@@ -10,16 +10,35 @@
 
 #include "etl_profile.h"
 #include "hal/hal.h"
+
+// [SIL-2] Constrain ArduinoJson v7 variant pool to 24 slots — sufficient for
+// all bridge payload types (max ~20 variants per frame). Without this, the
+// library defaults to 256 slots × 16 bytes = 4096 bytes on 64-bit hosts,
+// which exceeds the static arena and causes silent allocation failure.
+// The arena itself may reserve a small amount of extra headroom on 64-bit host
+// tests for MsgPack binary StringNode metadata, but the variant pool remains
+// bounded to 24 slots across builds.
+#ifndef ARDUINOJSON_POOL_CAPACITY
+#define ARDUINOJSON_POOL_CAPACITY 24
+#endif
+// Disable post-deserialization reallocate(); our bump-pointer arena shrinks
+// cleanly but the no-op round-trip adds unnecessary complexity.
+#ifndef ARDUINOJSON_AUTO_SHRINK
+#define ARDUINOJSON_AUTO_SHRINK 0
+#endif
+
 #include <ArduinoJson.h>
 
-namespace bridge::test { class TestAccessor; }
+namespace bridge::test {
+class TestAccessor;
+}
 
 #if defined(ARDUINO_ARCH_AVR)
 #include <avr/wdt.h>
 #endif
 
-#include <PacketSerial.h>
 #include <Codecs/COBS.h>
+#include <PacketSerial.h>
 #include <etl/algorithm.h>
 #include <etl/array.h>
 #include <etl/callback_timer.h>
@@ -49,11 +68,11 @@ namespace bridge::test { class TestAccessor; }
 
 // [SIL-2] Template De-bloating: Extern declarations
 namespace etl {
-  extern template class span<uint8_t>;
-  extern template class span<const uint8_t>;
-  extern template class span<char>;
-  extern template class span<const char>;
-}
+extern template class span<uint8_t>;
+extern template class span<const uint8_t>;
+extern template class span<char>;
+extern template class span<const char>;
+}  // namespace etl
 
 namespace rpc {
 class Serializable {
@@ -89,7 +108,10 @@ class BridgeArenaAllocator final : public ArduinoJson::Allocator {
  public:
   static constexpr size_t kCapacity = bridge::config::JSON_NODE_POOL_SIZE;
 
-  void reset() noexcept { _used = 0U; _last = nullptr; }
+  void reset() noexcept {
+    _used = 0U;
+    _last = nullptr;
+  }
 
   void* allocate(size_t n) override {
     n = (n + alignof(max_align_t) - 1U) & ~(alignof(max_align_t) - 1U);
@@ -103,7 +125,8 @@ class BridgeArenaAllocator final : public ArduinoJson::Allocator {
   void deallocate(void*) override {}
 
   void* reallocate(void* ptr, size_t new_size) override {
-    new_size = (new_size + alignof(max_align_t) - 1U) & ~(alignof(max_align_t) - 1U);
+    new_size =
+        (new_size + alignof(max_align_t) - 1U) & ~(alignof(max_align_t) - 1U);
     if (ptr == _last) {
       const size_t last_start = static_cast<uint8_t*>(_last) - _buf;
       if (last_start + new_size <= kCapacity) {
@@ -160,8 +183,8 @@ class BridgeClass {
       size_t used = serializeMsgPack(
           doc, reinterpret_cast<char*>(_transient_buffer.data()),
           rpc::MAX_PAYLOAD_SIZE);
-      return sendFrame(s, seq,
-                       etl::span<const uint8_t>(_transient_buffer.data(), used));
+      return sendFrame(
+          s, seq, etl::span<const uint8_t>(_transient_buffer.data(), used));
     }
     return false;
   }
@@ -174,8 +197,8 @@ class BridgeClass {
       size_t used = serializeMsgPack(
           doc, reinterpret_cast<char*>(_transient_buffer.data()),
           rpc::MAX_PAYLOAD_SIZE);
-      return sendFrame(c, seq,
-                       etl::span<const uint8_t>(_transient_buffer.data(), used));
+      return sendFrame(
+          c, seq, etl::span<const uint8_t>(_transient_buffer.data(), used));
     }
     return false;
   }
@@ -215,9 +238,9 @@ class BridgeClass {
   };
 
   void _sendRawFrame(uint16_t command_id, uint16_t sequence_id,
-                    etl::span<const uint8_t> payload);
+                     etl::span<const uint8_t> payload);
   bool _sendFrame(uint16_t command_id, uint16_t sequence_id,
-                 etl::span<const uint8_t> payload);
+                  etl::span<const uint8_t> payload);
   void _initializeRuntime();
 
   // STRICT ORDER FOR CONSTRUCTOR

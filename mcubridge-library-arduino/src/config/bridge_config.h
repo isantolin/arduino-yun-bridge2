@@ -34,8 +34,15 @@ static constexpr bool ENABLE_WATCHDOG = true;
 // [SIL-2] Maximum time to wait for Linux handshake before entering safe state.
 static constexpr uint32_t SYNC_TIMEOUT_MS = 30000UL;
 
-// Static arena capacity for ArduinoJson documents — fits all payload types.
+// Static arena capacity for ArduinoJson v7.
+// The variant pool is capped to 24 slots in Bridge.h; on 64-bit host tests we
+// reserve extra headroom for MsgPack binary StringNode allocations used by
+// handshake and service payloads. MCU builds keep the tighter 384-byte arena.
+#if defined(BRIDGE_HOST_TEST) && (UINTPTR_MAX > 0xFFFFFFFFU)
+static constexpr size_t JSON_NODE_POOL_SIZE = 512U;
+#else
 static constexpr size_t JSON_NODE_POOL_SIZE = 384U;
+#endif
 
 // --- Feature Flags (Manual overrides via build system) ---
 #ifndef BRIDGE_ENABLE_DATASTORE

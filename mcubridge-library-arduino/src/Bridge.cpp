@@ -681,9 +681,10 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
     wc_HmacUpdate(&hmac_engine, msg.nonce.data(), rpc::RPC_HANDSHAKE_NONCE_LENGTH);
     wc_HmacFinal(&hmac_engine, full_tag.data());
 
-    if (!rpc::security::timing_safe_equal(
+    const bool tag_ok = rpc::security::timing_safe_equal(
             etl::span<const uint8_t>(full_tag.data(), rpc::RPC_HANDSHAKE_TAG_LENGTH),
-            etl::span<const uint8_t>(msg.tag.data(), rpc::RPC_HANDSHAKE_TAG_LENGTH))) {
+            etl::span<const uint8_t>(msg.tag.data(), rpc::RPC_HANDSHAKE_TAG_LENGTH));
+    if (!tag_ok) {
       _fsm.receive(bridge::fsm::EvHandshakeFailed());
       emitStatus(rpc::StatusCode::STATUS_ERROR);
       return;

@@ -244,6 +244,22 @@ void test_process_branch_error_paths() {
   Process._onPollResponse(rpc::payload::ProcessPollResponse{});
 }
 
+void test_console_write_full_buffer_retains_data_when_send_fails() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream);
+
+  Console.begin();
+
+  etl::array<uint8_t, bridge::config::CONSOLE_TX_BUFFER_SIZE> fill = {};
+  fill.fill('x');
+  TEST_ASSERT_EQUAL_UINT32(fill.size(),
+                           Console.write(fill.data(), fill.size()));
+
+  Bridge.enterSafeState();
+  const etl::array<uint8_t, 1> extra = {'y'};
+  TEST_ASSERT_EQUAL_UINT32(0, Console.write(extra.data(), extra.size()));
+}
+
 void test_mailbox_and_datastore_variants() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
@@ -418,6 +434,7 @@ int main() {
   RUN_TEST(test_spi_timeout_and_error_paths);
   RUN_TEST(test_process_poll_and_kill);
   RUN_TEST(test_process_branch_error_paths);
+  RUN_TEST(test_console_write_full_buffer_retains_data_when_send_fails);
   RUN_TEST(test_mailbox_and_datastore_variants);
   RUN_TEST(test_bridge_fsm_resets);
   RUN_TEST(test_checksum_direct_library_path);

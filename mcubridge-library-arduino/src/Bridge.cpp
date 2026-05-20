@@ -26,16 +26,6 @@ void __attribute__((weak)) __attribute__((unused)) handle_error(
 }
 }  // namespace etl
 
-}
-
-void BridgeClass::notify_observers(const MsgBridgeSynchronized& msg) {
-  _notifyObservers(msg);
-}
-
-void BridgeClass::notify_observers(const MsgBridgeLost& msg) {
-  _notifyObservers(msg);
-}
-
 BridgeClass::BridgeClass(Stream& stream)
     : _stream(stream),
       _hardware_serial(nullptr),

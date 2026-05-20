@@ -314,16 +314,21 @@ class PrometheusExporter:
             # when read from this WSGI thread. Close them to prevent ResourceWarnings
             # when the diskcache object is destroyed.
             with contextlib.suppress(Exception):
-                if hasattr(self._state.mailbox_queue, "cache"):
-                    cache: Any = self._state.mailbox_queue.cache
-                    if hasattr(cache._local, "con"):
-                        cache._local.con.close()
-                        del cache._local.con
-                if hasattr(self._state.mailbox_incoming_queue, "cache"):
-                    cache: Any = self._state.mailbox_incoming_queue.cache
-                    if hasattr(cache._local, "con"):
-                        cache._local.con.close()
-                        del cache._local.con
+                if self._state is not None:
+                    mq: Any = self._state.mailbox_queue
+                    if hasattr(mq, "cache"):
+                        cache: Any = mq.cache
+                        local: Any = getattr(cache, "_local", None)
+                        if local and hasattr(local, "con"):
+                            local.con.close()
+                            del local.con
+                    miq: Any = self._state.mailbox_incoming_queue
+                    if hasattr(miq, "cache"):
+                        cache: Any = miq.cache
+                        local: Any = getattr(cache, "_local", None)
+                        if local and hasattr(local, "con"):
+                            local.con.close()
+                            del local.con
 
             return [payload]
 

@@ -58,9 +58,3 @@ void MailboxClass::_onAvailableResponse(
 MailboxClass Mailbox;
 
 #endif
-(_available_count);
-}
-
-MailboxClass Mailbox;
-
-#endif

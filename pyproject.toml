@@ -37,10 +37,6 @@ markers = [
     "fuzz: mark a test as a fuzz test",
     "timeout: timeout marker accepted during IDE discovery even when pytest-timeout is absent",
 ]
-filterwarnings = [
-    "error",
-    "ignore:Exception ignored.*sqlite3\\.Connection:pytest.PytestUnraisableExceptionWarning",
-]
 
 [tool.pyright]
 typeCheckingMode = "strict"

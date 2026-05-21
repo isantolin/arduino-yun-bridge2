@@ -24,8 +24,12 @@ from jinja2 import Environment, FileSystemLoader
 # ═════════════════════════════════════════════════════════════════════════════
 # DEPENDENCY VALIDATION (CRITICAL)
 # ═════════════════════════════════════════════════════════════════════════════
-REQUIRED_DEPS = ["msgspec", "jinja2", "google.protobuf", "nanopb"]
+REQUIRED_DEPS = ["msgspec", "jinja2", "google.protobuf", "nanopb", "grpc_tools"]
 MISSING_DEPS: list[str] = []
+
+for dep in REQUIRED_DEPS:
+    if importlib.util.find_spec(dep.split(".")[0]) is None:
+        MISSING_DEPS.append(dep)
 
 if MISSING_DEPS:
     sys.stderr.write("\n" + "!" * 80 + "\n")
@@ -1168,12 +1172,19 @@ class JinjaGenerator:
             sys.exit(1)
 
     def generate_python_pb2(self, proto_path: Path, out_dir: Path) -> None:
-        """Invoke protoc to generate Python pb2 module."""
-        cmd = ["protoc", f"--python_out={out_dir}", f"--proto_path={proto_path.parent}", str(proto_path)]
+        """Invoke protoc to generate Python pb2 module via grpcio-tools."""
+        cmd = [
+            sys.executable,
+            "-m",
+            "grpc_tools.protoc",
+            f"--python_out={out_dir}",
+            f"--proto_path={proto_path.parent}",
+            str(proto_path),
+        ]
         try:
             subprocess.run(cmd, check=True, capture_output=True, text=True)
         except subprocess.CalledProcessError as e:
-            sys.stderr.write(f"Error: protoc failed: {e.stderr}\n")
+            sys.stderr.write(f"Error: grpc_tools.protoc failed: {e.stderr}\n")
             sys.exit(1)
 
     def generate_python_client(self, spec: ProtocolSpec, out_path: Path) -> None:

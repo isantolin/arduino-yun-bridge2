@@ -492,12 +492,13 @@ class BaseStruct(msgspec.Struct, frozen=True, array_like=True):
 class VersionResponsePacket:
     PROTO_CLASS: Any = pb.VersionResponse
     _msg: Any
-
+    
     major: Annotated[int, msgspec.Meta(ge=0)]
-
+    
     minor: Annotated[int, msgspec.Meta(ge=0)]
-
+    
     patch: Annotated[int, msgspec.Meta(ge=0)]
+    
 
     def __init__(self, **kwargs: Any) -> None:
         self._msg = self.PROTO_CLASS(**kwargs)
@@ -514,14 +515,15 @@ class VersionResponsePacket:
         return instance
 
     def encode(self) -> bytes:
-        return self._msg.SerializeToString()  # type: ignore
+        return self._msg.SerializeToString() # type: ignore
 
 
 class FreeMemoryResponsePacket:
     PROTO_CLASS: Any = pb.FreeMemoryResponse
     _msg: Any
-
+    
     value: Annotated[int, msgspec.Meta(ge=0)]
+    
 
     def __init__(self, **kwargs: Any) -> None:
         self._msg = self.PROTO_CLASS(**kwargs)
@@ -538,16 +540,17 @@ class FreeMemoryResponsePacket:
         return instance
 
     def encode(self) -> bytes:
-        return self._msg.SerializeToString()  # type: ignore
+        return self._msg.SerializeToString() # type: ignore
 
 
 class PinModePacket:
     PROTO_CLASS: Any = pb.PinMode
     _msg: Any
-
+    
     pin: Annotated[int, msgspec.Meta(ge=0)]
-
+    
     mode: Annotated[int, msgspec.Meta(ge=0)]
+    
 
     def __init__(self, **kwargs: Any) -> None:
         self._msg = self.PROTO_CLASS(**kwargs)
@@ -564,16 +567,17 @@ class PinModePacket:
         return instance
 
     def encode(self) -> bytes:
-        return self._msg.SerializeToString()  # type: ignore
+        return self._msg.SerializeToString() # type: ignore
 
 
 class DigitalWritePacket:
     PROTO_CLASS: Any = pb.DigitalWrite
     _msg: Any
-
+    
     pin: Annotated[int, msgspec.Meta(ge=0)]
-
+    
     value: Annotated[int, msgspec.Meta(ge=0)]
+    
 
     def __init__(self, **kwargs: Any) -> None:
         self._msg = self.PROTO_CLASS(**kwargs)
@@ -590,16 +594,17 @@ class DigitalWritePacket:
         return instance
 
     def encode(self) -> bytes:
-        return self._msg.SerializeToString()  # type: ignore
+        return self._msg.SerializeToString() # type: ignore
 
 
 class AnalogWritePacket:
     PROTO_CLASS: Any = pb.AnalogWrite
     _msg: Any
-
+    
     pin: Annotated[int, msgspec.Meta(ge=0)]
-
+    
     value: Annotated[int, msgspec.Meta(ge=0)]
+    
 
     def __init__(self, **kwargs: Any) -> None:
         self._msg = self.PROTO_CLASS(**kwargs)
@@ -616,14 +621,15 @@ class AnalogWritePacket:
         return instance
 
     def encode(self) -> bytes:
-        return self._msg.SerializeToString()  # type: ignore
+        return self._msg.SerializeToString() # type: ignore
 
 
 class PinReadPacket:
     PROTO_CLASS: Any = pb.PinRead
     _msg: Any
-
+    
     pin: Annotated[int, msgspec.Meta(ge=0)]
+    
 
     def __init__(self, **kwargs: Any) -> None:
         self._msg = self.PROTO_CLASS(**kwargs)
@@ -640,14 +646,15 @@ class PinReadPacket:
         return instance
 
     def encode(self) -> bytes:
-        return self._msg.SerializeToString()  # type: ignore
+        return self._msg.SerializeToString() # type: ignore
 
 
 class DigitalReadResponsePacket:
     PROTO_CLASS: Any = pb.DigitalReadResponse
     _msg: Any
-
+    
     value: Annotated[int, msgspec.Meta(ge=0)]
+    
 
     def __init__(self, **kwargs: Any) -> None:
         self._msg = self.PROTO_CLASS(**kwargs)
@@ -664,14 +671,15 @@ class DigitalReadResponsePacket:
         return instance
 
     def encode(self) -> bytes:
-        return self._msg.SerializeToString()  # type: ignore
+        return self._msg.SerializeToString() # type: ignore
 
 
 class AnalogReadResponsePacket:
     PROTO_CLASS: Any = pb.AnalogReadResponse
     _msg: Any
-
+    
     value: Annotated[int, msgspec.Meta(ge=0)]
+    
 
     def __init__(self, **kwargs: Any) -> None:
         self._msg = self.PROTO_CLASS(**kwargs)
@@ -688,14 +696,15 @@ class AnalogReadResponsePacket:
         return instance
 
     def encode(self) -> bytes:
-        return self._msg.SerializeToString()  # type: ignore
+        return self._msg.SerializeToString() # type: ignore
 
 
 class ConsoleWritePacket:
     PROTO_CLASS: Any = pb.ConsoleWrite
     _msg: Any
-
+    
     data: bytes
+    
 
     def __init__(self, **kwargs: Any) -> None:
         self._msg = self.PROTO_CLASS(**kwargs)
@@ -712,16 +721,17 @@ class ConsoleWritePacket:
         return instance
 
     def encode(self) -> bytes:
-        return self._msg.SerializeToString()  # type: ignore
+        return self._msg.SerializeToString() # type: ignore
 
 
 class DatastorePutPacket:
     PROTO_CLASS: Any = pb.DatastorePut
     _msg: Any
-
+    
     key: str
-
+    
     value: bytes
+    
 
     def __init__(self, **kwargs: Any) -> None:
         self._msg = self.PROTO_CLASS(**kwargs)
@@ -738,14 +748,15 @@ class DatastorePutPacket:
         return instance
 
     def encode(self) -> bytes:
-        return self._msg.SerializeToString()  # type: ignore
+        return self._msg.SerializeToString() # type: ignore
 
 
 class DatastoreGetPacket:
     PROTO_CLASS: Any = pb.DatastoreGet
     _msg: Any
-
+    
     key: str
+    
 
     def __init__(self, **kwargs: Any) -> None:
         self._msg = self.PROTO_CLASS(**kwargs)
@@ -762,14 +773,15 @@ class DatastoreGetPacket:
         return instance
 
     def encode(self) -> bytes:
-        return self._msg.SerializeToString()  # type: ignore
+        return self._msg.SerializeToString() # type: ignore
 
 
 class DatastoreGetResponsePacket:
     PROTO_CLASS: Any = pb.DatastoreGetResponse
     _msg: Any
-
+    
     value: bytes
+    
 
     def __init__(self, **kwargs: Any) -> None:
         self._msg = self.PROTO_CLASS(**kwargs)
@@ -786,14 +798,15 @@ class DatastoreGetResponsePacket:
         return instance
 
     def encode(self) -> bytes:
-        return self._msg.SerializeToString()  # type: ignore
+        return self._msg.SerializeToString() # type: ignore
 
 
 class MailboxPushPacket:
     PROTO_CLASS: Any = pb.MailboxPush
     _msg: Any
-
+    
     data: bytes
+    
 
     def __init__(self, **kwargs: Any) -> None:
         self._msg = self.PROTO_CLASS(**kwargs)
@@ -810,14 +823,15 @@ class MailboxPushPacket:
         return instance
 
     def encode(self) -> bytes:
-        return self._msg.SerializeToString()  # type: ignore
+        return self._msg.SerializeToString() # type: ignore
 
 
 class MailboxProcessedPacket:
     PROTO_CLASS: Any = pb.MailboxProcessed
     _msg: Any
-
+    
     message_id: Annotated[int, msgspec.Meta(ge=0)]
+    
 
     def __init__(self, **kwargs: Any) -> None:
         self._msg = self.PROTO_CLASS(**kwargs)
@@ -834,14 +848,15 @@ class MailboxProcessedPacket:
         return instance
 
     def encode(self) -> bytes:
-        return self._msg.SerializeToString()  # type: ignore
+        return self._msg.SerializeToString() # type: ignore
 
 
 class MailboxAvailableResponsePacket:
     PROTO_CLASS: Any = pb.MailboxAvailableResponse
     _msg: Any
-
+    
     count: Annotated[int, msgspec.Meta(ge=0)]
+    
 
     def __init__(self, **kwargs: Any) -> None:
         self._msg = self.PROTO_CLASS(**kwargs)
@@ -858,14 +873,15 @@ class MailboxAvailableResponsePacket:
         return instance
 
     def encode(self) -> bytes:
-        return self._msg.SerializeToString()  # type: ignore
+        return self._msg.SerializeToString() # type: ignore
 
 
 class MailboxReadResponsePacket:
     PROTO_CLASS: Any = pb.MailboxReadResponse
     _msg: Any
-
+    
     content: bytes
+    
 
     def __init__(self, **kwargs: Any) -> None:
         self._msg = self.PROTO_CLASS(**kwargs)
@@ -882,16 +898,17 @@ class MailboxReadResponsePacket:
         return instance
 
     def encode(self) -> bytes:
-        return self._msg.SerializeToString()  # type: ignore
+        return self._msg.SerializeToString() # type: ignore
 
 
 class FileWritePacket:
     PROTO_CLASS: Any = pb.FileWrite
     _msg: Any
-
+    
     path: str
-
+    
     data: bytes
+    
 
     def __init__(self, **kwargs: Any) -> None:
         self._msg = self.PROTO_CLASS(**kwargs)
@@ -908,14 +925,15 @@ class FileWritePacket:
         return instance
 
     def encode(self) -> bytes:
-        return self._msg.SerializeToString()  # type: ignore
+        return self._msg.SerializeToString() # type: ignore
 
 
 class FileReadPacket:
     PROTO_CLASS: Any = pb.FileRead
     _msg: Any
-
+    
     path: str
+    
 
     def __init__(self, **kwargs: Any) -> None:
         self._msg = self.PROTO_CLASS(**kwargs)
@@ -932,14 +950,15 @@ class FileReadPacket:
         return instance
 
     def encode(self) -> bytes:
-        return self._msg.SerializeToString()  # type: ignore
+        return self._msg.SerializeToString() # type: ignore
 
 
 class FileRemovePacket:
     PROTO_CLASS: Any = pb.FileRemove
     _msg: Any
-
+    
     path: str
+    
 
     def __init__(self, **kwargs: Any) -> None:
         self._msg = self.PROTO_CLASS(**kwargs)
@@ -956,14 +975,15 @@ class FileRemovePacket:
         return instance
 
     def encode(self) -> bytes:
-        return self._msg.SerializeToString()  # type: ignore
+        return self._msg.SerializeToString() # type: ignore
 
 
 class FileReadResponsePacket:
     PROTO_CLASS: Any = pb.FileReadResponse
     _msg: Any
-
+    
     content: bytes
+    
 
     def __init__(self, **kwargs: Any) -> None:
         self._msg = self.PROTO_CLASS(**kwargs)
@@ -980,14 +1000,15 @@ class FileReadResponsePacket:
         return instance
 
     def encode(self) -> bytes:
-        return self._msg.SerializeToString()  # type: ignore
+        return self._msg.SerializeToString() # type: ignore
 
 
 class ProcessRunAsyncPacket:
     PROTO_CLASS: Any = pb.ProcessRunAsync
     _msg: Any
-
+    
     command: str
+    
 
     def __init__(self, **kwargs: Any) -> None:
         self._msg = self.PROTO_CLASS(**kwargs)
@@ -1004,14 +1025,15 @@ class ProcessRunAsyncPacket:
         return instance
 
     def encode(self) -> bytes:
-        return self._msg.SerializeToString()  # type: ignore
+        return self._msg.SerializeToString() # type: ignore
 
 
 class ProcessRunAsyncResponsePacket:
     PROTO_CLASS: Any = pb.ProcessRunAsyncResponse
     _msg: Any
-
+    
     pid: Annotated[int, msgspec.Meta(ge=0)]
+    
 
     def __init__(self, **kwargs: Any) -> None:
         self._msg = self.PROTO_CLASS(**kwargs)
@@ -1028,14 +1050,15 @@ class ProcessRunAsyncResponsePacket:
         return instance
 
     def encode(self) -> bytes:
-        return self._msg.SerializeToString()  # type: ignore
+        return self._msg.SerializeToString() # type: ignore
 
 
 class ProcessPollPacket:
     PROTO_CLASS: Any = pb.ProcessPoll
     _msg: Any
-
+    
     pid: Annotated[int, msgspec.Meta(ge=0)]
+    
 
     def __init__(self, **kwargs: Any) -> None:
         self._msg = self.PROTO_CLASS(**kwargs)
@@ -1052,20 +1075,21 @@ class ProcessPollPacket:
         return instance
 
     def encode(self) -> bytes:
-        return self._msg.SerializeToString()  # type: ignore
+        return self._msg.SerializeToString() # type: ignore
 
 
 class ProcessPollResponsePacket:
     PROTO_CLASS: Any = pb.ProcessPollResponse
     _msg: Any
-
+    
     status: Annotated[int, msgspec.Meta(ge=0)]
-
+    
     exit_code: Annotated[int, msgspec.Meta(ge=0)]
-
+    
     stdout_data: bytes
-
+    
     stderr_data: bytes
+    
 
     def __init__(self, **kwargs: Any) -> None:
         self._msg = self.PROTO_CLASS(**kwargs)
@@ -1082,14 +1106,15 @@ class ProcessPollResponsePacket:
         return instance
 
     def encode(self) -> bytes:
-        return self._msg.SerializeToString()  # type: ignore
+        return self._msg.SerializeToString() # type: ignore
 
 
 class ProcessKillPacket:
     PROTO_CLASS: Any = pb.ProcessKill
     _msg: Any
-
+    
     pid: Annotated[int, msgspec.Meta(ge=0)]
+    
 
     def __init__(self, **kwargs: Any) -> None:
         self._msg = self.PROTO_CLASS(**kwargs)
@@ -1106,14 +1131,15 @@ class ProcessKillPacket:
         return instance
 
     def encode(self) -> bytes:
-        return self._msg.SerializeToString()  # type: ignore
+        return self._msg.SerializeToString() # type: ignore
 
 
 class AckPacket:
     PROTO_CLASS: Any = pb.AckPacket
     _msg: Any
-
+    
     command_id: Annotated[int, msgspec.Meta(ge=0)]
+    
 
     def __init__(self, **kwargs: Any) -> None:
         self._msg = self.PROTO_CLASS(**kwargs)
@@ -1130,18 +1156,19 @@ class AckPacket:
         return instance
 
     def encode(self) -> bytes:
-        return self._msg.SerializeToString()  # type: ignore
+        return self._msg.SerializeToString() # type: ignore
 
 
 class HandshakeConfigPacket:
     PROTO_CLASS: Any = pb.HandshakeConfig
     _msg: Any
-
+    
     ack_timeout_ms: Annotated[int, msgspec.Meta(ge=0)]
-
+    
     ack_retry_limit: Annotated[int, msgspec.Meta(ge=0)]
-
+    
     response_timeout_ms: Annotated[int, msgspec.Meta(ge=0)]
+    
 
     def __init__(self, **kwargs: Any) -> None:
         self._msg = self.PROTO_CLASS(**kwargs)
@@ -1158,14 +1185,15 @@ class HandshakeConfigPacket:
         return instance
 
     def encode(self) -> bytes:
-        return self._msg.SerializeToString()  # type: ignore
+        return self._msg.SerializeToString() # type: ignore
 
 
 class SetBaudratePacket:
     PROTO_CLASS: Any = pb.SetBaudratePacket
     _msg: Any
-
+    
     baudrate: Annotated[int, msgspec.Meta(ge=0)]
+    
 
     def __init__(self, **kwargs: Any) -> None:
         self._msg = self.PROTO_CLASS(**kwargs)
@@ -1182,16 +1210,17 @@ class SetBaudratePacket:
         return instance
 
     def encode(self) -> bytes:
-        return self._msg.SerializeToString()  # type: ignore
+        return self._msg.SerializeToString() # type: ignore
 
 
 class LinkSyncPacket:
     PROTO_CLASS: Any = pb.LinkSync
     _msg: Any
-
+    
     nonce: bytes
-
+    
     tag: bytes
+    
 
     def __init__(self, **kwargs: Any) -> None:
         self._msg = self.PROTO_CLASS(**kwargs)
@@ -1208,14 +1237,15 @@ class LinkSyncPacket:
         return instance
 
     def encode(self) -> bytes:
-        return self._msg.SerializeToString()  # type: ignore
+        return self._msg.SerializeToString() # type: ignore
 
 
 class EnterBootloaderPacket:
     PROTO_CLASS: Any = pb.EnterBootloader
     _msg: Any
-
+    
     magic: Annotated[int, msgspec.Meta(ge=0)]
+    
 
     def __init__(self, **kwargs: Any) -> None:
         self._msg = self.PROTO_CLASS(**kwargs)
@@ -1232,14 +1262,15 @@ class EnterBootloaderPacket:
         return instance
 
     def encode(self) -> bytes:
-        return self._msg.SerializeToString()  # type: ignore
+        return self._msg.SerializeToString() # type: ignore
 
 
 class SpiTransferPacket:
     PROTO_CLASS: Any = pb.SpiTransfer
     _msg: Any
-
+    
     data: bytes
+    
 
     def __init__(self, **kwargs: Any) -> None:
         self._msg = self.PROTO_CLASS(**kwargs)
@@ -1256,14 +1287,15 @@ class SpiTransferPacket:
         return instance
 
     def encode(self) -> bytes:
-        return self._msg.SerializeToString()  # type: ignore
+        return self._msg.SerializeToString() # type: ignore
 
 
 class SpiTransferResponsePacket:
     PROTO_CLASS: Any = pb.SpiTransferResponse
     _msg: Any
-
+    
     data: bytes
+    
 
     def __init__(self, **kwargs: Any) -> None:
         self._msg = self.PROTO_CLASS(**kwargs)
@@ -1280,18 +1312,19 @@ class SpiTransferResponsePacket:
         return instance
 
     def encode(self) -> bytes:
-        return self._msg.SerializeToString()  # type: ignore
+        return self._msg.SerializeToString() # type: ignore
 
 
 class SpiConfigPacket:
     PROTO_CLASS: Any = pb.SpiConfig
     _msg: Any
-
+    
     bit_order: Annotated[int, msgspec.Meta(ge=0)]
-
+    
     data_mode: Annotated[int, msgspec.Meta(ge=0)]
-
+    
     frequency: Annotated[int, msgspec.Meta(ge=0)]
+    
 
     def __init__(self, **kwargs: Any) -> None:
         self._msg = self.PROTO_CLASS(**kwargs)
@@ -1308,7 +1341,7 @@ class SpiConfigPacket:
         return instance
 
     def encode(self) -> bytes:
-        return self._msg.SerializeToString()  # type: ignore
+        return self._msg.SerializeToString() # type: ignore
 
 
 # --- END GENERATED PACKETS ---

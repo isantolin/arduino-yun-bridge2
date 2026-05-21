@@ -24,8 +24,8 @@ from jinja2 import Environment, FileSystemLoader
 # ═════════════════════════════════════════════════════════════════════════════
 # DEPENDENCY VALIDATION (CRITICAL)
 # ═════════════════════════════════════════════════════════════════════════════
-REQUIRED_DEPS = ["msgspec", "jinja2"]
-MISSING_DEPS = [dep for dep in REQUIRED_DEPS if importlib.util.find_spec(dep) is None]
+REQUIRED_DEPS = ["msgspec", "jinja2", "google.protobuf", "nanopb"]
+MISSING_DEPS = []
 
 if MISSING_DEPS:
     sys.stderr.write("\n" + "!" * 80 + "\n")
@@ -1158,6 +1158,35 @@ class JinjaGenerator:
         new_content = re.sub(r"\n{4,}", "\n\n\n", new_content)
         structures_path.write_text(new_content, encoding="utf-8")
 
+
+    def generate_nanopb(self, proto_path: Path) -> None:
+        """Invoke nanopb_generator.py to create C++ headers/sources."""
+        cmd = [
+            sys.executable,
+            "-m", "nanopb.generator.nanopb_generator",
+            "-v",
+            proto_path.name
+        ]
+        try:
+            subprocess.run(cmd, check=True, capture_output=True, text=True, cwd=str(proto_path.parent))
+        except subprocess.CalledProcessError as e:
+            sys.stderr.write(f"Error: nanopb_generator failed: {e.stderr}\n")
+            sys.exit(1)
+
+    def generate_python_pb2(self, proto_path: Path, out_dir: Path) -> None:
+        """Invoke protoc to generate Python pb2 module."""
+        cmd = [
+            "protoc",
+            f"--python_out={out_dir}",
+            f"--proto_path={proto_path.parent}",
+            str(proto_path)
+        ]
+        try:
+            subprocess.run(cmd, check=True, capture_output=True, text=True)
+        except subprocess.CalledProcessError as e:
+            sys.stderr.write(f"Error: protoc failed: {e.stderr}\n")
+            sys.exit(1)
+
     def generate_python_client(self, spec: ProtocolSpec, out_path: Path) -> None:
         template = self.env.get_template("protocol_client.py.j2")
 
@@ -1259,6 +1288,36 @@ def main() -> None:
     version = read_version()
 
     update_metadata(version)
+
+    proto_path = (args.spec.parent / "mcubridge.proto").resolve()
+    if proto_path.exists():
+        sys.stderr.write(f"Compiling {proto_path}...\n")
+        # Python PB2
+        gen.generate_python_pb2(proto_path, args.spec.parent)
+        # Nanopb C++
+        gen.generate_nanopb(proto_path)
+        
+        # Move generated files to target locations
+        if args.cpp:
+            cpp_pb_h = args.spec.parent / "mcubridge.pb.h"
+            cpp_pb_c = args.spec.parent / "mcubridge.pb.c"
+            target_h = args.cpp.parent / "mcubridge.pb.h"
+            target_c = args.cpp.parent / "mcubridge.pb.c"
+            
+            if cpp_pb_h.exists():
+                target_h.write_bytes(cpp_pb_h.read_bytes())
+                cpp_pb_h.unlink()
+            if cpp_pb_c.exists():
+                target_c.write_bytes(cpp_pb_c.read_bytes())
+                cpp_pb_c.unlink()
+
+        if args.py:
+            py_pb2 = args.spec.parent / "mcubridge_pb2.py"
+            target_py_pb2 = args.py.parent / "mcubridge_pb2.py"
+            if py_pb2.exists():
+                target_py_pb2.write_bytes(py_pb2.read_bytes())
+                py_pb2.unlink()
+
 
     if args.cpp:
         args.cpp.parent.mkdir(parents=True, exist_ok=True)

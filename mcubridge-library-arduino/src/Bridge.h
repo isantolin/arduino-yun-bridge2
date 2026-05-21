@@ -11,23 +11,7 @@
 #include "etl_profile.h"
 #include "hal/hal.h"
 
-// [SIL-2] Constrain ArduinoJson v7 variant pool to 24 slots — sufficient for
-// all bridge payload types (max ~20 variants per frame). Without this, the
-// library defaults to 256 slots × 16 bytes = 4096 bytes on 64-bit hosts,
-// which exceeds the static arena and causes silent allocation failure.
-// The arena itself may reserve a small amount of extra headroom on 64-bit host
-// tests for MsgPack binary StringNode metadata, but the variant pool remains
-// bounded to 24 slots across builds.
-#ifndef ARDUINOJSON_POOL_CAPACITY
-#define ARDUINOJSON_POOL_CAPACITY 24
-#endif
-// Disable post-deserialization reallocate(); our bump-pointer arena shrinks
-// cleanly but the no-op round-trip adds unnecessary complexity.
-#ifndef ARDUINOJSON_AUTO_SHRINK
-#define ARDUINOJSON_AUTO_SHRINK 0
-#endif
 
-#include <ArduinoJson.h>
 
 namespace bridge::test {
 class TestAccessor;
@@ -74,12 +58,7 @@ extern template class span<char>;
 extern template class span<const char>;
 }  // namespace etl
 
-namespace rpc {
-class Serializable {
- public:
-  virtual bool encode(JsonVariant target) const = 0;
-};
-}  // namespace rpc
+
 
 namespace bridge {
 namespace router {
@@ -104,41 +83,7 @@ struct CommandContext {
 
 // [SIL-2] Zero-Heap ArduinoJson arena: all JSON documents backed by static BSS.
 // Compliant with ArduinoJson v7 Allocator interface; no malloc/free.
-class BridgeArenaAllocator final : public ArduinoJson::Allocator {
- public:
-  static constexpr size_t kCapacity = bridge::config::JSON_NODE_POOL_SIZE;
 
-  void reset() noexcept {
-    _used = 0U;
-    _last = nullptr;
-  }
-
-  void* allocate(size_t n) override {
-    n = (n + alignof(max_align_t) - 1U) & ~(alignof(max_align_t) - 1U);
-    if (_used + n > kCapacity) return nullptr;
-    void* p = _buf + _used;
-    _last = p;
-    _used += n;
-    return p;
-  }
-
-  void deallocate(void*) override {}
-
-  void* reallocate(void* ptr, size_t new_size) override {
-    new_size =
-        (new_size + alignof(max_align_t) - 1U) & ~(alignof(max_align_t) - 1U);
-    if (ptr == _last) {
-      const size_t last_start = static_cast<uint8_t*>(_last) - _buf;
-      if (last_start + new_size <= kCapacity) {
-        _used = last_start + new_size;
-        return ptr;
-      }
-    }
-    return nullptr;
-  }
-
- private:
-  alignas(max_align_t) uint8_t _buf[kCapacity]{};
   size_t _used{0U};
   void* _last{nullptr};
 };
@@ -170,31 +115,24 @@ class BridgeClass {
   [[nodiscard]] bool sendFrame(rpc::CommandId c, uint16_t seq = 0,
                                etl::span<const uint8_t> p = {});
 
+  
   template <typename T>
   [[nodiscard]] bool send(rpc::StatusCode s, uint16_t seq, const T& packet) {
-    _json_arena.reset();
-    JsonDocument doc(&_json_arena);
-    if (packet.encode(doc.to<JsonVariant>())) {
-      size_t used = serializeMsgPack(
-          doc, reinterpret_cast<char*>(_transient_buffer.data()),
-          rpc::MAX_PAYLOAD_SIZE);
-      return sendFrame(
-          s, seq, etl::span<const uint8_t>(_transient_buffer.data(), used));
+    pb_ostream_t stream = pb_ostream_from_buffer(_transient_buffer.data(), rpc::MAX_PAYLOAD_SIZE);
+    if (packet.encode(&stream)) {
+      return sendFrame(s, seq, etl::span<const uint8_t>(_transient_buffer.data(), stream.bytes_written));
     }
     return false;
   }
 
-  template <typename T>
-  [[nodiscard]] bool send(rpc::CommandId c, uint16_t seq, const T& packet) {
-    _json_arena.reset();
-    JsonDocument doc(&_json_arena);
-    if (packet.encode(doc.to<JsonVariant>())) {
-      size_t used = serializeMsgPack(
-          doc, reinterpret_cast<char*>(_transient_buffer.data()),
-          rpc::MAX_PAYLOAD_SIZE);
-      return sendFrame(
-          c, seq, etl::span<const uint8_t>(_transient_buffer.data(), used));
-    }
+  
+    return false;
+  }
+
+    return false;
+  }
+
+  
     return false;
   }
 
@@ -304,7 +242,7 @@ class BridgeClass {
       _timer_ids;
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> _transient_buffer;
   etl::array<uint8_t, bridge::config::RX_BUFFER_SIZE> _rx_storage;
-  static BridgeArenaAllocator _json_arena;
+
   rpc::FrameParser _frame_parser;
   bool _is_post_passed;
   bool _tx_enabled;
@@ -385,18 +323,26 @@ class BridgeClass {
   static const etl::array<DispatchHandler, rpc::RPC_MAX_COMMAND_ID>&
   _dispatchTable();
 
+  
   template <typename T, typename F>
   void _withPayload(const bridge::router::CommandContext& ctx, F handler) {
-    _json_arena.reset();
-    JsonDocument doc(&_json_arena);
-    auto res = rpc::Payload::parse<T>(*ctx.frame, doc);
+    auto res = rpc::Payload::parse<T>(*ctx.frame);
     if (res) handler(res.value());
   }
-  template <typename T, typename F>
-  void _withPayloadAck(const bridge::router::CommandContext& ctx, F handler) {
-    if (ctx.is_duplicate) {
-      (void)send(rpc::StatusCode::STATUS_ACK, ctx.sequence_id,
-                 rpc::payload::AckPacket{ctx.raw_command});
+  );
+      return;
+    }
+    auto res = rpc::Payload::parse<T>(*ctx.frame);
+    if (res) {
+      handler(res.value());
+      if (ctx.requires_ack)
+        (void)send(rpc::StatusCode::STATUS_ACK, ctx.sequence_id,
+                   rpc::payload::AckPacket{ctx.raw_command});
+    } else
+      emitStatus(rpc::StatusCode::STATUS_ERROR);
+  }
+
+  );
       return;
     }
     _json_arena.reset();
@@ -418,15 +364,21 @@ class BridgeClass {
     }
     handler();
   }
+  
   template <typename T, typename TID, typename TValid, typename TRead>
   void _handlePinRead(const bridge::router::CommandContext& ctx, TID resp_id,
                       TValid valid, TRead read) {
     _withResponse(ctx, [this, &ctx, resp_id, valid, read]() {
-      _json_arena.reset();
-      JsonDocument doc(&_json_arena);
-      auto res = rpc::Payload::parse<rpc::payload::PinRead>(*ctx.frame, doc);
-      if (res && valid(res->pin)) {
-        T resp = {static_cast<decltype(T::value)>(read(res->pin))};
+      auto res = rpc::Payload::parse<rpc::payload::PinRead>(*ctx.frame);
+      if (res && valid(res->pb_msg.pin)) {
+        T resp;
+        resp.pb_msg.value = static_cast<uint32_t>(read(res->pb_msg.pin));
+        (void)send(static_cast<rpc::CommandId>(resp_id), ctx.sequence_id, resp);
+      } else
+        emitStatus(rpc::StatusCode::STATUS_ERROR);
+    });
+  }
+;
         (void)send(static_cast<rpc::CommandId>(resp_id), ctx.sequence_id, resp);
       } else
         emitStatus(rpc::StatusCode::STATUS_ERROR);

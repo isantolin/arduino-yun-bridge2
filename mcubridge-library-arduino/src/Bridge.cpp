@@ -17,7 +17,7 @@
 #include "services/SPIService.h"
 
 BridgeClass Bridge(Serial);
-BridgeArenaAllocator BridgeClass::_json_arena;
+
 
 namespace etl {
 void __attribute__((weak)) __attribute__((unused)) handle_error(

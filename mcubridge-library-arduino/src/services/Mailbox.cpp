@@ -15,7 +15,7 @@ void send_mailbox_command(rpc::CommandId command_id) {
 }  // namespace
 
 MailboxClass::MailboxClass()
-    : _rx_buffer(), _available_count(0U), _available_handler() {}
+    : _rx_buffer(), _available_count(0U) {}
 
 void MailboxClass::push(etl::span<const uint8_t> data) {
   (void)Bridge.send(rpc::CommandId::CMD_MAILBOX_PUSH, 0,

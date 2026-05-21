@@ -296,7 +296,7 @@ void BridgeClass::enterSafeState() {
   _tx_enabled = false;
   _clearPendingTxQueue();
   _fsm.receive(bridge::fsm::EvReset());
-  notify_observers(MsgBridgeLost());
+  _notifyObservers(MsgBridgeLost());
 }
 
 void BridgeClass::emitStatus(rpc::StatusCode code,

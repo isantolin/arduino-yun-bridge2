@@ -145,11 +145,11 @@ async def test_handshake_capabilities_retry(
 async def test_handshake_malformed_sync_resp(
     handshake_setup: tuple[SerialHandshakeManager, RuntimeState, AsyncMock],
 ) -> None:
-    """Verify handling of corrupt MsgPack in sync response."""
+    """Verify handling of corrupt protobuf in sync response."""
     manager, state, _ = handshake_setup
     state.link_handshake_nonce = b"pending"
 
-    result = await manager.handle_link_sync_resp(1, b"\xff\xff\xff")  # Invalid msgpack
+    result = await manager.handle_link_sync_resp(1, b"\xff\xff\xff")  # Invalid protobuf
     assert result is False
     assert state.last_handshake_error == "sync_decode_failed"
     cast(AsyncMock, manager._acknowledge_frame).assert_called_with(

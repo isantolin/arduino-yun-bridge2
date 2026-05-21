@@ -22,18 +22,20 @@ import tenacity
 from cryptography.hazmat.primitives import hashes, hmac
 from cryptography.hazmat.primitives.constant_time import bytes_eq
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from google.protobuf.message import DecodeError as ProtobufDecodeError
 
 from ..config.const import (
     SERIAL_HANDSHAKE_BACKOFF_BASE,
     SERIAL_HANDSHAKE_BACKOFF_MAX,
 )
 from ..config.settings import RuntimeConfig
-from ..protocol import protocol
+from ..protocol import protocol, structures
 from ..protocol.protocol import Command, Status
 from ..protocol.structures import (
     CapabilitiesPacket,
     HandshakeConfigPacket,
     LinkSyncPacket,
+    PROTOBUF_CONTENT_TYPE,
     QueuedPublish,
     SerialTimingWindow,
 )
@@ -118,7 +120,7 @@ class SerialHandshakeManager:
         self._acknowledge_frame = acknowledge_frame
         self._logger = logger_ or logger
         self._fatal_threshold = max(1, config.serial_handshake_fatal_failures)
-        # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
+        # [SIL-2] Serialize handshake timing as protobuf.
         self._reset_payload = HandshakeConfigPacket(
             ack_timeout_ms=self._timing.ack_timeout_ms,
             ack_retry_limit=self._timing.retry_limit,
@@ -204,7 +206,7 @@ class SerialHandshakeManager:
 
         # [MIL-SPEC] Send LINK_SYNC with mutual authentication tag
         our_tag = self.calculate_handshake_tag(self._config.serial_shared_secret, nonce)
-        # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
+        # [SIL-2] Serialize LINK_SYNC as protobuf.
         sync_payload = LinkSyncPacket(nonce=nonce, tag=our_tag).encode()
         sync_ok = await self._send_frame(Command.CMD_LINK_SYNC.value, sync_payload)
         if not sync_ok:
@@ -269,13 +271,13 @@ class SerialHandshakeManager:
             self._state.handshake_rate_until = now + rate_limit
 
         try:
-            # [SIL-2] Use direct msgspec.msgpack.decode (Zero Wrapper)
+            # [SIL-2] Decode LINK_SYNC_RESP as protobuf.
             sync_pkt = LinkSyncPacket.decode(payload)
             nonce = bytes(sync_pkt.nonce)
             tag_bytes = bytes(sync_pkt.tag)
-        except (ValueError, TypeError, Exception):
+        except (ProtobufDecodeError, ValueError, TypeError):
             self._logger.warning(
-                "LINK_SYNC_RESP msgpack decode failed (len=%d)",
+                "LINK_SYNC_RESP protobuf decode failed (len=%d)",
                 len(payload),
             )
             await self._acknowledge_frame(
@@ -391,7 +393,7 @@ class SerialHandshakeManager:
 
     def _parse_capabilities(self, payload: bytes) -> None:
         try:
-            # [SIL-2] Use direct msgspec.msgpack.decode (Zero Wrapper)
+            # [SIL-2] Decode capabilities as protobuf.
             cap = CapabilitiesPacket.decode(payload)
             self._state.mcu_capabilities = McuCapabilities(
                 protocol_version=cap.ver,
@@ -401,7 +403,7 @@ class SerialHandshakeManager:
                 features=cap.features,
             )
             self._logger.info("MCU Capabilities: %s", self._state.mcu_capabilities)
-        except (ValueError, TypeError, Exception, KeyError) as exc:
+        except (ProtobufDecodeError, ValueError, TypeError, KeyError) as exc:
             self._logger.warning("Failed to unpack capabilities: %s", exc)
 
     async def handle_link_reset_resp(self, seq_id: int, payload: bytes) -> bool:
@@ -525,11 +527,10 @@ class SerialHandshakeManager:
         }
         if extra:
             payload |= extra
-        # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
         message = QueuedPublish(
             topic_name=topic_path(self._state.mqtt_topic_prefix, Topic.SYSTEM, "handshake"),
-            payload=msgspec.msgpack.encode(payload),
-            content_type="application/msgpack",
+            payload=structures.encode_structured_payload(payload),
+            content_type=PROTOBUF_CONTENT_TYPE,
             user_properties=(("bridge-event", "handshake"),),
         )
         await self._enqueue_mqtt(message)

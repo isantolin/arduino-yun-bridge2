@@ -776,7 +776,7 @@ void BridgeClass::_handleSpiTransfer(
         return;
       }
       rpc::payload::SpiTransferResponse resp = {};
-      rpc::payload::copy_to_pb_bytes((pb_bytes_array_t*)&resp.pb_msg.data, 64, _rx_storage.data(),
+      rpc::payload::copy_to_pb_bytes(resp.pb_msg.data, _rx_storage.data(),
                                      len);
       (void)send(rpc::CommandId::CMD_SPI_TRANSFER_RESP, ctx.sequence_id, resp);
     } else

@@ -9,6 +9,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <etl/algorithm.h>
 #include <etl/string_view.h>
 #include "pb_encode.h"
 #include "pb_decode.h"
@@ -18,10 +19,14 @@
 
 namespace rpc::payload {
 
-inline void copy_to_pb_bytes(pb_bytes_array_t* dest, size_t dest_size, const uint8_t* src, size_t src_size) {
-    size_t to_copy = (src_size <= dest_size) ? src_size : dest_size;
-    dest->size = (pb_size_t)to_copy;
-    memcpy(dest->bytes, src, to_copy);
+template <typename PbBytesArray>
+inline void copy_to_pb_bytes(PbBytesArray& dest, const uint8_t* src, size_t src_size) {
+    constexpr size_t dest_size = sizeof(dest.bytes) / sizeof(dest.bytes[0]);
+    const size_t to_copy = (src_size <= dest_size) ? src_size : dest_size;
+    dest.size = static_cast<pb_size_t>(to_copy);
+    if (to_copy > 0U) {
+        etl::copy_n(src, to_copy, dest.bytes);
+    }
 }
 
 {% for s in structs %}

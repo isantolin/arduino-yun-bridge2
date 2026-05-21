@@ -32,6 +32,9 @@ from .definitions import (
 from .env import dump_client_env, read_uci_general
 from .protocol import (
     Command,
+    ProcessPollResponsePacket,
+    ProcessRunAsyncPacket,
+    ProcessRunAsyncResponsePacket,
     Topic,
     SpiConfigPacket,
     SpiTransferPacket,
@@ -60,6 +63,7 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
+PROTOBUF_CONTENT_TYPE = "application/x-protobuf"
 _UCI_GENERAL = read_uci_general()
 
 MQTT_HOST = os.environ.get("MCUBRIDGE_MQTT_HOST") or _UCI_GENERAL.get("mqtt_host", DEFAULT_MQTT_HOST)
@@ -168,7 +172,13 @@ class Bridge:
             pass
 
     async def _publish_and_wait(
-        self, topic: str, payload: bytes | str, *, resp_topic: str | None = None, timeout: float = 15
+        self,
+        topic: str,
+        payload: bytes | str,
+        *,
+        resp_topic: str | None = None,
+        timeout: float = 15,
+        content_type: str | None = None,
     ) -> bytes:
         if not self._client:
             raise ConnectionError("Not connected")
@@ -186,6 +196,7 @@ class Bridge:
                 payload=payload.encode() if isinstance(payload, str) else payload,
                 response_topic=self._reply_topic,
                 correlation_data=correlation,
+                content_type=content_type,
             )
             await self._client.publish(msg.topic_name, msg.payload, properties=build_mqtt_properties(msg))
             delivered = await asyncio.wait_for(queue.get(), timeout=timeout)
@@ -252,11 +263,12 @@ class Bridge:
     async def run_shell_command_async(self, parts: list[str], timeout: float = 15) -> int:
         res = await self._publish_and_wait(
             Topic.build(Topic.SHELL, "run_async"),
-            shlex.join(parts),
+            ProcessRunAsyncPacket(command=shlex.join(parts)).encode(),
             resp_topic=Topic.build(Topic.SHELL, "run_async", "response"),
             timeout=timeout,
+            content_type=PROTOBUF_CONTENT_TYPE,
         )
-        return int(res.decode())
+        return int(ProcessRunAsyncResponsePacket.decode(res).pid)
 
     async def poll_shell_process(self, pid: int, timeout: float = 15) -> ShellPollResponse:
         res = await self._publish_and_wait(
@@ -265,7 +277,16 @@ class Bridge:
             resp_topic=Topic.build(Topic.SHELL, "poll", pid, "response"),
             timeout=timeout,
         )
-        return msgspec.msgpack.decode(res, type=ShellPollResponse)
+        packet = ProcessPollResponsePacket.decode(res)
+        return {
+            "status_byte": int(packet.status),
+            "exit_code": int(packet.exit_code),
+            "stdout_chunk": bytes(packet.stdout_data),
+            "stderr_chunk": bytes(packet.stderr_data),
+            "finished": bool(packet.finished),
+            "stdout_truncated": bool(packet.stdout_truncated),
+            "stderr_truncated": bool(packet.stderr_truncated),
+        }
 
     async def file_write(self, filename: str, content: str | bytes) -> None:
         (

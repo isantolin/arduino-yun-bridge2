@@ -18,7 +18,7 @@ MailboxClass::MailboxClass() : _rx_buffer(), _available_count(0U) {}
 
 void MailboxClass::push(etl::span<const uint8_t> data) {
   rpc::payload::MailboxPush p;
-  rpc::payload::copy_to_pb_bytes((pb_bytes_array_t*)&p.pb_msg.data, 64, data.data(), data.size());
+  rpc::payload::copy_to_pb_bytes(p.pb_msg.data, data.data(), data.size());
   (void)Bridge.send(rpc::CommandId::CMD_MAILBOX_PUSH, 0, p);
 }
 

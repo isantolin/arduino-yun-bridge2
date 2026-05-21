@@ -35,7 +35,13 @@ rationale = "Template engine for professional and auditable code generation [BUI
 name = "msgspec"
 openwrt = "python3-msgspec"
 pip = "msgspec==0.21.1"
-rationale = "High-performance JSON/MessagePack library"
+rationale = "High-performance typed struct and validation library"
+
+[[dependency]]
+name = "protobuf"
+openwrt = "python3-protobuf"
+pip = "protobuf==6.33.6"
+rationale = "Generated protobuf runtime required for daemon and MQTT payload serialization"
 
 
 [[dependency]]

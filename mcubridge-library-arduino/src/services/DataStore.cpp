@@ -12,8 +12,7 @@ void DataStoreClass::set(etl::string_view key, etl::span<const uint8_t> value) {
   rpc::payload::DatastorePut p;
   strncpy(p.pb_msg.key, key.data(), 32);
   p.pb_msg.key[31] = '\0';
-  rpc::payload::copy_to_pb_bytes((pb_bytes_array_t*)&p.pb_msg.value, 64,
-                                 value.data(), value.size());
+  rpc::payload::copy_to_pb_bytes(p.pb_msg.value, value.data(), value.size());
   (void)Bridge.send(rpc::CommandId::CMD_DATASTORE_PUT, 0, p);
 }
 

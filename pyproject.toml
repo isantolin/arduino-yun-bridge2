@@ -15,6 +15,7 @@ dependencies = [
     "msgspec==0.21.1",
     "paho-mqtt==2.1.0",
     "prometheus-client==0.25.0",
+    "protobuf==6.33.6",
     "pyserial-asyncio-fast==0.16",
     "structlog==25.5.0",
     "tenacity==9.1.4",

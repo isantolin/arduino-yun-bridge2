@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any, cast, Final
 
 import msgspec
 import structlog
+from google.protobuf.message import DecodeError as ProtobufDecodeError
 
 import aiomqtt
 from paho.mqtt.packettypes import PacketTypes
@@ -67,10 +68,10 @@ from ..protocol.structures import (
     ProcessOutputBatch,
     ProcessPollPacket,
     ProcessRunAsyncPacket,
-    ProcessRunAsyncResponsePacket,
     ProcessPollResponsePacket,
+    ProcessRunAsyncResponsePacket,
+    PROTOBUF_CONTENT_TYPE,
     QueuedPublish,
-    ShellCommandPayload,
     SpiConfigPacket,
     SpiTransferResponsePacket,
     SpiTransferPacket,
@@ -479,10 +480,15 @@ class BridgeService:
         await self.enqueue_mqtt(
             QueuedPublish(
                 topic_path(self.state.mqtt_topic_prefix, Topic.SYSTEM, Topic.STATUS),
-                msgspec.msgpack.encode(
-                    {"status": status.value, "name": status.name, "description": status.description, "message": text}
+                structures.encode_structured_payload(
+                    {
+                        "status": status.value,
+                        "name": status.name,
+                        "description": status.description,
+                        "message": text,
+                    }
                 ),
-                content_type="application/msgpack",
+                content_type=PROTOBUF_CONTENT_TYPE,
                 user_properties=(("bridge-status", status.name),),
             )
         )
@@ -630,13 +636,13 @@ class BridgeService:
         pl = msgspec.convert(inbound.payload, bytes)
         if act == ShellAction.RUN_ASYNC:
             try:
-                cmd = ShellCommandPayload.decode(pl).command if pl.startswith(b"\x81") else pl.decode().strip()
+                cmd = ProcessRunAsyncPacket.decode(pl).command if pl.startswith(b"\x0a") else pl.decode().strip()
                 pid = await self._run_process(cmd)
-            except (msgspec.DecodeError, UnicodeDecodeError, ValueError, OSError) as exc:
+            except (ProtobufDecodeError, UnicodeDecodeError, ValueError, OSError) as exc:
                 logger.warning("MQTT shell run_async rejected", error=str(exc))
-                payload = f"error:{exc}".encode()
+                payload = ProcessRunAsyncResponsePacket(pid=0).encode()
             else:
-                payload = str(pid).encode() if pid else b"error:internal"
+                payload = ProcessRunAsyncResponsePacket(pid=pid).encode()
             await self.enqueue_mqtt(
                 QueuedPublish(
                     topic_path(
@@ -646,6 +652,7 @@ class BridgeService:
                         protocol.MQTT_SUFFIX_RESPONSE,
                     ),
                     payload,
+                    content_type=PROTOBUF_CONTENT_TYPE,
                 ),
                 reply_context=inbound,
             )
@@ -662,8 +669,16 @@ class BridgeService:
                             str(pid),
                             protocol.MQTT_SUFFIX_RESPONSE,
                         ),
-                        msgspec.msgpack.encode(batch),
-                        content_type="application/msgpack",
+                        ProcessPollResponsePacket(
+                            status=batch.status_byte,
+                            exit_code=batch.exit_code,
+                            stdout_data=batch.stdout_chunk,
+                            stderr_data=batch.stderr_chunk,
+                            finished=batch.finished,
+                            stdout_truncated=batch.stdout_truncated,
+                            stderr_truncated=batch.stderr_truncated,
+                        ).encode(),
+                        content_type=PROTOBUF_CONTENT_TYPE,
                     ),
                     reply_context=inbound,
                 )
@@ -759,8 +774,8 @@ class BridgeService:
                 await self.enqueue_mqtt(
                     QueuedPublish(
                         topic_path(self.state.mqtt_topic_prefix, Topic.SYSTEM, "bridge", flavor, "value"),
-                        msgspec.msgpack.encode(snap),
-                        content_type="application/msgpack",
+                        structures.encode_structured_payload(snap),
+                        content_type=PROTOBUF_CONTENT_TYPE,
                     ),
                     reply_context=inbound,
                 )
@@ -920,8 +935,8 @@ class BridgeService:
         await self.enqueue_mqtt(
             QueuedPublish(
                 topic_path(self.state.mqtt_topic_prefix, Topic.SYSTEM, Topic.STATUS),
-                msgspec.msgpack.encode({"status": "forbidden", "topic": val, "action": act}),
-                content_type="application/msgpack",
+                structures.encode_structured_payload({"status": "forbidden", "topic": val, "action": act}),
+                content_type=PROTOBUF_CONTENT_TYPE,
                 user_properties=(("bridge-error", TOPIC_FORBIDDEN_REASON),),
             ),
             reply_context=ctx,

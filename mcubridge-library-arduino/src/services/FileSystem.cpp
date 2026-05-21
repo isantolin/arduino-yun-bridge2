@@ -19,7 +19,7 @@ constexpr size_t kReadChunkSize = 64U;
 
 void send_read_response(etl::span<const uint8_t> content) {
   rpc::payload::FileReadResponse p;
-  rpc::payload::copy_to_pb_bytes((pb_bytes_array_t*)&p.pb_msg.content, 64, content.data(),
+  rpc::payload::copy_to_pb_bytes(p.pb_msg.content, content.data(),
                                  content.size());
   (void)Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 0, p);
 }
@@ -32,7 +32,7 @@ void FileSystemClass::write(etl::string_view path,
   rpc::payload::FileWrite p;
   strncpy(p.pb_msg.path, path.data(), 64);
   p.pb_msg.path[63] = '\0';
-  rpc::payload::copy_to_pb_bytes((pb_bytes_array_t*)&p.pb_msg.data, 64, data.data(), data.size());
+  rpc::payload::copy_to_pb_bytes(p.pb_msg.data, data.data(), data.size());
   (void)Bridge.send(rpc::CommandId::CMD_FILE_WRITE, 0, p);
 }
 

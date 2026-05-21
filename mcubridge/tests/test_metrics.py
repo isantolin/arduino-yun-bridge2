@@ -1,7 +1,6 @@
 """Tests for daemon metrics publisher."""
 
 from __future__ import annotations
-import msgspec
 
 import asyncio
 from unittest.mock import patch
@@ -11,7 +10,7 @@ from mcubridge.metrics import (
     publish_bridge_snapshots,
     publish_metrics,
 )
-from mcubridge.protocol.structures import QueuedPublish
+from mcubridge.protocol.structures import PROTOBUF_CONTENT_TYPE, QueuedPublish, decode_structured_payload
 from mcubridge.protocol import protocol
 from mcubridge.state.context import RuntimeState
 
@@ -64,8 +63,8 @@ async def test_publish_metrics_publishes_snapshot(
     expected_topic = "test/prefix/system/metrics"
 
     assert message.topic_name == expected_topic
-    assert msgspec.msgpack.decode(message.payload) == fake_snapshot
-    assert message.content_type == "application/msgpack"
+    assert decode_structured_payload(message.payload) == fake_snapshot
+    assert message.content_type == PROTOBUF_CONTENT_TYPE
     assert ("bridge-spool", "disk-full") in message.user_properties
     assert ("bridge-files", "quota-blocked") in message.user_properties
     assert ("bridge-watchdog-enabled", "1") in message.user_properties

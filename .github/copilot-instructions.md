@@ -7,7 +7,7 @@
 
 ## Architecture & Source Layout
 - `mcubridge/`: async daemon (`mcubridge/daemon.py`, `BridgeService`, `RuntimeState`, MQTT helpers), init scripts, core system scripts (`scripts/`), UCI defaults (`uci-defaults/`), and Python tests.
-- `mcubridge-library-arduino/`: MCU runtime, sketches under `examples/`, protocol glue under `src/protocol/` (COBS, CRC, RPC enums, MsgPack-based payload structs).
+- `mcubridge-library-arduino/`: MCU runtime, sketches under `examples/`, protocol glue under `src/protocol/` (COBS, CRC, RPC enums, nanopb/protobuf payload structs).
   - `src/services/`: Arduino service implementations (Bridge, Console, DataStore, FileSystem, Mailbox, Process)
   - `src/security/`: Cryptographic primitives (HKDF, HMAC, secure_zero)
   - `src/config/`: Configuration constants
@@ -18,7 +18,7 @@
 
 ## Protocol, Config, and Secrets
 - Edit `tools/protocol/spec.toml` (enums/constants) and `tools/protocol/mcubridge.proto` (payload schemas) then run `python3 tools/protocol/generate.py` to refresh both Python (`mcubridge/protocol/protocol.py`, `structures.py`) and C++ (`rpc_protocol.h`, `rpc_structs.h`). Commit all generated artifacts together.
-- Payload serialization uses **MsgPack** (array format): `msgspec` on Python and ArduinoJson MsgPack APIs (`serializeMsgPack` / `deserializeMsgPack`) on MCU. The `rpc_structs.h` file defines `rpc::payload::*` structs with `encode()`/`decode()` methods and provides `Payload::parse<T>()` for type-safe decode.
+- Payload serialization uses **protobuf**: generated Python `Packet` wrappers on the daemon side and nanopb-backed `rpc::payload::*` structs on the MCU side. The `rpc_structs.h` file defines `encode()`/`decode()` methods and provides `Payload::parse<T>()` for type-safe decode.
 - Runtime defaults live in `mcubridge/mcubridge/config/const.py`; adjust values there and expose overrides via UCI (`mcubridge.general.*`).
 - Rotate serial + MQTT credentials with `tools/rotate_credentials.sh --host <yun>` or `/usr/bin/mcubridge-rotate-credentials` so sketches can embed `#define BRIDGE_SERIAL_SHARED_SECRET "..."`.
 - Update topic ACLs (`mqtt_allow_*`, `allowed_commands`) in both policy code (`mcubridge/policy.py`) and LuCI defaults whenever permissions change.

@@ -18,13 +18,13 @@ from prometheus_client.core import Metric
 from prometheus_client.registry import Collector
 import structlog
 
-from .protocol.structures import QueuedPublish
+from .protocol import structures
+from .protocol.structures import PROTOBUF_CONTENT_TYPE, QueuedPublish
 from .protocol.topics import Topic, topic_path
 from .state.context import RuntimeState
 
 logger = structlog.get_logger("mcubridge.metrics")
 _BRIDGE_SNAPSHOT_EXPIRY_SECONDS = 30
-_msgpack_enc = msgspec.msgpack.Encoder()
 
 PublishEnqueue = Callable[[QueuedPublish], Awaitable[None]]
 
@@ -42,9 +42,8 @@ def _build_metrics_message(
     )
     message = QueuedPublish(
         topic_name=topic,
-        # [SIL-2] Fast serialization using msgspec.msgpack.encode handles Structs directly
-        payload=_msgpack_enc.encode(snapshot),
-        content_type="application/msgpack",
+        payload=structures.encode_structured_payload(snapshot),
+        content_type=PROTOBUF_CONTENT_TYPE,
         message_expiry_interval=int(expiry_seconds),
         user_properties=(),
     )
@@ -395,8 +394,8 @@ def _build_bridge_snapshot_message(
     )
     return QueuedPublish(
         topic_name=topic,
-        payload=_msgpack_enc.encode(snapshot),
-        content_type="application/msgpack",
+        payload=structures.encode_structured_payload(snapshot),
+        content_type=PROTOBUF_CONTENT_TYPE,
         message_expiry_interval=_BRIDGE_SNAPSHOT_EXPIRY_SECONDS,
         user_properties=(("bridge-snapshot", flavor),),
     )

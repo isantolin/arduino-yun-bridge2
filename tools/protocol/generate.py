@@ -121,7 +121,7 @@ class CppStruct:
 
     name: str  # e.g. "VersionResponse"
     fields: tuple[CppField, ...]
-    field_count: int  # number of MsgPack array elements
+    field_count: int  # number of declared payload fields
 
 
 def build_cpp_structs_from_spec(spec: ProtocolSpec) -> list[CppStruct]:
@@ -486,83 +486,6 @@ class JinjaGenerator:
                 "name": "RPC_SPI_COMMAND_MAX",
                 "type": "uint16_t",
                 "value": c["spi_command_max"],
-            },
-            # MsgPack wire-format constants
-            {
-                "name": "MSGPACK_FIXARRAY_MASK",
-                "type": "uint8_t",
-                "value": c["msgpack_fixarray_mask"],
-            },
-            {
-                "name": "MSGPACK_FIXSTR_MASK",
-                "type": "uint8_t",
-                "value": c["msgpack_fixstr_mask"],
-            },
-            {"name": "MSGPACK_BIN8", "type": "uint8_t", "value": c["msgpack_bin8"]},
-            {"name": "MSGPACK_BIN16", "type": "uint8_t", "value": c["msgpack_bin16"]},
-            {"name": "MSGPACK_BIN32", "type": "uint8_t", "value": c["msgpack_bin32"]},
-            {
-                "name": "MSGPACK_UINT8_FMT",
-                "type": "uint8_t",
-                "value": c["msgpack_uint8_fmt"],
-            },
-            {
-                "name": "MSGPACK_UINT16_FMT",
-                "type": "uint8_t",
-                "value": c["msgpack_uint16_fmt"],
-            },
-            {
-                "name": "MSGPACK_UINT32_FMT",
-                "type": "uint8_t",
-                "value": c["msgpack_uint32_fmt"],
-            },
-            {"name": "MSGPACK_STR8", "type": "uint8_t", "value": c["msgpack_str8"]},
-            {"name": "MSGPACK_STR16", "type": "uint8_t", "value": c["msgpack_str16"]},
-            {"name": "MSGPACK_STR32", "type": "uint8_t", "value": c["msgpack_str32"]},
-            {
-                "name": "MSGPACK_ARRAY16",
-                "type": "uint8_t",
-                "value": c["msgpack_array16"],
-            },
-            {
-                "name": "MSGPACK_ARRAY32",
-                "type": "uint8_t",
-                "value": c["msgpack_array32"],
-            },
-            {
-                "name": "MSGPACK_POSITIVE_FIXINT_MAX",
-                "type": "uint8_t",
-                "value": c["msgpack_positive_fixint_max"],
-            },
-            {
-                "name": "MSGPACK_FIXARRAY_TYPE_MASK",
-                "type": "uint8_t",
-                "value": c["msgpack_fixarray_type_mask"],
-            },
-            {
-                "name": "MSGPACK_FIXARRAY_VALUE_MASK",
-                "type": "uint8_t",
-                "value": c["msgpack_fixarray_value_mask"],
-            },
-            {
-                "name": "MSGPACK_FIXSTR_TYPE_MASK",
-                "type": "uint8_t",
-                "value": c["msgpack_fixstr_type_mask"],
-            },
-            {
-                "name": "MSGPACK_FIXSTR_VALUE_MASK",
-                "type": "uint8_t",
-                "value": c["msgpack_fixstr_value_mask"],
-            },
-            {
-                "name": "MSGPACK_UINT8_MAX_VAL",
-                "type": "uint8_t",
-                "value": c["msgpack_uint8_max_val"],
-            },
-            {
-                "name": "MSGPACK_UINT16_MAX_VAL",
-                "type": "uint16_t",
-                "value": c["msgpack_uint16_max_val"],
             },
         ]
 
@@ -1172,12 +1095,13 @@ class JinjaGenerator:
             sys.exit(1)
 
     def generate_python_pb2(self, proto_path: Path, out_dir: Path) -> None:
-        """Invoke protoc to generate Python pb2 module via grpcio-tools."""
+        """Invoke protoc to generate Python pb2 module and typing stub via grpcio-tools."""
         cmd = [
             sys.executable,
             "-m",
             "grpc_tools.protoc",
             f"--python_out={out_dir}",
+            f"--pyi_out={out_dir}",
             f"--proto_path={proto_path.parent}",
             str(proto_path),
         ]
@@ -1353,6 +1277,7 @@ def main() -> None:
                 cpp_pb_c.unlink()
 
         py_pb2 = args.spec.parent / "mcubridge_pb2.py"
+        py_pb2_stub = args.spec.parent / "mcubridge_pb2.pyi"
         if py_pb2.exists():
             pb2_data = py_pb2.read_bytes()
             if args.py:
@@ -1360,6 +1285,18 @@ def main() -> None:
             if args.py_client:
                 (args.py_client.parent / "mcubridge_pb2.py").write_bytes(pb2_data)
             py_pb2.unlink()
+        if py_pb2_stub.exists():
+            pb2_stub_text = py_pb2_stub.read_text()
+            pb2_stub_text = pb2_stub_text.replace(
+                "_Union[StructuredEntry, _Mapping]]",
+                "_Union[StructuredEntry, _Mapping[str, object]]]",
+            )
+            pb2_stub_data = pb2_stub_text.encode()
+            if args.py:
+                (args.py.parent / "mcubridge_pb2.pyi").write_bytes(pb2_stub_data)
+            if args.py_client:
+                (args.py_client.parent / "mcubridge_pb2.pyi").write_bytes(pb2_stub_data)
+            py_pb2_stub.unlink()
 
     if args.cpp:
         args.cpp.parent.mkdir(parents=True, exist_ok=True)

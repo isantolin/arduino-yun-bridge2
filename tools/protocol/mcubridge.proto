@@ -122,6 +122,9 @@ message ProcessPollResponse {
     uint32 exit_code = 2;
     bytes stdout_data = 3;
     bytes stderr_data = 4;
+    bool finished = 5;
+    bool stdout_truncated = 6;
+    bool stderr_truncated = 7;
 }
 
 message ProcessKill {
@@ -131,6 +134,22 @@ message ProcessKill {
 message GenericResponse {
     string status = 1;
     string message = 2;
+}
+
+message StructuredEntry {
+    string key = 1;
+    oneof value {
+        string string_value = 2;
+        bytes bytes_value = 3;
+        bool bool_value = 4;
+        int64 int_value = 5;
+        double double_value = 6;
+        bool null_value = 7;
+    }
+}
+
+message StructuredPayload {
+    repeated StructuredEntry entries = 1;
 }
 
 message AckPacket {

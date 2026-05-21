@@ -37,13 +37,13 @@ Notas:
 
 La **fuente de verdad machine-readable** del protocolo vive en `tools/protocol/spec.toml`. El sistema exige el cumplimiento estricto de la **versión 0x02**. Cualquier frame con una versión diferente es rechazado inmediatamente.
 
-### Serialización de Payloads (MsgPack)
-Todos los payloads del protocolo se definen como mensajes en `tools/protocol/mcubridge.proto` y se serializan con **MsgPack** (formato array) dentro del frame RPC.
+### Serialización de Payloads (Protobuf)
+Todos los payloads del protocolo se definen como mensajes en `tools/protocol/mcubridge.proto` y se serializan como **protobuf** dentro del frame RPC.
 
-- **Python (daemon):** usa `msgspec` para codificar/decodificar payloads vía las clases `Packet` generadas en `structures.py`.
-- **C++ (MCU):** usa las APIs MsgPack de ArduinoJson (`serializeMsgPack`/`deserializeMsgPack`) para codificar/decodificar payloads sin heap dinámico en runtime. Los tipos se exponen como `rpc::payload::*` structs nativos con métodos `encode()`/`decode()`.
+- **Python (daemon):** usa clases `Packet` generadas en `structures.py` sobre `google.protobuf`.
+- **C++ (MCU):** usa nanopb para codificar/decodificar payloads sin heap dinámico en runtime. Los tipos se exponen como `rpc::payload::*` structs nativos con métodos `encode()`/`decode()`.
 
-El generador produce automáticamente `Payload::parse<T>(const rpc::Frame&)` que usa `msgpack::Decoder` internamente, garantizando robustez SIL-2.
+El generador produce automáticamente `Payload::parse<T>(const rpc::Frame&)` sobre nanopb/protobuf, garantizando robustez SIL-2.
 
 ### Validación Estática (C++)
 La librería C++ utiliza el namespace `rpc::Payload` para un desempaquetado de datos seguro y tipado.
@@ -66,7 +66,7 @@ La librería C++ utiliza intensivamente `constexpr` e `if constexpr` para:
 
 Qué se centraliza en `mcubridge.proto` (y se genera a Python/C++ vía el generador):
 
-- **Layouts de payload**: cada mensaje RPC tiene un tipo MsgPack (`ConsoleWrite`, `ProcessPoll`, `AckPacket`, etc.) con campos tipados y tamaños máximos definidos por las opciones del generador.
+- **Layouts de payload**: cada mensaje RPC tiene un mensaje protobuf (`ConsoleWrite`, `ProcessPoll`, `AckPacket`, etc.) con campos tipados y tamaños máximos definidos por las opciones del generador.
 
 Este documento **no duplica listados enumerados** (por ejemplo `[mqtt_suffixes]`, `[status_reasons]`, `[[mqtt_subscriptions]]`, `[[topics]]`, `[[actions]]`) para evitar drift; esos catálogos se consideran canónicos en el spec y en los bindings generados.
 
@@ -78,10 +78,10 @@ Al ejecutar:
 
 - `python3 tools/protocol/generate.py --spec tools/protocol/spec.toml --py mcubridge/mcubridge/protocol/protocol.py --cpp mcubridge-library-arduino/src/protocol/rpc_protocol.h --cpp-structs mcubridge-library-arduino/src/protocol/rpc_structs.h`
 
-…se regeneran los bindings de enums/constantes. Además, el generador produce structs MsgPack para ambos lados:
+…se regeneran los bindings de enums/constantes. Además, el generador produce structs protobuf para ambos lados:
 
 - **Python:** clases `Packet` en `structures.py` (tipado estático con `msgspec`)
-- **C++ (MsgPack):** structs nativos en `rpc_structs.h` con `encode()`/`decode()` (estáticos, sin heap)
+- **C++ (nanopb/protobuf):** structs nativos en `rpc_structs.h` con `encode()`/`decode()` (estáticos, sin heap)
 
 Todos los artefactos generados deben commitearse en el mismo cambio.
 
@@ -101,7 +101,7 @@ Esta sección resume cómo se articula el daemon, qué garantías de seguridad o
 - **High-Performance Transport**: El daemon utiliza `pyserial-asyncio-fast` para minimizar la latencia y evitar el doble buffering en el enlace serie.
 - **MQTT Publisher**: publica respuestas/telemetría con MQTT v5 (correlation data, response_topic, expiración, metadatos).
 - **MCU Firmware (mcubridge-library-arduino)**: implementa el protocolo binario bajo normativa SIL-2 y vela por el secreto compartido del enlace serie.
-- **Instrumentación**: el daemon escribe `/tmp/mcubridge_status.json` (snapshot en tmpfs; se pierde al reboot), publica métricas en `br/system/metrics` (MsgPack) y puede exponer Prometheus por HTTP.
+- **Instrumentación**: el daemon escribe `/tmp/mcubridge_status.json` (snapshot en tmpfs; se pierde al reboot), publica métricas en `br/system/metrics` (protobuf) y puede exponer Prometheus por HTTP.
 
 ## Seguridad
 
@@ -342,7 +342,7 @@ dmesg -n 1
 Este protocolo binario se usa entre microcontrolador (MCU) y procesador Linux (MPU). Refleja el comportamiento publicado en el daemon y el firmware.
 
 La comunicación sigue un modelo de RPC: normalmente el MPU inicia peticiones y el MCU responde, pero existen comandos **bidireccionales** (por ejemplo consola/mailbox/archivo) que se interpretan como “push simétrico”.
-Los payloads de cada comando se serializan con **MsgPack** (formato array). Las definiciones viven en `tools/protocol/mcubridge.proto` y se generan structs nativos para C++ (`rpc_structs.h`) y clases `Packet` para Python (`structures.py`). El frame RPC transporta el payload serializado como bytes opacos.
+Los payloads de cada comando se serializan con **protobuf**. Las definiciones viven en `tools/protocol/mcubridge.proto` y se generan structs nativos para C++ (`rpc_structs.h`) y clases `Packet` para Python (`structures.py`). El frame RPC transporta el payload serializado como bytes opacos.
 ## 1.1 Contrato de direccionalidad y ACK
 
 ### Tipos de mensajes
@@ -355,7 +355,7 @@ Los payloads de cada comando se serializan con **MsgPack** (formato array). Las 
 
 `STATUS_ACK` (`0x38`) confirma recepción de un comando que requiere ACK.
 
-- Payload: mensaje MsgPack `AckPacket { command_id: uint32 }` codificado con el codec MsgPack.
+- Payload: mensaje protobuf `AckPacket { command_id: uint32 }`.
 - El campo `command_id` corresponde al `command_id` original del frame que se confirma.
 
 ### Comandos que requieren ACK
@@ -417,7 +417,7 @@ CRC32 (4 bytes, Big Endian) sobre Header + Nonce + Payload + Tag. Polinomio IEEE
 | **Criptografía AEAD** | Cifrado y Autenticación | **wolfCrypt** (ChaCha20-Poly1305). | **cryptography** (OpenSSL backend). |
 | **COBS** | Framing / Escaping | **Externa**: `PacketSerial2`. | **Externa**: `cobs` (paquete PyPI). |
 | **CRC32** | Integridad adicional | **Interna**: `etl::crc32` (ETL SIL-2 certified). | **Interna**: `binascii.crc32` (IEEE 802.3 standard). |
-| **Payload Serialization** | Codificación de payloads | **MsgPack** (ArduinoJson `serializeMsgPack`/`deserializeMsgPack`, sin heap dinámico en runtime). | **MsgPack** (`msgspec`, clases `Packet` en `structures.py`). |
+| **Payload Serialization** | Codificación de payloads | **nanopb/protobuf** (sin heap dinámico en runtime). | **protobuf** (`google.protobuf`, clases `Packet` en `structures.py`). |
 | **Endianness** | Byte Order | `etl::endian::big`. | `struct.pack('>...')` (Big Endian). |
 
 ## 4. Códigos de estado (`Status`)
@@ -637,7 +637,7 @@ Raw:
 ### 5.3 Consola (0x60)
 
 - **`0x60` CMD_CONSOLE_WRITE (bidireccional)**
-  - Payload: mensaje MsgPack `ConsoleWrite { data: bytes }` (máx. 61 bytes de datos útiles; 64 bytes de payload RPC menos 3 bytes de overhead MsgPack bin8).
+  - Payload: mensaje protobuf `ConsoleWrite { data: bytes }` limitado por `MAX_PAYLOAD_SIZE`.
   - Si el texto a enviar supera 62 bytes, se fragmenta en múltiples frames.
   - Confirmación: `STATUS_ACK (0x38)`.
 
@@ -675,17 +675,17 @@ Notas operativas:
 
 ### 5.7 Gestión de procesos (0xA0)
 
-- **`0xA1` CMD_PROCESS_RUN_ASYNC (MCU → Linux)**: MsgPack `ProcessRunAsync { command: string }`.
-- **`0xA2` CMD_PROCESS_POLL (MCU → Linux)**: MsgPack `ProcessPoll { pid: uint32 }`.
-- **`0xA3` CMD_PROCESS_KILL (MCU → Linux)**: MsgPack `ProcessKill { pid: uint32 }`.
+- **`0xA1` CMD_PROCESS_RUN_ASYNC (MCU → Linux)**: protobuf `ProcessRunAsync { command: string }`.
+- **`0xA2` CMD_PROCESS_POLL (MCU → Linux)**: protobuf `ProcessPoll { pid: uint32 }`.
+- **`0xA3` CMD_PROCESS_KILL (MCU → Linux)**: protobuf `ProcessKill { pid: uint32 }`.
 
 Respuestas (Linux → MCU):
 
-- **`0xA5` CMD_PROCESS_RUN_ASYNC_RESP (Linux → MCU)**: MsgPack `ProcessRunAsyncResponse { pid: uint32 }`.
-- **`0xA6` CMD_PROCESS_POLL_RESP (Linux → MCU)**: MsgPack `ProcessPollResponse { status, exit_code, stdout_data: bytes, stderr_data: bytes }`.
+- **`0xA5` CMD_PROCESS_RUN_ASYNC_RESP (Linux → MCU)**: protobuf `ProcessRunAsyncResponse { pid: uint32 }`.
+- **`0xA6` CMD_PROCESS_POLL_RESP (Linux → MCU)**: protobuf `ProcessPollResponse { status, exit_code, stdout_data: bytes, stderr_data: bytes, finished, stdout_truncated, stderr_truncated }`.
 
 Notas:
-- Todos los payloads de proceso usan mensajes MsgPack definidos en `tools/protocol/mcubridge.proto`.
+- Todos los payloads de proceso usan mensajes protobuf definidos en `tools/protocol/mcubridge.proto`.
 - El daemon envía ACK primero (con `AckPacket`) y luego la respuesta de negocio en un frame separado.
 - `CMD_PROCESS_KILL` se confirma con `STATUS_ACK` conteniendo `AckPacket`.
 

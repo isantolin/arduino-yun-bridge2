@@ -28,7 +28,7 @@ async def _stream_poll_updates(
     while True:
         poll_payload: dict[str, Any] = await bridge.poll_shell_process(pid)
 
-        # msgspec msgpack decoding yields bytes for stdout_chunk/stderr_chunk
+        # Protobuf poll payloads preserve stdout/stderr as raw bytes.
         raw_stdout = poll_payload.get("stdout_chunk") or b""
         raw_stderr = poll_payload.get("stderr_chunk") or b""
 

@@ -248,21 +248,20 @@ def run_benchmarks(iterations: int = 5000) -> list[BenchmarkResult]:
     results.append(_benchmark("Frame.build()", sample_frame.build, iterations))
     results.append(_benchmark("Frame.parse()", lambda: Frame.parse(raw), iterations))
 
-    # --- MsgPack encode/decode (serial payload) ---
-    import msgspec
+    # --- Protobuf encode/decode (serial payload) ---
     from mcubridge.protocol.structures import ConsoleWritePacket
 
     sample_packet = ConsoleWritePacket(data=b"Hello, Bridge!" * 4)
-    mp_bytes = msgspec.msgpack.encode(sample_packet)
+    pb_bytes = sample_packet.encode()
 
-    def _mp_encode() -> bytes:
-        return msgspec.msgpack.encode(ConsoleWritePacket(data=b"Hello, Bridge!" * 4))
+    def _pb_encode() -> bytes:
+        return ConsoleWritePacket(data=b"Hello, Bridge!" * 4).encode()
 
-    def _mp_decode() -> Any:
-        return msgspec.msgpack.decode(mp_bytes, type=ConsoleWritePacket)
+    def _pb_decode() -> Any:
+        return ConsoleWritePacket.decode(pb_bytes)
 
-    results.append(_benchmark("MsgPack encode", _mp_encode, iterations))
-    results.append(_benchmark("MsgPack decode", _mp_decode, iterations))
+    results.append(_benchmark("Protobuf encode", _pb_encode, iterations))
+    results.append(_benchmark("Protobuf decode", _pb_decode, iterations))
 
     # --- RLE compress ---
     import mcubridge.protocol.rle

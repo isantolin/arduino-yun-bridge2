@@ -128,8 +128,8 @@ void test_rle_complex_sequence() {
   TEST_ASSERT_EQUAL(0x01, dst_buf[0]);
   TEST_ASSERT_EQUAL(0x02, dst_buf[1]);
   TEST_ASSERT_EQUAL(0xEE, dst_buf[2]);
-  bridge::utils::CounterIterator<int> seq_begin(3);
-  bridge::utils::CounterIterator<int> seq_end(7);
+  bridge::etl_ext::CounterIterator<int> seq_begin(3);
+  bridge::etl_ext::CounterIterator<int> seq_end(7);
   etl::for_each(seq_begin, seq_end, [&dst_buf](int i) {
     TEST_ASSERT_EQUAL(0xFF, dst_buf[i]);
   });

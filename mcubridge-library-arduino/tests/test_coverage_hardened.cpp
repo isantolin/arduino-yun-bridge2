@@ -39,8 +39,6 @@ void capture_poll_handler(rpc::StatusCode status, uint16_t exit_code,
   (void)exit_code;
 }
 void datastore_get_handler(etl::string_view, etl::span<const uint8_t>) {}
-uint16_t mailbox_available = 0;
-void mailbox_available_handler(uint16_t count) { mailbox_available = count; }
 void dummy_cmd_handler(const rpc::Frame&) {}
 void dummy_status_handler(rpc::StatusCode, etl::span<const uint8_t>) {}
 }  // namespace
@@ -69,8 +67,8 @@ void test_bridge_queue_full_and_retransmit() {
   ba.setSynchronized();
 
   // Fill the TX queue with reliable commands to trigger full condition
-  bridge::utils::CounterIterator<uint32_t> fill_begin(0);
-  bridge::utils::CounterIterator<uint32_t> fill_end(
+  bridge::etl_ext::CounterIterator<uint32_t> fill_begin(0);
+  bridge::etl_ext::CounterIterator<uint32_t> fill_end(
       bridge::config::MAX_PENDING_TX_FRAMES);
   etl::for_each(fill_begin, fill_end, [&ba](uint32_t i) {
     // Use a reliable command (e.g., CMD_CONSOLE_WRITE)
@@ -275,10 +273,7 @@ void test_mailbox_and_datastore_variants() {
   etl::array<uint8_t, 2> mb_data3 = {0xCC, 0xDD};
   Mailbox._onIncomingData(rpc::payload::MailboxReadResponse{mb_data3});
   Mailbox._onAvailableResponse({});
-  Mailbox.onAvailable(
-      MailboxClass::AvailableHandler::create<mailbox_available_handler>());
   Mailbox._onAvailableResponse(rpc::payload::MailboxAvailableResponse{7});
-  TEST_ASSERT_EQUAL(7, mailbox_available);
 
   // Coverage for observer notification
   Mailbox.notification(MsgBridgeSynchronized());

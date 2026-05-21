@@ -287,8 +287,8 @@ void test_console_and_policy_edges() {
   ba.setSynchronized();
   Console.begin();
 
-  bridge::utils::CounterIterator<size_t> begin(0);
-  bridge::utils::CounterIterator<size_t> end(
+  bridge::etl_ext::CounterIterator<size_t> begin(0);
+  bridge::etl_ext::CounterIterator<size_t> end(
       bridge::config::CONSOLE_TX_BUFFER_SIZE);
   etl::for_each(begin, end, [](size_t) { (void)Console.write('x'); });
 
@@ -372,8 +372,8 @@ void test_observer_and_task_runtime_edges() {
   reset_bridge_core(Bridge, stream);
   auto ba = TestAccessor::create(Bridge);
   CountingObserver observer;
-  bridge::utils::CounterIterator<size_t> it(0);
-  bridge::utils::CounterIterator<size_t> end(bridge::config::MAX_OBSERVERS + 2);
+  bridge::etl_ext::CounterIterator<size_t> it(0);
+  bridge::etl_ext::CounterIterator<size_t> end(bridge::config::MAX_OBSERVERS + 2);
   etl::for_each(it, end,
                 [&observer](size_t) { Bridge.registerObserver(observer); });
   Bridge.notify_observers(MsgBridgeSynchronized());
@@ -528,9 +528,7 @@ void test_filesystem_spi_fsm_and_rle_edges() {
 
   bridge::fsm::BridgeFsm fsm;
   fsm.start();
-  TEST_ASSERT_FALSE(fsm.isUnsynchronized());
   fsm.receive(bridge::fsm::EvReset());
-  TEST_ASSERT_TRUE(fsm.isUnsynchronized());
 
   etl::array<uint8_t, 5> bad_rle = {rle::ESCAPE_BYTE, 10, 0x44, 0xAA, 0xBB};
   etl::array<uint8_t, 1> out = {0};

@@ -505,7 +505,7 @@ def _flatten_structured_value(
     elif isinstance(value, int):
         entry.int_value = value
     elif isinstance(value, float):
-        entry.double_value = value
+        entry.float_value = value
     else:
         raise TypeError(f"Unsupported structured payload value for '{key_prefix}': {type(value)!r}")
     entries.append(entry)
@@ -531,8 +531,8 @@ def _entry_value(entry: pb.StructuredEntry) -> Any:
             return entry.bool_value
         case "int_value":
             return entry.int_value
-        case "double_value":
-            return entry.double_value
+        case "float_value":
+            return entry.float_value
         case "null_value":
             return None
         case _:

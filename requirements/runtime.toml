@@ -41,7 +41,8 @@ rationale = "High-performance typed struct and validation library"
 name = "protobuf"
 openwrt = "python3-protobuf"
 pip = "protobuf==6.33.6"
-rationale = "Generated protobuf runtime required for daemon and MQTT payload serialization"
+check_latest = false
+rationale = "Generated protobuf runtime required for daemon and MQTT payload serialization; pinned below v7 until grpcio-tools supports it cleanly on this toolchain"
 
 
 [[dependency]]

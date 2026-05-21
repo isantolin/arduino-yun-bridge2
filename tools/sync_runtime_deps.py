@@ -40,6 +40,7 @@ class _DepEntry(TypedDict):
     name: str
     openwrt: str
     pip: str
+    check_latest: bool
 
 
 def load_manifest() -> list[_DepEntry]:
@@ -60,6 +61,7 @@ def load_manifest() -> list[_DepEntry]:
                 name=name,
                 openwrt=openwrt,
                 pip=pip_spec,
+                check_latest=bool(entry.get("check_latest", True)),
             )
         )
     return normalized
@@ -211,8 +213,10 @@ def _fetch_latest_version(package_name: str) -> str | None:
 def check_latest_versions(deps: Sequence[_DepEntry]) -> list[tuple[str, str, str]]:
     """Return list of (package, pinned, latest) for outdated packages."""
     outdated: list[tuple[str, str, str]] = []
-    pip_specs = [dep["pip"] for dep in deps if dep.get("pip")]
-    for spec in pip_specs:
+    pip_specs = [(dep["pip"], dep["check_latest"]) for dep in deps if dep.get("pip")]
+    for spec, should_check_latest in pip_specs:
+        if not should_check_latest:
+            continue
         name, pinned = _parse_pip_spec(spec)
         if not pinned:
             continue

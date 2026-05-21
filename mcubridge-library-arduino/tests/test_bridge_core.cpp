@@ -140,8 +140,7 @@ void test_bridge_dedup_console_write_retry() {
 
   rpc::payload::ConsoleWrite msg = {};
   etl::array<uint8_t, 5> data = {'h', 'e', 'l', 'l', 'o'};
-  rpc::payload::copy_to_pb_bytes((pb_bytes_array_t*)&msg.pb_msg.data, 64,
-                                 data.data(), 5);
+  rpc::payload::copy_to_pb_bytes(msg.pb_msg.data, data.data(), 5);
 
   rpc::Frame frame = {};
   static etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> frame_buf;

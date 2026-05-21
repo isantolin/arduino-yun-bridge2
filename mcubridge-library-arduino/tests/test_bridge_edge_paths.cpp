@@ -150,8 +150,7 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
       []() {
         rpc::payload::DatastoreGetResponse p;
         uint8_t v[] = {1, 2, 3, 4};
-        rpc::payload::copy_to_pb_bytes((pb_bytes_array_t*)&p.pb_msg.value, 64, v,
-                                       4);
+        rpc::payload::copy_to_pb_bytes(p.pb_msg.value, v, 4);
         return p;
       }(),
       buf);
@@ -162,8 +161,7 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
       []() {
         rpc::payload::MailboxPush p;
         uint8_t v[] = {1, 2, 3, 4};
-        rpc::payload::copy_to_pb_bytes((pb_bytes_array_t*)&p.pb_msg.data, 64, v,
-                                       4);
+        rpc::payload::copy_to_pb_bytes(p.pb_msg.data, v, 4);
         return p;
       }(),
       buf);
@@ -174,8 +172,7 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
       []() {
         rpc::payload::MailboxReadResponse p;
         uint8_t v[] = {1, 2, 3, 4};
-        rpc::payload::copy_to_pb_bytes((pb_bytes_array_t*)&p.pb_msg.content, 64,
-                                       v, 4);
+        rpc::payload::copy_to_pb_bytes(p.pb_msg.content, v, 4);
         return p;
       }(),
       buf);
@@ -197,8 +194,7 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
         rpc::payload::FileWrite p;
         strncpy(p.pb_msg.path, "edge.bin", 64);
         uint8_t v[] = {1, 2, 3, 4};
-        rpc::payload::copy_to_pb_bytes((pb_bytes_array_t*)&p.pb_msg.data, 64, v,
-                                       4);
+        rpc::payload::copy_to_pb_bytes(p.pb_msg.data, v, 4);
         return p;
       }(),
       buf);
@@ -229,8 +225,7 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
       []() {
         rpc::payload::FileReadResponse p;
         uint8_t v[] = {1, 2, 3, 4};
-        rpc::payload::copy_to_pb_bytes((pb_bytes_array_t*)&p.pb_msg.content, 64,
-                                       v, 4);
+        rpc::payload::copy_to_pb_bytes(p.pb_msg.content, v, 4);
         return p;
       }(),
       buf);
@@ -253,10 +248,8 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
         p.pb_msg.status = 0;
         p.pb_msg.exit_code = 0;
         uint8_t v[] = {1, 2, 3, 4};
-        rpc::payload::copy_to_pb_bytes((pb_bytes_array_t*)&p.pb_msg.stdout_data,
-                                       32, v, 4);
-        rpc::payload::copy_to_pb_bytes((pb_bytes_array_t*)&p.pb_msg.stderr_data,
-                                       32, v, 4);
+        rpc::payload::copy_to_pb_bytes(p.pb_msg.stdout_data, v, 4);
+        rpc::payload::copy_to_pb_bytes(p.pb_msg.stderr_data, v, 4);
         return p;
       }(),
       buf);
@@ -400,8 +393,7 @@ void test_console_and_policy_edges() {
       []() {
         rpc::payload::ConsoleWrite p;
         uint8_t v[] = {0x41, 0x42};
-        rpc::payload::copy_to_pb_bytes((pb_bytes_array_t*)&p.pb_msg.data, 64, v,
-                                       2);
+        rpc::payload::copy_to_pb_bytes(p.pb_msg.data, v, 2);
         return p;
       }(),
       buf);
@@ -617,8 +609,8 @@ void test_service_capacity_and_send_fail_edges() {
   etl::array<uint8_t, bridge::config::CONSOLE_RX_BUFFER_SIZE + 4> console_bytes;
   console_bytes.fill(0x42);
   rpc::payload::ConsoleWrite cmsg;
-  rpc::payload::copy_to_pb_bytes((pb_bytes_array_t*)&cmsg.pb_msg.data, 64,
-                                 console_bytes.data(), console_bytes.size());
+  rpc::payload::copy_to_pb_bytes(cmsg.pb_msg.data, console_bytes.data(),
+                                 console_bytes.size());
   Console._push(cmsg);
   Console._push(cmsg);
   TEST_ASSERT_EQUAL_UINT32(0, static_cast<uint32_t>(Console.write(nullptr, 1)));
@@ -628,12 +620,12 @@ void test_service_capacity_and_send_fail_edges() {
   etl::array<uint8_t, bridge::config::MAILBOX_RX_BUFFER_SIZE + 8> mailbox_bytes;
   mailbox_bytes.fill(0x24);
   rpc::payload::MailboxPush mpush;
-  rpc::payload::copy_to_pb_bytes((pb_bytes_array_t*)&mpush.pb_msg.data, 64,
-                                 mailbox_bytes.data(), mailbox_bytes.size());
+  rpc::payload::copy_to_pb_bytes(mpush.pb_msg.data, mailbox_bytes.data(),
+                                 mailbox_bytes.size());
   Mailbox._onIncomingData(mpush);
   rpc::payload::MailboxReadResponse mread;
-  rpc::payload::copy_to_pb_bytes((pb_bytes_array_t*)&mread.pb_msg.content, 64,
-                                 mailbox_bytes.data(), mailbox_bytes.size());
+  rpc::payload::copy_to_pb_bytes(mread.pb_msg.content, mailbox_bytes.data(),
+                                 mailbox_bytes.size());
   Mailbox._onIncomingData(mread);
 
   Bridge.enterSafeState();
@@ -656,16 +648,16 @@ void test_filesystem_spi_fsm_and_rle_edges() {
   etl::array<uint8_t, 2> fs_data = {1, 2};
   rpc::payload::FileWrite fwp;
   strncpy(fwp.pb_msg.path, "/bad", 64);
-  rpc::payload::copy_to_pb_bytes((pb_bytes_array_t*)&fwp.pb_msg.data, 64,
-                                 fs_data.data(), fs_data.size());
+  rpc::payload::copy_to_pb_bytes(fwp.pb_msg.data, fs_data.data(),
+                                 fs_data.size());
   FileSystem._onWrite(fwp);
 
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE + 8> big_data;
   big_data.fill(0x31);
   rpc::payload::FileWrite fwp2;
   strncpy(fwp2.pb_msg.path, "large.bin", 64);
-  rpc::payload::copy_to_pb_bytes((pb_bytes_array_t*)&fwp2.pb_msg.data, 64,
-                                 big_data.data(), big_data.size());
+  rpc::payload::copy_to_pb_bytes(fwp2.pb_msg.data, big_data.data(),
+                                 big_data.size());
   FileSystem._onWrite(fwp2);
 
   rpc::payload::FileRead frp;
@@ -678,8 +670,8 @@ void test_filesystem_spi_fsm_and_rle_edges() {
   ba.dispatch(spi_begin);
   etl::array<uint8_t, 3> spi_payload = {0xA1, 0xB2, 0xC3};
   rpc::payload::SpiTransfer stp;
-  rpc::payload::copy_to_pb_bytes((pb_bytes_array_t*)&stp.pb_msg.data, 64,
-                                 spi_payload.data(), spi_payload.size());
+  rpc::payload::copy_to_pb_bytes(stp.pb_msg.data, spi_payload.data(),
+                                 spi_payload.size());
   auto spi_transfer = make_payload_frame(
       rpc::to_underlying(rpc::CommandId::CMD_SPI_TRANSFER), 801, stp, buf);
   ba.dispatch(spi_transfer);
@@ -718,8 +710,8 @@ void test_encrypted_rx_nonce_and_compressed_empty_paths() {
 
   etl::array<uint8_t, 2> payload = {0x55, 0x66};
   rpc::payload::ConsoleWrite cmsg;
-  rpc::payload::copy_to_pb_bytes((pb_bytes_array_t*)&cmsg.pb_msg.data, 64,
-                                 payload.data(), payload.size());
+  rpc::payload::copy_to_pb_bytes(cmsg.pb_msg.data, payload.data(),
+                                 payload.size());
   TEST_ASSERT_TRUE(
       Bridge.send(rpc::CommandId::CMD_CONSOLE_WRITE, 901, cmsg));
 
@@ -752,8 +744,8 @@ void test_fault_injection_harness_paths() {
   file_data.fill(0x5A);
   rpc::payload::FileWrite fwp;
   strncpy(fwp.pb_msg.path, "fi-timeout.bin", 64);
-  rpc::payload::copy_to_pb_bytes((pb_bytes_array_t*)&fwp.pb_msg.data, 64,
-                                 file_data.data(), file_data.size());
+  rpc::payload::copy_to_pb_bytes(fwp.pb_msg.data, file_data.data(),
+                                 file_data.size());
   FileSystem._onWrite(fwp);
   bridge::test::fault::enable(
       bridge::test::fault::FaultPoint::FILESYSTEM_TIMEOUT);
@@ -837,8 +829,8 @@ void test_fault_injection_harness_paths() {
   secure_stream.tx_buf.clear();
   etl::array<uint8_t, 2> s_payload = {0x41, 0x42};
   rpc::payload::ConsoleWrite s_cmsg;
-  rpc::payload::copy_to_pb_bytes((pb_bytes_array_t*)&s_cmsg.pb_msg.data, 64,
-                                 s_payload.data(), s_payload.size());
+  rpc::payload::copy_to_pb_bytes(s_cmsg.pb_msg.data, s_payload.data(),
+                                 s_payload.size());
   TEST_ASSERT_TRUE(
       Bridge.send(rpc::CommandId::CMD_CONSOLE_WRITE, 951, s_cmsg));
   size_t cursor = 0;

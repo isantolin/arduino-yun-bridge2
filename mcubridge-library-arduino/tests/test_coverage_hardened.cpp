@@ -45,14 +45,12 @@ void dummy_status_handler(rpc::StatusCode, etl::span<const uint8_t>) {}
 
 void hit_mailbox_push(etl::span<const uint8_t> data) {
   rpc::payload::MailboxPush p;
-  rpc::payload::copy_to_pb_bytes((pb_bytes_array_t*)&p.pb_msg.data, 64,
-                                 data.data(), data.size());
+  rpc::payload::copy_to_pb_bytes(p.pb_msg.data, data.data(), data.size());
   Mailbox._onIncomingData(p);
 }
 void hit_mailbox_read_resp(etl::span<const uint8_t> data) {
   rpc::payload::MailboxReadResponse p;
-  rpc::payload::copy_to_pb_bytes((pb_bytes_array_t*)&p.pb_msg.content, 64,
-                                 data.data(), data.size());
+  rpc::payload::copy_to_pb_bytes(p.pb_msg.content, data.data(), data.size());
   Mailbox._onIncomingData(p);
 }
 

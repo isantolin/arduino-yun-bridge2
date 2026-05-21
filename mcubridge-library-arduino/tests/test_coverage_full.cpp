@@ -151,8 +151,7 @@ void test_bridge_coverage() {
 
   rpc::payload::ConsoleWrite cmsg;
   uint8_t cdata[] = "hello";
-  rpc::payload::copy_to_pb_bytes((pb_bytes_array_t*)&cmsg.pb_msg.data, 64, cdata,
-                                 5);
+  rpc::payload::copy_to_pb_bytes(cmsg.pb_msg.data, cdata, 5);
   ba.invokeConsolePush(cmsg);
 
   rpc::Frame f_cw = {};
@@ -172,8 +171,7 @@ void test_bridge_coverage() {
       etl::delegate<void(etl::string_view, etl::span<const uint8_t>)>::create<
           dummy_datastore_get>());
   rpc::payload::DatastoreGetResponse ds_get_p;
-  rpc::payload::copy_to_pb_bytes((pb_bytes_array_t*)&ds_get_p.pb_msg.value, 64,
-                                 ds_val, 2);
+  rpc::payload::copy_to_pb_bytes(ds_get_p.pb_msg.value, ds_val, 2);
   DataStore._onResponse(ds_get_p);
 
   rpc::Frame f_dsg = {};
@@ -190,8 +188,7 @@ void test_bridge_coverage() {
   uint8_t mbox_data[32] = {0};
   (void)Mailbox.push(etl::span<const uint8_t>(mbox_data, 3));
   rpc::payload::MailboxPush mpush;
-  rpc::payload::copy_to_pb_bytes((pb_bytes_array_t*)&mpush.pb_msg.data, 64,
-                                 mbox_data, 3);
+  rpc::payload::copy_to_pb_bytes(mpush.pb_msg.data, mbox_data, 3);
   Mailbox._onIncomingData(mpush);
 
   rpc::Frame f_mp = {};
@@ -203,8 +200,7 @@ void test_bridge_coverage() {
   ba.dispatch(f_mp);
 
   rpc::payload::MailboxReadResponse mread;
-  rpc::payload::copy_to_pb_bytes((pb_bytes_array_t*)&mread.pb_msg.content, 64,
-                                 mbox_data, 3);
+  rpc::payload::copy_to_pb_bytes(mread.pb_msg.content, mbox_data, 3);
   Mailbox._onIncomingData(mread);
 
   rpc::Frame f_mr = {};
@@ -266,8 +262,7 @@ void test_bridge_coverage() {
   FileSystem.remove("test.txt");
 
   rpc::payload::FileReadResponse fr_p;
-  rpc::payload::copy_to_pb_bytes((pb_bytes_array_t*)&fr_p.pb_msg.content, 64,
-                                 ds_val, 2);
+  rpc::payload::copy_to_pb_bytes(fr_p.pb_msg.content, ds_val, 2);
   FileSystem._onResponse(fr_p);
 
   rpc::Frame f_fr = {};
@@ -285,8 +280,7 @@ void test_bridge_coverage() {
   f_fw.header.command_id = (uint16_t)rpc::CommandId::CMD_FILE_WRITE;
   rpc::payload::FileWrite fwp;
   strncpy(fwp.pb_msg.path, "test.txt", sizeof(fwp.pb_msg.path));
-  rpc::payload::copy_to_pb_bytes((pb_bytes_array_t*)&fwp.pb_msg.data, 64, ds_val,
-                                 2);
+  rpc::payload::copy_to_pb_bytes(fwp.pb_msg.data, ds_val, 2);
   bridge::test::set_pb_payload(f_fw, fwp);
   ba.dispatch(f_fw);
 

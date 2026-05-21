@@ -10,6 +10,59 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 cd "$SCRIPT_DIR"
 
+# --- Nanopb Core C Files ---
+# Since these are ignored by .gitignore, we download them dynamically if missing.
+install_nanopb_core() {
+    local target_dir="src"
+    local version="nanopb-0.4.9.1"
+    local base_url="https://raw.githubusercontent.com/nanopb/nanopb/${version}"
+    local files=(
+        "pb.h"
+        "pb_common.h"
+        "pb_common.c"
+        "pb_decode.h"
+        "pb_decode.c"
+        "pb_encode.h"
+        "pb_encode.c"
+    )
+
+    mkdir -p "$target_dir"
+    for f in "${files[@]}"; do
+        local dest="$target_dir/$f"
+        if [ ! -f "$dest" ]; then
+            echo "[INFO] Downloading Nanopb core file: $f..."
+            if command -v curl >/dev/null 2>&1; then
+                curl -fsSL "$base_url/$f" -o "$dest"
+            elif command -v wget >/dev/null 2>&1; then
+                wget -qO "$dest" "$base_url/$f"
+            else
+                echo "[ERROR] 'curl' or 'wget' is required to download Nanopb." >&2
+                exit 1
+            fi
+        fi
+    done
+}
+
+install_nanopb_core
+
+# Generate protocol bindings if missing or if python is available
+if [ ! -f "src/protocol/rpc_protocol.h" ] || [ ! -f "src/protocol/mcubridge.pb.c" ]; then
+    echo "[host-cpp] Protocol files missing. Generating..."
+    PYTHON_CMD=$(command -v python3 || command -v python)
+    if [ -n "$PYTHON_CMD" ]; then
+        $PYTHON_CMD ../tools/protocol/generate.py \
+            --spec ../tools/protocol/spec.toml \
+            --py ../mcubridge/mcubridge/protocol/protocol.py \
+            --cpp src/protocol/rpc_protocol.h \
+            --cpp-structs src/protocol/rpc_structs.h \
+            --py-client ../mcubridge-client-examples/mcubridge_client/protocol.py \
+            --structures ../mcubridge/mcubridge/protocol/structures.py
+    else
+        echo "[ERROR] Python 3 is required to generate missing protocol files." >&2
+        exit 1
+    fi
+fi
+
 # Detect Arduino libraries directory
 ARDUINO_LIBS="$HOME/Arduino/libraries"
 if [ ! -d "$ARDUINO_LIBS" ]; then ARDUINO_LIBS="$HOME/Documents/Arduino/libraries"; fi
@@ -64,6 +117,10 @@ SOURCES=(
     "$WOLFSSL_PATH/wolfcrypt/src/chacha.c"
     "$WOLFSSL_PATH/wolfcrypt/src/poly1305.c"
     "$WOLFSSL_PATH/wolfcrypt/src/chacha20_poly1305.c"
+    "src/pb_encode.c"
+    "src/pb_decode.c"
+    "src/pb_common.c"
+    "src/protocol/mcubridge.pb.c"
 )
 
 # Unity test framework

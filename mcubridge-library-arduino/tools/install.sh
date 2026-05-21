@@ -143,6 +143,37 @@ install_dependency "Unity" \
     "src" \
     "${LIB_ROOT}/tests"
 
+# --- Nanopb Core C Files ---
+# Since these are ignored by .gitignore, we download them dynamically if missing.
+install_nanopb_core() {
+    local target_dir="${LIB_ROOT}/src"
+    local version="nanopb-0.4.9.1"
+    local base_url="https://raw.githubusercontent.com/nanopb/nanopb/${version}"
+    local files=(
+        "pb.h"
+        "pb_common.h"
+        "pb_common.c"
+        "pb_decode.h"
+        "pb_decode.c"
+        "pb_encode.h"
+        "pb_encode.c"
+    )
+
+    mkdir -p "$target_dir"
+    for f in "${files[@]}"; do
+        local dest="$target_dir/$f"
+        if [ ! -f "$dest" ]; then
+            echo "[INFO] Downloading Nanopb core file: $f..."
+            if ! download_zip "$f" "$base_url/$f" "$dest"; then
+                echo "[ERROR] Failed to download $f from $base_url/$f" >&2
+                return 1
+            fi
+        fi
+    done
+}
+
+install_nanopb_core
+
 if [ ! -d "${LIB_ROOT}/src" ]; then
     echo "[ERROR] Source directory not found: ${LIB_ROOT}/src" >&2
     exit 1

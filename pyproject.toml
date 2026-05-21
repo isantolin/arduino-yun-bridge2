@@ -42,7 +42,7 @@ markers = [
 typeCheckingMode = "strict"
 pythonVersion = "3.13"
 stubPath = "typings"
-extraPaths = ["mcubridge", "typings/stubs"]
+extraPaths = ["mcubridge", "typings/stubs", "mcubridge-client-examples"]
 include = [
     "mcubridge/mcubridge",
     "mcubridge/tests",

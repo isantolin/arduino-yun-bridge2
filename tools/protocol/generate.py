@@ -25,7 +25,7 @@ from jinja2 import Environment, FileSystemLoader
 # DEPENDENCY VALIDATION (CRITICAL)
 # ═════════════════════════════════════════════════════════════════════════════
 REQUIRED_DEPS = ["msgspec", "jinja2", "google.protobuf", "nanopb"]
-MISSING_DEPS = []
+MISSING_DEPS: list[str] = []
 
 if MISSING_DEPS:
     sys.stderr.write("\n" + "!" * 80 + "\n")
@@ -1203,7 +1203,7 @@ class JinjaGenerator:
 
         # Include packets for Protobuf support
         packet_messages = [m for m in spec.messages if m.name not in PACKET_EXCLUDE]
-        packets = []
+        packets: list[dict[str, str]] = []
         for msg in packet_messages:
             packets.append({"class_name": f"{msg.name}Packet", "proto_name": msg.name})
 
@@ -1263,7 +1263,39 @@ def _format_python_file(path: Path) -> None:
         sys.stderr.write(f"Warning: black formatting failed for {path}: {e}\n")
 
 
+def ensure_nanopb_core_files() -> None:
+    """Ensure the core Nanopb C files exist in mcubridge-library-arduino/src/."""
+    import urllib.request
+
+    src_dir = REPO_ROOT / "mcubridge-library-arduino" / "src"
+    version = "nanopb-0.4.9.1"
+    base_url = f"https://raw.githubusercontent.com/nanopb/nanopb/{version}/"
+    files = [
+        "pb.h",
+        "pb_common.h",
+        "pb_common.c",
+        "pb_decode.h",
+        "pb_decode.c",
+        "pb_encode.h",
+        "pb_encode.c",
+    ]
+
+    src_dir.mkdir(parents=True, exist_ok=True)
+    for f in files:
+        target = src_dir / f
+        if not target.exists():
+            url = base_url + f
+            sys.stderr.write(f"Downloading core Nanopb file: {f} from {url}...\n")
+            try:
+                with urllib.request.urlopen(url, timeout=20) as response:
+                    target.write_bytes(response.read())
+            except Exception as e:
+                sys.stderr.write(f"Error downloading {f}: {e}\n")
+                sys.exit(1)
+
+
 def main() -> None:
+    ensure_nanopb_core_files()
     parser = argparse.ArgumentParser(description="Protocol binding generator for MCU Bridge v2.")
     parser.add_argument("--spec", type=Path, required=True, help="Protocol specification file")
     parser.add_argument("--cpp", type=Path, default=None, help="C++ header output")

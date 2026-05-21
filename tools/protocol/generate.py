@@ -1158,15 +1158,9 @@ class JinjaGenerator:
         new_content = re.sub(r"\n{4,}", "\n\n\n", new_content)
         structures_path.write_text(new_content, encoding="utf-8")
 
-
     def generate_nanopb(self, proto_path: Path) -> None:
         """Invoke nanopb_generator.py to create C++ headers/sources."""
-        cmd = [
-            sys.executable,
-            "-m", "nanopb.generator.nanopb_generator",
-            "-v",
-            proto_path.name
-        ]
+        cmd = [sys.executable, "-m", "nanopb.generator.nanopb_generator", "-v", proto_path.name]
         try:
             subprocess.run(cmd, check=True, capture_output=True, text=True, cwd=str(proto_path.parent))
         except subprocess.CalledProcessError as e:
@@ -1175,12 +1169,7 @@ class JinjaGenerator:
 
     def generate_python_pb2(self, proto_path: Path, out_dir: Path) -> None:
         """Invoke protoc to generate Python pb2 module."""
-        cmd = [
-            "protoc",
-            f"--python_out={out_dir}",
-            f"--proto_path={proto_path.parent}",
-            str(proto_path)
-        ]
+        cmd = ["protoc", f"--python_out={out_dir}", f"--proto_path={proto_path.parent}", str(proto_path)]
         try:
             subprocess.run(cmd, check=True, capture_output=True, text=True)
         except subprocess.CalledProcessError as e:
@@ -1212,12 +1201,19 @@ class JinjaGenerator:
             },
         ]
 
+        # Include packets for Protobuf support
+        packet_messages = [m for m in spec.messages if m.name not in PACKET_EXCLUDE]
+        packets = []
+        for msg in packet_messages:
+            packets.append({"class_name": f"{msg.name}Packet", "proto_name": msg.name})
+
         render = template.render(
             constants=constants,
             capabilities=spec.capabilities,
             statuses=spec.statuses,
             commands=spec.commands,
             topics=spec.topics,
+            packets=packets,
         )
         out_path.write_text(render, encoding="utf-8")
 
@@ -1296,28 +1292,31 @@ def main() -> None:
         gen.generate_python_pb2(proto_path, args.spec.parent)
         # Nanopb C++
         gen.generate_nanopb(proto_path)
-        
+
         # Move generated files to target locations
         if args.cpp:
             cpp_pb_h = args.spec.parent / "mcubridge.pb.h"
             cpp_pb_c = args.spec.parent / "mcubridge.pb.c"
             target_h = args.cpp.parent / "mcubridge.pb.h"
             target_c = args.cpp.parent / "mcubridge.pb.c"
-            
+
             if cpp_pb_h.exists():
                 target_h.write_bytes(cpp_pb_h.read_bytes())
+                # Fix pb.h include for relative path in Arduino library structure
+                target_h.write_text(target_h.read_text().replace("#include <pb.h>", '#include "../pb.h"'))
                 cpp_pb_h.unlink()
             if cpp_pb_c.exists():
                 target_c.write_bytes(cpp_pb_c.read_bytes())
                 cpp_pb_c.unlink()
 
-        if args.py:
-            py_pb2 = args.spec.parent / "mcubridge_pb2.py"
-            target_py_pb2 = args.py.parent / "mcubridge_pb2.py"
-            if py_pb2.exists():
-                target_py_pb2.write_bytes(py_pb2.read_bytes())
-                py_pb2.unlink()
-
+        py_pb2 = args.spec.parent / "mcubridge_pb2.py"
+        if py_pb2.exists():
+            pb2_data = py_pb2.read_bytes()
+            if args.py:
+                (args.py.parent / "mcubridge_pb2.py").write_bytes(pb2_data)
+            if args.py_client:
+                (args.py_client.parent / "mcubridge_pb2.py").write_bytes(pb2_data)
+            py_pb2.unlink()
 
     if args.cpp:
         args.cpp.parent.mkdir(parents=True, exist_ok=True)

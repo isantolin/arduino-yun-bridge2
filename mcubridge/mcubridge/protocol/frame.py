@@ -14,6 +14,7 @@ The frame format is strictly defined to ensure:
 from __future__ import annotations
 
 import struct
+from mcubridge.security.security import aead_encrypt, aead_decrypt
 from binascii import crc32
 
 import msgspec
@@ -63,7 +64,7 @@ class Frame(msgspec.Struct, frozen=True):
         """Get the raw 15-bit command ID without the compression flag."""
         return int(self.command_id) & ~protocol.CMD_FLAG_COMPRESSED & protocol.UINT16_MAX
 
-    def build(self) -> bytes:
+    def build(self, session_key: bytes | None = None) -> bytes:
         """Delegates frame building to the declarative schema."""
         cmd_id = int(self.command_id)
         payload = self.payload
@@ -97,13 +98,22 @@ class Frame(msgspec.Struct, frozen=True):
         except struct.error as e:
             raise ValueError(f"Failed to build frame: {e}") from e
 
-        body = header + self.nonce + payload + self.tag
+        raw_cmd = cmd_id & ~protocol.CMD_FLAG_COMPRESSED & protocol.UINT16_MAX
+        is_excluded = (protocol.STATUS_CODE_MIN <= raw_cmd <= protocol.STATUS_CODE_MAX) or (
+            protocol.SYSTEM_COMMAND_MIN <= raw_cmd <= protocol.SYSTEM_COMMAND_MAX
+        )
+        if session_key and not is_excluded:
+            payload, tag = aead_encrypt(payload, session_key, self.nonce, header)
+        else:
+            tag = self.tag
+
+        body = header + self.nonce + payload + tag
         crc = _frame_crc(body)
 
         return body + CRC_STRUCT.pack(crc)
 
     @classmethod
-    def parse(cls, raw_frame_buffer: bytes | bytearray | memoryview) -> Frame:
+    def parse(cls, raw_frame_buffer: bytes | bytearray | memoryview, session_key: bytes | None = None) -> Frame:
         """Delegates frame parsing to the declarative schema."""
         buf = memoryview(raw_frame_buffer)
         if len(buf) < _HEADER_SIZE + _NONCE_SIZE + _TAG_SIZE + _CRC_SIZE:
@@ -135,6 +145,14 @@ class Frame(msgspec.Struct, frozen=True):
         nonce = bytes(body[_HEADER_SIZE : _HEADER_SIZE + _NONCE_SIZE])
         payload = bytes(body[_HEADER_SIZE + _NONCE_SIZE : _HEADER_SIZE + _NONCE_SIZE + payload_len])
         tag = bytes(body[_HEADER_SIZE + _NONCE_SIZE + payload_len : body_len])
+        header = bytes(body[:_HEADER_SIZE])
+
+        raw_cmd = cmd_id & ~protocol.CMD_FLAG_COMPRESSED & protocol.UINT16_MAX
+        is_excluded = (protocol.STATUS_CODE_MIN <= raw_cmd <= protocol.STATUS_CODE_MAX) or (
+            protocol.SYSTEM_COMMAND_MIN <= raw_cmd <= protocol.SYSTEM_COMMAND_MAX
+        )
+        if session_key and not is_excluded:
+            payload = aead_decrypt(payload, tag, session_key, nonce, header)
 
         if cmd_id & protocol.CMD_FLAG_COMPRESSED:
             try:

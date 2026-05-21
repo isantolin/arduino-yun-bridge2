@@ -1,10 +1,11 @@
 #define BRIDGE_ENABLE_TEST_INTERFACE 1
+#include <etl/array.h>
+
 #include "Bridge.h"
 #include "BridgeTestHelper.h"
 #include "BridgeTestInterface.h"
 #include "fsm/bridge_fsm.h"
 #include "test_support.h"
-#include <etl/array.h>
 
 // Global stubs for host environment
 Stream* g_arduino_stream_delegate = nullptr;
@@ -53,7 +54,7 @@ void test_fsm_timeout_to_fault() {
   TEST_ASSERT(ba.isFault());
 }
 
-} // namespace
+}  // namespace
 
 int main() {
   UNITY_BEGIN();

@@ -9,15 +9,15 @@ namespace test {
 
 template <typename T>
 void set_pb_payload(rpc::Frame& frame, const T& msg) {
-    JsonDocument doc;
-    if (msg.encode(doc.to<JsonVariant>())) {
-        size_t used = serializeMsgPack(doc, (char*)const_cast<uint8_t*>(frame.payload.data()), frame.payload.size());
-        frame.header.payload_length = static_cast<uint16_t>(used);
-        frame.payload = frame.payload.subspan(0, used);
-    }
+  pb_ostream_t stream = pb_ostream_from_buffer(
+      const_cast<uint8_t*>(frame.payload.data()), rpc::MAX_PAYLOAD_SIZE);
+  if (msg.encode(&stream)) {
+    frame.header.payload_length = static_cast<uint16_t>(stream.bytes_written);
+    frame.payload = frame.payload.subspan(0, stream.bytes_written);
+  }
 }
 
-} // namespace test
-} // namespace bridge
+}  // namespace test
+}  // namespace bridge
 
 #endif

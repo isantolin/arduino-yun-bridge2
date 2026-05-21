@@ -7,7 +7,6 @@ import contextlib
 from typing import Any, cast
 from unittest.mock import AsyncMock, patch
 
-import msgspec
 import pytest
 import pytest_asyncio
 from aiomqtt.message import Message
@@ -64,26 +63,26 @@ async def test_runtime_brute_force_handlers(
     handlers: list[tuple[int, int, bytes]] = [
         (Command.CMD_XON.value, 1, b""),
         (Command.CMD_XOFF.value, 1, b""),
-        (Status.ACK.value, 1, msgspec.msgpack.encode(AckPacket(command_id=1))),
+        (Status.ACK.value, 1, AckPacket(command_id=1).encode()),
         (
             Command.CMD_CONSOLE_WRITE.value,
             1,
-            msgspec.msgpack.encode(ConsoleWritePacket(data=b"test")),
+            ConsoleWritePacket(data=b"test").encode(),
         ),
         (
             Command.CMD_DATASTORE_PUT.value,
             1,
-            msgspec.msgpack.encode(DatastorePutPacket(key="k", value=b"v")),
+            DatastorePutPacket(key="k", value=b"v").encode(),
         ),
         (
             Command.CMD_DATASTORE_GET.value,
             1,
-            msgspec.msgpack.encode(DatastoreGetPacket(key="k")),
+            DatastoreGetPacket(key="k").encode(),
         ),
         (
             Command.CMD_MAILBOX_PUSH.value,
             1,
-            msgspec.msgpack.encode(MailboxPushPacket(data=b"m")),
+            MailboxPushPacket(data=b"m").encode(),
         ),
         (Command.CMD_MAILBOX_READ.value, 1, b""),
         (Command.CMD_MAILBOX_AVAILABLE.value, 1, b""),
@@ -95,62 +94,62 @@ async def test_runtime_brute_force_handlers(
         (
             Command.CMD_FILE_WRITE.value,
             1,
-            msgspec.msgpack.encode(FileWritePacket(path="f", data=b"")),
+            FileWritePacket(path="f", data=b"").encode(),
         ),
         (
             Command.CMD_FILE_READ.value,
             1,
-            msgspec.msgpack.encode(FileReadPacket(path="f")),
+            FileReadPacket(path="f").encode(),
         ),
         (
             Command.CMD_FILE_REMOVE.value,
             1,
-            msgspec.msgpack.encode(FileRemovePacket(path="f")),
+            FileRemovePacket(path="f").encode(),
         ),
         (
             Command.CMD_FILE_READ_RESP.value,
             1,
-            msgspec.msgpack.encode(FileReadResponsePacket(content=b"abc")),
+            FileReadResponsePacket(content=b"abc").encode(),
         ),
         (
             Command.CMD_PROCESS_RUN_ASYNC.value,
             1,
-            msgspec.msgpack.encode(ProcessRunAsyncPacket(command="ls")),
+            ProcessRunAsyncPacket(command="ls").encode(),
         ),
         (
             Command.CMD_PROCESS_POLL.value,
             1,
-            msgspec.msgpack.encode(ProcessPollPacket(pid=1)),
+            ProcessPollPacket(pid=1).encode(),
         ),
         (
             Command.CMD_PROCESS_KILL.value,
             1,
-            msgspec.msgpack.encode(ProcessKillPacket(pid=1)),
+            ProcessKillPacket(pid=1).encode(),
         ),
         (
             Command.CMD_DIGITAL_READ.value,
             1,
-            msgspec.msgpack.encode(PinReadPacket(pin=1)),
+            PinReadPacket(pin=1).encode(),
         ),
         (
             Command.CMD_ANALOG_READ.value,
             1,
-            msgspec.msgpack.encode(PinReadPacket(pin=1)),
+            PinReadPacket(pin=1).encode(),
         ),
         (
             Command.CMD_DIGITAL_READ_RESP.value,
             1,
-            msgspec.msgpack.encode(DigitalReadResponsePacket(value=1)),
+            DigitalReadResponsePacket(value=1).encode(),
         ),
         (
             Command.CMD_ANALOG_READ_RESP.value,
             1,
-            msgspec.msgpack.encode(AnalogReadResponsePacket(value=1)),
+            AnalogReadResponsePacket(value=1).encode(),
         ),
         (
             Command.CMD_SPI_TRANSFER_RESP.value,
             1,
-            msgspec.msgpack.encode(SpiTransferResponsePacket(data=b"r")),
+            SpiTransferResponsePacket(data=b"r").encode(),
         ),
     ]
 
@@ -186,8 +185,8 @@ async def test_runtime_mqtt_brute_force(
 
             async def complete_file_read() -> None:
                 file_read_handler = service.mcu_registry[Command.CMD_FILE_READ_RESP.value]
-                await file_read_handler(1, msgspec.msgpack.encode(FileReadResponsePacket(content=b"abc")))
-                await file_read_handler(1, msgspec.msgpack.encode(FileReadResponsePacket(content=b"")))
+                await file_read_handler(1, FileReadResponsePacket(content=b"abc").encode())
+                await file_read_handler(1, FileReadResponsePacket(content=b"").encode())
 
             asyncio.get_running_loop().create_task(complete_file_read())
         return True
@@ -284,7 +283,7 @@ async def test_runtime_file_ops_permission_errors(
     await service.handle_mcu_frame(
         Command.CMD_FILE_READ.value,
         1,
-        msgspec.msgpack.encode(FileReadPacket(path="test")),
+        FileReadPacket(path="test").encode(),
     )
     assert serial.send.called
     args, _ = serial.send.call_args

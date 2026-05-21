@@ -25,7 +25,6 @@ echo "[emulator] Installing library dependencies..."
 ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library"
 WOLFSSL_PATH="$ARDUINO_LIBS/wolfSSL"
 PACKETSERIAL_PATH="$ARDUINO_LIBS/PacketSerial"
-AJSON_PATH="$ARDUINO_LIBS/ArduinoJson"
 
 # Use the python from the current environment (e.g. tox virtualenv)
 PYTHON_CMD=$(command -v python || command -v python3)
@@ -60,6 +59,13 @@ WOLF_SOURCES=(
     "$WOLFSSL_PATH/wolfcrypt/src/chacha20_poly1305.c"
 )
 
+NANOPB_SOURCES=(
+    "${SRC_DIR}/pb_encode.c"
+    "${SRC_DIR}/pb_decode.c"
+    "${SRC_DIR}/pb_common.c"
+    "${SRC_DIR}/protocol/mcubridge.pb.c"
+)
+
 echo "[emulator] Compiling native bridge emulator (Base)..."
 g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -DARDUINO_STUB_CUSTOM_MILLIS=1 -DARDUINO_STUB_CUSTOM_SERIAL=1 \
     -DNUM_DIGITAL_PINS=20 -DNUM_ANALOG_INPUTS=6  -DWOLFSSL_USER_SETTINGS -DETL_NO_STL \
@@ -67,14 +73,15 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -I"${SRC_DIR}/config" \
     -I"${TEST_DIR}/mocks" \
     -I"${STUB_DIR}" \
+    -I"${TEST_DIR}" \
     -I"${ETL_PATH}" \
     -I"${ETL_PATH}/include" \
     -I"${ETL_PATH}/arduino" \
     -I"${WOLFSSL_PATH}" \
     -I"${PACKETSERIAL_PATH}" \
     -I"${PACKETSERIAL_PATH}/src" \
-    -I"${AJSON_PATH}/src" \
     "${WOLF_SOURCES[@]}" \
+    "${NANOPB_SOURCES[@]}" \
     "${SRC_DIR}/security/security.cpp" \
     "${SRC_DIR}/hal/hal.cpp" \
     "${SRC_DIR}/fsm/bridge_fsm.cpp" \
@@ -99,14 +106,15 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -I"${SRC_DIR}/config" \
     -I"${TEST_DIR}/mocks" \
     -I"${STUB_DIR}" \
+    -I"${TEST_DIR}" \
     -I"${ETL_PATH}" \
     -I"${ETL_PATH}/include" \
     -I"${ETL_PATH}/arduino" \
     -I"${WOLFSSL_PATH}" \
     -I"${PACKETSERIAL_PATH}" \
     -I"${PACKETSERIAL_PATH}/src" \
-    -I"${AJSON_PATH}/src" \
     "${WOLF_SOURCES[@]}" \
+    "${NANOPB_SOURCES[@]}" \
     "${SRC_DIR}/security/security.cpp" \
     "${SRC_DIR}/hal/hal.cpp" \
     "${SRC_DIR}/fsm/bridge_fsm.cpp" \

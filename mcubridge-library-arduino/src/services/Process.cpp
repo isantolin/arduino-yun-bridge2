@@ -10,7 +10,7 @@
 
 namespace {
 
-constexpr size_t kProcessCommandBufferSize = rpc::MAX_PAYLOAD_SIZE;
+constexpr size_t kProcessCommandBufferSize = 64U;
 constexpr int32_t kProcessInvalidPid = -1;
 
 }  // namespace
@@ -54,10 +54,11 @@ void ProcessClass::runAsync(etl::string_view cmd,
     return;
   }
 
-  const bool send_ok =
-      Bridge.send(rpc::CommandId::CMD_PROCESS_RUN_ASYNC, 0,
-                  rpc::payload::ProcessRunAsync{
-                      etl::span<const char>(command_buffer.data(), command_buffer.size())});
+  rpc::payload::ProcessRunAsync p;
+  strncpy(p.pb_msg.command, command_buffer.data(), 64);
+  p.pb_msg.command[63] = '\0';
+
+  const bool send_ok = Bridge.send(rpc::CommandId::CMD_PROCESS_RUN_ASYNC, 0, p);
   if (!send_ok) {
     Bridge.emitStatus(
         rpc::StatusCode::STATUS_ERROR,
@@ -77,8 +78,10 @@ void ProcessClass::poll(int32_t pid, ProcessPollHandler handler) {
     return;
   }
 
-  if (!Bridge.send(rpc::CommandId::CMD_PROCESS_POLL, 0,
-                   rpc::payload::ProcessPoll{static_cast<uint32_t>(pid)})) {
+  rpc::payload::ProcessPoll p;
+  p.pb_msg.pid = static_cast<uint32_t>(pid);
+
+  if (!Bridge.send(rpc::CommandId::CMD_PROCESS_POLL, 0, p)) {
     Bridge.emitStatus(
         rpc::StatusCode::STATUS_ERROR,
         etl::string_view(rpc::status_reason::PROCESS_RUN_INTERNAL_ERROR));
@@ -91,15 +94,16 @@ void ProcessClass::poll(int32_t pid, ProcessPollHandler handler) {
 }
 
 void ProcessClass::kill(int32_t pid) {
-  (void)Bridge.send(rpc::CommandId::CMD_PROCESS_KILL, 0,
-                    rpc::payload::ProcessKill{static_cast<uint32_t>(pid)});
+  rpc::payload::ProcessKill p;
+  p.pb_msg.pid = static_cast<uint32_t>(pid);
+  (void)Bridge.send(rpc::CommandId::CMD_PROCESS_KILL, 0, p);
 }
 
 void ProcessClass::_onKillNotification(const rpc::payload::ProcessKill& msg) {
   // Linux notifies MCU that a process was killed. Clear local queues only —
   // do NOT re-send CMD_PROCESS_KILL (that would create an echo loop).
   reset();
-  (void)msg.pid;
+  (void)msg.pb_msg.pid;
 }
 
 void ProcessClass::_onRunAsyncResponse(
@@ -108,7 +112,7 @@ void ProcessClass::_onRunAsyncResponse(
   const PendingRunAsync pending = _pending_run_async.front();
   _pending_run_async.pop();
   if (pending.handler.is_valid()) {
-    pending.handler(static_cast<int32_t>(msg.pid));
+    pending.handler(static_cast<int32_t>(msg.pb_msg.pid));
   }
 }
 
@@ -118,8 +122,12 @@ void ProcessClass::_onPollResponse(
   const PendingPoll pending = _pending_polls.front();
   _pending_polls.pop();
   if (pending.handler.is_valid()) {
-    pending.handler(static_cast<rpc::StatusCode>(msg.status), msg.exit_code,
-                    msg.stdout_data, msg.stderr_data);
+    pending.handler(static_cast<rpc::StatusCode>(msg.pb_msg.status),
+                    msg.pb_msg.exit_code,
+                    etl::span<const uint8_t>(msg.pb_msg.stdout_data.bytes,
+                                             msg.pb_msg.stdout_data.size),
+                    etl::span<const uint8_t>(msg.pb_msg.stderr_data.bytes,
+                                             msg.pb_msg.stderr_data.size));
   }
 }
 

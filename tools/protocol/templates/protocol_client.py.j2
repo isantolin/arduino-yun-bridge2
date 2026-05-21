@@ -7,6 +7,11 @@ from enum import IntEnum
 from pathlib import PurePosixPath
 from typing import Final
 
+try:
+    from . import mcubridge_pb2 as pb
+except ImportError:
+    import mcubridge_pb2 as pb
+
 # Protocol Constants
 {% for const in constants -%}
 {{ const.name }}: Final[{{ const.type }}] = {{ const.value }}
@@ -49,3 +54,30 @@ class Topic:
     {%- for topic in topics %}
     {{ topic.name }}: Final[str] = "{{ topic.value }}"
     {%- endfor %}
+
+
+# --- BEGIN GENERATED PACKETS --- DO NOT EDIT (auto-generated from spec.toml)
+{% for packet in packets %}
+
+class {{ packet.class_name }}:
+    PROTO_CLASS = pb.{{ packet.proto_name }}
+    
+    def __init__(self, **kwargs):
+        self._msg = self.PROTO_CLASS(**kwargs)
+        
+    def __getattr__(self, name):
+        return getattr(self._msg, name)
+        
+    @classmethod
+    def decode(cls, data: bytes):
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+        
+    def encode(self) -> bytes:
+        return self._msg.SerializeToString()
+
+{% endfor %}
+# --- END GENERATED PACKETS ---

@@ -1,0 +1,171 @@
+syntax = "proto3";
+
+package rpc.pb;
+
+// [SIL-2] Top-level container for all messages to/from MCU
+// This is used for framed transmission over serial
+message RpcContainer {
+    uint32 seq_id = 1;
+    uint32 checksum = 2;
+    bytes payload = 3;
+}
+
+message VersionResponse {
+    uint32 major = 1;
+    uint32 minor = 2;
+    uint32 patch = 3;
+}
+
+message FreeMemoryResponse {
+    uint32 value = 1;
+}
+
+message Capabilities {
+    uint32 ver = 1;
+    uint32 arch = 2;
+    uint32 dig = 3;
+    uint32 ana = 4;
+    uint32 feat = 5;
+}
+
+message PinMode {
+    uint32 pin = 1;
+    uint32 mode = 2;
+}
+
+message DigitalWrite {
+    uint32 pin = 1;
+    uint32 value = 2;
+}
+
+message AnalogWrite {
+    uint32 pin = 1;
+    uint32 value = 2;
+}
+
+message PinRead {
+    uint32 pin = 1;
+}
+
+message DigitalReadResponse {
+    uint32 value = 1;
+}
+
+message AnalogReadResponse {
+    uint32 value = 1;
+}
+
+message ConsoleWrite {
+    bytes data = 1;
+}
+
+message DatastorePut {
+    string key = 1;
+    bytes value = 2;
+}
+
+message DatastoreGet {
+    string key = 1;
+}
+
+message DatastoreGetResponse {
+    bytes value = 1;
+}
+
+message MailboxPush {
+    bytes data = 1;
+}
+
+message MailboxProcessed {
+    uint32 message_id = 1;
+}
+
+message MailboxAvailableResponse {
+    uint32 count = 1;
+}
+
+message MailboxReadResponse {
+    bytes content = 1;
+}
+
+message FileWrite {
+    string path = 1;
+    bytes data = 2;
+}
+
+message FileRead {
+    string path = 1;
+}
+
+message FileRemove {
+    string path = 1;
+}
+
+message FileReadResponse {
+    bytes content = 1;
+}
+
+message ProcessRunAsync {
+    string command = 1;
+}
+
+message ProcessRunAsyncResponse {
+    uint32 pid = 1;
+}
+
+message ProcessPoll {
+    uint32 pid = 1;
+}
+
+message ProcessPollResponse {
+    uint32 status = 1;
+    uint32 exit_code = 2;
+    bytes stdout_data = 3;
+    bytes stderr_data = 4;
+}
+
+message ProcessKill {
+    uint32 pid = 1;
+}
+
+message GenericResponse {
+    string status = 1;
+    string message = 2;
+}
+
+message AckPacket {
+    uint32 command_id = 1;
+}
+
+message HandshakeConfig {
+    uint32 ack_timeout_ms = 1;
+    uint32 ack_retry_limit = 2;
+    uint32 response_timeout_ms = 3;
+}
+
+message SetBaudratePacket {
+    uint32 baudrate = 1;
+}
+
+message LinkSync {
+    bytes nonce = 1;
+    bytes tag = 2;
+}
+
+message EnterBootloader {
+    uint32 magic = 1;
+}
+
+message SpiTransfer {
+    bytes data = 1;
+}
+
+message SpiTransferResponse {
+    bytes data = 1;
+}
+
+message SpiConfig {
+    uint32 bit_order = 1;
+    uint32 data_mode = 2;
+    uint32 frequency = 3;
+}

@@ -16,6 +16,7 @@ from mcubridge.protocol.protocol import (
     Topic,
 )
 from mcubridge.protocol.structures import (
+    VersionResponsePacket,
     DigitalReadResponsePacket,
     PendingPinRequest,
 )
@@ -54,7 +55,7 @@ async def test_runtime_mcu_lifecycle_exhaustive(service_setup: Any) -> None:
         state.mark_synchronized()
 
     with patch.object(service.handshake, "synchronize", side_effect=mock_sync):
-        serial.send_and_wait_payload.return_value = msgspec.msgpack.encode([1, 0, 0])
+        serial.send_and_wait_payload.return_value = VersionResponsePacket(major=1, minor=0, patch=0).encode()
         await service.on_serial_connected()
         assert serial.send_and_wait_payload.called
 
@@ -82,9 +83,7 @@ async def test_mcu_handlers_exhaustive(service_setup: Any) -> None:
     await service.mcu_registry[Command.CMD_MAILBOX_READ.value](4, b"")
 
     state.pending_digital_reads.append(PendingPinRequest(pin=1, reply_context=None))
-    await service.mcu_registry[Command.CMD_DIGITAL_READ_RESP.value](
-        5, msgspec.msgpack.encode(DigitalReadResponsePacket(value=1))
-    )
+    await service.mcu_registry[Command.CMD_DIGITAL_READ_RESP.value](5, DigitalReadResponsePacket(value=1).encode())
 
 
 @pytest.mark.asyncio

@@ -1,6 +1,8 @@
 #include "services/Console.h"
-#include "Bridge.h"
+
 #include <etl/algorithm.h>
+
+#include "Bridge.h"
 
 ConsoleClass::ConsoleClass() : _flags(0) {}
 
@@ -11,18 +13,18 @@ void ConsoleClass::begin() {
 }
 
 void ConsoleClass::_push(const rpc::payload::ConsoleWrite& msg) {
-  const auto& data = msg.data;
-  etl::for_each(data.begin(), data.end(), [this](uint8_t b) {
+  const auto& data = msg.pb_msg.data;
+  etl::for_each(data.bytes, data.bytes + data.size, [this](uint8_t b) {
     if (!_rx_buffer.full()) _rx_buffer.push(b);
   });
 }
 
 void ConsoleClass::process() {
   if (!_tx_buffer.empty()) {
-    if (Bridge.send(
-            rpc::CommandId::CMD_CONSOLE_WRITE, 0,
-            rpc::payload::ConsoleWrite{etl::span<const uint8_t>(
-                _tx_buffer.data(), _tx_buffer.size())})) {
+    rpc::payload::ConsoleWrite p;
+    rpc::payload::copy_to_pb_bytes((pb_bytes_array_t*)&p.pb_msg.data, 64,
+                                   _tx_buffer.data(), _tx_buffer.size());
+    if (Bridge.send(rpc::CommandId::CMD_CONSOLE_WRITE, 0, p)) {
       _tx_buffer.clear();
     }
   }

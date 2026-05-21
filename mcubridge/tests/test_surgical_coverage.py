@@ -1,7 +1,6 @@
 import asyncio
 from typing import Any
 import pytest
-import msgspec
 from unittest.mock import AsyncMock, MagicMock, patch
 from aiomqtt.message import Message
 from pathlib import Path
@@ -50,7 +49,7 @@ async def test_surgical_runtime_exhaustive(
     await service.handle_mcu_frame(
         Command.CMD_DATASTORE_GET_RESP.value,
         1,
-        msgspec.msgpack.encode(DatastoreGetResponsePacket(value=b"v")),
+        DatastoreGetResponsePacket(value=b"v").encode(),
     )
 
     # Digital Read response
@@ -58,7 +57,7 @@ async def test_surgical_runtime_exhaustive(
     await service.handle_mcu_frame(
         Command.CMD_DIGITAL_READ_RESP.value,
         1,
-        msgspec.msgpack.encode(DigitalReadResponsePacket(value=1)),
+        DigitalReadResponsePacket(value=1).encode(),
     )
 
     # Analog Read response
@@ -66,14 +65,14 @@ async def test_surgical_runtime_exhaustive(
     await service.handle_mcu_frame(
         Command.CMD_ANALOG_READ_RESP.value,
         1,
-        msgspec.msgpack.encode(AnalogReadResponsePacket(value=512)),
+        AnalogReadResponsePacket(value=512).encode(),
     )
 
     # SPI Transfer response
     await service.handle_mcu_frame(
         Command.CMD_SPI_TRANSFER_RESP.value,
         1,
-        msgspec.msgpack.encode(SpiTransferResponsePacket(data=b"resp")),
+        SpiTransferResponsePacket(data=b"resp").encode(),
     )
 
     # Test TaskGroup cancel path

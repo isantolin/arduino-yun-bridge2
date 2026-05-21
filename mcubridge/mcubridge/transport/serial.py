@@ -22,7 +22,6 @@ from typing import TYPE_CHECKING, Any, cast
 
 import msgspec
 from cobs import cobs
-from cryptography.exceptions import InvalidTag
 import serial
 import serial_asyncio_fast
 import tenacity
@@ -37,7 +36,7 @@ from mcubridge.config.const import (
     SERIAL_MIN_ACK_TIMEOUT,
 )
 from mcubridge.protocol import protocol
-from mcubridge.protocol.frame import Frame, HEADER_STRUCT
+from mcubridge.protocol.frame import Frame
 from mcubridge.protocol.protocol import (
     ACK_ONLY_COMMANDS,
     RESPONSE_ONLY_COMMANDS,
@@ -214,7 +213,9 @@ class SerialTransport:
     def _process_packet(self, encoded_packet: bytes | memoryview) -> None:
         if self._negotiating and self._negotiation_future and not self._negotiation_future.done():
             try:
-                frame = Frame.parse(cobs.decode(encoded_packet))
+                frame = Frame.parse(
+                    cobs.decode(encoded_packet), self.state.link_session_key if self.state.is_synchronized else None
+                )
                 if frame.command_id == protocol.Command.CMD_SET_BAUDRATE_RESP.value:
                     self._switch_local_baudrate(self.config.serial_baud)
                     self._negotiation_future.set_result(True)
@@ -234,17 +235,19 @@ class SerialTransport:
             logger.debug("[SERIAL <- MCU] [RAW]: [%s]", packet_bytes.hex(" ").upper())
         try:
             decoded = cobs.decode(packet_bytes)
-            frame = Frame.parse(decoded)
+            frame = Frame.parse(decoded, self.state.link_session_key if self.state.is_synchronized else None)
             cmd_id, seq_id, payload = frame.command_id, frame.sequence_id, frame.payload
             is_excluded = (
                 protocol.STATUS_CODE_MIN <= cmd_id <= protocol.STATUS_CODE_MAX
                 or protocol.SYSTEM_COMMAND_MIN <= cmd_id <= protocol.SYSTEM_COMMAND_MAX
             )
-            if self.state.is_synchronized and self.state.link_aead_cipher and not is_excluded:
-                try:
-                    payload = self.state.link_aead_cipher.decrypt(frame.nonce, payload + frame.tag, frame.header_bytes)
-                except InvalidTag as exc:
-                    raise ValueError("AEAD authentication failed") from exc
+            if self.state.is_synchronized and not is_excluded:
+                from mcubridge.security.security import validate_nonce_counter
+
+                ok, new_counter = validate_nonce_counter(frame.nonce, self.state.link_last_nonce_counter)
+                if not ok:
+                    raise ValueError("Anti-replay validation failed: invalid nonce counter")
+                self.state.link_last_nonce_counter = new_counter
             self._correlate_frame(cmd_id, payload)
             if self.service:
                 await self.service.handle_mcu_frame(cmd_id, seq_id, payload)
@@ -266,7 +269,7 @@ class SerialTransport:
             ack_target = pending.command_id
             if payload:
                 with contextlib.suppress(msgspec.DecodeError, msgspec.ValidationError, TypeError, ValueError):
-                    ack_target = msgspec.msgpack.decode(payload, type=AckPacket).command_id
+                    ack_target = AckPacket.decode(payload).command_id
             if ack_target != pending.command_id:
                 return
             if not pending.ack_received:
@@ -281,7 +284,7 @@ class SerialTransport:
             reject = not payload or (
                 not payload.isascii()
                 if not payload.startswith(b"\x91")
-                else msgspec.msgpack.decode(payload, type=AckPacket).command_id == pending.command_id
+                else AckPacket.decode(payload).command_id == pending.command_id
             )
             if reject:
                 pending.mark_failure(command_id)
@@ -432,21 +435,16 @@ class SerialTransport:
             protocol.STATUS_CODE_MIN <= command_id <= protocol.STATUS_CODE_MAX
             or protocol.SYSTEM_COMMAND_MIN <= command_id <= protocol.SYSTEM_COMMAND_MAX
         )
-        if self.state.is_synchronized and self.state.link_aead_cipher and not is_excluded:
+        nonce = b"\x00" * protocol.AEAD_NONCE_SIZE
+        if self.state.is_synchronized and not is_excluded:
             nonce, new_counter = generate_nonce_with_counter(self.state.link_nonce_counter)
             self.state.link_nonce_counter = new_counter
-            header_bytes = HEADER_STRUCT.pack(protocol.PROTOCOL_VERSION, len(payload), int(command_id), seq_id)
-            encrypted_blob = self.state.link_aead_cipher.encrypt(nonce, payload, header_bytes)
-            frame = Frame(
-                command_id=command_id,
-                sequence_id=seq_id,
-                payload=encrypted_blob[:-16],
-                nonce=nonce,
-                tag=encrypted_blob[-16:],
-            )
-        else:
-            frame = Frame(command_id=command_id, sequence_id=seq_id, payload=payload)
-        encoded = cobs.encode(frame.build()) + protocol.FRAME_DELIMITER
+
+        frame = Frame(command_id=command_id, sequence_id=seq_id, payload=payload, nonce=nonce)
+        encoded = (
+            cobs.encode(frame.build(self.state.link_session_key if self.state.is_synchronized else None))
+            + protocol.FRAME_DELIMITER
+        )
         if logger.is_enabled_for(logging.DEBUG):
             logger.debug(
                 "[SERIAL -> MCU] [CMD:0x%02X] [RAW]: [%s]",
@@ -466,7 +464,7 @@ class SerialTransport:
     async def _negotiate_baudrate(self, target_baud: int) -> bool:
         from mcubridge.protocol.structures import SetBaudratePacket
 
-        payload = msgspec.msgpack.encode(SetBaudratePacket(baudrate=target_baud))
+        payload = SetBaudratePacket(baudrate=target_baud).encode()
         self._negotiating = True
         try:
             self._negotiation_future = self.loop.create_future() if self.loop else None
@@ -483,4 +481,4 @@ class SerialTransport:
             self._negotiating = False
 
     async def acknowledge(self, command_id: int, seq_id: int, *, status: Status = Status.ACK) -> None:
-        await self._send_raw(status.value, msgspec.msgpack.encode(AckPacket(command_id=command_id)), seq_id)
+        await self._send_raw(status.value, AckPacket(command_id=command_id).encode(), seq_id)

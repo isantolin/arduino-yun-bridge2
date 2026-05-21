@@ -4,14 +4,14 @@
 
 #define BRIDGE_ENABLE_TEST_INTERFACE 1
 #include "Bridge.h"
+#include "BridgeTestHelper.h"
+#include "BridgeTestInterface.h"
 #include "services/Console.h"
 #include "services/DataStore.h"
 #include "services/Mailbox.h"
 #include "services/Process.h"
 #include "test_constants.h"
 #include "test_support.h"
-#include "BridgeTestHelper.h"
-#include "BridgeTestInterface.h"
 
 // Define the global delegates and stubs for HardwareSerial stub
 Stream* g_arduino_stream_delegate = nullptr;
@@ -36,26 +36,28 @@ void reset_bridge_comp(BiStream& stream) {
 void test_all_handlers_coverage() {
   BiStream stream;
   reset_bridge_comp(stream);
-  
+
   rpc::Frame frame = {};
   frame.header.version = rpc::PROTOCOL_VERSION;
   frame.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION);
   TestAccessor::create(Bridge).dispatch(frame);
-  
-  frame.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_GET_FREE_MEMORY);
+
+  frame.header.command_id =
+      rpc::to_underlying(rpc::CommandId::CMD_GET_FREE_MEMORY);
   TestAccessor::create(Bridge).dispatch(frame);
 
-  frame.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_GET_CAPABILITIES);
+  frame.header.command_id =
+      rpc::to_underlying(rpc::CommandId::CMD_GET_CAPABILITIES);
   TestAccessor::create(Bridge).dispatch(frame);
 }
 
 void test_process_api() {
   BiStream stream;
   reset_bridge_comp(stream);
-  
-  #if BRIDGE_ENABLE_PROCESS
+
+#if BRIDGE_ENABLE_PROCESS
   Process.reset();
-  #endif
+#endif
 }
 
 void test_console_api() {
@@ -68,17 +70,17 @@ void test_console_api() {
 void test_datastore_api() {
   BiStream stream;
   reset_bridge_comp(stream);
-  #if BRIDGE_ENABLE_DATASTORE
-  // No begin needed
-  #endif
+#if BRIDGE_ENABLE_DATASTORE
+// No begin needed
+#endif
 }
 
 void test_mailbox_api() {
   BiStream stream;
   reset_bridge_comp(stream);
-  #if BRIDGE_ENABLE_MAILBOX
-  // No begin needed
-  #endif
+#if BRIDGE_ENABLE_MAILBOX
+// No begin needed
+#endif
 }
 
 int main() {

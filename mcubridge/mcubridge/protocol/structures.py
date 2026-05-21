@@ -5,6 +5,7 @@ Binary parsing uses stdlib struct; high-level schemas use Msgspec (SIL-2).
 """
 
 from __future__ import annotations
+from . import mcubridge_pb2 as pb
 
 import asyncio
 import enum
@@ -476,7 +477,7 @@ _msgpack_encoder = msgspec.msgpack.Encoder()
 _msgpack_decoder = msgspec.msgpack.Decoder()
 
 
-class BaseStruct:
+class BaseStruct(msgspec.Struct, frozen=True, array_like=True):
     """Base class for all serial payload packets.
 
     Encoded as MsgPack arrays (positional fields) for compact wire format.

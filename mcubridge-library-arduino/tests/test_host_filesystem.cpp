@@ -92,8 +92,8 @@ void test_filesystem_on_write() {
   reset_bridge_core(Bridge, stream);
   etl::array<uint8_t, 3> resp_data = {4, 5, 6};
   rpc::payload::FileWrite msg;
-  msg.path = "on_write.bin";
-  msg.data = etl::span<const uint8_t>(resp_data.data(), resp_data.size());
+  strncpy(msg.pb_msg.path, "on_write.bin", sizeof(msg.pb_msg.path));
+  rpc::payload::copy_to_pb_bytes((pb_bytes_array_t*)&msg.pb_msg.data, 64, resp_data.data(), resp_data.size());
   FileSystem._onWrite(msg);
 }
 
@@ -105,7 +105,7 @@ void test_filesystem_on_read() {
   (void)bridge::hal::writeFile(path, etl::span<const uint8_t>(data.data(), data.size()));
 
   rpc::payload::FileRead msg;
-  msg.path = path;
+  strncpy(msg.pb_msg.path, path.data(), sizeof(msg.pb_msg.path));
   FileSystem._onRead(msg);
   (void)bridge::hal::removeFile(path);
 }
@@ -114,7 +114,7 @@ void test_filesystem_on_remove() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   rpc::payload::FileRemove msg;
-  msg.path = "on_rem.bin";
+  strncpy(msg.pb_msg.path, "on_rem.bin", sizeof(msg.pb_msg.path));
   FileSystem._onRemove(msg);
 }
 

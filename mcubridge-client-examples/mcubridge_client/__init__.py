@@ -12,7 +12,7 @@ import ssl
 import uuid
 from contextlib import AsyncExitStack
 from pathlib import Path
-from typing import TypedDict, cast
+from typing import TypedDict
 
 import msgspec
 from aiomqtt import Client, MqttError, ProtocolVersion
@@ -30,7 +30,15 @@ from .definitions import (
     build_mqtt_properties,
 )
 from .env import dump_client_env, read_uci_general
-from .protocol import Command, Topic
+from .protocol import (
+    Command,
+    Topic,
+    SpiConfigPacket,
+    SpiTransferPacket,
+    SpiTransferResponsePacket,
+    VersionResponsePacket,
+    FreeMemoryResponsePacket,
+)
 from .spi import SpiDevice
 
 __all__ = [
@@ -44,6 +52,11 @@ __all__ = [
     "QOSLevel",
     "Command",
     "Topic",
+    "FreeMemoryResponsePacket",
+    "SpiConfigPacket",
+    "SpiTransferPacket",
+    "SpiTransferResponsePacket",
+    "VersionResponsePacket",
 ]
 
 logger = logging.getLogger(__name__)
@@ -176,7 +189,7 @@ class Bridge:
             )
             await self._client.publish(msg.topic_name, msg.payload, properties=build_mqtt_properties(msg))
             delivered = await asyncio.wait_for(queue.get(), timeout=timeout)
-            return msgspec.convert(delivered.payload, bytes)
+            return bytes(delivered.payload)
         finally:
             self._correlation_routes.pop(correlation, None)
             if resp_topic:
@@ -252,7 +265,7 @@ class Bridge:
             resp_topic=Topic.build(Topic.SHELL, "poll", pid, "response"),
             timeout=timeout,
         )
-        return cast(ShellPollResponse, msgspec.msgpack.decode(res))
+        return msgspec.msgpack.decode(res, type=ShellPollResponse)
 
     async def file_write(self, filename: str, content: str | bytes) -> None:
         (

@@ -1,10 +1,10 @@
 #include <etl/array.h>
-#include "etl_ext/CounterIterator.h"
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
 
 #include "Bridge.h"
+#include "etl_ext/CounterIterator.h"
 #include "protocol/rle.h"
 #include "test_support.h"
 
@@ -21,8 +21,8 @@ void test_rle_empty_src() {
   etl::array<uint8_t, 10> dst_buf;
   etl::span<uint8_t> dst(dst_buf);
   etl::array<uint8_t, 1> src_buf = {0};
-  etl::span<const uint8_t> src(src_buf.data(), 0); 
-  
+  etl::span<const uint8_t> src(src_buf.data(), 0);
+
   TEST_ASSERT_EQUAL(0, rle::decode(src, dst));
 }
 
@@ -31,7 +31,7 @@ void test_rle_empty_dst() {
   etl::span<const uint8_t> src(src_buf);
   etl::array<uint8_t, 1> dst_buf = {0};
   etl::span<uint8_t> dst(dst_buf.data(), 0);
-  
+
   TEST_ASSERT_EQUAL(0, rle::decode(src, dst));
 }
 
@@ -39,9 +39,10 @@ void test_rle_literal_no_escape() {
   etl::array<uint8_t, 3> src_buf = {0x01, 0x02, 0x03};
   etl::array<uint8_t, 10> dst_buf;
   dst_buf.fill(0);
-  
-  size_t written = rle::decode(etl::span<const uint8_t>(src_buf), etl::span<uint8_t>(dst_buf));
-  
+
+  size_t written =
+      rle::decode(etl::span<const uint8_t>(src_buf), etl::span<uint8_t>(dst_buf));
+
   TEST_ASSERT_EQUAL(3, written);
   TEST_ASSERT_EQUAL(0x01, dst_buf[0]);
   TEST_ASSERT_EQUAL(0x02, dst_buf[1]);
@@ -50,12 +51,14 @@ void test_rle_literal_no_escape() {
 
 void test_rle_single_escape() {
   // ESCAPE_BYTE, SINGLE_ESCAPE_MARKER, VALUE
-  etl::array<uint8_t, 3> src_buf = {rle::ESCAPE_BYTE, rle::SINGLE_ESCAPE_MARKER, 0xAA};
+  etl::array<uint8_t, 3> src_buf = {rle::ESCAPE_BYTE, rle::SINGLE_ESCAPE_MARKER,
+                                    0xAA};
   etl::array<uint8_t, 10> dst_buf;
   dst_buf.fill(0);
-  
-  size_t written = rle::decode(etl::span<const uint8_t>(src_buf), etl::span<uint8_t>(dst_buf));
-  
+
+  size_t written =
+      rle::decode(etl::span<const uint8_t>(src_buf), etl::span<uint8_t>(dst_buf));
+
   TEST_ASSERT_EQUAL(1, written);
   TEST_ASSERT_EQUAL(0xAA, dst_buf[0]);
 }
@@ -66,48 +69,53 @@ void test_rle_run_escape() {
   etl::array<uint8_t, 3> src_buf = {rle::ESCAPE_BYTE, count, 0xBB};
   etl::array<uint8_t, 10> dst_buf;
   dst_buf.fill(0);
-  
-  size_t written = rle::decode(etl::span<const uint8_t>(src_buf), etl::span<uint8_t>(dst_buf));
-  
+
+  size_t written =
+      rle::decode(etl::span<const uint8_t>(src_buf), etl::span<uint8_t>(dst_buf));
+
   TEST_ASSERT_EQUAL(5, written);
-  for(int i=0; i<5; i++) {
+  for (int i = 0; i < 5; i++) {
     TEST_ASSERT_EQUAL_HEX8(0xBB, dst_buf[i]);
   }
 }
 
 void test_rle_dst_overflow_literal() {
   etl::array<uint8_t, 2> src_buf = {0x01, 0x02};
-  etl::array<uint8_t, 1> dst_buf; 
-  
-  size_t written = rle::decode(etl::span<const uint8_t>(src_buf), etl::span<uint8_t>(dst_buf.data(), 1));
-  
+  etl::array<uint8_t, 1> dst_buf;
+
+  size_t written = rle::decode(etl::span<const uint8_t>(src_buf),
+                               etl::span<uint8_t>(dst_buf.data(), 1));
+
   TEST_ASSERT_EQUAL(0, written);
 }
 
 void test_rle_dst_overflow_run() {
-  etl::array<uint8_t, 3> src_buf = {rle::ESCAPE_BYTE, 0x05, 0xCC}; 
-  etl::array<uint8_t, 2> dst_buf; 
-  
-  size_t written = rle::decode(etl::span<const uint8_t>(src_buf), etl::span<uint8_t>(dst_buf.data(), 2));
-  
+  etl::array<uint8_t, 3> src_buf = {rle::ESCAPE_BYTE, 0x05, 0xCC};
+  etl::array<uint8_t, 2> dst_buf;
+
+  size_t written = rle::decode(etl::span<const uint8_t>(src_buf),
+                               etl::span<uint8_t>(dst_buf.data(), 2));
+
   TEST_ASSERT_EQUAL(0, written);
 }
 
 void test_rle_incomplete_escape_marker() {
   etl::array<uint8_t, 1> src_buf = {rle::ESCAPE_BYTE};
   etl::array<uint8_t, 10> dst_buf;
-  
-  size_t written = rle::decode(etl::span<const uint8_t>(src_buf), etl::span<uint8_t>(dst_buf));
-  
-  TEST_ASSERT_EQUAL(0, written); 
+
+  size_t written =
+      rle::decode(etl::span<const uint8_t>(src_buf), etl::span<uint8_t>(dst_buf));
+
+  TEST_ASSERT_EQUAL(0, written);
 }
 
 void test_rle_incomplete_escape_val() {
   etl::array<uint8_t, 2> src_buf = {rle::ESCAPE_BYTE, 0x01};
   etl::array<uint8_t, 10> dst_buf;
-  
-  size_t written = rle::decode(etl::span<const uint8_t>(src_buf), etl::span<uint8_t>(dst_buf));
-  
+
+  size_t written =
+      rle::decode(etl::span<const uint8_t>(src_buf), etl::span<uint8_t>(dst_buf));
+
   TEST_ASSERT_EQUAL(0, written);
 }
 
@@ -118,12 +126,14 @@ void test_rle_complex_sequence() {
   // Run of 2+2=4 0xFF (4 bytes)
   // Literal 0x03 (1 byte)
   // Total: 2 + 1 + 4 + 1 = 8 bytes
-  etl::array<uint8_t, 9> src_buf = {0x01, 0x02, rle::ESCAPE_BYTE, rle::SINGLE_ESCAPE_MARKER, 0xEE, 
-                       rle::ESCAPE_BYTE, 0x02, 0xFF, 0x03};
+  etl::array<uint8_t, 9> src_buf = {0x01, 0x02, rle::ESCAPE_BYTE,
+                                    rle::SINGLE_ESCAPE_MARKER, 0xEE,
+                                    rle::ESCAPE_BYTE, 0x02, 0xFF, 0x03};
   etl::array<uint8_t, 20> dst_buf;
-  
-  size_t written = rle::decode(etl::span<const uint8_t>(src_buf), etl::span<uint8_t>(dst_buf));
-  
+
+  size_t written =
+      rle::decode(etl::span<const uint8_t>(src_buf), etl::span<uint8_t>(dst_buf));
+
   TEST_ASSERT_EQUAL(8, written);
   TEST_ASSERT_EQUAL(0x01, dst_buf[0]);
   TEST_ASSERT_EQUAL(0x02, dst_buf[1]);

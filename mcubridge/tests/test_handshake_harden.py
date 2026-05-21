@@ -59,7 +59,7 @@ async def test_handshake_auth_mismatch(
 
     # Simulate MCU response with WRONG tag
     bad_tag = b"F" * 16
-    payload = msgspec.msgpack.encode(LinkSyncPacket(nonce=nonce, tag=bad_tag))
+    payload = LinkSyncPacket(nonce=nonce, tag=bad_tag).encode()
 
     result = await manager.handle_link_sync_resp(1, payload)
     assert result is False

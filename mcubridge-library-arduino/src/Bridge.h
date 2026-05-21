@@ -11,8 +11,6 @@
 #include "etl_profile.h"
 #include "hal/hal.h"
 
-
-
 namespace bridge::test {
 class TestAccessor;
 }
@@ -58,8 +56,6 @@ extern template class span<char>;
 extern template class span<const char>;
 }  // namespace etl
 
-
-
 namespace bridge {
 namespace router {
 struct CommandContext {
@@ -80,13 +76,6 @@ struct CommandContext {
 }  // namespace bridge
 
 #include "ErrorPolicy.h"
-
-// [SIL-2] Zero-Heap ArduinoJson arena: all JSON documents backed by static BSS.
-// Compliant with ArduinoJson v7 Allocator interface; no malloc/free.
-
-  size_t _used{0U};
-  void* _last{nullptr};
-};
 
 class BridgeClass {
  public:
@@ -115,7 +104,6 @@ class BridgeClass {
   [[nodiscard]] bool sendFrame(rpc::CommandId c, uint16_t seq = 0,
                                etl::span<const uint8_t> p = {});
 
-  
   template <typename T>
   [[nodiscard]] bool send(rpc::StatusCode s, uint16_t seq, const T& packet) {
     pb_ostream_t stream = pb_ostream_from_buffer(_transient_buffer.data(), rpc::MAX_PAYLOAD_SIZE);
@@ -125,14 +113,12 @@ class BridgeClass {
     return false;
   }
 
-  
-    return false;
-  }
-
-    return false;
-  }
-
-  
+  template <typename T>
+  [[nodiscard]] bool send(rpc::CommandId c, uint16_t seq, const T& packet) {
+    pb_ostream_t stream = pb_ostream_from_buffer(_transient_buffer.data(), rpc::MAX_PAYLOAD_SIZE);
+    if (packet.encode(&stream)) {
+      return sendFrame(c, seq, etl::span<const uint8_t>(_transient_buffer.data(), stream.bytes_written));
+    }
     return false;
   }
 
@@ -323,13 +309,18 @@ class BridgeClass {
   static const etl::array<DispatchHandler, rpc::RPC_MAX_COMMAND_ID>&
   _dispatchTable();
 
-  
   template <typename T, typename F>
   void _withPayload(const bridge::router::CommandContext& ctx, F handler) {
     auto res = rpc::Payload::parse<T>(*ctx.frame);
     if (res) handler(res.value());
   }
-  );
+
+  template <typename T, typename F>
+  void _withPayloadAck(const bridge::router::CommandContext& ctx, F handler) {
+    if (ctx.is_duplicate) {
+      rpc::payload::AckPacket p;
+      p.pb_msg.command_id = ctx.raw_command;
+      (void)send(rpc::StatusCode::STATUS_ACK, ctx.sequence_id, p);
       return;
     }
     auto res = rpc::Payload::parse<T>(*ctx.frame);
@@ -342,20 +333,6 @@ class BridgeClass {
       emitStatus(rpc::StatusCode::STATUS_ERROR);
   }
 
-  );
-      return;
-    }
-    _json_arena.reset();
-    JsonDocument doc(&_json_arena);
-    auto res = rpc::Payload::parse<T>(*ctx.frame, doc);
-    if (res) {
-      handler(res.value());
-      if (ctx.requires_ack)
-        (void)send(rpc::StatusCode::STATUS_ACK, ctx.sequence_id,
-                   rpc::payload::AckPacket{ctx.raw_command});
-    } else
-      emitStatus(rpc::StatusCode::STATUS_ERROR);
-  }
   template <typename F>
   void _withResponse(const bridge::router::CommandContext& ctx, F handler) {
     if (ctx.is_duplicate) {
@@ -364,7 +341,7 @@ class BridgeClass {
     }
     handler();
   }
-  
+
   template <typename T, typename TID, typename TValid, typename TRead>
   void _handlePinRead(const bridge::router::CommandContext& ctx, TID resp_id,
                       TValid valid, TRead read) {
@@ -378,12 +355,7 @@ class BridgeClass {
         emitStatus(rpc::StatusCode::STATUS_ERROR);
     });
   }
-;
-        (void)send(static_cast<rpc::CommandId>(resp_id), ctx.sequence_id, resp);
-      } else
-        emitStatus(rpc::StatusCode::STATUS_ERROR);
-    });
-  }
+
   void _clearPendingTxQueue();
   void _flushPendingTxQueue();
   void _handleAck(uint16_t command_id);

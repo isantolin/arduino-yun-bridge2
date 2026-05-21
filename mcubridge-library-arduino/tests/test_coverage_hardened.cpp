@@ -43,6 +43,19 @@ void dummy_cmd_handler(const rpc::Frame&) {}
 void dummy_status_handler(rpc::StatusCode, etl::span<const uint8_t>) {}
 }  // namespace
 
+void hit_mailbox_push(etl::span<const uint8_t> data) {
+  rpc::payload::MailboxPush p;
+  rpc::payload::copy_to_pb_bytes((pb_bytes_array_t*)&p.pb_msg.data, 64,
+                                 data.data(), data.size());
+  Mailbox._onIncomingData(p);
+}
+void hit_mailbox_read_resp(etl::span<const uint8_t> data) {
+  rpc::payload::MailboxReadResponse p;
+  rpc::payload::copy_to_pb_bytes((pb_bytes_array_t*)&p.pb_msg.content, 64,
+                                 data.data(), data.size());
+  Mailbox._onIncomingData(p);
+}
+
 void test_bridge_emit_status_variants() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
@@ -97,8 +110,8 @@ void test_filesystem_read_edge_cases() {
   // Trigger FileSystem read chunks with timeout/error simulation
   const char* file_path_str = "test.txt";
   etl::string_view path_sv(file_path_str);
-  rpc::payload::FileRead req = {
-      etl::span<const char>(path_sv.data(), path_sv.size())};
+  rpc::payload::FileRead req;
+  strncpy(req.pb_msg.path, path_sv.data(), sizeof(req.pb_msg.path));
 
   // This will use the new CounterIterator in _onRead
   FileSystem._onRead(req);
@@ -115,7 +128,11 @@ void test_spi_timeout_and_error_paths() {
   reset_bridge_core(Bridge, stream);
 
   SPIService.begin();
-  SPIService.setConfig({4000000, 1, 0});  // frequency, bit_order, data_mode
+  rpc::payload::SpiConfig sc;
+  sc.pb_msg.frequency = 4000000;
+  sc.pb_msg.bit_order = 1;
+  sc.pb_msg.data_mode = 0;
+  SPIService.setConfig(sc);
 
   etl::array<uint8_t, 4> buf = {1, 2, 3, 4};
   // Normal transfer (stub SPI doesn't timeout)
@@ -172,7 +189,11 @@ void test_process_branch_error_paths() {
                    etl::delegate<void(int32_t)>::create<capture_async_handler>());
   TEST_ASSERT_EQUAL(-1, captured_pid);
   TEST_ASSERT_EQUAL(1, Process._pending_run_async.size());
-  Process._onRunAsyncResponse(rpc::payload::ProcessRunAsyncResponse{42});
+  Process._onRunAsyncResponse([]() {
+    rpc::payload::ProcessRunAsyncResponse p;
+    p.pb_msg.pid = 42;
+    return p;
+  }());
   TEST_ASSERT_EQUAL(42, captured_pid);
 
   // Valid send with invalid callback should not enqueue a pending run.
@@ -235,7 +256,11 @@ void test_process_branch_error_paths() {
   ProcessClass::ProcessRunHandler invalid_pending_run;
   invalid_pending_run.clear();
   Process._pending_run_async.push({invalid_pending_run});
-  Process._onRunAsyncResponse(rpc::payload::ProcessRunAsyncResponse{777});
+  Process._onRunAsyncResponse([]() {
+    rpc::payload::ProcessRunAsyncResponse p;
+    p.pb_msg.pid = 777;
+    return p;
+  }());
   ProcessClass::ProcessPollHandler invalid_pending_poll;
   invalid_pending_poll.clear();
   Process._pending_polls.push({1, invalid_pending_poll});
@@ -269,11 +294,15 @@ void test_mailbox_and_datastore_variants() {
 
   // Test _onIncomingData
   etl::array<uint8_t, 2> mb_data2 = {0xAA, 0xBB};
-  Mailbox._onIncomingData(rpc::payload::MailboxPush{mb_data2});
+  hit_mailbox_push(mb_data2);
   etl::array<uint8_t, 2> mb_data3 = {0xCC, 0xDD};
-  Mailbox._onIncomingData(rpc::payload::MailboxReadResponse{mb_data3});
+  hit_mailbox_read_resp(mb_data3);
   Mailbox._onAvailableResponse({});
-  Mailbox._onAvailableResponse(rpc::payload::MailboxAvailableResponse{7});
+  Mailbox._onAvailableResponse([]() {
+    rpc::payload::MailboxAvailableResponse p;
+    p.pb_msg.count = 7;
+    return p;
+  }());
 
   // Coverage for observer notification
   Mailbox.notification(MsgBridgeSynchronized());
@@ -293,6 +322,10 @@ void test_mailbox_and_datastore_variants() {
 
   TEST_ASSERT(true);
 }
+
+
+
+
 
 void test_bridge_fsm_resets() {
   BiStream stream;
@@ -348,8 +381,12 @@ void test_bridge_template_coverage() {
   reset_bridge_core(Bridge, stream);
 
   // Explicitly trigger template instantiations that might be missed
-  (void)Bridge.send(rpc::CommandId::CMD_SET_PIN_MODE, 1,
-                    rpc::payload::PinMode{13, 1});
+  (void)Bridge.send(rpc::CommandId::CMD_SET_PIN_MODE, 1, []() {
+    rpc::payload::PinMode p;
+    p.pb_msg.pin = 13;
+    p.pb_msg.mode = 1;
+    return p;
+  }());
 
   // Mock handlers
   Bridge.onCommand(BridgeClass::CommandHandler::create<dummy_cmd_handler>());
@@ -366,16 +403,18 @@ void test_bridge_duplicate_packet() {
   ba.setSynchronized();
 
   static etl::array<uint8_t, 256> buf;
-  rpc::payload::DigitalWrite msg = {13, 1};
-  JsonDocument doc;
-  if (msg.encode(doc.to<JsonVariant>())) {
-    size_t used = serializeMsgPack(doc, (char*)buf.data(), buf.size());
+  rpc::payload::DigitalWrite msg;
+  msg.pb_msg.pin = 13;
+  msg.pb_msg.value = 1;
+
+  pb_ostream_t pbos = pb_ostream_from_buffer(buf.data(), buf.size());
+  if (msg.encode(&pbos)) {
     rpc::Frame f = {};
-    f.header = {rpc::PROTOCOL_VERSION, (uint16_t)used,
+    f.header = {rpc::PROTOCOL_VERSION, (uint16_t)pbos.bytes_written,
                 (uint16_t)rpc::CommandId::CMD_DIGITAL_WRITE, 10};
     f.nonce.fill(0);
     f.tag.fill(0);
-    f.payload = etl::span<const uint8_t>(buf.data(), used);
+    f.payload = etl::span<const uint8_t>(buf.data(), pbos.bytes_written);
 
     bridge::router::CommandContext ctx(&f, f.header.command_id, 10, true, true);
     ba.handleDigitalWriteCommand(ctx);
@@ -392,27 +431,55 @@ void test_bridge_exhaustive_command_handlers() {
 
   static etl::array<uint8_t, 256> buf;
   auto trigger = [&](rpc::CommandId id, auto payload) {
-    JsonDocument doc;
-    if (payload.encode(doc.to<JsonVariant>())) {
-      size_t used = serializeMsgPack(doc, (char*)buf.data(), buf.size());
+    pb_ostream_t pbos = pb_ostream_from_buffer(buf.data(), buf.size());
+    if (payload.encode(&pbos)) {
       rpc::Frame f = {};
-      f.header = {rpc::PROTOCOL_VERSION, (uint16_t)used, (uint16_t)id, 1};
+      f.header = {rpc::PROTOCOL_VERSION, (uint16_t)pbos.bytes_written, (uint16_t)id, 1};
       f.nonce.fill(0);
       f.tag.fill(0);
-      f.payload = etl::span<const uint8_t>(buf.data(), used);
+      f.payload = etl::span<const uint8_t>(buf.data(), pbos.bytes_written);
       ba.dispatch(f);
     }
   };
 
-  trigger(rpc::CommandId::CMD_SET_BAUDRATE,
-          rpc::payload::SetBaudratePacket{57600});
-  trigger(rpc::CommandId::CMD_ENTER_BOOTLOADER,
-          rpc::payload::EnterBootloader{rpc::RPC_BOOTLOADER_MAGIC});
-  trigger(rpc::CommandId::CMD_SET_PIN_MODE, rpc::payload::PinMode{13, 1});
-  trigger(rpc::CommandId::CMD_DIGITAL_WRITE, rpc::payload::DigitalWrite{13, 1});
-  trigger(rpc::CommandId::CMD_ANALOG_WRITE, rpc::payload::AnalogWrite{3, 128});
-  trigger(rpc::CommandId::CMD_DIGITAL_READ, rpc::payload::PinRead{13});
-  trigger(rpc::CommandId::CMD_ANALOG_READ, rpc::payload::PinRead{0});
+  trigger(rpc::CommandId::CMD_SET_BAUDRATE, []() {
+    rpc::payload::SetBaudratePacket p;
+    p.pb_msg.baudrate = 57600;
+    return p;
+  }());
+  trigger(rpc::CommandId::CMD_ENTER_BOOTLOADER, []() {
+    rpc::payload::EnterBootloader p;
+    p.pb_msg.magic = rpc::RPC_BOOTLOADER_MAGIC;
+    return p;
+  }());
+  trigger(rpc::CommandId::CMD_SET_PIN_MODE, []() {
+    rpc::payload::PinMode p;
+    p.pb_msg.pin = 13;
+    p.pb_msg.mode = 1;
+    return p;
+  }());
+  trigger(rpc::CommandId::CMD_DIGITAL_WRITE, []() {
+    rpc::payload::DigitalWrite p;
+    p.pb_msg.pin = 13;
+    p.pb_msg.value = 1;
+    return p;
+  }());
+  trigger(rpc::CommandId::CMD_ANALOG_WRITE, []() {
+    rpc::payload::AnalogWrite p;
+    p.pb_msg.pin = 3;
+    p.pb_msg.value = 128;
+    return p;
+  }());
+  trigger(rpc::CommandId::CMD_DIGITAL_READ, []() {
+    rpc::payload::PinRead p;
+    p.pb_msg.pin = 13;
+    return p;
+  }());
+  trigger(rpc::CommandId::CMD_ANALOG_READ, []() {
+    rpc::payload::PinRead p;
+    p.pb_msg.pin = 0;
+    return p;
+  }());
 
   TEST_ASSERT(true);
 }

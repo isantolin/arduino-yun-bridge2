@@ -14,12 +14,12 @@ void send_mailbox_command(rpc::CommandId command_id) {
 
 }  // namespace
 
-MailboxClass::MailboxClass()
-    : _rx_buffer(), _available_count(0U) {}
+MailboxClass::MailboxClass() : _rx_buffer(), _available_count(0U) {}
 
 void MailboxClass::push(etl::span<const uint8_t> data) {
-  (void)Bridge.send(rpc::CommandId::CMD_MAILBOX_PUSH, 0,
-                    rpc::payload::MailboxPush{data});
+  rpc::payload::MailboxPush p;
+  rpc::payload::copy_to_pb_bytes((pb_bytes_array_t*)&p.pb_msg.data, 64, data.data(), data.size());
+  (void)Bridge.send(rpc::CommandId::CMD_MAILBOX_PUSH, 0, p);
 }
 
 void MailboxClass::requestRead() {
@@ -42,17 +42,19 @@ void MailboxClass::_setIncomingData(etl::span<const uint8_t> data) {
 }
 
 void MailboxClass::_onIncomingData(const rpc::payload::MailboxPush& msg) {
-  _setIncomingData(msg.data);
+  _setIncomingData(
+      etl::span<const uint8_t>(msg.pb_msg.data.bytes, msg.pb_msg.data.size));
 }
 
 void MailboxClass::_onIncomingData(
     const rpc::payload::MailboxReadResponse& msg) {
-  _setIncomingData(msg.content);
+  _setIncomingData(etl::span<const uint8_t>(msg.pb_msg.content.bytes,
+                                            msg.pb_msg.content.size));
 }
 
 void MailboxClass::_onAvailableResponse(
     const rpc::payload::MailboxAvailableResponse& msg) {
-  _available_count = msg.count;
+  _available_count = msg.pb_msg.count;
 }
 
 MailboxClass Mailbox;

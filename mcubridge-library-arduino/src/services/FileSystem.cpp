@@ -1,4 +1,5 @@
 #include "services/FileSystem.h"
+
 #include "Bridge.h"
 
 #if BRIDGE_ENABLE_FILESYSTEM && defined(BRIDGE_HOST_TEST)
@@ -8,7 +9,7 @@
 #if BRIDGE_ENABLE_FILESYSTEM
 
 namespace {
-constexpr size_t kReadChunkSize = rpc::MAX_PAYLOAD_SIZE - 3U;
+constexpr size_t kReadChunkSize = 64U;
 
 #if defined(BRIDGE_HOST_TEST)
 #define BRIDGE_FS_DEBUG(...) fprintf(stderr, __VA_ARGS__)
@@ -17,8 +18,10 @@ constexpr size_t kReadChunkSize = rpc::MAX_PAYLOAD_SIZE - 3U;
 #endif
 
 void send_read_response(etl::span<const uint8_t> content) {
-  (void)Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 0,
-                    rpc::payload::FileReadResponse{content});
+  rpc::payload::FileReadResponse p;
+  rpc::payload::copy_to_pb_bytes((pb_bytes_array_t*)&p.pb_msg.content, 64, content.data(),
+                                 content.size());
+  (void)Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 0, p);
 }
 }  // namespace
 
@@ -26,43 +29,46 @@ FileSystemClass::FileSystemClass() {}
 
 void FileSystemClass::write(etl::string_view path,
                             etl::span<const uint8_t> data) {
-  (void)Bridge.send(rpc::CommandId::CMD_FILE_WRITE, 0,
-                    rpc::payload::FileWrite{path, data});
+  rpc::payload::FileWrite p;
+  strncpy(p.pb_msg.path, path.data(), 64);
+  p.pb_msg.path[63] = '\0';
+  rpc::payload::copy_to_pb_bytes((pb_bytes_array_t*)&p.pb_msg.data, 64, data.data(), data.size());
+  (void)Bridge.send(rpc::CommandId::CMD_FILE_WRITE, 0, p);
 }
 
 void FileSystemClass::read(etl::string_view path,
                            FileSystemReadHandler handler) {
   _read_handler = handler;
-  if (!Bridge.send(rpc::CommandId::CMD_FILE_READ, 0,
-                   rpc::payload::FileRead{path})) {
+  rpc::payload::FileRead p;
+  strncpy(p.pb_msg.path, path.data(), 64);
+  p.pb_msg.path[63] = '\0';
+  if (!Bridge.send(rpc::CommandId::CMD_FILE_READ, 0, p)) {
     Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
   }
 }
 
 void FileSystemClass::remove(etl::string_view path) {
-  (void)Bridge.send(rpc::CommandId::CMD_FILE_REMOVE, 0,
-                    rpc::payload::FileRemove{path});
+  rpc::payload::FileRemove p;
+  strncpy(p.pb_msg.path, path.data(), 64);
+  p.pb_msg.path[63] = '\0';
+  (void)Bridge.send(rpc::CommandId::CMD_FILE_REMOVE, 0, p);
 }
 
 void FileSystemClass::_onWrite(const rpc::payload::FileWrite& msg) {
   auto res = bridge::hal::writeFile(
-      etl::string_view(msg.path.data(), msg.path.size()), msg.data);
+      etl::string_view(msg.pb_msg.path),
+      etl::span<const uint8_t>(msg.pb_msg.data.bytes, msg.pb_msg.data.size));
   (void)Bridge.sendFrame(res ? rpc::StatusCode::STATUS_OK
                              : rpc::StatusCode::STATUS_ERROR);
 }
 
 void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
-  BRIDGE_FS_DEBUG("[DEBUG] FS: Reading file: %.*s\\n", (int)msg.path.size(),
-                  msg.path.data());
+  BRIDGE_FS_DEBUG("[DEBUG] FS: Reading file: %s\\n", msg.pb_msg.path);
   size_t offset = 0;
-  // [SIL-2] Reverting to local stack buffer to prevent memory collision.
-  // Bridge.borrowTransientBuffer() cannot be used here because send_read_response
-  // calls Bridge.send, which uses the same buffer for MsgPack encoding.
   etl::array<uint8_t, kReadChunkSize> buffer;
   const uint32_t start_ms = millis();
-  const etl::string_view path(msg.path.data(), msg.path.size());
+  const etl::string_view path(msg.pb_msg.path);
 
-  // [SIL-2] Use CounterIterator to avoid large stack-allocated dummy arrays.
   using bridge::etl_ext::CounterIterator;
   (void)etl::find_if(
       CounterIterator<uint16_t>(0U),
@@ -95,13 +101,15 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
 }
 
 void FileSystemClass::_onRemove(const rpc::payload::FileRemove& msg) {
-  auto res = bridge::hal::removeFile(etl::string_view(msg.path.data(), msg.path.size()));
-  (void)Bridge.sendFrame(res ? rpc::StatusCode::STATUS_OK : rpc::StatusCode::STATUS_ERROR);
+  auto res = bridge::hal::removeFile(etl::string_view(msg.pb_msg.path));
+  (void)Bridge.sendFrame(res ? rpc::StatusCode::STATUS_OK
+                             : rpc::StatusCode::STATUS_ERROR);
 }
 
 void FileSystemClass::_onResponse(const rpc::payload::FileReadResponse& msg) {
   if (_read_handler.is_valid()) {
-    _read_handler(msg.content);
+    _read_handler(etl::span<const uint8_t>(msg.pb_msg.content.bytes,
+                                           msg.pb_msg.content.size));
   }
 }
 

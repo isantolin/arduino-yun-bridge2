@@ -119,13 +119,11 @@ class SerialHandshakeManager:
         self._logger = logger_ or logger
         self._fatal_threshold = max(1, config.serial_handshake_fatal_failures)
         # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
-        self._reset_payload = msgspec.msgpack.encode(
-            HandshakeConfigPacket(
-                ack_timeout_ms=self._timing.ack_timeout_ms,
-                ack_retry_limit=self._timing.retry_limit,
-                response_timeout_ms=self._timing.response_timeout_ms,
-            )
-        )
+        self._reset_payload = HandshakeConfigPacket(
+            ack_timeout_ms=self._timing.ack_timeout_ms,
+            ack_retry_limit=self._timing.retry_limit,
+            response_timeout_ms=self._timing.response_timeout_ms,
+        ).encode()
         self._capabilities_future: asyncio.Future[bytes] | None = None
         self.fsm_state = self.STATE_UNSYNCHRONIZED
 
@@ -207,7 +205,7 @@ class SerialHandshakeManager:
         # [MIL-SPEC] Send LINK_SYNC with mutual authentication tag
         our_tag = self.calculate_handshake_tag(self._config.serial_shared_secret, nonce)
         # [SIL-2] Use direct msgspec.msgpack.encode (Zero Wrapper)
-        sync_payload = msgspec.msgpack.encode(LinkSyncPacket(nonce=nonce, tag=our_tag))
+        sync_payload = LinkSyncPacket(nonce=nonce, tag=our_tag).encode()
         sync_ok = await self._send_frame(Command.CMD_LINK_SYNC.value, sync_payload)
         if not sync_ok:
             self.clear_handshake_expectations()
@@ -272,10 +270,10 @@ class SerialHandshakeManager:
 
         try:
             # [SIL-2] Use direct msgspec.msgpack.decode (Zero Wrapper)
-            sync_pkt = msgspec.msgpack.decode(payload, type=LinkSyncPacket)
+            sync_pkt = LinkSyncPacket.decode(payload)
             nonce = bytes(sync_pkt.nonce)
             tag_bytes = bytes(sync_pkt.tag)
-        except (ValueError, TypeError, msgspec.DecodeError):
+        except (ValueError, TypeError, Exception):
             self._logger.warning(
                 "LINK_SYNC_RESP msgpack decode failed (len=%d)",
                 len(payload),
@@ -394,7 +392,7 @@ class SerialHandshakeManager:
     def _parse_capabilities(self, payload: bytes) -> None:
         try:
             # [SIL-2] Use direct msgspec.msgpack.decode (Zero Wrapper)
-            cap = msgspec.msgpack.decode(payload, type=CapabilitiesPacket)
+            cap = CapabilitiesPacket.decode(payload)
             self._state.mcu_capabilities = McuCapabilities(
                 protocol_version=cap.ver,
                 board_arch=cap.arch,
@@ -403,7 +401,7 @@ class SerialHandshakeManager:
                 features=cap.features,
             )
             self._logger.info("MCU Capabilities: %s", self._state.mcu_capabilities)
-        except (ValueError, TypeError, msgspec.DecodeError, KeyError) as exc:
+        except (ValueError, TypeError, Exception, KeyError) as exc:
             self._logger.warning("Failed to unpack capabilities: %s", exc)
 
     async def handle_link_reset_resp(self, seq_id: int, payload: bytes) -> bool:

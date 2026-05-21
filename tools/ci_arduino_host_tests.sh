@@ -49,7 +49,6 @@ fi
 ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library"
 WOLFSSL_PATH="$ARDUINO_LIBS/wolfSSL"
 PACKETSERIAL_PATH="$ARDUINO_LIBS/PacketSerial"
-AJSON_PATH="$ARDUINO_LIBS/ArduinoJson"
 
 if [[ "${1:-}" == "--install-only" ]]; then
     echo "[host-cpp] Dependencies installed. Exiting as requested by --install-only."
@@ -69,6 +68,10 @@ SOURCES=(
     "$WOLFSSL_PATH/wolfcrypt/src/chacha.c"
     "$WOLFSSL_PATH/wolfcrypt/src/poly1305.c"
     "$WOLFSSL_PATH/wolfcrypt/src/chacha20_poly1305.c"
+    "${SRC_DIR}/pb_encode.c"
+    "${SRC_DIR}/pb_decode.c"
+    "${SRC_DIR}/pb_common.c"
+    "${SRC_DIR}/protocol/mcubridge.pb.c"
     "${SRC_DIR}/hal/hal.cpp"
     "${SRC_DIR}/fsm/bridge_fsm.cpp"
     "${SRC_DIR}/protocol/rle.cpp"
@@ -113,13 +116,13 @@ BASE_FLAGS=(
     -I"${SRC_DIR}/protocol" \
     -I"${TEST_DIR}/Unity/src" \
     -I"${STUB_DIR}" \
+    -I"${TEST_DIR}" \
     -I"$ETL_PATH" \
     -I"$ETL_PATH/include" \
     -I"$ETL_PATH/arduino" \
     -I"$WOLFSSL_PATH" \
     -I"$PACKETSERIAL_PATH" \
     -I"$PACKETSERIAL_PATH/src" \
-    -I"$AJSON_PATH/src" \
 )
 
 # Compile common sources to objects in parallel
@@ -148,6 +151,15 @@ TEST_FILES=(
     "${TEST_DIR}/test_fsm_mutual_auth.cpp"
     "${TEST_DIR}/test_arduino_100_coverage.cpp"
     "${TEST_DIR}/test_coverage_full.cpp"
+    "${TEST_DIR}/test_rpc_structs.cpp"
+    "${TEST_DIR}/test_surgical_coverage.cpp"
+    "${TEST_DIR}/test_arduino_harden.cpp"
+    "${TEST_DIR}/test_arduino_crypto_harden.cpp"
+    "${TEST_DIR}/test_arduino_stress.cpp"
+    "${TEST_DIR}/test_rle.cpp"
+    "${TEST_DIR}/test_coverage_hardened.cpp"
+    "${TEST_DIR}/test_bridge_edge_paths.cpp"
+    "${TEST_DIR}/test_hal_weak_defaults.cpp"
 )
 
 # Compile and run test suites in parallel

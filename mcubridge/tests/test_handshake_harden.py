@@ -11,7 +11,7 @@ from mcubridge.services.handshake import SerialHandshakeManager, SerialHandshake
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.state.context import create_runtime_state, RuntimeState
 from mcubridge.protocol.protocol import Command, Status
-from mcubridge.protocol.structures import LinkSyncPacket
+from mcubridge.protocol import mcubridge_pb2 as pb
 
 
 @pytest.fixture
@@ -59,7 +59,7 @@ async def test_handshake_auth_mismatch(
 
     # Simulate MCU response with WRONG tag
     bad_tag = b"F" * 16
-    payload = LinkSyncPacket(nonce=nonce, tag=bad_tag).encode()
+    payload = pb.LinkSync(nonce=nonce, tag=bad_tag).SerializeToString()
 
     result = await manager.handle_link_sync_resp(1, payload)
     assert result is False

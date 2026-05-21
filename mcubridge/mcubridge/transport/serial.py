@@ -44,8 +44,8 @@ from mcubridge.protocol.protocol import (
     expected_responses,
     response_to_request,
 )
+from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol.structures import (
-    AckPacket,
     PendingCommand,
 )
 from mcubridge.security.security import (
@@ -268,8 +268,12 @@ class SerialTransport:
         if command_id == Status.ACK.value:
             ack_target = pending.command_id
             if payload:
-                with contextlib.suppress(msgspec.DecodeError, msgspec.ValidationError, TypeError, ValueError):
-                    ack_target = AckPacket.decode(payload).command_id
+                try:
+                    ack_pkt = pb.AckPacket()
+                    ack_pkt.ParseFromString(payload)
+                    ack_target = ack_pkt.command_id
+                except Exception:
+                    pass
             if ack_target != pending.command_id:
                 return
             if not pending.ack_received:
@@ -281,10 +285,16 @@ class SerialTransport:
             pending.mark_success(payload)
             return
         if command_id in SERIAL_FAILURE_STATUS_CODES:
+            ack_cmd_id = -1
+            if payload and payload.startswith(b"\x91"):
+                try:
+                    ack_pkt = pb.AckPacket()
+                    ack_pkt.ParseFromString(payload)
+                    ack_cmd_id = ack_pkt.command_id
+                except Exception:
+                    pass
             reject = not payload or (
-                not payload.isascii()
-                if not payload.startswith(b"\x91")
-                else AckPacket.decode(payload).command_id == pending.command_id
+                not payload.isascii() if not payload.startswith(b"\x91") else ack_cmd_id == pending.command_id
             )
             if reject:
                 pending.mark_failure(command_id)
@@ -462,9 +472,7 @@ class SerialTransport:
         return True
 
     async def _negotiate_baudrate(self, target_baud: int) -> bool:
-        from mcubridge.protocol.structures import SetBaudratePacket
-
-        payload = SetBaudratePacket(baudrate=target_baud).encode()
+        payload = pb.SetBaudratePacket(baudrate=target_baud).SerializeToString()
         self._negotiating = True
         try:
             self._negotiation_future = self.loop.create_future() if self.loop else None
@@ -481,4 +489,4 @@ class SerialTransport:
             self._negotiating = False
 
     async def acknowledge(self, command_id: int, seq_id: int, *, status: Status = Status.ACK) -> None:
-        await self._send_raw(status.value, AckPacket(command_id=command_id).encode(), seq_id)
+        await self._send_raw(status.value, pb.AckPacket(command_id=command_id).SerializeToString(), seq_id)

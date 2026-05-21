@@ -12,25 +12,10 @@ import pytest_asyncio
 from aiomqtt.message import Message
 
 from mcubridge.config.settings import RuntimeConfig
+from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.protocol.structures import (
-    AckPacket,
     AllowedCommandPolicy,
-    AnalogReadResponsePacket,
-    ConsoleWritePacket,
-    DatastoreGetPacket,
-    DatastorePutPacket,
-    DigitalReadResponsePacket,
-    FileReadPacket,
-    FileReadResponsePacket,
-    FileRemovePacket,
-    FileWritePacket,
-    MailboxPushPacket,
-    PinReadPacket,
-    ProcessKillPacket,
-    ProcessPollPacket,
-    ProcessRunAsyncPacket,
-    SpiTransferResponsePacket,
 )
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState
@@ -63,26 +48,26 @@ async def test_runtime_brute_force_handlers(
     handlers: list[tuple[int, int, bytes]] = [
         (Command.CMD_XON.value, 1, b""),
         (Command.CMD_XOFF.value, 1, b""),
-        (Status.ACK.value, 1, AckPacket(command_id=1).encode()),
+        (Status.ACK.value, 1, pb.AckPacket(command_id=1).SerializeToString()),
         (
             Command.CMD_CONSOLE_WRITE.value,
             1,
-            ConsoleWritePacket(data=b"test").encode(),
+            pb.ConsoleWrite(data=b"test").SerializeToString(),
         ),
         (
             Command.CMD_DATASTORE_PUT.value,
             1,
-            DatastorePutPacket(key="k", value=b"v").encode(),
+            pb.DatastorePut(key="k", value=b"v").SerializeToString(),
         ),
         (
             Command.CMD_DATASTORE_GET.value,
             1,
-            DatastoreGetPacket(key="k").encode(),
+            pb.DatastoreGet(key="k").SerializeToString(),
         ),
         (
             Command.CMD_MAILBOX_PUSH.value,
             1,
-            MailboxPushPacket(data=b"m").encode(),
+            pb.MailboxPush(data=b"m").SerializeToString(),
         ),
         (Command.CMD_MAILBOX_READ.value, 1, b""),
         (Command.CMD_MAILBOX_AVAILABLE.value, 1, b""),
@@ -94,62 +79,62 @@ async def test_runtime_brute_force_handlers(
         (
             Command.CMD_FILE_WRITE.value,
             1,
-            FileWritePacket(path="f", data=b"").encode(),
+            pb.FileWrite(path="f", data=b"").SerializeToString(),
         ),
         (
             Command.CMD_FILE_READ.value,
             1,
-            FileReadPacket(path="f").encode(),
+            pb.FileRead(path="f").SerializeToString(),
         ),
         (
             Command.CMD_FILE_REMOVE.value,
             1,
-            FileRemovePacket(path="f").encode(),
+            pb.FileRemove(path="f").SerializeToString(),
         ),
         (
             Command.CMD_FILE_READ_RESP.value,
             1,
-            FileReadResponsePacket(content=b"abc").encode(),
+            pb.FileReadResponse(content=b"abc").SerializeToString(),
         ),
         (
             Command.CMD_PROCESS_RUN_ASYNC.value,
             1,
-            ProcessRunAsyncPacket(command="ls").encode(),
+            pb.ProcessRunAsync(command="ls").SerializeToString(),
         ),
         (
             Command.CMD_PROCESS_POLL.value,
             1,
-            ProcessPollPacket(pid=1).encode(),
+            pb.ProcessPoll(pid=1).SerializeToString(),
         ),
         (
             Command.CMD_PROCESS_KILL.value,
             1,
-            ProcessKillPacket(pid=1).encode(),
+            pb.ProcessKill(pid=1).SerializeToString(),
         ),
         (
             Command.CMD_DIGITAL_READ.value,
             1,
-            PinReadPacket(pin=1).encode(),
+            pb.PinRead(pin=1).SerializeToString(),
         ),
         (
             Command.CMD_ANALOG_READ.value,
             1,
-            PinReadPacket(pin=1).encode(),
+            pb.PinRead(pin=1).SerializeToString(),
         ),
         (
             Command.CMD_DIGITAL_READ_RESP.value,
             1,
-            DigitalReadResponsePacket(value=1).encode(),
+            pb.DigitalReadResponse(value=1).SerializeToString(),
         ),
         (
             Command.CMD_ANALOG_READ_RESP.value,
             1,
-            AnalogReadResponsePacket(value=1).encode(),
+            pb.AnalogReadResponse(value=1).SerializeToString(),
         ),
         (
             Command.CMD_SPI_TRANSFER_RESP.value,
             1,
-            SpiTransferResponsePacket(data=b"r").encode(),
+            pb.SpiTransferResponse(data=b"r").SerializeToString(),
         ),
     ]
 
@@ -185,8 +170,8 @@ async def test_runtime_mqtt_brute_force(
 
             async def complete_file_read() -> None:
                 file_read_handler = service.mcu_registry[Command.CMD_FILE_READ_RESP.value]
-                await file_read_handler(1, FileReadResponsePacket(content=b"abc").encode())
-                await file_read_handler(1, FileReadResponsePacket(content=b"").encode())
+                await file_read_handler(1, pb.FileReadResponse(content=b"abc").SerializeToString())
+                await file_read_handler(1, pb.FileReadResponse(content=b"").SerializeToString())
 
             asyncio.get_running_loop().create_task(complete_file_read())
         return True

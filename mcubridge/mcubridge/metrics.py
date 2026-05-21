@@ -13,13 +13,13 @@ from typing import (
 )
 from wsgiref.types import WSGIApplication
 
+import json
 import msgspec
 from prometheus_client.core import Metric
 from prometheus_client.registry import Collector
 import structlog
 
-from .protocol import structures
-from .protocol.structures import PROTOBUF_CONTENT_TYPE, QueuedPublish
+from .protocol.structures import JSON_CONTENT_TYPE, QueuedPublish
 from .protocol.topics import Topic, topic_path
 from .state.context import RuntimeState
 
@@ -42,8 +42,8 @@ def _build_metrics_message(
     )
     message = QueuedPublish(
         topic_name=topic,
-        payload=structures.encode_structured_payload(snapshot),
-        content_type=PROTOBUF_CONTENT_TYPE,
+        payload=json.dumps(snapshot).encode("utf-8"),
+        content_type=JSON_CONTENT_TYPE,
         message_expiry_interval=int(expiry_seconds),
         user_properties=(),
     )
@@ -394,8 +394,8 @@ def _build_bridge_snapshot_message(
     )
     return QueuedPublish(
         topic_name=topic,
-        payload=structures.encode_structured_payload(snapshot),
-        content_type=PROTOBUF_CONTENT_TYPE,
+        payload=json.dumps(snapshot).encode("utf-8"),
+        content_type=JSON_CONTENT_TYPE,
         message_expiry_interval=_BRIDGE_SNAPSHOT_EXPIRY_SECONDS,
         user_properties=(("bridge-snapshot", flavor),),
     )

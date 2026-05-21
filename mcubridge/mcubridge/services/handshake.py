@@ -10,6 +10,7 @@ This module implements secure handshake with:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import secrets
 import structlog
@@ -29,13 +30,10 @@ from ..config.const import (
     SERIAL_HANDSHAKE_BACKOFF_MAX,
 )
 from ..config.settings import RuntimeConfig
+from ..protocol import mcubridge_pb2 as pb
 from ..protocol import protocol, structures
 from ..protocol.protocol import Command, Status
 from ..protocol.structures import (
-    CapabilitiesPacket,
-    HandshakeConfigPacket,
-    LinkSyncPacket,
-    PROTOBUF_CONTENT_TYPE,
     QueuedPublish,
     SerialTimingWindow,
 )
@@ -121,11 +119,11 @@ class SerialHandshakeManager:
         self._logger = logger_ or logger
         self._fatal_threshold = max(1, config.serial_handshake_fatal_failures)
         # [SIL-2] Serialize handshake timing as protobuf.
-        self._reset_payload = HandshakeConfigPacket(
+        self._reset_payload = pb.HandshakeConfig(
             ack_timeout_ms=self._timing.ack_timeout_ms,
             ack_retry_limit=self._timing.retry_limit,
             response_timeout_ms=self._timing.response_timeout_ms,
-        ).encode()
+        ).SerializeToString()
         self._capabilities_future: asyncio.Future[bytes] | None = None
         self.fsm_state = self.STATE_UNSYNCHRONIZED
 
@@ -181,11 +179,13 @@ class SerialHandshakeManager:
         self._state.link_sync_event.clear()
 
         # [MIL-SPEC] Generate random nonce for session derivation
-        nonce = secrets.token_bytes(protocol.HANDSHAKE_NONCE_LENGTH)
+        nonce_bytes = secrets.token_bytes(protocol.HANDSHAKE_NONCE_LENGTH)
+        nonce = bytearray(nonce_bytes)
 
         self._state.link_handshake_nonce = nonce
         self._state.link_nonce_length = protocol.HANDSHAKE_NONCE_LENGTH
-        self._state.link_expected_tag = self.calculate_handshake_tag(self._config.serial_shared_secret, nonce)
+        tag_bytes = self.calculate_handshake_tag(self._config.serial_shared_secret, nonce_bytes)
+        self._state.link_expected_tag = bytearray(tag_bytes)
 
         reset_ok = await self._send_frame(
             Command.CMD_LINK_RESET.value,
@@ -205,9 +205,9 @@ class SerialHandshakeManager:
         await asyncio.sleep(0.05)
 
         # [MIL-SPEC] Send LINK_SYNC with mutual authentication tag
-        our_tag = self.calculate_handshake_tag(self._config.serial_shared_secret, nonce)
+        our_tag = self.calculate_handshake_tag(self._config.serial_shared_secret, bytes(nonce))
         # [SIL-2] Serialize LINK_SYNC as protobuf.
-        sync_payload = LinkSyncPacket(nonce=nonce, tag=our_tag).encode()
+        sync_payload = pb.LinkSync(nonce=bytes(nonce), tag=our_tag).SerializeToString()
         sync_ok = await self._send_frame(Command.CMD_LINK_SYNC.value, sync_payload)
         if not sync_ok:
             self.clear_handshake_expectations()
@@ -272,7 +272,8 @@ class SerialHandshakeManager:
 
         try:
             # [SIL-2] Decode LINK_SYNC_RESP as protobuf.
-            sync_pkt = LinkSyncPacket.decode(payload)
+            sync_pkt = pb.LinkSync()
+            sync_pkt.ParseFromString(payload)
             nonce = bytes(sync_pkt.nonce)
             tag_bytes = bytes(sync_pkt.tag)
         except (ProtobufDecodeError, ValueError, TypeError):
@@ -292,7 +293,7 @@ class SerialHandshakeManager:
         expected_tag = self._state.link_expected_tag
         recalculated_tag = self.calculate_handshake_tag(self._config.serial_shared_secret, nonce)
 
-        nonce_mismatch = not bytes_eq(nonce, expected)
+        nonce_mismatch = not bytes_eq(nonce, bytes(expected))
         missing_expected_tag = expected_tag is None
         bad_tag_length = len(tag_bytes) != protocol.AEAD_TAG_SIZE
         tag_mismatch = (
@@ -394,13 +395,18 @@ class SerialHandshakeManager:
     def _parse_capabilities(self, payload: bytes) -> None:
         try:
             # [SIL-2] Decode capabilities as protobuf.
-            cap = CapabilitiesPacket.decode(payload)
+            cap = pb.Capabilities()
+            cap.ParseFromString(payload)
+            from ..protocol.structures import _int_to_capabilities, CapabilitiesFeatures
+
+            feat_dict = _int_to_capabilities(cap.feat)
+            features = msgspec.convert(feat_dict, CapabilitiesFeatures)
             self._state.mcu_capabilities = McuCapabilities(
                 protocol_version=cap.ver,
                 board_arch=cap.arch,
                 num_digital_pins=cap.dig,
                 num_analog_inputs=cap.ana,
-                features=cap.features,
+                features=features,
             )
             self._logger.info("MCU Capabilities: %s", self._state.mcu_capabilities)
         except (ProtobufDecodeError, ValueError, TypeError, KeyError) as exc:
@@ -486,11 +492,9 @@ class SerialHandshakeManager:
 
     def clear_handshake_expectations(self) -> None:
         if self._state.link_handshake_nonce is not None:
-            nonce_buf = bytearray(self._state.link_handshake_nonce)
-            secure_zero(nonce_buf)
+            secure_zero(self._state.link_handshake_nonce)
         if self._state.link_expected_tag is not None:
-            tag_buf = bytearray(self._state.link_expected_tag)
-            secure_zero(tag_buf)
+            secure_zero(self._state.link_expected_tag)
 
         self._state.link_handshake_nonce = None
         self._state.link_expected_tag = None
@@ -529,8 +533,8 @@ class SerialHandshakeManager:
             payload |= extra
         message = QueuedPublish(
             topic_name=topic_path(self._state.mqtt_topic_prefix, Topic.SYSTEM, "handshake"),
-            payload=structures.encode_structured_payload(payload),
-            content_type=PROTOBUF_CONTENT_TYPE,
+            payload=json.dumps(payload).encode("utf-8"),
+            content_type=structures.JSON_CONTENT_TYPE,
             user_properties=(("bridge-event", "handshake"),),
         )
         await self._enqueue_mqtt(message)

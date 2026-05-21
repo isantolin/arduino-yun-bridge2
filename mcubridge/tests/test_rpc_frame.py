@@ -11,27 +11,27 @@ def test_build_and_parse_round_trip() -> None:
     # New AEAD Frame: Header(7) + Nonce(12) + Payload + Tag(16) + CRC(4) = 39 + len
     assert len(raw) == 39 + len(payload)
 
-    parsed_command, parsed_seq, parsed_payload, _, _ = Frame.parse(raw)
-    assert parsed_command == TEST_CMD_ID
-    assert parsed_seq == 0
-    assert parsed_payload == payload
+    parsed = Frame.parse(raw)
+    assert parsed.command_id == TEST_CMD_ID
+    assert parsed.sequence_id == 0
+    assert parsed.payload == payload
 
 
 def test_empty_payload_round_trip() -> None:
     raw = Frame(command_id=TEST_CMD_ID, sequence_id=0, payload=b"").build()
-    parsed_command, parsed_seq, parsed_payload, _, _ = Frame.parse(raw)
-    assert parsed_command == TEST_CMD_ID
-    assert parsed_seq == 0
-    assert parsed_payload == b""
+    parsed = Frame.parse(raw)
+    assert parsed.command_id == TEST_CMD_ID
+    assert parsed.sequence_id == 0
+    assert parsed.payload == b""
 
 
 def test_max_payload_round_trip() -> None:
     payload = b"p" * protocol.MAX_PAYLOAD_SIZE
     raw = Frame(command_id=TEST_CMD_ID, sequence_id=0, payload=payload).build()
-    parsed_command, parsed_seq, parsed_payload, _, _ = Frame.parse(raw)
-    assert parsed_command == TEST_CMD_ID
-    assert parsed_seq == 0
-    assert parsed_payload == payload
+    parsed = Frame.parse(raw)
+    assert parsed.command_id == TEST_CMD_ID
+    assert parsed.sequence_id == 0
+    assert parsed.payload == payload
 
 
 def test_frame_object_round_trip() -> None:

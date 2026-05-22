@@ -133,7 +133,6 @@ else
     install_dependency "Embedded_Template_Library" "https://codeload.github.com/ETLCPP/etl/zip/refs/tags/20.47.1" "include/etl/algorithm.h" "" "$LIB_DIR"
     install_dependency "wolfSSL" "https://codeload.github.com/wolfSSL/wolfssl/zip/refs/tags/v5.9.1-stable" "wolfssl/wolfcrypt/settings.h" "" "$LIB_DIR"
     install_dependency "PacketSerial" "https://codeload.github.com/isantolin/PacketSerial2/zip/refs/heads/master" "PacketSerial.h" "" "$LIB_DIR"
-    install_dependency "ArduinoJson" "https://codeload.github.com/bblanchon/ArduinoJson/zip/refs/tags/v7.4.3" "ArduinoJson.h" "" "$LIB_DIR"
 fi
 
 # Unity test framework (host tests only)

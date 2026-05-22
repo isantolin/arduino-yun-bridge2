@@ -34,11 +34,12 @@ for dep in REQUIRED_DEPS:
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 # Check for protoc binary (check local project bin first)
-PROTOC_BIN = (REPO_ROOT / "bin" / "protoc").resolve()
-if not PROTOC_BIN.exists():
-    PROTOC_BIN = Path("protoc")
+# Use lowercase to avoid Pyright constant redefinition error
+protoc_bin = (REPO_ROOT / "bin" / "protoc").resolve()
+if not protoc_bin.exists():
+    protoc_bin = Path("protoc")
 
-HAS_PROTOC = subprocess.run([str(PROTOC_BIN), "--version"], capture_output=True).returncode == 0
+HAS_PROTOC = subprocess.run([str(protoc_bin), "--version"], capture_output=True, check=False).returncode == 0
 
 if MISSING_DEPS or not HAS_PROTOC:
     sys.stderr.write("\n" + "!" * 80 + "\n")
@@ -60,13 +61,7 @@ if MISSING_DEPS or not HAS_PROTOC:
 if TYPE_CHECKING:
     from mcubridge.protocol.spec_model import ProtocolSpec
 else:
-    _SPEC_MODEL_PATH = (
-        REPO_ROOT
-        / "mcubridge"
-        / "mcubridge"
-        / "protocol"
-        / "spec_model.py"  # noqa: W503
-    )
+    _SPEC_MODEL_PATH = REPO_ROOT / "mcubridge" / "mcubridge" / "protocol" / "spec_model.py"  # noqa: W503
     _loader_spec = importlib.util.spec_from_file_location("spec_model", str(_SPEC_MODEL_PATH))
     assert _loader_spec is not None and _loader_spec.loader is not None
     _spec_mod = importlib.util.module_from_spec(_loader_spec)
@@ -1110,7 +1105,7 @@ class JinjaGenerator:
     def generate_python_pb2(self, proto_path: Path, out_dir: Path) -> None:
         """Invoke protoc to generate Python pb2 module and typing stub."""
         cmd = [
-            str(PROTOC_BIN),
+            str(protoc_bin),
             f"--python_out={out_dir}",
             f"--pyi_out={out_dir}",
             f"--proto_path={proto_path.parent}",

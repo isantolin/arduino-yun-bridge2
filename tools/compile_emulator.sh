@@ -27,18 +27,7 @@ WOLFSSL_PATH="$ARDUINO_LIBS/wolfSSL"
 PACKETSERIAL_PATH="$ARDUINO_LIBS/PacketSerial"
 
 # Use the python from the current environment (e.g. tox virtualenv)
-PYTHON_CMD=$(command -v python || command -v python3)
-PROTO_VENV_DIR="${ROOT_DIR}/.tmp_tests/protocol-gen-venv"
-GEN_PYTHON="${PYTHON_CMD}"
-
-if ! "${GEN_PYTHON}" -c 'import grpc_tools.protoc, nanopb' >/dev/null 2>&1; then
-    echo "[emulator] Bootstrapping protocol generation venv..."
-    if [ ! -x "${PROTO_VENV_DIR}/bin/python" ]; then
-        "${PYTHON_CMD}" -m venv "${PROTO_VENV_DIR}"
-        "${PROTO_VENV_DIR}/bin/python" -m pip install --quiet -r "${ROOT_DIR}/requirements/runtime.txt" black nanopb grpcio-tools
-    fi
-    GEN_PYTHON="${PROTO_VENV_DIR}/bin/python"
-fi
+GEN_PYTHON=$(command -v python || command -v python3)
 
 echo "[emulator] Verifying library paths..."
 ls -la "${PACKETSERIAL_PATH}" || echo "PACKETSERIAL_PATH not found"

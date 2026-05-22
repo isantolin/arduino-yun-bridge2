@@ -33,5 +33,6 @@
   "flake8.path": [
     "${workspaceFolder}/.tox/py313/bin/flake8"
   ],
-  "python.analysis.languageServerMode": "full"
+  "python.analysis.languageServerMode": "full",
+  "python-envs.defaultEnvManager": "ms-python.python:system"
 }

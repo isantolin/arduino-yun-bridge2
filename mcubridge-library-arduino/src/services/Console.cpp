@@ -16,8 +16,8 @@ void ConsoleClass::begin() {
 void ConsoleClass::_push(const rpc::payload::ConsoleWrite& msg) {
   const auto& data = msg.pb_msg.data;
   const size_t to_write = etl::min(static_cast<size_t>(data.size), _rx_buffer.available());
-  if (to_write > 0) {
-    _rx_buffer.insert(_rx_buffer.end(), data.bytes, data.bytes + to_write);
+  for (size_t i = 0; i < to_write; ++i) {
+    _rx_buffer.push(data.bytes[i]);
   }
 }
 

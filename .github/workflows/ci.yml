@@ -27,6 +27,15 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
+      - name: Install protoc
+        run: |
+          PROTOC_VERSION=29.3
+          PROTOC_ZIP=protoc-${PROTOC_VERSION}-linux-x86_64.zip
+          curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${PROTOC_ZIP}
+          sudo unzip -o ${PROTOC_ZIP} -d /usr/local bin/protoc
+          sudo unzip -o ${PROTOC_ZIP} -d /usr/local 'include/*'
+          rm -f ${PROTOC_ZIP}
+          protoc --version
       - uses: ./.github/actions/setup-python-tox
         with:
           install-system-deps: 'true'
@@ -55,6 +64,15 @@ jobs:
       ARDUINO_METRICS_DIR: arduino-logs
     steps:
       - uses: actions/checkout@v6
+      - name: Install protoc
+        run: |
+          PROTOC_VERSION=29.3
+          PROTOC_ZIP=protoc-${PROTOC_VERSION}-linux-x86_64.zip
+          curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${PROTOC_ZIP}
+          sudo unzip -o ${PROTOC_ZIP} -d /usr/local bin/protoc
+          sudo unzip -o ${PROTOC_ZIP} -d /usr/local 'include/*'
+          rm -f ${PROTOC_ZIP}
+          protoc --version
       - name: Setup Arduino CLI
         run: |
           curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
@@ -92,6 +110,15 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
+      - name: Install protoc
+        run: |
+          PROTOC_VERSION=29.3
+          PROTOC_ZIP=protoc-${PROTOC_VERSION}-linux-x86_64.zip
+          curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${PROTOC_ZIP}
+          sudo unzip -o ${PROTOC_ZIP} -d /usr/local bin/protoc
+          sudo unzip -o ${PROTOC_ZIP} -d /usr/local 'include/*'
+          rm -f ${PROTOC_ZIP}
+          protoc --version
       - uses: ./.github/actions/setup-python-tox
       - name: Install Build Tools
         run: |
@@ -163,6 +190,15 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@v6
+      - name: Install protoc
+        run: |
+          PROTOC_VERSION=29.3
+          PROTOC_ZIP=protoc-${PROTOC_VERSION}-linux-x86_64.zip
+          curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${PROTOC_ZIP}
+          sudo unzip -o ${PROTOC_ZIP} -d /usr/local bin/protoc
+          sudo unzip -o ${PROTOC_ZIP} -d /usr/local 'include/*'
+          rm -f ${PROTOC_ZIP}
+          protoc --version
       - uses: ./.github/actions/setup-python-tox
       - name: Install Python Dependencies
         run: pip install -r requirements/runtime.txt
@@ -189,6 +225,15 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
+      - name: Install protoc
+        run: |
+          PROTOC_VERSION=29.3
+          PROTOC_ZIP=protoc-${PROTOC_VERSION}-linux-x86_64.zip
+          curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${PROTOC_ZIP}
+          sudo unzip -o ${PROTOC_ZIP} -d /usr/local bin/protoc
+          sudo unzip -o ${PROTOC_ZIP} -d /usr/local 'include/*'
+          rm -f ${PROTOC_ZIP}
+          protoc --version
       - uses: ./.github/actions/setup-python-tox
       - name: Install Emulation Tools
         run: |
@@ -208,6 +253,15 @@ jobs:
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@v6
+      - name: Install protoc
+        run: |
+          PROTOC_VERSION=29.3
+          PROTOC_ZIP=protoc-${PROTOC_VERSION}-linux-x86_64.zip
+          curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${PROTOC_ZIP}
+          sudo unzip -o ${PROTOC_ZIP} -d /usr/local bin/protoc
+          sudo unzip -o ${PROTOC_ZIP} -d /usr/local 'include/*'
+          rm -f ${PROTOC_ZIP}
+          protoc --version
       - uses: ./.github/actions/setup-python-tox
 
       - name: Download Python Coverage

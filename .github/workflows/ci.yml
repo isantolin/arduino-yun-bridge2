@@ -40,7 +40,7 @@ jobs:
           install-system-deps: 'true'
       - name: Install System Dependencies
         run: |
-          sudo apt-get update && sudo apt-get install -y cppcheck luacheck unzip
+          sudo apt-get update && sudo apt-get install -y cppcheck lua-check unzip
       - name: Check for Hardcoded Secrets
         run: |
           echo "Checking for hardcoded secrets..."

@@ -19,14 +19,20 @@ env:
 
 jobs:
   # ═══════════════════════════════════════════════════════════════════════════
-  # STAGE 1: Fast Checks (parallel) - ~3min total
+  # STAGE 1: Fast Checks (Consolidated) - ~1min total
   # ═══════════════════════════════════════════════════════════════════════════
-  security-check:
-    name: Security Scan
+  static-analysis:
+    name: Static Analysis
     runs-on: ubuntu-24.04
-    timeout-minutes: 2
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
+      - uses: ./.github/actions/setup-python-tox
+        with:
+          install-system-deps: 'true'
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y cppcheck lua-check
       - name: Check for Hardcoded Secrets
         run: |
           echo "Checking for hardcoded secrets..."
@@ -37,73 +43,13 @@ jobs:
             exit 1
           fi
           echo "✅ No hardcoded secrets"
-
-  lint:
-    name: Lint
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v6
-      - uses: ./.github/actions/setup-python-tox
-        with:
-          install-system-deps: 'true'
-      - run: tox -e lint
-
-  cppcheck:
-    name: C++ Check
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v6
-      - uses: ./.github/actions/setup-python-tox
-      - name: Install Cppcheck
-        run: sudo apt-get update && sudo apt-get install -y cppcheck
-      - run: tox -e cppcheck
-
-  typecheck:
-    name: Type Check
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v6
-      - uses: ./.github/actions/setup-python-tox
-      - run: tox -e typecheck
-
-  deps-sync:
-    name: Deps Sync
-    runs-on: ubuntu-24.04
-    timeout-minutes: 3
-    steps:
-      - uses: actions/checkout@v6
-      - uses: ./.github/actions/setup-python-tox
-      - run: tox -e deps-sync
-
-  protocol-sync:
-    name: Protocol Sync
-    runs-on: ubuntu-24.04
-    timeout-minutes: 3
-    steps:
-      - uses: actions/checkout@v6
-      - uses: ./.github/actions/setup-python-tox
-      - run: tox -e protocol
-
-  lua-lint:
-    name: Lua Lint
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v6
-      - uses: ./.github/actions/setup-python-tox
-        with:
-          install-system-deps: 'true'
-      - name: Install Luacheck
-        run: sudo apt-get install -y lua-check
-      - run: tox -e lua
+      - name: Run Consolidated Checks
+        run: tox -e protocol,deps-sync,lua,cppcheck,typecheck,lint
 
   arduino-examples:
     name: Arduino Examples Compilation
     runs-on: ubuntu-24.04
-    needs: [lint, cppcheck]
+    needs: [static-analysis]
     timeout-minutes: 10
     env:
       ARDUINO_METRICS_DIR: arduino-logs
@@ -142,7 +88,7 @@ jobs:
   unified-tests:
     name: Unified Host Tests & Coverage
     runs-on: ubuntu-24.04
-    needs: [lint, typecheck, protocol-sync, deps-sync]
+    needs: [static-analysis]
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
@@ -179,7 +125,7 @@ jobs:
   arduino-emulation:
     name: Arduino Emulation (${{ matrix.name }})
     runs-on: ubuntu-24.04
-    needs: [lint, typecheck, protocol-sync]
+    needs: [static-analysis]
     strategy:
       fail-fast: false
       matrix:
@@ -239,7 +185,7 @@ jobs:
   protocol-fuzzing:
     name: Protocol Stress Test (Fuzzing)
     runs-on: ubuntu-24.04
-    needs: [lint, typecheck, protocol-sync]
+    needs: [static-analysis]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6

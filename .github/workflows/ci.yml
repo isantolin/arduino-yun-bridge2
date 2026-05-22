@@ -198,7 +198,7 @@ jobs:
           protoc --version
       - uses: ./.github/actions/setup-python-tox
       - name: Install Python Dependencies
-        run: pip install -r requirements/runtime.txt
+        run: pip install -r requirements/runtime.txt nanopb
       - name: Install Emulation Tools
         run: |
           sudo apt-get update

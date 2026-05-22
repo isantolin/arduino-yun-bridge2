@@ -15,6 +15,27 @@ void DataStoreClass::set(etl::string_view key, etl::span<const uint8_t> value) {
   (void)Bridge.send(rpc::CommandId::CMD_DATASTORE_PUT, 0, p);
 }
 
+void DataStoreClass::get(etl::string_view key, GetHandler handler) {
+  if (_pending_gets.full()) {
+    Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
+    return;
+  }
+
+  rpc::payload::DatastoreGet p;
+  rpc::payload::copy_to_pb_string(p.pb_msg.key, key);
+  if (!Bridge.send(rpc::CommandId::CMD_DATASTORE_GET, 0, p)) {
+    Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
+    return;
+  }
+
+  PendingGet pending = {};
+  const size_t to_copy = etl::min(key.length(), pending.key.size() - 1U);
+  etl::copy_n(key.data(), to_copy, pending.key.begin());
+  pending.key[to_copy] = '\0';
+  pending.handler = handler;
+  _pending_gets.push(pending);
+}
+
 void DataStoreClass::_onResponse(
     const rpc::payload::DatastoreGetResponse& msg) {
   if (_pending_gets.empty()) return;

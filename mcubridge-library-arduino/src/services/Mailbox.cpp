@@ -8,11 +8,9 @@
 
 namespace {
 
-#if 0
 void send_mailbox_command(rpc::CommandId command_id) {
   (void)Bridge.sendFrame(command_id);
 }
-#endif
 
 }  // namespace
 
@@ -22,6 +20,18 @@ void MailboxClass::push(etl::span<const uint8_t> data) {
   rpc::payload::MailboxPush p;
   rpc::payload::copy_to_pb_bytes(p.pb_msg.data, data.data(), data.size());
   (void)Bridge.send(rpc::CommandId::CMD_MAILBOX_PUSH, 0, p);
+}
+
+void MailboxClass::requestRead() {
+  send_mailbox_command(rpc::CommandId::CMD_MAILBOX_READ);
+}
+
+void MailboxClass::requestAvailable() {
+  send_mailbox_command(rpc::CommandId::CMD_MAILBOX_AVAILABLE);
+}
+
+void MailboxClass::signalProcessed() {
+  send_mailbox_command(rpc::CommandId::CMD_MAILBOX_PROCESSED);
 }
 
 void MailboxClass::_setIncomingData(etl::span<const uint8_t> data) {

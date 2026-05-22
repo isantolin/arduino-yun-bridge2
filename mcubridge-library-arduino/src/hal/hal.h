@@ -62,6 +62,7 @@ uint16_t getFreeMemory();
  * @param pin The pin number to validate.
  * @return true if valid, false otherwise.
  */
+bool isValidPin(uint8_t pin);
 
 /**
  * @brief Initialize hardware specific features (e.g. Watchdog).

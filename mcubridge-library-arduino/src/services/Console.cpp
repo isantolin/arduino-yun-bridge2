@@ -3,6 +3,7 @@
 #include <etl/algorithm.h>
 
 #include "Bridge.h"
+#include "etl_ext/CounterIterator.h"
 
 ConsoleClass::ConsoleClass() : _flags(0) {}
 
@@ -14,9 +15,10 @@ void ConsoleClass::begin() {
 
 void ConsoleClass::_push(const rpc::payload::ConsoleWrite& msg) {
   const auto& data = msg.pb_msg.data;
-  etl::for_each(data.bytes, data.bytes + data.size, [this](uint8_t b) {
-    if (!_rx_buffer.full()) _rx_buffer.push(b);
-  });
+  const size_t to_write = etl::min(static_cast<size_t>(data.size), _rx_buffer.available());
+  if (to_write > 0) {
+    _rx_buffer.insert(_rx_buffer.end(), data.bytes, data.bytes + to_write);
+  }
 }
 
 void ConsoleClass::process() {
@@ -41,15 +43,20 @@ size_t ConsoleClass::write(uint8_t c) {
 
 size_t ConsoleClass::write(const uint8_t* buffer, size_t size) {
   if (buffer == nullptr || size == 0) return 0;
-  etl::span<const uint8_t> data(buffer, size);
   size_t written = 0;
-  etl::for_each(data.begin(), data.end(), [this, &written](uint8_t b) {
-    if (_tx_buffer.full()) process();
-    if (!_tx_buffer.full()) {
-      _tx_buffer.push_back(b);
-      written++;
-    }
-  });
+  using bridge::etl_ext::CounterIterator;
+  const uint16_t max_chunks = static_cast<uint16_t>(size);
+  (void)etl::find_if(
+      CounterIterator<uint16_t>(0U),
+      CounterIterator<uint16_t>(max_chunks + 1U),
+      [&](uint16_t) {
+        if (_tx_buffer.full()) process();
+        if (_tx_buffer.full()) return true;
+        const size_t to_write = etl::min(size - written, _tx_buffer.available());
+        _tx_buffer.insert(_tx_buffer.end(), buffer + written, buffer + written + to_write);
+        written += to_write;
+        return written >= size;
+      });
   return written;
 }
 

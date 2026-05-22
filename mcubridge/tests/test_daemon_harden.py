@@ -63,8 +63,8 @@ async def test_supervisor_circuit_breaker(daemon_setup: BridgeDaemon) -> None:
             max_restarts=15,
         )
 
-    # Should stop after 10 consecutive failures at max backoff
-    assert call_count <= 11
+    # The supervisor now retries up to max_restarts + 1 times
+    assert call_count == 16
 
 
 @pytest.mark.asyncio

@@ -42,7 +42,9 @@ void forceSafeState();
 /**
  * @brief Portable memory fence to prevent compiler reordering in critical paths.
  */
-void memory_fence();
+inline __attribute__((always_inline)) void memory_fence() {
+  asm volatile("" ::: "memory");
+}
 
 /**
  * @brief Kick/reset the hardware watchdog timer.

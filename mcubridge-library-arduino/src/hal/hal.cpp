@@ -72,16 +72,6 @@ void forceSafeState() {
   }
 }
 
-void memory_fence() {
-  if constexpr (Traits::id == ArchId::ARCH_HOST) {
-    // Host fallback memory fence (no-op or simple volatile)
-    asm volatile("" ::: "memory");
-  } else {
-    // [SIL-2] Portable compiler barrier
-    asm volatile("" ::: "memory");
-  }
-}
-
 void watchdog_kick() {
   if constexpr (bridge::config::ENABLE_WATCHDOG) {
     if constexpr (Traits::id == ArchId::ARCH_AVR) {

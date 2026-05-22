@@ -40,8 +40,7 @@ void FileSystemClass::read(etl::string_view path,
                            FileSystemReadHandler handler) {
   _read_handler = handler;
   rpc::payload::FileRead p;
-  strncpy(p.pb_msg.path, path.data(), 64);
-  p.pb_msg.path[63] = '\0';
+  rpc::payload::copy_to_pb_string(p.pb_msg.path, path);
   if (!Bridge.send(rpc::CommandId::CMD_FILE_READ, 0, p)) {
     Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
   }

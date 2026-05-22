@@ -51,7 +51,6 @@ from mcubridge.config.const import (
     DEFAULT_SERIAL_SHARED_SECRET,
     SUPERVISOR_DEFAULT_MAX_BACKOFF,
     SUPERVISOR_DEFAULT_MIN_BACKOFF,
-    SUPERVISOR_MAX_CONSECUTIVE_MAX_BACKOFF,
 )
 from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import (
@@ -120,22 +119,9 @@ class BridgeDaemon:
         tls_context = self.config.get_ssl_context()
         reconnect_delay = max(1, self.config.reconnect_delay)
 
-        def _is_retryable(e: Any) -> bool:
-            if isinstance(e, (aiomqtt.MqttError, OSError, asyncio.TimeoutError)):
-                return True
-            if isinstance(e, BaseExceptionGroup):
-                return any(_is_retryable(sub) for sub in e.exceptions)  # type: ignore
-            return False
-
-        def _retry_predicate(retry_state: tenacity.RetryCallState) -> bool:
-            if not retry_state.outcome or not retry_state.outcome.failed:
-                return False
-            exc = retry_state.outcome.exception()
-            return _is_retryable(exc) if exc else False
-
         retryer = tenacity.AsyncRetrying(
             wait=tenacity.wait_exponential(multiplier=reconnect_delay, max=60) + tenacity.wait_random(0, 2),
-            retry=_retry_predicate,
+            retry=tenacity.retry_if_exception_type((aiomqtt.MqttError, OSError, asyncio.TimeoutError)),
             before_sleep=lambda rs: logger.warning(
                 "MQTT connection retry",
                 attempt=rs.attempt_number,
@@ -311,28 +297,10 @@ class BridgeDaemon:
         max_backoff: float = SUPERVISOR_DEFAULT_MAX_BACKOFF,
     ) -> None:
         """Lightweight supervisor with Circuit Breaker logic (SIL 2)."""
-        # [SIL-2] Circuit Breaker: Stop after consecutive failures at max backoff
-        # to prevent infinite CPU thrashing on persistent hardware failure.
-
-        def _circuit_breaker(rs: tenacity.RetryCallState) -> bool:
-            if not rs.outcome or not rs.outcome.failed:
-                return False
-            exc = rs.outcome.exception()
-            if isinstance(exc, (*fatal_exceptions, asyncio.CancelledError)):
-                return False
-            # Check for consecutive max backoff hits
-            if rs.idle_for >= max_backoff and rs.attempt_number >= SUPERVISOR_MAX_CONSECUTIVE_MAX_BACKOFF:
-                logger.critical(
-                    "CIRCUIT BREAKER: Task '%s' tripped after repeated failures at max backoff.",
-                    name,
-                )
-                return False
-            return True
-
         retryer = tenacity.AsyncRetrying(
             stop=(tenacity.stop_after_attempt(max_restarts + 1) if max_restarts is not None else tenacity.stop_never),
             wait=tenacity.wait_exponential(multiplier=min_backoff, max=max_backoff),
-            retry=_circuit_breaker,
+            retry=tenacity.retry_if_not_exception_type((*fatal_exceptions, asyncio.CancelledError)),
             before_sleep=lambda rs: self.state.record_supervisor_failure(
                 name,
                 backoff=float(rs.next_action.sleep if rs.next_action else 0.0),

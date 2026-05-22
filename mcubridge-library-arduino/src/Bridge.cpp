@@ -360,6 +360,13 @@ void BridgeClass::_sendRawFrame(uint16_t command_id, uint16_t sequence_id,
   etl::array<uint8_t, rpc::MAX_FRAME_SIZE> buffer;
   size_t len = rpc::FrameParser::serialize(f, buffer);
 
+#if defined(BRIDGE_HOST_TEST) && defined(BRIDGE_FAULT_INJECTION)
+  if (bridge::test::fault::consume(
+          bridge::test::fault::FaultPoint::BRIDGE_SERIALIZE_ZERO)) {
+    len = 0;
+  }
+#endif
+
   if (len > 0)
     _packet_serial.send(_stream, etl::span<const uint8_t>(buffer.data(), len));
 }

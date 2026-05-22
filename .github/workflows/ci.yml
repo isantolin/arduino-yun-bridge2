@@ -290,7 +290,8 @@ jobs:
 
       - name: Generate Coverage Summary
         run: |
-          pip install -r requirements/runtime.txt rich nanopb protobuf
+          python -m pip install --upgrade pip setuptools
+          pip install -r requirements/runtime.txt rich
           python tools/coverage_report.py \
             --output-markdown coverage/coverage-summary.md \
             --output-json coverage/coverage-summary.json \
@@ -312,6 +313,8 @@ jobs:
           PYTHONPATH: mcubridge:mcubridge-client-examples:typings
         run: |
           # 1. Mandatory Protocol Generation (Required for imports)
+          # Use tox to ensure we have all generator deps, but we need them in this env too
+          pip install jinja2 nanopb
           python tools/protocol/generate.py \
             --spec tools/protocol/spec.toml \
             --py mcubridge/mcubridge/protocol/protocol.py \

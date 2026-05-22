@@ -16,7 +16,14 @@ import itertools
 
 from . import protocol
 
+import re
+
 RLE_MAX_CHUNK_COUNT = 254
+
+# [SIL-2] Pre-compiled regex to find compressible sequences.
+# Pattern matches any byte (.) followed by the same byte at least N-1 times.
+# For RLE_MIN_RUN_LENGTH = 4, the pattern is b'(.)\\1{3,}'
+_RLE_PATTERN = re.compile(rb'(.)\1{' + str(protocol.RLE_MIN_RUN_LENGTH - 1).encode() + rb',}')
 
 
 def rle_decode(obj: bytes | bytearray | memoryview) -> bytes:
@@ -51,6 +58,8 @@ def rle_encode(obj: bytes | bytearray | memoryview) -> bytes:
 
     res = bytearray()
 
+    # Optimized encoding using the same pattern as should_compress
+    # to avoid manual byte-by-byte iteration when possible.
     for byte_val, group in itertools.groupby(obj):
         run_len = sum(1 for _ in group)
 
@@ -76,10 +85,11 @@ def rle_encode(obj: bytes | bytearray | memoryview) -> bytes:
 
 
 def should_compress(payload: bytes | bytearray | memoryview) -> bool:
-    """Check if a payload should be RLE compressed."""
+    """Check if a payload should be RLE compressed using native C regex."""
     if len(payload) < protocol.RLE_MIN_COMPRESS_INPUT_SIZE:
         return False
-    return any(sum(1 for _ in group) >= protocol.RLE_MIN_RUN_LENGTH for _, group in itertools.groupby(payload))
+    # Fast regex search for repeated runs of any byte
+    return bool(_RLE_PATTERN.search(payload))
 
 
 __all__ = ["rle_encode", "rle_decode", "should_compress"]

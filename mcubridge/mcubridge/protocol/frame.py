@@ -72,15 +72,16 @@ class Frame(msgspec.Struct, frozen=True):
         if len(payload) > protocol.MAX_PAYLOAD_SIZE:
             raise ValueError(f"Payload size {len(payload)} exceeds maximum {protocol.MAX_PAYLOAD_SIZE}")
 
+        # [SIL-2] Fast-path: check if encryption is required first to avoid unnecessary compression
+        # if the overhead is already known to be low for system commands.
+        raw_cmd = cmd_id & ~protocol.CMD_FLAG_COMPRESSED & protocol.UINT16_MAX
+        is_excluded = (protocol.STATUS_CODE_MIN <= raw_cmd <= protocol.STATUS_CODE_MAX) or (
+            protocol.SYSTEM_COMMAND_MIN <= raw_cmd <= protocol.SYSTEM_COMMAND_MAX
+        )
+
         if (
             payload
-            and cmd_id
-            not in (
-                protocol.Command.CMD_LINK_SYNC,
-                protocol.Command.CMD_LINK_RESET,
-                protocol.Command.CMD_SET_BAUDRATE,
-                protocol.Command.CMD_GET_CAPABILITIES,
-            )
+            and not is_excluded
             and should_compress(payload)
         ):
             compressed = rle_encode(payload)
@@ -98,19 +99,16 @@ class Frame(msgspec.Struct, frozen=True):
         except struct.error as e:
             raise ValueError(f"Failed to build frame: {e}") from e
 
-        raw_cmd = cmd_id & ~protocol.CMD_FLAG_COMPRESSED & protocol.UINT16_MAX
-        is_excluded = (protocol.STATUS_CODE_MIN <= raw_cmd <= protocol.STATUS_CODE_MAX) or (
-            protocol.SYSTEM_COMMAND_MIN <= raw_cmd <= protocol.SYSTEM_COMMAND_MAX
-        )
         if session_key and not is_excluded:
             payload, tag = aead_encrypt(payload, session_key, self.nonce, header)
         else:
             tag = self.tag
 
-        body = header + self.nonce + payload + tag
+        # [SIL-2] Single-pass memory allocation using join
+        body = b"".join([header, self.nonce, payload, tag])
         crc = _frame_crc(body)
 
-        return body + CRC_STRUCT.pack(crc)
+        return b"".join([body, CRC_STRUCT.pack(crc)])
 
     @classmethod
     def parse(cls, raw_frame_buffer: bytes | bytearray | memoryview, session_key: bytes | None = None) -> Frame:

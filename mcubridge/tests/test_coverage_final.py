@@ -17,6 +17,7 @@ from mcubridge.config.settings import RuntimeConfig
 from mcubridge.policy import tokenize_shell_command, CommandValidationError
 from mcubridge.security.security import (
     secure_zero,
+    secure_zero_bytes_copy,
     generate_nonce_with_counter,
     extract_nonce_counter,
     validate_nonce_counter,
@@ -125,6 +126,9 @@ def test_security_primitives_coverage() -> None:
     mv = memoryview(bytearray(b"sensitive"))
     secure_zero(mv)
     assert mv == bytearray(len(b"sensitive"))
+
+    # secure_zero_bytes_copy
+    assert secure_zero_bytes_copy(b"abc") == b"\x00\x00\x00"
 
     # Nonce functions
     nonce, next_c = generate_nonce_with_counter(10)

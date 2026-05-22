@@ -7,12 +7,14 @@ from .security import (
     extract_nonce_counter,
     generate_nonce_with_counter,
     secure_zero,
+    secure_zero_bytes_copy,
     validate_nonce_counter,
     verify_crypto_integrity,
 )
 
 __all__ = [
     "secure_zero",
+    "secure_zero_bytes_copy",
     "generate_nonce_with_counter",
     "extract_nonce_counter",
     "validate_nonce_counter",

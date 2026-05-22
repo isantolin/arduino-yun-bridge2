@@ -1,0 +1,29 @@
+# --- BEGIN GENERATED PACKETS --- DO NOT EDIT (auto-generated from spec.toml)
+{% for packet in packets %}
+
+class {{ packet.class_name }}:
+    PROTO_CLASS: Any = pb.{{ packet.proto_name }}
+    _msg: Any
+    {% for field in packet.fields %}
+    {{ field.name }}: {{ field.python_type }}
+    {% endfor %}
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> {{ packet.class_name }}:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return self._msg.SerializeToString() # type: ignore
+
+{% endfor %}
+# --- END GENERATED PACKETS ---

@@ -14,8 +14,7 @@ The frame format is strictly defined to ensure:
 from __future__ import annotations
 
 import struct
-from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
-from cryptography.exceptions import InvalidTag
+from mcubridge.security.security import aead_encrypt, aead_decrypt
 from binascii import crc32
 
 import msgspec
@@ -46,6 +45,14 @@ class Frame(msgspec.Struct, frozen=True):
     nonce: bytes = b"\x00" * _NONCE_SIZE
     tag: bytes = b"\x00" * _TAG_SIZE
     header_bytes: bytes | None = None
+
+    def __iter__(self):
+        """Allow unpacking: cmd, seq, payload = frame."""
+        yield self.command_id
+        yield self.sequence_id
+        yield self.payload
+        yield self.nonce
+        yield self.tag
 
     @property
     def is_compressed(self) -> bool:
@@ -96,9 +103,7 @@ class Frame(msgspec.Struct, frozen=True):
             protocol.SYSTEM_COMMAND_MIN <= raw_cmd <= protocol.SYSTEM_COMMAND_MAX
         )
         if session_key and not is_excluded:
-            aead = ChaCha20Poly1305(session_key)
-            full_ct = aead.encrypt(self.nonce, payload, header)
-            payload, tag = full_ct[:-16], full_ct[-16:]
+            payload, tag = aead_encrypt(payload, session_key, self.nonce, header)
         else:
             tag = self.tag
 
@@ -147,11 +152,7 @@ class Frame(msgspec.Struct, frozen=True):
             protocol.SYSTEM_COMMAND_MIN <= raw_cmd <= protocol.SYSTEM_COMMAND_MAX
         )
         if session_key and not is_excluded:
-            try:
-                aead = ChaCha20Poly1305(session_key)
-                payload = aead.decrypt(nonce, payload + tag, header)
-            except InvalidTag as exc:
-                raise ValueError("AEAD decryption failed") from exc
+            payload = aead_decrypt(payload, tag, session_key, nonce, header)
 
         if cmd_id & protocol.CMD_FLAG_COMPRESSED:
             try:

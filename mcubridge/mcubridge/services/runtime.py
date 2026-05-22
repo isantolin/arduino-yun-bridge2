@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import collections
 import contextlib
-import json
 import itertools
 import shlex
 from collections.abc import Coroutine, Callable, Awaitable
@@ -44,14 +43,40 @@ from ..protocol.protocol import (
     SystemAction,
     response_to_request,
 )
-from ..protocol import mcubridge_pb2 as pb
 from ..protocol.structures import (
-    JSON_CONTENT_TYPE,
-    PROTOBUF_CONTENT_TYPE,
-    PendingPinRequest,
+    AckPacket,
+    AnalogReadResponsePacket,
+    ConsoleWritePacket,
+    DatastoreGetPacket,
+    DatastoreGetResponsePacket,
+    DatastorePutPacket,
+    DigitalReadResponsePacket,
+    DigitalWritePacket,
+    EnterBootloaderPacket,
+    FileReadPacket,
+    FileReadResponsePacket,
+    FileRemovePacket,
+    FileWritePacket,
+    FreeMemoryResponsePacket,
+    MailboxAvailableResponsePacket,
+    MailboxProcessedPacket,
+    MailboxPushPacket,
+    MailboxReadResponsePacket,
+    PinModePacket,
+    PinReadPacket,
+    ProcessKillPacket,
     ProcessOutputBatch,
+    ProcessPollPacket,
+    ProcessRunAsyncPacket,
+    ProcessPollResponsePacket,
+    ProcessRunAsyncResponsePacket,
+    PROTOBUF_CONTENT_TYPE,
     QueuedPublish,
+    SpiConfigPacket,
+    SpiTransferResponsePacket,
+    SpiTransferPacket,
     TopicRoute,
+    VersionResponsePacket,
 )
 from ..protocol.topics import Topic, parse_topic, topic_path
 from ..state.context import ProcessContext, RuntimeState
@@ -110,20 +135,22 @@ class BridgeService:
         return {
             Command.CMD_XOFF.value: lambda _, __: self._handle_mcu_xoff(),
             Command.CMD_XON.value: lambda _, __: self._handle_mcu_xon(),
-            Command.CMD_CONSOLE_WRITE.value: self._gen_handler(pb.ConsoleWrite, self._on_mcu_console_write),
-            Command.CMD_DATASTORE_PUT.value: self._gen_handler(pb.DatastorePut, self._on_mcu_datastore_put),
-            Command.CMD_DATASTORE_GET.value: self._gen_handler(pb.DatastoreGet, self._on_mcu_datastore_get),
-            Command.CMD_MAILBOX_PUSH.value: self._gen_handler(pb.MailboxPush, self._on_mcu_mailbox_push),
+            Command.CMD_CONSOLE_WRITE.value: self._gen_handler(ConsoleWritePacket, self._on_mcu_console_write),
+            Command.CMD_DATASTORE_PUT.value: self._gen_handler(DatastorePutPacket, self._on_mcu_datastore_put),
+            Command.CMD_DATASTORE_GET.value: self._gen_handler(DatastoreGetPacket, self._on_mcu_datastore_get),
+            Command.CMD_MAILBOX_PUSH.value: self._gen_handler(MailboxPushPacket, self._on_mcu_mailbox_push),
             Command.CMD_MAILBOX_AVAILABLE.value: lambda seq, _: self._on_mcu_mailbox_available(seq),
             Command.CMD_MAILBOX_READ.value: lambda seq, _: self._on_mcu_mailbox_read(seq),
-            Command.CMD_MAILBOX_PROCESSED.value: self._gen_handler(pb.MailboxProcessed, self._on_mcu_mailbox_processed),
-            Command.CMD_FILE_WRITE.value: self._gen_handler(pb.FileWrite, self._on_mcu_file_write),
-            Command.CMD_FILE_READ.value: self._gen_handler(pb.FileRead, self._on_mcu_file_read),
-            Command.CMD_FILE_REMOVE.value: self._gen_handler(pb.FileRemove, self._on_mcu_file_remove),
-            Command.CMD_FILE_READ_RESP.value: self._gen_handler(pb.FileReadResponse, self._on_mcu_file_read_resp),
-            Command.CMD_PROCESS_RUN_ASYNC.value: self._gen_handler(pb.ProcessRunAsync, self._on_mcu_process_run),
-            Command.CMD_PROCESS_POLL.value: self._gen_handler(pb.ProcessPoll, self._on_mcu_process_poll),
-            Command.CMD_PROCESS_KILL.value: self._gen_handler(pb.ProcessKill, lambda p: self._stop_process(p.pid)),
+            Command.CMD_MAILBOX_PROCESSED.value: self._gen_handler(
+                MailboxProcessedPacket, self._on_mcu_mailbox_processed
+            ),
+            Command.CMD_FILE_WRITE.value: self._gen_handler(FileWritePacket, self._on_mcu_file_write),
+            Command.CMD_FILE_READ.value: self._gen_handler(FileReadPacket, self._on_mcu_file_read),
+            Command.CMD_FILE_REMOVE.value: self._gen_handler(FileRemovePacket, self._on_mcu_file_remove),
+            Command.CMD_FILE_READ_RESP.value: self._gen_handler(FileReadResponsePacket, self._on_mcu_file_read_resp),
+            Command.CMD_PROCESS_RUN_ASYNC.value: self._gen_handler(ProcessRunAsyncPacket, self._on_mcu_process_run),
+            Command.CMD_PROCESS_POLL.value: self._gen_handler(ProcessPollPacket, self._on_mcu_process_poll),
+            Command.CMD_PROCESS_KILL.value: self._gen_handler(ProcessKillPacket, lambda p: self._stop_process(p.pid)),
             Command.CMD_DIGITAL_READ.value: lambda _, __: self.serial.send(
                 Status.NOT_IMPLEMENTED.value, b"linux_gpio_read_not_available"
             ),
@@ -131,28 +158,27 @@ class BridgeService:
                 Status.NOT_IMPLEMENTED.value, b"linux_adc_read_not_available"
             ),
             Command.CMD_DIGITAL_READ_RESP.value: self._gen_handler(
-                pb.DigitalReadResponse,
+                DigitalReadResponsePacket,
                 lambda p: self._on_pin_resp(p, Topic.DIGITAL, self.state.pending_digital_reads),
             ),
             Command.CMD_ANALOG_READ_RESP.value: self._gen_handler(
-                pb.AnalogReadResponse, lambda p: self._on_pin_resp(p, Topic.ANALOG, self.state.pending_analog_reads)
+                AnalogReadResponsePacket, lambda p: self._on_pin_resp(p, Topic.ANALOG, self.state.pending_analog_reads)
             ),
-            Command.CMD_GET_VERSION_RESP.value: self._gen_handler(pb.VersionResponse, self._on_mcu_version_resp),
+            Command.CMD_GET_VERSION_RESP.value: self._gen_handler(VersionResponsePacket, self._on_mcu_version_resp),
             Command.CMD_GET_FREE_MEMORY_RESP.value: self._gen_handler(
-                pb.FreeMemoryResponse, self._on_mcu_free_memory_resp
+                FreeMemoryResponsePacket, self._on_mcu_free_memory_resp
             ),
-            Command.CMD_SPI_TRANSFER_RESP.value: self._gen_handler(pb.SpiTransferResponse, self._on_mcu_spi_resp),
+            Command.CMD_SPI_TRANSFER_RESP.value: self._gen_handler(SpiTransferResponsePacket, self._on_mcu_spi_resp),
             Command.CMD_GET_CAPABILITIES_RESP.value: self.handshake.handle_capabilities_resp,
             Command.CMD_LINK_SYNC_RESP.value: self.handshake.handle_link_sync_resp,
             Command.CMD_LINK_RESET_RESP.value: self.handshake.handle_link_reset_resp,
             Status.ACK.value: self._on_mcu_ack,
         }
 
-    def _gen_handler(self, proto_class: type[Any], callback: Callable[[Any], Awaitable[Any]]) -> McuHandler:
+    def _gen_handler(self, packet_type: type[Any], callback: Callable[[Any], Awaitable[Any]]) -> McuHandler:
         async def _handler(seq: int, payload: bytes) -> bool | None:
             try:
-                p = proto_class()
-                p.ParseFromString(payload)
+                p = packet_type.decode(payload)
                 res = await callback(p)
                 return True if res is None else res
             except Exception as exc:
@@ -306,7 +332,7 @@ class BridgeService:
         self.state.mcu_is_paused = True
         self.state.serial_tx_allowed.clear()
 
-    async def _on_mcu_console_write(self, p: pb.ConsoleWrite) -> None:
+    async def _on_mcu_console_write(self, p: ConsoleWritePacket) -> None:
         if p.data:
             await self.enqueue_mqtt(
                 QueuedPublish(
@@ -316,21 +342,21 @@ class BridgeService:
                 )
             )
 
-    async def _on_mcu_datastore_put(self, p: pb.DatastorePut) -> bool:
+    async def _on_mcu_datastore_put(self, p: DatastorePutPacket) -> bool:
         if self.state.datastore_cache is not None:
             self.state.datastore_cache[p.key] = bytes(p.value)
         await self._publish_datastore_value(p.key, bytes(p.value))
         return True
 
-    async def _on_mcu_datastore_get(self, p: pb.DatastoreGet) -> bool:
+    async def _on_mcu_datastore_get(self, p: DatastoreGetPacket) -> bool:
         cache = cast(Any, self.state.datastore_cache)
         val = msgspec.convert(cache.get(p.key, b"") if cache else b"", bytes)
         return await self.serial.send(
             Command.CMD_DATASTORE_GET_RESP.value,
-            pb.DatastoreGetResponse(value=val[:255]).SerializeToString(),
+            DatastoreGetResponsePacket(value=msgspec.Raw(val[:255])).encode(),
         )
 
-    async def _on_mcu_mailbox_push(self, p: pb.MailboxPush) -> bool:
+    async def _on_mcu_mailbox_push(self, p: MailboxPushPacket) -> bool:
         self.state.mailbox_incoming_queue.append(bytes(p.data))
         await self.enqueue_mqtt(
             QueuedPublish(
@@ -342,15 +368,15 @@ class BridgeService:
     async def _on_mcu_mailbox_available(self, seq: int) -> bool:
         return await self.serial.send(
             Command.CMD_MAILBOX_AVAILABLE_RESP.value,
-            pb.MailboxAvailableResponse(count=len(self.state.mailbox_queue)).SerializeToString(),
+            MailboxAvailableResponsePacket(count=len(self.state.mailbox_queue)).encode(),
         )
 
     async def _on_mcu_mailbox_read(self, seq: int) -> bool:
         return await self.serial.send(
             Command.CMD_MAILBOX_READ_RESP.value,
-            pb.MailboxReadResponse(
+            MailboxReadResponsePacket(
                 content=self.state.mailbox_queue.popleft() if self.state.mailbox_queue else b""
-            ).SerializeToString(),
+            ).encode(),
         )
 
     async def _on_mcu_mailbox_processed(self, payload: bytes) -> None:
@@ -358,37 +384,35 @@ class BridgeService:
             QueuedPublish(topic_path(self.state.mqtt_topic_prefix, Topic.MAILBOX, MailboxAction.PROCESSED), payload)
         )
 
-    async def _on_mcu_file_write(self, p: pb.FileWrite) -> bool:
+    async def _on_mcu_file_write(self, p: FileWritePacket) -> bool:
         path = self._get_safe_path(p.path)
         if path and await self._write_with_quota(path, p.data):
             return await self.serial.send(Status.OK.value, b"")
         return await self.serial.send(Status.ERROR.value, b"Write failed")
 
-    async def _on_mcu_file_read(self, p: pb.FileRead) -> None:
+    async def _on_mcu_file_read(self, p: FileReadPacket) -> None:
         path = self._get_safe_path(p.path)
         if path and path.is_file():
             data = await asyncio.to_thread(path.read_bytes)
             if not data:
-                await self.serial.send(
-                    Command.CMD_FILE_READ_RESP.value, pb.FileReadResponse(content=b"").SerializeToString()
-                )
+                await self.serial.send(Command.CMD_FILE_READ_RESP.value, FileReadResponsePacket(content=b"").encode())
             else:
                 for chunk in itertools.batched(data, protocol.MAX_PAYLOAD_SIZE - 3):
                     await self.serial.send(
                         Command.CMD_FILE_READ_RESP.value,
-                        pb.FileReadResponse(content=bytes(chunk)).SerializeToString(),
+                        FileReadResponsePacket(content=bytes(chunk)).encode(),
                     )
             return
         await self.serial.send(Status.ERROR.value, b"Read failed")
 
-    async def _on_mcu_file_remove(self, p: pb.FileRemove) -> bool:
+    async def _on_mcu_file_remove(self, p: FileRemovePacket) -> bool:
         path = self._get_safe_path(p.path)
         if path and path.exists():
             await asyncio.to_thread(path.unlink)
             return await self.serial.send(Status.OK.value, b"")
         return await self.serial.send(Status.ERROR.value, b"Remove failed")
 
-    async def _on_mcu_file_read_resp(self, p: pb.FileReadResponse) -> bool:
+    async def _on_mcu_file_read_resp(self, p: FileReadResponsePacket) -> bool:
         if not self._pending_mcu_read:
             return False
         if p.content:
@@ -397,27 +421,27 @@ class BridgeService:
             self._pending_mcu_read.future.set_result(b"".join(self._pending_mcu_read.chunks))
         return True
 
-    async def _on_mcu_process_run(self, p: pb.ProcessRunAsync) -> bool:
+    async def _on_mcu_process_run(self, p: ProcessRunAsyncPacket) -> bool:
         if p.command and self.state.allowed_policy.is_allowed(p.command):
             pid = await self._run_process(p.command)
             if pid:
                 return await self.serial.send(
                     Command.CMD_PROCESS_RUN_ASYNC_RESP.value,
-                    pb.ProcessRunAsyncResponse(pid=pid).SerializeToString(),
+                    ProcessRunAsyncResponsePacket(pid=pid).encode(),
                 )
         await self.serial.send(Status.ERROR.value, b"Exec failed")
         return False
 
-    async def _on_mcu_process_poll(self, p: pb.ProcessPoll) -> bool:
+    async def _on_mcu_process_poll(self, p: ProcessPollPacket) -> bool:
         batch = await self._poll_process(p.pid)
         return await self.serial.send(
             Command.CMD_PROCESS_POLL_RESP.value,
-            pb.ProcessPollResponse(
+            ProcessPollResponsePacket(
                 status=batch.status_byte,
                 exit_code=batch.exit_code,
                 stdout_data=batch.stdout_chunk,
                 stderr_data=batch.stderr_chunk,
-            ).SerializeToString(),
+            ).encode(),
         )
 
     async def _on_pin_resp(self, p: Any, tp: Topic, q: collections.deque[structures.PendingPinRequest]) -> None:
@@ -432,22 +456,21 @@ class BridgeService:
             reply_context=req.reply_context if req else None,
         )
 
-    async def _on_mcu_spi_resp(self, p: pb.SpiTransferResponse) -> None:
+    async def _on_mcu_spi_resp(self, p: SpiTransferResponsePacket) -> None:
         await self.enqueue_mqtt(
             QueuedPublish(topic_path(self.state.mqtt_topic_prefix, Topic.SPI, "transfer", "resp"), p.data)
         )
 
-    async def _on_mcu_version_resp(self, p: pb.VersionResponse) -> None:
+    async def _on_mcu_version_resp(self, p: VersionResponsePacket) -> None:
         self.state.mcu_version = (p.major, p.minor, p.patch)
         logger.debug("MCU > VERSION RESP: %d.%d.%d", p.major, p.minor, p.patch)
 
-    async def _on_mcu_free_memory_resp(self, p: pb.FreeMemoryResponse) -> None:
+    async def _on_mcu_free_memory_resp(self, p: FreeMemoryResponsePacket) -> None:
         logger.debug("MCU > FREE MEMORY RESP: %d", p.value)
 
     async def _on_mcu_ack(self, seq: int, payload: bytes) -> None:
         with contextlib.suppress(Exception):
-            p = pb.Ack()
-            p.ParseFromString(payload)
+            p = AckPacket.decode(payload)
             logger.debug("MCU > ACK for 0x%02X", p.command_id)
 
     async def _handle_mcu_status(self, seq_id: int, status: Status, payload: bytes) -> None:
@@ -457,15 +480,15 @@ class BridgeService:
         await self.enqueue_mqtt(
             QueuedPublish(
                 topic_path(self.state.mqtt_topic_prefix, Topic.SYSTEM, Topic.STATUS),
-                json.dumps(
+                structures.encode_structured_payload(
                     {
                         "status": status.value,
                         "name": status.name,
                         "description": status.description,
                         "message": text,
                     }
-                ).encode("utf-8"),
-                content_type=JSON_CONTENT_TYPE,
+                ),
+                content_type=PROTOBUF_CONTENT_TYPE,
                 user_properties=(("bridge-status", status.name),),
             )
         )
@@ -502,7 +525,7 @@ class BridgeService:
         pl = msgspec.convert(inbound.payload, bytes)
         if route.identifier == MailboxAction.WRITE:
             self.state.mailbox_queue.append(pl)
-            await self.serial.send(Command.CMD_MAILBOX_PUSH.value, pb.MailboxPush(data=pl).SerializeToString())
+            await self.serial.send(Command.CMD_MAILBOX_PUSH.value, MailboxPushPacket(data=pl).encode())
         elif route.identifier == MailboxAction.READ:
             data = self.state.mailbox_incoming_queue.popleft() if self.state.mailbox_incoming_queue else b""
             await self.enqueue_mqtt(
@@ -522,15 +545,13 @@ class BridgeService:
         if target.startswith("mcu/"):
             if act == FileAction.READ:
                 await self._handle_mqtt_file_mcu_read(inbound, target)
-            if act == FileAction.WRITE:
+            elif act == FileAction.WRITE:
                 await self.serial.send(
                     Command.CMD_FILE_WRITE.value,
-                    pb.FileWrite(path=target[4:], data=msgspec.convert(inbound.payload, bytes)).SerializeToString(),
+                    FileWritePacket(path=target[4:], data=msgspec.convert(inbound.payload, bytes)).encode(),
                 )
             elif act == FileAction.REMOVE:
-                await self.serial.send(
-                    Command.CMD_FILE_REMOVE.value, pb.FileRemove(path=target[4:]).SerializeToString()
-                )
+                await self.serial.send(Command.CMD_FILE_REMOVE.value, FileRemovePacket(path=target[4:]).encode())
         else:
             path = self._get_safe_path(target)
             if not path:
@@ -574,7 +595,7 @@ class BridgeService:
             self._pending_mcu_read = _PendingMcuRead(target, asyncio.get_running_loop().create_future())
             if not await self.serial.send(
                 Command.CMD_FILE_READ.value,
-                pb.FileRead(path=target[4:]).SerializeToString(),
+                FileReadPacket(path=target[4:]).encode(),
             ):
                 logger.warning("MCU file read dispatch failed", target=target)
                 await self.enqueue_mqtt(
@@ -615,18 +636,13 @@ class BridgeService:
         pl = msgspec.convert(inbound.payload, bytes)
         if act == ShellAction.RUN_ASYNC:
             try:
-                if pl.startswith(b"\x0a"):
-                    req = pb.ProcessRunAsync()
-                    req.ParseFromString(pl)
-                    cmd = req.command
-                else:
-                    cmd = pl.decode().strip()
+                cmd = ProcessRunAsyncPacket.decode(pl).command if pl.startswith(b"\x0a") else pl.decode().strip()
                 pid = await self._run_process(cmd)
             except (ProtobufDecodeError, UnicodeDecodeError, ValueError, OSError) as exc:
                 logger.warning("MQTT shell run_async rejected", error=str(exc))
-                payload = pb.ProcessRunAsyncResponse(pid=0).SerializeToString()
+                payload = ProcessRunAsyncResponsePacket(pid=0).encode()
             else:
-                payload = pb.ProcessRunAsyncResponse(pid=pid).SerializeToString()
+                payload = ProcessRunAsyncResponsePacket(pid=pid).encode()
             await self.enqueue_mqtt(
                 QueuedPublish(
                     topic_path(
@@ -653,7 +669,7 @@ class BridgeService:
                             str(pid),
                             protocol.MQTT_SUFFIX_RESPONSE,
                         ),
-                        pb.ProcessPollResponse(
+                        ProcessPollResponsePacket(
                             status=batch.status_byte,
                             exit_code=batch.exit_code,
                             stdout_data=batch.stdout_chunk,
@@ -661,7 +677,7 @@ class BridgeService:
                             finished=batch.finished,
                             stdout_truncated=batch.stdout_truncated,
                             stderr_truncated=batch.stderr_truncated,
-                        ).SerializeToString(),
+                        ).encode(),
                         content_type=PROTOBUF_CONTENT_TYPE,
                     ),
                     reply_context=inbound,
@@ -677,24 +693,17 @@ class BridgeService:
                 await self.serial.send(Command.CMD_SPI_END.value, b"")
             case SpiAction.CONFIG:
                 try:
-                    cfg = json.loads(inbound.payload)
-                    p = pb.SpiConfig(
-                        bit_order=cfg.get("bit_order", 0),
-                        data_mode=cfg.get("data_mode", 0),
-                        frequency=cfg.get("frequency", 0),
-                    )
-                    await self.serial.send(Command.CMD_SPI_SET_CONFIG.value, p.SerializeToString())
-                except (json.JSONDecodeError, TypeError, ValueError) as exc:
+                    p = msgspec.json.decode(inbound.payload, type=SpiConfigPacket)
+                    await self.serial.send(Command.CMD_SPI_SET_CONFIG.value, p.encode())
+                except (msgspec.DecodeError, msgspec.ValidationError, TypeError, ValueError) as exc:
                     logger.error("SPI config error: %s", exc)
             case SpiAction.TRANSFER:
                 if inbound.payload:
                     res = await self.serial.send_and_wait_payload(
                         Command.CMD_SPI_TRANSFER.value,
-                        pb.SpiTransfer(data=bytes(inbound.payload)).SerializeToString(),
+                        SpiTransferPacket(data=bytes(inbound.payload)).encode(),
                     )
                     if res:
-                        resp = pb.SpiTransferResponse()
-                        resp.ParseFromString(res)
                         await self.enqueue_mqtt(
                             QueuedPublish(
                                 topic_path(
@@ -703,7 +712,7 @@ class BridgeService:
                                     SpiAction.TRANSFER,
                                     protocol.MQTT_SUFFIX_RESPONSE,
                                 ),
-                                resp.data,
+                                SpiTransferResponsePacket.decode(res).data,
                             ),
                             reply_context=inbound,
                         )
@@ -717,9 +726,7 @@ class BridgeService:
         pl = msgspec.convert(inbound.payload, bytes).decode()
         if len(route.segments) == 2:
             if route.segments[1] == PinAction.MODE:
-                await self.serial.send(
-                    Command.CMD_SET_PIN_MODE.value, pb.PinMode(pin=pin, mode=int(pl)).SerializeToString()
-                )
+                await self.serial.send(Command.CMD_SET_PIN_MODE.value, PinModePacket(pin=pin, mode=int(pl)).encode())
             elif route.segments[1] == PinAction.READ:
                 cmd = Command.CMD_DIGITAL_READ if route.topic == Topic.DIGITAL else Command.CMD_ANALOG_READ
                 q = (
@@ -728,35 +735,30 @@ class BridgeService:
                     else self.state.pending_analog_reads
                 )
                 if len(q) < self.state.pending_pin_request_limit:
-                    q.append(PendingPinRequest(pin=pin, reply_context=inbound))
-                    await self.serial.send(cmd.value, pb.PinRead(pin=pin).SerializeToString())
+                    q.append(structures.PendingPinRequest(pin=pin, reply_context=inbound))
+                    await self.serial.send(cmd.value, PinReadPacket(pin=pin).encode())
         else:
             cmd = Command.CMD_DIGITAL_WRITE if route.topic == Topic.DIGITAL else Command.CMD_ANALOG_WRITE
-            write_pkt = (
-                pb.DigitalWrite(pin=pin, value=int(pl) if pl.isdigit() else 0).SerializeToString()
-                if cmd == Command.CMD_DIGITAL_WRITE
-                else pb.AnalogWrite(pin=pin, value=int(pl) if pl.isdigit() else 0).SerializeToString()
+            await self.serial.send(
+                cmd.value, DigitalWritePacket(pin=pin, value=int(pl) if pl.isdigit() else 0).encode()
             )
-            await self.serial.send(cmd.value, write_pkt)
 
     async def _handle_mqtt_system(self, route: TopicRoute, inbound: Message) -> None:
         match route.identifier:
             case SystemAction.BOOTLOADER:
                 await self.serial.send(
                     Command.CMD_ENTER_BOOTLOADER.value,
-                    pb.EnterBootloader(magic=protocol.BOOTLOADER_MAGIC).SerializeToString(),
+                    EnterBootloaderPacket(magic=protocol.BOOTLOADER_MAGIC).encode(),
                 )
             case SystemAction.FREE_MEMORY if "get" in route.segments:
                 pl = await self.serial.send_and_wait_payload(Command.CMD_GET_FREE_MEMORY.value, b"")
                 if pl:
-                    p = pb.FreeMemoryResponse()
-                    p.ParseFromString(pl)
                     await self.enqueue_mqtt(
                         QueuedPublish(
                             topic_path(
                                 self.state.mqtt_topic_prefix, Topic.SYSTEM, SystemAction.FREE_MEMORY, SystemAction.VALUE
                             ),
-                            str(p.value).encode(),
+                            str(FreeMemoryResponsePacket.decode(pl).value).encode(),
                         ),
                         reply_context=inbound,
                     )
@@ -772,8 +774,8 @@ class BridgeService:
                 await self.enqueue_mqtt(
                     QueuedPublish(
                         topic_path(self.state.mqtt_topic_prefix, Topic.SYSTEM, "bridge", flavor, "value"),
-                        json.dumps(msgspec.structs.asdict(snap)).encode("utf-8"),
-                        content_type=JSON_CONTENT_TYPE,
+                        structures.encode_structured_payload(snap),
+                        content_type=PROTOBUF_CONTENT_TYPE,
                     ),
                     reply_context=inbound,
                 )
@@ -785,8 +787,7 @@ class BridgeService:
     async def _request_mcu_version(self, inbound: Message | None = None) -> bool:
         pl = await self.serial.send_and_wait_payload(Command.CMD_GET_VERSION.value, b"")
         if pl:
-            p = pb.VersionResponse()
-            p.ParseFromString(pl)
+            p = VersionResponsePacket.decode(pl)
             self.state.mcu_version = (p.major, p.minor, p.patch)
             await self._publish_version(self.state.mcu_version, inbound)
             return True
@@ -807,7 +808,7 @@ class BridgeService:
             buf = self.state.console_to_mcu_queue.popleft()
             for chunk in itertools.batched(buf, protocol.MAX_PAYLOAD_SIZE):
                 if not await self.serial.send(
-                    Command.CMD_CONSOLE_WRITE.value, pb.ConsoleWrite(data=bytes(chunk)).SerializeToString()
+                    Command.CMD_CONSOLE_WRITE.value, ConsoleWritePacket(data=bytes(chunk)).encode()
                 ):
                     self.state.console_to_mcu_queue.appendleft(buf)
                     return
@@ -934,8 +935,8 @@ class BridgeService:
         await self.enqueue_mqtt(
             QueuedPublish(
                 topic_path(self.state.mqtt_topic_prefix, Topic.SYSTEM, Topic.STATUS),
-                json.dumps({"status": "forbidden", "topic": val, "action": act}).encode("utf-8"),
-                content_type=JSON_CONTENT_TYPE,
+                structures.encode_structured_payload({"status": "forbidden", "topic": val, "action": act}),
+                content_type=PROTOBUF_CONTENT_TYPE,
                 user_properties=(("bridge-error", TOPIC_FORBIDDEN_REASON),),
             ),
             reply_context=ctx,

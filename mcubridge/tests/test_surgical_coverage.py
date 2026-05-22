@@ -14,9 +14,12 @@ from mcubridge.protocol.protocol import (
     Command,
 )
 from mcubridge.protocol.structures import (
+    DatastoreGetResponsePacket,
+    DigitalReadResponsePacket,
+    AnalogReadResponsePacket,
+    SpiTransferResponsePacket,
     PendingPinRequest,
 )
-from mcubridge.protocol import mcubridge_pb2 as pb
 
 # Mock 'uci' globally for tests that import scripts directly
 sys.modules["uci"] = MagicMock()
@@ -46,7 +49,7 @@ async def test_surgical_runtime_exhaustive(
     await service.handle_mcu_frame(
         Command.CMD_DATASTORE_GET_RESP.value,
         1,
-        pb.DatastoreGetResponse(value=b"v").SerializeToString(),
+        DatastoreGetResponsePacket(value=b"v").encode(),
     )
 
     # Digital Read response
@@ -54,7 +57,7 @@ async def test_surgical_runtime_exhaustive(
     await service.handle_mcu_frame(
         Command.CMD_DIGITAL_READ_RESP.value,
         1,
-        pb.DigitalReadResponse(value=1).SerializeToString(),
+        DigitalReadResponsePacket(value=1).encode(),
     )
 
     # Analog Read response
@@ -62,14 +65,14 @@ async def test_surgical_runtime_exhaustive(
     await service.handle_mcu_frame(
         Command.CMD_ANALOG_READ_RESP.value,
         1,
-        pb.AnalogReadResponse(value=512).SerializeToString(),
+        AnalogReadResponsePacket(value=512).encode(),
     )
 
     # SPI Transfer response
     await service.handle_mcu_frame(
         Command.CMD_SPI_TRANSFER_RESP.value,
         1,
-        pb.SpiTransferResponse(data=b"resp").SerializeToString(),
+        SpiTransferResponsePacket(data=b"resp").encode(),
     )
 
     # Test TaskGroup cancel path

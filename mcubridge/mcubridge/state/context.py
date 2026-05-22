@@ -189,9 +189,9 @@ class RuntimeState(msgspec.Struct, weakref=True):
 
     mcu_version: tuple[int, int, int] | None = None
     mcu_capabilities: McuCapabilities | None = None
-    link_handshake_nonce: bytearray | None = None
+    link_handshake_nonce: bytes | None = None
     link_sync_event: asyncio.Event = msgspec.field(default_factory=asyncio.Event)
-    link_expected_tag: bytearray | None = None
+    link_expected_tag: bytes | None = None
     link_session_key: bytes | None = None
     link_aead_cipher: Any | None = None
     link_nonce_length: int = 0

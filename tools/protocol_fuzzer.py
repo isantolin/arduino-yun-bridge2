@@ -10,7 +10,7 @@ import struct
 import argparse
 from binascii import crc32
 from cobs import cobs
-import serial_asyncio_fast
+import serialx
 import structlog
 from typing import Final
 from mcubridge.protocol import protocol
@@ -33,9 +33,7 @@ class ProtocolFuzzer:
         self.seq_id = 0
 
     async def connect(self) -> None:
-        self.reader, self.writer = await serial_asyncio_fast.open_serial_connection(
-            url=self.port, baudrate=self.baudrate
-        )
+        self.reader, self.writer = await serialx.open_serial_connection(url=self.port, baudrate=self.baudrate)
         logger.info("connected", port=self.port, baudrate=self.baudrate)
 
     def _build_raw_frame(self, cmd: int, seq: int, payload: bytes, override_crc: int | None = None) -> bytes:

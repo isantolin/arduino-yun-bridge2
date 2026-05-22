@@ -42,7 +42,7 @@ if _stubs_path not in sys.path:
     sys.path.insert(0, _stubs_path)
 
 
-# No longer injecting serial_asyncio_fast into sys.modules.
+# No longer injecting legacy serial asyncio shims into sys.modules.
 # Tests MUST mock mcubridge.transport.serial components instead.
 
 # [TEST FIX] Disable SysLog for all tests to prevent unclosed UNIX sockets (ResourceWarning)

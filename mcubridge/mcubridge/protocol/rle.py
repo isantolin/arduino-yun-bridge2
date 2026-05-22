@@ -23,7 +23,7 @@ RLE_MAX_CHUNK_COUNT = 254
 # [SIL-2] Pre-compiled regex to find compressible sequences.
 # Pattern matches any byte (.) followed by the same byte at least N-1 times.
 # For RLE_MIN_RUN_LENGTH = 4, the pattern is b'(.)\\1{3,}'
-_RLE_PATTERN = re.compile(rb'(.)\1{' + str(protocol.RLE_MIN_RUN_LENGTH - 1).encode() + rb',}')
+_RLE_PATTERN = re.compile(rb"(.)\1{" + str(protocol.RLE_MIN_RUN_LENGTH - 1).encode() + rb",}")
 
 
 def rle_decode(obj: bytes | bytearray | memoryview) -> bytes:

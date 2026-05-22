@@ -9,7 +9,7 @@ import time
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-import serial
+import serialx
 
 # [SIL-2] Use direct library functions for framing
 from cobs import cobs
@@ -111,20 +111,20 @@ def build_snapshot(command_id: int, payload: bytes) -> FrameDebugSnapshot:
     )
 
 
-def _open_serial_device(port: str, baud: int, timeout: float) -> serial.Serial:
+def _open_serial_device(port: str, baud: int, timeout: float) -> serialx.Serial:
     try:
-        return serial.Serial(port=port, baudrate=baud, timeout=timeout)
-    except serial.SerialException as exc:
+        return serialx.serial_for_url(port, baudrate=baud, read_timeout=timeout)
+    except serialx.SerialException as exc:
         raise SystemExit(f"Failed to open serial port {port}: {exc}") from exc
 
 
-def _write_frame(device: serial.Serial, encoded_packet: bytes) -> int:
+def _write_frame(device: serialx.Serial, encoded_packet: bytes) -> int:
     written = device.write(encoded_packet)
     device.flush()
     return int(written) if written is not None else 0
 
 
-def _read_frame(device: serial.Serial, timeout: float) -> bytes | None:
+def _read_frame(device: serialx.Serial, timeout: float) -> bytes | None:
     buffer = bytearray()
     deadline = time.monotonic() + timeout if timeout > 0 else None
     while True:

@@ -51,7 +51,7 @@ define Package/$(PKG_NAME)
 		python3-msgspec \
 		python3-protobuf \
 		python3-prometheus-client \
-		python3-pyserial-asyncio-fast \
+		python3-serialx \
 		python3-tenacity \
 		python3-uvloop \
 		python3-cryptography \

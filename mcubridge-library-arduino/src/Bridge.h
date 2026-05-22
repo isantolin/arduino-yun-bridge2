@@ -302,12 +302,17 @@ class BridgeClass {
   void _handleReceivedFrame(etl::span<const uint8_t> p);
   void onUnknownCommand(const bridge::router::CommandContext& ctx);
 
-  using DispatchHandler =
-      void (BridgeClass::*)(const bridge::router::CommandContext&);
+  // [MEM-SAVE] Non-template helper to reduce binary bloat in _withPayloadAck.
+  // Declared before templates to ensure visibility in template body.
+  void _processAck(uint16_t command_id, uint16_t sequence_id);
 
-  // [SIL-2] Shared O(1) jump table (kept out of Bridge instance RAM).
-  static const etl::array<DispatchHandler, rpc::RPC_MAX_COMMAND_ID>&
-  _dispatchTable();
+  // [MEM-SAVE] Static wrapper type to avoid member function pointer overhead
+  // and enable true constexpr/Flash placement of the dispatch table.
+  using DispatchHandler = void (*)(BridgeClass&,
+                                   const bridge::router::CommandContext&);
+
+  // [SIL-2] [MEM-SAVE] Static O(1) jump table in Flash.
+  static DispatchHandler _getHandler(uint16_t command_id);
 
   template <typename T, typename F>
   void _withPayload(const bridge::router::CommandContext& ctx, F handler) {
@@ -317,18 +322,16 @@ class BridgeClass {
 
   template <typename T, typename F>
   void _withPayloadAck(const bridge::router::CommandContext& ctx, F handler) {
+    // [MEM-SAVE] Delegating ACK processing to non-template _processAck
+    // reduces the code generated for each instantiation of this template.
     if (ctx.is_duplicate) {
-      rpc::payload::AckPacket p;
-      p.pb_msg.command_id = ctx.raw_command;
-      (void)send(rpc::StatusCode::STATUS_ACK, ctx.sequence_id, p);
+      _processAck(ctx.raw_command, ctx.sequence_id);
       return;
     }
     auto res = rpc::Payload::parse<T>(*ctx.frame);
     if (res) {
       handler(res.value());
-      if (ctx.requires_ack)
-        (void)send(rpc::StatusCode::STATUS_ACK, ctx.sequence_id,
-                   rpc::payload::AckPacket{ctx.raw_command});
+      if (ctx.requires_ack) _processAck(ctx.raw_command, ctx.sequence_id);
     } else
       emitStatus(rpc::StatusCode::STATUS_ERROR);
   }

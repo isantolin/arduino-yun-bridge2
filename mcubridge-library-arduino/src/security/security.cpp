@@ -82,6 +82,99 @@ bool aead_decrypt(etl::span<uint8_t> out, etl::span<const uint8_t> in,
                                      out.data()) == 0;
 }
 
+bool handshake_authenticate_raw(const uint8_t* secret, size_t secret_len,
+                                const uint8_t* nonce, size_t nonce_len,
+                                const uint8_t* received_tag, size_t tag_len,
+                                uint8_t* out_tag) {
+  // [MEM-SAVE] Logic moved from BridgeClass to a non-member function to reduce class size.
+  etl::array<uint8_t, rpc::RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH> handshake_key;
+  hkdf_sha256(etl::span<uint8_t>(handshake_key), etl::span<const uint8_t>(secret, secret_len),
+              etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_SALT),
+              etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH));
+
+  Hmac hmac_engine;
+  wc_HmacSetKey(&hmac_engine, WC_SHA256, handshake_key.data(),
+                rpc::RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH);
+  wc_HmacUpdate(&hmac_engine, nonce, static_cast<word32>(nonce_len));
+  wc_HmacFinal(&hmac_engine, out_tag);
+
+  bool tag_ok = true;
+  if (received_tag != nullptr && tag_len > 0) {
+    tag_ok = timing_safe_equal(
+        etl::span<const uint8_t>(out_tag, rpc::RPC_HANDSHAKE_TAG_LENGTH),
+        etl::span<const uint8_t>(received_tag, tag_len));
+  }
+
+  secure_zero(handshake_key);
+  return tag_ok;
+}
+
+void derive_session_key_raw(const uint8_t* secret, size_t secret_len,
+                             const uint8_t* nonce, size_t nonce_len,
+                             uint8_t* out_key) {
+  hkdf_sha256(etl::span<uint8_t>(out_key, 32), etl::span<const uint8_t>(secret, secret_len),
+              etl::span<const uint8_t>(nonce, nonce_len),
+              etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_INFO_SESSION));
+}
+
+bool aead_encrypt_frame_raw(rpc::Frame& f, const uint8_t* payload, size_t len,
+                            const uint8_t* key, uint64_t& nonce_counter,
+                            uint8_t* out_buffer) {
+  // [MEM-SAVE] Encapsulating frame-level crypto orchestration here
+  // prevents BridgeClass from having to know about wolfSSL or AEAD details.
+  nonce_counter++;
+  f.nonce.fill(0);
+  constexpr etl::string_view mcu_prefix("MCU");
+  etl::copy_n(mcu_prefix.begin(), 3, f.nonce.begin());
+  etl::byte_stream_writer n_writer(f.nonce.data() + 4, 8, etl::endian::big);
+  n_writer.write<uint64_t>(nonce_counter);
+
+  etl::array<uint8_t, rpc::FRAME_HEADER_SIZE> header_buf;
+  rpc::checksum::serialize_header(f.header, header_buf);
+
+  if (aead_encrypt(etl::span<uint8_t>(out_buffer, len), f.tag,
+                   etl::span<const uint8_t>(payload, len),
+                   etl::span<const uint8_t>(key, 32), f.nonce, header_buf)) {
+    f.payload = etl::span<const uint8_t>(out_buffer, len);
+    return true;
+  }
+  return false;
+}
+
+bool aead_decrypt_frame_raw(rpc::Frame& f, const uint8_t* key,
+                             uint8_t* out_buffer) {
+  // [MEM-SAVE] Decapsulating frame-level crypto orchestration here
+  // prevents BridgeClass from having to know about wolfSSL or AEAD details.
+  etl::array<uint8_t, rpc::FRAME_HEADER_SIZE> h_buf;
+  rpc::checksum::serialize_header(f.header, h_buf);
+  if (aead_decrypt(etl::span<uint8_t>(out_buffer, f.payload.size()), f.payload, f.tag,
+                   etl::span<const uint8_t>(key, 32), f.nonce, h_buf)) {
+    f.payload = etl::span<const uint8_t>(out_buffer, f.payload.size());
+    return true;
+  }
+  return false;
+}
+
+bool validate_frame_nonce(const rpc::Frame& f, uint64_t& last_seen_counter) {
+  // [MEM-SAVE] Replay protection logic moved from BridgeClass to security helper.
+  uint64_t counter = 0;
+  etl::byte_stream_reader n_reader(f.nonce.data() + 4, 8, etl::endian::big);
+#if defined(BRIDGE_HOST_TEST) && defined(BRIDGE_FAULT_INJECTION)
+  if (bridge::test::fault::consume(
+          bridge::test::fault::FaultPoint::BRIDGE_NONCE_READ_FAIL)) {
+    return false;
+  }
+#endif
+  if (auto c_opt = n_reader.read<uint64_t>()) {
+    counter = *c_opt;
+  }
+  if (counter <= last_seen_counter) {
+    return false;
+  }
+  last_seen_counter = counter;
+  return true;
+}
+
 // --- Self-Tests Implementation ---
 
 static constexpr etl::array<uint8_t, 3> kat_sha256_msg PROGMEM = {

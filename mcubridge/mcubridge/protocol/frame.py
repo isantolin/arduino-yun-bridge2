@@ -79,11 +79,7 @@ class Frame(msgspec.Struct, frozen=True):
             protocol.SYSTEM_COMMAND_MIN <= raw_cmd <= protocol.SYSTEM_COMMAND_MAX
         )
 
-        if (
-            payload
-            and not is_excluded
-            and should_compress(payload)
-        ):
+        if payload and not is_excluded and should_compress(payload):
             compressed = rle_encode(payload)
             if len(compressed) < len(payload):
                 payload = compressed

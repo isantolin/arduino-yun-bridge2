@@ -119,11 +119,15 @@ async def test_serial_transport_edge_cases(mock_config: RuntimeConfig, mock_stat
     service = MagicMock()
     transport = SerialTransport(mock_config, mock_state, service)
 
+    class BrokenTransport:
+        def __setattr__(self, name: str, value: object) -> None:
+            if name == "baudrate":
+                raise ValueError("unsupported baudrate")
+            super().__setattr__(name, value)
+
     transport.writer = MagicMock(spec=asyncio.StreamWriter)
     transport.writer.is_closing.return_value = False
-    transport.writer.transport = MagicMock()
-    if hasattr(transport.writer.transport, "serial"):
-        del transport.writer.transport.serial
+    transport.writer.transport = BrokenTransport()
 
     with pytest.raises(RuntimeError, match="UART access failed"):
         cast(Any, transport)._switch_local_baudrate(9600)
@@ -134,7 +138,7 @@ async def test_serial_transport_edge_cases(mock_config: RuntimeConfig, mock_stat
     assert pending.completion.is_set()
     assert cast(Any, transport)._current is None
 
-    with patch("serial_asyncio_fast.open_serial_connection", side_effect=OSError("link down")):
+    with patch("mcubridge.transport.serial.serialx.open_serial_connection", side_effect=OSError("link down")):
         with pytest.raises(OSError):
             await cast(Any, transport)._connect_and_run()
 

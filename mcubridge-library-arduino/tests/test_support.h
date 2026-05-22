@@ -211,7 +211,7 @@ static bool extract_next_valid_frame(const ByteBuffer<N>& buffer,
       uint32_t cv = calc.value();
       etl::byte_stream_writer w(
           decoded_buf.data() + decoded_len - rpc::CRC_TRAILER_SIZE,
-          rpc::CRC_TRAILER_SIZE, etl::endian::big);
+          rpc::CRC_TRAILER_SIZE, etl::endian::little);
       w.write<uint32_t>(cv);
 
       auto result =

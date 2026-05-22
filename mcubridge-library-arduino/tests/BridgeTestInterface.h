@@ -58,22 +58,14 @@ class TestAccessor {
   void computeHandshakeTag(const uint8_t* nonce_ptr, size_t len,
                            uint8_t* tag_out) {
     if (_bridge._shared_secret.empty()) return;
-    etl::span<const uint8_t> nonce(nonce_ptr, len);
-    etl::array<uint8_t, 32> handshake_key;
-    rpc::security::hkdf_sha256(
-        etl::span<uint8_t>(handshake_key),
+    // [MEM-SAVE] Replaced manual handshake logic with centralized utility.
+    etl::array<uint8_t, 32> out_tag_full;
+    (void)rpc::security::handshake_authenticate(
         etl::span<const uint8_t>(_bridge._shared_secret),
-        etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_SALT),
-        etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH));
-
-    etl::array<uint8_t, 32> full_tag;
-    Hmac hmac_engine;
-    wc_HmacSetKey(&hmac_engine, WC_SHA256, handshake_key.data(), 32);
-    wc_HmacUpdate(&hmac_engine, nonce.data(),
-                  static_cast<word32>(nonce.size()));
-    wc_HmacFinal(&hmac_engine, full_tag.data());
-
-    etl::copy_n(full_tag.begin(), 16, tag_out);
+        etl::span<const uint8_t>(nonce_ptr, len),
+        etl::span<const uint8_t>(), // [MEM-SAVE] received_tag not used here
+        etl::span<uint8_t>(out_tag_full));
+    etl::copy_n(out_tag_full.begin(), 16, tag_out);
   }
 
   void onAckTimeout() { _bridge._onAckTimeout(); }

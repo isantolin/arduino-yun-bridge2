@@ -51,10 +51,10 @@ pip = "prometheus-client==0.25.0"
 rationale = "Expose runtime metrics via the Prometheus Python client"
 
 [[dependency]]
-name = "pyserial-asyncio-fast"
-openwrt = "python3-pyserial-asyncio-fast"
-pip = "pyserial-asyncio-fast==0.16"
-rationale = "Zero-Overhead Async I/O for Serial"
+name = "serialx"
+openwrt = "python3-serialx"
+pip = "serialx==1.8.0"
+rationale = "Native sync/async serial stack with modem-pin controls and typed transports"
 
 [[dependency]]
 name = "tenacity"

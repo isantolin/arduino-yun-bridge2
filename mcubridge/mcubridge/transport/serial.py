@@ -1,4 +1,4 @@
-"""Serial transport implementation using pyserial-asyncio-fast Streams.
+"""Serial transport implementation using serialx streams and transports.
 
 This module implements a Zero-Overhead asyncio transport using StreamReader
 and StreamWriter. It delegates delimiter searching to Python's C core via
@@ -16,14 +16,12 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-import structlog
-import time
 from typing import TYPE_CHECKING, Any, cast
 
 import msgspec
 from cobs import cobs
-import serial
-import serial_asyncio_fast
+import serialx
+import structlog
 import tenacity
 
 from mcubridge.config.const import (
@@ -104,14 +102,16 @@ class SerialTransport:
             super().__init__(status)
             self.status = status
 
-    def _switch_local_baudrate(self, target_baud: int) -> None:
+    def _active_transport(self) -> serialx.BaseSerialTransport:
         if self.writer is None or self.writer.is_closing():
             raise RuntimeError("Serial writer inactive")
+        return cast(serialx.BaseSerialTransport, self.writer.transport)
+
+    def _switch_local_baudrate(self, target_baud: int) -> None:
         try:
-            serial_port = cast(Any, self.writer.transport).serial
-            serial_port.baudrate = target_baud
+            self._active_transport().baudrate = target_baud
             logger.info("Local UART switched to %d baud", target_baud)
-        except (AttributeError, ValueError) as e:
+        except (AttributeError, OSError, ValueError, serialx.SerialException) as e:
             raise RuntimeError(f"UART access failed: {e}") from e
 
     async def reset(self) -> None:
@@ -138,12 +138,12 @@ class SerialTransport:
 
     async def _connect_and_run(self) -> None:
         logger.info("Connecting to MCU on %s...", self.config.serial_port)
-        await self._toggle_dtr()
         connect_baud = self.config.serial_safe_baud or protocol.DEFAULT_SAFE_BAUDRATE
-        self.reader, self.writer = await serial_asyncio_fast.open_serial_connection(
+        await self._toggle_dtr(connect_baud)
+        self.reader, self.writer = await serialx.open_serial_connection(
             url=self.config.serial_port, baudrate=connect_baud, xonxoff=False
         )
-        self.state.serial_writer = cast(asyncio.BaseTransport, self.writer)
+        self.state.serial_writer = cast(asyncio.BaseTransport, self.writer.transport)
         read_task = asyncio.get_running_loop().create_task(self._read_loop(self.reader))
         self.is_connected = True
         try:
@@ -172,17 +172,15 @@ class SerialTransport:
             if self.writer:
                 self.writer.close()
 
-    async def _toggle_dtr(self) -> None:
+    async def _toggle_dtr(self, baudrate: int) -> None:
         try:
-
-            def _pulse() -> None:
-                with serial.Serial(self.config.serial_port) as s:
-                    s.dtr = False
-                    time.sleep(0.1)
-                    s.dtr = True
-
-            await asyncio.get_running_loop().run_in_executor(None, _pulse)
-        except (serial.SerialException, OSError, ValueError) as exc:
+            async with serialx.async_serial_for_url(
+                self.config.serial_port, baudrate=baudrate, xonxoff=False
+            ) as serial_port:
+                await serial_port.set_modem_pins(dtr=False)
+                await asyncio.sleep(0.1)
+                await serial_port.set_modem_pins(dtr=True)
+        except (serialx.SerialException, OSError, RuntimeError, ValueError) as exc:
             logger.warning("Unable to toggle DTR on %s: %s", self.config.serial_port, exc)
 
     async def stop(self) -> None:

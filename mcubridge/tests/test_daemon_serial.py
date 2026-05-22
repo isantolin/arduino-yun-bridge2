@@ -75,10 +75,9 @@ async def test_serial_reader_task_reconnects():
 
     with (
         patch(
-            "mcubridge.transport.serial.serial_asyncio_fast.open_serial_connection",
+            "mcubridge.transport.serial.serialx.open_serial_connection",
             mock_open,
         ),
-        patch("mcubridge.transport.serial.serial.Serial", MagicMock()),
         patch("asyncio.sleep", mock_sleep),
         patch.object(SerialTransport, "_toggle_dtr", AsyncMock()),
     ):

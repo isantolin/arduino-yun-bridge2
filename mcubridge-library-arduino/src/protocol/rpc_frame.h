@@ -53,6 +53,7 @@ enum class FrameError { NONE = 0, CRC_MISMATCH, MALFORMED, OVERFLOW, AUTH_FAIL }
 
 namespace checksum {
 inline void serialize_header(const FrameHeader& h, etl::span<uint8_t> buffer) {
+  // [MEM-SAVE] Avoids byte_stream overhead by direct struct mapping.
   etl::copy_n(reinterpret_cast<const uint8_t*>(&h), sizeof(FrameHeader), buffer.data());
 }
 
@@ -63,6 +64,7 @@ inline uint32_t compute(etl::span<const uint8_t> data) {
 }
 
 inline uint32_t compute(const Frame& f) {
+  // [MEM-SAVE] Cast direct mapping eliminates the need for temporary header_buf.
   etl::crc32 crc;
   crc.add(reinterpret_cast<const uint8_t*>(&f.header), reinterpret_cast<const uint8_t*>(&f.header) + sizeof(FrameHeader));
   crc.add(f.nonce.begin(), f.nonce.end());
@@ -74,6 +76,7 @@ inline uint32_t compute(const Frame& f) {
 
 class FrameParser {
  public:
+  // [MEM-SAVE] Centralized serialization with optional AEAD reduces duplicated logic in BridgeClass.
   static size_t serialize(const Frame& f, etl::span<uint8_t> buffer) {
     const size_t required = FRAME_HEADER_SIZE + AEAD_NONCE_SIZE +
                             f.payload.size() + AEAD_TAG_SIZE +
@@ -98,6 +101,7 @@ class FrameParser {
     return required;
   }
 
+  // [MEM-SAVE] parse() now extracts and validates full frame metadata natively.
   etl::expected<Frame, FrameError> parse(etl::span<const uint8_t> buffer) {
     if (buffer.size() < MIN_FRAME_SIZE || buffer.size() > MAX_RAW_FRAME_SIZE)
       return etl::unexpected<FrameError>(FrameError::MALFORMED);
@@ -108,6 +112,7 @@ class FrameParser {
 
     Frame result = {};
     
+    // [MEM-SAVE] reinterpret_cast mapping avoids field-by-field manual parsing.
     etl::copy_n(buffer.begin(), sizeof(FrameHeader), reinterpret_cast<uint8_t*>(&result.header));
 
     if (result.header.version != PROTOCOL_VERSION)
@@ -132,15 +137,6 @@ class FrameParser {
 
     uint32_t crc_opt = 0;
     etl::copy_n(buffer.begin() + crc_offset, CRC_TRAILER_SIZE, reinterpret_cast<uint8_t*>(&crc_opt));
-
-#if BRIDGE_HOST_TEST
-    if (crc_opt != crc_calc) {
-      fprintf(stderr,
-              "[PARSE] CRC MISMATCH! Size: %zu, Calc: %08X, Recv: %08X\n",
-              buffer.size(), (unsigned int)crc_calc,
-              (unsigned int)crc_opt);
-    }
-#endif
 
     if (crc_opt != crc_calc)
       return etl::unexpected<FrameError>(FrameError::CRC_MISMATCH);

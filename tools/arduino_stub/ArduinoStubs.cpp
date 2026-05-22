@@ -3,6 +3,10 @@
 #include "BridgeFaultInjection.h"
 
 SPIClass SPI;
+HardwareSerial Serial __attribute__((weak));
+HardwareSerial Serial1 __attribute__((weak));
+
+Stream* g_arduino_stream_delegate __attribute__((weak)) = nullptr;
 
 #ifdef ARDUINO_STUB_CUSTOM_MILLIS
 unsigned long millis() __attribute__((weak));

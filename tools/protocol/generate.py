@@ -24,20 +24,34 @@ from jinja2 import Environment, FileSystemLoader
 # ═════════════════════════════════════════════════════════════════════════════
 # DEPENDENCY VALIDATION (CRITICAL)
 # ═════════════════════════════════════════════════════════════════════════════
-REQUIRED_DEPS = ["msgspec", "jinja2", "google.protobuf", "nanopb", "grpc_tools"]
+REQUIRED_DEPS = ["msgspec", "jinja2", "google.protobuf", "nanopb"]
 MISSING_DEPS: list[str] = []
 
 for dep in REQUIRED_DEPS:
     if importlib.util.find_spec(dep.split(".")[0]) is None:
         MISSING_DEPS.append(dep)
 
-if MISSING_DEPS:
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+
+# Check for protoc binary (check local project bin first)
+PROTOC_BIN = (REPO_ROOT / "bin" / "protoc").resolve()
+if not PROTOC_BIN.exists():
+    PROTOC_BIN = Path("protoc")
+
+HAS_PROTOC = subprocess.run([str(PROTOC_BIN), "--version"], capture_output=True).returncode == 0
+
+if MISSING_DEPS or not HAS_PROTOC:
     sys.stderr.write("\n" + "!" * 80 + "\n")
-    sys.stderr.write("ERROR: Missing Python dependencies required for protocol generation:\n")
+    sys.stderr.write("ERROR: Missing dependencies required for protocol generation:\n")
     for dep in MISSING_DEPS:
-        sys.stderr.write(f"  - {dep}\n")
+        sys.stderr.write(f"  - {dep} (Python)\n")
+    if not HAS_PROTOC:
+        sys.stderr.write("  - protoc (System binary or local ./bin/protoc missing)\n")
     sys.stderr.write("\nTo fix this, run:\n")
-    sys.stderr.write(f"  pip install {' '.join(MISSING_DEPS)}\n")
+    if MISSING_DEPS:
+        sys.stderr.write(f"  pip install {' '.join(MISSING_DEPS)}\n")
+    if not HAS_PROTOC:
+        sys.stderr.write("  Check README for local protoc installation instructions.\n")
     sys.stderr.write("!" * 80 + "\n\n")
     sys.exit(1)
 # ═════════════════════════════════════════════════════════════════════════════
@@ -47,7 +61,7 @@ if TYPE_CHECKING:
     from mcubridge.protocol.spec_model import ProtocolSpec
 else:
     _SPEC_MODEL_PATH = (
-        Path(__file__).resolve().parent.parent.parent
+        REPO_ROOT
         / "mcubridge"
         / "mcubridge"
         / "protocol"
@@ -59,7 +73,6 @@ else:
     _loader_spec.loader.exec_module(_spec_mod)
     ProtocolSpec = _spec_mod.ProtocolSpec
 
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 TEMPLATE_DIR = Path(__file__).parent / "templates"
 VERSION_PATH = REPO_ROOT / "VERSION"
 
@@ -1095,11 +1108,9 @@ class JinjaGenerator:
             sys.exit(1)
 
     def generate_python_pb2(self, proto_path: Path, out_dir: Path) -> None:
-        """Invoke protoc to generate Python pb2 module and typing stub via grpcio-tools."""
+        """Invoke protoc to generate Python pb2 module and typing stub."""
         cmd = [
-            sys.executable,
-            "-m",
-            "grpc_tools.protoc",
+            str(PROTOC_BIN),
             f"--python_out={out_dir}",
             f"--pyi_out={out_dir}",
             f"--proto_path={proto_path.parent}",
@@ -1108,7 +1119,7 @@ class JinjaGenerator:
         try:
             subprocess.run(cmd, check=True, capture_output=True, text=True)
         except subprocess.CalledProcessError as e:
-            sys.stderr.write(f"Error: grpc_tools.protoc failed: {e.stderr}\n")
+            sys.stderr.write(f"Error: protoc failed: {e.stderr}\n")
             sys.exit(1)
 
     def generate_python_client(self, spec: ProtocolSpec, out_path: Path) -> None:

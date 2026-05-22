@@ -60,15 +60,6 @@ bool handshake_authenticate_raw(const uint8_t* secret, size_t secret_len,
                                 const uint8_t* received_tag, size_t tag_len,
                                 uint8_t* out_tag);
 
-inline bool handshake_authenticate(etl::span<const uint8_t> secret,
-                                   etl::span<const uint8_t> nonce,
-                                   etl::span<const uint8_t> received_tag,
-                                   etl::span<uint8_t> out_tag) {
-  return handshake_authenticate_raw(secret.data(), secret.size(), nonce.data(),
-                                     nonce.size(), received_tag.data(),
-                                     received_tag.size(), out_tag.data());
-}
-
 /**
  * @brief Derive session key from shared secret and nonce using HKDF.
  */
@@ -76,39 +67,18 @@ void derive_session_key_raw(const uint8_t* secret, size_t secret_len,
                              const uint8_t* nonce, size_t nonce_len,
                              uint8_t* out_key);
 
-inline void derive_session_key(etl::span<const uint8_t> secret,
-                               etl::span<const uint8_t> nonce,
-                               etl::span<uint8_t> out_key) {
-  derive_session_key_raw(secret.data(), secret.size(), nonce.data(),
-                          nonce.size(), out_key.data());
-}
-
 /**
  * @brief Securely encrypt a frame's payload and populate nonce/tag.
- * [MEM-SAVE] Centralizing frame-level crypto reduces main logic bloat.
  */
 bool aead_encrypt_frame_raw(rpc::Frame& f, const uint8_t* payload, size_t len,
                             const uint8_t* key, uint64_t& nonce_counter,
                             uint8_t* out_buffer);
-
-inline bool aead_encrypt_frame(rpc::Frame& f, etl::span<const uint8_t> payload,
-                               etl::span<const uint8_t> key,
-                               uint64_t& nonce_counter,
-                               etl::span<uint8_t> out_buffer) {
-  return aead_encrypt_frame_raw(f, payload.data(), payload.size(), key.data(),
-                                 nonce_counter, out_buffer.data());
-}
 
 /**
  * @brief Securely decrypt a frame's payload.
  */
 bool aead_decrypt_frame_raw(rpc::Frame& f, const uint8_t* key,
                              uint8_t* out_buffer);
-
-inline bool aead_decrypt_frame(rpc::Frame& f, etl::span<const uint8_t> key,
-                               etl::span<uint8_t> out_buffer) {
-  return aead_decrypt_frame_raw(f, key.data(), out_buffer.data());
-}
 
 /**
  * @brief Validate monotonic nonce counter to prevent replay attacks.

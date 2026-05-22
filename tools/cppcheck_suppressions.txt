@@ -1,3 +1,8 @@
+knownConditionTrueFalse:mcubridge-library-arduino/src/Bridge.cpp
+functionStatic:mcubridge-library-arduino/src/protocol/rpc_frame.h
+missingIncludeSystem
+normalCheckLevelMaxBranches
+unmatchedSuppression
 *:*etl*
 *:*arduino_stub*
 *:*nanopb*
@@ -5,10 +10,5 @@
 *:*pb_encode*
 *:*pb_decode*
 *:*pb.h*
-*:*mcubridge.pb*
-# False positive: cppcheck stub millis() returns 0 but real hardware increments
-knownConditionTrueFalse:*Bridge.cpp
-functionStatic:*mcubridge-library-arduino/src/protocol/rpc_frame.h
-unknownMacro:*mcubridge-library-arduino/src/security/sha256.cpp
-
-invalidLifetime:*mcubridge-library-arduino/src/security/sha256.h
+*:mcubridge.pb.c
+*:mcubridge.pb.h

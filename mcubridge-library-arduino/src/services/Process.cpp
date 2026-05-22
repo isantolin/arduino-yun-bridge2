@@ -17,10 +17,9 @@ constexpr int32_t kProcessInvalidPid = -1;
 
 ProcessClass::ProcessClass() {}
 
-void ProcessClass::runAsync(etl::string_view cmd,
-                            etl::span<const etl::string_view> args,
-                            ProcessRunHandler handler) {
-  if (handler.is_valid() && Process._pending_run_async.full()) {
+void ProcessClass::run(etl::string_view cmd, const etl::span<etl::string_view>& args,
+                       ProcessHandler handler) {
+  if (_pending_run_async.full()) {
     Bridge.emitStatus(
         rpc::StatusCode::STATUS_ERROR,
         etl::string_view(rpc::status_reason::PROCESS_LIMIT_REACHED));
@@ -66,36 +65,7 @@ void ProcessClass::runAsync(etl::string_view cmd,
     return;
   }
 
-  if (handler.is_valid()) Process._pending_run_async.push({handler});
-}
-
-void ProcessClass::poll(int32_t pid, ProcessPollHandler handler) {
-  if (handler.is_valid() && _pending_polls.full()) {
-    Bridge.emitStatus(
-        rpc::StatusCode::STATUS_ERROR,
-        etl::string_view(rpc::status_reason::PROCESS_LIMIT_REACHED));
-    return;
-  }
-
-  rpc::payload::ProcessPoll p;
-  p.pb_msg.pid = static_cast<uint32_t>(pid);
-
-  if (!Bridge.send(rpc::CommandId::CMD_PROCESS_POLL, 0, p)) {
-    Bridge.emitStatus(
-        rpc::StatusCode::STATUS_ERROR,
-        etl::string_view(rpc::status_reason::PROCESS_RUN_INTERNAL_ERROR));
-    return;
-  }
-
-  if (handler.is_valid()) {
-    _pending_polls.push({pid, handler});
-  }
-}
-
-void ProcessClass::kill(int32_t pid) {
-  rpc::payload::ProcessKill p;
-  p.pb_msg.pid = static_cast<uint32_t>(pid);
-  (void)Bridge.send(rpc::CommandId::CMD_PROCESS_KILL, 0, p);
+  if (handler.is_valid()) _pending_run_async.push({handler});
 }
 
 void ProcessClass::_onKillNotification(const rpc::payload::ProcessKill& msg) {

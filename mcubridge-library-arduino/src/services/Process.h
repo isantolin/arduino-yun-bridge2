@@ -21,11 +21,6 @@ class ProcessClass : public BridgeObserver {
                          etl::span<const uint8_t>)>;
 
   ProcessClass();
-  static void runAsync(etl::string_view cmd,
-                       etl::span<const etl::string_view> args,
-                       ProcessRunHandler handler);
-  void poll(int32_t pid, ProcessPollHandler handler);
-  static void kill(int32_t pid);
 
   void _onKillNotification(const rpc::payload::ProcessKill& msg);
   void _onRunAsyncResponse(const rpc::payload::ProcessRunAsyncResponse& msg);

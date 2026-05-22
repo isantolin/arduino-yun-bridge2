@@ -283,7 +283,7 @@ class BridgeClass {
   void _handleSpiSetConfigCommand(const bridge::router::CommandContext& ctx);
 #endif
 
-  void _handleStatusOk(const bridge::router::CommandContext& ctx);
+  static void _handleStatusOk(const bridge::router::CommandContext& ctx);
   void _handleStatusMalformed(const bridge::router::CommandContext& ctx);
   void _handleStatusAck(const bridge::router::CommandContext& ctx);
   void _handleGetVersion(const bridge::router::CommandContext& ctx);

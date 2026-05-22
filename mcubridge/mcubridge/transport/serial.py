@@ -109,7 +109,7 @@ class SerialTransport:
 
     def _switch_local_baudrate(self, target_baud: int) -> None:
         try:
-            self._active_transport().baudrate = target_baud
+            self._active_transport().serial.baudrate = target_baud
             logger.info("Local UART switched to %d baud", target_baud)
         except (AttributeError, OSError, ValueError, serialx.SerialException) as e:
             raise RuntimeError(f"UART access failed: {e}") from e

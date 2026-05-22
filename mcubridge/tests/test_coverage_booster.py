@@ -119,11 +119,15 @@ async def test_serial_transport_edge_cases(mock_config: RuntimeConfig, mock_stat
     service = MagicMock()
     transport = SerialTransport(mock_config, mock_state, service)
 
-    class BrokenTransport:
+    class BrokenSerial:
         def __setattr__(self, name: str, value: object) -> None:
             if name == "baudrate":
                 raise ValueError("unsupported baudrate")
             super().__setattr__(name, value)
+
+    class BrokenTransport:
+        def __init__(self) -> None:
+            self.serial = BrokenSerial()
 
     transport.writer = MagicMock(spec=asyncio.StreamWriter)
     transport.writer.is_closing.return_value = False

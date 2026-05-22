@@ -121,7 +121,7 @@ def _open_serial_device(port: str, baud: int, timeout: float) -> serialx.Serial:
 def _write_frame(device: serialx.Serial, encoded_packet: bytes) -> int:
     written = device.write(encoded_packet)
     device.flush()
-    return int(written) if written is not None else 0
+    return written
 
 
 def _read_frame(device: serialx.Serial, timeout: float) -> bytes | None:

@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import asyncio
 import pytest
@@ -99,7 +99,8 @@ async def test_process_packet_negotiation_ack_switches_local_baudrate() -> None:
         mock_writer.is_closing.return_value = False
 
         mock_transport = AsyncMock()
-        mock_transport.baudrate = config.serial_safe_baud
+        mock_transport.serial = MagicMock()
+        mock_transport.serial.baudrate = config.serial_safe_baud
         mock_writer.transport = mock_transport
 
         transport.writer = mock_writer
@@ -117,7 +118,7 @@ async def test_process_packet_negotiation_ack_switches_local_baudrate() -> None:
         transport._process_packet(encoded)  # type: ignore[reportPrivateUsage]
 
         assert await transport._negotiation_future is True  # type: ignore[reportPrivateUsage]
-        assert mock_transport.baudrate == config.serial_baud
+        assert mock_transport.serial.baudrate == config.serial_baud
     finally:
         state.cleanup()
 

@@ -32,8 +32,7 @@ jobs:
           PROTOC_VERSION=29.3
           PROTOC_ZIP=protoc-${PROTOC_VERSION}-linux-x86_64.zip
           curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${PROTOC_ZIP}
-          sudo unzip -o ${PROTOC_ZIP} -d /usr/local bin/protoc
-          sudo unzip -o ${PROTOC_ZIP} -d /usr/local 'include/*'
+          sudo unzip -o ${PROTOC_ZIP} -d /usr/local
           rm -f ${PROTOC_ZIP}
           protoc --version
       - uses: ./.github/actions/setup-python-tox
@@ -41,7 +40,7 @@ jobs:
           install-system-deps: 'true'
       - name: Install System Dependencies
         run: |
-          sudo apt-get update && sudo apt-get install -y cppcheck lua-check
+          sudo apt-get update && sudo apt-get install -y cppcheck luacheck unzip
       - name: Check for Hardcoded Secrets
         run: |
           echo "Checking for hardcoded secrets..."
@@ -69,8 +68,7 @@ jobs:
           PROTOC_VERSION=29.3
           PROTOC_ZIP=protoc-${PROTOC_VERSION}-linux-x86_64.zip
           curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${PROTOC_ZIP}
-          sudo unzip -o ${PROTOC_ZIP} -d /usr/local bin/protoc
-          sudo unzip -o ${PROTOC_ZIP} -d /usr/local 'include/*'
+          sudo unzip -o ${PROTOC_ZIP} -d /usr/local
           rm -f ${PROTOC_ZIP}
           protoc --version
       - name: Setup Arduino CLI
@@ -115,8 +113,7 @@ jobs:
           PROTOC_VERSION=29.3
           PROTOC_ZIP=protoc-${PROTOC_VERSION}-linux-x86_64.zip
           curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${PROTOC_ZIP}
-          sudo unzip -o ${PROTOC_ZIP} -d /usr/local bin/protoc
-          sudo unzip -o ${PROTOC_ZIP} -d /usr/local 'include/*'
+          sudo unzip -o ${PROTOC_ZIP} -d /usr/local
           rm -f ${PROTOC_ZIP}
           protoc --version
       - uses: ./.github/actions/setup-python-tox
@@ -195,8 +192,7 @@ jobs:
           PROTOC_VERSION=29.3
           PROTOC_ZIP=protoc-${PROTOC_VERSION}-linux-x86_64.zip
           curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${PROTOC_ZIP}
-          sudo unzip -o ${PROTOC_ZIP} -d /usr/local bin/protoc
-          sudo unzip -o ${PROTOC_ZIP} -d /usr/local 'include/*'
+          sudo unzip -o ${PROTOC_ZIP} -d /usr/local
           rm -f ${PROTOC_ZIP}
           protoc --version
       - uses: ./.github/actions/setup-python-tox
@@ -230,8 +226,7 @@ jobs:
           PROTOC_VERSION=29.3
           PROTOC_ZIP=protoc-${PROTOC_VERSION}-linux-x86_64.zip
           curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${PROTOC_ZIP}
-          sudo unzip -o ${PROTOC_ZIP} -d /usr/local bin/protoc
-          sudo unzip -o ${PROTOC_ZIP} -d /usr/local 'include/*'
+          sudo unzip -o ${PROTOC_ZIP} -d /usr/local
           rm -f ${PROTOC_ZIP}
           protoc --version
       - uses: ./.github/actions/setup-python-tox
@@ -258,8 +253,7 @@ jobs:
           PROTOC_VERSION=29.3
           PROTOC_ZIP=protoc-${PROTOC_VERSION}-linux-x86_64.zip
           curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${PROTOC_ZIP}
-          sudo unzip -o ${PROTOC_ZIP} -d /usr/local bin/protoc
-          sudo unzip -o ${PROTOC_ZIP} -d /usr/local 'include/*'
+          sudo unzip -o ${PROTOC_ZIP} -d /usr/local
           rm -f ${PROTOC_ZIP}
           protoc --version
       - uses: ./.github/actions/setup-python-tox
@@ -296,7 +290,7 @@ jobs:
 
       - name: Generate Coverage Summary
         run: |
-          pip install -r requirements/runtime.txt rich grpcio-tools nanopb protobuf
+          pip install -r requirements/runtime.txt rich nanopb protobuf
           python tools/coverage_report.py \
             --output-markdown coverage/coverage-summary.md \
             --output-json coverage/coverage-summary.json \

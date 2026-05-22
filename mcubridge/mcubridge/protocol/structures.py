@@ -1,3 +1,1354 @@
+from typing import Any, Final, cast
+from . import mcubridge_pb2 as pb
+# --- BEGIN GENERATED PACKETS --- DO NOT EDIT (auto-generated from spec.toml)
+
+
+class AckPacket:
+    PROTO_CLASS: Any = pb.AckPacket
+    _msg: Any
+    
+    command_id: Annotated[int, msgspec.Meta(ge=0)]
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> AckPacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class GenericResponsePacket:
+    PROTO_CLASS: Any = pb.GenericResponse
+    _msg: Any
+    
+    status: Annotated[int, msgspec.Meta(ge=0)]
+    
+    message: str
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> GenericResponsePacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class VersionRequestPacket:
+    PROTO_CLASS: Any = pb.VersionRequest
+    _msg: Any
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> VersionRequestPacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class VersionResponsePacket:
+    PROTO_CLASS: Any = pb.VersionResponse
+    _msg: Any
+    
+    major: Annotated[int, msgspec.Meta(ge=0)]
+    
+    minor: Annotated[int, msgspec.Meta(ge=0)]
+    
+    patch: Annotated[int, msgspec.Meta(ge=0)]
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> VersionResponsePacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class FreeMemoryRequestPacket:
+    PROTO_CLASS: Any = pb.FreeMemoryRequest
+    _msg: Any
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> FreeMemoryRequestPacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class FreeMemoryResponsePacket:
+    PROTO_CLASS: Any = pb.FreeMemoryResponse
+    _msg: Any
+    
+    value: Annotated[int, msgspec.Meta(ge=0)]
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> FreeMemoryResponsePacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class LinkSyncPacket:
+    PROTO_CLASS: Any = pb.LinkSync
+    _msg: Any
+    
+    nonce: bytes
+    
+    tag: bytes
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> LinkSyncPacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class LinkSyncResponsePacket:
+    PROTO_CLASS: Any = pb.LinkSyncResponse
+    _msg: Any
+    
+    nonce: bytes
+    
+    tag: bytes
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> LinkSyncResponsePacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class LinkResetPacket:
+    PROTO_CLASS: Any = pb.LinkReset
+    _msg: Any
+    
+    ack_timeout_ms: Annotated[int, msgspec.Meta(ge=0)]
+    
+    ack_retry_limit: Annotated[int, msgspec.Meta(ge=0)]
+    
+    response_timeout_ms: Annotated[int, msgspec.Meta(ge=0)]
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> LinkResetPacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class LinkResetResponsePacket:
+    PROTO_CLASS: Any = pb.LinkResetResponse
+    _msg: Any
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> LinkResetResponsePacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class CapabilitiesRequestPacket:
+    PROTO_CLASS: Any = pb.CapabilitiesRequest
+    _msg: Any
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> CapabilitiesRequestPacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class SetBaudratePacket:
+    PROTO_CLASS: Any = pb.SetBaudratePacket
+    _msg: Any
+    
+    baudrate: Annotated[int, msgspec.Meta(ge=0)]
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> SetBaudratePacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class SetBaudrateResponsePacket:
+    PROTO_CLASS: Any = pb.SetBaudrateResponse
+    _msg: Any
+    
+    baudrate: Annotated[int, msgspec.Meta(ge=0)]
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> SetBaudrateResponsePacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class EnterBootloaderPacket:
+    PROTO_CLASS: Any = pb.EnterBootloader
+    _msg: Any
+    
+    magic: Annotated[int, msgspec.Meta(ge=0)]
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> EnterBootloaderPacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class FlowControlXoffPacket:
+    PROTO_CLASS: Any = pb.FlowControlXoff
+    _msg: Any
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> FlowControlXoffPacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class FlowControlXonPacket:
+    PROTO_CLASS: Any = pb.FlowControlXon
+    _msg: Any
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> FlowControlXonPacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class PinModePacket:
+    PROTO_CLASS: Any = pb.PinMode
+    _msg: Any
+    
+    pin: Annotated[int, msgspec.Meta(ge=0)]
+    
+    mode: Annotated[int, msgspec.Meta(ge=0)]
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> PinModePacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class DigitalWritePacket:
+    PROTO_CLASS: Any = pb.DigitalWrite
+    _msg: Any
+    
+    pin: Annotated[int, msgspec.Meta(ge=0)]
+    
+    value: Annotated[int, msgspec.Meta(ge=0)]
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> DigitalWritePacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class AnalogWritePacket:
+    PROTO_CLASS: Any = pb.AnalogWrite
+    _msg: Any
+    
+    pin: Annotated[int, msgspec.Meta(ge=0)]
+    
+    value: Annotated[int, msgspec.Meta(ge=0)]
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> AnalogWritePacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class PinReadPacket:
+    PROTO_CLASS: Any = pb.PinRead
+    _msg: Any
+    
+    pin: Annotated[int, msgspec.Meta(ge=0)]
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> PinReadPacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class DigitalReadResponsePacket:
+    PROTO_CLASS: Any = pb.DigitalReadResponse
+    _msg: Any
+    
+    value: Annotated[int, msgspec.Meta(ge=0)]
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> DigitalReadResponsePacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class AnalogReadResponsePacket:
+    PROTO_CLASS: Any = pb.AnalogReadResponse
+    _msg: Any
+    
+    value: Annotated[int, msgspec.Meta(ge=0)]
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> AnalogReadResponsePacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class ConsoleWritePacket:
+    PROTO_CLASS: Any = pb.ConsoleWrite
+    _msg: Any
+    
+    data: bytes
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> ConsoleWritePacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class DatastorePutPacket:
+    PROTO_CLASS: Any = pb.DatastorePut
+    _msg: Any
+    
+    key: str
+    
+    value: bytes
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> DatastorePutPacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class DatastoreGetPacket:
+    PROTO_CLASS: Any = pb.DatastoreGet
+    _msg: Any
+    
+    key: str
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> DatastoreGetPacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class DatastoreGetResponsePacket:
+    PROTO_CLASS: Any = pb.DatastoreGetResponse
+    _msg: Any
+    
+    value: bytes
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> DatastoreGetResponsePacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class MailboxReadPacket:
+    PROTO_CLASS: Any = pb.MailboxRead
+    _msg: Any
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> MailboxReadPacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class MailboxProcessedPacket:
+    PROTO_CLASS: Any = pb.MailboxProcessed
+    _msg: Any
+    
+    message_id: Annotated[int, msgspec.Meta(ge=0)]
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> MailboxProcessedPacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class MailboxAvailablePacket:
+    PROTO_CLASS: Any = pb.MailboxAvailable
+    _msg: Any
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> MailboxAvailablePacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class MailboxPushPacket:
+    PROTO_CLASS: Any = pb.MailboxPush
+    _msg: Any
+    
+    data: bytes
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> MailboxPushPacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class MailboxAvailableResponsePacket:
+    PROTO_CLASS: Any = pb.MailboxAvailableResponse
+    _msg: Any
+    
+    count: Annotated[int, msgspec.Meta(ge=0)]
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> MailboxAvailableResponsePacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class MailboxReadResponsePacket:
+    PROTO_CLASS: Any = pb.MailboxReadResponse
+    _msg: Any
+    
+    content: bytes
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> MailboxReadResponsePacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class FileWritePacket:
+    PROTO_CLASS: Any = pb.FileWrite
+    _msg: Any
+    
+    path: str
+    
+    data: bytes
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> FileWritePacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class FileReadPacket:
+    PROTO_CLASS: Any = pb.FileRead
+    _msg: Any
+    
+    path: str
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> FileReadPacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class FileRemovePacket:
+    PROTO_CLASS: Any = pb.FileRemove
+    _msg: Any
+    
+    path: str
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> FileRemovePacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class FileReadResponsePacket:
+    PROTO_CLASS: Any = pb.FileReadResponse
+    _msg: Any
+    
+    content: bytes
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> FileReadResponsePacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class ProcessRunAsyncPacket:
+    PROTO_CLASS: Any = pb.ProcessRunAsync
+    _msg: Any
+    
+    command: str
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> ProcessRunAsyncPacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class ProcessRunAsyncResponsePacket:
+    PROTO_CLASS: Any = pb.ProcessRunAsyncResponse
+    _msg: Any
+    
+    pid: Annotated[int, msgspec.Meta(ge=0)]
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> ProcessRunAsyncResponsePacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class ProcessPollPacket:
+    PROTO_CLASS: Any = pb.ProcessPoll
+    _msg: Any
+    
+    pid: Annotated[int, msgspec.Meta(ge=0)]
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> ProcessPollPacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class ProcessPollResponsePacket:
+    PROTO_CLASS: Any = pb.ProcessPollResponse
+    _msg: Any
+    
+    status: Annotated[int, msgspec.Meta(ge=0)]
+    
+    exit_code: Annotated[int, msgspec.Meta(ge=0)]
+    
+    stdout_data: bytes
+    
+    stderr_data: bytes
+    
+    finished: bool
+    
+    stdout_truncated: bool
+    
+    stderr_truncated: bool
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> ProcessPollResponsePacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class ProcessKillPacket:
+    PROTO_CLASS: Any = pb.ProcessKill
+    _msg: Any
+    
+    pid: Annotated[int, msgspec.Meta(ge=0)]
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> ProcessKillPacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class SpiBeginPacket:
+    PROTO_CLASS: Any = pb.SpiBegin
+    _msg: Any
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> SpiBeginPacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class SpiEndPacket:
+    PROTO_CLASS: Any = pb.SpiEnd
+    _msg: Any
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> SpiEndPacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class SpiTransferPacket:
+    PROTO_CLASS: Any = pb.SpiTransfer
+    _msg: Any
+    
+    data: bytes
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> SpiTransferPacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class SpiTransferResponsePacket:
+    PROTO_CLASS: Any = pb.SpiTransferResponse
+    _msg: Any
+    
+    data: bytes
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> SpiTransferResponsePacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class SpiConfigPacket:
+    PROTO_CLASS: Any = pb.SpiConfig
+    _msg: Any
+    
+    bit_order: Annotated[int, msgspec.Meta(ge=0)]
+    
+    data_mode: Annotated[int, msgspec.Meta(ge=0)]
+    
+    frequency: Annotated[int, msgspec.Meta(ge=0)]
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> SpiConfigPacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+class HandshakeConfigPacket:
+    PROTO_CLASS: Any = pb.HandshakeConfig
+    _msg: Any
+    
+    ack_timeout_ms: Annotated[int, msgspec.Meta(ge=0)]
+    
+    ack_retry_limit: Annotated[int, msgspec.Meta(ge=0)]
+    
+    response_timeout_ms: Annotated[int, msgspec.Meta(ge=0)]
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> HandshakeConfigPacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return cast(bytes, self._msg.SerializeToString())
+
+
+# --- McuFrame Helper ---
+
+_COMMAND_TO_FIELD: Final[dict[int, str]] = {
+    48: "ack",
+    49: "error",
+    64: "get_version",
+    65: "version_resp",
+    66: "get_free_memory",
+    67: "free_memory_resp",
+    68: "link_sync",
+    69: "link_sync_resp",
+    70: "link_reset",
+    71: "link_reset_resp",
+    72: "get_capabilities",
+    73: "capabilities_resp",
+    74: "set_baudrate",
+    75: "set_baudrate_resp",
+    76: "enter_bootloader",
+    78: "xoff",
+    79: "xon",
+    80: "set_pin_mode",
+    81: "digital_write",
+    82: "analog_write",
+    83: "digital_read",
+    84: "analog_read",
+    85: "digital_read_resp",
+    86: "analog_read_resp",
+    96: "console_write",
+    112: "datastore_put",
+    113: "datastore_get",
+    114: "datastore_get_resp",
+    128: "mailbox_read",
+    129: "mailbox_processed",
+    130: "mailbox_available",
+    131: "mailbox_push",
+    132: "mailbox_read_resp",
+    133: "mailbox_available_resp",
+    144: "file_write",
+    145: "file_read",
+    146: "file_remove",
+    147: "file_read_resp",
+    161: "process_run",
+    162: "process_poll",
+    163: "process_kill",
+    165: "process_run_resp",
+    166: "process_poll_resp",
+    176: "spi_begin",
+    177: "spi_transfer",
+    178: "spi_transfer_resp",
+    179: "spi_end",
+    180: "spi_set_config",
+}
+
+_FIELD_TO_CLASS: Final[dict[str, Any]] = {
+    "ack": pb.AckPacket,
+    "genericresponse": pb.GenericResponse,
+    "versionrequest": pb.VersionRequest,
+    "versionresponse": pb.VersionResponse,
+    "freememoryrequest": pb.FreeMemoryRequest,
+    "freememoryresponse": pb.FreeMemoryResponse,
+    "linksync": pb.LinkSync,
+    "linksyncresponse": pb.LinkSyncResponse,
+    "linkreset": pb.LinkReset,
+    "linkresetresponse": pb.LinkResetResponse,
+    "capabilitiesrequest": pb.CapabilitiesRequest,
+    "setbaudrate": pb.SetBaudratePacket,
+    "setbaudrateresponse": pb.SetBaudrateResponse,
+    "enterbootloader": pb.EnterBootloader,
+    "flowcontrolxoff": pb.FlowControlXoff,
+    "flowcontrolxon": pb.FlowControlXon,
+    "pinmode": pb.PinMode,
+    "digitalwrite": pb.DigitalWrite,
+    "analogwrite": pb.AnalogWrite,
+    "pinread": pb.PinRead,
+    "digitalreadresponse": pb.DigitalReadResponse,
+    "analogreadresponse": pb.AnalogReadResponse,
+    "consolewrite": pb.ConsoleWrite,
+    "datastoreput": pb.DatastorePut,
+    "datastoreget": pb.DatastoreGet,
+    "datastoregetresponse": pb.DatastoreGetResponse,
+    "mailboxread": pb.MailboxRead,
+    "mailboxprocessed": pb.MailboxProcessed,
+    "mailboxavailable": pb.MailboxAvailable,
+    "mailboxpush": pb.MailboxPush,
+    "mailboxavailableresponse": pb.MailboxAvailableResponse,
+    "mailboxreadresponse": pb.MailboxReadResponse,
+    "filewrite": pb.FileWrite,
+    "fileread": pb.FileRead,
+    "fileremove": pb.FileRemove,
+    "filereadresponse": pb.FileReadResponse,
+    "processrunasync": pb.ProcessRunAsync,
+    "processrunasyncresponse": pb.ProcessRunAsyncResponse,
+    "processpoll": pb.ProcessPoll,
+    "processpollresponse": pb.ProcessPollResponse,
+    "processkill": pb.ProcessKill,
+    "spibegin": pb.SpiBegin,
+    "spiend": pb.SpiEnd,
+    "spitransfer": pb.SpiTransfer,
+    "spitransferresponse": pb.SpiTransferResponse,
+    "spiconfig": pb.SpiConfig,
+    "handshakeconfig": pb.HandshakeConfig,
+}
+
+def wrap_mcu_frame(command_id: int, seq_id: int, flags: int = 0, payload: Any = None) -> bytes:
+    """Wrap a payload into a Protobuf McuFrame container."""
+    frame = pb.McuFrame()
+    frame.seq_id = seq_id
+    frame.flags = flags
+    if payload is not None:
+        field_name = _COMMAND_TO_FIELD.get(command_id)
+        if field_name:
+            # Handle both wrapped Packet classes and raw Protobuf messages
+            msg = payload._msg if hasattr(payload, "_msg") else payload
+            
+            # If payload is bytes, we MUST decode it to the target class first
+            if isinstance(msg, bytes):
+                target_cls = _FIELD_TO_CLASS.get(field_name)
+                if target_cls:
+                    real_msg = target_cls()
+                    real_msg.ParseFromString(msg)
+                    msg = real_msg
+            
+            if not isinstance(msg, bytes):
+                getattr(frame, field_name).CopyFrom(msg)
+    return cast(bytes, frame.SerializeToString())
+
+def unwrap_mcu_frame(data: bytes) -> tuple[int, int, int, Any]:
+    """Unwrap a Protobuf McuFrame container."""
+    frame = pb.McuFrame()
+    frame.ParseFromString(data)
+    
+    command_id = 0
+    payload = None
+    oneof_field = frame.WhichOneof("message")
+    if oneof_field:
+        # Invert the mapping to find CommandId
+        for cid, field in _COMMAND_TO_FIELD.items():
+            if field == oneof_field:
+                command_id = cid
+                payload = getattr(frame, oneof_field)
+                break
+                
+    return command_id, frame.seq_id, frame.flags, payload
+
+# --- END GENERATED PACKETS ---
+
+
 """MCU Bridge Data Structures and Schemas.
 
 SINGLE SOURCE OF TRUTH for all data structures.
@@ -5,7 +1356,6 @@ Binary parsing uses stdlib struct; high-level schemas use Msgspec (SIL-2).
 """
 
 from __future__ import annotations
-from . import mcubridge_pb2 as pb
 
 import asyncio
 import enum
@@ -570,866 +1920,6 @@ class BaseStruct(msgspec.Struct, frozen=True, array_like=True):
 
 
 # --- Binary Protocol Packets ---
-
-# --- BEGIN GENERATED PACKETS --- DO NOT EDIT (auto-generated from spec.toml)
-
-
-class VersionResponsePacket:
-    PROTO_CLASS: Any = pb.VersionResponse
-    _msg: Any
-    
-    major: Annotated[int, msgspec.Meta(ge=0)]
-    
-    minor: Annotated[int, msgspec.Meta(ge=0)]
-    
-    patch: Annotated[int, msgspec.Meta(ge=0)]
-    
-
-    def __init__(self, **kwargs: Any) -> None:
-        self._msg = self.PROTO_CLASS(**kwargs)
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._msg, name)
-
-    @classmethod
-    def decode(cls, data: bytes) -> VersionResponsePacket:
-        msg = cls.PROTO_CLASS()
-        msg.ParseFromString(data)
-        instance = cls()
-        instance._msg = msg
-        return instance
-
-    def encode(self) -> bytes:
-        return self._msg.SerializeToString() # type: ignore
-
-
-class FreeMemoryResponsePacket:
-    PROTO_CLASS: Any = pb.FreeMemoryResponse
-    _msg: Any
-    
-    value: Annotated[int, msgspec.Meta(ge=0)]
-    
-
-    def __init__(self, **kwargs: Any) -> None:
-        self._msg = self.PROTO_CLASS(**kwargs)
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._msg, name)
-
-    @classmethod
-    def decode(cls, data: bytes) -> FreeMemoryResponsePacket:
-        msg = cls.PROTO_CLASS()
-        msg.ParseFromString(data)
-        instance = cls()
-        instance._msg = msg
-        return instance
-
-    def encode(self) -> bytes:
-        return self._msg.SerializeToString() # type: ignore
-
-
-class PinModePacket:
-    PROTO_CLASS: Any = pb.PinMode
-    _msg: Any
-    
-    pin: Annotated[int, msgspec.Meta(ge=0)]
-    
-    mode: Annotated[int, msgspec.Meta(ge=0)]
-    
-
-    def __init__(self, **kwargs: Any) -> None:
-        self._msg = self.PROTO_CLASS(**kwargs)
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._msg, name)
-
-    @classmethod
-    def decode(cls, data: bytes) -> PinModePacket:
-        msg = cls.PROTO_CLASS()
-        msg.ParseFromString(data)
-        instance = cls()
-        instance._msg = msg
-        return instance
-
-    def encode(self) -> bytes:
-        return self._msg.SerializeToString() # type: ignore
-
-
-class DigitalWritePacket:
-    PROTO_CLASS: Any = pb.DigitalWrite
-    _msg: Any
-    
-    pin: Annotated[int, msgspec.Meta(ge=0)]
-    
-    value: Annotated[int, msgspec.Meta(ge=0)]
-    
-
-    def __init__(self, **kwargs: Any) -> None:
-        self._msg = self.PROTO_CLASS(**kwargs)
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._msg, name)
-
-    @classmethod
-    def decode(cls, data: bytes) -> DigitalWritePacket:
-        msg = cls.PROTO_CLASS()
-        msg.ParseFromString(data)
-        instance = cls()
-        instance._msg = msg
-        return instance
-
-    def encode(self) -> bytes:
-        return self._msg.SerializeToString() # type: ignore
-
-
-class AnalogWritePacket:
-    PROTO_CLASS: Any = pb.AnalogWrite
-    _msg: Any
-    
-    pin: Annotated[int, msgspec.Meta(ge=0)]
-    
-    value: Annotated[int, msgspec.Meta(ge=0)]
-    
-
-    def __init__(self, **kwargs: Any) -> None:
-        self._msg = self.PROTO_CLASS(**kwargs)
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._msg, name)
-
-    @classmethod
-    def decode(cls, data: bytes) -> AnalogWritePacket:
-        msg = cls.PROTO_CLASS()
-        msg.ParseFromString(data)
-        instance = cls()
-        instance._msg = msg
-        return instance
-
-    def encode(self) -> bytes:
-        return self._msg.SerializeToString() # type: ignore
-
-
-class PinReadPacket:
-    PROTO_CLASS: Any = pb.PinRead
-    _msg: Any
-    
-    pin: Annotated[int, msgspec.Meta(ge=0)]
-    
-
-    def __init__(self, **kwargs: Any) -> None:
-        self._msg = self.PROTO_CLASS(**kwargs)
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._msg, name)
-
-    @classmethod
-    def decode(cls, data: bytes) -> PinReadPacket:
-        msg = cls.PROTO_CLASS()
-        msg.ParseFromString(data)
-        instance = cls()
-        instance._msg = msg
-        return instance
-
-    def encode(self) -> bytes:
-        return self._msg.SerializeToString() # type: ignore
-
-
-class DigitalReadResponsePacket:
-    PROTO_CLASS: Any = pb.DigitalReadResponse
-    _msg: Any
-    
-    value: Annotated[int, msgspec.Meta(ge=0)]
-    
-
-    def __init__(self, **kwargs: Any) -> None:
-        self._msg = self.PROTO_CLASS(**kwargs)
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._msg, name)
-
-    @classmethod
-    def decode(cls, data: bytes) -> DigitalReadResponsePacket:
-        msg = cls.PROTO_CLASS()
-        msg.ParseFromString(data)
-        instance = cls()
-        instance._msg = msg
-        return instance
-
-    def encode(self) -> bytes:
-        return self._msg.SerializeToString() # type: ignore
-
-
-class AnalogReadResponsePacket:
-    PROTO_CLASS: Any = pb.AnalogReadResponse
-    _msg: Any
-    
-    value: Annotated[int, msgspec.Meta(ge=0)]
-    
-
-    def __init__(self, **kwargs: Any) -> None:
-        self._msg = self.PROTO_CLASS(**kwargs)
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._msg, name)
-
-    @classmethod
-    def decode(cls, data: bytes) -> AnalogReadResponsePacket:
-        msg = cls.PROTO_CLASS()
-        msg.ParseFromString(data)
-        instance = cls()
-        instance._msg = msg
-        return instance
-
-    def encode(self) -> bytes:
-        return self._msg.SerializeToString() # type: ignore
-
-
-class ConsoleWritePacket:
-    PROTO_CLASS: Any = pb.ConsoleWrite
-    _msg: Any
-    
-    data: bytes
-    
-
-    def __init__(self, **kwargs: Any) -> None:
-        self._msg = self.PROTO_CLASS(**kwargs)
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._msg, name)
-
-    @classmethod
-    def decode(cls, data: bytes) -> ConsoleWritePacket:
-        msg = cls.PROTO_CLASS()
-        msg.ParseFromString(data)
-        instance = cls()
-        instance._msg = msg
-        return instance
-
-    def encode(self) -> bytes:
-        return self._msg.SerializeToString() # type: ignore
-
-
-class DatastorePutPacket:
-    PROTO_CLASS: Any = pb.DatastorePut
-    _msg: Any
-    
-    key: str
-    
-    value: bytes
-    
-
-    def __init__(self, **kwargs: Any) -> None:
-        self._msg = self.PROTO_CLASS(**kwargs)
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._msg, name)
-
-    @classmethod
-    def decode(cls, data: bytes) -> DatastorePutPacket:
-        msg = cls.PROTO_CLASS()
-        msg.ParseFromString(data)
-        instance = cls()
-        instance._msg = msg
-        return instance
-
-    def encode(self) -> bytes:
-        return self._msg.SerializeToString() # type: ignore
-
-
-class DatastoreGetPacket:
-    PROTO_CLASS: Any = pb.DatastoreGet
-    _msg: Any
-    
-    key: str
-    
-
-    def __init__(self, **kwargs: Any) -> None:
-        self._msg = self.PROTO_CLASS(**kwargs)
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._msg, name)
-
-    @classmethod
-    def decode(cls, data: bytes) -> DatastoreGetPacket:
-        msg = cls.PROTO_CLASS()
-        msg.ParseFromString(data)
-        instance = cls()
-        instance._msg = msg
-        return instance
-
-    def encode(self) -> bytes:
-        return self._msg.SerializeToString() # type: ignore
-
-
-class DatastoreGetResponsePacket:
-    PROTO_CLASS: Any = pb.DatastoreGetResponse
-    _msg: Any
-    
-    value: bytes
-    
-
-    def __init__(self, **kwargs: Any) -> None:
-        self._msg = self.PROTO_CLASS(**kwargs)
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._msg, name)
-
-    @classmethod
-    def decode(cls, data: bytes) -> DatastoreGetResponsePacket:
-        msg = cls.PROTO_CLASS()
-        msg.ParseFromString(data)
-        instance = cls()
-        instance._msg = msg
-        return instance
-
-    def encode(self) -> bytes:
-        return self._msg.SerializeToString() # type: ignore
-
-
-class MailboxPushPacket:
-    PROTO_CLASS: Any = pb.MailboxPush
-    _msg: Any
-    
-    data: bytes
-    
-
-    def __init__(self, **kwargs: Any) -> None:
-        self._msg = self.PROTO_CLASS(**kwargs)
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._msg, name)
-
-    @classmethod
-    def decode(cls, data: bytes) -> MailboxPushPacket:
-        msg = cls.PROTO_CLASS()
-        msg.ParseFromString(data)
-        instance = cls()
-        instance._msg = msg
-        return instance
-
-    def encode(self) -> bytes:
-        return self._msg.SerializeToString() # type: ignore
-
-
-class MailboxProcessedPacket:
-    PROTO_CLASS: Any = pb.MailboxProcessed
-    _msg: Any
-    
-    message_id: Annotated[int, msgspec.Meta(ge=0)]
-    
-
-    def __init__(self, **kwargs: Any) -> None:
-        self._msg = self.PROTO_CLASS(**kwargs)
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._msg, name)
-
-    @classmethod
-    def decode(cls, data: bytes) -> MailboxProcessedPacket:
-        msg = cls.PROTO_CLASS()
-        msg.ParseFromString(data)
-        instance = cls()
-        instance._msg = msg
-        return instance
-
-    def encode(self) -> bytes:
-        return self._msg.SerializeToString() # type: ignore
-
-
-class MailboxAvailableResponsePacket:
-    PROTO_CLASS: Any = pb.MailboxAvailableResponse
-    _msg: Any
-    
-    count: Annotated[int, msgspec.Meta(ge=0)]
-    
-
-    def __init__(self, **kwargs: Any) -> None:
-        self._msg = self.PROTO_CLASS(**kwargs)
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._msg, name)
-
-    @classmethod
-    def decode(cls, data: bytes) -> MailboxAvailableResponsePacket:
-        msg = cls.PROTO_CLASS()
-        msg.ParseFromString(data)
-        instance = cls()
-        instance._msg = msg
-        return instance
-
-    def encode(self) -> bytes:
-        return self._msg.SerializeToString() # type: ignore
-
-
-class MailboxReadResponsePacket:
-    PROTO_CLASS: Any = pb.MailboxReadResponse
-    _msg: Any
-    
-    content: bytes
-    
-
-    def __init__(self, **kwargs: Any) -> None:
-        self._msg = self.PROTO_CLASS(**kwargs)
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._msg, name)
-
-    @classmethod
-    def decode(cls, data: bytes) -> MailboxReadResponsePacket:
-        msg = cls.PROTO_CLASS()
-        msg.ParseFromString(data)
-        instance = cls()
-        instance._msg = msg
-        return instance
-
-    def encode(self) -> bytes:
-        return self._msg.SerializeToString() # type: ignore
-
-
-class FileWritePacket:
-    PROTO_CLASS: Any = pb.FileWrite
-    _msg: Any
-    
-    path: str
-    
-    data: bytes
-    
-
-    def __init__(self, **kwargs: Any) -> None:
-        self._msg = self.PROTO_CLASS(**kwargs)
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._msg, name)
-
-    @classmethod
-    def decode(cls, data: bytes) -> FileWritePacket:
-        msg = cls.PROTO_CLASS()
-        msg.ParseFromString(data)
-        instance = cls()
-        instance._msg = msg
-        return instance
-
-    def encode(self) -> bytes:
-        return self._msg.SerializeToString() # type: ignore
-
-
-class FileReadPacket:
-    PROTO_CLASS: Any = pb.FileRead
-    _msg: Any
-    
-    path: str
-    
-
-    def __init__(self, **kwargs: Any) -> None:
-        self._msg = self.PROTO_CLASS(**kwargs)
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._msg, name)
-
-    @classmethod
-    def decode(cls, data: bytes) -> FileReadPacket:
-        msg = cls.PROTO_CLASS()
-        msg.ParseFromString(data)
-        instance = cls()
-        instance._msg = msg
-        return instance
-
-    def encode(self) -> bytes:
-        return self._msg.SerializeToString() # type: ignore
-
-
-class FileRemovePacket:
-    PROTO_CLASS: Any = pb.FileRemove
-    _msg: Any
-    
-    path: str
-    
-
-    def __init__(self, **kwargs: Any) -> None:
-        self._msg = self.PROTO_CLASS(**kwargs)
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._msg, name)
-
-    @classmethod
-    def decode(cls, data: bytes) -> FileRemovePacket:
-        msg = cls.PROTO_CLASS()
-        msg.ParseFromString(data)
-        instance = cls()
-        instance._msg = msg
-        return instance
-
-    def encode(self) -> bytes:
-        return self._msg.SerializeToString() # type: ignore
-
-
-class FileReadResponsePacket:
-    PROTO_CLASS: Any = pb.FileReadResponse
-    _msg: Any
-    
-    content: bytes
-    
-
-    def __init__(self, **kwargs: Any) -> None:
-        self._msg = self.PROTO_CLASS(**kwargs)
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._msg, name)
-
-    @classmethod
-    def decode(cls, data: bytes) -> FileReadResponsePacket:
-        msg = cls.PROTO_CLASS()
-        msg.ParseFromString(data)
-        instance = cls()
-        instance._msg = msg
-        return instance
-
-    def encode(self) -> bytes:
-        return self._msg.SerializeToString() # type: ignore
-
-
-class ProcessRunAsyncPacket:
-    PROTO_CLASS: Any = pb.ProcessRunAsync
-    _msg: Any
-    
-    command: str
-    
-
-    def __init__(self, **kwargs: Any) -> None:
-        self._msg = self.PROTO_CLASS(**kwargs)
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._msg, name)
-
-    @classmethod
-    def decode(cls, data: bytes) -> ProcessRunAsyncPacket:
-        msg = cls.PROTO_CLASS()
-        msg.ParseFromString(data)
-        instance = cls()
-        instance._msg = msg
-        return instance
-
-    def encode(self) -> bytes:
-        return self._msg.SerializeToString() # type: ignore
-
-
-class ProcessRunAsyncResponsePacket:
-    PROTO_CLASS: Any = pb.ProcessRunAsyncResponse
-    _msg: Any
-    
-    pid: Annotated[int, msgspec.Meta(ge=0)]
-    
-
-    def __init__(self, **kwargs: Any) -> None:
-        self._msg = self.PROTO_CLASS(**kwargs)
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._msg, name)
-
-    @classmethod
-    def decode(cls, data: bytes) -> ProcessRunAsyncResponsePacket:
-        msg = cls.PROTO_CLASS()
-        msg.ParseFromString(data)
-        instance = cls()
-        instance._msg = msg
-        return instance
-
-    def encode(self) -> bytes:
-        return self._msg.SerializeToString() # type: ignore
-
-
-class ProcessPollPacket:
-    PROTO_CLASS: Any = pb.ProcessPoll
-    _msg: Any
-    
-    pid: Annotated[int, msgspec.Meta(ge=0)]
-    
-
-    def __init__(self, **kwargs: Any) -> None:
-        self._msg = self.PROTO_CLASS(**kwargs)
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._msg, name)
-
-    @classmethod
-    def decode(cls, data: bytes) -> ProcessPollPacket:
-        msg = cls.PROTO_CLASS()
-        msg.ParseFromString(data)
-        instance = cls()
-        instance._msg = msg
-        return instance
-
-    def encode(self) -> bytes:
-        return self._msg.SerializeToString() # type: ignore
-
-
-class ProcessPollResponsePacket:
-    PROTO_CLASS: Any = pb.ProcessPollResponse
-    _msg: Any
-    
-    status: Annotated[int, msgspec.Meta(ge=0)]
-    
-    exit_code: Annotated[int, msgspec.Meta(ge=0)]
-    
-    stdout_data: bytes
-    
-    stderr_data: bytes
-    
-
-    def __init__(self, **kwargs: Any) -> None:
-        self._msg = self.PROTO_CLASS(**kwargs)
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._msg, name)
-
-    @classmethod
-    def decode(cls, data: bytes) -> ProcessPollResponsePacket:
-        msg = cls.PROTO_CLASS()
-        msg.ParseFromString(data)
-        instance = cls()
-        instance._msg = msg
-        return instance
-
-    def encode(self) -> bytes:
-        return self._msg.SerializeToString() # type: ignore
-
-
-class ProcessKillPacket:
-    PROTO_CLASS: Any = pb.ProcessKill
-    _msg: Any
-    
-    pid: Annotated[int, msgspec.Meta(ge=0)]
-    
-
-    def __init__(self, **kwargs: Any) -> None:
-        self._msg = self.PROTO_CLASS(**kwargs)
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._msg, name)
-
-    @classmethod
-    def decode(cls, data: bytes) -> ProcessKillPacket:
-        msg = cls.PROTO_CLASS()
-        msg.ParseFromString(data)
-        instance = cls()
-        instance._msg = msg
-        return instance
-
-    def encode(self) -> bytes:
-        return self._msg.SerializeToString() # type: ignore
-
-
-class AckPacket:
-    PROTO_CLASS: Any = pb.AckPacket
-    _msg: Any
-    
-    command_id: Annotated[int, msgspec.Meta(ge=0)]
-    
-
-    def __init__(self, **kwargs: Any) -> None:
-        self._msg = self.PROTO_CLASS(**kwargs)
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._msg, name)
-
-    @classmethod
-    def decode(cls, data: bytes) -> AckPacket:
-        msg = cls.PROTO_CLASS()
-        msg.ParseFromString(data)
-        instance = cls()
-        instance._msg = msg
-        return instance
-
-    def encode(self) -> bytes:
-        return self._msg.SerializeToString() # type: ignore
-
-
-class HandshakeConfigPacket:
-    PROTO_CLASS: Any = pb.HandshakeConfig
-    _msg: Any
-    
-    ack_timeout_ms: Annotated[int, msgspec.Meta(ge=0)]
-    
-    ack_retry_limit: Annotated[int, msgspec.Meta(ge=0)]
-    
-    response_timeout_ms: Annotated[int, msgspec.Meta(ge=0)]
-    
-
-    def __init__(self, **kwargs: Any) -> None:
-        self._msg = self.PROTO_CLASS(**kwargs)
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._msg, name)
-
-    @classmethod
-    def decode(cls, data: bytes) -> HandshakeConfigPacket:
-        msg = cls.PROTO_CLASS()
-        msg.ParseFromString(data)
-        instance = cls()
-        instance._msg = msg
-        return instance
-
-    def encode(self) -> bytes:
-        return self._msg.SerializeToString() # type: ignore
-
-
-class SetBaudratePacket:
-    PROTO_CLASS: Any = pb.SetBaudratePacket
-    _msg: Any
-    
-    baudrate: Annotated[int, msgspec.Meta(ge=0)]
-    
-
-    def __init__(self, **kwargs: Any) -> None:
-        self._msg = self.PROTO_CLASS(**kwargs)
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._msg, name)
-
-    @classmethod
-    def decode(cls, data: bytes) -> SetBaudratePacket:
-        msg = cls.PROTO_CLASS()
-        msg.ParseFromString(data)
-        instance = cls()
-        instance._msg = msg
-        return instance
-
-    def encode(self) -> bytes:
-        return self._msg.SerializeToString() # type: ignore
-
-
-class LinkSyncPacket:
-    PROTO_CLASS: Any = pb.LinkSync
-    _msg: Any
-    
-    nonce: bytes
-    
-    tag: bytes
-    
-
-    def __init__(self, **kwargs: Any) -> None:
-        self._msg = self.PROTO_CLASS(**kwargs)
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._msg, name)
-
-    @classmethod
-    def decode(cls, data: bytes) -> LinkSyncPacket:
-        msg = cls.PROTO_CLASS()
-        msg.ParseFromString(data)
-        instance = cls()
-        instance._msg = msg
-        return instance
-
-    def encode(self) -> bytes:
-        return self._msg.SerializeToString() # type: ignore
-
-
-class EnterBootloaderPacket:
-    PROTO_CLASS: Any = pb.EnterBootloader
-    _msg: Any
-    
-    magic: Annotated[int, msgspec.Meta(ge=0)]
-    
-
-    def __init__(self, **kwargs: Any) -> None:
-        self._msg = self.PROTO_CLASS(**kwargs)
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._msg, name)
-
-    @classmethod
-    def decode(cls, data: bytes) -> EnterBootloaderPacket:
-        msg = cls.PROTO_CLASS()
-        msg.ParseFromString(data)
-        instance = cls()
-        instance._msg = msg
-        return instance
-
-    def encode(self) -> bytes:
-        return self._msg.SerializeToString() # type: ignore
-
-
-class SpiTransferPacket:
-    PROTO_CLASS: Any = pb.SpiTransfer
-    _msg: Any
-    
-    data: bytes
-    
-
-    def __init__(self, **kwargs: Any) -> None:
-        self._msg = self.PROTO_CLASS(**kwargs)
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._msg, name)
-
-    @classmethod
-    def decode(cls, data: bytes) -> SpiTransferPacket:
-        msg = cls.PROTO_CLASS()
-        msg.ParseFromString(data)
-        instance = cls()
-        instance._msg = msg
-        return instance
-
-    def encode(self) -> bytes:
-        return self._msg.SerializeToString() # type: ignore
-
-
-class SpiTransferResponsePacket:
-    PROTO_CLASS: Any = pb.SpiTransferResponse
-    _msg: Any
-    
-    data: bytes
-    
-
-    def __init__(self, **kwargs: Any) -> None:
-        self._msg = self.PROTO_CLASS(**kwargs)
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._msg, name)
-
-    @classmethod
-    def decode(cls, data: bytes) -> SpiTransferResponsePacket:
-        msg = cls.PROTO_CLASS()
-        msg.ParseFromString(data)
-        instance = cls()
-        instance._msg = msg
-        return instance
-
-    def encode(self) -> bytes:
-        return self._msg.SerializeToString() # type: ignore
-
-
-class SpiConfigPacket:
-    PROTO_CLASS: Any = pb.SpiConfig
-    _msg: Any
-    
-    bit_order: Annotated[int, msgspec.Meta(ge=0)]
-    
-    data_mode: Annotated[int, msgspec.Meta(ge=0)]
-    
-    frequency: Annotated[int, msgspec.Meta(ge=0)]
-    
-
-    def __init__(self, **kwargs: Any) -> None:
-        self._msg = self.PROTO_CLASS(**kwargs)
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._msg, name)
-
-    @classmethod
-    def decode(cls, data: bytes) -> SpiConfigPacket:
-        msg = cls.PROTO_CLASS()
-        msg.ParseFromString(data)
-        instance = cls()
-        instance._msg = msg
-        return instance
-
-    def encode(self) -> bytes:
-        return self._msg.SerializeToString() # type: ignore
-
-
-# --- END GENERATED PACKETS ---
 
 
 class GenericResponsePacket(msgspec.Struct, frozen=True):

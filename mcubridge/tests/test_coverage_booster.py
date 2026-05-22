@@ -15,7 +15,7 @@ from paho.mqtt.properties import Properties
 
 from mcubridge.config.settings import RuntimeConfig, load_runtime_config
 from mcubridge.daemon import BridgeDaemon, app
-from mcubridge.protocol import protocol, structures
+from mcubridge.protocol import protocol, structures, structures, structures
 from mcubridge.protocol.frame import Frame
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.protocol.topics import Topic

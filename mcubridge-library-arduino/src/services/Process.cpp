@@ -54,8 +54,8 @@ void ProcessClass::runAsync(etl::string_view cmd,
     return;
   }
 
-  rpc::payload::ProcessRunAsync p;
-  rpc::payload::copy_to_pb_string(p.pb_msg.command, etl::string_view(command_buffer.data(), command_buffer.size()));
+  ProcessRunAsync p;
+  copy_to_pb_string(p.command, etl::string_view(command_buffer.data(), command_buffer.size()));
 
   const bool send_ok = Bridge.send(rpc::CommandId::CMD_PROCESS_RUN_ASYNC, 0, p);
   if (!send_ok) {
@@ -77,8 +77,8 @@ void ProcessClass::poll(int32_t pid, ProcessPollHandler handler) {
     return;
   }
 
-  rpc::payload::ProcessPoll p;
-  p.pb_msg.pid = static_cast<uint32_t>(pid);
+  ProcessPoll p;
+  p.pid = static_cast<uint32_t>(pid);
 
   if (!Bridge.send(rpc::CommandId::CMD_PROCESS_POLL, 0, p)) {
     Bridge.emitStatus(
@@ -93,40 +93,40 @@ void ProcessClass::poll(int32_t pid, ProcessPollHandler handler) {
 }
 
 void ProcessClass::kill(int32_t pid) {
-  rpc::payload::ProcessKill p;
-  p.pb_msg.pid = static_cast<uint32_t>(pid);
+  rpc_pb_ProcessKill p;
+  p.pid = static_cast<uint32_t>(pid);
   (void)Bridge.send(rpc::CommandId::CMD_PROCESS_KILL, 0, p);
 }
 
-void ProcessClass::_onKillNotification(const rpc::payload::ProcessKill& msg) {
+void ProcessClass::_onKillNotification(const rpc_pb_ProcessKill& msg) {
   // Linux notifies MCU that a process was killed. Clear local queues only —
   // do NOT re-send CMD_PROCESS_KILL (that would create an echo loop).
   reset();
-  (void)msg.pb_msg.pid;
+  (void)msg.pid;
 }
 
 void ProcessClass::_onRunAsyncResponse(
-    const rpc::payload::ProcessRunAsyncResponse& msg) {
+    const rpc_pb_ProcessRunAsyncResponse& msg) {
   if (_pending_run_async.empty()) return;
   const PendingRunAsync pending = _pending_run_async.front();
   _pending_run_async.pop();
   if (pending.handler.is_valid()) {
-    pending.handler(static_cast<int32_t>(msg.pb_msg.pid));
+    pending.handler(static_cast<int32_t>(msg.pid));
   }
 }
 
 void ProcessClass::_onPollResponse(
-    const rpc::payload::ProcessPollResponse& msg) {
+    const rpc_pb_ProcessPollResponse& msg) {
   if (_pending_polls.empty()) return;
   const PendingPoll pending = _pending_polls.front();
   _pending_polls.pop();
   if (pending.handler.is_valid()) {
-    pending.handler(static_cast<rpc::StatusCode>(msg.pb_msg.status),
-                    msg.pb_msg.exit_code,
-                    etl::span<const uint8_t>(msg.pb_msg.stdout_data.bytes,
-                                             msg.pb_msg.stdout_data.size),
-                    etl::span<const uint8_t>(msg.pb_msg.stderr_data.bytes,
-                                             msg.pb_msg.stderr_data.size));
+    pending.handler(static_cast<rpc::StatusCode>(msg.status),
+                    msg.exit_code,
+                    etl::span<const uint8_t>(msg.stdout_data.bytes,
+                                             msg.stdout_data.size),
+                    etl::span<const uint8_t>(msg.stderr_data.bytes,
+                                             msg.stderr_data.size));
   }
 }
 

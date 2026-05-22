@@ -57,19 +57,19 @@ class ProtocolSpec(msgspec.Struct):
 
     constants: dict[str, Any]
     hardware: dict[str, Any]
-    commands: list[CommandDef]
-    statuses: list[StatusDef]
-    handshake: dict[str, Any]
-    mqtt_subscriptions: list[dict[str, Any]]
-    actions: list[dict[str, Any]]
-    topics: list[dict[str, Any]]
-    capabilities: dict[str, int]
-    architectures: dict[str, int]
-    compression: dict[str, int]
-    data_formats: dict[str, str]
-    mqtt_suffixes: dict[str, str]
-    mqtt_defaults: dict[str, str]
-    status_reasons: dict[str, str]
+    commands: list[CommandDef] = []
+    statuses: list[StatusDef] = []
+    handshake: dict[str, Any] = {}
+    mqtt_subscriptions: list[dict[str, Any]] = []
+    actions: list[dict[str, Any]] = []
+    topics: list[dict[str, Any]] = []
+    capabilities: dict[str, int] = {}
+    architectures: dict[str, int] = {}
+    compression: dict[str, int] = {}
+    data_formats: dict[str, str] = {}
+    mqtt_suffixes: dict[str, str] = {}
+    mqtt_defaults: dict[str, str] = {}
+    status_reasons: dict[str, str] = {}
     architecture_display_names: dict[str, str] = {}
     messages: list[MessageDef] = []
 

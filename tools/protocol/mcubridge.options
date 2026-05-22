@@ -1,5 +1,6 @@
 # [SIL-2] Static limits for Zero-Heap operation
-rpc.pb.RpcContainer.payload       max_size:64
+rpc.pb.McuFrame.message           max_size:128
+rpc.pb.AckPacket.command_id       int_size:IS_16
 rpc.pb.ConsoleWrite.data          max_size:64
 rpc.pb.DatastorePut.key           max_size:32
 rpc.pb.DatastorePut.value         max_size:64
@@ -15,9 +16,14 @@ rpc.pb.FileReadResponse.content   max_size:64
 rpc.pb.ProcessRunAsync.command    max_size:64
 rpc.pb.ProcessPollResponse.stdout_data max_size:32
 rpc.pb.ProcessPollResponse.stderr_data max_size:32
-rpc.pb.LinkSync.nonce             max_size:16
-rpc.pb.LinkSync.tag               max_size:16
+rpc.pb.LinkSync.nonce             max_size:16, fixed_length:true
+rpc.pb.LinkSync.tag               max_size:16, fixed_length:true
+rpc.pb.LinkSyncResponse.nonce     max_size:16, fixed_length:true
+rpc.pb.LinkSyncResponse.tag       max_size:16, fixed_length:true
 rpc.pb.SpiTransfer.data           max_size:64
 rpc.pb.SpiTransferResponse.data   max_size:64
-rpc.pb.GenericResponse.status      max_size:32
 rpc.pb.GenericResponse.message     max_size:64
+rpc.pb.StructuredEntry.key        max_size:32
+rpc.pb.StructuredEntry.string_value max_size:64
+rpc.pb.StructuredEntry.bytes_value  max_size:64
+rpc.pb.StructuredPayload.entries  max_count:8

@@ -112,7 +112,7 @@ async def test_runtime_brute_force_handlers(
             FileReadResponsePacket(content=b"abc").encode(),
         ),
         (
-            Command.CMD_PROCESS_RUN_ASYNC.value,
+            Command.CMD_PROCESS_RUN.value,
             1,
             ProcessRunAsyncPacket(command="ls").encode(),
         ),

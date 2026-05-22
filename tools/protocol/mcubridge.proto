@@ -2,24 +2,189 @@ syntax = "proto3";
 
 package rpc.pb;
 
-// [SIL-2] Top-level container for all messages to/from MCU
-// This is used for framed transmission over serial
-message RpcContainer {
-    uint32 seq_id = 1;
-    uint32 checksum = 2;
-    bytes payload = 3;
+// [SIL-2] Protocol Constants
+enum ProtocolConstant {
+    PROTOCOL_VERSION = 0;
+    VERSION_VAL = 2;
 }
 
+// [SIL-2] Command categories
+enum CommandCategory {
+    CAT_NONE = 0;
+    CAT_SYSTEM = 1;
+    CAT_GPIO = 2;
+    CAT_CONSOLE = 3;
+    CAT_DATASTORE = 4;
+    CAT_MAILBOX = 5;
+    CAT_FILESYSTEM = 6;
+    CAT_PROCESS = 7;
+    CAT_SPI = 8;
+}
+
+// [SIL-2] Top-level framed container for all MCU communication.
+// Metadata format in comments: [dir=..., cat=..., ack=true/false, resp=true/false]
+message McuFrame {
+    uint32 seq_id = 1;
+    uint32 flags = 2;
+    
+    oneof message {
+        // --- Status / Core (0x30+) ---
+        // [dir=mcu_to_linux, cat=system]
+        AckPacket ack = 48;
+        // [dir=mcu_to_linux, cat=system]
+        GenericResponse error = 49;
+        
+        // --- System (0x40+) ---
+        // [dir=linux_to_mcu, cat=system, resp=true]
+        VersionRequest get_version = 64;
+        // [dir=mcu_to_linux, cat=system]
+        VersionResponse version_resp = 65;
+        // [dir=linux_to_mcu, cat=system, resp=true]
+        FreeMemoryRequest get_free_memory = 66;
+        // [dir=mcu_to_linux, cat=system]
+        FreeMemoryResponse free_memory_resp = 67;
+        // [dir=linux_to_mcu, cat=system, resp=true]
+        LinkSync link_sync = 68;
+        // [dir=mcu_to_linux, cat=system]
+        LinkSyncResponse link_sync_resp = 69;
+        // [dir=linux_to_mcu, cat=system, resp=true]
+        LinkReset link_reset = 70;
+        // [dir=mcu_to_linux, cat=system]
+        LinkResetResponse link_reset_resp = 71;
+        // [dir=linux_to_mcu, cat=system, resp=true]
+        CapabilitiesRequest get_capabilities = 72;
+        // [dir=mcu_to_linux, cat=system]
+        Capabilities capabilities_resp = 73;
+        // [dir=linux_to_mcu, cat=system, ack=true]
+        SetBaudratePacket set_baudrate = 74;
+        // [dir=mcu_to_linux, cat=system]
+        SetBaudrateResponse set_baudrate_resp = 75;
+        // [dir=linux_to_mcu, cat=system, ack=true]
+        EnterBootloader enter_bootloader = 76;
+        // [dir=both, cat=system]
+        FlowControlXoff xoff = 78;
+        // [dir=both, cat=system]
+        FlowControlXon xon = 79;
+
+        // --- GPIO (0x50+) ---
+        // [dir=linux_to_mcu, cat=gpio, ack=true]
+        PinMode set_pin_mode = 80;
+        // [dir=linux_to_mcu, cat=gpio, ack=true]
+        DigitalWrite digital_write = 81;
+        // [dir=linux_to_mcu, cat=gpio, ack=true]
+        AnalogWrite analog_write = 82;
+        // [dir=linux_to_mcu, cat=gpio, resp=true]
+        PinRead digital_read = 83;
+        // [dir=linux_to_mcu, cat=gpio, resp=true]
+        PinRead analog_read = 84;
+        // [dir=mcu_to_linux, cat=gpio]
+        DigitalReadResponse digital_read_resp = 85;
+        // [dir=mcu_to_linux, cat=gpio]
+        AnalogReadResponse analog_read_resp = 86;
+
+        // --- Console (0x60+) ---
+        // [dir=both, cat=console, ack=true]
+        ConsoleWrite console_write = 96;
+
+        // --- Datastore (0x70+) ---
+        // [dir=mcu_to_linux, cat=datastore, ack=true]
+        DatastorePut datastore_put = 112;
+        // [dir=mcu_to_linux, cat=datastore]
+        DatastoreGet datastore_get = 113;
+        // [dir=linux_to_mcu, cat=datastore]
+        DatastoreGetResponse datastore_get_resp = 114;
+
+        // --- Mailbox (0x80+) ---
+        // [dir=mcu_to_linux, cat=mailbox]
+        MailboxRead mailbox_read = 128;
+        // [dir=mcu_to_linux, cat=mailbox]
+        MailboxProcessed mailbox_processed = 129;
+        // [dir=mcu_to_linux, cat=mailbox]
+        MailboxAvailable mailbox_available = 130;
+        // [dir=both, cat=mailbox, ack=true]
+        MailboxPush mailbox_push = 131;
+        // [dir=linux_to_mcu, cat=mailbox]
+        MailboxReadResponse mailbox_read_resp = 132;
+        // [dir=linux_to_mcu, cat=mailbox]
+        MailboxAvailableResponse mailbox_available_resp = 133;
+
+        // --- FileSystem (0x90+) ---
+        // [dir=both, cat=filesystem, ack=true]
+        FileWrite file_write = 144;
+        // [dir=both, cat=filesystem]
+        FileRead file_read = 145;
+        // [dir=both, cat=filesystem]
+        FileRemove file_remove = 146;
+        // [dir=both, cat=filesystem]
+        FileReadResponse file_read_resp = 147;
+
+        // --- Process (0xA0+) ---
+        // [dir=mcu_to_linux, cat=process]
+        ProcessRunAsync process_run = 161;
+        // [dir=mcu_to_linux, cat=process]
+        ProcessPoll process_poll = 162;
+        // [dir=both, cat=process]
+        ProcessKill process_kill = 163;
+        // [dir=linux_to_mcu, cat=process]
+        ProcessRunAsyncResponse process_run_resp = 165;
+        // [dir=linux_to_mcu, cat=process]
+        ProcessPollResponse process_poll_resp = 166;
+
+        // --- SPI (0xB0+) ---
+        // [dir=linux_to_mcu, cat=spi, ack=true]
+        SpiBegin spi_begin = 176;
+        // [dir=linux_to_mcu, cat=spi, resp=true]
+        SpiTransfer spi_transfer = 177;
+        // [dir=mcu_to_linux, cat=spi]
+        SpiTransferResponse spi_transfer_resp = 178;
+        // [dir=linux_to_mcu, cat=spi, ack=true]
+        SpiEnd spi_end = 179;
+        // [dir=linux_to_mcu, cat=spi, ack=true]
+        SpiConfig spi_set_config = 180;
+    }
+}
+
+// --- Message Definitions ---
+
+message AckPacket {
+    uint32 command_id = 1;
+}
+
+message GenericResponse {
+    uint32 status = 1;
+    string message = 2;
+}
+
+message VersionRequest {}
 message VersionResponse {
     uint32 major = 1;
     uint32 minor = 2;
     uint32 patch = 3;
 }
 
+message FreeMemoryRequest {}
 message FreeMemoryResponse {
     uint32 value = 1;
 }
 
+message LinkSync {
+    bytes nonce = 1;
+    bytes tag = 2;
+}
+message LinkSyncResponse {
+    bytes nonce = 1;
+    bytes tag = 2;
+}
+
+message LinkReset {
+    uint32 ack_timeout_ms = 1;
+    uint32 ack_retry_limit = 2;
+    uint32 response_timeout_ms = 3;
+}
+
+message LinkResetResponse {}
+
+message CapabilitiesRequest {}
 message Capabilities {
     uint32 ver = 1;
     uint32 arch = 2;
@@ -27,6 +192,20 @@ message Capabilities {
     uint32 ana = 4;
     uint32 feat = 5;
 }
+
+message SetBaudratePacket {
+    uint32 baudrate = 1;
+}
+message SetBaudrateResponse {
+    uint32 baudrate = 1;
+}
+
+message EnterBootloader {
+    uint32 magic = 1;
+}
+
+message FlowControlXoff {}
+message FlowControlXon {}
 
 message PinMode {
     uint32 pin = 1;
@@ -72,18 +251,17 @@ message DatastoreGetResponse {
     bytes value = 1;
 }
 
-message MailboxPush {
-    bytes data = 1;
-}
-
+message MailboxRead {}
 message MailboxProcessed {
     uint32 message_id = 1;
 }
-
+message MailboxAvailable {}
+message MailboxPush {
+    bytes data = 1;
+}
 message MailboxAvailableResponse {
     uint32 count = 1;
 }
-
 message MailboxReadResponse {
     bytes content = 1;
 }
@@ -92,15 +270,12 @@ message FileWrite {
     string path = 1;
     bytes data = 2;
 }
-
 message FileRead {
     string path = 1;
 }
-
 message FileRemove {
     string path = 1;
 }
-
 message FileReadResponse {
     bytes content = 1;
 }
@@ -108,15 +283,12 @@ message FileReadResponse {
 message ProcessRunAsync {
     string command = 1;
 }
-
 message ProcessRunAsyncResponse {
     uint32 pid = 1;
 }
-
 message ProcessPoll {
     uint32 pid = 1;
 }
-
 message ProcessPollResponse {
     uint32 status = 1;
     uint32 exit_code = 2;
@@ -126,16 +298,25 @@ message ProcessPollResponse {
     bool stdout_truncated = 6;
     bool stderr_truncated = 7;
 }
-
 message ProcessKill {
     uint32 pid = 1;
 }
 
-message GenericResponse {
-    string status = 1;
-    string message = 2;
+message SpiBegin {}
+message SpiEnd {}
+message SpiTransfer {
+    bytes data = 1;
+}
+message SpiTransferResponse {
+    bytes data = 1;
+}
+message SpiConfig {
+    uint32 bit_order = 1;
+    uint32 data_mode = 2;
+    uint32 frequency = 3;
 }
 
+// Utility message for MQTT structured payloads
 message StructuredEntry {
     string key = 1;
     oneof value {
@@ -152,39 +333,8 @@ message StructuredPayload {
     repeated StructuredEntry entries = 1;
 }
 
-message AckPacket {
-    uint32 command_id = 1;
-}
-
 message HandshakeConfig {
     uint32 ack_timeout_ms = 1;
     uint32 ack_retry_limit = 2;
     uint32 response_timeout_ms = 3;
-}
-
-message SetBaudratePacket {
-    uint32 baudrate = 1;
-}
-
-message LinkSync {
-    bytes nonce = 1;
-    bytes tag = 2;
-}
-
-message EnterBootloader {
-    uint32 magic = 1;
-}
-
-message SpiTransfer {
-    bytes data = 1;
-}
-
-message SpiTransferResponse {
-    bytes data = 1;
-}
-
-message SpiConfig {
-    uint32 bit_order = 1;
-    uint32 data_mode = 2;
-    uint32 frequency = 3;
 }

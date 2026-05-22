@@ -32,33 +32,31 @@ PROTOBUF_CONTENT_TYPE: Final[str] = "application/x-protobuf"
 # This ensures atomic bit-level parsing/building via 's C-backed engine.
 # Order matches the protocol specification (bit 0 to bit 15).
 
-_CAP_BITS = {
-    "watchdog": 0x00000001,
-    "rle": 0x00000002,
-    "debug_frames": 0x00000004,
-    "debug_io": 0x00000008,
-    "eeprom": 0x00000010,
-    "dac": 0x00000020,
-    "hw_serial1": 0x00000040,
-    "fpu": 0x00000080,
-    "logic_3v3": 0x00000100,
-    "big_buffer": 0x00000200,
-    "i2c": 0x00000400,
-    "spi": 0x00000800,
-    "sd": 0x00001000,
-}
-
+class CapabilityFlag(enum.IntFlag):
+    watchdog = 0x00000001
+    rle = 0x00000002
+    debug_frames = 0x00000004
+    debug_io = 0x00000008
+    eeprom = 0x00000010
+    dac = 0x00000020
+    hw_serial1 = 0x00000040
+    fpu = 0x00000080
+    logic_3v3 = 0x00000100
+    big_buffer = 0x00000200
+    i2c = 0x00000400
+    spi = 0x00000800
+    sd = 0x00001000
 
 def _capabilities_to_int(feat_dict: dict[str, Any]) -> int:
-    val = 0
+    val = CapabilityFlag(0)
     for k, v in feat_dict.items():
-        if v and k in _CAP_BITS:
-            val |= _CAP_BITS[k]
-    return val
-
+        if v and hasattr(CapabilityFlag, k):
+            val |= getattr(CapabilityFlag, k)
+    return int(val)
 
 def _int_to_capabilities(val: int) -> dict[str, bool]:
-    return {k: bool(val & bit) for k, bit in _CAP_BITS.items()}
+    flags = CapabilityFlag(val)
+    return {k: bool(flags & getattr(CapabilityFlag, k)) for k in CapabilityFlag.__members__}
 
 
 # [SIL-2] Compiled once at module load; reused across all AllowedCommandPolicy instances.
@@ -73,6 +71,8 @@ class FlowEvent(str, enum.Enum):
     RETRY = "retry"
     FAILURE = "failure"
 
+
+_ACTION_LOOKUP_MAP: dict[str, Any] | None = None
 
 class TopicRoute(msgspec.Struct, frozen=True):
     """Parsed representation of an MQTT topic targeting the daemon."""
@@ -91,18 +91,19 @@ class TopicRoute(msgspec.Struct, frozen=True):
         """Infer the service action from the first segment if applicable.
         Ignore segments that indicate a response flavor.
         """
+        global _ACTION_LOOKUP_MAP
         from .protocol import FileAction, ShellAction, SystemAction
+        
+        if _ACTION_LOOKUP_MAP is None:
+            _ACTION_LOOKUP_MAP = {}
+            for enum_cls in (FileAction, ShellAction, SystemAction):
+                for e in enum_cls:
+                    _ACTION_LOOKUP_MAP[e.value] = e
 
         if not self.segments or "response" in self.segments or "value" in self.segments:
             return None
         val = self.segments[0]
-        # Attempt to map to known action enums
-        for enum_cls in (FileAction, ShellAction, SystemAction):
-            try:
-                return enum_cls(val)
-            except ValueError:
-                continue
-        return val
+        return _ACTION_LOOKUP_MAP.get(val, val)
 
     @property
     def remainder(self) -> tuple[str, ...]:

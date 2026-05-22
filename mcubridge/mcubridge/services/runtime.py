@@ -181,7 +181,7 @@ class BridgeService:
                 p = packet_type.decode(payload)
                 res = await callback(p)
                 return True if res is None else res
-            except Exception as exc:
+            except (msgspec.MsgspecError, ValueError, TypeError, ProtobufDecodeError) as exc:
                 logger.error("MCU Payload decode error: %s", exc)
                 return False
 

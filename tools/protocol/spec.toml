@@ -173,12 +173,12 @@ aead_algorithm = "ChaCha20-Poly1305"
 aead_description = "Authenticated Encryption with Associated Data (RFC 8439)"
 
 [data_formats]
-crc_covered_header_format = ">BHHH"
-crc_format = ">I"
-uint8_format = ">B"
-uint16_format = ">H"
-uint32_format = ">I"
-nonce_counter_format = ">Q"
+crc_covered_header_format = "<BHHH"
+crc_format = "<I"
+uint8_format = "<B"
+uint16_format = "<H"
+uint32_format = "<I"
+nonce_counter_format = "<Q"
 
 [mqtt_suffixes]
 incoming_available = "incoming_available"

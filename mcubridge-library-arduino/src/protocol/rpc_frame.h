@@ -53,12 +53,7 @@ enum class FrameError { NONE = 0, CRC_MISMATCH, MALFORMED, OVERFLOW, AUTH_FAIL }
 
 namespace checksum {
 inline void serialize_header(const FrameHeader& h, etl::span<uint8_t> buffer) {
-  etl::byte_stream_writer writer(buffer.data(), buffer.size(),
-                                 etl::endian::big);
-  writer.write<uint8_t>(h.version);
-  writer.write<uint16_t>(h.payload_length);
-  writer.write<uint16_t>(h.command_id);
-  writer.write<uint16_t>(h.sequence_id);
+  etl::copy_n(reinterpret_cast<const uint8_t*>(&h), sizeof(FrameHeader), buffer.data());
 }
 
 inline uint32_t compute(etl::span<const uint8_t> data) {
@@ -69,9 +64,7 @@ inline uint32_t compute(etl::span<const uint8_t> data) {
 
 inline uint32_t compute(const Frame& f) {
   etl::crc32 crc;
-  etl::array<uint8_t, FRAME_HEADER_SIZE> header_buf;
-  serialize_header(f.header, header_buf);
-  crc.add(header_buf.begin(), header_buf.end());
+  crc.add(reinterpret_cast<const uint8_t*>(&f.header), reinterpret_cast<const uint8_t*>(&f.header) + sizeof(FrameHeader));
   crc.add(f.nonce.begin(), f.nonce.end());
   crc.add(f.payload.begin(), f.payload.end());
   crc.add(f.tag.begin(), f.tag.end());
@@ -99,11 +92,9 @@ class FrameParser {
               buffer.begin() + FRAME_HEADER_SIZE + AEAD_NONCE_SIZE +
                   f.payload.size());
 
-    etl::byte_stream_writer writer(
-        buffer.data() + FRAME_HEADER_SIZE + AEAD_NONCE_SIZE + f.payload.size() +
-            AEAD_TAG_SIZE,
-        CRC_TRAILER_SIZE, etl::endian::big);
-    writer.write<uint32_t>(f.crc);
+    etl::copy_n(reinterpret_cast<const uint8_t*>(&f.crc), CRC_TRAILER_SIZE,
+                buffer.begin() + FRAME_HEADER_SIZE + AEAD_NONCE_SIZE +
+                    f.payload.size() + AEAD_TAG_SIZE);
     return required;
   }
 
@@ -111,22 +102,13 @@ class FrameParser {
     if (buffer.size() < MIN_FRAME_SIZE || buffer.size() > MAX_RAW_FRAME_SIZE)
       return etl::unexpected<FrameError>(FrameError::MALFORMED);
 
-    etl::byte_stream_reader reader(buffer.data(), buffer.size(),
-                                   etl::endian::big);
     const size_t crc_offset = buffer.size() - CRC_TRAILER_SIZE;
     const uint32_t crc_calc =
         checksum::compute(buffer.subspan(0, crc_offset));
 
     Frame result = {};
-    const auto v_opt = reader.read<uint8_t>();
-    const auto l_opt = reader.read<uint16_t>();
-    const auto c_opt = reader.read<uint16_t>();
-    const auto s_opt = reader.read<uint16_t>();
-
-    if (!v_opt || !l_opt || !c_opt || !s_opt)
-      return etl::unexpected<FrameError>(FrameError::MALFORMED);
-
-    result.header = {*v_opt, *l_opt, *c_opt, *s_opt};
+    
+    etl::copy_n(buffer.begin(), sizeof(FrameHeader), reinterpret_cast<uint8_t*>(&result.header));
 
     if (result.header.version != PROTOCOL_VERSION)
       return etl::unexpected<FrameError>(FrameError::MALFORMED);
@@ -148,21 +130,19 @@ class FrameParser {
                     result.header.payload_length,
                 AEAD_TAG_SIZE, result.tag.begin());
 
-    reader.skip<uint8_t>(AEAD_NONCE_SIZE + result.header.payload_length +
-                        AEAD_TAG_SIZE);
-
-    const auto crc_opt = reader.read<uint32_t>();
+    uint32_t crc_opt = 0;
+    etl::copy_n(buffer.begin() + crc_offset, CRC_TRAILER_SIZE, reinterpret_cast<uint8_t*>(&crc_opt));
 
 #if BRIDGE_HOST_TEST
-    if (!crc_opt || *crc_opt != crc_calc) {
+    if (crc_opt != crc_calc) {
       fprintf(stderr,
               "[PARSE] CRC MISMATCH! Size: %zu, Calc: %08X, Recv: %08X\n",
               buffer.size(), (unsigned int)crc_calc,
-              (unsigned int)(crc_opt ? *crc_opt : 0));
+              (unsigned int)crc_opt);
     }
 #endif
 
-    if (!crc_opt || *crc_opt != crc_calc)
+    if (crc_opt != crc_calc)
       return etl::unexpected<FrameError>(FrameError::CRC_MISMATCH);
     result.crc = crc_calc;
     return result;

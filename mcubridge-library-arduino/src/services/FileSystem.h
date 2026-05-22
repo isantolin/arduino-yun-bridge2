@@ -22,7 +22,7 @@ class FileSystemClass : public BridgeObserver {
   static void _onWrite(const rpc_pb_FileWrite& msg);
   void _onRead(const rpc_pb_FileRead& msg);
   static void _onRemove(const rpc_pb_FileRemove& msg);
-  void _onResponse(const rpc_pb_rpc_pb_FileReadResponse& msg);
+  void _onResponse(const rpc_pb_FileReadResponse& msg);
 
   void notification(MsgBridgeSynchronized) override { /* ready */ }
   void notification(MsgBridgeLost) override { /* cleanup */ }

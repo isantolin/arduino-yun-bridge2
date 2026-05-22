@@ -76,14 +76,14 @@ class TestAccessor {
   bool sendFrame(rpc::CommandId c, uint16_t seq, etl::span<const uint8_t> p) {
     return _bridge.sendFrame(c, seq, p);
   }
-  void handleDigitalWriteCommand(const bridge::router::CommandContext& ctx) {
-    _bridge._handleDigitalWriteCommand(ctx);
+  void handlerpc_pb_DigitalWriteCommand(const bridge::router::CommandContext& ctx) {
+    _bridge._handlerpc_pb_DigitalWriteCommand(ctx);
   }
   void invokePacketReceived(etl::span<const uint8_t> p) {
     _bridge._onPacketReceived(p);
   }
 
-  void invokeConsolePush(const rpc::payload::ConsoleWrite& cmsg) {
+  void invokeConsolePush(const rpc_pb_ConsoleWrite& cmsg) {
     (void)_bridge.send(rpc::CommandId::CMD_CONSOLE_WRITE, 0, cmsg);
   }
   bool isAwaitingAck() const {
@@ -111,7 +111,7 @@ class TestAccessor {
   }
   void clearSynchronized() { _fsm.receive(bridge::fsm::EvReset()); }
   void onBootloaderDelay() { _bridge._onBootloaderDelay(); }
-  void applyTimingConfig(const rpc::payload::HandshakeConfig& msg) {
+  void applyTimingConfig(const rpc_pb_HandshakeConfig& msg) {
     _bridge._applyTimingConfig(msg);
   }
   void clearSharedSecret() { _bridge._shared_secret.clear(); }

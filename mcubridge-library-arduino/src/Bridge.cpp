@@ -458,7 +458,7 @@ void BridgeClass::_onAckTimeout() {
 }
 
 void BridgeClass::_processAck(uint16_t command_id, uint16_t sequence_id) {
-  AckPacket p = AckPacket_init_default;
+  rpc::payload::AckPacket p = rpc_pb_AckPacket_init_default;
   p.command_id = command_id;
   (void)send(rpc::CommandId::CMD_ACK, sequence_id, p);
 }

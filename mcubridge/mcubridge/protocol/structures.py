@@ -1,3 +1,4 @@
+from __future__ import annotations
 from typing import Any, Final, cast
 from . import mcubridge_pb2 as pb
 # --- BEGIN GENERATED PACKETS --- DO NOT EDIT (auto-generated from spec.toml)
@@ -1355,7 +1356,6 @@ SINGLE SOURCE OF TRUTH for all data structures.
 Binary parsing uses stdlib struct; high-level schemas use Msgspec (SIL-2).
 """
 
-from __future__ import annotations
 
 import asyncio
 import enum

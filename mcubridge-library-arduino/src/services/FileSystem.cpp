@@ -18,8 +18,8 @@ constexpr size_t kReadChunkSize = 64U;
 #endif
 
 void send_read_response(etl::span<const uint8_t> content) {
-  rpc_pb_rpc_pb_FileReadResponse p;
-  copy_to_pb_bytes(p.content, content.data(),
+  rpc_pb_FileReadResponse p;
+  rpc::payload::copy_to_pb_bytes(p.content, content.data(),
                                  content.size());
   (void)Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 0, p);
 }
@@ -32,7 +32,7 @@ void FileSystemClass::write(etl::string_view path,
   rpc_pb_FileWrite p;
   strncpy(p.path, path.data(), 64);
   p.path[63] = '\0';
-  copy_to_pb_bytes(p.data, data.data(), data.size());
+  rpc::payload::copy_to_pb_bytes(p.data, data.data(), data.size());
   (void)Bridge.send(rpc::CommandId::CMD_FILE_WRITE, 0, p);
 }
 
@@ -40,7 +40,7 @@ void FileSystemClass::read(etl::string_view path,
                            FileSystemReadHandler handler) {
   _read_handler = handler;
   rpc_pb_FileRead p;
-  copy_to_pb_string(p.path, path);
+  rpc::payload::copy_to_pb_string(p.path, path);
   if (!Bridge.send(rpc::CommandId::CMD_FILE_READ, 0, p)) {
     Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
   }
@@ -105,7 +105,7 @@ void FileSystemClass::_onRemove(const rpc_pb_FileRemove& msg) {
                              : rpc::StatusCode::STATUS_ERROR);
 }
 
-void FileSystemClass::_onResponse(const rpc_pb_rpc_pb_FileReadResponse& msg) {
+void FileSystemClass::_onResponse(const rpc_pb_FileReadResponse& msg) {
   if (_read_handler.is_valid()) {
     _read_handler(etl::span<const uint8_t>(msg.content.bytes,
                                            msg.content.size));

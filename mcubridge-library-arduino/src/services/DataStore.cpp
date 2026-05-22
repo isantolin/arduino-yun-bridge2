@@ -9,9 +9,9 @@
 DataStoreClass::DataStoreClass() {}
 
 void DataStoreClass::set(etl::string_view key, etl::span<const uint8_t> value) {
-  DatastorePut p;
-  copy_to_pb_string(p.key, key);
-  copy_to_pb_bytes(p.value, value.data(), value.size());
+  rpc_pb_DatastorePut p;
+  rpc::payload::copy_to_pb_string(p.key, key);
+  rpc::payload::copy_to_pb_bytes(p.value, value.data(), value.size());
   (void)Bridge.send(rpc::CommandId::CMD_DATASTORE_PUT, 0, p);
 }
 
@@ -21,8 +21,8 @@ void DataStoreClass::get(etl::string_view key, GetHandler handler) {
     return;
   }
 
-  DatastoreGet p;
-  copy_to_pb_string(p.key, key);
+  rpc_pb_DatastoreGet p;
+  rpc::payload::copy_to_pb_string(p.key, key);
   if (!Bridge.send(rpc::CommandId::CMD_DATASTORE_GET, 0, p)) {
     Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
     return;

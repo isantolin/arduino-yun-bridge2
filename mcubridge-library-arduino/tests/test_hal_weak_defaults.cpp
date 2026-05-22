@@ -35,7 +35,7 @@ void test_hal_weak_defaults_without_mock() {
       static_cast<int>(bridge::hal::HalError::NOT_IMPLEMENTED),
       static_cast<int>(rm.error()));
 
-  const uint32_t caps = bridge::hal::getCapabilities();
+  const uint32_t caps = bridge::hal::getrpc_pb_Capabilities();
   TEST_ASSERT_EQUAL_UINT32(
       0U, caps & static_cast<uint32_t>(rpc::RPC_CAPABILITY_SD));
 }

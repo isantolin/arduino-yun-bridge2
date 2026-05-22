@@ -73,10 +73,10 @@ void test_bridge_coverage() {
   ba.dispatch(f_ver);  // Duplicate
 
   (void)Bridge.send(rpc::CommandId::CMD_GET_VERSION_RESP, 0, []() {
-    rpc::payload::VersionResponse p;
-    p.pb_msg.major = 1;
-    p.pb_msg.minor = 0;
-    p.pb_msg.patch = 0;
+    rpc_pb_VersionResponse p;
+    p.major = 1;
+    p.minor = 0;
+    p.patch = 0;
     return p;
   }());
 
@@ -88,8 +88,8 @@ void test_bridge_coverage() {
   f_pin.payload = etl::span<uint8_t>(pl_buf.data(), pl_buf.size());
   f_pin.header.command_id = (uint16_t)rpc::CommandId::CMD_DIGITAL_READ;
   bridge::test::set_pb_payload(f_pin, []() {
-    rpc::payload::PinRead p;
-    p.pb_msg.pin = 255;
+    rpc_pb_PinRead p;
+    p.pin = 255;
     return p;
   }());  // Invalid pin
   ba.dispatch(f_pin);
@@ -104,9 +104,9 @@ void test_bridge_coverage() {
   f_dw.payload = etl::span<uint8_t>(pl_buf.data(), pl_buf.size());
   f_dw.header.command_id = (uint16_t)rpc::CommandId::CMD_DIGITAL_WRITE;
   bridge::test::set_pb_payload(f_dw, []() {
-    rpc::payload::DigitalWrite p;
-    p.pb_msg.pin = 13;
-    p.pb_msg.value = 1;
+    rpc_pb_DigitalWrite p;
+    p.pin = 13;
+    p.value = 1;
     return p;
   }());
   ba.dispatch(f_dw);
@@ -118,9 +118,9 @@ void test_bridge_coverage() {
   f_aw.payload = etl::span<uint8_t>(pl_buf.data(), pl_buf.size());
   f_aw.header.command_id = (uint16_t)rpc::CommandId::CMD_ANALOG_WRITE;
   bridge::test::set_pb_payload(f_aw, []() {
-    rpc::payload::AnalogWrite p;
-    p.pb_msg.pin = 13;
-    p.pb_msg.value = 128;
+    rpc_pb_AnalogWrite p;
+    p.pin = 13;
+    p.value = 128;
     return p;
   }());
   ba.dispatch(f_aw);
@@ -131,9 +131,9 @@ void test_bridge_coverage() {
   f_pm.payload = etl::span<uint8_t>(pl_buf.data(), pl_buf.size());
   f_pm.header.command_id = (uint16_t)rpc::CommandId::CMD_SET_PIN_MODE;
   bridge::test::set_pb_payload(f_pm, []() {
-    rpc::payload::PinMode p;
-    p.pb_msg.pin = 13;
-    p.pb_msg.mode = 1;
+    rpc_pb_PinMode p;
+    p.pin = 13;
+    p.mode = 1;
     return p;
   }());
   ba.dispatch(f_pm);
@@ -149,9 +149,9 @@ void test_bridge_coverage() {
                 [](int) { (void)Console.write('x'); });
   Console.process();
 
-  rpc::payload::ConsoleWrite cmsg;
+  rpc_pb_ConsoleWrite cmsg;
   uint8_t cdata[] = "hello";
-  rpc::payload::copy_to_pb_bytes(cmsg.pb_msg.data, cdata, 5);
+  copy_to_pb_bytes(cmsg.data, cdata, 5);
   ba.invokeConsolePush(cmsg);
 
   rpc::Frame f_cw = {};
@@ -170,8 +170,8 @@ void test_bridge_coverage() {
       "key",
       etl::delegate<void(etl::string_view, etl::span<const uint8_t>)>::create<
           dummy_datastore_get>());
-  rpc::payload::DatastoreGetResponse ds_get_p;
-  rpc::payload::copy_to_pb_bytes(ds_get_p.pb_msg.value, ds_val, 2);
+  rpc_pb_DatastoreGetResponse ds_get_p;
+  copy_to_pb_bytes(ds_get_p.value, ds_val, 2);
   DataStore._onResponse(ds_get_p);
 
   rpc::Frame f_dsg = {};
@@ -187,8 +187,8 @@ void test_bridge_coverage() {
   printf("  - Step 6: Mailbox\n");
   uint8_t mbox_data[32] = {0};
   (void)Mailbox.push(etl::span<const uint8_t>(mbox_data, 3));
-  rpc::payload::MailboxPush mpush;
-  rpc::payload::copy_to_pb_bytes(mpush.pb_msg.data, mbox_data, 3);
+  rpc_pb_MailboxPush mpush;
+  copy_to_pb_bytes(mpush.data, mbox_data, 3);
   Mailbox._onIncomingData(mpush);
 
   rpc::Frame f_mp = {};
@@ -199,8 +199,8 @@ void test_bridge_coverage() {
   bridge::test::set_pb_payload(f_mp, mpush);
   ba.dispatch(f_mp);
 
-  rpc::payload::MailboxReadResponse mread;
-  rpc::payload::copy_to_pb_bytes(mread.pb_msg.content, mbox_data, 3);
+  rpc_pb_MailboxReadResponse mread;
+  copy_to_pb_bytes(mread.content, mbox_data, 3);
   Mailbox._onIncomingData(mread);
 
   rpc::Frame f_mr = {};
@@ -212,8 +212,8 @@ void test_bridge_coverage() {
   bridge::test::set_pb_payload(f_mr, mread);
   ba.dispatch(f_mr);
 
-  rpc::payload::MailboxAvailableResponse mavl;
-  mavl.pb_msg.count = 3;
+  rpc_pb_MailboxAvailableResponse mavl;
+  mavl.count = 3;
   Mailbox._onAvailableResponse(mavl);
 
   rpc::Frame f_ma = {};
@@ -234,10 +234,10 @@ void test_bridge_coverage() {
   printf("  - Step 7: SPI\n");
 #if BRIDGE_ENABLE_SPI
   SPIService.begin();
-  rpc::payload::SpiConfig spi_cfg;
-  spi_cfg.pb_msg.frequency = 1000000;
-  spi_cfg.pb_msg.bit_order = 1;
-  spi_cfg.pb_msg.data_mode = 0;
+  rpc_pb_SpiConfig spi_cfg;
+  spi_cfg.frequency = 1000000;
+  spi_cfg.bit_order = 1;
+  spi_cfg.data_mode = 0;
   SPIService.setConfig(spi_cfg);
   uint8_t spi_buf[2] = {0, 0};
   SPIService.transfer(etl::span<uint8_t>(spi_buf, 2));
@@ -261,8 +261,8 @@ void test_bridge_coverage() {
   FileSystem.write("test.txt", etl::span<const uint8_t>(ds_val, 2));
   FileSystem.remove("test.txt");
 
-  rpc::payload::FileReadResponse fr_p;
-  rpc::payload::copy_to_pb_bytes(fr_p.pb_msg.content, ds_val, 2);
+  rpc_pb_FileReadResponse fr_p;
+  copy_to_pb_bytes(fr_p.content, ds_val, 2);
   FileSystem._onResponse(fr_p);
 
   rpc::Frame f_fr = {};
@@ -278,9 +278,9 @@ void test_bridge_coverage() {
   f_fw.payload = etl::span<uint8_t>(f_fw_buf.data(), f_fw_buf.size());
   f_fw.payload = etl::span<uint8_t>(pl_buf.data(), pl_buf.size());
   f_fw.header.command_id = (uint16_t)rpc::CommandId::CMD_FILE_WRITE;
-  rpc::payload::FileWrite fwp;
-  strncpy(fwp.pb_msg.path, "test.txt", sizeof(fwp.pb_msg.path));
-  rpc::payload::copy_to_pb_bytes(fwp.pb_msg.data, ds_val, 2);
+  rpc_pb_FileWrite fwp;
+  strncpy(fwp.path, "test.txt", sizeof(fwp.path));
+  copy_to_pb_bytes(fwp.data, ds_val, 2);
   bridge::test::set_pb_payload(f_fw, fwp);
   ba.dispatch(f_fw);
 
@@ -289,8 +289,8 @@ void test_bridge_coverage() {
   f_flr.payload = etl::span<uint8_t>(f_flr_buf.data(), f_flr_buf.size());
   f_flr.payload = etl::span<uint8_t>(pl_buf.data(), pl_buf.size());
   f_flr.header.command_id = (uint16_t)rpc::CommandId::CMD_FILE_READ;
-  rpc::payload::FileRead frp;
-  strncpy(frp.pb_msg.path, "test.txt", sizeof(frp.pb_msg.path));
+  rpc_pb_FileRead frp;
+  strncpy(frp.path, "test.txt", sizeof(frp.path));
   bridge::test::set_pb_payload(f_flr, frp);
   ba.dispatch(f_flr);
 
@@ -299,8 +299,8 @@ void test_bridge_coverage() {
   f_frm.payload = etl::span<uint8_t>(f_frm_buf.data(), f_frm_buf.size());
   f_frm.payload = etl::span<uint8_t>(pl_buf.data(), pl_buf.size());
   f_frm.header.command_id = (uint16_t)rpc::CommandId::CMD_FILE_REMOVE;
-  rpc::payload::FileRemove frmp;
-  strncpy(frmp.pb_msg.path, "test.txt", sizeof(frmp.pb_msg.path));
+  rpc_pb_FileRemove frmp;
+  strncpy(frmp.path, "test.txt", sizeof(frmp.path));
   bridge::test::set_pb_payload(f_frm, frmp);
   ba.dispatch(f_frm);
 
@@ -314,8 +314,8 @@ void test_bridge_coverage() {
                       rpc::StatusCode, uint16_t, etl::span<const uint8_t>,
                       etl::span<const uint8_t>)>::create<dummy_process_poll>());
 
-  rpc::payload::ProcessKill pk;
-  pk.pb_msg.pid = 1;
+  rpc_pb_ProcessKill pk;
+  pk.pid = 1;
   Process._onKillNotification(pk);
 
   rpc::Frame f_pk = {};
@@ -326,8 +326,8 @@ void test_bridge_coverage() {
   bridge::test::set_pb_payload(f_pk, pk);
   ba.dispatch(f_pk);
 
-  rpc::payload::ProcessRunAsyncResponse prar;
-  prar.pb_msg.pid = 123;
+  rpc_pb_ProcessRunAsyncResponse prar;
+  prar.pid = 123;
   Process._onRunAsyncResponse(prar);
 
   rpc::Frame f_prar = {};
@@ -339,9 +339,9 @@ void test_bridge_coverage() {
   bridge::test::set_pb_payload(f_prar, prar);
   ba.dispatch(f_prar);
 
-  rpc::payload::ProcessPollResponse ppr_p;
-  ppr_p.pb_msg.status = 0;
-  ppr_p.pb_msg.exit_code = 0;
+  rpc_pb_ProcessPollResponse ppr_p;
+  ppr_p.status = 0;
+  ppr_p.exit_code = 0;
   Process._onPollResponse(ppr_p);
 
   rpc::Frame f_ppr = {};
@@ -366,7 +366,7 @@ void test_bridge_coverage() {
   bridge::hal::removeFile("test.txt");
   uint8_t d, a;
   bridge::hal::getPinCounts(d, a);
-  bridge::hal::getCapabilities();
+  bridge::hal::getrpc_pb_Capabilities();
   bridge::hal::getArchId();
   bridge::hal::memory_fence();
   bridge::hal::watchdog_kick();
@@ -450,11 +450,11 @@ void test_bridge_coverage() {
   uint8_t rp_val[] = {rpc::PROTOCOL_VERSION, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
   ba.invokePacketReceived(etl::span<const uint8_t>(rp_val, sizeof(rp_val)));
 
-  rpc::payload::LinkSync lsync;
-  etl::fill(lsync.pb_msg.nonce.bytes, lsync.pb_msg.nonce.bytes + 16, 0);
-  lsync.pb_msg.nonce.size = 16;
-  etl::fill(lsync.pb_msg.tag.bytes, lsync.pb_msg.tag.bytes + 16, 0);
-  lsync.pb_msg.tag.size = 16;
+  LinkSync lsync;
+  etl::fill(lsync.nonce.bytes, lsync.nonce.bytes + 16, 0);
+  lsync.nonce.size = 16;
+  etl::fill(lsync.tag.bytes, lsync.tag.bytes + 16, 0);
+  lsync.tag.size = 16;
   rpc::Frame f_ls = {};
   static etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> f_ls_buf;
   f_ls.payload = etl::span<uint8_t>(f_ls_buf.data(), f_ls_buf.size());
@@ -469,10 +469,10 @@ void test_bridge_coverage() {
   f_lr.payload = etl::span<uint8_t>(pl_buf.data(), pl_buf.size());
   f_lr.header.command_id = (uint16_t)rpc::CommandId::CMD_LINK_RESET;
   bridge::test::set_pb_payload(f_lr, []() {
-    rpc::payload::HandshakeConfig p;
-    p.pb_msg.ack_timeout_ms = 100;
-    p.pb_msg.ack_retry_limit = 3;
-    p.pb_msg.response_timeout_ms = 200;
+    rpc_pb_HandshakeConfig p;
+    p.ack_timeout_ms = 100;
+    p.ack_retry_limit = 3;
+    p.response_timeout_ms = 200;
     return p;
   }());
   ba.dispatch(f_lr);
@@ -499,8 +499,8 @@ void test_bridge_coverage() {
   f_eb.payload = etl::span<uint8_t>(pl_buf.data(), pl_buf.size());
   f_eb.header.command_id = (uint16_t)rpc::CommandId::CMD_ENTER_BOOTLOADER;
   bridge::test::set_pb_payload(f_eb, []() {
-    rpc::payload::EnterBootloader p;
-    p.pb_msg.magic = rpc::RPC_BOOTLOADER_MAGIC;
+    rpc_pb_EnterBootloader p;
+    p.magic = rpc::RPC_BOOTLOADER_MAGIC;
     return p;
   }());
   ba.dispatch(f_eb);
@@ -511,8 +511,8 @@ void test_bridge_coverage() {
   f_sb.payload = etl::span<uint8_t>(pl_buf.data(), pl_buf.size());
   f_sb.header.command_id = (uint16_t)rpc::CommandId::CMD_SET_BAUDRATE;
   bridge::test::set_pb_payload(f_sb, []() {
-    rpc::payload::SetBaudratePacket p;
-    p.pb_msg.baudrate = 230400;
+    rpc_pb_SetBaudratePacket p;
+    p.baudrate = 230400;
     return p;
   }());
   ba.dispatch(f_sb);

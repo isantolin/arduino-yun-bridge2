@@ -70,17 +70,20 @@ async def test_process_packet_success_dispatches() -> None:
         service.handle_mcu_frame = AsyncMock()
 
         # [Proto-First] Payload MUST be a Protobuf-serialized McuFrame
-        pb_payload = structures.wrap_mcu_frame(Command.CMD_CONSOLE_WRITE.value, 0, payload=b"hi")
+        console_msg = structures.pb.ConsoleWrite(data=b"hi")
+        pb_payload = structures.wrap_mcu_frame(Command.CMD_CONSOLE_WRITE.value, 0, payload=console_msg)
         frame_bytes = Frame(command_id=Command.CMD_CONSOLE_WRITE.value, sequence_id=0, payload=pb_payload).build()
         encoded = cobs.encode(frame_bytes)
-
         transport = SerialTransport(config, state, service)
 
         transport.loop = asyncio.get_running_loop()
 
         await transport._async_process_packet(encoded)  # type: ignore[reportPrivateUsage]
 
-        service.handle_mcu_frame.assert_awaited_once_with(Command.CMD_CONSOLE_WRITE.value, 0, b"hi")
+        # The transport unpacks the McuFrame and passes the inner payload.
+        # pb_payload is the full McuFrame. The inner message is what gets dispatched.
+        inner_payload = getattr(structures.unwrap_mcu_frame(pb_payload)[3], "SerializeToString", lambda: b"")()
+        service.handle_mcu_frame.assert_awaited_once_with(Command.CMD_CONSOLE_WRITE.value, 0, inner_payload)
     finally:
         state.cleanup()
 

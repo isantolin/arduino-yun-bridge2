@@ -24,7 +24,7 @@ void ConsoleClass::_push(const rpc_pb_ConsoleWrite& msg) {
 void ConsoleClass::process() {
   if (!_tx_buffer.empty()) {
     rpc_pb_ConsoleWrite p;
-    copy_to_pb_bytes(p.data, _tx_buffer.data(),
+    rpc::payload::copy_to_pb_bytes(p.data, _tx_buffer.data(),
                                    _tx_buffer.size());
     if (Bridge.send(rpc::CommandId::CMD_CONSOLE_WRITE, 0, p)) {
       _tx_buffer.clear();

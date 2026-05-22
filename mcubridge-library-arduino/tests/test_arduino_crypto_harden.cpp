@@ -32,10 +32,10 @@ void test_bridge_full_crypto_handshake_and_data() {
   Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, secret_str);
 
   // 1. Prepare LinkSync request from "MPU"
-  rpc::payload::LinkSync sync_req = {};
+  LinkSync sync_req = {};
   for (int i = 0; i < 16; ++i)
-    sync_req.pb_msg.nonce.bytes[i] = static_cast<uint8_t>(i + 1);
-  sync_req.pb_msg.nonce.size = 16;
+    sync_req.nonce.bytes[i] = static_cast<uint8_t>(i + 1);
+  sync_req.nonce.size = 16;
 
   // Handshake Key Derivation
   etl::array<uint8_t, 32> handshake_key;
@@ -48,10 +48,10 @@ void test_bridge_full_crypto_handshake_and_data() {
 
   Hmac hmac_engine;
   wc_HmacSetKey(&hmac_engine, WC_SHA256, handshake_key.data(), 32);
-  wc_HmacUpdate(&hmac_engine, sync_req.pb_msg.nonce.bytes, 16);
+  wc_HmacUpdate(&hmac_engine, sync_req.nonce.bytes, 16);
   wc_HmacFinal(&hmac_engine, handshake_key.data());
-  memcpy(sync_req.pb_msg.tag.bytes, handshake_key.data(), 16);
-  sync_req.pb_msg.tag.size = 16;
+  memcpy(sync_req.tag.bytes, handshake_key.data(), 16);
+  sync_req.tag.size = 16;
 
   rpc::Frame f_sync = {};
   static etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> f_sync_buf;

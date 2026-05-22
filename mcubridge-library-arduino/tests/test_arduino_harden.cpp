@@ -136,11 +136,11 @@ void test_bridge_linksync_auth_failure() {
   const char* secret = "secure_secret_1234567890123456";
   Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, secret);
 
-  rpc::payload::LinkSync sync_msg = {};
-  memset(sync_msg.pb_msg.nonce.bytes, 0xAA, 16); sync_msg.pb_msg.nonce.size = 16;
-  sync_msg.pb_msg.nonce.size = 16;
-  memset(sync_msg.pb_msg.tag.bytes, 0xFF, 16); sync_msg.pb_msg.tag.size = 16;  // Wrong tag
-  sync_msg.pb_msg.tag.size = 16;
+  LinkSync sync_msg = {};
+  memset(sync_msg.nonce.bytes, 0xAA, 16); sync_msg.nonce.size = 16;
+  sync_msg.nonce.size = 16;
+  memset(sync_msg.tag.bytes, 0xFF, 16); sync_msg.tag.size = 16;  // Wrong tag
+  sync_msg.tag.size = 16;
 
   rpc::Frame f = {};
   static etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> f_buf;
@@ -217,12 +217,12 @@ void test_bridge_nonce_reuse_attack() {
   Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, secret);
 
   // 1. Sync properly
-  rpc::payload::LinkSync sync_msg = {};
-  memset(sync_msg.pb_msg.nonce.bytes, 0xAA, 16); sync_msg.pb_msg.nonce.size = 16;
-  sync_msg.pb_msg.nonce.size = 16;
-  ba.computeHandshakeTag(sync_msg.pb_msg.nonce.bytes, 16,
-                         sync_msg.pb_msg.tag.bytes);
-  sync_msg.pb_msg.tag.size = 16;
+  LinkSync sync_msg = {};
+  memset(sync_msg.nonce.bytes, 0xAA, 16); sync_msg.nonce.size = 16;
+  sync_msg.nonce.size = 16;
+  ba.computeHandshakeTag(sync_msg.nonce.bytes, 16,
+                         sync_msg.tag.bytes);
+  sync_msg.tag.size = 16;
 
   rpc::Frame f = {};
   static etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> f_buf;

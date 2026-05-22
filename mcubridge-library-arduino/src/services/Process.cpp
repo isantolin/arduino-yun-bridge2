@@ -54,10 +54,10 @@ void ProcessClass::runAsync(etl::string_view cmd,
     return;
   }
 
-  ProcessRunAsync p;
-  copy_to_pb_string(p.command, etl::string_view(command_buffer.data(), command_buffer.size()));
+  rpc_pb_ProcessRunAsync p;
+  rpc::payload::copy_to_pb_string(p.command, etl::string_view(command_buffer.data(), command_buffer.size()));
 
-  const bool send_ok = Bridge.send(rpc::CommandId::CMD_PROCESS_RUN_ASYNC, 0, p);
+  const bool send_ok = Bridge.send(rpc::CommandId::CMD_PROCESS_RUN, 0, p);
   if (!send_ok) {
     Bridge.emitStatus(
         rpc::StatusCode::STATUS_ERROR,
@@ -77,7 +77,7 @@ void ProcessClass::poll(int32_t pid, ProcessPollHandler handler) {
     return;
   }
 
-  ProcessPoll p;
+  rpc_pb_ProcessPoll p;
   p.pid = static_cast<uint32_t>(pid);
 
   if (!Bridge.send(rpc::CommandId::CMD_PROCESS_POLL, 0, p)) {

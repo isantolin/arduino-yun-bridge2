@@ -44,13 +44,13 @@ void dummy_status_handler(rpc::StatusCode, etl::span<const uint8_t>) {}
 }  // namespace
 
 void hit_mailbox_push(etl::span<const uint8_t> data) {
-  rpc::payload::MailboxPush p;
-  rpc::payload::copy_to_pb_bytes(p.pb_msg.data, data.data(), data.size());
+  rpc_pb_MailboxPush p;
+  copy_to_pb_bytes(p.data, data.data(), data.size());
   Mailbox._onIncomingData(p);
 }
 void hit_mailbox_read_resp(etl::span<const uint8_t> data) {
-  rpc::payload::MailboxReadResponse p;
-  rpc::payload::copy_to_pb_bytes(p.pb_msg.content, data.data(), data.size());
+  rpc_pb_MailboxReadResponse p;
+  copy_to_pb_bytes(p.content, data.data(), data.size());
   Mailbox._onIncomingData(p);
 }
 
@@ -108,8 +108,8 @@ void test_filesystem_read_edge_cases() {
   // Trigger FileSystem read chunks with timeout/error simulation
   const char* file_path_str = "test.txt";
   etl::string_view path_sv(file_path_str);
-  rpc::payload::FileRead req;
-  strncpy(req.pb_msg.path, path_sv.data(), sizeof(req.pb_msg.path));
+  rpc_pb_FileRead req;
+  strncpy(req.path, path_sv.data(), sizeof(req.path));
 
   // This will use the new CounterIterator in _onRead
   FileSystem._onRead(req);
@@ -126,10 +126,10 @@ void test_spi_timeout_and_error_paths() {
   reset_bridge_core(Bridge, stream);
 
   SPIService.begin();
-  rpc::payload::SpiConfig sc;
-  sc.pb_msg.frequency = 4000000;
-  sc.pb_msg.bit_order = 1;
-  sc.pb_msg.data_mode = 0;
+  rpc_pb_SpiConfig sc;
+  sc.frequency = 4000000;
+  sc.bit_order = 1;
+  sc.data_mode = 0;
   SPIService.setConfig(sc);
 
   etl::array<uint8_t, 4> buf = {1, 2, 3, 4};
@@ -156,7 +156,7 @@ void test_process_poll_and_kill() {
   reset_bridge_core(Bridge, stream);
 
   // Test Process service direct list initialization and pending queue
-  Process.poll(123, ProcessClass::ProcessPollHandler::create<poll_handler>());
+  Process.poll(123, ProcessClass::rpc_pb_ProcessPollHandler::create<poll_handler>());
   Process.kill(456);
   Process.runAsync("ls", {},
                    etl::delegate<void(int32_t)>::create<async_handler>());
@@ -188,8 +188,8 @@ void test_process_branch_error_paths() {
   TEST_ASSERT_EQUAL(-1, captured_pid);
   TEST_ASSERT_EQUAL(1, Process._pending_run_async.size());
   Process._onRunAsyncResponse([]() {
-    rpc::payload::ProcessRunAsyncResponse p;
-    p.pb_msg.pid = 42;
+    rpc_pb_ProcessRunAsyncResponse p;
+    p.pid = 42;
     return p;
   }());
   TEST_ASSERT_EQUAL(42, captured_pid);
@@ -236,18 +236,18 @@ void test_process_branch_error_paths() {
 
   // Poll queue full path (size=1), then invalid-handler path.
   Process.reset();
-  Process.poll(10, ProcessClass::ProcessPollHandler::create<capture_poll_handler>());
+  Process.poll(10, ProcessClass::rpc_pb_ProcessPollHandler::create<capture_poll_handler>());
   TEST_ASSERT_EQUAL(1, Process._pending_polls.size());
-  Process.poll(11, ProcessClass::ProcessPollHandler::create<capture_poll_handler>());
+  Process.poll(11, ProcessClass::rpc_pb_ProcessPollHandler::create<capture_poll_handler>());
   TEST_ASSERT_EQUAL(1, Process._pending_polls.size());
 
   Process.reset();
-  Process.poll(12, ProcessClass::ProcessPollHandler{});
+  Process.poll(12, ProcessClass::rpc_pb_ProcessPollHandler{});
   TEST_ASSERT_EQUAL(0, Process._pending_polls.size());
 
   // Force send failure in poll path.
   ba_recovered.clearSynchronized();
-  Process.poll(13, ProcessClass::ProcessPollHandler::create<capture_poll_handler>());
+  Process.poll(13, ProcessClass::rpc_pb_ProcessPollHandler::create<capture_poll_handler>());
   ba_recovered.setSynchronized();
 
   // Exercise invalid pending handlers in response dispatch.
@@ -255,14 +255,14 @@ void test_process_branch_error_paths() {
   invalid_pending_run.clear();
   Process._pending_run_async.push({invalid_pending_run});
   Process._onRunAsyncResponse([]() {
-    rpc::payload::ProcessRunAsyncResponse p;
-    p.pb_msg.pid = 777;
+    rpc_pb_ProcessRunAsyncResponse p;
+    p.pid = 777;
     return p;
   }());
-  ProcessClass::ProcessPollHandler invalid_pending_poll;
+  ProcessClass::rpc_pb_ProcessPollHandler invalid_pending_poll;
   invalid_pending_poll.clear();
   Process._pending_polls.push({1, invalid_pending_poll});
-  Process._onPollResponse(rpc::payload::ProcessPollResponse{});
+  Process._onPollResponse(rpc_pb_ProcessPollResponse{});
 }
 
 void test_console_write_full_buffer_retains_data_when_send_fails() {
@@ -297,8 +297,8 @@ void test_mailbox_and_datastore_variants() {
   hit_mailbox_read_resp(mb_data3);
   Mailbox._onAvailableResponse({});
   Mailbox._onAvailableResponse([]() {
-    rpc::payload::MailboxAvailableResponse p;
-    p.pb_msg.count = 7;
+    rpc_pb_MailboxAvailableResponse p;
+    p.count = 7;
     return p;
   }());
 
@@ -316,7 +316,7 @@ void test_mailbox_and_datastore_variants() {
   DataStoreClass::GetHandler invalid_get_handler;
   invalid_get_handler.clear();
   DataStore.get("gamma", invalid_get_handler);
-  DataStore._onResponse(rpc::payload::DatastoreGetResponse{});
+  DataStore._onResponse(rpc_pb_DatastoreGetResponse{});
 
   TEST_ASSERT(true);
 }
@@ -380,9 +380,9 @@ void test_bridge_template_coverage() {
 
   // Explicitly trigger template instantiations that might be missed
   (void)Bridge.send(rpc::CommandId::CMD_SET_PIN_MODE, 1, []() {
-    rpc::payload::PinMode p;
-    p.pb_msg.pin = 13;
-    p.pb_msg.mode = 1;
+    rpc_pb_PinMode p;
+    p.pin = 13;
+    p.mode = 1;
     return p;
   }());
 
@@ -401,9 +401,9 @@ void test_bridge_duplicate_packet() {
   ba.setSynchronized();
 
   static etl::array<uint8_t, 256> buf;
-  rpc::payload::DigitalWrite msg;
-  msg.pb_msg.pin = 13;
-  msg.pb_msg.value = 1;
+  rpc_pb_DigitalWrite msg;
+  msg.pin = 13;
+  msg.value = 1;
 
   pb_ostream_t pbos = pb_ostream_from_buffer(buf.data(), buf.size());
   if (msg.encode(&pbos)) {
@@ -415,7 +415,7 @@ void test_bridge_duplicate_packet() {
     f.payload = etl::span<const uint8_t>(buf.data(), pbos.bytes_written);
 
     bridge::router::CommandContext ctx(&f, f.header.command_id, 10, true, true);
-    ba.handleDigitalWriteCommand(ctx);
+    ba.handlerpc_pb_DigitalWriteCommand(ctx);
   }
 
   TEST_ASSERT(true);
@@ -441,41 +441,41 @@ void test_bridge_exhaustive_command_handlers() {
   };
 
   trigger(rpc::CommandId::CMD_SET_BAUDRATE, []() {
-    rpc::payload::SetBaudratePacket p;
-    p.pb_msg.baudrate = 57600;
+    rpc_pb_SetBaudratePacket p;
+    p.baudrate = 57600;
     return p;
   }());
   trigger(rpc::CommandId::CMD_ENTER_BOOTLOADER, []() {
-    rpc::payload::EnterBootloader p;
-    p.pb_msg.magic = rpc::RPC_BOOTLOADER_MAGIC;
+    rpc_pb_EnterBootloader p;
+    p.magic = rpc::RPC_BOOTLOADER_MAGIC;
     return p;
   }());
   trigger(rpc::CommandId::CMD_SET_PIN_MODE, []() {
-    rpc::payload::PinMode p;
-    p.pb_msg.pin = 13;
-    p.pb_msg.mode = 1;
+    rpc_pb_PinMode p;
+    p.pin = 13;
+    p.mode = 1;
     return p;
   }());
   trigger(rpc::CommandId::CMD_DIGITAL_WRITE, []() {
-    rpc::payload::DigitalWrite p;
-    p.pb_msg.pin = 13;
-    p.pb_msg.value = 1;
+    rpc_pb_DigitalWrite p;
+    p.pin = 13;
+    p.value = 1;
     return p;
   }());
   trigger(rpc::CommandId::CMD_ANALOG_WRITE, []() {
-    rpc::payload::AnalogWrite p;
-    p.pb_msg.pin = 3;
-    p.pb_msg.value = 128;
+    rpc_pb_AnalogWrite p;
+    p.pin = 3;
+    p.value = 128;
     return p;
   }());
   trigger(rpc::CommandId::CMD_DIGITAL_READ, []() {
-    rpc::payload::PinRead p;
-    p.pb_msg.pin = 13;
+    rpc_pb_PinRead p;
+    p.pin = 13;
     return p;
   }());
   trigger(rpc::CommandId::CMD_ANALOG_READ, []() {
-    rpc::payload::PinRead p;
-    p.pb_msg.pin = 0;
+    rpc_pb_PinRead p;
+    p.pin = 0;
     return p;
   }());
 

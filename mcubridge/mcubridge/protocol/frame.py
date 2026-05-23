@@ -38,7 +38,6 @@ def _frame_crc(data: bytes | bytearray | memoryview) -> int:
     return crc32(data) & protocol.CRC32_MASK
 
 
-from mcubridge.protocol import mcubridge_pb2 as pb
 
 
 class Frame(msgspec.Struct, frozen=True):

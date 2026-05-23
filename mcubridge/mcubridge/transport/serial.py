@@ -18,7 +18,6 @@ import contextlib
 import logging
 from typing import TYPE_CHECKING, Any, cast
 
-import msgspec
 from cobs import cobs
 import serialx
 import structlog
@@ -37,7 +36,6 @@ from mcubridge.protocol import protocol
 from mcubridge.protocol.frame import Frame
 from mcubridge.protocol.protocol import (
     ACK_ONLY_COMMANDS,
-    RESPONSE_ONLY_COMMANDS,
     Status,
     expected_responses,
     response_to_request,
@@ -151,13 +149,13 @@ class SerialTransport:
                 raise ConnectionError("Baudrate negotiation failed")
             if self.service:
                 await self.service.on_serial_connected()
-            
+
             # Wait for either stop event or read task failure
             wait_stop = asyncio.create_task(self._stop_event.wait())
             done, _ = await asyncio.wait([wait_stop, read_task], return_when=asyncio.FIRST_COMPLETED)
             if not wait_stop.done():
                 wait_stop.cancel()
-            
+
             # If read_task finished first, it means connection was lost
             if read_task in done:
                 raise ConnectionError("Serial connection lost")
@@ -222,13 +220,14 @@ class SerialTransport:
                 return
 
         cmd_id, seq_id, payload = frame.command_id, frame.sequence_id, frame.payload
-        
+
         # Anti-replay validation
         is_excluded = (protocol.STATUS_CODE_MIN <= cmd_id <= protocol.STATUS_CODE_MAX) or (
             protocol.SYSTEM_COMMAND_MIN <= cmd_id <= protocol.SYSTEM_COMMAND_MAX
         )
         if self.state.is_synchronized and not is_excluded:
             from mcubridge.security.security import validate_nonce_counter
+
             ok, new_counter = validate_nonce_counter(frame.nonce, self.state.link_last_nonce_counter)
             if not ok:
                 logger.warning("Anti-replay validation failed")
@@ -239,7 +238,7 @@ class SerialTransport:
         self._correlate_frame(cmd_id, payload)
         if self.service:
             await self.service.handle_mcu_frame(cmd_id, seq_id, payload)
-        
+
         self.state.metrics.serial_bytes_received.inc(len(encoded_packet))
         self.state.metrics.serial_frames_received.inc()
 
@@ -290,7 +289,9 @@ class SerialTransport:
             try:
                 retryer = tenacity.AsyncRetrying(
                     stop=tenacity.stop_after_attempt(self._max_attempts),
-                    wait=tenacity.wait_exponential(multiplier=SERIAL_HANDSHAKE_BACKOFF_BASE, max=SERIAL_HANDSHAKE_BACKOFF_MAX),
+                    wait=tenacity.wait_exponential(
+                        multiplier=SERIAL_HANDSHAKE_BACKOFF_BASE, max=SERIAL_HANDSHAKE_BACKOFF_MAX
+                    ),
                     retry=tenacity.retry_if_exception_type(self._RetryableSerialError),
                     reraise=True,
                 )
@@ -299,7 +300,7 @@ class SerialTransport:
                         pending.attempts = (pending.attempts or 0) + 1
                         pending.ack_received = False
                         pending.success = None
-                        
+
                         if not await self.send_raw(command_id, payload):
                             raise self._FatalSerialError(None)
 
@@ -310,7 +311,7 @@ class SerialTransport:
                                     return True
                         except TimeoutError:
                             raise self._RetryableSerialError()
-                        
+
                         if pending.failure_status is not None:
                             raise self._FatalSerialError(pending.failure_status)
                         raise self._RetryableSerialError()
@@ -332,7 +333,9 @@ class SerialTransport:
             try:
                 retryer = tenacity.AsyncRetrying(
                     stop=tenacity.stop_after_attempt(self._max_attempts),
-                    wait=tenacity.wait_exponential(multiplier=SERIAL_HANDSHAKE_BACKOFF_BASE, max=SERIAL_HANDSHAKE_BACKOFF_MAX),
+                    wait=tenacity.wait_exponential(
+                        multiplier=SERIAL_HANDSHAKE_BACKOFF_BASE, max=SERIAL_HANDSHAKE_BACKOFF_MAX
+                    ),
                     retry=tenacity.retry_if_exception_type(self._RetryableSerialError),
                     reraise=True,
                 )
@@ -377,8 +380,11 @@ class SerialTransport:
             self.state.link_nonce_counter = new_counter
 
         frame = Frame(command_id=command_id, sequence_id=seq_id, payload=payload, nonce=nonce)
-        encoded = cobs.encode(frame.build(self.state.link_session_key if self.state.is_synchronized else None)) + protocol.FRAME_DELIMITER
-        
+        encoded = (
+            cobs.encode(frame.build(self.state.link_session_key if self.state.is_synchronized else None))
+            + protocol.FRAME_DELIMITER
+        )
+
         if logger.is_enabled_for(logging.DEBUG):
             logger.debug(
                 "[SERIAL -> MCU] [CMD:0x%02X] [RAW]: [%s]",
@@ -398,6 +404,7 @@ class SerialTransport:
 
     async def _negotiate_baudrate(self, target_baud: int) -> bool:
         from mcubridge.protocol.structures import SetBaudratePacket
+
         payload = SetBaudratePacket(baudrate=target_baud).encode()
         self._negotiating = True
         try:

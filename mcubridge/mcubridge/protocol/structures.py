@@ -1,6 +1,30 @@
 from __future__ import annotations
-from typing import Any, Final, cast
+"""MCU Bridge Data Structures and Schemas.
+
+SINGLE SOURCE OF TRUTH for all data structures.
+Binary parsing uses stdlib struct; high-level schemas use Msgspec (SIL-2).
+"""
+
+
+import asyncio
+import enum
+import functools
+import re
+import time
+from collections.abc import Iterable, Mapping
+from enum import IntEnum
+from pathlib import Path
+from typing import (
+    Annotated,
+    Any,
+    ClassVar,
+    Final,
+    TypeVar,
+    cast,
+)
+
 from . import mcubridge_pb2 as pb
+import msgspec
 # --- BEGIN GENERATED PACKETS --- DO NOT EDIT (auto-generated from spec.toml)
 
 
@@ -1349,32 +1373,6 @@ def unwrap_mcu_frame(data: bytes) -> tuple[int, int, int, Any]:
 
 # --- END GENERATED PACKETS ---
 
-
-"""MCU Bridge Data Structures and Schemas.
-
-SINGLE SOURCE OF TRUTH for all data structures.
-Binary parsing uses stdlib struct; high-level schemas use Msgspec (SIL-2).
-"""
-
-
-import asyncio
-import enum
-import functools
-import re
-import time
-from collections.abc import Iterable, Mapping
-from enum import IntEnum
-from pathlib import Path
-from typing import (
-    Annotated,
-    Any,
-    ClassVar,
-    Final,
-    TypeVar,
-    cast,
-)
-
-import msgspec
 
 PROTOBUF_CONTENT_TYPE: Final[str] = "application/x-protobuf"
 

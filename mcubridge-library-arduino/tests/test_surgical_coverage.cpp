@@ -22,6 +22,7 @@ void test_surgical_bridge_errors() {
   stream.clear();
   reset_bridge_core(Bridge, stream);
   auto ba = TestAccessor::create(Bridge);
+  ba.clearSharedSecret();
   ba.setSynchronized();
 
   // 1. Replay detection (Same nonce counter)
@@ -34,9 +35,9 @@ void test_surgical_bridge_errors() {
   static uint8_t payload[32];
   f.payload = etl::span<const uint8_t>(payload, 32);
   // Bridge saves the last counter. We'll dispatch once.
-  ba.invokePacketReceived(f.payload);
+  ba.dispatch(f);
   // Dispatch again with same nonce (implicit counter 0 in header)
-  ba.invokePacketReceived(f.payload);
+  ba.dispatch(f);
 
   // 2. emitStatus variants
   Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR, "Short");
@@ -50,11 +51,11 @@ void test_surgical_bridge_errors() {
   rpc::Frame f_unk = {};
   f_unk.header.version = rpc::PROTOCOL_VERSION;
   f_unk.header.command_id = 999;
-  ba.invokePacketReceived(f_unk.payload);
+  ba.dispatch(f_unk);
 
   // 4. Bad version
   f_unk.header.version = 0;
-  ba.invokePacketReceived(f_unk.payload);
+  ba.dispatch(f_unk);
 
   TEST_ASSERT(true);
 }
@@ -64,6 +65,7 @@ void test_surgical_fsm_resets() {
   stream.clear();
   reset_bridge_core(Bridge, stream);
   auto ba = TestAccessor::create(Bridge);
+  ba.clearSharedSecret();
 
   ba.trigger(bridge::fsm::EvReset());
   ba.trigger(bridge::fsm::EvHandshakeStart());
@@ -102,6 +104,7 @@ void test_surgical_tasks_flow() {
   stream.clear();
   reset_bridge_core(Bridge, stream);
   auto ba = TestAccessor::create(Bridge);
+  ba.clearSharedSecret();
 
   // SerialTask XOFF path
   static uint8_t dummy[1000];

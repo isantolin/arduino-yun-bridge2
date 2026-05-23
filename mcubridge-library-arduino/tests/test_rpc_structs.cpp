@@ -90,13 +90,13 @@ void test_all_structs_roundtrip() {
 
   const char* str = "test";
   rpc_pb_ConsoleWrite cw;
-  copy_to_pb_bytes(
+  rpc::payload::copy_to_pb_bytes(
       cw.data, reinterpret_cast<const uint8_t*>(str), 4);
   test_roundtrip(cw);
 
   rpc_pb_DatastorePut dp;
   strncpy(dp.key, str, 32);
-  copy_to_pb_bytes(
+  rpc::payload::copy_to_pb_bytes(
       dp.value, reinterpret_cast<const uint8_t*>(str), 4);
   test_roundtrip(dp);
 
@@ -105,12 +105,12 @@ void test_all_structs_roundtrip() {
   test_roundtrip(dg);
 
   rpc_pb_DatastoreGetResponse dgr;
-  copy_to_pb_bytes(
+  rpc::payload::copy_to_pb_bytes(
       dgr.value, reinterpret_cast<const uint8_t*>(str), 4);
   test_roundtrip(dgr);
 
   rpc_pb_MailboxPush mbp;
-  copy_to_pb_bytes(
+  rpc::payload::copy_to_pb_bytes(
       mbp.data, reinterpret_cast<const uint8_t*>(str), 4);
   test_roundtrip(mbp);
 
@@ -126,13 +126,13 @@ void test_all_structs_roundtrip() {
   }());
 
   rpc_pb_MailboxReadResponse mbr;
-  copy_to_pb_bytes(
+  rpc::payload::copy_to_pb_bytes(
       mbr.content, reinterpret_cast<const uint8_t*>(str), 4);
   test_roundtrip(mbr);
 
   rpc_pb_FileWrite fw;
   strncpy(fw.path, str, 64);
-  copy_to_pb_bytes(
+  rpc::payload::copy_to_pb_bytes(
       fw.data, reinterpret_cast<const uint8_t*>(str), 4);
   test_roundtrip(fw);
 
@@ -145,7 +145,7 @@ void test_all_structs_roundtrip() {
   test_roundtrip(frm);
 
   rpc_pb_FileReadResponse frr;
-  copy_to_pb_bytes(
+  rpc::payload::copy_to_pb_bytes(
       frr.content, reinterpret_cast<const uint8_t*>(str), 4);
   test_roundtrip(frr);
 
@@ -167,9 +167,9 @@ void test_all_structs_roundtrip() {
   rpc_pb_ProcessPollResponse ppr;
   ppr.status = 0;
   ppr.exit_code = 0;
-  copy_to_pb_bytes(
+  rpc::payload::copy_to_pb_bytes(
       ppr.stdout_data, reinterpret_cast<const uint8_t*>(str), 4);
-  copy_to_pb_bytes(
+  rpc::payload::copy_to_pb_bytes(
       ppr.stderr_data, reinterpret_cast<const uint8_t*>(str), 4);
   test_roundtrip(ppr);
 
@@ -199,12 +199,12 @@ void test_all_structs_roundtrip() {
   test_roundtrip(rpc_pb_EnterBootloader{});
 
   rpc_pb_SpiTransfer st;
-  copy_to_pb_bytes(
+  rpc::payload::copy_to_pb_bytes(
       st.data, reinterpret_cast<const uint8_t*>(str), 4);
   test_roundtrip(st);
 
   rpc_pb_SpiTransferResponse strr;
-  copy_to_pb_bytes(
+  rpc::payload::copy_to_pb_bytes(
       strr.data, reinterpret_cast<const uint8_t*>(str), 4);
   test_roundtrip(strr);
 

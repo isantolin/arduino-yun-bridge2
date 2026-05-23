@@ -1,5 +1,4 @@
 # [SIL-2] Static limits for Zero-Heap operation
-rpc.pb.McuFrame.message           max_size:128
 rpc.pb.AckPacket.command_id       int_size:IS_16
 rpc.pb.ConsoleWrite.data          max_size:64
 rpc.pb.DatastorePut.key           max_size:32

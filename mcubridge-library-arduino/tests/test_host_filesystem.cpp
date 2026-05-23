@@ -93,7 +93,7 @@ void test_filesystem_on_write() {
   etl::array<uint8_t, 3> resp_data = {4, 5, 6};
   rpc_pb_FileWrite msg;
   strncpy(msg.path, "on_write.bin", sizeof(msg.path));
-  copy_to_pb_bytes(msg.data, resp_data.data(),
+  rpc::payload::copy_to_pb_bytes(msg.data, resp_data.data(),
                                  resp_data.size());
   FileSystem._onWrite(msg);
 }

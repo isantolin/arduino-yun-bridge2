@@ -39,18 +39,18 @@ void capture_poll_handler(rpc::StatusCode status, uint16_t exit_code,
   (void)exit_code;
 }
 void datastore_get_handler(etl::string_view, etl::span<const uint8_t>) {}
-void dummy_cmd_handler(const rpc::Frame&) {}
+void dummy_cmd_handler(const rpc_pb_McuFrame&) {}
 void dummy_status_handler(rpc::StatusCode, etl::span<const uint8_t>) {}
 }  // namespace
 
 void hit_mailbox_push(etl::span<const uint8_t> data) {
   rpc_pb_MailboxPush p;
-  copy_to_pb_bytes(p.data, data.data(), data.size());
+  rpc::payload::copy_to_pb_bytes(p.data, data.data(), data.size());
   Mailbox._onIncomingData(p);
 }
 void hit_mailbox_read_resp(etl::span<const uint8_t> data) {
   rpc_pb_MailboxReadResponse p;
-  copy_to_pb_bytes(p.content, data.data(), data.size());
+  rpc::payload::copy_to_pb_bytes(p.content, data.data(), data.size());
   Mailbox._onIncomingData(p);
 }
 
@@ -156,7 +156,7 @@ void test_process_poll_and_kill() {
   reset_bridge_core(Bridge, stream);
 
   // Test Process service direct list initialization and pending queue
-  Process.poll(123, ProcessClass::rpc_pb_ProcessPollHandler::create<poll_handler>());
+  Process.poll(123, ProcessClass::ProcessPollHandler::create<poll_handler>());
   Process.kill(456);
   Process.runAsync("ls", {},
                    etl::delegate<void(int32_t)>::create<async_handler>());
@@ -236,18 +236,18 @@ void test_process_branch_error_paths() {
 
   // Poll queue full path (size=1), then invalid-handler path.
   Process.reset();
-  Process.poll(10, ProcessClass::rpc_pb_ProcessPollHandler::create<capture_poll_handler>());
+  Process.poll(10, ProcessClass::ProcessPollHandler::create<capture_poll_handler>());
   TEST_ASSERT_EQUAL(1, Process._pending_polls.size());
-  Process.poll(11, ProcessClass::rpc_pb_ProcessPollHandler::create<capture_poll_handler>());
+  Process.poll(11, ProcessClass::ProcessPollHandler::create<capture_poll_handler>());
   TEST_ASSERT_EQUAL(1, Process._pending_polls.size());
 
   Process.reset();
-  Process.poll(12, ProcessClass::rpc_pb_ProcessPollHandler{});
+  Process.poll(12, ProcessClass::ProcessPollHandler{});
   TEST_ASSERT_EQUAL(0, Process._pending_polls.size());
 
   // Force send failure in poll path.
   ba_recovered.clearSynchronized();
-  Process.poll(13, ProcessClass::rpc_pb_ProcessPollHandler::create<capture_poll_handler>());
+  Process.poll(13, ProcessClass::ProcessPollHandler::create<capture_poll_handler>());
   ba_recovered.setSynchronized();
 
   // Exercise invalid pending handlers in response dispatch.
@@ -259,7 +259,7 @@ void test_process_branch_error_paths() {
     p.pid = 777;
     return p;
   }());
-  ProcessClass::rpc_pb_ProcessPollHandler invalid_pending_poll;
+  ProcessClass::ProcessPollHandler invalid_pending_poll;
   invalid_pending_poll.clear();
   Process._pending_polls.push({1, invalid_pending_poll});
   Process._onPollResponse(rpc_pb_ProcessPollResponse{});
@@ -369,7 +369,7 @@ void test_bridge_packet_errors() {
   auto ba = TestAccessor::create(Bridge);
 
   // Test malformed packet (length 0)
-  ba.invokePacketReceived(etl::span<const uint8_t>());
+  ba.dispatch(etl::span<const uint8_t>());
 
   TEST_ASSERT(true);
 }
@@ -406,7 +406,7 @@ void test_bridge_duplicate_packet() {
   msg.value = 1;
 
   pb_ostream_t pbos = pb_ostream_from_buffer(buf.data(), buf.size());
-  if (msg.encode(&pbos)) {
+  if (pb_encode(&pbos, rpc::Payload::Traits<decltype(msg)>::fields, &msg)) {
     rpc::Frame f = {};
     f.header = {rpc::PROTOCOL_VERSION, (uint16_t)pbos.bytes_written,
                 (uint16_t)rpc::CommandId::CMD_DIGITAL_WRITE, 10};
@@ -414,8 +414,8 @@ void test_bridge_duplicate_packet() {
     f.tag.fill(0);
     f.payload = etl::span<const uint8_t>(buf.data(), pbos.bytes_written);
 
-    bridge::router::CommandContext ctx(&f, f.header.command_id, 10, true, true);
-    ba.handlerpc_pb_DigitalWriteCommand(ctx);
+    rpc_pb_McuFrame mf = rpc_pb_McuFrame_init_default; mf.seq_id = 10; mf.which_message = f.header.command_id; mf.message.digital_write = msg;
+    ba.handleDigitalWriteCommand(mf);
   }
 
   TEST_ASSERT(true);
@@ -430,13 +430,13 @@ void test_bridge_exhaustive_command_handlers() {
   static etl::array<uint8_t, 256> buf;
   auto trigger = [&](rpc::CommandId id, auto payload) {
     pb_ostream_t pbos = pb_ostream_from_buffer(buf.data(), buf.size());
-    if (payload.encode(&pbos)) {
+    if (pb_encode(&pbos, rpc::Payload::Traits<decltype(payload)>::fields, &payload)) {
       rpc::Frame f = {};
       f.header = {rpc::PROTOCOL_VERSION, (uint16_t)pbos.bytes_written, (uint16_t)id, 1};
       f.nonce.fill(0);
       f.tag.fill(0);
       f.payload = etl::span<const uint8_t>(buf.data(), pbos.bytes_written);
-      ba.invokePacketReceived(f.payload);
+      ba.dispatch(f);
     }
   };
 

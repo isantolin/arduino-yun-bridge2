@@ -19,14 +19,18 @@ void reset_bridge() {
 
 void test_bridge_initialization() {
   reset_bridge();
+  Console.begin();
   auto ba = TestAccessor::create(Bridge);
+  ba.clearSharedSecret();
   TEST_ASSERT_FALSE(ba.isSynchronized());
   TEST_ASSERT_FALSE(ba.isAwaitingAck());
 }
 
 void test_bridge_handshake() {
   reset_bridge();
+  Console.begin();
   auto ba = TestAccessor::create(Bridge);
+  ba.clearSharedSecret();
   TEST_ASSERT_FALSE(ba.isSynchronized());
 
   // 1. Prepare Handshake Payload using computeHandshakeTag
@@ -45,9 +49,9 @@ void test_bridge_handshake() {
   pb_ostream_t pbos = pb_ostream_from_buffer(pl_buf.data(), pl_buf.size());
   rpc_pb_McuFrame mf = rpc_pb_McuFrame_init_default;
   mf.which_message = rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
-  mf.seq_id = 1;
-  memcpy(&mf.message, &msg, sizeof(msg));
-  pb_encode(&pbos, rpc_pb_McuFrame_fields, &mf);
+  mf.seq_id = 5;
+  mf.message.link_sync = msg;
+  TEST_ASSERT_TRUE(pb_encode(&pbos, rpc_pb_McuFrame_fields, &mf));
 
   // 2. Build rpc_pb_LinkSync frame using FrameBuilder
   etl::array<uint8_t, rpc::MAX_FRAME_SIZE> frame_raw;
@@ -63,7 +67,7 @@ void test_bridge_handshake() {
   // 3. Dispatch using FrameParser
   auto frame_res = rpc::FrameParser().parse(etl::span<uint8_t>(frame_raw.data(), len));
   TEST_ASSERT_TRUE(frame_res.has_value());
-  ba.invokePacketReceived(etl::span<const uint8_t>(frame_raw.data(), len));
+  ba.dispatch(etl::span<const uint8_t>(frame_raw.data(), len));
   Bridge.process();
 
   TEST_ASSERT(ba.isSynchronized());
@@ -71,7 +75,9 @@ void test_bridge_handshake() {
 
 void test_bridge_send_frame() {
   reset_bridge();
+  Console.begin();
   auto ba = TestAccessor::create(Bridge);
+  ba.clearSharedSecret();
   ba.setSynchronized();
 
   etl::array<uint8_t, 2> payload = {0xAA, 0xBB};
@@ -81,7 +87,9 @@ void test_bridge_send_frame() {
 
 void test_bridge_process_rx() {
   reset_bridge();
+  Console.begin();
   auto ba = TestAccessor::create(Bridge);
+  ba.clearSharedSecret();
   ba.setSynchronized();
 
   rpc_pb_DigitalWrite msg = {};
@@ -92,9 +100,9 @@ void test_bridge_process_rx() {
   pb_ostream_t pbos = pb_ostream_from_buffer(pl_buf.data(), pl_buf.size());
   rpc_pb_McuFrame mf = rpc_pb_McuFrame_init_default;
   mf.which_message = rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE);
-  mf.seq_id = 1;
-  memcpy(&mf.message, &msg, sizeof(msg));
-  pb_encode(&pbos, rpc_pb_McuFrame_fields, &mf);
+  mf.seq_id = 6;
+  mf.message.digital_write = msg;
+  TEST_ASSERT_TRUE(pb_encode(&pbos, rpc_pb_McuFrame_fields, &mf));
 
   etl::array<uint8_t, rpc::MAX_FRAME_SIZE> frame_raw;
   etl::array<uint8_t, rpc::AEAD_NONCE_SIZE> frame_nonce = {};
@@ -107,13 +115,15 @@ void test_bridge_process_rx() {
 
   auto frame_res = rpc::FrameParser().parse(etl::span<uint8_t>(frame_raw.data(), len));
   TEST_ASSERT_TRUE(frame_res.has_value());
-  ba.invokePacketReceived(etl::span<const uint8_t>(frame_raw.data(), len));
+  ba.dispatch(etl::span<const uint8_t>(frame_raw.data(), len));
   Bridge.process();
 }
 
 void test_bridge_dedup_console_write() {
   reset_bridge();
+  Console.begin();
   auto ba = TestAccessor::create(Bridge);
+  ba.clearSharedSecret();
   ba.setSynchronized();
 
   // 1. Build rpc_pb_ConsoleWrite frame once
@@ -126,9 +136,9 @@ void test_bridge_dedup_console_write() {
   pb_ostream_t pbos = pb_ostream_from_buffer(pl_buf.data(), pl_buf.size());
   rpc_pb_McuFrame mf = rpc_pb_McuFrame_init_default;
   mf.which_message = rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE);
-  mf.seq_id = 1;
-  memcpy(&mf.message, &msg, sizeof(msg));
-  pb_encode(&pbos, rpc_pb_McuFrame_fields, &mf);
+  mf.seq_id = 7;
+  mf.message.console_write = msg;
+  TEST_ASSERT_TRUE(pb_encode(&pbos, rpc_pb_McuFrame_fields, &mf));
 
   etl::array<uint8_t, rpc::MAX_FRAME_SIZE> frame_raw;
   etl::array<uint8_t, rpc::AEAD_NONCE_SIZE> frame_nonce = {};
@@ -143,19 +153,21 @@ void test_bridge_dedup_console_write() {
   TEST_ASSERT_TRUE(frame_res.has_value());
 
   // 2. Dispatch twice
-  ba.invokePacketReceived(etl::span<const uint8_t>(frame_raw.data(), len));
+  ba.dispatch(etl::span<const uint8_t>(frame_raw.data(), len));
   Bridge.process();
-  TEST_ASSERT_EQUAL(4, Console.available());
+  TEST_ASSERT_EQUAL(96, ba.getLastCommandId()); TEST_ASSERT_EQUAL(4, Console.available());
 
-  ba.invokePacketReceived(etl::span<const uint8_t>(frame_raw.data(), len));
+  ba.dispatch(etl::span<const uint8_t>(frame_raw.data(), len));
   Bridge.process();
   // 3. Verify Console.available() remains consistent (deduplicated)
-  TEST_ASSERT_EQUAL(4, Console.available());
+  TEST_ASSERT_EQUAL(96, ba.getLastCommandId()); TEST_ASSERT_EQUAL(4, Console.available());
 }
 
 void test_bridge_status_ack() {
   reset_bridge();
+  Console.begin();
   auto ba = TestAccessor::create(Bridge);
+  ba.clearSharedSecret();
   ba.setSynchronized();
 
   // 1. Trigger a command that requires ACK
@@ -168,7 +180,7 @@ void test_bridge_status_ack() {
   
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> pl_buf;
   pb_ostream_t pbos = pb_ostream_from_buffer(pl_buf.data(), pl_buf.size());
-  rpc_pb_McuFrame mf = rpc_pb_McuFrame_init_default; mf.which_message = rpc::to_underlying(rpc::CommandId::CMD_ACK); mf.seq_id = 1; memcpy(&mf.message, &p, sizeof(p)); pb_encode(&pbos, rpc_pb_McuFrame_fields, &mf);
+  rpc_pb_McuFrame mf = rpc_pb_McuFrame_init_default; mf.which_message = rpc::to_underlying(rpc::CommandId::CMD_ACK); mf.seq_id = 4; mf.message.ack = p; TEST_ASSERT_TRUE(pb_encode(&pbos, rpc_pb_McuFrame_fields, &mf));
 
   etl::array<uint8_t, rpc::MAX_FRAME_SIZE> frame_raw;
   etl::array<uint8_t, rpc::AEAD_NONCE_SIZE> frame_nonce = {};
@@ -182,7 +194,7 @@ void test_bridge_status_ack() {
   // 3. Dispatch and verify isAwaitingAck() becomes false
   auto frame_res = rpc::FrameParser().parse(etl::span<uint8_t>(frame_raw.data(), len));
   TEST_ASSERT_TRUE(frame_res.has_value());
-  ba.invokePacketReceived(etl::span<const uint8_t>(frame_raw.data(), len));
+  ba.dispatch(etl::span<const uint8_t>(frame_raw.data(), len));
   Bridge.process();
 
   TEST_ASSERT_FALSE(ba.isAwaitingAck());

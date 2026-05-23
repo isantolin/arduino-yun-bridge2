@@ -49,11 +49,11 @@ void test_bridge_packet_corruption_chaos() {
 
   // Inyectar ruido asíncrono
   etl::array<uint8_t, 5> noise = {0x00, 0xFF, 0xAA, 0x55, 0x00};
-  ba.invokePacketReceived(noise);
+  ba.dispatch(noise);
 
   // Inyectar frame truncado
   etl::array<uint8_t, 3> truncated = {0x02, 0x01, 0x00};
-  ba.invokePacketReceived(truncated);
+  ba.dispatch(truncated);
 
   TEST_ASSERT_TRUE(true);
 }
@@ -75,7 +75,7 @@ void test_bridge_dispatch_security_denial() {
   f.tag.fill(0);
   f.crc = rpc::checksum::compute(f);
 
-  ba.invokePacketReceived(f.payload);
+  ba.dispatch(f);
 
   // Should have sent some response (error status)
   TEST_ASSERT_TRUE(stream.tx_buf.len > 0);

@@ -35,27 +35,27 @@ struct CountingObserver final : public BridgeObserver {
   void notification(MsgBridgeLost) override { ++lost; }
 };
 
-void on_fs_read(etl::span<const uint8_t>) {}
+void on_fread(etl::span<const uint8_t>) {}
 void on_datastore_get(etl::string_view, etl::span<const uint8_t>) {}
-void on_process_poll(rpc::StatusCode, uint16_t, etl::span<const uint8_t>,
+void on_procespoll(rpc::StatusCode, uint16_t, etl::span<const uint8_t>,
                      etl::span<const uint8_t>) {}
 
 bool extract_encrypted_frame(const ByteBuffer<8192>& tx, size_t& cursor,
-                             rpc::Frame& out, size_t attempts_left) {
-  if (attempts_left == 0) return false;
+                             rpc::Frame& out, size_t attemptleft) {
+  if (attemptleft == 0) return false;
   rpc::Frame candidate = {};
   if (!extract_next_valid_frame(tx, cursor, candidate)) return false;
   const uint16_t raw_cmd =
       candidate.header.command_id & ~rpc::RPC_CMD_FLAG_COMPRESSED;
-  const bool is_excluded = (raw_cmd >= rpc::RPC_STATUS_CODE_MIN &&
+  const bool iexcluded = (raw_cmd >= rpc::RPC_STATUS_CODE_MIN &&
                             raw_cmd <= rpc::RPC_STATUS_CODE_MAX) ||
                            (raw_cmd >= rpc::RPC_SYSTEM_COMMAND_MIN &&
                             raw_cmd <= rpc::RPC_SYSTEM_COMMAND_MAX);
-  if (!is_excluded) {
+  if (!iexcluded) {
     out = candidate;
     return true;
   }
-  return extract_encrypted_frame(tx, cursor, out, attempts_left - 1);
+  return extract_encrypted_frame(tx, cursor, out, attemptleft - 1);
 }
 
 rpc::Frame make_empty_frame(uint16_t cmd, uint16_t seq) {
@@ -92,11 +92,13 @@ rpc::Frame make_malformed_payload_frame(uint16_t cmd, uint16_t seq) {
   return frame;
 }
 
-void test_dispatch_valid_payload_handlers_unique_seq() {
+void test_dispatch_valid_payload_handlerunique_seq() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
+  ba.clearSharedSecret();
+  bs.clearSharedSecret();
 
   uint16_t seq = 100;
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buf;
@@ -110,7 +112,7 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
                            return p;
                          }(),
                          buf);
-  ba.invokePacketReceived(set_baud.payload);
+  ba.dispatch(set_baud);
 
   auto set_pin =
       make_payload_frame(rpc::to_underlying(rpc::CommandId::CMD_SET_PIN_MODE),
@@ -121,7 +123,7 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
                            return p;
                          }(),
                          buf);
-  ba.invokePacketReceived(set_pin.payload);
+  ba.dispatch(set_pin);
 
   auto dwrite =
       make_payload_frame(rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE),
@@ -132,7 +134,7 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
                            return p;
                          }(),
                          buf);
-  ba.invokePacketReceived(dwrite.payload);
+  ba.dispatch(dwrite);
 
   auto awrite =
       make_payload_frame(rpc::to_underlying(rpc::CommandId::CMD_ANALOG_WRITE),
@@ -143,40 +145,40 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
                            return p;
                          }(),
                          buf);
-  ba.invokePacketReceived(awrite.payload);
+  ba.dispatch(awrite);
 
   auto ds = make_payload_frame(
       rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_GET_RESP), seq++,
       []() {
         rpc_pb_DatastoreGetResponse p;
         uint8_t v[] = {1, 2, 3, 4};
-        copy_to_pb_bytes(p.value, v, 4);
+        rpc::payload::copy_to_pb_bytes(p.value, v, 4);
         return p;
       }(),
       buf);
-  ba.invokePacketReceived(ds.payload);
+  ba.dispatch(ds);
 
   auto mpush = make_payload_frame(
       rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH), seq++,
       []() {
         rpc_pb_MailboxPush p;
         uint8_t v[] = {1, 2, 3, 4};
-        copy_to_pb_bytes(p.data, v, 4);
+        rpc::payload::copy_to_pb_bytes(p.data, v, 4);
         return p;
       }(),
       buf);
-  ba.invokePacketReceived(mpush.payload);
+  ba.dispatch(mpush);
 
   auto mread = make_payload_frame(
       rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_READ_RESP), seq++,
       []() {
         rpc_pb_MailboxReadResponse p;
         uint8_t v[] = {1, 2, 3, 4};
-        copy_to_pb_bytes(p.content, v, 4);
+        rpc::payload::copy_to_pb_bytes(p.content, v, 4);
         return p;
       }(),
       buf);
-  ba.invokePacketReceived(mread.payload);
+  ba.dispatch(mread);
 
   auto mavl = make_payload_frame(
       rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP), seq++,
@@ -186,7 +188,7 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
         return p;
       }(),
       buf);
-  ba.invokePacketReceived(mavl.payload);
+  ba.dispatch(mavl);
 
   auto fw = make_payload_frame(
       rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE), seq++,
@@ -194,11 +196,11 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
         rpc_pb_FileWrite p;
         strncpy(p.path, "edge.bin", 64);
         uint8_t v[] = {1, 2, 3, 4};
-        copy_to_pb_bytes(p.data, v, 4);
+        rpc::payload::copy_to_pb_bytes(p.data, v, 4);
         return p;
       }(),
       buf);
-  ba.invokePacketReceived(fw.payload);
+  ba.dispatch(fw);
 
   auto fr = make_payload_frame(
       rpc::to_underlying(rpc::CommandId::CMD_FILE_READ), seq++,
@@ -208,7 +210,7 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
         return p;
       }(),
       buf);
-  ba.invokePacketReceived(fr.payload);
+  ba.dispatch(fr);
 
   auto frm = make_payload_frame(
       rpc::to_underlying(rpc::CommandId::CMD_FILE_REMOVE), seq++,
@@ -218,28 +220,28 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
         return p;
       }(),
       buf);
-  ba.invokePacketReceived(frm.payload);
+  ba.dispatch(frm);
 
   auto frr = make_payload_frame(
       rpc::to_underlying(rpc::CommandId::CMD_FILE_READ_RESP), seq++,
       []() {
         rpc_pb_FileReadResponse p;
         uint8_t v[] = {1, 2, 3, 4};
-        copy_to_pb_bytes(p.content, v, 4);
+        rpc::payload::copy_to_pb_bytes(p.content, v, 4);
         return p;
       }(),
       buf);
-  ba.invokePacketReceived(frr.payload);
+  ba.dispatch(frr);
 
   auto pr = make_payload_frame(
-      rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP), seq++,
+      rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_RESP), seq++,
       []() {
         rpc_pb_ProcessRunAsyncResponse p;
         p.pid = 123;
         return p;
       }(),
       buf);
-  ba.invokePacketReceived(pr.payload);
+  ba.dispatch(pr);
 
   auto pp = make_payload_frame(
       rpc::to_underlying(rpc::CommandId::CMD_PROCESS_POLL_RESP), seq++,
@@ -248,12 +250,12 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
         p.status = 0;
         p.exit_code = 0;
         uint8_t v[] = {1, 2, 3, 4};
-        copy_to_pb_bytes(p.stdout_data, v, 4);
-        copy_to_pb_bytes(p.stderr_data, v, 4);
+        rpc::payload::copy_to_pb_bytes(p.stdout_data, v, 4);
+        rpc::payload::copy_to_pb_bytes(p.stderr_data, v, 4);
         return p;
       }(),
       buf);
-  ba.invokePacketReceived(pp.payload);
+  ba.dispatch(pp);
 
   auto pk = make_payload_frame(
       rpc::to_underlying(rpc::CommandId::CMD_PROCESS_KILL), seq++,
@@ -263,7 +265,7 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
         return p;
       }(),
       buf);
-  ba.invokePacketReceived(pk.payload);
+  ba.dispatch(pk);
 
   auto sc = make_payload_frame(
       rpc::to_underlying(rpc::CommandId::CMD_SPI_SET_CONFIG), seq++,
@@ -275,24 +277,24 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
         return p;
       }(),
       buf);
-  ba.invokePacketReceived(sc.payload);
+  ba.dispatch(sc);
 
   auto sbegin = make_empty_frame(
       rpc::to_underlying(rpc::CommandId::CMD_SPI_BEGIN), seq++);
-  ba.invokePacketReceived(sbegin.payload);
+  ba.dispatch(sbegin);
 
   auto send =
       make_empty_frame(rpc::to_underlying(rpc::CommandId::CMD_SPI_END), seq++);
-  ba.invokePacketReceived(send.payload);
+  ba.dispatch(send);
 
   auto cap = make_empty_frame(
       rpc::to_underlying(rpc::CommandId::CMD_GET_CAPABILITIES), seq++);
-  ba.invokePacketReceived(cap.payload);
+  ba.dispatch(cap);
 
   auto transfer = make_payload_frame(
       rpc::to_underlying(rpc::CommandId::CMD_SPI_TRANSFER), seq++,
       rpc_pb_SpiTransfer{}, buf);
-  ba.invokePacketReceived(transfer.payload);
+  ba.dispatch(transfer);
 }
 
 void test_dispatch_malformed_payload_paths() {
@@ -300,6 +302,8 @@ void test_dispatch_malformed_payload_paths() {
   reset_bridge_core(Bridge, stream);
   auto ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
+  ba.clearSharedSecret();
+  bs.clearSharedSecret();
 
   uint16_t seq = 300;
   const etl::array<uint16_t, 18> ids = {
@@ -317,22 +321,24 @@ void test_dispatch_malformed_payload_paths() {
       rpc::to_underlying(rpc::CommandId::CMD_FILE_READ),
       rpc::to_underlying(rpc::CommandId::CMD_FILE_REMOVE),
       rpc::to_underlying(rpc::CommandId::CMD_FILE_READ_RESP),
-      rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP),
+      rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_RESP),
       rpc::to_underlying(rpc::CommandId::CMD_PROCESS_POLL_RESP),
       rpc::to_underlying(rpc::CommandId::CMD_PROCESS_KILL),
       rpc::to_underlying(rpc::CommandId::CMD_SPI_SET_CONFIG)};
 
   etl::for_each(ids.begin(), ids.end(), [&ba, &seq](uint16_t cmd) {
     auto malformed = make_malformed_payload_frame(cmd, seq++);
-    ba.invokePacketReceived(malformed.payload);
+    ba.dispatch(malformed);
   });
 }
 
-void test_packet_received_security_and_decompress_paths() {
+void test_packet_received_security_and_decomprespaths() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
+  ba.clearSharedSecret();
+  bs.clearSharedSecret();
 
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload_buf;
   auto secure =
@@ -348,7 +354,7 @@ void test_packet_received_security_and_decompress_paths() {
 
   etl::array<uint8_t, rpc::MAX_FRAME_SIZE> wire;
   size_t wire_len = rpc::FrameParser::serialize(secure, wire);
-  ba.invokePacketReceived(etl::span<const uint8_t>(wire.data(), wire_len));
+  ba.dispatch(etl::span<const uint8_t>(wire.data(), wire_len));
 
   etl::array<uint8_t, 16> encoded = {0x10, 0x11, 0x12, 0x13};
   const size_t encoded_len = 4;
@@ -366,7 +372,7 @@ void test_packet_received_security_and_decompress_paths() {
   compressed.crc = rpc::checksum::compute(compressed);
 
   wire_len = rpc::FrameParser::serialize(compressed, wire);
-  ba.invokePacketReceived(etl::span<const uint8_t>(wire.data(), wire_len));
+  ba.dispatch(etl::span<const uint8_t>(wire.data(), wire_len));
 }
 
 void test_console_and_policy_edges() {
@@ -374,6 +380,8 @@ void test_console_and_policy_edges() {
   reset_bridge_core(Bridge, stream);
   auto ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
+  ba.clearSharedSecret();
+  bs.clearSharedSecret();
   Console.begin();
 
   bridge::etl_ext::CounterIterator<size_t> begin(0);
@@ -393,13 +401,15 @@ void test_console_and_policy_edges() {
       []() {
         rpc_pb_ConsoleWrite p;
         uint8_t v[] = {0x41, 0x42};
-        copy_to_pb_bytes(p.data, v, 2);
+        rpc::payload::copy_to_pb_bytes(p.data, v, 2);
         return p;
       }(),
       buf);
 
   ba.setSynchronized();
-  ba.invokePacketReceived(frame.payload);
+  ba.clearSharedSecret();
+  bs.clearSharedSecret();
+  ba.dispatch(frame);
   TEST_ASSERT_EQUAL(0x41, Console.peek());
   TEST_ASSERT_EQUAL(0x41, Console.read());
   TEST_ASSERT_EQUAL(0x42, Console.read());
@@ -504,12 +514,12 @@ void test_timer_link_and_bootloader_edges() {
   ba.invokeTimerTask();
 
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buf;
-  LinkSync sync = {};
-  memset(sync.nonce.bytes, 0x11, 16); sync.nonce.size = 16;
-  memset(sync.tag.bytes, 0x22, 16); sync.tag.size = 16;
+  rpc_pb_LinkSync sync = {};
+  memset(sync.nonce, 0x11, 16); 
+  memset(sync.tag, 0x22, 16); 
   auto linksync = make_payload_frame(
       rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC), 700, sync, buf);
-  ba.invokePacketReceived(linksync.payload);
+  ba.dispatch(linksync);
 
   auto linkreset = make_payload_frame(
       rpc::to_underlying(rpc::CommandId::CMD_LINK_RESET), 701, []() {
@@ -520,7 +530,7 @@ void test_timer_link_and_bootloader_edges() {
         return p;
       }(),
       buf);
-  ba.invokePacketReceived(linkreset.payload);
+  ba.dispatch(linkreset);
   ba.applyTimingConfig([]() {
     rpc_pb_HandshakeConfig p;
     p.ack_timeout_ms = 0;
@@ -537,7 +547,7 @@ void test_timer_link_and_bootloader_edges() {
                            return p;
                          }(),
                          buf);
-  ba.invokePacketReceived(baud_zero.payload);
+  ba.dispatch(baud_zero);
   auto baud_new =
       make_payload_frame(rpc::to_underlying(rpc::CommandId::CMD_SET_BAUDRATE),
                          703, []() {
@@ -546,7 +556,7 @@ void test_timer_link_and_bootloader_edges() {
                            return p;
                          }(),
                          buf);
-  ba.invokePacketReceived(baud_new.payload);
+  ba.dispatch(baud_new);
   auto baud_dup =
       make_payload_frame(rpc::to_underlying(rpc::CommandId::CMD_SET_BAUDRATE),
                          704, []() {
@@ -555,7 +565,7 @@ void test_timer_link_and_bootloader_edges() {
                            return p;
                          }(),
                          buf);
-  ba.invokePacketReceived(baud_dup.payload);
+  ba.dispatch(baud_dup);
 
   auto boot_bad = make_payload_frame(
       rpc::to_underlying(rpc::CommandId::CMD_ENTER_BOOTLOADER), 705,
@@ -565,7 +575,7 @@ void test_timer_link_and_bootloader_edges() {
         return p;
       }(),
       buf);
-  ba.invokePacketReceived(boot_bad.payload);
+  ba.dispatch(boot_bad);
   auto boot_ok = make_payload_frame(
       rpc::to_underlying(rpc::CommandId::CMD_ENTER_BOOTLOADER), 706,
       []() {
@@ -574,7 +584,7 @@ void test_timer_link_and_bootloader_edges() {
         return p;
       }(),
       buf);
-  ba.invokePacketReceived(boot_ok.payload);
+  ba.dispatch(boot_ok);
 }
 
 void test_service_capacity_and_send_fail_edges() {
@@ -582,6 +592,8 @@ void test_service_capacity_and_send_fail_edges() {
   reset_bridge_core(Bridge, stream);
   auto ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
+  ba.clearSharedSecret();
+  bs.clearSharedSecret();
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> frame_buf;
   auto pin_mode_ok =
       make_payload_frame(rpc::to_underlying(rpc::CommandId::CMD_SET_PIN_MODE),
@@ -592,7 +604,7 @@ void test_service_capacity_and_send_fail_edges() {
                            return p;
                          }(),
                          frame_buf);
-  ba.invokePacketReceived(pin_mode_ok.payload);
+  ba.dispatch(pin_mode_ok);
   auto analog_write_ok =
       make_payload_frame(rpc::to_underlying(rpc::CommandId::CMD_ANALOG_WRITE),
                          781, []() {
@@ -602,14 +614,14 @@ void test_service_capacity_and_send_fail_edges() {
                            return p;
                          }(),
                          frame_buf);
-  ba.invokePacketReceived(analog_write_ok.payload);
+  ba.dispatch(analog_write_ok);
 
   Console.begin();
   Console.process();
   etl::array<uint8_t, bridge::config::CONSOLE_RX_BUFFER_SIZE + 4> console_bytes;
   console_bytes.fill(0x42);
   rpc_pb_ConsoleWrite cmsg;
-  copy_to_pb_bytes(cmsg.data, console_bytes.data(),
+  rpc::payload::copy_to_pb_bytes(cmsg.data, console_bytes.data(),
                                  console_bytes.size());
   Console._push(cmsg);
   Console._push(cmsg);
@@ -620,23 +632,23 @@ void test_service_capacity_and_send_fail_edges() {
   etl::array<uint8_t, bridge::config::MAILBOX_RX_BUFFER_SIZE + 8> mailbox_bytes;
   mailbox_bytes.fill(0x24);
   rpc_pb_MailboxPush mpush;
-  copy_to_pb_bytes(mpush.data, mailbox_bytes.data(),
+  rpc::payload::copy_to_pb_bytes(mpush.data, mailbox_bytes.data(),
                                  mailbox_bytes.size());
   Mailbox._onIncomingData(mpush);
   rpc_pb_MailboxReadResponse mread;
-  copy_to_pb_bytes(mread.content, mailbox_bytes.data(),
+  rpc::payload::copy_to_pb_bytes(mread.content, mailbox_bytes.data(),
                                  mailbox_bytes.size());
   Mailbox._onIncomingData(mread);
 
   Bridge.enterSafeState();
   FileSystem.read("blocked.bin",
-                  FileSystemClass::FileSystemReadHandler::create<on_fs_read>());
+                  FileSystemClass::FileSystemReadHandler::create<on_fread>());
   DataStore.get(
       "key",
       etl::delegate<void(etl::string_view, etl::span<const uint8_t>)>::create<
           on_datastore_get>());
   Process.poll(123,
-               ProcessClass::rpc_pb_ProcessPollHandler::create<on_process_poll>());
+               ProcessClass::ProcessPollHandler::create<on_procespoll>());
 }
 
 void test_filesystem_spi_fsm_and_rle_edges() {
@@ -644,19 +656,21 @@ void test_filesystem_spi_fsm_and_rle_edges() {
   reset_bridge_core(Bridge, stream);
   auto ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
+  ba.clearSharedSecret();
+  bs.clearSharedSecret();
 
-  etl::array<uint8_t, 2> fs_data = {1, 2};
+  etl::array<uint8_t, 2> fdata = {1, 2};
   rpc_pb_FileWrite fwp;
   strncpy(fwp.path, "/bad", 64);
-  copy_to_pb_bytes(fwp.data, fs_data.data(),
-                                 fs_data.size());
+  rpc::payload::copy_to_pb_bytes(fwp.data, fdata.data(),
+                                 fdata.size());
   FileSystem._onWrite(fwp);
 
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE + 8> big_data;
   big_data.fill(0x31);
   rpc_pb_FileWrite fwp2;
   strncpy(fwp2.path, "large.bin", 64);
-  copy_to_pb_bytes(fwp2.data, big_data.data(),
+  rpc::payload::copy_to_pb_bytes(fwp2.data, big_data.data(),
                                  big_data.size());
   FileSystem._onWrite(fwp2);
 
@@ -667,17 +681,17 @@ void test_filesystem_spi_fsm_and_rle_edges() {
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buf;
   auto spi_begin =
       make_empty_frame(rpc::to_underlying(rpc::CommandId::CMD_SPI_BEGIN), 800);
-  ba.invokePacketReceived(spi_begin.payload);
+  ba.dispatch(spi_begin);
   etl::array<uint8_t, 3> spi_payload = {0xA1, 0xB2, 0xC3};
   rpc_pb_SpiTransfer stp;
-  copy_to_pb_bytes(stp.data, spi_payload.data(),
+  rpc::payload::copy_to_pb_bytes(stp.data, spi_payload.data(),
                                  spi_payload.size());
   auto spi_transfer = make_payload_frame(
       rpc::to_underlying(rpc::CommandId::CMD_SPI_TRANSFER), 801, stp, buf);
-  ba.invokePacketReceived(spi_transfer.payload);
+  ba.dispatch(spi_transfer);
   auto spi_end =
       make_empty_frame(rpc::to_underlying(rpc::CommandId::CMD_SPI_END), 802);
-  ba.invokePacketReceived(spi_end.payload);
+  ba.dispatch(spi_end);
 
   bridge::fsm::BridgeFsm fsm;
   fsm.start();
@@ -695,22 +709,22 @@ void test_encrypted_rx_nonce_and_compressed_empty_paths() {
   reset_bridge_core(Bridge, stream);
   auto ba = TestAccessor::create(Bridge);
 
-  LinkSync sync = {};
-  memset(sync.nonce.bytes, 0xAB, 16); sync.nonce.size = 16;
-  sync.nonce.size = 16;
-  ba.computeHandshakeTag(sync.nonce.bytes, 16, sync.tag.bytes);
-  sync.tag.size = 16;
+  rpc_pb_LinkSync sync = {};
+  memset(sync.nonce, 0xAB, 16); 
+  
+  ba.computeHandshakeTag(sync.nonce, 16, sync.tag);
+  
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buf;
   auto linksync = make_payload_frame(
       rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC), 900, sync, buf);
-  ba.invokePacketReceived(linksync.payload);
+  ba.dispatch(linksync);
   TEST_ASSERT_TRUE(ba.isSynchronized());
   ba.handleAck(ba.getLastCommandId());
   stream.tx_buf.clear();
 
   etl::array<uint8_t, 2> payload = {0x55, 0x66};
   rpc_pb_ConsoleWrite cmsg;
-  copy_to_pb_bytes(cmsg.data, payload.data(),
+  rpc::payload::copy_to_pb_bytes(cmsg.data, payload.data(),
                                  payload.size());
   TEST_ASSERT_TRUE(
       Bridge.send(rpc::CommandId::CMD_CONSOLE_WRITE, 901, cmsg));
@@ -721,15 +735,17 @@ void test_encrypted_rx_nonce_and_compressed_empty_paths() {
   if (extract_encrypted_frame(stream.tx_buf, cursor, encrypted, 4)) {
     size_t wire_len = rpc::FrameParser::serialize(
         encrypted, etl::span<uint8_t>(wire.data(), wire.size()));
-    ba.invokePacketReceived(etl::span<const uint8_t>(wire.data(), wire_len));
+    ba.dispatch(etl::span<const uint8_t>(wire.data(), wire_len));
   }
 }
 
-void test_fault_injection_harness_paths() {
+void test_fault_injection_harnespaths() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
+  ba.clearSharedSecret();
+  bs.clearSharedSecret();
 
   bridge::test::fault::set_clock_ms(0U);
   SPIService.begin();
@@ -744,7 +760,7 @@ void test_fault_injection_harness_paths() {
   file_data.fill(0x5A);
   rpc_pb_FileWrite fwp;
   strncpy(fwp.path, "fi-timeout.bin", 64);
-  copy_to_pb_bytes(fwp.data, file_data.data(),
+  rpc::payload::copy_to_pb_bytes(fwp.data, file_data.data(),
                                  file_data.size());
   FileSystem._onWrite(fwp);
   bridge::test::fault::enable(
@@ -769,6 +785,8 @@ void test_fault_injection_harness_paths() {
   reset_bridge_core(Bridge, stream);
   auto ba2 = TestAccessor::create(Bridge);
   ba2.setSynchronized();
+  ba.clearSharedSecret();
+  bs.clearSharedSecret();
   ba2.exhaustTxPayloadPool();
   bridge::test::fault::enable(
       bridge::test::fault::FaultPoint::BRIDGE_POOL_ALLOC_FAIL);
@@ -815,33 +833,33 @@ void test_fault_injection_harness_paths() {
   BiStream secure_stream;
   reset_bridge_core(Bridge, secure_stream);
   auto bs = TestAccessor::create(Bridge);
-  LinkSync s_sync = {};
-  memset(s_sync.nonce.bytes, 0x44, 16); s_sync.nonce.size = 16;
-  s_sync.nonce.size = 16;
-  bs.computeHandshakeTag(s_sync.nonce.bytes, 16, s_sync.tag.bytes);
-  s_sync.tag.size = 16;
+  rpc_pb_LinkSync sync = {};
+  memset(sync.nonce, 0x44, 16); 
+  
+  bs.computeHandshakeTag(sync.nonce, 16, sync.tag);
+  
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> tmp_buf;
-  auto s_linksync = make_payload_frame(
-      rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC), 950, s_sync, tmp_buf);
-  bs.dispatch(s_linksync);
+  auto linksync = make_payload_frame(
+      rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC), 950, sync, tmp_buf);
+  bs.dispatch(linksync);
   TEST_ASSERT_TRUE(bs.isSynchronized());
   bs.handleAck(bs.getLastCommandId());
   secure_stream.tx_buf.clear();
-  etl::array<uint8_t, 2> s_payload = {0x41, 0x42};
-  rpc_pb_ConsoleWrite s_cmsg;
-  copy_to_pb_bytes(s_cmsg.data, s_payload.data(),
-                                 s_payload.size());
+  etl::array<uint8_t, 2> payload = {0x41, 0x42};
+  rpc_pb_ConsoleWrite cmsg;
+  rpc::payload::copy_to_pb_bytes(cmsg.data, payload.data(),
+                                 payload.size());
   TEST_ASSERT_TRUE(
-      Bridge.send(rpc::CommandId::CMD_CONSOLE_WRITE, 951, s_cmsg));
+      Bridge.send(rpc::CommandId::CMD_CONSOLE_WRITE, 951, cmsg));
   size_t cursor = 0;
-  rpc::Frame s_encrypted = {};
-  if (extract_encrypted_frame(secure_stream.tx_buf, cursor, s_encrypted, 4)) {
+  rpc::Frame encrypted = {};
+  if (extract_encrypted_frame(secure_stream.tx_buf, cursor, encrypted, 4)) {
     etl::array<uint8_t, rpc::MAX_FRAME_SIZE> wire;
     const size_t wire_len = rpc::FrameParser::serialize(
-        s_encrypted, etl::span<uint8_t>(wire.data(), wire.size()));
+        encrypted, etl::span<uint8_t>(wire.data(), wire.size()));
     bridge::test::fault::enable(
         bridge::test::fault::FaultPoint::BRIDGE_NONCE_READ_FAIL);
-    bs.invokePacketReceived(etl::span<const uint8_t>(wire.data(), wire_len));
+    bs.dispatch(etl::span<const uint8_t>(wire.data(), wire_len));
   }
 
   rpc::Frame bad_compressed = {};
@@ -859,16 +877,16 @@ void test_fault_injection_harness_paths() {
   etl::array<uint8_t, rpc::MAX_FRAME_SIZE> bad_wire;
   const size_t bad_len = rpc::FrameParser::serialize(
       bad_compressed, etl::span<uint8_t>(bad_wire.data(), bad_wire.size()));
-  bs.invokePacketReceived(etl::span<const uint8_t>(bad_wire.data(), bad_len));
+  bs.dispatch(etl::span<const uint8_t>(bad_wire.data(), bad_len));
 }
 
 }  // namespace
 
 int main() {
   UNITY_BEGIN();
-  RUN_TEST(test_dispatch_valid_payload_handlers_unique_seq);
+  RUN_TEST(test_dispatch_valid_payload_handlerunique_seq);
   RUN_TEST(test_dispatch_malformed_payload_paths);
-  RUN_TEST(test_packet_received_security_and_decompress_paths);
+  RUN_TEST(test_packet_received_security_and_decomprespaths);
   RUN_TEST(test_console_and_policy_edges);
   RUN_TEST(test_security_invalid_size_guards);
   RUN_TEST(test_observer_and_task_runtime_edges);
@@ -876,6 +894,6 @@ int main() {
   RUN_TEST(test_service_capacity_and_send_fail_edges);
   RUN_TEST(test_filesystem_spi_fsm_and_rle_edges);
   RUN_TEST(test_encrypted_rx_nonce_and_compressed_empty_paths);
-  RUN_TEST(test_fault_injection_harness_paths);
+  RUN_TEST(test_fault_injection_harnespaths);
   return UNITY_END();
 }

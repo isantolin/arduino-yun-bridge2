@@ -240,6 +240,7 @@ static inline void reset_bridge_core(BridgeClass& bridge, Stream& stream,
                                      const char* secret = "top-secret") {
   bridge.~BridgeClass();
   new (&bridge) BridgeClass(stream);
+  printf("--- RESET BRIDGE ---\n");
   if (baudrate) {
     bridge.begin(baudrate, secret);
   } else {

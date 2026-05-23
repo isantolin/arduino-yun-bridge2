@@ -19,7 +19,7 @@ from binascii import crc32
 
 import msgspec
 
-from . import protocol, structures
+from . import protocol
 from .rle import rle_encode, rle_decode, should_compress
 
 _HEADER_FORMAT = protocol.FRAME_HEADER_FORMAT

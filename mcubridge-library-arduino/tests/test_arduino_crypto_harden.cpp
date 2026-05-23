@@ -68,7 +68,7 @@ void test_bridge_full_crypto_handshake_and_data() {
 
   // 2. Dispatch SYNC.
   ba.setIdle();
-  ba.invokePacketReceived(f_sync.payload);
+  ba.dispatch(f_sync);
 
   // 3. Send ENCRYPTED data frame (even if not synced, to test rejection
   // branches)
@@ -84,7 +84,7 @@ void test_bridge_full_crypto_handshake_and_data() {
   f_data.nonce[11] = 5;         // Counter = 5
   f_data.tag.fill(0xEE);  // Triggers AEAD failure path
 
-  ba.invokePacketReceived(f_data.payload);
+  ba.dispatch(f_data);
 
   // Emitting error should write to stream
   TEST_ASSERT(stream.tx_buf.len > 0);

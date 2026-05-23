@@ -72,6 +72,21 @@ BridgeClass::BridgeClass(Stream& stream)
 }
 
 void BridgeClass::_dispatchCommand(const rpc_pb_McuFrame& frame) {
+  printf("dispatch cmd: %d\n", (int)frame.which_message);
+  auto it = etl::find(_rx_history.begin(), _rx_history.end(), frame.seq_id);
+  const bool is_duplicate = (it != _rx_history.end());
+  printf("Duplicate? %d (seq=%d)\n", is_duplicate, frame.seq_id);
+
+  if (!is_duplicate) {
+    if (_rx_history.full()) _rx_history.pop();
+    _rx_history.push(frame.seq_id);
+  } else {
+    if (is_reliable_cmd(frame.which_message)) {
+      _processAck(frame.which_message, frame.seq_id);
+    }
+    return;
+  }
+
   if (_command_handler.is_valid()) {
     _command_handler(frame);
   }
@@ -474,6 +489,7 @@ void BridgeClass::_retransmitLastFrame() {
 }
 
 void BridgeClass::_handleAck(uint16_t cmd) {
+  printf("handleAck: cmd=%d, last=%d\n", cmd, _last_command_id);
   if (!_fsm.isAwaitingAck() || cmd != _last_command_id) return;
   _timers.stop(_timer_ids[bridge::scheduler::TIMER_ACK_TIMEOUT]);
   _clearPendingTxQueue();
@@ -542,6 +558,7 @@ void BridgeClass::_handleAnalogReadCommand(const rpc_pb_McuFrame& frame) {
 }
 
 void BridgeClass::_handleConsoleWriteCommand(const rpc_pb_McuFrame& frame) {
+  printf("Console push size: %d\n", (int)frame.message.console_write.data.size);
   Console._push(frame.message.console_write);
 }
 
@@ -738,7 +755,9 @@ void BridgeClass::_handleReceivedFrame(etl::span<const uint8_t> p) {
 
   rpc_pb_McuFrame pb_frame = rpc_pb_McuFrame_init_default;
   pb_istream_t stream = pb_istream_from_buffer(eff.payload.data(), eff.payload.size());
-  if (pb_decode(&stream, rpc_pb_McuFrame_fields, &pb_frame)) {
+  bool dec_ok = pb_decode(&stream, rpc_pb_McuFrame_fields, &pb_frame);
+  if (dec_ok) {
+  printf("Which: %d, cmd_id: %d\n", pb_frame.which_message, pb_frame.message.ack.command_id);
       if (pb_frame.seq_id == 0) pb_frame.seq_id = eff.header.sequence_id;
       _dispatchCommand(pb_frame);
   } else {

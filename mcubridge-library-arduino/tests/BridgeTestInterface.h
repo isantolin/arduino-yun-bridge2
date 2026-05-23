@@ -49,6 +49,12 @@ class TestAccessor {
   }
 
   void dispatch(const rpc_pb_McuFrame& frame) { _bridge._dispatchCommand(frame); }
+  void dispatch(etl::span<const uint8_t> p) { _bridge._onPacketReceived(p); }
+  void dispatch(const rpc::Frame& frame) {
+    etl::array<uint8_t, rpc::MAX_FRAME_SIZE> buf;
+    size_t len = rpc::FrameParser::serialize(frame, buf);
+    if (len > 0) _bridge._onPacketReceived(etl::span<const uint8_t>(buf.data(), len));
+  }
 
   bool isSharedSecretEmpty() const { return _bridge._shared_secret.empty(); }
   void setSharedSecret(etl::span<const uint8_t> secret) {

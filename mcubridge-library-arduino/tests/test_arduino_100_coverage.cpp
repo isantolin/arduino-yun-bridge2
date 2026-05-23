@@ -65,7 +65,7 @@ void test_bridge_brute_force_commands() {
     f.header.command_id = (uint16_t)id;
     f.header.sequence_id++;
     bridge::test::set_pb_payload(f, packet);
-    ba.invokePacketReceived(f.payload);
+    ba.dispatch(f);
   };
 
   // GPIO VALID

@@ -40,15 +40,15 @@ void test_all_handlers_coverage() {
   rpc::Frame frame = {};
   frame.header.version = rpc::PROTOCOL_VERSION;
   frame.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION);
-  TestAccessor::create(Bridge).invokePacketReceived(frame);
+  TestAccessor::create(Bridge).dispatch(frame);
 
   frame.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_GET_FREE_MEMORY);
-  TestAccessor::create(Bridge).invokePacketReceived(frame);
+  TestAccessor::create(Bridge).dispatch(frame);
 
   frame.header.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_GET_CAPABILITIES);
-  TestAccessor::create(Bridge).invokePacketReceived(frame);
+  TestAccessor::create(Bridge).dispatch(frame);
 }
 
 void test_process_api() {

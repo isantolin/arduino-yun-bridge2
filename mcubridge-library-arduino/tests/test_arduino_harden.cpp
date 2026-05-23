@@ -37,7 +37,7 @@ void test_bridge_protocol_version_mismatch() {
   // Let's call _onPacketReceived instead.
   etl::array<uint8_t, 256> buf;
   size_t len = rpc::FrameParser::serialize(f, buf);
-  ba.invokePacketReceived(etl::span<const uint8_t>(buf.data(), len));
+  ba.dispatch(etl::span<const uint8_t>(buf.data(), len));
 
   // Should have emitted STATUS_MALFORMED
   TEST_ASSERT_EQUAL(0, stream.available());
@@ -55,7 +55,7 @@ void test_bridge_unknown_command_jump_table() {
   f.tag.fill(0);
   f.payload = {};
 
-  ba.invokePacketReceived(f.payload);
+  ba.dispatch(f);
   TEST_ASSERT_TRUE(true);
 }
 
@@ -87,7 +87,7 @@ void test_bridge_packet_received_edge_cases() {
 
   // 1. Too short packet
   etl::array<uint8_t, 2> short_pkt = {0, 1};
-  ba.invokePacketReceived(short_pkt);
+  ba.dispatch(short_pkt);
 
   // 2. CRC mismatch
   rpc::Frame f = {};
@@ -100,7 +100,7 @@ void test_bridge_packet_received_edge_cases() {
 
   etl::array<uint8_t, 256> buf;
   size_t len = rpc::FrameParser::serialize(f, buf);
-  ba.invokePacketReceived(etl::span<const uint8_t>(buf.data(), len));
+  ba.dispatch(etl::span<const uint8_t>(buf.data(), len));
 
   TEST_ASSERT_TRUE(true);
 }
@@ -149,7 +149,7 @@ void test_bridge_linksync_auth_failure() {
                static_cast<uint16_t>(rpc::CommandId::CMD_LINK_SYNC), 1};
 
   bridge::test::set_pb_payload(f, sync_msg);
-  ba.invokePacketReceived(f.payload);
+  ba.dispatch(f);
 
   // Should have transitioned to Fault or Reset or stayed Unsynced
   TEST_ASSERT_FALSE(ba.isSynchronized());
@@ -184,7 +184,7 @@ void test_bridge_decompress_error() {
 
   etl::array<uint8_t, 256> buf;
   size_t len = rpc::FrameParser::serialize(f, buf);
-  ba.invokePacketReceived(etl::span<const uint8_t>(buf.data(), len));
+  ba.dispatch(etl::span<const uint8_t>(buf.data(), len));
 
   TEST_ASSERT_TRUE(true);
 }
@@ -201,7 +201,7 @@ void test_bridge_security_pre_sync_rejection() {
   rpc::Frame f = {};
   f.header = {rpc::PROTOCOL_VERSION, 0,
                static_cast<uint16_t>(rpc::CommandId::CMD_GET_FREE_MEMORY), 1};
-  ba.invokePacketReceived(f.payload);
+  ba.dispatch(f);
 
   // Should have emitted STATUS_ERROR (which is excluded from sync check
   // usually) but the restricted command itself was rejected.
@@ -230,7 +230,7 @@ void test_bridge_nonce_reuse_attack() {
   f.header = {rpc::PROTOCOL_VERSION, 0,
                static_cast<uint16_t>(rpc::CommandId::CMD_LINK_SYNC), 1};
   bridge::test::set_pb_payload(f, sync_msg);
-  ba.invokePacketReceived(f.payload);
+  ba.dispatch(f);
   TEST_ASSERT_TRUE(ba.isSynchronized());
 }
 

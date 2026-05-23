@@ -5,8 +5,7 @@
   "python.testing.pytestEnabled": true,
   "python.testing.unittestEnabled": false,
   "python.testing.pytestArgs": [
-    "-c",
-    "pytest-vscode.ini"
+    "."
   ],
   "C_Cpp.default.includePath": [
     "${workspaceFolder}/mcubridge-library-arduino/src/**",
@@ -32,6 +31,5 @@
   "flake8.path": [
     "${workspaceFolder}/.tox/py313/bin/flake8"
   ],
-  "python.analysis.languageServerMode": "full",
-  "python-envs.defaultEnvManager": "ms-python.python:system"
+  "python.analysis.languageServerMode": "full"
 }

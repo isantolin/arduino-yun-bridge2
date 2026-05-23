@@ -205,7 +205,9 @@ class SerialTransport:
     async def _process_packet(self, encoded_packet: bytes | memoryview) -> None:
         """Processes a packet from the serial stream. [FLATTENED]"""
         try:
-            decoded = cobs.decode(encoded_packet)
+            # Ensure we have bytes for cobs.decode
+            raw_bytes = bytes(encoded_packet) if isinstance(encoded_packet, memoryview) else encoded_packet
+            decoded = cobs.decode(raw_bytes)
             frame = Frame.parse(decoded, self.state.link_session_key if self.state.is_synchronized else None)
         except Exception as exc:
             logger.warning("[SERIAL <- MCU] [MALFORMED]: %s", exc)

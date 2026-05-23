@@ -69,13 +69,13 @@ inline uint32_t compute(etl::span<const uint8_t> data) {
 namespace Payload {
 
 template <typename T>
-inline etl::expected<T, rpc::FrameError> parse(const rpc::Frame& frame) {
+inline etl::expected<T, FrameError> parse(const rpc::Frame& frame) {
     T msg = {};
     pb_istream_t stream = pb_istream_from_buffer(frame.payload().data(), frame.header.payload_length());
     if (!msg.decode(&stream)) {
-        return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);
+        return etl::unexpected<FrameError>(FrameError::MALFORMED);
     }
-    return etl::expected<T, rpc::FrameError>(msg);
+    return etl::expected<T, FrameError>(msg);
 }
 
 } // namespace Payload
@@ -135,7 +135,10 @@ class FrameBuilder {
     f.envelope.pb_msg.sequence_id = seq_id;
     
     etl::copy_n(nonce.begin(), AEAD_NONCE_SIZE, f.envelope.pb_msg.nonce.bytes);
+    f.envelope.pb_msg.nonce.size = static_cast<pb_size_t>(AEAD_NONCE_SIZE);
+    
     etl::copy_n(tag.begin(), AEAD_TAG_SIZE, f.envelope.pb_msg.tag.bytes);
+    f.envelope.pb_msg.tag.size = static_cast<pb_size_t>(AEAD_TAG_SIZE);
     
     const size_t pl_size = etl::min(payload.size(), static_cast<size_t>(64U));
     etl::copy_n(payload.begin(), pl_size, f.envelope.pb_msg.payload.bytes);

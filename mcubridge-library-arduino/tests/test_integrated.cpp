@@ -18,19 +18,21 @@ namespace {
 
 void integrated_test_bridge_core() {
   BiStream stream;
-  BridgeClass localBridge(stream);
-  localBridge.begin(rpc::RPC_DEFAULT_BAUDRATE, "test_secret_1234567890123456");
-  auto accessor = bridge::test::TestAccessor::create(localBridge);
+  reset_bridge_core(Bridge, stream);
+  auto accessor = bridge::test::TestAccessor::create(Bridge);
   accessor.onStartupStabilized();
 
-  rpc::Frame sync;
-  sync.envelope.pb_msg.version = rpc::PROTOCOL_VERSION;
-  sync.envelope.pb_msg.command_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
-  sync.envelope.pb_msg.sequence_id = 1;
-  memset(sync.envelope.pb_msg.payload.bytes, 0, 16);
-  sync.envelope.pb_msg.payload.size = 16;
+  rpc::payload::LinkSync sync_req = {};
+  memset(sync_req.pb_msg.nonce.bytes, 1, 16);
+  sync_req.pb_msg.nonce.size = 16;
+
+  rpc::Frame sync_frame;
+  sync_frame.envelope.pb_msg.version = rpc::PROTOCOL_VERSION;
+  sync_frame.envelope.pb_msg.command_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
+  sync_frame.envelope.pb_msg.sequence_id = 1;
   
-  accessor.dispatch(sync);
+  bridge::test::set_pb_payload(sync_frame, sync_req);
+  accessor.dispatch(sync_frame);
 }
 
 void integrated_test_components() {

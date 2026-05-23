@@ -119,7 +119,7 @@ class Frame(msgspec.Struct, frozen=True):
     @classmethod
     def parse(cls, raw_frame_buffer: bytes | bytearray | memoryview, session_key: bytes | None = None) -> Frame:
         """Parses the frame using the Protobuf envelope."""
-        buf = memoryview(raw_frame_buffer)
+        buf = bytes(raw_frame_buffer)
         if len(buf) < _CRC_SIZE:
             raise ValueError("Incomplete or malformed frame: too short")
 
@@ -135,10 +135,9 @@ class Frame(msgspec.Struct, frozen=True):
 
         envelope = pb.RpcEnvelope()
         try:
-            envelope.ParseFromString(bytes(body))
+            envelope.ParseFromString(body)
         except Exception as e:
             raise ValueError(f"Failed to parse Protobuf envelope: {e}") from e
-
         if envelope.version != protocol.PROTOCOL_VERSION:
             raise ValueError("Invalid protocol version")
 

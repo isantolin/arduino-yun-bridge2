@@ -1,1 +1,0 @@
-../rules/openwrt-architect-arduino.agent.md

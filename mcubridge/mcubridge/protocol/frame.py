@@ -169,5 +169,5 @@ class Frame(msgspec.Struct, frozen=True):
             payload=payload,
             nonce=nonce,
             tag=tag,
-            header_bytes=body[:7],  # Keep for legacy compatibility if needed
+            header_bytes=bytes(body[:7]),  # Keep for legacy compatibility if needed
         )

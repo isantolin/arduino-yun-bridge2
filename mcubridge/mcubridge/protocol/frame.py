@@ -38,8 +38,6 @@ def _frame_crc(data: bytes | bytearray | memoryview) -> int:
     return crc32(data) & protocol.CRC32_MASK
 
 
-
-
 class Frame(msgspec.Struct, frozen=True):
     """Represents an RPC frame for MCU-Linux communication using Protobuf Enveloping."""
 

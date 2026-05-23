@@ -199,7 +199,7 @@ async def test_serial_transport_negotiation_coverage(mock_config: RuntimeConfig,
     encoded = cobs.encode(resp_frame.build())
 
     cast(Any, transport)._switch_local_baudrate = MagicMock()
-    await transport._process_packet(encoded)
+    await transport._process_packet(encoded)  # type: ignore[reportPrivateUsage]
     assert cast(Any, transport)._negotiation_future.done()
     assert cast(Any, transport)._negotiation_future.result() is True
 
@@ -303,7 +303,7 @@ async def test_serial_process_packet_coverage_final(mock_config: RuntimeConfig, 
     frame = Frame(command_id=0x50, sequence_id=1, payload=b"data", nonce=b"N" * 12, tag=b"T" * 16)
     encoded = cobs.encode(frame.build())
 
-    await transport._process_packet(encoded)
+    await transport._process_packet(encoded)  # type: ignore[reportPrivateUsage]
 
 
 @pytest.mark.asyncio

@@ -135,7 +135,7 @@ class Frame(msgspec.Struct, frozen=True):
 
         envelope = pb.RpcEnvelope()
         try:
-            envelope.ParseFromString(body)
+            envelope.ParseFromString(bytes(body))
         except Exception as e:
             raise ValueError(f"Failed to parse Protobuf envelope: {e}") from e
 

@@ -11,8 +11,8 @@ void setUp() {}
 void tearDown() {}
 
 namespace bridge::hal {
-extern bool g_host_has_sd;
-extern bool g_host_fs_enabled;
+__attribute__((weak)) bool g_host_has_sd = false;
+__attribute__((weak)) bool g_host_fs_enabled = false;
 }
 
 void test_hal_weak_defaults_without_mock() {

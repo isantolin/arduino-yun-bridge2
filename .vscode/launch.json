@@ -6,11 +6,6 @@
       "type": "debugpy",
       "request": "launch",
       "program": "mcubridge/mcubridge/daemon.py",
-      "args": [
-        "--serial-port", "/dev/ttyUSB0",
-        "--serial-baud", "115200",
-        "--mqtt-host", "127.0.0.1"
-      ],
       "console": "integratedTerminal",
       "justMyCode": true,
       "env": {

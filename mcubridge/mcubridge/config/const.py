@@ -33,7 +33,7 @@ from ssl import TLSVersion
 from ..protocol import protocol
 
 # -- Serial Port Defaults --
-DEFAULT_SERIAL_PORT: str = "/dev/ttyATH0"
+DEFAULT_SERIAL_PORT: str = "/dev/ttyUSB0"
 # Initial wait for serial port availability (reconnect loop)
 DEFAULT_RECONNECT_DELAY: int = 5
 # Maximum size of a raw serial frame including overhead

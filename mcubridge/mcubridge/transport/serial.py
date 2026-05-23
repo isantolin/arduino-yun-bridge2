@@ -151,7 +151,16 @@ class SerialTransport:
                 raise ConnectionError("Baudrate negotiation failed")
             if self.service:
                 await self.service.on_serial_connected()
-            await self._stop_event.wait()
+            
+            # Wait for either stop event or read task failure
+            wait_stop = asyncio.create_task(self._stop_event.wait())
+            done, _ = await asyncio.wait([wait_stop, read_task], return_when=asyncio.FIRST_COMPLETED)
+            if not wait_stop.done():
+                wait_stop.cancel()
+            
+            # If read_task finished first, it means connection was lost
+            if read_task in done:
+                raise ConnectionError("Serial connection lost")
         finally:
             self.is_connected = False
             read_task.cancel()
@@ -370,6 +379,13 @@ class SerialTransport:
         frame = Frame(command_id=command_id, sequence_id=seq_id, payload=payload, nonce=nonce)
         encoded = cobs.encode(frame.build(self.state.link_session_key if self.state.is_synchronized else None)) + protocol.FRAME_DELIMITER
         
+        if logger.is_enabled_for(logging.DEBUG):
+            logger.debug(
+                "[SERIAL -> MCU] [CMD:0x%02X] [RAW]: [%s]",
+                command_id,
+                encoded.hex().upper(),
+            )
+
         try:
             self.writer.write(encoded)
             await self.writer.drain()

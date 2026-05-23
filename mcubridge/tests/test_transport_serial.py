@@ -75,7 +75,7 @@ async def test_process_packet_success_dispatches() -> None:
 
         transport.loop = asyncio.get_running_loop()
 
-        await transport._async_process_packet(encoded)  # type: ignore[reportPrivateUsage]
+        await transport._process_packet(encoded)  # type: ignore[reportPrivateUsage]
 
         service.handle_mcu_frame.assert_awaited_once_with(Command.CMD_CONSOLE_WRITE.value, 0, b"hi")
     finally:
@@ -115,7 +115,7 @@ async def test_process_packet_negotiation_ack_switches_local_baudrate() -> None:
                 payload=b"",
             ).build()
         )
-        transport._process_packet(encoded)  # type: ignore[reportPrivateUsage]
+        await transport._process_packet(encoded)  # type: ignore[reportPrivateUsage]
 
         assert await transport._negotiation_future is True  # type: ignore[reportPrivateUsage]
         assert mock_transport.serial.baudrate == config.serial_baud

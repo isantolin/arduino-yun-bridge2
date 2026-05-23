@@ -303,7 +303,7 @@ async def test_serial_process_packet_coverage_final(mock_config: RuntimeConfig, 
     frame = Frame(command_id=0x50, sequence_id=1, payload=b"data", nonce=b"N" * 12, tag=b"T" * 16)
     encoded = cobs.encode(frame.build())
 
-    await cast(Any, transport)._async_process_packet(encoded)
+    await transport._process_packet(encoded)
 
 
 @pytest.mark.asyncio
@@ -700,7 +700,7 @@ async def test_serial_transport_tx_allowed_wait(mock_config: RuntimeConfig, mock
         mock_state.serial_tx_allowed.set()
 
     set_task = asyncio.create_task(set_later())
-    res = await cast(Any, transport)._send_raw(0x10, b"data")
+    res = await cast(Any, transport).send_raw(0x10, b"data")
     await set_task
     assert res is True
 

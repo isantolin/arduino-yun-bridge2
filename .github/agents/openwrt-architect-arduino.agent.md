@@ -21,11 +21,13 @@ Operating rules:
 - Web access is not disabled. Prefer workspace evidence and local validation first, and use web only when repository context is insufficient or external confirmation is required.
 - Prefer minimal, coherent, maintainable changes, except when removing Python wrappers, shims, manual glue, redundant abstractions, and MQTT-heavy pass-through layers; in those cases, prioritize eradication over keeping the diff small.
 - Do not disable existing functionality, safeguards, automation, checks, integrations, or compatibility unless the user explicitly requests it.
+- Order of priorities: Code Reduction first, then Library-First.
+- Absolute prohibition of suppressions of any kind (warnings, lint, errors, or checks). If any suppressions are found in the codebase, they must be removed immediately.
 
 Workflow:
 - At the beginning of every task, always state: scope, impacted areas, assumptions, risks, and a brief plan.
 - Run validation at the start and at the end of every task.
-- Python validation must run the full `tox` suite. Read the full output, not just the exit status. Any warning is a failure.
+- Validation must execute ALL `tox` environments configured in `tox.ini`. You must thoroughly analyze the complete execution log, and absolutely every notice or warning must be treated as a test failure/error.
 - Do not enter Phase 3 without explicit user confirmation after Phase 2.
 
 ## Phase 1 — Analysis, research, and pre-validation
@@ -43,7 +45,7 @@ Workflow:
 3. Environment and functional safety
    - Python must remain compatible with 3.13.9-r2. Keep runtime dependencies synchronized through the repo’s `apk`/Makefile flow when Python dependencies change.
    - C++ must use C++17. Prefer `if constexpr`, `inline`, `constexpr`, and strong typing.
-   - Zero-heap on MCU: no dynamic allocation, no STL containers that allocate. Prefer ETL and existing static utilities.
+   - Zero-heap on MCU: no dynamic allocation, no STL containers that allocate. Any manual C++ code (including existing and newly written code) that performs a function that can be substituted by an `etl::` component must be considered and replaced.
    - No infinite or blocking waits for hardware. Every read/write path must have timeouts and a safe-state return path.
    - Require watchdog initialization, safe pin states in `setup()`, and correct `volatile` / `ATOMIC_BLOCK` handling for shared ISR state.
 
@@ -53,13 +55,14 @@ Workflow:
    - Prioritize Python/MQTT modules and helpers first. Treat hand-written MQTT plumbing, translation layers, thin facades, and redundant helpers as default refactor targets unless they provide a clear architectural or safety benefit.
    - Do not preserve extra Python layers merely to keep the refactor small. Remove them when direct library usage is clearer and equivalent.
    - Treat raw `for` / `while`, `switch`, raw arrays, `memcmp/strcmp`, magic values, and avoidable manual state-machines as repo-wide audit targets. Prefer ETL/native library facilities, typed constants, `enum class`, `etl::array`, `etl::equal`, and direct native APIs.
+   - In C++, any manual code (including existing and newly written code) that performs a function that can be substituted by an `etl::` component must be considered and replaced.
    - Require const-correctness and strong typing for immutable and configuration values.
    - Keep strings and tables in Flash when appropriate: `PROGMEM/F()` on Harvard targets, `constexpr/const` on Von Neumann targets.
    - Python exceptions must be typed and logged to syslog. Generic or silent exception handling is a defect.
 
 5. Static validation and testing
    - Never suppress warnings with flags, pragmas, `# noqa`, or ignore lists. Fix the root cause.
-   - Run the full `tox` suite at the start and end of every task.
+   - Run ALL `tox` environments configured in `tox.ini` at the start and end of every task. Read the complete logs, and treat absolutely every notice or warning as an error.
    - Simulate static C++ review for dead code, uninitialized variables, narrowing, raw loops, raw arrays, `switch`, timeouts, watchdog coverage, and protocol symmetry.
 
 ## Phase 2 — Engineering report and execution plan

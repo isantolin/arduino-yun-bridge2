@@ -14,6 +14,11 @@ Arduino MCU Bridge 2 is a modern, high-performance communication system between 
 *   **OpenWrt:** Target OS is **OpenWrt 25.12.3** (APK based).
 *   **Communication:** Custom binary RPC over serial (COBS + CRC32) + AEAD encryption + MQTT v5 (aiomqtt). Protocol validation uses O(1) `etl::find` logic.
 
+## Core Rules & Priorities
+
+1.  **Priority Order:** Code Reduction first, then Library-First.
+2.  **Absolute Suppression Ban:** Suppressions of any kind (warnings, lint, errors, or checks) are strictly prohibited. If any suppressions are found in the codebase, they must be removed immediately.
+
 ## Development Conventions
 
 ### Python (Linux MPU)
@@ -27,13 +32,14 @@ Arduino MCU Bridge 2 is a modern, high-performance communication system between 
 *   **Strongly Typed FSM:** State logic implemented via `etl::fsm` using `enum class StateId : uint8_t` for mission-critical determinism and zero narrowing conversions.
 *   **O(1) Dispatch:** Protocol verification (`requires_ack`) uses `constexpr` arrays and `etl::find` for constant-time complexity.
 *   **Observer:** Components register as observers for system events (e.g., `on_frame`, `on_reset`).
+*   **ETL Component Replacement:** Any manual C++ code (including existing and newly written code) that performs a function that can be substituted by an `etl::` component must be considered and replaced.
 
 ## Building and Running
 
 ### Build Pipeline
 1.  **Compile:** `./1_compile.sh` for OpenWrt APK creation.
 2.  **Install:** `./3_install.sh` on target device.
-3.  **Validate:** `tox` runs all unit tests; `tox -e coverage` generates Python (90%+) and C++ (75%+) reports.
+3.  **Validate:** ALL `tox` environments configured in `tox.ini` must run. The full log of the execution must be thoroughly analyzed, and absolutely every notice or warning must be treated as a test failure/error. `tox -e coverage` generates Python (90%+) and C++ (75%+) reports.
 
 ### Observability
 *   **Metrics:** Prometheus exporter on port 8000.

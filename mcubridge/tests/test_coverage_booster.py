@@ -871,4 +871,3 @@ async def test_daemon_app_coverage_v4() -> None:
         with pytest.raises(SystemExit):
             app(["--serial-port", "/dev/ttyFAKE", "--mqtt-host", "localhost"])
         mock_main.assert_not_called()
-

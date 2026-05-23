@@ -234,12 +234,6 @@ bool run_cryptographic_self_tests() {
 
   memcpy_P(expected_buf.data(), kat_hmac_expected.data(),
            rpc::RPC_SHA256_DIGEST_SIZE);
-#if defined(BRIDGE_HOST_TEST) && defined(BRIDGE_FAULT_INJECTION)
-  if (bridge::test::fault::consume(
-          bridge::test::fault::FaultPoint::KAT_HMAC_MISMATCH)) {
-    actual[0] ^= 0xFF;
-  }
-#endif
   if (!etl::equal(actual.begin(), actual.end(), expected_buf.begin()))
     return false;
 

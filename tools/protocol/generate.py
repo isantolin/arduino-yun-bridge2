@@ -1104,18 +1104,37 @@ class JinjaGenerator:
 
     def generate_python_pb2(self, proto_path: Path, out_dir: Path) -> None:
         """Invoke protoc to generate Python pb2 module and typing stub."""
+        # Create a temporary wrapper script for protoc-gen-pyi
+        wrapper_path = REPO_ROOT / ".tmp_protoc_plugin.sh"
+
+        wrapper_path.write_text(
+            f'#!/bin/bash\n{sys.executable} -c "from mypy_protobuf.main import main; main()" "$@"\n'
+        )
+        wrapper_path.chmod(0o755)
+
+        import os
+
+        env = os.environ.copy()
+        # Ensure mypy-protobuf path is passed to the plugin execution
+        user_site = str(Path.home() / ".local" / "lib" / "python3.14" / "site-packages")
+        env["PYTHONPATH"] = f"{user_site}:{env.get('PYTHONPATH', '')}"
+
         cmd = [
             str(protoc_bin),
             f"--python_out={out_dir}",
             f"--pyi_out={out_dir}",
+            f"--plugin=protoc-gen-pyi={wrapper_path}",
             f"--proto_path={proto_path.parent}",
             str(proto_path),
         ]
         try:
-            subprocess.run(cmd, check=True, capture_output=True, text=True)
+            subprocess.run(cmd, check=True, capture_output=True, text=True, env=env)
         except subprocess.CalledProcessError as e:
             sys.stderr.write(f"Error: protoc failed: {e.stderr}\n")
             sys.exit(1)
+        finally:
+            if wrapper_path.exists():
+                wrapper_path.unlink()
 
     def generate_python_client(self, spec: ProtocolSpec, out_path: Path) -> None:
         template = self.env.get_template("protocol_client.py.j2")

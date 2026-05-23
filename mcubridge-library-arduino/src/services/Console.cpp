@@ -16,9 +16,9 @@ void ConsoleClass::begin() {
 void ConsoleClass::_push(const rpc::payload::ConsoleWrite& msg) {
   const auto& data = msg.pb_msg.data;
   const size_t to_write = etl::min(static_cast<size_t>(data.size), _rx_buffer.available());
-  for (size_t i = 0; i < to_write; ++i) {
-    _rx_buffer.push(data.bytes[i]);
-  }
+  using bridge::etl_ext::CounterIterator;
+  etl::for_each(CounterIterator<size_t>(0U), CounterIterator<size_t>(to_write),
+                [&](size_t i) { _rx_buffer.push(data.bytes[i]); });
 }
 
 void ConsoleClass::process() {

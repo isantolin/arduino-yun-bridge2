@@ -154,6 +154,9 @@ uint32_t getCapabilities() {
 #if BRIDGE_ENABLE_WATCHDOG
   caps.set(etl::count_trailing_zeros(rpc::RPC_CAPABILITY_WATCHDOG));
 #endif
+#if BRIDGE_ENABLE_RLE
+  caps.set(etl::count_trailing_zeros(rpc::RPC_CAPABILITY_RLE));
+#endif
 #if defined(ARDUINO_ARCH_AVR) && defined(SERIAL_PORT_HARDWARE1)
   caps.set(etl::count_trailing_zeros(rpc::RPC_CAPABILITY_HW_SERIAL1));
 #endif

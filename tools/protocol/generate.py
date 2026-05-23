@@ -969,7 +969,7 @@ class JinjaGenerator:
 
                 # [SIL-2] Validation constraints: merge with existing metadata in py_type
                 if f.min is not None or f.max is not None:
-                    new_meta = {}
+                    new_meta: dict[str, Any] = {}
                     if f.min is not None:
                         new_meta["ge"] = f.min
                     if f.max is not None:
@@ -982,18 +982,24 @@ class JinjaGenerator:
                             existing_parts = match.group(1).split(",")
                             for part in existing_parts:
                                 if "=" in part:
-                                    k_v = part.strip().split("=", 1)
-                                    if len(k_v) == 2:
-                                        k, v = k_v
-                                        if k not in new_meta:
-                                            new_meta[k] = v
+                                    k_v_list = part.strip().split("=", 1)
+                                    if len(k_v_list) == 2:
+                                        k_name: str = k_v_list[0]
+                                        v_val: str = k_v_list[1]
+                                        if k_name not in new_meta:
+                                            new_meta[k_name] = v_val
 
-                        meta_str = ", ".join(f"{k}={v}" for k, v in new_meta.items())
+                        meta_parts: list[str] = []
+                        for k_item, v_item in new_meta.items():
+                            meta_parts.append(f"{k_item}={v_item}")
+                        meta_str = ", ".join(meta_parts)
                         py_type = re.sub(r"msgspec.Meta\(.*?\)", f"msgspec.Meta({meta_str})", py_type)
                     else:
-                        meta_str = ", ".join(f"{k}={v}" for k, v in new_meta.items())
+                        meta_parts: list[str] = []
+                        for k_item, v_item in new_meta.items():
+                            meta_parts.append(f"{k_item}={v_item}")
+                        meta_str = ", ".join(meta_parts)
                         py_type = f"Annotated[{py_type}, msgspec.Meta({meta_str})]"
-
                 fields.append({"name": f.name, "python_type": py_type})
 
             packets.append(

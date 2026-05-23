@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import pytest
 from mcubridge.protocol.protocol import Command, Status, UINT8_MASK
-from tests.test_constants import TEST_BROKEN_CRC  # noqa: E402
-
-from tools import frame_debug  # noqa: E402
+from tests.test_constants import TEST_BROKEN_CRC
+from tools import frame_debug
 
 
 def test_resolve_command_hex() -> None:

@@ -61,7 +61,7 @@ if MISSING_DEPS or not HAS_PROTOC:
 if TYPE_CHECKING:
     from mcubridge.protocol.spec_model import ProtocolSpec
 else:
-    _SPEC_MODEL_PATH = REPO_ROOT / "mcubridge" / "mcubridge" / "protocol" / "spec_model.py"  # noqa: W503
+    _SPEC_MODEL_PATH = REPO_ROOT / "mcubridge" / "mcubridge" / "protocol" / "spec_model.py"
     _loader_spec = importlib.util.spec_from_file_location("spec_model", str(_SPEC_MODEL_PATH))
     assert _loader_spec is not None and _loader_spec.loader is not None
     _spec_mod = importlib.util.module_from_spec(_loader_spec)
@@ -1104,13 +1104,21 @@ class JinjaGenerator:
 
     def generate_python_pb2(self, proto_path: Path, out_dir: Path) -> None:
         """Invoke protoc to generate Python pb2 module and typing stub."""
+        import shutil
+
+        has_pyi = shutil.which("protoc-gen-pyi") is not None
         cmd = [
             str(protoc_bin),
             f"--python_out={out_dir}",
-            f"--pyi_out={out_dir}",
-            f"--proto_path={proto_path.parent}",
-            str(proto_path),
         ]
+        if has_pyi:
+            cmd.append(f"--pyi_out={out_dir}")
+        cmd.extend(
+            [
+                f"--proto_path={proto_path.parent}",
+                str(proto_path),
+            ]
+        )
         try:
             subprocess.run(cmd, check=True, capture_output=True, text=True)
         except subprocess.CalledProcessError as e:

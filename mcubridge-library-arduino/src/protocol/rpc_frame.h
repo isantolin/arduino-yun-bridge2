@@ -102,7 +102,7 @@ class FrameParser {
   }
 
   // [MEM-SAVE] parse() now extracts and validates full frame metadata natively.
-  etl::expected<Frame, FrameError> parse(etl::span<const uint8_t> buffer) {
+  static etl::expected<Frame, FrameError> parse(etl::span<const uint8_t> buffer) {
     if (buffer.size() < MIN_FRAME_SIZE || buffer.size() > MAX_RAW_FRAME_SIZE)
       return etl::unexpected<FrameError>(FrameError::MALFORMED);
 

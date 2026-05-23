@@ -34,9 +34,9 @@ void test_surgical_bridge_errors() {
   static uint8_t payload[32];
   f.payload = etl::span<const uint8_t>(payload, 32);
   // Bridge saves the last counter. We'll dispatch once.
-  ba.dispatch(f);
+  ba.invokePacketReceived(f.payload);
   // Dispatch again with same nonce (implicit counter 0 in header)
-  ba.dispatch(f);
+  ba.invokePacketReceived(f.payload);
 
   // 2. emitStatus variants
   Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR, "Short");
@@ -50,11 +50,11 @@ void test_surgical_bridge_errors() {
   rpc::Frame f_unk = {};
   f_unk.header.version = rpc::PROTOCOL_VERSION;
   f_unk.header.command_id = 999;
-  ba.dispatch(f_unk);
+  ba.invokePacketReceived(f_unk.payload);
 
   // 4. Bad version
   f_unk.header.version = 0;
-  ba.dispatch(f_unk);
+  ba.invokePacketReceived(f_unk.payload);
 
   TEST_ASSERT(true);
 }

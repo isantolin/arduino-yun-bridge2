@@ -31,7 +31,7 @@ void integrated_test_bridge_core() {
   etl::array<uint8_t, 16> payload = {0};
   sync.payload = etl::span<const uint8_t>(payload.data(), 16);
   
-  accessor.dispatch(sync);
+  accessor.invokePacketReceived(sync.payload);
 }
 
 void integrated_test_components() {

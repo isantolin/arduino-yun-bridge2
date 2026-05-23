@@ -55,7 +55,7 @@ void test_bridge_unknown_command_jump_table() {
   f.tag.fill(0);
   f.payload = {};
 
-  ba.dispatch(f);
+  ba.invokePacketReceived(f.payload);
   TEST_ASSERT_TRUE(true);
 }
 
@@ -149,7 +149,7 @@ void test_bridge_linksync_auth_failure() {
                static_cast<uint16_t>(rpc::CommandId::CMD_LINK_SYNC), 1};
 
   bridge::test::set_pb_payload(f, sync_msg);
-  ba.dispatch(f);
+  ba.invokePacketReceived(f.payload);
 
   // Should have transitioned to Fault or Reset or stayed Unsynced
   TEST_ASSERT_FALSE(ba.isSynchronized());
@@ -201,7 +201,7 @@ void test_bridge_security_pre_sync_rejection() {
   rpc::Frame f = {};
   f.header = {rpc::PROTOCOL_VERSION, 0,
                static_cast<uint16_t>(rpc::CommandId::CMD_GET_FREE_MEMORY), 1};
-  ba.dispatch(f);
+  ba.invokePacketReceived(f.payload);
 
   // Should have emitted STATUS_ERROR (which is excluded from sync check
   // usually) but the restricted command itself was rejected.
@@ -230,7 +230,7 @@ void test_bridge_nonce_reuse_attack() {
   f.header = {rpc::PROTOCOL_VERSION, 0,
                static_cast<uint16_t>(rpc::CommandId::CMD_LINK_SYNC), 1};
   bridge::test::set_pb_payload(f, sync_msg);
-  ba.dispatch(f);
+  ba.invokePacketReceived(f.payload);
   TEST_ASSERT_TRUE(ba.isSynchronized());
 }
 

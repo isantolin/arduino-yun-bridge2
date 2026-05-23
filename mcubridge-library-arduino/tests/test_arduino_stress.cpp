@@ -75,7 +75,7 @@ void test_bridge_dispatch_security_denial() {
   f.tag.fill(0);
   f.crc = rpc::checksum::compute(f);
 
-  ba.dispatch(f);
+  ba.invokePacketReceived(f.payload);
 
   // Should have sent some response (error status)
   TEST_ASSERT_TRUE(stream.tx_buf.len > 0);

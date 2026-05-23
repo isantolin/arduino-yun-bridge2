@@ -65,7 +65,7 @@ void test_bridge_brute_force_commands() {
     f.header.command_id = (uint16_t)id;
     f.header.sequence_id++;
     bridge::test::set_pb_payload(f, packet);
-    ba.dispatch(f);
+    ba.invokePacketReceived(f.payload);
   };
 
   // GPIO VALID
@@ -128,7 +128,7 @@ void test_bridge_brute_force_commands() {
     rpc_pb_DatastorePut p;
     strncpy(p.key, "k", 32);
     uint8_t v[] = "v";
-    copy_to_pb_bytes(p.value, v, 1);
+    rpc::payload::copy_to_pb_bytes(p.value, v, 1);
     return p;
   }());
   hit(rpc::CommandId::CMD_DATASTORE_GET, []() {
@@ -141,21 +141,21 @@ void test_bridge_brute_force_commands() {
   hit(rpc::CommandId::CMD_MAILBOX_PUSH, []() {
     rpc_pb_MailboxPush p;
     uint8_t v[] = "v";
-    copy_to_pb_bytes(p.data, v, 1);
+    rpc::payload::copy_to_pb_bytes(p.data, v, 1);
     return p;
   }());
 
-  f.header.command_id = (uint16_t)rpc::CommandId::CMD_MAILBOX_READ;
-  f.header.payload_length = 0;
-  ba.dispatch(f);
+  rpc_pb_McuFrame mf1 = rpc_pb_McuFrame_init_default; mf1.which_message = (pb_size_t)rpc::CommandId::CMD_MAILBOX_READ; ba.dispatch(mf1);
+  
+  
 
-  f.header.command_id = (uint16_t)rpc::CommandId::CMD_MAILBOX_AVAILABLE;
-  ba.dispatch(f);
+  rpc_pb_McuFrame mf2 = rpc_pb_McuFrame_init_default; mf2.which_message = (pb_size_t)rpc::CommandId::CMD_MAILBOX_AVAILABLE; ba.dispatch(mf2);
+  
 
   // Process
-  hit(rpc::CommandId::CMD_PROCESS_RUN_ASYNC, []() {
-    ProcessRunAsync p;
-    strncpy(p.command, "ls", 64);
+  hit(rpc::CommandId::CMD_PROCESS_RUN_RESP, []() {
+    rpc_pb_ProcessRunAsyncResponse p;
+    p.pid = 123;
     return p;
   }());
   hit(rpc::CommandId::CMD_PROCESS_POLL, []() {
@@ -177,13 +177,13 @@ void test_bridge_brute_force_commands() {
   hit(rpc::CommandId::CMD_SPI_SET_CONFIG, sc);
 
   rpc_pb_SpiTransfer st = {};
-  copy_to_pb_bytes(st.data, val, 1);
+  rpc::payload::copy_to_pb_bytes(st.data, val, 1);
   hit(rpc::CommandId::CMD_SPI_TRANSFER, st);
 
   // FileSystem
   rpc_pb_FileWrite fw = {};
   strncpy(fw.path, "t.txt", sizeof(fw.path));
-  copy_to_pb_bytes(fw.data, val, 1);
+  rpc::payload::copy_to_pb_bytes(fw.data, val, 1);
   hit(rpc::CommandId::CMD_FILE_WRITE, fw);
 
   rpc_pb_FileRead fr = {};
@@ -219,7 +219,7 @@ void test_bridge_send_exhaustive() {
   uint8_t data[] = "d";
 
   (void)Bridge.send(
-      rpc::CommandId::CMD_GET_VERSION_RESP, 1, []() {
+      rpc::CommandId::CMD_VERSION_RESP, 1, []() {
         rpc_pb_VersionResponse p;
         p.major = 1;
         p.minor = 2;
@@ -227,12 +227,12 @@ void test_bridge_send_exhaustive() {
         return p;
       }());
   (void)Bridge.send(
-      rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, 1, []() {
+      rpc::CommandId::CMD_FREE_MEMORY_RESP, 1, []() {
         rpc_pb_FreeMemoryResponse p;
         p.value = 1024;
         return p;
       }());
-  (void)Bridge.send(rpc::CommandId::CMD_GET_CAPABILITIES_RESP, 1,
+  (void)Bridge.send(rpc::CommandId::CMD_CAPABILITIES_RESP, 1,
                     rpc_pb_Capabilities{});
   (void)Bridge.send(
       rpc::CommandId::CMD_DIGITAL_READ_RESP, 1, []() {
@@ -248,31 +248,31 @@ void test_bridge_send_exhaustive() {
       }());
 
   rpc_pb_DatastoreGetResponse dgr;
-  copy_to_pb_bytes(dgr.value, data, 1);
+  rpc::payload::copy_to_pb_bytes(dgr.value, data, 1);
   (void)Bridge.send(rpc::CommandId::CMD_DATASTORE_GET_RESP, 1, dgr);
 
   rpc_pb_MailboxReadResponse mbr;
-  copy_to_pb_bytes(mbr.content, data, 1);
+  rpc::payload::copy_to_pb_bytes(mbr.content, data, 1);
   (void)Bridge.send(rpc::CommandId::CMD_MAILBOX_READ_RESP, 1, mbr);
 
   rpc_pb_FileReadResponse frr;
-  copy_to_pb_bytes(frr.content, data, 1);
+  rpc::payload::copy_to_pb_bytes(frr.content, data, 1);
   (void)Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 1, frr);
 
   (void)Bridge.send(
-      rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP, 1, []() {
+      rpc::CommandId::CMD_PROCESS_RUN_RESP, 1, []() {
         rpc_pb_ProcessRunAsyncResponse p;
         p.pid = 123;
         return p;
       }());
 
   rpc_pb_ProcessPollResponse ppr;
-  copy_to_pb_bytes(ppr.stdout_data, data, 1);
-  copy_to_pb_bytes(ppr.stderr_data, data, 1);
+  rpc::payload::copy_to_pb_bytes(ppr.stdout_data, data, 1);
+  rpc::payload::copy_to_pb_bytes(ppr.stderr_data, data, 1);
   (void)Bridge.send(rpc::CommandId::CMD_PROCESS_POLL_RESP, 1, ppr);
 
   rpc_pb_SpiTransferResponse strr;
-  copy_to_pb_bytes(strr.data, data, 1);
+  rpc::payload::copy_to_pb_bytes(strr.data, data, 1);
   (void)Bridge.send(rpc::CommandId::CMD_SPI_TRANSFER_RESP, 1, strr);
 
   // 1. Hit Queue Full
@@ -299,19 +299,18 @@ void test_console_and_misc() {
   Bridge.signalXon();
 
   rpc::Frame f = {};
-  f.header.command_id = (uint16_t)rpc::StatusCode::STATUS_OK;
-  ba.dispatch(f);
+  rpc_pb_McuFrame mf3 = rpc_pb_McuFrame_init_default; mf3.which_message = (pb_size_t)rpc::StatusCode::STATUS_OK; ba.dispatch(mf3);
+  
 
-  f.header.command_id = (uint16_t)rpc::StatusCode::STATUS_MALFORMED;
-  ba.dispatch(f);
+  rpc_pb_McuFrame mf4 = rpc_pb_McuFrame_init_default; mf4.which_message = (pb_size_t)rpc::StatusCode::STATUS_MALFORMED; ba.dispatch(mf4);
+  
 
   // Decompression MALFORMED
-  f.header.command_id = (uint16_t)rpc::CommandId::CMD_CONSOLE_WRITE |
-                        rpc::RPC_CMD_FLAG_COMPRESSED;
+  rpc_pb_McuFrame mf5 = rpc_pb_McuFrame_init_default; mf5.which_message = (pb_size_t)rpc::CommandId::CMD_CONSOLE_WRITE; ba.dispatch(mf5); //
   uint8_t comp_data[] = {0x03};  // Truncated RLE
   f.payload = etl::span<const uint8_t>(comp_data, 1);
   f.header.payload_length = 1;
-  ba.dispatch(f);
+  
 
   // 4. Trigger etl::handle_error
   etl::exception e("msg", "file", 100);

@@ -436,7 +436,7 @@ void test_bridge_exhaustive_command_handlers() {
       f.nonce.fill(0);
       f.tag.fill(0);
       f.payload = etl::span<const uint8_t>(buf.data(), pbos.bytes_written);
-      ba.dispatch(f);
+      ba.invokePacketReceived(f.payload);
     }
   };
 

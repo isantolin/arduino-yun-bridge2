@@ -39,6 +39,7 @@ class TestAccessor;
 #include <etl/vector.h>
 
 #include "config/bridge_config.h"
+#include "etl_ext/CounterIterator.h"
 #include "fsm/bridge_fsm.h"
 #include "protocol/BridgeEvents.h"
 #include "protocol/rle.h"

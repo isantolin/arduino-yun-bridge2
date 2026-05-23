@@ -96,7 +96,7 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto ba = TestAccessor::create(Bridge);
-  ba.setSynchronized(); ba.clearSharedSecret();
+  ba.setSynchronized();
 
   uint16_t seq = 100;
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buf;
@@ -299,7 +299,7 @@ void test_dispatch_malformed_payload_paths() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto ba = TestAccessor::create(Bridge);
-  ba.setSynchronized(); ba.clearSharedSecret();
+  ba.setSynchronized();
 
   uint16_t seq = 300;
   const etl::array<uint16_t, 18> ids = {
@@ -332,7 +332,7 @@ void test_packet_received_security_and_decompress_paths() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto ba = TestAccessor::create(Bridge);
-  ba.setSynchronized(); ba.clearSharedSecret();
+  ba.setSynchronized();
 
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload_buf;
   auto secure =
@@ -373,7 +373,7 @@ void test_console_and_policy_edges() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto ba = TestAccessor::create(Bridge);
-  ba.setSynchronized(); ba.clearSharedSecret();
+  ba.setSynchronized();
   Console.begin();
 
   bridge::etl_ext::CounterIterator<size_t> begin(0);
@@ -398,7 +398,7 @@ void test_console_and_policy_edges() {
       }(),
       buf);
 
-  ba.setSynchronized(); ba.clearSharedSecret();
+  ba.setSynchronized();
   ba.dispatch(frame);
   TEST_ASSERT_EQUAL(0x41, Console.peek());
   TEST_ASSERT_EQUAL(0x41, Console.read());
@@ -581,7 +581,7 @@ void test_service_capacity_and_send_fail_edges() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto ba = TestAccessor::create(Bridge);
-  ba.setSynchronized(); ba.clearSharedSecret();
+  ba.setSynchronized();
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> frame_buf;
   auto pin_mode_ok =
       make_payload_frame(rpc::to_underlying(rpc::CommandId::CMD_SET_PIN_MODE),
@@ -643,7 +643,7 @@ void test_filesystem_spi_fsm_and_rle_edges() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto ba = TestAccessor::create(Bridge);
-  ba.setSynchronized(); ba.clearSharedSecret();
+  ba.setSynchronized();
 
   etl::array<uint8_t, 2> fs_data = {1, 2};
   rpc::payload::FileWrite fwp;
@@ -729,7 +729,7 @@ void test_fault_injection_harness_paths() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto ba = TestAccessor::create(Bridge);
-  ba.setSynchronized(); ba.clearSharedSecret();
+  ba.setSynchronized();
 
   bridge::test::fault::set_clock_ms(0U);
   SPIService.begin();

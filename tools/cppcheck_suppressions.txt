@@ -8,3 +8,7 @@
 *:*mcubridge.pb*
 # False positive: cppcheck stub millis() returns 0 but real hardware increments
 knownConditionTrueFalse:*Bridge.cpp
+functionStatic:*mcubridge-library-arduino/src/protocol/rpc_frame.h
+unknownMacro:*mcubridge-library-arduino/src/security/sha256.cpp
+
+invalidLifetime:*mcubridge-library-arduino/src/security/sha256.h

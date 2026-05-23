@@ -1,6 +1,13 @@
 #ifndef RPC_FRAME_H
 #define RPC_FRAME_H
 
+#ifdef min
+#undef min
+#endif
+#ifdef max
+#undef max
+#endif
+
 #include <Arduino.h>
 #include "rpc_protocol.h"
 #include "rpc_structs.h"

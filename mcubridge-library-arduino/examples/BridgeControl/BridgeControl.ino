@@ -30,7 +30,7 @@ void setup() {
 
   Bridge.onCommand(BridgeClass::CommandHandler::create([](const rpc::Frame& frame) {
     Console.print(F("Comando RPC no manejado: ID=0x"));
-    Console.println(frame.header.command_id, HEX);
+    Console.println(frame.header.command_id(), HEX);
   }));
 
   Bridge.onStatus(BridgeClass::StatusHandler::create([](rpc::StatusCode status_code, etl::span<const uint8_t> payload) {

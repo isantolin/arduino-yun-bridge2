@@ -7,7 +7,13 @@
 #ifndef RPC_STRUCTS_H
 #define RPC_STRUCTS_H
 
-#include <stdint.h>
+#ifdef min
+#undef min
+#endif
+#ifdef max
+#undef max
+#endif
+
 #include <stddef.h>
 #include <etl/algorithm.h>
 #include <etl/string_view.h>

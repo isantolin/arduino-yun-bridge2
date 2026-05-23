@@ -1113,10 +1113,11 @@ class JinjaGenerator:
         wrapper_path.chmod(0o755)
 
         import os
+        import site
 
         env = os.environ.copy()
-        # Ensure mypy-protobuf path is passed to the plugin execution
-        user_site = str(Path.home() / ".local" / "lib" / "python3.14" / "site-packages")
+        # Ensure the user's local site-packages are in the path for the wrapper
+        user_site = site.getusersitepackages()
         env["PYTHONPATH"] = f"{user_site}:{env.get('PYTHONPATH', '')}"
 
         cmd = [

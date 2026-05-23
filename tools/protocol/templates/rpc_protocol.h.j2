@@ -57,6 +57,14 @@ enum class CompressionType : uint8_t {
 {%- endfor %}
 };
 
+enum class FrameError : uint8_t {
+    NONE = 0,
+    CRC_MISMATCH = 1,
+    MALFORMED = 2,
+    OVERFLOW = 3,
+    AUTH_FAIL = 4,
+};
+
 enum class StatusCode : uint8_t {
 {%- for status in statuses %}
     STATUS_{{ status.name }} = {{ status.value }},

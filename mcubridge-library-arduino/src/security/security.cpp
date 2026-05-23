@@ -124,7 +124,7 @@ bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
                         etl::span<uint8_t> out_nonce,
                         etl::span<uint8_t> out_tag) {
   nonce_counter++;
-  out_nonce.fill(0);
+  etl::fill(out_nonce.begin(), out_nonce.end(), 0U);
   constexpr etl::string_view mcu_prefix("MCU");
   etl::copy_n(mcu_prefix.begin(), 3, out_nonce.begin());
   etl::byte_stream_writer n_writer(out_nonce.data() + 4, 8, etl::endian::big);

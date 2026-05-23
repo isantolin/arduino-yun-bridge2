@@ -33,9 +33,9 @@ void test_bridge_full_crypto_handshake_and_data() {
 
   // 1. Prepare LinkSync request from "MPU"
   rpc::payload::LinkSync sync_req = {};
-  for (int i = 0; i < 16; ++i)
+  for (int i = 0; i < 12; ++i)
     sync_req.pb_msg.nonce.bytes[i] = static_cast<uint8_t>(i + 1);
-  sync_req.pb_msg.nonce.size = 16;
+  sync_req.pb_msg.nonce.size = 12;
 
   // Handshake Key Derivation
   etl::array<uint8_t, 32> handshake_key;
@@ -46,25 +46,19 @@ void test_bridge_full_crypto_handshake_and_data() {
       etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_SALT),
       etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH));
 
-  Hmac hmac_engine;
-  wc_HmacSetKey(&hmac_engine, WC_SHA256, handshake_key.data(), 32);
-  wc_HmacUpdate(&hmac_engine, sync_req.pb_msg.nonce.bytes, 16);
-  wc_HmacFinal(&hmac_engine, handshake_key.data());
+  Hmac hmac;
+  wc_HmacSetKey(&hmac, WC_SHA256, handshake_key.data(), 32);
+  wc_HmacUpdate(&hmac, sync_req.pb_msg.nonce.bytes, 12);
+  wc_HmacFinal(&hmac, handshake_key.data());
   memcpy(sync_req.pb_msg.tag.bytes, handshake_key.data(), 16);
   sync_req.pb_msg.tag.size = 16;
 
-  rpc::Frame f_sync = {};
-  static etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> f_sync_buf;
-  f_sync.payload = etl::span<uint8_t>(f_sync_buf.data(), f_sync_buf.size());
-  f_sync.header = {rpc::PROTOCOL_VERSION, 0,
-                   static_cast<uint16_t>(rpc::CommandId::CMD_LINK_SYNC), 1};
-  f_sync.nonce.fill(0);
-  f_sync.tag.fill(0);
+  rpc::Frame f_sync;
+  f_sync.envelope.pb_msg.version = rpc::PROTOCOL_VERSION;
+  f_sync.envelope.pb_msg.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_LINK_SYNC);
+  f_sync.envelope.pb_msg.sequence_id = 1;
 
-  static etl::array<uint8_t, 512> pl_buf;
-  f_sync.payload = etl::span<uint8_t>(pl_buf.data(), pl_buf.size());
   bridge::test::set_pb_payload(f_sync, sync_req);
-  f_sync.crc = rpc::checksum::compute(f_sync);
 
   // 2. Dispatch SYNC.
   ba.setIdle();
@@ -73,16 +67,18 @@ void test_bridge_full_crypto_handshake_and_data() {
   // 3. Send ENCRYPTED data frame (even if not synced, to test rejection
   // branches)
   stream.clear();
-  rpc::Frame f_data = {};
-  f_data.header = {rpc::PROTOCOL_VERSION, 0,
-                   static_cast<uint16_t>(rpc::CommandId::CMD_GET_FREE_MEMORY),
-                   2};
-  f_data.nonce.fill(0);
-  f_data.nonce[0] = 'M';
-  f_data.nonce[1] = 'P';
-  f_data.nonce[2] = 'U';
-  f_data.nonce[11] = 5;         // Counter = 5
-  f_data.tag.fill(0xEE);  // Triggers AEAD failure path
+  rpc::Frame f_data;
+  f_data.envelope.pb_msg.version = rpc::PROTOCOL_VERSION;
+  f_data.envelope.pb_msg.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_GET_FREE_MEMORY);
+  f_data.envelope.pb_msg.sequence_id = 2;
+  
+  f_data.envelope.pb_msg.nonce.bytes[0] = 'M';
+  f_data.envelope.pb_msg.nonce.bytes[1] = 'P';
+  f_data.envelope.pb_msg.nonce.bytes[2] = 'U';
+  f_data.envelope.pb_msg.nonce.bytes[11] = 5;         // Counter = 5
+  f_data.envelope.pb_msg.nonce.size = 12;
+  memset(f_data.envelope.pb_msg.tag.bytes, 0xEE, 16);
+  f_data.envelope.pb_msg.tag.size = 16;
 
   ba.dispatch(f_data);
 

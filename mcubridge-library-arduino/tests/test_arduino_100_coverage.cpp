@@ -55,15 +55,10 @@ void test_bridge_brute_force_commands() {
   auto ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
-  static etl::array<uint8_t, 512> pl_buf;
   rpc::Frame f = {};
-  static etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> f_buf;
-  f.payload = etl::span<uint8_t>(f_buf.data(), f_buf.size());
-  f.payload = etl::span<uint8_t>(pl_buf.data(), pl_buf.size());
 
   auto hit = [&](rpc::CommandId id, auto packet) {
-    f.header.command_id = (uint16_t)id;
-    f.header.sequence_id++;
+    f .envelope.pb_msg.command_id = (uint16_t)id;
     bridge::test::set_pb_payload(f, packet);
     ba.dispatch(f);
   };
@@ -145,11 +140,11 @@ void test_bridge_brute_force_commands() {
     return p;
   }());
 
-  f.header.command_id = (uint16_t)rpc::CommandId::CMD_MAILBOX_READ;
-  f.header.payload_length = 0;
+  f .envelope.pb_msg.command_id = (uint16_t)rpc::CommandId::CMD_MAILBOX_READ;
+  f .envelope.pb_msg.payload.size = 0;
   ba.dispatch(f);
 
-  f.header.command_id = (uint16_t)rpc::CommandId::CMD_MAILBOX_AVAILABLE;
+  f .envelope.pb_msg.command_id = (uint16_t)rpc::CommandId::CMD_MAILBOX_AVAILABLE;
   ba.dispatch(f);
 
   // Process
@@ -299,18 +294,16 @@ void test_console_and_misc() {
   Bridge.signalXon();
 
   rpc::Frame f = {};
-  f.header.command_id = (uint16_t)rpc::StatusCode::STATUS_OK;
+  f .envelope.pb_msg.command_id = (uint16_t)rpc::StatusCode::STATUS_OK;
   ba.dispatch(f);
 
-  f.header.command_id = (uint16_t)rpc::StatusCode::STATUS_MALFORMED;
+  f .envelope.pb_msg.command_id = (uint16_t)rpc::StatusCode::STATUS_MALFORMED;
   ba.dispatch(f);
 
   // Decompression MALFORMED
-  f.header.command_id = (uint16_t)rpc::CommandId::CMD_CONSOLE_WRITE |
+  f .envelope.pb_msg.command_id = (uint16_t)rpc::CommandId::CMD_CONSOLE_WRITE |
                         rpc::RPC_CMD_FLAG_COMPRESSED;
-  uint8_t comp_data[] = {0x03};  // Truncated RLE
-  f.payload = etl::span<const uint8_t>(comp_data, 1);
-  f.header.payload_length = 1;
+  f .envelope.pb_msg.payload.size = 1;
   ba.dispatch(f);
 
   // 4. Trigger etl::handle_error

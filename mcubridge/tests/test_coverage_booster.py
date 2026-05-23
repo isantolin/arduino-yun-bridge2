@@ -682,7 +682,7 @@ async def test_runtime_mcu_pin_analog_read_coverage(mock_config: RuntimeConfig, 
 
 @pytest.mark.asyncio
 async def test_serial_transport_tx_allowed_wait(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
-    """Cover _send_raw waiting for serial_tx_allowed."""
+    """Cover send_raw waiting for serial_tx_allowed."""
     service = MagicMock()
     transport = SerialTransport(mock_config, mock_state, service)
     transport.writer = MagicMock(spec=asyncio.StreamWriter)
@@ -871,3 +871,4 @@ async def test_daemon_app_coverage_v4() -> None:
         with pytest.raises(SystemExit):
             app(["--serial-port", "/dev/ttyFAKE", "--mqtt-host", "localhost"])
         mock_main.assert_not_called()
+

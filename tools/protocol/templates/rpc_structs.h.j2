@@ -13,9 +13,13 @@
 #include <etl/string_view.h>
 #include "pb_encode.h"
 #include "pb_decode.h"
+#include <etl/expected.h>
 #include "protocol/mcubridge.pb.h"
 #include "rpc_protocol.h"
-#include "rpc_frame.h"
+
+namespace rpc {
+struct Frame;
+}
 
 namespace rpc::payload {
 
@@ -56,16 +60,6 @@ struct {{ s.name }} {
 } // namespace rpc::payload
 
 namespace rpc::Payload {
-
-template <typename T>
-inline etl::expected<T, rpc::FrameError> parse(const rpc::Frame& frame) {
-    T msg = {};
-    pb_istream_t stream = pb_istream_from_buffer(frame.payload.data(), frame.header.payload_length);
-    if (!msg.decode(&stream)) {
-        return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);
-    }
-    return etl::expected<T, rpc::FrameError>(msg);
-}
 
 } // namespace rpc::Payload
 

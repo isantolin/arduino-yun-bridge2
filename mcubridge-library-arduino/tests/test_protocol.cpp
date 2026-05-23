@@ -20,52 +20,41 @@ void test_protocol_frame_logic_exhaustive() {
   TEST_ASSERT(!requires_ack((uint16_t)CommandId::CMD_GET_VERSION));
 
   // 2. is_compressed
-  TEST_ASSERT(is_compressed(rpc::RPC_CMD_FLAG_COMPRESSED));
-  TEST_ASSERT(!is_compressed(0x0001));
+  TEST_ASSERT(rpc::is_compressed(rpc::RPC_CMD_FLAG_COMPRESSED));
+  TEST_ASSERT(!rpc::is_compressed(0x0001));
 
   // 3. FrameParser::serialize error paths (buffer too small)
-  etl::array<uint8_t, 4> small_buf;
+  etl::array<uint8_t, 2> small_buf;
   Frame f = {};
-  f.payload = etl::span<const uint8_t>();
   TEST_ASSERT_EQUAL(
-      0, FrameParser::serialize(f, etl::span<uint8_t>(small_buf.data(), 4)));
+      0, FrameParser::serialize(f, etl::span<uint8_t>(small_buf.data(), 2)));
 
   // 4. FrameParser::parse error paths
-  FrameParser parser;
-  etl::array<uint8_t, 32> raw;
+  etl::array<uint8_t, 128> raw;
+  raw.fill(0);
 
   // Malformed: too short
-  TEST_ASSERT(!parser.parse(etl::span<const uint8_t>(raw.data(), 2)).has_value());
+  TEST_ASSERT(!FrameParser::parse(etl::span<const uint8_t>(raw.data(), 2)).has_value());
 
   // Malformed: wrong version
-  raw.fill(0);
-  raw[0] = 0xFF;  // Bad version
-  TEST_ASSERT(
-      !parser.parse(etl::span<const uint8_t>(raw.data(), MIN_FRAME_SIZE)).has_value());
-
-  // Malformed: payload length mismatch
-  raw.fill(0);
-  raw[0] = PROTOCOL_VERSION;
-  raw[1] = 0;
-  raw[2] = 10;  // Length 10 but buffer only MIN_FRAME_SIZE
-  TEST_ASSERT(
-      !parser.parse(etl::span<const uint8_t>(raw.data(), MIN_FRAME_SIZE)).has_value());
+  Frame f_valid;
+  f_valid.envelope.pb_msg.version = 0xFF;
+  size_t v_len = FrameParser::serialize(f_valid, raw);
+  TEST_ASSERT(!FrameParser::parse(etl::span<const uint8_t>(raw.data(), v_len)).has_value());
 
   // CRC Mismatch
-  etl::array<uint8_t, MIN_FRAME_SIZE> valid;
-  valid.fill(0);
-  valid[0] = PROTOCOL_VERSION;
-  valid[MIN_FRAME_SIZE - 1] = 0xFF; // Break CRC
-  auto res = parser.parse(etl::span<const uint8_t>(valid.data(), valid.size()));
+  f_valid.envelope.pb_msg.version = PROTOCOL_VERSION;
+  v_len = FrameParser::serialize(f_valid, raw);
+  TEST_ASSERT(v_len > 0);
+  raw[v_len - 1] ^= 0xFF; // Break CRC
+
+  auto res = FrameParser::parse(etl::span<const uint8_t>(raw.data(), v_len));
   TEST_ASSERT(!res.has_value());
   TEST_ASSERT(res.error() == FrameError::CRC_MISMATCH);
 
   // Correct CRC
-  rpc::Frame f_valid = {};
-  f_valid.header.version = PROTOCOL_VERSION;
-  f_valid.crc = rpc::checksum::compute(f_valid);
-  size_t v_len = FrameParser::serialize(f_valid, valid);
-  TEST_ASSERT(parser.parse(etl::span<const uint8_t>(valid.data(), v_len)).has_value());
+  raw[v_len - 1] ^= 0xFF; // Restore CRC
+  TEST_ASSERT(FrameParser::parse(etl::span<const uint8_t>(raw.data(), v_len)).has_value());
 }
 
 void test_protocol_builder_exhaustive() {
@@ -83,7 +72,7 @@ void test_protocol_builder_exhaustive() {
   TEST_ASSERT(len > 0);
 
   // Buffer too small
-  len = FrameBuilder::build(etl::span<uint8_t>(buf.data(), 5),
+  len = FrameBuilder::build(etl::span<uint8_t>(buf.data(), 2),
                             (uint16_t)CommandId::CMD_GET_VERSION, 1,
                             etl::span<const uint8_t>(payload.data(), 3),
                             nonce, tag);

@@ -185,7 +185,6 @@ struct TestCOBS {
 template <size_t N>
 static bool extract_next_valid_frame(const ByteBuffer<N>& buffer,
                                      size_t& cursor, rpc::Frame& out_frame) {
-  rpc::FrameParser parser;
   etl::array<uint8_t, 1024> decoded_buf;
 
   while (cursor < buffer.len) {
@@ -203,19 +202,9 @@ static bool extract_next_valid_frame(const ByteBuffer<N>& buffer,
     size_t decoded_len =
         TestCOBS::decode(&buffer.data[cursor], segment_len, decoded_buf.data());
 
-    if (decoded_len >= rpc::MIN_FRAME_SIZE) {
-      etl::crc32 calc;
-      calc.reset();
-      calc.add(decoded_buf.data(),
-               decoded_buf.data() + (decoded_len - rpc::CRC_TRAILER_SIZE));
-      uint32_t cv = calc.value();
-      etl::byte_stream_writer w(
-          decoded_buf.data() + decoded_len - rpc::CRC_TRAILER_SIZE,
-          rpc::CRC_TRAILER_SIZE, etl::endian::little);
-      w.write<uint32_t>(cv);
-
+    if (decoded_len >= rpc::CRC_TRAILER_SIZE + 2U) {
       auto result =
-          parser.parse(etl::span<const uint8_t>(decoded_buf.data(), decoded_len));
+          rpc::FrameParser::parse(etl::span<const uint8_t>(decoded_buf.data(), decoded_len));
       if (result) {
         out_frame = result.value();
         cursor = end;

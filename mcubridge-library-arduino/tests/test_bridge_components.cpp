@@ -38,15 +38,15 @@ void test_all_handlers_coverage() {
   reset_bridge_comp(stream);
 
   rpc::Frame frame = {};
-  frame.header.version = rpc::PROTOCOL_VERSION;
-  frame.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION);
+  frame .envelope.pb_msg.version = rpc::PROTOCOL_VERSION;
+  frame .envelope.pb_msg.command_id = rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION);
   TestAccessor::create(Bridge).dispatch(frame);
 
-  frame.header.command_id =
+  frame .envelope.pb_msg.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_GET_FREE_MEMORY);
   TestAccessor::create(Bridge).dispatch(frame);
 
-  frame.header.command_id =
+  frame .envelope.pb_msg.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_GET_CAPABILITIES);
   TestAccessor::create(Bridge).dispatch(frame);
 }

@@ -10,7 +10,14 @@ Stream* g_arduino_stream_delegate = nullptr;
 void setUp() {}
 void tearDown() {}
 
+namespace bridge::hal {
+extern bool g_host_has_sd;
+extern bool g_host_fs_enabled;
+}
+
 void test_hal_weak_defaults_without_mock() {
+  bridge::hal::g_host_fs_enabled = false;
+  bridge::hal::g_host_has_sd = false;
   TEST_ASSERT_FALSE(bridge::hal::hasSD());
 
   etl::array<uint8_t, 4> data = {1, 2, 3, 4};

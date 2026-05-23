@@ -46,9 +46,13 @@ static bool ensure_host_parent_directories(const PathString& full_path) {
   return true;
 }
 
-bool hasSD() { return true; }
+bool g_host_has_sd = true;
+bool g_host_fs_enabled = true;
+
+bool hasSD() { return g_host_fs_enabled && g_host_has_sd; }
 
 etl::expected<void, HalError> writeFile(etl::string_view path, etl::span<const uint8_t> data) {
+  if (!g_host_fs_enabled) return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
   PathString full_path;
   if (!resolve_to_full_path(path, full_path) || !ensure_host_parent_directories(full_path)) return etl::unexpected<HalError>(HalError::IO_ERROR);
   FILE* file = fopen(full_path.c_str(), "wb");
@@ -59,6 +63,7 @@ etl::expected<void, HalError> writeFile(etl::string_view path, etl::span<const u
 }
 
 etl::expected<ChunkResult, HalError> readFileChunk(etl::string_view path, size_t offset, etl::span<uint8_t> buffer) {
+  if (!g_host_fs_enabled) return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
   PathString full_path;
   if (!resolve_to_full_path(path, full_path)) return etl::unexpected<HalError>(HalError::INVALID_ARGUMENT);
   struct stat st = {};
@@ -82,6 +87,7 @@ etl::expected<ChunkResult, HalError> readFileChunk(etl::string_view path, size_t
 }
 
 etl::expected<void, HalError> removeFile(etl::string_view path) {
+  if (!g_host_fs_enabled) return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
   PathString full_path;
   if (!resolve_to_full_path(path, full_path)) return etl::unexpected<HalError>(HalError::INVALID_ARGUMENT);
   return (::unlink(full_path.c_str()) == 0) ? etl::expected<void, HalError>{} : etl::unexpected<HalError>(HalError::IO_ERROR);

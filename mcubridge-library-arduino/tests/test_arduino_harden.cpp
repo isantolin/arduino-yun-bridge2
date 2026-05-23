@@ -24,17 +24,11 @@ void test_bridge_protocol_version_mismatch() {
   auto ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
-  rpc::Frame f = {};
-  f.header = {static_cast<uint8_t>(rpc::PROTOCOL_VERSION + 1), 0,
-               static_cast<uint16_t>(rpc::CommandId::CMD_GET_VERSION), 1};
-  f.nonce.fill(0);
-  f.tag.fill(0);
-  f.payload = {};
-  f.crc = rpc::checksum::compute(f);
-
-  // Dispatching frame with wrong protocol version should be rejected or ignored.
-  // However, _dispatchCommand doesn't check version, it's checked in parser.
-  // Let's call _onPacketReceived instead.
+  rpc::Frame f;
+  f.envelope.pb_msg.version = static_cast<uint8_t>(rpc::PROTOCOL_VERSION + 1);
+  f.envelope.pb_msg.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_GET_VERSION);
+  f.envelope.pb_msg.sequence_id = 1;
+  
   etl::array<uint8_t, 256> buf;
   size_t len = rpc::FrameParser::serialize(f, buf);
   ba.invokePacketReceived(etl::span<const uint8_t>(buf.data(), len));
@@ -49,11 +43,10 @@ void test_bridge_unknown_command_jump_table() {
   auto ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
-  rpc::Frame f = {};
-  f.header = {rpc::PROTOCOL_VERSION, 0, 254, 1};  // 254 is empty
-  f.nonce.fill(0);
-  f.tag.fill(0);
-  f.payload = {};
+  rpc::Frame f;
+  f.envelope.pb_msg.version = rpc::PROTOCOL_VERSION;
+  f.envelope.pb_msg.command_id = 254; // empty
+  f.envelope.pb_msg.sequence_id = 1;
 
   ba.dispatch(f);
   TEST_ASSERT_TRUE(true);
@@ -90,16 +83,14 @@ void test_bridge_packet_received_edge_cases() {
   ba.invokePacketReceived(short_pkt);
 
   // 2. CRC mismatch
-  rpc::Frame f = {};
-  f.header = {rpc::PROTOCOL_VERSION, 0,
-               static_cast<uint16_t>(rpc::CommandId::CMD_GET_VERSION), 1};
-  f.nonce.fill(0);
-  f.tag.fill(0);
-  f.payload = {};
-  f.crc = rpc::RPC_BOOTLOADER_MAGIC;
+  rpc::Frame f;
+  f.envelope.pb_msg.version = rpc::PROTOCOL_VERSION;
+  f.envelope.pb_msg.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_GET_VERSION);
+  f.envelope.pb_msg.sequence_id = 1;
 
   etl::array<uint8_t, 256> buf;
   size_t len = rpc::FrameParser::serialize(f, buf);
+  buf[len - 1] ^= 0xFF; // Break CRC
   ba.invokePacketReceived(etl::span<const uint8_t>(buf.data(), len));
 
   TEST_ASSERT_TRUE(true);
@@ -138,20 +129,16 @@ void test_bridge_linksync_auth_failure() {
 
   rpc::payload::LinkSync sync_msg = {};
   memset(sync_msg.pb_msg.nonce.bytes, 0xAA, 16); sync_msg.pb_msg.nonce.size = 16;
-  sync_msg.pb_msg.nonce.size = 16;
-  memset(sync_msg.pb_msg.tag.bytes, 0xFF, 16); sync_msg.pb_msg.tag.size = 16;  // Wrong tag
-  sync_msg.pb_msg.tag.size = 16;
+  memset(sync_msg.pb_msg.tag.bytes, 0xFF, 16); sync_msg.pb_msg.tag.size = 16;
 
-  rpc::Frame f = {};
-  static etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> f_buf;
-  f.payload = etl::span<uint8_t>(f_buf.data(), f_buf.size());
-  f.header = {rpc::PROTOCOL_VERSION, 0,
-               static_cast<uint16_t>(rpc::CommandId::CMD_LINK_SYNC), 1};
+  rpc::Frame f;
+  f.envelope.pb_msg.version = rpc::PROTOCOL_VERSION;
+  f.envelope.pb_msg.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_LINK_SYNC);
+  f.envelope.pb_msg.sequence_id = 1;
 
   bridge::test::set_pb_payload(f, sync_msg);
   ba.dispatch(f);
 
-  // Should have transitioned to Fault or Reset or stayed Unsynced
   TEST_ASSERT_FALSE(ba.isSynchronized());
 }
 
@@ -171,16 +158,15 @@ void test_bridge_decompress_error() {
   auto ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
-  rpc::Frame f = {};
-  // Flag as compressed but provide garbage
-  f.header = {rpc::PROTOCOL_VERSION, 4,
-               static_cast<uint16_t>(
+  rpc::Frame f;
+  f.envelope.pb_msg.version = rpc::PROTOCOL_VERSION;
+  f.envelope.pb_msg.command_id = static_cast<uint16_t>(
                    static_cast<uint16_t>(rpc::CommandId::CMD_GET_VERSION) |
-                   rpc::RPC_CMD_FLAG_COMPRESSED),
-               1};
-  etl::array<uint8_t, 4> garbage = {0xFF, 0xFF, 0xFF, 0xFF};  // Invalid RLE
-  f.payload = garbage;
-  f.crc = rpc::checksum::compute(f);
+                   rpc::RPC_CMD_FLAG_COMPRESSED);
+  f.envelope.pb_msg.sequence_id = 1;
+
+  etl::array<uint8_t, 4> garbage = {0xFF, 0xFF, 0xFF, 0xFF};
+  rpc::payload::copy_to_pb_bytes(f.envelope.pb_msg.payload, garbage.data(), 4);
 
   etl::array<uint8_t, 256> buf;
   size_t len = rpc::FrameParser::serialize(f, buf);
@@ -198,13 +184,13 @@ void test_bridge_security_pre_sync_rejection() {
   Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, secret);
 
   // Try to send a restricted command before sync
-  rpc::Frame f = {};
-  f.header = {rpc::PROTOCOL_VERSION, 0,
-               static_cast<uint16_t>(rpc::CommandId::CMD_GET_FREE_MEMORY), 1};
+  rpc::Frame f;
+  f.envelope.pb_msg.version = rpc::PROTOCOL_VERSION;
+  f.envelope.pb_msg.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_GET_FREE_MEMORY);
+  f.envelope.pb_msg.sequence_id = 1;
+  
   ba.dispatch(f);
 
-  // Should have emitted STATUS_ERROR (which is excluded from sync check
-  // usually) but the restricted command itself was rejected.
   TEST_ASSERT_FALSE(ba.isSynchronized());
 }
 
@@ -219,16 +205,15 @@ void test_bridge_nonce_reuse_attack() {
   // 1. Sync properly
   rpc::payload::LinkSync sync_msg = {};
   memset(sync_msg.pb_msg.nonce.bytes, 0xAA, 16); sync_msg.pb_msg.nonce.size = 16;
-  sync_msg.pb_msg.nonce.size = 16;
   ba.computeHandshakeTag(sync_msg.pb_msg.nonce.bytes, 16,
                          sync_msg.pb_msg.tag.bytes);
   sync_msg.pb_msg.tag.size = 16;
 
-  rpc::Frame f = {};
-  static etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> f_buf;
-  f.payload = etl::span<uint8_t>(f_buf.data(), f_buf.size());
-  f.header = {rpc::PROTOCOL_VERSION, 0,
-               static_cast<uint16_t>(rpc::CommandId::CMD_LINK_SYNC), 1};
+  rpc::Frame f;
+  f.envelope.pb_msg.version = rpc::PROTOCOL_VERSION;
+  f.envelope.pb_msg.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_LINK_SYNC);
+  f.envelope.pb_msg.sequence_id = 1;
+  
   bridge::test::set_pb_payload(f, sync_msg);
   ba.dispatch(f);
   TEST_ASSERT_TRUE(ba.isSynchronized());

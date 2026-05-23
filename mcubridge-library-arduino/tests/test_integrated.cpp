@@ -24,12 +24,11 @@ void integrated_test_bridge_core() {
   accessor.onStartupStabilized();
 
   rpc::Frame sync;
-  sync.header.version = rpc::PROTOCOL_VERSION;
-  sync.header.command_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
-  sync.header.payload_length = 16;
-  sync.header.sequence_id = 1;
-  etl::array<uint8_t, 16> payload = {0};
-  sync.payload = etl::span<const uint8_t>(payload.data(), 16);
+  sync.envelope.pb_msg.version = rpc::PROTOCOL_VERSION;
+  sync.envelope.pb_msg.command_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
+  sync.envelope.pb_msg.sequence_id = 1;
+  memset(sync.envelope.pb_msg.payload.bytes, 0, 16);
+  sync.envelope.pb_msg.payload.size = 16;
   
   accessor.dispatch(sync);
 }

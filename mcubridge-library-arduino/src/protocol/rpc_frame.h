@@ -17,21 +17,34 @@ inline constexpr size_t CRC_TRAILER_SIZE = rpc::RPC_CRC_SIZE;
 inline constexpr size_t MAX_ENVELOPE_SIZE = rpc_pb_RpcEnvelope_size;
 inline constexpr size_t MAX_FRAME_SIZE = MAX_ENVELOPE_SIZE + CRC_TRAILER_SIZE;
 
-enum class FrameError { NONE = 0, CRC_MISMATCH, MALFORMED, OVERFLOW, AUTH_FAIL };
+inline bool is_compressed(uint16_t id) {
+  return (id & RPC_CMD_FLAG_COMPRESSED) != 0;
+}
 
 struct Frame {
   payload::RpcEnvelope envelope;
   uint32_t crc;
 
   struct HeaderProxy {
-    const rpc_pb_RpcEnvelope& pb;
-    uint8_t version() const { return static_cast<uint8_t>(pb.version); }
-    uint16_t command_id() const { return static_cast<uint16_t>(pb.command_id); }
-    uint16_t sequence_id() const { return static_cast<uint16_t>(pb.sequence_id); }
-    uint16_t payload_length() const { return static_cast<uint16_t>(pb.payload.size); }
+    const rpc_pb_RpcEnvelope* pb;
+    uint8_t version() const { return static_cast<uint8_t>(pb->version); }
+    uint16_t command_id() const { return static_cast<uint16_t>(pb->command_id); }
+    uint16_t sequence_id() const { return static_cast<uint16_t>(pb->sequence_id); }
+    uint16_t payload_length() const { return static_cast<uint16_t>(pb->payload.size); }
   } header;
 
-  Frame() : envelope{}, crc(0), header{envelope.pb_msg} {}
+  Frame() : envelope{}, crc(0), header{&envelope.pb_msg} {}
+  
+  Frame(const Frame& other) : envelope(other.envelope), crc(other.crc), header{&envelope.pb_msg} {}
+  
+  Frame& operator=(const Frame& other) {
+    if (this != &other) {
+      envelope = other.envelope;
+      crc = other.crc;
+      header.pb = &envelope.pb_msg;
+    }
+    return *this;
+  }
 
   etl::span<const uint8_t> payload() const {
     return etl::span<const uint8_t>(envelope.pb_msg.payload.bytes, envelope.pb_msg.payload.size);
@@ -45,6 +58,20 @@ inline uint32_t compute(etl::span<const uint8_t> data) {
   return crc_gen.value();
 }
 }  // namespace checksum
+
+namespace Payload {
+
+template <typename T>
+inline etl::expected<T, rpc::FrameError> parse(const rpc::Frame& frame) {
+    T msg = {};
+    pb_istream_t stream = pb_istream_from_buffer(frame.payload().data(), frame.header.payload_length());
+    if (!msg.decode(&stream)) {
+        return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);
+    }
+    return etl::expected<T, rpc::FrameError>(msg);
+}
+
+} // namespace Payload
 
 class FrameParser {
  public:
@@ -62,7 +89,7 @@ class FrameParser {
   }
 
   static etl::expected<Frame, FrameError> parse(etl::span<const uint8_t> buffer) {
-    if (buffer.size() < CRC_TRAILER_SIZE + 2U) // Minimum envelope size is very small
+    if (buffer.size() < CRC_TRAILER_SIZE + 2U)
       return etl::unexpected<FrameError>(FrameError::MALFORMED);
 
     const size_t crc_offset = buffer.size() - CRC_TRAILER_SIZE;

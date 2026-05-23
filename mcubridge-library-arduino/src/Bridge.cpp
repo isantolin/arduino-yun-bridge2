@@ -63,7 +63,6 @@ BridgeClass::BridgeClass(Stream& stream)
       _timer_ids(),
       _transient_buffer(),
       _rx_storage(),
-      _frame_parser(),
       _is_post_passed(false),
       _tx_enabled(true),
       _tx_payload_pool(),
@@ -628,15 +627,17 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
   }
   const auto& msg = res.value();
   rpc::payload::LinkSync resp = {};
-  etl::copy_n(msg.pb_msg.nonce.bytes, 16, resp.pb_msg.nonce.bytes);
-  resp.pb_msg.nonce.size = 16;
+  const size_t n_size = etl::min(static_cast<size_t>(msg.pb_msg.nonce.size),
+                                 static_cast<size_t>(rpc::RPC_HANDSHAKE_NONCE_LENGTH));
+  etl::copy_n(msg.pb_msg.nonce.bytes, n_size, resp.pb_msg.nonce.bytes);
+  resp.pb_msg.nonce.size = static_cast<pb_size_t>(n_size);
 
   if (!_shared_secret.empty()) {
     etl::array<uint8_t, rpc::RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH> out_tag;
     const bool tag_ok = rpc::security::handshake_authenticate_raw(
         _shared_secret.data(), _shared_secret.size(),
-        msg.pb_msg.nonce.bytes, 16,
-        msg.pb_msg.tag.bytes, rpc::RPC_HANDSHAKE_TAG_LENGTH,
+        msg.pb_msg.nonce.bytes, n_size,
+        msg.pb_msg.tag.bytes, msg.pb_msg.tag.size,
         out_tag.data());
 
     if (!tag_ok) {
@@ -645,11 +646,11 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
       return;
     }
 
-    etl::copy_n(out_tag.data(), 16, resp.pb_msg.tag.bytes);
-    resp.pb_msg.tag.size = 16;
+    etl::copy_n(out_tag.data(), rpc::RPC_HANDSHAKE_TAG_LENGTH, resp.pb_msg.tag.bytes);
+    resp.pb_msg.tag.size = rpc::RPC_HANDSHAKE_TAG_LENGTH;
     rpc::security::derive_session_key_raw(
         _shared_secret.data(), _shared_secret.size(),
-        msg.pb_msg.nonce.bytes, 16,
+        msg.pb_msg.nonce.bytes, n_size,
         _session_key.data());
     _tx_nonce_counter = 0;
     _rx_nonce_counter = 0;

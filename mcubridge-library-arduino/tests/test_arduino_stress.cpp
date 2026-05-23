@@ -68,12 +68,10 @@ void test_bridge_dispatch_security_denial() {
 
   // MPU is NOT synchronized yet.
   // Try to send a restricted command
-  rpc::Frame f = {};
-  f.header = {rpc::PROTOCOL_VERSION, 0,
-               static_cast<uint16_t>(rpc::CommandId::CMD_GET_FREE_MEMORY), 1};
-  f.nonce.fill(0);
-  f.tag.fill(0);
-  f.crc = rpc::checksum::compute(f);
+  rpc::Frame f;
+  f.envelope.pb_msg.version = rpc::PROTOCOL_VERSION;
+  f.envelope.pb_msg.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_GET_FREE_MEMORY);
+  f.envelope.pb_msg.sequence_id = 1;
 
   ba.dispatch(f);
 

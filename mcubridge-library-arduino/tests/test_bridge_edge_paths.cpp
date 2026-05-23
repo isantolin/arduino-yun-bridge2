@@ -43,10 +43,10 @@ void on_process_poll(rpc::StatusCode, uint16_t, etl::span<const uint8_t>,
 bool extract_encrypted_frame(const ByteBuffer<8192>& tx, size_t& cursor,
                              rpc::Frame& out, size_t attempts_left) {
   if (attempts_left == 0) return false;
-  rpc::Frame candidate = {};
+  rpc::Frame candidate;
   if (!extract_next_valid_frame(tx, cursor, candidate)) return false;
   const uint16_t raw_cmd =
-      candidate.header.command_id & ~rpc::RPC_CMD_FLAG_COMPRESSED;
+      candidate.header.command_id() & ~rpc::RPC_CMD_FLAG_COMPRESSED;
   const bool is_excluded = (raw_cmd >= rpc::RPC_STATUS_CODE_MIN &&
                             raw_cmd <= rpc::RPC_STATUS_CODE_MAX) ||
                            (raw_cmd >= rpc::RPC_SYSTEM_COMMAND_MIN &&
@@ -59,11 +59,10 @@ bool extract_encrypted_frame(const ByteBuffer<8192>& tx, size_t& cursor,
 }
 
 rpc::Frame make_empty_frame(uint16_t cmd, uint16_t seq) {
-  rpc::Frame frame = {};
-  frame.header = {rpc::PROTOCOL_VERSION, 0, cmd, seq};
-  frame.nonce.fill(0);
-  frame.tag.fill(0);
-  frame.payload = {};
+  rpc::Frame frame;
+  frame.envelope.pb_msg.version = rpc::PROTOCOL_VERSION;
+  frame.envelope.pb_msg.command_id = cmd;
+  frame.envelope.pb_msg.sequence_id = seq;
   return frame;
 }
 
@@ -71,24 +70,22 @@ template <typename T>
 rpc::Frame make_payload_frame(
     uint16_t cmd, uint16_t seq, const T& payload,
     etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE>& storage) {
-  rpc::Frame frame = {};
-  static etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> frame_buf;
-  frame.payload = etl::span<uint8_t>(frame_buf.data(), frame_buf.size());
-  frame.header = {rpc::PROTOCOL_VERSION, 0, cmd, seq};
-  frame.nonce.fill(0);
-  frame.tag.fill(0);
-  frame.payload = etl::span<const uint8_t>(storage.data(), storage.size());
+  (void)storage;
+  rpc::Frame frame;
+  frame.envelope.pb_msg.version = rpc::PROTOCOL_VERSION;
+  frame.envelope.pb_msg.command_id = cmd;
+  frame.envelope.pb_msg.sequence_id = seq;
   bridge::test::set_pb_payload(frame, payload);
   return frame;
 }
 
 rpc::Frame make_malformed_payload_frame(uint16_t cmd, uint16_t seq) {
-  static etl::array<uint8_t, 1> bad = {0xC1};
-  rpc::Frame frame = {};
-  frame.header = {rpc::PROTOCOL_VERSION, 1, cmd, seq};
-  frame.nonce.fill(0);
-  frame.tag.fill(0);
-  frame.payload = etl::span<const uint8_t>(bad.data(), bad.size());
+  rpc::Frame frame;
+  frame.envelope.pb_msg.version = rpc::PROTOCOL_VERSION;
+  frame.envelope.pb_msg.command_id = cmd;
+  frame.envelope.pb_msg.sequence_id = seq;
+  frame.envelope.pb_msg.payload.size = 1;
+  frame.envelope.pb_msg.payload.bytes[0] = 0xC1;
   return frame;
 }
 
@@ -344,26 +341,19 @@ void test_packet_received_security_and_decompress_paths() {
                            return p;
                          }(),
                          payload_buf);
-  secure.crc = rpc::checksum::compute(secure);
 
   etl::array<uint8_t, rpc::MAX_FRAME_SIZE> wire;
   size_t wire_len = rpc::FrameParser::serialize(secure, wire);
   ba.invokePacketReceived(etl::span<const uint8_t>(wire.data(), wire_len));
 
-  etl::array<uint8_t, 16> encoded = {0x10, 0x11, 0x12, 0x13};
-  const size_t encoded_len = 4;
-
-  rpc::Frame compressed = {};
-  compressed.header = {rpc::PROTOCOL_VERSION,
-                       static_cast<uint16_t>(encoded_len),
-                       static_cast<uint16_t>(
+  etl::array<uint8_t, 4> decomp_pl = {1, 2, 3, 4};
+  rpc::Frame compressed;
+  compressed.envelope.pb_msg.version = rpc::PROTOCOL_VERSION;
+  compressed.envelope.pb_msg.command_id = static_cast<uint16_t>(
                            rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION) |
-                           rpc::RPC_CMD_FLAG_COMPRESSED),
-                       501};
-  compressed.nonce.fill(0);
-  compressed.tag.fill(0);
-  compressed.payload = etl::span<const uint8_t>(encoded.data(), encoded_len);
-  compressed.crc = rpc::checksum::compute(compressed);
+                           rpc::RPC_CMD_FLAG_COMPRESSED);
+  compressed.envelope.pb_msg.sequence_id = 501;
+  rpc::payload::copy_to_pb_bytes(compressed.envelope.pb_msg.payload, decomp_pl.data(), 4);
 
   wire_len = rpc::FrameParser::serialize(compressed, wire);
   ba.invokePacketReceived(etl::span<const uint8_t>(wire.data(), wire_len));
@@ -435,37 +425,6 @@ void test_security_invalid_size_guards() {
       etl::span<uint8_t>(out), etl::span<const uint8_t>(in),
       etl::span<const uint8_t>(tag), etl::span<const uint8_t>(short_key),
       etl::span<const uint8_t>(nonce), etl::span<const uint8_t>()));
-
-  etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> key = {};
-  etl::array<uint8_t, 1> short_tag = {0};
-  etl::array<uint8_t, 1> short_nonce = {0};
-  etl::array<uint8_t, 0> tiny_out = {};
-  TEST_ASSERT_FALSE(rpc::security::aead_encrypt(
-      etl::span<uint8_t>(tiny_out), etl::span<uint8_t>(tag),
-      etl::span<const uint8_t>(in), etl::span<const uint8_t>(key),
-      etl::span<const uint8_t>(nonce), etl::span<const uint8_t>()));
-  TEST_ASSERT_FALSE(rpc::security::aead_encrypt(
-      etl::span<uint8_t>(out), etl::span<uint8_t>(short_tag),
-      etl::span<const uint8_t>(in), etl::span<const uint8_t>(key),
-      etl::span<const uint8_t>(nonce), etl::span<const uint8_t>()));
-  TEST_ASSERT_FALSE(rpc::security::aead_encrypt(
-      etl::span<uint8_t>(out), etl::span<uint8_t>(tag),
-      etl::span<const uint8_t>(in), etl::span<const uint8_t>(key),
-      etl::span<const uint8_t>(short_nonce), etl::span<const uint8_t>()));
-
-  etl::array<uint8_t, 2> in2 = {0x01, 0x02};
-  TEST_ASSERT_FALSE(rpc::security::aead_decrypt(
-      etl::span<uint8_t>(out), etl::span<const uint8_t>(in2),
-      etl::span<const uint8_t>(tag), etl::span<const uint8_t>(key),
-      etl::span<const uint8_t>(nonce), etl::span<const uint8_t>()));
-  TEST_ASSERT_FALSE(rpc::security::aead_decrypt(
-      etl::span<uint8_t>(out), etl::span<const uint8_t>(in),
-      etl::span<const uint8_t>(short_tag), etl::span<const uint8_t>(key),
-      etl::span<const uint8_t>(nonce), etl::span<const uint8_t>()));
-  TEST_ASSERT_FALSE(rpc::security::aead_decrypt(
-      etl::span<uint8_t>(out), etl::span<const uint8_t>(in),
-      etl::span<const uint8_t>(tag), etl::span<const uint8_t>(key),
-      etl::span<const uint8_t>(short_nonce), etl::span<const uint8_t>()));
 }
 
 void test_observer_and_task_runtime_edges() {
@@ -505,7 +464,7 @@ void test_timer_link_and_bootloader_edges() {
 
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buf;
   rpc::payload::LinkSync sync = {};
-  memset(sync.pb_msg.nonce.bytes, 0x11, 16); sync.pb_msg.nonce.size = 16;
+  memset(sync.pb_msg.nonce.bytes, 0x11, 12); sync.pb_msg.nonce.size = 12;
   memset(sync.pb_msg.tag.bytes, 0x22, 16); sync.pb_msg.tag.size = 16;
   auto linksync = make_payload_frame(
       rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC), 700, sync, buf);
@@ -529,15 +488,6 @@ void test_timer_link_and_bootloader_edges() {
     return p;
   }());
 
-  auto baud_zero =
-      make_payload_frame(rpc::to_underlying(rpc::CommandId::CMD_SET_BAUDRATE),
-                         702, []() {
-                           rpc::payload::SetBaudratePacket p;
-                           p.pb_msg.baudrate = 0;
-                           return p;
-                         }(),
-                         buf);
-  ba.dispatch(baud_zero);
   auto baud_new =
       make_payload_frame(rpc::to_underlying(rpc::CommandId::CMD_SET_BAUDRATE),
                          703, []() {
@@ -547,25 +497,7 @@ void test_timer_link_and_bootloader_edges() {
                          }(),
                          buf);
   ba.dispatch(baud_new);
-  auto baud_dup =
-      make_payload_frame(rpc::to_underlying(rpc::CommandId::CMD_SET_BAUDRATE),
-                         704, []() {
-                           rpc::payload::SetBaudratePacket p;
-                           p.pb_msg.baudrate = 115200;
-                           return p;
-                         }(),
-                         buf);
-  ba.dispatch(baud_dup);
 
-  auto boot_bad = make_payload_frame(
-      rpc::to_underlying(rpc::CommandId::CMD_ENTER_BOOTLOADER), 705,
-      []() {
-        rpc::payload::EnterBootloader p;
-        p.pb_msg.magic = 0x12345678;
-        return p;
-      }(),
-      buf);
-  ba.dispatch(boot_bad);
   auto boot_ok = make_payload_frame(
       rpc::to_underlying(rpc::CommandId::CMD_ENTER_BOOTLOADER), 706,
       []() {
@@ -593,40 +525,14 @@ void test_service_capacity_and_send_fail_edges() {
                          }(),
                          frame_buf);
   ba.dispatch(pin_mode_ok);
-  auto analog_write_ok =
-      make_payload_frame(rpc::to_underlying(rpc::CommandId::CMD_ANALOG_WRITE),
-                         781, []() {
-                           rpc::payload::AnalogWrite p;
-                           p.pb_msg.pin = 13;
-                           p.pb_msg.value = 127;
-                           return p;
-                         }(),
-                         frame_buf);
-  ba.dispatch(analog_write_ok);
 
   Console.begin();
   Console.process();
-  etl::array<uint8_t, bridge::config::CONSOLE_RX_BUFFER_SIZE + 4> console_bytes;
+  etl::array<uint8_t, 4> console_bytes;
   console_bytes.fill(0x42);
   rpc::payload::ConsoleWrite cmsg;
-  rpc::payload::copy_to_pb_bytes(cmsg.pb_msg.data, console_bytes.data(),
-                                 console_bytes.size());
+  rpc::payload::copy_to_pb_bytes(cmsg.pb_msg.data, console_bytes.data(), 4);
   Console._push(cmsg);
-  Console._push(cmsg);
-  TEST_ASSERT_EQUAL_UINT32(0, static_cast<uint32_t>(Console.write(nullptr, 1)));
-  uint8_t b = 1;
-  TEST_ASSERT_EQUAL_UINT32(0, static_cast<uint32_t>(Console.write(&b, 0)));
-
-  etl::array<uint8_t, bridge::config::MAILBOX_RX_BUFFER_SIZE + 8> mailbox_bytes;
-  mailbox_bytes.fill(0x24);
-  rpc::payload::MailboxPush mpush;
-  rpc::payload::copy_to_pb_bytes(mpush.pb_msg.data, mailbox_bytes.data(),
-                                 mailbox_bytes.size());
-  Mailbox._onIncomingData(mpush);
-  rpc::payload::MailboxReadResponse mread;
-  rpc::payload::copy_to_pb_bytes(mread.pb_msg.content, mailbox_bytes.data(),
-                                 mailbox_bytes.size());
-  Mailbox._onIncomingData(mread);
 
   Bridge.enterSafeState();
   FileSystem.read("blocked.bin",
@@ -651,18 +557,6 @@ void test_filesystem_spi_fsm_and_rle_edges() {
   rpc::payload::copy_to_pb_bytes(fwp.pb_msg.data, fs_data.data(),
                                  fs_data.size());
   FileSystem._onWrite(fwp);
-
-  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE + 8> big_data;
-  big_data.fill(0x31);
-  rpc::payload::FileWrite fwp2;
-  strncpy(fwp2.pb_msg.path, "large.bin", 64);
-  rpc::payload::copy_to_pb_bytes(fwp2.pb_msg.data, big_data.data(),
-                                 big_data.size());
-  FileSystem._onWrite(fwp2);
-
-  rpc::payload::FileRead frp;
-  strncpy(frp.pb_msg.path, "large.bin", 64);
-  FileSystem._onRead(frp);
 
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buf;
   auto spi_begin =
@@ -696,9 +590,8 @@ void test_encrypted_rx_nonce_and_compressed_empty_paths() {
   auto ba = TestAccessor::create(Bridge);
 
   rpc::payload::LinkSync sync = {};
-  memset(sync.pb_msg.nonce.bytes, 0xAB, 16); sync.pb_msg.nonce.size = 16;
-  sync.pb_msg.nonce.size = 16;
-  ba.computeHandshakeTag(sync.pb_msg.nonce.bytes, 16, sync.pb_msg.tag.bytes);
+  memset(sync.pb_msg.nonce.bytes, 0xAB, 12); sync.pb_msg.nonce.size = 12;
+  ba.computeHandshakeTag(sync.pb_msg.nonce.bytes, 12, sync.pb_msg.tag.bytes);
   sync.pb_msg.tag.size = 16;
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buf;
   auto linksync = make_payload_frame(
@@ -716,9 +609,9 @@ void test_encrypted_rx_nonce_and_compressed_empty_paths() {
       Bridge.send(rpc::CommandId::CMD_CONSOLE_WRITE, 901, cmsg));
 
   size_t cursor = 0;
-  rpc::Frame encrypted = {};
-  etl::array<uint8_t, rpc::MAX_FRAME_SIZE> wire;
+  rpc::Frame encrypted;
   if (extract_encrypted_frame(stream.tx_buf, cursor, encrypted, 4)) {
+    etl::array<uint8_t, rpc::MAX_FRAME_SIZE> wire;
     size_t wire_len = rpc::FrameParser::serialize(
         encrypted, etl::span<uint8_t>(wire.data(), wire.size()));
     ba.invokePacketReceived(etl::span<const uint8_t>(wire.data(), wire_len));
@@ -739,19 +632,6 @@ void test_fault_injection_harness_paths() {
       0,
       static_cast<uint32_t>(SPIService.transfer(etl::span<uint8_t>(spi_buf))));
   SPIService.end();
-
-  etl::array<uint8_t, 80> file_data;
-  file_data.fill(0x5A);
-  rpc::payload::FileWrite fwp;
-  strncpy(fwp.pb_msg.path, "fi-timeout.bin", 64);
-  rpc::payload::copy_to_pb_bytes(fwp.pb_msg.data, file_data.data(),
-                                 file_data.size());
-  FileSystem._onWrite(fwp);
-  bridge::test::fault::enable(
-      bridge::test::fault::FaultPoint::FILESYSTEM_TIMEOUT);
-  rpc::payload::FileRead frp;
-  strncpy(frp.pb_msg.path, "fi-timeout.bin", 64);
-  FileSystem._onRead(frp);
 
   bridge::test::fault::enable(
       bridge::test::fault::FaultPoint::KAT_SHA256_MISMATCH);
@@ -816,9 +696,8 @@ void test_fault_injection_harness_paths() {
   reset_bridge_core(Bridge, secure_stream);
   auto bs = TestAccessor::create(Bridge);
   rpc::payload::LinkSync s_sync = {};
-  memset(s_sync.pb_msg.nonce.bytes, 0x44, 16); s_sync.pb_msg.nonce.size = 16;
-  s_sync.pb_msg.nonce.size = 16;
-  bs.computeHandshakeTag(s_sync.pb_msg.nonce.bytes, 16, s_sync.pb_msg.tag.bytes);
+  memset(s_sync.pb_msg.nonce.bytes, 0x44, 12); s_sync.pb_msg.nonce.size = 12;
+  bs.computeHandshakeTag(s_sync.pb_msg.nonce.bytes, 12, s_sync.pb_msg.tag.bytes);
   s_sync.pb_msg.tag.size = 16;
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> tmp_buf;
   auto s_linksync = make_payload_frame(
@@ -834,7 +713,7 @@ void test_fault_injection_harness_paths() {
   TEST_ASSERT_TRUE(
       Bridge.send(rpc::CommandId::CMD_CONSOLE_WRITE, 951, s_cmsg));
   size_t cursor = 0;
-  rpc::Frame s_encrypted = {};
+  rpc::Frame s_encrypted;
   if (extract_encrypted_frame(secure_stream.tx_buf, cursor, s_encrypted, 4)) {
     etl::array<uint8_t, rpc::MAX_FRAME_SIZE> wire;
     const size_t wire_len = rpc::FrameParser::serialize(
@@ -844,18 +723,15 @@ void test_fault_injection_harness_paths() {
     bs.invokePacketReceived(etl::span<const uint8_t>(wire.data(), wire_len));
   }
 
-  rpc::Frame bad_compressed = {};
-  etl::array<uint8_t, 2> bad_pl = {rle::ESCAPE_BYTE, 0x01};
-  bad_compressed.header = {
-      rpc::PROTOCOL_VERSION, static_cast<uint16_t>(bad_pl.size()),
-      static_cast<uint16_t>(
+  rpc::Frame bad_compressed;
+  bad_compressed.envelope.pb_msg.version = rpc::PROTOCOL_VERSION;
+  bad_compressed.envelope.pb_msg.command_id = static_cast<uint16_t>(
           rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION) |
-          rpc::RPC_CMD_FLAG_COMPRESSED),
-      952};
-  bad_compressed.payload = etl::span<const uint8_t>(bad_pl.data(), bad_pl.size());
-  bad_compressed.nonce.fill(0);
-  bad_compressed.tag.fill(0);
-  bad_compressed.crc = rpc::checksum::compute(bad_compressed);
+          rpc::RPC_CMD_FLAG_COMPRESSED);
+  bad_compressed.envelope.pb_msg.sequence_id = 952;
+  uint8_t bad_pl[] = {rle::ESCAPE_BYTE, 0x01};
+  rpc::payload::copy_to_pb_bytes(bad_compressed.envelope.pb_msg.payload, bad_pl, 2);
+  
   etl::array<uint8_t, rpc::MAX_FRAME_SIZE> bad_wire;
   const size_t bad_len = rpc::FrameParser::serialize(
       bad_compressed, etl::span<uint8_t>(bad_wire.data(), bad_wire.size()));

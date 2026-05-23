@@ -1,6 +1,7 @@
 #define BRIDGE_ENABLE_TEST_INTERFACE 1
 #include <etl/array.h>
 #include "Bridge.h"
+#include "BridgeTestHelper.h"
 #include "BridgeTestInterface.h"
 #include "test_support.h"
 #include "services/Console.h"

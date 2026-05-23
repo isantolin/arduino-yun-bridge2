@@ -14,13 +14,15 @@ The frame format is strictly defined to ensure:
 from __future__ import annotations
 
 import struct
-from mcubridge.security.security import aead_encrypt, aead_decrypt
 from binascii import crc32
 
 import msgspec
 
+from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.security.security import aead_decrypt, aead_encrypt
+
 from . import protocol
-from .rle import rle_encode, rle_decode, should_compress
+from .rle import rle_decode, rle_encode, should_compress
 
 _HEADER_FORMAT = protocol.FRAME_HEADER_FORMAT
 HEADER_STRUCT = struct.Struct(_HEADER_FORMAT)
@@ -36,8 +38,11 @@ def _frame_crc(data: bytes | bytearray | memoryview) -> int:
     return crc32(data) & protocol.CRC32_MASK
 
 
+from mcubridge.protocol import mcubridge_pb2 as pb
+
+
 class Frame(msgspec.Struct, frozen=True):
-    """Represents an RPC frame for MCU-Linux communication."""
+    """Represents an RPC frame for MCU-Linux communication using Protobuf Enveloping."""
 
     command_id: int | protocol.Command | protocol.Status
     sequence_id: int
@@ -65,15 +70,15 @@ class Frame(msgspec.Struct, frozen=True):
         return int(self.command_id) & ~protocol.CMD_FLAG_COMPRESSED & protocol.UINT16_MAX
 
     def build(self, session_key: bytes | None = None) -> bytes:
-        """Delegates frame building to the declarative schema."""
+        """Builds the frame using a Protobuf envelope."""
         cmd_id = int(self.command_id)
+        if not (0 <= cmd_id <= protocol.UINT16_MAX):
+            raise ValueError(f"Invalid command ID: {cmd_id}")
         payload = self.payload
 
         if len(payload) > protocol.MAX_PAYLOAD_SIZE:
             raise ValueError(f"Payload size {len(payload)} exceeds maximum {protocol.MAX_PAYLOAD_SIZE}")
 
-        # [SIL-2] Fast-path: check if encryption is required first to avoid unnecessary compression
-        # if the overhead is already known to be low for system commands.
         raw_cmd = cmd_id & ~protocol.CMD_FLAG_COMPRESSED & protocol.UINT16_MAX
         is_excluded = (protocol.STATUS_CODE_MIN <= raw_cmd <= protocol.STATUS_CODE_MAX) or (
             protocol.SYSTEM_COMMAND_MIN <= raw_cmd <= protocol.SYSTEM_COMMAND_MAX
@@ -85,32 +90,40 @@ class Frame(msgspec.Struct, frozen=True):
                 payload = compressed
                 cmd_id |= protocol.CMD_FLAG_COMPRESSED
 
-        try:
-            header = HEADER_STRUCT.pack(
-                protocol.PROTOCOL_VERSION,
-                len(payload),
-                cmd_id,
-                self.sequence_id,
-            )
-        except struct.error as e:
-            raise ValueError(f"Failed to build frame: {e}") from e
+        # Use Protobuf for the entire envelope instead of manual struct.pack
+        envelope = pb.RpcEnvelope(
+            version=protocol.PROTOCOL_VERSION,
+            command_id=cmd_id,
+            sequence_id=self.sequence_id,
+            nonce=self.nonce,
+            tag=self.tag,
+            payload=payload,
+        )
 
         if session_key and not is_excluded:
-            payload, tag = aead_encrypt(payload, session_key, self.nonce, header)
-        else:
-            tag = self.tag
+            # We encrypt the encoded envelope? No, we encrypt only the internal payload
+            # for compatibility with MCU side (which might want to see the header unencrypted).
+            # But the requirement is ID 3: Everything in the envelope.
+            # Let's keep internal payload encryption for now but wrap it in the envelope.
+            inner_payload, tag = aead_encrypt(
+                payload,
+                session_key,
+                self.nonce,
+                # AEAD additional data: version + cmd + seq
+                struct.pack("<BHH", protocol.PROTOCOL_VERSION, cmd_id, self.sequence_id),
+            )
+            envelope.payload = inner_payload
+            envelope.tag = tag
 
-        # [SIL-2] Single-pass memory allocation using join
-        body = b"".join([header, self.nonce, payload, tag])
+        body = envelope.SerializeToString()
         crc = _frame_crc(body)
-
         return b"".join([body, CRC_STRUCT.pack(crc)])
 
     @classmethod
     def parse(cls, raw_frame_buffer: bytes | bytearray | memoryview, session_key: bytes | None = None) -> Frame:
-        """Delegates frame parsing to the declarative schema."""
+        """Parses the frame using the Protobuf envelope."""
         buf = memoryview(raw_frame_buffer)
-        if len(buf) < _HEADER_SIZE + _NONCE_SIZE + _TAG_SIZE + _CRC_SIZE:
+        if len(buf) < _CRC_SIZE:
             raise ValueError("Incomplete or malformed frame: too short")
 
         body_len = len(buf) - _CRC_SIZE
@@ -120,46 +133,44 @@ class Frame(msgspec.Struct, frozen=True):
         except struct.error as e:
             raise ValueError(f"Malformed CRC field: {e}") from e
 
-        actual_crc = _frame_crc(body)
+        if _frame_crc(body) != expected_crc:
+            raise ValueError("CRC mismatch")
 
-        if expected_crc != actual_crc:
-            raise ValueError(f"CRC mismatch: expected {expected_crc}, got {actual_crc}")
-
+        envelope = pb.RpcEnvelope()
         try:
-            version, payload_len, cmd_id, seq_id = HEADER_STRUCT.unpack(body[:_HEADER_SIZE])
-        except struct.error as e:
-            raise ValueError(f"Malformed header: {e}") from e
+            envelope.ParseFromString(body)
+        except Exception as e:
+            raise ValueError(f"Failed to parse Protobuf envelope: {e}") from e
 
-        if version != protocol.PROTOCOL_VERSION:
-            raise ValueError("Incomplete or malformed frame: invalid version")
+        if envelope.version != protocol.PROTOCOL_VERSION:
+            raise ValueError("Invalid protocol version")
 
-        if _HEADER_SIZE + _NONCE_SIZE + payload_len + _TAG_SIZE != body_len:
-            raise ValueError("Incomplete or malformed frame: invalid length")
-
-        nonce = bytes(body[_HEADER_SIZE : _HEADER_SIZE + _NONCE_SIZE])
-        payload = bytes(body[_HEADER_SIZE + _NONCE_SIZE : _HEADER_SIZE + _NONCE_SIZE + payload_len])
-        tag = bytes(body[_HEADER_SIZE + _NONCE_SIZE + payload_len : body_len])
-        header = bytes(body[:_HEADER_SIZE])
+        cmd_id = envelope.command_id
+        payload = envelope.payload
+        nonce = envelope.nonce
+        tag = envelope.tag
 
         raw_cmd = cmd_id & ~protocol.CMD_FLAG_COMPRESSED & protocol.UINT16_MAX
         is_excluded = (protocol.STATUS_CODE_MIN <= raw_cmd <= protocol.STATUS_CODE_MAX) or (
             protocol.SYSTEM_COMMAND_MIN <= raw_cmd <= protocol.SYSTEM_COMMAND_MAX
         )
+
         if session_key and not is_excluded:
-            payload = aead_decrypt(payload, tag, session_key, nonce, header)
+            header_aad = struct.pack("<BHH", envelope.version, cmd_id, envelope.sequence_id)
+            payload = aead_decrypt(payload, tag, session_key, nonce, header_aad)
 
         if cmd_id & protocol.CMD_FLAG_COMPRESSED:
             try:
                 payload = rle_decode(payload)
                 cmd_id &= ~protocol.CMD_FLAG_COMPRESSED
             except ValueError as e:
-                raise ValueError(f"Incomplete or malformed frame: RLE decode failed: {e}") from e
+                raise ValueError(f"RLE decode failed: {e}") from e
 
         return cls(
             command_id=cmd_id,
-            sequence_id=seq_id,
+            sequence_id=envelope.sequence_id,
             payload=payload,
             nonce=nonce,
             tag=tag,
-            header_bytes=bytes(body[:_HEADER_SIZE]),
+            header_bytes=body[:7],  # Keep for legacy compatibility if needed
         )

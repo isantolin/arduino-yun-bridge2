@@ -229,7 +229,6 @@ class BridgeClass {
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> _transient_buffer;
   etl::array<uint8_t, bridge::config::RX_BUFFER_SIZE> _rx_storage;
 
-  rpc::FrameParser _frame_parser;
   bool _is_post_passed;
   bool _tx_enabled;
 

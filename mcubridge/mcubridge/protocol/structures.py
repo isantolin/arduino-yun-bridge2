@@ -1429,6 +1429,41 @@ class SpiConfigPacket:
         return self._msg.SerializeToString() # type: ignore
 
 
+class RpcEnvelopePacket:
+    PROTO_CLASS: Any = pb.RpcEnvelope
+    _msg: Any
+    
+    version: Annotated[int, msgspec.Meta(ge=0)]
+    
+    command_id: Annotated[int, msgspec.Meta(ge=0)]
+    
+    sequence_id: Annotated[int, msgspec.Meta(ge=0)]
+    
+    nonce: bytes
+    
+    tag: bytes
+    
+    payload: bytes
+    
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._msg = self.PROTO_CLASS(**kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._msg, name)
+
+    @classmethod
+    def decode(cls, data: bytes) -> RpcEnvelopePacket:
+        msg = cls.PROTO_CLASS()
+        msg.ParseFromString(data)
+        instance = cls()
+        instance._msg = msg
+        return instance
+
+    def encode(self) -> bytes:
+        return self._msg.SerializeToString() # type: ignore
+
+
 # --- END GENERATED PACKETS ---
 
 

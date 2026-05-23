@@ -856,14 +856,6 @@ requires_ack = true
 #   bool                   — boolean (encoded as uint8 on wire)
 
 [[messages]]
-name = "RpcContainer"
-fields = [
-    {name = "seq_id", type = "uint32"},
-    {name = "checksum", type = "uint32"},
-    {name = "payload", type = "bytes"},
-]
-
-[[messages]]
 name = "VersionResponse"
 fields = [
     {name = "major", type = "uint8"},
@@ -1084,4 +1076,15 @@ fields = [
     {name = "bit_order", type = "uint32"},
     {name = "data_mode", type = "uint32"},
     {name = "frequency", type = "uint32"},
+]
+
+[[messages]]
+name = "RpcEnvelope"
+fields = [
+    {name = "version", type = "uint8"},
+    {name = "command_id", type = "uint16"},
+    {name = "sequence_id", type = "uint16"},
+    {name = "nonce", type = "bin_fixed", size = 12},
+    {name = "tag", type = "bin_fixed", size = 16},
+    {name = "payload", type = "bytes"},
 ]

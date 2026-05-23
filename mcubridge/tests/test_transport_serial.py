@@ -53,7 +53,7 @@ async def test_process_packet_crc_mismatch_reports_crc(
         monkeypatch.setattr(cobs, "decode", lambda _data: raw)  # type: ignore[reportUnknownLambdaType]
 
         # Manual call to async method
-        await transport._async_process_packet(b"\x02encoded")  # type: ignore[reportPrivateUsage]
+        await transport._process_packet(b"\x02encoded")  # type: ignore[reportPrivateUsage]
 
         assert state.serial_decode_errors == 1
     finally:
@@ -207,13 +207,13 @@ async def test_process_packet_fallback_triggers_negotiation(
         raw = b"\xff" + b"x" * 20
         monkeypatch.setattr(cobs, "decode", lambda _data: raw)  # type: ignore[reportUnknownLambdaType]
 
-        await transport._async_process_packet(b"\x02encoded")  # type: ignore[reportPrivateUsage]
+        await transport._process_packet(b"\x02encoded")  # type: ignore[reportPrivateUsage]
         assert transport._consecutive_crc_errors == 1  # type: ignore[reportPrivateUsage]
 
         transport._negotiate_baudrate.assert_not_called()  # type: ignore[reportPrivateUsage]
 
         # Second error (threshold reached)
-        await transport._async_process_packet(b"\x02encoded")  # type: ignore[reportPrivateUsage]
+        await transport._process_packet(b"\x02encoded")  # type: ignore[reportPrivateUsage]
         assert transport._consecutive_crc_errors == 0  # type: ignore[reportPrivateUsage]
 
         transport._negotiate_baudrate.assert_awaited_once_with(57600)  # type: ignore[reportPrivateUsage]

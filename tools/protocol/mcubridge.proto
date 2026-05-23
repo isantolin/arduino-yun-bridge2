@@ -2,14 +2,6 @@ syntax = "proto3";
 
 package rpc.pb;
 
-// [SIL-2] Top-level container for all messages to/from MCU
-// This is used for framed transmission over serial
-message RpcContainer {
-    uint32 seq_id = 1;
-    uint32 checksum = 2;
-    bytes payload = 3;
-}
-
 message VersionResponse {
     uint32 major = 1;
     uint32 minor = 2;
@@ -187,4 +179,13 @@ message SpiConfig {
     uint32 bit_order = 1;
     uint32 data_mode = 2;
     uint32 frequency = 3;
+}
+
+message RpcEnvelope {
+    uint32 version = 1;
+    uint32 command_id = 2;
+    uint32 sequence_id = 3;
+    bytes nonce = 4;
+    bytes tag = 5;
+    bytes payload = 6;
 }

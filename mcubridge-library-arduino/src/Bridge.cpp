@@ -80,17 +80,17 @@ BridgeClass::BridgeClass(Stream& stream)
 
 void BridgeClass::_dispatchCommand(const rpc::Frame& frame) {
   const uint16_t cmd_id =
-      frame.header.command_id & ~rpc::RPC_CMD_FLAG_COMPRESSED;
+      frame.header.command_id() & ~rpc::RPC_CMD_FLAG_COMPRESSED;
   auto it = etl::find(_rx_history.begin(), _rx_history.end(),
-                      frame.header.sequence_id);
+                      frame.header.sequence_id());
   const bool is_duplicate = (it != _rx_history.end());
   const bridge::router::CommandContext ctx(
-      &frame, cmd_id, frame.header.sequence_id, is_duplicate,
+      &frame, cmd_id, frame.header.sequence_id(), is_duplicate,
       rpc::requires_ack(cmd_id));
 
   if (!is_duplicate) {
     if (_rx_history.full()) _rx_history.pop();
-    _rx_history.push(frame.header.sequence_id);
+    _rx_history.push(frame.header.sequence_id());
   }
 
   if (!_isSecurityCheckPassed(ctx.raw_command)) {
@@ -339,26 +339,20 @@ void BridgeClass::_sendRawFrame(uint16_t command_id, uint16_t sequence_id,
                             raw_cmd <= rpc::RPC_SYSTEM_COMMAND_MAX);
   const bool do_encrypt = isSynchronized() && !_shared_secret.empty() && !is_excluded;
 
-  rpc::Frame f = {};
-  f.header = {rpc::PROTOCOL_VERSION, static_cast<uint16_t>(payload.size()),
-              command_id, sequence_id};
-
+  etl::array<uint8_t, rpc::AEAD_NONCE_SIZE> nonce = {};
+  etl::array<uint8_t, rpc::AEAD_TAG_SIZE> tag = {};
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> enc_pl;
+  etl::span<const uint8_t> final_payload = payload;
 
   if (do_encrypt) {
-    if (!rpc::security::aead_encrypt_frame_raw(f, payload.data(), payload.size(),
-                                           _session_key.data(),
-                                           _tx_nonce_counter, enc_pl.data()))
+    if (!rpc::security::aead_encrypt_frame(raw_cmd, sequence_id, payload, _session_key, 
+                                           _tx_nonce_counter, enc_pl, nonce, tag))
       return;
-  } else {
-    f.payload = payload;
-    f.nonce.fill(0);
-    f.tag.fill(0);
+    final_payload = etl::span<const uint8_t>(enc_pl.data(), payload.size());
   }
 
-  f.crc = rpc::checksum::compute(f);
   etl::array<uint8_t, rpc::MAX_FRAME_SIZE> buffer;
-  size_t len = rpc::FrameParser::serialize(f, buffer);
+  size_t len = rpc::FrameBuilder::build(buffer, command_id, sequence_id, final_payload, nonce, tag);
 
 #if defined(BRIDGE_HOST_TEST) && defined(BRIDGE_FAULT_INJECTION)
   if (bridge::test::fault::consume(
@@ -730,15 +724,16 @@ void BridgeClass::_handleEnterBootloader(const rpc::payload::EnterBootloader& ms
 void BridgeClass::_onBootloaderDelay() { bridge::hal::enterBootloader(); }
 
 void BridgeClass::_handleReceivedFrame(etl::span<const uint8_t> p) {
-  auto res = _frame_parser.parse(p);
+  auto res = rpc::FrameParser::parse(p);
   if (!res) {
     _last_parse_error = res.error();
     emitStatus(rpc::StatusCode::STATUS_MALFORMED);
     return;
   }
   rpc::Frame frame = res.value();
-  const uint16_t raw_cmd =
-      frame.header.command_id & ~rpc::RPC_CMD_FLAG_COMPRESSED;
+  const uint16_t cmd_id = frame.header.command_id();
+  const uint16_t raw_cmd = cmd_id & ~rpc::RPC_CMD_FLAG_COMPRESSED;
+  
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> dec_pl;
 
   const bool is_excluded = (raw_cmd >= rpc::RPC_STATUS_CODE_MIN &&
@@ -747,11 +742,18 @@ void BridgeClass::_handleReceivedFrame(etl::span<const uint8_t> p) {
                             raw_cmd <= rpc::RPC_SYSTEM_COMMAND_MAX);
 
   if (isSynchronized() && !_shared_secret.empty() && !is_excluded) {
-    if (!rpc::security::aead_decrypt_frame_raw(frame, _session_key.data(), dec_pl.data()) ||
-        !rpc::security::validate_frame_nonce(frame, _rx_nonce_counter)) {
+    if (!rpc::security::aead_decrypt_frame(raw_cmd, frame.header.sequence_id(), 
+                                           frame.payload(), 
+                                           etl::span<const uint8_t>(frame.envelope.pb_msg.tag.bytes, 16),
+                                           _session_key, 
+                                           etl::span<const uint8_t>(frame.envelope.pb_msg.nonce.bytes, 12),
+                                           dec_pl) ||
+        !rpc::security::validate_frame_nonce(etl::span<const uint8_t>(frame.envelope.pb_msg.nonce.bytes, 12), _rx_nonce_counter)) {
       emitStatus(rpc::StatusCode::STATUS_ERROR);
       return;
     }
+    // Update envelope with decrypted payload
+    etl::copy_n(dec_pl.data(), frame.header.payload_length(), frame.envelope.pb_msg.payload.bytes);
   }
 
   rpc::Frame eff;
@@ -771,14 +773,15 @@ void BridgeClass::_onPacketReceived(etl::span<const uint8_t> p) {
 etl::expected<void, rpc::FrameError> BridgeClass::_decompressFrame(
     const rpc::Frame& in, rpc::Frame& out) {
   out = in;
-  if (!rpc::is_compressed(in.header.command_id)) return {};
+  if (!rpc::is_compressed(in.header.command_id())) return {};
 
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> decomp_pl;
-  size_t decomp_size = rle::decode(in.payload, decomp_pl);
+  size_t decomp_size = rle::decode(in.payload(), decomp_pl);
   if (decomp_size == 0) return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);
 
   etl::copy_n(decomp_pl.data(), decomp_size, _transient_buffer.data());
-  out.payload = etl::span<const uint8_t>(_transient_buffer.data(), decomp_size);
+  etl::copy_n(decomp_pl.data(), decomp_size, out.envelope.pb_msg.payload.bytes);
+  out.envelope.pb_msg.payload.size = static_cast<pb_size_t>(decomp_size);
   return {};
 }
 

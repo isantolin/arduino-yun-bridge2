@@ -49,9 +49,9 @@ async def test_serial_transport_loops_final_v3(transport_setup: Any) -> None:
 
     transport._tx_sequence_id = 0xFFFE
     mock_writer.drain = AsyncMock()
-    await transport._send_raw(0x01, b"")
+    await transport.send_raw(0x01, b"")
     assert transport._tx_sequence_id == 0xFFFF
-    await transport._send_raw(0x01, b"")
+    await transport.send_raw(0x01, b"")
     assert transport._tx_sequence_id == 0
 
 

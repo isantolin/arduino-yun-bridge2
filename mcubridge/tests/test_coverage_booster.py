@@ -199,7 +199,7 @@ async def test_serial_transport_negotiation_coverage(mock_config: RuntimeConfig,
     encoded = cobs.encode(resp_frame.build())
 
     cast(Any, transport)._switch_local_baudrate = MagicMock()
-    cast(Any, transport)._process_packet(encoded)
+    await transport._process_packet(encoded)
     assert cast(Any, transport)._negotiation_future.done()
     assert cast(Any, transport)._negotiation_future.result() is True
 
@@ -600,7 +600,7 @@ async def test_serial_transport_retry_logic_coverage(mock_config: RuntimeConfig,
     transport.writer = AsyncMock(spec=asyncio.StreamWriter)
 
     # Mock _send_raw to return True
-    cast(Any, transport)._send_raw = AsyncMock(return_value=True)
+    cast(Any, transport).send_raw = AsyncMock(return_value=True)
 
     # Trigger timeout in _send_tracked
     cast(Any, transport)._response_timeout = 0.05

@@ -85,35 +85,29 @@ inline void derive_session_key(etl::span<const uint8_t> secret,
 
 /**
  * @brief Securely encrypt a frame's payload and populate nonce/tag.
- * [MEM-SAVE] Centralizing frame-level crypto reduces main logic bloat.
  */
-bool aead_encrypt_frame_raw(rpc::Frame& f, const uint8_t* payload, size_t len,
-                            const uint8_t* key, uint64_t& nonce_counter,
-                            uint8_t* out_buffer);
-
-inline bool aead_encrypt_frame(rpc::Frame& f, etl::span<const uint8_t> payload,
-                               etl::span<const uint8_t> key,
-                               uint64_t& nonce_counter,
-                               etl::span<uint8_t> out_buffer) {
-  return aead_encrypt_frame_raw(f, payload.data(), payload.size(), key.data(),
-                                 nonce_counter, out_buffer.data());
-}
+bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id, 
+                        etl::span<const uint8_t> in,
+                        etl::span<const uint8_t> key,
+                        uint64_t& nonce_counter,
+                        etl::span<uint8_t> out_payload,
+                        etl::span<uint8_t> out_nonce,
+                        etl::span<uint8_t> out_tag);
 
 /**
  * @brief Securely decrypt a frame's payload.
  */
-bool aead_decrypt_frame_raw(rpc::Frame& f, const uint8_t* key,
-                             uint8_t* out_buffer);
-
-inline bool aead_decrypt_frame(rpc::Frame& f, etl::span<const uint8_t> key,
-                               etl::span<uint8_t> out_buffer) {
-  return aead_decrypt_frame_raw(f, key.data(), out_buffer.data());
-}
+bool aead_decrypt_frame(uint16_t cmd_id, uint16_t seq_id,
+                        etl::span<const uint8_t> in,
+                        etl::span<const uint8_t> tag,
+                        etl::span<const uint8_t> key,
+                        etl::span<const uint8_t> nonce,
+                        etl::span<uint8_t> out_payload);
 
 /**
  * @brief Validate monotonic nonce counter to prevent replay attacks.
  */
-bool validate_frame_nonce(const rpc::Frame& f, uint64_t& last_seen_counter);
+bool validate_frame_nonce(etl::span<const uint8_t> nonce, uint64_t& last_seen_counter);
 
 /**
  * @brief Securely zero memory, resistant to compiler optimization.

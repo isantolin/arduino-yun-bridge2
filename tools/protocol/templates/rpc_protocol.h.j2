@@ -51,12 +51,6 @@ inline constexpr uint32_t RPC_CAPABILITY_{{ cap|upper }} = {{ val }}U;
 {% for arch, val in architectures.items() -%}
 inline constexpr uint8_t RPC_ARCH_{{ arch|upper }} = {{ val }}U;
 {% endfor %}
-enum class CompressionType : uint8_t {
-{%- for name, val in compression.items() %}
-    COMPRESSION_{{ name|upper }} = {{ val }},
-{%- endfor %}
-};
-
 enum class FrameError : uint8_t {
     NONE = 0,
     CRC_MISMATCH = 1,

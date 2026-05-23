@@ -48,8 +48,7 @@ void FileSystemClass::read(etl::string_view path,
 
 void FileSystemClass::remove(etl::string_view path) {
   rpc::payload::FileRemove p;
-  strncpy(p.pb_msg.path, path.data(), 64);
-  p.pb_msg.path[63] = '\0';
+  rpc::payload::copy_to_pb_string(p.pb_msg.path, path);
   (void)Bridge.send(rpc::CommandId::CMD_FILE_REMOVE, 0, p);
 }
 

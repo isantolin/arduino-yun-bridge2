@@ -160,9 +160,7 @@ void test_bridge_decompress_error() {
 
   rpc::Frame f;
   f.envelope.pb_msg.version = rpc::PROTOCOL_VERSION;
-  f.envelope.pb_msg.command_id = static_cast<uint16_t>(
-                   static_cast<uint16_t>(rpc::CommandId::CMD_GET_VERSION) |
-                   rpc::RPC_CMD_FLAG_COMPRESSED);
+  f.envelope.pb_msg.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_GET_VERSION);
   f.envelope.pb_msg.sequence_id = 1;
 
   etl::array<uint8_t, 4> garbage = {0xFF, 0xFF, 0xFF, 0xFF};

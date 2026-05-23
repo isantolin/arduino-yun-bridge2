@@ -121,6 +121,9 @@ class CppField:
     kind: str
     # For bin_fixed / str_fixed: the buffer size (e.g. 16, 32, 64)
     size: int = 0
+    # [SIL-2] Validation constraints
+    min_val: int | None = None
+    max_val: int | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -147,11 +150,9 @@ def build_cpp_structs_from_spec(spec: ProtocolSpec) -> list[CppStruct]:
                 kind = "uint32"
 
             if kind == "bin_fixed":
-                cpp_fields.append(CppField(name=f.name, kind=kind, size=f.size))
-            elif kind == "str_view":
-                cpp_fields.append(CppField(name=f.name, kind=kind))
+                cpp_fields.append(CppField(name=f.name, kind=kind, size=f.size, min_val=f.min, max_val=f.max))
             else:
-                cpp_fields.append(CppField(name=f.name, kind=kind))
+                cpp_fields.append(CppField(name=f.name, kind=kind, min_val=f.min, max_val=f.max))
 
         structs.append(
             CppStruct(
@@ -302,21 +303,6 @@ class JinjaGenerator:
                 "type": "uint8_t",
                 "value": c["rpc_command_group_offset"],
             },
-            {
-                "name": "RPC_TIMER_OVERFLOW_THRESHOLD",
-                "type": "uint32_t",
-                "value": c["rpc_timer_overflow_threshold"],
-            },
-            {
-                "name": "RPC_CMD_FLAG_COMPRESSED",
-                "type": "uint16_t",
-                "value": c["cmd_flag_compressed"],
-            },
-            {
-                "name": "RPC_CMD_FLAG_COMPRESSED_BIT",
-                "type": "uint8_t",
-                "value": c["rpc_cmd_flag_compressed_bit"],
-            },
             {"name": "RPC_UINT8_MASK", "type": "uint8_t", "value": c["uint8_mask"]},
             {"name": "RPC_UINT16_MAX", "type": "uint16_t", "value": c["uint16_max"]},
             {
@@ -359,42 +345,6 @@ class JinjaGenerator:
             },
             {"name": "RPC_DIGITAL_LOW", "type": "uint8_t", "value": c["digital_low"]},
             {"name": "RPC_DIGITAL_HIGH", "type": "uint8_t", "value": c["digital_high"]},
-            {
-                "name": "RPC_RLE_ESCAPE_BYTE",
-                "type": "uint8_t",
-                "value": c["rle_escape_byte"],
-            },
-            {
-                "name": "RPC_RLE_MIN_RUN_LENGTH",
-                "type": "uint8_t",
-                "value": c["rle_min_run_length"],
-            },
-            {
-                "name": "RPC_RLE_MAX_RUN_LENGTH",
-                "type": "uint16_t",
-                "value": c["rle_max_run_length"],
-            },
-            {
-                "name": "RPC_RLE_SINGLE_ESCAPE_MARKER",
-                "type": "uint8_t",
-                "value": c["rle_single_escape_marker"],
-            },
-            {
-                "name": "RPC_RLE_EXPANSION_FACTOR",
-                "type": "uint8_t",
-                "value": c["rle_expansion_factor"],
-            },
-            {"name": "RPC_RLE_OFFSET", "type": "uint8_t", "value": c["rle_offset"]},
-            {
-                "name": "RPC_RLE_MIN_COMPRESS_INPUT_SIZE",
-                "type": "size_t",
-                "value": c["rle_min_compress_input_size"],
-            },
-            {
-                "name": "RPC_RLE_MIN_COMPRESS_SAVINGS",
-                "type": "size_t",
-                "value": c["rle_min_compress_savings"],
-            },
             {
                 "name": "RPC_SHA256_DIGEST_SIZE",
                 "type": "uint8_t",
@@ -574,7 +524,6 @@ class JinjaGenerator:
             handshake=handshake_data,
             capabilities=spec.capabilities,
             architectures=spec.architectures,
-            compression=spec.compression,
             statuses=spec.statuses,
             commands=spec.commands,
             ack_commands=[c for c in spec.commands if c.requires_ack],
@@ -700,16 +649,6 @@ class JinjaGenerator:
                 "type": "int",
                 "value": c["rpc_timer_overflow_threshold"],
             },
-            {
-                "name": "CMD_FLAG_COMPRESSED",
-                "type": "int",
-                "value": c["cmd_flag_compressed"],
-            },
-            {
-                "name": "CMD_FLAG_COMPRESSED_BIT",
-                "type": "int",
-                "value": c["rpc_cmd_flag_compressed_bit"],
-            },
             {"name": "UINT8_MASK", "type": "int", "value": c["uint8_mask"]},
             {"name": "UINT16_MAX", "type": "int", "value": c["uint16_max"]},
             {"name": "BOOTLOADER_MAGIC", "type": "int", "value": c["bootloader_magic"]},
@@ -760,38 +699,6 @@ class JinjaGenerator:
             },
             {"name": "DIGITAL_LOW", "type": "int", "value": c["digital_low"]},
             {"name": "DIGITAL_HIGH", "type": "int", "value": c["digital_high"]},
-            {"name": "RLE_ESCAPE_BYTE", "type": "int", "value": c["rle_escape_byte"]},
-            {
-                "name": "RLE_MIN_RUN_LENGTH",
-                "type": "int",
-                "value": c["rle_min_run_length"],
-            },
-            {
-                "name": "RLE_MAX_RUN_LENGTH",
-                "type": "int",
-                "value": c["rle_max_run_length"],
-            },
-            {
-                "name": "RLE_SINGLE_ESCAPE_MARKER",
-                "type": "int",
-                "value": c["rle_single_escape_marker"],
-            },
-            {
-                "name": "RLE_EXPANSION_FACTOR",
-                "type": "int",
-                "value": c["rle_expansion_factor"],
-            },
-            {"name": "RLE_OFFSET", "type": "int", "value": c["rle_offset"]},
-            {
-                "name": "RLE_MIN_COMPRESS_INPUT_SIZE",
-                "type": "int",
-                "value": c["rle_min_compress_input_size"],
-            },
-            {
-                "name": "RLE_MIN_COMPRESS_SAVINGS",
-                "type": "int",
-                "value": c["rle_min_compress_savings"],
-            },
             {
                 "name": "SHA256_DIGEST_SIZE",
                 "type": "int",
@@ -1009,7 +916,6 @@ class JinjaGenerator:
             capabilities=spec.capabilities,
             architectures=spec.architectures,
             architecture_display_names=spec.architecture_display_names,
-            compression=spec.compression,
             data_formats=spec.data_formats,
             mqtt_suffixes=spec.mqtt_suffixes,
             mqtt_defaults=spec.mqtt_defaults,
@@ -1060,7 +966,36 @@ class JinjaGenerator:
                 if py_type is None:
                     sys.stderr.write(f"Warning: unknown field type '{f.type}' in {msg.name}.{f.name}, skipping field\n")
                     continue
+
+                # [SIL-2] Validation constraints: merge with existing metadata in py_type
+                if f.min is not None or f.max is not None:
+                    new_meta = {}
+                    if f.min is not None:
+                        new_meta["ge"] = f.min
+                    if f.max is not None:
+                        new_meta["le"] = f.max
+
+                    if "msgspec.Meta(" in py_type:
+                        # Extract existing metadata and merge
+                        match = re.search(r"msgspec.Meta\((.*?)\)", py_type)
+                        if match:
+                            existing_parts = match.group(1).split(",")
+                            for part in existing_parts:
+                                if "=" in part:
+                                    k_v = part.strip().split("=", 1)
+                                    if len(k_v) == 2:
+                                        k, v = k_v
+                                        if k not in new_meta:
+                                            new_meta[k] = v
+
+                        meta_str = ", ".join(f"{k}={v}" for k, v in new_meta.items())
+                        py_type = re.sub(r"msgspec.Meta\(.*?\)", f"msgspec.Meta({meta_str})", py_type)
+                    else:
+                        meta_str = ", ".join(f"{k}={v}" for k, v in new_meta.items())
+                        py_type = f"Annotated[{py_type}, msgspec.Meta({meta_str})]"
+
                 fields.append({"name": f.name, "python_type": py_type})
+
             packets.append(
                 {
                     "class_name": packet_class_name(msg.name),

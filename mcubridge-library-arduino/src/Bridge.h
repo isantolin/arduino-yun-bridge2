@@ -42,10 +42,10 @@ class TestAccessor;
 #include "etl_ext/CounterIterator.h"
 #include "fsm/bridge_fsm.h"
 #include "protocol/BridgeEvents.h"
-#include "protocol/rle.h"
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
 #include "protocol/rpc_structs.h"
+
 #include "security/security.h"
 
 // [SIL-2] Template De-bloating: Extern declarations
@@ -140,9 +140,6 @@ class BridgeClass {
 
   static constexpr bool is_reliable_cmd(uint16_t id) {
     return rpc::requires_ack(id);
-  }
-  static constexpr bool is_compressed_cmd(uint16_t id) {
-    return (id & rpc::RPC_CMD_FLAG_COMPRESSED) != 0;
   }
 
  protected:

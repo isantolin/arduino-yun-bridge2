@@ -43,6 +43,8 @@ class MessageFieldDef(msgspec.Struct, frozen=True):
     type: str  # uint8, uint16, uint32, int32, bytes, bin_fixed, string, bool
     size: int = 0  # for bin_fixed
     max_size: int = 64  # for string
+    min: int | None = None
+    max: int | None = None
 
 
 class MessageDef(msgspec.Struct, frozen=True):
@@ -65,7 +67,6 @@ class ProtocolSpec(msgspec.Struct):
     topics: list[dict[str, Any]]
     capabilities: dict[str, int]
     architectures: dict[str, int]
-    compression: dict[str, int]
     data_formats: dict[str, str]
     mqtt_suffixes: dict[str, str]
     mqtt_defaults: dict[str, str]

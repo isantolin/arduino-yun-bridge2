@@ -300,12 +300,6 @@ void test_console_and_misc() {
   f .envelope.pb_msg.command_id = (uint16_t)rpc::StatusCode::STATUS_MALFORMED;
   ba.dispatch(f);
 
-  // Decompression MALFORMED
-  f .envelope.pb_msg.command_id = (uint16_t)rpc::CommandId::CMD_CONSOLE_WRITE |
-                        rpc::RPC_CMD_FLAG_COMPRESSED;
-  f .envelope.pb_msg.payload.size = 1;
-  ba.dispatch(f);
-
   // 4. Trigger etl::handle_error
   etl::exception e("msg", "file", 100);
   etl::handle_error(e);

@@ -374,10 +374,10 @@ async def test_frame_unpacking_coverage() -> None:
     assert f2.command_id == 0x10  # parse removes flag
     assert f2.payload == b"AAAAA" * 10
 
-    # Force compression failure coverage (if it didn't compress)
+    # Force build coverage
     f3 = Frame(command_id=0x10, sequence_id=2, payload=b"ABCDE")
     b3 = f3.build()
-    assert not (Frame.parse(b3).command_id & protocol.CMD_FLAG_COMPRESSED)
+    assert Frame.parse(b3).command_id == 0x10
 
 
 @pytest.mark.asyncio
@@ -804,7 +804,7 @@ async def test_structures_exhaustive_v10() -> None:
     """Cover structures.py functions and methods."""
     import mcubridge.protocol.structures as structures_mod
 
-    feats = {"watchdog": True, "rle": False, "hw_serial1": True}
+    feats = {"watchdog": True, "hw_serial1": True}
 
     val = cast(Any, structures_mod)._capabilities_to_int(feats)
     assert val & 0x01

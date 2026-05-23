@@ -58,8 +58,25 @@ struct {{ s.name }} {
     }
 
     bool decode(pb_istream_t* stream) {
-        return pb_decode(stream, rpc_pb_{{ s.name }}_fields, &pb_msg);
+        if (!pb_decode(stream, rpc_pb_{{ s.name }}_fields, &pb_msg)) return false;
+        {%- for field in s.fields %}
+        {%- if field.min_val is not none or field.max_val is not none %}
+        {%- if field.kind in ["uint8", "uint16", "uint32"] %}
+        if (
+            {%- if field.min_val is not none and field.min_val > 0 -%}
+            pb_msg.{{ field.name }} < {{ field.min_val }}
+            {%- endif -%}
+            {%- if field.min_val is not none and field.min_val > 0 and field.max_val is not none %} || {% endif -%}
+            {%- if field.max_val is not none -%}
+            pb_msg.{{ field.name }} > {{ field.max_val }}
+            {%- endif -%}
+        ) return false;
+        {%- endif %}
+        {%- endif %}
+        {%- endfor %}
+        return true;
     }
+
 };
 {% endfor %}
 

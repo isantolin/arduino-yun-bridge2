@@ -19,9 +19,6 @@ void test_protocol_frame_logic_exhaustive() {
   TEST_ASSERT(requires_ack((uint16_t)CommandId::CMD_CONSOLE_WRITE));
   TEST_ASSERT(!requires_ack((uint16_t)CommandId::CMD_GET_VERSION));
 
-  // 2. is_compressed
-  TEST_ASSERT(rpc::is_compressed(rpc::RPC_CMD_FLAG_COMPRESSED));
-  TEST_ASSERT(!rpc::is_compressed(0x0001));
 
   // 3. FrameParser::serialize error paths (buffer too small)
   etl::array<uint8_t, 2> small_buf;

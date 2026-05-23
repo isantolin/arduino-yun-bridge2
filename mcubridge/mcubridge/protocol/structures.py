@@ -113,24 +113,6 @@ class TopicRoute(msgspec.Struct, frozen=True):
         return self.segments[1:] if len(self.segments) > 1 else ()
 
 
-class RLEPayload(msgspec.Struct, frozen=True):
-    """Encapsulates RLE-compressed data."""
-
-    data: bytes
-
-    def decode(self) -> bytes:
-        """Decompress data using native RLE decoder."""
-        from .rle import rle_decode
-
-        if not self.data:
-            return b""
-
-        try:
-            return rle_decode(self.data)
-        except ValueError as exc:
-            raise ValueError(f"RLE decompression failed: {exc}") from exc
-
-
 # =============================================================================
 # 2. Security and Policy Structures (msgspec)
 # =============================================================================
@@ -632,9 +614,9 @@ class PinModePacket:
     PROTO_CLASS: Any = pb.PinMode
     _msg: Any
     
-    pin: Annotated[int, msgspec.Meta(ge=0)]
+    pin: Annotated[int, msgspec.Meta(ge=0, le=20)]
     
-    mode: Annotated[int, msgspec.Meta(ge=0)]
+    mode: Annotated[int, msgspec.Meta(ge=0, le=2)]
     
 
     def __init__(self, **kwargs: Any) -> None:
@@ -659,9 +641,9 @@ class DigitalWritePacket:
     PROTO_CLASS: Any = pb.DigitalWrite
     _msg: Any
     
-    pin: Annotated[int, msgspec.Meta(ge=0)]
+    pin: Annotated[int, msgspec.Meta(ge=0, le=20)]
     
-    value: Annotated[int, msgspec.Meta(ge=0)]
+    value: Annotated[int, msgspec.Meta(ge=0, le=1)]
     
 
     def __init__(self, **kwargs: Any) -> None:
@@ -686,9 +668,9 @@ class AnalogWritePacket:
     PROTO_CLASS: Any = pb.AnalogWrite
     _msg: Any
     
-    pin: Annotated[int, msgspec.Meta(ge=0)]
+    pin: Annotated[int, msgspec.Meta(ge=0, le=20)]
     
-    value: Annotated[int, msgspec.Meta(ge=0)]
+    value: Annotated[int, msgspec.Meta(ge=0, le=255)]
     
 
     def __init__(self, **kwargs: Any) -> None:
@@ -713,7 +695,7 @@ class PinReadPacket:
     PROTO_CLASS: Any = pb.PinRead
     _msg: Any
     
-    pin: Annotated[int, msgspec.Meta(ge=0)]
+    pin: Annotated[int, msgspec.Meta(ge=0, le=20)]
     
 
     def __init__(self, **kwargs: Any) -> None:
@@ -1443,6 +1425,8 @@ class RpcEnvelopePacket:
     
     tag: bytes
     
+    tag: bytes
+    
     payload: bytes
     
 
@@ -1482,7 +1466,6 @@ class CapabilitiesFeatures(msgspec.Struct, frozen=True):
     """Features bitmask parsed via BitStruct."""
 
     watchdog: bool
-    rle: bool
     debug_frames: bool
     debug_io: bool
     eeprom: bool

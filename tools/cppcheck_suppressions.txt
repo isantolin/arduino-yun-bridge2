@@ -12,5 +12,3 @@ functionStatic:*mcubridge-library-arduino/src/protocol/rpc_frame.h
 unknownMacro:*mcubridge-library-arduino/src/security/sha256.cpp
 
 invalidLifetime:*mcubridge-library-arduino/src/security/sha256.h
-functionStatic:mcubridge-library-arduino/src/Bridge.cpp
-functionStatic:mcubridge-library-arduino/src/Bridge.h

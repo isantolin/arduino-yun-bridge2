@@ -67,10 +67,6 @@ else:
     _spec_mod = importlib.util.module_from_spec(_loader_spec)
     _loader_spec.loader.exec_module(_spec_mod)
     ProtocolSpec = _spec_mod.ProtocolSpec
-    CommandDef = _spec_mod.CommandDef
-    StatusDef = _spec_mod.StatusDef
-    MessageDef = _spec_mod.MessageDef
-    MessageFieldDef = _spec_mod.MessageFieldDef
 
 TEMPLATE_DIR = Path(__file__).parent / "templates"
 VERSION_PATH = REPO_ROOT / "VERSION"
@@ -1073,10 +1069,8 @@ class JinjaGenerator:
                 }
             )
 
-        command_field_map: dict[int, str] = {cmd.value: cmd.name.lower().removeprefix("cmd_") for cmd in spec.commands}
-
         template = self.env.get_template("structures_packets.py.j2")
-        generated = template.render(packets=packets, command_field_map=command_field_map)
+        generated = template.render(packets=packets)
         # Normalize to exactly 2 blank lines between top-level defs (PEP 8)
         generated = re.sub(r"\n{4,}", "\n\n\n", generated)
 
@@ -1241,79 +1235,6 @@ def ensure_nanopb_core_files() -> None:
                 sys.exit(1)
 
 
-def parse_proto_metadata(proto_path: Path) -> tuple[list[CommandDef], list[MessageDef]]:
-    """Parse mcubridge.proto to extract commands (from McuFrame oneof) and message definitions."""
-    content = proto_path.read_text(encoding="utf-8")
-    commands = []
-    messages = []
-
-    # 1. Parse oneof message in McuFrame
-    mcu_frame_match = re.search(r"message McuFrame\s+\{.*?oneof message\s+\{(.*?)\}", content, re.DOTALL)
-    if mcu_frame_match:
-        oneof_content = mcu_frame_match.group(1)
-        # Match pattern: // [metadata] \n Type name = tag;
-        blocks = re.findall(r"(?://\s*\[(.*?)\]\s*\n\s*)?(\w+)\s+(\w+)\s*=\s*(\d+);", oneof_content)
-        for meta_str, _type_name, name, tag in blocks:
-            cmd_name = f"CMD_{name.upper()}"
-            current_meta = {}
-            if meta_str:
-                try:
-                    current_meta = dict(item.split("=") for item in meta_str.split(", "))
-                except ValueError:
-                    sys.stderr.write(f"Warning: malformed metadata comment for {name}: {meta_str}\n")
-
-            # Map metadata to CommandDef
-            directions_str = current_meta.get("dir", "both")
-            if directions_str == "both":
-                directions = ["linux_to_mcu", "mcu_to_linux"]
-            else:
-                directions = directions_str.split("|")
-
-            commands.append(
-                CommandDef(
-                    name=cmd_name,
-                    value=int(tag),
-                    directions=directions,
-                    category=current_meta.get("cat", "system"),
-                    requires_ack=current_meta.get("ack", "false").lower() == "true",
-                    expects_direct_response=current_meta.get("resp", "false").lower() == "true",
-                )
-            )
-
-    # 2. Parse all messages for MessageDef
-    for msg_match in re.finditer(r"message (\w+)\s+\{(.*?)\}", content, re.DOTALL):
-        msg_name = msg_match.group(1)
-        if msg_name in (
-            "McuFrame",
-            "RpcContainer",
-            "StructuredEntry",
-            "StructuredPayload",
-        ):
-            continue
-
-        fields = []
-        fields_content = msg_match.group(2)
-        for field_line in fields_content.splitlines():
-            field_line = field_line.strip()
-            if not field_line or field_line.startswith("//"):
-                continue
-            # Parse: uint32 major = 1;
-            f_match = re.match(r"(?:repeated\s+)?(\w+)\s+(\w+)\s*=\s*(\d+);", field_line)
-            if f_match:
-                f_type, f_name, _ = f_match.groups()
-                # Map proto types to our internal types used by generator
-                type_map = {
-                    "uint32": "uint32",
-                    "bytes": "bytes",
-                    "string": "string",
-                    "bool": "bool",
-                }
-                fields.append(MessageFieldDef(name=f_name, type=type_map.get(f_type, "uint32")))
-        messages.append(MessageDef(name=msg_name, fields=fields))
-
-    return commands, messages
-
-
 def main() -> None:
     ensure_nanopb_core_files()
     parser = argparse.ArgumentParser(description="Protocol binding generator for MCU Bridge v2.")
@@ -1332,15 +1253,6 @@ def main() -> None:
     args = parser.parse_args()
 
     spec = ProtocolSpec.load(args.spec)
-
-    proto_path = (args.spec.parent / "mcubridge.proto").resolve()
-    if proto_path.exists():
-        proto_commands, proto_messages = parse_proto_metadata(proto_path)
-        # Proto-First: Protobuf data takes precedence or extends TOML
-        # We convert to list to allow appending if they were empty
-        spec.commands = list(spec.commands) + proto_commands
-        spec.messages = list(spec.messages) + proto_messages
-
     gen = JinjaGenerator()
     version = read_version()
 

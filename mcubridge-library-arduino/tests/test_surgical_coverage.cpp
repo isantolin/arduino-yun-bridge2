@@ -22,7 +22,6 @@ void test_surgical_bridge_errors() {
   stream.clear();
   reset_bridge_core(Bridge, stream);
   auto ba = TestAccessor::create(Bridge);
-  ba.clearSharedSecret();
   ba.setSynchronized();
 
   // 1. Replay detection (Same nonce counter)
@@ -65,7 +64,6 @@ void test_surgical_fsm_resets() {
   stream.clear();
   reset_bridge_core(Bridge, stream);
   auto ba = TestAccessor::create(Bridge);
-  ba.clearSharedSecret();
 
   ba.trigger(bridge::fsm::EvReset());
   ba.trigger(bridge::fsm::EvHandshakeStart());
@@ -104,7 +102,6 @@ void test_surgical_tasks_flow() {
   stream.clear();
   reset_bridge_core(Bridge, stream);
   auto ba = TestAccessor::create(Bridge);
-  ba.clearSharedSecret();
 
   // SerialTask XOFF path
   static uint8_t dummy[1000];

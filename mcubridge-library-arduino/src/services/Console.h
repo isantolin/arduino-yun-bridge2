@@ -17,7 +17,7 @@ class ConsoleClass : public Stream, public BridgeObserver {
  public:
   ConsoleClass();
   void begin();
-  void _push(const rpc_pb_ConsoleWrite& msg);
+  void _push(const rpc::payload::ConsoleWrite& msg);
   void process();
 
   void notification(MsgBridgeSynchronized) override { begin(); }

@@ -48,13 +48,7 @@ class TestAccessor {
     _fsm.receive(ev);
   }
 
-  void dispatch(const rpc_pb_McuFrame& frame) { _bridge._dispatchCommand(frame); }
-  void dispatch(etl::span<const uint8_t> p) { _bridge._onPacketReceived(p); }
-  void dispatch(const rpc::Frame& frame) {
-    etl::array<uint8_t, rpc::MAX_FRAME_SIZE> buf;
-    size_t len = rpc::FrameParser::serialize(frame, buf);
-    if (len > 0) _bridge._onPacketReceived(etl::span<const uint8_t>(buf.data(), len));
-  }
+  void dispatch(const rpc::Frame& frame) { _bridge._dispatchCommand(frame); }
 
   bool isSharedSecretEmpty() const { return _bridge._shared_secret.empty(); }
   void setSharedSecret(etl::span<const uint8_t> secret) {
@@ -66,30 +60,30 @@ class TestAccessor {
     if (_bridge._shared_secret.empty()) return;
     // [MEM-SAVE] Replaced manual handshake logic with centralized utility.
     etl::array<uint8_t, 32> out_tag_full;
-    (void)rpc::security::handshake_authenticate_raw(
-        _bridge._shared_secret.data(), _bridge._shared_secret.size(),
-        nonce_ptr, len,
-        nullptr, 0, // received_tag not used here
-        out_tag_full.data());
+    (void)rpc::security::handshake_authenticate(
+        etl::span<const uint8_t>(_bridge._shared_secret),
+        etl::span<const uint8_t>(nonce_ptr, len),
+        etl::span<const uint8_t>(), // [MEM-SAVE] received_tag not used here
+        etl::span<uint8_t>(out_tag_full));
     etl::copy_n(out_tag_full.begin(), 16, tag_out);
   }
 
   void onAckTimeout() { _bridge._onAckTimeout(); }
   void handleAck(uint16_t cmd) { _bridge._handleAck(cmd); }
-  void handleGetVersion(const rpc_pb_McuFrame& frame) {
-    _bridge._handleGetVersion(frame);
+  void handleGetVersion(const bridge::router::CommandContext& ctx) {
+    _bridge._handleGetVersion(ctx);
   }
   bool sendFrame(rpc::CommandId c, uint16_t seq, etl::span<const uint8_t> p) {
     return _bridge.sendFrame(c, seq, p);
   }
-  void handleDigitalWriteCommand(const rpc_pb_McuFrame& frame) {
-    _bridge._handleDigitalWriteCommand(frame);
+  void handleDigitalWriteCommand(const bridge::router::CommandContext& ctx) {
+    _bridge._handleDigitalWriteCommand(ctx);
   }
   void invokePacketReceived(etl::span<const uint8_t> p) {
     _bridge._onPacketReceived(p);
   }
 
-  void invokeConsolePush(const rpc_pb_ConsoleWrite& cmsg) {
+  void invokeConsolePush(const rpc::payload::ConsoleWrite& cmsg) {
     (void)_bridge.send(rpc::CommandId::CMD_CONSOLE_WRITE, 0, cmsg);
   }
   bool isAwaitingAck() const {
@@ -117,7 +111,7 @@ class TestAccessor {
   }
   void clearSynchronized() { _fsm.receive(bridge::fsm::EvReset()); }
   void onBootloaderDelay() { _bridge._onBootloaderDelay(); }
-  void applyTimingConfig(const rpc_pb_HandshakeConfig& msg) {
+  void applyTimingConfig(const rpc::payload::HandshakeConfig& msg) {
     _bridge._applyTimingConfig(msg);
   }
   void clearSharedSecret() { _bridge._shared_secret.clear(); }

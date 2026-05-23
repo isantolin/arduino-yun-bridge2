@@ -23,63 +23,7 @@ class {{ packet.class_name }}:
         return instance
 
     def encode(self) -> bytes:
-        return cast(bytes, self._msg.SerializeToString())
+        return self._msg.SerializeToString() # type: ignore
 
 {% endfor %}
-
-# --- McuFrame Helper ---
-
-_COMMAND_TO_FIELD: Final[dict[int, str]] = {
-{%- for cmd_id, field_name in command_field_map.items() %}
-    {{ cmd_id }}: "{{ field_name }}",
-{%- endfor %}
-}
-
-_FIELD_TO_CLASS: Final[dict[str, Any]] = {
-{%- for packet in packets %}
-    "{{ packet.class_name.lower().removesuffix('packet') }}": pb.{{ packet.proto_name }},
-{%- endfor %}
-}
-
-def wrap_mcu_frame(command_id: int, seq_id: int, flags: int = 0, payload: Any = None) -> bytes:
-    """Wrap a payload into a Protobuf McuFrame container."""
-    frame = pb.McuFrame()
-    frame.seq_id = seq_id
-    frame.flags = flags
-    if payload is not None:
-        field_name = _COMMAND_TO_FIELD.get(command_id)
-        if field_name:
-            # Handle both wrapped Packet classes and raw Protobuf messages
-            msg = payload._msg if hasattr(payload, "_msg") else payload
-            
-            # If payload is bytes, we MUST decode it to the target class first
-            if isinstance(msg, bytes):
-                target_cls = _FIELD_TO_CLASS.get(field_name)
-                if target_cls:
-                    real_msg = target_cls()
-                    real_msg.ParseFromString(msg)
-                    msg = real_msg
-            
-            if not isinstance(msg, bytes):
-                getattr(frame, field_name).CopyFrom(msg)
-    return cast(bytes, frame.SerializeToString())
-
-def unwrap_mcu_frame(data: bytes) -> tuple[int, int, int, Any]:
-    """Unwrap a Protobuf McuFrame container."""
-    frame = pb.McuFrame()
-    frame.ParseFromString(data)
-    
-    command_id = 0
-    payload = None
-    oneof_field = frame.WhichOneof("message")
-    if oneof_field:
-        # Invert the mapping to find CommandId
-        for cid, field in _COMMAND_TO_FIELD.items():
-            if field == oneof_field:
-                command_id = cid
-                payload = getattr(frame, oneof_field)
-                break
-                
-    return command_id, frame.seq_id, frame.flags, payload
-
 # --- END GENERATED PACKETS ---

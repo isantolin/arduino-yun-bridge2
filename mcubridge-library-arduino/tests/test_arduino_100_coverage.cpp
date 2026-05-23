@@ -70,144 +70,144 @@ void test_bridge_brute_force_commands() {
 
   // GPIO VALID
   hit(rpc::CommandId::CMD_DIGITAL_WRITE, []() {
-    rpc_pb_DigitalWrite p;
-    p.pin = 13;
-    p.value = 1;
+    rpc::payload::DigitalWrite p;
+    p.pb_msg.pin = 13;
+    p.pb_msg.value = 1;
     return p;
   }());
   hit(rpc::CommandId::CMD_ANALOG_WRITE, []() {
-    rpc_pb_AnalogWrite p;
-    p.pin = 9;
-    p.value = 128;
+    rpc::payload::AnalogWrite p;
+    p.pb_msg.pin = 9;
+    p.pb_msg.value = 128;
     return p;
   }());
   hit(rpc::CommandId::CMD_DIGITAL_READ, []() {
-    rpc_pb_PinRead p;
-    p.pin = 13;
+    rpc::payload::PinRead p;
+    p.pb_msg.pin = 13;
     return p;
   }());
   hit(rpc::CommandId::CMD_ANALOG_READ, []() {
-    rpc_pb_PinRead p;
-    p.pin = 14;
+    rpc::payload::PinRead p;
+    p.pb_msg.pin = 14;
     return p;
   }());
 
   // GPIO INVALID
   hit(rpc::CommandId::CMD_DIGITAL_WRITE, []() {
-    rpc_pb_DigitalWrite p;
-    p.pin = 99;
-    p.value = 1;
+    rpc::payload::DigitalWrite p;
+    p.pb_msg.pin = 99;
+    p.pb_msg.value = 1;
     return p;
   }());
   hit(rpc::CommandId::CMD_ANALOG_WRITE, []() {
-    rpc_pb_AnalogWrite p;
-    p.pin = 99;
-    p.value = 128;
+    rpc::payload::AnalogWrite p;
+    p.pb_msg.pin = 99;
+    p.pb_msg.value = 128;
     return p;
   }());
   hit(rpc::CommandId::CMD_DIGITAL_READ, []() {
-    rpc_pb_PinRead p;
-    p.pin = 99;
+    rpc::payload::PinRead p;
+    p.pb_msg.pin = 99;
     return p;
   }());
   hit(rpc::CommandId::CMD_ANALOG_READ, []() {
-    rpc_pb_PinRead p;
-    p.pin = 99;
+    rpc::payload::PinRead p;
+    p.pb_msg.pin = 99;
     return p;
   }());
   hit(rpc::CommandId::CMD_SET_PIN_MODE, []() {
-    rpc_pb_PinMode p;
-    p.pin = 99;
-    p.mode = 1;
+    rpc::payload::PinMode p;
+    p.pb_msg.pin = 99;
+    p.pb_msg.mode = 1;
     return p;
   }());
 
   // DataStore
   uint8_t val[] = "v";
   hit(rpc::CommandId::CMD_DATASTORE_PUT, []() {
-    rpc_pb_DatastorePut p;
-    strncpy(p.key, "k", 32);
+    rpc::payload::DatastorePut p;
+    strncpy(p.pb_msg.key, "k", 32);
     uint8_t v[] = "v";
-    rpc::payload::copy_to_pb_bytes(p.value, v, 1);
+    rpc::payload::copy_to_pb_bytes(p.pb_msg.value, v, 1);
     return p;
   }());
   hit(rpc::CommandId::CMD_DATASTORE_GET, []() {
-    rpc_pb_DatastoreGet p;
-    strncpy(p.key, "k", 32);
+    rpc::payload::DatastoreGet p;
+    strncpy(p.pb_msg.key, "k", 32);
     return p;
   }());
 
   // Mailbox
   hit(rpc::CommandId::CMD_MAILBOX_PUSH, []() {
-    rpc_pb_MailboxPush p;
+    rpc::payload::MailboxPush p;
     uint8_t v[] = "v";
-    rpc::payload::copy_to_pb_bytes(p.data, v, 1);
+    rpc::payload::copy_to_pb_bytes(p.pb_msg.data, v, 1);
     return p;
   }());
 
-  rpc_pb_McuFrame mf1 = rpc_pb_McuFrame_init_default; mf1.which_message = (pb_size_t)rpc::CommandId::CMD_MAILBOX_READ; ba.dispatch(mf1);
-  
-  
+  f.header.command_id = (uint16_t)rpc::CommandId::CMD_MAILBOX_READ;
+  f.header.payload_length = 0;
+  ba.dispatch(f);
 
-  rpc_pb_McuFrame mf2 = rpc_pb_McuFrame_init_default; mf2.which_message = (pb_size_t)rpc::CommandId::CMD_MAILBOX_AVAILABLE; ba.dispatch(mf2);
-  
+  f.header.command_id = (uint16_t)rpc::CommandId::CMD_MAILBOX_AVAILABLE;
+  ba.dispatch(f);
 
   // Process
-  hit(rpc::CommandId::CMD_PROCESS_RUN_RESP, []() {
-    rpc_pb_ProcessRunAsyncResponse p;
-    p.pid = 123;
+  hit(rpc::CommandId::CMD_PROCESS_RUN_ASYNC, []() {
+    rpc::payload::ProcessRunAsync p;
+    strncpy(p.pb_msg.command, "ls", 64);
     return p;
   }());
   hit(rpc::CommandId::CMD_PROCESS_POLL, []() {
-    rpc_pb_ProcessPoll p;
-    p.pid = 123;
+    rpc::payload::ProcessPoll p;
+    p.pb_msg.pid = 123;
     return p;
   }());
   hit(rpc::CommandId::CMD_PROCESS_KILL, []() {
-    rpc_pb_ProcessKill p;
-    p.pid = 123;
+    rpc::payload::ProcessKill p;
+    p.pb_msg.pid = 123;
     return p;
   }());
 
   // SPI
-  rpc_pb_SpiConfig sc;
-  sc.frequency = 4000000;
-  sc.bit_order = 1;
-  sc.data_mode = 0;
+  rpc::payload::SpiConfig sc;
+  sc.pb_msg.frequency = 4000000;
+  sc.pb_msg.bit_order = 1;
+  sc.pb_msg.data_mode = 0;
   hit(rpc::CommandId::CMD_SPI_SET_CONFIG, sc);
 
-  rpc_pb_SpiTransfer st = {};
-  rpc::payload::copy_to_pb_bytes(st.data, val, 1);
+  rpc::payload::SpiTransfer st = {};
+  rpc::payload::copy_to_pb_bytes(st.pb_msg.data, val, 1);
   hit(rpc::CommandId::CMD_SPI_TRANSFER, st);
 
   // FileSystem
-  rpc_pb_FileWrite fw = {};
-  strncpy(fw.path, "t.txt", sizeof(fw.path));
-  rpc::payload::copy_to_pb_bytes(fw.data, val, 1);
+  rpc::payload::FileWrite fw = {};
+  strncpy(fw.pb_msg.path, "t.txt", sizeof(fw.pb_msg.path));
+  rpc::payload::copy_to_pb_bytes(fw.pb_msg.data, val, 1);
   hit(rpc::CommandId::CMD_FILE_WRITE, fw);
 
-  rpc_pb_FileRead fr = {};
-  strncpy(fr.path, "t.txt", sizeof(fr.path));
+  rpc::payload::FileRead fr = {};
+  strncpy(fr.pb_msg.path, "t.txt", sizeof(fr.pb_msg.path));
   hit(rpc::CommandId::CMD_FILE_READ, fr);
 
-  rpc_pb_FileRemove frm = {};
-  strncpy(frm.path, "t.txt", sizeof(frm.path));
+  rpc::payload::FileRemove frm = {};
+  strncpy(frm.pb_msg.path, "t.txt", sizeof(frm.pb_msg.path));
   hit(rpc::CommandId::CMD_FILE_REMOVE, frm);
 
   // Core commands
   hit(rpc::CommandId::CMD_GET_FREE_MEMORY, []() {
-    rpc_pb_FreeMemoryResponse p;
-    p.value = 0;
+    rpc::payload::FreeMemoryResponse p;
+    p.pb_msg.value = 0;
     return p;
   }());
   hit(rpc::CommandId::CMD_GET_VERSION, []() {
-    rpc_pb_VersionResponse p;
-    p.major = 2;
-    p.minor = 8;
-    p.patch = 5;
+    rpc::payload::VersionResponse p;
+    p.pb_msg.major = 2;
+    p.pb_msg.minor = 8;
+    p.pb_msg.patch = 5;
     return p;
   }());
-  hit(rpc::CommandId::CMD_GET_CAPABILITIES, rpc_pb_Capabilities{});
+  hit(rpc::CommandId::CMD_GET_CAPABILITIES, rpc::payload::Capabilities{});
 }
 
 void test_bridge_send_exhaustive() {
@@ -219,60 +219,60 @@ void test_bridge_send_exhaustive() {
   uint8_t data[] = "d";
 
   (void)Bridge.send(
-      rpc::CommandId::CMD_VERSION_RESP, 1, []() {
-        rpc_pb_VersionResponse p;
-        p.major = 1;
-        p.minor = 2;
-        p.patch = 3;
+      rpc::CommandId::CMD_GET_VERSION_RESP, 1, []() {
+        rpc::payload::VersionResponse p;
+        p.pb_msg.major = 1;
+        p.pb_msg.minor = 2;
+        p.pb_msg.patch = 3;
         return p;
       }());
   (void)Bridge.send(
-      rpc::CommandId::CMD_FREE_MEMORY_RESP, 1, []() {
-        rpc_pb_FreeMemoryResponse p;
-        p.value = 1024;
+      rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, 1, []() {
+        rpc::payload::FreeMemoryResponse p;
+        p.pb_msg.value = 1024;
         return p;
       }());
-  (void)Bridge.send(rpc::CommandId::CMD_CAPABILITIES_RESP, 1,
-                    rpc_pb_Capabilities{});
+  (void)Bridge.send(rpc::CommandId::CMD_GET_CAPABILITIES_RESP, 1,
+                    rpc::payload::Capabilities{});
   (void)Bridge.send(
       rpc::CommandId::CMD_DIGITAL_READ_RESP, 1, []() {
-        rpc_pb_DigitalReadResponse p;
-        p.value = 1;
+        rpc::payload::DigitalReadResponse p;
+        p.pb_msg.value = 1;
         return p;
       }());
   (void)Bridge.send(
       rpc::CommandId::CMD_ANALOG_READ_RESP, 1, []() {
-        rpc_pb_AnalogReadResponse p;
-        p.value = 512;
+        rpc::payload::AnalogReadResponse p;
+        p.pb_msg.value = 512;
         return p;
       }());
 
-  rpc_pb_DatastoreGetResponse dgr;
-  rpc::payload::copy_to_pb_bytes(dgr.value, data, 1);
+  rpc::payload::DatastoreGetResponse dgr;
+  rpc::payload::copy_to_pb_bytes(dgr.pb_msg.value, data, 1);
   (void)Bridge.send(rpc::CommandId::CMD_DATASTORE_GET_RESP, 1, dgr);
 
-  rpc_pb_MailboxReadResponse mbr;
-  rpc::payload::copy_to_pb_bytes(mbr.content, data, 1);
+  rpc::payload::MailboxReadResponse mbr;
+  rpc::payload::copy_to_pb_bytes(mbr.pb_msg.content, data, 1);
   (void)Bridge.send(rpc::CommandId::CMD_MAILBOX_READ_RESP, 1, mbr);
 
-  rpc_pb_FileReadResponse frr;
-  rpc::payload::copy_to_pb_bytes(frr.content, data, 1);
+  rpc::payload::FileReadResponse frr;
+  rpc::payload::copy_to_pb_bytes(frr.pb_msg.content, data, 1);
   (void)Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 1, frr);
 
   (void)Bridge.send(
-      rpc::CommandId::CMD_PROCESS_RUN_RESP, 1, []() {
-        rpc_pb_ProcessRunAsyncResponse p;
-        p.pid = 123;
+      rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP, 1, []() {
+        rpc::payload::ProcessRunAsyncResponse p;
+        p.pb_msg.pid = 123;
         return p;
       }());
 
-  rpc_pb_ProcessPollResponse ppr;
-  rpc::payload::copy_to_pb_bytes(ppr.stdout_data, data, 1);
-  rpc::payload::copy_to_pb_bytes(ppr.stderr_data, data, 1);
+  rpc::payload::ProcessPollResponse ppr;
+  rpc::payload::copy_to_pb_bytes(ppr.pb_msg.stdout_data, data, 1);
+  rpc::payload::copy_to_pb_bytes(ppr.pb_msg.stderr_data, data, 1);
   (void)Bridge.send(rpc::CommandId::CMD_PROCESS_POLL_RESP, 1, ppr);
 
-  rpc_pb_SpiTransferResponse strr;
-  rpc::payload::copy_to_pb_bytes(strr.data, data, 1);
+  rpc::payload::SpiTransferResponse strr;
+  rpc::payload::copy_to_pb_bytes(strr.pb_msg.data, data, 1);
   (void)Bridge.send(rpc::CommandId::CMD_SPI_TRANSFER_RESP, 1, strr);
 
   // 1. Hit Queue Full
@@ -299,18 +299,19 @@ void test_console_and_misc() {
   Bridge.signalXon();
 
   rpc::Frame f = {};
-  rpc_pb_McuFrame mf3 = rpc_pb_McuFrame_init_default; mf3.which_message = (pb_size_t)rpc::StatusCode::STATUS_OK; ba.dispatch(mf3);
-  
+  f.header.command_id = (uint16_t)rpc::StatusCode::STATUS_OK;
+  ba.dispatch(f);
 
-  rpc_pb_McuFrame mf4 = rpc_pb_McuFrame_init_default; mf4.which_message = (pb_size_t)rpc::StatusCode::STATUS_MALFORMED; ba.dispatch(mf4);
-  
+  f.header.command_id = (uint16_t)rpc::StatusCode::STATUS_MALFORMED;
+  ba.dispatch(f);
 
   // Decompression MALFORMED
-  rpc_pb_McuFrame mf5 = rpc_pb_McuFrame_init_default; mf5.which_message = (pb_size_t)rpc::CommandId::CMD_CONSOLE_WRITE; ba.dispatch(mf5); //
+  f.header.command_id = (uint16_t)rpc::CommandId::CMD_CONSOLE_WRITE |
+                        rpc::RPC_CMD_FLAG_COMPRESSED;
   uint8_t comp_data[] = {0x03};  // Truncated RLE
   f.payload = etl::span<const uint8_t>(comp_data, 1);
   f.header.payload_length = 1;
-  
+  ba.dispatch(f);
 
   // 4. Trigger etl::handle_error
   etl::exception e("msg", "file", 100);

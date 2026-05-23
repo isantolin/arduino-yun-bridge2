@@ -148,7 +148,7 @@ class BridgeService:
             Command.CMD_FILE_READ.value: self._gen_handler(FileReadPacket, self._on_mcu_file_read),
             Command.CMD_FILE_REMOVE.value: self._gen_handler(FileRemovePacket, self._on_mcu_file_remove),
             Command.CMD_FILE_READ_RESP.value: self._gen_handler(FileReadResponsePacket, self._on_mcu_file_read_resp),
-            Command.CMD_PROCESS_RUN.value: self._gen_handler(ProcessRunAsyncPacket, self._on_mcu_process_run),
+            Command.CMD_PROCESS_RUN_ASYNC.value: self._gen_handler(ProcessRunAsyncPacket, self._on_mcu_process_run),
             Command.CMD_PROCESS_POLL.value: self._gen_handler(ProcessPollPacket, self._on_mcu_process_poll),
             Command.CMD_PROCESS_KILL.value: self._gen_handler(ProcessKillPacket, lambda p: self._stop_process(p.pid)),
             Command.CMD_DIGITAL_READ.value: lambda _, __: self.serial.send(
@@ -164,12 +164,12 @@ class BridgeService:
             Command.CMD_ANALOG_READ_RESP.value: self._gen_handler(
                 AnalogReadResponsePacket, lambda p: self._on_pin_resp(p, Topic.ANALOG, self.state.pending_analog_reads)
             ),
-            Command.CMD_VERSION_RESP.value: self._gen_handler(VersionResponsePacket, self._on_mcu_version_resp),
-            Command.CMD_FREE_MEMORY_RESP.value: self._gen_handler(
+            Command.CMD_GET_VERSION_RESP.value: self._gen_handler(VersionResponsePacket, self._on_mcu_version_resp),
+            Command.CMD_GET_FREE_MEMORY_RESP.value: self._gen_handler(
                 FreeMemoryResponsePacket, self._on_mcu_free_memory_resp
             ),
             Command.CMD_SPI_TRANSFER_RESP.value: self._gen_handler(SpiTransferResponsePacket, self._on_mcu_spi_resp),
-            Command.CMD_CAPABILITIES_RESP.value: self.handshake.handle_capabilities_resp,
+            Command.CMD_GET_CAPABILITIES_RESP.value: self.handshake.handle_capabilities_resp,
             Command.CMD_LINK_SYNC_RESP.value: self.handshake.handle_link_sync_resp,
             Command.CMD_LINK_RESET_RESP.value: self.handshake.handle_link_reset_resp,
             Status.ACK.value: self._on_mcu_ack,
@@ -426,7 +426,7 @@ class BridgeService:
             pid = await self._run_process(p.command)
             if pid:
                 return await self.serial.send(
-                    Command.CMD_PROCESS_RUN_RESP.value,
+                    Command.CMD_PROCESS_RUN_ASYNC_RESP.value,
                     ProcessRunAsyncResponsePacket(pid=pid).encode(),
                 )
         await self.serial.send(Status.ERROR.value, b"Exec failed")

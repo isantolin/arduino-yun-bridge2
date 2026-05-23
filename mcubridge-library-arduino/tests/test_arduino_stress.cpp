@@ -49,11 +49,11 @@ void test_bridge_packet_corruption_chaos() {
 
   // Inyectar ruido asíncrono
   etl::array<uint8_t, 5> noise = {0x00, 0xFF, 0xAA, 0x55, 0x00};
-  ba.dispatch(noise);
+  ba.invokePacketReceived(noise);
 
   // Inyectar frame truncado
   etl::array<uint8_t, 3> truncated = {0x02, 0x01, 0x00};
-  ba.dispatch(truncated);
+  ba.invokePacketReceived(truncated);
 
   TEST_ASSERT_TRUE(true);
 }

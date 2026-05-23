@@ -37,7 +37,7 @@ void test_bridge_protocol_version_mismatch() {
   // Let's call _onPacketReceived instead.
   etl::array<uint8_t, 256> buf;
   size_t len = rpc::FrameParser::serialize(f, buf);
-  ba.dispatch(etl::span<const uint8_t>(buf.data(), len));
+  ba.invokePacketReceived(etl::span<const uint8_t>(buf.data(), len));
 
   // Should have emitted STATUS_MALFORMED
   TEST_ASSERT_EQUAL(0, stream.available());
@@ -87,7 +87,7 @@ void test_bridge_packet_received_edge_cases() {
 
   // 1. Too short packet
   etl::array<uint8_t, 2> short_pkt = {0, 1};
-  ba.dispatch(short_pkt);
+  ba.invokePacketReceived(short_pkt);
 
   // 2. CRC mismatch
   rpc::Frame f = {};
@@ -100,7 +100,7 @@ void test_bridge_packet_received_edge_cases() {
 
   etl::array<uint8_t, 256> buf;
   size_t len = rpc::FrameParser::serialize(f, buf);
-  ba.dispatch(etl::span<const uint8_t>(buf.data(), len));
+  ba.invokePacketReceived(etl::span<const uint8_t>(buf.data(), len));
 
   TEST_ASSERT_TRUE(true);
 }
@@ -136,11 +136,11 @@ void test_bridge_linksync_auth_failure() {
   const char* secret = "secure_secret_1234567890123456";
   Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, secret);
 
-  LinkSync sync_msg = {};
-  memset(sync_msg.nonce.bytes, 0xAA, 16); sync_msg.nonce.size = 16;
-  sync_msg.nonce.size = 16;
-  memset(sync_msg.tag.bytes, 0xFF, 16); sync_msg.tag.size = 16;  // Wrong tag
-  sync_msg.tag.size = 16;
+  rpc::payload::LinkSync sync_msg = {};
+  memset(sync_msg.pb_msg.nonce.bytes, 0xAA, 16); sync_msg.pb_msg.nonce.size = 16;
+  sync_msg.pb_msg.nonce.size = 16;
+  memset(sync_msg.pb_msg.tag.bytes, 0xFF, 16); sync_msg.pb_msg.tag.size = 16;  // Wrong tag
+  sync_msg.pb_msg.tag.size = 16;
 
   rpc::Frame f = {};
   static etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> f_buf;
@@ -184,7 +184,7 @@ void test_bridge_decompress_error() {
 
   etl::array<uint8_t, 256> buf;
   size_t len = rpc::FrameParser::serialize(f, buf);
-  ba.dispatch(etl::span<const uint8_t>(buf.data(), len));
+  ba.invokePacketReceived(etl::span<const uint8_t>(buf.data(), len));
 
   TEST_ASSERT_TRUE(true);
 }
@@ -217,12 +217,12 @@ void test_bridge_nonce_reuse_attack() {
   Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, secret);
 
   // 1. Sync properly
-  LinkSync sync_msg = {};
-  memset(sync_msg.nonce.bytes, 0xAA, 16); sync_msg.nonce.size = 16;
-  sync_msg.nonce.size = 16;
-  ba.computeHandshakeTag(sync_msg.nonce.bytes, 16,
-                         sync_msg.tag.bytes);
-  sync_msg.tag.size = 16;
+  rpc::payload::LinkSync sync_msg = {};
+  memset(sync_msg.pb_msg.nonce.bytes, 0xAA, 16); sync_msg.pb_msg.nonce.size = 16;
+  sync_msg.pb_msg.nonce.size = 16;
+  ba.computeHandshakeTag(sync_msg.pb_msg.nonce.bytes, 16,
+                         sync_msg.pb_msg.tag.bytes);
+  sync_msg.pb_msg.tag.size = 16;
 
   rpc::Frame f = {};
   static etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> f_buf;

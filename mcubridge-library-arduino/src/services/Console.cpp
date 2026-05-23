@@ -13,8 +13,8 @@ void ConsoleClass::begin() {
   _tx_buffer.clear();
 }
 
-void ConsoleClass::_push(const rpc_pb_ConsoleWrite& msg) {
-  const auto& data = msg.data;
+void ConsoleClass::_push(const rpc::payload::ConsoleWrite& msg) {
+  const auto& data = msg.pb_msg.data;
   const size_t to_write = etl::min(static_cast<size_t>(data.size), _rx_buffer.available());
   for (size_t i = 0; i < to_write; ++i) {
     _rx_buffer.push(data.bytes[i]);
@@ -23,8 +23,8 @@ void ConsoleClass::_push(const rpc_pb_ConsoleWrite& msg) {
 
 void ConsoleClass::process() {
   if (!_tx_buffer.empty()) {
-    rpc_pb_ConsoleWrite p;
-    rpc::payload::copy_to_pb_bytes(p.data, _tx_buffer.data(),
+    rpc::payload::ConsoleWrite p;
+    rpc::payload::copy_to_pb_bytes(p.pb_msg.data, _tx_buffer.data(),
                                    _tx_buffer.size());
     if (Bridge.send(rpc::CommandId::CMD_CONSOLE_WRITE, 0, p)) {
       _tx_buffer.clear();

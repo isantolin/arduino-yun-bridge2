@@ -19,9 +19,6 @@
 
 namespace rpc::payload {
 
-/**
- * @brief Safely copy a buffer into a Nanopb bytes field.
- */
 template <typename PbBytesArray>
 inline void copy_to_pb_bytes(PbBytesArray& dest, const uint8_t* src, size_t src_size) {
     constexpr size_t dest_size = sizeof(dest.bytes) / sizeof(dest.bytes[0]);
@@ -32,9 +29,6 @@ inline void copy_to_pb_bytes(PbBytesArray& dest, const uint8_t* src, size_t src_
     }
 }
 
-/**
- * @brief Safely copy a string into a Nanopb string (char array) field.
- */
 template <typename PbStringArray>
 inline void copy_to_pb_string(PbStringArray& dest, etl::string_view src) {
     constexpr size_t dest_size = sizeof(dest) / sizeof(dest[0]);
@@ -46,26 +40,32 @@ inline void copy_to_pb_string(PbStringArray& dest, etl::string_view src) {
 }
 
 {% for s in structs %}
-using {{ s.name }} = rpc_pb_{{ s.name }};
+struct {{ s.name }} {
+    rpc_pb_{{ s.name }} pb_msg = rpc_pb_{{ s.name }}_init_default;
+
+    bool encode(pb_ostream_t* stream) const {
+        return pb_encode(stream, rpc_pb_{{ s.name }}_fields, &pb_msg);
+    }
+
+    bool decode(pb_istream_t* stream) {
+        return pb_decode(stream, rpc_pb_{{ s.name }}_fields, &pb_msg);
+    }
+};
 {% endfor %}
 
 } // namespace rpc::payload
 
 namespace rpc::Payload {
 
-/**
- * @brief Helper trait to get Nanopb fields and init values for a type.
- */
 template <typename T>
-struct Traits;
-
-{% for s in structs %}
-template <>
-struct Traits<rpc_pb_{{ s.name }}> {
-    static constexpr const pb_msgdesc_t* fields = rpc_pb_{{ s.name }}_fields;
-    static constexpr rpc_pb_{{ s.name }} init_default = rpc_pb_{{ s.name }}_init_default;
-};
-{% endfor %}
+inline etl::expected<T, rpc::FrameError> parse(const rpc::Frame& frame) {
+    T msg = {};
+    pb_istream_t stream = pb_istream_from_buffer(frame.payload.data(), frame.header.payload_length);
+    if (!msg.decode(&stream)) {
+        return etl::unexpected<rpc::FrameError>(rpc::FrameError::MALFORMED);
+    }
+    return etl::expected<T, rpc::FrameError>(msg);
+}
 
 } // namespace rpc::Payload
 

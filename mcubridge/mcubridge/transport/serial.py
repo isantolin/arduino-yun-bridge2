@@ -33,7 +33,7 @@ from mcubridge.config.const import (
     SERIAL_SUCCESS_STATUS_CODES,
     SERIAL_MIN_ACK_TIMEOUT,
 )
-from mcubridge.protocol import protocol, structures
+from mcubridge.protocol import protocol
 from mcubridge.protocol.frame import Frame
 from mcubridge.protocol.protocol import (
     ACK_ONLY_COMMANDS,
@@ -234,19 +234,7 @@ class SerialTransport:
         try:
             decoded = cobs.decode(packet_bytes)
             frame = Frame.parse(decoded, self.state.link_session_key if self.state.is_synchronized else None)
-
-            # [Proto-First] Unwrap the McuFrame container
-            cmd_id, seq_id, _, pb_msg = structures.unwrap_mcu_frame(frame.payload)
-            if seq_id == 0:
-                seq_id = frame.sequence_id
-
-            # Payload for existing handlers
-            payload = (
-                pb_msg.SerializeToString()
-                if pb_msg is not None and hasattr(pb_msg, "SerializeToString")
-                else frame.payload
-            )
-
+            cmd_id, seq_id, payload = frame.command_id, frame.sequence_id, frame.payload
             is_excluded = (
                 protocol.STATUS_CODE_MIN <= cmd_id <= protocol.STATUS_CODE_MAX
                 or protocol.SYSTEM_COMMAND_MIN <= cmd_id <= protocol.SYSTEM_COMMAND_MAX
@@ -450,12 +438,7 @@ class SerialTransport:
             nonce, new_counter = generate_nonce_with_counter(self.state.link_nonce_counter)
             self.state.link_nonce_counter = new_counter
 
-        # [Proto-First] Wrap binary payload in McuFrame container
-        # Note: if payload is already Protobuf-serialized McuFrame (unlikely here),
-        # it will be wrapped again unless we check.
-        pb_payload = structures.wrap_mcu_frame(command_id, seq_id, payload=payload)
-
-        frame = Frame(command_id=command_id, sequence_id=seq_id, payload=pb_payload, nonce=nonce)
+        frame = Frame(command_id=command_id, sequence_id=seq_id, payload=payload, nonce=nonce)
         encoded = (
             cobs.encode(frame.build(self.state.link_session_key if self.state.is_synchronized else None))
             + protocol.FRAME_DELIMITER

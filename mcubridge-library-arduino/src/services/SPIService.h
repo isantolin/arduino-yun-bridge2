@@ -18,7 +18,7 @@ public:
 
   void begin();
   void end();
-  void setConfig(const rpc_pb_SpiConfig& config);
+  void setConfig(const rpc::payload::SpiConfig& config);
   size_t transfer(etl::span<uint8_t> buffer);
 
   void notification(MsgBridgeSynchronized) override {}

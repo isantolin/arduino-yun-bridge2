@@ -22,7 +22,7 @@ class DataStoreClass : public BridgeObserver {
   static void set(etl::string_view key, etl::span<const uint8_t> value);
   void get(etl::string_view key, GetHandler handler);
 
-  void _onResponse(const rpc_pb_DatastoreGetResponse& msg);
+  void _onResponse(const rpc::payload::DatastoreGetResponse& msg);
 
   void notification(MsgBridgeSynchronized) override { /* ready */ }
   void notification(MsgBridgeLost) override { _pending_gets.clear(); }

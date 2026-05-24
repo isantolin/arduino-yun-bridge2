@@ -29,7 +29,8 @@ namespace security {
 
 namespace {
 
-int aead_kat_encrypt(etl::span<const uint8_t> key, etl::span<const uint8_t> nonce,
+int aead_kat_encrypt(etl::span<const uint8_t> key,
+                     etl::span<const uint8_t> nonce,
                      etl::span<const uint8_t> ad, etl::span<const uint8_t> in,
                      etl::span<uint8_t> out, etl::span<uint8_t> tag) {
 #if defined(BRIDGE_HOST_TEST) && defined(BRIDGE_FAULT_INJECTION)
@@ -38,10 +39,9 @@ int aead_kat_encrypt(etl::span<const uint8_t> key, etl::span<const uint8_t> nonc
     return -1;
   }
 #endif
-  return wc_ChaCha20Poly1305_Encrypt(key.data(), nonce.data(), ad.data(),
-                                     static_cast<word32>(ad.size()), in.data(),
-                                     static_cast<word32>(in.size()), out.data(),
-                                     tag.data());
+  return wc_ChaCha20Poly1305_Encrypt(
+      key.data(), nonce.data(), ad.data(), static_cast<word32>(ad.size()),
+      in.data(), static_cast<word32>(in.size()), out.data(), tag.data());
 }
 
 }  // namespace
@@ -59,7 +59,8 @@ void hkdf_sha256(etl::span<uint8_t> out, etl::span<const uint8_t> key,
 bool aead_encrypt(etl::span<uint8_t> out, etl::span<uint8_t> tag,
                   etl::span<const uint8_t> in, etl::span<const uint8_t> key,
                   etl::span<const uint8_t> nonce, etl::span<const uint8_t> ad) {
-  if (out.size() < in.size() || tag.size() < rpc::RPC_AEAD_TAG_SIZE || key.size() < rpc::RPC_AEAD_KEY_SIZE ||
+  if (out.size() < in.size() || tag.size() < rpc::RPC_AEAD_TAG_SIZE ||
+      key.size() < rpc::RPC_AEAD_KEY_SIZE ||
       nonce.size() < rpc::RPC_AEAD_NONCE_SIZE)
     return false;
 
@@ -72,7 +73,8 @@ bool aead_encrypt(etl::span<uint8_t> out, etl::span<uint8_t> tag,
 bool aead_decrypt(etl::span<uint8_t> out, etl::span<const uint8_t> in,
                   etl::span<const uint8_t> tag, etl::span<const uint8_t> key,
                   etl::span<const uint8_t> nonce, etl::span<const uint8_t> ad) {
-  if (out.size() < in.size() || tag.size() < rpc::RPC_AEAD_TAG_SIZE || key.size() < rpc::RPC_AEAD_KEY_SIZE ||
+  if (out.size() < in.size() || tag.size() < rpc::RPC_AEAD_TAG_SIZE ||
+      key.size() < rpc::RPC_AEAD_KEY_SIZE ||
       nonce.size() < rpc::RPC_AEAD_NONCE_SIZE)
     return false;
 
@@ -87,7 +89,8 @@ bool handshake_authenticate_raw(const uint8_t* secret, size_t secret_len,
                                 const uint8_t* received_tag, size_t tag_len,
                                 uint8_t* out_tag) {
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH> handshake_key;
-  hkdf_sha256(etl::span<uint8_t>(handshake_key), etl::span<const uint8_t>(secret, secret_len),
+  hkdf_sha256(etl::span<uint8_t>(handshake_key),
+              etl::span<const uint8_t>(secret, secret_len),
               etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_SALT),
               etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH));
 
@@ -109,17 +112,17 @@ bool handshake_authenticate_raw(const uint8_t* secret, size_t secret_len,
 }
 
 void derive_session_key_raw(const uint8_t* secret, size_t secret_len,
-                             const uint8_t* nonce, size_t nonce_len,
-                             uint8_t* out_key) {
-  hkdf_sha256(etl::span<uint8_t>(out_key, 32), etl::span<const uint8_t>(secret, secret_len),
+                            const uint8_t* nonce, size_t nonce_len,
+                            uint8_t* out_key) {
+  hkdf_sha256(etl::span<uint8_t>(out_key, 32),
+              etl::span<const uint8_t>(secret, secret_len),
               etl::span<const uint8_t>(nonce, nonce_len),
               etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_INFO_SESSION));
 }
 
-bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id, 
+bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
                         etl::span<const uint8_t> in,
-                        etl::span<const uint8_t> key,
-                        uint64_t& nonce_counter,
+                        etl::span<const uint8_t> key, uint64_t& nonce_counter,
                         etl::span<uint8_t> out_payload,
                         etl::span<uint8_t> out_nonce,
                         etl::span<uint8_t> out_tag) {
@@ -130,14 +133,18 @@ bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
   etl::byte_stream_writer n_writer(out_nonce.data() + 4, 8, etl::endian::big);
   n_writer.write<uint64_t>(nonce_counter);
 
-  etl::array<uint8_t, 5> ad;
-  ad[0] = rpc::PROTOCOL_VERSION;
-  ad[1] = static_cast<uint8_t>(cmd_id & 0xFF);
-  ad[2] = static_cast<uint8_t>(cmd_id >> 8);
-  ad[3] = static_cast<uint8_t>(seq_id & 0xFF);
-  ad[4] = static_cast<uint8_t>(seq_id >> 8);
+  payload::RpcEnvelope aad_env;
+  aad_env.pb_msg.version = rpc::PROTOCOL_VERSION;
+  aad_env.pb_msg.command_id = cmd_id;
+  aad_env.pb_msg.sequence_id = seq_id;
 
-  return aead_encrypt(out_payload, out_tag, in, key, out_nonce, ad);
+  etl::array<uint8_t, 32> ad;
+  pb_ostream_t stream = pb_ostream_from_buffer(ad.data(), ad.size());
+  (void)aad_env.encode(&stream);
+
+  return aead_encrypt(
+      out_payload, out_tag, in, key, out_nonce,
+      etl::span<const uint8_t>(ad.data(), stream.bytes_written));
 }
 
 bool aead_decrypt_frame(uint16_t cmd_id, uint16_t seq_id,
@@ -146,17 +153,22 @@ bool aead_decrypt_frame(uint16_t cmd_id, uint16_t seq_id,
                         etl::span<const uint8_t> key,
                         etl::span<const uint8_t> nonce,
                         etl::span<uint8_t> out_payload) {
-  etl::array<uint8_t, 5> ad;
-  ad[0] = rpc::PROTOCOL_VERSION;
-  ad[1] = static_cast<uint8_t>(cmd_id & 0xFF);
-  ad[2] = static_cast<uint8_t>(cmd_id >> 8);
-  ad[3] = static_cast<uint8_t>(seq_id & 0xFF);
-  ad[4] = static_cast<uint8_t>(seq_id >> 8);
+  payload::RpcEnvelope aad_env;
+  aad_env.pb_msg.version = rpc::PROTOCOL_VERSION;
+  aad_env.pb_msg.command_id = cmd_id;
+  aad_env.pb_msg.sequence_id = seq_id;
 
-  return aead_decrypt(out_payload, in, tag, key, nonce, ad);
+  etl::array<uint8_t, 32> ad;
+  pb_ostream_t stream = pb_ostream_from_buffer(ad.data(), ad.size());
+  (void)aad_env.encode(&stream);
+
+  return aead_decrypt(
+      out_payload, in, tag, key, nonce,
+      etl::span<const uint8_t>(ad.data(), stream.bytes_written));
 }
 
-bool validate_frame_nonce(etl::span<const uint8_t> nonce, uint64_t& last_seen_counter) {
+bool validate_frame_nonce(etl::span<const uint8_t> nonce,
+                          uint64_t& last_seen_counter) {
   if (nonce.size() < 12) return false;
   uint64_t counter = 0;
   etl::byte_stream_reader n_reader(nonce.data() + 4, 8, etl::endian::big);
@@ -189,8 +201,8 @@ static constexpr etl::array<uint8_t, 3> kat_hmac_key PROGMEM = {
     {'k', 'e', 'y'}};
 static constexpr etl::array<uint8_t, 43> kat_hmac_data PROGMEM = {
     {'T', 'h', 'e', ' ', 'q', 'u', 'i', 'k', ' ', 'b', 'r', 'o', 'w', 'n',
-     ' ', 'f', 'o', 'x', ' ', 'j', 'u', 'm', 'p', 's', ' ', 'o', 'v', 'e', 'r',
-     ' ', 't', 'h', 'e', ' ', 'l', 'a', 'z', 'y', ' ', 'd', 'o', 'g'}};
+     ' ', 'f', 'o', 'x', ' ', 'j', 'u', 'm', 'p', 's', ' ', 'o', 'v', 'e',
+     'r', ' ', 't', 'h', 'e', ' ', 'l', 'a', 'z', 'y', ' ', 'd', 'o', 'g'}};
 static constexpr etl::array<uint8_t, 32> kat_hmac_expected PROGMEM = {
     {0xF7, 0xBC, 0x83, 0xF4, 0x30, 0x53, 0x84, 0x24, 0xB1, 0x32, 0x98,
      0xE6, 0xAA, 0x6F, 0xB1, 0x43, 0xEF, 0x4D, 0x59, 0xA1, 0x49, 0x46,
@@ -247,13 +259,13 @@ bool run_cryptographic_self_tests() {
 
   etl::array<uint8_t, 16> aead_tag_actual;
   etl::array<uint8_t, 4> aead_out;
-  if (aead_kat_encrypt(etl::span<const uint8_t>(kat_aead_key),
-                       etl::span<const uint8_t>(kat_aead_nonce),
-                       etl::span<const uint8_t>(kat_aead_ad),
-                       etl::span<const uint8_t>(
-                           reinterpret_cast<const uint8_t*>("test"), 4),
-                       etl::span<uint8_t>(aead_out),
-                       etl::span<uint8_t>(aead_tag_actual)) != 0)
+  if (aead_kat_encrypt(
+          etl::span<const uint8_t>(kat_aead_key),
+          etl::span<const uint8_t>(kat_aead_nonce),
+          etl::span<const uint8_t>(kat_aead_ad),
+          etl::span<const uint8_t>(reinterpret_cast<const uint8_t*>("test"), 4),
+          etl::span<uint8_t>(aead_out),
+          etl::span<uint8_t>(aead_tag_actual)) != 0)
     return false;
 
   return etl::equal(aead_tag_actual.begin(), aead_tag_actual.end(),

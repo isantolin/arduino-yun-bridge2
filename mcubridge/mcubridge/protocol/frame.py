@@ -46,7 +46,6 @@ class Frame(msgspec.Struct, frozen=True):
     payload: bytes = b""
     nonce: bytes = b"\x00" * _NONCE_SIZE
     tag: bytes = b"\x00" * _TAG_SIZE
-    header_bytes: bytes | None = None
 
     def __iter__(self):
         """Allow unpacking: cmd, seq, payload = frame."""
@@ -98,16 +97,17 @@ class Frame(msgspec.Struct, frozen=True):
         )
 
         if session_key and not is_excluded:
-            # We encrypt the encoded envelope? No, we encrypt only the internal payload
-            # for compatibility with MCU side (which might want to see the header unencrypted).
-            # But the requirement is ID 3: Everything in the envelope.
-            # Let's keep internal payload encryption for now but wrap it in the envelope.
+            # [SIL-2] Use Protobuf RpcEnvelope as AAD instead of manual struct.pack
+            header_aad = pb.RpcEnvelope(
+                version=protocol.PROTOCOL_VERSION,
+                command_id=cmd_id,
+                sequence_id=self.sequence_id,
+            ).SerializeToString()
             inner_payload, tag = aead_encrypt(
                 payload,
                 session_key,
                 self.nonce,
-                # AEAD additional data: version + cmd + seq
-                struct.pack("<BHH", protocol.PROTOCOL_VERSION, cmd_id, self.sequence_id),
+                header_aad,
             )
             envelope.payload = inner_payload
             envelope.tag = tag
@@ -152,7 +152,11 @@ class Frame(msgspec.Struct, frozen=True):
         )
 
         if session_key and not is_excluded:
-            header_aad = struct.pack("<BHH", envelope.version, cmd_id, envelope.sequence_id)
+            header_aad = pb.RpcEnvelope(
+                version=envelope.version,
+                command_id=cmd_id,
+                sequence_id=envelope.sequence_id,
+            ).SerializeToString()
             payload = aead_decrypt(payload, tag, session_key, nonce, header_aad)
 
         if cmd_id & protocol.CMD_FLAG_COMPRESSED:
@@ -168,5 +172,4 @@ class Frame(msgspec.Struct, frozen=True):
             payload=payload,
             nonce=nonce,
             tag=tag,
-            header_bytes=bytes(body[:7]),  # Keep for legacy compatibility if needed
         )

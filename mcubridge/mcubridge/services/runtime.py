@@ -167,7 +167,7 @@ class BridgeService:
 
     # --- External Interface ---
 
-    def register_serial_sender(self, sender: Callable[[int, bytes], Awaitable[bool]]) -> None:
+    def register_serial_sender(self, sender: Callable[[int, bytes, int | None], Awaitable[bool]]) -> None:
         self._serial_sender = sender
 
     def set_mqtt_client(self, client: aiomqtt.Client | None) -> None:
@@ -244,13 +244,13 @@ class BridgeService:
 
     # --- Dispatchers ---
 
-    async def handle_mcu_frame(self, cmd_id: int, seq_id: int, payload: bytes) -> None:
-        if not (self.state.is_synchronized or cmd_id in _STATUS_VALUES or cmd_id in _PRE_SYNC_ALLOWED_COMMANDS):
+    async def handle_mcu_frame(self, command_id: int, sequence_id: int, payload: bytes) -> None:
+        if not (self.state.is_synchronized or command_id in _STATUS_VALUES or command_id in _PRE_SYNC_ALLOWED_COMMANDS):
             return
-        if handler := self.mcu_registry.get(cmd_id):
-            if await handler(seq_id, payload) is not False and cmd_id not in _STATUS_VALUES:
-                await self.serial.acknowledge(cmd_id, seq_id)
-        elif response_to_request(cmd_id) is None:
+        if handler := self.mcu_registry.get(command_id):
+            if await handler(sequence_id, payload) is not False and command_id not in _STATUS_VALUES:
+                await self.serial.acknowledge(command_id, sequence_id)
+        elif response_to_request(command_id) is None:
             self.state.metrics.unknown_command_count.inc()
             await self.serial.send(Status.NOT_IMPLEMENTED.value, b"")
 

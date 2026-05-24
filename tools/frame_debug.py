@@ -45,7 +45,7 @@ class FrameDebugSnapshot:
         )
 
 
-def _resolve_command(cmd_str: str) -> int:
+def resolve_command(cmd_str: str) -> int:
     if not cmd_str:
         raise ValueError("command may not be empty")
     try:
@@ -64,7 +64,7 @@ def _resolve_command(cmd_str: str) -> int:
                 raise ValueError(f"Unknown command identifier: {cmd_str}")
 
 
-def _parse_payload(payload_str: str | None) -> bytes:
+def parse_payload(payload_str: str | None) -> bytes:
     if not payload_str:
         return b""
     try:
@@ -77,7 +77,7 @@ def _parse_payload(payload_str: str | None) -> bytes:
         raise ValueError(f"Invalid hex payload: {exc}")
 
 
-def _name_for_command(command_id: int) -> str:
+def name_for_command(command_id: int) -> str:
     for enum_cls in (protocol.Command, protocol.Status):
         try:
             return enum_cls(command_id).name
@@ -99,7 +99,7 @@ def build_snapshot(command_id: int, payload: bytes) -> FrameDebugSnapshot:
     encoded_packet = encoded_body + FRAME_DELIMITER
     return FrameDebugSnapshot(
         command_id=command_id,
-        command_name=_name_for_command(command_id),
+        command_name=name_for_command(command_id),
         payload_length=len(payload),
         crc=crc,
         raw_length=len(raw_frame),
@@ -198,8 +198,8 @@ def main_cmd(argv: list[str] | None = None) -> None:
     read_response: bool = args.read_response
     read_timeout: float = args.read_timeout
     try:
-        cmd_id = _resolve_command(command)
-        payload_bytes = _parse_payload(payload)
+        cmd_id = resolve_command(command)
+        payload_bytes = parse_payload(payload)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         raise SystemExit(2)

@@ -18,6 +18,7 @@ from binascii import crc32
 
 import msgspec
 
+from google.protobuf.message import DecodeError
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.security.security import aead_decrypt, aead_encrypt
 
@@ -136,7 +137,7 @@ class Frame(msgspec.Struct, frozen=True):
         envelope = pb.RpcEnvelope()
         try:
             envelope.ParseFromString(body)
-        except Exception as e:
+        except DecodeError as e:
             raise ValueError(f"Failed to parse Protobuf envelope: {e}") from e
         if envelope.version != protocol.PROTOCOL_VERSION:
             raise ValueError("Invalid protocol version")

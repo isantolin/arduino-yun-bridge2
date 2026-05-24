@@ -88,10 +88,7 @@ def pytest_pyfunc_call(pyfuncitem: pytest.Function) -> bool | None:
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
-        kwargs = {
-            name: pyfuncitem.funcargs[name]
-            for name in pyfuncitem._fixtureinfo.argnames  # type: ignore[reportPrivateUsage]
-        }
+        kwargs = {name: pyfuncitem.funcargs[name] for name in getattr(pyfuncitem, "_fixtureinfo").argnames}
         loop.run_until_complete(test_function(**kwargs))
     finally:
         try:
@@ -145,7 +142,7 @@ mcubridge.config.const.VOLATILE_STORAGE_PATHS = frozenset(
 
 
 @pytest.fixture(autouse=True)
-def _isolate_test_paths() -> Iterator[None]:  # type: ignore[reportUnusedFunction]
+def isolate_test_paths() -> Iterator[None]:
     """Give each test unique file_system_root and mqtt_spool_dir to prevent cross-test interference.
     [SIL-2] FLASH PROTECTION: Always use /tmp (RAMFS) or verified .tmp_tests.
     """
@@ -209,7 +206,7 @@ def isolate_persistent_runtime_paths() -> Iterator[None]:
 
 
 @pytest.fixture(autouse=True)
-def _default_serial_secret(monkeypatch: pytest.MonkeyPatch) -> None:  # type: ignore[reportUnusedFunction]
+def default_serial_secret(monkeypatch: pytest.MonkeyPatch) -> None:
     """Ensure load_runtime_config() sees a secure serial secret by default.
 
     Settings are UCI-only, so we inject a deterministic UCI payload for tests.

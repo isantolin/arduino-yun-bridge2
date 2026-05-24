@@ -206,7 +206,7 @@ class BridgeDaemon:
             async with self.service, asyncio.TaskGroup() as tg:
                 # 1. Serial Link (Critical)
                 tg.create_task(
-                    self._supervise(
+                    self.supervise(
                         "serial-link",
                         self.serial_transport.run,
                         (SerialHandshakeFatal,),
@@ -215,7 +215,7 @@ class BridgeDaemon:
 
                 # 2. MQTT Link
                 tg.create_task(
-                    self._supervise(
+                    self.supervise(
                         "mqtt-link",
                         self._mqtt_run,
                     )
@@ -223,13 +223,13 @@ class BridgeDaemon:
 
                 # 3. Status & Metrics (Periodic)
                 tg.create_task(
-                    self._supervise(
+                    self.supervise(
                         "status-writer",
                         lambda: status_writer(self.state, self.config.status_interval),
                     )
                 )
                 tg.create_task(
-                    self._supervise(
+                    self.supervise(
                         "metrics-publisher",
                         lambda: publish_metrics(
                             self.state,
@@ -242,7 +242,7 @@ class BridgeDaemon:
                 # 4. Optional Features
                 if self.config.bridge_summary_interval > 0.0 or self.config.bridge_handshake_interval > 0.0:
                     tg.create_task(
-                        self._supervise(
+                        self.supervise(
                             "bridge-snapshots",
                             lambda: publish_bridge_snapshots(
                                 self.state,
@@ -255,7 +255,7 @@ class BridgeDaemon:
 
                 if self.config.watchdog_enabled:
                     self.watchdog = WatchdogKeepalive(interval=self.config.watchdog_interval, state=self.state)
-                    tg.create_task(self._supervise("watchdog", self.watchdog.run))
+                    tg.create_task(self.supervise("watchdog", self.watchdog.run))
 
                 if self.config.metrics_enabled:
                     self.exporter = PrometheusExporter(
@@ -263,7 +263,7 @@ class BridgeDaemon:
                         self.config.metrics_host,
                         self.config.metrics_port,
                     )
-                    tg.create_task(self._supervise("prometheus-exporter", self.exporter.run))
+                    tg.create_task(self.supervise("prometheus-exporter", self.exporter.run))
 
         except* asyncio.CancelledError:
             log.info("Daemon shutdown initiated (Cancelled).")
@@ -287,7 +287,7 @@ class BridgeDaemon:
             STATUS_FILE.unlink(missing_ok=True)
             log.info("MCU Bridge daemon stopped.")
 
-    async def _supervise(
+    async def supervise(
         self,
         name: str,
         factory: Callable[[], Awaitable[None]],

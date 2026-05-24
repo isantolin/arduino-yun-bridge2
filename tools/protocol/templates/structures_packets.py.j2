@@ -23,7 +23,7 @@ class {{ packet.class_name }}:
         return instance
 
     def encode(self) -> bytes:
-        return self._msg.SerializeToString() # type: ignore
+        return self._msg.SerializeToString()
 
 {% endfor %}
 # --- END GENERATED PACKETS ---

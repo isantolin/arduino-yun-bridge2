@@ -61,7 +61,7 @@ if MISSING_DEPS or not HAS_PROTOC:
 if TYPE_CHECKING:
     from mcubridge.protocol.spec_model import ProtocolSpec
 else:
-    _SPEC_MODEL_PATH = REPO_ROOT / "mcubridge" / "mcubridge" / "protocol" / "spec_model.py"  # noqa: W503
+    _SPEC_MODEL_PATH = REPO_ROOT / "mcubridge" / "mcubridge" / "protocol" / "spec_model.py"
     _loader_spec = importlib.util.spec_from_file_location("spec_model", str(_SPEC_MODEL_PATH))
     assert _loader_spec is not None and _loader_spec.loader is not None
     _spec_mod = importlib.util.module_from_spec(_loader_spec)

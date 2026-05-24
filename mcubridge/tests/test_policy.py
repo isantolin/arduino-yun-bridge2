@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import cast, Any
 import pytest
 from mcubridge.policy import AllowedCommandPolicy, TopicAuthorization
 from mcubridge.protocol.topics import Topic
@@ -109,7 +110,7 @@ class TestTopicAuthorization:
         ],
     )
     def test_console_and_pin_toggles_respected(self, kwargs: dict[str, bool], topic: str, action: str) -> None:
-        policy = TopicAuthorization(**kwargs)  # type: ignore[reportArgumentType]
+        policy = TopicAuthorization(**cast(dict[str, Any], kwargs))
         assert policy.allows(topic, action) is False
 
     def test_case_insensitivity(self) -> None:

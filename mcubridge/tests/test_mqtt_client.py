@@ -1,3 +1,4 @@
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -15,9 +16,12 @@ async def test_aiomqtt_context_manager_mocking():
     # Setup the __aenter__ to return the mock instance itself
     mock_client_instance.__aenter__.return_value = mock_client_instance
 
-    async with mock_client_instance as client:  # type: ignore[reportUnknownVariableType]
+    from typing import cast
+
+    client: Client
+    async with cast(Client, mock_client_instance) as client:
         assert client is mock_client_instance
-        await client.publish("test/topic", b"payload")  # type: ignore[reportUnknownMemberType]
+        await client.publish("test/topic", b"payload")
 
     mock_client_instance.publish.assert_awaited_once_with(
         "test/topic",
@@ -46,10 +50,10 @@ async def test_aiomqtt_messages_iterator_mocking():
 
     mock_messages.__aiter__.side_effect = msg_gen
 
-    received = []
+    received: list[Any] = []
     async for msg in mock_client.messages:
-        received.append(msg)  # type: ignore[reportUnknownMemberType]
+        received.append(msg)
 
-    assert len(received) == 1  # type: ignore[reportUnknownArgumentType]
-    assert received[0].topic == "test/in"  # type: ignore[reportUnknownMemberType]
-    assert received[0].payload == b"123"  # type: ignore[reportUnknownMemberType]
+    assert len(received) == 1
+    assert received[0].topic == "test/in"
+    assert received[0].payload == b"123"

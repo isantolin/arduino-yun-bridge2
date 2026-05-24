@@ -291,12 +291,12 @@ class PrometheusExporter:
         from prometheus_client import CONTENT_TYPE_LATEST, ProcessCollector, generate_latest
         from wsgiref.simple_server import make_server
 
-        self._state = state
+        self._state: RuntimeState | None = state
         self._host = host if host else "0.0.0.0"
         self._port = port
         self._registry = state.metrics.registry
         self._server: Any = None
-        self._collector = RuntimeStateCollector(state)
+        self._collector: RuntimeStateCollector | None = RuntimeStateCollector(state)
 
         # [SIL-2 / Library-First] Use native ProcessCollector to get CPU/RAM/FDs for free
         ProcessCollector(registry=self._registry)
@@ -373,8 +373,8 @@ class PrometheusExporter:
                 self._server.server_close()
 
             # Help GC by clearing references
-            self._state = None  # type: ignore
-            self._collector = None  # type: ignore
+            self._state = None
+            self._collector = None
             self._server = None
             log.info("Prometheus exporter stopped")
 

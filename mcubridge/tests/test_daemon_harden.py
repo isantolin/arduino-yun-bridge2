@@ -55,7 +55,7 @@ async def test_supervisor_circuit_breaker(daemon_setup: BridgeDaemon) -> None:
 
     # The supervisor trips and re-raises the last exception
     with pytest.raises(RuntimeError, match="Persistent failure"):
-        await daemon._supervise(
+        await daemon.supervise(
             "test-task",
             failing_factory,
             min_backoff=0.01,
@@ -76,7 +76,7 @@ async def test_supervisor_fatal_exception(daemon_setup: BridgeDaemon) -> None:
         raise SerialHandshakeFatal("MCU Rejected Secret")
 
     with pytest.raises(SerialHandshakeFatal):
-        await daemon._supervise("critical-task", fatal_factory, fatal_exceptions=(SerialHandshakeFatal,))
+        await daemon.supervise("critical-task", fatal_factory, fatal_exceptions=(SerialHandshakeFatal,))
 
 
 def test_app_cli_overrides() -> None:

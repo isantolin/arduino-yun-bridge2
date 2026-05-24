@@ -365,7 +365,8 @@ class SerialTransport:
                         except TimeoutError:
                             raise self._RetryableSerialError()
                         raise self._RetryableSerialError()
-            except Exception:
+            except Exception as exc:
+                logger.error("Send and wait payload failed: %s", exc)
                 return None
             finally:
                 self._current = None
@@ -426,7 +427,8 @@ class SerialTransport:
             if self._negotiation_future:
                 await asyncio.wait_for(self._negotiation_future, timeout=SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT)
             return True
-        except Exception:
+        except Exception as exc:
+            logger.error("Baudrate negotiation failed: %s", exc)
             return False
         finally:
             self._negotiating = False

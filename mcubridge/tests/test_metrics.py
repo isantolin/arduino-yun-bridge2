@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -40,10 +41,13 @@ async def test_publish_metrics_publishes_snapshot(
 
     runtime_state.mqtt_topic_prefix = "test/prefix"
 
+    def mock_build_metrics(self: Any) -> Any:
+        return fake_snapshot
+
     with patch.object(
         RuntimeState,
         "build_metrics_snapshot",
-        side_effect=lambda self: fake_snapshot,  # type: ignore[reportUnknownLambdaType]
+        side_effect=mock_build_metrics,
         autospec=True,
     ):
         task = asyncio.create_task(
@@ -84,13 +88,16 @@ async def test_publish_metrics_marks_unknown_spool_reason(
         captured["message"] = message
         event.set()
 
+    def mock_build_metrics_degraded(self: Any) -> Any:
+        return {
+            "mqtt_spool_degraded": True,
+            "watchdog_enabled": False,
+        }
+
     with patch.object(
         RuntimeState,
         "build_metrics_snapshot",
-        side_effect=lambda self: {  # type: ignore[reportUnknownLambdaType]
-            "mqtt_spool_degraded": True,
-            "watchdog_enabled": False,
-        },
+        side_effect=mock_build_metrics_degraded,
         autospec=True,
     ):
         task = asyncio.create_task(
@@ -123,17 +130,23 @@ async def test_publish_bridge_snapshots_emits_summary_and_handshake(
         if len(messages) >= 2:
             event.set()
 
+    def mock_build_bridge_snap(self: Any) -> Any:
+        return {"snapshot": "summary"}
+
+    def mock_build_handshake_snap(self: Any) -> Any:
+        return {"snapshot": "handshake"}
+
     with (
         patch.object(
             RuntimeState,
             "build_bridge_snapshot",
-            side_effect=lambda self: {"snapshot": "summary"},  # type: ignore[reportUnknownLambdaType]
+            side_effect=mock_build_bridge_snap,
             autospec=True,
         ),
         patch.object(
             RuntimeState,
             "build_handshake_snapshot",
-            side_effect=lambda self: {"snapshot": "handshake"},  # type: ignore[reportUnknownLambdaType]
+            side_effect=mock_build_handshake_snap,
             autospec=True,
         ),
     ):

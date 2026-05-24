@@ -107,7 +107,7 @@ def update_pyproject(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> boo
                 dep.get("pip")
                 and dep["name"] not in BUILD_ONLY_PACKAGES
                 and not any(dep["pip"].startswith(p) for p in SYSTEM_ONLY_PACKAGES)
-            )  # noqa: W503
+            )
         ]
     )
 
@@ -203,7 +203,7 @@ def _fetch_latest_version(package_name: str) -> str | None:
     """Query PyPI JSON API for the latest release version."""
     url = f"https://pypi.org/pypi/{package_name}/json"
     try:
-        with urllib.request.urlopen(url, timeout=10) as resp:  # noqa: S310
+        with urllib.request.urlopen(url, timeout=10) as resp:
             data = msgspec.json.decode(resp.read())
             return data["info"]["version"]
     except (urllib.error.URLError, ValueError, KeyError, msgspec.DecodeError):

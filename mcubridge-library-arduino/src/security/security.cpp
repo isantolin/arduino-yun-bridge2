@@ -139,6 +139,7 @@ bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
   aad_env.pb_msg.sequence_id = seq_id;
 
   etl::array<uint8_t, 32> ad;
+  ad.fill(0U);
   pb_ostream_t stream = pb_ostream_from_buffer(ad.data(), ad.size());
   (void)aad_env.encode(&stream);
 
@@ -159,6 +160,7 @@ bool aead_decrypt_frame(uint16_t cmd_id, uint16_t seq_id,
   aad_env.pb_msg.sequence_id = seq_id;
 
   etl::array<uint8_t, 32> ad;
+  ad.fill(0U);
   pb_ostream_t stream = pb_ostream_from_buffer(ad.data(), ad.size());
   (void)aad_env.encode(&stream);
 

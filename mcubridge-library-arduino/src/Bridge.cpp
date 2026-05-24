@@ -725,7 +725,7 @@ void BridgeClass::_handleGetCapabilities(
     rpc::payload::Capabilities resp = {};
     resp.pb_msg.ver = rpc::PROTOCOL_VERSION;
     resp.pb_msg.arch = bridge::hal::getArchId();
-    resp.pb_msg.feat = bridge::hal::getCapabilities();
+    bridge::hal::fillCapabilities(resp.pb_msg);
     uint8_t dig = 0, ana = 0;
     bridge::hal::getPinCounts(dig, ana);
     resp.pb_msg.dig = dig;

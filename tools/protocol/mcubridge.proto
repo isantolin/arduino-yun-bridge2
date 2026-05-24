@@ -17,7 +17,19 @@ message Capabilities {
     uint32 arch = 2;
     uint32 dig = 3;
     uint32 ana = 4;
-    uint32 feat = 5;
+    bool watchdog = 5;
+    bool rle = 6;
+    bool debug_frames = 7;
+    bool debug_io = 8;
+    bool eeprom = 9;
+    bool dac = 10;
+    bool hw_serial1 = 11;
+    bool fpu = 12;
+    bool logic_3v3 = 13;
+    bool big_buffer = 14;
+    bool i2c = 15;
+    bool spi = 16;
+    bool sd = 17;
 }
 
 message PinMode {

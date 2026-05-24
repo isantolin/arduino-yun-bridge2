@@ -12,6 +12,7 @@
 #include <etl/crc32.h>
 #include <etl/expected.h>
 #include <etl/span.h>
+#include <etl/byte_stream.h>
 
 #include "rpc_protocol.h"
 #include "rpc_structs.h"
@@ -32,30 +33,15 @@ struct Frame {
   payload::RpcEnvelope envelope;
   uint32_t crc;
 
-  struct HeaderProxy {
-    const rpc_pb_RpcEnvelope* pb;
-    uint8_t version() const { return static_cast<uint8_t>(pb->version); }
-    uint16_t command_id() const {
-      return static_cast<uint16_t>(pb->command_id);
-    }
-    uint16_t sequence_id() const {
-      return static_cast<uint16_t>(pb->sequence_id);
-    }
-    uint16_t payload_length() const {
-      return static_cast<uint16_t>(pb->payload.size);
-    }
-  } header;
-
-  Frame() : envelope{}, crc(0), header{&envelope.pb_msg} {}
+  Frame() : envelope{}, crc(0) {}
 
   Frame(const Frame& other)
-      : envelope(other.envelope), crc(other.crc), header{&envelope.pb_msg} {}
+      : envelope(other.envelope), crc(other.crc) {}
 
   Frame& operator=(const Frame& other) {
     if (this != &other) {
       envelope = other.envelope;
       crc = other.crc;
-      header.pb = &envelope.pb_msg;
     }
     return *this;
   }
@@ -80,7 +66,7 @@ template <typename T>
 inline etl::expected<T, FrameError> parse(const rpc::Frame& frame) {
   T msg = {};
   pb_istream_t stream = pb_istream_from_buffer(frame.payload().data(),
-                                               frame.header.payload_length());
+                                               frame.envelope.pb_msg.payload.size);
   if (!msg.decode(&stream)) {
     return etl::unexpected<FrameError>(FrameError::MALFORMED);
   }
@@ -101,8 +87,9 @@ class FrameParser {
     const size_t encoded_size = stream.bytes_written;
     const uint32_t crc = checksum::compute(buffer.subspan(0, encoded_size));
 
-    etl::copy_n(reinterpret_cast<const uint8_t*>(&crc), CRC_TRAILER_SIZE,
-                buffer.begin() + encoded_size);
+    etl::byte_stream_writer writer(buffer.begin() + encoded_size, CRC_TRAILER_SIZE, etl::endian::little);
+    writer.write<uint32_t>(crc);
+    
     return encoded_size + CRC_TRAILER_SIZE;
   }
 
@@ -115,8 +102,8 @@ class FrameParser {
     const uint32_t crc_calc = checksum::compute(buffer.subspan(0, crc_offset));
 
     uint32_t crc_received = 0;
-    etl::copy_n(buffer.begin() + crc_offset, CRC_TRAILER_SIZE,
-                reinterpret_cast<uint8_t*>(&crc_received));
+    etl::byte_stream_reader reader(buffer.begin() + crc_offset, CRC_TRAILER_SIZE, etl::endian::little);
+    crc_received = reader.read<uint32_t>().value_or(0U);
 
     if (crc_received != crc_calc)
       return etl::unexpected<FrameError>(FrameError::CRC_MISMATCH);

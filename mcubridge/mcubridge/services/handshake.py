@@ -37,7 +37,6 @@ from ..protocol.structures import (
     QueuedPublish,
     SerialTimingWindow,
     CapabilitiesFeatures,
-    int_to_capabilities,
 )
 from ..protocol.topics import Topic, topic_path
 from ..security.security import (
@@ -395,12 +394,27 @@ class SerialHandshakeManager:
         try:
             # [SIL-2] Decode capabilities as protobuf.
             cap = pb.Capabilities.FromString(payload)
+            features = CapabilitiesFeatures(
+                watchdog=cap.watchdog,
+                rle=cap.rle,
+                debug_frames=cap.debug_frames,
+                debug_io=cap.debug_io,
+                eeprom=cap.eeprom,
+                dac=cap.dac,
+                hw_serial1=cap.hw_serial1,
+                fpu=cap.fpu,
+                logic_3v3=cap.logic_3v3,
+                big_buffer=cap.big_buffer,
+                i2c=cap.i2c,
+                spi=cap.spi,
+                sd=cap.sd,
+            )
             self._state.mcu_capabilities = McuCapabilities(
                 protocol_version=cap.ver,
                 board_arch=cap.arch,
                 num_digital_pins=cap.dig,
                 num_analog_inputs=cap.ana,
-                features=msgspec.convert(int_to_capabilities(cap.feat), CapabilitiesFeatures),
+                features=features,
             )
             self._logger.info("MCU Capabilities: %s", self._state.mcu_capabilities)
         except (ProtobufDecodeError, ValueError, TypeError, KeyError) as exc:

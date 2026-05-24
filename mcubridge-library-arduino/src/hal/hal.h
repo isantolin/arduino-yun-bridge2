@@ -14,6 +14,9 @@
 #include <etl/string_view.h>
 #include <stdint.h>
 
+struct _rpc_pb_Capabilities;
+typedef struct _rpc_pb_Capabilities rpc_pb_Capabilities;
+
 namespace bridge::hal {
 
 /**
@@ -99,9 +102,9 @@ etl::expected<ChunkResult, HalError> readFileChunk(etl::string_view path,
 etl::expected<void, HalError> removeFile(etl::string_view path);
 
 /**
- * @brief Get MCU capabilities bitmask.
+ * @brief Populate MCU capabilities directly into the Protobuf message.
  */
-uint32_t getCapabilities();
+void fillCapabilities(rpc_pb_Capabilities& caps);
 
 /**
  * @brief Get the architecture specific ID.

@@ -33,35 +33,6 @@ PROTOBUF_CONTENT_TYPE: Final[str] = "application/x-protobuf"
 # Order matches the protocol specification (bit 0 to bit 15).
 
 
-class CapabilityFlag(enum.IntFlag):
-    watchdog = 0x00000001
-    rle = 0x00000002
-    debug_frames = 0x00000004
-    debug_io = 0x00000008
-    eeprom = 0x00000010
-    dac = 0x00000020
-    hw_serial1 = 0x00000040
-    fpu = 0x00000080
-    logic_3v3 = 0x00000100
-    big_buffer = 0x00000200
-    i2c = 0x00000400
-    spi = 0x00000800
-    sd = 0x00001000
-
-
-def capabilities_to_int(feat_dict: dict[str, Any]) -> int:
-    val = CapabilityFlag(0)
-    for k, v in feat_dict.items():
-        if v and hasattr(CapabilityFlag, k):
-            val |= getattr(CapabilityFlag, k)
-    return int(val)
-
-
-def int_to_capabilities(val: int) -> dict[str, bool]:
-    flags = CapabilityFlag(val)
-    return {k: bool(flags & getattr(CapabilityFlag, k)) for k in CapabilityFlag.__members__}
-
-
 # [SIL-2] Compiled once at module load; reused across all AllowedCommandPolicy instances.
 _TOKEN_SEP: Final = re.compile(r"[,\s]+")
 

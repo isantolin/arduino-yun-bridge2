@@ -10,6 +10,7 @@
 #include "ArchTraits.h"
 #include "config/bridge_config.h"
 #include "protocol/rpc_protocol.h"
+#include "protocol/rpc_structs.h"
 
 #if defined(ARDUINO_ARCH_AVR)
 extern "C" {
@@ -149,28 +150,44 @@ __attribute__((weak)) etl::expected<void, HalError> removeFile(etl::string_view 
   return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
 }
 
-uint32_t getCapabilities() {
-  etl::bitset<32> caps;
-#if BRIDGE_ENABLE_WATCHDOG
-  caps.set(etl::count_trailing_zeros(rpc::RPC_CAPABILITY_WATCHDOG));
+void fillCapabilities(rpc_pb_Capabilities& caps) {
+  caps.watchdog = bridge::config::ENABLE_WATCHDOG;
+#if defined(BRIDGE_ENABLE_RLE)
+  caps.rle = (BRIDGE_ENABLE_RLE != 0);
+#else
+  caps.rle = false;
 #endif
-#if BRIDGE_ENABLE_RLE
-  caps.set(etl::count_trailing_zeros(rpc::RPC_CAPABILITY_RLE));
+#if defined(BRIDGE_ENABLE_DEBUG_FRAMES)
+  caps.debug_frames = true;
 #endif
-#if defined(ARDUINO_ARCH_AVR) && defined(SERIAL_PORT_HARDWARE1)
-  caps.set(etl::count_trailing_zeros(rpc::RPC_CAPABILITY_HW_SERIAL1));
+#if defined(BRIDGE_ENABLE_DEBUG_IO)
+  caps.debug_io = true;
+#endif
+#if defined(BRIDGE_ENABLE_EEPROM)
+  caps.eeprom = true;
 #endif
 #if defined(BRIDGE_ENABLE_DAC)
-  caps.set(etl::count_trailing_zeros(rpc::RPC_CAPABILITY_DAC));
+  caps.dac = true;
 #endif
-#if BRIDGE_ENABLE_I2C
-  caps.set(etl::count_trailing_zeros(rpc::RPC_CAPABILITY_I2C));
+#if defined(ARDUINO_ARCH_AVR) && defined(SERIAL_PORT_HARDWARE1)
+  caps.hw_serial1 = true;
 #endif
-#if BRIDGE_ENABLE_SPI
-  caps.set(etl::count_trailing_zeros(rpc::RPC_CAPABILITY_SPI));
+#if defined(BRIDGE_ENABLE_FPU)
+  caps.fpu = true;
 #endif
-  if (hasSD()) caps.set(etl::count_trailing_zeros(rpc::RPC_CAPABILITY_SD));
-  return static_cast<uint32_t>(caps.to_ulong());
+#if defined(BRIDGE_ENABLE_LOGIC_3V3)
+  caps.logic_3v3 = true;
+#endif
+#if defined(BRIDGE_ENABLE_BIG_BUFFER)
+  caps.big_buffer = true;
+#endif
+#if defined(BRIDGE_ENABLE_I2C)
+  caps.i2c = (BRIDGE_ENABLE_I2C != 0);
+#endif
+#if defined(BRIDGE_ENABLE_SPI)
+  caps.spi = (BRIDGE_ENABLE_SPI != 0);
+#endif
+  caps.sd = hasSD();
 }
 
 void getPinCounts(uint8_t& digital, uint8_t& analog) {

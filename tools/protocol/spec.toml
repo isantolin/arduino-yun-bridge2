@@ -72,19 +72,6 @@ none = 0x00
 rle = 0x01
 
 [capabilities]
-watchdog = 0x00000001
-rle = 0x00000002
-debug_frames = 0x00000004
-debug_io = 0x00000008
-eeprom = 0x00000010
-dac = 0x00000020
-hw_serial1 = 0x00000040
-fpu = 0x00000080
-logic_3v3 = 0x00000100
-big_buffer = 0x00000200
-i2c = 0x00000400
-spi = 0x00000800
-sd = 0x00001000
 
 [architectures]
 avr = 1

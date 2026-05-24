@@ -17,7 +17,7 @@ from mcubridge.protocol import mcubridge_pb2 as pb
 import asyncio
 import contextlib
 import logging
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast, Protocol, runtime_checkable, Callable, Awaitable
 
 from cobs import cobs
 import serialx
@@ -56,6 +56,19 @@ if TYPE_CHECKING:
 logger = structlog.get_logger("mcubridge.serial")
 
 
+@runtime_checkable
+class McuService(Protocol):
+    """Strict interface for MCU frame handlers. [SIL-2]"""
+
+    async def on_serial_connected(self) -> None: ...
+
+    async def on_serial_disconnected(self) -> None: ...
+
+    async def handle_mcu_frame(self, command_id: int, sequence_id: int, payload: bytes) -> None: ...
+
+    def register_serial_sender(self, sender: Callable[[int, bytes, int | None], Awaitable[bool]]) -> None: ...
+
+
 class SerialTransport:
     """High-performance asyncio serial transport with flattened pipeline. [SIL-2]"""
 
@@ -63,7 +76,7 @@ class SerialTransport:
         self,
         config: RuntimeConfig,
         state: RuntimeState,
-        service: Any,
+        service: McuService | None,
     ) -> None:
         self.config = config
         self.state = state
@@ -80,7 +93,6 @@ class SerialTransport:
         self._negotiation_future: asyncio.Future[bool] | None = None
         self._consecutive_crc_errors = 0
         self._tx_sequence_id = 0
-        self._packet_semaphore = asyncio.Semaphore(16)
         self.is_connected = False
 
         self._current: PendingCommand | None = None

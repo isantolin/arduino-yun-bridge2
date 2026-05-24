@@ -804,7 +804,7 @@ async def test_structures_exhaustive_v10() -> None:
 
     feats = {"watchdog": True, "rle": False, "hw_serial1": True}
 
-    val = cast(Any, structures_mod)._capabilities_to_int(feats)
+    val = cast(Any, structures_mod).capabilities_to_int(feats)
     assert val & 0x01
 
     # AllowedCommandPolicy edge cases

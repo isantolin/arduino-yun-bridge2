@@ -36,6 +36,8 @@ from ..protocol.structures import (
     PROTOBUF_CONTENT_TYPE,
     QueuedPublish,
     SerialTimingWindow,
+    CapabilitiesFeatures,
+    int_to_capabilities,
 )
 from ..protocol.topics import Topic, topic_path
 from ..security.security import (
@@ -398,7 +400,7 @@ class SerialHandshakeManager:
                 board_arch=cap.arch,
                 num_digital_pins=cap.dig,
                 num_analog_inputs=cap.ana,
-                features=cap.features,
+                features=msgspec.convert(int_to_capabilities(cap.feat), CapabilitiesFeatures),
             )
             self._logger.info("MCU Capabilities: %s", self._state.mcu_capabilities)
         except (ProtobufDecodeError, ValueError, TypeError, KeyError) as exc:

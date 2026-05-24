@@ -49,7 +49,7 @@ class CapabilityFlag(enum.IntFlag):
     sd = 0x00001000
 
 
-def _capabilities_to_int(feat_dict: dict[str, Any]) -> int:
+def capabilities_to_int(feat_dict: dict[str, Any]) -> int:
     val = CapabilityFlag(0)
     for k, v in feat_dict.items():
         if v and hasattr(CapabilityFlag, k):
@@ -57,7 +57,7 @@ def _capabilities_to_int(feat_dict: dict[str, Any]) -> int:
     return int(val)
 
 
-def _int_to_capabilities(val: int) -> dict[str, bool]:
+def int_to_capabilities(val: int) -> dict[str, bool]:
     flags = CapabilityFlag(val)
     return {k: bool(flags & getattr(CapabilityFlag, k)) for k in CapabilityFlag.__members__}
 

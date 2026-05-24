@@ -402,7 +402,7 @@ void test_bridge_duplicate_packet() {
   f.envelope.pb_msg.sequence_id = 10;
   f.envelope.pb_msg.payload.size = 2; // dummy
   
-  bridge::router::CommandContext ctx(&f, f.header.command_id(), 10, true, true);
+  bridge::router::CommandContext ctx(&f, f.envelope.pb_msg.command_id, 10, true, true);
   ba.handleDigitalWriteCommand(ctx);
 
   TEST_ASSERT(true);

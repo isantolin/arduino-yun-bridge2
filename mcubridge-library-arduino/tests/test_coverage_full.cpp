@@ -308,7 +308,8 @@ void test_bridge_coverage() {
   bridge::hal::removeFile("test.txt");
   uint8_t d, a;
   bridge::hal::getPinCounts(d, a);
-  bridge::hal::getCapabilities();
+  rpc_pb_Capabilities caps_dummy = rpc_pb_Capabilities_init_default;
+  bridge::hal::fillCapabilities(caps_dummy);
   bridge::hal::getArchId();
   bridge::hal::memory_fence();
   bridge::hal::watchdog_kick();

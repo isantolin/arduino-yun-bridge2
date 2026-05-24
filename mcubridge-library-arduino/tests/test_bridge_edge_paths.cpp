@@ -46,7 +46,7 @@ bool extract_encrypted_frame(const ByteBuffer<8192>& tx, size_t& cursor,
   rpc::Frame candidate;
   if (!extract_next_valid_frame(tx, cursor, candidate)) return false;
   const uint16_t raw_cmd =
-      candidate.header.command_id() & ~rpc::RPC_CMD_FLAG_COMPRESSED;
+      candidate.envelope.pb_msg.command_id & ~rpc::RPC_CMD_FLAG_COMPRESSED;
   const bool is_excluded = (raw_cmd >= rpc::RPC_STATUS_CODE_MIN &&
                             raw_cmd <= rpc::RPC_STATUS_CODE_MAX) ||
                            (raw_cmd >= rpc::RPC_SYSTEM_COMMAND_MIN &&

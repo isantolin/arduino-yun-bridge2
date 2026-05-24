@@ -15,7 +15,7 @@ MQTT_WILDCARD_MULTI: Final[str] = "#"
 {%- endfor %}
 
 {% for const in handshake_constants %}
-{{ const.name }}: Final[{{ const.type }}] = {{ const.value }}
+{{ const.name }}: Final[int] = {{ const.value }}
 {%- endfor %}
 HANDSHAKE_CONFIG_SIZE: Final[int] = 7
 
@@ -24,7 +24,7 @@ HANDSHAKE_CONFIG_SIZE: Final[int] = 7
 {%- endfor %}
 
 {% for key, val in handshake_bytes.items() %}
-{{ key }}: Final[bytes] = b{{ val|tojson }}
+{{ key }}: Final[bytes] = bytes({{ val|tojson }})
 {%- endfor %}
 
 class CompressionType(IntEnum):

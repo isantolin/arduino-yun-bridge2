@@ -11,7 +11,7 @@
 
 #include "protocol/BridgeEvents.h"
 #include "protocol/rpc_protocol.h"
-#include "protocol/rpc_structs.h"
+#include "protocol/mcubridge.pb.h"
 
 class ProcessClass : public BridgeObserver {
  public:
@@ -27,9 +27,9 @@ class ProcessClass : public BridgeObserver {
   void poll(int32_t pid, ProcessPollHandler handler);
   static void kill(int32_t pid);
 
-  void _onKillNotification(const rpc::payload::ProcessKill& msg);
-  void _onRunAsyncResponse(const rpc::payload::ProcessRunAsyncResponse& msg);
-  void _onPollResponse(const rpc::payload::ProcessPollResponse& msg);
+  void _onKillNotification(const rpc_pb_ProcessKill& msg);
+  void _onRunAsyncResponse(const rpc_pb_ProcessRunAsyncResponse& msg);
+  void _onPollResponse(const rpc_pb_ProcessPollResponse& msg);
   void reset();
 
   void notification(MsgBridgeSynchronized) override { /* ready */ }

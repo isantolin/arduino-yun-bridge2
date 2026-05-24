@@ -23,16 +23,16 @@ void integrated_test_bridge_core() {
   auto accessor = bridge::test::TestAccessor::create(Bridge);
   accessor.onStartupStabilized();
 
-  rpc::payload::LinkSync sync_req = {};
-  memset(sync_req.pb_msg.nonce.bytes, 1, 16);
-  sync_req.pb_msg.nonce.size = 16;
+  rpc_pb_LinkSync sync_req = rpc_pb_LinkSync_init_default;
+  memset(sync_req.nonce.bytes, 1, 16);
+  sync_req.nonce.size = 16;
 
   rpc::Frame sync_frame;
-  sync_frame.envelope.pb_msg.version = rpc::PROTOCOL_VERSION;
-  sync_frame.envelope.pb_msg.command_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
-  sync_frame.envelope.pb_msg.sequence_id = 1;
+  sync_frame.envelope.version = rpc::PROTOCOL_VERSION;
+  sync_frame.envelope.command_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
+  sync_frame.envelope.sequence_id = 1;
   
-  bridge::test::set_pb_payload(sync_frame, sync_req);
+  bridge::test::set_pb_payload(sync_frame, rpc_pb_LinkSync_fields, sync_req);
   accessor.dispatch(sync_frame);
 }
 

@@ -9,7 +9,7 @@
 #include <etl/span.h>
 
 #include "protocol/BridgeEvents.h"
-#include "protocol/rpc_structs.h"
+#include "protocol/mcubridge.pb.h"
 
 class MailboxClass : public BridgeObserver {
  public:
@@ -20,9 +20,9 @@ class MailboxClass : public BridgeObserver {
   static void requestAvailable();
   static void signalProcessed();
 
-  void _onIncomingData(const rpc::payload::MailboxPush& msg);
-  void _onIncomingData(const rpc::payload::MailboxReadResponse& msg);
-  void _onAvailableResponse(const rpc::payload::MailboxAvailableResponse& msg);
+  void _onIncomingData(const rpc_pb_MailboxPush& msg);
+  void _onIncomingData(const rpc_pb_MailboxReadResponse& msg);
+  void _onAvailableResponse(const rpc_pb_MailboxAvailableResponse& msg);
 
   void notification(MsgBridgeSynchronized) override { /* ready */ }
   void notification(MsgBridgeLost) override {

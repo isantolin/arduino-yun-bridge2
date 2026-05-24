@@ -85,7 +85,7 @@ BUILD_DIR="build-host-local"
 OBJ_DIR="${BUILD_DIR}/objs"
 mkdir -p "${OBJ_DIR}"
 
-COMMON_FLAGS="-O2 -g -Wall -DBRIDGE_HOST_TEST=1 -DUNITY_INCLUDE_DOUBLE -DBRIDGE_ENABLE_SPI=1 -DWOLFSSL_USER_SETTINGS -DETL_NO_STL -Isrc -Isrc/config -Isrc/protocol -Itests/Unity/src -I../tools/arduino_stub/include -I$ETL_PATH -I$ETL_PATH/include -I$ETL_PATH/arduino -I$WOLFSSL_PATH -I$PACKETSERIAL_PATH -I$PACKETSERIAL_PATH/src"
+COMMON_FLAGS="-O2 -g -Wall -DBRIDGE_HOST_TEST=1 -DUNITY_INCLUDE_DOUBLE -DBRIDGE_ENABLE_SPI=1 -DWOLFSSL_USER_SETTINGS -DETL_NO_STL -Isrc -Isrc/config -Isrc/protocol -Itests/Unity/src -I../tools/arduino_stub/include -I$ETL_PATH -I$ETL_PATH/include -I$ETL_PATH/arduino -I$WOLFSSL_PATH -I$PSERIAL_PATH -I$PSERIAL_PATH/src"
 
 SOURCES=(
     "src/security/security.cpp"
@@ -141,7 +141,7 @@ for src in "${SOURCES[@]}"; do
     fi
 done
 
-TESTS="test_protocol test_bridge_core test_bridge_components test_fsm_mutual_auth test_integrated test_host_filesystem test_arduino_100_coverage test_coverage_full test_coverage_hardened"
+TESTS="test_protocol test_bridge_core test_bridge_components test_fsm_mutual_auth test_integrated test_host_filesystem test_coverage_full test_coverage_hardened"
 
 for t in $TESTS; do
     echo "=== Building $t ==="

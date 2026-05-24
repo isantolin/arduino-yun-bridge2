@@ -34,7 +34,6 @@ for dep in REQUIRED_DEPS:
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 # Check for protoc binary (check local project bin first)
-# Use lowercase to avoid Pyright constant redefinition error
 protoc_bin = (REPO_ROOT / "bin" / "protoc").resolve()
 if not protoc_bin.exists():
     protoc_bin = Path("protoc")
@@ -71,98 +70,6 @@ else:
 TEMPLATE_DIR = Path(__file__).parent / "templates"
 VERSION_PATH = REPO_ROOT / "VERSION"
 
-# ═════════════════════════════════════════════════════════════════════════════
-# MESSAGE PARSER — build C++ / Python models from spec.toml [[messages]]
-# ═════════════════════════════════════════════════════════════════════════════
-
-# Messages that do NOT get a Packet class (used directly or handled specially)
-PACKET_EXCLUDE: frozenset[str] = frozenset({"RpcContainer", "Capabilities"})
-
-# spec.toml field type → Python type annotation string
-TOML_PYTHON_TYPE_MAP: dict[str, str] = {
-    "uint8": "Annotated[int, msgspec.Meta(ge=0)]",
-    "uint16": "Annotated[int, msgspec.Meta(ge=0)]",
-    "uint32": "Annotated[int, msgspec.Meta(ge=0)]",
-    "int32": "int",
-    "string": "str",
-    "bytes": "bytes",
-    "bin_fixed": "bytes",
-    "bool": "bool",
-}
-
-
-# ─── C++ struct model for rpc_structs.h generation ────────────────────────
-# Messages excluded from C++ struct generation (container / internal)
-CPP_STRUCT_EXCLUDE: frozenset[str] = frozenset({"RpcContainer"})
-
-# spec.toml field type → C++ CppField kind
-TOML_CPP_KIND_MAP: dict[str, str] = {
-    "uint8": "uint8",
-    "uint16": "uint16",
-    "uint32": "uint32",
-    "int32": "uint32",
-    "bytes": "bin_view",
-    "bin_fixed": "bin_fixed",
-    "string": "str_view",
-    "bool": "uint8",
-}
-
-
-@dataclasses.dataclass(frozen=True)
-class CppField:
-    """A single field in a C++ struct for rpc_structs.h."""
-
-    name: str
-    # Field kind determines encode/decode strategy:
-    #   "uint8" / "uint16" / "uint32" — integer scalar
-    #   "bin_view" — variable-length bytes (etl::span, zero-copy on decode)
-    #   "bin_fixed" — fixed-length byte array (uint8_t[N])
-    #   "str_fixed" — fixed-length null-terminated string (char[N])
-    kind: str
-    # For bin_fixed / str_fixed: the buffer size (e.g. 16, 32, 64)
-    size: int = 0
-
-
-@dataclasses.dataclass(frozen=True)
-class CppStruct:
-    """A C++ struct generated into rpc_structs.h."""
-
-    name: str  # e.g. "VersionResponse"
-    fields: tuple[CppField, ...]
-    field_count: int  # number of declared payload fields
-
-
-def build_cpp_structs_from_spec(spec: ProtocolSpec) -> list[CppStruct]:
-    """Build CppStruct models from spec.toml [[messages]] for rpc_structs.h."""
-    structs: list[CppStruct] = []
-
-    for msg in spec.messages:
-        if msg.name in CPP_STRUCT_EXCLUDE:
-            continue
-        cpp_fields: list[CppField] = []
-        for f in msg.fields:
-            kind = TOML_CPP_KIND_MAP.get(f.type)
-            if kind is None:
-                sys.stderr.write(f"Warning: unknown field type '{f.type}' in {msg.name}.{f.name}\n")
-                kind = "uint32"
-
-            if kind == "bin_fixed":
-                cpp_fields.append(CppField(name=f.name, kind=kind, size=f.size))
-            elif kind == "str_view":
-                cpp_fields.append(CppField(name=f.name, kind=kind))
-            else:
-                cpp_fields.append(CppField(name=f.name, kind=kind))
-
-        structs.append(
-            CppStruct(
-                name=msg.name,
-                fields=tuple(cpp_fields),
-                field_count=len(cpp_fields),
-            )
-        )
-
-    return structs
-
 
 def packet_class_name(proto_name: str) -> str:
     """Convert proto message name to Python Packet class name."""
@@ -192,384 +99,73 @@ class JinjaGenerator:
         result = "'".join(reversed(parts))
         return f"-{result}" if value < 0 else result
 
+    def _extract_proto_metadata(self, pb2_path: Path) -> dict[str, Any]:
+        """Extract Enums and Message definitions from the generated pb2 module."""
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("proto_metadata", str(pb2_path))
+        if not spec or not spec.loader:
+            return {}
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+
+        metadata = {"commands": [], "statuses": [], "messages": []}
+
+        # Extract Enums
+        for enum_name in ["Command", "Status"]:
+            if hasattr(mod, enum_name):
+                enum_desc = getattr(mod, enum_name)
+                for name, val in enum_desc.items():
+                    if name in ["CMD_INVALID", "STATUS_INVALID"]:
+                        continue
+                    item = {"name": name, "value": val}
+                    if enum_name == "Command":
+                        metadata["commands"].append(item)
+                    else:
+                        metadata["statuses"].append(item)
+
+        # Extract Message names
+        for name, obj in mod.__dict__.items():
+            if isinstance(obj, type) and hasattr(obj, "DESCRIPTOR"):
+                if name in ["RpcEnvelope", "StructuredEntry", "StructuredPayload"]:
+                    continue
+                metadata["messages"].append({"name": name})
+
+        return metadata
+
     def generate_cpp_header(self, spec: ProtocolSpec, out_path: Path, version: str) -> None:
         template = self.env.get_template("rpc_protocol.h.j2")
 
         v_major, v_minor, v_patch = map(int, version.split("."))
 
-        c = spec.constants
-        constants = [
-            {
-                "name": "RPC_AEAD_NONCE_SIZE",
-                "type": "size_t",
-                "value": c["aead_nonce_size"],
-            },
-            {
-                "name": "RPC_AEAD_TAG_SIZE",
-                "type": "size_t",
-                "value": c["aead_tag_size"],
-            },
-            {
-                "name": "RPC_AEAD_KEY_SIZE",
-                "type": "size_t",
-                "value": c["aead_key_size"],
-            },
-            {
-                "name": "PROTOCOL_VERSION",
-                "type": "uint8_t",
-                "value": c["protocol_version"],
-            },
-            {"name": "FIRMWARE_VERSION_MAJOR", "type": "uint8_t", "value": v_major},
-            {"name": "FIRMWARE_VERSION_MINOR", "type": "uint8_t", "value": v_minor},
-            {"name": "FIRMWARE_VERSION_PATCH", "type": "uint8_t", "value": v_patch},
-            {
-                "name": "RPC_DEFAULT_BAUDRATE",
-                "type": "unsigned long",
-                "value": c["default_baudrate"],
-            },
-            {
-                "name": "MAX_PAYLOAD_SIZE",
-                "type": "size_t",
-                "value": c["max_payload_size"],
-            },
-            {
-                "name": "RPC_DEFAULT_SAFE_BAUDRATE",
-                "type": "unsigned long",
-                "value": c["default_safe_baudrate"],
-            },
-            {
-                "name": "RPC_SERIAL_TIMEOUT_MS",
-                "type": "uint32_t",
-                "value": spec.hardware["serial_timeout_ms"],
-            },
-            {
-                "name": "RPC_SPI_TIMEOUT_MS",
-                "type": "uint32_t",
-                "value": spec.hardware["spi_timeout_ms"],
-            },
-            {
-                "name": "RPC_MAX_FILEPATH_LENGTH",
-                "type": "size_t",
-                "value": c["max_filepath_length"],
-            },
-            {
-                "name": "RPC_MAX_DATASTORE_KEY_LENGTH",
-                "type": "size_t",
-                "value": c["max_datastore_key_length"],
-            },
-            {
-                "name": "RPC_DEFAULT_ACK_TIMEOUT_MS",
-                "type": "unsigned int",
-                "value": c["default_ack_timeout_ms"],
-            },
-            {
-                "name": "RPC_DEFAULT_RETRY_LIMIT",
-                "type": "uint8_t",
-                "value": c["default_retry_limit"],
-            },
-            {
-                "name": "RPC_MAX_PENDING_TX_FRAMES",
-                "type": "uint8_t",
-                "value": c["max_pending_tx_frames"],
-            },
-            {
-                "name": "RPC_MAX_COMMAND_ID",
-                "type": "uint16_t",
-                "value": c["max_command_id"],
-            },
-            {
-                "name": "RPC_INVALID_ID_SENTINEL",
-                "type": "uint16_t",
-                "value": c["invalid_id_sentinel"],
-            },
-            {
-                "name": "RPC_NULL_TERMINATOR",
-                "type": "char",
-                "value": c["rpc_null_terminator"],
-            },
-            {
-                "name": "RPC_COMMAND_STRIDE",
-                "type": "uint8_t",
-                "value": c["rpc_command_stride"],
-            },
-            {
-                "name": "RPC_COMMAND_GROUP_SHIFT",
-                "type": "uint8_t",
-                "value": c["rpc_command_group_shift"],
-            },
-            {
-                "name": "RPC_COMMAND_GROUP_OFFSET",
-                "type": "uint8_t",
-                "value": c["rpc_command_group_offset"],
-            },
-            {
-                "name": "RPC_TIMER_OVERFLOW_THRESHOLD",
-                "type": "uint32_t",
-                "value": c["rpc_timer_overflow_threshold"],
-            },
-            {
-                "name": "RPC_CMD_FLAG_COMPRESSED",
-                "type": "uint16_t",
-                "value": c["cmd_flag_compressed"],
-            },
-            {
-                "name": "RPC_CMD_FLAG_COMPRESSED_BIT",
-                "type": "uint8_t",
-                "value": c["rpc_cmd_flag_compressed_bit"],
-            },
-            {"name": "RPC_UINT8_MASK", "type": "uint8_t", "value": c["uint8_mask"]},
-            {"name": "RPC_UINT16_MAX", "type": "uint16_t", "value": c["uint16_max"]},
-            {
-                "name": "RPC_BOOTLOADER_MAGIC",
-                "type": "uint32_t",
-                "value": c["bootloader_magic"],
-            },
-            {
-                "name": "RPC_PROCESS_DEFAULT_EXIT_CODE",
-                "type": "uint8_t",
-                "value": c["process_default_exit_code"],
-            },
-            {"name": "RPC_CRC_SIZE", "type": "size_t", "value": c["crc_size"]},
-            {
-                "name": "RPC_CRC_COVERED_HEADER_SIZE",
-                "type": "size_t",
-                "value": c["crc_covered_header_size"],
-            },
-            {
-                "name": "RPC_MIN_FRAME_SIZE",
-                "type": "size_t",
-                "value": c["min_frame_size"],
-            },
-            {"name": "RPC_CRC32_MASK", "type": "uint32_t", "value": c["crc32_mask"]},
-            {"name": "RPC_CRC_INITIAL", "type": "uint32_t", "value": c["crc_initial"]},
-            {
-                "name": "RPC_NONCE_COUNTER_MASK",
-                "type": "uint64_t",
-                "value": c["nonce_counter_mask"],
-            },
-            {
-                "name": "RPC_CRC_POLYNOMIAL",
-                "type": "uint32_t",
-                "value": c["crc_polynomial"],
-            },
-            {
-                "name": "RPC_FRAME_DELIMITER",
-                "type": "uint8_t",
-                "value": c["frame_delimiter"],
-            },
-            {"name": "RPC_DIGITAL_LOW", "type": "uint8_t", "value": c["digital_low"]},
-            {"name": "RPC_DIGITAL_HIGH", "type": "uint8_t", "value": c["digital_high"]},
-            {
-                "name": "RPC_RLE_ESCAPE_BYTE",
-                "type": "uint8_t",
-                "value": c["rle_escape_byte"],
-            },
-            {
-                "name": "RPC_RLE_MIN_RUN_LENGTH",
-                "type": "uint8_t",
-                "value": c["rle_min_run_length"],
-            },
-            {
-                "name": "RPC_RLE_MAX_RUN_LENGTH",
-                "type": "uint16_t",
-                "value": c["rle_max_run_length"],
-            },
-            {
-                "name": "RPC_RLE_SINGLE_ESCAPE_MARKER",
-                "type": "uint8_t",
-                "value": c["rle_single_escape_marker"],
-            },
-            {
-                "name": "RPC_RLE_EXPANSION_FACTOR",
-                "type": "uint8_t",
-                "value": c["rle_expansion_factor"],
-            },
-            {"name": "RPC_RLE_OFFSET", "type": "uint8_t", "value": c["rle_offset"]},
-            {
-                "name": "RPC_RLE_MIN_COMPRESS_INPUT_SIZE",
-                "type": "size_t",
-                "value": c["rle_min_compress_input_size"],
-            },
-            {
-                "name": "RPC_RLE_MIN_COMPRESS_SAVINGS",
-                "type": "size_t",
-                "value": c["rle_min_compress_savings"],
-            },
-            {
-                "name": "RPC_SHA256_DIGEST_SIZE",
-                "type": "uint8_t",
-                "value": spec.hardware["sha256_digest_size"],
-            },
-            {
-                "name": "RPC_SHA256_KAT_BUFFER_SIZE",
-                "type": "uint8_t",
-                "value": spec.hardware["sha256_kat_buffer_size"],
-            },
-            {
-                "name": "RPC_STATUS_CODE_MIN",
-                "type": "uint8_t",
-                "value": c["status_code_min"],
-            },
-            {
-                "name": "RPC_STATUS_CODE_MAX",
-                "type": "uint8_t",
-                "value": c["status_code_max"],
-            },
-            {
-                "name": "RPC_SYSTEM_COMMAND_MIN",
-                "type": "uint16_t",
-                "value": c["system_command_min"],
-            },
-            {
-                "name": "RPC_SYSTEM_COMMAND_MAX",
-                "type": "uint16_t",
-                "value": c["system_command_max"],
-            },
-            {
-                "name": "RPC_GPIO_COMMAND_MIN",
-                "type": "uint16_t",
-                "value": c["gpio_command_min"],
-            },
-            {
-                "name": "RPC_GPIO_COMMAND_MAX",
-                "type": "uint16_t",
-                "value": c["gpio_command_max"],
-            },
-            {
-                "name": "RPC_CONSOLE_COMMAND_MIN",
-                "type": "uint16_t",
-                "value": c["console_command_min"],
-            },
-            {
-                "name": "RPC_CONSOLE_COMMAND_MAX",
-                "type": "uint16_t",
-                "value": c["console_command_max"],
-            },
-            {
-                "name": "RPC_DATASTORE_COMMAND_MIN",
-                "type": "uint16_t",
-                "value": c["datastore_command_min"],
-            },
-            {
-                "name": "RPC_DATASTORE_COMMAND_MAX",
-                "type": "uint16_t",
-                "value": c["datastore_command_max"],
-            },
-            {
-                "name": "RPC_MAILBOX_COMMAND_MIN",
-                "type": "uint16_t",
-                "value": c["mailbox_command_min"],
-            },
-            {
-                "name": "RPC_MAILBOX_COMMAND_MAX",
-                "type": "uint16_t",
-                "value": c["mailbox_command_max"],
-            },
-            {
-                "name": "RPC_FILESYSTEM_COMMAND_MIN",
-                "type": "uint16_t",
-                "value": c["filesystem_command_min"],
-            },
-            {
-                "name": "RPC_FILESYSTEM_COMMAND_MAX",
-                "type": "uint16_t",
-                "value": c["filesystem_command_max"],
-            },
-            {
-                "name": "RPC_PROCESS_COMMAND_MIN",
-                "type": "uint16_t",
-                "value": c["process_command_min"],
-            },
-            {
-                "name": "RPC_PROCESS_COMMAND_MAX",
-                "type": "uint16_t",
-                "value": c["process_command_max"],
-            },
-            {
-                "name": "RPC_SPI_COMMAND_MIN",
-                "type": "uint16_t",
-                "value": c["spi_command_min"],
-            },
-            {
-                "name": "RPC_SPI_COMMAND_MAX",
-                "type": "uint16_t",
-                "value": c["spi_command_max"],
-            },
-        ]
+        # Convert topics to list of dicts
+        topics_data = [{"name": t["name"], "value": t["value"]} for t in spec.topics]
 
+        # Prepare handshake data
         hs = spec.handshake
-        handshake_constants = [
-            {
-                "name": "RPC_HANDSHAKE_NONCE_LENGTH",
-                "type": "unsigned int",
-                "value": hs["nonce_length"],
-            },
-            {
-                "name": "RPC_HANDSHAKE_TAG_LENGTH",
-                "type": "unsigned int",
-                "value": hs["tag_length"],
-            },
-            {
-                "name": "RPC_HANDSHAKE_ACK_TIMEOUT_MIN_MS",
-                "type": "uint32_t",
-                "value": hs["ack_timeout_min_ms"],
-            },
-            {
-                "name": "RPC_HANDSHAKE_ACK_TIMEOUT_MAX_MS",
-                "type": "uint32_t",
-                "value": hs["ack_timeout_max_ms"],
-            },
-            {
-                "name": "RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS",
-                "type": "uint32_t",
-                "value": hs["response_timeout_min_ms"],
-            },
-            {
-                "name": "RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS",
-                "type": "uint32_t",
-                "value": hs["response_timeout_max_ms"],
-            },
-            {
-                "name": "RPC_HANDSHAKE_RETRY_LIMIT_MIN",
-                "type": "unsigned int",
-                "value": hs["retry_limit_min"],
-            },
-            {
-                "name": "RPC_HANDSHAKE_RETRY_LIMIT_MAX",
-                "type": "unsigned int",
-                "value": hs["retry_limit_max"],
-            },
-            {
-                "name": "RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH",
-                "type": "unsigned int",
-                "value": hs["hkdf_output_length"],
-            },
-            {
-                "name": "RPC_HANDSHAKE_NONCE_RANDOM_BYTES",
-                "type": "unsigned int",
-                "value": hs["nonce_random_bytes"],
-            },
-            {
-                "name": "RPC_HANDSHAKE_NONCE_COUNTER_BYTES",
-                "type": "unsigned int",
-                "value": hs["nonce_counter_bytes"],
-            },
-        ]
-
         handshake_data = {
-            "hkdf_salt": hs["hkdf_salt"],
-            "hkdf_salt_bytes": ", ".join(f"0x{ord(c):02X}" for c in hs["hkdf_salt"]),
-            "hkdf_salt_len": len(hs["hkdf_salt"]),
-            "hkdf_info_auth": hs["hkdf_info_auth"],
-            "hkdf_info_auth_bytes": ", ".join(f"0x{ord(c):02X}" for c in hs["hkdf_info_auth"]),
-            "hkdf_info_auth_len": len(hs["hkdf_info_auth"]),
-            "hkdf_info_session": hs["hkdf_info_session"],
-            "hkdf_info_session_bytes": ", ".join(f"0x{ord(c):02X}" for c in hs["hkdf_info_session"]),
+            "nonce_length": hs["nonce_length"],
+            "tag_length": hs["tag_length"],
+            "hkdf_output_length": hs["hkdf_output_length"],
+            "hkdf_info_session_bytes": ", ".join([f"0x{b:02X}" for b in hs["hkdf_info_session"].encode("ascii")]),
             "hkdf_info_session_len": len(hs["hkdf_info_session"]),
+            "hkdf_info_auth_bytes": ", ".join([f"0x{b:02X}" for b in hs["hkdf_info_auth"].encode("ascii")]),
+            "hkdf_info_auth_len": len(hs["hkdf_info_auth"]),
+            "hkdf_salt_bytes": ", ".join([f"0x{b:02X}" for b in hs["hkdf_salt"].encode("ascii")]),
+            "hkdf_salt_len": len(hs["hkdf_salt"]),
+            "response_timeout_max_ms": hs["response_timeout_max_ms"],
         }
+        
+        handshake_constants = []
+        for k, v in hs.items():
+            if isinstance(v, int):
+                name = f"HANDSHAKE_{k.upper()}"
+                handshake_constants.append({"name": name, "type": "uint32_t" if v > 65535 else "uint16_t" if v > 255 else "uint8_t", "value": v})
 
         render = template.render(
-            constants=constants,
+            v_major=v_major,
+            v_minor=v_minor,
+            v_patch=v_patch,
+            constants=self._get_constants(spec),
             handshake_constants=handshake_constants,
             handshake=handshake_data,
             capabilities=spec.capabilities,
@@ -579,14 +175,41 @@ class JinjaGenerator:
             commands=spec.commands,
             ack_commands=[c for c in spec.commands if c.requires_ack],
             status_reasons=spec.status_reasons,
+            topics=topics_data,
         )
         out_path.write_text(render, encoding="utf-8")
 
-    def generate_cpp_structs(self, spec: ProtocolSpec, out_path: Path) -> None:
-        template = self.env.get_template("rpc_structs.h.j2")
-        structs = build_cpp_structs_from_spec(spec)
-        render = template.render(structs=structs)
-        out_path.write_text(render, encoding="utf-8")
+    def _get_constants(self, spec: ProtocolSpec) -> list[dict[str, Any]]:
+        c = spec.constants
+        return [
+            {"name": "AEAD_NONCE_SIZE", "type": "uint8_t", "value": c["aead_nonce_size"]},
+            {"name": "AEAD_TAG_SIZE", "type": "uint8_t", "value": c["aead_tag_size"]},
+            {"name": "AEAD_KEY_SIZE", "type": "uint8_t", "value": c["aead_key_size"]},
+            {"name": "CRC_SIZE", "type": "uint8_t", "value": c["crc_size"]},
+            {"name": "DEFAULT_BAUDRATE", "type": "uint32_t", "value": c["default_baudrate"]},
+            {"name": "PROTOCOL_VERSION", "type": "uint8_t", "value": c["protocol_version"]},
+            {"name": "MAX_PAYLOAD_SIZE", "type": "uint8_t", "value": c["max_payload_size"]},
+            {"name": "DEFAULT_RETRY_LIMIT", "type": "uint8_t", "value": c["default_retry_limit"]},
+            {"name": "DEFAULT_ACK_TIMEOUT_MS", "type": "uint16_t", "value": c["default_ack_timeout_ms"]},
+            {"name": "BOOTLOADER_MAGIC", "type": "uint32_t", "value": hex(c["bootloader_magic"])},
+            {"name": "STATUS_CODE_MIN", "type": "uint16_t", "value": c["status_code_min"]},
+            {"name": "STATUS_CODE_MAX", "type": "uint16_t", "value": c["status_code_max"]},
+            {"name": "SYSTEM_COMMAND_MIN", "type": "uint16_t", "value": c["system_command_min"]},
+            {"name": "SYSTEM_COMMAND_MAX", "type": "uint16_t", "value": c["system_command_max"]},
+            {"name": "MAX_COMMAND_ID", "type": "uint16_t", "value": c["max_command_id"]},
+            {"name": "MAX_FILEPATH_LENGTH", "type": "uint8_t", "value": c["max_filepath_length"]},
+            {"name": "MAX_DATASTORE_KEY_LENGTH", "type": "uint8_t", "value": c["max_datastore_key_length"]},
+            {"name": "CMD_FLAG_COMPRESSED", "type": "uint16_t", "value": c["cmd_flag_compressed"]},
+            {"name": "UINT8_MASK", "type": "uint8_t", "value": c["uint8_mask"]},
+            {"name": "FRAME_DELIMITER", "type": "uint8_t", "value": c["frame_delimiter"]},
+            {"name": "RPC_SHA256_DIGEST_SIZE", "type": "uint8_t", "value": 32},
+            {"name": "RPC_SHA256_KAT_BUFFER_SIZE", "type": "uint8_t", "value": 64},
+            {"name": "RLE_ESCAPE_BYTE", "type": "uint8_t", "value": c["rle_escape_byte"]},
+            {"name": "RLE_MIN_RUN_LENGTH", "type": "uint8_t", "value": c["rle_min_run_length"]},
+            {"name": "RLE_MAX_RUN_LENGTH", "type": "uint16_t", "value": c["rle_max_run_length"]},
+            {"name": "RLE_SINGLE_ESCAPE_MARKER", "type": "uint8_t", "value": c["rle_single_escape_marker"]},
+            {"name": "RLE_OFFSET", "type": "uint8_t", "value": c["rle_offset"]},
+        ]
 
     def generate_cpp_hw_config(self, spec: ProtocolSpec, out_path: Path) -> None:
         template = self.env.get_template("rpc_hw_config.h.j2")
@@ -594,504 +217,92 @@ class JinjaGenerator:
         out_path.write_text(render, encoding="utf-8")
 
     def generate_python(self, spec: ProtocolSpec, out_path: Path) -> None:
+        """Generate Python protocol definitions for the daemon."""
         template = self.env.get_template("protocol.py.j2")
+        self._generate_python_common(spec, out_path, template)
 
+    def generate_python_client(self, spec: ProtocolSpec, out_path: Path) -> None:
+        """Generate Python protocol definitions for the client (unified)."""
+        template = self.env.get_template("protocol.py.j2")
+        self._generate_python_common(spec, out_path, template)
+
+    def _generate_python_common(self, spec: ProtocolSpec, out_path: Path, template: Any) -> None:
         c = spec.constants
         constants = [
             {"name": "AEAD_NONCE_SIZE", "type": "int", "value": c["aead_nonce_size"]},
             {"name": "AEAD_TAG_SIZE", "type": "int", "value": c["aead_tag_size"]},
             {"name": "AEAD_KEY_SIZE", "type": "int", "value": c["aead_key_size"]},
-            {
-                "name": "FLOW_CONTROL_XOFF_THRESHOLD",
-                "type": "int",
-                "value": spec.hardware["flow_control_xoff_threshold"],
-            },
-            {
-                "name": "FLOW_CONTROL_XON_THRESHOLD",
-                "type": "int",
-                "value": spec.hardware["flow_control_xon_threshold"],
-            },
-            {
-                "name": "FRAME_HEADER_FORMAT",
-                "type": "str",
-                "value": f'"{spec.data_formats["crc_covered_header_format"]}"',
-            },
-            {
-                "name": "FRAME_CRC_FORMAT",
-                "type": "str",
-                "value": f'"{spec.data_formats["crc_format"]}"',
-            },
-            {
-                "name": "NONCE_COUNTER_FORMAT",
-                "type": "str",
-                "value": f'"{spec.data_formats["nonce_counter_format"]}"',
-            },
+            {"name": "FLOW_CONTROL_XOFF_THRESHOLD", "type": "int", "value": spec.hardware["flow_control_xoff_threshold"]},
+            {"name": "FLOW_CONTROL_XON_THRESHOLD", "type": "int", "value": spec.hardware["flow_control_xon_threshold"]},
             {"name": "PROTOCOL_VERSION", "type": "int", "value": c["protocol_version"]},
             {"name": "DEFAULT_BAUDRATE", "type": "int", "value": c["default_baudrate"]},
-            {
-                "name": "DEFAULT_MQTT_PORT",
-                "type": "int",
-                "value": c["default_mqtt_port"],
-            },
+            {"name": "DEFAULT_MQTT_PORT", "type": "int", "value": c["default_mqtt_port"]},
             {"name": "MAX_PAYLOAD_SIZE", "type": "int", "value": c["max_payload_size"]},
-            {
-                "name": "DEFAULT_SAFE_BAUDRATE",
-                "type": "int",
-                "value": c["default_safe_baudrate"],
-            },
-            {
-                "name": "SERIAL_TIMEOUT_MS",
-                "type": "int",
-                "value": spec.hardware["serial_timeout_ms"],
-            },
-            {
-                "name": "SPI_TIMEOUT_MS",
-                "type": "int",
-                "value": spec.hardware["spi_timeout_ms"],
-            },
-            {
-                "name": "MAX_FILEPATH_LENGTH",
-                "type": "int",
-                "value": c["max_filepath_length"],
-            },
-            {
-                "name": "MAX_DATASTORE_KEY_LENGTH",
-                "type": "int",
-                "value": c["max_datastore_key_length"],
-            },
-            {
-                "name": "DEFAULT_ACK_TIMEOUT_MS",
-                "type": "int",
-                "value": c["default_ack_timeout_ms"],
-            },
-            {
-                "name": "DEFAULT_RETRY_LIMIT",
-                "type": "int",
-                "value": c["default_retry_limit"],
-            },
-            {
-                "name": "MAX_PENDING_TX_FRAMES",
-                "type": "int",
-                "value": c["max_pending_tx_frames"],
-            },
-            {
-                "name": "INVALID_ID_SENTINEL",
-                "type": "int",
-                "value": c["invalid_id_sentinel"],
-            },
-            {
-                "name": "NULL_TERMINATOR",
-                "type": "int",
-                "value": c["rpc_null_terminator"],
-            },
-            {"name": "COMMAND_STRIDE", "type": "int", "value": c["rpc_command_stride"]},
-            {
-                "name": "COMMAND_GROUP_SHIFT",
-                "type": "int",
-                "value": c["rpc_command_group_shift"],
-            },
-            {
-                "name": "COMMAND_GROUP_OFFSET",
-                "type": "int",
-                "value": c["rpc_command_group_offset"],
-            },
-            {
-                "name": "TIMER_OVERFLOW_THRESHOLD",
-                "type": "int",
-                "value": c["rpc_timer_overflow_threshold"],
-            },
-            {
-                "name": "CMD_FLAG_COMPRESSED",
-                "type": "int",
-                "value": c["cmd_flag_compressed"],
-            },
-            {
-                "name": "CMD_FLAG_COMPRESSED_BIT",
-                "type": "int",
-                "value": c["rpc_cmd_flag_compressed_bit"],
-            },
-            {"name": "UINT8_MASK", "type": "int", "value": c["uint8_mask"]},
-            {"name": "UINT16_MAX", "type": "int", "value": c["uint16_max"]},
             {"name": "BOOTLOADER_MAGIC", "type": "int", "value": c["bootloader_magic"]},
-            {
-                "name": "PROCESS_DEFAULT_EXIT_CODE",
-                "type": "int",
-                "value": c["process_default_exit_code"],
-            },
-            {"name": "CRC_SIZE", "type": "int", "value": c["crc_size"]},
-            {
-                "name": "CRC_COVERED_HEADER_SIZE",
-                "type": "int",
-                "value": c["crc_covered_header_size"],
-            },
-            {"name": "MIN_FRAME_SIZE", "type": "int", "value": c["min_frame_size"]},
-            {"name": "CRC32_MASK", "type": "int", "value": c["crc32_mask"]},
-            {"name": "CRC_INITIAL", "type": "int", "value": c["crc_initial"]},
-            {
-                "name": "NONCE_COUNTER_MASK",
-                "type": "int",
-                "value": c["nonce_counter_mask"],
-            },
-            {"name": "CRC_POLYNOMIAL", "type": "int", "value": c["crc_polynomial"]},
-            {
-                "name": "MQTT_SUFFIX_INCOMING_AVAILABLE",
-                "type": "str",
-                "value": f'"{spec.mqtt_suffixes["incoming_available"]}"',
-            },
-            {
-                "name": "MQTT_SUFFIX_OUTGOING_AVAILABLE",
-                "type": "str",
-                "value": f'"{spec.mqtt_suffixes["outgoing_available"]}"',
-            },
-            {
-                "name": "MQTT_SUFFIX_RESPONSE",
-                "type": "str",
-                "value": f'"{spec.mqtt_suffixes["response"]}"',
-            },
-            {
-                "name": "MQTT_SUFFIX_ERROR",
-                "type": "str",
-                "value": f'"{spec.mqtt_suffixes["error"]}"',
-            },
-            {
-                "name": "FRAME_DELIMITER",
-                "type": "bytes",
-                "value": f"bytes([{c['frame_delimiter']}])",
-            },
-            {"name": "DIGITAL_LOW", "type": "int", "value": c["digital_low"]},
-            {"name": "DIGITAL_HIGH", "type": "int", "value": c["digital_high"]},
-            {"name": "RLE_ESCAPE_BYTE", "type": "int", "value": c["rle_escape_byte"]},
-            {
-                "name": "RLE_MIN_RUN_LENGTH",
-                "type": "int",
-                "value": c["rle_min_run_length"],
-            },
-            {
-                "name": "RLE_MAX_RUN_LENGTH",
-                "type": "int",
-                "value": c["rle_max_run_length"],
-            },
-            {
-                "name": "RLE_SINGLE_ESCAPE_MARKER",
-                "type": "int",
-                "value": c["rle_single_escape_marker"],
-            },
-            {
-                "name": "RLE_EXPANSION_FACTOR",
-                "type": "int",
-                "value": c["rle_expansion_factor"],
-            },
-            {"name": "RLE_OFFSET", "type": "int", "value": c["rle_offset"]},
-            {
-                "name": "RLE_MIN_COMPRESS_INPUT_SIZE",
-                "type": "int",
-                "value": c["rle_min_compress_input_size"],
-            },
-            {
-                "name": "RLE_MIN_COMPRESS_SAVINGS",
-                "type": "int",
-                "value": c["rle_min_compress_savings"],
-            },
-            {
-                "name": "SHA256_DIGEST_SIZE",
-                "type": "int",
-                "value": spec.hardware["sha256_digest_size"],
-            },
-            {
-                "name": "SHA256_KAT_BUFFER_SIZE",
-                "type": "int",
-                "value": spec.hardware["sha256_kat_buffer_size"],
-            },
             {"name": "STATUS_CODE_MIN", "type": "int", "value": c["status_code_min"]},
             {"name": "STATUS_CODE_MAX", "type": "int", "value": c["status_code_max"]},
-            {
-                "name": "SYSTEM_COMMAND_MIN",
-                "type": "int",
-                "value": c["system_command_min"],
-            },
-            {
-                "name": "SYSTEM_COMMAND_MAX",
-                "type": "int",
-                "value": c["system_command_max"],
-            },
-            {"name": "GPIO_COMMAND_MIN", "type": "int", "value": c["gpio_command_min"]},
-            {"name": "GPIO_COMMAND_MAX", "type": "int", "value": c["gpio_command_max"]},
-            {
-                "name": "CONSOLE_COMMAND_MIN",
-                "type": "int",
-                "value": c["console_command_min"],
-            },
-            {
-                "name": "CONSOLE_COMMAND_MAX",
-                "type": "int",
-                "value": c["console_command_max"],
-            },
-            {
-                "name": "DATASTORE_COMMAND_MIN",
-                "type": "int",
-                "value": c["datastore_command_min"],
-            },
-            {
-                "name": "DATASTORE_COMMAND_MAX",
-                "type": "int",
-                "value": c["datastore_command_max"],
-            },
-            {
-                "name": "MAILBOX_COMMAND_MIN",
-                "type": "int",
-                "value": c["mailbox_command_min"],
-            },
-            {
-                "name": "MAILBOX_COMMAND_MAX",
-                "type": "int",
-                "value": c["mailbox_command_max"],
-            },
-            {
-                "name": "FILESYSTEM_COMMAND_MIN",
-                "type": "int",
-                "value": c["filesystem_command_min"],
-            },
-            {
-                "name": "FILESYSTEM_COMMAND_MAX",
-                "type": "int",
-                "value": c["filesystem_command_max"],
-            },
-            {
-                "name": "PROCESS_COMMAND_MIN",
-                "type": "int",
-                "value": c["process_command_min"],
-            },
-            {
-                "name": "PROCESS_COMMAND_MAX",
-                "type": "int",
-                "value": c["process_command_max"],
-            },
-            {"name": "SPI_COMMAND_MIN", "type": "int", "value": c["spi_command_min"]},
-            {"name": "SPI_COMMAND_MAX", "type": "int", "value": c["spi_command_max"]},
-            {
-                "name": "FILE_LARGE_WARNING_BYTES",
-                "type": "int",
-                "value": spec.hardware["file_large_warning_bytes"],
-            },
+            {"name": "SYSTEM_COMMAND_MIN", "type": "int", "value": c["system_command_min"]},
+            {"name": "SYSTEM_COMMAND_MAX", "type": "int", "value": c["system_command_max"]},
+            {"name": "DEFAULT_ACK_TIMEOUT_MS", "type": "int", "value": c["default_ack_timeout_ms"]},
+            {"name": "DEFAULT_RETRY_LIMIT", "type": "int", "value": c["default_retry_limit"]},
+            {"name": "MAX_PENDING_TX_FRAMES", "type": "int", "value": c["max_pending_tx_frames"]},
+            {"name": "MAX_COMMAND_ID", "type": "int", "value": c["max_command_id"]},
+            {"name": "MAX_FILEPATH_LENGTH", "type": "int", "value": c["max_filepath_length"]},
+            {"name": "MAX_DATASTORE_KEY_LENGTH", "type": "int", "value": c["max_datastore_key_length"]},
+            {"name": "FILE_LARGE_WARNING_BYTES", "type": "int", "value": spec.hardware["file_large_warning_bytes"]},
+            {"name": "CMD_FLAG_COMPRESSED", "type": "int", "value": 0x8000},
+            {"name": "UINT16_MAX", "type": "int", "value": 0xFFFF},
         ]
 
         hs = spec.handshake
-        handshake_constants = [
-            {
-                "name": "HANDSHAKE_NONCE_LENGTH",
-                "type": "int",
-                "value": hs["nonce_length"],
-            },
-            {"name": "HANDSHAKE_TAG_LENGTH", "type": "int", "value": hs["tag_length"]},
-            {
-                "name": "HANDSHAKE_ACK_TIMEOUT_MIN_MS",
-                "type": "int",
-                "value": hs["ack_timeout_min_ms"],
-            },
-            {
-                "name": "HANDSHAKE_ACK_TIMEOUT_MAX_MS",
-                "type": "int",
-                "value": hs["ack_timeout_max_ms"],
-            },
-            {
-                "name": "HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS",
-                "type": "int",
-                "value": hs["response_timeout_min_ms"],
-            },
-            {
-                "name": "HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS",
-                "type": "int",
-                "value": hs["response_timeout_max_ms"],
-            },
-            {
-                "name": "HANDSHAKE_RETRY_LIMIT_MIN",
-                "type": "int",
-                "value": hs["retry_limit_min"],
-            },
-            {
-                "name": "HANDSHAKE_RETRY_LIMIT_MAX",
-                "type": "int",
-                "value": hs["retry_limit_max"],
-            },
-            {
-                "name": "HANDSHAKE_HKDF_OUTPUT_LENGTH",
-                "type": "int",
-                "value": hs["hkdf_output_length"],
-            },
-            {
-                "name": "HANDSHAKE_NONCE_RANDOM_BYTES",
-                "type": "int",
-                "value": hs["nonce_random_bytes"],
-            },
-            {
-                "name": "HANDSHAKE_NONCE_COUNTER_BYTES",
-                "type": "int",
-                "value": hs["nonce_counter_bytes"],
-            },
-        ]
+        handshake_constants = [{"name": f"HANDSHAKE_{k.upper()}", "value": v} for k, v in hs.items() if isinstance(v, int)]
+        handshake_strings = {f"HANDSHAKE_{k.upper()}": v for k, v in hs.items() if isinstance(v, str) and not k.startswith("hkdf_info") and k != "hkdf_salt"}
+        handshake_bytes = {f"HANDSHAKE_{k.upper()}": list(v.encode("ascii")) for k, v in hs.items() if isinstance(v, str) and (k.startswith("hkdf_info") or k == "hkdf_salt")}
 
-        handshake_strings = {
-            "HANDSHAKE_TAG_ALGORITHM": hs["tag_algorithm"],
-            "HANDSHAKE_TAG_DESCRIPTION": hs["tag_description"],
-            "HANDSHAKE_HKDF_ALGORITHM": hs["hkdf_algorithm"],
-            "HANDSHAKE_NONCE_FORMAT_DESCRIPTION": hs["nonce_format_description"],
-        }
-
-        handshake_bytes = {
-            "HANDSHAKE_HKDF_SALT": hs["hkdf_salt"],
-            "HANDSHAKE_HKDF_INFO_AUTH": hs["hkdf_info_auth"],
-        }
-
-        # Group actions
-        grouped_actions: list[dict[str, Any]] = []
-        action_map: dict[str, list[dict[str, Any]]] = {}
+        # Group actions from spec.actions
+        grouped_actions = []
+        action_map = {}
         for act in spec.actions:
-            if "_" not in act["name"]:
-                continue
+            if "_" not in act["name"]: continue
             prefix, suffix = act["name"].split("_", 1)
-            action_map.setdefault(prefix, []).append(
-                {
-                    "name": suffix,
-                    "value": act["value"],
-                    "description": act["description"],
-                }
-            )
-
+            action_map.setdefault(prefix, []).append({"name": suffix, "value": act["value"]})
+        
         for prefix, items in action_map.items():
-            cls_name = "DatastoreAction" if prefix == "DATASTORE" else f"{prefix.lower().title()}Action"
+            cls_name = "DatastoreAction" if prefix == "DATASTORE" else f"{prefix.lower().capitalize()}Action"
             grouped_actions.append({"class_name": cls_name, "action_items": items})
 
-        # Process subscriptions
-        subscriptions: list[dict[str, Any]] = []
-        for sub in spec.mqtt_subscriptions:
-            segments: list[str] = []
-            topic_str = sub["topic"]
-            for s in sub.get("segments", []):
-                if s == "+":
-                    segments.append("MQTT_WILDCARD_SINGLE")
-                elif s == "#":
-                    segments.append("MQTT_WILDCARD_MULTI")
-                else:
-                    mapped = False
-                    if topic_str in [
-                        "DIGITAL",
-                        "ANALOG",
-                        "CONSOLE",
-                        "DATASTORE",
-                        "MAILBOX",
-                        "SHELL",
-                        "SYSTEM",
-                        "FILE",
-                    ]:
-                        c_name = "DatastoreAction" if topic_str == "DATASTORE" else f"{topic_str.lower().title()}Action"
-                        for act in spec.actions:
-                            if act["name"].startswith(f"{topic_str}_") and act["value"] == s:
-                                sfx = act["name"].split("_", 1)[1]
-                                segments.append(f"{c_name}.{sfx}.value")
-                                mapped = True
-                                break
-                    if not mapped:
-                        segments.append(f'"{s}"')
-
-            subscriptions.append(
-                {
-                    "topic": topic_str,
-                    "qos": sub["qos"],
-                    "segments_tuple": f"({', '.join(segments)},)" if segments else "()",
-                }
-            )
+        # Response mappings
+        request_response_pairs = {}
+        response_to_req_map = {}
+        cmd_names = {c.name for c in spec.commands}
+        for cmd in spec.commands:
+            if cmd.name.endswith("_RESP"):
+                req_name = cmd.name[:-5]
+                if req_name in cmd_names:
+                    request_response_pairs.setdefault(req_name, []).append(cmd.name)
+                    response_to_req_map[cmd.name] = req_name
 
         render = template.render(
             constants=constants,
             handshake_constants=handshake_constants,
             handshake_strings=handshake_strings,
             handshake_bytes=handshake_bytes,
+            compression=spec.compression,
             capabilities=spec.capabilities,
             architectures=spec.architectures,
             architecture_display_names=spec.architecture_display_names,
-            compression=spec.compression,
-            data_formats=spec.data_formats,
-            mqtt_suffixes=spec.mqtt_suffixes,
-            mqtt_defaults=spec.mqtt_defaults,
-            status_reasons=spec.status_reasons,
             statuses=spec.statuses,
+            status_reasons=spec.status_reasons,
             commands=spec.commands,
             ack_commands=[c for c in spec.commands if c.requires_ack],
             response_only_commands=[c for c in spec.commands if c.expects_direct_response],
             topics=spec.topics,
             grouped_actions=grouped_actions,
-            subscriptions=subscriptions,
-            request_response_pairs=self._build_req_resp_map(spec),
-            response_to_req_map=self._build_resp_to_req_map(spec),
+            request_response_pairs=request_response_pairs,
+            response_to_req_map=response_to_req_map,
+            mqtt_defaults=spec.mqtt_defaults,
         )
         out_path.write_text(render, encoding="utf-8")
-
-    @staticmethod
-    def _build_req_resp_map(spec: ProtocolSpec) -> dict[str, list[str]]:
-        pairs: dict[str, list[str]] = {}
-        cmd_names = {c.name for c in spec.commands}
-        for cmd in spec.commands:
-            if cmd.name.endswith("_RESP"):
-                req_name = cmd.name[:-5]
-                if req_name in cmd_names:
-                    pairs.setdefault(req_name, []).append(cmd.name)
-        return pairs
-
-    @staticmethod
-    def _build_resp_to_req_map(spec: ProtocolSpec) -> dict[str, str]:
-        reverse: dict[str, str] = {}
-        cmd_names = {c.name for c in spec.commands}
-        for cmd in spec.commands:
-            if cmd.name.endswith("_RESP"):
-                req_name = cmd.name[:-5]
-                if req_name in cmd_names:
-                    reverse[cmd.name] = req_name
-        return reverse
-
-    def generate_structures_packets(self, spec: ProtocolSpec, structures_path: Path) -> None:
-        """Generate Packet classes from spec.toml messages and splice into structures.py."""
-        packet_messages = [m for m in spec.messages if m.name not in PACKET_EXCLUDE]
-
-        packets: list[dict[str, object]] = []
-        for msg in packet_messages:
-            fields: list[dict[str, str]] = []
-            for f in msg.fields:
-                py_type = TOML_PYTHON_TYPE_MAP.get(f.type)
-                if py_type is None:
-                    sys.stderr.write(f"Warning: unknown field type '{f.type}' in {msg.name}.{f.name}, skipping field\n")
-                    continue
-                fields.append({"name": f.name, "python_type": py_type})
-            packets.append(
-                {
-                    "class_name": packet_class_name(msg.name),
-                    "proto_name": msg.name,
-                    "fields": fields,
-                }
-            )
-
-        template = self.env.get_template("structures_packets.py.j2")
-        generated = template.render(packets=packets)
-        # Normalize to exactly 2 blank lines between top-level defs (PEP 8)
-        generated = re.sub(r"\n{4,}", "\n\n\n", generated)
-
-        # Splice into structures.py between markers
-        content = structures_path.read_text(encoding="utf-8")
-        begin_marker = "# --- BEGIN GENERATED PACKETS ---"
-        end_marker = "# --- END GENERATED PACKETS ---"
-
-        begin_idx = content.find(begin_marker)
-        end_idx = content.find(end_marker)
-        if begin_idx == -1 or end_idx == -1:
-            sys.stderr.write(
-                f"Error: markers not found in {structures_path}. Expected '{begin_marker}' and '{end_marker}'\n"
-            )
-            sys.exit(1)
-
-        end_idx += len(end_marker)
-        new_content = content[:begin_idx] + generated + content[end_idx:]
-        # Normalize excessive blank lines at splice boundaries (PEP 8: max 2 between top-level defs)
-        new_content = re.sub(r"\n{4,}", "\n\n\n", new_content)
-        structures_path.write_text(new_content, encoding="utf-8")
 
     def generate_nanopb(self, proto_path: Path) -> None:
         """Invoke nanopb_generator.py to create C++ headers/sources."""
@@ -1104,272 +315,110 @@ class JinjaGenerator:
 
     def generate_python_pb2(self, proto_path: Path, out_dir: Path) -> None:
         """Invoke protoc to generate Python pb2 module and typing stub."""
-        # Create a temporary wrapper script for protoc-gen-pyi
         wrapper_path = REPO_ROOT / ".tmp_protoc_plugin.sh"
-
-        wrapper_path.write_text(
-            f'#!/bin/bash\n{sys.executable} -c "from mypy_protobuf.main import main; main()" "$@"\n'
-        )
+        wrapper_path.write_text(f'#!/bin/bash\n{sys.executable} -c "from mypy_protobuf.main import main; main()" "$@"\n')
         wrapper_path.chmod(0o755)
 
-        import os
-        import site
-
+        import os, site
         env = os.environ.copy()
-        # Ensure the user's local site-packages are in the path for the wrapper
-        user_site = site.getusersitepackages()
-        env["PYTHONPATH"] = f"{user_site}:{env.get('PYTHONPATH', '')}"
+        env["PYTHONPATH"] = f"{site.getusersitepackages()}:{env.get('PYTHONPATH', '')}"
 
-        cmd = [
-            str(protoc_bin),
-            f"--python_out={out_dir}",
-            f"--pyi_out={out_dir}",
-            f"--plugin=protoc-gen-pyi={wrapper_path}",
-            f"--proto_path={proto_path.parent}",
-            str(proto_path),
-        ]
+        cmd = [str(protoc_bin), f"--python_out={out_dir}", f"--pyi_out={out_dir}", 
+               f"--plugin=protoc-gen-pyi={wrapper_path}", f"--proto_path={proto_path.parent}", str(proto_path)]
         try:
             subprocess.run(cmd, check=True, capture_output=True, text=True, env=env)
         except subprocess.CalledProcessError as e:
             sys.stderr.write(f"Error: protoc failed: {e.stderr}\n")
             sys.exit(1)
         finally:
-            if wrapper_path.exists():
-                wrapper_path.unlink()
-
-    def generate_python_client(self, spec: ProtocolSpec, out_path: Path) -> None:
-        template = self.env.get_template("protocol_client.py.j2")
-
-        c = spec.constants
-        constants = [
-            {"name": "PROTOCOL_VERSION", "type": "int", "value": c["protocol_version"]},
-            {"name": "DEFAULT_BAUDRATE", "type": "int", "value": c["default_baudrate"]},
-            {
-                "name": "DEFAULT_MQTT_PORT",
-                "type": "int",
-                "value": c["default_mqtt_port"],
-            },
-            {"name": "MAX_PAYLOAD_SIZE", "type": "int", "value": c["max_payload_size"]},
-            {
-                "name": "MAX_FILEPATH_LENGTH",
-                "type": "int",
-                "value": c["max_filepath_length"],
-            },
-            {
-                "name": "MAX_DATASTORE_KEY_LENGTH",
-                "type": "int",
-                "value": c["max_datastore_key_length"],
-            },
-        ]
-
-        # Include packets for Protobuf support
-        packet_messages = [m for m in spec.messages if m.name not in PACKET_EXCLUDE]
-        packets: list[dict[str, str]] = []
-        for msg in packet_messages:
-            packets.append({"class_name": f"{msg.name}Packet", "proto_name": msg.name})
-
-        render = template.render(
-            constants=constants,
-            capabilities=spec.capabilities,
-            statuses=spec.statuses,
-            commands=spec.commands,
-            topics=spec.topics,
-            packets=packets,
-        )
-        out_path.write_text(render, encoding="utf-8")
+            if wrapper_path.exists(): wrapper_path.unlink()
 
 
 def read_version() -> str:
-    if not VERSION_PATH.exists():
-        sys.stderr.write(f"Warning: VERSION file not found at {VERSION_PATH}, using fallback.\n")
-        return "0.0.0"
+    if not VERSION_PATH.exists(): return "0.0.0"
     return VERSION_PATH.read_text(encoding="utf-8").strip()
 
 
 def update_metadata(version: str):
-    # 1. pyproject.toml
-    pyproj = REPO_ROOT / "pyproject.toml"
-    if pyproj.exists():
-        content = pyproj.read_text(encoding="utf-8")
-        content = re.sub(r'version\s*=\s*"[^"]+"', f'version = "{version}"', content, count=1)
-        pyproj.write_text(content, encoding="utf-8")
-        sys.stderr.write(f"Updated {pyproj} to version {version}\n")
-
-    # 2. mcubridge/Makefile
-    makefile = REPO_ROOT / "mcubridge" / "Makefile"
-    if makefile.exists():
-        content = makefile.read_text(encoding="utf-8")
-        content = re.sub(r"PKG_VERSION:=[^\n]+", f"PKG_VERSION:={version}", content)
-        makefile.write_text(content, encoding="utf-8")
-        sys.stderr.write(f"Updated {makefile} to version {version}\n")
-
-    # 3. mcubridge-library-arduino/library.properties
-    lib_prop = REPO_ROOT / "mcubridge-library-arduino" / "library.properties"
-    if lib_prop.exists():
-        content = lib_prop.read_text(encoding="utf-8")
-        content = re.sub(r"version=[^\n]+", f"version={version}", content)
-        lib_prop.write_text(content, encoding="utf-8")
-        sys.stderr.write(f"Updated {lib_prop} to version {version}\n")
-
-
-def _format_python_file(path: Path) -> None:
-    """Post-process a generated Python file with black for canonical formatting."""
-    try:
-        subprocess.run(
-            [sys.executable, "-m", "black", "--quiet", str(path)],
-            check=True,
-            capture_output=True,
-        )
-    except (OSError, subprocess.CalledProcessError) as e:
-        sys.stderr.write(f"Warning: black formatting failed for {path}: {e}\n")
+    for f, p in [(REPO_ROOT / "pyproject.toml", r'version\s*=\s*"[^"]+"'),
+                 (REPO_ROOT / "mcubridge" / "Makefile", r"PKG_VERSION:=[^\n]+"),
+                 (REPO_ROOT / "mcubridge-library-arduino" / "library.properties", r"version=[^\n]+")]:
+        if f.exists():
+            content = f.read_text(encoding="utf-8")
+            replacement = f"version = \"{version}\"" if "toml" in f.name else f"PKG_VERSION:={version}" if "Makefile" in f.name else f"version={version}"
+            f.write_text(re.sub(p, replacement, content, count=1 if "toml" in f.name else 0), encoding="utf-8")
 
 
 def ensure_nanopb_core_files() -> None:
-    """Ensure the core Nanopb C files exist in mcubridge-library-arduino/src/."""
     import urllib.request
-
     src_dir = REPO_ROOT / "mcubridge-library-arduino" / "src"
-    version = "nanopb-0.4.9.1"
-    base_url = f"https://raw.githubusercontent.com/nanopb/nanopb/{version}/"
-    files = [
-        "pb.h",
-        "pb_common.h",
-        "pb_common.c",
-        "pb_decode.h",
-        "pb_decode.c",
-        "pb_encode.h",
-        "pb_encode.c",
-    ]
-
-    src_dir.mkdir(parents=True, exist_ok=True)
-    for f in files:
+    base_url = "https://raw.githubusercontent.com/nanopb/nanopb/nanopb-0.4.9.1/"
+    for f in ["pb.h", "pb_common.h", "pb_common.c", "pb_decode.h", "pb_decode.c", "pb_encode.h", "pb_encode.c"]:
         target = src_dir / f
         if not target.exists():
-            url = base_url + f
-            sys.stderr.write(f"Downloading core Nanopb file: {f} from {url}...\n")
-            try:
-                with urllib.request.urlopen(url, timeout=20) as response:
-                    target.write_bytes(response.read())
-            except Exception as e:
-                sys.stderr.write(f"Error downloading {f}: {e}\n")
-                sys.exit(1)
+            with urllib.request.urlopen(base_url + f, timeout=20) as r: target.write_bytes(response.read())
 
 
 def main() -> None:
-    ensure_nanopb_core_files()
-    parser = argparse.ArgumentParser(description="Protocol binding generator for MCU Bridge v2.")
-    parser.add_argument("--spec", type=Path, required=True, help="Protocol specification file")
-    parser.add_argument("--cpp", type=Path, default=None, help="C++ header output")
-    parser.add_argument("--cpp-structs", type=Path, default=None, help="C++ structs output")
-    parser.add_argument("--py", type=Path, default=None, help="Python output")
-    parser.add_argument("--py-client", type=Path, default=None, help="Python client output")
-    parser.add_argument(
-        "--structures",
-        type=Path,
-        default=None,
-        help="Splice generated Packets into structures.py",
-    )
-
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--spec", type=Path, required=True)
+    parser.add_argument("--cpp", type=Path)
+    parser.add_argument("--cpp-structs", type=Path)
+    parser.add_argument("--py", type=Path)
+    parser.add_argument("--py-client", type=Path)
+    parser.add_argument("--structures", type=Path)
     args = parser.parse_args()
 
     spec = ProtocolSpec.load(args.spec)
     gen = JinjaGenerator()
     version = read_version()
-
     update_metadata(version)
 
     proto_path = (args.spec.parent / "mcubridge.proto").resolve()
     if proto_path.exists():
         sys.stderr.write(f"Compiling {proto_path}...\n")
-        # Python PB2
         gen.generate_python_pb2(proto_path, args.spec.parent)
-        # Nanopb C++
         gen.generate_nanopb(proto_path)
 
-        # Move generated files to target locations
+        py_pb2_temp = args.spec.parent / "mcubridge_pb2.py"
+        proto_meta = gen._extract_proto_metadata(py_pb2_temp)
+
+        if proto_meta.get("commands"):
+            cmd_map = {c.name: c for c in spec.commands}
+            spec.commands = [_spec_mod.CommandDef(name=pc["name"], value=pc["value"], 
+                             directions=cmd_map[pc["name"]].directions if pc["name"] in cmd_map else ["both"],
+                             requires_ack=cmd_map[pc["name"]].requires_ack if pc["name"] in cmd_map else False,
+                             expects_direct_response=cmd_map[pc["name"]].expects_direct_response if pc["name"] in cmd_map else False)
+                             for pc in proto_meta["commands"]]
+
+        if proto_meta.get("statuses"):
+            stat_map = {s.name: s for s in spec.statuses}
+            spec.statuses = [_spec_mod.StatusDef(name=ps["name"], value=ps["value"], 
+                             description=stat_map[ps["name"]].description if ps["name"] in stat_map else "")
+                             for ps in proto_meta["statuses"]]
+
         if args.cpp:
-            cpp_pb_h = args.spec.parent / "mcubridge.pb.h"
-            cpp_pb_c = args.spec.parent / "mcubridge.pb.c"
-            target_h = args.cpp.parent / "mcubridge.pb.h"
-            target_c = args.cpp.parent / "mcubridge.pb.c"
+            for ext in [".pb.h", ".pb.c"]:
+                src, dst = args.spec.parent / ("mcubridge" + ext), args.cpp.parent / ("mcubridge" + ext)
+                if src.exists():
+                    data = src.read_text().replace("#include <pb.h>", '#include "../pb.h"') if ext == ".pb.h" else src.read_text()
+                    dst.write_text(data)
+                    src.unlink()
 
-            if cpp_pb_h.exists():
-                target_h.write_bytes(cpp_pb_h.read_bytes())
-                # Fix pb.h include for relative path in Arduino library structure
-                target_h.write_text(target_h.read_text().replace("#include <pb.h>", '#include "../pb.h"'))
-                cpp_pb_h.unlink()
-            if cpp_pb_c.exists():
-                target_c.write_bytes(cpp_pb_c.read_bytes())
-                cpp_pb_c.unlink()
-
-        py_pb2 = args.spec.parent / "mcubridge_pb2.py"
-        py_pb2_stub = args.spec.parent / "mcubridge_pb2.pyi"
-        if py_pb2.exists():
-            pb2_data = py_pb2.read_bytes()
-            if args.py:
-                (args.py.parent / "mcubridge_pb2.py").write_bytes(pb2_data)
-            if args.py_client:
-                (args.py_client.parent / "mcubridge_pb2.py").write_bytes(pb2_data)
-            py_pb2.unlink()
-        if py_pb2_stub.exists():
-            pb2_stub_text = py_pb2_stub.read_text()
-            # [SIL-2] Patch generated stubs to avoid Pyright errors with newer Protobuf
-            pb2_stub_text = "# pyright: reportIncompatibleVariableOverride=false\n" + pb2_stub_text
-            pb2_stub_text = pb2_stub_text.replace(
-                "_Union[StructuredEntry, _Mapping]]",
-                "_Union[StructuredEntry, _Mapping[str, object]]]",
-            )
-            pb2_stub_data = pb2_stub_text.encode()
-            if args.py:
-                (args.py.parent / "mcubridge_pb2.pyi").write_bytes(pb2_stub_data)
-            if args.py_client:
-                (args.py_client.parent / "mcubridge_pb2.pyi").write_bytes(pb2_stub_data)
-            py_pb2_stub.unlink()
-
+        for dst_path in [args.py, args.py_client]:
+            if dst_path:
+                for ext in [".py", ".pyi"]:
+                    src = args.spec.parent / ("mcubridge_pb2" + ext)
+                    if src.exists():
+                        (dst_path.parent / ("mcubridge_pb2" + ext)).write_bytes(src.read_bytes())
+                # unlink temp files at the end
+    
     if args.cpp:
-        args.cpp.parent.mkdir(parents=True, exist_ok=True)
         gen.generate_cpp_header(spec, args.cpp, version)
-        sys.stderr.write(f"Generated {args.cpp}\n")
-
-        # Generate hardware config next to the main header
-        hw_config_path = args.cpp.parent / "rpc_hw_config.h"
-        gen.generate_cpp_hw_config(spec, hw_config_path)
-        sys.stderr.write(f"Generated {hw_config_path}\n")
-
-    if args.cpp_structs:
-        args.cpp_structs.parent.mkdir(parents=True, exist_ok=True)
-        gen.generate_cpp_structs(spec, args.cpp_structs)
-        sys.stderr.write(f"Generated {args.cpp_structs}\n")
-
-    if args.py:
-        args.py.parent.mkdir(parents=True, exist_ok=True)
-        gen.generate_python(spec, args.py)
-        _format_python_file(args.py)
-        sys.stderr.write(f"Generated {args.py}\n")
-
-    if args.py_client:
-        args.py_client.parent.mkdir(parents=True, exist_ok=True)
-        gen.generate_python_client(spec, args.py_client)
-        _format_python_file(args.py_client)
-        sys.stderr.write(f"Generated {args.py_client}\n")
-
-    # Generate Packet classes from spec.toml messages into structures.py
-    if args.structures:
-        sys.stderr.write(f"Skipping Packet generation for {args.structures} (wrappers deprecated)\n")
-
-    # Step 4: Generate type stubs for untyped libraries using pyright
-    untyped_libs = ["diskcache"]
-    sys.stderr.write(f"Generating type stubs for {', '.join(untyped_libs)}...\n")
-    for lib in untyped_libs:
-        # [SIL-2] Use -m pyright to ensure we use the version installed in the current venv
-        stub_cmd = [sys.executable, "-m", "pyright", "--createstub", lib]
-        try:
-            # We use subprocess.run to allow failure if pyright is not available,
-            # but log a warning.
-            subprocess.run(stub_cmd, check=False, capture_output=True)
-        except (OSError, RuntimeError, subprocess.SubprocessError) as e:
-            sys.stderr.write(f"Warning: Failed to generate stubs for {lib}: {e}\n")
-
+        gen.generate_cpp_hw_config(spec, args.cpp.parent / "rpc_hw_config.h")
+    
+    if args.py: gen.generate_python(spec, args.py)
+    if args.py_client: gen.generate_python_client(spec, args.py_client)
 
 if __name__ == "__main__":
     main()

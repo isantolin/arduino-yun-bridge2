@@ -10,7 +10,7 @@
 #include "ArchTraits.h"
 #include "config/bridge_config.h"
 #include "protocol/rpc_protocol.h"
-#include "protocol/rpc_structs.h"
+#include "protocol/mcubridge.pb.h"
 
 #if defined(ARDUINO_ARCH_AVR)
 extern "C" {
@@ -25,8 +25,8 @@ namespace {
 using Traits = CurrentArchTraits;
 
 constexpr uint8_t CURRENT_ARCH =
-    (Traits::id == ArchId::ARCH_AVR)    ? rpc::RPC_ARCH_AVR
-    : (Traits::id == ArchId::ARCH_HOST) ? rpc::RPC_ARCH_SAMD
+    (Traits::id == ArchId::ARCH_AVR)    ? rpc::ARCH_AVR
+    : (Traits::id == ArchId::ARCH_HOST) ? rpc::ARCH_SAMD
                                         : 0;
 
 constexpr uint8_t DIGITAL_PINS =

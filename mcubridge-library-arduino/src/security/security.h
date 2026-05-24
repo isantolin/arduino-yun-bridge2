@@ -145,17 +145,17 @@ inline bool timing_safe_equal(etl::span<const uint8_t> a,
 template <typename RandomFunc>
 [[maybe_unused]] inline void generate_nonce_with_counter(
     etl::span<uint8_t> out_nonce, uint64_t& counter, RandomFunc random_func) {
-  if (out_nonce.size() < RPC_HANDSHAKE_NONCE_LENGTH) return;
+  if (out_nonce.size() < rpc::HANDSHAKE_NONCE_LENGTH) return;
 
   etl::generate(
-      out_nonce.begin(), out_nonce.begin() + RPC_HANDSHAKE_NONCE_RANDOM_BYTES,
+      out_nonce.begin(), out_nonce.begin() + rpc::HANDSHAKE_NONCE_RANDOM_BYTES,
       [&]() {
-        return static_cast<uint8_t>(random_func() & rpc::RPC_UINT8_MASK);
+        return static_cast<uint8_t>(random_func() & rpc::UINT8_MASK);
       });
 
   counter++;
-  etl::byte_stream_writer w(out_nonce.data() + RPC_HANDSHAKE_NONCE_RANDOM_BYTES,
-                            out_nonce.size() - RPC_HANDSHAKE_NONCE_RANDOM_BYTES,
+  etl::byte_stream_writer w(out_nonce.data() + rpc::HANDSHAKE_NONCE_RANDOM_BYTES,
+                            out_nonce.size() - rpc::HANDSHAKE_NONCE_RANDOM_BYTES,
                             etl::endian::big);
   w.write<uint64_t>(counter);
 }
@@ -164,9 +164,9 @@ template <typename RandomFunc>
  * @brief Extract counter from nonce (for validation).
  */
 inline uint64_t extract_nonce_counter(etl::span<const uint8_t> nonce) {
-  if (nonce.size() < RPC_HANDSHAKE_NONCE_LENGTH) return 0;
-  etl::byte_stream_reader r(nonce.data() + RPC_HANDSHAKE_NONCE_RANDOM_BYTES,
-                            nonce.size() - RPC_HANDSHAKE_NONCE_RANDOM_BYTES,
+  if (nonce.size() < rpc::HANDSHAKE_NONCE_LENGTH) return 0;
+  etl::byte_stream_reader r(nonce.data() + rpc::HANDSHAKE_NONCE_RANDOM_BYTES,
+                            nonce.size() - rpc::HANDSHAKE_NONCE_RANDOM_BYTES,
                             etl::endian::big);
   return r.read<uint64_t>().value_or(0);
 }

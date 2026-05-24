@@ -15,7 +15,7 @@ void setup() {
   digitalWrite(13, LOW);
 
   // Initialize Bridge
-  Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, BRIDGE_SERIAL_SHARED_SECRET);
+  Bridge.begin(rpc::DEFAULT_BAUDRATE, BRIDGE_SERIAL_SHARED_SECRET);
 
   // Initialize Console
   Console.begin();

@@ -22,8 +22,8 @@ import msgspec.toml
 
 class CommandDef(msgspec.Struct, frozen=True):
     name: str
+    value: int
     directions: list[str]
-    value: int | None = None
     category: str | None = None
     description: str | None = None
     requires_ack: bool = False
@@ -32,8 +32,8 @@ class CommandDef(msgspec.Struct, frozen=True):
 
 class StatusDef(msgspec.Struct, frozen=True):
     name: str
+    value: int
     description: str
-    value: int | None = None
 
 
 class MessageFieldDef(msgspec.Struct, frozen=True):

@@ -20,7 +20,7 @@ void test_protocol_frame_logic_exhaustive() {
   TEST_ASSERT(!requires_ack((uint16_t)CommandId::CMD_GET_VERSION));
 
   // 2. is_compressed
-  TEST_ASSERT(rpc::is_compressed(rpc::CMD_FLAG_COMPRESSED));
+  TEST_ASSERT(rpc::is_compressed(rpc::RPC_CMD_FLAG_COMPRESSED));
   TEST_ASSERT(!rpc::is_compressed(0x0001));
 
   // 3. FrameParser::serialize error paths (buffer too small)
@@ -38,12 +38,12 @@ void test_protocol_frame_logic_exhaustive() {
 
   // Malformed: wrong version
   Frame f_valid;
-  f_valid.envelope.version = 0xFF;
+  f_valid.envelope.pb_msg.version = 0xFF;
   size_t v_len = FrameParser::serialize(f_valid, raw);
   TEST_ASSERT(!FrameParser::parse(etl::span<const uint8_t>(raw.data(), v_len)).has_value());
 
   // CRC Mismatch
-  f_valid.envelope.version = rpc::PROTOCOL_VERSION;
+  f_valid.envelope.pb_msg.version = PROTOCOL_VERSION;
   v_len = FrameParser::serialize(f_valid, raw);
   TEST_ASSERT(v_len > 0);
   raw[v_len - 1] ^= 0xFF; // Break CRC

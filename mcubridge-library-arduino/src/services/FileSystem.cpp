@@ -1,57 +1,115 @@
 #include "services/FileSystem.h"
 
-#include <etl/algorithm.h>
-
 #include "Bridge.h"
+
+#if BRIDGE_ENABLE_FILESYSTEM && defined(BRIDGE_HOST_TEST)
+#include <cstdio>
+#endif
 
 #if BRIDGE_ENABLE_FILESYSTEM
 
+namespace {
+constexpr size_t kReadChunkSize = 64U;
+
+#if defined(BRIDGE_HOST_TEST)
+#define BRIDGE_FS_DEBUG(...) fprintf(stderr, __VA_ARGS__)
+#else
+#define BRIDGE_FS_DEBUG(...) ((void)0)
+#endif
+
+void send_read_response(etl::span<const uint8_t> content) {
+  rpc::payload::FileReadResponse p;
+  rpc::payload::copy_to_pb_bytes(p.pb_msg.content, content.data(),
+                                 content.size());
+  (void)Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 0, p);
+}
+}  // namespace
+
 FileSystemClass::FileSystemClass() {}
 
-void FileSystemClass::_onWrite(const rpc_pb_FileWrite& msg) {
-  (void)bridge::hal::writeFile(msg.path,
-                                etl::span<const uint8_t>(msg.data.bytes,
-                                                         msg.data.size));
+void FileSystemClass::write(etl::string_view path,
+                            etl::span<const uint8_t> data) {
+  rpc::payload::FileWrite p;
+  strncpy(p.pb_msg.path, path.data(), 64);
+  p.pb_msg.path[63] = '\0';
+  rpc::payload::copy_to_pb_bytes(p.pb_msg.data, data.data(), data.size());
+  (void)Bridge.send(rpc::CommandId::CMD_FILE_WRITE, 0, p);
 }
 
-void FileSystemClass::_onRead(const rpc_pb_FileRead& msg) {
-  uint8_t buffer[64];
-  auto res = bridge::hal::readFileChunk(msg.path, 0, etl::span<uint8_t>(buffer, 64));
-  if (res) {
-    rpc_pb_FileReadResponse resp = rpc_pb_FileReadResponse_init_default;
-    rpc::payload::copy_to_pb_bytes(resp.content, buffer, res->bytes_read);
-    (void)Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 0, rpc_pb_FileReadResponse_fields, resp);
-  }
-}
-
-void FileSystemClass::_onRemove(const rpc_pb_FileRemove& msg) {
-  (void)bridge::hal::removeFile(msg.path);
-}
-
-void FileSystemClass::_onResponse(const rpc_pb_FileReadResponse& msg) {
-  if (_read_handler.is_valid()) {
-    _read_handler(etl::span<const uint8_t>(msg.content.bytes, msg.content.size));
-  }
-}
-
-void FileSystemClass::write(etl::string_view path, etl::span<const uint8_t> data) {
-  rpc_pb_FileWrite p = rpc_pb_FileWrite_init_default;
-  rpc::payload::copy_to_pb_string(p.path, path);
-  rpc::payload::copy_to_pb_bytes(p.data, data.data(), data.size());
-  (void)Bridge.send(rpc::CommandId::CMD_FILE_WRITE, 0, rpc_pb_FileWrite_fields, p);
-}
-
-void FileSystemClass::read(etl::string_view path, FileSystemReadHandler handler) {
+void FileSystemClass::read(etl::string_view path,
+                           FileSystemReadHandler handler) {
   _read_handler = handler;
-  rpc_pb_FileRead p = rpc_pb_FileRead_init_default;
-  rpc::payload::copy_to_pb_string(p.path, path);
-  (void)Bridge.send(rpc::CommandId::CMD_FILE_READ, 0, rpc_pb_FileRead_fields, p);
+  rpc::payload::FileRead p;
+  rpc::payload::copy_to_pb_string(p.pb_msg.path, path);
+  if (!Bridge.send(rpc::CommandId::CMD_FILE_READ, 0, p)) {
+    Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
+  }
 }
 
 void FileSystemClass::remove(etl::string_view path) {
-  rpc_pb_FileRemove p = rpc_pb_FileRemove_init_default;
-  rpc::payload::copy_to_pb_string(p.path, path);
-  (void)Bridge.send(rpc::CommandId::CMD_FILE_REMOVE, 0, rpc_pb_FileRemove_fields, p);
+  rpc::payload::FileRemove p;
+  strncpy(p.pb_msg.path, path.data(), 64);
+  p.pb_msg.path[63] = '\0';
+  (void)Bridge.send(rpc::CommandId::CMD_FILE_REMOVE, 0, p);
+}
+
+void FileSystemClass::_onWrite(const rpc::payload::FileWrite& msg) {
+  auto res = bridge::hal::writeFile(
+      etl::string_view(msg.pb_msg.path),
+      etl::span<const uint8_t>(msg.pb_msg.data.bytes, msg.pb_msg.data.size));
+  (void)Bridge.sendFrame(res ? rpc::StatusCode::STATUS_OK
+                             : rpc::StatusCode::STATUS_ERROR);
+}
+
+void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
+  BRIDGE_FS_DEBUG("[DEBUG] FS: Reading file: %s\\n", msg.pb_msg.path);
+  size_t offset = 0;
+  etl::array<uint8_t, kReadChunkSize> buffer;
+  const uint32_t start_ms = millis();
+  const etl::string_view path(msg.pb_msg.path);
+
+  using bridge::etl_ext::CounterIterator;
+  (void)etl::find_if(
+      CounterIterator<uint16_t>(0U),
+      CounterIterator(bridge::config::FILE_MAX_READ_CHUNKS),
+      [&](uint32_t chunk_idx) {
+        if (millis() - start_ms >= bridge::config::SERIAL_TIMEOUT_MS) {
+          BRIDGE_FS_DEBUG("[DEBUG] FS: Read TIMEOUT at offset %zu\\n", offset);
+          return true;
+        }
+
+        auto res = bridge::hal::readFileChunk(
+            path, offset, etl::span<uint8_t>(buffer.data(), buffer.size()));
+        if (!res) {
+          BRIDGE_FS_DEBUG("[DEBUG] FS: Read FAILED at offset %zu\\n", offset);
+          (void)Bridge.sendFrame(rpc::StatusCode::STATUS_ERROR);
+          return true;
+        }
+        BRIDGE_FS_DEBUG(
+            "[DEBUG] FS: Sending chunk %u (%zu bytes, has_more=%d)\\n",
+            (unsigned int)chunk_idx, res->bytes_read, res->has_more);
+        send_read_response(
+            etl::span<const uint8_t>(buffer.data(), res->bytes_read));
+        if (!res->has_more) {
+          send_read_response(etl::span<const uint8_t>());
+          return true;
+        }
+        offset += res->bytes_read;
+        return false;
+      });
+}
+
+void FileSystemClass::_onRemove(const rpc::payload::FileRemove& msg) {
+  auto res = bridge::hal::removeFile(etl::string_view(msg.pb_msg.path));
+  (void)Bridge.sendFrame(res ? rpc::StatusCode::STATUS_OK
+                             : rpc::StatusCode::STATUS_ERROR);
+}
+
+void FileSystemClass::_onResponse(const rpc::payload::FileReadResponse& msg) {
+  if (_read_handler.is_valid()) {
+    _read_handler(etl::span<const uint8_t>(msg.pb_msg.content.bytes,
+                                           msg.pb_msg.content.size));
+  }
 }
 
 FileSystemClass FileSystem;

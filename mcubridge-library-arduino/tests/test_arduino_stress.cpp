@@ -31,7 +31,7 @@ void test_bridge_reliable_retry_exhaustion() {
 
   // 2. Trigger timeout multiple times until limit
   bridge::etl_ext::CounterIterator<int> retry_begin(1);
-  bridge::etl_ext::CounterIterator<int> retry_end(rpc::DEFAULT_RETRY_LIMIT);
+  bridge::etl_ext::CounterIterator<int> retry_end(rpc::RPC_DEFAULT_RETRY_LIMIT);
   etl::for_each(retry_begin, retry_end, [&ba](int) {
     ba.onAckTimeout();
     TEST_ASSERT_TRUE(ba.isAwaitingAck());
@@ -64,14 +64,14 @@ void test_bridge_dispatch_security_denial() {
   auto ba = TestAccessor::create(Bridge);
 
   // Configure secret to enable security checks
-  Bridge.begin(rpc::DEFAULT_BAUDRATE, "secure_secret_1234567890123456");
+  Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, "secure_secret_1234567890123456");
 
   // MPU is NOT synchronized yet.
   // Try to send a restricted command
   rpc::Frame f;
-  f.envelope.version = rpc::PROTOCOL_VERSION;
-  f.envelope.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_GET_FREE_MEMORY);
-  f.envelope.sequence_id = 1;
+  f.envelope.pb_msg.version = rpc::PROTOCOL_VERSION;
+  f.envelope.pb_msg.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_GET_FREE_MEMORY);
+  f.envelope.pb_msg.sequence_id = 1;
 
   ba.dispatch(f);
 

@@ -8,7 +8,6 @@
 #include <etl/span.h>
 
 #include "Bridge.h"
-#include "security/security.h"
 
 namespace bridge::test {
 
@@ -84,8 +83,8 @@ class TestAccessor {
     _bridge._onPacketReceived(p);
   }
 
-  void invokeConsolePush(const rpc_pb_ConsoleWrite& cmsg) {
-    (void)_bridge.send(rpc::CommandId::CMD_CONSOLE_WRITE, 0, rpc_pb_ConsoleWrite_fields, cmsg);
+  void invokeConsolePush(const rpc::payload::ConsoleWrite& cmsg) {
+    (void)_bridge.send(rpc::CommandId::CMD_CONSOLE_WRITE, 0, cmsg);
   }
   bool isAwaitingAck() const {
     return _fsm.get_state_id() ==
@@ -112,7 +111,7 @@ class TestAccessor {
   }
   void clearSynchronized() { _fsm.receive(bridge::fsm::EvReset()); }
   void onBootloaderDelay() { _bridge._onBootloaderDelay(); }
-  void applyTimingConfig(const rpc_pb_HandshakeConfig& msg) {
+  void applyTimingConfig(const rpc::payload::HandshakeConfig& msg) {
     _bridge._applyTimingConfig(msg);
   }
   void clearSharedSecret() { _bridge._shared_secret.clear(); }

@@ -54,7 +54,7 @@ int main(int argc, char** argv) {
   sigaction(SIGTERM, &sa, NULL);
   sigaction(SIGINT, &sa, NULL);
 
-  Bridge.begin(rpc::DEFAULT_BAUDRATE, "DEBUG_INSECURE");
+  Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, "DEBUG_INSECURE");
 
   fprintf(stderr, "McuBridge Emulator Started on stdio\n");
 

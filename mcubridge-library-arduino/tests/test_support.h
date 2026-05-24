@@ -144,7 +144,7 @@ struct TestCOBS {
         code = 1;
       } else {
         *dst++ = b;
-        if (++code == rpc::UINT8_MASK) {
+        if (++code == rpc::RPC_UINT8_MASK) {
           *code_ptr = code;
           code_ptr = dst++;
           code = 1;
@@ -188,13 +188,13 @@ static bool extract_next_valid_frame(const ByteBuffer<N>& buffer,
   etl::array<uint8_t, 1024> decoded_buf;
 
   while (cursor < buffer.len) {
-    if (buffer.data[cursor] == rpc::FRAME_DELIMITER) {
+    if (buffer.data[cursor] == rpc::RPC_FRAME_DELIMITER) {
       cursor++;
       continue;
     }
 
     size_t end = cursor;
-    while (end < buffer.len && buffer.data[end] != rpc::FRAME_DELIMITER)
+    while (end < buffer.len && buffer.data[end] != rpc::RPC_FRAME_DELIMITER)
       end++;
 
     const size_t segment_len =
@@ -202,7 +202,7 @@ static bool extract_next_valid_frame(const ByteBuffer<N>& buffer,
     size_t decoded_len =
         TestCOBS::decode(&buffer.data[cursor], segment_len, decoded_buf.data());
 
-    if (decoded_len >= rpc::CRC_SIZE + 2U) {
+    if (decoded_len >= rpc::CRC_TRAILER_SIZE + 2U) {
       auto result =
           rpc::FrameParser::parse(etl::span<const uint8_t>(decoded_buf.data(), decoded_len));
       if (result) {
@@ -232,7 +232,7 @@ static inline void reset_bridge_core(BridgeClass& bridge, Stream& stream,
   if (baudrate) {
     bridge.begin(baudrate, secret);
   } else {
-    bridge.begin(rpc::DEFAULT_BAUDRATE, secret);
+    bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, secret);
   }
   auto ba = bridge::test::TestAccessor::create(bridge);
   ba.onStartupStabilized();

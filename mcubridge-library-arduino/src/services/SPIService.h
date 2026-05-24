@@ -10,7 +10,7 @@
 #undef max
 #include <etl/span.h>
 #include "protocol/BridgeEvents.h"
-#include "protocol/mcubridge.pb.h"
+#include "protocol/rpc_structs.h"
 
 class SPIServiceClass : public BridgeObserver {
 public:
@@ -18,7 +18,7 @@ public:
 
   void begin();
   void end();
-  void setConfig(const rpc_pb_SpiConfig& config);
+  void setConfig(const rpc::payload::SpiConfig& config);
   size_t transfer(etl::span<uint8_t> buffer);
 
   void notification(MsgBridgeSynchronized) override {}

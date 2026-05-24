@@ -11,13 +11,13 @@
 #include <etl/span.h>
 #include "protocol/BridgeEvents.h"
 #include "protocol/rpc_protocol.h"
-#include "protocol/mcubridge.pb.h"
+#include "protocol/rpc_structs.h"
 
 class ConsoleClass : public Stream, public BridgeObserver {
  public:
   ConsoleClass();
   void begin();
-  void _push(const rpc_pb_ConsoleWrite& msg);
+  void _push(const rpc::payload::ConsoleWrite& msg);
   void process();
 
   void notification(MsgBridgeSynchronized) override { begin(); }

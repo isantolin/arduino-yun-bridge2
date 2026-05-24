@@ -13,8 +13,8 @@ void ConsoleClass::begin() {
   _tx_buffer.clear();
 }
 
-void ConsoleClass::_push(const rpc_pb_ConsoleWrite& msg) {
-  const auto& data = msg.data;
+void ConsoleClass::_push(const rpc::payload::ConsoleWrite& msg) {
+  const auto& data = msg.pb_msg.data;
   const size_t to_write = etl::min(static_cast<size_t>(data.size), _rx_buffer.available());
   using bridge::etl_ext::CounterIterator;
   etl::for_each(CounterIterator<size_t>(0U), CounterIterator<size_t>(to_write),
@@ -23,10 +23,10 @@ void ConsoleClass::_push(const rpc_pb_ConsoleWrite& msg) {
 
 void ConsoleClass::process() {
   if (!_tx_buffer.empty()) {
-    rpc_pb_ConsoleWrite p = rpc_pb_ConsoleWrite_init_default;
-    rpc::payload::copy_to_pb_bytes(p.data, _tx_buffer.data(),
+    rpc::payload::ConsoleWrite p;
+    rpc::payload::copy_to_pb_bytes(p.pb_msg.data, _tx_buffer.data(),
                                    _tx_buffer.size());
-    if (Bridge.send(rpc::CommandId::CMD_CONSOLE_WRITE, 0, rpc_pb_ConsoleWrite_fields, p)) {
+    if (Bridge.send(rpc::CommandId::CMD_CONSOLE_WRITE, 0, p)) {
       _tx_buffer.clear();
     }
   }

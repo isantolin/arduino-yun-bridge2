@@ -29,13 +29,13 @@ void test_bridge_full_crypto_handshake_and_data() {
   auto ba = TestAccessor::create(Bridge);
 
   const char* secret_str = "secure_secret_1234567890123456";
-  Bridge.begin(rpc::DEFAULT_BAUDRATE, secret_str);
+  Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, secret_str);
 
   // 1. Prepare LinkSync request from "MPU"
-  rpc_pb_LinkSync sync_req = rpc_pb_LinkSync_init_default;
+  rpc::payload::LinkSync sync_req = {};
   for (int i = 0; i < 12; ++i)
-    sync_req.nonce.bytes[i] = static_cast<uint8_t>(i + 1);
-  sync_req.nonce.size = 12;
+    sync_req.pb_msg.nonce.bytes[i] = static_cast<uint8_t>(i + 1);
+  sync_req.pb_msg.nonce.size = 12;
 
   // Handshake Key Derivation
   etl::array<uint8_t, 32> handshake_key;
@@ -43,22 +43,22 @@ void test_bridge_full_crypto_handshake_and_data() {
       etl::span<uint8_t>(handshake_key),
       etl::span<const uint8_t>(reinterpret_cast<const uint8_t*>(secret_str),
                                32),
-      etl::span<const uint8_t>(rpc::HANDSHAKE_HKDF_SALT),
-      etl::span<const uint8_t>(rpc::HANDSHAKE_HKDF_INFO_AUTH));
+      etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_SALT),
+      etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH));
 
   Hmac hmac;
   wc_HmacSetKey(&hmac, WC_SHA256, handshake_key.data(), 32);
-  wc_HmacUpdate(&hmac, sync_req.nonce.bytes, 12);
+  wc_HmacUpdate(&hmac, sync_req.pb_msg.nonce.bytes, 12);
   wc_HmacFinal(&hmac, handshake_key.data());
-  memcpy(sync_req.tag.bytes, handshake_key.data(), 16);
-  sync_req.tag.size = 16;
+  memcpy(sync_req.pb_msg.tag.bytes, handshake_key.data(), 16);
+  sync_req.pb_msg.tag.size = 16;
 
   rpc::Frame f_sync;
-  f_sync.envelope.version = rpc::PROTOCOL_VERSION;
-  f_sync.envelope.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_LINK_SYNC);
-  f_sync.envelope.sequence_id = 1;
+  f_sync.envelope.pb_msg.version = rpc::PROTOCOL_VERSION;
+  f_sync.envelope.pb_msg.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_LINK_SYNC);
+  f_sync.envelope.pb_msg.sequence_id = 1;
 
-  bridge::test::set_pb_payload(f_sync, rpc_pb_LinkSync_fields, sync_req);
+  bridge::test::set_pb_payload(f_sync, sync_req);
 
   // 2. Dispatch SYNC.
   ba.setIdle();
@@ -68,17 +68,17 @@ void test_bridge_full_crypto_handshake_and_data() {
   // branches)
   stream.clear();
   rpc::Frame f_data;
-  f_data.envelope.version = rpc::PROTOCOL_VERSION;
-  f_data.envelope.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_GET_FREE_MEMORY);
-  f_data.envelope.sequence_id = 2;
+  f_data.envelope.pb_msg.version = rpc::PROTOCOL_VERSION;
+  f_data.envelope.pb_msg.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_GET_FREE_MEMORY);
+  f_data.envelope.pb_msg.sequence_id = 2;
   
-  f_data.envelope.nonce.bytes[0] = 'M';
-  f_data.envelope.nonce.bytes[1] = 'P';
-  f_data.envelope.nonce.bytes[2] = 'U';
-  f_data.envelope.nonce.bytes[11] = 5;         // Counter = 5
-  f_data.envelope.nonce.size = 12;
-  memset(f_data.envelope.tag.bytes, 0xEE, 16);
-  f_data.envelope.tag.size = 16;
+  f_data.envelope.pb_msg.nonce.bytes[0] = 'M';
+  f_data.envelope.pb_msg.nonce.bytes[1] = 'P';
+  f_data.envelope.pb_msg.nonce.bytes[2] = 'U';
+  f_data.envelope.pb_msg.nonce.bytes[11] = 5;         // Counter = 5
+  f_data.envelope.pb_msg.nonce.size = 12;
+  memset(f_data.envelope.pb_msg.tag.bytes, 0xEE, 16);
+  f_data.envelope.pb_msg.tag.size = 16;
 
   ba.dispatch(f_data);
 
@@ -99,7 +99,7 @@ void test_bridge_ack_timeout_retry_to_fault() {
 
   // Trigger timeout 3 times (Default limit)
   bridge::etl_ext::CounterIterator<int> retry_begin(0);
-  bridge::etl_ext::CounterIterator<int> retry_end(rpc::DEFAULT_RETRY_LIMIT);
+  bridge::etl_ext::CounterIterator<int> retry_end(rpc::RPC_DEFAULT_RETRY_LIMIT);
   etl::for_each(retry_begin, retry_end, [&ba](int) { ba.onAckTimeout(); });
 
   // After limit, it should transition out of Awaiting Ack

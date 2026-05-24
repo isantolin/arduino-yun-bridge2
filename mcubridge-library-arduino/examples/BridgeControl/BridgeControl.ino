@@ -26,7 +26,7 @@ void setup() {
   // En emulación, Serial (UART0) es el canal del protocolo. Cualquier texto
   // enviado aquí corromperá el stream COBS y bloqueará la sincronización.
 
-  Bridge.begin(rpc::DEFAULT_BAUDRATE, BRIDGE_SERIAL_SHARED_SECRET);
+  Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, BRIDGE_SERIAL_SHARED_SECRET);
 
   Bridge.onCommand(BridgeClass::CommandHandler::create([](const rpc::Frame& frame) {
     Console.print(F("Comando RPC no manejado: ID=0x"));

@@ -8,6 +8,7 @@ This module implements secure handshake with:
 """
 
 from __future__ import annotations
+from mcubridge.protocol import mcubridge_pb2 as pb
 
 import asyncio
 import logging
@@ -32,9 +33,6 @@ from ..config.settings import RuntimeConfig
 from ..protocol import protocol, structures
 from ..protocol.protocol import Command, Status
 from ..protocol.structures import (
-    CapabilitiesPacket,
-    HandshakeConfigPacket,
-    LinkSyncPacket,
     PROTOBUF_CONTENT_TYPE,
     QueuedPublish,
     SerialTimingWindow,
@@ -121,11 +119,11 @@ class SerialHandshakeManager:
         self._logger = logger_ or logger
         self._fatal_threshold = max(1, config.serial_handshake_fatal_failures)
         # [SIL-2] Serialize handshake timing as protobuf.
-        self._reset_payload = HandshakeConfigPacket(
+        self._reset_payload = pb.HandshakeConfig(
             ack_timeout_ms=self._timing.ack_timeout_ms,
             ack_retry_limit=self._timing.retry_limit,
             response_timeout_ms=self._timing.response_timeout_ms,
-        ).encode()
+        ).SerializeToString()
         self._capabilities_future: asyncio.Future[bytes] | None = None
         self.fsm_state = self.STATE_UNSYNCHRONIZED
 
@@ -207,7 +205,7 @@ class SerialHandshakeManager:
         # [MIL-SPEC] Send LINK_SYNC with mutual authentication tag
         our_tag = self.calculate_handshake_tag(self._config.serial_shared_secret, nonce)
         # [SIL-2] Serialize LINK_SYNC as protobuf.
-        sync_payload = LinkSyncPacket(nonce=nonce, tag=our_tag).encode()
+        sync_payload = pb.LinkSync(nonce=nonce, tag=our_tag).SerializeToString()
         sync_ok = await self._send_frame(Command.CMD_LINK_SYNC.value, sync_payload)
         if not sync_ok:
             self.clear_handshake_expectations()
@@ -272,7 +270,7 @@ class SerialHandshakeManager:
 
         try:
             # [SIL-2] Decode LINK_SYNC_RESP as protobuf.
-            sync_pkt = LinkSyncPacket.decode(payload)
+            sync_pkt = pb.LinkSync.FromString(payload)
             nonce = bytes(sync_pkt.nonce)
             tag_bytes = bytes(sync_pkt.tag)
         except (ProtobufDecodeError, ValueError, TypeError):
@@ -394,7 +392,7 @@ class SerialHandshakeManager:
     def _parse_capabilities(self, payload: bytes) -> None:
         try:
             # [SIL-2] Decode capabilities as protobuf.
-            cap = CapabilitiesPacket.decode(payload)
+            cap = pb.Capabilities.FromString(payload)
             self._state.mcu_capabilities = McuCapabilities(
                 protocol_version=cap.ver,
                 board_arch=cap.arch,

@@ -1,6 +1,7 @@
 """Booster tests for maximum coverage with strict typing."""
 
 from __future__ import annotations
+from mcubridge.protocol import mcubridge_pb2 as pb
 
 import asyncio
 import contextlib
@@ -259,14 +260,18 @@ async def test_runtime_mcu_handlers_coverage_final(mock_config: RuntimeConfig, m
 
     mock_state.datastore_cache.get.return_value = b"val1"
 
-    await service.mcu_registry[Command.CMD_DATASTORE_GET.value](1, structures.DatastoreGetPacket(key="key1").encode())
+    await service.mcu_registry[Command.CMD_DATASTORE_GET.value](
+        1, structures.pb.DatastoreGet(key="key1").SerializeToString()
+    )
 
     with patch("mcubridge.services.runtime.BridgeService._get_safe_path", return_value=None):
         await service.mcu_registry[Command.CMD_FILE_WRITE.value](
-            1, structures.FileWritePacket(path="x", data=b"").encode()
+            1, structures.pb.FileWrite(path="x", data=b"").SerializeToString()
         )
-        await service.mcu_registry[Command.CMD_FILE_READ.value](1, structures.FileReadPacket(path="x").encode())
-        await service.mcu_registry[Command.CMD_FILE_REMOVE.value](1, structures.FileRemovePacket(path="x").encode())
+        await service.mcu_registry[Command.CMD_FILE_READ.value](1, structures.pb.FileRead(path="x").SerializeToString())
+        await service.mcu_registry[Command.CMD_FILE_REMOVE.value](
+            1, structures.pb.FileRemove(path="x").SerializeToString()
+        )
 
     # Mailbox push malformed
     await service.mcu_registry[Command.CMD_MAILBOX_PUSH.value](1, b"\xff\xff")
@@ -405,9 +410,7 @@ async def test_runtime_mcu_version_coverage(mock_config: RuntimeConfig, mock_sta
     service = BridgeService(mock_config, mock_state, serial)
 
     # Mock response from serial
-    from mcubridge.protocol.structures import VersionResponsePacket
-
-    serial.send_and_wait_payload.return_value = VersionResponsePacket(major=1, minor=2, patch=3).encode()
+    serial.send_and_wait_payload.return_value = pb.VersionResponse(major=1, minor=2, patch=3).SerializeToString()
 
     msg = MagicMock()
     msg.topic = MagicMock()
@@ -452,10 +455,8 @@ async def test_handshake_manager_coverage(mock_config: RuntimeConfig, mock_state
 
     # 2. handle_link_sync_resp auth failure
     mock_state.link_handshake_nonce = b"A" * 12
-    from mcubridge.protocol.structures import LinkSyncPacket
-
-    bad_resp = LinkSyncPacket(nonce=b"A" * 12, tag=b"BAD_TAG")
-    await mgr.handle_link_sync_resp(1, bad_resp.encode())
+    bad_resp = pb.LinkSync(nonce=b"A" * 12, tag=b"BAD_TAG")
+    await mgr.handle_link_sync_resp(1, bad_resp.SerializeToString())
 
 
 @pytest.mark.asyncio
@@ -509,9 +510,8 @@ async def test_runtime_service_direct_handlers_v2(mock_config: RuntimeConfig, mo
     await service.handle_mcu_frame(
         Status.ACK.value,
         1,
-        structures.AckPacket(command_id=0x10).encode(),
+        pb.AckPacket(command_id=0x10).SerializeToString(),
     )
-
     # on_serial_disconnected
     # Mock self.serial.reset()
     mock_serial.reset = AsyncMock()
@@ -577,7 +577,7 @@ async def test_runtime_spi_pin_handlers_coverage(mock_config: RuntimeConfig, moc
     msg.payload = b"data"
 
     # Mock response to avoid msgspec error
-    serial.send_and_wait_payload.return_value = structures.SpiTransferResponsePacket(data=b"resp").encode()
+    serial.send_and_wait_payload.return_value = structures.pb.SpiTransferResponse(data=b"resp").SerializeToString()
 
     await cast(Any, service)._handle_mqtt_spi(route, msg)
     assert serial.send_and_wait_payload.called
@@ -673,9 +673,7 @@ async def test_runtime_mcu_pin_analog_read_coverage(mock_config: RuntimeConfig, 
     req = structures.PendingPinRequest(pin=5, reply_context=None)
     mock_state.pending_analog_reads.append(req)
 
-    from mcubridge.protocol.structures import AnalogReadResponsePacket
-
-    payload = AnalogReadResponsePacket(value=512).encode()
+    payload = pb.AnalogReadResponse(value=512).SerializeToString()
     await service.mcu_registry[Command.CMD_ANALOG_READ_RESP.value](1, payload)
     assert mock_mqtt.publish.called
 

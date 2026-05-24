@@ -1355,8 +1355,7 @@ def main() -> None:
 
     # Generate Packet classes from spec.toml messages into structures.py
     if args.structures:
-        gen.generate_structures_packets(spec, args.structures)
-        sys.stderr.write(f"Generated Packet classes in {args.structures}\n")
+        sys.stderr.write(f"Skipping Packet generation for {args.structures} (wrappers deprecated)\n")
 
     # Step 4: Generate type stubs for untyped libraries using pyright
     untyped_libs = ["diskcache"]

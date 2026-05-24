@@ -64,17 +64,18 @@ def get_module_size(mod_name: str) -> int:
 
 
 def generate_report(github_step_summary: Path | None = None) -> None:
-    from mcubridge.protocol import structures
 
     import_stats = measure_imports()
     mem_rss = measure_runtime_memory()
     object_symbols = measure_object_symbols()
 
+    from mcubridge.protocol import mcubridge_pb2 as pb
+
     # Measure protobuf packet serialization efficiency
-    test_packet = structures.AckPacket(command_id=0x42)
+    test_packet = pb.AckPacket(command_id=0x42)
     start_enc = time.perf_counter()
     for _ in range(1000):
-        _ = test_packet.encode()
+        _ = test_packet.SerializeToString()
     avg_enc = time.perf_counter() - start_enc
 
     md = [

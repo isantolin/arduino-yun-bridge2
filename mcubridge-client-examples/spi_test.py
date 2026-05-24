@@ -22,7 +22,9 @@ async def run_test(
     bridge = Bridge(host=host, port=port, username=user, password=password)
     if tls_insecure and bridge.tls_context:
         bridge.tls_context.check_hostname = False
-        bridge.tls_context.verify_mode = 0
+        import ssl
+
+        bridge.tls_context.verify_mode = ssl.CERT_NONE
 
     await bridge.connect()
     logger.info("--- Starting SPI Service Test ---")

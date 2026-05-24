@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
-from typing import Any
 
 from mcubridge_client import Bridge
 from mcubridge_client.cli import bridge_session, configure_logging
@@ -26,17 +25,17 @@ async def _stream_poll_updates(
 
     logger = logging.getLogger(__name__)
     while True:
-        poll_payload: dict[str, Any] = await bridge.poll_shell_process(pid)
+        poll_payload = await bridge.poll_shell_process(pid)
 
         # Protobuf poll payloads preserve stdout/stderr as raw bytes.
-        raw_stdout = poll_payload.get("stdout_chunk") or b""
-        raw_stderr = poll_payload.get("stderr_chunk") or b""
+        raw_stdout = poll_payload.stdout_chunk or b""
+        raw_stderr = poll_payload.stderr_chunk or b""
 
         stdout_chunk = raw_stdout.decode("utf-8", errors="replace").rstrip()
         stderr_chunk = raw_stderr.decode("utf-8", errors="replace").rstrip()
 
-        exit_code = poll_payload.get("exit_code")
-        finished = bool(poll_payload.get("finished"))
+        exit_code = getattr(poll_payload, "exit_code", None)
+        finished = getattr(poll_payload, "finished", False)
 
         if stdout_chunk:
             logger.info("[PID %d] STDOUT: %s", pid, stdout_chunk)

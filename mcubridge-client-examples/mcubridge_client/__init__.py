@@ -1,6 +1,7 @@
 """Minimalistic Async MQTT Client for MCU Bridge."""
 
 from __future__ import annotations
+from . import mcubridge_pb2 as pb
 
 import asyncio
 import contextlib
@@ -32,15 +33,7 @@ from .definitions import (
 from .env import dump_client_env, read_uci_general
 from .protocol import (
     Command,
-    ProcessPollResponsePacket,
-    ProcessRunAsyncPacket,
-    ProcessRunAsyncResponsePacket,
     Topic,
-    SpiConfigPacket,
-    SpiTransferPacket,
-    SpiTransferResponsePacket,
-    VersionResponsePacket,
-    FreeMemoryResponsePacket,
 )
 from .spi import SpiDevice
 
@@ -55,11 +48,6 @@ __all__ = [
     "QOSLevel",
     "Command",
     "Topic",
-    "FreeMemoryResponsePacket",
-    "SpiConfigPacket",
-    "SpiTransferPacket",
-    "SpiTransferResponsePacket",
-    "VersionResponsePacket",
 ]
 
 logger = logging.getLogger(__name__)
@@ -263,12 +251,12 @@ class Bridge:
     async def run_shell_command_async(self, parts: list[str], timeout: float = 15) -> int:
         res = await self._publish_and_wait(
             Topic.build(Topic.SHELL, "run_async"),
-            ProcessRunAsyncPacket(command=shlex.join(parts)).encode(),
+            pb.ProcessRunAsync(command=shlex.join(parts)).SerializeToString(),
             resp_topic=Topic.build(Topic.SHELL, "run_async", "response"),
             timeout=timeout,
             content_type=PROTOBUF_CONTENT_TYPE,
         )
-        return int(ProcessRunAsyncResponsePacket.decode(res).pid)
+        return int(pb.ProcessRunAsyncResponse.FromString(res).pid)
 
     async def poll_shell_process(self, pid: int, timeout: float = 15) -> ShellPollResponse:
         res = await self._publish_and_wait(
@@ -277,7 +265,7 @@ class Bridge:
             resp_topic=Topic.build(Topic.SHELL, "poll", pid, "response"),
             timeout=timeout,
         )
-        packet = ProcessPollResponsePacket.decode(res)
+        packet = pb.ProcessPollResponse.FromString(res)
         return {
             "status_byte": int(packet.status),
             "exit_code": int(packet.exit_code),

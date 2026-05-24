@@ -12,6 +12,7 @@ Outputs a Markdown table suitable for ``$GITHUB_STEP_SUMMARY``.
 """
 
 from __future__ import annotations
+from mcubridge.protocol import mcubridge_pb2 as pb
 
 import argparse
 import importlib
@@ -249,16 +250,14 @@ def run_benchmarks(iterations: int = 5000) -> list[BenchmarkResult]:
     results.append(_benchmark("Frame.parse()", lambda: Frame.parse(raw), iterations))
 
     # --- Protobuf encode/decode (serial payload) ---
-    from mcubridge.protocol.structures import ConsoleWritePacket
-
-    sample_packet = ConsoleWritePacket(data=b"Hello, Bridge!" * 4)
-    pb_bytes = sample_packet.encode()
+    sample_packet = pb.ConsoleWrite(data=b"Hello, Bridge!" * 4)
+    pb_bytes = sample_packet.SerializeToString()
 
     def _pb_encode() -> bytes:
-        return ConsoleWritePacket(data=b"Hello, Bridge!" * 4).encode()
+        return pb.ConsoleWrite(data=b"Hello, Bridge!" * 4).SerializeToString()
 
     def _pb_decode() -> Any:
-        return ConsoleWritePacket.decode(pb_bytes)
+        return pb.ConsoleWrite.FromString(pb_bytes)
 
     results.append(_benchmark("Protobuf encode", _pb_encode, iterations))
     results.append(_benchmark("Protobuf decode", _pb_decode, iterations))

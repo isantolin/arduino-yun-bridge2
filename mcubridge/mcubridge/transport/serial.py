@@ -12,6 +12,7 @@ and StreamWriter. It delegates delimiter searching to Python's C core via
 """
 
 from __future__ import annotations
+from mcubridge.protocol import mcubridge_pb2 as pb
 
 import asyncio
 import contextlib
@@ -41,7 +42,6 @@ from mcubridge.protocol.protocol import (
     response_to_request,
 )
 from mcubridge.protocol.structures import (
-    AckPacket,
     PendingCommand,
 )
 from mcubridge.security.security import (
@@ -252,7 +252,7 @@ class SerialTransport:
             ack_target = pending.command_id
             if payload:
                 with contextlib.suppress(Exception):
-                    ack_target = AckPacket.decode(payload).command_id
+                    ack_target = pb.AckPacket.FromString(payload).command_id
             if ack_target == pending.command_id:
                 pending.ack_received = True
                 if not pending.expected_resp_ids:
@@ -405,9 +405,7 @@ class SerialTransport:
             return False
 
     async def _negotiate_baudrate(self, target_baud: int) -> bool:
-        from mcubridge.protocol.structures import SetBaudratePacket
-
-        payload = SetBaudratePacket(baudrate=target_baud).encode()
+        payload = pb.SetBaudratePacket(baudrate=target_baud).SerializeToString()
         self._negotiating = True
         try:
             self._negotiation_future = self.loop.create_future() if self.loop else None
@@ -422,4 +420,4 @@ class SerialTransport:
             self._negotiating = False
 
     async def acknowledge(self, command_id: int, seq_id: int, *, status: Status = Status.ACK) -> None:
-        await self.send_raw(status.value, AckPacket(command_id=command_id).encode(), seq_id)
+        await self.send_raw(status.value, pb.AckPacket(command_id=command_id).SerializeToString(), seq_id)

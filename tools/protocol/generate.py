@@ -1048,51 +1048,6 @@ class JinjaGenerator:
                     reverse[cmd.name] = req_name
         return reverse
 
-    def generate_structures_packets(self, spec: ProtocolSpec, structures_path: Path) -> None:
-        """Generate Packet classes from spec.toml messages and splice into structures.py."""
-        packet_messages = [m for m in spec.messages if m.name not in PACKET_EXCLUDE]
-
-        packets: list[dict[str, object]] = []
-        for msg in packet_messages:
-            fields: list[dict[str, str]] = []
-            for f in msg.fields:
-                py_type = TOML_PYTHON_TYPE_MAP.get(f.type)
-                if py_type is None:
-                    sys.stderr.write(f"Warning: unknown field type '{f.type}' in {msg.name}.{f.name}, skipping field\n")
-                    continue
-                fields.append({"name": f.name, "python_type": py_type})
-            packets.append(
-                {
-                    "class_name": packet_class_name(msg.name),
-                    "proto_name": msg.name,
-                    "fields": fields,
-                }
-            )
-
-        template = self.env.get_template("structures_packets.py.j2")
-        generated = template.render(packets=packets)
-        # Normalize to exactly 2 blank lines between top-level defs (PEP 8)
-        generated = re.sub(r"\n{4,}", "\n\n\n", generated)
-
-        # Splice into structures.py between markers
-        content = structures_path.read_text(encoding="utf-8")
-        begin_marker = "# --- BEGIN GENERATED PACKETS ---"
-        end_marker = "# --- END GENERATED PACKETS ---"
-
-        begin_idx = content.find(begin_marker)
-        end_idx = content.find(end_marker)
-        if begin_idx == -1 or end_idx == -1:
-            sys.stderr.write(
-                f"Error: markers not found in {structures_path}. Expected '{begin_marker}' and '{end_marker}'\n"
-            )
-            sys.exit(1)
-
-        end_idx += len(end_marker)
-        new_content = content[:begin_idx] + generated + content[end_idx:]
-        # Normalize excessive blank lines at splice boundaries (PEP 8: max 2 between top-level defs)
-        new_content = re.sub(r"\n{4,}", "\n\n\n", new_content)
-        structures_path.write_text(new_content, encoding="utf-8")
-
     def generate_nanopb(self, proto_path: Path) -> None:
         """Invoke nanopb_generator.py to create C++ headers/sources."""
         cmd = [sys.executable, "-m", "nanopb.generator.nanopb_generator", "-v", proto_path.name]
@@ -1263,12 +1218,6 @@ def main() -> None:
     parser.add_argument("--cpp-structs", type=Path, default=None, help="C++ structs output")
     parser.add_argument("--py", type=Path, default=None, help="Python output")
     parser.add_argument("--py-client", type=Path, default=None, help="Python client output")
-    parser.add_argument(
-        "--structures",
-        type=Path,
-        default=None,
-        help="Splice generated Packets into structures.py",
-    )
 
     args = parser.parse_args()
 
@@ -1352,10 +1301,6 @@ def main() -> None:
         gen.generate_python_client(spec, args.py_client)
         _format_python_file(args.py_client)
         sys.stderr.write(f"Generated {args.py_client}\n")
-
-    # Generate Packet classes from spec.toml messages into structures.py
-    if args.structures:
-        sys.stderr.write(f"Skipping Packet generation for {args.structures} (wrappers deprecated)\n")
 
     # Step 4: Generate type stubs for untyped libraries using pyright
     untyped_libs = ["diskcache"]

@@ -83,7 +83,6 @@ class SerialTransport:
         self.service = service
         self.reader: asyncio.StreamReader | None = None
         self.writer: asyncio.StreamWriter | None = None
-        self.loop: asyncio.AbstractEventLoop | None = None
 
         if self.service:
             self.service.register_serial_sender(self.send)
@@ -93,7 +92,6 @@ class SerialTransport:
         self._negotiation_future: asyncio.Future[bool] | None = None
         self._consecutive_crc_errors = 0
         self._tx_sequence_id = 0
-        self.is_connected = False
 
         self._current: PendingCommand | None = None
         self._flow_lock = asyncio.Lock()
@@ -131,7 +129,6 @@ class SerialTransport:
             self._current = None
 
     async def run(self) -> None:
-        self.loop = asyncio.get_running_loop()
         retryer = tenacity.AsyncRetrying(
             wait=tenacity.wait_exponential(multiplier=1, min=1, max=10),
             retry=tenacity.retry_if_not_exception_type((asyncio.CancelledError, SerialHandshakeFatal)),
@@ -155,7 +152,6 @@ class SerialTransport:
         )
         self.state.serial_writer = cast(asyncio.BaseTransport, self.writer.transport)
         read_task = asyncio.get_running_loop().create_task(self._read_loop(self.reader))
-        self.is_connected = True
         try:
             if self.config.serial_baud != connect_baud and not await self._negotiate_baudrate(self.config.serial_baud):
                 raise ConnectionError("Baudrate negotiation failed")
@@ -172,7 +168,6 @@ class SerialTransport:
             if read_task in done:
                 raise ConnectionError("Serial connection lost")
         finally:
-            self.is_connected = False
             read_task.cancel()
             with contextlib.suppress(asyncio.IncompleteReadError, asyncio.CancelledError):
                 await read_task
@@ -421,7 +416,7 @@ class SerialTransport:
         payload = pb.SetBaudratePacket(baudrate=target_baud).SerializeToString()
         self._negotiating = True
         try:
-            self._negotiation_future = self.loop.create_future() if self.loop else None
+            self._negotiation_future = asyncio.get_running_loop().create_future()
             if not await self.send_raw(protocol.Command.CMD_SET_BAUDRATE.value, payload):
                 return False
             if self._negotiation_future:

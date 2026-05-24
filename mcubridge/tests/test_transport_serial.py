@@ -44,10 +44,7 @@ async def test_process_packet_crc_mismatch_reports_crc(
         state.mark_transport_connected()
         state.mark_synchronized()
         service = BridgeService(config, state, AsyncMock())
-
-        # Use SerialTransport to test async process packet logic
         transport = SerialTransport(config, state, service)
-        transport.loop = asyncio.get_running_loop()
 
         # Create an invalid frame manually (e.g. version mismatch to trigger ValueError in Frame.parse)
         raw = b"\xff" + b"x" * 20
@@ -77,9 +74,6 @@ async def test_process_packet_success_dispatches() -> None:
         frame_bytes = Frame(command_id=Command.CMD_CONSOLE_WRITE.value, sequence_id=0, payload=b"hi").build()
         encoded = cobs.encode(frame_bytes)
         transport = SerialTransport(config, state, service)
-
-        transport.loop = asyncio.get_running_loop()
-
         await getattr(transport, "_process_packet")(encoded)
 
         service.handle_mcu_frame.assert_awaited_once_with(Command.CMD_CONSOLE_WRITE.value, 0, b"hi")
@@ -97,7 +91,6 @@ async def test_process_packet_negotiation_ack_switches_local_baudrate() -> None:
         service = BridgeService(config, state, AsyncMock())
 
         transport = SerialTransport(config, state, service)
-        transport.loop = asyncio.get_running_loop()
 
         # [SIL-2] Use AsyncMock for StreamWriter to avoid unawaited coroutine warnings
         mock_writer = AsyncMock(spec=asyncio.StreamWriter)
@@ -111,7 +104,7 @@ async def test_process_packet_negotiation_ack_switches_local_baudrate() -> None:
         transport.writer = mock_writer
 
         setattr(transport, "_negotiating", True)
-        setattr(transport, "_negotiation_future", transport.loop.create_future())
+        setattr(transport, "_negotiation_future", asyncio.get_running_loop().create_future())
 
         encoded = cobs.encode(
             Frame(
@@ -214,7 +207,6 @@ async def test_process_packet_fallback_triggers_negotiation(
         service = BridgeService(config, state, AsyncMock())
 
         transport = SerialTransport(config, state, service)
-        transport.loop = asyncio.get_running_loop()
 
         # Mock negotiation method
         setattr(transport, "_negotiate_baudrate", AsyncMock(return_value=True))

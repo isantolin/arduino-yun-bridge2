@@ -25,9 +25,6 @@ from mcubridge.security.security import aead_decrypt, aead_encrypt
 from . import protocol
 from .rle import rle_decode, rle_encode, should_compress
 
-_HEADER_FORMAT = protocol.FRAME_HEADER_FORMAT
-HEADER_STRUCT = struct.Struct(_HEADER_FORMAT)
-_HEADER_SIZE = HEADER_STRUCT.size
 _NONCE_SIZE = protocol.AEAD_NONCE_SIZE
 _TAG_SIZE = protocol.AEAD_TAG_SIZE
 CRC_STRUCT = struct.Struct(protocol.FRAME_CRC_FORMAT)

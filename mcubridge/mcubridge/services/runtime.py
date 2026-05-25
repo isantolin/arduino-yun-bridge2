@@ -774,11 +774,7 @@ class BridgeService:
         pl, tp = f"{v[0]}.{v[1]}.{v[2]}".encode(), topic_path(
             self.state.mqtt_topic_prefix, Topic.SYSTEM, SystemAction.VERSION, SystemAction.VALUE
         )
-        await self.enqueue_mqtt(QueuedPublish(tp, pl, message_expiry_interval=MQTT_EXPIRY_DATASTORE))
-        if ctx:
-            await self.enqueue_mqtt(
-                QueuedPublish(tp, pl, message_expiry_interval=MQTT_EXPIRY_DATASTORE), reply_context=ctx
-            )
+        await self.enqueue_mqtt(QueuedPublish(tp, pl, message_expiry_interval=MQTT_EXPIRY_DATASTORE), reply_context=ctx)
 
     async def _flush_console_queue(self) -> None:
         while self.state.console_to_mcu_queue and not self.state.mcu_is_paused:

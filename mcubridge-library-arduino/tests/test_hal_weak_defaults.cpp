@@ -3,12 +3,21 @@
 #include "protocol/rpc_protocol.h"
 #include "protocol/rpc_structs.h"
 
+extern bool g_host_has_sd;
+extern bool g_host_fs_enabled;
+
 void setUp() {}
 void tearDown() {}
 
 // Test weak defaults in hal.cpp when not overridden by a mock.
 
 void test_hal_weak_defaults_without_mock() {
+  const bool original_sd = g_host_has_sd;
+  const bool original_fs = g_host_fs_enabled;
+  
+  g_host_has_sd = false;
+  g_host_fs_enabled = false;
+
   TEST_ASSERT_FALSE(bridge::hal::hasSD());
   TEST_ASSERT_FALSE(bridge::hal::hasSPI());
 
@@ -31,6 +40,9 @@ void test_hal_weak_defaults_without_mock() {
   rpc_pb_Capabilities caps = rpc_pb_Capabilities_init_default;
   bridge::hal::fillCapabilities(caps);
   TEST_ASSERT_FALSE(caps.sd);
+
+  g_host_has_sd = original_sd;
+  g_host_fs_enabled = original_fs;
 }
 
 #ifdef BRIDGE_HOST_TEST

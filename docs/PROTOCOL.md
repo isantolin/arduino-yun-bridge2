@@ -539,9 +539,9 @@ Raw (before COBS):
 
 - **`0x48` CMD_GET_CAPABILITIES (Linux → MCU)**
   - Petición: sin payload.
-  - Respuesta (`0x49 CMD_GET_CAPABILITIES_RESP`): `[proto_ver: u8, arch: u8, num_digital: u8, num_analog: u8, features: u32]`.
+  - Respuesta (`0x49 CMD_GET_CAPABILITIES_RESP`): mensaje protobuf `Capabilities { ver, arch, dig, ana, feat }`.
   - **Propósito:** Introspección estática de hardware (SIL-2 Safety). Permite al MPU validar que la configuración de pines no excede los límites físicos del MCU.
-  - **Features Bitmask (u32):**
+  - **Features Bitmask (`feat`, u32):**
     | Bit | Valor | Feature | Descripción |
     | :--- | :--- | :--- | :--- |
     | 0 | `1` | Watchdog | MCU Watchdog habilitado. |
@@ -557,6 +557,8 @@ Raw (before COBS):
     | 10 | `1024` | I2C | Soporte hardware I2C (Wire/SDA/SCL). |
     | 11 | `2048` | SPI | Soporte hardware SPI (SCK/MOSI/MISO). |
     | 12 | `4096` | SD | Tarjeta SD física detectada y funcional. |
+    | 13 | `8192` | Filesystem | Sistema de archivos habilitado. |
+    | 14 | `16384` | Process | Gestión de procesos habilitada. |
 
 - **`0x4E` CMD_XOFF (MCU → Linux)** / **`0x4F` CMD_XON (MCU → Linux)**
   - Sin payload.

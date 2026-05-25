@@ -30,6 +30,7 @@ message Capabilities {
     bool i2c = 15;
     bool spi = 16;
     bool sd = 17;
+    uint32 feat = 18;
 }
 
 message PinMode {

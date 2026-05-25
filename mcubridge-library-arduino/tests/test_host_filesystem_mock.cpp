@@ -10,6 +10,9 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+bool g_host_has_sd = true;
+bool g_host_fs_enabled = true;
+
 namespace bridge {
 namespace hal {
 
@@ -45,9 +48,6 @@ static bool ensure_host_parent_directories(const PathString& full_path) {
   if (::mkdir(parent_dir.c_str(), 0755) != 0 && errno != EEXIST) return false;
   return true;
 }
-
-bool g_host_has_sd = true;
-bool g_host_fs_enabled = true;
 
 bool hasSD() { return g_host_fs_enabled && g_host_has_sd; }
 

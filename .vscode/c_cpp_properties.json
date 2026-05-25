@@ -3,26 +3,13 @@
         {
             "name": "Linux",
             "includePath": [
-                "${default}",
-                "${workspaceFolder}/mcubridge-library-arduino/src",
-                "${workspaceFolder}/mcubridge-library-arduino/src/config",
-                "${workspaceFolder}/mcubridge-library-arduino/src/protocol",
-                "${workspaceFolder}/mcubridge-library-arduino/tests/Unity/src",
-                "${workspaceFolder}/tools/arduino_stub/include",
-                "${workspaceFolder}/.dummy_libs/Embedded_Template_Library/include",
-                "${workspaceFolder}/.dummy_libs/Embedded_Template_Library/arduino",
-                "${workspaceFolder}/.dummy_libs/wolfSSL",
-                "${workspaceFolder}/.dummy_libs/PacketSerial/src",
-                "~/Arduino/libraries/**"
+                "${workspaceFolder}/**",
+                "${workspaceFolder}/.dummy_libs/"
             ],
-            "defines": [
-                "BRIDGE_HOST_TEST=1",
-                "WOLFSSL_USER_SETTINGS",
-                "ETL_NO_STL",
-                "UNITY_INCLUDE_DOUBLE"
-            ],
-            "cStandard": "c11",
-            "cppStandard": "c++17",
+            "defines": [],
+            "compilerPath": "/usr/bin/gcc",
+            "cStandard": "c17",
+            "cppStandard": "gnu++17",
             "intelliSenseMode": "linux-gcc-x64"
         }
     ],

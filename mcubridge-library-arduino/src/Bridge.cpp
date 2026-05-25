@@ -300,7 +300,7 @@ void BridgeClass::SerialTask::task_process_work() {
 
 void BridgeClass::TimerTask::task_process_work() {
   if (bridge == nullptr) return;
-  const uint32_t now = millis();
+  const uint32_t now = ::millis();
   if (last_tick_ms == 0) last_tick_ms = now;
   const uint32_t elapsed = now - last_tick_ms;
   if (elapsed > 0) {
@@ -550,14 +550,14 @@ void BridgeClass::_handleDigitalReadCommand(
     const bridge::router::CommandContext& ctx) {
   _handlePinRead<rpc::payload::DigitalReadResponse>(
       ctx, rpc::CommandId::CMD_DIGITAL_READ_RESP, [](uint32_t) { return true; },
-      [](uint32_t p) { return digitalRead(p); });
+      [](uint32_t p) { return ::digitalRead(p); });
 }
 
 void BridgeClass::_handleAnalogReadCommand(
     const bridge::router::CommandContext& ctx) {
   _handlePinRead<rpc::payload::AnalogReadResponse>(
       ctx, rpc::CommandId::CMD_ANALOG_READ_RESP, [](uint32_t) { return true; },
-      [](uint32_t p) { return analogRead(p); });
+      [](uint32_t p) { return ::analogRead(p); });
 }
 
 void BridgeClass::_handleConsoleWriteCommand(

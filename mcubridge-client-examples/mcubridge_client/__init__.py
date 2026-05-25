@@ -187,7 +187,7 @@ class Bridge:
                 content_type=content_type,
             )
             await self._client.publish(msg.topic_name, msg.payload, properties=build_mqtt_properties(msg))
-            delivered = await asyncio.wait_for(queue.get(), timeout=timeout)
+            delivered = await asyncio.wait_for(queue.get(), timeout=10.0)
             return bytes(delivered.payload)
         finally:
             self._correlation_routes.pop(correlation, None)
@@ -218,7 +218,7 @@ class Bridge:
             Topic.build(Topic.DIGITAL, pin, "read"),
             b"",
             resp_topic=Topic.build(Topic.DIGITAL, pin, "value"),
-            timeout=timeout,
+            timeout=10.0,
         )
         return int(res.decode())
 
@@ -227,7 +227,7 @@ class Bridge:
             Topic.build(Topic.ANALOG, pin, "read"),
             b"",
             resp_topic=Topic.build(Topic.ANALOG, pin, "value"),
-            timeout=timeout,
+            timeout=10.0,
         )
         return int(res.decode())
 
@@ -236,7 +236,7 @@ class Bridge:
             Topic.build(Topic.DATASTORE, "put", key),
             value,
             resp_topic=Topic.build(Topic.DATASTORE, "get", key),
-            timeout=timeout,
+            timeout=10.0,
         )
 
     async def get(self, key: str, timeout: float = 15) -> str:
@@ -244,7 +244,7 @@ class Bridge:
             Topic.build(Topic.DATASTORE, "get", key, "request"),
             b"",
             resp_topic=Topic.build(Topic.DATASTORE, "get", key),
-            timeout=timeout,
+            timeout=10.0,
         )
         return res.decode()
 
@@ -253,7 +253,7 @@ class Bridge:
             Topic.build(Topic.SHELL, "run_async"),
             pb.ProcessRunAsync(command=shlex.join(parts)).SerializeToString(),
             resp_topic=Topic.build(Topic.SHELL, "run_async", "response"),
-            timeout=timeout,
+            timeout=10.0,
             content_type=PROTOBUF_CONTENT_TYPE,
         )
         return int(pb.ProcessRunAsyncResponse.FromString(res).pid)
@@ -263,7 +263,7 @@ class Bridge:
             Topic.build(Topic.SHELL, "poll", pid),
             b"",
             resp_topic=Topic.build(Topic.SHELL, "poll", pid, "response"),
-            timeout=timeout,
+            timeout=10.0,
         )
         packet = pb.ProcessPollResponse.FromString(res)
         return {
@@ -288,7 +288,7 @@ class Bridge:
             Topic.build(Topic.FILE, "read", filename.lstrip("/")),
             b"",
             resp_topic=Topic.build(Topic.FILE, "read", "response", filename.lstrip("/")),
-            timeout=timeout,
+            timeout=10.0,
         )
 
     async def file_remove(self, filename: str) -> None:
@@ -305,7 +305,7 @@ class Bridge:
                 Topic.build(Topic.MAILBOX, "read"),
                 b"",
                 resp_topic=Topic.build(Topic.MAILBOX, "incoming"),
-                timeout=timeout,
+                timeout=10.0,
             )
         return None
 
@@ -318,7 +318,7 @@ class Bridge:
             Topic.build(Topic.SYSTEM, "free_memory", "get"),
             b"",
             resp_topic=Topic.build(Topic.SYSTEM, "free_memory", "value"),
-            timeout=timeout,
+            timeout=10.0,
         )
         return int(res.decode())
 
@@ -331,7 +331,7 @@ class Bridge:
             Topic.build(Topic.SPI, "transfer"),
             data,
             resp_topic=Topic.build(Topic.SPI, "transfer", "resp"),
-            timeout=timeout,
+            timeout=10.0,
         )
 
     async def spi_begin(self) -> None:

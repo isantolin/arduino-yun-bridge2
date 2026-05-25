@@ -120,6 +120,7 @@ void derive_session_key_raw(const uint8_t* secret, size_t secret_len,
               etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_INFO_SESSION));
 }
 
+
 bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
                         etl::span<const uint8_t> in,
                         etl::span<const uint8_t> key, uint64_t* nonce_counter,

@@ -195,7 +195,7 @@ class BridgeClass {
                               PacketSerial2::NoLock, PacketSerial2::NoWatchdog>
       _packet_serial;
 
-  etl::vector<uint8_t, rpc::RPC_AEAD_KEY_SIZE> _shared_secret;
+  etl::vector<uint8_t, 64> _shared_secret;
   etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> _session_key;
   uint64_t _tx_nonce_counter;
   uint64_t _rx_nonce_counter;

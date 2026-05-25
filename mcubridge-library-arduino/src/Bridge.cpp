@@ -703,6 +703,7 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
 
   _fsm.receive(bridge::fsm::EvHandshakeStart());
   _fsm.receive(bridge::fsm::EvHandshakeComplete());
+  
   _tx_enabled = true;
   (void)send(rpc::CommandId::CMD_LINK_SYNC_RESP, ctx.sequence_id, resp);
   _notifyObservers(MsgBridgeSynchronized());

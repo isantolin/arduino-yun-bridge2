@@ -4,7 +4,7 @@
             "name": "Linux",
             "includePath": [
                 "${workspaceFolder}/**",
-                "${workspaceFolder}/.dummy_libs/"
+                "${workspaceFolder}/.dummy_libs/Embedded_Template_Library/include/"
             ],
             "defines": [],
             "compilerPath": "/usr/bin/gcc",

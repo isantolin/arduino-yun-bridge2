@@ -41,8 +41,8 @@ async def run_test(
 
         start_time = asyncio.get_running_loop().time()
         while True:
-            if asyncio.get_running_loop().time() - start_time > 10.0:
-                logging.info("Test duration of 10 seconds exceeded. Finishing.")
+            if asyncio.get_running_loop().time() - start_time > 20.0:
+                logging.info("Test duration of 20 seconds exceeded. Finishing.")
                 break
 
             if is_analog:

@@ -187,7 +187,7 @@ class Bridge:
                 content_type=content_type,
             )
             await self._client.publish(msg.topic_name, msg.payload, properties=build_mqtt_properties(msg))
-            delivered = await asyncio.wait_for(queue.get(), timeout=10.0)
+            delivered = await asyncio.wait_for(queue.get(), timeout=20.0)
             return bytes(delivered.payload)
         finally:
             self._correlation_routes.pop(correlation, None)

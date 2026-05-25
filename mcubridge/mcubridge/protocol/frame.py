@@ -84,7 +84,7 @@ class Frame(msgspec.Struct, frozen=True):
                 payload = compressed
                 cmd_id |= protocol.CMD_FLAG_COMPRESSED
 
-        # Use Protobuf for the entire envelope instead of manual struct.pack
+        # Use Protobuf for the entire envelope
         envelope = pb.RpcEnvelope(
             version=protocol.PROTOCOL_VERSION,
             command_id=cmd_id,
@@ -95,24 +95,24 @@ class Frame(msgspec.Struct, frozen=True):
         )
 
         if session_key and not is_excluded:
-            # [SIL-2] Use Protobuf RpcEnvelope as AAD instead of manual struct.pack
-            header_aad = pb.RpcEnvelope(
-                version=protocol.PROTOCOL_VERSION,
-                command_id=cmd_id,
-                sequence_id=self.sequence_id,
-            ).SerializeToString()
+            # [SIL-2] Use Protobuf RpcEnvelope as AAD. We clear payload/tag/nonce for AAD.
+            aad_envelope = pb.RpcEnvelope()
+            aad_envelope.CopyFrom(envelope)
+            aad_envelope.ClearField("payload")
+            aad_envelope.ClearField("tag")
+            aad_envelope.ClearField("nonce")
+
             inner_payload, tag = aead_encrypt(
                 payload,
                 session_key,
                 self.nonce,
-                header_aad,
+                aad_envelope.SerializeToString(),
             )
             envelope.payload = inner_payload
             envelope.tag = tag
 
         body = envelope.SerializeToString()
-        crc = _frame_crc(body)
-        return b"".join([body, CRC_STRUCT.pack(crc)])
+        return b"".join([body, CRC_STRUCT.pack(_frame_crc(body))])
 
     @classmethod
     def parse(cls, raw_frame_buffer: bytes | bytearray | memoryview, session_key: bytes | None = None) -> Frame:
@@ -121,14 +121,8 @@ class Frame(msgspec.Struct, frozen=True):
         if len(buf) < _CRC_SIZE:
             raise ValueError("Incomplete or malformed frame: too short")
 
-        body_len = len(buf) - _CRC_SIZE
-        body = buf[:body_len]
-        try:
-            expected_crc = CRC_STRUCT.unpack(buf[body_len:])[0]
-        except struct.error as e:
-            raise ValueError(f"Malformed CRC field: {e}") from e
-
-        if _frame_crc(body) != expected_crc:
+        body, crc_bytes = buf[:-_CRC_SIZE], buf[-_CRC_SIZE:]
+        if _frame_crc(body) != CRC_STRUCT.unpack(crc_bytes)[0]:
             raise ValueError("CRC mismatch")
 
         envelope = pb.RpcEnvelope()
@@ -136,33 +130,27 @@ class Frame(msgspec.Struct, frozen=True):
             envelope.ParseFromString(body)
         except DecodeError as e:
             raise ValueError(f"Failed to parse Protobuf envelope: {e}") from e
+
         if envelope.version != protocol.PROTOCOL_VERSION:
             raise ValueError("Invalid protocol version")
 
-        cmd_id = envelope.command_id
-        payload = envelope.payload
-        nonce = envelope.nonce
-        tag = envelope.tag
-
+        cmd_id, payload, nonce, tag = envelope.command_id, envelope.payload, envelope.nonce, envelope.tag
         raw_cmd = cmd_id & ~protocol.CMD_FLAG_COMPRESSED & protocol.UINT16_MAX
         is_excluded = (protocol.STATUS_CODE_MIN <= raw_cmd <= protocol.STATUS_CODE_MAX) or (
             protocol.SYSTEM_COMMAND_MIN <= raw_cmd <= protocol.SYSTEM_COMMAND_MAX
         )
 
         if session_key and not is_excluded:
-            header_aad = pb.RpcEnvelope(
-                version=envelope.version,
-                command_id=cmd_id,
-                sequence_id=envelope.sequence_id,
-            ).SerializeToString()
-            payload = aead_decrypt(payload, tag, session_key, nonce, header_aad)
+            aad_envelope = pb.RpcEnvelope()
+            aad_envelope.CopyFrom(envelope)
+            aad_envelope.ClearField("payload")
+            aad_envelope.ClearField("tag")
+            aad_envelope.ClearField("nonce")
+            payload = aead_decrypt(payload, tag, session_key, nonce, aad_envelope.SerializeToString())
 
         if cmd_id & protocol.CMD_FLAG_COMPRESSED:
-            try:
-                payload = rle_decode(payload)
-                cmd_id &= ~protocol.CMD_FLAG_COMPRESSED
-            except ValueError as e:
-                raise ValueError(f"RLE decode failed: {e}") from e
+            payload = rle_decode(payload)
+            cmd_id &= ~protocol.CMD_FLAG_COMPRESSED
 
         return cls(
             command_id=cmd_id,

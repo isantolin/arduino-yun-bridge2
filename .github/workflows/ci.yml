@@ -319,8 +319,7 @@ jobs:
           python tools/protocol/generate.py \
             --spec tools/protocol/spec.toml \
             --py mcubridge/mcubridge/protocol/protocol.py \
-            --py-client mcubridge-client-examples/mcubridge_client/protocol.py \
-            --structures mcubridge/mcubridge/protocol/structures.py
+            --py-client mcubridge-client-examples/mcubridge_client/protocol.py
           
           # 2. Standard performance profile
           python tools/daemon_profile_report.py \

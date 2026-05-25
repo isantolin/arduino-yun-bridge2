@@ -145,7 +145,12 @@ class BridgeClass {
     return (id & rpc::RPC_CMD_FLAG_COMPRESSED) != 0;
   }
 
- protected:
+ #if defined(BRIDGE_HOST_TEST)
+  public:
+ #else
+  protected:
+ #endif
+
   struct TxPayloadBuffer {
     etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> data;
   };
@@ -183,7 +188,6 @@ class BridgeClass {
                               PacketSerial2::NoLock, PacketSerial2::NoWatchdog>
       _packet_serial;
 
-  friend class bridge::test::TestAccessor;
   etl::vector<uint8_t, rpc::RPC_AEAD_KEY_SIZE> _shared_secret;
   etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> _session_key;
   uint64_t _tx_nonce_counter;

@@ -89,7 +89,7 @@ inline void derive_session_key(etl::span<const uint8_t> secret,
 bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id, 
                         etl::span<const uint8_t> in,
                         etl::span<const uint8_t> key,
-                        uint64_t& nonce_counter,
+                        uint64_t* nonce_counter,
                         etl::span<uint8_t> out_payload,
                         etl::span<uint8_t> out_nonce,
                         etl::span<uint8_t> out_tag);
@@ -107,7 +107,7 @@ bool aead_decrypt_frame(uint16_t cmd_id, uint16_t seq_id,
 /**
  * @brief Validate monotonic nonce counter to prevent replay attacks.
  */
-bool validate_frame_nonce(etl::span<const uint8_t> nonce, uint64_t& last_seen_counter);
+bool validate_frame_nonce(etl::span<const uint8_t> nonce, uint64_t* last_seen_counter);
 
 /**
  * @brief Securely zero memory, resistant to compiler optimization.

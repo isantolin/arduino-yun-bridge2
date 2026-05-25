@@ -122,16 +122,18 @@ void derive_session_key_raw(const uint8_t* secret, size_t secret_len,
 
 bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
                         etl::span<const uint8_t> in,
-                        etl::span<const uint8_t> key, uint64_t& nonce_counter,
+                        etl::span<const uint8_t> key, uint64_t* nonce_counter,
                         etl::span<uint8_t> out_payload,
                         etl::span<uint8_t> out_nonce,
                         etl::span<uint8_t> out_tag) {
-  nonce_counter++;
+  if (nonce_counter) (*nonce_counter)++;
+  const uint64_t current_nonce = nonce_counter ? *nonce_counter : 0;
+  
   etl::fill(out_nonce.begin(), out_nonce.end(), 0U);
   constexpr etl::string_view mcu_prefix("MCU");
   etl::copy_n(mcu_prefix.begin(), 3, out_nonce.begin());
   etl::byte_stream_writer n_writer(out_nonce.data() + 4, 8, etl::endian::big);
-  n_writer.write<uint64_t>(nonce_counter);
+  n_writer.write<uint64_t>(current_nonce);
 
   payload::RpcEnvelope aad_env;
   aad_env.version = rpc::PROTOCOL_VERSION;
@@ -170,7 +172,7 @@ bool aead_decrypt_frame(uint16_t cmd_id, uint16_t seq_id,
 }
 
 bool validate_frame_nonce(etl::span<const uint8_t> nonce,
-                          uint64_t& last_seen_counter) {
+                          uint64_t* last_seen_counter) {
   if (nonce.size() < 12) return false;
   uint64_t counter = 0;
   etl::byte_stream_reader n_reader(nonce.data() + 4, 8, etl::endian::big);
@@ -183,10 +185,10 @@ bool validate_frame_nonce(etl::span<const uint8_t> nonce,
   if (auto c_opt = n_reader.read<uint64_t>()) {
     counter = *c_opt;
   }
-  if (counter <= last_seen_counter) {
+  if (last_seen_counter && counter <= *last_seen_counter) {
     return false;
   }
-  last_seen_counter = counter;
+  if (last_seen_counter) *last_seen_counter = counter;
   return true;
 }
 

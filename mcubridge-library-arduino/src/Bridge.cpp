@@ -387,7 +387,7 @@ void BridgeClass::_sendRawFrame(uint16_t command_id, uint16_t sequence_id,
 
   if (do_encrypt) {
     if (!rpc::security::aead_encrypt_frame(raw_cmd, sequence_id, payload,
-                                           _session_key, _tx_nonce_counter,
+                                           _session_key, &_tx_nonce_counter,
                                            enc_pl, nonce, tag))
       return;
     final_payload = etl::span<const uint8_t>(enc_pl.data(), payload.size());
@@ -797,7 +797,7 @@ void BridgeClass::_handleReceivedFrame(etl::span<const uint8_t> p) {
             etl::span<const uint8_t>(frame.envelope.nonce.bytes, 12), dec_pl) ||
         !rpc::security::validate_frame_nonce(
             etl::span<const uint8_t>(frame.envelope.nonce.bytes, 12),
-            _rx_nonce_counter)) {
+            &_rx_nonce_counter)) {
       emitStatus(rpc::StatusCode::STATUS_ERROR);
       return;
     }

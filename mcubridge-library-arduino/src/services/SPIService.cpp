@@ -20,8 +20,8 @@ void SPIServiceClass::end() {
 }
 
 void SPIServiceClass::setConfig(const rpc::payload::SpiConfig& config) {
-  _settings = SPISettings(config.pb_msg.frequency, config.pb_msg.bit_order,
-                          config.pb_msg.data_mode);
+  _settings = SPISettings(config.frequency, config.bit_order,
+                          config.data_mode);
 }
 
 size_t SPIServiceClass::transfer(etl::span<uint8_t> buffer) {

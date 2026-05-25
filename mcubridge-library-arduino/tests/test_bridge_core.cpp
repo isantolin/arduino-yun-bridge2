@@ -36,14 +36,14 @@ void test_bridge_handshake() {
   ba.computeHandshakeTag(nonce.data(), nonce.size(), tag.data());
 
   rpc::payload::LinkSync msg = {};
-  etl::copy_n(nonce.begin(), 16, msg.pb_msg.nonce.bytes);
-  msg.pb_msg.nonce.size = 16;
-  etl::copy_n(tag.begin(), 16, msg.pb_msg.tag.bytes);
-  msg.pb_msg.tag.size = 16;
+  etl::copy_n(nonce.begin(), 16, msg.nonce.bytes);
+  msg.nonce.size = 16;
+  etl::copy_n(tag.begin(), 16, msg.tag.bytes);
+  msg.tag.size = 16;
 
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> pl_buf;
   pb_ostream_t pbos = pb_ostream_from_buffer(pl_buf.data(), pl_buf.size());
-  (void)msg.encode(&pbos);
+  (void)rpc::Payload::encode(&pbos, msg);
 
   // 2. Build LinkSync frame using FrameBuilder
   etl::array<uint8_t, rpc::MAX_FRAME_SIZE> frame_raw;
@@ -81,12 +81,12 @@ void test_bridge_process_rx() {
   ba.setSynchronized();
 
   rpc::payload::DigitalWrite msg = {};
-  msg.pb_msg.pin = 13;
-  msg.pb_msg.value = 1;
+  msg.pin = 13;
+  msg.value = 1;
 
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> pl_buf;
   pb_ostream_t pbos = pb_ostream_from_buffer(pl_buf.data(), pl_buf.size());
-  (void)msg.encode(&pbos);
+  (void)rpc::Payload::encode(&pbos, msg);
 
   etl::array<uint8_t, rpc::MAX_FRAME_SIZE> frame_raw;
   etl::array<uint8_t, rpc::AEAD_NONCE_SIZE> frame_nonce = {};
@@ -111,12 +111,12 @@ void test_bridge_dedup_console_write() {
   // 1. Build ConsoleWrite frame once
   rpc::payload::ConsoleWrite msg = {};
   const char* text = "TEST";
-  etl::copy_n(text, 4, msg.pb_msg.data.bytes);
-  msg.pb_msg.data.size = 4;
+  etl::copy_n(text, 4, msg.data.bytes);
+  msg.data.size = 4;
 
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> pl_buf;
   pb_ostream_t pbos = pb_ostream_from_buffer(pl_buf.data(), pl_buf.size());
-  (void)msg.encode(&pbos);
+  (void)rpc::Payload::encode(&pbos, msg);
 
   etl::array<uint8_t, rpc::MAX_FRAME_SIZE> frame_raw;
   etl::array<uint8_t, rpc::AEAD_NONCE_SIZE> frame_nonce = {};
@@ -152,11 +152,11 @@ void test_bridge_status_ack() {
 
   // 2. Build STATUS_ACK frame targeting sequence ID 77
   rpc::payload::AckPacket p = {};
-  p.pb_msg.command_id = rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE);
+  p.command_id = rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE);
   
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> pl_buf;
   pb_ostream_t pbos = pb_ostream_from_buffer(pl_buf.data(), pl_buf.size());
-  (void)p.encode(&pbos);
+  (void)rpc::Payload::encode(&pbos, p);
 
   etl::array<uint8_t, rpc::MAX_FRAME_SIZE> frame_raw;
   etl::array<uint8_t, rpc::AEAD_NONCE_SIZE> frame_nonce = {};

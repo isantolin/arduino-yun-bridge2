@@ -45,12 +45,12 @@ void dummy_status_handler(rpc::StatusCode, etl::span<const uint8_t>) {}
 
 void hit_mailbox_push(etl::span<const uint8_t> data) {
   rpc::payload::MailboxPush p;
-  rpc::payload::copy_to_pb_bytes(p.pb_msg.data, data.data(), data.size());
+  rpc::payload::copy_to_pb_bytes(p.data, data.data(), data.size());
   Mailbox._onIncomingData(p);
 }
 void hit_mailbox_read_resp(etl::span<const uint8_t> data) {
   rpc::payload::MailboxReadResponse p;
-  rpc::payload::copy_to_pb_bytes(p.pb_msg.content, data.data(), data.size());
+  rpc::payload::copy_to_pb_bytes(p.content, data.data(), data.size());
   Mailbox._onIncomingData(p);
 }
 
@@ -109,7 +109,7 @@ void test_filesystem_read_edge_cases() {
   const char* file_path_str = "test.txt";
   etl::string_view path_sv(file_path_str);
   rpc::payload::FileRead req;
-  strncpy(req.pb_msg.path, path_sv.data(), sizeof(req.pb_msg.path));
+  strncpy(req.path, path_sv.data(), sizeof(req.path));
 
   // This will use the new CounterIterator in _onRead
   FileSystem._onRead(req);
@@ -127,9 +127,9 @@ void test_spi_timeout_and_error_paths() {
 
   SPIService.begin();
   rpc::payload::SpiConfig sc;
-  sc.pb_msg.frequency = 4000000;
-  sc.pb_msg.bit_order = 1;
-  sc.pb_msg.data_mode = 0;
+  sc.frequency = 4000000;
+  sc.bit_order = 1;
+  sc.data_mode = 0;
   SPIService.setConfig(sc);
 
   etl::array<uint8_t, 4> buf = {1, 2, 3, 4};
@@ -189,7 +189,7 @@ void test_process_branch_error_paths() {
   TEST_ASSERT_EQUAL(1, Process._pending_run_async.size());
   Process._onRunAsyncResponse([]() {
     rpc::payload::ProcessRunAsyncResponse p;
-    p.pb_msg.pid = 42;
+    p.pid = 42;
     return p;
   }());
   TEST_ASSERT_EQUAL(42, captured_pid);
@@ -256,7 +256,7 @@ void test_process_branch_error_paths() {
   Process._pending_run_async.push({invalid_pending_run});
   Process._onRunAsyncResponse([]() {
     rpc::payload::ProcessRunAsyncResponse p;
-    p.pb_msg.pid = 777;
+    p.pid = 777;
     return p;
   }());
   ProcessClass::ProcessPollHandler invalid_pending_poll;
@@ -298,7 +298,7 @@ void test_mailbox_and_datastore_variants() {
   Mailbox._onAvailableResponse({});
   Mailbox._onAvailableResponse([]() {
     rpc::payload::MailboxAvailableResponse p;
-    p.pb_msg.count = 7;
+    p.count = 7;
     return p;
   }());
 
@@ -335,9 +335,9 @@ void test_bridge_fsm_resets() {
 void test_checksum_direct_library_path() {
   // Validates the new etl::byte_stream_writer logic in checksum::compute
   rpc::Frame f;
-  f.envelope.pb_msg.version = rpc::PROTOCOL_VERSION;
-  f.envelope.pb_msg.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_XON);
-  f.envelope.pb_msg.sequence_id = 0;
+  f.envelope.version = rpc::PROTOCOL_VERSION;
+  f.envelope.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_XON);
+  f.envelope.sequence_id = 0;
   
   uint32_t crc = rpc::checksum::compute(f.payload()); // Adjusted for new checksum logic
   (void)crc;
@@ -377,8 +377,8 @@ void test_bridge_template_coverage() {
   // Explicitly trigger template instantiations that might be missed
   (void)Bridge.send(rpc::CommandId::CMD_SET_PIN_MODE, 1, []() {
     rpc::payload::PinMode p;
-    p.pb_msg.pin = 13;
-    p.pb_msg.mode = 1;
+    p.pin = 13;
+    p.mode = 1;
     return p;
   }());
 
@@ -397,12 +397,12 @@ void test_bridge_duplicate_packet() {
   ba.setSynchronized();
 
   rpc::Frame f;
-  f.envelope.pb_msg.version = rpc::PROTOCOL_VERSION;
-  f.envelope.pb_msg.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_DIGITAL_WRITE);
-  f.envelope.pb_msg.sequence_id = 10;
-  f.envelope.pb_msg.payload.size = 2; // dummy
+  f.envelope.version = rpc::PROTOCOL_VERSION;
+  f.envelope.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_DIGITAL_WRITE);
+  f.envelope.sequence_id = 10;
+  f.envelope.payload.size = 2; // dummy
   
-  bridge::router::CommandContext ctx(&f, f.envelope.pb_msg.command_id, 10, true, true);
+  bridge::router::CommandContext ctx(&f, f.envelope.command_id, 10, true, true);
   ba.handleDigitalWriteCommand(ctx);
 
   TEST_ASSERT(true);
@@ -416,49 +416,49 @@ void test_bridge_exhaustive_command_handlers() {
 
   auto trigger = [&](rpc::CommandId id, auto payload) {
     rpc::Frame f;
-    f.envelope.pb_msg.version = rpc::PROTOCOL_VERSION;
-    f.envelope.pb_msg.command_id = static_cast<uint16_t>(id);
-    f.envelope.pb_msg.sequence_id = 1;
+    f.envelope.version = rpc::PROTOCOL_VERSION;
+    f.envelope.command_id = static_cast<uint16_t>(id);
+    f.envelope.sequence_id = 1;
     bridge::test::set_pb_payload(f, payload);
     ba.dispatch(f);
   };
 
   trigger(rpc::CommandId::CMD_SET_BAUDRATE, []() {
     rpc::payload::SetBaudratePacket p;
-    p.pb_msg.baudrate = 57600;
+    p.baudrate = 57600;
     return p;
   }());
   trigger(rpc::CommandId::CMD_ENTER_BOOTLOADER, []() {
     rpc::payload::EnterBootloader p;
-    p.pb_msg.magic = rpc::RPC_BOOTLOADER_MAGIC;
+    p.magic = rpc::RPC_BOOTLOADER_MAGIC;
     return p;
   }());
   trigger(rpc::CommandId::CMD_SET_PIN_MODE, []() {
     rpc::payload::PinMode p;
-    p.pb_msg.pin = 13;
-    p.pb_msg.mode = 1;
+    p.pin = 13;
+    p.mode = 1;
     return p;
   }());
   trigger(rpc::CommandId::CMD_DIGITAL_WRITE, []() {
     rpc::payload::DigitalWrite p;
-    p.pb_msg.pin = 13;
-    p.pb_msg.value = 1;
+    p.pin = 13;
+    p.value = 1;
     return p;
   }());
   trigger(rpc::CommandId::CMD_ANALOG_WRITE, []() {
     rpc::payload::AnalogWrite p;
-    p.pb_msg.pin = 3;
-    p.pb_msg.value = 128;
+    p.pin = 3;
+    p.value = 128;
     return p;
   }());
   trigger(rpc::CommandId::CMD_DIGITAL_READ, []() {
     rpc::payload::PinRead p;
-    p.pb_msg.pin = 13;
+    p.pin = 13;
     return p;
   }());
   trigger(rpc::CommandId::CMD_ANALOG_READ, []() {
     rpc::payload::PinRead p;
-    p.pb_msg.pin = 0;
+    p.pin = 0;
     return p;
   }());
 

@@ -134,14 +134,14 @@ bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
   n_writer.write<uint64_t>(nonce_counter);
 
   payload::RpcEnvelope aad_env;
-  aad_env.pb_msg.version = rpc::PROTOCOL_VERSION;
-  aad_env.pb_msg.command_id = cmd_id;
-  aad_env.pb_msg.sequence_id = seq_id;
+  aad_env.version = rpc::PROTOCOL_VERSION;
+  aad_env.command_id = cmd_id;
+  aad_env.sequence_id = seq_id;
 
   etl::array<uint8_t, 32> ad;
   ad.fill(0U);
   pb_ostream_t stream = pb_ostream_from_buffer(ad.data(), ad.size());
-  (void)aad_env.encode(&stream);
+  (void)rpc::Payload::encode(&stream, aad_env);
 
   return aead_encrypt(
       out_payload, out_tag, in, key, out_nonce,
@@ -155,14 +155,14 @@ bool aead_decrypt_frame(uint16_t cmd_id, uint16_t seq_id,
                         etl::span<const uint8_t> nonce,
                         etl::span<uint8_t> out_payload) {
   payload::RpcEnvelope aad_env;
-  aad_env.pb_msg.version = rpc::PROTOCOL_VERSION;
-  aad_env.pb_msg.command_id = cmd_id;
-  aad_env.pb_msg.sequence_id = seq_id;
+  aad_env.version = rpc::PROTOCOL_VERSION;
+  aad_env.command_id = cmd_id;
+  aad_env.sequence_id = seq_id;
 
   etl::array<uint8_t, 32> ad;
   ad.fill(0U);
   pb_ostream_t stream = pb_ostream_from_buffer(ad.data(), ad.size());
-  (void)aad_env.encode(&stream);
+  (void)rpc::Payload::encode(&stream, aad_env);
 
   return aead_decrypt(
       out_payload, in, tag, key, nonce,

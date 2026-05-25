@@ -38,12 +38,12 @@ void test_protocol_frame_logic_exhaustive() {
 
   // Malformed: wrong version
   Frame f_valid;
-  f_valid.envelope.pb_msg.version = 0xFF;
+  f_valid.envelope.version = 0xFF;
   size_t v_len = FrameParser::serialize(f_valid, raw);
   TEST_ASSERT(!FrameParser::parse(etl::span<const uint8_t>(raw.data(), v_len)).has_value());
 
   // CRC Mismatch
-  f_valid.envelope.pb_msg.version = PROTOCOL_VERSION;
+  f_valid.envelope.version = PROTOCOL_VERSION;
   v_len = FrameParser::serialize(f_valid, raw);
   TEST_ASSERT(v_len > 0);
   raw[v_len - 1] ^= 0xFF; // Break CRC

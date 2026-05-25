@@ -10,9 +10,9 @@ namespace test {
 template <typename T>
 void set_pb_payload(rpc::Frame& frame, const T& msg) {
   pb_ostream_t stream = pb_ostream_from_buffer(
-      frame.envelope.pb_msg.payload.bytes, 64U);
-  if (msg.encode(&stream)) {
-    frame.envelope.pb_msg.payload.size = static_cast<pb_size_t>(stream.bytes_written);
+      frame.envelope.payload.bytes, 64U);
+  if (rpc::Payload::encode(&stream, msg)) {
+    frame.envelope.payload.size = static_cast<pb_size_t>(stream.bytes_written);
   }
 }
 

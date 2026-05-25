@@ -50,22 +50,32 @@ inline void copy_to_pb_string(PbStringArray& dest, etl::string_view src) {
 }
 
 {% for s in structs %}
-struct {{ s.name }} {
-    rpc_pb_{{ s.name }} pb_msg = rpc_pb_{{ s.name }}_init_default;
-
-    bool encode(pb_ostream_t* stream) const {
-        return pb_encode(stream, rpc_pb_{{ s.name }}_fields, &pb_msg);
-    }
-
-    bool decode(pb_istream_t* stream) {
-        return pb_decode(stream, rpc_pb_{{ s.name }}_fields, &pb_msg);
-    }
-};
+using {{ s.name }} = rpc_pb_{{ s.name }};
 {% endfor %}
 
 } // namespace rpc::payload
 
 namespace rpc::Payload {
+
+template <typename T>
+const pb_msgdesc_t* get_fields();
+
+{% for s in structs %}
+template <>
+inline const pb_msgdesc_t* get_fields<rpc_pb_{{ s.name }}>() {
+    return rpc_pb_{{ s.name }}_fields;
+}
+{% endfor %}
+
+template <typename T>
+inline bool encode(pb_ostream_t* stream, const T& msg) {
+    return pb_encode(stream, get_fields<T>(), &msg);
+}
+
+template <typename T>
+inline bool decode(pb_istream_t* stream, T& msg) {
+    return pb_decode(stream, get_fields<T>(), &msg);
+}
 
 } // namespace rpc::Payload
 

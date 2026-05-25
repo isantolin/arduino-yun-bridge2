@@ -19,8 +19,8 @@ class TestAccessor;
 #include <avr/wdt.h>
 #endif
 
-#include <PacketSerial.h>
 #include <Codecs/COBS.h>
+#include <PacketSerial.h>
 #include <etl/algorithm.h>
 #include <etl/array.h>
 #include <etl/callback_timer.h>
@@ -106,18 +106,24 @@ class BridgeClass {
 
   template <typename T>
   [[nodiscard]] bool send(rpc::StatusCode s, uint16_t seq, const T& packet) {
-    pb_ostream_t stream = pb_ostream_from_buffer(_transient_buffer.data(), rpc::MAX_PAYLOAD_SIZE);
-    if (packet.encode(&stream)) {
-      return sendFrame(s, seq, etl::span<const uint8_t>(_transient_buffer.data(), stream.bytes_written));
+    pb_ostream_t stream =
+        pb_ostream_from_buffer(_transient_buffer.data(), rpc::MAX_PAYLOAD_SIZE);
+    if (rpc::Payload::encode(&stream, packet)) {
+      return sendFrame(s, seq,
+                       etl::span<const uint8_t>(_transient_buffer.data(),
+                                                stream.bytes_written));
     }
     return false;
   }
 
   template <typename T>
   [[nodiscard]] bool send(rpc::CommandId c, uint16_t seq, const T& packet) {
-    pb_ostream_t stream = pb_ostream_from_buffer(_transient_buffer.data(), rpc::MAX_PAYLOAD_SIZE);
-    if (packet.encode(&stream)) {
-      return sendFrame(c, seq, etl::span<const uint8_t>(_transient_buffer.data(), stream.bytes_written));
+    pb_ostream_t stream =
+        pb_ostream_from_buffer(_transient_buffer.data(), rpc::MAX_PAYLOAD_SIZE);
+    if (rpc::Payload::encode(&stream, packet)) {
+      return sendFrame(c, seq,
+                       etl::span<const uint8_t>(_transient_buffer.data(),
+                                                stream.bytes_written));
     }
     return false;
   }
@@ -145,11 +151,11 @@ class BridgeClass {
     return (id & rpc::RPC_CMD_FLAG_COMPRESSED) != 0;
   }
 
- #if defined(BRIDGE_HOST_TEST)
-  public:
- #else
-  protected:
- #endif
+#if defined(BRIDGE_HOST_TEST)
+ public:
+#else
+ protected:
+#endif
 
   struct TxPayloadBuffer {
     etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> data;
@@ -353,9 +359,9 @@ class BridgeClass {
                       TValid valid, TRead read) {
     _withResponse(ctx, [this, &ctx, resp_id, valid, read]() {
       auto res = rpc::Payload::parse<rpc::payload::PinRead>(*ctx.frame);
-      if (res && valid(res->pb_msg.pin)) {
+      if (res && valid(res->pin)) {
         T resp;
-        resp.pb_msg.value = static_cast<uint32_t>(read(res->pb_msg.pin));
+        resp.value = static_cast<uint32_t>(read(res->pin));
         (void)send(static_cast<rpc::CommandId>(resp_id), ctx.sequence_id, resp);
       } else
         emitStatus(rpc::StatusCode::STATUS_ERROR);

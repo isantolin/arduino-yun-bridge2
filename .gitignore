@@ -1,3 +1,9 @@
+# Protobuf and Nanopb Generated Files
+mcubridge.pb.c
+mcubridge.pb.h
+mcubridge_pb2.py
+mcubridge_pb2.pyi
+
 # OpenWRT SDK and build artifacts
 openwrt-sdk/
 aio-mqtt-master/

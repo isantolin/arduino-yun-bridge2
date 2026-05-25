@@ -55,8 +55,7 @@ if [ ! -f "src/protocol/rpc_protocol.h" ] || [ ! -f "src/protocol/mcubridge.pb.c
             --py ../mcubridge/mcubridge/protocol/protocol.py \
             --cpp src/protocol/rpc_protocol.h \
             --cpp-structs src/protocol/rpc_structs.h \
-            --py-client ../mcubridge-client-examples/mcubridge_client/protocol.py \
-            --structures ../mcubridge/mcubridge/protocol/structures.py
+            --py-client ../mcubridge-client-examples/mcubridge_client/protocol.py
     else
         echo "[ERROR] Python 3 is required to generate missing protocol files." >&2
         exit 1

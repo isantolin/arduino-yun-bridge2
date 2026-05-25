@@ -1117,19 +1117,12 @@ class JinjaGenerator:
             },
         ]
 
-        # Include packets for Protobuf support
-        packet_messages = [m for m in spec.messages if m.name not in PACKET_EXCLUDE]
-        packets: list[dict[str, str]] = []
-        for msg in packet_messages:
-            packets.append({"class_name": f"{msg.name}Packet", "proto_name": msg.name})
-
         render = template.render(
             constants=constants,
             capabilities=spec.capabilities,
             statuses=spec.statuses,
             commands=spec.commands,
             topics=spec.topics,
-            packets=packets,
         )
         out_path.write_text(render, encoding="utf-8")
 

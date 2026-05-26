@@ -66,7 +66,7 @@ class McuService(Protocol):
 
     async def handle_mcu_frame(self, command_id: int, sequence_id: int, payload: bytes) -> None: ...
 
-    def register_serial_sender(self, sender: Callable[[int, bytes, int | None], Awaitable[bool]]) -> None: ...
+    def register_serial_sender(self, sender: Callable[[int, bytes, int | None], Awaitable[bool | bytes]]) -> None: ...
 
 
 class SerialTransport:
@@ -281,8 +281,8 @@ class SerialTransport:
             if self.config.serial_baud != self.config.serial_safe_baud:
                 await self._negotiate_baudrate(self.config.serial_safe_baud)
 
-    async def send(self, command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
-        """Unified send method with automatic tracking and retries. [FLATTENED]"""
+    async def send(self, command_id: int, payload: bytes, seq_id: int | None = None) -> bool | bytes:
+        """Unified send method with automatic tracking, retries, and optional response return. [FLATTENED]"""
         if not self.writer or self.writer.is_closing():
             return False
 
@@ -317,7 +317,7 @@ class SerialTransport:
                             async with asyncio.timeout(self._response_timeout):
                                 await pending.completion.wait()
                                 if pending.success:
-                                    return True
+                                    return pending.response_payload if pending.response_payload is not None else True
                         except TimeoutError:
                             raise self._RetryableSerialError()
 
@@ -328,44 +328,11 @@ class SerialTransport:
             except self._FatalSerialError as exc:
                 pending.mark_failure(exc.status)
                 return False
-            except self._RetryableSerialError:
+            except (self._RetryableSerialError, tenacity.RetryError):
                 pending.mark_failure(Status.TIMEOUT.value)
                 return False
             finally:
                 self._current = None
-
-    async def send_and_wait_payload(self, command_id: int, payload: bytes) -> bytes | None:
-        """Helper to send a command and return its response payload."""
-        async with self._flow_lock:
-            pending = PendingCommand(command_id=command_id, expected_resp_ids=set(expected_responses(command_id)))
-            self._current = pending
-            try:
-                retryer = tenacity.AsyncRetrying(
-                    stop=tenacity.stop_after_attempt(self._max_attempts),
-                    wait=tenacity.wait_exponential(
-                        multiplier=SERIAL_HANDSHAKE_BACKOFF_BASE, max=SERIAL_HANDSHAKE_BACKOFF_MAX
-                    ),
-                    retry=tenacity.retry_if_exception_type(self._RetryableSerialError),
-                    reraise=True,
-                )
-                async for attempt in retryer:
-                    with attempt:
-                        if not await self.send_raw(command_id, payload):
-                            raise self._FatalSerialError(None)
-                        try:
-                            async with asyncio.timeout(self._response_timeout):
-                                await pending.completion.wait()
-                                if pending.success:
-                                    return pending.response_payload
-                        except TimeoutError:
-                            raise self._RetryableSerialError()
-                        raise self._RetryableSerialError()
-            except Exception as exc:
-                logger.error("Send and wait payload failed: %s", exc)
-                return None
-            finally:
-                self._current = None
-        return None
 
     async def send_raw(self, command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
         """Low-level send logic without tracking."""

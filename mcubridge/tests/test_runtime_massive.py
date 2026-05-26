@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_asyncio
+import msgspec
 from aiomqtt.message import Message
 
 from mcubridge.config.settings import RuntimeConfig
@@ -29,7 +30,7 @@ async def service_setup(
     serial = AsyncMock()
     serial.send = AsyncMock(return_value=True)
     serial.acknowledge = AsyncMock(return_value=True)
-    serial.send_and_wait_payload = AsyncMock(return_value=None)
+    serial.send = AsyncMock(return_value=None)
     serial.reset = AsyncMock(return_value=None)
     service = BridgeService(runtime_config, runtime_state, serial)
     mock_mqtt = AsyncMock()
@@ -165,7 +166,7 @@ async def test_runtime_mqtt_brute_force(
     service, state, serial = service_setup
     state.mark_synchronized()
 
-    async def send_side_effect(command_id: int, payload: bytes) -> bool:
+    async def send_side_effect(command_id: int, payload: bytes) -> bool | bytes:
         if command_id == Command.CMD_FILE_READ.value:
 
             async def complete_file_read() -> None:
@@ -174,6 +175,14 @@ async def test_runtime_mqtt_brute_force(
                 await file_read_handler(1, pb.FileReadResponse(content=b"").SerializeToString())
 
             asyncio.get_running_loop().create_task(complete_file_read())
+        elif command_id == Command.CMD_GET_VERSION.value:
+            return pb.VersionResponse(major=2, minor=8, patch=5).SerializeToString()
+        elif command_id == Command.CMD_GET_FREE_MEMORY.value:
+            return pb.FreeMemoryResponse(value=1024).SerializeToString()
+        elif command_id == Command.CMD_SPI_TRANSFER.value:
+            return pb.SpiTransferResponse(data=b"\xaa\xbb").SerializeToString()
+        elif command_id == Command.CMD_DATASTORE_GET.value:
+            return pb.DatastoreGetResponse(value=msgspec.Raw(b"cached")).SerializeToString()
         return True
 
     serial.send.side_effect = send_side_effect

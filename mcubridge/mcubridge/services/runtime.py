@@ -58,7 +58,7 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger("mcubridge.service")
 
-McuHandler = Callable[[int, bytes], Coroutine[Any, Any, bool | None]]
+McuHandler = Callable[[int, bytes], Coroutine[Any, Any, bool | bytes | None]]
 
 _PRE_SYNC_ALLOWED_COMMANDS: Final = {
     Command.CMD_LINK_SYNC_RESP.value,
@@ -134,10 +134,6 @@ class BridgeService:
             Command.CMD_ANALOG_READ_RESP.value: self._gen_handler(
                 pb.AnalogReadResponse, lambda p: self._on_pin_resp(p, Topic.ANALOG, self.state.pending_analog_reads)
             ),
-            Command.CMD_GET_VERSION_RESP.value: self._gen_handler(pb.VersionResponse, self._on_mcu_version_resp),
-            Command.CMD_GET_FREE_MEMORY_RESP.value: self._gen_handler(
-                pb.FreeMemoryResponse, self._on_mcu_free_memory_resp
-            ),
             Command.CMD_SPI_TRANSFER_RESP.value: self._gen_handler(pb.SpiTransferResponse, self._on_mcu_spi_resp),
             Command.CMD_GET_CAPABILITIES_RESP.value: self.handshake.handle_capabilities_resp,
             Command.CMD_LINK_SYNC_RESP.value: self.handshake.handle_link_sync_resp,
@@ -167,7 +163,7 @@ class BridgeService:
 
     # --- External Interface ---
 
-    def register_serial_sender(self, sender: Callable[[int, bytes, int | None], Awaitable[bool]]) -> None:
+    def register_serial_sender(self, sender: Callable[[int, bytes, int | None], Awaitable[bool | bytes]]) -> None:
         self._serial_sender = sender
 
     def set_mqtt_client(self, client: aiomqtt.Client | None) -> None:
@@ -434,13 +430,6 @@ class BridgeService:
             QueuedPublish(topic_path(self.state.mqtt_topic_prefix, Topic.SPI, "transfer", "resp"), p.data)
         )
 
-    async def _on_mcu_version_resp(self, p: pb.VersionResponse) -> None:
-        self.state.mcu_version = (p.major, p.minor, p.patch)
-        logger.debug("MCU > VERSION RESP: %d.%d.%d", p.major, p.minor, p.patch)
-
-    async def _on_mcu_free_memory_resp(self, p: pb.FreeMemoryResponse) -> None:
-        logger.debug("MCU > FREE MEMORY RESP: %d", p.value)
-
     async def _on_mcu_ack(self, seq: int, payload: bytes) -> None:
         with contextlib.suppress(Exception):
             p = pb.AckPacket.FromString(payload)
@@ -674,11 +663,11 @@ class BridgeService:
                     logger.error("SPI config error: %s", exc)
             case SpiAction.TRANSFER:
                 if inbound.payload:
-                    res = await self.serial.send_and_wait_payload(
+                    res = await self.serial.send(
                         Command.CMD_SPI_TRANSFER.value,
                         pb.SpiTransfer(data=bytes(inbound.payload)).SerializeToString(),
                     )
-                    if res:
+                    if isinstance(res, bytes):
                         await self.enqueue_mqtt(
                             QueuedPublish(
                                 topic_path(
@@ -728,8 +717,8 @@ class BridgeService:
                     pb.EnterBootloader(magic=protocol.BOOTLOADER_MAGIC).SerializeToString(),
                 )
             case SystemAction.FREE_MEMORY if "get" in route.segments:
-                pl = await self.serial.send_and_wait_payload(Command.CMD_GET_FREE_MEMORY.value, b"")
-                if pl:
+                pl = await self.serial.send(Command.CMD_GET_FREE_MEMORY.value, b"")
+                if isinstance(pl, bytes):
                     await self.enqueue_mqtt(
                         QueuedPublish(
                             topic_path(
@@ -762,8 +751,8 @@ class BridgeService:
     # --- Low-level Helpers ---
 
     async def _request_mcu_version(self, inbound: Message | None = None) -> bool:
-        pl = await self.serial.send_and_wait_payload(Command.CMD_GET_VERSION.value, b"")
-        if pl:
+        pl = await self.serial.send(Command.CMD_GET_VERSION.value, b"")
+        if isinstance(pl, bytes):
             p = pb.VersionResponse.FromString(pl)
             self.state.mcu_version = (p.major, p.minor, p.patch)
             await self._publish_version(self.state.mcu_version, inbound)

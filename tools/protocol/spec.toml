@@ -22,6 +22,8 @@ rpc_command_stride = 2
 rpc_command_group_shift = 4
 rpc_command_group_offset = 3
 rpc_timer_overflow_threshold = 0x80000000
+cmd_flag_compressed = 0x8000
+rpc_cmd_flag_compressed_bit = 15
 uint8_mask = 0xFF
 uint16_max = 0xFFFF
 bootloader_magic = 0xDEADC0DE
@@ -55,8 +57,19 @@ process_command_max = 0xAF
 spi_command_min = 0xB0
 spi_command_max = 0xBF
 
+# RLE compression constants
+rle_escape_byte = 0xFF
+rle_min_run_length = 4
+rle_max_run_length = 256
+rle_single_escape_marker = 0xFF
+rle_expansion_factor = 3
+rle_offset = 2
+rle_min_compress_input_size = 8
+rle_min_compress_savings = 4
+
 [compression]
 none = 0x00
+rle = 0x01
 
 [capabilities]
 
@@ -830,10 +843,6 @@ requires_ack = true
 #   bool                   — boolean (encoded as uint8 on wire)
 
 [[messages]]
-name = "Empty"
-fields = []
-
-[[messages]]
 name = "VersionResponse"
 fields = [
     {name = "major", type = "uint8"},
@@ -1057,20 +1066,10 @@ fields = [
 ]
 
 [[messages]]
-name = "RpcPayload"
-fields = [
-    # Placeholder for RpcPayload. fields are oneof in .proto
-    # But spec.toml MessageFieldDef doesn't support oneof.
-    # I'll add them as regular fields and I'll know they are oneof in .proto.
-    # The C++ generator will create a struct with all fields.
-    # Wait, if I want to use nanopb's oneof, I should NOT have them as regular fields in spec.toml 
-    # if I use them for rpc_structs.h generation.
-]
-
-[[messages]]
 name = "RpcEnvelope"
 fields = [
     {name = "version", type = "uint8"},
+    {name = "command_id", type = "uint16"},
     {name = "sequence_id", type = "uint16"},
     {name = "nonce", type = "bin_fixed", size = 12},
     {name = "tag", type = "bin_fixed", size = 16},

@@ -4,7 +4,7 @@ from typing import Any
 import asyncio
 import pytest
 from cobs import cobs
-from mcubridge.protocol import protocol, mcubridge_pb2 as pb
+from mcubridge.protocol import protocol
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.frame import Frame
 from mcubridge.protocol.protocol import Command
@@ -71,13 +71,12 @@ async def test_process_packet_success_dispatches() -> None:
 
         service.handle_mcu_frame = AsyncMock()
 
-        rpc_payload = pb.RpcPayload(console_write=pb.ConsoleWrite(data=b"hi"))
-        frame_bytes = Frame(sequence_id=0, payload=rpc_payload.SerializeToString()).build()
+        frame_bytes = Frame(command_id=Command.CMD_CONSOLE_WRITE.value, sequence_id=0, payload=b"hi").build()
         encoded = cobs.encode(frame_bytes)
         transport = SerialTransport(config, state, service)
         await getattr(transport, "_process_packet")(encoded)
 
-        service.handle_mcu_frame.assert_awaited_once_with(Command.CMD_CONSOLE_WRITE.value, 0, b"\n\x02hi")
+        service.handle_mcu_frame.assert_awaited_once_with(Command.CMD_CONSOLE_WRITE.value, 0, b"hi")
     finally:
         state.cleanup()
 
@@ -107,11 +106,11 @@ async def test_process_packet_negotiation_ack_switches_local_baudrate() -> None:
         setattr(transport, "_negotiating", True)
         setattr(transport, "_negotiation_future", asyncio.get_running_loop().create_future())
 
-        rpc_payload = pb.RpcPayload(set_baudrate_resp=pb.Empty())
         encoded = cobs.encode(
             Frame(
+                command_id=Command.CMD_SET_BAUDRATE_RESP.value,
                 sequence_id=0,
-                payload=rpc_payload.SerializeToString(),
+                payload=b"",
             ).build()
         )
         await getattr(transport, "_process_packet")(encoded)
@@ -165,12 +164,11 @@ async def test_write_frame_debug_logs_unknown_command(
             mock_log,
         )
 
-        ok = await transport.send(Command.CMD_XOFF.value, b"")
+        ok = await transport.send(0xFE, b"payload")
         assert ok is True
-
         assert mock_writer.write.called
-        # Check that the command 0x4E is present in the encoded hex string
-        assert "4e" in seen.get("msg", "").lower()
+        # Check that the command 0xFE is present in the encoded hex string
+        assert "fe" in seen.get("msg", "").lower()
     finally:
         state.cleanup()
 

@@ -154,6 +154,11 @@ __attribute__((weak)) etl::expected<void, HalError> removeFile(etl::string_view 
 
 void fillCapabilities(rpc_pb_Capabilities& caps) {
   caps.watchdog = bridge::config::ENABLE_WATCHDOG;
+#if defined(BRIDGE_ENABLE_RLE)
+  caps.rle = (BRIDGE_ENABLE_RLE != 0);
+#else
+  caps.rle = false;
+#endif
 #if defined(BRIDGE_ENABLE_DEBUG_FRAMES)
   caps.debug_frames = true;
 #endif

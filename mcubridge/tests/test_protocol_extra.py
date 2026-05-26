@@ -1,6 +1,33 @@
 """Extra coverage for mcubridge.protocol components."""
 
 
+def test_rle_encode_decode_edge_cases() -> None:
+    from mcubridge.protocol import rle
+    from mcubridge.protocol.structures import RLEPayload
+
+    # Empty
+    assert rle.rle_encode(b"") == b""
+    assert RLEPayload(b"").decode() == b""
+    # No compression benefit
+    assert rle.rle_encode(b"ABC") == b"ABC"  # Wait, literals are as-is if not 0xFF
+
+    # Literal 0xFF
+    assert rle.rle_encode(b"\xff") == b"\xff\xff\xff"
+
+    # 2 and 3 0xFF (encoded as individual literal escapes since len < 4)
+    assert rle.rle_encode(b"\xff\xff") == b"\xff\xff\xff\xff\xff\xff"
+    assert rle.rle_encode(b"\xff\xff\xff") == b"\xff\xff\xff\xff\xff\xff\xff\xff\xff"
+
+    # Large run
+    data = b"A" * 300
+    encoded = rle.rle_encode(data)
+    # 300 = 256 + 44
+    # Run 1: 0xFF, 254 (256-2), 'A'
+    # Run 2: 'A' repeated 44 times -> 0xFF, 42 (44-2), 'A'
+    assert len(encoded) == 6
+    assert RLEPayload(encoded).decode() == data
+
+
 def test_topics_handshake_topic() -> None:
     from mcubridge.protocol.topics import (
         Topic,

@@ -86,7 +86,7 @@ void derive_session_key_raw(const uint8_t* secret, size_t secret_len,
 /**
  * @brief Securely encrypt a frame's payload and populate nonce/tag.
  */
-bool aead_encrypt_frame(uint16_t seq_id, 
+bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id, 
                         etl::span<const uint8_t> in,
                         etl::span<const uint8_t> key,
                         uint64_t* nonce_counter,
@@ -97,7 +97,7 @@ bool aead_encrypt_frame(uint16_t seq_id,
 /**
  * @brief Securely decrypt a frame's payload.
  */
-bool aead_decrypt_frame(uint16_t seq_id,
+bool aead_decrypt_frame(uint16_t cmd_id, uint16_t seq_id,
                         etl::span<const uint8_t> in,
                         etl::span<const uint8_t> tag,
                         etl::span<const uint8_t> key,

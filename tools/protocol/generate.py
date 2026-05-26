@@ -307,6 +307,16 @@ class JinjaGenerator:
                 "type": "uint32_t",
                 "value": c["rpc_timer_overflow_threshold"],
             },
+            {
+                "name": "RPC_CMD_FLAG_COMPRESSED",
+                "type": "uint16_t",
+                "value": c["cmd_flag_compressed"],
+            },
+            {
+                "name": "RPC_CMD_FLAG_COMPRESSED_BIT",
+                "type": "uint8_t",
+                "value": c["rpc_cmd_flag_compressed_bit"],
+            },
             {"name": "RPC_UINT8_MASK", "type": "uint8_t", "value": c["uint8_mask"]},
             {"name": "RPC_UINT16_MAX", "type": "uint16_t", "value": c["uint16_max"]},
             {
@@ -349,6 +359,42 @@ class JinjaGenerator:
             },
             {"name": "RPC_DIGITAL_LOW", "type": "uint8_t", "value": c["digital_low"]},
             {"name": "RPC_DIGITAL_HIGH", "type": "uint8_t", "value": c["digital_high"]},
+            {
+                "name": "RPC_RLE_ESCAPE_BYTE",
+                "type": "uint8_t",
+                "value": c["rle_escape_byte"],
+            },
+            {
+                "name": "RPC_RLE_MIN_RUN_LENGTH",
+                "type": "uint8_t",
+                "value": c["rle_min_run_length"],
+            },
+            {
+                "name": "RPC_RLE_MAX_RUN_LENGTH",
+                "type": "uint16_t",
+                "value": c["rle_max_run_length"],
+            },
+            {
+                "name": "RPC_RLE_SINGLE_ESCAPE_MARKER",
+                "type": "uint8_t",
+                "value": c["rle_single_escape_marker"],
+            },
+            {
+                "name": "RPC_RLE_EXPANSION_FACTOR",
+                "type": "uint8_t",
+                "value": c["rle_expansion_factor"],
+            },
+            {"name": "RPC_RLE_OFFSET", "type": "uint8_t", "value": c["rle_offset"]},
+            {
+                "name": "RPC_RLE_MIN_COMPRESS_INPUT_SIZE",
+                "type": "size_t",
+                "value": c["rle_min_compress_input_size"],
+            },
+            {
+                "name": "RPC_RLE_MIN_COMPRESS_SAVINGS",
+                "type": "size_t",
+                "value": c["rle_min_compress_savings"],
+            },
             {
                 "name": "RPC_SHA256_DIGEST_SIZE",
                 "type": "uint8_t",
@@ -654,6 +700,16 @@ class JinjaGenerator:
                 "type": "int",
                 "value": c["rpc_timer_overflow_threshold"],
             },
+            {
+                "name": "CMD_FLAG_COMPRESSED",
+                "type": "int",
+                "value": c["cmd_flag_compressed"],
+            },
+            {
+                "name": "CMD_FLAG_COMPRESSED_BIT",
+                "type": "int",
+                "value": c["rpc_cmd_flag_compressed_bit"],
+            },
             {"name": "UINT8_MASK", "type": "int", "value": c["uint8_mask"]},
             {"name": "UINT16_MAX", "type": "int", "value": c["uint16_max"]},
             {"name": "BOOTLOADER_MAGIC", "type": "int", "value": c["bootloader_magic"]},
@@ -704,6 +760,38 @@ class JinjaGenerator:
             },
             {"name": "DIGITAL_LOW", "type": "int", "value": c["digital_low"]},
             {"name": "DIGITAL_HIGH", "type": "int", "value": c["digital_high"]},
+            {"name": "RLE_ESCAPE_BYTE", "type": "int", "value": c["rle_escape_byte"]},
+            {
+                "name": "RLE_MIN_RUN_LENGTH",
+                "type": "int",
+                "value": c["rle_min_run_length"],
+            },
+            {
+                "name": "RLE_MAX_RUN_LENGTH",
+                "type": "int",
+                "value": c["rle_max_run_length"],
+            },
+            {
+                "name": "RLE_SINGLE_ESCAPE_MARKER",
+                "type": "int",
+                "value": c["rle_single_escape_marker"],
+            },
+            {
+                "name": "RLE_EXPANSION_FACTOR",
+                "type": "int",
+                "value": c["rle_expansion_factor"],
+            },
+            {"name": "RLE_OFFSET", "type": "int", "value": c["rle_offset"]},
+            {
+                "name": "RLE_MIN_COMPRESS_INPUT_SIZE",
+                "type": "int",
+                "value": c["rle_min_compress_input_size"],
+            },
+            {
+                "name": "RLE_MIN_COMPRESS_SAVINGS",
+                "type": "int",
+                "value": c["rle_min_compress_savings"],
+            },
             {
                 "name": "SHA256_DIGEST_SIZE",
                 "type": "int",

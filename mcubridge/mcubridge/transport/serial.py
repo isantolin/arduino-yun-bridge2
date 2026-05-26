@@ -216,25 +216,6 @@ class SerialTransport:
             raw_bytes = bytes(encoded_packet) if isinstance(encoded_packet, memoryview) else encoded_packet
             decoded = cobs.decode(raw_bytes)
             frame = Frame.parse(decoded, self.state.link_session_key if self.state.is_synchronized else None)
-
-            rpc_payload = pb.RpcPayload()
-            try:
-                rpc_payload.ParseFromString(frame.payload)
-            except Exception as e:
-                raise ValueError(f"Failed to parse RpcPayload: {e}") from e
-
-            oneof_field = rpc_payload.WhichOneof("msg")
-            if not oneof_field:
-                raise ValueError("Empty RpcPayload")
-
-            cmd_id = rpc_payload.DESCRIPTOR.fields_by_name[oneof_field].number
-            # Extract the actual message bytes if needed, or the message itself
-            # For simplicity in this refactor, we still pass bytes to handle_mcu_frame
-            inner_msg = getattr(rpc_payload, oneof_field)
-            payload_bytes = inner_msg.SerializeToString() if hasattr(inner_msg, "SerializeToString") else b""
-            if isinstance(inner_msg, pb.Empty):
-                payload_bytes = b""
-
         except Exception as exc:
             logger.warning("[SERIAL <- MCU] [MALFORMED]: %s", exc)
             self.state.serial_decode_errors += 1
@@ -242,12 +223,12 @@ class SerialTransport:
             return
 
         if self._negotiating and self._negotiation_future and not self._negotiation_future.done():
-            if cmd_id == protocol.Command.CMD_SET_BAUDRATE_RESP.value:
+            if frame.command_id == protocol.Command.CMD_SET_BAUDRATE_RESP.value:
                 self._switch_local_baudrate(self.config.serial_baud)
                 self._negotiation_future.set_result(True)
                 return
 
-        seq_id = frame.sequence_id
+        cmd_id, seq_id, payload = frame.command_id, frame.sequence_id, frame.payload
 
         # Anti-replay validation
         is_excluded = (protocol.STATUS_CODE_MIN <= cmd_id <= protocol.STATUS_CODE_MAX) or (
@@ -263,9 +244,9 @@ class SerialTransport:
             self.state.link_last_nonce_counter = new_counter
 
         # Correlation and Service dispatch
-        self._correlate_frame(cmd_id, payload_bytes)
+        self._correlate_frame(cmd_id, payload)
         if self.service:
-            await self.service.handle_mcu_frame(cmd_id, seq_id, payload_bytes)
+            await self.service.handle_mcu_frame(cmd_id, seq_id, payload)
 
         self.state.metrics.serial_bytes_received.inc(len(encoded_packet))
         self.state.metrics.serial_frames_received.inc()
@@ -408,21 +389,9 @@ class SerialTransport:
             nonce, new_counter = generate_nonce_with_counter(self.state.link_nonce_counter)
             self.state.link_nonce_counter = new_counter
 
-        # Wrap into RpcPayload
-        rpc_payload = pb.RpcPayload()
-        try:
-            field_name = rpc_payload.DESCRIPTOR.fields_by_number[command_id].name
-            target_msg = getattr(rpc_payload, field_name)
-            if not isinstance(target_msg, pb.Empty):
-                target_msg.ParseFromString(payload)
-            serialized_payload = rpc_payload.SerializeToString()
-        except Exception as e:
-            logger.error("Failed to build RpcPayload for command %d: %s", command_id, e)
-            return False
-
-        frame = Frame(sequence_id=seq_id, payload=serialized_payload, nonce=nonce)
+        frame = Frame(command_id=command_id, sequence_id=seq_id, payload=payload, nonce=nonce)
         encoded = (
-            cobs.encode(frame.build(self.state.link_session_key if self.state.is_synchronized else None, is_excluded))
+            cobs.encode(frame.build(self.state.link_session_key if self.state.is_synchronized else None))
             + protocol.FRAME_DELIMITER
         )
 

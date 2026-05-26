@@ -25,6 +25,10 @@ inline constexpr size_t CRC_TRAILER_SIZE = rpc::RPC_CRC_SIZE;
 inline constexpr size_t MAX_ENVELOPE_SIZE = rpc_pb_RpcEnvelope_size;
 inline constexpr size_t MAX_FRAME_SIZE = MAX_ENVELOPE_SIZE + CRC_TRAILER_SIZE;
 
+inline bool is_compressed(uint16_t id) {
+  return (id & RPC_CMD_FLAG_COMPRESSED) != 0;
+}
+
 struct Frame {
   rpc_pb_RpcEnvelope envelope;
   uint32_t crc;
@@ -120,12 +124,13 @@ class FrameParser {
 
 class FrameBuilder {
  public:
-  static size_t build(etl::span<uint8_t> buffer,
+  static size_t build(etl::span<uint8_t> buffer, uint16_t cmd_id,
                       uint16_t seq_id, etl::span<const uint8_t> payload,
                       const etl::array<uint8_t, AEAD_NONCE_SIZE>& nonce,
                       const etl::array<uint8_t, AEAD_TAG_SIZE>& tag) {
     Frame f;
     f.envelope.version = PROTOCOL_VERSION;
+    f.envelope.command_id = cmd_id;
     f.envelope.sequence_id = seq_id;
 
     etl::copy_n(nonce.begin(), AEAD_NONCE_SIZE, f.envelope.nonce.bytes);

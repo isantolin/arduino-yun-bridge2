@@ -2,8 +2,6 @@ syntax = "proto3";
 
 package rpc.pb;
 
-message Empty {}
-
 message VersionResponse {
     uint32 major = 1;
     uint32 minor = 2;
@@ -20,18 +18,19 @@ message Capabilities {
     uint32 dig = 3;
     uint32 ana = 4;
     bool watchdog = 5;
-    bool debug_frames = 6;
-    bool debug_io = 7;
-    bool eeprom = 8;
-    bool dac = 9;
-    bool hw_serial1 = 10;
-    bool fpu = 11;
-    bool logic_3v3 = 12;
-    bool big_buffer = 13;
-    bool i2c = 14;
-    bool spi = 15;
-    bool sd = 16;
-    uint32 feat = 17;
+    bool rle = 6;
+    bool debug_frames = 7;
+    bool debug_io = 8;
+    bool eeprom = 9;
+    bool dac = 10;
+    bool hw_serial1 = 11;
+    bool fpu = 12;
+    bool logic_3v3 = 13;
+    bool big_buffer = 14;
+    bool i2c = 15;
+    bool spi = 16;
+    bool sd = 17;
+    uint32 feat = 18;
 }
 
 message PinMode {
@@ -195,88 +194,11 @@ message SpiConfig {
     uint32 frequency = 3;
 }
 
-// Polymorphic Payload Container
-message RpcPayload {
-    oneof msg {
-        // Statuses
-        Empty ok = 48; // 0x30
-        Empty error = 49;
-        Empty cmd_unknown = 50;
-        Empty malformed = 51;
-        Empty overflow = 52;
-        Empty crc_mismatch = 53;
-        Empty timeout = 54;
-        Empty not_implemented = 55;
-        AckPacket ack = 56; // 0x38
-
-        // System
-        Empty get_version = 64; // 0x40
-        VersionResponse version_resp = 65;
-        Empty get_free_memory = 66;
-        FreeMemoryResponse free_memory_resp = 67;
-        LinkSync link_sync = 68;
-        LinkSync link_sync_resp = 69;
-        HandshakeConfig link_reset = 70;
-        Empty link_reset_resp = 71;
-        Empty get_capabilities = 72;
-        Capabilities capabilities_resp = 73;
-        SetBaudratePacket set_baudrate = 74;
-        Empty set_baudrate_resp = 75;
-        EnterBootloader enter_bootloader = 76;
-        Empty xoff = 78;
-        Empty xon = 79;
-
-        // GPIO
-        PinMode set_pin_mode = 80; // 0x50
-        DigitalWrite digital_write = 81;
-        AnalogWrite analog_write = 82;
-        PinRead digital_read = 83;
-        PinRead analog_read = 84;
-        DigitalReadResponse digital_read_resp = 85;
-        AnalogReadResponse analog_read_resp = 86;
-
-        // Console
-        ConsoleWrite console_write = 96; // 0x60
-
-        // Datastore
-        DatastorePut datastore_put = 112; // 0x70
-        DatastoreGet datastore_get = 113;
-        DatastoreGetResponse datastore_get_resp = 114;
-
-        // Mailbox
-        Empty mailbox_read = 128; // 0x80
-        MailboxProcessed mailbox_processed = 129;
-        Empty mailbox_available = 130;
-        MailboxPush mailbox_push = 131;
-        MailboxReadResponse mailbox_read_resp = 132;
-        MailboxAvailableResponse mailbox_available_resp = 133;
-
-        // Filesystem
-        FileWrite file_write = 144; // 0x90
-        FileRead file_read = 145;
-        FileRemove file_remove = 146;
-        FileReadResponse file_read_resp = 147;
-
-        // Process
-        ProcessRunAsync process_run_async = 161; // 0xA1
-        ProcessPoll process_poll = 162;
-        ProcessKill process_kill = 163;
-        ProcessRunAsyncResponse process_run_async_resp = 165;
-        ProcessPollResponse process_poll_resp = 166;
-
-        // SPI
-        Empty spi_begin = 176; // 0xB0
-        SpiTransfer spi_transfer = 177;
-        SpiTransferResponse spi_transfer_resp = 178;
-        Empty spi_end = 179;
-        SpiConfig spi_config = 180;
-    }
-}
-
 message RpcEnvelope {
     uint32 version = 1;
-    uint32 sequence_id = 2;
-    bytes nonce = 3;
-    bytes tag = 4;
-    bytes payload = 5; // Serialized (and optionally encrypted) RpcPayload
+    uint32 command_id = 2;
+    uint32 sequence_id = 3;
+    bytes nonce = 4;
+    bytes tag = 5;
+    bytes payload = 6;
 }

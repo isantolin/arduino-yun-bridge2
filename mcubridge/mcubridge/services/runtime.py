@@ -103,64 +103,6 @@ class BridgeService:
             if s != Status.ACK:
                 self.mcu_registry[s.value] = self._make_status_handler(s)
 
-        # O(1) MQTT Dispatch Registry
-        self.mqtt_registry = self._setup_mqtt_registry()
-
-    def _setup_mqtt_registry(self) -> dict[Topic, Callable[[TopicRoute, Message], Coroutine[Any, Any, None]]]:
-        # Sub-registries for specific actions
-        self._system_dispatch = {
-            SystemAction.BOOTLOADER: self._handle_mqtt_system_bootloader,
-            SystemAction.FREE_MEMORY: self._handle_mqtt_system_free_memory,
-            SystemAction.VERSION: self._handle_mqtt_system_version,
-            SystemAction.BRIDGE: self._handle_mqtt_system_bridge,
-        }
-        self._spi_dispatch = {
-            SpiAction.BEGIN: lambda _, msg: self.serial.send(Command.CMD_SPI_BEGIN.value, b""),
-            SpiAction.END: lambda _, msg: self.serial.send(Command.CMD_SPI_END.value, b""),
-            SpiAction.CONFIG: self._handle_mqtt_spi_config,
-            SpiAction.TRANSFER: self._handle_mqtt_spi_transfer,
-        }
-        self._pin_dispatch = {
-            PinAction.MODE: self._handle_mqtt_pin_mode,
-            PinAction.READ: self._handle_mqtt_pin_read,
-        }
-        self._shell_dispatch = {
-            ShellAction.RUN_ASYNC: self._handle_mqtt_shell_run,
-            ShellAction.POLL: self._handle_mqtt_shell_poll,
-            ShellAction.KILL: self._handle_mqtt_shell_kill,
-        }
-
-        return {
-            Topic.CONSOLE: lambda route, msg: self._handle_mqtt_console(msg),
-            Topic.DATASTORE: self._handle_mqtt_datastore,
-            Topic.MAILBOX: self._handle_mqtt_mailbox,
-            Topic.FILE: self._handle_mqtt_file,
-            Topic.SHELL: self._dispatch_shell,
-            Topic.SPI: self._dispatch_spi,
-            Topic.DIGITAL: self._dispatch_pin,
-            Topic.ANALOG: self._dispatch_pin,
-            Topic.SYSTEM: self._dispatch_system,
-        }
-
-    async def _dispatch_system(self, route: TopicRoute, inbound: Message) -> None:
-        if handler := self._system_dispatch.get(cast(SystemAction, route.identifier)):
-            await handler(route, inbound)
-
-    async def _dispatch_spi(self, route: TopicRoute, inbound: Message) -> None:
-        if handler := self._spi_dispatch.get(cast(SpiAction, route.identifier)):
-            await handler(route, inbound)
-
-    async def _dispatch_pin(self, route: TopicRoute, inbound: Message) -> None:
-        if len(route.segments) == 2:
-            if handler := self._pin_dispatch.get(cast(PinAction, route.segments[1])):
-                await handler(route, inbound)
-        else:
-            await self._handle_mqtt_pin_write(route, inbound)
-
-    async def _dispatch_shell(self, route: TopicRoute, inbound: Message) -> None:
-        if handler := self._shell_dispatch.get(cast(ShellAction, route.identifier)):
-            await handler(route, inbound)
-
     def _setup_mcu_registry(self) -> dict[int, McuHandler]:
         return {
             Command.CMD_XOFF.value: lambda _, __: self._handle_mcu_xoff(),
@@ -330,9 +272,25 @@ class BridgeService:
                 return
 
             # Unified MQTT Dispatch
-            if isinstance(route.topic, Topic):
-                if handler := self.mqtt_registry.get(route.topic):
-                    await handler(route, inbound)
+            match route.topic:
+                case Topic.CONSOLE:
+                    await self._handle_mqtt_console(inbound)
+                case Topic.DATASTORE:
+                    await self._handle_mqtt_datastore(route, inbound)
+                case Topic.MAILBOX:
+                    await self._handle_mqtt_mailbox(route, inbound)
+                case Topic.FILE:
+                    await self._handle_mqtt_file(route, inbound)
+                case Topic.SHELL:
+                    await self._handle_mqtt_shell(route, inbound)
+                case Topic.SPI:
+                    await self._handle_mqtt_spi(route, inbound)
+                case Topic.DIGITAL | Topic.ANALOG:
+                    await self._handle_mqtt_pin(route, inbound)
+                case Topic.SYSTEM:
+                    await self._handle_mqtt_system(route, inbound)
+                case _:
+                    pass
 
     # --- Business Logic Implementation ---
 
@@ -648,153 +606,158 @@ class BridgeService:
             finally:
                 self._pending_mcu_read = None
 
-    async def _handle_mqtt_shell_run(self, route: TopicRoute, inbound: Message) -> None:
+    async def _handle_mqtt_shell(self, route: TopicRoute, inbound: Message) -> None:
+        act = route.segments[0] if route.segments else None
         pl = msgspec.convert(inbound.payload, bytes)
-        try:
-            cmd = pb.ProcessRunAsync.FromString(pl).command if pl.startswith(b"\x0a") else pl.decode().strip()
-            pid = await self._run_process(cmd)
-        except (ProtobufDecodeError, UnicodeDecodeError, ValueError, OSError) as exc:
-            logger.warning("MQTT shell run_async rejected", error=str(exc))
-            payload = pb.ProcessRunAsyncResponse(pid=0).SerializeToString()
-        else:
-            payload = pb.ProcessRunAsyncResponse(pid=pid).SerializeToString()
-        await self.enqueue_mqtt(
-            QueuedPublish(
-                topic_path(
-                    self.state.mqtt_topic_prefix,
-                    Topic.SHELL,
-                    ShellAction.RUN_ASYNC,
-                    protocol.MQTT_SUFFIX_RESPONSE,
-                ),
-                payload,
-                content_type=PROTOBUF_CONTENT_TYPE,
-            ),
-            reply_context=inbound,
-        )
-
-    async def _handle_mqtt_shell_poll(self, route: TopicRoute, inbound: Message) -> None:
-        if len(route.segments) != 2:
-            return
-        pid = int(route.segments[1])
-        batch = await self._poll_process(pid)
-        await self.enqueue_mqtt(
-            QueuedPublish(
-                topic_path(
-                    self.state.mqtt_topic_prefix,
-                    Topic.SHELL,
-                    ShellAction.POLL,
-                    str(pid),
-                    protocol.MQTT_SUFFIX_RESPONSE,
-                ),
-                pb.ProcessPollResponse(
-                    status=batch.status_byte,
-                    exit_code=batch.exit_code,
-                    stdout_data=batch.stdout_chunk,
-                    stderr_data=batch.stderr_chunk,
-                    finished=batch.finished,
-                    stdout_truncated=batch.stdout_truncated,
-                    stderr_truncated=batch.stderr_truncated,
-                ).SerializeToString(),
-                content_type=PROTOBUF_CONTENT_TYPE,
-            ),
-            reply_context=inbound,
-        )
-
-    async def _handle_mqtt_shell_kill(self, route: TopicRoute, inbound: Message) -> None:
-        if len(route.segments) == 2:
-            await self._stop_process(int(route.segments[1]))
-
-    async def _handle_mqtt_spi_config(self, route: TopicRoute, inbound: Message) -> None:
-        try:
-            p = msgspec.json.decode(inbound.payload, type=pb.SpiConfig)
-            await self.serial.send(Command.CMD_SPI_SET_CONFIG.value, p.SerializeToString())
-        except (msgspec.DecodeError, msgspec.ValidationError, TypeError, ValueError) as exc:
-            logger.error("SPI config error: %s", exc)
-
-    async def _handle_mqtt_spi_transfer(self, route: TopicRoute, inbound: Message) -> None:
-        if not inbound.payload:
-            return
-        res = await self.serial.send_and_wait_payload(
-            Command.CMD_SPI_TRANSFER.value,
-            pb.SpiTransfer(data=bytes(inbound.payload)).SerializeToString(),
-        )
-        if res:
+        if act == ShellAction.RUN_ASYNC:
+            try:
+                cmd = pb.ProcessRunAsync.FromString(pl).command if pl.startswith(b"\x0a") else pl.decode().strip()
+                pid = await self._run_process(cmd)
+            except (ProtobufDecodeError, UnicodeDecodeError, ValueError, OSError) as exc:
+                logger.warning("MQTT shell run_async rejected", error=str(exc))
+                payload = pb.ProcessRunAsyncResponse(pid=0).SerializeToString()
+            else:
+                payload = pb.ProcessRunAsyncResponse(pid=pid).SerializeToString()
             await self.enqueue_mqtt(
                 QueuedPublish(
                     topic_path(
                         self.state.mqtt_topic_prefix,
-                        Topic.SPI,
-                        SpiAction.TRANSFER,
+                        Topic.SHELL,
+                        ShellAction.RUN_ASYNC,
                         protocol.MQTT_SUFFIX_RESPONSE,
                     ),
-                    pb.SpiTransferResponse.FromString(res).data,
+                    payload,
+                    content_type=PROTOBUF_CONTENT_TYPE,
                 ),
                 reply_context=inbound,
             )
+        elif act in (ShellAction.POLL, ShellAction.KILL) and len(route.segments) == 2:
+            pid = int(route.segments[1])
+            if act == ShellAction.POLL:
+                batch = await self._poll_process(pid)
+                await self.enqueue_mqtt(
+                    QueuedPublish(
+                        topic_path(
+                            self.state.mqtt_topic_prefix,
+                            Topic.SHELL,
+                            ShellAction.POLL,
+                            str(pid),
+                            protocol.MQTT_SUFFIX_RESPONSE,
+                        ),
+                        pb.ProcessPollResponse(
+                            status=batch.status_byte,
+                            exit_code=batch.exit_code,
+                            stdout_data=batch.stdout_chunk,
+                            stderr_data=batch.stderr_chunk,
+                            finished=batch.finished,
+                            stdout_truncated=batch.stdout_truncated,
+                            stderr_truncated=batch.stderr_truncated,
+                        ).SerializeToString(),
+                        content_type=PROTOBUF_CONTENT_TYPE,
+                    ),
+                    reply_context=inbound,
+                )
+            else:
+                await self._stop_process(pid)
 
-    async def _handle_mqtt_pin_mode(self, route: TopicRoute, inbound: Message) -> None:
-        pin = self._parse_pin(route.segments[0])
-        if pin >= 0:
-            pl = msgspec.convert(inbound.payload, bytes).decode()
-            await self.serial.send(
-                Command.CMD_SET_PIN_MODE.value, pb.PinMode(pin=pin, mode=int(pl)).SerializeToString()
-            )
+    async def _handle_mqtt_spi(self, route: TopicRoute, inbound: Message) -> None:
+        match route.identifier:
+            case SpiAction.BEGIN:
+                await self.serial.send(Command.CMD_SPI_BEGIN.value, b"")
+            case SpiAction.END:
+                await self.serial.send(Command.CMD_SPI_END.value, b"")
+            case SpiAction.CONFIG:
+                try:
+                    p = msgspec.json.decode(inbound.payload, type=pb.SpiConfig)
+                    await self.serial.send(Command.CMD_SPI_SET_CONFIG.value, p.SerializeToString())
+                except (msgspec.DecodeError, msgspec.ValidationError, TypeError, ValueError) as exc:
+                    logger.error("SPI config error: %s", exc)
+            case SpiAction.TRANSFER:
+                if inbound.payload:
+                    res = await self.serial.send_and_wait_payload(
+                        Command.CMD_SPI_TRANSFER.value,
+                        pb.SpiTransfer(data=bytes(inbound.payload)).SerializeToString(),
+                    )
+                    if res:
+                        await self.enqueue_mqtt(
+                            QueuedPublish(
+                                topic_path(
+                                    self.state.mqtt_topic_prefix,
+                                    Topic.SPI,
+                                    SpiAction.TRANSFER,
+                                    protocol.MQTT_SUFFIX_RESPONSE,
+                                ),
+                                pb.SpiTransferResponse.FromString(res).data,
+                            ),
+                            reply_context=inbound,
+                        )
+            case _:
+                return
 
-    async def _handle_mqtt_pin_read(self, route: TopicRoute, inbound: Message) -> None:
-        pin = self._parse_pin(route.segments[0])
-        if pin < 0:
-            return
-        cmd = Command.CMD_DIGITAL_READ if route.topic == Topic.DIGITAL else Command.CMD_ANALOG_READ
-        q = self.state.pending_digital_reads if cmd == Command.CMD_DIGITAL_READ else self.state.pending_analog_reads
-        if len(q) < self.state.pending_pin_request_limit:
-            q.append(structures.PendingPinRequest(pin=pin, reply_context=inbound))
-            await self.serial.send(cmd.value, pb.PinRead(pin=pin).SerializeToString())
-
-    async def _handle_mqtt_pin_write(self, route: TopicRoute, inbound: Message) -> None:
+    async def _handle_mqtt_pin(self, route: TopicRoute, inbound: Message) -> None:
         pin = self._parse_pin(route.segments[0])
         if pin < 0:
             return
         pl = msgspec.convert(inbound.payload, bytes).decode()
-        cmd = Command.CMD_DIGITAL_WRITE if route.topic == Topic.DIGITAL else Command.CMD_ANALOG_WRITE
-        await self.serial.send(
-            cmd.value, pb.DigitalWrite(pin=pin, value=int(pl) if pl.isdigit() else 0).SerializeToString()
-        )
+        if len(route.segments) == 2:
+            if route.segments[1] == PinAction.MODE:
+                await self.serial.send(
+                    Command.CMD_SET_PIN_MODE.value, pb.PinMode(pin=pin, mode=int(pl)).SerializeToString()
+                )
+            elif route.segments[1] == PinAction.READ:
+                cmd = Command.CMD_DIGITAL_READ if route.topic == Topic.DIGITAL else Command.CMD_ANALOG_READ
+                q = (
+                    self.state.pending_digital_reads
+                    if cmd == Command.CMD_DIGITAL_READ
+                    else self.state.pending_analog_reads
+                )
+                if len(q) < self.state.pending_pin_request_limit:
+                    q.append(structures.PendingPinRequest(pin=pin, reply_context=inbound))
+                    await self.serial.send(cmd.value, pb.PinRead(pin=pin).SerializeToString())
+        else:
+            cmd = Command.CMD_DIGITAL_WRITE if route.topic == Topic.DIGITAL else Command.CMD_ANALOG_WRITE
+            await self.serial.send(
+                cmd.value, pb.DigitalWrite(pin=pin, value=int(pl) if pl.isdigit() else 0).SerializeToString()
+            )
 
-    async def _handle_mqtt_system_bootloader(self, route: TopicRoute, inbound: Message) -> None:
-        await self.serial.send(
-            Command.CMD_ENTER_BOOTLOADER.value,
-            pb.EnterBootloader(magic=protocol.BOOTLOADER_MAGIC).SerializeToString(),
-        )
-
-    async def _handle_mqtt_system_free_memory(self, route: TopicRoute, inbound: Message) -> None:
-        if "get" in route.segments:
-            pl = await self.serial.send_and_wait_payload(Command.CMD_GET_FREE_MEMORY.value, b"")
-            if pl:
+    async def _handle_mqtt_system(self, route: TopicRoute, inbound: Message) -> None:
+        match route.identifier:
+            case SystemAction.BOOTLOADER:
+                await self.serial.send(
+                    Command.CMD_ENTER_BOOTLOADER.value,
+                    pb.EnterBootloader(magic=protocol.BOOTLOADER_MAGIC).SerializeToString(),
+                )
+            case SystemAction.FREE_MEMORY if "get" in route.segments:
+                pl = await self.serial.send_and_wait_payload(Command.CMD_GET_FREE_MEMORY.value, b"")
+                if pl:
+                    await self.enqueue_mqtt(
+                        QueuedPublish(
+                            topic_path(
+                                self.state.mqtt_topic_prefix, Topic.SYSTEM, SystemAction.FREE_MEMORY, SystemAction.VALUE
+                            ),
+                            str(pb.FreeMemoryResponse.FromString(pl).value).encode(),
+                        ),
+                        reply_context=inbound,
+                    )
+            case SystemAction.VERSION if "get" in route.segments:
+                await self._request_mcu_version(inbound)
+            case SystemAction.BRIDGE:
+                flavor = route.segments[1] if len(route.segments) > 1 else "summary"
+                snap = (
+                    self.state.build_handshake_snapshot()
+                    if flavor == "handshake"
+                    else self.state.build_bridge_snapshot()
+                )
                 await self.enqueue_mqtt(
                     QueuedPublish(
-                        topic_path(
-                            self.state.mqtt_topic_prefix, Topic.SYSTEM, SystemAction.FREE_MEMORY, SystemAction.VALUE
-                        ),
-                        str(pb.FreeMemoryResponse.FromString(pl).value).encode(),
+                        topic_path(self.state.mqtt_topic_prefix, Topic.SYSTEM, "bridge", flavor, "value"),
+                        structures.encode_structured_payload(snap),
+                        content_type=PROTOBUF_CONTENT_TYPE,
                     ),
                     reply_context=inbound,
                 )
-
-    async def _handle_mqtt_system_version(self, route: TopicRoute, inbound: Message) -> None:
-        if "get" in route.segments:
-            await self._request_mcu_version(inbound)
-
-    async def _handle_mqtt_system_bridge(self, route: TopicRoute, inbound: Message) -> None:
-        flavor = route.segments[1] if len(route.segments) > 1 else "summary"
-        snap = self.state.build_handshake_snapshot() if flavor == "handshake" else self.state.build_bridge_snapshot()
-        await self.enqueue_mqtt(
-            QueuedPublish(
-                topic_path(self.state.mqtt_topic_prefix, Topic.SYSTEM, "bridge", flavor, "value"),
-                structures.encode_structured_payload(snap),
-                content_type=PROTOBUF_CONTENT_TYPE,
-            ),
-            reply_context=inbound,
-        )
+            case _:
+                return
 
     # --- Low-level Helpers ---
 

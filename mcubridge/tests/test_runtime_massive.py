@@ -29,6 +29,7 @@ async def service_setup(
     """Provide a BridgeService instance with mocked serial and MQTT."""
     serial = AsyncMock()
     serial.send = AsyncMock(return_value=True)
+    serial.send_raw = AsyncMock(return_value=True)
     serial.acknowledge = AsyncMock(return_value=True)
     serial.send = AsyncMock(return_value=None)
     serial.reset = AsyncMock(return_value=None)
@@ -186,6 +187,7 @@ async def test_runtime_mqtt_brute_force(
         return True
 
     serial.send.side_effect = send_side_effect
+    serial.send_raw.side_effect = send_side_effect
 
     # Use actual protocol constants for topics
     topics = [
@@ -230,6 +232,47 @@ async def test_runtime_mqtt_brute_force(
         )
         # We don't assert side effects, just that it doesn't crash
         await service.handle_mqtt_message(msg)
+
+
+@pytest.mark.asyncio
+async def test_runtime_mcu_file_read_uses_send_raw(
+    service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
+) -> None:
+    """MCU file reads should stream via send_raw and complete from chunk callbacks."""
+    service, state, serial = service_setup
+    state.mark_synchronized()
+    state.link_sync_event.set()
+
+    async def send_raw_side_effect(command_id: int, payload: bytes) -> bool:
+        assert command_id == Command.CMD_FILE_READ.value
+        assert pb.FileRead.FromString(payload).path == "arduino.bin"
+
+        async def complete_file_read() -> None:
+            file_read_handler = service.mcu_registry[Command.CMD_FILE_READ_RESP.value]
+            await file_read_handler(1, pb.FileReadResponse(content=b"mcu-data").SerializeToString())
+            await file_read_handler(1, pb.FileReadResponse(content=b"").SerializeToString())
+
+        asyncio.get_running_loop().create_task(complete_file_read())
+        return True
+
+    serial.send_raw.side_effect = send_raw_side_effect
+    service.enqueue_mqtt = AsyncMock()
+    msg = Message(
+        topic="br/file/read/mcu/arduino.bin",
+        payload=b"",
+        qos=0,
+        retain=False,
+        mid=1,
+        properties=None,
+    )
+
+    await service.handle_mqtt_message(msg)
+
+    serial.send_raw.assert_awaited_once()
+    serial.send.assert_not_awaited()
+    assert service.enqueue_mqtt.await_count == 1
+    queued_publish = service.enqueue_mqtt.await_args.args[0]
+    assert queued_publish.payload == b"mcu-data"
 
 
 @pytest.mark.asyncio

@@ -575,7 +575,7 @@ class BridgeService:
         )
         async with self._mcu_read_lock:
             self._pending_mcu_read = _PendingMcuRead(target, asyncio.get_running_loop().create_future())
-            if not await self.serial.send(
+            if not await self.serial.send_raw(
                 Command.CMD_FILE_READ.value,
                 pb.FileRead(path=target[4:]).SerializeToString(),
             ):

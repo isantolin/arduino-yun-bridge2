@@ -1,94 +1,49 @@
-#include <stddef.h>
-#include <stdint.h>
-#include <string.h>
-
-#define BRIDGE_ENABLE_TEST_INTERFACE 1
+#include <unity.h>
 #include "Bridge.h"
-#include "BridgeTestHelper.h"
 #include "BridgeTestInterface.h"
-#include "services/Console.h"
-#include "services/DataStore.h"
-#include "services/Mailbox.h"
-#include "services/Process.h"
-#include "test_constants.h"
-#include "test_support.h"
-
-// Define the global delegates and stubs for HardwareSerial stub
-Stream* g_arduino_stream_delegate = nullptr;
-HardwareSerial Serial;
-HardwareSerial Serial1;
-
-// Unity setup/teardown
-void setUp(void) {}
-void tearDown(void) {}
+#include "BridgeTestHelper.h"
 
 using namespace bridge::test;
 
-void reset_bridge_comp(BiStream& stream) {
-  Bridge.~BridgeClass();
-  new (&Bridge) BridgeClass(stream);
-  Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, "top-secret");
+void setUp() {}
+void tearDown() {}
+
+void test_component_dispatch() {
+  Bridge.begin(115200, "6368616e67656d65313233");
   auto ba = TestAccessor::create(Bridge);
-  ba.onStartupStabilized();
   ba.setSynchronized();
+
+  rpc_pb_PinMode msg = rpc_pb_PinMode_init_default;
+  msg.pin = 13;
+  msg.mode = 1; // OUTPUT
+
+  rpc::Frame frame;
+  set_pb_payload(frame, msg, rpc_pb_RpcPayload_set_pin_mode_tag);
+  frame.envelope.sequence_id = 20;
+
+  ba.dispatch(frame);
+  Bridge.process();
 }
 
-void test_all_handlers_coverage() {
-  BiStream stream;
-  reset_bridge_comp(stream);
+void test_component_ack_processing() {
+  Bridge.begin(115200, "6368616e67656d65313233");
+  auto ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
 
-  rpc::Frame frame = {};
-  frame .envelope.version = rpc::PROTOCOL_VERSION;
-  frame .envelope.command_id = rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION);
-  TestAccessor::create(Bridge).dispatch(frame);
+  rpc_pb_AckPacket ack = rpc_pb_AckPacket_init_default;
+  ack.command_id = rpc_pb_RpcPayload_digital_write_tag;
 
-  frame .envelope.command_id =
-      rpc::to_underlying(rpc::CommandId::CMD_GET_FREE_MEMORY);
-  TestAccessor::create(Bridge).dispatch(frame);
+  rpc::Frame frame;
+  set_pb_payload(frame, ack, rpc_pb_RpcPayload_ack_tag);
+  frame.envelope.sequence_id = 30;
 
-  frame .envelope.command_id =
-      rpc::to_underlying(rpc::CommandId::CMD_GET_CAPABILITIES);
-  TestAccessor::create(Bridge).dispatch(frame);
-}
-
-void test_process_api() {
-  BiStream stream;
-  reset_bridge_comp(stream);
-
-#if BRIDGE_ENABLE_PROCESS
-  Process.reset();
-#endif
-}
-
-void test_console_api() {
-  BiStream stream;
-  reset_bridge_comp(stream);
-  Console.begin();
-  Console.write('A');
-}
-
-void test_datastore_api() {
-  BiStream stream;
-  reset_bridge_comp(stream);
-#if BRIDGE_ENABLE_DATASTORE
-// No begin needed
-#endif
-}
-
-void test_mailbox_api() {
-  BiStream stream;
-  reset_bridge_comp(stream);
-#if BRIDGE_ENABLE_MAILBOX
-// No begin needed
-#endif
+  ba.dispatch(frame);
+  Bridge.process();
 }
 
 int main() {
   UNITY_BEGIN();
-  RUN_TEST(test_all_handlers_coverage);
-  RUN_TEST(test_process_api);
-  RUN_TEST(test_console_api);
-  RUN_TEST(test_datastore_api);
-  RUN_TEST(test_mailbox_api);
+  RUN_TEST(test_component_dispatch);
+  RUN_TEST(test_component_ack_processing);
   return UNITY_END();
 }

@@ -48,7 +48,17 @@ class TestAccessor {
     _fsm.receive(ev);
   }
 
-  void dispatch(const rpc::Frame& frame) { _bridge._dispatchCommand(frame); }
+  void dispatch(const rpc::Frame& frame) {
+    rpc_pb_RpcPayload payload = rpc_pb_RpcPayload_init_default;
+    pb_istream_t stream = pb_istream_from_buffer(frame.envelope.payload.bytes,
+                                                 frame.envelope.payload.size);
+    if (pb_decode(&stream, rpc_pb_RpcPayload_fields, &payload)) {
+      bridge::router::CommandContext ctx(
+          &frame, frame.envelope.sequence_id, false,
+          BridgeClass::is_reliable_cmd(static_cast<uint16_t>(payload.which_msg)));
+      _bridge._dispatch(payload, ctx);
+    }
+  }
 
   bool isSharedSecretEmpty() const { return _bridge._shared_secret.empty(); }
   void setSharedSecret(etl::span<const uint8_t> secret) {
@@ -68,6 +78,14 @@ class TestAccessor {
     etl::copy_n(out_tag_full.begin(), 16, tag_out);
   }
 
+  void encryptFrame(uint16_t seq_id, etl::span<const uint8_t> in,
+                    etl::span<uint8_t> out_nonce, etl::span<uint8_t> out_tag,
+                    etl::span<uint8_t> out_payload, uint64_t* nonce_counter) {
+    (void)rpc::security::aead_encrypt_frame(seq_id, in, _bridge._session_key,
+                                            nonce_counter, out_payload,
+                                            out_nonce, out_tag);
+  }
+
   void onAckTimeout() { _bridge._onAckTimeout(); }
   void handleAck(uint16_t cmd) { _bridge._handleAck(cmd); }
   void handleGetVersion(const bridge::router::CommandContext& ctx) {
@@ -76,8 +94,9 @@ class TestAccessor {
   bool sendFrame(rpc::CommandId c, uint16_t seq, etl::span<const uint8_t> p) {
     return _bridge.sendFrame(c, seq, p);
   }
-  void handleDigitalWriteCommand(const bridge::router::CommandContext& ctx) {
-    _bridge._handleDigitalWriteCommand(ctx);
+  void handleDigitalWriteCommand(const bridge::router::CommandContext& ctx,
+                                 const rpc_pb_DigitalWrite& m) {
+    _bridge._handleDigitalWriteCommand(ctx, m);
   }
   void invokePacketReceived(etl::span<const uint8_t> p) {
     _bridge._onPacketReceived(p);

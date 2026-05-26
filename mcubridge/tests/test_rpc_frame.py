@@ -1,44 +1,59 @@
 import pytest
 from mcubridge.protocol import protocol
 from mcubridge.protocol.frame import Frame
-from tests.test_constants import TEST_CMD_ID
+from mcubridge.protocol import mcubridge_pb2 as pb
+
+
+def _wrap_payload(command_id: int, payload: bytes) -> bytes:
+    rpc_payload = pb.RpcPayload()
+    field_name = rpc_payload.DESCRIPTOR.fields_by_number[command_id].name
+    target_msg = getattr(rpc_payload, field_name)
+    if isinstance(target_msg, pb.ConsoleWrite):
+        target_msg.data = payload
+    elif not isinstance(target_msg, pb.Empty):
+        try:
+            target_msg.ParseFromString(payload)
+        except Exception:
+            pass  # Ignore for testing non-pb payloads if needed
+    return rpc_payload.SerializeToString()
 
 
 def test_build_and_parse_round_trip() -> None:
     payload = b"\x01\x02\x03"
-    raw = Frame(command_id=TEST_CMD_ID, sequence_id=0, payload=payload).build()
+    wrapped = _wrap_payload(protocol.Command.CMD_CONSOLE_WRITE, payload)
+    raw = Frame(sequence_id=0, payload=wrapped).build()
 
     # Protobuf Envelope length is variable, but at least includes our data + overhead
     assert len(raw) > len(payload) + 32
 
-    parsed_command, parsed_seq, parsed_payload, _, _ = Frame.parse(raw)
-    assert parsed_command == TEST_CMD_ID
-    assert parsed_seq == 0
-    assert parsed_payload == payload
+    parsed_frame = Frame.parse(raw)
+    assert parsed_frame.sequence_id == 0
+    assert parsed_frame.payload == wrapped
 
 
 def test_empty_payload_round_trip() -> None:
-    raw = Frame(command_id=TEST_CMD_ID, sequence_id=0, payload=b"").build()
-    parsed_command, parsed_seq, parsed_payload, _, _ = Frame.parse(raw)
-    assert parsed_command == TEST_CMD_ID
-    assert parsed_seq == 0
-    assert parsed_payload == b""
+    wrapped = _wrap_payload(protocol.Command.CMD_GET_VERSION, b"")
+    raw = Frame(sequence_id=0, payload=wrapped).build()
+    parsed_frame = Frame.parse(raw)
+    assert parsed_frame.sequence_id == 0
+    assert parsed_frame.payload == wrapped
 
 
 def test_max_payload_round_trip() -> None:
-    payload = b"p" * protocol.MAX_PAYLOAD_SIZE
-    raw = Frame(command_id=TEST_CMD_ID, sequence_id=0, payload=payload).build()
-    parsed_command, parsed_seq, parsed_payload, _, _ = Frame.parse(raw)
-    assert parsed_command == TEST_CMD_ID
-    assert parsed_seq == 0
-    assert parsed_payload == payload
+    payload = b"p" * (protocol.MAX_PAYLOAD_SIZE - 10)  # Account for protobuf overhead
+    wrapped = _wrap_payload(protocol.Command.CMD_CONSOLE_WRITE, payload)
+    raw = Frame(sequence_id=0, payload=wrapped).build()
+    parsed_frame = Frame.parse(raw)
+    assert parsed_frame.sequence_id == 0
+    assert parsed_frame.payload == wrapped
 
 
 def test_frame_object_round_trip() -> None:
-    frame = Frame(command_id=TEST_CMD_ID, sequence_id=0, payload=b"hello")
+    wrapped = _wrap_payload(protocol.Command.CMD_CONSOLE_WRITE, b"hello")
+    frame = Frame(sequence_id=0, payload=wrapped)
     raw = frame.build()
     new_frame = Frame.parse(raw)
-    assert new_frame.command_id == frame.command_id
+    assert new_frame.sequence_id == frame.sequence_id
     assert new_frame.payload == frame.payload
 
 
@@ -46,12 +61,7 @@ def test_build_rejects_large_payload() -> None:
     payload = b"a" * (protocol.MAX_PAYLOAD_SIZE + 1)
 
     with pytest.raises(ValueError):
-        Frame(command_id=protocol.Command.CMD_SET_PIN_MODE, sequence_id=0, payload=payload).build()
-
-
-def test_build_rejects_invalid_command_id() -> None:
-    with pytest.raises(ValueError):
-        Frame(command_id=protocol.UINT16_MAX + 1, sequence_id=0, payload=b"").build()
+        Frame(sequence_id=0, payload=payload).build()
 
 
 def test_parse_rejects_short_frame() -> None:
@@ -63,7 +73,7 @@ def test_parse_rejects_short_frame() -> None:
 
 def test_parse_detects_crc_mismatch() -> None:
     payload = b"valid"
-    raw = Frame(command_id=protocol.Command.CMD_CONSOLE_WRITE, sequence_id=0, payload=payload).build()
+    raw = Frame(sequence_id=0, payload=payload).build()
     corrupted = raw[:-1] + bytes([raw[-1] ^ protocol.UINT8_MASK])
 
     with pytest.raises(ValueError):
@@ -74,7 +84,6 @@ def test_parse_validates_version_and_length() -> None:
     payload = b"data"
     raw = bytearray(
         Frame(
-            command_id=protocol.Command.CMD_DATASTORE_PUT,
             sequence_id=0,
             payload=payload,
         ).build()
@@ -84,14 +93,18 @@ def test_parse_validates_version_and_length() -> None:
     with pytest.raises(ValueError):
         Frame.parse(bytes(raw))
 
+    # Version is at the beginning of Protobuf, so corrupting early bytes might invalidate it
     raw = bytearray(
         Frame(
-            command_id=protocol.Command.CMD_DATASTORE_GET,
             sequence_id=0,
             payload=payload,
         ).build()
     )
-    raw[1] = 0
-    raw[2] = 0
+    # We can't easily predict where version is without parsing, but let's try to mess it up
+    # RpcEnvelope version is field 1, which usually starts with 0x08 (tag 1, wire type 0)
+    if raw[0] == 0x08:
+        raw[1] ^= 0xFF  # Corrupt version value
+
     with pytest.raises(ValueError):
+        # It might fail either at CRC or version check
         Frame.parse(bytes(raw))

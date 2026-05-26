@@ -161,8 +161,6 @@ class BridgeService:
         if handler := self._shell_dispatch.get(cast(ShellAction, route.identifier)):
             await handler(route, inbound)
 
-
-
     def _setup_mcu_registry(self) -> dict[int, McuHandler]:
         return {
             Command.CMD_XOFF.value: lambda _, __: self._handle_mcu_xoff(),
@@ -797,7 +795,6 @@ class BridgeService:
             ),
             reply_context=inbound,
         )
-
 
     # --- Low-level Helpers ---
 

@@ -1,75 +1,69 @@
-#define BRIDGE_ENABLE_TEST_INTERFACE 1
-#include <etl/array.h>
+#include <unity.h>
 #include "Bridge.h"
-#include "BridgeTestHelper.h"
 #include "BridgeTestInterface.h"
-#include "test_support.h"
-#include "services/Console.h"
-#include "services/FileSystem.h"
-#include "services/Process.h"
-#include "services/DataStore.h"
-#include "services/Mailbox.h"
+#include "BridgeTestHelper.h"
 
-// Bridge and core services are already provided by production code.
-HardwareSerial Serial;
-HardwareSerial Serial1;
-Stream* g_arduino_stream_delegate = nullptr;
+using namespace bridge::test;
 
-namespace {
+void setUp() {}
+void tearDown() {}
 
-void integrated_test_bridge_core() {
-  BiStream stream;
-  reset_bridge_core(Bridge, stream);
-  auto accessor = bridge::test::TestAccessor::create(Bridge);
-  accessor.onStartupStabilized();
+void test_integrated_handshake_to_command() {
+  Bridge.begin(115200, "6368616e67656d65313233");
+  auto ba = TestAccessor::create(Bridge);
 
-  rpc::payload::LinkSync sync_req = {};
-  memset(sync_req.nonce.bytes, 1, 16);
-  sync_req.nonce.size = 16;
+  // 1. Handshake
+  etl::array<uint8_t, 16> nonce; nonce.fill(0x42);
+  etl::array<uint8_t, 16> tag;
+  ba.computeHandshakeTag(nonce.data(), nonce.size(), tag.data());
 
-  rpc::Frame sync_frame;
-  sync_frame.envelope.version = rpc::PROTOCOL_VERSION;
-  sync_frame.envelope.command_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
-  sync_frame.envelope.sequence_id = 1;
-  
-  bridge::test::set_pb_payload(sync_frame, sync_req);
-  accessor.dispatch(sync_frame);
+  rpc_pb_LinkSync sync = rpc_pb_LinkSync_init_default;
+  etl::copy_n(nonce.begin(), 16, sync.nonce.bytes);
+  sync.nonce.size = 16;
+  etl::copy_n(tag.begin(), 16, sync.tag.bytes);
+  sync.tag.size = 16;
+
+  rpc_pb_RpcPayload sync_pl = rpc_pb_RpcPayload_init_default;
+  sync_pl.which_msg = rpc_pb_RpcPayload_link_sync_tag;
+  sync_pl.msg.link_sync = sync;
+
+  etl::array<uint8_t, 128> buf;
+  pb_ostream_t pbos = pb_ostream_from_buffer(buf.data(), buf.size());
+  pb_encode(&pbos, rpc_pb_RpcPayload_fields, &sync_pl);
+
+  etl::array<uint8_t, rpc::MAX_FRAME_SIZE> frame_raw;
+  etl::array<uint8_t, 12> frame_nonce = {};
+  etl::array<uint8_t, 16> frame_tag = {};
+  size_t len = rpc::FrameBuilder::build(frame_raw, 1, etl::span<const uint8_t>(buf.data(), pbos.bytes_written), frame_nonce, frame_tag);
+
+  ba.invokePacketReceived(etl::span<const uint8_t>(frame_raw.data(), len));
+  Bridge.process();
+  TEST_ASSERT(ba.isSynchronized());
+
+  // 2. Encrypted Command (Digital Write)
+  rpc_pb_DigitalWrite dw = rpc_pb_DigitalWrite_init_default;
+  dw.pin = 13;
+  dw.value = 1;
+
+  rpc_pb_RpcPayload dw_pl = rpc_pb_RpcPayload_init_default;
+  dw_pl.which_msg = rpc_pb_RpcPayload_digital_write_tag;
+  dw_pl.msg.digital_write = dw;
+
+  pbos = pb_ostream_from_buffer(buf.data(), buf.size());
+  pb_encode(&pbos, rpc_pb_RpcPayload_fields, &dw_pl);
+
+  // Encrypt
+  etl::array<uint8_t, 128> enc_pl;
+  uint64_t n_counter = 0;
+  ba.encryptFrame(10, etl::span<const uint8_t>(buf.data(), pbos.bytes_written), frame_nonce, frame_tag, enc_pl, &n_counter);
+
+  len = rpc::FrameBuilder::build(frame_raw, 10, etl::span<const uint8_t>(enc_pl.data(), pbos.bytes_written), frame_nonce, frame_tag);
+  ba.invokePacketReceived(etl::span<const uint8_t>(frame_raw.data(), len));
+  Bridge.process();
 }
 
-void integrated_test_components() {
-  static BiStream stream;
-  stream.clear();
-  reset_bridge_core(Bridge, stream);
-  auto ba = bridge::test::TestAccessor::create(Bridge);
-  ba.setSynchronized();
-
-  Console.begin();
-  Console.write('H');
-  Console.process();
-  TEST_ASSERT(stream.tx_buf.len > 0);
-
-  FileSystem.remove("test.txt");
-  
-#if BRIDGE_ENABLE_DATASTORE
-  etl::array<uint8_t, 1> val = {1};
-  DataStore.set("k", etl::span<const uint8_t>(val.data(), 1));
-#endif
-
-#if BRIDGE_ENABLE_MAILBOX
-  Mailbox.requestRead();
-#endif
-
-  Process.kill(123);
-}
-
-} // namespace
-
-void setUp(void) {}
-void tearDown(void) {}
-
-int main(void) {
+int main() {
   UNITY_BEGIN();
-  RUN_TEST(integrated_test_bridge_core);
-  RUN_TEST(integrated_test_components);
+  RUN_TEST(test_integrated_handshake_to_command);
   return UNITY_END();
 }

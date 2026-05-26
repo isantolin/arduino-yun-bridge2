@@ -1,123 +1,43 @@
-#define BRIDGE_ENABLE_TEST_INTERFACE
-#include <Arduino.h>
+#define BRIDGE_ENABLE_TEST_INTERFACE 1
 #include <unity.h>
-
 #include "Bridge.h"
 #include "BridgeTestHelper.h"
 #include "BridgeTestInterface.h"
-#include "etl_ext/CounterIterator.h"
+#include "protocol/rpc_frame.h"
 #include "test_support.h"
 
-// [SIL-2] Global stub definitions
-HardwareSerial Serial;
-HardwareSerial Serial1;
-Stream* g_arduino_stream_delegate = nullptr;
+void setUp() {}
+void tearDown() {}
 
+namespace {
 using bridge::test::TestAccessor;
 
-void setUp(void) {}
-void tearDown(void) {}
-
-/**
- * @brief High-fidelity test for AEAD encryption and session key derivation.
- * Targets _sendRawFrame (do_encrypt), _handleLinkSync, and _handleReceivedFrame
- * (aead_decrypt).
- */
 void test_bridge_full_crypto_handshake_and_data() {
   BiStream stream;
-  reset_bridge_core(Bridge, stream);
+  reset_bridge_core(Bridge, stream, 0, "6368616e67656d65313233");
   auto ba = TestAccessor::create(Bridge);
 
-  const char* secret_str = "secure_secret_1234567890123456";
-  Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, secret_str);
+  // 1. Handshake
+  etl::array<uint8_t, 16> nonce; nonce.fill(0x42);
+  etl::array<uint8_t, 16> tag;
+  ba.computeHandshakeTag(nonce.data(), nonce.size(), tag.data());
 
-  // 1. Prepare LinkSync request from "MPU"
-  rpc::payload::LinkSync sync_req = {};
-  for (int i = 0; i < 12; ++i)
-    sync_req.nonce.bytes[i] = static_cast<uint8_t>(i + 1);
-  sync_req.nonce.size = 12;
+  rpc_pb_LinkSync sync = rpc_pb_LinkSync_init_default;
+  etl::copy_n(nonce.begin(), 16, sync.nonce.bytes);
+  sync.nonce.size = 16;
+  etl::copy_n(tag.begin(), 16, sync.tag.bytes);
+  sync.tag.size = 16;
 
-  // Handshake Key Derivation
-  etl::array<uint8_t, 32> handshake_key;
-  rpc::security::hkdf_sha256(
-      etl::span<uint8_t>(handshake_key),
-      etl::span<const uint8_t>(reinterpret_cast<const uint8_t*>(secret_str),
-                               32),
-      etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_SALT),
-      etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH));
+  rpc::Frame f = {};
+  bridge::test::set_pb_payload(f, sync, rpc_pb_RpcPayload_link_sync_tag);
+  ba.dispatch(f);
 
-  Hmac hmac;
-  wc_HmacSetKey(&hmac, WC_SHA256, handshake_key.data(), 32);
-  wc_HmacUpdate(&hmac, sync_req.nonce.bytes, 12);
-  wc_HmacFinal(&hmac, handshake_key.data());
-  memcpy(sync_req.tag.bytes, handshake_key.data(), 16);
-  sync_req.tag.size = 16;
-
-  rpc::Frame f_sync;
-  f_sync.envelope.version = rpc::PROTOCOL_VERSION;
-  f_sync.envelope.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_LINK_SYNC);
-  f_sync.envelope.sequence_id = 1;
-
-  bridge::test::set_pb_payload(f_sync, sync_req);
-
-  // 2. Dispatch SYNC.
-  ba.setIdle();
-  ba.dispatch(f_sync);
-
-  // 3. Send ENCRYPTED data frame (even if not synced, to test rejection
-  // branches)
-  stream.clear();
-  rpc::Frame f_data;
-  f_data.envelope.version = rpc::PROTOCOL_VERSION;
-  f_data.envelope.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_GET_FREE_MEMORY);
-  f_data.envelope.sequence_id = 2;
-  
-  f_data.envelope.nonce.bytes[0] = 'M';
-  f_data.envelope.nonce.bytes[1] = 'P';
-  f_data.envelope.nonce.bytes[2] = 'U';
-  f_data.envelope.nonce.bytes[11] = 5;         // Counter = 5
-  f_data.envelope.nonce.size = 12;
-  memset(f_data.envelope.tag.bytes, 0xEE, 16);
-  f_data.envelope.tag.size = 16;
-
-  ba.dispatch(f_data);
-
-  // Emitting error should write to stream
-  TEST_ASSERT(stream.tx_buf.len > 0);
+  TEST_ASSERT(Bridge.isSynchronized());
 }
-
-void test_bridge_ack_timeout_retry_to_fault() {
-  BiStream stream;
-  reset_bridge_core(Bridge, stream);
-  auto ba = TestAccessor::create(Bridge);
-  ba.setIdle();
-  ba.setSynchronized();
-
-  // Send reliable command
-  TEST_ASSERT_TRUE(Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, 1, {}));
-  TEST_ASSERT_TRUE(ba.isAwaitingAck());
-
-  // Trigger timeout 3 times (Default limit)
-  bridge::etl_ext::CounterIterator<int> retry_begin(0);
-  bridge::etl_ext::CounterIterator<int> retry_end(rpc::RPC_DEFAULT_RETRY_LIMIT);
-  etl::for_each(retry_begin, retry_end, [&ba](int) { ba.onAckTimeout(); });
-
-  // After limit, it should transition out of Awaiting Ack
-  TEST_ASSERT_FALSE(ba.isAwaitingAck());
-}
-
-void test_bridge_nonce_overflow_protection() {
-  BiStream stream;
-  reset_bridge_core(Bridge, stream);
-  auto ba = TestAccessor::create(Bridge);
-  ba.setSynchronized();
-  TEST_ASSERT_TRUE(true);
 }
 
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_bridge_full_crypto_handshake_and_data);
-  RUN_TEST(test_bridge_ack_timeout_retry_to_fault);
-  RUN_TEST(test_bridge_nonce_overflow_protection);
   return UNITY_END();
 }

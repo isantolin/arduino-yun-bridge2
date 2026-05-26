@@ -23,7 +23,6 @@ from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.security.security import aead_decrypt, aead_encrypt
 
 from . import protocol
-from .rle import rle_decode, rle_encode, should_compress
 
 _NONCE_SIZE = protocol.AEAD_NONCE_SIZE
 _TAG_SIZE = protocol.AEAD_TAG_SIZE
@@ -39,55 +38,28 @@ def _frame_crc(data: bytes | bytearray | memoryview) -> int:
 class Frame(msgspec.Struct, frozen=True):
     """Represents an RPC frame for MCU-Linux communication using Protobuf Enveloping."""
 
-    command_id: int | protocol.Command | protocol.Status
     sequence_id: int
     payload: bytes = b""
     nonce: bytes = b"\x00" * _NONCE_SIZE
     tag: bytes = b"\x00" * _TAG_SIZE
 
     def __iter__(self):
-        """Allow unpacking: cmd, seq, payload = frame."""
-        yield self.command_id
+        """Allow unpacking: seq, payload = frame."""
         yield self.sequence_id
         yield self.payload
         yield self.nonce
         yield self.tag
 
-    @property
-    def is_compressed(self) -> bool:
-        """Check if the frame payload is compressed (bit 15)."""
-        return bool(int(self.command_id) & protocol.CMD_FLAG_COMPRESSED)
-
-    @property
-    def raw_command_id(self) -> int:
-        """Get the raw 15-bit command ID without the compression flag."""
-        return int(self.command_id) & ~protocol.CMD_FLAG_COMPRESSED & protocol.UINT16_MAX
-
-    def build(self, session_key: bytes | None = None) -> bytes:
+    def build(self, session_key: bytes | None = None, is_excluded: bool = False) -> bytes:
         """Builds the frame using a Protobuf envelope."""
-        cmd_id = int(self.command_id)
-        if not (0 <= cmd_id <= protocol.UINT16_MAX):
-            raise ValueError(f"Invalid command ID: {cmd_id}")
         payload = self.payload
 
         if len(payload) > protocol.MAX_PAYLOAD_SIZE:
             raise ValueError(f"Payload size {len(payload)} exceeds maximum {protocol.MAX_PAYLOAD_SIZE}")
 
-        raw_cmd = cmd_id & ~protocol.CMD_FLAG_COMPRESSED & protocol.UINT16_MAX
-        is_excluded = (protocol.STATUS_CODE_MIN <= raw_cmd <= protocol.STATUS_CODE_MAX) or (
-            protocol.SYSTEM_COMMAND_MIN <= raw_cmd <= protocol.SYSTEM_COMMAND_MAX
-        )
-
-        if payload and not is_excluded and should_compress(payload):
-            compressed = rle_encode(payload)
-            if len(compressed) < len(payload):
-                payload = compressed
-                cmd_id |= protocol.CMD_FLAG_COMPRESSED
-
         # Use Protobuf for the entire envelope
         envelope = pb.RpcEnvelope(
             version=protocol.PROTOCOL_VERSION,
-            command_id=cmd_id,
             sequence_id=self.sequence_id,
             nonce=self.nonce,
             tag=self.tag,
@@ -115,7 +87,12 @@ class Frame(msgspec.Struct, frozen=True):
         return b"".join([body, CRC_STRUCT.pack(_frame_crc(body))])
 
     @classmethod
-    def parse(cls, raw_frame_buffer: bytes | bytearray | memoryview, session_key: bytes | None = None) -> Frame:
+    def parse(
+        cls,
+        raw_frame_buffer: bytes | bytearray | memoryview,
+        session_key: bytes | None = None,
+        is_excluded: bool = False,
+    ) -> Frame:
         """Parses the frame using the Protobuf envelope."""
         buf = bytes(raw_frame_buffer)
         if len(buf) < _CRC_SIZE:
@@ -134,11 +111,7 @@ class Frame(msgspec.Struct, frozen=True):
         if envelope.version != protocol.PROTOCOL_VERSION:
             raise ValueError("Invalid protocol version")
 
-        cmd_id, payload, nonce, tag = envelope.command_id, envelope.payload, envelope.nonce, envelope.tag
-        raw_cmd = cmd_id & ~protocol.CMD_FLAG_COMPRESSED & protocol.UINT16_MAX
-        is_excluded = (protocol.STATUS_CODE_MIN <= raw_cmd <= protocol.STATUS_CODE_MAX) or (
-            protocol.SYSTEM_COMMAND_MIN <= raw_cmd <= protocol.SYSTEM_COMMAND_MAX
-        )
+        payload, nonce, tag = envelope.payload, envelope.nonce, envelope.tag
 
         if session_key and not is_excluded:
             aad_envelope = pb.RpcEnvelope()
@@ -148,12 +121,7 @@ class Frame(msgspec.Struct, frozen=True):
             aad_envelope.ClearField("nonce")
             payload = aead_decrypt(payload, tag, session_key, nonce, aad_envelope.SerializeToString())
 
-        if cmd_id & protocol.CMD_FLAG_COMPRESSED:
-            payload = rle_decode(payload)
-            cmd_id &= ~protocol.CMD_FLAG_COMPRESSED
-
         return cls(
-            command_id=cmd_id,
             sequence_id=envelope.sequence_id,
             payload=payload,
             nonce=nonce,

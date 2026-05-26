@@ -121,7 +121,7 @@ void derive_session_key_raw(const uint8_t* secret, size_t secret_len,
 }
 
 
-bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
+bool aead_encrypt_frame(uint16_t seq_id,
                         etl::span<const uint8_t> in,
                         etl::span<const uint8_t> key, uint64_t* nonce_counter,
                         etl::span<uint8_t> out_payload,
@@ -138,7 +138,6 @@ bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
 
   payload::RpcEnvelope aad_env = {};
   aad_env.version = rpc::PROTOCOL_VERSION;
-  aad_env.command_id = cmd_id;
   aad_env.sequence_id = seq_id;
 
   etl::array<uint8_t, 32> ad;
@@ -151,7 +150,7 @@ bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
       etl::span<const uint8_t>(ad.data(), stream.bytes_written));
 }
 
-bool aead_decrypt_frame(uint16_t cmd_id, uint16_t seq_id,
+bool aead_decrypt_frame(uint16_t seq_id,
                         etl::span<const uint8_t> in,
                         etl::span<const uint8_t> tag,
                         etl::span<const uint8_t> key,
@@ -159,7 +158,6 @@ bool aead_decrypt_frame(uint16_t cmd_id, uint16_t seq_id,
                         etl::span<uint8_t> out_payload) {
   payload::RpcEnvelope aad_env = {};
   aad_env.version = rpc::PROTOCOL_VERSION;
-  aad_env.command_id = cmd_id;
   aad_env.sequence_id = seq_id;
 
   etl::array<uint8_t, 32> ad;

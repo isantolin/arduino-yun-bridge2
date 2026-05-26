@@ -13,9 +13,12 @@ from mcubridge.state.context import create_runtime_state, RuntimeState
 from mcubridge.protocol.frame import Frame
 
 
+from mcubridge.protocol import mcubridge_pb2 as pb
+
+
 @pytest.fixture
 def transport_setup() -> tuple[RuntimeConfig, RuntimeState]:
-    config = RuntimeConfig(mqtt_topic="br", serial_port="/dev/test")
+    config = RuntimeConfig(mqtt_topic="br", serial_port="/dev/test", serial_shared_secret=b"test-secret-1234")
     state = create_runtime_state(config)
     return config, state
 
@@ -32,7 +35,8 @@ async def test_serial_transport_loops_final_v3(transport_setup: Any) -> None:
     mock_writer.close = __import__("unittest").mock.Mock()
     transport.writer = mock_writer
 
-    frame = Frame(command_id=0x01, sequence_id=1, payload=b"ok")
+    rpc_payload = pb.RpcPayload(ok=pb.Empty())
+    frame = Frame(sequence_id=1, payload=rpc_payload.SerializeToString())
     encoded = cobs.encode(frame.build()) + b"\x00"
 
     mock_reader.read.side_effect = [

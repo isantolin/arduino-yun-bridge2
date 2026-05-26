@@ -22,15 +22,15 @@ void MailboxClass::push(etl::span<const uint8_t> data) {
   (void)Bridge.send(rpc::CommandId::CMD_MAILBOX_PUSH, 0, p);
 }
 
-void MailboxClass::requestRead() {
+[[maybe_unused]] void MailboxClass::requestRead() {
   send_mailbox_command(rpc::CommandId::CMD_MAILBOX_READ);
 }
 
-void MailboxClass::requestAvailable() {
+[[maybe_unused]] void MailboxClass::requestAvailable() {
   send_mailbox_command(rpc::CommandId::CMD_MAILBOX_AVAILABLE);
 }
 
-void MailboxClass::signalProcessed() {
+[[maybe_unused]] void MailboxClass::signalProcessed() {
   send_mailbox_command(rpc::CommandId::CMD_MAILBOX_PROCESSED);
 }
 

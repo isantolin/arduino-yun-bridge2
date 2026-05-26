@@ -136,7 +136,7 @@ bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
   etl::byte_stream_writer n_writer(out_nonce.data() + 4, 8, etl::endian::big);
   n_writer.write<uint64_t>(current_nonce);
 
-  payload::RpcEnvelope aad_env;
+  payload::RpcEnvelope aad_env = {};
   aad_env.version = rpc::PROTOCOL_VERSION;
   aad_env.command_id = cmd_id;
   aad_env.sequence_id = seq_id;
@@ -157,7 +157,7 @@ bool aead_decrypt_frame(uint16_t cmd_id, uint16_t seq_id,
                         etl::span<const uint8_t> key,
                         etl::span<const uint8_t> nonce,
                         etl::span<uint8_t> out_payload) {
-  payload::RpcEnvelope aad_env;
+  payload::RpcEnvelope aad_env = {};
   aad_env.version = rpc::PROTOCOL_VERSION;
   aad_env.command_id = cmd_id;
   aad_env.sequence_id = seq_id;

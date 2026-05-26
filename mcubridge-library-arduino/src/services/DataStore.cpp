@@ -15,7 +15,7 @@ void DataStoreClass::set(etl::string_view key, etl::span<const uint8_t> value) {
   (void)Bridge.send(rpc::CommandId::CMD_DATASTORE_PUT, 0, p);
 }
 
-void DataStoreClass::get(etl::string_view key, GetHandler handler) {
+[[maybe_unused]] void DataStoreClass::get(etl::string_view key, GetHandler handler) {
   if (_pending_gets.full()) {
     Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
     return;

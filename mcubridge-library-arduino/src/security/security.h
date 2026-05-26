@@ -60,7 +60,7 @@ bool handshake_authenticate_raw(const uint8_t* secret, size_t secret_len,
                                 const uint8_t* received_tag, size_t tag_len,
                                 uint8_t* out_tag);
 
-inline bool handshake_authenticate(etl::span<const uint8_t> secret,
+[[maybe_unused]] inline bool handshake_authenticate(etl::span<const uint8_t> secret,
                                    etl::span<const uint8_t> nonce,
                                    etl::span<const uint8_t> received_tag,
                                    etl::span<uint8_t> out_tag) {
@@ -76,7 +76,7 @@ void derive_session_key_raw(const uint8_t* secret, size_t secret_len,
                              const uint8_t* nonce, size_t nonce_len,
                              uint8_t* out_key);
 
-inline void derive_session_key(etl::span<const uint8_t> secret,
+[[maybe_unused]] inline void derive_session_key(etl::span<const uint8_t> secret,
                                etl::span<const uint8_t> nonce,
                                etl::span<uint8_t> out_key) {
   derive_session_key_raw(secret.data(), secret.size(), nonce.data(),

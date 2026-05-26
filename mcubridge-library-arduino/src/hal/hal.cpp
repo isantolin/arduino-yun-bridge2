@@ -45,7 +45,7 @@ constexpr uint8_t ANALOG_PINS =
 
 }  // namespace
 
-bool isValidPin(const uint8_t pin) { return pin < DIGITAL_PINS; }
+[[maybe_unused]] bool isValidPin(const uint8_t pin) { return pin < DIGITAL_PINS; }
 
 namespace {
 template <size_t I>
@@ -129,7 +129,7 @@ void init() {
 
 __attribute__((weak)) bool hasSD() { return false; }
 
-__attribute__((weak)) bool hasSPI() { return false; }
+__attribute__((weak)) [[maybe_unused]] bool hasSPI() { return false; }
 
 __attribute__((weak)) etl::expected<void, HalError> writeFile(etl::string_view path,
                                         etl::span<const uint8_t> data) {

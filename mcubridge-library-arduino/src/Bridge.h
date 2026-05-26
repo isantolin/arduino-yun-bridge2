@@ -148,7 +148,7 @@ class BridgeClass {
   static constexpr bool is_reliable_cmd(uint16_t id) {
     return rpc::requires_ack(id);
   }
-  static constexpr bool is_compressed_cmd(uint16_t id) {
+  [[maybe_unused]] static constexpr bool is_compressed_cmd(uint16_t id) {
     return (id & rpc::RPC_CMD_FLAG_COMPRESSED) != 0;
   }
 

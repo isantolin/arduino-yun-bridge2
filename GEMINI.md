@@ -16,8 +16,9 @@ Arduino MCU Bridge 2 is a modern, high-performance communication system between 
 
 ## Core Rules & Priorities
 
-1.  **Priority Order:** Code Reduction first, then Library-First.
-2.  **Absolute Suppression Ban:** Suppressions of any kind (warnings, lint, errors, or checks) are strictly prohibited. If any suppressions are found in the codebase, they must be removed immediately.
+1.  **Mandatory Agent Delegation:** For *all* tasks, investigations, or modifications within this workspace, you MUST immediately invoke and delegate the work to the `@openwrt-architect-arduino` subagent. It is the principal architect and mission-critical auditor for this project.
+2.  **Priority Order:** Code Reduction first, then Library-First.
+3.  **Absolute Suppression Ban:** Suppressions of any kind (warnings, lint, errors, or checks) are strictly prohibited. If any suppressions are found in the codebase, they must be removed immediately.
 
 ## Development Conventions
 

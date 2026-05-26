@@ -45,7 +45,7 @@ void FileSystemClass::read(etl::string_view path,
   }
 }
 
-void FileSystemClass::remove(etl::string_view path) {
+[[maybe_unused]] void FileSystemClass::remove(etl::string_view path) {
   rpc::payload::FileRemove p;
   rpc::payload::copy_to_pb_string(p.path, path);
   (void)Bridge.send(rpc::CommandId::CMD_FILE_REMOVE, 0, p);

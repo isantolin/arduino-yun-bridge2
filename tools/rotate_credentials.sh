@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-LOCAL_ROTATE_HELPER="${ROOT_DIR}/mcubridge/scripts/mcubridge-rotate-credentials.py"
+LOCAL_ROTATE_HELPER="${ROOT_DIR}/mcubridge/scripts/mcubridge_rotate_credentials.py"
 
 show_help() {
   cat <<'EOF'
@@ -31,6 +31,10 @@ extract_serial_secret() {
   if [[ -f "$file" ]]; then
     awk -F'=' '/^SERIAL_SECRET=/{print $2; exit}' "$file"
   fi
+}
+
+extract_serial_secret_from_output() {
+  awk -F'=' '/^SERIAL_SECRET=/{print $2; exit}'
 }
 
 extract_secret_file_path() {
@@ -106,7 +110,10 @@ if [[ -n "$LOCAL_UCI_DIR" ]]; then
     exit 1
   fi
   SECRET_FILE=$(printf '%s\n' "$OUTPUT" | extract_secret_file_path)
-  SECRET=$(extract_serial_secret "$SECRET_FILE")
+  SECRET=$(printf '%s\n' "$OUTPUT" | extract_serial_secret_from_output)
+  if [[ -z "$SECRET" ]]; then
+    SECRET=$(extract_serial_secret "$SECRET_FILE")
+  fi
   # Clean up secret file after reading
   [[ -n "$SECRET_FILE" ]] && rm -f "$SECRET_FILE"
   if [[ -n "$SNIPPET_PATH" ]]; then
@@ -127,15 +134,14 @@ if ! OUTPUT=$("${SSH_CMD[@]}"); then
 fi
 
 REMOTE_SECRET_FILE=$(printf '%s\n' "$OUTPUT" | extract_secret_file_path)
-if [[ -n "$REMOTE_SECRET_FILE" ]]; then
+SECRET=$(printf '%s\n' "$OUTPUT" | extract_serial_secret_from_output)
+if [[ -z "$SECRET" && -n "$REMOTE_SECRET_FILE" ]]; then
   # Copy secret file from remote, read locally, then clean up
   LOCAL_TMP=$(mktemp)
   scp "${SSH_EXTRA[@]}" "$USER@$HOST:$REMOTE_SECRET_FILE" "$LOCAL_TMP" 2>/dev/null
   ssh "${SSH_EXTRA[@]}" "$USER@$HOST" -- rm -f "$REMOTE_SECRET_FILE" 2>/dev/null
   SECRET=$(extract_serial_secret "$LOCAL_TMP")
   rm -f "$LOCAL_TMP"
-else
-  SECRET=""
 fi
 if [[ -n "$SNIPPET_PATH" ]]; then
   write_sketch_snippet_file "$SECRET" "$SNIPPET_PATH"

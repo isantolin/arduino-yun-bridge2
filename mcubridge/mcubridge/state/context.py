@@ -62,6 +62,11 @@ logger = structlog.get_logger("mcubridge.state")
 SpoolSnapshot = dict[str, int | float]
 
 
+def _make_mqtt_publish_queue(maxsize: int = 0) -> asyncio.Queue[QueuedPublish]:
+    normalized = max(0, int(maxsize))
+    return cast(asyncio.Queue[QueuedPublish], asyncio.Queue(maxsize=normalized))
+
+
 __all__: Final[tuple[str, ...]] = (
     "McuCapabilities",
     "RuntimeState",
@@ -124,9 +129,7 @@ class RuntimeState(msgspec.Struct, weakref=True):
         if self.link_sync_event:
             self.link_sync_event.set()
 
-    mqtt_publish_queue: asyncio.Queue[QueuedPublish] = msgspec.field(
-        default_factory=lambda: cast(asyncio.Queue[QueuedPublish], asyncio.Queue())
-    )
+    mqtt_publish_queue: asyncio.Queue[QueuedPublish] = msgspec.field(default_factory=_make_mqtt_publish_queue)
     mqtt_queue_limit: int = DEFAULT_MQTT_QUEUE_LIMIT
     mqtt_drop_counts: dict[str, int] = msgspec.field(default_factory=lambda: cast(dict[str, int], {}))
     allow_non_tmp_paths: bool = False
@@ -239,6 +242,9 @@ class RuntimeState(msgspec.Struct, weakref=True):
     mqtt_spool_dropped_limit: int = 0
     mqtt_spool_trim_events: int = 0
     mqtt_spool_last_trim_unix: float = 0.0
+    mqtt_spool_degraded: bool = False
+    mqtt_spool_failure_reason: str | None = None
+    mqtt_spool_pending_messages: int = 0
 
     @property
     def handshake_failures(self) -> int:
@@ -291,6 +297,7 @@ class RuntimeState(msgspec.Struct, weakref=True):
             self.datastore_cache = None
 
         # Re-initialize transient queues
+        self.mqtt_publish_queue = _make_mqtt_publish_queue(self.mqtt_queue_limit)
         self.console_to_mcu_queue = collections.deque[bytes](maxlen=self.mailbox_queue_limit)
 
         def _create_spool(
@@ -463,7 +470,15 @@ class RuntimeState(msgspec.Struct, weakref=True):
             "serial": self.serial_flow_stats,
             "serial_throughput": self.serial_throughput_stats,
             "mqtt_drop_counts": dict(self.mqtt_drop_counts),
+            "mqtt_spool_corrupt_dropped": self.mqtt_spool_corrupt_dropped,
+            "mqtt_spool_dropped_limit": self.mqtt_spool_dropped_limit,
+            "mqtt_spool_trim_events": self.mqtt_spool_trim_events,
+            "mqtt_spool_last_trim_unix": self.mqtt_spool_last_trim_unix,
+            "mqtt_spool_degraded": self.mqtt_spool_degraded,
+            "mqtt_spool_failure_reason": self.mqtt_spool_failure_reason,
+            "mqtt_spool_pending_messages": self.mqtt_spool_pending_messages,
             "queue_depths": {
+                "mqtt_publish": self.mqtt_publish_queue.qsize(),
                 "console": len(self.console_to_mcu_queue),
                 "mailbox_outgoing": len(self.mailbox_queue),
                 "mailbox_incoming": len(self.mailbox_incoming_queue),
@@ -553,7 +568,7 @@ class RuntimeState(msgspec.Struct, weakref=True):
         while not self.mqtt_publish_queue.empty():
             with _sup:
                 self.mqtt_publish_queue.get_nowait()
-        self.mqtt_publish_queue = asyncio.Queue()
+        self.mqtt_publish_queue = _make_mqtt_publish_queue(self.mqtt_queue_limit)
 
         # 4. Terminate all running processes to release pipes/sockets.
         if self.running_processes:

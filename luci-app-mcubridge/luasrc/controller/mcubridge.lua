@@ -75,6 +75,15 @@ local function send_json(code, data)
     luci.http.write(require("luci.jsonc").stringify(data))
 end
 
+local function redact_secret_lines(output)
+    if not output or output == "" then
+        return output
+    end
+    local redacted = output:gsub("SERIAL_SECRET=[^\r\n]*", "SERIAL_SECRET=[redacted]")
+    redacted = redacted:gsub("MQTT_PASSWORD=[^\r\n]*", "MQTT_PASSWORD=[redacted]")
+    return redacted
+end
+
 -- REST API action handler
 function action_api(...)
     local args = {...}
@@ -176,10 +185,9 @@ end
 
 
 function action_mqtt_ws_auth()
-    local user = uci:get("mcubridge", "general", "mqtt_user") or ""
-    local pass = uci:get("mcubridge", "general", "mqtt_pass") or ""
     local topic_prefix = uci:get("mcubridge", "general", "mqtt_topic") or "br"
-    send_json(200, {user = user, pass = pass, topic_prefix = topic_prefix})
+    local auth_required = (uci:get("mcubridge", "general", "mqtt_user") or "") ~= ""
+    send_json(200, {auth_required = auth_required, topic_prefix = topic_prefix})
 end
 
 function action_mqtt_ws_url()
@@ -227,7 +235,7 @@ function action_rotate_credentials()
     end
     send_json(status, {
         status = (rc == 0) and "ok" or "error",
-        output = output,
+        output = redact_secret_lines(output),
         serial_secret = serial_secret,
         sketch_snippet = sketch_snippet,
     })

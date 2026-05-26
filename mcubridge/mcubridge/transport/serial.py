@@ -23,6 +23,7 @@ from cobs import cobs
 import serialx
 import structlog
 import tenacity
+from google.protobuf.message import DecodeError as ProtobufDecodeError
 
 from mcubridge.config.const import (
     MAX_SERIAL_FRAME_BYTES,
@@ -172,7 +173,7 @@ class SerialTransport:
             with contextlib.suppress(asyncio.IncompleteReadError, asyncio.CancelledError):
                 await read_task
             if self.service:
-                with contextlib.suppress(Exception):
+                with contextlib.suppress(OSError, RuntimeError, ValueError, TypeError):
                     await self.service.on_serial_disconnected()
             if self.writer:
                 self.writer.close()
@@ -205,7 +206,7 @@ class SerialTransport:
                 await reader.read(MAX_SERIAL_FRAME_BYTES)
             except asyncio.IncompleteReadError:
                 break
-            except Exception as exc:
+            except (OSError, RuntimeError, ValueError, TypeError, serialx.SerialException) as exc:
                 logger.error("Error in _read_loop: %s", exc)
                 break
 
@@ -216,7 +217,7 @@ class SerialTransport:
             raw_bytes = bytes(encoded_packet) if isinstance(encoded_packet, memoryview) else encoded_packet
             decoded = cobs.decode(raw_bytes)
             frame = Frame.parse(decoded, self.state.link_session_key if self.state.is_synchronized else None)
-        except Exception as exc:
+        except (cobs.DecodeError, ValueError, TypeError, RuntimeError) as exc:
             logger.warning("[SERIAL <- MCU] [MALFORMED]: %s", exc)
             self.state.serial_decode_errors += 1
             await self._check_baudrate_fallback()
@@ -258,7 +259,7 @@ class SerialTransport:
         if command_id == Status.ACK.value:
             ack_target = pending.command_id
             if payload:
-                with contextlib.suppress(Exception):
+                with contextlib.suppress(ProtobufDecodeError, TypeError, ValueError):
                     ack_target = pb.AckPacket.FromString(payload).command_id
             if ack_target == pending.command_id:
                 pending.ack_received = True
@@ -375,7 +376,7 @@ class SerialTransport:
             self.state.metrics.serial_bytes_sent.inc(len(encoded))
             self.state.metrics.serial_frames_sent.inc()
             return True
-        except Exception as exc:
+        except (AttributeError, OSError, RuntimeError, ValueError, serialx.SerialException) as exc:
             logger.error("Serial write failed: %s", exc)
             return False
 
@@ -389,7 +390,7 @@ class SerialTransport:
             if self._negotiation_future:
                 await asyncio.wait_for(self._negotiation_future, timeout=SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT)
             return True
-        except Exception as exc:
+        except (asyncio.TimeoutError, OSError, RuntimeError, ValueError, serialx.SerialException) as exc:
             logger.error("Baudrate negotiation failed: %s", exc)
             return False
         finally:

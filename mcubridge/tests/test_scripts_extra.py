@@ -1,10 +1,11 @@
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from typing import Any
 from collections.abc import Coroutine
 import importlib.util
 from pathlib import Path
 import sys
+import io
 
 
 def load_script(name: str) -> Any:
@@ -67,13 +68,17 @@ async def test_rotate_credentials_script(runtime_config: Any) -> None:
         patch("sys.argv", ["mcubridge-rotate-credentials", "--force", "--no-restart"]),
         patch("subprocess.run"),
         patch("uci.Uci"),
-        patch("mcubridge_rotate_credentials.update_uci_secret") as mock_update,
+        patch("mcubridge_rotate_credentials.update_uci_credentials") as mock_update,
+        patch("sys.stdout", new_callable=io.StringIO) as stdout,
         patch("asyncio.run", side_effect=mock_asyncio_run),
     ):
         mock_client = AsyncMock()
         mock_client_cls.return_value.__aenter__.return_value = mock_client
         script.main()
         assert mock_update.called
+        output = stdout.getvalue()
+        assert "SERIAL_SECRET=" in output
+        assert "MQTT_PASSWORD=" in output
 
 
 @pytest.mark.asyncio
@@ -109,3 +114,12 @@ async def test_rotate_credentials_abort(runtime_config: Any) -> None:
     ):
         script.main()
     assert exc.value.code == 0
+
+
+def test_rotate_credentials_updates_expected_uci_keys() -> None:
+    script = load_script("mcubridge-rotate-credentials")
+    mock_cursor = MagicMock()
+    with patch("uci.Uci", return_value=mock_cursor):
+        script.update_uci_credentials("serial-secret", "mqtt-password")
+    assert mock_cursor.set.call_args_list[0].args == ("mcubridge", "general", "serial_shared_secret", "serial-secret")
+    assert mock_cursor.set.call_args_list[1].args == ("mcubridge", "general", "mqtt_pass", "mqtt-password")

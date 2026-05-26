@@ -183,6 +183,7 @@ class BridgeDaemon:
                 ]
                 await client.subscribe(topics)
                 await client.publish(will_topic, b'{"status": "online"}', qos=1, retain=True)
+                await self.service.flush_mqtt_spool()
 
                 async for message in client.messages:
                     if message.topic:

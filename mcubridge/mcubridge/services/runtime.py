@@ -7,7 +7,10 @@ import asyncio
 import collections
 import contextlib
 import itertools
+import os
+import signal
 import shlex
+import time
 from collections.abc import Coroutine, Callable, Awaitable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -96,6 +99,8 @@ class BridgeService:
 
         self._storage_lock, self._mcu_read_lock, self._pending_mcu_read = asyncio.Lock(), asyncio.Lock(), None
         self._process_slots = asyncio.Semaphore(int(state.process_max_concurrent))
+        self._mqtt_publish_lock = asyncio.Lock()
+        self._mqtt_spool_sequence = itertools.count(1)
 
         # [SIL-2] O(1) MCU Dispatch Registry
         self.mcu_registry: dict[int, McuHandler] = self._setup_mcu_registry()
@@ -123,11 +128,11 @@ class BridgeService:
             Command.CMD_PROCESS_KILL.value: self._gen_handler(pb.ProcessKill, lambda p: self._stop_process(p.pid)),
             Command.CMD_DIGITAL_READ.value: lambda _, __: self.serial.send(
                 Status.NOT_IMPLEMENTED.value,
-                pb.GenericResponse(message="linux_gpio_read_not_available").SerializeToString(),
+                pb.GenericResponse(message="linux_originates_digital_read_requests").SerializeToString(),
             ),
             Command.CMD_ANALOG_READ.value: lambda _, __: self.serial.send(
                 Status.NOT_IMPLEMENTED.value,
-                pb.GenericResponse(message="linux_adc_read_not_available").SerializeToString(),
+                pb.GenericResponse(message="linux_originates_analog_read_requests").SerializeToString(),
             ),
             Command.CMD_DIGITAL_READ_RESP.value: self._gen_handler(
                 pb.DigitalReadResponse,
@@ -172,27 +177,140 @@ class BridgeService:
         self._mqtt_client = client
 
     async def enqueue_mqtt(self, message: QueuedPublish, *, reply_context: Message | None = None) -> None:
-        if not self._mqtt_client:
-            self.state.mqtt_dropped_messages += 1
-            self.state.metrics.mqtt_messages_dropped.inc()
-            return
+        resolved_message = self._resolve_reply_message(message, reply_context)
+        self.state.mqtt_publish_queue.put_nowait(resolved_message)
+        try:
+            async with self._mqtt_publish_lock:
+                await self._flush_mqtt_spool_locked()
+                if await self._publish_mqtt_message(resolved_message):
+                    return
+                if await self._spool_mqtt_message_locked(resolved_message):
+                    return
+                self._record_mqtt_drop(resolved_message.topic_name)
+        finally:
+            with contextlib.suppress(asyncio.QueueEmpty):
+                self.state.mqtt_publish_queue.get_nowait()
 
+    async def flush_mqtt_spool(self) -> None:
+        async with self._mqtt_publish_lock:
+            await self._flush_mqtt_spool_locked()
+
+    def _resolve_reply_message(self, message: QueuedPublish, reply_context: Message | Any | None) -> QueuedPublish:
         topic = message.topic_name
-        props = Properties(PacketTypes.PUBLISH)
+        correlation_data = message.correlation_data
+        user_properties = message.user_properties
 
-        if reply_context is not None and reply_context.properties:
-            r_props = reply_context.properties
+        r_props = getattr(reply_context, "properties", None)
+        if reply_context is not None and r_props is not None:
             if rt := getattr(r_props, "ResponseTopic", None):
                 topic = rt
             if cd := getattr(r_props, "CorrelationData", None):
-                props.CorrelationData = cd
+                correlation_data = cd
+            if req_topic := getattr(reply_context, "topic", None):
+                user_properties = (*user_properties, ("bridge-request-topic", str(req_topic)))
 
-            user_props = list(message.user_properties) + [("bridge-request-topic", str(reply_context.topic))]
-            if user_props:
-                props.UserProperty = user_props
-        elif message.user_properties:
+        return msgspec.structs.replace(
+            message,
+            topic_name=topic,
+            correlation_data=correlation_data,
+            user_properties=user_properties,
+        )
+
+    def _record_mqtt_drop(self, topic_name: str) -> None:
+        self.state.mqtt_drop_counts[topic_name] = self.state.mqtt_drop_counts.get(topic_name, 0) + 1
+        self.state.mqtt_dropped_messages += 1
+        self.state.metrics.mqtt_messages_dropped.inc()
+
+    def _mqtt_spool_dir(self) -> Path:
+        return Path(self.config.mqtt_spool_dir)
+
+    def _list_mqtt_spool_files(self) -> list[Path]:
+        spool_dir = self._mqtt_spool_dir()
+        if not spool_dir.exists():
+            return []
+        return sorted((path for path in spool_dir.iterdir() if path.is_file() and path.suffix == ".msgpack"))
+
+    def _mark_mqtt_spool_failure(self, reason: str) -> None:
+        self.state.mqtt_spool_degraded = True
+        self.state.mqtt_spool_failure_reason = reason
+
+    def _mark_mqtt_spool_healthy(self, pending_count: int) -> None:
+        self.state.mqtt_spool_degraded = False
+        self.state.mqtt_spool_failure_reason = None
+        self.state.mqtt_spool_pending_messages = pending_count
+
+    async def _trim_mqtt_spool_locked(self) -> None:
+        if self.state.mqtt_queue_limit <= 0:
+            return
+        files = await asyncio.to_thread(self._list_mqtt_spool_files)
+        overflow = len(files) - self.state.mqtt_queue_limit + 1
+        if overflow <= 0:
+            return
+        for path in files[:overflow]:
+            with contextlib.suppress(FileNotFoundError, OSError):
+                await asyncio.to_thread(path.unlink)
+            self.state.mqtt_spool_dropped_limit += 1
+        self.state.mqtt_spool_trim_events += 1
+        self.state.mqtt_spool_last_trim_unix = time.time()
+
+    async def _spool_mqtt_message_locked(self, message: QueuedPublish) -> bool:
+        spool_dir = self._mqtt_spool_dir()
+        try:
+            await asyncio.to_thread(spool_dir.mkdir, parents=True, exist_ok=True)
+            await self._trim_mqtt_spool_locked()
+            spool_path = spool_dir / f"{time.time_ns():020d}-{next(self._mqtt_spool_sequence):06d}.msgpack"
+            encoded = msgspec.msgpack.encode(message)
+            await asyncio.to_thread(spool_path.write_bytes, encoded)
+            pending = len(await asyncio.to_thread(self._list_mqtt_spool_files))
+            self._mark_mqtt_spool_healthy(pending)
+            return True
+        except OSError as exc:
+            logger.warning("MQTT spool write failed", error=str(exc), path=str(spool_dir))
+            self._mark_mqtt_spool_failure(str(exc))
+            return False
+
+    async def _flush_mqtt_spool_locked(self) -> None:
+        if not self._mqtt_client:
+            return
+        try:
+            files = await asyncio.to_thread(self._list_mqtt_spool_files)
+        except OSError as exc:
+            logger.warning("MQTT spool scan failed", error=str(exc), path=str(self._mqtt_spool_dir()))
+            self._mark_mqtt_spool_failure(str(exc))
+            return
+
+        for path in files:
+            try:
+                encoded = await asyncio.to_thread(path.read_bytes)
+                queued = msgspec.msgpack.decode(encoded, type=QueuedPublish)
+            except FileNotFoundError:
+                continue
+            except (OSError, ValueError, TypeError, msgspec.MsgspecError) as exc:
+                logger.warning("Dropping corrupt MQTT spool entry", path=str(path), error=str(exc))
+                self.state.mqtt_spool_corrupt_dropped += 1
+                with contextlib.suppress(FileNotFoundError, OSError):
+                    await asyncio.to_thread(path.unlink)
+                continue
+
+            if not await self._publish_mqtt_message(queued):
+                break
+
+            with contextlib.suppress(FileNotFoundError, OSError):
+                await asyncio.to_thread(path.unlink)
+
+        pending = len(await asyncio.to_thread(self._list_mqtt_spool_files))
+        if not self.state.mqtt_spool_degraded:
+            self._mark_mqtt_spool_healthy(pending)
+        else:
+            self.state.mqtt_spool_pending_messages = pending
+
+    async def _publish_mqtt_message(self, message: QueuedPublish) -> bool:
+        if not self._mqtt_client:
+            return False
+
+        props = Properties(PacketTypes.PUBLISH)
+        if message.user_properties:
             props.UserProperty = list(message.user_properties)
-
         if message.content_type:
             props.ContentType = message.content_type
         if message.payload_format_indicator is not None:
@@ -201,17 +319,22 @@ class BridgeService:
             props.MessageExpiryInterval = message.message_expiry_interval
         if message.response_topic:
             props.ResponseTopic = message.response_topic
-        if message.correlation_data and not getattr(props, "CorrelationData", None):
+        if message.correlation_data:
             props.CorrelationData = message.correlation_data
 
         try:
             await self._mqtt_client.publish(
-                topic, message.payload, qos=int(message.qos), retain=message.retain, properties=props
+                message.topic_name,
+                message.payload,
+                qos=int(message.qos),
+                retain=message.retain,
+                properties=props,
             )
             self.state.metrics.mqtt_messages_published.inc()
+            return True
         except (aiomqtt.MqttError, OSError, RuntimeError) as exc:
             logger.warning("MQTT publish failure: %s", exc)
-            self.state.mqtt_dropped_messages += 1
+            return False
 
     # --- Lifecycle ---
 
@@ -444,7 +567,7 @@ class BridgeService:
         )
 
     async def _on_mcu_ack(self, seq: int, payload: bytes) -> None:
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(ProtobufDecodeError, TypeError, ValueError):
             p = pb.AckPacket.FromString(payload)
             logger.debug("MCU > ACK for 0x%02X", p.command_id)
 
@@ -453,7 +576,7 @@ class BridgeService:
         if payload:
             try:
                 text = pb.GenericResponse.FromString(payload).message
-            except Exception:
+            except (ProtobufDecodeError, TypeError, ValueError):
                 text = payload.decode("utf-8", errors="ignore")
         log_func = logger.warning if status not in {Status.OK, Status.ACK} else logger.debug
         log_func("MCU > %s: %s %s", status.name, status.description, text)
@@ -677,7 +800,7 @@ class BridgeService:
                 try:
                     p = pb.SpiConfig.FromString(inbound.payload)
                     await self.serial.send(Command.CMD_SPI_SET_CONFIG.value, p.SerializeToString())
-                except Exception as exc:
+                except (ProtobufDecodeError, TypeError, ValueError) as exc:
                     logger.error("SPI config error: %s", exc)
             case SpiAction.TRANSFER:
                 if inbound.payload:
@@ -721,6 +844,27 @@ class BridgeService:
                 if len(q) < self.state.pending_pin_request_limit:
                     q.append(structures.PendingPinRequest(pin=pin, reply_context=inbound))
                     await self.serial.send(cmd.value, pb.PinRead(pin=pin).SerializeToString())
+                else:
+                    await self.enqueue_mqtt(
+                        QueuedPublish(
+                            topic_path(self.state.mqtt_topic_prefix, Topic.SYSTEM, Topic.STATUS),
+                            structures.encode_structured_payload(
+                                {
+                                    "status": "error",
+                                    "topic": route.topic.value,
+                                    "pin": pin,
+                                    "action": PinAction.READ,
+                                    "reason": "pending-pin-overflow",
+                                }
+                            ),
+                            content_type=PROTOBUF_CONTENT_TYPE,
+                            user_properties=(
+                                ("bridge-error", "pending-pin-overflow"),
+                                ("bridge-pin", str(pin)),
+                            ),
+                        ),
+                        reply_context=inbound,
+                    )
         else:
             cmd = Command.CMD_DIGITAL_WRITE if route.topic == Topic.DIGITAL else Command.CMD_ANALOG_WRITE
             await self.serial.send(
@@ -821,12 +965,7 @@ class BridgeService:
                 try:
                     ctx.exit_code = await asyncio.wait_for(ctx.handle.wait(), float(self.state.process_timeout))
                 except TimeoutError:
-                    import os
-                    import signal
-
-                    with contextlib.suppress(OSError):
-                        os.killpg(ctx.handle.pid, signal.SIGKILL)
-                    ctx.exit_code = -1
+                    ctx.exit_code = await self._terminate_process(pid, ctx, grace_period=0.5)
         finally:
             self._finalize_process(pid)
 
@@ -862,17 +1001,30 @@ class BridgeService:
         if not ctx:
             return False
         try:
-            import os
-            import signal
-
-            os.killpg(ctx.handle.pid, signal.SIGTERM)
-            await asyncio.sleep(0.5)
-            if ctx.handle.returncode is None:
-                os.killpg(ctx.handle.pid, signal.SIGKILL)
+            ctx.exit_code = await self._terminate_process(pid, ctx, grace_period=0.5)
         except (OSError, ProcessLookupError) as exc:
             logger.warning("Process termination failed", pid=pid, error=str(exc))
         self._finalize_process(pid)
         return True
+
+    async def _terminate_process(self, pid: int, ctx: ProcessContext, *, grace_period: float) -> int:
+        if ctx.handle.returncode is not None:
+            return int(ctx.handle.returncode)
+        try:
+            os.killpg(ctx.handle.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return int(ctx.handle.returncode or -1)
+
+        try:
+            return int(await asyncio.wait_for(ctx.handle.wait(), grace_period))
+        except TimeoutError:
+            logger.warning("Process exceeded graceful shutdown window; escalating to SIGKILL", pid=pid)
+
+        os.killpg(ctx.handle.pid, signal.SIGKILL)
+        try:
+            return int(await asyncio.wait_for(ctx.handle.wait(), 0.5))
+        except TimeoutError:
+            return -1
 
     def _finalize_process(self, pid: int) -> None:
         if self.state.running_processes.pop(pid, None):

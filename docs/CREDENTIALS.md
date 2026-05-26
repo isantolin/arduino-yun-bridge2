@@ -43,7 +43,7 @@ flowchart TD
 What happens:
 
 1. The script connects via SSH (default user `root`) and runs `/usr/bin/mcubridge-rotate-credentials` on the device.
-2. The helper writes the regenerated secrets to UCI (`/etc/config/mcubridge`) and restarts the daemon.
+2. The helper writes the regenerated secrets to UCI (`/etc/config/mcubridge`), updates `mcubridge.general.mqtt_pass`, and restarts the daemon.
 3. The script captures the freshly generated serial shared secret (stored in `mcubridge.general.serial_shared_secret`, also printed as `SERIAL_SECRET=...`) and prints a ready-to-paste snippet:
 
    ```c
@@ -62,7 +62,7 @@ sudo ./tools/rotate_credentials.sh --local build/rootfs/etc/config \
   --emit-sketch-snippet my_project/BridgeSecret.inc
 ```
 
-The CLI sets `UCI_CONFIG_DIR` to the provided path, invokes `mcubridge/scripts/mcubridge-rotate-credentials`, and (optionally) drops a snippet file that you can include from multiple sketches.
+The CLI sets `UCI_CONFIG_DIR` to the provided path, invokes `mcubridge/scripts/mcubridge_rotate_credentials.py`, and (optionally) drops a snippet file that you can include from multiple sketches.
 
 ## LuCI workflow
 
@@ -132,4 +132,3 @@ Key log fields to inspect:
 - `handshake_state`: Should progress `IDLE → CHALLENGE_SENT → SYNCHRONIZED`
 - `hmac_valid`: Must be `true` for successful authentication
 - `nonce_counter`: Should increment monotonically (anti-replay protection)
-

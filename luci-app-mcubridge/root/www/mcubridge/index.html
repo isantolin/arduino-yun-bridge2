@@ -45,21 +45,25 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 			let topicState = `${topicPrefix}/d/13/value`;
 			let client = null;
 			let brokerUrl = null;
-			let auth = {user: '', pass: ''};
+			let authRequired = false;
 
-			// Fetch broker WebSocket URL and credentials from LuCI endpoint
+			// Fetch broker WebSocket URL and topic metadata from LuCI.
 			Promise.all([
 				fetch('/cgi-bin/luci/admin/services/mcubridge/mqtt_ws_url').then(r => r.text()),
 				fetch('/cgi-bin/luci/admin/services/mcubridge/mqtt_ws_auth').then(r => r.json())
-			]).then(([url, creds]) => {
+			]).then(([url, info]) => {
 				brokerUrl = url.trim();
-				auth = creds;
-				topicPrefix = (creds.topic_prefix || topicPrefix).replace(/\/+$/, '');
+				authRequired = Boolean(info.auth_required);
+				topicPrefix = (info.topic_prefix || topicPrefix).replace(/\/+$/, '');
 				topicSet = `${topicPrefix}/d/13`;
 				topicState = `${topicPrefix}/d/13/value`;
-				document.getElementById('mqtt-user').value = auth.user || '';
-				document.getElementById('mqtt-pass').value = auth.pass || '';
+				if (authRequired) {
+					document.getElementById('status').innerText = 'Enter MQTT credentials to connect.';
+					return;
+				}
 				connectMQTT();
+			}).catch(err => {
+				document.getElementById('status').innerText = 'LuCI endpoint error: ' + err;
 			});
 
 			function connectMQTT() {

@@ -93,3 +93,17 @@ def test_system_snapshot_error(runtime_config: RuntimeConfig) -> None:
 
     snapshot = collect_system_metrics()
     assert snapshot == {}
+
+
+def test_build_metrics_snapshot_includes_spool_state(runtime_config: RuntimeConfig) -> None:
+    state = create_runtime_state(runtime_config)
+    try:
+        state.mqtt_spool_degraded = True
+        state.mqtt_spool_failure_reason = "disk-full"
+        state.mqtt_spool_pending_messages = 3
+        snapshot = state.build_metrics_snapshot()
+        assert snapshot["mqtt_spool_degraded"] is True
+        assert snapshot["mqtt_spool_failure_reason"] == "disk-full"
+        assert snapshot["mqtt_spool_pending_messages"] == 3
+    finally:
+        state.cleanup()

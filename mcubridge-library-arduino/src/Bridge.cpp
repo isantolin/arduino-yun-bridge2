@@ -336,10 +336,9 @@ void BridgeClass::emitStatus(rpc::StatusCode code,
 }
 
 void BridgeClass::emitStatus(rpc::StatusCode code, etl::string_view msg) {
-  (void)sendFrame(
-      code, 0,
-      etl::span<const uint8_t>(reinterpret_cast<const uint8_t*>(msg.data()),
-                               msg.length()));
+  rpc_pb_GenericResponse resp = rpc_pb_GenericResponse_init_default;
+  rpc::payload::copy_to_pb_string(resp.message, msg);
+  (void)send(code, 0, resp);
 }
 
 void BridgeClass::emitStatus(rpc::StatusCode code,
@@ -348,16 +347,16 @@ void BridgeClass::emitStatus(rpc::StatusCode code,
     (void)sendFrame(code);
     return;
   }
-  constexpr size_t max_len = rpc::MAX_PAYLOAD_SIZE - 1U;
+  constexpr size_t max_len = 63U;
   etl::string<max_len> str;
   str.resize(max_len);
   bridge::hal::copy_string(str.data(), reinterpret_cast<const char*>(msg),
                            max_len);
   str.resize(etl::strlen(str.data()));
-  (void)sendFrame(
-      code, 0,
-      etl::span<const uint8_t>(reinterpret_cast<const uint8_t*>(str.data()),
-                               str.length()));
+
+  rpc_pb_GenericResponse resp = rpc_pb_GenericResponse_init_default;
+  rpc::payload::copy_to_pb_string(resp.message, etl::string_view(str.data(), str.length()));
+  (void)send(code, 0, resp);
 }
 
 bool BridgeClass::sendFrame(rpc::StatusCode s, uint16_t seq,

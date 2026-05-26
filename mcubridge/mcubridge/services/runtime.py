@@ -122,10 +122,12 @@ class BridgeService:
             Command.CMD_PROCESS_POLL.value: self._gen_handler(pb.ProcessPoll, self._on_mcu_process_poll),
             Command.CMD_PROCESS_KILL.value: self._gen_handler(pb.ProcessKill, lambda p: self._stop_process(p.pid)),
             Command.CMD_DIGITAL_READ.value: lambda _, __: self.serial.send(
-                Status.NOT_IMPLEMENTED.value, b"linux_gpio_read_not_available"
+                Status.NOT_IMPLEMENTED.value,
+                pb.GenericResponse(message="linux_gpio_read_not_available").SerializeToString(),
             ),
             Command.CMD_ANALOG_READ.value: lambda _, __: self.serial.send(
-                Status.NOT_IMPLEMENTED.value, b"linux_adc_read_not_available"
+                Status.NOT_IMPLEMENTED.value,
+                pb.GenericResponse(message="linux_adc_read_not_available").SerializeToString(),
             ),
             Command.CMD_DIGITAL_READ_RESP.value: self._gen_handler(
                 pb.DigitalReadResponse,
@@ -359,7 +361,7 @@ class BridgeService:
         if path and await self._write_with_quota(path, p.data):
             res = await self.serial.send(Status.OK.value, b"")
             return bool(res)
-        res = await self.serial.send(Status.ERROR.value, b"Write failed")
+        res = await self.serial.send(Status.ERROR.value, pb.GenericResponse(message="Write failed").SerializeToString())
         return bool(res)
 
     async def _on_mcu_file_read(self, p: pb.FileRead) -> None:
@@ -377,7 +379,7 @@ class BridgeService:
                         pb.FileReadResponse(content=bytes(chunk)).SerializeToString(),
                     )
             return
-        await self.serial.send(Status.ERROR.value, b"Read failed")
+        await self.serial.send(Status.ERROR.value, pb.GenericResponse(message="Read failed").SerializeToString())
 
     async def _on_mcu_file_remove(self, p: pb.FileRemove) -> bool:
         path = self._get_safe_path(p.path)
@@ -385,7 +387,9 @@ class BridgeService:
             await asyncio.to_thread(path.unlink)
             res = await self.serial.send(Status.OK.value, b"")
             return bool(res)
-        res = await self.serial.send(Status.ERROR.value, b"Remove failed")
+        res = await self.serial.send(
+            Status.ERROR.value, pb.GenericResponse(message="Remove failed").SerializeToString()
+        )
         return bool(res)
 
     async def _on_mcu_file_read_resp(self, p: pb.FileReadResponse) -> bool:
@@ -406,7 +410,7 @@ class BridgeService:
                     pb.ProcessRunAsyncResponse(pid=pid).SerializeToString(),
                 )
                 return bool(res)
-        await self.serial.send(Status.ERROR.value, b"Exec failed")
+        await self.serial.send(Status.ERROR.value, pb.GenericResponse(message="Exec failed").SerializeToString())
         return False
 
     async def _on_mcu_process_poll(self, p: pb.ProcessPoll) -> bool:
@@ -445,7 +449,12 @@ class BridgeService:
             logger.debug("MCU > ACK for 0x%02X", p.command_id)
 
     async def _handle_mcu_status(self, seq_id: int, status: Status, payload: bytes) -> None:
-        text = payload.decode("utf-8", errors="ignore") if payload else ""
+        text = ""
+        if payload:
+            try:
+                text = pb.GenericResponse.FromString(payload).message
+            except Exception:
+                text = payload.decode("utf-8", errors="ignore")
         log_func = logger.warning if status not in {Status.OK, Status.ACK} else logger.debug
         log_func("MCU > %s: %s %s", status.name, status.description, text)
         await self.enqueue_mqtt(

@@ -1075,3 +1075,10 @@ fields = [
     {name = "tag", type = "bin_fixed", size = 16},
     {name = "payload", type = "bytes"},
 ]
+
+[[messages]]
+name = "GenericResponse"
+fields = [
+    {name = "status", type = "string", max_size = 32},
+    {name = "message", type = "string", max_size = 64},
+]

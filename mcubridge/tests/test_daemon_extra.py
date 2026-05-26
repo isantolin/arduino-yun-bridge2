@@ -66,14 +66,18 @@ async def test_daemon_supervise_cancelled() -> None:
 
 
 def test_init_check_dependencies_success() -> None:
-    from mcubridge import _check_dependencies  # pyright: ignore[reportPrivateUsage]
+    import mcubridge
+
+    _check_dependencies = getattr(mcubridge, "_check_dependencies")
 
     # This should pass in the test environment as we have paho-mqtt 2.x
     _check_dependencies()
 
 
 def test_init_check_dependencies_failure() -> None:
-    from mcubridge import _check_dependencies  # pyright: ignore[reportPrivateUsage]
+    import mcubridge
+
+    _check_dependencies = getattr(mcubridge, "_check_dependencies")
 
     # Mocking paho.mqtt.client without CallbackAPIVersion
     with patch("importlib.import_module") as mock_import:

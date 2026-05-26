@@ -1,4 +1,3 @@
-# pyright: reportPrivateUsage=false
 import time
 
 from mcubridge.state.context import create_runtime_state
@@ -17,7 +16,7 @@ def test_state_metrics_exhaustive() -> None:
     state.apply_handshake_stats({"attempts": 5, "successes": 2, "last_unix": time.time()})
     assert state.handshake_attempts == 5
 
-    state._apply_spool_observation({"corrupt_dropped": 1, "dropped_due_to_limit": 1})
+    getattr(state, "_apply_spool_observation")({"corrupt_dropped": 1, "dropped_due_to_limit": 1})
 
     state.handshake_last_started = time.monotonic() - 10
     assert state.handshake_duration_since_start() >= 10

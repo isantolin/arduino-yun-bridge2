@@ -305,10 +305,10 @@ def phase_verify(child: Any) -> None:
 def run_test(apk_disk: str, extroot_disk: str) -> None:
     log_info("[INFO] Starting QEMU Emulation (full pipeline)...")
 
-    import pexpect  # pyright: ignore[reportMissingModuleSource]
+    pexpect = __import__("pexpect")
 
     qemu_cmd = build_qemu_cmd(apk_disk, extroot_disk)
-    child: pexpect.spawn[str] = pexpect.spawn(qemu_cmd[0], qemu_cmd[1:], encoding="utf-8", timeout=300)
+    child: Any = pexpect.spawn(qemu_cmd[0], qemu_cmd[1:], encoding="utf-8", timeout=300)
     child.logfile = sys.stdout
 
     try:

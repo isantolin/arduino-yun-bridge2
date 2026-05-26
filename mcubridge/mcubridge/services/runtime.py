@@ -318,10 +318,11 @@ class BridgeService:
     async def _on_mcu_datastore_get(self, p: pb.DatastoreGet) -> bool:
         cache = cast(Any, self.state.datastore_cache)
         val = msgspec.convert(cache.get(p.key, b"") if cache else b"", bytes)
-        return await self.serial.send(
+        res = await self.serial.send(
             Command.CMD_DATASTORE_GET_RESP.value,
             pb.DatastoreGetResponse(value=msgspec.Raw(val[:255])).SerializeToString(),
         )
+        return bool(res)
 
     async def _on_mcu_mailbox_push(self, p: pb.MailboxPush) -> bool:
         self.state.mailbox_incoming_queue.append(bytes(p.data))
@@ -333,18 +334,20 @@ class BridgeService:
         return True
 
     async def _on_mcu_mailbox_available(self, seq: int) -> bool:
-        return await self.serial.send(
+        res = await self.serial.send(
             Command.CMD_MAILBOX_AVAILABLE_RESP.value,
             pb.MailboxAvailableResponse(count=len(self.state.mailbox_queue)).SerializeToString(),
         )
+        return bool(res)
 
     async def _on_mcu_mailbox_read(self, seq: int) -> bool:
-        return await self.serial.send(
+        res = await self.serial.send(
             Command.CMD_MAILBOX_READ_RESP.value,
             pb.MailboxReadResponse(
                 content=self.state.mailbox_queue.popleft() if self.state.mailbox_queue else b""
             ).SerializeToString(),
         )
+        return bool(res)
 
     async def _on_mcu_mailbox_processed(self, payload: bytes) -> None:
         await self.enqueue_mqtt(
@@ -354,8 +357,10 @@ class BridgeService:
     async def _on_mcu_file_write(self, p: pb.FileWrite) -> bool:
         path = self._get_safe_path(p.path)
         if path and await self._write_with_quota(path, p.data):
-            return await self.serial.send(Status.OK.value, b"")
-        return await self.serial.send(Status.ERROR.value, b"Write failed")
+            res = await self.serial.send(Status.OK.value, b"")
+            return bool(res)
+        res = await self.serial.send(Status.ERROR.value, b"Write failed")
+        return bool(res)
 
     async def _on_mcu_file_read(self, p: pb.FileRead) -> None:
         path = self._get_safe_path(p.path)
@@ -378,8 +383,10 @@ class BridgeService:
         path = self._get_safe_path(p.path)
         if path and path.exists():
             await asyncio.to_thread(path.unlink)
-            return await self.serial.send(Status.OK.value, b"")
-        return await self.serial.send(Status.ERROR.value, b"Remove failed")
+            res = await self.serial.send(Status.OK.value, b"")
+            return bool(res)
+        res = await self.serial.send(Status.ERROR.value, b"Remove failed")
+        return bool(res)
 
     async def _on_mcu_file_read_resp(self, p: pb.FileReadResponse) -> bool:
         if not self._pending_mcu_read:
@@ -394,16 +401,17 @@ class BridgeService:
         if p.command and self.state.allowed_policy.is_allowed(p.command):
             pid = await self._run_process(p.command)
             if pid:
-                return await self.serial.send(
+                res = await self.serial.send(
                     Command.CMD_PROCESS_RUN_ASYNC_RESP.value,
                     pb.ProcessRunAsyncResponse(pid=pid).SerializeToString(),
                 )
+                return bool(res)
         await self.serial.send(Status.ERROR.value, b"Exec failed")
         return False
 
     async def _on_mcu_process_poll(self, p: pb.ProcessPoll) -> bool:
         batch = await self._poll_process(p.pid)
-        return await self.serial.send(
+        res = await self.serial.send(
             Command.CMD_PROCESS_POLL_RESP.value,
             pb.ProcessPollResponse(
                 status=batch.status_byte,
@@ -412,6 +420,7 @@ class BridgeService:
                 stderr_data=batch.stderr_chunk,
             ).SerializeToString(),
         )
+        return bool(res)
 
     async def _on_pin_resp(self, p: Any, tp: Topic, q: collections.deque[structures.PendingPinRequest]) -> None:
         req = q.popleft() if q else None

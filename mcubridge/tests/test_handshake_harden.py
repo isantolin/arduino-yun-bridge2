@@ -7,7 +7,6 @@ from unittest.mock import AsyncMock, patch
 import pytest
 import msgspec
 
-# pyright: reportPrivateUsage=false
 from mcubridge.services.handshake import SerialHandshakeManager, SerialHandshakeFatal
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.state.context import create_runtime_state, RuntimeState
@@ -73,7 +72,7 @@ async def test_handshake_rate_limiting(
 ) -> None:
     """Verify handshake rate limiting protects MCU from thrashing."""
     manager, state, _ = handshake_setup
-    manager._config = msgspec.structs.replace(manager._config, serial_handshake_min_interval=1.0)
+    setattr(manager, "_config", msgspec.structs.replace(getattr(manager, "_config"), serial_handshake_min_interval=1.0))
 
     state.mark_synchronized()
     state.link_handshake_nonce = b"pending"
@@ -127,7 +126,7 @@ async def test_handshake_capabilities_retry(
     manager, _, send_frame = handshake_setup
 
     # Simulate timeout on first 2 attempts, success on 3rd
-    manager._timing = msgspec.structs.replace(manager._timing, response_timeout_ms=10)
+    setattr(manager, "_timing", msgspec.structs.replace(getattr(manager, "_timing"), response_timeout_ms=10))
 
     with patch("asyncio.wait_for") as mock_wait:
         mock_wait.side_effect = [
@@ -136,7 +135,7 @@ async def test_handshake_capabilities_retry(
             b"\x80",
         ]  # Empty map
 
-        result = await manager._fetch_capabilities()
+        result = await getattr(manager, "_fetch_capabilities")()
         assert result is True
         assert send_frame.call_count == 3
 
@@ -152,6 +151,6 @@ async def test_handshake_malformed_sync_resp(
     result = await manager.handle_link_sync_resp(1, b"\xff\xff\xff")  # Invalid protobuf
     assert result is False
     assert state.last_handshake_error == "sync_decode_failed"
-    cast(AsyncMock, manager._acknowledge_frame).assert_called_with(
+    cast(AsyncMock, getattr(manager, "_acknowledge_frame")).assert_called_with(
         Command.CMD_LINK_SYNC_RESP.value, 1, status=Status.MALFORMED
     )

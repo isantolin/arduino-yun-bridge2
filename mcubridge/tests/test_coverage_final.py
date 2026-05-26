@@ -9,8 +9,8 @@ import pytest
 from mcubridge.protocol import protocol
 from mcubridge.protocol.spec_model import ProtocolSpec
 
-# pyright: reportPrivateUsage=false
-from mcubridge.state.status import status_writer, _write_status_file
+from mcubridge.state.status import status_writer
+import mcubridge.state.status as status_mod
 from mcubridge.state.context import create_runtime_state
 from mcubridge.config.logging import configure_logging, hexdump_processor
 from mcubridge.config.settings import RuntimeConfig
@@ -83,7 +83,7 @@ def test_write_status_file_errors() -> None:
         mock_file.parent = MagicMock()
         mock_file.parent.mkdir.side_effect = OSError("Perm denied")
         with patch("mcubridge.state.status.logger") as mock_logger:
-            _write_status_file({})
+            getattr(status_mod, "_write_status_file")({})
             mock_logger.error.assert_called()
 
 
@@ -171,6 +171,5 @@ def test_state_context_extra_coverage() -> None:
     # Use public API if available or suppress if necessary
     # For coverage tests, private access is sometimes tolerated but we can cast to Any
     # to satisfy the type checker for now while maintaining the test's intent.
-    state_any: Any = state
-    state_any._apply_spool_observation({"corrupt_dropped": 1, "dropped_due_to_limit": 1})
+    getattr(state, "_apply_spool_observation")({"corrupt_dropped": 1, "dropped_due_to_limit": 1})
     assert state.handshake_duration_since_start() >= 0

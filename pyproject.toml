@@ -66,6 +66,7 @@ exclude = [
     "**/__pycache__",
     "**/node_modules",
     "**/*_pb2.py",
+    "**/*_pb2.pyi",
     "**/.*"
 ]
 reportMissingImports = true

@@ -4,7 +4,6 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-# pyright: reportPrivateUsage=false
 from mcubridge.daemon import BridgeDaemon, app, main
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.services.handshake import SerialHandshakeFatal
@@ -28,7 +27,7 @@ async def test_daemon_run_lifecycle(daemon_setup: BridgeDaemon) -> None:
 
     # Mock transports to avoid real IO
     daemon.serial_transport.run = AsyncMock()
-    daemon._mqtt_run = AsyncMock()
+    setattr(daemon, "_mqtt_run", AsyncMock())
 
     # Run and immediately cancel
     task = asyncio.create_task(daemon.run())

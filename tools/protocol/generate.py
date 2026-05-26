@@ -1255,8 +1255,6 @@ def main() -> None:
             py_pb2.unlink()
         if py_pb2_stub.exists():
             pb2_stub_text = py_pb2_stub.read_text()
-            # [SIL-2] Patch generated stubs to avoid Pyright errors with newer Protobuf
-            pb2_stub_text = "# pyright: reportIncompatibleVariableOverride=false\n" + pb2_stub_text
             pb2_stub_text = pb2_stub_text.replace(
                 "_Union[StructuredEntry, _Mapping]]",
                 "_Union[StructuredEntry, _Mapping[str, object]]]",

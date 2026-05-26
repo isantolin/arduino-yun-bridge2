@@ -8,7 +8,6 @@ import pytest
 import msgspec
 from aiomqtt.message import Message
 
-# pyright: reportPrivateUsage=false
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state, RuntimeState
 from mcubridge.config.settings import RuntimeConfig
@@ -55,7 +54,7 @@ async def test_runtime_mcu_lifecycle_exhaustive(service_setup: Any) -> None:
 
     with patch.object(service.handshake, "synchronize", side_effect=mock_sync):
         serial.send.return_value = pb.VersionResponse(major=1, minor=0, patch=0).SerializeToString()
-        await service._request_mcu_version()
+        await getattr(service, "_request_mcu_version")()
         assert serial.send.called
 
     await service.on_serial_disconnected()

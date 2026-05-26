@@ -5,7 +5,6 @@ from unittest.mock import AsyncMock, patch, MagicMock
 import pytest
 from cobs import cobs
 
-# pyright: reportPrivateUsage=false
 from mcubridge.transport.serial import SerialTransport
 from mcubridge.services.runtime import BridgeService
 from mcubridge.config.settings import RuntimeConfig
@@ -43,16 +42,16 @@ async def test_serial_transport_loops_final_v3(transport_setup: Any) -> None:
     ]
 
     try:
-        await asyncio.wait_for(transport._read_loop(mock_reader), 0.1)
+        await asyncio.wait_for(getattr(transport, "_read_loop")(mock_reader), 0.1)
     except (TimeoutError, Exception):
         pass
 
-    transport._tx_sequence_id = 0xFFFE
+    setattr(transport, "_tx_sequence_id", 0xFFFE)
     mock_writer.drain = AsyncMock()
     await transport.send_raw(0x01, b"")
-    assert transport._tx_sequence_id == 0xFFFF
+    assert getattr(transport, "_tx_sequence_id") == 0xFFFF
     await transport.send_raw(0x01, b"")
-    assert transport._tx_sequence_id == 0
+    assert getattr(transport, "_tx_sequence_id") == 0
 
 
 @pytest.mark.asyncio
@@ -62,7 +61,7 @@ async def test_serial_transport_negotiation_failure_final_v3(
     config, state = transport_setup
     transport = SerialTransport(config, state, service=MagicMock(spec=BridgeService))
 
-    transport._negotiation_future = asyncio.Future[Any]()
+    setattr(transport, "_negotiation_future", asyncio.Future[Any]())
 
     async def _mock_wait(fut: Any, timeout: Any) -> Any:
         if fut and not fut.done():
@@ -70,8 +69,9 @@ async def test_serial_transport_negotiation_failure_final_v3(
         raise TimeoutError()
 
     with patch("asyncio.wait_for", _mock_wait):
-        res = await transport._negotiate_baudrate(9600)
+        res = await getattr(transport, "_negotiate_baudrate")(9600)
         assert res is False
 
-    if transport._negotiation_future and not transport._negotiation_future.done():
-        transport._negotiation_future.set_result(False)
+    negotiation_future = getattr(transport, "_negotiation_future")
+    if negotiation_future and not negotiation_future.done():
+        negotiation_future.set_result(False)

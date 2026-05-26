@@ -271,7 +271,9 @@ async def test_runtime_mcu_file_read_uses_send_raw(
     serial.send_raw.assert_awaited_once()
     serial.send.assert_not_awaited()
     assert service.enqueue_mqtt.await_count == 1
-    queued_publish = service.enqueue_mqtt.await_args.args[0]
+    args = service.enqueue_mqtt.await_args
+    assert args is not None
+    queued_publish = args.args[0]
     assert queued_publish.payload == b"mcu-data"
 
 

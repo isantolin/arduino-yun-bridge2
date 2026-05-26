@@ -15,7 +15,6 @@ from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import TypedDict
 
-import msgspec
 from aiomqtt import Client, MqttError, ProtocolVersion
 from aiomqtt.message import Message
 
@@ -344,9 +343,10 @@ class Bridge:
 
     async def spi_config(self, frequency: int, bit_order: int, data_mode: int) -> None:
         if self._client:
+            config = pb.SpiConfig(frequency=frequency, bit_order=bit_order, data_mode=data_mode)
             await self._client.publish(
                 Topic.build(Topic.SPI, "config"),
-                msgspec.json.encode({"frequency": frequency, "bit_order": bit_order, "data_mode": data_mode}),
+                config.SerializeToString(),
             )
 
     def spi(

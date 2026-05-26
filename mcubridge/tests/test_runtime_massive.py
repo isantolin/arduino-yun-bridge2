@@ -205,7 +205,7 @@ async def test_runtime_mqtt_brute_force(
         ("br/shell/kill/123", b""),
         ("br/spi/begin", b""),
         ("br/spi/end", b""),
-        ("br/spi/config", b'{"frequency":1000000}'),
+        ("br/spi/config", pb.SpiConfig(frequency=1000000).SerializeToString()),
         ("br/spi/transfer", b"\x01\x02"),
         ("br/digital/13", b"1"),
         ("br/digital/13/read", b""),

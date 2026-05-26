@@ -5,7 +5,6 @@ from unittest.mock import AsyncMock, patch
 from pathlib import Path
 
 import pytest
-import msgspec
 from aiomqtt.message import Message
 
 from mcubridge.services.runtime import BridgeService
@@ -119,7 +118,7 @@ async def test_mqtt_handlers_exhaustive(service_setup: Any) -> None:
 
     msg = Message(
         topic="br/spi/config",
-        payload=msgspec.json.encode({"frequency": 1000, "bit_order": 0, "data_mode": 0}),
+        payload=pb.SpiConfig(frequency=1000, bit_order=0, data_mode=0).SerializeToString(),
         qos=0,
         retain=False,
         mid=1,

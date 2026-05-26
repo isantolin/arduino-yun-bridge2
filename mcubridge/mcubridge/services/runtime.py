@@ -666,9 +666,9 @@ class BridgeService:
                 await self.serial.send(Command.CMD_SPI_END.value, b"")
             case SpiAction.CONFIG:
                 try:
-                    p = msgspec.json.decode(inbound.payload, type=pb.SpiConfig)
+                    p = pb.SpiConfig.FromString(inbound.payload)
                     await self.serial.send(Command.CMD_SPI_SET_CONFIG.value, p.SerializeToString())
-                except (msgspec.DecodeError, msgspec.ValidationError, TypeError, ValueError) as exc:
+                except Exception as exc:
                     logger.error("SPI config error: %s", exc)
             case SpiAction.TRANSFER:
                 if inbound.payload:

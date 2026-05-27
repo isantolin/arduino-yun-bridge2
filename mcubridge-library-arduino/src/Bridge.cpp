@@ -337,7 +337,11 @@ void BridgeClass::emitStatus(rpc::StatusCode code,
 
 void BridgeClass::emitStatus(rpc::StatusCode code, etl::string_view msg) {
   rpc_pb_GenericResponse resp = rpc_pb_GenericResponse_init_default;
-  rpc::payload::copy_to_pb_string(resp.message, msg);
+  const size_t to_copy = etl::min(msg.size(), sizeof(resp.message) - 1U);
+  if (to_copy > 0U) {
+    etl::copy_n(msg.begin(), to_copy, resp.message);
+  }
+  resp.message[to_copy] = '\0';
   (void)send(code, 0, resp);
 }
 
@@ -355,7 +359,12 @@ void BridgeClass::emitStatus(rpc::StatusCode code,
   str.resize(etl::strlen(str.data()));
 
   rpc_pb_GenericResponse resp = rpc_pb_GenericResponse_init_default;
-  rpc::payload::copy_to_pb_string(resp.message, etl::string_view(str.data(), str.length()));
+  const size_t to_copy =
+      etl::min(static_cast<size_t>(str.length()), sizeof(resp.message) - 1U);
+  if (to_copy > 0U) {
+    etl::copy_n(str.begin(), to_copy, resp.message);
+  }
+  resp.message[to_copy] = '\0';
   (void)send(code, 0, resp);
 }
 
@@ -702,7 +711,7 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
 
   _fsm.receive(bridge::fsm::EvHandshakeStart());
   _fsm.receive(bridge::fsm::EvHandshakeComplete());
-  
+
   _tx_enabled = true;
   (void)send(rpc::CommandId::CMD_LINK_SYNC_RESP, ctx.sequence_id, resp);
   _notifyObservers(MsgBridgeSynchronized());
@@ -870,7 +879,11 @@ void BridgeClass::_handleSpiTransfer(
         return;
       }
       rpc::payload::SpiTransferResponse resp = {};
-      rpc::payload::copy_to_pb_bytes(resp.data, _rx_storage.data(), len);
+      const size_t to_copy = etl::min(len, sizeof(resp.data.bytes));
+      resp.data.size = (pb_size_t)to_copy;
+      if (to_copy > 0) {
+        etl::copy_n(_rx_storage.data(), to_copy, resp.data.bytes);
+      }
       (void)send(rpc::CommandId::CMD_SPI_TRANSFER_RESP, ctx.sequence_id, resp);
     } else
       emitStatus(rpc::StatusCode::STATUS_ERROR);

@@ -17,9 +17,9 @@ constexpr int32_t kProcessInvalidPid = -1;
 
 ProcessClass::ProcessClass() {}
 
-[[maybe_unused]] void ProcessClass::runAsync(etl::string_view cmd,
-                            etl::span<const etl::string_view> args,
-                            ProcessRunHandler handler) {
+[[maybe_unused]] void ProcessClass::runAsync(
+    etl::string_view cmd, etl::span<const etl::string_view> args,
+    ProcessRunHandler handler) {
   if (handler.is_valid() && Process._pending_run_async.full()) {
     Bridge.emitStatus(
         rpc::StatusCode::STATUS_ERROR,
@@ -55,7 +55,12 @@ ProcessClass::ProcessClass() {}
   }
 
   rpc::payload::ProcessRunAsync p;
-  rpc::payload::copy_to_pb_string(p.command, etl::string_view(command_buffer.data(), command_buffer.size()));
+  const size_t c_copy = etl::min(static_cast<size_t>(command_buffer.size()),
+                                 sizeof(p.command) - 1U);
+  if (c_copy > 0U) {
+    etl::copy_n(command_buffer.begin(), c_copy, p.command);
+  }
+  p.command[c_copy] = '\0';
 
   const bool send_ok = Bridge.send(rpc::CommandId::CMD_PROCESS_RUN_ASYNC, 0, p);
   if (!send_ok) {
@@ -69,7 +74,8 @@ ProcessClass::ProcessClass() {}
   if (handler.is_valid()) Process._pending_run_async.push({handler});
 }
 
-[[maybe_unused]] void ProcessClass::poll(int32_t pid, ProcessPollHandler handler) {
+[[maybe_unused]] void ProcessClass::poll(int32_t pid,
+                                         ProcessPollHandler handler) {
   if (handler.is_valid() && _pending_polls.full()) {
     Bridge.emitStatus(
         rpc::StatusCode::STATUS_ERROR,
@@ -121,12 +127,10 @@ void ProcessClass::_onPollResponse(
   const PendingPoll pending = _pending_polls.front();
   _pending_polls.pop();
   if (pending.handler.is_valid()) {
-    pending.handler(static_cast<rpc::StatusCode>(msg.status),
-                    msg.exit_code,
-                    etl::span<const uint8_t>(msg.stdout_data.bytes,
-                                             msg.stdout_data.size),
-                    etl::span<const uint8_t>(msg.stderr_data.bytes,
-                                             msg.stderr_data.size));
+    pending.handler(
+        static_cast<rpc::StatusCode>(msg.status), msg.exit_code,
+        etl::span<const uint8_t>(msg.stdout_data.bytes, msg.stdout_data.size),
+        etl::span<const uint8_t>(msg.stderr_data.bytes, msg.stderr_data.size));
   }
 }
 

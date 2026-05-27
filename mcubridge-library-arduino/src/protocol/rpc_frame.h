@@ -35,16 +35,6 @@ struct Frame {
 
   Frame() : envelope(rpc_pb_RpcEnvelope_init_default), crc(0) {}
 
-  Frame(const Frame& other) : envelope(other.envelope), crc(other.crc) {}
-
-  Frame& operator=(const Frame& other) {
-    if (this != &other) {
-      envelope = other.envelope;
-      crc = other.crc;
-    }
-    return *this;
-  }
-
   etl::span<const uint8_t> payload() const {
     return etl::span<const uint8_t>(envelope.payload.bytes,
                                     envelope.payload.size);
@@ -52,10 +42,12 @@ struct Frame {
 };
 
 namespace checksum {
+/**
+ * @brief Computes CRC32 using ETL directly (SIL-2).
+ * This remains as a small helper to keep parse/serialize readable.
+ */
 inline uint32_t compute(etl::span<const uint8_t> data) {
-  etl::crc32 crc_gen;
-  crc_gen.add(data.begin(), data.end());
-  return crc_gen.value();
+  return etl::crc32(data.begin(), data.end());
 }
 }  // namespace checksum
 

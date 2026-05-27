@@ -11,7 +11,30 @@
 
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
+#include "protocol/rpc_structs.h"
 #include "unity.h"
+
+namespace rpc::payload {
+template <typename PbBytesArray>
+inline void copy_to_pb_bytes(PbBytesArray& dest, const uint8_t* src, size_t src_size) {
+    constexpr size_t dest_size = sizeof(dest.bytes) / sizeof(dest.bytes[0]);
+    const size_t to_copy = (src_size <= dest_size) ? src_size : dest_size;
+    dest.size = static_cast<pb_size_t>(to_copy);
+    if (to_copy > 0U) {
+        etl::copy_n(src, to_copy, dest.bytes);
+    }
+}
+
+template <typename PbStringArray>
+inline void copy_to_pb_string(PbStringArray& dest, etl::string_view src) {
+    constexpr size_t dest_size = sizeof(dest) / sizeof(dest[0]);
+    const size_t to_copy = etl::min(src.size(), dest_size - 1U);
+    if (to_copy > 0U) {
+        etl::copy_n(src.begin(), to_copy, dest);
+    }
+    dest[to_copy] = '\0';
+}
+} // namespace rpc::payload
 
 static inline uint32_t crc32_ieee(const void* data, size_t len) {
   etl::crc32 crc_calc;

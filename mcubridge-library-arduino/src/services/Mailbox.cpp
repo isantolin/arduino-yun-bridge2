@@ -18,7 +18,11 @@ MailboxClass::MailboxClass() : _rx_buffer(), _available_count(0U) {}
 
 void MailboxClass::push(etl::span<const uint8_t> data) {
   rpc::payload::MailboxPush p;
-  rpc::payload::copy_to_pb_bytes(p.data, data.data(), data.size());
+  const size_t to_copy = etl::min(data.size(), sizeof(p.data.bytes));
+  p.data.size = (pb_size_t)to_copy;
+  if (to_copy > 0U) {
+    etl::copy_n(data.data(), to_copy, p.data.bytes);
+  }
   (void)Bridge.send(rpc::CommandId::CMD_MAILBOX_PUSH, 0, p);
 }
 
@@ -42,14 +46,13 @@ void MailboxClass::_setIncomingData(etl::span<const uint8_t> data) {
 }
 
 void MailboxClass::_onIncomingData(const rpc::payload::MailboxPush& msg) {
-  _setIncomingData(
-      etl::span<const uint8_t>(msg.data.bytes, msg.data.size));
+  _setIncomingData(etl::span<const uint8_t>(msg.data.bytes, msg.data.size));
 }
 
 void MailboxClass::_onIncomingData(
     const rpc::payload::MailboxReadResponse& msg) {
-  _setIncomingData(etl::span<const uint8_t>(msg.content.bytes,
-                                            msg.content.size));
+  _setIncomingData(
+      etl::span<const uint8_t>(msg.content.bytes, msg.content.size));
 }
 
 void MailboxClass::_onAvailableResponse(

@@ -24,8 +24,11 @@ void ConsoleClass::_push(const rpc::payload::ConsoleWrite& msg) {
 void ConsoleClass::process() {
   if (!_tx_buffer.empty()) {
     rpc::payload::ConsoleWrite p;
-    rpc::payload::copy_to_pb_bytes(p.data, _tx_buffer.data(),
-                                   _tx_buffer.size());
+    const size_t to_copy = etl::min(_tx_buffer.size(), sizeof(p.data.bytes));
+    p.data.size = (pb_size_t)to_copy;
+    if (to_copy > 0) {
+      etl::copy_n(_tx_buffer.data(), to_copy, p.data.bytes);
+    }
     if (Bridge.send(rpc::CommandId::CMD_CONSOLE_WRITE, 0, p)) {
       _tx_buffer.clear();
     }

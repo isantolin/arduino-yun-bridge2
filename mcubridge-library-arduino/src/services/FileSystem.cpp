@@ -19,8 +19,11 @@ constexpr size_t kReadChunkSize = 64U;
 
 void send_read_response(etl::span<const uint8_t> content) {
   rpc::payload::FileReadResponse p;
-  rpc::payload::copy_to_pb_bytes(p.content, content.data(),
-                                 content.size());
+  const size_t to_copy = etl::min(content.size(), sizeof(p.content.bytes));
+  p.content.size = (pb_size_t)to_copy;
+  if (to_copy > 0U) {
+    etl::copy_n(content.data(), to_copy, p.content.bytes);
+  }
   (void)Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 0, p);
 }
 }  // namespace
@@ -30,8 +33,17 @@ FileSystemClass::FileSystemClass() {}
 void FileSystemClass::write(etl::string_view path,
                             etl::span<const uint8_t> data) {
   rpc::payload::FileWrite p;
-  rpc::payload::copy_to_pb_string(p.path, path);
-  rpc::payload::copy_to_pb_bytes(p.data, data.data(), data.size());
+  const size_t p_copy = etl::min(path.size(), sizeof(p.path) - 1U);
+  if (p_copy > 0U) {
+    etl::copy_n(path.begin(), p_copy, p.path);
+  }
+  p.path[p_copy] = '\0';
+
+  const size_t d_copy = etl::min(data.size(), sizeof(p.data.bytes));
+  p.data.size = (pb_size_t)d_copy;
+  if (d_copy > 0U) {
+    etl::copy_n(data.data(), d_copy, p.data.bytes);
+  }
   (void)Bridge.send(rpc::CommandId::CMD_FILE_WRITE, 0, p);
 }
 
@@ -39,7 +51,12 @@ void FileSystemClass::read(etl::string_view path,
                            FileSystemReadHandler handler) {
   _read_handler = handler;
   rpc::payload::FileRead p;
-  rpc::payload::copy_to_pb_string(p.path, path);
+  const size_t p_copy = etl::min(path.size(), sizeof(p.path) - 1U);
+  if (p_copy > 0U) {
+    etl::copy_n(path.begin(), p_copy, p.path);
+  }
+  p.path[p_copy] = '\0';
+
   if (!Bridge.send(rpc::CommandId::CMD_FILE_READ, 0, p)) {
     Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
   }
@@ -47,7 +64,11 @@ void FileSystemClass::read(etl::string_view path,
 
 [[maybe_unused]] void FileSystemClass::remove(etl::string_view path) {
   rpc::payload::FileRemove p;
-  rpc::payload::copy_to_pb_string(p.path, path);
+  const size_t p_copy = etl::min(path.size(), sizeof(p.path) - 1U);
+  if (p_copy > 0U) {
+    etl::copy_n(path.begin(), p_copy, p.path);
+  }
+  p.path[p_copy] = '\0';
   (void)Bridge.send(rpc::CommandId::CMD_FILE_REMOVE, 0, p);
 }
 
@@ -105,8 +126,8 @@ void FileSystemClass::_onRemove(const rpc::payload::FileRemove& msg) {
 
 void FileSystemClass::_onResponse(const rpc::payload::FileReadResponse& msg) {
   if (_read_handler.is_valid()) {
-    _read_handler(etl::span<const uint8_t>(msg.content.bytes,
-                                           msg.content.size));
+    _read_handler(
+        etl::span<const uint8_t>(msg.content.bytes, msg.content.size));
   }
 }
 

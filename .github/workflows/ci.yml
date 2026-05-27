@@ -19,15 +19,20 @@ env:
 
 jobs:
   # ═══════════════════════════════════════════════════════════════════════════
-  # STAGE 1: Fast Checks (Consolidated) - ~1min total
+  # STAGE 1: Fast Checks & Unit Tests (Matrix)
   # ═══════════════════════════════════════════════════════════════════════════
-  static-analysis:
-    name: Static Analysis
+  tox-checks:
+    name: Tox (${{ matrix.env }})
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        env: [protocol, deps-sync, lua, cppcheck, typecheck, lint, py313, arduino]
     steps:
       - uses: actions/checkout@v6
       - name: Install protoc
+        if: matrix.env == 'protocol' || matrix.env == 'typecheck' || matrix.env == 'lint' || matrix.env == 'py313' || matrix.env == 'arduino' || matrix.env == 'cppcheck'
         run: |
           PROTOC_VERSION=29.3
           PROTOC_ZIP=protoc-${PROTOC_VERSION}-linux-x86_64.zip
@@ -38,11 +43,19 @@ jobs:
       - uses: ./.github/actions/setup-python-tox
         with:
           install-system-deps: 'true'
-      - name: Install System Dependencies
+      - name: Install Lua Check
+        if: matrix.env == 'lua'
         run: |
-          sudo apt-get update && sudo apt-get install -y cppcheck luarocks unzip
+          sudo apt-get update && sudo apt-get install -y luarocks
           sudo luarocks install luacheck
+      - name: Install Cppcheck
+        if: matrix.env == 'cppcheck'
+        run: sudo apt-get update && sudo apt-get install -y cppcheck
+      - name: Install Build Tools
+        if: matrix.env == 'arduino'
+        run: sudo apt-get update && sudo apt-get install -y g++ make
       - name: Check for Hardcoded Secrets
+        if: matrix.env == 'lint'
         run: |
           echo "Checking for hardcoded secrets..."
           if grep -r "serial_shared_secret.*=.*['\"][^'\"]\{8,\}['\"]" \
@@ -52,13 +65,13 @@ jobs:
             exit 1
           fi
           echo "✅ No hardcoded secrets"
-      - name: Run Consolidated Checks
-        run: tox -e protocol,deps-sync,lua,cppcheck,typecheck,lint
+      - name: Run Tox Environment
+        run: tox -e ${{ matrix.env }}
 
   arduino-examples:
     name: Arduino Examples Compilation
     runs-on: ubuntu-24.04
-    needs: [static-analysis]
+    needs: [tox-checks]
     timeout-minutes: 10
     env:
       ARDUINO_METRICS_DIR: arduino-logs
@@ -105,7 +118,7 @@ jobs:
   unified-tests:
     name: Unified Host Tests & Coverage
     runs-on: ubuntu-24.04
-    needs: [static-analysis]
+    needs: [tox-checks]
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
@@ -150,7 +163,7 @@ jobs:
   arduino-emulation:
     name: Arduino Emulation (${{ matrix.name }})
     runs-on: ubuntu-24.04
-    needs: [static-analysis]
+    needs: [tox-checks]
     strategy:
       fail-fast: false
       matrix:
@@ -218,7 +231,7 @@ jobs:
   protocol-fuzzing:
     name: Protocol Stress Test (Fuzzing)
     runs-on: ubuntu-24.04
-    needs: [static-analysis]
+    needs: [tox-checks]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6

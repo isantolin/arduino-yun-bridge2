@@ -16,8 +16,9 @@ Arduino MCU Bridge 2 is a modern, high-performance communication system between 
 
 ## Core Rules & Priorities
 
-1.  **Priority Order:** Code Reduction first, then Library-First.
-2.  **Absolute Suppression Ban:** Suppressions of any kind (warnings, lint, errors, or checks) are strictly prohibited. If any suppressions are found in the codebase, they must be removed immediately.
+1. Priority Order: Code Reduction first, then Library-First.
+2. C++ Wrapper Policy: Allow ONLY template wrappers; non-template wrappers are strictly prohibited.
+3. Absolute Suppression Ban: Suppressions of any kind (warnings, lint, errors, or checks) are strictly prohibited. If any suppressions are found in the codebase, they must be removed immediately.
 
 ## Development Conventions
 

@@ -56,7 +56,7 @@ Workflow:
    - Prioritize Python/MQTT modules and helpers first. Treat hand-written MQTT plumbing, translation layers, thin facades, and redundant helpers as default refactor targets unless they provide a clear architectural or safety benefit.
    - Do not preserve extra Python layers merely to keep the refactor small. Remove them when direct library usage is clearer and equivalent.
    - Treat raw `for` / `while`, `switch`, raw arrays, `memcmp/strcmp`, magic values, and avoidable manual state-machines as repo-wide audit targets. Prefer ETL/native library facilities, typed constants, `enum class`, `etl::array`, `etl::equal`, and direct native APIs.
-   - In C++, any manual code (including existing and newly written code) that performs a function that can be substituted by an `etl::` component must be considered and replaced.
+   - In C++, any manual code (including existing and newly written code) that performs a function that can be substituted by an `etl::` component must be considered and replaced. Allow ONLY template wrappers; non-template wrappers are strictly prohibited.
    - Require const-correctness and strong typing for immutable and configuration values.
    - Keep strings and tables in Flash when appropriate: `PROGMEM/F()` on Harvard targets, `constexpr/const` on Von Neumann targets.
    - Python exceptions must be typed and logged to syslog. Generic or silent exception handling is a defect.

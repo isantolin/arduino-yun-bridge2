@@ -236,18 +236,20 @@ def run_benchmarks(iterations: int = 5000) -> list[BenchmarkResult]:
     results: list[BenchmarkResult] = []
 
     # --- Frame parse/build ---
-    from mcubridge.protocol.frame import Frame
+    from mcubridge.protocol.frame import build_frame, parse_frame
     from mcubridge.protocol.protocol import Command
 
-    sample_frame = Frame(
-        command_id=Command.CMD_CONSOLE_WRITE,
-        sequence_id=42,
-        payload=b"Hello, Bridge!" * 4,
-    )
-    raw = sample_frame.build()
+    cmd_id = Command.CMD_CONSOLE_WRITE.value
+    seq_id = 42
+    payload = b"Hello, Bridge!" * 4
 
-    results.append(_benchmark("Frame.build()", sample_frame.build, iterations))
-    results.append(_benchmark("Frame.parse()", lambda: Frame.parse(raw), iterations))
+    def _frame_build() -> bytes:
+        return build_frame(command_id=cmd_id, sequence_id=seq_id, payload=payload)
+
+    raw = _frame_build()
+
+    results.append(_benchmark("build_frame()", _frame_build, iterations))
+    results.append(_benchmark("parse_frame()", lambda: parse_frame(raw), iterations))
 
     # --- Protobuf encode/decode (serial payload) ---
     sample_packet = pb.ConsoleWrite(data=b"Hello, Bridge!" * 4)

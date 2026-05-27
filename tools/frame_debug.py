@@ -14,8 +14,9 @@ import serialx
 # [SIL-2] Use direct library functions for framing
 from cobs import cobs
 from mcubridge.protocol import protocol
-from mcubridge.protocol.frame import Frame
+from mcubridge.protocol.frame import build_frame, parse_frame
 from mcubridge.protocol.protocol import DEFAULT_BAUDRATE, FRAME_DELIMITER
+from mcubridge.protocol import mcubridge_pb2 as pb
 
 
 @dataclass(frozen=True)
@@ -92,9 +93,9 @@ def _hex_with_spacing(data: bytes) -> str:
 
 def build_snapshot(command_id: int, payload: bytes) -> FrameDebugSnapshot:
     # Use sequence_id=0 for debug snapshots
-    frame_obj = Frame(command_id=command_id, sequence_id=0, payload=payload)
-    raw_frame = frame_obj.build()
-    crc = int.from_bytes(raw_frame[-protocol.CRC_SIZE :], "big")
+    raw_frame = build_frame(command_id=command_id, sequence_id=0, payload=payload)
+    # CRC is at the end of the frame (little-endian)
+    crc = int.from_bytes(raw_frame[-protocol.CRC_SIZE :], "little")
     encoded_body = cobs.encode(raw_frame)
     encoded_packet = encoded_body + FRAME_DELIMITER
     return FrameDebugSnapshot(
@@ -113,7 +114,7 @@ def build_snapshot(command_id: int, payload: bytes) -> FrameDebugSnapshot:
 
 def _open_serial_device(port: str, baud: int, timeout: float) -> serialx.Serial:
     try:
-        return serialx.serial_for_url(port, baudrate=baud, read_timeout=timeout)
+        return serialx.serial_for_url(port, baudrate=baud, timeout=timeout)
     except serialx.SerialException as exc:
         raise SystemExit(f"Failed to open serial port {port}: {exc}") from exc
 
@@ -140,16 +141,16 @@ def _read_frame(device: serialx.Serial, timeout: float) -> bytes | None:
         buffer.extend(chunk)
 
 
-def _decode_frame(encoded_packet: bytes) -> Frame:
-    return Frame.parse(cobs.decode(encoded_packet))
+def _decode_frame(encoded_packet: bytes) -> pb.RpcEnvelope:
+    return parse_frame(cobs.decode(encoded_packet))
 
 
-def _print_response(frame: Frame) -> None:
+def _print_response(envelope: pb.RpcEnvelope) -> None:
     sys.stdout.write(
         f"[FrameDebug] --- MCU Response ---\n"
-        f"cmd_id=0x{int(frame.command_id):02X}\n"
-        f"seq_id={frame.sequence_id}\n"
-        f"payload_len={len(frame.payload)}\n"
+        f"cmd_id=0x{int(envelope.command_id):02X}\n"
+        f"seq_id={envelope.sequence_id}\n"
+        f"payload_len={len(envelope.payload)}\n"
     )
 
 

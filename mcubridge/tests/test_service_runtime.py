@@ -135,12 +135,15 @@ async def test_handle_mqtt_pin_overflow_reports_error() -> None:
     config = _make_config()
     state = create_runtime_state(config)
     try:
+        from unittest.mock import patch
+        from mcubridge.protocol.structures import PendingPinRequest
+
         mock_serial = AsyncMock(spec=SerialTransport)
         service = BridgeService(config, state, mock_serial)
         state.state = "synchronized"
         state.link_sync_event.set()
         state.pending_pin_request_limit = 1
-        state.pending_digital_reads.append(object())  # type: ignore[arg-type]
+        state.pending_digital_reads.append(PendingPinRequest(pin=13, reply_context=None))
 
         captured: list[QueuedPublish] = []
 
@@ -148,16 +151,15 @@ async def test_handle_mqtt_pin_overflow_reports_error() -> None:
             del reply_context
             captured.append(message)
 
-        service.enqueue_mqtt = capture_enqueue  # type: ignore[method-assign]
+        with patch.object(service, "enqueue_mqtt", side_effect=capture_enqueue):
+            from aiomqtt.message import Message
 
-        from aiomqtt.message import Message
+            message = AsyncMock(spec=Message)
+            message.topic = "br/d/13/read"
+            message.payload = b""
+            message.properties = None
 
-        message = AsyncMock(spec=Message)
-        message.topic = "br/d/13/read"
-        message.payload = b""
-        message.properties = None
-
-        await service.handle_mqtt_message(message)
+            await service.handle_mqtt_message(message)
 
         assert captured
         assert ("bridge-error", "pending-pin-overflow") in captured[0].user_properties

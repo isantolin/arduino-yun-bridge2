@@ -43,14 +43,14 @@ jobs:
       - uses: ./.github/actions/setup-python-tox
         with:
           install-system-deps: 'true'
-      - name: Install Lua Check
-        if: matrix.env == 'lua'
+      - name: Install System Dependencies
+        if: matrix.env == 'lua' || matrix.env == 'cppcheck' || matrix.env == 'typecheck' || matrix.env == 'protocol' || matrix.env == 'lint'
         run: |
-          sudo apt-get update && sudo apt-get install -y luarocks
-          sudo luarocks install luacheck
-      - name: Install Cppcheck
-        if: matrix.env == 'cppcheck'
-        run: sudo apt-get update && sudo apt-get install -y cppcheck
+          sudo apt-get update && sudo apt-get install -y cppcheck luarocks unzip
+          python -m pip install protobuf mypy-protobuf
+          if [ "${{ matrix.env }}" = "lua" ]; then
+            sudo luarocks install luacheck
+          fi
       - name: Install Build Tools
         if: matrix.env == 'arduino'
         run: sudo apt-get update && sudo apt-get install -y g++ make

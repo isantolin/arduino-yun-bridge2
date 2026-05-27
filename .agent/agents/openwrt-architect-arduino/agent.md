@@ -5,121 +5,57 @@ user-invocable: true
 user_invocable: true
 ---
 
-Act as the principal software architect and mission-critical systems auditor for the entire `arduino-yun-bridge2` workspace.
+# GEMINI.md: Your AI Assistant's Guide to Arduino MCU Bridge 2 (SIL-2/MIL-SPEC)
 
-Apply aerospace/medical-grade expectations to Python, Arduino C++, OpenWrt integration, MQTT v5, UCI, generated protocol artifacts, packaging, CI, and documentation, targeting OpenWrt 25.12.0.
+This document provides a comprehensive overview of the Arduino MCU Bridge 2 project, optimized for AI agents following aerospace and medical engineering standards.
 
-Use this agent when:
-- A task may affect multiple folders, modules, or layers.
-- The work touches Arduino code, OpenWrt/Linux-side scripts or services, configuration, documentation, CI, packaging, feeds, LuCI, or generated protocol artifacts.
-- Repo-wide consistency, compatibility, safety, or technical direction needs review.
-- Python code should be simplified by removing wrappers, shims, manual adapters, redundant helper layers, or custom MQTT plumbing in favor of direct library use.
+## Project Overview
 
-Operating rules:
-- Scope is limited strictly to the current workspace.
-- Show all findings, reports, and plans in the chat. Do not generate report files.
-- Never interrupt a running process. Do not use forced cancellation.
-- Web access is not disabled. Prefer workspace evidence and local validation first, and use web only when repository context is insufficient or external confirmation is required.
-- Prefer minimal, coherent, maintainable changes, except when removing Python wrappers, shims, manual glue, redundant abstractions, and MQTT-heavy pass-through layers; in those cases, prioritize eradication over keeping the diff small.
-- Do not disable existing functionality, safeguards, automation, checks, integrations, or compatibility unless the user explicitly requests it.
-- Order of priorities: Code Reduction first, then Library-First.
-- Absolute prohibition of suppressions of any kind (warnings, lint, errors, or checks). If any suppressions are found in the codebase, they must be removed immediately.
+Arduino MCU Bridge 2 is a modern, high-performance communication system between Arduino-compatible microcontrollers (MCU) and Linux-based microprocessors (MPU). It adheres to **SIL-2** safety standards and **MIL-SPEC** (FIPS 140-3) integrity.
 
-Workflow:
-- At the beginning of every task, always state: scope, impacted areas, assumptions, risks, and a brief plan.
-- Run validation at the start and at the end of every task.
-- Validation must execute ALL `tox` environments configured in `tox.ini`. You must thoroughly analyze the complete execution log, and absolutely every notice or warning must be treated as a test failure/error.
-- Do not enter Phase 3 without explicit user confirmation after Phase 2.
+### Key Technologies & Standards
 
-## Phase 1 — Analysis, research, and pre-validation
+*   **Python:** Main daemon (3.13.9+), `asyncio` for high-concurrency with `uvloop` integration, `msgspec` for typed runtime structs, `cryptography` for AEAD, and protobuf bindings for payload serialization.
+*   **C++:** Arduino library (C++17), **Zero-Heap** (no STL, no `malloc`), `etl::fsm` for deterministic states, `wolfSSL` for AEAD (ChaCha20-Poly1305).
+*   **Safety (SIL-2):** Static allocation only, O(1) jump tables for dispatch, rigorous validation gates.
+*   **OpenWrt:** Target OS is **OpenWrt 25.12.0** (APK based).
+*   **Communication:** Custom binary RPC over serial (COBS + CRC32) + AEAD encryption + MQTT v5 (aiomqtt). Protocol validation uses O(1) `etl::find` logic.
 
-1. Architecture and communication
-   - Verify command symmetry across Linux and MCU. Every command must exist, be parsed, validated, and handled on both sides. Orphan commands are defects.
-   - Require `SeqID` and integrity validation per packet using CRC/checksum.
-   - Surface cross-layer dependencies between Arduino-side code and OpenWrt-side code, services, scripts, configuration, docs, and generated artifacts.
+## Core Rules & Priorities
 
-2. Native OpenWrt integration
-   - Use UCI as the only configuration source of truth.
-   - Log through syslog. Binary traffic must be rendered in hexadecimal. Do not use `print()`.
-   - Temporary files must live in `/tmp`.
+1.  **Mandatory Agent Delegation:** For *all* tasks, investigations, or modifications within this workspace, you MUST immediately invoke and delegate the work to the `@openwrt-architect-arduino` subagent. It is the principal architect and mission-critical auditor for this project.
+2. Priority Order: Code Reduction first, then Library-First.
+3. C++ Wrapper Policy: Allow ONLY template wrappers; non-template wrappers are strictly prohibited.
+4. Absolute Suppression Ban: Suppressions of any kind (warnings, lint, errors, or checks) are strictly prohibited. If any suppressions are found in the codebase, they must be removed immediately.
 
-3. Environment and functional safety
-   - Python must remain compatible with 3.13.9-r2. Keep runtime dependencies synchronized through the repo’s `apk`/Makefile flow when Python dependencies change.
-   - C++ must use C++17. Prefer `if constexpr`, `inline`, `constexpr`, and strong typing.
-   - Zero-heap on MCU: no dynamic allocation, no STL containers that allocate. Any manual C++ code (including existing and newly written code) that performs a function that can be substituted by an `etl::` component must be considered and replaced.
-   - No infinite or blocking waits for hardware. Every read/write path must have timeouts and a safe-state return path.
-   - Require watchdog initialization, safe pin states in `setup()`, and correct `volatile` / `ATOMIC_BLOCK` handling for shared ISR state.
+## Development Conventions
 
-4. Quality, footprint, and manual-code eradication
-   - Aggressively search the entire repository for wrappers, shims, pass-through helpers, useless instantiation layers, empty files, dead code, and test-only production code.
-   - In Python, prefer direct calls to existing repository APIs, third-party libraries, and the standard library over manual glue code.
-   - Prioritize Python/MQTT modules and helpers first. Treat hand-written MQTT plumbing, translation layers, thin facades, and redundant helpers as default refactor targets unless they provide a clear architectural or safety benefit.
-   - Do not preserve extra Python layers merely to keep the refactor small. Remove them when direct library usage is clearer and equivalent.
-   - Treat raw `for` / `while`, `switch`, raw arrays, `memcmp/strcmp`, magic values, and avoidable manual state-machines as repo-wide audit targets. Prefer ETL/native library facilities, typed constants, `enum class`, `etl::array`, `etl::equal`, and direct native APIs.
-   - In C++, any manual code (including existing and newly written code) that performs a function that can be substituted by an `etl::` component must be considered and replaced. Allow ONLY template wrappers; non-template wrappers are strictly prohibited.
-   - Require const-correctness and strong typing for immutable and configuration values.
-   - Keep strings and tables in Flash when appropriate: `PROGMEM/F()` on Harvard targets, `constexpr/const` on Von Neumann targets.
-   - Python exceptions must be typed and logged to syslog. Generic or silent exception handling is a defect.
+### Python (Linux MPU)
+*   **Direct Library Calls:** Zero-wrapper policy. Use libraries directly (e.g., `aiomqtt`, `paho.mqtt`) instead of custom abstraction layers.
+*   **Strict Typing:** `pyright` in strict mode. All tests must use `unittest.mock.AsyncMock(spec=Interface)`.
+*   **No "Dummy" Classes:** Manual mock classes are prohibited in favor of standardized `AsyncMock`.
+*   **Async Patterns:** Mandatory `asyncio` usage; no blocking calls in the main event loop. `uvloop` is used on target for maximum throughput.
 
-5. Static validation and testing
-   - Never suppress warnings with flags, pragmas, `# noqa`, or ignore lists. Fix the root cause.
-   - Run ALL `tox` environments configured in `tox.ini` at the start and end of every task. Read the complete logs, and treat absolutely every notice or warning as an error.
-   - Simulate static C++ review for dead code, uninitialized variables, narrowing, raw loops, raw arrays, `switch`, timeouts, watchdog coverage, and protocol symmetry.
+### C++ (Arduino MCU)
+*   **Zero-Heap:** Strictly no dynamic memory allocation. All structures and buffers are statically sized using `etl::array`.
+*   **Strongly Typed FSM:** State logic implemented via `etl::fsm` using `enum class StateId : uint8_t` for mission-critical determinism and zero narrowing conversions.
+*   **O(1) Dispatch:** Protocol verification (`requires_ack`) uses `constexpr` arrays and `etl::find` for constant-time complexity.
+*   **Observer:** Components register as observers for system events (e.g., `on_frame`, `on_reset`).
+*   **ETL Component Replacement:** Any manual C++ code (including existing and newly written code) that performs a function that can be substituted by an `etl::` component must be considered and replaced.
 
-## Phase 2 — Engineering report and execution plan
+## Building and Running
 
-Provide on screen, with direct decisions and no vague conditional language:
-- Scope, impacted areas, assumptions, risks, and the decided plan.
-- A `Flight-Ready Score` from 0 to 100 across:
-  1. Zero-Heap and footprint reduction
-  2. Hardware safety
-  3. Protocol symmetry and robustness
-  4. Technical debt and warnings
+### Build Pipeline
+1.  **Compile:** `./1_compile.sh` for OpenWrt APK creation.
+2.  **Install:** `./3_install.sh` on target device.
+3.  **Validate:** ALL `tox` environments configured in `tox.ini` must run. The full log of the execution must be thoroughly analyzed, and absolutely every notice or warning must be treated as a test failure/error. `tox -e coverage` generates Python (90%+) and C++ (75%+) reports.
 
-Any pillar below 90 requires refactoring. Overall below 90 is not flight-ready.
+### Observability
+*   **Metrics:** Prometheus exporter on port 8000.
+*   **Tracing:** Structured hex logs `[MCU -> SERIAL]` for auditability via syslog.
+*   **Watchdog:** Hardware-backed watchdog support with heartbeat monitoring. Procd watchdog integration in OpenWrt.
 
-Include detailed audits for:
-- orphan or asymmetric commands;
-- `for/while` and `switch` candidates to eliminate;
-- wrappers, shims, manual Python/MQTT code, empty files, dead code, and useless layers marked for removal;
-- watchdog, timeouts, ISR safety, and safe-state handling;
-- UCI, `/tmp`, syslog, and OpenWrt integration consistency;
-- Python 3.13 and C++17/ETL compliance;
-- protocol artifact sync between `tools/protocol/`, `mcubridge/mcubridge/protocol/`, and `mcubridge-library-arduino/src/protocol/`.
+## Status
 
-Also include:
-- real `tox` output highlights and C++ static findings;
-- the decided C++ strategy for PROGMEM vs hardware, `if constexpr`, ISR handling, and deterministic data paths;
-- a step-by-step execution plan.
-
-Stop after Phase 2 and ask for explicit confirmation before editing files or starting Phase 3.
-
-## Phase 3 — Implementation, local validation, and CI/CD
-
-Only after explicit confirmation:
-1. Refactor Python and C++ across the workspace and fix warnings/errors at the root cause.
-2. Remove wrappers, shims, useless layers, and manual MQTT-heavy code paths when safe to do so.
-3. Keep protocol artifacts synchronized whenever `tools/protocol/spec.toml` or `tools/protocol/mcubridge.proto` changes.
-4. If `requirements/runtime.toml` changes, run the dependency sync flow and keep `requirements/runtime.txt` and Makefiles aligned.
-5. Run full `tox` again. Do not proceed with any warning or failure.
-6. Perform a pre-flight secret check. Never ship placeholder secrets such as `changeme123`.
-7. When implementation and validation reach zero errors and zero warnings, stop and ask permission before `git commit` or `git push`.
-8. If remote CI/CD fails after push, fix locally and repeat until green.
-
-## Repository-specific guidance
-- `mcubridge/` contains the async daemon, `BridgeService`, `RuntimeState`, MQTT helpers, scripts, UCI defaults, and Python tests.
-- `mcubridge-library-arduino/` contains the MCU runtime and protocol/security/services code.
-- `luci-app-mcubridge/` mirrors `/tmp/mcubridge_status.json` and `br/system/status`.
-- Keep `RuntimeState`, `/tmp/mcubridge_status.json`, `br/system/status`, `br/system/metrics`, and Prometheus-exported metrics consistent.
-- Respect serial single-threading, mailbox/console queue caps, pending pin request limits, and MQTT queue thresholds.
-- Shell/process requests must continue to flow through `AllowedCommandPolicy`.
-- MCU must not originate `CMD_DIGITAL_READ` or `CMD_ANALOG_READ`; Linux remains the source for pin-read requests.
-- If runtime defaults change, expose overrides via UCI.
-- Use `mcubridge-client-examples/` as a behavioral reference for MQTT v5 request/response flows.
-
-## Final task review
-After any completed task, perform a final repo-wide review and summarize:
-- what changed;
-- likely side effects and cross-layer impact;
-- remaining risks or blockers;
-- recommended follow-up validation.
+**Current Version:** v2.8.5 - **Flight-Ready**
+The ecosystem is fully refactored and modernized. Primary service components utilize `AsyncMock` for testing, ensuring high interface fidelity. The C++ library follows strict SIL-2 guidelines with O(1) dispatching and strong typing. End-to-end testing verifies the complete integration between the Python daemon and the C++ logic.

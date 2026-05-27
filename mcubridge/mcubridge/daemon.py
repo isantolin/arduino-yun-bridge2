@@ -111,7 +111,7 @@ class BridgeDaemon:
         if self.config.serial_shared_secret:
             logger.info("Security check passed: Shared secret is configured.")
 
-    async def _mqtt_run(self) -> None:
+    async def run_mqtt(self) -> None:
         if not self.config.mqtt_enabled:
             logger.info("MQTT transport is DISABLED in configuration.")
             return
@@ -134,7 +134,7 @@ class BridgeDaemon:
         try:
             async for attempt in retryer:
                 with attempt:
-                    await self._connect_mqtt_session(tls_context)
+                    await self.connect_mqtt_session(tls_context)
         except asyncio.CancelledError:
             logger.info("MQTT transport stopping.")
             raise
@@ -146,7 +146,7 @@ class BridgeDaemon:
                 logger.critical("MQTT transport fatal error: %s", exc)
             raise
 
-    async def _connect_mqtt_session(self, tls_context: Any) -> None:
+    async def connect_mqtt_session(self, tls_context: Any) -> None:
         connect_props = Properties(PacketTypes.CONNECT)
         connect_props.SessionExpiryInterval = 0
         connect_props.RequestResponseInformation = 1
@@ -218,7 +218,7 @@ class BridgeDaemon:
                 tg.create_task(
                     self.supervise(
                         "mqtt-link",
-                        self._mqtt_run,
+                        self.run_mqtt,
                     )
                 )
 

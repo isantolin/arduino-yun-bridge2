@@ -14,6 +14,7 @@ from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState
 from mcubridge.transport.serial import SerialTransport
 
+
 @pytest_asyncio.fixture
 async def service_setup(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
@@ -26,6 +27,7 @@ async def service_setup(
     mock_mqtt = AsyncMock()
     service.set_mqtt_client(mock_mqtt)
     return service, runtime_state, serial, mock_mqtt
+
 
 @pytest.mark.asyncio
 async def test_mcu_file_read_handler_asserts_state(
@@ -44,6 +46,7 @@ async def test_mcu_file_read_handler_asserts_state(
     assert serial.send.call_args[0][0] == Command.CMD_FILE_READ_RESP.value
     resp = pb.FileReadResponse.FromString(serial.send.call_args[0][1])
     assert resp.content == b"file_data"
+
 
 @pytest.mark.asyncio
 async def test_mqtt_file_write_asserts_serial(
@@ -69,11 +72,12 @@ async def test_mqtt_file_write_asserts_serial(
     assert req.path == "out.txt"
     assert req.data == b"new_data"
 
+
 @pytest.mark.asyncio
 async def test_mqtt_datastore_put_asserts_cache(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock],
 ) -> None:
-    _, state, _, _ = service_setup
+    service, state, _, _ = service_setup
     state.mark_synchronized()
 
     msg = Message(
@@ -90,11 +94,12 @@ async def test_mqtt_datastore_put_asserts_cache(
     assert state.datastore_cache is not None
     assert state.datastore_cache["my_key"] == b"my_value"
 
+
 @pytest.mark.asyncio
 async def test_mcu_datastore_put_asserts_mqtt(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock],
 ) -> None:
-    service, state, serial, mock_mqtt = service_setup
+    service, state, _, _ = service_setup
     state.mark_synchronized()
     service.enqueue_mqtt = AsyncMock()
 
@@ -106,11 +111,12 @@ async def test_mcu_datastore_put_asserts_mqtt(
     assert "br/datastore/get/mcu_key" in queued_pub.topic_name
     assert queued_pub.payload == b"mcu_val"
 
+
 @pytest.mark.asyncio
 async def test_mcu_mailbox_push_asserts_mqtt(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock],
 ) -> None:
-    service, state, serial, mock_mqtt = service_setup
+    service, state, _, _ = service_setup
     state.mark_synchronized()
     service.enqueue_mqtt = AsyncMock()
 
@@ -122,11 +128,12 @@ async def test_mcu_mailbox_push_asserts_mqtt(
     assert "br/mailbox/incoming" in queued_pub.topic_name
     assert queued_pub.payload == b"mail_data"
 
+
 @pytest.mark.asyncio
 async def test_mqtt_mailbox_write_asserts_serial(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock],
 ) -> None:
-    service, state, serial, mock_mqtt = service_setup
+    service, state, serial, _ = service_setup
     state.mark_synchronized()
 
     msg = Message(
@@ -145,11 +152,12 @@ async def test_mqtt_mailbox_write_asserts_serial(
     req = pb.MailboxPush.FromString(serial.send.call_args[0][1])
     assert req.data == b"incoming_mail"
 
+
 @pytest.mark.asyncio
 async def test_mcu_process_run_asserts_exec(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock],
 ) -> None:
-    service, state, serial, mock_mqtt = service_setup
+    service, state, serial, _ = service_setup
     state.mark_synchronized()
 
     payload = pb.ProcessRunAsync(command="echo hello").SerializeToString()
@@ -168,11 +176,12 @@ async def test_mcu_process_run_asserts_exec(
             resp = pb.ProcessRunAsyncResponse.FromString(serial.send.call_args[0][1])
             assert resp.pid == 1234
 
+
 @pytest.mark.asyncio
 async def test_mqtt_spi_transfer_asserts_serial(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock],
 ) -> None:
-    service, state, serial, mock_mqtt = service_setup
+    service, state, serial, _ = service_setup
     state.mark_synchronized()
 
     msg = Message(
@@ -191,11 +200,12 @@ async def test_mqtt_spi_transfer_asserts_serial(
     req = pb.SpiTransfer.FromString(serial.send.call_args[0][1])
     assert req.data == b"\x01\x02\x03"
 
+
 @pytest.mark.asyncio
 async def test_mqtt_file_host_write_asserts_cache(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock],
 ) -> None:
-    service, state, serial, mock_mqtt = service_setup
+    service, state, _, _ = service_setup
     state.mark_synchronized()
     service.enqueue_mqtt = AsyncMock()
 
@@ -216,11 +226,12 @@ async def test_mqtt_file_host_write_asserts_cache(
     assert "br/file/read/host/test.txt" in queued_pub.topic_name
     assert queued_pub.payload == b"host_data"
 
+
 @pytest.mark.asyncio
 async def test_mqtt_file_host_read_asserts_read(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock],
 ) -> None:
-    service, state, serial, mock_mqtt = service_setup
+    service, state, _, _ = service_setup
     state.mark_synchronized()
     service.enqueue_mqtt = AsyncMock()
 
@@ -243,11 +254,12 @@ async def test_mqtt_file_host_read_asserts_read(
     assert queued_pub.topic_name.endswith("response")
     assert queued_pub.payload == b"disk_data"
 
+
 @pytest.mark.asyncio
 async def test_mqtt_shell_poll_asserts_mqtt(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock],
 ) -> None:
-    service, state, serial, mock_mqtt = service_setup
+    service, state, _, _ = service_setup
     state.mark_synchronized()
     service.enqueue_mqtt = AsyncMock()
 
@@ -262,9 +274,15 @@ async def test_mqtt_shell_poll_asserts_mqtt(
 
     with patch("mcubridge.policy.AllowedCommandPolicy.is_allowed", return_value=True):
         from mcubridge.services.runtime import ProcessOutputBatch
+
         mock_batch = ProcessOutputBatch(
-            status_byte=0, exit_code=0, stdout_chunk=b"out", stderr_chunk=b"err",
-            finished=True, stdout_truncated=False, stderr_truncated=False
+            status_byte=0,
+            exit_code=0,
+            stdout_chunk=b"out",
+            stderr_chunk=b"err",
+            finished=True,
+            stdout_truncated=False,
+            stderr_truncated=False,
         )
         with patch("mcubridge.services.runtime.BridgeService._poll_process", return_value=mock_batch):
             await service.handle_mqtt_message(msg)
@@ -273,11 +291,12 @@ async def test_mqtt_shell_poll_asserts_mqtt(
     queued_pub = service.enqueue_mqtt.call_args[0][0]
     assert "br/sh/poll/123/response" in queued_pub.topic_name
 
+
 @pytest.mark.asyncio
 async def test_mqtt_shell_kill_asserts_mqtt(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock],
 ) -> None:
-    service, state, serial, mock_mqtt = service_setup
+    service, state, _, _ = service_setup
     state.mark_synchronized()
 
     msg = Message(
@@ -294,11 +313,13 @@ async def test_mqtt_shell_kill_asserts_mqtt(
             await service.handle_mqtt_message(msg)
 
     mock_stop.assert_called_once_with(123)
+
+
 @pytest.mark.asyncio
 async def test_mqtt_shell_run_asserts_exec(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock],
 ) -> None:
-    service, state, serial, mock_mqtt = service_setup
+    service, state, _, _ = service_setup
     state.mark_synchronized()
     service.enqueue_mqtt = AsyncMock()
 

@@ -22,6 +22,7 @@ def runtime_config() -> RuntimeConfig:
         bridge_summary_interval=0.0,
     )
 
+
 @pytest.mark.asyncio
 async def test_daemon_supervise_retries_on_failure(runtime_config: RuntimeConfig) -> None:
     daemon = BridgeDaemon(runtime_config)
@@ -31,15 +32,17 @@ async def test_daemon_supervise_retries_on_failure(runtime_config: RuntimeConfig
 
     assert mock_factory.call_count == 2
 
+
 @pytest.mark.asyncio
 async def test_daemon_mqtt_run_disabled(runtime_config: RuntimeConfig) -> None:
     runtime_config.mqtt_enabled = False
     daemon = BridgeDaemon(runtime_config)
 
     # Should return immediately without connecting
-    with patch("mcubridge.daemon.BridgeDaemon._connect_mqtt_session") as mock_connect:
-        await daemon._mqtt_run()
+    with patch("mcubridge.daemon.BridgeDaemon.connect_mqtt_session") as mock_connect:
+        await daemon.run_mqtt()
         mock_connect.assert_not_called()
+
 
 @pytest.mark.asyncio
 async def test_daemon_run_orchestrates_tasks(runtime_config: RuntimeConfig) -> None:
@@ -47,7 +50,7 @@ async def test_daemon_run_orchestrates_tasks(runtime_config: RuntimeConfig) -> N
 
     # We mock the underlying methods to avoid real I/O
     daemon.serial_transport.run = AsyncMock()
-    daemon._mqtt_run = AsyncMock()
+    daemon.run_mqtt = AsyncMock()
 
     async def fail_soon() -> None:
         print("fail_soon started")
@@ -64,7 +67,8 @@ async def test_daemon_run_orchestrates_tasks(runtime_config: RuntimeConfig) -> N
     print("finished daemon.run")
 
     assert daemon.serial_transport.run.called
-    assert daemon._mqtt_run.called
+    assert daemon.run_mqtt.called
+
 
 def test_main_strict_mode_when_default_secret() -> None:
     # Test that the daemon disables MQTT when the default secret is used
@@ -79,6 +83,7 @@ def test_main_strict_mode_when_default_secret() -> None:
                     assert mock_daemon_class.called
                     used_config = mock_daemon_class.call_args[0][0]
                     assert used_config.mqtt_enabled is False
+
 
 def test_main_aborts_on_crypto_failure() -> None:
     mock_config = RuntimeConfig()

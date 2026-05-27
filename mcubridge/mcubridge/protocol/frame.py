@@ -102,9 +102,7 @@ def build_frame(
     return body + CRC_STRUCT.pack(_frame_crc(body))
 
 
-def parse_frame(
-    raw_frame_buffer: bytes | bytearray | memoryview, session_key: bytes | None = None
-) -> pb.RpcEnvelope:
+def parse_frame(raw_frame_buffer: bytes | bytearray | memoryview, session_key: bytes | None = None) -> pb.RpcEnvelope:
     """Parses binary buffer directly into a Protobuf envelope. [SIL-2]"""
     buf = bytes(raw_frame_buffer)
     if len(buf) < _CRC_SIZE:

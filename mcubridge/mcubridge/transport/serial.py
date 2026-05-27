@@ -35,7 +35,6 @@ from mcubridge.config.const import (
     SERIAL_MIN_ACK_TIMEOUT,
 )
 from mcubridge.protocol import protocol
-from mcubridge.protocol.frame import Frame
 from mcubridge.protocol.protocol import (
     ACK_ONLY_COMMANDS,
     Status,
@@ -211,25 +210,27 @@ class SerialTransport:
                 break
 
     async def _process_packet(self, encoded_packet: bytes | memoryview) -> None:
-        """Processes a packet from the serial stream. [FLATTENED]"""
+        """Processes a packet from the serial stream. [FLATTENED] [SIL-2]"""
+        from mcubridge.protocol.frame import parse_frame
+
         try:
             # Ensure we have bytes for cobs.decode
             raw_bytes = bytes(encoded_packet) if isinstance(encoded_packet, memoryview) else encoded_packet
             decoded = cobs.decode(raw_bytes)
-            frame = Frame.parse(decoded, self.state.link_session_key if self.state.is_synchronized else None)
+            envelope = parse_frame(decoded, self.state.link_session_key if self.state.is_synchronized else None)
         except (cobs.DecodeError, ValueError, TypeError, RuntimeError) as exc:
             logger.warning("[SERIAL <- MCU] [MALFORMED]: %s", exc)
             self.state.serial_decode_errors += 1
             await self._check_baudrate_fallback()
             return
 
+        cmd_id, seq_id, payload = envelope.command_id, envelope.sequence_id, envelope.payload
+
         if self._negotiating and self._negotiation_future and not self._negotiation_future.done():
-            if frame.command_id == protocol.Command.CMD_SET_BAUDRATE_RESP.value:
+            if cmd_id == protocol.Command.CMD_SET_BAUDRATE_RESP.value:
                 self._switch_local_baudrate(self.config.serial_baud)
                 self._negotiation_future.set_result(True)
                 return
-
-        cmd_id, seq_id, payload = frame.command_id, frame.sequence_id, frame.payload
 
         # Anti-replay validation
         is_excluded = (protocol.STATUS_CODE_MIN <= cmd_id <= protocol.STATUS_CODE_MAX) or (
@@ -238,7 +239,7 @@ class SerialTransport:
         if self.state.is_synchronized and not is_excluded:
             from mcubridge.security.security import validate_nonce_counter
 
-            ok, new_counter = validate_nonce_counter(frame.nonce, self.state.link_last_nonce_counter)
+            ok, new_counter = validate_nonce_counter(envelope.nonce, self.state.link_last_nonce_counter)
             if not ok:
                 logger.warning("Anti-replay validation failed")
                 return
@@ -357,9 +358,18 @@ class SerialTransport:
             nonce, new_counter = generate_nonce_with_counter(self.state.link_nonce_counter)
             self.state.link_nonce_counter = new_counter
 
-        frame = Frame(command_id=command_id, sequence_id=seq_id, payload=payload, nonce=nonce)
+        from mcubridge.protocol.frame import build_frame
+
         encoded = (
-            cobs.encode(frame.build(self.state.link_session_key if self.state.is_synchronized else None))
+            cobs.encode(
+                build_frame(
+                    command_id=command_id,
+                    sequence_id=seq_id,
+                    payload=payload,
+                    nonce=nonce,
+                    session_key=self.state.link_session_key if self.state.is_synchronized else None,
+                )
+            )
             + protocol.FRAME_DELIMITER
         )
 

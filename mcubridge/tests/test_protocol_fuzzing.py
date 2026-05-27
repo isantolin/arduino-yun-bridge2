@@ -2,7 +2,7 @@ import random
 
 import pytest
 from cobs import cobs
-from mcubridge.protocol.frame import Frame
+from mcubridge.protocol.frame import parse_frame
 from mcubridge.protocol.protocol import CRC_COVERED_HEADER_SIZE
 from tests.test_constants import TEST_RANDOM_SEED
 
@@ -12,7 +12,7 @@ FUZZ_ITERATIONS = 5000
 
 @pytest.mark.fuzz
 def test_frame_parsing_resilience_to_fuzzing():
-    """Fuzzing test to ensure Frame.parse never crashes with unhandled exceptions."""
+    """Fuzzing test to ensure parse_frame never crashes with unhandled exceptions."""
     random.seed(TEST_RANDOM_SEED)
 
     for i in range(FUZZ_ITERATIONS):
@@ -24,13 +24,13 @@ def test_frame_parsing_resilience_to_fuzzing():
         try:
             # We attempt to parse raw data directly as if it was decoded from COBS
             # (Testing the internal Frame structure parser)
-            _ = Frame.parse(raw_data)
+            _ = parse_frame(raw_data)
         except (ValueError, TypeError, LookupError, RuntimeError, AttributeError):
             # This is expected behavior for garbage data
             pass
         except BaseException as exc:
             message = (
-                f"Frame.parse crashed on iteration {i} with unhandled exception: "
+                f"parse_frame crashed on iteration {i} with unhandled exception: "
                 f"{type(exc).__name__}: {exc}. Data hex: {raw_data.hex()}"
             )
             pytest.fail(message)
@@ -65,7 +65,7 @@ def test_frame_header_parsing_resilience():
         raw_data = random.randbytes(length)
 
         try:
-            _ = Frame.parse(raw_data)
+            _ = parse_frame(raw_data)
         except (ValueError, TypeError, LookupError):
             pass
         except BaseException as exc:

@@ -9,7 +9,7 @@ from mcubridge.transport.serial import SerialTransport
 from mcubridge.services.runtime import BridgeService
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.state.context import create_runtime_state, RuntimeState
-from mcubridge.protocol.frame import Frame
+from mcubridge.protocol.frame import build_frame
 
 
 @pytest.fixture
@@ -31,8 +31,8 @@ async def test_serial_transport_loops_final_v3(transport_setup: Any) -> None:
     mock_writer.close = __import__("unittest").mock.Mock()
     transport.writer = mock_writer
 
-    frame = Frame(command_id=0x01, sequence_id=1, payload=b"ok")
-    encoded = cobs.encode(frame.build()) + b"\x00"
+    frame_bytes = build_frame(command_id=0x01, sequence_id=1, payload=b"ok")
+    encoded = cobs.encode(frame_bytes) + b"\x00"
 
     mock_reader.read.side_effect = [
         encoded[:2],

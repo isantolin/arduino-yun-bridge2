@@ -6,7 +6,7 @@ import pytest
 from cobs import cobs
 from mcubridge.protocol import protocol
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol.frame import Frame
+from mcubridge.protocol.frame import build_frame
 from mcubridge.protocol.protocol import Command
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
@@ -46,7 +46,7 @@ async def test_process_packet_crc_mismatch_reports_crc(
         service = BridgeService(config, state, AsyncMock())
         transport = SerialTransport(config, state, service)
 
-        # Create an invalid frame manually (e.g. version mismatch to trigger ValueError in Frame.parse)
+        # Create an invalid frame manually (e.g. version mismatch to trigger ValueError in parse_frame)
         raw = b"\xff" + b"x" * 20
 
         def mock_decode(data: Any) -> bytes:
@@ -71,7 +71,7 @@ async def test_process_packet_success_dispatches() -> None:
 
         service.handle_mcu_frame = AsyncMock()
 
-        frame_bytes = Frame(command_id=Command.CMD_CONSOLE_WRITE.value, sequence_id=0, payload=b"hi").build()
+        frame_bytes = build_frame(command_id=Command.CMD_CONSOLE_WRITE.value, sequence_id=0, payload=b"hi")
         encoded = cobs.encode(frame_bytes)
         transport = SerialTransport(config, state, service)
         await getattr(transport, "_process_packet")(encoded)
@@ -107,11 +107,11 @@ async def test_process_packet_negotiation_ack_switches_local_baudrate() -> None:
         setattr(transport, "_negotiation_future", asyncio.get_running_loop().create_future())
 
         encoded = cobs.encode(
-            Frame(
+            build_frame(
                 command_id=Command.CMD_SET_BAUDRATE_RESP.value,
                 sequence_id=0,
                 payload=b"",
-            ).build()
+            )
         )
         await getattr(transport, "_process_packet")(encoded)
 

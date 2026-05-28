@@ -568,7 +568,9 @@ cd "$SDK_DIR" || { echo "[ERROR] Cannot enter SDK dir $SDK_DIR"; exit 1; }
 # Build the SDK's host Python first so we can install build backends into it.
 # python3-typer needs pdm.backend, python3-cryptography needs maturin, python3-uvloop needs Cython.
 echo "[BUILD] Pre-building SDK host Python3..."
-make package/feeds/packages/python3/host/compile -j$(nproc) 2>&1 | tail -5 || true
+set -o pipefail
+make package/feeds/packages/python3/host/compile -j$(nproc) 2>&1 | tail -5
+set +o pipefail
 
 _SDK_PY="$SDK_DIR/staging_dir/hostpkg/bin/python3"
 if [ -x "$_SDK_PY" ]; then

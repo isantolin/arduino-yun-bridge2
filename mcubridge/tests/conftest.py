@@ -10,6 +10,7 @@ import logging
 import os
 import shutil
 import sys
+from asyncio import events as asyncio_events
 from collections.abc import Iterator
 from pathlib import Path
 from typing import cast
@@ -66,6 +67,11 @@ structlog.configure(
 _HAS_PYTEST_ASYNCIO = importlib.util.find_spec("pytest_asyncio") is not None
 
 
+def _get_event_loop_policy() -> object:
+    policy_getter = getattr(asyncio_events, "_get_event_loop_policy", asyncio.get_event_loop_policy)
+    return policy_getter()
+
+
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "asyncio: mark test to run on asyncio loop")
 
@@ -104,18 +110,14 @@ def pytest_pyfunc_call(pyfuncitem: pytest.Function) -> bool | None:
 def force_gc_cleanup():
     """Ensure all resources are released after each test to reach zero warnings."""
     import gc
-    import warnings
 
     yield
     # Close any stale event loop left by asyncio.run() or explicit set_event_loop
     # to prevent ResourceWarning from leaked self-pipe sockets across tests.
     #
-    # Python 3.13 deprecated get_event_loop() when no current loop exists.
-    # Access the policy's thread-local directly to avoid triggering the
-    # DeprecationWarning that filterwarnings=["error"] would promote to fatal.
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", category=DeprecationWarning, message=".*get_event_loop_policy.*")
-        policy = asyncio.get_event_loop_policy()
+    # Access the policy's thread-local directly to avoid deprecated public
+    # helpers that emit warnings under Python 3.13+.
+    policy = _get_event_loop_policy()
     loop = getattr(getattr(policy, "_local", None), "_loop", None)
     if loop is not None and not loop.is_closed():
         loop.close()
@@ -123,9 +125,7 @@ def force_gc_cleanup():
     # Collect garbage to finalize any objects that hold OS resources.
     # The diskcache ResourceWarning was fixed at the source (RuntimeState.__del__
     # + cleanup() resets mailbox queues to plain deques), so no suppression needed.
-    with warnings.catch_warnings():
-        warnings.filterwarnings("ignore", category=pytest.PytestUnraisableExceptionWarning)
-        gc.collect()
+    gc.collect()
 
 
 # [TEST FIX] Global absolute path for temporary test data.

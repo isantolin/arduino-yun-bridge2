@@ -58,11 +58,28 @@ jobs:
         if: matrix.env == 'lint'
         run: |
           echo "Checking for hardcoded secrets..."
-          if grep -r "serial_shared_secret.*=.*['\"][^'\"]\{8,\}['\"]" \
-               --include="mcubridge" mcubridge/uci-defaults/ 2>/dev/null | \
-               grep -v "6368616e67656d65313233" | grep -v '""' | grep -v "''"; then
-            echo "::error::Hardcoded secret found!"
-            exit 1
+          set +e
+          secret_scan_output=$(grep -r -n "serial_shared_secret.*=.*['\"][^'\"]\{8,\}['\"]" mcubridge/uci-defaults/)
+          secret_scan_status=$?
+          set -e
+          if [ "$secret_scan_status" -gt 1 ]; then
+            echo "::error::Failed to scan mcubridge/uci-defaults for hardcoded secrets."
+            exit "$secret_scan_status"
+          fi
+          if [ "$secret_scan_status" -eq 0 ]; then
+            set +e
+            filtered_secret_output=$(printf '%s\n' "$secret_scan_output" | grep -v "6368616e67656d65313233" | grep -v '""' | grep -v "''")
+            filtered_secret_status=$?
+            set -e
+            if [ "$filtered_secret_status" -gt 1 ]; then
+              echo "::error::Failed to filter secret scan results."
+              exit "$filtered_secret_status"
+            fi
+            if [ "$filtered_secret_status" -eq 0 ]; then
+              printf '%s\n' "$filtered_secret_output"
+              echo "::error::Hardcoded secret found!"
+              exit 1
+            fi
           fi
           echo "✅ No hardcoded secrets"
       - name: Run Tox Environment

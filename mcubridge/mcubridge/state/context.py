@@ -67,6 +67,16 @@ def _make_mqtt_publish_queue(maxsize: int = 0) -> asyncio.Queue[QueuedPublish]:
     return cast(asyncio.Queue[QueuedPublish], asyncio.Queue(maxsize=normalized))
 
 
+def _close_diskcache_resource(resource: Any) -> None:
+    cache = getattr(resource, "cache", resource)
+    local = getattr(cache, "_local", None)
+    connection = getattr(local, "con", None)
+    if connection is not None:
+        connection.close()
+        delattr(local, "con")
+    cache.close()
+
+
 __all__: Final[tuple[str, ...]] = (
     "McuCapabilities",
     "RuntimeState",
@@ -285,15 +295,15 @@ class RuntimeState(msgspec.Struct, weakref=True):
 
         if hasattr(self.mailbox_queue, "cache"):
             with _sup:
-                cast(Any, self.mailbox_queue).cache.close()
+                _close_diskcache_resource(self.mailbox_queue)
         if hasattr(self.mailbox_incoming_queue, "cache"):
             with _sup:
-                cast(Any, self.mailbox_incoming_queue).cache.close()
+                _close_diskcache_resource(self.mailbox_incoming_queue)
 
         # [SIL-2] Resource Lifecycle: Close persistent queues before replacement.
         if self.datastore_cache is not None:
             with _sup:
-                cast(Any, self.datastore_cache).close()
+                _close_diskcache_resource(self.datastore_cache)
             self.datastore_cache = None
 
         # Re-initialize transient queues
@@ -544,15 +554,13 @@ class RuntimeState(msgspec.Struct, weakref=True):
         # 1. Nullify high-level wrappers first to drop references to the underlying caches.
         if hasattr(self.mailbox_queue, "cache"):
             with _sup:
-                mq: Any = self.mailbox_queue
-                mq.cache.close()
-                mq.cache = None
+                _close_diskcache_resource(self.mailbox_queue)
+                cast(Any, self.mailbox_queue).cache = None
 
         if hasattr(self.mailbox_incoming_queue, "cache"):
             with _sup:
-                miq: Any = self.mailbox_incoming_queue
-                miq.cache.close()
-                miq.cache = None
+                _close_diskcache_resource(self.mailbox_incoming_queue)
+                cast(Any, self.mailbox_incoming_queue).cache = None
 
         self.mailbox_queue = collections.deque()
         self.mailbox_incoming_queue = collections.deque()
@@ -561,7 +569,7 @@ class RuntimeState(msgspec.Struct, weakref=True):
         # 2. Explicitly close and nullify persistent caches.
         if self.datastore_cache is not None:
             with _sup:
-                cast(Any, self.datastore_cache).close()
+                _close_diskcache_resource(self.datastore_cache)
             self.datastore_cache = None
 
         # 3. Drain and reset the MQTT queue.

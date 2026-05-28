@@ -4,7 +4,6 @@ source = mcubridge
 omit =
     *_pb2.py
     *_pb2.pyi
-    mcubridge/scripts/*
 
 [report]
 show_missing = True
@@ -14,4 +13,3 @@ precision = 2
 omit =
     *_pb2.py
     *_pb2.pyi
-    mcubridge/scripts/*

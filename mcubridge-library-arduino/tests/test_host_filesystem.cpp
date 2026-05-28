@@ -33,7 +33,7 @@ void test_hal_roundtrip() {
   TEST_ASSERT_EQUAL(payload.size(), res_r->bytes_read);
   TEST_ASSERT(etl::equal(payload.begin(), payload.end(), read_buffer.begin()));
 
-  (void)bridge::hal::removeFile(path);
+  TEST_ASSERT(bridge::hal::removeFile(path).has_value());
 }
 
 void test_hal_chunked_read_roundtrip() {
@@ -65,7 +65,7 @@ void test_hal_chunked_read_roundtrip() {
   TEST_ASSERT(etl::equal(read_payload.begin(), read_payload.begin() + 62, first_chunk.begin()));
   TEST_ASSERT(etl::equal(read_payload.begin() + 62, read_payload.end(), second_chunk.begin()));
 
-  (void)bridge::hal::removeFile(path);
+  TEST_ASSERT(bridge::hal::removeFile(path).has_value());
 }
 
 void test_filesystem_api_write() {
@@ -103,12 +103,12 @@ void test_filesystem_on_read() {
   reset_bridge_core(Bridge, stream);
   const etl::string_view path = "on_read.bin";
   etl::array<uint8_t, 1> data = {0xAA};
-  (void)bridge::hal::writeFile(path, etl::span<const uint8_t>(data.data(), data.size()));
+  TEST_ASSERT(bridge::hal::writeFile(path, etl::span<const uint8_t>(data.data(), data.size())).has_value());
 
   rpc::payload::FileRead msg;
   strncpy(msg.path, path.data(), sizeof(msg.path));
   FileSystem._onRead(msg);
-  (void)bridge::hal::removeFile(path);
+  TEST_ASSERT(bridge::hal::removeFile(path).has_value());
 }
 
 void test_filesystem_on_remove() {

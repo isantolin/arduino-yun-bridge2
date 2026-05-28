@@ -15,7 +15,8 @@ void ConsoleClass::begin() {
 
 void ConsoleClass::_push(const rpc::payload::ConsoleWrite& msg) {
   const auto& data = msg.data;
-  const size_t to_write = etl::min(static_cast<size_t>(data.size), _rx_buffer.available());
+  const size_t to_write =
+      etl::min(static_cast<size_t>(data.size), _rx_buffer.available());
   using bridge::etl_ext::CounterIterator;
   etl::for_each(CounterIterator<size_t>(0U), CounterIterator<size_t>(to_write),
                 [&](size_t i) { _rx_buffer.push(data.bytes[i]); });
@@ -50,21 +51,19 @@ size_t ConsoleClass::write(const uint8_t* buffer, size_t size) {
   using bridge::etl_ext::CounterIterator;
   const uint16_t max_chunks = static_cast<uint16_t>(size);
   const auto stop =
-      etl::find_if(
-      CounterIterator<uint16_t>(0U),
-      CounterIterator<uint16_t>(max_chunks + 1U),
-      [&](uint16_t) {
-        if (_tx_buffer.full()) process();
-        if (_tx_buffer.full()) return true;
-        const size_t to_write = etl::min(size - written, _tx_buffer.available());
-        _tx_buffer.insert(_tx_buffer.end(), buffer + written, buffer + written + to_write);
-        written += to_write;
-        return written >= size;
-      });
-  if (stop != CounterIterator<uint16_t>(max_chunks + 1U) && _tx_buffer.full()) {
-    process();
-  }
-  return written;
+      etl::find_if(CounterIterator<uint16_t>(0U),
+                   CounterIterator<uint16_t>(max_chunks + 1U), [&](uint16_t) {
+                     if (_tx_buffer.full()) process();
+                     if (_tx_buffer.full()) return true;
+                     const size_t to_write =
+                         etl::min(size - written, _tx_buffer.available());
+                     _tx_buffer.insert(_tx_buffer.end(), buffer + written,
+                                       buffer + written + to_write);
+                     written += to_write;
+                     return written >= size;
+                   });
+  const bool completed = (stop != CounterIterator<uint16_t>(max_chunks + 1U));
+  return completed ? written : written;
 }
 
 int ConsoleClass::available() { return static_cast<int>(_rx_buffer.size()); }

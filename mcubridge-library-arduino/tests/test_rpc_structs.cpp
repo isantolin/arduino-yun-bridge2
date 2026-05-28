@@ -29,7 +29,7 @@ void test_chaos_decode() {
   uint8_t buffer[2] = {0x91, 0xFF};  // Junk
   T p = {};
   pb_istream_t istream = pb_istream_from_buffer(buffer, 2);
-  (void)rpc::Payload::decode(&istream, p);  // Should fail gracefully
+  TEST_ASSERT_FALSE(rpc::Payload::decode(&istream, p));
 }
 
 void test_all_structs_roundtrip() {

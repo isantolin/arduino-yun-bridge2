@@ -12,9 +12,7 @@
 
 class SPISettings {
 public:
-    SPISettings(uint32_t clock, uint8_t bitOrder, uint8_t dataMode) {
-        (void)clock; (void)bitOrder; (void)dataMode;
-    }
+    SPISettings(uint32_t, uint8_t, uint8_t) {}
     SPISettings() {}
 };
 
@@ -22,7 +20,7 @@ class SPIClass {
 public:
     void begin() {}
     void end() {}
-    void beginTransaction(SPISettings settings) { (void)settings; }
+    void beginTransaction(SPISettings) {}
     void endTransaction() {}
     uint8_t transfer(uint8_t data) {
         if (bridge::test::fault::consume(

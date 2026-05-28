@@ -43,7 +43,7 @@ void test_bridge_handshake() {
 
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> pl_buf;
   pb_ostream_t pbos = pb_ostream_from_buffer(pl_buf.data(), pl_buf.size());
-  (void)rpc::Payload::encode(&pbos, msg);
+  TEST_ASSERT_TRUE(rpc::Payload::encode(&pbos, msg));
 
   // 2. Build LinkSync frame using FrameBuilder
   etl::array<uint8_t, rpc::MAX_FRAME_SIZE> frame_raw;
@@ -86,7 +86,7 @@ void test_bridge_process_rx() {
 
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> pl_buf;
   pb_ostream_t pbos = pb_ostream_from_buffer(pl_buf.data(), pl_buf.size());
-  (void)rpc::Payload::encode(&pbos, msg);
+  TEST_ASSERT_TRUE(rpc::Payload::encode(&pbos, msg));
 
   etl::array<uint8_t, rpc::MAX_FRAME_SIZE> frame_raw;
   etl::array<uint8_t, rpc::AEAD_NONCE_SIZE> frame_nonce = {};
@@ -116,7 +116,7 @@ void test_bridge_dedup_console_write() {
 
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> pl_buf;
   pb_ostream_t pbos = pb_ostream_from_buffer(pl_buf.data(), pl_buf.size());
-  (void)rpc::Payload::encode(&pbos, msg);
+  TEST_ASSERT_TRUE(rpc::Payload::encode(&pbos, msg));
 
   etl::array<uint8_t, rpc::MAX_FRAME_SIZE> frame_raw;
   etl::array<uint8_t, rpc::AEAD_NONCE_SIZE> frame_nonce = {};
@@ -147,7 +147,7 @@ void test_bridge_status_ack() {
   ba.setSynchronized();
 
   // 1. Trigger a command that requires ACK
-  (void)Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, 77);
+  TEST_ASSERT_TRUE(Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, 77));
   TEST_ASSERT_TRUE(ba.isAwaitingAck());
 
   // 2. Build STATUS_ACK frame targeting sequence ID 77
@@ -156,7 +156,7 @@ void test_bridge_status_ack() {
   
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> pl_buf;
   pb_ostream_t pbos = pb_ostream_from_buffer(pl_buf.data(), pl_buf.size());
-  (void)rpc::Payload::encode(&pbos, p);
+  TEST_ASSERT_TRUE(rpc::Payload::encode(&pbos, p));
 
   etl::array<uint8_t, rpc::MAX_FRAME_SIZE> frame_raw;
   etl::array<uint8_t, rpc::AEAD_NONCE_SIZE> frame_nonce = {};

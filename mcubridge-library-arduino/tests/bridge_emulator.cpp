@@ -19,8 +19,7 @@ Stream* g_arduino_stream_delegate = nullptr;
 
 static volatile sig_atomic_t g_running = 1;
 
-void signal_handler(int signum) {
-  (void)signum;
+void signal_handler(int) {
   g_running = 0;
 }
 
@@ -37,9 +36,7 @@ unsigned long millis() {
 
 void delay(unsigned long ms) { usleep(ms * 1000); }
 
-int main(int argc, char** argv) {
-  (void)argc;
-  (void)argv;
+int main(int, char**) {
   // Disable buffering for stdin/stdout to ensure real-time serial behavior
   setvbuf(stdin, NULL, _IONBF, 0);
   setvbuf(stdout, NULL, _IONBF, 0);

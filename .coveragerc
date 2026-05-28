@@ -1,9 +1,6 @@
 [run]
 branch = True
 source = mcubridge/mcubridge
-omit =
-    *_pb2.py
-    *_pb2.pyi
 
 [report]
 show_missing = True

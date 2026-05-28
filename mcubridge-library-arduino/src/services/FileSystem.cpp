@@ -14,7 +14,9 @@ constexpr size_t kReadChunkSize = 64U;
 #if defined(BRIDGE_HOST_TEST)
 #define BRIDGE_FS_DEBUG(...) fprintf(stderr, __VA_ARGS__)
 #else
-#define BRIDGE_FS_DEBUG(...) ((void)0)
+#define BRIDGE_FS_DEBUG(...) \
+  do {                       \
+  } while (false)
 #endif
 
 void send_read_response(etl::span<const uint8_t> content) {
@@ -96,8 +98,7 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
   const etl::string_view path(msg.path);
 
   using bridge::etl_ext::CounterIterator;
-  const auto stop =
-      etl::find_if(
+  const auto stop = etl::find_if(
       CounterIterator<uint16_t>(0U),
       CounterIterator(bridge::config::FILE_MAX_READ_CHUNKS),
       [&](uint32_t chunk_idx) {

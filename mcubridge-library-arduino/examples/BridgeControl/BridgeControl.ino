@@ -33,8 +33,7 @@ void setup() {
     Console.println(frame.envelope.command_id, HEX);
   }));
 
-  Bridge.onStatus(BridgeClass::StatusHandler::create([](rpc::StatusCode status_code, etl::span<const uint8_t> payload) {
-    (void)payload;
+  Bridge.onStatus(BridgeClass::StatusHandler::create([](rpc::StatusCode status_code, etl::span<const uint8_t>) {
     // Solo imprimir errores graves para evitar saturación
     if (status_code != rpc::StatusCode::STATUS_OK) {
       Console.print(F("Error de Estado: 0x"));

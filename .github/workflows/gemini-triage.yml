@@ -26,9 +26,21 @@ jobs:
     permissions:
       contents: 'read'
       id-token: 'write'
-      issues: 'read'
-      pull-requests: 'read'
+      issues: 'write'
+      pull-requests: 'write'
     steps:
+      - name: 'Mint identity token'
+        id: 'mint_identity_token'
+        if: |-
+          ${{ vars.APP_ID }}
+        uses: 'actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf' # ratchet:actions/create-github-app-token@v2
+        with:
+          app-id: '${{ vars.APP_ID }}'
+          private-key: '${{ secrets.APP_PRIVATE_KEY }}'
+          permission-contents: 'read'
+          permission-issues: 'write'
+          permission-pull-requests: 'write'
+
       - name: 'Get repository labels'
         id: 'get_labels'
         uses: 'actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd' # ratchet:actions/github-script@v8.0.0
@@ -61,7 +73,7 @@ jobs:
           ${{ steps.get_labels.outputs.available_labels != '' }}
         uses: 'google-github-actions/run-gemini-cli@v0' # ratchet:exclude
         env:
-          GITHUB_TOKEN: '' # Do NOT pass any auth tokens here since this runs on untrusted inputs
+          GITHUB_TOKEN: '${{ steps.mint_identity_token.outputs.token || secrets.GITHUB_TOKEN || github.token }}'
           ISSUE_TITLE: '${{ github.event.issue.title }}'
           ISSUE_BODY: '${{ github.event.issue.body }}'
           AVAILABLE_LABELS: '${{ steps.get_labels.outputs.available_labels }}'
@@ -90,6 +102,43 @@ jobs:
                 "enabled": true,
                 "target": "local",
                 "outfile": ".gemini/telemetry.log"
+              },
+              "mcpServers": {
+                "github": {
+                  "command": "docker",
+                  "args": [
+                    "run",
+                    "-i",
+                    "--rm",
+                    "-e",
+                    "GITHUB_PERSONAL_ACCESS_TOKEN",
+                    "ghcr.io/github/github-mcp-server:v1.0.5"
+                  ],
+                  "includeTools": [
+                    "add_issue_comment",
+                    "issue_read",
+                    "list_issues",
+                    "search_issues",
+                    "create_pull_request",
+                    "pull_request_read",
+                    "list_pull_requests",
+                    "search_pull_requests",
+                    "create_branch",
+                    "create_or_update_file",
+                    "delete_file",
+                    "fork_repository",
+                    "get_commit",
+                    "get_file_contents",
+                    "list_commits",
+                    "push_files",
+                    "search_code",
+                    "add_comment_to_pending_review",
+                    "pull_request_review_write"
+                  ],
+                  "env": {
+                    "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+                  }
+                }
               },
               "tools": {
                 "core": [

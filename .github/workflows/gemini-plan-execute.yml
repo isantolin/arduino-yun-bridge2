@@ -110,7 +110,9 @@ jobs:
                     "get_file_contents",
                     "list_commits",
                     "push_files",
-                    "search_code"
+                    "search_code",
+                    "add_comment_to_pending_review",
+                    "pull_request_review_write"
                   ],
                   "env": {
                     "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"

@@ -1,10 +1,10 @@
 #include "services/Process.h"
 
-#include <etl/algorithm.h>
 #include <etl/array.h>
 #include <etl/string.h>
 
 #include "Bridge.h"
+#include "protocol/pb_field_helpers.h"
 
 #if BRIDGE_ENABLE_PROCESS
 
@@ -55,12 +55,8 @@ void ProcessClass::runAsync(etl::string_view cmd,
   }
 
   rpc::payload::ProcessRunAsync p;
-  const size_t c_copy = etl::min(static_cast<size_t>(command_buffer.size()),
-                                 sizeof(p.command) - 1U);
-  if (c_copy > 0U) {
-    etl::copy_n(command_buffer.begin(), c_copy, p.command);
-  }
-  p.command[c_copy] = '\0';
+  rpc::pb_field::copy_string_view_trunc(
+      etl::string_view(command_buffer.data(), command_buffer.size()), p.command);
 
   const bool send_ok = Bridge.send(rpc::CommandId::CMD_PROCESS_RUN_ASYNC, 0, p);
   if (!send_ok) {
@@ -129,8 +125,8 @@ void ProcessClass::_onPollResponse(
   if (pending.handler.is_valid()) {
     pending.handler(
         static_cast<rpc::StatusCode>(msg.status), msg.exit_code,
-        etl::span<const uint8_t>(msg.stdout_data.bytes, msg.stdout_data.size),
-        etl::span<const uint8_t>(msg.stderr_data.bytes, msg.stderr_data.size));
+        rpc::pb_field::bytes_field_as_span(msg.stdout_data),
+        rpc::pb_field::bytes_field_as_span(msg.stderr_data));
   }
 }
 

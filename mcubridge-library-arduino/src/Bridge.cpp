@@ -12,6 +12,7 @@
 #include <wolfssl/wolfcrypt/types.h>
 
 #include "hal/progmem_compat.h"
+#include "protocol/pb_field_helpers.h"
 #include "services/Console.h"
 #include "services/DataStore.h"
 #include "services/FileSystem.h"
@@ -338,11 +339,7 @@ void BridgeClass::emitStatus(rpc::StatusCode code,
 
 void BridgeClass::emitStatus(rpc::StatusCode code, etl::string_view msg) {
   rpc_pb_GenericResponse resp = rpc_pb_GenericResponse_init_default;
-  const size_t to_copy = etl::min(msg.size(), sizeof(resp.message) - 1U);
-  if (to_copy > 0U) {
-    etl::copy_n(msg.begin(), to_copy, resp.message);
-  }
-  resp.message[to_copy] = '\0';
+  rpc::pb_field::copy_string_view_trunc(msg, resp.message);
   if (!send(code, 0, resp)) {
     enterSafeState();
   }
@@ -364,12 +361,8 @@ void BridgeClass::emitStatus(rpc::StatusCode code,
   str.resize(etl::strlen(str.data()));
 
   rpc_pb_GenericResponse resp = rpc_pb_GenericResponse_init_default;
-  const size_t to_copy =
-      etl::min(static_cast<size_t>(str.length()), sizeof(resp.message) - 1U);
-  if (to_copy > 0U) {
-    etl::copy_n(str.begin(), to_copy, resp.message);
-  }
-  resp.message[to_copy] = '\0';
+  rpc::pb_field::copy_string_view_trunc(
+      etl::string_view(str.data(), str.size()), resp.message);
   if (!send(code, 0, resp)) {
     enterSafeState();
   }
@@ -698,11 +691,8 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
   }
   const auto& msg = res.value();
   rpc::payload::LinkSync resp = {};
-  const size_t n_size =
-      etl::min(static_cast<size_t>(msg.nonce.size),
-               static_cast<size_t>(rpc::RPC_HANDSHAKE_NONCE_LENGTH));
-  etl::copy_n(msg.nonce.bytes, n_size, resp.nonce.bytes);
-  resp.nonce.size = static_cast<pb_size_t>(n_size);
+  const size_t n_size = rpc::pb_field::copy_span_to_bytes_field(
+      rpc::pb_field::bytes_field_as_span(msg.nonce), resp.nonce);
 
   if (!_shared_secret.empty()) {
     etl::array<uint8_t, rpc::RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH> out_tag;
@@ -716,8 +706,9 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
       return;
     }
 
-    etl::copy_n(out_tag.data(), rpc::RPC_HANDSHAKE_TAG_LENGTH, resp.tag.bytes);
-    resp.tag.size = rpc::RPC_HANDSHAKE_TAG_LENGTH;
+    rpc::pb_field::copy_span_to_bytes_field(
+        etl::span<const uint8_t>(out_tag.data(), rpc::RPC_HANDSHAKE_TAG_LENGTH),
+        resp.tag);
     rpc::security::derive_session_key_raw(
         _shared_secret.data(), _shared_secret.size(), msg.nonce.bytes, n_size,
         _session_key.data());
@@ -908,11 +899,8 @@ void BridgeClass::_handleSpiTransfer(
         return;
       }
       rpc::payload::SpiTransferResponse resp = {};
-      const size_t to_copy = etl::min(len, sizeof(resp.data.bytes));
-      resp.data.size = (pb_size_t)to_copy;
-      if (to_copy > 0) {
-        etl::copy_n(_rx_storage.data(), to_copy, resp.data.bytes);
-      }
+      rpc::pb_field::copy_span_to_bytes_field(
+          etl::span<const uint8_t>(_rx_storage.data(), len), resp.data);
       if (!send(rpc::CommandId::CMD_SPI_TRANSFER_RESP, ctx.sequence_id, resp)) {
         enterSafeState();
       }

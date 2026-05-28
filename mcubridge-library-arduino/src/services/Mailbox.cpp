@@ -1,8 +1,7 @@
 #include "services/Mailbox.h"
 
-#include <etl/algorithm.h>
-
 #include "Bridge.h"
+#include "protocol/pb_field_helpers.h"
 
 #if BRIDGE_ENABLE_MAILBOX
 
@@ -20,11 +19,7 @@ MailboxClass::MailboxClass() : _rx_buffer(), _available_count(0U) {}
 
 void MailboxClass::push(etl::span<const uint8_t> data) {
   rpc::payload::MailboxPush p;
-  const size_t to_copy = etl::min(data.size(), sizeof(p.data.bytes));
-  p.data.size = (pb_size_t)to_copy;
-  if (to_copy > 0U) {
-    etl::copy_n(data.data(), to_copy, p.data.bytes);
-  }
+  rpc::pb_field::copy_span_to_bytes_field(data, p.data);
   if (!Bridge.send(rpc::CommandId::CMD_MAILBOX_PUSH, 0, p)) {
     Bridge.enterSafeState();
   }
@@ -47,13 +42,12 @@ void MailboxClass::_setIncomingData(etl::span<const uint8_t> data) {
 }
 
 void MailboxClass::_onIncomingData(const rpc::payload::MailboxPush& msg) {
-  _setIncomingData(etl::span<const uint8_t>(msg.data.bytes, msg.data.size));
+  _setIncomingData(rpc::pb_field::bytes_field_as_span(msg.data));
 }
 
 void MailboxClass::_onIncomingData(
     const rpc::payload::MailboxReadResponse& msg) {
-  _setIncomingData(
-      etl::span<const uint8_t>(msg.content.bytes, msg.content.size));
+  _setIncomingData(rpc::pb_field::bytes_field_as_span(msg.content));
 }
 
 void MailboxClass::_onAvailableResponse(

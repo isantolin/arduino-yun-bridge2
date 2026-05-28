@@ -32,5 +32,6 @@
     "${workspaceFolder}/.tox/py313/bin/flake8"
   ],
   "python.analysis.languageServerMode": "full",
-  "markdown.validate.enabled": true
+  "markdown.validate.enabled": true,
+  "cmake.sourceDirectory": "/home/ignaciosantolin/arduino-yun-bridge2/.dummy_libs/Embedded_Template_Library"
 }

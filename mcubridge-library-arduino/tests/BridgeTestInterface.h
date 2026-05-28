@@ -71,13 +71,13 @@ class TestAccessor {
   void onAckTimeout() { _bridge._onAckTimeout(); }
   void handleAck(uint16_t cmd) { _bridge._handleAck(cmd); }
   void handleGetVersion(const bridge::router::CommandContext& ctx) {
-    _bridge._handleGetVersion(ctx);
+    _bridge._dispatchCommand(*ctx.frame);
   }
   bool sendFrame(rpc::CommandId c, uint16_t seq, etl::span<const uint8_t> p) {
     return _bridge.sendFrame(c, seq, p);
   }
   void handleDigitalWriteCommand(const bridge::router::CommandContext& ctx) {
-    _bridge._handleDigitalWriteCommand(ctx);
+    _bridge._dispatchCommand(*ctx.frame);
   }
   void invokePacketReceived(etl::span<const uint8_t> p) {
     _bridge._onPacketReceived(p);

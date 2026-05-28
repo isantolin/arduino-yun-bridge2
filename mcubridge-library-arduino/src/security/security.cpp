@@ -144,7 +144,7 @@ bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
   etl::array<uint8_t, 32> ad;
   ad.fill(0U);
   pb_ostream_t stream = pb_ostream_from_buffer(ad.data(), ad.size());
-  (void)rpc::Payload::encode(&stream, aad_env);
+  rpc::Payload::encode(&stream, aad_env);
 
   return aead_encrypt(
       out_payload, out_tag, in, key, out_nonce,
@@ -165,7 +165,7 @@ bool aead_decrypt_frame(uint16_t cmd_id, uint16_t seq_id,
   etl::array<uint8_t, 32> ad;
   ad.fill(0U);
   pb_ostream_t stream = pb_ostream_from_buffer(ad.data(), ad.size());
-  (void)rpc::Payload::encode(&stream, aad_env);
+  rpc::Payload::encode(&stream, aad_env);
 
   return aead_decrypt(
       out_payload, in, tag, key, nonce,

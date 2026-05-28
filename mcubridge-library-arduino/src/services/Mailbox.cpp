@@ -39,10 +39,7 @@ void MailboxClass::push(etl::span<const uint8_t> data) {
 }
 
 void MailboxClass::_setIncomingData(etl::span<const uint8_t> data) {
-  _rx_buffer.clear();
-  etl::for_each(data.begin(), data.end(), [this](uint8_t b) {
-    if (!_rx_buffer.full()) _rx_buffer.push(b);
-  });
+  _rx_buffer.assign(data.begin(), data.end());
 }
 
 void MailboxClass::_onIncomingData(const rpc::payload::MailboxPush& msg) {

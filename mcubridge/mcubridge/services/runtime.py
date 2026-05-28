@@ -489,24 +489,26 @@ class BridgeService:
 
     async def _on_mcu_file_read(self, p: pb.FileRead) -> None:
         path = self._get_safe_path(p.path)
-        if path and path.is_file():
+        if path and await asyncio.to_thread(path.is_file):
             data = await asyncio.to_thread(path.read_bytes)
             if not data:
                 await self.serial.send(
                     Command.CMD_FILE_READ_RESP.value, pb.FileReadResponse(content=b"").SerializeToString()
                 )
             else:
-                for chunk in itertools.batched(data, protocol.MAX_PAYLOAD_SIZE - 3):
+                chunk_size = protocol.MAX_PAYLOAD_SIZE - 3
+                for i in range(0, len(data), chunk_size):
+                    chunk = data[i : i + chunk_size]
                     await self.serial.send(
                         Command.CMD_FILE_READ_RESP.value,
-                        pb.FileReadResponse(content=bytes(chunk)).SerializeToString(),
+                        pb.FileReadResponse(content=chunk).SerializeToString(),
                     )
             return
         await self.serial.send(Status.ERROR.value, pb.GenericResponse(message="Read failed").SerializeToString())
 
     async def _on_mcu_file_remove(self, p: pb.FileRemove) -> bool:
         path = self._get_safe_path(p.path)
-        if path and path.exists():
+        if path and await asyncio.to_thread(path.exists):
             await asyncio.to_thread(path.unlink)
             res = await self.serial.send(Status.OK.value, b"")
             return bool(res)
@@ -670,7 +672,7 @@ class BridgeService:
                         ),
                         reply_context=inbound,
                     )
-            elif act == FileAction.READ and path.is_file():
+            elif act == FileAction.READ and await asyncio.to_thread(path.is_file):
                 if not inbound.topic.value.endswith(protocol.MQTT_SUFFIX_RESPONSE):
                     await self.enqueue_mqtt(
                         QueuedPublish(
@@ -685,7 +687,7 @@ class BridgeService:
                         ),
                         reply_context=inbound,
                     )
-            elif act == FileAction.REMOVE and path.exists():
+            elif act == FileAction.REMOVE and await asyncio.to_thread(path.exists):
                 await asyncio.to_thread(path.unlink)
 
     async def _handle_mqtt_file_mcu_read(self, ctx: Message, target: str) -> None:
@@ -930,9 +932,11 @@ class BridgeService:
     async def _flush_console_queue(self) -> None:
         while self.state.console_to_mcu_queue and not self.state.mcu_is_paused:
             buf = self.state.console_to_mcu_queue.popleft()
-            for chunk in itertools.batched(buf, protocol.MAX_PAYLOAD_SIZE):
+            chunk_size = protocol.MAX_PAYLOAD_SIZE
+            for i in range(0, len(buf), chunk_size):
+                chunk = buf[i : i + chunk_size]
                 if not await self.serial.send(
-                    Command.CMD_CONSOLE_WRITE.value, pb.ConsoleWrite(data=bytes(chunk)).SerializeToString()
+                    Command.CMD_CONSOLE_WRITE.value, pb.ConsoleWrite(data=chunk).SerializeToString()
                 ):
                     self.state.console_to_mcu_queue.appendleft(buf)
                     return
@@ -1040,14 +1044,14 @@ class BridgeService:
             import shutil
 
             try:
-                usage = shutil.disk_usage(self.config.file_system_root)
+                usage = await asyncio.to_thread(shutil.disk_usage, self.config.file_system_root)
                 self.state.file_storage_bytes_used = usage.used
                 if usage.free < len(data):
                     self.state.file_storage_limit_rejections += 1
                     return False
             except OSError:
                 pass
-            path.parent.mkdir(parents=True, exist_ok=True)
+            await asyncio.to_thread(path.parent.mkdir, parents=True, exist_ok=True)
             await asyncio.to_thread(path.write_bytes, data)
             return True
 

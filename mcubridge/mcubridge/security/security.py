@@ -50,7 +50,9 @@ def secure_zero_bytes_copy(data: bytes) -> bytes:
 
 def generate_nonce_with_counter(counter: int) -> tuple[bytes, int]:
     """Generate a 12-byte AEAD nonce with monotonic counter."""
-    new_counter = (counter + 1) & protocol.NONCE_COUNTER_MASK
+    if counter >= protocol.NONCE_COUNTER_MASK or counter < 0:
+        raise ValueError("Nonce counter overflow")
+    new_counter = counter + 1
     nonce = _FULL_NONCE_STRUCT.pack(secrets.token_bytes(NONCE_RANDOM_BYTES), new_counter)
     return nonce, new_counter
 
@@ -72,7 +74,7 @@ def validate_nonce_counter(nonce: bytes, last_counter: int) -> tuple[bool, int]:
     except ValueError:
         return False, last_counter
 
-    if current <= last_counter and last_counter != protocol.NONCE_COUNTER_MASK:
+    if current <= last_counter or current > protocol.NONCE_COUNTER_MASK:
         return False, last_counter
     return True, current
 

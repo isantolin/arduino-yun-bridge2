@@ -142,6 +142,22 @@ def test_security_primitives_coverage() -> None:
     ok, cur = validate_nonce_counter(nonce, 11)
     assert ok is False
 
+    with pytest.raises(ValueError, match="Nonce counter overflow"):
+        generate_nonce_with_counter(protocol.NONCE_COUNTER_MASK)
+
+    with pytest.raises(ValueError, match="Nonce counter overflow"):
+        generate_nonce_with_counter(-1)
+
+    from mcubridge.security import security
+    from mcubridge.security.security import NONCE_RANDOM_BYTES
+    import secrets
+
+    nonce_struct = getattr(security, "_FULL_NONCE_STRUCT")
+    nonce_zero = nonce_struct.pack(secrets.token_bytes(NONCE_RANDOM_BYTES), 0)
+
+    ok, cur = validate_nonce_counter(nonce_zero, protocol.NONCE_COUNTER_MASK)
+    assert ok is False
+
     # AEAD
     key = b"A" * 32
     data = b"hello"

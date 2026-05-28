@@ -11,6 +11,18 @@
 #include "protocol/BridgeEvents.h"
 #include "protocol/rpc_structs.h"
 
+template <typename T, size_t MAX_SIZE>
+class CircularBufferWrapper : public etl::circular_buffer<T, MAX_SIZE> {
+ public:
+  using etl::circular_buffer<T, MAX_SIZE>::circular_buffer;
+
+  template <typename TIterator>
+  void assign(TIterator first, TIterator last) {
+    this->clear();
+    this->push(first, last);
+  }
+};
+
 class MailboxClass : public BridgeObserver {
  public:
 
@@ -32,7 +44,7 @@ class MailboxClass : public BridgeObserver {
 
  private:
   void _setIncomingData(etl::span<const uint8_t> data);
-  etl::circular_buffer<uint8_t, bridge::config::MAILBOX_RX_BUFFER_SIZE>
+  CircularBufferWrapper<uint8_t, bridge::config::MAILBOX_RX_BUFFER_SIZE>
       _rx_buffer;
   uint16_t _available_count;
 };

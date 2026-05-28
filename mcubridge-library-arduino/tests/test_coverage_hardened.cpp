@@ -247,9 +247,9 @@ void test_process_branch_error_paths() {
   TEST_ASSERT_EQUAL(0, Process._pending_polls.size());
 
   // Force send failure in poll path.
-  ba_recovered.clearSynchronized();
+  Bridge._tx_enabled = false;
   Process.poll(13, ProcessClass::ProcessPollHandler::create<capture_poll_handler>());
-  ba_recovered.setSynchronized();
+  Bridge._tx_enabled = true;
 
   // Exercise invalid pending handlers in response dispatch.
   ProcessClass::ProcessRunHandler invalid_pending_run;

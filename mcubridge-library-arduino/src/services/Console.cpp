@@ -62,8 +62,7 @@ size_t ConsoleClass::write(const uint8_t* buffer, size_t size) {
                      written += to_write;
                      return written >= size;
                    });
-  const bool completed = (stop != CounterIterator<uint16_t>(max_chunks + 1U));
-  return completed ? written : written;
+  return written;
 }
 
 int ConsoleClass::available() { return static_cast<int>(_rx_buffer.size()); }

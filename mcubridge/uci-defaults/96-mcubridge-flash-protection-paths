@@ -11,10 +11,19 @@ if ! command -v uci >/dev/null 2>&1; then
     exit 0
 fi
 
-allow_non_tmp_paths="$(uci -q get mcubridge.general.allow_non_tmp_paths 2>/dev/null || echo "0")"
+uci_get_or_default() {
+    option="$1"
+    default_value="$2"
+    if value="$(uci -q get "$option" 2>/dev/null)"; then
+        printf '%s\n' "$value"
+        return
+    fi
+    printf '%s\n' "$default_value"
+}
 
-current_file_root="$(uci -q get mcubridge.general.file_system_root 2>/dev/null || true)"
-current_spool_dir="$(uci -q get mcubridge.general.mqtt_spool_dir 2>/dev/null || true)"
+allow_non_tmp_paths="$(uci_get_or_default mcubridge.general.allow_non_tmp_paths "0")"
+current_file_root="$(uci_get_or_default mcubridge.general.file_system_root "")"
+current_spool_dir="$(uci_get_or_default mcubridge.general.mqtt_spool_dir "")"
 
 changed=0
 

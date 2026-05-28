@@ -21,11 +21,12 @@ void DataStoreClass::set(etl::string_view key, etl::span<const uint8_t> value) {
   if (v_copy > 0U) {
     etl::copy_n(value.data(), v_copy, p.value.bytes);
   }
-  (void)Bridge.send(rpc::CommandId::CMD_DATASTORE_PUT, 0, p);
+  if (!Bridge.send(rpc::CommandId::CMD_DATASTORE_PUT, 0, p)) {
+    Bridge.enterSafeState();
+  }
 }
 
-[[maybe_unused]] void DataStoreClass::get(etl::string_view key,
-                                          GetHandler handler) {
+void DataStoreClass::get(etl::string_view key, GetHandler handler) {
   if (_pending_gets.full()) {
     Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
     return;

@@ -9,7 +9,9 @@
 namespace {
 
 void send_mailbox_command(rpc::CommandId command_id) {
-  (void)Bridge.sendFrame(command_id);
+  if (!Bridge.sendFrame(command_id)) {
+    Bridge.enterSafeState();
+  }
 }
 
 }  // namespace
@@ -23,18 +25,20 @@ void MailboxClass::push(etl::span<const uint8_t> data) {
   if (to_copy > 0U) {
     etl::copy_n(data.data(), to_copy, p.data.bytes);
   }
-  (void)Bridge.send(rpc::CommandId::CMD_MAILBOX_PUSH, 0, p);
+  if (!Bridge.send(rpc::CommandId::CMD_MAILBOX_PUSH, 0, p)) {
+    Bridge.enterSafeState();
+  }
 }
 
-[[maybe_unused]] void MailboxClass::requestRead() {
+void MailboxClass::requestRead() {
   send_mailbox_command(rpc::CommandId::CMD_MAILBOX_READ);
 }
 
-[[maybe_unused]] void MailboxClass::requestAvailable() {
+void MailboxClass::requestAvailable() {
   send_mailbox_command(rpc::CommandId::CMD_MAILBOX_AVAILABLE);
 }
 
-[[maybe_unused]] void MailboxClass::signalProcessed() {
+void MailboxClass::signalProcessed() {
   send_mailbox_command(rpc::CommandId::CMD_MAILBOX_PROCESSED);
 }
 

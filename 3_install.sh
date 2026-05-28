@@ -51,19 +51,26 @@ stop_daemon() {
     fi
 
     echo "[INFO] Stopping mcubridge daemon if active..."
-    $INIT_SCRIPT stop 2>/dev/null || true
+    if ! $INIT_SCRIPT stop 2>/dev/null; then
+        echo "[WARN] Init script stop reported an error; checking process table..."
+    fi
     sleep 1
 
     pids=$(ps w | grep -E 'python[0-9.]*.*mcubridge' | grep -v grep | awk '{print $1}')
 
     if [ -n "$pids" ]; then
         echo "[WARN] Daemon still running. Sending SIGTERM..."
-        kill $pids 2>/dev/null || true
+        if ! kill $pids 2>/dev/null; then
+            echo "[WARN] SIGTERM could not be delivered to one or more daemon PIDs."
+        fi
         sleep 2
         pids2=$(ps w | grep -E 'python[0-9.]*.*mcubridge' | grep -v grep | awk '{print $1}')
         if [ -n "$pids2" ]; then
             echo "[WARN] Process will not die. Sending SIGKILL..."
-            kill -9 $pids2 2>/dev/null || true
+            if ! kill -9 $pids2 2>/dev/null; then
+                echo "[ERROR] Failed to terminate stubborn daemon process(es)." >&2
+                exit 1
+            fi
         fi
     else
         echo "[INFO] No running mcubridge daemon process found."
@@ -115,7 +122,9 @@ install_dependency() {
     else
         echo "[WARN] 'apk add $pkg' failed. The package database might be inconsistent."
         echo "[INFO] Attempting 'apk fix' to repair system state..."
-        apk fix || true
+        if ! apk fix; then
+            echo "[WARN] 'apk fix' failed; retrying package installation without repair." >&2
+        fi
         
         echo "[INFO] Retrying installation of $pkg..."
         if apk add "$pkg"; then
@@ -149,7 +158,11 @@ ensure_uci_config() {
 
 uci_get_general() {
     local key="$1"
-    uci -q get "mcubridge.general.${key}" 2>/dev/null || true
+    if value=$(uci -q get "mcubridge.general.${key}" 2>/dev/null); then
+        printf '%s\n' "$value"
+    else
+        printf '\n'
+    fi
 }
 
 uci_set_general() {
@@ -302,8 +315,10 @@ if [ -n "$found_conflicts" ]; then
     case "$remove_answer" in
         y|Y)
             echo "[INFO] Removing conflicting packages..."
-            # [FIX] Added || true to prevent script exit if a package is not found
-            apk del $found_conflicts || true
+            if ! apk del $found_conflicts; then
+                echo "[ERROR] Failed to remove conflicting packages: $found_conflicts" >&2
+                exit 1
+            fi
             ;;
         *)
             echo "[INFO] Keeping existing PPP/DHCP packages." ;;
@@ -383,14 +398,19 @@ echo "[STEP 6/6] Finalizing system configuration..."
 [ -f /etc/init.d/uhttpd ] && /etc/init.d/uhttpd restart
 # Force reload of procd/rpcd to pick up new service files
 [ -f /etc/init.d/rpcd ] && /etc/init.d/rpcd restart
-/etc/init.d/system reload || true
+if ! /etc/init.d/system reload; then
+    echo "[WARN] Failed to reload system services." >&2
+fi
 
 echo "[FINAL] Finalizing setup..."
 
 # The daemon is configured via UCI (environment variables are ignored).
 if command -v uci >/dev/null 2>&1; then
-    uci set mcubridge.general.debug='1' >/dev/null 2>&1 || true
-    uci commit mcubridge >/dev/null 2>&1 || true
+    if ! uci set mcubridge.general.debug='1' >/dev/null 2>&1; then
+        echo "[WARN] Unable to enable mcubridge debug flag in UCI." >&2
+    elif ! uci commit mcubridge >/dev/null 2>&1; then
+        echo "[WARN] Unable to commit mcubridge UCI changes." >&2
+    fi
 fi
 
 if [ -f "$INIT_SCRIPT" ]; then

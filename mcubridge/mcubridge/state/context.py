@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import collections
-import contextlib
 import sqlite3
 import time
 from collections.abc import Mapping
@@ -75,6 +74,29 @@ def _close_diskcache_resource(resource: Any) -> None:
         connection.close()
         delattr(local, "con")
     cache.close()
+
+
+def _try_close_diskcache_resource(resource: Any, *, label: str) -> None:
+    try:
+        _close_diskcache_resource(resource)
+    except (AttributeError, OSError, RuntimeError, sqlite3.Error) as exc:
+        logger.debug("Failed to close diskcache resource", resource=label, error=str(exc))
+
+
+def _drain_queue_nowait(queue: asyncio.Queue[Any], *, label: str) -> None:
+    try:
+        queue.get_nowait()
+    except asyncio.QueueEmpty:
+        return
+    except RuntimeError as exc:
+        logger.debug("Failed to drain queue during cleanup", queue=label, error=str(exc))
+
+
+def _terminate_process_handle(handle: asyncio.subprocess.Process, *, pid: int) -> None:
+    try:
+        handle.terminate()
+    except (OSError, ProcessLookupError) as exc:
+        logger.debug("Process termination skipped during cleanup", pid=pid, error=str(exc))
 
 
 __all__: Final[tuple[str, ...]] = (
@@ -291,19 +313,14 @@ class RuntimeState(msgspec.Struct, weakref=True):
         return int(len(self.mailbox_incoming_queue))
 
     def configure(self) -> None:
-        _sup = contextlib.suppress(OSError, RuntimeError, AttributeError)
-
         if hasattr(self.mailbox_queue, "cache"):
-            with _sup:
-                _close_diskcache_resource(self.mailbox_queue)
+            _try_close_diskcache_resource(self.mailbox_queue, label="mailbox_queue")
         if hasattr(self.mailbox_incoming_queue, "cache"):
-            with _sup:
-                _close_diskcache_resource(self.mailbox_incoming_queue)
+            _try_close_diskcache_resource(self.mailbox_incoming_queue, label="mailbox_incoming_queue")
 
         # [SIL-2] Resource Lifecycle: Close persistent queues before replacement.
         if self.datastore_cache is not None:
-            with _sup:
-                _close_diskcache_resource(self.datastore_cache)
+            _try_close_diskcache_resource(self.datastore_cache, label="datastore_cache")
             self.datastore_cache = None
 
         # Re-initialize transient queues
@@ -460,7 +477,7 @@ class RuntimeState(msgspec.Struct, weakref=True):
             self.handshake_backoff_until = snap.backoff_until
             self.handshake_rate_until = snap.rate_limit_until
         except (msgspec.MsgspecError, ValueError, TypeError):
-            pass
+            logger.debug("Ignoring invalid handshake snapshot payload", payload=observation)
 
     def _apply_spool_observation(self, observation: Mapping[str, Any]) -> None:
         """Update internal state from spool statistics."""
@@ -548,19 +565,21 @@ class RuntimeState(msgspec.Struct, weakref=True):
         self.cleanup()
 
     def cleanup(self) -> None:
-        _sup = contextlib.suppress(OSError, RuntimeError, AttributeError)
-
         # [SIL-2] Aggressive Resource Eradication to prevent ResourceWarnings.
         # 1. Nullify high-level wrappers first to drop references to the underlying caches.
         if hasattr(self.mailbox_queue, "cache"):
-            with _sup:
-                _close_diskcache_resource(self.mailbox_queue)
+            _try_close_diskcache_resource(self.mailbox_queue, label="mailbox_queue")
+            try:
                 cast(Any, self.mailbox_queue).cache = None
+            except (AttributeError, RuntimeError) as exc:
+                logger.debug("Unable to clear mailbox queue cache reference", error=str(exc))
 
         if hasattr(self.mailbox_incoming_queue, "cache"):
-            with _sup:
-                _close_diskcache_resource(self.mailbox_incoming_queue)
+            _try_close_diskcache_resource(self.mailbox_incoming_queue, label="mailbox_incoming_queue")
+            try:
                 cast(Any, self.mailbox_incoming_queue).cache = None
+            except (AttributeError, RuntimeError) as exc:
+                logger.debug("Unable to clear mailbox incoming cache reference", error=str(exc))
 
         self.mailbox_queue = collections.deque()
         self.mailbox_incoming_queue = collections.deque()
@@ -568,30 +587,29 @@ class RuntimeState(msgspec.Struct, weakref=True):
 
         # 2. Explicitly close and nullify persistent caches.
         if self.datastore_cache is not None:
-            with _sup:
-                _close_diskcache_resource(self.datastore_cache)
+            _try_close_diskcache_resource(self.datastore_cache, label="datastore_cache")
             self.datastore_cache = None
 
         # 3. Drain and reset the MQTT queue.
         while not self.mqtt_publish_queue.empty():
-            with _sup:
-                self.mqtt_publish_queue.get_nowait()
+            _drain_queue_nowait(self.mqtt_publish_queue, label="mqtt_publish_queue")
         self.mqtt_publish_queue = _make_mqtt_publish_queue(self.mqtt_queue_limit)
 
         # 4. Terminate all running processes to release pipes/sockets.
         if self.running_processes:
             for ctx in list(self.running_processes.values()):
                 if ctx and ctx.handle:
-                    with contextlib.suppress(OSError, ProcessLookupError):
-                        ctx.handle.terminate()
+                    _terminate_process_handle(ctx.handle, pid=ctx.handle.pid)
             self.running_processes.clear()
 
         # 5. Clear other complex objects and state indicators.
-        with _sup:
+        try:
             self.serial_tx_allowed.clear()
             self.link_sync_event.clear()
             self.pending_digital_reads.clear()
             self.pending_analog_reads.clear()
+        except (AttributeError, RuntimeError) as exc:
+            logger.debug("Unable to clear runtime synchronization state", error=str(exc))
 
         # 6. References cleared; sqlite3 connections finalized by the GC at shutdown.
 

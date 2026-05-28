@@ -71,7 +71,6 @@ exclude = [
 ]
 reportMissingImports = true
 reportMissingTypeStubs = true
-reportMissingModuleSource = false
 
 [tool.black]
 target-version = ['py313']

@@ -45,7 +45,7 @@ constexpr uint8_t ANALOG_PINS =
 
 }  // namespace
 
-[[maybe_unused]] bool isValidPin(const uint8_t pin) { return pin < DIGITAL_PINS; }
+bool isValidPin(const uint8_t pin) { return pin < DIGITAL_PINS; }
 
 namespace {
 template <size_t I>
@@ -129,26 +129,19 @@ void init() {
 
 __attribute__((weak)) bool hasSD() { return false; }
 
-__attribute__((weak)) [[maybe_unused]] bool hasSPI() { return false; }
+__attribute__((weak)) bool hasSPI() { return false; }
 
-__attribute__((weak)) etl::expected<void, HalError> writeFile(etl::string_view path,
-                                        etl::span<const uint8_t> data) {
-  (void)path;
-  (void)data;
+__attribute__((weak)) etl::expected<void, HalError> writeFile(
+    etl::string_view, etl::span<const uint8_t>) {
   return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
 }
 
-__attribute__((weak)) etl::expected<ChunkResult, HalError> readFileChunk(etl::string_view path,
-                                                   size_t offset,
-                                                   etl::span<uint8_t> buffer) {
-  (void)path;
-  (void)offset;
-  (void)buffer;
+__attribute__((weak)) etl::expected<ChunkResult, HalError> readFileChunk(
+    etl::string_view, size_t, etl::span<uint8_t>) {
   return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
 }
 
-__attribute__((weak)) etl::expected<void, HalError> removeFile(etl::string_view path) {
-  (void)path;
+__attribute__((weak)) etl::expected<void, HalError> removeFile(etl::string_view) {
   return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
 }
 

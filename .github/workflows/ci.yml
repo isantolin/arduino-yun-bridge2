@@ -58,27 +58,23 @@ jobs:
         if: matrix.env == 'lint'
         run: |
           echo "Checking for hardcoded secrets..."
-          set +e
-          secret_scan_output=$(grep -r -n "serial_shared_secret.*=.*['\"][^'\"]\{8,\}['\"]" mcubridge/uci-defaults/)
-          secret_scan_status=$?
-          set -e
-          if [ "$secret_scan_status" -gt 1 ]; then
-            echo "::error::Failed to scan mcubridge/uci-defaults for hardcoded secrets."
-            exit "$secret_scan_status"
-          fi
-          if [ "$secret_scan_status" -eq 0 ]; then
-            set +e
-            filtered_secret_output=$(printf '%s\n' "$secret_scan_output" | grep -v "6368616e67656d65313233" | grep -v '""' | grep -v "''")
-            filtered_secret_status=$?
-            set -e
-            if [ "$filtered_secret_status" -gt 1 ]; then
-              echo "::error::Failed to filter secret scan results."
-              exit "$filtered_secret_status"
-            fi
-            if [ "$filtered_secret_status" -eq 0 ]; then
+          if secret_scan_output=$(grep -r -n "serial_shared_secret.*=.*['\"][^'\"]\{8,\}['\"]" mcubridge/uci-defaults/); then
+            if filtered_secret_output=$(printf '%s\n' "$secret_scan_output" | grep -v "6368616e67656d65313233" | grep -v '""' | grep -v "''"); then
               printf '%s\n' "$filtered_secret_output"
               echo "::error::Hardcoded secret found!"
               exit 1
+            else
+              filtered_secret_status=$?
+              if [ "$filtered_secret_status" -ne 1 ]; then
+                echo "::error::Failed to filter secret scan results."
+                exit "$filtered_secret_status"
+              fi
+            fi
+          else
+            secret_scan_status=$?
+            if [ "$secret_scan_status" -ne 1 ]; then
+              echo "::error::Failed to scan mcubridge/uci-defaults for hardcoded secrets."
+              exit "$secret_scan_status"
             fi
           fi
           echo "✅ No hardcoded secrets"
@@ -290,25 +286,25 @@ jobs:
       - uses: ./.github/actions/setup-python-tox
 
       - name: Download Python Coverage
+        if: needs.unified-tests.result == 'success'
         uses: actions/download-artifact@v8
         with:
           name: coverage-python
           path: coverage/python
-        continue-on-error: true
 
       - name: Download Arduino Coverage
+        if: needs.unified-tests.result == 'success'
         uses: actions/download-artifact@v8
         with:
           name: coverage-arduino-host
           path: coverage/arduino
-        continue-on-error: true
 
       - name: Download Arduino Logs
+        if: needs.arduino-examples.result == 'success'
         uses: actions/download-artifact@v8
         with:
           name: arduino-logs
           path: arduino-logs
-        continue-on-error: true
 
       - name: Verify Artifacts
         run: |

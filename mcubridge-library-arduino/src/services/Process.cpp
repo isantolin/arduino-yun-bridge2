@@ -17,9 +17,9 @@ constexpr int32_t kProcessInvalidPid = -1;
 
 ProcessClass::ProcessClass() {}
 
-[[maybe_unused]] void ProcessClass::runAsync(
-    etl::string_view cmd, etl::span<const etl::string_view> args,
-    ProcessRunHandler handler) {
+void ProcessClass::runAsync(etl::string_view cmd,
+                            etl::span<const etl::string_view> args,
+                            ProcessRunHandler handler) {
   if (handler.is_valid() && Process._pending_run_async.full()) {
     Bridge.emitStatus(
         rpc::StatusCode::STATUS_ERROR,
@@ -74,8 +74,7 @@ ProcessClass::ProcessClass() {}
   if (handler.is_valid()) Process._pending_run_async.push({handler});
 }
 
-[[maybe_unused]] void ProcessClass::poll(int32_t pid,
-                                         ProcessPollHandler handler) {
+void ProcessClass::poll(int32_t pid, ProcessPollHandler handler) {
   if (handler.is_valid() && _pending_polls.full()) {
     Bridge.emitStatus(
         rpc::StatusCode::STATUS_ERROR,
@@ -98,17 +97,18 @@ ProcessClass::ProcessClass() {}
   }
 }
 
-[[maybe_unused]] void ProcessClass::kill(int32_t pid) {
+void ProcessClass::kill(int32_t pid) {
   rpc::payload::ProcessKill p;
   p.pid = static_cast<uint32_t>(pid);
-  (void)Bridge.send(rpc::CommandId::CMD_PROCESS_KILL, 0, p);
+  if (!Bridge.send(rpc::CommandId::CMD_PROCESS_KILL, 0, p)) {
+    Bridge.enterSafeState();
+  }
 }
 
-void ProcessClass::_onKillNotification(const rpc::payload::ProcessKill& msg) {
+void ProcessClass::_onKillNotification(const rpc::payload::ProcessKill&) {
   // Linux notifies MCU that a process was killed. Clear local queues only —
   // do NOT re-send CMD_PROCESS_KILL (that would create an echo loop).
   reset();
-  (void)msg.pid;
 }
 
 void ProcessClass::_onRunAsyncResponse(

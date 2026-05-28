@@ -24,7 +24,9 @@ void send_read_response(etl::span<const uint8_t> content) {
   if (to_copy > 0U) {
     etl::copy_n(content.data(), to_copy, p.content.bytes);
   }
-  (void)Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 0, p);
+  if (!Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 0, p)) {
+    Bridge.enterSafeState();
+  }
 }
 }  // namespace
 
@@ -44,7 +46,9 @@ void FileSystemClass::write(etl::string_view path,
   if (d_copy > 0U) {
     etl::copy_n(data.data(), d_copy, p.data.bytes);
   }
-  (void)Bridge.send(rpc::CommandId::CMD_FILE_WRITE, 0, p);
+  if (!Bridge.send(rpc::CommandId::CMD_FILE_WRITE, 0, p)) {
+    Bridge.enterSafeState();
+  }
 }
 
 void FileSystemClass::read(etl::string_view path,
@@ -62,22 +66,26 @@ void FileSystemClass::read(etl::string_view path,
   }
 }
 
-[[maybe_unused]] void FileSystemClass::remove(etl::string_view path) {
+void FileSystemClass::remove(etl::string_view path) {
   rpc::payload::FileRemove p;
   const size_t p_copy = etl::min(path.size(), sizeof(p.path) - 1U);
   if (p_copy > 0U) {
     etl::copy_n(path.begin(), p_copy, p.path);
   }
   p.path[p_copy] = '\0';
-  (void)Bridge.send(rpc::CommandId::CMD_FILE_REMOVE, 0, p);
+  if (!Bridge.send(rpc::CommandId::CMD_FILE_REMOVE, 0, p)) {
+    Bridge.enterSafeState();
+  }
 }
 
 void FileSystemClass::_onWrite(const rpc::payload::FileWrite& msg) {
   auto res = bridge::hal::writeFile(
       etl::string_view(msg.path),
       etl::span<const uint8_t>(msg.data.bytes, msg.data.size));
-  (void)Bridge.sendFrame(res ? rpc::StatusCode::STATUS_OK
-                             : rpc::StatusCode::STATUS_ERROR);
+  if (!Bridge.sendFrame(res ? rpc::StatusCode::STATUS_OK
+                            : rpc::StatusCode::STATUS_ERROR)) {
+    Bridge.enterSafeState();
+  }
 }
 
 void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
@@ -88,7 +96,8 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
   const etl::string_view path(msg.path);
 
   using bridge::etl_ext::CounterIterator;
-  (void)etl::find_if(
+  const auto stop =
+      etl::find_if(
       CounterIterator<uint16_t>(0U),
       CounterIterator(bridge::config::FILE_MAX_READ_CHUNKS),
       [&](uint32_t chunk_idx) {
@@ -101,7 +110,9 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
             path, offset, etl::span<uint8_t>(buffer.data(), buffer.size()));
         if (!res) {
           BRIDGE_FS_DEBUG("[DEBUG] FS: Read FAILED at offset %zu\\n", offset);
-          (void)Bridge.sendFrame(rpc::StatusCode::STATUS_ERROR);
+          if (!Bridge.sendFrame(rpc::StatusCode::STATUS_ERROR)) {
+            Bridge.enterSafeState();
+          }
           return true;
         }
         BRIDGE_FS_DEBUG(
@@ -116,12 +127,17 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
         offset += res->bytes_read;
         return false;
       });
+  if (stop == CounterIterator(bridge::config::FILE_MAX_READ_CHUNKS)) {
+    BRIDGE_FS_DEBUG("[DEBUG] FS: Read exhausted maximum chunk budget\\n");
+  }
 }
 
 void FileSystemClass::_onRemove(const rpc::payload::FileRemove& msg) {
   auto res = bridge::hal::removeFile(etl::string_view(msg.path));
-  (void)Bridge.sendFrame(res ? rpc::StatusCode::STATUS_OK
-                             : rpc::StatusCode::STATUS_ERROR);
+  if (!Bridge.sendFrame(res ? rpc::StatusCode::STATUS_OK
+                            : rpc::StatusCode::STATUS_ERROR)) {
+    Bridge.enterSafeState();
+  }
 }
 
 void FileSystemClass::_onResponse(const rpc::payload::FileReadResponse& msg) {

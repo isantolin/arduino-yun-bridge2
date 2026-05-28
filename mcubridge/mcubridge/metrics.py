@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import math
+import sqlite3
 import weakref
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 from typing import (
@@ -27,6 +27,24 @@ logger = structlog.get_logger("mcubridge.metrics")
 _BRIDGE_SNAPSHOT_EXPIRY_SECONDS = 30
 
 PublishEnqueue = Callable[[QueuedPublish], Awaitable[None]]
+
+
+def _close_thread_local_diskcache_connection(state: RuntimeState | None, queue_name: str) -> None:
+    if state is None:
+        return
+    queue: Any = getattr(state, queue_name, None)
+    if not hasattr(queue, "cache"):
+        return
+    cache: Any = queue.cache
+    local: Any = getattr(cache, "_local", None)
+    if local is None or not hasattr(local, "con"):
+        return
+    try:
+        local.con.close()
+    except (AttributeError, OSError, RuntimeError, sqlite3.Error) as exc:
+        logger.debug("Unable to close thread-local diskcache connection", queue=queue_name, error=str(exc))
+    else:
+        del local.con
 
 
 def _build_metrics_message(
@@ -312,22 +330,8 @@ class PrometheusExporter:
             # [SIL-2] Root-cause fix: diskcache creates thread-local sqlite3 connections
             # when read from this WSGI thread. Close them to prevent ResourceWarnings
             # when the diskcache object is destroyed.
-            with contextlib.suppress(Exception):
-                if self._state is not None:
-                    mq: Any = self._state.mailbox_queue
-                    if hasattr(mq, "cache"):
-                        cache: Any = mq.cache
-                        local: Any = getattr(cache, "_local", None)
-                        if local and hasattr(local, "con"):
-                            local.con.close()
-                            del local.con
-                    miq: Any = self._state.mailbox_incoming_queue
-                    if hasattr(miq, "cache"):
-                        cache: Any = miq.cache
-                        local: Any = getattr(cache, "_local", None)
-                        if local and hasattr(local, "con"):
-                            local.con.close()
-                            del local.con
+            _close_thread_local_diskcache_connection(self._state, "mailbox_queue")
+            _close_thread_local_diskcache_connection(self._state, "mailbox_incoming_queue")
 
             return [payload]
 
@@ -363,8 +367,10 @@ class PrometheusExporter:
         finally:
             # Unregister the collector to break circular reference
             if self._server and self._collector:
-                with contextlib.suppress(KeyError):
+                try:
                     self._registry.unregister(self._collector)
+                except KeyError:
+                    logger.debug("Prometheus collector was already unregistered")
 
             # Shutdown stops the serve_forever loop
             if self._server:

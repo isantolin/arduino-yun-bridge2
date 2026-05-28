@@ -44,16 +44,16 @@ class StartupState
                             static_cast<etl::fsm_state_id_t>(StateId::STARTUP),
                             EvReset, EvHandshakeFailed, EvTimeout> {
  public:
-  [[maybe_unused]] etl::fsm_state_id_t on_event(const EvReset&) {
+  etl::fsm_state_id_t on_event(const EvReset&) {
     return static_cast<etl::fsm_state_id_t>(StateId::UNSYNCHRONIZED);
   }
-  [[maybe_unused]] etl::fsm_state_id_t on_event(const EvHandshakeFailed&) {
+  etl::fsm_state_id_t on_event(const EvHandshakeFailed&) {
     return static_cast<etl::fsm_state_id_t>(StateId::STARTUP);
   }
-  [[maybe_unused]] etl::fsm_state_id_t on_event(const EvTimeout&) {
+  etl::fsm_state_id_t on_event(const EvTimeout&) {
     return static_cast<etl::fsm_state_id_t>(StateId::FAULT);
   }
-  [[maybe_unused]] etl::fsm_state_id_t on_event_unknown(const etl::imessage&) {
+  etl::fsm_state_id_t on_event_unknown(const etl::imessage&) {
     return get_state_id();
   }
 };
@@ -64,19 +64,19 @@ class UnsynchronizedState
           static_cast<etl::fsm_state_id_t>(StateId::UNSYNCHRONIZED),
           EvHandshakeStart, EvReset, EvHandshakeFailed, EvTimeout> {
  public:
-  [[maybe_unused]] etl::fsm_state_id_t on_event(const EvHandshakeStart&) {
+  etl::fsm_state_id_t on_event(const EvHandshakeStart&) {
     return static_cast<etl::fsm_state_id_t>(StateId::HANDSHAKE);
   }
-  [[maybe_unused]] etl::fsm_state_id_t on_event(const EvReset&) {
+  etl::fsm_state_id_t on_event(const EvReset&) {
     return static_cast<etl::fsm_state_id_t>(StateId::UNSYNCHRONIZED);
   }
-  [[maybe_unused]] etl::fsm_state_id_t on_event(const EvHandshakeFailed&) {
+  etl::fsm_state_id_t on_event(const EvHandshakeFailed&) {
     return static_cast<etl::fsm_state_id_t>(StateId::STARTUP);
   }
-  [[maybe_unused]] etl::fsm_state_id_t on_event(const EvTimeout&) {
+  etl::fsm_state_id_t on_event(const EvTimeout&) {
     return static_cast<etl::fsm_state_id_t>(StateId::FAULT);
   }
-  [[maybe_unused]] etl::fsm_state_id_t on_event_unknown(const etl::imessage&) {
+  etl::fsm_state_id_t on_event_unknown(const etl::imessage&) {
     return get_state_id();
   }
 };
@@ -87,19 +87,19 @@ class HandshakeState
           static_cast<etl::fsm_state_id_t>(StateId::HANDSHAKE),
           EvHandshakeComplete, EvHandshakeFailed, EvReset, EvTimeout> {
  public:
-  [[maybe_unused]] etl::fsm_state_id_t on_event(const EvHandshakeComplete&) {
+  etl::fsm_state_id_t on_event(const EvHandshakeComplete&) {
     return static_cast<etl::fsm_state_id_t>(StateId::SYNCHRONIZED);
   }
-  [[maybe_unused]] etl::fsm_state_id_t on_event(const EvHandshakeFailed&) {
+  etl::fsm_state_id_t on_event(const EvHandshakeFailed&) {
     return static_cast<etl::fsm_state_id_t>(StateId::STARTUP);
   }
-  [[maybe_unused]] etl::fsm_state_id_t on_event(const EvReset&) {
+  etl::fsm_state_id_t on_event(const EvReset&) {
     return static_cast<etl::fsm_state_id_t>(StateId::UNSYNCHRONIZED);
   }
-  [[maybe_unused]] etl::fsm_state_id_t on_event(const EvTimeout&) {
+  etl::fsm_state_id_t on_event(const EvTimeout&) {
     return static_cast<etl::fsm_state_id_t>(StateId::FAULT);
   }
-  [[maybe_unused]] etl::fsm_state_id_t on_event_unknown(const etl::imessage&) {
+  etl::fsm_state_id_t on_event_unknown(const etl::imessage&) {
     return get_state_id();
   }
 };
@@ -110,19 +110,19 @@ class SynchronizedState
           static_cast<etl::fsm_state_id_t>(StateId::SYNCHRONIZED),
           EvSendCritical, EvReset, EvHandshakeFailed, EvTimeout> {
  public:
-  [[maybe_unused]] etl::fsm_state_id_t on_event(const EvSendCritical&) {
+  etl::fsm_state_id_t on_event(const EvSendCritical&) {
     return static_cast<etl::fsm_state_id_t>(StateId::AWAITING_ACK);
   }
-  [[maybe_unused]] etl::fsm_state_id_t on_event(const EvReset&) {
+  etl::fsm_state_id_t on_event(const EvReset&) {
     return static_cast<etl::fsm_state_id_t>(StateId::UNSYNCHRONIZED);
   }
-  [[maybe_unused]] etl::fsm_state_id_t on_event(const EvHandshakeFailed&) {
+  etl::fsm_state_id_t on_event(const EvHandshakeFailed&) {
     return static_cast<etl::fsm_state_id_t>(StateId::STARTUP);
   }
-  [[maybe_unused]] etl::fsm_state_id_t on_event(const EvTimeout&) {
+  etl::fsm_state_id_t on_event(const EvTimeout&) {
     return static_cast<etl::fsm_state_id_t>(StateId::FAULT);
   }
-  [[maybe_unused]] etl::fsm_state_id_t on_event_unknown(const etl::imessage&) {
+  etl::fsm_state_id_t on_event_unknown(const etl::imessage&) {
     return get_state_id();
   }
 };
@@ -133,19 +133,19 @@ class AwaitingAckState
           static_cast<etl::fsm_state_id_t>(StateId::AWAITING_ACK),
           EvAckReceived, EvTimeout, EvReset, EvHandshakeFailed> {
  public:
-  [[maybe_unused]] etl::fsm_state_id_t on_event(const EvAckReceived&) {
+  etl::fsm_state_id_t on_event(const EvAckReceived&) {
     return static_cast<etl::fsm_state_id_t>(StateId::SYNCHRONIZED);
   }
-  [[maybe_unused]] etl::fsm_state_id_t on_event(const EvTimeout&) {
+  etl::fsm_state_id_t on_event(const EvTimeout&) {
     return static_cast<etl::fsm_state_id_t>(StateId::FAULT);
   }
-  [[maybe_unused]] etl::fsm_state_id_t on_event(const EvReset&) {
+  etl::fsm_state_id_t on_event(const EvReset&) {
     return static_cast<etl::fsm_state_id_t>(StateId::UNSYNCHRONIZED);
   }
-  [[maybe_unused]] etl::fsm_state_id_t on_event(const EvHandshakeFailed&) {
+  etl::fsm_state_id_t on_event(const EvHandshakeFailed&) {
     return static_cast<etl::fsm_state_id_t>(StateId::STARTUP);
   }
-  [[maybe_unused]] etl::fsm_state_id_t on_event_unknown(const etl::imessage&) {
+  etl::fsm_state_id_t on_event_unknown(const etl::imessage&) {
     return get_state_id();
   }
 };
@@ -162,10 +162,10 @@ class FaultState
     return No_State_Change;
   }
 
-  [[maybe_unused]] etl::fsm_state_id_t on_event(const EvReset&) {
+  etl::fsm_state_id_t on_event(const EvReset&) {
     return static_cast<etl::fsm_state_id_t>(StateId::UNSYNCHRONIZED);
   }
-  [[maybe_unused]] etl::fsm_state_id_t on_event_unknown(const etl::imessage&) {
+  etl::fsm_state_id_t on_event_unknown(const etl::imessage&) {
     return get_state_id();
   }
 };

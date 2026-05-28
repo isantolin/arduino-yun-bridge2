@@ -132,8 +132,8 @@ class BridgeClass {
   using CommandHandler = etl::delegate<void(const rpc::Frame&)>;
   using StatusHandler =
       etl::delegate<void(rpc::StatusCode, etl::span<const uint8_t>)>;
-  [[maybe_unused]] void onCommand(CommandHandler h) { _command_handler = h; }
-  [[maybe_unused]] void onStatus(StatusHandler h) { _status_handler = h; }
+  void onCommand(CommandHandler h) { _command_handler = h; }
+  void onStatus(StatusHandler h) { _status_handler = h; }
   void flushStream() { _stream.flush(); }
 
   void _dispatchCommand(const rpc::Frame& frame);
@@ -148,7 +148,7 @@ class BridgeClass {
   static constexpr bool is_reliable_cmd(uint16_t id) {
     return rpc::requires_ack(id);
   }
-  [[maybe_unused]] static constexpr bool is_compressed_cmd(uint16_t id) {
+  static constexpr bool is_compressed_cmd(uint16_t id) {
     return (id & rpc::RPC_CMD_FLAG_COMPRESSED) != 0;
   }
 
@@ -253,7 +253,7 @@ class BridgeClass {
 
   [[nodiscard]] etl::expected<void, rpc::FrameError> _decompressFrame(
       const rpc::Frame& in, rpc::Frame& out);
-  [[maybe_unused]] void _applyTimingConfig(
+  void _applyTimingConfig(
       const rpc::payload::HandshakeConfig& msg);
 
   void _handleSetBaudrateCommand(const bridge::router::CommandContext& ctx);
@@ -363,7 +363,9 @@ class BridgeClass {
       if (res && valid(res->pin)) {
         T resp;
         resp.value = static_cast<uint32_t>(read(res->pin));
-        (void)send(static_cast<rpc::CommandId>(resp_id), ctx.sequence_id, resp);
+        if (!send(static_cast<rpc::CommandId>(resp_id), ctx.sequence_id, resp)) {
+          enterSafeState();
+        }
       } else
         emitStatus(rpc::StatusCode::STATUS_ERROR);
     });

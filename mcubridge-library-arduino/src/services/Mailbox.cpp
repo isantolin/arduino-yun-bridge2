@@ -3,16 +3,13 @@
 #include <etl/algorithm.h>
 
 #include "Bridge.h"
-#include "protocol/pb_utils.h"
 
 #if BRIDGE_ENABLE_MAILBOX
 
 namespace {
 
 void send_mailbox_command(rpc::CommandId command_id) {
-  if (!Bridge.sendFrame(command_id)) {
-    Bridge.enterSafeState();
-  }
+  (void)Bridge.sendFrame(command_id);
 }
 
 }  // namespace
@@ -21,21 +18,23 @@ MailboxClass::MailboxClass() : _rx_buffer(), _available_count(0U) {}
 
 void MailboxClass::push(etl::span<const uint8_t> data) {
   rpc::payload::MailboxPush p;
-  bridge::utils::pb_copy_bytes(data, p.data);
-  if (!Bridge.send(rpc::CommandId::CMD_MAILBOX_PUSH, 0, p)) {
-    Bridge.enterSafeState();
+  const size_t to_copy = etl::min(data.size(), sizeof(p.data.bytes));
+  p.data.size = (pb_size_t)to_copy;
+  if (to_copy > 0U) {
+    etl::copy_n(data.data(), to_copy, p.data.bytes);
   }
+  (void)Bridge.send(rpc::CommandId::CMD_MAILBOX_PUSH, 0, p);
 }
 
-void MailboxClass::requestRead() {
+[[maybe_unused]] void MailboxClass::requestRead() {
   send_mailbox_command(rpc::CommandId::CMD_MAILBOX_READ);
 }
 
-void MailboxClass::requestAvailable() {
+[[maybe_unused]] void MailboxClass::requestAvailable() {
   send_mailbox_command(rpc::CommandId::CMD_MAILBOX_AVAILABLE);
 }
 
-void MailboxClass::signalProcessed() {
+[[maybe_unused]] void MailboxClass::signalProcessed() {
   send_mailbox_command(rpc::CommandId::CMD_MAILBOX_PROCESSED);
 }
 

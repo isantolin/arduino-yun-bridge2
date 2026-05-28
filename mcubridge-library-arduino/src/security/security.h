@@ -60,7 +60,7 @@ bool handshake_authenticate_raw(const uint8_t* secret, size_t secret_len,
                                 const uint8_t* received_tag, size_t tag_len,
                                 uint8_t* out_tag);
 
-inline bool handshake_authenticate(etl::span<const uint8_t> secret,
+[[maybe_unused]] inline bool handshake_authenticate(etl::span<const uint8_t> secret,
                                    etl::span<const uint8_t> nonce,
                                    etl::span<const uint8_t> received_tag,
                                    etl::span<uint8_t> out_tag) {
@@ -76,7 +76,7 @@ void derive_session_key_raw(const uint8_t* secret, size_t secret_len,
                              const uint8_t* nonce, size_t nonce_len,
                              uint8_t* out_key);
 
-inline void derive_session_key(etl::span<const uint8_t> secret,
+[[maybe_unused]] inline void derive_session_key(etl::span<const uint8_t> secret,
                                etl::span<const uint8_t> nonce,
                                etl::span<uint8_t> out_key) {
   derive_session_key_raw(secret.data(), secret.size(), nonce.data(),
@@ -134,7 +134,7 @@ inline bool timing_safe_equal(etl::span<const uint8_t> a,
   if (a.size() != b.size()) return false;
   volatile uint8_t result = 0;
   auto it_b = b.begin();
-  etl::for_each(a.begin(), a.end(),
+  (void)etl::for_each(a.begin(), a.end(),
                       [&](uint8_t val_a) { result |= val_a ^ *it_b++; });
   return result == 0;
 }
@@ -143,7 +143,7 @@ inline bool timing_safe_equal(etl::span<const uint8_t> a,
  * @brief Generate nonce with monotonic counter (anti-replay).
  */
 template <typename RandomFunc>
-inline void generate_nonce_with_counter(
+[[maybe_unused]] inline void generate_nonce_with_counter(
     etl::span<uint8_t> out_nonce, uint64_t& counter, RandomFunc random_func) {
   if (out_nonce.size() < RPC_HANDSHAKE_NONCE_LENGTH) return;
 
@@ -174,7 +174,7 @@ inline uint64_t extract_nonce_counter(etl::span<const uint8_t> nonce) {
 /**
  * @brief Validate nonce counter is strictly greater than last seen.
  */
-inline bool validate_nonce_counter(
+[[maybe_unused]] inline bool validate_nonce_counter(
     etl::span<const uint8_t> nonce, uint64_t& last_counter) {
   uint64_t current = extract_nonce_counter(nonce);
   if (current <= last_counter) {

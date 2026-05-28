@@ -4,7 +4,6 @@
 
 #include "Bridge.h"
 #include "etl_ext/CounterIterator.h"
-#include "protocol/pb_utils.h"
 
 ConsoleClass::ConsoleClass() : _flags(0) {}
 
@@ -25,7 +24,11 @@ void ConsoleClass::_push(const rpc::payload::ConsoleWrite& msg) {
 void ConsoleClass::process() {
   if (!_tx_buffer.empty()) {
     rpc::payload::ConsoleWrite p;
-    bridge::utils::pb_copy_bytes(etl::span<const uint8_t>(_tx_buffer.data(), _tx_buffer.size()), p.data);
+    const size_t to_copy = etl::min(_tx_buffer.size(), sizeof(p.data.bytes));
+    p.data.size = (pb_size_t)to_copy;
+    if (to_copy > 0) {
+      etl::copy_n(_tx_buffer.data(), to_copy, p.data.bytes);
+    }
     if (Bridge.send(rpc::CommandId::CMD_CONSOLE_WRITE, 0, p)) {
       _tx_buffer.clear();
     }
@@ -46,15 +49,17 @@ size_t ConsoleClass::write(const uint8_t* buffer, size_t size) {
   size_t written = 0;
   using bridge::etl_ext::CounterIterator;
   const uint16_t max_chunks = static_cast<uint16_t>(size);
-  for (uint16_t i = 0; i < max_chunks + 1U; ++i) {
-    if (_tx_buffer.full()) process();
-    if (_tx_buffer.full()) break;
-    const size_t to_write = etl::min(size - written, _tx_buffer.available());
-    _tx_buffer.insert(_tx_buffer.end(), buffer + written,
-                      buffer + written + to_write);
-    written += to_write;
-    if (written >= size) break;
-  }
+  (void)etl::find_if(
+      CounterIterator<uint16_t>(0U),
+      CounterIterator<uint16_t>(max_chunks + 1U),
+      [&](uint16_t) {
+        if (_tx_buffer.full()) process();
+        if (_tx_buffer.full()) return true;
+        const size_t to_write = etl::min(size - written, _tx_buffer.available());
+        _tx_buffer.insert(_tx_buffer.end(), buffer + written, buffer + written + to_write);
+        written += to_write;
+        return written >= size;
+      });
   return written;
 }
 

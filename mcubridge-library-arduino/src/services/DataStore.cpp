@@ -3,7 +3,6 @@
 #include <etl/algorithm.h>
 
 #include "Bridge.h"
-#include "protocol/pb_utils.h"
 
 #if BRIDGE_ENABLE_DATASTORE
 
@@ -11,14 +10,21 @@ DataStoreClass::DataStoreClass() {}
 
 void DataStoreClass::set(etl::string_view key, etl::span<const uint8_t> value) {
   rpc::payload::DatastorePut p;
-  bridge::utils::pb_copy_string(key, p.key);
-  bridge::utils::pb_copy_bytes(value, p.value);
-  if (!Bridge.send(rpc::CommandId::CMD_DATASTORE_PUT, 0, p)) {
-    Bridge.enterSafeState();
+  const size_t k_copy = etl::min(key.size(), sizeof(p.key) - 1U);
+  if (k_copy > 0U) {
+    etl::copy_n(key.begin(), k_copy, p.key);
   }
+  p.key[k_copy] = '\0';
+
+  const size_t v_copy = etl::min(value.size(), sizeof(p.value.bytes));
+  p.value.size = (pb_size_t)v_copy;
+  if (v_copy > 0U) {
+    etl::copy_n(value.data(), v_copy, p.value.bytes);
+  }
+  (void)Bridge.send(rpc::CommandId::CMD_DATASTORE_PUT, 0, p);
 }
 
-void DataStoreClass::get(etl::string_view key,
+[[maybe_unused]] void DataStoreClass::get(etl::string_view key,
                                           GetHandler handler) {
   if (_pending_gets.full()) {
     Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
@@ -26,7 +32,11 @@ void DataStoreClass::get(etl::string_view key,
   }
 
   rpc::payload::DatastoreGet p;
-  bridge::utils::pb_copy_string(key, p.key);
+  const size_t k_copy = etl::min(key.size(), sizeof(p.key) - 1U);
+  if (k_copy > 0U) {
+    etl::copy_n(key.begin(), k_copy, p.key);
+  }
+  p.key[k_copy] = '\0';
 
   if (!Bridge.send(rpc::CommandId::CMD_DATASTORE_GET, 0, p)) {
     Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
@@ -34,7 +44,9 @@ void DataStoreClass::get(etl::string_view key,
   }
 
   PendingGet pending = {};
-  bridge::utils::pb_copy_string(key, pending.key);
+  const size_t to_copy = etl::min(key.length(), pending.key.size() - 1U);
+  etl::copy_n(key.data(), to_copy, pending.key.begin());
+  pending.key[to_copy] = '\0';
   pending.handler = handler;
   _pending_gets.push(pending);
 }

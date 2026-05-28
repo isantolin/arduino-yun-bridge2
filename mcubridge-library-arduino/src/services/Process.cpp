@@ -5,7 +5,6 @@
 #include <etl/string.h>
 
 #include "Bridge.h"
-#include "protocol/pb_utils.h"
 
 #if BRIDGE_ENABLE_PROCESS
 
@@ -18,7 +17,7 @@ constexpr int32_t kProcessInvalidPid = -1;
 
 ProcessClass::ProcessClass() {}
 
-void ProcessClass::runAsync(
+[[maybe_unused]] void ProcessClass::runAsync(
     etl::string_view cmd, etl::span<const etl::string_view> args,
     ProcessRunHandler handler) {
   if (handler.is_valid() && Process._pending_run_async.full()) {
@@ -56,7 +55,12 @@ void ProcessClass::runAsync(
   }
 
   rpc::payload::ProcessRunAsync p;
-  bridge::utils::pb_copy_string(etl::string_view(command_buffer.data(), command_buffer.size()), p.command);
+  const size_t c_copy = etl::min(static_cast<size_t>(command_buffer.size()),
+                                 sizeof(p.command) - 1U);
+  if (c_copy > 0U) {
+    etl::copy_n(command_buffer.begin(), c_copy, p.command);
+  }
+  p.command[c_copy] = '\0';
 
   const bool send_ok = Bridge.send(rpc::CommandId::CMD_PROCESS_RUN_ASYNC, 0, p);
   if (!send_ok) {
@@ -70,7 +74,7 @@ void ProcessClass::runAsync(
   if (handler.is_valid()) Process._pending_run_async.push({handler});
 }
 
-void ProcessClass::poll(int32_t pid,
+[[maybe_unused]] void ProcessClass::poll(int32_t pid,
                                          ProcessPollHandler handler) {
   if (handler.is_valid() && _pending_polls.full()) {
     Bridge.emitStatus(
@@ -94,18 +98,17 @@ void ProcessClass::poll(int32_t pid,
   }
 }
 
-void ProcessClass::kill(int32_t pid) {
+[[maybe_unused]] void ProcessClass::kill(int32_t pid) {
   rpc::payload::ProcessKill p;
   p.pid = static_cast<uint32_t>(pid);
-  if (!Bridge.send(rpc::CommandId::CMD_PROCESS_KILL, 0, p)) {
-    Bridge.enterSafeState();
-  }
+  (void)Bridge.send(rpc::CommandId::CMD_PROCESS_KILL, 0, p);
 }
 
 void ProcessClass::_onKillNotification(const rpc::payload::ProcessKill& msg) {
   // Linux notifies MCU that a process was killed. Clear local queues only —
   // do NOT re-send CMD_PROCESS_KILL (that would create an echo loop).
   reset();
+  (void)msg.pid;
 }
 
 void ProcessClass::_onRunAsyncResponse(

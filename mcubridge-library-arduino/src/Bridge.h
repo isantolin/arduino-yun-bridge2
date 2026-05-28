@@ -88,14 +88,13 @@ class BridgeClass {
   bool isSynchronized() const;
   void enterSafeState();
 
-  template <typename T = etl::span<const uint8_t>>
-  void emitStatus(rpc::StatusCode s, T m = T()) {
-    _emitStatusImpl(s, m);
-  }
+  void emitStatus(rpc::StatusCode s, etl::string_view m);
+  void emitStatus(rpc::StatusCode s, etl::span<const uint8_t> p);
+  void emitStatus(rpc::StatusCode s, const __FlashStringHelper* m);
 
-  template <typename T>
-  void attach(T& observer) {
-    _observers.push_back(&observer);
+  // Non-template wrapper to reduce bloat
+  void emitStatus(rpc::StatusCode s) {
+    emitStatus(s, etl::span<const uint8_t>());
   }
 
   void signalXoff();
@@ -133,8 +132,8 @@ class BridgeClass {
   using CommandHandler = etl::delegate<void(const rpc::Frame&)>;
   using StatusHandler =
       etl::delegate<void(rpc::StatusCode, etl::span<const uint8_t>)>;
-  void onCommand(CommandHandler h) { _command_handler = h; }
-  void onStatus(StatusHandler h) { _status_handler = h; }
+  [[maybe_unused]] void onCommand(CommandHandler h) { _command_handler = h; }
+  [[maybe_unused]] void onStatus(StatusHandler h) { _status_handler = h; }
   void flushStream() { _stream.flush(); }
 
   void _dispatchCommand(const rpc::Frame& frame);
@@ -149,7 +148,7 @@ class BridgeClass {
   static constexpr bool is_reliable_cmd(uint16_t id) {
     return rpc::requires_ack(id);
   }
-  static constexpr bool is_compressed_cmd(uint16_t id) {
+  [[maybe_unused]] static constexpr bool is_compressed_cmd(uint16_t id) {
     return (id & rpc::RPC_CMD_FLAG_COMPRESSED) != 0;
   }
 
@@ -168,10 +167,6 @@ class BridgeClass {
     TxPayloadBuffer* buffer;
     size_t length;
   };
-
-  void _emitStatusImpl(rpc::StatusCode s, etl::string_view m);
-  void _emitStatusImpl(rpc::StatusCode s, etl::span<const uint8_t> p);
-  void _emitStatusImpl(rpc::StatusCode s, const __FlashStringHelper* m);
 
   void _sendRawFrame(uint16_t command_id, uint16_t sequence_id,
                      etl::span<const uint8_t> payload);
@@ -258,29 +253,68 @@ class BridgeClass {
 
   [[nodiscard]] etl::expected<void, rpc::FrameError> _decompressFrame(
       const rpc::Frame& in, rpc::Frame& out);
-  void _applyTimingConfig(const rpc::payload::HandshakeConfig& msg);
+  [[maybe_unused]] void _applyTimingConfig(
+      const rpc::payload::HandshakeConfig& msg);
 
+  void _handleSetBaudrateCommand(const bridge::router::CommandContext& ctx);
+  void _handleEnterBootloaderCommand(const bridge::router::CommandContext& ctx);
+  void _handleSetPinModeCommand(const bridge::router::CommandContext& ctx);
+  void _handleDigitalWriteCommand(const bridge::router::CommandContext& ctx);
+  void _handleAnalogWriteCommand(const bridge::router::CommandContext& ctx);
+  void _handleDigitalReadCommand(const bridge::router::CommandContext& ctx);
+  void _handleAnalogReadCommand(const bridge::router::CommandContext& ctx);
+  void _handleConsoleWriteCommand(const bridge::router::CommandContext& ctx);
+#if BRIDGE_ENABLE_DATASTORE
+  void _handleDataStoreGetResponseCommand(
+      const bridge::router::CommandContext& ctx);
+#endif
+#if BRIDGE_ENABLE_MAILBOX
+  void _handleMailboxPushCommand(const bridge::router::CommandContext& ctx);
+  void _handleMailboxReadResponseCommand(
+      const bridge::router::CommandContext& ctx);
+  void _handleMailboxAvailableResponseCommand(
+      const bridge::router::CommandContext& ctx);
+#endif
+#if BRIDGE_ENABLE_FILESYSTEM
+  void _handleFileWriteCommand(const bridge::router::CommandContext& ctx);
+  void _handleFileReadCommand(const bridge::router::CommandContext& ctx);
+  void _handleFileRemoveCommand(const bridge::router::CommandContext& ctx);
+  void _handleFileReadResponseCommand(
+      const bridge::router::CommandContext& ctx);
+#endif
+#if BRIDGE_ENABLE_PROCESS
+  void _handleProcessRunAsyncResponseCommand(
+      const bridge::router::CommandContext& ctx);
+  void _handleProcessPollResponseCommand(
+      const bridge::router::CommandContext& ctx);
+  void _handleProcessKillCommand(const bridge::router::CommandContext& ctx);
+#endif
+#if BRIDGE_ENABLE_SPI
+  void _handleSpiSetConfigCommand(const bridge::router::CommandContext& ctx);
+#endif
+
+  static void _handleStatusOk(const bridge::router::CommandContext& ctx);
+  void _handleStatusMalformed(const bridge::router::CommandContext& ctx);
+  void _handleStatusAck(const bridge::router::CommandContext& ctx);
+  void _handleGetVersion(const bridge::router::CommandContext& ctx);
+  void _handleGetFreeMemory(const bridge::router::CommandContext& ctx);
   void _handleLinkSync(const bridge::router::CommandContext& ctx);
   void _handleLinkReset(const bridge::router::CommandContext& ctx);
   void _handleGetCapabilities(const bridge::router::CommandContext& ctx);
-  void _handleStatusMalformed(const bridge::router::CommandContext& ctx);
   void _handleXoff(const bridge::router::CommandContext& ctx);
   void _handleXon(const bridge::router::CommandContext& ctx);
   void _handleSetBaudrate(const rpc::payload::SetBaudratePacket& msg);
   void _handleSetTiming(const rpc::payload::HandshakeConfig& msg);
   void _handleEnterBootloader(const rpc::payload::EnterBootloader& msg);
+  void _handleSpiBegin(const bridge::router::CommandContext& ctx);
+  void _handleSpiEnd(const bridge::router::CommandContext& ctx);
+  void _handleSpiTransfer(const bridge::router::CommandContext& ctx);
   void _handleReceivedFrame(etl::span<const uint8_t> p);
   void onUnknownCommand(const bridge::router::CommandContext& ctx);
 
   // [MEM-SAVE] Non-template helper to reduce binary bloat in _withPayloadAck.
   // Declared before templates to ensure visibility in template body.
   void _processAck(uint16_t command_id, uint16_t sequence_id);
-
-  template <typename T, auto F>
-  static void _dispatchWrapper(BridgeClass& self,
-                               const bridge::router::CommandContext& ctx) {
-    self._withPayloadAck<T>(ctx, F);
-  }
 
   // [MEM-SAVE] Static wrapper type to avoid member function pointer overhead
   // and enable true constexpr/Flash placement of the dispatch table.
@@ -329,9 +363,7 @@ class BridgeClass {
       if (res && valid(res->pin)) {
         T resp;
         resp.value = static_cast<uint32_t>(read(res->pin));
-        if (!send(static_cast<rpc::CommandId>(resp_id), ctx.sequence_id, resp)) {
-          enterSafeState();
-        }
+        (void)send(static_cast<rpc::CommandId>(resp_id), ctx.sequence_id, resp);
       } else
         emitStatus(rpc::StatusCode::STATUS_ERROR);
     });

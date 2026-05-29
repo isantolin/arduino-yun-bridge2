@@ -984,8 +984,6 @@ void SafeStatePolicy::handle(BridgeClass<HardwareSerial>& bridge, const etl::exc
   bridge.enterSafeState();
 }
 #endif
-  bridge.enterSafeState();
-}
 }  // namespace bridge
 
 #if defined(BRIDGE_HOST_TEST)

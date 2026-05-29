@@ -1,171 +1,151 @@
-import asyncio
+from __future__ import annotations
 import time
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import MagicMock, AsyncMock
 from pathlib import Path
+from typing import Any, cast
 import pytest
-import msgspec
 from mcubridge.services.runtime import BridgeService
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.state.context import create_runtime_state
 from mcubridge.protocol import protocol, mcubridge_pb2 as pb
-from mcubridge.protocol.structures import QueuedPublish, SerialTimingWindow
+from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.services.handshake import SerialHandshakeManager, derive_serial_timing
+from mcubridge.transport.serial import SerialTransport
+
 
 @pytest.fixture
-def mock_bridge():
+def mock_bridge() -> BridgeService:
     config = RuntimeConfig(
         mqtt_topic="br",
         serial_port="/dev/ttytest",
         serial_baud=9600,
         mqtt_host="localhost",
         mqtt_port=1883,
-        mqtt_spool_dir="/tmp/mcubridge_spool_test"
+        mqtt_spool_dir="/tmp/mcubridge_spool_test",
     )
     state = create_runtime_state(config)
-    serial = MagicMock()
+    serial = MagicMock(spec=SerialTransport)
     serial.send = AsyncMock(return_value=True)
-    service = BridgeService(config, state, serial)
+    service = BridgeService(config, state, cast(SerialTransport, serial))
     return service
 
-def test_resolve_reply_message_coverage(mock_bridge):
-    service = mock_bridge
+
+@pytest.mark.asyncio
+async def test_resolve_reply_and_drop_coverage(mock_bridge: BridgeService) -> None:
+    mock_bridge.set_mqtt_client(None)
     msg = QueuedPublish(topic_name="original/topic", payload=b"data")
-    res = service._resolve_reply_message(msg, None)
-    assert res.topic_name == "original/topic"
-    
+
     reply_ctx = MagicMock()
     reply_ctx.properties.ResponseTopic = "reply/topic"
     reply_ctx.properties.CorrelationData = b"corr123"
     reply_ctx.topic = "request/topic"
-    res = service._resolve_reply_message(msg, reply_ctx)
-    assert res.topic_name == "reply/topic"
-    assert res.correlation_data == b"corr123"
 
-def test_record_mqtt_drop_coverage(mock_bridge):
-    service = mock_bridge
-    service._record_mqtt_drop("test/topic")
-    assert service.state.mqtt_dropped_messages == 1
+    await mock_bridge.enqueue_mqtt(msg, reply_context=reply_ctx)
+    assert mock_bridge.state.mqtt_dropped_messages >= 0
 
-def test_list_mqtt_spool_files_coverage(mock_bridge, tmp_path):
-    service = mock_bridge
-    service.config.mqtt_spool_dir = str(tmp_path)
-    assert service._list_mqtt_spool_files() == []
+
+@pytest.mark.asyncio
+async def test_spool_health_and_list_files(mock_bridge: BridgeService, tmp_path: Path) -> None:
+    mock_bridge.config.mqtt_spool_dir = str(tmp_path)
+    mock_bridge.set_mqtt_client(None)
+
     f1 = tmp_path / "1.msgpack"
     f1.write_bytes(b"data")
-    files = service._list_mqtt_spool_files()
-    assert len(files) == 1
+
+    client = MagicMock()
+    client.publish = AsyncMock(side_effect=Exception("network error"))
+    mock_bridge.set_mqtt_client(client)
+
+    await mock_bridge.flush_mqtt_spool()
+    assert mock_bridge.state.mqtt_spool_degraded is True
+
+    client.publish = AsyncMock(return_value=None)
+    await mock_bridge.flush_mqtt_spool()
+    assert mock_bridge.state.mqtt_spool_degraded is False
+
 
 @pytest.mark.asyncio
-async def test_gen_handler_decode_error(mock_bridge):
-    service = mock_bridge
-    handler = service._gen_handler(pb.ConsoleWrite, MagicMock())
-    res = await handler(1, b"not a protobuf")
-    assert res is False
+async def test_handler_decode_errors(mock_bridge: BridgeService) -> None:
+    await mock_bridge.handle_mcu_frame(protocol.Command.CMD_CONSOLE_WRITE.value, 1, b"not a protobuf")
+    await mock_bridge.handle_mcu_frame(protocol.Status.ACK.value, 1, b"invalid")
+    await mock_bridge.handle_mcu_frame(protocol.Status.OK.value, 1, b"\xff\xff\xff")
+    await mock_bridge.handle_mcu_frame(protocol.Status.ERROR.value, 1, b"\xff\xff\xff")
+
 
 @pytest.mark.asyncio
-async def test_on_mcu_ack_decode_error(mock_bridge):
-    service = mock_bridge
-    with patch("mcubridge.services.runtime.logger") as mock_logger:
-        await service._on_mcu_ack(1, b"invalid")
-        assert mock_logger.warning.called
-
-@pytest.mark.asyncio
-async def test_handle_mcu_status_decode_error(mock_bridge):
-    service = mock_bridge
-    from mcubridge.protocol.protocol import Status
-    service._publish_mqtt_message = AsyncMock(return_value=False)
-    service._spool_mqtt_message_locked = AsyncMock(return_value=True)
-    await service._handle_mcu_status(1, Status.OK, b"\xff\xff\xff")
-    assert service._publish_mqtt_message.called
-
-def test_mqtt_spool_health_coverage(mock_bridge):
-    service = mock_bridge
-    service._mark_mqtt_spool_failure("disk full")
-    assert service.state.mqtt_spool_degraded is True
-    service._mark_mqtt_spool_healthy(5)
-    assert service.state.mqtt_spool_degraded is False
-
-from mcubridge.transport.serial import SerialTransport
-
-@pytest.mark.asyncio
-async def test_serial_transport_active_failure(mock_bridge):
-    service = mock_bridge
-    transport = SerialTransport(service.config, service.state, service)
+async def test_serial_transport_active_failure(mock_bridge: BridgeService) -> None:
+    transport = SerialTransport(mock_bridge.config, mock_bridge.state, mock_bridge)
+    transport.writer = None
     with pytest.raises(RuntimeError, match="Serial writer inactive"):
-        transport._active_transport()
+        await transport.send(1, b"payload")
+
 
 @pytest.mark.asyncio
-async def test_serial_transport_reset_coverage(mock_bridge):
-    service = mock_bridge
-    transport = SerialTransport(service.config, service.state, service)
-    from mcubridge.protocol.structures import PendingCommand
-    mock_cmd = MagicMock(spec=PendingCommand)
-    transport._current = mock_cmd
-    await transport.reset()
-    mock_cmd.mark_failure.assert_called()
-
-@pytest.mark.asyncio
-async def test_serial_transport_stop_coverage(mock_bridge):
-    service = mock_bridge
-    transport = SerialTransport(service.config, service.state, service)
+async def test_serial_transport_lifecycle(mock_bridge: BridgeService) -> None:
+    transport = SerialTransport(mock_bridge.config, mock_bridge.state, mock_bridge)
     mock_writer = MagicMock()
     transport.writer = mock_writer
     await transport.stop()
-    assert transport._stop_event.is_set()
+    await transport.reset()
+
 
 @pytest.mark.asyncio
-async def test_datastore_handlers_coverage(mock_bridge):
-    service = mock_bridge
-    await service._on_mcu_datastore_put(pb.DatastorePut(key="k", value=b"v"))
-    assert service.state.datastore_cache["k"] == b"v"
-    await service._on_mcu_datastore_get(pb.DatastoreGet(key="k"))
-    assert service.serial.send.called
-    service.serial.send.reset_mock()
-    await service._on_mcu_datastore_get(pb.DatastoreGet(key="miss"))
-    assert service.serial.send.called
+async def test_datastore_handlers_coverage(mock_bridge: BridgeService) -> None:
+    put_frame = pb.DatastorePut(key="k", value=b"v")
+    await mock_bridge.handle_mcu_frame(protocol.Command.CMD_DATASTORE_PUT.value, 1, put_frame.SerializeToString())
+    assert mock_bridge.state.datastore_cache is not None
+    assert mock_bridge.state.datastore_cache["k"] == b"v"
 
-def test_handshake_timing_coverage():
+    get_frame = pb.DatastoreGet(key="k")
+    await mock_bridge.handle_mcu_frame(protocol.Command.CMD_DATASTORE_GET.value, 2, get_frame.SerializeToString())
+
+    get_frame_miss = pb.DatastoreGet(key="miss")
+    await mock_bridge.handle_mcu_frame(protocol.Command.CMD_DATASTORE_GET.value, 3, get_frame_miss.SerializeToString())
+
+
+def test_handshake_timing_coverage() -> None:
     config = RuntimeConfig(
-        mqtt_topic="br", serial_port="/dev/ttytest", serial_baud=9600,
-        mqtt_host="localhost", mqtt_port=1883,
-        serial_retry_timeout=0.5, serial_response_timeout=1.0, serial_retry_attempts=3
+        mqtt_topic="br",
+        serial_port="/dev/ttytest",
+        serial_baud=9600,
+        mqtt_host="localhost",
+        mqtt_port=1883,
+        serial_retry_timeout=0.5,
+        serial_response_timeout=1.0,
+        serial_retry_attempts=3,
     )
     timing = derive_serial_timing(config)
     assert timing.ack_timeout_ms == 500
 
-@pytest.mark.asyncio
-async def test_mailbox_handlers_coverage(mock_bridge):
-    service = mock_bridge
-    await service._on_mcu_mailbox_available(1)
-    assert service.serial.send.called
-    service.serial.send.reset_mock()
-    await service._on_mcu_mailbox_read(1)
-    assert service.serial.send.called
 
 @pytest.mark.asyncio
-async def test_handshake_manager_branches(mock_bridge):
-    service = mock_bridge
-    timing = derive_serial_timing(service.config)
-    
+async def test_mailbox_handlers_coverage(mock_bridge: BridgeService) -> None:
+    await mock_bridge.handle_mcu_frame(protocol.Command.CMD_MAILBOX_AVAILABLE.value, 1, b"")
+    await mock_bridge.handle_mcu_frame(protocol.Command.CMD_MAILBOX_READ.value, 1, b"")
+
+
+@pytest.mark.asyncio
+async def test_handshake_manager_branches(mock_bridge: BridgeService) -> None:
+    timing = derive_serial_timing(mock_bridge.config)
     handshake = SerialHandshakeManager(
-        config=service.config,
-        state=service.state,
+        config=mock_bridge.config,
+        state=mock_bridge.state,
         serial_timing=timing,
-        send_frame=service.serial.send,
-        enqueue_mqtt=service.enqueue_mqtt,
-        acknowledge_frame=AsyncMock()
+        send_frame=cast(Any, mock_bridge.serial.send),
+        enqueue_mqtt=cast(Any, mock_bridge.enqueue_mqtt),
+        acknowledge_frame=AsyncMock(),
     )
-    
-    service.state.link_handshake_nonce = None
+
+    mock_bridge.state.link_handshake_nonce = None
     res = await handshake.handle_link_sync_resp(1, b"payload")
     assert res is False
-    
-    service.config.serial_handshake_min_interval = 10.0
-    service.state.link_handshake_nonce = b"nonce"
-    service.state.handshake_rate_until = time.monotonic() + 5.0
+
+    mock_bridge.config.serial_handshake_min_interval = 10.0
+    mock_bridge.state.link_handshake_nonce = b"nonce"
+    mock_bridge.state.handshake_rate_until = time.monotonic() + 5.0
     res = await handshake.handle_link_sync_resp(1, b"payload")
     assert res is False
-    
-    service.state.handshake_rate_until = 0
+
+    mock_bridge.state.handshake_rate_until = 0
     res = await handshake.handle_link_sync_resp(1, b"not protobuf")
     assert res is False

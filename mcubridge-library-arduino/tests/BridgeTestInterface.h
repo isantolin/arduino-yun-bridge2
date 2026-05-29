@@ -11,13 +11,14 @@
 
 namespace bridge::test {
 
+template <typename TStream>
 class TestAccessor {
  public:
-  static TestAccessor create(BridgeClass& bridge) {
+  static TestAccessor create(BridgeClass<TStream>& bridge) {
     return TestAccessor(bridge);
   }
 
-  explicit TestAccessor(BridgeClass& bridge)
+  explicit TestAccessor(BridgeClass<TStream>& bridge)
       : _bridge(bridge), _fsm(bridge._fsm) {}
 
   void setSynchronized() {
@@ -131,7 +132,7 @@ class TestAccessor {
   size_t getObserverCount() const { return _bridge._observers.size(); }
 
  private:
-  BridgeClass& _bridge;
+  BridgeClass<TStream>& _bridge;
   bridge::fsm::BridgeFsm& _fsm;
 
   void exhaustTxPayloadPoolRecursive() {

@@ -247,11 +247,12 @@ static bool extract_next_valid_frame(const ByteBuffer<N>& buffer,
 #ifdef BRIDGE_ENABLE_TEST_INTERFACE
 #include "BridgeTestInterface.h"
 
-static inline void reset_bridge_core(BridgeClass& bridge, Stream& stream,
+template <typename TStream>
+static inline void reset_bridge_core(BridgeClass<TStream>& bridge, TStream& stream,
                                      unsigned long baudrate = 0,
                                      const char* secret = "top-secret") {
-  bridge.~BridgeClass();
-  new (&bridge) BridgeClass(stream);
+  bridge.~BridgeClass<TStream>();
+  new (&bridge) BridgeClass<TStream>(stream);
   if (baudrate) {
     bridge.begin(baudrate, secret);
   } else {

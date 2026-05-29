@@ -19,9 +19,8 @@ class TestAccessor;
 #include <avr/wdt.h>
 #endif
 
-#include <PacketSerial.h>
 #include <Codecs/COBS.h>
-
+#include <PacketSerial.h>
 #include <etl/algorithm.h>
 #include <etl/array.h>
 #include <etl/callback_timer.h>
@@ -125,15 +124,21 @@ class BridgeClass {
   void onCommand(CommandHandler h) { _command_handler = h; }
 
   void onStatus(StatusHandler h) { _status_handler = h; }
-  void registerObserver(BridgeObserver& observer) { _observers.push_back(&observer); }
+  void registerObserver(BridgeObserver& observer) {
+    _observers.push_back(&observer);
+  }
 
-  template <typename TPayload, typename TService, void (TService::*Member)(const TPayload&)>
-  void _delegateCommand(const bridge::router::CommandContext& ctx, TService& service) {
-    _withPayloadAck<TPayload>(ctx, [&service](const TPayload& m) { (service.*Member)(m); });
+  template <typename TPayload, typename TService,
+            void (TService::*Member)(const TPayload&)>
+  void _delegateCommand(const bridge::router::CommandContext& ctx,
+                        TService& service) {
+    _withPayloadAck<TPayload>(
+        ctx, [&service](const TPayload& m) { (service.*Member)(m); });
   }
 
   template <typename TPayload, typename TAction>
-  void _handlePinAction(const bridge::router::CommandContext& ctx, TAction action) {
+  void _handlePinAction(const bridge::router::CommandContext& ctx,
+                        TAction action) {
     _withPayloadAck<TPayload>(ctx, [action](const auto& m) {
       if (bridge::hal::isValidPin(static_cast<uint8_t>(m.pin))) {
         action(m);
@@ -141,7 +146,9 @@ class BridgeClass {
     });
   }
 
-  void registerObserver(BridgeObserver& observer) { _observers.push_back(&observer); }
+  void registerObserver(BridgeObserver& observer) {
+    _observers.push_back(&observer);
+  }
   void flushStream() { _stream.flush(); }
 
   void _dispatchCommand(const rpc::Frame& frame);
@@ -261,8 +268,7 @@ class BridgeClass {
 
   [[nodiscard]] etl::expected<void, rpc::FrameError> _decompressFrame(
       const rpc::Frame& in, rpc::Frame& out);
-  void _applyTimingConfig(
-      const rpc::payload::HandshakeConfig& msg);
+  void _applyTimingConfig(const rpc::payload::HandshakeConfig& msg);
 
   void _handleSetBaudrateCommand(const bridge::router::CommandContext& ctx);
   void _handleEnterBootloaderCommand(const bridge::router::CommandContext& ctx);
@@ -363,14 +369,16 @@ class BridgeClass {
     handler();
   }
 
-
-
-  template <typename TPayload, typename TService, void (TService::*Member)(const TPayload&)>
-  void _delegateCommand(const bridge::router::CommandContext& ctx, TService& service) {
-    _withPayloadAck<TPayload>(ctx, [&service](const TPayload& m) { (service.*Member)(m); });
+  template <typename TPayload, typename TService,
+            void (TService::*Member)(const TPayload&)>
+  void _delegateCommand(const bridge::router::CommandContext& ctx,
+                        TService& service) {
+    _withPayloadAck<TPayload>(
+        ctx, [&service](const TPayload& m) { (service.*Member)(m); });
   }
   template <typename TPayload, typename TAction>
-  void _handlePinAction(const bridge::router::CommandContext& ctx, TAction action) {
+  void _handlePinAction(const bridge::router::CommandContext& ctx,
+                        TAction action) {
     _withPayloadAck<TPayload>(ctx, [action](const auto& m) {
       if (bridge::hal::isValidPin(static_cast<uint8_t>(m.pin))) {
         action(m);
@@ -385,7 +393,8 @@ class BridgeClass {
       if (res && valid(res->pin)) {
         T resp;
         resp.value = static_cast<uint32_t>(read(res->pin));
-        if (!send(static_cast<rpc::CommandId>(resp_id), ctx.sequence_id, resp)) {
+        if (!send(static_cast<rpc::CommandId>(resp_id), ctx.sequence_id,
+                  resp)) {
           enterSafeState();
         }
       } else
@@ -407,7 +416,8 @@ class BridgeClass {
 };
 
 #if defined(BRIDGE_HOST_TEST)
-template <bool Debug> class HostSerialStream;
+template <bool Debug>
+class HostSerialStream;
 extern BridgeClass<HostSerialStream<false>> Bridge;
 #else
 extern BridgeClass<HardwareSerial> Bridge;

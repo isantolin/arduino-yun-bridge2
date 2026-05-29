@@ -5,6 +5,7 @@
 
 #if BRIDGE_ENABLE_SPI
 
+#include <Arduino.h>
 #include <SPI.h>
 #undef min
 #undef max

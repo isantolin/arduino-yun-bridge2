@@ -12,7 +12,7 @@
 #include "hal/hal.h"
 
 namespace bridge::test {
-class TestAccessor;
+template <typename TStream> class TestAccessor;
 }
 
 #if defined(ARDUINO_ARCH_AVR)
@@ -77,7 +77,6 @@ struct CommandContext {
 
 #include "ErrorPolicy.h"
 
-template <typename TStream>
 template <typename TStream>
 class BridgeClass {
  public:
@@ -146,9 +145,6 @@ class BridgeClass {
     });
   }
 
-  void registerObserver(BridgeObserver& observer) {
-    _observers.push_back(&observer);
-  }
   void flushStream() { _stream.flush(); }
 
   void _dispatchCommand(const rpc::Frame& frame);
@@ -190,7 +186,7 @@ class BridgeClass {
   void _initializeRuntime();
 
   // STRICT ORDER FOR CONSTRUCTOR
-  TTStream& _stream;
+  TStream& _stream;
   HardwareSerial* _hardware_serial;
   CommandHandler _command_handler;
   StatusHandler _status_handler;
@@ -371,21 +367,6 @@ class BridgeClass {
 
   template <typename TPayload, typename TService,
             void (TService::*Member)(const TPayload&)>
-  void _delegateCommand(const bridge::router::CommandContext& ctx,
-                        TService& service) {
-    _withPayloadAck<TPayload>(
-        ctx, [&service](const TPayload& m) { (service.*Member)(m); });
-  }
-  template <typename TPayload, typename TAction>
-  void _handlePinAction(const bridge::router::CommandContext& ctx,
-                        TAction action) {
-    _withPayloadAck<TPayload>(ctx, [action](const auto& m) {
-      if (bridge::hal::isValidPin(static_cast<uint8_t>(m.pin))) {
-        action(m);
-      }
-    });
-  }
-  template <typename T, typename TID, typename TValid, typename TRead>
   void _handlePinRead(const bridge::router::CommandContext& ctx, TID resp_id,
                       TValid valid, TRead read) {
     _withResponse(ctx, [this, &ctx, resp_id, valid, read]() {

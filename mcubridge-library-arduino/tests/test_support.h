@@ -124,7 +124,7 @@ class TxCaptureStream : public Stream {
 /**
  * Bidirectional mock stream – captures writes and feeds reads via feed().
  */
-class BiStream : public Stream {
+class BiStream : public HostSerialStream<false> {
  public:
   ByteBuffer<8192> rx_buf;
   ByteBuffer<8192> tx_buf;
@@ -247,8 +247,8 @@ static bool extract_next_valid_frame(const ByteBuffer<N>& buffer,
 #ifdef BRIDGE_ENABLE_TEST_INTERFACE
 #include "BridgeTestInterface.h"
 
-template <typename TStream>
-static inline void reset_bridge_core(BridgeClass<TStream>& bridge, TStream& stream,
+template <typename TStream, typename TActualStream>
+static inline void reset_bridge_core(BridgeClass<TStream>& bridge, TActualStream& stream,
                                      unsigned long baudrate = 0,
                                      const char* secret = "top-secret") {
   bridge.~BridgeClass<TStream>();
@@ -258,7 +258,7 @@ static inline void reset_bridge_core(BridgeClass<TStream>& bridge, TStream& stre
   } else {
     bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, secret);
   }
-  auto ba = bridge::test::TestAccessor::create(bridge);
+  auto ba = bridge::test::TestAccessor<TStream>::create(bridge);
   ba.onStartupStabilized();
   ba.setIdle();
 }

@@ -19,14 +19,14 @@ void reset_bridge() {
 
 void test_bridge_initialization() {
   reset_bridge();
-  auto ba = TestAccessor::create(Bridge);
+  auto ba = TestAccessor<HostSerialStream<false>>::create(Bridge);
   TEST_ASSERT_FALSE(ba.isSynchronized());
   TEST_ASSERT_FALSE(ba.isAwaitingAck());
 }
 
 void test_bridge_handshake() {
   reset_bridge();
-  auto ba = TestAccessor::create(Bridge);
+  auto ba = TestAccessor<HostSerialStream<false>>::create(Bridge);
   TEST_ASSERT_FALSE(ba.isSynchronized());
 
   // 1. Prepare Handshake Payload using computeHandshakeTag
@@ -67,7 +67,7 @@ void test_bridge_handshake() {
 
 void test_bridge_send_frame() {
   reset_bridge();
-  auto ba = TestAccessor::create(Bridge);
+  auto ba = TestAccessor<HostSerialStream<false>>::create(Bridge);
   ba.setSynchronized();
 
   etl::array<uint8_t, 2> payload = {0xAA, 0xBB};
@@ -77,7 +77,7 @@ void test_bridge_send_frame() {
 
 void test_bridge_process_rx() {
   reset_bridge();
-  auto ba = TestAccessor::create(Bridge);
+  auto ba = TestAccessor<HostSerialStream<false>>::create(Bridge);
   ba.setSynchronized();
 
   rpc::payload::DigitalWrite msg = {};
@@ -105,7 +105,7 @@ void test_bridge_process_rx() {
 
 void test_bridge_dedup_console_write() {
   reset_bridge();
-  auto ba = TestAccessor::create(Bridge);
+  auto ba = TestAccessor<HostSerialStream<false>>::create(Bridge);
   ba.setSynchronized();
 
   // 1. Build ConsoleWrite frame once
@@ -143,7 +143,7 @@ void test_bridge_dedup_console_write() {
 
 void test_bridge_status_ack() {
   reset_bridge();
-  auto ba = TestAccessor::create(Bridge);
+  auto ba = TestAccessor<HostSerialStream<false>>::create(Bridge);
   ba.setSynchronized();
 
   // 1. Trigger a command that requires ACK

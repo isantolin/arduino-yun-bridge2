@@ -28,7 +28,7 @@ void reset_bridge_comp(BiStream& stream) {
   Bridge.~BridgeClass();
   new (&Bridge) BridgeClass<HostSerialStream<>>(stream);
   Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, "top-secret");
-  auto ba = TestAccessor::create(Bridge);
+  auto ba = TestAccessor<HostSerialStream<false>>::create(Bridge);
   ba.onStartupStabilized();
   ba.setSynchronized();
 }
@@ -40,15 +40,15 @@ void test_all_handlers_coverage() {
   rpc::Frame frame = {};
   frame .envelope.version = rpc::PROTOCOL_VERSION;
   frame .envelope.command_id = rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION);
-  TestAccessor::create(Bridge).dispatch(frame);
+  TestAccessor<HostSerialStream<false>>::create(Bridge).dispatch(frame);
 
   frame .envelope.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_GET_FREE_MEMORY);
-  TestAccessor::create(Bridge).dispatch(frame);
+  TestAccessor<HostSerialStream<false>>::create(Bridge).dispatch(frame);
 
   frame .envelope.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_GET_CAPABILITIES);
-  TestAccessor::create(Bridge).dispatch(frame);
+  TestAccessor<HostSerialStream<false>>::create(Bridge).dispatch(frame);
 }
 
 void test_process_api() {

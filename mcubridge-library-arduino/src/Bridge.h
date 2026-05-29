@@ -12,15 +12,16 @@
 #include "hal/hal.h"
 
 namespace bridge::test {
-template <typename TStream> class TestAccessor;
+class TestAccessor;
 }
 
 #if defined(ARDUINO_ARCH_AVR)
 #include <avr/wdt.h>
 #endif
 
-#include <Codecs/COBS.h>
 #include <PacketSerial.h>
+#include <Codecs/COBS.h>
+
 #include <etl/algorithm.h>
 #include <etl/array.h>
 #include <etl/callback_timer.h>
@@ -77,11 +78,10 @@ struct CommandContext {
 
 #include "ErrorPolicy.h"
 
-template <typename TStream>
 class BridgeClass {
  public:
   using ErrorPolicy = bridge::SafeStatePolicy;
-  explicit BridgeClass(TStream& stream);
+  explicit BridgeClass(Stream& stream);
 
   void begin(uint32_t baudrate = 0, const char* secret = nullptr);
   void process();
@@ -105,12 +105,24 @@ class BridgeClass {
   [[nodiscard]] bool sendFrame(rpc::CommandId c, uint16_t seq = 0,
                                etl::span<const uint8_t> p = {});
 
-  template <typename TID, typename T>
-  [[nodiscard]] bool send(TID id, uint16_t seq, const T& packet) {
+  template <typename T>
+  [[nodiscard]] bool send(rpc::StatusCode s, uint16_t seq, const T& packet) {
     pb_ostream_t stream =
         pb_ostream_from_buffer(_transient_buffer.data(), rpc::MAX_PAYLOAD_SIZE);
     if (rpc::Payload::encode(&stream, packet)) {
-      return sendFrame(id, seq,
+      return sendFrame(s, seq,
+                       etl::span<const uint8_t>(_transient_buffer.data(),
+                                                stream.bytes_written));
+    }
+    return false;
+  }
+
+  template <typename T>
+  [[nodiscard]] bool send(rpc::CommandId c, uint16_t seq, const T& packet) {
+    pb_ostream_t stream =
+        pb_ostream_from_buffer(_transient_buffer.data(), rpc::MAX_PAYLOAD_SIZE);
+    if (rpc::Payload::encode(&stream, packet)) {
+      return sendFrame(c, seq,
                        etl::span<const uint8_t>(_transient_buffer.data(),
                                                 stream.bytes_written));
     }
@@ -121,30 +133,7 @@ class BridgeClass {
   using StatusHandler =
       etl::delegate<void(rpc::StatusCode, etl::span<const uint8_t>)>;
   void onCommand(CommandHandler h) { _command_handler = h; }
-
   void onStatus(StatusHandler h) { _status_handler = h; }
-  void registerObserver(BridgeObserver& observer) {
-    _observers.push_back(&observer);
-  }
-
-  template <typename TPayload, typename TService,
-            void (TService::*Member)(const TPayload&)>
-  void _delegateCommand(const bridge::router::CommandContext& ctx,
-                        TService& service) {
-    _withPayloadAck<TPayload>(
-        ctx, [&service](const TPayload& m) { (service.*Member)(m); });
-  }
-
-  template <typename TPayload, typename TAction>
-  void _handlePinAction(const bridge::router::CommandContext& ctx,
-                        TAction action) {
-    _withPayloadAck<TPayload>(ctx, [action](const auto& m) {
-      if (bridge::hal::isValidPin(static_cast<uint8_t>(m.pin))) {
-        action(m);
-      }
-    });
-  }
-
   void flushStream() { _stream.flush(); }
 
   void _dispatchCommand(const rpc::Frame& frame);
@@ -186,7 +175,7 @@ class BridgeClass {
   void _initializeRuntime();
 
   // STRICT ORDER FOR CONSTRUCTOR
-  TStream& _stream;
+  Stream& _stream;
   HardwareSerial* _hardware_serial;
   CommandHandler _command_handler;
   StatusHandler _status_handler;
@@ -219,10 +208,10 @@ class BridgeClass {
   } _watchdog_task;
 
   struct SerialTask : public etl::task {
-    BridgeClass<TStream>* bridge;
+    BridgeClass* bridge;
     bool xoff_sent;
     SerialTask() : etl::task(1), bridge(nullptr), xoff_sent(false) {}
-    void bind(BridgeClass<TStream>& owner) {
+    void bind(BridgeClass& owner) {
       bridge = &owner;
       xoff_sent = false;
     }
@@ -231,10 +220,10 @@ class BridgeClass {
   } _serial_task;
 
   struct TimerTask : public etl::task {
-    BridgeClass<TStream>* bridge;
+    BridgeClass* bridge;
     uint32_t last_tick_ms;
     TimerTask() : etl::task(2), bridge(nullptr), last_tick_ms(0) {}
-    void bind(BridgeClass<TStream>& owner) {
+    void bind(BridgeClass& owner) {
       bridge = &owner;
       last_tick_ms = 0;
     }
@@ -264,7 +253,8 @@ class BridgeClass {
 
   [[nodiscard]] etl::expected<void, rpc::FrameError> _decompressFrame(
       const rpc::Frame& in, rpc::Frame& out);
-  void _applyTimingConfig(const rpc::payload::HandshakeConfig& msg);
+  void _applyTimingConfig(
+      const rpc::payload::HandshakeConfig& msg);
 
   void _handleSetBaudrateCommand(const bridge::router::CommandContext& ctx);
   void _handleEnterBootloaderCommand(const bridge::router::CommandContext& ctx);
@@ -328,7 +318,7 @@ class BridgeClass {
 
   // [MEM-SAVE] Static wrapper type to avoid member function pointer overhead
   // and enable true constexpr/Flash placement of the dispatch table.
-  using DispatchHandler = void (*)(BridgeClass<TStream>&,
+  using DispatchHandler = void (*)(BridgeClass&,
                                    const bridge::router::CommandContext&);
 
   // [SIL-2] [MEM-SAVE] Static O(1) jump table in Flash.
@@ -365,8 +355,7 @@ class BridgeClass {
     handler();
   }
 
-  template <typename TPayload, typename TService,
-            void (TService::*Member)(const TPayload&)>
+  template <typename T, typename TID, typename TValid, typename TRead>
   void _handlePinRead(const bridge::router::CommandContext& ctx, TID resp_id,
                       TValid valid, TRead read) {
     _withResponse(ctx, [this, &ctx, resp_id, valid, read]() {
@@ -374,8 +363,7 @@ class BridgeClass {
       if (res && valid(res->pin)) {
         T resp;
         resp.value = static_cast<uint32_t>(read(res->pin));
-        if (!send(static_cast<rpc::CommandId>(resp_id), ctx.sequence_id,
-                  resp)) {
+        if (!send(static_cast<rpc::CommandId>(resp_id), ctx.sequence_id, resp)) {
           enterSafeState();
         }
       } else
@@ -396,12 +384,6 @@ class BridgeClass {
   }
 };
 
-#if defined(BRIDGE_HOST_TEST)
-template <bool Debug>
-class HostSerialStream;
-extern BridgeClass<HostSerialStream<false>> Bridge;
-#else
-extern BridgeClass<HardwareSerial> Bridge;
-#endif
+extern BridgeClass Bridge;
 
 #endif

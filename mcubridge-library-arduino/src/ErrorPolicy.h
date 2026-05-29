@@ -4,7 +4,7 @@
 #include <Arduino.h>
 #include <etl/exception.h>
 
-template <typename TStream> class BridgeClass;  // Forward declaration (global)
+class BridgeClass;  // Forward declaration (global)
 
 namespace bridge {
 
@@ -15,10 +15,7 @@ namespace bridge {
 class SafeStatePolicy {
  public:
   // Defined in Bridge.cpp to avoid circular dependency
-  #if defined(BRIDGE_HOST_TEST)
-#else
-  static void handle(BridgeClass<HardwareSerial>& bridge, const etl::exception& e);
-#endif
+  static void handle(::BridgeClass& bridge, const etl::exception& e);
 };
 
 }  // namespace bridge

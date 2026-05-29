@@ -97,7 +97,7 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
         }
         BRIDGE_FS_DEBUG(
             "[DEBUG] FS: Sending chunk %u (%zu bytes, has_more=%d)\\n",
-            static_cast<unsigned int>(chunk_idx), res->bytes_read, res->has_more);
+            (unsigned int)chunk_idx, res->bytes_read, res->has_more);
         send_read_response(
             etl::span<const uint8_t>(buffer.data(), res->bytes_read));
         if (!res->has_more) {

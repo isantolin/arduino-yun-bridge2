@@ -21,27 +21,16 @@
 #include "services/SPIService.h"
 
 // [SIL-2] Global Bridge instance using default Serial
-#if defined(BRIDGE_HOST_TEST)
-#include "../tests/host_serial_stream.h"
-HostSerialStream<false> g_test_stream;
-BridgeClass<HostSerialStream<false>> Bridge(g_test_stream);
-#else
-BridgeClass<HardwareSerial> Bridge(Serial);
-#endif
+BridgeClass Bridge(Serial);
 
 namespace etl {
 // [SIL-2] Custom error handler to ensure fail-safe state on ETL exceptions
 void __attribute__((weak)) handle_error(const etl::exception& e) {
-#if defined(BRIDGE_HOST_TEST)
-// handle_error is weak, tests provide it
-#else
-  bridge::SafeStatePolicy::handle(Bridge, e);
-#endif
+  BridgeClass::ErrorPolicy::handle(Bridge, e);
 }
 }  // namespace etl
 
-template <typename TStream>
-BridgeClass<TStream>::BridgeClass(TStream& stream)
+BridgeClass::BridgeClass(Stream& stream)
     : _stream(stream),
       _hardware_serial(nullptr),
       _command_handler(),
@@ -83,13 +72,12 @@ BridgeClass<TStream>::BridgeClass(TStream& stream)
 // [MEM-SAVE] Static wrappers to bridge between the static jump table and member
 // functions. This avoids the 4-8 byte overhead of member function pointers on
 // some architectures.
-#define DISPATCH_WRAPPER(method)                                           \
-  [](BridgeClass<TStream>& b, const bridge::router::CommandContext& ctx) { \
-    b.method(ctx);                                                         \
+#define DISPATCH_WRAPPER(method)                                  \
+  [](BridgeClass& b, const bridge::router::CommandContext& ctx) { \
+    b.method(ctx);                                                \
   }
 
-template <typename TStream>
-void BridgeClass<TStream>::_dispatchCommand(const rpc::Frame& frame) {
+void BridgeClass::_dispatchCommand(const rpc::Frame& frame) {
   const uint16_t cmd_id =
       frame.envelope.command_id & ~rpc::RPC_CMD_FLAG_COMPRESSED;
   auto it = etl::find(_rx_history.begin(), _rx_history.end(),
@@ -119,9 +107,7 @@ void BridgeClass<TStream>::_dispatchCommand(const rpc::Frame& frame) {
   }
 }
 
-template <typename TStream>
-typename BridgeClass<TStream>::DispatchHandler
-BridgeClass<TStream>::_getHandler(uint16_t command_id) {
+BridgeClass::DispatchHandler BridgeClass::_getHandler(uint16_t command_id) {
   // [SIL-2] [MEM-SAVE] Static O(1) jump table in Flash using lambda
   // initialization.
   static constexpr etl::array<DispatchHandler, rpc::RPC_MAX_COMMAND_ID> table =
@@ -223,8 +209,7 @@ BridgeClass<TStream>::_getHandler(uint16_t command_id) {
   return (command_id < rpc::RPC_MAX_COMMAND_ID) ? table[command_id] : nullptr;
 }
 
-template <typename TStream>
-void BridgeClass<TStream>::_initializeRuntime() {
+void BridgeClass::_initializeRuntime() {
   _tasks.clear();
   _serial_task.bind(*this);
   _timer_task.bind(*this);
@@ -244,8 +229,7 @@ void BridgeClass<TStream>::_initializeRuntime() {
   }
 }
 
-template <typename TStream>
-void BridgeClass<TStream>::begin(uint32_t baudrate, const char* secret) {
+void BridgeClass::begin(uint32_t baudrate, const char* secret) {
   _initializeRuntime();
   wolfCrypt_Init();
   _shared_secret.clear();
@@ -257,23 +241,6 @@ void BridgeClass<TStream>::begin(uint32_t baudrate, const char* secret) {
     _shared_secret.assign(data_ptr, data_ptr + len);
   }
 
-  _observers.clear();
-  registerObserver(Console);
-#if BRIDGE_ENABLE_DATASTORE
-  registerObserver(DataStore);
-#endif
-#if BRIDGE_ENABLE_MAILBOX
-  registerObserver(Mailbox);
-#endif
-#if BRIDGE_ENABLE_FILESYSTEM
-  registerObserver(FileSystem);
-#endif
-#if BRIDGE_ENABLE_PROCESS
-  registerObserver(Process);
-#endif
-#if BRIDGE_ENABLE_SPI
-  registerObserver(SPIService);
-#endif
   bridge::hal::init();
   if (!_fsm.is_started()) _fsm.start();
   _fsm.receive(bridge::fsm::EvReset());
@@ -309,20 +276,16 @@ void BridgeClass<TStream>::begin(uint32_t baudrate, const char* secret) {
 
   _packet_serial.setPacketHandler(
       etl::delegate<void(etl::span<const uint8_t>)>::create<
-          BridgeClass<TStream>, &BridgeClass<TStream>::_onPacketReceived>(
-          *this));
+          BridgeClass, &BridgeClass::_onPacketReceived>(*this));
 }
 
-template <typename TStream>
-void BridgeClass<TStream>::process() {
-  _scheduler_policy.schedule_tasks(_tasks);
-}
+void BridgeClass::process() { _scheduler_policy.schedule_tasks(_tasks); }
 
-void BridgeClass<TStream>::WatchdogTask::task_process_work() {
+void BridgeClass::WatchdogTask::task_process_work() {
   bridge::hal::watchdog_kick();
 }
 
-void BridgeClass<TStream>::SerialTask::task_process_work() {
+void BridgeClass::SerialTask::task_process_work() {
   if (bridge == nullptr) return;
   bridge->_packet_serial.update(bridge->_stream);
   const int avail = bridge->_stream.available();
@@ -337,7 +300,7 @@ void BridgeClass<TStream>::SerialTask::task_process_work() {
   }
 }
 
-void BridgeClass<TStream>::TimerTask::task_process_work() {
+void BridgeClass::TimerTask::task_process_work() {
   if (bridge == nullptr) return;
   const uint32_t now = ::millis();
   if (last_tick_ms == 0) last_tick_ms = now;
@@ -348,26 +311,18 @@ void BridgeClass<TStream>::TimerTask::task_process_work() {
   }
 }
 
-template <typename TStream>
-bool BridgeClass<TStream>::isSynchronized() const {
-  return _fsm.isSynchronized();
-}
+bool BridgeClass::isSynchronized() const { return _fsm.isSynchronized(); }
 
-template <typename TStream>
-void BridgeClass<TStream>::_handleStatusOk(
-    const bridge::router::CommandContext&) {}
+void BridgeClass::_handleStatusOk(const bridge::router::CommandContext&) {}
 
-template <typename TStream>
-void BridgeClass<TStream>::onUnknownCommand(
-    const bridge::router::CommandContext& ctx) {
+void BridgeClass::onUnknownCommand(const bridge::router::CommandContext& ctx) {
   if (_command_handler.is_valid())
     _command_handler(*ctx.frame);
   else
     emitStatus(rpc::StatusCode::STATUS_ERROR);
 }
 
-template <typename TStream>
-void BridgeClass<TStream>::enterSafeState() {
+void BridgeClass::enterSafeState() {
   bridge::hal::forceSafeState();
   _tx_enabled = false;
   _clearPendingTxQueue();
@@ -375,17 +330,14 @@ void BridgeClass<TStream>::enterSafeState() {
   _notifyObservers(MsgBridgeLost());
 }
 
-template <typename TStream>
-void BridgeClass<TStream>::emitStatus(rpc::StatusCode code,
-                                      etl::span<const uint8_t> pl) {
+void BridgeClass::emitStatus(rpc::StatusCode code,
+                             etl::span<const uint8_t> pl) {
   if (!sendFrame(code, 0, pl)) {
     enterSafeState();
   }
 }
 
-template <typename TStream>
-void BridgeClass<TStream>::emitStatus(rpc::StatusCode code,
-                                      etl::string_view msg) {
+void BridgeClass::emitStatus(rpc::StatusCode code, etl::string_view msg) {
   rpc_pb_GenericResponse resp = rpc_pb_GenericResponse_init_default;
   rpc::pb_field::copy_string_view_trunc(msg, resp.message);
   if (!send(code, 0, resp)) {
@@ -393,9 +345,8 @@ void BridgeClass<TStream>::emitStatus(rpc::StatusCode code,
   }
 }
 
-template <typename TStream>
-void BridgeClass<TStream>::emitStatus(rpc::StatusCode code,
-                                      const __FlashStringHelper* msg) {
+void BridgeClass::emitStatus(rpc::StatusCode code,
+                             const __FlashStringHelper* msg) {
   if (msg == nullptr) {
     if (!sendFrame(code)) {
       enterSafeState();
@@ -417,22 +368,18 @@ void BridgeClass<TStream>::emitStatus(rpc::StatusCode code,
   }
 }
 
-template <typename TStream>
-bool BridgeClass<TStream>::sendFrame(rpc::StatusCode s, uint16_t seq,
-                                     etl::span<const uint8_t> p) {
+bool BridgeClass::sendFrame(rpc::StatusCode s, uint16_t seq,
+                            etl::span<const uint8_t> p) {
   return _sendFrame(rpc::to_underlying(s), seq, p);
 }
 
-template <typename TStream>
-bool BridgeClass<TStream>::sendFrame(rpc::CommandId c, uint16_t seq,
-                                     etl::span<const uint8_t> p) {
+bool BridgeClass::sendFrame(rpc::CommandId c, uint16_t seq,
+                            etl::span<const uint8_t> p) {
   return _sendFrame(rpc::to_underlying(c), seq, p);
 }
 
-template <typename TStream>
-void BridgeClass<TStream>::_sendRawFrame(uint16_t command_id,
-                                         uint16_t sequence_id,
-                                         etl::span<const uint8_t> payload) {
+void BridgeClass::_sendRawFrame(uint16_t command_id, uint16_t sequence_id,
+                                etl::span<const uint8_t> payload) {
   const uint16_t raw_cmd = command_id & ~rpc::RPC_CMD_FLAG_COMPRESSED;
   const bool is_excluded = (raw_cmd >= rpc::RPC_STATUS_CODE_MIN &&
                             raw_cmd <= rpc::RPC_STATUS_CODE_MAX) ||
@@ -469,9 +416,8 @@ void BridgeClass<TStream>::_sendRawFrame(uint16_t command_id,
     _packet_serial.send(_stream, etl::span<const uint8_t>(buffer.data(), len));
 }
 
-template <typename TStream>
-bool BridgeClass<TStream>::_sendFrame(uint16_t cmd, uint16_t seq,
-                                      etl::span<const uint8_t> pl) {
+bool BridgeClass::_sendFrame(uint16_t cmd, uint16_t seq,
+                             etl::span<const uint8_t> pl) {
   const uint16_t raw_cmd = cmd & ~rpc::RPC_CMD_FLAG_COMPRESSED;
   const bool is_system = (raw_cmd >= rpc::RPC_STATUS_CODE_MIN &&
                           raw_cmd <= rpc::RPC_STATUS_CODE_MAX) ||
@@ -494,8 +440,7 @@ bool BridgeClass<TStream>::_sendFrame(uint16_t cmd, uint16_t seq,
   return true;
 }
 
-template <typename TStream>
-void BridgeClass<TStream>::_flushPendingTxQueue() {
+void BridgeClass::_flushPendingTxQueue() {
   BRIDGE_ATOMIC_BLOCK {
     if (_pending_tx_queue.empty()) return;
     if (!_tx_enabled) return;
@@ -509,8 +454,7 @@ void BridgeClass<TStream>::_flushPendingTxQueue() {
   }
 }
 
-template <typename TStream>
-void BridgeClass<TStream>::_onAckTimeout() {
+void BridgeClass::_onAckTimeout() {
   if (!_fsm.isAwaitingAck()) return;
   if (++_retry_count >= _retry_limit) {
     _timers.stop(_timer_ids[bridge::scheduler::TIMER_ACK_TIMEOUT]);
@@ -522,9 +466,7 @@ void BridgeClass<TStream>::_onAckTimeout() {
   _retransmitLastFrame();
 }
 
-template <typename TStream>
-void BridgeClass<TStream>::_processAck(uint16_t command_id,
-                                       uint16_t sequence_id) {
+void BridgeClass::_processAck(uint16_t command_id, uint16_t sequence_id) {
   // [MEM-SAVE] Replaced manual ACK building with centralized helper.
   rpc::payload::AckPacket p;
   p.command_id = command_id;
@@ -533,8 +475,7 @@ void BridgeClass<TStream>::_processAck(uint16_t command_id,
   }
 }
 
-template <typename TStream>
-void BridgeClass<TStream>::_retransmitLastFrame() {
+void BridgeClass::_retransmitLastFrame() {
   BRIDGE_ATOMIC_BLOCK {
     if (_pending_tx_queue.empty()) return;
     const auto& f = _pending_tx_queue.front();
@@ -544,8 +485,7 @@ void BridgeClass<TStream>::_retransmitLastFrame() {
   }
 }
 
-template <typename TStream>
-void BridgeClass<TStream>::_handleAck(uint16_t cmd) {
+void BridgeClass::_handleAck(uint16_t cmd) {
   if (!_fsm.isAwaitingAck() || cmd != _last_command_id) return;
   _timers.stop(_timer_ids[bridge::scheduler::TIMER_ACK_TIMEOUT]);
   _clearPendingTxQueue();
@@ -553,8 +493,7 @@ void BridgeClass<TStream>::_handleAck(uint16_t cmd) {
   _flushPendingTxQueue();
 }
 
-template <typename TStream>
-void BridgeClass<TStream>::_clearPendingTxQueue() {
+void BridgeClass::_clearPendingTxQueue() {
   BRIDGE_ATOMIC_BLOCK {
     etl::for_each(_pending_tx_queue.begin(), _pending_tx_queue.end(),
                   [this](PendingTxFrame& f) {
@@ -564,21 +503,16 @@ void BridgeClass<TStream>::_clearPendingTxQueue() {
   }
 }
 
-template <typename TStream>
-void BridgeClass<TStream>::_onRxDedupe() {
-  _rx_history.clear();
-}
+void BridgeClass::_onRxDedupe() { _rx_history.clear(); }
 
-template <typename TStream>
-void BridgeClass<TStream>::_onBaudrateChange() {
+void BridgeClass::_onBaudrateChange() {
   if (_pending_baudrate > 0) {
     if (_hardware_serial) _hardware_serial->begin(_pending_baudrate);
     _pending_baudrate = 0;
   }
 }
 
-template <typename TStream>
-void BridgeClass<TStream>::_handleSetBaudrateCommand(
+void BridgeClass::_handleSetBaudrateCommand(
     const bridge::router::CommandContext& ctx) {
   _withResponse(ctx, [this, &ctx]() {
     auto res = rpc::Payload::parse<rpc::payload::SetBaudratePacket>(*ctx.frame);
@@ -587,205 +521,169 @@ void BridgeClass<TStream>::_handleSetBaudrateCommand(
       if (!sendFrame(rpc::CommandId::CMD_SET_BAUDRATE_RESP, ctx.sequence_id)) {
         enterSafeState();
       }
-    } else if (!sendFrame(rpc::StatusCode::STATUS_ERROR, ctx.sequence_id)) {
-      enterSafeState();
-    }
+    } else
+      if (!sendFrame(rpc::StatusCode::STATUS_ERROR, ctx.sequence_id)) {
+        enterSafeState();
+      }
   });
 }
 
-template <typename TStream>
-void BridgeClass<TStream>::_handleEnterBootloaderCommand(
+void BridgeClass::_handleEnterBootloaderCommand(
     const bridge::router::CommandContext& ctx) {
-  _delegateCommand<rpc::payload::EnterBootloader, BridgeClass<TStream>,
-                   &BridgeClass<TStream>::_handleEnterBootloader>(ctx, *this);
+  _withPayloadAck<rpc::payload::EnterBootloader>(
+      ctx, [this](const auto& m) { _handleEnterBootloader(m); });
 }
 
-template <typename TStream>
-void BridgeClass<TStream>::_handleSetPinModeCommand(
+void BridgeClass::_handleSetPinModeCommand(
     const bridge::router::CommandContext& ctx) {
-  _handlePinAction<rpc::payload::PinMode>(ctx, [](const auto& m) {
+  _withPayloadAck<rpc::payload::PinMode>(ctx, [](const auto& m) {
+    // Direct literal mapping
     uint8_t m_val = INPUT;
     if (m.mode == 1)
       m_val = OUTPUT;
     else if (m.mode == 2)
       m_val = INPUT_PULLUP;
-    ::pinMode(static_cast<uint8_t>(m.pin), m_val);
+    pinMode(m.pin, m_val);
   });
 }
 
-template <typename TStream>
-void BridgeClass<TStream>::_handleDigitalWriteCommand(
+void BridgeClass::_handleDigitalWriteCommand(
     const bridge::router::CommandContext& ctx) {
-  _handlePinAction<rpc::payload::DigitalWrite>(ctx, [](const auto& m) {
-    ::digitalWrite(static_cast<uint8_t>(m.pin), (m.value == 0) ? LOW : HIGH);
+  _withPayloadAck<rpc::payload::DigitalWrite>(ctx, [](const auto& m) {
+    digitalWrite(m.pin, (m.value == 0) ? LOW : HIGH);
   });
 }
 
-template <typename TStream>
-void BridgeClass<TStream>::_handleAnalogWriteCommand(
+void BridgeClass::_handleAnalogWriteCommand(
     const bridge::router::CommandContext& ctx) {
-  _handlePinAction<rpc::payload::AnalogWrite>(ctx, [](const auto& m) {
-    ::analogWrite(static_cast<uint8_t>(m.pin), static_cast<int>(m.value));
-  });
+  _withPayloadAck<rpc::payload::AnalogWrite>(
+      ctx, [](const auto& m) { analogWrite(m.pin, (int)m.value); });
 }
 
-template <typename TStream>
-void BridgeClass<TStream>::_handleDigitalReadCommand(
+void BridgeClass::_handleDigitalReadCommand(
     const bridge::router::CommandContext& ctx) {
   _handlePinRead<rpc::payload::DigitalReadResponse>(
-      ctx, rpc::CommandId::CMD_DIGITAL_READ_RESP,
-      [](uint32_t p) {
-        return bridge::hal::isValidPin(static_cast<uint8_t>(p));
-      },
-      [](uint32_t p) {
-        return static_cast<uint32_t>(::digitalRead(static_cast<uint8_t>(p)));
-      });
+      ctx, rpc::CommandId::CMD_DIGITAL_READ_RESP, [](uint32_t) { return true; },
+      [](uint32_t p) { return ::digitalRead(p); });
 }
 
-template <typename TStream>
-void BridgeClass<TStream>::_handleAnalogReadCommand(
+void BridgeClass::_handleAnalogReadCommand(
     const bridge::router::CommandContext& ctx) {
   _handlePinRead<rpc::payload::AnalogReadResponse>(
-      ctx, rpc::CommandId::CMD_ANALOG_READ_RESP,
-      [](uint32_t p) {
-        return bridge::hal::isValidPin(static_cast<uint8_t>(p));
-      },
-      [](uint32_t p) {
-        return static_cast<uint32_t>(::analogRead(static_cast<uint8_t>(p)));
-      });
+      ctx, rpc::CommandId::CMD_ANALOG_READ_RESP, [](uint32_t) { return true; },
+      [](uint32_t p) { return ::analogRead(p); });
 }
 
-template <typename TStream>
-void BridgeClass<TStream>::_handleConsoleWriteCommand(
+void BridgeClass::_handleConsoleWriteCommand(
     const bridge::router::CommandContext& ctx) {
-  _delegateCommand<rpc::payload::ConsoleWrite, decltype(Console),
-                   &decltype(Console)::_push>(ctx, Console);
+  _withPayloadAck<rpc::payload::ConsoleWrite>(
+      ctx, [](const auto& m) { Console._push(m); });
 }
 
 #if BRIDGE_ENABLE_DATASTORE
-template <typename TStream>
-void BridgeClass<TStream>::_handleDataStoreGetResponseCommand(
+void BridgeClass::_handleDataStoreGetResponseCommand(
     const bridge::router::CommandContext& ctx) {
-  _delegateCommand<rpc::payload::DatastoreGetResponse, decltype(DataStore),
-                   &decltype(DataStore)::_onResponse>(ctx, DataStore);
+  _withPayloadAck<rpc::payload::DatastoreGetResponse>(
+      ctx, [](const auto& m) { DataStore._onResponse(m); });
 }
 #endif
 
 #if BRIDGE_ENABLE_MAILBOX
-template <typename TStream>
-void BridgeClass<TStream>::_handleMailboxPushCommand(
+void BridgeClass::_handleMailboxPushCommand(
     const bridge::router::CommandContext& ctx) {
-  _delegateCommand<rpc::payload::MailboxPush, decltype(Mailbox),
-                   &decltype(Mailbox)::_onIncomingData>(ctx, Mailbox);
+  _withPayloadAck<rpc::payload::MailboxPush>(
+      ctx, [](const auto& m) { Mailbox._onIncomingData(m); });
 }
-template <typename TStream>
-void BridgeClass<TStream>::_handleMailboxReadResponseCommand(
+void BridgeClass::_handleMailboxReadResponseCommand(
     const bridge::router::CommandContext& ctx) {
-  _delegateCommand<rpc::payload::MailboxReadResponse, decltype(Mailbox),
-                   &decltype(Mailbox)::_onIncomingData>(ctx, Mailbox);
+  _withPayloadAck<rpc::payload::MailboxReadResponse>(
+      ctx, [](const auto& m) { Mailbox._onIncomingData(m); });
 }
-template <typename TStream>
-void BridgeClass<TStream>::_handleMailboxAvailableResponseCommand(
+void BridgeClass::_handleMailboxAvailableResponseCommand(
     const bridge::router::CommandContext& ctx) {
-  _delegateCommand<rpc::payload::MailboxAvailableResponse, decltype(Mailbox),
-                   &decltype(Mailbox)::_onAvailableResponse>(ctx, Mailbox);
+  _withPayloadAck<rpc::payload::MailboxAvailableResponse>(
+      ctx, [](const auto& m) { Mailbox._onAvailableResponse(m); });
 }
 #endif
 
 #if BRIDGE_ENABLE_FILESYSTEM
-template <typename TStream>
-void BridgeClass<TStream>::_handleFileWriteCommand(
+void BridgeClass::_handleFileWriteCommand(
     const bridge::router::CommandContext& ctx) {
-  _delegateCommand<rpc::payload::FileWrite, decltype(FileSystem),
-                   &decltype(FileSystem)::_onWrite>(ctx, FileSystem);
+  _withPayloadAck<rpc::payload::FileWrite>(
+      ctx, [](const auto& m) { FileSystem._onWrite(m); });
 }
-template <typename TStream>
-void BridgeClass<TStream>::_handleFileReadCommand(
+void BridgeClass::_handleFileReadCommand(
     const bridge::router::CommandContext& ctx) {
-  _delegateCommand<rpc::payload::FileRead, decltype(FileSystem),
-                   &decltype(FileSystem)::_onRead>(ctx, FileSystem);
+  _withPayloadAck<rpc::payload::FileRead>(
+      ctx, [](const auto& m) { FileSystem._onRead(m); });
 }
-template <typename TStream>
-void BridgeClass<TStream>::_handleFileRemoveCommand(
+void BridgeClass::_handleFileRemoveCommand(
     const bridge::router::CommandContext& ctx) {
-  _delegateCommand<rpc::payload::FileRemove, decltype(FileSystem),
-                   &decltype(FileSystem)::_onRemove>(ctx, FileSystem);
+  _withPayloadAck<rpc::payload::FileRemove>(
+      ctx, [](const auto& m) { FileSystem._onRemove(m); });
 }
-template <typename TStream>
-void BridgeClass<TStream>::_handleFileReadResponseCommand(
+void BridgeClass::_handleFileReadResponseCommand(
     const bridge::router::CommandContext& ctx) {
-  _delegateCommand<rpc::payload::FileReadResponse, decltype(FileSystem),
-                   &decltype(FileSystem)::_onResponse>(ctx, FileSystem);
+  _withPayloadAck<rpc::payload::FileReadResponse>(
+      ctx, [](const auto& m) { FileSystem._onResponse(m); });
 }
 #endif
 
 #if BRIDGE_ENABLE_PROCESS
-template <typename TStream>
-void BridgeClass<TStream>::_handleProcessKillCommand(
+void BridgeClass::_handleProcessKillCommand(
     const bridge::router::CommandContext& ctx) {
-  _delegateCommand<rpc::payload::ProcessKill, decltype(Process),
-                   &decltype(Process)::_onKillNotification>(ctx, Process);
+  _withPayloadAck<rpc::payload::ProcessKill>(
+      ctx, [](const auto& m) { Process._onKillNotification(m); });
 }
-template <typename TStream>
-void BridgeClass<TStream>::_handleProcessRunAsyncResponseCommand(
+void BridgeClass::_handleProcessRunAsyncResponseCommand(
     const bridge::router::CommandContext& ctx) {
-  _delegateCommand<rpc::payload::ProcessRunAsyncResponse, decltype(Process),
-                   &decltype(Process)::_onRunAsyncResponse>(ctx, Process);
+  _withPayloadAck<rpc::payload::ProcessRunAsyncResponse>(
+      ctx, [](const auto& m) { Process._onRunAsyncResponse(m); });
 }
-template <typename TStream>
-void BridgeClass<TStream>::_handleProcessPollResponseCommand(
+void BridgeClass::_handleProcessPollResponseCommand(
     const bridge::router::CommandContext& ctx) {
-  _delegateCommand<rpc::payload::ProcessPollResponse, decltype(Process),
-                   &decltype(Process)::_onPollResponse>(ctx, Process);
+  _withPayloadAck<rpc::payload::ProcessPollResponse>(
+      ctx, [](const auto& m) { Process._onPollResponse(m); });
 }
 #endif
 
 #if BRIDGE_ENABLE_SPI
-template <typename TStream>
-void BridgeClass<TStream>::_handleSpiSetConfigCommand(
+void BridgeClass::_handleSpiSetConfigCommand(
     const bridge::router::CommandContext& ctx) {
-  _delegateCommand<rpc::payload::SpiConfig, decltype(SPIService),
-                   &decltype(SPIService)::setConfig>(ctx, SPIService);
+  _withPayloadAck<rpc::payload::SpiConfig>(
+      ctx, [](const auto& m) { SPIService.setConfig(m); });
 }
 #endif
 
-template <typename TStream>
-void BridgeClass<TStream>::_handleStatusAck(
-    const bridge::router::CommandContext& ctx) {
+void BridgeClass::_handleStatusAck(const bridge::router::CommandContext& ctx) {
   _withPayload<rpc::payload::AckPacket>(
       ctx, [this](const auto& ack) { _handleAck(ack.command_id); });
 }
 
-template <typename TStream>
-void BridgeClass<TStream>::_handleGetVersion(
-    const bridge::router::CommandContext& ctx) {
+void BridgeClass::_handleGetVersion(const bridge::router::CommandContext& ctx) {
   _withResponse(ctx, [this, &ctx]() {
     rpc::payload::VersionResponse resp = {};
     resp.major = rpc::FIRMWARE_VERSION_MAJOR;
     resp.minor = rpc::FIRMWARE_VERSION_MINOR;
-    resp.patch = static_cast<uint32_t>(rpc::FIRMWARE_VERSION_PATCH);
+    resp.patch = (uint32_t)rpc::FIRMWARE_VERSION_PATCH;
     if (!send(rpc::CommandId::CMD_GET_VERSION_RESP, ctx.sequence_id, resp)) {
       enterSafeState();
     }
   });
 }
 
-template <typename TStream>
-void BridgeClass<TStream>::_handleGetFreeMemory(
+void BridgeClass::_handleGetFreeMemory(
     const bridge::router::CommandContext& ctx) {
   _withResponse(ctx, [this, &ctx]() {
     rpc::payload::FreeMemoryResponse resp = {};
-    resp.value = static_cast<uint32_t>(bridge::hal::getFreeMemory());
-    if (!send(rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, ctx.sequence_id,
-              resp)) {
+    resp.value = (uint32_t)bridge::hal::getFreeMemory();
+    if (!send(rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, ctx.sequence_id, resp)) {
       enterSafeState();
     }
   });
 }
 
-template <typename TStream>
-void BridgeClass<TStream>::_handleLinkSync(
-    const bridge::router::CommandContext& ctx) {
+void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
   auto res = rpc::Payload::parse<rpc::payload::LinkSync>(*ctx.frame);
   if (!res) {
     emitStatus(rpc::StatusCode::STATUS_ERROR);
@@ -829,9 +727,7 @@ void BridgeClass<TStream>::_handleLinkSync(
   _notifyObservers(MsgBridgeSynchronized());
 }
 
-template <typename TStream>
-void BridgeClass<TStream>::_handleLinkReset(
-    const bridge::router::CommandContext& ctx) {
+void BridgeClass::_handleLinkReset(const bridge::router::CommandContext& ctx) {
   _withPayload<rpc::payload::HandshakeConfig>(
       ctx, [this, &ctx](const auto& msg) {
         _applyTimingConfig(msg);
@@ -842,8 +738,7 @@ void BridgeClass<TStream>::_handleLinkReset(
       });
 }
 
-template <typename TStream>
-void BridgeClass<TStream>::_handleGetCapabilities(
+void BridgeClass::_handleGetCapabilities(
     const bridge::router::CommandContext& ctx) {
   _withResponse(ctx, [this, &ctx]() {
     rpc::payload::Capabilities resp = {};
@@ -861,28 +756,23 @@ void BridgeClass<TStream>::_handleGetCapabilities(
   });
 }
 
-template <typename TStream>
-void BridgeClass<TStream>::_handleXoff(const bridge::router::CommandContext&) {
+void BridgeClass::_handleXoff(const bridge::router::CommandContext&) {
   _tx_enabled = false;
 }
 
-template <typename TStream>
-void BridgeClass<TStream>::_handleXon(const bridge::router::CommandContext&) {
+void BridgeClass::_handleXon(const bridge::router::CommandContext&) {
   _tx_enabled = true;
   _flushPendingTxQueue();
 }
 
-template <typename TStream>
-void BridgeClass<TStream>::_handleSetBaudrate(
+void BridgeClass::_handleSetBaudrate(
     const rpc::payload::SetBaudratePacket& msg) {
   if (msg.baudrate == 0 || msg.baudrate == _pending_baudrate) return;
   _pending_baudrate = msg.baudrate;
   _timers.start(_timer_ids[bridge::scheduler::TIMER_BAUDRATE_CHANGE]);
 }
 
-template <typename TStream>
-void BridgeClass<TStream>::_applyTimingConfig(
-    const rpc::payload::HandshakeConfig& msg) {
+void BridgeClass::_applyTimingConfig(const rpc::payload::HandshakeConfig& msg) {
   if (msg.ack_timeout_ms > 0) {
     _ack_timeout_ms = msg.ack_timeout_ms;
     _timers.set_period(_timer_ids[bridge::scheduler::TIMER_ACK_TIMEOUT],
@@ -892,8 +782,7 @@ void BridgeClass<TStream>::_applyTimingConfig(
     _response_timeout_ms = msg.response_timeout_ms;
 }
 
-template <typename TStream>
-void BridgeClass<TStream>::_handleEnterBootloader(
+void BridgeClass::_handleEnterBootloader(
     const rpc::payload::EnterBootloader& msg) {
   if (msg.magic == rpc::RPC_BOOTLOADER_MAGIC) {
     this->flushStream();
@@ -901,13 +790,9 @@ void BridgeClass<TStream>::_handleEnterBootloader(
   }
 }
 
-template <typename TStream>
-void BridgeClass<TStream>::_onBootloaderDelay() {
-  bridge::hal::enterBootloader();
-}
+void BridgeClass::_onBootloaderDelay() { bridge::hal::enterBootloader(); }
 
-template <typename TStream>
-void BridgeClass<TStream>::_handleReceivedFrame(etl::span<const uint8_t> p) {
+void BridgeClass::_handleReceivedFrame(etl::span<const uint8_t> p) {
   auto res = rpc::FrameParser::parse(p);
   if (!res) {
     _last_parse_error = res.error();
@@ -952,13 +837,11 @@ void BridgeClass<TStream>::_handleReceivedFrame(etl::span<const uint8_t> p) {
   _dispatchCommand(eff);
 }
 
-template <typename TStream>
-void BridgeClass<TStream>::_onPacketReceived(etl::span<const uint8_t> p) {
+void BridgeClass::_onPacketReceived(etl::span<const uint8_t> p) {
   _handleReceivedFrame(p);
 }
 
-template <typename TStream>
-etl::expected<void, rpc::FrameError> BridgeClass<TStream>::_decompressFrame(
+etl::expected<void, rpc::FrameError> BridgeClass::_decompressFrame(
     const rpc::Frame& in, rpc::Frame& out) {
   out = in;
   if (!rpc::is_compressed(in.envelope.command_id)) return {};
@@ -974,8 +857,7 @@ etl::expected<void, rpc::FrameError> BridgeClass<TStream>::_decompressFrame(
   return {};
 }
 
-template <typename TStream>
-bool BridgeClass<TStream>::_isSecurityCheckPassed(uint16_t cmd) const {
+bool BridgeClass::_isSecurityCheckPassed(uint16_t cmd) const {
   if (_shared_secret.empty()) return true;
   if ((cmd >= rpc::RPC_STATUS_CODE_MIN && cmd <= rpc::RPC_STATUS_CODE_MAX) ||
       (cmd >= rpc::RPC_SYSTEM_COMMAND_MIN &&
@@ -984,39 +866,31 @@ bool BridgeClass<TStream>::_isSecurityCheckPassed(uint16_t cmd) const {
   return _fsm.isSynchronized();
 }
 
-template <typename TStream>
-void BridgeClass<TStream>::signalXoff() {
+void BridgeClass::signalXoff() {
   if (!sendFrame(rpc::CommandId::CMD_XOFF)) {
     enterSafeState();
   }
 }
-template <typename TStream>
-void BridgeClass<TStream>::signalXon() {
+void BridgeClass::signalXon() {
   if (!sendFrame(rpc::CommandId::CMD_XON)) {
     enterSafeState();
   }
 }
 
-template <typename TStream>
-void BridgeClass<TStream>::_handleSpiBegin(
-    const bridge::router::CommandContext& ctx) {
+void BridgeClass::_handleSpiBegin(const bridge::router::CommandContext& ctx) {
   SPIService.begin();
   _processAck(ctx.raw_command, ctx.sequence_id);
 }
-template <typename TStream>
-void BridgeClass<TStream>::_handleSpiEnd(
-    const bridge::router::CommandContext& ctx) {
+void BridgeClass::_handleSpiEnd(const bridge::router::CommandContext& ctx) {
   SPIService.end();
   _processAck(ctx.raw_command, ctx.sequence_id);
 }
-template <typename TStream>
-void BridgeClass<TStream>::_handleSpiTransfer(
+void BridgeClass::_handleSpiTransfer(
     const bridge::router::CommandContext& ctx) {
   _withResponse(ctx, [this, &ctx]() {
     auto res = rpc::Payload::parse<rpc::payload::SpiTransfer>(*ctx.frame);
     if (res) {
-      size_t len =
-          etl::min(static_cast<size_t>(res->data.size), _rx_storage.size());
+      size_t len = etl::min((size_t)res->data.size, _rx_storage.size());
       etl::copy_n(res->data.bytes, len, _rx_storage.begin());
       size_t tr =
           SPIService.transfer(etl::span<uint8_t>(_rx_storage.data(), len));
@@ -1035,24 +909,12 @@ void BridgeClass<TStream>::_handleSpiTransfer(
   });
 }
 
-template <typename TStream>
-void BridgeClass<TStream>::_handleStatusMalformed(
-    const bridge::router::CommandContext&) {
+void BridgeClass::_handleStatusMalformed(const bridge::router::CommandContext&) {
   enterSafeState();
 }
 
 namespace bridge {
-#if defined(BRIDGE_HOST_TEST)
-#else
-void SafeStatePolicy::handle(BridgeClass<HardwareSerial>& bridge,
-                             const etl::exception&) {
+void SafeStatePolicy::handle(::BridgeClass& bridge, const etl::exception&) {
   bridge.enterSafeState();
 }
-#endif
 }  // namespace bridge
-
-#if defined(BRIDGE_HOST_TEST)
-template class BridgeClass<HostSerialStream<false>>;
-#else
-template class BridgeClass<HardwareSerial>;
-#endif

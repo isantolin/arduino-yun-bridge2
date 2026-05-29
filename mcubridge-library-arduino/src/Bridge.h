@@ -93,6 +93,7 @@ class BridgeClass {
   void emitStatus(rpc::StatusCode s, const __FlashStringHelper* m);
 
   // Non-template wrapper to reduce bloat
+  template <typename = void>
   void emitStatus(rpc::StatusCode s) {
     emitStatus(s, etl::span<const uint8_t>());
   }
@@ -100,10 +101,11 @@ class BridgeClass {
   void signalXoff();
   void signalXon();
 
-  [[nodiscard]] bool sendFrame(rpc::StatusCode s, uint16_t seq = 0,
-                               etl::span<const uint8_t> p = {});
-  [[nodiscard]] bool sendFrame(rpc::CommandId c, uint16_t seq = 0,
-                               etl::span<const uint8_t> p = {});
+  template <typename T>
+  [[nodiscard]] bool sendFrame(T cmd, uint16_t seq = 0,
+                               etl::span<const uint8_t> p = {}) {
+    return _sendFrame(rpc::to_underlying(cmd), seq, p);
+  }
 
   template <typename T>
   [[nodiscard]] bool send(rpc::StatusCode s, uint16_t seq, const T& packet) {

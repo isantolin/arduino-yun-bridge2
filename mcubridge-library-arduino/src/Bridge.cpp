@@ -367,17 +367,6 @@ void BridgeClass::emitStatus(rpc::StatusCode code,
     enterSafeState();
   }
 }
-
-bool BridgeClass::sendFrame(rpc::StatusCode s, uint16_t seq,
-                            etl::span<const uint8_t> p) {
-  return _sendFrame(rpc::to_underlying(s), seq, p);
-}
-
-bool BridgeClass::sendFrame(rpc::CommandId c, uint16_t seq,
-                            etl::span<const uint8_t> p) {
-  return _sendFrame(rpc::to_underlying(c), seq, p);
-}
-
 void BridgeClass::_sendRawFrame(uint16_t command_id, uint16_t sequence_id,
                                 etl::span<const uint8_t> payload) {
   const uint16_t raw_cmd = command_id & ~rpc::RPC_CMD_FLAG_COMPRESSED;

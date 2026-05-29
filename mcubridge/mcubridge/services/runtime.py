@@ -460,7 +460,7 @@ class BridgeService:
         val = msgspec.convert(cache.get(p.key, b"") if cache else b"", bytes)
         res = await self.serial.send(
             Command.CMD_DATASTORE_GET_RESP.value,
-            pb.DatastoreGetResponse(value=msgspec.Raw(val[:255])).SerializeToString(),
+            pb.DatastoreGetResponse(value=bytes(val[:255])).SerializeToString(),
         )
         return bool(res)
 

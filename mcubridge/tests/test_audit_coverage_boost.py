@@ -14,14 +14,14 @@ from mcubridge.transport.serial import SerialTransport
 
 
 @pytest.fixture
-def mock_bridge() -> BridgeService:
+def mock_bridge(tmp_path: Path) -> BridgeService:
     config = RuntimeConfig(
         mqtt_topic="br",
         serial_port="/dev/ttytest",
         serial_baud=9600,
         mqtt_host="localhost",
         mqtt_port=1883,
-        mqtt_spool_dir="/tmp/mcubridge_spool_test",
+        mqtt_spool_dir=str(tmp_path / "spool"),
     )
     state = create_runtime_state(config)
     serial = MagicMock(spec=SerialTransport)

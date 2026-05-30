@@ -44,24 +44,29 @@ async def test_resolve_reply_and_drop_coverage(mock_bridge: BridgeService) -> No
     assert mock_bridge.state.mqtt_dropped_messages >= 0
 
 
+
 @pytest.mark.asyncio
 async def test_spool_health_and_list_files(mock_bridge: BridgeService, tmp_path: Path) -> None:
     mock_bridge.config.mqtt_spool_dir = str(tmp_path)
-    mock_bridge.set_mqtt_client(None)
-
-    f1 = tmp_path / "1.msgpack"
-    f1.write_bytes(b"data")
-
-    client = MagicMock()
-    client.publish = AsyncMock(side_effect=Exception("network error"))
+    client = __import__("unittest").mock.MagicMock()
     mock_bridge.set_mqtt_client(client)
 
-    await mock_bridge.flush_mqtt_spool()
-    assert mock_bridge.state.mqtt_spool_degraded is True
+    import msgspec
+    from mcubridge.protocol.structures import QueuedPublish
+    dummy_pub = QueuedPublish(topic_name="test/topic", payload=b"data", qos=1, retain=False)
+    f1 = tmp_path / "1.msgpack"
+    f1.write_bytes(msgspec.msgpack.encode(dummy_pub))
 
-    client.publish = AsyncMock(return_value=None)
+    with __import__("unittest").mock.patch.object(mock_bridge, "_list_mqtt_spool_files", side_effect=OSError("scan failed")):
+        await mock_bridge.flush_mqtt_spool()
+    assert mock_bridge.state.mqtt_spool_degraded is True
+    assert mock_bridge.state.mqtt_spool_failure_reason == "scan failed"
+
+    # Now make it succeed
+    client.publish = __import__("unittest").mock.AsyncMock(return_value=None)
     await mock_bridge.flush_mqtt_spool()
     assert mock_bridge.state.mqtt_spool_degraded is False
+
 
 
 @pytest.mark.asyncio
@@ -76,8 +81,9 @@ async def test_handler_decode_errors(mock_bridge: BridgeService) -> None:
 async def test_serial_transport_active_failure(mock_bridge: BridgeService) -> None:
     transport = SerialTransport(mock_bridge.config, mock_bridge.state, mock_bridge)
     transport.writer = None
+    assert await transport.send(1, b"payload") is False
     with pytest.raises(RuntimeError, match="Serial writer inactive"):
-        await transport.send(1, b"payload")
+        transport._active_transport()
 
 
 @pytest.mark.asyncio

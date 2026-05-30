@@ -312,7 +312,7 @@ class BridgeService:
                 logger.warning("Unable to delete published MQTT spool entry", path=str(path), error=str(exc))
 
         pending = len(await asyncio.to_thread(self._list_mqtt_spool_files))
-        if not self.state.mqtt_spool_degraded:
+        if self.state.mqtt_spool_degraded:
             self._mark_mqtt_spool_healthy(pending)
         else:
             self.state.mqtt_spool_pending_messages = pending

@@ -16,12 +16,16 @@ from mcubridge.protocol import mcubridge_pb2 as pb
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, cast, Protocol, runtime_checkable, Callable, Awaitable
-
-from cobs import cobs
-import serialx
+import struct
 import structlog
 import tenacity
+import serialx
+from cobs import cobs
+from binascii import crc32
+
+
+from typing import TYPE_CHECKING, cast, Protocol, runtime_checkable, Callable, Awaitable
+
 from google.protobuf.message import DecodeError as ProtobufDecodeError
 
 from mcubridge.config.const import (
@@ -220,7 +224,18 @@ class SerialTransport:
             # Ensure we have bytes for cobs.decode
             raw_bytes = bytes(encoded_packet) if isinstance(encoded_packet, memoryview) else encoded_packet
             decoded = cobs.decode(raw_bytes)
-            envelope = parse_frame(decoded, self.state.link_session_key if self.state.is_synchronized else None)
+
+            if len(decoded) < 4:
+                raise ValueError("Frame too short for CRC")
+
+            payload_part, received_crc_bytes = decoded[:-4], decoded[-4:]
+            received_crc = struct.unpack("<I", received_crc_bytes)[0]
+            calculated_crc = crc32(payload_part) & 0xFFFFFFFF
+
+            if received_crc != calculated_crc:
+                raise ValueError(f"CRC Mismatch: got {received_crc:08X}, expected {calculated_crc:08X}")
+
+            envelope = parse_frame(payload_part, self.state.link_session_key if self.state.is_synchronized else None)
         except (cobs.DecodeError, ValueError, TypeError, RuntimeError) as exc:
             logger.warning("[SERIAL <- MCU] [MALFORMED]: %s", exc)
             self.state.serial_decode_errors += 1
@@ -368,18 +383,15 @@ class SerialTransport:
 
         from mcubridge.protocol.frame import build_frame
 
-        encoded = (
-            cobs.encode(
-                build_frame(
-                    command_id=command_id,
-                    sequence_id=seq_id,
-                    payload=payload,
-                    nonce=nonce,
-                    session_key=self.state.link_session_key if self.state.is_synchronized else None,
-                )
-            )
-            + protocol.FRAME_DELIMITER
+        raw_frame = build_frame(
+            command_id=command_id,
+            sequence_id=seq_id,
+            payload=payload,
+            nonce=nonce,
+            session_key=self.state.link_session_key if self.state.is_synchronized else None,
         )
+        crc = crc32(raw_frame) & 0xFFFFFFFF
+        encoded = cobs.encode(raw_frame + struct.pack("<I", crc)) + protocol.FRAME_DELIMITER
 
         if logger.is_enabled_for(logging.DEBUG):
             logger.debug(

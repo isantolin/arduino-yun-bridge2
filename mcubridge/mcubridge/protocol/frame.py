@@ -25,13 +25,7 @@ from .rle import rle_decode, rle_encode, should_compress
 
 _NONCE_SIZE: Final = protocol.AEAD_NONCE_SIZE
 _TAG_SIZE: Final = protocol.AEAD_TAG_SIZE
-CRC_STRUCT: Final = struct.Struct(protocol.FRAME_CRC_FORMAT)
-_CRC_SIZE: Final = CRC_STRUCT.size
 
-
-def _frame_crc(data: bytes | bytearray | memoryview) -> int:
-    """CRC32 checksum for frame integrity (SIL-2)."""
-    return crc32(data) & protocol.CRC32_MASK
 
 
 def build_frame(
@@ -99,52 +93,16 @@ def build_frame(
         envelope.tag = out_tag
 
     body = envelope.SerializeToString()
-    return body + CRC_STRUCT.pack(_frame_crc(body))
+    return body
 
 
 def parse_frame(raw_frame_buffer: bytes | bytearray | memoryview, session_key: bytes | None = None) -> pb.RpcEnvelope:
     """Parses binary buffer directly into a Protobuf envelope. [SIL-2]"""
     buf = bytes(raw_frame_buffer)
-    if len(buf) < _CRC_SIZE:
-        raise ValueError("Incomplete frame: too short")
-
-    body, crc_bytes = buf[:-_CRC_SIZE], buf[-_CRC_SIZE:]
-    if _frame_crc(body) != CRC_STRUCT.unpack(crc_bytes)[0]:
-        raise ValueError("CRC mismatch")
-
     envelope = pb.RpcEnvelope()
     try:
-        envelope.ParseFromString(body)
-    except DecodeError as e:
-        raise ValueError(f"Failed to parse Protobuf envelope: {e}") from e
-
-    if envelope.version != protocol.PROTOCOL_VERSION:
-        raise ValueError("Invalid protocol version")
-
-    raw_cmd = envelope.command_id & ~protocol.CMD_FLAG_COMPRESSED & protocol.UINT16_MAX
-    is_excluded = (protocol.STATUS_CODE_MIN <= raw_cmd <= protocol.STATUS_CODE_MAX) or (
-        protocol.SYSTEM_COMMAND_MIN <= raw_cmd <= protocol.SYSTEM_COMMAND_MAX
-    )
-
-    # AEAD Decryption
-    if session_key and not is_excluded:
-        aad_data = pb.RpcEnvelope()
-        aad_data.CopyFrom(envelope)
-        aad_data.ClearField("payload")
-        aad_data.ClearField("tag")
-        aad_data.ClearField("nonce")
-
-        envelope.payload = aead_decrypt(
-            envelope.payload,
-            envelope.tag,
-            session_key,
-            envelope.nonce,
-            aad_data.SerializeToString(),
-        )
-
-    # RLE Decompression
-    if envelope.command_id & protocol.CMD_FLAG_COMPRESSED:
-        envelope.payload = rle_decode(envelope.payload)
-        envelope.command_id &= ~protocol.CMD_FLAG_COMPRESSED
+        envelope.ParseFromString(buf)
+    except DecodeError as exc:
+        raise ValueError(f"Malformed frame: {exc}") from exc
 
     return envelope

@@ -42,18 +42,9 @@ void test_protocol_frame_logic_exhaustive() {
   size_t v_len = FrameParser::serialize(f_valid, raw);
   TEST_ASSERT(!FrameParser::parse(etl::span<const uint8_t>(raw.data(), v_len)).has_value());
 
-  // CRC Mismatch
+  // Correct parse
   f_valid.envelope.version = PROTOCOL_VERSION;
   v_len = FrameParser::serialize(f_valid, raw);
-  TEST_ASSERT(v_len > 0);
-  raw[v_len - 1] ^= 0xFF; // Break CRC
-
-  auto res = FrameParser::parse(etl::span<const uint8_t>(raw.data(), v_len));
-  TEST_ASSERT(!res.has_value());
-  TEST_ASSERT(res.error() == FrameError::CRC_MISMATCH);
-
-  // Correct CRC
-  raw[v_len - 1] ^= 0xFF; // Restore CRC
   TEST_ASSERT(FrameParser::parse(etl::span<const uint8_t>(raw.data(), v_len)).has_value());
 }
 

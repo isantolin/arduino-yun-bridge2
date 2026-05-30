@@ -2,8 +2,10 @@ from unittest.mock import AsyncMock, MagicMock
 from typing import Any
 
 import asyncio
+import struct
 import pytest
 from cobs import cobs
+from binascii import crc32
 from mcubridge.protocol import protocol
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.frame import build_frame
@@ -72,7 +74,8 @@ async def test_process_packet_success_dispatches() -> None:
         service.handle_mcu_frame = AsyncMock()
 
         frame_bytes = build_frame(command_id=Command.CMD_CONSOLE_WRITE.value, sequence_id=0, payload=b"hi")
-        encoded = cobs.encode(frame_bytes)
+        crc = crc32(frame_bytes) & 0xFFFFFFFF
+        encoded = cobs.encode(frame_bytes + struct.pack("<I", crc))
         transport = SerialTransport(config, state, service)
         await getattr(transport, "_process_packet")(encoded)
 
@@ -106,13 +109,13 @@ async def test_process_packet_negotiation_ack_switches_local_baudrate() -> None:
         setattr(transport, "_negotiating", True)
         setattr(transport, "_negotiation_future", asyncio.get_running_loop().create_future())
 
-        encoded = cobs.encode(
-            build_frame(
+        frame_raw = build_frame(
                 command_id=Command.CMD_SET_BAUDRATE_RESP.value,
                 sequence_id=0,
                 payload=b"",
             )
-        )
+        crc = crc32(frame_raw) & 0xFFFFFFFF
+        encoded = cobs.encode(frame_raw + struct.pack("<I", crc))
         await getattr(transport, "_process_packet")(encoded)
 
         assert await getattr(transport, "_negotiation_future") is True

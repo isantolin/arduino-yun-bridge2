@@ -152,15 +152,19 @@ class BiStream : public Stream {
 // ---------------------------------------------------------------------------
 // COBS encoder/decoder for building test frames.
 // [SIL-2] Mirrors the PacketSerial2::COBS codec used in production.
-// Validated by roundtrip tests in test_protocol.cpp and test_bridge_core.cpp.
+// Validated by roundtrip.
 // ---------------------------------------------------------------------------
 
-struct TestCOBS {
-  static size_t encode(const uint8_t* src, size_t len, uint8_t* dst) {
-    uint8_t* start = dst;
+class TestCOBS {
+ public:
+  static size_t encode(const uint8_t* source, size_t length,
+                       uint8_t* destination) {
+    uint8_t* dst = destination;
     uint8_t* code_ptr = dst++;
     uint8_t code = 1;
-    etl::for_each(src, src + len, [&](uint8_t b) {
+    const uint8_t* start = destination;
+
+    etl::for_each(source, source + length, [&](uint8_t b) {
       if (b == 0) {
         *code_ptr = code;
         code_ptr = dst++;
@@ -225,13 +229,20 @@ static bool extract_next_valid_frame(const ByteBuffer<N>& buffer,
     size_t decoded_len =
         TestCOBS::decode(&buffer.data[cursor], segment_len, decoded_buf.data());
 
-    if (decoded_len >= rpc::CRC_TRAILER_SIZE + 2U) {
-      auto result =
-          rpc::FrameParser::parse(etl::span<const uint8_t>(decoded_buf.data(), decoded_len));
-      if (result) {
-        out_frame = result.value();
-        cursor = end;
-        return true;
+    if (decoded_len >= 4U + 2U) {
+      const size_t payload_len = decoded_len - 4;
+      const uint32_t calc_crc = crc32_ieee(decoded_buf.data(), payload_len);
+      uint32_t received_crc = 0;
+      memcpy(&received_crc, &decoded_buf[payload_len], 4);
+
+      if (received_crc == calc_crc) {
+        auto result =
+            rpc::FrameParser::parse(etl::span<const uint8_t>(decoded_buf.data(), payload_len));
+        if (result) {
+          out_frame = result.value();
+          cursor = end;
+          return true;
+        }
       }
     }
     cursor = end;

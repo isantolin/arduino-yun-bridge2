@@ -340,7 +340,7 @@ void test_checksum_direct_library_path() {
   f.envelope.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_XON);
   f.envelope.sequence_id = 0;
   
-  uint32_t crc = rpc::checksum::compute(f.payload()); // Adjusted for new checksum logic
+  uint32_t crc = etl::crc32(f.payload().begin(), f.payload().end());
   TEST_ASSERT_GREATER_OR_EQUAL_UINT32(0, crc);
 }
 

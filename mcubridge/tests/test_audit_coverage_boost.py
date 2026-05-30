@@ -26,6 +26,7 @@ def mock_bridge(tmp_path: Path) -> BridgeService:
     state = create_runtime_state(config)
     serial = MagicMock(spec=SerialTransport)
     serial.send = AsyncMock(return_value=True)
+    state.mark_synchronized()
     service = BridgeService(config, state, cast(SerialTransport, serial))
     return service
 

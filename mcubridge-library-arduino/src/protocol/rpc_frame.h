@@ -109,7 +109,7 @@ class FrameBuilder {
     etl::copy_n(tag.begin(), AEAD_TAG_SIZE, f.envelope.tag.bytes);
     f.envelope.tag.size = static_cast<pb_size_t>(AEAD_TAG_SIZE);
 
-    const size_t pl_size = etl::min(payload.size(), static_cast<size_t>(64U));
+    const size_t pl_size = etl::min(payload.size(), MAX_PAYLOAD_SIZE);
     etl::copy_n(payload.begin(), pl_size, f.envelope.payload.bytes);
     f.envelope.payload.size = static_cast<pb_size_t>(pl_size);
 

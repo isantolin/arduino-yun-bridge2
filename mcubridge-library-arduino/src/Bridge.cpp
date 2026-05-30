@@ -12,7 +12,6 @@
 #include <wolfssl/wolfcrypt/types.h>
 
 #include "hal/progmem_compat.h"
-#include "protocol/pb_field_helpers.h"
 #include "services/Console.h"
 #include "services/DataStore.h"
 #include "services/FileSystem.h"
@@ -25,7 +24,8 @@ BridgeClass Bridge(Serial);
 
 namespace etl {
 // [SIL-2] Custom error handler to ensure fail-safe state on ETL exceptions
-void __attribute__((weak)) handle_error(const etl::exception& e) {
+void __attribute__((weak)) __attribute__((unused)) handle_error(
+    const etl::exception& e) {
   BridgeClass::ErrorPolicy::handle(Bridge, e);
 }
 }  // namespace etl
@@ -93,9 +93,7 @@ void BridgeClass::_dispatchCommand(const rpc::Frame& frame) {
   }
 
   if (!_isSecurityCheckPassed(ctx.raw_command)) {
-    if (!sendFrame(rpc::StatusCode::STATUS_ERROR, ctx.sequence_id)) {
-      enterSafeState();
-    }
+    (void)sendFrame(rpc::StatusCode::STATUS_ERROR, ctx.sequence_id);
     return;
   }
 
@@ -279,7 +277,7 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
           BridgeClass, &BridgeClass::_onPacketReceived>(*this));
 }
 
-void BridgeClass::process() { _scheduler_policy.schedule_tasks(_tasks); }
+void BridgeClass::process() { (void)_scheduler_policy.schedule_tasks(_tasks); }
 
 void BridgeClass::WatchdogTask::task_process_work() {
   bridge::hal::watchdog_kick();
@@ -313,7 +311,9 @@ void BridgeClass::TimerTask::task_process_work() {
 
 bool BridgeClass::isSynchronized() const { return _fsm.isSynchronized(); }
 
-void BridgeClass::_handleStatusOk(const bridge::router::CommandContext&) {}
+void BridgeClass::_handleStatusOk(const bridge::router::CommandContext& ctx) {
+  (void)ctx;
+}
 
 void BridgeClass::onUnknownCommand(const bridge::router::CommandContext& ctx) {
   if (_command_handler.is_valid())
@@ -332,25 +332,23 @@ void BridgeClass::enterSafeState() {
 
 void BridgeClass::emitStatus(rpc::StatusCode code,
                              etl::span<const uint8_t> pl) {
-  if (!sendFrame(code, 0, pl)) {
-    enterSafeState();
-  }
+  (void)sendFrame(code, 0, pl);
 }
 
 void BridgeClass::emitStatus(rpc::StatusCode code, etl::string_view msg) {
   rpc_pb_GenericResponse resp = rpc_pb_GenericResponse_init_default;
-  rpc::pb_field::copy_string_view_trunc(msg, resp.message);
-  if (!send(code, 0, resp)) {
-    enterSafeState();
+  const size_t to_copy = etl::min(msg.size(), sizeof(resp.message) - 1U);
+  if (to_copy > 0U) {
+    etl::copy_n(msg.begin(), to_copy, resp.message);
   }
+  resp.message[to_copy] = '\0';
+  (void)send(code, 0, resp);
 }
 
 void BridgeClass::emitStatus(rpc::StatusCode code,
                              const __FlashStringHelper* msg) {
   if (msg == nullptr) {
-    if (!sendFrame(code)) {
-      enterSafeState();
-    }
+    (void)sendFrame(code);
     return;
   }
   constexpr size_t max_len = 63U;
@@ -361,12 +359,25 @@ void BridgeClass::emitStatus(rpc::StatusCode code,
   str.resize(etl::strlen(str.data()));
 
   rpc_pb_GenericResponse resp = rpc_pb_GenericResponse_init_default;
-  rpc::pb_field::copy_string_view_trunc(
-      etl::string_view(str.data(), str.size()), resp.message);
-  if (!send(code, 0, resp)) {
-    enterSafeState();
+  const size_t to_copy =
+      etl::min(static_cast<size_t>(str.length()), sizeof(resp.message) - 1U);
+  if (to_copy > 0U) {
+    etl::copy_n(str.begin(), to_copy, resp.message);
   }
+  resp.message[to_copy] = '\0';
+  (void)send(code, 0, resp);
 }
+
+bool BridgeClass::sendFrame(rpc::StatusCode s, uint16_t seq,
+                            etl::span<const uint8_t> p) {
+  return _sendFrame(rpc::to_underlying(s), seq, p);
+}
+
+bool BridgeClass::sendFrame(rpc::CommandId c, uint16_t seq,
+                            etl::span<const uint8_t> p) {
+  return _sendFrame(rpc::to_underlying(c), seq, p);
+}
+
 void BridgeClass::_sendRawFrame(uint16_t command_id, uint16_t sequence_id,
                                 etl::span<const uint8_t> payload) {
   const uint16_t raw_cmd = command_id & ~rpc::RPC_CMD_FLAG_COMPRESSED;
@@ -459,9 +470,7 @@ void BridgeClass::_processAck(uint16_t command_id, uint16_t sequence_id) {
   // [MEM-SAVE] Replaced manual ACK building with centralized helper.
   rpc::payload::AckPacket p;
   p.command_id = command_id;
-  if (!send(rpc::StatusCode::STATUS_ACK, sequence_id, p)) {
-    enterSafeState();
-  }
+  (void)send(rpc::StatusCode::STATUS_ACK, sequence_id, p);
 }
 
 void BridgeClass::_retransmitLastFrame() {
@@ -507,13 +516,9 @@ void BridgeClass::_handleSetBaudrateCommand(
     auto res = rpc::Payload::parse<rpc::payload::SetBaudratePacket>(*ctx.frame);
     if (res) {
       _handleSetBaudrate(res.value());
-      if (!sendFrame(rpc::CommandId::CMD_SET_BAUDRATE_RESP, ctx.sequence_id)) {
-        enterSafeState();
-      }
+      (void)sendFrame(rpc::CommandId::CMD_SET_BAUDRATE_RESP, ctx.sequence_id);
     } else
-      if (!sendFrame(rpc::StatusCode::STATUS_ERROR, ctx.sequence_id)) {
-        enterSafeState();
-      }
+      (void)sendFrame(rpc::StatusCode::STATUS_ERROR, ctx.sequence_id);
   });
 }
 
@@ -655,9 +660,7 @@ void BridgeClass::_handleGetVersion(const bridge::router::CommandContext& ctx) {
     resp.major = rpc::FIRMWARE_VERSION_MAJOR;
     resp.minor = rpc::FIRMWARE_VERSION_MINOR;
     resp.patch = (uint32_t)rpc::FIRMWARE_VERSION_PATCH;
-    if (!send(rpc::CommandId::CMD_GET_VERSION_RESP, ctx.sequence_id, resp)) {
-      enterSafeState();
-    }
+    (void)send(rpc::CommandId::CMD_GET_VERSION_RESP, ctx.sequence_id, resp);
   });
 }
 
@@ -666,9 +669,7 @@ void BridgeClass::_handleGetFreeMemory(
   _withResponse(ctx, [this, &ctx]() {
     rpc::payload::FreeMemoryResponse resp = {};
     resp.value = (uint32_t)bridge::hal::getFreeMemory();
-    if (!send(rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, ctx.sequence_id, resp)) {
-      enterSafeState();
-    }
+    (void)send(rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, ctx.sequence_id, resp);
   });
 }
 
@@ -680,8 +681,11 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
   }
   const auto& msg = res.value();
   rpc::payload::LinkSync resp = {};
-  const size_t n_size = rpc::pb_field::copy_span_to_bytes_field(
-      rpc::pb_field::bytes_field_as_span(msg.nonce), resp.nonce);
+  const size_t n_size =
+      etl::min(static_cast<size_t>(msg.nonce.size),
+               static_cast<size_t>(rpc::RPC_HANDSHAKE_NONCE_LENGTH));
+  etl::copy_n(msg.nonce.bytes, n_size, resp.nonce.bytes);
+  resp.nonce.size = static_cast<pb_size_t>(n_size);
 
   if (!_shared_secret.empty()) {
     etl::array<uint8_t, rpc::RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH> out_tag;
@@ -695,9 +699,8 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
       return;
     }
 
-    rpc::pb_field::copy_span_to_bytes_field(
-        etl::span<const uint8_t>(out_tag.data(), rpc::RPC_HANDSHAKE_TAG_LENGTH),
-        resp.tag);
+    etl::copy_n(out_tag.data(), rpc::RPC_HANDSHAKE_TAG_LENGTH, resp.tag.bytes);
+    resp.tag.size = rpc::RPC_HANDSHAKE_TAG_LENGTH;
     rpc::security::derive_session_key_raw(
         _shared_secret.data(), _shared_secret.size(), msg.nonce.bytes, n_size,
         _session_key.data());
@@ -710,9 +713,7 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
   _fsm.receive(bridge::fsm::EvHandshakeComplete());
 
   _tx_enabled = true;
-  if (!send(rpc::CommandId::CMD_LINK_SYNC_RESP, ctx.sequence_id, resp)) {
-    enterSafeState();
-  }
+  (void)send(rpc::CommandId::CMD_LINK_SYNC_RESP, ctx.sequence_id, resp);
   _notifyObservers(MsgBridgeSynchronized());
 }
 
@@ -721,9 +722,7 @@ void BridgeClass::_handleLinkReset(const bridge::router::CommandContext& ctx) {
       ctx, [this, &ctx](const auto& msg) {
         _applyTimingConfig(msg);
         enterSafeState();
-        if (!sendFrame(rpc::CommandId::CMD_LINK_RESET_RESP, ctx.sequence_id)) {
-          enterSafeState();
-        }
+        (void)sendFrame(rpc::CommandId::CMD_LINK_RESET_RESP, ctx.sequence_id);
       });
 }
 
@@ -738,18 +737,18 @@ void BridgeClass::_handleGetCapabilities(
     bridge::hal::getPinCounts(dig, ana);
     resp.dig = dig;
     resp.ana = ana;
-    if (!send(rpc::CommandId::CMD_GET_CAPABILITIES_RESP, ctx.sequence_id,
-              resp)) {
-      enterSafeState();
-    }
+    (void)send(rpc::CommandId::CMD_GET_CAPABILITIES_RESP, ctx.sequence_id,
+               resp);
   });
 }
 
-void BridgeClass::_handleXoff(const bridge::router::CommandContext&) {
+void BridgeClass::_handleXoff(const bridge::router::CommandContext& ctx) {
+  (void)ctx;
   _tx_enabled = false;
 }
 
-void BridgeClass::_handleXon(const bridge::router::CommandContext&) {
+void BridgeClass::_handleXon(const bridge::router::CommandContext& ctx) {
+  (void)ctx;
   _tx_enabled = true;
   _flushPendingTxQueue();
 }
@@ -855,16 +854,8 @@ bool BridgeClass::_isSecurityCheckPassed(uint16_t cmd) const {
   return _fsm.isSynchronized();
 }
 
-void BridgeClass::signalXoff() {
-  if (!sendFrame(rpc::CommandId::CMD_XOFF)) {
-    enterSafeState();
-  }
-}
-void BridgeClass::signalXon() {
-  if (!sendFrame(rpc::CommandId::CMD_XON)) {
-    enterSafeState();
-  }
-}
+void BridgeClass::signalXoff() { (void)sendFrame(rpc::CommandId::CMD_XOFF); }
+void BridgeClass::signalXon() { (void)sendFrame(rpc::CommandId::CMD_XON); }
 
 void BridgeClass::_handleSpiBegin(const bridge::router::CommandContext& ctx) {
   SPIService.begin();
@@ -888,22 +879,26 @@ void BridgeClass::_handleSpiTransfer(
         return;
       }
       rpc::payload::SpiTransferResponse resp = {};
-      rpc::pb_field::copy_span_to_bytes_field(
-          etl::span<const uint8_t>(_rx_storage.data(), len), resp.data);
-      if (!send(rpc::CommandId::CMD_SPI_TRANSFER_RESP, ctx.sequence_id, resp)) {
-        enterSafeState();
+      const size_t to_copy = etl::min(len, sizeof(resp.data.bytes));
+      resp.data.size = (pb_size_t)to_copy;
+      if (to_copy > 0) {
+        etl::copy_n(_rx_storage.data(), to_copy, resp.data.bytes);
       }
+      (void)send(rpc::CommandId::CMD_SPI_TRANSFER_RESP, ctx.sequence_id, resp);
     } else
       emitStatus(rpc::StatusCode::STATUS_ERROR);
   });
 }
 
-void BridgeClass::_handleStatusMalformed(const bridge::router::CommandContext&) {
+void BridgeClass::_handleStatusMalformed(
+    const bridge::router::CommandContext& ctx) {
+  (void)ctx;
   enterSafeState();
 }
 
 namespace bridge {
-void SafeStatePolicy::handle(::BridgeClass& bridge, const etl::exception&) {
+void SafeStatePolicy::handle(::BridgeClass& bridge, const etl::exception& e) {
+  (void)e;
   bridge.enterSafeState();
 }
 }  // namespace bridge

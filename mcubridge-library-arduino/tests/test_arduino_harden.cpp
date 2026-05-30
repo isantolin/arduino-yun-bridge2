@@ -145,6 +145,8 @@ void test_bridge_linksync_auth_failure() {
 void test_bridge_retransmit_empty_queue() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
+  auto ba = TestAccessor::create(Bridge);
+  (void)ba;
 
   // Calling internal retransmit on empty queue should be safe
   TEST_ASSERT_TRUE(true);

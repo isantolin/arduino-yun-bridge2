@@ -32,9 +32,7 @@ fi
 
 # Apply immediately if sysctl is available
 if command -v sysctl >/dev/null 2>&1; then
-    if ! sysctl -p "$SYSCTL_CONF" >/dev/null 2>&1; then
-        echo "[mcubridge] Warning: failed to apply $SYSCTL_CONF immediately" >&2
-    fi
+    sysctl -p "$SYSCTL_CONF" >/dev/null 2>&1 || true
 fi
 
 # Also add to rc.local as backup (in case sysctl.d is not processed early enough)

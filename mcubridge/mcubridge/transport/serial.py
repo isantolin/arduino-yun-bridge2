@@ -15,17 +15,14 @@ from __future__ import annotations
 from mcubridge.protocol import mcubridge_pb2 as pb
 
 import asyncio
+import contextlib
 import logging
-import struct
-import structlog
-import tenacity
-import serialx
-from cobs import cobs
-from binascii import crc32
-
-
 from typing import TYPE_CHECKING, cast, Protocol, runtime_checkable, Callable, Awaitable
 
+from cobs import cobs
+import serialx
+import structlog
+import tenacity
 from google.protobuf.message import DecodeError as ProtobufDecodeError
 
 from mcubridge.config.const import (
@@ -172,15 +169,11 @@ class SerialTransport:
                 raise ConnectionError("Serial connection lost")
         finally:
             read_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.IncompleteReadError, asyncio.CancelledError):
                 await read_task
-            except (asyncio.IncompleteReadError, asyncio.CancelledError):
-                pass
             if self.service:
-                try:
+                with contextlib.suppress(OSError, RuntimeError, ValueError, TypeError):
                     await self.service.on_serial_disconnected()
-                except (OSError, RuntimeError, ValueError, TypeError) as exc:
-                    logger.warning("Serial service disconnect hook failed: %s", exc)
             if self.writer:
                 self.writer.close()
 
@@ -224,18 +217,7 @@ class SerialTransport:
             # Ensure we have bytes for cobs.decode
             raw_bytes = bytes(encoded_packet) if isinstance(encoded_packet, memoryview) else encoded_packet
             decoded = cobs.decode(raw_bytes)
-
-            if len(decoded) < 4:
-                raise ValueError("Frame too short for CRC")
-
-            payload_part, received_crc_bytes = decoded[:-4], decoded[-4:]
-            received_crc = struct.unpack("<I", received_crc_bytes)[0]
-            calculated_crc = crc32(payload_part) & 0xFFFFFFFF
-
-            if received_crc != calculated_crc:
-                raise ValueError(f"CRC Mismatch: got {received_crc:08X}, expected {calculated_crc:08X}")
-
-            envelope = parse_frame(payload_part, self.state.link_session_key if self.state.is_synchronized else None)
+            envelope = parse_frame(decoded, self.state.link_session_key if self.state.is_synchronized else None)
         except (cobs.DecodeError, ValueError, TypeError, RuntimeError) as exc:
             logger.warning("[SERIAL <- MCU] [MALFORMED]: %s", exc)
             self.state.serial_decode_errors += 1
@@ -278,10 +260,8 @@ class SerialTransport:
         if command_id == Status.ACK.value:
             ack_target = pending.command_id
             if payload:
-                try:
+                with contextlib.suppress(ProtobufDecodeError, TypeError, ValueError):
                     ack_target = pb.AckPacket.FromString(payload).command_id
-                except (ProtobufDecodeError, TypeError, ValueError) as exc:
-                    logger.debug("Ignoring malformed ACK payload", error=str(exc))
             if ack_target == pending.command_id:
                 pending.ack_received = True
                 if not pending.expected_resp_ids:
@@ -362,12 +342,9 @@ class SerialTransport:
             return False
 
         if not self.state.serial_tx_allowed.is_set():
-            try:
+            with contextlib.suppress(TimeoutError):
                 async with asyncio.timeout(30.0):
                     await self.state.serial_tx_allowed.wait()
-            except TimeoutError:
-                logger.warning("Timed out waiting for serial TX permission")
-                return False
 
         if seq_id is None:
             self._tx_sequence_id = (self._tx_sequence_id + 1) & protocol.UINT16_MAX
@@ -383,15 +360,18 @@ class SerialTransport:
 
         from mcubridge.protocol.frame import build_frame
 
-        raw_frame = build_frame(
-            command_id=command_id,
-            sequence_id=seq_id,
-            payload=payload,
-            nonce=nonce,
-            session_key=self.state.link_session_key if self.state.is_synchronized else None,
+        encoded = (
+            cobs.encode(
+                build_frame(
+                    command_id=command_id,
+                    sequence_id=seq_id,
+                    payload=payload,
+                    nonce=nonce,
+                    session_key=self.state.link_session_key if self.state.is_synchronized else None,
+                )
+            )
+            + protocol.FRAME_DELIMITER
         )
-        crc = crc32(raw_frame) & 0xFFFFFFFF
-        encoded = cobs.encode(raw_frame + struct.pack("<I", crc)) + protocol.FRAME_DELIMITER
 
         if logger.is_enabled_for(logging.DEBUG):
             logger.debug(

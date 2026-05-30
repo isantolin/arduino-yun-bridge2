@@ -71,14 +71,14 @@ endef
 define Build/Compile
 	python3 -O -m compileall -j 0 -b -f -q $(PKG_BUILD_DIR)/mcubridge
 	[ ! -d $(PKG_BUILD_DIR)/scripts ] || python3 -m compileall -j 0 -q -b $(PKG_BUILD_DIR)/scripts
-	find /tmp -name '__pycache__' -type d -print0 | xargs -0 -r rm -rf
+	find /tmp -name '__pycache__' -type d -print0 | xargs -0 -r rm -rf || true
 endef
 
 define Build/Prepare
 	rm -rf $(PKG_BUILD_DIR)
 	mkdir -p $(PKG_BUILD_DIR)
 	$(CP) -r ./mcubridge $(PKG_BUILD_DIR)/
-	find $(PKG_BUILD_DIR)/mcubridge -type d \( -name "tests" -o -name "test" -o -name "tools" -o -name "stubs" -o -name "__pycache__" \) -prune -exec rm -rf {} +
+	find $(PKG_BUILD_DIR)/mcubridge -type d \( -name "tests" -o -name "test" -o -name "tools" -o -name "stubs" -o -name "__pycache__" \) -prune -exec rm -rf {} + || true
 	$(CP) ./mcubridge.init $(PKG_BUILD_DIR)/
 	$(CP) ./mcubridge.files $(PKG_BUILD_DIR)/
 	$(CP) ./uci-defaults/95-mcubridge-silence-kernel-console $(PKG_BUILD_DIR)/
@@ -86,7 +86,7 @@ define Build/Prepare
 	$(CP) ./uci-defaults/97-mcubridge-default-secret $(PKG_BUILD_DIR)/
 	$(CP) ./uci-defaults/98-mcubridge-default-serial $(PKG_BUILD_DIR)/
 	$(CP) ./uci-defaults/99-mcubridge-disable-askconsole $(PKG_BUILD_DIR)/
-	if [ -d ./scripts ]; then $(CP) -r ./scripts $(PKG_BUILD_DIR)/; fi
+	[ -d ./scripts ] && $(CP) -r ./scripts $(PKG_BUILD_DIR)/ || true
 endef
 
 define Package/$(PKG_NAME)/install
@@ -113,12 +113,11 @@ define Package/$(PKG_NAME)/install
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/99-mcubridge-disable-askconsole $(1)/etc/uci-defaults/
 	
 	# Core scripts (install stripping .py extension and ensuring hyphenated command names)
-	if [ -d $(PKG_BUILD_DIR)/scripts ]; then \
+	[ -d $(PKG_BUILD_DIR)/scripts ] && \
 		for f in $$(find $(PKG_BUILD_DIR)/scripts -type f -name '*.py'); do \
 			cmd=$$(basename $$f .py | tr '_' '-'); \
 			$(INSTALL_BIN) "$$f" "$(1)/usr/bin/$$cmd"; \
-		done; \
-	fi
+		done || true
 endef
 
 define Package/$(PKG_NAME)/clean

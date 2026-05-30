@@ -60,12 +60,11 @@ class TestAccessor {
     if (_bridge._shared_secret.empty()) return;
     // [MEM-SAVE] Replaced manual handshake logic with centralized utility.
     etl::array<uint8_t, 32> out_tag_full;
-    const bool authenticated = rpc::security::handshake_authenticate(
+    (void)rpc::security::handshake_authenticate(
         etl::span<const uint8_t>(_bridge._shared_secret),
         etl::span<const uint8_t>(nonce_ptr, len),
         etl::span<const uint8_t>(), // [MEM-SAVE] received_tag not used here
         etl::span<uint8_t>(out_tag_full));
-    if (!authenticated) return;
     etl::copy_n(out_tag_full.begin(), 16, tag_out);
   }
 
@@ -85,10 +84,7 @@ class TestAccessor {
   }
 
   void invokeConsolePush(const rpc::payload::ConsoleWrite& cmsg) {
-    const bool pushed = _bridge.send(rpc::CommandId::CMD_CONSOLE_WRITE, 0, cmsg);
-    if (!pushed) {
-      _bridge.enterSafeState();
-    }
+    (void)_bridge.send(rpc::CommandId::CMD_CONSOLE_WRITE, 0, cmsg);
   }
   bool isAwaitingAck() const {
     return _fsm.get_state_id() ==

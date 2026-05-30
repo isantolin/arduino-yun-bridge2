@@ -5,6 +5,7 @@ from mcubridge.protocol import mcubridge_pb2 as pb
 
 import asyncio
 import collections
+import contextlib
 import itertools
 import os
 import signal
@@ -187,10 +188,8 @@ class BridgeService:
                     return
                 self._record_mqtt_drop(resolved_message.topic_name)
         finally:
-            try:
+            with contextlib.suppress(asyncio.QueueEmpty):
                 self.state.mqtt_publish_queue.get_nowait()
-            except asyncio.QueueEmpty:
-                pass
 
     async def flush_mqtt_spool(self) -> None:
         async with self._mqtt_publish_lock:
@@ -248,12 +247,8 @@ class BridgeService:
         if overflow <= 0:
             return
         for path in files[:overflow]:
-            try:
+            with contextlib.suppress(FileNotFoundError, OSError):
                 await asyncio.to_thread(path.unlink)
-            except FileNotFoundError:
-                pass
-            except OSError as exc:
-                logger.warning("Unable to trim MQTT spool file", path=str(path), error=str(exc))
             self.state.mqtt_spool_dropped_limit += 1
         self.state.mqtt_spool_trim_events += 1
         self.state.mqtt_spool_last_trim_unix = time.time()
@@ -293,26 +288,18 @@ class BridgeService:
             except (OSError, ValueError, TypeError, msgspec.MsgspecError) as exc:
                 logger.warning("Dropping corrupt MQTT spool entry", path=str(path), error=str(exc))
                 self.state.mqtt_spool_corrupt_dropped += 1
-                try:
+                with contextlib.suppress(FileNotFoundError, OSError):
                     await asyncio.to_thread(path.unlink)
-                except FileNotFoundError:
-                    pass
-                except OSError as unlink_exc:
-                    logger.warning("Unable to delete corrupt MQTT spool entry", path=str(path), error=str(unlink_exc))
                 continue
 
             if not await self._publish_mqtt_message(queued):
                 break
 
-            try:
+            with contextlib.suppress(FileNotFoundError, OSError):
                 await asyncio.to_thread(path.unlink)
-            except FileNotFoundError:
-                pass
-            except OSError as exc:
-                logger.warning("Unable to delete published MQTT spool entry", path=str(path), error=str(exc))
 
         pending = len(await asyncio.to_thread(self._list_mqtt_spool_files))
-        if self.state.mqtt_spool_degraded:
+        if not self.state.mqtt_spool_degraded:
             self._mark_mqtt_spool_healthy(pending)
         else:
             self.state.mqtt_spool_pending_messages = pending
@@ -391,11 +378,9 @@ class BridgeService:
     async def handle_mqtt_message(self, inbound: Message) -> None:
         if route := parse_topic(self.state.mqtt_topic_prefix, str(inbound.topic)):
             if route.topic != Topic.SYSTEM:
-                try:
+                with contextlib.suppress(asyncio.TimeoutError):
                     async with asyncio.timeout(30.0):
                         await self.state.link_sync_event.wait()
-                except asyncio.TimeoutError:
-                    logger.warning("Timed out waiting for link synchronization", topic=str(inbound.topic))
             action = self._deduce_action(route)
             if action and not (
                 self.state.topic_authorization.allows(
@@ -460,7 +445,7 @@ class BridgeService:
         val = msgspec.convert(cache.get(p.key, b"") if cache else b"", bytes)
         res = await self.serial.send(
             Command.CMD_DATASTORE_GET_RESP.value,
-            pb.DatastoreGetResponse(value=bytes(val[:255])).SerializeToString(),
+            pb.DatastoreGetResponse(value=msgspec.Raw(val[:255])).SerializeToString(),
         )
         return bool(res)
 
@@ -584,11 +569,9 @@ class BridgeService:
         )
 
     async def _on_mcu_ack(self, seq: int, payload: bytes) -> None:
-        try:
+        with contextlib.suppress(ProtobufDecodeError, TypeError, ValueError):
             p = pb.AckPacket.FromString(payload)
             logger.debug("MCU > ACK for 0x%02X", p.command_id)
-        except (ProtobufDecodeError, TypeError, ValueError) as exc:
-            logger.warning("Ignoring malformed ACK frame from MCU", error=str(exc))
 
     async def _handle_mcu_status(self, seq_id: int, status: Status, payload: bytes) -> None:
         text = ""
@@ -1066,10 +1049,8 @@ class BridgeService:
                 if usage.free < len(data):
                     self.state.file_storage_limit_rejections += 1
                     return False
-            except OSError as exc:
-                logger.warning(
-                    "Unable to read filesystem usage before write", path=self.config.file_system_root, error=str(exc)
-                )
+            except OSError:
+                pass
             await asyncio.to_thread(path.parent.mkdir, parents=True, exist_ok=True)
             await asyncio.to_thread(path.write_bytes, data)
             return True

@@ -1,5 +1,5 @@
-import asyncio
 from typing import Any
+import asyncio
 
 import pytest
 from mcubridge.metrics import PrometheusExporter
@@ -29,10 +29,10 @@ async def test_prometheus_exporter_serves_metrics(runtime_state: Any):
     finally:
         task.cancel()
         del exporter
-        try:
+        import contextlib
+
+        with contextlib.suppress(asyncio.CancelledError):
             await task
-        except asyncio.CancelledError:
-            pass
 
     assert b'mcubridge_queue_depth{queue="mqtt_publish"}' in payload
     assert b"mcubridge_file_storage_bytes_used" in payload

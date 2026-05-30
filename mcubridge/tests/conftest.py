@@ -141,13 +141,6 @@ mcubridge.config.const.VOLATILE_STORAGE_PATHS = frozenset(
 )
 
 
-def _rmtree_if_exists(path: str | Path) -> None:
-    target = Path(path)
-    if not target.exists():
-        return
-    shutil.rmtree(target)
-
-
 @pytest.fixture(autouse=True)
 def isolate_test_paths() -> Iterator[None]:
     """Give each test unique file_system_root and mqtt_spool_dir to prevent cross-test interference.
@@ -165,7 +158,7 @@ def isolate_test_paths() -> Iterator[None]:
     yield
     mcubridge.config.const.DEFAULT_FILE_SYSTEM_ROOT = original_fs
     mcubridge.config.const.DEFAULT_MQTT_SPOOL_DIR = original_spool
-    _rmtree_if_exists(tmp_base)
+    shutil.rmtree(tmp_base, ignore_errors=True)
 
 
 @pytest.fixture(autouse=True)
@@ -177,13 +170,13 @@ def reset_logging_handlers():
         try:
             handler.close()
         except (OSError, RuntimeError):
-            logging.getLogger(__name__).debug("Logging handler close failed during test cleanup")
+            pass
         root.removeHandler(handler)
 
 
 def _remove_persistent_test_path(path: Path) -> None:
     if path.is_dir():
-        _rmtree_if_exists(path)
+        shutil.rmtree(path, ignore_errors=True)
         return
 
     try:
@@ -191,7 +184,7 @@ def _remove_persistent_test_path(path: Path) -> None:
     except FileNotFoundError:
         return
     except IsADirectoryError:
-        _rmtree_if_exists(path)
+        shutil.rmtree(path, ignore_errors=True)
 
 
 @pytest.fixture(autouse=True)

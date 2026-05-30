@@ -53,6 +53,15 @@ def test_parse_rejects_short_frame() -> None:
         parse_frame(raw)
 
 
+def test_parse_detects_crc_mismatch() -> None:
+    payload = b"valid"
+    raw = build_frame(command_id=protocol.Command.CMD_CONSOLE_WRITE.value, sequence_id=0, payload=payload)
+    corrupted = raw[:-1] + bytes([raw[-1] ^ protocol.UINT8_MASK])
+
+    with pytest.raises(ValueError):
+        parse_frame(corrupted)
+
+
 def test_parse_validates_version_and_length() -> None:
     payload = b"data"
     raw = bytearray(

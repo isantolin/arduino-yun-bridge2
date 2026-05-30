@@ -4,6 +4,7 @@ from __future__ import annotations
 from . import mcubridge_pb2 as pb
 
 import asyncio
+import contextlib
 import logging
 import os
 import secrets
@@ -137,10 +138,8 @@ class Bridge:
     async def disconnect(self) -> None:
         if self._listener_task:
             self._listener_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._listener_task
-            except asyncio.CancelledError:
-                pass
         await self._exit_stack.aclose()
         self._client = None
         logger.info("Disconnected.")
@@ -156,8 +155,8 @@ class Bridge:
                     queue.put_nowait(message)
                 elif Topic.matches(self._console_topic, message.topic.value):
                     self._console_queue.put_nowait(bytes(message.payload) if message.payload else b"")
-        except MqttError as exc:
-            logger.info("MQTT listener stopped", exc_info=exc)
+        except MqttError:
+            pass
 
     async def _publish_and_wait(
         self,
@@ -300,15 +299,13 @@ class Bridge:
             await self._client.publish(Topic.build(Topic.MAILBOX, "write"), message)
 
     async def mailbox_read(self, timeout: float = 5.0) -> bytes | None:
-        try:
+        with contextlib.suppress(TimeoutError, asyncio.TimeoutError):
             return await self._publish_and_wait(
                 Topic.build(Topic.MAILBOX, "read"),
                 b"",
                 resp_topic=Topic.build(Topic.MAILBOX, "incoming"),
                 timeout=timeout,
             )
-        except (TimeoutError, asyncio.TimeoutError):
-            logger.debug("Mailbox read timed out after %.2fs", timeout)
         return None
 
     async def set_digital_mode(self, pin: int, mode: int) -> None:

@@ -84,10 +84,7 @@ class String {
 
   String(int v) {
     char buf[16];
-    const int chars = ::snprintf(buf, sizeof(buf), "%d", v);
-    if (chars < 0) {
-      buf[0] = '\0';
-    }
+    (void)::snprintf(buf, sizeof(buf), "%d", v);
     assign(buf);
   }
 

@@ -93,7 +93,6 @@ class BridgeClass {
   void emitStatus(rpc::StatusCode s, const __FlashStringHelper* m);
 
   // Non-template wrapper to reduce bloat
-  template <typename = void>
   void emitStatus(rpc::StatusCode s) {
     emitStatus(s, etl::span<const uint8_t>());
   }
@@ -101,11 +100,10 @@ class BridgeClass {
   void signalXoff();
   void signalXon();
 
-  template <typename T>
-  [[nodiscard]] bool sendFrame(T cmd, uint16_t seq = 0,
-                               etl::span<const uint8_t> p = {}) {
-    return _sendFrame(rpc::to_underlying(cmd), seq, p);
-  }
+  [[nodiscard]] bool sendFrame(rpc::StatusCode s, uint16_t seq = 0,
+                               etl::span<const uint8_t> p = {});
+  [[nodiscard]] bool sendFrame(rpc::CommandId c, uint16_t seq = 0,
+                               etl::span<const uint8_t> p = {});
 
   template <typename T>
   [[nodiscard]] bool send(rpc::StatusCode s, uint16_t seq, const T& packet) {
@@ -134,8 +132,8 @@ class BridgeClass {
   using CommandHandler = etl::delegate<void(const rpc::Frame&)>;
   using StatusHandler =
       etl::delegate<void(rpc::StatusCode, etl::span<const uint8_t>)>;
-  void onCommand(CommandHandler h) { _command_handler = h; }
-  void onStatus(StatusHandler h) { _status_handler = h; }
+  [[maybe_unused]] void onCommand(CommandHandler h) { _command_handler = h; }
+  [[maybe_unused]] void onStatus(StatusHandler h) { _status_handler = h; }
   void flushStream() { _stream.flush(); }
 
   void _dispatchCommand(const rpc::Frame& frame);
@@ -150,7 +148,7 @@ class BridgeClass {
   static constexpr bool is_reliable_cmd(uint16_t id) {
     return rpc::requires_ack(id);
   }
-  static constexpr bool is_compressed_cmd(uint16_t id) {
+  [[maybe_unused]] static constexpr bool is_compressed_cmd(uint16_t id) {
     return (id & rpc::RPC_CMD_FLAG_COMPRESSED) != 0;
   }
 
@@ -193,7 +191,7 @@ class BridgeClass {
 
   etl::array<uint8_t, bridge::config::RX_BUFFER_SIZE> _ps_rx_storage;
   etl::array<uint8_t, bridge::config::RX_BUFFER_SIZE> _ps_work_buffer;
-  PacketSerial2::PacketSerial<PacketSerial2::COBS, PacketSerial2::CRC32,
+  PacketSerial2::PacketSerial<PacketSerial2::COBS, PacketSerial2::NoCRC,
                               PacketSerial2::NoLock, PacketSerial2::NoWatchdog>
       _packet_serial;
 
@@ -255,7 +253,7 @@ class BridgeClass {
 
   [[nodiscard]] etl::expected<void, rpc::FrameError> _decompressFrame(
       const rpc::Frame& in, rpc::Frame& out);
-  void _applyTimingConfig(
+  [[maybe_unused]] void _applyTimingConfig(
       const rpc::payload::HandshakeConfig& msg);
 
   void _handleSetBaudrateCommand(const bridge::router::CommandContext& ctx);
@@ -365,9 +363,7 @@ class BridgeClass {
       if (res && valid(res->pin)) {
         T resp;
         resp.value = static_cast<uint32_t>(read(res->pin));
-        if (!send(static_cast<rpc::CommandId>(resp_id), ctx.sequence_id, resp)) {
-          enterSafeState();
-        }
+        (void)send(static_cast<rpc::CommandId>(resp_id), ctx.sequence_id, resp);
       } else
         emitStatus(rpc::StatusCode::STATUS_ERROR);
     });

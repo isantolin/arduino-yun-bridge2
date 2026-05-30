@@ -23,7 +23,8 @@ using namespace rpc;
 
 static volatile sig_atomic_t g_running = 1;
 
-void signal_handler(int) {
+void signal_handler(int signum) {
+  (void)signum;
   g_running = 0;
 }
 

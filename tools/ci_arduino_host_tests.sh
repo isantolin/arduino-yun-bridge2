@@ -103,6 +103,7 @@ BASE_FLAGS=(
     -Wall
     -Wextra
     -Werror
+    -Wno-unused-parameter
     -DBRIDGE_HOST_TEST=1
     -DBRIDGE_FAULT_INJECTION=1
     -DARDUINO_STUB_CUSTOM_MILLIS=1

@@ -4,7 +4,6 @@
 
 #include "Bridge.h"
 #include "etl_ext/CounterIterator.h"
-#include "protocol/pb_field_helpers.h"
 
 ConsoleClass::ConsoleClass() : _flags(0) {}
 
@@ -16,8 +15,7 @@ void ConsoleClass::begin() {
 
 void ConsoleClass::_push(const rpc::payload::ConsoleWrite& msg) {
   const auto& data = msg.data;
-  const size_t to_write =
-      etl::min(static_cast<size_t>(data.size), _rx_buffer.available());
+  const size_t to_write = etl::min(static_cast<size_t>(data.size), _rx_buffer.available());
   using bridge::etl_ext::CounterIterator;
   etl::for_each(CounterIterator<size_t>(0U), CounterIterator<size_t>(to_write),
                 [&](size_t i) { _rx_buffer.push(data.bytes[i]); });
@@ -26,8 +24,11 @@ void ConsoleClass::_push(const rpc::payload::ConsoleWrite& msg) {
 void ConsoleClass::process() {
   if (!_tx_buffer.empty()) {
     rpc::payload::ConsoleWrite p;
-    rpc::pb_field::copy_span_to_bytes_field(
-        etl::span<const uint8_t>(_tx_buffer.data(), _tx_buffer.size()), p.data);
+    const size_t to_copy = etl::min(_tx_buffer.size(), sizeof(p.data.bytes));
+    p.data.size = (pb_size_t)to_copy;
+    if (to_copy > 0) {
+      etl::copy_n(_tx_buffer.data(), to_copy, p.data.bytes);
+    }
     if (Bridge.send(rpc::CommandId::CMD_CONSOLE_WRITE, 0, p)) {
       _tx_buffer.clear();
     }
@@ -48,17 +49,17 @@ size_t ConsoleClass::write(const uint8_t* buffer, size_t size) {
   size_t written = 0;
   using bridge::etl_ext::CounterIterator;
   const uint16_t max_chunks = static_cast<uint16_t>(size);
-  (void)etl::find_if(CounterIterator<uint16_t>(0U),
-                     CounterIterator<uint16_t>(max_chunks + 1U), [&](uint16_t) {
-                 if (_tx_buffer.full()) process();
-                 if (_tx_buffer.full()) return true;
-                 const size_t to_write =
-                     etl::min(size - written, _tx_buffer.available());
-                 _tx_buffer.insert(_tx_buffer.end(), buffer + written,
-                                   buffer + written + to_write);
-                 written += to_write;
-                 return written >= size;
-               });
+  (void)etl::find_if(
+      CounterIterator<uint16_t>(0U),
+      CounterIterator<uint16_t>(max_chunks + 1U),
+      [&](uint16_t) {
+        if (_tx_buffer.full()) process();
+        if (_tx_buffer.full()) return true;
+        const size_t to_write = etl::min(size - written, _tx_buffer.available());
+        _tx_buffer.insert(_tx_buffer.end(), buffer + written, buffer + written + to_write);
+        written += to_write;
+        return written >= size;
+      });
   return written;
 }
 

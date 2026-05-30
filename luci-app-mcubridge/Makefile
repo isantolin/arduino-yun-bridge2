@@ -64,7 +64,7 @@ define Package/$(PKG_NAME)/install
 	$(CP) ./luasrc/view/mcubridge/mqtt_port_helper.htm $(1)/usr/lib/lua/luci/view/mcubridge/
 	
 	$(CP) -r ./root/etc/config/mcubridge $(1)/etc/config/
-	if [ -d ./root/www/mcubridge ]; then $(CP) -r ./root/www/mcubridge $(1)/www/; fi
+	[ -d ./root/www/mcubridge ] && $(CP) -r ./root/www/mcubridge $(1)/www/ || true
 	$(INSTALL_DIR) $(1)/www/mcubridge
 	$(INSTALL_DATA) $(DL_DIR)/$(MQTT_JS_DL_FILE) $(1)/www/mcubridge/mqtt.min.js
 endef

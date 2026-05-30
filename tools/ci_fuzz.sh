@@ -16,14 +16,7 @@ socat -d -d PTY,link="$FUZZ_PTY",raw,echo=0 EXEC:"$EMULATOR_BIN",pty,raw,echo=0 
 SOCAT_PID=$!
 
 # Trap cleanup
-cleanup() {
-    echo "[fuzz] Cleaning up..."
-    if kill -0 "$SOCAT_PID" 2>/dev/null; then
-        kill "$SOCAT_PID"
-    fi
-    rm -f "$FUZZ_PTY"
-}
-trap cleanup EXIT
+trap 'echo "[fuzz] Cleaning up..."; kill $SOCAT_PID 2>/dev/null || true; rm -f "$FUZZ_PTY"' EXIT
 
 # Wait for PTY to be ready
 MAX_RETRIES=10

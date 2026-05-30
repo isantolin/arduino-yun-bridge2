@@ -1,5 +1,5 @@
 # [SIL-2] Static limits for Zero-Heap operation
-rpc.pb.RpcEnvelope.payload       max_size:100
+rpc.pb.RpcEnvelope.payload       max_size:64
 rpc.pb.RpcEnvelope.nonce         max_size:12
 rpc.pb.RpcEnvelope.tag           max_size:16
 rpc.pb.ConsoleWrite.data          max_size:64

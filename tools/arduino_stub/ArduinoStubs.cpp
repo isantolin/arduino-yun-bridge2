@@ -22,5 +22,7 @@ void delay(unsigned long ms) {
 
 #include <etl/exception.h>
 namespace etl {
-void handle_error(const etl::exception&) {}
+void handle_error(const etl::exception& e) {
+  (void)e;
+}
 }

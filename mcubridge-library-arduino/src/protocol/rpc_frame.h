@@ -17,26 +17,13 @@
 #include "rpc_protocol.h"
 #include "rpc_structs.h"
 
-namespace PacketSerial2 {
-/**
- * @brief CRC32 policy using ETL (SIL-2).
- */
-struct CRC32 {
-  static constexpr size_t ByteSize = 4;
-  etl::crc32 _engine;
-  inline void reset() { _engine.reset(); }
-  inline void add(uint8_t b) { _engine.add(b); }
-  inline uint32_t value() const { return _engine.value(); }
-};
-}  // namespace PacketSerial2
-
 namespace rpc {
 
 inline constexpr size_t AEAD_NONCE_SIZE = rpc::RPC_AEAD_NONCE_SIZE;
 inline constexpr size_t AEAD_TAG_SIZE = rpc::RPC_AEAD_TAG_SIZE;
-
+inline constexpr size_t CRC_TRAILER_SIZE = rpc::RPC_CRC_SIZE;
 inline constexpr size_t MAX_ENVELOPE_SIZE = rpc_pb_RpcEnvelope_size;
-inline constexpr size_t MAX_FRAME_SIZE = MAX_ENVELOPE_SIZE;
+inline constexpr size_t MAX_FRAME_SIZE = MAX_ENVELOPE_SIZE + CRC_TRAILER_SIZE;
 
 inline bool is_compressed(uint16_t id) {
   return (id & RPC_CMD_FLAG_COMPRESSED) != 0;
@@ -44,8 +31,9 @@ inline bool is_compressed(uint16_t id) {
 
 struct Frame {
   rpc_pb_RpcEnvelope envelope;
+  uint32_t crc;
 
-  Frame() : envelope(rpc_pb_RpcEnvelope_init_default) {}
+  Frame() : envelope(rpc_pb_RpcEnvelope_init_default), crc(0) {}
 
   etl::span<const uint8_t> payload() const {
     return etl::span<const uint8_t>(envelope.payload.bytes,
@@ -53,7 +41,15 @@ struct Frame {
   }
 };
 
-
+namespace checksum {
+/**
+ * @brief Computes CRC32 using ETL directly (SIL-2).
+ * This remains as a small helper to keep parse/serialize readable.
+ */
+inline uint32_t compute(etl::span<const uint8_t> data) {
+  return etl::crc32(data.begin(), data.end());
+}
+}  // namespace checksum
 
 namespace Payload {
 
@@ -73,21 +69,47 @@ inline etl::expected<T, FrameError> parse(const rpc::Frame& frame) {
 class FrameParser {
  public:
   static size_t serialize(const Frame& f, etl::span<uint8_t> buffer) {
-    pb_ostream_t stream = pb_ostream_from_buffer(buffer.data(), buffer.size());
+    if (buffer.size() < CRC_TRAILER_SIZE) return 0;
+
+    pb_ostream_t stream =
+        pb_ostream_from_buffer(buffer.data(), buffer.size() - CRC_TRAILER_SIZE);
     if (!rpc::Payload::encode(&stream, f.envelope)) return 0;
-    return stream.bytes_written;
+
+    const size_t encoded_size = stream.bytes_written;
+    const uint32_t crc = checksum::compute(buffer.subspan(0, encoded_size));
+
+    etl::byte_stream_writer writer(buffer.begin() + encoded_size,
+                                   CRC_TRAILER_SIZE, etl::endian::little);
+    writer.write<uint32_t>(crc);
+
+    return encoded_size + CRC_TRAILER_SIZE;
   }
 
   static etl::expected<Frame, FrameError> parse(
       etl::span<const uint8_t> buffer) {
+    if (buffer.size() < CRC_TRAILER_SIZE + 2U)
+      return etl::unexpected<FrameError>(FrameError::MALFORMED);
+
+    const size_t crc_offset = buffer.size() - CRC_TRAILER_SIZE;
+    const uint32_t crc_calc = checksum::compute(buffer.subspan(0, crc_offset));
+
+    uint32_t crc_received = 0;
+    etl::byte_stream_reader reader(buffer.begin() + crc_offset,
+                                   CRC_TRAILER_SIZE, etl::endian::little);
+    crc_received = reader.read<uint32_t>().value_or(0U);
+
+    if (crc_received != crc_calc)
+      return etl::unexpected<FrameError>(FrameError::CRC_MISMATCH);
+
     Frame result;
-    pb_istream_t stream = pb_istream_from_buffer(buffer.data(), buffer.size());
+    pb_istream_t stream = pb_istream_from_buffer(buffer.data(), crc_offset);
     if (!rpc::Payload::decode(&stream, result.envelope))
       return etl::unexpected<FrameError>(FrameError::MALFORMED);
 
     if (result.envelope.version != PROTOCOL_VERSION)
       return etl::unexpected<FrameError>(FrameError::MALFORMED);
 
+    result.crc = crc_calc;
     return result;
   }
 };
@@ -109,7 +131,7 @@ class FrameBuilder {
     etl::copy_n(tag.begin(), AEAD_TAG_SIZE, f.envelope.tag.bytes);
     f.envelope.tag.size = static_cast<pb_size_t>(AEAD_TAG_SIZE);
 
-    const size_t pl_size = etl::min(payload.size(), MAX_PAYLOAD_SIZE);
+    const size_t pl_size = etl::min(payload.size(), static_cast<size_t>(64U));
     etl::copy_n(payload.begin(), pl_size, f.envelope.payload.bytes);
     f.envelope.payload.size = static_cast<pb_size_t>(pl_size);
 

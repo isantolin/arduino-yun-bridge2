@@ -6,6 +6,7 @@ Direct PTY-PTY link via socat, with MCU opening its PTY directly.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import signal
@@ -43,35 +44,6 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger("emulation-runner")
-
-
-def _terminate_process(proc: subprocess.Popen[Any], *, use_process_group: bool) -> None:
-    if proc.poll() is not None:
-        return
-    try:
-        if use_process_group:
-            try:
-                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-            except (ProcessLookupError, OSError):
-                os.kill(proc.pid, signal.SIGTERM)
-        else:
-            os.kill(proc.pid, signal.SIGTERM)
-        proc.wait(timeout=2)
-        return
-    except (ProcessLookupError, OSError, subprocess.TimeoutExpired) as exc:
-        logger.debug("Graceful process shutdown failed for pid %d: %s", proc.pid, exc)
-
-    try:
-        if use_process_group:
-            try:
-                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            except (ProcessLookupError, OSError):
-                os.kill(proc.pid, signal.SIGKILL)
-        else:
-            os.kill(proc.pid, signal.SIGKILL)
-        proc.wait(timeout=2)
-    except (ProcessLookupError, OSError, subprocess.TimeoutExpired) as exc:
-        logger.warning("Forced process shutdown failed for pid %d: %s", proc.pid, exc)
 
 
 @dataclass
@@ -291,10 +263,27 @@ def run_emulation(
         all_success = False
     finally:
         # Terminate daemon (same process group — plain kill only)
-        if daemon_proc is not None:
-            _terminate_process(daemon_proc, use_process_group=False)
+        for p in [daemon_proc]:
+            if p is None:
+                continue
+            with contextlib.suppress(Exception):
+                os.kill(p.pid, signal.SIGTERM)
+                p.wait(timeout=2)
+            with contextlib.suppress(Exception):
+                os.kill(p.pid, signal.SIGKILL)
         # Terminate socat+MCU (separate session — use process group)
-        _terminate_process(mcu_proc, use_process_group=True)
+        for p in [mcu_proc]:
+            with contextlib.suppress(Exception):
+                try:
+                    os.killpg(os.getpgid(p.pid), signal.SIGTERM)
+                except (ProcessLookupError, OSError):
+                    os.kill(p.pid, signal.SIGTERM)
+                p.wait(timeout=2)
+            with contextlib.suppress(Exception):
+                try:
+                    os.killpg(os.getpgid(p.pid), signal.SIGKILL)
+                except (ProcessLookupError, OSError):
+                    os.kill(p.pid, signal.SIGKILL)
 
     if not all_success:
         logger.error("Emulation FAILED.")

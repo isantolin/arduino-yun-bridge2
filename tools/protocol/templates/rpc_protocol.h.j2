@@ -88,7 +88,7 @@ constexpr etl::underlying_type_t<E> to_underlying(E value) {
     return static_cast<etl::underlying_type_t<E>>(value);
 }
 
-constexpr bool requires_ack(CommandId{% if ack_commands %} command_id{% endif %}) {
+constexpr bool requires_ack(CommandId command_id) {
 {%- if ack_commands %}
     constexpr etl::array<CommandId, {{ ack_commands | length }}U> ACK_COMMANDS = {
         {%- for cmd in ack_commands %}
@@ -97,6 +97,7 @@ constexpr bool requires_ack(CommandId{% if ack_commands %} command_id{% endif %}
     };
     return etl::find(ACK_COMMANDS.begin(), ACK_COMMANDS.end(), command_id) != ACK_COMMANDS.end();
 {%- else %}
+    (void)command_id;
     return false;
 {%- endif %}
 }

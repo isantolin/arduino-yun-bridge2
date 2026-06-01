@@ -18,12 +18,12 @@ import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-import msgspec
 import tenacity
 from cryptography.hazmat.primitives import hashes, hmac
 from cryptography.hazmat.primitives.constant_time import bytes_eq
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from google.protobuf.message import DecodeError as ProtobufDecodeError
+from google.protobuf.json_format import MessageToDict
 
 from ..config.const import (
     SERIAL_HANDSHAKE_BACKOFF_BASE,
@@ -35,14 +35,12 @@ from ..protocol.protocol import Command, Status
 from ..protocol.structures import (
     PROTOBUF_CONTENT_TYPE,
     QueuedPublish,
-    SerialTimingWindow,
-    CapabilitiesFeatures,
 )
 from ..protocol.topics import Topic, topic_path
 from ..security.security import (
     secure_zero,
 )
-from ..state.context import McuCapabilities, RuntimeState
+from ..state.context import RuntimeState
 
 from typing import Protocol
 
@@ -57,24 +55,13 @@ AcknowledgeFrameCallable = Callable[..., Awaitable[None]]
 logger = structlog.get_logger("mcubridge.service.handshake")
 
 
-def derive_serial_timing(config: RuntimeConfig) -> SerialTimingWindow:
+def derive_serial_timing(config: RuntimeConfig) -> pb.HandshakeConfig:
     """Derive timing windows from config with strict declarative validation."""
-    # Convert configuration seconds to milliseconds for the wire protocol
     ack_ms = int(round(config.serial_retry_timeout * 1000.0))
     response_ms = int(round(config.serial_response_timeout * 1000.0))
     retry_limit = int(config.serial_retry_attempts)
-
-    # Cross-field semantic validation: response must always be >= retry/ack
     response_ms = max(response_ms, ack_ms)
-
-    raw = {
-        "ack_timeout_ms": ack_ms,
-        "response_timeout_ms": response_ms,
-        "retry_limit": retry_limit,
-    }
-
-    # [SIL-2] msgspec will raise ValidationError if values are outside protocol bounds.
-    return msgspec.convert(raw, SerialTimingWindow, strict=True)
+    return pb.HandshakeConfig(ack_timeout_ms=ack_ms, response_timeout_ms=response_ms, ack_retry_limit=retry_limit)
 
 
 class SerialHandshakeFatal(RuntimeError):
@@ -105,7 +92,7 @@ class SerialHandshakeManager:
         *,
         config: RuntimeConfig,
         state: RuntimeState,
-        serial_timing: SerialTimingWindow,
+        serial_timing: pb.HandshakeConfig,
         send_frame: SendFrameCallable,
         enqueue_mqtt: EnqueueMessageCallable,
         acknowledge_frame: AcknowledgeFrameCallable,
@@ -120,11 +107,7 @@ class SerialHandshakeManager:
         self._logger = logger_ or logger
         self._fatal_threshold = max(1, config.serial_handshake_fatal_failures)
         # [SIL-2] Serialize handshake timing as protobuf.
-        self._reset_payload = pb.HandshakeConfig(
-            ack_timeout_ms=self._timing.ack_timeout_ms,
-            ack_retry_limit=self._timing.retry_limit,
-            response_timeout_ms=self._timing.response_timeout_ms,
-        ).SerializeToString()
+        self._reset_payload = self._timing.SerializeToString()
         self._capabilities_future: asyncio.Future[bytes] | None = None
         self.fsm_state = self.STATE_UNSYNCHRONIZED
 
@@ -371,7 +354,7 @@ class SerialHandshakeManager:
                 raise TimeoutError("Send failed")
 
             try:
-                timeout = max(5.0, self._timing.response_timeout_seconds)
+                timeout = max(5.0, (self._timing.response_timeout_ms / 1000.0))
                 payload = await asyncio.wait_for(self._capabilities_future, timeout=timeout)
                 self._parse_capabilities(payload)
                 return True
@@ -394,28 +377,8 @@ class SerialHandshakeManager:
         try:
             # [SIL-2] Decode capabilities as protobuf.
             cap = pb.Capabilities.FromString(payload)
-            features = CapabilitiesFeatures(
-                watchdog=cap.watchdog,
-                rle=cap.rle,
-                debug_frames=cap.debug_frames,
-                debug_io=cap.debug_io,
-                eeprom=cap.eeprom,
-                dac=cap.dac,
-                hw_serial1=cap.hw_serial1,
-                fpu=cap.fpu,
-                logic_3v3=cap.logic_3v3,
-                big_buffer=cap.big_buffer,
-                i2c=cap.i2c,
-                spi=cap.spi,
-                sd=cap.sd,
-            )
-            self._state.mcu_capabilities = McuCapabilities(
-                protocol_version=cap.ver,
-                board_arch=cap.arch,
-                num_digital_pins=cap.dig,
-                num_analog_inputs=cap.ana,
-                features=features,
-            )
+            features: dict[str, Any] = MessageToDict(cap, always_print_fields_with_no_presence=True)
+            self._state.mcu_capabilities = features
             self._logger.info("MCU Capabilities: %s", self._state.mcu_capabilities)
         except (ProtobufDecodeError, ValueError, TypeError, KeyError) as exc:
             self._logger.warning("Failed to unpack capabilities: %s", exc)
@@ -489,7 +452,7 @@ class SerialHandshakeManager:
         raise SerialHandshakeFatal(f"MCU rejected the serial shared secret (reason={reason}). {hint}")
 
     async def _wait_for_link_sync_confirmation(self, nonce: bytes) -> bool:
-        timeout = max(0.5, self._timing.response_timeout_seconds)
+        timeout = max(0.5, (self._timing.response_timeout_ms / 1000.0))
         try:
             async with asyncio.timeout(timeout):
                 if not self._state.is_synchronized:

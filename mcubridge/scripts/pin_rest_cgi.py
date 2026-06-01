@@ -12,7 +12,7 @@ import msgspec
 import paho.mqtt.publish
 from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import load_runtime_config
-from mcubridge.protocol.structures import GenericResponsePacket, RuntimeConfig
+from mcubridge.protocol.structures import RuntimeConfig
 from mcubridge.protocol.topics import Topic, topic_path
 
 logger = logging.getLogger("mcubridge.pin_rest")
@@ -40,7 +40,7 @@ def publish_sync(topic: str, payload: str, config: RuntimeConfig) -> None:
     )
 
 
-def json_res(start_response: Any, status: str, response: GenericResponsePacket) -> list[bytes]:
+def json_res(start_response: Any, status: str, response: dict[str, Any]) -> list[bytes]:
     body = msgspec.json.encode(response)
     headers = [
         ("Content-Type", "application/json"),
@@ -61,7 +61,7 @@ def application(environ: dict[str, Any], start_response: Any) -> list[bytes]:
             return json_res(
                 start_response,
                 "400 Bad Request",
-                GenericResponsePacket(status="error", message="Invalid path"),
+                dict(status="error", message="Invalid path"),
             )
 
         pin = match.group(1)
@@ -69,7 +69,7 @@ def application(environ: dict[str, Any], start_response: Any) -> list[bytes]:
             return json_res(
                 start_response,
                 "405 Method Not Allowed",
-                GenericResponsePacket(status="error", message="Method not allowed"),
+                dict(status="error", message="Method not allowed"),
             )
 
         body_len = int(environ.get("CONTENT_LENGTH", "0"))
@@ -81,7 +81,7 @@ def application(environ: dict[str, Any], start_response: Any) -> list[bytes]:
             return json_res(
                 start_response,
                 "400 Bad Request",
-                GenericResponsePacket(status="error", message="Invalid state"),
+                dict(status="error", message="Invalid state"),
             )
 
         topic = topic_path(config.mqtt_topic, Topic.DIGITAL, pin)
@@ -90,7 +90,7 @@ def application(environ: dict[str, Any], start_response: Any) -> list[bytes]:
         return json_res(
             start_response,
             "200 OK",
-            GenericResponsePacket(status="ok", data={"pin": int(pin), "state": state}),
+            dict(status="ok", data={"pin": int(pin), "state": state}),
         )
 
     except (ValueError, KeyError, TypeError, OSError) as e:
@@ -98,7 +98,7 @@ def application(environ: dict[str, Any], start_response: Any) -> list[bytes]:
         return json_res(
             start_response,
             "500 Internal Server Error",
-            GenericResponsePacket(status="error", message=str(e)),
+            dict(status="error", message=str(e)),
         )
 
 

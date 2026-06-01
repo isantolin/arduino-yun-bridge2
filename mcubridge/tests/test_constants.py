@@ -1,7 +1,7 @@
 from mcubridge.protocol import protocol
 from mcubridge.protocol.topics import parse_topic, topic_path
 from mcubridge.protocol.protocol import Topic
-from mcubridge.protocol.structures import McuCapabilities, FlowEvent, QueuedPublish, TopicAuthorization
+from mcubridge.protocol.structures import FlowEvent, QueuedPublish, TopicAuthorization
 
 # Original constants needed by other tests
 TEST_CMD_ID = 0x42
@@ -29,13 +29,6 @@ def test_topics_edge_cases():
 
 
 def test_structures_coverage_boost():
-    # Cover McuCapabilities properties
-    assert "AVR" in McuCapabilities(board_arch=1).arch_name
-    assert "ESP32" in McuCapabilities(board_arch=2).arch_name
-    assert "ESP8266" in McuCapabilities(board_arch=3).arch_name
-    assert "SAMD" in McuCapabilities(board_arch=4).arch_name
-    assert "SAM" in McuCapabilities(board_arch=5).arch_name
-    assert "Unknown" in McuCapabilities(board_arch=99).arch_name
 
     # Cover FlowEvent
     assert FlowEvent.SENT == "sent"

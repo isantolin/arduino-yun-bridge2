@@ -10,8 +10,6 @@ from unittest.mock import MagicMock, patch
 import msgspec
 import pytest
 
-from mcubridge.protocol.structures import GenericResponsePacket
-
 # Mock 'uci' before importing pin_rest_cgi
 uci_mock = types.ModuleType("uci")
 sys.modules["uci"] = uci_mock
@@ -59,7 +57,9 @@ def test_cgi_success(cgi_env: Any) -> None:
             assert "200 OK" in start_response.call_args[0][0]
             mock_publish.assert_called()
 
-            data = msgspec.json.decode(res[0], type=GenericResponsePacket)
+            data = msgspec.json.decode(
+                res[0],
+            )
             assert data.status == "ok"
 
 

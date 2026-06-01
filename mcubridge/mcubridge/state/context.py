@@ -43,8 +43,6 @@ from ..protocol.protocol import (
 from ..protocol.structures import (
     BridgeSnapshot,
     HandshakeSnapshot,
-    McuCapabilities,
-    McuVersion,
     PendingPinRequest,
     SerialFlowStats,
     SerialLinkSnapshot,
@@ -78,13 +76,11 @@ def _close_diskcache_resource(resource: Any) -> None:
 
 
 __all__: Final[tuple[str, ...]] = (
-    "McuCapabilities",
     "RuntimeState",
     "PendingPinRequest",
     "create_runtime_state",
     "HandshakeSnapshot",
     "SerialLinkSnapshot",
-    "McuVersion",
     "SerialPipelineSnapshot",
     "BridgeSnapshot",
     "Status",
@@ -201,7 +197,7 @@ class RuntimeState(msgspec.Struct, weakref=True):
     mailbox_incoming_truncated_messages: int = 0
 
     mcu_version: tuple[int, int, int] | None = None
-    mcu_capabilities: McuCapabilities | None = None
+    mcu_capabilities: dict[str, Any] | None = None
     link_handshake_nonce: bytes | None = None
     link_sync_event: asyncio.Event = msgspec.field(default_factory=asyncio.Event)
     link_expected_tag: bytes | None = None
@@ -534,8 +530,8 @@ class RuntimeState(msgspec.Struct, weakref=True):
             handshake=self.build_handshake_snapshot(),
             serial_pipeline=self.build_serial_pipeline_snapshot(),
             serial_flow=self.serial_flow_stats.as_snapshot(),
-            mcu_version=McuVersion(*self.mcu_version) if self.mcu_version else None,
-            capabilities=(msgspec.structs.asdict(self.mcu_capabilities) if self.mcu_capabilities else None),
+            mcu_version=self.mcu_version,
+            capabilities=self.mcu_capabilities,
         )
 
     def handshake_duration_since_start(self) -> float:

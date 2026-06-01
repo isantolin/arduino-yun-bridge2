@@ -543,43 +543,6 @@ class BaseStruct(msgspec.Struct, frozen=True, array_like=True):
 # --- Binary Protocol Packets ---
 
 
-class GenericResponsePacket(msgspec.Struct, frozen=True):
-    """Generic high-level API response packet."""
-
-    status: str
-    message: str | None = None
-    data: dict[str, Any] | None = None
-
-
-# --- Manual Packet Classes (require special handling) ---
-
-
-class CapabilitiesFeatures(msgspec.Struct, frozen=True):
-    """Features bitmask parsed via BitStruct."""
-
-    watchdog: bool
-    rle: bool
-    debug_frames: bool
-    debug_io: bool
-    eeprom: bool
-    dac: bool
-    hw_serial1: bool
-    fpu: bool
-    logic_3v3: bool
-    big_buffer: bool
-    i2c: bool
-    spi: bool
-    sd: bool
-
-
-# [SIL-2] Payload Schema Map: Centralized registry for all command payloads.
-# This eliminates manual if/elif dispatching across components.
-
-# --- Operational Constants ---
-
-MAX_COMMAND_LEN: Final[int] = 512
-
-
 class PayloadValidationError(ValueError):
     """Raised when an inbound MQTT payload cannot be validated."""
 
@@ -589,50 +552,6 @@ class PayloadValidationError(ValueError):
 
 
 # --- High-Level Structure (Msgspec Only) ---
-
-
-class ShellCommandPayload(msgspec.Struct, frozen=True):
-    """Represents a shell command request coming from MQTT.
-
-    Accepts either plain text or protobuf ProcessRunAsync payloads.
-    """
-
-    command: Annotated[str, msgspec.Meta(min_length=1, max_length=MAX_COMMAND_LEN)]
-
-
-class ShellPidPayload(msgspec.Struct, frozen=True):
-    """MQTT payload specifying an async shell PID to operate on."""
-
-    pid: Annotated[int, msgspec.Meta(gt=0, le=65535)]  # UINT16_MAX
-
-
-class SerialTimingWindow(msgspec.Struct, frozen=True):
-    """Derived serial retry/response windows used by both MCU and MPU."""
-
-    ack_timeout_ms: Annotated[int, msgspec.Meta(ge=10, le=50000)]
-    response_timeout_ms: Annotated[int, msgspec.Meta(ge=100, le=50000)]
-    retry_limit: Annotated[int, msgspec.Meta(ge=1, le=100)]
-
-    @property
-    def ack_timeout_seconds(self) -> float:
-        return self.ack_timeout_ms / 1000.0
-
-    @property
-    def response_timeout_seconds(self) -> float:
-        return self.response_timeout_ms / 1000.0
-
-
-class MqttPayload(msgspec.Struct, frozen=True):
-    topic: str
-    payload: bytes
-    qos: int = 1
-    retain: bool = False
-    properties: dict[str, Any] = {}
-
-
-class PinRequest(msgspec.Struct, frozen=True):
-    pin: int
-    state: str
 
 
 class PendingPinRequest(msgspec.Struct):
@@ -780,22 +699,6 @@ class SupervisorStats(BaseStats):
         return cast(SupervisorSnapshot, super().as_snapshot())
 
 
-class McuCapabilities(msgspec.Struct):
-    """Hardware capabilities reported by the MCU."""
-
-    protocol_version: int = 0
-    board_arch: int = 0
-    num_digital_pins: int = 0
-    num_analog_inputs: int = 0
-    features: CapabilitiesFeatures | None = None
-
-    @property
-    def arch_name(self) -> str:
-        from .protocol import ARCHITECTURE_DISPLAY_NAMES
-
-        return ARCHITECTURE_DISPLAY_NAMES.get(self.board_arch, f"Unknown (0x{self.board_arch:02X})")
-
-
 class SerialThroughputStats(BaseStats):
     """Serial link throughput counters."""
 
@@ -826,12 +729,6 @@ class PipelineEvent(msgspec.Struct, frozen=True, kw_only=True):
     ack_received: bool
     status: int | None
     timestamp: float
-
-
-class McuVersion(msgspec.Struct):
-    major: Annotated[int, msgspec.Meta(ge=0)]
-    minor: Annotated[int, msgspec.Meta(ge=0)]
-    patch: Annotated[int, msgspec.Meta(ge=0)] = 0
 
 
 class SerialPipelineSnapshot(msgspec.Struct, frozen=True, kw_only=True):
@@ -869,7 +766,7 @@ class BridgeSnapshot(msgspec.Struct, frozen=True, kw_only=True):
     handshake: HandshakeSnapshot
     serial_pipeline: SerialPipelineSnapshot
     serial_flow: SerialFlowSnapshot
-    mcu_version: McuVersion | None = None
+    mcu_version: tuple[int, int, int] | None = None
     capabilities: dict[str, Any] | None = None
 
 

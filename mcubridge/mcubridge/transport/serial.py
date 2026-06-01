@@ -138,7 +138,7 @@ class SerialTransport:
         try:
             await retryer(self._connect_and_run)
         except asyncio.CancelledError:
-            pass
+            logger.info("Serial transport cancelled")
         except SerialHandshakeFatal as exc:
             logger.error("Fatal serial handshake error: %s", exc)
             raise

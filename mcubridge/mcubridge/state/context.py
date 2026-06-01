@@ -459,8 +459,8 @@ class RuntimeState(msgspec.Struct, weakref=True):
             self.last_handshake_unix = snap.last_unix
             self.handshake_backoff_until = snap.backoff_until
             self.handshake_rate_until = snap.rate_limit_until
-        except (msgspec.MsgspecError, ValueError, TypeError):
-            pass
+        except (msgspec.MsgspecError, ValueError, TypeError) as exc:
+            logger.warning("Failed to apply handshake stats", error=exc)
 
     def _apply_spool_observation(self, observation: Mapping[str, Any]) -> None:
         """Update internal state from spool statistics."""

@@ -17,6 +17,7 @@ import ctypes
 import hashlib
 import secrets
 import struct
+import structlog
 from typing import Final
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from cryptography.exceptions import InvalidTag
@@ -30,6 +31,8 @@ NONCE_TOTAL_BYTES: Final[int] = AEAD_NONCE_SIZE
 AEAD_TAG_SIZE: Final[int] = protocol.AEAD_TAG_SIZE
 NONCE_RANDOM_BYTES: Final[int] = 4  # Derived
 NONCE_COUNTER_BYTES: Final[int] = 8  # Derived
+logger = structlog.get_logger("mcubridge.security")
+
 _FULL_NONCE_STRUCT = struct.Struct(">4sQ")
 
 
@@ -39,8 +42,8 @@ def secure_zero(data: bytearray | memoryview) -> None:
     try:
         buf = (ctypes.c_char * len(data)).from_buffer(data)
         ctypes.memset(ctypes.addressof(buf), 0, len(data))
-    except (TypeError, ValueError, AttributeError):
-        pass
+    except (TypeError, ValueError, AttributeError) as exc:
+        logger.warning("secure_zero: failed to zero memory", error=exc)
 
 
 def secure_zero_bytes_copy(data: bytes) -> bytes:

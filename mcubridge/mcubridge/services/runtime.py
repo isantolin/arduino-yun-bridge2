@@ -265,7 +265,6 @@ class BridgeService:
             self._mark_mqtt_spool_healthy(pending)
             return True
         except OSError as exc:
-            logger.warning("MQTT spool write failed", error=str(exc), path=str(spool_dir))
             self._mark_mqtt_spool_failure(str(exc))
             return False
 
@@ -275,7 +274,6 @@ class BridgeService:
         try:
             files = await asyncio.to_thread(self._list_mqtt_spool_files)
         except OSError as exc:
-            logger.warning("MQTT spool scan failed", error=str(exc), path=str(self._mqtt_spool_dir()))
             self._mark_mqtt_spool_failure(str(exc))
             return
 
@@ -1049,8 +1047,8 @@ class BridgeService:
                 if usage.free < len(data):
                     self.state.file_storage_limit_rejections += 1
                     return False
-            except OSError:
-                pass
+            except OSError as exc:
+                logger.warning("Disk usage check failed", error=exc)
             await asyncio.to_thread(path.parent.mkdir, parents=True, exist_ok=True)
             await asyncio.to_thread(path.write_bytes, data)
             return True

@@ -60,7 +60,7 @@ def test_cgi_success(cgi_env: Any) -> None:
             data = msgspec.json.decode(
                 res[0],
             )
-            assert data.status == "ok"
+            assert data["status"] == "ok"
 
 
 def test_cgi_invalid_path(cgi_env: Any) -> None:

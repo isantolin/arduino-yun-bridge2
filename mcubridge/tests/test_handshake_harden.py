@@ -126,7 +126,7 @@ async def test_handshake_capabilities_retry(
     manager, _, send_frame = handshake_setup
 
     # Simulate timeout on first 2 attempts, success on 3rd
-    setattr(manager, "_timing", msgspec.structs.replace(getattr(manager, "_timing"), response_timeout_ms=10))
+    manager._timing.response_timeout_ms = 10
 
     with patch("asyncio.wait_for") as mock_wait:
         mock_wait.side_effect = [

@@ -460,7 +460,8 @@ def _flatten_structured_value(
             _flatten_structured_value(f"{key_prefix}.{key}" if key_prefix else key, nested, entries)
         return
     if isinstance(value, (list, tuple)):
-        for i, nested in enumerate(value):
+        nested: Any
+        for i, nested in enumerate(cast(list[Any] | tuple[Any, ...], value)):
             _flatten_structured_value(f"{key_prefix}.{i}" if key_prefix else str(i), nested, entries)
         return
     if isinstance(value, Mapping):

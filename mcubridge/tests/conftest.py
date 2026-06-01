@@ -10,7 +10,6 @@ import logging
 import os
 import shutil
 import sys
-from asyncio import events as asyncio_events
 from collections.abc import Iterator
 from pathlib import Path
 from typing import cast
@@ -68,7 +67,7 @@ _HAS_PYTEST_ASYNCIO = importlib.util.find_spec("pytest_asyncio") is not None
 
 
 def _get_event_loop_policy() -> object:
-    policy_getter = getattr(asyncio_events, "_get_event_loop_policy", asyncio.get_event_loop_policy)
+    policy_getter = getattr(asyncio, "get_event_loop_policy")
     return policy_getter()
 
 
@@ -89,7 +88,7 @@ def pytest_pyfunc_call(pyfuncitem: pytest.Function) -> bool | None:
 
     policy = pyfuncitem.funcargs.get("event_loop_policy")
     if policy is not None:
-        asyncio.set_event_loop_policy(cast(asyncio.AbstractEventLoopPolicy, policy))
+        getattr(asyncio, "set_event_loop_policy")(cast(asyncio.AbstractEventLoopPolicy, policy))
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)

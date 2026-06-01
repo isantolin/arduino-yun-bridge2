@@ -28,9 +28,9 @@ void setup() {
 
   Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, BRIDGE_SERIAL_SHARED_SECRET);
 
-  Bridge.onCommand(BridgeClass::CommandHandler::create([](const rpc::Frame& frame) {
+  Bridge.onCommand(BridgeClass::CommandHandler::create([](const rpc_pb_RpcEnvelope& envelope) {
     Console.print(F("Comando RPC no manejado: ID=0x"));
-    Console.println(frame.envelope.command_id, HEX);
+    Console.println(envelope.command_id, HEX);
   }));
 
   Bridge.onStatus(BridgeClass::StatusHandler::create([](rpc::StatusCode status_code, etl::span<const uint8_t> payload) {

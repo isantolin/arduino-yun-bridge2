@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import collections
-import contextlib
 import sqlite3
 import time
 from collections.abc import Mapping
@@ -287,19 +286,23 @@ class RuntimeState(msgspec.Struct, weakref=True):
         return int(len(self.mailbox_incoming_queue))
 
     def configure(self) -> None:
-        _sup = contextlib.suppress(OSError, RuntimeError, AttributeError)
+        def _safe_close(resource: Any) -> None:
+            try:
+                _close_diskcache_resource(resource)
+            except (OSError, RuntimeError, AttributeError) as e:
+                logger.debug("Resource closure notice during reconfiguration", error=e)
 
         if hasattr(self.mailbox_queue, "cache"):
-            with _sup:
-                _close_diskcache_resource(self.mailbox_queue)
+            _safe_close(self.mailbox_queue)
         if hasattr(self.mailbox_incoming_queue, "cache"):
-            with _sup:
-                _close_diskcache_resource(self.mailbox_incoming_queue)
+            _safe_close(self.mailbox_incoming_queue)
 
         # [SIL-2] Resource Lifecycle: Close persistent queues before replacement.
         if self.datastore_cache is not None:
-            with _sup:
+            try:
                 _close_diskcache_resource(self.datastore_cache)
+            except (OSError, RuntimeError, AttributeError) as e:
+                logger.debug("Resource cleanup notice", error=e)
             self.datastore_cache = None
 
         # Re-initialize transient queues
@@ -544,19 +547,21 @@ class RuntimeState(msgspec.Struct, weakref=True):
         self.cleanup()
 
     def cleanup(self) -> None:
-        _sup = contextlib.suppress(OSError, RuntimeError, AttributeError)
-
         # [SIL-2] Aggressive Resource Eradication to prevent ResourceWarnings.
         # 1. Nullify high-level wrappers first to drop references to the underlying caches.
         if hasattr(self.mailbox_queue, "cache"):
-            with _sup:
+            try:
                 _close_diskcache_resource(self.mailbox_queue)
                 cast(Any, self.mailbox_queue).cache = None
+            except (OSError, RuntimeError, AttributeError) as e:
+                logger.debug("Mailbox queue cleanup notice", error=e)
 
         if hasattr(self.mailbox_incoming_queue, "cache"):
-            with _sup:
+            try:
                 _close_diskcache_resource(self.mailbox_incoming_queue)
                 cast(Any, self.mailbox_incoming_queue).cache = None
+            except (OSError, RuntimeError, AttributeError) as e:
+                logger.debug("Mailbox incoming queue cleanup notice", error=e)
 
         self.mailbox_queue = collections.deque()
         self.mailbox_incoming_queue = collections.deque()
@@ -564,30 +569,38 @@ class RuntimeState(msgspec.Struct, weakref=True):
 
         # 2. Explicitly close and nullify persistent caches.
         if self.datastore_cache is not None:
-            with _sup:
+            try:
                 _close_diskcache_resource(self.datastore_cache)
+            except (OSError, RuntimeError, AttributeError) as e:
+                logger.debug("Resource cleanup notice", error=e)
             self.datastore_cache = None
 
         # 3. Drain and reset the MQTT queue.
         while not self.mqtt_publish_queue.empty():
-            with _sup:
+            try:
                 self.mqtt_publish_queue.get_nowait()
+            except (OSError, RuntimeError, AttributeError) as e:
+                logger.debug("Resource cleanup notice", error=e)
         self.mqtt_publish_queue = _make_mqtt_publish_queue(self.mqtt_queue_limit)
 
         # 4. Terminate all running processes to release pipes/sockets.
         if self.running_processes:
             for ctx in list(self.running_processes.values()):
                 if ctx and ctx.handle:
-                    with contextlib.suppress(OSError, ProcessLookupError):
+                    try:
                         ctx.handle.terminate()
+                    except (OSError, ProcessLookupError) as e:
+                        logger.debug("Process termination cleanup notice", error=e)
             self.running_processes.clear()
 
         # 5. Clear other complex objects and state indicators.
-        with _sup:
+        try:
             self.serial_tx_allowed.clear()
             self.link_sync_event.clear()
             self.pending_digital_reads.clear()
             self.pending_analog_reads.clear()
+        except (OSError, RuntimeError, AttributeError) as e:
+            logger.debug("State indicators cleanup notice", error=e)
 
         # 6. References cleared; sqlite3 connections finalized by the GC at shutdown.
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import math
 import weakref
 from collections.abc import Awaitable, Callable, Iterable, Sequence
@@ -312,7 +311,7 @@ class PrometheusExporter:
             # [SIL-2] Root-cause fix: diskcache creates thread-local sqlite3 connections
             # when read from this WSGI thread. Close them to prevent ResourceWarnings
             # when the diskcache object is destroyed.
-            with contextlib.suppress(Exception):
+            try:
                 if self._state is not None:
                     mq: Any = self._state.mailbox_queue
                     if hasattr(mq, "cache"):
@@ -328,6 +327,10 @@ class PrometheusExporter:
                         if local and hasattr(local, "con"):
                             local.con.close()
                             del local.con
+            except (AttributeError, OSError, RuntimeError) as e:
+                logger.debug("Metrics diskcache connection cleanup notice", error=e)
+            except Exception as e:
+                logger.warning("Metrics diskcache connection cleanup failed", error=e)
 
             return [payload]
 
@@ -363,8 +366,10 @@ class PrometheusExporter:
         finally:
             # Unregister the collector to break circular reference
             if self._server and self._collector:
-                with contextlib.suppress(KeyError):
+                try:
                     self._registry.unregister(self._collector)
+                except KeyError:
+                    logger.debug("Collector already unregistered from registry")
 
             # Shutdown stops the serve_forever loop
             if self._server:

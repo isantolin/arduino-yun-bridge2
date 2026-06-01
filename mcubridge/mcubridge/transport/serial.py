@@ -15,7 +15,6 @@ from __future__ import annotations
 from mcubridge.protocol import mcubridge_pb2 as pb
 
 import asyncio
-import contextlib
 import logging
 from typing import TYPE_CHECKING, cast, Protocol, runtime_checkable, Callable, Awaitable
 
@@ -169,11 +168,15 @@ class SerialTransport:
                 raise ConnectionError("Serial connection lost")
         finally:
             read_task.cancel()
-            with contextlib.suppress(asyncio.IncompleteReadError, asyncio.CancelledError):
+            try:
                 await read_task
+            except (asyncio.IncompleteReadError, asyncio.CancelledError):
+                logger.debug("Serial read task cancelled or incomplete during cleanup")
             if self.service:
-                with contextlib.suppress(OSError, RuntimeError, ValueError, TypeError):
+                try:
                     await self.service.on_serial_disconnected()
+                except (OSError, RuntimeError, ValueError, TypeError) as e:
+                    logger.warning("Error during serial disconnect cleanup", error=e)
             if self.writer:
                 self.writer.close()
 
@@ -260,8 +263,10 @@ class SerialTransport:
         if command_id == Status.ACK.value:
             ack_target = pending.command_id
             if payload:
-                with contextlib.suppress(ProtobufDecodeError, TypeError, ValueError):
+                try:
                     ack_target = pb.AckPacket.FromString(payload).command_id
+                except (ProtobufDecodeError, TypeError, ValueError) as e:
+                    logger.warning("Failed to decode MCU ACK payload", error=e)
             if ack_target == pending.command_id:
                 pending.ack_received = True
                 if not pending.expected_resp_ids:
@@ -342,9 +347,11 @@ class SerialTransport:
             return False
 
         if not self.state.serial_tx_allowed.is_set():
-            with contextlib.suppress(TimeoutError):
+            try:
                 async with asyncio.timeout(30.0):
                     await self.state.serial_tx_allowed.wait()
+            except TimeoutError:
+                logger.warning("Timed out waiting for serial TX flow control")
 
         if seq_id is None:
             self._tx_sequence_id = (self._tx_sequence_id + 1) & protocol.UINT16_MAX

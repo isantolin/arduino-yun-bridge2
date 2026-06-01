@@ -27,10 +27,10 @@ void integrated_test_bridge_core() {
   memset(sync_req.nonce.bytes, 1, 16);
   sync_req.nonce.size = 16;
 
-  rpc::Frame sync_frame;
-  sync_frame.envelope.version = rpc::PROTOCOL_VERSION;
-  sync_frame.envelope.command_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
-  sync_frame.envelope.sequence_id = 1;
+  rpc_pb_RpcEnvelope sync_frame = rpc_pb_RpcEnvelope_init_default;
+  sync_frame.version = rpc::PROTOCOL_VERSION;
+  sync_frame.command_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
+  sync_frame.sequence_id = 1;
   
   bridge::test::set_pb_payload(sync_frame, sync_req);
   accessor.dispatch(sync_frame);

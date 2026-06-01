@@ -24,13 +24,13 @@ void test_bridge_protocol_version_mismatch() {
   auto ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
-  rpc::Frame f;
-  f.envelope.version = static_cast<uint8_t>(rpc::PROTOCOL_VERSION + 1);
-  f.envelope.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_GET_VERSION);
-  f.envelope.sequence_id = 1;
+  rpc_pb_RpcEnvelope f;
+  f.version = static_cast<uint8_t>(rpc::PROTOCOL_VERSION + 1);
+  f.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_GET_VERSION);
+  f.sequence_id = 1;
   
   etl::array<uint8_t, 256> buf;
-  size_t len = rpc::FrameParser::serialize(f, buf);
+  size_t len = rpc::serialize_frame(f, buf);
   ba.invokePacketReceived(etl::span<const uint8_t>(buf.data(), len));
 
   // Should have emitted STATUS_MALFORMED
@@ -43,10 +43,10 @@ void test_bridge_unknown_command_jump_table() {
   auto ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
-  rpc::Frame f;
-  f.envelope.version = rpc::PROTOCOL_VERSION;
-  f.envelope.command_id = 254; // empty
-  f.envelope.sequence_id = 1;
+  rpc_pb_RpcEnvelope f;
+  f.version = rpc::PROTOCOL_VERSION;
+  f.command_id = 254; // empty
+  f.sequence_id = 1;
 
   ba.dispatch(f);
   TEST_ASSERT_TRUE(true);
@@ -83,13 +83,13 @@ void test_bridge_packet_received_edge_cases() {
   ba.invokePacketReceived(short_pkt);
 
   // 2. CRC mismatch
-  rpc::Frame f;
-  f.envelope.version = rpc::PROTOCOL_VERSION;
-  f.envelope.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_GET_VERSION);
-  f.envelope.sequence_id = 1;
+  rpc_pb_RpcEnvelope f;
+  f.version = rpc::PROTOCOL_VERSION;
+  f.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_GET_VERSION);
+  f.sequence_id = 1;
 
   etl::array<uint8_t, 256> buf;
-  size_t len = rpc::FrameParser::serialize(f, buf);
+  size_t len = rpc::serialize_frame(f, buf);
   buf[len - 1] ^= 0xFF; // Break CRC
   ba.invokePacketReceived(etl::span<const uint8_t>(buf.data(), len));
 
@@ -131,10 +131,10 @@ void test_bridge_linksync_auth_failure() {
   memset(sync_msg.nonce.bytes, 0xAA, 16); sync_msg.nonce.size = 16;
   memset(sync_msg.tag.bytes, 0xFF, 16); sync_msg.tag.size = 16;
 
-  rpc::Frame f;
-  f.envelope.version = rpc::PROTOCOL_VERSION;
-  f.envelope.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_LINK_SYNC);
-  f.envelope.sequence_id = 1;
+  rpc_pb_RpcEnvelope f;
+  f.version = rpc::PROTOCOL_VERSION;
+  f.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_LINK_SYNC);
+  f.sequence_id = 1;
 
   bridge::test::set_pb_payload(f, sync_msg);
   ba.dispatch(f);
@@ -158,18 +158,18 @@ void test_bridge_decompress_error() {
   auto ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
-  rpc::Frame f;
-  f.envelope.version = rpc::PROTOCOL_VERSION;
-  f.envelope.command_id = static_cast<uint16_t>(
+  rpc_pb_RpcEnvelope f;
+  f.version = rpc::PROTOCOL_VERSION;
+  f.command_id = static_cast<uint16_t>(
                    static_cast<uint16_t>(rpc::CommandId::CMD_GET_VERSION) |
                    rpc::RPC_CMD_FLAG_COMPRESSED);
-  f.envelope.sequence_id = 1;
+  f.sequence_id = 1;
 
   etl::array<uint8_t, 4> garbage = {0xFF, 0xFF, 0xFF, 0xFF};
-  rpc::payload::copy_to_pb_bytes(f.envelope.payload, garbage.data(), 4);
+  rpc::payload::copy_to_pb_bytes(f.payload, garbage.data(), 4);
 
   etl::array<uint8_t, 256> buf;
-  size_t len = rpc::FrameParser::serialize(f, buf);
+  size_t len = rpc::serialize_frame(f, buf);
   ba.invokePacketReceived(etl::span<const uint8_t>(buf.data(), len));
 
   TEST_ASSERT_TRUE(true);
@@ -184,10 +184,10 @@ void test_bridge_security_pre_sync_rejection() {
   Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, secret);
 
   // Try to send a restricted command before sync
-  rpc::Frame f;
-  f.envelope.version = rpc::PROTOCOL_VERSION;
-  f.envelope.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_GET_FREE_MEMORY);
-  f.envelope.sequence_id = 1;
+  rpc_pb_RpcEnvelope f;
+  f.version = rpc::PROTOCOL_VERSION;
+  f.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_GET_FREE_MEMORY);
+  f.sequence_id = 1;
   
   ba.dispatch(f);
 
@@ -209,10 +209,10 @@ void test_bridge_nonce_reuse_attack() {
                          sync_msg.tag.bytes);
   sync_msg.tag.size = 16;
 
-  rpc::Frame f;
-  f.envelope.version = rpc::PROTOCOL_VERSION;
-  f.envelope.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_LINK_SYNC);
-  f.envelope.sequence_id = 1;
+  rpc_pb_RpcEnvelope f;
+  f.version = rpc::PROTOCOL_VERSION;
+  f.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_LINK_SYNC);
+  f.sequence_id = 1;
   
   bridge::test::set_pb_payload(f, sync_msg);
   ba.dispatch(f);

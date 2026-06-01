@@ -48,7 +48,7 @@ class TestAccessor {
     _fsm.receive(ev);
   }
 
-  void dispatch(const rpc::Frame& frame) { _bridge._dispatchCommand(frame); }
+  void dispatch(const rpc_pb_RpcEnvelope& frame) { _bridge._dispatchCommand(frame); }
 
   bool isSharedSecretEmpty() const { return _bridge._shared_secret.empty(); }
   void setSharedSecret(etl::span<const uint8_t> secret) {

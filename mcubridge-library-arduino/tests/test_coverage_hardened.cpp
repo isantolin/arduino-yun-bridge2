@@ -39,7 +39,7 @@ void capture_poll_handler(rpc::StatusCode status, uint16_t exit_code,
   (void)exit_code;
 }
 void datastore_get_handler(etl::string_view, etl::span<const uint8_t>) {}
-void dummy_cmd_handler(const rpc::Frame&) {}
+void dummy_cmd_handler(const rpc_pb_RpcEnvelope&) {}
 void dummy_status_handler(rpc::StatusCode, etl::span<const uint8_t>) {}
 }  // namespace
 
@@ -334,12 +334,12 @@ void test_bridge_fsm_resets() {
 
 void test_checksum_direct_library_path() {
   // Validates the new etl::byte_stream_writer logic in checksum::compute
-  rpc::Frame f;
-  f.envelope.version = rpc::PROTOCOL_VERSION;
-  f.envelope.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_XON);
-  f.envelope.sequence_id = 0;
+  rpc_pb_RpcEnvelope f = rpc_pb_RpcEnvelope_init_default;
+  f.version = rpc::PROTOCOL_VERSION;
+  f.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_XON);
+  f.sequence_id = 0;
   
-  uint32_t crc = rpc::checksum::compute(f.payload()); // Adjusted for new checksum logic
+  uint32_t crc = rpc::checksum::compute(etl::span<const uint8_t>(f.payload.bytes, f.payload.size)); // Adjusted for new checksum logic
   (void)crc;
   TEST_ASSERT(true);
 }
@@ -396,13 +396,13 @@ void test_bridge_duplicate_packet() {
   auto ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
-  rpc::Frame f;
-  f.envelope.version = rpc::PROTOCOL_VERSION;
-  f.envelope.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_DIGITAL_WRITE);
-  f.envelope.sequence_id = 10;
-  f.envelope.payload.size = 2; // dummy
+  rpc_pb_RpcEnvelope f = rpc_pb_RpcEnvelope_init_default;
+  f.version = rpc::PROTOCOL_VERSION;
+  f.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_DIGITAL_WRITE);
+  f.sequence_id = 10;
+  f.payload.size = 2; // dummy
   
-  bridge::router::CommandContext ctx(&f, f.envelope.command_id, 10, true, true);
+  bridge::router::CommandContext ctx(&f, f.command_id, 10, true, true);
   ba.handleDigitalWriteCommand(ctx);
 
   TEST_ASSERT(true);
@@ -415,10 +415,10 @@ void test_bridge_exhaustive_command_handlers() {
   ba.setSynchronized();
 
   auto trigger = [&](rpc::CommandId id, auto payload) {
-    rpc::Frame f;
-    f.envelope.version = rpc::PROTOCOL_VERSION;
-    f.envelope.command_id = static_cast<uint16_t>(id);
-    f.envelope.sequence_id = 1;
+    rpc_pb_RpcEnvelope f = rpc_pb_RpcEnvelope_init_default;
+    f.version = rpc::PROTOCOL_VERSION;
+    f.command_id = static_cast<uint16_t>(id);
+    f.sequence_id = 1;
     bridge::test::set_pb_payload(f, payload);
     ba.dispatch(f);
   };

@@ -53,10 +53,10 @@ void test_bridge_full_crypto_handshake_and_data() {
   memcpy(sync_req.tag.bytes, handshake_key.data(), 16);
   sync_req.tag.size = 16;
 
-  rpc::Frame f_sync;
-  f_sync.envelope.version = rpc::PROTOCOL_VERSION;
-  f_sync.envelope.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_LINK_SYNC);
-  f_sync.envelope.sequence_id = 1;
+  rpc_pb_RpcEnvelope f_sync;
+  f_sync.version = rpc::PROTOCOL_VERSION;
+  f_sync.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_LINK_SYNC);
+  f_sync.sequence_id = 1;
 
   bridge::test::set_pb_payload(f_sync, sync_req);
 
@@ -67,18 +67,18 @@ void test_bridge_full_crypto_handshake_and_data() {
   // 3. Send ENCRYPTED data frame (even if not synced, to test rejection
   // branches)
   stream.clear();
-  rpc::Frame f_data;
-  f_data.envelope.version = rpc::PROTOCOL_VERSION;
-  f_data.envelope.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_GET_FREE_MEMORY);
-  f_data.envelope.sequence_id = 2;
+  rpc_pb_RpcEnvelope f_data;
+  f_data.version = rpc::PROTOCOL_VERSION;
+  f_data.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_GET_FREE_MEMORY);
+  f_data.sequence_id = 2;
   
-  f_data.envelope.nonce.bytes[0] = 'M';
-  f_data.envelope.nonce.bytes[1] = 'P';
-  f_data.envelope.nonce.bytes[2] = 'U';
-  f_data.envelope.nonce.bytes[11] = 5;         // Counter = 5
-  f_data.envelope.nonce.size = 12;
-  memset(f_data.envelope.tag.bytes, 0xEE, 16);
-  f_data.envelope.tag.size = 16;
+  f_data.nonce.bytes[0] = 'M';
+  f_data.nonce.bytes[1] = 'P';
+  f_data.nonce.bytes[2] = 'U';
+  f_data.nonce.bytes[11] = 5;         // Counter = 5
+  f_data.nonce.size = 12;
+  memset(f_data.tag.bytes, 0xEE, 16);
+  f_data.tag.size = 16;
 
   ba.dispatch(f_data);
 

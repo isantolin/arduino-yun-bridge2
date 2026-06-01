@@ -51,13 +51,10 @@ void test_bridge_handshake() {
   // [MEM-SAVE] Reusing nonce for handshake (aligned with protocol spec).
   etl::copy_n(nonce.begin(), rpc::AEAD_NONCE_SIZE, frame_nonce.begin());
 
-  size_t len = rpc::FrameBuilder::build(
-      frame_raw, rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC), 1,
-      etl::span<const uint8_t>(pl_buf.data(), pbos.bytes_written),
-      frame_nonce, tag);
+  size_t len = rpc::serialize_frame(rpc::build_envelope(rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC), 1, etl::span<const uint8_t>(pl_buf.data(), pbos.bytes_written), frame_nonce, tag), frame_raw);
 
   // 3. Dispatch using FrameParser
-  auto frame_res = rpc::FrameParser().parse(etl::span<uint8_t>(frame_raw.data(), len));
+  auto frame_res = rpc::parse_frame(etl::span<uint8_t>(frame_raw.data(), len));
   TEST_ASSERT_TRUE(frame_res.has_value());
   ba.dispatch(frame_res.value());
   Bridge.process();
@@ -92,12 +89,9 @@ void test_bridge_process_rx() {
   etl::array<uint8_t, rpc::AEAD_NONCE_SIZE> frame_nonce = {};
   etl::array<uint8_t, rpc::AEAD_TAG_SIZE> frame_tag = {};
 
-  size_t len = rpc::FrameBuilder::build(
-      frame_raw, rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE), 10,
-      etl::span<const uint8_t>(pl_buf.data(), pbos.bytes_written),
-      frame_nonce, frame_tag);
+  size_t len = rpc::serialize_frame(rpc::build_envelope(rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE), 10, etl::span<const uint8_t>(pl_buf.data(), pbos.bytes_written), frame_nonce, frame_tag), frame_raw);
 
-  auto frame_res = rpc::FrameParser().parse(etl::span<uint8_t>(frame_raw.data(), len));
+  auto frame_res = rpc::parse_frame(etl::span<uint8_t>(frame_raw.data(), len));
   TEST_ASSERT_TRUE(frame_res.has_value());
   ba.dispatch(frame_res.value());
   Bridge.process();
@@ -122,12 +116,9 @@ void test_bridge_dedup_console_write() {
   etl::array<uint8_t, rpc::AEAD_NONCE_SIZE> frame_nonce = {};
   etl::array<uint8_t, rpc::AEAD_TAG_SIZE> frame_tag = {};
 
-  size_t len = rpc::FrameBuilder::build(
-      frame_raw, rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE), 55,
-      etl::span<const uint8_t>(pl_buf.data(), pbos.bytes_written),
-      frame_nonce, frame_tag);
+  size_t len = rpc::serialize_frame(rpc::build_envelope(rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE), 55, etl::span<const uint8_t>(pl_buf.data(), pbos.bytes_written), frame_nonce, frame_tag), frame_raw);
 
-  auto frame_res = rpc::FrameParser().parse(etl::span<uint8_t>(frame_raw.data(), len));
+  auto frame_res = rpc::parse_frame(etl::span<uint8_t>(frame_raw.data(), len));
   TEST_ASSERT_TRUE(frame_res.has_value());
 
   // 2. Dispatch twice
@@ -162,13 +153,10 @@ void test_bridge_status_ack() {
   etl::array<uint8_t, rpc::AEAD_NONCE_SIZE> frame_nonce = {};
   etl::array<uint8_t, rpc::AEAD_TAG_SIZE> frame_tag = {};
 
-  size_t len = rpc::FrameBuilder::build(
-      frame_raw, rpc::to_underlying(rpc::StatusCode::STATUS_ACK), 77,
-      etl::span<const uint8_t>(pl_buf.data(), pbos.bytes_written),
-      frame_nonce, frame_tag);
+  size_t len = rpc::serialize_frame(rpc::build_envelope(rpc::to_underlying(rpc::StatusCode::STATUS_ACK), 77, etl::span<const uint8_t>(pl_buf.data(), pbos.bytes_written), frame_nonce, frame_tag), frame_raw);
 
   // 3. Dispatch and verify isAwaitingAck() becomes false
-  auto frame_res = rpc::FrameParser().parse(etl::span<uint8_t>(frame_raw.data(), len));
+  auto frame_res = rpc::parse_frame(etl::span<uint8_t>(frame_raw.data(), len));
   TEST_ASSERT_TRUE(frame_res.has_value());
   ba.dispatch(frame_res.value());
   Bridge.process();

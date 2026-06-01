@@ -55,10 +55,10 @@ void test_bridge_brute_force_commands() {
   auto ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
-  rpc::Frame f = {};
+  rpc_pb_RpcEnvelope f = {};
 
   auto hit = [&](rpc::CommandId id, auto packet) {
-    f .envelope.command_id = (uint16_t)id;
+    f .command_id = (uint16_t)id;
     bridge::test::set_pb_payload(f, packet);
     ba.dispatch(f);
   };
@@ -140,11 +140,11 @@ void test_bridge_brute_force_commands() {
     return p;
   }());
 
-  f .envelope.command_id = (uint16_t)rpc::CommandId::CMD_MAILBOX_READ;
-  f .envelope.payload.size = 0;
+  f .command_id = (uint16_t)rpc::CommandId::CMD_MAILBOX_READ;
+  f .payload.size = 0;
   ba.dispatch(f);
 
-  f .envelope.command_id = (uint16_t)rpc::CommandId::CMD_MAILBOX_AVAILABLE;
+  f .command_id = (uint16_t)rpc::CommandId::CMD_MAILBOX_AVAILABLE;
   ba.dispatch(f);
 
   // Process
@@ -293,17 +293,17 @@ void test_console_and_misc() {
   Bridge.signalXoff();
   Bridge.signalXon();
 
-  rpc::Frame f = {};
-  f .envelope.command_id = (uint16_t)rpc::StatusCode::STATUS_OK;
+  rpc_pb_RpcEnvelope f = {};
+  f .command_id = (uint16_t)rpc::StatusCode::STATUS_OK;
   ba.dispatch(f);
 
-  f .envelope.command_id = (uint16_t)rpc::StatusCode::STATUS_MALFORMED;
+  f .command_id = (uint16_t)rpc::StatusCode::STATUS_MALFORMED;
   ba.dispatch(f);
 
   // Decompression MALFORMED
-  f .envelope.command_id = (uint16_t)rpc::CommandId::CMD_CONSOLE_WRITE |
+  f .command_id = (uint16_t)rpc::CommandId::CMD_CONSOLE_WRITE |
                         rpc::RPC_CMD_FLAG_COMPRESSED;
-  f .envelope.payload.size = 1;
+  f .payload.size = 1;
   ba.dispatch(f);
 
   // 4. Trigger etl::handle_error

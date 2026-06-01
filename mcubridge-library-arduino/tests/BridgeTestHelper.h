@@ -8,11 +8,11 @@ namespace bridge {
 namespace test {
 
 template <typename T>
-void set_pb_payload(rpc::Frame& frame, const T& msg) {
+void set_pb_payload(rpc_pb_RpcEnvelope& frame, const T& msg) {
   pb_ostream_t stream = pb_ostream_from_buffer(
-      frame.envelope.payload.bytes, 64U);
+      frame.payload.bytes, 64U);
   if (rpc::Payload::encode(&stream, msg)) {
-    frame.envelope.payload.size = static_cast<pb_size_t>(stream.bytes_written);
+    frame.payload.size = static_cast<pb_size_t>(stream.bytes_written);
   }
 }
 

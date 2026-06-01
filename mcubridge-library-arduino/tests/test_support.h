@@ -207,7 +207,7 @@ struct TestCOBS {
 
 template <size_t N>
 static bool extract_next_valid_frame(const ByteBuffer<N>& buffer,
-                                     size_t& cursor, rpc::Frame& out_frame) {
+                                     size_t& cursor, rpc_pb_RpcEnvelope& out_frame) {
   etl::array<uint8_t, 1024> decoded_buf;
 
   while (cursor < buffer.len) {
@@ -227,7 +227,7 @@ static bool extract_next_valid_frame(const ByteBuffer<N>& buffer,
 
     if (decoded_len >= rpc::CRC_TRAILER_SIZE + 2U) {
       auto result =
-          rpc::FrameParser::parse(etl::span<const uint8_t>(decoded_buf.data(), decoded_len));
+          rpc::parse_frame(etl::span<const uint8_t>(decoded_buf.data(), decoded_len));
       if (result) {
         out_frame = result.value();
         cursor = end;

@@ -41,12 +41,12 @@ void on_process_poll(rpc::StatusCode, uint16_t, etl::span<const uint8_t>,
                      etl::span<const uint8_t>) {}
 
 bool extract_encrypted_frame(const ByteBuffer<8192>& tx, size_t& cursor,
-                             rpc::Frame& out, size_t attempts_left) {
+                             rpc_pb_RpcEnvelope& out, size_t attempts_left) {
   if (attempts_left == 0) return false;
-  rpc::Frame candidate;
+  rpc_pb_RpcEnvelope candidate;
   if (!extract_next_valid_frame(tx, cursor, candidate)) return false;
   const uint16_t raw_cmd =
-      candidate.envelope.command_id & ~rpc::RPC_CMD_FLAG_COMPRESSED;
+      candidate.command_id & ~rpc::RPC_CMD_FLAG_COMPRESSED;
   const bool is_excluded = (raw_cmd >= rpc::RPC_STATUS_CODE_MIN &&
                             raw_cmd <= rpc::RPC_STATUS_CODE_MAX) ||
                            (raw_cmd >= rpc::RPC_SYSTEM_COMMAND_MIN &&
@@ -58,34 +58,34 @@ bool extract_encrypted_frame(const ByteBuffer<8192>& tx, size_t& cursor,
   return extract_encrypted_frame(tx, cursor, out, attempts_left - 1);
 }
 
-rpc::Frame make_empty_frame(uint16_t cmd, uint16_t seq) {
-  rpc::Frame frame;
-  frame.envelope.version = rpc::PROTOCOL_VERSION;
-  frame.envelope.command_id = cmd;
-  frame.envelope.sequence_id = seq;
+rpc_pb_RpcEnvelope make_empty_frame(uint16_t cmd, uint16_t seq) {
+  rpc_pb_RpcEnvelope frame;
+  frame.version = rpc::PROTOCOL_VERSION;
+  frame.command_id = cmd;
+  frame.sequence_id = seq;
   return frame;
 }
 
 template <typename T>
-rpc::Frame make_payload_frame(
+rpc_pb_RpcEnvelope make_payload_frame(
     uint16_t cmd, uint16_t seq, const T& payload,
     etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE>& storage) {
   (void)storage;
-  rpc::Frame frame;
-  frame.envelope.version = rpc::PROTOCOL_VERSION;
-  frame.envelope.command_id = cmd;
-  frame.envelope.sequence_id = seq;
+  rpc_pb_RpcEnvelope frame;
+  frame.version = rpc::PROTOCOL_VERSION;
+  frame.command_id = cmd;
+  frame.sequence_id = seq;
   bridge::test::set_pb_payload(frame, payload);
   return frame;
 }
 
-rpc::Frame make_malformed_payload_frame(uint16_t cmd, uint16_t seq) {
-  rpc::Frame frame;
-  frame.envelope.version = rpc::PROTOCOL_VERSION;
-  frame.envelope.command_id = cmd;
-  frame.envelope.sequence_id = seq;
-  frame.envelope.payload.size = 1;
-  frame.envelope.payload.bytes[0] = 0xC1;
+rpc_pb_RpcEnvelope make_malformed_payload_frame(uint16_t cmd, uint16_t seq) {
+  rpc_pb_RpcEnvelope frame;
+  frame.version = rpc::PROTOCOL_VERSION;
+  frame.command_id = cmd;
+  frame.sequence_id = seq;
+  frame.payload.size = 1;
+  frame.payload.bytes[0] = 0xC1;
   return frame;
 }
 
@@ -343,19 +343,19 @@ void test_packet_received_security_and_decompress_paths() {
                          payload_buf);
 
   etl::array<uint8_t, rpc::MAX_FRAME_SIZE> wire;
-  size_t wire_len = rpc::FrameParser::serialize(secure, wire);
+  size_t wire_len = rpc::serialize_frame(secure, wire);
   ba.invokePacketReceived(etl::span<const uint8_t>(wire.data(), wire_len));
 
   etl::array<uint8_t, 4> decomp_pl = {1, 2, 3, 4};
-  rpc::Frame compressed;
-  compressed.envelope.version = rpc::PROTOCOL_VERSION;
-  compressed.envelope.command_id = static_cast<uint16_t>(
+  rpc_pb_RpcEnvelope compressed;
+  compressed.version = rpc::PROTOCOL_VERSION;
+  compressed.command_id = static_cast<uint16_t>(
                            rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION) |
                            rpc::RPC_CMD_FLAG_COMPRESSED);
-  compressed.envelope.sequence_id = 501;
-  rpc::payload::copy_to_pb_bytes(compressed.envelope.payload, decomp_pl.data(), 4);
+  compressed.sequence_id = 501;
+  rpc::payload::copy_to_pb_bytes(compressed.payload, decomp_pl.data(), 4);
 
-  wire_len = rpc::FrameParser::serialize(compressed, wire);
+  wire_len = rpc::serialize_frame(compressed, wire);
   ba.invokePacketReceived(etl::span<const uint8_t>(wire.data(), wire_len));
 }
 
@@ -609,10 +609,10 @@ void test_encrypted_rx_nonce_and_compressed_empty_paths() {
       Bridge.send(rpc::CommandId::CMD_CONSOLE_WRITE, 901, cmsg));
 
   size_t cursor = 0;
-  rpc::Frame encrypted;
+  rpc_pb_RpcEnvelope encrypted;
   if (extract_encrypted_frame(stream.tx_buf, cursor, encrypted, 4)) {
     etl::array<uint8_t, rpc::MAX_FRAME_SIZE> wire;
-    size_t wire_len = rpc::FrameParser::serialize(
+    size_t wire_len = rpc::serialize_frame(
         encrypted, etl::span<uint8_t>(wire.data(), wire.size()));
     ba.invokePacketReceived(etl::span<const uint8_t>(wire.data(), wire_len));
   }
@@ -713,27 +713,27 @@ void test_fault_injection_harness_paths() {
   TEST_ASSERT_TRUE(
       Bridge.send(rpc::CommandId::CMD_CONSOLE_WRITE, 951, s_cmsg));
   size_t cursor = 0;
-  rpc::Frame s_encrypted;
+  rpc_pb_RpcEnvelope s_encrypted;
   if (extract_encrypted_frame(secure_stream.tx_buf, cursor, s_encrypted, 4)) {
     etl::array<uint8_t, rpc::MAX_FRAME_SIZE> wire;
-    const size_t wire_len = rpc::FrameParser::serialize(
+    const size_t wire_len = rpc::serialize_frame(
         s_encrypted, etl::span<uint8_t>(wire.data(), wire.size()));
     bridge::test::fault::enable(
         bridge::test::fault::FaultPoint::BRIDGE_NONCE_READ_FAIL);
     bs.invokePacketReceived(etl::span<const uint8_t>(wire.data(), wire_len));
   }
 
-  rpc::Frame bad_compressed;
-  bad_compressed.envelope.version = rpc::PROTOCOL_VERSION;
-  bad_compressed.envelope.command_id = static_cast<uint16_t>(
+  rpc_pb_RpcEnvelope bad_compressed;
+  bad_compressed.version = rpc::PROTOCOL_VERSION;
+  bad_compressed.command_id = static_cast<uint16_t>(
           rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION) |
           rpc::RPC_CMD_FLAG_COMPRESSED);
-  bad_compressed.envelope.sequence_id = 952;
+  bad_compressed.sequence_id = 952;
   uint8_t bad_pl[] = {rle::ESCAPE_BYTE, 0x01};
-  rpc::payload::copy_to_pb_bytes(bad_compressed.envelope.payload, bad_pl, 2);
+  rpc::payload::copy_to_pb_bytes(bad_compressed.payload, bad_pl, 2);
   
   etl::array<uint8_t, rpc::MAX_FRAME_SIZE> bad_wire;
-  const size_t bad_len = rpc::FrameParser::serialize(
+  const size_t bad_len = rpc::serialize_frame(
       bad_compressed, etl::span<uint8_t>(bad_wire.data(), bad_wire.size()));
   bs.invokePacketReceived(etl::span<const uint8_t>(bad_wire.data(), bad_len));
 }

@@ -25,12 +25,12 @@ void test_surgical_bridge_errors() {
   ba.setSynchronized();
 
   // 1. Replay detection (Same nonce counter)
-  rpc::Frame f = {};
-  f .envelope.version = rpc::PROTOCOL_VERSION;
-  f .envelope.command_id =
+  rpc_pb_RpcEnvelope f = rpc_pb_RpcEnvelope_init_default;
+  f .version = rpc::PROTOCOL_VERSION;
+  f .command_id =
       static_cast<uint16_t>(rpc::CommandId::CMD_LINK_SYNC);
-  f .envelope.sequence_id = 1;
-  f .envelope.payload.size = 32;
+  f .sequence_id = 1;
+  f .payload.size = 32;
   // Bridge saves the last counter. We'll dispatch once.
   ba.dispatch(f);
   // Dispatch again with same nonce (implicit counter 0 in header)
@@ -45,13 +45,13 @@ void test_surgical_bridge_errors() {
   Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR, (const char*)nullptr);
 
   // 3. Unknown Command in dispatch
-  rpc::Frame f_unk = {};
-  f_unk .envelope.version = rpc::PROTOCOL_VERSION;
-  f_unk .envelope.command_id = 999;
+  rpc_pb_RpcEnvelope f_unk = rpc_pb_RpcEnvelope_init_default;
+  f_unk .version = rpc::PROTOCOL_VERSION;
+  f_unk .command_id = 999;
   ba.dispatch(f_unk);
 
   // 4. Bad version
-  f_unk .envelope.version = 0;
+  f_unk .version = 0;
   ba.dispatch(f_unk);
 
   TEST_ASSERT(true);

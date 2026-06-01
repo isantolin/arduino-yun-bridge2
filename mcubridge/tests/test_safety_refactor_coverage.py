@@ -79,9 +79,7 @@ async def test_runtime_safety_coverage(real_config: RuntimeConfig) -> None:
 
 @pytest.mark.asyncio
 async def test_additional_coverage_boost(real_config: RuntimeConfig) -> None:
-    from mcubridge.state.context import RuntimeState
-
-    state = RuntimeState(real_config)
+    state = create_runtime_state(real_config)
     # Trigger the logging.warning in _close_diskcache_resource via Exception
     mock_mq = MagicMock()
     mock_mq.cache = MagicMock()

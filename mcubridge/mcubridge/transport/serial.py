@@ -33,7 +33,7 @@ from mcubridge.config.const import (
     SERIAL_SUCCESS_STATUS_CODES,
     SERIAL_MIN_ACK_TIMEOUT,
 )
-from mcubridge.protocol import protocol
+from mcubridge.protocol import protocol, is_system_command
 from mcubridge.protocol.protocol import (
     ACK_ONLY_COMMANDS,
     Status,
@@ -357,9 +357,7 @@ class SerialTransport:
             self._tx_sequence_id = (self._tx_sequence_id + 1) & protocol.UINT16_MAX
             seq_id = self._tx_sequence_id
 
-        is_excluded = (protocol.STATUS_CODE_MIN <= command_id <= protocol.STATUS_CODE_MAX) or (
-            protocol.SYSTEM_COMMAND_MIN <= command_id <= protocol.SYSTEM_COMMAND_MAX
-        )
+        is_excluded = is_system_command(command_id)
         nonce = b"\x00" * protocol.AEAD_NONCE_SIZE
         if self.state.is_synchronized and not is_excluded:
             nonce, new_counter = generate_nonce_with_counter(self.state.link_nonce_counter)

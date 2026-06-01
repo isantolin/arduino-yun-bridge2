@@ -16,5 +16,5 @@ namespace etl {
 
   // Common delegates used in Bridge
   template class delegate<void(rpc::StatusCode, etl::span<const uint8_t>)>;
-  template class delegate<void(const rpc::Frame&)>;
+  template class delegate<void(const rpc_pb_RpcEnvelope&)>;
 }

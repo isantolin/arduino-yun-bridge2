@@ -60,14 +60,14 @@ extern template class span<const char>;
 namespace bridge {
 namespace router {
 struct CommandContext {
-  const rpc::Frame* frame;
+  const rpc_pb_RpcEnvelope* envelope;
   uint16_t raw_command;
   uint16_t sequence_id;
   bool is_duplicate;
   bool requires_ack;
-  CommandContext(const rpc::Frame* f, uint16_t cmd, uint16_t seq, bool dup,
+  CommandContext(const rpc_pb_RpcEnvelope* f, uint16_t cmd, uint16_t seq, bool dup,
                  bool ack)
-      : frame(f),
+      : envelope(f),
         raw_command(cmd),
         sequence_id(seq),
         is_duplicate(dup),
@@ -129,14 +129,14 @@ class BridgeClass {
     return false;
   }
 
-  using CommandHandler = etl::delegate<void(const rpc::Frame&)>;
+  using CommandHandler = etl::delegate<void(const rpc_pb_RpcEnvelope&)>;
   using StatusHandler =
       etl::delegate<void(rpc::StatusCode, etl::span<const uint8_t>)>;
   [[maybe_unused]] void onCommand(CommandHandler h) { _command_handler = h; }
   [[maybe_unused]] void onStatus(StatusHandler h) { _status_handler = h; }
   void flushStream() { _stream.flush(); }
 
-  void _dispatchCommand(const rpc::Frame& frame);
+  void _dispatchCommand(const rpc_pb_RpcEnvelope& envelope);
   static void _onBootloaderDelay();
   void _onAckTimeout();
   void _onRxDedupe();
@@ -252,7 +252,7 @@ class BridgeClass {
   etl::circular_buffer<uint16_t, bridge::config::RX_HISTORY_SIZE> _rx_history;
 
   [[nodiscard]] etl::expected<void, rpc::FrameError> _decompressFrame(
-      const rpc::Frame& in, rpc::Frame& out);
+      const rpc_pb_RpcEnvelope& in, rpc_pb_RpcEnvelope& out);
   [[maybe_unused]] void _applyTimingConfig(
       const rpc::payload::HandshakeConfig& msg);
 
@@ -326,7 +326,7 @@ class BridgeClass {
 
   template <typename T, typename F>
   void _withPayload(const bridge::router::CommandContext& ctx, F handler) {
-    auto res = rpc::Payload::parse<T>(*ctx.frame);
+    auto res = rpc::Payload::parse<T>(*ctx.envelope);
     if (res) handler(res.value());
   }
 
@@ -338,7 +338,7 @@ class BridgeClass {
       _processAck(ctx.raw_command, ctx.sequence_id);
       return;
     }
-    auto res = rpc::Payload::parse<T>(*ctx.frame);
+    auto res = rpc::Payload::parse<T>(*ctx.envelope);
     if (res) {
       handler(res.value());
       if (ctx.requires_ack) _processAck(ctx.raw_command, ctx.sequence_id);
@@ -359,7 +359,7 @@ class BridgeClass {
   void _handlePinRead(const bridge::router::CommandContext& ctx, TID resp_id,
                       TValid valid, TRead read) {
     _withResponse(ctx, [this, &ctx, resp_id, valid, read]() {
-      auto res = rpc::Payload::parse<rpc::payload::PinRead>(*ctx.frame);
+      auto res = rpc::Payload::parse<rpc::payload::PinRead>(*ctx.envelope);
       if (res && valid(res->pin)) {
         T resp;
         resp.value = static_cast<uint32_t>(read(res->pin));

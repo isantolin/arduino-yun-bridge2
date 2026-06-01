@@ -1,3 +1,10 @@
+/**
+ * @file rpc_frame.h
+ * @brief Zero-Wrapper Protobuf Framing (SIL-2).
+ *
+ * This file implements the wire-format framing using Nanopb directly.
+ * All manual wrappers and redundant abstractions have been erradicated.
+ */
 #ifndef RPC_FRAME_H
 #define RPC_FRAME_H
 
@@ -29,22 +36,9 @@ inline bool is_compressed(uint16_t id) {
   return (id & RPC_CMD_FLAG_COMPRESSED) != 0;
 }
 
-struct Frame {
-  rpc_pb_RpcEnvelope envelope;
-  uint32_t crc;
-
-  Frame() : envelope(rpc_pb_RpcEnvelope_init_default), crc(0) {}
-
-  etl::span<const uint8_t> payload() const {
-    return etl::span<const uint8_t>(envelope.payload.bytes,
-                                    envelope.payload.size);
-  }
-};
-
 namespace checksum {
 /**
  * @brief Computes CRC32 using ETL directly (SIL-2).
- * This remains as a small helper to keep parse/serialize readable.
  */
 inline uint32_t compute(etl::span<const uint8_t> data) {
   return etl::crc32(data.begin(), data.end());
@@ -53,11 +47,14 @@ inline uint32_t compute(etl::span<const uint8_t> data) {
 
 namespace Payload {
 
+/**
+ * @brief Decodes a specific payload type from an envelope.
+ */
 template <typename T>
-inline etl::expected<T, FrameError> parse(const rpc::Frame& frame) {
+inline etl::expected<T, FrameError> parse(const rpc_pb_RpcEnvelope& envelope) {
   T msg = {};
-  pb_istream_t stream = pb_istream_from_buffer(frame.payload().data(),
-                                               frame.envelope.payload.size);
+  pb_istream_t stream = pb_istream_from_buffer(envelope.payload.bytes,
+                                               envelope.payload.size);
   if (!rpc::Payload::decode(&stream, msg)) {
     return etl::unexpected<FrameError>(FrameError::MALFORMED);
   }
@@ -66,78 +63,55 @@ inline etl::expected<T, FrameError> parse(const rpc::Frame& frame) {
 
 }  // namespace Payload
 
-class FrameParser {
- public:
-  static size_t serialize(const Frame& f, etl::span<uint8_t> buffer) {
-    if (buffer.size() < CRC_TRAILER_SIZE) return 0;
+/**
+ * @brief Serializes an envelope directly to buffer with CRC (Zero-Wrapper).
+ */
+inline size_t serialize_frame(const rpc_pb_RpcEnvelope& env, etl::span<uint8_t> buffer) {
+  if (buffer.size() < CRC_TRAILER_SIZE) return 0;
 
-    pb_ostream_t stream =
-        pb_ostream_from_buffer(buffer.data(), buffer.size() - CRC_TRAILER_SIZE);
-    if (!rpc::Payload::encode(&stream, f.envelope)) return 0;
+  pb_ostream_t stream =
+      pb_ostream_from_buffer(buffer.data(), buffer.size() - CRC_TRAILER_SIZE);
+  if (!rpc::Payload::encode(&stream, env)) return 0;
 
-    const size_t encoded_size = stream.bytes_written;
-    const uint32_t crc = checksum::compute(buffer.subspan(0, encoded_size));
+  const size_t encoded_size = stream.bytes_written;
+  const uint32_t crc = checksum::compute(buffer.subspan(0, encoded_size));
 
-    etl::byte_stream_writer writer(buffer.begin() + encoded_size,
-                                   CRC_TRAILER_SIZE, etl::endian::little);
-    writer.write<uint32_t>(crc);
+  etl::byte_stream_writer writer(buffer.begin() + encoded_size,
+                                 CRC_TRAILER_SIZE, etl::endian::little);
+  writer.write<uint32_t>(crc);
 
-    return encoded_size + CRC_TRAILER_SIZE;
-  }
+  return encoded_size + CRC_TRAILER_SIZE;
+}
 
-  static etl::expected<Frame, FrameError> parse(
-      etl::span<const uint8_t> buffer) {
-    if (buffer.size() < CRC_TRAILER_SIZE + 2U)
-      return etl::unexpected<FrameError>(FrameError::MALFORMED);
+/**
+ * @brief Parses a raw buffer into an envelope with CRC validation (Zero-Wrapper).
+ */
+inline etl::expected<rpc_pb_RpcEnvelope, FrameError> parse_frame(
+    etl::span<const uint8_t> buffer) {
+  if (buffer.size() < CRC_TRAILER_SIZE + 2U)
+    return etl::unexpected<FrameError>(FrameError::MALFORMED);
 
-    const size_t crc_offset = buffer.size() - CRC_TRAILER_SIZE;
-    const uint32_t crc_calc = checksum::compute(buffer.subspan(0, crc_offset));
+  const size_t crc_offset = buffer.size() - CRC_TRAILER_SIZE;
+  const uint32_t crc_calc = checksum::compute(buffer.subspan(0, crc_offset));
 
-    uint32_t crc_received = 0;
-    etl::byte_stream_reader reader(buffer.begin() + crc_offset,
-                                   CRC_TRAILER_SIZE, etl::endian::little);
-    crc_received = reader.read<uint32_t>().value_or(0U);
+  uint32_t crc_received = 0;
+  etl::byte_stream_reader reader(buffer.begin() + crc_offset,
+                                 CRC_TRAILER_SIZE, etl::endian::little);
+  crc_received = reader.read<uint32_t>().value_or(0U);
 
-    if (crc_received != crc_calc)
-      return etl::unexpected<FrameError>(FrameError::CRC_MISMATCH);
+  if (crc_received != crc_calc)
+    return etl::unexpected<FrameError>(FrameError::CRC_MISMATCH);
 
-    Frame result;
-    pb_istream_t stream = pb_istream_from_buffer(buffer.data(), crc_offset);
-    if (!rpc::Payload::decode(&stream, result.envelope))
-      return etl::unexpected<FrameError>(FrameError::MALFORMED);
+  rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
+  pb_istream_t stream = pb_istream_from_buffer(buffer.data(), crc_offset);
+  if (!rpc::Payload::decode(&stream, env))
+    return etl::unexpected<FrameError>(FrameError::MALFORMED);
 
-    if (result.envelope.version != PROTOCOL_VERSION)
-      return etl::unexpected<FrameError>(FrameError::MALFORMED);
+  if (env.version != PROTOCOL_VERSION)
+    return etl::unexpected<FrameError>(FrameError::MALFORMED);
 
-    result.crc = crc_calc;
-    return result;
-  }
-};
-
-class FrameBuilder {
- public:
-  static size_t build(etl::span<uint8_t> buffer, uint16_t cmd_id,
-                      uint16_t seq_id, etl::span<const uint8_t> payload,
-                      const etl::array<uint8_t, AEAD_NONCE_SIZE>& nonce,
-                      const etl::array<uint8_t, AEAD_TAG_SIZE>& tag) {
-    Frame f;
-    f.envelope.version = PROTOCOL_VERSION;
-    f.envelope.command_id = cmd_id;
-    f.envelope.sequence_id = seq_id;
-
-    etl::copy_n(nonce.begin(), AEAD_NONCE_SIZE, f.envelope.nonce.bytes);
-    f.envelope.nonce.size = static_cast<pb_size_t>(AEAD_NONCE_SIZE);
-
-    etl::copy_n(tag.begin(), AEAD_TAG_SIZE, f.envelope.tag.bytes);
-    f.envelope.tag.size = static_cast<pb_size_t>(AEAD_TAG_SIZE);
-
-    const size_t pl_size = etl::min(payload.size(), static_cast<size_t>(64U));
-    etl::copy_n(payload.begin(), pl_size, f.envelope.payload.bytes);
-    f.envelope.payload.size = static_cast<pb_size_t>(pl_size);
-
-    return FrameParser::serialize(f, buffer);
-  }
-};
+  return env;
+}
 
 }  // namespace rpc
 

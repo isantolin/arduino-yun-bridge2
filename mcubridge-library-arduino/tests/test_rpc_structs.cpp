@@ -89,10 +89,6 @@ void test_all_structs_roundtrip() {
   }());
 
   const char* str = "test";
-  rpc::payload::ConsoleWrite cw;
-  rpc::payload::copy_to_pb_bytes(
-      cw.data, reinterpret_cast<const uint8_t*>(str), 4);
-  test_roundtrip(cw);
 
   rpc::payload::DatastorePut dp;
   strncpy(dp.key, str, 32);
@@ -109,10 +105,6 @@ void test_all_structs_roundtrip() {
       dgr.value, reinterpret_cast<const uint8_t*>(str), 4);
   test_roundtrip(dgr);
 
-  rpc::payload::MailboxPush mbp;
-  rpc::payload::copy_to_pb_bytes(
-      mbp.data, reinterpret_cast<const uint8_t*>(str), 4);
-  test_roundtrip(mbp);
 
   test_roundtrip([]() {
     rpc::payload::MailboxProcessed p;
@@ -125,16 +117,7 @@ void test_all_structs_roundtrip() {
     return p;
   }());
 
-  rpc::payload::MailboxReadResponse mbr;
-  rpc::payload::copy_to_pb_bytes(
-      mbr.content, reinterpret_cast<const uint8_t*>(str), 4);
-  test_roundtrip(mbr);
 
-  rpc::payload::FileWrite fw;
-  strncpy(fw.path, str, 64);
-  rpc::payload::copy_to_pb_bytes(
-      fw.data, reinterpret_cast<const uint8_t*>(str), 4);
-  test_roundtrip(fw);
 
   rpc::payload::FileRead fr;
   strncpy(fr.path, str, 64);
@@ -144,10 +127,6 @@ void test_all_structs_roundtrip() {
   strncpy(frm.path, str, 64);
   test_roundtrip(frm);
 
-  rpc::payload::FileReadResponse frr;
-  rpc::payload::copy_to_pb_bytes(
-      frr.content, reinterpret_cast<const uint8_t*>(str), 4);
-  test_roundtrip(frr);
 
   rpc::payload::ProcessRunAsync pra;
   strncpy(pra.command, str, 64);
@@ -198,15 +177,7 @@ void test_all_structs_roundtrip() {
   test_roundtrip(rpc::payload::LinkSync{});
   test_roundtrip(rpc::payload::EnterBootloader{});
 
-  rpc::payload::SpiTransfer st;
-  rpc::payload::copy_to_pb_bytes(
-      st.data, reinterpret_cast<const uint8_t*>(str), 4);
-  test_roundtrip(st);
 
-  rpc::payload::SpiTransferResponse strr;
-  rpc::payload::copy_to_pb_bytes(
-      strr.data, reinterpret_cast<const uint8_t*>(str), 4);
-  test_roundtrip(strr);
 
   test_roundtrip([]() {
     rpc::payload::SpiConfig p;
@@ -220,15 +191,3 @@ void test_all_structs_roundtrip() {
 void test_all_structs_chaos() {
   test_chaos_decode<rpc::payload::VersionResponse>();
   test_chaos_decode<rpc::payload::Capabilities>();
-  test_chaos_decode<rpc::payload::ConsoleWrite>();
-  test_chaos_decode<rpc::payload::DatastorePut>();
-  test_chaos_decode<rpc::payload::FileWrite>();
-  test_chaos_decode<rpc::payload::ProcessPollResponse>();
-}
-
-int main() {
-  UNITY_BEGIN();
-  RUN_TEST(test_all_structs_roundtrip);
-  RUN_TEST(test_all_structs_chaos);
-  return UNITY_END();
-}

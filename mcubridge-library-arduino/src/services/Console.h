@@ -17,7 +17,7 @@ class ConsoleClass : public Stream {
  public:
   ConsoleClass();
   void begin();
-  void _push(const rpc::payload::ConsoleWrite& msg);
+  void _put_rx(uint8_t c);
   void process();
 
   void onSynchronized() { begin(); }

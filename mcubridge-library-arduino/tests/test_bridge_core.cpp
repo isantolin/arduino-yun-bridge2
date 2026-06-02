@@ -105,8 +105,7 @@ void test_bridge_dedup_console_write() {
   // 1. Build ConsoleWrite frame once
   rpc::payload::ConsoleWrite msg = {};
   const char* text = "TEST";
-  etl::copy_n(text, 4, msg.data.bytes);
-  msg.data.size = 4;
+  etl::span<const uint8_t> data_span((const uint8_t*)text, 4); msg.data.funcs.encode = &BridgeClass::_encode_span_callback; msg.data.arg = &data_span;
 
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> pl_buf;
   pb_ostream_t pbos = pb_ostream_from_buffer(pl_buf.data(), pl_buf.size());

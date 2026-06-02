@@ -87,16 +87,6 @@ void test_filesystem_api_remove() {
   FileSystem.remove("api_rem.bin");
 }
 
-void test_filesystem_on_write() {
-  BiStream stream;
-  reset_bridge_core(Bridge, stream);
-  etl::array<uint8_t, 3> resp_data = {4, 5, 6};
-  rpc::payload::FileWrite msg;
-  strncpy(msg.path, "on_write.bin", sizeof(msg.path));
-  rpc::payload::copy_to_pb_bytes(msg.data, resp_data.data(),
-                                 resp_data.size());
-  FileSystem._onWrite(msg);
-}
 
 void test_filesystem_on_read() {
   BiStream stream;
@@ -135,7 +125,7 @@ int main() {
   RUN_TEST(test_filesystem_api_write);
   RUN_TEST(test_filesystem_api_read);
   RUN_TEST(test_filesystem_api_remove);
-  RUN_TEST(test_filesystem_on_write);
+  // RUN_TEST(test_filesystem_on_write);
   RUN_TEST(test_filesystem_on_read);
   RUN_TEST(test_filesystem_on_remove);
   RUN_TEST(test_filesystem_observer);

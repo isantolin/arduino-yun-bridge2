@@ -9,6 +9,8 @@
 #include <stdint.h>
 
 #include "etl_profile.h"
+#include "pb_encode.h"
+#include "pb_decode.h"
 #include "hal/hal.h"
 
 namespace bridge::test {
@@ -79,6 +81,9 @@ struct CommandContext {
 
 class BridgeClass {
  public:
+  struct DecodeArg { etl::span<uint8_t> span; size_t bytes_read; };
+  static bool _encode_span_callback(pb_ostream_t* stream, const pb_field_iter_t* field, void* const* arg);
+  static bool _decode_span_callback(pb_istream_t* stream, const pb_field_iter_t* field, void** arg);
   using ErrorPolicy = bridge::SafeStatePolicy;
   explicit BridgeClass(Stream& stream);
 

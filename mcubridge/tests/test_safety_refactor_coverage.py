@@ -1,11 +1,17 @@
 import asyncio
 import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
-from mcubridge.state.context import create_runtime_state
+from mcubridge.state.context import _close_diskcache_resource, create_runtime_state
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.services.runtime import BridgeService
 from mcubridge.transport.serial import SerialTransport
 from mcubridge.protocol.structures import QueuedPublish
+
+
+def _replace_mailbox_queue(state, replacement) -> None:
+    if hasattr(state.mailbox_queue, "cache"):
+        _close_diskcache_resource(state.mailbox_queue)
+    state.mailbox_queue = replacement
 
 
 @pytest.mark.asyncio
@@ -20,14 +26,13 @@ async def test_metrics_cleanup_coverage(real_config: RuntimeConfig) -> None:
     mock_mq.cache = MagicMock()
     mock_mq.cache.close.side_effect = RuntimeError("Mock cleanup failure")
 
-    state.mailbox_queue = mock_mq
+    _replace_mailbox_queue(state, mock_mq)
 
     # Trigger KeyError in unregister to hit the new except block
     with patch.object(getattr(exporter, "_registry"), "unregister", side_effect=KeyError()):
-        # Mock server and collector to enter the block
-        setattr(exporter, "_server", MagicMock())
-        setattr(exporter, "_collector", MagicMock())
-        await exporter.run()
+        with patch.object(getattr(exporter, "_server"), "serve_forever", return_value=None):
+            with patch.object(getattr(exporter, "_server"), "shutdown", return_value=None):
+                await exporter.run()
 
 
 @pytest.mark.asyncio
@@ -43,7 +48,7 @@ async def test_context_cleanup_coverage(real_config: RuntimeConfig) -> None:
     # Mock diskcache with AttributeError
     mock_mq = MagicMock()
     mock_mq.cache = MagicMock()
-    state.mailbox_queue = mock_mq
+    _replace_mailbox_queue(state, mock_mq)
 
     state.cleanup()  # Hits new except blocks in context.py
 
@@ -76,6 +81,6 @@ async def test_additional_coverage_boost(real_config: RuntimeConfig) -> None:
     mock_mq = MagicMock()
     mock_mq.cache = MagicMock()
     mock_mq.cache.close.side_effect = RuntimeError("Fatal cleanup error")
-    state.mailbox_queue = mock_mq
+    _replace_mailbox_queue(state, mock_mq)
     # _close_diskcache_resource catches Exception internally — cleanup() must not raise.
     state.cleanup()

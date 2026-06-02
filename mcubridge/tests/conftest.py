@@ -4,6 +4,7 @@ from __future__ import annotations
 import msgspec
 
 import asyncio
+from asyncio import events as asyncio_events
 import importlib.util
 import inspect
 import logging
@@ -67,8 +68,18 @@ _HAS_PYTEST_ASYNCIO = importlib.util.find_spec("pytest_asyncio") is not None
 
 
 def _get_event_loop_policy() -> object:
-    policy_getter = getattr(asyncio, "get_event_loop_policy")
-    return policy_getter()
+    private_getter = getattr(asyncio_events, "_get_event_loop_policy", None)
+    if private_getter is not None:
+        return private_getter()
+
+    policy = getattr(asyncio_events, "_event_loop_policy", None)
+    if policy is None:
+        init_policy = getattr(asyncio_events, "_init_event_loop_policy", None)
+        if init_policy is None:
+            return asyncio.get_event_loop_policy()
+        init_policy()
+        policy = getattr(asyncio_events, "_event_loop_policy", None)
+    return policy
 
 
 def pytest_configure(config: pytest.Config) -> None:

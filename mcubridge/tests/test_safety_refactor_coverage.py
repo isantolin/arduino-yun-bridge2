@@ -75,7 +75,7 @@ async def test_additional_coverage_boost(real_config: RuntimeConfig) -> None:
     # Trigger the logging.warning in _close_diskcache_resource via Exception
     mock_mq = MagicMock()
     mock_mq.cache = MagicMock()
-    mock_mq.cache.close.side_effect = Exception("Fatal cleanup error")
+    mock_mq.cache.close.side_effect = RuntimeError("Fatal cleanup error")
     state.mailbox_queue = mock_mq
     # _close_diskcache_resource catches Exception internally — cleanup() must not raise.
     state.cleanup()

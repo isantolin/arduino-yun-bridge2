@@ -170,13 +170,19 @@ test_names=()
 for test_file in "${TEST_FILES[@]}"; do
     (
         test_name=$(basename "${test_file}" .cpp)
-        if ! g++ -std=c++17 "${BASE_FLAGS[@]}" "${test_file}" "${OBJECTS[@]}" "${UNITY_OBJ}" -o "${BUILD_DIR}/${test_name}" 2>&1; then
-            echo "[host-cpp] COMPILE FAILED: ${test_name}" >&2
-            exit 1
+        if g++ -std=c++17 "${BASE_FLAGS[@]}" "${test_file}" "${OBJECTS[@]}" "${UNITY_OBJ}" -o "${BUILD_DIR}/${test_name}" 2>&1; then
+            :
+        else
+            status=$?
+            echo "[host-cpp] COMPILE FAILED: ${test_name} (exit ${status})" >&2
+            exit "${status}"
         fi
-        if ! "${BUILD_DIR}/${test_name}"; then
-            echo "[host-cpp] TEST FAILED: ${test_name} (exit $?)" >&2
-            exit 1
+        if "${BUILD_DIR}/${test_name}"; then
+            :
+        else
+            status=$?
+            echo "[host-cpp] TEST FAILED: ${test_name} (exit ${status})" >&2
+            exit "${status}"
         fi
     ) &
     pids+=($!)

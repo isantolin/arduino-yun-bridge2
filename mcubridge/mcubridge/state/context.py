@@ -68,7 +68,7 @@ def _close_diskcache_resource(resource: Any) -> None:
     cache = getattr(resource, "cache", resource)
     try:
         cache.close()
-    except Exception as e:
+    except (AttributeError, OSError, RuntimeError, sqlite3.Error) as e:
         logger.warning("Diskcache close error", error=e)
 
 

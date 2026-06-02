@@ -1,4 +1,5 @@
 import random
+from collections.abc import Callable
 
 import pytest
 from cobs import cobs
@@ -8,6 +9,33 @@ from tests.test_constants import TEST_RANDOM_SEED
 
 # Deterministic seed for reproducibility
 FUZZ_ITERATIONS = 5000
+EXPECTED_PARSE_ERRORS = (
+    ValueError,
+    TypeError,
+    LookupError,
+    RuntimeError,
+    AttributeError,
+)
+EXPECTED_COBS_ERRORS = (cobs.DecodeError, ValueError, TypeError)
+
+
+def _assert_only_expected_exception(
+    operation: Callable[[], object],
+    expected: tuple[type[Exception], ...],
+    *,
+    iteration: int,
+    label: str,
+    raw_data: bytes,
+) -> None:
+    try:
+        operation()
+    except expected as exc:
+        assert isinstance(exc, expected)
+    except Exception as exc:
+        pytest.fail(
+            f"{label} crashed on iteration {iteration} with unhandled exception: "
+            f"{type(exc).__name__}: {exc}. Data hex: {raw_data.hex()}"
+        )
 
 
 @pytest.mark.fuzz
@@ -21,19 +49,13 @@ def test_frame_parsing_resilience_to_fuzzing():
         # Generate random bytes
         raw_data = random.randbytes(length)
 
-        try:
-            # We attempt to parse raw data directly as if it was decoded from COBS
-            # (Testing the internal Frame structure parser)
-            _ = parse_frame(raw_data)
-        except (ValueError, TypeError, LookupError, RuntimeError, AttributeError):
-            # This is expected behavior for garbage data
-            pass
-        except BaseException as exc:
-            message = (
-                f"parse_frame crashed on iteration {i} with unhandled exception: "
-                f"{type(exc).__name__}: {exc}. Data hex: {raw_data.hex()}"
-            )
-            pytest.fail(message)
+        _assert_only_expected_exception(
+            lambda: parse_frame(raw_data),
+            EXPECTED_PARSE_ERRORS,
+            iteration=i,
+            label="parse_frame",
+            raw_data=raw_data,
+        )
 
 
 @pytest.mark.fuzz
@@ -45,13 +67,13 @@ def test_cobs_decoding_resilience():
         length = random.randint(0, 200)
         raw_data = random.randbytes(length)
 
-        try:
-            # Most random data is invalid COBS (e.g. 0 byte in wrong place)
-            _ = cobs.decode(raw_data)
-        except (cobs.DecodeError, ValueError, TypeError):
-            pass
-        except BaseException as exc:
-            pytest.fail(f"cobs.decode crashed on iteration {i} with unhandled exception: {type(exc).__name__}: {exc}")
+        _assert_only_expected_exception(
+            lambda: cobs.decode(raw_data),
+            EXPECTED_COBS_ERRORS,
+            iteration=i,
+            label="cobs.decode",
+            raw_data=raw_data,
+        )
 
 
 @pytest.mark.fuzz
@@ -64,9 +86,10 @@ def test_frame_header_parsing_resilience():
         length = random.randint(0, CRC_COVERED_HEADER_SIZE + 5)
         raw_data = random.randbytes(length)
 
-        try:
-            _ = parse_frame(raw_data)
-        except (ValueError, TypeError, LookupError):
-            pass
-        except BaseException as exc:
-            pytest.fail(f"Header parsing crashed on iteration {i} with: {exc}")
+        _assert_only_expected_exception(
+            lambda: parse_frame(raw_data),
+            (ValueError, TypeError, LookupError),
+            iteration=i,
+            label="header parsing",
+            raw_data=raw_data,
+        )

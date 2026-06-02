@@ -48,7 +48,7 @@ Arduino MCU Bridge 2 is a modern, high-performance communication system between 
 3.  **Validate:** ALL `tox` environments configured in `tox.ini` must run. The full log of the execution must be thoroughly analyzed, and absolutely every notice or warning must be treated as a test failure/error. `tox -e coverage` generates Python (90%+) and C++ (75%+) reports.
 
 ### Observability
-*   **Metrics:** Prometheus exporter on port 8000.
+*   **Metrics:** Prometheus exporter on port 9130.
 *   **Tracing:** Structured hex logs `[MCU -> SERIAL]` for auditability via syslog.
 *   **Watchdog:** Hardware-backed watchdog support with heartbeat monitoring. Procd watchdog integration in OpenWrt.
 

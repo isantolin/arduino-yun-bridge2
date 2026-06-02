@@ -12,6 +12,8 @@ import sys
 import aiomqtt
 import pytest
 
+_AIOMQTT_CLIENT_TYPE = aiomqtt.Client
+
 # Dynamically import the script since its name contains underscores (normalized)
 script_path = Path(__file__).parent.parent / "scripts" / "mcubridge_hw_smoke.py"
 spec = importlib.util.spec_from_file_location("mcubridge_hw_smoke", str(script_path))
@@ -34,7 +36,7 @@ def test_hw_smoke_success(runtime_config: Any) -> None:
         patch("sys.argv", ["mcubridge_hw_smoke", "--pin", "13", "--timeout", "0.1"]),
     ):
 
-        mock_client = AsyncMock()
+        mock_client = AsyncMock(spec=_AIOMQTT_CLIENT_TYPE)
         mock_client_cls.return_value.__aenter__.return_value = mock_client
 
         # Simulate incoming version message
@@ -61,7 +63,7 @@ def test_hw_smoke_timeout(runtime_config: Any) -> None:
         pytest.raises(SystemExit) as exc,
     ):
 
-        mock_client = AsyncMock()
+        mock_client = AsyncMock(spec=_AIOMQTT_CLIENT_TYPE)
         mock_client_cls.return_value.__aenter__.return_value = mock_client
 
         async def _mock_empty_messages() -> Any:

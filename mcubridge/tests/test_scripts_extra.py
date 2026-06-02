@@ -1,4 +1,5 @@
 import pytest
+import aiomqtt
 from unittest.mock import AsyncMock, MagicMock, patch
 from typing import Any
 from collections.abc import Coroutine
@@ -6,6 +7,8 @@ import importlib.util
 from pathlib import Path
 import sys
 import io
+
+_AIOMQTT_CLIENT_TYPE = aiomqtt.Client
 
 
 def load_script(name: str) -> Any:
@@ -41,7 +44,7 @@ async def test_file_push_script(runtime_config: Any) -> None:
         patch("pathlib.Path.exists", return_value=True),
         patch("asyncio.run", side_effect=mock_asyncio_run),
     ):
-        mock_client = AsyncMock()
+        mock_client = AsyncMock(spec=_AIOMQTT_CLIENT_TYPE)
         mock_client_cls.return_value.__aenter__.return_value = mock_client
         script.main()
 
@@ -55,7 +58,7 @@ async def test_led_control_script(runtime_config: Any) -> None:
         patch("sys.argv", ["mcubridge-led-control", "on"]),
         patch("asyncio.run", side_effect=mock_asyncio_run),
     ):
-        mock_client = AsyncMock()
+        mock_client = AsyncMock(spec=_AIOMQTT_CLIENT_TYPE)
         mock_client_cls.return_value.__aenter__.return_value = mock_client
         script.main()
 
@@ -72,7 +75,7 @@ async def test_rotate_credentials_script(runtime_config: Any) -> None:
         patch("sys.stdout", new_callable=io.StringIO) as stdout,
         patch("asyncio.run", side_effect=mock_asyncio_run),
     ):
-        mock_client = AsyncMock()
+        mock_client = AsyncMock(spec=_AIOMQTT_CLIENT_TYPE)
         mock_client_cls.return_value.__aenter__.return_value = mock_client
         script.main()
         assert mock_update.called

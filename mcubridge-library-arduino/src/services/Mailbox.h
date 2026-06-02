@@ -30,6 +30,7 @@ class MailboxClass {
     _rx_buffer.clear();
     _available_count = 0U;
   }
+  void onSynchronized() {}
 
  private:
   void _setIncomingData(etl::span<const uint8_t> data);

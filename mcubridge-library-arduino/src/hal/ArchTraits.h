@@ -16,7 +16,9 @@ enum class ArchId : uint8_t {
   ARCH_HOST = 4
 };
 
-#if defined(ARDUINO_ARCH_AVR)
+#if defined(BRIDGE_HOST_TEST)
+#define BRIDGE_CURRENT_ARCH_ID ArchId::ARCH_HOST
+#elif defined(ARDUINO_ARCH_AVR)
 #include <avr/wdt.h>
 #define BRIDGE_CURRENT_ARCH_ID ArchId::ARCH_AVR
 #elif defined(ARDUINO_ARCH_ESP32)

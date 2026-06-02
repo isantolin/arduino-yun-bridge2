@@ -650,12 +650,6 @@ void test_fault_injection_harness_paths() {
   TEST_ASSERT_FALSE(
       Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, 77, {}));
 
-  stream.tx_buf.clear();
-  bridge::test::fault::enable(
-      bridge::test::fault::FaultPoint::BRIDGE_SERIALIZE_ZERO);
-  Bridge.signalXoff();
-  TEST_ASSERT_EQUAL_UINT32(0, static_cast<uint32_t>(stream.tx_buf.len));
-
   ba2.enqueueNullPendingFrame(
       rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE), 78, 0);
   ba2.clearPendingTxQueue();

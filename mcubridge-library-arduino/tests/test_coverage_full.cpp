@@ -10,6 +10,7 @@
 #include "protocol/rpc_services.h"
 #include "test_support.h"
 
+BridgeClass Bridge(Serial);
 // Global stubs for host environment
 Stream* g_arduino_stream_delegate = nullptr;
 HardwareSerial Serial;

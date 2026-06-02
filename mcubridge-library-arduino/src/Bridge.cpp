@@ -14,12 +14,12 @@
 
 #include "hal/progmem_compat.h"
 
-// [SIL-2] Global Bridge instance using default Serial
-BridgeClass Bridge(Serial);
+BridgeClass __attribute__((weak)) Bridge(Serial);
+
 
 namespace etl {
 // [SIL-2] Custom error handler to ensure fail-safe state on ETL exceptions
-void __attribute__((weak)) __attribute__((unused)) handle_error(
+void __attribute__((weak)) handle_error(
     const etl::exception& e) {
   BridgeClass::ErrorPolicy::handle(Bridge, e);
 }
@@ -435,7 +435,7 @@ void BridgeClass::SerialTask::task_process_work() {
 }
 void BridgeClass::TimerTask::task_process_work() {
   if (bridge == nullptr) return; 
-  const uint32_t now = ::millis();
+  const uint32_t now = millis();
   if (last_tick_ms == 0) last_tick_ms = now; 
   const uint32_t elapsed = now - last_tick_ms;
   if (elapsed > 0) { bridge->_timers.tick(elapsed); last_tick_ms = now; }

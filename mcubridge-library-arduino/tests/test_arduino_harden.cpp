@@ -8,6 +8,7 @@
 #include "etl_ext/CounterIterator.h"
 #include "test_support.h"
 
+BridgeClass Bridge(Serial);
 // [SIL-2] Global stub definitions for host environment
 HardwareSerial Serial;
 HardwareSerial Serial1;

@@ -407,7 +407,7 @@ class BridgeClass {
   }
 
   template <typename F>
-  void _withResponse(const bridge::router::CommandContext& ctx, F lambda) {
+  void _withResponse(const bridge::router::CommandContext& /*ctx*/, F lambda) {
     lambda();
   }
 

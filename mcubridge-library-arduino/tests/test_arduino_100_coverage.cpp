@@ -10,6 +10,7 @@
 #include "protocol/rpc_protocol.h"
 #include "test_support.h"
 
+BridgeClass Bridge(Serial);
 // Services
 #include "protocol/rpc_services.h"
 

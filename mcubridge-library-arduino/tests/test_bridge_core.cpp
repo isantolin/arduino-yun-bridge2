@@ -7,6 +7,7 @@
 #include "BridgeTestHelper.h"
 #include "protocol/rpc_services.h"
 
+BridgeClass Bridge(Serial);
 using namespace bridge::test;
 
 void setUp() {}

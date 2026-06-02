@@ -6,6 +6,7 @@
 #include "test_support.h"
 #include "protocol/rpc_services.h"
 
+BridgeClass Bridge(Serial);
 // Bridge and core services are already provided by production code.
 HardwareSerial Serial;
 HardwareSerial Serial1;

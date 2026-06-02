@@ -7,6 +7,7 @@
 #include "security/security.h"
 #include "test_support.h"
 
+BridgeClass Bridge(Serial);
 // Arduino Stubs for Linker
 HardwareSerial Serial;
 HardwareSerial Serial1;

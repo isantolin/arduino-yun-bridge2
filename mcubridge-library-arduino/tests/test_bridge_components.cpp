@@ -10,6 +10,7 @@
 #include "test_constants.h"
 #include "test_support.h"
 
+BridgeClass Bridge(Serial);
 // Define the global delegates and stubs for HardwareSerial stub
 Stream* g_arduino_stream_delegate = nullptr;
 HardwareSerial Serial;

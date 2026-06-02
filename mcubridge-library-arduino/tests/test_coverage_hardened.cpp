@@ -115,8 +115,8 @@ void test_filesystem_read_edge_cases() {
   FileSystem._onRead(req);
 
   // Coverage for observer notification
-  FileSystem.notification(MsgBridgeSynchronized());
-  FileSystem.notification(MsgBridgeLost());
+  FileSystem.onSynchronized();
+  FileSystem.onLost();
 
   TEST_ASSERT(true);
 }
@@ -147,8 +147,8 @@ void test_spi_timeout_and_error_paths() {
   TEST_ASSERT_EQUAL(0, n);
 
   // Coverage for observer notification
-  SPIService.notification(MsgBridgeSynchronized());
-  SPIService.notification(MsgBridgeLost());
+  SPIService.onSynchronized();
+  SPIService.onLost();
 }
 
 void test_process_poll_and_kill() {
@@ -166,8 +166,8 @@ void test_process_poll_and_kill() {
   Process._onPollResponse({});
 
   // Coverage for observer notification
-  Process.notification(MsgBridgeSynchronized());
-  Process.notification(MsgBridgeLost());
+  Process.onSynchronized();
+  Process.onLost();
 
   TEST_ASSERT(true);
 }
@@ -303,8 +303,8 @@ void test_mailbox_and_datastore_variants() {
   }());
 
   // Coverage for observer notification
-  Mailbox.notification(MsgBridgeSynchronized());
-  Mailbox.notification(MsgBridgeLost());
+  Mailbox.onSynchronized();
+  Mailbox.onLost();
 
   DataStore._pending_gets.clear();
   DataStore.get("alpha",

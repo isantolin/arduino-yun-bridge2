@@ -10,10 +10,10 @@
 #include <etl/span.h>
 #include <etl/string_view.h>
 
-#include "protocol/BridgeEvents.h"
+
 #include "protocol/rpc_structs.h"
 
-class DataStoreClass : public BridgeObserver {
+class DataStoreClass {
  public:
   using GetHandler =
       etl::delegate<void(etl::string_view, etl::span<const uint8_t>)>;
@@ -24,8 +24,8 @@ class DataStoreClass : public BridgeObserver {
 
   void _onResponse(const rpc::payload::DatastoreGetResponse& msg);
 
-  void notification(MsgBridgeSynchronized) override { /* ready */ }
-  void notification(MsgBridgeLost) override { _pending_gets.clear(); }
+  void onSynchronized() {}
+  void onLost() { _pending_gets.clear(); }
 
   struct PendingGet {
     etl::array<char, rpc::RPC_MAX_DATASTORE_KEY_LENGTH + 1U> key;

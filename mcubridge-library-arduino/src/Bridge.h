@@ -42,7 +42,6 @@ class TestAccessor;
 #include "config/bridge_config.h"
 #include "etl_ext/CounterIterator.h"
 #include "fsm/bridge_fsm.h"
-#include "protocol/BridgeEvents.h"
 #include "protocol/rle.h"
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
@@ -86,6 +85,9 @@ class BridgeClass {
   void begin(uint32_t baudrate = 0, const char* secret = nullptr);
   void process();
   bool isSynchronized() const;
+
+  // Explicit registration if needed, otherwise direct calls
+  void registerObserver(void*) {} // [SIL-2] Deprecated - Direct calls used instead
   void enterSafeState();
 
   void emitStatus(rpc::StatusCode s, etl::string_view m);
@@ -244,7 +246,7 @@ class BridgeClass {
   bool _is_post_passed;
   bool _tx_enabled;
 
-  etl::vector<BridgeObserver*, bridge::config::MAX_OBSERVERS> _observers;
+
   etl::pool<TxPayloadBuffer, bridge::config::MAX_PENDING_TX_FRAMES>
       _tx_payload_pool;
   etl::deque<PendingTxFrame, bridge::config::MAX_PENDING_TX_FRAMES>
@@ -374,13 +376,6 @@ class BridgeClass {
   void _flushPendingTxQueue();
   void _handleAck(uint16_t command_id);
 
-  template <typename TMessage>
-  void _notifyObservers(const TMessage& msg) {
-    etl::for_each(_observers.begin(), _observers.end(),
-                  [&msg](BridgeObserver* observer) {
-                    if (observer != nullptr) observer->notification(msg);
-                  });
-  }
 };
 
 extern BridgeClass Bridge;

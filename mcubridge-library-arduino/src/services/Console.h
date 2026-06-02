@@ -9,19 +9,19 @@
 #include <etl/vector.h>
 #include <etl/bitset.h>
 #include <etl/span.h>
-#include "protocol/BridgeEvents.h"
+
 #include "protocol/rpc_protocol.h"
 #include "protocol/rpc_structs.h"
 
-class ConsoleClass : public Stream, public BridgeObserver {
+class ConsoleClass : public Stream {
  public:
   ConsoleClass();
   void begin();
   void _push(const rpc::payload::ConsoleWrite& msg);
   void process();
 
-  void notification(MsgBridgeSynchronized) override { begin(); }
-  void notification(MsgBridgeLost) override { _flags.reset(BEGUN); }
+  void onSynchronized() { begin(); }
+  void onLost() { _flags.reset(BEGUN); }
 
   // Stream implementation
   size_t write(uint8_t c) override;

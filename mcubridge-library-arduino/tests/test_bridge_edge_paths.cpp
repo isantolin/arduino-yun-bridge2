@@ -28,12 +28,7 @@ void tearDown() {}
 
 namespace {
 
-struct CountingObserver final : public BridgeObserver {
-  int synced = 0;
-  int lost = 0;
-  void notification(MsgBridgeSynchronized) override { ++synced; }
-  void notification(MsgBridgeLost) override { ++lost; }
-};
+
 
 void on_fs_read(etl::span<const uint8_t>) {}
 void on_datastore_get(etl::string_view, etl::span<const uint8_t>) {}

@@ -337,7 +337,16 @@ void BridgeClass::enterSafeState() {
   _tx_enabled = false;
   _clearPendingTxQueue();
   _fsm.receive(bridge::fsm::EvReset());
-  _notifyObservers(MsgBridgeLost());
+
+  Console.onLost();
+  DataStore.onLost();
+  FileSystem.onLost();
+  Mailbox.onLost();
+  Process.onLost();
+#if BRIDGE_ENABLE_SPI
+  SPIService.onLost();
+#endif
+
 }
 
 void BridgeClass::emitStatus(rpc::StatusCode code,
@@ -734,7 +743,16 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
 
   _tx_enabled = true;
   [[maybe_unused]] auto _u1 = send(rpc::CommandId::CMD_LINK_SYNC_RESP, ctx.sequence_id, resp);
-  _notifyObservers(MsgBridgeSynchronized());
+
+  Console.onSynchronized();
+  DataStore.onSynchronized();
+  FileSystem.onSynchronized();
+  Mailbox.onSynchronized();
+  Process.onSynchronized();
+#if BRIDGE_ENABLE_SPI
+  SPIService.onSynchronized();
+#endif
+
 }
 
 void BridgeClass::_handleLinkReset(const bridge::router::CommandContext& ctx) {

@@ -8,12 +8,12 @@
 #include <etl/delegate.h>
 #include <etl/span.h>
 
-#include "protocol/BridgeEvents.h"
+
 #include "protocol/rpc_structs.h"
 
 
 
-class MailboxClass : public BridgeObserver {
+class MailboxClass {
  public:
 
   MailboxClass();
@@ -26,8 +26,8 @@ class MailboxClass : public BridgeObserver {
   void _onIncomingData(const rpc::payload::MailboxReadResponse& msg);
   void _onAvailableResponse(const rpc::payload::MailboxAvailableResponse& msg);
 
-  void notification(MsgBridgeSynchronized) override { /* ready */ }
-  void notification(MsgBridgeLost) override {
+  void onSynchronized() {}
+  void onLost() {
     _rx_buffer.clear();
     _available_count = 0U;
   }

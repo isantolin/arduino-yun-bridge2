@@ -124,7 +124,6 @@ class TestAccessor {
     _fsm.receive(bridge::fsm::EvReset());
   }
 
-  size_t getObserverCount() const { return _bridge._observers.size(); }
 
  private:
   BridgeClass& _bridge;

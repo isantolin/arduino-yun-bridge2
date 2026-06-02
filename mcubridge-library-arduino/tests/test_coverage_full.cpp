@@ -191,7 +191,7 @@ void test_bridge_coverage() {
   bridge::test::set_pb_payload(f_ma, mavl);
   ba.dispatch(f_ma);
 
-  Mailbox.notification(MsgBridgeLost{});
+  Mailbox.onLost();
   Mailbox.requestRead();
   Mailbox.requestAvailable();
   Mailbox.signalProcessed();

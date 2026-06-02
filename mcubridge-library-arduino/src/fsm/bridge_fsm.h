@@ -5,7 +5,6 @@
 #include <etl/message.h>
 
 #include "hal/hal.h"
-#include "protocol/BridgeEvents.h"
 
 namespace bridge::fsm {
 

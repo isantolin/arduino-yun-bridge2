@@ -9,11 +9,11 @@
 #include <etl/span.h>
 #include <etl/string_view.h>
 
-#include "protocol/BridgeEvents.h"
+
 #include "protocol/rpc_protocol.h"
 #include "protocol/rpc_structs.h"
 
-class ProcessClass : public BridgeObserver {
+class ProcessClass {
  public:
   using ProcessRunHandler = etl::delegate<void(int32_t)>;
   using ProcessPollHandler =
@@ -32,8 +32,8 @@ class ProcessClass : public BridgeObserver {
   void _onPollResponse(const rpc::payload::ProcessPollResponse& msg);
   void reset();
 
-  void notification(MsgBridgeSynchronized) override { /* ready */ }
-  void notification(MsgBridgeLost) override { reset(); }
+  void onSynchronized() {}
+  void onLost() { reset(); }
 
   struct PendingRunAsync {
     ProcessRunHandler handler;

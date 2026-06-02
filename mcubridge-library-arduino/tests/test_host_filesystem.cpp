@@ -122,8 +122,8 @@ void test_filesystem_on_remove() {
 void test_filesystem_observer() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  FileSystem.notification(MsgBridgeSynchronized{});
-  FileSystem.notification(MsgBridgeLost{});
+  FileSystem.onSynchronized();
+  FileSystem.onLost();
 }
 
 } // namespace

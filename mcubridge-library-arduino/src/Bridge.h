@@ -150,9 +150,6 @@ class BridgeClass {
   static constexpr bool is_reliable_cmd(uint16_t id) {
     return rpc::requires_ack(id);
   }
-  [[maybe_unused]] static constexpr bool is_compressed_cmd(uint16_t id) {
-    return (id & rpc::RPC_CMD_FLAG_COMPRESSED) != 0;
-  }
 
 #ifdef BRIDGE_HOST_TEST
   friend class bridge::test::TestAccessor;

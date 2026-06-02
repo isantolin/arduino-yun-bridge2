@@ -611,21 +611,6 @@ class JinjaGenerator:
                 "type": "int",
                 "value": spec.hardware["flow_control_xon_threshold"],
             },
-            {
-                "name": "FRAME_HEADER_FORMAT",
-                "type": "str",
-                "value": f'"{spec.data_formats["crc_covered_header_format"]}"',
-            },
-            {
-                "name": "FRAME_CRC_FORMAT",
-                "type": "str",
-                "value": f'"{spec.data_formats["crc_format"]}"',
-            },
-            {
-                "name": "NONCE_COUNTER_FORMAT",
-                "type": "str",
-                "value": f'"{spec.data_formats["nonce_counter_format"]}"',
-            },
             {"name": "PROTOCOL_VERSION", "type": "int", "value": c["protocol_version"]},
             {"name": "DEFAULT_BAUDRATE", "type": "int", "value": c["default_baudrate"]},
             {

@@ -9,7 +9,6 @@ namespace {
 constexpr size_t kReadChunkSize = 64U;
 
 #define BRIDGE_FS_DEBUG(...) do { (void)sizeof(__VA_ARGS__); } while (0)
-#endif
 
 void send_read_response(etl::span<const uint8_t> content) {
   rpc::payload::FileReadResponse p;

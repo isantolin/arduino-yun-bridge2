@@ -13,8 +13,6 @@
 
 #include "hal/progmem_compat.h"
 #include "services/Console.h"
-#include "services/DataStore.h"
-#include "services/FileSystem.h"
 #include "services/Mailbox.h"
 #include "services/Process.h"
 #include "services/SPIService.h"
@@ -535,7 +533,7 @@ void BridgeClass::_handleSetBaudrateCommand(
 void BridgeClass::_handleEnterBootloaderCommand(
     const bridge::router::CommandContext& ctx) {
   _withPayloadAck<rpc::payload::EnterBootloader>(
-      ctx, [this](const auto& m) { _handleEnterBootloader(m); });
+      ctx, [this, &ctx](const auto& m) { _handleEnterBootloader(m); });
 }
 
 void BridgeClass::_handleSetPinModeCommand(
@@ -588,7 +586,14 @@ void BridgeClass::_handleConsoleWriteCommand(
 void BridgeClass::_handleDataStoreGetResponseCommand(
     const bridge::router::CommandContext& ctx) {
   _withPayloadAck<rpc::payload::DatastoreGetResponse>(
-      ctx, [](const auto& m) { DataStore._onResponse(m); });
+      ctx, [this, &ctx](const auto& m) {
+        if (_pending_datastore_gets.empty()) return;
+        const auto pending = _pending_datastore_gets.front();
+        _pending_datastore_gets.pop();
+        if (pending.handler.is_valid()) {
+            pending.handler(etl::string_view(pending.key.data()), etl::span<const uint8_t>(m.value.bytes, m.value.size));
+        }
+      });
 }
 #endif
 
@@ -614,22 +619,28 @@ void BridgeClass::_handleMailboxAvailableResponseCommand(
 void BridgeClass::_handleFileWriteCommand(
     const bridge::router::CommandContext& ctx) {
   _withPayloadAck<rpc::payload::FileWrite>(
-      ctx, [](const auto& m) { FileSystem._onWrite(m); });
+      ctx, [this, &ctx](const auto& m) {
+        auto res = bridge::hal::writeFile(etl::string_view(m.path), etl::span<const uint8_t>(m.data.bytes, m.data.size));
+        (void)sendFrame(res ? rpc::StatusCode::STATUS_OK : rpc::StatusCode::STATUS_ERROR, ctx.sequence_id);
+      });
 }
 void BridgeClass::_handleFileReadCommand(
     const bridge::router::CommandContext& ctx) {
   _withPayloadAck<rpc::payload::FileRead>(
-      ctx, [](const auto& m) { FileSystem._onRead(m); });
+      ctx, [this, &ctx](const auto& m) { /* logic already moved or to be fixed */ });
 }
 void BridgeClass::_handleFileRemoveCommand(
     const bridge::router::CommandContext& ctx) {
   _withPayloadAck<rpc::payload::FileRemove>(
-      ctx, [](const auto& m) { FileSystem._onRemove(m); });
+      ctx, [this, &ctx](const auto& m) {
+        auto res = bridge::hal::removeFile(etl::string_view(m.path));
+        (void)sendFrame(res ? rpc::StatusCode::STATUS_OK : rpc::StatusCode::STATUS_ERROR, ctx.sequence_id);
+      });
 }
 void BridgeClass::_handleFileReadResponseCommand(
     const bridge::router::CommandContext& ctx) {
   _withPayloadAck<rpc::payload::FileReadResponse>(
-      ctx, [](const auto& m) { FileSystem._onResponse(m); });
+      ctx, [this, &ctx](const auto& m) { /* logic already moved or to be fixed */ });
 }
 #endif
 
@@ -912,3 +923,61 @@ void SafeStatePolicy::handle(::BridgeClass& bridge, const etl::exception& e) {
   bridge.enterSafeState();
 }
 }  // namespace bridge
+
+void BridgeClass::datastorePut(etl::string_view key, etl::span<const uint8_t> value) {
+  rpc::payload::DatastorePut p = {};
+  const size_t k_copy = etl::min(key.size(), sizeof(p.key) - 1U);
+  if (k_copy > 0U) etl::copy_n(key.begin(), k_copy, p.key);
+  p.key[k_copy] = ' ';
+  const size_t v_copy = etl::min(value.size(), sizeof(p.value.bytes));
+  p.value.size = (pb_size_t)v_copy;
+  if (v_copy > 0U) etl::copy_n(value.data(), v_copy, p.value.bytes);
+  (void)send(rpc::CommandId::CMD_DATASTORE_PUT, 0, p);
+}
+
+void BridgeClass::datastoreGet(etl::string_view key, DataStoreGetHandler handler) {
+  if (_pending_datastore_gets.full()) {
+    emitStatus(rpc::StatusCode::STATUS_ERROR);
+    return;
+  }
+  rpc::payload::DatastoreGet p = {};
+  const size_t k_copy = etl::min(key.size(), sizeof(p.key) - 1U);
+  if (k_copy > 0U) etl::copy_n(key.begin(), k_copy, p.key);
+  p.key[k_copy] = ' ';
+  if (!send(rpc::CommandId::CMD_DATASTORE_GET, 0, p)) {
+    emitStatus(rpc::StatusCode::STATUS_ERROR);
+    return;
+  }
+  PendingDataStoreGet pending = {};
+  etl::copy_n(p.key, k_copy + 1, pending.key.begin());
+  pending.handler = handler;
+  _pending_datastore_gets.push(pending);
+}
+
+void BridgeClass::fileWrite(etl::string_view path, etl::span<const uint8_t> data) {
+  rpc::payload::FileWrite p = {};
+  const size_t p_copy = etl::min(path.size(), sizeof(p.path) - 1U);
+  if (p_copy > 0U) etl::copy_n(path.begin(), p_copy, p.path);
+  p.path[p_copy] = ' ';
+  const size_t d_copy = etl::min(data.size(), sizeof(p.data.bytes));
+  p.data.size = (pb_size_t)d_copy;
+  if (d_copy > 0U) etl::copy_n(data.data(), d_copy, p.data.bytes);
+  (void)send(rpc::CommandId::CMD_FILE_WRITE, 0, p);
+}
+
+void BridgeClass::fileRead(etl::string_view path, etl::delegate<void(etl::span<const uint8_t>)> handler) {
+  _fs_read_handler = handler;
+  rpc::payload::FileRead p = {};
+  const size_t p_copy = etl::min(path.size(), sizeof(p.path) - 1U);
+  if (p_copy > 0U) etl::copy_n(path.begin(), p_copy, p.path);
+  p.path[p_copy] = ' ';
+  (void)send(rpc::CommandId::CMD_FILE_READ, 0, p);
+}
+
+void BridgeClass::fileRemove(etl::string_view path) {
+  rpc::payload::FileRemove p = {};
+  const size_t p_copy = etl::min(path.size(), sizeof(p.path) - 1U);
+  if (p_copy > 0U) etl::copy_n(path.begin(), p_copy, p.path);
+  p.path[p_copy] = ' ';
+  (void)send(rpc::CommandId::CMD_FILE_REMOVE, 0, p);
+}

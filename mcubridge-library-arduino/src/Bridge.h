@@ -132,6 +132,14 @@ class BridgeClass {
   using CommandHandler = etl::delegate<void(const rpc_pb_RpcEnvelope&)>;
   using StatusHandler =
       etl::delegate<void(rpc::StatusCode, etl::span<const uint8_t>)>;
+  // --- Direct Services (Zero-Wrapper) ---
+  void datastorePut(etl::string_view key, etl::span<const uint8_t> value);
+  using DataStoreGetHandler = etl::delegate<void(etl::string_view, etl::span<const uint8_t>)>;
+  void datastoreGet(etl::string_view key, DataStoreGetHandler handler);
+  void fileWrite(etl::string_view path, etl::span<const uint8_t> data);
+  void fileRead(etl::string_view path, etl::delegate<void(etl::span<const uint8_t>)> handler);
+  void fileRemove(etl::string_view path);
+
   [[maybe_unused]] void onCommand(CommandHandler h) { _command_handler = h; }
   [[maybe_unused]] void onStatus(StatusHandler h) { _status_handler = h; }
   void flushStream() { _stream.flush(); }
@@ -242,6 +250,13 @@ class BridgeClass {
 
   bool _is_post_passed;
   bool _tx_enabled;
+
+  struct PendingDataStoreGet {
+    etl::array<char, rpc::RPC_MAX_DATASTORE_KEY_LENGTH + 1U> key;
+    DataStoreGetHandler handler;
+  };
+  etl::queue<PendingDataStoreGet, bridge::config::MAX_PENDING_DATASTORE> _pending_datastore_gets;
+  etl::delegate<void(etl::span<const uint8_t>)> _fs_read_handler;
 
   etl::vector<BridgeObserver*, bridge::config::MAX_OBSERVERS> _observers;
   etl::pool<TxPayloadBuffer, bridge::config::MAX_PENDING_TX_FRAMES>

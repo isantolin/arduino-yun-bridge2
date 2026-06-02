@@ -289,7 +289,7 @@ class RuntimeState(msgspec.Struct, weakref=True):
         def _safe_close(resource: Any) -> None:
             try:
                 _close_diskcache_resource(resource)
-            except (OSError, RuntimeError, AttributeError) as e:
+            except (Exception, BaseException) as e:
                 logger.debug("Resource closure notice during reconfiguration", error=e)
 
         if hasattr(self.mailbox_queue, "cache"):
@@ -301,7 +301,7 @@ class RuntimeState(msgspec.Struct, weakref=True):
         if self.datastore_cache is not None:
             try:
                 _close_diskcache_resource(self.datastore_cache)
-            except (OSError, RuntimeError, AttributeError) as e:
+            except (Exception, BaseException) as e:
                 logger.debug("Resource cleanup notice", error=e)
             self.datastore_cache = None
 
@@ -553,14 +553,14 @@ class RuntimeState(msgspec.Struct, weakref=True):
             try:
                 _close_diskcache_resource(self.mailbox_queue)
                 cast(Any, self.mailbox_queue).cache = None
-            except (OSError, RuntimeError, AttributeError) as e:
+            except (Exception, BaseException) as e:
                 logger.debug("Mailbox queue cleanup notice", error=e)
 
         if hasattr(self.mailbox_incoming_queue, "cache"):
             try:
                 _close_diskcache_resource(self.mailbox_incoming_queue)
                 cast(Any, self.mailbox_incoming_queue).cache = None
-            except (OSError, RuntimeError, AttributeError) as e:
+            except (Exception, BaseException) as e:
                 logger.debug("Mailbox incoming queue cleanup notice", error=e)
 
         self.mailbox_queue = collections.deque()
@@ -571,7 +571,7 @@ class RuntimeState(msgspec.Struct, weakref=True):
         if self.datastore_cache is not None:
             try:
                 _close_diskcache_resource(self.datastore_cache)
-            except (OSError, RuntimeError, AttributeError) as e:
+            except (Exception, BaseException) as e:
                 logger.debug("Resource cleanup notice", error=e)
             self.datastore_cache = None
 
@@ -579,7 +579,7 @@ class RuntimeState(msgspec.Struct, weakref=True):
         while not self.mqtt_publish_queue.empty():
             try:
                 self.mqtt_publish_queue.get_nowait()
-            except (OSError, RuntimeError, AttributeError) as e:
+            except (Exception, BaseException) as e:
                 logger.debug("Resource cleanup notice", error=e)
         self.mqtt_publish_queue = _make_mqtt_publish_queue(self.mqtt_queue_limit)
 
@@ -599,7 +599,7 @@ class RuntimeState(msgspec.Struct, weakref=True):
             self.link_sync_event.clear()
             self.pending_digital_reads.clear()
             self.pending_analog_reads.clear()
-        except (OSError, RuntimeError, AttributeError) as e:
+        except (Exception, BaseException) as e:
             logger.debug("State indicators cleanup notice", error=e)
 
         # 6. References cleared; sqlite3 connections finalized by the GC at shutdown.

@@ -27,8 +27,6 @@ _TAG_SIZE: Final = protocol.AEAD_TAG_SIZE
 _CRC_SIZE: Final = protocol.CRC_SIZE
 
 
-
-
 def build_frame(
     command_id: int,
     sequence_id: int,
@@ -72,9 +70,7 @@ def build_frame(
     if session_key and not is_excluded:
         # Optimization: Use Protobuf envelope itself as AAD by only including header fields.
         aad = pb.RpcEnvelope(
-            version=envelope.version,
-            command_id=envelope.command_id,
-            sequence_id=envelope.sequence_id
+            version=envelope.version, command_id=envelope.command_id, sequence_id=envelope.sequence_id
         ).SerializeToString()
 
         envelope.payload, envelope.tag = aead_encrypt(
@@ -113,9 +109,7 @@ def parse_frame(raw_frame_buffer: bytes | bytearray | memoryview, session_key: b
     if session_key and not is_excluded:
         # Optimization: Use Protobuf envelope itself as AAD by only including header fields.
         aad = pb.RpcEnvelope(
-            version=envelope.version,
-            command_id=envelope.command_id,
-            sequence_id=envelope.sequence_id
+            version=envelope.version, command_id=envelope.command_id, sequence_id=envelope.sequence_id
         ).SerializeToString()
 
         envelope.payload = aead_decrypt(

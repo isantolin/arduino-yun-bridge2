@@ -279,11 +279,11 @@ void test_console_and_misc() {
   auto ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
-  rpc::services::console::begin();
+  
   rpc::services::console::write('X');
   uint8_t d[] = "abc";
   rpc::services::console::write(d, 3);
-  rpc::services::console::process();
+  
 
   Bridge.signalXoff();
   Bridge.signalXon();

@@ -14,7 +14,7 @@ void tearDown() {}
 
 void reset_bridge() {
   Bridge.begin(115200, "6368616e67656d65313233");
-  rpc::services::console::begin();
+  
 }
 
 void test_bridge_initialization() {

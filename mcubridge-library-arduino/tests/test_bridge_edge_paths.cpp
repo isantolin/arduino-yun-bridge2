@@ -359,7 +359,7 @@ void test_console_and_policy_edges() {
   reset_bridge_core(Bridge, stream);
   auto ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
-  rpc::services::console::begin();
+  
 
   bridge::etl_ext::CounterIterator<size_t> begin(0);
   bridge::etl_ext::CounterIterator<size_t> end(
@@ -521,8 +521,8 @@ void test_service_capacity_and_send_fail_edges() {
                          frame_buf);
   ba.dispatch(pin_mode_ok);
 
-  rpc::services::console::begin();
-  rpc::services::console::process();
+  
+  
   etl::array<uint8_t, 4> console_bytes;
   console_bytes.fill(0x42);
   rpc::payload::ConsoleWrite cmsg;
@@ -531,7 +531,7 @@ void test_service_capacity_and_send_fail_edges() {
 
   Bridge.enterSafeState();
   rpc::services::filesystem::read("blocked.bin",
-                  FileSystemClass::FileSystemReadHandler::create<on_fs_read>());
+                  rpc::services::filesystem::ReadHandler::create<on_fs_read>());
   rpc::services::datastore::get(
       "key",
       etl::delegate<void(etl::string_view, etl::span<const uint8_t>)>::create<
@@ -551,7 +551,7 @@ void test_filesystem_spi_fsm_and_rle_edges() {
   strncpy(fwp.path, "/bad", 64);
   rpc::payload::copy_to_pb_bytes(fwp.data, fs_data.data(),
                                  fs_data.size());
-  rpc::services::filesystem::_onWrite(fwp);
+  Bridge._handleFileWriteCommand(fwp);
 
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buf;
   auto spi_begin =

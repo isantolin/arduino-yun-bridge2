@@ -116,14 +116,14 @@ void test_bridge_coverage() {
 
   // 4. Console
   printf("  - Step 4: Console\n");
-  rpc::services::console::begin();
+  
   (void)rpc::services::console::write('a');
   bridge::etl_ext::CounterIterator<int> console_begin(0);
   bridge::etl_ext::CounterIterator<int> console_end(
       bridge::config::CONSOLE_TX_BUFFER_SIZE + 1);
   etl::for_each(console_begin, console_end,
                 [](int) { (void)rpc::services::console::write('x'); });
-  rpc::services::console::process();
+  
 
   rpc::payload::ConsoleWrite cmsg;
   uint8_t cdata[] = "hello";
@@ -138,7 +138,7 @@ void test_bridge_coverage() {
   // 5. DataStore
   printf("  - Step 5: DataStore\n");
   uint8_t ds_val[] = {1, 2};
-  (void)rpc::services::datastore::set("key", etl::span<const uint8_t>(ds_val, 2));
+  (void)rpc::services::datastore::put("key", etl::span<const uint8_t>(ds_val, 2));
   rpc::services::datastore::get(
       "key",
       etl::delegate<void(etl::string_view, etl::span<const uint8_t>)>::create<
@@ -290,7 +290,7 @@ void test_bridge_coverage() {
   bridge::test::set_pb_payload(f_ppr, ppr_p);
   ba.dispatch(f_ppr);
 
-  rpc::services::process::reset();
+  
 
   // 10. HAL
   printf("  - Step 10: HAL\n");

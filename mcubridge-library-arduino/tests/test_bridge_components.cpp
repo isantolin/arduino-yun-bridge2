@@ -53,14 +53,14 @@ void test_process_api() {
   reset_bridge_comp(stream);
 
 #if BRIDGE_ENABLE_PROCESS
-  rpc::services::process::reset();
+  
 #endif
 }
 
 void test_console_api() {
   BiStream stream;
   reset_bridge_comp(stream);
-  rpc::services::console::begin();
+  
   rpc::services::console::write('A');
 }
 

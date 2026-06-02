@@ -39,16 +39,16 @@ void integrated_test_components() {
   auto ba = bridge::test::TestAccessor::create(Bridge);
   ba.setSynchronized();
 
-  rpc::services::console::begin();
+  
   rpc::services::console::write('H');
-  rpc::services::console::process();
+  
   TEST_ASSERT(stream.tx_buf.len > 0);
 
   rpc::services::filesystem::remove("test.txt");
   
 #if BRIDGE_ENABLE_DATASTORE
   etl::array<uint8_t, 1> val = {1};
-  rpc::services::datastore::set("k", etl::span<const uint8_t>(val.data(), 1));
+  rpc::services::datastore::put("k", etl::span<const uint8_t>(val.data(), 1));
 #endif
 
 #if BRIDGE_ENABLE_MAILBOX

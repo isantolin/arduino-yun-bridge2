@@ -64,7 +64,7 @@ int main(int argc, char** argv) {
       int c = rpc::services::console::read();
       if (c >= 0) rpc::services::console::write(static_cast<uint8_t>(c));
     }
-    rpc::services::console::process();
+    
     usleep(1000);
   }
   fprintf(stderr, "McuBridge Emulator Terminating...\n");

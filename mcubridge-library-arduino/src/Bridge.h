@@ -36,6 +36,7 @@ class TestAccessor;
 #include <etl/queue.h>
 #include <etl/scheduler.h>
 #include <etl/span.h>
+#include <etl/string.h>
 #include <etl/string_view.h>
 #include <etl/task.h>
 #include <etl/variant.h>
@@ -380,7 +381,7 @@ class BridgeClass {
   void _handleSpiTransfer(const bridge::router::CommandContext& ctx);
   void _handleReceivedFrame(etl::span<const uint8_t> p);
   void onUnknownCommand(const bridge::router::CommandContext& ctx);
-  
+
   void _handleAck(uint16_t cmd);
   void _clearPendingTxQueue();
   void _flushPendingTxQueue();
@@ -395,6 +396,26 @@ class BridgeClass {
                   [&msg](BridgeObserver* observer) {
                     if (observer != nullptr) observer->notification(msg);
                   });
+  }
+
+  // --- Helpers ---
+  template <typename T, typename F>
+  void _withPayload(const bridge::router::CommandContext& ctx, F lambda) {
+    auto res = rpc::Payload::parse<T>(*ctx.envelope);
+    if (res) lambda(res.value());
+    else emitStatus(rpc::StatusCode::STATUS_ERROR);
+  }
+
+  template <typename F>
+  void _withResponse(const bridge::router::CommandContext& ctx, F lambda) {
+    lambda();
+  }
+
+  template <typename T, typename F>
+  void _withPayloadAck(const bridge::router::CommandContext& ctx, F lambda) {
+    auto res = rpc::Payload::parse<T>(*ctx.envelope);
+    if (res) { lambda(res.value()); _processAck(ctx.raw_command, ctx.sequence_id); }
+    else emitStatus(rpc::StatusCode::STATUS_ERROR);
   }
 };
 

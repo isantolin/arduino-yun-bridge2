@@ -107,11 +107,11 @@ void test_filesystem_read_edge_cases() {
   strncpy(req.path, path_sv.data(), sizeof(req.path));
 
   // This will use the new CounterIterator in _onRead
-  rpc::services::filesystem::_onRead(req);
+  Bridge._handleFileReadCommand(req);
 
   // Coverage for observer notification
-  rpc::services::filesystem::notification(MsgBridgeSynchronized());
-  rpc::services::filesystem::notification(MsgBridgeLost());
+  // notification removed(MsgBridgeSynchronized());
+  // notification removed(MsgBridgeLost());
 
   TEST_ASSERT(true);
 }
@@ -172,7 +172,7 @@ void test_process_branch_error_paths() {
   reset_bridge_core(Bridge, stream);
   auto ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
-  rpc::services::process::reset();
+  
 
   // Fill run queue (size=1) and trigger full-queue error callback path.
   captured_pid = 0;
@@ -190,7 +190,7 @@ void test_process_branch_error_paths() {
   TEST_ASSERT_EQUAL(42, captured_pid);
 
   // Valid send with invalid callback should not enqueue a pending run.
-  rpc::services::process::reset();
+  
   rpc::services::process::runAsync("ls", {}, ProcessClass::ProcessRunHandler{});
   TEST_ASSERT_EQUAL(0, rpc::services::process::_pending_run_async.size());
 
@@ -230,13 +230,13 @@ void test_process_branch_error_paths() {
   ba_recovered.setSynchronized();
 
   // Poll queue full path (size=1), then invalid-handler path.
-  rpc::services::process::reset();
+  
   rpc::services::process::poll(10, ProcessClass::ProcessPollHandler::create<capture_poll_handler>());
   TEST_ASSERT_EQUAL(1, rpc::services::process::_pending_polls.size());
   rpc::services::process::poll(11, ProcessClass::ProcessPollHandler::create<capture_poll_handler>());
   TEST_ASSERT_EQUAL(1, rpc::services::process::_pending_polls.size());
 
-  rpc::services::process::reset();
+  
   rpc::services::process::poll(12, ProcessClass::ProcessPollHandler{});
   TEST_ASSERT_EQUAL(0, rpc::services::process::_pending_polls.size());
 
@@ -264,7 +264,7 @@ void test_console_write_full_buffer_retains_data_when_send_fails() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
 
-  rpc::services::console::begin();
+  
 
   etl::array<uint8_t, bridge::config::CONSOLE_TX_BUFFER_SIZE> fill = {};
   fill.fill('x');

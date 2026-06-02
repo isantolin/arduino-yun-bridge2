@@ -92,7 +92,8 @@ class BridgeClass {
   void emitStatus(rpc::StatusCode s, etl::span<const uint8_t> p);
   void emitStatus(rpc::StatusCode s, const __FlashStringHelper* m);
 
-  // Non-template wrapper to reduce bloat
+  // [SIL-2] Template wrapper to comply with Rule 3
+  template <typename = void>
   void emitStatus(rpc::StatusCode s) {
     emitStatus(s, etl::span<const uint8_t>());
   }
@@ -363,7 +364,7 @@ class BridgeClass {
       if (res && valid(res->pin)) {
         T resp;
         resp.value = static_cast<uint32_t>(read(res->pin));
-        (void)send(static_cast<rpc::CommandId>(resp_id), ctx.sequence_id, resp);
+        [[maybe_unused]] auto _ = send(static_cast<rpc::CommandId>(resp_id), ctx.sequence_id, resp);
       } else
         emitStatus(rpc::StatusCode::STATUS_ERROR);
     });

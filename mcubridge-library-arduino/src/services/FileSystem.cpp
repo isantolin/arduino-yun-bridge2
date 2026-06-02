@@ -14,7 +14,7 @@ constexpr size_t kReadChunkSize = 64U;
 #if defined(BRIDGE_HOST_TEST)
 #define BRIDGE_FS_DEBUG(...) fprintf(stderr, __VA_ARGS__)
 #else
-#define BRIDGE_FS_DEBUG(...) ((void)0)
+#define BRIDGE_FS_DEBUG(...) ([[maybe_unused]] auto _u1 = 0)
 #endif
 
 void send_read_response(etl::span<const uint8_t> content) {
@@ -24,7 +24,7 @@ void send_read_response(etl::span<const uint8_t> content) {
   if (to_copy > 0U) {
     etl::copy_n(content.data(), to_copy, p.content.bytes);
   }
-  (void)Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 0, p);
+  [[maybe_unused]] auto _u1 = Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 0, p);
 }
 }  // namespace
 
@@ -44,7 +44,7 @@ void FileSystemClass::write(etl::string_view path,
   if (d_copy > 0U) {
     etl::copy_n(data.data(), d_copy, p.data.bytes);
   }
-  (void)Bridge.send(rpc::CommandId::CMD_FILE_WRITE, 0, p);
+  [[maybe_unused]] auto _u1 = Bridge.send(rpc::CommandId::CMD_FILE_WRITE, 0, p);
 }
 
 void FileSystemClass::read(etl::string_view path,
@@ -69,14 +69,14 @@ void FileSystemClass::read(etl::string_view path,
     etl::copy_n(path.begin(), p_copy, p.path);
   }
   p.path[p_copy] = '\0';
-  (void)Bridge.send(rpc::CommandId::CMD_FILE_REMOVE, 0, p);
+  [[maybe_unused]] auto _u1 = Bridge.send(rpc::CommandId::CMD_FILE_REMOVE, 0, p);
 }
 
 void FileSystemClass::_onWrite(const rpc::payload::FileWrite& msg) {
   auto res = bridge::hal::writeFile(
       etl::string_view(msg.path),
       etl::span<const uint8_t>(msg.data.bytes, msg.data.size));
-  (void)Bridge.sendFrame(res ? rpc::StatusCode::STATUS_OK
+  [[maybe_unused]] auto _u1 = Bridge.sendFrame(res ? rpc::StatusCode::STATUS_OK
                              : rpc::StatusCode::STATUS_ERROR);
 }
 
@@ -88,7 +88,7 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
   const etl::string_view path(msg.path);
 
   using bridge::etl_ext::CounterIterator;
-  (void)etl::find_if(
+  [[maybe_unused]] auto _u1 = etl::find_if(
       CounterIterator<uint16_t>(0U),
       CounterIterator(bridge::config::FILE_MAX_READ_CHUNKS),
       [&](uint32_t chunk_idx) {
@@ -101,7 +101,7 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
             path, offset, etl::span<uint8_t>(buffer.data(), buffer.size()));
         if (!res) {
           BRIDGE_FS_DEBUG("[DEBUG] FS: Read FAILED at offset %zu\\n", offset);
-          (void)Bridge.sendFrame(rpc::StatusCode::STATUS_ERROR);
+          [[maybe_unused]] auto _u1 = Bridge.sendFrame(rpc::StatusCode::STATUS_ERROR);
           return true;
         }
         BRIDGE_FS_DEBUG(
@@ -120,7 +120,7 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
 
 void FileSystemClass::_onRemove(const rpc::payload::FileRemove& msg) {
   auto res = bridge::hal::removeFile(etl::string_view(msg.path));
-  (void)Bridge.sendFrame(res ? rpc::StatusCode::STATUS_OK
+  [[maybe_unused]] auto _u1 = Bridge.sendFrame(res ? rpc::StatusCode::STATUS_OK
                              : rpc::StatusCode::STATUS_ERROR);
 }
 

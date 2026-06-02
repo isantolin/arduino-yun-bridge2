@@ -72,10 +72,20 @@ BridgeClass::BridgeClass(Stream& stream)
 // [MEM-SAVE] Static wrappers to bridge between the static jump table and member
 // functions. This avoids the 4-8 byte overhead of member function pointers on
 // some architectures.
-#define DISPATCH_WRAPPER(method)                                  \
-  [](BridgeClass& b, const bridge::router::CommandContext& ctx) { \
-    b.method(ctx);                                                \
+#include <etl/type_traits.h>
+
+// [SIL-2] Template wrapper to comply with Rule 3
+template <auto Method>
+static void dispatch_wrapper_t(BridgeClass& b,
+                               const bridge::router::CommandContext& ctx) {
+  if constexpr (etl::is_member_function_pointer<decltype(Method)>::value) {
+    (b.*Method)(ctx);
+  } else {
+    Method(ctx);
   }
+}
+
+#define DISPATCH_WRAPPER(method) &dispatch_wrapper_t<&BridgeClass::method>
 
 void BridgeClass::_dispatchCommand(const rpc_pb_RpcEnvelope& envelope) {
   const uint16_t cmd_id =
@@ -93,7 +103,7 @@ void BridgeClass::_dispatchCommand(const rpc_pb_RpcEnvelope& envelope) {
   }
 
   if (!_isSecurityCheckPassed(ctx.raw_command)) {
-    (void)sendFrame(rpc::StatusCode::STATUS_ERROR, ctx.sequence_id);
+    [[maybe_unused]] auto _u1 = sendFrame(rpc::StatusCode::STATUS_ERROR, ctx.sequence_id);
     return;
   }
 
@@ -277,7 +287,7 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
           BridgeClass, &BridgeClass::_onPacketReceived>(*this));
 }
 
-void BridgeClass::process() { (void)_scheduler_policy.schedule_tasks(_tasks); }
+void BridgeClass::process() { [[maybe_unused]] auto _u1 = _scheduler_policy.schedule_tasks(_tasks); }
 
 void BridgeClass::WatchdogTask::task_process_work() {
   bridge::hal::watchdog_kick();
@@ -312,7 +322,7 @@ void BridgeClass::TimerTask::task_process_work() {
 bool BridgeClass::isSynchronized() const { return _fsm.isSynchronized(); }
 
 void BridgeClass::_handleStatusOk(const bridge::router::CommandContext& ctx) {
-  (void)ctx;
+  [[maybe_unused]] auto _u1 = ctx;
 }
 
 void BridgeClass::onUnknownCommand(const bridge::router::CommandContext& ctx) {
@@ -332,7 +342,7 @@ void BridgeClass::enterSafeState() {
 
 void BridgeClass::emitStatus(rpc::StatusCode code,
                              etl::span<const uint8_t> pl) {
-  (void)sendFrame(code, 0, pl);
+  [[maybe_unused]] auto _u1 = sendFrame(code, 0, pl);
 }
 
 void BridgeClass::emitStatus(rpc::StatusCode code, etl::string_view msg) {
@@ -342,13 +352,13 @@ void BridgeClass::emitStatus(rpc::StatusCode code, etl::string_view msg) {
     etl::copy_n(msg.begin(), to_copy, resp.message);
   }
   resp.message[to_copy] = '\0';
-  (void)send(code, 0, resp);
+  [[maybe_unused]] auto _u1 = send(code, 0, resp);
 }
 
 void BridgeClass::emitStatus(rpc::StatusCode code,
                              const __FlashStringHelper* msg) {
   if (msg == nullptr) {
-    (void)sendFrame(code);
+    [[maybe_unused]] auto _u1 = sendFrame(code);
     return;
   }
   constexpr size_t max_len = 63U;
@@ -365,7 +375,7 @@ void BridgeClass::emitStatus(rpc::StatusCode code,
     etl::copy_n(str.begin(), to_copy, resp.message);
   }
   resp.message[to_copy] = '\0';
-  (void)send(code, 0, resp);
+  [[maybe_unused]] auto _u1 = send(code, 0, resp);
 }
 
 bool BridgeClass::sendFrame(rpc::StatusCode s, uint16_t seq,
@@ -480,7 +490,7 @@ void BridgeClass::_processAck(uint16_t command_id, uint16_t sequence_id) {
   // [MEM-SAVE] Replaced manual ACK building with centralized helper.
   rpc::payload::AckPacket p;
   p.command_id = command_id;
-  (void)send(rpc::StatusCode::STATUS_ACK, sequence_id, p);
+  [[maybe_unused]] auto _u1 = send(rpc::StatusCode::STATUS_ACK, sequence_id, p);
 }
 
 void BridgeClass::_retransmitLastFrame() {
@@ -526,9 +536,9 @@ void BridgeClass::_handleSetBaudrateCommand(
     auto res = rpc::Payload::parse<rpc::payload::SetBaudratePacket>(*ctx.envelope);
     if (res) {
       _handleSetBaudrate(res.value());
-      (void)sendFrame(rpc::CommandId::CMD_SET_BAUDRATE_RESP, ctx.sequence_id);
+      [[maybe_unused]] auto _u1 = sendFrame(rpc::CommandId::CMD_SET_BAUDRATE_RESP, ctx.sequence_id);
     } else
-      (void)sendFrame(rpc::StatusCode::STATUS_ERROR, ctx.sequence_id);
+      [[maybe_unused]] auto _u2 = sendFrame(rpc::StatusCode::STATUS_ERROR, ctx.sequence_id);
   });
 }
 
@@ -670,7 +680,7 @@ void BridgeClass::_handleGetVersion(const bridge::router::CommandContext& ctx) {
     resp.major = rpc::FIRMWARE_VERSION_MAJOR;
     resp.minor = rpc::FIRMWARE_VERSION_MINOR;
     resp.patch = (uint32_t)rpc::FIRMWARE_VERSION_PATCH;
-    (void)send(rpc::CommandId::CMD_GET_VERSION_RESP, ctx.sequence_id, resp);
+    [[maybe_unused]] auto _u1 = send(rpc::CommandId::CMD_GET_VERSION_RESP, ctx.sequence_id, resp);
   });
 }
 
@@ -679,7 +689,7 @@ void BridgeClass::_handleGetFreeMemory(
   _withResponse(ctx, [this, &ctx]() {
     rpc::payload::FreeMemoryResponse resp = {};
     resp.value = (uint32_t)bridge::hal::getFreeMemory();
-    (void)send(rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, ctx.sequence_id, resp);
+    [[maybe_unused]] auto _u1 = send(rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, ctx.sequence_id, resp);
   });
 }
 
@@ -723,7 +733,7 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
   _fsm.receive(bridge::fsm::EvHandshakeComplete());
 
   _tx_enabled = true;
-  (void)send(rpc::CommandId::CMD_LINK_SYNC_RESP, ctx.sequence_id, resp);
+  [[maybe_unused]] auto _u1 = send(rpc::CommandId::CMD_LINK_SYNC_RESP, ctx.sequence_id, resp);
   _notifyObservers(MsgBridgeSynchronized());
 }
 
@@ -732,7 +742,7 @@ void BridgeClass::_handleLinkReset(const bridge::router::CommandContext& ctx) {
       ctx, [this, &ctx](const auto& msg) {
         _applyTimingConfig(msg);
         enterSafeState();
-        (void)sendFrame(rpc::CommandId::CMD_LINK_RESET_RESP, ctx.sequence_id);
+        [[maybe_unused]] auto _u1 = sendFrame(rpc::CommandId::CMD_LINK_RESET_RESP, ctx.sequence_id);
       });
 }
 
@@ -747,18 +757,18 @@ void BridgeClass::_handleGetCapabilities(
     bridge::hal::getPinCounts(dig, ana);
     resp.dig = dig;
     resp.ana = ana;
-    (void)send(rpc::CommandId::CMD_GET_CAPABILITIES_RESP, ctx.sequence_id,
+    [[maybe_unused]] auto _u1 = send(rpc::CommandId::CMD_GET_CAPABILITIES_RESP, ctx.sequence_id,
                resp);
   });
 }
 
 void BridgeClass::_handleXoff(const bridge::router::CommandContext& ctx) {
-  (void)ctx;
+  [[maybe_unused]] auto _u1 = ctx;
   _tx_enabled = false;
 }
 
 void BridgeClass::_handleXon(const bridge::router::CommandContext& ctx) {
-  (void)ctx;
+  [[maybe_unused]] auto _u1 = ctx;
   _tx_enabled = true;
   _flushPendingTxQueue();
 }
@@ -864,8 +874,8 @@ bool BridgeClass::_isSecurityCheckPassed(uint16_t cmd) const {
   return _fsm.isSynchronized();
 }
 
-void BridgeClass::signalXoff() { (void)sendFrame(rpc::CommandId::CMD_XOFF); }
-void BridgeClass::signalXon() { (void)sendFrame(rpc::CommandId::CMD_XON); }
+void BridgeClass::signalXoff() { [[maybe_unused]] auto _u1 = sendFrame(rpc::CommandId::CMD_XOFF); }
+void BridgeClass::signalXon() { [[maybe_unused]] auto _u2 = sendFrame(rpc::CommandId::CMD_XON); }
 
 void BridgeClass::_handleSpiBegin(const bridge::router::CommandContext& ctx) {
   SPIService.begin();
@@ -894,7 +904,7 @@ void BridgeClass::_handleSpiTransfer(
       if (to_copy > 0) {
         etl::copy_n(_rx_storage.data(), to_copy, resp.data.bytes);
       }
-      (void)send(rpc::CommandId::CMD_SPI_TRANSFER_RESP, ctx.sequence_id, resp);
+      [[maybe_unused]] auto _u1 = send(rpc::CommandId::CMD_SPI_TRANSFER_RESP, ctx.sequence_id, resp);
     } else
       emitStatus(rpc::StatusCode::STATUS_ERROR);
   });
@@ -902,13 +912,12 @@ void BridgeClass::_handleSpiTransfer(
 
 void BridgeClass::_handleStatusMalformed(
     const bridge::router::CommandContext& ctx) {
-  (void)ctx;
+  [[maybe_unused]] auto _u1 = ctx;
   enterSafeState();
 }
 
 namespace bridge {
-void SafeStatePolicy::handle(::BridgeClass& bridge, const etl::exception& e) {
-  (void)e;
+void SafeStatePolicy::handle(::BridgeClass& bridge, [[maybe_unused]] const etl::exception& e) {
   bridge.enterSafeState();
 }
 }  // namespace bridge

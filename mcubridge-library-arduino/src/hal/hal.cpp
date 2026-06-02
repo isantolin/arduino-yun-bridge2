@@ -133,22 +133,22 @@ __attribute__((weak)) [[maybe_unused]] bool hasSPI() { return false; }
 
 __attribute__((weak)) etl::expected<void, HalError> writeFile(etl::string_view path,
                                         etl::span<const uint8_t> data) {
-  (void)path;
-  (void)data;
+  [[maybe_unused]] auto _u1 = path;
+  [[maybe_unused]] auto _u2 = data;
   return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
 }
 
 __attribute__((weak)) etl::expected<ChunkResult, HalError> readFileChunk(etl::string_view path,
                                                    size_t offset,
                                                    etl::span<uint8_t> buffer) {
-  (void)path;
-  (void)offset;
-  (void)buffer;
+  [[maybe_unused]] auto _u1 = path;
+  [[maybe_unused]] auto _u2 = offset;
+  [[maybe_unused]] auto _u3 = buffer;
   return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
 }
 
 __attribute__((weak)) etl::expected<void, HalError> removeFile(etl::string_view path) {
-  (void)path;
+  [[maybe_unused]] auto _u1 = path;
   return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
 }
 

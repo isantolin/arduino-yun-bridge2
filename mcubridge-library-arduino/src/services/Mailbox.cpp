@@ -9,7 +9,7 @@
 namespace {
 
 void send_mailbox_command(rpc::CommandId command_id) {
-  (void)Bridge.sendFrame(command_id);
+  [[maybe_unused]] auto _u1 = Bridge.sendFrame(command_id);
 }
 
 }  // namespace
@@ -23,7 +23,7 @@ void MailboxClass::push(etl::span<const uint8_t> data) {
   if (to_copy > 0U) {
     etl::copy_n(data.data(), to_copy, p.data.bytes);
   }
-  (void)Bridge.send(rpc::CommandId::CMD_MAILBOX_PUSH, 0, p);
+  [[maybe_unused]] auto _u1 = Bridge.send(rpc::CommandId::CMD_MAILBOX_PUSH, 0, p);
 }
 
 [[maybe_unused]] void MailboxClass::requestRead() {

@@ -134,7 +134,7 @@ inline bool timing_safe_equal(etl::span<const uint8_t> a,
   if (a.size() != b.size()) return false;
   volatile uint8_t result = 0;
   auto it_b = b.begin();
-  (void)etl::for_each(a.begin(), a.end(),
+  [[maybe_unused]] auto _ = etl::for_each(a.begin(), a.end(),
                       [&](uint8_t val_a) { result |= val_a ^ *it_b++; });
   return result == 0;
 }

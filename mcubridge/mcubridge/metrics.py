@@ -327,10 +327,8 @@ class PrometheusExporter:
                         if local and hasattr(local, "con"):
                             local.con.close()
                             del local.con
-            except (AttributeError, OSError, RuntimeError) as e:
+            except (AttributeError, OSError, RuntimeError, TypeError) as e:
                 logger.debug("Metrics diskcache connection cleanup notice", error=e)
-            except Exception as e:
-                logger.warning("Metrics diskcache connection cleanup failed", error=e)
 
             return [payload]
 

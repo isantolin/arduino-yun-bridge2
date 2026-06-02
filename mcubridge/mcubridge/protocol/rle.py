@@ -94,6 +94,7 @@ def should_compress(payload: bytes | bytearray | memoryview) -> bool:
 
 __all__ = ["rle_encode", "rle_decode", "should_compress"]
 
+
 def rle_encode_if_beneficial(payload: bytes | bytearray | memoryview) -> tuple[bytes, bool]:
     """Compress payload if RLE is beneficial and return (payload, was_compressed)."""
     if should_compress(payload):

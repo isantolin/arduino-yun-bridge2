@@ -173,8 +173,7 @@ class BridgeService:
         self.state.mqtt_publish_queue.put_nowait(resolved_message)
 
     async def flush_mqtt_spool(self) -> None:
-        async with self._mqtt_publish_lock:
-            await self._flush_mqtt_spool_locked()
+        pass
 
     def _resolve_reply_message(self, message: QueuedPublish, reply_context: Message | Any | None) -> QueuedPublish:
         topic = message.topic_name

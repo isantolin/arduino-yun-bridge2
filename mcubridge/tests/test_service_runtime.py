@@ -121,7 +121,6 @@ async def test_enqueue_mqtt_spools_until_client_recovers() -> None:
         assert state.mqtt_spool_pending_messages == 1
 
         mock_client = AsyncMock()
-        service.set_mqtt_client(mock_client)
         await service.flush_mqtt_spool()
 
         mock_client.publish.assert_awaited_once()

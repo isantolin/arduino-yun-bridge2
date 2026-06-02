@@ -184,7 +184,8 @@ class BridgeDaemon:
                 await client.publish(will_topic, b'{"status": "online"}', qos=1, retain=True)
 
                 async def publish_loop():
-                    from paho.mqtt.properties import Properties, PacketTypes
+                    from paho.mqtt.properties import Properties
+                    from paho.mqtt.packettypes import PacketTypes
 
                     while True:
                         msg = await self.state.mqtt_publish_queue.get()

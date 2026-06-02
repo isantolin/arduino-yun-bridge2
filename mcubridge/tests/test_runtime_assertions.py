@@ -25,7 +25,6 @@ async def service_setup(
     serial.acknowledge.return_value = True
     service = BridgeService(runtime_config, runtime_state, serial)
     mock_mqtt = AsyncMock()
-    service.set_mqtt_client(mock_mqtt)
     return service, runtime_state, serial, mock_mqtt
 
 

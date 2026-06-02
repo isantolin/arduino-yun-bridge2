@@ -2,18 +2,12 @@
 
 #include "Bridge.h"
 
-#if BRIDGE_ENABLE_FILESYSTEM && defined(BRIDGE_HOST_TEST)
-#include <cstdio>
-#endif
 
 #if BRIDGE_ENABLE_FILESYSTEM
 
 namespace {
 constexpr size_t kReadChunkSize = 64U;
 
-#if defined(BRIDGE_HOST_TEST)
-#define BRIDGE_FS_DEBUG(...) fprintf(stderr, __VA_ARGS__)
-#else
 #define BRIDGE_FS_DEBUG(...) do { (void)sizeof(__VA_ARGS__); } while (0)
 #endif
 

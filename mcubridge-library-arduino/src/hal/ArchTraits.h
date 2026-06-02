@@ -22,8 +22,6 @@ enum class ArchId : uint8_t {
 #elif defined(ARDUINO_ARCH_ESP32)
 #include <esp_task_wdt.h>
 #define BRIDGE_CURRENT_ARCH_ID ArchId::ARCH_ESP32
-#elif defined(BRIDGE_HOST_TEST)
-#define BRIDGE_CURRENT_ARCH_ID ArchId::ARCH_HOST
 #else
 #define BRIDGE_CURRENT_ARCH_ID ArchId::ARCH_UNKNOWN
 #endif

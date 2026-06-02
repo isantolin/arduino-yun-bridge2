@@ -155,11 +155,7 @@ class BridgeClass {
     return (id & rpc::RPC_CMD_FLAG_COMPRESSED) != 0;
   }
 
-#if defined(BRIDGE_HOST_TEST)
- public:
-#else
  protected:
-#endif
 
   struct TxPayloadBuffer {
     etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> data;

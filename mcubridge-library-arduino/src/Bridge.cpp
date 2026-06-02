@@ -5,9 +5,6 @@
 #include <etl/iterator.h>
 
 #include "hal/ArchTraits.h"
-#if defined(BRIDGE_HOST_TEST) && defined(BRIDGE_FAULT_INJECTION)
-#include "BridgeFaultInjection.h"
-#endif
 #include <wolfssl/wolfcrypt/settings.h>
 #include <wolfssl/wolfcrypt/types.h>
 
@@ -253,12 +250,6 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
   if (!_fsm.is_started()) _fsm.start();
   _fsm.receive(bridge::fsm::EvReset());
   _is_post_passed = rpc::security::run_cryptographic_self_tests();
-#if defined(BRIDGE_HOST_TEST) && defined(BRIDGE_FAULT_INJECTION)
-  if (bridge::test::fault::consume(
-          bridge::test::fault::FaultPoint::BRIDGE_FORCE_POST_FAIL)) {
-    _is_post_passed = false;
-  }
-#endif
   if (!_is_post_passed) enterSafeState();
 
   if constexpr (bridge::hal::CurrentArchTraits::id ==
@@ -434,12 +425,6 @@ void BridgeClass::_sendRawFrame(uint16_t command_id, uint16_t sequence_id,
   env.payload.size = static_cast<pb_size_t>(pl_size);
   size_t len = rpc::serialize_frame(env, buffer);
 
-#if defined(BRIDGE_HOST_TEST) && defined(BRIDGE_FAULT_INJECTION)
-  if (bridge::test::fault::consume(
-          bridge::test::fault::FaultPoint::BRIDGE_SERIALIZE_ZERO)) {
-    len = 0;
-  }
-#endif
 
   if (len > 0)
     _packet_serial.send(_stream, etl::span<const uint8_t>(buffer.data(), len));

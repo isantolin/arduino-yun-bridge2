@@ -19,9 +19,6 @@
 #include <wolfssl/wolfcrypt/kdf.h>
 
 #include "Bridge.h"
-#if defined(BRIDGE_HOST_TEST) && defined(BRIDGE_FAULT_INJECTION)
-#include "BridgeFaultInjection.h"
-#endif
 #include "hal/progmem_compat.h"
 
 namespace rpc {
@@ -33,12 +30,6 @@ int aead_kat_encrypt(etl::span<const uint8_t> key,
                      etl::span<const uint8_t> nonce,
                      etl::span<const uint8_t> ad, etl::span<const uint8_t> in,
                      etl::span<uint8_t> out, etl::span<uint8_t> tag) {
-#if defined(BRIDGE_HOST_TEST) && defined(BRIDGE_FAULT_INJECTION)
-  if (bridge::test::fault::consume(
-          bridge::test::fault::FaultPoint::KAT_AEAD_FAIL)) {
-    return -1;
-  }
-#endif
   return wc_ChaCha20Poly1305_Encrypt(
       key.data(), nonce.data(), ad.data(), static_cast<word32>(ad.size()),
       in.data(), static_cast<word32>(in.size()), out.data(), tag.data());
@@ -177,12 +168,6 @@ bool validate_frame_nonce(etl::span<const uint8_t> nonce,
   if (nonce.size() < 12) return false;
   uint64_t counter = 0;
   etl::byte_stream_reader n_reader(nonce.data() + 4, 8, etl::endian::big);
-#if defined(BRIDGE_HOST_TEST) && defined(BRIDGE_FAULT_INJECTION)
-  if (bridge::test::fault::consume(
-          bridge::test::fault::FaultPoint::BRIDGE_NONCE_READ_FAIL)) {
-    return false;
-  }
-#endif
   if (auto c_opt = n_reader.read<uint64_t>()) {
     counter = *c_opt;
   }

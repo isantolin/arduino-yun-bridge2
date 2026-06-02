@@ -22,8 +22,8 @@ class MailboxClass {
   static void requestAvailable();
   static void signalProcessed();
 
-  void _setIncomingData(etl::span<const uint8_t> data);
-  // _onIncomingData removed
+  void _onIncomingData(const rpc::payload::MailboxPush& msg);
+  void _onIncomingData(const rpc::payload::MailboxReadResponse& msg);
   void _onAvailableResponse(const rpc::payload::MailboxAvailableResponse& msg);
 
   void onSynchronized() {}
@@ -33,6 +33,7 @@ class MailboxClass {
   }
 
  private:
+  void _setIncomingData(etl::span<const uint8_t> data);
   etl::circular_buffer<uint8_t, bridge::config::MAILBOX_RX_BUFFER_SIZE>
       _rx_buffer;
   uint16_t _available_count;

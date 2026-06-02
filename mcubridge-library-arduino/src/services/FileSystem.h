@@ -19,10 +19,10 @@ class FileSystemClass {
   void read(etl::string_view path, FileSystemReadHandler handler);
   static void remove(etl::string_view path);
 
-  // _onWrite removed
+  static void _onWrite(const rpc::payload::FileWrite& msg);
   void _onRead(const rpc::payload::FileRead& msg);
   static void _onRemove(const rpc::payload::FileRemove& msg);
-  void _onResponse(etl::span<const uint8_t> content);
+  void _onResponse(const rpc::payload::FileReadResponse& msg);
 
   void onSynchronized() {}
   void onLost() {}

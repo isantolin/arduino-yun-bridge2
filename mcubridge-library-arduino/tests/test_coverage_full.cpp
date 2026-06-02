@@ -164,7 +164,7 @@ void test_bridge_coverage() {
   (void)Mailbox.push(etl::span<const uint8_t>(mbox_data, 3));
   rpc::payload::MailboxPush mpush;
   rpc::payload::copy_to_pb_bytes(mpush.data, mbox_data, 3);
-  Mailbox._setIncomingData(etl::span<const uint8_t>((const uint8_t*)mbox_data, 3));
+  Mailbox._onIncomingData(mpush);
 
   rpc_pb_RpcEnvelope f_mp = {};
   f_mp.command_id = (uint16_t)rpc::CommandId::CMD_MAILBOX_PUSH;
@@ -173,7 +173,7 @@ void test_bridge_coverage() {
 
   rpc::payload::MailboxReadResponse mread;
   rpc::payload::copy_to_pb_bytes(mread.content, mbox_data, 3);
-  Mailbox._setIncomingData(etl::span<const uint8_t>((const uint8_t*)mbox_data, 3));
+  Mailbox._onIncomingData(mread);
 
   rpc_pb_RpcEnvelope f_mr = {};
   f_mr.command_id =
@@ -226,7 +226,7 @@ void test_bridge_coverage() {
 
   rpc::payload::FileReadResponse fr_p;
   rpc::payload::copy_to_pb_bytes(fr_p.content, ds_val, 2);
-  // Removed FileSystem._onResponse
+  FileSystem._onResponse(fr_p);
 
   rpc_pb_RpcEnvelope f_fr = {};
   f_fr.command_id = (uint16_t)rpc::CommandId::CMD_FILE_READ_RESP;

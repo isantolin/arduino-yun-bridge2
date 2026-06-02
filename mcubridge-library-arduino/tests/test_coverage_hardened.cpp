@@ -44,14 +44,14 @@ void dummy_status_handler(rpc::StatusCode, etl::span<const uint8_t>) {}
 }  // namespace
 
 void hit_mailbox_push(etl::span<const uint8_t> data) {
-  rpc::payload::MailboxPush p = {};
+  rpc::payload::MailboxPush p;
   rpc::payload::copy_to_pb_bytes(p.data, data.data(), data.size());
-  // Removed Mailbox._onIncomingData
+  Mailbox._onIncomingData(p);
 }
 void hit_mailbox_read_resp(etl::span<const uint8_t> data) {
   rpc::payload::MailboxReadResponse p;
   rpc::payload::copy_to_pb_bytes(p.content, data.data(), data.size());
-  // Removed Mailbox._onIncomingData
+  Mailbox._onIncomingData(p);
 }
 
 void test_bridge_emit_status_variants() {

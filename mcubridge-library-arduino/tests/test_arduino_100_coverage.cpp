@@ -134,7 +134,7 @@ void test_bridge_brute_force_commands() {
 
   // Mailbox
   hit(rpc::CommandId::CMD_MAILBOX_PUSH, []() {
-    rpc::payload::MailboxPush /*zero-init*/ p = {};
+    rpc::payload::MailboxPush p;
     uint8_t v[] = "v";
     rpc::payload::copy_to_pb_bytes(p.data, v, 1);
     return p;
@@ -171,12 +171,12 @@ void test_bridge_brute_force_commands() {
   sc.data_mode = 0;
   hit(rpc::CommandId::CMD_SPI_SET_CONFIG, sc);
 
-  rpc::payload::SpiTransfer /*zero-init*/ st = {};
+  rpc::payload::SpiTransfer st = {};
   rpc::payload::copy_to_pb_bytes(st.data, val, 1);
   hit(rpc::CommandId::CMD_SPI_TRANSFER, st);
 
   // FileSystem
-  rpc::payload::FileWrite /*zero-init*/ fw = {};
+  rpc::payload::FileWrite fw = {};
   strncpy(fw.path, "t.txt", sizeof(fw.path));
   rpc::payload::copy_to_pb_bytes(fw.data, val, 1);
   hit(rpc::CommandId::CMD_FILE_WRITE, fw);
@@ -246,11 +246,11 @@ void test_bridge_send_exhaustive() {
   rpc::payload::copy_to_pb_bytes(dgr.value, data, 1);
   (void)Bridge.send(rpc::CommandId::CMD_DATASTORE_GET_RESP, 1, dgr);
 
-  rpc::payload::MailboxReadResponse /*zero-init*/ mbr;
+  rpc::payload::MailboxReadResponse mbr;
   rpc::payload::copy_to_pb_bytes(mbr.content, data, 1);
   (void)Bridge.send(rpc::CommandId::CMD_MAILBOX_READ_RESP, 1, mbr);
 
-  rpc::payload::FileReadResponse /*zero-init*/ frr;
+  rpc::payload::FileReadResponse frr;
   rpc::payload::copy_to_pb_bytes(frr.content, data, 1);
   (void)Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 1, frr);
 
@@ -266,7 +266,7 @@ void test_bridge_send_exhaustive() {
   rpc::payload::copy_to_pb_bytes(ppr.stderr_data, data, 1);
   (void)Bridge.send(rpc::CommandId::CMD_PROCESS_POLL_RESP, 1, ppr);
 
-  rpc::payload::SpiTransferResponse /*zero-init*/ strr;
+  rpc::payload::SpiTransferResponse strr;
   rpc::payload::copy_to_pb_bytes(strr.data, data, 1);
   (void)Bridge.send(rpc::CommandId::CMD_SPI_TRANSFER_RESP, 1, strr);
 

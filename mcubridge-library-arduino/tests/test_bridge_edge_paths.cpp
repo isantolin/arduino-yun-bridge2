@@ -151,7 +151,7 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
   auto mpush = make_payload_frame(
       rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH), seq++,
       []() {
-        rpc::payload::MailboxPush p = {};
+        rpc::payload::MailboxPush p;
         uint8_t v[] = {1, 2, 3, 4};
         rpc::payload::copy_to_pb_bytes(p.data, v, 4);
         return p;
@@ -551,7 +551,7 @@ void test_filesystem_spi_fsm_and_rle_edges() {
   strncpy(fwp.path, "/bad", 64);
   rpc::payload::copy_to_pb_bytes(fwp.data, fs_data.data(),
                                  fs_data.size());
-  // Removed FileSystem._onWrite
+  FileSystem._onWrite(fwp);
 
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buf;
   auto spi_begin =

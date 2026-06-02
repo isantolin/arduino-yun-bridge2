@@ -35,13 +35,7 @@ static constexpr bool ENABLE_WATCHDOG = true;
 static constexpr uint32_t SYNC_TIMEOUT_MS = 30000UL;
 
 // --- Feature Flags (Manual overrides via build system) ---
-#ifndef BRIDGE_ENABLE_CONSOLE
-#define BRIDGE_ENABLE_CONSOLE 1
-#endif
 #ifndef BRIDGE_ENABLE_DATASTORE
-#ifndef BRIDGE_ENABLE_CONSOLE
-#define BRIDGE_ENABLE_CONSOLE 1
-#endif
 #define BRIDGE_ENABLE_DATASTORE 1
 #endif
 #ifndef BRIDGE_ENABLE_MAILBOX
@@ -57,10 +51,6 @@ static constexpr uint32_t SYNC_TIMEOUT_MS = 30000UL;
 #define BRIDGE_ENABLE_SPI 1
 #endif
 
-#ifndef BRIDGE_ENABLE_CONSOLE
-#define BRIDGE_ENABLE_CONSOLE 1
-#endif
-static constexpr bool ENABLE_CONSOLE = BRIDGE_ENABLE_CONSOLE;
 static constexpr bool ENABLE_DATASTORE = BRIDGE_ENABLE_DATASTORE;
 static constexpr bool ENABLE_MAILBOX = BRIDGE_ENABLE_MAILBOX;
 static constexpr bool ENABLE_FILESYSTEM = BRIDGE_ENABLE_FILESYSTEM;

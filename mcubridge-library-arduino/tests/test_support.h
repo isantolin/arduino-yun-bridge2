@@ -15,10 +15,6 @@
 #include "unity.h"
 
 namespace rpc::payload {
-inline void copy_to_pb_bytes(pb_callback_t&, const uint8_t*, size_t) {
-    // Zero-Copy callbacks require manual setup in tests.
-}
-
 template <typename PbBytesArray>
 inline void copy_to_pb_bytes(PbBytesArray& dest, const uint8_t* src, size_t src_size) {
     constexpr size_t dest_size = sizeof(dest.bytes) / sizeof(dest.bytes[0]);

@@ -30,22 +30,6 @@ void __attribute__((weak)) __attribute__((unused)) handle_error(
 }
 }  // namespace etl
 
-
-bool BridgeClass::_encode_span_callback(pb_ostream_t* stream, const pb_field_iter_t* field, void* const* arg) {
-  if (!arg || !*arg) return true;
-  auto* span = static_cast<const etl::span<const uint8_t>*>(*arg);
-  if (span->empty()) return true;
-  if (!pb_encode_tag_for_field(stream, field)) return false;
-  return pb_encode_string(stream, span->data(), span->size());
-}
-
-bool BridgeClass::_decode_span_callback(pb_istream_t* stream, const pb_field_iter_t* field, void** arg) {
-  if (!arg || !*arg) return true;
-  auto* d = static_cast<DecodeArg*>(*arg);
-  d->bytes_read = etl::min((size_t)stream->bytes_left, d->span.size());
-  return pb_read(stream, d->span.data(), d->bytes_read);
-}
-
 BridgeClass::BridgeClass(Stream& stream)
     : _stream(stream),
       _hardware_serial(nullptr),
@@ -613,17 +597,10 @@ void BridgeClass::_handleAnalogReadCommand(
       [](uint32_t p) { return ::analogRead(p); });
 }
 
-void BridgeClass::_handleConsoleWriteCommand(const bridge::router::CommandContext& ctx) {
-  if (ctx.is_duplicate) { _processAck(ctx.raw_command, ctx.sequence_id); return; }
-  rpc_pb_ConsoleWrite msg = rpc_pb_ConsoleWrite_init_default;
-  DecodeArg arg = {etl::span<uint8_t>(_rx_storage.data(), _rx_storage.size()), 0};
-  msg.data.funcs.decode = &BridgeClass::_decode_span_callback;
-  msg.data.arg = &arg;
-  pb_istream_t stream = pb_istream_from_buffer(ctx.envelope->payload.bytes, ctx.envelope->payload.size);
-  if (pb_decode(&stream, rpc_pb_ConsoleWrite_fields, &msg)) {
-    for (size_t i = 0; i < arg.bytes_read; ++i) { Console._put_rx(_rx_storage[i]); }
-    if (ctx.requires_ack) _processAck(ctx.raw_command, ctx.sequence_id);
-  } else { emitStatus(rpc::StatusCode::STATUS_ERROR); }
+void BridgeClass::_handleConsoleWriteCommand(
+    const bridge::router::CommandContext& ctx) {
+  _withPayloadAck<rpc::payload::ConsoleWrite>(
+      ctx, [](const auto& m) { Console._push(m); });
 }
 
 #if BRIDGE_ENABLE_DATASTORE
@@ -635,29 +612,15 @@ void BridgeClass::_handleDataStoreGetResponseCommand(
 #endif
 
 #if BRIDGE_ENABLE_MAILBOX
-void BridgeClass::_handleMailboxPushCommand(const bridge::router::CommandContext& ctx) {
-  if (ctx.is_duplicate) { _processAck(ctx.raw_command, ctx.sequence_id); return; }
-  rpc_pb_MailboxPush msg = rpc_pb_MailboxPush_init_default;
-  DecodeArg arg = {etl::span<uint8_t>(_rx_storage.data(), _rx_storage.size()), 0};
-  msg.data.funcs.decode = &BridgeClass::_decode_span_callback;
-  msg.data.arg = &arg;
-  pb_istream_t stream = pb_istream_from_buffer(ctx.envelope->payload.bytes, ctx.envelope->payload.size);
-  if (pb_decode(&stream, rpc_pb_MailboxPush_fields, &msg)) {
-    Mailbox._setIncomingData(etl::span<const uint8_t>(_rx_storage.data(), arg.bytes_read));
-    if (ctx.requires_ack) _processAck(ctx.raw_command, ctx.sequence_id);
-  } else { emitStatus(rpc::StatusCode::STATUS_ERROR); }
+void BridgeClass::_handleMailboxPushCommand(
+    const bridge::router::CommandContext& ctx) {
+  _withPayloadAck<rpc::payload::MailboxPush>(
+      ctx, [](const auto& m) { Mailbox._onIncomingData(m); });
 }
-void BridgeClass::_handleMailboxReadResponseCommand(const bridge::router::CommandContext& ctx) {
-  if (ctx.is_duplicate) { _processAck(ctx.raw_command, ctx.sequence_id); return; }
-  rpc_pb_MailboxReadResponse msg = rpc_pb_MailboxReadResponse_init_default;
-  DecodeArg arg = {etl::span<uint8_t>(_rx_storage.data(), _rx_storage.size()), 0};
-  msg.content.funcs.decode = &BridgeClass::_decode_span_callback;
-  msg.content.arg = &arg;
-  pb_istream_t stream = pb_istream_from_buffer(ctx.envelope->payload.bytes, ctx.envelope->payload.size);
-  if (pb_decode(&stream, rpc_pb_MailboxReadResponse_fields, &msg)) {
-    Mailbox._setIncomingData(etl::span<const uint8_t>(_rx_storage.data(), arg.bytes_read));
-    if (ctx.requires_ack) _processAck(ctx.raw_command, ctx.sequence_id);
-  } else { emitStatus(rpc::StatusCode::STATUS_ERROR); }
+void BridgeClass::_handleMailboxReadResponseCommand(
+    const bridge::router::CommandContext& ctx) {
+  _withPayloadAck<rpc::payload::MailboxReadResponse>(
+      ctx, [](const auto& m) { Mailbox._onIncomingData(m); });
 }
 void BridgeClass::_handleMailboxAvailableResponseCommand(
     const bridge::router::CommandContext& ctx) {
@@ -667,18 +630,10 @@ void BridgeClass::_handleMailboxAvailableResponseCommand(
 #endif
 
 #if BRIDGE_ENABLE_FILESYSTEM
-void BridgeClass::_handleFileWriteCommand(const bridge::router::CommandContext& ctx) {
-  if (ctx.is_duplicate) { _processAck(ctx.raw_command, ctx.sequence_id); return; }
-  rpc_pb_FileWrite msg = rpc_pb_FileWrite_init_default;
-  DecodeArg arg = {etl::span<uint8_t>(_rx_storage.data(), _rx_storage.size()), 0};
-  msg.data.funcs.decode = &BridgeClass::_decode_span_callback;
-  msg.data.arg = &arg;
-  pb_istream_t stream = pb_istream_from_buffer(ctx.envelope->payload.bytes, ctx.envelope->payload.size);
-  if (pb_decode(&stream, rpc_pb_FileWrite_fields, &msg)) {
-    auto res = bridge::hal::writeFile(etl::string_view(msg.path), etl::span<const uint8_t>(_rx_storage.data(), arg.bytes_read));
-    [[maybe_unused]] auto _u1 = sendFrame(res ? rpc::StatusCode::STATUS_OK : rpc::StatusCode::STATUS_ERROR);
-    if (ctx.requires_ack) _processAck(ctx.raw_command, ctx.sequence_id);
-  } else { emitStatus(rpc::StatusCode::STATUS_ERROR); }
+void BridgeClass::_handleFileWriteCommand(
+    const bridge::router::CommandContext& ctx) {
+  _withPayloadAck<rpc::payload::FileWrite>(
+      ctx, [](const auto& m) { FileSystem._onWrite(m); });
 }
 void BridgeClass::_handleFileReadCommand(
     const bridge::router::CommandContext& ctx) {
@@ -690,17 +645,10 @@ void BridgeClass::_handleFileRemoveCommand(
   _withPayloadAck<rpc::payload::FileRemove>(
       ctx, [](const auto& m) { FileSystem._onRemove(m); });
 }
-void BridgeClass::_handleFileReadResponseCommand(const bridge::router::CommandContext& ctx) {
-  if (ctx.is_duplicate) { _processAck(ctx.raw_command, ctx.sequence_id); return; }
-  rpc_pb_FileReadResponse msg = rpc_pb_FileReadResponse_init_default;
-  DecodeArg arg = {etl::span<uint8_t>(_rx_storage.data(), _rx_storage.size()), 0};
-  msg.content.funcs.decode = &BridgeClass::_decode_span_callback;
-  msg.content.arg = &arg;
-  pb_istream_t stream = pb_istream_from_buffer(ctx.envelope->payload.bytes, ctx.envelope->payload.size);
-  if (pb_decode(&stream, rpc_pb_FileReadResponse_fields, &msg)) {
-    FileSystem._onResponse(etl::span<const uint8_t>(_rx_storage.data(), arg.bytes_read));
-    if (ctx.requires_ack) _processAck(ctx.raw_command, ctx.sequence_id);
-  } else { emitStatus(rpc::StatusCode::STATUS_ERROR); }
+void BridgeClass::_handleFileReadResponseCommand(
+    const bridge::router::CommandContext& ctx) {
+  _withPayloadAck<rpc::payload::FileReadResponse>(
+      ctx, [](const auto& m) { FileSystem._onResponse(m); });
 }
 #endif
 
@@ -955,32 +903,39 @@ void BridgeClass::_handleSpiEnd(const bridge::router::CommandContext& ctx) {
   SPIService.end();
   _processAck(ctx.raw_command, ctx.sequence_id);
 }
-void BridgeClass::_handleSpiTransfer(const bridge::router::CommandContext& ctx) {
-  if (ctx.is_duplicate) { _retransmitLastFrame(); return; }
-  rpc_pb_SpiTransfer msg = rpc_pb_SpiTransfer_init_default;
-  DecodeArg arg = {etl::span<uint8_t>(_rx_storage.data(), _rx_storage.size()), 0};
-  msg.data.funcs.decode = &BridgeClass::_decode_span_callback;
-  msg.data.arg = &arg;
-  pb_istream_t stream = pb_istream_from_buffer(ctx.envelope->payload.bytes, ctx.envelope->payload.size);
-  if (pb_decode(&stream, rpc_pb_SpiTransfer_fields, &msg)) {
-    size_t tr = SPIService.transfer(etl::span<uint8_t>(_rx_storage.data(), arg.bytes_read));
-    if (tr == 0) { emitStatus(rpc::StatusCode::STATUS_ERROR); return; }
-    rpc_pb_SpiTransferResponse resp = rpc_pb_SpiTransferResponse_init_default;
-    etl::span<const uint8_t> resp_span(_rx_storage.data(), tr);
-    resp.data.funcs.encode = &BridgeClass::_encode_span_callback;
-    resp.data.arg = (void*)&resp_span;
-    [[maybe_unused]] auto _u1 = send(rpc::CommandId::CMD_SPI_TRANSFER_RESP, ctx.sequence_id, resp);
-  } else { emitStatus(rpc::StatusCode::STATUS_ERROR); }
+void BridgeClass::_handleSpiTransfer(
+    const bridge::router::CommandContext& ctx) {
+  _withResponse(ctx, [this, &ctx]() {
+    auto res = rpc::Payload::parse<rpc::payload::SpiTransfer>(*ctx.envelope);
+    if (res) {
+      size_t len = etl::min((size_t)res->data.size, _rx_storage.size());
+      etl::copy_n(res->data.bytes, len, _rx_storage.begin());
+      size_t tr =
+          SPIService.transfer(etl::span<uint8_t>(_rx_storage.data(), len));
+      if (tr == 0) {
+        emitStatus(rpc::StatusCode::STATUS_ERROR);
+        return;
+      }
+      rpc::payload::SpiTransferResponse resp = {};
+      const size_t to_copy = etl::min(len, sizeof(resp.data.bytes));
+      resp.data.size = (pb_size_t)to_copy;
+      if (to_copy > 0) {
+        etl::copy_n(_rx_storage.data(), to_copy, resp.data.bytes);
+      }
+      [[maybe_unused]] auto _u1 = send(rpc::CommandId::CMD_SPI_TRANSFER_RESP, ctx.sequence_id, resp);
+    } else
+      emitStatus(rpc::StatusCode::STATUS_ERROR);
+  });
 }
 
-void BridgeClass::_handleStatusMalformed(const bridge::router::CommandContext& ctx) {
+void BridgeClass::_handleStatusMalformed(
+    const bridge::router::CommandContext& ctx) {
   [[maybe_unused]] auto _u1 = ctx;
   enterSafeState();
 }
 
 namespace bridge {
-void SafeStatePolicy::handle(::BridgeClass& bridge, const etl::exception& e) {
-  (void)e;
+void SafeStatePolicy::handle(::BridgeClass& bridge, [[maybe_unused]] const etl::exception& e) {
   bridge.enterSafeState();
 }
-}
+}  // namespace bridge

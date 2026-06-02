@@ -11,7 +11,7 @@
 #define BRIDGE_HOST_TEST 1
 #define ARDUINO_STUB_CUSTOM_MILLIS 1
 #include "Bridge.h"
-#include "services/Console.h"
+#include "protocol/rpc_services.h"
 #include "host_serial_stream.h"
 
 // External delegate for stream
@@ -60,11 +60,11 @@ int main(int argc, char** argv) {
 
   while (g_running) {
     Bridge.process();
-    while (Console.available()) {
-      int c = Console.read();
-      if (c >= 0) Console.write(static_cast<uint8_t>(c));
+    while (rpc::services::console::available()) {
+      int c = rpc::services::console::read();
+      if (c >= 0) rpc::services::console::write(static_cast<uint8_t>(c));
     }
-    Console.process();
+    rpc::services::console::process();
     usleep(1000);
   }
   fprintf(stderr, "McuBridge Emulator Terminating...\n");

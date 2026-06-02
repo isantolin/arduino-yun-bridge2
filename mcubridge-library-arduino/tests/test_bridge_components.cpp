@@ -6,10 +6,7 @@
 #include "Bridge.h"
 #include "BridgeTestHelper.h"
 #include "BridgeTestInterface.h"
-#include "services/Console.h"
-#include "services/DataStore.h"
-#include "services/Mailbox.h"
-#include "services/Process.h"
+#include "protocol/rpc_services.h"
 #include "test_constants.h"
 #include "test_support.h"
 
@@ -56,15 +53,15 @@ void test_process_api() {
   reset_bridge_comp(stream);
 
 #if BRIDGE_ENABLE_PROCESS
-  Process.reset();
+  rpc::services::process::reset();
 #endif
 }
 
 void test_console_api() {
   BiStream stream;
   reset_bridge_comp(stream);
-  Console.begin();
-  Console.write('A');
+  rpc::services::console::begin();
+  rpc::services::console::write('A');
 }
 
 void test_datastore_api() {

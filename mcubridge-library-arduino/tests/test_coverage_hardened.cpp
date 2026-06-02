@@ -5,12 +5,7 @@
 #include "BridgeTestHelper.h"
 #include "BridgeTestInterface.h"
 #include "etl_ext/CounterIterator.h"
-#include "services/Console.h"
-#include "services/DataStore.h"
-#include "services/FileSystem.h"
-#include "services/Mailbox.h"
-#include "services/Process.h"
-#include "services/SPIService.h"
+#include "protocol/rpc_services.h"
 #include "test_support.h"
 
 // Arduino Stubs for Linker
@@ -46,12 +41,12 @@ void dummy_status_handler(rpc::StatusCode, etl::span<const uint8_t>) {}
 void hit_mailbox_push(etl::span<const uint8_t> data) {
   rpc::payload::MailboxPush p;
   rpc::payload::copy_to_pb_bytes(p.data, data.data(), data.size());
-  Mailbox._onIncomingData(p);
+  rpc::services::mailbox::_onIncomingData(p);
 }
 void hit_mailbox_read_resp(etl::span<const uint8_t> data) {
   rpc::payload::MailboxReadResponse p;
   rpc::payload::copy_to_pb_bytes(p.content, data.data(), data.size());
-  Mailbox._onIncomingData(p);
+  rpc::services::mailbox::_onIncomingData(p);
 }
 
 void test_bridge_emit_status_variants() {
@@ -112,11 +107,11 @@ void test_filesystem_read_edge_cases() {
   strncpy(req.path, path_sv.data(), sizeof(req.path));
 
   // This will use the new CounterIterator in _onRead
-  FileSystem._onRead(req);
+  rpc::services::filesystem::_onRead(req);
 
   // Coverage for observer notification
-  FileSystem.notification(MsgBridgeSynchronized());
-  FileSystem.notification(MsgBridgeLost());
+  rpc::services::filesystem::notification(MsgBridgeSynchronized());
+  rpc::services::filesystem::notification(MsgBridgeLost());
 
   TEST_ASSERT(true);
 }
@@ -125,30 +120,30 @@ void test_spi_timeout_and_error_paths() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
 
-  SPIService.begin();
+  rpc::services::spi::begin();
   rpc::payload::SpiConfig sc;
   sc.frequency = 4000000;
   sc.bit_order = 1;
   sc.data_mode = 0;
-  SPIService.setConfig(sc);
+  rpc::services::spi::setConfig(sc);
 
   etl::array<uint8_t, 4> buf = {1, 2, 3, 4};
   // Normal transfer (stub SPI doesn't timeout)
-  size_t n = SPIService.transfer(etl::span<uint8_t>(buf));
+  size_t n = rpc::services::spi::transfer(etl::span<uint8_t>(buf));
   TEST_ASSERT_EQUAL(4, n);
 
   // Empty transfer
-  n = SPIService.transfer(etl::span<uint8_t>());
+  n = rpc::services::spi::transfer(etl::span<uint8_t>());
   TEST_ASSERT_EQUAL(0, n);
 
-  SPIService.end();
+  rpc::services::spi::end();
   // Transfer while not initialized
-  n = SPIService.transfer(etl::span<uint8_t>(buf));
+  n = rpc::services::spi::transfer(etl::span<uint8_t>(buf));
   TEST_ASSERT_EQUAL(0, n);
 
   // Coverage for observer notification
-  SPIService.notification(MsgBridgeSynchronized());
-  SPIService.notification(MsgBridgeLost());
+  rpc::services::spi::notification(MsgBridgeSynchronized());
+  rpc::services::spi::notification(MsgBridgeLost());
 }
 
 void test_process_poll_and_kill() {
@@ -156,18 +151,18 @@ void test_process_poll_and_kill() {
   reset_bridge_core(Bridge, stream);
 
   // Test Process service direct list initialization and pending queue
-  Process.poll(123, ProcessClass::ProcessPollHandler::create<poll_handler>());
-  Process.kill(456);
-  Process.runAsync("ls", {},
+  rpc::services::process::poll(123, ProcessClass::ProcessPollHandler::create<poll_handler>());
+  rpc::services::process::kill(456);
+  rpc::services::process::runAsync("ls", {},
                    etl::delegate<void(int32_t)>::create<async_handler>());
 
   // Internal handlers (coverage only)
-  Process._onRunAsyncResponse({});
-  Process._onPollResponse({});
+  rpc::services::process::_onRunAsyncResponse({});
+  rpc::services::process::_onPollResponse({});
 
   // Coverage for observer notification
-  Process.notification(MsgBridgeSynchronized());
-  Process.notification(MsgBridgeLost());
+  rpc::services::process::notification(MsgBridgeSynchronized());
+  rpc::services::process::notification(MsgBridgeLost());
 
   TEST_ASSERT(true);
 }
@@ -177,17 +172,17 @@ void test_process_branch_error_paths() {
   reset_bridge_core(Bridge, stream);
   auto ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
-  Process.reset();
+  rpc::services::process::reset();
 
   // Fill run queue (size=1) and trigger full-queue error callback path.
   captured_pid = 0;
-  Process.runAsync("ls", {},
+  rpc::services::process::runAsync("ls", {},
                    etl::delegate<void(int32_t)>::create<capture_async_handler>());
-  Process.runAsync("pwd", {},
+  rpc::services::process::runAsync("pwd", {},
                    etl::delegate<void(int32_t)>::create<capture_async_handler>());
   TEST_ASSERT_EQUAL(-1, captured_pid);
-  TEST_ASSERT_EQUAL(1, Process._pending_run_async.size());
-  Process._onRunAsyncResponse([]() {
+  TEST_ASSERT_EQUAL(1, rpc::services::process::_pending_run_async.size());
+  rpc::services::process::_onRunAsyncResponse([]() {
     rpc::payload::ProcessRunAsyncResponse p;
     p.pid = 42;
     return p;
@@ -195,9 +190,9 @@ void test_process_branch_error_paths() {
   TEST_ASSERT_EQUAL(42, captured_pid);
 
   // Valid send with invalid callback should not enqueue a pending run.
-  Process.reset();
-  Process.runAsync("ls", {}, ProcessClass::ProcessRunHandler{});
-  TEST_ASSERT_EQUAL(0, Process._pending_run_async.size());
+  rpc::services::process::reset();
+  rpc::services::process::runAsync("ls", {}, ProcessClass::ProcessRunHandler{});
+  TEST_ASSERT_EQUAL(0, rpc::services::process::_pending_run_async.size());
 
   // Force append_token failure via oversized arg, and hit lambda early return.
   etl::array<char, rpc::MAX_PAYLOAD_SIZE + 1> long_arg_storage = {};
@@ -206,20 +201,20 @@ void test_process_branch_error_paths() {
                                        rpc::MAX_PAYLOAD_SIZE);
   etl::array<etl::string_view, 2> overflow_args = {oversized_arg,
                                                    etl::string_view("y")};
-  Process.runAsync(
+  rpc::services::process::runAsync(
       "x", etl::span<const etl::string_view>(overflow_args.data(), 2),
       etl::delegate<void(int32_t)>::create<capture_async_handler>());
   TEST_ASSERT_EQUAL(-1, captured_pid);
   ProcessClass::ProcessRunHandler invalid_run_handler;
   invalid_run_handler.clear();
-  Process.runAsync("x", etl::span<const etl::string_view>(overflow_args.data(), 2),
+  rpc::services::process::runAsync("x", etl::span<const etl::string_view>(overflow_args.data(), 2),
                    invalid_run_handler);
 
   // Force prepend-space capacity failure (write_pos + 1 >= buffer_size).
   etl::array<char, rpc::MAX_PAYLOAD_SIZE> near_full_cmd = {};
   near_full_cmd.fill('c');
   etl::array<etl::string_view, 1> single_arg = {etl::string_view("z")};
-  Process.runAsync(
+  rpc::services::process::runAsync(
       etl::string_view(near_full_cmd.data(), rpc::MAX_PAYLOAD_SIZE - 1U),
       etl::span<const etl::string_view>(single_arg.data(), 1),
       etl::delegate<void(int32_t)>::create<capture_async_handler>());
@@ -227,7 +222,7 @@ void test_process_branch_error_paths() {
 
   // Force send failure path via safe state (TX disabled for non-system cmds).
   Bridge.enterSafeState();
-  Process.runAsync("ls", {},
+  rpc::services::process::runAsync("ls", {},
                    etl::delegate<void(int32_t)>::create<capture_async_handler>());
   TEST_ASSERT_EQUAL(-1, captured_pid);
   reset_bridge_core(Bridge, stream);
@@ -235,50 +230,50 @@ void test_process_branch_error_paths() {
   ba_recovered.setSynchronized();
 
   // Poll queue full path (size=1), then invalid-handler path.
-  Process.reset();
-  Process.poll(10, ProcessClass::ProcessPollHandler::create<capture_poll_handler>());
-  TEST_ASSERT_EQUAL(1, Process._pending_polls.size());
-  Process.poll(11, ProcessClass::ProcessPollHandler::create<capture_poll_handler>());
-  TEST_ASSERT_EQUAL(1, Process._pending_polls.size());
+  rpc::services::process::reset();
+  rpc::services::process::poll(10, ProcessClass::ProcessPollHandler::create<capture_poll_handler>());
+  TEST_ASSERT_EQUAL(1, rpc::services::process::_pending_polls.size());
+  rpc::services::process::poll(11, ProcessClass::ProcessPollHandler::create<capture_poll_handler>());
+  TEST_ASSERT_EQUAL(1, rpc::services::process::_pending_polls.size());
 
-  Process.reset();
-  Process.poll(12, ProcessClass::ProcessPollHandler{});
-  TEST_ASSERT_EQUAL(0, Process._pending_polls.size());
+  rpc::services::process::reset();
+  rpc::services::process::poll(12, ProcessClass::ProcessPollHandler{});
+  TEST_ASSERT_EQUAL(0, rpc::services::process::_pending_polls.size());
 
   // Force send failure in poll path.
   ba_recovered.clearSynchronized();
-  Process.poll(13, ProcessClass::ProcessPollHandler::create<capture_poll_handler>());
+  rpc::services::process::poll(13, ProcessClass::ProcessPollHandler::create<capture_poll_handler>());
   ba_recovered.setSynchronized();
 
   // Exercise invalid pending handlers in response dispatch.
   ProcessClass::ProcessRunHandler invalid_pending_run;
   invalid_pending_run.clear();
-  Process._pending_run_async.push({invalid_pending_run});
-  Process._onRunAsyncResponse([]() {
+  rpc::services::process::_pending_run_async.push({invalid_pending_run});
+  rpc::services::process::_onRunAsyncResponse([]() {
     rpc::payload::ProcessRunAsyncResponse p;
     p.pid = 777;
     return p;
   }());
   ProcessClass::ProcessPollHandler invalid_pending_poll;
   invalid_pending_poll.clear();
-  Process._pending_polls.push({1, invalid_pending_poll});
-  Process._onPollResponse(rpc::payload::ProcessPollResponse{});
+  rpc::services::process::_pending_polls.push({1, invalid_pending_poll});
+  rpc::services::process::_onPollResponse(rpc::payload::ProcessPollResponse{});
 }
 
 void test_console_write_full_buffer_retains_data_when_send_fails() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
 
-  Console.begin();
+  rpc::services::console::begin();
 
   etl::array<uint8_t, bridge::config::CONSOLE_TX_BUFFER_SIZE> fill = {};
   fill.fill('x');
   TEST_ASSERT_EQUAL_UINT32(fill.size(),
-                           Console.write(fill.data(), fill.size()));
+                           rpc::services::console::write(fill.data(), fill.size()));
 
   Bridge.enterSafeState();
   const etl::array<uint8_t, 1> extra = {'y'};
-  TEST_ASSERT_EQUAL_UINT32(0, Console.write(extra.data(), extra.size()));
+  TEST_ASSERT_EQUAL_UINT32(0, rpc::services::console::write(extra.data(), extra.size()));
 }
 
 void test_mailbox_and_datastore_variants() {
@@ -288,35 +283,35 @@ void test_mailbox_and_datastore_variants() {
   ba.setSynchronized();
 
   etl::array<uint8_t, 4> mb_data1 = {1, 2, 3, 4};
-  Mailbox.push(mb_data1);
+  rpc::services::mailbox::push(mb_data1);
 
   // Test _onIncomingData
   etl::array<uint8_t, 2> mb_data2 = {0xAA, 0xBB};
   hit_mailbox_push(mb_data2);
   etl::array<uint8_t, 2> mb_data3 = {0xCC, 0xDD};
   hit_mailbox_read_resp(mb_data3);
-  Mailbox._onAvailableResponse({});
-  Mailbox._onAvailableResponse([]() {
+  rpc::services::mailbox::_onAvailableResponse({});
+  rpc::services::mailbox::_onAvailableResponse([]() {
     rpc::payload::MailboxAvailableResponse p;
     p.count = 7;
     return p;
   }());
 
   // Coverage for observer notification
-  Mailbox.notification(MsgBridgeSynchronized());
-  Mailbox.notification(MsgBridgeLost());
+  rpc::services::mailbox::notification(MsgBridgeSynchronized());
+  rpc::services::mailbox::notification(MsgBridgeLost());
 
-  DataStore._pending_gets.clear();
-  DataStore.get("alpha",
+  rpc::services::datastore::_pending_gets.clear();
+  rpc::services::datastore::get("alpha",
                 DataStoreClass::GetHandler::create<datastore_get_handler>());
-  DataStore.get("beta",
+  rpc::services::datastore::get("beta",
                 DataStoreClass::GetHandler::create<datastore_get_handler>());
-  DataStore._onResponse({});
-  DataStore._pending_gets.clear();
+  rpc::services::datastore::_onResponse({});
+  rpc::services::datastore::_pending_gets.clear();
   DataStoreClass::GetHandler invalid_get_handler;
   invalid_get_handler.clear();
-  DataStore.get("gamma", invalid_get_handler);
-  DataStore._onResponse(rpc::payload::DatastoreGetResponse{});
+  rpc::services::datastore::get("gamma", invalid_get_handler);
+  rpc::services::datastore::_onResponse(rpc::payload::DatastoreGetResponse{});
 
   TEST_ASSERT(true);
 }

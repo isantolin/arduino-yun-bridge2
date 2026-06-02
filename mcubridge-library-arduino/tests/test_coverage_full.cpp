@@ -7,12 +7,7 @@
 #include "etl_ext/CounterIterator.h"
 #include "hal/hal.h"
 #include "hal/progmem_compat.h"
-#include "services/Console.h"
-#include "services/DataStore.h"
-#include "services/FileSystem.h"
-#include "services/Mailbox.h"
-#include "services/Process.h"
-#include "services/SPIService.h"
+#include "protocol/rpc_services.h"
 #include "test_support.h"
 
 // Global stubs for host environment
@@ -121,14 +116,14 @@ void test_bridge_coverage() {
 
   // 4. Console
   printf("  - Step 4: Console\n");
-  Console.begin();
-  (void)Console.write('a');
+  rpc::services::console::begin();
+  (void)rpc::services::console::write('a');
   bridge::etl_ext::CounterIterator<int> console_begin(0);
   bridge::etl_ext::CounterIterator<int> console_end(
       bridge::config::CONSOLE_TX_BUFFER_SIZE + 1);
   etl::for_each(console_begin, console_end,
-                [](int) { (void)Console.write('x'); });
-  Console.process();
+                [](int) { (void)rpc::services::console::write('x'); });
+  rpc::services::console::process();
 
   rpc::payload::ConsoleWrite cmsg;
   uint8_t cdata[] = "hello";
@@ -143,14 +138,14 @@ void test_bridge_coverage() {
   // 5. DataStore
   printf("  - Step 5: DataStore\n");
   uint8_t ds_val[] = {1, 2};
-  (void)DataStore.set("key", etl::span<const uint8_t>(ds_val, 2));
-  DataStore.get(
+  (void)rpc::services::datastore::set("key", etl::span<const uint8_t>(ds_val, 2));
+  rpc::services::datastore::get(
       "key",
       etl::delegate<void(etl::string_view, etl::span<const uint8_t>)>::create<
           dummy_datastore_get>());
   rpc::payload::DatastoreGetResponse ds_get_p;
   rpc::payload::copy_to_pb_bytes(ds_get_p.value, ds_val, 2);
-  DataStore._onResponse(ds_get_p);
+  rpc::services::datastore::_onResponse(ds_get_p);
 
   rpc_pb_RpcEnvelope f_dsg = {};
   f_dsg.command_id =
@@ -161,10 +156,10 @@ void test_bridge_coverage() {
   // 6. Mailbox
   printf("  - Step 6: Mailbox\n");
   uint8_t mbox_data[32] = {0};
-  (void)Mailbox.push(etl::span<const uint8_t>(mbox_data, 3));
+  (void)rpc::services::mailbox::push(etl::span<const uint8_t>(mbox_data, 3));
   rpc::payload::MailboxPush mpush;
   rpc::payload::copy_to_pb_bytes(mpush.data, mbox_data, 3);
-  Mailbox._onIncomingData(mpush);
+  rpc::services::mailbox::_onIncomingData(mpush);
 
   rpc_pb_RpcEnvelope f_mp = {};
   f_mp.command_id = (uint16_t)rpc::CommandId::CMD_MAILBOX_PUSH;
@@ -173,7 +168,7 @@ void test_bridge_coverage() {
 
   rpc::payload::MailboxReadResponse mread;
   rpc::payload::copy_to_pb_bytes(mread.content, mbox_data, 3);
-  Mailbox._onIncomingData(mread);
+  rpc::services::mailbox::_onIncomingData(mread);
 
   rpc_pb_RpcEnvelope f_mr = {};
   f_mr.command_id =
@@ -183,7 +178,7 @@ void test_bridge_coverage() {
 
   rpc::payload::MailboxAvailableResponse mavl;
   mavl.count = 3;
-  Mailbox._onAvailableResponse(mavl);
+  rpc::services::mailbox::_onAvailableResponse(mavl);
 
   rpc_pb_RpcEnvelope f_ma = {};
   f_ma.command_id =
@@ -191,24 +186,24 @@ void test_bridge_coverage() {
   bridge::test::set_pb_payload(f_ma, mavl);
   ba.dispatch(f_ma);
 
-  Mailbox.notification(MsgBridgeLost{});
-  Mailbox.requestRead();
-  Mailbox.requestAvailable();
-  Mailbox.signalProcessed();
+  rpc::services::mailbox::notification(MsgBridgeLost{});
+  rpc::services::mailbox::requestRead();
+  rpc::services::mailbox::requestAvailable();
+  rpc::services::mailbox::signalProcessed();
 
   // 7. SPI
   printf("  - Step 7: SPI\n");
 #if BRIDGE_ENABLE_SPI
-  SPIService.begin();
+  rpc::services::spi::begin();
   rpc::payload::SpiConfig spi_cfg;
   spi_cfg.frequency = 1000000;
   spi_cfg.bit_order = 1;
   spi_cfg.data_mode = 0;
-  SPIService.setConfig(spi_cfg);
+  rpc::services::spi::setConfig(spi_cfg);
   uint8_t spi_buf[2] = {0, 0};
-  SPIService.transfer(etl::span<uint8_t>(spi_buf, 2));
-  SPIService.end();
-  SPIService.transfer(etl::span<uint8_t>(spi_buf, 2));
+  rpc::services::spi::transfer(etl::span<uint8_t>(spi_buf, 2));
+  rpc::services::spi::end();
+  rpc::services::spi::transfer(etl::span<uint8_t>(spi_buf, 2));
 
   rpc_pb_RpcEnvelope f_sc = {};
   f_sc.command_id = (uint16_t)rpc::CommandId::CMD_SPI_SET_CONFIG;
@@ -218,15 +213,15 @@ void test_bridge_coverage() {
 
   // 8. FileSystem
   printf("  - Step 8: FileSystem\n");
-  FileSystem.read(
+  rpc::services::filesystem::read(
       "test.txt",
       etl::delegate<void(etl::span<const uint8_t>)>::create<dummy_fs_read>());
-  FileSystem.write("test.txt", etl::span<const uint8_t>(ds_val, 2));
-  FileSystem.remove("test.txt");
+  rpc::services::filesystem::write("test.txt", etl::span<const uint8_t>(ds_val, 2));
+  rpc::services::filesystem::remove("test.txt");
 
   rpc::payload::FileReadResponse fr_p;
   rpc::payload::copy_to_pb_bytes(fr_p.content, ds_val, 2);
-  FileSystem._onResponse(fr_p);
+  rpc::services::filesystem::_onResponse(fr_p);
 
   rpc_pb_RpcEnvelope f_fr = {};
   f_fr.command_id = (uint16_t)rpc::CommandId::CMD_FILE_READ_RESP;
@@ -257,17 +252,17 @@ void test_bridge_coverage() {
 
   // 9. Process
   printf("  - Step 9: Process\n");
-  Process.runAsync(
+  rpc::services::process::runAsync(
       "ls", etl::span<const etl::string_view>(),
       etl::delegate<void(int32_t)>::create<dummy_process_run>());
-  Process.kill(1);
-  Process.poll(1, etl::delegate<void(
+  rpc::services::process::kill(1);
+  rpc::services::process::poll(1, etl::delegate<void(
                       rpc::StatusCode, uint16_t, etl::span<const uint8_t>,
                       etl::span<const uint8_t>)>::create<dummy_process_poll>());
 
   rpc::payload::ProcessKill pk;
   pk.pid = 1;
-  Process._onKillNotification(pk);
+  rpc::services::process::_onKillNotification(pk);
 
   rpc_pb_RpcEnvelope f_pk = {};
   f_pk.command_id = (uint16_t)rpc::CommandId::CMD_PROCESS_KILL;
@@ -276,7 +271,7 @@ void test_bridge_coverage() {
 
   rpc::payload::ProcessRunAsyncResponse prar;
   prar.pid = 123;
-  Process._onRunAsyncResponse(prar);
+  rpc::services::process::_onRunAsyncResponse(prar);
 
   rpc_pb_RpcEnvelope f_prar = {};
   f_prar.command_id =
@@ -287,7 +282,7 @@ void test_bridge_coverage() {
   rpc::payload::ProcessPollResponse ppr_p;
   ppr_p.status = 0;
   ppr_p.exit_code = 0;
-  Process._onPollResponse(ppr_p);
+  rpc::services::process::_onPollResponse(ppr_p);
 
   rpc_pb_RpcEnvelope f_ppr = {};
   f_ppr.command_id =
@@ -295,7 +290,7 @@ void test_bridge_coverage() {
   bridge::test::set_pb_payload(f_ppr, ppr_p);
   ba.dispatch(f_ppr);
 
-  Process.reset();
+  rpc::services::process::reset();
 
   // 10. HAL
   printf("  - Step 10: HAL\n");

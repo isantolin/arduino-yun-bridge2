@@ -5,7 +5,7 @@
 #include "Bridge.h"
 #include "BridgeTestInterface.h"
 #include "BridgeTestHelper.h"
-#include "services/Console.h"
+#include "protocol/rpc_services.h"
 
 using namespace bridge::test;
 
@@ -14,7 +14,7 @@ void tearDown() {}
 
 void reset_bridge() {
   Bridge.begin(115200, "6368616e67656d65313233");
-  Console.begin();
+  rpc::services::console::begin();
 }
 
 void test_bridge_initialization() {
@@ -124,12 +124,12 @@ void test_bridge_dedup_console_write() {
   // 2. Dispatch twice
   ba.dispatch(frame_res.value());
   Bridge.process();
-  TEST_ASSERT_EQUAL(4, Console.available());
+  TEST_ASSERT_EQUAL(4, rpc::services::console::available());
 
   ba.dispatch(frame_res.value());
   Bridge.process();
-  // 3. Verify Console.available() remains consistent (deduplicated)
-  TEST_ASSERT_EQUAL(4, Console.available());
+  // 3. Verify rpc::services::console::available() remains consistent (deduplicated)
+  TEST_ASSERT_EQUAL(4, rpc::services::console::available());
 }
 
 void test_bridge_status_ack() {

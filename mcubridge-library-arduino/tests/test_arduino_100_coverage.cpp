@@ -11,12 +11,7 @@
 #include "test_support.h"
 
 // Services
-#include "services/Console.h"
-#include "services/DataStore.h"
-#include "services/FileSystem.h"
-#include "services/Mailbox.h"
-#include "services/Process.h"
-#include "services/SPIService.h"
+#include "protocol/rpc_services.h"
 
 // Global stubs for host environment
 Stream* g_arduino_stream_delegate = nullptr;
@@ -284,11 +279,11 @@ void test_console_and_misc() {
   auto ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
-  Console.begin();
-  Console.write('X');
+  rpc::services::console::begin();
+  rpc::services::console::write('X');
   uint8_t d[] = "abc";
-  Console.write(d, 3);
-  Console.process();
+  rpc::services::console::write(d, 3);
+  rpc::services::console::process();
 
   Bridge.signalXoff();
   Bridge.signalXon();

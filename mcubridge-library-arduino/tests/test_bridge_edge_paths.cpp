@@ -9,12 +9,7 @@
 #include "etl_ext/CounterIterator.h"
 #include "fsm/bridge_fsm.h"
 #include "protocol/rle.h"
-#include "services/Console.h"
-#include "services/DataStore.h"
-#include "services/FileSystem.h"
-#include "services/Mailbox.h"
-#include "services/Process.h"
-#include "services/SPIService.h"
+#include "protocol/rpc_services.h"
 #include "test_support.h"
 
 HardwareSerial Serial;
@@ -364,17 +359,17 @@ void test_console_and_policy_edges() {
   reset_bridge_core(Bridge, stream);
   auto ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
-  Console.begin();
+  rpc::services::console::begin();
 
   bridge::etl_ext::CounterIterator<size_t> begin(0);
   bridge::etl_ext::CounterIterator<size_t> end(
       bridge::config::CONSOLE_TX_BUFFER_SIZE);
-  etl::for_each(begin, end, [](size_t) { (void)Console.write('x'); });
+  etl::for_each(begin, end, [](size_t) { (void)rpc::services::console::write('x'); });
 
   Bridge.enterSafeState();
-  TEST_ASSERT_EQUAL_UINT32(0, static_cast<uint32_t>(Console.write('z')));
-  TEST_ASSERT_EQUAL(-1, Console.peek());
-  TEST_ASSERT_EQUAL(-1, Console.read());
+  TEST_ASSERT_EQUAL_UINT32(0, static_cast<uint32_t>(rpc::services::console::write('z')));
+  TEST_ASSERT_EQUAL(-1, rpc::services::console::peek());
+  TEST_ASSERT_EQUAL(-1, rpc::services::console::read());
 
   
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buf;
@@ -390,10 +385,10 @@ void test_console_and_policy_edges() {
 
   ba.setSynchronized();
   ba.dispatch(frame);
-  TEST_ASSERT_EQUAL(0x41, Console.peek());
-  TEST_ASSERT_EQUAL(0x41, Console.read());
-  TEST_ASSERT_EQUAL(0x42, Console.read());
-  TEST_ASSERT_EQUAL(-1, Console.read());
+  TEST_ASSERT_EQUAL(0x41, rpc::services::console::peek());
+  TEST_ASSERT_EQUAL(0x41, rpc::services::console::read());
+  TEST_ASSERT_EQUAL(0x42, rpc::services::console::read());
+  TEST_ASSERT_EQUAL(-1, rpc::services::console::read());
 
   ba.applyTimingConfig([]() {
     rpc::payload::HandshakeConfig p;
@@ -526,22 +521,22 @@ void test_service_capacity_and_send_fail_edges() {
                          frame_buf);
   ba.dispatch(pin_mode_ok);
 
-  Console.begin();
-  Console.process();
+  rpc::services::console::begin();
+  rpc::services::console::process();
   etl::array<uint8_t, 4> console_bytes;
   console_bytes.fill(0x42);
   rpc::payload::ConsoleWrite cmsg;
   rpc::payload::copy_to_pb_bytes(cmsg.data, console_bytes.data(), 4);
-  Console._push(cmsg);
+  rpc::services::console::_push(cmsg);
 
   Bridge.enterSafeState();
-  FileSystem.read("blocked.bin",
+  rpc::services::filesystem::read("blocked.bin",
                   FileSystemClass::FileSystemReadHandler::create<on_fs_read>());
-  DataStore.get(
+  rpc::services::datastore::get(
       "key",
       etl::delegate<void(etl::string_view, etl::span<const uint8_t>)>::create<
           on_datastore_get>());
-  Process.poll(123,
+  rpc::services::process::poll(123,
                ProcessClass::ProcessPollHandler::create<on_process_poll>());
 }
 
@@ -556,7 +551,7 @@ void test_filesystem_spi_fsm_and_rle_edges() {
   strncpy(fwp.path, "/bad", 64);
   rpc::payload::copy_to_pb_bytes(fwp.data, fs_data.data(),
                                  fs_data.size());
-  FileSystem._onWrite(fwp);
+  rpc::services::filesystem::_onWrite(fwp);
 
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buf;
   auto spi_begin =
@@ -625,13 +620,13 @@ void test_fault_injection_harness_paths() {
   ba.setSynchronized();
 
   bridge::test::fault::set_clock_ms(0U);
-  SPIService.begin();
+  rpc::services::spi::begin();
   etl::array<uint8_t, 2> spi_buf = {0x10, 0x20};
   bridge::test::fault::enable(bridge::test::fault::FaultPoint::SPI_TIMEOUT);
   TEST_ASSERT_EQUAL_UINT32(
       0,
-      static_cast<uint32_t>(SPIService.transfer(etl::span<uint8_t>(spi_buf))));
-  SPIService.end();
+      static_cast<uint32_t>(rpc::services::spi::transfer(etl::span<uint8_t>(spi_buf))));
+  rpc::services::spi::end();
 
   bridge::test::fault::enable(
       bridge::test::fault::FaultPoint::KAT_SHA256_MISMATCH);

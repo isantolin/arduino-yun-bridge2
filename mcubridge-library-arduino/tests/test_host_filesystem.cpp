@@ -3,7 +3,7 @@
 #include "BridgeTestHelper.h"
 #include "BridgeTestInterface.h"
 #include "hal/hal.h"
-#include "services/FileSystem.h"
+#include "protocol/rpc_services.h"
 #include "test_support.h"
 #include <etl/array.h>
 
@@ -72,19 +72,19 @@ void test_filesystem_api_write() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   etl::array<uint8_t, 3> data = {1, 2, 3};
-  FileSystem.write("api_write.bin", etl::span<const uint8_t>(data.data(), data.size()));
+  rpc::services::filesystem::write("api_write.bin", etl::span<const uint8_t>(data.data(), data.size()));
 }
 
 void test_filesystem_api_read() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  FileSystem.read("api_read.bin", FileSystemClass::FileSystemReadHandler::create<test_fs_read_callback>());
+  rpc::services::filesystem::read("api_read.bin", FileSystemClass::FileSystemReadHandler::create<test_fs_read_callback>());
 }
 
 void test_filesystem_api_remove() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  FileSystem.remove("api_rem.bin");
+  rpc::services::filesystem::remove("api_rem.bin");
 }
 
 void test_filesystem_on_write() {
@@ -95,7 +95,7 @@ void test_filesystem_on_write() {
   strncpy(msg.path, "on_write.bin", sizeof(msg.path));
   rpc::payload::copy_to_pb_bytes(msg.data, resp_data.data(),
                                  resp_data.size());
-  FileSystem._onWrite(msg);
+  rpc::services::filesystem::_onWrite(msg);
 }
 
 void test_filesystem_on_read() {
@@ -107,7 +107,7 @@ void test_filesystem_on_read() {
 
   rpc::payload::FileRead msg;
   strncpy(msg.path, path.data(), sizeof(msg.path));
-  FileSystem._onRead(msg);
+  rpc::services::filesystem::_onRead(msg);
   (void)bridge::hal::removeFile(path);
 }
 
@@ -116,14 +116,14 @@ void test_filesystem_on_remove() {
   reset_bridge_core(Bridge, stream);
   rpc::payload::FileRemove msg;
   strncpy(msg.path, "on_rem.bin", sizeof(msg.path));
-  FileSystem._onRemove(msg);
+  rpc::services::filesystem::_onRemove(msg);
 }
 
 void test_filesystem_observer() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  FileSystem.notification(MsgBridgeSynchronized{});
-  FileSystem.notification(MsgBridgeLost{});
+  rpc::services::filesystem::notification(MsgBridgeSynchronized{});
+  rpc::services::filesystem::notification(MsgBridgeLost{});
 }
 
 } // namespace

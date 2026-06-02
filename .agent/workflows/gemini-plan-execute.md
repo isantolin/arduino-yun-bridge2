@@ -100,4 +100,4 @@ Before taking any action, you must locate the latest plan of action in the issue
 
   - **Commit Messages**: All commits made with `create_or_update_file` must follow the Conventional Commits standard (e.g., `fix: ...`, `feat: ...`, `docs: ...`).
 
-  - **Modify files**: For file changes, You **MUST initialize a branch with `create_branch` first, then apply file changes to that branch using `create_or_update_file`, and finalize with `create_pull_request`.
+  - **Modify files**: For file changes, You **MUST** initialize a branch with `create_branch` first, then apply file changes to that branch using `create_or_update_file`, and finalize with `create_pull_request`.

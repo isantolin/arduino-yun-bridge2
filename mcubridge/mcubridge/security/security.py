@@ -46,11 +46,6 @@ def secure_zero(data: bytearray | memoryview) -> None:
         logger.warning("secure_zero: failed to zero memory", error=exc)
 
 
-def secure_zero_bytes_copy(data: bytes) -> bytes:
-    """Return a zeroed copy of the same length (for immutable bytes)."""
-    return bytes(len(data))
-
-
 def generate_nonce_with_counter(counter: int) -> tuple[bytes, int]:
     """Generate a 12-byte AEAD nonce with monotonic counter."""
     if counter >= protocol.NONCE_COUNTER_MASK or counter < 0:
@@ -130,7 +125,6 @@ __all__ = [
     "extract_nonce_counter",
     "generate_nonce_with_counter",
     "secure_zero",
-    "secure_zero_bytes_copy",
     "validate_nonce_counter",
     "verify_crypto_integrity",
 ]

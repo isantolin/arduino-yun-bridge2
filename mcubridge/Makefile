@@ -71,7 +71,7 @@ endef
 define Build/Compile
 	python3 -O -m compileall -j 0 -b -f -q $(PKG_BUILD_DIR)/mcubridge
 	[ ! -d $(PKG_BUILD_DIR)/scripts ] || python3 -m compileall -j 0 -q -b $(PKG_BUILD_DIR)/scripts
-	find /tmp -name '__pycache__' -type d -print0 | xargs -0 -r rm -rf || true
+	find $(PKG_BUILD_DIR) -name '__pycache__' -type d -print0 | xargs -0 -r rm -rf || true
 endef
 
 define Build/Prepare

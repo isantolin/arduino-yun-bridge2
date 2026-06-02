@@ -166,24 +166,39 @@ TEST_FILES=(
 # Compile and run test suites in parallel
 echo "[host-cpp] Compiling and running test suites in parallel..."
 pids=()
+test_names=()
 for test_file in "${TEST_FILES[@]}"; do
     (
         test_name=$(basename "${test_file}" .cpp)
-        g++ -std=c++17 "${BASE_FLAGS[@]}" "${test_file}" "${OBJECTS[@]}" "${UNITY_OBJ}" -o "${BUILD_DIR}/${test_name}"
-        "${BUILD_DIR}/${test_name}"
+        if ! g++ -std=c++17 "${BASE_FLAGS[@]}" "${test_file}" "${OBJECTS[@]}" "${UNITY_OBJ}" -o "${BUILD_DIR}/${test_name}" 2>&1; then
+            echo "[host-cpp] COMPILE FAILED: ${test_name}" >&2
+            exit 1
+        fi
+        if ! "${BUILD_DIR}/${test_name}"; then
+            echo "[host-cpp] TEST FAILED: ${test_name} (exit $?)" >&2
+            exit 1
+        fi
     ) &
     pids+=($!)
-    
+    test_names+=("$(basename "${test_file}" .cpp)")
+
     # Throttle to MAX_JOBS
     if [[ ${#pids[@]} -ge 5 ]]; then
-        wait ${pids[0]}
+        if ! wait ${pids[0]}; then
+            echo "[host-cpp] FAILED: ${test_names[0]}" >&2
+            exit 1
+        fi
         pids=("${pids[@]:1}")
+        test_names=("${test_names[@]:1}")
     fi
 done
 
 # Wait for remaining
-for pid in "${pids[@]}"; do
-    wait "$pid"
+for i in "${!pids[@]}"; do
+    if ! wait "${pids[$i]}"; then
+        echo "[host-cpp] FAILED: ${test_names[$i]}" >&2
+        exit 1
+    fi
 done
 
 echo "[host-cpp] ALL HOST TESTS PASSED"

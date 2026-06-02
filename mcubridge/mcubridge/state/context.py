@@ -66,12 +66,10 @@ def _make_mqtt_publish_queue(maxsize: int = 0) -> asyncio.Queue[QueuedPublish]:
 
 def _close_diskcache_resource(resource: Any) -> None:
     cache = getattr(resource, "cache", resource)
-    local = getattr(cache, "_local", None)
-    connection = getattr(local, "con", None)
-    if connection is not None:
-        connection.close()
-        delattr(local, "con")
-    cache.close()
+    try:
+        cache.close()
+    except Exception as e:
+        logger.warning("Diskcache close error", error=e)
 
 
 __all__: Final[tuple[str, ...]] = (
@@ -84,11 +82,6 @@ __all__: Final[tuple[str, ...]] = (
     "BridgeSnapshot",
     "Status",
 )
-
-
-def collect_system_metrics() -> dict[str, Any]:
-    """Collect system-level metrics using native library conversions."""
-    return {}
 
 
 class ProcessContext:
@@ -495,7 +488,6 @@ class RuntimeState(msgspec.Struct, weakref=True):
             },
             "handshake": self.build_handshake_snapshot(),
             "link_synchronised": self.is_synchronized,
-            "system": collect_system_metrics(),
             "bridge": self.build_bridge_snapshot(),
         }
 

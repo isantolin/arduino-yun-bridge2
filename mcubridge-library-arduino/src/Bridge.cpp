@@ -331,12 +331,8 @@ void BridgeClass::enterSafeState() {
 
   Console.onLost();
   DataStore.onLost();
-  FileSystem.onLost();
   Mailbox.onLost();
   Process.onLost();
-#if BRIDGE_ENABLE_SPI
-  SPIService.onLost();
-#endif
 
 }
 
@@ -730,13 +726,6 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
   [[maybe_unused]] auto _u1 = send(rpc::CommandId::CMD_LINK_SYNC_RESP, ctx.sequence_id, resp);
 
   Console.onSynchronized();
-  DataStore.onSynchronized();
-  FileSystem.onSynchronized();
-  Mailbox.onSynchronized();
-  Process.onSynchronized();
-#if BRIDGE_ENABLE_SPI
-  SPIService.onSynchronized();
-#endif
 
 }
 

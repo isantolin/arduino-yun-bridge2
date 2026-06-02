@@ -24,7 +24,6 @@ class DataStoreClass {
 
   void _onResponse(const rpc::payload::DatastoreGetResponse& msg);
 
-  void onSynchronized() {}
   void onLost() { _pending_gets.clear(); }
 
   struct PendingGet {

@@ -259,19 +259,6 @@ class RuntimeStateCollector(Collector):
         link_sync.add_metric([], 1.0 if state.is_synchronized else 0.0)
         yield link_sync
 
-        # 3. System Health (Dimensional)
-        from .state.context import collect_system_metrics
-
-        health = GaugeMetricFamily(
-            "mcubridge_system_health",
-            "System-level resource utilization metrics",
-            labels=["resource"],
-        )
-        sys_metrics = collect_system_metrics()
-        # [SIL-2] Iterative reduction: filter and add metrics without raw for-loops
-        [health.add_metric([k], float(v)) for k, v in sys_metrics.items() if isinstance(v, (int, float))]
-        yield health
-
         # 4. Supervisor Health (Dimensional)
         super_health = GaugeMetricFamily(
             "mcubridge_supervisor_worker_restarts",
@@ -308,26 +295,14 @@ class PrometheusExporter:
             payload = generate_latest(self._registry)
             start_response("200 OK", [("Content-Type", CONTENT_TYPE_LATEST)])
 
-            # [SIL-2] Root-cause fix: diskcache creates thread-local sqlite3 connections
-            # when read from this WSGI thread. Close them to prevent ResourceWarnings
-            # when the diskcache object is destroyed.
+            # [SIL-2] Root-cause fix: close thread-local diskcache sqlite3 connections
+            # opened by this WSGI thread to prevent ResourceWarnings on thread exit.
             try:
                 if self._state is not None:
-                    mq: Any = self._state.mailbox_queue
-                    if hasattr(mq, "cache"):
-                        cache: Any = mq.cache
-                        local: Any = getattr(cache, "_local", None)
-                        if local and hasattr(local, "con"):
-                            local.con.close()
-                            del local.con
-                    miq: Any = self._state.mailbox_incoming_queue
-                    if hasattr(miq, "cache"):
-                        cache: Any = miq.cache
-                        local: Any = getattr(cache, "_local", None)
-                        if local and hasattr(local, "con"):
-                            local.con.close()
-                            del local.con
-            except (AttributeError, OSError, RuntimeError, TypeError) as e:
+                    for mq in (self._state.mailbox_queue, self._state.mailbox_incoming_queue):
+                        if hasattr(mq, "cache"):
+                            cast(Any, mq).cache.close()
+            except (AttributeError, OSError, RuntimeError) as e:
                 logger.debug("Metrics diskcache connection cleanup notice", error=e)
 
             return [payload]

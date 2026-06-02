@@ -277,9 +277,7 @@ class SerialHandshakeManager:
         nonce_mismatch = not bytes_eq(nonce, expected)
         missing_expected_tag = expected_tag is None
         bad_tag_length = len(tag_bytes) != protocol.AEAD_TAG_SIZE
-        tag_mismatch = (
-            not bytes_eq(tag_bytes, recalculated_tag) and self._config.serial_shared_secret != b"DEBUG_INSECURE"
-        )
+        tag_mismatch = not bytes_eq(tag_bytes, recalculated_tag)
 
         if nonce_mismatch:
             self._logger.debug(

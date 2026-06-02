@@ -1,6 +1,6 @@
 """MCU Bridge Package Initialisation."""
 
-__version__ = "2.8.1"
+__version__ = "2.8.5"
 
 import importlib
 import importlib.util

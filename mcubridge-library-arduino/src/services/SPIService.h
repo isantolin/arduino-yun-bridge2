@@ -21,9 +21,6 @@ public:
   void setConfig(const rpc::payload::SpiConfig& config);
   size_t transfer(etl::span<uint8_t> buffer);
 
-  void onSynchronized() {}
-  void onLost() {}
-
 private:
   bool _initialized;
   SPISettings _settings;

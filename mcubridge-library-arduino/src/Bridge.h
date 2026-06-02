@@ -87,7 +87,6 @@ class BridgeClass {
   bool isSynchronized() const;
 
   // Explicit registration if needed, otherwise direct calls
-  void registerObserver(void*) {} // [SIL-2] Deprecated - Direct calls used instead
   void enterSafeState();
 
   void emitStatus(rpc::StatusCode s, etl::string_view m);

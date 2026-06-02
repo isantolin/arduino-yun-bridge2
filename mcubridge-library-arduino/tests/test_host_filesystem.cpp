@@ -119,13 +119,6 @@ void test_filesystem_on_remove() {
   FileSystem._onRemove(msg);
 }
 
-void test_filesystem_observer() {
-  BiStream stream;
-  reset_bridge_core(Bridge, stream);
-  FileSystem.onSynchronized();
-  FileSystem.onLost();
-}
-
 } // namespace
 
 int main() {
@@ -138,6 +131,5 @@ int main() {
   RUN_TEST(test_filesystem_on_write);
   RUN_TEST(test_filesystem_on_read);
   RUN_TEST(test_filesystem_on_remove);
-  RUN_TEST(test_filesystem_observer);
   return UNITY_END();
 }

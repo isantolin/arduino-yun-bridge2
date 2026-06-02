@@ -88,11 +88,12 @@ def test_mark_supervisor_healthy_resets_backoff(runtime_config: RuntimeConfig) -
         state.cleanup()
 
 
-def test_system_snapshot_error(runtime_config: RuntimeConfig) -> None:
-    from mcubridge.state.context import collect_system_metrics
+def test_system_snapshot_removed(runtime_config: RuntimeConfig) -> None:
+    """Verify collect_system_metrics was removed as dead code (always returned {})."""
 
-    snapshot = collect_system_metrics()
-    assert snapshot == {}
+    state = create_runtime_state(runtime_config)
+    snapshot = state.build_metrics_snapshot()
+    assert "system" not in snapshot
 
 
 def test_build_metrics_snapshot_includes_spool_state(runtime_config: RuntimeConfig) -> None:

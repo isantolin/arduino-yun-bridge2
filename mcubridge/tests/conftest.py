@@ -98,8 +98,8 @@ def pytest_pyfunc_call(pyfuncitem: pytest.Function) -> bool | None:
     finally:
         try:
             loop.run_until_complete(loop.shutdown_asyncgens())
-        except (RuntimeError, ValueError):
-            pass
+        except (RuntimeError, ValueError) as e:
+            logging.debug("Loop asyncgen shutdown notice: %s", e)
         loop.close()
         asyncio.set_event_loop(None)
     return True
@@ -168,8 +168,8 @@ def reset_logging_handlers():
     for handler in root.handlers[:]:
         try:
             handler.close()
-        except (OSError, RuntimeError):
-            pass
+        except (OSError, RuntimeError) as e:
+            logging.debug("Logging handler close notice: %s", e)
         root.removeHandler(handler)
 
 

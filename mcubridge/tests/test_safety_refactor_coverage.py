@@ -18,20 +18,15 @@ async def test_metrics_cleanup_coverage(real_config: RuntimeConfig) -> None:
     # Mock diskcache resource with a closing failure
     mock_mq = MagicMock()
     mock_mq.cache = MagicMock()
-    mock_mq.cache._local = MagicMock()
-    mock_mq.cache._local.con = MagicMock()
-    # Fix pyright: reportPrivateUsage
-    setattr(mock_mq.cache, "_local", mock_mq.cache._local)
-    mock_mq.cache._local.con.close.side_effect = RuntimeError("Mock cleanup failure")
+    mock_mq.cache.close.side_effect = RuntimeError("Mock cleanup failure")
 
     state.mailbox_queue = mock_mq
 
     # Trigger KeyError in unregister to hit the new except block
-    # Accessing private _registry for coverage purposes
-    with patch.object(exporter._registry, "unregister", side_effect=KeyError()):  # type: ignore
+    with patch.object(getattr(exporter, "_registry"), "unregister", side_effect=KeyError()):
         # Mock server and collector to enter the block
-        exporter._server = MagicMock()  # type: ignore
-        exporter._collector = MagicMock()  # type: ignore
+        setattr(exporter, "_server", MagicMock())
+        setattr(exporter, "_collector", MagicMock())
         await exporter.run()
 
 
@@ -48,9 +43,6 @@ async def test_context_cleanup_coverage(real_config: RuntimeConfig) -> None:
     # Mock diskcache with AttributeError
     mock_mq = MagicMock()
     mock_mq.cache = MagicMock()
-    # No _local to trigger AttributeError in _close_diskcache_resource
-    if hasattr(mock_mq.cache, "_local"):
-        del mock_mq.cache._local
     state.mailbox_queue = mock_mq
 
     state.cleanup()  # Hits new except blocks in context.py
@@ -74,7 +66,7 @@ async def test_runtime_safety_coverage(real_config: RuntimeConfig) -> None:
     with patch.object(service, "_list_mqtt_spool_files", return_value=[mock_path]):
         with patch("asyncio.to_thread", side_effect=[[mock_path], FileNotFoundError()]):
             # Accessing private method for coverage
-            await service._trim_mqtt_spool_locked()  # type: ignore
+            await getattr(service, "_trim_mqtt_spool_locked")()
 
 
 @pytest.mark.asyncio
@@ -83,16 +75,7 @@ async def test_additional_coverage_boost(real_config: RuntimeConfig) -> None:
     # Trigger the logging.warning in _close_diskcache_resource via Exception
     mock_mq = MagicMock()
     mock_mq.cache = MagicMock()
-    mock_mq.cache._local = MagicMock()
-    mock_mq.cache._local.con = MagicMock()
-    mock_mq.cache._local.con.close.side_effect = Exception("Fatal cleanup error")
+    mock_mq.cache.close.side_effect = Exception("Fatal cleanup error")
     state.mailbox_queue = mock_mq
-    # cleanup() now catches Exception and logs it, so it shouldn't bubble up anymore
-    # but we catch it just in case of future refactors.
-    try:
-        state.cleanup()
-    except Exception:
-        pass
-    finally:
-        # Prevent __del__ from raising again during garbage collection
-        mock_mq.cache._local.con.close.side_effect = None
+    # _close_diskcache_resource catches Exception internally — cleanup() must not raise.
+    state.cleanup()

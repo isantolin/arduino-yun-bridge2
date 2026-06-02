@@ -32,7 +32,6 @@ class ProcessClass {
   void _onPollResponse(const rpc::payload::ProcessPollResponse& msg);
   void reset();
 
-  void onSynchronized() {}
   void onLost() { reset(); }
 
   struct PendingRunAsync {

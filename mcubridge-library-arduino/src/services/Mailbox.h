@@ -26,7 +26,6 @@ class MailboxClass {
   void _onIncomingData(const rpc::payload::MailboxReadResponse& msg);
   void _onAvailableResponse(const rpc::payload::MailboxAvailableResponse& msg);
 
-  void onSynchronized() {}
   void onLost() {
     _rx_buffer.clear();
     _available_count = 0U;

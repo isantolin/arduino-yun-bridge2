@@ -154,6 +154,10 @@ class BridgeClass {
     return (id & rpc::RPC_CMD_FLAG_COMPRESSED) != 0;
   }
 
+#ifdef BRIDGE_HOST_TEST
+  friend class bridge::test::TestAccessor;
+#endif
+
  protected:
 
   struct TxPayloadBuffer {

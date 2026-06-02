@@ -364,7 +364,7 @@ class BridgeClass {
     _withResponse(ctx, [this, &ctx, resp_id, valid, read]() {
       auto res = rpc::Payload::parse<rpc::payload::PinRead>(*ctx.envelope);
       if (res && valid(res->pin)) {
-        T resp;
+        T resp{};
         resp.value = static_cast<uint32_t>(read(res->pin));
         [[maybe_unused]] auto _ = send(static_cast<rpc::CommandId>(resp_id), ctx.sequence_id, resp);
       } else

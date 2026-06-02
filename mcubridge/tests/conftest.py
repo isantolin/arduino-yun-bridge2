@@ -76,7 +76,7 @@ def _get_event_loop_policy() -> object:
     if policy is None:
         init_policy = getattr(asyncio_events, "_init_event_loop_policy", None)
         if init_policy is None:
-            return asyncio.get_event_loop_policy()
+            return None
         init_policy()
         policy = getattr(asyncio_events, "_event_loop_policy", None)
     return policy

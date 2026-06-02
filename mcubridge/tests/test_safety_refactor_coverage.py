@@ -1,17 +1,17 @@
 import asyncio
+import collections
 import pytest
+from typing import Any, cast
 from unittest.mock import MagicMock, patch, AsyncMock
-from mcubridge.state.context import _close_diskcache_resource, create_runtime_state
+from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.services.runtime import BridgeService
 from mcubridge.transport.serial import SerialTransport
 from mcubridge.protocol.structures import QueuedPublish
 
 
-def _replace_mailbox_queue(state, replacement) -> None:
-    if hasattr(state.mailbox_queue, "cache"):
-        _close_diskcache_resource(state.mailbox_queue)
-    state.mailbox_queue = replacement
+def _replace_mailbox_queue(state: RuntimeState, replacement: Any) -> None:
+    state.mailbox_queue = cast(collections.deque[bytes], replacement)
 
 
 @pytest.mark.asyncio

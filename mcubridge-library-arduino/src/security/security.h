@@ -73,6 +73,10 @@ bool handshake_authenticate_raw(const uint8_t* secret, size_t secret_len,
  * @brief Derive session key from shared secret and nonce using HKDF.
  */
 void derive_session_key_raw(const uint8_t* secret, size_t secret_len,
+                             const uint8_t* nonce, size_t nonce_len,
+                             uint8_t* out_key);
+
+/**
  * @brief Securely encrypt a frame's payload and populate nonce/tag.
  */
 bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id, 

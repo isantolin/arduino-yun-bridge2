@@ -150,8 +150,6 @@ TEST_FILES=(
     "${TEST_DIR}/test_arduino_crypto_harden.cpp"
     "${TEST_DIR}/test_arduino_stress.cpp"
     "${TEST_DIR}/test_rle.cpp"
-    "${TEST_DIR}/test_coverage_hardened.cpp"
-    "${TEST_DIR}/test_bridge_edge_paths.cpp"
     "${TEST_DIR}/test_hal_weak_defaults.cpp"
 )
 

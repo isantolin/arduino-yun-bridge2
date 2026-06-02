@@ -25,6 +25,13 @@ void __attribute__((weak)) __attribute__((unused)) handle_error(
 }
 }  // namespace etl
 
+namespace bridge {
+void SafeStatePolicy::handle(::BridgeClass& bridge, const etl::exception& e) {
+  (void)e;
+  bridge.enterSafeState();
+}
+}
+
 BridgeClass::BridgeClass(Stream& stream)
     : _stream(stream),
       _hardware_serial(nullptr),
@@ -98,14 +105,19 @@ void BridgeClass::_dispatchCommand(const rpc_pb_RpcEnvelope& envelope) {
 
   auto handler = _getHandler(cmd_id);
   if (handler) {
-    handler(*this, ctx);
+    const bool is_system = (ctx.raw_command >= rpc::RPC_STATUS_CODE_MIN && ctx.raw_command <= rpc::RPC_STATUS_CODE_MAX) || (ctx.raw_command >= rpc::RPC_SYSTEM_COMMAND_MIN && ctx.raw_command <= rpc::RPC_SYSTEM_COMMAND_MAX);
+    if (!ctx.is_duplicate || is_system) {
+      handler(*this, ctx);
+    } else if (ctx.requires_ack) {
+      _processAck(ctx.raw_command, ctx.sequence_id);
+    }
   } else {
     onUnknownCommand(ctx);
   }
 }
 
 void BridgeClass::_handleStatusOk(const bridge::router::CommandContext& ctx) { (void)ctx; }
-void BridgeClass::_handleStatusAck(const bridge::router::CommandContext& ctx) { _handleAck(ctx.envelope->sequence_id); }
+void BridgeClass::_handleStatusAck(const bridge::router::CommandContext& ctx) { _withPayload<rpc::payload::AckPacket>(ctx, [this](const auto& m) { _handleAck(m.command_id); }); }
 void BridgeClass::_handleStatusMalformed(const bridge::router::CommandContext& ctx) { (void)ctx; enterSafeState(); }
 
 void BridgeClass::_handleGetVersion(const bridge::router::CommandContext& ctx) {
@@ -309,7 +321,7 @@ void BridgeClass::_handleProcessPollResponseCommand(const bridge::router::Comman
 }
 
 void BridgeClass::_handleProcessKillCommand(const bridge::router::CommandContext& ctx) {
-  _withPayloadAck<rpc::payload::ProcessKill>(ctx, [](const auto& m) { (void)m; /* No MCU-side process kill yet */ });
+  _withPayloadAck<rpc::payload::ProcessKill>(ctx, [](const auto& m) { (void)m; });
 }
 
 void BridgeClass::_handleSpiBegin(const bridge::router::CommandContext& ctx) { spiBegin(); _processAck(ctx.raw_command, ctx.sequence_id); }
@@ -329,6 +341,20 @@ void BridgeClass::_handleSpiTransfer(const bridge::router::CommandContext& ctx) 
 }
 void BridgeClass::_handleSpiSetConfigCommand(const bridge::router::CommandContext& ctx) {
   _withPayloadAck<rpc::payload::SpiConfig>(ctx, [this](const auto& m) { spiSetConfig(m); });
+}
+
+void BridgeClass::signalXoff() { (void)sendFrame(rpc::CommandId::CMD_XOFF); }
+void BridgeClass::signalXon() { (void)sendFrame(rpc::CommandId::CMD_XON); }
+bool BridgeClass::isSynchronized() const { return _fsm.get_state_id() != static_cast<etl::fsm_state_id_t>(bridge::fsm::StateId::UNSYNCHRONIZED) && _fsm.get_state_id() != static_cast<etl::fsm_state_id_t>(bridge::fsm::StateId::STARTUP); }
+bool BridgeClass::_isSecurityCheckPassed(uint16_t command_id) const { (void)command_id; return true; }
+void BridgeClass::onUnknownCommand(const bridge::router::CommandContext& ctx) { (void)ctx; emitStatus(rpc::StatusCode::STATUS_ERROR); }
+void BridgeClass::_applyTimingConfig(const rpc::payload::HandshakeConfig& msg) { (void)msg; }
+void BridgeClass::_onBootloaderDelay() { bridge::hal::enterBootloader(); }
+void BridgeClass::_onPacketReceived(etl::span<const uint8_t> packet) {
+  auto res = rpc::parse_frame(packet);
+  if (res) {
+    _dispatchCommand(res.value());
+  }
 }
 
 BridgeClass::DispatchHandler BridgeClass::_getHandler(uint16_t command_id) {
@@ -401,7 +427,7 @@ void BridgeClass::process() { (void)_scheduler_policy.schedule_tasks(_tasks); }
 void BridgeClass::WatchdogTask::task_process_work() { bridge::hal::watchdog_kick(); }
 void BridgeClass::SerialTask::task_process_work() {
   if (bridge == nullptr) return; 
-  bridge->consoleWrite(nullptr, 0); // Trigger console flush if needed
+  bridge->consoleWrite(nullptr, 0); 
   bridge->_packet_serial.update(bridge->_stream);
   const int avail = bridge->_stream.available();
   if (!xoff_sent && avail > bridge::config::FLOW_CONTROL_XOFF_THRESHOLD) { bridge->signalXoff(); xoff_sent = true; }

@@ -40,7 +40,7 @@ void integrated_test_components() {
   ba.setSynchronized();
 
   
-  rpc::services::console::write('H');
+  rpc::services::console::write('H'); ba.invokeSerialTask();
   
   TEST_ASSERT(stream.tx_buf.len > 0);
 

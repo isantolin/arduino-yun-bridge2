@@ -2,68 +2,27 @@
  * CorrectedSmokeTest.ino - Full-stack E2E Verification
  */
 #include <Bridge.h>
-#include <services/Console.h>
+#include <protocol/rpc_services.h>
 
-// [MIL-SPEC] Shared secret must match the daemon configuration.
 #ifndef BRIDGE_SERIAL_SHARED_SECRET
 #define BRIDGE_SERIAL_SHARED_SECRET "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe"
 #endif
 
 void setup() {
-  // [SIL-2] Force safe state for actuators before enabling interrupts or protocol
-  pinMode(13, OUTPUT);
-  digitalWrite(13, LOW);
-
-  // Initialize Bridge
+  pinMode(13, OUTPUT); digitalWrite(13, LOW);
   Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, BRIDGE_SERIAL_SHARED_SECRET);
-
-  // Initialize Console
-  Console.begin();
-
-  // CRITICAL: Wait for Bridge to be synchronized (Linux handshake complete)
-  // This prevents "Rejecting MCU frame before link synchronisation" errors.
-  // [SIL-2] Bounded synchronization: abort to safe state if Linux unreachable.
-  // Non-blocking LED blink continues while waiting for handshake.
-  {
-    long lastBlink = 0;
-    bool ledState = false;
-    const uint32_t sync_deadline = millis() + bridge::config::SYNC_TIMEOUT_MS;
-    while (!Bridge.isSynchronized()) {
-      if (static_cast<int32_t>(millis() - sync_deadline) > 0) {
-        Bridge.enterSafeState();
-        break;
-      }
-      Bridge.process();
-      if (millis() - lastBlink > 100) {
-        lastBlink = millis();
-        ledState = !ledState;
-        digitalWrite(13, ledState ? HIGH : LOW);
-      }
-    }
+  const uint32_t sync_deadline = millis() + bridge::config::SYNC_TIMEOUT_MS;
+  while (!Bridge.isSynchronized()) {
+    if (static_cast<int32_t>(millis() - sync_deadline) > 0) { Bridge.enterSafeState(); break; }
+    Bridge.process();
   }
-
-  // Removed Console.println to avoid mixing console data with protocol frames
-  // Console messages can interfere with COBS framing
-  digitalWrite(13, HIGH);  // Indicate handshake complete
+  digitalWrite(13, HIGH);
 }
 
 void loop() {
-  // Main processing loop
   Bridge.process();
-
-  // Example: Echo serial console input back to verify bi-directional link
-  while (Console.available()) {
-    int c = Console.read();
-    if (c >= 0) {
-      Console.write(static_cast<uint8_t>(c));
-    }
+  while (rpc::services::console::available()) {
+    int c = rpc::services::console::read();
+    if (c >= 0) rpc::services::console::write(static_cast<uint8_t>(c));
   }
-
-  /*
-  static long lastPrint = 0;
-  if (millis() - lastPrint > 1000) {
-    lastPrint = millis();
-    Console.println("Estado: 0x05 (TIMEOUT)");
-  }
-  */
 }

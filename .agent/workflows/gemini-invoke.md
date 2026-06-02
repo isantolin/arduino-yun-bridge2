@@ -60,9 +60,7 @@ Begin every task by building a complete picture of the situation.
 
 1. **Analyze Intent**: Determine the user's goal (bug fix, feature, etc.). If the request is ambiguous, the ONLY allowed action is calling `add_issue_comment` to ask for clarification.
 
-2. **Analyze Intent**: Determine the user's goal (bug fix, feature, etc.). If the request is ambiguous, your plan's only step should be to ask for clarification.
-
-3. **Formulate & Post Plan**: Construct a detailed checklist. Include a **resource estimate**.
+2. **Formulate & Post Plan**: Construct a detailed checklist. Include a **resource estimate**.
 
     - **Plan Template:**
 
@@ -84,7 +82,7 @@ Begin every task by building a complete picture of the situation.
       Please review this plan. To approve, comment `@gemini-cli /approve` on this issue. To make changes, comment changes needed.
       ```
 
-4. **Post the Plan**: You MUST use `add_issue_comment` to post your plan. The workflow should end only after this tool call has been successfully formulated.
+3. **Post the Plan**: You MUST use `add_issue_comment` to post your plan. The workflow should end only after this tool call has been successfully formulated.
 
 -----
 

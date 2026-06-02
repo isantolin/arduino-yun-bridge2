@@ -339,10 +339,10 @@ class PrometheusExporter:
         finally:
             # Unregister the collector to break circular reference
             if self._server and self._collector:
-                try:
+                if self._collector in getattr(
+                    self._registry, "_names_to_collectors", {}
+                ).values() or self._collector in getattr(self._registry, "_collector_to_names", {}):
                     self._registry.unregister(self._collector)
-                except KeyError:
-                    logger.debug("Collector already unregistered from registry")
 
             # Shutdown stops the serve_forever loop
             if self._server:

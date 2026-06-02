@@ -9,7 +9,6 @@ import itertools
 import os
 import signal
 import shlex
-import time
 from collections.abc import Coroutine, Callable, Awaitable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -19,9 +18,6 @@ import msgspec
 import structlog
 from google.protobuf.message import DecodeError as ProtobufDecodeError
 
-import aiomqtt
-from paho.mqtt.packettypes import PacketTypes
-from paho.mqtt.properties import Properties
 
 from aiomqtt.message import Message
 
@@ -172,25 +168,9 @@ class BridgeService:
     def register_serial_sender(self, sender: Callable[[int, bytes, int | None], Awaitable[bool | bytes]]) -> None:
         self._serial_sender = sender
 
-    def set_mqtt_client(self, client: aiomqtt.Client | None) -> None:
-        self._mqtt_client = client
-
     async def enqueue_mqtt(self, message: QueuedPublish, *, reply_context: Message | None = None) -> None:
         resolved_message = self._resolve_reply_message(message, reply_context)
         self.state.mqtt_publish_queue.put_nowait(resolved_message)
-        try:
-            async with self._mqtt_publish_lock:
-                await self._flush_mqtt_spool_locked()
-                if await self._publish_mqtt_message(resolved_message):
-                    return
-                if await self._spool_mqtt_message_locked(resolved_message):
-                    return
-                self._record_mqtt_drop(resolved_message.topic_name)
-        finally:
-            try:
-                self.state.mqtt_publish_queue.get_nowait()
-            except asyncio.QueueEmpty:
-                logger.debug("MQTT publish queue already empty during pop")
 
     async def flush_mqtt_spool(self) -> None:
         async with self._mqtt_publish_lock:
@@ -216,132 +196,6 @@ class BridgeService:
             correlation_data=correlation_data,
             user_properties=user_properties,
         )
-
-    def _record_mqtt_drop(self, topic_name: str) -> None:
-        self.state.mqtt_drop_counts[topic_name] = self.state.mqtt_drop_counts.get(topic_name, 0) + 1
-        self.state.mqtt_dropped_messages += 1
-        self.state.metrics.mqtt_messages_dropped.inc()
-
-    def _mqtt_spool_dir(self) -> Path:
-        return Path(self.config.mqtt_spool_dir)
-
-    def _list_mqtt_spool_files(self) -> list[Path]:
-        spool_dir = self._mqtt_spool_dir()
-        if not spool_dir.exists():
-            return []
-        return sorted((path for path in spool_dir.iterdir() if path.is_file() and path.suffix == ".msgpack"))
-
-    def _mark_mqtt_spool_failure(self, reason: str) -> None:
-        self.state.mqtt_spool_degraded = True
-        self.state.mqtt_spool_failure_reason = reason
-
-    def _mark_mqtt_spool_healthy(self, pending_count: int) -> None:
-        self.state.mqtt_spool_degraded = False
-        self.state.mqtt_spool_failure_reason = None
-        self.state.mqtt_spool_pending_messages = pending_count
-
-    async def _trim_mqtt_spool_locked(self) -> None:
-        if self.state.mqtt_queue_limit <= 0:
-            return
-        files = await asyncio.to_thread(self._list_mqtt_spool_files)
-        overflow = len(files) - self.state.mqtt_queue_limit + 1
-        if overflow <= 0:
-            return
-        for path in files[:overflow]:
-            try:
-                await asyncio.to_thread(path.unlink)
-            except (FileNotFoundError, OSError) as e:
-                logger.debug("MQTT spool file unlink notice", path=str(path), error=e)
-            self.state.mqtt_spool_dropped_limit += 1
-        self.state.mqtt_spool_trim_events += 1
-        self.state.mqtt_spool_last_trim_unix = time.time()
-
-    async def _spool_mqtt_message_locked(self, message: QueuedPublish) -> bool:
-        spool_dir = self._mqtt_spool_dir()
-        try:
-            await asyncio.to_thread(spool_dir.mkdir, parents=True, exist_ok=True)
-            await self._trim_mqtt_spool_locked()
-            spool_path = spool_dir / f"{time.time_ns():020d}-{next(self._mqtt_spool_sequence):06d}.msgpack"
-            encoded = msgspec.msgpack.encode(message)
-            await asyncio.to_thread(spool_path.write_bytes, encoded)
-            pending = len(await asyncio.to_thread(self._list_mqtt_spool_files))
-            self._mark_mqtt_spool_healthy(pending)
-            return True
-        except OSError as exc:
-            self._mark_mqtt_spool_failure(str(exc))
-            return False
-
-    async def _flush_mqtt_spool_locked(self) -> None:
-        if not self._mqtt_client:
-            return
-        try:
-            files = await asyncio.to_thread(self._list_mqtt_spool_files)
-        except OSError as exc:
-            self._mark_mqtt_spool_failure(str(exc))
-            return
-
-        for path in files:
-            try:
-                encoded = await asyncio.to_thread(path.read_bytes)
-                queued = msgspec.msgpack.decode(encoded, type=QueuedPublish)
-            except FileNotFoundError:
-                continue
-            except (OSError, ValueError, TypeError, msgspec.MsgspecError) as exc:
-                logger.warning("Dropping corrupt MQTT spool entry", path=str(path), error=str(exc))
-                self.state.mqtt_spool_corrupt_dropped += 1
-                try:
-                    await asyncio.to_thread(path.unlink)
-                except (FileNotFoundError, OSError) as e:
-                    logger.debug("MQTT spool file unlink notice", path=str(path), error=e)
-                continue
-
-            if not await self._publish_mqtt_message(queued):
-                break
-
-            try:
-                await asyncio.to_thread(path.unlink)
-            except (FileNotFoundError, OSError) as e:
-                logger.debug("MQTT spool file unlink notice", path=str(path), error=e)
-
-        pending = len(await asyncio.to_thread(self._list_mqtt_spool_files))
-        if not self.state.mqtt_spool_degraded:
-            self._mark_mqtt_spool_healthy(pending)
-        else:
-            self.state.mqtt_spool_pending_messages = pending
-
-    async def _publish_mqtt_message(self, message: QueuedPublish) -> bool:
-        if not self._mqtt_client:
-            return False
-
-        props = Properties(PacketTypes.PUBLISH)
-        if message.user_properties:
-            props.UserProperty = list(message.user_properties)
-        if message.content_type:
-            props.ContentType = message.content_type
-        if message.payload_format_indicator is not None:
-            props.PayloadFormatIndicator = message.payload_format_indicator
-        if message.message_expiry_interval:
-            props.MessageExpiryInterval = message.message_expiry_interval
-        if message.response_topic:
-            props.ResponseTopic = message.response_topic
-        if message.correlation_data:
-            props.CorrelationData = message.correlation_data
-
-        try:
-            await self._mqtt_client.publish(
-                message.topic_name,
-                message.payload,
-                qos=int(message.qos),
-                retain=message.retain,
-                properties=props,
-            )
-            self.state.metrics.mqtt_messages_published.inc()
-            return True
-        except (aiomqtt.MqttError, OSError, RuntimeError) as exc:
-            logger.warning("MQTT publish failure: %s", exc)
-            return False
-
-    # --- Lifecycle ---
 
     async def __aenter__(self) -> BridgeService:
         self._task_group = asyncio.TaskGroup()

@@ -10,9 +10,13 @@
 #include "protocol/rpc_protocol.h"
 #include "test_support.h"
 
-BridgeClass Bridge(Serial);
 // Services
-#include "protocol/rpc_services.h"
+#include "services/Console.h"
+#include "services/DataStore.h"
+#include "services/FileSystem.h"
+#include "services/Mailbox.h"
+#include "services/Process.h"
+#include "services/SPIService.h"
 
 // Global stubs for host environment
 Stream* g_arduino_stream_delegate = nullptr;
@@ -280,11 +284,11 @@ void test_console_and_misc() {
   auto ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
-  
-  rpc::services::console::write('X');
+  Console.begin();
+  Console.write('X');
   uint8_t d[] = "abc";
-  rpc::services::console::write(d, 3);
-  
+  Console.write(d, 3);
+  Console.process();
 
   Bridge.signalXoff();
   Bridge.signalXon();

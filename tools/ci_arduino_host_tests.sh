@@ -75,6 +75,12 @@ SOURCES=(
     "${SRC_DIR}/fsm/bridge_fsm.cpp"
     "${SRC_DIR}/protocol/rle.cpp"
     "${SRC_DIR}/Bridge.cpp"
+    "${SRC_DIR}/services/Console.cpp"
+    "${SRC_DIR}/services/DataStore.cpp"
+    "${SRC_DIR}/services/Mailbox.cpp"
+    "${SRC_DIR}/services/FileSystem.cpp"
+    "${SRC_DIR}/services/Process.cpp"
+    "${SRC_DIR}/services/SPIService.cpp"
     "${ROOT_DIR}/tools/arduino_stub/BridgeFaultInjection.cpp"
     "${TEST_DIR}/test_host_filesystem_mock.cpp"
     "${ROOT_DIR}/tools/arduino_stub/ArduinoStubs.cpp"
@@ -150,6 +156,8 @@ TEST_FILES=(
     "${TEST_DIR}/test_arduino_crypto_harden.cpp"
     "${TEST_DIR}/test_arduino_stress.cpp"
     "${TEST_DIR}/test_rle.cpp"
+    "${TEST_DIR}/test_coverage_hardened.cpp"
+    "${TEST_DIR}/test_bridge_edge_paths.cpp"
     "${TEST_DIR}/test_hal_weak_defaults.cpp"
 )
 

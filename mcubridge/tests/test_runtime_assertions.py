@@ -273,13 +273,13 @@ async def test_mqtt_shell_poll_asserts_mqtt(
     )
 
     with patch("mcubridge.policy.AllowedCommandPolicy.is_allowed", return_value=True):
-        from mcubridge.protocol import mcubridge_pb2 as pb
+        from mcubridge.services.runtime import ProcessOutputBatch
 
-        mock_batch = pb.ProcessPollResponse(
-            status=0,
+        mock_batch = ProcessOutputBatch(
+            status_byte=0,
             exit_code=0,
-            stdout_data=b"out",
-            stderr_data=b"err",
+            stdout_chunk=b"out",
+            stderr_chunk=b"err",
             finished=True,
             stdout_truncated=False,
             stderr_truncated=False,

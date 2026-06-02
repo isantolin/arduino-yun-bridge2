@@ -6,11 +6,13 @@
 #include "Bridge.h"
 #include "BridgeTestHelper.h"
 #include "BridgeTestInterface.h"
-#include "protocol/rpc_services.h"
+#include "services/Console.h"
+#include "services/DataStore.h"
+#include "services/Mailbox.h"
+#include "services/Process.h"
 #include "test_constants.h"
 #include "test_support.h"
 
-BridgeClass Bridge(Serial);
 // Define the global delegates and stubs for HardwareSerial stub
 Stream* g_arduino_stream_delegate = nullptr;
 HardwareSerial Serial;
@@ -54,15 +56,15 @@ void test_process_api() {
   reset_bridge_comp(stream);
 
 #if BRIDGE_ENABLE_PROCESS
-  
+  Process.reset();
 #endif
 }
 
 void test_console_api() {
   BiStream stream;
   reset_bridge_comp(stream);
-  
-  rpc::services::console::write('A');
+  Console.begin();
+  Console.write('A');
 }
 
 void test_datastore_api() {

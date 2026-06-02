@@ -3,7 +3,7 @@
 #include "BridgeTestHelper.h"
 #include "BridgeTestInterface.h"
 #include "hal/hal.h"
-#include "protocol/rpc_services.h"
+#include "services/FileSystem.h"
 #include "test_support.h"
 #include <etl/array.h>
 
@@ -72,23 +72,59 @@ void test_filesystem_api_write() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   etl::array<uint8_t, 3> data = {1, 2, 3};
-  rpc::services::filesystem::write("api_write.bin", etl::span<const uint8_t>(data.data(), data.size()));
+  FileSystem.write("api_write.bin", etl::span<const uint8_t>(data.data(), data.size()));
 }
 
 void test_filesystem_api_read() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  rpc::services::filesystem::read("api_read.bin", etl::delegate<void(etl::span<const uint8_t>)>::create<test_fs_read_callback>());
+  FileSystem.read("api_read.bin", FileSystemClass::FileSystemReadHandler::create<test_fs_read_callback>());
 }
 
 void test_filesystem_api_remove() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  rpc::services::filesystem::remove("api_rem.bin");
+  FileSystem.remove("api_rem.bin");
 }
 
+void test_filesystem_on_write() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream);
+  etl::array<uint8_t, 3> resp_data = {4, 5, 6};
+  rpc::payload::FileWrite msg;
+  strncpy(msg.path, "on_write.bin", sizeof(msg.path));
+  rpc::payload::copy_to_pb_bytes(msg.data, resp_data.data(),
+                                 resp_data.size());
+  FileSystem._onWrite(msg);
+}
 
+void test_filesystem_on_read() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream);
+  const etl::string_view path = "on_read.bin";
+  etl::array<uint8_t, 1> data = {0xAA};
+  (void)bridge::hal::writeFile(path, etl::span<const uint8_t>(data.data(), data.size()));
 
+  rpc::payload::FileRead msg;
+  strncpy(msg.path, path.data(), sizeof(msg.path));
+  FileSystem._onRead(msg);
+  (void)bridge::hal::removeFile(path);
+}
+
+void test_filesystem_on_remove() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream);
+  rpc::payload::FileRemove msg;
+  strncpy(msg.path, "on_rem.bin", sizeof(msg.path));
+  FileSystem._onRemove(msg);
+}
+
+void test_filesystem_observer() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream);
+  FileSystem.notification(MsgBridgeSynchronized{});
+  FileSystem.notification(MsgBridgeLost{});
+}
 
 } // namespace
 
@@ -99,5 +135,9 @@ int main() {
   RUN_TEST(test_filesystem_api_write);
   RUN_TEST(test_filesystem_api_read);
   RUN_TEST(test_filesystem_api_remove);
+  RUN_TEST(test_filesystem_on_write);
+  RUN_TEST(test_filesystem_on_read);
+  RUN_TEST(test_filesystem_on_remove);
+  RUN_TEST(test_filesystem_observer);
   return UNITY_END();
 }

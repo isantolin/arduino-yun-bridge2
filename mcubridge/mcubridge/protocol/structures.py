@@ -446,6 +446,8 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
 # 3. Operational Structures
 # =============================================================================
 
+T = TypeVar("T", bound="BaseStruct")
+
 
 def _flatten_structured_value(
     key_prefix: str,
@@ -536,6 +538,13 @@ def decode_structured_payload(data: bytes) -> dict[str, Any]:
     return decoded
 
 
+class BaseStruct(msgspec.Struct, frozen=True, array_like=True):
+    """Base class for all serial payload packets.
+
+    Encoded as protobuf payloads carried inside the framed RPC transport.
+    """
+
+
 # --- Binary Protocol Packets ---
 
 
@@ -605,6 +614,18 @@ class QueuedPublish(msgspec.Struct, frozen=True):
 
 
 # --- Process Service Structures ---
+
+
+class ProcessOutputBatch(msgspec.Struct):
+    """Structured payload describing PROCESS_POLL results."""
+
+    status_byte: Annotated[int, msgspec.Meta(ge=0, le=255)]
+    exit_code: Annotated[int, msgspec.Meta(ge=0, le=255)]
+    stdout_chunk: bytes
+    stderr_chunk: bytes
+    finished: bool
+    stdout_truncated: bool
+    stderr_truncated: bool
 
 
 # --- Serial Flow Structures ---

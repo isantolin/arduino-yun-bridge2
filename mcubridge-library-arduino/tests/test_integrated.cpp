@@ -4,9 +4,12 @@
 #include "BridgeTestHelper.h"
 #include "BridgeTestInterface.h"
 #include "test_support.h"
-#include "protocol/rpc_services.h"
+#include "services/Console.h"
+#include "services/FileSystem.h"
+#include "services/Process.h"
+#include "services/DataStore.h"
+#include "services/Mailbox.h"
 
-BridgeClass Bridge(Serial);
 // Bridge and core services are already provided by production code.
 HardwareSerial Serial;
 HardwareSerial Serial1;
@@ -40,23 +43,23 @@ void integrated_test_components() {
   auto ba = bridge::test::TestAccessor::create(Bridge);
   ba.setSynchronized();
 
-  
-  rpc::services::console::write('H'); ba.invokeSerialTask();
-  
+  Console.begin();
+  Console.write('H');
+  Console.process();
   TEST_ASSERT(stream.tx_buf.len > 0);
 
-  rpc::services::filesystem::remove("test.txt");
+  FileSystem.remove("test.txt");
   
 #if BRIDGE_ENABLE_DATASTORE
   etl::array<uint8_t, 1> val = {1};
-  rpc::services::datastore::put("k", etl::span<const uint8_t>(val.data(), 1));
+  DataStore.set("k", etl::span<const uint8_t>(val.data(), 1));
 #endif
 
 #if BRIDGE_ENABLE_MAILBOX
-  rpc::services::mailbox::requestRead();
+  Mailbox.requestRead();
 #endif
 
-  rpc::services::process::kill(123);
+  Process.kill(123);
 }
 
 } // namespace

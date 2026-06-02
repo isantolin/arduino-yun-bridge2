@@ -25,12 +25,7 @@ def get_uci_config() -> dict[str, Any]:
         if UciClass is None:
             return get_default_config()
 
-        # Try to instantiate the cursor. If it requires arguments (like the 'fake' UCI),
-        # it will raise a TypeError which we catch below.
-        try:
-            cursor_obj = UciClass()
-        except (TypeError, ValueError):
-            return get_default_config()
+        cursor_obj = UciClass()
 
         with cursor_obj as cursor:
             # Verify it's a real cursor with get_all method

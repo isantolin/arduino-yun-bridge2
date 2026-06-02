@@ -93,3 +93,6 @@ async def test_additional_coverage_boost(real_config: RuntimeConfig) -> None:
         state.cleanup()
     except Exception:
         pass
+    finally:
+        # Prevent __del__ from raising again during garbage collection
+        mock_mq.cache._local.con.close.side_effect = None

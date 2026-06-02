@@ -105,6 +105,8 @@ BASE_FLAGS=(
     -Werror
     -Wno-unused-parameter
     -DBRIDGE_HOST_TEST=1
+    -Dprotected=public
+    -Dprivate=public
     -DBRIDGE_FAULT_INJECTION=1
     -DARDUINO_STUB_CUSTOM_MILLIS=1
     -DWOLFSSL_USER_SETTINGS

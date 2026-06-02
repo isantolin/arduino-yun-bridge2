@@ -7,7 +7,11 @@
 
 #include <etl/span.h>
 
+#define protected public
+#define private public
 #include "Bridge.h"
+#undef protected
+#undef private
 
 namespace bridge::test {
 

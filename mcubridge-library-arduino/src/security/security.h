@@ -76,6 +76,13 @@ void derive_session_key_raw(const uint8_t* secret, size_t secret_len,
                              const uint8_t* nonce, size_t nonce_len,
                              uint8_t* out_key);
 
+[[maybe_unused]] inline void derive_session_key(etl::span<const uint8_t> secret,
+                               etl::span<const uint8_t> nonce,
+                               etl::span<uint8_t> out_key) {
+  derive_session_key_raw(secret.data(), secret.size(), nonce.data(),
+                          nonce.size(), out_key.data());
+}
+
 /**
  * @brief Securely encrypt a frame's payload and populate nonce/tag.
  */
@@ -133,6 +140,27 @@ inline bool timing_safe_equal(etl::span<const uint8_t> a,
 }
 
 /**
+ * @brief Generate nonce with monotonic counter (anti-replay).
+ */
+template <typename RandomFunc>
+[[maybe_unused]] inline void generate_nonce_with_counter(
+    etl::span<uint8_t> out_nonce, uint64_t& counter, RandomFunc random_func) {
+  if (out_nonce.size() < RPC_HANDSHAKE_NONCE_LENGTH) return;
+
+  etl::generate(
+      out_nonce.begin(), out_nonce.begin() + RPC_HANDSHAKE_NONCE_RANDOM_BYTES,
+      [&]() {
+        return static_cast<uint8_t>(random_func() & rpc::RPC_UINT8_MASK);
+      });
+
+  counter++;
+  etl::byte_stream_writer w(out_nonce.data() + RPC_HANDSHAKE_NONCE_RANDOM_BYTES,
+                            out_nonce.size() - RPC_HANDSHAKE_NONCE_RANDOM_BYTES,
+                            etl::endian::big);
+  w.write<uint64_t>(counter);
+}
+
+/**
  * @brief Extract counter from nonce (for validation).
  */
 inline uint64_t extract_nonce_counter(etl::span<const uint8_t> nonce) {
@@ -141,6 +169,19 @@ inline uint64_t extract_nonce_counter(etl::span<const uint8_t> nonce) {
                             nonce.size() - RPC_HANDSHAKE_NONCE_RANDOM_BYTES,
                             etl::endian::big);
   return r.read<uint64_t>().value_or(0);
+}
+
+/**
+ * @brief Validate nonce counter is strictly greater than last seen.
+ */
+[[maybe_unused]] inline bool validate_nonce_counter(
+    etl::span<const uint8_t> nonce, uint64_t& last_counter) {
+  uint64_t current = extract_nonce_counter(nonce);
+  if (current <= last_counter) {
+    return false;
+  }
+  last_counter = current;
+  return true;
 }
 
 }  // namespace security

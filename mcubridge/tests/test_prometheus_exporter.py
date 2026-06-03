@@ -17,18 +17,10 @@ async def test_prometheus_exporter_serves_metrics(runtime_state: Any):
     exporter = PrometheusExporter(runtime_state, "127.0.0.1", 0)
     # Start server in background
     task = asyncio.create_task(exporter.run())
-
-    # Wait for the port to be non-zero (meaning server started)
-    for _ in range(50):
-        if exporter.port != 0:
-            break
-        await asyncio.sleep(0.1)
-
-    port = exporter.port
-    assert port != 0
+    await asyncio.sleep(0.5)  # Increase sleep to ensure server is ready
 
     try:
-        reader, writer = await asyncio.open_connection("127.0.0.1", port)
+        reader, writer = await asyncio.open_connection("127.0.0.1", exporter.port)
         writer.write(b"GET /metrics HTTP/1.1\r\nHost: localhost\r\n\r\n")
         await writer.drain()
         payload = await reader.read()
@@ -36,11 +28,17 @@ async def test_prometheus_exporter_serves_metrics(runtime_state: Any):
         await writer.wait_closed()
     finally:
         task.cancel()
+        del exporter
+
         try:
             await task
         except asyncio.CancelledError:
             pass
 
-    assert b"mcubridge_queue_depth" in payload
+    assert b'mcubridge_queue_depth{queue="mqtt_publish"}' in payload
     assert b"mcubridge_file_storage_bytes_used" in payload
-    assert b"mcubridge_supervisor_worker_restarts" in payload
+    assert b'mcubridge_supervisor_worker_restarts{worker="worker"} 2.0' in payload
+    assert b"mcubridge_build_info" in payload
+    # Accept both legacy 0.0.4 and newer OpenMetrics formats
+    assert b"text/plain" in payload
+    assert b"charset=utf-8" in payload

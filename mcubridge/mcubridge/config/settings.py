@@ -24,7 +24,7 @@ from mcubridge.protocol.structures import RuntimeConfig
 logger = structlog.get_logger(__name__)
 
 
-def dec_hook(type_type: Any, obj: Any) -> Any:
+def _dec_hook(type_type: Any, obj: Any) -> Any:
     """[SIL-2] msgspec dec_hook for zero-wrapper coercion."""
     types = getattr(type_type, "__args__", (type_type,))
     if bytes in types and isinstance(obj, str):
@@ -91,7 +91,7 @@ def load_runtime_config(overrides: dict[str, Any] | None = None) -> RuntimeConfi
 
     try:
         # [SIL-2] Holistic Validation via msgspec.Struct.
-        return msgspec.convert(raw_values, RuntimeConfig, strict=False, dec_hook=dec_hook)
+        return msgspec.convert(raw_values, RuntimeConfig, strict=False, dec_hook=_dec_hook)
     except (msgspec.ValidationError, ValueError) as e:
         if source == "uci":
             # [SIL-2] Deterministic Failure: If UCI is present but invalid, abort.

@@ -42,6 +42,19 @@ void test_protocol_frame_logic_exhaustive() {
   size_t v_len = serialize_frame(env_valid, raw);
   TEST_ASSERT(!parse_frame(etl::span<const uint8_t>(raw.data(), v_len)).has_value());
 
+  // CRC Mismatch
+  env_valid.version = PROTOCOL_VERSION;
+  v_len = serialize_frame(env_valid, raw);
+  TEST_ASSERT(v_len > 0);
+  raw[v_len - 1] ^= 0xFF; // Break CRC
+
+  auto res = parse_frame(etl::span<const uint8_t>(raw.data(), v_len));
+  TEST_ASSERT(!res.has_value());
+  TEST_ASSERT(res.error() == FrameError::CRC_MISMATCH);
+
+  // Correct CRC
+  raw[v_len - 1] ^= 0xFF; // Restore CRC
+  TEST_ASSERT(parse_frame(etl::span<const uint8_t>(raw.data(), v_len)).has_value());
 }
 
 void test_protocol_builder_exhaustive() {

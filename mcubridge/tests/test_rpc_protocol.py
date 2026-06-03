@@ -5,6 +5,7 @@ from mcubridge.protocol import protocol
 
 
 def test_crc_is_32bit() -> None:
+    assert protocol.FRAME_CRC_FORMAT == "<I"
     assert protocol.CRC_SIZE == 4
 
 

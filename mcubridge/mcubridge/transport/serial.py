@@ -19,7 +19,6 @@ import logging
 from typing import TYPE_CHECKING, cast, Protocol, runtime_checkable, Callable, Awaitable
 
 from cobs import cobs
-from binascii import crc32
 import serialx
 import structlog
 import tenacity
@@ -87,13 +86,13 @@ class SerialTransport:
         if self.service:
             self.service.register_serial_sender(self.send)
 
-        self.stop_event = asyncio.Event()
-        self.negotiating = False
-        self.negotiation_future: asyncio.Future[bool] | None = None
-        self.consecutive_crc_errors = 0
+        self._stop_event = asyncio.Event()
+        self._negotiating = False
+        self._negotiation_future: asyncio.Future[bool] | None = None
+        self._consecutive_crc_errors = 0
         self._tx_sequence_id = 0
 
-        self.current: PendingCommand | None = None
+        self._current: PendingCommand | None = None
         self._flow_lock = asyncio.Lock()
 
         self._ack_timeout = max(self.config.serial_retry_timeout or 0, SERIAL_MIN_ACK_TIMEOUT)
@@ -110,23 +109,23 @@ class SerialTransport:
             super().__init__(status)
             self.status = status
 
-    def active_transport(self) -> serialx.BaseSerialTransport:
+    def _active_transport(self) -> serialx.BaseSerialTransport:
         if self.writer is None or self.writer.is_closing():
             raise RuntimeError("Serial writer inactive")
         return cast(serialx.BaseSerialTransport, self.writer.transport)
 
-    def switch_local_baudrate(self, target_baud: int) -> None:
+    def _switch_local_baudrate(self, target_baud: int) -> None:
         try:
-            self.active_transport().serial.baudrate = target_baud
+            self._active_transport().serial.baudrate = target_baud
             logger.info("Local UART switched to %d baud", target_baud)
         except (AttributeError, OSError, ValueError, serialx.SerialException) as e:
             raise RuntimeError(f"UART access failed: {e}") from e
 
     async def reset(self) -> None:
         async with self._flow_lock:
-            if self.current:
-                self.current.mark_failure(Status.TIMEOUT.value)
-            self.current = None
+            if self._current:
+                self._current.mark_failure(Status.TIMEOUT.value)
+            self._current = None
 
     async def run(self) -> None:
         retryer = tenacity.AsyncRetrying(
@@ -151,7 +150,7 @@ class SerialTransport:
             url=self.config.serial_port, baudrate=connect_baud, xonxoff=False
         )
         self.state.serial_writer = cast(asyncio.BaseTransport, self.writer.transport)
-        read_task = asyncio.get_running_loop().create_task(self.read_loop(self.reader))
+        read_task = asyncio.get_running_loop().create_task(self._read_loop(self.reader))
         try:
             if self.config.serial_baud != connect_baud and not await self._negotiate_baudrate(self.config.serial_baud):
                 raise ConnectionError("Baudrate negotiation failed")
@@ -159,7 +158,7 @@ class SerialTransport:
                 await self.service.on_serial_connected()
 
             # Wait for either stop event or read task failure
-            wait_stop = asyncio.create_task(self.stop_event.wait())
+            wait_stop = asyncio.create_task(self._stop_event.wait())
             done, _ = await asyncio.wait([wait_stop, read_task], return_when=asyncio.FIRST_COMPLETED)
             if not wait_stop.done():
                 wait_stop.cancel()
@@ -193,27 +192,27 @@ class SerialTransport:
             logger.warning("Unable to toggle DTR on %s: %s", self.config.serial_port, exc)
 
     async def stop(self) -> None:
-        self.stop_event.set()
+        self._stop_event.set()
         if self.writer:
             self.writer.close()
 
-    async def read_loop(self, reader: asyncio.StreamReader) -> None:
-        while not self.stop_event.is_set():
+    async def _read_loop(self, reader: asyncio.StreamReader) -> None:
+        while not self._stop_event.is_set():
             try:
                 packet_with_sep = await reader.readuntil(protocol.FRAME_DELIMITER)
                 packet_view = memoryview(packet_with_sep)[:-1]
                 if packet_view:
-                    await self.process_packet(packet_view)
+                    await self._process_packet(packet_view)
             except asyncio.LimitOverrunError:
                 self.state.serial_decode_errors += 1
                 await reader.read(MAX_SERIAL_FRAME_BYTES)
             except asyncio.IncompleteReadError:
                 break
             except (OSError, RuntimeError, ValueError, TypeError, serialx.SerialException) as exc:
-                logger.error("Error in read_loop: %s", exc)
+                logger.error("Error in _read_loop: %s", exc)
                 break
 
-    async def process_packet(self, encoded_packet: bytes | memoryview) -> None:
+    async def _process_packet(self, encoded_packet: bytes | memoryview) -> None:
         """Processes a packet from the serial stream. [FLATTENED] [SIL-2]"""
         from mcubridge.protocol.frame import parse_frame
 
@@ -221,24 +220,19 @@ class SerialTransport:
             # Ensure we have bytes for cobs.decode
             raw_bytes = bytes(encoded_packet) if isinstance(encoded_packet, memoryview) else encoded_packet
             decoded = cobs.decode(raw_bytes)
-            if len(decoded) < 4:
-                raise ValueError("Incomplete frame: too short for CRC")
-            body, crc_bytes = decoded[:-4], decoded[-4:]
-            if (crc32(body) & 0xFFFFFFFF) != int.from_bytes(crc_bytes, "little"):
-                raise ValueError("CRC mismatch")
-            envelope = parse_frame(body, self.state.link_session_key if self.state.is_synchronized else None)
+            envelope = parse_frame(decoded, self.state.link_session_key if self.state.is_synchronized else None)
         except (cobs.DecodeError, ValueError, TypeError, RuntimeError) as exc:
             logger.warning("[SERIAL <- MCU] [MALFORMED]: %s", exc)
             self.state.serial_decode_errors += 1
-            await self.check_baudrate_fallback()
+            await self._check_baudrate_fallback()
             return
 
         cmd_id, seq_id, payload = envelope.command_id, envelope.sequence_id, envelope.payload
 
-        if self.negotiating and self.negotiation_future and not self.negotiation_future.done():
+        if self._negotiating and self._negotiation_future and not self._negotiation_future.done():
             if cmd_id == protocol.Command.CMD_SET_BAUDRATE_RESP.value:
-                self.switch_local_baudrate(self.config.serial_baud)
-                self.negotiation_future.set_result(True)
+                self._switch_local_baudrate(self.config.serial_baud)
+                self._negotiation_future.set_result(True)
                 return
 
         # Anti-replay validation
@@ -255,15 +249,15 @@ class SerialTransport:
             self.state.link_last_nonce_counter = new_counter
 
         # Correlation and Service dispatch
-        self.correlate_frame(cmd_id, payload)
+        self._correlate_frame(cmd_id, payload)
         if self.service:
             await self.service.handle_mcu_frame(cmd_id, seq_id, payload)
 
         self.state.metrics.serial_bytes_received.inc(len(encoded_packet))
         self.state.metrics.serial_frames_received.inc()
 
-    def correlate_frame(self, command_id: int, payload: bytes) -> None:
-        pending = self.current
+    def _correlate_frame(self, command_id: int, payload: bytes) -> None:
+        pending = self._current
         if pending is None:
             return
         if command_id == Status.ACK.value:
@@ -286,11 +280,11 @@ class SerialTransport:
         elif command_id in SERIAL_SUCCESS_STATUS_CODES and not pending.expected_resp_ids:
             pending.mark_success(payload)
 
-    async def check_baudrate_fallback(self) -> None:
-        self.consecutive_crc_errors += 1
-        if self.consecutive_crc_errors >= self.config.serial_fallback_threshold:
+    async def _check_baudrate_fallback(self) -> None:
+        self._consecutive_crc_errors += 1
+        if self._consecutive_crc_errors >= self.config.serial_fallback_threshold:
             logger.warning("Fallback to %d baud", self.config.serial_safe_baud)
-            self.consecutive_crc_errors = 0
+            self._consecutive_crc_errors = 0
             if self.config.serial_baud != self.config.serial_safe_baud:
                 await self._negotiate_baudrate(self.config.serial_safe_baud)
 
@@ -307,7 +301,7 @@ class SerialTransport:
 
         async with self._flow_lock:
             pending = PendingCommand(command_id=command_id, expected_resp_ids=set(expected_responses(command_id)))
-            self.current = pending
+            self._current = pending
             try:
                 retryer = tenacity.AsyncRetrying(
                     stop=tenacity.stop_after_attempt(self._max_attempts),
@@ -345,7 +339,7 @@ class SerialTransport:
                 pending.mark_failure(Status.TIMEOUT.value)
                 return False
             finally:
-                self.current = None
+                self._current = None
 
     async def send_raw(self, command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
         """Low-level send logic without tracking."""
@@ -371,19 +365,18 @@ class SerialTransport:
 
         from mcubridge.protocol.frame import build_frame
 
-        body = build_frame(
-            command_id=command_id,
-            sequence_id=seq_id,
-            payload=payload,
-            nonce=nonce,
-            session_key=self.state.link_session_key if self.state.is_synchronized else None,
+        encoded = (
+            cobs.encode(
+                build_frame(
+                    command_id=command_id,
+                    sequence_id=seq_id,
+                    payload=payload,
+                    nonce=nonce,
+                    session_key=self.state.link_session_key if self.state.is_synchronized else None,
+                )
+            )
+            + protocol.FRAME_DELIMITER
         )
-
-        # Add CRC32 (little endian) to match PacketSerial2::Crc32Policy
-        crc_val = crc32(body) & 0xFFFFFFFF
-        body_with_crc = body + crc_val.to_bytes(4, "little")
-
-        encoded = cobs.encode(body_with_crc) + protocol.FRAME_DELIMITER
 
         if logger.is_enabled_for(logging.DEBUG):
             logger.debug(
@@ -404,19 +397,19 @@ class SerialTransport:
 
     async def _negotiate_baudrate(self, target_baud: int) -> bool:
         payload = pb.SetBaudratePacket(baudrate=target_baud).SerializeToString()
-        self.negotiating = True
+        self._negotiating = True
         try:
-            self.negotiation_future = asyncio.get_running_loop().create_future()
+            self._negotiation_future = asyncio.get_running_loop().create_future()
             if not await self.send_raw(protocol.Command.CMD_SET_BAUDRATE.value, payload):
                 return False
-            if self.negotiation_future:
-                await asyncio.wait_for(self.negotiation_future, timeout=SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT)
+            if self._negotiation_future:
+                await asyncio.wait_for(self._negotiation_future, timeout=SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT)
             return True
         except (asyncio.TimeoutError, OSError, RuntimeError, ValueError, serialx.SerialException) as exc:
             logger.error("Baudrate negotiation failed: %s", exc)
             return False
         finally:
-            self.negotiating = False
+            self._negotiating = False
 
     async def acknowledge(self, command_id: int, seq_id: int, *, status: Status = Status.ACK) -> None:
         await self.send_raw(status.value, pb.AckPacket(command_id=command_id).SerializeToString(), seq_id)

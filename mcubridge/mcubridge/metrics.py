@@ -8,8 +8,9 @@ import weakref
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 from typing import (
     Any,
+    cast,
 )
-
+from wsgiref.types import WSGIApplication
 
 import msgspec
 from prometheus_client.core import Metric
@@ -270,61 +271,86 @@ class RuntimeStateCollector(Collector):
 
 
 class PrometheusExporter:
-    "[Library-First] Expose RuntimeState snapshots via the official Prometheus HTTP server."
+    """Expose RuntimeState snapshots via the official Prometheus HTTP server."""
 
     def __init__(self, state: RuntimeState, host: str, port: int) -> None:
-        from prometheus_client import ProcessCollector
+        from prometheus_client import CONTENT_TYPE_LATEST, ProcessCollector, generate_latest
+        from wsgiref.simple_server import make_server
 
         self._state: RuntimeState | None = state
         self._host = host if host else "0.0.0.0"
         self._port = port
         self._registry = state.metrics.registry
+        self._server: Any = None
         self._collector: RuntimeStateCollector | None = RuntimeStateCollector(state)
 
+        # [SIL-2 / Library-First] Use native ProcessCollector to get CPU/RAM/FDs for free
         ProcessCollector(registry=self._registry)
+
+        # Register the dynamic state collector
         self._registry.register(self._collector)
-        self._server: Any = None
+
+        # [Library-First] Use direct registry rendering with native prometheus APIs.
+        def _app(environ: dict[str, Any], start_response: Callable[..., Any]) -> list[bytes]:
+            payload = generate_latest(self._registry)
+            start_response("200 OK", [("Content-Type", CONTENT_TYPE_LATEST)])
+
+            # [SIL-2] Root-cause fix: close thread-local diskcache sqlite3 connections
+            # opened by this WSGI thread to prevent ResourceWarnings on thread exit.
+            try:
+                if self._state is not None:
+                    for mq in (self._state.mailbox_queue, self._state.mailbox_incoming_queue):
+                        if hasattr(mq, "cache"):
+                            cast(Any, mq).cache.close()
+            except (AttributeError, OSError, RuntimeError) as e:
+                logger.debug("Metrics diskcache connection cleanup notice", error=e)
+
+            return [payload]
+
+        app: WSGIApplication = cast(WSGIApplication, _app)
+
+        self._server = make_server(
+            self._host,
+            self._port,
+            app,
+        )
 
     @property
     def port(self) -> int:
-        if self._server and hasattr(self._server, "socket"):
-            return int(self._server.socket.getsockname()[1])
+        """Return the actually bound port (useful for port 0)."""
+        if self._server:
+            # server_address is (host, port)
+            return int(self._server.server_address[1])
         return self._port
 
     async def run(self) -> None:
-        from prometheus_client import MetricsHandler
-        from http.server import HTTPServer
-        import threading
-
-        # Create server synchronously so we can get the port immediately
-        self._server = HTTPServer((self._host, self._port), MetricsHandler)
-        # Manually inject our registry into the handler class
-        self._server.RequestHandlerClass.registry = self._registry
-
+        """Start the Prometheus HTTP server and keep it running."""
         log = logger.bind(host=self._host, port=self.port)
-        log.info("Prometheus exporter starting (Library-First manual HTTPServer)")
-
-        # Start the server in a daemon thread
-        thread = threading.Thread(target=self._server.serve_forever, daemon=True)
-        thread.start()
+        log.info("Prometheus exporter starting (official make_server)")
 
         try:
-            while True:
-                await asyncio.sleep(3600)
+            # We use an executor to run the blocking serve_forever()
+            # while maintaining the asyncio task alive for signal handling.
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, self._server.serve_forever)
         except asyncio.CancelledError:
             log.info("Prometheus exporter shutdown requested.")
-            self._server.shutdown()
             raise
         finally:
-            if self._registry and self._collector:
+            # Unregister the collector to break circular reference
+            if self._server and self._collector:
                 try:
                     self._registry.unregister(self._collector)
-                except (KeyError, ValueError):
-                    pass
+                except KeyError:
+                    logger.debug("Collector already unregistered from registry")
 
+            # Shutdown stops the serve_forever loop
             if self._server:
+                self._server.shutdown()
+                # server_close releases the socket (avoids ResourceWarning)
                 self._server.server_close()
 
+            # Help GC by clearing references
             self._state = None
             self._collector = None
             self._server = None

@@ -176,63 +176,28 @@ class BridgeDaemon:
             properties=connect_props,
         ) as client:
             logger.info("Connected to MQTT broker (Paho v2/MQTTv5).")
+            self.service.set_mqtt_client(client)
             try:
                 topics = [
                     (topic_path(self.state.mqtt_topic_prefix, t, *s), int(q)) for t, s, q in MQTT_COMMAND_SUBSCRIPTIONS
                 ]
                 await client.subscribe(topics)
                 await client.publish(will_topic, b'{"status": "online"}', qos=1, retain=True)
+                await self.service.flush_mqtt_spool()
 
-                async def publish_loop():
-                    from paho.mqtt.properties import Properties
-                    from paho.mqtt.packettypes import PacketTypes
-
-                    while True:
-                        msg = await self.state.mqtt_publish_queue.get()
-                        props = Properties(PacketTypes.PUBLISH)
-                        if msg.user_properties:
-                            props.UserProperty = list(msg.user_properties)
-                        if msg.content_type:
-                            props.ContentType = msg.content_type
-                        if msg.payload_format_indicator is not None:
-                            props.PayloadFormatIndicator = msg.payload_format_indicator
-                        if msg.message_expiry_interval:
-                            props.MessageExpiryInterval = msg.message_expiry_interval
-                        if msg.response_topic:
-                            props.ResponseTopic = msg.response_topic
-                        if msg.correlation_data:
-                            props.CorrelationData = msg.correlation_data
-
+                async for message in client.messages:
+                    if message.topic:
                         try:
-                            await client.publish(
-                                msg.topic_name,
-                                msg.payload,
-                                qos=int(msg.qos),
-                                retain=msg.retain,
-                                properties=props,
+                            await self.service.handle_mqtt_message(message)
+                        except (ValueError, RuntimeError, asyncio.QueueFull) as e:
+                            logger.error(
+                                "Error processing MQTT message",
+                                topic=str(message.topic),
+                                error=str(e),
+                                payload_hex=(message.payload.hex() if message.payload else None),
                             )
-                            self.state.metrics.mqtt_messages_published.inc()
-                        except (aiomqtt.MqttError, OSError, RuntimeError) as e:
-                            logger.warning("MQTT publish failure: %s", e)
-
-                async def consume_loop():
-                    async for message in client.messages:
-                        if message.topic:
-                            try:
-                                await self.service.handle_mqtt_message(message)
-                            except (ValueError, RuntimeError, asyncio.QueueFull) as e:
-                                logger.error(
-                                    "Error processing MQTT message",
-                                    topic=str(message.topic),
-                                    error=str(e),
-                                    payload_hex=(message.payload.hex() if message.payload else None),
-                                )
-
-                async with asyncio.TaskGroup() as tg:
-                    tg.create_task(publish_loop())
-                    tg.create_task(consume_loop())
             finally:
-                pass
+                self.service.set_mqtt_client(None)
 
     async def run(self) -> None:
         """Main entry point for daemon execution using native TaskGroup orchestration."""

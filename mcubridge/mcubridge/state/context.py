@@ -350,11 +350,13 @@ class RuntimeState(msgspec.Struct, weakref=True):
 
         # [SIL-2] Direct Enum resolution to avoid wrapper overhead
         def _res_cmd(cid: int) -> str:
-            if cid in [c.value for c in Command]:
+            try:
                 return Command(cid).name
-            if cid in [s.value for s in Status]:
-                return Status(cid).name
-            return f"0x{cid:02X}"
+            except ValueError:
+                try:
+                    return Status(cid).name
+                except ValueError:
+                    return f"0x{cid:02X}"
 
         if name == "start":
             # [SIL-2] Unified metrics increment
@@ -402,9 +404,9 @@ class RuntimeState(msgspec.Struct, weakref=True):
             # [SIL-2] Direct Status resolution
             s_name = "unknown"
             if status_code is not None:
-                if status_code in [s.value for s in Status]:
+                try:
                     s_name = Status(status_code).name
-                else:
+                except ValueError:
                     s_name = f"0x{status_code:02X}"
 
             payload = {

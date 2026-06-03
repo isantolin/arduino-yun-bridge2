@@ -225,7 +225,7 @@ static bool extract_next_valid_frame(const ByteBuffer<N>& buffer,
     size_t decoded_len =
         TestCOBS::decode(&buffer.data[cursor], segment_len, decoded_buf.data());
 
-    if (decoded_len >= 0 + 2U) {
+    if (decoded_len >= rpc::CRC_TRAILER_SIZE + 2U) {
       auto result =
           rpc::parse_frame(etl::span<const uint8_t>(decoded_buf.data(), decoded_len));
       if (result) {

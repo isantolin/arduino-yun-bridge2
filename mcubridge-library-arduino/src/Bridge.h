@@ -77,21 +77,6 @@ struct CommandContext {
 
 #include "ErrorPolicy.h"
 
-
-#include <etl/crc32.h>
-
-namespace bridge {
-namespace config {
-struct Crc32Policy {
-    static constexpr size_t ByteSize = 4;
-    etl::crc32 crc;
-    inline void reset() { crc.reset(); }
-    inline void add(uint8_t b) { crc.add(b); }
-    inline uint32_t value() const { return crc.value(); }
-};
-}
-}
-
 class BridgeClass {
  public:
   using ErrorPolicy = bridge::SafeStatePolicy;
@@ -165,6 +150,9 @@ class BridgeClass {
   static constexpr bool is_reliable_cmd(uint16_t id) {
     return rpc::requires_ack(id);
   }
+  [[maybe_unused]] static constexpr bool is_compressed_cmd(uint16_t id) {
+    return (id & rpc::RPC_CMD_FLAG_COMPRESSED) != 0;
+  }
 
 #ifdef BRIDGE_HOST_TEST
   friend class bridge::test::TestAccessor;
@@ -205,7 +193,7 @@ class BridgeClass {
 
   etl::array<uint8_t, bridge::config::RX_BUFFER_SIZE> _ps_rx_storage;
   etl::array<uint8_t, bridge::config::RX_BUFFER_SIZE> _ps_work_buffer;
-  PacketSerial2::PacketSerial<PacketSerial2::COBS, bridge::config::Crc32Policy,
+  PacketSerial2::PacketSerial<PacketSerial2::COBS, PacketSerial2::NoCRC,
                               PacketSerial2::NoLock, PacketSerial2::NoWatchdog>
       _packet_serial;
 

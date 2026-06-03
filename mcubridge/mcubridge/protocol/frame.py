@@ -12,6 +12,7 @@ between the Linux daemon and the Arduino MCU.
 
 from __future__ import annotations
 
+from binascii import crc32
 from typing import Final
 
 from google.protobuf.message import DecodeError
@@ -23,6 +24,7 @@ from .rle import rle_decode, rle_encode_if_beneficial
 
 _NONCE_SIZE: Final = protocol.AEAD_NONCE_SIZE
 _TAG_SIZE: Final = protocol.AEAD_TAG_SIZE
+_CRC_SIZE: Final = protocol.CRC_SIZE
 
 
 def build_frame(
@@ -79,13 +81,19 @@ def build_frame(
         )
 
     body = envelope.SerializeToString()
-    return body
+    return body + (crc32(body) & protocol.CRC32_MASK).to_bytes(4, "little")
 
 
 def parse_frame(raw_frame_buffer: bytes | bytearray | memoryview, session_key: bytes | None = None) -> pb.RpcEnvelope:
     """Parses binary buffer directly into a Protobuf envelope. [SIL-2]"""
     buf = bytes(raw_frame_buffer)
-    body = buf
+    if len(buf) < _CRC_SIZE:
+        raise ValueError("Incomplete frame: too short")
+
+    body, crc_bytes = buf[:-_CRC_SIZE], buf[-_CRC_SIZE:]
+    if (crc32(body) & protocol.CRC32_MASK) != int.from_bytes(crc_bytes, "little"):
+        raise ValueError("CRC mismatch")
+
     envelope = pb.RpcEnvelope()
     try:
         envelope.ParseFromString(body)

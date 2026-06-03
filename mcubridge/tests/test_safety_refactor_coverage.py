@@ -19,6 +19,8 @@ async def test_metrics_cleanup_coverage(real_config: RuntimeConfig) -> None:
     from mcubridge.metrics import PrometheusExporter
 
     state = create_runtime_state(real_config)
+    state.cleanup()  # Close real diskcache resources before replacing to avoid ResourceWarning
+
     exporter = PrometheusExporter(state, host="127.0.0.1", port=0)
 
     # Mock diskcache resource with a closing failure
@@ -36,6 +38,7 @@ async def test_metrics_cleanup_coverage(real_config: RuntimeConfig) -> None:
 @pytest.mark.asyncio
 async def test_context_cleanup_coverage(real_config: RuntimeConfig) -> None:
     state = create_runtime_state(real_config)
+    state.cleanup()  # Close real diskcache resources before replacing to avoid ResourceWarning
 
     # Mock a process that fails to terminate
     mock_proc = MagicMock()

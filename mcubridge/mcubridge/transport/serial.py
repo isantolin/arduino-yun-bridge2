@@ -371,18 +371,19 @@ class SerialTransport:
 
         from mcubridge.protocol.frame import build_frame
 
-        encoded = (
-            cobs.encode(
-                build_frame(
-                    command_id=command_id,
-                    sequence_id=seq_id,
-                    payload=payload,
-                    nonce=nonce,
-                    session_key=self.state.link_session_key if self.state.is_synchronized else None,
-                )
-            )
-            + protocol.FRAME_DELIMITER
+        body = build_frame(
+            command_id=command_id,
+            sequence_id=seq_id,
+            payload=payload,
+            nonce=nonce,
+            session_key=self.state.link_session_key if self.state.is_synchronized else None,
         )
+
+        # Add CRC32 (little endian) to match PacketSerial2::Crc32Policy
+        crc_val = crc32(body) & 0xFFFFFFFF
+        body_with_crc = body + crc_val.to_bytes(4, "little")
+
+        encoded = cobs.encode(body_with_crc) + protocol.FRAME_DELIMITER
 
         if logger.is_enabled_for(logging.DEBUG):
             logger.debug(

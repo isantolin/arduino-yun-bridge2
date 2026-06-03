@@ -190,7 +190,7 @@ class BridgeClass {
 
   etl::array<uint8_t, bridge::config::RX_BUFFER_SIZE> _ps_rx_storage;
   etl::array<uint8_t, bridge::config::RX_BUFFER_SIZE> _ps_work_buffer;
-  PacketSerial2::PacketSerial<PacketSerial2::COBS, PacketSerial2::NoCRC,
+  PacketSerial2::PacketSerial<PacketSerial2::COBS, PacketSerial2::CRC32,
                               PacketSerial2::NoLock, PacketSerial2::NoWatchdog>
       _packet_serial;
 

@@ -19,6 +19,7 @@ import logging
 from typing import TYPE_CHECKING, cast, Protocol, runtime_checkable, Callable, Awaitable
 
 from cobs import cobs
+from binascii import crc32
 import serialx
 import structlog
 import tenacity
@@ -220,7 +221,12 @@ class SerialTransport:
             # Ensure we have bytes for cobs.decode
             raw_bytes = bytes(encoded_packet) if isinstance(encoded_packet, memoryview) else encoded_packet
             decoded = cobs.decode(raw_bytes)
-            envelope = parse_frame(decoded, self.state.link_session_key if self.state.is_synchronized else None)
+            if len(decoded) < 4:
+                raise ValueError("Incomplete frame: too short for CRC")
+            body, crc_bytes = decoded[:-4], decoded[-4:]
+            if (crc32(body) & 0xFFFFFFFF) != int.from_bytes(crc_bytes, "little"):
+                raise ValueError("CRC mismatch")
+            envelope = parse_frame(body, self.state.link_session_key if self.state.is_synchronized else None)
         except (cobs.DecodeError, ValueError, TypeError, RuntimeError) as exc:
             logger.warning("[SERIAL <- MCU] [MALFORMED]: %s", exc)
             self.state.serial_decode_errors += 1

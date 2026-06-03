@@ -596,7 +596,7 @@ async def test_read_loop_dispatches_valid_packet() -> None:
             ]
         )
 
-        with patch.object(serial, \"process_packet\", new_callable=AsyncMock) as mock_pp:
+        with patch.object(serial, "process_packet", new_callable=AsyncMock) as mock_pp:
             await serial.read_loop(mock_reader)
             mock_pp.assert_awaited_once()
     finally:
@@ -729,7 +729,7 @@ async def test_process_packet_baudrate_negotiation() -> None:
 
         encoded = _valid_packet(Command.CMD_SET_BAUDRATE_RESP.value)
 
-        with patch.object(serial, \"switch_local_baudrate\"):
+        with patch.object(serial, "switch_local_baudrate"):
             await serial.process_packet(encoded)
 
         assert fut.done() and fut.result() is True

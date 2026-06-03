@@ -274,8 +274,9 @@ class RuntimeStateCollector(Collector):
 
 
 
+
 class PrometheusExporter:
-    """Expose RuntimeState snapshots via the official Prometheus HTTP server."""
+    'Expose RuntimeState snapshots via the official Prometheus HTTP server.'
 
     def __init__(self, state: RuntimeState, host: str, port: int) -> None:
         from prometheus_client import ProcessCollector
@@ -286,25 +287,17 @@ class PrometheusExporter:
         self._registry = state.metrics.registry
         self._collector: RuntimeStateCollector | None = RuntimeStateCollector(state)
 
-        # [SIL-2 / Library-First] Use native ProcessCollector to get CPU/RAM/FDs for free
         ProcessCollector(registry=self._registry)
-
-        # Register the dynamic state collector
         self._registry.register(self._collector)
         self._server: Any = None
 
     @property
     def port(self) -> int:
-        """Return the actually bound port (useful for port 0)."""
         if self._server and hasattr(self._server, "socket"):
             return int(self._server.socket.getsockname()[1])
         return self._port
 
     async def run(self) -> None:
-        """Start the Prometheus HTTP server and keep it running."""
-        # [Library-First] Erradicated manual WSGI server and threads.
-        # Using native start_http_server which manages its own serving thread.
-        # In modern prometheus_client, start_http_server returns the HTTP server.
         from prometheus_client import start_http_server
         
         self._server = start_http_server(
@@ -317,14 +310,12 @@ class PrometheusExporter:
         log.info("Prometheus exporter starting (official start_http_server)")
 
         try:
-            # Since start_http_server starts a daemon thread, we just wait until cancelled.
             while True:
                 await asyncio.sleep(3600)
         except asyncio.CancelledError:
             log.info("Prometheus exporter shutdown requested.")
             raise
         finally:
-            # Unregister the collector to break circular reference
             if self._registry and self._collector:
                 try:
                     self._registry.unregister(self._collector)

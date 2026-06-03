@@ -255,39 +255,39 @@ def test_verify_crypto_integrity_sha_failure() -> None:
         assert verify_crypto_integrity() is False
 
 
-def test_dec_hook_bytes_branch() -> None:
-    from mcubridge.config.settings import _dec_hook
+def testdec_hook_bytes_branch() -> None:
+    from mcubridge.config.settings import dec_hook
 
-    result = _dec_hook(bytes, "  hello  ")
+    result = dec_hook(bytes, "  hello  ")
     assert result == b"hello"
 
 
-def test_dec_hook_tuple_branch() -> None:
-    from mcubridge.config.settings import _dec_hook
+def testdec_hook_tuple_branch() -> None:
+    from mcubridge.config.settings import dec_hook
 
-    result = _dec_hook(tuple, "word1 word2 word3")
+    result = dec_hook(tuple, "word1 word2 word3")
     assert result == ("word1", "word2", "word3")
 
 
-def test_dec_hook_str_path_branch() -> None:
-    from mcubridge.config.settings import _dec_hook
+def testdec_hook_str_path_branch() -> None:
+    from mcubridge.config.settings import dec_hook
 
-    result = _dec_hook(str, "/some/path/to/file")
+    result = dec_hook(str, "/some/path/to/file")
     assert "/" in result
 
 
-def test_dec_hook_str_empty_returns_none() -> None:
-    from mcubridge.config.settings import _dec_hook
+def testdec_hook_str_empty_returns_none() -> None:
+    from mcubridge.config.settings import dec_hook
 
-    result = _dec_hook(str, "")
+    result = dec_hook(str, "")
     assert result is None
 
 
-def test_dec_hook_type_error() -> None:
-    from mcubridge.config.settings import _dec_hook
+def testdec_hook_type_error() -> None:
+    from mcubridge.config.settings import dec_hook
 
     with pytest.raises(TypeError):
-        _dec_hook(int, "not_convertible")
+        dec_hook(int, "not_convertible")
 
 
 def test_load_runtime_config_with_overrides() -> None:

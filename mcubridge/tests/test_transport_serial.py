@@ -77,7 +77,7 @@ async def test_reset_no_pending() -> None:
     try:
         serial = SerialTransport(config, state, None)
         await serial.reset()  # Nothing pending — just acquires lock and exits
-        assert serial._current is None
+        assert serial.current is None
     finally:
         state.cleanup()
 
@@ -89,10 +89,10 @@ async def test_reset_with_pending() -> None:
     try:
         serial = SerialTransport(config, state, None)
         pending = PendingCommand(command_id=Command.CMD_GET_VERSION.value, expected_resp_ids=set())
-        serial._current = pending
+        serial.current = pending
         await serial.reset()
         assert pending.success is False
-        assert serial._current is None
+        assert serial.current is None
     finally:
         state.cleanup()
 
@@ -109,7 +109,7 @@ async def test_stop_no_writer() -> None:
     try:
         serial = SerialTransport(config, state, None)
         await serial.stop()
-        assert serial._stop_event.is_set()
+        assert serial.stop_event.is_set()
     finally:
         state.cleanup()
 
@@ -123,7 +123,7 @@ async def test_stop_with_writer() -> None:
         mock_w = _mock_writer()
         serial.writer = mock_w
         await serial.stop()
-        assert serial._stop_event.is_set()
+        assert serial.stop_event.is_set()
         mock_w.close.assert_called_once()
     finally:
         state.cleanup()
@@ -140,7 +140,7 @@ def test_active_transport_no_writer() -> None:
     try:
         serial = SerialTransport(config, state, None)
         with pytest.raises(RuntimeError, match="Serial writer inactive"):
-            serial._active_transport()
+            serial.active_transport()
     finally:
         state.cleanup()
 
@@ -154,7 +154,7 @@ def test_active_transport_closing_writer() -> None:
         mock_w.is_closing.return_value = True
         serial.writer = mock_w
         with pytest.raises(RuntimeError, match="Serial writer inactive"):
-            serial._active_transport()
+            serial.active_transport()
     finally:
         state.cleanup()
 
@@ -176,9 +176,9 @@ def test_switch_local_baudrate_error() -> None:
     state = create_runtime_state(config)
     try:
         serial = SerialTransport(config, state, None)
-        with patch.object(serial, "_active_transport", return_value=_FailingTransport()):
+        with patch.object(serial, \"active_transport", return_value=_FailingTransport()):
             with pytest.raises(RuntimeError, match="UART access failed"):
-                serial._switch_local_baudrate(9600)
+                serial.switch_local_baudrate(9600)
     finally:
         state.cleanup()
 
@@ -286,8 +286,8 @@ async def test_send_tracked_success() -> None:
 
         async def _mark_success_after_start() -> None:
             await asyncio.sleep(0.01)
-            if serial._current is not None:
-                serial._current.mark_success(b"version_data")
+            if serial.current is not None:
+                serial.current.mark_success(b"version_data")
 
         asyncio.create_task(_mark_success_after_start())
         result = await serial.send(Command.CMD_GET_VERSION.value, b"")
@@ -402,7 +402,7 @@ def test_correlate_frame_no_pending() -> None:
     state = create_runtime_state(config)
     try:
         serial = SerialTransport(config, state, None)
-        serial._correlate_frame(Status.ACK.value, b"")  # No-op; _current is None
+        serial.correlate_frame(Status.ACK.value, b"")  # No-op; _current is None
     finally:
         state.cleanup()
 
@@ -413,9 +413,9 @@ def test_correlate_frame_ack_match_no_expected_resp() -> None:
     try:
         serial = SerialTransport(config, state, None)
         pending = PendingCommand(command_id=Command.CMD_GET_VERSION.value, expected_resp_ids=set())
-        serial._current = pending
+        serial.current = pending
 
-        serial._correlate_frame(Status.ACK.value, b"")
+        serial.correlate_frame(Status.ACK.value, b"")
         assert pending.ack_received is True
         assert pending.success is True
     finally:
@@ -431,10 +431,10 @@ def test_correlate_frame_ack_with_payload() -> None:
         serial = SerialTransport(config, state, None)
         cmd_id = Command.CMD_GET_VERSION.value
         pending = PendingCommand(command_id=cmd_id, expected_resp_ids=set())
-        serial._current = pending
+        serial.current = pending
 
         ack_payload = pb.AckPacket(command_id=cmd_id).SerializeToString()
-        serial._correlate_frame(Status.ACK.value, ack_payload)
+        serial.correlate_frame(Status.ACK.value, ack_payload)
         assert pending.ack_received is True
         assert pending.success is True
     finally:
@@ -450,9 +450,9 @@ def test_correlate_frame_response_to_request() -> None:
             command_id=Command.CMD_GET_VERSION.value,
             expected_resp_ids={Command.CMD_GET_VERSION_RESP.value},
         )
-        serial._current = pending
+        serial.current = pending
 
-        serial._correlate_frame(Command.CMD_GET_VERSION_RESP.value, b"resp_data")
+        serial.correlate_frame(Command.CMD_GET_VERSION_RESP.value, b"resp_data")
         assert pending.success is True
         assert pending.response_payload == b"resp_data"
     finally:
@@ -468,9 +468,9 @@ def test_correlate_frame_failure_status() -> None:
         serial = SerialTransport(config, state, None)
         failure_code = next(iter(SERIAL_FAILURE_STATUS_CODES))
         pending = PendingCommand(command_id=Command.CMD_GET_VERSION.value, expected_resp_ids=set())
-        serial._current = pending
+        serial.current = pending
 
-        serial._correlate_frame(failure_code, b"")
+        serial.correlate_frame(failure_code, b"")
         assert pending.success is False
         assert pending.failure_status == failure_code
     finally:
@@ -486,9 +486,9 @@ def test_correlate_frame_success_status() -> None:
         serial = SerialTransport(config, state, None)
         ok_code = next(iter(SERIAL_SUCCESS_STATUS_CODES))
         pending = PendingCommand(command_id=Command.CMD_GET_VERSION.value, expected_resp_ids=set())
-        serial._current = pending
+        serial.current = pending
 
-        serial._correlate_frame(ok_code, b"")
+        serial.correlate_frame(ok_code, b"")
         assert pending.success is True
     finally:
         state.cleanup()
@@ -505,9 +505,9 @@ async def test_check_baudrate_fallback_below_threshold() -> None:
     state = create_runtime_state(config)
     try:
         serial = SerialTransport(config, state, None)
-        serial._consecutive_crc_errors = 0
-        await serial._check_baudrate_fallback()
-        assert serial._consecutive_crc_errors == 1
+        serial.consecutive_crc_errors = 0
+        await serial.check_baudrate_fallback()
+        assert serial.consecutive_crc_errors == 1
     finally:
         state.cleanup()
 
@@ -519,9 +519,9 @@ async def test_check_baudrate_fallback_at_threshold() -> None:
     state = create_runtime_state(config)
     try:
         serial = SerialTransport(config, state, None)
-        serial._consecutive_crc_errors = config.serial_fallback_threshold - 1
-        await serial._check_baudrate_fallback()
-        assert serial._consecutive_crc_errors == 0
+        serial.consecutive_crc_errors = config.serial_fallback_threshold - 1
+        await serial.check_baudrate_fallback()
+        assert serial.consecutive_crc_errors == 0
     finally:
         state.cleanup()
 
@@ -540,7 +540,7 @@ async def test_read_loop_incomplete_read_breaks() -> None:
         mock_reader = AsyncMock()
         mock_reader.readuntil = AsyncMock(side_effect=asyncio.IncompleteReadError(b"", 0))
 
-        await serial._read_loop(mock_reader)  # Returns after break
+        await serial.read_loop(mock_reader)  # Returns after break
     finally:
         state.cleanup()
 
@@ -560,7 +560,7 @@ async def test_read_loop_limit_overrun_then_breaks() -> None:
         )
         mock_reader.read = AsyncMock(return_value=b"junk")
 
-        await serial._read_loop(mock_reader)
+        await serial.read_loop(mock_reader)
         assert state.serial_decode_errors >= 1
     finally:
         state.cleanup()
@@ -575,7 +575,7 @@ async def test_read_loop_oserror_breaks() -> None:
         mock_reader = AsyncMock()
         mock_reader.readuntil = AsyncMock(side_effect=OSError("read error"))
 
-        await serial._read_loop(mock_reader)  # OSError handler breaks
+        await serial.read_loop(mock_reader)  # OSError handler breaks
     finally:
         state.cleanup()
 
@@ -596,8 +596,8 @@ async def test_read_loop_dispatches_valid_packet() -> None:
             ]
         )
 
-        with patch.object(serial, "_process_packet", new_callable=AsyncMock) as mock_pp:
-            await serial._read_loop(mock_reader)
+        with patch.object(serial, \"process_packet", new_callable=AsyncMock) as mock_pp:
+            await serial.read_loop(mock_reader)
             mock_pp.assert_awaited_once()
     finally:
         state.cleanup()
@@ -616,7 +616,7 @@ async def test_process_packet_cobs_error() -> None:
         serial = SerialTransport(config, state, None)
         bad_cobs = b"\xff\xff\xff"  # Invalid COBS
 
-        await serial._process_packet(bad_cobs)
+        await serial.process_packet(bad_cobs)
         assert state.serial_decode_errors >= 1
     finally:
         state.cleanup()
@@ -640,7 +640,7 @@ async def test_process_packet_crc_mismatch() -> None:
         bad_crc = b"\xde\xad\xbe\xef"
         encoded = cobs.encode(body + bad_crc)
 
-        await serial._process_packet(encoded)
+        await serial.process_packet(encoded)
         assert state.serial_decode_errors >= 1
     finally:
         state.cleanup()
@@ -656,7 +656,7 @@ async def test_process_packet_valid_system_command() -> None:
         encoded = _valid_packet(Command.CMD_GET_VERSION_RESP.value)
 
         # Verify _process_packet completes without error (metrics incremented internally)
-        await serial._process_packet(encoded)
+        await serial.process_packet(encoded)
         # Success: no exception raised, packet was processed
     finally:
         state.cleanup()
@@ -688,7 +688,7 @@ async def test_process_packet_anti_replay_validation() -> None:
         crc_val = crc32(body) & 0xFFFFFFFF
         encoded_nonce = cobs.encode(body + crc_val.to_bytes(4, "little"))
 
-        await serial._process_packet(encoded_nonce)
+        await serial.process_packet(encoded_nonce)
         assert state.link_last_nonce_counter == 1
     finally:
         state.cleanup()
@@ -706,7 +706,7 @@ async def test_process_packet_with_service_dispatch() -> None:
         serial = SerialTransport(config, state, mock_service)
         encoded = _valid_packet(Command.CMD_GET_VERSION_RESP.value)
 
-        await serial._process_packet(encoded)
+        await serial.process_packet(encoded)
         mock_service.handle_mcu_frame.assert_awaited_once()
     finally:
         state.cleanup()
@@ -719,18 +719,18 @@ async def test_process_packet_baudrate_negotiation() -> None:
     state = create_runtime_state(config)
     try:
         serial = SerialTransport(config, state, None)
-        serial._negotiating = True
+        serial.negotiating = True
         loop = asyncio.get_event_loop()
         fut: asyncio.Future[bool] = loop.create_future()
-        serial._negotiation_future = fut
+        serial.negotiation_future = fut
 
         mock_w = _mock_writer()
         serial.writer = mock_w
 
         encoded = _valid_packet(Command.CMD_SET_BAUDRATE_RESP.value)
 
-        with patch.object(serial, "_switch_local_baudrate"):
-            await serial._process_packet(encoded)
+        with patch.object(serial, \"switch_local_baudrate"):
+            await serial.process_packet(encoded)
 
         assert fut.done() and fut.result() is True
     finally:

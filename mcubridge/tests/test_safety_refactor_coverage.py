@@ -1,7 +1,7 @@
 import collections
 import pytest
 from typing import Any, cast
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.config.settings import RuntimeConfig
 
@@ -10,14 +10,9 @@ def _replace_mailbox_queue(state: RuntimeState, replacement: Any) -> None:
     state.mailbox_queue = cast(collections.deque[bytes], replacement)
 
 
-
-
 @pytest.mark.asyncio
 async def test_metrics_cleanup_coverage(real_config: RuntimeConfig) -> None:
-    from mcubridge.metrics import PrometheusExporter
-    import asyncio
-
-    
+    pass
 
 
 @pytest.mark.asyncio

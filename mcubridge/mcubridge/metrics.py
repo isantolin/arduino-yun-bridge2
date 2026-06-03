@@ -8,13 +8,11 @@ import weakref
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 from typing import (
     Any,
-    cast,
 )
 
 
 import msgspec
 from prometheus_client.core import Metric
-from prometheus_client import start_http_server
 from prometheus_client.registry import Collector
 import structlog
 
@@ -271,16 +269,12 @@ class RuntimeStateCollector(Collector):
         yield super_health
 
 
-
-
-
-
 class PrometheusExporter:
-    'Expose RuntimeState snapshots via the official Prometheus HTTP server.'
+    "[Library-First] Expose RuntimeState snapshots via the official Prometheus HTTP server."
 
     def __init__(self, state: RuntimeState, host: str, port: int) -> None:
         from prometheus_client import ProcessCollector
-        
+
         self._state: RuntimeState | None = state
         self._host = host if host else "0.0.0.0"
         self._port = port
@@ -298,22 +292,28 @@ class PrometheusExporter:
         return self._port
 
     async def run(self) -> None:
-        from prometheus_client import start_http_server
-        
-        self._server = start_http_server(
-            port=self._port, 
-            addr=self._host, 
-            registry=self._registry
-        )
-        
+        from prometheus_client import MetricsHandler
+        from http.server import HTTPServer
+        import threading
+
+        # Create server synchronously so we can get the port immediately
+        self._server = HTTPServer((self._host, self._port), MetricsHandler)
+        # Manually inject our registry into the handler class
+        self._server.RequestHandlerClass.registry = self._registry
+
         log = logger.bind(host=self._host, port=self.port)
-        log.info("Prometheus exporter starting (official start_http_server)")
+        log.info("Prometheus exporter starting (Library-First manual HTTPServer)")
+
+        # Start the server in a daemon thread
+        thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+        thread.start()
 
         try:
             while True:
                 await asyncio.sleep(3600)
         except asyncio.CancelledError:
             log.info("Prometheus exporter shutdown requested.")
+            self._server.shutdown()
             raise
         finally:
             if self._registry and self._collector:
@@ -322,7 +322,7 @@ class PrometheusExporter:
                 except (KeyError, ValueError):
                     pass
 
-            if self._server and hasattr(self._server, "server_close"):
+            if self._server:
                 self._server.server_close()
 
             self._state = None

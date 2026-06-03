@@ -1,6 +1,5 @@
 from typing import Any
 import asyncio
-from unittest.mock import MagicMock, patch
 
 import pytest
 from mcubridge.metrics import PrometheusExporter
@@ -18,13 +17,13 @@ async def test_prometheus_exporter_serves_metrics(runtime_state: Any):
     exporter = PrometheusExporter(runtime_state, "127.0.0.1", 0)
     # Start server in background
     task = asyncio.create_task(exporter.run())
-    
+
     # Wait for the port to be non-zero (meaning server started)
     for _ in range(50):
         if exporter.port != 0:
             break
         await asyncio.sleep(0.1)
-    
+
     port = exporter.port
     assert port != 0
 

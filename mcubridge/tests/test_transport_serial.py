@@ -35,6 +35,3 @@ def test_is_raw_binary_frame_valid_size() -> None:
 
 
 @pytest.mark.asyncio
-async def test_process_packet_crc_mismatch_reports_crc(
-        pass
-

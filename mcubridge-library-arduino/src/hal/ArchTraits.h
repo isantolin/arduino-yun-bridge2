@@ -16,14 +16,14 @@ enum class ArchId : uint8_t {
   ARCH_HOST = 4
 };
 
-#if defined(BRIDGE_HOST_TEST)
-#define BRIDGE_CURRENT_ARCH_ID ArchId::ARCH_HOST
-#elif defined(ARDUINO_ARCH_AVR)
+#if defined(ARDUINO_ARCH_AVR)
 #include <avr/wdt.h>
 #define BRIDGE_CURRENT_ARCH_ID ArchId::ARCH_AVR
 #elif defined(ARDUINO_ARCH_ESP32)
 #include <esp_task_wdt.h>
 #define BRIDGE_CURRENT_ARCH_ID ArchId::ARCH_ESP32
+#elif defined(__STDC_HOSTED__) && (__STDC_HOSTED__ == 1)
+#define BRIDGE_CURRENT_ARCH_ID ArchId::ARCH_HOST
 #else
 #define BRIDGE_CURRENT_ARCH_ID ArchId::ARCH_UNKNOWN
 #endif

@@ -104,7 +104,6 @@ BASE_FLAGS=(
     -Wextra
     -Werror
     -Wno-unused-parameter
-    -DBRIDGE_HOST_TEST=1
     -Dprotected=public
     -Dprivate=public
     -DBRIDGE_FAULT_INJECTION=1

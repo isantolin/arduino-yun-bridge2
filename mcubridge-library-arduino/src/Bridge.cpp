@@ -699,9 +699,11 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
 
   if (!_shared_secret.empty()) {
     etl::array<uint8_t, rpc::RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH> out_tag;
-    const bool tag_ok = rpc::security::handshake_authenticate_raw(
-        _shared_secret.data(), _shared_secret.size(), msg.nonce.bytes, n_size,
-        msg.tag.bytes, msg.tag.size, out_tag.data());
+    const bool tag_ok = rpc::security::handshake_authenticate(
+        etl::span<const uint8_t>(_shared_secret),
+        etl::span<const uint8_t>(msg.nonce.bytes, n_size),
+        etl::span<const uint8_t>(msg.tag.bytes, msg.tag.size),
+        etl::span<uint8_t>(out_tag));
 
     if (!tag_ok) {
       _fsm.receive(bridge::fsm::EvHandshakeFailed());
@@ -711,9 +713,10 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
 
     etl::copy_n(out_tag.data(), rpc::RPC_HANDSHAKE_TAG_LENGTH, resp.tag.bytes);
     resp.tag.size = rpc::RPC_HANDSHAKE_TAG_LENGTH;
-    rpc::security::derive_session_key_raw(
-        _shared_secret.data(), _shared_secret.size(), msg.nonce.bytes, n_size,
-        _session_key.data());
+    rpc::security::derive_session_key(
+        etl::span<const uint8_t>(_shared_secret),
+        etl::span<const uint8_t>(msg.nonce.bytes, n_size),
+        etl::span<uint8_t>(_session_key));
     _tx_nonce_counter = 0;
     _rx_nonce_counter = 0;
     rpc::security::secure_zero(etl::span<uint8_t>(out_tag));

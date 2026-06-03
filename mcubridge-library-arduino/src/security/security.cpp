@@ -75,39 +75,37 @@ bool aead_decrypt(etl::span<uint8_t> out, etl::span<const uint8_t> in,
                                      out.data()) == 0;
 }
 
-bool handshake_authenticate_raw(const uint8_t* secret, size_t secret_len,
-                                const uint8_t* nonce, size_t nonce_len,
-                                const uint8_t* received_tag, size_t tag_len,
-                                uint8_t* out_tag) {
+bool handshake_authenticate(etl::span<const uint8_t> secret,
+                            etl::span<const uint8_t> nonce,
+                            etl::span<const uint8_t> received_tag,
+                            etl::span<uint8_t> out_tag) {
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH> handshake_key;
   hkdf_sha256(etl::span<uint8_t>(handshake_key),
-              etl::span<const uint8_t>(secret, secret_len),
+              secret,
               etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_SALT),
               etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH));
 
   Hmac hmac_engine;
   wc_HmacSetKey(&hmac_engine, WC_SHA256, handshake_key.data(),
                 rpc::RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH);
-  wc_HmacUpdate(&hmac_engine, nonce, static_cast<word32>(nonce_len));
-  wc_HmacFinal(&hmac_engine, out_tag);
+  wc_HmacUpdate(&hmac_engine, nonce.data(), static_cast<word32>(nonce.size()));
+  wc_HmacFinal(&hmac_engine, out_tag.data());
 
   bool tag_ok = true;
-  if (received_tag != nullptr && tag_len > 0) {
+  if (!received_tag.empty()) {
     tag_ok = timing_safe_equal(
-        etl::span<const uint8_t>(out_tag, rpc::RPC_HANDSHAKE_TAG_LENGTH),
-        etl::span<const uint8_t>(received_tag, tag_len));
+        etl::span<const uint8_t>(out_tag.data(), rpc::RPC_HANDSHAKE_TAG_LENGTH),
+        received_tag);
   }
 
   secure_zero(handshake_key);
   return tag_ok;
 }
 
-void derive_session_key_raw(const uint8_t* secret, size_t secret_len,
-                            const uint8_t* nonce, size_t nonce_len,
-                            uint8_t* out_key) {
-  hkdf_sha256(etl::span<uint8_t>(out_key, 32),
-              etl::span<const uint8_t>(secret, secret_len),
-              etl::span<const uint8_t>(nonce, nonce_len),
+void derive_session_key(etl::span<const uint8_t> secret,
+                        etl::span<const uint8_t> nonce,
+                        etl::span<uint8_t> out_key) {
+  hkdf_sha256(out_key, secret, nonce,
               etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_INFO_SESSION));
 }
 
@@ -135,7 +133,9 @@ bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
   etl::array<uint8_t, 32> ad;
   ad.fill(0U);
   pb_ostream_t stream = pb_ostream_from_buffer(ad.data(), ad.size());
-  [[maybe_unused]] auto _u1 = rpc::Payload::encode(&stream, aad_env);
+  if (!rpc::Payload::encode(&stream, aad_env)) {
+    return false;
+  }
 
   return aead_encrypt(
       out_payload, out_tag, in, key, out_nonce,
@@ -156,7 +156,9 @@ bool aead_decrypt_frame(uint16_t cmd_id, uint16_t seq_id,
   etl::array<uint8_t, 32> ad;
   ad.fill(0U);
   pb_ostream_t stream = pb_ostream_from_buffer(ad.data(), ad.size());
-  [[maybe_unused]] auto _u1 = rpc::Payload::encode(&stream, aad_env);
+  if (!rpc::Payload::encode(&stream, aad_env)) {
+    return false;
+  }
 
   return aead_decrypt(
       out_payload, in, tag, key, nonce,

@@ -45,7 +45,7 @@ void test_hal_weak_defaults_without_mock() {
   g_host_fs_enabled = original_fs;
 }
 
-#ifdef BRIDGE_HOST_TEST
+#if defined(__STDC_HOSTED__) && (__STDC_HOSTED__ == 1)
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_hal_weak_defaults_without_mock);

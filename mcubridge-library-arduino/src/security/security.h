@@ -55,33 +55,17 @@ bool aead_decrypt(etl::span<uint8_t> out, etl::span<const uint8_t> in,
  * @brief Perform timing-safe HMAC-SHA256 handshake authentication.
  * [MEM-SAVE] Centralizing this logic avoids duplication in BridgeClass handlers.
  */
-bool handshake_authenticate_raw(const uint8_t* secret, size_t secret_len,
-                                const uint8_t* nonce, size_t nonce_len,
-                                const uint8_t* received_tag, size_t tag_len,
-                                uint8_t* out_tag);
-
-[[maybe_unused]] inline bool handshake_authenticate(etl::span<const uint8_t> secret,
-                                   etl::span<const uint8_t> nonce,
-                                   etl::span<const uint8_t> received_tag,
-                                   etl::span<uint8_t> out_tag) {
-  return handshake_authenticate_raw(secret.data(), secret.size(), nonce.data(),
-                                     nonce.size(), received_tag.data(),
-                                     received_tag.size(), out_tag.data());
-}
+bool handshake_authenticate(etl::span<const uint8_t> secret,
+                            etl::span<const uint8_t> nonce,
+                            etl::span<const uint8_t> received_tag,
+                            etl::span<uint8_t> out_tag);
 
 /**
  * @brief Derive session key from shared secret and nonce using HKDF.
  */
-void derive_session_key_raw(const uint8_t* secret, size_t secret_len,
-                             const uint8_t* nonce, size_t nonce_len,
-                             uint8_t* out_key);
-
-[[maybe_unused]] inline void derive_session_key(etl::span<const uint8_t> secret,
-                               etl::span<const uint8_t> nonce,
-                               etl::span<uint8_t> out_key) {
-  derive_session_key_raw(secret.data(), secret.size(), nonce.data(),
-                          nonce.size(), out_key.data());
-}
+void derive_session_key(etl::span<const uint8_t> secret,
+                        etl::span<const uint8_t> nonce,
+                        etl::span<uint8_t> out_key);
 
 /**
  * @brief Securely encrypt a frame's payload and populate nonce/tag.
@@ -134,8 +118,8 @@ inline bool timing_safe_equal(etl::span<const uint8_t> a,
   if (a.size() != b.size()) return false;
   volatile uint8_t result = 0;
   auto it_b = b.begin();
-  [[maybe_unused]] auto _ = etl::for_each(a.begin(), a.end(),
-                      [&](uint8_t val_a) { result |= val_a ^ *it_b++; });
+  etl::for_each(a.begin(), a.end(),
+                [&](uint8_t val_a) { result |= val_a ^ *it_b++; });
   return result == 0;
 }
 

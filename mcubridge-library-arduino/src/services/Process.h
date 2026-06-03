@@ -33,7 +33,7 @@ class ProcessClass {
   void reset();
 
   void onLost() { reset(); }
-  void onSynchronized() {}
+  static void onSynchronized() {}
 
   struct PendingRunAsync {
     ProcessRunHandler handler;

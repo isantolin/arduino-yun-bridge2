@@ -24,7 +24,7 @@ class FileSystemClass {
   static void _onRemove(const rpc::payload::FileRemove& msg);
   void _onResponse(const rpc::payload::FileReadResponse& msg);
 
-  void onSynchronized() {}
+  static void onSynchronized() {}
   void onLost() { _read_handler = FileSystemReadHandler{}; }
 
  private:

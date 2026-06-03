@@ -5,6 +5,7 @@
 #include "Bridge.h"
 #include "BridgeTestInterface.h"
 #include "BridgeTestHelper.h"
+#include "rpc_frame_test_helpers.h"
 #include "services/Console.h"
 
 using namespace bridge::test;

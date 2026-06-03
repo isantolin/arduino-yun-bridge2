@@ -62,14 +62,14 @@ class TestAccessor {
   void computeHandshakeTag(const uint8_t* nonce_ptr, size_t len,
                            uint8_t* tag_out) {
     if (_bridge._shared_secret.empty()) return;
-    // [MEM-SAVE] Replaced manual handshake logic with centralized utility.
     etl::array<uint8_t, 32> out_tag_full;
-    (void)rpc::security::handshake_authenticate(
-        etl::span<const uint8_t>(_bridge._shared_secret),
-        etl::span<const uint8_t>(nonce_ptr, len),
-        etl::span<const uint8_t>(), // [MEM-SAVE] received_tag not used here
-        etl::span<uint8_t>(out_tag_full));
-    etl::copy_n(out_tag_full.begin(), 16, tag_out);
+    if (rpc::security::handshake_authenticate(
+            etl::span<const uint8_t>(_bridge._shared_secret),
+            etl::span<const uint8_t>(nonce_ptr, len),
+            etl::span<const uint8_t>(),
+            etl::span<uint8_t>(out_tag_full))) {
+      etl::copy_n(out_tag_full.begin(), 16, tag_out);
+    }
   }
 
   void onAckTimeout() { _bridge._onAckTimeout(); }

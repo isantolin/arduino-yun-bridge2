@@ -11,10 +11,6 @@
 #include "etl_profile.h"
 #include "hal/hal.h"
 
-namespace bridge::test {
-class TestAccessor;
-}
-
 #if defined(ARDUINO_ARCH_AVR)
 #include <avr/wdt.h>
 #endif
@@ -153,10 +149,6 @@ class BridgeClass {
   [[maybe_unused]] static constexpr bool is_compressed_cmd(uint16_t id) {
     return (id & rpc::RPC_CMD_FLAG_COMPRESSED) != 0;
   }
-
-#ifdef BRIDGE_HOST_TEST
-  friend class bridge::test::TestAccessor;
-#endif
 
  protected:
 

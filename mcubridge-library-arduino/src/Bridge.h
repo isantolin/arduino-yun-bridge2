@@ -77,6 +77,21 @@ struct CommandContext {
 
 #include "ErrorPolicy.h"
 
+
+#include <etl/crc32.h>
+
+namespace bridge {
+namespace config {
+struct Crc32Policy {
+    static constexpr size_t ByteSize = 4;
+    etl::crc32 crc;
+    inline void reset() { crc.reset(); }
+    inline void add(uint8_t b) { crc.add(b); }
+    inline uint32_t value() const { return crc.value(); }
+};
+}
+}
+
 class BridgeClass {
  public:
   using ErrorPolicy = bridge::SafeStatePolicy;
@@ -190,7 +205,7 @@ class BridgeClass {
 
   etl::array<uint8_t, bridge::config::RX_BUFFER_SIZE> _ps_rx_storage;
   etl::array<uint8_t, bridge::config::RX_BUFFER_SIZE> _ps_work_buffer;
-  PacketSerial2::PacketSerial<PacketSerial2::COBS, PacketSerial2::CRC32,
+  PacketSerial2::PacketSerial<PacketSerial2::COBS, bridge::config::Crc32Policy,
                               PacketSerial2::NoLock, PacketSerial2::NoWatchdog>
       _packet_serial;
 

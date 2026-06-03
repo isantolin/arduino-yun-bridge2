@@ -90,7 +90,7 @@ def test_get_uci_config_without_get_all_returns_defaults() -> None:
             return False
 
     fake_module = types.ModuleType("uci")
-    fake_module.Uci = DummyUciContext
+    setattr(fake_module, "Uci", DummyUciContext)
 
     with patch.dict("sys.modules", {"uci": fake_module}):
         importlib.reload(common)

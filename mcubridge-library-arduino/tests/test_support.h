@@ -251,13 +251,13 @@ static inline void reset_bridge_core(BridgeClass& bridge, Stream& stream,
                                      unsigned long baudrate = 0,
                                      const char* secret = "top-secret") {
   bridge.~BridgeClass();
-  new (&bridge) BridgeClass(stream);
+  new (&bridge) bridge::test::TestAccessor(stream);
   if (baudrate) {
     bridge.begin(baudrate, secret);
   } else {
     bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, secret);
   }
-  auto ba = bridge::test::TestAccessor::create(bridge);
+  auto& ba = bridge::test::TestAccessor::create(bridge);
   ba.onStartupStabilized();
   ba.setIdle();
 }

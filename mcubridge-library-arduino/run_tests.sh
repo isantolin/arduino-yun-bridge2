@@ -91,6 +91,7 @@ SOURCES=(
     "src/hal/hal.cpp"
     "src/protocol/rle.cpp"
     "src/Bridge.cpp"
+    "src/BridgeInstance.cpp"
     "src/fsm/bridge_fsm.cpp"
     "src/services/Console.cpp"
     "src/services/DataStore.cpp"

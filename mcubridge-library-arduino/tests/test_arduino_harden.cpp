@@ -21,7 +21,7 @@ void tearDown() {}
 void test_bridge_protocol_version_mismatch() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto ba = TestAccessor::create(Bridge);
+  auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
   rpc_pb_RpcEnvelope f;
@@ -40,7 +40,7 @@ void test_bridge_protocol_version_mismatch() {
 void test_bridge_unknown_command_jump_table() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto ba = TestAccessor::create(Bridge);
+  auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
   rpc_pb_RpcEnvelope f;
@@ -55,7 +55,7 @@ void test_bridge_unknown_command_jump_table() {
 void test_bridge_tx_queue_full_force() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto ba = TestAccessor::create(Bridge);
+  auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
   // Fill the queue
@@ -76,7 +76,7 @@ void test_bridge_tx_queue_full_force() {
 void test_bridge_packet_received_edge_cases() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto ba = TestAccessor::create(Bridge);
+  auto& ba = TestAccessor::create(Bridge);
 
   // 1. Too short packet
   etl::array<uint8_t, 2> short_pkt = {0, 1};
@@ -99,7 +99,7 @@ void test_bridge_packet_received_edge_cases() {
 void test_bridge_ack_orphans() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto ba = TestAccessor::create(Bridge);
+  auto& ba = TestAccessor::create(Bridge);
 
   // Ack while not awaiting
   ba.handleAck(static_cast<uint16_t>(rpc::CommandId::CMD_GET_VERSION));
@@ -122,7 +122,7 @@ void test_bridge_begin_idempotency() {
 void test_bridge_linksync_auth_failure() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto ba = TestAccessor::create(Bridge);
+  auto& ba = TestAccessor::create(Bridge);
 
   const char* secret = "secure_secret_1234567890123456";
   Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, secret);
@@ -145,7 +145,7 @@ void test_bridge_linksync_auth_failure() {
 void test_bridge_retransmit_empty_queue() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto ba = TestAccessor::create(Bridge);
+  auto& ba = TestAccessor::create(Bridge);
   (void)ba;
 
   // Calling internal retransmit on empty queue should be safe
@@ -155,7 +155,7 @@ void test_bridge_retransmit_empty_queue() {
 void test_bridge_decompress_error() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto ba = TestAccessor::create(Bridge);
+  auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
   rpc_pb_RpcEnvelope f;
@@ -178,7 +178,7 @@ void test_bridge_decompress_error() {
 void test_bridge_security_pre_sync_rejection() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto ba = TestAccessor::create(Bridge);
+  auto& ba = TestAccessor::create(Bridge);
 
   const char* secret = "secure_secret_1234567890123456";
   Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, secret);
@@ -197,7 +197,7 @@ void test_bridge_security_pre_sync_rejection() {
 void test_bridge_nonce_reuse_attack() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto ba = TestAccessor::create(Bridge);
+  auto& ba = TestAccessor::create(Bridge);
 
   const char* secret = "secure_secret_1234567890123456";
   Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, secret);

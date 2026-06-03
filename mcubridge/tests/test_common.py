@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import types
 from unittest.mock import MagicMock, patch
 
 from mcubridge.config import common
@@ -66,6 +67,32 @@ def test_get_uci_config_missing_section_returns_defaults() -> None:
     mock_cursor.get_all.return_value = {}
 
     with patch.dict("sys.modules", {"uci": mock_module}):
+        importlib.reload(common)
+        config = common.get_uci_config()
+        assert config == common.get_default_config()
+
+
+def test_get_uci_config_without_uci_class_returns_defaults() -> None:
+    fake_module = types.ModuleType("uci")
+
+    with patch.dict("sys.modules", {"uci": fake_module}):
+        importlib.reload(common)
+        config = common.get_uci_config()
+        assert config == common.get_default_config()
+
+
+def test_get_uci_config_without_get_all_returns_defaults() -> None:
+    class DummyUciContext:
+        def __enter__(self) -> object:
+            return object()
+
+        def __exit__(self, exc_type: object, exc: object, tb: object) -> bool:
+            return False
+
+    fake_module = types.ModuleType("uci")
+    fake_module.Uci = DummyUciContext
+
+    with patch.dict("sys.modules", {"uci": fake_module}):
         importlib.reload(common)
         config = common.get_uci_config()
         assert config == common.get_default_config()

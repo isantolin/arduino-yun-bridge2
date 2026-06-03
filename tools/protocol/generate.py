@@ -1239,10 +1239,10 @@ def main() -> None:
                 target_h.write_bytes(cpp_pb_h.read_bytes())
                 # Fix pb.h include for relative path in Arduino library structure
                 target_h.write_text(target_h.read_text().replace("#include <pb.h>", '#include "../pb.h"'))
-                cpp_pb_h.unlink()
+                cpp_pb_h.unlink(missing_ok=True)
             if cpp_pb_c.exists():
                 target_c.write_bytes(cpp_pb_c.read_bytes())
-                cpp_pb_c.unlink()
+                cpp_pb_c.unlink(missing_ok=True)
 
         py_pb2 = args.spec.parent / "mcubridge_pb2.py"
         py_pb2_stub = args.spec.parent / "mcubridge_pb2.pyi"
@@ -1252,7 +1252,7 @@ def main() -> None:
                 (args.py.parent / "mcubridge_pb2.py").write_bytes(pb2_data)
             if args.py_client:
                 (args.py_client.parent / "mcubridge_pb2.py").write_bytes(pb2_data)
-            py_pb2.unlink()
+            py_pb2.unlink(missing_ok=True)
         if py_pb2_stub.exists():
             pb2_stub_text = py_pb2_stub.read_text()
             pb2_stub_text = pb2_stub_text.replace(
@@ -1264,7 +1264,7 @@ def main() -> None:
                 (args.py.parent / "mcubridge_pb2.pyi").write_bytes(pb2_stub_data)
             if args.py_client:
                 (args.py_client.parent / "mcubridge_pb2.pyi").write_bytes(pb2_stub_data)
-            py_pb2_stub.unlink()
+            py_pb2_stub.unlink(missing_ok=True)
 
     if args.cpp:
         args.cpp.parent.mkdir(parents=True, exist_ok=True)

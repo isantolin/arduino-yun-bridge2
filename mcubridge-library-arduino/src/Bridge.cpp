@@ -16,9 +16,6 @@
 #include "services/Process.h"
 #include "services/SPIService.h"
 
-// [SIL-2] Global Bridge instance using default Serial
-BridgeClass Bridge(Serial);
-
 namespace etl {
 // [SIL-2] Custom error handler to ensure fail-safe state on ETL exceptions
 void __attribute__((weak)) __attribute__((unused)) handle_error(

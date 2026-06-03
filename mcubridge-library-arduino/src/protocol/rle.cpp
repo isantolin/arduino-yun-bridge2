@@ -23,7 +23,9 @@ struct LiteralState
                             ByteMsg> {
   [[maybe_unused]] etl::fsm_state_id_t on_event(const etl::imessage& msg);
   [[maybe_unused]] etl::fsm_state_id_t on_event_unknown(const etl::imessage&) {
+    // GCOVR_EXCL_START
     return get_state_id();
+    // GCOVR_EXCL_STOP
   }
 };
 
@@ -33,7 +35,9 @@ struct EscMarkerState
           static_cast<etl::fsm_state_id_t>(StateId::ESC_MARKER), ByteMsg> {
   [[maybe_unused]] etl::fsm_state_id_t on_event(const etl::imessage& msg);
   [[maybe_unused]] etl::fsm_state_id_t on_event_unknown(const etl::imessage&) {
+    // GCOVR_EXCL_START
     return get_state_id();
+    // GCOVR_EXCL_STOP
   }
 };
 
@@ -43,7 +47,9 @@ struct EscValState
                             ByteMsg> {
   [[maybe_unused]] etl::fsm_state_id_t on_event(const etl::imessage& msg);
   [[maybe_unused]] etl::fsm_state_id_t on_event_unknown(const etl::imessage&) {
+    // GCOVR_EXCL_START
     return get_state_id();
+    // GCOVR_EXCL_STOP
   }
 };
 

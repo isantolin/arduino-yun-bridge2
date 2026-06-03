@@ -74,7 +74,7 @@ void test_bridge_emit_status_variants() {
 void test_bridge_queue_full_and_retransmit() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto ba = TestAccessor::create(Bridge);
+  auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
   // Fill the TX queue with reliable commands to trigger full condition
@@ -102,7 +102,7 @@ void test_bridge_queue_full_and_retransmit() {
 void test_filesystem_read_edge_cases() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto ba = TestAccessor::create(Bridge);
+  auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
   // Trigger FileSystem read chunks with timeout/error simulation
@@ -175,7 +175,7 @@ void test_process_poll_and_kill() {
 void test_process_branch_error_paths() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto ba = TestAccessor::create(Bridge);
+  auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
   Process.reset();
 
@@ -231,7 +231,7 @@ void test_process_branch_error_paths() {
                    etl::delegate<void(int32_t)>::create<capture_async_handler>());
   TEST_ASSERT_EQUAL(-1, captured_pid);
   reset_bridge_core(Bridge, stream);
-  auto ba_recovered = TestAccessor::create(Bridge);
+  auto& ba_recovered = TestAccessor::create(Bridge);
   ba_recovered.setSynchronized();
 
   // Poll queue full path (size=1), then invalid-handler path.
@@ -284,7 +284,7 @@ void test_console_write_full_buffer_retains_data_when_send_fails() {
 void test_mailbox_and_datastore_variants() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto ba = TestAccessor::create(Bridge);
+  auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
   etl::array<uint8_t, 4> mb_data1 = {1, 2, 3, 4};
@@ -324,7 +324,7 @@ void test_mailbox_and_datastore_variants() {
 void test_bridge_fsm_resets() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto ba = TestAccessor::create(Bridge);
+  auto& ba = TestAccessor::create(Bridge);
 
   ba.setSynchronized();
   Bridge.enterSafeState();  // Should reset FSM and stop timers
@@ -362,7 +362,7 @@ void test_bridge_timer_callbacks() {
 void test_bridge_packet_errors() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto ba = TestAccessor::create(Bridge);
+  auto& ba = TestAccessor::create(Bridge);
 
   // Test malformed packet (length 0)
   ba.invokePacketReceived(etl::span<const uint8_t>());
@@ -393,7 +393,7 @@ void test_bridge_template_coverage() {
 void test_bridge_duplicate_packet() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto ba = TestAccessor::create(Bridge);
+  auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
   rpc_pb_RpcEnvelope f = rpc_pb_RpcEnvelope_init_default;
@@ -411,7 +411,7 @@ void test_bridge_duplicate_packet() {
 void test_bridge_exhaustive_command_handlers() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto ba = TestAccessor::create(Bridge);
+  auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
   auto trigger = [&](rpc::CommandId id, auto payload) {

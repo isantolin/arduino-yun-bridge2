@@ -21,7 +21,7 @@ void tearDown() {}
 void test_bridge_reliable_retry_exhaustion() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto ba = TestAccessor::create(Bridge);
+  auto& ba = TestAccessor::create(Bridge);
   ba.setIdle();
   ba.setSynchronized();
 
@@ -45,7 +45,7 @@ void test_bridge_reliable_retry_exhaustion() {
 void test_bridge_packet_corruption_chaos() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto ba = TestAccessor::create(Bridge);
+  auto& ba = TestAccessor::create(Bridge);
 
   // Inyectar ruido asíncrono
   etl::array<uint8_t, 5> noise = {0x00, 0xFF, 0xAA, 0x55, 0x00};
@@ -61,7 +61,7 @@ void test_bridge_packet_corruption_chaos() {
 void test_bridge_dispatch_security_denial() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto ba = TestAccessor::create(Bridge);
+  auto& ba = TestAccessor::create(Bridge);
 
   // Configure secret to enable security checks
   Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, "secure_secret_1234567890123456");
@@ -82,7 +82,7 @@ void test_bridge_dispatch_security_denial() {
 void test_bridge_fsm_illegal_transitions() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto ba = TestAccessor::create(Bridge);
+  auto& ba = TestAccessor::create(Bridge);
 
   ba.setIdle();
   // EvAckReceived in Idle should be ignored

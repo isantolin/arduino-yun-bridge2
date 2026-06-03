@@ -6,30 +6,23 @@
 #endif
 
 #include <etl/span.h>
-
-#define protected public
-#define private public
 #include "Bridge.h"
-#undef protected
-#undef private
 
 namespace bridge::test {
 
-class TestAccessor {
+class TestAccessor : public BridgeClass {
  public:
-  static TestAccessor create(BridgeClass& bridge) {
-    return TestAccessor(bridge);
-  }
+  explicit TestAccessor(Stream& s) : BridgeClass(s) {}
 
-  explicit TestAccessor(BridgeClass& bridge)
-      : _bridge(bridge), _fsm(bridge._fsm) {}
+  static TestAccessor& create(BridgeClass& b) {
+    return static_cast<TestAccessor&>(b);
+  }
 
   void setSynchronized() {
     _fsm.receive(bridge::fsm::EvHandshakeStart());
     _fsm.receive(bridge::fsm::EvHandshakeComplete());
   }
 
-  bool isSynchronized() const { return _bridge.isSynchronized(); }
   bool isFault() const {
     return _fsm.get_state_id() ==
            static_cast<etl::fsm_state_id_t>(bridge::fsm::StateId::FAULT);
@@ -44,7 +37,6 @@ class TestAccessor {
            static_cast<etl::fsm_state_id_t>(bridge::fsm::StateId::STARTUP);
   }
 
-  // Restored locally for test compatibility
   void onStartupStabilized() { _fsm.receive(bridge::fsm::EvStabilized()); }
 
   template <typename TEvent>
@@ -52,19 +44,19 @@ class TestAccessor {
     _fsm.receive(ev);
   }
 
-  void dispatch(const rpc_pb_RpcEnvelope& frame) { _bridge._dispatchCommand(frame); }
+  void dispatch(const rpc_pb_RpcEnvelope& frame) { _dispatchCommand(frame); }
 
-  bool isSharedSecretEmpty() const { return _bridge._shared_secret.empty(); }
+  bool isSharedSecretEmpty() const { return _shared_secret.empty(); }
   void setSharedSecret(etl::span<const uint8_t> secret) {
-    _bridge._shared_secret.assign(secret.begin(), secret.end());
+    _shared_secret.assign(secret.begin(), secret.end());
   }
 
   void computeHandshakeTag(const uint8_t* nonce_ptr, size_t len,
                            uint8_t* tag_out) {
-    if (_bridge._shared_secret.empty()) return;
+    if (_shared_secret.empty()) return;
     etl::array<uint8_t, 32> out_tag_full;
     if (rpc::security::handshake_authenticate(
-            etl::span<const uint8_t>(_bridge._shared_secret),
+            etl::span<const uint8_t>(_shared_secret),
             etl::span<const uint8_t>(nonce_ptr, len),
             etl::span<const uint8_t>(),
             etl::span<uint8_t>(out_tag_full))) {
@@ -72,69 +64,67 @@ class TestAccessor {
     }
   }
 
-  void onAckTimeout() { _bridge._onAckTimeout(); }
-  void handleAck(uint16_t cmd) { _bridge._handleAck(cmd); }
+  void onAckTimeout() { _onAckTimeout(); }
+  void handleAck(uint16_t cmd) { _handleAck(cmd); }
   void handleGetVersion(const bridge::router::CommandContext& ctx) {
-    _bridge._handleGetVersion(ctx);
-  }
-  bool sendFrame(rpc::CommandId c, uint16_t seq, etl::span<const uint8_t> p) {
-    return _bridge.sendFrame(c, seq, p);
+    _handleGetVersion(ctx);
   }
   void handleDigitalWriteCommand(const bridge::router::CommandContext& ctx) {
-    _bridge._handleDigitalWriteCommand(ctx);
+    _handleDigitalWriteCommand(ctx);
   }
   void invokePacketReceived(etl::span<const uint8_t> p) {
-    _bridge._onPacketReceived(p);
+    _onPacketReceived(p);
   }
 
   void invokeConsolePush(const rpc::payload::ConsoleWrite& cmsg) {
-    (void)_bridge.send(rpc::CommandId::CMD_CONSOLE_WRITE, 0, cmsg);
+    (void)send(rpc::CommandId::CMD_CONSOLE_WRITE, 0, cmsg);
   }
   bool isAwaitingAck() const {
     return _fsm.get_state_id() ==
            static_cast<etl::fsm_state_id_t>(bridge::fsm::StateId::AWAITING_ACK);
   }
-  uint16_t getLastCommandId() const { return _bridge._last_command_id; }
-  void onRxDedupe() { _bridge._onRxDedupe(); }
-  void setPendingBaudrate(uint32_t b) { _bridge._pending_baudrate = b; }
-  void onBaudrateChange() { _bridge._onBaudrateChange(); }
-  void invokeWatchdog() { _bridge._watchdog_task.task_process_work(); }
-  void invokeSerialTask() { _bridge._serial_task.task_process_work(); }
-  void invokeTimerTask() { _bridge._timer_task.task_process_work(); }
-  void setSerialTaskXoffSent(bool value) { _bridge._serial_task.xoff_sent = value; }
-  void setSerialTaskBridgeNull() { _bridge._serial_task.bridge = nullptr; }
-  void setTimerTaskBridgeNull() { _bridge._timer_task.bridge = nullptr; }
-  void setTimerLastTick(uint32_t tick) { _bridge._timer_task.last_tick_ms = tick; }
-  void setHardwareSerial(HardwareSerial* serial) { _bridge._hardware_serial = serial; }
-  void clearPendingTxQueue() { _bridge._clearPendingTxQueue(); }
-  void exhaustTxPayloadPool() {
-    exhaustTxPayloadPoolRecursive();
-  }
-  void enqueueNullPendingFrame(uint16_t command_id, uint16_t sequence_id, size_t length) {
-    _bridge._pending_tx_queue.push_back({command_id, sequence_id, nullptr, length});
+  uint16_t getLastCommandId() const { return _last_command_id; }
+  void onRxDedupe() { _onRxDedupe(); }
+  void setPendingBaudrate(uint32_t b) { _pending_baudrate = b; }
+  void onBaudrateChange() { _onBaudrateChange(); }
+  void invokeWatchdog() { _watchdog_task.task_process_work(); }
+  void invokeSerialTask() { _serial_task.task_process_work(); }
+  void invokeTimerTask() { _timer_task.task_process_work(); }
+  void setSerialTaskXoffSent(bool value) { _serial_task.xoff_sent = value; }
+  void setSerialTaskBridgeNull() { _serial_task.bridge = nullptr; }
+  void setTimerTaskBridgeNull() { _timer_task.bridge = nullptr; }
+  void setTimerLastTick(uint32_t tick) { _timer_task.last_tick_ms = tick; }
+  void setHardwareSerial(HardwareSerial* serial) { _hardware_serial = serial; }
+  void clearPendingTxQueue() { _clearPendingTxQueue(); }
+  void exhaustTxPayloadPool() { exhaustTxPayloadPoolRecursive(); }
+  void enqueueNullPendingFrame(uint16_t command_id, uint16_t sequence_id,
+                               size_t length) {
+    _pending_tx_queue.push_back({command_id, sequence_id, nullptr, length});
   }
   void clearSynchronized() { _fsm.receive(bridge::fsm::EvReset()); }
-  void onBootloaderDelay() { _bridge._onBootloaderDelay(); }
+  void onBootloaderDelay() { _onBootloaderDelay(); }
   void applyTimingConfig(const rpc::payload::HandshakeConfig& msg) {
-    _bridge._applyTimingConfig(msg);
+    _applyTimingConfig(msg);
   }
-  void clearSharedSecret() { _bridge._shared_secret.clear(); }
+  void clearSharedSecret() { _shared_secret.clear(); }
   bool isSecurityCheckPassed(uint16_t cmd) const {
-    return _bridge._isSecurityCheckPassed(cmd);
+    return _isSecurityCheckPassed(cmd);
   }
+
+  void setSessionKey(etl::span<const uint8_t> key) {
+    etl::copy_n(key.begin(), etl::min(key.size(), _session_key.size()),
+                _session_key.begin());
+  }
+  void setRxNonceCounter(uint64_t counter) { _rx_nonce_counter = counter; }
 
   void setIdle() {
     if (!_fsm.is_started()) _fsm.start();
     _fsm.receive(bridge::fsm::EvReset());
   }
 
-
  private:
-  BridgeClass& _bridge;
-  bridge::fsm::BridgeFsm& _fsm;
-
   void exhaustTxPayloadPoolRecursive() {
-    auto* slot = _bridge._tx_payload_pool.allocate();
+    auto* slot = _tx_payload_pool.allocate();
     if (slot == nullptr) return;
     exhaustTxPayloadPoolRecursive();
   }

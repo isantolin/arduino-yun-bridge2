@@ -20,7 +20,7 @@ using bridge::test::TestAccessor;
 void test_fsm_initial_state() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto ba = TestAccessor::create(Bridge);
+  auto& ba = TestAccessor::create(Bridge);
   ba.onStartupStabilized();
   TEST_ASSERT(ba.isUnsynchronized());
 }
@@ -28,7 +28,7 @@ void test_fsm_initial_state() {
 void test_mutual_auth_success() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto ba = TestAccessor::create(Bridge);
+  auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
   TEST_ASSERT(ba.isSynchronized());
 }
@@ -36,7 +36,7 @@ void test_mutual_auth_success() {
 void test_mutual_auth_failure_to_startup() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto ba = TestAccessor::create(Bridge);
+  auto& ba = TestAccessor::create(Bridge);
   ba.onStartupStabilized();
   ba.trigger(bridge::fsm::EvHandshakeStart());
   ba.trigger(bridge::fsm::EvHandshakeFailed());
@@ -47,7 +47,7 @@ void test_mutual_auth_failure_to_startup() {
 void test_fsm_timeout_to_fault() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto ba = TestAccessor::create(Bridge);
+  auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
   ba.trigger(bridge::fsm::EvTimeout());
   // Observed behavior: Timeout from synchronized goes to Fault

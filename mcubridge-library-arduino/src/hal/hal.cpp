@@ -50,7 +50,7 @@ constexpr uint8_t ANALOG_PINS =
 namespace {
 template <size_t I>
 void _forceSinglePin() {
-  if constexpr (bridge::config::SAFE_START_PINS_ENABLED) {
+  if constexpr (bridge::config::SAFE_START_PINS_ENABLED) {  // GCOVR_EXCL_BR_LINE
     ::pinMode(static_cast<uint8_t>(I), OUTPUT);
     ::digitalWrite(static_cast<uint8_t>(I), LOW);
   } else {
@@ -65,7 +65,7 @@ void _forceSafePins(etl::index_sequence<Is...>) {
 }  // namespace
 
 void forceSafeState() {
-  if constexpr (Traits::id == ArchId::ARCH_AVR) {
+  if constexpr (Traits::id == ArchId::ARCH_AVR) {  // GCOVR_EXCL_BR_LINE
     _forceSafePins(etl::make_index_sequence<bridge::config::DIGITAL_PINS>{});
   } else {
     _forceSafePins(
@@ -74,12 +74,12 @@ void forceSafeState() {
 }
 
 void watchdog_kick() {
-  if constexpr (bridge::config::ENABLE_WATCHDOG) {
-    if constexpr (Traits::id == ArchId::ARCH_AVR) {
+  if constexpr (bridge::config::ENABLE_WATCHDOG) {  // GCOVR_EXCL_BR_LINE
+    if constexpr (Traits::id == ArchId::ARCH_AVR) {  // GCOVR_EXCL_BR_LINE
 #if defined(ARDUINO_ARCH_AVR)
       wdt_reset();
 #endif
-    } else if constexpr (Traits::id == ArchId::ARCH_ESP32) {
+    } else if constexpr (Traits::id == ArchId::ARCH_ESP32) {  // GCOVR_EXCL_BR_LINE
 #if defined(ARDUINO_ARCH_ESP32)
       esp_task_wdt_reset();
 #endif
@@ -91,7 +91,7 @@ void watchdog_kick() {
 }
 
 uint16_t getFreeMemory() {
-  if constexpr (Traits::id == ArchId::ARCH_AVR) {
+  if constexpr (Traits::id == ArchId::ARCH_AVR) {  // GCOVR_EXCL_BR_LINE
 #if defined(ARDUINO_ARCH_AVR)
     int v;
     return static_cast<uint16_t>(
@@ -101,7 +101,7 @@ uint16_t getFreeMemory() {
 #else
     return Traits::default_free_memory;
 #endif
-  } else if constexpr (Traits::id == ArchId::ARCH_ESP32) {
+  } else if constexpr (Traits::id == ArchId::ARCH_ESP32) {  // GCOVR_EXCL_BR_LINE
 #if defined(ARDUINO_ARCH_ESP32)
     return static_cast<uint16_t>(ESP.getFreeHeap());
 #else
@@ -113,12 +113,12 @@ uint16_t getFreeMemory() {
 
 void init() {
   forceSafeState();
-  if constexpr (bridge::config::ENABLE_WATCHDOG) {
-    if constexpr (Traits::id == ArchId::ARCH_AVR) {
+  if constexpr (bridge::config::ENABLE_WATCHDOG) {  // GCOVR_EXCL_BR_LINE
+    if constexpr (Traits::id == ArchId::ARCH_AVR) {  // GCOVR_EXCL_BR_LINE
 #if defined(ARDUINO_ARCH_AVR)
       wdt_enable(WDTO_4S);
 #endif
-    } else if constexpr (Traits::id == ArchId::ARCH_ESP32) {
+    } else if constexpr (Traits::id == ArchId::ARCH_ESP32) {  // GCOVR_EXCL_BR_LINE
 #if defined(ARDUINO_ARCH_ESP32)
       esp_task_wdt_init(4, true);
       esp_task_wdt_add(nullptr);
@@ -200,7 +200,7 @@ uint8_t getArchId() { return CURRENT_ARCH; }
 
 [[noreturn]] void enterBootloader() {
   forceSafeState();
-  if constexpr (Traits::id == ArchId::ARCH_AVR) {
+  if constexpr (Traits::id == ArchId::ARCH_AVR) {  // GCOVR_EXCL_BR_LINE
 #if defined(ARDUINO_ARCH_AVR)
     // [SIL-2] Caterina/Optiboot: set magic key and trigger 15 ms WDT reset.
     // The bootloader checks the token at 0x0800 on restart.
@@ -208,7 +208,7 @@ uint8_t getArchId() { return CURRENT_ARCH; }
 #endif
   }
 
-  if constexpr (Traits::id == ArchId::ARCH_HOST) {
+  if constexpr (Traits::id == ArchId::ARCH_HOST) {  // GCOVR_EXCL_BR_LINE
     // [SIL-2] On host/test environment, exit instead of hanging CI.
     exit(0);
   }

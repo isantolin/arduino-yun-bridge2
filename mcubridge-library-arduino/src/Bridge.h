@@ -369,6 +369,8 @@ class BridgeClass {
 
 };
 
+#ifndef BRIDGE_NO_GLOBAL_EXTERN
 extern BridgeClass Bridge;
+#endif
 
 #endif

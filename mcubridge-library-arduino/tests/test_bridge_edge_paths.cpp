@@ -87,7 +87,7 @@ rpc_pb_RpcEnvelope make_malformed_payload_frame(uint16_t cmd, uint16_t seq) {
 void test_dispatch_valid_payload_handlers_unique_seq() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto ba = TestAccessor::create(Bridge);
+  auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
   uint16_t seq = 100;
@@ -290,7 +290,7 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
 void test_dispatch_malformed_payload_paths() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto ba = TestAccessor::create(Bridge);
+  auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
   uint16_t seq = 300;
@@ -323,7 +323,7 @@ void test_dispatch_malformed_payload_paths() {
 void test_packet_received_security_and_decompress_paths() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto ba = TestAccessor::create(Bridge);
+  auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload_buf;
@@ -357,7 +357,7 @@ void test_packet_received_security_and_decompress_paths() {
 void test_console_and_policy_edges() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto ba = TestAccessor::create(Bridge);
+  auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
   Console.begin();
 
@@ -425,7 +425,7 @@ void test_security_invalid_size_guards() {
 void test_observer_and_task_runtime_edges() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto ba = TestAccessor::create(Bridge);
+  auto& ba = TestAccessor::create(Bridge);
 
   ba.setSerialTaskBridgeNull();
   ba.invokeSerialTask();
@@ -443,7 +443,7 @@ void test_observer_and_task_runtime_edges() {
     void flush() override {}
   } flow;
   reset_bridge_core(Bridge, flow);
-  auto ba_flow = TestAccessor::create(Bridge);
+  auto& ba_flow = TestAccessor::create(Bridge);
   flow.avail = bridge::config::FLOW_CONTROL_XOFF_THRESHOLD + 1;
   ba_flow.invokeSerialTask();
   flow.avail = bridge::config::FLOW_CONTROL_XON_THRESHOLD - 1;
@@ -453,7 +453,7 @@ void test_observer_and_task_runtime_edges() {
 void test_timer_link_and_bootloader_edges() {
   BiStream stream;
   reset_bridge_core(Bridge, stream, 0, nullptr);
-  auto ba = TestAccessor::create(Bridge);
+  auto& ba = TestAccessor::create(Bridge);
   ba.setTimerLastTick(1);
   ba.invokeTimerTask();
 
@@ -507,7 +507,7 @@ void test_timer_link_and_bootloader_edges() {
 void test_service_capacity_and_send_fail_edges() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto ba = TestAccessor::create(Bridge);
+  auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> frame_buf;
   auto pin_mode_ok =
@@ -543,7 +543,7 @@ void test_service_capacity_and_send_fail_edges() {
 void test_filesystem_spi_fsm_and_rle_edges() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto ba = TestAccessor::create(Bridge);
+  auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
   etl::array<uint8_t, 2> fs_data = {1, 2};
@@ -582,7 +582,7 @@ void test_filesystem_spi_fsm_and_rle_edges() {
 void test_encrypted_rx_nonce_and_compressed_empty_paths() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto ba = TestAccessor::create(Bridge);
+  auto& ba = TestAccessor::create(Bridge);
 
   rpc::payload::LinkSync sync = {};
   memset(sync.nonce.bytes, 0xAB, 12); sync.nonce.size = 12;
@@ -616,7 +616,7 @@ void test_encrypted_rx_nonce_and_compressed_empty_paths() {
 void test_fault_injection_harness_paths() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto ba = TestAccessor::create(Bridge);
+  auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
   bridge::test::fault::set_clock_ms(0U);
@@ -642,7 +642,7 @@ void test_fault_injection_harness_paths() {
 
   bridge::test::fault::reset();
   reset_bridge_core(Bridge, stream);
-  auto ba2 = TestAccessor::create(Bridge);
+  auto& ba2 = TestAccessor::create(Bridge);
   ba2.setSynchronized();
   ba2.exhaustTxPayloadPool();
   bridge::test::fault::enable(
@@ -676,14 +676,14 @@ void test_fault_injection_harness_paths() {
     void flush() override {}
   } flow;
   reset_bridge_core(Bridge, flow);
-  auto ba_flow = TestAccessor::create(Bridge);
+  auto& ba_flow = TestAccessor::create(Bridge);
   ba_flow.setSerialTaskXoffSent(true);
   flow.avail = bridge::config::FLOW_CONTROL_XON_THRESHOLD - 1;
   ba_flow.invokeSerialTask();
 
   BiStream secure_stream;
   reset_bridge_core(Bridge, secure_stream);
-  auto bs = TestAccessor::create(Bridge);
+  auto& bs = TestAccessor::create(Bridge);
   rpc::payload::LinkSync s_sync = {};
   memset(s_sync.nonce.bytes, 0x44, 12); s_sync.nonce.size = 12;
   bs.computeHandshakeTag(s_sync.nonce.bytes, 12, s_sync.tag.bytes);

@@ -42,7 +42,7 @@ using bridge::test::TestAccessor;
 void test_bridge_basic_lifecycle() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto ba = TestAccessor::create(Bridge);
+  auto& ba = TestAccessor::create(Bridge);
 
   ba.setSynchronized();
   TEST_ASSERT(Bridge.isSynchronized());
@@ -52,7 +52,7 @@ void test_bridge_basic_lifecycle() {
 void test_bridge_brute_force_commands() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto ba = TestAccessor::create(Bridge);
+  auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
   rpc_pb_RpcEnvelope f = {};
@@ -208,7 +208,7 @@ void test_bridge_brute_force_commands() {
 void test_bridge_send_exhaustive() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto ba = TestAccessor::create(Bridge);
+  auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
   uint8_t data[] = "d";
@@ -281,7 +281,7 @@ void test_bridge_send_exhaustive() {
 void test_console_and_misc() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto ba = TestAccessor::create(Bridge);
+  auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
   Console.begin();

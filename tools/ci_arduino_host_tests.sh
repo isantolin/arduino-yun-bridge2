@@ -75,6 +75,7 @@ SOURCES=(
     "${SRC_DIR}/fsm/bridge_fsm.cpp"
     "${SRC_DIR}/protocol/rle.cpp"
     "${SRC_DIR}/Bridge.cpp"
+    "${TEST_DIR}/bridge_test_global.cpp"
     "${SRC_DIR}/services/Console.cpp"
     "${SRC_DIR}/services/DataStore.cpp"
     "${SRC_DIR}/services/Mailbox.cpp"
@@ -104,8 +105,6 @@ BASE_FLAGS=(
     -Wextra
     -Werror
     -Wno-unused-parameter
-    -Dprotected=public
-    -Dprivate=public
     -DBRIDGE_FAULT_INJECTION=1
     -DARDUINO_STUB_CUSTOM_MILLIS=1
     -DWOLFSSL_USER_SETTINGS

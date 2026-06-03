@@ -45,7 +45,7 @@ void test_bridge_coverage() {
   printf("Starting test_bridge_coverage...\n");
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  auto ba = TestAccessor::create(Bridge);
+  auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
   // 1. Unknown Command

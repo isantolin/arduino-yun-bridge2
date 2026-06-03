@@ -192,9 +192,10 @@ static constexpr etl::array<uint8_t, 32> kat_sha256_expected PROGMEM = {
 static constexpr etl::array<uint8_t, 3> kat_hmac_key PROGMEM = {
     {'k', 'e', 'y'}};
 static constexpr etl::array<uint8_t, 43> kat_hmac_data PROGMEM = {
-    {'T', 'h', 'e', ' ', 'q', 'u', 'i', 'k', ' ', 'b', 'r', 'o', 'w', 'n',
-     ' ', 'f', 'o', 'x', ' ', 'j', 'u', 'm', 'p', 's', ' ', 'o', 'v', 'e',
-     'r', ' ', 't', 'h', 'e', ' ', 'l', 'a', 'z', 'y', ' ', 'd', 'o', 'g'}};
+    {'T', 'h', 'e', ' ', 'q', 'u', 'i', 'c', 'k', ' ', 'b', 'r', 'o', 'w',
+     'n', ' ', 'f', 'o', 'x', ' ', 'j', 'u', 'm', 'p', 's', ' ', 'o', 'v',
+     'e', 'r', ' ', 't', 'h', 'e', ' ', 'l', 'a', 'z', 'y', ' ', 'd', 'o',
+     'g'}};
 static constexpr etl::array<uint8_t, 32> kat_hmac_expected PROGMEM = {
     {0xF7, 0xBC, 0x83, 0xF4, 0x30, 0x53, 0x84, 0x24, 0xB1, 0x32, 0x98,
      0xE6, 0xAA, 0x6F, 0xB1, 0x43, 0xEF, 0x4D, 0x59, 0xA1, 0x49, 0x46,

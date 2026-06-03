@@ -24,6 +24,7 @@ from .rle import rle_decode, rle_encode_if_beneficial
 _NONCE_SIZE: Final = protocol.AEAD_NONCE_SIZE
 _TAG_SIZE: Final = protocol.AEAD_TAG_SIZE
 
+
 def build_frame(
     command_id: int,
     sequence_id: int,

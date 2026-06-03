@@ -15,8 +15,6 @@ from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import (
     Command,
     Status,
-    expected_responses,
-    response_to_request,
 )
 from mcubridge.protocol.structures import PendingCommand
 from mcubridge.security.security import generate_nonce_with_counter
@@ -639,7 +637,7 @@ async def test_process_packet_crc_mismatch() -> None:
             nonce=b"\x00" * 12,
             session_key=None,
         )
-        bad_crc = b"\xDE\xAD\xBE\xEF"
+        bad_crc = b"\xde\xad\xbe\xef"
         encoded = cobs.encode(body + bad_crc)
 
         await serial._process_packet(encoded)
@@ -676,7 +674,7 @@ async def test_process_packet_anti_replay_validation() -> None:
 
         nonce, _ = generate_nonce_with_counter(0)  # counter=1 embedded
 
-        encoded = _valid_packet(Command.CMD_SET_PIN_MODE.value)
+        _valid_packet(Command.CMD_SET_PIN_MODE.value)
         # Rebuild with correct nonce so anti-replay passes
         from mcubridge.protocol.frame import build_frame
 

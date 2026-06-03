@@ -54,7 +54,8 @@ def test_parse_rejects_short_frame() -> None:
 
 
 def test_parse_detects_crc_mismatch() -> None:
-        pass
+    pass
+
 
 def test_parse_validates_version_and_length() -> None:
     payload = b"data"

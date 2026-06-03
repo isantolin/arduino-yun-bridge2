@@ -9,7 +9,6 @@ from unittest.mock import AsyncMock
 import pytest
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
-from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
 
@@ -110,5 +109,4 @@ async def test_handle_mqtt_console_queues_and_flushes() -> None:
 
 @pytest.mark.asyncio
 async def test_enqueue_mqtt_spools_until_client_recovers() -> None:
-        pass
-
+    pass

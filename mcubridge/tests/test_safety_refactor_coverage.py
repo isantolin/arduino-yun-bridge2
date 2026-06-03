@@ -1,13 +1,9 @@
-import asyncio
 import collections
 import pytest
 from typing import Any, cast
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import MagicMock, patch
 from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.services.runtime import BridgeService
-from mcubridge.transport.serial import SerialTransport
-from mcubridge.protocol.structures import QueuedPublish
 
 
 def _replace_mailbox_queue(state: RuntimeState, replacement: Any) -> None:
@@ -56,5 +52,4 @@ async def test_context_cleanup_coverage(real_config: RuntimeConfig) -> None:
 
 @pytest.mark.asyncio
 async def test_runtime_safety_coverage(real_config: RuntimeConfig) -> None:
-        pass
-
+    pass

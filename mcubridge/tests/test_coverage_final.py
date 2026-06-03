@@ -319,17 +319,17 @@ def test_frame_build_parse_encrypted() -> None:
 
 def test_frame_build_rle_compressed() -> None:
     from mcubridge.protocol.frame import build_frame, parse_frame
-    from mcubridge.protocol.protocol import Command, CMD_FLAG_COMPRESSED
+    from mcubridge.protocol.protocol import Command
 
     body = build_frame(
         command_id=Command.CMD_SET_PIN_MODE.value,
         sequence_id=1,
-        payload=b"\xAA" * 50,
+        payload=b"\xaa" * 50,
         nonce=b"\x00" * 12,
         session_key=None,
     )
     envelope = parse_frame(body, session_key=None)
-    assert envelope.payload == b"\xAA" * 50
+    assert envelope.payload == b"\xaa" * 50
 
 
 def test_frame_parse_wrong_key_raises() -> None:

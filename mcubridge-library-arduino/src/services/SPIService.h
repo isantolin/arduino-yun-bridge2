@@ -21,7 +21,7 @@ public:
   void setConfig(const rpc::payload::SpiConfig& config);
   size_t transfer(etl::span<uint8_t> buffer);
 
-  void onSynchronized() {}
+  void onSynchronized() { static_cast<void>(this); }
   void onLost() { end(); }
 
 private:

@@ -47,16 +47,6 @@ inline const pb_msgdesc_t* get_fields<rpc_pb_{{ s.name }}>() {
 }
 {% endfor %}
 
-template <typename T>
-inline bool encode(pb_ostream_t* stream, const T& msg) {
-    return pb_encode(stream, get_fields<T>(), &msg);
-}
-
-template <typename T>
-inline bool decode(pb_istream_t* stream, T& msg) {
-    return pb_decode(stream, get_fields<T>(), &msg);
-}
-
 } // namespace rpc::Payload
 
 #endif

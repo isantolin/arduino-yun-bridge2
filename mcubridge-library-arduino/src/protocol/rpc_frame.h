@@ -55,7 +55,7 @@ inline etl::expected<T, FrameError> parse(const rpc_pb_RpcEnvelope& envelope) {
   T msg = {};
   pb_istream_t stream = pb_istream_from_buffer(envelope.payload.bytes,
                                                envelope.payload.size);
-  if (!rpc::Payload::decode(&stream, msg)) {
+  if (!pb_decode(&stream, rpc::Payload::get_fields<T>(), &msg)) {
     return etl::unexpected<FrameError>(FrameError::MALFORMED);
   }
   return etl::expected<T, FrameError>(msg);
@@ -71,7 +71,7 @@ inline size_t serialize_frame(const rpc_pb_RpcEnvelope& env, etl::span<uint8_t> 
 
   pb_ostream_t stream =
       pb_ostream_from_buffer(buffer.data(), buffer.size() - CRC_TRAILER_SIZE);
-  if (!rpc::Payload::encode(&stream, env)) return 0;
+  if (!pb_encode(&stream, rpc::Payload::get_fields<rpc_pb_RpcEnvelope>(), &env)) return 0;
 
   const size_t encoded_size = stream.bytes_written;
   const uint32_t crc = checksum::compute(buffer.subspan(0, encoded_size));
@@ -104,7 +104,7 @@ inline etl::expected<rpc_pb_RpcEnvelope, FrameError> parse_frame(
 
   rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
   pb_istream_t stream = pb_istream_from_buffer(buffer.data(), crc_offset);
-  if (!rpc::Payload::decode(&stream, env))
+  if (!pb_decode(&stream, rpc::Payload::get_fields<rpc_pb_RpcEnvelope>(), &env))
     return etl::unexpected<FrameError>(FrameError::MALFORMED);
 
   if (env.version != PROTOCOL_VERSION)

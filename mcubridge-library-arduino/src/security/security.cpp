@@ -133,7 +133,7 @@ bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
   etl::array<uint8_t, 32> ad;
   ad.fill(0U);
   pb_ostream_t stream = pb_ostream_from_buffer(ad.data(), ad.size());
-  if (!rpc::Payload::encode(&stream, aad_env)) {
+  if (!pb_encode(&stream, rpc::Payload::get_fields<rpc_pb_RpcEnvelope>(), &aad_env)) {
     return false;
   }
 
@@ -156,7 +156,7 @@ bool aead_decrypt_frame(uint16_t cmd_id, uint16_t seq_id,
   etl::array<uint8_t, 32> ad;
   ad.fill(0U);
   pb_ostream_t stream = pb_ostream_from_buffer(ad.data(), ad.size());
-  if (!rpc::Payload::encode(&stream, aad_env)) {
+  if (!pb_encode(&stream, rpc::Payload::get_fields<rpc_pb_RpcEnvelope>(), &aad_env)) {
     return false;
   }
 

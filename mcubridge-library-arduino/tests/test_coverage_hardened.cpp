@@ -403,7 +403,7 @@ void test_bridge_duplicate_packet() {
   f.payload.size = 2; // dummy
   
   bridge::router::CommandContext ctx(&f, f.command_id, 10, true, true);
-  ba.handleDigitalWriteCommand(ctx);
+  ba.dispatch(f);
 
   TEST_ASSERT(true);
 }

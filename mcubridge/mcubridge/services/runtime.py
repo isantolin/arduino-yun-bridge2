@@ -389,13 +389,13 @@ class BridgeService:
                 except asyncio.TimeoutError:
                     logger.warning("Timed out waiting for MCU link synchronization", topic=str(inbound.topic))
             action = self._deduce_action(route)
-            allows = True
-            allows = True
-            if self.state.topic_authorization and action:
-                allows = self.state.topic_authorization.allows(
+            if action and not (
+                self.state.topic_authorization.allows(
                     route.topic.value if isinstance(route.topic, Topic) else route.topic, action
                 )
-            if not allows:
+                if self.state.topic_authorization
+                else False
+            ):
                 await self._reject_mqtt(inbound, route.topic, action)
                 return
 
@@ -1075,14 +1075,12 @@ class BridgeService:
             return "write" if len(r.segments) == 1 else (r.segments[1].lower() if len(r.segments) > 1 else None)
         return "in" if r.topic == Topic.CONSOLE and r.identifier == "in" else (r.identifier or None)
 
-    async def _reject_mqtt(self, ctx: Message, tp: Any, act: Any) -> None:
-        val = tp.value if hasattr(tp, "value") else tp
+    async def _reject_mqtt(self, ctx: Message, tp: Topic | str, act: str) -> None:
+        val = tp.value if isinstance(tp, Topic) else tp
         await self.enqueue_mqtt(
             QueuedPublish(
                 topic_path(self.state.mqtt_topic_prefix, Topic.SYSTEM, Topic.STATUS),
-                structures.encode_structured_payload(
-                    {"status": "forbidden", "topic": val or "unknown", "action": act or "unknown"}
-                ),
+                structures.encode_structured_payload({"status": "forbidden", "topic": val, "action": act}),
                 content_type=PROTOBUF_CONTENT_TYPE,
                 user_properties=(("bridge-error", TOPIC_FORBIDDEN_REASON),),
             ),

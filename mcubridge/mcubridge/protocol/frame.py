@@ -63,7 +63,7 @@ def build_frame(
         sequence_id=sequence_id,
         nonce=nonce or (b"\x00" * _NONCE_SIZE),
         tag=tag or (b"\x00" * _TAG_SIZE),
-        raw_payload=final_payload,
+        payload=final_payload,
     )
 
     # AEAD Encryption (if session key provided)
@@ -73,7 +73,7 @@ def build_frame(
             version=envelope.version, command_id=envelope.command_id, sequence_id=envelope.sequence_id
         ).SerializeToString()
 
-        envelope.raw_payload, envelope.tag = aead_encrypt(
+        envelope.payload, envelope.tag = aead_encrypt(
             final_payload,
             session_key,
             envelope.nonce,
@@ -112,8 +112,8 @@ def parse_frame(raw_frame_buffer: bytes | bytearray | memoryview, session_key: b
             version=envelope.version, command_id=envelope.command_id, sequence_id=envelope.sequence_id
         ).SerializeToString()
 
-        envelope.raw_payload = aead_decrypt(
-            envelope.raw_payload,
+        envelope.payload = aead_decrypt(
+            envelope.payload,
             envelope.tag,
             session_key,
             envelope.nonce,
@@ -122,7 +122,7 @@ def parse_frame(raw_frame_buffer: bytes | bytearray | memoryview, session_key: b
 
     # RLE Decompression
     if envelope.command_id & protocol.CMD_FLAG_COMPRESSED:
-        envelope.raw_payload = rle_decode(envelope.raw_payload)
+        envelope.payload = rle_decode(envelope.payload)
         envelope.command_id &= ~protocol.CMD_FLAG_COMPRESSED
 
     return envelope

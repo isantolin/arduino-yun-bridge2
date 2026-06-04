@@ -200,43 +200,5 @@ message RpcEnvelope {
     uint32 sequence_id = 3;
     bytes nonce = 4;
     bytes tag = 5;
-    oneof payload {
-        VersionResponse get_version_resp = 6;
-        FreeMemoryResponse get_free_memory_resp = 7;
-        Capabilities get_capabilities_resp = 8;
-        PinMode set_pin_mode = 9;
-        DigitalWrite digital_write = 10;
-        AnalogWrite analog_write = 11;
-        PinRead pin_read = 12;
-        DigitalReadResponse digital_read_resp = 13;
-        AnalogReadResponse analog_read_resp = 14;
-        ConsoleWrite console_write = 15;
-        DatastorePut datastore_put = 16;
-        DatastoreGet datastore_get = 17;
-        DatastoreGetResponse datastore_get_resp = 18;
-        MailboxPush mailbox_push = 19;
-        MailboxProcessed mailbox_processed = 20;
-        MailboxAvailableResponse mailbox_available_resp = 21;
-        MailboxReadResponse mailbox_read_resp = 22;
-        FileWrite file_write = 23;
-        FileRead file_read = 24;
-        FileRemove file_remove = 25;
-        FileReadResponse file_read_resp = 26;
-        ProcessRunAsync process_run_async = 27;
-        ProcessRunAsyncResponse process_run_async_resp = 28;
-        ProcessPoll process_poll = 29;
-        ProcessPollResponse process_poll_resp = 30;
-        ProcessKill process_kill = 31;
-        GenericResponse generic_resp = 32;
-        StructuredPayload structured_payload = 33;
-        AckPacket ack = 34;
-        HandshakeConfig handshake_config = 35;
-        SetBaudratePacket set_baudrate = 36;
-        LinkSync link_sync = 37;
-        EnterBootloader enter_bootloader = 38;
-        SpiTransfer spi_transfer = 39;
-        SpiTransferResponse spi_transfer_resp = 40;
-        SpiConfig spi_config = 41;
-        bytes raw_payload = 42;
-    }
+    bytes payload = 6;
 }

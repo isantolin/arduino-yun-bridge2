@@ -69,6 +69,7 @@ class TestAccessor : public BridgeClass {
   void handleGetVersion(const bridge::router::CommandContext& ctx) {
     _handleGetVersion(ctx);
   }
+  void handleDigitalWrite(const rpc_pb_DigitalWrite& m) { _handleDigitalWrite(m); }
   void invokePacketReceived(etl::span<const uint8_t> p) {
     _onPacketReceived(p);
   }
@@ -92,7 +93,7 @@ class TestAccessor : public BridgeClass {
   void setTimerTaskBridgeNull() { _timer_task.bridge = nullptr; }
   void setTimerLastTick(uint32_t tick) { _timer_task.last_tick_ms = tick; }
   void setHardwareSerial(HardwareSerial* serial) { _hardware_serial = serial; }
-  void clearPendingTxQueue() { _pending_tx_queue.clear(); }
+  void clearPendingTxQueue() { _clearPendingTxQueue(); }
   void exhaustTxPayloadPool() { exhaustTxPayloadPoolRecursive(); }
   void enqueueNullPendingFrame(uint16_t command_id, uint16_t sequence_id,
                                size_t length) {

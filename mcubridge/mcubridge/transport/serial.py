@@ -227,7 +227,7 @@ class SerialTransport:
             await self._check_baudrate_fallback()
             return
 
-        cmd_id, seq_id, payload = envelope.command_id, envelope.sequence_id, envelope.raw_payload
+        cmd_id, seq_id, payload = envelope.command_id, envelope.sequence_id, envelope.payload
 
         if self._negotiating and self._negotiation_future and not self._negotiation_future.done():
             if cmd_id == protocol.Command.CMD_SET_BAUDRATE_RESP.value:

@@ -35,9 +35,8 @@ inline rpc_pb_RpcEnvelope build_envelope(uint16_t cmd_id, uint16_t seq_id,
 
   if (!payload.empty()) {
     const size_t p_size = etl::min(payload.size(), static_cast<size_t>(MAX_PAYLOAD_SIZE));
-    etl::copy_n(payload.begin(), p_size, env.payload.raw_payload.bytes);
-    env.payload.raw_payload.size = static_cast<pb_size_t>(p_size);
-    env.which_payload = rpc_pb_RpcEnvelope_raw_payload_tag;
+    etl::copy_n(payload.begin(), p_size, env.payload.bytes);
+    env.payload.size = static_cast<pb_size_t>(p_size);
   }
 
   return env;

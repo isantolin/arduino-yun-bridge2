@@ -23,4 +23,3 @@ rpc.pb.SpiTransfer.data           max_size:64
 rpc.pb.SpiTransferResponse.data   max_size:64
 rpc.pb.GenericResponse.status      max_size:32
 rpc.pb.GenericResponse.message     max_size:64
-rpc.pb.RpcEnvelope.raw_payload max_size:64

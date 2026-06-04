@@ -14,7 +14,7 @@ def test_build_and_parse_round_trip() -> None:
     envelope = parse_frame(raw)
     assert envelope.command_id == TEST_CMD_ID
     assert envelope.sequence_id == 0
-    assert envelope.raw_payload == payload
+    assert envelope.payload == payload
 
 
 def test_empty_payload_round_trip() -> None:
@@ -22,7 +22,7 @@ def test_empty_payload_round_trip() -> None:
     envelope = parse_frame(raw)
     assert envelope.command_id == TEST_CMD_ID
     assert envelope.sequence_id == 0
-    assert envelope.raw_payload == b""
+    assert envelope.payload == b""
 
 
 def test_max_payload_round_trip() -> None:
@@ -31,7 +31,7 @@ def test_max_payload_round_trip() -> None:
     envelope = parse_frame(raw)
     assert envelope.command_id == TEST_CMD_ID
     assert envelope.sequence_id == 0
-    assert envelope.raw_payload == payload
+    assert envelope.payload == payload
 
 
 def test_build_rejects_large_payload() -> None:

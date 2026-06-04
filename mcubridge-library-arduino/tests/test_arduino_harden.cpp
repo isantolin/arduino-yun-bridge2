@@ -25,7 +25,7 @@ void test_bridge_protocol_version_mismatch() {
   ba.setSynchronized();
 
   rpc_pb_RpcEnvelope f;
-  f.version = static_cast<uint8_t>(rpc::PROTOCOL_VERSION + 1);
+  f.version = static_cast<uint8_t>(rpc::RPC_PROTOCOL_VERSION + 1);
   f.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_GET_VERSION);
   f.sequence_id = 1;
   
@@ -44,7 +44,7 @@ void test_bridge_unknown_command_jump_table() {
   ba.setSynchronized();
 
   rpc_pb_RpcEnvelope f;
-  f.version = rpc::PROTOCOL_VERSION;
+  f.version = rpc::RPC_PROTOCOL_VERSION;
   f.command_id = 254; // empty
   f.sequence_id = 1;
 
@@ -84,7 +84,7 @@ void test_bridge_packet_received_edge_cases() {
 
   // 2. CRC mismatch
   rpc_pb_RpcEnvelope f;
-  f.version = rpc::PROTOCOL_VERSION;
+  f.version = rpc::RPC_PROTOCOL_VERSION;
   f.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_GET_VERSION);
   f.sequence_id = 1;
 
@@ -114,7 +114,7 @@ void test_bridge_ack_orphans() {
 }
 
 void test_bridge_begin_idempotency() {
-  Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE);
+  Bridge.begin(rpc::DEFAULT_BAUDRATE);
   Bridge.begin(9600);
   TEST_ASSERT_TRUE(true);
 }
@@ -125,14 +125,14 @@ void test_bridge_linksync_auth_failure() {
   auto& ba = TestAccessor::create(Bridge);
 
   const char* secret = "secure_secret_1234567890123456";
-  Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, secret);
+  Bridge.begin(rpc::DEFAULT_BAUDRATE, secret);
 
   rpc::payload::LinkSync sync_msg = {};
   memset(sync_msg.nonce.bytes, 0xAA, 16); sync_msg.nonce.size = 16;
   memset(sync_msg.tag.bytes, 0xFF, 16); sync_msg.tag.size = 16;
 
   rpc_pb_RpcEnvelope f;
-  f.version = rpc::PROTOCOL_VERSION;
+  f.version = rpc::RPC_PROTOCOL_VERSION;
   f.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_LINK_SYNC);
   f.sequence_id = 1;
 
@@ -159,7 +159,7 @@ void test_bridge_decompress_error() {
   ba.setSynchronized();
 
   rpc_pb_RpcEnvelope f;
-  f.version = rpc::PROTOCOL_VERSION;
+  f.version = rpc::RPC_PROTOCOL_VERSION;
   f.command_id = static_cast<uint16_t>(
                    static_cast<uint16_t>(rpc::CommandId::CMD_GET_VERSION) |
                    rpc::RPC_CMD_FLAG_COMPRESSED);
@@ -181,11 +181,11 @@ void test_bridge_security_pre_sync_rejection() {
   auto& ba = TestAccessor::create(Bridge);
 
   const char* secret = "secure_secret_1234567890123456";
-  Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, secret);
+  Bridge.begin(rpc::DEFAULT_BAUDRATE, secret);
 
   // Try to send a restricted command before sync
   rpc_pb_RpcEnvelope f;
-  f.version = rpc::PROTOCOL_VERSION;
+  f.version = rpc::RPC_PROTOCOL_VERSION;
   f.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_GET_FREE_MEMORY);
   f.sequence_id = 1;
   
@@ -200,7 +200,7 @@ void test_bridge_nonce_reuse_attack() {
   auto& ba = TestAccessor::create(Bridge);
 
   const char* secret = "secure_secret_1234567890123456";
-  Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, secret);
+  Bridge.begin(rpc::DEFAULT_BAUDRATE, secret);
 
   // 1. Sync properly
   rpc::payload::LinkSync sync_msg = {};
@@ -210,7 +210,7 @@ void test_bridge_nonce_reuse_attack() {
   sync_msg.tag.size = 16;
 
   rpc_pb_RpcEnvelope f;
-  f.version = rpc::PROTOCOL_VERSION;
+  f.version = rpc::RPC_PROTOCOL_VERSION;
   f.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_LINK_SYNC);
   f.sequence_id = 1;
   

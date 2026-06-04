@@ -26,7 +26,7 @@ void test_surgical_bridge_errors() {
 
   // 1. Replay detection (Same nonce counter)
   rpc_pb_RpcEnvelope f = rpc_pb_RpcEnvelope_init_default;
-  f .version = rpc::PROTOCOL_VERSION;
+  f .version = rpc::RPC_PROTOCOL_VERSION;
   f .command_id =
       static_cast<uint16_t>(rpc::CommandId::CMD_LINK_SYNC);
   f .sequence_id = 1;
@@ -46,7 +46,7 @@ void test_surgical_bridge_errors() {
 
   // 3. Unknown Command in dispatch
   rpc_pb_RpcEnvelope f_unk = rpc_pb_RpcEnvelope_init_default;
-  f_unk .version = rpc::PROTOCOL_VERSION;
+  f_unk .version = rpc::RPC_PROTOCOL_VERSION;
   f_unk .command_id = 999;
   ba.dispatch(f_unk);
 

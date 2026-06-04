@@ -27,7 +27,7 @@ using namespace bridge::test;
 void reset_bridge_comp(BiStream& stream) {
   Bridge.~BridgeClass();
   new (&Bridge) bridge::test::TestAccessor(stream);
-  Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, "top-secret");
+  Bridge.begin(rpc::DEFAULT_BAUDRATE, "top-secret");
   auto& ba = TestAccessor::create(Bridge);
   ba.onStartupStabilized();
   ba.setSynchronized();
@@ -38,7 +38,7 @@ void test_all_handlers_coverage() {
   reset_bridge_comp(stream);
 
   rpc_pb_RpcEnvelope frame = rpc_pb_RpcEnvelope_init_default;
-  frame.version = rpc::PROTOCOL_VERSION;
+  frame.version = rpc::RPC_PROTOCOL_VERSION;
   frame.command_id = rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION);
   TestAccessor::create(Bridge).dispatch(frame);
 

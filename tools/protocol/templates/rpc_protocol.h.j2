@@ -7,12 +7,10 @@
 #ifndef RPC_PROTOCOL_H
 #define RPC_PROTOCOL_H
 
-#include <stddef.h>
 #include <stdint.h>
+#include <stddef.h>
 #include <etl/array.h>
 #include <etl/type_traits.h>
-#include <etl/algorithm.h>
-#include <etl/iterator.h>
 
 #ifndef RPC_PROGMEM
 #if defined(ARDUINO_ARCH_AVR)
@@ -25,87 +23,87 @@
 
 namespace rpc {
 
+enum class Architecture : uint8_t {
+{%- for name, val in architectures.items() %}
+    ARCH_{{ name|upper }} = {{ val }},
+{%- endfor %}
+};
+
 {% for const in constants -%}
-inline constexpr {{ const.type }} {{ const.name }} = {{ const.value | cpp_digits }}{{ 'UL' if const.type == 'unsigned long' else 'U' if const.type.startswith('uint') or const.type.startswith('unsigned') else '' }};
+{%- if const.name == "UINT16_MAX" or const.name == "UINT8_MASK" -%}
+inline constexpr {{ const.type }} RPC_{{ const.name }} = {{ const.value | cpp_digits }}U;
+{%- else -%}
+inline constexpr {{ const.type }} RPC_{{ const.name }} = {{ const.value | cpp_digits }}{{ "UL" if const.type == "unsigned long" else "ULL" if const.type == "uint64_t" else "U" if const.type.startswith("uint") or const.type.startswith("unsigned") else "" }};
+{%- endif %}
+{%- if const.name not in ["UINT16_MAX", "UINT8_MAX", "UINT8_MASK", "INT16_MAX", "INT16_MIN"] -%}
+inline constexpr {{ const.type }} {{ const.name }} = RPC_{{ const.name }};
+{%- endif %}
 {% endfor %}
+
 {% for const in handshake_constants -%}
-inline constexpr {{ const.type }} {{ const.name }} = {{ const.value | cpp_digits }}{{ 'UL' if const.type == 'unsigned long' else 'U' if const.type.startswith('uint') or const.type.startswith('unsigned') else '' }};
+inline constexpr {{ const.type }} RPC_{{ const.name }} = {{ const.value | cpp_digits }}{{ "UL" if const.type == "unsigned long" else "ULL" if const.type == "uint64_t" else "U" if const.type.startswith("uint") or const.type.startswith("unsigned") else "" }};
+inline constexpr {{ const.type }} {{ const.name }} = RPC_{{ const.name }};
 {% endfor %}
 inline constexpr unsigned int RPC_HANDSHAKE_CONFIG_SIZE = 7U;
 
 {% if handshake.hkdf_salt -%}
 inline constexpr etl::array<uint8_t, {{ handshake.hkdf_salt_len }}U> RPC_HANDSHAKE_HKDF_SALT RPC_PROGMEM = { {{ handshake.hkdf_salt_bytes }} };
+inline constexpr auto HANDSHAKE_HKDF_SALT = RPC_HANDSHAKE_HKDF_SALT;
 {%- endif %}
 
 {% if handshake.hkdf_info_auth -%}
 inline constexpr etl::array<uint8_t, {{ handshake.hkdf_info_auth_len }}U> RPC_HANDSHAKE_HKDF_INFO_AUTH RPC_PROGMEM = { {{ handshake.hkdf_info_auth_bytes }} };
+inline constexpr auto HANDSHAKE_HKDF_INFO_AUTH = RPC_HANDSHAKE_HKDF_INFO_AUTH;
 {%- endif %}
 
 {% if handshake.hkdf_info_session -%}
 inline constexpr etl::array<uint8_t, {{ handshake.hkdf_info_session_len }}U> RPC_HANDSHAKE_HKDF_INFO_SESSION RPC_PROGMEM = { {{ handshake.hkdf_info_session_bytes }} };
+inline constexpr auto HANDSHAKE_HKDF_INFO_SESSION = RPC_HANDSHAKE_HKDF_INFO_SESSION;
 {%- endif %}
 
-{% for cap, val in capabilities.items() -%}
-inline constexpr uint32_t RPC_CAPABILITY_{{ cap|upper }} = {{ val }}U;
-{% endfor %}
-{% for arch, val in architectures.items() -%}
-inline constexpr uint8_t RPC_ARCH_{{ arch|upper }} = {{ val }}U;
-{% endfor %}
-enum class CompressionType : uint8_t {
-{%- for name, val in compression.items() %}
-    COMPRESSION_{{ name|upper }} = {{ val }},
+namespace status_reason {
+{%- for name, val in status_reasons.items() %}
+    inline constexpr const char* {{ name|upper }} = "{{ val }}";
 {%- endfor %}
+}
+
+enum class StatusCode : uint8_t {
+    {%- for status in statuses %}
+    STATUS_{{ status.name }} = {{ status.value }},
+    {%- endfor %}
+};
+
+enum class CommandId : uint16_t {
+    {%- for cmd in commands %}
+    {{ cmd.name }} = {{ cmd.value }},
+    {%- endfor %}
 };
 
 enum class FrameError : uint8_t {
     NONE = 0,
-    CRC_MISMATCH = 1,
-    MALFORMED = 2,
-    OVERFLOW = 3,
-    AUTH_FAIL = 4,
+    MALFORMED = 1,
+    CRC_MISMATCH = 2,
+    TIMEOUT = 3,
+    OVERFLOW = 4,
+    SECURITY = 5,
 };
 
-enum class StatusCode : uint8_t {
-{%- for status in statuses %}
-    STATUS_{{ status.name }} = {{ status.value }},
-{%- endfor %}
-};
-
-enum class CommandId : uint16_t {
-{%- for cmd in commands %}
-    {{ cmd.name }} = {{ cmd.value }},
-{%- endfor %}
-};
-
-namespace status_reason {
-{%- for name, val in status_reasons.items() %}
-inline constexpr char {{ name|upper }}[] = "{{ val }}";
-{%- endfor %}
-}
-
-template <typename E>
-constexpr etl::underlying_type_t<E> to_underlying(E value) {
-    return static_cast<etl::underlying_type_t<E>>(value);
-}
-
-constexpr bool requires_ack(CommandId command_id) {
-{%- if ack_commands %}
-    constexpr etl::array<CommandId, {{ ack_commands | length }}U> ACK_COMMANDS = {
-        {%- for cmd in ack_commands %}
-        CommandId::{{ cmd.name }},
-        {%- endfor %}
-    };
-    return etl::find(ACK_COMMANDS.begin(), ACK_COMMANDS.end(), command_id) != ACK_COMMANDS.end();
-{%- else %}
-    (void)command_id;
-    return false;
-{%- endif %}
+template <typename T>
+constexpr etl::underlying_type_t<T> to_underlying(T value) {
+    return static_cast<etl::underlying_type_t<T>>(value);
 }
 
 constexpr bool requires_ack(uint16_t command_id) {
-    return requires_ack(static_cast<CommandId>(command_id));
+    switch (command_id) {
+        {%- for cmd in ack_commands %}
+        case to_underlying(CommandId::{{ cmd.name }}):
+        {%- endfor %}
+            return true;
+        default:
+            return false;
+    }
 }
 
 } // namespace rpc
 
-#endif // RPC_PROTOCOL_H
+#endif

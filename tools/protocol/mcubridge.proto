@@ -1,6 +1,236 @@
 syntax = "proto3";
 
+import "nanopb.proto";
+import "bridge_options.proto";
+
 package rpc.pb;
+
+enum StatusCode {
+    STATUS_UNSPECIFIED = 0;
+    STATUS_OK = 0x30;
+    STATUS_ERROR = 0x31;
+    STATUS_CMD_UNKNOWN = 0x32;
+    STATUS_MALFORMED = 0x33;
+    STATUS_OVERFLOW = 0x34;
+    STATUS_CRC_MISMATCH = 0x35;
+    STATUS_TIMEOUT = 0x36;
+    STATUS_NOT_IMPLEMENTED = 0x37;
+    STATUS_ACK = 0x38;
+}
+
+enum CommandId {
+    CMD_UNSPECIFIED = 0;
+    
+    // --- System Commands (0x40-0x4F) ---
+    CMD_GET_VERSION = 0x40 [
+        (bridge.options.category) = "system",
+        (bridge.options.requires_ack) = false,
+        (bridge.options.response_message) = "VersionResponse"
+    ];
+    CMD_GET_VERSION_RESP = 0x41 [
+        (bridge.options.category) = "system"
+    ];
+    CMD_GET_FREE_MEMORY = 0x42 [
+        (bridge.options.category) = "system",
+        (bridge.options.requires_ack) = false,
+        (bridge.options.response_message) = "FreeMemoryResponse"
+    ];
+    CMD_GET_FREE_MEMORY_RESP = 0x43 [
+        (bridge.options.category) = "system"
+    ];
+    CMD_LINK_SYNC = 0x44 [
+        (bridge.options.category) = "system",
+        (bridge.options.requires_ack) = false,
+        (bridge.options.description) = "Synchronize link state with mutual authentication."
+    ];
+    CMD_LINK_SYNC_RESP = 0x45 [
+        (bridge.options.category) = "system"
+    ];
+    CMD_LINK_RESET = 0x46 [
+        (bridge.options.category) = "system",
+        (bridge.options.requires_ack) = false,
+        (bridge.options.description) = "Reset link state."
+    ];
+    CMD_LINK_RESET_RESP = 0x47 [
+        (bridge.options.category) = "system"
+    ];
+    CMD_GET_CAPABILITIES = 0x48 [
+        (bridge.options.category) = "system",
+        (bridge.options.requires_ack) = false,
+        (bridge.options.response_message) = "Capabilities"
+    ];
+    CMD_GET_CAPABILITIES_RESP = 0x49 [
+        (bridge.options.category) = "system"
+    ];
+    CMD_SET_BAUDRATE = 0x4A [
+        (bridge.options.category) = "system",
+        (bridge.options.requires_ack) = true
+    ];
+    CMD_SET_BAUDRATE_RESP = 0x4B [
+        (bridge.options.category) = "system"
+    ];
+    CMD_ENTER_BOOTLOADER = 0x4C [
+        (bridge.options.category) = "system",
+        (bridge.options.requires_ack) = true
+    ];
+    CMD_XOFF = 0x4E [
+        (bridge.options.category) = "system",
+        (bridge.options.requires_ack) = false
+    ];
+    CMD_XON = 0x4F [
+        (bridge.options.category) = "system",
+        (bridge.options.requires_ack) = false
+    ];
+
+    // --- GPIO Commands (0x50-0x5F) ---
+    CMD_SET_PIN_MODE = 0x50 [
+        (bridge.options.category) = "gpio",
+        (bridge.options.requires_ack) = true
+    ];
+    CMD_DIGITAL_WRITE = 0x51 [
+        (bridge.options.category) = "gpio",
+        (bridge.options.requires_ack) = true
+    ];
+    CMD_ANALOG_WRITE = 0x52 [
+        (bridge.options.category) = "gpio",
+        (bridge.options.requires_ack) = true
+    ];
+    CMD_DIGITAL_READ = 0x53 [
+        (bridge.options.category) = "gpio",
+        (bridge.options.requires_ack) = false,
+        (bridge.options.response_message) = "DigitalReadResponse"
+    ];
+    CMD_ANALOG_READ = 0x54 [
+        (bridge.options.category) = "gpio",
+        (bridge.options.requires_ack) = false,
+        (bridge.options.response_message) = "AnalogReadResponse"
+    ];
+    CMD_DIGITAL_READ_RESP = 0x55 [
+        (bridge.options.category) = "gpio"
+    ];
+    CMD_ANALOG_READ_RESP = 0x56 [
+        (bridge.options.category) = "gpio"
+    ];
+
+    // --- Console Commands (0x60-0x6F) ---
+    CMD_CONSOLE_WRITE = 0x60 [
+        (bridge.options.category) = "console",
+        (bridge.options.requires_ack) = true
+    ];
+
+    // --- Datastore Commands (0x70-0x7F) ---
+    CMD_DATASTORE_PUT = 0x70 [
+        (bridge.options.category) = "datastore",
+        (bridge.options.requires_ack) = true
+    ];
+    CMD_DATASTORE_GET = 0x71 [
+        (bridge.options.category) = "datastore",
+        (bridge.options.requires_ack) = false,
+        (bridge.options.response_message) = "DatastoreGetResponse"
+    ];
+    CMD_DATASTORE_GET_RESP = 0x72 [
+        (bridge.options.category) = "datastore"
+    ];
+
+    // --- Mailbox Commands (0x80-0x8F) ---
+    CMD_MAILBOX_PUSH = 0x80 [
+        (bridge.options.category) = "mailbox",
+        (bridge.options.requires_ack) = true
+    ];
+    CMD_MAILBOX_READ = 0x81 [
+        (bridge.options.category) = "mailbox",
+        (bridge.options.requires_ack) = false,
+        (bridge.options.response_message) = "MailboxReadResponse"
+    ];
+    CMD_MAILBOX_READ_RESP = 0x82 [
+        (bridge.options.category) = "mailbox"
+    ];
+    CMD_MAILBOX_AVAILABLE = 0x83 [
+        (bridge.options.category) = "mailbox",
+        (bridge.options.requires_ack) = false,
+        (bridge.options.response_message) = "MailboxAvailableResponse"
+    ];
+    CMD_MAILBOX_AVAILABLE_RESP = 0x84 [
+        (bridge.options.category) = "mailbox"
+    ];
+    CMD_MAILBOX_PROCESSED = 0x85 [
+        (bridge.options.category) = "mailbox",
+        (bridge.options.requires_ack) = true
+    ];
+
+    // --- File System Commands (0x90-0x9F) ---
+    CMD_FILE_WRITE = 0x90 [
+        (bridge.options.category) = "file",
+        (bridge.options.requires_ack) = true
+    ];
+    CMD_FILE_READ = 0x91 [
+        (bridge.options.category) = "file",
+        (bridge.options.requires_ack) = false,
+        (bridge.options.response_message) = "FileReadResponse"
+    ];
+    CMD_FILE_READ_RESP = 0x92 [
+        (bridge.options.category) = "file"
+    ];
+    CMD_FILE_REMOVE = 0x93 [
+        (bridge.options.category) = "file",
+        (bridge.options.requires_ack) = true
+    ];
+
+    // --- Process Commands (0xA0-0xAF) ---
+    CMD_PROCESS_RUN_ASYNC = 0xA0 [
+        (bridge.options.category) = "process",
+        (bridge.options.requires_ack) = false,
+        (bridge.options.response_message) = "ProcessRunAsyncResponse"
+    ];
+    CMD_PROCESS_RUN_ASYNC_RESP = 0xA1 [
+        (bridge.options.category) = "process"
+    ];
+    CMD_PROCESS_POLL = 0xA2 [
+        (bridge.options.category) = "process",
+        (bridge.options.requires_ack) = false,
+        (bridge.options.response_message) = "ProcessPollResponse"
+    ];
+    CMD_PROCESS_POLL_RESP = 0xA3 [
+        (bridge.options.category) = "process"
+    ];
+    CMD_PROCESS_KILL = 0xA4 [
+        (bridge.options.category) = "process",
+        (bridge.options.requires_ack) = true
+    ];
+
+    // --- SPI Commands (0xB0-0xBF) ---
+    CMD_SPI_BEGIN = 0xB0 [
+        (bridge.options.category) = "spi",
+        (bridge.options.requires_ack) = true
+    ];
+    CMD_SPI_TRANSFER = 0xB1 [
+        (bridge.options.category) = "spi",
+        (bridge.options.requires_ack) = false,
+        (bridge.options.response_message) = "SpiTransferResponse"
+    ];
+    CMD_SPI_TRANSFER_RESP = 0xB2 [
+        (bridge.options.category) = "spi"
+    ];
+    CMD_SPI_END = 0xB3 [
+        (bridge.options.category) = "spi",
+        (bridge.options.requires_ack) = true
+    ];
+    CMD_SPI_SET_CONFIG = 0xB4 [
+        (bridge.options.category) = "spi",
+        (bridge.options.requires_ack) = true
+    ];
+}
+
+// --- Payload Messages ---
+
+message RpcEnvelope {
+    uint32 version = 1;
+    uint32 command_id = 2;
+    uint32 sequence_id = 3;
+    bytes nonce = 4 [(nanopb).max_size = 12];
+    bytes tag = 5 [(nanopb).max_size = 16];
+    bytes payload = 6 [(nanopb).max_size = 64];
+}
 
 message VersionResponse {
     uint32 major = 1;
@@ -15,8 +245,8 @@ message FreeMemoryResponse {
 message Capabilities {
     uint32 ver = 1;
     uint32 arch = 2;
-    uint32 dig = 3;
-    uint32 ana = 4;
+    bool dig = 3;
+    bool ana = 4;
     bool watchdog = 5;
     bool rle = 6;
     bool debug_frames = 7;
@@ -27,10 +257,12 @@ message Capabilities {
     bool fpu = 12;
     bool logic_3v3 = 13;
     bool big_buffer = 14;
-    bool i2c = 15;
-    bool spi = 16;
-    bool sd = 17;
-    uint32 feat = 18;
+    bool ethernet = 15;
+    bool wifi = 16;
+    bool can = 17;
+    bool flash = 18;
+    bool spi = 19;
+    bool sd = 20;
 }
 
 message PinMode {
@@ -61,28 +293,28 @@ message AnalogReadResponse {
 }
 
 message ConsoleWrite {
-    bytes data = 1;
+    bytes data = 1 [(nanopb).max_size = 64];
 }
 
 message DatastorePut {
-    string key = 1;
-    bytes value = 2;
+    bytes key = 1 [(nanopb).max_size = 32];
+    bytes value = 2 [(nanopb).max_size = 64];
 }
 
 message DatastoreGet {
-    string key = 1;
+    bytes key = 1 [(nanopb).max_size = 32];
 }
 
 message DatastoreGetResponse {
-    bytes value = 1;
+    bytes value = 1 [(nanopb).max_size = 64];
 }
 
 message MailboxPush {
-    bytes data = 1;
+    bytes data = 1 [(nanopb).max_size = 64];
 }
 
 message MailboxProcessed {
-    uint32 message_id = 1;
+    uint32 count = 1;
 }
 
 message MailboxAvailableResponse {
@@ -90,28 +322,28 @@ message MailboxAvailableResponse {
 }
 
 message MailboxReadResponse {
-    bytes content = 1;
+    bytes content = 1 [(nanopb).max_size = 64];
 }
 
 message FileWrite {
-    string path = 1;
-    bytes data = 2;
+    bytes path = 1 [(nanopb).max_size = 64];
+    bytes data = 2 [(nanopb).max_size = 64];
 }
 
 message FileRead {
-    string path = 1;
-}
-
-message FileRemove {
-    string path = 1;
+    bytes path = 1 [(nanopb).max_size = 64];
 }
 
 message FileReadResponse {
-    bytes content = 1;
+    bytes content = 1 [(nanopb).max_size = 64];
+}
+
+message FileRemove {
+    bytes path = 1 [(nanopb).max_size = 64];
 }
 
 message ProcessRunAsync {
-    string command = 1;
+    bytes command = 1 [(nanopb).max_size = 64];
 }
 
 message ProcessRunAsyncResponse {
@@ -123,22 +355,63 @@ message ProcessPoll {
 }
 
 message ProcessPollResponse {
-    uint32 status = 1;
-    uint32 exit_code = 2;
-    bytes stdout_data = 3;
-    bytes stderr_data = 4;
-    bool finished = 5;
-    bool stdout_truncated = 6;
-    bool stderr_truncated = 7;
+    uint32 pid = 2;
+    uint32 exit_code = 3;
+    bool running = 4;
+    bytes stdout_data = 5 [(nanopb).max_size = 32];
+    bytes stderr_data = 6 [(nanopb).max_size = 32];
 }
 
 message ProcessKill {
     uint32 pid = 1;
 }
 
+message LinkSync {
+    bytes nonce = 1 [(nanopb).max_size = 16];
+    bytes tag = 2 [(nanopb).max_size = 16];
+}
+
+message SpiTransfer {
+    bytes data = 1 [(nanopb).max_size = 64];
+}
+
+message SpiTransferResponse {
+    bytes data = 1 [(nanopb).max_size = 64];
+}
+
+message SpiConfig {
+    uint32 speed = 1;
+    uint32 mode = 2;
+    uint32 bit_order = 3;
+    uint32 frequency = 4;
+    uint32 data_mode = 5;
+}
+
 message GenericResponse {
-    string status = 1;
-    string message = 2;
+    bytes status = 1 [(nanopb).max_size = 32];
+    bytes message = 2 [(nanopb).max_size = 64];
+}
+
+message AckPacket {
+    uint32 sequence_id = 1;
+    uint32 command_id = 2;
+}
+
+
+message HandshakeConfig {
+    uint32 config = 1;
+    uint32 ack_timeout_ms = 2;
+    uint32 ack_retry_limit = 3;
+    uint32 response_timeout_ms = 4;
+}
+
+
+message SetBaudratePacket {
+    uint32 baudrate = 1;
+}
+
+message EnterBootloader {
+    uint32 magic = 1;
 }
 
 message StructuredEntry {
@@ -148,57 +421,11 @@ message StructuredEntry {
         bytes bytes_value = 3;
         bool bool_value = 4;
         int64 int_value = 5;
-        float float_value = 6;
+        double float_value = 6;
         bool null_value = 7;
     }
 }
 
 message StructuredPayload {
     repeated StructuredEntry entries = 1;
-}
-
-message AckPacket {
-    uint32 command_id = 1;
-}
-
-message HandshakeConfig {
-    uint32 ack_timeout_ms = 1;
-    uint32 ack_retry_limit = 2;
-    uint32 response_timeout_ms = 3;
-}
-
-message SetBaudratePacket {
-    uint32 baudrate = 1;
-}
-
-message LinkSync {
-    bytes nonce = 1;
-    bytes tag = 2;
-}
-
-message EnterBootloader {
-    uint32 magic = 1;
-}
-
-message SpiTransfer {
-    bytes data = 1;
-}
-
-message SpiTransferResponse {
-    bytes data = 1;
-}
-
-message SpiConfig {
-    uint32 bit_order = 1;
-    uint32 data_mode = 2;
-    uint32 frequency = 3;
-}
-
-message RpcEnvelope {
-    uint32 version = 1;
-    uint32 command_id = 2;
-    uint32 sequence_id = 3;
-    bytes nonce = 4;
-    bytes tag = 5;
-    bytes payload = 6;
 }

@@ -42,15 +42,15 @@ void test_bridge_handshake() {
   etl::copy_n(tag.begin(), 16, msg.tag.bytes);
   msg.tag.size = 16;
 
-  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> pl_buf;
+  etl::array<uint8_t, rpc::RPC_MAX_PAYLOAD_SIZE> pl_buf;
   pb_ostream_t pbos = pb_ostream_from_buffer(pl_buf.data(), pl_buf.size());
   (void)pb_encode(&pbos, rpc::Payload::get_fields<decltype(msg)>(), &msg);
 
   // 2. Build LinkSync frame using FrameBuilder
   etl::array<uint8_t, rpc::MAX_FRAME_SIZE> frame_raw;
-  etl::array<uint8_t, rpc::AEAD_NONCE_SIZE> frame_nonce = {};
+  etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> frame_nonce = {};
   // [MEM-SAVE] Reusing nonce for handshake (aligned with protocol spec).
-  etl::copy_n(nonce.begin(), rpc::AEAD_NONCE_SIZE, frame_nonce.begin());
+  etl::copy_n(nonce.begin(), rpc::RPC_AEAD_NONCE_SIZE, frame_nonce.begin());
 
   size_t len = rpc::serialize_frame(rpc::build_envelope(rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC), 1, etl::span<const uint8_t>(pl_buf.data(), pbos.bytes_written), frame_nonce, tag), frame_raw);
 
@@ -82,13 +82,13 @@ void test_bridge_process_rx() {
   msg.pin = 13;
   msg.value = 1;
 
-  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> pl_buf;
+  etl::array<uint8_t, rpc::RPC_MAX_PAYLOAD_SIZE> pl_buf;
   pb_ostream_t pbos = pb_ostream_from_buffer(pl_buf.data(), pl_buf.size());
   (void)pb_encode(&pbos, rpc::Payload::get_fields<decltype(msg)>(), &msg);
 
   etl::array<uint8_t, rpc::MAX_FRAME_SIZE> frame_raw;
-  etl::array<uint8_t, rpc::AEAD_NONCE_SIZE> frame_nonce = {};
-  etl::array<uint8_t, rpc::AEAD_TAG_SIZE> frame_tag = {};
+  etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> frame_nonce = {};
+  etl::array<uint8_t, rpc::RPC_AEAD_TAG_SIZE> frame_tag = {};
 
   size_t len = rpc::serialize_frame(rpc::build_envelope(rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE), 10, etl::span<const uint8_t>(pl_buf.data(), pbos.bytes_written), frame_nonce, frame_tag), frame_raw);
 
@@ -109,13 +109,13 @@ void test_bridge_dedup_console_write() {
   etl::copy_n(text, 4, msg.data.bytes);
   msg.data.size = 4;
 
-  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> pl_buf;
+  etl::array<uint8_t, rpc::RPC_MAX_PAYLOAD_SIZE> pl_buf;
   pb_ostream_t pbos = pb_ostream_from_buffer(pl_buf.data(), pl_buf.size());
   (void)pb_encode(&pbos, rpc::Payload::get_fields<decltype(msg)>(), &msg);
 
   etl::array<uint8_t, rpc::MAX_FRAME_SIZE> frame_raw;
-  etl::array<uint8_t, rpc::AEAD_NONCE_SIZE> frame_nonce = {};
-  etl::array<uint8_t, rpc::AEAD_TAG_SIZE> frame_tag = {};
+  etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> frame_nonce = {};
+  etl::array<uint8_t, rpc::RPC_AEAD_TAG_SIZE> frame_tag = {};
 
   size_t len = rpc::serialize_frame(rpc::build_envelope(rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE), 55, etl::span<const uint8_t>(pl_buf.data(), pbos.bytes_written), frame_nonce, frame_tag), frame_raw);
 
@@ -146,13 +146,13 @@ void test_bridge_status_ack() {
   rpc::payload::AckPacket p = {};
   p.command_id = rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE);
   
-  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> pl_buf;
+  etl::array<uint8_t, rpc::RPC_MAX_PAYLOAD_SIZE> pl_buf;
   pb_ostream_t pbos = pb_ostream_from_buffer(pl_buf.data(), pl_buf.size());
   (void)pb_encode(&pbos, rpc::Payload::get_fields<decltype(p)>(), &p);
 
   etl::array<uint8_t, rpc::MAX_FRAME_SIZE> frame_raw;
-  etl::array<uint8_t, rpc::AEAD_NONCE_SIZE> frame_nonce = {};
-  etl::array<uint8_t, rpc::AEAD_TAG_SIZE> frame_tag = {};
+  etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> frame_nonce = {};
+  etl::array<uint8_t, rpc::RPC_AEAD_TAG_SIZE> frame_tag = {};
 
   size_t len = rpc::serialize_frame(rpc::build_envelope(rpc::to_underlying(rpc::StatusCode::STATUS_ACK), 77, etl::span<const uint8_t>(pl_buf.data(), pbos.bytes_written), frame_nonce, frame_tag), frame_raw);
 

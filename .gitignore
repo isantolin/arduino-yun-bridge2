@@ -121,3 +121,15 @@ mcubridge-library-arduino/src/pb_decode.c
 mcubridge-library-arduino/src/pb_decode.h
 mcubridge-library-arduino/src/pb_encode.c
 mcubridge-library-arduino/src/pb_encode.h
+mcubridge/mcubridge/protocol/bridge_options_pb2.py
+proto.desc
+mcubridge/mcubridge/protocol/nanopb_pb2.py
+mcubridge-library-arduino/src/protocol/bridge_options.pb.c
+mcubridge-library-arduino/src/protocol/bridge_options.pb.h
+mcubridge-library-arduino/src/protocol/rpc_dispatch.h
+tools/protocol/templates/rpc_protocol.h.j2
+tools/protocol/templates/rpc_dispatch.h.j2
+tools/protocol/templates/protocol.py.j2
+tools/protocol/templates/protocol.py.j2
+tools/protocol/templates/rpc_protocol.h.j2
+.mosquitto-tox.pid

@@ -26,11 +26,11 @@ FileSystemClass::FileSystemClass() {}
 void FileSystemClass::write(etl::string_view path,
                             etl::span<const uint8_t> data) {
   rpc::payload::FileWrite p;
-  const size_t p_copy = etl::min(path.size(), sizeof(p.path) - 1U);
+  const size_t p_copy = etl::min(path.size(), sizeof(p.path.bytes) - 1U);
   if (p_copy > 0U) {
-    etl::copy_n(path.begin(), p_copy, p.path);
+    { p.path.size = (pb_size_t)(p_copy); etl::copy_n(path.begin(), p_copy, static_cast<char*>(static_cast<void*>(p.path.bytes))); };
   }
-  p.path[p_copy] = '\0';
+  p.path.bytes[p_copy] = '\0';
 
   const size_t d_copy = etl::min(data.size(), sizeof(p.data.bytes));
   p.data.size = (pb_size_t)d_copy;
@@ -44,11 +44,11 @@ void FileSystemClass::read(etl::string_view path,
                            FileSystemReadHandler handler) {
   _read_handler = handler;
   rpc::payload::FileRead p;
-  const size_t p_copy = etl::min(path.size(), sizeof(p.path) - 1U);
+  const size_t p_copy = etl::min(path.size(), sizeof(p.path.bytes) - 1U);
   if (p_copy > 0U) {
-    etl::copy_n(path.begin(), p_copy, p.path);
+    { p.path.size = (pb_size_t)(p_copy); etl::copy_n(path.begin(), p_copy, static_cast<char*>(static_cast<void*>(p.path.bytes))); };
   }
-  p.path[p_copy] = '\0';
+  p.path.bytes[p_copy] = '\0';
 
   if (!Bridge.send(rpc::CommandId::CMD_FILE_READ, 0, p)) {
     Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
@@ -57,17 +57,17 @@ void FileSystemClass::read(etl::string_view path,
 
 [[maybe_unused]] void FileSystemClass::remove(etl::string_view path) {
   rpc::payload::FileRemove p;
-  const size_t p_copy = etl::min(path.size(), sizeof(p.path) - 1U);
+  const size_t p_copy = etl::min(path.size(), sizeof(p.path.bytes) - 1U);
   if (p_copy > 0U) {
-    etl::copy_n(path.begin(), p_copy, p.path);
+    { p.path.size = (pb_size_t)(p_copy); etl::copy_n(path.begin(), p_copy, static_cast<char*>(static_cast<void*>(p.path.bytes))); };
   }
-  p.path[p_copy] = '\0';
+  p.path.bytes[p_copy] = '\0';
   [[maybe_unused]] auto _u1 = Bridge.send(rpc::CommandId::CMD_FILE_REMOVE, 0, p);
 }
 
 void FileSystemClass::_onWrite(const rpc::payload::FileWrite& msg) {
   auto res = bridge::hal::writeFile(
-      etl::string_view(msg.path),
+      etl::string_view(static_cast<const char*>(static_cast<const void*>(msg.path.bytes)), msg.path.size),
       etl::span<const uint8_t>(msg.data.bytes, msg.data.size));
   [[maybe_unused]] auto _u1 = Bridge.sendFrame(res ? rpc::StatusCode::STATUS_OK
                              : rpc::StatusCode::STATUS_ERROR);
@@ -78,7 +78,7 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
   size_t offset = 0;
   etl::array<uint8_t, kReadChunkSize> buffer;
   const uint32_t start_ms = millis();
-  const etl::string_view path(msg.path);
+  const etl::string_view path(static_cast<const char*>(static_cast<const void*>(msg.path.bytes)), msg.path.size);
 
   using bridge::etl_ext::CounterIterator;
   [[maybe_unused]] auto _u1 = etl::find_if(
@@ -112,7 +112,7 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
 }
 
 void FileSystemClass::_onRemove(const rpc::payload::FileRemove& msg) {
-  auto res = bridge::hal::removeFile(etl::string_view(msg.path));
+  auto res = bridge::hal::removeFile(etl::string_view(static_cast<const char*>(static_cast<const void*>(msg.path.bytes)), msg.path.size));
   [[maybe_unused]] auto _u1 = Bridge.sendFrame(res ? rpc::StatusCode::STATUS_OK
                              : rpc::StatusCode::STATUS_ERROR);
 }

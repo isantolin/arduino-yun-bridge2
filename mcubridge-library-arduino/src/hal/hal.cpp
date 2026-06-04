@@ -25,9 +25,9 @@ namespace {
 using Traits = CurrentArchTraits;
 
 constexpr uint8_t CURRENT_ARCH =
-    (Traits::id == ArchId::ARCH_AVR)    ? rpc::to_underlying(rpc::Architecture::ARCH_AVR)
-    : (Traits::id == ArchId::ARCH_HOST) ? rpc::to_underlying(rpc::Architecture::ARCH_SAMD)
-                                        : static_cast<uint8_t>(0);
+    (Traits::id == ArchId::ARCH_AVR)    ? rpc::RPC_ARCH_AVR
+    : (Traits::id == ArchId::ARCH_HOST) ? rpc::RPC_ARCH_SAMD
+                                        : 0;
 
 constexpr uint8_t DIGITAL_PINS =
     (Traits::id == ArchId::ARCH_AVR)
@@ -40,8 +40,8 @@ constexpr uint8_t ANALOG_PINS =
     (Traits::id == ArchId::ARCH_AVR)
         ? static_cast<uint8_t>(bridge::config::ANALOG_PINS)
     : (Traits::id == ArchId::ARCH_HOST)
-        ? bridge::config::SAMD_ANALOG_PINS
-        : static_cast<uint8_t>(0);
+        ? static_cast<uint8_t>(bridge::config::SAMD_ANALOG_PINS)
+        : 0;
 
 }  // namespace
 

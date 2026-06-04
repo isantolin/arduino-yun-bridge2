@@ -121,14 +121,14 @@ void test_bridge_brute_force_commands() {
   uint8_t val[] = "v";
   hit(rpc::CommandId::CMD_DATASTORE_PUT, []() {
     rpc::payload::DatastorePut p;
-    strncpy((char*)p.key.bytes, "k", 32);
+    strncpy(p.key, "k", 32);
     uint8_t v[] = "v";
     rpc::payload::copy_to_pb_bytes(p.value, v, 1);
     return p;
   }());
   hit(rpc::CommandId::CMD_DATASTORE_GET, []() {
     rpc::payload::DatastoreGet p;
-    strncpy((char*)p.key.bytes, "k", 32);
+    strncpy(p.key, "k", 32);
     return p;
   }());
 
@@ -150,7 +150,7 @@ void test_bridge_brute_force_commands() {
   // Process
   hit(rpc::CommandId::CMD_PROCESS_RUN_ASYNC, []() {
     rpc::payload::ProcessRunAsync p;
-    strncpy((char*)p.command.bytes, "ls", 64);
+    strncpy(p.command, "ls", 64);
     return p;
   }());
   hit(rpc::CommandId::CMD_PROCESS_POLL, []() {
@@ -177,16 +177,16 @@ void test_bridge_brute_force_commands() {
 
   // FileSystem
   rpc::payload::FileWrite fw = {};
-  strncpy((char*)fw.path.bytes, "t.txt", sizeof(fw.path.bytes));
+  strncpy(fw.path, "t.txt", sizeof(fw.path));
   rpc::payload::copy_to_pb_bytes(fw.data, val, 1);
   hit(rpc::CommandId::CMD_FILE_WRITE, fw);
 
   rpc::payload::FileRead fr = {};
-  strncpy((char*)fr.path.bytes, "t.txt", sizeof(fr.path.bytes));
+  strncpy(fr.path, "t.txt", sizeof(fr.path));
   hit(rpc::CommandId::CMD_FILE_READ, fr);
 
   rpc::payload::FileRemove frm = {};
-  strncpy((char*)frm.path.bytes, "t.txt", sizeof(frm.path.bytes));
+  strncpy(frm.path, "t.txt", sizeof(frm.path));
   hit(rpc::CommandId::CMD_FILE_REMOVE, frm);
 
   // Core commands

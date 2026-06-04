@@ -79,15 +79,15 @@ bool handshake_authenticate(etl::span<const uint8_t> secret,
                             etl::span<const uint8_t> nonce,
                             etl::span<const uint8_t> received_tag,
                             etl::span<uint8_t> out_tag) {
-  etl::array<uint8_t, rpc::HANDSHAKE_HKDF_OUTPUT_LENGTH> handshake_key;
+  etl::array<uint8_t, rpc::RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH> handshake_key;
   hkdf_sha256(etl::span<uint8_t>(handshake_key),
               secret,
-              etl::span<const uint8_t>(rpc::HANDSHAKE_HKDF_SALT),
-              etl::span<const uint8_t>(rpc::HANDSHAKE_HKDF_INFO_AUTH));
+              etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_SALT),
+              etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH));
 
   Hmac hmac_engine;
   wc_HmacSetKey(&hmac_engine, WC_SHA256, handshake_key.data(),
-                rpc::HANDSHAKE_HKDF_OUTPUT_LENGTH);
+                rpc::RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH);
   wc_HmacUpdate(&hmac_engine, nonce.data(), static_cast<word32>(nonce.size()));
   wc_HmacFinal(&hmac_engine, out_tag.data());
 
@@ -106,7 +106,7 @@ void derive_session_key(etl::span<const uint8_t> secret,
                         etl::span<const uint8_t> nonce,
                         etl::span<uint8_t> out_key) {
   hkdf_sha256(out_key, secret, nonce,
-              etl::span<const uint8_t>(rpc::HANDSHAKE_HKDF_INFO_SESSION));
+              etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_INFO_SESSION));
 }
 
 
@@ -126,7 +126,7 @@ bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
   n_writer.write<uint64_t>(current_nonce);
 
   payload::RpcEnvelope aad_env = {};
-  aad_env.version = rpc::RPC_PROTOCOL_VERSION;
+  aad_env.version = rpc::PROTOCOL_VERSION;
   aad_env.command_id = cmd_id;
   aad_env.sequence_id = seq_id;
 
@@ -149,7 +149,7 @@ bool aead_decrypt_frame(uint16_t cmd_id, uint16_t seq_id,
                         etl::span<const uint8_t> nonce,
                         etl::span<uint8_t> out_payload) {
   payload::RpcEnvelope aad_env = {};
-  aad_env.version = rpc::RPC_PROTOCOL_VERSION;
+  aad_env.version = rpc::PROTOCOL_VERSION;
   aad_env.command_id = cmd_id;
   aad_env.sequence_id = seq_id;
 
@@ -203,7 +203,7 @@ static constexpr etl::array<uint8_t, 32> kat_hmac_expected PROGMEM = {
 
 bool run_cryptographic_self_tests() {
   etl::array<uint8_t, rpc::RPC_SHA256_DIGEST_SIZE> actual;
-  etl::array<uint8_t, rpc::SHA256_KAT_BUFFER_SIZE> buffer;
+  etl::array<uint8_t, rpc::RPC_SHA256_KAT_BUFFER_SIZE> buffer;
 
   // 1. SHA256 KAT
   Sha256 sha;

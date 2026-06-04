@@ -109,7 +109,7 @@ void test_filesystem_read_edge_cases() {
   const char* file_path_str = "test.txt";
   etl::string_view path_sv(file_path_str);
   rpc::payload::FileRead req;
-  rpc::payload::copy_to_pb_bytes(req.path, reinterpret_cast<const uint8_t*>(path_sv.data()), strlen(path_sv.data()));
+  strncpy(req.path, path_sv.data(), sizeof(req.path));
 
   // This will use the new CounterIterator in _onRead
   FileSystem._onRead(req);
@@ -200,10 +200,10 @@ void test_process_branch_error_paths() {
   TEST_ASSERT_EQUAL(0, Process._pending_run_async.size());
 
   // Force append_token failure via oversized arg, and hit lambda early return.
-  etl::array<char, rpc::RPC_MAX_PAYLOAD_SIZE + 1> long_arg_storage = {};
+  etl::array<char, rpc::MAX_PAYLOAD_SIZE + 1> long_arg_storage = {};
   long_arg_storage.fill('a');
   const etl::string_view oversized_arg(long_arg_storage.data(),
-                                       rpc::RPC_MAX_PAYLOAD_SIZE);
+                                       rpc::MAX_PAYLOAD_SIZE);
   etl::array<etl::string_view, 2> overflow_args = {oversized_arg,
                                                    etl::string_view("y")};
   Process.runAsync(
@@ -216,11 +216,11 @@ void test_process_branch_error_paths() {
                    invalid_run_handler);
 
   // Force prepend-space capacity failure (write_pos + 1 >= buffer_size).
-  etl::array<char, rpc::RPC_MAX_PAYLOAD_SIZE> near_full_cmd = {};
+  etl::array<char, rpc::MAX_PAYLOAD_SIZE> near_full_cmd = {};
   near_full_cmd.fill('c');
   etl::array<etl::string_view, 1> single_arg = {etl::string_view("z")};
   Process.runAsync(
-      etl::string_view(near_full_cmd.data(), rpc::RPC_MAX_PAYLOAD_SIZE - 1U),
+      etl::string_view(near_full_cmd.data(), rpc::MAX_PAYLOAD_SIZE - 1U),
       etl::span<const etl::string_view>(single_arg.data(), 1),
       etl::delegate<void(int32_t)>::create<capture_async_handler>());
   TEST_ASSERT_EQUAL(-1, captured_pid);
@@ -335,7 +335,7 @@ void test_bridge_fsm_resets() {
 void test_checksum_direct_library_path() {
   // Validates the new etl::byte_stream_writer logic in checksum::compute
   rpc_pb_RpcEnvelope f = rpc_pb_RpcEnvelope_init_default;
-  f.version = rpc::RPC_PROTOCOL_VERSION;
+  f.version = rpc::PROTOCOL_VERSION;
   f.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_XON);
   f.sequence_id = 0;
   
@@ -397,7 +397,7 @@ void test_bridge_duplicate_packet() {
   ba.setSynchronized();
 
   rpc_pb_RpcEnvelope f = rpc_pb_RpcEnvelope_init_default;
-  f.version = rpc::RPC_PROTOCOL_VERSION;
+  f.version = rpc::PROTOCOL_VERSION;
   f.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_DIGITAL_WRITE);
   f.sequence_id = 10;
   f.payload.size = 2; // dummy
@@ -416,7 +416,7 @@ void test_bridge_exhaustive_command_handlers() {
 
   auto trigger = [&](rpc::CommandId id, auto payload) {
     rpc_pb_RpcEnvelope f = rpc_pb_RpcEnvelope_init_default;
-    f.version = rpc::RPC_PROTOCOL_VERSION;
+    f.version = rpc::PROTOCOL_VERSION;
     f.command_id = static_cast<uint16_t>(id);
     f.sequence_id = 1;
     bridge::test::set_pb_payload(f, payload);

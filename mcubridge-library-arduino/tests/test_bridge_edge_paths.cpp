@@ -42,10 +42,10 @@ bool extract_encrypted_frame(const ByteBuffer<8192>& tx, size_t& cursor,
   if (!extract_next_valid_frame(tx, cursor, candidate)) return false;
   const uint16_t raw_cmd =
       candidate.command_id & ~rpc::RPC_CMD_FLAG_COMPRESSED;
-  const bool is_excluded = (raw_cmd >= rpc::STATUS_CODE_MIN &&
-                            raw_cmd <= rpc::STATUS_CODE_MAX) ||
-                           (raw_cmd >= rpc::SYSTEM_COMMAND_MIN &&
-                            raw_cmd <= rpc::SYSTEM_COMMAND_MAX);
+  const bool is_excluded = (raw_cmd >= rpc::RPC_STATUS_CODE_MIN &&
+                            raw_cmd <= rpc::RPC_STATUS_CODE_MAX) ||
+                           (raw_cmd >= rpc::RPC_SYSTEM_COMMAND_MIN &&
+                            raw_cmd <= rpc::RPC_SYSTEM_COMMAND_MAX);
   if (!is_excluded) {
     out = candidate;
     return true;
@@ -55,7 +55,7 @@ bool extract_encrypted_frame(const ByteBuffer<8192>& tx, size_t& cursor,
 
 rpc_pb_RpcEnvelope make_empty_frame(uint16_t cmd, uint16_t seq) {
   rpc_pb_RpcEnvelope frame;
-  frame.version = rpc::RPC_PROTOCOL_VERSION;
+  frame.version = rpc::PROTOCOL_VERSION;
   frame.command_id = cmd;
   frame.sequence_id = seq;
   return frame;
@@ -64,10 +64,10 @@ rpc_pb_RpcEnvelope make_empty_frame(uint16_t cmd, uint16_t seq) {
 template <typename T>
 rpc_pb_RpcEnvelope make_payload_frame(
     uint16_t cmd, uint16_t seq, const T& payload,
-    etl::array<uint8_t, rpc::RPC_MAX_PAYLOAD_SIZE>& storage) {
+    etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE>& storage) {
   (void)storage;
   rpc_pb_RpcEnvelope frame;
-  frame.version = rpc::RPC_PROTOCOL_VERSION;
+  frame.version = rpc::PROTOCOL_VERSION;
   frame.command_id = cmd;
   frame.sequence_id = seq;
   bridge::test::set_pb_payload(frame, payload);
@@ -76,7 +76,7 @@ rpc_pb_RpcEnvelope make_payload_frame(
 
 rpc_pb_RpcEnvelope make_malformed_payload_frame(uint16_t cmd, uint16_t seq) {
   rpc_pb_RpcEnvelope frame;
-  frame.version = rpc::RPC_PROTOCOL_VERSION;
+  frame.version = rpc::PROTOCOL_VERSION;
   frame.command_id = cmd;
   frame.sequence_id = seq;
   frame.payload.size = 1;
@@ -91,7 +91,7 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
   ba.setSynchronized();
 
   uint16_t seq = 100;
-  etl::array<uint8_t, rpc::RPC_MAX_PAYLOAD_SIZE> buf;
+  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buf;
   
 
   auto set_baud =
@@ -184,7 +184,7 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
       rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE), seq++,
       []() {
         rpc::payload::FileWrite p;
-        strncpy((char*)p.path.bytes, "edge.bin", 64);
+        strncpy(p.path, "edge.bin", 64);
         uint8_t v[] = {1, 2, 3, 4};
         rpc::payload::copy_to_pb_bytes(p.data, v, 4);
         return p;
@@ -196,7 +196,7 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
       rpc::to_underlying(rpc::CommandId::CMD_FILE_READ), seq++,
       []() {
         rpc::payload::FileRead p;
-        strncpy((char*)p.path.bytes, "edge.bin", 64);
+        strncpy(p.path, "edge.bin", 64);
         return p;
       }(),
       buf);
@@ -206,7 +206,7 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
       rpc::to_underlying(rpc::CommandId::CMD_FILE_REMOVE), seq++,
       []() {
         rpc::payload::FileRemove p;
-        strncpy((char*)p.path.bytes, "edge.bin", 64);
+        strncpy(p.path, "edge.bin", 64);
         return p;
       }(),
       buf);
@@ -237,7 +237,7 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
       rpc::to_underlying(rpc::CommandId::CMD_PROCESS_POLL_RESP), seq++,
       []() {
         rpc::payload::ProcessPollResponse p;
-        p.exit_code = 0;
+        p.status = 0;
         p.exit_code = 0;
         uint8_t v[] = {1, 2, 3, 4};
         rpc::payload::copy_to_pb_bytes(p.stdout_data, v, 4);
@@ -326,7 +326,7 @@ void test_packet_received_security_and_decompress_paths() {
   auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
 
-  etl::array<uint8_t, rpc::RPC_MAX_PAYLOAD_SIZE> payload_buf;
+  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload_buf;
   auto secure =
       make_payload_frame(rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE),
                          500, []() {
@@ -343,7 +343,7 @@ void test_packet_received_security_and_decompress_paths() {
 
   etl::array<uint8_t, 4> decomp_pl = {1, 2, 3, 4};
   rpc_pb_RpcEnvelope compressed;
-  compressed.version = rpc::RPC_PROTOCOL_VERSION;
+  compressed.version = rpc::PROTOCOL_VERSION;
   compressed.command_id = static_cast<uint16_t>(
                            rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION) |
                            rpc::RPC_CMD_FLAG_COMPRESSED);
@@ -372,7 +372,7 @@ void test_console_and_policy_edges() {
   TEST_ASSERT_EQUAL(-1, Console.read());
 
   
-  etl::array<uint8_t, rpc::RPC_MAX_PAYLOAD_SIZE> buf;
+  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buf;
   auto frame = make_payload_frame(
       rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE), 600,
       []() {
@@ -457,7 +457,7 @@ void test_timer_link_and_bootloader_edges() {
   ba.setTimerLastTick(1);
   ba.invokeTimerTask();
 
-  etl::array<uint8_t, rpc::RPC_MAX_PAYLOAD_SIZE> buf;
+  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buf;
   rpc::payload::LinkSync sync = {};
   memset(sync.nonce.bytes, 0x11, 12); sync.nonce.size = 12;
   memset(sync.tag.bytes, 0x22, 16); sync.tag.size = 16;
@@ -509,7 +509,7 @@ void test_service_capacity_and_send_fail_edges() {
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
-  etl::array<uint8_t, rpc::RPC_MAX_PAYLOAD_SIZE> frame_buf;
+  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> frame_buf;
   auto pin_mode_ok =
       make_payload_frame(rpc::to_underlying(rpc::CommandId::CMD_SET_PIN_MODE),
                          780, []() {
@@ -548,12 +548,12 @@ void test_filesystem_spi_fsm_and_rle_edges() {
 
   etl::array<uint8_t, 2> fs_data = {1, 2};
   rpc::payload::FileWrite fwp;
-  strncpy((char*)fwp.path.bytes, "/bad", 64);
+  strncpy(fwp.path, "/bad", 64);
   rpc::payload::copy_to_pb_bytes(fwp.data, fs_data.data(),
                                  fs_data.size());
   FileSystem._onWrite(fwp);
 
-  etl::array<uint8_t, rpc::RPC_MAX_PAYLOAD_SIZE> buf;
+  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buf;
   auto spi_begin =
       make_empty_frame(rpc::to_underlying(rpc::CommandId::CMD_SPI_BEGIN), 800);
   ba.dispatch(spi_begin);
@@ -588,7 +588,7 @@ void test_encrypted_rx_nonce_and_compressed_empty_paths() {
   memset(sync.nonce.bytes, 0xAB, 12); sync.nonce.size = 12;
   ba.computeHandshakeTag(sync.nonce.bytes, 12, sync.tag.bytes);
   sync.tag.size = 16;
-  etl::array<uint8_t, rpc::RPC_MAX_PAYLOAD_SIZE> buf;
+  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buf;
   auto linksync = make_payload_frame(
       rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC), 900, sync, buf);
   ba.dispatch(linksync);
@@ -638,7 +638,7 @@ void test_fault_injection_harness_paths() {
   TEST_ASSERT_FALSE(rpc::security::run_cryptographic_self_tests());
   bridge::test::fault::enable(
       bridge::test::fault::FaultPoint::BRIDGE_FORCE_POST_FAIL);
-  Bridge.begin(rpc::DEFAULT_BAUDRATE, "top-secret");
+  Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, "top-secret");
 
   bridge::test::fault::reset();
   reset_bridge_core(Bridge, stream);
@@ -688,7 +688,7 @@ void test_fault_injection_harness_paths() {
   memset(s_sync.nonce.bytes, 0x44, 12); s_sync.nonce.size = 12;
   bs.computeHandshakeTag(s_sync.nonce.bytes, 12, s_sync.tag.bytes);
   s_sync.tag.size = 16;
-  etl::array<uint8_t, rpc::RPC_MAX_PAYLOAD_SIZE> tmp_buf;
+  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> tmp_buf;
   auto s_linksync = make_payload_frame(
       rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC), 950, s_sync, tmp_buf);
   bs.dispatch(s_linksync);
@@ -713,7 +713,7 @@ void test_fault_injection_harness_paths() {
   }
 
   rpc_pb_RpcEnvelope bad_compressed;
-  bad_compressed.version = rpc::RPC_PROTOCOL_VERSION;
+  bad_compressed.version = rpc::PROTOCOL_VERSION;
   bad_compressed.command_id = static_cast<uint16_t>(
           rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION) |
           rpc::RPC_CMD_FLAG_COMPRESSED);

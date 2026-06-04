@@ -211,13 +211,13 @@ static bool extract_next_valid_frame(const ByteBuffer<N>& buffer,
   etl::array<uint8_t, 1024> decoded_buf;
 
   while (cursor < buffer.len) {
-    if (buffer.data[cursor] == rpc::FRAME_DELIMITER) {
+    if (buffer.data[cursor] == rpc::RPC_FRAME_DELIMITER) {
       cursor++;
       continue;
     }
 
     size_t end = cursor;
-    while (end < buffer.len && buffer.data[end] != rpc::FRAME_DELIMITER)
+    while (end < buffer.len && buffer.data[end] != rpc::RPC_FRAME_DELIMITER)
       end++;
 
     const size_t segment_len =
@@ -255,7 +255,7 @@ static inline void reset_bridge_core(BridgeClass& bridge, Stream& stream,
   if (baudrate) {
     bridge.begin(baudrate, secret);
   } else {
-    bridge.begin(rpc::DEFAULT_BAUDRATE, secret);
+    bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, secret);
   }
   auto& ba = bridge::test::TestAccessor::create(bridge);
   ba.onStartupStabilized();

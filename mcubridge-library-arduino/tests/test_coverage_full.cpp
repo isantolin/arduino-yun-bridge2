@@ -236,7 +236,7 @@ void test_bridge_coverage() {
   rpc_pb_RpcEnvelope f_fw = {};
   f_fw.command_id = (uint16_t)rpc::CommandId::CMD_FILE_WRITE;
   rpc::payload::FileWrite fwp;
-  strncpy((char*)fwp.path.bytes, "test.txt", sizeof(fwp.path.bytes));
+  strncpy(fwp.path, "test.txt", sizeof(fwp.path));
   rpc::payload::copy_to_pb_bytes(fwp.data, ds_val, 2);
   bridge::test::set_pb_payload(f_fw, fwp);
   ba.dispatch(f_fw);
@@ -244,14 +244,14 @@ void test_bridge_coverage() {
   rpc_pb_RpcEnvelope f_flr = {};
   f_flr.command_id = (uint16_t)rpc::CommandId::CMD_FILE_READ;
   rpc::payload::FileRead frp;
-  strncpy((char*)frp.path.bytes, "test.txt", sizeof(frp.path.bytes));
+  strncpy(frp.path, "test.txt", sizeof(frp.path));
   bridge::test::set_pb_payload(f_flr, frp);
   ba.dispatch(f_flr);
 
   rpc_pb_RpcEnvelope f_frm = {};
   f_frm.command_id = (uint16_t)rpc::CommandId::CMD_FILE_REMOVE;
   rpc::payload::FileRemove frmp;
-  strncpy((char*)frmp.path.bytes, "test.txt", sizeof(frmp.path.bytes));
+  strncpy(frmp.path, "test.txt", sizeof(frmp.path));
   bridge::test::set_pb_payload(f_frm, frmp);
   ba.dispatch(f_frm);
 
@@ -285,7 +285,7 @@ void test_bridge_coverage() {
   ba.dispatch(f_prar);
 
   rpc::payload::ProcessPollResponse ppr_p;
-  ppr_p.exit_code = 0;
+  ppr_p.status = 0;
   ppr_p.exit_code = 0;
   Process._onPollResponse(ppr_p);
 
@@ -346,7 +346,7 @@ void test_bridge_coverage() {
   ba.trigger(EvDummy());
 
   ba.onRxDedupe();
-  ba.setPendingBaudrate(rpc::DEFAULT_BAUDRATE);
+  ba.setPendingBaudrate(rpc::RPC_DEFAULT_BAUDRATE);
   ba.onBaudrateChange();
   ba.invokeWatchdog();
 
@@ -390,7 +390,7 @@ void test_bridge_coverage() {
   Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR, F("err"));
   Bridge.enterSafeState();
 
-  uint8_t rp_val[] = {rpc::RPC_PROTOCOL_VERSION, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+  uint8_t rp_val[] = {rpc::PROTOCOL_VERSION, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
   ba.invokePacketReceived(etl::span<const uint8_t>(rp_val, sizeof(rp_val)));
 
   rpc::payload::LinkSync lsync;

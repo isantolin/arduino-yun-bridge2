@@ -100,7 +100,7 @@ etl::fsm_state_id_t EscValState::on_event(const etl::imessage& imsg) {
   auto& m = get_fsm_context();
   size_t run_len = (m.esc_count == SINGLE_ESCAPE_MARKER)
                        ? 1
-                       : static_cast<size_t>(m.esc_count) + rpc::RLE_OFFSET;
+                       : static_cast<size_t>(m.esc_count) + rpc::RPC_RLE_OFFSET;
   if (static_cast<size_t>(etl::distance(m.it, m.end)) < run_len) {
     m.error = true;
     return static_cast<etl::fsm_state_id_t>(StateId::LITERAL);

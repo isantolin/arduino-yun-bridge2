@@ -49,9 +49,9 @@ void test_all_structs_roundtrip() {
     rpc::payload::Capabilities p;
     p.ver = 1;
     p.arch = 2;
-    p.dig = true;
-    p.ana = true;
-    p.dig = true;
+    p.dig = 20;
+    p.ana = 6;
+    p.feat = 0xFF;
     return p;
   }());
   test_roundtrip([]() {
@@ -95,13 +95,13 @@ void test_all_structs_roundtrip() {
   test_roundtrip(cw);
 
   rpc::payload::DatastorePut dp;
-  rpc::payload::copy_to_pb_bytes(dp.key, reinterpret_cast<const uint8_t*>(str), 4);
+  strncpy(dp.key, str, 32);
   rpc::payload::copy_to_pb_bytes(
       dp.value, reinterpret_cast<const uint8_t*>(str), 4);
   test_roundtrip(dp);
 
   rpc::payload::DatastoreGet dg;
-  rpc::payload::copy_to_pb_bytes(dg.key, reinterpret_cast<const uint8_t*>(str), 4);
+  strncpy(dg.key, str, 32);
   test_roundtrip(dg);
 
   rpc::payload::DatastoreGetResponse dgr;
@@ -116,7 +116,7 @@ void test_all_structs_roundtrip() {
 
   test_roundtrip([]() {
     rpc::payload::MailboxProcessed p;
-    p.count = 1;
+    p.message_id = 1;
     return p;
   }());
   test_roundtrip([]() {
@@ -131,17 +131,17 @@ void test_all_structs_roundtrip() {
   test_roundtrip(mbr);
 
   rpc::payload::FileWrite fw;
-  rpc::payload::copy_to_pb_bytes(fw.path, reinterpret_cast<const uint8_t*>(str), 4);
+  strncpy(fw.path, str, 64);
   rpc::payload::copy_to_pb_bytes(
       fw.data, reinterpret_cast<const uint8_t*>(str), 4);
   test_roundtrip(fw);
 
   rpc::payload::FileRead fr;
-  rpc::payload::copy_to_pb_bytes(fr.path, reinterpret_cast<const uint8_t*>(str), 4);
+  strncpy(fr.path, str, 64);
   test_roundtrip(fr);
 
   rpc::payload::FileRemove frm;
-  rpc::payload::copy_to_pb_bytes(frm.path, reinterpret_cast<const uint8_t*>(str), 4);
+  strncpy(frm.path, str, 64);
   test_roundtrip(frm);
 
   rpc::payload::FileReadResponse frr;
@@ -150,7 +150,7 @@ void test_all_structs_roundtrip() {
   test_roundtrip(frr);
 
   rpc::payload::ProcessRunAsync pra;
-  rpc::payload::copy_to_pb_bytes(pra.command, reinterpret_cast<const uint8_t*>(str), 4);
+  strncpy(pra.command, str, 64);
   test_roundtrip(pra);
 
   test_roundtrip([]() {
@@ -165,7 +165,7 @@ void test_all_structs_roundtrip() {
   }());
 
   rpc::payload::ProcessPollResponse ppr;
-  ppr.exit_code = 0;
+  ppr.status = 0;
   ppr.exit_code = 0;
   rpc::payload::copy_to_pb_bytes(
       ppr.stdout_data, reinterpret_cast<const uint8_t*>(str), 4);

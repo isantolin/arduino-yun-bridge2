@@ -20,8 +20,7 @@ import msgspec.toml
 # =============================================================================
 
 
-class CommandDef(msgspec.Struct, frozen=True, kw_only=True):
-    payload_type: str | None = None
+class CommandDef(msgspec.Struct, frozen=True):
     name: str
     value: int
     directions: list[str]
@@ -53,13 +52,13 @@ class MessageDef(msgspec.Struct, frozen=True):
     fields: list[MessageFieldDef]
 
 
-class ProtocolSpec(msgspec.Struct, kw_only=True):
+class ProtocolSpec(msgspec.Struct):
     """Root model of the parsed spec.toml."""
 
     constants: dict[str, Any]
     hardware: dict[str, Any]
-    commands: list[CommandDef] = []
-    statuses: list[StatusDef] = []
+    commands: list[CommandDef]
+    statuses: list[StatusDef]
     handshake: dict[str, Any]
     mqtt_subscriptions: list[dict[str, Any]]
     actions: list[dict[str, Any]]

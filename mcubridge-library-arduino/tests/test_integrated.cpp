@@ -28,7 +28,7 @@ void integrated_test_bridge_core() {
   sync_req.nonce.size = 16;
 
   rpc_pb_RpcEnvelope sync_frame = rpc_pb_RpcEnvelope_init_default;
-  sync_frame.version = rpc::RPC_PROTOCOL_VERSION;
+  sync_frame.version = rpc::PROTOCOL_VERSION;
   sync_frame.command_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
   sync_frame.sequence_id = 1;
   

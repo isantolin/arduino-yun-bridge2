@@ -26,16 +26,14 @@
 
 namespace rpc {
 
-
-
-// AEAD_NONCE_SIZE defined in rpc_protocol.h
-// AEAD_TAG_SIZE defined in rpc_protocol.h
+inline constexpr size_t AEAD_NONCE_SIZE = rpc::RPC_AEAD_NONCE_SIZE;
+inline constexpr size_t AEAD_TAG_SIZE = rpc::RPC_AEAD_TAG_SIZE;
 inline constexpr size_t CRC_TRAILER_SIZE = rpc::RPC_CRC_SIZE;
-inline constexpr size_t MAX_ENVELOPE_SIZE = sizeof(rpc_pb_RpcEnvelope);
+inline constexpr size_t MAX_ENVELOPE_SIZE = rpc_pb_RpcEnvelope_size;
 inline constexpr size_t MAX_FRAME_SIZE = MAX_ENVELOPE_SIZE + CRC_TRAILER_SIZE;
 
 inline bool is_compressed(uint16_t id) {
-  return (id & rpc::RPC_CMD_FLAG_COMPRESSED) != 0;
+  return (id & RPC_CMD_FLAG_COMPRESSED) != 0;
 }
 
 namespace checksum {
@@ -109,7 +107,7 @@ inline etl::expected<rpc_pb_RpcEnvelope, FrameError> parse_frame(
   if (!pb_decode(&stream, rpc::Payload::get_fields<rpc_pb_RpcEnvelope>(), &env))
     return etl::unexpected<FrameError>(FrameError::MALFORMED);
 
-  if (env.version != rpc::RPC_PROTOCOL_VERSION)
+  if (env.version != PROTOCOL_VERSION)
     return etl::unexpected<FrameError>(FrameError::MALFORMED);
 
   return env;

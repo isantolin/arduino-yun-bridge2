@@ -34,8 +34,6 @@ from ..config.const import (
 from ..config.settings import RuntimeConfig
 from ..protocol import protocol, structures
 from ..protocol.protocol import (
-    get_mcu_payload_class,
-    MCU_DISPATCH_METADATA,
     Command,
     ConsoleAction,
     DatastoreAction,
@@ -110,36 +108,44 @@ class BridgeService:
                 self.mcu_registry[s.value] = self._make_status_handler(s)
 
     def _setup_mcu_registry(self) -> dict[int, McuHandler]:
-        registry = {}
-        for cmd_id, meta in MCU_DISPATCH_METADATA.items():
-            handler_name = meta["handler"]
-            # Fix naming convention if necessary (MCU_DISPATCH_METADATA uses _on_mcu_...)
-            handler_func = getattr(self, handler_name, None)
-
-            if not handler_func:
-                # Handle special handshake methods
-                if meta["name"].endswith("_RESP"):
-                    hs_handler = getattr(self.handshake, f"handle_{meta['name'].lower()[:-5]}_resp", None)
-                    if hs_handler:
-                        registry[cmd_id] = hs_handler
-                        continue
-                continue
-
-            payload_cls = get_mcu_payload_class(cmd_id)
-            if payload_cls:
-                registry[cmd_id] = self._gen_handler(payload_cls, handler_func)
-            else:
-                registry[cmd_id] = lambda seq, _: handler_func(seq)
-
-        # Explicit overrides for non-standard handlers
-        registry[Status.ACK.value] = self._on_mcu_ack
-        registry[Command.CMD_XOFF.value] = lambda _, __: self._handle_mcu_xoff()
-        registry[Command.CMD_XON.value] = lambda _, __: self._handle_mcu_xon()
-        registry[Command.CMD_PROCESS_KILL.value] = self._gen_handler(
-            pb.ProcessKill, lambda p: self._stop_process(p.pid)
-        )
-
-        return registry
+        return {
+            Command.CMD_XOFF.value: lambda _, __: self._handle_mcu_xoff(),
+            Command.CMD_XON.value: lambda _, __: self._handle_mcu_xon(),
+            Command.CMD_CONSOLE_WRITE.value: self._gen_handler(pb.ConsoleWrite, self._on_mcu_console_write),
+            Command.CMD_DATASTORE_PUT.value: self._gen_handler(pb.DatastorePut, self._on_mcu_datastore_put),
+            Command.CMD_DATASTORE_GET.value: self._gen_handler(pb.DatastoreGet, self._on_mcu_datastore_get),
+            Command.CMD_MAILBOX_PUSH.value: self._gen_handler(pb.MailboxPush, self._on_mcu_mailbox_push),
+            Command.CMD_MAILBOX_AVAILABLE.value: lambda seq, _: self._on_mcu_mailbox_available(seq),
+            Command.CMD_MAILBOX_READ.value: lambda seq, _: self._on_mcu_mailbox_read(seq),
+            Command.CMD_MAILBOX_PROCESSED.value: self._gen_handler(pb.MailboxProcessed, self._on_mcu_mailbox_processed),
+            Command.CMD_FILE_WRITE.value: self._gen_handler(pb.FileWrite, self._on_mcu_file_write),
+            Command.CMD_FILE_READ.value: self._gen_handler(pb.FileRead, self._on_mcu_file_read),
+            Command.CMD_FILE_REMOVE.value: self._gen_handler(pb.FileRemove, self._on_mcu_file_remove),
+            Command.CMD_FILE_READ_RESP.value: self._gen_handler(pb.FileReadResponse, self._on_mcu_file_read_resp),
+            Command.CMD_PROCESS_RUN_ASYNC.value: self._gen_handler(pb.ProcessRunAsync, self._on_mcu_process_run),
+            Command.CMD_PROCESS_POLL.value: self._gen_handler(pb.ProcessPoll, self._on_mcu_process_poll),
+            Command.CMD_PROCESS_KILL.value: self._gen_handler(pb.ProcessKill, lambda p: self._stop_process(p.pid)),
+            Command.CMD_DIGITAL_READ.value: lambda _, __: self.serial.send(
+                Status.NOT_IMPLEMENTED.value,
+                pb.GenericResponse(message="linux_originates_digital_read_requests").SerializeToString(),
+            ),
+            Command.CMD_ANALOG_READ.value: lambda _, __: self.serial.send(
+                Status.NOT_IMPLEMENTED.value,
+                pb.GenericResponse(message="linux_originates_analog_read_requests").SerializeToString(),
+            ),
+            Command.CMD_DIGITAL_READ_RESP.value: self._gen_handler(
+                pb.DigitalReadResponse,
+                lambda p: self._on_pin_resp(p, Topic.DIGITAL, self.state.pending_digital_reads),
+            ),
+            Command.CMD_ANALOG_READ_RESP.value: self._gen_handler(
+                pb.AnalogReadResponse, lambda p: self._on_pin_resp(p, Topic.ANALOG, self.state.pending_analog_reads)
+            ),
+            Command.CMD_SPI_TRANSFER_RESP.value: self._gen_handler(pb.SpiTransferResponse, self._on_mcu_spi_resp),
+            Command.CMD_GET_CAPABILITIES_RESP.value: self.handshake.handle_capabilities_resp,
+            Command.CMD_LINK_SYNC_RESP.value: self.handshake.handle_link_sync_resp,
+            Command.CMD_LINK_RESET_RESP.value: self.handshake.handle_link_reset_resp,
+            Status.ACK.value: self._on_mcu_ack,
+        }
 
     def _gen_handler(self, packet_type: type[Any], callback: Callable[[Any], Awaitable[Any]]) -> McuHandler:
         async def _handler(seq: int, payload: bytes) -> bool | None:

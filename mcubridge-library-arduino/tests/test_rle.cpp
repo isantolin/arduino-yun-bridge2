@@ -65,7 +65,7 @@ void test_rle_single_escape() {
 
 void test_rle_run_escape() {
   // Run of 5: ESCAPE_BYTE, (5 - OFFSET), VALUE
-  uint8_t count = 5 - rpc::RLE_OFFSET;
+  uint8_t count = 5 - rpc::RPC_RLE_OFFSET;
   etl::array<uint8_t, 3> src_buf = {rle::ESCAPE_BYTE, count, 0xBB};
   etl::array<uint8_t, 10> dst_buf;
   dst_buf.fill(0);

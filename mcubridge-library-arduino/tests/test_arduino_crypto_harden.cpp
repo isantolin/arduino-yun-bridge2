@@ -30,7 +30,7 @@ void test_bridge_full_crypto_handshake_and_data() {
   auto& ba = TestAccessor::create(Bridge);
 
   const char* secret_str = "secure_secret_1234567890123456";
-  Bridge.begin(rpc::DEFAULT_BAUDRATE, secret_str);
+  Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, secret_str);
 
   // 1. Prepare LinkSync request from "MPU"
   rpc::payload::LinkSync sync_req = {};
@@ -44,8 +44,8 @@ void test_bridge_full_crypto_handshake_and_data() {
       etl::span<uint8_t>(handshake_key),
       etl::span<const uint8_t>(reinterpret_cast<const uint8_t*>(secret_str),
                                32),
-      etl::span<const uint8_t>(rpc::HANDSHAKE_HKDF_SALT),
-      etl::span<const uint8_t>(rpc::HANDSHAKE_HKDF_INFO_AUTH));
+      etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_SALT),
+      etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH));
 
   Hmac hmac;
   wc_HmacSetKey(&hmac, WC_SHA256, handshake_key.data(), 32);
@@ -55,7 +55,7 @@ void test_bridge_full_crypto_handshake_and_data() {
   sync_req.tag.size = 16;
 
   rpc_pb_RpcEnvelope f_sync;
-  f_sync.version = rpc::RPC_PROTOCOL_VERSION;
+  f_sync.version = rpc::PROTOCOL_VERSION;
   f_sync.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_LINK_SYNC);
   f_sync.sequence_id = 1;
 
@@ -69,7 +69,7 @@ void test_bridge_full_crypto_handshake_and_data() {
   // branches)
   stream.clear();
   rpc_pb_RpcEnvelope f_data;
-  f_data.version = rpc::RPC_PROTOCOL_VERSION;
+  f_data.version = rpc::PROTOCOL_VERSION;
   f_data.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_GET_FREE_MEMORY);
   f_data.sequence_id = 2;
   
@@ -100,7 +100,7 @@ void test_bridge_ack_timeout_retry_to_fault() {
 
   // Trigger timeout 3 times (Default limit)
   bridge::etl_ext::CounterIterator<int> retry_begin(0);
-  bridge::etl_ext::CounterIterator<int> retry_end(rpc::DEFAULT_RETRY_LIMIT);
+  bridge::etl_ext::CounterIterator<int> retry_end(rpc::RPC_DEFAULT_RETRY_LIMIT);
   etl::for_each(retry_begin, retry_end, [&ba](int) { ba.onAckTimeout(); });
 
   // After limit, it should transition out of Awaiting Ack
@@ -124,7 +124,7 @@ void test_aead_decrypt_and_validate_nonce() {
   constexpr uint16_t seq = 7U;
   etl::array<uint8_t, 8> plaintext = {0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xBA, 0xBE};
 
-  etl::array<uint8_t, rpc::RPC_MAX_PAYLOAD_SIZE> enc_out;
+  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> enc_out;
   etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> nonce;
   etl::array<uint8_t, rpc::RPC_AEAD_TAG_SIZE> tag;
   uint64_t tx_ctr = 0;
@@ -141,7 +141,7 @@ void test_aead_decrypt_and_validate_nonce() {
   TEST_ASSERT_EQUAL_UINT64(1U, tx_ctr);
 
   // Decrypt and verify plaintext is recovered
-  etl::array<uint8_t, rpc::RPC_MAX_PAYLOAD_SIZE> dec_out;
+  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> dec_out;
   bool dec_ok = rpc::security::aead_decrypt_frame(
       cmd, seq,
       etl::span<const uint8_t>(enc_out.data(), plaintext.size()),
@@ -169,7 +169,7 @@ void test_encrypted_frame_receive_path() {
   auto& ba = TestAccessor::create(Bridge);
 
   const char* secret = "secure_secret_1234567890123456";
-  Bridge.begin(rpc::DEFAULT_BAUDRATE, secret);
+  Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, secret);
 
   // Sync the bridge with a valid handshake tag
   rpc::payload::LinkSync sync_msg = {};
@@ -179,7 +179,7 @@ void test_encrypted_frame_receive_path() {
   sync_msg.tag.size = 16;
 
   rpc_pb_RpcEnvelope f_sync = {};
-  f_sync.version = rpc::RPC_PROTOCOL_VERSION;
+  f_sync.version = rpc::PROTOCOL_VERSION;
   f_sync.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_LINK_SYNC);
   f_sync.sequence_id = 1;
   bridge::test::set_pb_payload(f_sync, sync_msg);
@@ -196,7 +196,7 @@ void test_encrypted_frame_receive_path() {
   // CMD_DIGITAL_READ (83) is outside the system/status exclusion ranges so the
   // bridge will run the full AEAD decrypt + nonce-validation path before
   // dispatching the command and emitting a reply.
-  etl::array<uint8_t, rpc::RPC_MAX_PAYLOAD_SIZE> enc_out;
+  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> enc_out;
   etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> nonce;
   etl::array<uint8_t, rpc::RPC_AEAD_TAG_SIZE> tag;
   uint64_t tx_ctr = 0;
@@ -214,7 +214,7 @@ void test_encrypted_frame_receive_path() {
 
   // Build and serialize the encrypted envelope
   rpc_pb_RpcEnvelope f_enc = {};
-  f_enc.version = rpc::RPC_PROTOCOL_VERSION;
+  f_enc.version = rpc::PROTOCOL_VERSION;
   f_enc.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_DIGITAL_READ);
   f_enc.sequence_id = 2;
   etl::copy_n(nonce.begin(), rpc::RPC_AEAD_NONCE_SIZE, f_enc.nonce.bytes);

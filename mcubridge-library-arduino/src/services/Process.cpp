@@ -56,11 +56,11 @@ ProcessClass::ProcessClass() {}
 
   rpc::payload::ProcessRunAsync p;
   const size_t c_copy = etl::min(static_cast<size_t>(command_buffer.size()),
-                                 sizeof(p.command.bytes) - 1U);
+                                 sizeof(p.command) - 1U);
   if (c_copy > 0U) {
-    { p.command.size = (pb_size_t)(c_copy); etl::copy_n(command_buffer.begin(), c_copy, static_cast<char*>(static_cast<void*>(p.command.bytes))); };
+    etl::copy_n(command_buffer.begin(), c_copy, p.command);
   }
-  p.command.bytes[c_copy] = '\0';
+  p.command[c_copy] = '\0';
 
   const bool send_ok = Bridge.send(rpc::CommandId::CMD_PROCESS_RUN_ASYNC, 0, p);
   if (!send_ok) {
@@ -128,7 +128,7 @@ void ProcessClass::_onPollResponse(
   _pending_polls.pop();
   if (pending.handler.is_valid()) {
     pending.handler(
-        rpc::StatusCode::STATUS_OK, msg.exit_code,
+        static_cast<rpc::StatusCode>(msg.status), msg.exit_code,
         etl::span<const uint8_t>(msg.stdout_data.bytes, msg.stdout_data.size),
         etl::span<const uint8_t>(msg.stderr_data.bytes, msg.stderr_data.size));
   }

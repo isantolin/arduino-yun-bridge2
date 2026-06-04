@@ -150,7 +150,7 @@ def _print_response(envelope: pb.RpcEnvelope) -> None:
         f"[FrameDebug] --- MCU Response ---\n"
         f"cmd_id=0x{int(envelope.command_id):02X}\n"
         f"seq_id={envelope.sequence_id}\n"
-        f"payload_len={len(envelope.payload)}\n"
+        f"payload_len={len(envelope.raw_payload)}\n"
     )
 
 

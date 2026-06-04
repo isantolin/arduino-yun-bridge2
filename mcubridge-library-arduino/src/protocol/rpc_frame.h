@@ -29,7 +29,7 @@ namespace rpc {
 inline constexpr size_t AEAD_NONCE_SIZE = rpc::RPC_AEAD_NONCE_SIZE;
 inline constexpr size_t AEAD_TAG_SIZE = rpc::RPC_AEAD_TAG_SIZE;
 inline constexpr size_t CRC_TRAILER_SIZE = rpc::RPC_CRC_SIZE;
-inline constexpr size_t MAX_ENVELOPE_SIZE = rpc_pb_RpcEnvelope_size;
+inline constexpr size_t MAX_ENVELOPE_SIZE = 128;
 inline constexpr size_t MAX_FRAME_SIZE = MAX_ENVELOPE_SIZE + CRC_TRAILER_SIZE;
 
 inline bool is_compressed(uint16_t id) {
@@ -45,23 +45,6 @@ inline uint32_t compute(etl::span<const uint8_t> data) {
 }
 }  // namespace checksum
 
-namespace Payload {
-
-/**
- * @brief Decodes a specific payload type from an envelope.
- */
-template <typename T>
-inline etl::expected<T, FrameError> parse(const rpc_pb_RpcEnvelope& envelope) {
-  T msg = {};
-  pb_istream_t stream = pb_istream_from_buffer(envelope.payload.bytes,
-                                               envelope.payload.size);
-  if (!pb_decode(&stream, rpc::Payload::get_fields<T>(), &msg)) {
-    return etl::unexpected<FrameError>(FrameError::MALFORMED);
-  }
-  return etl::expected<T, FrameError>(msg);
-}
-
-}  // namespace Payload
 
 /**
  * @brief Serializes an envelope directly to buffer with CRC (Zero-Wrapper).

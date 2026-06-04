@@ -287,18 +287,12 @@ class BridgeClass {
   
 #endif
 
-  void _handleStatusOk(const bridge::router::CommandContext& ctx);
-  void _handleStatusMalformed(const bridge::router::CommandContext& ctx);
-  void _handleStatusAck(const bridge::router::CommandContext& ctx);
   void _handleGetVersion(const bridge::router::CommandContext& ctx);
   void _handleGetFreeMemory(const bridge::router::CommandContext& ctx);
   void _handleLinkSync(const bridge::router::CommandContext& ctx);
   void _handleLinkReset(const bridge::router::CommandContext& ctx);
   void _handleGetCapabilities(const bridge::router::CommandContext& ctx);
-  void _handleXoff(const bridge::router::CommandContext& ctx);
-  void _handleXon(const bridge::router::CommandContext& ctx);
   void _handleSetBaudrate(const rpc::payload::SetBaudratePacket& msg);
-  void _handleSetTiming(const rpc::payload::HandshakeConfig& msg);
   void _handleEnterBootloader(const rpc::payload::EnterBootloader& msg);
   void _handleSpiBegin(const bridge::router::CommandContext& ctx);
   void _handleSpiEnd(const bridge::router::CommandContext& ctx);
@@ -308,67 +302,26 @@ class BridgeClass {
 
   void _processAck(uint16_t command_id, uint16_t sequence_id);
 
-  using DispatchHandler = void (*)(BridgeClass&,
-                                   const bridge::router::CommandContext&);
+  
 
   
   
   // [SIL-2] Architectural De-layering: Direct Template Dispatch
-  template <typename T, void (BridgeClass::*Handler)(const T&)>
-  static void _dispatchAck(BridgeClass& b, const bridge::router::CommandContext& ctx) {
-    if (ctx.is_duplicate) { b._processAck(ctx.raw_command, ctx.sequence_id); return; }
-    T msg = {};
-    pb_istream_t stream = pb_istream_from_buffer(ctx.envelope->payload.bytes, ctx.envelope->payload.size);
-    if (pb_decode(&stream, rpc::Payload::get_fields<T>(), &msg)) {
-      b._processAck(ctx.raw_command, ctx.sequence_id);
-      (b.*Handler)(msg);
-    } else b.emitStatus(rpc::StatusCode::STATUS_MALFORMED);
-  }
+  
 
-  template <typename T, void (BridgeClass::*Handler)(const bridge::router::CommandContext&, const T&)>
-  static void _dispatchAckCtx(BridgeClass& b, const bridge::router::CommandContext& ctx) {
-    if (ctx.is_duplicate) { b._processAck(ctx.raw_command, ctx.sequence_id); return; }
-    T msg = {};
-    pb_istream_t stream = pb_istream_from_buffer(ctx.envelope->payload.bytes, ctx.envelope->payload.size);
-    if (pb_decode(&stream, rpc::Payload::get_fields<T>(), &msg)) {
-      b._processAck(ctx.raw_command, ctx.sequence_id);
-      (b.*Handler)(ctx, msg);
-    } else b.emitStatus(rpc::StatusCode::STATUS_MALFORMED);
-  }
+  
 
-  template <void (BridgeClass::*Handler)(const bridge::router::CommandContext&)>
-  static void _dispatchSimple(BridgeClass& b, const bridge::router::CommandContext& ctx) {
-    (b.*Handler)(ctx);
-  }
+  
 
-  template <void (BridgeClass::*Handler)(const bridge::router::CommandContext&)>
-  static void _dispatchSimpleAck(BridgeClass& b, const bridge::router::CommandContext& ctx) {
-    if (ctx.is_duplicate) { b._processAck(ctx.raw_command, ctx.sequence_id); return; }
-    b._processAck(ctx.raw_command, ctx.sequence_id);
-    (b.*Handler)(ctx);
-  }
+  
 
-  template <void (BridgeClass::*Handler)(const bridge::router::CommandContext&)>
-  static void _dispatchResponse(BridgeClass& b, const bridge::router::CommandContext& ctx) {
-    if (ctx.is_duplicate) { b._retransmitLastFrame(); return; }
-    (b.*Handler)(ctx);
-  }
+  
 
-  template <typename T, void (BridgeClass::*Handler)(const T&)>
-  static void _dispatchPayload(BridgeClass& b, const bridge::router::CommandContext& ctx) {
-    T msg = {};
-    pb_istream_t stream = pb_istream_from_buffer(ctx.envelope->payload.bytes, ctx.envelope->payload.size);
-    if (pb_decode(&stream, rpc::Payload::get_fields<T>(), &msg)) (b.*Handler)(msg);
-  }
+  
 
-  void _handleSetPinMode(const rpc_pb_PinMode& m);
-  void _handleDigitalWrite(const rpc_pb_DigitalWrite& m);
-  void _handleAnalogWrite(const rpc_pb_AnalogWrite& m);
   void _handleDigitalRead(const bridge::router::CommandContext& ctx);
   void _handleAnalogRead(const bridge::router::CommandContext& ctx);
-  void _handleConsoleWrite(const rpc_pb_ConsoleWrite& m);
   void _handleDataStoreGetResponse(const bridge::router::CommandContext& ctx, const rpc_pb_DatastoreGetResponse& m);
-  void _handleMailboxPush(const rpc_pb_MailboxPush& m);
   void _handleMailboxReadResponse(const bridge::router::CommandContext& ctx, const rpc_pb_MailboxReadResponse& m);
   void _handleMailboxAvailableResponse(const bridge::router::CommandContext& ctx, const rpc_pb_MailboxAvailableResponse& m);
   void _handleFileWrite(const bridge::router::CommandContext& ctx, const rpc_pb_FileWrite& m);
@@ -378,10 +331,7 @@ class BridgeClass {
   void _handleProcessKill(const bridge::router::CommandContext& ctx, const rpc_pb_ProcessKill& m);
   void _handleProcessRunAsyncResponse(const bridge::router::CommandContext& ctx, const rpc_pb_ProcessRunAsyncResponse& m);
   void _handleProcessPollResponse(const bridge::router::CommandContext& ctx, const rpc_pb_ProcessPollResponse& m);
-  void _handleSpiSetConfig(const rpc_pb_SpiConfig& m);
-  void _handleAckStruct(const rpc_pb_AckPacket& m);
   void _handleLinkResetStruct(const rpc_pb_HandshakeConfig& m);
-  static DispatchHandler _getHandler(uint16_t command_id);
 
   void _clearPendingTxQueue();
   void _flushPendingTxQueue();

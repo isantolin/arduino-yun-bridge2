@@ -17,7 +17,7 @@ This library provides the MCU-side runtime for the Arduino MCU Bridge v2 project
 - `examples/`
   - Arduino sketches demonstrating usage of the library (`BridgeControl`).
 - `docs/`
-  - Additional documentation and diagrams describing the protocol and library design (`docs/PROTOCOL.md`).
+  - Additional documentation and diagrams describing the protocol and library design (`../docs/PROTOCOL.md`).
 - `tools/`
   - Maintenance scripts such as `install.sh` to deploy the library into an Arduino environment.
   - The protocol generator lives in `tools/protocol/spec.toml` (see repository root); running `python3 tools/protocol/generate.py` refreshes the shared headers in `src/protocol/` alongside the Python daemon bindings.
@@ -78,7 +78,7 @@ void loop() {
 
 - The library targets AVR-based Arduino MCU boards. Ensure the Arduino AVR core is installed.
 - The shared protocol headers are kept aligned with the Python daemon under `mcubridge/mcubridge/protocol`.
-- All payload serialization uses **nanopb/protobuf** via generated `rpc::payload::*` structs with `encode()`/`decode()` methods. Payload decoding uses `Payload::parse<T>()`.
+- All payload serialization uses **nanopb/protobuf** via generated `rpc_pb_*` structs serialised and deserialised via `rpc::Payload::serialize` and `rpc::Payload::parse`.
 - MCU sketches should no longer attempt to initiate pin reads directly; GPIO reads are exclusively driven from the Linux daemon via MQTT (`CMD_DIGITAL_READ`/`CMD_ANALOG_READ`).
 
 ## Contributing

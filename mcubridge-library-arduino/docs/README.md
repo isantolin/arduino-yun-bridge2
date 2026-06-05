@@ -9,7 +9,7 @@ This documentation outlines the internal structure of the McuBridge Arduino libr
 - `src/protocol/` – protocol helpers shared with the Linux daemon (COBS, CRC, frame builders, nanopb/protobuf payload structs).
 - `src/` – public headers exported to sketches (`Bridge.h`, `Console.h`, etc.).
 - `examples/` – ready-to-upload sketches demonstrating the library (e.g. `BridgeControl`).
-- `docs/` – additional documentation and protocol references (`PROTOCOL.md`).
+- `docs/` – additional documentation and protocol references (located at root level: `../docs/PROTOCOL.md`).
 - `tools/` – install scripts or build helpers (currently `install.sh`).
 
 ### Actualizaciones recientes

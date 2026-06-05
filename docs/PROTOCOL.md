@@ -41,9 +41,9 @@ La **fuente de verdad machine-readable** del protocolo vive en `tools/protocol/s
 Todos los payloads del protocolo se definen como mensajes en `tools/protocol/mcubridge.proto` y se serializan como **protobuf** dentro del frame RPC.
 
 - **Python (daemon):** usa clases `Packet` generadas en `structures.py` sobre `google.protobuf`.
-- **C++ (MCU):** usa nanopb para codificar/decodificar payloads sin heap dinámico en runtime. Los tipos se exponen como `rpc::payload::*` structs nativos con métodos `encode()`/`decode()`.
+- **C++ (MCU):** usa nanopb para codificar/decodificar payloads sin heap dinámico en runtime. Los tipos se exponen como `rpc_pb_*` structs nativos serializados y deserializados vía `rpc::Payload::serialize` y `rpc::Payload::parse`.
 
-El generador produce automáticamente `Payload::parse<T>(const rpc::Frame&)` sobre nanopb/protobuf, garantizando robustez SIL-2.
+El generador produce automáticamente `rpc::Payload::parse<T>(const rpc_pb_RpcEnvelope&)` sobre nanopb/protobuf, garantizando robustez SIL-2.
 
 ### Validación Estática (C++)
 La librería C++ utiliza el namespace `rpc::Payload` para un desempaquetado de datos seguro y tipado.
@@ -762,29 +762,23 @@ Output:  0xFF 0x00 0xFF    (3 bytes: escape + count=0+2=2 + 0xFF)
 ```cpp
 #include "protocol/rle.h"
 
-uint8_t input[] = "AAAAAAAAAA";  // 10 bytes
-uint8_t output[32];
-
-// Verificar si vale la pena comprimir
-if (rle::should_compress(input, 10)) {
-  size_t compressed_len = rle::encode(input, 10, output, sizeof(output));
-  // compressed_len = 3 bytes
-}
-
+// Nota: La MCU solo realiza descompresión en C++ para ahorrar recursos.
 // Decodificar
 uint8_t decoded[32];
-size_t decoded_len = rle::decode(output, compressed_len, decoded, sizeof(decoded));
+size_t decoded_len = rle::decode(
+    etl::span<const uint8_t>(output, compressed_len),
+    etl::span<uint8_t>(decoded, sizeof(decoded)));
 ```
 
 **Python (daemon):**
 ```python
-from mcubridge.protocol.rle import encode, decode, should_compress
+from mcubridge.protocol.rle import rle_encode, rle_decode, should_compress
 
 data = b"A" * 100
 
 if should_compress(data):
-    compressed = encode(data)  # 3 bytes
-    original = decode(compressed)  # 100 bytes
+    compressed = rle_encode(data)  # 3 bytes
+    original = rle_decode(compressed)  # 100 bytes
 ```
 
 ### 7.6 Recursos
@@ -793,7 +787,7 @@ if should_compress(data):
 - **Flash (MCU):** ~500 bytes de código
 - **Archivos fuente:**
   - C++: `mcubridge-library-arduino/src/protocol/rle.h`
-  - Python: `mcubridge/mcubridge/rpc/rle.py`
+  - Python: `mcubridge/mcubridge/protocol/rle.py`
   - Spec: `tools/protocol/spec.toml` (sección `[compression]`)
 
 ---

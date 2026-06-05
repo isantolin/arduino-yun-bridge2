@@ -157,7 +157,7 @@ class Bridge:
                 elif Topic.matches(self._console_topic, message.topic.value):
                     self._console_queue.put_nowait(bytes(message.payload) if message.payload else b"")
         except MqttError as e:
-            logger.error("MQTT listener error", error=e)
+            logger.error("MQTT listener error", exc_info=e)
 
     async def _publish_and_wait(
         self,

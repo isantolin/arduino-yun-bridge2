@@ -28,8 +28,6 @@ class SpiMode(IntEnum):
     MODE3 = 3
 
 
-
-
 def build_bridge_args(
     host: str | None = None,
     port: int | None = None,

@@ -580,7 +580,6 @@ class QOSLevel(IntEnum):
 UserProperty = tuple[str, str]
 
 
-
 def build_mqtt_properties(message: QueuedPublish) -> Properties:
     """Construct MQTT 5.0 properties object for aiomqtt/paho. [SIL-2]"""
     props = Properties(PacketTypes.PUBLISH)

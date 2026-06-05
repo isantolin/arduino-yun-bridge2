@@ -39,6 +39,8 @@ Arduino MCU Bridge 2 is a modern, high-performance communication system between 
 *   **O(1) Dispatch:** Protocol verification (`requires_ack`) uses `constexpr` arrays and `etl::find` for constant-time complexity.
 *   **Observer:** Components register as observers for system events (e.g., `on_frame`, `on_reset`).
 *   **ETL Component Replacement:** Any manual C++ code (including existing and newly written code) that performs a function that can be substituted by an `etl::` component must be considered and replaced.
+*   **Loop Replacement:** En C++ los bucles deben ser sustituidos por estructuras etl::.
+*   **Loop Replacement:** En C++ los bucles deben ser sustituidos por estructuras etl::.
 
 ## Building and Running
 

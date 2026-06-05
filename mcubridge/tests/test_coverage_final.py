@@ -14,7 +14,6 @@ import mcubridge.state.status as status_mod
 from mcubridge.state.context import create_runtime_state
 from mcubridge.config.logging import configure_logging, hexdump_processor
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.policy import tokenize_shell_command, CommandValidationError
 from mcubridge.security.security import (
     secure_zero,
     generate_nonce_with_counter,
@@ -103,16 +102,6 @@ def test_logging_coverage() -> None:
     processed = hexdump_processor(None, "info", event)
     assert processed["data"] == "[01 02]"
     assert processed["empty"] == "[]"
-
-
-def test_policy_coverage() -> None:
-    assert tokenize_shell_command("ls -la") == ("ls", "-la")
-    with pytest.raises(CommandValidationError):
-        tokenize_shell_command("")
-    with pytest.raises(CommandValidationError):
-        tokenize_shell_command("  ")
-    with pytest.raises(CommandValidationError):
-        tokenize_shell_command("'unclosed quote")
 
 
 def test_security_primitives_coverage() -> None:

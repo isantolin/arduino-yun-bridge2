@@ -298,8 +298,10 @@ class BridgeService:
                         await asyncio.to_thread(popleft_fn)
                 except IndexError as pop_exc:
                     logger.error("Failed to pop corrupt entry", error=str(pop_exc))
+                    break
                 except (OSError, sqlite3.Error) as pop_exc:
                     logger.error("Database error while popping corrupt entry", error=str(pop_exc))
+                    break
                 self.state.mqtt_spool_corrupt_dropped += 1
                 try:
                     spool_len = await asyncio.to_thread(len, self._mqtt_spool)
@@ -364,8 +366,27 @@ class BridgeService:
         return self
 
     async def __aexit__(self, et: Any, ev: Any, tb: Any) -> None:
-        if self._task_group:
-            await self._task_group.__aexit__(et, ev, tb)
+        try:
+            if self._task_group:
+                await self._task_group.__aexit__(et, ev, tb)
+        finally:
+            self.cleanup()
+
+    def cleanup(self) -> None:
+        """Explicitly cleanup and close the spool cache database connection (SIL 2)."""
+        self.serial = None
+        if hasattr(self, "_mqtt_spool") and self._mqtt_spool is not None:
+            try:
+                cache = getattr(self._mqtt_spool, "cache", self._mqtt_spool)
+                cache.close()
+                cast(Any, self._mqtt_spool).cache = None
+            except (AttributeError, OSError, RuntimeError, sqlite3.Error) as e:
+                logger.debug("Spool cache close error during cleanup", error=e)
+            self._mqtt_spool = None
+
+    def __del__(self) -> None:
+        """Last-resort cleanup for spool database cache connections."""
+        self.cleanup()
 
     async def on_serial_connected(self) -> None:
         self.state.mark_transport_connected()

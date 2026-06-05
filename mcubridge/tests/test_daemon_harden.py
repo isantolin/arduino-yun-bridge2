@@ -1,7 +1,6 @@
 import asyncio
-from typing import cast
+from typing import cast, Iterator
 from unittest.mock import AsyncMock, patch
-
 import pytest
 
 from mcubridge.daemon import BridgeDaemon, app, main
@@ -10,14 +9,16 @@ from mcubridge.services.handshake import SerialHandshakeFatal
 
 
 @pytest.fixture
-def daemon_setup() -> BridgeDaemon:
+def daemon_setup() -> Iterator[BridgeDaemon]:
     config = RuntimeConfig(
         mqtt_topic="br",
         serial_port="/dev/test",
         serial_shared_secret=b"secure_secret_123456789012345678",
     )
     daemon = BridgeDaemon(config)
-    return daemon
+    yield daemon
+    daemon.cleanup()
+
 
 
 @pytest.mark.asyncio

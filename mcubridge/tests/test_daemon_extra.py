@@ -21,7 +21,7 @@ async def test_daemon_supervise_fatal_exception() -> None:
         with pytest.raises(SerialHandshakeFatal):
             await daemon.supervise("test-fatal", fatal_task, fatal_exceptions=(SerialHandshakeFatal,))
     finally:
-        daemon.state.cleanup()
+        daemon.cleanup()
 
 
 @pytest.mark.asyncio
@@ -44,7 +44,7 @@ async def test_daemon_supervise_restarts() -> None:
         assert state["call_count"] == 3
         assert "test-restart" in daemon.state.supervisor_stats
     finally:
-        daemon.state.cleanup()
+        daemon.cleanup()
 
 
 @pytest.mark.asyncio
@@ -62,7 +62,7 @@ async def test_daemon_supervise_cancelled() -> None:
         with pytest.raises(asyncio.CancelledError):
             await task
     finally:
-        daemon.state.cleanup()
+        daemon.cleanup()
 
 
 def test_init_check_dependencies_success() -> None:

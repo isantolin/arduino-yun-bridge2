@@ -111,6 +111,14 @@ class BridgeDaemon:
         if self.config.serial_shared_secret:
             logger.info("Security check passed: Shared secret is configured.")
 
+    def cleanup(self) -> None:
+        """Explicitly cleanup and close all daemon resources to prevent ResourceWarnings."""
+        if hasattr(self, "serial_transport") and self.serial_transport is not None:
+            self.serial_transport.service = None
+        if hasattr(self, "service") and self.service is not None:
+            self.service.cleanup()
+        self.state.cleanup()
+
     async def run_mqtt(self) -> None:
         if not self.config.mqtt_enabled:
             logger.info("MQTT transport is DISABLED in configuration.")
@@ -284,7 +292,7 @@ class BridgeDaemon:
                 log.critical("Fatal task error: %s", e, exc_info=e)
             raise
         finally:
-            self.state.cleanup()
+            self.cleanup()
             STATUS_FILE.unlink(missing_ok=True)
             log.info("MCU Bridge daemon stopped.")
 
@@ -410,7 +418,7 @@ def main() -> None:
         sys.exit(1)
     finally:
         if daemon is not None:
-            daemon.state.cleanup()
+            daemon.cleanup()
 
 
 if __name__ == "__main__":

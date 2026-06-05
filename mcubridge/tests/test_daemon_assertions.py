@@ -26,48 +26,54 @@ def runtime_config() -> RuntimeConfig:
 @pytest.mark.asyncio
 async def test_daemon_supervise_retries_on_failure(runtime_config: RuntimeConfig) -> None:
     daemon = BridgeDaemon(runtime_config)
-    mock_factory = AsyncMock(side_effect=[ValueError("fail"), None])
-
-    await daemon.supervise("test-task", mock_factory, min_backoff=0.01, max_backoff=0.01)
-
-    assert mock_factory.call_count == 2
+    try:
+        mock_factory = AsyncMock(side_effect=[ValueError("fail"), None])
+        await daemon.supervise("test-task", mock_factory, min_backoff=0.01, max_backoff=0.01)
+        assert mock_factory.call_count == 2
+    finally:
+        daemon.cleanup()
 
 
 @pytest.mark.asyncio
 async def test_daemon_mqtt_run_disabled(runtime_config: RuntimeConfig) -> None:
     runtime_config.mqtt_enabled = False
     daemon = BridgeDaemon(runtime_config)
-
-    # Should return immediately without connecting
-    with patch("mcubridge.daemon.BridgeDaemon.connect_mqtt_session") as mock_connect:
-        await daemon.run_mqtt()
-        mock_connect.assert_not_called()
+    try:
+        # Should return immediately without connecting
+        with patch("mcubridge.daemon.BridgeDaemon.connect_mqtt_session") as mock_connect:
+            await daemon.run_mqtt()
+            mock_connect.assert_not_called()
+    finally:
+        daemon.cleanup()
 
 
 @pytest.mark.asyncio
 async def test_daemon_run_orchestrates_tasks(runtime_config: RuntimeConfig) -> None:
     daemon = BridgeDaemon(runtime_config)
+    try:
+        # We mock the underlying methods to avoid real I/O
+        daemon.serial_transport.run = AsyncMock()
+        daemon.run_mqtt = AsyncMock()
 
-    # We mock the underlying methods to avoid real I/O
-    daemon.serial_transport.run = AsyncMock()
-    daemon.run_mqtt = AsyncMock()
+        async def fail_soon() -> None:
+            print("fail_soon started")
+            await asyncio.sleep(0.05)
+            print("fail_soon raising")
+            raise SerialHandshakeFatal("test fatal")
 
-    async def fail_soon() -> None:
-        print("fail_soon started")
-        await asyncio.sleep(0.05)
-        print("fail_soon raising")
-        raise SerialHandshakeFatal("test fatal")
+        daemon.serial_transport.run.side_effect = fail_soon
 
-    daemon.serial_transport.run.side_effect = fail_soon
+        print("entering with daemon.run")
+        with pytest.raises(ExceptionGroup):
+            await daemon.run()
 
-    print("entering with daemon.run")
-    with pytest.raises(ExceptionGroup):
-        await daemon.run()
+        print("finished daemon.run")
 
-    print("finished daemon.run")
+        assert daemon.serial_transport.run.called
+        assert daemon.run_mqtt.called
+    finally:
+        daemon.cleanup()
 
-    assert daemon.serial_transport.run.called
-    assert daemon.run_mqtt.called
 
 
 def test_main_strict_mode_when_default_secret() -> None:

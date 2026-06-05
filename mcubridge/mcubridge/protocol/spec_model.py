@@ -65,7 +65,6 @@ class ProtocolSpec(msgspec.Struct):
     topics: list[dict[str, Any]]
     capabilities: dict[str, int]
     architectures: dict[str, int]
-    compression: dict[str, int]
     data_formats: dict[str, str]
     mqtt_suffixes: dict[str, str]
     mqtt_defaults: dict[str, str]

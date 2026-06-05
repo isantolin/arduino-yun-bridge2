@@ -84,24 +84,6 @@ class TopicRoute(msgspec.Struct, frozen=True):
         return self.segments[1:] if len(self.segments) > 1 else ()
 
 
-class RLEPayload(msgspec.Struct, frozen=True):
-    """Encapsulates RLE-compressed data."""
-
-    data: bytes
-
-    def decode(self) -> bytes:
-        """Decompress data using native RLE decoder."""
-        from .rle import rle_decode
-
-        if not self.data:
-            return b""
-
-        try:
-            return rle_decode(self.data)
-        except ValueError as exc:
-            raise ValueError(f"RLE decompression failed: {exc}") from exc
-
-
 # =============================================================================
 # 2. Security and Policy Structures (msgspec)
 # =============================================================================

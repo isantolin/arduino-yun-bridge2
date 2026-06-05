@@ -8,7 +8,6 @@
 #include "BridgeTestInterface.h"
 #include "etl_ext/CounterIterator.h"
 #include "fsm/bridge_fsm.h"
-#include "protocol/rle.h"
 #include "services/Console.h"
 #include "services/DataStore.h"
 #include "services/FileSystem.h"
@@ -41,7 +40,7 @@ bool extract_encrypted_frame(const ByteBuffer<8192>& tx, size_t& cursor,
   rpc_pb_RpcEnvelope candidate;
   if (!extract_next_valid_frame(tx, cursor, candidate)) return false;
   const uint16_t raw_cmd =
-      candidate.command_id & ~rpc::RPC_CMD_FLAG_COMPRESSED;
+      candidate.command_id;
   const bool is_excluded = (raw_cmd >= rpc::RPC_STATUS_CODE_MIN &&
                             raw_cmd <= rpc::RPC_STATUS_CODE_MAX) ||
                            (raw_cmd >= rpc::RPC_SYSTEM_COMMAND_MIN &&
@@ -320,7 +319,7 @@ void test_dispatch_malformed_payload_paths() {
   });
 }
 
-void test_packet_received_security_and_decompress_paths() {
+void test_packet_received_security_paths() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
@@ -339,18 +338,6 @@ void test_packet_received_security_and_decompress_paths() {
 
   etl::array<uint8_t, rpc::MAX_FRAME_SIZE> wire;
   size_t wire_len = rpc::serialize_frame(secure, wire);
-  ba.invokePacketReceived(etl::span<const uint8_t>(wire.data(), wire_len));
-
-  etl::array<uint8_t, 4> decomp_pl = {1, 2, 3, 4};
-  rpc_pb_RpcEnvelope compressed;
-  compressed.version = rpc::PROTOCOL_VERSION;
-  compressed.command_id = static_cast<uint16_t>(
-                           rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION) |
-                           rpc::RPC_CMD_FLAG_COMPRESSED);
-  compressed.sequence_id = 501;
-  rpc::payload::copy_to_pb_bytes(compressed.payload, decomp_pl.data(), 4);
-
-  wire_len = rpc::serialize_frame(compressed, wire);
   ba.invokePacketReceived(etl::span<const uint8_t>(wire.data(), wire_len));
 }
 
@@ -540,7 +527,7 @@ void test_service_capacity_and_send_fail_edges() {
                ProcessType::ProcessPollHandler::create<on_process_poll>());
 }
 
-void test_filesystem_spi_fsm_and_rle_edges() {
+void test_filesystem_spi_fsm_edges() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
@@ -571,15 +558,9 @@ void test_filesystem_spi_fsm_and_rle_edges() {
   bridge::fsm::BridgeFsm fsm;
   fsm.start();
   fsm.receive(bridge::fsm::EvReset());
-
-  etl::array<uint8_t, 5> bad_rle = {rle::ESCAPE_BYTE, 10, 0x44, 0xAA, 0xBB};
-  etl::array<uint8_t, 1> out = {0};
-  TEST_ASSERT_EQUAL_UINT32(
-      0, static_cast<uint32_t>(rle::decode(etl::span<const uint8_t>(bad_rle),
-                                           etl::span<uint8_t>(out))));
 }
 
-void test_encrypted_rx_nonce_and_compressed_empty_paths() {
+void test_encrypted_rx_nonce_paths() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
@@ -658,10 +639,9 @@ void test_fault_injection_harness_paths() {
   ba2.setPendingBaudrate(115200U);
   ba2.onBaudrateChange();
 
-  // Branch coverage for requires_ack (default path and flags)
+  // Branch coverage for requires_ack (default path)
   TEST_ASSERT_FALSE(
-      rpc::requires_ack(rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION) |
-                        rpc::RPC_CMD_FLAG_COMPRESSED));
+      rpc::requires_ack(rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION)));
   TEST_ASSERT_TRUE(
       rpc::requires_ack(rpc::to_underlying(rpc::CommandId::CMD_SPI_BEGIN)));
 
@@ -712,19 +692,6 @@ void test_fault_injection_harness_paths() {
     bs.invokePacketReceived(etl::span<const uint8_t>(wire.data(), wire_len));
   }
 
-  rpc_pb_RpcEnvelope bad_compressed;
-  bad_compressed.version = rpc::PROTOCOL_VERSION;
-  bad_compressed.command_id = static_cast<uint16_t>(
-          rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION) |
-          rpc::RPC_CMD_FLAG_COMPRESSED);
-  bad_compressed.sequence_id = 952;
-  uint8_t bad_pl[] = {rle::ESCAPE_BYTE, 0x01};
-  rpc::payload::copy_to_pb_bytes(bad_compressed.payload, bad_pl, 2);
-  
-  etl::array<uint8_t, rpc::MAX_FRAME_SIZE> bad_wire;
-  const size_t bad_len = rpc::serialize_frame(
-      bad_compressed, etl::span<uint8_t>(bad_wire.data(), bad_wire.size()));
-  bs.invokePacketReceived(etl::span<const uint8_t>(bad_wire.data(), bad_len));
 }
 
 }  // namespace
@@ -733,14 +700,14 @@ int main() {
   UNITY_BEGIN();
   RUN_TEST(test_dispatch_valid_payload_handlers_unique_seq);
   RUN_TEST(test_dispatch_malformed_payload_paths);
-  RUN_TEST(test_packet_received_security_and_decompress_paths);
+  RUN_TEST(test_packet_received_security_paths);
   RUN_TEST(test_console_and_policy_edges);
   RUN_TEST(test_security_invalid_size_guards);
   RUN_TEST(test_observer_and_task_runtime_edges);
   RUN_TEST(test_timer_link_and_bootloader_edges);
   RUN_TEST(test_service_capacity_and_send_fail_edges);
-  RUN_TEST(test_filesystem_spi_fsm_and_rle_edges);
-  RUN_TEST(test_encrypted_rx_nonce_and_compressed_empty_paths);
+  RUN_TEST(test_filesystem_spi_fsm_edges);
+  RUN_TEST(test_encrypted_rx_nonce_paths);
   RUN_TEST(test_fault_injection_harness_paths);
   return UNITY_END();
 }

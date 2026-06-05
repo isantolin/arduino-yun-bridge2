@@ -38,7 +38,6 @@
 #include "config/bridge_config.h"
 #include "etl_ext/CounterIterator.h"
 #include "fsm/bridge_fsm.h"
-#include "protocol/rle.h"
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
 #include "protocol/rpc_structs.h"
@@ -146,9 +145,6 @@ class BridgeClass {
   static constexpr bool is_reliable_cmd(uint16_t id) {
     return rpc::requires_ack(id);
   }
-  [[maybe_unused]] static constexpr bool is_compressed_cmd(uint16_t id) {
-    return (id & rpc::RPC_CMD_FLAG_COMPRESSED) != 0;
-  }
 
  protected:
 
@@ -243,8 +239,6 @@ class BridgeClass {
 
   etl::circular_buffer<uint16_t, bridge::config::RX_HISTORY_SIZE> _rx_history;
 
-  [[nodiscard]] etl::expected<void, rpc::FrameError> _decompressFrame(
-      const rpc_pb_RpcEnvelope& in, rpc_pb_RpcEnvelope& out);
   [[maybe_unused]] void _applyTimingConfig(
       const rpc::payload::HandshakeConfig& msg);
 

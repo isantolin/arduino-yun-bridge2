@@ -89,7 +89,6 @@ COMMON_FLAGS="-O2 -g -Wall -DBRIDGE_HOST_TEST=1 -DUNITY_INCLUDE_DOUBLE -DBRIDGE_
 SOURCES=(
     "src/security/security.cpp"
     "src/hal/hal.cpp"
-    "src/protocol/rle.cpp"
     "src/Bridge.cpp"
     "src/BridgeInstance.cpp"
     "src/fsm/bridge_fsm.cpp"

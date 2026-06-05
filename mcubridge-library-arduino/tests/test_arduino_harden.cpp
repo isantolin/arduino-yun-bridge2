@@ -152,28 +152,6 @@ void test_bridge_retransmit_empty_queue() {
   TEST_ASSERT_TRUE(true);
 }
 
-void test_bridge_decompress_error() {
-  BiStream stream;
-  reset_bridge_core(Bridge, stream);
-  auto& ba = TestAccessor::create(Bridge);
-  ba.setSynchronized();
-
-  rpc_pb_RpcEnvelope f;
-  f.version = rpc::PROTOCOL_VERSION;
-  f.command_id = static_cast<uint16_t>(
-                   static_cast<uint16_t>(rpc::CommandId::CMD_GET_VERSION) |
-                   rpc::RPC_CMD_FLAG_COMPRESSED);
-  f.sequence_id = 1;
-
-  etl::array<uint8_t, 4> garbage = {0xFF, 0xFF, 0xFF, 0xFF};
-  rpc::payload::copy_to_pb_bytes(f.payload, garbage.data(), 4);
-
-  etl::array<uint8_t, 256> buf;
-  size_t len = rpc::serialize_frame(f, buf);
-  ba.invokePacketReceived(etl::span<const uint8_t>(buf.data(), len));
-
-  TEST_ASSERT_TRUE(true);
-}
 
 void test_bridge_security_pre_sync_rejection() {
   BiStream stream;
@@ -228,7 +206,6 @@ int main() {
   RUN_TEST(test_bridge_ack_orphans);
   RUN_TEST(test_bridge_begin_idempotency);
   RUN_TEST(test_bridge_linksync_auth_failure);
-  RUN_TEST(test_bridge_decompress_error);
   RUN_TEST(test_bridge_security_pre_sync_rejection);
   RUN_TEST(test_bridge_nonce_reuse_attack);
   return UNITY_END();

@@ -27,10 +27,6 @@ HANDSHAKE_CONFIG_SIZE: Final[int] = 7
 {{ key }}: Final[bytes] = b{{ val|tojson }}
 {%- endfor %}
 
-class CompressionType(IntEnum):
-{%- for name, val in compression.items() %}
-    {{ name|upper }} = {{ val }}
-{%- endfor %}
 
 {% for cap, val in capabilities.items() %}
 CAPABILITY_{{ cap|upper }}: Final[int] = {{ val }}

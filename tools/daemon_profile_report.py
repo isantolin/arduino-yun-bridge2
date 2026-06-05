@@ -6,7 +6,6 @@ Measures:
   - Dependency count and total source size.
   - Frame parse/build throughput.
   - Protobuf encode/decode throughput.
-  - RLE compress/decompress throughput.
 
 Outputs a Markdown table suitable for ``$GITHUB_STEP_SUMMARY``.
 """
@@ -232,7 +231,7 @@ def _benchmark(name: str, fn: Callable[[], Any], iterations: int = 5000) -> Benc
 
 
 def run_benchmarks(iterations: int = 5000) -> list[BenchmarkResult]:
-    """Run frame, protobuf, and RLE benchmarks."""
+    """Run frame and protobuf benchmarks."""
     results: list[BenchmarkResult] = []
 
     # --- Frame parse/build ---
@@ -263,19 +262,6 @@ def run_benchmarks(iterations: int = 5000) -> list[BenchmarkResult]:
 
     results.append(_benchmark("Protobuf encode", _pb_encode, iterations))
     results.append(_benchmark("Protobuf decode", _pb_decode, iterations))
-
-    # --- RLE compress ---
-    import mcubridge.protocol.rle
-
-    rle_input = bytes([0] * 50 + [1] * 30 + [2] * 20 + [255] * 28)
-
-    results.append(
-        _benchmark(
-            "RLE encode",
-            lambda: mcubridge.protocol.rle.rle_encode(rle_input),
-            iterations,
-        )
-    )
 
     # --- Topic parsing ---
     from mcubridge.protocol.topics import parse_topic

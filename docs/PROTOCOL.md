@@ -544,20 +544,19 @@ Raw (before COBS):
     | Bit | Valor | Feature | Descripción |
     | :--- | :--- | :--- | :--- |
     | 0 | `1` | Watchdog | MCU Watchdog habilitado. |
-    | 1 | `2` | RLE | Compresión RLE soportada. |
-    | 2 | `4` | Debug Frames | Logging de tramas activo. |
-    | 3 | `8` | Debug IO | Logging de GPIO activo. |
-    | 4 | `16` | EEPROM | Memoria no volátil disponible. |
-    | 5 | `32` | DAC | Salida analógica real (True DAC). |
-    | 6 | `64` | HW Serial 1 | Segundo puerto serial hardware disponible. |
-    | 7 | `128` | FPU | Unidad de punto flotante hardware. |
-    | 8 | `256` | 3.3V Logic | Niveles lógicos de 3.3V (vs 5V). |
-    | 9 | `512` | Big Buffer | Buffer RX serial extendido (>64 bytes). |
-    | 10 | `1024` | I2C | Soporte hardware I2C (Wire/SDA/SCL). |
-    | 11 | `2048` | SPI | Soporte hardware SPI (SCK/MOSI/MISO). |
-    | 12 | `4096` | SD | Tarjeta SD física detectada y funcional. |
-    | 13 | `8192` | Filesystem | Sistema de archivos habilitado. |
-    | 14 | `16384` | Process | Gestión de procesos habilitada. |
+    | 1 | `2` | Debug Frames | Logging de tramas activo. |
+    | 2 | `4` | Debug IO | Logging de GPIO activo. |
+    | 3 | `8` | EEPROM | Memoria no volátil disponible. |
+    | 4 | `16` | DAC | Salida analógica real (True DAC). |
+    | 5 | `32` | HW Serial 1 | Segundo puerto serial hardware disponible. |
+    | 6 | `64` | FPU | Unidad de punto flotante hardware. |
+    | 7 | `128` | 3.3V Logic | Niveles lógicos de 3.3V (vs 5V). |
+    | 8 | `256` | Big Buffer | Buffer RX serial extendido (>64 bytes). |
+    | 9 | `512` | I2C | Soporte hardware I2C (Wire/SDA/SCL). |
+    | 10 | `1024` | SPI | Soporte hardware SPI (SCK/MOSI/MISO). |
+    | 11 | `2048` | SD | Tarjeta SD física detectada y funcional. |
+    | 12 | `4096` | Filesystem | Sistema de archivos habilitado. |
+    | 13 | `8192` | Process | Gestión de procesos habilitada. |
 
 - **`0x4E` CMD_XOFF (MCU → Linux)** / **`0x4F` CMD_XON (MCU → Linux)**
   - Sin payload.
@@ -699,98 +698,6 @@ Notas:
 
 ---
 
-## 7. Compresión RLE (opcional)
-
-El protocolo incluye una implementación de **Run-Length Encoding (RLE)** optimizada para sistemas embebidos con RAM limitada. Está disponible en ambos lados (MCU y daemon) para comprimir payloads antes de transmitir.
-
-### 7.1 Casos de uso
-
-| Tipo de dato | Compresión típica | Recomendación |
-| --- | --- | --- |
-| Console output con espacios/tabs | 1.2x - 2x | ✅ Usar |
-| Datos de sensores repetitivos | 2x - 10x | ✅ Usar |
-| Archivos con padding nulo | 10x - 50x | ✅ Usar |
-| Datos GPIO (1-2 bytes) | N/A | ❌ No usar |
-| Handshake/crypto | N/A | ❌ No usar |
-| Datos aleatorios | ~1x | ❌ No usar |
-
-### 7.2 Formato de codificación
-
-```
-Literal:     byte                    (si byte ≠ 0xFF)
-Run:         0xFF <count> <byte>     (secuencia de bytes repetidos)
-```
-
-| Count | Significado |
-| --- | --- |
-| 0-254 | Run length = count + 2 (2-256 bytes) |
-| 255 | Marcador especial: exactamente 1 byte (para escapar 0xFF aislado) |
-
-**Ejemplos:**
-
-```
-Input:   "AAAAA"           (5 bytes)
-Output:  0xFF 0x03 0x41    (3 bytes: escape + count=3+2=5 + 'A')
-
-Input:   0xFF              (1 byte aislado)
-Output:  0xFF 0xFF 0xFF    (3 bytes: escape + marcador_especial + 0xFF)
-
-Input:   0xFF 0xFF         (2 bytes consecutivos)
-Output:  0xFF 0x00 0xFF    (3 bytes: escape + count=0+2=2 + 0xFF)
-```
-
-### 7.3 Parámetros
-
-| Constante | Valor | Descripción |
-| --- | --- | --- |
-| `RLE_ESCAPE_BYTE` | `0xFF` | Byte que indica inicio de secuencia codificada |
-| `RLE_MIN_RUN_LENGTH` | 4 | Longitud mínima para codificar (break-even) |
-| `RLE_MAX_RUN_LENGTH` | 256 | Máximo por secuencia (runs más largos se dividen) |
-
-### 7.4 Performance
-
-| Escenario | Input | Output | Ratio |
-| --- | --- | --- | --- |
-| Datos uniformes | 100 bytes | 3 bytes | **33x** |
-| Largo uniforme | 1000 bytes | 12 bytes | **83x** |
-| Texto normal | 100 bytes | ~100 bytes | ~1x |
-| Muchos 0xFF aislados | 50 bytes | ~150 bytes | 0.3x (expansión) |
-
-### 7.5 Uso en código
-
-**C++ (MCU):**
-```cpp
-#include "protocol/rle.h"
-
-// Nota: La MCU solo realiza descompresión en C++ para ahorrar recursos.
-// Decodificar
-uint8_t decoded[32];
-size_t decoded_len = rle::decode(
-    etl::span<const uint8_t>(output, compressed_len),
-    etl::span<uint8_t>(decoded, sizeof(decoded)));
-```
-
-**Python (daemon):**
-```python
-from mcubridge.protocol.rle import rle_encode, rle_decode, should_compress
-
-data = b"A" * 100
-
-if should_compress(data):
-    compressed = rle_encode(data)  # 3 bytes
-    original = rle_decode(compressed)  # 100 bytes
-```
-
-### 7.6 Recursos
-
-- **RAM (MCU):** ~10 bytes de stack, sin heap
-- **Flash (MCU):** ~500 bytes de código
-- **Archivos fuente:**
-  - C++: `mcubridge-library-arduino/src/protocol/rle.h`
-  - Python: `mcubridge/mcubridge/protocol/rle.py`
-  - Spec: `tools/protocol/spec.toml` (sección `[compression]`)
-
----
 
 ### MQTT: snapshots del bridge (SYSTEM/bridge/*)
 

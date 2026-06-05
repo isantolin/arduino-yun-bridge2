@@ -32,9 +32,6 @@ inline constexpr size_t CRC_TRAILER_SIZE = rpc::RPC_CRC_SIZE;
 inline constexpr size_t MAX_ENVELOPE_SIZE = rpc_pb_RpcEnvelope_size;
 inline constexpr size_t MAX_FRAME_SIZE = MAX_ENVELOPE_SIZE + CRC_TRAILER_SIZE;
 
-inline bool is_compressed(uint16_t id) {
-  return (id & RPC_CMD_FLAG_COMPRESSED) != 0;
-}
 
 namespace checksum {
 /**

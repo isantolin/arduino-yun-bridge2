@@ -38,7 +38,6 @@ actions = []
 topics = []
 capabilities = {}
 architectures = {}
-compression = {}
 data_formats = {}
 mqtt_suffixes = {}
 mqtt_defaults = {}

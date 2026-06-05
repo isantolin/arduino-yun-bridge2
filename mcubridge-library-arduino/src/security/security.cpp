@@ -15,17 +15,8 @@
 
 #include "Bridge.h"
 #include "hal/progmem_compat.h"
-namespace {
-bool g_fault_kat_sha256 = false;
-bool g_fault_kat_hmac = false;
-bool g_fault_kat_aead = false;
-}
 
-extern "C" {
-  void bridge_test_security_fault_sha256(bool enable) { g_fault_kat_sha256 = enable; }
-  void bridge_test_security_fault_hmac(bool enable) { g_fault_kat_hmac = enable; }
-  void bridge_test_security_fault_aead(bool enable) { g_fault_kat_aead = enable; }
-}
+
 
 
 namespace rpc {
@@ -183,7 +174,7 @@ static constexpr etl::array<uint8_t, 32> kat_hmac_expected PROGMEM = {
      0xE6, 0xAA, 0x6F, 0xB1, 0x43, 0xEF, 0x4D, 0x59, 0xA1, 0x49, 0x46,
      0x17, 0x59, 0x97, 0x47, 0x9D, 0xBC, 0x2D, 0x1A, 0x3C, 0xD8}};
 
-bool run_cryptographic_self_tests() {
+bool __attribute__((weak)) run_cryptographic_self_tests() {
   etl::array<uint8_t, rpc::RPC_SHA256_DIGEST_SIZE> actual;
   etl::array<uint8_t, rpc::RPC_SHA256_KAT_BUFFER_SIZE> buffer;
 
@@ -198,7 +189,7 @@ bool run_cryptographic_self_tests() {
   etl::array<uint8_t, rpc::RPC_SHA256_DIGEST_SIZE> expected_buf;
   memcpy_P(expected_buf.data(), kat_sha256_expected.data(),
            rpc::RPC_SHA256_DIGEST_SIZE);
-  if (g_fault_kat_sha256 || !etl::equal(actual.begin(), actual.end(), expected_buf.begin()))
+  if (!etl::equal(actual.begin(), actual.end(), expected_buf.begin()))
     return false;
 
   // 2. HMAC-SHA256 KAT
@@ -216,7 +207,7 @@ bool run_cryptographic_self_tests() {
 
   memcpy_P(expected_buf.data(), kat_hmac_expected.data(),
            rpc::RPC_SHA256_DIGEST_SIZE);
-  if (g_fault_kat_hmac || !etl::equal(actual.begin(), actual.end(), expected_buf.begin()))
+  if (!etl::equal(actual.begin(), actual.end(), expected_buf.begin()))
     return false;
 
   // 3. ChaCha20-Poly1305 KAT (RFC 8439)
@@ -243,7 +234,7 @@ bool run_cryptographic_self_tests() {
           etl::span<uint8_t>(aead_tag_actual)) != 0)
     return false;
 
-  return g_fault_kat_aead ? false : etl::equal(aead_tag_actual.begin(), aead_tag_actual.end(), kat_aead_tag_expected.begin());
+  return etl::equal(aead_tag_actual.begin(), aead_tag_actual.end(), kat_aead_tag_expected.begin());
 }
 
 }  // namespace security

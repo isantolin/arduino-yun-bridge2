@@ -82,7 +82,16 @@ def verify_crypto_integrity() -> bool:
     if hashlib.sha256(b"abc").hexdigest() != ("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"):
         return False
 
-    # 2. ChaCha20-Poly1305 KAT
+    # 2. HMAC-SHA256 KAT
+    import hmac
+
+    if (
+        hmac.new(b"\x00" * 32, b"abc", hashlib.sha256).hexdigest()
+        != "fd7adb152c05ef80dccf50a1fa4c05d5a3ec6da95575fc312ae7c5d091836351"
+    ):
+        return False
+
+    # 3. ChaCha20-Poly1305 KAT
     try:
         key = b"\x00" * 32
         nonce = b"\x00" * 12

@@ -167,7 +167,7 @@ void test_bridge_coverage() {
   Mailbox.onLost();
   Mailbox.requestRead();
   Mailbox.requestAvailable();
-  Mailbox.signalProcessed();
+  Mailbox.signalProcessed(123);
 
   // 7. SPI
   printf("  - Step 7: SPI\n");

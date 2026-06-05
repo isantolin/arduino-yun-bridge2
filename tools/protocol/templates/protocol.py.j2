@@ -113,10 +113,24 @@ class Topic(StrEnum):
     {%- endfor %}
 
 
+class CommonAction:
+    {%- set unique_items = [] %}
+    {%- for action in grouped_actions %}
+      {%- for item in action.action_items %}
+        {%- if item.name not in unique_items %}
+          {%- if unique_items.append(item.name) %}{% endif %}
+        {%- endif %}
+      {%- endfor %}
+    {%- endfor %}
+    {%- for name in unique_items|sort %}
+    {{ name }}: Final[str] = "{{ name|lower }}"
+    {%- endfor %}
+
+
 {% for action in grouped_actions %}
 class {{ action.class_name }}(StrEnum):
     {%- for item in action.action_items %}
-    {{ item.name }} = "{{ item.value }}"  # {{ item.description }}
+    {{ item.name }} = CommonAction.{{ item.name }}  # {{ item.description }}
     {%- endfor %}
 
 {% endfor %}

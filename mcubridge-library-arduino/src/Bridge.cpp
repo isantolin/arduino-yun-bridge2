@@ -144,6 +144,18 @@ BridgeClass::DispatchHandler BridgeClass::_getHandler(uint16_t command_id) {
                 &BridgeClass::_handleDataStoreGetResponse>;
 #endif
 
+#if BRIDGE_ENABLE_MAILBOX
+        t[rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH)] =
+            &BridgeClass::_dispatchAckCtx<rpc_pb_MailboxPush,
+                                          &BridgeClass::_handleMailboxPush>;
+        t[rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_READ_RESP)] =
+            &BridgeClass::_dispatchPayload<rpc_pb_MailboxReadResponse,
+                                           &BridgeClass::_handleMailboxReadResponse>;
+        t[rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP)] =
+            &BridgeClass::_dispatchPayload<rpc_pb_MailboxAvailableResponse,
+                                           &BridgeClass::_handleMailboxAvailableResponse>;
+#endif
+
 #if BRIDGE_ENABLE_FILESYSTEM
         t[rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE)] =
             &BridgeClass::_dispatchAckCtx<rpc_pb_FileWrite,
@@ -523,6 +535,20 @@ void BridgeClass::_handleDataStoreGetResponse(
     const rpc_pb_DatastoreGetResponse& m) {
   (void)ctx;
   DataStore._onResponse(m);
+}
+#endif
+
+#if BRIDGE_ENABLE_MAILBOX
+void BridgeClass::_handleMailboxPush(const bridge::router::CommandContext& ctx,
+                                     const rpc_pb_MailboxPush& m) {
+  (void)ctx;
+  MailboxClass<>::_onPush(m);
+}
+void BridgeClass::_handleMailboxReadResponse(const rpc_pb_MailboxReadResponse& m) {
+  MailboxClass<>::_onReadResponse(m);
+}
+void BridgeClass::_handleMailboxAvailableResponse(const rpc_pb_MailboxAvailableResponse& m) {
+  MailboxClass<>::_onAvailableResponse(m);
 }
 #endif
 

@@ -357,6 +357,12 @@ class BridgeClass {
   void _handleProcessPollResponse(const bridge::router::CommandContext& ctx,
                                   const rpc_pb_ProcessPollResponse& m);
   void _handleSpiSetConfig(const rpc_pb_SpiConfig& m);
+#if BRIDGE_ENABLE_MAILBOX
+  void _handleMailboxPush(const bridge::router::CommandContext& ctx,
+                          const rpc_pb_MailboxPush& m);
+  void _handleMailboxReadResponse(const rpc_pb_MailboxReadResponse& m);
+  void _handleMailboxAvailableResponse(const rpc_pb_MailboxAvailableResponse& m);
+#endif
   void _handleAckStruct(const rpc_pb_AckPacket& m);
   void _handleLinkResetStruct(const rpc_pb_HandshakeConfig& m);
   static DispatchHandler _getHandler(uint16_t command_id);

@@ -184,7 +184,7 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
       rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE), seq++,
       []() {
         rpc::payload::FileWrite p;
-        strncpy(p.path, "edge.bin", 64);
+        strncpy(p.path, "edge.bin", sizeof(p.path));
         uint8_t v[] = {1, 2, 3, 4};
         rpc::payload::copy_to_pb_bytes(p.data, v, 4);
         return p;
@@ -196,7 +196,7 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
       rpc::to_underlying(rpc::CommandId::CMD_FILE_READ), seq++,
       []() {
         rpc::payload::FileRead p;
-        strncpy(p.path, "edge.bin", 64);
+        strncpy(p.path, "edge.bin", sizeof(p.path));
         return p;
       }(),
       buf);
@@ -206,7 +206,7 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
       rpc::to_underlying(rpc::CommandId::CMD_FILE_REMOVE), seq++,
       []() {
         rpc::payload::FileRemove p;
-        strncpy(p.path, "edge.bin", 64);
+        strncpy(p.path, "edge.bin", sizeof(p.path));
         return p;
       }(),
       buf);
@@ -548,7 +548,7 @@ void test_filesystem_spi_fsm_and_rle_edges() {
 
   etl::array<uint8_t, 2> fs_data = {1, 2};
   rpc::payload::FileWrite fwp;
-  strncpy(fwp.path, "/bad", 64);
+  strncpy(fwp.path, "/bad", sizeof(fwp.path));
   rpc::payload::copy_to_pb_bytes(fwp.data, fs_data.data(),
                                  fs_data.size());
   FileSystem._onWrite(fwp);

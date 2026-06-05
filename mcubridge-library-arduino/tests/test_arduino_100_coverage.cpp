@@ -121,14 +121,14 @@ void test_bridge_brute_force_commands() {
   uint8_t val[] = "v";
   hit(rpc::CommandId::CMD_DATASTORE_PUT, []() {
     rpc::payload::DatastorePut p;
-    strncpy(p.key, "k", 32);
+    strncpy(p.key, "k", sizeof(p.key));
     uint8_t v[] = "v";
     rpc::payload::copy_to_pb_bytes(p.value, v, 1);
     return p;
   }());
   hit(rpc::CommandId::CMD_DATASTORE_GET, []() {
     rpc::payload::DatastoreGet p;
-    strncpy(p.key, "k", 32);
+    strncpy(p.key, "k", sizeof(p.key));
     return p;
   }());
 
@@ -150,7 +150,7 @@ void test_bridge_brute_force_commands() {
   // Process
   hit(rpc::CommandId::CMD_PROCESS_RUN_ASYNC, []() {
     rpc::payload::ProcessRunAsync p;
-    strncpy(p.command, "ls", 64);
+    strncpy(p.command, "ls", sizeof(p.command));
     return p;
   }());
   hit(rpc::CommandId::CMD_PROCESS_POLL, []() {

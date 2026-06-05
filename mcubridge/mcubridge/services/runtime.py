@@ -479,9 +479,13 @@ class BridgeService:
         )
         return bool(res)
 
-    async def _on_mcu_mailbox_processed(self, payload: bytes) -> None:
+    async def _on_mcu_mailbox_processed(self, p: pb.MailboxProcessed) -> None:
         await self.enqueue_mqtt(
-            QueuedPublish(topic_path(self.state.mqtt_topic_prefix, Topic.MAILBOX, MailboxAction.PROCESSED), payload)
+            QueuedPublish(
+                topic_name=topic_path(self.state.mqtt_topic_prefix, Topic.MAILBOX, MailboxAction.PROCESSED),
+                payload=p.SerializeToString(),
+                content_type=PROTOBUF_CONTENT_TYPE,
+            )
         )
 
     async def _on_mcu_file_write(self, p: pb.FileWrite) -> bool:
@@ -744,7 +748,12 @@ class BridgeService:
         pl = msgspec.convert(inbound.payload, bytes)
         if act == ShellAction.RUN_ASYNC:
             try:
-                cmd = pb.ProcessRunAsync.FromString(pl).command if pl.startswith(b"\x0a") else pl.decode().strip()
+                properties = getattr(inbound, "properties", None)
+                content_type = getattr(properties, "ContentType", None) if properties else None
+                if content_type == PROTOBUF_CONTENT_TYPE or pl.startswith(b"\x0a"):
+                    cmd = pb.ProcessRunAsync.FromString(pl).command
+                else:
+                    cmd = pl.decode().strip()
                 pid = await self._run_process(cmd)
             except (ProtobufDecodeError, UnicodeDecodeError, ValueError, OSError) as exc:
                 logger.warning("MQTT shell run_async rejected", error=str(exc))

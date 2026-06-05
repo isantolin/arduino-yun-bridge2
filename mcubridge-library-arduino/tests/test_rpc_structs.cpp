@@ -95,13 +95,13 @@ void test_all_structs_roundtrip() {
   test_roundtrip(cw);
 
   rpc::payload::DatastorePut dp;
-  strncpy(dp.key, str, 32);
+  strncpy(dp.key, str, sizeof(dp.key));
   rpc::payload::copy_to_pb_bytes(
       dp.value, reinterpret_cast<const uint8_t*>(str), 4);
   test_roundtrip(dp);
 
   rpc::payload::DatastoreGet dg;
-  strncpy(dg.key, str, 32);
+  strncpy(dg.key, str, sizeof(dg.key));
   test_roundtrip(dg);
 
   rpc::payload::DatastoreGetResponse dgr;
@@ -131,17 +131,17 @@ void test_all_structs_roundtrip() {
   test_roundtrip(mbr);
 
   rpc::payload::FileWrite fw;
-  strncpy(fw.path, str, 64);
+  strncpy(fw.path, str, sizeof(fw.path));
   rpc::payload::copy_to_pb_bytes(
       fw.data, reinterpret_cast<const uint8_t*>(str), 4);
   test_roundtrip(fw);
 
   rpc::payload::FileRead fr;
-  strncpy(fr.path, str, 64);
+  strncpy(fr.path, str, sizeof(fr.path));
   test_roundtrip(fr);
 
   rpc::payload::FileRemove frm;
-  strncpy(frm.path, str, 64);
+  strncpy(frm.path, str, sizeof(frm.path));
   test_roundtrip(frm);
 
   rpc::payload::FileReadResponse frr;
@@ -150,7 +150,7 @@ void test_all_structs_roundtrip() {
   test_roundtrip(frr);
 
   rpc::payload::ProcessRunAsync pra;
-  strncpy(pra.command, str, 64);
+  strncpy(pra.command, str, sizeof(pra.command));
   test_roundtrip(pra);
 
   test_roundtrip([]() {

@@ -9,17 +9,22 @@ rpc.pb.DatastoreGet.key           max_size:32
 rpc.pb.DatastoreGetResponse.value max_size:64
 rpc.pb.MailboxPush.data           max_size:64
 rpc.pb.MailboxReadResponse.content max_size:64
-rpc.pb.FileWrite.path             max_size:64
-rpc.pb.FileWrite.data             max_size:64
+rpc.pb.FileWrite.path             max_size:32
+rpc.pb.FileWrite.data             max_size:28
 rpc.pb.FileRead.path              max_size:64
 rpc.pb.FileRemove.path            max_size:64
 rpc.pb.FileReadResponse.content   max_size:64
-rpc.pb.ProcessRunAsync.command    max_size:64
+rpc.pb.ProcessRunAsync.command    max_size:60
 rpc.pb.ProcessPollResponse.stdout_data max_size:32
 rpc.pb.ProcessPollResponse.stderr_data max_size:32
 rpc.pb.LinkSync.nonce             max_size:16
 rpc.pb.LinkSync.tag               max_size:16
 rpc.pb.SpiTransfer.data           max_size:64
 rpc.pb.SpiTransferResponse.data   max_size:64
-rpc.pb.GenericResponse.status      max_size:32
-rpc.pb.GenericResponse.message     max_size:64
+rpc.pb.GenericResponse.status      max_size:8
+rpc.pb.GenericResponse.message     max_size:48
+
+# Exclude MQTT-only structures from MCU firmware compilation
+rpc.pb.StructuredEntry   skip_message:true
+rpc.pb.StructuredPayload skip_message:true
+

@@ -292,19 +292,17 @@ void BridgeClass::_handleDigitalWrite(const rpc_pb_DigitalWrite& m) { digitalWri
 void BridgeClass::_handleAnalogWrite(const rpc_pb_AnalogWrite& m) { analogWrite(m.pin, (int)m.value); }
 
 void BridgeClass::_handleDigitalRead(const bridge::router::CommandContext& ctx) {
-  
-  rpc_pb_PinRead m = {}; pb_istream_t stream = pb_istream_from_buffer(ctx.envelope->payload.bytes, ctx.envelope->payload.size);
-  if (pb_decode(&stream, rpc::Payload::get_fields<rpc_pb_PinRead>(), &m) && bridge::hal::isValidPin(m.pin)) {
-    rpc_pb_DigitalReadResponse resp = {}; resp.value = static_cast<uint32_t>(::digitalRead(m.pin));
+  auto res = rpc::Payload::parse<rpc_pb_PinRead>(*ctx.envelope);
+  if (res && bridge::hal::isValidPin(res->pin)) {
+    rpc_pb_DigitalReadResponse resp = {}; resp.value = static_cast<uint32_t>(::digitalRead(res->pin));
     (void)send(rpc::CommandId::CMD_DIGITAL_READ_RESP, ctx.sequence_id, resp);
   } else emitStatus(rpc::StatusCode::STATUS_ERROR);
 }
 
 void BridgeClass::_handleAnalogRead(const bridge::router::CommandContext& ctx) {
-  
-  rpc_pb_PinRead m = {}; pb_istream_t stream = pb_istream_from_buffer(ctx.envelope->payload.bytes, ctx.envelope->payload.size);
-  if (pb_decode(&stream, rpc::Payload::get_fields<rpc_pb_PinRead>(), &m) && bridge::hal::isValidPin(m.pin)) {
-    rpc_pb_AnalogReadResponse resp = {}; resp.value = static_cast<uint32_t>(::analogRead(m.pin));
+  auto res = rpc::Payload::parse<rpc_pb_PinRead>(*ctx.envelope);
+  if (res && bridge::hal::isValidPin(res->pin)) {
+    rpc_pb_AnalogReadResponse resp = {}; resp.value = static_cast<uint32_t>(::analogRead(res->pin));
     (void)send(rpc::CommandId::CMD_ANALOG_READ_RESP, ctx.sequence_id, resp);
   } else emitStatus(rpc::StatusCode::STATUS_ERROR);
 }
@@ -359,10 +357,9 @@ void BridgeClass::_handleSpiEnd(const bridge::router::CommandContext& ctx) {
   SPIService.end(); _processAck(ctx.raw_command, ctx.sequence_id);
 }
 void BridgeClass::_handleSpiTransfer(const bridge::router::CommandContext& ctx) {
-  
-  rpc_pb_SpiTransfer m = {}; pb_istream_t stream = pb_istream_from_buffer(ctx.envelope->payload.bytes, ctx.envelope->payload.size);
-  if (pb_decode(&stream, rpc::Payload::get_fields<rpc_pb_SpiTransfer>(), &m)) {
-    size_t len = etl::min((size_t)m.data.size, _rx_storage.size()); etl::copy_n(m.data.bytes, len, _rx_storage.begin());
+  auto res = rpc::Payload::parse<rpc_pb_SpiTransfer>(*ctx.envelope);
+  if (res) {
+    size_t len = etl::min((size_t)res->data.size, _rx_storage.size()); etl::copy_n(res->data.bytes, len, _rx_storage.begin());
     size_t tr = SPIService.transfer(etl::span<uint8_t>(_rx_storage.data(), len));
     if (tr == 0) { emitStatus(rpc::StatusCode::STATUS_ERROR); return; }
     rpc_pb_SpiTransferResponse resp = {}; const size_t to_copy = etl::min(len, sizeof(resp.data.bytes));
@@ -375,15 +372,15 @@ void BridgeClass::_handleSpiTransfer(const bridge::router::CommandContext& ctx) 
 void BridgeClass::_handleStatusMalformed(const bridge::router::CommandContext& ctx) { (void)ctx; enterSafeState(); }
 
 void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
-  rpc_pb_LinkSync msg = {}; pb_istream_t stream = pb_istream_from_buffer(ctx.envelope->payload.bytes, ctx.envelope->payload.size);
-  if (!pb_decode(&stream, rpc::Payload::get_fields<rpc_pb_LinkSync>(), &msg)) { emitStatus(rpc::StatusCode::STATUS_ERROR); return; }
-  rpc_pb_LinkSync resp = {}; const size_t n_size = etl::min(static_cast<size_t>(msg.nonce.size), static_cast<size_t>(rpc::RPC_HANDSHAKE_NONCE_LENGTH));
-  etl::copy_n(msg.nonce.bytes, n_size, resp.nonce.bytes); resp.nonce.size = static_cast<pb_size_t>(n_size);
+  auto res = rpc::Payload::parse<rpc_pb_LinkSync>(*ctx.envelope);
+  if (!res) { emitStatus(rpc::StatusCode::STATUS_ERROR); return; }
+  rpc_pb_LinkSync resp = {}; const size_t n_size = etl::min(static_cast<size_t>(res->nonce.size), static_cast<size_t>(rpc::RPC_HANDSHAKE_NONCE_LENGTH));
+  etl::copy_n(res->nonce.bytes, n_size, resp.nonce.bytes); resp.nonce.size = static_cast<pb_size_t>(n_size);
   if (!_shared_secret.empty()) {
     etl::array<uint8_t, rpc::RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH> out_tag;
-    if (rpc::security::handshake_authenticate(etl::span<const uint8_t>(_shared_secret), etl::span<const uint8_t>(msg.nonce.bytes, n_size), etl::span<const uint8_t>(msg.tag.bytes, msg.tag.size), etl::span<uint8_t>(out_tag))) {
+    if (rpc::security::handshake_authenticate(etl::span<const uint8_t>(_shared_secret), etl::span<const uint8_t>(res->nonce.bytes, n_size), etl::span<const uint8_t>(res->tag.bytes, res->tag.size), etl::span<uint8_t>(out_tag))) {
       etl::copy_n(out_tag.data(), rpc::RPC_HANDSHAKE_TAG_LENGTH, resp.tag.bytes); resp.tag.size = rpc::RPC_HANDSHAKE_TAG_LENGTH;
-      rpc::security::derive_session_key(etl::span<const uint8_t>(_shared_secret), etl::span<const uint8_t>(msg.nonce.bytes, n_size), etl::span<uint8_t>(_session_key));
+      rpc::security::derive_session_key(etl::span<const uint8_t>(_shared_secret), etl::span<const uint8_t>(res->nonce.bytes, n_size), etl::span<uint8_t>(_session_key));
       _tx_nonce_counter = 0; _rx_nonce_counter = 0; rpc::security::secure_zero(etl::span<uint8_t>(out_tag));
     } else { _fsm.receive(bridge::fsm::EvHandshakeFailed()); emitStatus(rpc::StatusCode::STATUS_ERROR); return; }
   }
@@ -393,9 +390,8 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
 
 void BridgeClass::_handleLinkReset(const bridge::router::CommandContext& ctx) {
     if (ctx.envelope->payload.size > 0) {
-        rpc_pb_HandshakeConfig m = {};
-        pb_istream_t stream = pb_istream_from_buffer(ctx.envelope->payload.bytes, ctx.envelope->payload.size);
-        if (pb_decode(&stream, rpc::Payload::get_fields<rpc_pb_HandshakeConfig>(), &m)) _handleSetTiming(m);
+        auto res = rpc::Payload::parse<rpc_pb_HandshakeConfig>(*ctx.envelope);
+        if (res) _handleSetTiming(res.value());
     }
     _fsm.receive(bridge::fsm::EvReset());
     (void)sendFrame(rpc::CommandId::CMD_LINK_RESET_RESP, ctx.sequence_id);
@@ -411,8 +407,8 @@ void BridgeClass::_handleXoff(const bridge::router::CommandContext& ctx) { (void
 void BridgeClass::_handleXon(const bridge::router::CommandContext& ctx) { (void)ctx; _tx_enabled = true; }
 
 void BridgeClass::_handleStatusAck(const bridge::router::CommandContext& ctx) {
-  rpc_pb_AckPacket m = {}; pb_istream_t stream = pb_istream_from_buffer(ctx.envelope->payload.bytes, ctx.envelope->payload.size);
-  if (pb_decode(&stream, rpc::Payload::get_fields<rpc_pb_AckPacket>(), &m)) _handleAck(m.command_id);
+  auto res = rpc::Payload::parse<rpc_pb_AckPacket>(*ctx.envelope);
+  if (res) _handleAck(res->command_id);
 }
 
 void BridgeClass::_handleGetVersion(const bridge::router::CommandContext& ctx) {

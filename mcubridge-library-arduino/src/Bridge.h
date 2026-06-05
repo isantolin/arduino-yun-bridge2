@@ -107,24 +107,22 @@ class BridgeClass {
 
   template <typename T>
   [[nodiscard]] bool send(rpc::StatusCode s, uint16_t seq, const T& packet) {
-    pb_ostream_t stream =
-        pb_ostream_from_buffer(_transient_buffer.data(), rpc::MAX_PAYLOAD_SIZE);
-    if (pb_encode(&stream, rpc::Payload::get_fields<T>(), &packet)) {
+    auto res = rpc::Payload::serialize<T>(packet, etl::span<uint8_t>(_transient_buffer.data(), rpc::MAX_PAYLOAD_SIZE));
+    if (res) {
       return sendFrame(s, seq,
                        etl::span<const uint8_t>(_transient_buffer.data(),
-                                                stream.bytes_written));
+                                                res.value()));
     }
     return false;
   }
 
   template <typename T>
   [[nodiscard]] bool send(rpc::CommandId c, uint16_t seq, const T& packet) {
-    pb_ostream_t stream =
-        pb_ostream_from_buffer(_transient_buffer.data(), rpc::MAX_PAYLOAD_SIZE);
-    if (pb_encode(&stream, rpc::Payload::get_fields<T>(), &packet)) {
+    auto res = rpc::Payload::serialize<T>(packet, etl::span<uint8_t>(_transient_buffer.data(), rpc::MAX_PAYLOAD_SIZE));
+    if (res) {
       return sendFrame(c, seq,
                        etl::span<const uint8_t>(_transient_buffer.data(),
-                                                stream.bytes_written));
+                                                res.value()));
     }
     return false;
   }
@@ -258,34 +256,7 @@ class BridgeClass {
   
   
   
-#if BRIDGE_ENABLE_DATASTORE
-  void _handleDataStoreGetResponseCommand(
-      const bridge::router::CommandContext& ctx);
-#endif
-#if BRIDGE_ENABLE_MAILBOX
-  
-  void _handleMailboxReadResponseCommand(
-      const bridge::router::CommandContext& ctx);
-  void _handleMailboxAvailableResponseCommand(
-      const bridge::router::CommandContext& ctx);
-#endif
-#if BRIDGE_ENABLE_FILESYSTEM
-  
-  
-  
-  void _handleFileReadResponseCommand(
-      const bridge::router::CommandContext& ctx);
-#endif
-#if BRIDGE_ENABLE_PROCESS
-  void _handleProcessRunAsyncResponseCommand(
-      const bridge::router::CommandContext& ctx);
-  void _handleProcessPollResponseCommand(
-      const bridge::router::CommandContext& ctx);
-  
-#endif
-#if BRIDGE_ENABLE_SPI
-  
-#endif
+
 
   void _handleStatusOk(const bridge::router::CommandContext& ctx);
   void _handleStatusMalformed(const bridge::router::CommandContext& ctx);
@@ -317,22 +288,20 @@ class BridgeClass {
   template <typename T, void (BridgeClass::*Handler)(const T&)>
   static void _dispatchAck(BridgeClass& b, const bridge::router::CommandContext& ctx) {
     if (ctx.is_duplicate) { b._processAck(ctx.raw_command, ctx.sequence_id); return; }
-    T msg = {};
-    pb_istream_t stream = pb_istream_from_buffer(ctx.envelope->payload.bytes, ctx.envelope->payload.size);
-    if (pb_decode(&stream, rpc::Payload::get_fields<T>(), &msg)) {
+    auto res = rpc::Payload::parse<T>(*ctx.envelope);
+    if (res) {
       b._processAck(ctx.raw_command, ctx.sequence_id);
-      (b.*Handler)(msg);
+      (b.*Handler)(res.value());
     } else b.emitStatus(rpc::StatusCode::STATUS_MALFORMED);
   }
 
   template <typename T, void (BridgeClass::*Handler)(const bridge::router::CommandContext&, const T&)>
   static void _dispatchAckCtx(BridgeClass& b, const bridge::router::CommandContext& ctx) {
     if (ctx.is_duplicate) { b._processAck(ctx.raw_command, ctx.sequence_id); return; }
-    T msg = {};
-    pb_istream_t stream = pb_istream_from_buffer(ctx.envelope->payload.bytes, ctx.envelope->payload.size);
-    if (pb_decode(&stream, rpc::Payload::get_fields<T>(), &msg)) {
+    auto res = rpc::Payload::parse<T>(*ctx.envelope);
+    if (res) {
       b._processAck(ctx.raw_command, ctx.sequence_id);
-      (b.*Handler)(ctx, msg);
+      (b.*Handler)(ctx, res.value());
     } else b.emitStatus(rpc::StatusCode::STATUS_MALFORMED);
   }
 
@@ -356,9 +325,8 @@ class BridgeClass {
 
   template <typename T, void (BridgeClass::*Handler)(const T&)>
   static void _dispatchPayload(BridgeClass& b, const bridge::router::CommandContext& ctx) {
-    T msg = {};
-    pb_istream_t stream = pb_istream_from_buffer(ctx.envelope->payload.bytes, ctx.envelope->payload.size);
-    if (pb_decode(&stream, rpc::Payload::get_fields<T>(), &msg)) (b.*Handler)(msg);
+    auto res = rpc::Payload::parse<T>(*ctx.envelope);
+    if (res) (b.*Handler)(res.value());
   }
 
   void _handleSetPinMode(const rpc_pb_PinMode& m);

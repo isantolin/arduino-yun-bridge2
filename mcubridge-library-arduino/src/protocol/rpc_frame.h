@@ -61,6 +61,18 @@ inline etl::expected<T, FrameError> parse(const rpc_pb_RpcEnvelope& envelope) {
   return etl::expected<T, FrameError>(msg);
 }
 
+/**
+ * @brief Encodes a payload directly to a buffer (Zero-Wrapper).
+ */
+template <typename T>
+inline etl::expected<size_t, FrameError> serialize(const T& msg, etl::span<uint8_t> buffer) {
+  pb_ostream_t stream = pb_ostream_from_buffer(buffer.data(), buffer.size());
+  if (!pb_encode(&stream, rpc::Payload::get_fields<T>(), &msg)) {
+    return etl::unexpected<FrameError>(FrameError::MALFORMED);
+  }
+  return stream.bytes_written;
+}
+
 }  // namespace Payload
 
 /**

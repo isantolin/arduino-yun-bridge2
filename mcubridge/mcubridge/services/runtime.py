@@ -127,11 +127,11 @@ class BridgeService:
             Command.CMD_PROCESS_KILL.value: self._gen_handler(pb.ProcessKill, lambda p: self._stop_process(p.pid)),
             Command.CMD_DIGITAL_READ.value: lambda _, __: self.serial.send(
                 Status.NOT_IMPLEMENTED.value,
-                pb.GenericResponse(message="linux_originates_digital_read_requests").SerializeToString(),
+                pb.GenericResponse(message="linux_originates_digital_read_requests"),
             ),
             Command.CMD_ANALOG_READ.value: lambda _, __: self.serial.send(
                 Status.NOT_IMPLEMENTED.value,
-                pb.GenericResponse(message="linux_originates_analog_read_requests").SerializeToString(),
+                pb.GenericResponse(message="linux_originates_analog_read_requests"),
             ),
             Command.CMD_DIGITAL_READ_RESP.value: self._gen_handler(
                 pb.DigitalReadResponse,
@@ -452,7 +452,7 @@ class BridgeService:
         val = msgspec.convert(cache.get(p.key, b"") if cache else b"", bytes)
         res = await self.serial.send(
             Command.CMD_DATASTORE_GET_RESP.value,
-            pb.DatastoreGetResponse(value=msgspec.Raw(val[:255])).SerializeToString(),
+            pb.DatastoreGetResponse(value=val[:255]),
         )
         return bool(res)
 
@@ -468,16 +468,14 @@ class BridgeService:
     async def _on_mcu_mailbox_available(self, seq: int) -> bool:
         res = await self.serial.send(
             Command.CMD_MAILBOX_AVAILABLE_RESP.value,
-            pb.MailboxAvailableResponse(count=len(self.state.mailbox_queue)).SerializeToString(),
+            pb.MailboxAvailableResponse(count=len(self.state.mailbox_queue)),
         )
         return bool(res)
 
     async def _on_mcu_mailbox_read(self, seq: int) -> bool:
         res = await self.serial.send(
             Command.CMD_MAILBOX_READ_RESP.value,
-            pb.MailboxReadResponse(
-                content=self.state.mailbox_queue.popleft() if self.state.mailbox_queue else b""
-            ).SerializeToString(),
+            pb.MailboxReadResponse(content=self.state.mailbox_queue.popleft() if self.state.mailbox_queue else b""),
         )
         return bool(res)
 
@@ -491,7 +489,7 @@ class BridgeService:
         if path and await self._write_with_quota(path, p.data):
             res = await self.serial.send(Status.OK.value, b"")
             return bool(res)
-        res = await self.serial.send(Status.ERROR.value, pb.GenericResponse(message="Write failed").SerializeToString())
+        res = await self.serial.send(Status.ERROR.value, pb.GenericResponse(message="Write failed"))
         return bool(res)
 
     async def _on_mcu_file_read(self, p: pb.FileRead) -> None:
@@ -499,19 +497,17 @@ class BridgeService:
         if path and await asyncio.to_thread(path.is_file):
             data = await asyncio.to_thread(path.read_bytes)
             if not data:
-                await self.serial.send(
-                    Command.CMD_FILE_READ_RESP.value, pb.FileReadResponse(content=b"").SerializeToString()
-                )
+                await self.serial.send(Command.CMD_FILE_READ_RESP.value, pb.FileReadResponse(content=b""))
             else:
                 chunk_size = protocol.MAX_PAYLOAD_SIZE - 3
                 for i in range(0, len(data), chunk_size):
                     chunk = data[i : i + chunk_size]
                     await self.serial.send(
                         Command.CMD_FILE_READ_RESP.value,
-                        pb.FileReadResponse(content=chunk).SerializeToString(),
+                        pb.FileReadResponse(content=chunk),
                     )
             return
-        await self.serial.send(Status.ERROR.value, pb.GenericResponse(message="Read failed").SerializeToString())
+        await self.serial.send(Status.ERROR.value, pb.GenericResponse(message="Read failed"))
 
     async def _on_mcu_file_remove(self, p: pb.FileRemove) -> bool:
         path = self._get_safe_path(p.path)
@@ -519,9 +515,7 @@ class BridgeService:
             await asyncio.to_thread(path.unlink)
             res = await self.serial.send(Status.OK.value, b"")
             return bool(res)
-        res = await self.serial.send(
-            Status.ERROR.value, pb.GenericResponse(message="Remove failed").SerializeToString()
-        )
+        res = await self.serial.send(Status.ERROR.value, pb.GenericResponse(message="Remove failed"))
         return bool(res)
 
     async def _on_mcu_file_read_resp(self, p: pb.FileReadResponse) -> bool:
@@ -539,10 +533,10 @@ class BridgeService:
             if pid:
                 res = await self.serial.send(
                     Command.CMD_PROCESS_RUN_ASYNC_RESP.value,
-                    pb.ProcessRunAsyncResponse(pid=pid).SerializeToString(),
+                    pb.ProcessRunAsyncResponse(pid=pid),
                 )
                 return bool(res)
-        await self.serial.send(Status.ERROR.value, pb.GenericResponse(message="Exec failed").SerializeToString())
+        await self.serial.send(Status.ERROR.value, pb.GenericResponse(message="Exec failed"))
         return False
 
     async def _on_mcu_process_poll(self, p: pb.ProcessPoll) -> bool:
@@ -554,7 +548,7 @@ class BridgeService:
                 exit_code=batch.exit_code,
                 stdout_data=batch.stdout_chunk,
                 stderr_data=batch.stderr_chunk,
-            ).SerializeToString(),
+            ),
         )
         return bool(res)
 
@@ -639,7 +633,7 @@ class BridgeService:
         pl = msgspec.convert(inbound.payload, bytes)
         if route.identifier == MailboxAction.WRITE:
             self.state.mailbox_queue.append(pl)
-            await self.serial.send(Command.CMD_MAILBOX_PUSH.value, pb.MailboxPush(data=pl).SerializeToString())
+            await self.serial.send(Command.CMD_MAILBOX_PUSH.value, pb.MailboxPush(data=pl))
         elif route.identifier == MailboxAction.READ:
             data = self.state.mailbox_incoming_queue.popleft() if self.state.mailbox_incoming_queue else b""
             await self.enqueue_mqtt(
@@ -662,12 +656,10 @@ class BridgeService:
             elif act == FileAction.WRITE:
                 await self.serial.send(
                     Command.CMD_FILE_WRITE.value,
-                    pb.FileWrite(path=target[4:], data=msgspec.convert(inbound.payload, bytes)).SerializeToString(),
+                    pb.FileWrite(path=target[4:], data=msgspec.convert(inbound.payload, bytes)),
                 )
             elif act == FileAction.REMOVE:
-                await self.serial.send(
-                    Command.CMD_FILE_REMOVE.value, pb.FileRemove(path=target[4:]).SerializeToString()
-                )
+                await self.serial.send(Command.CMD_FILE_REMOVE.value, pb.FileRemove(path=target[4:]))
         else:
             path = self._get_safe_path(target)
             if not path:
@@ -711,7 +703,7 @@ class BridgeService:
             self._pending_mcu_read = _PendingMcuRead(target, asyncio.get_running_loop().create_future())
             if not await self.serial.send_raw(
                 Command.CMD_FILE_READ.value,
-                pb.FileRead(path=target[4:]).SerializeToString(),
+                pb.FileRead(path=target[4:]),
             ):
                 logger.warning("MCU file read dispatch failed", target=target)
                 await self.enqueue_mqtt(
@@ -810,14 +802,14 @@ class BridgeService:
             case SpiAction.CONFIG:
                 try:
                     p = pb.SpiConfig.FromString(inbound.payload)
-                    await self.serial.send(Command.CMD_SPI_SET_CONFIG.value, p.SerializeToString())
+                    await self.serial.send(Command.CMD_SPI_SET_CONFIG.value, p)
                 except (ProtobufDecodeError, TypeError, ValueError) as exc:
                     logger.error("SPI config error: %s", exc)
             case SpiAction.TRANSFER:
                 if inbound.payload:
                     res = await self.serial.send(
                         Command.CMD_SPI_TRANSFER.value,
-                        pb.SpiTransfer(data=bytes(inbound.payload)).SerializeToString(),
+                        pb.SpiTransfer(data=bytes(inbound.payload)),
                     )
                     if isinstance(res, bytes):
                         await self.enqueue_mqtt(
@@ -842,9 +834,7 @@ class BridgeService:
         pl = msgspec.convert(inbound.payload, bytes).decode()
         if len(route.segments) == 2:
             if route.segments[1] == PinAction.MODE:
-                await self.serial.send(
-                    Command.CMD_SET_PIN_MODE.value, pb.PinMode(pin=pin, mode=int(pl)).SerializeToString()
-                )
+                await self.serial.send(Command.CMD_SET_PIN_MODE.value, pb.PinMode(pin=pin, mode=int(pl)))
             elif route.segments[1] == PinAction.READ:
                 cmd = Command.CMD_DIGITAL_READ if route.topic == Topic.DIGITAL else Command.CMD_ANALOG_READ
                 q = (
@@ -854,7 +844,7 @@ class BridgeService:
                 )
                 if len(q) < self.state.pending_pin_request_limit:
                     q.append(structures.PendingPinRequest(pin=pin, reply_context=inbound))
-                    await self.serial.send(cmd.value, pb.PinRead(pin=pin).SerializeToString())
+                    await self.serial.send(cmd.value, pb.PinRead(pin=pin))
                 else:
                     await self.enqueue_mqtt(
                         QueuedPublish(
@@ -878,16 +868,14 @@ class BridgeService:
                     )
         else:
             cmd = Command.CMD_DIGITAL_WRITE if route.topic == Topic.DIGITAL else Command.CMD_ANALOG_WRITE
-            await self.serial.send(
-                cmd.value, pb.DigitalWrite(pin=pin, value=int(pl) if pl.isdigit() else 0).SerializeToString()
-            )
+            await self.serial.send(cmd.value, pb.DigitalWrite(pin=pin, value=int(pl) if pl.isdigit() else 0))
 
     async def _handle_mqtt_system(self, route: TopicRoute, inbound: Message) -> None:
         match route.identifier:
             case SystemAction.BOOTLOADER:
                 await self.serial.send(
                     Command.CMD_ENTER_BOOTLOADER.value,
-                    pb.EnterBootloader(magic=protocol.BOOTLOADER_MAGIC).SerializeToString(),
+                    pb.EnterBootloader(magic=protocol.BOOTLOADER_MAGIC),
                 )
             case SystemAction.FREE_MEMORY if "get" in route.segments:
                 pl = await self.serial.send(Command.CMD_GET_FREE_MEMORY.value, b"")
@@ -944,9 +932,7 @@ class BridgeService:
             chunk_size = protocol.MAX_PAYLOAD_SIZE
             for i in range(0, len(buf), chunk_size):
                 chunk = buf[i : i + chunk_size]
-                if not await self.serial.send(
-                    Command.CMD_CONSOLE_WRITE.value, pb.ConsoleWrite(data=chunk).SerializeToString()
-                ):
+                if not await self.serial.send(Command.CMD_CONSOLE_WRITE.value, pb.ConsoleWrite(data=chunk)):
                     self.state.console_to_mcu_queue.appendleft(buf)
                     return
 

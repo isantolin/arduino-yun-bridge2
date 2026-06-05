@@ -22,7 +22,7 @@ from cobs import cobs
 import serialx
 import structlog
 import tenacity
-from google.protobuf.message import DecodeError as ProtobufDecodeError
+from google.protobuf.message import Message, DecodeError as ProtobufDecodeError
 
 from mcubridge.config.const import (
     MAX_SERIAL_FRAME_BYTES,
@@ -288,8 +288,11 @@ class SerialTransport:
             if self.config.serial_baud != self.config.serial_safe_baud:
                 await self._negotiate_baudrate(self.config.serial_safe_baud)
 
-    async def send(self, command_id: int, payload: bytes, seq_id: int | None = None) -> bool | bytes:
+    async def send(self, command_id: int, payload: bytes | Message, seq_id: int | None = None) -> bool | bytes:
         """Unified send method with automatic tracking, retries, and optional response return. [FLATTENED]"""
+        if isinstance(payload, Message):
+            payload = payload.SerializeToString()
+
         if not self.writer or self.writer.is_closing():
             return False
 
@@ -341,8 +344,11 @@ class SerialTransport:
             finally:
                 self._current = None
 
-    async def send_raw(self, command_id: int, payload: bytes, seq_id: int | None = None) -> bool:
+    async def send_raw(self, command_id: int, payload: bytes | Message, seq_id: int | None = None) -> bool:
         """Low-level send logic without tracking."""
+        if isinstance(payload, Message):
+            payload = payload.SerializeToString()
+
         if not self.writer:
             return False
 
@@ -396,7 +402,7 @@ class SerialTransport:
             return False
 
     async def _negotiate_baudrate(self, target_baud: int) -> bool:
-        payload = pb.SetBaudratePacket(baudrate=target_baud).SerializeToString()
+        payload = pb.SetBaudratePacket(baudrate=target_baud)
         self._negotiating = True
         try:
             self._negotiation_future = asyncio.get_running_loop().create_future()
@@ -412,4 +418,4 @@ class SerialTransport:
             self._negotiating = False
 
     async def acknowledge(self, command_id: int, seq_id: int, *, status: Status = Status.ACK) -> None:
-        await self.send_raw(status.value, pb.AckPacket(command_id=command_id).SerializeToString(), seq_id)
+        await self.send_raw(status.value, pb.AckPacket(command_id=command_id), seq_id)

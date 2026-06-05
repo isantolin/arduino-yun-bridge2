@@ -14,7 +14,7 @@ void send_mailbox_command(rpc::CommandId command_id) {
 
 }  // namespace
 
-MailboxClass::MailboxClass() : _rx_buffer(), _available_count(0U) {}
+MailboxClass::MailboxClass() {}
 
 void MailboxClass::push(etl::span<const uint8_t> data) {
   rpc::payload::MailboxPush p;
@@ -38,24 +38,18 @@ void MailboxClass::push(etl::span<const uint8_t> data) {
   send_mailbox_command(rpc::CommandId::CMD_MAILBOX_PROCESSED);
 }
 
-void MailboxClass::_setIncomingData(etl::span<const uint8_t> data) {
-  _rx_buffer.clear();
-  _rx_buffer.push(data.begin(), data.end());
-}
-
 void MailboxClass::_onIncomingData(const rpc::payload::MailboxPush& msg) {
-  _setIncomingData(etl::span<const uint8_t>(msg.data.bytes, msg.data.size));
+  (void)msg;
 }
 
 void MailboxClass::_onIncomingData(
     const rpc::payload::MailboxReadResponse& msg) {
-  _setIncomingData(
-      etl::span<const uint8_t>(msg.content.bytes, msg.content.size));
+  (void)msg;
 }
 
 void MailboxClass::_onAvailableResponse(
     const rpc::payload::MailboxAvailableResponse& msg) {
-  _available_count = msg.count;
+  (void)msg;
 }
 
 MailboxClass Mailbox;

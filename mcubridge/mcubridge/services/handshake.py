@@ -42,11 +42,12 @@ from ..security.security import (
 )
 from ..state.context import RuntimeState
 
+from google.protobuf.message import Message
 from typing import Protocol
 
 
 class SendFrameCallable(Protocol):
-    async def __call__(self, command_id: int, payload: bytes, seq_id: int | None = None) -> bool: ...
+    async def __call__(self, command_id: int, payload: bytes | Message, seq_id: int | None = None) -> bool: ...
 
 
 EnqueueMessageCallable = Callable[[QueuedPublish], Awaitable[None]]
@@ -107,7 +108,7 @@ class SerialHandshakeManager:
         self._logger = logger_ or logger
         self._fatal_threshold = max(1, config.serial_handshake_fatal_failures)
         # [SIL-2] Serialize handshake timing as protobuf.
-        self._reset_payload = self._timing.SerializeToString()
+        self._reset_payload = self._timing
         self._capabilities_future: asyncio.Future[bytes] | None = None
         self.fsm_state = self.STATE_UNSYNCHRONIZED
 
@@ -189,7 +190,7 @@ class SerialHandshakeManager:
         # [MIL-SPEC] Send LINK_SYNC with mutual authentication tag
         our_tag = self.calculate_handshake_tag(self._config.serial_shared_secret, nonce)
         # [SIL-2] Serialize LINK_SYNC as protobuf.
-        sync_payload = pb.LinkSync(nonce=nonce, tag=our_tag).SerializeToString()
+        sync_payload = pb.LinkSync(nonce=nonce, tag=our_tag)
         sync_ok = await self._send_frame(Command.CMD_LINK_SYNC.value, sync_payload)
         if not sync_ok:
             self.clear_handshake_expectations()

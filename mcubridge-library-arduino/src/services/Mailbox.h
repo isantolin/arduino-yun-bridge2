@@ -22,21 +22,12 @@ class MailboxClass {
   static void requestAvailable();
   static void signalProcessed();
 
-  void _onIncomingData(const rpc::payload::MailboxPush& msg);
-  void _onIncomingData(const rpc::payload::MailboxReadResponse& msg);
-  void _onAvailableResponse(const rpc::payload::MailboxAvailableResponse& msg);
+  static void _onIncomingData(const rpc::payload::MailboxPush& msg);
+  static void _onIncomingData(const rpc::payload::MailboxReadResponse& msg);
+  static void _onAvailableResponse(const rpc::payload::MailboxAvailableResponse& msg);
 
-  void onLost() {
-    _rx_buffer.clear();
-    _available_count = 0U;
-  }
+  static void onLost() {}
   static void onSynchronized() {}
-
- private:
-  void _setIncomingData(etl::span<const uint8_t> data);
-  etl::circular_buffer<uint8_t, bridge::config::MAILBOX_RX_BUFFER_SIZE>
-      _rx_buffer;
-  uint16_t _available_count;
 };
 
 extern MailboxClass Mailbox;

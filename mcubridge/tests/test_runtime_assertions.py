@@ -44,7 +44,8 @@ async def test_mcu_file_read_handler_asserts_state(
 
     serial.send.assert_called_once()
     assert serial.send.call_args[0][0] == Command.CMD_FILE_READ_RESP.value
-    resp = pb.FileReadResponse.FromString(serial.send.call_args[0][1])
+    resp = serial.send.call_args[0][1]
+    assert isinstance(resp, pb.FileReadResponse)
     assert resp.content == b"file_data"
 
 
@@ -68,7 +69,8 @@ async def test_mqtt_file_write_asserts_serial(
 
     serial.send.assert_called_once()
     assert serial.send.call_args[0][0] == Command.CMD_FILE_WRITE.value
-    req = pb.FileWrite.FromString(serial.send.call_args[0][1])
+    req = serial.send.call_args[0][1]
+    assert isinstance(req, pb.FileWrite)
     assert req.path == "out.txt"
     assert req.data == b"new_data"
 
@@ -149,7 +151,8 @@ async def test_mqtt_mailbox_write_asserts_serial(
 
     serial.send.assert_called_once()
     assert serial.send.call_args[0][0] == Command.CMD_MAILBOX_PUSH.value
-    req = pb.MailboxPush.FromString(serial.send.call_args[0][1])
+    req = serial.send.call_args[0][1]
+    assert isinstance(req, pb.MailboxPush)
     assert req.data == b"incoming_mail"
 
 
@@ -173,7 +176,8 @@ async def test_mcu_process_run_asserts_exec(
             mock_exec.assert_called_once()
             serial.send.assert_called_once()
             assert serial.send.call_args[0][0] == Command.CMD_PROCESS_RUN_ASYNC_RESP.value
-            resp = pb.ProcessRunAsyncResponse.FromString(serial.send.call_args[0][1])
+            resp = serial.send.call_args[0][1]
+            assert isinstance(resp, pb.ProcessRunAsyncResponse)
             assert resp.pid == 1234
 
 
@@ -197,7 +201,8 @@ async def test_mqtt_spi_transfer_asserts_serial(
 
     serial.send.assert_called_once()
     assert serial.send.call_args[0][0] == Command.CMD_SPI_TRANSFER.value
-    req = pb.SpiTransfer.FromString(serial.send.call_args[0][1])
+    req = serial.send.call_args[0][1]
+    assert isinstance(req, pb.SpiTransfer)
     assert req.data == b"\x01\x02\x03"
 
 

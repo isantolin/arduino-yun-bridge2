@@ -827,9 +827,7 @@ class BridgeService:
         pl = msgspec.convert(inbound.payload, bytes).decode()
         if len(route.segments) == 2:
             if route.segments[1] == PinAction.MODE:
-                await self.serial.send(
-                    Command.CMD_SET_PIN_MODE.value, pb.PinMode(pin=pin, mode=pb.PinModeType.ValueType(int(pl)))
-                )
+                await self.serial.send(Command.CMD_SET_PIN_MODE.value, pb.PinMode(pin=pin, mode=cast(Any, int(pl))))
             elif route.segments[1] == PinAction.READ:
                 cmd = Command.CMD_DIGITAL_READ if route.topic == Topic.DIGITAL else Command.CMD_ANALOG_READ
                 q = (

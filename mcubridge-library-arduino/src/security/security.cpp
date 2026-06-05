@@ -15,6 +15,18 @@
 
 #include "Bridge.h"
 #include "hal/progmem_compat.h"
+namespace {
+bool g_fault_kat_sha256 = false;
+bool g_fault_kat_hmac = false;
+bool g_fault_kat_aead = false;
+}
+
+extern "C" {
+  void bridge_test_security_fault_sha256(bool enable) { g_fault_kat_sha256 = enable; }
+  void bridge_test_security_fault_hmac(bool enable) { g_fault_kat_hmac = enable; }
+  void bridge_test_security_fault_aead(bool enable) { g_fault_kat_aead = enable; }
+}
+
 
 namespace rpc {
 namespace security {
@@ -26,8 +38,10 @@ int aead_kat_encrypt(etl::span<const uint8_t> key,
                      etl::span<const uint8_t> ad, etl::span<const uint8_t> in,
                      etl::span<uint8_t> out, etl::span<uint8_t> tag) {
   return wc_ChaCha20Poly1305_Encrypt(
-      key.data(), nonce.data(), ad.data(), static_cast<word32>(ad.size()),
-      in.data(), static_cast<word32>(in.size()), out.data(), tag.data());
+      const_cast<byte*>(key.data()), const_cast<byte*>(nonce.data()), 
+      const_cast<byte*>(ad.data()), static_cast<word32>(ad.size()),
+      const_cast<byte*>(in.data()), static_cast<word32>(in.size()), 
+      out.data(), tag.data());
 }
 
 }  // namespace
@@ -103,9 +117,9 @@ bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
     return false;
   }
 
-  return wc_ChaCha20Poly1305_Encrypt(key.data(), out_nonce.data(), ad.data(), 
-                                     static_cast<word32>(stream.bytes_written), 
-                                     in.data(), static_cast<word32>(in.size()), 
+  return wc_ChaCha20Poly1305_Encrypt(const_cast<byte*>(key.data()), out_nonce.data(), 
+                                     const_cast<byte*>(ad.data()), static_cast<word32>(stream.bytes_written), 
+                                     const_cast<byte*>(in.data()), static_cast<word32>(in.size()), 
                                      out_payload.data(), out_tag.data()) == 0;
 }
 
@@ -127,10 +141,10 @@ bool aead_decrypt_frame(uint16_t cmd_id, uint16_t seq_id,
     return false;
   }
 
-  return wc_ChaCha20Poly1305_Decrypt(key.data(), nonce.data(), ad.data(), 
-                                     static_cast<word32>(stream.bytes_written), 
-                                     in.data(), static_cast<word32>(in.size()), 
-                                     tag.data(), out_payload.data()) == 0;
+  return wc_ChaCha20Poly1305_Decrypt(const_cast<byte*>(key.data()), const_cast<byte*>(nonce.data()), 
+                                     const_cast<byte*>(ad.data()), static_cast<word32>(stream.bytes_written), 
+                                     const_cast<byte*>(in.data()), static_cast<word32>(in.size()), 
+                                     const_cast<byte*>(tag.data()), out_payload.data()) == 0;
 }
 
 bool validate_frame_nonce(etl::span<const uint8_t> nonce,
@@ -184,7 +198,7 @@ bool run_cryptographic_self_tests() {
   etl::array<uint8_t, rpc::RPC_SHA256_DIGEST_SIZE> expected_buf;
   memcpy_P(expected_buf.data(), kat_sha256_expected.data(),
            rpc::RPC_SHA256_DIGEST_SIZE);
-  if (!etl::equal(actual.begin(), actual.end(), expected_buf.begin()))
+  if (g_fault_kat_sha256 || !etl::equal(actual.begin(), actual.end(), expected_buf.begin()))
     return false;
 
   // 2. HMAC-SHA256 KAT
@@ -202,7 +216,7 @@ bool run_cryptographic_self_tests() {
 
   memcpy_P(expected_buf.data(), kat_hmac_expected.data(),
            rpc::RPC_SHA256_DIGEST_SIZE);
-  if (!etl::equal(actual.begin(), actual.end(), expected_buf.begin()))
+  if (g_fault_kat_hmac || !etl::equal(actual.begin(), actual.end(), expected_buf.begin()))
     return false;
 
   // 3. ChaCha20-Poly1305 KAT (RFC 8439)
@@ -229,8 +243,7 @@ bool run_cryptographic_self_tests() {
           etl::span<uint8_t>(aead_tag_actual)) != 0)
     return false;
 
-  return etl::equal(aead_tag_actual.begin(), aead_tag_actual.end(),
-                    kat_aead_tag_expected.begin());
+  return g_fault_kat_aead ? false : etl::equal(aead_tag_actual.begin(), aead_tag_actual.end(), kat_aead_tag_expected.begin());
 }
 
 }  // namespace security

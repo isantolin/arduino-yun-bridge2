@@ -92,6 +92,13 @@ inline void secure_zero(etl::span<uint8_t> buf) {
  */
 bool run_cryptographic_self_tests();
 
+extern "C" {
+  void bridge_test_security_fault_sha256(bool enable);
+  void bridge_test_security_fault_hmac(bool enable);
+  void bridge_test_security_fault_aead(bool enable);
+}
+
+
 /**
  * @brief Timing-safe memory comparison.
  */

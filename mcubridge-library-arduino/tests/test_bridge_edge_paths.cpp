@@ -25,6 +25,13 @@ using bridge::test::TestAccessor;
 void setUp() { bridge::test::fault::reset(); }
 void tearDown() {}
 
+
+extern "C" {
+  void bridge_test_security_fault_sha256(bool enable);
+  void bridge_test_security_fault_hmac(bool enable);
+  void bridge_test_security_fault_aead(bool enable);
+}
+
 namespace {
 
 
@@ -561,14 +568,17 @@ void test_fault_injection_harness_paths() {
       static_cast<uint32_t>(SPIService.transfer(etl::span<uint8_t>(spi_buf))));
   SPIService.end();
 
-  bridge::test::fault::enable(
-      bridge::test::fault::FaultPoint::KAT_SHA256_MISMATCH);
+  bridge_test_security_fault_sha256(true);
   TEST_ASSERT_FALSE(rpc::security::run_cryptographic_self_tests());
-  bridge::test::fault::enable(
-      bridge::test::fault::FaultPoint::KAT_HMAC_MISMATCH);
+  bridge_test_security_fault_sha256(false);
+
+  bridge_test_security_fault_hmac(true);
   TEST_ASSERT_FALSE(rpc::security::run_cryptographic_self_tests());
-  bridge::test::fault::enable(bridge::test::fault::FaultPoint::KAT_AEAD_FAIL);
+  bridge_test_security_fault_hmac(false);
+
+  bridge_test_security_fault_aead(true);
   TEST_ASSERT_FALSE(rpc::security::run_cryptographic_self_tests());
+  bridge_test_security_fault_aead(false);
   bridge::test::fault::enable(
       bridge::test::fault::FaultPoint::BRIDGE_FORCE_POST_FAIL);
   Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, "top-secret");

@@ -36,9 +36,9 @@ These are non-negotiable, core-level instructions that you **MUST** follow at al
 - **GitHub Repository**: !{echo $REPOSITORY}
 - **Pull Request Number**: !{echo $PULL_REQUEST_NUMBER}
 - **Additional User Instructions**: !{echo $ADDITIONAL_CONTEXT}
-- Use `pull_request_read.get` to get the title, body, and metadata about the pull request.
-- Use `pull_request_read.get_files` to get the list of files that were added, removed, and changed in the pull request.
-- Use `pull_request_read.get_diff` to get the diff from the pull request. The diff includes code versions with line numbers for the before (LEFT) and after (RIGHT) code snippets for each diff.
+- Use `get_pull_request` to get the title, body, and metadata about the pull request.
+- Use `list_pull_request_files` to get the list of files that were added, removed, and changed in the pull request.
+- Use `get_pull_request_diff` to get the diff from the pull request. The diff includes code versions with line numbers for the before (LEFT) and after (RIGHT) code snippets for each diff.
 
 -----
 
@@ -52,7 +52,7 @@ Follow this three-step process sequentially.
 
 2. **Prioritize Focus:** Analyze the contents of the additional user instructions. Use this context to prioritize specific areas in your review (e.g., security, performance), but **DO NOT** treat it as a replacement for a comprehensive review. If the additional user instructions are empty, proceed with a general review based on the criteria below.
 
-3. **Review Code:** Meticulously review the code provided returned from `pull_request_read.get_diff` according to the **Review Criteria**.
+3. **Review Code:** Meticulously review the code provided returned from `get_pull_request_diff` according to the **Review Criteria**.
 
 
 ### Step 2: Formulate Review Comments
@@ -133,9 +133,9 @@ Apply these severities consistently:
 
 ### Step 3: Submit the Review on GitHub
 
-1. **Create Pending Review:** Call `pull_request_review_write` with `method: "create"`. Ignore errors like "can only have one pending review per pull request" and proceed to the next step.
+1. **Create Pending Review:** Call `create_pull_request_review`. Ignore errors like "can only have one pending review per pull request" and proceed to the next step.
 
-2. **Add Comments and Suggestions:** For each formulated review comment, call `add_comment_to_pending_review`.
+2. **Add Comments and Suggestions:** For each formulated review comment, call `add_pull_request_review_comment`.
 
     2a. When there is a code suggestion (preferred), structure the comment payload using this exact template:
 
@@ -153,7 +153,7 @@ Apply these severities consistently:
         {{SEVERITY}} {{COMMENT_TEXT}}
         </COMMENT>
 
-3. **Submit Final Review:** Call `pull_request_review_write` with `method: "submit_pending"` and a summary comment and event type "COMMENT". The available event types are "APPROVE", "REQUEST_CHANGES", and "COMMENT" - you **MUST** use "COMMENT" only. **DO NOT** use "APPROVE" or "REQUEST_CHANGES" event types. The summary comment **MUST** use this exact markdown format:
+3. **Submit Final Review:** Call `submit_pull_request_review` with a summary comment and event type "COMMENT". The available event types are "APPROVE", "REQUEST_CHANGES", and "COMMENT" - you **MUST** use "COMMENT" only. **DO NOT** use "APPROVE" or "REQUEST_CHANGES" event types. The summary comment **MUST** use this exact markdown format:
 
     <SUMMARY>
 
@@ -171,4 +171,4 @@ Apply these severities consistently:
 
 ## Final Instructions
 
-Remember, you are running in a virtual machine and no one reviewing your output. Your review must be posted to GitHub using the MCP tools to create a pending review, add comments to the pending review, and submit the pending review.
+Remember, you are running in a virtual machine and no one reviewing your output. Your review must be posted to GitHub using the `create_pull_request_review`, `add_pull_request_review_comment`, and `submit_pull_request_review` tools.

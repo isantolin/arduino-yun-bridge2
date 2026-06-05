@@ -116,12 +116,18 @@ jobs:
                   ],
                   "includeTools": [
                     "add_issue_comment",
-                    "issue_read",
+                    "get_issue",
+                    "get_issue_comments",
+                    "list_issue_comments",
                     "list_issues",
                     "search_issues",
                     "create_pull_request",
-                    "pull_request_read",
+                    "get_pull_request",
+                    "get_pull_request_review",
+                    "get_pull_request_diff",
+                    "list_pull_request_files",
                     "list_pull_requests",
+                    "list_pull_request_reviews",
                     "search_pull_requests",
                     "create_branch",
                     "create_or_update_file",
@@ -132,8 +138,9 @@ jobs:
                     "list_commits",
                     "push_files",
                     "search_code",
-                    "add_comment_to_pending_review",
-                    "pull_request_review_write"
+                    "add_pull_request_review_comment",
+                    "create_pull_request_review",
+                    "submit_pull_request_review"
                   ],
                   "env": {
                     "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"

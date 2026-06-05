@@ -5,15 +5,18 @@
 #include "Bridge.h"
 #include "etl_ext/CounterIterator.h"
 
-ConsoleClass::ConsoleClass() : _flags(0) {}
+template <typename T>
+ConsoleClass<T>::ConsoleClass() : _flags(0) {}
 
-void ConsoleClass::begin() {
+template <typename T>
+void ConsoleClass<T>::begin() {
   _flags.set(BEGUN);
   _rx_buffer.clear();
   _tx_buffer.clear();
 }
 
-void ConsoleClass::_push(const rpc::payload::ConsoleWrite& msg) {
+template <typename T>
+void ConsoleClass<T>::_push(const rpc::payload::ConsoleWrite& msg) {
   const auto& data = msg.data;
   const size_t to_write = etl::min(static_cast<size_t>(data.size), _rx_buffer.available());
   using bridge::etl_ext::CounterIterator;
@@ -21,7 +24,8 @@ void ConsoleClass::_push(const rpc::payload::ConsoleWrite& msg) {
                 [&](size_t i) { _rx_buffer.push(data.bytes[i]); });
 }
 
-void ConsoleClass::process() {
+template <typename T>
+void ConsoleClass<T>::process() {
   if (!_tx_buffer.empty()) {
     rpc::payload::ConsoleWrite p;
     const size_t to_copy = etl::min(_tx_buffer.size(), sizeof(p.data.bytes));
@@ -35,7 +39,8 @@ void ConsoleClass::process() {
   }
 }
 
-size_t ConsoleClass::write(uint8_t c) {
+template <typename T>
+size_t ConsoleClass<T>::write(uint8_t c) {
   if (_tx_buffer.full()) process();
   if (!_tx_buffer.full()) {
     _tx_buffer.push_back(c);
@@ -44,7 +49,8 @@ size_t ConsoleClass::write(uint8_t c) {
   return 0;
 }
 
-size_t ConsoleClass::write(const uint8_t* buffer, size_t size) {
+template <typename T>
+size_t ConsoleClass<T>::write(const uint8_t* buffer, size_t size) {
   if (buffer == nullptr || size == 0) return 0;
   size_t written = 0;
   using bridge::etl_ext::CounterIterator;
@@ -63,18 +69,22 @@ size_t ConsoleClass::write(const uint8_t* buffer, size_t size) {
   return written;
 }
 
-int ConsoleClass::available() { return static_cast<int>(_rx_buffer.size()); }
+template <typename T>
+int ConsoleClass<T>::available() { return static_cast<int>(_rx_buffer.size()); }
 
-int ConsoleClass::read() {
+template <typename T>
+int ConsoleClass<T>::read() {
   if (_rx_buffer.empty()) return -1;
   uint8_t c = _rx_buffer.front();
   _rx_buffer.pop();
   return static_cast<int>(c);
 }
 
-int ConsoleClass::peek() {
+template <typename T>
+int ConsoleClass<T>::peek() {
   if (_rx_buffer.empty()) return -1;
   return static_cast<int>(_rx_buffer.front());
 }
 
-ConsoleClass Console;
+template class ConsoleClass<void>;
+ConsoleType Console;

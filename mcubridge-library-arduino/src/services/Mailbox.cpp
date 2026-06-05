@@ -14,9 +14,11 @@ void send_mailbox_command(rpc::CommandId command_id) {
 
 }  // namespace
 
-MailboxClass::MailboxClass() {}
+template <typename T>
+MailboxClass<T>::MailboxClass() {}
 
-void MailboxClass::push(etl::span<const uint8_t> data) {
+template <typename T>
+void MailboxClass<T>::push(etl::span<const uint8_t> data) {
   rpc::payload::MailboxPush p;
   const size_t to_copy = etl::min(data.size(), sizeof(p.data.bytes));
   p.data.size = (pb_size_t)to_copy;
@@ -26,32 +28,39 @@ void MailboxClass::push(etl::span<const uint8_t> data) {
   [[maybe_unused]] auto _u1 = Bridge.send(rpc::CommandId::CMD_MAILBOX_PUSH, 0, p);
 }
 
-[[maybe_unused]] void MailboxClass::requestRead() {
+template <typename T>
+void MailboxClass<T>::requestRead() {
   send_mailbox_command(rpc::CommandId::CMD_MAILBOX_READ);
 }
 
-[[maybe_unused]] void MailboxClass::requestAvailable() {
+template <typename T>
+void MailboxClass<T>::requestAvailable() {
   send_mailbox_command(rpc::CommandId::CMD_MAILBOX_AVAILABLE);
 }
 
-[[maybe_unused]] void MailboxClass::signalProcessed() {
+template <typename T>
+void MailboxClass<T>::signalProcessed() {
   send_mailbox_command(rpc::CommandId::CMD_MAILBOX_PROCESSED);
 }
 
-void MailboxClass::_onIncomingData(const rpc::payload::MailboxPush& msg) {
+template <typename T>
+void MailboxClass<T>::_onIncomingData(const rpc::payload::MailboxPush& msg) {
   (void)msg;
 }
 
-void MailboxClass::_onIncomingData(
+template <typename T>
+void MailboxClass<T>::_onIncomingData(
     const rpc::payload::MailboxReadResponse& msg) {
   (void)msg;
 }
 
-void MailboxClass::_onAvailableResponse(
+template <typename T>
+void MailboxClass<T>::_onAvailableResponse(
     const rpc::payload::MailboxAvailableResponse& msg) {
   (void)msg;
 }
 
-MailboxClass Mailbox;
+template class MailboxClass<void>;
+MailboxType Mailbox;
 
 #endif

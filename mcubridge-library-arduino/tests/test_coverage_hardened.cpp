@@ -156,7 +156,7 @@ void test_process_poll_and_kill() {
   reset_bridge_core(Bridge, stream);
 
   // Test Process service direct list initialization and pending queue
-  Process.poll(123, ProcessClass::ProcessPollHandler::create<poll_handler>());
+  Process.poll(123, ProcessType::ProcessPollHandler::create<poll_handler>());
   Process.kill(456);
   Process.runAsync("ls", {},
                    etl::delegate<void(int32_t)>::create<async_handler>());
@@ -196,7 +196,7 @@ void test_process_branch_error_paths() {
 
   // Valid send with invalid callback should not enqueue a pending run.
   Process.reset();
-  Process.runAsync("ls", {}, ProcessClass::ProcessRunHandler{});
+  Process.runAsync("ls", {}, ProcessType::ProcessRunHandler{});
   TEST_ASSERT_EQUAL(0, Process._pending_run_async.size());
 
   // Force append_token failure via oversized arg, and hit lambda early return.
@@ -210,7 +210,7 @@ void test_process_branch_error_paths() {
       "x", etl::span<const etl::string_view>(overflow_args.data(), 2),
       etl::delegate<void(int32_t)>::create<capture_async_handler>());
   TEST_ASSERT_EQUAL(-1, captured_pid);
-  ProcessClass::ProcessRunHandler invalid_run_handler;
+  ProcessType::ProcessRunHandler invalid_run_handler;
   invalid_run_handler.clear();
   Process.runAsync("x", etl::span<const etl::string_view>(overflow_args.data(), 2),
                    invalid_run_handler);
@@ -236,22 +236,22 @@ void test_process_branch_error_paths() {
 
   // Poll queue full path (size=1), then invalid-handler path.
   Process.reset();
-  Process.poll(10, ProcessClass::ProcessPollHandler::create<capture_poll_handler>());
+  Process.poll(10, ProcessType::ProcessPollHandler::create<capture_poll_handler>());
   TEST_ASSERT_EQUAL(1, Process._pending_polls.size());
-  Process.poll(11, ProcessClass::ProcessPollHandler::create<capture_poll_handler>());
+  Process.poll(11, ProcessType::ProcessPollHandler::create<capture_poll_handler>());
   TEST_ASSERT_EQUAL(1, Process._pending_polls.size());
 
   Process.reset();
-  Process.poll(12, ProcessClass::ProcessPollHandler{});
+  Process.poll(12, ProcessType::ProcessPollHandler{});
   TEST_ASSERT_EQUAL(0, Process._pending_polls.size());
 
   // Force send failure in poll path.
   ba_recovered.clearSynchronized();
-  Process.poll(13, ProcessClass::ProcessPollHandler::create<capture_poll_handler>());
+  Process.poll(13, ProcessType::ProcessPollHandler::create<capture_poll_handler>());
   ba_recovered.setSynchronized();
 
   // Exercise invalid pending handlers in response dispatch.
-  ProcessClass::ProcessRunHandler invalid_pending_run;
+  ProcessType::ProcessRunHandler invalid_pending_run;
   invalid_pending_run.clear();
   Process._pending_run_async.push({invalid_pending_run});
   Process._onRunAsyncResponse([]() {
@@ -259,7 +259,7 @@ void test_process_branch_error_paths() {
     p.pid = 777;
     return p;
   }());
-  ProcessClass::ProcessPollHandler invalid_pending_poll;
+  ProcessType::ProcessPollHandler invalid_pending_poll;
   invalid_pending_poll.clear();
   Process._pending_polls.push({1, invalid_pending_poll});
   Process._onPollResponse(rpc::payload::ProcessPollResponse{});
@@ -308,12 +308,12 @@ void test_mailbox_and_datastore_variants() {
 
   DataStore._pending_gets.clear();
   DataStore.get("alpha",
-                DataStoreClass::GetHandler::create<datastore_get_handler>());
+                DataStoreType::GetHandler::create<datastore_get_handler>());
   DataStore.get("beta",
-                DataStoreClass::GetHandler::create<datastore_get_handler>());
+                DataStoreType::GetHandler::create<datastore_get_handler>());
   DataStore._onResponse({});
   DataStore._pending_gets.clear();
-  DataStoreClass::GetHandler invalid_get_handler;
+  DataStoreType::GetHandler invalid_get_handler;
   invalid_get_handler.clear();
   DataStore.get("gamma", invalid_get_handler);
   DataStore._onResponse(rpc::payload::DatastoreGetResponse{});

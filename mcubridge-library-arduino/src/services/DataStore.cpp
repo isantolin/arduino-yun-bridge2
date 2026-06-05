@@ -6,9 +6,11 @@
 
 #if BRIDGE_ENABLE_DATASTORE
 
-DataStoreClass::DataStoreClass() {}
+template <typename T>
+DataStoreClass<T>::DataStoreClass() {}
 
-void DataStoreClass::set(etl::string_view key, etl::span<const uint8_t> value) {
+template <typename T>
+void DataStoreClass<T>::set(etl::string_view key, etl::span<const uint8_t> value) {
   rpc::payload::DatastorePut p;
   const size_t k_copy = etl::min(key.size(), sizeof(p.key) - 1U);
   if (k_copy > 0U) {
@@ -24,8 +26,9 @@ void DataStoreClass::set(etl::string_view key, etl::span<const uint8_t> value) {
   [[maybe_unused]] auto _u1 = Bridge.send(rpc::CommandId::CMD_DATASTORE_PUT, 0, p);
 }
 
-[[maybe_unused]] void DataStoreClass::get(etl::string_view key,
-                                          GetHandler handler) {
+template <typename T>
+void DataStoreClass<T>::get(etl::string_view key,
+                            typename DataStoreClass<T>::GetHandler handler) {
   if (_pending_gets.full()) {
     Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
     return;
@@ -43,7 +46,7 @@ void DataStoreClass::set(etl::string_view key, etl::span<const uint8_t> value) {
     return;
   }
 
-  PendingGet pending = {};
+  typename DataStoreClass<T>::PendingGet pending = {};
   const size_t to_copy = etl::min(key.length(), pending.key.size() - 1U);
   etl::copy_n(key.data(), to_copy, pending.key.begin());
   pending.key[to_copy] = '\0';
@@ -51,11 +54,12 @@ void DataStoreClass::set(etl::string_view key, etl::span<const uint8_t> value) {
   _pending_gets.push(pending);
 }
 
-void DataStoreClass::_onResponse(
+template <typename T>
+void DataStoreClass<T>::_onResponse(
     const rpc::payload::DatastoreGetResponse& msg) {
   if (_pending_gets.empty()) return;
 
-  const PendingGet pending = _pending_gets.front();
+  const typename DataStoreClass<T>::PendingGet pending = _pending_gets.front();
   _pending_gets.pop();
   if (!pending.handler.is_valid()) return;
 
@@ -64,6 +68,7 @@ void DataStoreClass::_onResponse(
                   etl::span<const uint8_t>(msg.value.bytes, msg.value.size));
 }
 
-DataStoreClass DataStore;
+template class DataStoreClass<void>;
+DataStoreType DataStore;
 
 #endif

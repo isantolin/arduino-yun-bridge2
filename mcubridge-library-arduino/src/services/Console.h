@@ -13,6 +13,7 @@
 #include "protocol/rpc_protocol.h"
 #include "protocol/rpc_structs.h"
 
+template <typename T = void>
 class ConsoleClass : public Stream {
  public:
   ConsoleClass();
@@ -38,6 +39,7 @@ class ConsoleClass : public Stream {
   etl::vector<uint8_t, bridge::config::CONSOLE_TX_BUFFER_SIZE> _tx_buffer;
 };
 
-extern ConsoleClass Console;
+using ConsoleType = ConsoleClass<>;
+extern ConsoleType Console;
 
 #endif

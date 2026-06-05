@@ -10,6 +10,7 @@
 
 #include "protocol/rpc_structs.h"
 
+template <typename T = void>
 class FileSystemClass {
  public:
   using FileSystemReadHandler = etl::delegate<void(etl::span<const uint8_t>)>;
@@ -31,6 +32,7 @@ class FileSystemClass {
   FileSystemReadHandler _read_handler;
 };
 
-extern FileSystemClass FileSystem;
+using FileSystemType = FileSystemClass<>;
+extern FileSystemType FileSystem;
 
 #endif

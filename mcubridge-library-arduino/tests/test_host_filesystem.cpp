@@ -78,7 +78,7 @@ void test_filesystem_api_write() {
 void test_filesystem_api_read() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
-  FileSystem.read("api_read.bin", FileSystemClass::FileSystemReadHandler::create<test_fs_read_callback>());
+  FileSystem.read("api_read.bin", FileSystemType::FileSystemReadHandler::create<test_fs_read_callback>());
 }
 
 void test_filesystem_api_remove() {

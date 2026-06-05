@@ -13,6 +13,7 @@
 
 #include "protocol/rpc_structs.h"
 
+template <typename T = void>
 class DataStoreClass {
  public:
   using GetHandler =
@@ -33,6 +34,7 @@ class DataStoreClass {
   etl::queue<PendingGet, bridge::config::MAX_PENDING_DATASTORE> _pending_gets;
 };
 
-extern DataStoreClass DataStore;
+using DataStoreType = DataStoreClass<>;
+extern DataStoreType DataStore;
 
 #endif

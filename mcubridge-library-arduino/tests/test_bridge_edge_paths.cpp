@@ -531,13 +531,13 @@ void test_service_capacity_and_send_fail_edges() {
 
   Bridge.enterSafeState();
   FileSystem.read("blocked.bin",
-                  FileSystemClass::FileSystemReadHandler::create<on_fs_read>());
+                  FileSystemType::FileSystemReadHandler::create<on_fs_read>());
   DataStore.get(
       "key",
       etl::delegate<void(etl::string_view, etl::span<const uint8_t>)>::create<
           on_datastore_get>());
   Process.poll(123,
-               ProcessClass::ProcessPollHandler::create<on_process_poll>());
+               ProcessType::ProcessPollHandler::create<on_process_poll>());
 }
 
 void test_filesystem_spi_fsm_and_rle_edges() {

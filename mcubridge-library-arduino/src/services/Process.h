@@ -13,6 +13,7 @@
 #include "protocol/rpc_protocol.h"
 #include "protocol/rpc_structs.h"
 
+template <typename T = void>
 class ProcessClass {
  public:
   using ProcessRunHandler = etl::delegate<void(int32_t)>;
@@ -48,6 +49,7 @@ class ProcessClass {
       _pending_polls;
 };
 
-extern ProcessClass Process;
+using ProcessType = ProcessClass<>;
+extern ProcessType Process;
 
 #endif

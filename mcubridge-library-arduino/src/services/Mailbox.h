@@ -13,6 +13,7 @@
 
 
 
+template <typename T = void>
 class MailboxClass {
  public:
 
@@ -30,6 +31,7 @@ class MailboxClass {
   static void onSynchronized() {}
 };
 
-extern MailboxClass Mailbox;
+using MailboxType = MailboxClass<>;
+extern MailboxType Mailbox;
 
 #endif

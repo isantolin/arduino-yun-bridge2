@@ -25,6 +25,8 @@ from typing import (
 )
 
 import msgspec
+from paho.mqtt.packettypes import PacketTypes
+from paho.mqtt.properties import Properties
 
 PROTOBUF_CONTENT_TYPE: Final[str] = "application/x-protobuf"
 
@@ -576,6 +578,29 @@ class QOSLevel(IntEnum):
 
 
 UserProperty = tuple[str, str]
+
+
+
+def build_mqtt_properties(message: QueuedPublish) -> Properties:
+    """Construct MQTT 5.0 properties object for aiomqtt/paho. [SIL-2]"""
+    props = Properties(PacketTypes.PUBLISH)
+    _MAP = {
+        "content_type": "ContentType",
+        "payload_format_indicator": "PayloadFormatIndicator",
+        "message_expiry_interval": "MessageExpiryInterval",
+        "response_topic": "ResponseTopic",
+        "correlation_data": "CorrelationData",
+        "user_properties": "UserProperty",
+    }
+    for field, paho_name in _MAP.items():
+        val = getattr(message, field)
+        if val is not None:
+            setattr(props, paho_name, list(val) if field == "user_properties" else val)
+
+    if message.subscription_identifier is not None:
+        props.SubscriptionIdentifier = list(message.subscription_identifier)
+
+    return props
 
 
 class QueuedPublish(msgspec.Struct, frozen=True):

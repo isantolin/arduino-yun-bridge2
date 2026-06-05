@@ -140,7 +140,7 @@ class Bridge:
             try:
                 await self._listener_task
             except asyncio.CancelledError:
-                pass
+                logger.debug("Listener task cancelled during disconnect")
         await self._exit_stack.aclose()
         self._client = None
         logger.info("Disconnected.")
@@ -156,8 +156,8 @@ class Bridge:
                     queue.put_nowait(message)
                 elif Topic.matches(self._console_topic, message.topic.value):
                     self._console_queue.put_nowait(bytes(message.payload) if message.payload else b"")
-        except MqttError:
-            pass
+        except MqttError as e:
+            logger.error("MQTT listener error", error=e)
 
     async def _publish_and_wait(
         self,

@@ -20,8 +20,6 @@ import structlog
 from google.protobuf.message import DecodeError as ProtobufDecodeError
 
 import aiomqtt
-from paho.mqtt.packettypes import PacketTypes
-from paho.mqtt.properties import Properties
 
 from aiomqtt.message import Message
 
@@ -313,27 +311,13 @@ class BridgeService:
         if not self._mqtt_client:
             return False
 
-        props = Properties(PacketTypes.PUBLISH)
-        if message.user_properties:
-            props.UserProperty = list(message.user_properties)
-        if message.content_type:
-            props.ContentType = message.content_type
-        if message.payload_format_indicator is not None:
-            props.PayloadFormatIndicator = message.payload_format_indicator
-        if message.message_expiry_interval:
-            props.MessageExpiryInterval = message.message_expiry_interval
-        if message.response_topic:
-            props.ResponseTopic = message.response_topic
-        if message.correlation_data:
-            props.CorrelationData = message.correlation_data
-
         try:
             await self._mqtt_client.publish(
                 message.topic_name,
                 message.payload,
                 qos=int(message.qos),
                 retain=message.retain,
-                properties=props,
+                properties=structures.build_mqtt_properties(message),
             )
             self.state.metrics.mqtt_messages_published.inc()
             return True

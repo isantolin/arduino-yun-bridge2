@@ -15,8 +15,9 @@
 #include <avr/wdt.h>
 #endif
 
-#include <Codecs/COBS.h>
+
 #include <PacketSerial.h>
+#include <Codecs/COBS.h>
 #include <etl/algorithm.h>
 #include <etl/array.h>
 #include <etl/callback_timer.h>

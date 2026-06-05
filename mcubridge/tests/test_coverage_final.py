@@ -58,20 +58,23 @@ async def test_status_writer_coverage() -> None:
         mqtt_port=1883,
     )
     state = create_runtime_state(config)
-
-    mock_child = MagicMock()
-    mock_child.pid = 1234
-    mock_child.name.return_value = "child"
-    mock_child.cpu_percent.return_value = 0.1
-    mock_child.memory_info.return_value.rss = 1000
-
-    task = asyncio.create_task(status_writer(state, 1))
-    await asyncio.sleep(0.1)
-    task.cancel()
     try:
-        await task
-    except asyncio.CancelledError:
-        pass
+        mock_child = MagicMock()
+        mock_child.pid = 1234
+        mock_child.name.return_value = "child"
+        mock_child.cpu_percent.return_value = 0.1
+        mock_child.memory_info.return_value.rss = 1000
+
+        task = asyncio.create_task(status_writer(state, 1))
+        await asyncio.sleep(0.1)
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+    finally:
+        state.cleanup()
+
 
 
 def test_write_status_file_errors() -> None:
@@ -165,11 +168,15 @@ def test_state_context_extra_coverage() -> None:
         mqtt_port=1883,
     )
     state = create_runtime_state(config)
-    # Correct method name
-    state.mark_supervisor_healthy("test")
-    state.apply_handshake_stats({"attempts": 1, "successes": 1, "last_unix": time.time()})
-    # Use public API if available or suppress if necessary
-    # For coverage tests, private access is sometimes tolerated but we can cast to Any
-    # to satisfy the type checker for now while maintaining the test's intent.
-    getattr(state, "_apply_spool_observation")({"corrupt_dropped": 1, "dropped_due_to_limit": 1})
-    assert state.handshake_duration_since_start() >= 0
+    try:
+        # Correct method name
+        state.mark_supervisor_healthy("test")
+        state.apply_handshake_stats({"attempts": 1, "successes": 1, "last_unix": time.time()})
+        # Use public API if available or suppress if necessary
+        # For coverage tests, private access is sometimes tolerated but we can cast to Any
+        # to satisfy the type checker for now while maintaining the test's intent.
+        getattr(state, "_apply_spool_observation")({"corrupt_dropped": 1, "dropped_due_to_limit": 1})
+        assert state.handshake_duration_since_start() >= 0
+    finally:
+        state.cleanup()
+

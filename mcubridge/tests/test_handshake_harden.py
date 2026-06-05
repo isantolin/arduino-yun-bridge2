@@ -1,7 +1,7 @@
 from mcubridge.protocol import mcubridge_pb2 as pb
 import asyncio
 import time
-from typing import cast
+from typing import cast, Iterator
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -14,7 +14,7 @@ from mcubridge.protocol.protocol import Command, Status
 
 
 @pytest.fixture
-def handshake_setup() -> tuple[SerialHandshakeManager, RuntimeState, AsyncMock]:
+def handshake_setup() -> Iterator[tuple[SerialHandshakeManager, RuntimeState, AsyncMock]]:
     config = RuntimeConfig(
         mqtt_topic="br",
         serial_port="/dev/test",
@@ -39,7 +39,9 @@ def handshake_setup() -> tuple[SerialHandshakeManager, RuntimeState, AsyncMock]:
         enqueue_mqtt=enqueue_mqtt,
         acknowledge_frame=acknowledge_frame,
     )
-    return manager, state, send_frame
+    yield manager, state, send_frame
+    state.cleanup()
+
 
 
 @pytest.mark.asyncio

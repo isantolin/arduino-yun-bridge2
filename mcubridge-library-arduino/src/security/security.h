@@ -34,24 +34,6 @@ void hkdf_sha256(etl::span<uint8_t> out, etl::span<const uint8_t> key,
                  etl::span<const uint8_t> salt, etl::span<const uint8_t> info);
 
 /**
- * @brief AEAD encryption (ChaCha20-Poly1305).
- * out must be at least in.size() + tag.size().
- */
-bool aead_encrypt(etl::span<uint8_t> out, etl::span<uint8_t> tag,
-                  etl::span<const uint8_t> in, etl::span<const uint8_t> key,
-                  etl::span<const uint8_t> nonce,
-                  etl::span<const uint8_t> ad = {});
-
-/**
- * @brief AEAD decryption (ChaCha20-Poly1305).
- * out must be at least in.size().
- */
-bool aead_decrypt(etl::span<uint8_t> out, etl::span<const uint8_t> in,
-                  etl::span<const uint8_t> tag, etl::span<const uint8_t> key,
-                  etl::span<const uint8_t> nonce,
-                  etl::span<const uint8_t> ad = {});
-
-/**
  * @brief Perform timing-safe HMAC-SHA256 handshake authentication.
  * [MEM-SAVE] Centralizing this logic avoids duplication in BridgeClass handlers.
  */
@@ -117,58 +99,13 @@ inline bool timing_safe_equal(etl::span<const uint8_t> a,
                               etl::span<const uint8_t> b) {
   if (a.size() != b.size()) return false;
   volatile uint8_t result = 0;
-  auto it_b = b.begin();
-  etl::for_each(a.begin(), a.end(),
-                [&](uint8_t val_a) { result |= val_a ^ *it_b++; });
-  return result == 0;
-}
-
-/**
- * @brief Generate nonce with monotonic counter (anti-replay).
- */
-template <typename RandomFunc>
-[[maybe_unused]] inline void generate_nonce_with_counter(
-    etl::span<uint8_t> out_nonce, uint64_t& counter, RandomFunc random_func) {
-  if (out_nonce.size() < RPC_HANDSHAKE_NONCE_LENGTH) return;
-
-  etl::generate(
-      out_nonce.begin(), out_nonce.begin() + RPC_HANDSHAKE_NONCE_RANDOM_BYTES,
-      [&]() {
-        return static_cast<uint8_t>(random_func() & rpc::RPC_UINT8_MASK);
-      });
-
-  counter++;
-  etl::byte_stream_writer w(out_nonce.data() + RPC_HANDSHAKE_NONCE_RANDOM_BYTES,
-                            out_nonce.size() - RPC_HANDSHAKE_NONCE_RANDOM_BYTES,
-                            etl::endian::big);
-  w.write<uint64_t>(counter);
-}
-
-/**
- * @brief Extract counter from nonce (for validation).
- */
-inline uint64_t extract_nonce_counter(etl::span<const uint8_t> nonce) {
-  if (nonce.size() < RPC_HANDSHAKE_NONCE_LENGTH) return 0;
-  etl::byte_stream_reader r(nonce.data() + RPC_HANDSHAKE_NONCE_RANDOM_BYTES,
-                            nonce.size() - RPC_HANDSHAKE_NONCE_RANDOM_BYTES,
-                            etl::endian::big);
-  return r.read<uint64_t>().value_or(0);
-}
-
-/**
- * @brief Validate nonce counter is strictly greater than last seen.
- */
-[[maybe_unused]] inline bool validate_nonce_counter(
-    etl::span<const uint8_t> nonce, uint64_t& last_counter) {
-  uint64_t current = extract_nonce_counter(nonce);
-  if (current <= last_counter) {
-    return false;
+  for (size_t i = 0; i < a.size(); ++i) {
+    result |= (a[i] ^ b[i]);
   }
-  last_counter = current;
-  return true;
+  return result == 0;
 }
 
 }  // namespace security
 }  // namespace rpc
 
-#endif  // RPC_SECURITY_H
+#endif // RPC_SECURITY_H

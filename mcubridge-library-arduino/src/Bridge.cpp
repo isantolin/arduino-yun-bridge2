@@ -289,7 +289,7 @@ void BridgeClass::_handleAnalogWrite(const rpc_pb_AnalogWrite& m) { analogWrite(
 
 void BridgeClass::_handleDigitalRead(const bridge::router::CommandContext& ctx) {
   auto res = rpc::Payload::parse<rpc_pb_PinRead>(*ctx.envelope);
-  if (res && bridge::hal::isValidPin(res->pin)) {
+  if (res && res->pin < bridge::config::DIGITAL_PINS) {
     rpc_pb_DigitalReadResponse resp = {}; resp.value = static_cast<uint32_t>(::digitalRead(res->pin));
     (void)send(rpc::CommandId::CMD_DIGITAL_READ_RESP, ctx.sequence_id, resp);
   } else emitStatus(rpc::StatusCode::STATUS_ERROR);
@@ -297,7 +297,7 @@ void BridgeClass::_handleDigitalRead(const bridge::router::CommandContext& ctx) 
 
 void BridgeClass::_handleAnalogRead(const bridge::router::CommandContext& ctx) {
   auto res = rpc::Payload::parse<rpc_pb_PinRead>(*ctx.envelope);
-  if (res && bridge::hal::isValidPin(res->pin)) {
+  if (res && res->pin < bridge::config::DIGITAL_PINS) {
     rpc_pb_AnalogReadResponse resp = {}; resp.value = static_cast<uint32_t>(::analogRead(res->pin));
     (void)send(rpc::CommandId::CMD_ANALOG_READ_RESP, ctx.sequence_id, resp);
   } else emitStatus(rpc::StatusCode::STATUS_ERROR);

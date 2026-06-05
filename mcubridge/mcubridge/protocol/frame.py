@@ -14,9 +14,11 @@ from __future__ import annotations
 from binascii import crc32
 from typing import Final
 
+from cryptography.exceptions import InvalidTag
+from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from google.protobuf.message import DecodeError
+
 from mcubridge.protocol import mcubridge_pb2 as pb
-from mcubridge.security.security import aead_decrypt, aead_encrypt
 
 from . import protocol, is_system_command
 
@@ -60,12 +62,8 @@ def build_frame(
             version=envelope.version, command_id=envelope.command_id, sequence_id=envelope.sequence_id
         ).SerializeToString()
 
-        envelope.payload, envelope.tag = aead_encrypt(
-            payload,
-            session_key,
-            envelope.nonce,
-            aad,
-        )
+        full_ct = ChaCha20Poly1305(session_key).encrypt(envelope.nonce, payload, aad)
+        envelope.payload, envelope.tag = full_ct[:-16], full_ct[-16:]
 
     body = envelope.SerializeToString()
     return body + (crc32(body) & protocol.CRC32_MASK).to_bytes(4, "little")
@@ -99,12 +97,11 @@ def parse_frame(raw_frame_buffer: bytes | bytearray | memoryview, session_key: b
             version=envelope.version, command_id=envelope.command_id, sequence_id=envelope.sequence_id
         ).SerializeToString()
 
-        envelope.payload = aead_decrypt(
-            envelope.payload,
-            envelope.tag,
-            session_key,
-            envelope.nonce,
-            aad,
-        )
+        try:
+            envelope.payload = ChaCha20Poly1305(session_key).decrypt(
+                envelope.nonce, envelope.payload + envelope.tag, aad
+            )
+        except InvalidTag as exc:
+            raise ValueError("AEAD decryption failed") from exc
 
     return envelope

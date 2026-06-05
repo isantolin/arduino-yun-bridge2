@@ -360,23 +360,6 @@ void test_console_and_policy_edges() {
   bridge::SafeStatePolicy::handle(Bridge, ex);
 }
 
-void test_security_invalid_size_guards() {
-  etl::array<uint8_t, 1> out = {0};
-  etl::array<uint8_t, 1> in = {0x42};
-  etl::array<uint8_t, 1> short_key = {0};
-  etl::array<uint8_t, rpc::RPC_AEAD_TAG_SIZE> tag = {};
-  etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> nonce = {};
-
-  TEST_ASSERT_FALSE(rpc::security::aead_encrypt(
-      etl::span<uint8_t>(out), etl::span<uint8_t>(tag),
-      etl::span<const uint8_t>(in), etl::span<const uint8_t>(short_key),
-      etl::span<const uint8_t>(nonce), etl::span<const uint8_t>()));
-
-  TEST_ASSERT_FALSE(rpc::security::aead_decrypt(
-      etl::span<uint8_t>(out), etl::span<const uint8_t>(in),
-      etl::span<const uint8_t>(tag), etl::span<const uint8_t>(short_key),
-      etl::span<const uint8_t>(nonce), etl::span<const uint8_t>()));
-}
 
 void test_observer_and_task_runtime_edges() {
   BiStream stream;
@@ -671,7 +654,7 @@ int main() {
   RUN_TEST(test_dispatch_malformed_payload_paths);
   RUN_TEST(test_packet_received_security_paths);
   RUN_TEST(test_console_and_policy_edges);
-  RUN_TEST(test_security_invalid_size_guards);
+  // RUN_TEST(test_security_invalid_size_guards); // Eradicated with thin wrappers
   RUN_TEST(test_observer_and_task_runtime_edges);
   RUN_TEST(test_timer_link_and_bootloader_edges);
   RUN_TEST(test_service_capacity_and_send_fail_edges);

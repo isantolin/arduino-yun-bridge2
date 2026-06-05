@@ -45,7 +45,6 @@ constexpr uint8_t ANALOG_PINS =
 
 }  // namespace
 
-[[maybe_unused]] bool isValidPin(const uint8_t pin) { return pin < DIGITAL_PINS; }
 
 namespace {
 template <size_t I>

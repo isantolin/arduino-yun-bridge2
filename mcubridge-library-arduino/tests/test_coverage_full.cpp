@@ -286,7 +286,7 @@ void test_bridge_coverage() {
   bridge::hal::getArchId();
   bridge::hal::memory_fence();
   bridge::hal::watchdog_kick();
-  bridge::hal::isValidPin(0);
+  [[maybe_unused]] bool _unused_pin = (0 < bridge::config::DIGITAL_PINS);
   uint8_t pb_val = 0;
   bridge::hal::read_byte(&pb_val);
   char pd_val[1];

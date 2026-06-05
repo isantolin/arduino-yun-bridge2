@@ -1,11 +1,6 @@
 /*
  * This file is part of Arduino MCU Ecosystem v2.
  * Copyright (C) 2025-2026 Ignacio Santolin and contributors
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
  */
 
 #include "security.h"
@@ -47,34 +42,6 @@ void hkdf_sha256(etl::span<uint8_t> out, etl::span<const uint8_t> key,
           static_cast<word32>(out.size()));
 }
 
-bool aead_encrypt(etl::span<uint8_t> out, etl::span<uint8_t> tag,
-                  etl::span<const uint8_t> in, etl::span<const uint8_t> key,
-                  etl::span<const uint8_t> nonce, etl::span<const uint8_t> ad) {
-  if (out.size() < in.size() || tag.size() < rpc::RPC_AEAD_TAG_SIZE ||
-      key.size() < rpc::RPC_AEAD_KEY_SIZE ||
-      nonce.size() < rpc::RPC_AEAD_NONCE_SIZE)
-    return false;
-
-  return wc_ChaCha20Poly1305_Encrypt(key.data(), nonce.data(), ad.data(),
-                                     static_cast<word32>(ad.size()), in.data(),
-                                     static_cast<word32>(in.size()), out.data(),
-                                     tag.data()) == 0;
-}
-
-bool aead_decrypt(etl::span<uint8_t> out, etl::span<const uint8_t> in,
-                  etl::span<const uint8_t> tag, etl::span<const uint8_t> key,
-                  etl::span<const uint8_t> nonce, etl::span<const uint8_t> ad) {
-  if (out.size() < in.size() || tag.size() < rpc::RPC_AEAD_TAG_SIZE ||
-      key.size() < rpc::RPC_AEAD_KEY_SIZE ||
-      nonce.size() < rpc::RPC_AEAD_NONCE_SIZE)
-    return false;
-
-  return wc_ChaCha20Poly1305_Decrypt(key.data(), nonce.data(), ad.data(),
-                                     static_cast<word32>(ad.size()), in.data(),
-                                     static_cast<word32>(in.size()), tag.data(),
-                                     out.data()) == 0;
-}
-
 bool handshake_authenticate(etl::span<const uint8_t> secret,
                             etl::span<const uint8_t> nonce,
                             etl::span<const uint8_t> received_tag,
@@ -97,7 +64,6 @@ bool handshake_authenticate(etl::span<const uint8_t> secret,
         etl::span<const uint8_t>(out_tag.data(), rpc::RPC_HANDSHAKE_TAG_LENGTH),
         received_tag);
   }
-
   secure_zero(handshake_key);
   return tag_ok;
 }
@@ -137,9 +103,10 @@ bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
     return false;
   }
 
-  return aead_encrypt(
-      out_payload, out_tag, in, key, out_nonce,
-      etl::span<const uint8_t>(ad.data(), stream.bytes_written));
+  return wc_ChaCha20Poly1305_Encrypt(key.data(), out_nonce.data(), ad.data(), 
+                                     static_cast<word32>(stream.bytes_written), 
+                                     in.data(), static_cast<word32>(in.size()), 
+                                     out_payload.data(), out_tag.data()) == 0;
 }
 
 bool aead_decrypt_frame(uint16_t cmd_id, uint16_t seq_id,
@@ -160,9 +127,10 @@ bool aead_decrypt_frame(uint16_t cmd_id, uint16_t seq_id,
     return false;
   }
 
-  return aead_decrypt(
-      out_payload, in, tag, key, nonce,
-      etl::span<const uint8_t>(ad.data(), stream.bytes_written));
+  return wc_ChaCha20Poly1305_Decrypt(key.data(), nonce.data(), ad.data(), 
+                                     static_cast<word32>(stream.bytes_written), 
+                                     in.data(), static_cast<word32>(in.size()), 
+                                     tag.data(), out_payload.data()) == 0;
 }
 
 bool validate_frame_nonce(etl::span<const uint8_t> nonce,

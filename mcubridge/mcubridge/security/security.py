@@ -20,7 +20,6 @@ import struct
 import structlog
 from typing import Final
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
-from cryptography.exceptions import InvalidTag
 
 from ..protocol import protocol
 
@@ -77,23 +76,6 @@ def validate_nonce_counter(nonce: bytes, last_counter: int) -> tuple[bool, int]:
     return True, current
 
 
-def aead_encrypt(payload: bytes, key: bytes, nonce: bytes, ad: bytes) -> tuple[bytes, bytes]:
-    """Encrypt payload using ChaCha20-Poly1305 AEAD."""
-    aead = ChaCha20Poly1305(key)
-    full_ct = aead.encrypt(nonce, payload, ad)
-    # cryptography returns [ciphertext][tag]
-    return full_ct[:-16], full_ct[-16:]
-
-
-def aead_decrypt(payload: bytes, tag: bytes, key: bytes, nonce: bytes, ad: bytes) -> bytes:
-    """Decrypt payload using ChaCha20-Poly1305 AEAD."""
-    aead = ChaCha20Poly1305(key)
-    try:
-        return aead.decrypt(nonce, payload + tag, ad)
-    except InvalidTag as exc:
-        raise ValueError("AEAD decryption failed") from exc
-
-
 def verify_crypto_integrity() -> bool:
     """Perform Known Answer Tests (KAT) for cryptographic primitives."""
     # 1. SHA256 KAT
@@ -115,16 +97,9 @@ def verify_crypto_integrity() -> bool:
 
 
 __all__ = [
-    "AEAD_NONCE_SIZE",
-    "NONCE_TOTAL_BYTES",
-    "AEAD_TAG_SIZE",
-    "NONCE_RANDOM_BYTES",
-    "NONCE_COUNTER_BYTES",
-    "aead_decrypt",
-    "aead_encrypt",
-    "extract_nonce_counter",
-    "generate_nonce_with_counter",
     "secure_zero",
+    "generate_nonce_with_counter",
+    "extract_nonce_counter",
     "validate_nonce_counter",
     "verify_crypto_integrity",
 ]

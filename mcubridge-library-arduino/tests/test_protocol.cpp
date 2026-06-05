@@ -64,8 +64,9 @@ void test_protocol_builder_exhaustive() {
   env.version = PROTOCOL_VERSION;
   env.command_id = (uint16_t)CommandId::CMD_GET_VERSION;
   env.sequence_id = 1;
-  etl::copy_n(payload.begin(), 3, env.payload.bytes);
-  env.payload.size = 3;
+  env.which_payload_type = rpc_pb_RpcEnvelope_encrypted_payload_tag;
+  etl::copy_n(payload.begin(), 3, env.payload_type.encrypted_payload.bytes);
+  env.payload_type.encrypted_payload.size = 3;
 
   // Success path
   size_t len = serialize_frame(env, etl::span<uint8_t>(buf.data(), 128));

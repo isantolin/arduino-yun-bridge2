@@ -221,7 +221,7 @@ void test_encrypted_frame_receive_path() {
   f_enc.nonce.size = static_cast<pb_size_t>(rpc::RPC_AEAD_NONCE_SIZE);
   etl::copy_n(tag.begin(), rpc::RPC_AEAD_TAG_SIZE, f_enc.tag.bytes);
   f_enc.tag.size = static_cast<pb_size_t>(rpc::RPC_AEAD_TAG_SIZE);
-  f_enc.payload.size = 0;
+  f_enc.payload_type.encrypted_payload.size = 0;
 
   etl::array<uint8_t, 256> raw_buf;
   size_t raw_len = rpc::serialize_frame(f_enc, raw_buf);

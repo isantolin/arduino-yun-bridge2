@@ -57,7 +57,7 @@ void test_all_structs_roundtrip() {
   test_roundtrip([]() {
     rpc::payload::PinMode p;
     p.pin = 13;
-    p.mode = 1;
+    p.mode = rpc_pb_PinModeType_PIN_OUTPUT;
     return p;
   }());
   test_roundtrip([]() {

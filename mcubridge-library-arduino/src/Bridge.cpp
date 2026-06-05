@@ -399,8 +399,9 @@ void BridgeClass::_transmit(uint16_t command_id, uint16_t sequence_id,
   env.tag.size = static_cast<pb_size_t>(rpc::AEAD_TAG_SIZE);
   const size_t pl_size = etl::min(final_payload.size(),
                                   static_cast<size_t>(rpc::MAX_PAYLOAD_SIZE));
-  etl::copy_n(final_payload.begin(), pl_size, env.payload.bytes);
-  env.payload.size = static_cast<pb_size_t>(pl_size);
+  env.which_payload_type = rpc_pb_RpcEnvelope_encrypted_payload_tag;
+  etl::copy_n(final_payload.begin(), pl_size, env.payload_type.encrypted_payload.bytes);
+  env.payload_type.encrypted_payload.size = static_cast<pb_size_t>(pl_size);
   size_t len = rpc::serialize_frame(env, buffer);
   if (len > 0)
     _packet_serial.send(_stream, etl::span<const uint8_t>(buffer.data(), len));
@@ -490,9 +491,9 @@ void BridgeClass::_handleEnterBootloader(const rpc_pb_EnterBootloader& msg) {
 
 void BridgeClass::_handleSetPinMode(const rpc_pb_PinMode& m) {
   uint8_t m_val = INPUT;
-  if (m.mode == 1)
+  if (m.mode == rpc_pb_PinModeType_PIN_OUTPUT)
     m_val = OUTPUT;
-  else if (m.mode == 2)
+  else if (m.mode == rpc_pb_PinModeType_PIN_INPUT_PULLUP)
     m_val = INPUT_PULLUP;
   pinMode(m.pin, m_val);
 }
@@ -675,7 +676,7 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
 }
 
 void BridgeClass::_handleLinkReset(const bridge::router::CommandContext& ctx) {
-  if (ctx.envelope->payload.size > 0) {
+  if (ctx.envelope->which_payload_type != 0) {
     auto res = rpc::Payload::parse<rpc_pb_HandshakeConfig>(*ctx.envelope);
     if (res) _handleSetTiming(res.value());
   }
@@ -749,8 +750,8 @@ void BridgeClass::_handleReceivedFrame(etl::span<const uint8_t> p) {
     etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> dec_pl;
     if (!rpc::security::aead_decrypt_frame(
             raw_cmd, envelope.sequence_id,
-            etl::span<const uint8_t>(envelope.payload.bytes,
-                                     envelope.payload.size),
+            etl::span<const uint8_t>(envelope.payload_type.encrypted_payload.bytes,
+                                     envelope.payload_type.encrypted_payload.size),
             etl::span<const uint8_t>(envelope.tag.bytes, 16), _session_key,
             etl::span<const uint8_t>(envelope.nonce.bytes, 12), dec_pl) ||
         !rpc::security::validate_frame_nonce(
@@ -759,7 +760,7 @@ void BridgeClass::_handleReceivedFrame(etl::span<const uint8_t> p) {
       emitStatus(rpc::StatusCode::STATUS_ERROR);
       return;
     }
-    etl::copy_n(dec_pl.data(), envelope.payload.size, envelope.payload.bytes);
+    etl::copy_n(dec_pl.data(), envelope.payload_type.encrypted_payload.size, envelope.payload_type.encrypted_payload.bytes);
   }
   _dispatchCommand(envelope);
 }

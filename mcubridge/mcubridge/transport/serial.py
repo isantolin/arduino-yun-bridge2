@@ -214,7 +214,7 @@ class SerialTransport:
 
     async def _process_packet(self, encoded_packet: bytes | memoryview) -> None:
         """Processes a packet from the serial stream. [FLATTENED] [SIL-2]"""
-        from mcubridge.protocol.frame import parse_frame
+        from mcubridge.protocol.frame import parse_frame, get_payload
 
         try:
             # Ensure we have bytes for cobs.decode
@@ -227,7 +227,7 @@ class SerialTransport:
             await self._check_baudrate_fallback()
             return
 
-        cmd_id, seq_id, payload = envelope.command_id, envelope.sequence_id, envelope.payload
+        cmd_id, seq_id, payload = envelope.command_id, envelope.sequence_id, get_payload(envelope)
 
         if self._negotiating and self._negotiation_future and not self._negotiation_future.done():
             if cmd_id == protocol.Command.CMD_SET_BAUDRATE_RESP.value:
@@ -290,9 +290,6 @@ class SerialTransport:
 
     async def send(self, command_id: int, payload: bytes | Message, seq_id: int | None = None) -> bool | bytes:
         """Unified send method with automatic tracking, retries, and optional response return. [FLATTENED]"""
-        if isinstance(payload, Message):
-            payload = payload.SerializeToString()
-
         if not self.writer or self.writer.is_closing():
             return False
 
@@ -346,9 +343,6 @@ class SerialTransport:
 
     async def send_raw(self, command_id: int, payload: bytes | Message, seq_id: int | None = None) -> bool:
         """Low-level send logic without tracking."""
-        if isinstance(payload, Message):
-            payload = payload.SerializeToString()
-
         if not self.writer:
             return False
 

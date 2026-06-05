@@ -105,29 +105,55 @@ class BridgeClass {
                                etl::span<const uint8_t> p = {});
 
   template <typename T>
-  [[nodiscard]] bool send(rpc::StatusCode s, uint16_t seq, const T& packet) {
-    auto res = rpc::Payload::serialize<T>(
-        packet,
-        etl::span<uint8_t>(_transient_buffer.data(), rpc::MAX_PAYLOAD_SIZE));
-    if (res) {
-      return sendFrame(
-          s, seq,
-          etl::span<const uint8_t>(_transient_buffer.data(), res.value()));
+  [[nodiscard]] bool sendSinglePass(uint16_t command_id, uint16_t sequence_id, const T& packet) {
+    const bool is_system = (command_id >= rpc::RPC_STATUS_CODE_MIN &&
+                            command_id <= rpc::RPC_STATUS_CODE_MAX) ||
+                           (command_id >= rpc::RPC_SYSTEM_COMMAND_MIN &&
+                            command_id <= rpc::RPC_SYSTEM_COMMAND_MAX);
+    if (!_tx_enabled && !is_system) return false;
+
+    etl::array<uint8_t, rpc::MAX_FRAME_SIZE> buffer;
+    rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
+    env.version = rpc::PROTOCOL_VERSION;
+    env.command_id = command_id;
+    env.sequence_id = sequence_id;
+    rpc::Payload::set_envelope_field<T>(env, packet);
+    size_t len = rpc::serialize_frame(env, buffer);
+    if (len > 0) {
+      _packet_serial.send(_stream, etl::span<const uint8_t>(buffer.data(), len));
+      return true;
     }
     return false;
   }
 
   template <typename T>
+  [[nodiscard]] bool send(rpc::StatusCode s, uint16_t seq, const T& packet) {
+    return sendSinglePass<T>(rpc::to_underlying(s), seq, packet);
+  }
+
+  template <typename T>
   [[nodiscard]] bool send(rpc::CommandId c, uint16_t seq, const T& packet) {
-    auto res = rpc::Payload::serialize<T>(
-        packet,
-        etl::span<uint8_t>(_transient_buffer.data(), rpc::MAX_PAYLOAD_SIZE));
-    if (res) {
-      return sendFrame(
-          c, seq,
-          etl::span<const uint8_t>(_transient_buffer.data(), res.value()));
+    const uint16_t raw_cmd = rpc::to_underlying(c);
+    const bool is_excluded = (raw_cmd >= rpc::RPC_STATUS_CODE_MIN &&
+                              raw_cmd <= rpc::RPC_STATUS_CODE_MAX) ||
+                             (raw_cmd >= rpc::RPC_SYSTEM_COMMAND_MIN &&
+                              raw_cmd <= rpc::RPC_SYSTEM_COMMAND_MAX);
+    const bool do_encrypt =
+        isSynchronized() && !_shared_secret.empty() && !is_excluded;
+
+    if (do_encrypt) {
+      auto res = rpc::Payload::serialize<T>(
+          packet,
+          etl::span<uint8_t>(_transient_buffer.data(), rpc::MAX_PAYLOAD_SIZE));
+      if (res) {
+        return sendFrame(
+            c, seq,
+            etl::span<const uint8_t>(_transient_buffer.data(), res.value()));
+      }
+      return false;
+    } else {
+      return sendSinglePass<T>(raw_cmd, seq, packet);
     }
-    return false;
   }
 
   using CommandHandler = etl::delegate<void(const rpc_pb_RpcEnvelope&)>;

@@ -44,19 +44,114 @@ inline uint32_t compute(etl::span<const uint8_t> data) {
 
 namespace Payload {
 
+template <typename T>
+inline void set_envelope_field(rpc_pb_RpcEnvelope& env, const T& packet);
+
+#define DEFN_SET_ENVELOPE_FIELD(type, field, tag) \
+template <> \
+inline void set_envelope_field<type>(rpc_pb_RpcEnvelope& env, const type& packet) { \
+  env.which_payload_type = tag; \
+  env.payload_type.field = packet; \
+}
+
+DEFN_SET_ENVELOPE_FIELD(rpc_pb_VersionResponse, version_resp, rpc_pb_RpcEnvelope_version_resp_tag)
+DEFN_SET_ENVELOPE_FIELD(rpc_pb_FreeMemoryResponse, free_memory_resp, rpc_pb_RpcEnvelope_free_memory_resp_tag)
+DEFN_SET_ENVELOPE_FIELD(rpc_pb_Capabilities, capabilities, rpc_pb_RpcEnvelope_capabilities_tag)
+DEFN_SET_ENVELOPE_FIELD(rpc_pb_PinMode, pin_mode, rpc_pb_RpcEnvelope_pin_mode_tag)
+DEFN_SET_ENVELOPE_FIELD(rpc_pb_DigitalWrite, digital_write, rpc_pb_RpcEnvelope_digital_write_tag)
+DEFN_SET_ENVELOPE_FIELD(rpc_pb_AnalogWrite, analog_write, rpc_pb_RpcEnvelope_analog_write_tag)
+DEFN_SET_ENVELOPE_FIELD(rpc_pb_PinRead, pin_read, rpc_pb_RpcEnvelope_pin_read_tag)
+DEFN_SET_ENVELOPE_FIELD(rpc_pb_DigitalReadResponse, digital_read_resp, rpc_pb_RpcEnvelope_digital_read_resp_tag)
+DEFN_SET_ENVELOPE_FIELD(rpc_pb_AnalogReadResponse, analog_read_resp, rpc_pb_RpcEnvelope_analog_read_resp_tag)
+DEFN_SET_ENVELOPE_FIELD(rpc_pb_ConsoleWrite, console_write, rpc_pb_RpcEnvelope_console_write_tag)
+DEFN_SET_ENVELOPE_FIELD(rpc_pb_DatastorePut, datastore_put, rpc_pb_RpcEnvelope_datastore_put_tag)
+DEFN_SET_ENVELOPE_FIELD(rpc_pb_DatastoreGet, datastore_get, rpc_pb_RpcEnvelope_datastore_get_tag)
+DEFN_SET_ENVELOPE_FIELD(rpc_pb_DatastoreGetResponse, datastore_get_resp, rpc_pb_RpcEnvelope_datastore_get_resp_tag)
+DEFN_SET_ENVELOPE_FIELD(rpc_pb_MailboxPush, mailbox_push, rpc_pb_RpcEnvelope_mailbox_push_tag)
+DEFN_SET_ENVELOPE_FIELD(rpc_pb_MailboxProcessed, mailbox_processed, rpc_pb_RpcEnvelope_mailbox_processed_tag)
+DEFN_SET_ENVELOPE_FIELD(rpc_pb_MailboxAvailableResponse, mailbox_available_resp, rpc_pb_RpcEnvelope_mailbox_available_resp_tag)
+DEFN_SET_ENVELOPE_FIELD(rpc_pb_MailboxReadResponse, mailbox_read_resp, rpc_pb_RpcEnvelope_mailbox_read_resp_tag)
+DEFN_SET_ENVELOPE_FIELD(rpc_pb_FileWrite, file_write, rpc_pb_RpcEnvelope_file_write_tag)
+DEFN_SET_ENVELOPE_FIELD(rpc_pb_FileRead, file_read, rpc_pb_RpcEnvelope_file_read_tag)
+DEFN_SET_ENVELOPE_FIELD(rpc_pb_FileRemove, file_remove, rpc_pb_RpcEnvelope_file_remove_tag)
+DEFN_SET_ENVELOPE_FIELD(rpc_pb_FileReadResponse, file_read_resp, rpc_pb_RpcEnvelope_file_read_resp_tag)
+DEFN_SET_ENVELOPE_FIELD(rpc_pb_ProcessRunAsync, process_run_async, rpc_pb_RpcEnvelope_process_run_async_tag)
+DEFN_SET_ENVELOPE_FIELD(rpc_pb_ProcessRunAsyncResponse, process_run_async_resp, rpc_pb_RpcEnvelope_process_run_async_resp_tag)
+DEFN_SET_ENVELOPE_FIELD(rpc_pb_ProcessPoll, process_poll, rpc_pb_RpcEnvelope_process_poll_tag)
+DEFN_SET_ENVELOPE_FIELD(rpc_pb_ProcessPollResponse, process_poll_resp, rpc_pb_RpcEnvelope_process_poll_resp_tag)
+DEFN_SET_ENVELOPE_FIELD(rpc_pb_ProcessKill, process_kill, rpc_pb_RpcEnvelope_process_kill_tag)
+DEFN_SET_ENVELOPE_FIELD(rpc_pb_GenericResponse, generic_resp, rpc_pb_RpcEnvelope_generic_resp_tag)
+DEFN_SET_ENVELOPE_FIELD(rpc_pb_AckPacket, ack_packet, rpc_pb_RpcEnvelope_ack_packet_tag)
+DEFN_SET_ENVELOPE_FIELD(rpc_pb_HandshakeConfig, handshake_config, rpc_pb_RpcEnvelope_handshake_config_tag)
+DEFN_SET_ENVELOPE_FIELD(rpc_pb_SetBaudratePacket, set_baudrate_packet, rpc_pb_RpcEnvelope_set_baudrate_packet_tag)
+DEFN_SET_ENVELOPE_FIELD(rpc_pb_LinkSync, link_sync, rpc_pb_RpcEnvelope_link_sync_tag)
+DEFN_SET_ENVELOPE_FIELD(rpc_pb_EnterBootloader, enter_bootloader, rpc_pb_RpcEnvelope_enter_bootloader_tag)
+DEFN_SET_ENVELOPE_FIELD(rpc_pb_SpiTransfer, spi_transfer, rpc_pb_RpcEnvelope_spi_transfer_tag)
+DEFN_SET_ENVELOPE_FIELD(rpc_pb_SpiTransferResponse, spi_transfer_resp, rpc_pb_RpcEnvelope_spi_transfer_resp_tag)
+DEFN_SET_ENVELOPE_FIELD(rpc_pb_SpiConfig, spi_config, rpc_pb_RpcEnvelope_spi_config_tag)
+
+
 /**
  * @brief Decodes a specific payload type from an envelope.
  */
 template <typename T>
-inline etl::expected<T, FrameError> parse(const rpc_pb_RpcEnvelope& envelope) {
-  T msg = {};
-  pb_istream_t stream = pb_istream_from_buffer(envelope.payload.bytes,
-                                               envelope.payload.size);
-  if (!pb_decode(&stream, rpc::Payload::get_fields<T>(), &msg)) {
-    return etl::unexpected<FrameError>(FrameError::MALFORMED);
-  }
-  return etl::expected<T, FrameError>(msg);
+inline etl::expected<T, FrameError> parse(const rpc_pb_RpcEnvelope& envelope);
+
+#define DEFN_PARSE_SPECIALIZATION(type, field, tag) \
+template <> \
+inline etl::expected<type, FrameError> parse<type>(const rpc_pb_RpcEnvelope& envelope) { \
+  if (envelope.which_payload_type == tag) { \
+    return envelope.payload_type.field; \
+  } \
+  type msg = {}; \
+  if (envelope.which_payload_type == rpc_pb_RpcEnvelope_encrypted_payload_tag) { \
+    pb_istream_t stream = pb_istream_from_buffer( \
+        envelope.payload_type.encrypted_payload.bytes, \
+        envelope.payload_type.encrypted_payload.size); \
+    if (!pb_decode(&stream, rpc::Payload::get_fields<type>(), &msg)) { \
+      return etl::unexpected<FrameError>(FrameError::MALFORMED); \
+    } \
+    return etl::expected<type, FrameError>(msg); \
+  } \
+  return etl::unexpected<FrameError>(FrameError::MALFORMED); \
 }
+
+DEFN_PARSE_SPECIALIZATION(rpc_pb_VersionResponse, version_resp, rpc_pb_RpcEnvelope_version_resp_tag)
+DEFN_PARSE_SPECIALIZATION(rpc_pb_FreeMemoryResponse, free_memory_resp, rpc_pb_RpcEnvelope_free_memory_resp_tag)
+DEFN_PARSE_SPECIALIZATION(rpc_pb_Capabilities, capabilities, rpc_pb_RpcEnvelope_capabilities_tag)
+DEFN_PARSE_SPECIALIZATION(rpc_pb_PinMode, pin_mode, rpc_pb_RpcEnvelope_pin_mode_tag)
+DEFN_PARSE_SPECIALIZATION(rpc_pb_DigitalWrite, digital_write, rpc_pb_RpcEnvelope_digital_write_tag)
+DEFN_PARSE_SPECIALIZATION(rpc_pb_AnalogWrite, analog_write, rpc_pb_RpcEnvelope_analog_write_tag)
+DEFN_PARSE_SPECIALIZATION(rpc_pb_PinRead, pin_read, rpc_pb_RpcEnvelope_pin_read_tag)
+DEFN_PARSE_SPECIALIZATION(rpc_pb_DigitalReadResponse, digital_read_resp, rpc_pb_RpcEnvelope_digital_read_resp_tag)
+DEFN_PARSE_SPECIALIZATION(rpc_pb_AnalogReadResponse, analog_read_resp, rpc_pb_RpcEnvelope_analog_read_resp_tag)
+DEFN_PARSE_SPECIALIZATION(rpc_pb_ConsoleWrite, console_write, rpc_pb_RpcEnvelope_console_write_tag)
+DEFN_PARSE_SPECIALIZATION(rpc_pb_DatastorePut, datastore_put, rpc_pb_RpcEnvelope_datastore_put_tag)
+DEFN_PARSE_SPECIALIZATION(rpc_pb_DatastoreGet, datastore_get, rpc_pb_RpcEnvelope_datastore_get_tag)
+DEFN_PARSE_SPECIALIZATION(rpc_pb_DatastoreGetResponse, datastore_get_resp, rpc_pb_RpcEnvelope_datastore_get_resp_tag)
+DEFN_PARSE_SPECIALIZATION(rpc_pb_MailboxPush, mailbox_push, rpc_pb_RpcEnvelope_mailbox_push_tag)
+DEFN_PARSE_SPECIALIZATION(rpc_pb_MailboxProcessed, mailbox_processed, rpc_pb_RpcEnvelope_mailbox_processed_tag)
+DEFN_PARSE_SPECIALIZATION(rpc_pb_MailboxAvailableResponse, mailbox_available_resp, rpc_pb_RpcEnvelope_mailbox_available_resp_tag)
+DEFN_PARSE_SPECIALIZATION(rpc_pb_MailboxReadResponse, mailbox_read_resp, rpc_pb_RpcEnvelope_mailbox_read_resp_tag)
+DEFN_PARSE_SPECIALIZATION(rpc_pb_FileWrite, file_write, rpc_pb_RpcEnvelope_file_write_tag)
+DEFN_PARSE_SPECIALIZATION(rpc_pb_FileRead, file_read, rpc_pb_RpcEnvelope_file_read_tag)
+DEFN_PARSE_SPECIALIZATION(rpc_pb_FileRemove, file_remove, rpc_pb_RpcEnvelope_file_remove_tag)
+DEFN_PARSE_SPECIALIZATION(rpc_pb_FileReadResponse, file_read_resp, rpc_pb_RpcEnvelope_file_read_resp_tag)
+DEFN_PARSE_SPECIALIZATION(rpc_pb_ProcessRunAsync, process_run_async, rpc_pb_RpcEnvelope_process_run_async_tag)
+DEFN_PARSE_SPECIALIZATION(rpc_pb_ProcessRunAsyncResponse, process_run_async_resp, rpc_pb_RpcEnvelope_process_run_async_resp_tag)
+DEFN_PARSE_SPECIALIZATION(rpc_pb_ProcessPoll, process_poll, rpc_pb_RpcEnvelope_process_poll_tag)
+DEFN_PARSE_SPECIALIZATION(rpc_pb_ProcessPollResponse, process_poll_resp, rpc_pb_RpcEnvelope_process_poll_resp_tag)
+DEFN_PARSE_SPECIALIZATION(rpc_pb_ProcessKill, process_kill, rpc_pb_RpcEnvelope_process_kill_tag)
+DEFN_PARSE_SPECIALIZATION(rpc_pb_GenericResponse, generic_resp, rpc_pb_RpcEnvelope_generic_resp_tag)
+DEFN_PARSE_SPECIALIZATION(rpc_pb_AckPacket, ack_packet, rpc_pb_RpcEnvelope_ack_packet_tag)
+DEFN_PARSE_SPECIALIZATION(rpc_pb_HandshakeConfig, handshake_config, rpc_pb_RpcEnvelope_handshake_config_tag)
+DEFN_PARSE_SPECIALIZATION(rpc_pb_SetBaudratePacket, set_baudrate_packet, rpc_pb_RpcEnvelope_set_baudrate_packet_tag)
+DEFN_PARSE_SPECIALIZATION(rpc_pb_LinkSync, link_sync, rpc_pb_RpcEnvelope_link_sync_tag)
+DEFN_PARSE_SPECIALIZATION(rpc_pb_EnterBootloader, enter_bootloader, rpc_pb_RpcEnvelope_enter_bootloader_tag)
+DEFN_PARSE_SPECIALIZATION(rpc_pb_SpiTransfer, spi_transfer, rpc_pb_RpcEnvelope_spi_transfer_tag)
+DEFN_PARSE_SPECIALIZATION(rpc_pb_SpiTransferResponse, spi_transfer_resp, rpc_pb_RpcEnvelope_spi_transfer_resp_tag)
+DEFN_PARSE_SPECIALIZATION(rpc_pb_SpiConfig, spi_config, rpc_pb_RpcEnvelope_spi_config_tag)
+
 
 /**
  * @brief Encodes a payload directly to a buffer (Zero-Wrapper).

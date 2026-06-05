@@ -87,8 +87,9 @@ rpc_pb_RpcEnvelope make_malformed_payload_frame(uint16_t cmd, uint16_t seq) {
   frame.version = rpc::PROTOCOL_VERSION;
   frame.command_id = cmd;
   frame.sequence_id = seq;
-  frame.payload.size = 1;
-  frame.payload.bytes[0] = 0xC1;
+  frame.which_payload_type = rpc_pb_RpcEnvelope_encrypted_payload_tag;
+  frame.payload_type.encrypted_payload.size = 1;
+  frame.payload_type.encrypted_payload.bytes[0] = 0xC1;
   return frame;
 }
 
@@ -117,7 +118,7 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
                          seq++, []() {
                            rpc::payload::PinMode p;
                            p.pin = 255;
-                           p.mode = 1;
+                           p.mode = rpc_pb_PinModeType_PIN_OUTPUT;
                            return p;
                          }(),
                          buf);
@@ -463,7 +464,7 @@ void test_service_capacity_and_send_fail_edges() {
                          780, []() {
                            rpc::payload::PinMode p;
                            p.pin = 13;
-                           p.mode = 1;
+                           p.mode = rpc_pb_PinModeType_PIN_OUTPUT;
                            return p;
                          }(),
                          frame_buf);

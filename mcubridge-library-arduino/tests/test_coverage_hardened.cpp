@@ -320,7 +320,7 @@ void test_checksum_direct_library_path() {
   f.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_XON);
   f.sequence_id = 0;
   
-  uint32_t crc = rpc::checksum::compute(etl::span<const uint8_t>(f.payload.bytes, f.payload.size)); // Adjusted for new checksum logic
+  uint32_t crc = rpc::checksum::compute(etl::span<const uint8_t>(f.payload_type.encrypted_payload.bytes, f.payload_type.encrypted_payload.size)); // Adjusted for new checksum logic
   (void)crc;
   TEST_ASSERT(true);
 }
@@ -359,7 +359,7 @@ void test_bridge_template_coverage() {
   (void)Bridge.send(rpc::CommandId::CMD_SET_PIN_MODE, 1, []() {
     rpc::payload::PinMode p;
     p.pin = 13;
-    p.mode = 1;
+    p.mode = rpc_pb_PinModeType_PIN_OUTPUT;
     return p;
   }());
 
@@ -381,7 +381,7 @@ void test_bridge_duplicate_packet() {
   f.version = rpc::PROTOCOL_VERSION;
   f.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_DIGITAL_WRITE);
   f.sequence_id = 10;
-  f.payload.size = 2; // dummy
+  f.payload_type.encrypted_payload.size = 2; // dummy
   
   bridge::router::CommandContext ctx(&f, f.command_id, 10, true, true);
   ba.dispatch(f);
@@ -417,7 +417,7 @@ void test_bridge_exhaustive_command_handlers() {
   trigger(rpc::CommandId::CMD_SET_PIN_MODE, []() {
     rpc::payload::PinMode p;
     p.pin = 13;
-    p.mode = 1;
+    p.mode = rpc_pb_PinModeType_PIN_OUTPUT;
     return p;
   }());
   trigger(rpc::CommandId::CMD_DIGITAL_WRITE, []() {

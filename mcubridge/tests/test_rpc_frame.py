@@ -1,6 +1,6 @@
 import pytest
 from mcubridge.protocol import protocol
-from mcubridge.protocol.frame import build_frame, parse_frame
+from mcubridge.protocol.frame import build_frame, parse_frame, get_payload
 from tests.test_constants import TEST_CMD_ID
 
 
@@ -14,7 +14,7 @@ def test_build_and_parse_round_trip() -> None:
     envelope = parse_frame(raw)
     assert envelope.command_id == TEST_CMD_ID
     assert envelope.sequence_id == 0
-    assert envelope.payload == payload
+    assert get_payload(envelope) == payload
 
 
 def test_empty_payload_round_trip() -> None:
@@ -22,7 +22,7 @@ def test_empty_payload_round_trip() -> None:
     envelope = parse_frame(raw)
     assert envelope.command_id == TEST_CMD_ID
     assert envelope.sequence_id == 0
-    assert envelope.payload == b""
+    assert get_payload(envelope) == b""
 
 
 def test_max_payload_round_trip() -> None:
@@ -31,7 +31,7 @@ def test_max_payload_round_trip() -> None:
     envelope = parse_frame(raw)
     assert envelope.command_id == TEST_CMD_ID
     assert envelope.sequence_id == 0
-    assert envelope.payload == payload
+    assert get_payload(envelope) == payload
 
 
 def test_build_rejects_large_payload() -> None:

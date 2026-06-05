@@ -113,7 +113,7 @@ void test_bridge_brute_force_commands() {
   hit(rpc::CommandId::CMD_SET_PIN_MODE, []() {
     rpc::payload::PinMode p;
     p.pin = 99;
-    p.mode = 1;
+    p.mode = rpc_pb_PinModeType_PIN_OUTPUT;
     return p;
   }());
 
@@ -135,7 +135,7 @@ void test_bridge_brute_force_commands() {
   // Mailbox
 
   f .command_id = (uint16_t)rpc::CommandId::CMD_MAILBOX_READ;
-  f .payload.size = 0;
+  f.payload_type.encrypted_payload.size = 0;
   ba.dispatch(f);
 
   f .command_id = (uint16_t)rpc::CommandId::CMD_MAILBOX_AVAILABLE;

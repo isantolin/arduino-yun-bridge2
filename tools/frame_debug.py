@@ -14,7 +14,7 @@ import serialx
 # [SIL-2] Use direct library functions for framing
 from cobs import cobs
 from mcubridge.protocol import protocol
-from mcubridge.protocol.frame import build_frame, parse_frame
+from mcubridge.protocol.frame import build_frame, parse_frame, get_payload
 from mcubridge.protocol.protocol import DEFAULT_BAUDRATE, FRAME_DELIMITER
 from mcubridge.protocol import mcubridge_pb2 as pb
 
@@ -150,7 +150,7 @@ def _print_response(envelope: pb.RpcEnvelope) -> None:
         f"[FrameDebug] --- MCU Response ---\n"
         f"cmd_id=0x{int(envelope.command_id):02X}\n"
         f"seq_id={envelope.sequence_id}\n"
-        f"payload_len={len(envelope.payload)}\n"
+        f"payload_len={len(get_payload(envelope))}\n"
     )
 
 

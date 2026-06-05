@@ -2,6 +2,12 @@ syntax = "proto3";
 
 package rpc.pb;
 
+enum PinModeType {
+    PIN_INPUT = 0;
+    PIN_OUTPUT = 1;
+    PIN_INPUT_PULLUP = 2;
+}
+
 message VersionResponse {
     uint32 major = 1;
     uint32 minor = 2;
@@ -34,7 +40,7 @@ message Capabilities {
 
 message PinMode {
     uint32 pin = 1;
-    uint32 mode = 2;
+    PinModeType mode = 2;
 }
 
 message DigitalWrite {
@@ -193,11 +199,120 @@ message SpiConfig {
     uint32 frequency = 3;
 }
 
+message SupervisorSnapshot {
+    uint32 restarts = 1;
+    double last_failure_unix = 2;
+    string last_exception = 3;
+    double backoff_seconds = 4;
+    bool fatal = 5;
+}
+
+message SystemStatus {
+    double cpu_percent = 1;
+    uint64 memory_total_bytes = 2;
+    uint64 memory_available_bytes = 3;
+    double load_avg_1m = 4;
+    double uptime_seconds = 5;
+}
+
+message SerialLinkSnapshot {
+    bool connected = 1;
+    bool writer_attached = 2;
+    bool synchronised = 3;
+}
+
+message HandshakeSnapshot {
+    bool synchronised = 1;
+    uint32 attempts = 2;
+    uint32 successes = 3;
+    uint32 failures = 4;
+    uint32 failure_streak = 5;
+    string last_error = 6;
+    double last_unix = 7;
+    double last_duration = 8;
+    double backoff_until = 9;
+    double rate_limit_until = 10;
+    uint32 fatal_count = 11;
+    string fatal_reason = 12;
+    string fatal_detail = 13;
+    double fatal_unix = 14;
+    bool pending_nonce = 15;
+    uint32 nonce_length = 16;
+}
+
+message PipelineEvent {
+    string event = 1;
+    uint32 command_id = 2;
+    uint32 attempt = 3;
+    bool ack_received = 4;
+    uint32 status = 5;
+    double timestamp = 6;
+}
+
+message SerialPipelineSnapshot {
+    PipelineEvent inflight = 1;
+    PipelineEvent last_completion = 2;
+}
+
+message SerialFlowSnapshot {
+    uint32 commands_sent = 1;
+    uint32 commands_acked = 2;
+    uint32 retries = 3;
+    uint32 failures = 4;
+    double last_event_unix = 5;
+}
+
+message BridgeSnapshot {
+    SerialLinkSnapshot serial_link = 1;
+    HandshakeSnapshot handshake = 2;
+    SerialPipelineSnapshot serial_pipeline = 3;
+    SerialFlowSnapshot serial_flow = 4;
+    VersionResponse mcu_version = 5;
+    Capabilities capabilities = 6;
+}
+
 message RpcEnvelope {
     uint32 version = 1;
     uint32 command_id = 2;
     uint32 sequence_id = 3;
     bytes nonce = 4;
     bytes tag = 5;
-    bytes payload = 6;
+    oneof payload_type {
+        bytes encrypted_payload = 6;
+        VersionResponse version_resp = 7;
+        FreeMemoryResponse free_memory_resp = 8;
+        Capabilities capabilities = 9;
+        PinMode pin_mode = 10;
+        DigitalWrite digital_write = 11;
+        AnalogWrite analog_write = 12;
+        PinRead pin_read = 13;
+        DigitalReadResponse digital_read_resp = 14;
+        AnalogReadResponse analog_read_resp = 15;
+        ConsoleWrite console_write = 16;
+        DatastorePut datastore_put = 17;
+        DatastoreGet datastore_get = 18;
+        DatastoreGetResponse datastore_get_resp = 19;
+        MailboxPush mailbox_push = 20;
+        MailboxProcessed mailbox_processed = 21;
+        MailboxAvailableResponse mailbox_available_resp = 22;
+        MailboxReadResponse mailbox_read_resp = 23;
+        FileWrite file_write = 24;
+        FileRead file_read = 25;
+        FileRemove file_remove = 26;
+        FileReadResponse file_read_resp = 27;
+        ProcessRunAsync process_run_async = 28;
+        ProcessRunAsyncResponse process_run_async_resp = 29;
+        ProcessPoll process_poll = 30;
+        ProcessPollResponse process_poll_resp = 31;
+        ProcessKill process_kill = 32;
+        GenericResponse generic_resp = 33;
+        AckPacket ack_packet = 34;
+        HandshakeConfig handshake_config = 35;
+        SetBaudratePacket set_baudrate_packet = 36;
+        LinkSync link_sync = 37;
+        EnterBootloader enter_bootloader = 38;
+        SpiTransfer spi_transfer = 39;
+        SpiTransferResponse spi_transfer_resp = 40;
+        SpiConfig spi_config = 41;
+    }
 }

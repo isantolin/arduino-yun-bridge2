@@ -114,7 +114,7 @@ def build_frame(
         if isinstance(payload, Message):
             field_name = _get_envelope_field_name_for_message(payload)
             if field_name:
-                setattr(envelope, field_name, payload)
+                getattr(envelope, field_name).CopyFrom(payload)
             else:
                 envelope.encrypted_payload = payload_bytes
         else:
@@ -177,7 +177,7 @@ def parse_frame(raw_frame_buffer: bytes | bytearray | memoryview, session_key: b
         loop = asyncio.get_running_loop()
         loop.call_soon(lambda env_id=id(envelope): _transient_payloads.pop(env_id, None))
     except RuntimeError:
-        pass
+        loop = None
 
     return envelope
 

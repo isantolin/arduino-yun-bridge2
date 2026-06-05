@@ -330,9 +330,6 @@ class BridgeClass {
   void _handleAnalogRead(const bridge::router::CommandContext& ctx);
   void _handleConsoleWrite(const rpc_pb_ConsoleWrite& m);
   void _handleDataStoreGetResponse(const bridge::router::CommandContext& ctx, const rpc_pb_DatastoreGetResponse& m);
-  void _handleMailboxPush(const rpc_pb_MailboxPush& m);
-  void _handleMailboxReadResponse(const bridge::router::CommandContext& ctx, const rpc_pb_MailboxReadResponse& m);
-  void _handleMailboxAvailableResponse(const bridge::router::CommandContext& ctx, const rpc_pb_MailboxAvailableResponse& m);
   void _handleFileWrite(const bridge::router::CommandContext& ctx, const rpc_pb_FileWrite& m);
   void _handleFileRead(const bridge::router::CommandContext& ctx, const rpc_pb_FileRead& m);
   void _handleFileRemove(const bridge::router::CommandContext& ctx, const rpc_pb_FileRemove& m);

@@ -23,10 +23,6 @@ class MailboxClass {
   static void requestAvailable();
   static void signalProcessed();
 
-  static void _onIncomingData(const rpc::payload::MailboxPush& msg);
-  static void _onIncomingData(const rpc::payload::MailboxReadResponse& msg);
-  static void _onAvailableResponse(const rpc::payload::MailboxAvailableResponse& msg);
-
   static void onLost() {}
   static void onSynchronized() {}
 };

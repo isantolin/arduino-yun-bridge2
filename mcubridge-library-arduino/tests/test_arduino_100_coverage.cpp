@@ -133,12 +133,6 @@ void test_bridge_brute_force_commands() {
   }());
 
   // Mailbox
-  hit(rpc::CommandId::CMD_MAILBOX_PUSH, []() {
-    rpc::payload::MailboxPush p;
-    uint8_t v[] = "v";
-    rpc::payload::copy_to_pb_bytes(p.data, v, 1);
-    return p;
-  }());
 
   f .command_id = (uint16_t)rpc::CommandId::CMD_MAILBOX_READ;
   f .payload.size = 0;
@@ -246,9 +240,7 @@ void test_bridge_send_exhaustive() {
   rpc::payload::copy_to_pb_bytes(dgr.value, data, 1);
   (void)Bridge.send(rpc::CommandId::CMD_DATASTORE_GET_RESP, 1, dgr);
 
-  rpc::payload::MailboxReadResponse mbr;
-  rpc::payload::copy_to_pb_bytes(mbr.content, data, 1);
-  (void)Bridge.send(rpc::CommandId::CMD_MAILBOX_READ_RESP, 1, mbr);
+
 
   rpc::payload::FileReadResponse frr;
   rpc::payload::copy_to_pb_bytes(frr.content, data, 1);

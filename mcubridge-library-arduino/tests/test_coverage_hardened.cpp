@@ -43,16 +43,7 @@ void dummy_cmd_handler(const rpc_pb_RpcEnvelope&) {}
 void dummy_status_handler(rpc::StatusCode, etl::span<const uint8_t>) {}
 }  // namespace
 
-void hit_mailbox_push(etl::span<const uint8_t> data) {
-  rpc::payload::MailboxPush p;
-  rpc::payload::copy_to_pb_bytes(p.data, data.data(), data.size());
-  Mailbox._onIncomingData(p);
-}
-void hit_mailbox_read_resp(etl::span<const uint8_t> data) {
-  rpc::payload::MailboxReadResponse p;
-  rpc::payload::copy_to_pb_bytes(p.content, data.data(), data.size());
-  Mailbox._onIncomingData(p);
-}
+
 
 void test_bridge_emit_status_variants() {
   BiStream stream;
@@ -290,17 +281,7 @@ void test_mailbox_and_datastore_variants() {
   etl::array<uint8_t, 4> mb_data1 = {1, 2, 3, 4};
   Mailbox.push(mb_data1);
 
-  // Test _onIncomingData
-  etl::array<uint8_t, 2> mb_data2 = {0xAA, 0xBB};
-  hit_mailbox_push(mb_data2);
-  etl::array<uint8_t, 2> mb_data3 = {0xCC, 0xDD};
-  hit_mailbox_read_resp(mb_data3);
-  Mailbox._onAvailableResponse({});
-  Mailbox._onAvailableResponse([]() {
-    rpc::payload::MailboxAvailableResponse p;
-    p.count = 7;
-    return p;
-  }());
+
 
   // Coverage for observer notification
   Mailbox.onSynchronized();

@@ -43,23 +43,6 @@ void MailboxClass<T>::signalProcessed() {
   send_mailbox_command(rpc::CommandId::CMD_MAILBOX_PROCESSED);
 }
 
-template <typename T>
-void MailboxClass<T>::_onIncomingData(const rpc::payload::MailboxPush& msg) {
-  (void)msg;
-}
-
-template <typename T>
-void MailboxClass<T>::_onIncomingData(
-    const rpc::payload::MailboxReadResponse& msg) {
-  (void)msg;
-}
-
-template <typename T>
-void MailboxClass<T>::_onAvailableResponse(
-    const rpc::payload::MailboxAvailableResponse& msg) {
-  (void)msg;
-}
-
 template class MailboxClass<void>;
 MailboxType Mailbox;
 

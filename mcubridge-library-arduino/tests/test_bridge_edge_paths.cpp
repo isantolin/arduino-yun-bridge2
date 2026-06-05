@@ -147,37 +147,6 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
       buf);
   ba.dispatch(ds);
 
-  auto mpush = make_payload_frame(
-      rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH), seq++,
-      []() {
-        rpc::payload::MailboxPush p;
-        uint8_t v[] = {1, 2, 3, 4};
-        rpc::payload::copy_to_pb_bytes(p.data, v, 4);
-        return p;
-      }(),
-      buf);
-  ba.dispatch(mpush);
-
-  auto mread = make_payload_frame(
-      rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_READ_RESP), seq++,
-      []() {
-        rpc::payload::MailboxReadResponse p;
-        uint8_t v[] = {1, 2, 3, 4};
-        rpc::payload::copy_to_pb_bytes(p.content, v, 4);
-        return p;
-      }(),
-      buf);
-  ba.dispatch(mread);
-
-  auto mavl = make_payload_frame(
-      rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP), seq++,
-      []() {
-        rpc::payload::MailboxAvailableResponse p;
-        p.count = 7;
-        return p;
-      }(),
-      buf);
-  ba.dispatch(mavl);
 
   auto fw = make_payload_frame(
       rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE), seq++,

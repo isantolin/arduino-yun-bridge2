@@ -162,34 +162,7 @@ void test_bridge_coverage() {
   printf("  - Step 6: Mailbox\n");
   uint8_t mbox_data[32] = {0};
   (void)Mailbox.push(etl::span<const uint8_t>(mbox_data, 3));
-  rpc::payload::MailboxPush mpush;
-  rpc::payload::copy_to_pb_bytes(mpush.data, mbox_data, 3);
-  Mailbox._onIncomingData(mpush);
 
-  rpc_pb_RpcEnvelope f_mp = {};
-  f_mp.command_id = (uint16_t)rpc::CommandId::CMD_MAILBOX_PUSH;
-  bridge::test::set_pb_payload(f_mp, mpush);
-  ba.dispatch(f_mp);
-
-  rpc::payload::MailboxReadResponse mread;
-  rpc::payload::copy_to_pb_bytes(mread.content, mbox_data, 3);
-  Mailbox._onIncomingData(mread);
-
-  rpc_pb_RpcEnvelope f_mr = {};
-  f_mr.command_id =
-      (uint16_t)rpc::CommandId::CMD_MAILBOX_READ_RESP;
-  bridge::test::set_pb_payload(f_mr, mread);
-  ba.dispatch(f_mr);
-
-  rpc::payload::MailboxAvailableResponse mavl;
-  mavl.count = 3;
-  Mailbox._onAvailableResponse(mavl);
-
-  rpc_pb_RpcEnvelope f_ma = {};
-  f_ma.command_id =
-      (uint16_t)rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP;
-  bridge::test::set_pb_payload(f_ma, mavl);
-  ba.dispatch(f_ma);
 
   Mailbox.onLost();
   Mailbox.requestRead();

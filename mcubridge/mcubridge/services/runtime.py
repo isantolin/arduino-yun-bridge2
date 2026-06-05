@@ -5,8 +5,8 @@ from mcubridge.protocol import mcubridge_pb2 as pb
 
 import asyncio
 import collections
-import itertools
 import os
+import sqlite3
 import signal
 import shlex
 import time
@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast, Final
 
 import msgspec
+import diskcache
 import structlog
 from google.protobuf.message import DecodeError as ProtobufDecodeError
 
@@ -97,7 +98,7 @@ class BridgeService:
         self._storage_lock, self._mcu_read_lock, self._pending_mcu_read = asyncio.Lock(), asyncio.Lock(), None
         self._process_slots = asyncio.Semaphore(int(state.process_max_concurrent))
         self._mqtt_publish_lock = asyncio.Lock()
-        self._mqtt_spool_sequence = itertools.count(1)
+        self._mqtt_spool = diskcache.Deque(directory=self.config.mqtt_spool_dir)
 
         # [SIL-2] O(1) MCU Dispatch Registry
         self.mcu_registry: dict[int, McuHandler] = self._setup_mcu_registry()
@@ -223,12 +224,6 @@ class BridgeService:
     def _mqtt_spool_dir(self) -> Path:
         return Path(self.config.mqtt_spool_dir)
 
-    def _list_mqtt_spool_files(self) -> list[Path]:
-        spool_dir = self._mqtt_spool_dir()
-        if not spool_dir.exists():
-            return []
-        return sorted((path for path in spool_dir.iterdir() if path.is_file() and path.suffix == ".msgpack"))
-
     def _mark_mqtt_spool_failure(self, reason: str) -> None:
         self.state.mqtt_spool_degraded = True
         self.state.mqtt_spool_failure_reason = reason
@@ -238,74 +233,110 @@ class BridgeService:
         self.state.mqtt_spool_failure_reason = None
         self.state.mqtt_spool_pending_messages = pending_count
 
-    async def _trim_mqtt_spool_locked(self) -> None:
-        if self.state.mqtt_queue_limit <= 0:
-            return
-        files = await asyncio.to_thread(self._list_mqtt_spool_files)
-        overflow = len(files) - self.state.mqtt_queue_limit + 1
-        if overflow <= 0:
-            return
-        for path in files[:overflow]:
-            try:
-                await asyncio.to_thread(path.unlink)
-            except (FileNotFoundError, OSError) as e:
-                logger.debug("MQTT spool file unlink notice", path=str(path), error=e)
-            self.state.mqtt_spool_dropped_limit += 1
-        self.state.mqtt_spool_trim_events += 1
-        self.state.mqtt_spool_last_trim_unix = time.time()
-
     async def _spool_mqtt_message_locked(self, message: QueuedPublish) -> bool:
-        spool_dir = self._mqtt_spool_dir()
         try:
-            await asyncio.to_thread(spool_dir.mkdir, parents=True, exist_ok=True)
-            await self._trim_mqtt_spool_locked()
-            spool_path = spool_dir / f"{time.time_ns():020d}-{next(self._mqtt_spool_sequence):06d}.msgpack"
+            if self.state.mqtt_queue_limit > 0:
+                spool_len = await asyncio.to_thread(len, self._mqtt_spool)
+                while spool_len >= self.state.mqtt_queue_limit:
+                    try:
+                        popleft_fn = cast(Callable[[], Any], getattr(self._mqtt_spool, "popleft"))
+                        await asyncio.to_thread(popleft_fn)
+                        self.state.mqtt_spool_dropped_limit += 1
+                    except IndexError as exc:
+                        logger.error("Spool popped while empty during limit check", error=str(exc))
+                        break
+                    except (OSError, sqlite3.Error) as exc:
+                        logger.error("Database error during spool popleft", error=str(exc))
+                        break
+                    spool_len = await asyncio.to_thread(len, self._mqtt_spool)
+
+                if self.state.mqtt_spool_dropped_limit > 0:
+                    self.state.mqtt_spool_trim_events += 1
+                    self.state.mqtt_spool_last_trim_unix = time.time()
+
             encoded = msgspec.msgpack.encode(message)
-            await asyncio.to_thread(spool_path.write_bytes, encoded)
-            pending = len(await asyncio.to_thread(self._list_mqtt_spool_files))
-            self._mark_mqtt_spool_healthy(pending)
+            append_fn = cast(Callable[[bytes], Any], getattr(self._mqtt_spool, "append"))
+            await asyncio.to_thread(append_fn, encoded)
+
+            pending_count = await asyncio.to_thread(len, self._mqtt_spool)
+            self._mark_mqtt_spool_healthy(pending_count)
             return True
-        except OSError as exc:
+        except (OSError, sqlite3.Error) as exc:
             self._mark_mqtt_spool_failure(str(exc))
+            return False
+        except msgspec.MsgspecError as exc:
+            logger.error("Serialization failure for spool message", error=str(exc))
             return False
 
     async def _flush_mqtt_spool_locked(self) -> None:
-        if not self._mqtt_client:
+        if not self._mqtt_client or not self._mqtt_spool:
             return
+
         try:
-            files = await asyncio.to_thread(self._list_mqtt_spool_files)
-        except OSError as exc:
+            spool_len = await asyncio.to_thread(len, self._mqtt_spool)
+        except (OSError, sqlite3.Error) as exc:
             self._mark_mqtt_spool_failure(str(exc))
             return
 
-        for path in files:
+        while spool_len > 0:
             try:
-                encoded = await asyncio.to_thread(path.read_bytes)
+
+                def peek_fn():
+                    return cast(bytes, self._mqtt_spool[0])
+
+                encoded = await asyncio.to_thread(peek_fn)
                 queued = msgspec.msgpack.decode(encoded, type=QueuedPublish)
-            except FileNotFoundError:
-                continue
-            except (OSError, ValueError, TypeError, msgspec.MsgspecError) as exc:
-                logger.warning("Dropping corrupt MQTT spool entry", path=str(path), error=str(exc))
+            except IndexError as exc:
+                logger.warning("Spool is empty during peek", error=str(exc))
+                break
+            except (ValueError, TypeError, msgspec.MsgspecError) as exc:
+                logger.warning("Dropping corrupt MQTT spool entry", error=str(exc))
+                try:
+                    spool_len = await asyncio.to_thread(len, self._mqtt_spool)
+                    if spool_len > 0:
+                        popleft_fn = cast(Callable[[], Any], getattr(self._mqtt_spool, "popleft"))
+                        await asyncio.to_thread(popleft_fn)
+                except IndexError as pop_exc:
+                    logger.error("Failed to pop corrupt entry", error=str(pop_exc))
+                except (OSError, sqlite3.Error) as pop_exc:
+                    logger.error("Database error while popping corrupt entry", error=str(pop_exc))
                 self.state.mqtt_spool_corrupt_dropped += 1
                 try:
-                    await asyncio.to_thread(path.unlink)
-                except (FileNotFoundError, OSError) as e:
-                    logger.debug("MQTT spool file unlink notice", path=str(path), error=e)
+                    spool_len = await asyncio.to_thread(len, self._mqtt_spool)
+                except (OSError, sqlite3.Error):
+                    break
                 continue
+            except (OSError, sqlite3.Error) as exc:
+                self._mark_mqtt_spool_failure(str(exc))
+                break
 
             if not await self._publish_mqtt_message(queued):
                 break
 
             try:
-                await asyncio.to_thread(path.unlink)
-            except (FileNotFoundError, OSError) as e:
-                logger.debug("MQTT spool file unlink notice", path=str(path), error=e)
+                popleft_fn = cast(Callable[[], Any], getattr(self._mqtt_spool, "popleft"))
+                await asyncio.to_thread(popleft_fn)
+            except IndexError as exc:
+                logger.warning("Spool was empty during popleft", error=str(exc))
+                break
+            except (OSError, sqlite3.Error) as exc:
+                self._mark_mqtt_spool_failure(str(exc))
+                break
 
-        pending = len(await asyncio.to_thread(self._list_mqtt_spool_files))
-        if not self.state.mqtt_spool_degraded:
-            self._mark_mqtt_spool_healthy(pending)
-        else:
-            self.state.mqtt_spool_pending_messages = pending
+            try:
+                spool_len = await asyncio.to_thread(len, self._mqtt_spool)
+            except (OSError, sqlite3.Error) as exc:
+                self._mark_mqtt_spool_failure(str(exc))
+                break
+
+        try:
+            pending_count = await asyncio.to_thread(len, self._mqtt_spool)
+            if not self.state.mqtt_spool_degraded:
+                self._mark_mqtt_spool_healthy(pending_count)
+            else:
+                self.state.mqtt_spool_pending_messages = pending_count
+        except (OSError, sqlite3.Error) as exc:
+            self._mark_mqtt_spool_failure(str(exc))
 
     async def _publish_mqtt_message(self, message: QueuedPublish) -> bool:
         if not self._mqtt_client:

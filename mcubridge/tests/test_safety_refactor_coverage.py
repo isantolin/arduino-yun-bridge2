@@ -55,6 +55,8 @@ async def test_context_cleanup_coverage(real_config: RuntimeConfig) -> None:
 
 @pytest.mark.asyncio
 async def test_runtime_safety_coverage(real_config: RuntimeConfig) -> None:
+    import sqlite3
+
     state = create_runtime_state(real_config)
     serial = AsyncMock(spec=SerialTransport)
     service = BridgeService(real_config, state, serial)
@@ -63,15 +65,14 @@ async def test_runtime_safety_coverage(real_config: RuntimeConfig) -> None:
     with patch.object(state.mqtt_publish_queue, "get_nowait", side_effect=asyncio.QueueEmpty()):
         await service.enqueue_mqtt(QueuedPublish(topic_name="test", payload=b""))
 
-    # Trigger FileNotFoundError in spool unlink
-    from pathlib import Path
+    # Mock Deque methods to throw sqlite3.Error for error branch coverage
+    spool = getattr(service, "_mqtt_spool")
+    with patch.object(spool, "append", side_effect=sqlite3.Error("DB error")):
+        success = await getattr(service, "_spool_mqtt_message_locked")(QueuedPublish(topic_name="test", payload=b""))
+        assert success is False
 
-    mock_path = MagicMock(spec=Path)
-    # We need to reach the point where unlink is called.
-    with patch.object(service, "_list_mqtt_spool_files", return_value=[mock_path]):
-        with patch("asyncio.to_thread", side_effect=[[mock_path], FileNotFoundError()]):
-            # Accessing private method for coverage
-            await getattr(service, "_trim_mqtt_spool_locked")()
+    with patch("asyncio.to_thread", side_effect=sqlite3.Error("DB error")):
+        await getattr(service, "_flush_mqtt_spool_locked")()
 
 
 @pytest.mark.asyncio

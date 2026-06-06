@@ -236,3 +236,12 @@ async def test_peeking_or_popping_errors(real_config: RuntimeConfig) -> None:
     finally:
         service.cleanup()
         state.cleanup()
+
+@pytest.mark.asyncio
+async def test_mailbox_queue_close_error(real_config: RuntimeConfig) -> None:
+    state = create_runtime_state(real_config)
+    class FakeCache:
+        def close(self):
+            raise OSError("mock error")
+    state.mailbox_queue.cache = FakeCache()
+    _replace_mailbox_queue(state, collections.deque())

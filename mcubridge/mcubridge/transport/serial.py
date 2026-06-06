@@ -63,7 +63,7 @@ class McuService(Protocol):
 
     async def on_serial_disconnected(self) -> None: ...
 
-    async def handle_mcu_frame(self, command_id: int, sequence_id: int, payload: bytes) -> None: ...
+    async def handle_mcu_frame(self, command_id: int, sequence_id: int, payload: bytes | Message) -> None: ...
 
     def register_serial_sender(self, sender: Callable[[int, bytes, int | None], Awaitable[bool | bytes]]) -> None: ...
 
@@ -256,7 +256,7 @@ class SerialTransport:
         self.state.metrics.serial_bytes_received.inc(len(encoded_packet))
         self.state.metrics.serial_frames_received.inc()
 
-    def _correlate_frame(self, command_id: int, payload: bytes) -> None:
+    def _correlate_frame(self, command_id: int, payload: bytes | Message) -> None:
         pending = self._current
         if pending is None:
             return
@@ -264,7 +264,10 @@ class SerialTransport:
             ack_target = pending.command_id
             if payload:
                 try:
-                    ack_target = pb.AckPacket.FromString(payload).command_id
+                    if isinstance(payload, Message):
+                        ack_target = getattr(payload, "command_id", ack_target)
+                    else:
+                        ack_target = pb.AckPacket.FromString(payload).command_id
                 except (ProtobufDecodeError, TypeError, ValueError) as e:
                     logger.warning("Failed to decode MCU ACK payload", error=e)
             if ack_target == pending.command_id:

@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any, cast, Final
 import msgspec
 import diskcache
 import structlog
-from google.protobuf.message import DecodeError as ProtobufDecodeError
+from google.protobuf.message import DecodeError as ProtobufDecodeError, Message
 
 import aiomqtt
 
@@ -61,7 +61,7 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger("mcubridge.service")
 
-McuHandler = Callable[[int, bytes], Coroutine[Any, Any, bool | bytes | None]]
+McuHandler = Callable[[int, bytes | Message], Coroutine[Any, Any, bool | bytes | None]]
 
 _PRE_SYNC_ALLOWED_COMMANDS: Final = {
     Command.CMD_LINK_SYNC_RESP.value,
@@ -168,10 +168,13 @@ class BridgeService:
         }
 
     def _gen_handler(self, packet_type: type[Any], callback: Callable[[Any], Awaitable[Any]]) -> McuHandler:
-        async def _handler(seq: int, payload: bytes) -> bool | None:
+        async def _handler(seq: int, payload: bytes | Message) -> bool | None:
             try:
-                p = packet_type()
-                p.ParseFromString(payload)
+                if isinstance(payload, Message):
+                    p = payload
+                else:
+                    p = packet_type()
+                    p.ParseFromString(payload)
                 res = await callback(p)
                 return True if res is None else res
             except (msgspec.MsgspecError, ValueError, TypeError, ProtobufDecodeError) as exc:
@@ -181,7 +184,7 @@ class BridgeService:
         return _handler
 
     def _make_status_handler(self, status: Status) -> McuHandler:
-        async def _handler(seq: int, payload: bytes) -> bool | None:
+        async def _handler(seq: int, payload: bytes | Message) -> bool | None:
             await self._handle_mcu_status(seq, status, payload)
             return True
 
@@ -465,7 +468,7 @@ class BridgeService:
 
     # --- Dispatchers ---
 
-    async def handle_mcu_frame(self, command_id: int, sequence_id: int, payload: bytes) -> None:
+    async def handle_mcu_frame(self, command_id: int, sequence_id: int, payload: bytes | Message) -> None:
         serial = self.serial
         if not serial:
             return

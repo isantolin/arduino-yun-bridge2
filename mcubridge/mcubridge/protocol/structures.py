@@ -5,6 +5,7 @@ Binary parsing uses stdlib struct; high-level schemas use Msgspec (SIL-2).
 """
 
 from __future__ import annotations
+from google.protobuf.message import Message
 from . import mcubridge_pb2 as pb
 
 import asyncio
@@ -615,7 +616,6 @@ class QueuedPublish(msgspec.Struct, frozen=True):
     message_expiry_interval: int | None = None
     response_topic: str | None = None
     correlation_data: bytes | None = None
-    response_payload: bytes | None = None
     user_properties: tuple[UserProperty, ...] = ()
     subscription_identifier: tuple[int, ...] | None = None
     topic_alias: int | None = None
@@ -651,9 +651,9 @@ class PendingCommand(msgspec.Struct):
     ack_received: bool = False
     reply_topic: str | None = None
     correlation_data: bytes | None = None
-    response_payload: bytes | None = None
+    response_payload: bytes | Message | None = None
 
-    def mark_success(self, payload: bytes | None = None) -> None:
+    def mark_success(self, payload: bytes | Message | None = None) -> None:
         self.response_payload = payload
         self.success = True
         if not self.completion.is_set():

@@ -30,7 +30,7 @@ _CRC_SIZE: Final = protocol.CRC_SIZE
 
 class DecodedFrame(msgspec.Struct):
     envelope: pb.RpcEnvelope
-    payload: bytes
+    payload: bytes | Message
 
 
 _MAP: Final[dict[str, str]] = {
@@ -45,7 +45,7 @@ def _get_envelope_field_name_for_message(msg: Message) -> str | None:
 def build_frame(
     command_id: int,
     sequence_id: int,
-    payload: bytes | Message = b"",
+    payload: bytes | Message | Message = b"",
     nonce: bytes | None = None,
     tag: bytes | None = None,
     session_key: bytes | None = None,
@@ -136,7 +136,7 @@ def parse_frame(raw_frame_buffer: bytes | bytearray | memoryview, session_key: b
         if active_field == "encrypted_payload":
             decrypted = envelope.encrypted_payload
         elif active_field:
-            decrypted = getattr(envelope, active_field).SerializeToString()
+            decrypted = getattr(envelope, active_field)
         else:
             decrypted = b""
 

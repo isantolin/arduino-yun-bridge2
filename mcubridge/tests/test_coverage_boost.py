@@ -50,8 +50,11 @@ def test_frame_coverage_boost() -> None:
     frame_req = build_frame(command_id=5, sequence_id=3, payload=req)
     parsed_req = parse_frame(frame_req)
     assert parsed_req.envelope.WhichOneof("payload_type") == "digital_write"
-    assert parsed_req.payload == req.SerializeToString()
-
+    if isinstance(parsed_req.payload, google.protobuf.message.Message):
+        assert parsed_req.payload == req
+    else:
+        assert parsed_req.payload == req.SerializeToString()
+        
     # 5. parse_frame with empty active field in payload_type
     envelope_empty = pb.RpcEnvelope(version=protocol.PROTOCOL_VERSION, command_id=10, sequence_id=4)
     body_empty = envelope_empty.SerializeToString()

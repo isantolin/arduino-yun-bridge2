@@ -590,6 +590,7 @@ def build_mqtt_properties(message: QueuedPublish) -> Properties:
         "response_topic": "ResponseTopic",
         "correlation_data": "CorrelationData",
         "user_properties": "UserProperty",
+        "topic_alias": "TopicAlias",
     }
     for field, paho_name in _MAP.items():
         val = getattr(message, field)
@@ -617,6 +618,7 @@ class QueuedPublish(msgspec.Struct, frozen=True):
     response_payload: bytes | None = None
     user_properties: tuple[UserProperty, ...] = ()
     subscription_identifier: tuple[int, ...] | None = None
+    topic_alias: int | None = None
 
 
 # --- Process Service Structures ---

@@ -95,6 +95,8 @@ class BridgeService:
     _mqtt_publish_lock: asyncio.Lock
     _mqtt_spool: diskcache.Deque | None
     mcu_registry: dict[int, McuHandler]
+    _topic_aliases: dict[str, int]
+    _next_alias_id: int
 
     def __init__(self, config: RuntimeConfig, state: RuntimeState, serial: SerialTransport) -> None:
         self.config, self.state, self.serial = config, state, serial
@@ -116,6 +118,8 @@ class BridgeService:
         self._process_slots = asyncio.Semaphore(int(state.process_max_concurrent))
         self._mqtt_publish_lock = asyncio.Lock()
         self._mqtt_spool = diskcache.Deque(directory=self.config.mqtt_spool_dir)
+        self._topic_aliases = {}
+        self._next_alias_id = 1
 
         # [SIL-2] O(1) MCU Dispatch Registry
         self.mcu_registry: dict[int, McuHandler] = self._setup_mcu_registry(serial)
@@ -190,6 +194,8 @@ class BridgeService:
 
     def set_mqtt_client(self, client: aiomqtt.Client | None) -> None:
         self._mqtt_client = client
+        self._topic_aliases.clear()
+        self._next_alias_id = 1
 
     async def enqueue_mqtt(self, message: QueuedPublish, *, reply_context: Message | None = None) -> None:
         resolved_message = self._resolve_reply_message(message, reply_context)
@@ -365,13 +371,41 @@ class BridgeService:
         if not self._mqtt_client:
             return False
 
+        topic_alias_max = 0
+        client_obj = getattr(self._mqtt_client, "_client", None)
+        if client_obj is not None:
+            connack_props = getattr(client_obj, "_connack_properties", None)
+            if connack_props is not None:
+                val = getattr(connack_props, "TopicAliasMaximum", 0)
+                if type(val) is int:
+                    topic_alias_max = val
+
+        pub_message = message
+        if topic_alias_max > 0:
+            if message.topic_name in self._topic_aliases:
+                alias_id = self._topic_aliases[message.topic_name]
+                pub_message = msgspec.structs.replace(
+                    message,
+                    topic_name="",
+                    topic_alias=alias_id,
+                )
+            elif message.topic_name:
+                if self._next_alias_id <= topic_alias_max:
+                    alias_id = self._next_alias_id
+                    self._topic_aliases[message.topic_name] = alias_id
+                    self._next_alias_id += 1
+                    pub_message = msgspec.structs.replace(
+                        message,
+                        topic_alias=alias_id,
+                    )
+
         try:
             await self._mqtt_client.publish(
-                message.topic_name,
-                message.payload,
-                qos=int(message.qos),
-                retain=message.retain,
-                properties=structures.build_mqtt_properties(message),
+                pub_message.topic_name,
+                pub_message.payload,
+                qos=int(pub_message.qos),
+                retain=pub_message.retain,
+                properties=structures.build_mqtt_properties(pub_message),
             )
             self.state.metrics.mqtt_messages_published.inc()
             return True

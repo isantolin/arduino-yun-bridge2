@@ -167,3 +167,171 @@ async def test_handle_mqtt_pin_overflow_reports_error() -> None:
         mock_serial.send.assert_not_called()
     finally:
         state.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_mqtt_topic_aliases() -> None:
+    config = _make_config()
+    state = create_runtime_state(config)
+    try:
+        mock_serial = AsyncMock(spec=SerialTransport)
+        service = BridgeService(config, state, mock_serial)
+
+        # 1. Setup mock client with TopicAliasMaximum = 2
+        mock_client = AsyncMock()
+        mock_paho_client = AsyncMock()
+        mock_connack_props = AsyncMock()
+        mock_connack_props.TopicAliasMaximum = 2
+        mock_paho_client._connack_properties = mock_connack_props
+        mock_client._client = mock_paho_client
+
+        service.set_mqtt_client(mock_client)
+
+        # Publish Topic A (first time)
+        msg_a1 = QueuedPublish(topic_name="topic/A", payload=b"payload_a1")
+        await service.enqueue_mqtt(msg_a1)
+
+        # Publish Topic A (second time)
+        msg_a2 = QueuedPublish(topic_name="topic/A", payload=b"payload_a2")
+        await service.enqueue_mqtt(msg_a2)
+
+        # Publish Topic B (first time)
+        msg_b1 = QueuedPublish(topic_name="topic/B", payload=b"payload_b1")
+        await service.enqueue_mqtt(msg_b1)
+
+        # Publish Topic B (second time)
+        msg_b2 = QueuedPublish(topic_name="topic/B", payload=b"payload_b2")
+        await service.enqueue_mqtt(msg_b2)
+
+        # Verify publish calls
+        assert mock_client.publish.call_count == 4
+
+        # Call 1: topic/A with alias 1
+        args_1, kwargs_1 = mock_client.publish.call_args_list[0]
+        assert args_1[0] == "topic/A"
+        assert args_1[1] == b"payload_a1"
+        assert kwargs_1["properties"].TopicAlias == 1
+
+        # Call 2: empty topic with alias 1
+        args_2, kwargs_2 = mock_client.publish.call_args_list[1]
+        assert args_2[0] == ""
+        assert args_2[1] == b"payload_a2"
+        assert kwargs_2["properties"].TopicAlias == 1
+
+        # Call 3: topic/B with alias 2
+        args_3, kwargs_3 = mock_client.publish.call_args_list[2]
+        assert args_3[0] == "topic/B"
+        assert args_3[1] == b"payload_b1"
+        assert kwargs_3["properties"].TopicAlias == 2
+
+        # Call 4: empty topic with alias 2
+        args_4, kwargs_4 = mock_client.publish.call_args_list[3]
+        assert args_4[0] == ""
+        assert args_4[1] == b"payload_b2"
+        assert kwargs_4["properties"].TopicAlias == 2
+
+        # 2. Test Reset-on-reconnect behavior
+        mock_client_new = AsyncMock()
+        mock_paho_client_new = AsyncMock()
+        mock_connack_props_new = AsyncMock()
+        mock_connack_props_new.TopicAliasMaximum = 2
+        mock_paho_client_new._connack_properties = mock_connack_props_new
+        mock_client_new._client = mock_paho_client_new
+
+        service.set_mqtt_client(mock_client_new)
+
+        # Publish Topic A (first time after reset)
+        await service.enqueue_mqtt(msg_a1)
+
+        assert mock_client_new.publish.call_count == 1
+        args_new, kwargs_new = mock_client_new.publish.call_args_list[0]
+        # Should have full topic and alias 1 again
+        assert args_new[0] == "topic/A"
+        assert kwargs_new["properties"].TopicAlias == 1
+    finally:
+        state.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_mqtt_topic_aliases_limit_boundary() -> None:
+    config = _make_config()
+    state = create_runtime_state(config)
+    try:
+        mock_serial = AsyncMock(spec=SerialTransport)
+        service = BridgeService(config, state, mock_serial)
+
+        # Setup mock client with TopicAliasMaximum = 1
+        mock_client = AsyncMock()
+        mock_paho_client = AsyncMock()
+        mock_connack_props = AsyncMock()
+        mock_connack_props.TopicAliasMaximum = 1
+        mock_paho_client._connack_properties = mock_connack_props
+        mock_client._client = mock_paho_client
+        service.set_mqtt_client(mock_client)
+
+        # Topic A -> mapped to alias 1
+        await service.enqueue_mqtt(QueuedPublish(topic_name="topic/A", payload=b"a1"))
+        # Topic B -> no room, published normally (no alias)
+        await service.enqueue_mqtt(QueuedPublish(topic_name="topic/B", payload=b"b1"))
+        # Topic A again -> alias 1 (empty topic)
+        await service.enqueue_mqtt(QueuedPublish(topic_name="topic/A", payload=b"a2"))
+        # Topic B again -> no room, published normally (no alias)
+        await service.enqueue_mqtt(QueuedPublish(topic_name="topic/B", payload=b"b2"))
+
+        assert mock_client.publish.call_count == 4
+
+        # Topic A 1st: full topic, alias 1
+        args_1, kwargs_1 = mock_client.publish.call_args_list[0]
+        assert args_1[0] == "topic/A"
+        assert kwargs_1["properties"].TopicAlias == 1
+
+        # Topic B 1st: full topic, no alias
+        args_2, kwargs_2 = mock_client.publish.call_args_list[1]
+        assert args_2[0] == "topic/B"
+        assert not hasattr(kwargs_2["properties"], "TopicAlias") or kwargs_2["properties"].TopicAlias is None
+
+        # Topic A 2nd: empty topic, alias 1
+        args_3, kwargs_3 = mock_client.publish.call_args_list[2]
+        assert args_3[0] == ""
+        assert kwargs_3["properties"].TopicAlias == 1
+
+        # Topic B 2nd: full topic, no alias
+        args_4, kwargs_4 = mock_client.publish.call_args_list[3]
+        assert args_4[0] == "topic/B"
+        assert not hasattr(kwargs_4["properties"], "TopicAlias") or kwargs_4["properties"].TopicAlias is None
+    finally:
+        state.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_mqtt_topic_aliases_disabled() -> None:
+    config = _make_config()
+    state = create_runtime_state(config)
+    try:
+        mock_serial = AsyncMock(spec=SerialTransport)
+        service = BridgeService(config, state, mock_serial)
+
+        # Setup mock client with TopicAliasMaximum = 0 (or missing)
+        mock_client = AsyncMock()
+        mock_paho_client = AsyncMock()
+        mock_connack_props = AsyncMock()
+        mock_connack_props.TopicAliasMaximum = 0
+        mock_paho_client._connack_properties = mock_connack_props
+        mock_client._client = mock_paho_client
+        service.set_mqtt_client(mock_client)
+
+        await service.enqueue_mqtt(QueuedPublish(topic_name="topic/A", payload=b"a1"))
+        await service.enqueue_mqtt(QueuedPublish(topic_name="topic/A", payload=b"a2"))
+
+        assert mock_client.publish.call_count == 2
+
+        # Both should have full topic and no TopicAlias property set
+        args_1, kwargs_1 = mock_client.publish.call_args_list[0]
+        assert args_1[0] == "topic/A"
+        assert not hasattr(kwargs_1["properties"], "TopicAlias") or kwargs_1["properties"].TopicAlias is None
+
+        args_2, kwargs_2 = mock_client.publish.call_args_list[1]
+        assert args_2[0] == "topic/A"
+        assert not hasattr(kwargs_2["properties"], "TopicAlias") or kwargs_2["properties"].TopicAlias is None
+    finally:
+        state.cleanup()

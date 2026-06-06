@@ -11,13 +11,13 @@ between the Linux daemon and the Arduino MCU.
 
 from __future__ import annotations
 
-import asyncio
 from binascii import crc32
 from typing import Final
 
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from google.protobuf.message import DecodeError, Message
+import msgspec
 
 from mcubridge.protocol import mcubridge_pb2 as pb
 
@@ -27,48 +27,19 @@ _NONCE_SIZE: Final = protocol.AEAD_NONCE_SIZE
 _TAG_SIZE: Final = protocol.AEAD_TAG_SIZE
 _CRC_SIZE: Final = protocol.CRC_SIZE
 
-_transient_payloads: dict[int, bytes] = {}
+
+class DecodedFrame(msgspec.Struct):
+    envelope: pb.RpcEnvelope
+    payload: bytes
+
+
+_MAP: Final[dict[str, str]] = {
+    field.message_type.name: field.name for field in pb.RpcEnvelope.DESCRIPTOR.fields if field.message_type
+}
 
 
 def _get_envelope_field_name_for_message(msg: Message) -> str | None:
-    _MAP = {
-        "VersionResponse": "version_resp",
-        "FreeMemoryResponse": "free_memory_resp",
-        "Capabilities": "capabilities",
-        "PinMode": "pin_mode",
-        "DigitalWrite": "digital_write",
-        "AnalogWrite": "analog_write",
-        "PinRead": "pin_read",
-        "DigitalReadResponse": "digital_read_resp",
-        "AnalogReadResponse": "analog_read_resp",
-        "ConsoleWrite": "console_write",
-        "DatastorePut": "datastore_put",
-        "DatastoreGet": "datastore_get",
-        "DatastoreGetResponse": "datastore_get_resp",
-        "MailboxPush": "mailbox_push",
-        "MailboxProcessed": "mailbox_processed",
-        "MailboxAvailableResponse": "mailbox_available_resp",
-        "MailboxReadResponse": "mailbox_read_resp",
-        "FileWrite": "file_write",
-        "FileRead": "file_read",
-        "FileRemove": "file_remove",
-        "FileReadResponse": "file_read_resp",
-        "ProcessRunAsync": "process_run_async",
-        "ProcessRunAsyncResponse": "process_run_async_resp",
-        "ProcessPoll": "process_poll",
-        "ProcessPollResponse": "process_poll_resp",
-        "ProcessKill": "process_kill",
-        "GenericResponse": "generic_resp",
-        "AckPacket": "ack_packet",
-        "HandshakeConfig": "handshake_config",
-        "SetBaudratePacket": "set_baudrate_packet",
-        "LinkSync": "link_sync",
-        "EnterBootloader": "enter_bootloader",
-        "SpiTransfer": "spi_transfer",
-        "SpiTransferResponse": "spi_transfer_resp",
-        "SpiConfig": "spi_config",
-    }
-    return _MAP.get(msg.__class__.__name__)
+    return _MAP.get(msg.DESCRIPTOR.name)
 
 
 def build_frame(
@@ -124,7 +95,7 @@ def build_frame(
     return body + (crc32(body) & protocol.CRC32_MASK).to_bytes(4, "little")
 
 
-def parse_frame(raw_frame_buffer: bytes | bytearray | memoryview, session_key: bytes | None = None) -> pb.RpcEnvelope:
+def parse_frame(raw_frame_buffer: bytes | bytearray | memoryview, session_key: bytes | None = None) -> DecodedFrame:
     """Parses binary buffer directly into a Protobuf envelope. [SIL-2]"""
     buf = bytes(raw_frame_buffer)
     if len(buf) < _CRC_SIZE:
@@ -169,19 +140,4 @@ def parse_frame(raw_frame_buffer: bytes | bytearray | memoryview, session_key: b
         else:
             decrypted = b""
 
-    _transient_payloads[id(envelope)] = decrypted
-    if len(_transient_payloads) > 1000:
-        _transient_payloads.clear()
-
-    try:
-        loop = asyncio.get_running_loop()
-        loop.call_soon(lambda env_id=id(envelope): _transient_payloads.pop(env_id, None))
-    except RuntimeError:
-        loop = None
-
-    return envelope
-
-
-def get_payload(envelope: pb.RpcEnvelope) -> bytes:
-    """Extracts the transient/decrypted payload from a parsed envelope."""
-    return _transient_payloads.get(id(envelope), b"")
+    return DecodedFrame(envelope=envelope, payload=decrypted)

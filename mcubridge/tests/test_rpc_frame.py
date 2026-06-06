@@ -1,6 +1,6 @@
 import pytest
 from mcubridge.protocol import protocol
-from mcubridge.protocol.frame import build_frame, parse_frame, get_payload
+from mcubridge.protocol.frame import build_frame, parse_frame
 from tests.test_constants import TEST_CMD_ID
 
 
@@ -11,27 +11,27 @@ def test_build_and_parse_round_trip() -> None:
     # Protobuf Envelope length is variable, but at least includes our data + overhead
     assert len(raw) > len(payload) + 32
 
-    envelope = parse_frame(raw)
-    assert envelope.command_id == TEST_CMD_ID
-    assert envelope.sequence_id == 0
-    assert get_payload(envelope) == payload
+    decoded = parse_frame(raw)
+    assert decoded.envelope.command_id == TEST_CMD_ID
+    assert decoded.envelope.sequence_id == 0
+    assert decoded.payload == payload
 
 
 def test_empty_payload_round_trip() -> None:
     raw = build_frame(command_id=TEST_CMD_ID, sequence_id=0, payload=b"")
-    envelope = parse_frame(raw)
-    assert envelope.command_id == TEST_CMD_ID
-    assert envelope.sequence_id == 0
-    assert get_payload(envelope) == b""
+    decoded = parse_frame(raw)
+    assert decoded.envelope.command_id == TEST_CMD_ID
+    assert decoded.envelope.sequence_id == 0
+    assert decoded.payload == b""
 
 
 def test_max_payload_round_trip() -> None:
     payload = b"p" * protocol.MAX_PAYLOAD_SIZE
     raw = build_frame(command_id=TEST_CMD_ID, sequence_id=0, payload=payload)
-    envelope = parse_frame(raw)
-    assert envelope.command_id == TEST_CMD_ID
-    assert envelope.sequence_id == 0
-    assert get_payload(envelope) == payload
+    decoded = parse_frame(raw)
+    assert decoded.envelope.command_id == TEST_CMD_ID
+    assert decoded.envelope.sequence_id == 0
+    assert decoded.payload == payload
 
 
 def test_build_rejects_large_payload() -> None:

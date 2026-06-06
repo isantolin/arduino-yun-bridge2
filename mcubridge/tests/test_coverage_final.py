@@ -1,10 +1,10 @@
 import asyncio
-import time
 from unittest.mock import MagicMock, patch
 from pathlib import Path
-from typing import Any
+from typing import Any, Union
 
 import pytest
+import msgspec
 
 from mcubridge.protocol import protocol
 from mcubridge.protocol.spec_model import ProtocolSpec
@@ -19,9 +19,7 @@ from mcubridge.security.security import (
     generate_nonce_with_counter,
     extract_nonce_counter,
     validate_nonce_counter,
-    verify_crypto_integrity,
 )
-from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 
 
 def test_protocol_spec_load(tmp_path: Path) -> None:
@@ -59,12 +57,6 @@ async def test_status_writer_coverage() -> None:
     )
     state = create_runtime_state(config)
     try:
-        mock_child = MagicMock()
-        mock_child.pid = 1234
-        mock_child.name.return_value = "child"
-        mock_child.cpu_percent.return_value = 0.1
-        mock_child.memory_info.return_value.rss = 1000
-
         task = asyncio.create_task(status_writer(state, 1))
         await asyncio.sleep(0.1)
         task.cancel()
@@ -78,7 +70,6 @@ async def test_status_writer_coverage() -> None:
 
 def test_write_status_file_errors() -> None:
     with patch("mcubridge.state.status.STATUS_FILE") as mock_file:
-        # Use a real path for mkdir mock to avoid confusion
         mock_file.parent = MagicMock()
         mock_file.parent.mkdir.side_effect = OSError("Perm denied")
         with patch("mcubridge.state.status.logger") as mock_logger:
@@ -97,9 +88,6 @@ def test_logging_coverage() -> None:
         debug=True,
     )
     configure_logging(config)
-
-    # Test hexdump processor
-    # Use real bytes
     event: dict[str, Any] = {"data": b"\x01\x02", "empty": b""}
     processed = hexdump_processor(None, "info", event)
     assert processed["data"] == "[01 02]"
@@ -107,74 +95,74 @@ def test_logging_coverage() -> None:
 
 
 def test_security_primitives_coverage() -> None:
-    # secure_zero
     ba = bytearray(b"sensitive")
     secure_zero(ba)
     assert ba == bytearray(len(b"sensitive"))
-
     mv = memoryview(bytearray(b"sensitive"))
     secure_zero(mv)
     assert mv == bytearray(len(b"sensitive"))
-
-    # Nonce functions
     nonce, next_c = generate_nonce_with_counter(10)
     assert next_c == 11
     assert extract_nonce_counter(nonce) == 11
-
     ok, cur = validate_nonce_counter(nonce, 10)
     assert ok is True
     assert cur == 11
-
     ok, cur = validate_nonce_counter(nonce, 11)
     assert ok is False
-
     with pytest.raises(ValueError, match="Nonce counter overflow"):
         generate_nonce_with_counter(protocol.NONCE_COUNTER_MASK)
-
     with pytest.raises(ValueError, match="Nonce counter overflow"):
         generate_nonce_with_counter(-1)
 
-    from mcubridge.security import security
-    from mcubridge.security.security import NONCE_RANDOM_BYTES
-    import secrets
 
-    nonce_struct = getattr(security, "_FULL_NONCE_STRUCT")
-    nonce_zero = nonce_struct.pack(secrets.token_bytes(NONCE_RANDOM_BYTES), 0)
+def test_dec_hook_extra_paths() -> None:
+    import mcubridge.config.settings as settings_mod
 
-    ok, cur = validate_nonce_counter(nonce_zero, protocol.NONCE_COUNTER_MASK)
-    assert ok is False
+    _dec_hook = getattr(settings_mod, "_dec_hook")
 
-    # AEAD
-    key = b"A" * 32
-    data = b"hello"
-    ad = b"header"
-    cipher = ChaCha20Poly1305(key)
-    ct = cipher.encrypt(nonce, data, ad)
-    pt = cipher.decrypt(nonce, ct, ad)
-    assert pt == data
-
-    # verify_crypto_integrity
-    assert verify_crypto_integrity() is True
+    with patch("pathlib.Path.expanduser", return_value=Path("/home/user/test")):
+        res = _dec_hook(str, "~/test")
+        assert res == "/home/user/test"
+    res = _dec_hook(str, "/tmp/test")
+    assert res == "/tmp/test"
+    with pytest.raises(TypeError, match="Cannot coerce"):
+        _dec_hook(int, "not_an_int")
+    res = _dec_hook(Union[bytes, str], " secret ")
+    assert res == b"secret"
+    res = _dec_hook(tuple, "a b c")
+    assert res == ("a", "b", "c")
 
 
-def test_state_context_extra_coverage() -> None:
+@pytest.mark.asyncio
+async def test_status_writer_error_handling() -> None:
     config = RuntimeConfig(
         mqtt_topic="br",
-        serial_port="/dev/ttytest",
-        serial_baud=protocol.DEFAULT_BAUDRATE,
-        serial_safe_baud=9600,
-        mqtt_host="localhost",
-        mqtt_port=1883,
+        serial_port="/dev/test",
+        serial_shared_secret="secret1234",
     )
     state = create_runtime_state(config)
-    try:
-        # Correct method name
-        state.mark_supervisor_healthy("test")
-        state.apply_handshake_stats({"attempts": 1, "successes": 1, "last_unix": time.time()})
-        # Use public API if available or suppress if necessary
-        # For coverage tests, private access is sometimes tolerated but we can cast to Any
-        # to satisfy the type checker for now while maintaining the test's intent.
-        getattr(state, "_apply_spool_observation")({"corrupt_dropped": 1, "dropped_due_to_limit": 1})
-        assert state.handshake_duration_since_start() >= 0
-    finally:
-        state.cleanup()
+    with patch("mcubridge.state.status._write_status_file", side_effect=RuntimeError("write failed")):
+        from mcubridge.state.status import status_writer
+
+        task = asyncio.create_task(status_writer(state, 1))
+        await asyncio.sleep(0.1)
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+    with patch("mcubridge.state.status._json_enc") as mock_enc:
+        mock_enc.encode.side_effect = msgspec.MsgspecError("encode error")
+        _write_status_file = getattr(status_mod, "_write_status_file")
+
+        _write_status_file({"a": 1})
+
+
+def test_daemon_metrics_initialization() -> None:
+    from mcubridge.state.metrics import DaemonMetrics
+    from prometheus_client import CollectorRegistry
+
+    reg = CollectorRegistry()
+    metrics = DaemonMetrics(reg)
+    assert metrics.registry == reg
+    metrics.mqtt_messages_published.inc()

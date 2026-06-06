@@ -24,15 +24,12 @@
 #include <etl/delegate.h>
 #include <etl/deque.h>
 #include <etl/expected.h>
-#include <etl/flat_map.h>
 #include <etl/fsm.h>
 #include <etl/pool.h>
-#include <etl/queue.h>
 #include <etl/scheduler.h>
 #include <etl/span.h>
 #include <etl/string_view.h>
 #include <etl/task.h>
-#include <etl/variant.h>
 #include <etl/vector.h>
 
 #include "config/bridge_config.h"

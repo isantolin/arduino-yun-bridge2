@@ -145,11 +145,11 @@ class SerialTransport:
     async def _connect_and_run(self) -> None:
         logger.info("Connecting to MCU on %s...", self.config.serial_port)
         connect_baud = self.config.serial_safe_baud or protocol.DEFAULT_SAFE_BAUDRATE
-        await self._toggle_dtr(connect_baud)
         self.reader, self.writer = await serialx.open_serial_connection(
             url=self.config.serial_port, baudrate=connect_baud, xonxoff=False
         )
         self.state.serial_writer = cast(asyncio.BaseTransport, self.writer.transport)
+        await self._toggle_dtr()
         read_task = asyncio.get_running_loop().create_task(self._read_loop(self.reader))
         try:
             if self.config.serial_baud != connect_baud and not await self._negotiate_baudrate(self.config.serial_baud):
@@ -180,15 +180,13 @@ class SerialTransport:
             if self.writer:
                 self.writer.close()
 
-    async def _toggle_dtr(self, baudrate: int) -> None:
+    async def _toggle_dtr(self) -> None:
         try:
-            async with serialx.async_serial_for_url(
-                self.config.serial_port, baudrate=baudrate, xonxoff=False
-            ) as serial_port:
-                await serial_port.set_modem_pins(dtr=False)
-                await asyncio.sleep(0.1)
-                await serial_port.set_modem_pins(dtr=True)
-        except (serialx.SerialException, OSError, RuntimeError, ValueError) as exc:
+            serial_obj = self._active_transport().serial
+            serial_obj.dtr = False
+            await asyncio.sleep(0.1)
+            serial_obj.dtr = True
+        except (AttributeError, OSError, ValueError, serialx.SerialException, RuntimeError) as exc:
             logger.warning("Unable to toggle DTR on %s: %s", self.config.serial_port, exc)
 
     async def stop(self) -> None:
@@ -214,20 +212,22 @@ class SerialTransport:
 
     async def _process_packet(self, encoded_packet: bytes | memoryview) -> None:
         """Processes a packet from the serial stream. [FLATTENED] [SIL-2]"""
-        from mcubridge.protocol.frame import parse_frame, get_payload
+        from mcubridge.protocol.frame import parse_frame
 
         try:
             # Ensure we have bytes for cobs.decode
             raw_bytes = bytes(encoded_packet) if isinstance(encoded_packet, memoryview) else encoded_packet
             decoded = cobs.decode(raw_bytes)
-            envelope = parse_frame(decoded, self.state.link_session_key if self.state.is_synchronized else None)
+            decoded_frame = parse_frame(decoded, self.state.link_session_key if self.state.is_synchronized else None)
         except (cobs.DecodeError, ValueError, TypeError, RuntimeError) as exc:
             logger.warning("[SERIAL <- MCU] [MALFORMED]: %s", exc)
             self.state.serial_decode_errors += 1
             await self._check_baudrate_fallback()
             return
 
-        cmd_id, seq_id, payload = envelope.command_id, envelope.sequence_id, get_payload(envelope)
+        envelope = decoded_frame.envelope
+        payload = decoded_frame.payload
+        cmd_id, seq_id = envelope.command_id, envelope.sequence_id
 
         if self._negotiating and self._negotiation_future and not self._negotiation_future.done():
             if cmd_id == protocol.Command.CMD_SET_BAUDRATE_RESP.value:

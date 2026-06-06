@@ -306,28 +306,6 @@ void BridgeClass::enterSafeState() {
   Process.onLost();
 }
 
-  constexpr size_t max_len = 63U;
-  etl::string<max_len> str;
-  str.resize(max_len);
-  bridge::hal::copy_string(str.data(), reinterpret_cast<const char*>(msg),
-                           max_len);
-  str.resize(etl::strlen(str.data()));
-  rpc_pb_GenericResponse resp = rpc_pb_GenericResponse_init_default;
-  const size_t to_copy =
-      etl::min(static_cast<size_t>(str.length()), sizeof(resp.message) - 1U);
-  if (to_copy > 0U) etl::copy_n(str.begin(), to_copy, resp.message);
-  resp.message[to_copy] = 0;
-  (void)send(code, 0, resp);
-}
-
-      if (!_fsm.isAwaitingAck()) _flushPendingTxQueue();
-    }
-    return true;
-  }
-  _transmit(cmd, seq, pl);
-  return true;
-}
-
 void BridgeClass::_transmit(uint16_t command_id, uint16_t sequence_id,
                             etl::span<const uint8_t> payload) {
   const uint16_t raw_cmd = command_id;

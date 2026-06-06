@@ -28,6 +28,7 @@
 #include <etl/pool.h>
 #include <etl/scheduler.h>
 #include <etl/span.h>
+#include <etl/string.h>
 #include <etl/string_view.h>
 #include <etl/task.h>
 #include <etl/vector.h>

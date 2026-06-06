@@ -76,7 +76,6 @@ async def test_status_writer_coverage() -> None:
         state.cleanup()
 
 
-
 def test_write_status_file_errors() -> None:
     with patch("mcubridge.state.status.STATUS_FILE") as mock_file:
         # Use a real path for mkdir mock to avoid confusion
@@ -179,4 +178,3 @@ def test_state_context_extra_coverage() -> None:
         assert state.handshake_duration_since_start() >= 0
     finally:
         state.cleanup()
-

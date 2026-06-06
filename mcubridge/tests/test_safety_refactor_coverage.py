@@ -11,8 +11,6 @@ from mcubridge.transport.serial import SerialTransport
 from mcubridge.protocol.structures import QueuedPublish
 
 
-
-
 def _replace_mailbox_queue(state: RuntimeState, replacement: Any) -> None:
     if hasattr(state.mailbox_queue, "cache") and getattr(state.mailbox_queue, "cache", None) is not None:
         try:
@@ -79,7 +77,9 @@ async def test_runtime_safety_coverage(real_config: RuntimeConfig) -> None:
         # Mock Deque methods to throw sqlite3.Error for error branch coverage
         spool = getattr(service, "_mqtt_spool")
         with patch.object(spool, "append", side_effect=sqlite3.Error("DB error")):
-            success = await getattr(service, "_spool_mqtt_message_locked")(QueuedPublish(topic_name="test", payload=b""))
+            success = await getattr(service, "_spool_mqtt_message_locked")(
+                QueuedPublish(topic_name="test", payload=b"")
+            )
             assert success is False
 
         with patch("asyncio.to_thread", side_effect=sqlite3.Error("DB error")):
@@ -176,6 +176,7 @@ async def test_serialization_failure(real_config: RuntimeConfig) -> None:
 @pytest.mark.asyncio
 async def test_peeking_or_popping_errors(real_config: RuntimeConfig) -> None:
     import sqlite3
+
     state = create_runtime_state(real_config)
     serial = AsyncMock(spec=SerialTransport)
     service = BridgeService(real_config, state, serial)
@@ -189,7 +190,7 @@ async def test_peeking_or_popping_errors(real_config: RuntimeConfig) -> None:
         spool.append(msgspec.msgpack.encode(valid_msg))
 
         # 1. IndexError on peek
-        def mock_to_thread_index_error(func, *args, **kwargs):
+        def mock_to_thread_index_error(func: Any, *args: Any, **kwargs: Any) -> Any:
             if func == len:
                 return 1
             raise IndexError("Mock empty")
@@ -199,7 +200,7 @@ async def test_peeking_or_popping_errors(real_config: RuntimeConfig) -> None:
         assert len(spool) == 1
 
         # 2. sqlite3.Error on peek
-        def mock_to_thread_sqlite_error(func, *args, **kwargs):
+        def mock_to_thread_sqlite_error(func: Any, *args: Any, **kwargs: Any) -> Any:
             if func == len:
                 return 1
             raise sqlite3.Error("DB error")
@@ -235,4 +236,3 @@ async def test_peeking_or_popping_errors(real_config: RuntimeConfig) -> None:
     finally:
         service.cleanup()
         state.cleanup()
-

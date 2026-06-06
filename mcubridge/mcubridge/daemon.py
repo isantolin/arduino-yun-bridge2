@@ -113,10 +113,12 @@ class BridgeDaemon:
 
     def cleanup(self) -> None:
         """Explicitly cleanup and close all daemon resources to prevent ResourceWarnings."""
-        if hasattr(self, "serial_transport") and self.serial_transport is not None:
-            self.serial_transport.service = None
-        if hasattr(self, "service") and self.service is not None:
-            self.service.cleanup()
+        serial_transport = getattr(self, "serial_transport", None)
+        if serial_transport is not None:
+            serial_transport.service = None
+        service = getattr(self, "service", None)
+        if service is not None:
+            service.cleanup()
         self.state.cleanup()
 
     async def run_mqtt(self) -> None:

@@ -43,7 +43,6 @@ def handshake_setup() -> Iterator[tuple[SerialHandshakeManager, RuntimeState, As
     state.cleanup()
 
 
-
 @pytest.mark.asyncio
 async def test_handshake_auth_mismatch(
     handshake_setup: tuple[SerialHandshakeManager, RuntimeState, AsyncMock],

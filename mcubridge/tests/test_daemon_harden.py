@@ -20,7 +20,6 @@ def daemon_setup() -> Iterator[BridgeDaemon]:
     daemon.cleanup()
 
 
-
 @pytest.mark.asyncio
 async def test_daemon_run_lifecycle(daemon_setup: BridgeDaemon) -> None:
     """Test daemon startup and graceful shutdown via TaskGroup cancellation."""

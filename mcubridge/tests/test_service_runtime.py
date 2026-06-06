@@ -37,6 +37,7 @@ async def test_send_frame_via_transport() -> None:
         mock_serial.send.return_value = True
         service = BridgeService(config, state, mock_serial)
 
+        assert service.serial is not None
         ok = await service.serial.send(protocol.Command.CMD_GET_VERSION.value, b"x")
         assert ok is True
         mock_serial.send.assert_called_once()

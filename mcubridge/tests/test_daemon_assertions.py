@@ -75,7 +75,6 @@ async def test_daemon_run_orchestrates_tasks(runtime_config: RuntimeConfig) -> N
         daemon.cleanup()
 
 
-
 def test_main_strict_mode_when_default_secret() -> None:
     # Test that the daemon disables MQTT when the default secret is used
     mock_config = RuntimeConfig(serial_shared_secret=b"failsafe_secret_mode", mqtt_enabled=True)

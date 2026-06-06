@@ -6,13 +6,11 @@
         "run",
         "-i",
         "--rm",
-        "-e",
-        "GITHUB_PERSONAL_ACCESS_TOKEN",
-        "ghcr.io/github/github-mcp-server:latest"
-      ],
-      "env": {
-        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
-      }
+        "--env-file",
+        "/home/ignaciosantolin/.mcp_secrets",
+        "ghcr.io/github/github-mcp-server:latest",
+        "stdio"
+      ]
     }
   }
 }

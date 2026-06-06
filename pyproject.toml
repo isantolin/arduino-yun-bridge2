@@ -17,7 +17,7 @@ dependencies = [
     "prometheus-client==0.25.0",
     "protobuf==7.35.0",
     "serialx==1.8.0",
-    "structlog==25.5.0",
+    "structlog==26.1.0",
     "tenacity==9.1.4",
     "uvloop==0.22.1",
 ]
@@ -37,6 +37,10 @@ norecursedirs = ["openwrt-sdk", "feeds", ".git", ".tox", ".venv*", ".dummy_libs"
 markers = [
     "fuzz: mark a test as a fuzz test",
     "timeout: timeout marker accepted during IDE discovery even when pytest-timeout is absent",
+]
+filterwarnings = [
+    "error",
+    "ignore:unclosed database in <sqlite3.Connection:ResourceWarning",
 ]
 
 [tool.pyright]

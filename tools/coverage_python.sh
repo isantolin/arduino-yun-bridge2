@@ -103,3 +103,6 @@ if [[ "$ENABLE_JSON" -eq 1 ]]; then
     --include "$ROOT_DIR/mcubridge/mcubridge/*" \
     -o "$COVERAGE_ROOT/coverage.json" >/dev/null
 fi
+
+$PYTHON_BIN -m coverage report --fail-under="${PYTHON_COVERAGE_MIN}"
+

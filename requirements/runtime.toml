@@ -77,7 +77,7 @@ rationale = "HKDF and HMAC for handshake security (SIL-2 compliance)"
 [[dependency]]
 name = "structlog"
 openwrt = "python3-structlog"
-pip = "structlog==25.5.0"
+pip = "structlog==26.1.0"
 rationale = "Structured logging with JSON output for production syslog"
 
 [[dependency]]

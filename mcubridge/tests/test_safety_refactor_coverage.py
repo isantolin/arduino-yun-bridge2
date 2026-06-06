@@ -243,5 +243,5 @@ async def test_mailbox_queue_close_error(real_config: RuntimeConfig) -> None:
     class FakeCache:
         def close(self):
             raise OSError("mock error")
-    state.mailbox_queue.cache = FakeCache()
+    object.__setattr__(state, "mailbox_queue", MagicMock(cache=FakeCache()))
     _replace_mailbox_queue(state, collections.deque())

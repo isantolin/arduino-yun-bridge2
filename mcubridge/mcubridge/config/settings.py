@@ -84,7 +84,7 @@ def load_runtime_config(overrides: dict[str, Any] | None = None) -> RuntimeConfi
     _config_source[0] = source
 
     if isinstance(raw_values.get("allowed_commands"), str):
-        raw_values["allowed_commands"] = raw_values["allowed_commands"].split()
+        raw_values["allowed_commands"] = tuple(raw_values["allowed_commands"].split())
 
     if isinstance(raw_values.get("serial_shared_secret"), str):
         raw_values["serial_shared_secret"] = raw_values["serial_shared_secret"].strip().encode("utf-8")

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import cast, Any
 import pytest
-from mcubridge.policy import AllowedCommandPolicy, TopicAuthorization
+from mcubridge.protocol.structures import AllowedCommandPolicy, TopicAuthorization
 from mcubridge.protocol.topics import Topic
 
 

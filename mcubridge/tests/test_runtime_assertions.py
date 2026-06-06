@@ -165,7 +165,7 @@ async def test_mcu_process_run_asserts_exec(
 
     payload = pb.ProcessRunAsync(command="echo hello").SerializeToString()
 
-    with patch("mcubridge.policy.AllowedCommandPolicy.is_allowed", return_value=True):
+    with patch("mcubridge.protocol.structures.AllowedCommandPolicy.is_allowed", return_value=True):
         with patch("asyncio.create_subprocess_exec") as mock_exec:
             mock_proc = AsyncMock()
             mock_proc.pid = 1234
@@ -277,7 +277,7 @@ async def test_mqtt_shell_poll_asserts_mqtt(
         properties=None,
     )
 
-    with patch("mcubridge.policy.AllowedCommandPolicy.is_allowed", return_value=True):
+    with patch("mcubridge.protocol.structures.AllowedCommandPolicy.is_allowed", return_value=True):
         from mcubridge.services.runtime import ProcessOutputBatch
 
         mock_batch = ProcessOutputBatch(
@@ -313,7 +313,7 @@ async def test_mqtt_shell_kill_asserts_mqtt(
         properties=None,
     )
 
-    with patch("mcubridge.policy.AllowedCommandPolicy.is_allowed", return_value=True):
+    with patch("mcubridge.protocol.structures.AllowedCommandPolicy.is_allowed", return_value=True):
         with patch("mcubridge.services.runtime.BridgeService._stop_process", return_value=True) as mock_stop:
             await service.handle_mqtt_message(msg)
 
@@ -337,7 +337,7 @@ async def test_mqtt_shell_run_asserts_exec(
         properties=None,
     )
 
-    with patch("mcubridge.policy.AllowedCommandPolicy.is_allowed", return_value=True):
+    with patch("mcubridge.protocol.structures.AllowedCommandPolicy.is_allowed", return_value=True):
         with patch("asyncio.create_subprocess_exec") as mock_exec:
             mock_proc = AsyncMock()
             mock_proc.pid = 999

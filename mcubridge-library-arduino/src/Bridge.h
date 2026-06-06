@@ -81,12 +81,33 @@ class BridgeClass {
   // Explicit registration if needed, otherwise direct calls
   void enterSafeState();
 
-  void emitStatus(rpc::StatusCode s, etl::string_view m);
-  void emitStatus(rpc::StatusCode s, etl::span<const uint8_t> p);
-  void emitStatus(rpc::StatusCode s, const __FlashStringHelper* m);
-
-  // [SIL-2] Template wrapper to comply with Rule 3
-  template <typename = void>
+  template <typename T = etl::span<const uint8_t>>
+  void emitStatus(rpc::StatusCode s, const T& payload = etl::span<const uint8_t>()) {
+    if constexpr (etl::is_same_v<T, etl::span<const uint8_t>>) {
+      (void)sendFrame(s, 0, payload);
+    } else if constexpr (etl::is_same_v<T, etl::string_view>) {
+      rpc_pb_GenericResponse resp = rpc_pb_GenericResponse_init_default;
+      const size_t to_copy = etl::min(payload.size(), sizeof(resp.message) - 1U);
+      if (to_copy > 0U) etl::copy_n(payload.begin(), to_copy, resp.message);
+      resp.message[to_copy] = 0;
+      (void)send(s, 0, resp);
+    } else if constexpr (etl::is_same_v<T, const __FlashStringHelper*> || etl::is_same_v<T, __FlashStringHelper*>) {
+      if (!payload) {
+        (void)sendFrame(s);
+        return;
+      }
+      constexpr size_t max_len = 63U;
+      etl::string<max_len> str;
+      str.resize(max_len);
+      bridge::hal::copy_string(str.data(), reinterpret_cast<const char*>(payload), max_len);
+      str.resize(etl::strlen(str.data()));
+      rpc_pb_GenericResponse resp = rpc_pb_GenericResponse_init_default;
+      const size_t to_copy = etl::min(static_cast<size_t>(str.length()), sizeof(resp.message) - 1U);
+      if (to_copy > 0U) etl::copy_n(str.begin(), to_copy, resp.message);
+      resp.message[to_copy] = 0;
+      (void)send(s, 0, resp);
+    }
+  }
   void emitStatus(rpc::StatusCode s) {
     emitStatus(s, etl::span<const uint8_t>());
   }
@@ -94,12 +115,28 @@ class BridgeClass {
   void signalXoff();
   void signalXon();
 
-  [[nodiscard]] bool sendFrame(rpc::StatusCode s, uint16_t seq = 0,
-                               etl::span<const uint8_t> p = {});
-  [[nodiscard]] bool sendFrame(rpc::CommandId c, uint16_t seq = 0,
-                               etl::span<const uint8_t> p = {});
-  [[nodiscard]] bool sendFrame(uint16_t cmd, uint16_t seq = 0,
-                               etl::span<const uint8_t> p = {});
+  template <typename T>
+  [[nodiscard]] bool sendFrame(T command, uint16_t seq = 0, etl::span<const uint8_t> p = {}) {
+    static_assert(etl::is_enum_v<T> || etl::is_integral_v<T>, "Command must be enum or integral");
+    const uint16_t cmd = static_cast<uint16_t>(command);
+    const bool is_system = (cmd >= rpc::RPC_STATUS_CODE_MIN && cmd <= rpc::RPC_STATUS_CODE_MAX) ||
+                           (cmd >= rpc::RPC_SYSTEM_COMMAND_MIN && cmd <= rpc::RPC_SYSTEM_COMMAND_MAX);
+    if (!_tx_enabled && !is_system) return false;
+    if (is_reliable_cmd(cmd)) {
+      BRIDGE_ATOMIC_BLOCK {
+        if (_pending_tx_queue.full()) return false;
+        auto* buf = _tx_payload_pool.allocate();
+        if (!buf) return false;
+        const size_t pl_size = etl::min(p.size(), buf->data.size());
+        etl::copy_n(p.data(), pl_size, buf->data.data());
+        _pending_tx_queue.push_back({cmd, seq, buf, pl_size});
+        if (!_fsm.isAwaitingAck()) _flushPendingTxQueue();
+      }
+      return true;
+    }
+    _transmit(cmd, seq, p);
+    return true;
+  }
 
   template <typename T>
   [[nodiscard]] bool sendSinglePass(uint16_t command_id, uint16_t sequence_id, const T& packet) {

@@ -31,8 +31,7 @@ from ..config.const import (
     DEFAULT_WATCHDOG_INTERVAL,
 )
 from ..config.settings import RuntimeConfig
-from ..protocol.structures import QueuedPublish
-from ..policy import AllowedCommandPolicy, TopicAuthorization
+from ..protocol.structures import AllowedCommandPolicy, QueuedPublish, TopicAuthorization
 from ..protocol import protocol
 from ..protocol.protocol import (
     DEFAULT_RETRY_LIMIT,

@@ -306,23 +306,6 @@ void BridgeClass::enterSafeState() {
   Process.onLost();
 }
 
-void BridgeClass::emitStatus(rpc::StatusCode code,
-                             etl::span<const uint8_t> pl) {
-  (void)sendFrame(code, 0, pl);
-}
-void BridgeClass::emitStatus(rpc::StatusCode code, etl::string_view msg) {
-  rpc_pb_GenericResponse resp = rpc_pb_GenericResponse_init_default;
-  const size_t to_copy = etl::min(msg.size(), sizeof(resp.message) - 1U);
-  if (to_copy > 0U) etl::copy_n(msg.begin(), to_copy, resp.message);
-  resp.message[to_copy] = 0;
-  (void)send(code, 0, resp);
-}
-void BridgeClass::emitStatus(rpc::StatusCode code,
-                             const __FlashStringHelper* msg) {
-  if (!msg) {
-    (void)sendFrame(code);
-    return;
-  }
   constexpr size_t max_len = 63U;
   etl::string<max_len> str;
   str.resize(max_len);
@@ -337,29 +320,6 @@ void BridgeClass::emitStatus(rpc::StatusCode code,
   (void)send(code, 0, resp);
 }
 
-bool BridgeClass::sendFrame(rpc::StatusCode s, uint16_t seq,
-                            etl::span<const uint8_t> p) {
-  return sendFrame(rpc::to_underlying(s), seq, p);
-}
-bool BridgeClass::sendFrame(rpc::CommandId c, uint16_t seq,
-                            etl::span<const uint8_t> p) {
-  return sendFrame(rpc::to_underlying(c), seq, p);
-}
-bool BridgeClass::sendFrame(uint16_t cmd, uint16_t seq,
-                            etl::span<const uint8_t> pl) {
-  const uint16_t raw_cmd = cmd;
-  const bool is_system = (raw_cmd >= rpc::RPC_STATUS_CODE_MIN &&
-                          raw_cmd <= rpc::RPC_STATUS_CODE_MAX) ||
-                         (raw_cmd >= rpc::RPC_SYSTEM_COMMAND_MIN &&
-                          raw_cmd <= rpc::RPC_SYSTEM_COMMAND_MAX);
-  if (!_tx_enabled && !is_system) return false;
-  if (is_reliable_cmd(cmd)) {
-    BRIDGE_ATOMIC_BLOCK {
-      if (_pending_tx_queue.full()) return false;
-      auto* buf = _tx_payload_pool.allocate();
-      if (!buf) return false;
-      etl::copy_n(pl.data(), pl.size(), buf->data.data());
-      _pending_tx_queue.push_back({cmd, seq, buf, pl.size()});
       if (!_fsm.isAwaitingAck()) _flushPendingTxQueue();
     }
     return true;

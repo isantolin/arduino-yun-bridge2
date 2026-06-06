@@ -43,7 +43,7 @@ async def test_serial_transport_loops_final_v3(transport_setup: Any) -> None:
 
     try:
         await asyncio.wait_for(getattr(transport, "_read_loop")(mock_reader), 0.1)
-    except (TimeoutError, Exception):
+    except TimeoutError:
         pass
 
     setattr(transport, "_tx_sequence_id", 0xFFFE)

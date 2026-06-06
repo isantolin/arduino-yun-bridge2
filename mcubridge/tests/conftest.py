@@ -298,5 +298,11 @@ def real_config():
     raw["serial_handshake_fatal_failures"] = 15
     raw["process_max_concurrent"] = 4
     raw["allow_non_tmp_paths"] = True
+    
+    # [TEST FIX] Ensure the mocked unique paths from isolate_test_paths are actually applied
+    from mcubridge.config import const
+    raw["mqtt_spool_dir"] = const.DEFAULT_MQTT_SPOOL_DIR
+    raw["file_system_root"] = const.DEFAULT_FILE_SYSTEM_ROOT
+
     config = msgspec.convert(raw, settings.RuntimeConfig, strict=False)
     return config

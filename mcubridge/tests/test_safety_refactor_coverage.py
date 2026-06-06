@@ -15,7 +15,7 @@ def _replace_mailbox_queue(state: RuntimeState, replacement: Any) -> None:
     if hasattr(state.mailbox_queue, "cache") and getattr(state.mailbox_queue, "cache", None) is not None:
         try:
             getattr(state.mailbox_queue, "cache").close()
-        except Exception:
+        except (OSError, RuntimeError):
             pass
     state.mailbox_queue = cast(collections.deque[bytes], replacement)
 

@@ -2,7 +2,7 @@ import asyncio
 import sys
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-import google.protobuf.message
+from google.protobuf.message import Message as ProtobufMessage
 from binascii import crc32
 from typing import Any
 
@@ -27,7 +27,7 @@ sys.modules["uci"] = MagicMock()
 
 def test_frame_coverage_boost() -> None:
     # 1. Message descriptor name not in map
-    mock_msg = MagicMock(spec=google.protobuf.message.Message)
+    mock_msg = MagicMock(spec=ProtobufMessage)
     mock_msg.DESCRIPTOR.name = "NonExistentName"
     mock_msg.SerializeToString.return_value = b"mockpayload"
     frame = build_frame(command_id=10, sequence_id=1, payload=mock_msg)
@@ -50,11 +50,11 @@ def test_frame_coverage_boost() -> None:
     frame_req = build_frame(command_id=5, sequence_id=3, payload=req)
     parsed_req = parse_frame(frame_req)
     assert parsed_req.envelope.WhichOneof("payload_type") == "digital_write"
-    if isinstance(parsed_req.payload, google.protobuf.message.Message):
+    if isinstance(parsed_req.payload, ProtobufMessage):
         assert parsed_req.payload == req
     else:
         assert parsed_req.payload == req.SerializeToString()
-        
+
     # 5. parse_frame with empty active field in payload_type
     envelope_empty = pb.RpcEnvelope(version=protocol.PROTOCOL_VERSION, command_id=10, sequence_id=4)
     body_empty = envelope_empty.SerializeToString()

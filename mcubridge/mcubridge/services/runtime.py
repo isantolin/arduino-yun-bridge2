@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any, cast, Final
 import msgspec
 import diskcache
 import structlog
-from google.protobuf.message import DecodeError as ProtobufDecodeError, Message
+from google.protobuf.message import DecodeError as ProtobufDecodeError, Message as ProtobufMessage
 
 import aiomqtt
 
@@ -61,7 +61,8 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger("mcubridge.service")
 
-McuHandler = Callable[[int, bytes | Message], Coroutine[Any, Any, bool | bytes | None]]
+McuHandler = Callable[[int, bytes | ProtobufMessage], Coroutine[Any, Any, bool | bytes | ProtobufMessage | None]]
+
 
 _PRE_SYNC_ALLOWED_COMMANDS: Final = {
     Command.CMD_LINK_SYNC_RESP.value,
@@ -86,7 +87,7 @@ class BridgeService:
     serial: SerialTransport | None
     _mqtt_client: aiomqtt.Client | None
     _task_group: asyncio.TaskGroup | None
-    _serial_sender: Callable[[int, Any, int | None], Awaitable[bool | bytes]] | None
+    _serial_sender: Callable[[int, Any, int | None], Awaitable[bool | bytes | ProtobufMessage]] | None
     handshake: SerialHandshakeManager
     _storage_lock: asyncio.Lock
     _mcu_read_lock: asyncio.Lock
@@ -129,14 +130,14 @@ class BridgeService:
 
     def _setup_mcu_registry(self, serial: SerialTransport) -> dict[int, McuHandler]:
         return {
-            Command.CMD_XOFF.value: lambda _, __: self._handle_mcu_xoff(),
-            Command.CMD_XON.value: lambda _, __: self._handle_mcu_xon(),
+            Command.CMD_XOFF.value: lambda _seq, _payload: self._handle_mcu_xoff(),
+            Command.CMD_XON.value: lambda _seq, _payload: self._handle_mcu_xon(),
             Command.CMD_CONSOLE_WRITE.value: self._gen_handler(pb.ConsoleWrite, self._on_mcu_console_write),
             Command.CMD_DATASTORE_PUT.value: self._gen_handler(pb.DatastorePut, self._on_mcu_datastore_put),
             Command.CMD_DATASTORE_GET.value: self._gen_handler(pb.DatastoreGet, self._on_mcu_datastore_get),
             Command.CMD_MAILBOX_PUSH.value: self._gen_handler(pb.MailboxPush, self._on_mcu_mailbox_push),
-            Command.CMD_MAILBOX_AVAILABLE.value: lambda seq, _: self._on_mcu_mailbox_available(seq),
-            Command.CMD_MAILBOX_READ.value: lambda seq, _: self._on_mcu_mailbox_read(seq),
+            Command.CMD_MAILBOX_AVAILABLE.value: lambda seq, _payload: self._on_mcu_mailbox_available(seq),
+            Command.CMD_MAILBOX_READ.value: lambda seq, _payload: self._on_mcu_mailbox_read(seq),
             Command.CMD_MAILBOX_PROCESSED.value: self._gen_handler(pb.MailboxProcessed, self._on_mcu_mailbox_processed),
             Command.CMD_FILE_WRITE.value: self._gen_handler(pb.FileWrite, self._on_mcu_file_write),
             Command.CMD_FILE_READ.value: self._gen_handler(pb.FileRead, self._on_mcu_file_read),
@@ -145,11 +146,11 @@ class BridgeService:
             Command.CMD_PROCESS_RUN_ASYNC.value: self._gen_handler(pb.ProcessRunAsync, self._on_mcu_process_run),
             Command.CMD_PROCESS_POLL.value: self._gen_handler(pb.ProcessPoll, self._on_mcu_process_poll),
             Command.CMD_PROCESS_KILL.value: self._gen_handler(pb.ProcessKill, lambda p: self._stop_process(p.pid)),
-            Command.CMD_DIGITAL_READ.value: lambda _, __: serial.send(
+            Command.CMD_DIGITAL_READ.value: lambda _seq, _payload: serial.send(
                 Status.NOT_IMPLEMENTED.value,
                 pb.GenericResponse(message="linux_originates_digital_read_requests"),
             ),
-            Command.CMD_ANALOG_READ.value: lambda _, __: serial.send(
+            Command.CMD_ANALOG_READ.value: lambda _seq, _payload: serial.send(
                 Status.NOT_IMPLEMENTED.value,
                 pb.GenericResponse(message="linux_originates_analog_read_requests"),
             ),
@@ -168,9 +169,9 @@ class BridgeService:
         }
 
     def _gen_handler(self, packet_type: type[Any], callback: Callable[[Any], Awaitable[Any]]) -> McuHandler:
-        async def _handler(seq: int, payload: bytes | Message) -> bool | None:
+        async def _handler(seq: int, payload: bytes | ProtobufMessage) -> bool | ProtobufMessage | None:
             try:
-                if isinstance(payload, Message):
+                if isinstance(payload, ProtobufMessage):
                     p = payload
                 else:
                     p = packet_type()
@@ -184,7 +185,7 @@ class BridgeService:
         return _handler
 
     def _make_status_handler(self, status: Status) -> McuHandler:
-        async def _handler(seq: int, payload: bytes | Message) -> bool | None:
+        async def _handler(seq: int, payload: bytes | ProtobufMessage) -> bool | ProtobufMessage | None:
             await self._handle_mcu_status(seq, status, payload)
             return True
 
@@ -192,7 +193,9 @@ class BridgeService:
 
     # --- External Interface ---
 
-    def register_serial_sender(self, sender: Callable[[int, Any, int | None], Awaitable[bool | bytes]]) -> None:
+    def register_serial_sender(
+        self, sender: Callable[[int, Any, int | None], Awaitable[bool | bytes | ProtobufMessage]]
+    ) -> None:
         self._serial_sender = sender
 
     def set_mqtt_client(self, client: aiomqtt.Client | None) -> None:
@@ -468,7 +471,7 @@ class BridgeService:
 
     # --- Dispatchers ---
 
-    async def handle_mcu_frame(self, command_id: int, sequence_id: int, payload: bytes | Message) -> None:
+    async def handle_mcu_frame(self, command_id: int, sequence_id: int, payload: bytes | ProtobufMessage) -> None:
         serial = self.serial
         if not serial:
             return
@@ -698,20 +701,29 @@ class BridgeService:
             QueuedPublish(topic_path(self.state.mqtt_topic_prefix, Topic.SPI, "transfer", "resp"), p.data)
         )
 
-    async def _on_mcu_ack(self, seq: int, payload: bytes) -> None:
+    async def _on_mcu_ack(self, seq: int, payload: bytes | ProtobufMessage) -> None:
         try:
-            p = pb.AckPacket.FromString(payload)
+            if isinstance(payload, ProtobufMessage):
+                p = cast(pb.AckPacket, payload)
+            else:
+                p = pb.AckPacket.FromString(payload)
             logger.debug("MCU > ACK for 0x%02X", p.command_id)
         except (ProtobufDecodeError, TypeError, ValueError) as e:
             logger.warning("Failed to decode MCU ACK packet", error=e)
 
-    async def _handle_mcu_status(self, seq_id: int, status: Status, payload: bytes) -> None:
+    async def _handle_mcu_status(self, seq_id: int, status: Status, payload: bytes | ProtobufMessage) -> None:
         text = ""
         if payload:
             try:
-                text = pb.GenericResponse.FromString(payload).message
+                if isinstance(payload, ProtobufMessage):
+                    text = getattr(payload, "message", str(payload))
+                else:
+                    text = pb.GenericResponse.FromString(payload).message
             except (ProtobufDecodeError, TypeError, ValueError):
-                text = payload.decode("utf-8", errors="ignore")
+                if isinstance(payload, bytes):
+                    text = payload.decode("utf-8", errors="ignore")
+                else:
+                    text = str(payload)
         log_func = logger.warning if status not in {Status.OK, Status.ACK} else logger.debug
         log_func("MCU > %s: %s %s", status.name, status.description, text)
         await self.enqueue_mqtt(

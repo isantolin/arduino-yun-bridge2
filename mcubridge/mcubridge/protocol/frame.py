@@ -16,7 +16,7 @@ from typing import Final
 
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
-from google.protobuf.message import DecodeError, Message
+from google.protobuf.message import DecodeError, Message as ProtobufMessage
 import msgspec
 
 from mcubridge.protocol import mcubridge_pb2 as pb
@@ -30,7 +30,7 @@ _CRC_SIZE: Final = protocol.CRC_SIZE
 
 class DecodedFrame(msgspec.Struct):
     envelope: pb.RpcEnvelope
-    payload: bytes | Message
+    payload: bytes | ProtobufMessage
 
 
 _MAP: Final[dict[str, str]] = {
@@ -38,14 +38,14 @@ _MAP: Final[dict[str, str]] = {
 }
 
 
-def _get_envelope_field_name_for_message(msg: Message) -> str | None:
+def _get_envelope_field_name_for_message(msg: ProtobufMessage) -> str | None:
     return _MAP.get(msg.DESCRIPTOR.name)
 
 
 def build_frame(
     command_id: int,
     sequence_id: int,
-    payload: bytes | Message | Message = b"",
+    payload: bytes | ProtobufMessage = b"",
     nonce: bytes | None = None,
     tag: bytes | None = None,
     session_key: bytes | None = None,
@@ -65,7 +65,7 @@ def build_frame(
         tag=tag or (b"\x00" * _TAG_SIZE),
     )
 
-    payload_bytes = payload.SerializeToString() if isinstance(payload, Message) else payload
+    payload_bytes = payload.SerializeToString() if isinstance(payload, ProtobufMessage) else payload
     if len(payload_bytes) > protocol.MAX_PAYLOAD_SIZE:
         raise ValueError(f"Payload size {len(payload_bytes)} exceeds maximum {protocol.MAX_PAYLOAD_SIZE}")
 
@@ -82,7 +82,7 @@ def build_frame(
         envelope.encrypted_payload, envelope.tag = full_ct[:-16], full_ct[-16:]
     else:
         # Unencrypted! Single-pass serialization.
-        if isinstance(payload, Message):
+        if isinstance(payload, ProtobufMessage):
             field_name = _get_envelope_field_name_for_message(payload)
             if field_name:
                 getattr(envelope, field_name).CopyFrom(payload)

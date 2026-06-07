@@ -12,18 +12,19 @@ from mcubridge.protocol import mcubridge_pb2 as pb
 
 import asyncio
 import logging
+from google.protobuf.json_format import MessageToDict
 import secrets
 import structlog
 import time
 from collections.abc import Awaitable, Callable
 from typing import Any
+from typing import cast
 
 import tenacity
 from cryptography.hazmat.primitives import hashes, hmac
 from cryptography.hazmat.primitives.constant_time import bytes_eq
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-from google.protobuf.message import DecodeError as ProtobufDecodeError
-from google.protobuf.json_format import MessageToDict
+from google.protobuf.message import DecodeError as ProtobufDecodeError, Message as ProtobufMessage
 
 from ..config.const import (
     SERIAL_HANDSHAKE_BACKOFF_BASE,
@@ -109,7 +110,7 @@ class SerialHandshakeManager:
         self._fatal_threshold = max(1, config.serial_handshake_fatal_failures)
         # [SIL-2] Serialize handshake timing as protobuf.
         self._reset_payload = self._timing
-        self._capabilities_future: asyncio.Future[bytes] | None = None
+        self._capabilities_future: asyncio.Future[bytes | ProtobufMessage] | None = None
         self.fsm_state = self.STATE_UNSYNCHRONIZED
 
     def _set_fsm_state(self, new_state: str) -> None:
@@ -224,7 +225,7 @@ class SerialHandshakeManager:
 
         return self.fsm_state == self.STATE_SYNCHRONIZED
 
-    async def handle_link_sync_resp(self, seq_id: int, payload: bytes) -> bool:
+    async def handle_link_sync_resp(self, seq_id: int, payload: bytes | ProtobufMessage) -> bool:
         expected = self._state.link_handshake_nonce
         if expected is None:
             self._logger.warning("Unexpected LINK_SYNC_RESP without pending nonce")
@@ -255,13 +256,16 @@ class SerialHandshakeManager:
 
         try:
             # [SIL-2] Decode LINK_SYNC_RESP as protobuf.
-            sync_pkt = pb.LinkSync.FromString(payload)
+            if isinstance(payload, ProtobufMessage):
+                sync_pkt = cast(pb.LinkSync, payload)
+            else:
+                sync_pkt = pb.LinkSync.FromString(payload)
             nonce = bytes(sync_pkt.nonce)
             tag_bytes = bytes(sync_pkt.tag)
         except (ProtobufDecodeError, ValueError, TypeError):
             self._logger.warning(
                 "LINK_SYNC_RESP protobuf decode failed (len=%d)",
-                len(payload),
+                len(payload) if isinstance(payload, bytes) else 0,
             )
             await self._acknowledge_frame(
                 Command.CMD_LINK_SYNC_RESP.value,
@@ -367,23 +371,28 @@ class SerialHandshakeManager:
         except tenacity.RetryError:
             return False
 
-    async def handle_capabilities_resp(self, seq_id: int, payload: bytes) -> bool:
+    async def handle_capabilities_resp(self, seq_id: int, payload: bytes | ProtobufMessage) -> bool:
         if self._capabilities_future and not self._capabilities_future.done():
             self._capabilities_future.set_result(payload)
         return True
 
-    def _parse_capabilities(self, payload: bytes) -> None:
+    def _parse_capabilities(self, payload: bytes | ProtobufMessage) -> None:
         try:
             # [SIL-2] Decode capabilities as protobuf.
-            cap = pb.Capabilities.FromString(payload)
-            features: dict[str, Any] = MessageToDict(cap, always_print_fields_with_no_presence=True)
+            if isinstance(payload, ProtobufMessage):
+                p = cast(pb.Capabilities, payload)
+            else:
+                p = pb.Capabilities.FromString(payload)
+            features: dict[str, Any] = MessageToDict(p, always_print_fields_with_no_presence=True)
             self._state.mcu_capabilities = features
             self._logger.info("MCU Capabilities: %s", self._state.mcu_capabilities)
         except (ProtobufDecodeError, ValueError, TypeError, KeyError) as exc:
             self._logger.warning("Failed to unpack capabilities: %s", exc)
 
-    async def handle_link_reset_resp(self, seq_id: int, payload: bytes) -> bool:
-        self._logger.info("MCU link reset acknowledged (payload=%s)", payload.hex())
+    async def handle_link_reset_resp(self, seq_id: int, payload: bytes | ProtobufMessage) -> bool:
+        self._logger.info(
+            "MCU link reset acknowledged (payload=%s)", (payload.hex() if isinstance(payload, bytes) else str(payload))
+        )
         return True
 
     async def handle_handshake_failure(

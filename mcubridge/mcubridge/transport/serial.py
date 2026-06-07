@@ -331,7 +331,7 @@ class SerialTransport:
                             async with asyncio.timeout(self._response_timeout):
                                 await pending.completion.wait()
                                 if pending.success:
-                                    return pending.response_payload if pending.response_payload is not None else True  # type: ignore
+                                    return pending.response_payload if pending.response_payload is not None else True
                         except TimeoutError:
                             raise self._RetryableSerialError()
 

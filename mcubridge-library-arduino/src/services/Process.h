@@ -40,7 +40,7 @@ class ProcessClass {
     ProcessRunHandler handler;
   };
   struct PendingPoll {
-    int32_t pid;
+    int32_t pid{0};
     ProcessPollHandler handler;
   };
   etl::queue<PendingRunAsync, bridge::config::MAX_PENDING_PROCESS_POLLS>

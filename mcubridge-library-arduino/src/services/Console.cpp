@@ -18,10 +18,9 @@ void ConsoleClass<T>::begin() {
 template <typename T>
 void ConsoleClass<T>::_push(const rpc::payload::ConsoleWrite& msg) {
   const auto& data = msg.data;
-  const size_t to_write = etl::min(static_cast<size_t>(data.size), _rx_buffer.available());
-  using bridge::etl_ext::CounterIterator;
-  etl::for_each(CounterIterator<size_t>(0U), CounterIterator<size_t>(to_write),
-                [&](size_t i) { _rx_buffer.push(data.bytes[i]); });
+  const size_t to_write =
+      etl::min(static_cast<size_t>(data.size), _rx_buffer.available());
+  _rx_buffer.insert(_rx_buffer.end(), data.bytes, data.bytes + to_write);
 }
 
 template <typename T>

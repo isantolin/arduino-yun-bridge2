@@ -54,7 +54,7 @@ void test_surgical_bridge_errors() {
   f_unk .version = 0;
   ba.dispatch(f_unk);
 
-  TEST_ASSERT(true);
+  
 }
 
 void test_surgical_fsm_resets() {
@@ -69,7 +69,7 @@ void test_surgical_fsm_resets() {
   ba.setSynchronized();
   ba.trigger(bridge::fsm::EvReset());
 
-  TEST_ASSERT(true);
+  
 }
 
 void test_surgical_security_failures() {
@@ -94,7 +94,7 @@ void test_surgical_tasks_flow() {
   ba.setSynchronized();
   ba.onAckTimeout();
 
-  TEST_ASSERT(true);
+  
 }
 
 int main() {

@@ -59,7 +59,7 @@ void test_bridge_emit_status_variants() {
   Bridge.emitStatus(rpc::StatusCode::STATUS_OK,
                     (const __FlashStringHelper*)nullptr);
 
-  TEST_ASSERT(true);
+  
 }
 
 void test_bridge_queue_full_and_retransmit() {
@@ -87,7 +87,7 @@ void test_bridge_queue_full_and_retransmit() {
   // Trigger ACK for a non-waiting command
   ba.handleAck(0xFFFF);
 
-  TEST_ASSERT(true);
+  
 }
 
 void test_filesystem_read_edge_cases() {
@@ -109,7 +109,7 @@ void test_filesystem_read_edge_cases() {
   FileSystem.onSynchronized();
   FileSystem.onLost();
 
-  TEST_ASSERT(true);
+  
 }
 
 void test_spi_timeout_and_error_paths() {
@@ -160,7 +160,7 @@ void test_process_poll_and_kill() {
   Process.onSynchronized();
   Process.onLost();
 
-  TEST_ASSERT(true);
+  
 }
 
 void test_process_branch_error_paths() {
@@ -299,7 +299,7 @@ void test_mailbox_and_datastore_variants() {
   DataStore.get("gamma", invalid_get_handler);
   DataStore._onResponse(rpc::payload::DatastoreGetResponse{});
 
-  TEST_ASSERT(true);
+  
 }
 
 void test_bridge_fsm_resets() {
@@ -322,7 +322,7 @@ void test_checksum_direct_library_path() {
   
   uint32_t crc = rpc::checksum::compute(etl::span<const uint8_t>(f.payload_type.encrypted_payload.bytes, f.payload_type.encrypted_payload.size)); // Adjusted for new checksum logic
   (void)crc;
-  TEST_ASSERT(true);
+  
 }
 
 void test_bridge_timer_callbacks() {
@@ -337,7 +337,7 @@ void test_bridge_timer_callbacks() {
   bridge::test::TestAccessor::create(Bridge).onStartupStabilized();
   Bridge._onBootloaderDelay();
 
-  TEST_ASSERT(true);
+  
 }
 
 void test_bridge_packet_errors() {
@@ -348,7 +348,7 @@ void test_bridge_packet_errors() {
   // Test malformed packet (length 0)
   ba.invokePacketReceived(etl::span<const uint8_t>());
 
-  TEST_ASSERT(true);
+  
 }
 
 void test_bridge_template_coverage() {
@@ -368,7 +368,7 @@ void test_bridge_template_coverage() {
   Bridge.onStatus(BridgeClass::StatusHandler::create<dummy_status_handler>());
   Bridge.flushStream();
 
-  TEST_ASSERT(true);
+  
 }
 
 void test_bridge_duplicate_packet() {
@@ -386,7 +386,7 @@ void test_bridge_duplicate_packet() {
   bridge::router::CommandContext ctx(&f, f.command_id, 10, true, true);
   ba.dispatch(f);
 
-  TEST_ASSERT(true);
+  
 }
 
 void test_bridge_exhaustive_command_handlers() {
@@ -443,7 +443,7 @@ void test_bridge_exhaustive_command_handlers() {
     return p;
   }());
 
-  TEST_ASSERT(true);
+  
 }
 
 int main() {

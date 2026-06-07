@@ -20,7 +20,6 @@
 #include <etl/crc32.h>
 #include <etl/expected.h>
 #include <etl/span.h>
-#include <etl/vector.h>
 
 #include "rpc_protocol.h"
 #include "rpc_structs.h"
@@ -32,23 +31,6 @@ inline constexpr size_t AEAD_TAG_SIZE = rpc::RPC_AEAD_TAG_SIZE;
 inline constexpr size_t CRC_TRAILER_SIZE = rpc::RPC_CRC_SIZE;
 inline constexpr size_t MAX_ENVELOPE_SIZE = rpc_pb_RpcEnvelope_size;
 inline constexpr size_t MAX_FRAME_SIZE = MAX_ENVELOPE_SIZE + CRC_TRAILER_SIZE;
-
-struct CRC32 {
-  static constexpr size_t ByteSize = 4;
-  inline void reset() {
-    _buffer.clear();
-  }
-  inline void add(uint8_t val) {
-    if (!_buffer.full()) {
-      _buffer.push_back(val);
-    }
-  }
-  inline uint32_t value() const {
-    return etl::crc32(_buffer.begin(), _buffer.end());
-  }
-private:
-  etl::vector<uint8_t, MAX_FRAME_SIZE> _buffer;
-};
 
 
 namespace checksum {
@@ -186,21 +168,46 @@ inline etl::expected<size_t, FrameError> serialize(const T& msg, etl::span<uint8
 }  // namespace Payload
 
 /**
- * @brief Serializes an envelope directly to buffer (Zero-Wrapper).
+ * @brief Serializes an envelope directly to buffer with CRC (Zero-Wrapper).
  */
 inline size_t serialize_frame(const rpc_pb_RpcEnvelope& env, etl::span<uint8_t> buffer) {
-  pb_ostream_t stream = pb_ostream_from_buffer(buffer.data(), buffer.size());
+  if (buffer.size() < CRC_TRAILER_SIZE) return 0;
+
+  pb_ostream_t stream =
+      pb_ostream_from_buffer(buffer.data(), buffer.size() - CRC_TRAILER_SIZE);
   if (!pb_encode(&stream, rpc::Payload::get_fields<rpc_pb_RpcEnvelope>(), &env)) return 0;
-  return stream.bytes_written;
+
+  const size_t encoded_size = stream.bytes_written;
+  const uint32_t crc = checksum::compute(buffer.subspan(0, encoded_size));
+
+  etl::byte_stream_writer writer(buffer.begin() + encoded_size,
+                                 CRC_TRAILER_SIZE, etl::endian::little);
+  writer.write<uint32_t>(crc);
+
+  return encoded_size + CRC_TRAILER_SIZE;
 }
 
 /**
- * @brief Parses a raw buffer into an envelope (Zero-Wrapper).
+ * @brief Parses a raw buffer into an envelope with CRC validation (Zero-Wrapper).
  */
 inline etl::expected<rpc_pb_RpcEnvelope, FrameError> parse_frame(
     etl::span<const uint8_t> buffer) {
+  if (buffer.size() < CRC_TRAILER_SIZE + 2U)
+    return etl::unexpected<FrameError>(FrameError::MALFORMED);
+
+  const size_t crc_offset = buffer.size() - CRC_TRAILER_SIZE;
+  const uint32_t crc_calc = checksum::compute(buffer.subspan(0, crc_offset));
+
+  uint32_t crc_received = 0;
+  etl::byte_stream_reader reader(buffer.begin() + crc_offset,
+                                 CRC_TRAILER_SIZE, etl::endian::little);
+  crc_received = reader.read<uint32_t>().value_or(0U);
+
+  if (crc_received != crc_calc)
+    return etl::unexpected<FrameError>(FrameError::CRC_MISMATCH);
+
   rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
-  pb_istream_t stream = pb_istream_from_buffer(buffer.data(), buffer.size());
+  pb_istream_t stream = pb_istream_from_buffer(buffer.data(), crc_offset);
   if (!pb_decode(&stream, rpc::Payload::get_fields<rpc_pb_RpcEnvelope>(), &env))
     return etl::unexpected<FrameError>(FrameError::MALFORMED);
 

@@ -34,7 +34,7 @@ from ..config.settings import RuntimeConfig
 from ..protocol import protocol, structures
 from ..protocol.protocol import Command, Status
 from ..protocol.structures import (
-    JSON_CONTENT_TYPE,
+    PROTOBUF_CONTENT_TYPE,
     QueuedPublish,
 )
 from ..protocol.topics import Topic, topic_path
@@ -515,7 +515,7 @@ class SerialHandshakeManager:
         message = QueuedPublish(
             topic_name=topic_path(self._state.mqtt_topic_prefix, Topic.SYSTEM, "handshake"),
             payload=structures.encode_structured_payload(payload),
-            content_type=JSON_CONTENT_TYPE,
+            content_type=PROTOBUF_CONTENT_TYPE,
             user_properties=(("bridge-event", "handshake"),),
         )
         await self._enqueue_mqtt(message)

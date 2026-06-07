@@ -377,8 +377,7 @@ class BridgeClass {
   template <typename T, void (BridgeClass::*Handler)(const T&)>
   static void _dispatchPayload(BridgeClass& b,
                                const bridge::router::CommandContext& ctx) {
-    auto res = rpc::Payload::get_field<T>(*ctx.envelope);
-    if (res) (b.*Handler)(res.value());
+    (b.*Handler)(rpc::Payload::get_field<T>(*ctx.envelope));
   }
 
   void _handleSetPinMode(const rpc_pb_PinMode& m);

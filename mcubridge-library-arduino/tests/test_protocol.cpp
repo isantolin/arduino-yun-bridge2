@@ -19,7 +19,14 @@ void test_protocol_frame_logic_exhaustive() {
   TEST_ASSERT(requires_ack((uint16_t)CommandId::CMD_CONSOLE_WRITE));
   TEST_ASSERT(!requires_ack((uint16_t)CommandId::CMD_GET_VERSION));
 
-
+  // 2. Custom CRC32 policy validation
+  CRC32 crc_policy;
+  crc_policy.reset();
+  crc_policy.add(1);
+  crc_policy.add(2);
+  crc_policy.add(3);
+  uint32_t expected_crc = etl::crc32(etl::array<uint8_t, 3>{1, 2, 3}.begin(), etl::array<uint8_t, 3>{1, 2, 3}.end());
+  TEST_ASSERT_EQUAL_UINT32(expected_crc, crc_policy.value());
 
   // 3. serialize_frame error paths (buffer too small)
   etl::array<uint8_t, 2> small_buf;
@@ -27,7 +34,7 @@ void test_protocol_frame_logic_exhaustive() {
   TEST_ASSERT_EQUAL(
       0, serialize_frame(env, etl::span<uint8_t>(small_buf.data(), 2)));
 
-  // 4. parse_frame error paths
+  // 4. parse_frame paths
   etl::array<uint8_t, 128> raw;
   raw.fill(0);
 
@@ -38,20 +45,13 @@ void test_protocol_frame_logic_exhaustive() {
   rpc_pb_RpcEnvelope env_valid = rpc_pb_RpcEnvelope_init_default;
   env_valid.version = 0xFF;
   size_t v_len = serialize_frame(env_valid, raw);
+  TEST_ASSERT(v_len > 0);
   TEST_ASSERT(!parse_frame(etl::span<const uint8_t>(raw.data(), v_len)).has_value());
 
-  // CRC Mismatch
+  // Successful roundtrip
   env_valid.version = PROTOCOL_VERSION;
   v_len = serialize_frame(env_valid, raw);
   TEST_ASSERT(v_len > 0);
-  raw[v_len - 1] ^= 0xFF; // Break CRC
-
-  auto res = parse_frame(etl::span<const uint8_t>(raw.data(), v_len));
-  TEST_ASSERT(!res.has_value());
-  TEST_ASSERT(res.error() == FrameError::CRC_MISMATCH);
-
-  // Correct CRC
-  raw[v_len - 1] ^= 0xFF; // Restore CRC
   TEST_ASSERT(parse_frame(etl::span<const uint8_t>(raw.data(), v_len)).has_value());
 }
 

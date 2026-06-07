@@ -47,6 +47,7 @@ from ..protocol.protocol import (
 )
 from ..protocol.structures import (
     ProcessOutputBatch,
+    JSON_CONTENT_TYPE,
     PROTOBUF_CONTENT_TYPE,
     QueuedPublish,
     TopicRoute,
@@ -737,7 +738,7 @@ class BridgeService:
                         "message": text,
                     }
                 ),
-                content_type=PROTOBUF_CONTENT_TYPE,
+                content_type=JSON_CONTENT_TYPE,
                 user_properties=(("bridge-status", status.name),),
             )
         )
@@ -1019,7 +1020,7 @@ class BridgeService:
                                     "reason": "pending-pin-overflow",
                                 }
                             ),
-                            content_type=PROTOBUF_CONTENT_TYPE,
+                            content_type=JSON_CONTENT_TYPE,
                             user_properties=(
                                 ("bridge-error", "pending-pin-overflow"),
                                 ("bridge-pin", str(pin)),
@@ -1066,7 +1067,7 @@ class BridgeService:
                     QueuedPublish(
                         topic_path(self.state.mqtt_topic_prefix, Topic.SYSTEM, "bridge", flavor, "value"),
                         structures.encode_structured_payload(snap),
-                        content_type=PROTOBUF_CONTENT_TYPE,
+                        content_type=JSON_CONTENT_TYPE,
                     ),
                     reply_context=inbound,
                 )
@@ -1237,7 +1238,7 @@ class BridgeService:
             QueuedPublish(
                 topic_path(self.state.mqtt_topic_prefix, Topic.SYSTEM, Topic.STATUS),
                 structures.encode_structured_payload({"status": "forbidden", "topic": val, "action": act}),
-                content_type=PROTOBUF_CONTENT_TYPE,
+                content_type=JSON_CONTENT_TYPE,
                 user_properties=(("bridge-error", TOPIC_FORBIDDEN_REASON),),
             ),
             reply_context=ctx,

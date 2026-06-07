@@ -11,7 +11,7 @@ from mcubridge.metrics import (
     publish_bridge_snapshots,
     publish_metrics,
 )
-from mcubridge.protocol.structures import PROTOBUF_CONTENT_TYPE, QueuedPublish, decode_structured_payload
+from mcubridge.protocol.structures import JSON_CONTENT_TYPE, QueuedPublish, decode_structured_payload
 from mcubridge.protocol import protocol
 from mcubridge.state.context import RuntimeState
 
@@ -68,7 +68,7 @@ async def test_publish_metrics_publishes_snapshot(
 
     assert message.topic_name == expected_topic
     assert decode_structured_payload(message.payload) == fake_snapshot
-    assert message.content_type == PROTOBUF_CONTENT_TYPE
+    assert message.content_type == JSON_CONTENT_TYPE
     assert ("bridge-spool", "disk-full") in message.user_properties
     assert ("bridge-files", "quota-blocked") in message.user_properties
     assert ("bridge-watchdog-enabled", "1") in message.user_properties

@@ -152,7 +152,8 @@ class BridgeClass {
     env.version = rpc::PROTOCOL_VERSION;
     env.command_id = command_id;
     env.sequence_id = sequence_id;
-    rpc::Payload::set_envelope_field<T>(env, packet);
+    env.which_payload_type = rpc::Payload::get_tag<T>();
+    rpc::Payload::set_field(env, packet);
     size_t len = rpc::serialize_frame(env, buffer);
     if (len > 0) {
       _packet_serial.send(_stream, etl::span<const uint8_t>(buffer.data(), len));
@@ -337,7 +338,7 @@ class BridgeClass {
       b._processAck(ctx.raw_command, ctx.sequence_id);
       return;
     }
-    auto res = rpc::Payload::parse<T>(*ctx.envelope);
+    auto res = rpc::Payload::get_field<T>(*ctx.envelope);
     if (res) {
       b._processAck(ctx.raw_command, ctx.sequence_id);
       (b.*Handler)(res.value());
@@ -353,7 +354,7 @@ class BridgeClass {
       b._processAck(ctx.raw_command, ctx.sequence_id);
       return;
     }
-    auto res = rpc::Payload::parse<T>(*ctx.envelope);
+    auto res = rpc::Payload::get_field<T>(*ctx.envelope);
     if (res) {
       b._processAck(ctx.raw_command, ctx.sequence_id);
       (b.*Handler)(ctx, res.value());
@@ -391,7 +392,7 @@ class BridgeClass {
   template <typename T, void (BridgeClass::*Handler)(const T&)>
   static void _dispatchPayload(BridgeClass& b,
                                const bridge::router::CommandContext& ctx) {
-    auto res = rpc::Payload::parse<T>(*ctx.envelope);
+    auto res = rpc::Payload::get_field<T>(*ctx.envelope);
     if (res) (b.*Handler)(res.value());
   }
 

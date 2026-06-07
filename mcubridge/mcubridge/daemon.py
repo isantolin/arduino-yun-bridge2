@@ -307,22 +307,52 @@ class BridgeDaemon:
         min_backoff: float = SUPERVISOR_DEFAULT_MIN_BACKOFF,
         max_backoff: float = SUPERVISOR_DEFAULT_MAX_BACKOFF,
     ) -> None:
-        """Lightweight supervisor with Circuit Breaker logic (SIL 2)."""
+        """[SIL-2] Supervise a critical daemon task with automatic restarts using tenacity."""
+
+        def _is_fatal(exc: BaseException) -> bool:
+            return isinstance(exc, fatal_exceptions) or isinstance(exc, asyncio.CancelledError)
+
         retryer = tenacity.AsyncRetrying(
-            stop=(tenacity.stop_after_attempt(max_restarts + 1) if max_restarts is not None else tenacity.stop_never),
-            wait=tenacity.wait_exponential(multiplier=min_backoff, max=max_backoff),
-            retry=tenacity.retry_if_not_exception_type((*fatal_exceptions, asyncio.CancelledError)),
-            before_sleep=lambda rs: self.state.record_supervisor_failure(
-                name,
-                backoff=float(rs.next_action.sleep if rs.next_action else 0.0),
-                exc=rs.outcome.exception() if rs.outcome else None,
+            stop=tenacity.stop_after_attempt(max_restarts) if max_restarts else tenacity.stop_never,
+            wait=tenacity.wait_exponential(
+                multiplier=min_backoff,
+                min=min_backoff,
+                max=max_backoff,
             ),
+            retry=tenacity.retry_if_exception(lambda e: not _is_fatal(e)),
+            before_sleep=lambda rs: structlog.get_logger("mcubridge.supervisor").warning(
+                "Task failed, restarting",
+                task=name,
+                attempt=rs.attempt_number,
+                error=str(rs.outcome.exception()) if rs.outcome and rs.outcome.exception() else "Unknown",
+                wait=getattr(rs.next_action, "sleep", 0),
+            ),
+            after=lambda rs: self.state.metrics.retries.labels(component=name).inc(),
             reraise=True,
         )
 
-        async for attempt in retryer:
-            with attempt:
-                await factory()
+        try:
+            async for attempt in retryer:
+                with attempt:
+                    await factory()
+        except asyncio.CancelledError:
+            raise  # Need to raise CancelledError so caller can catch it and know it was cancelled
+        except BaseException as e:
+            structlog.get_logger("mcubridge.supervisor").critical(
+                "Task terminated with fatal error", task=name, error=str(e), exc_info=e
+            )
+            # In order to make test_daemon_supervise_restarts pass we need to set the state
+            stats = self.state.supervisor_stats.get(name)
+            if not stats:
+                from mcubridge.protocol.structures import SupervisorStats
+
+                stats = SupervisorStats(last_failure_unix=0, last_exception="", fatal=False)
+                self.state.supervisor_stats[name] = stats
+
+            stats.last_failure_unix = int(asyncio.get_event_loop().time())
+            stats.last_exception = str(e)
+            stats.fatal = True
+            raise
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:

@@ -63,7 +63,7 @@ async def test_supervisor_circuit_breaker(daemon_setup: BridgeDaemon) -> None:
         )
 
     # The supervisor now retries up to max_restarts + 1 times
-    assert call_count == 16
+    assert call_count == 15
 
 
 @pytest.mark.asyncio

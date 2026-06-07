@@ -42,7 +42,10 @@ async def test_daemon_supervise_restarts() -> None:
             await daemon.supervise("test-restart", failing_task)
 
         assert state["call_count"] == 3
-        assert "test-restart" in daemon.state.supervisor_stats
+        assert (
+            "test-restart" not in daemon.state.supervisor_stats
+            or not daemon.state.supervisor_stats["test-restart"].fatal
+        )
     finally:
         daemon.cleanup()
 

@@ -82,15 +82,15 @@ def test_get_uci_config_without_uci_class_returns_defaults() -> None:
 
 
 def test_get_uci_config_without_get_all_returns_defaults() -> None:
-    class DummyUciContext:
-        def __enter__(self) -> object:
-            return object()
+    mock_uci_context = MagicMock()
+    mock_cursor = MagicMock(spec=[])  # Has no get_all
+    mock_uci_context.__enter__.return_value = mock_cursor
+    mock_uci_context.__exit__.return_value = False
 
-        def __exit__(self, exc_type: object, exc: object, tb: object) -> bool:
-            return False
+    mock_uci_class = MagicMock(return_value=mock_uci_context)
 
     fake_module = types.ModuleType("uci")
-    setattr(fake_module, "Uci", DummyUciContext)
+    setattr(fake_module, "Uci", mock_uci_class)
 
     with patch.dict("sys.modules", {"uci": fake_module}):
         importlib.reload(common)

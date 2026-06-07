@@ -30,7 +30,6 @@ def _make_config() -> RuntimeConfig:
     )
 
 
-
 @pytest.mark.asyncio
 async def test_process_packet_crc_mismatch_reports_crc(
     monkeypatch: pytest.MonkeyPatch,

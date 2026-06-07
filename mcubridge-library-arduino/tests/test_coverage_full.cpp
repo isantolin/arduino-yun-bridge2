@@ -6,7 +6,6 @@
 #include "BridgeTestInterface.h"
 #include "etl_ext/CounterIterator.h"
 #include "hal/hal.h"
-#include "hal/progmem_compat.h"
 #include "services/Console.h"
 #include "services/DataStore.h"
 #include "services/FileSystem.h"
@@ -287,10 +286,6 @@ void test_bridge_coverage() {
   bridge::hal::memory_fence();
   bridge::hal::watchdog_kick();
   [[maybe_unused]] bool _unused_pin = (0 < bridge::config::DIGITAL_PINS);
-  uint8_t pb_val = 0;
-  bridge::hal::read_byte(&pb_val);
-  char pd_val[1];
-  bridge::hal::copy_string(pd_val, "", 1);
 
   // 11. FSM & Timers & Retransmission
   printf("  - Step 11: FSM & Timers\n");

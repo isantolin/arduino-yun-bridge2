@@ -14,7 +14,6 @@
 #include <wolfssl/wolfcrypt/kdf.h>
 
 #include "Bridge.h"
-#include "hal/progmem_compat.h"
 
 
 

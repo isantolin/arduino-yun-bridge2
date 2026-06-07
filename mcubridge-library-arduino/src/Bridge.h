@@ -92,21 +92,6 @@ class BridgeClass {
       if (to_copy > 0U) etl::copy_n(payload.begin(), to_copy, resp.message);
       resp.message[to_copy] = 0;
       (void)send(s, 0, resp);
-    } else if constexpr (etl::is_same_v<T, const __FlashStringHelper*> || etl::is_same_v<T, __FlashStringHelper*>) {
-      if (!payload) {
-        (void)sendFrame(s);
-        return;
-      }
-      constexpr size_t max_len = 63U;
-      etl::string<max_len> str;
-      str.resize(max_len);
-      bridge::hal::copy_string(str.data(), reinterpret_cast<const char*>(payload), max_len);
-      str.resize(etl::strlen(str.data()));
-      rpc_pb_GenericResponse resp = rpc_pb_GenericResponse_init_default;
-      const size_t to_copy = etl::min(static_cast<size_t>(str.length()), sizeof(resp.message) - 1U);
-      if (to_copy > 0U) etl::copy_n(str.begin(), to_copy, resp.message);
-      resp.message[to_copy] = 0;
-      (void)send(s, 0, resp);
     }
   }
   void emitStatus(rpc::StatusCode s) {

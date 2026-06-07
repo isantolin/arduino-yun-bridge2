@@ -7,7 +7,6 @@
 #include <wolfssl/wolfcrypt/types.h>
 
 #include "hal/ArchTraits.h"
-#include "hal/progmem_compat.h"
 #include "services/Console.h"
 #include "services/DataStore.h"
 #include "services/FileSystem.h"

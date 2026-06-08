@@ -244,7 +244,7 @@ class BridgeClass {
   void _timerTask();
 
   struct DelegateTask : public etl::task {
-    DelegateTask(etl::task_priority_t priority) : etl::task(priority) {}
+    explicit DelegateTask(etl::task_priority_t priority) : etl::task(priority) {}
     etl::delegate<void()> task_delegate;
     uint32_t task_request_work() const override { return 1; }
     void task_process_work() override { if (task_delegate.is_valid()) task_delegate(); }

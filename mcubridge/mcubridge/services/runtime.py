@@ -46,6 +46,15 @@ from ..protocol.protocol import (
     response_to_request,
 )
 
+from ..protocol.structures import (
+    ProcessOutputBatch,
+    PROTOBUF_CONTENT_TYPE,
+    QueuedPublish,
+    TopicRoute,
+)
+from ..protocol.topics import Topic, parse_topic, topic_path
+from ..state.context import ProcessContext, RuntimeState
+
 _COMMAND_TO_PB = {
     Command.CMD_CONSOLE_WRITE.value: pb.ConsoleWrite,
     Command.CMD_DATASTORE_PUT.value: pb.DatastorePut,
@@ -63,14 +72,6 @@ _COMMAND_TO_PB = {
     Command.CMD_ANALOG_READ_RESP.value: pb.AnalogReadResponse,
     Command.CMD_SPI_TRANSFER_RESP.value: pb.SpiTransferResponse,
 }
-from ..protocol.structures import (
-    ProcessOutputBatch,
-    PROTOBUF_CONTENT_TYPE,
-    QueuedPublish,
-    TopicRoute,
-)
-from ..protocol.topics import Topic, parse_topic, topic_path
-from ..state.context import ProcessContext, RuntimeState
 
 if TYPE_CHECKING:
     from ..transport.serial import SerialTransport
@@ -150,20 +151,22 @@ class BridgeService:
         return {
             Command.CMD_XOFF.value: lambda _seq, _payload: self._handle_mcu_xoff(),
             Command.CMD_XON.value: lambda _seq, _payload: self._handle_mcu_xon(),
-            Command.CMD_CONSOLE_WRITE.value: lambda _seq, p: self._on_mcu_console_write(p),
-            Command.CMD_DATASTORE_PUT.value: lambda _seq, p: self._on_mcu_datastore_put(p),
-            Command.CMD_DATASTORE_GET.value: lambda _seq, p: self._on_mcu_datastore_get(p),
-            Command.CMD_MAILBOX_PUSH.value: lambda _seq, p: self._on_mcu_mailbox_push(p),
+            Command.CMD_CONSOLE_WRITE.value: lambda _seq, p: self._on_mcu_console_write(cast(pb.ConsoleWrite, p)),
+            Command.CMD_DATASTORE_PUT.value: lambda _seq, p: self._on_mcu_datastore_put(cast(pb.DatastorePut, p)),
+            Command.CMD_DATASTORE_GET.value: lambda _seq, p: self._on_mcu_datastore_get(cast(pb.DatastoreGet, p)),
+            Command.CMD_MAILBOX_PUSH.value: lambda _seq, p: self._on_mcu_mailbox_push(cast(pb.MailboxPush, p)),
             Command.CMD_MAILBOX_AVAILABLE.value: lambda seq, _payload: self._on_mcu_mailbox_available(seq),
             Command.CMD_MAILBOX_READ.value: lambda seq, _payload: self._on_mcu_mailbox_read(seq),
-            Command.CMD_MAILBOX_PROCESSED.value: lambda _seq, p: self._on_mcu_mailbox_processed(p),
-            Command.CMD_FILE_WRITE.value: lambda _seq, p: self._on_mcu_file_write(p),
-            Command.CMD_FILE_READ.value: lambda _seq, p: self._on_mcu_file_read(p),
-            Command.CMD_FILE_REMOVE.value: lambda _seq, p: self._on_mcu_file_remove(p),
-            Command.CMD_FILE_READ_RESP.value: lambda _seq, p: self._on_mcu_file_read_resp(p),
-            Command.CMD_PROCESS_RUN_ASYNC.value: lambda _seq, p: self._on_mcu_process_run(p),
-            Command.CMD_PROCESS_POLL.value: lambda _seq, p: self._on_mcu_process_poll(p),
-            Command.CMD_PROCESS_KILL.value: lambda _seq, p: self._stop_process(p.pid),
+            Command.CMD_MAILBOX_PROCESSED.value: lambda _seq, p: self._on_mcu_mailbox_processed(
+                cast(pb.MailboxProcessed, p)
+            ),
+            Command.CMD_FILE_WRITE.value: lambda _seq, p: self._on_mcu_file_write(cast(pb.FileWrite, p)),
+            Command.CMD_FILE_READ.value: lambda _seq, p: self._on_mcu_file_read(cast(pb.FileRead, p)),
+            Command.CMD_FILE_REMOVE.value: lambda _seq, p: self._on_mcu_file_remove(cast(pb.FileRemove, p)),
+            Command.CMD_FILE_READ_RESP.value: lambda _seq, p: self._on_mcu_file_read_resp(cast(pb.FileReadResponse, p)),
+            Command.CMD_PROCESS_RUN_ASYNC.value: lambda _seq, p: self._on_mcu_process_run(cast(pb.ProcessRunAsync, p)),
+            Command.CMD_PROCESS_POLL.value: lambda _seq, p: self._on_mcu_process_poll(cast(pb.ProcessPoll, p)),
+            Command.CMD_PROCESS_KILL.value: lambda _seq, p: self._stop_process(cast(pb.ProcessKill, p).pid),
             Command.CMD_DIGITAL_READ.value: lambda _seq, _payload: serial.send(
                 Status.NOT_IMPLEMENTED.value,
                 pb.GenericResponse(message="linux_originates_digital_read_requests"),
@@ -172,18 +175,18 @@ class BridgeService:
                 Status.NOT_IMPLEMENTED.value,
                 pb.GenericResponse(message="linux_originates_analog_read_requests"),
             ),
-            Command.CMD_DIGITAL_READ_RESP.value: lambda _seq, p: self._on_pin_resp(p, Topic.DIGITAL, self.state.pending_digital_reads),
-            Command.CMD_ANALOG_READ_RESP.value: lambda _seq, p: self._on_pin_resp(p, Topic.ANALOG, self.state.pending_analog_reads),
-            Command.CMD_SPI_TRANSFER_RESP.value: lambda _seq, p: self._on_mcu_spi_resp(p),
+            Command.CMD_DIGITAL_READ_RESP.value: lambda _seq, p: self._on_pin_resp(
+                p, Topic.DIGITAL, self.state.pending_digital_reads
+            ),
+            Command.CMD_ANALOG_READ_RESP.value: lambda _seq, p: self._on_pin_resp(
+                p, Topic.ANALOG, self.state.pending_analog_reads
+            ),
+            Command.CMD_SPI_TRANSFER_RESP.value: lambda _seq, p: self._on_mcu_spi_resp(cast(pb.SpiTransferResponse, p)),
             Command.CMD_GET_CAPABILITIES_RESP.value: self.handshake.handle_capabilities_resp,
             Command.CMD_LINK_SYNC_RESP.value: self.handshake.handle_link_sync_resp,
             Command.CMD_LINK_RESET_RESP.value: self.handshake.handle_link_reset_resp,
             Status.ACK.value: self._on_mcu_ack,
         }
-
-
-
-        return _handler
 
     def _make_status_handler(self, status: Status) -> McuHandler:
         async def _handler(seq: int, payload: bytes | ProtobufMessage) -> bool | ProtobufMessage | None:
@@ -484,7 +487,7 @@ class BridgeService:
             if not isinstance(p, ProtobufMessage) and command_id in _COMMAND_TO_PB:
                 msg_cls = _COMMAND_TO_PB[command_id]
                 p = msg_cls()
-                p.ParseFromString(payload)
+                p.ParseFromString(cast(bytes, payload))
 
             if await handler(sequence_id, p) is not False and command_id not in _STATUS_VALUES:
                 await serial.acknowledge(command_id, sequence_id)

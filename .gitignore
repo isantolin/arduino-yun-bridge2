@@ -122,3 +122,5 @@ mcubridge-library-arduino/src/pb_decode.h
 mcubridge-library-arduino/src/pb_encode.c
 mcubridge-library-arduino/src/pb_encode.h
 .mosquitto-tox.pid
+feeds/luci-app-mcubridge
+feeds/mcubridge

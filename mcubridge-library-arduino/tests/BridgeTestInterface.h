@@ -85,13 +85,13 @@ class TestAccessor : public BridgeClass {
   void onRxDedupe() { _onRxDedupe(); }
   void setPendingBaudrate(uint32_t b) { _pending_baudrate = b; }
   void onBaudrateChange() { _onBaudrateChange(); }
-  void invokeWatchdog() { _watchdog_task.task_process_work(); }
-  void invokeSerialTask() { _serial_task.task_process_work(); }
-  void invokeTimerTask() { _timer_task.task_process_work(); }
-  void setSerialTaskXoffSent(bool value) { _serial_task.xoff_sent = value; }
-  void setSerialTaskBridgeNull() { _serial_task.bridge = nullptr; }
-  void setTimerTaskBridgeNull() { _timer_task.bridge = nullptr; }
-  void setTimerLastTick(uint32_t tick) { _timer_task.last_tick_ms = tick; }
+  void invokeWatchdog() { _watchdogTask(); }
+  void invokeSerialTask() { _serialTask(); }
+  void invokeTimerTask() { _timerTask(); }
+  void setSerialTaskXoffSent(bool value) { _serial_xoff_sent = value; }
+  void setSerialTaskBridgeNull() { }
+  void setTimerTaskBridgeNull() { }
+  void setTimerLastTick(uint32_t tick) { _timer_last_tick_ms = tick; }
   void setHardwareSerial(HardwareSerial* serial) { _hardware_serial = serial; }
   void clearPendingTxQueue() { _clearPendingTxQueue(); }
   void exhaustTxPayloadPool() { exhaustTxPayloadPoolRecursive(); }

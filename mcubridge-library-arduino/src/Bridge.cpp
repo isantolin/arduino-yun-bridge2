@@ -45,14 +45,14 @@ BridgeClass::BridgeClass(Stream& stream)
       _tx_nonce_counter(0),
       _rx_nonce_counter(0),
       _fsm(),
-      _watchdog_task(),
-      _serial_task(),
-      _timer_task(),
+      _watchdog_task(0),
+      _serial_task(1),
+      _timer_task(2),
       _tasks(),
       _scheduler_policy(),
+      _timer_last_tick_ms(0),
+      _serial_xoff_sent(false),
       _timers(),
-      _timer_ids(),
-      _transient_buffer(),
       _rx_storage(),
       _is_post_passed(false),
       _tx_enabled(true),
@@ -199,12 +199,18 @@ BridgeClass::DispatchHandler BridgeClass::_getHandler(uint16_t command_id) {
 }
 
 void BridgeClass::_initializeRuntime() {
+  _watchdog_task.task_delegate = etl::delegate<void()>::create<BridgeClass, &BridgeClass::_watchdogTask>(*this);
+  _serial_task.task_delegate = etl::delegate<void()>::create<BridgeClass, &BridgeClass::_serialTask>(*this);
+  _timer_task.task_delegate = etl::delegate<void()>::create<BridgeClass, &BridgeClass::_timerTask>(*this);
+
   _tasks.clear();
-  _serial_task.bind(*this);
-  _timer_task.bind(*this);
   _tasks.push_back(&_watchdog_task);
   _tasks.push_back(&_serial_task);
   _tasks.push_back(&_timer_task);
+
+  _timer_last_tick_ms = 0;
+  _serial_xoff_sent = false;
+
   _rx_storage.fill(0);
   _ps_rx_storage.fill(0);
   _ps_work_buffer.fill(0);
@@ -257,32 +263,31 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
 void BridgeClass::process() {
   [[maybe_unused]] auto _u1 = _scheduler_policy.schedule_tasks(_tasks);
 }
-void BridgeClass::WatchdogTask::task_process_work() {
+void BridgeClass::_watchdogTask() {
   bridge::hal::watchdog_kick();
 }
-void BridgeClass::SerialTask::task_process_work() {
-  if (!bridge) return;
-  bridge->_packet_serial.update(bridge->_stream);
-  const int avail = bridge->_stream.available();
-  if (!xoff_sent && avail > bridge::config::FLOW_CONTROL_XOFF_THRESHOLD) {
-    bridge->signalXoff();
-    xoff_sent = true;
-  } else if (xoff_sent && avail < bridge::config::FLOW_CONTROL_XON_THRESHOLD) {
-    bridge->signalXon();
-    xoff_sent = false;
-  }
-}
-void BridgeClass::TimerTask::task_process_work() {
-  if (!bridge) return;
-  const uint32_t now = ::millis();
-  if (last_tick_ms == 0) last_tick_ms = now;
-  const uint32_t elapsed = now - last_tick_ms;
-  if (elapsed > 0) {
-    bridge->_timers.tick(elapsed);
-    last_tick_ms = now;
+
+void BridgeClass::_serialTask() {
+  _packet_serial.update(_stream);
+  const int avail = _stream.available();
+  if (!_serial_xoff_sent && avail > bridge::config::FLOW_CONTROL_XOFF_THRESHOLD) {
+    signalXoff();
+    _serial_xoff_sent = true;
+  } else if (_serial_xoff_sent && avail < bridge::config::FLOW_CONTROL_XON_THRESHOLD) {
+    signalXon();
+    _serial_xoff_sent = false;
   }
 }
 
+void BridgeClass::_timerTask() {
+  const uint32_t now = ::millis();
+  if (_timer_last_tick_ms == 0) _timer_last_tick_ms = now;
+  const uint32_t elapsed = now - _timer_last_tick_ms;
+  if (elapsed > 0) {
+    _timers.tick(elapsed);
+    _timer_last_tick_ms = now;
+  }
+}
 bool BridgeClass::isSynchronized() const { return _fsm.isSynchronized(); }
 void BridgeClass::_handleStatusOk(const bridge::router::CommandContext& ctx) {
   (void)ctx;

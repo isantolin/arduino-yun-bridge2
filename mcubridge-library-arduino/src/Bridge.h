@@ -239,38 +239,26 @@ class BridgeClass {
   uint64_t _rx_nonce_counter;
   bridge::fsm::BridgeFsm _fsm;
 
-  struct WatchdogTask : public etl::task {
-    WatchdogTask() : etl::task(0) {}
-    uint32_t task_request_work() const override { return 1; }
-    void task_process_work() override;
-  } _watchdog_task;
+  void _watchdogTask();
+  void _serialTask();
+  void _timerTask();
 
-  struct SerialTask : public etl::task {
-    BridgeClass* bridge;
-    bool xoff_sent;
-    SerialTask() : etl::task(1), bridge(nullptr), xoff_sent(false) {}
-    void bind(BridgeClass& owner) {
-      bridge = &owner;
-      xoff_sent = false;
-    }
+  struct DelegateTask : public etl::task {
+    DelegateTask(etl::task_priority_t priority) : etl::task(priority) {}
+    etl::delegate<void()> task_delegate;
     uint32_t task_request_work() const override { return 1; }
-    void task_process_work() override;
-  } _serial_task;
+    void task_process_work() override { if (task_delegate.is_valid()) task_delegate(); }
+  };
 
-  struct TimerTask : public etl::task {
-    BridgeClass* bridge;
-    uint32_t last_tick_ms;
-    TimerTask() : etl::task(2), bridge(nullptr), last_tick_ms(0) {}
-    void bind(BridgeClass& owner) {
-      bridge = &owner;
-      last_tick_ms = 0;
-    }
-    uint32_t task_request_work() const override { return 1; }
-    void task_process_work() override;
-  } _timer_task;
+  DelegateTask _watchdog_task;
+  DelegateTask _serial_task;
+  DelegateTask _timer_task;
 
   etl::vector<etl::task*, 3> _tasks;
   etl::scheduler_policy_sequential_single _scheduler_policy;
+
+  uint32_t _timer_last_tick_ms;
+  bool _serial_xoff_sent;
 
   etl::callback_timer<bridge::scheduler::NUMBER_OF_TIMERS> _timers;
   etl::array<etl::timer::id::type, bridge::scheduler::NUMBER_OF_TIMERS>

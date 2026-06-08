@@ -323,7 +323,7 @@ class BridgeClass {
       b._processAck(ctx.raw_command, ctx.sequence_id);
       return;
     }
-    auto res = rpc::Payload::get_field<T>(*ctx.envelope);
+    auto res = rpc::Payload::parse<T>(*ctx.envelope);
     if (res) {
       b._processAck(ctx.raw_command, ctx.sequence_id);
       (b.*Handler)(res.value());
@@ -339,7 +339,7 @@ class BridgeClass {
       b._processAck(ctx.raw_command, ctx.sequence_id);
       return;
     }
-    auto res = rpc::Payload::get_field<T>(*ctx.envelope);
+    auto res = rpc::Payload::parse<T>(*ctx.envelope);
     if (res) {
       b._processAck(ctx.raw_command, ctx.sequence_id);
       (b.*Handler)(ctx, res.value());
@@ -377,7 +377,7 @@ class BridgeClass {
   template <typename T, void (BridgeClass::*Handler)(const T&)>
   static void _dispatchPayload(BridgeClass& b,
                                const bridge::router::CommandContext& ctx) {
-    (b.*Handler)(rpc::Payload::get_field<T>(*ctx.envelope));
+    (b.*Handler)((rpc::Payload::parse<T>(*ctx.envelope)).value());
   }
 
   void _handleSetPinMode(const rpc_pb_PinMode& m);

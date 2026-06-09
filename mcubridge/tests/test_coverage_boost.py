@@ -223,8 +223,14 @@ async def test_serial_transport_coverage_boost(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_daemon_coverage_boost() -> None:
+async def test_daemon_coverage_boost(tmp_path) -> None:
     from mcubridge.daemon import BridgeDaemon, app
+
+    # Crear rutas de sandbox temporales e independientes por hilo
+    test_root = tmp_path / "yun_files"
+    test_spool = tmp_path / "spool"
+    test_root.mkdir()
+    test_spool.mkdir()
 
     config = RuntimeConfig(
         mqtt_topic="br",
@@ -234,7 +240,12 @@ async def test_daemon_coverage_boost() -> None:
         metrics_enabled=False,  # Set to False to prevent blocking socketserver shutdown
         bridge_summary_interval=1.0,
         bridge_handshake_interval=1.0,
+        # Forzar aislamiento absoluto de archivos DBM
+        file_system_root=str(test_root),
+        mqtt_spool_dir=str(test_spool),
     )
+    
+    # La base de datos spool.db ahora se abrirá de manera aislada y determinista
     daemon = BridgeDaemon(config)
 
     # 1. run_mqtt when mqtt_enabled is False

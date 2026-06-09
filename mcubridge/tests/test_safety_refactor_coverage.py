@@ -14,7 +14,7 @@ from mcubridge.protocol.structures import QueuedPublish
 def _replace_mailbox_queue(state: RuntimeState, replacement: Any) -> None:
     if hasattr(state.mailbox_queue, "close"):
         try:
-            state.mailbox_queue.close()
+            cast(Any, state.mailbox_queue).close()
         except (OSError, RuntimeError):
             pass
     state.mailbox_queue = cast(collections.deque[bytes], replacement)

@@ -530,13 +530,13 @@ class RuntimeState(msgspec.Struct, weakref=True):
         # 1. Nullify high-level wrappers first to drop references to the underlying caches.
         try:
             if hasattr(self.mailbox_queue, "close"):
-                self.mailbox_queue.close()
+                cast(Any, self.mailbox_queue).close()
         except (OSError, RuntimeError, AttributeError) as e:
             logger.debug("Mailbox queue cleanup notice", error=e)
 
         try:
             if hasattr(self.mailbox_incoming_queue, "close"):
-                self.mailbox_incoming_queue.close()
+                cast(Any, self.mailbox_incoming_queue).close()
         except (OSError, RuntimeError, AttributeError) as e:
             logger.debug("Mailbox incoming queue cleanup notice", error=e)
 

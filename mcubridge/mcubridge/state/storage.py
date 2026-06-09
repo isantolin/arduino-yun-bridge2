@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import dbm
 import os
-from typing import TypeVar, Generic
+from typing import TypeVar
 
 T = TypeVar("T")
 

@@ -108,41 +108,48 @@ class BridgeClass {
     const bool is_system = (cmd >= rpc::RPC_STATUS_CODE_MIN && cmd <= rpc::RPC_STATUS_CODE_MAX) ||
                            (cmd >= rpc::RPC_SYSTEM_COMMAND_MIN && cmd <= rpc::RPC_SYSTEM_COMMAND_MAX);
     if (!_tx_enabled && !is_system) return false;
-    
+    if (is_reliable_cmd(cmd)) {
+      BRIDGE_ATOMIC_BLOCK {
+        if (_pending_tx_queue.full()) return false;
+        auto* buf = _tx_payload_pool.allocate();
+        if (!buf) return false;
+        const size_t pl_size = etl::min(p.size(), buf->data.size());
+        etl::copy_n(p.data(), pl_size, buf->data.data());
+        _pending_tx_queue.push_back({cmd, seq, buf, pl_size});
+        if (!_fsm.isAwaitingAck()) _flushPendingTxQueue();
+      }
+      return true;
+    }
+    _transmit(cmd, seq, p);
+    return true;
+  }
+
+  template <typename T>
+  [[nodiscard]] bool sendSinglePass(uint16_t command_id, uint16_t sequence_id, const T& packet) {
+    const bool is_system = (command_id >= rpc::RPC_STATUS_CODE_MIN &&
+                            command_id <= rpc::RPC_STATUS_CODE_MAX) ||
+                           (command_id >= rpc::RPC_SYSTEM_COMMAND_MIN &&
+                            command_id <= rpc::RPC_SYSTEM_COMMAND_MAX);
+    if (!_tx_enabled && !is_system) return false;
+
+    etl::array<uint8_t, rpc::MAX_FRAME_SIZE> buffer;
     rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
     env.version = rpc::PROTOCOL_VERSION;
-    env.command_id = cmd;
-    env.sequence_id = seq;
-    
-    const bool do_encrypt = isSynchronized() && !_shared_secret.empty() && !is_system;
-    
-    if (do_encrypt) {
-      etl::array<uint8_t, rpc::AEAD_NONCE_SIZE> nonce = {};
-      etl::array<uint8_t, rpc::AEAD_TAG_SIZE> tag = {};
-      etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> enc_pl;
-      if (!rpc::security::aead_encrypt_frame(cmd, seq, p, _session_key, &_tx_nonce_counter, enc_pl, nonce, tag)) return false;
-      
-      etl::copy_n(nonce.begin(), rpc::AEAD_NONCE_SIZE, env.nonce.bytes);
-      env.nonce.size = static_cast<pb_size_t>(rpc::AEAD_NONCE_SIZE);
-      etl::copy_n(tag.begin(), rpc::AEAD_TAG_SIZE, env.tag.bytes);
-      env.tag.size = static_cast<pb_size_t>(rpc::AEAD_TAG_SIZE);
-      
-      env.which_payload_type = rpc_pb_RpcEnvelope_encrypted_payload_tag;
-      const size_t pl_size = etl::min(enc_pl.size(), static_cast<size_t>(rpc::MAX_PAYLOAD_SIZE));
-      etl::copy_n(enc_pl.begin(), pl_size, env.payload_type.encrypted_payload.bytes);
-      env.payload_type.encrypted_payload.size = static_cast<pb_size_t>(pl_size);
-    } else {
-      env.which_payload_type = rpc_pb_RpcEnvelope_encrypted_payload_tag;
-      const size_t pl_size = etl::min(p.size(), static_cast<size_t>(rpc::MAX_PAYLOAD_SIZE));
-      if (pl_size > 0) etl::copy_n(p.data(), pl_size, env.payload_type.encrypted_payload.bytes);
-      env.payload_type.encrypted_payload.size = static_cast<pb_size_t>(pl_size);
+    env.command_id = command_id;
+    env.sequence_id = sequence_id;
+    env.which_payload_type = rpc::Payload::get_tag<T>();
+    rpc::Payload::set_field(env, packet);
+    size_t len = rpc::serialize_frame(env, buffer);
+    if (len > 0) {
+      _packet_serial.send(_stream, etl::span<const uint8_t>(buffer.data(), len));
+      return true;
     }
-    return _enqueueOrSend(env, cmd, seq);
+    return false;
   }
 
   template <typename T>
   [[nodiscard]] bool send(rpc::StatusCode s, uint16_t seq, const T& packet) {
-    return send(static_cast<rpc::CommandId>(s), seq, packet);
+    return sendSinglePass<T>(rpc::to_underlying(s), seq, packet);
   }
 
   template <typename T>
@@ -155,38 +162,19 @@ class BridgeClass {
     const bool do_encrypt =
         isSynchronized() && !_shared_secret.empty() && !is_excluded;
 
-    if (!_tx_enabled && !is_excluded) return false;
-
-    rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
-    env.version = rpc::PROTOCOL_VERSION;
-    env.command_id = raw_cmd;
-    env.sequence_id = seq;
-
     if (do_encrypt) {
       auto res = rpc::Payload::serialize<T>(
           packet,
           etl::span<uint8_t>(_transient_buffer.data(), rpc::MAX_PAYLOAD_SIZE));
-      if (!res) return false;
-      
-      etl::array<uint8_t, rpc::AEAD_NONCE_SIZE> nonce = {};
-      etl::array<uint8_t, rpc::AEAD_TAG_SIZE> tag = {};
-      etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> enc_pl;
-      if (!rpc::security::aead_encrypt_frame(raw_cmd, seq, etl::span<const uint8_t>(_transient_buffer.data(), res.value()), _session_key, &_tx_nonce_counter, enc_pl, nonce, tag)) return false;
-      
-      etl::copy_n(nonce.begin(), rpc::AEAD_NONCE_SIZE, env.nonce.bytes);
-      env.nonce.size = static_cast<pb_size_t>(rpc::AEAD_NONCE_SIZE);
-      etl::copy_n(tag.begin(), rpc::AEAD_TAG_SIZE, env.tag.bytes);
-      env.tag.size = static_cast<pb_size_t>(rpc::AEAD_TAG_SIZE);
-      
-      env.which_payload_type = rpc_pb_RpcEnvelope_encrypted_payload_tag;
-      const size_t pl_size = etl::min(enc_pl.size(), static_cast<size_t>(rpc::MAX_PAYLOAD_SIZE));
-      etl::copy_n(enc_pl.begin(), pl_size, env.payload_type.encrypted_payload.bytes);
-      env.payload_type.encrypted_payload.size = static_cast<pb_size_t>(pl_size);
+      if (res) {
+        return sendFrame(
+            c, seq,
+            etl::span<const uint8_t>(_transient_buffer.data(), res.value()));
+      }
+      return false;
     } else {
-      env.which_payload_type = rpc::Payload::get_tag<T>();
-      rpc::Payload::set_field(env, packet);
+      return sendSinglePass<T>(raw_cmd, seq, packet);
     }
-    return _enqueueOrSend(env, raw_cmd, seq);
   }
 
   using CommandHandler = etl::delegate<void(const rpc_pb_RpcEnvelope&)>;
@@ -211,15 +199,17 @@ class BridgeClass {
 
  protected:
   struct TxPayloadBuffer {
-    rpc_pb_RpcEnvelope envelope;
+    etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> data;
   };
   struct PendingTxFrame {
     uint16_t command_id;
     uint16_t sequence_id;
     TxPayloadBuffer* buffer;
+    size_t length;
   };
 
-  bool _enqueueOrSend(const rpc_pb_RpcEnvelope& env, uint16_t cmd, uint16_t seq);
+  void _transmit(uint16_t command_id, uint16_t sequence_id,
+                 etl::span<const uint8_t> payload);
   void _initializeRuntime();
 
   // STRICT ORDER FOR CONSTRUCTOR

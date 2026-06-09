@@ -311,26 +311,43 @@ void BridgeClass::enterSafeState() {
   Process.onLost();
 }
 
-bool BridgeClass::_enqueueOrSend(const rpc_pb_RpcEnvelope& env, uint16_t cmd, uint16_t seq) {
-  if (is_reliable_cmd(cmd)) {
-    BRIDGE_ATOMIC_BLOCK {
-      if (_pending_tx_queue.full()) return false;
-      auto* buf = _tx_payload_pool.allocate();
-      if (!buf) return false;
-      buf->envelope = env;
-      _pending_tx_queue.push_back({cmd, seq, buf});
-      if (!_fsm.isAwaitingAck()) _flushPendingTxQueue();
-    }
-    return true;
+void BridgeClass::_transmit(uint16_t command_id, uint16_t sequence_id,
+                            etl::span<const uint8_t> payload) {
+  const uint16_t raw_cmd = command_id;
+  const bool is_excluded = (raw_cmd >= rpc::RPC_STATUS_CODE_MIN &&
+                            raw_cmd <= rpc::RPC_STATUS_CODE_MAX) ||
+                           (raw_cmd >= rpc::RPC_SYSTEM_COMMAND_MIN &&
+                            raw_cmd <= rpc::RPC_SYSTEM_COMMAND_MAX);
+  const bool do_encrypt =
+      isSynchronized() && !_shared_secret.empty() && !is_excluded;
+  etl::array<uint8_t, rpc::AEAD_NONCE_SIZE> nonce = {};
+  etl::array<uint8_t, rpc::AEAD_TAG_SIZE> tag = {};
+  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> enc_pl;
+  etl::span<const uint8_t> final_payload = payload;
+  if (do_encrypt) {
+    if (!rpc::security::aead_encrypt_frame(raw_cmd, sequence_id, payload,
+                                           _session_key, &_tx_nonce_counter,
+                                           enc_pl, nonce, tag))
+      return;
+    final_payload = etl::span<const uint8_t>(enc_pl.data(), payload.size());
   }
-
   etl::array<uint8_t, rpc::MAX_FRAME_SIZE> buffer;
+  rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
+  env.version = rpc::PROTOCOL_VERSION;
+  env.command_id = command_id;
+  env.sequence_id = sequence_id;
+  etl::copy_n(nonce.begin(), rpc::AEAD_NONCE_SIZE, env.nonce.bytes);
+  env.nonce.size = static_cast<pb_size_t>(rpc::AEAD_NONCE_SIZE);
+  etl::copy_n(tag.begin(), rpc::AEAD_TAG_SIZE, env.tag.bytes);
+  env.tag.size = static_cast<pb_size_t>(rpc::AEAD_TAG_SIZE);
+  const size_t pl_size = etl::min(final_payload.size(),
+                                  static_cast<size_t>(rpc::MAX_PAYLOAD_SIZE));
+  env.which_payload_type = rpc_pb_RpcEnvelope_encrypted_payload_tag;
+  etl::copy_n(final_payload.begin(), pl_size, env.payload_type.encrypted_payload.bytes);
+  env.payload_type.encrypted_payload.size = static_cast<pb_size_t>(pl_size);
   size_t len = rpc::serialize_frame(env, buffer);
-  if (len > 0) {
+  if (len > 0)
     _packet_serial.send(_stream, etl::span<const uint8_t>(buffer.data(), len));
-    return true;
-  }
-  return false;
 }
 
 void BridgeClass::_flushPendingTxQueue() {
@@ -340,12 +357,8 @@ void BridgeClass::_flushPendingTxQueue() {
     _last_command_id = f.command_id;
     _retry_count = 0;
     _fsm.receive(bridge::fsm::EvSendCritical());
-    
-    etl::array<uint8_t, rpc::MAX_FRAME_SIZE> buffer;
-    size_t len = rpc::serialize_frame(f.buffer->envelope, buffer);
-    if (len > 0) {
-      _packet_serial.send(_stream, etl::span<const uint8_t>(buffer.data(), len));
-    }
+    _transmit(f.command_id, f.sequence_id,
+              etl::span<const uint8_t>(f.buffer->data.data(), f.length));
     _timers.start(_timer_ids[bridge::scheduler::TIMER_ACK_TIMEOUT]);
   }
 }
@@ -354,12 +367,8 @@ void BridgeClass::_retransmitLastFrame() {
   BRIDGE_ATOMIC_BLOCK {
     if (_pending_tx_queue.empty()) return;
     const auto& f = _pending_tx_queue.front();
-    
-    etl::array<uint8_t, rpc::MAX_FRAME_SIZE> buffer;
-    size_t len = rpc::serialize_frame(f.buffer->envelope, buffer);
-    if (len > 0) {
-      _packet_serial.send(_stream, etl::span<const uint8_t>(buffer.data(), len));
-    }
+    _transmit(f.command_id, f.sequence_id,
+              etl::span<const uint8_t>(f.buffer->data.data(), f.length));
     _timers.start(_timer_ids[bridge::scheduler::TIMER_ACK_TIMEOUT]);
   }
 }

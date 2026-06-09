@@ -46,7 +46,7 @@ openwrt-sdk-25.12.3-malta-be_gcc-14.3.0_musl.Linux-x86_64/
 .antigravitycli/
 
 # Generated type stubs (dynamic)
-typings/diskcache/
+typings/*
 
 # Persist static mission-critical stubs
 !typings/stubs/

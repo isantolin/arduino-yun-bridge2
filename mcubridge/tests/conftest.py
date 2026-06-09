@@ -168,7 +168,7 @@ def isolate_test_paths() -> Iterator[None]:
     yield
     mcubridge.config.const.DEFAULT_FILE_SYSTEM_ROOT = original_fs
     mcubridge.config.const.DEFAULT_MQTT_SPOOL_DIR = original_spool
-    shutil.rmtree(tmp_base, ignore_errors=True)
+    shutil.rmtree(tmp_base)
 
 
 @pytest.fixture(autouse=True)
@@ -186,7 +186,7 @@ def reset_logging_handlers():
 
 def _remove_persistent_test_path(path: Path) -> None:
     if path.is_dir():
-        shutil.rmtree(path, ignore_errors=True)
+        shutil.rmtree(path)
         return
 
     try:
@@ -194,7 +194,7 @@ def _remove_persistent_test_path(path: Path) -> None:
     except FileNotFoundError:
         return
     except IsADirectoryError:
-        shutil.rmtree(path, ignore_errors=True)
+        shutil.rmtree(path)
 
 
 @pytest.fixture(autouse=True)

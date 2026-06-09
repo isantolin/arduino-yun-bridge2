@@ -18,14 +18,14 @@ def _make_config() -> RuntimeConfig:
     import time
 
     fs_root = f".tmp_tests/mcubridge-test-fs-{os.getpid()}-{time.time_ns()}"
-    spool_dir = f".tmp_tests/mcubridge-test-spool-{os.getpid()}-{time.time_ns()}"
+    f".tmp_tests/mcubridge-test-spool-{os.getpid()}-{time.time_ns()}"
     return RuntimeConfig(
         serial_port="/dev/ttyATH0",
         mqtt_topic="br",
         allowed_commands=("*",),
         serial_shared_secret=b"secret123",
         file_system_root=fs_root,
-        mqtt_spool_dir=spool_dir,
+        mqtt_spool_dir="",
         allow_non_tmp_paths=True,
     )
 

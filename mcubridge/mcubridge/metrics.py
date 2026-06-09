@@ -295,15 +295,7 @@ class PrometheusExporter:
             payload = generate_latest(self._registry)
             start_response("200 OK", [("Content-Type", CONTENT_TYPE_LATEST)])
 
-            # [SIL-2] Root-cause fix: close thread-local diskcache sqlite3 connections
-            # opened by this WSGI thread to prevent ResourceWarnings on thread exit.
-            try:
-                if self._state is not None:
-                    for mq in (self._state.mailbox_queue, self._state.mailbox_incoming_queue):
-                        if hasattr(mq, "cache"):
-                            cast(Any, mq).cache.close()
-            except (AttributeError, OSError, RuntimeError) as e:
-                logger.debug("Metrics diskcache connection cleanup notice", error=e)
+            # [SIL-2] DBM handles its own thread-local resources safely.
 
             return [payload]
 

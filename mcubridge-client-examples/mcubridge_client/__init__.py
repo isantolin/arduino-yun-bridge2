@@ -203,7 +203,10 @@ class Bridge:
     async def console_read_async(self) -> str | None:
         try:
             payload = await asyncio.wait_for(self._console_queue.get(), timeout=0.1)
-            return payload.decode("utf-8", errors="replace")
+            try:
+                return payload.decode("utf-8")
+            except UnicodeDecodeError:
+                return f"<hex:{payload.hex()}>"
         except TimeoutError:
             return None
 

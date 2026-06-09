@@ -337,7 +337,7 @@ class BridgeDaemon:
                     await factory()
         except asyncio.CancelledError:
             raise  # Need to raise CancelledError so caller can catch it and know it was cancelled
-        except BaseException as e:
+        except (RuntimeError, OSError, asyncio.TimeoutError, aiomqtt.MqttError, msgspec.MsgspecError) as e:
             structlog.get_logger("mcubridge.supervisor").critical(
                 "Task terminated with fatal error", task=name, error=str(e), exc_info=e
             )

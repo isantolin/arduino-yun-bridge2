@@ -40,7 +40,6 @@ markers = [
 ]
 filterwarnings = [
     "error",
-    "ignore:unclosed database in <sqlite3.Connection:ResourceWarning",
 ]
 
 [tool.pyright]

@@ -128,7 +128,7 @@ def test_get_uci_config_skips_internal_keys() -> None:
 
 def test_encode_status_reason_trims_to_max_payload() -> None:
     reason = "x" * (protocol.MAX_PAYLOAD_SIZE + 50)
-    payload = reason.encode("utf-8", errors="ignore")[: protocol.MAX_PAYLOAD_SIZE]
+    payload = reason.encode("utf-8", errors="strict")[: protocol.MAX_PAYLOAD_SIZE]
     assert len(payload) == protocol.MAX_PAYLOAD_SIZE
 
 

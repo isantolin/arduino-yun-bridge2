@@ -31,8 +31,14 @@ async def _stream_poll_updates(
         raw_stdout = poll_payload.get("stdout_chunk", b"")
         raw_stderr = poll_payload.get("stderr_chunk", b"")
 
-        stdout_chunk = raw_stdout.decode("utf-8", errors="replace").rstrip()
-        stderr_chunk = raw_stderr.decode("utf-8", errors="replace").rstrip()
+        def safe_decode(b: bytes) -> str:
+            try:
+                return b.decode("utf-8")
+            except UnicodeDecodeError:
+                return f"<hex:{b.hex()}>"
+
+        stdout_chunk = safe_decode(raw_stdout).rstrip()
+        stderr_chunk = safe_decode(raw_stderr).rstrip()
 
         exit_code = poll_payload.get("exit_code")
         finished = poll_payload.get("finished", False)

@@ -89,7 +89,10 @@ def _mcu_stderr_worker(mcu_proc: subprocess.Popen[bytes], state: EmulationState)
         for line in iter(mcu_proc.stderr.readline, b""):
             if not line:
                 break
-            decoded = line.decode("utf-8", errors="ignore")
+            try:
+                decoded = line.decode("utf-8")
+            except UnicodeDecodeError:
+                decoded = f"<hex:{line.hex()}>"
             state.on_line(decoded, "mcu")
 
 

@@ -42,7 +42,10 @@ async def test_send_frame_via_transport() -> None:
         assert ok is True
         mock_serial.send.assert_called_once()
     finally:
-        state.cleanup()
+        if "service" in locals():
+            service.cleanup()
+        else:
+            state.cleanup()
 
 
 @pytest.mark.asyncio
@@ -58,7 +61,10 @@ async def test_handle_mcu_frame_pre_sync_denied() -> None:
         await service.handle_mcu_frame(protocol.Command.CMD_GET_VERSION.value, 1, b"")
         mock_serial.acknowledge.assert_not_called()
     finally:
-        state.cleanup()
+        if "service" in locals():
+            service.cleanup()
+        else:
+            state.cleanup()
 
 
 @pytest.mark.asyncio
@@ -81,7 +87,10 @@ async def test_handle_mcu_xon_xoff() -> None:
         assert state.mcu_is_paused is False
         assert state.serial_tx_allowed.is_set() is True
     finally:
-        state.cleanup()
+        if "service" in locals():
+            service.cleanup()
+        else:
+            state.cleanup()
 
 
 @pytest.mark.asyncio
@@ -106,7 +115,10 @@ async def test_handle_mqtt_console_queues_and_flushes() -> None:
 
         mock_serial.send.assert_called()
     finally:
-        state.cleanup()
+        if "service" in locals():
+            service.cleanup()
+        else:
+            state.cleanup()
 
 
 @pytest.mark.asyncio
@@ -128,7 +140,10 @@ async def test_enqueue_mqtt_spools_until_client_recovers() -> None:
         mock_client.publish.assert_awaited_once()
         assert state.mqtt_spool_pending_messages == 0
     finally:
-        state.cleanup()
+        if "service" in locals():
+            service.cleanup()
+        else:
+            state.cleanup()
 
 
 @pytest.mark.asyncio
@@ -166,7 +181,10 @@ async def test_handle_mqtt_pin_overflow_reports_error() -> None:
         assert ("bridge-error", "pending-pin-overflow") in captured[0].user_properties
         mock_serial.send.assert_not_called()
     finally:
-        state.cleanup()
+        if "service" in locals():
+            service.cleanup()
+        else:
+            state.cleanup()
 
 
 @pytest.mark.asyncio
@@ -249,7 +267,10 @@ async def test_mqtt_topic_aliases() -> None:
         assert args_new[0] == "topic/A"
         assert kwargs_new["properties"].TopicAlias == 1
     finally:
-        state.cleanup()
+        if "service" in locals():
+            service.cleanup()
+        else:
+            state.cleanup()
 
 
 @pytest.mark.asyncio
@@ -300,7 +321,10 @@ async def test_mqtt_topic_aliases_limit_boundary() -> None:
         assert args_4[0] == "topic/B"
         assert not hasattr(kwargs_4["properties"], "TopicAlias") or kwargs_4["properties"].TopicAlias is None
     finally:
-        state.cleanup()
+        if "service" in locals():
+            service.cleanup()
+        else:
+            state.cleanup()
 
 
 @pytest.mark.asyncio
@@ -334,4 +358,7 @@ async def test_mqtt_topic_aliases_disabled() -> None:
         assert args_2[0] == "topic/A"
         assert not hasattr(kwargs_2["properties"], "TopicAlias") or kwargs_2["properties"].TopicAlias is None
     finally:
-        state.cleanup()
+        if "service" in locals():
+            service.cleanup()
+        else:
+            state.cleanup()

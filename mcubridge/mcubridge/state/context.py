@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import collections
-import sqlite3
+
 import time
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Final, TypeVar, cast
 
-import diskcache
+from .storage import DbmDeque, DbmCache
 import msgspec
 import structlog
 
@@ -61,14 +61,6 @@ SpoolSnapshot = dict[str, int | float]
 def _make_mqtt_publish_queue(maxsize: int = 0) -> asyncio.Queue[QueuedPublish]:
     normalized = max(0, int(maxsize))
     return cast(asyncio.Queue[QueuedPublish], asyncio.Queue(maxsize=normalized))
-
-
-def _close_diskcache_resource(resource: Any) -> None:
-    cache = getattr(resource, "cache", resource)
-    try:
-        cache.close()
-    except (AttributeError, OSError, RuntimeError, sqlite3.Error) as e:
-        logger.warning("Diskcache close error", error=e)
 
 
 __all__: Final[tuple[str, ...]] = (
@@ -130,7 +122,7 @@ class RuntimeState(msgspec.Struct, weakref=True):
     mqtt_queue_limit: int = DEFAULT_MQTT_QUEUE_LIMIT
     mqtt_drop_counts: dict[str, int] = msgspec.field(default_factory=lambda: cast(dict[str, int], {}))
     allow_non_tmp_paths: bool = False
-    datastore_cache: diskcache.Cache | None = None
+    datastore_cache: DbmCache | None = None
 
     # [SIL-2] Mailbox queues persist to /tmp through diskcache when enabled.
     mailbox_queue: collections.deque[bytes] = msgspec.field(
@@ -280,21 +272,17 @@ class RuntimeState(msgspec.Struct, weakref=True):
     def configure(self) -> None:
         def _safe_close(resource: Any) -> None:
             try:
-                _close_diskcache_resource(resource)
+                if hasattr(resource, "close"):
+                    resource.close()
             except (OSError, RuntimeError, AttributeError) as e:
                 logger.debug("Resource closure notice during reconfiguration", error=e)
 
-        if hasattr(self.mailbox_queue, "cache"):
-            _safe_close(self.mailbox_queue)
-        if hasattr(self.mailbox_incoming_queue, "cache"):
-            _safe_close(self.mailbox_incoming_queue)
+        _safe_close(self.mailbox_queue)
+        _safe_close(self.mailbox_incoming_queue)
 
         # [SIL-2] Resource Lifecycle: Close persistent queues before replacement.
         if self.datastore_cache is not None:
-            try:
-                _close_diskcache_resource(self.datastore_cache)
-            except (OSError, RuntimeError, AttributeError) as e:
-                logger.debug("Resource cleanup notice", error=e)
+            _safe_close(self.datastore_cache)
             self.datastore_cache = None
 
         # Re-initialize transient queues
@@ -308,11 +296,11 @@ class RuntimeState(msgspec.Struct, weakref=True):
             if self.allow_non_tmp_paths or self.file_system_root.startswith("/tmp/"):
                 directory = Path(self.file_system_root) / subdir
 
-            if directory:
+            if directory and self.file_system_root:
                 try:
                     directory.mkdir(parents=True, exist_ok=True)
-                    return diskcache.Deque(directory=str(directory))
-                except (OSError, RuntimeError, sqlite3.Error):
+                    return DbmDeque(path=str(directory / "spool.db"), maxlen=self.mailbox_queue_limit)
+                except (OSError, RuntimeError):
                     logger.warning("Spool '%s' falling back to RAM", subdir)
 
             return cast(Any, collections.deque[bytes](maxlen=self.mailbox_queue_limit))
@@ -325,12 +313,12 @@ class RuntimeState(msgspec.Struct, weakref=True):
         if self.allow_non_tmp_paths or self.file_system_root.startswith("/tmp/"):
             ds_dir = Path(self.file_system_root) / "datastore"
 
-        if ds_dir:
+        if ds_dir and self.file_system_root:
             try:
                 ds_dir.mkdir(parents=True, exist_ok=True)
-                self.datastore_cache = diskcache.Cache(str(ds_dir), size_limit=1024 * 1024)
+                self.datastore_cache = DbmCache(str(ds_dir / "datastore.db"))
             except (OSError, RuntimeError) as e:
-                logger.warning("Could not initialize datastore diskcache: %s", e)
+                logger.warning("Could not initialize datastore dbm: %s", e)
 
     def mark_supervisor_healthy(self, name: str) -> None:
         """Reset backoff status for a healthy supervisor."""
@@ -540,19 +528,17 @@ class RuntimeState(msgspec.Struct, weakref=True):
     def cleanup(self) -> None:
         # [SIL-2] Aggressive Resource Eradication to prevent ResourceWarnings.
         # 1. Nullify high-level wrappers first to drop references to the underlying caches.
-        if hasattr(self.mailbox_queue, "cache"):
-            try:
-                _close_diskcache_resource(self.mailbox_queue)
-                cast(Any, self.mailbox_queue).cache = None
-            except (OSError, RuntimeError, AttributeError) as e:
-                logger.debug("Mailbox queue cleanup notice", error=e)
+        try:
+            if hasattr(self.mailbox_queue, "close"):
+                self.mailbox_queue.close()
+        except (OSError, RuntimeError, AttributeError) as e:
+            logger.debug("Mailbox queue cleanup notice", error=e)
 
-        if hasattr(self.mailbox_incoming_queue, "cache"):
-            try:
-                _close_diskcache_resource(self.mailbox_incoming_queue)
-                cast(Any, self.mailbox_incoming_queue).cache = None
-            except (OSError, RuntimeError, AttributeError) as e:
-                logger.debug("Mailbox incoming queue cleanup notice", error=e)
+        try:
+            if hasattr(self.mailbox_incoming_queue, "close"):
+                self.mailbox_incoming_queue.close()
+        except (OSError, RuntimeError, AttributeError) as e:
+            logger.debug("Mailbox incoming queue cleanup notice", error=e)
 
         self.mailbox_queue = collections.deque()
         self.mailbox_incoming_queue = collections.deque()
@@ -561,10 +547,19 @@ class RuntimeState(msgspec.Struct, weakref=True):
         # 2. Explicitly close and nullify persistent caches.
         if self.datastore_cache is not None:
             try:
-                _close_diskcache_resource(self.datastore_cache)
+                self.datastore_cache.close()
             except (OSError, RuntimeError, AttributeError) as e:
                 logger.debug("Resource cleanup notice", error=e)
             self.datastore_cache = None
+
+        # [SIL-2] Standard deque fallback
+        self.mailbox_queue = collections.deque()
+        self.mailbox_incoming_queue = collections.deque()
+
+        # 2.1 Aggressive garbage collection
+        import gc
+
+        gc.collect()
 
         # 3. Drain and reset the MQTT queue.
         while not self.mqtt_publish_queue.empty():

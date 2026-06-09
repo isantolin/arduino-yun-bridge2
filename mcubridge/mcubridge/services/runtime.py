@@ -6,7 +6,7 @@ from mcubridge.protocol import mcubridge_pb2 as pb
 import asyncio
 import collections
 import os
-import sqlite3
+
 import signal
 import shlex
 import time
@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast, Final
 
 import msgspec
-import diskcache
+from ..state.storage import DbmDeque
 import structlog
 from google.protobuf.message import DecodeError as ProtobufDecodeError, Message as ProtobufMessage
 
@@ -113,7 +113,7 @@ class BridgeService:
     _pending_mcu_read: _PendingMcuRead | None
     _process_slots: asyncio.Semaphore
     _mqtt_publish_lock: asyncio.Lock
-    _mqtt_spool: diskcache.Deque | None
+    _mqtt_spool: DbmDeque | None
     mcu_registry: dict[int, McuHandler]
     _topic_aliases: dict[str, int]
     _next_alias_id: int
@@ -137,7 +137,11 @@ class BridgeService:
         self._storage_lock, self._mcu_read_lock, self._pending_mcu_read = asyncio.Lock(), asyncio.Lock(), None
         self._process_slots = asyncio.Semaphore(int(state.process_max_concurrent))
         self._mqtt_publish_lock = asyncio.Lock()
-        self._mqtt_spool = diskcache.Deque(directory=self.config.mqtt_spool_dir)
+        self._mqtt_spool = None
+        if self.config.mqtt_spool_dir:
+            self._mqtt_spool = DbmDeque(
+                path=str(Path(self.config.mqtt_spool_dir) / "spool.db"), maxlen=self.state.mqtt_queue_limit
+            )
         self._topic_aliases = {}
         self._next_alias_id = 1
 
@@ -275,13 +279,13 @@ class BridgeService:
                 spool_len = await asyncio.to_thread(len, spool)
                 while spool_len >= self.state.mqtt_queue_limit:
                     try:
-                        popleft_fn = cast(Callable[[], Any], getattr(spool, "popleft"))
+                        popleft_fn = spool.popleft
                         await asyncio.to_thread(popleft_fn)
                         self.state.mqtt_spool_dropped_limit += 1
                     except IndexError as exc:
                         logger.error("Spool popped while empty during limit check", error=str(exc))
                         break
-                    except (OSError, sqlite3.Error) as exc:
+                    except OSError as exc:
                         logger.error("Database error during spool popleft", error=str(exc))
                         break
                     spool_len = await asyncio.to_thread(len, spool)
@@ -291,13 +295,13 @@ class BridgeService:
                     self.state.mqtt_spool_last_trim_unix = time.time()
 
             encoded = msgspec.msgpack.encode(message)
-            append_fn = cast(Callable[[bytes], Any], getattr(spool, "append"))
+            append_fn = spool.append
             await asyncio.to_thread(append_fn, encoded)
 
             pending_count = await asyncio.to_thread(len, spool)
             self._mark_mqtt_spool_healthy(pending_count)
             return True
-        except (OSError, sqlite3.Error) as exc:
+        except OSError as exc:
             self._mark_mqtt_spool_failure(str(exc))
             return False
         except msgspec.MsgspecError as exc:
@@ -311,7 +315,7 @@ class BridgeService:
 
         try:
             spool_len = await asyncio.to_thread(len, spool)
-        except (OSError, sqlite3.Error) as exc:
+        except OSError as exc:
             self._mark_mqtt_spool_failure(str(exc))
             return
 
@@ -319,9 +323,9 @@ class BridgeService:
             try:
 
                 def peek_fn() -> bytes:
-                    return cast(bytes, spool[0])
+                    return spool[0]
 
-                encoded = await asyncio.to_thread(peek_fn)
+                encoded = peek_fn()
                 queued = msgspec.msgpack.decode(encoded, type=QueuedPublish)
             except IndexError as exc:
                 logger.warning("Spool is empty during peek", error=str(exc))
@@ -331,21 +335,21 @@ class BridgeService:
                 try:
                     spool_len = await asyncio.to_thread(len, spool)
                     if spool_len > 0:
-                        popleft_fn = cast(Callable[[], Any], getattr(spool, "popleft"))
+                        popleft_fn = spool.popleft
                         await asyncio.to_thread(popleft_fn)
                 except IndexError as pop_exc:
                     logger.error("Failed to pop corrupt entry", error=str(pop_exc))
                     break
-                except (OSError, sqlite3.Error) as pop_exc:
+                except OSError as pop_exc:
                     logger.error("Database error while popping corrupt entry", error=str(pop_exc))
                     break
                 self.state.mqtt_spool_corrupt_dropped += 1
                 try:
                     spool_len = await asyncio.to_thread(len, spool)
-                except (OSError, sqlite3.Error):
+                except OSError:
                     break
                 continue
-            except (OSError, sqlite3.Error) as exc:
+            except OSError as exc:
                 self._mark_mqtt_spool_failure(str(exc))
                 break
 
@@ -353,18 +357,18 @@ class BridgeService:
                 break
 
             try:
-                popleft_fn = cast(Callable[[], Any], getattr(spool, "popleft"))
+                popleft_fn = spool.popleft
                 await asyncio.to_thread(popleft_fn)
             except IndexError as exc:
                 logger.warning("Spool was empty during popleft", error=str(exc))
                 break
-            except (OSError, sqlite3.Error) as exc:
+            except OSError as exc:
                 self._mark_mqtt_spool_failure(str(exc))
                 break
 
             try:
                 spool_len = await asyncio.to_thread(len, spool)
-            except (OSError, sqlite3.Error) as exc:
+            except OSError as exc:
                 self._mark_mqtt_spool_failure(str(exc))
                 break
 
@@ -374,7 +378,7 @@ class BridgeService:
                 self._mark_mqtt_spool_healthy(pending_count)
             else:
                 self.state.mqtt_spool_pending_messages = pending_count
-        except (OSError, sqlite3.Error) as exc:
+        except OSError as exc:
             self._mark_mqtt_spool_failure(str(exc))
 
     async def _publish_mqtt_message(self, message: QueuedPublish) -> bool:
@@ -443,13 +447,13 @@ class BridgeService:
         spool = self._mqtt_spool
         if spool is not None:
             try:
-                cache = cast(Any, getattr(spool, "cache", spool))
-                if hasattr(cache, "close"):
-                    cache.close()
-                cast(Any, spool).cache = None
-            except (AttributeError, OSError, RuntimeError, sqlite3.Error) as e:
+                spool.close()
+            except (AttributeError, OSError, RuntimeError) as e:
                 logger.debug("Spool cache close error during cleanup", error=e)
             self._mqtt_spool = None
+
+        if self.state:
+            self.state.cleanup()
 
     def __del__(self) -> None:
         """Last-resort cleanup for spool database cache connections."""
@@ -732,7 +736,10 @@ class BridgeService:
                     text = pb.GenericResponse.FromString(payload).message
             except (ProtobufDecodeError, TypeError, ValueError):
                 if isinstance(payload, bytes):
-                    text = payload.decode("utf-8", errors="ignore")
+                    try:
+                        text = payload.decode("utf-8")
+                    except UnicodeDecodeError:
+                        text = f"<hex:{payload.hex()}>"
                 else:
                     text = str(payload)
         log_func = logger.warning if status not in {Status.OK, Status.ACK} else logger.debug

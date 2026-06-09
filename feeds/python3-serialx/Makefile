@@ -20,7 +20,7 @@ include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
 define Build/Prepare
 	$(call Build/Prepare/Default)
 	sed -i 's/, "setuptools-rust"//' $(PKG_BUILD_DIR)/pyproject.toml
-	sed -i '/^\[\[tool\.setuptools-rust\.ext-modules\]\]$$$$,/^$$$$/d' $(PKG_BUILD_DIR)/pyproject.toml
+	sed -i '/ext-modules/,/^$$$$/d' $(PKG_BUILD_DIR)/pyproject.toml
 endef
 
 define Package/python3-serialx

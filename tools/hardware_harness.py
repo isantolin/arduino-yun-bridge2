@@ -150,10 +150,17 @@ async def run_command(
     )
     try:
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+
+        def safe_decode(b: bytes) -> str:
+            try:
+                return b.decode("utf-8")
+            except UnicodeDecodeError:
+                return f"<hex:{b.hex()}>"
+
         return (
             proc.returncode or 0,
-            stdout.decode("utf-8", errors="ignore"),
-            stderr.decode("utf-8", errors="ignore"),
+            safe_decode(stdout),
+            safe_decode(stderr),
         )
     except TimeoutError:
         try:

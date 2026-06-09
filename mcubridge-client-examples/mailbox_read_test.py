@@ -41,7 +41,10 @@ async def run_test(
                 logger.info("No mailbox message within timeout; poll %d done.", polls)
                 continue
 
-            preview = message.decode("utf-8", errors="ignore")
+            try:
+                preview = message.decode("utf-8")
+            except UnicodeDecodeError:
+                preview = f"<hex:{message.hex()}>"
             logger.info(
                 "Received mailbox message (%d bytes): %s",
                 len(message),

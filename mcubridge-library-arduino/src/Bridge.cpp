@@ -262,6 +262,7 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
 
 void BridgeClass::process() {
   [[maybe_unused]] auto _u1 = _scheduler_policy.schedule_tasks(_tasks);
+  if constexpr (bridge::config::ENABLE_MAILBOX) Mailbox.process();
 }
 void BridgeClass::_watchdogTask() {
   bridge::hal::watchdog_kick();

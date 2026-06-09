@@ -41,14 +41,17 @@ void test_all_handlers_coverage() {
   frame.version = rpc::PROTOCOL_VERSION;
   frame.command_id = rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION);
   TestAccessor::create(Bridge).dispatch(frame);
+    Mailbox.process();
 
   frame.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_GET_FREE_MEMORY);
   TestAccessor::create(Bridge).dispatch(frame);
+    Mailbox.process();
 
   frame.command_id =
       rpc::to_underlying(rpc::CommandId::CMD_GET_CAPABILITIES);
   TestAccessor::create(Bridge).dispatch(frame);
+    Mailbox.process();
 }
 
 void test_process_api() {
@@ -127,6 +130,7 @@ void test_mailbox_api() {
     frame.command_id = rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH);
     bridge::test::set_pb_payload(frame, push_msg);
     TestAccessor::create(Bridge).dispatch(frame);
+    Mailbox.process();
     TEST_ASSERT_TRUE(message_callback_called);
     TEST_ASSERT_EQUAL_UINT32(2, last_message_len);
     TEST_ASSERT_EQUAL_UINT8(0x11, last_message_data[0]);
@@ -144,6 +148,7 @@ void test_mailbox_api() {
     frame.command_id = rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_READ_RESP);
     bridge::test::set_pb_payload(frame, read_resp);
     TestAccessor::create(Bridge).dispatch(frame);
+    Mailbox.process();
     TEST_ASSERT_TRUE(message_callback_called);
     TEST_ASSERT_EQUAL_UINT32(3, last_message_len);
     TEST_ASSERT_EQUAL_UINT8(0x33, last_message_data[0]);
@@ -158,6 +163,7 @@ void test_mailbox_api() {
     frame.command_id = rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP);
     bridge::test::set_pb_payload(frame, avail_resp);
     TestAccessor::create(Bridge).dispatch(frame);
+    Mailbox.process();
     TEST_ASSERT_TRUE(available_callback_called);
     TEST_ASSERT_EQUAL_UINT32(42, last_available_count);
   }

@@ -4,7 +4,9 @@
 #include "config/bridge_config.h"
 #undef min
 #undef max
+#include <etl/array.h>
 #include <etl/circular_buffer.h>
+#include <etl/queue.h>
 #include <etl/delegate.h>
 #include <etl/span.h>
 
@@ -36,12 +38,18 @@ class MailboxClass {
   static void _onReadResponse(const rpc::payload::MailboxReadResponse& msg);
   static void _onAvailableResponse(const rpc::payload::MailboxAvailableResponse& msg);
 
-  static void onLost() {}
+  static void process();
+  static void onLost();
   static void onSynchronized() {}
 
  private:
+  struct MailboxMessage {
+    etl::array<uint8_t, 64> data;
+    uint8_t size;
+  };
   static MessageCallback _message_callback;
   static AvailableCallback _available_callback;
+  static etl::queue<MailboxMessage, 8> _queue;
 };
 
 using MailboxType = MailboxClass<>;

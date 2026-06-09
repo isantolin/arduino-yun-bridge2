@@ -103,14 +103,25 @@ def test_security_coverage_boost() -> None:
 
 
 @pytest.mark.asyncio
-async def test_serial_transport_coverage_boost() -> None:
+async def test_serial_transport_coverage_boost(tmp_path) -> None:
+    # Crear directorios sandbox únicos por cada worker de pytest-xdist
+    test_root = tmp_path / "yun_files"
+    test_spool = tmp_path / "spool"
+    test_root.mkdir()
+    test_spool.mkdir()
+
     config = RuntimeConfig(
         mqtt_topic="br",
         serial_port="/dev/testport",
         serial_fallback_threshold=2,
         serial_baud=115200,
         serial_safe_baud=9600,
+        # Forzar aislamiento absoluto de archivos DBM en el hilo actual
+        file_system_root=str(test_root),
+        mqtt_spool_dir=str(test_spool),
     )
+    
+    # Ahora la base de datos se creará de forma aislada y determinista
     state = create_runtime_state(config)
     state.serial_tx_allowed.set()
 

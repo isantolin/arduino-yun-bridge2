@@ -2,7 +2,6 @@
 aiomqtt==2.5.1
 cobs==1.2.2
 cryptography==48.0.0
-diskcache==5.6.3
 jinja2==3.1.6
 msgspec==0.21.1
 paho-mqtt==2.1.0

@@ -1204,7 +1204,7 @@ def main() -> None:
         sys.stderr.write(f"Generated {args.py_client}\n")
 
     # Step 4: Generate type stubs for untyped libraries using pyright
-    untyped_libs = ["diskcache"]
+    untyped_libs = []
     sys.stderr.write(f"Generating type stubs for {', '.join(untyped_libs)}...\n")
     for lib in untyped_libs:
         # [SIL-2] Use -m pyright to ensure we use the version installed in the current venv

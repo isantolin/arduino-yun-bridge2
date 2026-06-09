@@ -133,7 +133,7 @@ def force_gc_cleanup():
         loop.close()
     asyncio.set_event_loop(None)
     # Collect garbage to finalize any objects that hold OS resources.
-    # The diskcache ResourceWarning was fixed at the source (RuntimeState.__del__
+    # The dbm ResourceWarning was fixed at the source (RuntimeState.__del__
     # + cleanup() resets mailbox queues to plain deques), so no suppression needed.
     gc.collect()
 

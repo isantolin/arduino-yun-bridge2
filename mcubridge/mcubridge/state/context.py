@@ -124,7 +124,7 @@ class RuntimeState(msgspec.Struct, weakref=True):
     allow_non_tmp_paths: bool = False
     datastore_cache: DbmCache | None = None
 
-    # [SIL-2] Mailbox queues persist to /tmp through diskcache when enabled.
+    # [SIL-2] Mailbox queues persist to /tmp through dbm when enabled.
     mailbox_queue: collections.deque[bytes] = msgspec.field(
         default_factory=lambda: cast(collections.deque[bytes], collections.deque())
     )
@@ -308,7 +308,7 @@ class RuntimeState(msgspec.Struct, weakref=True):
         self.mailbox_queue = _create_spool("mailbox_out")
         self.mailbox_incoming_queue = _create_spool("mailbox_in")
 
-        # [SIL-2] Initialize datastore with diskcache for ACID persistence
+        # [SIL-2] Initialize datastore with dbm for ACID persistence
         ds_dir = None
         if self.allow_non_tmp_paths or self.file_system_root.startswith("/tmp/"):
             ds_dir = Path(self.file_system_root) / "datastore"
@@ -522,7 +522,7 @@ class RuntimeState(msgspec.Struct, weakref=True):
         return max(0.0, time.monotonic() - self.handshake_last_started)
 
     def __del__(self) -> None:
-        """Last-resort cleanup to prevent ResourceWarning from unclosed diskcache connections."""
+        """Last-resort cleanup to prevent ResourceWarning from unclosed dbm connections."""
         self.cleanup()
 
     def cleanup(self) -> None:

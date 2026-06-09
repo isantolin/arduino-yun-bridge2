@@ -56,7 +56,6 @@ define Package/$(PKG_NAME)
 		python3-uvloop \
 		python3-cryptography \
 		python3-structlog \
-		python3-diskcache \
 		mosquitto-client
 	# AUTO-GENERATED RUNTIME DEPENDS END
 endef

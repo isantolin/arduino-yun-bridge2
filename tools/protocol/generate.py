@@ -1204,17 +1204,16 @@ def main() -> None:
         sys.stderr.write(f"Generated {args.py_client}\n")
 
     # Step 4: Generate type stubs for untyped libraries using pyright
+    # [SIL-2] Generate type stubs for untyped libraries using pyright if any are defined.
     untyped_libs: list[str] = []
-    sys.stderr.write(f"Generating type stubs for {', '.join(untyped_libs)}...\n")
-    for lib in untyped_libs:
-        # [SIL-2] Use -m pyright to ensure we use the version installed in the current venv
-        stub_cmd = [sys.executable, "-m", "pyright", "--createstub", lib]
-        try:
-            # We use subprocess.run to allow failure if pyright is not available,
-            # but log a warning.
-            subprocess.run(stub_cmd, check=False, capture_output=True)
-        except (OSError, RuntimeError, subprocess.SubprocessError) as e:
-            sys.stderr.write(f"Warning: Failed to generate stubs for {lib}: {e}\n")
+    if untyped_libs:
+        sys.stderr.write(f"Generating type stubs for {', ' .join(untyped_libs)}...\n")
+        for lib in untyped_libs:
+            stub_cmd = [sys.executable, "-m", "pyright", "--createstub", lib]
+            try:
+                subprocess.run(stub_cmd, check=False, capture_output=True)
+            except (OSError, RuntimeError, subprocess.SubprocessError) as e:
+                sys.stderr.write(f"Warning: Failed to generate stubs for {lib}: {e}\n")
 
 
 if __name__ == "__main__":

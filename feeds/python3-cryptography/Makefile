@@ -5,7 +5,7 @@ PKG_VERSION:=48.0.1
 PKG_RELEASE:=1
 
 PYPI_NAME:=cryptography
-PKG_HASH:=5c3932f4436d1cccb036cb0eaef46e6e2db91035166f1ad6505c3c9d5a635920
+PKG_HASH:=266f4ee051abb2f725b74ef8072b521ce1feacf685a3364fa6a6b45548db791a
 
 PKG_BUILD_DEPENDS:=libffi/host python-maturin/host python-cffi/host rust/host
 

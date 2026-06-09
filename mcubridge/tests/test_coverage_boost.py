@@ -226,32 +226,30 @@ async def test_serial_transport_coverage_boost(tmp_path) -> None:
 async def test_daemon_coverage_boost(tmp_path) -> None:
     from mcubridge.daemon import BridgeDaemon, app
 
-    # Crear rutas de sandbox temporales e independientes por hilo
+    # 1. Definir rutas sandbox aisladas y deterministas
     test_root = tmp_path / "yun_files"
     test_spool = tmp_path / "spool"
     test_root.mkdir()
     test_spool.mkdir()
 
+    # Primera configuración (Aislada correctamente)
     config = RuntimeConfig(
         mqtt_topic="br",
         serial_port="/dev/testport",
         mqtt_enabled=False,
         watchdog_enabled=True,
-        metrics_enabled=False,  # Set to False to prevent blocking socketserver shutdown
+        metrics_enabled=False,
         bridge_summary_interval=1.0,
         bridge_handshake_interval=1.0,
-        # Forzar aislamiento absoluto de archivos DBM
         file_system_root=str(test_root),
         mqtt_spool_dir=str(test_spool),
     )
-    
-    # La base de datos spool.db ahora se abrirá de manera aislada y determinista
-    daemon = BridgeDaemon(config)
 
-    # 1. run_mqtt when mqtt_enabled is False
+    daemon = BridgeDaemon(config)
     await daemon.run_mqtt()
 
-    # 2. connect_mqtt_session anonymous and success paths
+    # 2. SEGUNDA CONFIGURACIÓN (¡Aquí estaba la fuga!)
+    # Debemos inyectar también el aislamiento para evitar que herede '/tmp'
     config_mqtt = RuntimeConfig(
         mqtt_topic="br",
         serial_port="/dev/testport",
@@ -259,7 +257,16 @@ async def test_daemon_coverage_boost(tmp_path) -> None:
         mqtt_host="localhost",
         mqtt_port=1883,
         mqtt_user="",
+        # Forzar aislamiento absoluto también en esta rama de ejecución
+        file_system_root=str(test_root / "mqtt_files"),
+        mqtt_spool_dir=str(test_spool / "mqtt_spool"),
     )
+    
+    # Crear sub-directorios específicos antes de inicializar
+    (test_root / "mqtt_files").mkdir()
+    (test_spool / "mqtt_spool").mkdir()
+
+    # Ahora el segundo demonio iniciará sin colisionar con ningún hilo paralelo
     daemon_mqtt: Any = BridgeDaemon(config_mqtt)
 
     mock_client = AsyncMock()

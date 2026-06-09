@@ -6,6 +6,10 @@ import dbm
 import os
 from typing import TypeVar
 
+import structlog
+
+logger = structlog.get_logger(__name__)
+
 T = TypeVar("T")
 
 
@@ -105,13 +109,13 @@ class DbmCache:
             return db[key.encode()]
 
     def get(self, key: str, default: T | None = None) -> bytes | T | None:
+        """Get an item with a default value. [SIL-2] Catching only expected IO errors."""
         try:
             with dbm.open(self.path, "c") as db:
                 val = db.get(key.encode())
                 return val if val is not None else default
-        except KeyError:
-            return default
-        except Exception:
+        except (dbm.error, OSError) as exc:
+            logger.warning("DbmCache get failed", path=self.path, key=key, error=exc)
             return default
 
     def clear(self) -> None:

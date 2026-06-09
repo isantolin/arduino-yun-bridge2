@@ -121,7 +121,7 @@ async def test_serial_transport_coverage_boost(tmp_path: Path) -> None:
         file_system_root=str(test_root),
         mqtt_spool_dir=str(test_spool),
     )
-    
+
     # Ahora la base de datos se creará de forma aislada y determinista
     state = create_runtime_state(config)
     state.serial_tx_allowed.set()
@@ -258,7 +258,7 @@ async def test_daemon_coverage_boost(tmp_path: Path) -> None:
         file_system_root=str(test_root / "mqtt_files"),
         mqtt_spool_dir=str(test_spool / "mqtt_spool"),
     )
-    
+
     (test_root / "mqtt_files").mkdir()
     (test_spool / "mqtt_spool").mkdir()
 

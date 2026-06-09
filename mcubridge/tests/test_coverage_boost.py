@@ -20,6 +20,7 @@ from mcubridge.config.settings import RuntimeConfig
 from mcubridge.state.context import create_runtime_state
 from mcubridge.protocol.protocol import Status
 from mcubridge.protocol.structures import PendingCommand
+from pathlib import Path
 
 # Mock 'uci' globally for tests that import scripts directly
 sys.modules["uci"] = MagicMock()
@@ -103,8 +104,8 @@ def test_security_coverage_boost() -> None:
 
 
 @pytest.mark.asyncio
-async def test_serial_transport_coverage_boost(tmp_path) -> None:
-    # Crear directorios sandbox únicos por cada worker de pytest-xdist
+async def test_serial_transport_coverage_boost(tmp_path: Path) -> None:
+    # Pyright ahora deducirá correctamente que test_root y test_spool son objetos Path
     test_root = tmp_path / "yun_files"
     test_spool = tmp_path / "spool"
     test_root.mkdir()
@@ -223,16 +224,15 @@ async def test_serial_transport_coverage_boost(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_daemon_coverage_boost(tmp_path) -> None:
+async def test_daemon_coverage_boost(tmp_path: Path) -> None:
     from mcubridge.daemon import BridgeDaemon, app
 
-    # 1. Definir rutas sandbox aisladas y deterministas
+    # Estructura del sandbox completamente tipada
     test_root = tmp_path / "yun_files"
     test_spool = tmp_path / "spool"
     test_root.mkdir()
     test_spool.mkdir()
 
-    # Primera configuración (Aislada correctamente)
     config = RuntimeConfig(
         mqtt_topic="br",
         serial_port="/dev/testport",
@@ -248,8 +248,6 @@ async def test_daemon_coverage_boost(tmp_path) -> None:
     daemon = BridgeDaemon(config)
     await daemon.run_mqtt()
 
-    # 2. SEGUNDA CONFIGURACIÓN (¡Aquí estaba la fuga!)
-    # Debemos inyectar también el aislamiento para evitar que herede '/tmp'
     config_mqtt = RuntimeConfig(
         mqtt_topic="br",
         serial_port="/dev/testport",
@@ -257,16 +255,13 @@ async def test_daemon_coverage_boost(tmp_path) -> None:
         mqtt_host="localhost",
         mqtt_port=1883,
         mqtt_user="",
-        # Forzar aislamiento absoluto también en esta rama de ejecución
         file_system_root=str(test_root / "mqtt_files"),
         mqtt_spool_dir=str(test_spool / "mqtt_spool"),
     )
     
-    # Crear sub-directorios específicos antes de inicializar
     (test_root / "mqtt_files").mkdir()
     (test_spool / "mqtt_spool").mkdir()
 
-    # Ahora el segundo demonio iniciará sin colisionar con ningún hilo paralelo
     daemon_mqtt: Any = BridgeDaemon(config_mqtt)
 
     mock_client = AsyncMock()

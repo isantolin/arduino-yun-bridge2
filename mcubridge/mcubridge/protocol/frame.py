@@ -116,13 +116,7 @@ def parse_frame(raw_frame_buffer: bytes | bytearray | memoryview, session_key: b
         except InvalidTag as exc:
             raise ValueError("AEAD decryption failed") from exc
     else:
-        # Unencrypted! Extract from oneof field and serialize/populate payload for compatibility
-        active_field = envelope.WhichOneof("payload_type")
-        if active_field == "encrypted_payload":
-            decrypted = envelope.encrypted_payload
-        elif active_field:
-            decrypted = getattr(envelope, active_field)
-        else:
-            decrypted = b""
+        # Unencrypted! [SIL-2] Holistic payload extraction from the unified encrypted_payload field.
+        decrypted = envelope.encrypted_payload
 
     return DecodedFrame(envelope=envelope, payload=decrypted)

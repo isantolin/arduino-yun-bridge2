@@ -137,8 +137,10 @@ class BridgeClass {
     env.version = rpc::PROTOCOL_VERSION;
     env.command_id = command_id;
     env.sequence_id = sequence_id;
-    env.which_payload_type = rpc::Payload::get_tag<T>();
-    rpc::Payload::set_field(env, packet);
+    env.which_payload_type = rpc_pb_RpcEnvelope_encrypted_payload_tag;
+    pb_ostream_t pl_stream = pb_ostream_from_buffer(env.payload_type.encrypted_payload.bytes, sizeof(env.payload_type.encrypted_payload.bytes));
+    if (!pb_encode(&pl_stream, rpc::Payload::get_fields<T>(), &packet)) return false;
+    env.payload_type.encrypted_payload.size = static_cast<pb_size_t>(pl_stream.bytes_written);
     size_t len = rpc::serialize_frame(env, buffer);
     if (len > 0) {
       _packet_serial.send(_stream, etl::span<const uint8_t>(buffer.data(), len));

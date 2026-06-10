@@ -38,16 +38,12 @@ from ..protocol.protocol import (
     Command,
     Status,
 )
+from ..protocol import mcubridge_pb2 as pb
 from ..protocol.structures import (
-    BridgeSnapshot,
-    HandshakeSnapshot,
     PendingPinRequest,
     SerialFlowStats,
-    SerialLinkSnapshot,
-    SerialPipelineSnapshot,
     SerialThroughputStats,
     SupervisorStats,
-    PipelineEvent,
 )
 from .metrics import DaemonMetrics
 
@@ -67,10 +63,7 @@ __all__: Final[tuple[str, ...]] = (
     "RuntimeState",
     "PendingPinRequest",
     "create_runtime_state",
-    "HandshakeSnapshot",
-    "SerialLinkSnapshot",
-    "SerialPipelineSnapshot",
-    "BridgeSnapshot",
+
     "Status",
 )
 
@@ -420,17 +413,25 @@ class RuntimeState(msgspec.Struct, weakref=True):
                 duration_val = float(cast(float, payload["duration"]))
                 self.metrics.serial_latency_ms.observe(duration_val * 1000.0)
 
-    def build_serial_pipeline_snapshot(self) -> SerialPipelineSnapshot:
-        return SerialPipelineSnapshot(
-            inflight=self.serial_pipeline_inflight,
-            last_completion=self.serial_pipeline_last,
-        )
+    def build_serial_pipeline_snapshot(self) -> pb.SerialPipelineSnapshot:
+        snapshot = pb.SerialPipelineSnapshot()
+        if self.serial_pipeline_inflight:
+            inf = dict(self.serial_pipeline_inflight)
+            if inf.get("status") is None: inf["status"] = 0
+            snapshot.inflight.CopyFrom(pb.PipelineEvent(**inf))
+        if self.serial_pipeline_last:
+            last = dict(self.serial_pipeline_last)
+            if last.get("status") is None: last["status"] = 0
+            snapshot.last_completion.CopyFrom(pb.PipelineEvent(**last))
+        return snapshot
 
     def apply_handshake_stats(self, observation: Mapping[str, Any]) -> None:
         """Update internal state from external handshake statistics."""
         # [SIL-2] Bulk conversion using msgspec to eliminate manual coercion
         try:
-            snap = msgspec.convert(observation, HandshakeSnapshot, strict=False)
+            from google.protobuf.json_format import ParseDict
+            snap = pb.HandshakeSnapshot()
+            ParseDict(observation, snap, ignore_unknown_fields=True)
             self.handshake_attempts = snap.attempts
             self.handshake_successes = snap.successes
             self.handshake_failure_streak = snap.failure_streak
@@ -453,58 +454,59 @@ class RuntimeState(msgspec.Struct, weakref=True):
         if "last_trim_unix" in observation:
             self.mqtt_spool_last_trim_unix = msgspec.convert(observation["last_trim_unix"], float)
 
-    def build_metrics_snapshot(self) -> dict[str, Any]:
-        # [SIL-2] Return rich objects where possible to preserve attribute-based API
-        return {
-            "serial": self.serial_flow_stats,
-            "serial_throughput": self.serial_throughput_stats,
-            "mqtt_drop_counts": dict(self.mqtt_drop_counts),
-            "mqtt_spool_corrupt_dropped": self.mqtt_spool_corrupt_dropped,
-            "mqtt_spool_dropped_limit": self.mqtt_spool_dropped_limit,
-            "mqtt_spool_trim_events": self.mqtt_spool_trim_events,
-            "mqtt_spool_last_trim_unix": self.mqtt_spool_last_trim_unix,
-            "mqtt_spool_degraded": self.mqtt_spool_degraded,
-            "mqtt_spool_failure_reason": self.mqtt_spool_failure_reason,
-            "mqtt_spool_pending_messages": self.mqtt_spool_pending_messages,
-            "queue_depths": {
-                "mqtt_publish": self.mqtt_publish_queue.qsize(),
-                "console": len(self.console_to_mcu_queue),
-                "mailbox_outgoing": len(self.mailbox_queue),
-                "mailbox_incoming": len(self.mailbox_incoming_queue),
-                "running_processes": len(self.running_processes),
-            },
-            "handshake": self.build_handshake_snapshot(),
-            "link_synchronised": self.is_synchronized,
-            "bridge": self.build_bridge_snapshot(),
-        }
+    def build_metrics_snapshot(self) -> pb.DaemonMetrics:
+        metrics = pb.DaemonMetrics(
+            serial=self.serial_flow_stats.as_snapshot(),
+            serial_throughput=self.serial_throughput_stats.as_snapshot(),
+            mqtt_spool_corrupt_dropped=self.mqtt_spool_corrupt_dropped,
+            mqtt_spool_dropped_limit=self.mqtt_spool_dropped_limit,
+            mqtt_spool_trim_events=self.mqtt_spool_trim_events,
+            mqtt_spool_last_trim_unix=self.mqtt_spool_last_trim_unix,
+            mqtt_spool_degraded=self.mqtt_spool_degraded,
+            mqtt_spool_failure_reason=self.mqtt_spool_failure_reason or "",
+            mqtt_spool_pending_messages=self.mqtt_spool_pending_messages,
+            queue_depths=pb.QueueDepths(
+                mqtt_publish=self.mqtt_publish_queue.qsize(),
+                console=len(self.console_to_mcu_queue),
+                mailbox_outgoing=len(self.mailbox_queue),
+                mailbox_incoming=len(self.mailbox_incoming_queue),
+                running_processes=len(self.running_processes),
+            ),
+            handshake=self.build_handshake_snapshot(),
+            link_synchronised=self.is_synchronized,
+            bridge=self.build_bridge_snapshot(),
+            file_storage_limit_rejections=self.file_storage_limit_rejections,
+            file_write_limit_rejections=self.file_write_limit_rejections,
+        )
+        for k, v in self.mqtt_drop_counts.items():
+            metrics.mqtt_drop_counts[k] = v
+        return metrics
 
-    def build_handshake_snapshot(self) -> HandshakeSnapshot:
+    def build_handshake_snapshot(self) -> pb.HandshakeSnapshot:
         # [SIL-2] Atomic field extraction from self to avoid manual boilerplate.
         # We leverage the fact that most fields match by name and type.
-        return HandshakeSnapshot(
+        return pb.HandshakeSnapshot(
             synchronised=self.is_synchronized,
             attempts=self.handshake_attempts,
             successes=self.handshake_successes,
             failures=self.handshake_failures,
             failure_streak=self.handshake_failure_streak,
-            last_error=self.last_handshake_error,
+            last_error=self.last_handshake_error or "",
             last_unix=self.last_handshake_unix,
             last_duration=self.handshake_last_duration,
             backoff_until=self.handshake_backoff_until,
             rate_limit_until=self.handshake_rate_until,
             fatal_count=self.handshake_fatal_count,
-            fatal_reason=self.handshake_fatal_reason,
-            fatal_detail=self.handshake_fatal_detail,
+            fatal_reason=self.handshake_fatal_reason or "",
+            fatal_detail=self.handshake_fatal_detail or "",
             fatal_unix=self.handshake_fatal_unix,
             pending_nonce=bool(self.link_handshake_nonce),
             nonce_length=self.link_nonce_length,
         )
 
-    def build_bridge_snapshot(self) -> BridgeSnapshot:
-        # [SIL-2] Converge disparate state metrics into a unified snapshot structure
-        # using msgspec for guaranteed validation and performance.
-        return BridgeSnapshot(
-            serial_link=SerialLinkSnapshot(
+    def build_bridge_snapshot(self) -> pb.BridgeSnapshot:
+        return pb.BridgeSnapshot(
+            serial_link=pb.SerialLinkSnapshot(
                 connected=self.is_connected,
                 writer_attached=self.serial_writer is not None,
                 synchronised=self.is_synchronized,
@@ -512,8 +514,12 @@ class RuntimeState(msgspec.Struct, weakref=True):
             handshake=self.build_handshake_snapshot(),
             serial_pipeline=self.build_serial_pipeline_snapshot(),
             serial_flow=self.serial_flow_stats.as_snapshot(),
-            mcu_version=self.mcu_version,
-            capabilities=self.mcu_capabilities,
+            mcu_version=pb.VersionResponse(
+                major=self.mcu_version[0],
+                minor=self.mcu_version[1],
+                patch=self.mcu_version[2],
+            ) if self.mcu_version else None,
+            capabilities=pb.Capabilities(**self.mcu_capabilities) if self.mcu_capabilities else None,
         )
 
     def handshake_duration_since_start(self) -> float:

@@ -9,6 +9,7 @@ This module implements secure handshake with:
 
 from __future__ import annotations
 from mcubridge.protocol import mcubridge_pb2 as pb
+from ..protocol import protocol
 
 import asyncio
 import logging
@@ -63,7 +64,15 @@ def derive_serial_timing(config: RuntimeConfig) -> pb.HandshakeConfig:
     response_ms = int(round(config.serial_response_timeout * 1000.0))
     retry_limit = int(config.serial_retry_attempts)
     response_ms = max(response_ms, ack_ms)
-    return pb.HandshakeConfig(ack_timeout_ms=ack_ms, response_timeout_ms=response_ms, ack_retry_limit=retry_limit)
+    return pb.HandshakeConfig(
+        ack_timeout_ms=ack_ms,
+        response_timeout_ms=response_ms,
+        ack_retry_limit=retry_limit,
+        max_payload_size=protocol.MAX_PAYLOAD_SIZE,
+        max_inflight_commands=1,
+        watchdog_interval_ms=int(round(config.watchdog_interval * 1000.0)) if config.watchdog_enabled else 0,
+        keepalive_interval_ms=30000,
+    )
 
 
 class SerialHandshakeFatal(RuntimeError):

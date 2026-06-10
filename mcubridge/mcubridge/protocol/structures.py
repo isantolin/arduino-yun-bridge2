@@ -31,11 +31,6 @@ from paho.mqtt.properties import Properties
 
 PROTOBUF_CONTENT_TYPE: Final[str] = "application/x-protobuf"
 
-# [SIL-2] Declarative bitmask definition for MCU capabilities.
-# This ensures atomic bit-level parsing/building via 's C-backed engine.
-# Order matches the protocol specification (bit 0 to bit 15).
-
-
 # [SIL-2] Compiled once at module load; reused across all AllowedCommandPolicy instances.
 _TOKEN_SEP: Final = re.compile(r"[,\s]+")
 
@@ -85,11 +80,6 @@ class TopicRoute(msgspec.Struct, frozen=True):
     @property
     def remainder(self) -> tuple[str, ...]:
         return self.segments[1:] if len(self.segments) > 1 else ()
-
-
-# =============================================================================
-# 2. Security and Policy Structures (msgspec)
-# =============================================================================
 
 
 class AllowedCommandPolicy(msgspec.Struct, frozen=True):
@@ -176,10 +166,7 @@ def _get_topic_auth_mapping() -> dict[tuple[str, str], str]:
 
 
 class TopicAuthorization(msgspec.Struct, frozen=True):
-    """Per-topic allow flags for MQTT-driven actions.
-
-    Optimized for lookup speed using a pre-calculated frozenset of allowed (topic, action) tuples.
-    """
+    """Per-topic allow flags for MQTT-driven actions."""
 
     file_read: bool = True
     file_write: bool = True
@@ -205,30 +192,20 @@ class TopicAuthorization(msgspec.Struct, frozen=True):
     spi_transfer: bool = True
     spi_config: bool = True
 
-    # Cache for allowed permissions (not serialized)
     _allowed_cache: Final[frozenset[tuple[str, str]]] = frozenset()
 
     def __post_init__(self) -> None:
-        """Build the optimized lookup cache using the module-level cached mapping."""
         mapping = _get_topic_auth_mapping()
         allowed = [k for k, attr in mapping.items() if getattr(self, attr)]
         object.__setattr__(self, "_allowed_cache", frozenset(allowed))
 
     def allows(self, topic: str, action: str) -> bool:
-        """Check if action is allowed on topic. O(1) complexity."""
         return (topic.lower(), action.lower()) in self._allowed_cache
-
-
-# =============================================================================
-# 3. Runtime Configuration Structures (msgspec)
-# =============================================================================
 
 
 class RuntimeConfig(msgspec.Struct, kw_only=True):
     """Strongly typed configuration for the daemon."""
 
-    # Imports moved inside __post_init__ or methods to avoid circularity
-    # but we need constants for defaults.
     from mcubridge.config.const import (
         DEFAULT_ALLOW_NON_TMP_PATHS,
         DEFAULT_BRIDGE_HANDSHAKE_INTERVAL,
@@ -284,19 +261,13 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
     mqtt_certfile: str | None = None
     mqtt_keyfile: str | None = None
     mqtt_topic: str = MQTT_DEFAULT_TOPIC_PREFIX
-
-    # [SIL-2] Accept Any to allow raw strings from UCI/Tests, then coerce in __post_init__
     allowed_commands: Any = ()
-
     file_system_root: str = DEFAULT_FILE_SYSTEM_ROOT
     process_timeout: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_PROCESS_TIMEOUT
-
     mqtt_tls_insecure: bool = DEFAULT_MQTT_TLS_INSECURE
     file_write_max_bytes: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_FILE_WRITE_MAX_BYTES
     file_storage_quota_bytes: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_FILE_STORAGE_QUOTA_BYTES
-
     allowed_policy: AllowedCommandPolicy | None = None
-
     mqtt_queue_limit: Annotated[int, msgspec.Meta(ge=0)] = DEFAULT_MQTT_QUEUE_LIMIT
     reconnect_delay: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_RECONNECT_DELAY
     status_interval: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_STATUS_INTERVAL
@@ -317,11 +288,7 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
     watchdog_enabled: bool = True
     watchdog_interval: Annotated[float, msgspec.Meta(ge=0.1, le=60.0)] = DEFAULT_WATCHDOG_INTERVAL
     topic_authorization: TopicAuthorization | None = None
-
-    # [SIL-2] Security: Accept Any to allow raw strings from UCI/Tests,
-    # then coerce to bytes in __post_init__ to avoid msgspec base64 errors.
     serial_shared_secret: Any = DEFAULT_SERIAL_SHARED_SECRET
-
     mqtt_spool_dir: str = DEFAULT_MQTT_SPOOL_DIR
     process_max_output_bytes: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_PROCESS_MAX_OUTPUT_BYTES
     process_max_concurrent: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_PROCESS_MAX_CONCURRENT
@@ -333,13 +300,10 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
     allow_non_tmp_paths: bool = DEFAULT_ALLOW_NON_TMP_PATHS
 
     def get_ssl_context(self) -> Any | None:
-        """Create an ssl.SSLContext based on the current configuration (SIL-2)."""
         if not self.mqtt_tls:
             return None
-
         import ssl
         from mcubridge.config.const import MQTT_TLS_MIN_VERSION
-
         try:
             if self.mqtt_cafile:
                 ca_path = Path(self.mqtt_cafile)
@@ -348,18 +312,14 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
                 context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH, cafile=str(ca_path))
             else:
                 context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
-
             context.minimum_version = MQTT_TLS_MIN_VERSION
-
             if self.mqtt_tls_insecure:
                 context.check_hostname = False
                 context.verify_mode = ssl.CERT_NONE
-
             if self.mqtt_certfile or self.mqtt_keyfile:
                 if not (self.mqtt_certfile and self.mqtt_keyfile):
                     raise ValueError("Both mqtt_certfile and mqtt_keyfile must be provided for mTLS.")
                 context.load_cert_chain(self.mqtt_certfile, self.mqtt_keyfile)
-
             return context
         except (OSError, ssl.SSLError, ValueError) as exc:
             raise RuntimeError(f"TLS setup failed: {exc}") from exc
@@ -373,110 +333,41 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
             DEFAULT_SERIAL_SHARED_SECRET,
             VOLATILE_STORAGE_PATHS,
         )
-
-        # [SIL-2] Semantic Policy Derivation
         self.allowed_policy = AllowedCommandPolicy.from_iterable(self.allowed_commands)
         self.allowed_commands = self.allowed_policy.entries if self.allowed_policy else ()
-
         if self.topic_authorization is None or isinstance(self.topic_authorization, dict):
             self.topic_authorization = (
                 msgspec.convert(self.topic_authorization, TopicAuthorization)
                 if self.topic_authorization
                 else TopicAuthorization()
             )
-
-        # [SIL-2] Strict Semantic Validations
         if not self.mqtt_topic or not any(filter(None, self.mqtt_topic.split("/"))):
             raise ValueError("mqtt_topic must contain at least one segment")
-
         if self.serial_response_timeout < self.serial_retry_timeout * 2:
             raise ValueError("serial_response_timeout must be at least 2x serial_retry_timeout")
-
         if self.watchdog_enabled and self.watchdog_interval < 0.5:
             raise ValueError("watchdog_interval must be >= 0.5s when enabled")
-
         if not self.serial_shared_secret:
             raise ValueError("serial_shared_secret must be configured")
-
         if self.serial_shared_secret == b"changeme123":
             raise ValueError("serial_shared_secret placeholder is insecure")
-
-        # Unique symbol check for minimum entropy
         if isinstance(self.serial_shared_secret, bytes):
             unique_symbols = {byte for byte in self.serial_shared_secret}
             if len(unique_symbols) < 4 and self.serial_shared_secret != DEFAULT_SERIAL_SHARED_SECRET:
                 raise ValueError("serial_shared_secret must contain at least four distinct bytes")
-
-        # Logic-based cross-field validations
         if self.file_storage_quota_bytes < self.file_write_max_bytes:
             raise ValueError("file_storage_quota_bytes must be greater than or equal to file_write_max_bytes")
-
         if self.mailbox_queue_bytes_limit < self.mailbox_queue_limit:
             raise ValueError("mailbox_queue_bytes_limit must be greater than or equal to mailbox_queue_limit")
-
-        # [SIL-2] Flash Protection: Spooling must ALWAYS be in volatile RAM.
         if not self.allow_non_tmp_paths:
             if not any(self.mqtt_spool_dir.startswith(p) for p in VOLATILE_STORAGE_PATHS):
-                msg = f"FLASH PROTECTION: mqtt_spool_dir ({self.mqtt_spool_dir}) must be in a volatile location"
-                raise ValueError(msg)
-
-        if not self.allow_non_tmp_paths:
+                raise ValueError(f"FLASH PROTECTION: mqtt_spool_dir ({self.mqtt_spool_dir}) must be in a volatile location")
             if not any(self.file_system_root.startswith(p) for p in VOLATILE_STORAGE_PATHS):
-                raise ValueError(
-                    f"FLASH PROTECTION: file_system_root ({self.file_system_root}) must be in a volatile location"
-                )
-
-
-# =============================================================================
-# 3. Operational Structures
-# =============================================================================
-
-T = TypeVar("T", bound="BaseStruct")
-
-
-def _flatten_structured_value(
-    key_prefix: str,
-    value: Any,
-    entries: list[pb.StructuredEntry],
-) -> None:
-    if isinstance(value, msgspec.Struct):
-        struct_fields = msgspec.structs.asdict(value)
-        for key, nested in struct_fields.items():
-            _flatten_structured_value(f"{key_prefix}.{key}" if key_prefix else key, nested, entries)
-        return
-    if isinstance(value, (list, tuple)):
-        nested: Any
-        for i, nested in enumerate(cast(list[Any] | tuple[Any, ...], value)):
-            _flatten_structured_value(f"{key_prefix}.{i}" if key_prefix else str(i), nested, entries)
-        return
-    if isinstance(value, Mapping):
-        mapped_value = cast(Mapping[str, Any], value)
-        for key, nested in mapped_value.items():
-            key_name = str(key)
-            _flatten_structured_value(f"{key_prefix}.{key_name}" if key_prefix else key_name, nested, entries)
-        return
-
-    entry = pb.StructuredEntry(key=key_prefix)
-    if value is None:
-        entry.null_value = True
-    elif isinstance(value, bytes):
-        entry.bytes_value = value
-    elif isinstance(value, str):
-        entry.string_value = value
-    elif isinstance(value, bool):
-        entry.bool_value = value
-    elif isinstance(value, enum.IntEnum):
-        entry.int_value = int(value)
-    elif isinstance(value, int):
-        entry.int_value = value
-    elif isinstance(value, float):
-        entry.float_value = value
-    else:
-        raise TypeError(f"Unsupported structured payload value for '{key_prefix}': {type(value)!r}")
-    entries.append(entry)
+                raise ValueError(f"FLASH PROTECTION: file_system_root ({self.file_system_root}) must be in a volatile location")
 
 
 def encode_structured_payload(payload: Mapping[str, Any] | msgspec.Struct) -> bytes:
+    """[DEPRECATED] Use specific Protobuf messages directly."""
     message = pb.StructuredPayload()
     source: Mapping[str, Any] = msgspec.structs.asdict(payload) if isinstance(payload, msgspec.Struct) else payload
     entries: list[pb.StructuredEntry] = []
@@ -486,23 +377,179 @@ def encode_structured_payload(payload: Mapping[str, Any] | msgspec.Struct) -> by
     return message.SerializeToString()
 
 
-def _entry_value(entry: pb.StructuredEntry) -> Any:
-    match entry.WhichOneof("value"):
-        case "string_value":
-            return entry.string_value
-        case "bytes_value":
-            return bytes(entry.bytes_value)
-        case "bool_value":
-            return entry.bool_value
-        case "int_value":
-            return entry.int_value
-        case "float_value":
-            return entry.float_value
-        case "null_value":
-            return None
-        case _:
-            raise ValueError(f"StructuredEntry '{entry.key}' missing value")
+def _flatten_structured_value(key_prefix: str, value: Any, entries: list[pb.StructuredEntry]) -> None:
+    if isinstance(value, msgspec.Struct):
+        struct_fields = msgspec.structs.asdict(value)
+        for key, nested in struct_fields.items():
+            _flatten_structured_value(f"{key_prefix}.{key}" if key_prefix else key, nested, entries)
+        return
+    if isinstance(value, (list, tuple)):
+        for i, nested in enumerate(value):
+            _flatten_structured_value(f"{key_prefix}.{i}" if key_prefix else str(i), nested, entries)
+        return
+    if isinstance(value, Mapping):
+        for key, nested in value.items():
+            _flatten_structured_value(f"{key_prefix}.{str(key)}" if key_prefix else str(key), nested, entries)
+        return
+    entry = pb.StructuredEntry(key=key_prefix)
+    if value is None: entry.null_value = True
+    elif isinstance(value, bytes): entry.bytes_value = value
+    elif isinstance(value, str): entry.string_value = value
+    elif isinstance(value, bool): entry.bool_value = value
+    elif isinstance(value, (int, enum.IntEnum)): entry.int_value = int(value)
+    elif isinstance(value, float): entry.float_value = value
+    else: raise TypeError(f"Unsupported structured payload value for '{key_prefix}': {type(value)!r}")
+    entries.append(entry)
 
+
+class PendingPinRequest(msgspec.Struct):
+    pin: int
+    reply_context: Any | None = None
+
+
+class QOSLevel(IntEnum):
+    QOS_0 = 0
+    QOS_1 = 1
+    QOS_2 = 2
+
+
+UserProperty = tuple[str, str]
+
+
+def build_mqtt_properties(message: QueuedPublish) -> Properties:
+    props = Properties(PacketTypes.PUBLISH)
+    _MAP = {"content_type": "ContentType", "payload_format_indicator": "PayloadFormatIndicator",
+            "message_expiry_interval": "MessageExpiryInterval", "response_topic": "ResponseTopic",
+            "correlation_data": "CorrelationData", "user_properties": "UserProperty", "topic_alias": "TopicAlias"}
+    for field, paho_name in _MAP.items():
+        val = getattr(message, field)
+        if val is not None:
+            setattr(props, paho_name, list(val) if field == "user_properties" else val)
+    if message.subscription_identifier is not None:
+        props.SubscriptionIdentifier = list(message.subscription_identifier)
+    return props
+
+
+class QueuedPublish(msgspec.Struct, frozen=True):
+    topic_name: str
+    payload: bytes
+    qos: Annotated[int, msgspec.Meta(ge=0, le=2)] = 0
+    retain: bool = False
+    content_type: str | None = None
+    payload_format_indicator: int | None = None
+    message_expiry_interval: int | None = None
+    response_topic: str | None = None
+    correlation_data: bytes | None = None
+    user_properties: tuple[UserProperty, ...] = ()
+    subscription_identifier: tuple[int, ...] | None = None
+    topic_alias: int | None = None
+
+
+class ProcessOutputBatch(msgspec.Struct):
+    status_byte: Annotated[int, msgspec.Meta(ge=0, le=255)]
+    exit_code: Annotated[int, msgspec.Meta(ge=0, le=255)]
+    stdout_chunk: bytes
+    stderr_chunk: bytes
+    finished: bool
+    stdout_truncated: bool
+    stderr_truncated: bool
+
+
+class PendingCommand(msgspec.Struct):
+    command_id: int
+    expected_resp_ids: set[int] = msgspec.field(default_factory=lambda: cast(set[int], set()))
+    completion: asyncio.Event = msgspec.field(default_factory=asyncio.Event)
+    attempts: int = 0
+    success: bool | None = None
+    failure_status: int | None = None
+    ack_received: bool = False
+    reply_topic: str | None = None
+    correlation_data: bytes | None = None
+    response_payload: bytes | ProtobufMessage | None = None
+
+    def mark_success(self, payload: bytes | ProtobufMessage | None = None) -> None:
+        self.response_payload = payload
+        self.success = True
+        if not self.completion.is_set(): self.completion.set()
+
+    def mark_failure(self, status: int | None) -> None:
+        self.success = False
+        self.failure_status = status
+        if not self.completion.is_set(): self.completion.set()
+
+
+class BaseStats(msgspec.Struct):
+    def as_snapshot(self) -> ProtobufMessage:
+        raise NotImplementedError()
+
+
+class SupervisorStats(BaseStats):
+    restarts: int = 0
+    last_failure_unix: float = 0.0
+    last_exception: str | None = None
+    backoff_seconds: float = 0.0
+    fatal: bool = False
+
+    def as_snapshot(self) -> pb.SupervisorSnapshot:
+        return pb.SupervisorSnapshot(
+            restarts=self.restarts,
+            last_failure_unix=self.last_failure_unix,
+            last_exception=self.last_exception or "",
+            backoff_seconds=self.backoff_seconds,
+            fatal=self.fatal,
+        )
+
+
+class SerialThroughputStats(BaseStats):
+    bytes_sent: int = 0
+    bytes_received: int = 0
+    frames_sent: int = 0
+    frames_received: int = 0
+    last_tx_unix: float = 0.0
+    last_rx_unix: float = 0.0
+
+    def record_tx(self, nbytes: int) -> None:
+        self.bytes_sent += nbytes
+        self.frames_sent += 1
+        self.last_tx_unix = time.time()
+
+    def record_rx(self, nbytes: int) -> None:
+        self.bytes_received += nbytes
+        self.frames_received += 1
+        self.last_rx_unix = time.time()
+
+    def as_snapshot(self) -> pb.SerialThroughputSnapshot:
+        return pb.SerialThroughputSnapshot(
+            bytes_sent=self.bytes_sent,
+            bytes_received=self.bytes_received,
+            frames_sent=self.frames_sent,
+            frames_received=self.frames_received,
+            last_tx_unix=self.last_tx_unix,
+            last_rx_unix=self.last_rx_unix,
+        )
+
+
+class SerialFlowStats(BaseStats):
+    commands_sent: int = 0
+    commands_acked: int = 0
+    retries: int = 0
+    failures: int = 0
+    last_event_unix: float = 0.0
+
+    def as_snapshot(self) -> pb.SerialFlowSnapshot:
+        return pb.SerialFlowSnapshot(
+            commands_sent=self.commands_sent,
+            commands_acked=self.commands_acked,
+            retries=self.retries,
+            failures=self.failures,
+            last_event_unix=self.last_event_unix,
+        )
+
+
+class ProcessStats(msgspec.Struct):
+    name: str
+    cpu_percent: Annotated[float, msgspec.Meta(ge=0.0)]
+    memory_rss_bytes: Annotated[int, msgspec.Meta(ge=0)]
 
 def decode_structured_payload(data: bytes) -> dict[str, Any]:
     message = pb.StructuredPayload()
@@ -523,294 +570,19 @@ def decode_structured_payload(data: bytes) -> dict[str, Any]:
     return decoded
 
 
-class BaseStruct(msgspec.Struct, frozen=True, array_like=True):
-    """Base class for all serial payload packets.
-
-    Encoded as protobuf payloads carried inside the framed RPC transport.
-    """
-
-
-# --- Binary Protocol Packets ---
-
-
-class PayloadValidationError(ValueError):
-    """Raised when an inbound MQTT payload cannot be validated."""
-
-    def __init__(self, message: str) -> None:
-        super().__init__(message)
-        self.message = message
-
-
-# --- High-Level Structure (Msgspec Only) ---
-
-
-class PendingPinRequest(msgspec.Struct):
-    """Pending pin read request."""
-
-    pin: int
-    reply_context: Any | None = None  # Message | None
-
-
-class ServiceHealth(msgspec.Struct, frozen=True):
-    name: str
-    status: str
-    restarts: int
-    last_failure_unix: float
-    last_exception: str | None = None
-
-
-class SystemStatus(msgspec.Struct, frozen=True):
-    cpu_percent: float | None
-    memory_total_bytes: int | None
-    memory_available_bytes: int | None
-    load_avg_1m: float | None
-    uptime_seconds: float
-
-
-# --- MQTT Spool Structures ---
-
-
-class QOSLevel(IntEnum):
-    """MQTT Quality-of-Service levels."""
-
-    QOS_0 = 0
-    QOS_1 = 1
-    QOS_2 = 2
-
-
-UserProperty = tuple[str, str]
-
-
-def build_mqtt_properties(message: QueuedPublish) -> Properties:
-    """Construct MQTT 5.0 properties object for aiomqtt/paho. [SIL-2]"""
-    props = Properties(PacketTypes.PUBLISH)
-    _MAP = {
-        "content_type": "ContentType",
-        "payload_format_indicator": "PayloadFormatIndicator",
-        "message_expiry_interval": "MessageExpiryInterval",
-        "response_topic": "ResponseTopic",
-        "correlation_data": "CorrelationData",
-        "user_properties": "UserProperty",
-        "topic_alias": "TopicAlias",
-    }
-    for field, paho_name in _MAP.items():
-        val = getattr(message, field)
-        if val is not None:
-            setattr(props, paho_name, list(val) if field == "user_properties" else val)
-
-    if message.subscription_identifier is not None:
-        props.SubscriptionIdentifier = list(message.subscription_identifier)
-
-    return props
-
-
-class QueuedPublish(msgspec.Struct, frozen=True):
-    """Serializable MQTT publish packet used by the durable spool."""
-
-    topic_name: str
-    payload: bytes
-    qos: Annotated[int, msgspec.Meta(ge=0, le=2)] = 0
-    retain: bool = False
-    content_type: str | None = None
-    payload_format_indicator: int | None = None
-    message_expiry_interval: int | None = None
-    response_topic: str | None = None
-    correlation_data: bytes | None = None
-    user_properties: tuple[UserProperty, ...] = ()
-    subscription_identifier: tuple[int, ...] | None = None
-    topic_alias: int | None = None
-
-
-# --- Process Service Structures ---
-
-
-class ProcessOutputBatch(msgspec.Struct):
-    """Structured payload describing PROCESS_POLL results."""
-
-    status_byte: Annotated[int, msgspec.Meta(ge=0, le=255)]
-    exit_code: Annotated[int, msgspec.Meta(ge=0, le=255)]
-    stdout_chunk: bytes
-    stderr_chunk: bytes
-    finished: bool
-    stdout_truncated: bool
-    stderr_truncated: bool
-
-
-# --- Serial Flow Structures ---
-
-
-class PendingCommand(msgspec.Struct):
-    """Book-keeping for a tracked command in flight."""
-
-    command_id: int
-    expected_resp_ids: set[int] = msgspec.field(default_factory=lambda: cast(set[int], set()))
-    completion: asyncio.Event = msgspec.field(default_factory=asyncio.Event)
-    attempts: int = 0
-    success: bool | None = None
-    failure_status: int | None = None
-    ack_received: bool = False
-    reply_topic: str | None = None
-    correlation_data: bytes | None = None
-    response_payload: bytes | ProtobufMessage | None = None
-
-    def mark_success(self, payload: bytes | ProtobufMessage | None = None) -> None:
-        self.response_payload = payload
-        self.success = True
-        if not self.completion.is_set():
-            self.completion.set()
-
-    def mark_failure(self, status: int | None) -> None:
-        self.success = False
-        self.failure_status = status
-        if not self.completion.is_set():
-            self.completion.set()
-
-
-# --- Status Structures ---
-
-
-_SnapshotT = TypeVar("_SnapshotT", bound=msgspec.Struct)
-
-
-class BaseStats(msgspec.Struct):
-    """Base for statistics containers providing standard dict conversion.
-
-    Subclasses that define ``SNAPSHOT_TYPE`` get a generic ``as_snapshot()``
-    that converts all fields into the frozen snapshot class via msgspec.
-    """
-
-    SNAPSHOT_TYPE: ClassVar[type | None] = None
-
-    def as_snapshot(self) -> msgspec.Struct:
-        """Convert mutable stats to a frozen snapshot struct."""
-        snap_cls = self.__class__.SNAPSHOT_TYPE
-        if snap_cls is None:
-            raise NotImplementedError(f"{self.__class__.__name__} has no SNAPSHOT_TYPE")
-        return cast(msgspec.Struct, msgspec.convert(msgspec.structs.asdict(self), snap_cls))
-
-
-class SupervisorSnapshot(msgspec.Struct):
-    restarts: Annotated[int, msgspec.Meta(ge=0)]
-    last_failure_unix: float
-    last_exception: str | None
-    backoff_seconds: Annotated[float, msgspec.Meta(ge=0.0)]
-    fatal: bool
-
-
-class SupervisorStats(BaseStats):
-    """Task supervisor statistics."""
-
-    SNAPSHOT_TYPE: ClassVar[type | None] = SupervisorSnapshot
-
-    restarts: int = 0
-    last_failure_unix: float = 0.0
-    last_exception: str | None = None
-    backoff_seconds: float = 0.0
-    fatal: bool = False
-
-    def as_snapshot(self) -> SupervisorSnapshot:
-        return cast(SupervisorSnapshot, super().as_snapshot())
-
-
-class SerialThroughputStats(BaseStats):
-    """Serial link throughput counters."""
-
-    bytes_sent: int = 0
-    bytes_received: int = 0
-    frames_sent: int = 0
-    frames_received: int = 0
-    last_tx_unix: float = 0.0
-    last_rx_unix: float = 0.0
-
-    def record_tx(self, nbytes: int) -> None:
-        self.bytes_sent += nbytes
-        self.frames_sent += 1
-        self.last_tx_unix = time.time()
-
-    def record_rx(self, nbytes: int) -> None:
-        self.bytes_received += nbytes
-        self.frames_received += 1
-        self.last_rx_unix = time.time()
-
-
-class PipelineEvent(msgspec.Struct, frozen=True, kw_only=True):
-    """Immutable snapshot of a single serial pipeline RPC event (SIL-2)."""
-
-    event: str
-    command_id: int
-    attempt: int
-    ack_received: bool
-    status: int | None
-    timestamp: float
-
-
-class SerialPipelineSnapshot(msgspec.Struct, frozen=True, kw_only=True):
-    inflight: dict[str, Any] | None = None
-    last_completion: dict[str, Any] | None = None
-
-
-class SerialLinkSnapshot(msgspec.Struct, frozen=True, kw_only=True):
-    connected: bool = False
-    writer_attached: bool = False
-    synchronised: bool = False
-
-
-class HandshakeSnapshot(msgspec.Struct, frozen=True, kw_only=True):
-    synchronised: bool = False
-    attempts: Annotated[int, msgspec.Meta(ge=0)] = 0
-    successes: Annotated[int, msgspec.Meta(ge=0)] = 0
-    failures: Annotated[int, msgspec.Meta(ge=0)] = 0
-    failure_streak: Annotated[int, msgspec.Meta(ge=0)] = 0
-    last_error: str | None = None
-    last_unix: Annotated[float, msgspec.Meta(ge=0.0)] = 0.0
-    last_duration: float = 0.0
-    backoff_until: Annotated[float, msgspec.Meta(ge=0.0)] = 0.0
-    rate_limit_until: Annotated[float, msgspec.Meta(ge=0.0)] = 0.0
-    fatal_count: Annotated[int, msgspec.Meta(ge=0)] = 0
-    fatal_reason: str | None = None
-    fatal_detail: str | None = None
-    fatal_unix: Annotated[float, msgspec.Meta(ge=0.0)] = 0.0
-    pending_nonce: bool = False
-    nonce_length: Annotated[int, msgspec.Meta(ge=0)] = 0
-
-
-class BridgeSnapshot(msgspec.Struct, frozen=True, kw_only=True):
-    serial_link: SerialLinkSnapshot
-    handshake: HandshakeSnapshot
-    serial_pipeline: SerialPipelineSnapshot
-    serial_flow: SerialFlowSnapshot
-    mcu_version: tuple[int, int, int] | None = None
-    capabilities: dict[str, Any] | None = None
-
-
-class SerialFlowSnapshot(msgspec.Struct):
-    """Serial flow control statistics snapshot."""
-
-    commands_sent: Annotated[int, msgspec.Meta(ge=0)]
-    commands_acked: Annotated[int, msgspec.Meta(ge=0)]
-    retries: Annotated[int, msgspec.Meta(ge=0)]
-    failures: Annotated[int, msgspec.Meta(ge=0)]
-    last_event_unix: float
-
-
-class SerialFlowStats(BaseStats):
-    """Serial flow control statistics (Mutable)."""
-
-    SNAPSHOT_TYPE: ClassVar[type | None] = SerialFlowSnapshot
-
-    commands_sent: int = 0
-    commands_acked: int = 0
-    retries: int = 0
-    failures: int = 0
-    last_event_unix: float = 0.0
-
-    def as_snapshot(self) -> SerialFlowSnapshot:
-        return cast(SerialFlowSnapshot, super().as_snapshot())
-
-
-class ProcessStats(msgspec.Struct):
-    """Resource usage statistics for a single process."""
-
-    name: str
-    cpu_percent: Annotated[float, msgspec.Meta(ge=0.0)]
-    memory_rss_bytes: Annotated[int, msgspec.Meta(ge=0)]
+def _entry_value(entry: pb.StructuredEntry) -> Any:
+    match entry.WhichOneof("value"):
+        case "string_value":
+            return entry.string_value
+        case "bytes_value":
+            return bytes(entry.bytes_value)
+        case "bool_value":
+            return entry.bool_value
+        case "int_value":
+            return entry.int_value
+        case "float_value":
+            return entry.float_value
+        case "null_value":
+            return None
+        case _:
+            raise ValueError(f"StructuredEntry '{entry.key}' missing value")

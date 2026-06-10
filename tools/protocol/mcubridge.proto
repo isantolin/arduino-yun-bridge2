@@ -141,8 +141,21 @@ message ProcessKill {
     uint32 pid = 1;
 }
 
+enum ErrorCode {
+    SUCCESS = 0;
+    UNKNOWN_ERROR = 1;
+    INVALID_COMMAND = 2;
+    PERMISSION_DENIED = 3;
+    TIMEOUT = 4;
+    HARDWARE_FAILURE = 5;
+    BUFFER_OVERFLOW = 6;
+    CRC_MISMATCH = 7;
+    NOT_SYNCHRONIZED = 8;
+    RATE_LIMITED = 9;
+}
+
 message GenericResponse {
-    string status = 1;
+    ErrorCode code = 1;
     string message = 2;
 }
 
@@ -170,6 +183,10 @@ message HandshakeConfig {
     uint32 ack_timeout_ms = 1;
     uint32 ack_retry_limit = 2;
     uint32 response_timeout_ms = 3;
+    uint32 max_payload_size = 4;
+    uint32 max_inflight_commands = 5;
+    uint32 watchdog_interval_ms = 6;
+    uint32 keepalive_interval_ms = 7;
 }
 
 message SetBaudratePacket {
@@ -262,6 +279,15 @@ message SerialFlowSnapshot {
     double last_event_unix = 5;
 }
 
+message SerialThroughputSnapshot {
+    uint64 bytes_sent = 1;
+    uint64 bytes_received = 2;
+    uint32 frames_sent = 3;
+    uint32 frames_received = 4;
+    double last_tx_unix = 5;
+    double last_rx_unix = 6;
+}
+
 message BridgeSnapshot {
     SerialLinkSnapshot serial_link = 1;
     HandshakeSnapshot handshake = 2;
@@ -269,6 +295,48 @@ message BridgeSnapshot {
     SerialFlowSnapshot serial_flow = 4;
     VersionResponse mcu_version = 5;
     Capabilities capabilities = 6;
+}
+
+message QueueDepths {
+    uint32 mqtt_publish = 1;
+    uint32 console = 2;
+    uint32 mailbox_outgoing = 3;
+    uint32 mailbox_incoming = 4;
+    uint32 running_processes = 5;
+}
+
+message AuthorizationError {
+    string status = 1;
+    string topic = 2;
+    string action = 3;
+}
+
+message ProcessStats {
+    string name = 1;
+    double cpu_percent = 2;
+    uint64 memory_rss_bytes = 3;
+}
+
+message DaemonMetrics {
+    SerialFlowSnapshot serial = 1;
+    SerialThroughputSnapshot serial_throughput = 2;
+    map<string, uint32> mqtt_drop_counts = 3;
+    uint32 mqtt_spool_corrupt_dropped = 4;
+    uint32 mqtt_spool_dropped_limit = 5;
+    uint32 mqtt_spool_trim_events = 6;
+    double mqtt_spool_last_trim_unix = 7;
+    bool mqtt_spool_degraded = 8;
+    string mqtt_spool_failure_reason = 9;
+    uint32 mqtt_spool_pending_messages = 10;
+    QueueDepths queue_depths = 11;
+    HandshakeSnapshot handshake = 12;
+    bool link_synchronised = 13;
+    BridgeSnapshot bridge = 14;
+    uint32 file_storage_limit_rejections = 15;
+    uint32 file_write_limit_rejections = 16;
+    map<string, ProcessStats> processes = 17;
+    map<string, SupervisorSnapshot> supervisors = 18;
+    double heartbeat_unix = 19;
 }
 
 message RpcEnvelope {
@@ -314,5 +382,7 @@ message RpcEnvelope {
         SpiTransfer spi_transfer = 39;
         SpiTransferResponse spi_transfer_resp = 40;
         SpiConfig spi_config = 41;
+        AuthorizationError auth_error = 42;
+        DaemonMetrics daemon_metrics = 43;
     }
 }

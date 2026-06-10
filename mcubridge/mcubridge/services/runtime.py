@@ -32,6 +32,7 @@ from ..config.const import (
 )
 from ..config.settings import RuntimeConfig
 from ..protocol import protocol, structures
+from ..protocol import mcubridge_pb2 as pb
 from ..protocol.protocol import (
     Command,
     ConsoleAction,
@@ -173,11 +174,11 @@ class BridgeService:
             Command.CMD_PROCESS_KILL.value: lambda _seq, p: self._stop_process(cast(pb.ProcessKill, p).pid),
             Command.CMD_DIGITAL_READ.value: lambda _seq, _payload: serial.send(
                 Status.NOT_IMPLEMENTED.value,
-                pb.GenericResponse(message="linux_originates_digital_read_requests"),
+                pb.GenericResponse(code=pb.SUCCESS, message="linux_originates_digital_read_requests"),
             ),
             Command.CMD_ANALOG_READ.value: lambda _seq, _payload: serial.send(
                 Status.NOT_IMPLEMENTED.value,
-                pb.GenericResponse(message="linux_originates_analog_read_requests"),
+                pb.GenericResponse(code=pb.SUCCESS, message="linux_originates_analog_read_requests"),
             ),
             Command.CMD_DIGITAL_READ_RESP.value: lambda _seq, p: self._on_pin_resp(
                 p, Topic.DIGITAL, self.state.pending_digital_reads
@@ -624,7 +625,7 @@ class BridgeService:
         if path and await self._write_with_quota(path, p.data):
             res = await serial.send(Status.OK.value, b"")
             return bool(res)
-        res = await serial.send(Status.ERROR.value, pb.GenericResponse(message="Write failed"))
+        res = await serial.send(Status.ERROR.value, pb.GenericResponse(code=pb.HARDWARE_FAILURE, message="Write failed"))
         return bool(res)
 
     async def _on_mcu_file_read(self, p: pb.FileRead) -> None:
@@ -645,7 +646,7 @@ class BridgeService:
                         pb.FileReadResponse(content=chunk),
                     )
             return
-        await serial.send(Status.ERROR.value, pb.GenericResponse(message="Read failed"))
+        await serial.send(Status.ERROR.value, pb.GenericResponse(code=pb.HARDWARE_FAILURE, message="Read failed"))
 
     async def _on_mcu_file_remove(self, p: pb.FileRemove) -> bool:
         serial = self.serial
@@ -656,7 +657,7 @@ class BridgeService:
             await asyncio.to_thread(path.unlink)
             res = await serial.send(Status.OK.value, b"")
             return bool(res)
-        res = await serial.send(Status.ERROR.value, pb.GenericResponse(message="Remove failed"))
+        res = await serial.send(Status.ERROR.value, pb.GenericResponse(code=pb.HARDWARE_FAILURE, message="Remove failed"))
         return bool(res)
 
     async def _on_mcu_file_read_resp(self, p: pb.FileReadResponse) -> bool:
@@ -680,7 +681,7 @@ class BridgeService:
                     pb.ProcessRunAsyncResponse(pid=pid),
                 )
                 return bool(res)
-        await serial.send(Status.ERROR.value, pb.GenericResponse(message="Exec failed"))
+        await serial.send(Status.ERROR.value, pb.GenericResponse(code=pb.HARDWARE_FAILURE, message="Exec failed"))
         return False
 
     async def _on_mcu_process_poll(self, p: pb.ProcessPoll) -> bool:
@@ -1254,7 +1255,7 @@ class BridgeService:
         await self.enqueue_mqtt(
             QueuedPublish(
                 topic_path(self.state.mqtt_topic_prefix, Topic.SYSTEM, Topic.STATUS),
-                structures.encode_structured_payload({"status": "forbidden", "topic": val, "action": act}),
+                pb.AuthorizationError(status="forbidden", topic=str(val), action=str(act)).SerializeToString(),
                 content_type=PROTOBUF_CONTENT_TYPE,
                 user_properties=(("bridge-error", TOPIC_FORBIDDEN_REASON),),
             ),

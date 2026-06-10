@@ -124,3 +124,4 @@ mcubridge-library-arduino/src/pb_encode.h
 .mosquitto-tox.pid
 feeds/luci-app-mcubridge
 feeds/mcubridge
+tools/protocol/templates/protocol.py

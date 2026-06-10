@@ -45,7 +45,7 @@ class MailboxClass {
  private:
   struct MailboxMessage {
     etl::array<uint8_t, 64> data;
-    uint8_t size;
+    uint8_t size = 0;
   };
   static MessageCallback _message_callback;
   static AvailableCallback _available_callback;

@@ -224,8 +224,6 @@ class BridgeClass {
   uint16_t _ack_timeout_ms;
   uint32_t _response_timeout_ms;
   uint32_t _pending_baudrate;
-  uint8_t _consecutive_crc_errors;
-  rpc::FrameError _last_parse_error;
 
   etl::array<uint8_t, bridge::config::RX_BUFFER_SIZE> _ps_rx_storage;
   etl::array<uint8_t, bridge::config::RX_BUFFER_SIZE> _ps_work_buffer;

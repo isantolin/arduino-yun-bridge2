@@ -34,15 +34,6 @@ class DecodedFrame(msgspec.Struct):
     payload: bytes | ProtobufMessage
 
 
-_MAP: Final[dict[str, str]] = {
-    field.message_type.name: field.name for field in pb.RpcEnvelope.DESCRIPTOR.fields if field.message_type
-}
-
-
-def _get_envelope_field_name_for_message(msg: ProtobufMessage) -> str | None:
-    return _MAP.get(msg.DESCRIPTOR.name)
-
-
 def build_frame(
     command_id: int,
     sequence_id: int,
@@ -82,15 +73,8 @@ def build_frame(
         full_ct = ChaCha20Poly1305(session_key).encrypt(envelope.nonce, payload_bytes, aad)
         envelope.encrypted_payload, envelope.tag = full_ct[:-16], full_ct[-16:]
     else:
-        # Unencrypted! Single-pass serialization.
-        if isinstance(payload, ProtobufMessage):
-            field_name = _get_envelope_field_name_for_message(payload)
-            if field_name:
-                getattr(envelope, field_name).CopyFrom(payload)
-            else:
-                envelope.encrypted_payload = payload_bytes
-        else:
-            envelope.encrypted_payload = payload_bytes
+        # [SIL-2] Direct payload assignment eradicating redundant envelope field logic.
+        envelope.encrypted_payload = payload_bytes
 
     body = envelope.SerializeToString()
     return body + struct.pack("<I", crc32(body) & protocol.CRC32_MASK)

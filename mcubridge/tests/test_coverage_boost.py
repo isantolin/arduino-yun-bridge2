@@ -50,7 +50,7 @@ def test_frame_coverage_boost() -> None:
     req = pb.DigitalWrite(pin=13, value=1)
     frame_req = build_frame(command_id=5, sequence_id=3, payload=req)
     parsed_req = parse_frame(frame_req)
-    assert parsed_req.envelope.WhichOneof("payload_type") == "digital_write"
+    assert parsed_req.envelope.WhichOneof("payload_type") == "encrypted_payload"
     if isinstance(parsed_req.payload, ProtobufMessage):
         assert parsed_req.payload == req
     else:

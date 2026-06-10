@@ -15,7 +15,7 @@
 #include "services/SPIService.h"
 
 namespace etl {
-void __attribute__((weak)) __attribute__((unused)) handle_error(
+void __attribute__((weak)) handle_error(
     const etl::exception& e) {
   BridgeClass::ErrorPolicy::handle(Bridge, e);
 }
@@ -33,8 +33,6 @@ BridgeClass::BridgeClass(Stream& stream)
       _ack_timeout_ms(rpc::RPC_DEFAULT_ACK_TIMEOUT_MS),
       _response_timeout_ms(rpc::RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS),
       _pending_baudrate(0),
-      _consecutive_crc_errors(0),
-      _last_parse_error(rpc::FrameError::NONE),
       _ps_rx_storage(),
       _ps_work_buffer(),
       _packet_serial(
@@ -675,7 +673,6 @@ void BridgeClass::_applyTimingConfig(const rpc_pb_HandshakeConfig& msg) {
 void BridgeClass::_handleReceivedFrame(etl::span<const uint8_t> p) {
   auto res = rpc::parse_frame(p);
   if (!res) {
-    _last_parse_error = res.error();
     emitStatus(rpc::StatusCode::STATUS_MALFORMED);
     return;
   }

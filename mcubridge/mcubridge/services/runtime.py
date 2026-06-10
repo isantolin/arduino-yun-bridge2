@@ -207,7 +207,7 @@ class BridgeService:
         self._next_alias_id = 1
 
     async def enqueue_mqtt(self, message: QueuedPublish, *, reply_context: Message | None = None) -> None:
-        resolved_message = self._resolve_reply_message(message, reply_context)
+        resolved_message = message.resolve_context(reply_context)
         self.state.mqtt_publish_queue.put_nowait(resolved_message)
         try:
             async with self._mqtt_publish_lock:
@@ -227,26 +227,6 @@ class BridgeService:
         async with self._mqtt_publish_lock:
             await self._flush_mqtt_spool_locked()
 
-    def _resolve_reply_message(self, message: QueuedPublish, reply_context: Message | Any | None) -> QueuedPublish:
-        topic = message.topic_name
-        correlation_data = message.correlation_data
-        user_properties = message.user_properties
-
-        r_props = getattr(reply_context, "properties", None)
-        if reply_context is not None and r_props is not None:
-            if rt := getattr(r_props, "ResponseTopic", None):
-                topic = rt
-            if cd := getattr(r_props, "CorrelationData", None):
-                correlation_data = cd
-            if req_topic := getattr(reply_context, "topic", None):
-                user_properties = (*user_properties, ("bridge-request-topic", str(req_topic)))
-
-        return msgspec.structs.replace(
-            message,
-            topic_name=topic,
-            correlation_data=correlation_data,
-            user_properties=user_properties,
-        )
 
     def _record_mqtt_drop(self, topic_name: str) -> None:
         self.state.mqtt_drop_counts[topic_name] = self.state.mqtt_drop_counts.get(topic_name, 0) + 1

@@ -619,6 +619,25 @@ class QueuedPublish(msgspec.Struct, frozen=True):
     user_properties: tuple[UserProperty, ...] = ()
     subscription_identifier: tuple[int, ...] | None = None
     topic_alias: int | None = None
+    def resolve_context(self, context: Any | None) -> QueuedPublish:
+        """Resolve MQTT request-reply context into the publish packet. [SIL-2]"""
+        if context is None:
+            return self
+
+        props = getattr(context, "properties", None)
+        updates: dict[str, Any] = {}
+
+        if props:
+            if rt := getattr(props, "ResponseTopic", None):
+                updates["topic_name"] = str(rt)
+            if cd := getattr(props, "CorrelationData", None):
+                updates["correlation_data"] = bytes(cd)
+
+        if req_topic := getattr(context, "topic", None):
+            updates["user_properties"] = (*self.user_properties, ("bridge-request-topic", str(req_topic)))
+
+        return msgspec.structs.replace(self, **updates) if updates else self
+
 
 
 # --- Process Service Structures ---

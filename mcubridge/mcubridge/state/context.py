@@ -6,7 +6,7 @@ import asyncio
 import collections
 from collections.abc import Mapping
 import time
-from typing import Any, TypeVar, cast, TYPE_CHECKING
+from typing import Any, TypeVar, cast, TYPE_CHECKING, Counter
 
 from .storage import DbmDeque, DbmCache
 import msgspec
@@ -23,6 +23,7 @@ from ..protocol.structures import (
 if TYPE_CHECKING:
     from ..config.settings import RuntimeConfig
     from .metrics import Metrics
+    from ..protocol.structures import AllowedCommandPolicy
 
 T = TypeVar("T")
 logger = structlog.get_logger("mcubridge.state.context")
@@ -55,8 +56,17 @@ class RuntimeState:
     datastore_cache: DbmCache
     pending_digital_reads: list[Any]
     pending_analog_reads: list[Any]
-    mcu_status_counts: collections.Counter[int]
-    mqtt_drop_counts: collections.Counter[str]
+    mcu_status_counts: Counter[int]
+    mqtt_drop_counts: Counter[str]
+    mqtt_dropped_messages: Counter[str]
+
+    config_source: str
+    serial_decode_errors: int
+    serial_response_timeout_ms: int
+    pending_pin_request_limit: int
+    allowed_policy: AllowedCommandPolicy | None
+    process_lock: asyncio.Lock
+    file_storage_bytes_used: int
 
     def __init__(self, config: RuntimeConfig) -> None:
         self.config = config
@@ -65,7 +75,7 @@ class RuntimeState:
         self.serial_baud: int = config.serial_baud
         self.is_connected = False
         self.is_synchronized = False
-        self.serial_writer: asyncio.StreamWriter | None = None
+        self.serial_writer = None
         self.mcu_version: tuple[int, int, int] | None = None
         self.mcu_capabilities: dict[str, Any] = {}
 
@@ -115,7 +125,9 @@ class RuntimeState:
         self.supervisor_stats = collections.defaultdict(SupervisorStats)
         self.mcu_status_counts = collections.Counter()
         self.mqtt_drop_counts = collections.Counter()
+        self.mqtt_dropped_messages = self.mqtt_drop_counts
         self.serial_decode_errors = 0
+        self.serial_response_timeout_ms = int(config.serial_response_timeout * 1000)
 
         # Queues & Storage
         self.mqtt_publish_limit: int = config.mqtt_queue_limit
@@ -132,6 +144,7 @@ class RuntimeState:
         self.mailbox_limit: int = config.mailbox_queue_limit
         self.mailbox_bytes_limit: int = config.mailbox_queue_bytes_limit
         self.pending_pin_limit: int = config.pending_pin_request_limit
+        self.pending_pin_request_limit = self.pending_pin_limit
         self.process_max_concurrent: int = config.process_max_concurrent
         self.process_max_output: int = config.process_max_output_bytes
         self.process_timeout: int = config.process_timeout
@@ -141,12 +154,16 @@ class RuntimeState:
         self.file_storage_limit_rejections = 0
         self.file_write_limit_rejections = 0
         self.file_system_root: str = config.file_system_root
+        self.file_storage_bytes_used = 0
 
         # Internal collections
         self.console_to_mcu_queue = collections.deque()
         self.running_processes = {}
         self.pending_digital_reads = []
         self.pending_analog_reads = []
+        self.process_lock = asyncio.Lock()
+        self.config_source = "defaults"
+        self.allowed_policy = config.allowed_policy
 
         # Pipeline Tracking
         self.serial_pipeline_inflight = None
@@ -232,7 +249,7 @@ class RuntimeState:
             self.serial_flow_stats.commands_sent += 1
             self.metrics.serial_commands_sent.inc()
         elif name in ("ack", "failure"):
-            inf = cast(dict[str, Any], self.serial_pipeline_inflight) if self.serial_pipeline_inflight else None
+            inf = cast(Mapping[str, Any], self.serial_pipeline_inflight) if self.serial_pipeline_inflight else None
             if name == "ack":
                 self.serial_flow_stats.commands_acked += 1
                 self.metrics.serial_commands_acked.inc()
@@ -273,7 +290,7 @@ class RuntimeState:
         """Construct binary snapshot of the serial pipeline."""
         snapshot = pb.SerialPipelineSnapshot()
         if self.serial_pipeline_inflight:
-            inf = dict(cast(dict[str, Any], self.serial_pipeline_inflight))
+            inf = dict(cast(Mapping[str, Any], self.serial_pipeline_inflight))
             inf.pop("command_name", None)
             inf.pop("started_unix", None)
             inf.pop("acknowledged", None)
@@ -281,7 +298,7 @@ class RuntimeState:
                 inf["status"] = 0
             snapshot.inflight.CopyFrom(pb.PipelineEvent(event="sent", **inf))
         if self.serial_pipeline_last:
-            last = dict(cast(dict[str, Any], self.serial_pipeline_last))
+            last = dict(cast(Mapping[str, Any], self.serial_pipeline_last))
             if last.get("status_code") is not None:
                 last["status"] = last.pop("status_code")
             if last.get("status") is None:
@@ -306,8 +323,8 @@ class RuntimeState:
             snap = pb.HandshakeSnapshot()
             if isinstance(observation, pb.HandshakeSnapshot):
                 snap.CopyFrom(observation)
-            elif isinstance(observation, dict):
-                ParseDict(observation, snap, ignore_unknown_fields=True)
+            elif isinstance(observation, Mapping):
+                ParseDict(cast(dict[str, Any], observation), snap, ignore_unknown_fields=True)
 
             self.handshake_attempts = snap.attempts
             self.handshake_successes = snap.successes

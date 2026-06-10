@@ -10,7 +10,7 @@ import os
 import signal
 import shlex
 import time
-from collections.abc import Coroutine, Callable, Awaitable
+from collections.abc import Coroutine, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast, Final
@@ -106,7 +106,7 @@ class BridgeService:
     serial: SerialTransport | None
     _mqtt_client: aiomqtt.Client | None
     _task_group: asyncio.TaskGroup | None
-    _serial_sender: Callable[[int, Any, int | None], Awaitable[bool | bytes | ProtobufMessage]] | None
+
     handshake: SerialHandshakeManager
     _storage_lock: asyncio.Lock
     _mcu_read_lock: asyncio.Lock
@@ -120,7 +120,7 @@ class BridgeService:
 
     def __init__(self, config: RuntimeConfig, state: RuntimeState, serial: SerialTransport) -> None:
         self.config, self.state, self.serial = config, state, serial
-        self._mqtt_client, self._task_group, self._serial_sender = None, None, None
+        self._mqtt_client, self._task_group = None, None
 
         from .handshake import SerialHandshakeManager, derive_serial_timing
 
@@ -200,11 +200,6 @@ class BridgeService:
         return _handler
 
     # --- External Interface ---
-
-    def register_serial_sender(
-        self, sender: Callable[[int, Any, int | None], Awaitable[bool | bytes | ProtobufMessage]]
-    ) -> None:
-        self._serial_sender = sender
 
     def set_mqtt_client(self, client: aiomqtt.Client | None) -> None:
         self._mqtt_client = client

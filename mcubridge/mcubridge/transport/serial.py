@@ -16,7 +16,7 @@ from mcubridge.protocol import mcubridge_pb2 as pb
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, cast, Protocol, runtime_checkable, Callable, Awaitable
+from typing import TYPE_CHECKING, cast
 
 from cobs import cobs
 import serialx
@@ -51,23 +51,9 @@ from mcubridge.services.handshake import SerialHandshakeFatal
 if TYPE_CHECKING:
     from mcubridge.config.settings import RuntimeConfig
     from mcubridge.state.context import RuntimeState
+    from mcubridge.services.runtime import BridgeService
 
 logger = structlog.get_logger("mcubridge.serial")
-
-
-@runtime_checkable
-class McuService(Protocol):
-    """Strict interface for MCU frame handlers. [SIL-2]"""
-
-    async def on_serial_connected(self) -> None: ...
-
-    async def on_serial_disconnected(self) -> None: ...
-
-    async def handle_mcu_frame(self, command_id: int, sequence_id: int, payload: bytes | ProtobufMessage) -> None: ...
-
-    def register_serial_sender(
-        self, sender: Callable[[int, bytes | ProtobufMessage, int | None], Awaitable[bool | bytes | ProtobufMessage]]
-    ) -> None: ...
 
 
 class SerialTransport:
@@ -77,16 +63,13 @@ class SerialTransport:
         self,
         config: RuntimeConfig,
         state: RuntimeState,
-        service: McuService | None,
+        service: BridgeService | None,
     ) -> None:
         self.config = config
         self.state = state
         self.service = service
         self.reader: asyncio.StreamReader | None = None
         self.writer: asyncio.StreamWriter | None = None
-
-        if self.service:
-            self.service.register_serial_sender(self.send)
 
         self._stop_event = asyncio.Event()
         self._negotiating = False

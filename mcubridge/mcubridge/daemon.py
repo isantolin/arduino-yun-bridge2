@@ -95,15 +95,12 @@ class BridgeDaemon:
         self.state = create_runtime_state(config)
         self.state.config_source = get_config_source()
 
-        # 1. Create Transports
+        # 1. Create Serial Transport
         self.serial_transport = SerialTransport(self.config, self.state, None)
 
-        # 2. Create Service with both transports
+        # 2. Create Service and link transport
         self.service = BridgeService(config, self.state, self.serial_transport)
-
-        # 3. Explicitly link transports to service
         self.serial_transport.service = self.service
-        self.service.register_serial_sender(self.serial_transport.send)
 
         self.watchdog: WatchdogKeepalive | None = None
         self.exporter: PrometheusExporter | None = None

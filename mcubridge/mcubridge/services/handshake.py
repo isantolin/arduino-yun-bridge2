@@ -32,7 +32,7 @@ from ..config.const import (
     SERIAL_HANDSHAKE_BACKOFF_MAX,
 )
 from ..config.settings import RuntimeConfig
-from ..protocol import protocol, structures
+from ..protocol import structures
 from ..protocol.protocol import Command, Status
 from ..protocol.structures import (
     PROTOBUF_CONTENT_TYPE,

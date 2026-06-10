@@ -19,9 +19,7 @@ from pathlib import Path
 from typing import (
     Annotated,
     Any,
-    ClassVar,
     Final,
-    TypeVar,
     cast,
 )
 
@@ -304,6 +302,7 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
             return None
         import ssl
         from mcubridge.config.const import MQTT_TLS_MIN_VERSION
+
         try:
             if self.mqtt_cafile:
                 ca_path = Path(self.mqtt_cafile)
@@ -333,6 +332,7 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
             DEFAULT_SERIAL_SHARED_SECRET,
             VOLATILE_STORAGE_PATHS,
         )
+
         self.allowed_policy = AllowedCommandPolicy.from_iterable(self.allowed_commands)
         self.allowed_commands = self.allowed_policy.entries if self.allowed_policy else ()
         if self.topic_authorization is None or isinstance(self.topic_authorization, dict):
@@ -361,14 +361,20 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
             raise ValueError("mailbox_queue_bytes_limit must be greater than or equal to mailbox_queue_limit")
         if not self.allow_non_tmp_paths:
             if not any(self.mqtt_spool_dir.startswith(p) for p in VOLATILE_STORAGE_PATHS):
-                raise ValueError(f"FLASH PROTECTION: mqtt_spool_dir ({self.mqtt_spool_dir}) must be in a volatile location")
+                raise ValueError(
+                    f"FLASH PROTECTION: mqtt_spool_dir ({self.mqtt_spool_dir}) must be in a volatile location"
+                )
             if not any(self.file_system_root.startswith(p) for p in VOLATILE_STORAGE_PATHS):
-                raise ValueError(f"FLASH PROTECTION: file_system_root ({self.file_system_root}) must be in a volatile location")
+                raise ValueError(
+                    f"FLASH PROTECTION: file_system_root ({self.file_system_root}) must be in a volatile location"
+                )
 
 
-def encode_structured_payload(payload: Mapping[str, Any] | msgspec.Struct) -> bytes:
+def encode_structured_payload(payload: Any) -> bytes:
     """[DEPRECATED] Use specific Protobuf messages directly."""
     message = pb.StructuredPayload()
+    if hasattr(payload, "SerializeToString"):
+        return payload.SerializeToString()
     source: Mapping[str, Any] = msgspec.structs.asdict(payload) if isinstance(payload, msgspec.Struct) else payload
     entries: list[pb.StructuredEntry] = []
     for key, value in source.items():
@@ -392,13 +398,20 @@ def _flatten_structured_value(key_prefix: str, value: Any, entries: list[pb.Stru
             _flatten_structured_value(f"{key_prefix}.{str(key)}" if key_prefix else str(key), nested, entries)
         return
     entry = pb.StructuredEntry(key=key_prefix)
-    if value is None: entry.null_value = True
-    elif isinstance(value, bytes): entry.bytes_value = value
-    elif isinstance(value, str): entry.string_value = value
-    elif isinstance(value, bool): entry.bool_value = value
-    elif isinstance(value, (int, enum.IntEnum)): entry.int_value = int(value)
-    elif isinstance(value, float): entry.float_value = value
-    else: raise TypeError(f"Unsupported structured payload value for '{key_prefix}': {type(value)!r}")
+    if value is None:
+        entry.null_value = True
+    elif isinstance(value, bytes):
+        entry.bytes_value = value
+    elif isinstance(value, str):
+        entry.string_value = value
+    elif isinstance(value, bool):
+        entry.bool_value = value
+    elif isinstance(value, (int, enum.IntEnum)):
+        entry.int_value = int(value)
+    elif isinstance(value, float):
+        entry.float_value = value
+    else:
+        raise TypeError(f"Unsupported structured payload value for '{key_prefix}': {type(value)!r}")
     entries.append(entry)
 
 
@@ -418,9 +431,15 @@ UserProperty = tuple[str, str]
 
 def build_mqtt_properties(message: QueuedPublish) -> Properties:
     props = Properties(PacketTypes.PUBLISH)
-    _MAP = {"content_type": "ContentType", "payload_format_indicator": "PayloadFormatIndicator",
-            "message_expiry_interval": "MessageExpiryInterval", "response_topic": "ResponseTopic",
-            "correlation_data": "CorrelationData", "user_properties": "UserProperty", "topic_alias": "TopicAlias"}
+    _MAP = {
+        "content_type": "ContentType",
+        "payload_format_indicator": "PayloadFormatIndicator",
+        "message_expiry_interval": "MessageExpiryInterval",
+        "response_topic": "ResponseTopic",
+        "correlation_data": "CorrelationData",
+        "user_properties": "UserProperty",
+        "topic_alias": "TopicAlias",
+    }
     for field, paho_name in _MAP.items():
         val = getattr(message, field)
         if val is not None:
@@ -470,12 +489,14 @@ class PendingCommand(msgspec.Struct):
     def mark_success(self, payload: bytes | ProtobufMessage | None = None) -> None:
         self.response_payload = payload
         self.success = True
-        if not self.completion.is_set(): self.completion.set()
+        if not self.completion.is_set():
+            self.completion.set()
 
     def mark_failure(self, status: int | None) -> None:
         self.success = False
         self.failure_status = status
-        if not self.completion.is_set(): self.completion.set()
+        if not self.completion.is_set():
+            self.completion.set()
 
 
 class BaseStats(msgspec.Struct):
@@ -551,7 +572,9 @@ class ProcessStats(msgspec.Struct):
     cpu_percent: Annotated[float, msgspec.Meta(ge=0.0)]
     memory_rss_bytes: Annotated[int, msgspec.Meta(ge=0)]
 
+
 def decode_structured_payload(data: bytes) -> dict[str, Any]:
+
     message = pb.StructuredPayload()
     message.ParseFromString(data)
     decoded: dict[str, Any] = {}
@@ -564,7 +587,7 @@ def decode_structured_payload(data: bytes) -> dict[str, Any]:
                 next_cursor: dict[str, Any] = {}
                 cursor[part] = next_cursor
             else:
-                next_cursor = cast(dict[str, Any], next_cursor_obj)
+                next_cursor = next_cursor_obj
             cursor = next_cursor
         cursor[parts[-1]] = _entry_value(entry)
     return decoded

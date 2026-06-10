@@ -17,7 +17,6 @@ from prometheus_client.core import Metric
 from prometheus_client.registry import Collector
 import structlog
 
-from .protocol import structures
 from .protocol.structures import PROTOBUF_CONTENT_TYPE, QueuedPublish
 from .protocol.topics import Topic, topic_path
 from .protocol import mcubridge_pb2 as pb

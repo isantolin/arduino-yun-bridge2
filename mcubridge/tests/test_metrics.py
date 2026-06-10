@@ -11,7 +11,7 @@ from mcubridge.metrics import (
     publish_bridge_snapshots,
     publish_metrics,
 )
-from mcubridge.protocol.structures import PROTOBUF_CONTENT_TYPE, QueuedPublish, decode_structured_payload
+from mcubridge.protocol.structures import PROTOBUF_CONTENT_TYPE, QueuedPublish
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol import protocol
 from mcubridge.state.context import RuntimeState
@@ -86,7 +86,9 @@ async def test_publish_metrics_marks_unknown_spool_reason(
         event.set()
 
     def mock_build_metrics_degraded(self: Any) -> Any:
-        snap = pb.DaemonMetrics(); snap.mqtt_spool_degraded = True; return snap
+        snap = pb.DaemonMetrics()
+        snap.mqtt_spool_degraded = True
+        return snap
 
     with patch.object(
         RuntimeState,

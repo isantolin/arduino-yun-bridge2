@@ -32,7 +32,6 @@ from ..config.const import (
 )
 from ..config.settings import RuntimeConfig
 from ..protocol import protocol, structures
-from ..protocol import mcubridge_pb2 as pb
 from ..protocol.protocol import (
     Command,
     ConsoleAction,
@@ -625,7 +624,9 @@ class BridgeService:
         if path and await self._write_with_quota(path, p.data):
             res = await serial.send(Status.OK.value, b"")
             return bool(res)
-        res = await serial.send(Status.ERROR.value, pb.GenericResponse(code=pb.HARDWARE_FAILURE, message="Write failed"))
+        res = await serial.send(
+            Status.ERROR.value, pb.GenericResponse(code=pb.HARDWARE_FAILURE, message="Write failed")
+        )
         return bool(res)
 
     async def _on_mcu_file_read(self, p: pb.FileRead) -> None:
@@ -657,7 +658,9 @@ class BridgeService:
             await asyncio.to_thread(path.unlink)
             res = await serial.send(Status.OK.value, b"")
             return bool(res)
-        res = await serial.send(Status.ERROR.value, pb.GenericResponse(code=pb.HARDWARE_FAILURE, message="Remove failed"))
+        res = await serial.send(
+            Status.ERROR.value, pb.GenericResponse(code=pb.HARDWARE_FAILURE, message="Remove failed")
+        )
         return bool(res)
 
     async def _on_mcu_file_read_resp(self, p: pb.FileReadResponse) -> bool:
@@ -1084,7 +1087,7 @@ class BridgeService:
                 await self.enqueue_mqtt(
                     QueuedPublish(
                         topic_path(self.state.mqtt_topic_prefix, Topic.SYSTEM, "bridge", flavor, "value"),
-                        structures.encode_structured_payload(snap),
+                        snap.SerializeToString(),
                         content_type=PROTOBUF_CONTENT_TYPE,
                     ),
                     reply_context=inbound,

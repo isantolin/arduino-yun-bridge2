@@ -35,7 +35,3 @@ rpc.pb.PipelineEvent          skip_message:true
 rpc.pb.SerialPipelineSnapshot skip_message:true
 rpc.pb.SerialFlowSnapshot     skip_message:true
 rpc.pb.BridgeSnapshot         skip_message:true
-rpc.pb.SerialThroughputSnapshot skip_message:true
-rpc.pb.QueueDepths               skip_message:true
-rpc.pb.AuthorizationError       skip_message:true
-rpc.pb.DaemonMetrics            skip_message:true

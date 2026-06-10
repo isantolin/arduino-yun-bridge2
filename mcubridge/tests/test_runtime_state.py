@@ -93,7 +93,7 @@ def test_system_snapshot_removed(runtime_config: RuntimeConfig) -> None:
 
     state = create_runtime_state(runtime_config)
     snapshot = state.build_metrics_snapshot()
-    assert not hasattr(snapshot, "system")
+    assert "system" not in snapshot
 
 
 def test_build_metrics_snapshot_includes_spool_state(runtime_config: RuntimeConfig) -> None:
@@ -103,8 +103,8 @@ def test_build_metrics_snapshot_includes_spool_state(runtime_config: RuntimeConf
         state.mqtt_spool_failure_reason = "disk-full"
         state.mqtt_spool_pending_messages = 3
         snapshot = state.build_metrics_snapshot()
-        assert snapshot.mqtt_spool_degraded is True
-        assert snapshot.mqtt_spool_failure_reason == "disk-full"
-        assert snapshot.mqtt_spool_pending_messages == 3
+        assert snapshot["mqtt_spool_degraded"] is True
+        assert snapshot["mqtt_spool_failure_reason"] == "disk-full"
+        assert snapshot["mqtt_spool_pending_messages"] == 3
     finally:
         state.cleanup()

@@ -1,7 +1,6 @@
 """Periodic status writer for the MCU Bridge daemon."""
 
 from __future__ import annotations
-from google.protobuf.json_format import MessageToDict
 
 import asyncio
 import structlog
@@ -29,16 +28,11 @@ async def status_writer(state: RuntimeState, interval: int) -> None:
             child_stats: dict[str, Any] = {}
 
             payload = state.build_metrics_snapshot()
-            for k, v in child_stats.items():
-                ps = payload.processes[k]
-                ps.name = v.name
-                ps.cpu_percent = v.cpu_percent
-                ps.memory_rss_bytes = v.memory_rss_bytes
-            for n, s in state.supervisor_stats.items():
-                payload.supervisors[n].CopyFrom(s.as_snapshot())
-            payload.heartbeat_unix = time.time()
+            payload["process_stats"] = child_stats
+            payload["supervisors"] = {n: s.as_snapshot() for n, s in state.supervisor_stats.items()}
+            payload["heartbeat_unix"] = time.time()
 
-            write_task = asyncio.create_task(asyncio.to_thread(_write_status_file, MessageToDict(payload)))
+            write_task = asyncio.create_task(asyncio.to_thread(_write_status_file, payload))
             try:
                 await asyncio.shield(write_task)
             except asyncio.CancelledError:

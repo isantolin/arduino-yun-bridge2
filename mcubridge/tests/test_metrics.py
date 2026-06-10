@@ -11,8 +11,7 @@ from mcubridge.metrics import (
     publish_bridge_snapshots,
     publish_metrics,
 )
-from mcubridge.protocol.structures import PROTOBUF_CONTENT_TYPE, QueuedPublish
-from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.protocol.structures import PROTOBUF_CONTENT_TYPE, QueuedPublish, decode_structured_payload
 from mcubridge.protocol import protocol
 from mcubridge.state.context import RuntimeState
 
@@ -30,13 +29,17 @@ async def test_publish_metrics_publishes_snapshot(
         captured["message"] = message
         event.set()
 
-    fake_snapshot = pb.DaemonMetrics()
-    fake_snapshot.mqtt_spool_degraded = True
-    fake_snapshot.mqtt_spool_failure_reason = "disk-full"
-    fake_snapshot.file_storage_limit_rejections = 1
+    fake_snapshot = {
+        "cpu": 99.0,
+        "mem": {"free": 1024},
+        "mqtt_spool_degraded": True,
+        "mqtt_spool_failure_reason": "disk-full",
+        "watchdog_enabled": True,
+        "watchdog_interval": 7.5,
+        "file_storage_limit_rejections": 1,
+    }
 
     runtime_state.mqtt_topic_prefix = "test/prefix"
-    runtime_state.watchdog_interval = 7.5
 
     def mock_build_metrics(self: Any) -> Any:
         return fake_snapshot
@@ -64,7 +67,7 @@ async def test_publish_metrics_publishes_snapshot(
     expected_topic = "test/prefix/system/metrics"
 
     assert message.topic_name == expected_topic
-    assert pb.DaemonMetrics.FromString(message.payload) == fake_snapshot
+    assert decode_structured_payload(message.payload) == fake_snapshot
     assert message.content_type == PROTOBUF_CONTENT_TYPE
     assert ("bridge-spool", "disk-full") in message.user_properties
     assert ("bridge-files", "quota-blocked") in message.user_properties
@@ -86,9 +89,10 @@ async def test_publish_metrics_marks_unknown_spool_reason(
         event.set()
 
     def mock_build_metrics_degraded(self: Any) -> Any:
-        snap = pb.DaemonMetrics()
-        snap.mqtt_spool_degraded = True
-        return snap
+        return {
+            "mqtt_spool_degraded": True,
+            "watchdog_enabled": False,
+        }
 
     with patch.object(
         RuntimeState,
@@ -127,10 +131,10 @@ async def test_publish_bridge_snapshots_emits_summary_and_handshake(
             event.set()
 
     def mock_build_bridge_snap(self: Any) -> Any:
-        return pb.BridgeSnapshot()
+        return {"snapshot": "summary"}
 
     def mock_build_handshake_snap(self: Any) -> Any:
-        return pb.HandshakeSnapshot()
+        return {"snapshot": "handshake"}
 
     with (
         patch.object(

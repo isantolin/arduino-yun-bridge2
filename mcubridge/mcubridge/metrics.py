@@ -17,9 +17,9 @@ from prometheus_client.core import Metric
 from prometheus_client.registry import Collector
 import structlog
 
+from .protocol import structures
 from .protocol.structures import PROTOBUF_CONTENT_TYPE, QueuedPublish
 from .protocol.topics import Topic, topic_path
-from .protocol import mcubridge_pb2 as pb
 from .state.context import RuntimeState
 
 logger = structlog.get_logger("mcubridge.metrics")
@@ -30,7 +30,7 @@ PublishEnqueue = Callable[[QueuedPublish], Awaitable[None]]
 
 def _build_metrics_message(
     state: RuntimeState,
-    snapshot: pb.DaemonMetrics,
+    snapshot: dict[str, Any],
     *,
     expiry_seconds: float,
 ) -> QueuedPublish:
@@ -41,15 +41,15 @@ def _build_metrics_message(
     )
     message = QueuedPublish(
         topic_name=topic,
-        payload=snapshot.SerializeToString(),
+        payload=structures.encode_structured_payload(snapshot),
         content_type=PROTOBUF_CONTENT_TYPE,
         message_expiry_interval=int(expiry_seconds),
         user_properties=(),
     )
 
-    mqtt_spool_failure = snapshot.mqtt_spool_failure_reason
+    mqtt_spool_failure = snapshot.get("mqtt_spool_failure_reason")
     extra_props: list[tuple[str, str]] = []
-    if snapshot.mqtt_spool_degraded:
+    if snapshot.get("mqtt_spool_degraded"):
         extra_props.append(("bridge-spool", mqtt_spool_failure or "unknown"))
 
     file_status = next(
@@ -59,17 +59,17 @@ def _build_metrics_message(
                 ("file_storage_limit_rejections", "quota-blocked"),
                 ("file_write_limit_rejections", "write-limit"),
             )
-            if getattr(snapshot, key, 0) > 0
+            if (val := snapshot.get(key)) is not None and isinstance(val, (int, float)) and val > 0
         ),
         None,
     )
     if file_status is not None:
         extra_props.append(("bridge-files", file_status))
 
-    if True:  # Protobuf has defaults
-        enabled = True  # TODO: get from state
+    if snapshot.get("watchdog_enabled") is not None:
+        enabled = bool(snapshot.get("watchdog_enabled"))
         extra_props.append(("bridge-watchdog-enabled", "1" if enabled else "0"))
-        watchdog_interval = getattr(state, "watchdog_interval", 0)
+        watchdog_interval = snapshot.get("watchdog_interval")
         if isinstance(watchdog_interval, (int, float)):
             extra_props.append(("bridge-watchdog-interval", str(watchdog_interval)))
 
@@ -364,7 +364,7 @@ def _build_bridge_snapshot_message(
     )
     return QueuedPublish(
         topic_name=topic,
-        payload=snapshot.SerializeToString(),
+        payload=structures.encode_structured_payload(snapshot),
         content_type=PROTOBUF_CONTENT_TYPE,
         message_expiry_interval=_BRIDGE_SNAPSHOT_EXPIRY_SECONDS,
         user_properties=(("bridge-snapshot", flavor),),

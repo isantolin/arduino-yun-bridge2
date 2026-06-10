@@ -55,24 +55,6 @@ from ..protocol.structures import (
 from ..protocol.topics import Topic, parse_topic, topic_path
 from ..state.context import ProcessContext, RuntimeState
 
-_COMMAND_TO_PB = {
-    Command.CMD_CONSOLE_WRITE.value: pb.ConsoleWrite,
-    Command.CMD_DATASTORE_PUT.value: pb.DatastorePut,
-    Command.CMD_DATASTORE_GET.value: pb.DatastoreGet,
-    Command.CMD_MAILBOX_PUSH.value: pb.MailboxPush,
-    Command.CMD_MAILBOX_PROCESSED.value: pb.MailboxProcessed,
-    Command.CMD_FILE_WRITE.value: pb.FileWrite,
-    Command.CMD_FILE_READ.value: pb.FileRead,
-    Command.CMD_FILE_REMOVE.value: pb.FileRemove,
-    Command.CMD_FILE_READ_RESP.value: pb.FileReadResponse,
-    Command.CMD_PROCESS_RUN_ASYNC.value: pb.ProcessRunAsync,
-    Command.CMD_PROCESS_POLL.value: pb.ProcessPoll,
-    Command.CMD_PROCESS_KILL.value: pb.ProcessKill,
-    Command.CMD_DIGITAL_READ_RESP.value: pb.DigitalReadResponse,
-    Command.CMD_ANALOG_READ_RESP.value: pb.AnalogReadResponse,
-    Command.CMD_SPI_TRANSFER_RESP.value: pb.SpiTransferResponse,
-}
-
 if TYPE_CHECKING:
     from ..transport.serial import SerialTransport
     from .handshake import SerialHandshakeManager
@@ -463,8 +445,8 @@ class BridgeService:
 
         if handler := self.mcu_registry.get(command_id):
             p = payload
-            if not isinstance(p, ProtobufMessage) and command_id in _COMMAND_TO_PB:
-                msg_cls = _COMMAND_TO_PB[command_id]
+            if not isinstance(p, ProtobufMessage) and command_id in protocol.COMMAND_TO_PB:
+                msg_cls = protocol.COMMAND_TO_PB[command_id]
                 p = msg_cls()
                 p.ParseFromString(cast(bytes, payload))
 

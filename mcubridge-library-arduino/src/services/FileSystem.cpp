@@ -32,7 +32,6 @@ void FileSystemClass<T>::write(etl::string_view path,
   if (p_copy > 0U) {
     etl::copy_n(path.begin(), p_copy, p.path);
   }
-  p.path[p_copy] = '\0';
 
   const size_t d_copy = etl::min(data.size(), sizeof(p.data.bytes));
   p.data.size = (pb_size_t)d_copy;
@@ -51,7 +50,6 @@ void FileSystemClass<T>::read(etl::string_view path,
   if (p_copy > 0U) {
     etl::copy_n(path.begin(), p_copy, p.path);
   }
-  p.path[p_copy] = '\0';
 
   if (!Bridge.send(rpc::CommandId::CMD_FILE_READ, 0, p)) {
     Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
@@ -65,7 +63,6 @@ void FileSystemClass<T>::remove(etl::string_view path) {
   if (p_copy > 0U) {
     etl::copy_n(path.begin(), p_copy, p.path);
   }
-  p.path[p_copy] = '\0';
   [[maybe_unused]] auto _u1 = Bridge.send(rpc::CommandId::CMD_FILE_REMOVE, 0, p);
 }
 

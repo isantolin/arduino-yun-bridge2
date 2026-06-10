@@ -62,7 +62,6 @@ void ProcessClass<T>::runAsync(
   if (c_copy > 0U) {
     etl::copy_n(command_buffer.begin(), c_copy, p.command);
   }
-  p.command[c_copy] = '\0';
 
   const bool send_ok = Bridge.send(rpc::CommandId::CMD_PROCESS_RUN_ASYNC, 0, p);
   if (!send_ok) {

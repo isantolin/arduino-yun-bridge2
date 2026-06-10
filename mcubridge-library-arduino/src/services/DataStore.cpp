@@ -16,7 +16,6 @@ void DataStoreClass<T>::set(etl::string_view key, etl::span<const uint8_t> value
   if (k_copy > 0U) {
     etl::copy_n(key.begin(), k_copy, p.key);
   }
-  p.key[k_copy] = '\0';
 
   const size_t v_copy = etl::min(value.size(), sizeof(p.value.bytes));
   p.value.size = (pb_size_t)v_copy;
@@ -39,7 +38,6 @@ void DataStoreClass<T>::get(etl::string_view key,
   if (k_copy > 0U) {
     etl::copy_n(key.begin(), k_copy, p.key);
   }
-  p.key[k_copy] = '\0';
 
   if (!Bridge.send(rpc::CommandId::CMD_DATASTORE_GET, 0, p)) {
     Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
@@ -49,7 +47,6 @@ void DataStoreClass<T>::get(etl::string_view key,
   typename DataStoreClass<T>::PendingGet pending = {};
   const size_t to_copy = etl::min(key.length(), pending.key.size() - 1U);
   etl::copy_n(key.data(), to_copy, pending.key.begin());
-  pending.key[to_copy] = '\0';
   pending.handler = handler;
   _pending_gets.push(pending);
 }

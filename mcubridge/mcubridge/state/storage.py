@@ -115,7 +115,7 @@ class DbmCache:
                 val = db.get(key.encode())
                 return val if val is not None else default
         except dbm.error as exc:
-            logger.warning("DbmCache get failed", path=self.path, key=key, error=exc)
+            logger.error("DbmCache get failed", path=self.path, key=key, error=exc)
             return default
 
     def clear(self) -> None:

@@ -228,7 +228,7 @@ class SerialHandshakeManager:
     async def handle_link_sync_resp(self, seq_id: int, payload: bytes | ProtobufMessage) -> bool:
         expected = self._state.link_handshake_nonce
         if expected is None:
-            self._logger.warning("Unexpected LINK_SYNC_RESP without pending nonce")
+            self._logger.error("Unexpected LINK_SYNC_RESP without pending nonce")
             await self._acknowledge_frame(
                 Command.CMD_LINK_SYNC_RESP.value,
                 seq_id,
@@ -241,7 +241,7 @@ class SerialHandshakeManager:
         if rate_limit > 0:
             now = time.monotonic()
             if now < self._state.handshake_rate_until:
-                self._logger.warning(
+                self._logger.error(
                     ("LINK_SYNC_RESP throttled due to rate limit (remaining=%.2fs)"),
                     self._state.handshake_rate_until - now,
                 )
@@ -263,7 +263,7 @@ class SerialHandshakeManager:
             nonce = bytes(sync_pkt.nonce)
             tag_bytes = bytes(sync_pkt.tag)
         except (ProtobufDecodeError, ValueError, TypeError):
-            self._logger.warning(
+            self._logger.error(
                 "LINK_SYNC_RESP protobuf decode failed (len=%d)",
                 len(payload) if isinstance(payload, bytes) else 0,
             )
@@ -293,7 +293,7 @@ class SerialHandshakeManager:
             return False
 
         if missing_expected_tag or bad_tag_length or tag_mismatch:
-            self._logger.warning(
+            self._logger.error(
                 "LINK_SYNC_RESP auth mismatch: missing_tag=%s, bad_len=%s, tag_mismatch=%s (nonce=%s)",
                 missing_expected_tag,
                 bad_tag_length,
@@ -387,7 +387,7 @@ class SerialHandshakeManager:
             self._state.mcu_capabilities = features
             self._logger.info("MCU Capabilities: %s", self._state.mcu_capabilities)
         except (ProtobufDecodeError, ValueError, TypeError, KeyError) as exc:
-            self._logger.warning("Failed to unpack capabilities: %s", exc)
+            self._logger.error("Failed to unpack capabilities: %s", exc)
 
     async def handle_link_reset_resp(self, seq_id: int, payload: bytes | ProtobufMessage) -> bool:
         self._logger.info(

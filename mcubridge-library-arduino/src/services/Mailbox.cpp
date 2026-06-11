@@ -9,7 +9,7 @@
 namespace {
 
 void send_mailbox_command(rpc::CommandId command_id) {
-  [[maybe_unused]] auto _u1 = Bridge.sendFrame(command_id);
+  if (!Bridge.sendFrame(command_id)) {}
 }
 
 }  // namespace
@@ -25,7 +25,7 @@ void MailboxClass<T>::push(etl::span<const uint8_t> data) {
   if (to_copy > 0U) {
     etl::copy_n(data.data(), to_copy, p.data.bytes);
   }
-  [[maybe_unused]] auto _u1 = Bridge.send(rpc::CommandId::CMD_MAILBOX_PUSH, 0, p);
+  if (!Bridge.send(rpc::CommandId::CMD_MAILBOX_PUSH, 0, p)) {}
 }
 
 template <typename T>
@@ -51,7 +51,7 @@ template <typename T>
 void MailboxClass<T>::signalProcessed(uint32_t message_id) {
   rpc::payload::MailboxProcessed p;
   p.message_id = message_id;
-  [[maybe_unused]] auto _u1 = Bridge.send(rpc::CommandId::CMD_MAILBOX_PROCESSED, 0, p);
+  if (!Bridge.send(rpc::CommandId::CMD_MAILBOX_PROCESSED, 0, p)) {}
 }
 
 template <typename T>

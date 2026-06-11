@@ -161,7 +161,7 @@ class SerialTransport:
                 try:
                     await self.service.on_serial_disconnected()
                 except (OSError, RuntimeError, ValueError, TypeError) as e:
-                    logger.warning("Error during serial disconnect cleanup", error=e)
+                    logger.error("Error during serial disconnect cleanup", error=e)
             if self.writer:
                 self.writer.close()
 
@@ -172,7 +172,7 @@ class SerialTransport:
             await asyncio.sleep(0.1)
             serial_obj.dtr = True
         except (AttributeError, OSError, ValueError, serialx.SerialException, RuntimeError) as exc:
-            logger.warning("Unable to toggle DTR on %s: %s", self.config.serial_port, exc)
+            logger.error("Unable to toggle DTR on %s: %s", self.config.serial_port, exc)
 
     async def stop(self) -> None:
         self._stop_event.set()
@@ -205,7 +205,7 @@ class SerialTransport:
             decoded = cobs.decode(raw_bytes)
             decoded_frame = parse_frame(decoded, self.state.link_session_key if self.state.is_synchronized else None)
         except (cobs.DecodeError, ValueError, TypeError, RuntimeError) as exc:
-            logger.warning("[SERIAL <- MCU] [MALFORMED]: %s", exc)
+            logger.error("[SERIAL <- MCU] [MALFORMED]: %s", exc)
             self.state.serial_decode_errors += 1
             await self._check_baudrate_fallback()
             return
@@ -229,7 +229,7 @@ class SerialTransport:
 
             ok, new_counter = validate_nonce_counter(envelope.nonce, self.state.link_last_nonce_counter)
             if not ok:
-                logger.warning("Anti-replay validation failed")
+                logger.error("Anti-replay validation failed")
                 return
             self.state.link_last_nonce_counter = new_counter
 
@@ -254,7 +254,7 @@ class SerialTransport:
                     else:
                         ack_target = pb.AckPacket.FromString(payload).command_id
                 except (ProtobufDecodeError, TypeError, ValueError) as e:
-                    logger.warning("Failed to decode MCU ACK payload", error=e)
+                    logger.error("Failed to decode MCU ACK payload", error=e)
             if ack_target == pending.command_id:
                 pending.ack_received = True
                 if not pending.expected_resp_ids:
@@ -271,7 +271,7 @@ class SerialTransport:
     async def _check_baudrate_fallback(self) -> None:
         self._consecutive_crc_errors += 1
         if self._consecutive_crc_errors >= self.config.serial_fallback_threshold:
-            logger.warning("Fallback to %d baud", self.config.serial_safe_baud)
+            logger.error("Fallback to %d baud", self.config.serial_safe_baud)
             self._consecutive_crc_errors = 0
             if self.config.serial_baud != self.config.serial_safe_baud:
                 await self._negotiate_baudrate(self.config.serial_safe_baud)
@@ -341,7 +341,7 @@ class SerialTransport:
                 async with asyncio.timeout(30.0):
                     await self.state.serial_tx_allowed.wait()
             except TimeoutError:
-                logger.warning("Timed out waiting for serial TX flow control")
+                logger.error("Timed out waiting for serial TX flow control")
 
         if seq_id is None:
             self._tx_sequence_id = (self._tx_sequence_id + 1) & protocol.UINT16_MAX

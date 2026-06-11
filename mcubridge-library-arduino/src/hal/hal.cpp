@@ -128,26 +128,20 @@ void init() {
 
 __attribute__((weak)) bool hasSD() { return false; }
 
-__attribute__((weak)) [[maybe_unused]] bool hasSPI() { return false; }
+__attribute__((weak)) bool hasSPI() { return false; }
 
-__attribute__((weak)) etl::expected<void, HalError> writeFile(etl::string_view path,
-                                        etl::span<const uint8_t> data) {
-  [[maybe_unused]] auto _u1 = path;
-  [[maybe_unused]] auto _u2 = data;
+__attribute__((weak)) etl::expected<void, HalError> writeFile(etl::string_view,
+                                        etl::span<const uint8_t>) {
   return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
 }
 
-__attribute__((weak)) etl::expected<ChunkResult, HalError> readFileChunk(etl::string_view path,
-                                                   size_t offset,
-                                                   etl::span<uint8_t> buffer) {
-  [[maybe_unused]] auto _u1 = path;
-  [[maybe_unused]] auto _u2 = offset;
-  [[maybe_unused]] auto _u3 = buffer;
+__attribute__((weak)) etl::expected<ChunkResult, HalError> readFileChunk(etl::string_view,
+                                                   size_t,
+                                                   etl::span<uint8_t>) {
   return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
 }
 
-__attribute__((weak)) etl::expected<void, HalError> removeFile(etl::string_view path) {
-  [[maybe_unused]] auto _u1 = path;
+__attribute__((weak)) etl::expected<void, HalError> removeFile(etl::string_view) {
   return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
 }
 

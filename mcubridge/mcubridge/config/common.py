@@ -37,11 +37,11 @@ def get_uci_config() -> dict[str, Any]:
 
             # Clean UCI dictionary (remove internal keys)
             return {str(k): v for k, v in section.items() if not str(k).startswith((".", "_"))}
-    except (ImportError, RuntimeError, ValueError, OSError) as err:
+    except ImportError:
+        return get_default_config()
+    except (RuntimeError, ValueError, OSError) as err:
         # [SIL-2] Log only specific configuration/system errors to syslog.
-        logger.warning("UCI system error, falling back to safe defaults: %s", err)
-    except (KeyError, TypeError, AttributeError, NameError) as err:
-        logger.warning("UCI internal dictionary error, falling back to safe defaults: %s", err)
+        logger.error("UCI system system error", error=err)
 
     return get_default_config()
 

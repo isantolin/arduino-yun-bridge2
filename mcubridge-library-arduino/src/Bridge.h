@@ -85,13 +85,13 @@ class BridgeClass {
   template <typename T = etl::span<const uint8_t>>
   void emitStatus(rpc::StatusCode s, const T& payload = etl::span<const uint8_t>()) {
     if constexpr (etl::is_same_v<T, etl::span<const uint8_t>>) {
-      (void)sendFrame(s, 0, payload);
+      if (!sendFrame(s, 0, payload)) {}
     } else if constexpr (etl::is_same_v<T, etl::string_view>) {
       rpc_pb_GenericResponse resp = rpc_pb_GenericResponse_init_default;
       const size_t to_copy = etl::min(payload.size(), sizeof(resp.message) - 1U);
       if (to_copy > 0U) etl::copy_n(payload.begin(), to_copy, resp.message);
       resp.message[to_copy] = 0;
-      (void)send(s, 0, resp);
+      if (!send(s, 0, resp)) {}
     }
   }
   void emitStatus(rpc::StatusCode s) {
@@ -182,8 +182,8 @@ class BridgeClass {
   using CommandHandler = etl::delegate<void(const rpc_pb_RpcEnvelope&)>;
   using StatusHandler =
       etl::delegate<void(rpc::StatusCode, etl::span<const uint8_t>)>;
-  [[maybe_unused]] void onCommand(CommandHandler h) { _command_handler = h; }
-  [[maybe_unused]] void onStatus(StatusHandler h) { _status_handler = h; }
+  void onCommand(CommandHandler h) { _command_handler = h; }
+  void onStatus(StatusHandler h) { _status_handler = h; }
   void flushStream() { _stream.flush(); }
 
   void _dispatchCommand(const rpc_pb_RpcEnvelope& envelope);
@@ -276,7 +276,7 @@ class BridgeClass {
 
   etl::circular_buffer<uint16_t, bridge::config::RX_HISTORY_SIZE> _rx_history;
 
-  [[maybe_unused]] void _applyTimingConfig(
+  void _applyTimingConfig(
       const rpc::payload::HandshakeConfig& msg);
 
   void _handleStatusOk(const bridge::router::CommandContext& ctx);

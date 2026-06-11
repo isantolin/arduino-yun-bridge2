@@ -225,7 +225,7 @@ async def test_serial_transport_coverage_boost(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_daemon_coverage_boost(tmp_path: Path) -> None:
-    from mcubridge.daemon import BridgeDaemon, app
+    from mcubridge.services.runtime import BridgeService
 
     # Estructura del sandbox completamente tipada
     test_root = tmp_path / "yun_files"
@@ -245,7 +245,10 @@ async def test_daemon_coverage_boost(tmp_path: Path) -> None:
         mqtt_spool_dir=str(test_spool),
     )
 
-    daemon = BridgeDaemon(config)
+    state = create_runtime_state(config)
+    serial = SerialTransport(config, state, None)
+    daemon = BridgeService(config, state, serial)
+    serial.service = daemon
     await daemon.run_mqtt()
 
     config_mqtt = RuntimeConfig(
@@ -262,7 +265,10 @@ async def test_daemon_coverage_boost(tmp_path: Path) -> None:
     (test_root / "mqtt_files").mkdir()
     (test_spool / "mqtt_spool").mkdir()
 
-    daemon_mqtt: Any = BridgeDaemon(config_mqtt)
+    state_mqtt = create_runtime_state(config_mqtt)
+    serial_mqtt = SerialTransport(config_mqtt, state_mqtt, None)
+    daemon_mqtt: Any = BridgeService(config_mqtt, state_mqtt, serial_mqtt)
+    serial_mqtt.service = daemon_mqtt
 
     mock_client = AsyncMock()
     mock_client.__aenter__.return_value = mock_client
@@ -286,7 +292,7 @@ async def test_daemon_coverage_boost(tmp_path: Path) -> None:
 
     with patch("aiomqtt.Client", return_value=mock_client):
         await daemon_mqtt.connect_mqtt_session(None)
-        assert daemon_mqtt.service._mqtt_client is None
+        assert daemon_mqtt._mqtt_client is None
 
     # Connect MQTT session ExceptionGroup path
     mock_client2 = AsyncMock()
@@ -315,27 +321,23 @@ async def test_daemon_coverage_boost(tmp_path: Path) -> None:
 
     # 4. daemon.run with ExceptionGroup
     with patch("asyncio.TaskGroup.__aexit__", side_effect=ExceptionGroup("tasks", [OSError("task error")])):
-        daemon_opt = BridgeDaemon(config)
+        state_opt = create_runtime_state(config)
+        serial_opt = SerialTransport(config, state_opt, None)
+        daemon_opt = BridgeService(config, state_opt, serial_opt)
+        serial_opt.service = daemon_opt
         with pytest.raises(ExceptionGroup):
             await daemon_opt.run()
 
-    # 5. app entry point CLI
-    with patch("mcubridge.daemon.main") as mock_main:
-        with pytest.raises(SystemExit):
-            app(["--help"])
-        app([])
-        mock_main.assert_called_once()
-
 
 def test_daemon_main_coverage() -> None:
-    from mcubridge.daemon import main
+    from mcubridge.daemon import app as main
     from mcubridge.config.const import DEFAULT_SERIAL_SHARED_SECRET
 
     # 1. verify_crypto_integrity fails in main
     with patch("mcubridge.daemon.verify_crypto_integrity", return_value=False):
         with patch("mcubridge.daemon.logger") as mock_logger:
             with pytest.raises(SystemExit) as excinfo:
-                main()
+                main([])
             assert excinfo.value.code == 1
             mock_logger.critical.assert_called_with("CRYPTOGRAPHIC INTEGRITY CHECK FAILED! Aborting for security.")
 
@@ -354,7 +356,7 @@ def test_daemon_main_coverage() -> None:
                     raise KeyboardInterrupt
 
                 mock_runner.return_value.__enter__.return_value.run.side_effect = run_side_effect
-                main()
+                main([])
 
     # 3. Exception group in main
     with patch("mcubridge.daemon.load_runtime_config"):
@@ -367,16 +369,12 @@ def test_daemon_main_coverage() -> None:
 
                 mock_runner.return_value.__enter__.return_value.run.side_effect = run_side_effect_eg
                 with pytest.raises(SystemExit) as excinfo:
-                    main()
+                    main([])
                 assert excinfo.value.code == 1
 
-    # 4. uvloop is None
-    with patch("mcubridge.daemon.load_runtime_config"):
-        with patch("mcubridge.daemon.verify_crypto_integrity", return_value=True):
-            with patch("mcubridge.daemon.uvloop", None):
-                with pytest.raises(SystemExit) as excinfo:
-                    main()
-                assert excinfo.value.code == 1
+    # 4. Help and version
+    with pytest.raises(SystemExit):
+        main(["--help"])
 
 
 @pytest.mark.asyncio

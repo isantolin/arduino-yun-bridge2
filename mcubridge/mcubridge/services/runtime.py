@@ -10,7 +10,7 @@ import os
 import signal
 import shlex
 import time
-from collections.abc import Coroutine, Callable
+from collections.abc import Coroutine, Callable, Awaitable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast, Final
@@ -21,18 +21,25 @@ import structlog
 from google.protobuf.message import DecodeError as ProtobufDecodeError, Message as ProtobufMessage
 
 import aiomqtt
+import logging
+import tenacity
 
 from aiomqtt.message import Message
+from paho.mqtt.packettypes import PacketTypes
+from paho.mqtt.properties import Properties
 
 from ..config.const import (
     MQTT_EXPIRY_CONSOLE,
     MQTT_EXPIRY_DATASTORE,
     MQTT_EXPIRY_PIN,
     TOPIC_FORBIDDEN_REASON,
+    SUPERVISOR_DEFAULT_MAX_BACKOFF,
+    SUPERVISOR_DEFAULT_MIN_BACKOFF,
 )
 from ..config.settings import RuntimeConfig
 from ..protocol import protocol, structures
 from ..protocol.protocol import (
+    MQTT_COMMAND_SUBSCRIPTIONS,
     Command,
     ConsoleAction,
     DatastoreAction,
@@ -53,11 +60,18 @@ from ..protocol.structures import (
     TopicRoute,
 )
 from ..protocol.topics import Topic, parse_topic, topic_path
+from ..metrics import (
+    PrometheusExporter,
+    publish_bridge_snapshots,
+    publish_metrics,
+)
+from ..state.status import STATUS_FILE, status_writer
+from ..watchdog import WatchdogKeepalive
 from ..state.context import ProcessContext, RuntimeState
+from .handshake import SerialHandshakeManager, SerialHandshakeFatal, derive_serial_timing
 
 if TYPE_CHECKING:
     from ..transport.serial import SerialTransport
-    from .handshake import SerialHandshakeManager
 
 
 logger = structlog.get_logger("mcubridge.service")
@@ -103,8 +117,8 @@ class BridgeService:
     def __init__(self, config: RuntimeConfig, state: RuntimeState, serial: SerialTransport) -> None:
         self.config, self.state, self.serial = config, state, serial
         self._mqtt_client, self._task_group = None, None
-
-        from .handshake import SerialHandshakeManager, derive_serial_timing
+        self.watchdog: WatchdogKeepalive | None = None
+        self.exporter: PrometheusExporter | None = None
 
         self.handshake = SerialHandshakeManager(
             config=config,
@@ -209,7 +223,6 @@ class BridgeService:
         async with self._mqtt_publish_lock:
             await self._flush_mqtt_spool_locked()
 
-
     def _record_mqtt_drop(self, topic_name: str) -> None:
         self.state.mqtt_drop_counts[topic_name] = self.state.mqtt_drop_counts.get(topic_name, 0) + 1
         self.state.mqtt_dropped_messages += 1
@@ -285,10 +298,10 @@ class BridgeService:
                 encoded = peek_fn()
                 queued = msgspec.msgpack.decode(encoded, type=QueuedPublish)
             except IndexError as exc:
-                logger.warning("Spool is empty during peek", error=str(exc))
+                logger.error("Spool is empty during peek", error=str(exc))
                 break
             except (ValueError, TypeError, msgspec.MsgspecError) as exc:
-                logger.warning("Dropping corrupt MQTT spool entry", error=str(exc))
+                logger.error("Dropping corrupt MQTT spool entry", error=str(exc))
                 try:
                     spool_len = await asyncio.to_thread(len, spool)
                     if spool_len > 0:
@@ -317,7 +330,7 @@ class BridgeService:
                 popleft_fn = spool.popleft
                 await asyncio.to_thread(popleft_fn)
             except IndexError as exc:
-                logger.warning("Spool was empty during popleft", error=str(exc))
+                logger.error("Spool was empty during popleft", error=str(exc))
                 break
             except OSError as exc:
                 self._mark_mqtt_spool_failure(str(exc))
@@ -381,7 +394,7 @@ class BridgeService:
             self.state.metrics.mqtt_messages_published.inc()
             return True
         except (aiomqtt.MqttError, OSError, RuntimeError) as exc:
-            logger.warning("MQTT publish failure: %s", exc)
+            logger.error("MQTT publish failure: %s", exc)
             return False
 
     # --- Lifecycle ---
@@ -463,7 +476,7 @@ class BridgeService:
                     async with asyncio.timeout(30.0):
                         await self.state.link_sync_event.wait()
                 except asyncio.TimeoutError:
-                    logger.warning("Timed out waiting for MCU link synchronization", topic=str(inbound.topic))
+                    logger.error("Timed out waiting for MCU link synchronization", topic=str(inbound.topic))
             action = self._deduce_action(route)
             if action and not (
                 self.state.topic_authorization.allows(
@@ -681,7 +694,7 @@ class BridgeService:
                 p = pb.AckPacket.FromString(payload)
             logger.debug("MCU > ACK for 0x%02X", p.command_id)
         except (ProtobufDecodeError, TypeError, ValueError) as e:
-            logger.warning("Failed to decode MCU ACK packet", error=e)
+            logger.error("Failed to decode MCU ACK packet", error=e)
 
     async def _handle_mcu_status(self, seq_id: int, status: Status, payload: bytes | ProtobufMessage) -> None:
         text = ""
@@ -699,7 +712,7 @@ class BridgeService:
                         text = f"<hex:{payload.hex()}>"
                 else:
                     text = str(payload)
-        log_func = logger.warning if status not in {Status.OK, Status.ACK} else logger.debug
+        log_func = logger.error if status not in {Status.OK, Status.ACK} else logger.debug
         log_func("MCU > %s: %s %s", status.name, status.description, text)
         await self.enqueue_mqtt(
             QueuedPublish(
@@ -830,7 +843,7 @@ class BridgeService:
                 Command.CMD_FILE_READ.value,
                 pb.FileRead(path=target[4:]),
             ):
-                logger.warning("MCU file read dispatch failed", target=target)
+                logger.error("MCU file read dispatch failed", target=target)
                 await self.enqueue_mqtt(
                     QueuedPublish(
                         response_topic,
@@ -852,7 +865,7 @@ class BridgeService:
                     reply_context=ctx,
                 )
             except TimeoutError:
-                logger.warning("Timed out waiting for MCU file read response", target=target)
+                logger.error("Timed out waiting for MCU file read response", target=target)
                 await self.enqueue_mqtt(
                     QueuedPublish(
                         response_topic,
@@ -877,7 +890,7 @@ class BridgeService:
                     cmd = pl.decode().strip()
                 pid = await self._run_process(cmd)
             except (ProtobufDecodeError, UnicodeDecodeError, ValueError, OSError) as exc:
-                logger.warning("MQTT shell run_async rejected", error=str(exc))
+                logger.error("MQTT shell run_async rejected", error=str(exc))
                 payload = pb.ProcessRunAsyncResponse(pid=0).SerializeToString()
             else:
                 payload = pb.ProcessRunAsyncResponse(pid=pid).SerializeToString()
@@ -1147,7 +1160,7 @@ class BridgeService:
         try:
             ctx.exit_code = await self._terminate_process(pid, ctx, grace_period=0.5)
         except (OSError, ProcessLookupError) as exc:
-            logger.warning("Process termination failed", pid=pid, error=str(exc))
+            logger.error("Process termination failed", pid=pid, error=str(exc))
         self._finalize_process(pid)
         return True
 
@@ -1162,7 +1175,7 @@ class BridgeService:
         try:
             return int(await asyncio.wait_for(ctx.handle.wait(), grace_period))
         except TimeoutError:
-            logger.warning("Process exceeded graceful shutdown window; escalating to SIGKILL", pid=pid)
+            logger.error("Process exceeded graceful shutdown window; escalating to SIGKILL", pid=pid)
 
         os.killpg(ctx.handle.pid, signal.SIGKILL)
         try:
@@ -1190,7 +1203,7 @@ class BridgeService:
                     self.state.file_storage_limit_rejections += 1
                     return False
             except OSError as exc:
-                logger.warning("Disk usage check failed", error=exc)
+                logger.error("Disk usage check failed", error=exc)
             await asyncio.to_thread(path.parent.mkdir, parents=True, exist_ok=True)
             await asyncio.to_thread(path.write_bytes, data)
             return True
@@ -1229,3 +1242,219 @@ class BridgeService:
             QueuedPublish(tp, val, message_expiry_interval=MQTT_EXPIRY_DATASTORE, user_properties=props),
             reply_context=reply_context,
         )
+
+    # --- De-layered Orchestration [SIL-2] ---
+
+    async def run(self) -> None:
+        """Main entry point for daemon execution using native TaskGroup orchestration."""
+        try:
+            async with self, asyncio.TaskGroup() as tg:
+                # 1. Serial Link (Critical)
+                tg.create_task(
+                    self.supervise(
+                        "serial-link",
+                        self.serial.run if self.serial else lambda: asyncio.sleep(0),
+                        (SerialHandshakeFatal,),
+                    )
+                )
+
+                # 2. MQTT Link
+                tg.create_task(
+                    self.supervise(
+                        "mqtt-link",
+                        self.run_mqtt,
+                    )
+                )
+
+                # 3. Status & Metrics (Periodic)
+                tg.create_task(
+                    self.supervise(
+                        "status-writer",
+                        lambda: status_writer(self.state, self.config.status_interval),
+                    )
+                )
+                tg.create_task(
+                    self.supervise(
+                        "metrics-publisher",
+                        lambda: publish_metrics(
+                            self.state,
+                            self.enqueue_mqtt,
+                            float(self.config.status_interval),
+                        ),
+                    )
+                )
+
+                # 4. Optional Features
+                if self.config.bridge_summary_interval > 0.0 or self.config.bridge_handshake_interval > 0.0:
+                    tg.create_task(
+                        self.supervise(
+                            "bridge-snapshots",
+                            lambda: publish_bridge_snapshots(
+                                self.state,
+                                self.enqueue_mqtt,
+                                summary_interval=float(self.config.bridge_summary_interval),
+                                handshake_interval=float(self.config.bridge_handshake_interval),
+                            ),
+                        )
+                    )
+
+                if self.config.watchdog_enabled:
+                    self.watchdog = WatchdogKeepalive(interval=self.config.watchdog_interval, state=self.state)
+                    tg.create_task(self.supervise("watchdog", self.watchdog.run))
+
+                if self.config.metrics_enabled:
+                    self.exporter = PrometheusExporter(
+                        self.state,
+                        self.config.metrics_host,
+                        self.config.metrics_port,
+                    )
+                    tg.create_task(self.supervise("prometheus-exporter", self.exporter.run))
+
+        except* asyncio.CancelledError:
+            logger.info("Daemon shutdown initiated (Cancelled).")
+        except* (
+            TimeoutError,
+            OSError,
+            RuntimeError,
+            ValueError,
+            TypeError,
+            msgspec.MsgspecError,
+            aiomqtt.MqttError,
+            tenacity.RetryError,
+            SerialHandshakeFatal,
+        ) as exc_group:
+            for e in exc_group.exceptions:
+                logger.critical("Fatal task error: %s", e, exc_info=e)
+            raise
+        finally:
+            self.cleanup()
+            STATUS_FILE.unlink(missing_ok=True)
+            logger.info("MCU Bridge daemon stopped.")
+
+    async def run_mqtt(self) -> None:
+        if not self.config.mqtt_enabled:
+            logger.info("MQTT transport is DISABLED in configuration.")
+            return
+
+        tls_context = self.config.get_ssl_context()
+        reconnect_delay = max(1, self.config.reconnect_delay)
+
+        retryer = tenacity.AsyncRetrying(
+            wait=tenacity.wait_exponential(multiplier=reconnect_delay, max=60) + tenacity.wait_random(0, 2),
+            retry=tenacity.retry_if_exception_type((aiomqtt.MqttError, OSError, asyncio.TimeoutError)),
+            before_sleep=lambda rs: logger.error(
+                "MQTT connection retry",
+                attempt=rs.attempt_number,
+                wait=getattr(rs.next_action, "sleep", 0),
+            ),
+            after=lambda rs: self.state.metrics.retries.labels(component="mqtt_connect").inc(),
+            reraise=True,
+        )
+
+        try:
+            async for attempt in retryer:
+                with attempt:
+                    await self.connect_mqtt_session(tls_context)
+        except asyncio.CancelledError:
+            logger.info("MQTT transport stopping.")
+            raise
+        except (TimeoutError, ConnectionError, OSError) as exc:
+            logger.critical("MQTT transport fatal error: %s", exc)
+            raise
+        except ExceptionGroup as eg:
+            for exc in eg.exceptions:
+                logger.critical("MQTT transport fatal error: %s", exc)
+            raise
+
+    async def connect_mqtt_session(self, tls_context: Any) -> None:
+        connect_props = Properties(PacketTypes.CONNECT)
+        connect_props.SessionExpiryInterval = 0
+        connect_props.RequestResponseInformation = 1
+        connect_props.RequestProblemInformation = 1
+
+        if not self.config.mqtt_user:
+            logger.error("MQTT connecting without authentication (anonymous)")
+
+        will_topic = topic_path(self.state.mqtt_topic_prefix, Topic.SYSTEM, "status")
+        will = aiomqtt.Will(
+            topic=will_topic,
+            payload=b'{"status": "offline", "reason": "unexpected_disconnect"}',
+            qos=1,
+            retain=True,
+        )
+
+        async with aiomqtt.Client(
+            hostname=self.config.mqtt_host,
+            port=self.config.mqtt_port,
+            username=self.config.mqtt_user or None,
+            password=self.config.mqtt_pass or None,
+            tls_context=tls_context,
+            logger=logging.getLogger("mcubridge.mqtt.client"),
+            protocol=aiomqtt.ProtocolVersion.V5,
+            clean_session=None,
+            will=will,
+            properties=connect_props,
+        ) as client:
+            logger.info("Connected to MQTT broker (Paho v2/MQTTv5).")
+            self.set_mqtt_client(client)
+            try:
+                topics = [
+                    (topic_path(self.state.mqtt_topic_prefix, t, *s), int(q)) for t, s, q in MQTT_COMMAND_SUBSCRIPTIONS
+                ]
+                await client.subscribe(topics)
+                await client.publish(will_topic, b'{"status": "online"}', qos=1, retain=True)
+                await self.flush_mqtt_spool()
+
+                async for message in client.messages:
+                    if message.topic:
+                        try:
+                            await self.handle_mqtt_message(message)
+                        except (ValueError, RuntimeError, asyncio.QueueFull) as e:
+                            logger.error(
+                                "Error processing MQTT message",
+                                topic=str(message.topic),
+                                error=str(e),
+                                payload_hex=(message.payload.hex() if message.payload else None),
+                            )
+            finally:
+                self.set_mqtt_client(None)
+
+    async def supervise(
+        self,
+        name: str,
+        factory: Callable[[], Awaitable[None]],
+        fatal_exceptions: tuple[type[BaseException], ...] = (),
+        max_restarts: int | None = None,
+        min_backoff: float = SUPERVISOR_DEFAULT_MIN_BACKOFF,
+        max_backoff: float = SUPERVISOR_DEFAULT_MAX_BACKOFF,
+    ) -> None:
+        """[SIL-2] Supervise a critical daemon task with automatic restarts using tenacity."""
+
+        retryer = tenacity.AsyncRetrying(
+            stop=tenacity.stop_after_attempt(max_restarts) if max_restarts else tenacity.stop_never,
+            wait=tenacity.wait_exponential(multiplier=min_backoff, max=max_backoff) + tenacity.wait_random(0, 1),
+            retry=tenacity.retry_if_not_exception_type((asyncio.CancelledError, *fatal_exceptions)),
+            before_sleep=lambda rs: logger.error(
+                "Task supervisor restarting",
+                task=name,
+                attempt=rs.attempt_number,
+                error=str(rs.outcome.exception()) if rs.outcome else None,
+            ),
+            after=lambda rs: self.state.metrics.retries.labels(component=name).inc(),
+            reraise=True,
+        )
+
+        try:
+            async for attempt in retryer:
+                with attempt:
+                    logger.debug("Supervisor starting task", task=name)
+                    await factory()
+        except asyncio.CancelledError:
+            logger.debug("Supervisor task cancelled", task=name)
+            raise
+        except fatal_exceptions as exc:
+            logger.critical("Supervisor task failed with fatal exception", task=name, error=str(exc))
+            raise
+        except Exception as exc:
+            logger.critical("Supervisor task failed unexpectedly", task=name, error=str(exc))
+            raise

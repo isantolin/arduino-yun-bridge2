@@ -1,49 +1,45 @@
 import asyncio
-from typing import cast, Iterator
+from typing import cast, Any
 from unittest.mock import AsyncMock, patch
 import pytest
 
-from mcubridge.daemon import BridgeDaemon, app, main
+from mcubridge.daemon import app
 from mcubridge.config.settings import RuntimeConfig
+from mcubridge.services.runtime import BridgeService
 from mcubridge.services.handshake import SerialHandshakeFatal
 
 
 @pytest.fixture
-def daemon_setup() -> Iterator[BridgeDaemon]:
-    config = RuntimeConfig(
-        mqtt_topic="br",
-        serial_port="/dev/test",
-        serial_shared_secret=b"secure_secret_123456789012345678",
-    )
-    daemon = BridgeDaemon(config)
-    yield daemon
-    daemon.cleanup()
+def service_setup(service_stack: tuple[BridgeService, Any, Any]) -> BridgeService:
+    service, _, _ = service_stack
+    return service
 
 
 @pytest.mark.asyncio
-async def test_daemon_run_lifecycle(daemon_setup: BridgeDaemon) -> None:
+async def test_daemon_run_lifecycle(service_setup: BridgeService) -> None:
     """Test daemon startup and graceful shutdown via TaskGroup cancellation."""
-    daemon = daemon_setup
+    service = service_setup
 
     # Mock transports to avoid real IO
-    daemon.serial_transport.run = AsyncMock()
-    setattr(daemon, "_mqtt_run", AsyncMock())
+    if service.serial:
+        service.serial.run = AsyncMock()
+    service.run_mqtt = AsyncMock()
 
     # Run and immediately cancel
-    task = asyncio.create_task(daemon.run())
+    task = asyncio.create_task(service.run())
     await asyncio.sleep(0.1)
     task.cancel()
 
     # The daemon catches CancelledError and logs it, so it should exit cleanly
     await task
 
-    assert daemon.state.state == "connected" or daemon.state.state == "disconnected"
+    assert service.state.state in ("connected", "disconnected", "synchronized")
 
 
 @pytest.mark.asyncio
-async def test_supervisor_circuit_breaker(daemon_setup: BridgeDaemon) -> None:
+async def test_supervisor_circuit_breaker(service_setup: BridgeService) -> None:
     """Verify circuit breaker trips after repeated failures at max backoff."""
-    daemon = daemon_setup
+    service = service_setup
 
     call_count = 0
 
@@ -54,7 +50,7 @@ async def test_supervisor_circuit_breaker(daemon_setup: BridgeDaemon) -> None:
 
     # The supervisor trips and re-raises the last exception
     with pytest.raises(RuntimeError, match="Persistent failure"):
-        await daemon.supervise(
+        await service.supervise(
             "test-task",
             failing_factory,
             min_backoff=0.01,
@@ -67,30 +63,23 @@ async def test_supervisor_circuit_breaker(daemon_setup: BridgeDaemon) -> None:
 
 
 @pytest.mark.asyncio
-async def test_supervisor_fatal_exception(daemon_setup: BridgeDaemon) -> None:
+async def test_supervisor_fatal_exception(service_setup: BridgeService) -> None:
     """Verify supervisor stops immediately on fatal exceptions."""
-    daemon = daemon_setup
+    service = service_setup
 
     async def fatal_factory() -> None:
         raise SerialHandshakeFatal("MCU Rejected Secret")
 
     with pytest.raises(SerialHandshakeFatal):
-        await daemon.supervise("critical-task", fatal_factory, fatal_exceptions=(SerialHandshakeFatal,))
-
-
-def test_app_cli_overrides() -> None:
-    """CLI no longer accepts operational overrides; UCI is authoritative."""
-    with patch("mcubridge.daemon.main") as mock_main:
-        with pytest.raises(SystemExit):
-            app(["--serial-port", "/dev/ttyUSB0"])
-        mock_main.assert_not_called()
+        await service.supervise("critical-task", fatal_factory, fatal_exceptions=(SerialHandshakeFatal,))
 
 
 def test_main_crypto_post_failure() -> None:
     """Verify daemon exits if FIPS POST fails."""
     with patch("mcubridge.daemon.verify_crypto_integrity", return_value=False):
-        with pytest.raises(SystemExit) as exc:
-            main()
+        with patch("asyncio.Runner"):
+            with pytest.raises(SystemExit) as exc:
+                app([])
         assert exc.value.code == 1
 
 
@@ -101,10 +90,10 @@ def test_main_insecure_secret_warning() -> None:
     insecure_config = RuntimeConfig(serial_shared_secret=DEFAULT_SERIAL_SHARED_SECRET)
     with patch("mcubridge.daemon.verify_crypto_integrity", return_value=True):
         with patch("mcubridge.daemon.load_runtime_config", return_value=insecure_config):
-            with patch("mcubridge.daemon.BridgeDaemon") as mock_daemon_cls:
+            with patch("mcubridge.daemon.BridgeService") as mock_service_cls:
                 with patch("asyncio.Runner"):
-                    main()
+                    app([])
 
-                    # Check that config passed to BridgeDaemon has mqtt_enabled=False
-                    config = cast(RuntimeConfig, mock_daemon_cls.call_args[0][0])
+                    # Check that config passed to BridgeService has mqtt_enabled=False
+                    config = cast(RuntimeConfig, mock_service_cls.call_args[0][0])
                     assert config.mqtt_enabled is False

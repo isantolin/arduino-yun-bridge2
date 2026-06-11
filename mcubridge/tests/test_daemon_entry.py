@@ -3,11 +3,11 @@ import importlib
 from unittest.mock import MagicMock
 
 
-def test_daemon_main_invokes_entrypoint(monkeypatch: Any):
+def test_daemon_app_invokes_entrypoint(monkeypatch: Any):
     module = importlib.import_module("mcubridge.daemon")
     called = MagicMock()
-    monkeypatch.setattr(module, "main", called)
+    monkeypatch.setattr(module, "app", called)
 
-    module.main()
+    module.app()
 
     called.assert_called_once_with()

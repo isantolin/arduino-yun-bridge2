@@ -104,7 +104,7 @@ template <typename T>
 void ProcessClass<T>::kill(int32_t pid) {
   rpc::payload::ProcessKill p;
   p.pid = static_cast<uint32_t>(pid);
-  [[maybe_unused]] auto _u1 = Bridge.send(rpc::CommandId::CMD_PROCESS_KILL, 0, p);
+  if (!Bridge.send(rpc::CommandId::CMD_PROCESS_KILL, 0, p)) {}
 }
 
 template <typename T>
@@ -112,7 +112,7 @@ void ProcessClass<T>::_onKillNotification(const rpc::payload::ProcessKill& msg) 
   // Linux notifies MCU that a process was killed. Clear local queues only —
   // do NOT re-send CMD_PROCESS_KILL (that would create an echo loop).
   reset();
-  [[maybe_unused]] auto _u1 = msg.pid;
+  msg.pid;
 }
 
 template <typename T>

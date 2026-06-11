@@ -307,3 +307,20 @@ def real_config():
 
     config = msgspec.convert(raw, settings.RuntimeConfig, strict=False)
     return config
+
+
+@pytest.fixture
+def service_stack(runtime_config: RuntimeConfig):
+    """Provide a complete service stack (Service, State, Serial) for integration testing."""
+    from mcubridge.transport.serial import SerialTransport
+    from mcubridge.services.runtime import BridgeService
+    from mcubridge.state.context import create_runtime_state
+
+    state = create_runtime_state(runtime_config)
+    serial = SerialTransport(runtime_config, state, None)
+    service = BridgeService(runtime_config, state, serial)
+    serial.service = service
+    try:
+        yield service, state, serial
+    finally:
+        service.cleanup()

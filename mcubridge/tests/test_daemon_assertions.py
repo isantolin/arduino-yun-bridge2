@@ -1,15 +1,17 @@
-"""Assertive tests for BridgeDaemon orchestration and MQTT handling."""
+"""Assertive tests for BridgeService orchestration and MQTT handling."""
 
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from mcubridge.daemon import BridgeDaemon, main
+from mcubridge.daemon import app
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.services.handshake import SerialHandshakeFatal
+from mcubridge.services.runtime import BridgeService
 
 
 @pytest.fixture
@@ -24,55 +26,42 @@ def runtime_config() -> RuntimeConfig:
 
 
 @pytest.mark.asyncio
-async def test_daemon_supervise_retries_on_failure(runtime_config: RuntimeConfig) -> None:
-    daemon = BridgeDaemon(runtime_config)
-    try:
-        mock_factory = AsyncMock(side_effect=[ValueError("fail"), None])
-        await daemon.supervise("test-task", mock_factory, min_backoff=0.01, max_backoff=0.01)
-        assert mock_factory.call_count == 2
-    finally:
-        daemon.cleanup()
+async def test_daemon_supervise_retries_on_failure(service_stack: tuple[BridgeService, Any, Any]) -> None:
+    service, _, _ = service_stack
+    mock_factory = AsyncMock(side_effect=[ValueError("fail"), None])
+    await service.supervise("test-task", mock_factory, min_backoff=0.01, max_backoff=0.01)
+    assert mock_factory.call_count == 2
 
 
 @pytest.mark.asyncio
-async def test_daemon_mqtt_run_disabled(runtime_config: RuntimeConfig) -> None:
-    runtime_config.mqtt_enabled = False
-    daemon = BridgeDaemon(runtime_config)
-    try:
-        # Should return immediately without connecting
-        with patch("mcubridge.daemon.BridgeDaemon.connect_mqtt_session") as mock_connect:
-            await daemon.run_mqtt()
-            mock_connect.assert_not_called()
-    finally:
-        daemon.cleanup()
+async def test_daemon_mqtt_run_disabled(service_stack: tuple[BridgeService, Any, Any]) -> None:
+    service, _, _ = service_stack
+    service.config.mqtt_enabled = False
+    # Should return immediately without connecting
+    with patch("mcubridge.services.runtime.BridgeService.connect_mqtt_session") as mock_connect:
+        await service.run_mqtt()
+        mock_connect.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_daemon_run_orchestrates_tasks(runtime_config: RuntimeConfig) -> None:
-    daemon = BridgeDaemon(runtime_config)
-    try:
-        # We mock the underlying methods to avoid real I/O
-        daemon.serial_transport.run = AsyncMock()
-        daemon.run_mqtt = AsyncMock()
+async def test_daemon_run_orchestrates_tasks(service_stack: tuple[BridgeService, Any, Any]) -> None:
+    service, _, serial = service_stack
 
-        async def fail_soon() -> None:
-            print("fail_soon started")
-            await asyncio.sleep(0.05)
-            print("fail_soon raising")
-            raise SerialHandshakeFatal("test fatal")
+    # We mock the underlying methods to avoid real I/O
+    serial.run = AsyncMock()
+    service.run_mqtt = AsyncMock()
 
-        daemon.serial_transport.run.side_effect = fail_soon
+    async def fail_soon() -> None:
+        await asyncio.sleep(0.05)
+        raise SerialHandshakeFatal("test fatal")
 
-        print("entering with daemon.run")
-        with pytest.raises(ExceptionGroup):
-            await daemon.run()
+    serial.run.side_effect = fail_soon
 
-        print("finished daemon.run")
+    with pytest.raises(ExceptionGroup):
+        await service.run()
 
-        assert daemon.serial_transport.run.called
-        assert daemon.run_mqtt.called
-    finally:
-        daemon.cleanup()
+    assert serial.run.called
+    assert service.run_mqtt.called
 
 
 def test_main_strict_mode_when_default_secret() -> None:
@@ -81,12 +70,12 @@ def test_main_strict_mode_when_default_secret() -> None:
 
     with patch("mcubridge.daemon.load_runtime_config", return_value=mock_config):
         with patch("mcubridge.daemon.verify_crypto_integrity", return_value=True):
-            with patch("mcubridge.daemon.BridgeDaemon") as mock_daemon_class:
+            with patch("mcubridge.daemon.BridgeService") as mock_service_class:
                 with patch("asyncio.Runner"):
-                    main()
+                    app([])
 
-                    assert mock_daemon_class.called
-                    used_config = mock_daemon_class.call_args[0][0]
+                    assert mock_service_class.called
+                    used_config = mock_service_class.call_args[0][0]
                     assert used_config.mqtt_enabled is False
 
 
@@ -94,6 +83,7 @@ def test_main_aborts_on_crypto_failure() -> None:
     mock_config = RuntimeConfig()
     with patch("mcubridge.daemon.load_runtime_config", return_value=mock_config):
         with patch("mcubridge.daemon.verify_crypto_integrity", return_value=False):
-            with pytest.raises(SystemExit) as exc:
-                main()
-            assert exc.value.code == 1
+            with patch("asyncio.Runner"):
+                with pytest.raises(SystemExit) as exc:
+                    app([])
+                assert exc.value.code == 1

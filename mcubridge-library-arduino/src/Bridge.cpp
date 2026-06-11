@@ -73,8 +73,7 @@ void BridgeClass::_dispatchCommand(const rpc_pb_RpcEnvelope& envelope) {
   }
 
   if (!_isSecurityCheckPassed(ctx.raw_command)) {
-    [[maybe_unused]] auto _u1 =
-        sendFrame(rpc::StatusCode::STATUS_ERROR, ctx.sequence_id);
+    if (!sendFrame(rpc::StatusCode::STATUS_ERROR, ctx.sequence_id)) {}
     return;
   }
 
@@ -259,7 +258,7 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
 }
 
 void BridgeClass::process() {
-  [[maybe_unused]] auto _u1 = _scheduler_policy.schedule_tasks(_tasks);
+  _scheduler_policy.schedule_tasks(_tasks);
   if constexpr (bridge::config::ENABLE_MAILBOX) Mailbox.process();
 }
 void BridgeClass::_watchdogTask() {
@@ -288,8 +287,8 @@ void BridgeClass::_timerTask() {
   }
 }
 bool BridgeClass::isSynchronized() const { return _fsm.isSynchronized(); }
-void BridgeClass::_handleStatusOk(const bridge::router::CommandContext& ctx) {
-  (void)ctx;
+void BridgeClass::_handleStatusOk(const bridge::router::CommandContext&) {
+  
 }
 void BridgeClass::onUnknownCommand(const bridge::router::CommandContext& ctx) {
   if (_command_handler.is_valid())
@@ -386,7 +385,7 @@ void BridgeClass::_onAckTimeout() {
 void BridgeClass::_processAck(uint16_t command_id, uint16_t sequence_id) {
   rpc_pb_AckPacket p = {};
   p.command_id = command_id;
-  (void)send(rpc::StatusCode::STATUS_ACK, sequence_id, p);
+  if (!send(rpc::StatusCode::STATUS_ACK, sequence_id, p)) {}
 }
 
 void BridgeClass::_handleAckStruct(const rpc_pb_AckPacket& m) {
@@ -452,7 +451,7 @@ void BridgeClass::_handleDigitalRead(
   if (res && res->pin < bridge::config::DIGITAL_PINS) {
     rpc_pb_DigitalReadResponse resp = {};
     resp.value = static_cast<uint32_t>(::digitalRead(res->pin));
-    (void)send(rpc::CommandId::CMD_DIGITAL_READ_RESP, ctx.sequence_id, resp);
+    if (!send(rpc::CommandId::CMD_DIGITAL_READ_RESP, ctx.sequence_id, resp)) {}
   } else
     emitStatus(rpc::StatusCode::STATUS_ERROR);
 }
@@ -462,7 +461,7 @@ void BridgeClass::_handleAnalogRead(const bridge::router::CommandContext& ctx) {
   if (res && res->pin < bridge::config::DIGITAL_PINS) {
     rpc_pb_AnalogReadResponse resp = {};
     resp.value = static_cast<uint32_t>(::analogRead(res->pin));
-    (void)send(rpc::CommandId::CMD_ANALOG_READ_RESP, ctx.sequence_id, resp);
+    if (!send(rpc::CommandId::CMD_ANALOG_READ_RESP, ctx.sequence_id, resp)) {}
   } else
     emitStatus(rpc::StatusCode::STATUS_ERROR);
 }
@@ -473,17 +472,17 @@ void BridgeClass::_handleConsoleWrite(const rpc_pb_ConsoleWrite& m) {
 
 #if BRIDGE_ENABLE_DATASTORE
 void BridgeClass::_handleDataStoreGetResponse(
-    const bridge::router::CommandContext& ctx,
+    const bridge::router::CommandContext& ,
     const rpc_pb_DatastoreGetResponse& m) {
-  (void)ctx;
+  
   DataStore._onResponse(m);
 }
 #endif
 
 #if BRIDGE_ENABLE_MAILBOX
-void BridgeClass::_handleMailboxPush(const bridge::router::CommandContext& ctx,
+void BridgeClass::_handleMailboxPush(const bridge::router::CommandContext& 
                                      const rpc_pb_MailboxPush& m) {
-  (void)ctx;
+  
   MailboxClass<>::_onPush(m);
 }
 void BridgeClass::_handleMailboxReadResponse(const rpc_pb_MailboxReadResponse& m) {
@@ -495,44 +494,44 @@ void BridgeClass::_handleMailboxAvailableResponse(const rpc_pb_MailboxAvailableR
 #endif
 
 #if BRIDGE_ENABLE_FILESYSTEM
-void BridgeClass::_handleFileWrite(const bridge::router::CommandContext& ctx,
+void BridgeClass::_handleFileWrite(const bridge::router::CommandContext& 
                                    const rpc_pb_FileWrite& m) {
-  (void)ctx;
+  
   FileSystem._onWrite(m);
 }
-void BridgeClass::_handleFileRead(const bridge::router::CommandContext& ctx,
+void BridgeClass::_handleFileRead(const bridge::router::CommandContext& 
                                   const rpc_pb_FileRead& m) {
-  (void)ctx;
+  
   FileSystem._onRead(m);
 }
-void BridgeClass::_handleFileRemove(const bridge::router::CommandContext& ctx,
+void BridgeClass::_handleFileRemove(const bridge::router::CommandContext& 
                                     const rpc_pb_FileRemove& m) {
-  (void)ctx;
+  
   FileSystem._onRemove(m);
 }
 void BridgeClass::_handleFileReadResponse(
-    const bridge::router::CommandContext& ctx,
+    const bridge::router::CommandContext& ,
     const rpc_pb_FileReadResponse& m) {
-  (void)ctx;
+  
   FileSystem._onResponse(m);
 }
 #endif
 #if BRIDGE_ENABLE_PROCESS
-void BridgeClass::_handleProcessKill(const bridge::router::CommandContext& ctx,
+void BridgeClass::_handleProcessKill(const bridge::router::CommandContext& 
                                      const rpc_pb_ProcessKill& m) {
-  (void)ctx;
+  
   Process._onKillNotification(m);
 }
 void BridgeClass::_handleProcessRunAsyncResponse(
-    const bridge::router::CommandContext& ctx,
+    const bridge::router::CommandContext& ,
     const rpc_pb_ProcessRunAsyncResponse& m) {
-  (void)ctx;
+  
   Process._onRunAsyncResponse(m);
 }
 void BridgeClass::_handleProcessPollResponse(
-    const bridge::router::CommandContext& ctx,
+    const bridge::router::CommandContext& ,
     const rpc_pb_ProcessPollResponse& m) {
-  (void)ctx;
+  
   Process._onPollResponse(m);
 }
 #endif
@@ -540,11 +539,11 @@ void BridgeClass::_handleProcessPollResponse(
 void BridgeClass::_handleSpiSetConfig(const rpc_pb_SpiConfig& m) {
   SPIService.setConfig(m);
 }
-void BridgeClass::_handleSpiBegin(const bridge::router::CommandContext& ctx) {
+void BridgeClass::_handleSpiBegin(const bridge::router::CommandContext&) {
   SPIService.begin();
   _processAck(ctx.raw_command, ctx.sequence_id);
 }
-void BridgeClass::_handleSpiEnd(const bridge::router::CommandContext& ctx) {
+void BridgeClass::_handleSpiEnd(const bridge::router::CommandContext&) {
   SPIService.end();
   _processAck(ctx.raw_command, ctx.sequence_id);
 }
@@ -564,15 +563,15 @@ void BridgeClass::_handleSpiTransfer(
     const size_t to_copy = etl::min(len, sizeof(resp.data.bytes));
     resp.data.size = (pb_size_t)to_copy;
     if (to_copy > 0) etl::copy_n(_rx_storage.data(), to_copy, resp.data.bytes);
-    (void)send(rpc::CommandId::CMD_SPI_TRANSFER_RESP, ctx.sequence_id, resp);
+    if (!send(rpc::CommandId::CMD_SPI_TRANSFER_RESP, ctx.sequence_id, resp)) {}
   } else
     emitStatus(rpc::StatusCode::STATUS_ERROR);
 }
 #endif
 
 void BridgeClass::_handleStatusMalformed(
-    const bridge::router::CommandContext& ctx) {
-  (void)ctx;
+    const bridge::router::CommandContext& ) {
+  
   enterSafeState();
 }
 
@@ -613,7 +612,7 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx) {
   }
   _fsm.receive(bridge::fsm::EvHandshakeStart());
   _fsm.receive(bridge::fsm::EvHandshakeComplete());
-  (void)send(rpc::CommandId::CMD_LINK_SYNC_RESP, ctx.sequence_id, resp);
+  if (!send(rpc::CommandId::CMD_LINK_SYNC_RESP, ctx.sequence_id, resp)) {}
 }
 
 void BridgeClass::_handleLinkReset(const bridge::router::CommandContext& ctx) {
@@ -622,22 +621,22 @@ void BridgeClass::_handleLinkReset(const bridge::router::CommandContext& ctx) {
     if (res) _handleSetTiming(res.value());
   }
   _fsm.receive(bridge::fsm::EvReset());
-  (void)sendFrame(rpc::CommandId::CMD_LINK_RESET_RESP, ctx.sequence_id);
+  if (!sendFrame(rpc::CommandId::CMD_LINK_RESET_RESP, ctx.sequence_id)) {}
 }
 
 void BridgeClass::_handleGetCapabilities(
     const bridge::router::CommandContext& ctx) {
   rpc_pb_Capabilities resp = rpc_pb_Capabilities_init_default;
   bridge::hal::fillCapabilities(resp);
-  (void)send(rpc::CommandId::CMD_GET_CAPABILITIES_RESP, ctx.sequence_id, resp);
+  if (!send(rpc::CommandId::CMD_GET_CAPABILITIES_RESP, ctx.sequence_id, resp)) {}
 }
 
-void BridgeClass::_handleXoff(const bridge::router::CommandContext& ctx) {
-  (void)ctx;
+void BridgeClass::_handleXoff(const bridge::router::CommandContext&) {
+  
   _tx_enabled = false;
 }
-void BridgeClass::_handleXon(const bridge::router::CommandContext& ctx) {
-  (void)ctx;
+void BridgeClass::_handleXon(const bridge::router::CommandContext&) {
+  
   _tx_enabled = true;
 }
 
@@ -646,19 +645,19 @@ void BridgeClass::_handleStatusAck(const bridge::router::CommandContext& ctx) {
   if (res) _handleAck(res->command_id);
 }
 
-void BridgeClass::_handleGetVersion(const bridge::router::CommandContext& ctx) {
+void BridgeClass::_handleGetVersion(const bridge::router::CommandContext&) {
   rpc_pb_VersionResponse resp = {};
   resp.major = rpc::FIRMWARE_VERSION_MAJOR;
   resp.minor = rpc::FIRMWARE_VERSION_MINOR;
   resp.patch = (uint32_t)rpc::FIRMWARE_VERSION_PATCH;
-  (void)send(rpc::CommandId::CMD_GET_VERSION_RESP, ctx.sequence_id, resp);
+  if (!send(rpc::CommandId::CMD_GET_VERSION_RESP, ctx.sequence_id, resp)) {}
 }
 
 void BridgeClass::_handleGetFreeMemory(
     const bridge::router::CommandContext& ctx) {
   rpc_pb_FreeMemoryResponse resp = {};
   resp.value = (uint32_t)bridge::hal::getFreeMemory();
-  (void)send(rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, ctx.sequence_id, resp);
+  if (!send(rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, ctx.sequence_id, resp)) {}
 }
 
 void BridgeClass::_handleSetTiming(const rpc_pb_HandshakeConfig& msg) {
@@ -718,12 +717,12 @@ bool BridgeClass::_isSecurityCheckPassed(uint16_t cmd) const {
   return _fsm.isSynchronized();
 }
 
-void BridgeClass::signalXoff() { (void)sendFrame(rpc::CommandId::CMD_XOFF); }
-void BridgeClass::signalXon() { (void)sendFrame(rpc::CommandId::CMD_XON); }
+void BridgeClass::signalXoff() { if (!sendFrame(rpc::CommandId::CMD_XOFF)) {} }
+void BridgeClass::signalXon() { if (!sendFrame(rpc::CommandId::CMD_XON)) {} }
 
 namespace bridge {
-void SafeStatePolicy::handle(::BridgeClass& bridge, const etl::exception& e) {
-  (void)e;
+void SafeStatePolicy::handle(::BridgeClass& bridge, const etl::exception&) {
+  
   bridge.enterSafeState();
 }
 }  // namespace bridge

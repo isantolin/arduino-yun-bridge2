@@ -52,7 +52,7 @@ void FileSystemClass<T>::read(etl::string_view path,
   }
 
   if (!Bridge.send(rpc::CommandId::CMD_FILE_READ, 0, p)) {
-    Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR)) {}
+    Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
   }
 }
 
@@ -84,7 +84,7 @@ void FileSystemClass<T>::_onRead(const rpc::payload::FileRead& msg) {
   const etl::string_view path(msg.path);
 
   using bridge::etl_ext::CounterIterator;
-  etl::find_if(
+  if (etl::find_if(
       CounterIterator<uint16_t>(0U),
       CounterIterator(bridge::config::FILE_MAX_READ_CHUNKS),
       [&](uint32_t chunk_idx) {
@@ -97,7 +97,7 @@ void FileSystemClass<T>::_onRead(const rpc::payload::FileRead& msg) {
             path, offset, etl::span<uint8_t>(buffer.data(), buffer.size()));
         if (!res) {
           BRIDGE_FS_DEBUG("[DEBUG] FS: Read FAILED at offset %zu\n", offset);
-          Bridge.sendFrame(rpc::StatusCode::STATUS_ERROR)) {}
+          if (!Bridge.sendFrame(rpc::StatusCode::STATUS_ERROR)) {}
           return true;
         }
         BRIDGE_FS_DEBUG(
@@ -111,7 +111,7 @@ void FileSystemClass<T>::_onRead(const rpc::payload::FileRead& msg) {
         }
         offset += res->bytes_read;
         return false;
-      });
+      }) != CounterIterator(bridge::config::FILE_MAX_READ_CHUNKS)) {}
 }
 
 template <typename T>

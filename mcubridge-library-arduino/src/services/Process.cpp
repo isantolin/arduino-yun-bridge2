@@ -112,7 +112,6 @@ void ProcessClass<T>::_onKillNotification(const rpc::payload::ProcessKill& msg) 
   // Linux notifies MCU that a process was killed. Clear local queues only —
   // do NOT re-send CMD_PROCESS_KILL (that would create an echo loop).
   reset();
-  msg.pid;
 }
 
 template <typename T>

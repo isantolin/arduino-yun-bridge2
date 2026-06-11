@@ -480,7 +480,7 @@ void BridgeClass::_handleDataStoreGetResponse(
 #endif
 
 #if BRIDGE_ENABLE_MAILBOX
-void BridgeClass::_handleMailboxPush(const bridge::router::CommandContext& 
+void BridgeClass::_handleMailboxPush(const bridge::router::CommandContext& ctx, 
                                      const rpc_pb_MailboxPush& m) {
   
   MailboxClass<>::_onPush(m);
@@ -494,17 +494,17 @@ void BridgeClass::_handleMailboxAvailableResponse(const rpc_pb_MailboxAvailableR
 #endif
 
 #if BRIDGE_ENABLE_FILESYSTEM
-void BridgeClass::_handleFileWrite(const bridge::router::CommandContext& 
+void BridgeClass::_handleFileWrite(const bridge::router::CommandContext& ctx, 
                                    const rpc_pb_FileWrite& m) {
   
   FileSystem._onWrite(m);
 }
-void BridgeClass::_handleFileRead(const bridge::router::CommandContext& 
+void BridgeClass::_handleFileRead(const bridge::router::CommandContext& ctx, 
                                   const rpc_pb_FileRead& m) {
   
   FileSystem._onRead(m);
 }
-void BridgeClass::_handleFileRemove(const bridge::router::CommandContext& 
+void BridgeClass::_handleFileRemove(const bridge::router::CommandContext& ctx, 
                                     const rpc_pb_FileRemove& m) {
   
   FileSystem._onRemove(m);
@@ -517,7 +517,7 @@ void BridgeClass::_handleFileReadResponse(
 }
 #endif
 #if BRIDGE_ENABLE_PROCESS
-void BridgeClass::_handleProcessKill(const bridge::router::CommandContext& 
+void BridgeClass::_handleProcessKill(const bridge::router::CommandContext& ctx, 
                                      const rpc_pb_ProcessKill& m) {
   
   Process._onKillNotification(m);
@@ -539,11 +539,11 @@ void BridgeClass::_handleProcessPollResponse(
 void BridgeClass::_handleSpiSetConfig(const rpc_pb_SpiConfig& m) {
   SPIService.setConfig(m);
 }
-void BridgeClass::_handleSpiBegin(const bridge::router::CommandContext&) {
+void BridgeClass::_handleSpiBegin(const bridge::router::CommandContext& ctx) {
   SPIService.begin();
   _processAck(ctx.raw_command, ctx.sequence_id);
 }
-void BridgeClass::_handleSpiEnd(const bridge::router::CommandContext&) {
+void BridgeClass::_handleSpiEnd(const bridge::router::CommandContext& ctx) {
   SPIService.end();
   _processAck(ctx.raw_command, ctx.sequence_id);
 }
@@ -645,7 +645,7 @@ void BridgeClass::_handleStatusAck(const bridge::router::CommandContext& ctx) {
   if (res) _handleAck(res->command_id);
 }
 
-void BridgeClass::_handleGetVersion(const bridge::router::CommandContext&) {
+void BridgeClass::_handleGetVersion(const bridge::router::CommandContext& ctx) {
   rpc_pb_VersionResponse resp = {};
   resp.major = rpc::FIRMWARE_VERSION_MAJOR;
   resp.minor = rpc::FIRMWARE_VERSION_MINOR;

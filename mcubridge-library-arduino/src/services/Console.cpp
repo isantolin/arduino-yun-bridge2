@@ -56,7 +56,7 @@ size_t ConsoleClass<T>::write(const uint8_t* buffer, size_t size) {
   size_t written = 0;
   using bridge::etl_ext::CounterIterator;
   const uint16_t max_chunks = static_cast<uint16_t>(size);
-  etl::find_if(
+  if (etl::find_if(
       CounterIterator<uint16_t>(0U),
       CounterIterator<uint16_t>(max_chunks + 1U),
       [&](uint16_t) {
@@ -66,7 +66,7 @@ size_t ConsoleClass<T>::write(const uint8_t* buffer, size_t size) {
         _tx_buffer.insert(_tx_buffer.end(), buffer + written, buffer + written + to_write);
         written += to_write;
         return written >= size;
-      });
+      }) != CounterIterator<uint16_t>(max_chunks + 1U)) {}
   return written;
 }
 

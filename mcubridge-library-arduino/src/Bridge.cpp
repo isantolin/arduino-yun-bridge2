@@ -480,7 +480,7 @@ void BridgeClass::_handleDataStoreGetResponse(
 #endif
 
 #if BRIDGE_ENABLE_MAILBOX
-void BridgeClass::_handleMailboxPush(const bridge::router::CommandContext& ctx, 
+void BridgeClass::_handleMailboxPush(const bridge::router::CommandContext&, 
                                      const rpc_pb_MailboxPush& m) {
   
   MailboxClass<>::_onPush(m);
@@ -494,17 +494,17 @@ void BridgeClass::_handleMailboxAvailableResponse(const rpc_pb_MailboxAvailableR
 #endif
 
 #if BRIDGE_ENABLE_FILESYSTEM
-void BridgeClass::_handleFileWrite(const bridge::router::CommandContext& ctx, 
+void BridgeClass::_handleFileWrite(const bridge::router::CommandContext&, 
                                    const rpc_pb_FileWrite& m) {
   
   FileSystem._onWrite(m);
 }
-void BridgeClass::_handleFileRead(const bridge::router::CommandContext& ctx, 
+void BridgeClass::_handleFileRead(const bridge::router::CommandContext&, 
                                   const rpc_pb_FileRead& m) {
   
   FileSystem._onRead(m);
 }
-void BridgeClass::_handleFileRemove(const bridge::router::CommandContext& ctx, 
+void BridgeClass::_handleFileRemove(const bridge::router::CommandContext&, 
                                     const rpc_pb_FileRemove& m) {
   
   FileSystem._onRemove(m);
@@ -517,7 +517,7 @@ void BridgeClass::_handleFileReadResponse(
 }
 #endif
 #if BRIDGE_ENABLE_PROCESS
-void BridgeClass::_handleProcessKill(const bridge::router::CommandContext& ctx, 
+void BridgeClass::_handleProcessKill(const bridge::router::CommandContext&, 
                                      const rpc_pb_ProcessKill& m) {
   
   Process._onKillNotification(m);

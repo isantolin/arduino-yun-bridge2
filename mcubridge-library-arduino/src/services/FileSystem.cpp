@@ -87,7 +87,7 @@ void FileSystemClass<T>::_onRead(const rpc::payload::FileRead& msg) {
   if (etl::find_if(
       CounterIterator<uint16_t>(0U),
       CounterIterator(bridge::config::FILE_MAX_READ_CHUNKS),
-      [&](uint32_t chunk_idx) {
+      [&](uint32_t) {
         if (millis() - start_ms >= bridge::config::SERIAL_TIMEOUT_MS) {
           BRIDGE_FS_DEBUG("[DEBUG] FS: Read TIMEOUT at offset %zu\n", offset);
           return true;

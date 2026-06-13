@@ -53,7 +53,7 @@ rationale = "Expose runtime metrics via the Prometheus Python client"
 [[dependency]]
 name = "serialx"
 openwrt = "python3-serialx"
-pip = "serialx==1.8.1"
+pip = "serialx==1.8.2"
 rationale = "Native sync/async serial stack with modem-pin controls and typed transports"
 
 [[dependency]]
@@ -71,7 +71,7 @@ rationale = "Ultra-fast asyncio event loop implementation (libuv)"
 [[dependency]]
 name = "cryptography"
 openwrt = "python3-cryptography"
-pip = "cryptography==48.0.1"
+pip = "cryptography==49.0.0"
 rationale = "HKDF and HMAC for handshake security (SIL-2 compliance)"
 
 [[dependency]]

@@ -46,12 +46,15 @@ BridgeClass::BridgeClass(Stream& stream)
       _timer_last_tick_ms(0),
       _serial_xoff_sent(false),
       _timers(),
-      _rx_storage(),
       _is_post_passed(false),
       _tx_enabled(true),
       _tx_payload_pool(),
       _pending_tx_queue(),
-      _rx_history() {}
+      _rx_history() {
+  _packet_serial.setPacketHandler(
+      etl::delegate<void(etl::span<const uint8_t>)>::create<
+          BridgeClass, &BridgeClass::_onPacketReceived>(*this));
+}
 
 void BridgeClass::_dispatchCommand(const rpc_pb_RpcEnvelope& envelope) {
   const uint16_t cmd_id = envelope.command_id;
@@ -195,7 +198,7 @@ void BridgeClass::_initializeRuntime() {
   _timer_last_tick_ms = 0;
   _serial_xoff_sent = false;
 
-  _rx_storage.fill(0);
+  // Shared buffer initialized by PacketSerial
   _ps_rx_storage.fill(0);
   _ps_work_buffer.fill(0);
   if constexpr (bridge::hal::CurrentArchTraits::id ==
@@ -207,6 +210,7 @@ void BridgeClass::_initializeRuntime() {
 
 void BridgeClass::begin(uint32_t baudrate, const char* secret) {
   _initializeRuntime();
+
   wolfCrypt_Init();
   _shared_secret.clear();
   if (secret != nullptr) {
@@ -540,10 +544,10 @@ void BridgeClass::_handleSpiTransfer(
     const bridge::router::CommandContext& ctx) {
   auto res = rpc::Payload::parse<rpc_pb_SpiTransfer>(*ctx.envelope);
   if (res) {
-    size_t len = etl::min((size_t)res->data.size, _rx_storage.size());
-    etl::copy_n(res->data.bytes, len, _rx_storage.begin());
+    size_t len = etl::min((size_t)res->data.size, _ps_work_buffer.size());
+    etl::copy_n(res->data.bytes, len, _ps_work_buffer.begin());
     size_t tr =
-        SPIService.transfer(etl::span<uint8_t>(_rx_storage.data(), len));
+        SPIService.transfer(etl::span<uint8_t>(_ps_work_buffer.data(), len));
     if (tr == 0) {
       emitStatus(rpc::StatusCode::STATUS_ERROR);
       return;
@@ -551,7 +555,7 @@ void BridgeClass::_handleSpiTransfer(
     rpc_pb_SpiTransferResponse resp = {};
     const size_t to_copy = etl::min(len, sizeof(resp.data.bytes));
     resp.data.size = (pb_size_t)to_copy;
-    if (to_copy > 0) etl::copy_n(_rx_storage.data(), to_copy, resp.data.bytes);
+    if (to_copy > 0) etl::copy_n(_ps_work_buffer.data(), to_copy, resp.data.bytes);
     if (!send(rpc::CommandId::CMD_SPI_TRANSFER_RESP, ctx.sequence_id, resp)) {}
   } else
     emitStatus(rpc::StatusCode::STATUS_ERROR);

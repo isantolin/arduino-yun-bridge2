@@ -208,7 +208,7 @@ class BridgeClass {
     size_t length;
   };
 
-  void _transmit(uint16_t command_id, uint16_t sequence_id,
+  __attribute__((noinline)) void _transmit(uint16_t command_id, uint16_t sequence_id,
                  etl::span<const uint8_t> payload);
   void _initializeRuntime();
 
@@ -237,9 +237,9 @@ class BridgeClass {
   uint64_t _rx_nonce_counter;
   bridge::fsm::BridgeFsm _fsm;
 
-  static void _watchdogTask();
-  void _serialTask();
-  void _timerTask();
+  static __attribute__((noinline)) void _watchdogTask();
+  __attribute__((noinline)) void _serialTask();
+  __attribute__((noinline)) void _timerTask();
 
 
 
@@ -250,7 +250,7 @@ class BridgeClass {
   etl::array<etl::timer::id::type, bridge::scheduler::NUMBER_OF_TIMERS>
       _timer_ids;
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> _transient_buffer;
-  etl::array<uint8_t, bridge::config::RX_BUFFER_SIZE> _rx_storage;
+
 
   bool _is_post_passed;
   bool _tx_enabled;
@@ -270,7 +270,7 @@ class BridgeClass {
   void _handleStatusAck(const bridge::router::CommandContext& ctx);
   void _handleGetVersion(const bridge::router::CommandContext& ctx);
   void _handleGetFreeMemory(const bridge::router::CommandContext& ctx);
-  void _handleLinkSync(const bridge::router::CommandContext& ctx);
+  __attribute__((noinline)) void _handleLinkSync(const bridge::router::CommandContext& ctx);
   void _handleLinkReset(const bridge::router::CommandContext& ctx);
   void _handleGetCapabilities(const bridge::router::CommandContext& ctx);
   void _handleXoff(const bridge::router::CommandContext& ctx);
@@ -280,8 +280,8 @@ class BridgeClass {
   void _handleEnterBootloader(const rpc::payload::EnterBootloader& msg);
   void _handleSpiBegin(const bridge::router::CommandContext& ctx);
   void _handleSpiEnd(const bridge::router::CommandContext& ctx);
-  void _handleSpiTransfer(const bridge::router::CommandContext& ctx);
-  void _handleReceivedFrame(etl::span<const uint8_t> p);
+  __attribute__((noinline)) void _handleSpiTransfer(const bridge::router::CommandContext& ctx);
+  __attribute__((noinline)) void _handleReceivedFrame(etl::span<const uint8_t> p);
   void onUnknownCommand(const bridge::router::CommandContext& ctx);
 
   void _processAck(uint16_t command_id, uint16_t sequence_id);

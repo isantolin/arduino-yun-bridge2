@@ -613,13 +613,9 @@ class BridgeService:
             if not data:
                 await serial.send(Command.CMD_FILE_READ_RESP.value, pb.FileReadResponse(content=b""))
             else:
-                chunk_size = protocol.MAX_PAYLOAD_SIZE - 3
-                for i in range(0, len(data), chunk_size):
-                    chunk = data[i : i + chunk_size]
-                    await serial.send(
-                        Command.CMD_FILE_READ_RESP.value,
-                        pb.FileReadResponse(content=chunk),
-                    )
+                from ..protocol.structures import iter_chunks
+                for chunk in iter_chunks(data, protocol.MAX_PAYLOAD_SIZE - 3):
+                    await serial.send(Command.CMD_FILE_READ_RESP.value, pb.FileReadResponse(content=chunk))
             return
         await serial.send(Status.ERROR.value, pb.GenericResponse(message="Read failed"))
 
@@ -1093,13 +1089,11 @@ class BridgeService:
             return
         while self.state.console_to_mcu_queue and not self.state.mcu_is_paused:
             buf = self.state.console_to_mcu_queue.popleft()
-            chunk_size = protocol.MAX_PAYLOAD_SIZE
-            for i in range(0, len(buf), chunk_size):
-                chunk = buf[i : i + chunk_size]
+            from ..protocol.structures import iter_chunks
+            for chunk in iter_chunks(buf, protocol.MAX_PAYLOAD_SIZE):
                 if not await serial.send(Command.CMD_CONSOLE_WRITE.value, pb.ConsoleWrite(data=chunk)):
                     self.state.console_to_mcu_queue.appendleft(buf)
                     return
-
     async def _run_process(self, command: str) -> int:
         if not self.state.allowed_policy.is_allowed(command):
             return 0

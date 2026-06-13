@@ -11,7 +11,7 @@ constexpr size_t kReadChunkSize = 64U;
 #define BRIDGE_FS_DEBUG(...) 
 
 void send_read_response(etl::span<const uint8_t> content) {
-  rpc::payload::FileReadResponse p;
+  rpc::payload::FileReadResponse p = {};
   const size_t to_copy = etl::min(content.size(), sizeof(p.content.bytes));
   p.content.size = (pb_size_t)to_copy;
   if (to_copy > 0U) {
@@ -27,7 +27,7 @@ FileSystemClass<T>::FileSystemClass() {}
 template <typename T>
 void FileSystemClass<T>::write(etl::string_view path,
                                etl::span<const uint8_t> data) {
-  rpc::payload::FileWrite p;
+  rpc::payload::FileWrite p = {};
   const size_t p_copy = etl::min(path.size(), sizeof(p.path) - 1U);
   if (p_copy > 0U) {
     etl::copy_n(path.begin(), p_copy, p.path);
@@ -45,7 +45,7 @@ template <typename T>
 void FileSystemClass<T>::read(etl::string_view path,
                               typename FileSystemClass<T>::FileSystemReadHandler handler) {
   _read_handler = handler;
-  rpc::payload::FileRead p;
+  rpc::payload::FileRead p = {};
   const size_t p_copy = etl::min(path.size(), sizeof(p.path) - 1U);
   if (p_copy > 0U) {
     etl::copy_n(path.begin(), p_copy, p.path);
@@ -58,7 +58,7 @@ void FileSystemClass<T>::read(etl::string_view path,
 
 template <typename T>
 void FileSystemClass<T>::remove(etl::string_view path) {
-  rpc::payload::FileRemove p;
+  rpc::payload::FileRemove p = {};
   const size_t p_copy = etl::min(path.size(), sizeof(p.path) - 1U);
   if (p_copy > 0U) {
     etl::copy_n(path.begin(), p_copy, p.path);

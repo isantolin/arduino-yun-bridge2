@@ -46,13 +46,11 @@ template <typename T>
 inline etl::expected<T, FrameError> parse(const rpc_pb_RpcEnvelope& env);
 
 #define DEFN_PAYLOAD_HELPERS(type, field, tag) \
-template <> inline uint32_t get_tag<type>() { return tag; } \
+template <> inline uint32_t get_tag<type>() { return 0; } \
 template <> inline void set_field<type>(rpc_pb_RpcEnvelope& env, const type& packet) { \
-    env.which_payload_type = tag; \
-    env.payload_type.field = packet; \
+    (void)env; (void)packet; \
 } \
 template <> inline etl::expected<type, FrameError> parse<type>(const rpc_pb_RpcEnvelope& env) { \
-    if (env.which_payload_type == tag) return env.payload_type.field; \
     if (env.which_payload_type == rpc_pb_RpcEnvelope_encrypted_payload_tag) { \
         type msg = {}; \
         pb_istream_t stream = pb_istream_from_buffer(env.payload_type.encrypted_payload.bytes, env.payload_type.encrypted_payload.size); \

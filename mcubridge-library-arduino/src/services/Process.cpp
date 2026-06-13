@@ -56,7 +56,7 @@ void ProcessClass<T>::runAsync(
     return;
   }
 
-  rpc::payload::ProcessRunAsync p;
+  rpc::payload::ProcessRunAsync p = {};
   const size_t c_copy = etl::min(static_cast<size_t>(command_buffer.size()),
                                  sizeof(p.command) - 1U);
   if (c_copy > 0U) {
@@ -85,7 +85,7 @@ void ProcessClass<T>::poll(int32_t pid,
     return;
   }
 
-  rpc::payload::ProcessPoll p;
+  rpc::payload::ProcessPoll p = {};
   p.pid = static_cast<uint32_t>(pid);
 
   if (!Bridge.send(rpc::CommandId::CMD_PROCESS_POLL, 0, p)) {
@@ -102,7 +102,7 @@ void ProcessClass<T>::poll(int32_t pid,
 
 template <typename T>
 void ProcessClass<T>::kill(int32_t pid) {
-  rpc::payload::ProcessKill p;
+  rpc::payload::ProcessKill p = {};
   p.pid = static_cast<uint32_t>(pid);
   if (!Bridge.send(rpc::CommandId::CMD_PROCESS_KILL, 0, p)) {}
 }

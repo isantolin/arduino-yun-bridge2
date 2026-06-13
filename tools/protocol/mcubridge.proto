@@ -279,40 +279,5 @@ message RpcEnvelope {
     bytes tag = 5;
     oneof payload_type {
         bytes encrypted_payload = 6;
-        VersionResponse version_resp = 7;
-        FreeMemoryResponse free_memory_resp = 8;
-        Capabilities capabilities = 9;
-        PinMode pin_mode = 10;
-        DigitalWrite digital_write = 11;
-        AnalogWrite analog_write = 12;
-        PinRead pin_read = 13;
-        DigitalReadResponse digital_read_resp = 14;
-        AnalogReadResponse analog_read_resp = 15;
-        ConsoleWrite console_write = 16;
-        DatastorePut datastore_put = 17;
-        DatastoreGet datastore_get = 18;
-        DatastoreGetResponse datastore_get_resp = 19;
-        MailboxPush mailbox_push = 20;
-        MailboxProcessed mailbox_processed = 21;
-        MailboxAvailableResponse mailbox_available_resp = 22;
-        MailboxReadResponse mailbox_read_resp = 23;
-        FileWrite file_write = 24;
-        FileRead file_read = 25;
-        FileRemove file_remove = 26;
-        FileReadResponse file_read_resp = 27;
-        ProcessRunAsync process_run_async = 28;
-        ProcessRunAsyncResponse process_run_async_resp = 29;
-        ProcessPoll process_poll = 30;
-        ProcessPollResponse process_poll_resp = 31;
-        ProcessKill process_kill = 32;
-        GenericResponse generic_resp = 33;
-        AckPacket ack_packet = 34;
-        HandshakeConfig handshake_config = 35;
-        SetBaudratePacket set_baudrate_packet = 36;
-        LinkSync link_sync = 37;
-        EnterBootloader enter_bootloader = 38;
-        SpiTransfer spi_transfer = 39;
-        SpiTransferResponse spi_transfer_resp = 40;
-        SpiConfig spi_config = 41;
     }
 }

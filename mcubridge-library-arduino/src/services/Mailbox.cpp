@@ -19,7 +19,7 @@ MailboxClass<T>::MailboxClass() {}
 
 template <typename T>
 void MailboxClass<T>::push(etl::span<const uint8_t> data) {
-  rpc::payload::MailboxPush p;
+  rpc::payload::MailboxPush p = {};
   const size_t to_copy = etl::min(data.size(), sizeof(p.data.bytes));
   p.data.size = (pb_size_t)to_copy;
   if (to_copy > 0U) {
@@ -49,7 +49,7 @@ void MailboxClass<T>::requestAvailable() {
 
 template <typename T>
 void MailboxClass<T>::signalProcessed(uint32_t message_id) {
-  rpc::payload::MailboxProcessed p;
+  rpc::payload::MailboxProcessed p = {};
   p.message_id = message_id;
   if (!Bridge.send(rpc::CommandId::CMD_MAILBOX_PROCESSED, 0, p)) {}
 }

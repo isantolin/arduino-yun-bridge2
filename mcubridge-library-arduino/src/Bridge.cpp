@@ -33,11 +33,11 @@ BridgeClass::BridgeClass(Stream& stream)
       _ack_timeout_ms(rpc::RPC_DEFAULT_ACK_TIMEOUT_MS),
       _response_timeout_ms(rpc::RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS),
       _pending_baudrate(0),
-      _ps_rx_storage(),
-      _ps_work_buffer(),
+      
+      _rx_buffer(),
       _packet_serial(
-          etl::span<uint8_t>(_ps_rx_storage.data(), _ps_rx_storage.size()),
-          etl::span<uint8_t>(_ps_work_buffer.data(), _ps_work_buffer.size())),
+          etl::span<uint8_t>(_rx_buffer.data(), _rx_buffer.size()),
+          etl::span<uint8_t>(_rx_buffer.data(), _rx_buffer.size())),
       _shared_secret(),
       _session_key(),
       _tx_nonce_counter(0),
@@ -199,8 +199,8 @@ void BridgeClass::_initializeRuntime() {
   _serial_xoff_sent = false;
 
   // Shared buffer initialized by PacketSerial
-  _ps_rx_storage.fill(0);
-  _ps_work_buffer.fill(0);
+  
+  _rx_buffer.fill(0);
   if constexpr (bridge::hal::CurrentArchTraits::id ==
                 bridge::hal::ArchId::ARCH_AVR)
     _hardware_serial = static_cast<HardwareSerial*>(&_stream);
@@ -431,6 +431,154 @@ void BridgeClass::_handleSetPinMode(const rpc_pb_PinMode& m) {
   pinMode(m.pin, m_val);
 }
 
+
+void BridgeClass::_handleDigitalWriteFast(const bridge::router::CommandContext& ctx) {
+    rpc_pb_DigitalWrite m = {};
+    if (rpc::Payload::_parse_impl(*ctx.envelope, rpc_pb_DigitalWrite_fields, &m)) {
+        _processAck(ctx.raw_command, ctx.sequence_id);
+        _handleDigitalWrite(m);
+    } else {
+        emitStatus(rpc::StatusCode::STATUS_MALFORMED);
+    }
+}
+
+void BridgeClass::_handleAckStructFast(const bridge::router::CommandContext& ctx) {
+  rpc_pb_AckPacket m = {};
+  if (rpc::Payload::_parse_impl(*ctx.envelope, rpc_pb_AckPacket_fields, &m)) {
+    _handleAckStruct(m);
+  } else {
+    emitStatus(rpc::StatusCode::STATUS_MALFORMED);
+  }
+}
+
+void BridgeClass::_handleSetBaudrateFast(const bridge::router::CommandContext& ctx) {
+  rpc_pb_SetBaudratePacket m = {};
+  if (rpc::Payload::_parse_impl(*ctx.envelope, rpc_pb_SetBaudratePacket_fields, &m)) {
+    _processAck(ctx.raw_command, ctx.sequence_id);
+    _handleSetBaudrate(m);
+  } else {
+    emitStatus(rpc::StatusCode::STATUS_MALFORMED);
+  }
+}
+
+void BridgeClass::_handleEnterBootloaderFast(const bridge::router::CommandContext& ctx) {
+  rpc_pb_EnterBootloader m = {};
+  if (rpc::Payload::_parse_impl(*ctx.envelope, rpc_pb_EnterBootloader_fields, &m)) {
+    _processAck(ctx.raw_command, ctx.sequence_id);
+    _handleEnterBootloader(m);
+  } else {
+    emitStatus(rpc::StatusCode::STATUS_MALFORMED);
+  }
+}
+
+void BridgeClass::_handleSetPinModeFast(const bridge::router::CommandContext& ctx) {
+  rpc_pb_PinMode m = {};
+  if (rpc::Payload::_parse_impl(*ctx.envelope, rpc_pb_PinMode_fields, &m)) {
+    _processAck(ctx.raw_command, ctx.sequence_id);
+    _handleSetPinMode(m);
+  } else {
+    emitStatus(rpc::StatusCode::STATUS_MALFORMED);
+  }
+}
+
+void BridgeClass::_handleConsoleWriteFast(const bridge::router::CommandContext& ctx) {
+  rpc_pb_ConsoleWrite m = {};
+  if (rpc::Payload::_parse_impl(*ctx.envelope, rpc_pb_ConsoleWrite_fields, &m)) {
+    _processAck(ctx.raw_command, ctx.sequence_id);
+    _handleConsoleWrite(m);
+  } else {
+    emitStatus(rpc::StatusCode::STATUS_MALFORMED);
+  }
+}
+
+void BridgeClass::_handleMailboxPushFast(const bridge::router::CommandContext& ctx) {
+  rpc_pb_MailboxPush m = {};
+  if (rpc::Payload::_parse_impl(*ctx.envelope, rpc_pb_MailboxPush_fields, &m)) {
+    _processAck(ctx.raw_command, ctx.sequence_id);
+    _handleMailboxPush(ctx, m);
+  } else {
+    emitStatus(rpc::StatusCode::STATUS_MALFORMED);
+  }
+}
+
+void BridgeClass::_handleMailboxReadResponseFast(const bridge::router::CommandContext& ctx) {
+  rpc_pb_MailboxReadResponse m = {};
+  if (rpc::Payload::_parse_impl(*ctx.envelope, rpc_pb_MailboxReadResponse_fields, &m)) {
+    _handleMailboxReadResponse(m);
+  } else {
+    emitStatus(rpc::StatusCode::STATUS_MALFORMED);
+  }
+}
+
+void BridgeClass::_handleMailboxAvailableResponseFast(const bridge::router::CommandContext& ctx) {
+  rpc_pb_MailboxAvailableResponse m = {};
+  if (rpc::Payload::_parse_impl(*ctx.envelope, rpc_pb_MailboxAvailableResponse_fields, &m)) {
+    _handleMailboxAvailableResponse(m);
+  } else {
+    emitStatus(rpc::StatusCode::STATUS_MALFORMED);
+  }
+}
+
+void BridgeClass::_handleFileWriteFast(const bridge::router::CommandContext& ctx) {
+  rpc_pb_FileWrite m = {};
+  if (rpc::Payload::_parse_impl(*ctx.envelope, rpc_pb_FileWrite_fields, &m)) {
+    _processAck(ctx.raw_command, ctx.sequence_id);
+    _handleFileWrite(ctx, m);
+  } else {
+    emitStatus(rpc::StatusCode::STATUS_MALFORMED);
+  }
+}
+
+void BridgeClass::_handleFileReadFast(const bridge::router::CommandContext& ctx) {
+  rpc_pb_FileRead m = {};
+  if (rpc::Payload::_parse_impl(*ctx.envelope, rpc_pb_FileRead_fields, &m)) {
+    _processAck(ctx.raw_command, ctx.sequence_id);
+    _handleFileRead(ctx, m);
+  } else {
+    emitStatus(rpc::StatusCode::STATUS_MALFORMED);
+  }
+}
+
+void BridgeClass::_handleFileRemoveFast(const bridge::router::CommandContext& ctx) {
+  rpc_pb_FileRemove m = {};
+  if (rpc::Payload::_parse_impl(*ctx.envelope, rpc_pb_FileRemove_fields, &m)) {
+    _processAck(ctx.raw_command, ctx.sequence_id);
+    _handleFileRemove(ctx, m);
+  } else {
+    emitStatus(rpc::StatusCode::STATUS_MALFORMED);
+  }
+}
+
+void BridgeClass::_handleProcessKillFast(const bridge::router::CommandContext& ctx) {
+  rpc_pb_ProcessKill m = {};
+  if (rpc::Payload::_parse_impl(*ctx.envelope, rpc_pb_ProcessKill_fields, &m)) {
+    _processAck(ctx.raw_command, ctx.sequence_id);
+    _handleProcessKill(ctx, m);
+  } else {
+    emitStatus(rpc::StatusCode::STATUS_MALFORMED);
+  }
+}
+
+void BridgeClass::_handleSpiSetConfigFast(const bridge::router::CommandContext& ctx) {
+  rpc_pb_SpiConfig m = {};
+  if (rpc::Payload::_parse_impl(*ctx.envelope, rpc_pb_SpiConfig_fields, &m)) {
+    _processAck(ctx.raw_command, ctx.sequence_id);
+    _handleSpiSetConfig(m);
+  } else {
+    emitStatus(rpc::StatusCode::STATUS_MALFORMED);
+  }
+}
+
+void BridgeClass::_handleAnalogWriteFast(const bridge::router::CommandContext& ctx) {
+    rpc_pb_AnalogWrite m = {};
+    if (rpc::Payload::_parse_impl(*ctx.envelope, rpc_pb_AnalogWrite_fields, &m)) {
+        _processAck(ctx.raw_command, ctx.sequence_id);
+        _handleAnalogWrite(m);
+    } else {
+        emitStatus(rpc::StatusCode::STATUS_MALFORMED);
+    }
+}
+
 void BridgeClass::_handleDigitalWrite(const rpc_pb_DigitalWrite& m) {
   digitalWrite(m.pin, (m.value == 0) ? LOW : HIGH);
 }
@@ -544,10 +692,10 @@ void BridgeClass::_handleSpiTransfer(
     const bridge::router::CommandContext& ctx) {
   auto res = rpc::Payload::parse<rpc_pb_SpiTransfer>(*ctx.envelope);
   if (res) {
-    size_t len = etl::min((size_t)res->data.size, _ps_work_buffer.size());
-    etl::copy_n(res->data.bytes, len, _ps_work_buffer.begin());
+    size_t len = etl::min((size_t)res->data.size, _rx_buffer.size());
+    etl::copy_n(res->data.bytes, len, _rx_buffer.begin());
     size_t tr =
-        SPIService.transfer(etl::span<uint8_t>(_ps_work_buffer.data(), len));
+        SPIService.transfer(etl::span<uint8_t>(_rx_buffer.data(), len));
     if (tr == 0) {
       emitStatus(rpc::StatusCode::STATUS_ERROR);
       return;
@@ -555,7 +703,7 @@ void BridgeClass::_handleSpiTransfer(
     rpc_pb_SpiTransferResponse resp = {};
     const size_t to_copy = etl::min(len, sizeof(resp.data.bytes));
     resp.data.size = (pb_size_t)to_copy;
-    if (to_copy > 0) etl::copy_n(_ps_work_buffer.data(), to_copy, resp.data.bytes);
+    if (to_copy > 0) etl::copy_n(_rx_buffer.data(), to_copy, resp.data.bytes);
     if (!send(rpc::CommandId::CMD_SPI_TRANSFER_RESP, ctx.sequence_id, resp)) {}
   } else
     emitStatus(rpc::StatusCode::STATUS_ERROR);

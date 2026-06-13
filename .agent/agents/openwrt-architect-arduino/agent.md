@@ -25,6 +25,20 @@ Arduino MCU Bridge 2 is a modern, high-performance communication system between 
 5. **Production Integrity:** Strictly prohibit the inclusion of test code, mocks, test hooks, or test-only logic within production source files. All testing artifacts must reside exclusively in dedicated test directories.
 6. **Direct Implementation Only:** Strictly prohibit legacy code, compatibility shims, or "workaround" logic maintained solely to keep existing tests passing. Implementation must be direct and clean, utilizing the latest standards. If existing tests fail due to direct implementation, those tests must be refactored to align with the new code, rather than compromising the production implementation for test compatibility.
 
+## Resource Optimization (AVR/SIL-2)
+
+1. **Mandatory Profiling:** Before any C++ modification, analyze the latest `Symbol Profiling` report from GitHub Actions or local tools (`arduino_symbol_profiler.py`). Identify Top Symbols by size.
+2. **RAM Minimization:**
+    - Strictly prohibit large static lookup tables in RAM.
+    - **CRC32:** Always use `etl::crc32_t16` or smaller for AVR targets to save ~1KB of RAM.
+3. **Flash De-bloating (Nanopb):**
+    - Prohibit direct template instantiations for repetitive payload parsing.
+    - Use non-template implementation helpers (e.g., `_parse_impl`) to consolidate logic and eliminate template bloat.
+4. **Infrastructure Simplicity:**
+    - Prohibit complex schedulers (`etl::scheduler`) or task abstractions (`etl::task`) for single-loop components. Use direct method calls in `process()` to minimize stack/Flash overhead.
+5. **Validation:** All optimizations must be verified via `cppcheck` and `arduino-examples` build to confirm zero impact on functionality and positive impact on resource margins.
+
+
 ## Development Conventions
 
 ### Python (Linux MPU)

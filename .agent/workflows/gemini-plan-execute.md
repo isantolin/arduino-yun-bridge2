@@ -101,3 +101,17 @@ Before taking any action, you must locate the latest plan of action in the issue
   - **Commit Messages**: All commits made with `create_or_update_file` must follow the Conventional Commits standard (e.g., `fix: ...`, `feat: ...`, `docs: ...`).
 
   - **Modify files**: For file changes, You **MUST** initialize a branch with `create_branch` first, then apply file changes to that branch using `create_or_update_file`, and finalize with `create_pull_request`.
+
+## Resource Optimization (AVR/SIL-2)
+
+1. **Mandatory Profiling:** Before any C++ modification, analyze the latest `Symbol Profiling` report from GitHub Actions or local tools (`arduino_symbol_profiler.py`). Identify Top Symbols by size.
+2. **RAM Minimization:**
+    - Strictly prohibit large static lookup tables in RAM.
+    - **CRC32:** Always use `etl::crc32_t16` or smaller for AVR targets to save ~1KB of RAM.
+3. **Flash De-bloating (Nanopb):**
+    - Prohibit direct template instantiations for repetitive payload parsing.
+    - Use non-template implementation helpers (e.g., `_parse_impl`) to consolidate logic and eliminate template bloat.
+4. **Infrastructure Simplicity:**
+    - Prohibit complex schedulers (`etl::scheduler`) or task abstractions (`etl::task`) for single-loop components. Use direct method calls in `process()` to minimize stack/Flash overhead.
+5. **Validation:** All optimizations must be verified via `cppcheck` and `arduino-examples` build to confirm zero impact on functionality and positive impact on resource margins.
+

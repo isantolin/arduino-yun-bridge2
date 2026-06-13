@@ -1,7 +1,8 @@
 import pytest
 import asyncio
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import MagicMock, AsyncMock, patch
 from mcubridge.transport.serial import SerialTransport
+import serialx
 from mcubridge.protocol.frame import build_frame
 from cobs import cobs
 from typing import Any
@@ -25,10 +26,10 @@ async def test_serial_transport_loops_final_v3(transport_setup: Any) -> None:
 
     mock_reader = AsyncMock(spec=asyncio.StreamReader)
     mock_reader.feed_eof = __import__("unittest").mock.Mock()
-    mock_writer = AsyncMock(spec=asyncio.StreamWriter)
-    mock_writer.write = __import__("unittest").mock.Mock()
-    mock_writer.close = __import__("unittest").mock.Mock()
-    transport.writer = mock_writer
+    mock_serial = AsyncMock(spec=serialx.AsyncSerial)
+    mock_serial.write = AsyncMock()
+    mock_serial.close = __import__("unittest").mock.Mock()
+    transport.serial = mock_serial
 
     frame_bytes = build_frame(command_id=0x01, sequence_id=1, payload=b"ok")
     encoded = cobs.encode(frame_bytes) + b"\x00"
@@ -47,15 +48,16 @@ async def test_serial_transport_loops_final_v3(transport_setup: Any) -> None:
         await asyncio.sleep(2)
         return b""
 
-    mock_reader.read.side_effect = read_mock_impl
+    mock_serial.readuntil.side_effect = read_mock_impl
 
-    try:
-        await asyncio.wait_for(getattr(transport, "_read_loop")(mock_reader), 0.1)
-    except TimeoutError:
-        pass
+    with patch.object(transport, "_negotiate_baudrate", return_value=True):
+        try:
+            await asyncio.wait_for(getattr(transport, "_read_loop")(), 0.1)
+        except (asyncio.TimeoutError, TimeoutError):
+            pass
 
     setattr(transport, "_tx_sequence_id", 0xFFFE)
-    mock_writer.drain = AsyncMock()
+    mock_serial.drain = AsyncMock()
     await transport.send_raw(0x01, b"")
     assert getattr(transport, "_tx_sequence_id") == 65535
 
@@ -66,5 +68,5 @@ async def test_serial_transport_negotiation_failure_final_v3(transport_setup: An
     transport = SerialTransport(config, state, service=AsyncMock(spec=BridgeService))
     mock_reader = AsyncMock(spec=asyncio.StreamReader)
     mock_reader.read.side_effect = [b"invalid", b""]
-    await getattr(transport, "_read_loop")(mock_reader)
+    await getattr(transport, "_read_loop")()
     assert state.is_connected is False

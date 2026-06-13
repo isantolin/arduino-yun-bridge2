@@ -16,6 +16,7 @@ from mcubridge.security.security import (
     verify_crypto_integrity,
 )
 from mcubridge.transport.serial import SerialTransport
+import serialx
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.state.context import create_runtime_state
 from mcubridge.protocol.protocol import Status
@@ -135,7 +136,7 @@ async def test_serial_transport_coverage_boost(tmp_path: Path) -> None:
     transport: Any = SerialTransport(config, state, service)
 
     # 1. _active_transport raises when writer is None
-    with pytest.raises(RuntimeError, match="Serial writer inactive"):
+    with pytest.raises(RuntimeError, match="Serial inactive"):
         transport._active_transport()
 
     # 2. _switch_local_baudrate raises when transport throws error
@@ -148,12 +149,12 @@ async def test_serial_transport_coverage_boost(tmp_path: Path) -> None:
         def baudrate(self, _val: int) -> None:
             raise ValueError("bad baud")
 
-    mock_writer = MagicMock()
-    mock_writer.is_closing.return_value = False
+    mock_serial = MagicMock()
+    mock_serial.is_open = True
     mock_active = MagicMock()
     mock_active.serial = BadSerial()
-    mock_writer.transport = mock_active
-    transport.writer = mock_writer
+    mock_serial.transport = mock_active
+    transport.serial = mock_serial
     with pytest.raises(RuntimeError, match="UART access failed"):
         transport._switch_local_baudrate(9600)
 
@@ -165,10 +166,10 @@ async def test_serial_transport_coverage_boost(tmp_path: Path) -> None:
     assert transport._current is None
 
     # 4. stop when writer exists
-    mock_writer_stop = MagicMock()
-    transport.writer = mock_writer_stop
+    mock_serial_stop = MagicMock(spec=serialx.AsyncSerial)
+    transport.serial = mock_serial_stop
     await transport.stop()
-    mock_writer_stop.close.assert_called_once()
+    mock_serial_stop.schedule_close.assert_called_once()
 
     # 5. _read_loop with IncompleteReadError and LimitOverrunError
     transport._stop_event.clear()
@@ -178,7 +179,8 @@ async def test_serial_transport_coverage_boost(tmp_path: Path) -> None:
         asyncio.IncompleteReadError(b"partial", 10),
     ]
     try:
-        await transport._read_loop(mock_reader)
+        transport.serial = mock_reader
+        await transport._read_loop()
         mock_reader.read.assert_awaited_once_with(1024)
     except AssertionError as e:
         with open("/home/ignaciosantolin/arduino-yun-bridge2/.tmp_calls.txt", "w") as f:
@@ -193,7 +195,8 @@ async def test_serial_transport_coverage_boost(tmp_path: Path) -> None:
     transport._stop_event.clear()
     mock_reader2 = AsyncMock()
     mock_reader2.readuntil.side_effect = OSError("read error")
-    await transport._read_loop(mock_reader2)
+    transport.serial = mock_reader2
+    await transport._read_loop()
 
     # 7. _process_packet with malformed packet (triggers _check_baudrate_fallback)
     transport._consecutive_crc_errors = 1
@@ -213,13 +216,13 @@ async def test_serial_transport_coverage_boost(tmp_path: Path) -> None:
     assert transport._current.ack_received
 
     # 9. send_raw when writer is None
-    transport.writer = None
+    transport.serial = None
     assert await transport.send_raw(1, b"") is False
 
     # 10. send_raw with write error
-    mock_writer2 = MagicMock()
-    mock_writer2.write.side_effect = OSError("write error")
-    transport.writer = mock_writer2
+    mock_serial2 = MagicMock()
+    mock_serial2.write.side_effect = OSError("write error")
+    transport.serial = mock_serial2
     assert await transport.send_raw(1, b"") is False
 
 

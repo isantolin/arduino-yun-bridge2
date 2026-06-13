@@ -68,8 +68,8 @@ class SerialTransport:
         self.config = config
         self.state = state
         self.service = service
-        self.reader: asyncio.StreamReader | None = None
-        self.writer: asyncio.StreamWriter | None = None
+        self.serial: serialx.AsyncSerial | None = None
+
 
         self._stop_event = asyncio.Event()
         self._negotiating = False
@@ -95,9 +95,9 @@ class SerialTransport:
             self.status = status
 
     def _active_transport(self) -> serialx.BaseSerialTransport:
-        if self.writer is None or self.writer.is_closing():
-            raise RuntimeError("Serial writer inactive")
-        return cast(serialx.BaseSerialTransport, self.writer.transport)
+        if self.serial is None or not self.serial.is_open:
+            raise RuntimeError("Serial inactive")
+        return self.serial.transport
 
     def _switch_local_baudrate(self, target_baud: int) -> None:
         try:
@@ -130,71 +130,73 @@ class SerialTransport:
     async def _connect_and_run(self) -> None:
         logger.info("Connecting to MCU on %s...", self.config.serial_port)
         connect_baud = self.config.serial_safe_baud or protocol.DEFAULT_SAFE_BAUDRATE
-        self.reader, self.writer = await serialx.open_serial_connection(
+        
+        self.serial = serialx.async_serial_for_url(
             url=self.config.serial_port, baudrate=connect_baud, xonxoff=False
         )
-        self.state.serial_writer = cast(asyncio.BaseTransport, self.writer.transport)
-        await self._toggle_dtr()
-        read_task = asyncio.get_running_loop().create_task(self._read_loop(self.reader))
-        try:
-            if self.config.serial_baud != connect_baud and not await self._negotiate_baudrate(self.config.serial_baud):
-                raise ConnectionError("Baudrate negotiation failed")
-            if self.service:
-                await self.service.on_serial_connected()
-
-            # Wait for either stop event or read task failure
-            wait_stop = asyncio.create_task(self._stop_event.wait())
-            done, _ = await asyncio.wait([wait_stop, read_task], return_when=asyncio.FIRST_COMPLETED)
-            if not wait_stop.done():
-                wait_stop.cancel()
-
-            # If read_task finished first, it means connection was lost
-            if read_task in done:
-                raise ConnectionError("Serial connection lost")
-        finally:
-            read_task.cancel()
+        
+        async with self.serial:
+            self.state.serial_writer = cast(asyncio.BaseTransport, self.serial.transport)
+            await self._toggle_dtr()
+            
+            read_task = asyncio.get_running_loop().create_task(self._read_loop())
             try:
-                await read_task
-            except (asyncio.IncompleteReadError, asyncio.CancelledError):
-                logger.debug("Serial read task cancelled or incomplete during cleanup")
-            if self.service:
+                if self.config.serial_baud != connect_baud and not await self._negotiate_baudrate(self.config.serial_baud):
+                    raise ConnectionError("Baudrate negotiation failed")
+                if self.service:
+                    await self.service.on_serial_connected()
+
+                # Wait for either stop event or read task failure
+                wait_stop = asyncio.create_task(self._stop_event.wait())
+                done, _ = await asyncio.wait([wait_stop, read_task], return_when=asyncio.FIRST_COMPLETED)
+                if not wait_stop.done():
+                    wait_stop.cancel()
+
+                # If read_task finished first, it means connection was lost
+                if read_task in done:
+                    raise ConnectionError("Serial connection lost")
+            finally:
+                read_task.cancel()
                 try:
-                    await self.service.on_serial_disconnected()
-                except (OSError, RuntimeError, ValueError, TypeError) as e:
-                    logger.error("Error during serial disconnect cleanup", error=e)
-            if self.writer:
-                self.writer.close()
-
+                    await read_task
+                except (asyncio.IncompleteReadError, asyncio.CancelledError):
+                    logger.debug("Serial read task cancelled or incomplete during cleanup")
+                if self.service:
+                    try:
+                        await self.service.on_serial_disconnected()
+                    except (OSError, RuntimeError, ValueError, TypeError) as e:
+                        logger.error("Error during serial disconnect cleanup", error=e)
     async def _toggle_dtr(self) -> None:
+        if not self.serial:
+            return
         try:
-            serial_obj = self._active_transport().serial
-            serial_obj.dtr = False
+            await self.serial.set_modem_pins(dtr=False)
             await asyncio.sleep(0.1)
-            serial_obj.dtr = True
-        except (AttributeError, OSError, ValueError, serialx.SerialException, RuntimeError) as exc:
+            await self.serial.set_modem_pins(dtr=True)
+        except (OSError, ValueError, serialx.SerialException, RuntimeError) as exc:
             logger.error("Unable to toggle DTR on %s: %s", self.config.serial_port, exc)
-
     async def stop(self) -> None:
         self._stop_event.set()
-        if self.writer:
-            self.writer.close()
+        if self.serial:
+            self.serial.schedule_close()
 
-    async def _read_loop(self, reader: asyncio.StreamReader) -> None:
+    async def _read_loop(self) -> None:
+        """High-performance read loop with zero-layer dispatch. [SIL-2]"""
+        if not self.serial:
+            return
         while not self._stop_event.is_set():
             try:
-                packet_with_sep = await reader.readuntil(protocol.FRAME_DELIMITER)
-                packet_view = memoryview(packet_with_sep)[:-1]
-                if packet_view:
-                    await self._process_packet(packet_view)
+                packet = await self.serial.readuntil(protocol.FRAME_DELIMITER)
+                if packet:
+                    await self._process_packet(packet)
             except asyncio.LimitOverrunError:
                 self.state.serial_decode_errors += 1
-                await reader.read(MAX_SERIAL_FRAME_BYTES)
+                await self.serial.read(MAX_SERIAL_FRAME_BYTES)
             except asyncio.IncompleteReadError:
                 break
-            except (OSError, RuntimeError, ValueError, TypeError, serialx.SerialException) as exc:
-                logger.error("Error in _read_loop: %s", exc)
+            except (OSError, serialx.SerialException) as exc:
+                logger.error("Serial I/O error: %s", exc)
                 break
-
     async def _process_packet(self, encoded_packet: bytes | memoryview) -> None:
         """Processes a packet from the serial stream. [FLATTENED] [SIL-2]"""
         from mcubridge.protocol.frame import parse_frame
@@ -280,7 +282,7 @@ class SerialTransport:
         self, command_id: int, payload: bytes | ProtobufMessage, seq_id: int | None = None
     ) -> bool | bytes | ProtobufMessage:
         """Unified send method with automatic tracking, retries, and optional response return. [FLATTENED]"""
-        if not self.writer or self.writer.is_closing():
+        if not self.serial or not self.serial.is_open:
             return False
 
         is_handshake = command_id in (protocol.Command.CMD_LINK_SYNC.value, protocol.Command.CMD_LINK_RESET.value)
@@ -333,7 +335,7 @@ class SerialTransport:
 
     async def send_raw(self, command_id: int, payload: bytes | ProtobufMessage, seq_id: int | None = None) -> bool:
         """Low-level send logic without tracking."""
-        if not self.writer:
+        if not self.serial:
             return False
 
         if not self.state.serial_tx_allowed.is_set():
@@ -376,8 +378,8 @@ class SerialTransport:
             )
 
         try:
-            self.writer.write(encoded)
-            await self.writer.drain()
+            await self.serial.write(encoded)
+
             self.state.metrics.serial_bytes_sent.inc(len(encoded))
             self.state.metrics.serial_frames_sent.inc()
             return True

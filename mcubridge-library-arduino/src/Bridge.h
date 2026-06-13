@@ -26,11 +26,9 @@
 #include <etl/expected.h>
 #include <etl/fsm.h>
 #include <etl/pool.h>
-#include <etl/scheduler.h>
 #include <etl/span.h>
 #include <etl/string.h>
 #include <etl/string_view.h>
-#include <etl/task.h>
 #include <etl/vector.h>
 
 #include "config/bridge_config.h"
@@ -239,23 +237,11 @@ class BridgeClass {
   uint64_t _rx_nonce_counter;
   bridge::fsm::BridgeFsm _fsm;
 
-  void _watchdogTask();
+  static void _watchdogTask();
   void _serialTask();
   void _timerTask();
 
-  struct DelegateTask : public etl::task {
-    explicit DelegateTask(etl::task_priority_t priority) : etl::task(priority) {}
-    etl::delegate<void()> task_delegate;
-    uint32_t task_request_work() const override { return 1; }
-    void task_process_work() override { if (task_delegate.is_valid()) task_delegate(); }
-  };
 
-  DelegateTask _watchdog_task;
-  DelegateTask _serial_task;
-  DelegateTask _timer_task;
-
-  etl::vector<etl::task*, 3> _tasks;
-  etl::scheduler_policy_sequential_single _scheduler_policy;
 
   uint32_t _timer_last_tick_ms;
   bool _serial_xoff_sent;

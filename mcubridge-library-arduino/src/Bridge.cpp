@@ -43,11 +43,6 @@ BridgeClass::BridgeClass(Stream& stream)
       _tx_nonce_counter(0),
       _rx_nonce_counter(0),
       _fsm(),
-      _watchdog_task(0),
-      _serial_task(1),
-      _timer_task(2),
-      _tasks(),
-      _scheduler_policy(),
       _timer_last_tick_ms(0),
       _serial_xoff_sent(false),
       _timers(),
@@ -196,14 +191,6 @@ BridgeClass::DispatchHandler BridgeClass::_getHandler(uint16_t command_id) {
 }
 
 void BridgeClass::_initializeRuntime() {
-  _watchdog_task.task_delegate = etl::delegate<void()>::create<BridgeClass, &BridgeClass::_watchdogTask>(*this);
-  _serial_task.task_delegate = etl::delegate<void()>::create<BridgeClass, &BridgeClass::_serialTask>(*this);
-  _timer_task.task_delegate = etl::delegate<void()>::create<BridgeClass, &BridgeClass::_timerTask>(*this);
-
-  _tasks.clear();
-  _tasks.push_back(&_watchdog_task);
-  _tasks.push_back(&_serial_task);
-  _tasks.push_back(&_timer_task);
 
   _timer_last_tick_ms = 0;
   _serial_xoff_sent = false;
@@ -258,7 +245,9 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
 }
 
 void BridgeClass::process() {
-  _scheduler_policy.schedule_tasks(_tasks);
+  _watchdogTask();
+  _serialTask();
+  _timerTask();
   if constexpr (bridge::config::ENABLE_MAILBOX) Mailbox.process();
 }
 void BridgeClass::_watchdogTask() {

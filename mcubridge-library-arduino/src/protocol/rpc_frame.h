@@ -30,11 +30,22 @@ inline constexpr size_t MAX_FRAME_SIZE = MAX_ENVELOPE_SIZE + CRC_TRAILER_SIZE;
 
 namespace checksum {
 inline uint32_t compute(etl::span<const uint8_t> data) {
-  return etl::crc32(data.begin(), data.end());
+  return etl::crc32_t16(data.begin(), data.end());
 }
 }
 
 namespace Payload {
+
+// [OPTIMIZATION] Non-template implementation to reduce Flash bloat.
+inline bool _parse_impl(const rpc_pb_RpcEnvelope& env, const pb_msgdesc_t* fields, void* dest) {
+    if (env.which_payload_type == rpc_pb_RpcEnvelope_encrypted_payload_tag) {
+        pb_istream_t stream = pb_istream_from_buffer(
+            env.payload_type.encrypted_payload.bytes, 
+            env.payload_type.encrypted_payload.size);
+        return pb_decode(&stream, fields, dest);
+    }
+    return false;
+}
 
 template <typename T>
 inline uint32_t get_tag();
@@ -45,21 +56,7 @@ inline void set_field(rpc_pb_RpcEnvelope& env, const T& packet);
 template <typename T>
 inline etl::expected<T, FrameError> parse(const rpc_pb_RpcEnvelope& env);
 
-#define DEFN_PAYLOAD_HELPERS(type, field, tag) \
-template <> inline uint32_t get_tag<type>() { return 0; } \
-template <> inline void set_field<type>(rpc_pb_RpcEnvelope& env, const type& packet) { \
-    (void)env; (void)packet; \
-} \
-template <> inline etl::expected<type, FrameError> parse<type>(const rpc_pb_RpcEnvelope& env) { \
-    if (env.which_payload_type == rpc_pb_RpcEnvelope_encrypted_payload_tag) { \
-        type msg = {}; \
-        pb_istream_t stream = pb_istream_from_buffer(env.payload_type.encrypted_payload.bytes, env.payload_type.encrypted_payload.size); \
-        if (!pb_decode(&stream, rpc::Payload::get_fields<type>(), &msg)) return etl::unexpected<FrameError>(FrameError::MALFORMED); \
-        return msg; \
-    } \
-    return etl::unexpected<FrameError>(FrameError::MALFORMED); \
-}
-
+#define DEFN_PAYLOAD_HELPERS(type, field, tag) template <> inline uint32_t get_tag<type>() { return 0; } template <> inline void set_field<type>(rpc_pb_RpcEnvelope& env, const type& packet) {     (void)env; (void)packet; } template <> inline etl::expected<type, FrameError> parse<type>(const rpc_pb_RpcEnvelope& env) {     type msg = {};     if (_parse_impl(env, rpc::Payload::get_fields<type>(), &msg)) return msg;     return etl::unexpected<FrameError>(FrameError::MALFORMED); }
 DEFN_PAYLOAD_HELPERS(rpc_pb_VersionResponse, version_resp, rpc_pb_RpcEnvelope_version_resp_tag)
 DEFN_PAYLOAD_HELPERS(rpc_pb_FreeMemoryResponse, free_memory_resp, rpc_pb_RpcEnvelope_free_memory_resp_tag)
 DEFN_PAYLOAD_HELPERS(rpc_pb_Capabilities, capabilities, rpc_pb_RpcEnvelope_capabilities_tag)
@@ -98,14 +95,8 @@ DEFN_PAYLOAD_HELPERS(rpc_pb_SpiConfig, spi_config, rpc_pb_RpcEnvelope_spi_config
 
 #undef DEFN_PAYLOAD_HELPERS
 
-template <typename T>
-inline etl::expected<size_t, FrameError> serialize(const T& msg, etl::span<uint8_t> buffer) {
-  pb_ostream_t stream = pb_ostream_from_buffer(buffer.data(), buffer.size());
-  if (!pb_encode(&stream, rpc::Payload::get_fields<T>(), &msg)) return etl::unexpected<FrameError>(FrameError::MALFORMED);
-  return stream.bytes_written;
 }
 
-} // namespace Payload
 
 inline size_t serialize_frame(const rpc_pb_RpcEnvelope& env, etl::span<uint8_t> buffer) {
   if (buffer.size() < CRC_TRAILER_SIZE) return 0;

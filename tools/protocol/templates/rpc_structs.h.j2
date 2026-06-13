@@ -16,6 +16,7 @@
 
 #include <stddef.h>
 #include <etl/algorithm.h>
+#include <etl/span.h>
 #include <etl/string_view.h>
 #include "pb_encode.h"
 #include "pb_decode.h"
@@ -47,6 +48,15 @@ inline const pb_msgdesc_t* get_fields<rpc_pb_{{ s.name }}>() {
 }
 {% endfor %}
 
+
+template <typename T>
+inline etl::expected<size_t, bool> serialize(const T& packet, etl::span<uint8_t> buffer) {
+    pb_ostream_t stream = pb_ostream_from_buffer(buffer.data(), buffer.size());
+    if (pb_encode(&stream, get_fields<T>(), &packet)) {
+        return stream.bytes_written;
+    }
+    return etl::unexpected<bool>(false);
+}
 } // namespace rpc::Payload
 
 #endif

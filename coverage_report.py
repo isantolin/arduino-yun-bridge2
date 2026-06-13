@@ -2,11 +2,11 @@ import json
 
 
 def report():
-    with open("coverage/arduino/coverage.json") as f:
-        data = json.load(f)
+    with open("coverage/arduino/coverage.json") as coverage_file:
+        data = json.load(coverage_file)
 
-    for f in data["files"]:
-        filename = f.get("file")
+    for file_entry in data["files"]:
+        filename = file_entry.get("file")
         # Filter as the shell script does
         if (
             "etl" in filename
@@ -17,11 +17,11 @@ def report():
         ):
             continue
 
-        lines = f["lines"]
+        lines = file_entry["lines"]
         line_counts = {}
-        for l in lines:
-            ln = l["line_number"]
-            line_counts[ln] = line_counts.get(ln, 0) + l["count"]
+        for line in lines:
+            ln = line["line_number"]
+            line_counts[ln] = line_counts.get(ln, 0) + line["count"]
 
         f_total = len(line_counts)
         f_covered = len([ln for ln, count in line_counts.items() if count > 0])

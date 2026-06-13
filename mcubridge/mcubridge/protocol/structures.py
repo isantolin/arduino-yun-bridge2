@@ -832,16 +832,71 @@ class PipelineEvent(msgspec.Struct, frozen=True, kw_only=True):
     status: int | None
     timestamp: float
 
+    def to_protobuf(self) -> pb.PipelineEvent:
+        return pb.PipelineEvent(
+            event=self.event,
+            command_id=self.command_id,
+            attempt=self.attempt,
+            ack_received=self.ack_received,
+            status=self.status if self.status is not None else 0,
+            timestamp=self.timestamp,
+        )
+
 
 class SerialPipelineSnapshot(msgspec.Struct, frozen=True, kw_only=True):
     inflight: dict[str, Any] | None = None
     last_completion: dict[str, Any] | None = None
+
+    def to_protobuf(self) -> pb.SerialPipelineSnapshot:
+        def _dict_to_pb_pipeline_event(d: dict[str, Any]) -> pb.PipelineEvent:
+            event_val = str(d.get("event") or d.get("last_event") or "")
+            cid = int(d.get("command_id") or 0)
+            attempt = int(d.get("attempt") or 0)
+            acked = bool(d.get("acknowledged") or d.get("ack_received") or False)
+            status_val = d.get("status_code") or d.get("status")
+            status = int(status_val) if status_val is not None else 0
+            ts_val = (
+                d.get("completed_unix")
+                or d.get("last_event_unix")
+                or d.get("started_unix")
+                or d.get("timestamp")
+                or 0.0
+            )
+            ts = float(ts_val)
+            return pb.PipelineEvent(
+                event=event_val,
+                command_id=cid,
+                attempt=attempt,
+                ack_received=acked,
+                status=status,
+                timestamp=ts,
+            )
+
+        inflight_pb = None
+        if self.inflight is not None:
+            inflight_pb = _dict_to_pb_pipeline_event(self.inflight)
+
+        last_pb = None
+        if self.last_completion is not None:
+            last_pb = _dict_to_pb_pipeline_event(self.last_completion)
+
+        return pb.SerialPipelineSnapshot(
+            inflight=inflight_pb,
+            last_completion=last_pb,
+        )
 
 
 class SerialLinkSnapshot(msgspec.Struct, frozen=True, kw_only=True):
     connected: bool = False
     writer_attached: bool = False
     synchronised: bool = False
+
+    def to_protobuf(self) -> pb.SerialLinkSnapshot:
+        return pb.SerialLinkSnapshot(
+            connected=self.connected,
+            writer_attached=self.writer_attached,
+            synchronised=self.synchronised,
+        )
 
 
 class HandshakeSnapshot(msgspec.Struct, frozen=True, kw_only=True):
@@ -862,6 +917,26 @@ class HandshakeSnapshot(msgspec.Struct, frozen=True, kw_only=True):
     pending_nonce: bool = False
     nonce_length: Annotated[int, msgspec.Meta(ge=0)] = 0
 
+    def to_protobuf(self) -> pb.HandshakeSnapshot:
+        return pb.HandshakeSnapshot(
+            synchronised=self.synchronised,
+            attempts=self.attempts,
+            successes=self.successes,
+            failures=self.failures,
+            failure_streak=self.failure_streak,
+            last_error=self.last_error if self.last_error is not None else "",
+            last_unix=self.last_unix,
+            last_duration=self.last_duration,
+            backoff_until=self.backoff_until,
+            rate_limit_until=self.rate_limit_until,
+            fatal_count=self.fatal_count,
+            fatal_reason=self.fatal_reason if self.fatal_reason is not None else "",
+            fatal_detail=self.fatal_detail if self.fatal_detail is not None else "",
+            fatal_unix=self.fatal_unix,
+            pending_nonce=self.pending_nonce,
+            nonce_length=self.nonce_length,
+        )
+
 
 class BridgeSnapshot(msgspec.Struct, frozen=True, kw_only=True):
     serial_link: SerialLinkSnapshot
@@ -870,6 +945,31 @@ class BridgeSnapshot(msgspec.Struct, frozen=True, kw_only=True):
     serial_flow: SerialFlowSnapshot
     mcu_version: tuple[int, int, int] | None = None
     capabilities: dict[str, Any] | None = None
+
+    def to_protobuf(self) -> pb.BridgeSnapshot:
+        from google.protobuf.json_format import ParseDict
+
+        version_pb = None
+        if self.mcu_version is not None:
+            version_pb = pb.VersionResponse(
+                major=self.mcu_version[0],
+                minor=self.mcu_version[1],
+                patch=self.mcu_version[2],
+            )
+
+        capabilities_pb = None
+        if self.capabilities is not None:
+            capabilities_pb = pb.Capabilities()
+            ParseDict(self.capabilities, capabilities_pb)
+
+        return pb.BridgeSnapshot(
+            serial_link=self.serial_link.to_protobuf(),
+            handshake=self.handshake.to_protobuf(),
+            serial_pipeline=self.serial_pipeline.to_protobuf(),
+            serial_flow=self.serial_flow.to_protobuf(),
+            mcu_version=version_pb,
+            capabilities=capabilities_pb,
+        )
 
 
 class SerialFlowSnapshot(msgspec.Struct):
@@ -880,6 +980,15 @@ class SerialFlowSnapshot(msgspec.Struct):
     retries: Annotated[int, msgspec.Meta(ge=0)]
     failures: Annotated[int, msgspec.Meta(ge=0)]
     last_event_unix: float
+
+    def to_protobuf(self) -> pb.SerialFlowSnapshot:
+        return pb.SerialFlowSnapshot(
+            commands_sent=self.commands_sent,
+            commands_acked=self.commands_acked,
+            retries=self.retries,
+            failures=self.failures,
+            last_event_unix=self.last_event_unix,
+        )
 
 
 class SerialFlowStats(BaseStats):

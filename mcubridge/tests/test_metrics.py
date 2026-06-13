@@ -130,11 +130,30 @@ async def test_publish_bridge_snapshots_emits_summary_and_handshake(
         if len(messages) >= 2:
             event.set()
 
+    from mcubridge.protocol.structures import (
+        BridgeSnapshot,
+        SerialLinkSnapshot,
+        HandshakeSnapshot,
+        SerialPipelineSnapshot,
+        SerialFlowSnapshot,
+    )
+
     def mock_build_bridge_snap(self: Any) -> Any:
-        return {"snapshot": "summary"}
+        return BridgeSnapshot(
+            serial_link=SerialLinkSnapshot(),
+            handshake=HandshakeSnapshot(),
+            serial_pipeline=SerialPipelineSnapshot(),
+            serial_flow=SerialFlowSnapshot(
+                commands_sent=0,
+                commands_acked=0,
+                retries=0,
+                failures=0,
+                last_event_unix=0.0,
+            ),
+        )
 
     def mock_build_handshake_snap(self: Any) -> Any:
-        return {"snapshot": "handshake"}
+        return HandshakeSnapshot()
 
     with (
         patch.object(

@@ -1,6 +1,7 @@
 import asyncio
 import sys
 import pytest
+from cobs import cobs
 from unittest.mock import AsyncMock, MagicMock, patch
 from google.protobuf.message import Message as ProtobufMessage
 from binascii import crc32
@@ -59,20 +60,20 @@ def test_frame_coverage_boost() -> None:
     # 5. parse_frame with empty active field in payload_type
     envelope_empty = pb.RpcEnvelope(version=protocol.PROTOCOL_VERSION, command_id=10, sequence_id=4)
     body_empty = envelope_empty.SerializeToString()
-    frame_empty = body_empty + (crc32(body_empty) & 0xFFFFFFFF).to_bytes(4, "little")
+    frame_empty = cobs.encode(body_empty + (crc32(body_empty) & 0xFFFFFFFF).to_bytes(4, "little")) + b"\x00"
     parsed_empty = parse_frame(frame_empty)
     assert parsed_empty.payload == b""
 
     # 6. parse_frame with invalid protocol version
     envelope_bad_ver = pb.RpcEnvelope(version=999, command_id=10, sequence_id=5)
     body_bad_ver = envelope_bad_ver.SerializeToString()
-    frame_bad_ver = body_bad_ver + (crc32(body_bad_ver) & 0xFFFFFFFF).to_bytes(4, "little")
+    frame_bad_ver = cobs.encode(body_bad_ver + (crc32(body_bad_ver) & 0xFFFFFFFF).to_bytes(4, "little")) + b"\x00"
     with pytest.raises(ValueError, match="Invalid protocol version"):
         parse_frame(frame_bad_ver)
 
     # 7. parse_frame with failed protobuf envelope parse
     body_bad_proto = b"\xff\xff\xff\xff"
-    frame_bad_proto = body_bad_proto + (crc32(body_bad_proto) & 0xFFFFFFFF).to_bytes(4, "little")
+    frame_bad_proto = cobs.encode(body_bad_proto + (crc32(body_bad_proto) & 0xFFFFFFFF).to_bytes(4, "little")) + b"\x00"
     with pytest.raises(ValueError, match="Failed to parse Protobuf envelope"):
         parse_frame(frame_bad_proto)
 

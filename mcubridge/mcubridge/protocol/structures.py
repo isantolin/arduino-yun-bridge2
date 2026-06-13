@@ -29,6 +29,7 @@ import msgspec
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 
+
 def iter_chunks(data: bytes, chunk_size: int) -> Iterable[bytes]:
     """Zero-copy chunking using memoryview for maximum throughput. [SIL-2]"""
     if not data:
@@ -36,6 +37,7 @@ def iter_chunks(data: bytes, chunk_size: int) -> Iterable[bytes]:
     view = memoryview(data)
     for i in range(0, len(data), chunk_size):
         yield bytes(view[i : i + chunk_size])
+
 
 PROTOBUF_CONTENT_TYPE: Final[str] = "application/x-protobuf"
 

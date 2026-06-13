@@ -68,7 +68,7 @@ async def test_process_packet_success_dispatches() -> None:
         service.handle_mcu_frame = AsyncMock()
 
         frame_bytes = build_frame(command_id=Command.CMD_CONSOLE_WRITE.value, sequence_id=0, payload=b"hi")
-        encoded = cobs.encode(frame_bytes)
+        encoded = frame_bytes
         transport = SerialTransport(config, state, service)
         await getattr(transport, "_process_packet")(encoded)
 
@@ -93,7 +93,9 @@ async def test_process_packet_negotiation_ack_switches_local_baudrate() -> None:
         mock_writer.is_closing.return_value = False
 
         mock_transport = AsyncMock()
-        from serialx import Serial; mock_transport.serial = MagicMock(spec=Serial)
+        from serialx import Serial
+
+        mock_transport.serial = MagicMock(spec=Serial)
         mock_transport.serial.baudrate = config.serial_safe_baud
         mock_writer.transport = mock_transport
 
@@ -102,12 +104,10 @@ async def test_process_packet_negotiation_ack_switches_local_baudrate() -> None:
         setattr(transport, "_negotiating", True)
         setattr(transport, "_negotiation_future", asyncio.get_running_loop().create_future())
 
-        encoded = cobs.encode(
-            build_frame(
-                command_id=Command.CMD_SET_BAUDRATE_RESP.value,
-                sequence_id=0,
-                payload=b"",
-            )
+        encoded = build_frame(
+            command_id=Command.CMD_SET_BAUDRATE_RESP.value,
+            sequence_id=0,
+            payload=b"",
         )
         await getattr(transport, "_process_packet")(encoded)
 

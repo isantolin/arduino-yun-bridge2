@@ -20,15 +20,44 @@ void __attribute__((weak)) handle_error(
   BridgeClass::ErrorPolicy::handle(Bridge, e);
 }
 }  // namespace etl
+
 BridgeClass::BridgeClass(Stream& stream)
-    : _stream(&stream),
+    : _stream(stream),
+      _hardware_serial(nullptr),
+      _command_handler(),
+      _status_handler(),
+      _last_command_id(0),
+      _tx_sequence_id(0),
+      _retry_count(0),
+      _retry_limit(rpc::RPC_DEFAULT_RETRY_LIMIT),
+      _ack_timeout_ms(rpc::RPC_DEFAULT_ACK_TIMEOUT_MS),
+      _response_timeout_ms(rpc::RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS),
+      _pending_baudrate(0),
+      _ps_rx_storage(),
+      _ps_work_buffer(),
       _packet_serial(
           etl::span<uint8_t>(_ps_rx_storage.data(), _ps_rx_storage.size()),
           etl::span<uint8_t>(_ps_work_buffer.data(), _ps_work_buffer.size())),
+      _shared_secret(),
+      _session_key(),
+      _tx_nonce_counter(0),
+      _rx_nonce_counter(0),
       _fsm(),
       _watchdog_task(0),
       _serial_task(1),
-      _timer_task(2) {}
+      _timer_task(2),
+      _tasks(),
+      _scheduler_policy(),
+      _timer_last_tick_ms(0),
+      _serial_xoff_sent(false),
+      _timers(),
+      _rx_storage(),
+      _is_post_passed(false),
+      _tx_enabled(true),
+      _tx_payload_pool(),
+      _pending_tx_queue(),
+      _rx_history() {}
+
 void BridgeClass::_dispatchCommand(const rpc_pb_RpcEnvelope& envelope) {
   const uint16_t cmd_id = envelope.command_id;
   auto it =
@@ -101,22 +130,17 @@ BridgeClass::DispatchHandler BridgeClass::_getHandler(uint16_t command_id) {
             &BridgeClass::_dispatchResponse<&BridgeClass::_handleDigitalRead>;
         t[rpc::to_underlying(rpc::CommandId::CMD_ANALOG_READ)] =
             &BridgeClass::_dispatchResponse<&BridgeClass::_handleAnalogRead>;
-        #if BRIDGE_ENABLE_CONSOLE
         t[rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE)] =
             &BridgeClass::_dispatchAck<rpc_pb_ConsoleWrite,
                                        &BridgeClass::_handleConsoleWrite>;
-#endif
 #if BRIDGE_ENABLE_DATASTORE
-        #if BRIDGE_ENABLE_DATASTORE
         t[rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_GET_RESP)] =
             &BridgeClass::_dispatchAckCtx<
                 rpc_pb_DatastoreGetResponse,
                 &BridgeClass::_handleDataStoreGetResponse>;
 #endif
-#endif
 
 #if BRIDGE_ENABLE_MAILBOX
-        #if BRIDGE_ENABLE_MAILBOX
         t[rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH)] =
             &BridgeClass::_dispatchAckCtx<rpc_pb_MailboxPush,
                                           &BridgeClass::_handleMailboxPush>;
@@ -127,10 +151,8 @@ BridgeClass::DispatchHandler BridgeClass::_getHandler(uint16_t command_id) {
             &BridgeClass::_dispatchPayload<rpc_pb_MailboxAvailableResponse,
                                            &BridgeClass::_handleMailboxAvailableResponse>;
 #endif
-#endif
 
 #if BRIDGE_ENABLE_FILESYSTEM
-        #if BRIDGE_ENABLE_FILESYSTEM
         t[rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE)] =
             &BridgeClass::_dispatchAckCtx<rpc_pb_FileWrite,
                                           &BridgeClass::_handleFileWrite>;
@@ -144,9 +166,7 @@ BridgeClass::DispatchHandler BridgeClass::_getHandler(uint16_t command_id) {
             &BridgeClass::_dispatchAckCtx<
                 rpc_pb_FileReadResponse, &BridgeClass::_handleFileReadResponse>;
 #endif
-#endif
 #if BRIDGE_ENABLE_PROCESS
-        #if BRIDGE_ENABLE_PROCESS
         t[rpc::to_underlying(rpc::CommandId::CMD_PROCESS_KILL)] =
             &BridgeClass::_dispatchAckCtx<rpc_pb_ProcessKill,
                                           &BridgeClass::_handleProcessKill>;
@@ -159,9 +179,7 @@ BridgeClass::DispatchHandler BridgeClass::_getHandler(uint16_t command_id) {
                 rpc_pb_ProcessPollResponse,
                 &BridgeClass::_handleProcessPollResponse>;
 #endif
-#endif
 #if BRIDGE_ENABLE_SPI
-        #if BRIDGE_ENABLE_SPI
         t[rpc::to_underlying(rpc::CommandId::CMD_SPI_BEGIN)] =
             &BridgeClass::_dispatchSimpleAck<&BridgeClass::_handleSpiBegin>;
         t[rpc::to_underlying(rpc::CommandId::CMD_SPI_TRANSFER)] =
@@ -171,7 +189,6 @@ BridgeClass::DispatchHandler BridgeClass::_getHandler(uint16_t command_id) {
         t[rpc::to_underlying(rpc::CommandId::CMD_SPI_SET_CONFIG)] =
             &BridgeClass::_dispatchAck<rpc_pb_SpiConfig,
                                        &BridgeClass::_handleSpiSetConfig>;
-#endif
 #endif
         return t;
       }();
@@ -196,7 +213,7 @@ void BridgeClass::_initializeRuntime() {
   _ps_work_buffer.fill(0);
   if constexpr (bridge::hal::CurrentArchTraits::id ==
                 bridge::hal::ArchId::ARCH_AVR)
-    _hardware_serial = static_cast<HardwareSerial*>(_stream);
+    _hardware_serial = static_cast<HardwareSerial*>(&_stream);
   else
     _hardware_serial = nullptr;
 }
@@ -249,8 +266,8 @@ void BridgeClass::_watchdogTask() {
 }
 
 void BridgeClass::_serialTask() {
-  _packet_serial.update(*_stream);
-  const int avail = _stream->available();
+  _packet_serial.update(_stream);
+  const int avail = _stream.available();
   if (!_serial_xoff_sent && avail > bridge::config::FLOW_CONTROL_XOFF_THRESHOLD) {
     signalXoff();
     _serial_xoff_sent = true;
@@ -327,7 +344,7 @@ void BridgeClass::_transmit(uint16_t command_id, uint16_t sequence_id,
   env.payload_type.encrypted_payload.size = static_cast<pb_size_t>(pl_size);
   size_t len = rpc::serialize_frame(env, buffer);
   if (len > 0)
-    _packet_serial.send(*_stream, etl::span<const uint8_t>(buffer.data(), len));
+    _packet_serial.send(_stream, etl::span<const uint8_t>(buffer.data(), len));
 }
 
 void BridgeClass::_flushPendingTxQueue() {

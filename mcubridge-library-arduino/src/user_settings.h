@@ -37,12 +37,6 @@
 #define WOLFSSL_HKDF
 #define HAVE_CHACHA
 #define HAVE_POLY1305
-#define POLY1305_NO_UNROLL
-#define CHACHA_NO_UNROLL
-#define WOLFSSL_SMALL_STACK
-#define POLY1305_NO_UNROLL
-#define CHACHA_NO_UNROLL
-#define WOLFSSL_SMALL_STACK
 
 /* Protocol protections */
 #define NO_AES

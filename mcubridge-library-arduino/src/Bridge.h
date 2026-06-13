@@ -73,7 +73,7 @@ struct CommandContext {
 class BridgeClass {
  public:
   using ErrorPolicy = bridge::SafeStatePolicy;
-  explicit BridgeClass(Stream& stream); BridgeClass() = default;
+  explicit BridgeClass(Stream& stream);
 
   void begin(uint32_t baudrate = 0, const char* secret = nullptr);
   void process();
@@ -143,7 +143,7 @@ class BridgeClass {
     env.payload_type.encrypted_payload.size = static_cast<pb_size_t>(pl_stream.bytes_written);
     size_t len = rpc::serialize_frame(env, buffer);
     if (len > 0) {
-      _packet_serial.send(*_stream, etl::span<const uint8_t>(buffer.data(), len));
+      _packet_serial.send(_stream, etl::span<const uint8_t>(buffer.data(), len));
       return true;
     }
     return false;

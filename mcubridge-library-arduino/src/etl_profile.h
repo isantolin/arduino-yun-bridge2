@@ -22,18 +22,12 @@
 #if defined(__AVR__)
 #define ETL_COMPILER_GCC
 #define ETL_CPP17_SUPPORTED 1
-#define ETL_CRC_TABLE_PROGMEM
-#define ETL_CRC_TABLE_PROGMEM
 #elif defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266)
 #define ETL_COMPILER_GCC
 #define ETL_CPP17_SUPPORTED 1
-#define ETL_CRC_TABLE_PROGMEM
-#define ETL_CRC_TABLE_PROGMEM
 #else
 #define ETL_COMPILER_GENERIC
 #define ETL_CPP17_SUPPORTED 1
-#define ETL_CRC_TABLE_PROGMEM
-#define ETL_CRC_TABLE_PROGMEM
 #endif
 
 // [SIL-2] ETL Callback Timer locking for Arduino

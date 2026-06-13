@@ -1,6 +1,6 @@
 import pytest
 import asyncio
-from unittest.mock import AsyncMock
+from unittest.mock import MagicMock, AsyncMock
 from mcubridge.transport.serial import SerialTransport
 from mcubridge.protocol.frame import build_frame
 from cobs import cobs
@@ -35,17 +35,19 @@ async def test_serial_transport_loops_final_v3(transport_setup: Any) -> None:
 
     call_count = 0
 
-    async def readuntil_mock_impl(sep: bytes = b"\x00") -> bytes:
+    async def read_mock_impl(n: int = -1) -> bytes:
         nonlocal call_count
         call_count += 1
         if call_count == 1:
-            return encoded
+            return encoded[:2]
         if call_count == 2:
+            return encoded[2:]
+        if call_count == 3:
             return b"\xff\x00"
         await asyncio.sleep(2)
         return b""
 
-    mock_reader.readuntil.side_effect = readuntil_mock_impl
+    mock_reader.read.side_effect = read_mock_impl
 
     try:
         await asyncio.wait_for(getattr(transport, "_read_loop")(mock_reader), 0.1)
@@ -63,6 +65,6 @@ async def test_serial_transport_negotiation_failure_final_v3(transport_setup: An
     config, state = transport_setup
     transport = SerialTransport(config, state, service=AsyncMock(spec=BridgeService))
     mock_reader = AsyncMock(spec=asyncio.StreamReader)
-    mock_reader.readuntil.side_effect = [b"invalid\x00", asyncio.IncompleteReadError(b"", 1)]
+    mock_reader.read.side_effect = [b"invalid", b""]
     await getattr(transport, "_read_loop")(mock_reader)
     assert state.is_connected is False

@@ -10,7 +10,6 @@ between the Linux daemon and the Arduino MCU.
 """
 
 from __future__ import annotations
-from cobs import cobs
 
 import struct
 from binascii import crc32
@@ -78,22 +77,12 @@ def build_frame(
         envelope.encrypted_payload = payload_bytes
 
     body = envelope.SerializeToString()
-    full_frame = body + struct.pack("<I", crc32(body) & protocol.CRC32_MASK)
-    return cobs.encode(full_frame) + protocol.FRAME_DELIMITER
+    return body + struct.pack("<I", crc32(body) & protocol.CRC32_MASK)
 
 
-def parse_frame(encoded_buffer: bytes | bytearray | memoryview, session_key: bytes | None = None) -> DecodedFrame:
+def parse_frame(raw_frame_buffer: bytes | bytearray | memoryview, session_key: bytes | None = None) -> DecodedFrame:
     """Parses binary buffer directly into a Protobuf envelope. [SIL-2]"""
-    # [SIL-2] De-layered: COBS decoding integrated into protocol layer.
-    raw = bytes(encoded_buffer)
-    if raw.endswith(b"\x00"):
-        raw = raw[:-1]
-    if not raw:
-        raise ValueError("Empty frame after stripping delimiter")
-    try:
-        buf = cobs.decode(raw)
-    except cobs.DecodeError as e:
-        raise ValueError(f"COBS decode failed: {e}") from e
+    buf = bytes(raw_frame_buffer)
     if len(buf) < _CRC_SIZE:
         raise ValueError("Incomplete frame: too short")
 

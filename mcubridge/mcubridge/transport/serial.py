@@ -18,6 +18,7 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING, cast
 
+from cobs import cobs
 import serialx
 import structlog
 import tenacity
@@ -28,6 +29,8 @@ from mcubridge.config.const import (
     SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT,
     SERIAL_HANDSHAKE_BACKOFF_BASE,
     SERIAL_HANDSHAKE_BACKOFF_MAX,
+    SERIAL_FAILURE_STATUS_CODES,
+    SERIAL_SUCCESS_STATUS_CODES,
     SERIAL_MIN_ACK_TIMEOUT,
 )
 from mcubridge.protocol import protocol, is_system_command
@@ -35,9 +38,13 @@ from mcubridge.protocol.protocol import (
     ACK_ONLY_COMMANDS,
     Status,
     expected_responses,
+    response_to_request,
 )
 from mcubridge.protocol.structures import (
     PendingCommand,
+)
+from mcubridge.security.security import (
+    generate_nonce_with_counter,
 )
 from mcubridge.services.handshake import SerialHandshakeFatal
 
@@ -173,86 +180,93 @@ class SerialTransport:
             self.writer.close()
 
     async def _read_loop(self, reader: asyncio.StreamReader) -> None:
-        """High-performance read loop with zero-layer dispatch. [SIL-2]"""
         while not self._stop_event.is_set():
             try:
-                packet = await reader.readuntil(protocol.FRAME_DELIMITER)
-                if packet:
-                    await self._process_packet(packet)
+                packet_with_sep = await reader.readuntil(protocol.FRAME_DELIMITER)
+                packet_view = memoryview(packet_with_sep)[:-1]
+                if packet_view:
+                    await self._process_packet(packet_view)
             except asyncio.LimitOverrunError:
                 self.state.serial_decode_errors += 1
                 await reader.read(MAX_SERIAL_FRAME_BYTES)
             except asyncio.IncompleteReadError:
                 break
-            except (OSError, serialx.SerialException) as exc:
-                logger.error("Serial I/O error: %s", exc)
+            except (OSError, RuntimeError, ValueError, TypeError, serialx.SerialException) as exc:
+                logger.error("Error in _read_loop: %s", exc)
                 break
 
-    async def _process_packet(self, packet: bytes | memoryview) -> None:
-        """De-layered packet processing helper for tests and loop. [SIL-2]"""
+    async def _process_packet(self, encoded_packet: bytes | memoryview) -> None:
+        """Processes a packet from the serial stream. [FLATTENED] [SIL-2]"""
         from mcubridge.protocol.frame import parse_frame
-        from google.protobuf.message import DecodeError as ProtobufDecodeError
 
         try:
-            # [SIL-2] DE-LAYERED: Direct parsing and dispatch.
-            decoded_frame = parse_frame(packet, self.state.link_session_key if self.state.is_synchronized else None)
-            envelope, payload = decoded_frame.envelope, decoded_frame.payload
-            cmd_id, seq_id = envelope.command_id, envelope.sequence_id
-
-            self._correlate_frame(cmd_id, payload)
-
-            if self._negotiating and self._negotiation_future and not self._negotiation_future.done():
-                if cmd_id == protocol.Command.CMD_SET_BAUDRATE_RESP.value:
-                    self._switch_local_baudrate(self.config.serial_baud)
-                    self._negotiation_future.set_result(True)
-                    return
-
-            # Anti-replay validation
-            is_excluded = (protocol.STATUS_CODE_MIN <= cmd_id <= protocol.STATUS_CODE_MAX) or (
-                protocol.SYSTEM_COMMAND_MIN <= cmd_id <= protocol.SYSTEM_COMMAND_MAX
-            )
-            if self.state.is_synchronized and not is_excluded:
-                from mcubridge.security.security import validate_nonce_counter
-
-                ok, new_counter = validate_nonce_counter(envelope.nonce, self.state.link_last_nonce_counter)
-                if not ok:
-                    logger.error("Anti-replay validation failed")
-                    return
-                self.state.link_last_nonce_counter = new_counter
-
-            if self.service:
-                await self.service.handle_mcu_frame(cmd_id, seq_id, payload)
-
-            self.state.metrics.serial_bytes_received.inc(len(packet))
-            self.state.metrics.serial_frames_received.inc()
-
-        except (ValueError, TypeError, RuntimeError, ProtobufDecodeError) as exc:
+            # Ensure we have bytes for cobs.decode
+            raw_bytes = bytes(encoded_packet) if isinstance(encoded_packet, memoryview) else encoded_packet
+            decoded = cobs.decode(raw_bytes)
+            decoded_frame = parse_frame(decoded, self.state.link_session_key if self.state.is_synchronized else None)
+        except (cobs.DecodeError, ValueError, TypeError, RuntimeError) as exc:
             logger.error("[SERIAL <- MCU] [MALFORMED]: %s", exc)
             self.state.serial_decode_errors += 1
             await self._check_baudrate_fallback()
+            return
+
+        envelope = decoded_frame.envelope
+        payload = decoded_frame.payload
+        cmd_id, seq_id = envelope.command_id, envelope.sequence_id
+
+        if self._negotiating and self._negotiation_future and not self._negotiation_future.done():
+            if cmd_id == protocol.Command.CMD_SET_BAUDRATE_RESP.value:
+                self._switch_local_baudrate(self.config.serial_baud)
+                self._negotiation_future.set_result(True)
+                return
+
+        # Anti-replay validation
+        is_excluded = (protocol.STATUS_CODE_MIN <= cmd_id <= protocol.STATUS_CODE_MAX) or (
+            protocol.SYSTEM_COMMAND_MIN <= cmd_id <= protocol.SYSTEM_COMMAND_MAX
+        )
+        if self.state.is_synchronized and not is_excluded:
+            from mcubridge.security.security import validate_nonce_counter
+
+            ok, new_counter = validate_nonce_counter(envelope.nonce, self.state.link_last_nonce_counter)
+            if not ok:
+                logger.error("Anti-replay validation failed")
+                return
+            self.state.link_last_nonce_counter = new_counter
+
+        # Correlation and Service dispatch
+        self._correlate_frame(cmd_id, payload)
+        if self.service:
+            await self.service.handle_mcu_frame(cmd_id, seq_id, payload)
+
+        self.state.metrics.serial_bytes_received.inc(len(encoded_packet))
+        self.state.metrics.serial_frames_received.inc()
 
     def _correlate_frame(self, command_id: int, payload: bytes | ProtobufMessage) -> None:
-        """Internal frame correlation logic. [SIL-2]"""
         pending = self._current
         if pending is None:
             return
         if command_id == Status.ACK.value:
             ack_target = pending.command_id
             if payload:
-                if isinstance(payload, bytes):
-                    try:
-                        ack_p = pb.AckPacket()
-                        ack_p.ParseFromString(payload)
-                        ack_target = ack_p.command_id
-                    except (ProtobufDecodeError, ValueError):
-                        pass
-                elif hasattr(payload, "command_id"):
-                    ack_target = getattr(payload, "command_id")
+                try:
+                    if isinstance(payload, ProtobufMessage):
+                        ack_target = getattr(payload, "command_id", ack_target)
+                    else:
+                        ack_target = pb.AckPacket.FromString(payload).command_id
+                except (ProtobufDecodeError, TypeError, ValueError) as e:
+                    logger.error("Failed to decode MCU ACK payload", error=e)
             if ack_target == pending.command_id:
                 pending.ack_received = True
-        elif command_id in pending.expected_resp_ids:
-            pending.response_payload = payload
-            pending.mark_success()
+                if not pending.expected_resp_ids:
+                    pending.mark_success(payload)
+            return
+        if response_to_request(command_id) == pending.command_id:
+            pending.mark_success(payload)
+            return
+        if command_id in SERIAL_FAILURE_STATUS_CODES:
+            pending.mark_failure(command_id)
+        elif command_id in SERIAL_SUCCESS_STATUS_CODES and not pending.expected_resp_ids:
+            pending.mark_success(payload)
 
     async def _check_baudrate_fallback(self) -> None:
         self._consecutive_crc_errors += 1
@@ -318,7 +332,7 @@ class SerialTransport:
                 self._current = None
 
     async def send_raw(self, command_id: int, payload: bytes | ProtobufMessage, seq_id: int | None = None) -> bool:
-        """Low-level send logic without tracking. [DE-LAYERED]"""
+        """Low-level send logic without tracking."""
         if not self.writer:
             return False
 
@@ -336,20 +350,22 @@ class SerialTransport:
         is_excluded = is_system_command(command_id)
         nonce = b"\x00" * protocol.AEAD_NONCE_SIZE
         if self.state.is_synchronized and not is_excluded:
-            from mcubridge.security.security import generate_nonce_with_counter
-
             nonce, new_counter = generate_nonce_with_counter(self.state.link_nonce_counter)
             self.state.link_nonce_counter = new_counter
 
         from mcubridge.protocol.frame import build_frame
 
-        # [SIL-2] DE-LAYERED: build_frame now handles framing and COBS.
-        encoded = build_frame(
-            command_id=command_id,
-            sequence_id=seq_id,
-            payload=payload,
-            nonce=nonce,
-            session_key=self.state.link_session_key if self.state.is_synchronized else None,
+        encoded = (
+            cobs.encode(
+                build_frame(
+                    command_id=command_id,
+                    sequence_id=seq_id,
+                    payload=payload,
+                    nonce=nonce,
+                    session_key=self.state.link_session_key if self.state.is_synchronized else None,
+                )
+            )
+            + protocol.FRAME_DELIMITER
         )
 
         if logger.is_enabled_for(logging.DEBUG):
@@ -362,8 +378,10 @@ class SerialTransport:
         try:
             self.writer.write(encoded)
             await self.writer.drain()
+            self.state.metrics.serial_bytes_sent.inc(len(encoded))
+            self.state.metrics.serial_frames_sent.inc()
             return True
-        except (OSError, serialx.SerialException, RuntimeError) as exc:
+        except (AttributeError, OSError, RuntimeError, ValueError, serialx.SerialException) as exc:
             logger.error("Serial write failed: %s", exc)
             return False
 

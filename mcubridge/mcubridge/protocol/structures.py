@@ -431,8 +431,6 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
 # 3. Operational Structures
 # =============================================================================
 
-T = TypeVar("T", bound="BaseStruct")
-
 
 def _flatten_structured_value(
     key_prefix: str,
@@ -521,13 +519,6 @@ def decode_structured_payload(data: bytes) -> dict[str, Any]:
             cursor = next_cursor
         cursor[parts[-1]] = _entry_value(entry)
     return decoded
-
-
-class BaseStruct(msgspec.Struct, frozen=True, array_like=True):
-    """Base class for all serial payload packets.
-
-    Encoded as protobuf payloads carried inside the framed RPC transport.
-    """
 
 
 # --- Binary Protocol Packets ---

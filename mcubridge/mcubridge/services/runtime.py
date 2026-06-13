@@ -18,7 +18,11 @@ from typing import TYPE_CHECKING, Any, cast, Final
 import msgspec
 from ..state.storage import DbmDeque
 import structlog
-from google.protobuf.message import DecodeError as ProtobufDecodeError, Message as ProtobufMessage
+from google.protobuf.message import (
+    DecodeError as ProtobufDecodeError,
+    Message as ProtobufMessage,
+    EncodeError as ProtobufSerializationError,
+)
 
 import aiomqtt
 import logging
@@ -58,6 +62,8 @@ from ..protocol.structures import (
     PROTOBUF_CONTENT_TYPE,
     QueuedPublish,
     TopicRoute,
+    encode_queued_publish,
+    decode_queued_publish,
 )
 from ..protocol.topics import Topic, parse_topic, topic_path
 from ..metrics import (
@@ -264,7 +270,7 @@ class BridgeService:
                     self.state.mqtt_spool_trim_events += 1
                     self.state.mqtt_spool_last_trim_unix = time.time()
 
-            encoded = msgspec.msgpack.encode(message)
+            encoded = encode_queued_publish(message)
             append_fn = spool.append
             await asyncio.to_thread(append_fn, encoded)
 
@@ -274,7 +280,7 @@ class BridgeService:
         except OSError as exc:
             self._mark_mqtt_spool_failure(str(exc))
             return False
-        except msgspec.MsgspecError as exc:
+        except ProtobufSerializationError as exc:
             logger.error("Serialization failure for spool message", error=str(exc))
             return False
 
@@ -296,11 +302,11 @@ class BridgeService:
                     return spool[0]
 
                 encoded = peek_fn()
-                queued = msgspec.msgpack.decode(encoded, type=QueuedPublish)
+                queued = decode_queued_publish(encoded)
             except IndexError as exc:
                 logger.error("Spool is empty during peek", error=str(exc))
                 break
-            except (ValueError, TypeError, msgspec.MsgspecError) as exc:
+            except (ValueError, TypeError, ProtobufDecodeError) as exc:
                 logger.error("Dropping corrupt MQTT spool entry", error=str(exc))
                 try:
                     spool_len = await asyncio.to_thread(len, spool)

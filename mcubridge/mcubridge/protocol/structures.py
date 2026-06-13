@@ -639,6 +639,76 @@ class QueuedPublish(msgspec.Struct, frozen=True):
 
         return msgspec.structs.replace(self, **updates) if updates else self
 
+    def to_protobuf(self) -> bytes:
+        """Serialize QueuedPublish to Protobuf binary format."""
+        pb_msg = pb.MqttQueuedPublish()
+        pb_msg.topic_name = self.topic_name
+        pb_msg.payload = self.payload
+        pb_msg.qos = self.qos
+        pb_msg.retain = self.retain
+        if self.content_type is not None:
+            pb_msg.content_type = self.content_type
+        if self.payload_format_indicator is not None:
+            pb_msg.payload_format_indicator = self.payload_format_indicator
+        if self.message_expiry_interval is not None:
+            pb_msg.message_expiry_interval = self.message_expiry_interval
+        if self.response_topic is not None:
+            pb_msg.response_topic = self.response_topic
+        if self.correlation_data is not None:
+            pb_msg.correlation_data = self.correlation_data
+        if self.user_properties:
+            for k, v in self.user_properties:
+                pb_msg.user_properties.add(key=k, value=v)
+        if self.subscription_identifier is not None:
+            pb_msg.subscription_identifier.extend(self.subscription_identifier)
+        if self.topic_alias is not None:
+            pb_msg.topic_alias = self.topic_alias
+        return pb_msg.SerializeToString()
+
+    @classmethod
+    def from_protobuf(cls, data: bytes) -> QueuedPublish:
+        """Deserialize QueuedPublish from Protobuf binary format."""
+        pb_msg = pb.MqttQueuedPublish()
+        pb_msg.ParseFromString(data)
+
+        content_type = pb_msg.content_type if pb_msg.HasField("content_type") else None
+        payload_format_indicator = (
+            pb_msg.payload_format_indicator if pb_msg.HasField("payload_format_indicator") else None
+        )
+        message_expiry_interval = pb_msg.message_expiry_interval if pb_msg.HasField("message_expiry_interval") else None
+        response_topic = pb_msg.response_topic if pb_msg.HasField("response_topic") else None
+        correlation_data = pb_msg.correlation_data if pb_msg.HasField("correlation_data") else None
+
+        user_properties = tuple((prop.key, prop.value) for prop in pb_msg.user_properties)
+
+        subscription_identifier = tuple(pb_msg.subscription_identifier) if pb_msg.subscription_identifier else None
+        topic_alias = pb_msg.topic_alias if pb_msg.HasField("topic_alias") else None
+
+        return cls(
+            topic_name=pb_msg.topic_name,
+            payload=pb_msg.payload,
+            qos=pb_msg.qos,
+            retain=pb_msg.retain,
+            content_type=content_type,
+            payload_format_indicator=payload_format_indicator,
+            message_expiry_interval=message_expiry_interval,
+            response_topic=response_topic,
+            correlation_data=correlation_data,
+            user_properties=user_properties,
+            subscription_identifier=subscription_identifier,
+            topic_alias=topic_alias,
+        )
+
+
+def encode_queued_publish(message: QueuedPublish) -> bytes:
+    """Helper to serialize QueuedPublish to Protobuf binary format."""
+    return message.to_protobuf()
+
+
+def decode_queued_publish(data: bytes) -> QueuedPublish:
+    """Helper to deserialize QueuedPublish from Protobuf binary format."""
+    return QueuedPublish.from_protobuf(data)
+
 
 # --- Process Service Structures ---
 

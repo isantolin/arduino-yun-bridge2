@@ -1,6 +1,5 @@
 import asyncio
 import collections
-import msgspec
 import pytest
 from typing import Any, cast
 from unittest.mock import MagicMock, patch, AsyncMock
@@ -8,7 +7,8 @@ from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.services.runtime import BridgeService
 from mcubridge.transport.serial import SerialTransport
-from mcubridge.protocol.structures import QueuedPublish
+from mcubridge.protocol.structures import QueuedPublish, encode_queued_publish, decode_queued_publish
+from google.protobuf.message import EncodeError as ProtobufSerializationError
 
 
 def _replace_mailbox_queue(state: RuntimeState, replacement: Any) -> None:
@@ -120,8 +120,8 @@ async def test_spool_trim_and_limit(real_config: RuntimeConfig) -> None:
         assert await getattr(service, "_spool_mqtt_message_locked")(msg3) is True
 
         assert len(spool) == 2
-        el1 = msgspec.msgpack.decode(spool[0], type=QueuedPublish)
-        el2 = msgspec.msgpack.decode(spool[1], type=QueuedPublish)
+        el1 = decode_queued_publish(spool[0])
+        el2 = decode_queued_publish(spool[1])
         assert el1.topic_name == "test2"
         assert el2.topic_name == "test3"
         assert service.state.mqtt_spool_dropped_limit == 1
@@ -142,9 +142,9 @@ async def test_corrupt_item_handling(real_config: RuntimeConfig) -> None:
         spool = getattr(service, "_mqtt_spool")
         spool.clear()
 
-        spool.append(b"invalid_bytes_not_msgpack")
+        spool.append(b"invalid_bytes_not_protobuf")
         valid_msg = QueuedPublish(topic_name="valid", payload=b"valid_payload")
-        spool.append(msgspec.msgpack.encode(valid_msg))
+        spool.append(encode_queued_publish(valid_msg))
 
         await getattr(service, "_flush_mqtt_spool_locked")()
 
@@ -163,7 +163,10 @@ async def test_serialization_failure(real_config: RuntimeConfig) -> None:
     service = BridgeService(real_config, state, serial)
     try:
         msg = QueuedPublish(topic_name="test", payload=b"payload")
-        with patch("msgspec.msgpack.encode", side_effect=msgspec.MsgspecError("Serialization error")):
+        with patch(
+            "mcubridge.services.runtime.encode_queued_publish",
+            side_effect=ProtobufSerializationError("Serialization error"),
+        ):
             success = await getattr(service, "_spool_mqtt_message_locked")(msg)
             assert success is False
     finally:
@@ -184,7 +187,7 @@ async def test_peeking_or_popping_errors(real_config: RuntimeConfig) -> None:
         spool.clear()
 
         valid_msg = QueuedPublish(topic_name="valid", payload=b"payload")
-        spool.append(msgspec.msgpack.encode(valid_msg))
+        spool.append(encode_queued_publish(valid_msg))
 
         # 1. IndexError on peek
         def mock_to_thread_index_error(func: Any, *args: Any, **kwargs: Any) -> Any:
@@ -225,7 +228,7 @@ async def test_peeking_or_popping_errors(real_config: RuntimeConfig) -> None:
 
         # 5. OSError on popleft after publish
         spool.clear()
-        spool.append(msgspec.msgpack.encode(valid_msg))
+        spool.append(encode_queued_publish(valid_msg))
         popleft_mock = MagicMock(side_effect=OSError("DB error during pop"))
         with patch.object(spool, "popleft", popleft_mock):
             await getattr(service, "_flush_mqtt_spool_locked")()

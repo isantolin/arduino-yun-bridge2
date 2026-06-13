@@ -39,7 +39,7 @@ async def test_serial_reader_task_reconnects():
         serial_shared_secret=b"s_e_c_r_e_t_mock",
         allow_non_tmp_paths=True,
     )
-    state = MagicMock(spec=RuntimeState)
+    state = AsyncMock(spec=RuntimeState)
     service = AsyncMock(spec=BridgeService)
     service.on_serial_connected = AsyncMock()
     service.on_serial_disconnected = AsyncMock()
@@ -54,7 +54,7 @@ async def test_serial_reader_task_reconnects():
         asyncio.IncompleteReadError(b"", None),  # Third connection lost
     ]
 
-    mock_writer = MagicMock(spec=asyncio.StreamWriter)
+    mock_writer = AsyncMock(spec=asyncio.StreamWriter)
     mock_writer.is_closing.return_value = False
     mock_writer.wait_closed = AsyncMock()
 

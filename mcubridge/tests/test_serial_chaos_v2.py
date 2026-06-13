@@ -21,11 +21,11 @@ def transport_setup():
 @pytest.mark.asyncio
 async def test_serial_transport_loops_final_v3(transport_setup: Any) -> None:
     config, state = transport_setup
-    transport = SerialTransport(config, state, service=MagicMock(spec=BridgeService))
+    transport = SerialTransport(config, state, service=AsyncMock(spec=BridgeService))
 
-    mock_reader = MagicMock(spec=asyncio.StreamReader)
+    mock_reader = AsyncMock(spec=asyncio.StreamReader)
     mock_reader.feed_eof = __import__("unittest").mock.Mock()
-    mock_writer = MagicMock(spec=asyncio.StreamWriter)
+    mock_writer = AsyncMock(spec=asyncio.StreamWriter)
     mock_writer.write = __import__("unittest").mock.Mock()
     mock_writer.close = __import__("unittest").mock.Mock()
     transport.writer = mock_writer
@@ -63,8 +63,8 @@ async def test_serial_transport_loops_final_v3(transport_setup: Any) -> None:
 @pytest.mark.asyncio
 async def test_serial_transport_negotiation_failure_final_v3(transport_setup: Any) -> None:
     config, state = transport_setup
-    transport = SerialTransport(config, state, service=MagicMock(spec=BridgeService))
-    mock_reader = MagicMock(spec=asyncio.StreamReader)
+    transport = SerialTransport(config, state, service=AsyncMock(spec=BridgeService))
+    mock_reader = AsyncMock(spec=asyncio.StreamReader)
     mock_reader.read.side_effect = [b"invalid", b""]
     await getattr(transport, "_read_loop")(mock_reader)
     assert state.is_connected is False

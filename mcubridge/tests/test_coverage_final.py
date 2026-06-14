@@ -7,7 +7,6 @@ import pytest
 import msgspec
 
 from mcubridge.protocol import protocol
-from mcubridge.protocol.spec_model import ProtocolSpec
 
 from mcubridge.state.status import status_writer
 import mcubridge.state.status as status_mod
@@ -20,29 +19,6 @@ from mcubridge.security.security import (
     extract_nonce_counter,
     validate_nonce_counter,
 )
-
-
-def test_protocol_spec_load(tmp_path: Path) -> None:
-    spec_file = tmp_path / "spec.toml"
-    content = """
-constants = { VERSION = 1 }
-hardware = { TYPE = "arduino" }
-commands = []
-statuses = []
-handshake = {}
-mqtt_subscriptions = []
-actions = []
-topics = []
-capabilities = {}
-architectures = {}
-data_formats = {}
-mqtt_suffixes = {}
-mqtt_defaults = {}
-status_reasons = {}
-"""
-    spec_file.write_text(content)
-    spec = ProtocolSpec.load(spec_file)
-    assert spec.constants["VERSION"] == 1
 
 
 @pytest.mark.asyncio

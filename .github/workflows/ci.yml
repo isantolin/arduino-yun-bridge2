@@ -347,7 +347,7 @@ jobs:
           # Use tox to ensure we have all generator deps, but we need them in this env too
           pip install jinja2 nanopb
           python tools/protocol/generate.py \
-            --spec tools/protocol/spec.toml \
+            --spec tools/protocol/mcubridge.proto \
             --py mcubridge/mcubridge/protocol/protocol.py \
             --py-client mcubridge-client-examples/mcubridge_client/protocol.py
           

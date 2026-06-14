@@ -35,3 +35,37 @@ rpc.pb.PipelineEvent          skip_message:true
 rpc.pb.SerialPipelineSnapshot skip_message:true
 rpc.pb.SerialFlowSnapshot     skip_message:true
 rpc.pb.BridgeSnapshot         skip_message:true
+
+# Exclude metadata options from MCU library
+rpc.pb.Constants skip_message:true
+rpc.pb.Hardware skip_message:true
+rpc.pb.Handshake skip_message:true
+rpc.pb.DataFormats skip_message:true
+rpc.pb.MqttSuffixes skip_message:true
+rpc.pb.MqttDefaults skip_message:true
+rpc.pb.StatusReasons skip_message:true
+rpc.pb.MqttSubscription skip_message:true
+rpc.pb.TopicConfig skip_message:true
+rpc.pb.ActionConfig skip_message:true
+rpc.pb.ArchConfig skip_message:true
+rpc.pb.CapConfig skip_message:true
+rpc.pb.CommandOptions skip_message:true
+rpc.pb.StatusOptions skip_message:true
+
+# Exclude extension definitions from Nanopb C generation
+rpc.pb.constants type:FT_IGNORE
+rpc.pb.hardware type:FT_IGNORE
+rpc.pb.handshake type:FT_IGNORE
+rpc.pb.data_formats type:FT_IGNORE
+rpc.pb.mqtt_suffixes type:FT_IGNORE
+rpc.pb.mqtt_defaults type:FT_IGNORE
+rpc.pb.status_reasons type:FT_IGNORE
+rpc.pb.mqtt_subscriptions type:FT_IGNORE
+rpc.pb.topics type:FT_IGNORE
+rpc.pb.actions type:FT_IGNORE
+rpc.pb.architectures type:FT_IGNORE
+rpc.pb.capabilities type:FT_IGNORE
+rpc.pb.cmd_opts type:FT_IGNORE
+rpc.pb.status_opts type:FT_IGNORE
+
+

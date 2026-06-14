@@ -15,7 +15,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import argparse
 from jinja2 import Environment, FileSystemLoader
@@ -23,7 +23,7 @@ from jinja2 import Environment, FileSystemLoader
 # ═════════════════════════════════════════════════════════════════════════════
 # DEPENDENCY VALIDATION (CRITICAL)
 # ═════════════════════════════════════════════════════════════════════════════
-REQUIRED_DEPS = ["msgspec", "jinja2", "google.protobuf", "nanopb"]
+REQUIRED_DEPS = ["jinja2", "google.protobuf", "nanopb"]
 MISSING_DEPS: list[str] = []
 
 for dep in REQUIRED_DEPS:
@@ -56,16 +56,188 @@ if MISSING_DEPS or not HAS_PROTOC:
     sys.exit(1)
 # ═════════════════════════════════════════════════════════════════════════════
 
-# Load ProtocolSpec directly from spec_model.py via importlib.util
-if TYPE_CHECKING:
-    from mcubridge.protocol.spec_model import ProtocolSpec
-else:
-    _SPEC_MODEL_PATH = REPO_ROOT / "mcubridge" / "mcubridge" / "protocol" / "spec_model.py"
-    _loader_spec = importlib.util.spec_from_file_location("spec_model", str(_SPEC_MODEL_PATH))
-    assert _loader_spec is not None and _loader_spec.loader is not None
-    _spec_mod = importlib.util.module_from_spec(_loader_spec)
-    _loader_spec.loader.exec_module(_spec_mod)
-    ProtocolSpec = _spec_mod.ProtocolSpec
+
+class CommandDef:
+    def __init__(
+        self,
+        name: str,
+        value: int,
+        directions: list[str],
+        category: str | None = None,
+        description: str | None = None,
+        requires_ack: bool = False,
+        expects_direct_response: bool = False,
+    ) -> None:
+        self.name = name
+        self.value = value
+        self.directions = directions
+        self.category = category
+        self.description = description
+        self.requires_ack = requires_ack
+        self.expects_direct_response = expects_direct_response
+
+
+class StatusDef:
+    def __init__(self, name: str, value: int, description: str) -> None:
+        self.name = name
+        self.value = value
+        self.description = description
+
+
+class ProtocolSpec:
+    def __init__(
+        self,
+        constants: dict[str, Any],
+        hardware: dict[str, Any],
+        commands: list[CommandDef],
+        statuses: list[StatusDef],
+        handshake: dict[str, Any],
+        mqtt_subscriptions: list[dict[str, Any]],
+        actions: list[dict[str, Any]],
+        topics: list[dict[str, Any]],
+        capabilities: dict[str, int],
+        architectures: dict[str, int],
+        data_formats: dict[str, str],
+        mqtt_suffixes: dict[str, str],
+        mqtt_defaults: dict[str, str],
+        status_reasons: dict[str, str],
+        architecture_display_names: dict[str, str],
+    ) -> None:
+        self.constants = constants
+        self.hardware = hardware
+        self.commands = commands
+        self.statuses = statuses
+        self.handshake = handshake
+        self.mqtt_subscriptions = mqtt_subscriptions
+        self.actions = actions
+        self.topics = topics
+        self.capabilities = capabilities
+        self.architectures = architectures
+        self.data_formats = data_formats
+        self.mqtt_suffixes = mqtt_suffixes
+        self.mqtt_defaults = mqtt_defaults
+        self.status_reasons = status_reasons
+        self.architecture_display_names = architecture_display_names
+
+
+def load_spec_from_proto(proto_path: Path) -> ProtocolSpec:
+    import importlib
+    from google.protobuf.json_format import MessageToDict
+
+    proto_dir = str(proto_path.parent)
+    if proto_dir not in sys.path:
+        sys.path.insert(0, proto_dir)
+
+    if "mcubridge_pb2" in sys.modules:
+        del sys.modules["mcubridge_pb2"]
+
+    mcubridge_pb2 = importlib.import_module("mcubridge_pb2")
+    file_desc = mcubridge_pb2.DESCRIPTOR
+    options = file_desc.GetOptions()
+
+    constants_opt = options.Extensions[mcubridge_pb2.constants]
+    hardware_opt = options.Extensions[mcubridge_pb2.hardware]
+    handshake_opt = options.Extensions[mcubridge_pb2.handshake]
+    data_formats_opt = options.Extensions[mcubridge_pb2.data_formats]
+    mqtt_suffixes_opt = options.Extensions[mcubridge_pb2.mqtt_suffixes]
+    mqtt_defaults_opt = options.Extensions[mcubridge_pb2.mqtt_defaults]
+    status_reasons_opt = options.Extensions[mcubridge_pb2.status_reasons]
+    mqtt_subscriptions_opt = options.Extensions[mcubridge_pb2.mqtt_subscriptions]
+    topics_opt = options.Extensions[mcubridge_pb2.topics]
+    actions_opt = options.Extensions[mcubridge_pb2.actions]
+    architectures_opt = options.Extensions[mcubridge_pb2.architectures]
+    capabilities_opt = options.Extensions[mcubridge_pb2.capabilities]
+
+    constants = MessageToDict(
+        constants_opt, preserving_proto_field_name=True, always_print_fields_with_no_presence=True
+    )
+    hardware = MessageToDict(hardware_opt, preserving_proto_field_name=True, always_print_fields_with_no_presence=True)
+    handshake = MessageToDict(
+        handshake_opt, preserving_proto_field_name=True, always_print_fields_with_no_presence=True
+    )
+    data_formats = MessageToDict(
+        data_formats_opt, preserving_proto_field_name=True, always_print_fields_with_no_presence=True
+    )
+    mqtt_suffixes = MessageToDict(
+        mqtt_suffixes_opt, preserving_proto_field_name=True, always_print_fields_with_no_presence=True
+    )
+    mqtt_defaults = MessageToDict(
+        mqtt_defaults_opt, preserving_proto_field_name=True, always_print_fields_with_no_presence=True
+    )
+    status_reasons = MessageToDict(
+        status_reasons_opt, preserving_proto_field_name=True, always_print_fields_with_no_presence=True
+    )
+
+    mqtt_subscriptions = [
+        MessageToDict(sub, preserving_proto_field_name=True, always_print_fields_with_no_presence=True)
+        for sub in mqtt_subscriptions_opt
+    ]
+    topics = [
+        MessageToDict(t, preserving_proto_field_name=True, always_print_fields_with_no_presence=True)
+        for t in topics_opt
+    ]
+    actions = [
+        MessageToDict(a, preserving_proto_field_name=True, always_print_fields_with_no_presence=True)
+        for a in actions_opt
+    ]
+
+    architectures: dict[str, int] = {}
+    architecture_display_names: dict[str, str] = {}
+    for arch in architectures_opt:
+        architectures[arch.name] = arch.value
+        if arch.display_name:
+            architecture_display_names[arch.name] = arch.display_name
+
+    capabilities: dict[str, int] = {}
+    for cap in capabilities_opt:
+        capabilities[cap.name] = cap.value
+
+    # Load Command enum
+    command_enum_desc = file_desc.enum_types_by_name["Command"]
+    commands: list[CommandDef] = []
+    for val in command_enum_desc.values:
+        if val.name == "CMD_UNSPECIFIED":
+            continue
+        opts = val.GetOptions().Extensions[mcubridge_pb2.cmd_opts]
+        commands.append(
+            CommandDef(
+                name=val.name,
+                value=val.number,
+                directions=list(opts.directions),
+                category=opts.category or None,
+                description=opts.description or None,
+                requires_ack=opts.requires_ack,
+                expects_direct_response=opts.expects_direct_response,
+            )
+        )
+
+    # Load Status enum
+    status_enum_desc = file_desc.enum_types_by_name["Status"]
+    statuses: list[StatusDef] = []
+    for val in status_enum_desc.values:
+        if val.name == "STATUS_UNSPECIFIED":
+            continue
+        opts = val.GetOptions().Extensions[mcubridge_pb2.status_opts]
+        statuses.append(StatusDef(name=val.name, value=val.number, description=opts.description))
+
+    return ProtocolSpec(
+        constants=constants,
+        hardware=hardware,
+        commands=commands,
+        statuses=statuses,
+        handshake=handshake,
+        mqtt_subscriptions=mqtt_subscriptions,
+        actions=actions,
+        topics=topics,
+        capabilities=capabilities,
+        architectures=architectures,
+        data_formats=data_formats,
+        mqtt_suffixes=mqtt_suffixes,
+        mqtt_defaults=mqtt_defaults,
+        status_reasons=status_reasons,
+        architecture_display_names=architecture_display_names,
+    )
+
 
 TEMPLATE_DIR = Path(__file__).parent / "templates"
 VERSION_PATH = REPO_ROOT / "VERSION"
@@ -881,7 +1053,28 @@ class JinjaGenerator:
 
     def generate_nanopb(self, proto_path: Path) -> None:
         """Invoke nanopb_generator.py to create C++ headers/sources."""
-        cmd = [sys.executable, "-m", "nanopb.generator.nanopb_generator", "-v", proto_path.name]
+        import importlib
+
+        nanopb = importlib.import_module("nanopb")
+        nanopb_file = nanopb.__file__
+        assert nanopb_file is not None
+        nanopb_include_path = Path(nanopb_file).parent / "generator" / "proto"
+
+        cmd = [
+            sys.executable,
+            "-m",
+            "nanopb.generator.nanopb_generator",
+            "-v",
+            "-I",
+            str(proto_path.parent),
+            "-I",
+            str(nanopb_include_path),
+            "-I",
+            "/usr/local/include",
+            "-I",
+            "/usr/include",
+            proto_path.name,
+        ]
         try:
             subprocess.run(cmd, check=True, capture_output=True, text=True, cwd=str(proto_path.parent))
         except subprocess.CalledProcessError as e:
@@ -900,6 +1093,12 @@ class JinjaGenerator:
 
         import os
         import site
+        import importlib
+
+        nanopb = importlib.import_module("nanopb")
+        nanopb_file = nanopb.__file__
+        assert nanopb_file is not None
+        nanopb_include_path = Path(nanopb_file).parent / "generator" / "proto"
 
         env = os.environ.copy()
         # Ensure the user's local site-packages are in the path for the wrapper
@@ -912,6 +1111,9 @@ class JinjaGenerator:
             f"--pyi_out={out_dir}",
             f"--plugin=protoc-gen-pyi={wrapper_path}",
             f"--proto_path={proto_path.parent}",
+            f"--proto_path={nanopb_include_path}",
+            "--proto_path=/usr/local/include",
+            "--proto_path=/usr/include",
             str(proto_path),
         ]
         try:
@@ -1037,32 +1239,38 @@ def ensure_nanopb_core_files() -> None:
 def main() -> None:
     ensure_nanopb_core_files()
     parser = argparse.ArgumentParser(description="Protocol binding generator for MCU Bridge v2.")
-    parser.add_argument("--spec", type=Path, required=True, help="Protocol specification file")
+    parser.add_argument("--spec", type=Path, required=True, help="Protocol specification file (.proto)")
     parser.add_argument("--cpp", type=Path, default=None, help="C++ header output")
     parser.add_argument("--cpp-structs", type=Path, default=None, help="C++ structs output")
     parser.add_argument("--py", type=Path, default=None, help="Python output")
     parser.add_argument("--py-client", type=Path, default=None, help="Python client output")
 
     args = parser.parse_args()
-
-    spec = ProtocolSpec.load(args.spec)
     gen = JinjaGenerator()
     version = read_version()
 
     update_metadata(version)
 
-    proto_path = (args.spec.parent / "mcubridge.proto").resolve()
+    # Compile the protobuf first to generate mcubridge_pb2.py
+    proto_path = args.spec.resolve()
+    if proto_path.suffix == ".toml":
+        proto_path = (proto_path.parent / "mcubridge.proto").resolve()
+
     if proto_path.exists():
         sys.stderr.write(f"Compiling {proto_path}...\n")
         # Python PB2
-        gen.generate_python_pb2(proto_path, args.spec.parent)
+        gen.generate_python_pb2(proto_path, proto_path.parent)
         # Nanopb C++
         gen.generate_nanopb(proto_path)
 
-        # Move generated files to target locations
+    # Now load the compiled descriptor
+    spec = load_spec_from_proto(proto_path)
+
+    # Move generated files to target locations
+    if proto_path.exists():
         if args.cpp:
-            cpp_pb_h = args.spec.parent / "mcubridge.pb.h"
-            cpp_pb_c = args.spec.parent / "mcubridge.pb.c"
+            cpp_pb_h = proto_path.parent / "mcubridge.pb.h"
+            cpp_pb_c = proto_path.parent / "mcubridge.pb.c"
             target_h = args.cpp.parent / "mcubridge.pb.h"
             target_c = args.cpp.parent / "mcubridge.pb.c"
 
@@ -1075,8 +1283,8 @@ def main() -> None:
                 target_c.write_bytes(cpp_pb_c.read_bytes())
                 cpp_pb_c.unlink(missing_ok=True)
 
-        py_pb2 = args.spec.parent / "mcubridge_pb2.py"
-        py_pb2_stub = args.spec.parent / "mcubridge_pb2.pyi"
+        py_pb2 = proto_path.parent / "mcubridge_pb2.py"
+        py_pb2_stub = proto_path.parent / "mcubridge_pb2.pyi"
         if py_pb2.exists():
             pb2_data = py_pb2.read_bytes()
             if args.py:

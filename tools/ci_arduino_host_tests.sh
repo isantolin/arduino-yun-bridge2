@@ -23,7 +23,7 @@ fi
 # [SIL-2] Ensure dependencies are present
 echo "[host-cpp] Generating protocol bindings..."
 ${PYTHON_CMD} "${ROOT_DIR}/tools/protocol/generate.py" \
-    --spec "${ROOT_DIR}/tools/protocol/spec.toml" \
+    --spec "${ROOT_DIR}/tools/protocol/mcubridge.proto" \
     --py "${ROOT_DIR}/mcubridge/mcubridge/protocol/protocol.py" \
     --cpp "${SRC_DIR}/protocol/rpc_protocol.h" \
     --cpp-structs "${SRC_DIR}/protocol/rpc_structs.h" \

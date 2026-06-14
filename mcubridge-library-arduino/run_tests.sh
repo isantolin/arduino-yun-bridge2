@@ -51,7 +51,7 @@ if [ ! -f "src/protocol/rpc_protocol.h" ] || [ ! -f "src/protocol/mcubridge.pb.c
     PYTHON_CMD=$(command -v python3 || command -v python)
     if [ -n "$PYTHON_CMD" ]; then
         $PYTHON_CMD ../tools/protocol/generate.py \
-            --spec ../tools/protocol/spec.toml \
+            --spec ../tools/protocol/mcubridge.proto \
             --py ../mcubridge/mcubridge/protocol/protocol.py \
             --cpp src/protocol/rpc_protocol.h \
             --cpp-structs src/protocol/rpc_structs.h \

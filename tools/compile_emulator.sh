@@ -35,7 +35,7 @@ ls -la "${PACKETSERIAL_PATH}/src" || echo "PACKETSERIAL_PATH/src not found"
 
 echo "[emulator] Generating protocol bindings..."
 if ! "${GEN_PYTHON}" "${ROOT_DIR}/tools/protocol/generate.py" \
-    --spec "${ROOT_DIR}/tools/protocol/spec.toml" \
+    --spec "${ROOT_DIR}/tools/protocol/mcubridge.proto" \
     --py "${ROOT_DIR}/mcubridge/mcubridge/protocol/protocol.py" \
     --cpp "${SRC_DIR}/protocol/rpc_protocol.h" \
     --cpp-structs "${SRC_DIR}/protocol/rpc_structs.h" \

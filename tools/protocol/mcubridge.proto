@@ -2,6 +2,838 @@ syntax = "proto3";
 
 package rpc.pb;
 
+import "google/protobuf/descriptor.proto";
+
+message Constants {
+    uint32 aead_nonce_size = 1;
+    uint32 aead_tag_size = 2;
+    uint32 aead_key_size = 3;
+    uint32 protocol_version = 4;
+    uint32 default_baudrate = 5;
+    uint32 default_safe_baudrate = 6;
+    uint32 default_mqtt_port = 7;
+    uint32 max_payload_size = 8;
+    uint32 max_filepath_length = 9;
+    uint32 max_datastore_key_length = 10;
+    uint32 default_ack_timeout_ms = 11;
+    uint32 default_retry_limit = 12;
+    uint32 max_pending_tx_frames = 13;
+    uint32 max_command_id = 14;
+    uint32 invalid_id_sentinel = 15;
+    uint32 rpc_null_terminator = 16;
+    uint32 rpc_command_stride = 17;
+    uint32 rpc_command_group_shift = 18;
+    uint32 rpc_command_group_offset = 19;
+    uint32 rpc_timer_overflow_threshold = 20;
+    uint32 uint8_mask = 21;
+    uint32 uint16_max = 22;
+    uint32 bootloader_magic = 23;
+    uint32 process_default_exit_code = 24;
+    uint32 crc_size = 25;
+    uint32 crc_covered_header_size = 26;
+    uint32 min_frame_size = 27;
+    uint32 crc32_mask = 28;
+    uint32 crc_initial = 29;
+    uint64 nonce_counter_mask = 30;
+    uint32 crc_polynomial = 31;
+    uint32 frame_delimiter = 32;
+    uint32 digital_low = 33;
+    uint32 digital_high = 34;
+    uint32 status_code_min = 35;
+    uint32 status_code_max = 36;
+    uint32 system_command_min = 37;
+    uint32 system_command_max = 38;
+    uint32 gpio_command_min = 39;
+    uint32 gpio_command_max = 40;
+    uint32 console_command_min = 41;
+    uint32 console_command_max = 42;
+    uint32 datastore_command_min = 43;
+    uint32 datastore_command_max = 44;
+    uint32 mailbox_command_min = 45;
+    uint32 mailbox_command_max = 46;
+    uint32 filesystem_command_min = 47;
+    uint32 filesystem_command_max = 48;
+    uint32 process_command_min = 49;
+    uint32 process_command_max = 50;
+    uint32 spi_command_min = 51;
+    uint32 spi_command_max = 52;
+}
+
+message Hardware {
+    uint32 max_observers_avr = 1;
+    uint32 max_observers_other = 2;
+    uint32 rx_history_size = 3;
+    uint32 rx_buffer_size_avr = 4;
+    uint32 rx_buffer_size_other = 5;
+    uint32 max_pending_tx_frames_avr = 6;
+    uint32 max_pending_tx_frames_other = 7;
+    uint32 console_rx_buffer_size_avr = 8;
+    uint32 console_rx_buffer_size_other = 9;
+    uint32 console_tx_buffer_size_avr = 10;
+    uint32 console_tx_buffer_size_other = 11;
+    uint32 mailbox_rx_buffer_size_avr = 12;
+    uint32 mailbox_rx_buffer_size_other = 13;
+    uint32 max_pending_datastore = 14;
+    uint32 max_pending_process_polls = 15;
+    uint32 file_large_warning_bytes = 16;
+    uint32 startup_drain_per_tick = 17;
+    uint32 startup_drain_final = 18;
+    uint32 startup_stabilization_ms = 19;
+    uint32 baudrate_change_delay_ms = 20;
+    uint32 max_consecutive_crc_errors = 21;
+    uint32 rx_dedupe_interval_ms = 22;
+    uint32 flow_control_xoff_threshold = 23;
+    uint32 flow_control_xon_threshold = 24;
+    uint32 hkdf_key_length = 25;
+    uint32 key_and_digest_buffer_size = 26;
+    uint32 avr_digital_pins = 27;
+    uint32 avr_analog_pins = 28;
+    uint32 samd_digital_pins = 29;
+    uint32 samd_analog_pins = 30;
+    uint32 fallback_max_pin = 31;
+    uint32 fallback_free_memory = 32;
+    uint32 capabilities_feat_extended = 33;
+    uint32 serial_timeout_ms = 34;
+    uint32 spi_timeout_ms = 35;
+    uint32 bootloader_delay_ms = 36;
+    uint32 file_max_read_chunks = 37;
+    uint32 sha256_digest_size = 38;
+    uint32 sha256_kat_buffer_size = 39;
+    uint32 hkdf_handshake_key_length = 40;
+    uint32 hkdf_handshake_full_tag_size = 41;
+}
+
+message Handshake {
+    uint32 nonce_length = 1;
+    uint32 tag_length = 2;
+    string tag_algorithm = 3;
+    string tag_description = 4;
+    uint32 ack_timeout_min_ms = 5;
+    uint32 ack_timeout_max_ms = 6;
+    uint32 response_timeout_min_ms = 7;
+    uint32 response_timeout_max_ms = 8;
+    uint32 retry_limit_min = 9;
+    uint32 retry_limit_max = 10;
+    string hkdf_algorithm = 11;
+    string hkdf_salt = 12;
+    string hkdf_info_auth = 13;
+    string hkdf_info_session = 14;
+    uint32 hkdf_output_length = 15;
+    uint32 nonce_random_bytes = 16;
+    uint32 nonce_counter_bytes = 17;
+    string nonce_format_description = 18;
+    string aead_algorithm = 19;
+    string aead_description = 20;
+}
+
+message DataFormats {
+    string crc_covered_header_format = 1;
+    string crc_format = 2;
+    string uint8_format = 3;
+    string uint16_format = 4;
+    string uint32_format = 5;
+    string nonce_counter_format = 6;
+}
+
+message MqttSuffixes {
+    string incoming_available = 1;
+    string outgoing_available = 2;
+    string response = 3;
+    string error = 4;
+}
+
+message MqttDefaults {
+    string default_topic_prefix = 1;
+}
+
+message StatusReasons {
+    string invalid_path = 1;
+    string read_failed = 2;
+    string remove_failed = 3;
+    string write_failed = 4;
+    string mailbox_incoming_overflow = 5;
+    string mailbox_outgoing_overflow = 6;
+    string process_limit_reached = 7;
+    string command_validation_failed = 8;
+    string process_run_async_failed = 9;
+    string process_run_internal_error = 10;
+    string process_kill_malformed = 11;
+    string process_not_found = 12;
+    string process_kill_failed = 13;
+}
+
+message MqttSubscription {
+    string topic = 1;
+    repeated string segments = 2;
+    uint32 qos = 3;
+}
+
+message TopicConfig {
+    string name = 1;
+    string value = 2;
+    string description = 3;
+}
+
+message ActionConfig {
+    string name = 1;
+    string value = 2;
+    string description = 3;
+}
+
+message ArchConfig {
+    string name = 1;
+    uint32 value = 2;
+    string display_name = 3;
+}
+
+message CapConfig {
+    string name = 1;
+    uint32 value = 2;
+}
+
+message CommandOptions {
+    string category = 1;
+    repeated string directions = 2;
+    bool requires_ack = 3;
+    bool expects_direct_response = 4;
+    string description = 5;
+}
+
+message StatusOptions {
+    string description = 1;
+}
+
+extend google.protobuf.FileOptions {
+    Constants constants = 1001;
+    Hardware hardware = 1002;
+    Handshake handshake = 1003;
+    DataFormats data_formats = 1004;
+    MqttSuffixes mqtt_suffixes = 1005;
+    MqttDefaults mqtt_defaults = 1006;
+    StatusReasons status_reasons = 1007;
+    repeated MqttSubscription mqtt_subscriptions = 1008;
+    repeated TopicConfig topics = 1009;
+    repeated ActionConfig actions = 1010;
+    repeated ArchConfig architectures = 1011;
+    repeated CapConfig capabilities = 1012;
+}
+
+extend google.protobuf.EnumValueOptions {
+    CommandOptions cmd_opts = 1013;
+    StatusOptions status_opts = 1014;
+}
+
+enum Status {
+    STATUS_UNSPECIFIED = 0;
+    OK = 48 [(status_opts) = { description: "Operation completed successfully." }];
+    ERROR = 49 [(status_opts) = { description: "Generic failure." }];
+    CMD_UNKNOWN = 50 [(status_opts) = { description: "Command not recognized." }];
+    MALFORMED = 51 [(status_opts) = { description: "Payload had invalid structure." }];
+    OVERFLOW = 52 [(status_opts) = { description: "Frame exceeded buffer size." }];
+    CRC_MISMATCH = 53 [(status_opts) = { description: "CRC check failed." }];
+    TIMEOUT = 54 [(status_opts) = { description: "Operation timed out." }];
+    NOT_IMPLEMENTED = 55 [(status_opts) = { description: "Command defined but not supported." }];
+    ACK = 56 [(status_opts) = { description: "Generic acknowledgement for fire-and-forget commands." }];
+}
+
+enum Command {
+    CMD_UNSPECIFIED = 0;
+    CMD_GET_VERSION = 64 [(cmd_opts) = { category: "system", directions: ["linux_to_mcu"], expects_direct_response: true }];
+    CMD_GET_VERSION_RESP = 65 [(cmd_opts) = { category: "system", directions: ["mcu_to_linux"] }];
+    CMD_GET_FREE_MEMORY = 66 [(cmd_opts) = { category: "system", directions: ["linux_to_mcu"], expects_direct_response: true }];
+    CMD_GET_FREE_MEMORY_RESP = 67 [(cmd_opts) = { category: "system", directions: ["mcu_to_linux"] }];
+    CMD_LINK_SYNC = 68 [(cmd_opts) = { category: "system", directions: ["linux_to_mcu"], expects_direct_response: true, description: "Synchronize link state with mutual authentication. Payload: [16-byte Nonce] + [16-byte HMAC Tag (optional)]." }];
+    CMD_LINK_SYNC_RESP = 69 [(cmd_opts) = { category: "system", directions: ["mcu_to_linux"] }];
+    CMD_LINK_RESET = 70 [(cmd_opts) = { category: "system", directions: ["linux_to_mcu"], expects_direct_response: true, description: "Reset link state. Accepts optional payload with 'config_format' to update timing parameters." }];
+    CMD_LINK_RESET_RESP = 71 [(cmd_opts) = { category: "system", directions: ["mcu_to_linux"] }];
+    CMD_GET_CAPABILITIES = 72 [(cmd_opts) = { category: "system", directions: ["linux_to_mcu"], expects_direct_response: true }];
+    CMD_GET_CAPABILITIES_RESP = 73 [(cmd_opts) = { category: "system", directions: ["mcu_to_linux"] }];
+    CMD_SET_BAUDRATE = 74 [(cmd_opts) = { category: "system", directions: ["linux_to_mcu"], requires_ack: true }];
+    CMD_SET_BAUDRATE_RESP = 75 [(cmd_opts) = { category: "system", directions: ["mcu_to_linux"] }];
+    CMD_ENTER_BOOTLOADER = 76 [(cmd_opts) = { category: "system", directions: ["linux_to_mcu"], requires_ack: true }];
+    CMD_XOFF = 78 [(cmd_opts) = { directions: ["linux_to_mcu", "mcu_to_linux"], requires_ack: false, description: "Pause transmission (Flow Control)" }];
+    CMD_XON = 79 [(cmd_opts) = { directions: ["linux_to_mcu", "mcu_to_linux"], requires_ack: false, description: "Resume transmission (Flow Control)" }];
+    CMD_SET_PIN_MODE = 80 [(cmd_opts) = { category: "gpio", directions: ["linux_to_mcu"], requires_ack: true }];
+    CMD_DIGITAL_WRITE = 81 [(cmd_opts) = { category: "gpio", directions: ["linux_to_mcu"], requires_ack: true }];
+    CMD_ANALOG_WRITE = 82 [(cmd_opts) = { category: "gpio", directions: ["linux_to_mcu"], requires_ack: true }];
+    CMD_DIGITAL_READ = 83 [(cmd_opts) = { category: "gpio", directions: ["linux_to_mcu"], expects_direct_response: true }];
+    CMD_ANALOG_READ = 84 [(cmd_opts) = { category: "gpio", directions: ["linux_to_mcu"], expects_direct_response: true }];
+    CMD_DIGITAL_READ_RESP = 85 [(cmd_opts) = { category: "gpio", directions: ["mcu_to_linux"] }];
+    CMD_ANALOG_READ_RESP = 86 [(cmd_opts) = { category: "gpio", directions: ["mcu_to_linux"] }];
+    CMD_CONSOLE_WRITE = 96 [(cmd_opts) = { category: "console", directions: ["linux_to_mcu", "mcu_to_linux"], requires_ack: true }];
+    CMD_DATASTORE_PUT = 112 [(cmd_opts) = { category: "datastore", directions: ["mcu_to_linux"], requires_ack: true }];
+    CMD_DATASTORE_GET = 113 [(cmd_opts) = { category: "datastore", directions: ["mcu_to_linux"] }];
+    CMD_DATASTORE_GET_RESP = 114 [(cmd_opts) = { category: "datastore", directions: ["linux_to_mcu"] }];
+    CMD_MAILBOX_READ = 128 [(cmd_opts) = { category: "mailbox", directions: ["mcu_to_linux"] }];
+    CMD_MAILBOX_PROCESSED = 129 [(cmd_opts) = { category: "mailbox", directions: ["mcu_to_linux"] }];
+    CMD_MAILBOX_AVAILABLE = 130 [(cmd_opts) = { category: "mailbox", directions: ["mcu_to_linux"] }];
+    CMD_MAILBOX_PUSH = 131 [(cmd_opts) = { category: "mailbox", directions: ["linux_to_mcu", "mcu_to_linux"], requires_ack: true }];
+    CMD_MAILBOX_READ_RESP = 132 [(cmd_opts) = { category: "mailbox", directions: ["linux_to_mcu"] }];
+    CMD_MAILBOX_AVAILABLE_RESP = 133 [(cmd_opts) = { category: "mailbox", directions: ["linux_to_mcu"] }];
+    CMD_FILE_WRITE = 144 [(cmd_opts) = { category: "filesystem", directions: ["linux_to_mcu", "mcu_to_linux"], requires_ack: true }];
+    CMD_FILE_READ = 145 [(cmd_opts) = { category: "filesystem", directions: ["linux_to_mcu", "mcu_to_linux"] }];
+    CMD_FILE_REMOVE = 146 [(cmd_opts) = { category: "filesystem", directions: ["linux_to_mcu", "mcu_to_linux"] }];
+    CMD_FILE_READ_RESP = 147 [(cmd_opts) = { category: "filesystem", directions: ["linux_to_mcu", "mcu_to_linux"] }];
+    CMD_PROCESS_RUN_ASYNC = 161 [(cmd_opts) = { category: "process", directions: ["mcu_to_linux"] }];
+    CMD_PROCESS_POLL = 162 [(cmd_opts) = { category: "process", directions: ["mcu_to_linux"] }];
+    CMD_PROCESS_KILL = 163 [(cmd_opts) = { category: "process", directions: ["linux_to_mcu", "mcu_to_linux"] }];
+    CMD_PROCESS_RUN_ASYNC_RESP = 165 [(cmd_opts) = { category: "process", directions: ["linux_to_mcu"] }];
+    CMD_PROCESS_POLL_RESP = 166 [(cmd_opts) = { category: "process", directions: ["linux_to_mcu"] }];
+    CMD_SPI_BEGIN = 176 [(cmd_opts) = { category: "spi", directions: ["linux_to_mcu"], requires_ack: true }];
+    CMD_SPI_TRANSFER = 177 [(cmd_opts) = { category: "spi", directions: ["linux_to_mcu"], expects_direct_response: true }];
+    CMD_SPI_TRANSFER_RESP = 178 [(cmd_opts) = { category: "spi", directions: ["mcu_to_linux"] }];
+    CMD_SPI_END = 179 [(cmd_opts) = { category: "spi", directions: ["linux_to_mcu"], requires_ack: true }];
+    CMD_SPI_SET_CONFIG = 180 [(cmd_opts) = { category: "spi", directions: ["linux_to_mcu"], requires_ack: true }];
+}
+
+option (rpc.pb.constants) = {
+    aead_nonce_size: 12
+    aead_tag_size: 16
+    aead_key_size: 32
+    protocol_version: 2
+    default_baudrate: 115200
+    default_safe_baudrate: 115200
+    default_mqtt_port: 8883
+    max_payload_size: 64
+    max_filepath_length: 64
+    max_datastore_key_length: 32
+    default_ack_timeout_ms: 200
+    default_retry_limit: 5
+    max_pending_tx_frames: 2
+    max_command_id: 256
+    invalid_id_sentinel: 65535
+    rpc_null_terminator: 0
+    rpc_command_stride: 2
+    rpc_command_group_shift: 4
+    rpc_command_group_offset: 3
+    rpc_timer_overflow_threshold: 2147483648
+    uint8_mask: 255
+    uint16_max: 65535
+    bootloader_magic: 3735929054
+    process_default_exit_code: 255
+    crc_size: 4
+    crc_covered_header_size: 7
+    min_frame_size: 39
+    crc32_mask: 4294967295
+    crc_initial: 4294967295
+    nonce_counter_mask: 18446744073709551615
+    crc_polynomial: 3988292384
+    frame_delimiter: 0
+    digital_low: 0
+    digital_high: 1
+    status_code_min: 48
+    status_code_max: 63
+    system_command_min: 64
+    system_command_max: 79
+    gpio_command_min: 80
+    gpio_command_max: 95
+    console_command_min: 96
+    console_command_max: 111
+    datastore_command_min: 112
+    datastore_command_max: 127
+    mailbox_command_min: 128
+    mailbox_command_max: 143
+    filesystem_command_min: 144
+    filesystem_command_max: 159
+    process_command_min: 160
+    process_command_max: 175
+    spi_command_min: 176
+    spi_command_max: 191
+};
+
+option (rpc.pb.hardware) = {
+    max_observers_avr: 4
+    max_observers_other: 8
+    rx_history_size: 1
+    rx_buffer_size_avr: 128
+    rx_buffer_size_other: 512
+    max_pending_tx_frames_avr: 1
+    max_pending_tx_frames_other: 8
+    console_rx_buffer_size_avr: 32
+    console_rx_buffer_size_other: 64
+    console_tx_buffer_size_avr: 32
+    console_tx_buffer_size_other: 60
+    mailbox_rx_buffer_size_avr: 64
+    mailbox_rx_buffer_size_other: 128
+    max_pending_datastore: 1
+    max_pending_process_polls: 1
+    file_large_warning_bytes: 1048576
+    startup_drain_per_tick: 64
+    startup_drain_final: 256
+    startup_stabilization_ms: 50
+    baudrate_change_delay_ms: 50
+    max_consecutive_crc_errors: 5
+    rx_dedupe_interval_ms: 1000
+    flow_control_xoff_threshold: 48
+    flow_control_xon_threshold: 16
+    hkdf_key_length: 32
+    key_and_digest_buffer_size: 64
+    avr_digital_pins: 14
+    avr_analog_pins: 6
+    samd_digital_pins: 20
+    samd_analog_pins: 8
+    fallback_max_pin: 32
+    fallback_free_memory: 1024
+    capabilities_feat_extended: 1
+    serial_timeout_ms: 50
+    spi_timeout_ms: 50
+    bootloader_delay_ms: 100
+    file_max_read_chunks: 256
+    sha256_digest_size: 32
+    sha256_kat_buffer_size: 64
+    hkdf_handshake_key_length: 32
+    hkdf_handshake_full_tag_size: 32
+};
+
+option (rpc.pb.handshake) = {
+    nonce_length: 16
+    tag_length: 16
+    tag_algorithm: "HMAC-SHA256"
+    tag_description: "HMAC-SHA256(secret, nonce) truncated to 16 bytes"
+    ack_timeout_min_ms: 25
+    ack_timeout_max_ms: 60000
+    response_timeout_min_ms: 100
+    response_timeout_max_ms: 180000
+    retry_limit_min: 1
+    retry_limit_max: 8
+    hkdf_algorithm: "HKDF-SHA256"
+    hkdf_salt: "mcubridge-v2"
+    hkdf_info_auth: "handshake-auth"
+    hkdf_info_session: "session-key"
+    hkdf_output_length: 32
+    nonce_random_bytes: 8
+    nonce_counter_bytes: 8
+    nonce_format_description: "random[8] || counter[8] (uint64 BE) for anti-replay"
+    aead_algorithm: "ChaCha20-Poly1305"
+    aead_description: "Authenticated Encryption with Associated Data (RFC 8439)"
+};
+
+option (rpc.pb.data_formats) = {
+    crc_covered_header_format: "<BHHH"
+    crc_format: "<I"
+    uint8_format: "<B"
+    uint16_format: "<H"
+    uint32_format: "<I"
+    nonce_counter_format: "<Q"
+};
+
+option (rpc.pb.mqtt_suffixes) = {
+    incoming_available: "incoming_available"
+    outgoing_available: "outgoing_available"
+    response: "response"
+    error: "error"
+};
+
+option (rpc.pb.mqtt_defaults) = {
+    default_topic_prefix: "br"
+};
+
+option (rpc.pb.status_reasons) = {
+    invalid_path: "invalid_path"
+    read_failed: "read_failed"
+    remove_failed: "remove_failed"
+    write_failed: "write_failed"
+    mailbox_incoming_overflow: "mailbox_incoming_overflow"
+    mailbox_outgoing_overflow: "mailbox_outgoing_overflow"
+    process_limit_reached: "process_limit_reached"
+    command_validation_failed: "command_validation_failed"
+    process_run_async_failed: "process_run_async_failed"
+    process_run_internal_error: "process_run_internal_error"
+    process_kill_malformed: "process_kill_malformed"
+    process_not_found: "process_not_found"
+    process_kill_failed: "process_kill_failed"
+};
+
+option (rpc.pb.mqtt_subscriptions) = {
+    topic: "DIGITAL"
+    segments: ["+", "mode"]
+    qos: 0
+};
+option (rpc.pb.mqtt_subscriptions) = {
+    topic: "DIGITAL"
+    segments: ["+", "read"]
+    qos: 0
+};
+option (rpc.pb.mqtt_subscriptions) = {
+    topic: "DIGITAL"
+    segments: ["+"]
+    qos: 0
+};
+option (rpc.pb.mqtt_subscriptions) = {
+    topic: "ANALOG"
+    segments: ["+", "read"]
+    qos: 0
+};
+option (rpc.pb.mqtt_subscriptions) = {
+    topic: "ANALOG"
+    segments: ["+"]
+    qos: 0
+};
+option (rpc.pb.mqtt_subscriptions) = {
+    topic: "CONSOLE"
+    segments: ["in"]
+    qos: 0
+};
+option (rpc.pb.mqtt_subscriptions) = {
+    topic: "DATASTORE"
+    segments: ["put", "#"]
+    qos: 0
+};
+option (rpc.pb.mqtt_subscriptions) = {
+    topic: "DATASTORE"
+    segments: ["get", "#"]
+    qos: 0
+};
+option (rpc.pb.mqtt_subscriptions) = {
+    topic: "MAILBOX"
+    segments: ["write"]
+    qos: 0
+};
+option (rpc.pb.mqtt_subscriptions) = {
+    topic: "MAILBOX"
+    segments: ["read"]
+    qos: 0
+};
+option (rpc.pb.mqtt_subscriptions) = {
+    topic: "SHELL"
+    segments: ["run_async"]
+    qos: 0
+};
+option (rpc.pb.mqtt_subscriptions) = {
+    topic: "SHELL"
+    segments: ["poll", "#"]
+    qos: 0
+};
+option (rpc.pb.mqtt_subscriptions) = {
+    topic: "SHELL"
+    segments: ["kill", "#"]
+    qos: 0
+};
+option (rpc.pb.mqtt_subscriptions) = {
+    topic: "SYSTEM"
+    segments: ["free_memory", "get"]
+    qos: 0
+};
+option (rpc.pb.mqtt_subscriptions) = {
+    topic: "SYSTEM"
+    segments: ["version", "get"]
+    qos: 0
+};
+option (rpc.pb.mqtt_subscriptions) = {
+    topic: "SYSTEM"
+    segments: ["bridge", "handshake", "get"]
+    qos: 0
+};
+option (rpc.pb.mqtt_subscriptions) = {
+    topic: "SYSTEM"
+    segments: ["bridge", "summary", "get"]
+    qos: 0
+};
+option (rpc.pb.mqtt_subscriptions) = {
+    topic: "SYSTEM"
+    segments: ["bridge", "state", "get"]
+    qos: 0
+};
+option (rpc.pb.mqtt_subscriptions) = {
+    topic: "FILE"
+    segments: ["write", "#"]
+    qos: 0
+};
+option (rpc.pb.mqtt_subscriptions) = {
+    topic: "FILE"
+    segments: ["read", "#"]
+    qos: 0
+};
+option (rpc.pb.mqtt_subscriptions) = {
+    topic: "FILE"
+    segments: ["remove", "#"]
+    qos: 0
+};
+option (rpc.pb.mqtt_subscriptions) = {
+    topic: "SPI"
+    segments: ["begin"]
+    qos: 0
+};
+option (rpc.pb.mqtt_subscriptions) = {
+    topic: "SPI"
+    segments: ["end"]
+    qos: 0
+};
+option (rpc.pb.mqtt_subscriptions) = {
+    topic: "SPI"
+    segments: ["transfer"]
+    qos: 0
+};
+option (rpc.pb.mqtt_subscriptions) = {
+    topic: "SPI"
+    segments: ["config"]
+    qos: 0
+};
+
+option (rpc.pb.topics) = {
+    name: "ANALOG"
+    value: "a"
+    description: "Analog pin operations"
+};
+option (rpc.pb.topics) = {
+    name: "CONSOLE"
+    value: "console"
+    description: "Remote console"
+};
+option (rpc.pb.topics) = {
+    name: "DATASTORE"
+    value: "datastore"
+    description: "Key-value storage"
+};
+option (rpc.pb.topics) = {
+    name: "DIGITAL"
+    value: "d"
+    description: "Digital pin operations"
+};
+option (rpc.pb.topics) = {
+    name: "FILE"
+    value: "file"
+    description: "File system operations"
+};
+option (rpc.pb.topics) = {
+    name: "MAILBOX"
+    value: "mailbox"
+    description: "Message passing"
+};
+option (rpc.pb.topics) = {
+    name: "SHELL"
+    value: "sh"
+    description: "Shell command execution"
+};
+option (rpc.pb.topics) = {
+    name: "SPI"
+    value: "spi"
+    description: "SPI bus operations"
+};
+option (rpc.pb.topics) = {
+    name: "STATUS"
+    value: "status"
+    description: "System status reporting"
+};
+option (rpc.pb.topics) = {
+    name: "SYSTEM"
+    value: "system"
+    description: "System control and info"
+};
+
+option (rpc.pb.actions) = {
+    name: "FILE_READ"
+    value: "read"
+    description: "Read file content"
+};
+option (rpc.pb.actions) = {
+    name: "FILE_WRITE"
+    value: "write"
+    description: "Write file content"
+};
+option (rpc.pb.actions) = {
+    name: "FILE_REMOVE"
+    value: "remove"
+    description: "Remove file"
+};
+option (rpc.pb.actions) = {
+    name: "SPI_BEGIN"
+    value: "begin"
+    description: "Initialize SPI bus"
+};
+option (rpc.pb.actions) = {
+    name: "SPI_END"
+    value: "end"
+    description: "Deinitialize SPI bus"
+};
+option (rpc.pb.actions) = {
+    name: "SPI_TRANSFER"
+    value: "transfer"
+    description: "Full-duplex SPI transfer"
+};
+option (rpc.pb.actions) = {
+    name: "SPI_CONFIG"
+    value: "config"
+    description: "Configure SPI parameters"
+};
+option (rpc.pb.actions) = {
+    name: "SHELL_RUN_ASYNC"
+    value: "run_async"
+    description: "Run shell command asynchronously"
+};
+option (rpc.pb.actions) = {
+    name: "SHELL_POLL"
+    value: "poll"
+    description: "Poll shell command status"
+};
+option (rpc.pb.actions) = {
+    name: "SHELL_KILL"
+    value: "kill"
+    description: "Kill shell command"
+};
+option (rpc.pb.actions) = {
+    name: "MAILBOX_WRITE"
+    value: "write"
+    description: "Write to mailbox"
+};
+option (rpc.pb.actions) = {
+    name: "DATASTORE_GET"
+    value: "get"
+    description: "Get datastore value"
+};
+option (rpc.pb.actions) = {
+    name: "DATASTORE_PUT"
+    value: "put"
+    description: "Put datastore value"
+};
+option (rpc.pb.actions) = {
+    name: "PIN_MODE"
+    value: "mode"
+    description: "Set pin mode"
+};
+option (rpc.pb.actions) = {
+    name: "PIN_READ"
+    value: "read"
+    description: "Read pin value"
+};
+option (rpc.pb.actions) = {
+    name: "CONSOLE_IN"
+    value: "in"
+    description: "Console input"
+};
+option (rpc.pb.actions) = {
+    name: "CONSOLE_OUT"
+    value: "out"
+    description: "Console output"
+};
+option (rpc.pb.actions) = {
+    name: "MAILBOX_READ"
+    value: "read"
+    description: "Read from mailbox"
+};
+option (rpc.pb.actions) = {
+    name: "MAILBOX_INCOMING"
+    value: "incoming"
+    description: "Mailbox incoming messages"
+};
+option (rpc.pb.actions) = {
+    name: "MAILBOX_PROCESSED"
+    value: "processed"
+    description: "Mailbox processed notifications"
+};
+option (rpc.pb.actions) = {
+    name: "MAILBOX_ERRORS"
+    value: "errors"
+    description: "Mailbox error topic"
+};
+option (rpc.pb.actions) = {
+    name: "SYSTEM_FREE_MEMORY"
+    value: "free_memory"
+    description: "System free memory"
+};
+option (rpc.pb.actions) = {
+    name: "SYSTEM_VERSION"
+    value: "version"
+    description: "System version"
+};
+option (rpc.pb.actions) = {
+    name: "SYSTEM_BOOTLOADER"
+    value: "bootloader"
+    description: "Enter bootloader mode"
+};
+option (rpc.pb.actions) = {
+    name: "SYSTEM_GET"
+    value: "get"
+    description: "Get system info"
+};
+option (rpc.pb.actions) = {
+    name: "SYSTEM_VALUE"
+    value: "value"
+    description: "Value payload segment"
+};
+option (rpc.pb.actions) = {
+    name: "SYSTEM_METRICS"
+    value: "metrics"
+    description: "Metrics topic"
+};
+option (rpc.pb.actions) = {
+    name: "SYSTEM_BRIDGE"
+    value: "bridge"
+    description: "Bridge snapshots"
+};
+option (rpc.pb.actions) = {
+    name: "SYSTEM_HANDSHAKE"
+    value: "handshake"
+    description: "Handshake snapshot"
+};
+option (rpc.pb.actions) = {
+    name: "SYSTEM_SUMMARY"
+    value: "summary"
+    description: "Bridge summary snapshot"
+};
+option (rpc.pb.actions) = {
+    name: "SYSTEM_STATE"
+    value: "state"
+    description: "Bridge state snapshot"
+};
+option (rpc.pb.actions) = {
+    name: "DIGITAL_WRITE"
+    value: "write"
+    description: "Digital write"
+};
+option (rpc.pb.actions) = {
+    name: "DIGITAL_READ"
+    value: "read"
+    description: "Digital read"
+};
+option (rpc.pb.actions) = {
+    name: "DIGITAL_MODE"
+    value: "mode"
+    description: "Digital mode"
+};
+option (rpc.pb.actions) = {
+    name: "ANALOG_WRITE"
+    value: "write"
+    description: "Analog write"
+};
+option (rpc.pb.actions) = {
+    name: "ANALOG_READ"
+    value: "read"
+    description: "Analog read"
+};
+
+option (rpc.pb.architectures) = {
+    name: "avr"
+    value: 1
+    display_name: "Atmel AVR"
+};
+option (rpc.pb.architectures) = {
+    name: "esp32"
+    value: 2
+    display_name: "Espressif ESP32"
+};
+option (rpc.pb.architectures) = {
+    name: "esp8266"
+    value: 3
+    display_name: "Espressif ESP8266"
+};
+option (rpc.pb.architectures) = {
+    name: "samd"
+    value: 4
+    display_name: "Microchip SAMD"
+};
+option (rpc.pb.architectures) = {
+    name: "sam"
+    value: 5
+    display_name: "Microchip SAM"
+};
+option (rpc.pb.architectures) = {
+    name: "rp2040"
+    value: 6
+    display_name: "Raspberry Pi RP2040"
+};
+
+
 enum PinModeType {
     PIN_INPUT = 0;
     PIN_OUTPUT = 1;

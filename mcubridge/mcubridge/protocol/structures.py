@@ -114,30 +114,47 @@ class TopicRoute(msgspec.Struct, frozen=True):
 
 
 class AllowedCommandPolicy:
+    __hash__ = None  # type: ignore
     """Normalised allow-list for shell/process commands. [SIL-2] Wraps Protobuf."""
+
     def __init__(self, entries: Iterable[str] = ()) -> None:
         self._pb = pb.AllowedCommandPolicy(entries=list(entries))
+
     @property
-    def entries(self) -> tuple[str, ...]: return tuple(self._pb.entries)
+    def entries(self) -> tuple[str, ...]:
+        return tuple(self._pb.entries)
+
     @property
     def allow_all(self) -> bool:
         from mcubridge.config.const import ALLOWED_COMMAND_WILDCARD
+
         return ALLOWED_COMMAND_WILDCARD in self._pb.entries
+
     def is_allowed(self, command: str) -> bool:
         import fnmatch
+
         pieces = command.strip().split()
-        if not pieces: return False
+        if not pieces:
+            return False
         return self.allow_all or any(fnmatch.fnmatch(pieces[0].lower(), p) for p in self._pb.entries)
-    def __contains__(self, item: str) -> bool: return item.lower() in self._pb.entries
-    def to_protobuf(self) -> bytes: return self._pb.SerializeToString()
+
+    def __contains__(self, item: str) -> bool:
+        return item.lower() in self._pb.entries
+
+    def to_protobuf(self) -> bytes:
+        return self._pb.SerializeToString()
+
     def __eq__(self, other: Any) -> bool:
-        if not isinstance(other, AllowedCommandPolicy): return False
+        if not isinstance(other, AllowedCommandPolicy):
+            return False
         return self._pb.entries == other._pb.entries
+
     @classmethod
     def from_iterable(cls, entries: Iterable[str]) -> AllowedCommandPolicy:
         all_tokens: list[str] = []
         for c in entries:
-            if not c: continue
+            if not c:
+                continue
             tokens = _TOKEN_SEP.split(c.strip().lower())
             all_tokens.extend(t for t in tokens if t)
         items: set[str] = set(all_tokens)
@@ -149,6 +166,7 @@ class AllowedCommandPolicy:
 def _get_topic_auth_mapping_v3() -> dict[tuple[str, str], str]:
     import mcubridge.protocol.protocol as proto
     from mcubridge.protocol.topics import Topic
+
     mapping: dict[tuple[str, str], str] = {}
     # Use the class descriptor instead of an instance
     fields = [f.name for f in pb.TopicAuthorization.DESCRIPTOR.fields]
@@ -158,7 +176,8 @@ def _get_topic_auth_mapping_v3() -> dict[tuple[str, str], str]:
             if field.startswith(f"{prefix}_"):
                 suffix = field[len(prefix) + 1 :]
                 action_class_name = f"{t.name.title()}Action"
-                if t == Topic.SPI: action_class_name = "SpiAction"
+                if t == Topic.SPI:
+                    action_class_name = "SpiAction"
                 action_cls = getattr(proto, action_class_name, None)
                 if action_cls is not None:
                     for act in action_cls:
@@ -169,7 +188,9 @@ def _get_topic_auth_mapping_v3() -> dict[tuple[str, str], str]:
 
 
 class TopicAuthorization:
+    __hash__ = None  # type: ignore
     """Per-topic allow flags for MQTT-driven actions. [SIL-2] Wraps Protobuf."""
+
     def __init__(self, **kwargs: bool) -> None:
         self._pb = pb.TopicAuthorization()
         for field in [f.name for f in self._pb.DESCRIPTOR.fields]:
@@ -178,62 +199,108 @@ class TopicAuthorization:
         mapping = _get_topic_auth_mapping_v3()
         allowed = [k for k, field_name in mapping.items() if getattr(self._pb, field_name)]
         self._allowed_cache = frozenset(allowed)
-    
+
     @property
-    def file_read(self) -> bool: return self._pb.file_read
+    def file_read(self) -> bool:
+        return self._pb.file_read
+
     @property
-    def file_write(self) -> bool: return self._pb.file_write
+    def file_write(self) -> bool:
+        return self._pb.file_write
+
     @property
-    def file_remove(self) -> bool: return self._pb.file_remove
+    def file_remove(self) -> bool:
+        return self._pb.file_remove
+
     @property
-    def datastore_get(self) -> bool: return self._pb.datastore_get
+    def datastore_get(self) -> bool:
+        return self._pb.datastore_get
+
     @property
-    def datastore_put(self) -> bool: return self._pb.datastore_put
+    def datastore_put(self) -> bool:
+        return self._pb.datastore_put
+
     @property
-    def mailbox_read(self) -> bool: return self._pb.mailbox_read
+    def mailbox_read(self) -> bool:
+        return self._pb.mailbox_read
+
     @property
-    def mailbox_write(self) -> bool: return self._pb.mailbox_write
+    def mailbox_write(self) -> bool:
+        return self._pb.mailbox_write
+
     @property
-    def shell_run_async(self) -> bool: return self._pb.shell_run_async
+    def shell_run_async(self) -> bool:
+        return self._pb.shell_run_async
+
     @property
-    def shell_poll(self) -> bool: return self._pb.shell_poll
+    def shell_poll(self) -> bool:
+        return self._pb.shell_poll
+
     @property
-    def shell_kill(self) -> bool: return self._pb.shell_kill
+    def shell_kill(self) -> bool:
+        return self._pb.shell_kill
+
     @property
-    def console_input(self) -> bool: return self._pb.console_input
+    def console_input(self) -> bool:
+        return self._pb.console_input
+
     @property
-    def digital_write(self) -> bool: return self._pb.digital_write
+    def digital_write(self) -> bool:
+        return self._pb.digital_write
+
     @property
-    def digital_read(self) -> bool: return self._pb.digital_read
+    def digital_read(self) -> bool:
+        return self._pb.digital_read
+
     @property
-    def digital_mode(self) -> bool: return self._pb.digital_mode
+    def digital_mode(self) -> bool:
+        return self._pb.digital_mode
+
     @property
-    def analog_write(self) -> bool: return self._pb.analog_write
+    def analog_write(self) -> bool:
+        return self._pb.analog_write
+
     @property
-    def analog_read(self) -> bool: return self._pb.analog_read
+    def analog_read(self) -> bool:
+        return self._pb.analog_read
+
     @property
-    def system_version(self) -> bool: return self._pb.system_version
+    def system_version(self) -> bool:
+        return self._pb.system_version
+
     @property
-    def system_free_memory(self) -> bool: return self._pb.system_free_memory
+    def system_free_memory(self) -> bool:
+        return self._pb.system_free_memory
+
     @property
-    def system_bootloader(self) -> bool: return self._pb.system_bootloader
+    def system_bootloader(self) -> bool:
+        return self._pb.system_bootloader
+
     @property
-    def spi_begin(self) -> bool: return self._pb.spi_begin
+    def spi_begin(self) -> bool:
+        return self._pb.spi_begin
+
     @property
-    def spi_end(self) -> bool: return self._pb.spi_end
+    def spi_end(self) -> bool:
+        return self._pb.spi_end
+
     @property
-    def spi_transfer(self) -> bool: return self._pb.spi_transfer
+    def spi_transfer(self) -> bool:
+        return self._pb.spi_transfer
+
     @property
-    def spi_config(self) -> bool: return self._pb.spi_config
+    def spi_config(self) -> bool:
+        return self._pb.spi_config
 
     def allows(self, topic: str, action: str) -> bool:
         return (topic.lower(), action.lower()) in self._allowed_cache
-    def to_protobuf(self) -> bytes: return self._pb.SerializeToString()
+
+    def to_protobuf(self) -> bytes:
+        return self._pb.SerializeToString()
+
     def __eq__(self, other: Any) -> bool:
-        if not isinstance(other, AllowedCommandPolicy): return False
-        return self._pb.entries == other._pb.entries
-    def __eq__(self, other: Any) -> bool:
-        if not isinstance(other, TopicAuthorization): return False
+        if not isinstance(other, TopicAuthorization):
+            return False
         return self._pb.SerializeToString() == other._pb.SerializeToString()
 
 
@@ -385,8 +452,10 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
         self.allowed_commands = self.allowed_policy.entries if self.allowed_policy else ()
 
         if self.topic_authorization is None or isinstance(self.topic_authorization, dict):
-            kwargs = self.topic_authorization if isinstance(self.topic_authorization, dict) else {}
-            object.__setattr__(self, "topic_authorization", TopicAuthorization(**kwargs))
+            # [SIL-2] Explicit type checking and casting to resolve partially unknown Mapping from msgspec
+            raw_auth = getattr(self, "topic_authorization", None)
+            ta_dict = cast(dict[str, bool], raw_auth if isinstance(raw_auth, dict) else {})
+            object.__setattr__(self, "topic_authorization", TopicAuthorization(**ta_dict))
 
         # [SIL-2] Strict Semantic Validations
         if not self.mqtt_topic or not any(filter(None, self.mqtt_topic.split("/"))):
@@ -554,12 +623,19 @@ class PendingPinRequest:
 class ServiceHealth:
     def __init__(self, name: str, status: str, restarts: int) -> None:
         self._pb = pb.ServiceHealth(name=name, status=status, restarts=restarts)
+
     @property
-    def name(self) -> str: return self._pb.name
+    def name(self) -> str:
+        return self._pb.name
+
     @property
-    def status(self) -> str: return self._pb.status
+    def status(self) -> str:
+        return self._pb.status
+
     @property
-    def restarts(self) -> int: return self._pb.restarts
+    def restarts(self) -> int:
+        return self._pb.restarts
+
     last_failure_unix: float
     last_exception: str | None = None
 
@@ -766,56 +842,80 @@ def decode_queued_publish(data: bytes) -> QueuedPublish:
 
 class PendingCommand:
     """Book-keeping for a tracked command in flight. [SIL-2] Wraps Protobuf."""
-    def __init__(self, command_id: int, expected_resp_ids: Iterable[int] = (), 
-                 reply_topic: str | None = None, correlation_data: bytes | None = None) -> None:
+
+    def __init__(
+        self,
+        command_id: int,
+        expected_resp_ids: Iterable[int] = (),
+        reply_topic: str | None = None,
+        correlation_data: bytes | None = None,
+    ) -> None:
         self._pb = pb.PendingCommand(
             command_id=command_id,
             expected_resp_ids=list(expected_resp_ids),
             reply_topic=reply_topic,
-            correlation_data=correlation_data
+            correlation_data=correlation_data,
         )
         self.completion = asyncio.Event()
         self.response_payload: bytes | ProtobufMessage | None = None
+
     @property
-    def command_id(self) -> int: return self._pb.command_id
+    def command_id(self) -> int:
+        return self._pb.command_id
+
     @property
-    def expected_resp_ids(self) -> list[int]: return list(self._pb.expected_resp_ids)
+    def expected_resp_ids(self) -> list[int]:
+        return list(self._pb.expected_resp_ids)
+
     @property
-    def attempts(self) -> int: return self._pb.attempts
+    def attempts(self) -> int:
+        return self._pb.attempts
+
     @attempts.setter
-    def attempts(self, val: int) -> None: self._pb.attempts = val
+    def attempts(self, val: int) -> None:
+        self._pb.attempts = val
+
     @property
-    def success(self) -> bool | None: return self._pb.success if self._pb.HasField("success") else None
+    def success(self) -> bool | None:
+        return self._pb.success if self._pb.HasField("success") else None
+
     @success.setter
     def success(self, val: bool | None) -> None:
-        if val is None: self._pb.ClearField("success")
-        else: self._pb.success = val
+        if val is None:
+            self._pb.ClearField("success")
+        else:
+            self._pb.success = val
+
     @property
-    def failure_status(self) -> int | None: return self._pb.failure_status if self._pb.HasField("failure_status") else None
+    def failure_status(self) -> int | None:
+        return self._pb.failure_status if self._pb.HasField("failure_status") else None
+
     @property
-    def ack_received(self) -> bool: return self._pb.ack_received
+    def ack_received(self) -> bool:
+        return self._pb.ack_received
+
     @ack_received.setter
-    def ack_received(self, val: bool) -> None: self._pb.ack_received = val
+    def ack_received(self, val: bool) -> None:
+        self._pb.ack_received = val
+
     @property
-    def reply_topic(self) -> str | None: return self._pb.reply_topic if self._pb.HasField("reply_topic") else None
+    def reply_topic(self) -> str | None:
+        return self._pb.reply_topic if self._pb.HasField("reply_topic") else None
+
     @property
-    def correlation_data(self) -> bytes | None: return self._pb.correlation_data if self._pb.HasField("correlation_data") else None
+    def correlation_data(self) -> bytes | None:
+        return self._pb.correlation_data if self._pb.HasField("correlation_data") else None
+
     def mark_success(self, payload: bytes | ProtobufMessage | None = None) -> None:
         self.response_payload = payload
         self._pb.success = True
-        if not self.completion.is_set(): self.completion.set()
-    def mark_failure(self, status: int | None) -> None:
-        self._pb.success = False
-        if status is not None: self._pb.failure_status = status
-        if not self.completion.is_set(): self.completion.set()
-    def mark_failure(self, status: int | None) -> None:
-        self._pb.success = False
-        if status is not None: self._pb.failure_status = status
-        if not self.completion.is_set(): self.completion.set()
+        if not self.completion.is_set():
+            self.completion.set()
 
     def mark_failure(self, status: int | None) -> None:
         self._pb.success = False
-        if status is not None: self._pb.failure_status = status
+        if status is not None:
+            self._pb.failure_status = status
         if not self.completion.is_set():
             self.completion.set()
 
@@ -825,24 +925,39 @@ class PendingCommand:
 
 class SerialThroughputStats:
     """Serial link throughput counters. [SIL-2] Wraps Protobuf."""
+
     def __init__(self) -> None:
         self._pb = pb.SerialThroughputStats()
+
     @property
-    def bytes_sent(self) -> int: return self._pb.bytes_sent
+    def bytes_sent(self) -> int:
+        return self._pb.bytes_sent
+
     @property
-    def bytes_received(self) -> int: return self._pb.bytes_received
+    def bytes_received(self) -> int:
+        return self._pb.bytes_received
+
     @property
-    def frames_sent(self) -> int: return self._pb.frames_sent
+    def frames_sent(self) -> int:
+        return self._pb.frames_sent
+
     @property
-    def frames_received(self) -> int: return self._pb.frames_received
+    def frames_received(self) -> int:
+        return self._pb.frames_received
+
     @property
-    def last_tx_unix(self) -> float: return self._pb.last_tx_unix
+    def last_tx_unix(self) -> float:
+        return self._pb.last_tx_unix
+
     @property
-    def last_rx_unix(self) -> float: return self._pb.last_rx_unix
+    def last_rx_unix(self) -> float:
+        return self._pb.last_rx_unix
+
     def record_tx(self, nbytes: int) -> None:
         self._pb.bytes_sent += nbytes
         self._pb.frames_sent += 1
         self._pb.last_tx_unix = time.time()
+
     def record_rx(self, nbytes: int) -> None:
         self._pb.bytes_received += nbytes
         self._pb.frames_received += 1
@@ -852,9 +967,15 @@ class SerialThroughputStats:
 class ProcessStats:
     def __init__(self, name: str, cpu_percent: float, memory_rss_bytes: int) -> None:
         self._pb = pb.ProcessStats(name=name, cpu_percent=cpu_percent, memory_rss_bytes=memory_rss_bytes)
+
     @property
-    def name(self) -> str: return self._pb.name
+    def name(self) -> str:
+        return self._pb.name
+
     @property
-    def cpu_percent(self) -> float: return self._pb.cpu_percent
+    def cpu_percent(self) -> float:
+        return self._pb.cpu_percent
+
     @property
-    def memory_rss_bytes(self) -> int: return self._pb.memory_rss_bytes
+    def memory_rss_bytes(self) -> int:
+        return self._pb.memory_rss_bytes

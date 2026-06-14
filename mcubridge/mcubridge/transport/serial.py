@@ -35,7 +35,6 @@ from mcubridge.config.const import (
 from mcubridge.protocol import protocol, is_system_command
 from mcubridge.protocol.protocol import (
     ACK_ONLY_COMMANDS,
-
     Status,
     expected_responses,
     response_to_request,

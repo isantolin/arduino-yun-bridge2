@@ -1,3 +1,5 @@
+from __future__ import annotations
+from pathlib import Path
 from mcubridge.protocol import mcubridge_pb2 as pb
 import asyncio
 import time
@@ -14,7 +16,7 @@ from mcubridge.protocol.protocol import Command, Status
 
 
 @pytest.fixture
-def handshake_setup(tmp_path) -> Iterator[tuple[SerialHandshakeManager, RuntimeState, AsyncMock]]:
+def handshake_setup(tmp_path: Path) -> Iterator[tuple[SerialHandshakeManager, RuntimeState, AsyncMock]]:
     config = RuntimeConfig(
         mqtt_topic="br",
         serial_port="/dev/test",

@@ -142,45 +142,30 @@ class AllowedCommandPolicy(msgspec.Struct, frozen=True):
 
 @functools.lru_cache(maxsize=1)
 def _get_topic_auth_mapping() -> dict[tuple[str, str], str]:
-    """Build and cache the (topic, action) → field-name map (deferred to avoid circular imports)."""
-    from mcubridge.protocol.protocol import (
-        AnalogAction,
-        ConsoleAction,
-        DatastoreAction,
-        DigitalAction,
-        FileAction,
-        MailboxAction,
-        ShellAction,
-        SpiAction,
-        SystemAction,
-    )
+    """Build and cache the (topic, action) → field-name map dynamically via reflection."""
+    import mcubridge.protocol.protocol as proto
     from mcubridge.protocol.topics import Topic
 
-    return {
-        (Topic.FILE.value, FileAction.READ.value): "file_read",
-        (Topic.FILE.value, FileAction.WRITE.value): "file_write",
-        (Topic.FILE.value, FileAction.REMOVE.value): "file_remove",
-        (Topic.DATASTORE.value, DatastoreAction.GET.value): "datastore_get",
-        (Topic.DATASTORE.value, DatastoreAction.PUT.value): "datastore_put",
-        (Topic.MAILBOX.value, MailboxAction.READ.value): "mailbox_read",
-        (Topic.MAILBOX.value, MailboxAction.WRITE.value): "mailbox_write",
-        (Topic.SHELL.value, ShellAction.RUN_ASYNC.value): "shell_run_async",
-        (Topic.SHELL.value, ShellAction.POLL.value): "shell_poll",
-        (Topic.SHELL.value, ShellAction.KILL.value): "shell_kill",
-        (Topic.CONSOLE.value, ConsoleAction.IN.value): "console_input",
-        (Topic.DIGITAL.value, DigitalAction.WRITE.value): "digital_write",
-        (Topic.DIGITAL.value, DigitalAction.READ.value): "digital_read",
-        (Topic.DIGITAL.value, DigitalAction.MODE.value): "digital_mode",
-        (Topic.ANALOG.value, AnalogAction.WRITE.value): "analog_write",
-        (Topic.ANALOG.value, AnalogAction.READ.value): "analog_read",
-        (Topic.SYSTEM.value, SystemAction.VERSION.value): "system_version",
-        (Topic.SYSTEM.value, SystemAction.FREE_MEMORY.value): "system_free_memory",
-        (Topic.SYSTEM.value, SystemAction.BOOTLOADER.value): "system_bootloader",
-        (Topic.SPI.value, SpiAction.BEGIN.value): "spi_begin",
-        (Topic.SPI.value, SpiAction.END.value): "spi_end",
-        (Topic.SPI.value, SpiAction.TRANSFER.value): "spi_transfer",
-        (Topic.SPI.value, SpiAction.CONFIG.value): "spi_config",
-    }
+    mapping: dict[tuple[str, str], str] = {}
+    fields = [f.name for f in msgspec.structs.fields(TopicAuthorization)]
+
+    for field in fields:
+        if field.startswith("_"):
+            continue
+        for t in Topic:
+            prefix = t.name.lower()
+            if field.startswith(f"{prefix}_"):
+                suffix = field[len(prefix) + 1 :]
+                action_class_name = f"{t.name.title()}Action"
+                if t == Topic.SPI:
+                    action_class_name = "SpiAction"
+                action_cls = getattr(proto, action_class_name, None)
+                if action_cls is not None:
+                    for act in action_cls:
+                        if act.value == suffix or (suffix == "input" and act.value == "in"):
+                            mapping[(t.value, act.value)] = field
+                            break
+    return mapping
 
 
 class TopicAuthorization(msgspec.Struct, frozen=True):
@@ -582,23 +567,25 @@ UserProperty = tuple[str, str]
 def build_mqtt_properties(message: QueuedPublish) -> Properties:
     """Construct MQTT 5.0 properties object for aiomqtt/paho. [SIL-2]"""
     props = Properties(PacketTypes.PUBLISH)
-    _MAP = {
-        "content_type": "ContentType",
-        "payload_format_indicator": "PayloadFormatIndicator",
-        "message_expiry_interval": "MessageExpiryInterval",
-        "response_topic": "ResponseTopic",
-        "correlation_data": "CorrelationData",
-        "user_properties": "UserProperty",
-        "topic_alias": "TopicAlias",
-    }
-    for field, paho_name in _MAP.items():
-        val = getattr(message, field)
-        if val is not None:
-            setattr(props, paho_name, list(val) if field == "user_properties" else val)
-
-    if message.subscription_identifier is not None:
-        props.SubscriptionIdentifier = list(message.subscription_identifier)
-
+    for field_desc in pb.MqttQueuedPublish.DESCRIPTOR.fields:
+        field_name = field_desc.name
+        if field_name in ("topic_name", "payload", "qos", "retain"):
+            continue
+        val = getattr(message, field_name)
+        if val is None:
+            continue
+        paho_name = "".join(part.capitalize() for part in field_name.split("_"))
+        if paho_name == "UserProperties":
+            paho_name = "UserProperty"
+        ident = props.getIdentFromName(paho_name)
+        if ident != -1:
+            properties_dict = cast(dict[int, Any], props.properties)
+            if ident in properties_dict:
+                if PacketTypes.PUBLISH in properties_dict[ident][1]:
+                    if paho_name in ("UserProperty", "SubscriptionIdentifier"):
+                        setattr(props, paho_name, list(val))
+                    else:
+                        setattr(props, paho_name, val)
     return props
 
 

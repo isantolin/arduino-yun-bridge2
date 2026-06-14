@@ -389,9 +389,7 @@ class JinjaGenerator:
         render = template.render(hardware=spec.hardware)
         out_path.write_text(render, encoding="utf-8")
 
-    def generate_python(self, spec: ProtocolSpec, out_path: Path) -> None:
-        template = self.env.get_template("protocol.py.j2")
-
+    def _extract_python_constants(self, spec: ProtocolSpec) -> list[dict[str, Any]]:
         constants: list[dict[str, Any]] = []
         # Reflection from spec.constants_opt descriptor fields
         for field in spec.constants_opt.DESCRIPTOR.fields:
@@ -401,7 +399,7 @@ class JinjaGenerator:
             if py_name:
                 val = getattr(spec.constants_opt, field.name)
                 if py_name == "FRAME_DELIMITER":
-                    constants.append({"name": py_name, "type": py_type, "value": f"bytes([{val}])"})
+                    constants.append({"name": py_name, "type": py_type, "value": f"bytes([ {val} ])"})
                 else:
                     constants.append({"name": py_name, "type": py_type, "value": val})
 
@@ -428,6 +426,9 @@ class JinjaGenerator:
             py_name = f"MQTT_SUFFIX_{key.upper()}"
             constants.append({"name": py_name, "type": "str", "value": f'"{val}"'})
 
+        return constants
+
+    def _extract_python_handshake_constants(self, spec: ProtocolSpec) -> list[dict[str, Any]]:
         handshake_constants: list[dict[str, Any]] = []
         # Reflection from spec.handshake_opt descriptor fields
         for field in spec.handshake_opt.DESCRIPTOR.fields:
@@ -436,29 +437,16 @@ class JinjaGenerator:
             py_type = opts.Extensions[spec.pb_module.py_type]
             if py_name:
                 val = getattr(spec.handshake_opt, field.name)
-                handshake_constants.append({"name": py_name, "type": py_type, "value": val})
+                if py_type == "str":
+                    formatted_val = f'"{val}"'
+                elif py_type == "bytes":
+                    formatted_val = f'b"{val}"'
+                else:
+                    formatted_val = val
+                handshake_constants.append({"name": py_name, "type": py_type, "value": formatted_val})
+        return handshake_constants
 
-        # Build command_to_pb mapping reflexively
-        command_to_pb: list[tuple[str, str]] = []
-        for cmd in spec.commands:
-            class_name = cmd_name_to_pb_class(cmd.name)
-            if hasattr(spec.pb_module, class_name):
-                command_to_pb.append((cmd.name, class_name))
-
-        hs = spec.handshake
-        handshake_strings = {
-            "HANDSHAKE_TAG_ALGORITHM": hs["tag_algorithm"],
-            "HANDSHAKE_TAG_DESCRIPTION": hs["tag_description"],
-            "HANDSHAKE_HKDF_ALGORITHM": hs["hkdf_algorithm"],
-            "HANDSHAKE_NONCE_FORMAT_DESCRIPTION": hs["nonce_format_description"],
-        }
-
-        handshake_bytes = {
-            "HANDSHAKE_HKDF_SALT": hs["hkdf_salt"],
-            "HANDSHAKE_HKDF_INFO_AUTH": hs["hkdf_info_auth"],
-        }
-
-        # Group actions
+    def _group_actions(self, spec: ProtocolSpec) -> list[dict[str, Any]]:
         grouped_actions: list[dict[str, Any]] = []
         action_map: dict[str, list[dict[str, Any]]] = {}
         for act in spec.actions:
@@ -476,8 +464,10 @@ class JinjaGenerator:
         for prefix, items in action_map.items():
             cls_name = "DatastoreAction" if prefix == "DATASTORE" else f"{prefix.lower().title()}Action"
             grouped_actions.append({"class_name": cls_name, "action_items": items})
+        return grouped_actions
 
-        # Process subscriptions
+    def _process_python_subscriptions(self, spec: ProtocolSpec) -> list[dict[str, Any]]:
+        valid_topic_names = {t["name"] for t in spec.topics}
         subscriptions: list[dict[str, Any]] = []
         for sub in spec.mqtt_subscriptions:
             segments: list[str] = []
@@ -489,16 +479,7 @@ class JinjaGenerator:
                     segments.append("MQTT_WILDCARD_MULTI")
                 else:
                     mapped = False
-                    if topic_str in [
-                        "DIGITAL",
-                        "ANALOG",
-                        "CONSOLE",
-                        "DATASTORE",
-                        "MAILBOX",
-                        "SHELL",
-                        "SYSTEM",
-                        "FILE",
-                    ]:
+                    if topic_str in valid_topic_names:
                         c_name = "DatastoreAction" if topic_str == "DATASTORE" else f"{topic_str.lower().title()}Action"
                         for act in spec.actions:
                             if act["name"].startswith(f"{topic_str}_") and act["value"] == s:
@@ -516,12 +497,26 @@ class JinjaGenerator:
                     "segments_tuple": f"({', '.join(segments)},)" if segments else "()",
                 }
             )
+        return subscriptions
+
+    def generate_python(self, spec: ProtocolSpec, out_path: Path) -> None:
+        template = self.env.get_template("protocol.py.j2")
+
+        constants = self._extract_python_constants(spec)
+        handshake_constants = self._extract_python_handshake_constants(spec)
+        grouped_actions = self._group_actions(spec)
+        subscriptions = self._process_python_subscriptions(spec)
+
+        # Build command_to_pb mapping reflexively
+        command_to_pb: list[tuple[str, str]] = []
+        for cmd in spec.commands:
+            class_name = cmd_name_to_pb_class(cmd.name)
+            if hasattr(spec.pb_module, class_name):
+                command_to_pb.append((cmd.name, class_name))
 
         render = template.render(
             constants=constants,
             handshake_constants=handshake_constants,
-            handshake_strings=handshake_strings,
-            handshake_bytes=handshake_bytes,
             capabilities=spec.capabilities,
             architectures=spec.architectures,
             architecture_display_names=spec.architecture_display_names,

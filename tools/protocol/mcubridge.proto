@@ -106,22 +106,22 @@ message Hardware {
 message Handshake {
     uint32 nonce_length = 1 [(cpp_name) = "RPC_HANDSHAKE_NONCE_LENGTH", (cpp_type) = "unsigned int", (py_name) = "HANDSHAKE_NONCE_LENGTH", (py_type) = "int"];
     uint32 tag_length = 2 [(cpp_name) = "RPC_HANDSHAKE_TAG_LENGTH", (cpp_type) = "unsigned int", (py_name) = "HANDSHAKE_TAG_LENGTH", (py_type) = "int"];
-    string tag_algorithm = 3 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
-    string tag_description = 4 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
+    string tag_algorithm = 3 [(cpp_name) = "", (cpp_type) = "", (py_name) = "HANDSHAKE_TAG_ALGORITHM", (py_type) = "str"];
+    string tag_description = 4 [(cpp_name) = "", (cpp_type) = "", (py_name) = "HANDSHAKE_TAG_DESCRIPTION", (py_type) = "str"];
     uint32 ack_timeout_min_ms = 5 [(cpp_name) = "RPC_HANDSHAKE_ACK_TIMEOUT_MIN_MS", (cpp_type) = "uint32_t", (py_name) = "HANDSHAKE_ACK_TIMEOUT_MIN_MS", (py_type) = "int"];
     uint32 ack_timeout_max_ms = 6 [(cpp_name) = "RPC_HANDSHAKE_ACK_TIMEOUT_MAX_MS", (cpp_type) = "uint32_t", (py_name) = "HANDSHAKE_ACK_TIMEOUT_MAX_MS", (py_type) = "int"];
     uint32 response_timeout_min_ms = 7 [(cpp_name) = "RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS", (cpp_type) = "uint32_t", (py_name) = "HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS", (py_type) = "int"];
     uint32 response_timeout_max_ms = 8 [(cpp_name) = "RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS", (cpp_type) = "uint32_t", (py_name) = "HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS", (py_type) = "int"];
     uint32 retry_limit_min = 9 [(cpp_name) = "RPC_HANDSHAKE_RETRY_LIMIT_MIN", (cpp_type) = "uint8_t", (py_name) = "HANDSHAKE_RETRY_LIMIT_MIN", (py_type) = "int"];
     uint32 retry_limit_max = 10 [(cpp_name) = "RPC_HANDSHAKE_RETRY_LIMIT_MAX", (cpp_type) = "uint8_t", (py_name) = "HANDSHAKE_RETRY_LIMIT_MAX", (py_type) = "int"];
-    string hkdf_algorithm = 11 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
-    string hkdf_salt = 12 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
-    string hkdf_info_auth = 13 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
+    string hkdf_algorithm = 11 [(cpp_name) = "", (cpp_type) = "", (py_name) = "HANDSHAKE_HKDF_ALGORITHM", (py_type) = "str"];
+    string hkdf_salt = 12 [(cpp_name) = "", (cpp_type) = "", (py_name) = "HANDSHAKE_HKDF_SALT", (py_type) = "bytes"];
+    string hkdf_info_auth = 13 [(cpp_name) = "", (cpp_type) = "", (py_name) = "HANDSHAKE_HKDF_INFO_AUTH", (py_type) = "bytes"];
     string hkdf_info_session = 14 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
     uint32 hkdf_output_length = 15 [(cpp_name) = "RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH", (cpp_type) = "unsigned int", (py_name) = "HANDSHAKE_HKDF_OUTPUT_LENGTH", (py_type) = "int"];
     uint32 nonce_random_bytes = 16 [(cpp_name) = "RPC_HANDSHAKE_NONCE_RANDOM_BYTES", (cpp_type) = "unsigned int", (py_name) = "HANDSHAKE_NONCE_RANDOM_BYTES", (py_type) = "int"];
     uint32 nonce_counter_bytes = 17 [(cpp_name) = "RPC_HANDSHAKE_NONCE_COUNTER_BYTES", (cpp_type) = "unsigned int", (py_name) = "HANDSHAKE_NONCE_COUNTER_BYTES", (py_type) = "int"];
-    string nonce_format_description = 18 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
+    string nonce_format_description = 18 [(cpp_name) = "", (cpp_type) = "", (py_name) = "HANDSHAKE_NONCE_FORMAT_DESCRIPTION", (py_type) = "str"];
     string aead_algorithm = 19 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
     string aead_description = 20 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
 }

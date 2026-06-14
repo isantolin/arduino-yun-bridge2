@@ -21,14 +21,6 @@ MQTT_WILDCARD_MULTI: Final[str] = "#"
 {%- endfor %}
 HANDSHAKE_CONFIG_SIZE: Final[int] = 7
 
-{% for key, val in handshake_strings.items() %}
-{{ key }}: Final[str] = {{ val|tojson }}
-{%- endfor %}
-
-{% for key, val in handshake_bytes.items() %}
-{{ key }}: Final[bytes] = b{{ val|tojson }}
-{%- endfor %}
-
 
 {% for cap, val in capabilities.items() %}
 CAPABILITY_{{ cap|upper }}: Final[int] = {{ val }}

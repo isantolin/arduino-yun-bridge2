@@ -11,7 +11,6 @@ from mcubridge.protocol.protocol import Command
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
 from mcubridge.transport.serial import SerialTransport
-import serialx
 
 
 def _make_config() -> RuntimeConfig:
@@ -90,15 +89,15 @@ async def test_process_packet_negotiation_ack_switches_local_baudrate() -> None:
         transport = SerialTransport(config, state, service)
 
         # [SIL-2] Use AsyncMock for StreamWriter to avoid unawaited coroutine warnings
-        mock_serial = AsyncMock(spec=serialx.AsyncSerial)
-        mock_serial.is_open = True
+        mock_writer = AsyncMock(spec=asyncio.StreamWriter)
+        mock_writer.is_closing.return_value = False
 
         mock_transport = AsyncMock()
         from serialx import Serial; mock_transport.serial = MagicMock(spec=Serial)
         mock_transport.serial.baudrate = config.serial_safe_baud
-        mock_serial.transport = mock_transport
+        mock_writer.transport = mock_transport
 
-        transport.serial = mock_serial
+        transport.writer = mock_writer
 
         setattr(transport, "_negotiating", True)
         setattr(transport, "_negotiation_future", asyncio.get_running_loop().create_future())
@@ -129,9 +128,9 @@ async def test_write_frame_debug_logs_unknown_command(
         import mcubridge.transport.serial
 
         transport = SerialTransport(config, state, service)
-        mock_serial = AsyncMock(spec=serialx.AsyncSerial)
-        mock_serial.is_open = True
-        transport.serial = mock_serial
+        mock_writer = AsyncMock(spec=asyncio.StreamWriter)
+        mock_writer.is_closing.return_value = False
+        transport.writer = mock_writer
 
         def mock_is_enabled(lvl: int) -> bool:
             return True
@@ -163,7 +162,7 @@ async def test_write_frame_debug_logs_unknown_command(
 
         ok = await transport.send(0xFE, b"payload")
         assert ok is True
-        assert mock_serial.write.called
+        assert mock_writer.write.called
         # Check that the command 0xFE is present in the encoded hex string
         assert "fe" in seen.get("msg", "").lower()
     finally:
@@ -178,10 +177,10 @@ async def test_write_frame_returns_false_on_write_error() -> None:
         service = BridgeService(config, state, AsyncMock(spec=SerialTransport))
 
         transport = SerialTransport(config, state, service)
-        mock_serial = AsyncMock(spec=serialx.AsyncSerial)
-        mock_serial.is_open = True
-        mock_serial.write.side_effect = OSError("boom")
-        transport.serial = mock_serial
+        mock_writer = AsyncMock(spec=asyncio.StreamWriter)
+        mock_writer.is_closing.return_value = False
+        mock_writer.write.side_effect = OSError("boom")
+        transport.writer = mock_writer
 
         ok = await transport.send(Command.CMD_CONSOLE_WRITE.value, b"hi")
         assert ok is False

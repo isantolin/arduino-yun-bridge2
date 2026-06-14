@@ -6,7 +6,6 @@ from typing import Any
 
 import os
 import asyncio
-import serialx
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -46,18 +45,23 @@ async def test_serial_reader_task_reconnects():
     service.on_serial_disconnected = AsyncMock()
     service.register_serial_sender = MagicMock()
 
-    # Mock AsyncSerial
-    mock_serial = AsyncMock(spec=serialx.AsyncSerial)
-    mock_serial.__aenter__.return_value = mock_serial
-    mock_serial.is_open = True
-    mock_serial.readuntil.side_effect = [
-        asyncio.IncompleteReadError(b"", None),
-        asyncio.IncompleteReadError(b"", None),
-        asyncio.IncompleteReadError(b"", None),
+    # Mock Transport/Protocol via Streams API
+    mock_reader = AsyncMock(spec=asyncio.StreamReader)
+    # Simulate connection dropping by raising IncompleteReadError in the loop
+    mock_reader.readuntil.side_effect = [
+        asyncio.IncompleteReadError(b"", None),  # First connection lost
+        asyncio.IncompleteReadError(b"", None),  # Second connection lost
+        asyncio.IncompleteReadError(b"", None),  # Third connection lost
     ]
-    
-    # Mock async_serial_for_url
-    mock_open = MagicMock(return_value=mock_serial)    # Mock sleep to fast-forward loops and eventually break the run loop
+
+    mock_writer = AsyncMock(spec=asyncio.StreamWriter)
+    mock_writer.is_closing.return_value = False
+    mock_writer.wait_closed = AsyncMock()
+
+    # Mock open_serial_connection
+    mock_open = AsyncMock(return_value=(mock_reader, mock_writer))
+
+    # Mock sleep to fast-forward loops and eventually break the run loop
     sleep_count = 0
 
     async def mock_sleep_fn(duration: Any):
@@ -71,7 +75,7 @@ async def test_serial_reader_task_reconnects():
 
     with (
         patch(
-            "mcubridge.transport.serial.serialx.async_serial_for_url",
+            "mcubridge.transport.serial.serialx.open_serial_connection",
             mock_open,
         ),
         patch("asyncio.sleep", mock_sleep),

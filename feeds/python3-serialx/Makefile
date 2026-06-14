@@ -6,7 +6,7 @@ PKG_RELEASE:=1
 
 PYPI_NAME:=serialx
 PKG_SOURCE:=$(PYPI_NAME)-$(PKG_VERSION).tar.gz
-PKG_HASH:=ab0ff3c65b41eb08ea2400bec424e8882eaf0f31c56c4f6930d19f9ffe8e6ea6
+PKG_HASH:=90c912ec8ceb4ae26a7dca158ca21e5bd8d73ddfc93c5e8d8b101a22ddccbb9a
 
 PKG_MAINTAINER:=Ignacio Santolin <isantolin@gmail.com>
 PKG_LICENSE:=Apache-2.0

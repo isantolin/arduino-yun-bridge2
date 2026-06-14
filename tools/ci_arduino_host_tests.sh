@@ -74,6 +74,7 @@ SOURCES=(
     "${SRC_DIR}/hal/hal.cpp"
     "${SRC_DIR}/fsm/bridge_fsm.cpp"
     "${SRC_DIR}/Bridge.cpp"
+    "${SRC_DIR}/Instantiations.cpp"
     "${TEST_DIR}/bridge_test_global.cpp"
     "${SRC_DIR}/services/Console.cpp"
     "${SRC_DIR}/services/DataStore.cpp"

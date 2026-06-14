@@ -23,34 +23,9 @@ void __attribute__((weak)) handle_error(
 
 BridgeClass::BridgeClass(Stream& stream)
     : _stream(stream),
-      _hardware_serial(nullptr),
-      _command_handler(),
-      _status_handler(),
-      _last_command_id(0),
-      _tx_sequence_id(0),
-      _retry_count(0),
-      _retry_limit(rpc::RPC_DEFAULT_RETRY_LIMIT),
-      _ack_timeout_ms(rpc::RPC_DEFAULT_ACK_TIMEOUT_MS),
-      _response_timeout_ms(rpc::RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS),
-      _pending_baudrate(0),
-      
-      _rx_buffer(),
       _packet_serial(
           etl::span<uint8_t>(_rx_buffer.data(), _rx_buffer.size()),
-          etl::span<uint8_t>(_rx_buffer.data(), _rx_buffer.size())),
-      _shared_secret(),
-      _session_key(),
-      _tx_nonce_counter(0),
-      _rx_nonce_counter(0),
-      _fsm(),
-      _timer_last_tick_ms(0),
-      _serial_xoff_sent(false),
-      _timers(),
-      _is_post_passed(false),
-      _tx_enabled(true),
-      _tx_payload_pool(),
-      _pending_tx_queue(),
-      _rx_history() {
+          etl::span<uint8_t>(_rx_buffer.data(), _rx_buffer.size())) {
   _packet_serial.setPacketHandler(
       etl::delegate<void(etl::span<const uint8_t>)>::create<
           BridgeClass, &BridgeClass::_onPacketReceived>(*this));
@@ -83,114 +58,108 @@ void BridgeClass::_dispatchCommand(const rpc_pb_RpcEnvelope& envelope) {
 }
 
 BridgeClass::DispatchHandler BridgeClass::_getHandler(uint16_t command_id) {
-  static constexpr etl::array<DispatchHandler, rpc::RPC_MAX_COMMAND_ID> table =
-      []() {
-        etl::array<DispatchHandler, rpc::RPC_MAX_COMMAND_ID> t = {};
-        t.fill(nullptr);
-        t[rpc::to_underlying(rpc::StatusCode::STATUS_OK)] =
-            &BridgeClass::_dispatchSimpleAck<&BridgeClass::_handleStatusOk>;
-        t[rpc::to_underlying(rpc::StatusCode::STATUS_ACK)] =
-            &BridgeClass::_dispatchPayload<rpc_pb_AckPacket,
+  switch (command_id) {
+    case rpc::to_underlying(rpc::StatusCode::STATUS_OK):
+      return &BridgeClass::_dispatchSimpleAck<&BridgeClass::_handleStatusOk>;
+    case rpc::to_underlying(rpc::StatusCode::STATUS_ACK):
+      return &BridgeClass::_dispatchPayload<rpc_pb_AckPacket,
                                            &BridgeClass::_handleAckStruct>;
-        t[rpc::to_underlying(rpc::StatusCode::STATUS_MALFORMED)] =
-            &BridgeClass::_dispatchSimple<&BridgeClass::_handleStatusMalformed>;
-        t[rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION)] =
-            &BridgeClass::_dispatchResponse<&BridgeClass::_handleGetVersion>;
-        t[rpc::to_underlying(rpc::CommandId::CMD_GET_FREE_MEMORY)] =
-            &BridgeClass::_dispatchResponse<&BridgeClass::_handleGetFreeMemory>;
-        t[rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC)] =
-            &BridgeClass::_dispatchSimpleAck<&BridgeClass::_handleLinkSync>;
-        t[rpc::to_underlying(rpc::CommandId::CMD_LINK_RESET)] =
-            &BridgeClass::_dispatchSimpleAck<&BridgeClass::_handleLinkReset>;
-        t[rpc::to_underlying(rpc::CommandId::CMD_GET_CAPABILITIES)] =
-            &BridgeClass::_dispatchResponse<
-                &BridgeClass::_handleGetCapabilities>;
-        t[rpc::to_underlying(rpc::CommandId::CMD_SET_BAUDRATE)] =
-            &BridgeClass::_dispatchAck<rpc_pb_SetBaudratePacket,
+    case rpc::to_underlying(rpc::StatusCode::STATUS_MALFORMED):
+      return &BridgeClass::_dispatchSimple<&BridgeClass::_handleStatusMalformed>;
+    case rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION):
+      return &BridgeClass::_dispatchResponse<&BridgeClass::_handleGetVersion>;
+    case rpc::to_underlying(rpc::CommandId::CMD_GET_FREE_MEMORY):
+      return &BridgeClass::_dispatchResponse<&BridgeClass::_handleGetFreeMemory>;
+    case rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC):
+      return &BridgeClass::_dispatchSimpleAck<&BridgeClass::_handleLinkSync>;
+    case rpc::to_underlying(rpc::CommandId::CMD_LINK_RESET):
+      return &BridgeClass::_dispatchSimpleAck<&BridgeClass::_handleLinkReset>;
+    case rpc::to_underlying(rpc::CommandId::CMD_GET_CAPABILITIES):
+      return &BridgeClass::_dispatchResponse<&BridgeClass::_handleGetCapabilities>;
+    case rpc::to_underlying(rpc::CommandId::CMD_SET_BAUDRATE):
+      return &BridgeClass::_dispatchAck<rpc_pb_SetBaudratePacket,
                                        &BridgeClass::_handleSetBaudrate>;
-        t[rpc::to_underlying(rpc::CommandId::CMD_ENTER_BOOTLOADER)] =
-            &BridgeClass::_dispatchAck<rpc_pb_EnterBootloader,
+    case rpc::to_underlying(rpc::CommandId::CMD_ENTER_BOOTLOADER):
+      return &BridgeClass::_dispatchAck<rpc_pb_EnterBootloader,
                                        &BridgeClass::_handleEnterBootloader>;
-        t[rpc::to_underlying(rpc::CommandId::CMD_XOFF)] =
-            &BridgeClass::_dispatchSimpleAck<&BridgeClass::_handleXoff>;
-        t[rpc::to_underlying(rpc::CommandId::CMD_XON)] =
-            &BridgeClass::_dispatchSimpleAck<&BridgeClass::_handleXon>;
-        t[rpc::to_underlying(rpc::CommandId::CMD_SET_PIN_MODE)] =
-            &BridgeClass::_dispatchAck<rpc_pb_PinMode,
+    case rpc::to_underlying(rpc::CommandId::CMD_XOFF):
+      return &BridgeClass::_dispatchSimpleAck<&BridgeClass::_handleXoff>;
+    case rpc::to_underlying(rpc::CommandId::CMD_XON):
+      return &BridgeClass::_dispatchSimpleAck<&BridgeClass::_handleXon>;
+    case rpc::to_underlying(rpc::CommandId::CMD_SET_PIN_MODE):
+      return &BridgeClass::_dispatchAck<rpc_pb_PinMode,
                                        &BridgeClass::_handleSetPinMode>;
-        t[rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE)] =
-            &BridgeClass::_dispatchAck<rpc_pb_DigitalWrite,
+    case rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE):
+      return &BridgeClass::_dispatchAck<rpc_pb_DigitalWrite,
                                        &BridgeClass::_handleDigitalWrite>;
-        t[rpc::to_underlying(rpc::CommandId::CMD_ANALOG_WRITE)] =
-            &BridgeClass::_dispatchAck<rpc_pb_AnalogWrite,
+    case rpc::to_underlying(rpc::CommandId::CMD_ANALOG_WRITE):
+      return &BridgeClass::_dispatchAck<rpc_pb_AnalogWrite,
                                        &BridgeClass::_handleAnalogWrite>;
-        t[rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_READ)] =
-            &BridgeClass::_dispatchResponse<&BridgeClass::_handleDigitalRead>;
-        t[rpc::to_underlying(rpc::CommandId::CMD_ANALOG_READ)] =
-            &BridgeClass::_dispatchResponse<&BridgeClass::_handleAnalogRead>;
-        t[rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE)] =
-            &BridgeClass::_dispatchAck<rpc_pb_ConsoleWrite,
+    case rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_READ):
+      return &BridgeClass::_dispatchResponse<&BridgeClass::_handleDigitalRead>;
+    case rpc::to_underlying(rpc::CommandId::CMD_ANALOG_READ):
+      return &BridgeClass::_dispatchResponse<&BridgeClass::_handleAnalogRead>;
+    case rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE):
+      return &BridgeClass::_dispatchAck<rpc_pb_ConsoleWrite,
                                        &BridgeClass::_handleConsoleWrite>;
 #if BRIDGE_ENABLE_DATASTORE
-        t[rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_GET_RESP)] =
-            &BridgeClass::_dispatchAckCtx<
+    case rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_GET_RESP):
+      return &BridgeClass::_dispatchAckCtx<
                 rpc_pb_DatastoreGetResponse,
                 &BridgeClass::_handleDataStoreGetResponse>;
 #endif
-
 #if BRIDGE_ENABLE_MAILBOX
-        t[rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH)] =
-            &BridgeClass::_dispatchAckCtx<rpc_pb_MailboxPush,
+    case rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH):
+      return &BridgeClass::_dispatchAckCtx<rpc_pb_MailboxPush,
                                           &BridgeClass::_handleMailboxPush>;
-        t[rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_READ_RESP)] =
-            &BridgeClass::_dispatchPayload<rpc_pb_MailboxReadResponse,
+    case rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_READ_RESP):
+      return &BridgeClass::_dispatchPayload<rpc_pb_MailboxReadResponse,
                                            &BridgeClass::_handleMailboxReadResponse>;
-        t[rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP)] =
-            &BridgeClass::_dispatchPayload<rpc_pb_MailboxAvailableResponse,
+    case rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP):
+      return &BridgeClass::_dispatchPayload<rpc_pb_MailboxAvailableResponse,
                                            &BridgeClass::_handleMailboxAvailableResponse>;
 #endif
-
 #if BRIDGE_ENABLE_FILESYSTEM
-        t[rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE)] =
-            &BridgeClass::_dispatchAckCtx<rpc_pb_FileWrite,
+    case rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE):
+      return &BridgeClass::_dispatchAckCtx<rpc_pb_FileWrite,
                                           &BridgeClass::_handleFileWrite>;
-        t[rpc::to_underlying(rpc::CommandId::CMD_FILE_READ)] =
-            &BridgeClass::_dispatchAckCtx<rpc_pb_FileRead,
+    case rpc::to_underlying(rpc::CommandId::CMD_FILE_READ):
+      return &BridgeClass::_dispatchAckCtx<rpc_pb_FileRead,
                                           &BridgeClass::_handleFileRead>;
-        t[rpc::to_underlying(rpc::CommandId::CMD_FILE_REMOVE)] =
-            &BridgeClass::_dispatchAckCtx<rpc_pb_FileRemove,
+    case rpc::to_underlying(rpc::CommandId::CMD_FILE_REMOVE):
+      return &BridgeClass::_dispatchAckCtx<rpc_pb_FileRemove,
                                           &BridgeClass::_handleFileRemove>;
-        t[rpc::to_underlying(rpc::CommandId::CMD_FILE_READ_RESP)] =
-            &BridgeClass::_dispatchAckCtx<
+    case rpc::to_underlying(rpc::CommandId::CMD_FILE_READ_RESP):
+      return &BridgeClass::_dispatchAckCtx<
                 rpc_pb_FileReadResponse, &BridgeClass::_handleFileReadResponse>;
 #endif
 #if BRIDGE_ENABLE_PROCESS
-        t[rpc::to_underlying(rpc::CommandId::CMD_PROCESS_KILL)] =
-            &BridgeClass::_dispatchAckCtx<rpc_pb_ProcessKill,
+    case rpc::to_underlying(rpc::CommandId::CMD_PROCESS_KILL):
+      return &BridgeClass::_dispatchAckCtx<rpc_pb_ProcessKill,
                                           &BridgeClass::_handleProcessKill>;
-        t[rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP)] =
-            &BridgeClass::_dispatchAckCtx<
+    case rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP):
+      return &BridgeClass::_dispatchAckCtx<
                 rpc_pb_ProcessRunAsyncResponse,
                 &BridgeClass::_handleProcessRunAsyncResponse>;
-        t[rpc::to_underlying(rpc::CommandId::CMD_PROCESS_POLL_RESP)] =
-            &BridgeClass::_dispatchAckCtx<
+    case rpc::to_underlying(rpc::CommandId::CMD_PROCESS_POLL_RESP):
+      return &BridgeClass::_dispatchAckCtx<
                 rpc_pb_ProcessPollResponse,
                 &BridgeClass::_handleProcessPollResponse>;
 #endif
 #if BRIDGE_ENABLE_SPI
-        t[rpc::to_underlying(rpc::CommandId::CMD_SPI_BEGIN)] =
-            &BridgeClass::_dispatchSimpleAck<&BridgeClass::_handleSpiBegin>;
-        t[rpc::to_underlying(rpc::CommandId::CMD_SPI_TRANSFER)] =
-            &BridgeClass::_dispatchResponse<&BridgeClass::_handleSpiTransfer>;
-        t[rpc::to_underlying(rpc::CommandId::CMD_SPI_END)] =
-            &BridgeClass::_dispatchSimpleAck<&BridgeClass::_handleSpiEnd>;
-        t[rpc::to_underlying(rpc::CommandId::CMD_SPI_SET_CONFIG)] =
-            &BridgeClass::_dispatchAck<rpc_pb_SpiConfig,
+    case rpc::to_underlying(rpc::CommandId::CMD_SPI_BEGIN):
+      return &BridgeClass::_dispatchSimpleAck<&BridgeClass::_handleSpiBegin>;
+    case rpc::to_underlying(rpc::CommandId::CMD_SPI_TRANSFER):
+      return &BridgeClass::_dispatchResponse<&BridgeClass::_handleSpiTransfer>;
+    case rpc::to_underlying(rpc::CommandId::CMD_SPI_END):
+      return &BridgeClass::_dispatchSimpleAck<&BridgeClass::_handleSpiEnd>;
+    case rpc::to_underlying(rpc::CommandId::CMD_SPI_SET_CONFIG):
+      return &BridgeClass::_dispatchAck<rpc_pb_SpiConfig,
                                        &BridgeClass::_handleSpiSetConfig>;
 #endif
-        return t;
-      }();
-  return (command_id < rpc::RPC_MAX_COMMAND_ID) ? table[command_id] : nullptr;
+    default:
+      return nullptr;
+  }
 }
 
 void BridgeClass::_initializeRuntime() {

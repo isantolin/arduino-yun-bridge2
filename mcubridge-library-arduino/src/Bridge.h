@@ -214,16 +214,16 @@ class BridgeClass {
 
   // STRICT ORDER FOR CONSTRUCTOR
   Stream& _stream;
-  HardwareSerial* _hardware_serial;
+  HardwareSerial* _hardware_serial = nullptr;
   CommandHandler _command_handler;
   StatusHandler _status_handler;
-  uint16_t _last_command_id;
-  uint16_t _tx_sequence_id;
-  uint8_t _retry_count;
-  uint8_t _retry_limit;
-  uint16_t _ack_timeout_ms;
-  uint32_t _response_timeout_ms;
-  uint32_t _pending_baudrate;
+  uint16_t _last_command_id = 0;
+  uint16_t _tx_sequence_id = 0;
+  uint8_t _retry_count = 0;
+  uint8_t _retry_limit = rpc::RPC_DEFAULT_RETRY_LIMIT;
+  uint16_t _ack_timeout_ms = rpc::RPC_DEFAULT_ACK_TIMEOUT_MS;
+  uint32_t _response_timeout_ms = rpc::RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS;
+  uint32_t _pending_baudrate = 0;
 
 
   etl::array<uint8_t, bridge::config::RX_BUFFER_SIZE> _rx_buffer;
@@ -233,8 +233,8 @@ class BridgeClass {
 
   etl::vector<uint8_t, 64> _shared_secret;
   etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> _session_key;
-  uint64_t _tx_nonce_counter;
-  uint64_t _rx_nonce_counter;
+  uint64_t _tx_nonce_counter = 0;
+  uint64_t _rx_nonce_counter = 0;
   bridge::fsm::BridgeFsm _fsm;
 
   static __attribute__((noinline)) void _watchdogTask();
@@ -243,8 +243,8 @@ class BridgeClass {
 
 
 
-  uint32_t _timer_last_tick_ms;
-  bool _serial_xoff_sent;
+  uint32_t _timer_last_tick_ms = 0;
+  bool _serial_xoff_sent = false;
 
   etl::callback_timer<bridge::scheduler::NUMBER_OF_TIMERS> _timers;
   etl::array<etl::timer::id::type, bridge::scheduler::NUMBER_OF_TIMERS>
@@ -252,8 +252,8 @@ class BridgeClass {
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> _transient_buffer;
 
 
-  bool _is_post_passed;
-  bool _tx_enabled;
+  bool _is_post_passed = false;
+  bool _tx_enabled = true;
 
   etl::pool<TxPayloadBuffer, bridge::config::MAX_PENDING_TX_FRAMES>
       _tx_payload_pool;

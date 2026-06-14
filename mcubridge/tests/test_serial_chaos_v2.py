@@ -1,6 +1,6 @@
 import pytest
 import asyncio
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import AsyncMock
 from mcubridge.transport.serial import SerialTransport
 from mcubridge.protocol.frame import build_frame
 from cobs import cobs

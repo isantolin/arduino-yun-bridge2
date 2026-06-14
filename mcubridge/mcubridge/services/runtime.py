@@ -1056,7 +1056,7 @@ class BridgeService:
                 await self.enqueue_mqtt(
                     QueuedPublish(
                         topic_path(self.state.mqtt_topic_prefix, Topic.SYSTEM, "bridge", flavor, "value"),
-                        snap.to_protobuf().SerializeToString(),
+                        snap.SerializeToString(),
                         content_type=PROTOBUF_CONTENT_TYPE,
                     ),
                     reply_context=inbound,

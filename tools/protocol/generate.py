@@ -10,7 +10,6 @@ Copyright (C) 2025-2026 Ignacio Santolin and contributors
 
 from __future__ import annotations
 
-import dataclasses
 import importlib.util
 import re
 import subprocess
@@ -70,98 +69,6 @@ else:
 
 TEMPLATE_DIR = Path(__file__).parent / "templates"
 VERSION_PATH = REPO_ROOT / "VERSION"
-
-# ═════════════════════════════════════════════════════════════════════════════
-# MESSAGE PARSER — build C++ / Python models from spec.toml [[messages]]
-# ═════════════════════════════════════════════════════════════════════════════
-
-# Messages that do NOT get a Packet class (used directly or handled specially)
-PACKET_EXCLUDE: frozenset[str] = frozenset({"RpcContainer", "Capabilities"})
-
-# spec.toml field type → Python type annotation string
-TOML_PYTHON_TYPE_MAP: dict[str, str] = {
-    "uint8": "Annotated[int, msgspec.Meta(ge=0)]",
-    "uint16": "Annotated[int, msgspec.Meta(ge=0)]",
-    "uint32": "Annotated[int, msgspec.Meta(ge=0)]",
-    "int32": "int",
-    "string": "str",
-    "bytes": "bytes",
-    "bin_fixed": "bytes",
-    "bool": "bool",
-}
-
-
-# ─── C++ struct model for rpc_structs.h generation ────────────────────────
-# Messages excluded from C++ struct generation (container / internal)
-CPP_STRUCT_EXCLUDE: frozenset[str] = frozenset({"RpcContainer"})
-
-# spec.toml field type → C++ CppField kind
-TOML_CPP_KIND_MAP: dict[str, str] = {
-    "uint8": "uint8",
-    "uint16": "uint16",
-    "uint32": "uint32",
-    "int32": "uint32",
-    "bytes": "bin_view",
-    "bin_fixed": "bin_fixed",
-    "string": "str_view",
-    "bool": "uint8",
-}
-
-
-@dataclasses.dataclass(frozen=True)
-class CppField:
-    """A single field in a C++ struct for rpc_structs.h."""
-
-    name: str
-    # Field kind determines encode/decode strategy:
-    #   "uint8" / "uint16" / "uint32" — integer scalar
-    #   "bin_view" — variable-length bytes (etl::span, zero-copy on decode)
-    #   "bin_fixed" — fixed-length byte array (uint8_t[N])
-    #   "str_fixed" — fixed-length null-terminated string (char[N])
-    kind: str
-    # For bin_fixed / str_fixed: the buffer size (e.g. 16, 32, 64)
-    size: int = 0
-
-
-@dataclasses.dataclass(frozen=True)
-class CppStruct:
-    """A C++ struct generated into rpc_structs.h."""
-
-    name: str  # e.g. "VersionResponse"
-    fields: tuple[CppField, ...]
-    field_count: int  # number of declared payload fields
-
-
-def build_cpp_structs_from_spec(spec: ProtocolSpec) -> list[CppStruct]:
-    """Build CppStruct models from spec.toml [[messages]] for rpc_structs.h."""
-    structs: list[CppStruct] = []
-
-    for msg in spec.messages:
-        if msg.name in CPP_STRUCT_EXCLUDE:
-            continue
-        cpp_fields: list[CppField] = []
-        for f in msg.fields:
-            kind = TOML_CPP_KIND_MAP.get(f.type)
-            if kind is None:
-                sys.stderr.write(f"Warning: unknown field type '{f.type}' in {msg.name}.{f.name}\n")
-                kind = "uint32"
-
-            if kind == "bin_fixed":
-                cpp_fields.append(CppField(name=f.name, kind=kind, size=f.size))
-            elif kind == "str_view":
-                cpp_fields.append(CppField(name=f.name, kind=kind))
-            else:
-                cpp_fields.append(CppField(name=f.name, kind=kind))
-
-        structs.append(
-            CppStruct(
-                name=msg.name,
-                fields=tuple(cpp_fields),
-                field_count=len(cpp_fields),
-            )
-        )
-
-    return structs
 
 
 def packet_class_name(proto_name: str) -> str:
@@ -537,7 +444,24 @@ class JinjaGenerator:
 
     def generate_cpp_structs(self, spec: ProtocolSpec, out_path: Path) -> None:
         template = self.env.get_template("rpc_structs.h.j2")
-        structs = build_cpp_structs_from_spec(spec)
+        proto_path = (REPO_ROOT / "tools" / "protocol" / "mcubridge.proto").resolve()
+        content = proto_path.read_text(encoding="utf-8")
+        msg_names = re.findall(r"(?:^|\n)\s*message\s+(\w+)\s*\{", content)
+
+        options_path = (REPO_ROOT / "tools" / "protocol" / "mcubridge.options").resolve()
+        options_content = options_path.read_text(encoding="utf-8")
+        skipped_messages = re.findall(r"rpc\.pb\.(\w+)\s+skip_message:true", options_content)
+
+        msg_names = [
+            name for name in msg_names
+            if name not in skipped_messages and name != "RpcContainer"
+        ]
+
+        class MessageHelper:
+            def __init__(self, name: str):
+                self.name = name
+
+        structs = [MessageHelper(name) for name in msg_names]
         render = template.render(structs=structs)
         out_path.write_text(render, encoding="utf-8")
 

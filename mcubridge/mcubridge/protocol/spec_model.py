@@ -36,22 +36,6 @@ class StatusDef(msgspec.Struct, frozen=True):
     description: str
 
 
-class MessageFieldDef(msgspec.Struct, frozen=True):
-    """A single field in a protocol message."""
-
-    name: str
-    type: str  # uint8, uint16, uint32, int32, bytes, bin_fixed, string, bool
-    size: int = 0  # for bin_fixed
-    max_size: int = 64  # for string
-
-
-class MessageDef(msgspec.Struct, frozen=True):
-    """A protocol message definition (replaces .proto + .options)."""
-
-    name: str
-    fields: list[MessageFieldDef]
-
-
 class ProtocolSpec(msgspec.Struct):
     """Root model of the parsed spec.toml."""
 
@@ -70,7 +54,6 @@ class ProtocolSpec(msgspec.Struct):
     mqtt_defaults: dict[str, str]
     status_reasons: dict[str, str]
     architecture_display_names: dict[str, str] = {}
-    messages: list[MessageDef] = []
 
     @classmethod
     def load(cls, path: Path) -> "ProtocolSpec":

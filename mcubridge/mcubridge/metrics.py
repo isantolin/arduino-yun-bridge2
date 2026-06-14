@@ -364,7 +364,7 @@ def _build_bridge_snapshot_message(
     )
     return QueuedPublish(
         topic_name=topic,
-        payload=snapshot.to_protobuf().SerializeToString(),
+        payload=snapshot.SerializeToString(),
         content_type=PROTOBUF_CONTENT_TYPE,
         message_expiry_interval=_BRIDGE_SNAPSHOT_EXPIRY_SECONDS,
         user_properties=(("bridge-snapshot", flavor),),

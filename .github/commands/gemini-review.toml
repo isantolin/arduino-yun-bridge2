@@ -170,4 +170,18 @@ Apply these severities consistently:
 ## Final Instructions
 
 Remember, you are running in a virtual machine and no one reviewing your output. Your review must be posted to GitHub using the `create_pull_request_review`, `add_pull_request_review_comment`, and `submit_pull_request_review` tools.
+
+## Resource Optimization (AVR/SIL-2)
+
+1. **Mandatory Profiling:** Before any C++ modification, analyze the latest `Symbol Profiling` report from GitHub Actions or local tools (`arduino_symbol_profiler.py`). Identify Top Symbols by size.
+2. **RAM Minimization:**
+    - Strictly prohibit large static lookup tables in RAM.
+    - **CRC32:** Always use `etl::crc32_t16` or smaller for AVR targets to save ~1KB of RAM.
+3. **Flash De-bloating (Nanopb):**
+    - Prohibit direct template instantiations for repetitive payload parsing.
+    - Use non-template implementation helpers (e.g., `_parse_impl`) to consolidate logic and eliminate template bloat.
+4. **Infrastructure Simplicity:**
+    - Prohibit complex schedulers (`etl::scheduler`) or task abstractions (`etl::task`) for single-loop components. Use direct method calls in `process()` to minimize stack/Flash overhead.
+5. **Validation:** All optimizations must be verified via `cppcheck` and `arduino-examples` build to confirm zero impact on functionality and positive impact on resource margins.
 """
+

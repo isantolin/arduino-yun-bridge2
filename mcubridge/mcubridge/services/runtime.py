@@ -33,9 +33,9 @@ from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 
 from ..config.const import (
-    MQTT_EXPIRY_CONSOLE,
-    MQTT_EXPIRY_DATASTORE,
-    MQTT_EXPIRY_PIN,
+
+
+
     TOPIC_FORBIDDEN_REASON,
     SUPERVISOR_DEFAULT_MAX_BACKOFF,
     SUPERVISOR_DEFAULT_MIN_BACKOFF,
@@ -529,7 +529,7 @@ class BridgeService:
                 QueuedPublish(
                     topic_path(self.state.mqtt_topic_prefix, Topic.CONSOLE, ConsoleAction.OUT),
                     p.data,
-                    message_expiry_interval=MQTT_EXPIRY_CONSOLE,
+                    message_expiry_interval=protocol.MQTT_EXPIRY_CONSOLE,
                 )
             )
 
@@ -670,7 +670,7 @@ class BridgeService:
             QueuedPublish(
                 topic_path(self.state.mqtt_topic_prefix, tp, str(req.pin) if req else "unknown", "value"),
                 str(p.value).encode(),
-                message_expiry_interval=MQTT_EXPIRY_PIN,
+                message_expiry_interval=protocol.MQTT_EXPIRY_PIN,
                 user_properties=(("bridge-pin", str(req.pin) if req else "unknown"),),
             ),
             reply_context=req.reply_context if req else None,
@@ -1066,7 +1066,7 @@ class BridgeService:
         pl, tp = f"{v[0]}.{v[1]}.{v[2]}".encode(), topic_path(
             self.state.mqtt_topic_prefix, Topic.SYSTEM, SystemAction.VERSION, SystemAction.VALUE
         )
-        await self.enqueue_mqtt(QueuedPublish(tp, pl, message_expiry_interval=MQTT_EXPIRY_DATASTORE), reply_context=ctx)
+        await self.enqueue_mqtt(QueuedPublish(tp, pl, message_expiry_interval=protocol.MQTT_EXPIRY_DATASTORE), reply_context=ctx)
 
     async def _flush_console_queue(self) -> None:
         serial = self.serial
@@ -1242,7 +1242,7 @@ class BridgeService:
         )
         props = (("bridge-datastore-key", key), ("bridge-error", error)) if error else (("bridge-datastore-key", key),)
         await self.enqueue_mqtt(
-            QueuedPublish(tp, val, message_expiry_interval=MQTT_EXPIRY_DATASTORE, user_properties=props),
+            QueuedPublish(tp, val, message_expiry_interval=protocol.MQTT_EXPIRY_DATASTORE, user_properties=props),
             reply_context=reply_context,
         )
 

@@ -15,7 +15,7 @@ import msgspec
 import structlog
 
 from ..config.const import (
-    DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
+
     DEFAULT_FILE_STORAGE_QUOTA_BYTES,
     DEFAULT_FILE_SYSTEM_ROOT,
     DEFAULT_FILE_WRITE_MAX_BYTES,
@@ -24,7 +24,7 @@ from ..config.const import (
     DEFAULT_MQTT_QUEUE_LIMIT,
     DEFAULT_PENDING_PIN_REQUESTS,
     DEFAULT_PROCESS_MAX_CONCURRENT,
-    DEFAULT_PROCESS_MAX_OUTPUT_BYTES,
+
     DEFAULT_PROCESS_TIMEOUT,
     DEFAULT_SERIAL_RESPONSE_TIMEOUT,
     DEFAULT_SERIAL_RETRY_TIMEOUT,
@@ -127,7 +127,7 @@ class RuntimeState(msgspec.Struct, weakref=True):
     console_to_mcu_queue: collections.deque[bytes] = msgspec.field(
         default_factory=lambda: cast(collections.deque[bytes], collections.deque())
     )
-    console_queue_limit_bytes: int = DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
+    console_queue_limit_bytes: int = protocol.DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
 
     console_queue_bytes: int = 0
     console_dropped_chunks: int = 0
@@ -194,7 +194,7 @@ class RuntimeState(msgspec.Struct, weakref=True):
     serial_throughput_stats: SerialThroughputStats = msgspec.field(default_factory=SerialThroughputStats)
     serial_pipeline_inflight: dict[str, Any] | None = None
     serial_pipeline_last: dict[str, Any] | None = None
-    process_output_limit: int = DEFAULT_PROCESS_MAX_OUTPUT_BYTES
+    process_output_limit: int = protocol.DEFAULT_PROCESS_MAX_OUTPUT_BYTES
     process_max_concurrent: int = DEFAULT_PROCESS_MAX_CONCURRENT
     unknown_command_count: int = 0
     unknown_command_last_id: int = 0

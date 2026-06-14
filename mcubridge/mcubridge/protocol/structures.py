@@ -7,6 +7,28 @@ Binary parsing uses stdlib struct; high-level schemas use Msgspec (SIL-2).
 from __future__ import annotations
 from google.protobuf.message import Message as ProtobufMessage
 from . import mcubridge_pb2 as pb
+from . import protocol
+from .protocol import (
+        DEFAULT_BAUDRATE,
+        DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
+        DEFAULT_PROCESS_MAX_OUTPUT_BYTES,
+        DEFAULT_RECONNECT_DELAY,
+        DEFAULT_RETRY_LIMIT,
+        DEFAULT_SAFE_BAUDRATE,
+        DEFAULT_SERIAL_FALLBACK_THRESHOLD,
+        DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES,
+        FILE_LARGE_WARNING_BYTES,
+        MAX_SERIAL_FRAME_BYTES,
+        MQTT_DEFAULT_TOPIC_PREFIX,
+        MQTT_EXPIRY_CONSOLE,
+        MQTT_EXPIRY_DATASTORE,
+        MQTT_EXPIRY_DEFAULT,
+        MQTT_EXPIRY_PIN,
+        MQTT_EXPIRY_SHELL,
+        PROMETHEUS_PORT,
+        SYNC_TIMEOUT_MS,
+)
+
 
 import asyncio
 import enum
@@ -226,7 +248,6 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
         DEFAULT_ALLOW_NON_TMP_PATHS,
         DEFAULT_BRIDGE_HANDSHAKE_INTERVAL,
         DEFAULT_BRIDGE_SUMMARY_INTERVAL,
-        DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
         DEFAULT_DEBUG,
         DEFAULT_FILE_STORAGE_QUOTA_BYTES,
         DEFAULT_FILE_SYSTEM_ROOT,
@@ -235,7 +256,6 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
         DEFAULT_MAILBOX_QUEUE_LIMIT,
         DEFAULT_METRICS_ENABLED,
         DEFAULT_METRICS_HOST,
-        DEFAULT_METRICS_PORT,
         DEFAULT_MQTT_CAFILE,
         DEFAULT_MQTT_HOST,
         DEFAULT_MQTT_PORT,
@@ -244,11 +264,7 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
         DEFAULT_MQTT_TLS_INSECURE,
         DEFAULT_PENDING_PIN_REQUESTS,
         DEFAULT_PROCESS_MAX_CONCURRENT,
-        DEFAULT_PROCESS_MAX_OUTPUT_BYTES,
         DEFAULT_PROCESS_TIMEOUT,
-        DEFAULT_RECONNECT_DELAY,
-        DEFAULT_SERIAL_FALLBACK_THRESHOLD,
-        DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES,
         DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL,
         DEFAULT_SERIAL_PORT,
         DEFAULT_SERIAL_RESPONSE_TIMEOUT,
@@ -257,12 +273,6 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
         DEFAULT_STATUS_INTERVAL,
         DEFAULT_WATCHDOG_INTERVAL,
         MIN_SERIAL_SHARED_SECRET_LEN,
-    )
-    from mcubridge.protocol.protocol import (
-        DEFAULT_BAUDRATE,
-        DEFAULT_RETRY_LIMIT,
-        DEFAULT_SAFE_BAUDRATE,
-        MQTT_DEFAULT_TOPIC_PREFIX,
     )
 
     serial_port: str = DEFAULT_SERIAL_PORT
@@ -320,7 +330,7 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
     process_max_concurrent: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_PROCESS_MAX_CONCURRENT
     metrics_enabled: bool = DEFAULT_METRICS_ENABLED
     metrics_host: str = DEFAULT_METRICS_HOST
-    metrics_port: Annotated[int, msgspec.Meta(ge=1, le=65535)] = DEFAULT_METRICS_PORT
+    metrics_port: Annotated[int, msgspec.Meta(ge=1, le=65535)] = PROMETHEUS_PORT
     bridge_summary_interval: Annotated[float, msgspec.Meta(ge=0.0)] = DEFAULT_BRIDGE_SUMMARY_INTERVAL
     bridge_handshake_interval: Annotated[float, msgspec.Meta(ge=0.0)] = DEFAULT_BRIDGE_HANDSHAKE_INTERVAL
     allow_non_tmp_paths: bool = DEFAULT_ALLOW_NON_TMP_PATHS

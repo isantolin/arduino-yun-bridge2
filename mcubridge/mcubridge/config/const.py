@@ -35,9 +35,9 @@ from ..protocol import protocol
 # -- Serial Port Defaults --
 DEFAULT_SERIAL_PORT: str = "/dev/ttyATH0"
 # Initial wait for serial port availability (reconnect loop)
-DEFAULT_RECONNECT_DELAY: int = protocol.DEFAULT_RECONNECT_DELAY
+
 # Maximum size of a raw serial frame including overhead
-MAX_SERIAL_FRAME_BYTES: int = protocol.MAX_SERIAL_FRAME_BYTES
+
 # Timeout for general serial operations (not strict RPC)
 DEFAULT_SERIAL_RETRY_TIMEOUT: float = 10.0
 DEFAULT_SERIAL_RESPONSE_TIMEOUT: float = 20.0
@@ -45,9 +45,9 @@ DEFAULT_SERIAL_RESPONSE_TIMEOUT: float = 20.0
 SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT: float = 2.0
 DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL: float = 0.0
 # How many fatal handshake failures before restarting the serial task
-DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES: int = protocol.DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES
+
 # CRC error threshold before triggering baudrate fallback
-DEFAULT_SERIAL_FALLBACK_THRESHOLD: int = protocol.DEFAULT_SERIAL_FALLBACK_THRESHOLD
+
 # Backoff strategy for handshake retries
 SERIAL_HANDSHAKE_BACKOFF_BASE: float = 1.0
 SERIAL_HANDSHAKE_BACKOFF_MAX: float = 60.0
@@ -64,11 +64,6 @@ DEFAULT_MQTT_SPOOL_DIR: str = "/tmp/mcubridge/spool"
 MQTT_USER_PROP_FILE_PATH: str = "bridge-file-path"
 
 # -- MQTT Message Expiry Intervals (seconds) --
-MQTT_EXPIRY_PIN: int = protocol.MQTT_EXPIRY_PIN
-MQTT_EXPIRY_CONSOLE: int = protocol.MQTT_EXPIRY_CONSOLE
-MQTT_EXPIRY_DATASTORE: int = protocol.MQTT_EXPIRY_DATASTORE
-MQTT_EXPIRY_SHELL: int = protocol.MQTT_EXPIRY_SHELL
-MQTT_EXPIRY_DEFAULT: int = protocol.MQTT_EXPIRY_DEFAULT
 
 # -- MQTT Spool Backoff Strategy --
 SPOOL_BACKOFF_MULTIPLIER: float = 5.0
@@ -80,17 +75,17 @@ DEFAULT_FILE_SYSTEM_ROOT: str = "/tmp/yun_files"
 DEFAULT_FILE_WRITE_MAX_BYTES: int = 262144
 DEFAULT_FILE_STORAGE_QUOTA_BYTES: int = 8388608
 # Warning threshold for files growing large in RAM (Inherited from spec.toml)
-FILE_LARGE_WARNING_BYTES: int = protocol.FILE_LARGE_WARNING_BYTES
+
 # Paths considered safe (volatile/RAM) for writing to avoid flash wear
 VOLATILE_STORAGE_PATHS: frozenset[str] = frozenset({"/tmp", "/var/run", "/run", "/dev/shm"})
 SYSTEMD_PRIVATE_PREFIX: str = "systemd-private-"
 
 # -- Component Limits --
 DEFAULT_PROCESS_TIMEOUT: int = 10
-DEFAULT_PROCESS_MAX_OUTPUT_BYTES: int = protocol.DEFAULT_PROCESS_MAX_OUTPUT_BYTES
+
 DEFAULT_PROCESS_MAX_CONCURRENT: int = 4
 # [SIL-2] Process kill timeouts (seconds)
-DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES: int = protocol.DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
+
 DEFAULT_MAILBOX_QUEUE_LIMIT: int = 64
 DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT: int = 65536
 DEFAULT_PENDING_PIN_REQUESTS: int = 32
@@ -101,7 +96,7 @@ DEFAULT_STATUS_INTERVAL: int = 5
 DEFAULT_BRIDGE_SUMMARY_INTERVAL: int = 60
 DEFAULT_BRIDGE_HANDSHAKE_INTERVAL: int = 300
 DEFAULT_METRICS_HOST: str = "127.0.0.1"
-DEFAULT_METRICS_PORT: int = protocol.PROMETHEUS_PORT
+
 DEFAULT_METRICS_ENABLED: bool = False
 
 # -- Logging --
@@ -141,7 +136,6 @@ DEFAULT_ALLOW_NON_TMP_PATHS: bool = False
 # imports with mcubridge.protocol.structures.RuntimeConfig.
 # ==============================================================================
 
-
 def _load_status_codes() -> tuple[frozenset[int], frozenset[int]]:
     """Lazy-load protocol status codes to break circular import chain."""
     from ..protocol import protocol
@@ -159,9 +153,7 @@ def _load_status_codes() -> tuple[frozenset[int], frozenset[int]]:
     success = frozenset({protocol.Status.OK.value})
     return failure, success
 
-
 SERIAL_FAILURE_STATUS_CODES, SERIAL_SUCCESS_STATUS_CODES = _load_status_codes()
-
 
 __all__ = [
     "STATUS_FILE_PATH",
@@ -174,12 +166,12 @@ __all__ = [
     "DEFAULT_FILE_SYSTEM_ROOT",
     "DEFAULT_FILE_WRITE_MAX_BYTES",
     "DEFAULT_FILE_STORAGE_QUOTA_BYTES",
-    "FILE_LARGE_WARNING_BYTES",
+    
     "DEFAULT_PROCESS_TIMEOUT",
     "DEFAULT_MQTT_QUEUE_LIMIT",
-    "DEFAULT_RECONNECT_DELAY",
+    
     "DEFAULT_STATUS_INTERVAL",
-    "DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES",
+    
     "DEFAULT_MAILBOX_QUEUE_LIMIT",
     "DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT",
     "DEFAULT_PENDING_PIN_REQUESTS",
@@ -190,21 +182,21 @@ __all__ = [
     "SERIAL_HANDSHAKE_BACKOFF_MAX",
     "MIN_SERIAL_SHARED_SECRET_LEN",
     "DEFAULT_SERIAL_SHARED_SECRET",
-    "DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES",
+    
     "SERIAL_MIN_ACK_TIMEOUT",
     "SERIAL_FAILURE_STATUS_CODES",
     "SERIAL_SUCCESS_STATUS_CODES",
     "DEFAULT_MQTT_SPOOL_DIR",
     "MQTT_USER_PROP_FILE_PATH",
-    "MQTT_EXPIRY_PIN",
-    "MQTT_EXPIRY_CONSOLE",
-    "MQTT_EXPIRY_DATASTORE",
-    "MQTT_EXPIRY_SHELL",
-    "MQTT_EXPIRY_DEFAULT",
-    "DEFAULT_PROCESS_MAX_OUTPUT_BYTES",
+    
+    
+    
+    
+    
+    
     "DEFAULT_PROCESS_MAX_CONCURRENT",
     "DEFAULT_METRICS_HOST",
-    "DEFAULT_METRICS_PORT",
+    
     "DEFAULT_METRICS_ENABLED",
     "DEFAULT_BRIDGE_SUMMARY_INTERVAL",
     "DEFAULT_BRIDGE_HANDSHAKE_INTERVAL",

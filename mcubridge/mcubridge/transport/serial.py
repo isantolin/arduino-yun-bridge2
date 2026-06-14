@@ -25,7 +25,6 @@ import tenacity
 from google.protobuf.message import Message as ProtobufMessage, DecodeError as ProtobufDecodeError
 
 from mcubridge.config.const import (
-    MAX_SERIAL_FRAME_BYTES,
     SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT,
     SERIAL_HANDSHAKE_BACKOFF_BASE,
     SERIAL_HANDSHAKE_BACKOFF_MAX,
@@ -36,6 +35,7 @@ from mcubridge.config.const import (
 from mcubridge.protocol import protocol, is_system_command
 from mcubridge.protocol.protocol import (
     ACK_ONLY_COMMANDS,
+
     Status,
     expected_responses,
     response_to_request,
@@ -188,7 +188,7 @@ class SerialTransport:
                     await self._process_packet(packet_view)
             except asyncio.LimitOverrunError:
                 self.state.serial_decode_errors += 1
-                await reader.read(MAX_SERIAL_FRAME_BYTES)
+                await reader.read(protocol.MAX_SERIAL_FRAME_BYTES)
             except asyncio.IncompleteReadError:
                 break
             except (OSError, RuntimeError, ValueError, TypeError, serialx.SerialException) as exc:

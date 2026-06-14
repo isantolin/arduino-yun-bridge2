@@ -9,7 +9,6 @@ from typing import Any
 import pytest
 from mcubridge.config import settings
 from mcubridge.config.const import (
-    DEFAULT_MQTT_PORT,
     DEFAULT_PROCESS_TIMEOUT,
 )
 from mcubridge.config.settings import RuntimeConfig
@@ -22,7 +21,7 @@ def _config_kwargs(**overrides: Any) -> dict[str, Any]:
         "serial_baud": protocol.DEFAULT_BAUDRATE,
         "serial_safe_baud": protocol.DEFAULT_SAFE_BAUDRATE,
         "mqtt_host": "localhost",
-        "mqtt_port": DEFAULT_MQTT_PORT,
+        "mqtt_port": protocol.DEFAULT_MQTT_PORT,
         "mqtt_user": None,
         "mqtt_pass": None,
         "mqtt_tls": True,

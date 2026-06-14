@@ -23,15 +23,15 @@ import pytest
 from mcubridge.config import common
 from mcubridge.config import settings
 from mcubridge.config.const import (
-    DEFAULT_MQTT_PORT,
     DEFAULT_PROCESS_TIMEOUT,
-    DEFAULT_RECONNECT_DELAY,
     DEFAULT_STATUS_INTERVAL,
 )
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import (
     DEFAULT_BAUDRATE,
+    DEFAULT_MQTT_PORT,
+    DEFAULT_RECONNECT_DELAY,
     DEFAULT_SAFE_BAUDRATE,
 )
 from mcubridge.state.context import RuntimeState, create_runtime_state

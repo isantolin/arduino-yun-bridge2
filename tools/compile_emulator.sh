@@ -85,6 +85,7 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     "${SRC_DIR}/hal/hal.cpp" \
     "${SRC_DIR}/fsm/bridge_fsm.cpp" \
     "${SRC_DIR}/Bridge.cpp" \
+    "${SRC_DIR}/Instantiations.cpp" \
     "${SRC_DIR}/BridgeInstance.cpp" \
     "${SRC_DIR}/services/Console.cpp" \
     "${SRC_DIR}/services/DataStore.cpp" \
@@ -118,6 +119,7 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     "${SRC_DIR}/hal/hal.cpp" \
     "${SRC_DIR}/fsm/bridge_fsm.cpp" \
     "${SRC_DIR}/Bridge.cpp" \
+    "${SRC_DIR}/Instantiations.cpp" \
     "${SRC_DIR}/BridgeInstance.cpp" \
     "${SRC_DIR}/services/Console.cpp" \
     "${SRC_DIR}/services/DataStore.cpp" \

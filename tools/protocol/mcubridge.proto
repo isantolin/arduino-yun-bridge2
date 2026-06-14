@@ -1069,18 +1069,18 @@ message SpiConfig {
 
 message SupervisorSnapshot {
     uint32 restarts = 1;
-    double last_failure_unix = 2;
+    float last_failure_unix = 2;
     string last_exception = 3;
-    double backoff_seconds = 4;
+    float backoff_seconds = 4;
     bool fatal = 5;
 }
 
 message SystemStatus {
-    double cpu_percent = 1;
+    float cpu_percent = 1;
     uint64 memory_total_bytes = 2;
     uint64 memory_available_bytes = 3;
-    double load_avg_1m = 4;
-    double uptime_seconds = 5;
+    float load_avg_1m = 4;
+    float uptime_seconds = 5;
 }
 
 message SerialLinkSnapshot {
@@ -1096,14 +1096,14 @@ message HandshakeSnapshot {
     uint32 failures = 4;
     uint32 failure_streak = 5;
     string last_error = 6;
-    double last_unix = 7;
-    double last_duration = 8;
-    double backoff_until = 9;
-    double rate_limit_until = 10;
+    float last_unix = 7;
+    float last_duration = 8;
+    float backoff_until = 9;
+    float rate_limit_until = 10;
     uint32 fatal_count = 11;
     string fatal_reason = 12;
     string fatal_detail = 13;
-    double fatal_unix = 14;
+    float fatal_unix = 14;
     bool pending_nonce = 15;
     uint32 nonce_length = 16;
 }
@@ -1114,7 +1114,7 @@ message PipelineEvent {
     uint32 attempt = 3;
     bool ack_received = 4;
     uint32 status = 5;
-    double timestamp = 6;
+    float timestamp = 6;
 }
 
 message SerialPipelineSnapshot {
@@ -1127,7 +1127,7 @@ message SerialFlowSnapshot {
     uint32 commands_acked = 2;
     uint32 retries = 3;
     uint32 failures = 4;
-    double last_event_unix = 5;
+    float last_event_unix = 5;
 }
 
 message BridgeSnapshot {
@@ -1145,13 +1145,13 @@ message SerialThroughputStats {
     uint64 bytes_received = 2;
     uint32 frames_sent = 3;
     uint32 frames_received = 4;
-    double last_tx_unix = 5;
-    double last_rx_unix = 6;
+    float last_tx_unix = 5;
+    float last_rx_unix = 6;
 }
 
 message ProcessStats {
     string name = 1;
-    double cpu_percent = 2;
+    float cpu_percent = 2;
     uint64 memory_rss_bytes = 3;
 }
 

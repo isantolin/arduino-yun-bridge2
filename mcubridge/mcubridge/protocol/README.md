@@ -9,7 +9,7 @@ The system is designed with a strict layering to separate the wire protocol from
 ### 1. The Protocol Contract (`protocol/protocol.py`)
 - **Role:** Low-level Protocol Constants.
 - **Content:** Command IDs, Status Codes, Binary Format definitions, Magic Numbers.
-- **Origin:** Auto-generated from `tools/protocol/spec.toml` using `tools/protocol/generate.py`.
+- **Origin:** Auto-generated from `tools/protocol/mcubridge.proto` using `tools/protocol/generate.py`.
 - **Modification Policy:** **DO NOT EDIT MANUALLY.**
 
 ### 2. The Data Structures (`protocol/structures.py`)

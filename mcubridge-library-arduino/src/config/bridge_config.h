@@ -10,7 +10,7 @@ namespace config {
 
 /**
  * [SIL-2] Hardware Abstraction Metadata
- * These values are derived from spec.toml or detected via compiler defines.
+ * These values are derived from mcubridge.proto or detected via compiler defines.
  * Strictly Zero-Redundancy: Inherits constants from generated protocol headers.
  */
 

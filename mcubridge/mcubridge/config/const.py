@@ -16,7 +16,7 @@ Architecture Layers:
 - `mcubridge.config.settings`: Runtime configuration loaded from UCI/defaults.
 
 Configuration Flow:
-    spec.toml -> generate.py -> protocol.py (constants)
+    mcubridge.proto -> generate.py -> protocol.py (constants)
     UCI/defaults -> settings.py -> RuntimeConfig (validated)
 """
 
@@ -74,7 +74,7 @@ SPOOL_BACKOFF_MAX_SECONDS: float = 60.0
 DEFAULT_FILE_SYSTEM_ROOT: str = "/tmp/yun_files"
 DEFAULT_FILE_WRITE_MAX_BYTES: int = 262144
 DEFAULT_FILE_STORAGE_QUOTA_BYTES: int = 8388608
-# Warning threshold for files growing large in RAM (Inherited from spec.toml)
+# Warning threshold for files growing large in RAM (Inherited from mcubridge.proto)
 
 # Paths considered safe (volatile/RAM) for writing to avoid flash wear
 VOLATILE_STORAGE_PATHS: frozenset[str] = frozenset({"/tmp", "/var/run", "/run", "/dev/shm"})

@@ -20,7 +20,7 @@ This library provides the MCU-side runtime for the Arduino MCU Bridge v2 project
   - Additional documentation and diagrams describing the protocol and library design (`../docs/PROTOCOL.md`).
 - `tools/`
   - Maintenance scripts such as `install.sh` to deploy the library into an Arduino environment.
-  - The protocol generator lives in `tools/protocol/spec.toml` (see repository root); running `python3 tools/protocol/generate.py` refreshes the shared headers in `src/protocol/` alongside the Python daemon bindings.
+  - The protocol generator lives in `tools/protocol/mcubridge.proto` (see repository root); running `python3 tools/protocol/generate.py` refreshes the shared headers in `src/protocol/` alongside the Python daemon bindings.
 
 ## Installation
 

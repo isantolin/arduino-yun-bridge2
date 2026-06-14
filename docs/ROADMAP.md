@@ -31,5 +31,5 @@
 ## Future Strategic Goals (2026-2027)
 
 ### 1. Zero-Code Experience
-- **Dynamic LuCI UI**: Automated web interface generation based on `spec.toml` definitions.
+- **Dynamic LuCI UI**: Automated web interface generation based on `mcubridge.proto` definitions.
 - **Pythonic MCU Mocking**: Local development library that transparently uses the emulator when hardware is missing.

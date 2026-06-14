@@ -4,7 +4,7 @@ This directory contains the auto-generated C++ protocol definitions for the Ardu
 
 ## Source of Truth
 The protocol is formally defined in two files at the repository root:
-- `tools/protocol/spec.toml` — enums, constants, command IDs, MQTT topics.
+- `tools/protocol/mcubridge.proto` — enums, constants, command IDs, MQTT topics.
 - `tools/protocol/mcubridge.proto` — payload message schemas (proto3).
 
 All files in this directory should be considered **read-only artifacts** of the generation process, with the exception of helper classes that wrap the generated structures.
@@ -15,7 +15,7 @@ All files in this directory should be considered **read-only artifacts** of the 
 *   `rpc_frame.h`: Frame handling logic (CRC, Header, Payload).
 
 ## Generation
-To regenerate these files after modifying `spec.toml` or `mcubridge.proto`:
+To regenerate these files after modifying `mcubridge.proto`:
 ```bash
 python3 tools/protocol/generate.py
 ```

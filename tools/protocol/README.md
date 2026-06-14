@@ -1,7 +1,7 @@
 # Protocol Code Generation
 
 The files in this directory describe the RPC protocol shared between the MCU
-(Arduino) and the MPU (Linux). The canonical definition lives in `spec.toml`
+(Arduino) and the MPU (Linux). The canonical definition lives in `mcubridge.proto`
 (enums, constants, MQTT topics) and `mcubridge.proto` (payload schemas).
 Running the generator updates all derived artifacts to stay in sync.
 
@@ -11,8 +11,8 @@ python3 tools/protocol/generate.py
 
 The command refreshes:
 
-- `mcubridge/mcubridge/protocol/protocol.py` — Python enums and constants from `spec.toml`.
-- `mcubridge-library-arduino/src/protocol/rpc_protocol.h` — C++ enums and constants from `spec.toml`.
+- `mcubridge/mcubridge/protocol/protocol.py` — Python enums and constants from `mcubridge.proto`.
+- `mcubridge-library-arduino/src/protocol/rpc_protocol.h` — C++ enums and constants from `mcubridge.proto`.
 - `mcubridge-library-arduino/src/protocol/rpc_structs.h` — C++ nanopb type aliases and `Payload::parse<T>` wrappers.
 - `mcubridge/mcubridge/protocol/mcubridge_pb2.py` + `.pyi` — Python protobuf bindings from `mcubridge.proto`.
 - `mcubridge-library-arduino/src/protocol/mcubridge.pb.h` + `.pb.c` — C nanopb structs from `mcubridge.proto`.

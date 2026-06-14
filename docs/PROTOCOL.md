@@ -35,7 +35,7 @@ Notas:
 
 ## Fuente de verdad
 
-La **fuente de verdad machine-readable** del protocolo se reparte entre `tools/protocol/mcubridge.proto` (mensajes y constantes de aplicación) y `tools/protocol/spec.toml` (contrato binario y IDs de comando). El sistema exige el cumplimiento estricto de la **versión 0x02**. Cualquier frame con una versión diferente es rechazado inmediatamente.
+La **fuente de verdad machine-readable** del protocolo se vive íntegramente en `tools/protocol/mcubridge.proto` (mensajes, constantes de aplicación, suscripciones MQTT, contrato binario y IDs de comando). El sistema exige el cumplimiento estricto de la **versión 0x02**. Cualquier frame con una versión diferente es rechazado inmediatamente.
 
 ### Serialización de Payloads (Protobuf)
 Todos los payloads del protocolo se definen como mensajes en `tools/protocol/mcubridge.proto` y se serializan como **protobuf** dentro del frame RPC.
@@ -51,11 +51,6 @@ La librería C++ utiliza el namespace `rpc::Payload` para un desempaquetado de d
 ### Despacho de Comandos (Deterministic Switch Dispatch)
 El MCU utiliza un despacho basado en una estructura `switch` optimizada sobre punteros a métodos. Esto garantiza un tiempo de despacho determinista, elimina la redundancia de código y minimiza el uso de RAM al evitar tablas de salto estáticas de gran tamaño, cumpliendo con los requisitos más estrictos de SIL-2. Esto garantiza un tiempo de despacho constante (O(1)), elimina la redundancia de código y reduce drásticamente la profundidad de la pila de llamadas, cumpliendo con los requisitos más estrictos de SIL-2.
 
-Qué **sí** se centraliza en `spec.toml` (y se genera a Python/C++):
-
-- **Contrato wire MCU↔Linux**: enums/IDs (`Command`, `Status`), límites, sentinels/máscaras y cualquier valor validado por ambos lados.
-- **Handshake HMAC-auth**: formato serializado y rangos (`HANDSHAKE_CONFIG_*`, `*_MIN/MAX`) y defaults que formen parte del intercambio/validación.
-- **Bootloader Safety**: uso de `RPC_BOOTLOADER_MAGIC` (0xDEADC0DE) para prevenir activaciones accidentales del WDT-bootloader.
 - **Contrato MQTT público**: prefijo por defecto, sufijos y tokens canónicos que impactan interoperabilidad (`MQTT_DEFAULT_TOPIC_PREFIX`, `MQTT_SUFFIX_*`, `STATUS_REASON_*`).
 
 ### Determinismo C++17 y Zero-Cost Abstractions
@@ -68,7 +63,7 @@ Qué se centraliza en `mcubridge.proto` (y se genera a Python/C++ vía el genera
 
 - **Layouts de payload**: cada mensaje RPC tiene un mensaje protobuf (`ConsoleWrite`, `ProcessPoll`, `AckPacket`, etc.) con campos tipados y tamaños máximos definidos por las opciones del generador.
 
-Este documento **no duplica listados enumerados** (por ejemplo `[mqtt_suffixes]`, `[status_reasons]`, `[[mqtt_subscriptions]]`, `[[topics]]`, `[[actions]]`) para evitar drift; esos catálogos se consideran canónicos en el spec y en los bindings generados.
+Este documento **no duplica listados enumerados** (por ejemplo `[mqtt_suffixes]`, `[status_reasons]`, `[[mqtt_subscriptions]]`, `[[topics]]`, `[[actions]]`) para evitar drift; esos catálogos se consideran canónicos en `mcubridge.proto` y en los bindings generados.
 
 Qué **no** se centraliza en el spec (porque es decisión de despliegue/runtime):
 
@@ -76,16 +71,16 @@ Qué **no** se centraliza en el spec (porque es decisión de despliegue/runtime)
 
 Al ejecutar:
 
-- `python3 tools/protocol/generate.py --spec tools/protocol/spec.toml --py mcubridge/mcubridge/protocol/protocol.py --cpp mcubridge-library-arduino/src/protocol/rpc_protocol.h --cpp-structs mcubridge-library-arduino/src/protocol/rpc_structs.h`
+- `python3 tools/protocol/generate.py --py mcubridge/mcubridge/protocol/protocol.py --cpp mcubridge-library-arduino/src/protocol/rpc_protocol.h --cpp-structs mcubridge-library-arduino/src/protocol/rpc_structs.h`
 
 …se regeneran los bindings de enums/constantes. Además, el generador produce structs protobuf para ambos lados:
 
-- **Python:** clases `Packet` en `structures.py` (tipado estático con `msgspec`)
+- **Python:** clases `Packet` en `structures.py` (tipado estático)
 - **C++ (nanopb/protobuf):** structs nativos en `rpc_structs.h` con `encode()`/`decode()` (estáticos, sin heap)
 
 Todos los artefactos generados deben commitearse en el mismo cambio.
 
-Este documento actúa además como **contrato normativo** de direccionalidad y semántica (ACK/RESP). Si el comportamiento real difiere, se considera un bug: hay que ajustar implementación + `spec.toml` + este documento.
+Este documento actúa además como **contrato normativo** de direccionalidad y semántica (ACK/RESP). Si el comportamiento real difiere, se considera un bug: hay que ajustar implementación  + este documento.
 
 ---
 
@@ -591,7 +586,7 @@ MCU detecta RX buffer < 25% → envía CMD_XON (0x4F)  → Linux reanuda TX
 
 #### Notas de Implementación
 
-- `CMD_XOFF` y `CMD_XON` **no requieren ACK** (`requires_ack = false` en spec.toml).
+- `CMD_XOFF` y `CMD_XON` **no requieren ACK** (`requires_ack = false` en `mcubridge.proto`).
 - Son comandos unidireccionales MCU → Linux únicamente.
 - El daemon debe aplicar el gating de forma **global** (todos los comandos, no solo consola).
 - La pausa debe liberarse inmediatamente ante pérdida de conexión serial.
@@ -694,7 +689,7 @@ Notas:
 - **Truncado**: si una respuesta supera `MAX_PAYLOAD_SIZE`, los datos se truncan.
 - **MQTT**: además del RPC serie, el daemon expone una API MQTT.
   - Dirección: MQTT clientes → daemon (comandos), daemon → MQTT (respuestas/snapshots).
-  - La lista de suscripciones (incluyendo comodines y QoS) vive en `tools/protocol/spec.toml` (`[[mqtt_subscriptions]]`) y se genera a Python como `MQTT_COMMAND_SUBSCRIPTIONS`.
+  - La lista de suscripciones (incluyendo comodines y QoS) vive en `tools/protocol/mcubridge.proto` (`option (rpc.pb.mqtt_subscriptions)`) y se genera a Python como `MQTT_COMMAND_SUBSCRIPTIONS`.
 
 ---
 
@@ -707,7 +702,7 @@ Además de los comandos anteriores, el daemon expone endpoints de lectura de est
 - `br/system/bridge/summary/get` → publica `br/system/bridge/summary/value`.
 - `br/system/bridge/state/get` → publica `br/system/bridge/summary/value` (alias histórico).
 
-Estos topics forman parte del contrato operativo y deben estar definidos en `tools/protocol/spec.toml`.
+Estos topics forman parte del contrato operativo y deben estar definidos en `tools/protocol/mcubridge.proto`.
 
 ---
 

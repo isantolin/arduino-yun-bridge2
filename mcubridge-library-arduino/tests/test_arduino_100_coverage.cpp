@@ -3,7 +3,7 @@
 #include <etl/array.h>
 
 #include "Bridge.h"
-#include "BridgeTestHelper.h"
+#include "test_support.h"
 #include "BridgeTestInterface.h"
 #include "etl_ext/CounterIterator.h"
 #include "protocol/rpc_frame.h"

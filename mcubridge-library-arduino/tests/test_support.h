@@ -261,4 +261,52 @@ static inline void reset_bridge_core(BridgeClass& bridge, Stream& stream,
   ba.onStartupStabilized();
   ba.setIdle();
 }
+
+namespace rpc {
+
+inline rpc_pb_RpcEnvelope build_envelope(uint16_t cmd_id, uint16_t seq_id,
+                                         etl::span<const uint8_t> payload = {},
+                                         etl::span<const uint8_t> nonce = {},
+                                         etl::span<const uint8_t> tag = {}) {
+  rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
+  env.version = PROTOCOL_VERSION;
+  env.command_id = cmd_id;
+  env.sequence_id = seq_id;
+
+  if (!nonce.empty()) {
+    const size_t n_size = etl::min(nonce.size(), static_cast<size_t>(AEAD_NONCE_SIZE));
+    etl::copy_n(nonce.begin(), n_size, env.nonce.bytes);
+    env.nonce.size = static_cast<pb_size_t>(n_size);
+  }
+
+  if (!tag.empty()) {
+    const size_t t_size = etl::min(tag.size(), static_cast<size_t>(AEAD_TAG_SIZE));
+    etl::copy_n(tag.begin(), t_size, env.tag.bytes);
+    env.tag.size = static_cast<pb_size_t>(t_size);
+  }
+
+  if (!payload.empty()) {
+    const size_t p_size = etl::min(payload.size(), static_cast<size_t>(MAX_PAYLOAD_SIZE));
+    env.which_payload_type = rpc_pb_RpcEnvelope_encrypted_payload_tag;
+    etl::copy_n(payload.begin(), p_size, env.payload_type.encrypted_payload.bytes);
+    env.payload_type.encrypted_payload.size = static_cast<pb_size_t>(p_size);
+  }
+
+  return env;
+}
+
+}  // namespace rpc
+
+namespace bridge::test {
+template <typename T>
+void set_pb_payload(rpc_pb_RpcEnvelope& frame, const T& msg) {
+  frame.which_payload_type = rpc_pb_RpcEnvelope_encrypted_payload_tag;
+  pb_ostream_t stream = pb_ostream_from_buffer(
+      frame.payload_type.encrypted_payload.bytes, 64U);
+  if (pb_encode(&stream, rpc::Payload::get_fields<T>(), &msg)) {
+    frame.payload_type.encrypted_payload.size = static_cast<pb_size_t>(stream.bytes_written);
+  }
+}
+} // namespace bridge::test
+
 #endif

@@ -1,6 +1,6 @@
 #define BRIDGE_ENABLE_TEST_INTERFACE 1
 #include "Bridge.h"
-#include "BridgeTestHelper.h"
+#include "test_support.h"
 #include "BridgeTestInterface.h"
 #include "hal/hal.h"
 #include "services/FileSystem.h"

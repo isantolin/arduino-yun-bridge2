@@ -2,7 +2,7 @@
 #include <etl/array.h>
 
 #include "Bridge.h"
-#include "BridgeTestHelper.h"
+#include "test_support.h"
 #include "BridgeTestInterface.h"
 #include "fsm/bridge_fsm.h"
 #include "test_support.h"

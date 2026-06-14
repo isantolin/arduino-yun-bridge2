@@ -4,7 +4,7 @@
 
 #include "Bridge.h"
 #include "BridgeFaultInjection.h"
-#include "BridgeTestHelper.h"
+#include "test_support.h"
 #include "BridgeTestInterface.h"
 #include "etl_ext/CounterIterator.h"
 #include "fsm/bridge_fsm.h"

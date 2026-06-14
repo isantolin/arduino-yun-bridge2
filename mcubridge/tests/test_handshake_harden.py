@@ -14,12 +14,13 @@ from mcubridge.protocol.protocol import Command, Status
 
 
 @pytest.fixture
-def handshake_setup() -> Iterator[tuple[SerialHandshakeManager, RuntimeState, AsyncMock]]:
+def handshake_setup(tmp_path) -> Iterator[tuple[SerialHandshakeManager, RuntimeState, AsyncMock]]:
     config = RuntimeConfig(
         mqtt_topic="br",
         serial_port="/dev/test",
         serial_shared_secret=b"secure_secret_123456789012345678",
         serial_handshake_fatal_failures=3,
+        file_system_root=str(tmp_path),
     )
     state = create_runtime_state(config)
 

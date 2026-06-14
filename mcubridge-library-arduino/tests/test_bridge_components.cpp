@@ -4,13 +4,13 @@
 
 #define BRIDGE_ENABLE_TEST_INTERFACE 1
 #include "Bridge.h"
-#include "BridgeTestHelper.h"
+#include "test_support.h"
 #include "BridgeTestInterface.h"
 #include "services/Console.h"
 #include "services/DataStore.h"
 #include "services/Mailbox.h"
 #include "services/Process.h"
-#include "test_constants.h"
+
 #include "test_support.h"
 
 // Define the global delegates and stubs for HardwareSerial stub

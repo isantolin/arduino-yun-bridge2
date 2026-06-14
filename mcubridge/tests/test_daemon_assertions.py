@@ -15,13 +15,14 @@ from mcubridge.services.runtime import BridgeService
 
 
 @pytest.fixture
-def runtime_config() -> RuntimeConfig:
+def runtime_config(tmp_path) -> RuntimeConfig:
     return RuntimeConfig(
         serial_port="/dev/ttyDummy",
         mqtt_enabled=True,
         metrics_enabled=False,
         watchdog_enabled=False,
         bridge_summary_interval=0.0,
+        file_system_root=str(tmp_path),
     )
 
 
@@ -64,9 +65,9 @@ async def test_daemon_run_orchestrates_tasks(service_stack: tuple[BridgeService,
     assert service.run_mqtt.called
 
 
-def test_main_strict_mode_when_default_secret() -> None:
+def test_main_strict_mode_when_default_secret(tmp_path) -> None:
     # Test that the daemon disables MQTT when the default secret is used
-    mock_config = RuntimeConfig(serial_shared_secret=b"failsafe_secret_mode", mqtt_enabled=True)
+    mock_config = RuntimeConfig(serial_shared_secret=b"failsafe_secret_mode", mqtt_enabled=True, file_system_root=str(tmp_path))
 
     with patch("mcubridge.daemon.load_runtime_config", return_value=mock_config):
         with patch("mcubridge.daemon.verify_crypto_integrity", return_value=True):
@@ -79,8 +80,8 @@ def test_main_strict_mode_when_default_secret() -> None:
                     assert used_config.mqtt_enabled is False
 
 
-def test_main_aborts_on_crypto_failure() -> None:
-    mock_config = RuntimeConfig()
+def test_main_aborts_on_crypto_failure(tmp_path) -> None:
+    mock_config = RuntimeConfig(file_system_root=str(tmp_path))
     with patch("mcubridge.daemon.load_runtime_config", return_value=mock_config):
         with patch("mcubridge.daemon.verify_crypto_integrity", return_value=False):
             with patch("asyncio.Runner"):

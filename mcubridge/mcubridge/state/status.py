@@ -14,8 +14,20 @@ import msgspec
 from ..config.const import STATUS_FILE_PATH
 from .context import RuntimeState
 
+from google.protobuf.message import Message as ProtobufMessage
+
 logger = structlog.get_logger("mcubridge.status")
-_json_enc = msgspec.json.Encoder()
+
+
+def _enc_hook(obj: Any) -> Any:
+    if isinstance(obj, ProtobufMessage):
+        from google.protobuf.json_format import MessageToDict
+
+        return MessageToDict(obj, preserving_proto_field_name=True)
+    raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
+
+
+_json_enc = msgspec.json.Encoder(enc_hook=_enc_hook)
 STATUS_FILE = Path(STATUS_FILE_PATH)
 
 

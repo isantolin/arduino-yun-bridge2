@@ -40,9 +40,7 @@ from ..protocol.protocol import (
 )
 from ..protocol.structures import (
     PendingPinRequest,
-    SerialFlowStats,
     SerialThroughputStats,
-    SupervisorStats,
 )
 from ..protocol import mcubridge_pb2 as pb
 from .metrics import DaemonMetrics
@@ -192,7 +190,7 @@ class RuntimeState(msgspec.Struct, weakref=True):
     handshake_fatal_detail: str | None = None
     handshake_fatal_unix: float = 0.0
     handshake_last_started: float = 0.0
-    serial_flow_stats: SerialFlowStats = msgspec.field(default_factory=SerialFlowStats)
+    serial_flow_stats: pb.SerialFlowSnapshot = msgspec.field(default_factory=pb.SerialFlowSnapshot)
     serial_throughput_stats: SerialThroughputStats = msgspec.field(default_factory=SerialThroughputStats)
     serial_pipeline_inflight: dict[str, Any] | None = None
     serial_pipeline_last: dict[str, Any] | None = None
@@ -205,8 +203,8 @@ class RuntimeState(msgspec.Struct, weakref=True):
     serial_response_timeout_ms: int = int(DEFAULT_SERIAL_RESPONSE_TIMEOUT * 1000)
     serial_retry_limit: int = DEFAULT_RETRY_LIMIT
     mcu_status_counts: dict[str, int] = msgspec.field(default_factory=lambda: cast(dict[str, int], {}))
-    supervisor_stats: dict[str, SupervisorStats] = msgspec.field(
-        default_factory=lambda: cast(dict[str, SupervisorStats], {})
+    supervisor_stats: dict[str, pb.SupervisorSnapshot] = msgspec.field(
+        default_factory=lambda: cast(dict[str, pb.SupervisorSnapshot], {})
     )
     supervisor_failures: int = 0
     last_supervisor_error: str | None = None
@@ -239,7 +237,7 @@ class RuntimeState(msgspec.Struct, weakref=True):
 
     def record_supervisor_failure(self, name: str, backoff: float, exc: BaseException | None) -> None:
         """Record an internal service task failure."""
-        stats = self.supervisor_stats.setdefault(name, SupervisorStats())
+        stats = self.supervisor_stats.setdefault(name, pb.SupervisorSnapshot())
         stats.restarts += 1
         stats.last_failure_unix = time.time()
         stats.last_exception = f"{exc.__class__.__name__}: {exc}" if exc else "unknown"
@@ -554,13 +552,7 @@ class RuntimeState(msgspec.Struct, weakref=True):
             ),
             handshake=self.build_handshake_snapshot(),
             serial_pipeline=self.build_serial_pipeline_snapshot(),
-            serial_flow=pb.SerialFlowSnapshot(
-                commands_sent=self.serial_flow_stats.commands_sent,
-                commands_acked=self.serial_flow_stats.commands_acked,
-                retries=self.serial_flow_stats.retries,
-                failures=self.serial_flow_stats.failures,
-                last_event_unix=self.serial_flow_stats.last_event_unix,
-            ),
+            serial_flow=self.serial_flow_stats,
             mcu_version=version_pb,
             capabilities=capabilities_pb,
         )

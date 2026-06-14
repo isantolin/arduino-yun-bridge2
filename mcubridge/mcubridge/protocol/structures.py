@@ -445,6 +445,13 @@ def _flatten_structured_value(
     value: Any,
     entries: list[pb.StructuredEntry],
 ) -> None:
+    if isinstance(value, ProtobufMessage):
+        from google.protobuf.json_format import MessageToDict
+
+        proto_fields = MessageToDict(value, preserving_proto_field_name=True)
+        for key, nested in proto_fields.items():
+            _flatten_structured_value(f"{key_prefix}.{key}" if key_prefix else key, nested, entries)
+        return
     if isinstance(value, msgspec.Struct):
         struct_fields = msgspec.structs.asdict(value)
         for key, nested in struct_fields.items():
@@ -753,18 +760,6 @@ def decode_queued_publish(data: bytes) -> QueuedPublish:
 # --- Process Service Structures ---
 
 
-class ProcessOutputBatch(msgspec.Struct):
-    """Structured payload describing PROCESS_POLL results."""
-
-    status_byte: Annotated[int, msgspec.Meta(ge=0, le=255)]
-    exit_code: Annotated[int, msgspec.Meta(ge=0, le=255)]
-    stdout_chunk: bytes
-    stderr_chunk: bytes
-    finished: bool
-    stdout_truncated: bool
-    stderr_truncated: bool
-
-
 # --- Serial Flow Structures ---
 
 
@@ -798,16 +793,6 @@ class PendingCommand(msgspec.Struct):
 # --- Status Structures ---
 
 
-class SupervisorStats(msgspec.Struct):
-    """Task supervisor statistics."""
-
-    restarts: int = 0
-    last_failure_unix: float = 0.0
-    last_exception: str | None = None
-    backoff_seconds: float = 0.0
-    fatal: bool = False
-
-
 class SerialThroughputStats(msgspec.Struct):
     """Serial link throughput counters."""
 
@@ -827,16 +812,6 @@ class SerialThroughputStats(msgspec.Struct):
         self.bytes_received += nbytes
         self.frames_received += 1
         self.last_rx_unix = time.time()
-
-
-class SerialFlowStats(msgspec.Struct):
-    """Serial flow control statistics (Mutable)."""
-
-    commands_sent: int = 0
-    commands_acked: int = 0
-    retries: int = 0
-    failures: int = 0
-    last_event_unix: float = 0.0
 
 
 class ProcessStats(msgspec.Struct):

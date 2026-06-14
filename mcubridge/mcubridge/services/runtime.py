@@ -58,7 +58,6 @@ from ..protocol.protocol import (
 )
 
 from ..protocol.structures import (
-    ProcessOutputBatch,
     PROTOBUF_CONTENT_TYPE,
     QueuedPublish,
     TopicRoute,
@@ -661,12 +660,7 @@ class BridgeService:
         batch = await self._poll_process(p.pid)
         res = await serial.send(
             Command.CMD_PROCESS_POLL_RESP.value,
-            pb.ProcessPollResponse(
-                status=batch.status_byte,
-                exit_code=batch.exit_code,
-                stdout_data=batch.stdout_chunk,
-                stderr_data=batch.stderr_chunk,
-            ),
+            batch,
         )
         return bool(res)
 
@@ -921,15 +915,7 @@ class BridgeService:
                             str(pid),
                             protocol.MQTT_SUFFIX_RESPONSE,
                         ),
-                        pb.ProcessPollResponse(
-                            status=batch.status_byte,
-                            exit_code=batch.exit_code,
-                            stdout_data=batch.stdout_chunk,
-                            stderr_data=batch.stderr_chunk,
-                            finished=batch.finished,
-                            stdout_truncated=batch.stdout_truncated,
-                            stderr_truncated=batch.stderr_truncated,
-                        ).SerializeToString(),
+                        batch.SerializeToString(),
                         content_type=PROTOBUF_CONTENT_TYPE,
                     ),
                     reply_context=inbound,
@@ -1127,11 +1113,19 @@ class BridgeService:
         finally:
             self._finalize_process(pid)
 
-    async def _poll_process(self, pid: int) -> ProcessOutputBatch:
+    async def _poll_process(self, pid: int) -> pb.ProcessPollResponse:
         async with self.state.process_lock:
             ctx = self.state.running_processes.get(pid)
             if not ctx:
-                return ProcessOutputBatch(Status.ERROR.value, 1, b"", b"", True, False, False)
+                return pb.ProcessPollResponse(
+                    status=Status.ERROR.value,
+                    exit_code=1,
+                    stdout_data=b"",
+                    stderr_data=b"",
+                    finished=True,
+                    stdout_truncated=False,
+                    stderr_truncated=False,
+                )
             async with ctx.io_lock:
 
                 async def _rd(s: asyncio.StreamReader | None) -> tuple[bytes, bool]:
@@ -1151,7 +1145,15 @@ class BridgeService:
                     and (ctx.handle.stderr is None or ctx.handle.stderr.at_eof())
                 ):
                     self._finalize_process(pid)
-                return ProcessOutputBatch(Status.OK.value, ctx.exit_code, o, e, fin, to, te)
+                return pb.ProcessPollResponse(
+                    status=Status.OK.value,
+                    exit_code=ctx.exit_code,
+                    stdout_data=o,
+                    stderr_data=e,
+                    finished=fin,
+                    stdout_truncated=to,
+                    stderr_truncated=te,
+                )
 
     async def _stop_process(self, pid: int) -> bool:
         async with self.state.process_lock:

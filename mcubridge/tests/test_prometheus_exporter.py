@@ -3,7 +3,7 @@ import asyncio
 
 import pytest
 from mcubridge.metrics import PrometheusExporter
-from mcubridge.state.context import SupervisorStats
+from mcubridge.protocol import mcubridge_pb2 as pb
 
 
 @pytest.mark.asyncio
@@ -11,7 +11,7 @@ async def test_prometheus_exporter_serves_metrics(runtime_state: Any):
     runtime_state.file_storage_quota_bytes = 4096
     runtime_state.file_storage_bytes_used = 1024
     runtime_state.supervisor_stats = {
-        "worker": SupervisorStats(restarts=2),
+        "worker": pb.SupervisorSnapshot(restarts=2),
     }
 
     exporter = PrometheusExporter(runtime_state, "127.0.0.1", 0)

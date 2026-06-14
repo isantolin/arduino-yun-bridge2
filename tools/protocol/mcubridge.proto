@@ -57,6 +57,20 @@ message Constants {
     uint32 process_command_max = 50 [(cpp_name) = "RPC_PROCESS_COMMAND_MAX", (cpp_type) = "uint16_t", (py_name) = "PROCESS_COMMAND_MAX", (py_type) = "int"];
     uint32 spi_command_min = 51 [(cpp_name) = "RPC_SPI_COMMAND_MIN", (cpp_type) = "uint16_t", (py_name) = "SPI_COMMAND_MIN", (py_type) = "int"];
     uint32 spi_command_max = 52 [(cpp_name) = "RPC_SPI_COMMAND_MAX", (cpp_type) = "uint16_t", (py_name) = "SPI_COMMAND_MAX", (py_type) = "int"];
+    uint32 default_reconnect_delay = 53 [(py_name) = "DEFAULT_RECONNECT_DELAY", (py_type) = "int"];
+    uint32 max_serial_frame_bytes = 54 [(py_name) = "MAX_SERIAL_FRAME_BYTES", (py_type) = "int"];
+    uint32 default_serial_handshake_fatal_failures = 55 [(py_name) = "DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES", (py_type) = "int"];
+    uint32 default_serial_fallback_threshold = 56 [(py_name) = "DEFAULT_SERIAL_FALLBACK_THRESHOLD", (py_type) = "int"];
+    uint32 mqtt_expiry_pin = 57 [(py_name) = "MQTT_EXPIRY_PIN", (py_type) = "int"];
+    uint32 mqtt_expiry_console = 58 [(py_name) = "MQTT_EXPIRY_CONSOLE", (py_type) = "int"];
+    uint32 mqtt_expiry_datastore = 59 [(py_name) = "MQTT_EXPIRY_DATASTORE", (py_type) = "int"];
+    uint32 mqtt_expiry_shell = 60 [(py_name) = "MQTT_EXPIRY_SHELL", (py_type) = "int"];
+    uint32 mqtt_expiry_default = 61 [(py_name) = "MQTT_EXPIRY_DEFAULT", (py_type) = "int"];
+    uint32 default_process_max_output_bytes = 62 [(py_name) = "DEFAULT_PROCESS_MAX_OUTPUT_BYTES", (py_type) = "int"];
+    uint32 default_console_queue_limit_bytes = 63 [(py_name) = "DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES", (py_type) = "int"];
+    uint32 prometheus_port = 64 [(py_name) = "PROMETHEUS_PORT", (py_type) = "int"];
+    uint32 sync_timeout_ms = 65 [(cpp_name) = "SYNC_TIMEOUT_MS", (cpp_type) = "uint32_t", (py_name) = "SYNC_TIMEOUT_MS", (py_type) = "int"];
+
 }
 
 message Hardware {
@@ -347,6 +361,20 @@ option (rpc.pb.constants) = {
     process_command_max: 175
     spi_command_min: 176
     spi_command_max: 191
+    default_reconnect_delay: 5
+    max_serial_frame_bytes: 1024
+    default_serial_handshake_fatal_failures: 15
+    default_serial_fallback_threshold: 5
+    mqtt_expiry_pin: 5
+    mqtt_expiry_console: 5
+    mqtt_expiry_datastore: 60
+    mqtt_expiry_shell: 30
+    mqtt_expiry_default: 10
+    default_process_max_output_bytes: 65536
+    default_console_queue_limit_bytes: 16384
+    prometheus_port: 9130
+    sync_timeout_ms: 30000
+
 };
 
 option (rpc.pb.hardware) = {

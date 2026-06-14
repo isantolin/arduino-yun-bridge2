@@ -1,12 +1,11 @@
 from __future__ import annotations
-import msgspec
 
 from mcubridge.protocol.structures import QueuedPublish
 from mcubridge.protocol import protocol
 
 
-def test_queued_publish_json_roundtrip() -> None:
-    """Verify that QueuedPublish correctly roundtrips via direct JSON serialization."""
+def test_queued_publish_protobuf_roundtrip() -> None:
+    """Verify that QueuedPublish correctly roundtrips via protobuf serialization."""
     message = QueuedPublish(
         topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test",
         payload=b"hello",
@@ -21,8 +20,8 @@ def test_queued_publish_json_roundtrip() -> None:
     )
 
     # Use direct library calls as per zero-wrapper mandate
-    encoded = msgspec.json.encode(message)
-    restored = msgspec.json.decode(encoded, type=QueuedPublish)
+    encoded = message.to_protobuf()
+    restored = QueuedPublish.from_protobuf(encoded)
 
     assert restored == message
     assert restored.correlation_data == b"cid"

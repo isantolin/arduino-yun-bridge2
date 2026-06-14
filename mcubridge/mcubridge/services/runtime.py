@@ -374,8 +374,7 @@ class BridgeService:
         if topic_alias_max > 0:
             if message.topic_name in self._topic_aliases:
                 alias_id = self._topic_aliases[message.topic_name]
-                pub_message = msgspec.structs.replace(
-                    message,
+                pub_message = message.replace(
                     topic_name="",
                     topic_alias=alias_id,
                 )
@@ -384,8 +383,7 @@ class BridgeService:
                     alias_id = self._next_alias_id
                     self._topic_aliases[message.topic_name] = alias_id
                     self._next_alias_id += 1
-                    pub_message = msgspec.structs.replace(
-                        message,
+                    pub_message = message.replace(
                         topic_alias=alias_id,
                     )
 

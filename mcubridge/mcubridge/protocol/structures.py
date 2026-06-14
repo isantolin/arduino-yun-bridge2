@@ -558,14 +558,6 @@ class ServiceHealth(msgspec.Struct, frozen=True):
     last_exception: str | None = None
 
 
-class SystemStatus(msgspec.Struct, frozen=True):
-    cpu_percent: float | None
-    memory_total_bytes: int | None
-    memory_available_bytes: int | None
-    load_avg_1m: float | None
-    uptime_seconds: float
-
-
 # --- MQTT Spool Structures ---
 
 
@@ -603,24 +595,108 @@ def build_mqtt_properties(message: QueuedPublish) -> Properties:
     return props
 
 
-class QueuedPublish(msgspec.Struct, frozen=True):
-    """Serializable MQTT publish packet used by the durable spool."""
+class QueuedPublish:
+    """Serializable MQTT publish packet helper to eliminate schema duplication.
 
-    topic_name: str
-    payload: bytes
-    qos: Annotated[int, msgspec.Meta(ge=0, le=2)] = 0
-    retain: bool = False
-    content_type: str | None = None
-    payload_format_indicator: int | None = None
-    message_expiry_interval: int | None = None
-    response_topic: str | None = None
-    correlation_data: bytes | None = None
-    user_properties: tuple[UserProperty, ...] = ()
-    subscription_identifier: tuple[int, ...] | None = None
-    topic_alias: int | None = None
+    This class wraps pb.MqttQueuedPublish directly, avoiding duplication of fields.
+    """
+
+    __slots__ = ("_pb",)
+
+    def __init__(
+        self,
+        topic_name: str,
+        payload: bytes,
+        qos: int = 0,
+        retain: bool = False,
+        content_type: str | None = None,
+        payload_format_indicator: int | None = None,
+        message_expiry_interval: int | None = None,
+        response_topic: str | None = None,
+        correlation_data: bytes | None = None,
+        user_properties: Iterable[tuple[str, str]] = (),
+        subscription_identifier: Iterable[int] | None = None,
+        topic_alias: int | None = None,
+    ) -> None:
+        self._pb = pb.MqttQueuedPublish(
+            topic_name=topic_name,
+            payload=payload,
+            qos=qos,
+            retain=retain,
+        )
+        if content_type is not None:
+            self._pb.content_type = content_type
+        if payload_format_indicator is not None:
+            self._pb.payload_format_indicator = payload_format_indicator
+        if message_expiry_interval is not None:
+            self._pb.message_expiry_interval = message_expiry_interval
+        if response_topic is not None:
+            self._pb.response_topic = response_topic
+        if correlation_data is not None:
+            self._pb.correlation_data = correlation_data
+        for k, v in user_properties:
+            self._pb.user_properties.add(key=k, value=v)
+        if subscription_identifier is not None:
+            self._pb.subscription_identifier.extend(subscription_identifier)
+        if topic_alias is not None:
+            self._pb.topic_alias = topic_alias
+
+    def __getattr__(self, name: str) -> Any:
+        if name == "user_properties":
+            return tuple((p.key, p.value) for p in self._pb.user_properties)
+        if name == "subscription_identifier":
+            return tuple(self._pb.subscription_identifier) if self._pb.subscription_identifier else None
+
+        # Check optional fields presence
+        if name in (
+            "content_type",
+            "payload_format_indicator",
+            "message_expiry_interval",
+            "response_topic",
+            "correlation_data",
+            "topic_alias",
+        ):
+            if self._pb.HasField(name):
+                return getattr(self._pb, name)
+            return None
+
+        try:
+            return getattr(self._pb, name)
+        except AttributeError:
+            raise AttributeError(f"'QueuedPublish' object has no attribute '{name}'")
+
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, QueuedPublish):
+            return NotImplemented
+        return self._pb.SerializeToString() == other._pb.SerializeToString()
+
+    def __hash__(self) -> int:
+        return hash(self._pb.SerializeToString())
+
+    def __repr__(self) -> str:
+        return f"QueuedPublish(topic_name={self.topic_name!r}, qos={self.qos}, retain={self.retain})"
+
+    def replace(self, **kwargs: Any) -> QueuedPublish:
+        """Create a new QueuedPublish with fields replaced."""
+        new_pb = pb.MqttQueuedPublish()
+        new_pb.CopyFrom(self._pb)
+        for k, v in kwargs.items():
+            if k == "user_properties":
+                del new_pb.user_properties[:]
+                for pk, pv in v:
+                    new_pb.user_properties.add(key=pk, value=pv)
+            elif k == "subscription_identifier":
+                del new_pb.subscription_identifier[:]
+                if v is not None:
+                    new_pb.subscription_identifier.extend(v)
+            else:
+                setattr(new_pb, k, v)
+        instance = QueuedPublish.__new__(QueuedPublish)
+        instance._pb = new_pb
+        return instance
 
     def resolve_context(self, context: Any | None) -> QueuedPublish:
-        """Resolve MQTT request-reply context into the publish packet. [SIL-2]"""
+        """Resolve MQTT request-reply context into the publish packet."""
         if context is None:
             return self
 
@@ -633,70 +709,35 @@ class QueuedPublish(msgspec.Struct, frozen=True):
             if cd := getattr(props, "CorrelationData", None):
                 updates["correlation_data"] = bytes(cd)
 
+        user_props = list(self.user_properties)
         if req_topic := getattr(context, "topic", None):
-            updates["user_properties"] = (*self.user_properties, ("bridge-request-topic", str(req_topic)))
+            user_props.append(("bridge-request-topic", str(req_topic)))
 
-        return msgspec.structs.replace(self, **updates) if updates else self
+        new_pb = pb.MqttQueuedPublish()
+        new_pb.CopyFrom(self._pb)
+        if "topic_name" in updates:
+            new_pb.topic_name = updates["topic_name"]
+        if "correlation_data" in updates:
+            new_pb.correlation_data = updates["correlation_data"]
+
+        del new_pb.user_properties[:]
+        for k, v in user_props:
+            new_pb.user_properties.add(key=k, value=v)
+
+        instance = QueuedPublish.__new__(QueuedPublish)
+        instance._pb = new_pb
+        return instance
 
     def to_protobuf(self) -> bytes:
-        """Serialize QueuedPublish to Protobuf binary format."""
-        pb_msg = pb.MqttQueuedPublish()
-        pb_msg.topic_name = self.topic_name
-        pb_msg.payload = self.payload
-        pb_msg.qos = self.qos
-        pb_msg.retain = self.retain
-        if self.content_type is not None:
-            pb_msg.content_type = self.content_type
-        if self.payload_format_indicator is not None:
-            pb_msg.payload_format_indicator = self.payload_format_indicator
-        if self.message_expiry_interval is not None:
-            pb_msg.message_expiry_interval = self.message_expiry_interval
-        if self.response_topic is not None:
-            pb_msg.response_topic = self.response_topic
-        if self.correlation_data is not None:
-            pb_msg.correlation_data = self.correlation_data
-        if self.user_properties:
-            for k, v in self.user_properties:
-                pb_msg.user_properties.add(key=k, value=v)
-        if self.subscription_identifier is not None:
-            pb_msg.subscription_identifier.extend(self.subscription_identifier)
-        if self.topic_alias is not None:
-            pb_msg.topic_alias = self.topic_alias
-        return pb_msg.SerializeToString()
+        return self._pb.SerializeToString()
 
     @classmethod
     def from_protobuf(cls, data: bytes) -> QueuedPublish:
-        """Deserialize QueuedPublish from Protobuf binary format."""
         pb_msg = pb.MqttQueuedPublish()
         pb_msg.ParseFromString(data)
-
-        content_type = pb_msg.content_type if pb_msg.HasField("content_type") else None
-        payload_format_indicator = (
-            pb_msg.payload_format_indicator if pb_msg.HasField("payload_format_indicator") else None
-        )
-        message_expiry_interval = pb_msg.message_expiry_interval if pb_msg.HasField("message_expiry_interval") else None
-        response_topic = pb_msg.response_topic if pb_msg.HasField("response_topic") else None
-        correlation_data = pb_msg.correlation_data if pb_msg.HasField("correlation_data") else None
-
-        user_properties = tuple((prop.key, prop.value) for prop in pb_msg.user_properties)
-
-        subscription_identifier = tuple(pb_msg.subscription_identifier) if pb_msg.subscription_identifier else None
-        topic_alias = pb_msg.topic_alias if pb_msg.HasField("topic_alias") else None
-
-        return cls(
-            topic_name=pb_msg.topic_name,
-            payload=pb_msg.payload,
-            qos=pb_msg.qos,
-            retain=pb_msg.retain,
-            content_type=content_type,
-            payload_format_indicator=payload_format_indicator,
-            message_expiry_interval=message_expiry_interval,
-            response_topic=response_topic,
-            correlation_data=correlation_data,
-            user_properties=user_properties,
-            subscription_identifier=subscription_identifier,
-            topic_alias=topic_alias,
-        )
+        instance = cls.__new__(cls)
+        instance._pb = pb_msg
+        return instance
 
 
 def encode_queued_publish(message: QueuedPublish) -> bytes:

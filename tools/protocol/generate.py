@@ -452,10 +452,7 @@ class JinjaGenerator:
         options_content = options_path.read_text(encoding="utf-8")
         skipped_messages = re.findall(r"rpc\.pb\.(\w+)\s+skip_message:true", options_content)
 
-        msg_names = [
-            name for name in msg_names
-            if name not in skipped_messages and name != "RpcContainer"
-        ]
+        msg_names = [name for name in msg_names if name not in skipped_messages and name != "RpcContainer"]
 
         class MessageHelper:
             def __init__(self, name: str):

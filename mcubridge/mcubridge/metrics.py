@@ -74,8 +74,7 @@ def _build_metrics_message(
             extra_props.append(("bridge-watchdog-interval", str(watchdog_interval)))
 
     if extra_props:
-        message = msgspec.structs.replace(
-            message,
+        message = message.replace(
             user_properties=(*message.user_properties, *extra_props),
         )
 

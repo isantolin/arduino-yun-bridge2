@@ -22,8 +22,10 @@ logger = structlog.get_logger("mcubridge.status")
 def _enc_hook(obj: Any) -> Any:
     if isinstance(obj, ProtobufMessage):
         from google.protobuf.json_format import MessageToDict
-
         return MessageToDict(obj, preserving_proto_field_name=True)
+    if hasattr(obj, "_pb") and isinstance(obj._pb, ProtobufMessage):
+        from google.protobuf.json_format import MessageToDict
+        return MessageToDict(obj._pb, preserving_proto_field_name=True)
     raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
 
 

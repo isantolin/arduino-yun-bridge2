@@ -150,10 +150,10 @@ class RuntimeState(msgspec.Struct, weakref=True):
     watchdog_enabled: bool = False
     watchdog_interval: float = DEFAULT_WATCHDOG_INTERVAL
     last_watchdog_beat: float = 0.0
-    pending_digital_reads: collections.deque[PendingPinRequest] = msgspec.field(
+    pending_digital_reads: Any = msgspec.field(
         default_factory=lambda: cast(collections.deque[PendingPinRequest], collections.deque())
     )
-    pending_analog_reads: collections.deque[PendingPinRequest] = msgspec.field(
+    pending_analog_reads: Any = msgspec.field(
         default_factory=lambda: cast(collections.deque[PendingPinRequest], collections.deque())
     )
     mailbox_queue_limit: int = DEFAULT_MAILBOX_QUEUE_LIMIT
@@ -189,7 +189,7 @@ class RuntimeState(msgspec.Struct, weakref=True):
     handshake_fatal_unix: float = 0.0
     handshake_last_started: float = 0.0
     serial_flow_stats: pb.SerialFlowSnapshot = msgspec.field(default_factory=pb.SerialFlowSnapshot)
-    serial_throughput_stats: SerialThroughputStats = msgspec.field(default_factory=SerialThroughputStats)
+    serial_throughput_stats: Any = msgspec.field(default_factory=SerialThroughputStats)
     serial_pipeline_inflight: dict[str, Any] | None = None
     serial_pipeline_last: dict[str, Any] | None = None
     process_output_limit: int = protocol.DEFAULT_PROCESS_MAX_OUTPUT_BYTES

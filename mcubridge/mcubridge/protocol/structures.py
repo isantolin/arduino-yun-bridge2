@@ -113,65 +113,52 @@ class TopicRoute(msgspec.Struct, frozen=True):
 # =============================================================================
 
 
-class AllowedCommandPolicy(msgspec.Struct, frozen=True):
-    """Normalised allow-list for shell/process commands."""
-
-    entries: tuple[str, ...] = ()
-
+class AllowedCommandPolicy:
+    """Normalised allow-list for shell/process commands. [SIL-2] Wraps Protobuf."""
+    def __init__(self, entries: Iterable[str] = ()) -> None:
+        self._pb = pb.AllowedCommandPolicy(entries=list(entries))
+    @property
+    def entries(self) -> tuple[str, ...]: return tuple(self._pb.entries)
     @property
     def allow_all(self) -> bool:
         from mcubridge.config.const import ALLOWED_COMMAND_WILDCARD
-
-        return ALLOWED_COMMAND_WILDCARD in self.entries
-
+        return ALLOWED_COMMAND_WILDCARD in self._pb.entries
     def is_allowed(self, command: str) -> bool:
         import fnmatch
-
         pieces = command.strip().split()
-        if not pieces:
-            return False
-        return self.allow_all or any(fnmatch.fnmatch(pieces[0].lower(), p) for p in self.entries)
-
-    def __contains__(self, item: str) -> bool:
-        return item.lower() in self.entries
-
+        if not pieces: return False
+        return self.allow_all or any(fnmatch.fnmatch(pieces[0].lower(), p) for p in self._pb.entries)
+    def __contains__(self, item: str) -> bool: return item.lower() in self._pb.entries
+    def to_protobuf(self) -> bytes: return self._pb.SerializeToString()
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, AllowedCommandPolicy): return False
+        return self._pb.entries == other._pb.entries
     @classmethod
-    def from_iterable(
-        cls,
-        entries: Iterable[str],
-    ) -> AllowedCommandPolicy:
-        """Return a deduplicated, lower-cased and sorted allow-list preserving wildcards."""
+    def from_iterable(cls, entries: Iterable[str]) -> AllowedCommandPolicy:
         all_tokens: list[str] = []
         for c in entries:
-            if not c:
-                continue
+            if not c: continue
             tokens = _TOKEN_SEP.split(c.strip().lower())
             all_tokens.extend(t for t in tokens if t)
-
         items: set[str] = set(all_tokens)
-        normalised = ("*",) if "*" in items else tuple(sorted(items))
+        normalised = ["*"] if "*" in items else sorted(list(items))
         return cls(entries=normalised)
 
 
 @functools.lru_cache(maxsize=1)
-def _get_topic_auth_mapping() -> dict[tuple[str, str], str]:
-    """Build and cache the (topic, action) → field-name map dynamically via reflection."""
+def _get_topic_auth_mapping_v3() -> dict[tuple[str, str], str]:
     import mcubridge.protocol.protocol as proto
     from mcubridge.protocol.topics import Topic
-
     mapping: dict[tuple[str, str], str] = {}
-    fields = [f.name for f in msgspec.structs.fields(TopicAuthorization)]
-
+    # Use the class descriptor instead of an instance
+    fields = [f.name for f in pb.TopicAuthorization.DESCRIPTOR.fields]
     for field in fields:
-        if field.startswith("_"):
-            continue
         for t in Topic:
             prefix = t.name.lower()
             if field.startswith(f"{prefix}_"):
                 suffix = field[len(prefix) + 1 :]
                 action_class_name = f"{t.name.title()}Action"
-                if t == Topic.SPI:
-                    action_class_name = "SpiAction"
+                if t == Topic.SPI: action_class_name = "SpiAction"
                 action_cls = getattr(proto, action_class_name, None)
                 if action_cls is not None:
                     for act in action_cls:
@@ -181,48 +168,73 @@ def _get_topic_auth_mapping() -> dict[tuple[str, str], str]:
     return mapping
 
 
-class TopicAuthorization(msgspec.Struct, frozen=True):
-    """Per-topic allow flags for MQTT-driven actions.
-
-    Optimized for lookup speed using a pre-calculated frozenset of allowed (topic, action) tuples.
-    """
-
-    file_read: bool = True
-    file_write: bool = True
-    file_remove: bool = True
-    datastore_get: bool = True
-    datastore_put: bool = True
-    mailbox_read: bool = True
-    mailbox_write: bool = True
-    shell_run_async: bool = True
-    shell_poll: bool = True
-    shell_kill: bool = True
-    console_input: bool = True
-    digital_write: bool = True
-    digital_read: bool = True
-    digital_mode: bool = True
-    analog_write: bool = True
-    analog_read: bool = True
-    system_version: bool = True
-    system_free_memory: bool = True
-    system_bootloader: bool = True
-    spi_begin: bool = True
-    spi_end: bool = True
-    spi_transfer: bool = True
-    spi_config: bool = True
-
-    # Cache for allowed permissions (not serialized)
-    _allowed_cache: Final[frozenset[tuple[str, str]]] = frozenset()
-
-    def __post_init__(self) -> None:
-        """Build the optimized lookup cache using the module-level cached mapping."""
-        mapping = _get_topic_auth_mapping()
-        allowed = [k for k, attr in mapping.items() if getattr(self, attr)]
-        object.__setattr__(self, "_allowed_cache", frozenset(allowed))
+class TopicAuthorization:
+    """Per-topic allow flags for MQTT-driven actions. [SIL-2] Wraps Protobuf."""
+    def __init__(self, **kwargs: bool) -> None:
+        self._pb = pb.TopicAuthorization()
+        for field in [f.name for f in self._pb.DESCRIPTOR.fields]:
+            val = kwargs.get(field, True)
+            setattr(self._pb, field, val)
+        mapping = _get_topic_auth_mapping_v3()
+        allowed = [k for k, field_name in mapping.items() if getattr(self._pb, field_name)]
+        self._allowed_cache = frozenset(allowed)
+    
+    @property
+    def file_read(self) -> bool: return self._pb.file_read
+    @property
+    def file_write(self) -> bool: return self._pb.file_write
+    @property
+    def file_remove(self) -> bool: return self._pb.file_remove
+    @property
+    def datastore_get(self) -> bool: return self._pb.datastore_get
+    @property
+    def datastore_put(self) -> bool: return self._pb.datastore_put
+    @property
+    def mailbox_read(self) -> bool: return self._pb.mailbox_read
+    @property
+    def mailbox_write(self) -> bool: return self._pb.mailbox_write
+    @property
+    def shell_run_async(self) -> bool: return self._pb.shell_run_async
+    @property
+    def shell_poll(self) -> bool: return self._pb.shell_poll
+    @property
+    def shell_kill(self) -> bool: return self._pb.shell_kill
+    @property
+    def console_input(self) -> bool: return self._pb.console_input
+    @property
+    def digital_write(self) -> bool: return self._pb.digital_write
+    @property
+    def digital_read(self) -> bool: return self._pb.digital_read
+    @property
+    def digital_mode(self) -> bool: return self._pb.digital_mode
+    @property
+    def analog_write(self) -> bool: return self._pb.analog_write
+    @property
+    def analog_read(self) -> bool: return self._pb.analog_read
+    @property
+    def system_version(self) -> bool: return self._pb.system_version
+    @property
+    def system_free_memory(self) -> bool: return self._pb.system_free_memory
+    @property
+    def system_bootloader(self) -> bool: return self._pb.system_bootloader
+    @property
+    def spi_begin(self) -> bool: return self._pb.spi_begin
+    @property
+    def spi_end(self) -> bool: return self._pb.spi_end
+    @property
+    def spi_transfer(self) -> bool: return self._pb.spi_transfer
+    @property
+    def spi_config(self) -> bool: return self._pb.spi_config
 
     def allows(self, topic: str, action: str) -> bool:
-        """Check if action is allowed on topic. O(1) complexity."""
         return (topic.lower(), action.lower()) in self._allowed_cache
+    def to_protobuf(self) -> bytes: return self._pb.SerializeToString()
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, AllowedCommandPolicy): return False
+        return self._pb.entries == other._pb.entries
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, TopicAuthorization): return False
+        return self._pb.SerializeToString() == other._pb.SerializeToString()
 
 
 # =============================================================================
@@ -289,7 +301,7 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
     file_write_max_bytes: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_FILE_WRITE_MAX_BYTES
     file_storage_quota_bytes: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_FILE_STORAGE_QUOTA_BYTES
 
-    allowed_policy: AllowedCommandPolicy | None = None
+    allowed_policy: Any = None
 
     mqtt_queue_limit: Annotated[int, msgspec.Meta(ge=0)] = DEFAULT_MQTT_QUEUE_LIMIT
     reconnect_delay: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_RECONNECT_DELAY
@@ -310,7 +322,7 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
     mqtt_enabled: bool = True
     watchdog_enabled: bool = True
     watchdog_interval: Annotated[float, msgspec.Meta(ge=0.1, le=60.0)] = DEFAULT_WATCHDOG_INTERVAL
-    topic_authorization: TopicAuthorization | None = None
+    topic_authorization: Any = None
 
     # [SIL-2] Security: Accept Any to allow raw strings from UCI/Tests,
     # then coerce to bytes in __post_init__ to avoid msgspec base64 errors.
@@ -373,11 +385,8 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
         self.allowed_commands = self.allowed_policy.entries if self.allowed_policy else ()
 
         if self.topic_authorization is None or isinstance(self.topic_authorization, dict):
-            self.topic_authorization = (
-                msgspec.convert(self.topic_authorization, TopicAuthorization)
-                if self.topic_authorization
-                else TopicAuthorization()
-            )
+            kwargs = self.topic_authorization if isinstance(self.topic_authorization, dict) else {}
+            object.__setattr__(self, "topic_authorization", TopicAuthorization(**kwargs))
 
         # [SIL-2] Strict Semantic Validations
         if not self.mqtt_topic or not any(filter(None, self.mqtt_topic.split("/"))):
@@ -536,17 +545,21 @@ class PayloadValidationError(ValueError):
 # --- High-Level Structure (Msgspec Only) ---
 
 
-class PendingPinRequest(msgspec.Struct):
-    """Pending pin read request."""
+class PendingPinRequest:
+    def __init__(self, pin: int, reply_context: Any | None = None) -> None:
+        self.pin = pin
+        self.reply_context = reply_context  # Message | None
 
-    pin: int
-    reply_context: Any | None = None  # Message | None
 
-
-class ServiceHealth(msgspec.Struct, frozen=True):
-    name: str
-    status: str
-    restarts: int
+class ServiceHealth:
+    def __init__(self, name: str, status: str, restarts: int) -> None:
+        self._pb = pb.ServiceHealth(name=name, status=status, restarts=restarts)
+    @property
+    def name(self) -> str: return self._pb.name
+    @property
+    def status(self) -> str: return self._pb.status
+    @property
+    def restarts(self) -> int: return self._pb.restarts
     last_failure_unix: float
     last_exception: str | None = None
 
@@ -751,29 +764,58 @@ def decode_queued_publish(data: bytes) -> QueuedPublish:
 # --- Serial Flow Structures ---
 
 
-class PendingCommand(msgspec.Struct):
-    """Book-keeping for a tracked command in flight."""
-
-    command_id: int
-    expected_resp_ids: set[int] = msgspec.field(default_factory=lambda: cast(set[int], set()))
-    completion: asyncio.Event = msgspec.field(default_factory=asyncio.Event)
-    attempts: int = 0
-    success: bool | None = None
-    failure_status: int | None = None
-    ack_received: bool = False
-    reply_topic: str | None = None
-    correlation_data: bytes | None = None
-    response_payload: bytes | ProtobufMessage | None = None
-
+class PendingCommand:
+    """Book-keeping for a tracked command in flight. [SIL-2] Wraps Protobuf."""
+    def __init__(self, command_id: int, expected_resp_ids: Iterable[int] = (), 
+                 reply_topic: str | None = None, correlation_data: bytes | None = None) -> None:
+        self._pb = pb.PendingCommand(
+            command_id=command_id,
+            expected_resp_ids=list(expected_resp_ids),
+            reply_topic=reply_topic,
+            correlation_data=correlation_data
+        )
+        self.completion = asyncio.Event()
+        self.response_payload: bytes | ProtobufMessage | None = None
+    @property
+    def command_id(self) -> int: return self._pb.command_id
+    @property
+    def expected_resp_ids(self) -> list[int]: return list(self._pb.expected_resp_ids)
+    @property
+    def attempts(self) -> int: return self._pb.attempts
+    @attempts.setter
+    def attempts(self, val: int) -> None: self._pb.attempts = val
+    @property
+    def success(self) -> bool | None: return self._pb.success if self._pb.HasField("success") else None
+    @success.setter
+    def success(self, val: bool | None) -> None:
+        if val is None: self._pb.ClearField("success")
+        else: self._pb.success = val
+    @property
+    def failure_status(self) -> int | None: return self._pb.failure_status if self._pb.HasField("failure_status") else None
+    @property
+    def ack_received(self) -> bool: return self._pb.ack_received
+    @ack_received.setter
+    def ack_received(self, val: bool) -> None: self._pb.ack_received = val
+    @property
+    def reply_topic(self) -> str | None: return self._pb.reply_topic if self._pb.HasField("reply_topic") else None
+    @property
+    def correlation_data(self) -> bytes | None: return self._pb.correlation_data if self._pb.HasField("correlation_data") else None
     def mark_success(self, payload: bytes | ProtobufMessage | None = None) -> None:
         self.response_payload = payload
-        self.success = True
-        if not self.completion.is_set():
-            self.completion.set()
+        self._pb.success = True
+        if not self.completion.is_set(): self.completion.set()
+    def mark_failure(self, status: int | None) -> None:
+        self._pb.success = False
+        if status is not None: self._pb.failure_status = status
+        if not self.completion.is_set(): self.completion.set()
+    def mark_failure(self, status: int | None) -> None:
+        self._pb.success = False
+        if status is not None: self._pb.failure_status = status
+        if not self.completion.is_set(): self.completion.set()
 
     def mark_failure(self, status: int | None) -> None:
-        self.success = False
-        self.failure_status = status
+        self._pb.success = False
+        if status is not None: self._pb.failure_status = status
         if not self.completion.is_set():
             self.completion.set()
 
@@ -781,30 +823,38 @@ class PendingCommand(msgspec.Struct):
 # --- Status Structures ---
 
 
-class SerialThroughputStats(msgspec.Struct):
-    """Serial link throughput counters."""
-
-    bytes_sent: int = 0
-    bytes_received: int = 0
-    frames_sent: int = 0
-    frames_received: int = 0
-    last_tx_unix: float = 0.0
-    last_rx_unix: float = 0.0
-
+class SerialThroughputStats:
+    """Serial link throughput counters. [SIL-2] Wraps Protobuf."""
+    def __init__(self) -> None:
+        self._pb = pb.SerialThroughputStats()
+    @property
+    def bytes_sent(self) -> int: return self._pb.bytes_sent
+    @property
+    def bytes_received(self) -> int: return self._pb.bytes_received
+    @property
+    def frames_sent(self) -> int: return self._pb.frames_sent
+    @property
+    def frames_received(self) -> int: return self._pb.frames_received
+    @property
+    def last_tx_unix(self) -> float: return self._pb.last_tx_unix
+    @property
+    def last_rx_unix(self) -> float: return self._pb.last_rx_unix
     def record_tx(self, nbytes: int) -> None:
-        self.bytes_sent += nbytes
-        self.frames_sent += 1
-        self.last_tx_unix = time.time()
-
+        self._pb.bytes_sent += nbytes
+        self._pb.frames_sent += 1
+        self._pb.last_tx_unix = time.time()
     def record_rx(self, nbytes: int) -> None:
-        self.bytes_received += nbytes
-        self.frames_received += 1
-        self.last_rx_unix = time.time()
+        self._pb.bytes_received += nbytes
+        self._pb.frames_received += 1
+        self._pb.last_rx_unix = time.time()
 
 
-class ProcessStats(msgspec.Struct):
-    """Resource usage statistics for a single process."""
-
-    name: str
-    cpu_percent: Annotated[float, msgspec.Meta(ge=0.0)]
-    memory_rss_bytes: Annotated[int, msgspec.Meta(ge=0)]
+class ProcessStats:
+    def __init__(self, name: str, cpu_percent: float, memory_rss_bytes: int) -> None:
+        self._pb = pb.ProcessStats(name=name, cpu_percent=cpu_percent, memory_rss_bytes=memory_rss_bytes)
+    @property
+    def name(self) -> str: return self._pb.name
+    @property
+    def cpu_percent(self) -> float: return self._pb.cpu_percent
+    @property
+    def memory_rss_bytes(self) -> int: return self._pb.memory_rss_bytes

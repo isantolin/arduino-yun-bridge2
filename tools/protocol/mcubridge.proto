@@ -1139,6 +1139,74 @@ message BridgeSnapshot {
     Capabilities capabilities = 6;
 }
 
+
+message SerialThroughputStats {
+    uint64 bytes_sent = 1;
+    uint64 bytes_received = 2;
+    uint32 frames_sent = 3;
+    uint32 frames_received = 4;
+    double last_tx_unix = 5;
+    double last_rx_unix = 6;
+}
+
+message ProcessStats {
+    string name = 1;
+    double cpu_percent = 2;
+    uint64 memory_rss_bytes = 3;
+}
+
+message ServiceHealth {
+    string name = 1;
+    string status = 2;
+    uint32 restarts = 3;
+}
+
+message AllowedCommandPolicy {
+    repeated string entries = 1;
+}
+
+message TopicAuthorization {
+    bool file_read = 1;
+    bool file_write = 2;
+    bool file_remove = 3;
+    bool datastore_get = 4;
+    bool datastore_put = 5;
+    bool mailbox_read = 6;
+    bool mailbox_write = 7;
+    bool shell_run_async = 8;
+    bool shell_poll = 9;
+    bool shell_kill = 10;
+    bool console_input = 11;
+    bool digital_write = 12;
+    bool digital_read = 13;
+    bool digital_mode = 14;
+    bool analog_write = 15;
+    bool analog_read = 16;
+    bool system_version = 17;
+    bool system_free_memory = 18;
+    bool system_bootloader = 19;
+    bool spi_begin = 20;
+    bool spi_end = 21;
+    bool spi_transfer = 22;
+    bool spi_config = 23;
+}
+
+message PendingPinRequest {
+    uint32 pin = 1;
+    optional MqttQueuedPublish reply_context = 2;
+}
+
+message PendingCommand {
+    uint32 command_id = 1;
+    repeated uint32 expected_resp_ids = 2;
+    uint32 attempts = 3;
+    optional bool success = 4;
+    optional uint32 failure_status = 5;
+    bool ack_received = 6;
+    optional string reply_topic = 7;
+    optional bytes correlation_data = 8;
+}
+
 message RpcEnvelope {
     uint32 version = 1;
     uint32 command_id = 2;

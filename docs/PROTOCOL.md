@@ -35,7 +35,7 @@ Notas:
 
 ## Fuente de verdad
 
-La **fuente de verdad machine-readable** del protocolo vive en `tools/protocol/spec.toml`. El sistema exige el cumplimiento estricto de la **versión 0x02**. Cualquier frame con una versión diferente es rechazado inmediatamente.
+La **fuente de verdad machine-readable** del protocolo se reparte entre `tools/protocol/mcubridge.proto` (mensajes y constantes de aplicación) y `tools/protocol/spec.toml` (contrato binario y IDs de comando). El sistema exige el cumplimiento estricto de la **versión 0x02**. Cualquier frame con una versión diferente es rechazado inmediatamente.
 
 ### Serialización de Payloads (Protobuf)
 Todos los payloads del protocolo se definen como mensajes en `tools/protocol/mcubridge.proto` y se serializan como **protobuf** dentro del frame RPC.
@@ -48,8 +48,8 @@ El generador produce automáticamente `rpc::Payload::parse<T>(const rpc_pb_RpcEn
 ### Validación Estática (C++)
 La librería C++ utiliza el namespace `rpc::Payload` para un desempaquetado de datos seguro y tipado.
 
-### Despacho de Comandos (O(1) Jump Tables)
-El MCU utiliza un despacho basado en **tablas de salto (jump tables)** de punteros a métodos en lugar de `switch/case` manuales. Esto garantiza un tiempo de despacho constante (O(1)), elimina la redundancia de código y reduce drásticamente la profundidad de la pila de llamadas, cumpliendo con los requisitos más estrictos de SIL-2.
+### Despacho de Comandos (Deterministic Switch Dispatch)
+El MCU utiliza un despacho basado en una estructura `switch` optimizada sobre punteros a métodos. Esto garantiza un tiempo de despacho determinista, elimina la redundancia de código y minimiza el uso de RAM al evitar tablas de salto estáticas de gran tamaño, cumpliendo con los requisitos más estrictos de SIL-2. Esto garantiza un tiempo de despacho constante (O(1)), elimina la redundancia de código y reduce drásticamente la profundidad de la pila de llamadas, cumpliendo con los requisitos más estrictos de SIL-2.
 
 Qué **sí** se centraliza en `spec.toml` (y se genera a Python/C++):
 

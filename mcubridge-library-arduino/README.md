@@ -30,7 +30,7 @@ This library provides the MCU-side runtime for the Arduino MCU Bridge v2 project
 
 ### External dependencies
 
-- **Crypto**: The installer fetches the [Crypto](https://github.com/OperatorFoundation/Crypto) library (standalone fork maintained by Operator Foundation).
+- **wolfSSL**: The library utilizes wolfSSL for AEAD (ChaCha20-Poly1305) and HMAC operations, ensuring MIL-SPEC cryptographic integrity.
 - **ETL (Embedded Template Library)**: Used for deterministic, static memory containers (`circular_buffer`, `vector`, `queue`). This ensures SIL-2 compliance by avoiding dynamic heap allocation.
 - **Internalized Dependencies**: The library now includes internal implementations for **COBS framing** and **CRC32** (IEEE 802.3).
 
@@ -38,13 +38,16 @@ This library provides the MCU-side runtime for the Arduino MCU Bridge v2 project
 
 This library follows IEC 61508 (SIL-2) and FIPS 140-3 (MIL-SPEC) guidelines:
 - **No Dynamic Memory:** All buffers are statically allocated using ETL. No `malloc`/`new` after initialization.
-- **Deterministic O(1) Dispatch:** Command handling uses jump tables of member function pointers, ensuring constant-time dispatch and minimal stack depth.
+- **Deterministic Switch Dispatch:** Command handling uses an optimized switch structure over member function pointers, ensuring constant-time dispatch, minimal stack depth, and reduced RAM usage.
 - **Deterministic FSM:** Communication state managed by `etl::fsm` with explicit states (Unsynchronized, Idle, AwaitingAck, Fault).
 - **Cryptographic Self-Tests (POST):** Performs Known Answer Tests (KAT) for SHA256 and HMAC-SHA256 at startup.
 - **Fail-Secure:** Initialization aborts and the system enters a safe state (StateFault) if cryptographic integrity checks fail.
 - **Key Isolation:** Uses **HKDF-SHA256** for key derivation, ensuring the shared secret is never used directly for authentication tags.
 - **No Recursion:** Deterministic stack usage.
 - **Integrity:** All RPC frames are protected by CRC32.
+- **Flash Optimization**: Repetitive Nanopb instantiations are consolidated into non-template implementation helpers in .cpp files, significantly reducing binary size for 8-bit MCUs.
+- **Zero-Template Wrappers**: Public APIs like ConsoleClass have been refactored from templates to standard classes to further de-bloat the Flash memory footprint.
+
 - **Hardware Abstraction:** Automatic detection of MCU capabilities including GPIO limits, Big Buffer, EEPROM, DAC, FPU, I2C, and SPI.
 
 ## Best Practices

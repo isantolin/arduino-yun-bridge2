@@ -20,6 +20,12 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 - **MIL-SPEC Compliance (FIPS 140-3):** Implementación de **HKDF-SHA256** para derivación de claves y **Power-On Self-Tests (POST)** que validan el motor criptográfico en cada arranque.
 - **Protección de Flash:** Bloqueo de inicio si las rutas de escritura intensa (`file_system_root`, `mqtt_spool_dir`) no están en `/tmp` (RAM).
 
+### Novedades (junio 2026)
+
+- **Migración Integral a Protobuf (v2.8.5)**: Las estructuras de telemetría, métricas y políticas de seguridad han sido migradas íntegramente de `msgspec` a **Protobuf + Nanopb**. Esto establece una Fuente Única de Verdad (SSOT) en `mcubridge.proto`, garantizando una consistencia binaria absoluta y reduciendo el overhead de procesamiento en el MPU.
+- **Optimización de Despacho (Switch-based)**: El despacho de comandos en el MCU se ha refactorizado a una estructura `switch` optimizada sobre punteros a métodos, reduciendo el consumo de RAM respecto a las tablas de salto estáticas previas.
+- **De-bloating de Flash (MCU)**: Consolidación de instanciaciones de Nanopb en archivos `.cpp` para evitar la duplicación de símbolos en el firmware, maximizando el espacio libre en MCUs con recursos limitados.
+
 ### Novedades (marzo 2026)
 
 - **Unificación de Componentes (Shell + Process):** Eliminación de la capa redundante `ShellComponent`. Toda la lógica de comandos shell/consola vía MQTT ha sido absorbida por el **ProcessComponent**, centralizando la gestión de PIDs, concurrencia y políticas de seguridad en un solo módulo determinista.

@@ -103,21 +103,9 @@ _RESPONSE_TO_REQUEST_MAP: Final[dict[int, int]] = {
 
 # Mapping of Command IDs to their respective Protobuf message classes. [SIL-2]
 COMMAND_TO_PB: Final[dict[int, type]] = {
-    Command.CMD_CONSOLE_WRITE.value: pb.ConsoleWrite,
-    Command.CMD_DATASTORE_PUT.value: pb.DatastorePut,
-    Command.CMD_DATASTORE_GET.value: pb.DatastoreGet,
-    Command.CMD_MAILBOX_PUSH.value: pb.MailboxPush,
-    Command.CMD_MAILBOX_PROCESSED.value: pb.MailboxProcessed,
-    Command.CMD_FILE_WRITE.value: pb.FileWrite,
-    Command.CMD_FILE_READ.value: pb.FileRead,
-    Command.CMD_FILE_REMOVE.value: pb.FileRemove,
-    Command.CMD_FILE_READ_RESP.value: pb.FileReadResponse,
-    Command.CMD_PROCESS_RUN_ASYNC.value: pb.ProcessRunAsync,
-    Command.CMD_PROCESS_POLL.value: pb.ProcessPoll,
-    Command.CMD_PROCESS_KILL.value: pb.ProcessKill,
-    Command.CMD_DIGITAL_READ_RESP.value: pb.DigitalReadResponse,
-    Command.CMD_ANALOG_READ_RESP.value: pb.AnalogReadResponse,
-    Command.CMD_SPI_TRANSFER_RESP.value: pb.SpiTransferResponse,
+    {%- for cmd_name, pb_class in command_to_pb %}
+    Command.{{ cmd_name }}.value: pb.{{ pb_class }},
+    {%- endfor %}
 }
 
 def expected_responses(command_id: int) -> frozenset[int]:

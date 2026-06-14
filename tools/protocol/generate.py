@@ -57,6 +57,23 @@ if MISSING_DEPS or not HAS_PROTOC:
 # ═════════════════════════════════════════════════════════════════════════════
 
 
+# Mappings and helper functions for reflective protocol constant generation.
+
+
+def cmd_name_to_pb_class(cmd_name: str) -> str:
+    """Convert CMD_X_Y style command name to CamelCase class name."""
+    if cmd_name.startswith("CMD_"):
+        cmd_name = cmd_name[4:]
+    segments = cmd_name.split("_")
+    mapped_segments: list[str] = []
+    for seg in segments:
+        if seg == "RESP":
+            mapped_segments.append("Response")
+        else:
+            mapped_segments.append(seg.capitalize())
+    return "".join(mapped_segments)
+
+
 class CommandDef:
     def __init__(
         self,
@@ -118,6 +135,11 @@ class ProtocolSpec:
         self.mqtt_defaults = mqtt_defaults
         self.status_reasons = status_reasons
         self.architecture_display_names = architecture_display_names
+        self.constants_opt: Any = None
+        self.hardware_opt: Any = None
+        self.handshake_opt: Any = None
+        self.data_formats_opt: Any = None
+        self.pb_module: Any = None
 
 
 def load_spec_from_proto(proto_path: Path) -> ProtocolSpec:
@@ -220,7 +242,7 @@ def load_spec_from_proto(proto_path: Path) -> ProtocolSpec:
         opts = val.GetOptions().Extensions[mcubridge_pb2.status_opts]
         statuses.append(StatusDef(name=val.name, value=val.number, description=opts.description))
 
-    return ProtocolSpec(
+    spec = ProtocolSpec(
         constants=constants,
         hardware=hardware,
         commands=commands,
@@ -237,6 +259,12 @@ def load_spec_from_proto(proto_path: Path) -> ProtocolSpec:
         status_reasons=status_reasons,
         architecture_display_names=architecture_display_names,
     )
+    spec.constants_opt = constants_opt
+    spec.hardware_opt = hardware_opt
+    spec.handshake_opt = handshake_opt
+    spec.data_formats_opt = data_formats_opt
+    spec.pb_module = mcubridge_pb2
+    return spec
 
 
 TEMPLATE_DIR = Path(__file__).parent / "templates"
@@ -276,318 +304,40 @@ class JinjaGenerator:
 
         v_major, v_minor, v_patch = map(int, version.split("."))
 
-        c = spec.constants
-        constants = [
-            {
-                "name": "RPC_AEAD_NONCE_SIZE",
-                "type": "size_t",
-                "value": c["aead_nonce_size"],
-            },
-            {
-                "name": "RPC_AEAD_TAG_SIZE",
-                "type": "size_t",
-                "value": c["aead_tag_size"],
-            },
-            {
-                "name": "RPC_AEAD_KEY_SIZE",
-                "type": "size_t",
-                "value": c["aead_key_size"],
-            },
-            {
-                "name": "PROTOCOL_VERSION",
-                "type": "uint8_t",
-                "value": c["protocol_version"],
-            },
-            {"name": "FIRMWARE_VERSION_MAJOR", "type": "uint8_t", "value": v_major},
-            {"name": "FIRMWARE_VERSION_MINOR", "type": "uint8_t", "value": v_minor},
-            {"name": "FIRMWARE_VERSION_PATCH", "type": "uint8_t", "value": v_patch},
-            {
-                "name": "RPC_DEFAULT_BAUDRATE",
-                "type": "unsigned long",
-                "value": c["default_baudrate"],
-            },
-            {
-                "name": "MAX_PAYLOAD_SIZE",
-                "type": "size_t",
-                "value": c["max_payload_size"],
-            },
-            {
-                "name": "RPC_DEFAULT_SAFE_BAUDRATE",
-                "type": "unsigned long",
-                "value": c["default_safe_baudrate"],
-            },
-            {
-                "name": "RPC_SERIAL_TIMEOUT_MS",
-                "type": "uint32_t",
-                "value": spec.hardware["serial_timeout_ms"],
-            },
-            {
-                "name": "RPC_SPI_TIMEOUT_MS",
-                "type": "uint32_t",
-                "value": spec.hardware["spi_timeout_ms"],
-            },
-            {
-                "name": "RPC_MAX_FILEPATH_LENGTH",
-                "type": "size_t",
-                "value": c["max_filepath_length"],
-            },
-            {
-                "name": "RPC_MAX_DATASTORE_KEY_LENGTH",
-                "type": "size_t",
-                "value": c["max_datastore_key_length"],
-            },
-            {
-                "name": "RPC_DEFAULT_ACK_TIMEOUT_MS",
-                "type": "unsigned int",
-                "value": c["default_ack_timeout_ms"],
-            },
-            {
-                "name": "RPC_DEFAULT_RETRY_LIMIT",
-                "type": "uint8_t",
-                "value": c["default_retry_limit"],
-            },
-            {
-                "name": "RPC_MAX_PENDING_TX_FRAMES",
-                "type": "uint8_t",
-                "value": c["max_pending_tx_frames"],
-            },
-            {
-                "name": "RPC_MAX_COMMAND_ID",
-                "type": "uint16_t",
-                "value": c["max_command_id"],
-            },
-            {
-                "name": "RPC_INVALID_ID_SENTINEL",
-                "type": "uint16_t",
-                "value": c["invalid_id_sentinel"],
-            },
-            {
-                "name": "RPC_NULL_TERMINATOR",
-                "type": "char",
-                "value": c["rpc_null_terminator"],
-            },
-            {
-                "name": "RPC_COMMAND_STRIDE",
-                "type": "uint8_t",
-                "value": c["rpc_command_stride"],
-            },
-            {
-                "name": "RPC_COMMAND_GROUP_SHIFT",
-                "type": "uint8_t",
-                "value": c["rpc_command_group_shift"],
-            },
-            {
-                "name": "RPC_COMMAND_GROUP_OFFSET",
-                "type": "uint8_t",
-                "value": c["rpc_command_group_offset"],
-            },
-            {
-                "name": "RPC_TIMER_OVERFLOW_THRESHOLD",
-                "type": "uint32_t",
-                "value": c["rpc_timer_overflow_threshold"],
-            },
-            {"name": "RPC_UINT8_MASK", "type": "uint8_t", "value": c["uint8_mask"]},
-            {"name": "RPC_UINT16_MAX", "type": "uint16_t", "value": c["uint16_max"]},
-            {
-                "name": "RPC_BOOTLOADER_MAGIC",
-                "type": "uint32_t",
-                "value": c["bootloader_magic"],
-            },
-            {
-                "name": "RPC_PROCESS_DEFAULT_EXIT_CODE",
-                "type": "uint8_t",
-                "value": c["process_default_exit_code"],
-            },
-            {"name": "RPC_CRC_SIZE", "type": "size_t", "value": c["crc_size"]},
-            {
-                "name": "RPC_CRC_COVERED_HEADER_SIZE",
-                "type": "size_t",
-                "value": c["crc_covered_header_size"],
-            },
-            {
-                "name": "RPC_MIN_FRAME_SIZE",
-                "type": "size_t",
-                "value": c["min_frame_size"],
-            },
-            {"name": "RPC_CRC32_MASK", "type": "uint32_t", "value": c["crc32_mask"]},
-            {"name": "RPC_CRC_INITIAL", "type": "uint32_t", "value": c["crc_initial"]},
-            {
-                "name": "RPC_NONCE_COUNTER_MASK",
-                "type": "uint64_t",
-                "value": c["nonce_counter_mask"],
-            },
-            {
-                "name": "RPC_CRC_POLYNOMIAL",
-                "type": "uint32_t",
-                "value": c["crc_polynomial"],
-            },
-            {
-                "name": "RPC_FRAME_DELIMITER",
-                "type": "uint8_t",
-                "value": c["frame_delimiter"],
-            },
-            {"name": "RPC_DIGITAL_LOW", "type": "uint8_t", "value": c["digital_low"]},
-            {"name": "RPC_DIGITAL_HIGH", "type": "uint8_t", "value": c["digital_high"]},
-            {
-                "name": "RPC_SHA256_DIGEST_SIZE",
-                "type": "uint8_t",
-                "value": spec.hardware["sha256_digest_size"],
-            },
-            {
-                "name": "RPC_SHA256_KAT_BUFFER_SIZE",
-                "type": "uint8_t",
-                "value": spec.hardware["sha256_kat_buffer_size"],
-            },
-            {
-                "name": "RPC_STATUS_CODE_MIN",
-                "type": "uint8_t",
-                "value": c["status_code_min"],
-            },
-            {
-                "name": "RPC_STATUS_CODE_MAX",
-                "type": "uint8_t",
-                "value": c["status_code_max"],
-            },
-            {
-                "name": "RPC_SYSTEM_COMMAND_MIN",
-                "type": "uint16_t",
-                "value": c["system_command_min"],
-            },
-            {
-                "name": "RPC_SYSTEM_COMMAND_MAX",
-                "type": "uint16_t",
-                "value": c["system_command_max"],
-            },
-            {
-                "name": "RPC_GPIO_COMMAND_MIN",
-                "type": "uint16_t",
-                "value": c["gpio_command_min"],
-            },
-            {
-                "name": "RPC_GPIO_COMMAND_MAX",
-                "type": "uint16_t",
-                "value": c["gpio_command_max"],
-            },
-            {
-                "name": "RPC_CONSOLE_COMMAND_MIN",
-                "type": "uint16_t",
-                "value": c["console_command_min"],
-            },
-            {
-                "name": "RPC_CONSOLE_COMMAND_MAX",
-                "type": "uint16_t",
-                "value": c["console_command_max"],
-            },
-            {
-                "name": "RPC_DATASTORE_COMMAND_MIN",
-                "type": "uint16_t",
-                "value": c["datastore_command_min"],
-            },
-            {
-                "name": "RPC_DATASTORE_COMMAND_MAX",
-                "type": "uint16_t",
-                "value": c["datastore_command_max"],
-            },
-            {
-                "name": "RPC_MAILBOX_COMMAND_MIN",
-                "type": "uint16_t",
-                "value": c["mailbox_command_min"],
-            },
-            {
-                "name": "RPC_MAILBOX_COMMAND_MAX",
-                "type": "uint16_t",
-                "value": c["mailbox_command_max"],
-            },
-            {
-                "name": "RPC_FILESYSTEM_COMMAND_MIN",
-                "type": "uint16_t",
-                "value": c["filesystem_command_min"],
-            },
-            {
-                "name": "RPC_FILESYSTEM_COMMAND_MAX",
-                "type": "uint16_t",
-                "value": c["filesystem_command_max"],
-            },
-            {
-                "name": "RPC_PROCESS_COMMAND_MIN",
-                "type": "uint16_t",
-                "value": c["process_command_min"],
-            },
-            {
-                "name": "RPC_PROCESS_COMMAND_MAX",
-                "type": "uint16_t",
-                "value": c["process_command_max"],
-            },
-            {
-                "name": "RPC_SPI_COMMAND_MIN",
-                "type": "uint16_t",
-                "value": c["spi_command_min"],
-            },
-            {
-                "name": "RPC_SPI_COMMAND_MAX",
-                "type": "uint16_t",
-                "value": c["spi_command_max"],
-            },
-        ]
+        constants: list[dict[str, Any]] = []
+        # Reflection from spec.constants_opt descriptor fields
+        for field in spec.constants_opt.DESCRIPTOR.fields:
+            opts = field.GetOptions()
+            cpp_name = opts.Extensions[spec.pb_module.cpp_name]
+            cpp_type = opts.Extensions[spec.pb_module.cpp_type]
+            if cpp_name:
+                val = getattr(spec.constants_opt, field.name)
+                constants.append({"name": cpp_name, "type": cpp_type, "value": val})
+
+        # Reflection from spec.hardware_opt descriptor fields
+        for field in spec.hardware_opt.DESCRIPTOR.fields:
+            opts = field.GetOptions()
+            cpp_name = opts.Extensions[spec.pb_module.cpp_name]
+            cpp_type = opts.Extensions[spec.pb_module.cpp_type]
+            if cpp_name:
+                val = getattr(spec.hardware_opt, field.name)
+                constants.append({"name": cpp_name, "type": cpp_type, "value": val})
+
+        # Append version constants
+        constants.append({"name": "FIRMWARE_VERSION_MAJOR", "type": "uint8_t", "value": v_major})
+        constants.append({"name": "FIRMWARE_VERSION_MINOR", "type": "uint8_t", "value": v_minor})
+        constants.append({"name": "FIRMWARE_VERSION_PATCH", "type": "uint8_t", "value": v_patch})
 
         hs = spec.handshake
-        handshake_constants = [
-            {
-                "name": "RPC_HANDSHAKE_NONCE_LENGTH",
-                "type": "unsigned int",
-                "value": hs["nonce_length"],
-            },
-            {
-                "name": "RPC_HANDSHAKE_TAG_LENGTH",
-                "type": "unsigned int",
-                "value": hs["tag_length"],
-            },
-            {
-                "name": "RPC_HANDSHAKE_ACK_TIMEOUT_MIN_MS",
-                "type": "uint32_t",
-                "value": hs["ack_timeout_min_ms"],
-            },
-            {
-                "name": "RPC_HANDSHAKE_ACK_TIMEOUT_MAX_MS",
-                "type": "uint32_t",
-                "value": hs["ack_timeout_max_ms"],
-            },
-            {
-                "name": "RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS",
-                "type": "uint32_t",
-                "value": hs["response_timeout_min_ms"],
-            },
-            {
-                "name": "RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS",
-                "type": "uint32_t",
-                "value": hs["response_timeout_max_ms"],
-            },
-            {
-                "name": "RPC_HANDSHAKE_RETRY_LIMIT_MIN",
-                "type": "unsigned int",
-                "value": hs["retry_limit_min"],
-            },
-            {
-                "name": "RPC_HANDSHAKE_RETRY_LIMIT_MAX",
-                "type": "unsigned int",
-                "value": hs["retry_limit_max"],
-            },
-            {
-                "name": "RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH",
-                "type": "unsigned int",
-                "value": hs["hkdf_output_length"],
-            },
-            {
-                "name": "RPC_HANDSHAKE_NONCE_RANDOM_BYTES",
-                "type": "unsigned int",
-                "value": hs["nonce_random_bytes"],
-            },
-            {
-                "name": "RPC_HANDSHAKE_NONCE_COUNTER_BYTES",
-                "type": "unsigned int",
-                "value": hs["nonce_counter_bytes"],
-            },
-        ]
+        handshake_constants: list[dict[str, Any]] = []
+        # Reflection from spec.handshake_opt descriptor fields
+        for field in spec.handshake_opt.DESCRIPTOR.fields:
+            opts = field.GetOptions()
+            cpp_name = opts.Extensions[spec.pb_module.cpp_name]
+            cpp_type = opts.Extensions[spec.pb_module.cpp_type]
+            if cpp_name:
+                val = getattr(spec.handshake_opt, field.name)
+                handshake_constants.append({"name": cpp_name, "type": cpp_type, "value": val})
 
         handshake_data = {
             "hkdf_salt": hs["hkdf_salt"],
@@ -642,298 +392,60 @@ class JinjaGenerator:
     def generate_python(self, spec: ProtocolSpec, out_path: Path) -> None:
         template = self.env.get_template("protocol.py.j2")
 
-        c = spec.constants
-        constants = [
-            {"name": "AEAD_NONCE_SIZE", "type": "int", "value": c["aead_nonce_size"]},
-            {"name": "AEAD_TAG_SIZE", "type": "int", "value": c["aead_tag_size"]},
-            {"name": "AEAD_KEY_SIZE", "type": "int", "value": c["aead_key_size"]},
-            {
-                "name": "FLOW_CONTROL_XOFF_THRESHOLD",
-                "type": "int",
-                "value": spec.hardware["flow_control_xoff_threshold"],
-            },
-            {
-                "name": "FLOW_CONTROL_XON_THRESHOLD",
-                "type": "int",
-                "value": spec.hardware["flow_control_xon_threshold"],
-            },
-            {
-                "name": "FRAME_HEADER_FORMAT",
-                "type": "str",
-                "value": f'"{spec.data_formats["crc_covered_header_format"]}"',
-            },
-            {
-                "name": "FRAME_CRC_FORMAT",
-                "type": "str",
-                "value": f'"{spec.data_formats["crc_format"]}"',
-            },
-            {
-                "name": "NONCE_COUNTER_FORMAT",
-                "type": "str",
-                "value": f'"{spec.data_formats["nonce_counter_format"]}"',
-            },
-            {"name": "PROTOCOL_VERSION", "type": "int", "value": c["protocol_version"]},
-            {"name": "DEFAULT_BAUDRATE", "type": "int", "value": c["default_baudrate"]},
-            {
-                "name": "DEFAULT_MQTT_PORT",
-                "type": "int",
-                "value": c["default_mqtt_port"],
-            },
-            {"name": "MAX_PAYLOAD_SIZE", "type": "int", "value": c["max_payload_size"]},
-            {
-                "name": "DEFAULT_SAFE_BAUDRATE",
-                "type": "int",
-                "value": c["default_safe_baudrate"],
-            },
-            {
-                "name": "SERIAL_TIMEOUT_MS",
-                "type": "int",
-                "value": spec.hardware["serial_timeout_ms"],
-            },
-            {
-                "name": "SPI_TIMEOUT_MS",
-                "type": "int",
-                "value": spec.hardware["spi_timeout_ms"],
-            },
-            {
-                "name": "MAX_FILEPATH_LENGTH",
-                "type": "int",
-                "value": c["max_filepath_length"],
-            },
-            {
-                "name": "MAX_DATASTORE_KEY_LENGTH",
-                "type": "int",
-                "value": c["max_datastore_key_length"],
-            },
-            {
-                "name": "DEFAULT_ACK_TIMEOUT_MS",
-                "type": "int",
-                "value": c["default_ack_timeout_ms"],
-            },
-            {
-                "name": "DEFAULT_RETRY_LIMIT",
-                "type": "int",
-                "value": c["default_retry_limit"],
-            },
-            {
-                "name": "MAX_PENDING_TX_FRAMES",
-                "type": "int",
-                "value": c["max_pending_tx_frames"],
-            },
-            {
-                "name": "INVALID_ID_SENTINEL",
-                "type": "int",
-                "value": c["invalid_id_sentinel"],
-            },
-            {
-                "name": "NULL_TERMINATOR",
-                "type": "int",
-                "value": c["rpc_null_terminator"],
-            },
-            {"name": "COMMAND_STRIDE", "type": "int", "value": c["rpc_command_stride"]},
-            {
-                "name": "COMMAND_GROUP_SHIFT",
-                "type": "int",
-                "value": c["rpc_command_group_shift"],
-            },
-            {
-                "name": "COMMAND_GROUP_OFFSET",
-                "type": "int",
-                "value": c["rpc_command_group_offset"],
-            },
-            {
-                "name": "TIMER_OVERFLOW_THRESHOLD",
-                "type": "int",
-                "value": c["rpc_timer_overflow_threshold"],
-            },
-            {"name": "UINT8_MASK", "type": "int", "value": c["uint8_mask"]},
-            {"name": "UINT16_MAX", "type": "int", "value": c["uint16_max"]},
-            {"name": "BOOTLOADER_MAGIC", "type": "int", "value": c["bootloader_magic"]},
-            {
-                "name": "PROCESS_DEFAULT_EXIT_CODE",
-                "type": "int",
-                "value": c["process_default_exit_code"],
-            },
-            {"name": "CRC_SIZE", "type": "int", "value": c["crc_size"]},
-            {
-                "name": "CRC_COVERED_HEADER_SIZE",
-                "type": "int",
-                "value": c["crc_covered_header_size"],
-            },
-            {"name": "MIN_FRAME_SIZE", "type": "int", "value": c["min_frame_size"]},
-            {"name": "CRC32_MASK", "type": "int", "value": c["crc32_mask"]},
-            {"name": "CRC_INITIAL", "type": "int", "value": c["crc_initial"]},
-            {
-                "name": "NONCE_COUNTER_MASK",
-                "type": "int",
-                "value": c["nonce_counter_mask"],
-            },
-            {"name": "CRC_POLYNOMIAL", "type": "int", "value": c["crc_polynomial"]},
-            {
-                "name": "MQTT_SUFFIX_INCOMING_AVAILABLE",
-                "type": "str",
-                "value": f'"{spec.mqtt_suffixes["incoming_available"]}"',
-            },
-            {
-                "name": "MQTT_SUFFIX_OUTGOING_AVAILABLE",
-                "type": "str",
-                "value": f'"{spec.mqtt_suffixes["outgoing_available"]}"',
-            },
-            {
-                "name": "MQTT_SUFFIX_RESPONSE",
-                "type": "str",
-                "value": f'"{spec.mqtt_suffixes["response"]}"',
-            },
-            {
-                "name": "MQTT_SUFFIX_ERROR",
-                "type": "str",
-                "value": f'"{spec.mqtt_suffixes["error"]}"',
-            },
-            {
-                "name": "FRAME_DELIMITER",
-                "type": "bytes",
-                "value": f"bytes([{c['frame_delimiter']}])",
-            },
-            {"name": "DIGITAL_LOW", "type": "int", "value": c["digital_low"]},
-            {"name": "DIGITAL_HIGH", "type": "int", "value": c["digital_high"]},
-            {
-                "name": "SHA256_DIGEST_SIZE",
-                "type": "int",
-                "value": spec.hardware["sha256_digest_size"],
-            },
-            {
-                "name": "SHA256_KAT_BUFFER_SIZE",
-                "type": "int",
-                "value": spec.hardware["sha256_kat_buffer_size"],
-            },
-            {"name": "STATUS_CODE_MIN", "type": "int", "value": c["status_code_min"]},
-            {"name": "STATUS_CODE_MAX", "type": "int", "value": c["status_code_max"]},
-            {
-                "name": "SYSTEM_COMMAND_MIN",
-                "type": "int",
-                "value": c["system_command_min"],
-            },
-            {
-                "name": "SYSTEM_COMMAND_MAX",
-                "type": "int",
-                "value": c["system_command_max"],
-            },
-            {"name": "GPIO_COMMAND_MIN", "type": "int", "value": c["gpio_command_min"]},
-            {"name": "GPIO_COMMAND_MAX", "type": "int", "value": c["gpio_command_max"]},
-            {
-                "name": "CONSOLE_COMMAND_MIN",
-                "type": "int",
-                "value": c["console_command_min"],
-            },
-            {
-                "name": "CONSOLE_COMMAND_MAX",
-                "type": "int",
-                "value": c["console_command_max"],
-            },
-            {
-                "name": "DATASTORE_COMMAND_MIN",
-                "type": "int",
-                "value": c["datastore_command_min"],
-            },
-            {
-                "name": "DATASTORE_COMMAND_MAX",
-                "type": "int",
-                "value": c["datastore_command_max"],
-            },
-            {
-                "name": "MAILBOX_COMMAND_MIN",
-                "type": "int",
-                "value": c["mailbox_command_min"],
-            },
-            {
-                "name": "MAILBOX_COMMAND_MAX",
-                "type": "int",
-                "value": c["mailbox_command_max"],
-            },
-            {
-                "name": "FILESYSTEM_COMMAND_MIN",
-                "type": "int",
-                "value": c["filesystem_command_min"],
-            },
-            {
-                "name": "FILESYSTEM_COMMAND_MAX",
-                "type": "int",
-                "value": c["filesystem_command_max"],
-            },
-            {
-                "name": "PROCESS_COMMAND_MIN",
-                "type": "int",
-                "value": c["process_command_min"],
-            },
-            {
-                "name": "PROCESS_COMMAND_MAX",
-                "type": "int",
-                "value": c["process_command_max"],
-            },
-            {"name": "SPI_COMMAND_MIN", "type": "int", "value": c["spi_command_min"]},
-            {"name": "SPI_COMMAND_MAX", "type": "int", "value": c["spi_command_max"]},
-            {
-                "name": "FILE_LARGE_WARNING_BYTES",
-                "type": "int",
-                "value": spec.hardware["file_large_warning_bytes"],
-            },
-        ]
+        constants: list[dict[str, Any]] = []
+        # Reflection from spec.constants_opt descriptor fields
+        for field in spec.constants_opt.DESCRIPTOR.fields:
+            opts = field.GetOptions()
+            py_name = opts.Extensions[spec.pb_module.py_name]
+            py_type = opts.Extensions[spec.pb_module.py_type]
+            if py_name:
+                val = getattr(spec.constants_opt, field.name)
+                if py_name == "FRAME_DELIMITER":
+                    constants.append({"name": py_name, "type": py_type, "value": f"bytes([{val}])"})
+                else:
+                    constants.append({"name": py_name, "type": py_type, "value": val})
+
+        # Reflection from spec.hardware_opt descriptor fields
+        for field in spec.hardware_opt.DESCRIPTOR.fields:
+            opts = field.GetOptions()
+            py_name = opts.Extensions[spec.pb_module.py_name]
+            py_type = opts.Extensions[spec.pb_module.py_type]
+            if py_name:
+                val = getattr(spec.hardware_opt, field.name)
+                constants.append({"name": py_name, "type": py_type, "value": val})
+
+        # Reflection from spec.data_formats_opt descriptor fields
+        for field in spec.data_formats_opt.DESCRIPTOR.fields:
+            opts = field.GetOptions()
+            py_name = opts.Extensions[spec.pb_module.py_name]
+            py_type = opts.Extensions[spec.pb_module.py_type]
+            if py_name:
+                val = getattr(spec.data_formats_opt, field.name)
+                constants.append({"name": py_name, "type": py_type, "value": f'"{val}"'})
+
+        # Mqtt suffixes
+        for key, val in spec.mqtt_suffixes.items():
+            py_name = f"MQTT_SUFFIX_{key.upper()}"
+            constants.append({"name": py_name, "type": "str", "value": f'"{val}"'})
+
+        handshake_constants: list[dict[str, Any]] = []
+        # Reflection from spec.handshake_opt descriptor fields
+        for field in spec.handshake_opt.DESCRIPTOR.fields:
+            opts = field.GetOptions()
+            py_name = opts.Extensions[spec.pb_module.py_name]
+            py_type = opts.Extensions[spec.pb_module.py_type]
+            if py_name:
+                val = getattr(spec.handshake_opt, field.name)
+                handshake_constants.append({"name": py_name, "type": py_type, "value": val})
+
+        # Build command_to_pb mapping reflexively
+        command_to_pb: list[tuple[str, str]] = []
+        for cmd in spec.commands:
+            class_name = cmd_name_to_pb_class(cmd.name)
+            if hasattr(spec.pb_module, class_name):
+                command_to_pb.append((cmd.name, class_name))
 
         hs = spec.handshake
-        handshake_constants = [
-            {
-                "name": "HANDSHAKE_NONCE_LENGTH",
-                "type": "int",
-                "value": hs["nonce_length"],
-            },
-            {"name": "HANDSHAKE_TAG_LENGTH", "type": "int", "value": hs["tag_length"]},
-            {
-                "name": "HANDSHAKE_ACK_TIMEOUT_MIN_MS",
-                "type": "int",
-                "value": hs["ack_timeout_min_ms"],
-            },
-            {
-                "name": "HANDSHAKE_ACK_TIMEOUT_MAX_MS",
-                "type": "int",
-                "value": hs["ack_timeout_max_ms"],
-            },
-            {
-                "name": "HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS",
-                "type": "int",
-                "value": hs["response_timeout_min_ms"],
-            },
-            {
-                "name": "HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS",
-                "type": "int",
-                "value": hs["response_timeout_max_ms"],
-            },
-            {
-                "name": "HANDSHAKE_RETRY_LIMIT_MIN",
-                "type": "int",
-                "value": hs["retry_limit_min"],
-            },
-            {
-                "name": "HANDSHAKE_RETRY_LIMIT_MAX",
-                "type": "int",
-                "value": hs["retry_limit_max"],
-            },
-            {
-                "name": "HANDSHAKE_HKDF_OUTPUT_LENGTH",
-                "type": "int",
-                "value": hs["hkdf_output_length"],
-            },
-            {
-                "name": "HANDSHAKE_NONCE_RANDOM_BYTES",
-                "type": "int",
-                "value": hs["nonce_random_bytes"],
-            },
-            {
-                "name": "HANDSHAKE_NONCE_COUNTER_BYTES",
-                "type": "int",
-                "value": hs["nonce_counter_bytes"],
-            },
-        ]
-
         handshake_strings = {
             "HANDSHAKE_TAG_ALGORITHM": hs["tag_algorithm"],
             "HANDSHAKE_TAG_DESCRIPTION": hs["tag_description"],
@@ -1026,6 +538,7 @@ class JinjaGenerator:
             subscriptions=subscriptions,
             request_response_pairs=self._build_req_resp_map(spec),
             response_to_req_map=self._build_resp_to_req_map(spec),
+            command_to_pb=command_to_pb,
         )
         out_path.write_text(render, encoding="utf-8")
 
@@ -1128,27 +641,13 @@ class JinjaGenerator:
     def generate_python_client(self, spec: ProtocolSpec, out_path: Path) -> None:
         template = self.env.get_template("protocol_client.py.j2")
 
-        c = spec.constants
-        constants = [
-            {"name": "PROTOCOL_VERSION", "type": "int", "value": c["protocol_version"]},
-            {"name": "DEFAULT_BAUDRATE", "type": "int", "value": c["default_baudrate"]},
-            {
-                "name": "DEFAULT_MQTT_PORT",
-                "type": "int",
-                "value": c["default_mqtt_port"],
-            },
-            {"name": "MAX_PAYLOAD_SIZE", "type": "int", "value": c["max_payload_size"]},
-            {
-                "name": "MAX_FILEPATH_LENGTH",
-                "type": "int",
-                "value": c["max_filepath_length"],
-            },
-            {
-                "name": "MAX_DATASTORE_KEY_LENGTH",
-                "type": "int",
-                "value": c["max_datastore_key_length"],
-            },
-        ]
+        constants: list[dict[str, Any]] = []
+        for field in spec.constants_opt.DESCRIPTOR.fields:
+            opts = field.GetOptions()
+            if opts.Extensions[spec.pb_module.client_constant]:
+                py_name = opts.Extensions[spec.pb_module.py_name]
+                val = getattr(spec.constants_opt, field.name)
+                constants.append({"name": py_name, "type": "int", "value": val})
 
         render = template.render(
             constants=constants,

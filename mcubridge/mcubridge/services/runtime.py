@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast, Final
 
+import msgspec
 from ..state.storage import DbmDeque
 import structlog
 from google.protobuf.message import (
@@ -88,19 +89,6 @@ _PRE_SYNC_ALLOWED_COMMANDS: Final = {
 }
 
 _STATUS_VALUES: Final = {s.value for s in Status}
-
-
-def _to_bytes(val: Any) -> bytes:
-    """Safe, high-performance native byte coercion to eliminate msgspec dependence."""
-    if isinstance(val, bytes):
-        return val
-    if isinstance(val, memoryview):
-        return bytes(val)
-    if isinstance(val, str):
-        return val.encode()
-    if val is None:
-        return b""
-    return bytes(val)
 
 
 @dataclass
@@ -547,8 +535,8 @@ class BridgeService:
 
     async def _on_mcu_datastore_put(self, p: pb.DatastorePut) -> bool:
         if self.state.datastore_cache is not None:
-            self.state.datastore_cache[p.key] = _to_bytes(p.value)
-        await self._publish_datastore_value(p.key, _to_bytes(p.value))
+            self.state.datastore_cache[p.key] = bytes(p.value)
+        await self._publish_datastore_value(p.key, bytes(p.value))
         return True
 
     async def _on_mcu_datastore_get(self, p: pb.DatastoreGet) -> bool:
@@ -556,7 +544,7 @@ class BridgeService:
         if not serial:
             return False
         cache = cast(Any, self.state.datastore_cache)
-        val = _to_bytes(cache.get(p.key, b"") if cache else b"")
+        val = msgspec.convert(cache.get(p.key, b"") if cache else b"", bytes)
         res = await serial.send(
             Command.CMD_DATASTORE_GET_RESP.value,
             pb.DatastoreGetResponse(value=val[:255]),
@@ -564,10 +552,10 @@ class BridgeService:
         return bool(res)
 
     async def _on_mcu_mailbox_push(self, p: pb.MailboxPush) -> bool:
-        self.state.mailbox_incoming_queue.append(_to_bytes(p.data))
+        self.state.mailbox_incoming_queue.append(bytes(p.data))
         await self.enqueue_mqtt(
             create_queued_publish(
-                topic_path(self.state.mqtt_topic_prefix, Topic.MAILBOX, MailboxAction.INCOMING), _to_bytes(p.data)
+                topic_path(self.state.mqtt_topic_prefix, Topic.MAILBOX, MailboxAction.INCOMING), bytes(p.data)
             )
         )
         return True
@@ -676,9 +664,6 @@ class BridgeService:
         )
         return bool(res)
 
-    async def _on_mcu_process_kill(self, pid: int) -> bool:
-        return await self._stop_process(pid)
-
     async def _on_pin_resp(self, p: Any, tp: Topic, q: collections.deque[structures.PendingPinRequest]) -> None:
         req = q.popleft() if q else None
         await self.enqueue_mqtt(
@@ -697,25 +682,31 @@ class BridgeService:
         )
 
     async def _on_mcu_ack(self, seq: int, payload: bytes | ProtobufMessage) -> None:
-        # Optimized O(1) matching avoiding redundant try-except blocks
-        p = payload if isinstance(payload, pb.AckPacket) else pb.AckPacket.FromString(payload)
-        logger.debug("MCU > ACK for 0x%02X", p.command_id)
+        try:
+            if isinstance(payload, ProtobufMessage):
+                p = cast(pb.AckPacket, payload)
+            else:
+                p = pb.AckPacket.FromString(payload)
+            logger.debug("MCU > ACK for 0x%02X", p.command_id)
+        except (ProtobufDecodeError, TypeError, ValueError) as e:
+            logger.error("Failed to decode MCU ACK packet", error=e)
 
     async def _handle_mcu_status(self, seq_id: int, status: Status, payload: bytes | ProtobufMessage) -> None:
         text = ""
         if payload:
-            if isinstance(payload, pb.GenericResponse):
-                text = payload.message
-            elif isinstance(payload, ProtobufMessage):
-                text = getattr(payload, "message", str(payload))
-            elif isinstance(payload, bytes):
-                try:
-                    text = payload.decode("utf-8")
-                except UnicodeDecodeError:
-                    text = f"<hex:{payload.hex()}>"
-            else:
-                text = str(payload)
-
+            try:
+                if isinstance(payload, ProtobufMessage):
+                    text = getattr(payload, "message", str(payload))
+                else:
+                    text = pb.GenericResponse.FromString(payload).message
+            except (ProtobufDecodeError, TypeError, ValueError):
+                if isinstance(payload, bytes):
+                    try:
+                        text = payload.decode("utf-8")
+                    except UnicodeDecodeError:
+                        text = f"<hex:{payload.hex()}>"
+                else:
+                    text = str(payload)
         log_func = logger.error if status not in {Status.OK, Status.ACK} else logger.debug
         log_func("MCU > %s: %s %s", status.name, status.description, text)
         await self.enqueue_mqtt(
@@ -737,7 +728,7 @@ class BridgeService:
     # --- MQTT Specific Handlers (Cleaned) ---
 
     async def _handle_mqtt_console(self, inbound: Message) -> None:
-        if pl := _to_bytes(inbound.payload):
+        if pl := msgspec.convert(inbound.payload, bytes):
             self.state.console_to_mcu_queue.append(pl)
             await self._flush_console_queue()
 
@@ -746,7 +737,7 @@ class BridgeService:
         if key_parts and key_parts[-1] in ("request", "response"):
             key_parts.pop()
         key = "/".join(key_parts)
-        pl = _to_bytes(inbound.payload)
+        pl = msgspec.convert(inbound.payload, bytes)
         if not key:
             return
         if route.identifier == DatastoreAction.PUT:
@@ -758,7 +749,7 @@ class BridgeService:
             cache = cast(Any, self.state.datastore_cache)
             val = cache.get(key) if cache else None
             if val is not None:
-                await self._publish_datastore_value(key, _to_bytes(val), reply_context=inbound)
+                await self._publish_datastore_value(key, msgspec.convert(val, bytes), reply_context=inbound)
             elif route.remainder and route.remainder[-1] == "request":
                 await self._publish_datastore_value(key, b"", reply_context=inbound, error="datastore-miss")
 
@@ -766,7 +757,7 @@ class BridgeService:
         serial = self.serial
         if not serial:
             return
-        pl = _to_bytes(inbound.payload)
+        pl = msgspec.convert(inbound.payload, bytes)
         if route.identifier == MailboxAction.WRITE:
             self.state.mailbox_queue.append(pl)
             await serial.send(Command.CMD_MAILBOX_PUSH.value, pb.MailboxPush(data=pl))
@@ -795,7 +786,7 @@ class BridgeService:
             elif act == FileAction.WRITE:
                 await serial.send(
                     Command.CMD_FILE_WRITE.value,
-                    pb.FileWrite(path=target[4:], data=_to_bytes(inbound.payload)),
+                    pb.FileWrite(path=target[4:], data=msgspec.convert(inbound.payload, bytes)),
                 )
             elif act == FileAction.REMOVE:
                 await serial.send(Command.CMD_FILE_REMOVE.value, pb.FileRemove(path=target[4:]))
@@ -804,11 +795,11 @@ class BridgeService:
             if not path:
                 return
             if act == FileAction.WRITE:
-                if await self._write_with_quota(path, _to_bytes(inbound.payload)):
+                if await self._write_with_quota(path, msgspec.convert(inbound.payload, bytes)):
                     await self.enqueue_mqtt(
                         create_queued_publish(
                             topic_path(self.state.mqtt_topic_prefix, Topic.FILE, FileAction.READ, target),
-                            _to_bytes(inbound.payload),
+                            msgspec.convert(inbound.payload, bytes),
                         ),
                         reply_context=inbound,
                     )
@@ -883,7 +874,7 @@ class BridgeService:
 
     async def _handle_mqtt_shell(self, route: TopicRoute, inbound: Message) -> None:
         act = route.segments[0] if route.segments else None
-        pl = _to_bytes(inbound.payload)
+        pl = msgspec.convert(inbound.payload, bytes)
         if act == ShellAction.RUN_ASYNC:
             try:
                 properties = getattr(inbound, "properties", None)
@@ -976,7 +967,7 @@ class BridgeService:
         pin = self._parse_pin(route.segments[0])
         if pin < 0:
             return
-        pl = _to_bytes(inbound.payload).decode()
+        pl = msgspec.convert(inbound.payload, bytes).decode()
         if len(route.segments) == 2:
             if route.segments[1] == PinAction.MODE:
                 await serial.send(Command.CMD_SET_PIN_MODE.value, pb.PinMode(pin=pin, mode=cast(Any, int(pl))))
@@ -1334,6 +1325,7 @@ class BridgeService:
             RuntimeError,
             ValueError,
             TypeError,
+            msgspec.MsgspecError,
             aiomqtt.MqttError,
             tenacity.RetryError,
             SerialHandshakeFatal,

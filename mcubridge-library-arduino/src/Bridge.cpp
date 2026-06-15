@@ -184,8 +184,10 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
   _shared_secret.clear();
   if (secret != nullptr) {
     const etl::string_view s(secret);
-    // Fixed double black-magic pointer casts using native, safe, and MISRA-compliant ETL iterators
-    _shared_secret.assign(s.begin(), s.begin() + etl::min(s.size(), _shared_secret.capacity()));
+    const size_t len = etl::min(s.size(), _shared_secret.capacity());
+    const auto data_ptr =
+        static_cast<const uint8_t*>(static_cast<const void*>(s.data()));
+    _shared_secret.assign(data_ptr, data_ptr + len);
   }
   bridge::hal::init();
   if (!_fsm.is_started()) _fsm.start();

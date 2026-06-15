@@ -509,6 +509,9 @@ def _flatten_structured_value(
     value: Any,
     entries: list[pb.StructuredEntry],
 ) -> None:
+    if hasattr(value, "_pb"):
+        value = getattr(value, "_pb")
+
     if isinstance(value, ProtobufMessage):
         from google.protobuf.json_format import MessageToDict
 

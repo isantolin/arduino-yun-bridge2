@@ -356,22 +356,7 @@ class BridgeClass {
 
   void _handleSetPinMode(const rpc_pb_PinMode& m);
   void _handleDigitalWrite(const rpc_pb_DigitalWrite& m);
-  void _handleDigitalWriteFast(const bridge::router::CommandContext& ctx);
   void _handleAnalogWrite(const rpc_pb_AnalogWrite& m);
-  void _handleAnalogWriteFast(const bridge::router::CommandContext& ctx);
-  void _handleAckStructFast(const bridge::router::CommandContext& ctx);
-  void _handleSetBaudrateFast(const bridge::router::CommandContext& ctx);
-  void _handleEnterBootloaderFast(const bridge::router::CommandContext& ctx);
-  void _handleSetPinModeFast(const bridge::router::CommandContext& ctx);
-  void _handleConsoleWriteFast(const bridge::router::CommandContext& ctx);
-  void _handleMailboxPushFast(const bridge::router::CommandContext& ctx);
-  void _handleMailboxReadResponseFast(const bridge::router::CommandContext& ctx);
-  void _handleMailboxAvailableResponseFast(const bridge::router::CommandContext& ctx);
-  void _handleFileWriteFast(const bridge::router::CommandContext& ctx);
-  void _handleFileReadFast(const bridge::router::CommandContext& ctx);
-  void _handleFileRemoveFast(const bridge::router::CommandContext& ctx);
-  void _handleProcessKillFast(const bridge::router::CommandContext& ctx);
-  void _handleSpiSetConfigFast(const bridge::router::CommandContext& ctx);
   void _handleDigitalRead(const bridge::router::CommandContext& ctx);
   void _handleAnalogRead(const bridge::router::CommandContext& ctx);
   void _handleConsoleWrite(const rpc_pb_ConsoleWrite& m);

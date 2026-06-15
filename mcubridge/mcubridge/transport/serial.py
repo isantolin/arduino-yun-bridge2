@@ -93,14 +93,10 @@ class SerialTransport:
             super().__init__(status)
             self.status = status
 
-    def _active_transport(self) -> serialx.BaseSerialTransport:
-        if self.writer is None or self.writer.is_closing():
-            raise RuntimeError("Serial writer inactive")
-        return cast(serialx.BaseSerialTransport, self.writer.transport)
 
     def _switch_local_baudrate(self, target_baud: int) -> None:
         try:
-            self._active_transport().serial.baudrate = target_baud
+            cast(serialx.BaseSerialTransport, self.writer.transport).serial.baudrate = target_baud
             logger.info("Local UART switched to %d baud", target_baud)
         except (AttributeError, OSError, ValueError, serialx.SerialException) as e:
             raise RuntimeError(f"UART access failed: {e}") from e
@@ -166,7 +162,7 @@ class SerialTransport:
 
     async def _toggle_dtr(self) -> None:
         try:
-            serial_obj = self._active_transport().serial
+            serial_obj = cast(serialx.BaseSerialTransport, self.writer.transport).serial
             serial_obj.dtr = False
             await asyncio.sleep(0.1)
             serial_obj.dtr = True

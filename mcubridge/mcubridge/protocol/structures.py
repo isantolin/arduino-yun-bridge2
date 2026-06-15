@@ -1,11 +1,12 @@
 """MCU Bridge Data Structures and Schemas.
 
 SINGLE SOURCE OF TRUTH for all data structures.
-Binary parsing uses stdlib struct; high-level schemas use Msgspec (SIL-2).
+Binary parsing and high-level configurations are backed strictly by Protobuf (SIL-2).
 """
 
 from __future__ import annotations
 from google.protobuf.message import Message as ProtobufMessage
+from google.protobuf.json_format import ParseDict, MessageToDict
 from . import mcubridge_pb2 as pb
 from .protocol import (
     DEFAULT_BAUDRATE,
@@ -19,7 +20,6 @@ from .protocol import (
     MQTT_DEFAULT_TOPIC_PREFIX,
     PROMETHEUS_PORT,
 )
-
 
 import asyncio
 import enum
@@ -37,7 +37,6 @@ from typing import (
     cast,
 )
 
-import msgspec
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 
@@ -170,105 +169,84 @@ def allows_topic(auth: pb.TopicAuthorization, topic: str, action: str) -> bool:
 
 
 # =============================================================================
-# 3. Runtime Configuration Structures (msgspec)
+# 3. Runtime Configuration Structures (Protobuf-backed SSoT)
 # =============================================================================
 
 
-class RuntimeConfig(msgspec.Struct, kw_only=True):
-    """Strongly typed configuration for the daemon."""
+class RuntimeConfig:
+    """Strongly typed configuration for the daemon backed strictly by Protobuf. [SIL-2]"""
 
-    # Imports moved inside __post_init__ or methods to avoid circularity
-    # but we need constants for defaults.
-    from mcubridge.config.const import (
-        DEFAULT_ALLOW_NON_TMP_PATHS,
-        DEFAULT_BRIDGE_HANDSHAKE_INTERVAL,
-        DEFAULT_BRIDGE_SUMMARY_INTERVAL,
-        DEFAULT_DEBUG,
-        DEFAULT_FILE_STORAGE_QUOTA_BYTES,
-        DEFAULT_FILE_SYSTEM_ROOT,
-        DEFAULT_FILE_WRITE_MAX_BYTES,
-        DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
-        DEFAULT_MAILBOX_QUEUE_LIMIT,
-        DEFAULT_METRICS_ENABLED,
-        DEFAULT_METRICS_HOST,
-        DEFAULT_MQTT_CAFILE,
-        DEFAULT_MQTT_HOST,
-        DEFAULT_MQTT_PORT,
-        DEFAULT_MQTT_QUEUE_LIMIT,
-        DEFAULT_MQTT_SPOOL_DIR,
-        DEFAULT_MQTT_TLS_INSECURE,
-        DEFAULT_PENDING_PIN_REQUESTS,
-        DEFAULT_PROCESS_MAX_CONCURRENT,
-        DEFAULT_PROCESS_TIMEOUT,
-        DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL,
-        DEFAULT_SERIAL_PORT,
-        DEFAULT_SERIAL_RESPONSE_TIMEOUT,
-        DEFAULT_SERIAL_RETRY_TIMEOUT,
-        DEFAULT_SERIAL_SHARED_SECRET,
-        DEFAULT_STATUS_INTERVAL,
-        DEFAULT_WATCHDOG_INTERVAL,
-        MIN_SERIAL_SHARED_SECRET_LEN,
-    )
+    _INT_FIELDS: Final[set[str]] = {
+        "serial_baud", "serial_safe_baud", "mqtt_port", "process_timeout",
+        "file_write_max_bytes", "file_storage_quota_bytes", "mqtt_queue_limit",
+        "reconnect_delay", "status_interval", "console_queue_limit_bytes",
+        "mailbox_queue_limit", "mailbox_queue_bytes_limit", "pending_pin_request_limit",
+        "serial_retry_attempts", "serial_fallback_threshold", "serial_handshake_fatal_failures",
+        "metrics_port", "process_max_output_bytes", "process_max_concurrent"
+    }
 
-    serial_port: str = DEFAULT_SERIAL_PORT
-    serial_baud: Annotated[int, msgspec.Meta(ge=300)] = DEFAULT_BAUDRATE
-    serial_safe_baud: Annotated[int, msgspec.Meta(ge=300)] = DEFAULT_SAFE_BAUDRATE
-    mqtt_host: str = DEFAULT_MQTT_HOST
-    mqtt_port: Annotated[int, msgspec.Meta(ge=1, le=65535)] = DEFAULT_MQTT_PORT
-    mqtt_user: str | None = None
-    mqtt_pass: str | None = None
-    mqtt_tls: bool = True
-    mqtt_cafile: str | None = DEFAULT_MQTT_CAFILE
-    mqtt_certfile: str | None = None
-    mqtt_keyfile: str | None = None
-    mqtt_topic: str = MQTT_DEFAULT_TOPIC_PREFIX
+    _FLOAT_FIELDS: Final[set[str]] = {
+        "serial_retry_timeout", "serial_response_timeout", "serial_handshake_min_interval",
+        "watchdog_interval", "bridge_summary_interval", "bridge_handshake_interval"
+    }
 
-    # [SIL-2] Accept Any to allow raw strings from UCI/Tests, then coerce in __post_init__
-    allowed_commands: Any = ()
+    _BOOL_FIELDS: Final[set[str]] = {
+        "mqtt_tls", "mqtt_tls_insecure", "debug", "mqtt_enabled", "watchdog_enabled",
+        "metrics_enabled", "allow_non_tmp_paths"
+    }
 
-    file_system_root: str = DEFAULT_FILE_SYSTEM_ROOT
-    process_timeout: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_PROCESS_TIMEOUT
+    def __init__(self, raw_config: dict | pb.RuntimeConfigProto) -> None:
+        if isinstance(raw_config, pb.RuntimeConfigProto):
+            self._pb = raw_config
+            self._topic_authorization_raw = None
+        else:
+            coerced = self._coerce_dict(raw_config)
+            self._pb = pb.RuntimeConfigProto()
+            # Parse dict with strict field matching directly using Google's ParseDict engine
+            ParseDict(coerced, self._pb, ignore_unknown_fields=True)
+            self._topic_authorization_raw = raw_config.get("topic_authorization", None)
 
-    mqtt_tls_insecure: bool = DEFAULT_MQTT_TLS_INSECURE
-    file_write_max_bytes: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_FILE_WRITE_MAX_BYTES
-    file_storage_quota_bytes: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_FILE_STORAGE_QUOTA_BYTES
+        self.__post_init__()
 
-    allowed_policy: Any = None
+    def _coerce_dict(self, d: dict) -> dict:
+        """Coerce raw strings (e.g. from OpenWrt UCI) into exact Protobuf scalar types."""
+        coerced = {}
+        for k, v in d.items():
+            if v is None:
+                continue
+            if k in self._INT_FIELDS:
+                coerced[k] = int(v)
+            elif k in self._FLOAT_FIELDS:
+                coerced[k] = float(v)
+            elif k in self._BOOL_FIELDS:
+                if isinstance(v, str):
+                    coerced[k] = v.lower() in ("true", "1", "yes", "on", "y")
+                else:
+                    coerced[k] = bool(v)
+            elif k == "allowed_commands":
+                if isinstance(v, str):
+                    coerced[k] = [v]
+                elif isinstance(v, (list, tuple)):
+                    coerced[k] = list(v)
+                else:
+                    coerced[k] = []
+            elif k == "serial_shared_secret":
+                if isinstance(v, str):
+                    coerced[k] = v.encode()
+                else:
+                    coerced[k] = bytes(v)
+            else:
+                coerced[k] = v
+        return coerced
 
-    mqtt_queue_limit: Annotated[int, msgspec.Meta(ge=0)] = DEFAULT_MQTT_QUEUE_LIMIT
-    reconnect_delay: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_RECONNECT_DELAY
-    status_interval: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_STATUS_INTERVAL
-    debug: bool = DEFAULT_DEBUG
-    console_queue_limit_bytes: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
-    mailbox_queue_limit: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_MAILBOX_QUEUE_LIMIT
-    mailbox_queue_bytes_limit: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT
-    pending_pin_request_limit: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_PENDING_PIN_REQUESTS
-    serial_retry_timeout: Annotated[float, msgspec.Meta(ge=0.01, le=30.0)] = DEFAULT_SERIAL_RETRY_TIMEOUT
-    serial_response_timeout: Annotated[float, msgspec.Meta(ge=0.02, le=120.0)] = DEFAULT_SERIAL_RESPONSE_TIMEOUT
-    serial_retry_attempts: Annotated[int, msgspec.Meta(ge=0)] = DEFAULT_RETRY_LIMIT
-    serial_fallback_threshold: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_SERIAL_FALLBACK_THRESHOLD
-    serial_handshake_min_interval: Annotated[float, msgspec.Meta(ge=0.0, le=30.0)] = (
-        DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL
-    )
-    serial_handshake_fatal_failures: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES
-    mqtt_enabled: bool = True
-    watchdog_enabled: bool = True
-    watchdog_interval: Annotated[float, msgspec.Meta(ge=0.1, le=60.0)] = DEFAULT_WATCHDOG_INTERVAL
-    topic_authorization: Any = None
-
-    # [SIL-2] Security: Accept Any to allow raw strings from UCI/Tests,
-    # then coerce to bytes in __post_init__ to avoid msgspec base64 errors.
-    serial_shared_secret: Any = DEFAULT_SERIAL_SHARED_SECRET
-
-    mqtt_spool_dir: str = DEFAULT_MQTT_SPOOL_DIR
-    process_max_output_bytes: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_PROCESS_MAX_OUTPUT_BYTES
-    process_max_concurrent: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_PROCESS_MAX_CONCURRENT
-    metrics_enabled: bool = DEFAULT_METRICS_ENABLED
-    metrics_host: str = DEFAULT_METRICS_HOST
-    metrics_port: Annotated[int, msgspec.Meta(ge=1, le=65535)] = PROMETHEUS_PORT
-    bridge_summary_interval: Annotated[float, msgspec.Meta(ge=0.0)] = DEFAULT_BRIDGE_SUMMARY_INTERVAL
-    bridge_handshake_interval: Annotated[float, msgspec.Meta(ge=0.0)] = DEFAULT_BRIDGE_HANDSHAKE_INTERVAL
-    allow_non_tmp_paths: bool = DEFAULT_ALLOW_NON_TMP_PATHS
+    def __getattr__(self, name: str) -> Any:
+        """Dynamic read-only property forwarding to the underlying Protobuf message."""
+        if hasattr(self._pb, name):
+            val = getattr(self._pb, name)
+            if hasattr(val, "extend"):  # Repeated fields container coercion
+                return tuple(val)
+            return val
+        raise AttributeError(f"'RuntimeConfig' object has no attribute '{name}'")
 
     def get_ssl_context(self) -> Any | None:
         """Create an ssl.SSLContext based on the current configuration (SIL-2)."""
@@ -312,20 +290,21 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
             VOLATILE_STORAGE_PATHS,
         )
 
-        # [SIL-2] Semantic Policy Derivation
+        # Semantic Policy Derivation
         self.allowed_policy = create_allowed_policy(self.allowed_commands)
         self.allowed_commands = tuple(self.allowed_policy.entries)
 
-        if self.topic_authorization is None or isinstance(self.topic_authorization, dict):
-            raw_auth = getattr(self, "topic_authorization", None)
-            ta_dict = cast(dict[str, bool], raw_auth if isinstance(raw_auth, dict) else {})
+        if self._topic_authorization_raw is None or isinstance(self._topic_authorization_raw, dict):
+            ta_dict = self._topic_authorization_raw if isinstance(self._topic_authorization_raw, dict) else {}
             auth_pb = pb.TopicAuthorization()
             for field in [f.name for f in auth_pb.DESCRIPTOR.fields]:
                 val = ta_dict.get(field, True)
                 setattr(auth_pb, field, val)
-            object.__setattr__(self, "topic_authorization", auth_pb)
+            self.topic_authorization = auth_pb
+        else:
+            self.topic_authorization = self._topic_authorization_raw
 
-        # [SIL-2] Strict Semantic Validations
+        # Strict Semantic Validations
         if not self.mqtt_topic or not any(filter(None, self.mqtt_topic.split("/"))):
             raise ValueError("mqtt_topic must contain at least one segment")
 
@@ -342,10 +321,9 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
             raise ValueError("serial_shared_secret placeholder is insecure")
 
         # Unique symbol check for minimum entropy
-        if isinstance(self.serial_shared_secret, bytes):
-            unique_symbols = {byte for byte in self.serial_shared_secret}
-            if len(unique_symbols) < 4 and self.serial_shared_secret != DEFAULT_SERIAL_SHARED_SECRET:
-                raise ValueError("serial_shared_secret must contain at least four distinct bytes")
+        unique_symbols = {byte for byte in self.serial_shared_secret}
+        if len(unique_symbols) < 4 and self.serial_shared_secret != DEFAULT_SERIAL_SHARED_SECRET:
+            raise ValueError("serial_shared_secret must contain at least four distinct bytes")
 
         # Logic-based cross-field validations
         if self.file_storage_quota_bytes < self.file_write_max_bytes:
@@ -354,13 +332,12 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
         if self.mailbox_queue_bytes_limit < self.mailbox_queue_limit:
             raise ValueError("mailbox_queue_bytes_limit must be greater than or equal to mailbox_queue_limit")
 
-        # [SIL-2] Flash Protection: Spooling must ALWAYS be in volatile RAM.
+        # Flash Protection: Spooling must ALWAYS be in volatile RAM.
         if not self.allow_non_tmp_paths:
             if not any(self.mqtt_spool_dir.startswith(p) for p in VOLATILE_STORAGE_PATHS):
                 msg = f"FLASH PROTECTION: mqtt_spool_dir ({self.mqtt_spool_dir}) must be in a volatile location"
                 raise ValueError(msg)
 
-        if not self.allow_non_tmp_paths:
             if not any(self.file_system_root.startswith(p) for p in VOLATILE_STORAGE_PATHS):
                 raise ValueError(
                     f"FLASH PROTECTION: file_system_root ({self.file_system_root}) must be in a volatile location"
@@ -368,7 +345,7 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
 
 
 # =============================================================================
-# 3. Operational Structures
+# 4. Operational Structures
 # =============================================================================
 
 
@@ -381,15 +358,8 @@ def _flatten_structured_value(
         value = getattr(value, "_pb")
 
     if isinstance(value, ProtobufMessage):
-        from google.protobuf.json_format import MessageToDict
-
         proto_fields = MessageToDict(value, preserving_proto_field_name=True)
         for key, nested in proto_fields.items():
-            _flatten_structured_value(f"{key_prefix}.{key}" if key_prefix else key, nested, entries)
-        return
-    if isinstance(value, msgspec.Struct):
-        struct_fields = msgspec.structs.asdict(value)
-        for key, nested in struct_fields.items():
             _flatten_structured_value(f"{key_prefix}.{key}" if key_prefix else key, nested, entries)
         return
     if isinstance(value, (list, tuple)):
@@ -424,9 +394,12 @@ def _flatten_structured_value(
     entries.append(entry)
 
 
-def encode_structured_payload(payload: Mapping[str, Any] | msgspec.Struct) -> bytes:
+def encode_structured_payload(payload: Mapping[str, Any] | RuntimeConfig) -> bytes:
     message = pb.StructuredPayload()
-    source: Mapping[str, Any] = msgspec.structs.asdict(payload) if isinstance(payload, msgspec.Struct) else payload
+    if isinstance(payload, RuntimeConfig):
+        source = MessageToDict(payload._pb, preserving_proto_field_name=True)
+    else:
+        source = payload
     entries: list[pb.StructuredEntry] = []
     for key, value in source.items():
         _flatten_structured_value(str(key), value, entries)
@@ -508,6 +481,18 @@ UserProperty = tuple[str, str]
 def build_mqtt_properties(message: pb.MqttQueuedPublish) -> Properties:
     """Construct MQTT 5.0 properties object for aiomqtt/paho. [SIL-2]"""
     props = Properties(PacketTypes.PUBLISH)
+    
+    # Map fields statically using a static lookup to avoid expensive string capitalization split loops
+    PROTO_TO_PAHO_PROPERTIES: Final = {
+        "message_expiry_interval": "MessageExpiryInterval",
+        "user_properties": "UserProperty",
+        "content_type": "ContentType",
+        "correlation_data": "CorrelationData",
+        "response_topic": "ResponseTopic",
+        "payload_format_indicator": "PayloadFormatIndicator",
+        "subscription_identifier": "SubscriptionIdentifier"
+    }
+
     for field_desc in pb.MqttQueuedPublish.DESCRIPTOR.fields:
         field_name = field_desc.name
         if field_name in ("topic_name", "payload", "qos", "retain"):
@@ -525,18 +510,17 @@ def build_mqtt_properties(message: pb.MqttQueuedPublish) -> Properties:
                 continue
         if val is None:
             continue
-        paho_name = "".join(part.capitalize() for part in field_name.split("_"))
-        if paho_name == "UserProperties":
-            paho_name = "UserProperty"
+            
+        paho_name = PROTO_TO_PAHO_PROPERTIES.get(field_name)
+        if paho_name is None:
+            continue
+            
         ident = props.getIdentFromName(paho_name)
         if ident != -1:
             properties_dict = cast(dict[int, Any], props.properties)
             if ident in properties_dict:
                 if PacketTypes.PUBLISH in properties_dict[ident][1]:
-                    if paho_name in ("UserProperty", "SubscriptionIdentifier"):
-                        setattr(props, paho_name, val)
-                    else:
-                        setattr(props, paho_name, val)
+                    setattr(props, paho_name, val)
     return props
 
 
@@ -658,3 +642,4 @@ class PendingCommand:
             self.failure_status = status
         if not self.completion.is_set():
             self.completion.set()
+

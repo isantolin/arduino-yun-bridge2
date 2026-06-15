@@ -12,6 +12,7 @@ from .structures import TopicRoute
 
 
 import posixpath
+import functools
 
 
 def topic_path(prefix: str, topic: Topic, *segments: str | int) -> str:
@@ -24,6 +25,13 @@ def topic_path(prefix: str, topic: Topic, *segments: str | int) -> str:
 # --- Service Specific Topics ---
 
 
+@functools.lru_cache(maxsize=32)
+def _get_prefix_segs(prefix: str) -> tuple[str, ...]:
+    """Cache prefix segment splits. [SIL-2]"""
+    return tuple(filter(None, prefix.split("/")))
+
+
+@functools.lru_cache(maxsize=256)
 def parse_topic(prefix: str, topic_name: str) -> TopicRoute | None:
     """Parse an incoming MQTT topic into a TopicRoute.
     Returns None if the topic does not match the prefix or is malformed.
@@ -32,7 +40,7 @@ def parse_topic(prefix: str, topic_name: str) -> TopicRoute | None:
         return None
 
     # [SIL-2] Holistic topic decomposition using library-native filter/split.
-    prefix_segs = tuple(filter(None, prefix.split("/")))
+    prefix_segs = _get_prefix_segs(prefix)
     topic_segs = tuple(filter(None, topic_name.split("/")))
 
     # Validation: must contain prefix + at least one service segment

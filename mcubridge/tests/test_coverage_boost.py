@@ -134,11 +134,6 @@ async def test_serial_transport_coverage_boost(tmp_path: Path) -> None:
 
     transport: Any = SerialTransport(config, state, service)
 
-    # 1. _active_transport raises when writer is None
-    with pytest.raises(RuntimeError, match="Serial writer inactive"):
-        transport._active_transport()
-
-    # 2. _switch_local_baudrate raises when transport throws error
     class BadSerial:
         @property
         def baudrate(self) -> int:

@@ -6,6 +6,7 @@
 #endif
 
 #include <etl/span.h>
+
 #include "Bridge.h"
 
 namespace bridge::test {
@@ -58,8 +59,7 @@ class TestAccessor : public BridgeClass {
     if (rpc::security::handshake_authenticate(
             etl::span<const uint8_t>(_shared_secret),
             etl::span<const uint8_t>(nonce_ptr, len),
-            etl::span<const uint8_t>(),
-            etl::span<uint8_t>(out_tag_full))) {
+            etl::span<const uint8_t>(), etl::span<uint8_t>(out_tag_full))) {
       etl::copy_n(out_tag_full.begin(), 16, tag_out);
     }
   }
@@ -69,9 +69,11 @@ class TestAccessor : public BridgeClass {
   void handleGetVersion(const bridge::router::CommandContext& ctx) {
     _handleGetVersion(ctx);
   }
-  void handleDigitalWrite(const rpc_pb_DigitalWrite& m) { _handleDigitalWrite(m); }
+  void handleDigitalWrite(const rpc_pb_DigitalWrite& m) {
+    _handleDigitalWrite(m);
+  }
   void invokePacketReceived(etl::span<const uint8_t> p) {
-    _onPacketReceived(p);
+    _handleReceivedFrame(p);
   }
 
   void invokeConsolePush(const rpc::payload::ConsoleWrite& cmsg) {
@@ -89,8 +91,8 @@ class TestAccessor : public BridgeClass {
   void invokeSerialTask() { _serialTask(); }
   void invokeTimerTask() { _timerTask(); }
   void setSerialTaskXoffSent(bool value) { _serial_xoff_sent = value; }
-  void setSerialTaskBridgeNull() { }
-  void setTimerTaskBridgeNull() { }
+  void setSerialTaskBridgeNull() {}
+  void setTimerTaskBridgeNull() {}
   void setTimerLastTick(uint32_t tick) { _timer_last_tick_ms = tick; }
   void setHardwareSerial(HardwareSerial* serial) { _hardware_serial = serial; }
   void clearPendingTxQueue() { _clearPendingTxQueue(); }

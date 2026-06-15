@@ -45,11 +45,11 @@ constexpr uint8_t ANALOG_PINS =
 
 }  // namespace
 
-
 namespace {
 template <size_t I>
 void _forceSinglePin() {
-  if constexpr (bridge::config::SAFE_START_PINS_ENABLED) {  // GCOVR_EXCL_BR_LINE
+  if constexpr (bridge::config::
+                    SAFE_START_PINS_ENABLED) {  // GCOVR_EXCL_BR_LINE
     ::pinMode(static_cast<uint8_t>(I), OUTPUT);
     ::digitalWrite(static_cast<uint8_t>(I), LOW);
   } else {
@@ -73,18 +73,19 @@ void forceSafeState() {
 }
 
 void watchdog_kick() {
-  if constexpr (bridge::config::ENABLE_WATCHDOG) {  // GCOVR_EXCL_BR_LINE
+  if constexpr (bridge::config::ENABLE_WATCHDOG) {   // GCOVR_EXCL_BR_LINE
     if constexpr (Traits::id == ArchId::ARCH_AVR) {  // GCOVR_EXCL_BR_LINE
 #if defined(ARDUINO_ARCH_AVR)
       wdt_reset();
 #endif
-    } else if constexpr (Traits::id == ArchId::ARCH_ESP32) {  // GCOVR_EXCL_BR_LINE
+    } else if constexpr (Traits::id ==
+                         ArchId::ARCH_ESP32) {  // GCOVR_EXCL_BR_LINE
 #if defined(ARDUINO_ARCH_ESP32)
       esp_task_wdt_reset();
 #endif
     } else {
       // Native or unsupported fallback
-      asm volatile(""); // no-op
+      asm volatile("");  // no-op
     }
   }
 }
@@ -100,7 +101,8 @@ uint16_t getFreeMemory() {
 #else
     return Traits::default_free_memory;
 #endif
-  } else if constexpr (Traits::id == ArchId::ARCH_ESP32) {  // GCOVR_EXCL_BR_LINE
+  } else if constexpr (Traits::id ==
+                       ArchId::ARCH_ESP32) {  // GCOVR_EXCL_BR_LINE
 #if defined(ARDUINO_ARCH_ESP32)
     return static_cast<uint16_t>(ESP.getFreeHeap());
 #else
@@ -112,12 +114,13 @@ uint16_t getFreeMemory() {
 
 void init() {
   forceSafeState();
-  if constexpr (bridge::config::ENABLE_WATCHDOG) {  // GCOVR_EXCL_BR_LINE
+  if constexpr (bridge::config::ENABLE_WATCHDOG) {   // GCOVR_EXCL_BR_LINE
     if constexpr (Traits::id == ArchId::ARCH_AVR) {  // GCOVR_EXCL_BR_LINE
 #if defined(ARDUINO_ARCH_AVR)
       wdt_enable(WDTO_4S);
 #endif
-    } else if constexpr (Traits::id == ArchId::ARCH_ESP32) {  // GCOVR_EXCL_BR_LINE
+    } else if constexpr (Traits::id ==
+                         ArchId::ARCH_ESP32) {  // GCOVR_EXCL_BR_LINE
 #if defined(ARDUINO_ARCH_ESP32)
       esp_task_wdt_init(4, true);
       esp_task_wdt_add(nullptr);
@@ -130,18 +133,18 @@ __attribute__((weak)) bool hasSD() { return false; }
 
 __attribute__((weak)) bool hasSPI() { return false; }
 
-__attribute__((weak)) etl::expected<void, HalError> writeFile(etl::string_view,
-                                        etl::span<const uint8_t>) {
+__attribute__((weak)) etl::expected<void, HalError> writeFile(
+    etl::string_view, etl::span<const uint8_t>) {
   return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
 }
 
-__attribute__((weak)) etl::expected<ChunkResult, HalError> readFileChunk(etl::string_view,
-                                                   size_t,
-                                                   etl::span<uint8_t>) {
+__attribute__((weak)) etl::expected<ChunkResult, HalError> readFileChunk(
+    etl::string_view, size_t, etl::span<uint8_t>) {
   return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
 }
 
-__attribute__((weak)) etl::expected<void, HalError> removeFile(etl::string_view) {
+__attribute__((weak)) etl::expected<void, HalError> removeFile(
+    etl::string_view) {
   return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
 }
 

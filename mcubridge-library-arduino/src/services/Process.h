@@ -9,7 +9,6 @@
 #include <etl/span.h>
 #include <etl/string_view.h>
 
-
 #include "protocol/rpc_protocol.h"
 #include "protocol/rpc_structs.h"
 
@@ -34,7 +33,6 @@ class ProcessClass {
   void reset();
 
   void onLost() { reset(); }
-  static void onSynchronized() {}
 
   struct PendingRunAsync {
     ProcessRunHandler handler;

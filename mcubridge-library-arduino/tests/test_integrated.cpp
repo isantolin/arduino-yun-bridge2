@@ -1,14 +1,14 @@
 #define BRIDGE_ENABLE_TEST_INTERFACE 1
 #include <etl/array.h>
+
 #include "Bridge.h"
-#include "test_support.h"
 #include "BridgeTestInterface.h"
-#include "test_support.h"
 #include "services/Console.h"
-#include "services/FileSystem.h"
-#include "services/Process.h"
 #include "services/DataStore.h"
+#include "services/FileSystem.h"
 #include "services/Mailbox.h"
+#include "services/Process.h"
+#include "test_support.h"
 
 // Bridge and core services are already provided by production code.
 HardwareSerial Serial;
@@ -31,7 +31,7 @@ void integrated_test_bridge_core() {
   sync_frame.version = rpc::PROTOCOL_VERSION;
   sync_frame.command_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC);
   sync_frame.sequence_id = 1;
-  
+
   bridge::test::set_pb_payload(sync_frame, sync_req);
   accessor.dispatch(sync_frame);
 }
@@ -49,7 +49,7 @@ void integrated_test_components() {
   TEST_ASSERT(stream.tx_buf.len > 0);
 
   FileSystem.remove("test.txt");
-  
+
 #if BRIDGE_ENABLE_DATASTORE
   etl::array<uint8_t, 1> val = {1};
   DataStore.set("k", etl::span<const uint8_t>(val.data(), 1));
@@ -62,7 +62,7 @@ void integrated_test_components() {
   Process.kill(123);
 }
 
-} // namespace
+}  // namespace
 
 void setUp(void) {}
 void tearDown(void) {}

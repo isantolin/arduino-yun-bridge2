@@ -1,52 +1,60 @@
-#include <stdint.h>
-#include "etl_profile.h"
-#include <etl/span.h>
 #include <etl/delegate.h>
 #include <etl/expected.h>
+#include <etl/span.h>
+#include <stdint.h>
+
+#include "etl_profile.h"
 #include "protocol/rpc_frame.h"
 
 // [SIL-2] Explicit Template Instantiations to reduce binary bloat
 // This ensures these common types are compiled only once.
 
 namespace etl {
-  template class span<uint8_t>;
-  template class span<const uint8_t>;
-  template class span<char>;
-  template class span<const char>;
+template class span<uint8_t>;
+template class span<const uint8_t>;
+template class span<char>;
+template class span<const char>;
 
-  // Common delegates used in Bridge
-  template class delegate<void(rpc::StatusCode, etl::span<const uint8_t>)>;
-  template class delegate<void(const rpc_pb_RpcEnvelope&)>;
-}
+// Common delegates used in Bridge
+template class delegate<void(rpc::StatusCode, etl::span<const uint8_t>)>;
+template class delegate<void(const rpc_pb_RpcEnvelope&)>;
+}  // namespace etl
 
 namespace rpc {
 
 namespace Payload {
-bool _parse_impl(const rpc_pb_RpcEnvelope& env, const pb_msgdesc_t* fields, void* dest) {
-    if (env.which_payload_type == rpc_pb_RpcEnvelope_encrypted_payload_tag) {
-        pb_istream_t stream = pb_istream_from_buffer(
-            env.payload_type.encrypted_payload.bytes, 
-            env.payload_type.encrypted_payload.size);
-        return pb_decode(&stream, fields, dest);
-    }
-    return false;
+bool _parse_impl(const rpc_pb_RpcEnvelope& env, const pb_msgdesc_t* fields,
+                 void* dest) {
+  if (env.which_payload_type == rpc_pb_RpcEnvelope_encrypted_payload_tag) {
+    pb_istream_t stream =
+        pb_istream_from_buffer(env.payload_type.encrypted_payload.bytes,
+                               env.payload_type.encrypted_payload.size);
+    return pb_decode(&stream, fields, dest);
+  }
+  return false;
 }
-} // namespace Payload
+}  // namespace Payload
 
-etl::expected<rpc_pb_RpcEnvelope, FrameError> parse_frame(etl::span<const uint8_t> buffer) {
-  if (buffer.size() < CRC_TRAILER_SIZE + 2U) return etl::unexpected<FrameError>(FrameError::MALFORMED);
+etl::expected<rpc_pb_RpcEnvelope, FrameError> parse_frame(
+    etl::span<const uint8_t> buffer) {
+  if (buffer.size() < CRC_TRAILER_SIZE + 2U)
+    return etl::unexpected<FrameError>(FrameError::MALFORMED);
   const size_t crc_offset = buffer.size() - CRC_TRAILER_SIZE;
   const uint32_t crc_calc = checksum::compute(buffer.subspan(0, crc_offset));
-  const uint32_t crc_received = (static_cast<uint32_t>(buffer[crc_offset])) |
-                                (static_cast<uint32_t>(buffer[crc_offset + 1]) << 8) |
-                                (static_cast<uint32_t>(buffer[crc_offset + 2]) << 16) |
-                                (static_cast<uint32_t>(buffer[crc_offset + 3]) << 24);
-  if (crc_received != crc_calc) return etl::unexpected<FrameError>(FrameError::CRC_MISMATCH);
+  const uint32_t crc_received =
+      (static_cast<uint32_t>(buffer[crc_offset])) |
+      (static_cast<uint32_t>(buffer[crc_offset + 1]) << 8) |
+      (static_cast<uint32_t>(buffer[crc_offset + 2]) << 16) |
+      (static_cast<uint32_t>(buffer[crc_offset + 3]) << 24);
+  if (crc_received != crc_calc)
+    return etl::unexpected<FrameError>(FrameError::CRC_MISMATCH);
   rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
   pb_istream_t stream = pb_istream_from_buffer(buffer.data(), crc_offset);
-  if (!pb_decode(&stream, rpc_pb_RpcEnvelope_fields, &env)) return etl::unexpected<FrameError>(FrameError::MALFORMED);
-  if (env.version != PROTOCOL_VERSION) return etl::unexpected<FrameError>(FrameError::MALFORMED);
+  if (!pb_decode(&stream, rpc_pb_RpcEnvelope_fields, &env))
+    return etl::unexpected<FrameError>(FrameError::MALFORMED);
+  if (env.version != PROTOCOL_VERSION)
+    return etl::unexpected<FrameError>(FrameError::MALFORMED);
   return env;
 }
 
-} // namespace rpc
+}  // namespace rpc

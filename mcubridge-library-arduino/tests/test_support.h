@@ -16,25 +16,26 @@
 
 namespace rpc::payload {
 template <typename PbBytesArray>
-inline void copy_to_pb_bytes(PbBytesArray& dest, const uint8_t* src, size_t src_size) {
-    constexpr size_t dest_size = sizeof(dest.bytes) / sizeof(dest.bytes[0]);
-    const size_t to_copy = (src_size <= dest_size) ? src_size : dest_size;
-    dest.size = static_cast<pb_size_t>(to_copy);
-    if (to_copy > 0U) {
-        etl::copy_n(src, to_copy, dest.bytes);
-    }
+inline void copy_to_pb_bytes(PbBytesArray& dest, const uint8_t* src,
+                             size_t src_size) {
+  constexpr size_t dest_size = sizeof(dest.bytes) / sizeof(dest.bytes[0]);
+  const size_t to_copy = (src_size <= dest_size) ? src_size : dest_size;
+  dest.size = static_cast<pb_size_t>(to_copy);
+  if (to_copy > 0U) {
+    etl::copy_n(src, to_copy, dest.bytes);
+  }
 }
 
 template <typename PbStringArray>
 inline void copy_to_pb_string(PbStringArray& dest, etl::string_view src) {
-    constexpr size_t dest_size = sizeof(dest) / sizeof(dest[0]);
-    const size_t to_copy = etl::min(src.size(), dest_size - 1U);
-    if (to_copy > 0U) {
-        etl::copy_n(src.begin(), to_copy, dest);
-    }
-    dest[to_copy] = '\0';
+  constexpr size_t dest_size = sizeof(dest) / sizeof(dest[0]);
+  const size_t to_copy = etl::min(src.size(), dest_size - 1U);
+  if (to_copy > 0U) {
+    etl::copy_n(src.begin(), to_copy, dest);
+  }
+  dest[to_copy] = '\0';
 }
-} // namespace rpc::payload
+}  // namespace rpc::payload
 
 static inline uint32_t crc32_ieee(const void* data, size_t len) {
   etl::crc32 crc_calc;
@@ -44,7 +45,8 @@ static inline uint32_t crc32_ieee(const void* data, size_t len) {
 }
 
 /* Legacy convenience macros – map to Unity assertions. */
-#define TEST_ASSERT_EQ_UINT(actual, expected)   TEST_ASSERT_EQUAL_UINT32((unsigned long)(expected), (unsigned long)(actual))
+#define TEST_ASSERT_EQ_UINT(actual, expected) \
+  TEST_ASSERT_EQUAL_UINT32((unsigned long)(expected), (unsigned long)(actual))
 
 template <size_t N>
 struct ByteBuffer {
@@ -207,7 +209,8 @@ struct TestCOBS {
 
 template <size_t N>
 static bool extract_next_valid_frame(const ByteBuffer<N>& buffer,
-                                     size_t& cursor, rpc_pb_RpcEnvelope& out_frame) {
+                                     size_t& cursor,
+                                     rpc_pb_RpcEnvelope& out_frame) {
   etl::array<uint8_t, 1024> decoded_buf;
 
   while (cursor < buffer.len) {
@@ -226,8 +229,8 @@ static bool extract_next_valid_frame(const ByteBuffer<N>& buffer,
         TestCOBS::decode(&buffer.data[cursor], segment_len, decoded_buf.data());
 
     if (decoded_len >= rpc::CRC_TRAILER_SIZE + 2U) {
-      auto result =
-          rpc::parse_frame(etl::span<const uint8_t>(decoded_buf.data(), decoded_len));
+      auto result = rpc::parse_frame(
+          etl::span<const uint8_t>(decoded_buf.data(), decoded_len));
       if (result) {
         out_frame = result.value();
         cursor = end;
@@ -274,21 +277,25 @@ inline rpc_pb_RpcEnvelope build_envelope(uint16_t cmd_id, uint16_t seq_id,
   env.sequence_id = seq_id;
 
   if (!nonce.empty()) {
-    const size_t n_size = etl::min(nonce.size(), static_cast<size_t>(AEAD_NONCE_SIZE));
+    const size_t n_size =
+        etl::min(nonce.size(), static_cast<size_t>(AEAD_NONCE_SIZE));
     etl::copy_n(nonce.begin(), n_size, env.nonce.bytes);
     env.nonce.size = static_cast<pb_size_t>(n_size);
   }
 
   if (!tag.empty()) {
-    const size_t t_size = etl::min(tag.size(), static_cast<size_t>(AEAD_TAG_SIZE));
+    const size_t t_size =
+        etl::min(tag.size(), static_cast<size_t>(AEAD_TAG_SIZE));
     etl::copy_n(tag.begin(), t_size, env.tag.bytes);
     env.tag.size = static_cast<pb_size_t>(t_size);
   }
 
   if (!payload.empty()) {
-    const size_t p_size = etl::min(payload.size(), static_cast<size_t>(MAX_PAYLOAD_SIZE));
+    const size_t p_size =
+        etl::min(payload.size(), static_cast<size_t>(MAX_PAYLOAD_SIZE));
     env.which_payload_type = rpc_pb_RpcEnvelope_encrypted_payload_tag;
-    etl::copy_n(payload.begin(), p_size, env.payload_type.encrypted_payload.bytes);
+    etl::copy_n(payload.begin(), p_size,
+                env.payload_type.encrypted_payload.bytes);
     env.payload_type.encrypted_payload.size = static_cast<pb_size_t>(p_size);
   }
 
@@ -301,12 +308,13 @@ namespace bridge::test {
 template <typename T>
 void set_pb_payload(rpc_pb_RpcEnvelope& frame, const T& msg) {
   frame.which_payload_type = rpc_pb_RpcEnvelope_encrypted_payload_tag;
-  pb_ostream_t stream = pb_ostream_from_buffer(
-      frame.payload_type.encrypted_payload.bytes, 64U);
+  pb_ostream_t stream =
+      pb_ostream_from_buffer(frame.payload_type.encrypted_payload.bytes, 64U);
   if (pb_encode(&stream, rpc::Payload::get_fields<T>(), &msg)) {
-    frame.payload_type.encrypted_payload.size = static_cast<pb_size_t>(stream.bytes_written);
+    frame.payload_type.encrypted_payload.size =
+        static_cast<pb_size_t>(stream.bytes_written);
   }
 }
-} // namespace bridge::test
+}  // namespace bridge::test
 
 #endif

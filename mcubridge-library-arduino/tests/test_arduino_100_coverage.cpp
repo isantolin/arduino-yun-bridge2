@@ -3,7 +3,6 @@
 #include <etl/array.h>
 
 #include "Bridge.h"
-#include "test_support.h"
 #include "BridgeTestInterface.h"
 #include "etl_ext/CounterIterator.h"
 #include "protocol/rpc_frame.h"
@@ -58,7 +57,7 @@ void test_bridge_brute_force_commands() {
   rpc_pb_RpcEnvelope f = {};
 
   auto hit = [&](rpc::CommandId id, auto packet) {
-    f .command_id = (uint16_t)id;
+    f.command_id = (uint16_t)id;
     bridge::test::set_pb_payload(f, packet);
     ba.dispatch(f);
   };
@@ -134,11 +133,11 @@ void test_bridge_brute_force_commands() {
 
   // Mailbox
 
-  f .command_id = (uint16_t)rpc::CommandId::CMD_MAILBOX_READ;
+  f.command_id = (uint16_t)rpc::CommandId::CMD_MAILBOX_READ;
   f.payload_type.encrypted_payload.size = 0;
   ba.dispatch(f);
 
-  f .command_id = (uint16_t)rpc::CommandId::CMD_MAILBOX_AVAILABLE;
+  f.command_id = (uint16_t)rpc::CommandId::CMD_MAILBOX_AVAILABLE;
   ba.dispatch(f);
 
   // Process
@@ -207,51 +206,44 @@ void test_bridge_send_exhaustive() {
 
   uint8_t data[] = "d";
 
-  (void)Bridge.send(
-      rpc::CommandId::CMD_GET_VERSION_RESP, 1, []() {
-        rpc::payload::VersionResponse p;
-        p.major = 1;
-        p.minor = 2;
-        p.patch = 3;
-        return p;
-      }());
-  (void)Bridge.send(
-      rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, 1, []() {
-        rpc::payload::FreeMemoryResponse p;
-        p.value = 1024;
-        return p;
-      }());
+  (void)Bridge.send(rpc::CommandId::CMD_GET_VERSION_RESP, 1, []() {
+    rpc::payload::VersionResponse p;
+    p.major = 1;
+    p.minor = 2;
+    p.patch = 3;
+    return p;
+  }());
+  (void)Bridge.send(rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, 1, []() {
+    rpc::payload::FreeMemoryResponse p;
+    p.value = 1024;
+    return p;
+  }());
   (void)Bridge.send(rpc::CommandId::CMD_GET_CAPABILITIES_RESP, 1,
                     rpc::payload::Capabilities{});
-  (void)Bridge.send(
-      rpc::CommandId::CMD_DIGITAL_READ_RESP, 1, []() {
-        rpc::payload::DigitalReadResponse p;
-        p.value = 1;
-        return p;
-      }());
-  (void)Bridge.send(
-      rpc::CommandId::CMD_ANALOG_READ_RESP, 1, []() {
-        rpc::payload::AnalogReadResponse p;
-        p.value = 512;
-        return p;
-      }());
+  (void)Bridge.send(rpc::CommandId::CMD_DIGITAL_READ_RESP, 1, []() {
+    rpc::payload::DigitalReadResponse p;
+    p.value = 1;
+    return p;
+  }());
+  (void)Bridge.send(rpc::CommandId::CMD_ANALOG_READ_RESP, 1, []() {
+    rpc::payload::AnalogReadResponse p;
+    p.value = 512;
+    return p;
+  }());
 
   rpc::payload::DatastoreGetResponse dgr;
   rpc::payload::copy_to_pb_bytes(dgr.value, data, 1);
   (void)Bridge.send(rpc::CommandId::CMD_DATASTORE_GET_RESP, 1, dgr);
 
-
-
   rpc::payload::FileReadResponse frr;
   rpc::payload::copy_to_pb_bytes(frr.content, data, 1);
   (void)Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 1, frr);
 
-  (void)Bridge.send(
-      rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP, 1, []() {
-        rpc::payload::ProcessRunAsyncResponse p;
-        p.pid = 123;
-        return p;
-      }());
+  (void)Bridge.send(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP, 1, []() {
+    rpc::payload::ProcessRunAsyncResponse p;
+    p.pid = 123;
+    return p;
+  }());
 
   rpc::payload::ProcessPollResponse ppr;
   rpc::payload::copy_to_pb_bytes(ppr.stdout_data, data, 1);
@@ -286,13 +278,11 @@ void test_console_and_misc() {
   Bridge.signalXon();
 
   rpc_pb_RpcEnvelope f = {};
-  f .command_id = (uint16_t)rpc::StatusCode::STATUS_OK;
+  f.command_id = (uint16_t)rpc::StatusCode::STATUS_OK;
   ba.dispatch(f);
 
-  f .command_id = (uint16_t)rpc::StatusCode::STATUS_MALFORMED;
+  f.command_id = (uint16_t)rpc::StatusCode::STATUS_MALFORMED;
   ba.dispatch(f);
-
-
 
   // 4. Trigger etl::handle_error
   etl::exception e("msg", "file", 100);

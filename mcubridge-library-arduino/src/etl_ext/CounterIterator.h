@@ -1,9 +1,9 @@
 #ifndef MCUBRIDGE_ITERATORS_H
 #define MCUBRIDGE_ITERATORS_H
 
+#include <etl/iterator.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <etl/iterator.h>
 
 namespace bridge {
 namespace etl_ext {

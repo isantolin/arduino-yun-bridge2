@@ -43,7 +43,8 @@ struct ChunkResult {
 void forceSafeState();
 
 /**
- * @brief Portable memory fence to prevent compiler reordering in critical paths.
+ * @brief Portable memory fence to prevent compiler reordering in critical
+ * paths.
  */
 inline __attribute__((always_inline)) void memory_fence() {
   asm volatile("" ::: "memory");
@@ -140,6 +141,5 @@ struct BridgeAtomicGuard {
 };
 #define BRIDGE_ATOMIC_BLOCK if (BridgeAtomicGuard _guard{}; true)
 #endif
-
 
 #endif  // BRIDGE_HAL_H

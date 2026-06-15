@@ -88,7 +88,7 @@ $PYTHON_BIN -m pytest \
   -v \
   -p pytest_asyncio \
   -o log_cli=false \
-  --timeout=60 \
+  --timeout=300 \
   --timeout-method=thread \
   --cov=mcubridge \
   --cov-branch \

@@ -2,7 +2,6 @@
 #include <unity.h>
 
 #include "Bridge.h"
-#include "test_support.h"
 #include "BridgeTestInterface.h"
 #include "etl_ext/CounterIterator.h"
 #include "services/Console.h"
@@ -43,8 +42,6 @@ void dummy_cmd_handler(const rpc_pb_RpcEnvelope&) {}
 void dummy_status_handler(rpc::StatusCode, etl::span<const uint8_t>) {}
 }  // namespace
 
-
-
 void test_bridge_emit_status_variants() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
@@ -58,8 +55,6 @@ void test_bridge_emit_status_variants() {
   Bridge.emitStatus(rpc::StatusCode::STATUS_OK, etl::string_view(""));
   Bridge.emitStatus(rpc::StatusCode::STATUS_OK,
                     (const __FlashStringHelper*)nullptr);
-
-  
 }
 
 void test_bridge_queue_full_and_retransmit() {
@@ -86,8 +81,6 @@ void test_bridge_queue_full_and_retransmit() {
 
   // Trigger ACK for a non-waiting command
   ba.handleAck(0xFFFF);
-
-  
 }
 
 void test_filesystem_read_edge_cases() {
@@ -106,10 +99,7 @@ void test_filesystem_read_edge_cases() {
   FileSystem._onRead(req);
 
   // Coverage for observer notification
-  FileSystem.onSynchronized();
   FileSystem.onLost();
-
-  
 }
 
 void test_spi_timeout_and_error_paths() {
@@ -138,7 +128,6 @@ void test_spi_timeout_and_error_paths() {
   TEST_ASSERT_EQUAL(0, n);
 
   // Coverage for observer notification
-  SPIService.onSynchronized();
   SPIService.onLost();
 }
 
@@ -157,10 +146,7 @@ void test_process_poll_and_kill() {
   Process._onPollResponse({});
 
   // Coverage for observer notification
-  Process.onSynchronized();
   Process.onLost();
-
-  
 }
 
 void test_process_branch_error_paths() {
@@ -172,10 +158,10 @@ void test_process_branch_error_paths() {
 
   // Fill run queue (size=1) and trigger full-queue error callback path.
   captured_pid = 0;
-  Process.runAsync("ls", {},
-                   etl::delegate<void(int32_t)>::create<capture_async_handler>());
-  Process.runAsync("pwd", {},
-                   etl::delegate<void(int32_t)>::create<capture_async_handler>());
+  Process.runAsync(
+      "ls", {}, etl::delegate<void(int32_t)>::create<capture_async_handler>());
+  Process.runAsync(
+      "pwd", {}, etl::delegate<void(int32_t)>::create<capture_async_handler>());
   TEST_ASSERT_EQUAL(-1, captured_pid);
   TEST_ASSERT_EQUAL(1, Process._pending_run_async.size());
   Process._onRunAsyncResponse([]() {
@@ -203,7 +189,8 @@ void test_process_branch_error_paths() {
   TEST_ASSERT_EQUAL(-1, captured_pid);
   ProcessType::ProcessRunHandler invalid_run_handler;
   invalid_run_handler.clear();
-  Process.runAsync("x", etl::span<const etl::string_view>(overflow_args.data(), 2),
+  Process.runAsync("x",
+                   etl::span<const etl::string_view>(overflow_args.data(), 2),
                    invalid_run_handler);
 
   // Force prepend-space capacity failure (write_pos + 1 >= buffer_size).
@@ -218,8 +205,8 @@ void test_process_branch_error_paths() {
 
   // Force send failure path via safe state (TX disabled for non-system cmds).
   Bridge.enterSafeState();
-  Process.runAsync("ls", {},
-                   etl::delegate<void(int32_t)>::create<capture_async_handler>());
+  Process.runAsync(
+      "ls", {}, etl::delegate<void(int32_t)>::create<capture_async_handler>());
   TEST_ASSERT_EQUAL(-1, captured_pid);
   reset_bridge_core(Bridge, stream);
   auto& ba_recovered = TestAccessor::create(Bridge);
@@ -227,9 +214,11 @@ void test_process_branch_error_paths() {
 
   // Poll queue full path (size=1), then invalid-handler path.
   Process.reset();
-  Process.poll(10, ProcessType::ProcessPollHandler::create<capture_poll_handler>());
+  Process.poll(10,
+               ProcessType::ProcessPollHandler::create<capture_poll_handler>());
   TEST_ASSERT_EQUAL(1, Process._pending_polls.size());
-  Process.poll(11, ProcessType::ProcessPollHandler::create<capture_poll_handler>());
+  Process.poll(11,
+               ProcessType::ProcessPollHandler::create<capture_poll_handler>());
   TEST_ASSERT_EQUAL(1, Process._pending_polls.size());
 
   Process.reset();
@@ -238,7 +227,8 @@ void test_process_branch_error_paths() {
 
   // Force send failure in poll path.
   ba_recovered.clearSynchronized();
-  Process.poll(13, ProcessType::ProcessPollHandler::create<capture_poll_handler>());
+  Process.poll(13,
+               ProcessType::ProcessPollHandler::create<capture_poll_handler>());
   ba_recovered.setSynchronized();
 
   // Exercise invalid pending handlers in response dispatch.
@@ -281,10 +271,7 @@ void test_mailbox_and_datastore_variants() {
   etl::array<uint8_t, 4> mb_data1 = {1, 2, 3, 4};
   Mailbox.push(mb_data1);
 
-
-
   // Coverage for observer notification
-  Mailbox.onSynchronized();
   Mailbox.onLost();
 
   DataStore._pending_gets.clear();
@@ -298,8 +285,6 @@ void test_mailbox_and_datastore_variants() {
   invalid_get_handler.clear();
   DataStore.get("gamma", invalid_get_handler);
   DataStore._onResponse(rpc::payload::DatastoreGetResponse{});
-
-  
 }
 
 void test_bridge_fsm_resets() {
@@ -319,10 +304,12 @@ void test_checksum_direct_library_path() {
   f.version = rpc::PROTOCOL_VERSION;
   f.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_XON);
   f.sequence_id = 0;
-  
-  uint32_t crc = rpc::checksum::compute(etl::span<const uint8_t>(f.payload_type.encrypted_payload.bytes, f.payload_type.encrypted_payload.size)); // Adjusted for new checksum logic
+
+  uint32_t crc = rpc::checksum::compute(
+      etl::span<const uint8_t>(f.payload_type.encrypted_payload.bytes,
+                               f.payload_type.encrypted_payload
+                                   .size));  // Adjusted for new checksum logic
   (void)crc;
-  
 }
 
 void test_bridge_timer_callbacks() {
@@ -336,8 +323,6 @@ void test_bridge_timer_callbacks() {
   Bridge._onBaudrateChange();
   bridge::test::TestAccessor::create(Bridge).onStartupStabilized();
   Bridge._onBootloaderDelay();
-
-  
 }
 
 void test_bridge_packet_errors() {
@@ -347,8 +332,6 @@ void test_bridge_packet_errors() {
 
   // Test malformed packet (length 0)
   ba.invokePacketReceived(etl::span<const uint8_t>());
-
-  
 }
 
 void test_bridge_template_coverage() {
@@ -367,8 +350,6 @@ void test_bridge_template_coverage() {
   Bridge.onCommand(BridgeClass::CommandHandler::create<dummy_cmd_handler>());
   Bridge.onStatus(BridgeClass::StatusHandler::create<dummy_status_handler>());
   Bridge.flushStream();
-
-  
 }
 
 void test_bridge_duplicate_packet() {
@@ -381,12 +362,10 @@ void test_bridge_duplicate_packet() {
   f.version = rpc::PROTOCOL_VERSION;
   f.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_DIGITAL_WRITE);
   f.sequence_id = 10;
-  f.payload_type.encrypted_payload.size = 2; // dummy
-  
+  f.payload_type.encrypted_payload.size = 2;  // dummy
+
   bridge::router::CommandContext ctx(&f, f.command_id, 10, true, true);
   ba.dispatch(f);
-
-  
 }
 
 void test_bridge_exhaustive_command_handlers() {
@@ -442,8 +421,6 @@ void test_bridge_exhaustive_command_handlers() {
     p.pin = 0;
     return p;
   }());
-
-  
 }
 
 int main() {

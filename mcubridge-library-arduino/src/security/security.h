@@ -36,7 +36,8 @@ void hkdf_sha256(etl::span<uint8_t> out, etl::span<const uint8_t> key,
 
 /**
  * @brief Perform timing-safe HMAC-SHA256 handshake authentication.
- * [MEM-SAVE] Centralizing this logic avoids duplication in BridgeClass handlers.
+ * [MEM-SAVE] Centralizing this logic avoids duplication in BridgeClass
+ * handlers.
  */
 bool handshake_authenticate(etl::span<const uint8_t> secret,
                             etl::span<const uint8_t> nonce,
@@ -53,10 +54,9 @@ void derive_session_key(etl::span<const uint8_t> secret,
 /**
  * @brief Securely encrypt a frame's payload and populate nonce/tag.
  */
-bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id, 
+bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
                         etl::span<const uint8_t> in,
-                        etl::span<const uint8_t> key,
-                        uint64_t* nonce_counter,
+                        etl::span<const uint8_t> key, uint64_t* nonce_counter,
                         etl::span<uint8_t> out_payload,
                         etl::span<uint8_t> out_nonce,
                         etl::span<uint8_t> out_tag);
@@ -74,7 +74,8 @@ bool aead_decrypt_frame(uint16_t cmd_id, uint16_t seq_id,
 /**
  * @brief Validate monotonic nonce counter to prevent replay attacks.
  */
-bool validate_frame_nonce(etl::span<const uint8_t> nonce, uint64_t* last_seen_counter);
+bool validate_frame_nonce(etl::span<const uint8_t> nonce,
+                          uint64_t* last_seen_counter);
 
 /**
  * @brief Securely zero memory, resistant to compiler optimization.
@@ -102,13 +103,11 @@ inline bool timing_safe_equal(etl::span<const uint8_t> a,
   volatile uint8_t result = 0;
   using bridge::etl_ext::CounterIterator;
   etl::for_each(CounterIterator<size_t>(0U), CounterIterator<size_t>(a.size()),
-                [&](size_t i) {
-                  result |= (a[i] ^ b[i]);
-                });
+                [&](size_t i) { result |= (a[i] ^ b[i]); });
   return result == 0;
 }
 
 }  // namespace security
 }  // namespace rpc
 
-#endif // RPC_SECURITY_H
+#endif  // RPC_SECURITY_H

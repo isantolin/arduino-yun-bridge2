@@ -3,7 +3,6 @@
 #include <unity.h>
 
 #include "Bridge.h"
-#include "test_support.h"
 #include "BridgeTestInterface.h"
 #include "etl_ext/CounterIterator.h"
 #include "test_support.h"
@@ -28,7 +27,7 @@ void test_bridge_protocol_version_mismatch() {
   f.version = static_cast<uint8_t>(rpc::PROTOCOL_VERSION + 1);
   f.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_GET_VERSION);
   f.sequence_id = 1;
-  
+
   etl::array<uint8_t, 256> buf;
   size_t len = rpc::serialize_frame(f, buf);
   ba.invokePacketReceived(etl::span<const uint8_t>(buf.data(), len));
@@ -45,7 +44,7 @@ void test_bridge_unknown_command_jump_table() {
 
   rpc_pb_RpcEnvelope f;
   f.version = rpc::PROTOCOL_VERSION;
-  f.command_id = 254; // empty
+  f.command_id = 254;  // empty
   f.sequence_id = 1;
 
   ba.dispatch(f);
@@ -90,7 +89,7 @@ void test_bridge_packet_received_edge_cases() {
 
   etl::array<uint8_t, 256> buf;
   size_t len = rpc::serialize_frame(f, buf);
-  buf[len - 1] ^= 0xFF; // Break CRC
+  buf[len - 1] ^= 0xFF;  // Break CRC
   ba.invokePacketReceived(etl::span<const uint8_t>(buf.data(), len));
 
   TEST_ASSERT_TRUE(true);
@@ -128,8 +127,10 @@ void test_bridge_linksync_auth_failure() {
   Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, secret);
 
   rpc::payload::LinkSync sync_msg = {};
-  memset(sync_msg.nonce.bytes, 0xAA, 16); sync_msg.nonce.size = 16;
-  memset(sync_msg.tag.bytes, 0xFF, 16); sync_msg.tag.size = 16;
+  memset(sync_msg.nonce.bytes, 0xAA, 16);
+  sync_msg.nonce.size = 16;
+  memset(sync_msg.tag.bytes, 0xFF, 16);
+  sync_msg.tag.size = 16;
 
   rpc_pb_RpcEnvelope f;
   f.version = rpc::PROTOCOL_VERSION;
@@ -152,7 +153,6 @@ void test_bridge_retransmit_empty_queue() {
   TEST_ASSERT_TRUE(true);
 }
 
-
 void test_bridge_security_pre_sync_rejection() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
@@ -166,7 +166,7 @@ void test_bridge_security_pre_sync_rejection() {
   f.version = rpc::PROTOCOL_VERSION;
   f.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_GET_FREE_MEMORY);
   f.sequence_id = 1;
-  
+
   ba.dispatch(f);
 
   TEST_ASSERT_FALSE(ba.isSynchronized());
@@ -182,16 +182,16 @@ void test_bridge_nonce_reuse_attack() {
 
   // 1. Sync properly
   rpc::payload::LinkSync sync_msg = {};
-  memset(sync_msg.nonce.bytes, 0xAA, 16); sync_msg.nonce.size = 16;
-  ba.computeHandshakeTag(sync_msg.nonce.bytes, 16,
-                         sync_msg.tag.bytes);
+  memset(sync_msg.nonce.bytes, 0xAA, 16);
+  sync_msg.nonce.size = 16;
+  ba.computeHandshakeTag(sync_msg.nonce.bytes, 16, sync_msg.tag.bytes);
   sync_msg.tag.size = 16;
 
   rpc_pb_RpcEnvelope f;
   f.version = rpc::PROTOCOL_VERSION;
   f.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_LINK_SYNC);
   f.sequence_id = 1;
-  
+
   bridge::test::set_pb_payload(f, sync_msg);
   ba.dispatch(f);
   TEST_ASSERT_TRUE(ba.isSynchronized());

@@ -1,14 +1,15 @@
-#include "hal/hal.h"
-#include "config/bridge_config.h"
-#include "BridgeFaultInjection.h"
-#include "protocol/rpc_protocol.h"
-#include <etl/string.h>
 #include <errno.h>
+#include <etl/string.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+
+#include "BridgeFaultInjection.h"
+#include "config/bridge_config.h"
+#include "hal/hal.h"
+#include "protocol/rpc_protocol.h"
 
 bool g_host_has_sd = true;
 bool g_host_fs_enabled = true;
@@ -18,11 +19,14 @@ namespace hal {
 
 constexpr char kHostFilesystemRoot[] = "/tmp/mcubridge-host-fs";
 constexpr size_t kHostFilesystemRootLength = sizeof(kHostFilesystemRoot) - 1U;
-constexpr size_t kHostFilesystemPathCapacity = kHostFilesystemRootLength + rpc::RPC_MAX_FILEPATH_LENGTH + 2U;
+constexpr size_t kHostFilesystemPathCapacity =
+    kHostFilesystemRootLength + rpc::RPC_MAX_FILEPATH_LENGTH + 2U;
 using PathString = etl::string<kHostFilesystemPathCapacity>;
 
 static bool resolve_to_full_path(etl::string_view path, PathString& full_path) {
-  if (path.empty() || path.front() == '/' || path.find("..") != etl::string_view::npos) return false;
+  if (path.empty() || path.front() == '/' ||
+      path.find("..") != etl::string_view::npos)
+    return false;
   full_path.assign(kHostFilesystemRoot);
   full_path.append("/");
   full_path.append(path.data(), path.length());
@@ -51,47 +55,70 @@ static bool ensure_host_parent_directories(const PathString& full_path) {
 
 bool hasSD() { return g_host_fs_enabled && g_host_has_sd; }
 
-etl::expected<void, HalError> writeFile(etl::string_view path, etl::span<const uint8_t> data) {
-  if (!g_host_fs_enabled) return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
+etl::expected<void, HalError> writeFile(etl::string_view path,
+                                        etl::span<const uint8_t> data) {
+  if (!g_host_fs_enabled)
+    return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
   PathString full_path;
-  if (!resolve_to_full_path(path, full_path) || !ensure_host_parent_directories(full_path)) return etl::unexpected<HalError>(HalError::IO_ERROR);
+  if (!resolve_to_full_path(path, full_path) ||
+      !ensure_host_parent_directories(full_path))
+    return etl::unexpected<HalError>(HalError::IO_ERROR);
   FILE* file = fopen(full_path.c_str(), "wb");
   if (file == nullptr) return etl::unexpected<HalError>(HalError::IO_ERROR);
   const size_t bytes_written = fwrite(data.data(), 1U, data.size(), file);
-  fflush(file); fclose(file);
-  return (bytes_written == data.size()) ? etl::expected<void, HalError>{} : etl::unexpected<HalError>(HalError::IO_ERROR);
+  fflush(file);
+  fclose(file);
+  return (bytes_written == data.size())
+             ? etl::expected<void, HalError>{}
+             : etl::unexpected<HalError>(HalError::IO_ERROR);
 }
 
-etl::expected<ChunkResult, HalError> readFileChunk(etl::string_view path, size_t offset, etl::span<uint8_t> buffer) {
-  if (!g_host_fs_enabled) return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
+etl::expected<ChunkResult, HalError> readFileChunk(etl::string_view path,
+                                                   size_t offset,
+                                                   etl::span<uint8_t> buffer) {
+  if (!g_host_fs_enabled)
+    return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
   PathString full_path;
-  if (!resolve_to_full_path(path, full_path)) return etl::unexpected<HalError>(HalError::INVALID_ARGUMENT);
+  if (!resolve_to_full_path(path, full_path))
+    return etl::unexpected<HalError>(HalError::INVALID_ARGUMENT);
   struct stat st = {};
-  if ((::stat(full_path.c_str(), &st) != 0) || !S_ISREG(st.st_mode)) return etl::unexpected<HalError>(HalError::NOT_FOUND);
+  if ((::stat(full_path.c_str(), &st) != 0) || !S_ISREG(st.st_mode))
+    return etl::unexpected<HalError>(HalError::NOT_FOUND);
   const size_t file_size = static_cast<size_t>(st.st_size);
-  if (offset > file_size) return etl::unexpected<HalError>(HalError::INVALID_ARGUMENT);
+  if (offset > file_size)
+    return etl::unexpected<HalError>(HalError::INVALID_ARGUMENT);
   FILE* file = fopen(full_path.c_str(), "rb");
   if (file == nullptr) return etl::unexpected<HalError>(HalError::IO_ERROR);
-  if ((offset > 0U) && (fseek(file, static_cast<long>(offset), SEEK_SET) != 0)) { fclose(file); return etl::unexpected<HalError>(HalError::IO_ERROR); }
+  if ((offset > 0U) &&
+      (fseek(file, static_cast<long>(offset), SEEK_SET) != 0)) {
+    fclose(file);
+    return etl::unexpected<HalError>(HalError::IO_ERROR);
+  }
   ChunkResult result = {};
   result.bytes_read = fread(buffer.data(), 1U, buffer.size(), file);
-  bool failed = ferror(file) != 0; fclose(file);
+  bool failed = ferror(file) != 0;
+  fclose(file);
   if (failed) return etl::unexpected<HalError>(HalError::IO_ERROR);
   result.has_more = (offset + result.bytes_read) < file_size;
   if (bridge::test::fault::consume(
           bridge::test::fault::FaultPoint::FILESYSTEM_TIMEOUT)) {
-    bridge::test::fault::advance_clock_ms(bridge::config::SERIAL_TIMEOUT_MS + 1U);
+    bridge::test::fault::advance_clock_ms(bridge::config::SERIAL_TIMEOUT_MS +
+                                          1U);
     result.has_more = true;
   }
   return result;
 }
 
 etl::expected<void, HalError> removeFile(etl::string_view path) {
-  if (!g_host_fs_enabled) return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
+  if (!g_host_fs_enabled)
+    return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
   PathString full_path;
-  if (!resolve_to_full_path(path, full_path)) return etl::unexpected<HalError>(HalError::INVALID_ARGUMENT);
-  return (::unlink(full_path.c_str()) == 0) ? etl::expected<void, HalError>{} : etl::unexpected<HalError>(HalError::IO_ERROR);
+  if (!resolve_to_full_path(path, full_path))
+    return etl::unexpected<HalError>(HalError::INVALID_ARGUMENT);
+  return (::unlink(full_path.c_str()) == 0)
+             ? etl::expected<void, HalError>{}
+             : etl::unexpected<HalError>(HalError::IO_ERROR);
 }
 
-} // namespace hal
-} // namespace bridge
+}  // namespace hal
+}  // namespace bridge

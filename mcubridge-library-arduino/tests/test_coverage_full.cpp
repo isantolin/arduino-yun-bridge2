@@ -2,7 +2,6 @@
 #include <etl/array.h>
 
 #include "Bridge.h"
-#include "test_support.h"
 #include "BridgeTestInterface.h"
 #include "etl_ext/CounterIterator.h"
 #include "hal/hal.h"
@@ -53,10 +52,11 @@ void test_bridge_coverage() {
   f_unknown.command_id = 999;
   ba.dispatch(f_unknown);
 
-  Bridge.onCommand(
-      etl::delegate<void(const rpc_pb_RpcEnvelope&)>::create<dummy_command_handler>());
+  Bridge.onCommand(etl::delegate<void(const rpc_pb_RpcEnvelope&)>::create<
+                   dummy_command_handler>());
   ba.dispatch(f_unknown);
-  Bridge.onCommand(etl::delegate<void(const rpc_pb_RpcEnvelope&)>::create<nullptr>());
+  Bridge.onCommand(
+      etl::delegate<void(const rpc_pb_RpcEnvelope&)>::create<nullptr>());
 
   // 2. Duplicate Sequence ID
   printf("  - Step 2: Duplicate Sequence ID\n");
@@ -152,8 +152,7 @@ void test_bridge_coverage() {
   DataStore._onResponse(ds_get_p);
 
   rpc_pb_RpcEnvelope f_dsg = {};
-  f_dsg.command_id =
-      (uint16_t)rpc::CommandId::CMD_DATASTORE_GET_RESP;
+  f_dsg.command_id = (uint16_t)rpc::CommandId::CMD_DATASTORE_GET_RESP;
   bridge::test::set_pb_payload(f_dsg, ds_get_p);
   ba.dispatch(f_dsg);
 
@@ -161,7 +160,6 @@ void test_bridge_coverage() {
   printf("  - Step 6: Mailbox\n");
   uint8_t mbox_data[32] = {0};
   (void)Mailbox.push(etl::span<const uint8_t>(mbox_data, 3));
-
 
   Mailbox.onLost();
   Mailbox.requestRead();
@@ -229,9 +227,8 @@ void test_bridge_coverage() {
 
   // 9. Process
   printf("  - Step 9: Process\n");
-  Process.runAsync(
-      "ls", etl::span<const etl::string_view>(),
-      etl::delegate<void(int32_t)>::create<dummy_process_run>());
+  Process.runAsync("ls", etl::span<const etl::string_view>(),
+                   etl::delegate<void(int32_t)>::create<dummy_process_run>());
   Process.kill(1);
   Process.poll(1, etl::delegate<void(
                       rpc::StatusCode, uint16_t, etl::span<const uint8_t>,
@@ -251,8 +248,7 @@ void test_bridge_coverage() {
   Process._onRunAsyncResponse(prar);
 
   rpc_pb_RpcEnvelope f_prar = {};
-  f_prar.command_id =
-      (uint16_t)rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP;
+  f_prar.command_id = (uint16_t)rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP;
   bridge::test::set_pb_payload(f_prar, prar);
   ba.dispatch(f_prar);
 
@@ -262,8 +258,7 @@ void test_bridge_coverage() {
   Process._onPollResponse(ppr_p);
 
   rpc_pb_RpcEnvelope f_ppr = {};
-  f_ppr.command_id =
-      (uint16_t)rpc::CommandId::CMD_PROCESS_POLL_RESP;
+  f_ppr.command_id = (uint16_t)rpc::CommandId::CMD_PROCESS_POLL_RESP;
   bridge::test::set_pb_payload(f_ppr, ppr_p);
   ba.dispatch(f_ppr);
 
@@ -383,8 +378,7 @@ void test_bridge_coverage() {
   ba.dispatch(f_lr);
 
   rpc_pb_RpcEnvelope f_cap = {};
-  f_cap.command_id =
-      (uint16_t)rpc::CommandId::CMD_GET_CAPABILITIES;
+  f_cap.command_id = (uint16_t)rpc::CommandId::CMD_GET_CAPABILITIES;
   ba.dispatch(f_cap);
 
   rpc_pb_RpcEnvelope f_xoff = {};

@@ -32,12 +32,13 @@ namespace checksum {
 inline uint32_t compute(etl::span<const uint8_t> data) {
   return etl::crc32_t16(data.begin(), data.end());
 }
-}
+}  // namespace checksum
 
 namespace Payload {
 
 // [OPTIMIZATION] Non-template implementation to reduce Flash bloat.
-bool _parse_impl(const rpc_pb_RpcEnvelope& env, const pb_msgdesc_t* fields, void* dest);
+bool _parse_impl(const rpc_pb_RpcEnvelope& env, const pb_msgdesc_t* fields,
+                 void* dest);
 
 template <typename T>
 inline uint32_t get_tag();
@@ -48,62 +49,113 @@ inline void set_field(rpc_pb_RpcEnvelope& env, const T& packet);
 template <typename T>
 inline etl::expected<T, FrameError> parse(const rpc_pb_RpcEnvelope& env);
 
-#define DEFN_PAYLOAD_HELPERS(type, field, tag) template <> inline uint32_t get_tag<type>() { return 0; } template <> inline void set_field<type>(rpc_pb_RpcEnvelope& env, const type& packet) {     (void)env; (void)packet; } template <> inline etl::expected<type, FrameError> parse<type>(const rpc_pb_RpcEnvelope& env) {     type msg = {};     if (_parse_impl(env, rpc::Payload::get_fields<type>(), &msg)) return msg;     return etl::unexpected<FrameError>(FrameError::MALFORMED); }
-DEFN_PAYLOAD_HELPERS(rpc_pb_VersionResponse, version_resp, rpc_pb_RpcEnvelope_version_resp_tag)
-DEFN_PAYLOAD_HELPERS(rpc_pb_FreeMemoryResponse, free_memory_resp, rpc_pb_RpcEnvelope_free_memory_resp_tag)
-DEFN_PAYLOAD_HELPERS(rpc_pb_Capabilities, capabilities, rpc_pb_RpcEnvelope_capabilities_tag)
+#define DEFN_PAYLOAD_HELPERS(type, field, tag)                                \
+  template <>                                                                 \
+  inline uint32_t get_tag<type>() {                                           \
+    return 0;                                                                 \
+  }                                                                           \
+  template <>                                                                 \
+  inline void set_field<type>(rpc_pb_RpcEnvelope & env, const type& packet) { \
+    (void)env;                                                                \
+    (void)packet;                                                             \
+  }                                                                           \
+  template <>                                                                 \
+  inline etl::expected<type, FrameError> parse<type>(                         \
+      const rpc_pb_RpcEnvelope& env) {                                        \
+    type msg = {};                                                            \
+    if (_parse_impl(env, rpc::Payload::get_fields<type>(), &msg)) return msg; \
+    return etl::unexpected<FrameError>(FrameError::MALFORMED);                \
+  }
+DEFN_PAYLOAD_HELPERS(rpc_pb_VersionResponse, version_resp,
+                     rpc_pb_RpcEnvelope_version_resp_tag)
+DEFN_PAYLOAD_HELPERS(rpc_pb_FreeMemoryResponse, free_memory_resp,
+                     rpc_pb_RpcEnvelope_free_memory_resp_tag)
+DEFN_PAYLOAD_HELPERS(rpc_pb_Capabilities, capabilities,
+                     rpc_pb_RpcEnvelope_capabilities_tag)
 DEFN_PAYLOAD_HELPERS(rpc_pb_PinMode, pin_mode, rpc_pb_RpcEnvelope_pin_mode_tag)
-DEFN_PAYLOAD_HELPERS(rpc_pb_DigitalWrite, digital_write, rpc_pb_RpcEnvelope_digital_write_tag)
-DEFN_PAYLOAD_HELPERS(rpc_pb_AnalogWrite, analog_write, rpc_pb_RpcEnvelope_analog_write_tag)
+DEFN_PAYLOAD_HELPERS(rpc_pb_DigitalWrite, digital_write,
+                     rpc_pb_RpcEnvelope_digital_write_tag)
+DEFN_PAYLOAD_HELPERS(rpc_pb_AnalogWrite, analog_write,
+                     rpc_pb_RpcEnvelope_analog_write_tag)
 DEFN_PAYLOAD_HELPERS(rpc_pb_PinRead, pin_read, rpc_pb_RpcEnvelope_pin_read_tag)
-DEFN_PAYLOAD_HELPERS(rpc_pb_DigitalReadResponse, digital_read_resp, rpc_pb_RpcEnvelope_digital_read_resp_tag)
-DEFN_PAYLOAD_HELPERS(rpc_pb_AnalogReadResponse, analog_read_resp, rpc_pb_RpcEnvelope_analog_read_resp_tag)
-DEFN_PAYLOAD_HELPERS(rpc_pb_ConsoleWrite, console_write, rpc_pb_RpcEnvelope_console_write_tag)
-DEFN_PAYLOAD_HELPERS(rpc_pb_DatastorePut, datastore_put, rpc_pb_RpcEnvelope_datastore_put_tag)
-DEFN_PAYLOAD_HELPERS(rpc_pb_DatastoreGet, datastore_get, rpc_pb_RpcEnvelope_datastore_get_tag)
-DEFN_PAYLOAD_HELPERS(rpc_pb_DatastoreGetResponse, datastore_get_resp, rpc_pb_RpcEnvelope_datastore_get_resp_tag)
-DEFN_PAYLOAD_HELPERS(rpc_pb_MailboxPush, mailbox_push, rpc_pb_RpcEnvelope_mailbox_push_tag)
-DEFN_PAYLOAD_HELPERS(rpc_pb_MailboxProcessed, mailbox_processed, rpc_pb_RpcEnvelope_mailbox_processed_tag)
-DEFN_PAYLOAD_HELPERS(rpc_pb_MailboxAvailableResponse, mailbox_available_resp, rpc_pb_RpcEnvelope_mailbox_available_resp_tag)
-DEFN_PAYLOAD_HELPERS(rpc_pb_MailboxReadResponse, mailbox_read_resp, rpc_pb_RpcEnvelope_mailbox_read_resp_tag)
-DEFN_PAYLOAD_HELPERS(rpc_pb_FileWrite, file_write, rpc_pb_RpcEnvelope_file_write_tag)
-DEFN_PAYLOAD_HELPERS(rpc_pb_FileRead, file_read, rpc_pb_RpcEnvelope_file_read_tag)
-DEFN_PAYLOAD_HELPERS(rpc_pb_FileRemove, file_remove, rpc_pb_RpcEnvelope_file_remove_tag)
-DEFN_PAYLOAD_HELPERS(rpc_pb_FileReadResponse, file_read_resp, rpc_pb_RpcEnvelope_file_read_resp_tag)
-DEFN_PAYLOAD_HELPERS(rpc_pb_ProcessRunAsync, process_run_async, rpc_pb_RpcEnvelope_process_run_async_tag)
-DEFN_PAYLOAD_HELPERS(rpc_pb_ProcessRunAsyncResponse, process_run_async_resp, rpc_pb_RpcEnvelope_process_run_async_resp_tag)
-DEFN_PAYLOAD_HELPERS(rpc_pb_ProcessPoll, process_poll, rpc_pb_RpcEnvelope_process_poll_tag)
-DEFN_PAYLOAD_HELPERS(rpc_pb_ProcessPollResponse, process_poll_resp, rpc_pb_RpcEnvelope_process_poll_resp_tag)
-DEFN_PAYLOAD_HELPERS(rpc_pb_ProcessKill, process_kill, rpc_pb_RpcEnvelope_process_kill_tag)
-DEFN_PAYLOAD_HELPERS(rpc_pb_GenericResponse, generic_resp, rpc_pb_RpcEnvelope_generic_resp_tag)
-DEFN_PAYLOAD_HELPERS(rpc_pb_AckPacket, ack_packet, rpc_pb_RpcEnvelope_ack_packet_tag)
-DEFN_PAYLOAD_HELPERS(rpc_pb_HandshakeConfig, handshake_config, rpc_pb_RpcEnvelope_handshake_config_tag)
-DEFN_PAYLOAD_HELPERS(rpc_pb_SetBaudratePacket, set_baudrate_packet, rpc_pb_RpcEnvelope_set_baudrate_packet_tag)
-DEFN_PAYLOAD_HELPERS(rpc_pb_LinkSync, link_sync, rpc_pb_RpcEnvelope_link_sync_tag)
-DEFN_PAYLOAD_HELPERS(rpc_pb_EnterBootloader, enter_bootloader, rpc_pb_RpcEnvelope_enter_bootloader_tag)
-DEFN_PAYLOAD_HELPERS(rpc_pb_SpiTransfer, spi_transfer, rpc_pb_RpcEnvelope_spi_transfer_tag)
-DEFN_PAYLOAD_HELPERS(rpc_pb_SpiTransferResponse, spi_transfer_resp, rpc_pb_RpcEnvelope_spi_transfer_resp_tag)
-DEFN_PAYLOAD_HELPERS(rpc_pb_SpiConfig, spi_config, rpc_pb_RpcEnvelope_spi_config_tag)
+DEFN_PAYLOAD_HELPERS(rpc_pb_DigitalReadResponse, digital_read_resp,
+                     rpc_pb_RpcEnvelope_digital_read_resp_tag)
+DEFN_PAYLOAD_HELPERS(rpc_pb_AnalogReadResponse, analog_read_resp,
+                     rpc_pb_RpcEnvelope_analog_read_resp_tag)
+DEFN_PAYLOAD_HELPERS(rpc_pb_ConsoleWrite, console_write,
+                     rpc_pb_RpcEnvelope_console_write_tag)
+DEFN_PAYLOAD_HELPERS(rpc_pb_DatastorePut, datastore_put,
+                     rpc_pb_RpcEnvelope_datastore_put_tag)
+DEFN_PAYLOAD_HELPERS(rpc_pb_DatastoreGet, datastore_get,
+                     rpc_pb_RpcEnvelope_datastore_get_tag)
+DEFN_PAYLOAD_HELPERS(rpc_pb_DatastoreGetResponse, datastore_get_resp,
+                     rpc_pb_RpcEnvelope_datastore_get_resp_tag)
+DEFN_PAYLOAD_HELPERS(rpc_pb_MailboxPush, mailbox_push,
+                     rpc_pb_RpcEnvelope_mailbox_push_tag)
+DEFN_PAYLOAD_HELPERS(rpc_pb_MailboxProcessed, mailbox_processed,
+                     rpc_pb_RpcEnvelope_mailbox_processed_tag)
+DEFN_PAYLOAD_HELPERS(rpc_pb_MailboxAvailableResponse, mailbox_available_resp,
+                     rpc_pb_RpcEnvelope_mailbox_available_resp_tag)
+DEFN_PAYLOAD_HELPERS(rpc_pb_MailboxReadResponse, mailbox_read_resp,
+                     rpc_pb_RpcEnvelope_mailbox_read_resp_tag)
+DEFN_PAYLOAD_HELPERS(rpc_pb_FileWrite, file_write,
+                     rpc_pb_RpcEnvelope_file_write_tag)
+DEFN_PAYLOAD_HELPERS(rpc_pb_FileRead, file_read,
+                     rpc_pb_RpcEnvelope_file_read_tag)
+DEFN_PAYLOAD_HELPERS(rpc_pb_FileRemove, file_remove,
+                     rpc_pb_RpcEnvelope_file_remove_tag)
+DEFN_PAYLOAD_HELPERS(rpc_pb_FileReadResponse, file_read_resp,
+                     rpc_pb_RpcEnvelope_file_read_resp_tag)
+DEFN_PAYLOAD_HELPERS(rpc_pb_ProcessRunAsync, process_run_async,
+                     rpc_pb_RpcEnvelope_process_run_async_tag)
+DEFN_PAYLOAD_HELPERS(rpc_pb_ProcessRunAsyncResponse, process_run_async_resp,
+                     rpc_pb_RpcEnvelope_process_run_async_resp_tag)
+DEFN_PAYLOAD_HELPERS(rpc_pb_ProcessPoll, process_poll,
+                     rpc_pb_RpcEnvelope_process_poll_tag)
+DEFN_PAYLOAD_HELPERS(rpc_pb_ProcessPollResponse, process_poll_resp,
+                     rpc_pb_RpcEnvelope_process_poll_resp_tag)
+DEFN_PAYLOAD_HELPERS(rpc_pb_ProcessKill, process_kill,
+                     rpc_pb_RpcEnvelope_process_kill_tag)
+DEFN_PAYLOAD_HELPERS(rpc_pb_GenericResponse, generic_resp,
+                     rpc_pb_RpcEnvelope_generic_resp_tag)
+DEFN_PAYLOAD_HELPERS(rpc_pb_AckPacket, ack_packet,
+                     rpc_pb_RpcEnvelope_ack_packet_tag)
+DEFN_PAYLOAD_HELPERS(rpc_pb_HandshakeConfig, handshake_config,
+                     rpc_pb_RpcEnvelope_handshake_config_tag)
+DEFN_PAYLOAD_HELPERS(rpc_pb_SetBaudratePacket, set_baudrate_packet,
+                     rpc_pb_RpcEnvelope_set_baudrate_packet_tag)
+DEFN_PAYLOAD_HELPERS(rpc_pb_LinkSync, link_sync,
+                     rpc_pb_RpcEnvelope_link_sync_tag)
+DEFN_PAYLOAD_HELPERS(rpc_pb_EnterBootloader, enter_bootloader,
+                     rpc_pb_RpcEnvelope_enter_bootloader_tag)
+DEFN_PAYLOAD_HELPERS(rpc_pb_SpiTransfer, spi_transfer,
+                     rpc_pb_RpcEnvelope_spi_transfer_tag)
+DEFN_PAYLOAD_HELPERS(rpc_pb_SpiTransferResponse, spi_transfer_resp,
+                     rpc_pb_RpcEnvelope_spi_transfer_resp_tag)
+DEFN_PAYLOAD_HELPERS(rpc_pb_SpiConfig, spi_config,
+                     rpc_pb_RpcEnvelope_spi_config_tag)
 
 #undef DEFN_PAYLOAD_HELPERS
 
-}
+}  // namespace Payload
 
-
-inline size_t serialize_frame(const rpc_pb_RpcEnvelope& env, etl::span<uint8_t> buffer) {
+inline size_t serialize_frame(const rpc_pb_RpcEnvelope& env,
+                              etl::span<uint8_t> buffer) {
   if (buffer.size() < CRC_TRAILER_SIZE) return 0;
-  pb_ostream_t mem_stream = pb_ostream_from_buffer(buffer.data(), buffer.size() - CRC_TRAILER_SIZE);
+  pb_ostream_t mem_stream =
+      pb_ostream_from_buffer(buffer.data(), buffer.size() - CRC_TRAILER_SIZE);
   if (!pb_encode(&mem_stream, rpc_pb_RpcEnvelope_fields, &env)) return 0;
   const size_t encoded_size = mem_stream.bytes_written;
   const uint32_t crc = checksum::compute(buffer.subspan(0, encoded_size));
-  buffer[encoded_size]     = static_cast<uint8_t>(crc & 0xFF);
+  buffer[encoded_size] = static_cast<uint8_t>(crc & 0xFF);
   buffer[encoded_size + 1] = static_cast<uint8_t>((crc >> 8) & 0xFF);
   buffer[encoded_size + 2] = static_cast<uint8_t>((crc >> 16) & 0xFF);
   buffer[encoded_size + 3] = static_cast<uint8_t>((crc >> 24) & 0xFF);
   return encoded_size + CRC_TRAILER_SIZE;
 }
 
-etl::expected<rpc_pb_RpcEnvelope, FrameError> parse_frame(etl::span<const uint8_t> buffer);
+etl::expected<rpc_pb_RpcEnvelope, FrameError> parse_frame(
+    etl::span<const uint8_t> buffer);
 
-} // namespace rpc
+}  // namespace rpc
 #endif

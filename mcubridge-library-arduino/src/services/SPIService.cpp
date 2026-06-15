@@ -24,8 +24,7 @@ void SPIServiceClass<T>::end() {
 
 template <typename T>
 void SPIServiceClass<T>::setConfig(const rpc::payload::SpiConfig& config) {
-  _settings = SPISettings(config.frequency, config.bit_order,
-                          config.data_mode);
+  _settings = SPISettings(config.frequency, config.bit_order, config.data_mode);
 }
 
 template <typename T>

@@ -4,13 +4,11 @@
 
 #define BRIDGE_ENABLE_TEST_INTERFACE 1
 #include "Bridge.h"
-#include "test_support.h"
 #include "BridgeTestInterface.h"
 #include "services/Console.h"
 #include "services/DataStore.h"
 #include "services/Mailbox.h"
 #include "services/Process.h"
-
 #include "test_support.h"
 
 // Define the global delegates and stubs for HardwareSerial stub
@@ -41,17 +39,15 @@ void test_all_handlers_coverage() {
   frame.version = rpc::PROTOCOL_VERSION;
   frame.command_id = rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION);
   TestAccessor::create(Bridge).dispatch(frame);
-    Mailbox.process();
+  Mailbox.process();
 
-  frame.command_id =
-      rpc::to_underlying(rpc::CommandId::CMD_GET_FREE_MEMORY);
+  frame.command_id = rpc::to_underlying(rpc::CommandId::CMD_GET_FREE_MEMORY);
   TestAccessor::create(Bridge).dispatch(frame);
-    Mailbox.process();
+  Mailbox.process();
 
-  frame.command_id =
-      rpc::to_underlying(rpc::CommandId::CMD_GET_CAPABILITIES);
+  frame.command_id = rpc::to_underlying(rpc::CommandId::CMD_GET_CAPABILITIES);
   TestAccessor::create(Bridge).dispatch(frame);
-    Mailbox.process();
+  Mailbox.process();
 }
 
 void test_process_api() {
@@ -107,8 +103,10 @@ void test_mailbox_api() {
   last_message_len = 0;
   last_available_count = 0;
 
-  Mailbox.registerMessageCallback(MailboxType::MessageCallback::create<my_message_callback>());
-  Mailbox.registerAvailableCallback(MailboxType::AvailableCallback::create<my_available_callback>());
+  Mailbox.registerMessageCallback(
+      MailboxType::MessageCallback::create<my_message_callback>());
+  Mailbox.registerAvailableCallback(
+      MailboxType::AvailableCallback::create<my_available_callback>());
 
   // 2. Test sending commands
   uint8_t raw_payload[] = {0xAA, 0xBB, 0xCC};
@@ -145,7 +143,8 @@ void test_mailbox_api() {
     read_resp.content.bytes[0] = 0x33;
     read_resp.content.bytes[1] = 0x44;
     read_resp.content.bytes[2] = 0x55;
-    frame.command_id = rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_READ_RESP);
+    frame.command_id =
+        rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_READ_RESP);
     bridge::test::set_pb_payload(frame, read_resp);
     TestAccessor::create(Bridge).dispatch(frame);
     Mailbox.process();
@@ -160,7 +159,8 @@ void test_mailbox_api() {
   {
     rpc_pb_MailboxAvailableResponse avail_resp = {};
     avail_resp.count = 42;
-    frame.command_id = rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP);
+    frame.command_id =
+        rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP);
     bridge::test::set_pb_payload(frame, avail_resp);
     TestAccessor::create(Bridge).dispatch(frame);
     Mailbox.process();

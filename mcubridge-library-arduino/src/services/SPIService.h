@@ -14,7 +14,7 @@
 
 template <typename T = void>
 class SPIServiceClass {
-public:
+ public:
   SPIServiceClass();
 
   void begin();
@@ -22,10 +22,9 @@ public:
   void setConfig(const rpc::payload::SpiConfig& config);
   size_t transfer(etl::span<uint8_t> buffer);
 
-  static void onSynchronized() {}
   void onLost() { end(); }
 
-private:
+ private:
   bool _initialized;
   SPISettings _settings;
 };
@@ -33,5 +32,5 @@ private:
 using SPIServiceType = SPIServiceClass<>;
 extern SPIServiceType SPIService;
 
-#endif // BRIDGE_ENABLE_SPI
-#endif // BRIDGE_SPI_SERVICE_H
+#endif  // BRIDGE_ENABLE_SPI
+#endif  // BRIDGE_SPI_SERVICE_H

@@ -2,7 +2,6 @@
 #include <unity.h>
 
 #include "Bridge.h"
-#include "test_support.h"
 #include "BridgeTestInterface.h"
 #include "security/security.h"
 #include "test_support.h"
@@ -26,10 +25,9 @@ void test_surgical_bridge_errors() {
 
   // 1. Replay detection (Same nonce counter)
   rpc_pb_RpcEnvelope f = rpc_pb_RpcEnvelope_init_default;
-  f .version = rpc::PROTOCOL_VERSION;
-  f .command_id =
-      static_cast<uint16_t>(rpc::CommandId::CMD_LINK_SYNC);
-  f .sequence_id = 1;
+  f.version = rpc::PROTOCOL_VERSION;
+  f.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_LINK_SYNC);
+  f.sequence_id = 1;
   f.payload_type.encrypted_payload.size = 32;
   // Bridge saves the last counter. We'll dispatch once.
   ba.dispatch(f);
@@ -46,15 +44,13 @@ void test_surgical_bridge_errors() {
 
   // 3. Unknown Command in dispatch
   rpc_pb_RpcEnvelope f_unk = rpc_pb_RpcEnvelope_init_default;
-  f_unk .version = rpc::PROTOCOL_VERSION;
-  f_unk .command_id = 999;
+  f_unk.version = rpc::PROTOCOL_VERSION;
+  f_unk.command_id = 999;
   ba.dispatch(f_unk);
 
   // 4. Bad version
-  f_unk .version = 0;
+  f_unk.version = 0;
   ba.dispatch(f_unk);
-
-  
 }
 
 void test_surgical_fsm_resets() {
@@ -68,8 +64,6 @@ void test_surgical_fsm_resets() {
   ba.trigger(bridge::fsm::EvReset());
   ba.setSynchronized();
   ba.trigger(bridge::fsm::EvReset());
-
-  
 }
 
 void test_surgical_security_failures() {
@@ -93,8 +87,6 @@ void test_surgical_tasks_flow() {
   // TimerTask ACK timeout
   ba.setSynchronized();
   ba.onAckTimeout();
-
-  
 }
 
 int main() {

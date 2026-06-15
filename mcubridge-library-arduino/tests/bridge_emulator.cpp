@@ -1,18 +1,18 @@
 #include <fcntl.h>
 #include <poll.h>
+#include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <termios.h>
 #include <time.h>
 #include <unistd.h>
-#include <signal.h>
 
 #define BRIDGE_HOST_TEST 1
 #define ARDUINO_STUB_CUSTOM_MILLIS 1
 #include "Bridge.h"
-#include "services/Console.h"
 #include "host_serial_stream.h"
+#include "services/Console.h"
 
 // External delegate for stream
 Stream* g_arduino_stream_delegate = nullptr;

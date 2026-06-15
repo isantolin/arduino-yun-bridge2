@@ -10,7 +10,8 @@ template <typename T>
 DataStoreClass<T>::DataStoreClass() {}
 
 template <typename T>
-void DataStoreClass<T>::set(etl::string_view key, etl::span<const uint8_t> value) {
+void DataStoreClass<T>::set(etl::string_view key,
+                            etl::span<const uint8_t> value) {
   rpc::payload::DatastorePut p = {};
   const size_t k_copy = etl::min(key.size(), sizeof(p.key) - 1U);
   if (k_copy > 0U) {
@@ -22,7 +23,8 @@ void DataStoreClass<T>::set(etl::string_view key, etl::span<const uint8_t> value
   if (v_copy > 0U) {
     etl::copy_n(value.data(), v_copy, p.value.bytes);
   }
-  if (!Bridge.send(rpc::CommandId::CMD_DATASTORE_PUT, 0, p)) {}
+  if (!Bridge.send(rpc::CommandId::CMD_DATASTORE_PUT, 0, p)) {
+  }
 }
 
 template <typename T>

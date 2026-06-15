@@ -6,14 +6,11 @@
 #undef max
 #include <etl/array.h>
 #include <etl/circular_buffer.h>
-#include <etl/queue.h>
 #include <etl/delegate.h>
+#include <etl/queue.h>
 #include <etl/span.h>
 
-
 #include "protocol/rpc_structs.h"
-
-
 
 template <typename T = void>
 class MailboxClass {
@@ -36,11 +33,11 @@ class MailboxClass {
 
   static void _onPush(const rpc::payload::MailboxPush& msg);
   static void _onReadResponse(const rpc::payload::MailboxReadResponse& msg);
-  static void _onAvailableResponse(const rpc::payload::MailboxAvailableResponse& msg);
+  static void _onAvailableResponse(
+      const rpc::payload::MailboxAvailableResponse& msg);
 
   static void process();
   static void onLost();
-  static void onSynchronized() {}
 
  private:
   struct MailboxMessage {

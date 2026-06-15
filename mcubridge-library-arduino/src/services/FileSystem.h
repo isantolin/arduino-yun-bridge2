@@ -4,9 +4,9 @@
 #include "config/bridge_config.h"
 #undef min
 #undef max
-#include <etl/string_view.h>
-#include <etl/span.h>
 #include <etl/delegate.h>
+#include <etl/span.h>
+#include <etl/string_view.h>
 
 #include "protocol/rpc_structs.h"
 
@@ -25,7 +25,6 @@ class FileSystemClass {
   static void _onRemove(const rpc::payload::FileRemove& msg);
   void _onResponse(const rpc::payload::FileReadResponse& msg);
 
-  static void onSynchronized() {}
   void onLost() { _read_handler = FileSystemReadHandler{}; }
 
  private:

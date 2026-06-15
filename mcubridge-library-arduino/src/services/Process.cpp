@@ -76,8 +76,8 @@ void ProcessClass<T>::runAsync(
 }
 
 template <typename T>
-void ProcessClass<T>::poll(int32_t pid,
-                           typename ProcessClass<T>::ProcessPollHandler handler) {
+void ProcessClass<T>::poll(
+    int32_t pid, typename ProcessClass<T>::ProcessPollHandler handler) {
   if (handler.is_valid() && _pending_polls.full()) {
     Bridge.emitStatus(
         rpc::StatusCode::STATUS_ERROR,
@@ -104,7 +104,8 @@ template <typename T>
 void ProcessClass<T>::kill(int32_t pid) {
   rpc::payload::ProcessKill p = {};
   p.pid = static_cast<uint32_t>(pid);
-  if (!Bridge.send(rpc::CommandId::CMD_PROCESS_KILL, 0, p)) {}
+  if (!Bridge.send(rpc::CommandId::CMD_PROCESS_KILL, 0, p)) {
+  }
 }
 
 template <typename T>
@@ -118,7 +119,8 @@ template <typename T>
 void ProcessClass<T>::_onRunAsyncResponse(
     const rpc::payload::ProcessRunAsyncResponse& msg) {
   if (_pending_run_async.empty()) return;
-  const typename ProcessClass<T>::PendingRunAsync pending = _pending_run_async.front();
+  const typename ProcessClass<T>::PendingRunAsync pending =
+      _pending_run_async.front();
   _pending_run_async.pop();
   if (pending.handler.is_valid()) {
     pending.handler(static_cast<int32_t>(msg.pid));

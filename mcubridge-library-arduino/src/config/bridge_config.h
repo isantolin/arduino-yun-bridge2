@@ -2,6 +2,7 @@
 #define BRIDGE_CONFIG_H
 
 #include <stdint.h>
+
 #include "protocol/rpc_hw_config.h"
 #include "protocol/rpc_protocol.h"
 
@@ -10,22 +11,23 @@ namespace config {
 
 /**
  * [SIL-2] Hardware Abstraction Metadata
- * These values are derived from mcubridge.proto or detected via compiler defines.
- * Strictly Zero-Redundancy: Inherits constants from generated protocol headers.
+ * These values are derived from mcubridge.proto or detected via compiler
+ * defines. Strictly Zero-Redundancy: Inherits constants from generated protocol
+ * headers.
  */
 
 #if defined(ARDUINO_ARCH_AVR)
-  static constexpr bool IS_AVR = true;
-  static constexpr uint8_t DIGITAL_PINS = AVR_DIGITAL_PINS; 
-  static constexpr uint8_t ANALOG_PINS = AVR_ANALOG_PINS;
+static constexpr bool IS_AVR = true;
+static constexpr uint8_t DIGITAL_PINS = AVR_DIGITAL_PINS;
+static constexpr uint8_t ANALOG_PINS = AVR_ANALOG_PINS;
 #elif defined(ARDUINO_ARCH_SAMD)
-  static constexpr bool IS_AVR = false;
-  static constexpr uint8_t DIGITAL_PINS = SAMD_DIGITAL_PINS; 
-  static constexpr uint8_t ANALOG_PINS = SAMD_ANALOG_PINS;
+static constexpr bool IS_AVR = false;
+static constexpr uint8_t DIGITAL_PINS = SAMD_DIGITAL_PINS;
+static constexpr uint8_t ANALOG_PINS = SAMD_ANALOG_PINS;
 #else
-  static constexpr bool IS_AVR = false;
-  static constexpr uint8_t DIGITAL_PINS = FALLBACK_MAX_PIN;
-  static constexpr uint8_t ANALOG_PINS = 0; 
+static constexpr bool IS_AVR = false;
+static constexpr uint8_t DIGITAL_PINS = FALLBACK_MAX_PIN;
+static constexpr uint8_t ANALOG_PINS = 0;
 #endif
 
 static constexpr bool SAFE_START_PINS_ENABLED = true;
@@ -68,7 +70,7 @@ enum TimerId : uint8_t {
   TIMER_BOOTLOADER_DELAY = 4,
   NUMBER_OF_TIMERS = 5
 };
-} // namespace scheduler
+}  // namespace scheduler
 }  // namespace bridge
 
 #endif

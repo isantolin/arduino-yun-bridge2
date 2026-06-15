@@ -15,9 +15,6 @@
 
 #include "Bridge.h"
 
-
-
-
 namespace rpc {
 namespace security {
 
@@ -28,10 +25,10 @@ int aead_kat_encrypt(etl::span<const uint8_t> key,
                      etl::span<const uint8_t> ad, etl::span<const uint8_t> in,
                      etl::span<uint8_t> out, etl::span<uint8_t> tag) {
   return wc_ChaCha20Poly1305_Encrypt(
-      const_cast<byte*>(key.data()), const_cast<byte*>(nonce.data()), 
+      const_cast<byte*>(key.data()), const_cast<byte*>(nonce.data()),
       const_cast<byte*>(ad.data()), static_cast<word32>(ad.size()),
-      const_cast<byte*>(in.data()), static_cast<word32>(in.size()), 
-      out.data(), tag.data());
+      const_cast<byte*>(in.data()), static_cast<word32>(in.size()), out.data(),
+      tag.data());
 }
 
 }  // namespace
@@ -51,8 +48,7 @@ bool handshake_authenticate(etl::span<const uint8_t> secret,
                             etl::span<const uint8_t> received_tag,
                             etl::span<uint8_t> out_tag) {
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH> handshake_key;
-  hkdf_sha256(etl::span<uint8_t>(handshake_key),
-              secret,
+  hkdf_sha256(etl::span<uint8_t>(handshake_key), secret,
               etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_SALT),
               etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH));
 
@@ -79,7 +75,6 @@ void derive_session_key(etl::span<const uint8_t> secret,
               etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_INFO_SESSION));
 }
 
-
 bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
                         etl::span<const uint8_t> in,
                         etl::span<const uint8_t> key, uint64_t* nonce_counter,
@@ -88,7 +83,7 @@ bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
                         etl::span<uint8_t> out_tag) {
   if (nonce_counter) (*nonce_counter)++;
   const uint64_t current_nonce = nonce_counter ? *nonce_counter : 0;
-  
+
   etl::fill(out_nonce.begin(), out_nonce.end(), 0U);
   constexpr etl::string_view mcu_prefix("MCU");
   etl::copy_n(mcu_prefix.begin(), 3, out_nonce.begin());
@@ -103,14 +98,17 @@ bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
   etl::array<uint8_t, 32> ad;
   ad.fill(0U);
   pb_ostream_t stream = pb_ostream_from_buffer(ad.data(), ad.size());
-  if (!pb_encode(&stream, rpc::Payload::get_fields<rpc_pb_RpcEnvelope>(), &aad_env)) {
+  if (!pb_encode(&stream, rpc::Payload::get_fields<rpc_pb_RpcEnvelope>(),
+                 &aad_env)) {
     return false;
   }
 
-  return wc_ChaCha20Poly1305_Encrypt(const_cast<byte*>(key.data()), out_nonce.data(), 
-                                     const_cast<byte*>(ad.data()), static_cast<word32>(stream.bytes_written), 
-                                     const_cast<byte*>(in.data()), static_cast<word32>(in.size()), 
-                                     out_payload.data(), out_tag.data()) == 0;
+  return wc_ChaCha20Poly1305_Encrypt(
+             const_cast<byte*>(key.data()), out_nonce.data(),
+             const_cast<byte*>(ad.data()),
+             static_cast<word32>(stream.bytes_written),
+             const_cast<byte*>(in.data()), static_cast<word32>(in.size()),
+             out_payload.data(), out_tag.data()) == 0;
 }
 
 bool aead_decrypt_frame(uint16_t cmd_id, uint16_t seq_id,
@@ -127,14 +125,17 @@ bool aead_decrypt_frame(uint16_t cmd_id, uint16_t seq_id,
   etl::array<uint8_t, 32> ad;
   ad.fill(0U);
   pb_ostream_t stream = pb_ostream_from_buffer(ad.data(), ad.size());
-  if (!pb_encode(&stream, rpc::Payload::get_fields<rpc_pb_RpcEnvelope>(), &aad_env)) {
+  if (!pb_encode(&stream, rpc::Payload::get_fields<rpc_pb_RpcEnvelope>(),
+                 &aad_env)) {
     return false;
   }
 
-  return wc_ChaCha20Poly1305_Decrypt(const_cast<byte*>(key.data()), const_cast<byte*>(nonce.data()), 
-                                     const_cast<byte*>(ad.data()), static_cast<word32>(stream.bytes_written), 
-                                     const_cast<byte*>(in.data()), static_cast<word32>(in.size()), 
-                                     const_cast<byte*>(tag.data()), out_payload.data()) == 0;
+  return wc_ChaCha20Poly1305_Decrypt(
+             const_cast<byte*>(key.data()), const_cast<byte*>(nonce.data()),
+             const_cast<byte*>(ad.data()),
+             static_cast<word32>(stream.bytes_written),
+             const_cast<byte*>(in.data()), static_cast<word32>(in.size()),
+             const_cast<byte*>(tag.data()), out_payload.data()) == 0;
 }
 
 bool validate_frame_nonce(etl::span<const uint8_t> nonce,
@@ -164,10 +165,9 @@ static constexpr etl::array<uint8_t, 32> kat_sha256_expected PROGMEM = {
 static constexpr etl::array<uint8_t, 3> kat_hmac_key PROGMEM = {
     {'k', 'e', 'y'}};
 static constexpr etl::array<uint8_t, 43> kat_hmac_data PROGMEM = {
-    {'T', 'h', 'e', ' ', 'q', 'u', 'i', 'c', 'k', ' ', 'b', 'r', 'o', 'w',
-     'n', ' ', 'f', 'o', 'x', ' ', 'j', 'u', 'm', 'p', 's', ' ', 'o', 'v',
-     'e', 'r', ' ', 't', 'h', 'e', ' ', 'l', 'a', 'z', 'y', ' ', 'd', 'o',
-     'g'}};
+    {'T', 'h', 'e', ' ', 'q', 'u', 'i', 'c', 'k', ' ', 'b', 'r', 'o', 'w', 'n',
+     ' ', 'f', 'o', 'x', ' ', 'j', 'u', 'm', 'p', 's', ' ', 'o', 'v', 'e', 'r',
+     ' ', 't', 'h', 'e', ' ', 'l', 'a', 'z', 'y', ' ', 'd', 'o', 'g'}};
 static constexpr etl::array<uint8_t, 32> kat_hmac_expected PROGMEM = {
     {0xF7, 0xBC, 0x83, 0xF4, 0x30, 0x53, 0x84, 0x24, 0xB1, 0x32, 0x98,
      0xE6, 0xAA, 0x6F, 0xB1, 0x43, 0xEF, 0x4D, 0x59, 0xA1, 0x49, 0x46,
@@ -233,7 +233,8 @@ bool __attribute__((weak)) run_cryptographic_self_tests() {
           etl::span<uint8_t>(aead_tag_actual)) != 0)
     return false;
 
-  return etl::equal(aead_tag_actual.begin(), aead_tag_actual.end(), kat_aead_tag_expected.begin());
+  return etl::equal(aead_tag_actual.begin(), aead_tag_actual.end(),
+                    kat_aead_tag_expected.begin());
 }
 
 }  // namespace security

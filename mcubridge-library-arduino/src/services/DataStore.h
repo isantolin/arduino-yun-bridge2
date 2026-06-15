@@ -10,7 +10,6 @@
 #include <etl/span.h>
 #include <etl/string_view.h>
 
-
 #include "protocol/rpc_structs.h"
 
 template <typename T = void>

@@ -1,10 +1,10 @@
 #include <poll.h>
+#include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
-#include <signal.h>
 
 #define BRIDGE_HOST_TEST 1
 #define ARDUINO_STUB_CUSTOM_MILLIS 1

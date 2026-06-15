@@ -15,9 +15,8 @@
 #include <avr/wdt.h>
 #endif
 
-
-#include <PacketSerial.h>
 #include <Codecs/COBS.h>
+#include <PacketSerial.h>
 #include <etl/algorithm.h>
 #include <etl/array.h>
 #include <etl/callback_timer.h>
@@ -81,15 +80,19 @@ class BridgeClass {
   void enterSafeState();
 
   template <typename T = etl::span<const uint8_t>>
-  void emitStatus(rpc::StatusCode s, const T& payload = etl::span<const uint8_t>()) {
+  void emitStatus(rpc::StatusCode s,
+                  const T& payload = etl::span<const uint8_t>()) {
     if constexpr (etl::is_same_v<T, etl::span<const uint8_t>>) {
-      if (!sendFrame(s, 0, payload)) {}
+      if (!sendFrame(s, 0, payload)) {
+      }
     } else if constexpr (etl::is_same_v<T, etl::string_view>) {
       rpc_pb_GenericResponse resp = rpc_pb_GenericResponse_init_default;
-      const size_t to_copy = etl::min(payload.size(), sizeof(resp.message) - 1U);
+      const size_t to_copy =
+          etl::min(payload.size(), sizeof(resp.message) - 1U);
       if (to_copy > 0U) etl::copy_n(payload.begin(), to_copy, resp.message);
       resp.message[to_copy] = 0;
-      if (!send(s, 0, resp)) {}
+      if (!send(s, 0, resp)) {
+      }
     }
   }
   void emitStatus(rpc::StatusCode s) {
@@ -100,11 +103,15 @@ class BridgeClass {
   void signalXon();
 
   template <typename T>
-  [[nodiscard]] bool sendFrame(T command, uint16_t seq = 0, etl::span<const uint8_t> p = {}) {
-    static_assert(etl::is_enum_v<T> || etl::is_integral_v<T>, "Command must be enum or integral");
+  [[nodiscard]] bool sendFrame(T command, uint16_t seq = 0,
+                               etl::span<const uint8_t> p = {}) {
+    static_assert(etl::is_enum_v<T> || etl::is_integral_v<T>,
+                  "Command must be enum or integral");
     const uint16_t cmd = static_cast<uint16_t>(command);
-    const bool is_system = (cmd >= rpc::RPC_STATUS_CODE_MIN && cmd <= rpc::RPC_STATUS_CODE_MAX) ||
-                           (cmd >= rpc::RPC_SYSTEM_COMMAND_MIN && cmd <= rpc::RPC_SYSTEM_COMMAND_MAX);
+    const bool is_system =
+        (cmd >= rpc::RPC_STATUS_CODE_MIN && cmd <= rpc::RPC_STATUS_CODE_MAX) ||
+        (cmd >= rpc::RPC_SYSTEM_COMMAND_MIN &&
+         cmd <= rpc::RPC_SYSTEM_COMMAND_MAX);
     if (!_tx_enabled && !is_system) return false;
     if (is_reliable_cmd(cmd)) {
       BRIDGE_ATOMIC_BLOCK {
@@ -123,7 +130,8 @@ class BridgeClass {
   }
 
   template <typename T>
-  [[nodiscard]] bool sendSinglePass(uint16_t command_id, uint16_t sequence_id, const T& packet) {
+  [[nodiscard]] bool sendSinglePass(uint16_t command_id, uint16_t sequence_id,
+                                    const T& packet) {
     const bool is_system = (command_id >= rpc::RPC_STATUS_CODE_MIN &&
                             command_id <= rpc::RPC_STATUS_CODE_MAX) ||
                            (command_id >= rpc::RPC_SYSTEM_COMMAND_MIN &&
@@ -136,12 +144,17 @@ class BridgeClass {
     env.command_id = command_id;
     env.sequence_id = sequence_id;
     env.which_payload_type = rpc_pb_RpcEnvelope_encrypted_payload_tag;
-    pb_ostream_t pl_stream = pb_ostream_from_buffer(env.payload_type.encrypted_payload.bytes, sizeof(env.payload_type.encrypted_payload.bytes));
-    if (!pb_encode(&pl_stream, rpc::Payload::get_fields<T>(), &packet)) return false;
-    env.payload_type.encrypted_payload.size = static_cast<pb_size_t>(pl_stream.bytes_written);
+    pb_ostream_t pl_stream = pb_ostream_from_buffer(
+        env.payload_type.encrypted_payload.bytes,
+        sizeof(env.payload_type.encrypted_payload.bytes));
+    if (!pb_encode(&pl_stream, rpc::Payload::get_fields<T>(), &packet))
+      return false;
+    env.payload_type.encrypted_payload.size =
+        static_cast<pb_size_t>(pl_stream.bytes_written);
     size_t len = rpc::serialize_frame(env, buffer);
     if (len > 0) {
-      _packet_serial.send(_stream, etl::span<const uint8_t>(buffer.data(), len));
+      _packet_serial.send(_stream,
+                          etl::span<const uint8_t>(buffer.data(), len));
       return true;
     }
     return false;
@@ -191,7 +204,6 @@ class BridgeClass {
   void _onBaudrateChange();
   void _retransmitLastFrame();
   bool _isSecurityCheckPassed(uint16_t command_id) const;
-  void _onPacketReceived(etl::span<const uint8_t> packet);
 
   static constexpr bool is_reliable_cmd(uint16_t id) {
     return rpc::requires_ack(id);
@@ -208,8 +220,9 @@ class BridgeClass {
     size_t length;
   };
 
-  __attribute__((noinline)) void _transmit(uint16_t command_id, uint16_t sequence_id,
-                 etl::span<const uint8_t> payload);
+  __attribute__((noinline)) void _transmit(uint16_t command_id,
+                                           uint16_t sequence_id,
+                                           etl::span<const uint8_t> payload);
   void _initializeRuntime();
 
   // STRICT ORDER FOR CONSTRUCTOR
@@ -224,7 +237,6 @@ class BridgeClass {
   uint16_t _ack_timeout_ms = rpc::RPC_DEFAULT_ACK_TIMEOUT_MS;
   uint32_t _response_timeout_ms = rpc::RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS;
   uint32_t _pending_baudrate = 0;
-
 
   etl::array<uint8_t, bridge::config::RX_BUFFER_SIZE> _rx_buffer;
   PacketSerial2::PacketSerial<PacketSerial2::COBS, PacketSerial2::NoCRC,
@@ -241,8 +253,6 @@ class BridgeClass {
   __attribute__((noinline)) void _serialTask();
   __attribute__((noinline)) void _timerTask();
 
-
-
   uint32_t _timer_last_tick_ms = 0;
   bool _serial_xoff_sent = false;
 
@@ -250,7 +260,6 @@ class BridgeClass {
   etl::array<etl::timer::id::type, bridge::scheduler::NUMBER_OF_TIMERS>
       _timer_ids;
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> _transient_buffer;
-
 
   bool _is_post_passed = false;
   bool _tx_enabled = true;
@@ -262,15 +271,15 @@ class BridgeClass {
 
   etl::circular_buffer<uint16_t, bridge::config::RX_HISTORY_SIZE> _rx_history;
 
-  void _applyTimingConfig(
-      const rpc::payload::HandshakeConfig& msg);
+  void _applyTimingConfig(const rpc::payload::HandshakeConfig& msg);
 
   void _handleStatusOk(const bridge::router::CommandContext& ctx);
   void _handleStatusMalformed(const bridge::router::CommandContext& ctx);
   void _handleStatusAck(const bridge::router::CommandContext& ctx);
   void _handleGetVersion(const bridge::router::CommandContext& ctx);
   void _handleGetFreeMemory(const bridge::router::CommandContext& ctx);
-  __attribute__((noinline)) void _handleLinkSync(const bridge::router::CommandContext& ctx);
+  __attribute__((noinline)) void _handleLinkSync(
+      const bridge::router::CommandContext& ctx);
   void _handleLinkReset(const bridge::router::CommandContext& ctx);
   void _handleGetCapabilities(const bridge::router::CommandContext& ctx);
   void _handleXoff(const bridge::router::CommandContext& ctx);
@@ -280,8 +289,10 @@ class BridgeClass {
   void _handleEnterBootloader(const rpc::payload::EnterBootloader& msg);
   void _handleSpiBegin(const bridge::router::CommandContext& ctx);
   void _handleSpiEnd(const bridge::router::CommandContext& ctx);
-  __attribute__((noinline)) void _handleSpiTransfer(const bridge::router::CommandContext& ctx);
-  __attribute__((noinline)) void _handleReceivedFrame(etl::span<const uint8_t> p);
+  __attribute__((noinline)) void _handleSpiTransfer(
+      const bridge::router::CommandContext& ctx);
+  __attribute__((noinline)) void _handleReceivedFrame(
+      etl::span<const uint8_t> p);
   void onUnknownCommand(const bridge::router::CommandContext& ctx);
 
   void _processAck(uint16_t command_id, uint16_t sequence_id);
@@ -381,7 +392,8 @@ class BridgeClass {
   void _handleMailboxPush(const bridge::router::CommandContext& ctx,
                           const rpc_pb_MailboxPush& m);
   void _handleMailboxReadResponse(const rpc_pb_MailboxReadResponse& m);
-  void _handleMailboxAvailableResponse(const rpc_pb_MailboxAvailableResponse& m);
+  void _handleMailboxAvailableResponse(
+      const rpc_pb_MailboxAvailableResponse& m);
 #endif
   void _handleAckStruct(const rpc_pb_AckPacket& m);
   void _handleLinkResetStruct(const rpc_pb_HandshakeConfig& m);

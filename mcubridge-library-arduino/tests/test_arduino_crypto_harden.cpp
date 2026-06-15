@@ -4,7 +4,6 @@
 #include <unity.h>
 
 #include "Bridge.h"
-#include "test_support.h"
 #include "BridgeTestInterface.h"
 #include "etl_ext/CounterIterator.h"
 #include "test_support.h"
@@ -70,13 +69,14 @@ void test_bridge_full_crypto_handshake_and_data() {
   stream.clear();
   rpc_pb_RpcEnvelope f_data;
   f_data.version = rpc::PROTOCOL_VERSION;
-  f_data.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_GET_FREE_MEMORY);
+  f_data.command_id =
+      static_cast<uint16_t>(rpc::CommandId::CMD_GET_FREE_MEMORY);
   f_data.sequence_id = 2;
-  
+
   f_data.nonce.bytes[0] = 'M';
   f_data.nonce.bytes[1] = 'P';
   f_data.nonce.bytes[2] = 'U';
-  f_data.nonce.bytes[11] = 5;         // Counter = 5
+  f_data.nonce.bytes[11] = 5;  // Counter = 5
   f_data.nonce.size = 12;
   memset(f_data.tag.bytes, 0xEE, 16);
   f_data.tag.size = 16;
@@ -120,9 +120,11 @@ void test_aead_decrypt_and_validate_nonce() {
   etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> session_key;
   etl::fill(session_key.begin(), session_key.end(), 0x42U);
 
-  constexpr uint16_t cmd = static_cast<uint16_t>(rpc::CommandId::CMD_GET_VERSION);
+  constexpr uint16_t cmd =
+      static_cast<uint16_t>(rpc::CommandId::CMD_GET_VERSION);
   constexpr uint16_t seq = 7U;
-  etl::array<uint8_t, 8> plaintext = {0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xBA, 0xBE};
+  etl::array<uint8_t, 8> plaintext = {0xDE, 0xAD, 0xBE, 0xEF,
+                                      0xCA, 0xFE, 0xBA, 0xBE};
 
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> enc_out;
   etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> nonce;
@@ -130,12 +132,9 @@ void test_aead_decrypt_and_validate_nonce() {
   uint64_t tx_ctr = 0;
 
   bool enc_ok = rpc::security::aead_encrypt_frame(
-      cmd, seq,
-      etl::span<const uint8_t>(plaintext),
-      etl::span<const uint8_t>(session_key),
-      &tx_ctr,
-      etl::span<uint8_t>(enc_out),
-      etl::span<uint8_t>(nonce),
+      cmd, seq, etl::span<const uint8_t>(plaintext),
+      etl::span<const uint8_t>(session_key), &tx_ctr,
+      etl::span<uint8_t>(enc_out), etl::span<uint8_t>(nonce),
       etl::span<uint8_t>(tag));
   TEST_ASSERT_TRUE(enc_ok);
   TEST_ASSERT_EQUAL_UINT64(1U, tx_ctr);
@@ -143,12 +142,9 @@ void test_aead_decrypt_and_validate_nonce() {
   // Decrypt and verify plaintext is recovered
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> dec_out;
   bool dec_ok = rpc::security::aead_decrypt_frame(
-      cmd, seq,
-      etl::span<const uint8_t>(enc_out.data(), plaintext.size()),
-      etl::span<const uint8_t>(tag),
-      etl::span<const uint8_t>(session_key),
-      etl::span<const uint8_t>(nonce),
-      etl::span<uint8_t>(dec_out));
+      cmd, seq, etl::span<const uint8_t>(enc_out.data(), plaintext.size()),
+      etl::span<const uint8_t>(tag), etl::span<const uint8_t>(session_key),
+      etl::span<const uint8_t>(nonce), etl::span<uint8_t>(dec_out));
   TEST_ASSERT_TRUE(dec_ok);
   TEST_ASSERT_EQUAL_MEMORY(plaintext.data(), dec_out.data(), plaintext.size());
 
@@ -205,11 +201,8 @@ void test_encrypted_frame_receive_path() {
   bool enc_ok = rpc::security::aead_encrypt_frame(
       static_cast<uint16_t>(rpc::CommandId::CMD_DIGITAL_READ), 2,
       etl::span<const uint8_t>(no_payload.data(), 0),
-      etl::span<const uint8_t>(known_key),
-      &tx_ctr,
-      etl::span<uint8_t>(enc_out),
-      etl::span<uint8_t>(nonce),
-      etl::span<uint8_t>(tag));
+      etl::span<const uint8_t>(known_key), &tx_ctr, etl::span<uint8_t>(enc_out),
+      etl::span<uint8_t>(nonce), etl::span<uint8_t>(tag));
   TEST_ASSERT_TRUE(enc_ok);
 
   // Build and serialize the encrypted envelope

@@ -6,11 +6,13 @@
 
 // [MIL-SPEC] Shared secret must match the daemon configuration.
 #ifndef BRIDGE_SERIAL_SHARED_SECRET
-#define BRIDGE_SERIAL_SHARED_SECRET "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe"
+#define BRIDGE_SERIAL_SHARED_SECRET \
+  "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe"
 #endif
 
 void setup() {
-  // [SIL-2] Force safe state for actuators before enabling interrupts or protocol
+  // [SIL-2] Force safe state for actuators before enabling interrupts or
+  // protocol
   pinMode(13, OUTPUT);
   digitalWrite(13, LOW);
 

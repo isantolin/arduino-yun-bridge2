@@ -52,12 +52,21 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-openwrt-sdk-25.12.0-
 
+      # [FIX CRITICO] Instalar el compilador Rust del host con el target de MIPS
+      # Esto permite que "inject_rust_into_sdk" en 1_compile.sh use la compilación rápida
+      # omitiendo la construcción desde cero de LLVM/Rust (que dura más de 2 horas y causa OOM Crash)
+      - name: Install Rust Toolchain (Host)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: mips-unknown-linux-musl
+
       - name: Install Host Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential clang flex bison g++ gawk gcc-multilib g++-multilib \
           gettext git libncurses-dev libssl-dev rsync unzip zlib1g-dev file wget zstd protobuf-compiler
-          python3 -m pip install msgspec jinja2 pdm-backend hatchling protobuf nanopb grpcio-tools
+          python3 -m pip install msgspec jinja2 pdm-backend hatchling protobuf nanopb grpcio-tools maturin setuptools-rust
 
       - name: Compile Packages
         run: |

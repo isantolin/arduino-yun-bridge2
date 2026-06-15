@@ -52,14 +52,13 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-openwrt-sdk-25.12.0-
 
-      # [FIX CRITICO] Instalar el compilador Rust del host con el target de MIPS
-      # Esto permite que "inject_rust_into_sdk" en 1_compile.sh use la compilación rápida
-      # omitiendo la construcción desde cero de LLVM/Rust (que dura más de 2 horas y causa OOM Crash)
-      - name: Install Rust Toolchain (Host)
-        uses: dtolnay/rust-toolchain@stable
+      # [FIX CRÍTICO] Instalar la rama Nightly con el componente de código fuente "rust-src".
+      # Esto nos permite compilar la biblioteca estándar de Rust ("std") al vuelo para la arquitectura MIPS
+      # omitiendo la construcción nativa y pesada de LLVM del SDK (que causa bloqueos por Out-Of-Memory).
+      - name: Install Rust Toolchain (Host Nightly)
+        uses: dtolnay/rust-toolchain@nightly
         with:
-          toolchain: stable
-          targets: mips-unknown-linux-musl
+          components: rust-src
 
       - name: Install Host Dependencies
         run: |

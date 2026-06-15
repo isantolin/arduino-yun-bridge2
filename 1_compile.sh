@@ -148,8 +148,15 @@ inject_rust_into_sdk() {
         if rustup target list --installed 2>/dev/null | grep -q "^$target$"; then
             echo "[INFO] Host Rust fully supports $target. Injecting into SDK..."
             can_inject=1
+        elif [ "$rustup_std_available" -eq 0 ] && rustup component list --installed 2>/dev/null | grep -q "^rust-src"; then
+            # [FIX CRÍTICO TIER 3] Para mips-unknown-linux-musl no hay binarios de rust-std en rustup.
+            # Al detectar el componente de código fuente "rust-src" en el host (Nightly), habilitamos
+            # la compilación al vuelo de std a través del compilador del host interceptando la inyección.
+            echo "[INFO] Host Rust has 'rust-src' component. Enabling build-std cross-compilation for Tier 3 target $target..."
+            export CARGO_UNSTABLE_BUILD_STD=std
+            can_inject=1
         else
-            echo "[WARN] Host Rust missing 'std' library for $target (Tier 3 target)."
+            echo "[WARN] Host Rust missing 'std' library for $target (Tier 3 target) and 'rust-src' component is unavailable."
             echo "[INFO] Falling back to SDK-internal Rust build (this will be slow but reliable)."
         fi
     fi
@@ -376,7 +383,7 @@ if [ -d "$LOCAL_FEED_PATH" ]; then
     sed -i 's|https://git.openwrt.org/feed/routing.git|https://github.com/openwrt/routing.git|g' "$FEEDS_CONF"
     sed -i 's|https://git.openwrt.org/feed/telephony.git|https://github.com/openwrt/telephony.git|g' "$FEEDS_CONF"
     
-    # [FIX] Limpiar configuración antigua para forzar la ruta nueva
+    # [FIX] Limpiar configuración antigua para forzar la ruta nova
     if grep -q "src-link mcubridge" "$FEEDS_CONF"; then
         sed -i '/src-link mcubridge/d' "$FEEDS_CONF"
     fi

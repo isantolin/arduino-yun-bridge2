@@ -1,28 +1,41 @@
 from __future__ import annotations
 
-from mcubridge.protocol.structures import QueuedPublish
+from mcubridge.protocol.structures import (
+    create_queued_publish,
+    encode_queued_publish,
+    decode_queued_publish,
+)
 from mcubridge.protocol import protocol
 
 
 def test_queued_publish_protobuf_roundtrip() -> None:
-    """Verify that QueuedPublish correctly roundtrips via protobuf serialization."""
-    message = QueuedPublish(
+    """Verify that MqttQueuedPublish correctly roundtrips via protobuf serialization."""
+    message = create_queued_publish(
         topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test",
         payload=b"hello",
-        qos=1,
-        retain=True,
         content_type="application/octet-stream",
-        payload_format_indicator=1,
         message_expiry_interval=30,
-        response_topic=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/resp",
-        correlation_data=b"cid",
         user_properties=(("k", "v"),),
     )
+    message.qos = 1
+    message.retain = True
+    message.payload_format_indicator = 1
+    message.response_topic = f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/resp"
+    message.correlation_data = b"cid"
 
     # Use direct library calls as per zero-wrapper mandate
-    encoded = message.to_protobuf()
-    restored = QueuedPublish.from_protobuf(encoded)
+    encoded = encode_queued_publish(message)
+    restored = decode_queued_publish(encoded)
 
-    assert restored == message
-    assert restored.correlation_data == b"cid"
-    assert restored.user_properties == (("k", "v"),)
+    assert restored.topic_name == message.topic_name
+    assert restored.payload == message.payload
+    assert restored.qos == message.qos
+    assert restored.retain == message.retain
+    assert restored.content_type == message.content_type
+    assert restored.payload_format_indicator == message.payload_format_indicator
+    assert restored.message_expiry_interval == message.message_expiry_interval
+    assert restored.response_topic == message.response_topic
+    assert restored.correlation_data == message.correlation_data
+
+    props = [(p.key, p.value) for p in restored.user_properties]
+    assert props == [("k", "v")]

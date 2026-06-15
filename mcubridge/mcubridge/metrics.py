@@ -17,15 +17,16 @@ from prometheus_client.core import Metric
 from prometheus_client.registry import Collector
 import structlog
 
+from .protocol import mcubridge_pb2 as pb
 from .protocol import structures
-from .protocol.structures import PROTOBUF_CONTENT_TYPE, QueuedPublish
+from .protocol.structures import PROTOBUF_CONTENT_TYPE, create_queued_publish
 from .protocol.topics import Topic, topic_path
 from .state.context import RuntimeState
 
 logger = structlog.get_logger("mcubridge.metrics")
 _BRIDGE_SNAPSHOT_EXPIRY_SECONDS = 30
 
-PublishEnqueue = Callable[[QueuedPublish], Awaitable[None]]
+PublishEnqueue = Callable[[pb.MqttQueuedPublish], Awaitable[None]]
 
 
 def _build_metrics_message(
@@ -33,13 +34,13 @@ def _build_metrics_message(
     snapshot: dict[str, Any],
     *,
     expiry_seconds: float,
-) -> QueuedPublish:
+) -> pb.MqttQueuedPublish:
     topic = topic_path(
         state.mqtt_topic_prefix,
         Topic.SYSTEM,
         "metrics",
     )
-    message = QueuedPublish(
+    message = create_queued_publish(
         topic_name=topic,
         payload=structures.encode_structured_payload(snapshot),
         content_type=PROTOBUF_CONTENT_TYPE,
@@ -74,9 +75,9 @@ def _build_metrics_message(
             extra_props.append(("bridge-watchdog-interval", str(watchdog_interval)))
 
     if extra_props:
-        message = message.replace(
-            user_properties=(*message.user_properties, *extra_props),
-        )
+        user_props = [(p.key, p.value) for p in message.user_properties]
+        user_props.extend(extra_props)
+        message = structures.replace_mqtt_publish(message, user_properties=user_props)
 
     return message
 
@@ -352,7 +353,7 @@ def _build_bridge_snapshot_message(
     state: RuntimeState,
     flavor: str,
     snapshot: Any,
-) -> QueuedPublish:
+) -> pb.MqttQueuedPublish:
     segments: Sequence[str] = (
         ("bridge", "handshake", "value") if flavor == "handshake" else ("bridge", "summary", "value")
     )
@@ -361,7 +362,7 @@ def _build_bridge_snapshot_message(
         Topic.SYSTEM,
         *segments,
     )
-    return QueuedPublish(
+    return create_queued_publish(
         topic_name=topic,
         payload=snapshot.SerializeToString(),
         content_type=PROTOBUF_CONTENT_TYPE,

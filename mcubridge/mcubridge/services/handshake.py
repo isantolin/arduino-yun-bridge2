@@ -35,7 +35,7 @@ from ..protocol import protocol, structures
 from ..protocol.protocol import Command, Status
 from ..protocol.structures import (
     PROTOBUF_CONTENT_TYPE,
-    QueuedPublish,
+    create_queued_publish,
 )
 from ..protocol.topics import Topic, topic_path
 from ..security.security import (
@@ -51,7 +51,7 @@ class SendFrameCallable(Protocol):
     async def __call__(self, command_id: int, payload: bytes | Message, seq_id: int | None = None) -> bool: ...
 
 
-EnqueueMessageCallable = Callable[[QueuedPublish], Awaitable[None]]
+EnqueueMessageCallable = Callable[[pb.MqttQueuedPublish], Awaitable[None]]
 AcknowledgeFrameCallable = Callable[..., Awaitable[None]]
 
 logger = structlog.get_logger("mcubridge.service.handshake")
@@ -512,7 +512,7 @@ class SerialHandshakeManager:
         }
         if extra:
             payload |= extra
-        message = QueuedPublish(
+        message = create_queued_publish(
             topic_name=topic_path(self._state.mqtt_topic_prefix, Topic.SYSTEM, "handshake"),
             payload=structures.encode_structured_payload(payload),
             content_type=PROTOBUF_CONTENT_TYPE,

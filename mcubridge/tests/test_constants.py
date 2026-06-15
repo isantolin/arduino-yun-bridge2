@@ -1,7 +1,8 @@
 from mcubridge.protocol import protocol
 from mcubridge.protocol.topics import parse_topic, topic_path
 from mcubridge.protocol.protocol import Topic
-from mcubridge.protocol.structures import FlowEvent, QueuedPublish, TopicAuthorization
+from mcubridge.protocol.structures import FlowEvent, create_queued_publish
+from mcubridge.protocol import mcubridge_pb2 as pb
 
 # Original constants needed by other tests
 TEST_CMD_ID = 0x42
@@ -33,13 +34,13 @@ def test_structures_coverage_boost():
     # Cover FlowEvent
     assert FlowEvent.SENT == "sent"
 
-    # Cover QueuedPublish properties
-    qp = QueuedPublish(topic_name="topic", payload=b"payload")
+    # Cover MqttQueuedPublish properties
+    qp = create_queued_publish(topic_name="topic", payload=b"payload")
     assert qp.topic_name == "topic"
     assert qp.payload == b"payload"
     assert qp.qos == 0
 
     # Cover TopicAuthorization
-    ta = TopicAuthorization()
+    ta = pb.TopicAuthorization()
+    ta.file_read = True
     assert ta.file_read is True
-    assert ta.file_write is True

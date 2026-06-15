@@ -9,7 +9,8 @@ from unittest.mock import AsyncMock
 import pytest
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
-from mcubridge.protocol.structures import QueuedPublish
+from mcubridge.protocol.structures import create_queued_publish
+from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
 
@@ -132,7 +133,7 @@ async def test_enqueue_mqtt_spools_until_client_recovers() -> None:
     state = create_runtime_state(config)
     try:
         service = BridgeService(config, state, AsyncMock(spec=SerialTransport))
-        message = QueuedPublish("br/system/status", b"payload")
+        message = create_queued_publish("br/system/status", b"payload")
 
         await service.enqueue_mqtt(message)
 
@@ -167,9 +168,9 @@ async def test_handle_mqtt_pin_overflow_reports_error() -> None:
         state.pending_pin_request_limit = 1
         state.pending_digital_reads.append(PendingPinRequest(pin=13, reply_context=None))
 
-        captured: list[QueuedPublish] = []
+        captured: list[pb.MqttQueuedPublish] = []
 
-        async def capture_enqueue(message: QueuedPublish, *, reply_context: object | None = None) -> None:
+        async def capture_enqueue(message: pb.MqttQueuedPublish, *, reply_context: object | None = None) -> None:
             del reply_context
             captured.append(message)
 
@@ -184,7 +185,9 @@ async def test_handle_mqtt_pin_overflow_reports_error() -> None:
             await service.handle_mqtt_message(message)
 
         assert captured
-        assert ("bridge-error", "pending-pin-overflow") in captured[0].user_properties
+        assert any(
+            prop.key == "bridge-error" and prop.value == "pending-pin-overflow" for prop in captured[0].user_properties
+        )
         mock_serial.send.assert_not_called()
     finally:
         if service is not None:
@@ -213,19 +216,19 @@ async def test_mqtt_topic_aliases() -> None:
         service.set_mqtt_client(mock_client)
 
         # Publish Topic A (first time)
-        msg_a1 = QueuedPublish(topic_name="topic/A", payload=b"payload_a1")
+        msg_a1 = create_queued_publish(topic_name="topic/A", payload=b"payload_a1")
         await service.enqueue_mqtt(msg_a1)
 
         # Publish Topic A (second time)
-        msg_a2 = QueuedPublish(topic_name="topic/A", payload=b"payload_a2")
+        msg_a2 = create_queued_publish(topic_name="topic/A", payload=b"payload_a2")
         await service.enqueue_mqtt(msg_a2)
 
         # Publish Topic B (first time)
-        msg_b1 = QueuedPublish(topic_name="topic/B", payload=b"payload_b1")
+        msg_b1 = create_queued_publish(topic_name="topic/B", payload=b"payload_b1")
         await service.enqueue_mqtt(msg_b1)
 
         # Publish Topic B (second time)
-        msg_b2 = QueuedPublish(topic_name="topic/B", payload=b"payload_b2")
+        msg_b2 = create_queued_publish(topic_name="topic/B", payload=b"payload_b2")
         await service.enqueue_mqtt(msg_b2)
 
         # Verify publish calls
@@ -299,13 +302,13 @@ async def test_mqtt_topic_aliases_limit_boundary() -> None:
         service.set_mqtt_client(mock_client)
 
         # Topic A -> mapped to alias 1
-        await service.enqueue_mqtt(QueuedPublish(topic_name="topic/A", payload=b"a1"))
+        await service.enqueue_mqtt(create_queued_publish(topic_name="topic/A", payload=b"a1"))
         # Topic B -> no room, published normally (no alias)
-        await service.enqueue_mqtt(QueuedPublish(topic_name="topic/B", payload=b"b1"))
+        await service.enqueue_mqtt(create_queued_publish(topic_name="topic/B", payload=b"b1"))
         # Topic A again -> alias 1 (empty topic)
-        await service.enqueue_mqtt(QueuedPublish(topic_name="topic/A", payload=b"a2"))
+        await service.enqueue_mqtt(create_queued_publish(topic_name="topic/A", payload=b"a2"))
         # Topic B again -> no room, published normally (no alias)
-        await service.enqueue_mqtt(QueuedPublish(topic_name="topic/B", payload=b"b2"))
+        await service.enqueue_mqtt(create_queued_publish(topic_name="topic/B", payload=b"b2"))
 
         assert mock_client.publish.call_count == 4
 
@@ -353,8 +356,8 @@ async def test_mqtt_topic_aliases_disabled() -> None:
         mock_client._client = mock_paho_client
         service.set_mqtt_client(mock_client)
 
-        await service.enqueue_mqtt(QueuedPublish(topic_name="topic/A", payload=b"a1"))
-        await service.enqueue_mqtt(QueuedPublish(topic_name="topic/A", payload=b"a2"))
+        await service.enqueue_mqtt(create_queued_publish(topic_name="topic/A", payload=b"a1"))
+        await service.enqueue_mqtt(create_queued_publish(topic_name="topic/A", payload=b"a2"))
 
         assert mock_client.publish.call_count == 2
 

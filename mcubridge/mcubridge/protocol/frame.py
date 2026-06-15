@@ -13,12 +13,11 @@ from __future__ import annotations
 
 import struct
 from binascii import crc32
-from typing import Final
+from typing import Final, NamedTuple
 
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from google.protobuf.message import DecodeError, Message as ProtobufMessage
-import msgspec
 
 from mcubridge.protocol import mcubridge_pb2 as pb
 
@@ -29,7 +28,7 @@ _TAG_SIZE: Final = protocol.AEAD_TAG_SIZE
 _CRC_SIZE: Final = protocol.CRC_SIZE
 
 
-class DecodedFrame(msgspec.Struct):
+class DecodedFrame(NamedTuple):
     envelope: pb.RpcEnvelope
     payload: bytes | ProtobufMessage
 

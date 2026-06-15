@@ -8,18 +8,18 @@ from unittest.mock import MagicMock, patch
 
 from mcubridge.config import common
 
-from mcubridge.protocol.structures import QueuedPublish, AllowedCommandPolicy
+from mcubridge.protocol.structures import create_queued_publish, create_allowed_policy
 from mcubridge.protocol import protocol
 
 
 def test_normalise_commands():
     cmds = ["cmd1 ", "CMD2", "cmd1", "*"]
-    policy = AllowedCommandPolicy.from_iterable(cmds)
-    assert policy.entries == ("*",)
+    policy = create_allowed_policy(cmds)
+    assert list(policy.entries) == ["*"]
 
     cmds = ["cmd1", "CMD2"]
-    policy = AllowedCommandPolicy.from_iterable(cmds)
-    assert policy.entries == ("cmd1", "cmd2")
+    policy = create_allowed_policy(cmds)
+    assert list(policy.entries) == ["cmd1", "cmd2"]
 
 
 def test_get_uci_config_success():
@@ -128,7 +128,7 @@ def test_encode_status_reason_trims_to_max_payload() -> None:
 def test_queued_publish_properties_empty() -> None:
     from mcubridge_client.definitions import build_mqtt_properties
 
-    message = QueuedPublish(
+    message = create_queued_publish(
         topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test",
         payload=b"hi",
     )
@@ -150,16 +150,17 @@ def test_queued_publish_properties_empty() -> None:
 def test_build_mqtt_properties_populates_fields() -> None:
     from mcubridge_client.definitions import build_mqtt_properties
 
-    message = QueuedPublish(
+    message = create_queued_publish(
         topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test",
         payload=b"hi",
         content_type="text/plain",
-        payload_format_indicator=1,
         message_expiry_interval=10,
-        response_topic=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/response",
-        correlation_data=b"cid",
         user_properties=(("k", "v"),),
     )
+    message.payload_format_indicator = 1
+    message.response_topic = f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/response"
+    message.correlation_data = b"cid"
+
     props = build_mqtt_properties(message)
     assert props is not None
     assert props.ContentType == "text/plain"

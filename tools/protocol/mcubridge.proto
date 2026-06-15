@@ -1191,22 +1191,6 @@ message TopicAuthorization {
     bool spi_config = 23;
 }
 
-message PendingPinRequest {
-    uint32 pin = 1;
-    optional MqttQueuedPublish reply_context = 2;
-}
-
-message PendingCommand {
-    uint32 command_id = 1;
-    repeated uint32 expected_resp_ids = 2;
-    uint32 attempts = 3;
-    optional bool success = 4;
-    optional uint32 failure_status = 5;
-    bool ack_received = 6;
-    optional string reply_topic = 7;
-    optional bytes correlation_data = 8;
-}
-
 message RpcEnvelope {
     uint32 version = 1;
     uint32 command_id = 2;

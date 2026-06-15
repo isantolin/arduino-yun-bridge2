@@ -4,7 +4,8 @@ import ssl
 from enum import IntEnum
 
 from mcubridge.config.const import DEFAULT_MQTT_PORT
-from mcubridge.protocol.structures import QOSLevel, UserProperty, QueuedPublish, build_mqtt_properties
+from mcubridge.protocol.structures import QOSLevel, UserProperty, build_mqtt_properties
+from mcubridge.protocol.mcubridge_pb2 import MqttQueuedPublish
 from .protocol import MAX_PAYLOAD_SIZE
 
 # Client-specific default (remote board IP, NOT localhost)
@@ -63,7 +64,7 @@ __all__ = [
     "DEFAULT_MQTT_TOPIC",
     "MAX_PAYLOAD_SIZE",
     "QOSLevel",
-    "QueuedPublish",
+    "MqttQueuedPublish",
     "SpiBitOrder",
     "SpiMode",
     "UserProperty",

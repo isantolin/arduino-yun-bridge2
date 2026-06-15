@@ -22,12 +22,13 @@ from .definitions import (
     DEFAULT_MQTT_PORT,
     DEFAULT_MQTT_TOPIC,
     QOSLevel,
-    QueuedPublish,
+    MqttQueuedPublish,
     SpiBitOrder,
     SpiMode,
     build_bridge_args,
     build_mqtt_properties,
 )
+from mcubridge.protocol.structures import create_queued_publish
 from .env import dump_client_env, read_uci_general
 from .protocol import (
     Command,
@@ -46,6 +47,7 @@ __all__ = [
     "QOSLevel",
     "Command",
     "Topic",
+    "MqttQueuedPublish",
 ]
 
 logger = logging.getLogger(__name__)
@@ -179,13 +181,15 @@ class Bridge:
             await self._client.subscribe(resp_topic)
 
         try:
-            msg = QueuedPublish(
+            msg = create_queued_publish(
                 topic_name=topic,
                 payload=payload.encode() if isinstance(payload, str) else payload,
-                response_topic=self._reply_topic,
-                correlation_data=correlation,
                 content_type=content_type,
             )
+            if self._reply_topic:
+                msg.response_topic = self._reply_topic
+            if correlation:
+                msg.correlation_data = correlation
             await self._client.publish(msg.topic_name, msg.payload, properties=build_mqtt_properties(msg))
             delivered = await asyncio.wait_for(queue.get(), timeout=timeout)
             return bytes(delivered.payload)

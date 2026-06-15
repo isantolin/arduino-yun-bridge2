@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import collections
-
 import time
 from collections.abc import Mapping
 from pathlib import Path
@@ -29,16 +28,14 @@ from ..config.const import (
     DEFAULT_WATCHDOG_INTERVAL,
 )
 from ..config.settings import RuntimeConfig
-from ..protocol.structures import AllowedCommandPolicy, QueuedPublish, TopicAuthorization
 from ..protocol import protocol
 from ..protocol.protocol import (
     DEFAULT_RETRY_LIMIT,
-    Command,
     Status,
 )
 from ..protocol.structures import (
     PendingPinRequest,
-    SerialThroughputStats,
+    create_allowed_policy,
 )
 from ..protocol import mcubridge_pb2 as pb
 from .metrics import DaemonMetrics
@@ -50,9 +47,9 @@ logger = structlog.get_logger("mcubridge.state")
 SpoolSnapshot = dict[str, int | float]
 
 
-def _make_mqtt_publish_queue(maxsize: int = 0) -> asyncio.Queue[QueuedPublish]:
+def _make_mqtt_publish_queue(maxsize: int = 0) -> asyncio.Queue[pb.MqttQueuedPublish]:
     normalized = max(0, int(maxsize))
-    return cast(asyncio.Queue[QueuedPublish], asyncio.Queue(maxsize=normalized))
+    return cast(asyncio.Queue[pb.MqttQueuedPublish], asyncio.Queue(maxsize=normalized))
 
 
 __all__: Final[tuple[str, ...]] = (
@@ -72,12 +69,128 @@ class ProcessContext:
         self.exit_code = 0
 
 
-class RuntimeState(msgspec.Struct, weakref=True):
-    """Aggregated mutable state shared across the daemon layers."""
+class RuntimeState:
+    """Aggregated mutable state shared across the daemon layers. [SIL-2]"""
 
-    metrics: DaemonMetrics = msgspec.field(default_factory=DaemonMetrics)
-    serial_writer: asyncio.BaseTransport | None = None
-    state: str = "disconnected"
+    def __init__(self, **kwargs: Any) -> None:
+        self.metrics: DaemonMetrics = kwargs.get("metrics") or DaemonMetrics()
+        self.serial_writer: asyncio.BaseTransport | None = kwargs.get("serial_writer")
+        self.state: str = kwargs.get("state", "disconnected")
+
+        self.mqtt_queue_limit: int = kwargs.get("mqtt_queue_limit", DEFAULT_MQTT_QUEUE_LIMIT)
+        self.mqtt_publish_queue: asyncio.Queue[pb.MqttQueuedPublish] = kwargs.get(
+            "mqtt_publish_queue"
+        ) or _make_mqtt_publish_queue(self.mqtt_queue_limit)
+        self.mqtt_drop_counts: dict[str, int] = kwargs.get("mqtt_drop_counts") or {}
+        self.allow_non_tmp_paths: bool = kwargs.get("allow_non_tmp_paths", False)
+        self.datastore_cache: DbmCache | None = kwargs.get("datastore_cache")
+
+        self.mailbox_queue: collections.deque[bytes] = kwargs.get("mailbox_queue") or collections.deque()
+        self.mailbox_incoming_queue: collections.deque[bytes] = (
+            kwargs.get("mailbox_incoming_queue") or collections.deque()
+        )
+
+        self.mcu_is_paused: bool = kwargs.get("mcu_is_paused", False)
+        self.serial_tx_allowed: asyncio.Event = kwargs.get("serial_tx_allowed") or asyncio.Event()
+        self.console_to_mcu_queue: collections.deque[bytes] = kwargs.get("console_to_mcu_queue") or collections.deque()
+        self.console_queue_limit_bytes: int = kwargs.get(
+            "console_queue_limit_bytes", protocol.DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
+        )
+
+        self.console_queue_bytes: int = kwargs.get("console_queue_bytes", 0)
+        self.console_dropped_chunks: int = kwargs.get("console_dropped_chunks", 0)
+        self.console_truncated_chunks: int = kwargs.get("console_truncated_chunks", 0)
+
+        self.running_processes: dict[int, ProcessContext] = kwargs.get("running_processes") or {}
+        self.process_lock: asyncio.Lock = kwargs.get("process_lock") or asyncio.Lock()
+        self.next_pid: int = kwargs.get("next_pid", 1)
+        self.allowed_policy: pb.AllowedCommandPolicy = kwargs.get("allowed_policy") or create_allowed_policy([])
+        self.topic_authorization: pb.TopicAuthorization | None = kwargs.get("topic_authorization")
+        self.process_timeout: int = kwargs.get("process_timeout", DEFAULT_PROCESS_TIMEOUT)
+        self.file_system_root: str = kwargs.get("file_system_root", DEFAULT_FILE_SYSTEM_ROOT)
+        self.file_write_max_bytes: int = kwargs.get("file_write_max_bytes", DEFAULT_FILE_WRITE_MAX_BYTES)
+        self.file_storage_quota_bytes: int = kwargs.get("file_storage_quota_bytes", DEFAULT_FILE_STORAGE_QUOTA_BYTES)
+        self.file_storage_bytes_used: int = kwargs.get("file_storage_bytes_used", 0)
+        self.file_write_limit_rejections: int = kwargs.get("file_write_limit_rejections", 0)
+        self.file_storage_limit_rejections: int = kwargs.get("file_storage_limit_rejections", 0)
+        self.mqtt_topic_prefix: str = kwargs.get("mqtt_topic_prefix", protocol.MQTT_DEFAULT_TOPIC_PREFIX)
+        self.watchdog_enabled: bool = kwargs.get("watchdog_enabled", False)
+        self.watchdog_interval: float = kwargs.get("watchdog_interval", DEFAULT_WATCHDOG_INTERVAL)
+        self.last_watchdog_beat: float = kwargs.get("last_watchdog_beat", 0.0)
+
+        self.pending_digital_reads: collections.deque[PendingPinRequest] = (
+            kwargs.get("pending_digital_reads") or collections.deque()
+        )
+        self.pending_analog_reads: collections.deque[PendingPinRequest] = (
+            kwargs.get("pending_analog_reads") or collections.deque()
+        )
+
+        self.mailbox_queue_limit: int = kwargs.get("mailbox_queue_limit", DEFAULT_MAILBOX_QUEUE_LIMIT)
+        self.mailbox_queue_bytes_limit: int = kwargs.get("mailbox_queue_bytes_limit", DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT)
+        self.pending_pin_request_limit: int = kwargs.get("pending_pin_request_limit", DEFAULT_PENDING_PIN_REQUESTS)
+        self.mailbox_queue_bytes: int = kwargs.get("mailbox_queue_bytes", 0)
+        self.mailbox_dropped_messages: int = kwargs.get("mailbox_dropped_messages", 0)
+        self.mailbox_truncated_messages: int = kwargs.get("mailbox_truncated_messages", 0)
+
+        self.mailbox_incoming_queue_bytes: int = kwargs.get("mailbox_incoming_queue_bytes", 0)
+        self.mailbox_incoming_dropped_messages: int = kwargs.get("mailbox_incoming_dropped_messages", 0)
+        self.mailbox_incoming_truncated_messages: int = kwargs.get("mailbox_incoming_truncated_messages", 0)
+
+        self.mcu_version: tuple[int, int, int] | None = kwargs.get("mcu_version")
+        self.mcu_capabilities: dict[str, Any] | None = kwargs.get("mcu_capabilities")
+        self.link_handshake_nonce: bytes | None = kwargs.get("link_handshake_nonce")
+        self.link_sync_event: asyncio.Event = kwargs.get("link_sync_event") or asyncio.Event()
+        self.link_expected_tag: bytes | None = kwargs.get("link_expected_tag")
+        self.link_session_key: bytes | None = kwargs.get("link_session_key")
+        self.link_aead_cipher: Any | None = kwargs.get("link_aead_cipher")
+        self.link_nonce_length: int = kwargs.get("link_nonce_length", 0)
+        self.link_nonce_counter: int = kwargs.get("link_nonce_counter", 0)
+        self.link_last_nonce_counter: int = kwargs.get("link_last_nonce_counter", 0)
+        self.handshake_failure_streak: int = kwargs.get("handshake_failure_streak", 0)
+        self.handshake_backoff_until: float = kwargs.get("handshake_backoff_until", 0.0)
+        self.handshake_rate_until: float = kwargs.get("handshake_rate_until", 0.0)
+        self.last_handshake_error: str | None = kwargs.get("last_handshake_error")
+        self.last_handshake_unix: float = kwargs.get("last_handshake_unix", 0.0)
+        self.handshake_last_duration: float = kwargs.get("handshake_last_duration", 0.0)
+        self.handshake_fatal_count: int = kwargs.get("handshake_fatal_count", 0)
+        self.handshake_fatal_reason: str | None = kwargs.get("handshake_fatal_reason")
+        self.handshake_fatal_detail: str | None = kwargs.get("handshake_fatal_detail")
+        self.handshake_fatal_unix: float = kwargs.get("handshake_fatal_unix", 0.0)
+        self.handshake_last_started: float = kwargs.get("handshake_last_started", 0.0)
+        self.serial_flow_stats: pb.SerialFlowSnapshot = kwargs.get("serial_flow_stats") or pb.SerialFlowSnapshot()
+        self.serial_throughput_stats: pb.SerialThroughputStats = (
+            kwargs.get("serial_throughput_stats") or pb.SerialThroughputStats()
+        )
+        self.serial_pipeline_inflight: dict[str, Any] | None = kwargs.get("serial_pipeline_inflight")
+        self.serial_pipeline_last: dict[str, Any] | None = kwargs.get("serial_pipeline_last")
+        self.process_output_limit: int = kwargs.get("process_output_limit", protocol.DEFAULT_PROCESS_MAX_OUTPUT_BYTES)
+        self.process_max_concurrent: int = kwargs.get("process_max_concurrent", DEFAULT_PROCESS_MAX_CONCURRENT)
+        self.unknown_command_count: int = kwargs.get("unknown_command_count", 0)
+        self.unknown_command_last_id: int = kwargs.get("unknown_command_last_id", 0)
+        self.config_source: str = kwargs.get("config_source", "uci")
+        self.serial_ack_timeout_ms: int = kwargs.get("serial_ack_timeout_ms", int(DEFAULT_SERIAL_RETRY_TIMEOUT * 1000))
+        self.serial_response_timeout_ms: int = kwargs.get(
+            "serial_response_timeout_ms", int(DEFAULT_SERIAL_RESPONSE_TIMEOUT * 1000)
+        )
+        self.serial_retry_limit: int = kwargs.get("serial_retry_limit", DEFAULT_RETRY_LIMIT)
+        self.mcu_status_counts: dict[str, int] = kwargs.get("mcu_status_counts") or {}
+        self.supervisor_stats: dict[str, pb.SupervisorSnapshot] = kwargs.get("supervisor_stats") or {}
+        self.supervisor_failures: int = kwargs.get("supervisor_failures", 0)
+        self.last_supervisor_error: str | None = kwargs.get("last_supervisor_error")
+
+        self.mqtt_dropped_messages: int = kwargs.get("mqtt_dropped_messages", 0)
+        self.serial_decode_errors: int = kwargs.get("serial_decode_errors", 0)
+        self.handshake_attempts: int = kwargs.get("handshake_attempts", 0)
+        self.handshake_successes: int = kwargs.get("handshake_successes", 0)
+        self.watchdog_beats: int = kwargs.get("watchdog_beats", 0)
+
+        self.mqtt_spool_corrupt_dropped: int = kwargs.get("mqtt_spool_corrupt_dropped", 0)
+        self.mqtt_spool_dropped_limit: int = kwargs.get("mqtt_spool_dropped_limit", 0)
+        self.mqtt_spool_trim_events: int = kwargs.get("mqtt_spool_trim_events", 0)
+        self.mqtt_spool_last_trim_unix: float = kwargs.get("mqtt_spool_last_trim_unix", 0.0)
+        self.mqtt_spool_degraded: bool = kwargs.get("mqtt_spool_degraded", False)
+        self.mqtt_spool_failure_reason: str | None = kwargs.get("mqtt_spool_failure_reason")
+        self.mqtt_spool_pending_messages: int = kwargs.get("mqtt_spool_pending_messages", 0)
 
     @property
     def is_connected(self) -> bool:
@@ -106,123 +219,6 @@ class RuntimeState(msgspec.Struct, weakref=True):
         if self.link_sync_event:
             self.link_sync_event.set()
 
-    mqtt_publish_queue: asyncio.Queue[QueuedPublish] = msgspec.field(default_factory=_make_mqtt_publish_queue)
-    mqtt_queue_limit: int = DEFAULT_MQTT_QUEUE_LIMIT
-    mqtt_drop_counts: dict[str, int] = msgspec.field(default_factory=lambda: cast(dict[str, int], {}))
-    allow_non_tmp_paths: bool = False
-    datastore_cache: DbmCache | None = None
-
-    # [SIL-2] Mailbox queues persist to /tmp through dbm when enabled.
-    mailbox_queue: collections.deque[bytes] = msgspec.field(
-        default_factory=lambda: cast(collections.deque[bytes], collections.deque())
-    )
-    mailbox_incoming_queue: collections.deque[bytes] = msgspec.field(
-        default_factory=lambda: cast(collections.deque[bytes], collections.deque())
-    )
-
-    mcu_is_paused: bool = False
-    serial_tx_allowed: asyncio.Event = msgspec.field(default_factory=asyncio.Event)
-    console_to_mcu_queue: collections.deque[bytes] = msgspec.field(
-        default_factory=lambda: cast(collections.deque[bytes], collections.deque())
-    )
-    console_queue_limit_bytes: int = protocol.DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
-
-    console_queue_bytes: int = 0
-    console_dropped_chunks: int = 0
-    console_truncated_chunks: int = 0
-    running_processes: dict[int, ProcessContext] = msgspec.field(
-        default_factory=lambda: cast(dict[int, "ProcessContext"], {})
-    )
-    process_lock: asyncio.Lock = msgspec.field(default_factory=asyncio.Lock)
-    next_pid: int = 1
-    allowed_policy: AllowedCommandPolicy = msgspec.field(
-        default_factory=AllowedCommandPolicy,
-    )
-    topic_authorization: TopicAuthorization | None = None
-    process_timeout: int = DEFAULT_PROCESS_TIMEOUT
-    file_system_root: str = DEFAULT_FILE_SYSTEM_ROOT
-    file_write_max_bytes: int = DEFAULT_FILE_WRITE_MAX_BYTES
-    file_storage_quota_bytes: int = DEFAULT_FILE_STORAGE_QUOTA_BYTES
-    file_storage_bytes_used: int = 0
-    file_write_limit_rejections: int = 0
-    file_storage_limit_rejections: int = 0
-    mqtt_topic_prefix: str = protocol.MQTT_DEFAULT_TOPIC_PREFIX
-    watchdog_enabled: bool = False
-    watchdog_interval: float = DEFAULT_WATCHDOG_INTERVAL
-    last_watchdog_beat: float = 0.0
-    pending_digital_reads: Any = msgspec.field(
-        default_factory=lambda: cast(collections.deque[PendingPinRequest], collections.deque())
-    )
-    pending_analog_reads: Any = msgspec.field(
-        default_factory=lambda: cast(collections.deque[PendingPinRequest], collections.deque())
-    )
-    mailbox_queue_limit: int = DEFAULT_MAILBOX_QUEUE_LIMIT
-    mailbox_queue_bytes_limit: int = DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT
-    pending_pin_request_limit: int = DEFAULT_PENDING_PIN_REQUESTS
-    mailbox_queue_bytes: int = 0
-    mailbox_dropped_messages: int = 0
-    mailbox_truncated_messages: int = 0
-
-    mailbox_incoming_queue_bytes: int = 0
-    mailbox_incoming_dropped_messages: int = 0
-    mailbox_incoming_truncated_messages: int = 0
-
-    mcu_version: tuple[int, int, int] | None = None
-    mcu_capabilities: dict[str, Any] | None = None
-    link_handshake_nonce: bytes | None = None
-    link_sync_event: asyncio.Event = msgspec.field(default_factory=asyncio.Event)
-    link_expected_tag: bytes | None = None
-    link_session_key: bytes | None = None
-    link_aead_cipher: Any | None = None
-    link_nonce_length: int = 0
-    link_nonce_counter: int = 0
-    link_last_nonce_counter: int = 0
-    handshake_failure_streak: int = 0
-    handshake_backoff_until: float = 0.0
-    handshake_rate_until: float = 0.0
-    last_handshake_error: str | None = None
-    last_handshake_unix: float = 0.0
-    handshake_last_duration: float = 0.0
-    handshake_fatal_count: int = 0
-    handshake_fatal_reason: str | None = None
-    handshake_fatal_detail: str | None = None
-    handshake_fatal_unix: float = 0.0
-    handshake_last_started: float = 0.0
-    serial_flow_stats: pb.SerialFlowSnapshot = msgspec.field(default_factory=pb.SerialFlowSnapshot)
-    serial_throughput_stats: Any = msgspec.field(default_factory=SerialThroughputStats)
-    serial_pipeline_inflight: dict[str, Any] | None = None
-    serial_pipeline_last: dict[str, Any] | None = None
-    process_output_limit: int = protocol.DEFAULT_PROCESS_MAX_OUTPUT_BYTES
-    process_max_concurrent: int = DEFAULT_PROCESS_MAX_CONCURRENT
-    unknown_command_count: int = 0
-    unknown_command_last_id: int = 0
-    config_source: str = "uci"
-    serial_ack_timeout_ms: int = int(DEFAULT_SERIAL_RETRY_TIMEOUT * 1000)
-    serial_response_timeout_ms: int = int(DEFAULT_SERIAL_RESPONSE_TIMEOUT * 1000)
-    serial_retry_limit: int = DEFAULT_RETRY_LIMIT
-    mcu_status_counts: dict[str, int] = msgspec.field(default_factory=lambda: cast(dict[str, int], {}))
-    supervisor_stats: dict[str, pb.SupervisorSnapshot] = msgspec.field(
-        default_factory=lambda: cast(dict[str, pb.SupervisorSnapshot], {})
-    )
-    supervisor_failures: int = 0
-    last_supervisor_error: str | None = None
-
-    # Fields read by business logic / tests (Prometheus counters are the export source of truth)
-    mqtt_dropped_messages: int = 0
-    serial_decode_errors: int = 0
-    handshake_attempts: int = 0
-    handshake_successes: int = 0
-    watchdog_beats: int = 0
-
-    # Spool metrics
-    mqtt_spool_corrupt_dropped: int = 0
-    mqtt_spool_dropped_limit: int = 0
-    mqtt_spool_trim_events: int = 0
-    mqtt_spool_last_trim_unix: float = 0.0
-    mqtt_spool_degraded: bool = False
-    mqtt_spool_failure_reason: str | None = None
-    mqtt_spool_pending_messages: int = 0
-
     @property
     def handshake_failures(self) -> int:
         """Total handshake failures (Calculated)."""
@@ -231,7 +227,7 @@ class RuntimeState(msgspec.Struct, weakref=True):
     @property
     def allowed_commands(self) -> tuple[str, ...]:
         """Return the current allowed command list from policy."""
-        return self.allowed_policy.entries
+        return tuple(self.allowed_policy.entries)
 
     def record_supervisor_failure(self, name: str, backoff: float, exc: BaseException | None) -> None:
         """Record an internal service task failure."""
@@ -250,6 +246,11 @@ class RuntimeState(msgspec.Struct, weakref=True):
             backoff,
             exc,
         )
+
+    def mark_supervisor_healthy(self, name: str) -> None:
+        """Mark a task supervisor healthy, resetting its backoff. [SIL-2]"""
+        if name in self.supervisor_stats:
+            self.supervisor_stats[name].backoff_seconds = 0.0
 
     def mailbox_queue_depth(self) -> int:
         return int(len(self.mailbox_queue))
@@ -304,138 +305,29 @@ class RuntimeState(msgspec.Struct, weakref=True):
         if ds_dir and self.file_system_root:
             try:
                 ds_dir.mkdir(parents=True, exist_ok=True)
-                self.datastore_cache = DbmCache(str(ds_dir / "datastore.db"))
-            except (OSError, RuntimeError) as e:
-                logger.warning("Could not initialize datastore dbm: %s", e)
-
-    def mark_supervisor_healthy(self, name: str) -> None:
-        """Reset backoff status for a healthy supervisor."""
-        stats = self.supervisor_stats.get(name)
-        if stats:
-            stats.backoff_seconds = 0.0
-            stats.fatal = False
-
-    def record_serial_pipeline_event(self, event: pb.PipelineEvent) -> None:
-        name = event.event
-        command_id = event.command_id
-        attempt = event.attempt
-        timestamp = event.timestamp
-        acked = event.ack_received
-        status_code = event.status
-
-        # [SIL-2] Direct Enum resolution to avoid wrapper overhead
-        def _res_cmd(cid: int) -> str:
-            try:
-                return Command(cid).name
-            except ValueError:
-                try:
-                    return Status(cid).name
-                except ValueError:
-                    return f"0x{cid:02X}"
-
-        if name == "start":
-            # [SIL-2] Unified metrics increment
-            self.serial_flow_stats.commands_sent += 1
-            self.serial_flow_stats.last_event_unix = timestamp
-
-            self.serial_pipeline_inflight = {
-                "command_id": command_id,
-                "command_name": _res_cmd(command_id),
-                "attempt": attempt,
-                "started_unix": timestamp,
-                "acknowledged": False,
-                "last_event": "start",
-                "last_event_unix": timestamp,
-            }
-            return
-
-        inf = self.serial_pipeline_inflight
-        if name == "ack" and inf:
-            # [SIL-2] Unified metrics increment
-            self.serial_flow_stats.commands_acked += 1
-            self.serial_flow_stats.last_event_unix = timestamp
-
-            inf.update(
-                {
-                    "acknowledged": True,
-                    "ack_unix": timestamp,
-                    "last_event": "ack",
-                    "last_event_unix": timestamp,
-                }
-            )
-            return
-
-        if name == "retry":
-            self.serial_flow_stats.retries += 1
-            self.metrics.serial_retries.inc()
-            self.serial_flow_stats.last_event_unix = timestamp
-
-        if name in {"success", "failure", "abandoned"}:
-            if name in {"failure", "abandoned"}:
-                self.serial_flow_stats.failures += 1
-                self.metrics.serial_failures.inc()
-                self.serial_flow_stats.last_event_unix = timestamp
-
-            # [SIL-2] Direct Status resolution
-            try:
-                s_name = Status(status_code).name
-            except ValueError:
-                s_name = f"0x{status_code:02X}"
-
-            payload: dict[str, Any] = {
-                "command_id": command_id,
-                "command_name": _res_cmd(command_id),
-                "attempt": attempt,
-                "event": name,
-                "completed_unix": timestamp,
-                "status_code": status_code,
-                "status_name": s_name,
-                "acknowledged": acked or bool(inf and inf.get("acknowledged")),
-            }
-            if inf:
-                payload["started_unix"] = inf.get("started_unix")
-                try:
-                    start_val = float(inf.get("started_unix", timestamp))
-                    payload["duration"] = max(0.0, timestamp - start_val)
-                except (ValueError, TypeError):
-                    payload["duration"] = 0.0
-            self.serial_pipeline_last = payload
-            self.serial_pipeline_inflight = None
-
-            if "duration" in payload:
-                duration_val = float(cast(float, payload["duration"]))
-                self.metrics.serial_latency_ms.observe(duration_val * 1000.0)
+                self.datastore_cache = DbmCache(str(ds_dir / "data.db"))
+            except (OSError, RuntimeError):
+                logger.warning("Datastore falling back to RAM cache")
+                self.datastore_cache = None
 
     def build_serial_pipeline_snapshot(self) -> pb.SerialPipelineSnapshot:
-        def _dict_to_pb_pipeline_event(d: dict[str, Any]) -> pb.PipelineEvent:
-            event_val = str(d.get("event") or d.get("last_event") or "")
-            cid = int(d.get("command_id") or 0)
-            attempt = int(d.get("attempt") or 0)
-            acked = bool(d.get("acknowledged") or d.get("ack_received") or False)
-            status_val = d.get("status_code") or d.get("status")
-            status = int(status_val) if status_val is not None else 0
-            ts_val = (
-                d.get("completed_unix")
-                or d.get("last_event_unix")
-                or d.get("started_unix")
-                or d.get("timestamp")
-                or 0.0
-            )
-            ts = float(ts_val)
+        def _dict_to_pb_pipeline_event(ev_dict: dict[str, Any] | None) -> pb.PipelineEvent:
+            if not ev_dict:
+                return pb.PipelineEvent(event="none")
             return pb.PipelineEvent(
-                event=event_val,
-                command_id=cid,
-                attempt=attempt,
-                ack_received=acked,
-                status=status,
-                timestamp=ts,
+                event=str(ev_dict.get("event", "none")),
+                command_id=int(ev_dict.get("command_id", 0)),
+                attempt=int(ev_dict.get("attempt", 0)),
+                ack_received=bool(ev_dict.get("ack_received", False)),
+                status=int(ev_dict.get("status", 0)),
+                timestamp=float(ev_dict.get("timestamp", 0.0)),
             )
 
-        inflight_pb = None
+        inflight_pb = pb.PipelineEvent(event="none")
         if self.serial_pipeline_inflight is not None:
             inflight_pb = _dict_to_pb_pipeline_event(self.serial_pipeline_inflight)
 
-        last_pb = None
+        last_pb = pb.PipelineEvent(event="none")
         if self.serial_pipeline_last is not None:
             last_pb = _dict_to_pb_pipeline_event(self.serial_pipeline_last)
 
@@ -459,15 +351,14 @@ class RuntimeState(msgspec.Struct, weakref=True):
 
     def _apply_spool_observation(self, observation: Mapping[str, Any]) -> None:
         """Update internal state from spool statistics."""
-        # [SIL-2] Static assignment to avoid reflection overhead and string manipulation
         if "corrupt_dropped" in observation:
-            self.mqtt_spool_corrupt_dropped = msgspec.convert(observation["corrupt_dropped"], int)
+            self.mqtt_spool_corrupt_dropped = int(observation["corrupt_dropped"])
         if "dropped_due_to_limit" in observation:
-            self.mqtt_spool_dropped_limit = msgspec.convert(observation["dropped_due_to_limit"], int)
+            self.mqtt_spool_dropped_limit = int(observation["dropped_due_to_limit"])
         if "trim_events" in observation:
-            self.mqtt_spool_trim_events = msgspec.convert(observation["trim_events"], int)
+            self.mqtt_spool_trim_events = int(observation["trim_events"])
         if "last_trim_unix" in observation:
-            self.mqtt_spool_last_trim_unix = msgspec.convert(observation["last_trim_unix"], float)
+            self.mqtt_spool_last_trim_unix = float(observation["last_trim_unix"])
 
     def build_metrics_snapshot(self) -> dict[str, Any]:
         from google.protobuf.json_format import MessageToDict
@@ -505,8 +396,6 @@ class RuntimeState(msgspec.Struct, weakref=True):
         }
 
     def build_handshake_snapshot(self) -> pb.HandshakeSnapshot:
-        # [SIL-2] Atomic field extraction from self to avoid manual boilerplate.
-        # We leverage the fact that most fields match by name and type.
         return pb.HandshakeSnapshot(
             synchronised=self.is_synchronized,
             attempts=self.handshake_attempts,
@@ -565,8 +454,6 @@ class RuntimeState(msgspec.Struct, weakref=True):
         self.cleanup()
 
     def cleanup(self) -> None:
-        # [SIL-2] Aggressive Resource Eradication to prevent ResourceWarnings.
-        # 1. Nullify high-level wrappers first to drop references to the underlying caches.
         try:
             if hasattr(self.mailbox_queue, "close"):
                 cast(Any, self.mailbox_queue).close()
@@ -583,7 +470,6 @@ class RuntimeState(msgspec.Struct, weakref=True):
         self.mailbox_incoming_queue = collections.deque()
         self.console_to_mcu_queue = collections.deque()
 
-        # 2. Explicitly close and nullify persistent caches.
         if self.datastore_cache is not None:
             try:
                 self.datastore_cache.close()
@@ -591,16 +477,13 @@ class RuntimeState(msgspec.Struct, weakref=True):
                 logger.debug("Resource cleanup notice", error=e)
             self.datastore_cache = None
 
-        # [SIL-2] Standard deque fallback
         self.mailbox_queue = collections.deque()
         self.mailbox_incoming_queue = collections.deque()
 
-        # 2.1 Aggressive garbage collection
         import gc
 
         gc.collect()
 
-        # 3. Drain and reset the MQTT queue.
         while not self.mqtt_publish_queue.empty():
             try:
                 self.mqtt_publish_queue.get_nowait()
@@ -608,7 +491,6 @@ class RuntimeState(msgspec.Struct, weakref=True):
                 logger.debug("Resource cleanup notice", error=e)
         self.mqtt_publish_queue = _make_mqtt_publish_queue(self.mqtt_queue_limit)
 
-        # 4. Terminate all running processes to release pipes/sockets.
         if self.running_processes:
             for ctx in list(self.running_processes.values()):
                 if ctx and ctx.handle:
@@ -618,7 +500,6 @@ class RuntimeState(msgspec.Struct, weakref=True):
                         logger.debug("Process termination cleanup notice", error=e)
             self.running_processes.clear()
 
-        # 5. Clear other complex objects and state indicators.
         try:
             self.serial_tx_allowed.clear()
             self.link_sync_event.clear()
@@ -626,8 +507,6 @@ class RuntimeState(msgspec.Struct, weakref=True):
             self.pending_analog_reads.clear()
         except (OSError, RuntimeError, AttributeError) as e:
             logger.debug("State indicators cleanup notice", error=e)
-
-        # 6. References cleared; sqlite3 connections finalized by the GC at shutdown.
 
 
 def create_runtime_state(config: RuntimeConfig | dict[str, Any]) -> RuntimeState:
@@ -641,11 +520,9 @@ def create_runtime_state(config: RuntimeConfig | dict[str, Any]) -> RuntimeState
     if "process_max_output_bytes" in cfg_dict:
         cfg_dict["process_output_limit"] = cfg_dict.pop("process_max_output_bytes")
     if "allowed_commands" in cfg_dict and cfg_dict["allowed_commands"] is not None:
-        from ..protocol.structures import AllowedCommandPolicy
+        cfg_dict["allowed_policy"] = create_allowed_policy(cfg_dict.pop("allowed_commands"))
 
-        cfg_dict["allowed_policy"] = AllowedCommandPolicy(entries=cfg_dict.pop("allowed_commands"))
-
-    state = msgspec.convert(cfg_dict, RuntimeState, strict=False)
+    state = RuntimeState(**cfg_dict)
     state.serial_tx_allowed.set()
     state.configure()
 

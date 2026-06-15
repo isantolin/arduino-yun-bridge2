@@ -11,7 +11,8 @@ from mcubridge.metrics import (
     publish_bridge_snapshots,
     publish_metrics,
 )
-from mcubridge.protocol.structures import PROTOBUF_CONTENT_TYPE, QueuedPublish, decode_structured_payload
+from mcubridge.protocol.structures import PROTOBUF_CONTENT_TYPE, decode_structured_payload
+from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol import protocol
 from mcubridge.state.context import RuntimeState
 
@@ -23,9 +24,9 @@ async def test_publish_metrics_publishes_snapshot(
     """Verify that publish_metrics enqueues payload with telemetry metadata."""
 
     event = asyncio.Event()
-    captured: dict[str, QueuedPublish] = {}
+    captured: dict[str, pb.MqttQueuedPublish] = {}
 
-    async def fake_enqueue(message: QueuedPublish) -> None:
+    async def fake_enqueue(message: pb.MqttQueuedPublish) -> None:
         captured["message"] = message
         event.set()
 
@@ -69,10 +70,11 @@ async def test_publish_metrics_publishes_snapshot(
     assert message.topic_name == expected_topic
     assert decode_structured_payload(message.payload) == fake_snapshot
     assert message.content_type == PROTOBUF_CONTENT_TYPE
-    assert ("bridge-spool", "disk-full") in message.user_properties
-    assert ("bridge-files", "quota-blocked") in message.user_properties
-    assert ("bridge-watchdog-enabled", "1") in message.user_properties
-    assert ("bridge-watchdog-interval", "7.5") in message.user_properties
+    props = [(p.key, p.value) for p in message.user_properties]
+    assert ("bridge-spool", "disk-full") in props
+    assert ("bridge-files", "quota-blocked") in props
+    assert ("bridge-watchdog-enabled", "1") in props
+    assert ("bridge-watchdog-interval", "7.5") in props
 
 
 @pytest.mark.asyncio
@@ -82,9 +84,9 @@ async def test_publish_metrics_marks_unknown_spool_reason(
     """Ensure bridge-spool user property defaults to 'unknown'."""
 
     event = asyncio.Event()
-    captured: dict[str, QueuedPublish] = {}
+    captured: dict[str, pb.MqttQueuedPublish] = {}
 
-    async def fake_enqueue(message: QueuedPublish) -> None:
+    async def fake_enqueue(message: pb.MqttQueuedPublish) -> None:
         captured["message"] = message
         event.set()
 
@@ -114,8 +116,9 @@ async def test_publish_metrics_marks_unknown_spool_reason(
             await task
 
     message = captured["message"]
-    assert ("bridge-spool", "unknown") in message.user_properties
-    assert any(key == "bridge-watchdog-enabled" for key, _ in message.user_properties)
+    props = [(p.key, p.value) for p in message.user_properties]
+    assert ("bridge-spool", "unknown") in props
+    assert any(key == "bridge-watchdog-enabled" for key, _ in props)
 
 
 @pytest.mark.asyncio
@@ -123,9 +126,9 @@ async def test_publish_bridge_snapshots_emits_summary_and_handshake(
     runtime_state: RuntimeState,
 ) -> None:
     event = asyncio.Event()
-    messages: list[QueuedPublish] = []
+    messages: list[pb.MqttQueuedPublish] = []
 
-    async def fake_enqueue(message: QueuedPublish) -> None:
+    async def fake_enqueue(message: pb.MqttQueuedPublish) -> None:
         messages.append(message)
         if len(messages) >= 2:
             event.set()
@@ -180,18 +183,18 @@ async def test_publish_bridge_snapshots_emits_summary_and_handshake(
     topics = {message.topic_name for message in messages}
     assert f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/bridge/summary/value" in topics
     assert f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/bridge/handshake/value" in topics
-    properties = [prop for message in messages for prop in message.user_properties]
-    assert ("bridge-snapshot", "summary") in properties
-    assert ("bridge-snapshot", "handshake") in properties
+    props = [(p.key, p.value) for message in messages for p in message.user_properties]
+    assert ("bridge-snapshot", "summary") in props
+    assert ("bridge-snapshot", "handshake") in props
 
 
 @pytest.mark.asyncio
 async def test_publish_bridge_snapshots_noop_when_disabled(
     runtime_state: RuntimeState,
 ) -> None:
-    messages: list[QueuedPublish] = []
+    messages: list[pb.MqttQueuedPublish] = []
 
-    async def fake_enqueue(message: QueuedPublish) -> None:
+    async def fake_enqueue(message: pb.MqttQueuedPublish) -> None:
         messages.append(message)
 
     task = asyncio.create_task(

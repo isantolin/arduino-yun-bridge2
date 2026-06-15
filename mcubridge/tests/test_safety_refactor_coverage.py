@@ -7,7 +7,7 @@ from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.services.runtime import BridgeService
 from mcubridge.transport.serial import SerialTransport
-from mcubridge.protocol.structures import QueuedPublish, encode_queued_publish, decode_queued_publish
+from mcubridge.protocol.structures import create_queued_publish, encode_queued_publish, decode_queued_publish
 from google.protobuf.message import EncodeError as ProtobufSerializationError
 
 
@@ -70,13 +70,13 @@ async def test_runtime_safety_coverage(real_config: RuntimeConfig) -> None:
     try:
         # Trigger QueueEmpty in enqueue_mqtt finally block
         with patch.object(state.mqtt_publish_queue, "get_nowait", side_effect=asyncio.QueueEmpty()):
-            await service.enqueue_mqtt(QueuedPublish(topic_name="test", payload=b""))
+            await service.enqueue_mqtt(create_queued_publish(topic_name="test", payload=b""))
 
         # Mock Deque methods to throw OSError for error branch coverage
         spool = getattr(service, "_mqtt_spool")
         with patch.object(spool, "append", side_effect=OSError("DB error")):
             success = await getattr(service, "_spool_mqtt_message_locked")(
-                QueuedPublish(topic_name="test", payload=b"")
+                create_queued_publish(topic_name="test", payload=b"")
             )
             assert success is False
 
@@ -111,9 +111,9 @@ async def test_spool_trim_and_limit(real_config: RuntimeConfig) -> None:
         spool = getattr(service, "_mqtt_spool")
         spool.clear()
 
-        msg1 = QueuedPublish(topic_name="test1", payload=b"payload1")
-        msg2 = QueuedPublish(topic_name="test2", payload=b"payload2")
-        msg3 = QueuedPublish(topic_name="test3", payload=b"payload3")
+        msg1 = create_queued_publish(topic_name="test1", payload=b"payload1")
+        msg2 = create_queued_publish(topic_name="test2", payload=b"payload2")
+        msg3 = create_queued_publish(topic_name="test3", payload=b"payload3")
 
         assert await getattr(service, "_spool_mqtt_message_locked")(msg1) is True
         assert await getattr(service, "_spool_mqtt_message_locked")(msg2) is True
@@ -143,7 +143,7 @@ async def test_corrupt_item_handling(real_config: RuntimeConfig) -> None:
         spool.clear()
 
         spool.append(b"invalid_bytes_not_protobuf")
-        valid_msg = QueuedPublish(topic_name="valid", payload=b"valid_payload")
+        valid_msg = create_queued_publish(topic_name="valid", payload=b"valid_payload")
         spool.append(encode_queued_publish(valid_msg))
 
         await getattr(service, "_flush_mqtt_spool_locked")()
@@ -162,7 +162,7 @@ async def test_serialization_failure(real_config: RuntimeConfig) -> None:
     serial = AsyncMock(spec=SerialTransport)
     service = BridgeService(real_config, state, serial)
     try:
-        msg = QueuedPublish(topic_name="test", payload=b"payload")
+        msg = create_queued_publish(topic_name="test", payload=b"payload")
         with patch(
             "mcubridge.services.runtime.encode_queued_publish",
             side_effect=ProtobufSerializationError("Serialization error"),
@@ -186,7 +186,7 @@ async def test_peeking_or_popping_errors(real_config: RuntimeConfig) -> None:
         spool = getattr(service, "_mqtt_spool")
         spool.clear()
 
-        valid_msg = QueuedPublish(topic_name="valid", payload=b"payload")
+        valid_msg = create_queued_publish(topic_name="valid", payload=b"payload")
         spool.append(encode_queued_publish(valid_msg))
 
         # 1. IndexError on peek

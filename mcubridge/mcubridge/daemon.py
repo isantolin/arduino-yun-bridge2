@@ -99,7 +99,6 @@ def app(args: list[str] | None = None) -> None:
         RuntimeError,
         ValueError,
         TypeError,
-        msgspec.MsgspecError,
         aiomqtt.MqttError,
         SerialHandshakeFatal,
         tenacity.RetryError,

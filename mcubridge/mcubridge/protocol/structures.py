@@ -214,7 +214,7 @@ def create_queued_publish(
     topic_name: str,
     payload: bytes,
     retain: bool = False,
-    qos: int = 1,
+    qos: int = 0,
     content_type: str | None = None,
     message_expiry_interval: int | None = None,
     user_properties: Iterable[tuple[str, str]] = (),
@@ -265,6 +265,8 @@ def build_mqtt_properties(message: pb.MqttQueuedPublish) -> Properties:
     props = Properties(PacketTypes.PUBLISH)
     if message.content_type:
         props.ContentType = message.content_type
+    if message.payload_format_indicator:
+        props.PayloadFormatIndicator = message.payload_format_indicator
     if message.message_expiry_interval:
         props.MessageExpiryInterval = message.message_expiry_interval
     if message.topic_alias:
@@ -392,6 +394,10 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
             for f in [f.name for f in auth_pb.DESCRIPTOR.fields]:
                 setattr(auth_pb, f, ta_dict.get(f, True))
             object.__setattr__(self, "topic_authorization", auth_pb)
+
+        if not self.mqtt_topic or not any(filter(None, self.mqtt_topic.split("/"))):
+            raise ValueError("mqtt_topic must contain at least one segment")
+
         if self.serial_response_timeout < self.serial_retry_timeout * 2:
             raise ValueError("serial_response_timeout must be at least 2x serial_retry_timeout")
         if not self.serial_shared_secret:

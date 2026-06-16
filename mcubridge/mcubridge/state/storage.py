@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import dbm
 import os
-from typing import Any, TypeVar
+from typing import Any, Literal, TypeVar
 
 import structlog
 
@@ -30,7 +30,7 @@ class DbmDeque:
         with self._open_db("c"):
             pass
 
-    def _open_db(self, flag: str) -> Any:
+    def _open_db(self, flag: Literal["r", "w", "c", "n"]) -> Any:
         try:
             db = dbm.open(self.path, flag)
             # Ensure basic structure is initialized
@@ -118,7 +118,7 @@ class DbmCache:
         with self._open_db("c"):
             pass
 
-    def _open_db(self, flag: str) -> Any:
+    def _open_db(self, flag: Literal["r", "w", "c", "n"]) -> Any:
         try:
             return dbm.open(self.path, flag)
         except dbm.error as e:

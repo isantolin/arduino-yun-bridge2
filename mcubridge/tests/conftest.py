@@ -14,7 +14,7 @@ from pathlib import Path
 import shutil
 import sys
 import time
-from typing import cast
+from typing import Any, cast
 
 import msgspec
 import pytest
@@ -82,7 +82,7 @@ original_get_default_config = mcubridge.config.common.get_default_config
 
 
 class PatchedRuntimeConfig:
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args: Any, **kwargs: Any) -> RuntimeConfig:
         default_spool = mcubridge.config.const.DEFAULT_MQTT_SPOOL_DIR
         default_fs = mcubridge.config.const.DEFAULT_FILE_SYSTEM_ROOT
         if (
@@ -100,13 +100,13 @@ class PatchedRuntimeConfig:
         return OriginalRuntimeConfig(*args, **kwargs)
 
 
-def patched_convert(obj, type_arg, *args, **kwargs):
+def patched_convert(obj: Any, type_arg: Any, *args: Any, **kwargs: Any) -> Any:
     if type_arg is PatchedRuntimeConfig:
         type_arg = OriginalRuntimeConfig
     return original_convert(obj, type_arg, *args, **kwargs)
 
 
-def patched_get_default_config():
+def patched_get_default_config() -> dict[str, Any]:
     cfg = original_get_default_config()
     cfg["mqtt_spool_dir"] = get_unique_test_spool()
     cfg["file_system_root"] = get_unique_test_fs()

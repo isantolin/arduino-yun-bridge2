@@ -373,18 +373,20 @@ class JinjaGenerator:
         template = self.env.get_template("rpc_structs.h.j2")
         proto_path = (REPO_ROOT / "tools" / "protocol" / "mcubridge.proto").resolve()
         proto_content = proto_path.read_text(encoding="utf-8")
-        
+
         # 1. Extract ALL messages for basic aliases and get_fields
         all_msg_names = re.findall(r"(?:^|\n)\s*message\s+(\w+)\s*{", proto_content)
         options_path = (REPO_ROOT / "tools" / "protocol" / "mcubridge.options").resolve()
         options_content = options_path.read_text(encoding="utf-8")
         skipped_messages = re.findall(r"rpc\.pb\.(\w+)\s+skip_message:true", options_content)
-        
-        all_structs = [{"name": name} for name in all_msg_names if name not in skipped_messages and name != "RpcContainer"]
+
+        all_structs = [
+            {"name": name} for name in all_msg_names if name not in skipped_messages and name != "RpcContainer"
+        ]
 
         # 2. Extract messages inside RpcEnvelope oneof for payload helpers
         oneof_match = re.search(r"oneof payload_type\s*{(.*?)}", proto_content, re.DOTALL)
-        payload_structs = []
+        payload_structs: list[dict[str, str]] = []
         if oneof_match:
             oneof_content = oneof_match.group(1)
             for raw_line in oneof_content.strip().split("\n"):

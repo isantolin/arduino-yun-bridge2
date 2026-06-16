@@ -1440,9 +1440,11 @@ class BridgeService:
 
         retryer = tenacity.AsyncRetrying(
             stop=tenacity.stop_after_attempt(max_restarts) if max_restarts else tenacity.stop_never,
-            wait=tenacity.wait_exponential(multiplier=min_backoff, max=max_backoff) + tenacity.wait_random(0, jitter)
-            if jitter > 0
-            else tenacity.wait_exponential(multiplier=min_backoff, max=max_backoff),
+            wait=(
+                tenacity.wait_exponential(multiplier=min_backoff, max=max_backoff) + tenacity.wait_random(0, jitter)
+                if jitter > 0
+                else tenacity.wait_exponential(multiplier=min_backoff, max=max_backoff)
+            ),
             retry=tenacity.retry_if_not_exception_type((asyncio.CancelledError, *fatal_exceptions)),
             before_sleep=lambda rs: logger.error(
                 "Task supervisor restarting",

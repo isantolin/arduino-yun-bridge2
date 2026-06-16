@@ -170,11 +170,12 @@ class BridgeClass {
         isSynchronized() && !_shared_secret.empty() && !is_excluded;
 
     if (do_encrypt) {
-      pb_ostream_t out_stream = pb_ostream_from_buffer(_transient_buffer.data(), rpc::MAX_PAYLOAD_SIZE);
+      pb_ostream_t out_stream = pb_ostream_from_buffer(_transient_buffer.data(),
+                                                       rpc::MAX_PAYLOAD_SIZE);
       if (pb_encode(&out_stream, rpc::Payload::get_fields<T>(), &packet)) {
-        return sendFrame(
-            c, seq,
-            etl::span<const uint8_t>(_transient_buffer.data(), out_stream.bytes_written));
+        return sendFrame(c, seq,
+                         etl::span<const uint8_t>(_transient_buffer.data(),
+                                                  out_stream.bytes_written));
       }
       return false;
     } else {
@@ -302,8 +303,11 @@ class BridgeClass {
     }
     T res_msg = {};
     bool decoded = false;
-    if (ctx.envelope->which_payload_type == rpc_pb_RpcEnvelope_encrypted_payload_tag) {
-      pb_istream_t stream = pb_istream_from_buffer(ctx.envelope->payload_type.encrypted_payload.bytes, ctx.envelope->payload_type.encrypted_payload.size);
+    if (ctx.envelope->which_payload_type ==
+        rpc_pb_RpcEnvelope_encrypted_payload_tag) {
+      pb_istream_t stream = pb_istream_from_buffer(
+          ctx.envelope->payload_type.encrypted_payload.bytes,
+          ctx.envelope->payload_type.encrypted_payload.size);
       decoded = pb_decode(&stream, rpc::Payload::get_fields<T>(), &res_msg);
     } else if (ctx.envelope->which_payload_type == rpc::Payload::get_tag<T>()) {
       res_msg = rpc::Payload::get<T>(*ctx.envelope);
@@ -326,8 +330,11 @@ class BridgeClass {
     }
     T res_msg = {};
     bool decoded = false;
-    if (ctx.envelope->which_payload_type == rpc_pb_RpcEnvelope_encrypted_payload_tag) {
-      pb_istream_t stream = pb_istream_from_buffer(ctx.envelope->payload_type.encrypted_payload.bytes, ctx.envelope->payload_type.encrypted_payload.size);
+    if (ctx.envelope->which_payload_type ==
+        rpc_pb_RpcEnvelope_encrypted_payload_tag) {
+      pb_istream_t stream = pb_istream_from_buffer(
+          ctx.envelope->payload_type.encrypted_payload.bytes,
+          ctx.envelope->payload_type.encrypted_payload.size);
       decoded = pb_decode(&stream, rpc::Payload::get_fields<T>(), &res_msg);
     } else if (ctx.envelope->which_payload_type == rpc::Payload::get_tag<T>()) {
       res_msg = rpc::Payload::get<T>(*ctx.envelope);
@@ -371,8 +378,11 @@ class BridgeClass {
   static void _dispatchPayload(BridgeClass& b,
                                const bridge::router::CommandContext& ctx) {
     T res_msg = {};
-    if (ctx.envelope->which_payload_type == rpc_pb_RpcEnvelope_encrypted_payload_tag) {
-      pb_istream_t stream = pb_istream_from_buffer(ctx.envelope->payload_type.encrypted_payload.bytes, ctx.envelope->payload_type.encrypted_payload.size);
+    if (ctx.envelope->which_payload_type ==
+        rpc_pb_RpcEnvelope_encrypted_payload_tag) {
+      pb_istream_t stream = pb_istream_from_buffer(
+          ctx.envelope->payload_type.encrypted_payload.bytes,
+          ctx.envelope->payload_type.encrypted_payload.size);
       if (pb_decode(&stream, rpc::Payload::get_fields<T>(), &res_msg)) {
         (b.*Handler)(res_msg);
       }

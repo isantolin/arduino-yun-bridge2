@@ -34,7 +34,6 @@ inline uint32_t compute(etl::span<const uint8_t> data) {
 }
 }  // namespace checksum
 
-
 inline size_t serialize_frame(const rpc_pb_RpcEnvelope& env,
                               etl::span<uint8_t> buffer) {
   if (buffer.size() < CRC_TRAILER_SIZE) return 0;

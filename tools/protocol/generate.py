@@ -298,10 +298,11 @@ class JinjaGenerator:
             parts.append(s[-3:])
             s = s[:-3]
         result = "'".join(reversed(parts))
+        return f"-{result}" if value < 0 else result
+
     @staticmethod
     def _snake_case(s: str) -> str:
         return re.sub(r"(?<!^)(?=[A-Z])", "_", s).lower()
-        return f"-{result}" if value < 0 else result
 
     def generate_cpp_header(self, spec: ProtocolSpec, out_path: Path, version: str) -> None:
         template = self.env.get_template("rpc_protocol.h.j2")

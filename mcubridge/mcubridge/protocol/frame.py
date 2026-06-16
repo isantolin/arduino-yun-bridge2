@@ -56,7 +56,6 @@ def build_frame(
         tag=tag or (b"\x00" * _TAG_SIZE),
     )
 
-
     # AEAD Encryption (if session key provided)
     do_encrypt = bool(session_key and not is_excluded)
 
@@ -65,7 +64,7 @@ def build_frame(
         payload_bytes = payload.SerializeToString() if isinstance(payload, ProtobufMessage) else payload
         if len(payload_bytes) > protocol.MAX_PAYLOAD_SIZE:
             raise ValueError(f"Payload size {len(payload_bytes)} exceeds maximum {protocol.MAX_PAYLOAD_SIZE}")
-        
+
         # Optimization: Use Protobuf envelope itself as AAD by only including header fields.
         aad = pb.RpcEnvelope(
             version=envelope.version, command_id=envelope.command_id, sequence_id=envelope.sequence_id
@@ -108,7 +107,6 @@ def parse_frame(raw_frame_buffer: bytes | bytearray | memoryview, session_key: b
         raise ValueError("Invalid protocol version")
 
     is_excluded = is_system_command(envelope.command_id)
-
 
     # AEAD Decryption
     if session_key and not is_excluded:

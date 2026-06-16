@@ -56,6 +56,7 @@ async def test_supervisor_circuit_breaker(service_setup: BridgeService) -> None:
             min_backoff=0.01,
             max_backoff=0.01,
             max_restarts=15,
+            jitter=0,
         )
 
     # The supervisor now retries up to max_restarts + 1 times

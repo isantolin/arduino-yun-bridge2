@@ -48,6 +48,32 @@ inline const pb_msgdesc_t* get_fields<rpc_pb_{{ s.name }}>() {
 }
 {% endfor %}
 
+template <typename T>
+pb_size_t get_tag();
+
+template <typename T>
+void set(rpc_pb_RpcEnvelope& env, const T& packet);
+
+template <typename T>
+const T& get(const rpc_pb_RpcEnvelope& env);
+
+{% for s in structs %}
+template <>
+inline pb_size_t get_tag<rpc_pb_{{ s.name }}>() {
+    return rpc_pb_RpcEnvelope_{{ s.name | snakecase }}_tag;
+}
+
+template <>
+inline void set<rpc_pb_{{ s.name }}>(rpc_pb_RpcEnvelope& env, const rpc_pb_{{ s.name }}& packet) {
+    env.which_payload_type = rpc_pb_RpcEnvelope_{{ s.name | snakecase }}_tag;
+    env.payload_type.{{ s.name | snakecase }} = packet;
+}
+
+template <>
+inline const rpc_pb_{{ s.name }}& get<rpc_pb_{{ s.name }}>(const rpc_pb_RpcEnvelope& env) {
+    return env.payload_type.{{ s.name | snakecase }};
+}
+{% endfor %}
 
 template <typename T>
 inline etl::expected<size_t, bool> serialize(const T& packet, etl::span<uint8_t> buffer) {

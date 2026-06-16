@@ -285,6 +285,7 @@ class JinjaGenerator:
             keep_trailing_newline=True,
         )
         self.env.filters["cpp_digits"] = self._cpp_digit_separator
+        self.env.filters["snakecase"] = self._snake_case
 
     @staticmethod
     def _cpp_digit_separator(value: object) -> str:
@@ -297,6 +298,9 @@ class JinjaGenerator:
             parts.append(s[-3:])
             s = s[:-3]
         result = "'".join(reversed(parts))
+    @staticmethod
+    def _snake_case(s: str) -> str:
+        return re.sub(r"(?<!^)(?=[A-Z])", "_", s).lower()
         return f"-{result}" if value < 0 else result
 
     def generate_cpp_header(self, spec: ProtocolSpec, out_path: Path, version: str) -> None:

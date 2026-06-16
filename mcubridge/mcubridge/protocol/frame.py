@@ -57,14 +57,15 @@ def build_frame(
     )
 
 
-    payload_bytes = payload.SerializeToString() if isinstance(payload, ProtobufMessage) else payload
-    if len(payload_bytes) > protocol.MAX_PAYLOAD_SIZE:
-        raise ValueError(f"Payload size {len(payload_bytes)} exceeds maximum {protocol.MAX_PAYLOAD_SIZE}")
-
     # AEAD Encryption (if session key provided)
-    do_encrypt = session_key and not is_excluded
+    do_encrypt = bool(session_key and not is_excluded)
+
     if do_encrypt:
         assert session_key is not None
+        payload_bytes = payload.SerializeToString() if isinstance(payload, ProtobufMessage) else payload
+        if len(payload_bytes) > protocol.MAX_PAYLOAD_SIZE:
+            raise ValueError(f"Payload size {len(payload_bytes)} exceeds maximum {protocol.MAX_PAYLOAD_SIZE}")
+        
         # Optimization: Use Protobuf envelope itself as AAD by only including header fields.
         aad = pb.RpcEnvelope(
             version=envelope.version, command_id=envelope.command_id, sequence_id=envelope.sequence_id
@@ -75,10 +76,13 @@ def build_frame(
     else:
         # Unencrypted! [SIL-2] Holistic payload extraction natively handled by Protobuf.
         if isinstance(payload, ProtobufMessage):
+            # NO double encoding here: assign directly to oneof field
             field_name = "".join(["_" + c.lower() if c.isupper() else c for c in type(payload).__name__]).lstrip("_")
             getattr(envelope, field_name).CopyFrom(payload)
         else:
-            envelope.encrypted_payload = payload_bytes
+            if len(payload) > protocol.MAX_PAYLOAD_SIZE:
+                raise ValueError(f"Payload size {len(payload)} exceeds maximum {protocol.MAX_PAYLOAD_SIZE}")
+            envelope.encrypted_payload = payload
 
     body = envelope.SerializeToString()
     return body + struct.pack("<I", crc32(body) & protocol.CRC32_MASK)

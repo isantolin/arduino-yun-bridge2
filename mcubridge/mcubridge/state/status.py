@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import structlog
-import time
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any
@@ -40,15 +39,10 @@ async def status_writer(state: RuntimeState, interval: int) -> None:
 
     async def _write_tick() -> None:
         try:
-            # [SIL-2] Simplified metrics
-            child_stats: dict[str, Any] = {}
+            # [SIL-2] Use BridgeStatus Protobuf for holistic snapshot
+            status = state.build_status_snapshot()
 
-            payload = state.build_metrics_snapshot()
-            payload["process_stats"] = child_stats
-            payload["supervisors"] = {n: s for n, s in state.supervisor_stats.items()}
-            payload["heartbeat_unix"] = time.time()
-
-            write_task = asyncio.create_task(asyncio.to_thread(_write_status_file, payload))
+            write_task = asyncio.create_task(asyncio.to_thread(_write_status_file, status))
             try:
                 await asyncio.shield(write_task)
             except asyncio.CancelledError:
@@ -68,7 +62,7 @@ async def status_writer(state: RuntimeState, interval: int) -> None:
         raise
 
 
-def _write_status_file(payload: dict[str, Any]) -> None:
+def _write_status_file(payload: ProtobufMessage) -> None:
     """[SIL-2] Atomic status persistence using zero-copy library primitives."""
     try:
         STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)

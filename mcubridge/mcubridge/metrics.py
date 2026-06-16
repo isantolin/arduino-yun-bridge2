@@ -30,7 +30,7 @@ PublishEnqueue = Callable[[pb.MqttQueuedPublish], Awaitable[None]]
 
 def _build_metrics_message(
     state: RuntimeState,
-    snapshot: dict[str, Any],
+    snapshot: pb.DaemonMetrics,
     *,
     expiry_seconds: float,
 ) -> pb.MqttQueuedPublish:
@@ -39,39 +39,28 @@ def _build_metrics_message(
         Topic.SYSTEM,
         "metrics",
     )
+    # [SIL-2] Direct Protobuf serialization without StructuredPayload overhead
     message = create_queued_publish(
         topic_name=topic,
-        payload=structures.encode_structured_payload(snapshot),
+        payload=snapshot.SerializeToString(),
         content_type=PROTOBUF_CONTENT_TYPE,
         message_expiry_interval=int(expiry_seconds),
         user_properties=(),
     )
 
-    mqtt_spool_failure = snapshot.get("mqtt_spool_failure_reason")
     extra_props: list[tuple[str, str]] = []
-    if snapshot.get("mqtt_spool_degraded"):
-        extra_props.append(("bridge-spool", mqtt_spool_failure or "unknown"))
+    if snapshot.mqtt_spool_degraded:
+        extra_props.append(("bridge-spool", snapshot.mqtt_spool_failure_reason or "unknown"))
 
-    file_status = next(
-        (
-            label
-            for key, label in (
-                ("file_storage_limit_rejections", "quota-blocked"),
-                ("file_write_limit_rejections", "write-limit"),
-            )
-            if (val := snapshot.get(key)) is not None and isinstance(val, (int, float)) and val > 0
-        ),
-        None,
-    )
-    if file_status is not None:
-        extra_props.append(("bridge-files", file_status))
+    # Extra props for files
+    if state.file_storage_limit_rejections > 0:
+        extra_props.append(("bridge-files", "quota-blocked"))
+    elif state.file_write_limit_rejections > 0:
+        extra_props.append(("bridge-files", "write-limit"))
 
-    if snapshot.get("watchdog_enabled") is not None:
-        enabled = bool(snapshot.get("watchdog_enabled"))
-        extra_props.append(("bridge-watchdog-enabled", "1" if enabled else "0"))
-        watchdog_interval = snapshot.get("watchdog_interval")
-        if isinstance(watchdog_interval, (int, float)):
-            extra_props.append(("bridge-watchdog-interval", str(watchdog_interval)))
+    extra_props.append(("bridge-watchdog-enabled", "1" if snapshot.watchdog_enabled else "0"))
+    if snapshot.watchdog_enabled:
+        extra_props.append(("bridge-watchdog-interval", str(snapshot.watchdog_interval)))
 
     if extra_props:
         user_props = [(p.key, p.value) for p in message.user_properties]

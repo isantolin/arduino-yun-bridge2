@@ -1106,6 +1106,10 @@ message HandshakeSnapshot {
     float fatal_unix = 14;
     bool pending_nonce = 15;
     uint32 nonce_length = 16;
+    string reason = 17;
+    string detail = 18;
+    string fsm_state = 19;
+    string event = 20;
 }
 
 message PipelineEvent {
@@ -1209,8 +1213,51 @@ message MqttQueuedPublish {
     optional string response_topic = 8;
     optional bytes correlation_data = 9;
     repeated UserProperty user_properties = 10;
+
+
     repeated uint32 subscription_identifier = 11;
     optional uint32 topic_alias = 12;
+}
+
+
+
+message MqttDropCount {
+    string topic = 1;
+    uint32 count = 2;
+}
+
+message QueueDepths {
+    uint32 mqtt_publish = 1;
+    uint32 console = 2;
+    uint32 mailbox_outgoing = 3;
+    uint32 mailbox_incoming = 4;
+    uint32 running_processes = 5;
+}
+
+message SupervisorEntry {
+    string name = 1;
+    SupervisorSnapshot stats = 2;
+}
+
+message DaemonMetrics {
+    uint32 mqtt_queue_depth = 1;
+    uint32 mqtt_dropped_messages = 2;
+    repeated MqttDropCount mqtt_drop_counts = 3;
+    uint32 mqtt_spool_corrupt_dropped = 4;
+    uint32 mqtt_spool_dropped_limit = 5;
+    uint32 mqtt_spool_trim_events = 6;
+    double mqtt_spool_last_trim_unix = 7;
+    bool mqtt_spool_degraded = 8;
+    string mqtt_spool_failure_reason = 9;
+    uint32 mqtt_spool_pending_messages = 10;
+    QueueDepths queue_depths = 11;
+    bool link_synchronised = 12;
+    uint32 unknown_command_count = 13;
+    uint32 unknown_command_last_id = 14;
+    repeated SupervisorEntry supervisors = 15;
+    double heartbeat_unix = 16;
+    bool watchdog_enabled = 17;
+    double watchdog_interval = 18;
 }
 
 message RpcEnvelope {
@@ -1256,8 +1303,27 @@ message RpcEnvelope {
         SpiTransfer spi_transfer = 39;
         SpiTransferResponse spi_transfer_response = 40;
         SpiConfig spi_config = 41;
+        DaemonMetrics daemon_metrics = 42;
     }
 }
 
 
 
+
+message StatusReport {
+    uint32 status = 1;
+    string name = 2;
+    string description = 3;
+    string message = 4;
+    string topic = 5;
+    string action = 6;
+    uint32 pin = 7;
+    string reason = 8;
+}
+
+message BridgeStatus {
+    DaemonMetrics metrics = 1;
+    BridgeSnapshot bridge = 2;
+    repeated ProcessStats process_stats = 3;
+    SystemStatus system = 4;
+}

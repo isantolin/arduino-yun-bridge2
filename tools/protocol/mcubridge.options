@@ -35,6 +35,12 @@ rpc.pb.PipelineEvent          skip_message:true
 rpc.pb.SerialPipelineSnapshot skip_message:true
 rpc.pb.SerialFlowSnapshot     skip_message:true
 rpc.pb.BridgeSnapshot         skip_message:true
+rpc.pb.DaemonMetrics          skip_message:true
+rpc.pb.BridgeStatus           skip_message:true
+rpc.pb.StatusReport           skip_message:true
+rpc.pb.MqttDropCount          skip_message:true
+rpc.pb.QueueDepths           skip_message:true
+rpc.pb.SupervisorEntry        skip_message:true
 
 # Exclude metadata options from MCU library
 rpc.pb.Constants skip_message:true

@@ -711,14 +711,12 @@ class BridgeService:
         await self.enqueue_mqtt(
             create_queued_publish(
                 topic_path(self.state.mqtt_topic_prefix, Topic.SYSTEM, Topic.STATUS),
-                structures.encode_structured_payload(
-                    {
-                        "status": status.value,
-                        "name": status.name,
-                        "description": status.description,
-                        "message": text,
-                    }
-                ),
+                pb.StatusReport(
+                    status=status.value,
+                    name=status.name,
+                    description=status.description,
+                    message=text,
+                ).SerializeToString(),
                 content_type=PROTOBUF_CONTENT_TYPE,
                 user_properties=(("bridge-status", status.name),),
             )
@@ -984,15 +982,13 @@ class BridgeService:
                     await self.enqueue_mqtt(
                         create_queued_publish(
                             topic_path(self.state.mqtt_topic_prefix, Topic.SYSTEM, Topic.STATUS),
-                            structures.encode_structured_payload(
-                                {
-                                    "status": "error",
-                                    "topic": route.topic.value,
-                                    "pin": pin,
-                                    "action": PinAction.READ,
-                                    "reason": "pending-pin-overflow",
-                                }
-                            ),
+                            pb.StatusReport(
+                                status=int(Status.ERROR),
+                                topic=str(route.topic.value),
+                                pin=pin,
+                                action=str(PinAction.READ),
+                                reason="pending-pin-overflow",
+                            ).SerializeToString(),
                             content_type=PROTOBUF_CONTENT_TYPE,
                             user_properties=(
                                 ("bridge-error", "pending-pin-overflow"),
@@ -1228,7 +1224,7 @@ class BridgeService:
         await self.enqueue_mqtt(
             create_queued_publish(
                 topic_path(self.state.mqtt_topic_prefix, Topic.SYSTEM, Topic.STATUS),
-                structures.encode_structured_payload({"status": "forbidden", "topic": val, "action": act}),
+                pb.StatusReport(status=403, topic=val, action=act, reason="forbidden").SerializeToString(),
                 content_type=PROTOBUF_CONTENT_TYPE,
                 user_properties=(("bridge-error", TOPIC_FORBIDDEN_REASON),),
             ),

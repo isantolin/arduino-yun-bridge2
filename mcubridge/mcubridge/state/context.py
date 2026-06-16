@@ -360,40 +360,46 @@ class RuntimeState:
         if "last_trim_unix" in observation:
             self.mqtt_spool_last_trim_unix = float(observation["last_trim_unix"])
 
-    def build_metrics_snapshot(self) -> dict[str, Any]:
-        from google.protobuf.json_format import MessageToDict
+    def build_metrics_snapshot(self) -> pb.DaemonMetrics:
+        """Build a concrete metrics snapshot for telemetry. [SIL-2]"""
+        supervisors = [pb.SupervisorEntry(name=name, stats=stats) for name, stats in self.supervisor_stats.items()]
+        mqtt_drop_counts = [
+            pb.MqttDropCount(topic=topic, count=count) for topic, count in self.mqtt_drop_counts.items()
+        ]
 
-        # [SIL-2] Return rich objects where possible to preserve attribute-based API
-        return {
-            "serial": self.serial_flow_stats,
-            "serial_throughput": self.serial_throughput_stats,
-            "mqtt_drop_counts": dict(self.mqtt_drop_counts),
-            "mqtt_spool_corrupt_dropped": self.mqtt_spool_corrupt_dropped,
-            "mqtt_spool_dropped_limit": self.mqtt_spool_dropped_limit,
-            "mqtt_spool_trim_events": self.mqtt_spool_trim_events,
-            "mqtt_spool_last_trim_unix": self.mqtt_spool_last_trim_unix,
-            "mqtt_spool_degraded": self.mqtt_spool_degraded,
-            "mqtt_spool_failure_reason": self.mqtt_spool_failure_reason,
-            "mqtt_spool_pending_messages": self.mqtt_spool_pending_messages,
-            "queue_depths": {
-                "mqtt_publish": self.mqtt_publish_queue.qsize(),
-                "console": len(self.console_to_mcu_queue),
-                "mailbox_outgoing": len(self.mailbox_queue),
-                "mailbox_incoming": len(self.mailbox_incoming_queue),
-                "running_processes": len(self.running_processes),
-            },
-            "handshake": MessageToDict(
-                self.build_handshake_snapshot(),
-                always_print_fields_with_no_presence=True,
-                preserving_proto_field_name=True,
+        return pb.DaemonMetrics(
+            mqtt_queue_depth=self.mqtt_publish_queue.qsize(),
+            mqtt_dropped_messages=self.mqtt_dropped_messages,
+            mqtt_drop_counts=mqtt_drop_counts,
+            mqtt_spool_corrupt_dropped=self.mqtt_spool_corrupt_dropped,
+            mqtt_spool_dropped_limit=self.mqtt_spool_dropped_limit,
+            mqtt_spool_trim_events=self.mqtt_spool_trim_events,
+            mqtt_spool_last_trim_unix=self.mqtt_spool_last_trim_unix,
+            mqtt_spool_degraded=self.mqtt_spool_degraded,
+            mqtt_spool_failure_reason=self.mqtt_spool_failure_reason or "",
+            mqtt_spool_pending_messages=self.mqtt_spool_pending_messages,
+            queue_depths=pb.QueueDepths(
+                mqtt_publish=self.mqtt_publish_queue.qsize(),
+                console=len(self.console_to_mcu_queue),
+                mailbox_outgoing=len(self.mailbox_queue),
+                mailbox_incoming=len(self.mailbox_incoming_queue),
+                running_processes=len(self.running_processes),
             ),
-            "link_synchronised": self.is_synchronized,
-            "bridge": MessageToDict(
-                self.build_bridge_snapshot(),
-                always_print_fields_with_no_presence=True,
-                preserving_proto_field_name=True,
-            ),
-        }
+            link_synchronised=self.is_synchronized,
+            unknown_command_count=self.unknown_command_count,
+            unknown_command_last_id=self.unknown_command_last_id,
+            supervisors=supervisors,
+            heartbeat_unix=time.time(),
+            watchdog_enabled=self.watchdog_enabled,
+            watchdog_interval=self.watchdog_interval,
+        )
+
+    def build_status_snapshot(self) -> pb.BridgeStatus:
+        """Build a holistic snapshot of the bridge status. [SIL-2]"""
+        return pb.BridgeStatus(
+            metrics=self.build_metrics_snapshot(),
+            bridge=self.build_bridge_snapshot(),
+        )
 
     def build_handshake_snapshot(self) -> pb.HandshakeSnapshot:
         return pb.HandshakeSnapshot(

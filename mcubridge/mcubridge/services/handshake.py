@@ -31,7 +31,7 @@ from ..config.const import (
     SERIAL_HANDSHAKE_BACKOFF_MAX,
 )
 from ..config.settings import RuntimeConfig
-from ..protocol import protocol, structures
+from ..protocol import protocol
 from ..protocol.protocol import Command, Status
 from ..protocol.structures import (
     PROTOBUF_CONTENT_TYPE,
@@ -495,26 +495,16 @@ class SerialHandshakeManager:
         detail: str | None = None,
         extra: dict[str, Any] | None = None,
     ) -> None:
-        payload: dict[str, Any] = {
-            "event": event,
-            "reason": reason,
-            "detail": detail,
-            "attempts": self._state.handshake_attempts,
-            "successes": self._state.handshake_successes,
-            "failures": self._state.handshake_failures,
-            "failure_streak": self._state.handshake_failure_streak,
-            "backoff_until": self._state.handshake_backoff_until,
-            "fatal_count": self._state.handshake_fatal_count,
-            "fatal_reason": self._state.handshake_fatal_reason,
-            "fatal_detail": self._state.handshake_fatal_detail,
-            "fatal_unix": self._state.handshake_fatal_unix,
-            "fsm_state": self.fsm_state,  # Include FSM state in telemetry
-        }
-        if extra:
-            payload |= extra
+        # [SIL-2] Holistic Handshake Snapshot via Protobuf
+        snapshot = self._state.build_handshake_snapshot()
+        snapshot.event = event
+        snapshot.reason = reason or ""
+        snapshot.detail = detail or ""
+        snapshot.fsm_state = str(self.fsm_state)
+
         message = create_queued_publish(
             topic_name=topic_path(self._state.mqtt_topic_prefix, Topic.SYSTEM, "handshake"),
-            payload=structures.encode_structured_payload(payload),
+            payload=snapshot.SerializeToString(),
             content_type=PROTOBUF_CONTENT_TYPE,
             user_properties=(("bridge-event", "handshake"),),
         )

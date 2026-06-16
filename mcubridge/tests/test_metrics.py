@@ -11,7 +11,7 @@ from mcubridge.metrics import (
     publish_bridge_snapshots,
     publish_metrics,
 )
-from mcubridge.protocol.structures import PROTOBUF_CONTENT_TYPE, decode_structured_payload
+from mcubridge.protocol.structures import PROTOBUF_CONTENT_TYPE
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol import protocol
 from mcubridge.state.context import RuntimeState
@@ -30,15 +30,19 @@ async def test_publish_metrics_publishes_snapshot(
         captured["message"] = message
         event.set()
 
-    fake_snapshot = {
-        "cpu": 99.0,
-        "mem": {"free": 1024},
-        "mqtt_spool_degraded": True,
-        "mqtt_spool_failure_reason": "disk-full",
-        "watchdog_enabled": True,
-        "watchdog_interval": 7.5,
-        "file_storage_limit_rejections": 1,
-    }
+    # [SIL-2] State updated directly on context for extra_props logic
+    runtime_state.mqtt_spool_degraded = True
+    runtime_state.mqtt_spool_failure_reason = "disk-full"
+    runtime_state.watchdog_enabled = True
+    runtime_state.watchdog_interval = 7.5
+    runtime_state.file_storage_limit_rejections = 1
+
+    fake_snapshot = pb.DaemonMetrics(
+        mqtt_spool_degraded=True,
+        mqtt_spool_failure_reason="disk-full",
+        watchdog_enabled=True,
+        watchdog_interval=7.5,
+    )
 
     runtime_state.mqtt_topic_prefix = "test/prefix"
 
@@ -51,6 +55,7 @@ async def test_publish_metrics_publishes_snapshot(
         side_effect=mock_build_metrics,
         autospec=True,
     ):
+
         task = asyncio.create_task(
             publish_metrics(
                 runtime_state,
@@ -68,7 +73,10 @@ async def test_publish_metrics_publishes_snapshot(
     expected_topic = "test/prefix/system/metrics"
 
     assert message.topic_name == expected_topic
-    assert decode_structured_payload(message.payload) == fake_snapshot
+    decoded = pb.DaemonMetrics()
+    decoded.ParseFromString(message.payload)
+    assert decoded.mqtt_spool_degraded is True
+    assert decoded.mqtt_spool_failure_reason == "disk-full"
     assert message.content_type == PROTOBUF_CONTENT_TYPE
     props = [(p.key, p.value) for p in message.user_properties]
     assert ("bridge-spool", "disk-full") in props
@@ -91,10 +99,9 @@ async def test_publish_metrics_marks_unknown_spool_reason(
         event.set()
 
     def mock_build_metrics_degraded(self: Any) -> Any:
-        return {
-            "mqtt_spool_degraded": True,
-            "watchdog_enabled": False,
-        }
+        return pb.DaemonMetrics(
+            mqtt_spool_degraded=True,
+        )
 
     with patch.object(
         RuntimeState,
@@ -102,6 +109,10 @@ async def test_publish_metrics_marks_unknown_spool_reason(
         side_effect=mock_build_metrics_degraded,
         autospec=True,
     ):
+        runtime_state.mqtt_spool_degraded = True
+        runtime_state.mqtt_spool_failure_reason = None
+        runtime_state.watchdog_enabled = False
+
         task = asyncio.create_task(
             publish_metrics(
                 runtime_state,

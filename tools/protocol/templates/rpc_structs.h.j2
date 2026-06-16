@@ -60,18 +60,18 @@ const T& get(const rpc_pb_RpcEnvelope& env);
 {% for s in structs %}
 template <>
 inline pb_size_t get_tag<rpc_pb_{{ s.name }}>() {
-    return rpc_pb_RpcEnvelope_{{ s.name | snakecase }}_tag;
+    return rpc_pb_RpcEnvelope_{{ s.field }}_tag;
 }
 
 template <>
 inline void set<rpc_pb_{{ s.name }}>(rpc_pb_RpcEnvelope& env, const rpc_pb_{{ s.name }}& packet) {
-    env.which_payload_type = rpc_pb_RpcEnvelope_{{ s.name | snakecase }}_tag;
-    env.payload_type.{{ s.name | snakecase }} = packet;
+    env.which_payload_type = rpc_pb_RpcEnvelope_{{ s.field }}_tag;
+    env.payload_type.{{ s.field }} = packet;
 }
 
 template <>
 inline const rpc_pb_{{ s.name }}& get<rpc_pb_{{ s.name }}>(const rpc_pb_RpcEnvelope& env) {
-    return env.payload_type.{{ s.name | snakecase }};
+    return env.payload_type.{{ s.field }};
 }
 {% endfor %}
 

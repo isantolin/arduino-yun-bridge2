@@ -12,7 +12,6 @@ from typing import (
 )
 from wsgiref.types import WSGIApplication
 
-import msgspec
 from prometheus_client.core import Metric
 from prometheus_client.registry import Collector
 import structlog
@@ -148,7 +147,7 @@ async def publish_metrics(
             await _emit_metrics_snapshot(state, enqueue, expiry_seconds=expiry)
         except asyncio.CancelledError:
             raise
-        except (OSError, RuntimeError, msgspec.MsgspecError) as e:
+        except (OSError, RuntimeError) as e:
             logger.error("Periodic metrics emit failed: %s", e)
 
     try:
@@ -188,7 +187,7 @@ async def publish_bridge_snapshots(
                         await _emit_bridge_snapshot(state, enqueue, flavor="summary")
                     except asyncio.CancelledError:
                         raise
-                    except (OSError, RuntimeError, msgspec.MsgspecError) as e:
+                    except (OSError, RuntimeError) as e:
                         logger.error("Bridge summary emit failed: %s", e)
                     await asyncio.sleep(summary_seconds)
 
@@ -202,7 +201,7 @@ async def publish_bridge_snapshots(
                         await _emit_bridge_snapshot(state, enqueue, flavor="handshake")
                     except asyncio.CancelledError:
                         raise
-                    except (OSError, RuntimeError, msgspec.MsgspecError) as e:
+                    except (OSError, RuntimeError) as e:
                         logger.error("Bridge handshake emit failed: %s", e)
                     await asyncio.sleep(handshake_seconds)
 

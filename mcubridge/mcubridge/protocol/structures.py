@@ -387,11 +387,7 @@ def _flatten_structured_value(
         for key, nested in proto_fields.items():
             _flatten_structured_value(f"{key_prefix}.{key}" if key_prefix else key, nested, entries)
         return
-    if isinstance(value, msgspec.Struct):
-        struct_fields = msgspec.structs.asdict(value)
-        for key, nested in struct_fields.items():
-            _flatten_structured_value(f"{key_prefix}.{key}" if key_prefix else key, nested, entries)
-        return
+
     if isinstance(value, (list, tuple)):
         nested: Any
         for i, nested in enumerate(cast(list[Any] | tuple[Any, ...], value)):
@@ -424,11 +420,10 @@ def _flatten_structured_value(
     entries.append(entry)
 
 
-def encode_structured_payload(payload: Mapping[str, Any] | msgspec.Struct) -> bytes:
+def encode_structured_payload(payload: Mapping[str, Any]) -> bytes:
     message = pb.StructuredPayload()
-    source: Mapping[str, Any] = msgspec.structs.asdict(payload) if isinstance(payload, msgspec.Struct) else payload
     entries: list[pb.StructuredEntry] = []
-    for key, value in source.items():
+    for key, value in payload.items():
         _flatten_structured_value(str(key), value, entries)
     message.entries.extend(entries)
     return message.SerializeToString()

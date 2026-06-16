@@ -544,7 +544,7 @@ class BridgeService:
         if not serial:
             return False
         cache = cast(Any, self.state.datastore_cache)
-        val = msgspec.convert(cache.get(p.key, b"") if cache else b"", bytes)
+        val = bytes(cache.get(p.key, b"") if cache else b"")
         res = await serial.send(
             Command.CMD_DATASTORE_GET_RESP.value,
             pb.DatastoreGetResponse(value=val[:255]),
@@ -728,7 +728,7 @@ class BridgeService:
     # --- MQTT Specific Handlers (Cleaned) ---
 
     async def _handle_mqtt_console(self, inbound: Message) -> None:
-        if pl := msgspec.convert(inbound.payload, bytes):
+        if pl := bytes(inbound.payload):
             self.state.console_to_mcu_queue.append(pl)
             await self._flush_console_queue()
 
@@ -737,7 +737,7 @@ class BridgeService:
         if key_parts and key_parts[-1] in ("request", "response"):
             key_parts.pop()
         key = "/".join(key_parts)
-        pl = msgspec.convert(inbound.payload, bytes)
+        pl = bytes(inbound.payload)
         if not key:
             return
         if route.identifier == DatastoreAction.PUT:
@@ -749,7 +749,7 @@ class BridgeService:
             cache = cast(Any, self.state.datastore_cache)
             val = cache.get(key) if cache else None
             if val is not None:
-                await self._publish_datastore_value(key, msgspec.convert(val, bytes), reply_context=inbound)
+                await self._publish_datastore_value(key, bytes(val), reply_context=inbound)
             elif route.remainder and route.remainder[-1] == "request":
                 await self._publish_datastore_value(key, b"", reply_context=inbound, error="datastore-miss")
 
@@ -757,7 +757,7 @@ class BridgeService:
         serial = self.serial
         if not serial:
             return
-        pl = msgspec.convert(inbound.payload, bytes)
+        pl = bytes(inbound.payload)
         if route.identifier == MailboxAction.WRITE:
             self.state.mailbox_queue.append(pl)
             await serial.send(Command.CMD_MAILBOX_PUSH.value, pb.MailboxPush(data=pl))
@@ -786,7 +786,7 @@ class BridgeService:
             elif act == FileAction.WRITE:
                 await serial.send(
                     Command.CMD_FILE_WRITE.value,
-                    pb.FileWrite(path=target[4:], data=msgspec.convert(inbound.payload, bytes)),
+                    pb.FileWrite(path=target[4:], data=bytes(inbound.payload)),
                 )
             elif act == FileAction.REMOVE:
                 await serial.send(Command.CMD_FILE_REMOVE.value, pb.FileRemove(path=target[4:]))
@@ -795,11 +795,11 @@ class BridgeService:
             if not path:
                 return
             if act == FileAction.WRITE:
-                if await self._write_with_quota(path, msgspec.convert(inbound.payload, bytes)):
+                if await self._write_with_quota(path, bytes(inbound.payload)):
                     await self.enqueue_mqtt(
                         create_queued_publish(
                             topic_path(self.state.mqtt_topic_prefix, Topic.FILE, FileAction.READ, target),
-                            msgspec.convert(inbound.payload, bytes),
+                            bytes(inbound.payload),
                         ),
                         reply_context=inbound,
                     )
@@ -874,7 +874,7 @@ class BridgeService:
 
     async def _handle_mqtt_shell(self, route: TopicRoute, inbound: Message) -> None:
         act = route.segments[0] if route.segments else None
-        pl = msgspec.convert(inbound.payload, bytes)
+        pl = bytes(inbound.payload)
         if act == ShellAction.RUN_ASYNC:
             try:
                 properties = getattr(inbound, "properties", None)
@@ -967,7 +967,7 @@ class BridgeService:
         pin = self._parse_pin(route.segments[0])
         if pin < 0:
             return
-        pl = msgspec.convert(inbound.payload, bytes).decode()
+        pl = bytes(inbound.payload).decode()
         if len(route.segments) == 2:
             if route.segments[1] == PinAction.MODE:
                 await serial.send(Command.CMD_SET_PIN_MODE.value, pb.PinMode(pin=pin, mode=cast(Any, int(pl))))

@@ -373,25 +373,32 @@ class JinjaGenerator:
         template = self.env.get_template("rpc_structs.h.j2")
         proto_path = (REPO_ROOT / "tools" / "protocol" / "mcubridge.proto").resolve()
         proto_content = proto_path.read_text(encoding="utf-8")
+        
+        # 1. Extract ALL messages for basic aliases and get_fields
+        all_msg_names = re.findall(r"(?:^|\n)\s*message\s+(\w+)\s*{", proto_content)
+        options_path = (REPO_ROOT / "tools" / "protocol" / "mcubridge.options").resolve()
+        options_content = options_path.read_text(encoding="utf-8")
+        skipped_messages = re.findall(r"rpc\.pb\.(\w+)\s+skip_message:true", options_content)
+        
+        all_structs = [{"name": name} for name in all_msg_names if name not in skipped_messages and name != "RpcContainer"]
 
+        # 2. Extract messages inside RpcEnvelope oneof for payload helpers
         oneof_match = re.search(r"oneof payload_type\s*{(.*?)}", proto_content, re.DOTALL)
-        if not oneof_match:
-            raise RuntimeError("Could not find RpcEnvelope oneof payload_type in proto")
-
-        oneof_content = oneof_match.group(1)
-        structs: list[dict[str, str]] = []
-        for raw_line in oneof_content.strip().split("\n"):
-            line = raw_line.strip()
-            if not line or line.startswith("//"):
-                continue
-            m = re.search(r"(\w+)\s+(\w+)\s*=\s*(\d+);", line)
-            if m:
-                msg_type, field_name, _ = m.groups()
-                if msg_type == "bytes":
+        payload_structs = []
+        if oneof_match:
+            oneof_content = oneof_match.group(1)
+            for raw_line in oneof_content.strip().split("\n"):
+                line = raw_line.strip()
+                if not line or line.startswith("//"):
                     continue
-                structs.append({"name": msg_type, "field": field_name})
+                m = re.search(r"(\w+)\s+(\w+)\s*=\s*(\d+);", line)
+                if m:
+                    msg_type, field_name, _ = m.groups()
+                    if msg_type == "bytes":
+                        continue
+                    payload_structs.append({"name": msg_type, "field": field_name})
 
-        render = template.render(structs=structs)
+        render = template.render(all_structs=all_structs, payload_structs=payload_structs)
         out_path.write_text(render, encoding="utf-8")
 
     def generate_cpp_hw_config(self, spec: ProtocolSpec, out_path: Path) -> None:

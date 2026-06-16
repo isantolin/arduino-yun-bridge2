@@ -30,7 +30,7 @@ struct Frame;
 
 namespace rpc::payload {
 
-{% for s in structs %}
+{% for s in all_structs %}
 using {{ s.name }} = rpc_pb_{{ s.name }};
 {% endfor %}
 
@@ -41,7 +41,7 @@ namespace rpc::Payload {
 template <typename T>
 const pb_msgdesc_t* get_fields();
 
-{% for s in structs %}
+{% for s in all_structs %}
 template <>
 inline const pb_msgdesc_t* get_fields<rpc_pb_{{ s.name }}>() {
     return rpc_pb_{{ s.name }}_fields;
@@ -57,7 +57,7 @@ void set(rpc_pb_RpcEnvelope& env, const T& packet);
 template <typename T>
 const T& get(const rpc_pb_RpcEnvelope& env);
 
-{% for s in structs %}
+{% for s in payload_structs %}
 template <>
 inline pb_size_t get_tag<rpc_pb_{{ s.name }}>() {
     return rpc_pb_RpcEnvelope_{{ s.field }}_tag;

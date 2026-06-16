@@ -22,19 +22,6 @@ template class delegate<void(const rpc_pb_RpcEnvelope&)>;
 
 namespace rpc {
 
-namespace Payload {
-bool _parse_impl(const rpc_pb_RpcEnvelope& env, const pb_msgdesc_t* fields,
-                 void* dest) {
-  if (env.which_payload_type == rpc_pb_RpcEnvelope_encrypted_payload_tag) {
-    pb_istream_t stream =
-        pb_istream_from_buffer(env.payload_type.encrypted_payload.bytes,
-                               env.payload_type.encrypted_payload.size);
-    return pb_decode(&stream, fields, dest);
-  }
-  return false;
-}
-}  // namespace Payload
-
 etl::expected<rpc_pb_RpcEnvelope, FrameError> parse_frame(
     etl::span<const uint8_t> buffer) {
   if (buffer.size() < CRC_TRAILER_SIZE + 2U)

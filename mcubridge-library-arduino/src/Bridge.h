@@ -177,13 +177,11 @@ class BridgeClass {
         isSynchronized() && !_shared_secret.empty() && !is_excluded;
 
     if (do_encrypt) {
-      auto res = rpc::Payload::serialize<T>(
-          packet,
-          etl::span<uint8_t>(_transient_buffer.data(), rpc::MAX_PAYLOAD_SIZE));
-      if (res) {
+      pb_ostream_t out_stream = pb_ostream_from_buffer(_transient_buffer.data(), rpc::MAX_PAYLOAD_SIZE);
+      if (pb_encode(&out_stream, rpc::Payload::get_fields<T>(), &packet)) {
         return sendFrame(
             c, seq,
-            etl::span<const uint8_t>(_transient_buffer.data(), res.value()));
+            etl::span<const uint8_t>(_transient_buffer.data(), out_stream.bytes_written));
       }
       return false;
     } else {
@@ -309,10 +307,15 @@ class BridgeClass {
       b._processAck(ctx.raw_command, ctx.sequence_id);
       return;
     }
-    auto res = rpc::Payload::parse<T>(*ctx.envelope);
-    if (res) {
+    T res_msg = {};
+    bool decoded = false;
+    if (ctx.envelope->which_payload_type == rpc_pb_RpcEnvelope_encrypted_payload_tag) {
+      pb_istream_t stream = pb_istream_from_buffer(ctx.envelope->payload_type.encrypted_payload.bytes, ctx.envelope->payload_type.encrypted_payload.size);
+      decoded = pb_decode(&stream, rpc::Payload::get_fields<T>(), &res_msg);
+    }
+    if (decoded) {
       b._processAck(ctx.raw_command, ctx.sequence_id);
-      (b.*Handler)(res.value());
+      (b.*Handler)(res_msg);
     } else
       b.emitStatus(rpc::StatusCode::STATUS_MALFORMED);
   }
@@ -325,10 +328,15 @@ class BridgeClass {
       b._processAck(ctx.raw_command, ctx.sequence_id);
       return;
     }
-    auto res = rpc::Payload::parse<T>(*ctx.envelope);
-    if (res) {
+    T res_msg = {};
+    bool decoded = false;
+    if (ctx.envelope->which_payload_type == rpc_pb_RpcEnvelope_encrypted_payload_tag) {
+      pb_istream_t stream = pb_istream_from_buffer(ctx.envelope->payload_type.encrypted_payload.bytes, ctx.envelope->payload_type.encrypted_payload.size);
+      decoded = pb_decode(&stream, rpc::Payload::get_fields<T>(), &res_msg);
+    }
+    if (decoded) {
       b._processAck(ctx.raw_command, ctx.sequence_id);
-      (b.*Handler)(ctx, res.value());
+      (b.*Handler)(ctx, res_msg);
     } else
       b.emitStatus(rpc::StatusCode::STATUS_MALFORMED);
   }
@@ -363,7 +371,13 @@ class BridgeClass {
   template <typename T, void (BridgeClass::*Handler)(const T&)>
   static void _dispatchPayload(BridgeClass& b,
                                const bridge::router::CommandContext& ctx) {
-    (b.*Handler)((rpc::Payload::parse<T>(*ctx.envelope)).value());
+    T res_msg = {};
+    if (ctx.envelope->which_payload_type == rpc_pb_RpcEnvelope_encrypted_payload_tag) {
+      pb_istream_t stream = pb_istream_from_buffer(ctx.envelope->payload_type.encrypted_payload.bytes, ctx.envelope->payload_type.encrypted_payload.size);
+      if (pb_decode(&stream, rpc::Payload::get_fields<T>(), &res_msg)) {
+        (b.*Handler)(res_msg);
+      }
+    }
   }
 
   void _handleSetPinMode(const rpc_pb_PinMode& m);

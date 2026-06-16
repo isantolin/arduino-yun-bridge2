@@ -14,9 +14,10 @@
 #if defined(ARDUINO_ARCH_AVR)
 #include <avr/wdt.h>
 #endif
-
-#include <Codecs/COBS.h>
+// clang-format off
 #include <PacketSerial.h>
+#include <Codecs/COBS.h>
+// clang-format on
 #include <etl/algorithm.h>
 #include <etl/array.h>
 #include <etl/callback_timer.h>

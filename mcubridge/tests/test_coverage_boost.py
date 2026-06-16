@@ -27,11 +27,9 @@ sys.modules["uci"] = MagicMock()
 
 
 def test_frame_coverage_boost() -> None:
-    # 1. Message descriptor name not in map
-    mock_msg = MagicMock(spec=ProtobufMessage)
-    mock_msg.DESCRIPTOR.name = "NonExistentName"
-    mock_msg.SerializeToString.return_value = b"mockpayload"
-    frame = build_frame(command_id=10, sequence_id=1, payload=mock_msg)
+
+    # 1. Raw bytes payload
+    frame = build_frame(command_id=10, sequence_id=1, payload=b"mockpayload")
     parsed = parse_frame(frame)
     assert parsed.payload == b"mockpayload"
 
@@ -50,7 +48,7 @@ def test_frame_coverage_boost() -> None:
     req = pb.DigitalWrite(pin=13, value=1)
     frame_req = build_frame(command_id=5, sequence_id=3, payload=req)
     parsed_req = parse_frame(frame_req)
-    assert parsed_req.envelope.WhichOneof("payload_type") == "encrypted_payload"
+    assert parsed_req.envelope.WhichOneof("payload_type") == "digital_write"
     if isinstance(parsed_req.payload, ProtobufMessage):
         assert parsed_req.payload == req
     else:

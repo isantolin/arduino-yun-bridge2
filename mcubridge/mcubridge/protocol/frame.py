@@ -56,6 +56,7 @@ def build_frame(
         tag=tag or (b"\x00" * _TAG_SIZE),
     )
 
+
     payload_bytes = payload.SerializeToString() if isinstance(payload, ProtobufMessage) else payload
     if len(payload_bytes) > protocol.MAX_PAYLOAD_SIZE:
         raise ValueError(f"Payload size {len(payload_bytes)} exceeds maximum {protocol.MAX_PAYLOAD_SIZE}")
@@ -72,8 +73,12 @@ def build_frame(
         full_ct = ChaCha20Poly1305(session_key).encrypt(envelope.nonce, payload_bytes, aad)
         envelope.encrypted_payload, envelope.tag = full_ct[:-16], full_ct[-16:]
     else:
-        # [SIL-2] Direct payload assignment eradicating redundant envelope field logic.
-        envelope.encrypted_payload = payload_bytes
+        # Unencrypted! [SIL-2] Holistic payload extraction natively handled by Protobuf.
+        if isinstance(payload, ProtobufMessage):
+            field_name = "".join(["_" + c.lower() if c.isupper() else c for c in type(payload).__name__]).lstrip("_")
+            getattr(envelope, field_name).CopyFrom(payload)
+        else:
+            envelope.encrypted_payload = payload_bytes
 
     body = envelope.SerializeToString()
     return body + struct.pack("<I", crc32(body) & protocol.CRC32_MASK)
@@ -100,6 +105,7 @@ def parse_frame(raw_frame_buffer: bytes | bytearray | memoryview, session_key: b
 
     is_excluded = is_system_command(envelope.command_id)
 
+
     # AEAD Decryption
     if session_key and not is_excluded:
         # Optimization: Use Protobuf envelope itself as AAD by only including header fields.
@@ -115,7 +121,13 @@ def parse_frame(raw_frame_buffer: bytes | bytearray | memoryview, session_key: b
         except InvalidTag as exc:
             raise ValueError("AEAD decryption failed") from exc
     else:
-        # Unencrypted! [SIL-2] Holistic payload extraction from the unified encrypted_payload field.
-        decrypted = envelope.encrypted_payload
+        # Unencrypted! [SIL-2] Holistic payload extraction from the native oneof field.
+        field = envelope.WhichOneof("payload_type")
+        if field == "encrypted_payload":
+            decrypted = envelope.encrypted_payload
+        elif field:
+            decrypted = getattr(envelope, field)
+        else:
+            decrypted = b""
 
     return DecodedFrame(envelope=envelope, payload=decrypted)

@@ -1191,16 +1191,7 @@ message TopicAuthorization {
     bool spi_config = 23;
 }
 
-message RpcEnvelope {
-    uint32 version = 1;
-    uint32 command_id = 2;
-    uint32 sequence_id = 3;
-    bytes nonce = 4;
-    bytes tag = 5;
-    oneof payload_type {
-        bytes encrypted_payload = 6;
-    }
-}
+
 
 message UserProperty {
     string key = 1;
@@ -1221,4 +1212,52 @@ message MqttQueuedPublish {
     repeated uint32 subscription_identifier = 11;
     optional uint32 topic_alias = 12;
 }
+
+message RpcEnvelope {
+    uint32 version = 1;
+    uint32 command_id = 2;
+    uint32 sequence_id = 3;
+    bytes nonce = 4;
+    bytes tag = 5;
+    oneof payload_type {
+        bytes encrypted_payload = 6;
+        VersionResponse version_response = 7;
+        FreeMemoryResponse free_memory_response = 8;
+        Capabilities capabilities = 9;
+        PinMode pin_mode = 10;
+        DigitalWrite digital_write = 11;
+        AnalogWrite analog_write = 12;
+        PinRead pin_read = 13;
+        DigitalReadResponse digital_read_response = 14;
+        AnalogReadResponse analog_read_response = 15;
+        ConsoleWrite console_write = 16;
+        DatastorePut datastore_put = 17;
+        DatastoreGet datastore_get = 18;
+        DatastoreGetResponse datastore_get_response = 19;
+        MailboxPush mailbox_push = 20;
+        MailboxProcessed mailbox_processed = 21;
+        MailboxAvailableResponse mailbox_available_response = 22;
+        MailboxReadResponse mailbox_read_response = 23;
+        FileWrite file_write = 24;
+        FileRead file_read = 25;
+        FileRemove file_remove = 26;
+        FileReadResponse file_read_response = 27;
+        ProcessRunAsync process_run_async = 28;
+        ProcessRunAsyncResponse process_run_async_response = 29;
+        ProcessPoll process_poll = 30;
+        ProcessPollResponse process_poll_response = 31;
+        ProcessKill process_kill = 32;
+        GenericResponse generic_response = 33;
+        AckPacket ack_packet = 34;
+        HandshakeConfig handshake_config = 35;
+        SetBaudratePacket set_baudrate_packet = 36;
+        LinkSync link_sync = 37;
+        EnterBootloader enter_bootloader = 38;
+        SpiTransfer spi_transfer = 39;
+        SpiTransferResponse spi_transfer_response = 40;
+        SpiConfig spi_config = 41;
+    }
+}
+
+
 

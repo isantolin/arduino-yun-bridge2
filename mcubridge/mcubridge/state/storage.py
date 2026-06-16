@@ -27,14 +27,33 @@ class DbmDeque:
         if directory:
             os.makedirs(directory, exist_ok=True)
         # Initialize if not exists
-        with dbm.open(self.path, "c") as db:
-            if b"head" not in db:
+        with self._open_db("c") as db:
+            pass
+
+    def _open_db(self, flag: str) -> Any:
+        try:
+            db = dbm.open(self.path, flag)
+            # Ensure basic structure is initialized
+            if b"head" not in db or b"tail" not in db:
                 db[b"head"] = b"0"
-            if b"tail" not in db:
                 db[b"tail"] = b"0"
+            return db
+        except dbm.error as e:
+            logger.warning("DbmDeque database corrupt or incomplete, recreating: %s", e)
+            for suffix in ("", ".db", ".dir", ".pag", ".bak"):
+                try:
+                    os.unlink(self.path + suffix)
+                except FileNotFoundError:
+                    pass
+                except OSError:
+                    pass
+            db = dbm.open(self.path, "n")
+            db[b"head"] = b"0"
+            db[b"tail"] = b"0"
+            return db
 
     def append(self, item: bytes) -> None:
-        with dbm.open(self.path, "c") as db:
+        with self._open_db("c") as db:
             tail = int(db[b"tail"])
             db[str(tail).encode()] = item
             db[b"tail"] = str(tail + 1).encode()
@@ -49,7 +68,7 @@ class DbmDeque:
                 db[b"head"] = str(head + 1).encode()
 
     def popleft(self) -> bytes:
-        with dbm.open(self.path, "c") as db:
+        with self._open_db("c") as db:
             head = int(db[b"head"])
             tail = int(db[b"tail"])
             if head >= tail:
@@ -62,11 +81,11 @@ class DbmDeque:
             return val
 
     def __len__(self) -> int:
-        with dbm.open(self.path, "c") as db:
+        with self._open_db("c") as db:
             return int(db[b"tail"]) - int(db[b"head"])
 
     def __getitem__(self, index: int) -> bytes:
-        with dbm.open(self.path, "c") as db:
+        with self._open_db("c") as db:
             head = int(db[b"head"])
             tail = int(db[b"tail"])
             length = tail - head
@@ -81,9 +100,8 @@ class DbmDeque:
             return db[str(actual_index).encode()]
 
     def clear(self) -> None:
-        with dbm.open(self.path, "n") as db:
-            db[b"head"] = b"0"
-            db[b"tail"] = b"0"
+        with self._open_db("n") as db:
+            pass
 
     def close(self) -> None:
         pass
@@ -97,21 +115,35 @@ class DbmCache:
         directory = os.path.dirname(self.path)
         if directory:
             os.makedirs(directory, exist_ok=True)
-        with dbm.open(self.path, "c"):
+        with self._open_db("c"):
             pass
 
+    def _open_db(self, flag: str) -> Any:
+        try:
+            return dbm.open(self.path, flag)
+        except dbm.error as e:
+            logger.warning("DbmCache database corrupt or incomplete, recreating: %s", e)
+            for suffix in ("", ".db", ".dir", ".pag", ".bak"):
+                try:
+                    os.unlink(self.path + suffix)
+                except FileNotFoundError:
+                    pass
+                except OSError:
+                    pass
+            return dbm.open(self.path, "n")
+
     def __setitem__(self, key: str, value: bytes) -> None:
-        with dbm.open(self.path, "c") as db:
+        with self._open_db("c") as db:
             db[key.encode()] = value
 
     def __getitem__(self, key: str) -> bytes:
-        with dbm.open(self.path, "c") as db:
+        with self._open_db("c") as db:
             return db[key.encode()]
 
     def get(self, key: str, default: T | None = None) -> bytes | T | None:
         """Get an item with a default value. [SIL-2] Catching only expected IO errors."""
         try:
-            with dbm.open(self.path, "c") as db:
+            with self._open_db("c") as db:
                 val = db.get(key.encode())
                 return val if val is not None else default
         except dbm.error as exc:
@@ -119,7 +151,7 @@ class DbmCache:
             return default
 
     def clear(self) -> None:
-        with dbm.open(self.path, "n"):
+        with self._open_db("n"):
             pass
 
     def close(self) -> None:

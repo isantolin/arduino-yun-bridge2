@@ -1,27 +1,82 @@
 """Pytest configuration for MCU Bridge tests."""
 
 from __future__ import annotations
+
+import os
+import time
 import msgspec
+import mcubridge.protocol.structures
+import mcubridge.config.common
+
+# ==============================================================================
+# GLOBAL TEST PATH ISOLATION PATCHING
+# ==============================================================================
+# This monkeypatches the default directories for both direct RuntimeConfig(...) 
+# calls and settings load functions (get_default_config) to ensure that each
+# test case runs in its own unique, isolated /tmp directory.
+# A cache is used to ensure stability (same paths) within a single test case,
+# which is reset between tests by the isolate_test_paths fixture.
+
+_current_test_spool: str | None = None
+_current_test_fs: str | None = None
+
+def get_unique_test_spool() -> str:
+    global _current_test_spool
+    if _current_test_spool is None:
+        _current_test_spool = f"/tmp/mcubridge-test-spool-{os.getpid()}-{time.time_ns()}"
+    return _current_test_spool
+
+def get_unique_test_fs() -> str:
+    global _current_test_fs
+    if _current_test_fs is None:
+        _current_test_fs = f"/tmp/mcubridge-test-fs-{os.getpid()}-{time.time_ns()}"
+    return _current_test_fs
+
+OriginalRuntimeConfig = mcubridge.protocol.structures.RuntimeConfig
+original_convert = msgspec.convert
+original_get_default_config = mcubridge.config.common.get_default_config
+
+class PatchedRuntimeConfig:
+    def __new__(cls, *args, **kwargs):
+        from mcubridge.config.const import DEFAULT_MQTT_SPOOL_DIR, DEFAULT_FILE_SYSTEM_ROOT
+        if "mqtt_spool_dir" not in kwargs or kwargs["mqtt_spool_dir"] == "/tmp/mcubridge/spool" or kwargs["mqtt_spool_dir"] == DEFAULT_MQTT_SPOOL_DIR:
+            kwargs["mqtt_spool_dir"] = get_unique_test_spool()
+        if "file_system_root" not in kwargs or kwargs["file_system_root"] == "/tmp/mcubridge" or kwargs["file_system_root"] == DEFAULT_FILE_SYSTEM_ROOT:
+            kwargs["file_system_root"] = get_unique_test_fs()
+        return OriginalRuntimeConfig(*args, **kwargs)
+
+def patched_convert(obj, type_arg, *args, **kwargs):
+    if type_arg is PatchedRuntimeConfig:
+        type_arg = OriginalRuntimeConfig
+    return original_convert(obj, type_arg, *args, **kwargs)
+
+def patched_get_default_config():
+    cfg = original_get_default_config()
+    cfg["mqtt_spool_dir"] = get_unique_test_spool()
+    cfg["file_system_root"] = get_unique_test_fs()
+    return cfg
+
+msgspec.convert = patched_convert
+mcubridge.protocol.structures.RuntimeConfig = PatchedRuntimeConfig
+mcubridge.config.common.get_default_config = patched_get_default_config
+# ==============================================================================
 
 import asyncio
 from asyncio import events as asyncio_events
+import gc
 import importlib.util
 import inspect
 import logging
-import os
 import shutil
 import sys
 from collections.abc import Iterator
 from pathlib import Path
-from typing import cast
-
-import structlog
-import mcubridge.config.const
+from typing import cast, Any
 
 import pytest
+import structlog
 
-from mcubridge.config import common
-from mcubridge.config import settings
+from mcubridge.config import common, settings
 from mcubridge.config.const import (
     DEFAULT_PROCESS_TIMEOUT,
     DEFAULT_STATUS_INTERVAL,
@@ -36,18 +91,13 @@ from mcubridge.protocol.protocol import (
 )
 from mcubridge.state.context import RuntimeState, create_runtime_state
 
+
 # [TEST FIX] We use the stub from stubs/uci/ which provides proper UciException and Uci classes.
 # The stub is placed in sys.path so 'import uci' will succeed naturally without sys.modules hack.
 _stubs_path = str(Path(__file__).parent.parent / "stubs")
 if _stubs_path not in sys.path:
     sys.path.insert(0, _stubs_path)
 
-
-# No longer injecting legacy serial asyncio shims into sys.modules.
-# Tests MUST mock mcubridge.transport.serial components instead.
-
-# [TEST FIX] Disable SysLog for all tests to prevent unclosed UNIX sockets (ResourceWarning)
-# and interference with Python 3.13 representation during cleanup.
 
 # [TEST FIX] Configure structlog purely natively but route to logging for caplog compatibility.
 structlog.configure(
@@ -119,35 +169,25 @@ def pytest_pyfunc_call(pyfuncitem: pytest.Function) -> bool | None:
 @pytest.fixture(autouse=True)
 def force_gc_cleanup():
     """Ensure all resources are released after each test to reach zero warnings."""
-    import gc
-
     yield
     # Close any stale event loop left by asyncio.run() or explicit set_event_loop
-    # to prevent ResourceWarning from leaked self-pipe sockets across tests.
-    #
-    # Access the policy's thread-local directly to avoid deprecated public
-    # helpers that emit warnings under Python 3.13+.
     policy = _get_event_loop_policy()
     loop = getattr(getattr(policy, "_local", None), "_loop", None)
     if loop is not None and not loop.is_closed():
         loop.close()
     asyncio.set_event_loop(None)
-    # Collect garbage to finalize any objects that hold OS resources.
-    # The dbm ResourceWarning was fixed at the source (RuntimeState.__del__
-    # + cleanup() resets mailbox queues to plain deques), so no suppression needed.
     gc.collect()
 
 
 # [TEST FIX] Global absolute path for temporary test data.
-# This ensures all tests use the same base directory and avoids 'Disk quota exceeded'
-# on restricted environments by allowing the user to redirect it.
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 TMP_TESTS_DIR = os.path.join(PROJECT_ROOT, ".tmp_tests")
 os.makedirs(TMP_TESTS_DIR, exist_ok=True)
 
 # [TEST FIX] Global injection is needed before any tests run to ensure Settings validation passes.
+import mcubridge.config.const
 mcubridge.config.const.VOLATILE_STORAGE_PATHS = frozenset(
-    list(mcubridge.config.const.VOLATILE_STORAGE_PATHS) + [TMP_TESTS_DIR, "/var/tmp"]
+    list(mcubridge.config.const.VOLATILE_STORAGE_PATHS) + [TMP_TESTS_DIR, "/var/tmp", "/tmp"]
 )
 
 
@@ -156,19 +196,31 @@ def isolate_test_paths() -> Iterator[None]:
     """Give each test unique file_system_root and mqtt_spool_dir to prevent cross-test interference.
     [SIL-2] FLASH PROTECTION: Always use /tmp (RAMFS) or verified .tmp_tests.
     """
-    import mcubridge.config.const
-    import tempfile
+    global _current_test_spool, _current_test_fs
+    # Reset path cache to generate new paths for the current test case
+    _current_test_spool = None
+    _current_test_fs = None
 
+    import mcubridge.config.const
     original_fs = mcubridge.config.const.DEFAULT_FILE_SYSTEM_ROOT
     original_spool = mcubridge.config.const.DEFAULT_MQTT_SPOOL_DIR
 
-    tmp_base = tempfile.mkdtemp(prefix="mcubridge-pytest-", dir=TMP_TESTS_DIR)
-    mcubridge.config.const.DEFAULT_FILE_SYSTEM_ROOT = str(Path(tmp_base) / "yun_files")
-    mcubridge.config.const.DEFAULT_MQTT_SPOOL_DIR = str(Path(tmp_base) / "spool")
+    mcubridge.config.const.DEFAULT_FILE_SYSTEM_ROOT = get_unique_test_fs()
+    mcubridge.config.const.DEFAULT_MQTT_SPOOL_DIR = get_unique_test_spool()
+
+    os.makedirs(mcubridge.config.const.DEFAULT_FILE_SYSTEM_ROOT, exist_ok=True)
+    os.makedirs(mcubridge.config.const.DEFAULT_MQTT_SPOOL_DIR, exist_ok=True)
+
     yield
+
+    try:
+        shutil.rmtree(mcubridge.config.const.DEFAULT_FILE_SYSTEM_ROOT, ignore_errors=True)
+        shutil.rmtree(mcubridge.config.const.DEFAULT_MQTT_SPOOL_DIR, ignore_errors=True)
+    except Exception:
+        pass
+
     mcubridge.config.const.DEFAULT_FILE_SYSTEM_ROOT = original_fs
     mcubridge.config.const.DEFAULT_MQTT_SPOOL_DIR = original_spool
-    shutil.rmtree(tmp_base)
 
 
 @pytest.fixture(autouse=True)
@@ -217,11 +269,7 @@ def isolate_persistent_runtime_paths() -> Iterator[None]:
 
 @pytest.fixture(autouse=True)
 def default_serial_secret(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Ensure load_runtime_config() sees a secure serial secret by default.
-
-    Settings are UCI-only, so we inject a deterministic UCI payload for tests.
-    """
-
+    """Ensure load_runtime_config() sees a secure serial secret by default."""
     monkeypatch.setattr(
         settings,
         "get_uci_config",
@@ -239,10 +287,6 @@ if str(PACKAGE_ROOT) not in sys.path:
 
 @pytest.fixture()
 def runtime_config() -> RuntimeConfig:
-    import time
-
-    # [TEST FIX] Ensure each test worker has its own unique FS root to avoid SQLite locking
-    unique_root = os.path.join(TMP_TESTS_DIR, f"mcubridge-test-fs-{os.getpid()}-{time.time_ns()}")
     return RuntimeConfig(
         serial_port="/dev/null",
         serial_baud=DEFAULT_BAUDRATE,
@@ -257,7 +301,7 @@ def runtime_config() -> RuntimeConfig:
         mqtt_keyfile=None,
         mqtt_topic=protocol.MQTT_DEFAULT_TOPIC_PREFIX,
         allowed_commands=(),
-        file_system_root=unique_root,
+        file_system_root=get_unique_test_fs(),
         process_timeout=DEFAULT_PROCESS_TIMEOUT,
         mqtt_queue_limit=8,
         reconnect_delay=DEFAULT_RECONNECT_DELAY,
@@ -270,7 +314,7 @@ def runtime_config() -> RuntimeConfig:
         serial_response_timeout=0.1,
         serial_retry_attempts=1,
         serial_shared_secret=b"s_e_c_r_e_t_mock",
-        mqtt_spool_dir=os.path.join(TMP_TESTS_DIR, f"mcubridge-test-spool-{os.getpid()}"),
+        mqtt_spool_dir=get_unique_test_spool(),
         allow_non_tmp_paths=True,
     )
 
@@ -290,7 +334,6 @@ def runtime_state(runtime_config: RuntimeConfig) -> Iterator[RuntimeState]:
 @pytest.fixture
 def real_config():
     from mcubridge.config import settings
-
     raw = settings.get_default_config()
     raw["serial_shared_secret"] = b"abcd1234"
     raw["serial_retry_timeout"] = 1.0
@@ -299,9 +342,7 @@ def real_config():
     raw["process_max_concurrent"] = 4
     raw["allow_non_tmp_paths"] = True
 
-    # [TEST FIX] Ensure the mocked unique paths from isolate_test_paths are actually applied
     from mcubridge.config import const
-
     raw["mqtt_spool_dir"] = const.DEFAULT_MQTT_SPOOL_DIR
     raw["file_system_root"] = const.DEFAULT_FILE_SYSTEM_ROOT
 

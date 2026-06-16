@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import dbm
 import os
-from typing import TypeVar
+from typing import Any, TypeVar
 
 import structlog
 
@@ -27,7 +27,7 @@ class DbmDeque:
         if directory:
             os.makedirs(directory, exist_ok=True)
         # Initialize if not exists
-        with self._open_db("c") as db:
+        with self._open_db("c"):
             pass
 
     def _open_db(self, flag: str) -> Any:
@@ -100,7 +100,7 @@ class DbmDeque:
             return db[str(actual_index).encode()]
 
     def clear(self) -> None:
-        with self._open_db("n") as db:
+        with self._open_db("n"):
             pass
 
     def close(self) -> None:

@@ -312,6 +312,9 @@ class BridgeClass {
     if (ctx.envelope->which_payload_type == rpc_pb_RpcEnvelope_encrypted_payload_tag) {
       pb_istream_t stream = pb_istream_from_buffer(ctx.envelope->payload_type.encrypted_payload.bytes, ctx.envelope->payload_type.encrypted_payload.size);
       decoded = pb_decode(&stream, rpc::Payload::get_fields<T>(), &res_msg);
+    } else if (ctx.envelope->which_payload_type != 0) {
+      memcpy(&res_msg, &ctx.envelope->payload_type, sizeof(T));
+      decoded = true;
     }
     if (decoded) {
       b._processAck(ctx.raw_command, ctx.sequence_id);
@@ -333,6 +336,9 @@ class BridgeClass {
     if (ctx.envelope->which_payload_type == rpc_pb_RpcEnvelope_encrypted_payload_tag) {
       pb_istream_t stream = pb_istream_from_buffer(ctx.envelope->payload_type.encrypted_payload.bytes, ctx.envelope->payload_type.encrypted_payload.size);
       decoded = pb_decode(&stream, rpc::Payload::get_fields<T>(), &res_msg);
+    } else if (ctx.envelope->which_payload_type != 0) {
+      memcpy(&res_msg, &ctx.envelope->payload_type, sizeof(T));
+      decoded = true;
     }
     if (decoded) {
       b._processAck(ctx.raw_command, ctx.sequence_id);
@@ -377,6 +383,9 @@ class BridgeClass {
       if (pb_decode(&stream, rpc::Payload::get_fields<T>(), &res_msg)) {
         (b.*Handler)(res_msg);
       }
+    } else if (ctx.envelope->which_payload_type != 0) {
+      memcpy(&res_msg, &ctx.envelope->payload_type, sizeof(T));
+      (b.*Handler)(res_msg);
     }
   }
 

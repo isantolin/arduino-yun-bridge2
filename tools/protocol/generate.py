@@ -398,7 +398,8 @@ class JinjaGenerator:
                     msg_type, field_name, _ = m.groups()
                     if msg_type == "bytes":
                         continue
-                    payload_structs.append({"name": msg_type, "field": field_name})
+                    if msg_type not in skipped_messages:
+                        payload_structs.append({"name": msg_type, "field": field_name})
 
         render = template.render(all_structs=all_structs, payload_structs=payload_structs)
         out_path.write_text(render, encoding="utf-8")

@@ -30,7 +30,6 @@ import argparse
 import asyncio
 import sys
 
-import msgspec
 import tenacity
 
 # [SIL-2] Deterministic Import: uvloop is MANDATORY for performance on OpenWrt.
@@ -115,7 +114,6 @@ def app(args: list[str] | None = None) -> None:
                 ValueError,
                 TypeError,
                 asyncio.TimeoutError,
-                msgspec.MsgspecError,
                 aiomqtt.MqttError,
                 SerialHandshakeFatal,
                 tenacity.RetryError,

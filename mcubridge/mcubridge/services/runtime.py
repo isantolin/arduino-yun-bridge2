@@ -15,7 +15,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast, Final
 
-import msgspec
 from ..state.storage import DbmDeque
 import structlog
 from google.protobuf.message import (
@@ -1325,7 +1324,6 @@ class BridgeService:
             RuntimeError,
             ValueError,
             TypeError,
-            msgspec.MsgspecError,
             aiomqtt.MqttError,
             tenacity.RetryError,
             SerialHandshakeFatal,

@@ -373,20 +373,20 @@ class JinjaGenerator:
         template = self.env.get_template("rpc_structs.h.j2")
         proto_path = (REPO_ROOT / "tools" / "protocol" / "mcubridge.proto").resolve()
         proto_content = proto_path.read_text(encoding="utf-8")
-        
+
         oneof_match = re.search(r"oneof payload_type\s*{(.*?)}", proto_content, re.DOTALL)
         if not oneof_match:
             raise RuntimeError("Could not find RpcEnvelope oneof payload_type in proto")
-            
+
         oneof_content = oneof_match.group(1)
-        structs = []
-        for line in oneof_content.strip().split("\n"):
-            line = line.strip()
+        structs: list[dict[str, str]] = []
+        for raw_line in oneof_content.strip().split("\n"):
+            line = raw_line.strip()
             if not line or line.startswith("//"):
                 continue
             m = re.search(r"(\w+)\s+(\w+)\s*=\s*(\d+);", line)
             if m:
-                msg_type, field_name, tag = m.groups()
+                msg_type, field_name, _ = m.groups()
                 if msg_type == "bytes":
                     continue
                 structs.append({"name": msg_type, "field": field_name})

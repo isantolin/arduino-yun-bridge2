@@ -6,31 +6,15 @@ import asyncio
 import structlog
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Any
 
-import msgspec
+from google.protobuf.json_format import MessageToJson
+from google.protobuf.message import Message as ProtobufMessage
 
 from ..config.const import STATUS_FILE_PATH
 from .context import RuntimeState
 
-from google.protobuf.message import Message as ProtobufMessage
-
 logger = structlog.get_logger("mcubridge.status")
 
-
-def _enc_hook(obj: Any) -> Any:
-    if isinstance(obj, ProtobufMessage):
-        from google.protobuf.json_format import MessageToDict
-
-        return MessageToDict(obj, preserving_proto_field_name=True)
-    if hasattr(obj, "_pb") and isinstance(obj._pb, ProtobufMessage):
-        from google.protobuf.json_format import MessageToDict
-
-        return MessageToDict(obj._pb, preserving_proto_field_name=True)
-    raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
-
-
-_json_enc = msgspec.json.Encoder(enc_hook=_enc_hook)
 STATUS_FILE = Path(STATUS_FILE_PATH)
 
 
@@ -50,7 +34,7 @@ async def status_writer(state: RuntimeState, interval: int) -> None:
                 raise
         except asyncio.CancelledError:
             raise
-        except (OSError, RuntimeError, msgspec.MsgspecError) as e:
+        except (OSError, RuntimeError, ValueError) as e:
             logger.error("Periodic status write failed: %s", e)
 
     try:
@@ -63,15 +47,15 @@ async def status_writer(state: RuntimeState, interval: int) -> None:
 
 
 def _write_status_file(payload: ProtobufMessage) -> None:
-    """[SIL-2] Atomic status persistence using zero-copy library primitives."""
+    """[SIL-2] Atomic status persistence via Protobuf-native JSON serialization."""
     try:
         STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        # [SIL-2] Use library encoder for atomic generation
-        data = _json_enc.encode(payload)
+        # [SIL-2] Direct Protobuf→JSON via library primitive (zero shim)
+        data = MessageToJson(payload, preserving_proto_field_name=True).encode("utf-8")
 
         with NamedTemporaryFile("wb", dir=STATUS_FILE.parent, delete=False) as tf:
             tf.write(data)
             temp_name = tf.name
         Path(temp_name).replace(STATUS_FILE)
-    except (msgspec.MsgspecError, OSError) as e:
+    except (ValueError, OSError) as e:
         logger.error("Failed to write atomic status file: %s", e)

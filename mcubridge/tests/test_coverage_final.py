@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any, Union
 
 import pytest
-import msgspec
+
 
 from mcubridge.protocol import protocol
 
@@ -127,11 +127,10 @@ async def test_status_writer_error_handling() -> None:
             await task
         except asyncio.CancelledError:
             pass
-    with patch("mcubridge.state.status._json_enc") as mock_enc:
-        mock_enc.encode.side_effect = msgspec.MsgspecError("encode error")
+    with patch("mcubridge.state.status.MessageToJson", side_effect=ValueError("encode error")):
         _write_status_file = getattr(status_mod, "_write_status_file")
 
-        _write_status_file({"a": 1})
+        _write_status_file({})
 
 
 def test_daemon_metrics_initialization() -> None:

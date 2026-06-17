@@ -6,11 +6,7 @@ import asyncio
 import math
 import weakref
 from collections.abc import Awaitable, Callable, Iterable, Sequence
-from typing import (
-    Any,
-    cast,
-)
-from wsgiref.types import WSGIApplication
+from typing import Any
 
 from prometheus_client.core import Metric
 from prometheus_client.registry import Collector
@@ -262,7 +258,7 @@ class PrometheusExporter:
     """Expose RuntimeState snapshots via the official Prometheus HTTP server."""
 
     def __init__(self, state: RuntimeState, host: str, port: int) -> None:
-        from prometheus_client import CONTENT_TYPE_LATEST, ProcessCollector, generate_latest
+        from prometheus_client import ProcessCollector, make_wsgi_app
         from wsgiref.simple_server import make_server
 
         self._state: RuntimeState | None = state
@@ -278,21 +274,12 @@ class PrometheusExporter:
         # Register the dynamic state collector
         self._registry.register(self._collector)
 
-        # [Library-First] Use direct registry rendering with native prometheus APIs.
-        def _app(environ: dict[str, Any], start_response: Callable[..., Any]) -> list[bytes]:
-            payload = generate_latest(self._registry)
-            start_response("200 OK", [("Content-Type", CONTENT_TYPE_LATEST)])
-
-            # [SIL-2] DBM handles its own thread-local resources safely.
-
-            return [payload]
-
-        app: WSGIApplication = cast(WSGIApplication, _app)
-
+        # [Library-First] Use official prometheus_client WSGI app factory.
+        # Provides content negotiation, gzip, OPTIONS/405 handling, and name[] filtering.
         self._server = make_server(
             self._host,
             self._port,
-            app,
+            make_wsgi_app(registry=self._registry),
         )
 
     @property

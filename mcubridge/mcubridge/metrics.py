@@ -258,8 +258,12 @@ class PrometheusExporter:
     """Expose RuntimeState snapshots via the official Prometheus HTTP server."""
 
     def __init__(self, state: RuntimeState, host: str, port: int) -> None:
-        from prometheus_client import ProcessCollector, make_wsgi_app
+        from prometheus_client import ProcessCollector
+        import prometheus_client
         from wsgiref.simple_server import make_server
+
+        pc: Any = prometheus_client
+        make_wsgi_app: Any = pc.make_wsgi_app
 
         self._state: RuntimeState | None = state
         self._host = host if host else "0.0.0.0"

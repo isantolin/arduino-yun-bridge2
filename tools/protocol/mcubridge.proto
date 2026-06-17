@@ -1260,6 +1260,21 @@ message DaemonMetrics {
     double watchdog_interval = 18;
 }
 
+message PinControlRequest {
+    string state = 1;
+}
+
+message PinControlData {
+    uint32 pin = 1;
+    string state = 2;
+}
+
+message PinControlResponse {
+    string status = 1;
+    optional string message = 2;
+    optional PinControlData data = 3;
+}
+
 message RpcEnvelope {
     uint32 version = 1;
     uint32 command_id = 2;

@@ -8,10 +8,11 @@ import re
 from typing import Any
 from wsgiref.handlers import CGIHandler
 
-import msgspec
 import paho.mqtt.publish
+from google.protobuf import json_format
 from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import load_runtime_config
+from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol.structures import RuntimeConfig
 from mcubridge.protocol.topics import Topic, topic_path
 
@@ -40,8 +41,9 @@ def publish_sync(topic: str, payload: str, config: RuntimeConfig) -> None:
     )
 
 
-def json_res(start_response: Any, status: str, response: dict[str, Any]) -> list[bytes]:
-    body = msgspec.json.encode(response)
+def json_res(start_response: Any, status: str, response: pb.PinControlResponse) -> list[bytes]:
+    """Serialize PinControlResponse Protobuf message to JSON for CGI output."""
+    body = json_format.MessageToJson(response, preserving_proto_field_name=True).encode("utf-8")
     headers = [
         ("Content-Type", "application/json"),
         ("Content-Length", str(len(body))),
@@ -61,44 +63,52 @@ def application(environ: dict[str, Any], start_response: Any) -> list[bytes]:
             return json_res(
                 start_response,
                 "400 Bad Request",
-                dict(status="error", message="Invalid path"),
+                pb.PinControlResponse(status="error", message="Invalid path"),
             )
 
-        pin = match.group(1)
+        pin = int(match.group(1))
         if environ.get("REQUEST_METHOD") != "POST":
             return json_res(
                 start_response,
                 "405 Method Not Allowed",
-                dict(status="error", message="Method not allowed"),
+                pb.PinControlResponse(status="error", message="Method not allowed"),
             )
 
         body_len = int(environ.get("CONTENT_LENGTH", "0"))
         body_data = environ["wsgi.input"].read(body_len)
-        data: dict[str, Any] = msgspec.json.decode(body_data) if body_len else {}
-        state = str(data.get("state", "")).upper()
+
+        # [SIL-2] Parse request using Protobuf model via JSON mapping
+        req = pb.PinControlRequest()
+        if body_len:
+            json_format.Parse(body_data, req)
+
+        state = str(req.state).upper()
 
         if state not in ("ON", "OFF"):
             return json_res(
                 start_response,
                 "400 Bad Request",
-                dict(status="error", message="Invalid state"),
+                pb.PinControlResponse(status="error", message="Invalid state"),
             )
 
-        topic = topic_path(config.mqtt_topic, Topic.DIGITAL, pin)
+        topic = topic_path(config.mqtt_topic, Topic.DIGITAL, str(pin))
         publish_sync(topic, "1" if state == "ON" else "0", config)
 
         return json_res(
             start_response,
             "200 OK",
-            dict(status="ok", data={"pin": int(pin), "state": state}),
+            pb.PinControlResponse(
+                status="ok",
+                data=pb.PinControlData(pin=pin, state=state),
+            ),
         )
 
-    except (ValueError, KeyError, TypeError, OSError) as e:
+    except (ValueError, KeyError, TypeError, OSError, json_format.ParseError) as e:
         logger.exception("CGI Error")
         return json_res(
             start_response,
             "500 Internal Server Error",
-            dict(status="error", message=str(e)),
+            pb.PinControlResponse(status="error", message=str(e)),
         )
 
 

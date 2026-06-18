@@ -605,8 +605,8 @@ void BridgeClass::_handleXon(const bridge::router::CommandContext&) {
   _tx_enabled = true;
 }
 
-void BridgeClass::_handleStatusAck(const bridge::router::CommandContext& ctx,
-                                   const rpc_pb_AckPacket& m) {
+void BridgeClass::_handleStatusAck(
+    const bridge::router::CommandContext& /*ctx*/, const rpc_pb_AckPacket& m) {
   _handleAck(m.command_id);
 }
 

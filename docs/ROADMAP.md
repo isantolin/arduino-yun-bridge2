@@ -15,7 +15,7 @@
 - **C++17 Migration**: Leveraging modern language features (lambdas, structured bindings) for cleaner, safer code.
 - **Strict SIL-2 Compliance**: All C-style casts replaced with `reinterpret_cast`/`static_cast` and reinforced memory safety.
 - **O(1) C++ Dispatch**: Replaced switch/case with jump tables for deterministic execution.
-- **Python 3.13.9+**: Full compatibility and optimization using uvloop and msgspec.
+- **Python 3.13.9+**: Full compatibility and optimization using uvloop and Protobuf.
 - **Mutual Auth Handshake**: Robust HKDF-SHA256 based synchronization with anti-replay protection.
 - **Protobuf over MQTT**: Migrated from JSON to protobuf payloads for deterministic binary interoperability.
 - **Strong Type Safety**: Integrated PEP-561 type stubs for third-party libraries.

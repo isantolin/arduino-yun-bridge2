@@ -75,9 +75,11 @@ def build_frame(
     else:
         # Unencrypted! [SIL-2] Holistic payload extraction natively handled by Protobuf.
         if isinstance(payload, ProtobufMessage):
-            # NO double encoding here: assign directly to oneof field
-            field_name = "".join(["_" + c.lower() if c.isupper() else c for c in type(payload).__name__]).lstrip("_")
-            getattr(envelope, field_name).CopyFrom(payload)
+            # [SIL-2] Use descriptor-based field mapping to eliminate manual string logic.
+            for field in envelope.DESCRIPTOR.oneofs_by_name["payload_type"].fields:
+                if field.message_type == payload.DESCRIPTOR:
+                    getattr(envelope, field.name).CopyFrom(payload)
+                    break
         else:
             if len(payload) > protocol.MAX_PAYLOAD_SIZE:
                 raise ValueError(f"Payload size {len(payload)} exceeds maximum {protocol.MAX_PAYLOAD_SIZE}")

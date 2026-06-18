@@ -170,12 +170,30 @@ class BridgeClass {
         isSynchronized() && !_shared_secret.empty() && !is_excluded;
 
     if (do_encrypt) {
+      if (is_reliable_cmd(raw_cmd)) {
+        BRIDGE_ATOMIC_BLOCK {
+          if (_pending_tx_queue.full()) return false;
+          auto* buf = _tx_payload_pool.allocate();
+          if (!buf) return false;
+          pb_ostream_t out_stream =
+              pb_ostream_from_buffer(buf->data.data(), buf->data.size());
+          if (pb_encode(&out_stream, rpc::Payload::get_fields<T>(), &packet)) {
+            _pending_tx_queue.push_back(
+                {raw_cmd, seq, buf, out_stream.bytes_written});
+            if (!_fsm.isAwaitingAck()) _flushPendingTxQueue();
+            return true;
+          }
+          _tx_payload_pool.release(buf);
+          return false;
+        }
+      }
       pb_ostream_t out_stream = pb_ostream_from_buffer(_transient_buffer.data(),
                                                        rpc::MAX_PAYLOAD_SIZE);
       if (pb_encode(&out_stream, rpc::Payload::get_fields<T>(), &packet)) {
-        return sendFrame(c, seq,
-                         etl::span<const uint8_t>(_transient_buffer.data(),
-                                                  out_stream.bytes_written));
+        _transmit(raw_cmd, seq,
+                  etl::span<const uint8_t>(_transient_buffer.data(),
+                                           out_stream.bytes_written));
+        return true;
       }
       return false;
     } else {
@@ -364,6 +382,33 @@ class BridgeClass {
     (b.*Handler)(ctx);
   }
 
+  template <typename T, void (BridgeClass::*Handler)(
+                            const bridge::router::CommandContext&, const T&)>
+  static void _dispatchResponse(BridgeClass& b,
+                                const bridge::router::CommandContext& ctx) {
+    if (ctx.is_duplicate) {
+      b._retransmitLastFrame();
+      return;
+    }
+    T res_msg = {};
+    bool decoded = false;
+    if (ctx.envelope->which_payload_type ==
+        rpc_pb_RpcEnvelope_encrypted_payload_tag) {
+      pb_istream_t stream = pb_istream_from_buffer(
+          ctx.envelope->payload_type.encrypted_payload.bytes,
+          ctx.envelope->payload_type.encrypted_payload.size);
+      decoded = pb_decode(&stream, rpc::Payload::get_fields<T>(), &res_msg);
+    } else if (ctx.envelope->which_payload_type == rpc::Payload::get_tag<T>()) {
+      res_msg = rpc::Payload::get<T>(*ctx.envelope);
+      decoded = true;
+    }
+    if (decoded) {
+      (b.*Handler)(ctx, res_msg);
+    } else
+      b.emitStatus(rpc::StatusCode::STATUS_MALFORMED);
+  }
+
+  // Overload for cases without a payload (e.g. simple requests)
   template <void (BridgeClass::*Handler)(const bridge::router::CommandContext&)>
   static void _dispatchResponse(BridgeClass& b,
                                 const bridge::router::CommandContext& ctx) {

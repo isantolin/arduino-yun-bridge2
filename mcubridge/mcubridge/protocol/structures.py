@@ -1,7 +1,7 @@
 """MCU Bridge Data Structures and Schemas.
 
 SINGLE SOURCE OF TRUTH for all data structures.
-Binary parsing uses stdlib struct; high-level schemas use Msgspec (SIL-2).
+Binary parsing uses stdlib struct; high-level schemas use Protobuf (SIL-2) [TESTED].
 """
 
 from __future__ import annotations
@@ -156,7 +156,7 @@ def allows_topic(auth: pb.TopicAuthorization, topic: str, action: str) -> bool:
 
 
 # =============================================================================
-# 3. Runtime Configuration Structures (msgspec)
+# 3. Runtime Configuration Structures (Protobuf-backed)
 # =============================================================================
 
 

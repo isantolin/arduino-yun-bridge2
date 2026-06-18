@@ -62,7 +62,7 @@ BridgeClass::DispatchHandler BridgeClass::_getHandler(uint16_t command_id) {
       return &BridgeClass::_dispatchSimpleAck<&BridgeClass::_handleStatusOk>;
     case rpc::to_underlying(rpc::StatusCode::STATUS_ACK):
       return &BridgeClass::_dispatchAckCtx<rpc_pb_AckPacket,
-                                        &BridgeClass::_handleStatusAck>;
+                                           &BridgeClass::_handleStatusAck>;
     case rpc::to_underlying(rpc::StatusCode::STATUS_MALFORMED):
       return &BridgeClass::_dispatchSimple<
           &BridgeClass::_handleStatusMalformed>;
@@ -73,7 +73,7 @@ BridgeClass::DispatchHandler BridgeClass::_getHandler(uint16_t command_id) {
           &BridgeClass::_handleGetFreeMemory>;
     case rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC):
       return &BridgeClass::_dispatchAckCtx<rpc_pb_LinkSync,
-                                        &BridgeClass::_handleLinkSync>;
+                                           &BridgeClass::_handleLinkSync>;
     case rpc::to_underlying(rpc::CommandId::CMD_LINK_RESET):
       return &BridgeClass::_dispatchSimpleAck<&BridgeClass::_handleLinkReset>;
     case rpc::to_underlying(rpc::CommandId::CMD_GET_CAPABILITIES):
@@ -99,11 +99,11 @@ BridgeClass::DispatchHandler BridgeClass::_getHandler(uint16_t command_id) {
       return &BridgeClass::_dispatchAck<rpc_pb_AnalogWrite,
                                         &BridgeClass::_handleAnalogWrite>;
     case rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_READ):
-      return &BridgeClass::_dispatchResponseCtx<rpc_pb_PinRead,
-                                             &BridgeClass::_handleDigitalRead>;
+      return &BridgeClass::_dispatchResponseCtx<
+          rpc_pb_PinRead, &BridgeClass::_handleDigitalRead>;
     case rpc::to_underlying(rpc::CommandId::CMD_ANALOG_READ):
-      return &BridgeClass::_dispatchResponseCtx<rpc_pb_PinRead,
-                                             &BridgeClass::_handleAnalogRead>;
+      return &BridgeClass::_dispatchResponseCtx<
+          rpc_pb_PinRead, &BridgeClass::_handleAnalogRead>;
     case rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE):
       return &BridgeClass::_dispatchAck<rpc_pb_ConsoleWrite,
                                         &BridgeClass::_handleConsoleWrite>;
@@ -155,8 +155,8 @@ BridgeClass::DispatchHandler BridgeClass::_getHandler(uint16_t command_id) {
     case rpc::to_underlying(rpc::CommandId::CMD_SPI_BEGIN):
       return &BridgeClass::_dispatchSimpleAck<&BridgeClass::_handleSpiBegin>;
     case rpc::to_underlying(rpc::CommandId::CMD_SPI_TRANSFER):
-      return &BridgeClass::_dispatchResponseCtx<rpc_pb_SpiTransfer,
-                                             &BridgeClass::_handleSpiTransfer>;
+      return &BridgeClass::_dispatchResponseCtx<
+          rpc_pb_SpiTransfer, &BridgeClass::_handleSpiTransfer>;
     case rpc::to_underlying(rpc::CommandId::CMD_SPI_END):
       return &BridgeClass::_dispatchSimpleAck<&BridgeClass::_handleSpiEnd>;
     case rpc::to_underlying(rpc::CommandId::CMD_SPI_SET_CONFIG):

@@ -211,6 +211,15 @@ message CommandOptions {
     bool requires_ack = 3;
     bool expects_direct_response = 4;
     string description = 5;
+    string mqtt_topic = 6;
+}
+
+extend google.protobuf.MessageOptions {
+    string msg_mqtt_topic = 1020;
+}
+
+extend google.protobuf.EnumOptions {
+    string enum_mqtt_topic = 1021;
 }
 
 message StatusOptions {
@@ -247,6 +256,7 @@ extend google.protobuf.FieldOptions {
 
 enum Status {
     STATUS_UNSPECIFIED = 0;
+    option (enum_mqtt_topic) = "system/status";
     OK = 48 [(status_opts) = { description: "Operation completed successfully." }];
     ERROR = 49 [(status_opts) = { description: "Generic failure." }];
     CMD_UNKNOWN = 50 [(status_opts) = { description: "Command not recognized." }];
@@ -261,15 +271,15 @@ enum Status {
 enum Command {
     CMD_UNSPECIFIED = 0;
     CMD_GET_VERSION = 64 [(cmd_opts) = { category: "system", directions: ["linux_to_mcu"], expects_direct_response: true }];
-    CMD_GET_VERSION_RESP = 65 [(cmd_opts) = { category: "system", directions: ["mcu_to_linux"] }];
+    CMD_GET_VERSION_RESP = 65 [(cmd_opts) = { category: "system", directions: ["mcu_to_linux"], mqtt_topic: "system/version/value" }];
     CMD_GET_FREE_MEMORY = 66 [(cmd_opts) = { category: "system", directions: ["linux_to_mcu"], expects_direct_response: true }];
-    CMD_GET_FREE_MEMORY_RESP = 67 [(cmd_opts) = { category: "system", directions: ["mcu_to_linux"] }];
+    CMD_GET_FREE_MEMORY_RESP = 67 [(cmd_opts) = { category: "system", directions: ["mcu_to_linux"], mqtt_topic: "system/free_memory/value" }];
     CMD_LINK_SYNC = 68 [(cmd_opts) = { category: "system", directions: ["linux_to_mcu"], expects_direct_response: true, description: "Synchronize link state with mutual authentication. Payload: [16-byte Nonce] + [16-byte HMAC Tag (optional)]." }];
     CMD_LINK_SYNC_RESP = 69 [(cmd_opts) = { category: "system", directions: ["mcu_to_linux"] }];
     CMD_LINK_RESET = 70 [(cmd_opts) = { category: "system", directions: ["linux_to_mcu"], expects_direct_response: true, description: "Reset link state. Accepts optional payload with 'config_format' to update timing parameters." }];
     CMD_LINK_RESET_RESP = 71 [(cmd_opts) = { category: "system", directions: ["mcu_to_linux"] }];
     CMD_GET_CAPABILITIES = 72 [(cmd_opts) = { category: "system", directions: ["linux_to_mcu"], expects_direct_response: true }];
-    CMD_GET_CAPABILITIES_RESP = 73 [(cmd_opts) = { category: "system", directions: ["mcu_to_linux"] }];
+    CMD_GET_CAPABILITIES_RESP = 73 [(cmd_opts) = { category: "system", directions: ["mcu_to_linux"], mqtt_topic: "system/capabilities/value" }];
     CMD_SET_BAUDRATE = 74 [(cmd_opts) = { category: "system", directions: ["linux_to_mcu"], requires_ack: true }];
     CMD_SET_BAUDRATE_RESP = 75 [(cmd_opts) = { category: "system", directions: ["mcu_to_linux"] }];
     CMD_ENTER_BOOTLOADER = 76 [(cmd_opts) = { category: "system", directions: ["linux_to_mcu"], requires_ack: true }];
@@ -877,12 +887,14 @@ enum PinModeType {
 }
 
 message VersionResponse {
+    option (msg_mqtt_topic) = "system/version/value";
     uint32 major = 1;
     uint32 minor = 2;
     uint32 patch = 3;
 }
 
 message FreeMemoryResponse {
+    option (msg_mqtt_topic) = "system/free_memory/value";
     uint32 value = 1;
 }
 
@@ -984,6 +996,7 @@ message AnalogReadResponse {
 }
 
 message ConsoleWrite {
+    option (msg_mqtt_topic) = "console/out";
     bytes data = 1;
 }
 
@@ -1001,10 +1014,12 @@ message DatastoreGetResponse {
 }
 
 message MailboxPush {
+    option (msg_mqtt_topic) = "mailbox/incoming";
     bytes data = 1;
 }
 
 message MailboxProcessed {
+    option (msg_mqtt_topic) = "mailbox/processed";
     uint32 message_id = 1;
 }
 
@@ -1108,6 +1123,7 @@ message SpiTransfer {
 }
 
 message SpiTransferResponse {
+    option (msg_mqtt_topic) = "spi/transfer/resp";
     bytes data = 1;
 }
 
@@ -1140,6 +1156,7 @@ message SerialLinkSnapshot {
 }
 
 message HandshakeSnapshot {
+    option (msg_mqtt_topic) = "system/bridge/handshake/value";
     bool synchronised = 1;
     uint32 attempts = 2;
     uint32 successes = 3;
@@ -1185,6 +1202,7 @@ message SerialFlowSnapshot {
 }
 
 message BridgeSnapshot {
+    option (msg_mqtt_topic) = "system/bridge/summary/value";
     SerialLinkSnapshot serial_link = 1;
     HandshakeSnapshot handshake = 2;
     SerialPipelineSnapshot serial_pipeline = 3;
@@ -1376,6 +1394,7 @@ message RpcEnvelope {
 
 
 message StatusReport {
+    option (msg_mqtt_topic) = "system/status";
     uint32 status = 1;
     string name = 2;
     string description = 3;

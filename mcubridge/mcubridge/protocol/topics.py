@@ -6,20 +6,37 @@ Avoid hardcoding topic strings elsewhere.
 
 from __future__ import annotations
 
-
 from .protocol import Topic
 from .structures import TopicRoute
+from google.protobuf.message import Message as ProtobufMessage
 
 
 import posixpath
 import functools
 
 
-def topic_path(prefix: str, topic: Topic, *segments: str | int) -> str:
+def topic_path(prefix: str, topic: str | Topic, *segments: str | int) -> str:
     """[SIL-2] Construct topic path using direct join/filter delegation."""
     # Eradicate manual part.append() loops in favor of a single generator.
     parts = [str(s).strip("/") for s in (prefix, topic, *segments) if str(s).strip("/")]
     return posixpath.join(*parts) if parts else ""
+
+
+def get_topic_for_message(prefix: str, message: ProtobufMessage | int | str) -> str | None:
+    """Resolve the canonical MQTT topic for a given message instance, command ID or enum name. [SIL-2]"""
+    from .protocol import COMMAND_TO_TOPIC, MESSAGE_TO_TOPIC
+
+    rel = None
+    if isinstance(message, int):
+        rel = COMMAND_TO_TOPIC.get(message)
+    elif isinstance(message, str):
+        rel = MESSAGE_TO_TOPIC.get(message)
+    else:
+        rel = MESSAGE_TO_TOPIC.get(type(message))
+
+    if rel:
+        return topic_path(prefix, *rel.split("/"))
+    return None
 
 
 # --- Service Specific Topics ---

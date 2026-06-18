@@ -37,7 +37,7 @@ from ..protocol.structures import (
     PROTOBUF_CONTENT_TYPE,
     create_queued_publish,
 )
-from ..protocol.topics import Topic, topic_path
+from ..protocol.topics import get_topic_for_message
 from ..security.security import (
     secure_zero,
 )
@@ -503,7 +503,7 @@ class SerialHandshakeManager:
         snapshot.fsm_state = str(self.fsm_state)
 
         message = create_queued_publish(
-            topic_name=topic_path(self._state.mqtt_topic_prefix, Topic.SYSTEM, "handshake"),
+            topic_name=get_topic_for_message(self._state.mqtt_topic_prefix, snapshot) or "",
             payload=snapshot.SerializeToString(),
             content_type=PROTOBUF_CONTENT_TYPE,
             user_properties=(("bridge-event", "handshake"),),

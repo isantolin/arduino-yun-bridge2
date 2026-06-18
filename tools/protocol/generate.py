@@ -84,6 +84,7 @@ class CommandDef:
         description: str | None = None,
         requires_ack: bool = False,
         expects_direct_response: bool = False,
+        mqtt_topic: str | None = None,
     ) -> None:
         self.name = name
         self.value = value
@@ -92,6 +93,7 @@ class CommandDef:
         self.description = description
         self.requires_ack = requires_ack
         self.expects_direct_response = expects_direct_response
+        self.mqtt_topic = mqtt_topic
 
 
 class StatusDef:
@@ -119,6 +121,7 @@ class ProtocolSpec:
         mqtt_defaults: dict[str, str],
         status_reasons: dict[str, str],
         architecture_display_names: dict[str, str],
+        message_topics: dict[str, str],
     ) -> None:
         self.constants = constants
         self.hardware = hardware
@@ -135,6 +138,7 @@ class ProtocolSpec:
         self.mqtt_defaults = mqtt_defaults
         self.status_reasons = status_reasons
         self.architecture_display_names = architecture_display_names
+        self.message_topics = message_topics
         self.constants_opt: Any = None
         self.hardware_opt: Any = None
         self.handshake_opt: Any = None
@@ -230,8 +234,23 @@ def load_spec_from_proto(proto_path: Path) -> ProtocolSpec:
                 description=opts.description or None,
                 requires_ack=opts.requires_ack,
                 expects_direct_response=opts.expects_direct_response,
+                mqtt_topic=opts.mqtt_topic or None,
             )
         )
+
+    # Load Message MQTT topics
+    message_topics: dict[str, str] = {}
+    for msg_name, msg_desc in file_desc.message_types_by_name.items():
+        opts = msg_desc.GetOptions()
+        if opts.HasExtension(mcubridge_pb2.msg_mqtt_topic):
+            message_topics[msg_name] = opts.Extensions[mcubridge_pb2.msg_mqtt_topic]
+
+    # Load Enum MQTT topics (like Status)
+    for enum_name, enum_desc in file_desc.enum_types_by_name.items():
+        opts = enum_desc.GetOptions()
+        if opts.HasExtension(mcubridge_pb2.enum_mqtt_topic):
+            # For enums, we treat it as a special mapping or just add to message_topics with a prefix
+            message_topics[f"{enum_name}_ENUM"] = opts.Extensions[mcubridge_pb2.enum_mqtt_topic]
 
     # Load Status enum
     status_enum_desc = file_desc.enum_types_by_name["Status"]
@@ -258,6 +277,7 @@ def load_spec_from_proto(proto_path: Path) -> ProtocolSpec:
         mqtt_defaults=mqtt_defaults,
         status_reasons=status_reasons,
         architecture_display_names=architecture_display_names,
+        message_topics=message_topics,
     )
     spec.constants_opt = constants_opt
     spec.hardware_opt = hardware_opt
@@ -554,6 +574,7 @@ class JinjaGenerator:
             request_response_pairs=self._build_req_resp_map(spec),
             response_to_req_map=self._build_resp_to_req_map(spec),
             command_to_pb=command_to_pb,
+            message_topics=spec.message_topics,
         )
         out_path.write_text(render, encoding="utf-8")
 

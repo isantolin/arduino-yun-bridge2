@@ -286,7 +286,8 @@ class BridgeClass {
 
   void _handleStatusOk(const bridge::router::CommandContext& ctx);
   void _handleStatusMalformed(const bridge::router::CommandContext& ctx);
-  void _handleStatusAck(const bridge::router::CommandContext& ctx, const rpc_pb_AckPacket& m);
+  void _handleStatusAck(const bridge::router::CommandContext& ctx,
+                        const rpc_pb_AckPacket& m);
   void _handleGetVersion(const bridge::router::CommandContext& ctx);
   void _handleGetFreeMemory(const bridge::router::CommandContext& ctx);
   __attribute__((noinline)) void _handleLinkSync(
@@ -385,7 +386,7 @@ class BridgeClass {
   template <typename T, void (BridgeClass::*Handler)(
                             const bridge::router::CommandContext&, const T&)>
   static void _dispatchResponseCtx(BridgeClass& b,
-                                const bridge::router::CommandContext& ctx) {
+                                   const bridge::router::CommandContext& ctx) {
     if (ctx.is_duplicate) {
       b._retransmitLastFrame();
       return;
@@ -439,8 +440,10 @@ class BridgeClass {
   void _handleSetPinMode(const rpc_pb_PinMode& m);
   void _handleDigitalWrite(const rpc_pb_DigitalWrite& m);
   void _handleAnalogWrite(const rpc_pb_AnalogWrite& m);
-  void _handleDigitalRead(const bridge::router::CommandContext& ctx, const rpc_pb_PinRead& m);
-  void _handleAnalogRead(const bridge::router::CommandContext& ctx, const rpc_pb_PinRead& m);
+  void _handleDigitalRead(const bridge::router::CommandContext& ctx,
+                          const rpc_pb_PinRead& m);
+  void _handleAnalogRead(const bridge::router::CommandContext& ctx,
+                         const rpc_pb_PinRead& m);
   void _handleConsoleWrite(const rpc_pb_ConsoleWrite& m);
   void _handleDataStoreGetResponse(const bridge::router::CommandContext& ctx,
                                    const rpc_pb_DatastoreGetResponse& m);

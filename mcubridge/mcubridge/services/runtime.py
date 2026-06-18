@@ -41,7 +41,6 @@ from ..protocol import protocol, structures
 from ..protocol.protocol import (
     MQTT_COMMAND_SUBSCRIPTIONS,
     Command,
-    ConsoleAction,
     DatastoreAction,
     FileAction,
     MailboxAction,
@@ -62,7 +61,7 @@ from ..protocol.structures import (
     is_command_allowed,
     allows_topic,
 )
-from ..protocol.topics import Topic, parse_topic, topic_path
+from ..protocol.topics import Topic, get_topic_for_message, parse_topic, topic_path
 from ..metrics import (
     PrometheusExporter,
     publish_bridge_snapshots,
@@ -526,7 +525,7 @@ class BridgeService:
         if p.data:
             await self.enqueue_mqtt(
                 create_queued_publish(
-                    topic_path(self.state.mqtt_topic_prefix, Topic.CONSOLE, ConsoleAction.OUT),
+                    get_topic_for_message(self.state.mqtt_topic_prefix, p) or "",
                     p.data,
                     message_expiry_interval=protocol.MQTT_EXPIRY_CONSOLE,
                 )
@@ -553,9 +552,7 @@ class BridgeService:
     async def _on_mcu_mailbox_push(self, p: pb.MailboxPush) -> bool:
         self.state.mailbox_incoming_queue.append(bytes(p.data))
         await self.enqueue_mqtt(
-            create_queued_publish(
-                topic_path(self.state.mqtt_topic_prefix, Topic.MAILBOX, MailboxAction.INCOMING), bytes(p.data)
-            )
+            create_queued_publish(get_topic_for_message(self.state.mqtt_topic_prefix, p) or "", bytes(p.data))
         )
         return True
 
@@ -582,7 +579,7 @@ class BridgeService:
     async def _on_mcu_mailbox_processed(self, p: pb.MailboxProcessed) -> None:
         await self.enqueue_mqtt(
             create_queued_publish(
-                topic_name=topic_path(self.state.mqtt_topic_prefix, Topic.MAILBOX, MailboxAction.PROCESSED),
+                topic_name=get_topic_for_message(self.state.mqtt_topic_prefix, p) or "",
                 payload=p.SerializeToString(),
                 content_type=PROTOBUF_CONTENT_TYPE,
             )
@@ -677,7 +674,7 @@ class BridgeService:
 
     async def _on_mcu_spi_resp(self, p: pb.SpiTransferResponse) -> None:
         await self.enqueue_mqtt(
-            create_queued_publish(topic_path(self.state.mqtt_topic_prefix, Topic.SPI, "transfer", "resp"), p.data)
+            create_queued_publish(get_topic_for_message(self.state.mqtt_topic_prefix, p) or "", p.data)
         )
 
     async def _on_mcu_ack(self, seq: int, payload: bytes | ProtobufMessage) -> None:
@@ -710,7 +707,7 @@ class BridgeService:
         log_func("MCU > %s: %s %s", status.name, status.description, text)
         await self.enqueue_mqtt(
             create_queued_publish(
-                topic_path(self.state.mqtt_topic_prefix, Topic.SYSTEM, Topic.STATUS),
+                get_topic_for_message(self.state.mqtt_topic_prefix, pb.StatusReport) or "",
                 pb.StatusReport(
                     status=status.value,
                     name=status.name,
@@ -981,7 +978,7 @@ class BridgeService:
                 else:
                     await self.enqueue_mqtt(
                         create_queued_publish(
-                            topic_path(self.state.mqtt_topic_prefix, Topic.SYSTEM, Topic.STATUS),
+                            get_topic_for_message(self.state.mqtt_topic_prefix, pb.StatusReport) or "",
                             pb.StatusReport(
                                 status=int(Status.ERROR),
                                 topic=str(route.topic.value),
@@ -1014,15 +1011,15 @@ class BridgeService:
             case SystemAction.FREE_MEMORY if "get" in route.segments:
                 pl = await serial.send(Command.CMD_GET_FREE_MEMORY.value, b"")
                 if isinstance(pl, bytes):
-                    await self.enqueue_mqtt(
-                        create_queued_publish(
-                            topic_path(
-                                self.state.mqtt_topic_prefix, Topic.SYSTEM, SystemAction.FREE_MEMORY, SystemAction.VALUE
+                    tp = get_topic_for_message(self.state.mqtt_topic_prefix, pb.FreeMemoryResponse)
+                    if tp:
+                        await self.enqueue_mqtt(
+                            create_queued_publish(
+                                tp,
+                                str(pb.FreeMemoryResponse.FromString(pl).value).encode(),
                             ),
-                            str(pb.FreeMemoryResponse.FromString(pl).value).encode(),
-                        ),
-                        reply_context=inbound,
-                    )
+                            reply_context=inbound,
+                        )
             case SystemAction.VERSION if "get" in route.segments:
                 await self._request_mcu_version(inbound)
             case SystemAction.BRIDGE:
@@ -1034,7 +1031,7 @@ class BridgeService:
                 )
                 await self.enqueue_mqtt(
                     create_queued_publish(
-                        topic_path(self.state.mqtt_topic_prefix, Topic.SYSTEM, "bridge", flavor, "value"),
+                        get_topic_for_message(self.state.mqtt_topic_prefix, snap) or "",
                         snap.SerializeToString(),
                         content_type=PROTOBUF_CONTENT_TYPE,
                     ),
@@ -1058,12 +1055,12 @@ class BridgeService:
         return False
 
     async def _publish_version(self, v: tuple[int, int, int], ctx: Message | None) -> None:
-        pl, tp = f"{v[0]}.{v[1]}.{v[2]}".encode(), topic_path(
-            self.state.mqtt_topic_prefix, Topic.SYSTEM, SystemAction.VERSION, SystemAction.VALUE
-        )
-        await self.enqueue_mqtt(
-            create_queued_publish(tp, pl, message_expiry_interval=protocol.MQTT_EXPIRY_DATASTORE), reply_context=ctx
-        )
+        pl = f"{v[0]}.{v[1]}.{v[2]}".encode()
+        tp = get_topic_for_message(self.state.mqtt_topic_prefix, pb.VersionResponse)
+        if tp:
+            await self.enqueue_mqtt(
+                create_queued_publish(tp, pl, message_expiry_interval=protocol.MQTT_EXPIRY_DATASTORE), reply_context=ctx
+            )
 
     async def _flush_console_queue(self) -> None:
         serial = self.serial
@@ -1223,7 +1220,7 @@ class BridgeService:
         val = tp.value if isinstance(tp, Topic) else tp
         await self.enqueue_mqtt(
             create_queued_publish(
-                topic_path(self.state.mqtt_topic_prefix, Topic.SYSTEM, Topic.STATUS),
+                get_topic_for_message(self.state.mqtt_topic_prefix, pb.StatusReport) or "",
                 pb.StatusReport(status=403, topic=val, action=act, reason="forbidden").SerializeToString(),
                 content_type=PROTOBUF_CONTENT_TYPE,
                 user_properties=(("bridge-error", TOPIC_FORBIDDEN_REASON),),
@@ -1376,7 +1373,7 @@ class BridgeService:
         if not self.config.mqtt_user:
             logger.error("MQTT connecting without authentication (anonymous)")
 
-        will_topic = topic_path(self.state.mqtt_topic_prefix, Topic.SYSTEM, "status")
+        will_topic = get_topic_for_message(self.state.mqtt_topic_prefix, "Status") or ""
         will = aiomqtt.Will(
             topic=will_topic,
             payload=b'{"status": "offline", "reason": "unexpected_disconnect"}',

@@ -375,7 +375,7 @@ def main(argv: list[str] | None = None) -> None:
             ],
         }
         json_output.parent.mkdir(parents=True, exist_ok=True)
-        json_output.write_bytes(json.dumps(data))
+        json_output.write_text(json.dumps(data))
         print(f"JSON written to {json_output}")
 
 

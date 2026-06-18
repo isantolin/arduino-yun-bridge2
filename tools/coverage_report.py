@@ -305,8 +305,8 @@ def main(argv: list[str] | None = None) -> None:
             for row in rows
         }
         output_json.parent.mkdir(parents=True, exist_ok=True)
-        output_json.write_bytes(
-            json.dumps(json.dumps(payload), indent=2),
+        output_json.write_text(
+            json.dumps(payload, indent=2),
         )
 
 

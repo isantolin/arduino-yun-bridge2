@@ -61,7 +61,7 @@ BridgeClass::DispatchHandler BridgeClass::_getHandler(uint16_t command_id) {
     case rpc::to_underlying(rpc::StatusCode::STATUS_OK):
       return &BridgeClass::_dispatchSimpleAck<&BridgeClass::_handleStatusOk>;
     case rpc::to_underlying(rpc::StatusCode::STATUS_ACK):
-      return &BridgeClass::_dispatchAck<rpc_pb_AckPacket,
+      return &BridgeClass::_dispatchAckCtx<rpc_pb_AckPacket,
                                         &BridgeClass::_handleStatusAck>;
     case rpc::to_underlying(rpc::StatusCode::STATUS_MALFORMED):
       return &BridgeClass::_dispatchSimple<
@@ -72,7 +72,7 @@ BridgeClass::DispatchHandler BridgeClass::_getHandler(uint16_t command_id) {
       return &BridgeClass::_dispatchResponse<
           &BridgeClass::_handleGetFreeMemory>;
     case rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC):
-      return &BridgeClass::_dispatchAck<rpc_pb_LinkSync,
+      return &BridgeClass::_dispatchAckCtx<rpc_pb_LinkSync,
                                         &BridgeClass::_handleLinkSync>;
     case rpc::to_underlying(rpc::CommandId::CMD_LINK_RESET):
       return &BridgeClass::_dispatchSimpleAck<&BridgeClass::_handleLinkReset>;
@@ -99,10 +99,10 @@ BridgeClass::DispatchHandler BridgeClass::_getHandler(uint16_t command_id) {
       return &BridgeClass::_dispatchAck<rpc_pb_AnalogWrite,
                                         &BridgeClass::_handleAnalogWrite>;
     case rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_READ):
-      return &BridgeClass::_dispatchResponse<rpc_pb_PinRead,
+      return &BridgeClass::_dispatchResponseCtx<rpc_pb_PinRead,
                                              &BridgeClass::_handleDigitalRead>;
     case rpc::to_underlying(rpc::CommandId::CMD_ANALOG_READ):
-      return &BridgeClass::_dispatchResponse<rpc_pb_PinRead,
+      return &BridgeClass::_dispatchResponseCtx<rpc_pb_PinRead,
                                              &BridgeClass::_handleAnalogRead>;
     case rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE):
       return &BridgeClass::_dispatchAck<rpc_pb_ConsoleWrite,
@@ -155,7 +155,7 @@ BridgeClass::DispatchHandler BridgeClass::_getHandler(uint16_t command_id) {
     case rpc::to_underlying(rpc::CommandId::CMD_SPI_BEGIN):
       return &BridgeClass::_dispatchSimpleAck<&BridgeClass::_handleSpiBegin>;
     case rpc::to_underlying(rpc::CommandId::CMD_SPI_TRANSFER):
-      return &BridgeClass::_dispatchResponse<rpc_pb_SpiTransfer,
+      return &BridgeClass::_dispatchResponseCtx<rpc_pb_SpiTransfer,
                                              &BridgeClass::_handleSpiTransfer>;
     case rpc::to_underlying(rpc::CommandId::CMD_SPI_END):
       return &BridgeClass::_dispatchSimpleAck<&BridgeClass::_handleSpiEnd>;
@@ -357,9 +357,6 @@ void BridgeClass::_processAck(uint16_t command_id, uint16_t sequence_id) {
   }
 }
 
-void BridgeClass::_handleAckStruct(const rpc_pb_AckPacket& m) {
-  _handleAck(m.command_id);
-}
 void BridgeClass::_handleAck(uint16_t cmd) {
   if (!_fsm.isAwaitingAck() || cmd != _last_command_id) return;
   _timers.stop(_timer_ids[bridge::scheduler::TIMER_ACK_TIMEOUT]);

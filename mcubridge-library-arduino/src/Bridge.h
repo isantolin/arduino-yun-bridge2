@@ -286,11 +286,11 @@ class BridgeClass {
 
   void _handleStatusOk(const bridge::router::CommandContext& ctx);
   void _handleStatusMalformed(const bridge::router::CommandContext& ctx);
-  void _handleStatusAck(const bridge::router::CommandContext& ctx);
+  void _handleStatusAck(const bridge::router::CommandContext& ctx, const rpc_pb_AckPacket& m);
   void _handleGetVersion(const bridge::router::CommandContext& ctx);
   void _handleGetFreeMemory(const bridge::router::CommandContext& ctx);
   __attribute__((noinline)) void _handleLinkSync(
-      const bridge::router::CommandContext& ctx);
+      const bridge::router::CommandContext& ctx, const rpc_pb_LinkSync& m);
   void _handleLinkReset(const bridge::router::CommandContext& ctx);
   void _handleGetCapabilities(const bridge::router::CommandContext& ctx);
   void _handleXoff(const bridge::router::CommandContext& ctx);
@@ -301,7 +301,7 @@ class BridgeClass {
   void _handleSpiBegin(const bridge::router::CommandContext& ctx);
   void _handleSpiEnd(const bridge::router::CommandContext& ctx);
   __attribute__((noinline)) void _handleSpiTransfer(
-      const bridge::router::CommandContext& ctx);
+      const bridge::router::CommandContext& ctx, const rpc_pb_SpiTransfer& m);
   __attribute__((noinline)) void _handleReceivedFrame(
       etl::span<const uint8_t> p);
   void onUnknownCommand(const bridge::router::CommandContext& ctx);
@@ -384,7 +384,7 @@ class BridgeClass {
 
   template <typename T, void (BridgeClass::*Handler)(
                             const bridge::router::CommandContext&, const T&)>
-  static void _dispatchResponse(BridgeClass& b,
+  static void _dispatchResponseCtx(BridgeClass& b,
                                 const bridge::router::CommandContext& ctx) {
     if (ctx.is_duplicate) {
       b._retransmitLastFrame();
@@ -439,8 +439,8 @@ class BridgeClass {
   void _handleSetPinMode(const rpc_pb_PinMode& m);
   void _handleDigitalWrite(const rpc_pb_DigitalWrite& m);
   void _handleAnalogWrite(const rpc_pb_AnalogWrite& m);
-  void _handleDigitalRead(const bridge::router::CommandContext& ctx);
-  void _handleAnalogRead(const bridge::router::CommandContext& ctx);
+  void _handleDigitalRead(const bridge::router::CommandContext& ctx, const rpc_pb_PinRead& m);
+  void _handleAnalogRead(const bridge::router::CommandContext& ctx, const rpc_pb_PinRead& m);
   void _handleConsoleWrite(const rpc_pb_ConsoleWrite& m);
   void _handleDataStoreGetResponse(const bridge::router::CommandContext& ctx,
                                    const rpc_pb_DatastoreGetResponse& m);
@@ -466,7 +466,6 @@ class BridgeClass {
   void _handleMailboxAvailableResponse(
       const rpc_pb_MailboxAvailableResponse& m);
 #endif
-  void _handleAckStruct(const rpc_pb_AckPacket& m);
   void _handleLinkResetStruct(const rpc_pb_HandshakeConfig& m);
   static DispatchHandler _getHandler(uint16_t command_id);
 

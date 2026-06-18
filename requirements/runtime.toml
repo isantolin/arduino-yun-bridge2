@@ -31,8 +31,6 @@ openwrt = "python3-jinja2"
 pip = "jinja2==3.1.6"
 rationale = "Template engine for professional and auditable code generation [BUILD-ONLY]"
 
-[[dependency]]
-rationale = "High-performance typed struct and validation library"
 
 [[dependency]]
 name = "protobuf"

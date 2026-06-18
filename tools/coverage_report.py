@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
-import msgspec
+import json
 import rich.console
 from rich.table import Table
 
@@ -91,7 +91,7 @@ def _safe_percent(hit: int, total: int) -> float | None:
 def _read_arduino_metrics(path: Path) -> CoverageMetrics | None:
     if not path.exists():
         return None
-    raw = msgspec.json.decode(path.read_bytes())
+    raw = json.loads(path.read_bytes())
     data = cast(dict[str, Any], raw)
     summaries = data.get("summaries")
     summary: dict[str, Any] | None = None
@@ -306,7 +306,7 @@ def main(argv: list[str] | None = None) -> None:
         }
         output_json.parent.mkdir(parents=True, exist_ok=True)
         output_json.write_bytes(
-            msgspec.json.format(msgspec.json.encode(payload), indent=2),
+            json.dumps(json.dumps(payload), indent=2),
         )
 
 

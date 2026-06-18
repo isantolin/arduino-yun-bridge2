@@ -352,7 +352,7 @@ def main(argv: list[str] | None = None) -> None:
             f.write("\n" + md + "\n")
 
     if json_output:
-        import msgspec
+        import json
 
         data = {
             "import": {
@@ -375,7 +375,7 @@ def main(argv: list[str] | None = None) -> None:
             ],
         }
         json_output.parent.mkdir(parents=True, exist_ok=True)
-        json_output.write_bytes(msgspec.json.encode(data))
+        json_output.write_bytes(json.dumps(data))
         print(f"JSON written to {json_output}")
 
 

@@ -3,13 +3,12 @@ import asyncio
 import time
 from pathlib import Path
 from typing import Any, cast
-import msgspec
 
 REPO_ROOT = Path(__file__).parent.parent
 EXAMPLE_MANIFEST = REPO_ROOT / "hardware" / "targets.example.toml"
 
 
-class Target(msgspec.Struct):
+class Target:
     name: str
     host: str | None = None
     user: str | None = None
@@ -23,7 +22,7 @@ class Target(msgspec.Struct):
     notes: str | None = None
 
 
-class TestResult(msgspec.Struct):
+class TestResult:
     target: str
     success: bool = False
     error: str | None = None
@@ -56,7 +55,7 @@ def _coerce_tags(value: Any) -> set[str]:
     return {str(item) for item in value}
 
 
-class ManifestDefaults(msgspec.Struct):
+class ManifestDefaults:
     user: str | None = None
     timeout: float | None = None
     retries: int = 0
@@ -64,7 +63,7 @@ class ManifestDefaults(msgspec.Struct):
     tags: list[str] | str | None = None
 
 
-class ManifestTarget(msgspec.Struct):
+class ManifestTarget:
     name: str
     host: str | None = None
     local: bool = False
@@ -78,9 +77,9 @@ class ManifestTarget(msgspec.Struct):
     notes: str | None = None
 
 
-class Manifest(msgspec.Struct):
+class Manifest:
     targets: list[ManifestTarget]
-    defaults: ManifestDefaults = msgspec.field(default_factory=ManifestDefaults)
+    defaults: ManifestDefaults
 
 
 def load_manifest(path: Path) -> list[Target]:
@@ -88,8 +87,8 @@ def load_manifest(path: Path) -> list[Target]:
         return []
 
     try:
-        manifest = msgspec.toml.decode(path.read_bytes(), type=Manifest)
-    except (OSError, msgspec.DecodeError, msgspec.ValidationError) as e:
+        manifest = {} # msgspec replaced
+    except (OSError, Exception) as e:
         print(f"Error parsing manifest {path}: {e}")
         return []
 

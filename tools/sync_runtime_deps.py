@@ -12,7 +12,8 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TypedDict
 
-import msgspec
+import json
+import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = ROOT / "requirements" / "runtime.toml"
@@ -47,7 +48,7 @@ def load_manifest() -> list[_DepEntry]:
     if not MANIFEST_PATH.exists():
         raise ManifestError(f"Missing manifest: {MANIFEST_PATH}")
 
-    data = msgspec.toml.decode(MANIFEST_PATH.read_text(encoding="utf-8"))
+    data = tomllib.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
     entries = data.get("dependency")
     if not entries:
         raise ManifestError("Manifest must declare at least one dependency")
@@ -204,9 +205,9 @@ def _fetch_latest_version(package_name: str) -> str | None:
     url = f"https://pypi.org/pypi/{package_name}/json"
     try:
         with urllib.request.urlopen(url, timeout=10) as resp:
-            data = msgspec.json.decode(resp.read())
+            data = json.loads(resp.read())
             return data["info"]["version"]
-    except (urllib.error.URLError, ValueError, KeyError, msgspec.DecodeError):
+    except (urllib.error.URLError, ValueError, KeyError, json.JSONDecodeError):
         return None
 
 

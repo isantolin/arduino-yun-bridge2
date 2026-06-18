@@ -16,7 +16,6 @@ tracemalloc.start()
 def measure_imports() -> list[tuple[str, float]]:
     modules = [
         "asyncio",
-        "msgspec",
         "aiomqtt",
         "paho.mqtt",
         "mcubridge.protocol.frame",

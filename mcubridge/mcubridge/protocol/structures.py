@@ -7,18 +7,6 @@ Binary parsing uses stdlib struct; high-level schemas use Msgspec (SIL-2).
 from __future__ import annotations
 from google.protobuf.message import Message as ProtobufMessage
 from . import mcubridge_pb2 as pb
-from .protocol import (
-    DEFAULT_BAUDRATE,
-    DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
-    DEFAULT_PROCESS_MAX_OUTPUT_BYTES,
-    DEFAULT_RECONNECT_DELAY,
-    DEFAULT_RETRY_LIMIT,
-    DEFAULT_SAFE_BAUDRATE,
-    DEFAULT_SERIAL_FALLBACK_THRESHOLD,
-    DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES,
-    MQTT_DEFAULT_TOPIC_PREFIX,
-    PROMETHEUS_PORT,
-)
 
 
 import asyncio
@@ -30,14 +18,12 @@ from enum import IntEnum
 from dataclasses import dataclass
 from pathlib import Path
 from typing import (
-    Annotated,
     Any,
     Final,
     NamedTuple,
     cast,
 )
 
-import msgspec
 from paho.mqtt.packettypes import PacketTypes
 from paho.mqtt.properties import Properties
 
@@ -174,129 +160,64 @@ def allows_topic(auth: pb.TopicAuthorization, topic: str, action: str) -> bool:
 # =============================================================================
 
 
-class RuntimeConfig(msgspec.Struct, kw_only=True):
-    """Strongly typed configuration for the daemon."""
+class RuntimeConfig:
+    """Strongly typed configuration for the daemon, backed by Protobuf."""
 
-    # Imports moved inside __post_init__ or methods to avoid circularity
-    # but we need constants for defaults.
-    from mcubridge.config.const import (
-        DEFAULT_ALLOW_NON_TMP_PATHS,
-        DEFAULT_BRIDGE_HANDSHAKE_INTERVAL,
-        DEFAULT_BRIDGE_SUMMARY_INTERVAL,
-        DEFAULT_DEBUG,
-        DEFAULT_FILE_STORAGE_QUOTA_BYTES,
-        DEFAULT_FILE_SYSTEM_ROOT,
-        DEFAULT_FILE_WRITE_MAX_BYTES,
-        DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
-        DEFAULT_MAILBOX_QUEUE_LIMIT,
-        DEFAULT_METRICS_ENABLED,
-        DEFAULT_METRICS_HOST,
-        DEFAULT_MQTT_CAFILE,
-        DEFAULT_MQTT_HOST,
-        DEFAULT_MQTT_PORT,
-        DEFAULT_MQTT_QUEUE_LIMIT,
-        DEFAULT_MQTT_SPOOL_DIR,
-        DEFAULT_MQTT_TLS_INSECURE,
-        DEFAULT_PENDING_PIN_REQUESTS,
-        DEFAULT_PROCESS_MAX_CONCURRENT,
-        DEFAULT_PROCESS_TIMEOUT,
-        DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL,
-        DEFAULT_SERIAL_PORT,
-        DEFAULT_SERIAL_RESPONSE_TIMEOUT,
-        DEFAULT_SERIAL_RETRY_TIMEOUT,
-        DEFAULT_SERIAL_SHARED_SECRET,
-        DEFAULT_STATUS_INTERVAL,
-        DEFAULT_WATCHDOG_INTERVAL,
-        MIN_SERIAL_SHARED_SECRET_LEN,
-    )
+    pb_obj: pb.RuntimeConfig
 
-    serial_port: str = DEFAULT_SERIAL_PORT
-    serial_baud: Annotated[int, msgspec.Meta(ge=300)] = DEFAULT_BAUDRATE
-    serial_safe_baud: Annotated[int, msgspec.Meta(ge=300)] = DEFAULT_SAFE_BAUDRATE
-    mqtt_host: str = DEFAULT_MQTT_HOST
-    mqtt_port: Annotated[int, msgspec.Meta(ge=1, le=65535)] = DEFAULT_MQTT_PORT
-    mqtt_user: str | None = None
-    mqtt_pass: str | None = None
-    mqtt_tls: bool = True
-    mqtt_cafile: str | None = DEFAULT_MQTT_CAFILE
-    mqtt_certfile: str | None = None
-    mqtt_keyfile: str | None = None
-    mqtt_topic: str = MQTT_DEFAULT_TOPIC_PREFIX
+    def __init__(self, pb_msg: pb.RuntimeConfig | None = None, **kwargs: Any):
+        if pb_msg is None:
+            if not kwargs.get("bypass_defaults"):
+                from mcubridge.config.common import get_default_config
 
-    # [SIL-2] Accept Any to allow raw strings from UCI/Tests, then coerce in __post_init__
-    allowed_commands: Any = ()
+                defaults = get_default_config()
+                for k, v in defaults.items():
+                    if k not in kwargs:
+                        kwargs[k] = v
+            kwargs.pop("bypass_defaults", None)
+            if isinstance(kwargs.get("serial_shared_secret"), str):
+                kwargs["serial_shared_secret"] = kwargs["serial_shared_secret"].encode("utf-8")
+            self.pb_obj = pb.RuntimeConfig(**kwargs)
+        else:
+            self.pb_obj = pb_msg
+        self._validate()
 
-    file_system_root: str = DEFAULT_FILE_SYSTEM_ROOT
-    process_timeout: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_PROCESS_TIMEOUT
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.pb_obj, name)
 
-    mqtt_tls_insecure: bool = DEFAULT_MQTT_TLS_INSECURE
-    file_write_max_bytes: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_FILE_WRITE_MAX_BYTES
-    file_storage_quota_bytes: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_FILE_STORAGE_QUOTA_BYTES
-
-    allowed_policy: Any = None
-
-    mqtt_queue_limit: Annotated[int, msgspec.Meta(ge=0)] = DEFAULT_MQTT_QUEUE_LIMIT
-    reconnect_delay: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_RECONNECT_DELAY
-    status_interval: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_STATUS_INTERVAL
-    debug: bool = DEFAULT_DEBUG
-    console_queue_limit_bytes: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
-    mailbox_queue_limit: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_MAILBOX_QUEUE_LIMIT
-    mailbox_queue_bytes_limit: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT
-    pending_pin_request_limit: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_PENDING_PIN_REQUESTS
-    serial_retry_timeout: Annotated[float, msgspec.Meta(ge=0.01, le=30.0)] = DEFAULT_SERIAL_RETRY_TIMEOUT
-    serial_response_timeout: Annotated[float, msgspec.Meta(ge=0.02, le=120.0)] = DEFAULT_SERIAL_RESPONSE_TIMEOUT
-    serial_retry_attempts: Annotated[int, msgspec.Meta(ge=0)] = DEFAULT_RETRY_LIMIT
-    serial_fallback_threshold: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_SERIAL_FALLBACK_THRESHOLD
-    serial_handshake_min_interval: Annotated[float, msgspec.Meta(ge=0.0, le=30.0)] = (
-        DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL
-    )
-    serial_handshake_fatal_failures: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES
-    mqtt_enabled: bool = True
-    watchdog_enabled: bool = True
-    watchdog_interval: Annotated[float, msgspec.Meta(ge=0.1, le=60.0)] = DEFAULT_WATCHDOG_INTERVAL
-    topic_authorization: Any = None
-
-    # [SIL-2] Security: Accept Any to allow raw strings from UCI/Tests,
-    # then coerce to bytes in __post_init__ to avoid msgspec base64 errors.
-    serial_shared_secret: Any = DEFAULT_SERIAL_SHARED_SECRET
-
-    mqtt_spool_dir: str = DEFAULT_MQTT_SPOOL_DIR
-    process_max_output_bytes: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_PROCESS_MAX_OUTPUT_BYTES
-    process_max_concurrent: Annotated[int, msgspec.Meta(ge=1)] = DEFAULT_PROCESS_MAX_CONCURRENT
-    metrics_enabled: bool = DEFAULT_METRICS_ENABLED
-    metrics_host: str = DEFAULT_METRICS_HOST
-    metrics_port: Annotated[int, msgspec.Meta(ge=1, le=65535)] = PROMETHEUS_PORT
-    bridge_summary_interval: Annotated[float, msgspec.Meta(ge=0.0)] = DEFAULT_BRIDGE_SUMMARY_INTERVAL
-    bridge_handshake_interval: Annotated[float, msgspec.Meta(ge=0.0)] = DEFAULT_BRIDGE_HANDSHAKE_INTERVAL
-    allow_non_tmp_paths: bool = DEFAULT_ALLOW_NON_TMP_PATHS
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name == "pb_obj":
+            super().__setattr__(name, value)
+        else:
+            setattr(self.pb_obj, name, value)
 
     def get_ssl_context(self) -> Any | None:
         """Create an ssl.SSLContext based on the current configuration (SIL-2)."""
-        if not self.mqtt_tls:
+        if not self.pb_obj.mqtt_tls:
             return None
 
         import ssl
         from mcubridge.config.const import MQTT_TLS_MIN_VERSION
 
         try:
-            if self.mqtt_cafile:
-                ca_path = Path(self.mqtt_cafile)
+            if self.pb_obj.mqtt_cafile:
+                ca_path = Path(self.pb_obj.mqtt_cafile)
                 if not ca_path.exists():
-                    raise RuntimeError(f"MQTT TLS CA file missing: {self.mqtt_cafile}")
+                    raise RuntimeError(f"MQTT TLS CA file missing: {self.pb_obj.mqtt_cafile}")
                 context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH, cafile=str(ca_path))
             else:
                 context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
 
             context.minimum_version = MQTT_TLS_MIN_VERSION
 
-            if self.mqtt_tls_insecure:
+            if self.pb_obj.mqtt_tls_insecure:
                 context.check_hostname = False
                 context.verify_mode = ssl.CERT_NONE
 
-            if self.mqtt_certfile or self.mqtt_keyfile:
-                if not (self.mqtt_certfile and self.mqtt_keyfile):
+            if self.pb_obj.mqtt_certfile or self.pb_obj.mqtt_keyfile:
+                if not (self.pb_obj.mqtt_certfile and self.pb_obj.mqtt_keyfile):
                     raise ValueError("Both mqtt_certfile and mqtt_keyfile must be provided for mTLS.")
-                context.load_cert_chain(self.mqtt_certfile, self.mqtt_keyfile)
+                context.load_cert_chain(self.pb_obj.mqtt_certfile, self.pb_obj.mqtt_keyfile)
 
             return context
         except (OSError, ssl.SSLError, ValueError) as exc:
@@ -304,66 +225,56 @@ class RuntimeConfig(msgspec.Struct, kw_only=True):
 
     @property
     def tls_enabled(self) -> bool:
-        return self.mqtt_tls
+        return self.pb_obj.mqtt_tls
 
-    def __post_init__(self) -> None:
+    def _validate(self) -> None:
         from mcubridge.config.const import (
             DEFAULT_SERIAL_SHARED_SECRET,
             VOLATILE_STORAGE_PATHS,
         )
 
-        # [SIL-2] Semantic Policy Derivation
-        self.allowed_policy = create_allowed_policy(self.allowed_commands)
-        self.allowed_commands = tuple(self.allowed_policy.entries)
+        self.pb_obj.allowed_policy.CopyFrom(create_allowed_policy(self.pb_obj.allowed_commands))
+        del self.pb_obj.allowed_commands[:]
+        self.pb_obj.allowed_commands.extend(self.pb_obj.allowed_policy.entries)
 
-        if self.topic_authorization is None or isinstance(self.topic_authorization, dict):
-            raw_auth = getattr(self, "topic_authorization", None)
-            ta_dict = cast(dict[str, bool], raw_auth if isinstance(raw_auth, dict) else {})
-            auth_pb = pb.TopicAuthorization()
-            for field in [f.name for f in auth_pb.DESCRIPTOR.fields]:
-                val = ta_dict.get(field, True)
-                setattr(auth_pb, field, val)
-            object.__setattr__(self, "topic_authorization", auth_pb)
+        if not any(
+            getattr(self.pb_obj.topic_authorization, f.name) for f in self.pb_obj.topic_authorization.DESCRIPTOR.fields
+        ):
+            for field in [f.name for f in self.pb_obj.topic_authorization.DESCRIPTOR.fields]:
+                setattr(self.pb_obj.topic_authorization, field, True)
 
-        # [SIL-2] Strict Semantic Validations
-        if not self.mqtt_topic or not any(filter(None, self.mqtt_topic.split("/"))):
+        if not self.pb_obj.mqtt_topic or not any(filter(None, self.pb_obj.mqtt_topic.split("/"))):
             raise ValueError("mqtt_topic must contain at least one segment")
 
-        if self.serial_response_timeout < self.serial_retry_timeout * 2:
+        if self.pb_obj.serial_response_timeout < self.pb_obj.serial_retry_timeout * 2:
             raise ValueError("serial_response_timeout must be at least 2x serial_retry_timeout")
 
-        if self.watchdog_enabled and self.watchdog_interval < 0.5:
+        if self.pb_obj.watchdog_enabled and self.pb_obj.watchdog_interval < 0.5:
             raise ValueError("watchdog_interval must be >= 0.5s when enabled")
 
-        if not self.serial_shared_secret:
+        if not self.pb_obj.serial_shared_secret:
             raise ValueError("serial_shared_secret must be configured")
 
-        if self.serial_shared_secret == b"changeme123":
+        if self.pb_obj.serial_shared_secret == b"changeme123":
             raise ValueError("serial_shared_secret placeholder is insecure")
 
-        # Unique symbol check for minimum entropy
-        if isinstance(self.serial_shared_secret, bytes):
-            unique_symbols = {byte for byte in self.serial_shared_secret}
-            if len(unique_symbols) < 4 and self.serial_shared_secret != DEFAULT_SERIAL_SHARED_SECRET:
-                raise ValueError("serial_shared_secret must contain at least four distinct bytes")
+        unique_symbols = {byte for byte in self.pb_obj.serial_shared_secret}
+        if len(unique_symbols) < 4 and self.pb_obj.serial_shared_secret != DEFAULT_SERIAL_SHARED_SECRET:
+            raise ValueError("serial_shared_secret must contain at least four distinct bytes")
 
-        # Logic-based cross-field validations
-        if self.file_storage_quota_bytes < self.file_write_max_bytes:
+        if self.pb_obj.file_storage_quota_bytes < self.pb_obj.file_write_max_bytes:
             raise ValueError("file_storage_quota_bytes must be greater than or equal to file_write_max_bytes")
 
-        if self.mailbox_queue_bytes_limit < self.mailbox_queue_limit:
+        if self.pb_obj.mailbox_queue_bytes_limit < self.pb_obj.mailbox_queue_limit:
             raise ValueError("mailbox_queue_bytes_limit must be greater than or equal to mailbox_queue_limit")
 
-        # [SIL-2] Flash Protection: Spooling must ALWAYS be in volatile RAM.
-        if not self.allow_non_tmp_paths:
-            if not any(self.mqtt_spool_dir.startswith(p) for p in VOLATILE_STORAGE_PATHS):
-                msg = f"FLASH PROTECTION: mqtt_spool_dir ({self.mqtt_spool_dir}) must be in a volatile location"
+        if not self.pb_obj.allow_non_tmp_paths:
+            if not any(self.pb_obj.mqtt_spool_dir.startswith(p) for p in VOLATILE_STORAGE_PATHS):
+                msg = f"FLASH PROTECTION: mqtt_spool_dir ({self.pb_obj.mqtt_spool_dir}) must be in volatile storage"
                 raise ValueError(msg)
-
-        if not self.allow_non_tmp_paths:
-            if not any(self.file_system_root.startswith(p) for p in VOLATILE_STORAGE_PATHS):
+            if not any(self.pb_obj.file_system_root.startswith(p) for p in VOLATILE_STORAGE_PATHS):
                 raise ValueError(
-                    f"FLASH PROTECTION: file_system_root ({self.file_system_root}) must be in a volatile location"
+                    f"FLASH PROTECTION: file_system_root ({self.pb_obj.file_system_root}) must be in volatile storage"
                 )
 
 
@@ -377,8 +288,8 @@ def _flatten_structured_value(
     value: Any,
     entries: list[pb.StructuredEntry],
 ) -> None:
-    if hasattr(value, "_pb"):
-        value = getattr(value, "_pb")
+    if hasattr(value, "pb_obj"):
+        value = getattr(value, "pb_obj")
 
     if isinstance(value, ProtobufMessage):
         from google.protobuf.json_format import MessageToDict
@@ -537,20 +448,20 @@ def build_mqtt_properties(message: pb.MqttQueuedPublish) -> Properties:
 
 def replace_mqtt_publish(message: pb.MqttQueuedPublish, **kwargs: Any) -> pb.MqttQueuedPublish:
     """Create a new MqttQueuedPublish with fields replaced."""
-    new_pb = pb.MqttQueuedPublish()
-    new_pb.CopyFrom(message)
+    newpb_obj = pb.MqttQueuedPublish()
+    newpb_obj.CopyFrom(message)
     for k, v in kwargs.items():
         if k == "user_properties":
-            del new_pb.user_properties[:]
+            del newpb_obj.user_properties[:]
             for pk, pv in v:
-                new_pb.user_properties.add(key=pk, value=pv)
+                newpb_obj.user_properties.add(key=pk, value=pv)
         elif k == "subscription_identifier":
-            del new_pb.subscription_identifier[:]
+            del newpb_obj.subscription_identifier[:]
             if v is not None:
-                new_pb.subscription_identifier.extend(v)
+                newpb_obj.subscription_identifier.extend(v)
         else:
-            setattr(new_pb, k, v)
-    return new_pb
+            setattr(newpb_obj, k, v)
+    return newpb_obj
 
 
 def resolve_mqtt_context(message: pb.MqttQueuedPublish, context: Any | None) -> pb.MqttQueuedPublish:
@@ -571,18 +482,18 @@ def resolve_mqtt_context(message: pb.MqttQueuedPublish, context: Any | None) -> 
     if req_topic := getattr(context, "topic", None):
         user_props.append(("bridge-request-topic", str(req_topic)))
 
-    new_pb = pb.MqttQueuedPublish()
-    new_pb.CopyFrom(message)
+    newpb_obj = pb.MqttQueuedPublish()
+    newpb_obj.CopyFrom(message)
     if "topic_name" in updates:
-        new_pb.topic_name = updates["topic_name"]
+        newpb_obj.topic_name = updates["topic_name"]
     if "correlation_data" in updates:
-        new_pb.correlation_data = updates["correlation_data"]
+        newpb_obj.correlation_data = updates["correlation_data"]
 
-    del new_pb.user_properties[:]
+    del newpb_obj.user_properties[:]
     for k, v in user_props:
-        new_pb.user_properties.add(key=k, value=v)
+        newpb_obj.user_properties.add(key=k, value=v)
 
-    return new_pb
+    return newpb_obj
 
 
 def create_queued_publish(

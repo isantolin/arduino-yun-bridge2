@@ -32,9 +32,6 @@ pip = "jinja2==3.1.6"
 rationale = "Template engine for professional and auditable code generation [BUILD-ONLY]"
 
 [[dependency]]
-name = "msgspec"
-openwrt = "python3-msgspec"
-pip = "msgspec==0.21.1"
 rationale = "High-performance typed struct and validation library"
 
 [[dependency]]

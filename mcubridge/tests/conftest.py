@@ -14,9 +14,9 @@ from pathlib import Path
 import shutil
 import sys
 import time
+from mcubridge.config.settings import load_runtime_config
 from typing import Any, cast
 
-import msgspec
 import pytest
 import structlog
 
@@ -77,12 +77,15 @@ def get_unique_test_fs() -> str:
 
 
 OriginalRuntimeConfig = mcubridge.protocol.structures.RuntimeConfig
-original_convert = msgspec.convert
 original_get_default_config = mcubridge.config.common.get_default_config
 
 
 class PatchedRuntimeConfig:
     def __new__(cls, *args: Any, **kwargs: Any) -> RuntimeConfig:
+        defaults = original_get_default_config()
+        for k, v in defaults.items():
+            if k not in kwargs:
+                kwargs[k] = v
         default_spool = mcubridge.config.const.DEFAULT_MQTT_SPOOL_DIR
         default_fs = mcubridge.config.const.DEFAULT_FILE_SYSTEM_ROOT
         if (
@@ -97,13 +100,9 @@ class PatchedRuntimeConfig:
             or kwargs["file_system_root"] == default_fs
         ):
             kwargs["file_system_root"] = get_unique_test_fs()
+        if isinstance(kwargs.get("serial_shared_secret"), str):
+            kwargs["serial_shared_secret"] = kwargs["serial_shared_secret"].encode()
         return OriginalRuntimeConfig(*args, **kwargs)
-
-
-def patched_convert(obj: Any, type_arg: Any, *args: Any, **kwargs: Any) -> Any:
-    if type_arg is PatchedRuntimeConfig:
-        type_arg = OriginalRuntimeConfig
-    return original_convert(obj, type_arg, *args, **kwargs)
 
 
 def patched_get_default_config() -> dict[str, Any]:
@@ -113,7 +112,6 @@ def patched_get_default_config() -> dict[str, Any]:
     return cfg
 
 
-msgspec.convert = patched_convert
 mcubridge.protocol.structures.RuntimeConfig = PatchedRuntimeConfig
 mcubridge.config.common.get_default_config = patched_get_default_config
 # ==============================================================================
@@ -356,7 +354,7 @@ def real_config():
     raw["mqtt_spool_dir"] = mcubridge.config.const.DEFAULT_MQTT_SPOOL_DIR
     raw["file_system_root"] = mcubridge.config.const.DEFAULT_FILE_SYSTEM_ROOT
 
-    config = msgspec.convert(raw, RuntimeConfig, strict=False)
+    config = load_runtime_config(raw)
     return config
 
 

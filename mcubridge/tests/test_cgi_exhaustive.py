@@ -7,7 +7,7 @@ from typing import Any
 from collections.abc import Callable
 from unittest.mock import MagicMock, patch
 
-import msgspec
+import json
 import pytest
 
 # Mock 'uci' before importing pin_rest_cgi
@@ -40,7 +40,7 @@ def cgi_env() -> Callable[..., dict[str, Any]]:
 
 
 def test_cgi_success(cgi_env: Any) -> None:
-    env = cgi_env(body=msgspec.json.encode({"state": "ON"}))
+    env = cgi_env(body=json.dumps({"state": "ON"}).encode("utf-8"))
     start_response = MagicMock()
 
     with patch("paho.mqtt.publish.single") as mock_publish:
@@ -57,7 +57,7 @@ def test_cgi_success(cgi_env: Any) -> None:
             assert "200 OK" in start_response.call_args[0][0]
             mock_publish.assert_called()
 
-            data = msgspec.json.decode(
+            data = json.loads(
                 res[0],
             )
             assert data["status"] == "ok"
@@ -78,14 +78,14 @@ def test_cgi_invalid_method(cgi_env: Any) -> None:
 
 
 def test_cgi_invalid_state(cgi_env: Any) -> None:
-    env = cgi_env(body=msgspec.json.encode({"state": "INVALID"}))
+    env = cgi_env(body=json.dumps({"state": "INVALID"}).encode("utf-8"))
     start_response = MagicMock()
     application(env, start_response)
     assert "400 Bad Request" in start_response.call_args[0][0]
 
 
 def test_cgi_internal_error(cgi_env: Any) -> None:
-    env = cgi_env(body=msgspec.json.encode({"state": "ON"}))
+    env = cgi_env(body=json.dumps({"state": "ON"}).encode("utf-8"))
     start_response = MagicMock()
     with patch("pin_rest_cgi.load_runtime_config", side_effect=OSError("fail")):
         application(env, start_response)

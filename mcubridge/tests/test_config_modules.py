@@ -1,7 +1,6 @@
 """Tests for RuntimeConfig loader and utility functions."""
 
 from __future__ import annotations
-import msgspec
 
 from typing import Any
 
@@ -52,14 +51,14 @@ def test_load_runtime_config_applies_env_and_defaults(
     assert config.serial_baud == 57600
     assert config.mqtt_host == "broker"
     assert config.mqtt_port == 321
-    assert config.mqtt_user == " user "
-    assert config.mqtt_pass == " pass "
+    assert config.mqtt_user == "user"
+    assert config.mqtt_pass == "pass"
     assert config.mqtt_tls is True
-    assert config.mqtt_cafile == " /etc/cafile "
-    assert config.mqtt_certfile == " "
+    assert config.mqtt_cafile == "/etc/cafile"
+    assert config.mqtt_certfile == ""
     assert config.mqtt_keyfile == ""
-    assert config.mqtt_topic == " custom/topic "
-    assert config.allowed_commands == ("echo", "ls")
+    assert config.mqtt_topic == "custom/topic"
+    assert config.allowed_commands == ["echo", "ls"]
     assert config.file_system_root == "/data"
     assert config.process_timeout == 60
     assert config.mqtt_queue_limit == 1
@@ -104,9 +103,9 @@ def test_load_runtime_config_rejects_non_tmp_paths_when_disabled(
     }
     monkeypatch.setattr(settings, "_load_raw_config", lambda: (raw_config, "test"))
 
-    # Strict validation should now raise msgspec.ValidationError during load_runtime_config in test mode
+    # Strict validation should now raise ValueError during load_runtime_config in test mode
 
-    with pytest.raises(msgspec.ValidationError):
+    with pytest.raises(ValueError):
         settings.load_runtime_config()
 
 
@@ -121,7 +120,7 @@ def test_load_runtime_config_allows_empty_mqtt_user_value(
 
     config = settings.load_runtime_config()
     assert config.mqtt_user == ""
-    assert config.mqtt_pass == " "
+    assert config.mqtt_pass == ""
 
 
 def test_load_runtime_config_prefers_uci_config(monkeypatch: pytest.MonkeyPatch):

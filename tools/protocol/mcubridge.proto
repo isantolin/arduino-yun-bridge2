@@ -925,6 +925,56 @@ message PinRead {
     uint32 pin = 1;
 }
 
+message RuntimeConfig {
+    string serial_port = 1;
+    uint32 serial_baud = 2;
+    uint32 serial_safe_baud = 3;
+    string mqtt_host = 4;
+    uint32 mqtt_port = 5;
+    optional string mqtt_user = 6;
+    optional string mqtt_pass = 7;
+    bool mqtt_tls = 8;
+    optional string mqtt_cafile = 9;
+    optional string mqtt_certfile = 10;
+    optional string mqtt_keyfile = 11;
+    string mqtt_topic = 12;
+    repeated string allowed_commands = 13;
+    string file_system_root = 14;
+    uint32 process_timeout = 15;
+    bool mqtt_tls_insecure = 16;
+    uint32 file_write_max_bytes = 17;
+    uint32 file_storage_quota_bytes = 18;
+    uint32 mqtt_queue_limit = 19;
+    uint32 reconnect_delay = 20;
+    uint32 status_interval = 21;
+    bool debug = 22;
+    uint32 console_queue_limit_bytes = 23;
+    uint32 mailbox_queue_limit = 24;
+    uint32 mailbox_queue_bytes_limit = 25;
+    uint32 pending_pin_request_limit = 26;
+    float serial_retry_timeout = 27;
+    float serial_response_timeout = 28;
+    uint32 serial_retry_attempts = 29;
+    uint32 serial_fallback_threshold = 30;
+    float serial_handshake_min_interval = 31;
+    uint32 serial_handshake_fatal_failures = 32;
+    bool mqtt_enabled = 33;
+    bool watchdog_enabled = 34;
+    float watchdog_interval = 35;
+    bytes serial_shared_secret = 36;
+    string mqtt_spool_dir = 37;
+    uint32 process_max_output_bytes = 38;
+    uint32 process_max_concurrent = 39;
+    bool metrics_enabled = 40;
+    string metrics_host = 41;
+    uint32 metrics_port = 42;
+    float bridge_summary_interval = 43;
+    float bridge_handshake_interval = 44;
+    bool allow_non_tmp_paths = 45;
+    AllowedCommandPolicy allowed_policy = 46;
+    TopicAuthorization topic_authorization = 47;
+}
+
 message DigitalReadResponse {
     uint32 value = 1;
 }

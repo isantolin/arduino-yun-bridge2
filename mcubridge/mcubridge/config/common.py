@@ -48,10 +48,55 @@ def get_uci_config() -> dict[str, Any]:
 
 def get_default_config() -> dict[str, Any]:
     """Return the complete default configuration as a dictionary (SIL 2)."""
-    import msgspec
-    from mcubridge.protocol.structures import RuntimeConfig
+    from mcubridge.protocol import mcubridge_pb2 as pb
+    from mcubridge.protocol import protocol
+    from mcubridge.config import const
+    from google.protobuf import json_format
 
-    return msgspec.structs.asdict(RuntimeConfig())
+    msg = pb.RuntimeConfig(
+        serial_port=const.DEFAULT_SERIAL_PORT,
+        serial_baud=protocol.DEFAULT_BAUDRATE,
+        serial_safe_baud=protocol.DEFAULT_SAFE_BAUDRATE,
+        mqtt_host=const.DEFAULT_MQTT_HOST,
+        mqtt_port=protocol.DEFAULT_MQTT_PORT,
+        mqtt_tls=True,
+        mqtt_cafile=const.DEFAULT_MQTT_CAFILE,
+        mqtt_topic=protocol.MQTT_DEFAULT_TOPIC_PREFIX,
+        allowed_commands=[],
+        file_system_root=const.DEFAULT_FILE_SYSTEM_ROOT,
+        process_timeout=const.DEFAULT_PROCESS_TIMEOUT,
+        mqtt_tls_insecure=const.DEFAULT_MQTT_TLS_INSECURE,
+        file_write_max_bytes=const.DEFAULT_FILE_WRITE_MAX_BYTES,
+        file_storage_quota_bytes=const.DEFAULT_FILE_STORAGE_QUOTA_BYTES,
+        mqtt_queue_limit=const.DEFAULT_MQTT_QUEUE_LIMIT,
+        reconnect_delay=protocol.DEFAULT_RECONNECT_DELAY,
+        status_interval=const.DEFAULT_STATUS_INTERVAL,
+        debug=const.DEFAULT_DEBUG,
+        console_queue_limit_bytes=protocol.DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES,
+        mailbox_queue_limit=const.DEFAULT_MAILBOX_QUEUE_LIMIT,
+        mailbox_queue_bytes_limit=const.DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
+        pending_pin_request_limit=const.DEFAULT_PENDING_PIN_REQUESTS,
+        serial_retry_timeout=const.DEFAULT_SERIAL_RETRY_TIMEOUT,
+        serial_response_timeout=const.DEFAULT_SERIAL_RESPONSE_TIMEOUT,
+        serial_retry_attempts=protocol.DEFAULT_RETRY_LIMIT,
+        serial_fallback_threshold=protocol.DEFAULT_SERIAL_FALLBACK_THRESHOLD,
+        serial_handshake_min_interval=const.DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL,
+        serial_handshake_fatal_failures=protocol.DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES,
+        mqtt_enabled=True,
+        watchdog_enabled=True,
+        watchdog_interval=const.DEFAULT_WATCHDOG_INTERVAL,
+        serial_shared_secret=const.DEFAULT_SERIAL_SHARED_SECRET,
+        mqtt_spool_dir=const.DEFAULT_MQTT_SPOOL_DIR,
+        process_max_output_bytes=protocol.DEFAULT_PROCESS_MAX_OUTPUT_BYTES,
+        process_max_concurrent=const.DEFAULT_PROCESS_MAX_CONCURRENT,
+        metrics_enabled=const.DEFAULT_METRICS_ENABLED,
+        metrics_host=const.DEFAULT_METRICS_HOST,
+        metrics_port=protocol.PROMETHEUS_PORT,
+        bridge_summary_interval=const.DEFAULT_BRIDGE_SUMMARY_INTERVAL,
+        bridge_handshake_interval=const.DEFAULT_BRIDGE_HANDSHAKE_INTERVAL,
+        allow_non_tmp_paths=const.DEFAULT_ALLOW_NON_TMP_PATHS,
+    )
+    return json_format.MessageToDict(msg, preserving_proto_field_name=True)
 
 
 __all__: Final[tuple[str, ...]] = (

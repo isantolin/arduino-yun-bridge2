@@ -73,7 +73,7 @@ def app(args: list[str] | None = None) -> None:
 
         # [SIL-2] Strict Mode Security Gate
         if config.serial_shared_secret == DEFAULT_SERIAL_SHARED_SECRET:
-            config.mqtt_enabled = False
+            config.pb_obj.mqtt_enabled = False
             logger.error("STRICT MODE: MQTT transport has been DISABLED for security.")
 
         # 1. Create Serial Transport

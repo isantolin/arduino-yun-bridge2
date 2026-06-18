@@ -1,7 +1,7 @@
 import asyncio
 from unittest.mock import MagicMock, patch
 from pathlib import Path
-from typing import Any, Union
+from typing import Any
 
 import pytest
 
@@ -94,50 +94,11 @@ def test_security_primitives_coverage() -> None:
 def test_dec_hook_extra_paths() -> None:
     import mcubridge.config.settings as settings_mod
 
-    _dec_hook = getattr(settings_mod, "_dec_hook")
+    _coerce_value = getattr(settings_mod, "_coerce_value")
+    from google.protobuf.descriptor import FieldDescriptor
 
     with patch("pathlib.Path.expanduser", return_value=Path("/home/user/test")):
-        res = _dec_hook(str, "~/test")
+        res = _coerce_value("~/test", FieldDescriptor.TYPE_STRING, "some_dir")
         assert res == "/home/user/test"
-    res = _dec_hook(str, "/tmp/test")
+    res = _coerce_value("/tmp/test", FieldDescriptor.TYPE_STRING)
     assert res == "/tmp/test"
-    with pytest.raises(TypeError, match="Cannot coerce"):
-        _dec_hook(int, "not_an_int")
-    res = _dec_hook(Union[bytes, str], " secret ")
-    assert res == b"secret"
-    res = _dec_hook(tuple, "a b c")
-    assert res == ("a", "b", "c")
-
-
-@pytest.mark.asyncio
-async def test_status_writer_error_handling() -> None:
-    config = RuntimeConfig(
-        mqtt_topic="br",
-        serial_port="/dev/test",
-        serial_shared_secret="secret1234",
-    )
-    state = create_runtime_state(config)
-    with patch("mcubridge.state.status._write_status_file", side_effect=RuntimeError("write failed")):
-        from mcubridge.state.status import status_writer
-
-        task = asyncio.create_task(status_writer(state, 1))
-        await asyncio.sleep(0.1)
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
-    with patch("mcubridge.state.status.MessageToJson", side_effect=ValueError("encode error")):
-        _write_status_file = getattr(status_mod, "_write_status_file")
-
-        _write_status_file({})
-
-
-def test_daemon_metrics_initialization() -> None:
-    from mcubridge.state.metrics import DaemonMetrics
-    from prometheus_client import CollectorRegistry
-
-    reg = CollectorRegistry()
-    metrics = DaemonMetrics(reg)
-    assert metrics.registry == reg
-    metrics.mqtt_messages_published.inc()

@@ -10,31 +10,18 @@ not used.
 from __future__ import annotations
 
 import structlog
-from typing import Any
+from typing import Any, cast
 from pathlib import Path
 
-import msgspec
 
 from ..config.common import (
     get_default_config,
     get_uci_config,
 )
 from mcubridge.protocol.structures import RuntimeConfig
+from mcubridge.protocol import mcubridge_pb2 as pb
 
 logger = structlog.get_logger(__name__)
-
-
-def _dec_hook(type_type: Any, obj: Any) -> Any:
-    """[SIL-2] msgspec dec_hook for zero-wrapper coercion."""
-    types = getattr(type_type, "__args__", (type_type,))
-    if bytes in types and isinstance(obj, str):
-        return obj.strip().encode("utf-8")
-    if (tuple in types or getattr(type_type, "__origin__", type_type) is tuple) and isinstance(obj, str):
-        return tuple(obj.split())
-    if str in types and isinstance(obj, str):
-        val = obj.strip()
-        return str(Path(val).expanduser().resolve()) if ("~" in val or "/" in val) and "\n" not in val else val or None
-    raise TypeError(f"Cannot coerce {obj!r} to {type_type}")
 
 
 def _load_raw_config() -> tuple[dict[str, Any], str]:
@@ -68,37 +55,96 @@ def get_config_source() -> str:
     return _config_source[0]
 
 
+def _coerce_value(val: Any, target_type: int, field_name: str = "") -> Any:
+    """Coerce UCI string values to target Protobuf types. [SIL-2]"""
+    from google.protobuf.descriptor import FieldDescriptor
+
+    if val is None:
+        return None
+
+    if target_type == FieldDescriptor.TYPE_STRING:
+        s_val = str(val).strip()
+        is_path_field = any(
+            x in field_name for x in ("_dir", "_file", "_root", "serial_port", "mqtt_ca", "mqtt_cert", "mqtt_key")
+        )
+        if is_path_field and ("~" in s_val or "/" in s_val) and "\n" not in s_val:
+            return str(Path(s_val).expanduser().resolve())
+        return s_val or None
+
+    if target_type in (
+        FieldDescriptor.TYPE_UINT32,
+        FieldDescriptor.TYPE_INT32,
+        FieldDescriptor.TYPE_UINT64,
+        FieldDescriptor.TYPE_INT64,
+    ):
+        try:
+            return int(val)
+        except (ValueError, TypeError):
+            return 0
+
+    if target_type in (FieldDescriptor.TYPE_FLOAT, FieldDescriptor.TYPE_DOUBLE):
+        try:
+            return float(val)
+        except (ValueError, TypeError):
+            return 0.0
+
+    if target_type == FieldDescriptor.TYPE_BOOL:
+        if isinstance(val, bool):
+            return val
+        return str(val).lower() in ("1", "true", "yes", "on")
+
+    if target_type == FieldDescriptor.TYPE_BYTES:
+        if isinstance(val, bytes):
+            return val
+        return str(val).strip().encode("utf-8")
+
+    return val
+
+
 def load_runtime_config(overrides: dict[str, Any] | None = None) -> RuntimeConfig:
-    """Load, normalize, and validate the daemon configuration (SIL 2).
-
-    This is the primary entry point for configuration loading. It ensures that
-    the returned RuntimeConfig is valid and follows all flash protection rules.
-
-    Args:
-        overrides: Optional dictionary of configuration overrides (e.g. from CLI).
-    """
+    """Load, normalize, and validate the daemon configuration (SIL 2)."""
     raw_values, source = _load_raw_config()
+    from mcubridge.config.common import get_default_config
+
+    defaults = get_default_config()
+    for k, v in defaults.items():
+        if k not in raw_values:
+            raw_values[k] = v
     if overrides:
         raw_values.update(overrides)
         source = "cli"
     _config_source[0] = source
 
-    if isinstance(raw_values.get("allowed_commands"), str):
-        raw_values["allowed_commands"] = tuple(raw_values["allowed_commands"].split())
+    msg = pb.RuntimeConfig()
 
-    if isinstance(raw_values.get("serial_shared_secret"), str):
-        raw_values["serial_shared_secret"] = raw_values["serial_shared_secret"].strip().encode("utf-8")
+    if isinstance(raw_values.get("allowed_commands"), str):
+        raw_values["allowed_commands"] = raw_values["allowed_commands"].split()
+    elif raw_values.get("allowed_commands") is None:
+        raw_values["allowed_commands"] = []
+
+    for field in msg.DESCRIPTOR.fields:
+        if field.name in ("allowed_policy", "topic_authorization"):
+            continue
+
+        val = raw_values.get(field.name)
+        if val is None:
+            continue
+
+        if hasattr(getattr(msg, field.name), "extend"):
+            if isinstance(val, (list, tuple)):
+                items = [_coerce_value(i, field.type, field.name) for i in cast("list[Any]", val)]
+                getattr(msg, field.name).extend(items)
+            continue
+
+        coerced = _coerce_value(val, field.type, field.name)
+        if coerced is not None:
+            setattr(msg, field.name, coerced)
 
     try:
-        # [SIL-2] Holistic Validation via msgspec.Struct.
-        return msgspec.convert(raw_values, RuntimeConfig, strict=False, dec_hook=_dec_hook)
-    except (msgspec.ValidationError, ValueError) as e:
+        return RuntimeConfig(msg)
+    except (ValueError, TypeError) as e:
         if source == "uci":
-            # [SIL-2] Deterministic Failure: If UCI is present but invalid, abort.
-            # This prevents running with a partially invalid security config.
             logger.critical("FATAL: UCI configuration is invalid: %s", e)
             raise RuntimeError(f"Invalid system configuration: {e}") from e
-
-        # During tests or fallback, let the error propagate if it's a structural/logic error
         logger.critical("Configuration validation failed: %s", e)
         raise

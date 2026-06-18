@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Any, Final, TypeVar, cast
 
 from .storage import DbmDeque, DbmCache
-import msgspec
 import structlog
 
 from ..config.const import (
@@ -311,7 +310,7 @@ class RuntimeState:
                 self.datastore_cache = None
 
     def build_serial_pipeline_snapshot(self) -> pb.SerialPipelineSnapshot:
-        def _dict_to_pb_pipeline_event(ev_dict: dict[str, Any] | None) -> pb.PipelineEvent:
+        def _dict_topb_obj_pipeline_event(ev_dict: dict[str, Any] | None) -> pb.PipelineEvent:
             if not ev_dict:
                 return pb.PipelineEvent(event="none")
             return pb.PipelineEvent(
@@ -323,17 +322,17 @@ class RuntimeState:
                 timestamp=float(ev_dict.get("timestamp", 0.0)),
             )
 
-        inflight_pb = pb.PipelineEvent(event="none")
+        inflightpb_obj = pb.PipelineEvent(event="none")
         if self.serial_pipeline_inflight is not None:
-            inflight_pb = _dict_to_pb_pipeline_event(self.serial_pipeline_inflight)
+            inflightpb_obj = _dict_topb_obj_pipeline_event(self.serial_pipeline_inflight)
 
-        last_pb = pb.PipelineEvent(event="none")
+        lastpb_obj = pb.PipelineEvent(event="none")
         if self.serial_pipeline_last is not None:
-            last_pb = _dict_to_pb_pipeline_event(self.serial_pipeline_last)
+            lastpb_obj = _dict_topb_obj_pipeline_event(self.serial_pipeline_last)
 
         return pb.SerialPipelineSnapshot(
-            inflight=inflight_pb,
-            last_completion=last_pb,
+            inflight=inflightpb_obj,
+            last_completion=lastpb_obj,
         )
 
     def apply_handshake_stats(self, observation: Mapping[str, Any]) -> None:
@@ -424,18 +423,18 @@ class RuntimeState:
     def build_bridge_snapshot(self) -> pb.BridgeSnapshot:
         from google.protobuf.json_format import ParseDict
 
-        version_pb = None
+        versionpb_obj = None
         if self.mcu_version is not None:
-            version_pb = pb.VersionResponse(
+            versionpb_obj = pb.VersionResponse(
                 major=self.mcu_version[0],
                 minor=self.mcu_version[1],
                 patch=self.mcu_version[2],
             )
 
-        capabilities_pb = None
+        capabilitiespb_obj = None
         if self.mcu_capabilities is not None:
-            capabilities_pb = pb.Capabilities()
-            ParseDict(self.mcu_capabilities, capabilities_pb)
+            capabilitiespb_obj = pb.Capabilities()
+            ParseDict(self.mcu_capabilities, capabilitiespb_obj)
 
         return pb.BridgeSnapshot(
             serial_link=pb.SerialLinkSnapshot(
@@ -446,8 +445,8 @@ class RuntimeState:
             handshake=self.build_handshake_snapshot(),
             serial_pipeline=self.build_serial_pipeline_snapshot(),
             serial_flow=self.serial_flow_stats,
-            mcu_version=version_pb,
-            capabilities=capabilities_pb,
+            mcu_version=versionpb_obj,
+            capabilities=capabilitiespb_obj,
         )
 
     def handshake_duration_since_start(self) -> float:
@@ -516,17 +515,23 @@ class RuntimeState:
 
 
 def create_runtime_state(config: RuntimeConfig | dict[str, Any]) -> RuntimeState:
-    from ..config.settings import RuntimeConfig
+    from ..config.settings import load_runtime_config
+    from google.protobuf import json_format
 
-    cfg = msgspec.convert(config, RuntimeConfig) if isinstance(config, dict) else config
+    if isinstance(config, dict):
+        cfg = load_runtime_config(config)
+    else:
+        cfg = config
 
-    cfg_dict = {k: v for k, v in msgspec.structs.asdict(cfg).items() if v is not None}
+    cfg_dict = json_format.MessageToDict(cfg.pb_obj, preserving_proto_field_name=True)
+
     if "mqtt_topic" in cfg_dict:
         cfg_dict["mqtt_topic_prefix"] = cfg_dict.pop("mqtt_topic")
     if "process_max_output_bytes" in cfg_dict:
         cfg_dict["process_output_limit"] = cfg_dict.pop("process_max_output_bytes")
-    if "allowed_commands" in cfg_dict and cfg_dict["allowed_commands"] is not None:
-        cfg_dict["allowed_policy"] = create_allowed_policy(cfg_dict.pop("allowed_commands"))
+
+    cfg_dict["allowed_policy"] = cfg.allowed_policy
+    cfg_dict["topic_authorization"] = cfg.topic_authorization
 
     state = RuntimeState(**cfg_dict)
     state.serial_tx_allowed.set()

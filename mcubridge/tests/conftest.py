@@ -229,10 +229,12 @@ def isolate_test_paths() -> Iterator[None]:
     yield
 
     try:
-        shutil.rmtree(mcubridge.config.const.DEFAULT_FILE_SYSTEM_ROOT, ignore_errors=True)
-        shutil.rmtree(mcubridge.config.const.DEFAULT_MQTT_SPOOL_DIR, ignore_errors=True)
-    except Exception:
-        pass
+        if os.path.exists(mcubridge.config.const.DEFAULT_FILE_SYSTEM_ROOT):
+            shutil.rmtree(mcubridge.config.const.DEFAULT_FILE_SYSTEM_ROOT)
+        if os.path.exists(mcubridge.config.const.DEFAULT_MQTT_SPOOL_DIR):
+            shutil.rmtree(mcubridge.config.const.DEFAULT_MQTT_SPOOL_DIR)
+    except OSError as e:
+        logging.getLogger("mcubridge.tests").warning("Teardown path cleanup notice: %s", e)
 
     mcubridge.config.const.DEFAULT_FILE_SYSTEM_ROOT = original_fs
     mcubridge.config.const.DEFAULT_MQTT_SPOOL_DIR = original_spool

@@ -125,3 +125,4 @@ mcubridge-library-arduino/src/pb_encode.h
 feeds/luci-app-mcubridge
 feeds/mcubridge
 tools/protocol/templates/protocol.py
+build_output/

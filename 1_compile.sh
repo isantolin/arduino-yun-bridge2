@@ -122,6 +122,7 @@ inject_rust_into_sdk() {
     
     # Limpiar inyecciones previas para evitar estados inconsistentes
     rm -f "$sdk_host_bin/rustc" "$sdk_host_bin/cargo" "$sdk_host_bin/rustdoc"
+    rm -f "$sdk_hostpkg_bin/rustc" "$sdk_hostpkg_bin/cargo" "$sdk_hostpkg_bin/rustdoc"
     rm -f "$sdk_hostpkg_bin/maturin" "$SDK_DIR/staging_dir/host/stamp/.rust_installed" "$SDK_DIR/staging_dir/hostpkg/stamp/.rust_installed"
 
     local can_inject=0
@@ -162,10 +163,13 @@ inject_rust_into_sdk() {
     fi
 
     if [ "$can_inject" -eq 1 ]; then
-        mkdir -p "$sdk_host_bin"
+        mkdir -p "$sdk_host_bin" "$sdk_hostpkg_bin"
         ln -sf "$(command -v rustc)" "$sdk_host_bin/rustc"
         ln -sf "$(command -v cargo)" "$sdk_host_bin/cargo"
         ln -sf "$(command -v rustdoc)" "$sdk_host_bin/rustdoc"
+        ln -sf "$(command -v rustc)" "$sdk_hostpkg_bin/rustc"
+        ln -sf "$(command -v cargo)" "$sdk_hostpkg_bin/cargo"
+        ln -sf "$(command -v rustdoc)" "$sdk_hostpkg_bin/rustdoc"
         mkdir -p "$SDK_DIR/staging_dir/host/stamp" "$SDK_DIR/staging_dir/hostpkg/stamp"
         touch "$SDK_DIR/staging_dir/host/stamp/.rust_installed"
         touch "$SDK_DIR/staging_dir/hostpkg/stamp/.rust_installed"
@@ -525,9 +529,26 @@ fi
 # without a managed Git repo. Debe ser 'false' para GitHub Actions.
 RUST_MAKEFILE="package/feeds/packages/rust/Makefile"
 if [ -f "$RUST_MAKEFILE" ]; then
-    echo "[FIX] Patching rust host build config for CI..."
-    sed -i 's/llvm.download-ci-llvm=true/llvm.download-ci-llvm=false/g' "$RUST_MAKEFILE"
-    sed -i 's/llvm.download-ci-llvm=if-unchanged/llvm.download-ci-llvm=false/g' "$RUST_MAKEFILE"
+    if [ -f "$SDK_DIR/staging_dir/host/bin/rustc" ]; then
+        echo "[FIX] Host Rust injected. Stubbing out SDK Rust compilation macros in $RUST_MAKEFILE..."
+        python3 -c '
+import re, sys
+filepath = sys.argv[1]
+with open(filepath, "r") as f:
+    content = f.read()
+for macro in ["Host/Prepare", "Host/Compile", "Host/Install"]:
+    pattern = r"(define\s+" + re.escape(macro) + r"(?:\s|#|$)[^\n]*\n.*?endef)"
+    replacement = f"define {macro}\n\ttrue\nendef"
+    content, count = re.subn(pattern, replacement, content, flags=re.DOTALL)
+    print(f"Stubbed {macro}: {count} replacements")
+with open(filepath, "w") as f:
+    f.write(content)
+' "$RUST_MAKEFILE"
+    else
+        echo "[FIX] Host Rust NOT injected. Patching rust host build config for CI..."
+        sed -i 's/llvm.download-ci-llvm=true/llvm.download-ci-llvm=false/g' "$RUST_MAKEFILE"
+        sed -i 's/llvm.download-ci-llvm=if-unchanged/llvm.download-ci-llvm=false/g' "$RUST_MAKEFILE"
+    fi
 fi
 # ==============================================================================
 

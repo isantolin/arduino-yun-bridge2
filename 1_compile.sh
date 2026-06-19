@@ -122,7 +122,7 @@ inject_rust_into_sdk() {
     
     # Limpiar inyecciones previas para evitar estados inconsistentes
     rm -f "$sdk_host_bin/rustc" "$sdk_host_bin/cargo" "$sdk_host_bin/rustdoc"
-    rm -f "$sdk_hostpkg_bin/maturin" "$SDK_DIR/staging_dir/host/stamp/.rust_installed"
+    rm -f "$sdk_hostpkg_bin/maturin" "$SDK_DIR/staging_dir/host/stamp/.rust_installed" "$SDK_DIR/staging_dir/hostpkg/stamp/.rust_installed"
 
     local can_inject=0
     if command -v rustc >/dev/null 2>&1 && command -v cargo >/dev/null 2>&1; then
@@ -166,8 +166,9 @@ inject_rust_into_sdk() {
         ln -sf "$(command -v rustc)" "$sdk_host_bin/rustc"
         ln -sf "$(command -v cargo)" "$sdk_host_bin/cargo"
         ln -sf "$(command -v rustdoc)" "$sdk_host_bin/rustdoc"
-        mkdir -p "$SDK_DIR/staging_dir/host/stamp"
+        mkdir -p "$SDK_DIR/staging_dir/host/stamp" "$SDK_DIR/staging_dir/hostpkg/stamp"
         touch "$SDK_DIR/staging_dir/host/stamp/.rust_installed"
+        touch "$SDK_DIR/staging_dir/hostpkg/stamp/.rust_installed"
         
         # Inyectar maturin solo si Rust es funcional
         if command -v maturin >/dev/null 2>&1; then

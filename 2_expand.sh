@@ -175,6 +175,8 @@ esac
 # --- 1. Dependencies ---
 
 echo "1. Checking and installing required packages..."
+# [FIX] Update package feeds before attempting to install packages
+apk update || log_warn "Failed to update package database. Trying installation anyway..."
 install_pkg e2fsprogs
 install_pkg block-mount
 install_pkg fdisk

@@ -168,32 +168,8 @@ class BridgeClass {
         isSynchronized() && !_shared_secret.empty() && !is_excluded;
 
     if (do_encrypt) {
-      if (is_reliable_cmd(raw_cmd)) {
-        BRIDGE_ATOMIC_BLOCK {
-          if (_pending_tx_queue.full()) return false;
-          auto* buf = _tx_payload_pool.allocate();
-          if (!buf) return false;
-          pb_ostream_t out_stream =
-              pb_ostream_from_buffer(buf->data.data(), buf->data.size());
-          if (pb_encode(&out_stream, rpc::Payload::get_fields<T>(), &packet)) {
-            _pending_tx_queue.push_back(
-                {raw_cmd, seq, buf, out_stream.bytes_written});
-            if (!_fsm.isAwaitingAck()) _flushPendingTxQueue();
-            return true;
-          }
-          _tx_payload_pool.release(buf);
-          return false;
-        }
-      }
-      pb_ostream_t out_stream = pb_ostream_from_buffer(_transient_buffer.data(),
-                                                       rpc::MAX_PAYLOAD_SIZE);
-      if (pb_encode(&out_stream, rpc::Payload::get_fields<T>(), &packet)) {
-        _transmit(raw_cmd, seq,
-                  etl::span<const uint8_t>(_transient_buffer.data(),
-                                           out_stream.bytes_written));
-        return true;
-      }
-      return false;
+      return _sendEncryptedHelper(raw_cmd, seq, rpc::Payload::get_fields<T>(),
+                                  &packet);
     } else {
       return sendSinglePass<T>(raw_cmd, seq, packet);
     }
@@ -462,6 +438,8 @@ class BridgeClass {
   static DispatchHandler _getHandler(uint16_t command_id);
   static bool _decodePayloadHelper(const bridge::router::CommandContext& ctx,
                                    const pb_msgdesc_t* fields, void* dest);
+  bool _sendEncryptedHelper(uint16_t raw_cmd, uint16_t seq,
+                            const pb_msgdesc_t* fields, const void* packet);
 
   void _clearPendingTxQueue();
   void _flushPendingTxQueue();

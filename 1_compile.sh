@@ -103,11 +103,7 @@ sanitize_path() {
 
 sanitize_path
 
-# ==============================================================================
-# [SIL-2] Sincronización Automática de Dependencias
-# ==============================================================================
-echo "[INFO] Sincronizando dependencias de runtime Python..."
-python3 ./tools/sync_runtime_deps.py
+# Sincronización de dependencias de runtime se realiza más adelante con rutas absolutas
 
 # ==============================================================================
 # [FIX CRITICO] Rust/Cargo Bridge para CI (GitHub Actions)
@@ -289,6 +285,28 @@ check_python_module() {
 
 check_python_module "setuptools"
 
+# --- DOWNLOAD CACHE SYMLINK SETUP ---
+setup_dl_symlink() {
+    # Ensure repo dl directory exists
+    mkdir -p "$REPO_ROOT/dl"
+    
+    # If SDK directory exists, manage the symlink
+    if [ -d "$SDK_DIR" ]; then
+        if [ -d "$SDK_DIR/dl" ] && [ ! -L "$SDK_DIR/dl" ]; then
+            echo "[INFO] Moving existing files from SDK download directory to repo-wide cache..."
+            if [ "$(ls -A "$SDK_DIR/dl" 2>/dev/null)" ]; then
+                cp -a "$SDK_DIR/dl/." "$REPO_ROOT/dl/"
+            fi
+            rm -rf "$SDK_DIR/dl"
+        fi
+        
+        if [ ! -L "$SDK_DIR/dl" ]; then
+            echo "[INFO] Creating symlink from $SDK_DIR/dl to $REPO_ROOT/dl..."
+            ln -sf "$REPO_ROOT/dl" "$SDK_DIR/dl"
+        fi
+    fi
+}
+
 # --- PREPARE SDK ---
 if command -v unzstd >/dev/null 2>&1; then ZSTD_DECOMPRESSOR="unzstd"; 
 elif command -v zstd >/dev/null 2>&1; then ZSTD_DECOMPRESSOR="zstd -d"; 
@@ -300,6 +318,9 @@ mkdir -p "$BIN_DIR"
 if [ -d "$SDK_DIR" ] && [ ! -f "$SDK_DIR/scripts/feeds" ]; then
     rm -rf "$SDK_DIR"
 fi
+
+# Ensure download symlink exists if SDK is already present
+setup_dl_symlink
 
 if [ ! -d "$SDK_DIR" ]; then
     MAX_RETRIES=10; RETRY=0; SUCCESS=0
@@ -342,6 +363,8 @@ if [ ! -d "$SDK_DIR" ]; then
         echo "[INFO] Extracting SDK..."
         if tar --use-compress-program="${ZSTD_DECOMPRESSOR}" -xf sdk.tar.zst; then
             rm sdk.tar.zst; mv openwrt-sdk-* "$SDK_DIR"; SUCCESS=1;
+            # Ensure download symlink exists for freshly extracted SDK
+            setup_dl_symlink
             # [FIX] Inyectamos Rust antes de cualquier compilación
             inject_rust_into_sdk
             break

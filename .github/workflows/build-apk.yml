@@ -16,7 +16,7 @@ env:
 
 jobs:
   build-apk:
-    name: Compile APKs for OpenWrt 25.12.0
+    name: Compile APKs for OpenWrt 25.12.4
     runs-on: ubuntu-24.04
     timeout-minutes: 330
     steps:
@@ -28,7 +28,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: dl
-          key: ${{ runner.os }}-openwrt-dl-25.12.0
+          key: ${{ runner.os }}-openwrt-dl-25.12.4
           restore-keys: |
             ${{ runner.os }}-openwrt-dl-
 
@@ -39,18 +39,18 @@ jobs:
           path: |
             openwrt-sdk/staging_dir/hostpkg
             openwrt-sdk/staging_dir/host
-          key: ${{ runner.os }}-openwrt-host-25.12.0-${{ hashFiles('1_compile.sh') }}
+          key: ${{ runner.os }}-openwrt-host-25.12.4-${{ hashFiles('1_compile.sh') }}
           restore-keys: |
-            ${{ runner.os }}-openwrt-host-25.12.0-
+            ${{ runner.os }}-openwrt-host-25.12.4-
 
       # Cache layer 3: Full SDK (staging_dir/target, build_dir, feeds)
       - name: Cache OpenWrt SDK
         uses: actions/cache@v5
         with:
           path: openwrt-sdk
-          key: ${{ runner.os }}-openwrt-sdk-25.12.0-${{ hashFiles('1_compile.sh', 'mcubridge/Makefile', 'feeds/**/Makefile') }}
+          key: ${{ runner.os }}-openwrt-sdk-25.12.4-${{ hashFiles('1_compile.sh', 'mcubridge/Makefile', 'feeds/**/Makefile') }}
           restore-keys: |
-            ${{ runner.os }}-openwrt-sdk-25.12.0-
+            ${{ runner.os }}-openwrt-sdk-25.12.4-
 
       # [FIX CRÍTICO] Instalar la rama Nightly con el componente de código fuente "rust-src".
       # Esto nos permite compilar la biblioteca estándar de Rust ("std") al vuelo para la arquitectura MIPS

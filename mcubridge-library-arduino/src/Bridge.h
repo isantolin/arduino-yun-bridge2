@@ -23,11 +23,9 @@
 #include <etl/callback_timer.h>
 #include <etl/delegate.h>
 #include <etl/deque.h>
-#include <etl/expected.h>
 #include <etl/fsm.h>
 #include <etl/pool.h>
 #include <etl/span.h>
-#include <etl/string.h>
 #include <etl/string_view.h>
 #include <etl/vector.h>
 
@@ -469,7 +467,6 @@ class BridgeClass {
   void _handleMailboxAvailableResponse(
       const rpc_pb_MailboxAvailableResponse& m);
 #endif
-  void _handleLinkResetStruct(const rpc_pb_HandshakeConfig& m);
   static DispatchHandler _getHandler(uint16_t command_id);
 
   void _clearPendingTxQueue();

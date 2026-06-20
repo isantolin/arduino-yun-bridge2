@@ -14,7 +14,6 @@ import enum
 import functools
 import re
 from collections.abc import Iterable, Mapping
-from enum import IntEnum
 from dataclasses import dataclass
 from pathlib import Path
 from typing import (
@@ -42,15 +41,6 @@ PROTOBUF_CONTENT_TYPE: Final[str] = "application/x-protobuf"
 
 # [SIL-2] Compiled once at module load; reused across all AllowedCommandPolicy instances.
 _TOKEN_SEP: Final = re.compile(r"[,\s]+")
-
-
-class FlowEvent(str, enum.Enum):
-    """Serial flow event types for typed dispatch."""
-
-    SENT = "sent"
-    ACK = "ack"
-    RETRY = "retry"
-    FAILURE = "failure"
 
 
 @functools.lru_cache(maxsize=1)
@@ -398,14 +388,6 @@ class PendingPinRequest:
 
 
 # --- MQTT Spool Helpers ---
-
-
-class QOSLevel(IntEnum):
-    """MQTT Quality-of-Service levels."""
-
-    QOS_0 = 0
-    QOS_1 = 1
-    QOS_2 = 2
 
 
 UserProperty = tuple[str, str]

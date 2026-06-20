@@ -8,12 +8,15 @@
 #include <Arduino.h>
 #include <etl/algorithm.h>
 #include <etl/array.h>
+#include <etl/string_view.h>
 #include <wolfssl/wolfcrypt/chacha20_poly1305.h>
 #include <wolfssl/wolfcrypt/hash.h>
 #include <wolfssl/wolfcrypt/hmac.h>
 #include <wolfssl/wolfcrypt/kdf.h>
 
-#include "Bridge.h"
+#include "../protocol/rpc_structs.h"
+#include "pb_decode.h"
+#include "pb_encode.h"
 
 namespace rpc {
 namespace security {

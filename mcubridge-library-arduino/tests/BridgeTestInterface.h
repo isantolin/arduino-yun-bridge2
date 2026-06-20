@@ -38,8 +38,6 @@ class TestAccessor : public BridgeClass {
            static_cast<etl::fsm_state_id_t>(bridge::fsm::StateId::STARTUP);
   }
 
-  void onStartupStabilized() { _fsm.receive(bridge::fsm::EvStabilized()); }
-
   template <typename TEvent>
   void trigger(const TEvent& ev) {
     _fsm.receive(ev);

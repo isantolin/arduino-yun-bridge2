@@ -20,7 +20,6 @@ void test_fsm_initial_state() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
-  ba.onStartupStabilized();
   TEST_ASSERT(ba.isUnsynchronized());
 }
 
@@ -36,7 +35,6 @@ void test_mutual_auth_failure_to_startup() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
-  ba.onStartupStabilized();
   ba.trigger(bridge::fsm::EvHandshakeStart());
   ba.trigger(bridge::fsm::EvHandshakeFailed());
   // Observed behavior: Handshake failure resets to Startup

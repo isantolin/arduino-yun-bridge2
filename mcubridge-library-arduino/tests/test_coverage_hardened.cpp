@@ -321,7 +321,6 @@ void test_bridge_timer_callbacks() {
   Bridge._onAckTimeout();
   Bridge._onRxDedupe();
   Bridge._onBaudrateChange();
-  bridge::test::TestAccessor::create(Bridge).onStartupStabilized();
   Bridge._onBootloaderDelay();
 }
 

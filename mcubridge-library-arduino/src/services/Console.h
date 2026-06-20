@@ -8,7 +8,6 @@
 #undef max
 #include <etl/bitset.h>
 #include <etl/circular_buffer.h>
-#include <etl/span.h>
 #include <etl/vector.h>
 
 #include "protocol/rpc_protocol.h"

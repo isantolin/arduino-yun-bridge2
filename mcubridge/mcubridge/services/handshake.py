@@ -566,8 +566,6 @@ class SerialHandshakeManager:
     @staticmethod
     def calculate_session_key(secret: bytes, nonce: bytes) -> bytes:
         """[MIL-SPEC] Derive a 32-byte session key from shared secret and nonce."""
-        from cryptography.hazmat.primitives import hashes
-        from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
         hkdf = HKDF(
             algorithm=hashes.SHA256(),

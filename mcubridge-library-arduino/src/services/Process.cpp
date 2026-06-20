@@ -1,7 +1,6 @@
 #include "services/Process.h"
 
 #include <etl/algorithm.h>
-#include <etl/array.h>
 #include <etl/string.h>
 
 #include "Bridge.h"

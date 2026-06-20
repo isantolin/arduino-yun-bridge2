@@ -5,7 +5,6 @@
 #undef min
 #undef max
 #include <etl/array.h>
-#include <etl/circular_buffer.h>
 #include <etl/delegate.h>
 #include <etl/queue.h>
 #include <etl/span.h>

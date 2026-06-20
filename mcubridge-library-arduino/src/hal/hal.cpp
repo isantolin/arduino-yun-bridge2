@@ -1,11 +1,7 @@
 #include "hal.h"
 
 #include <etl/algorithm.h>
-#include <etl/binary.h>
-#include <etl/bitset.h>
 #include <etl/iterator.h>
-#include <etl/string.h>
-#include <etl/to_string.h>
 
 #include "ArchTraits.h"
 #include "config/bridge_config.h"

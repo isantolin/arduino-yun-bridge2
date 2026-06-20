@@ -21,7 +21,6 @@ void integrated_test_bridge_core() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& accessor = bridge::test::TestAccessor::create(Bridge);
-  accessor.onStartupStabilized();
 
   rpc::payload::LinkSync sync_req = {};
   memset(sync_req.nonce.bytes, 1, 16);

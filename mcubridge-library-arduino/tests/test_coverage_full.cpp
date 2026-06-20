@@ -288,7 +288,6 @@ void test_bridge_coverage() {
   ba.trigger(bridge::fsm::EvHandshakeFailed());
   ba.trigger(bridge::fsm::EvTimeout());
   ba.trigger(bridge::fsm::EvReset());
-  ba.trigger(bridge::fsm::EvStabilized());
   ba.trigger(bridge::fsm::EvHandshakeStart());
   ba.trigger(bridge::fsm::EvHandshakeComplete());
 
@@ -315,7 +314,6 @@ void test_bridge_coverage() {
 
   uint8_t sd_val_x[] = {0};
   stream.feed(sd_val_x, 1);
-  ba.onStartupStabilized();
 
   // 12. Flow Control
   printf("  - Step 12: Flow Control\n");

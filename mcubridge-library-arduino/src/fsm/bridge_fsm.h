@@ -18,14 +18,13 @@ enum class StateId : uint8_t {
 };
 
 // --- Events ---
-struct EvStabilized : public etl::message<0> {};
-struct EvHandshakeStart : public etl::message<1> {};
-struct EvHandshakeComplete : public etl::message<2> {};
-struct EvHandshakeFailed : public etl::message<3> {};
-struct EvSendCritical : public etl::message<4> {};
-struct EvAckReceived : public etl::message<5> {};
-struct EvTimeout : public etl::message<6> {};
-struct EvReset : public etl::message<7> {};
+struct EvHandshakeStart : public etl::message<0> {};
+struct EvHandshakeComplete : public etl::message<1> {};
+struct EvHandshakeFailed : public etl::message<2> {};
+struct EvSendCritical : public etl::message<3> {};
+struct EvAckReceived : public etl::message<4> {};
+struct EvTimeout : public etl::message<5> {};
+struct EvReset : public etl::message<6> {};
 
 // --- Forward Declarations ---
 class BridgeFsm;

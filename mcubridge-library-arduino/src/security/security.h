@@ -16,7 +16,6 @@
 #include <stdint.h>
 
 #include "../etl_ext/CounterIterator.h"
-#include "../protocol/rpc_frame.h"
 #include "../protocol/rpc_protocol.h"
 
 /* [WOLFSSL] Core headers */

@@ -16,6 +16,8 @@ import subprocess
 import shutil
 from pathlib import Path
 from typing import Any
+import urllib.request
+import urllib.error
 
 
 def log_info(msg: str) -> None:
@@ -44,6 +46,23 @@ EXTROOT_DISK_MB = 2048  # extroot overlay + swap
 PROMPT = r"root@.*:.*#"
 DEPLOY_SCRIPTS = ["2_expand.sh", "3_install.sh"]
 
+SYS_APKS_BASE_URL = f"https://downloads.openwrt.org/releases/{OPENWRT_VERSION}/packages/mips_24kc/base"
+SYS_APKS_TARGET_URL = f"https://downloads.openwrt.org/releases/{OPENWRT_VERSION}/targets/{TARGET}/packages"
+
+SYS_APKS = [
+    ("fdisk-2.41.5-r1.apk", SYS_APKS_BASE_URL),
+    ("libfdisk1-2.41.5-r1.apk", SYS_APKS_BASE_URL),
+    ("libsmartcols1-2.41.5-r1.apk", SYS_APKS_BASE_URL),
+    ("libblkid1-2.41.5-r1.apk", SYS_APKS_BASE_URL),
+    ("libuuid1-2.41.5-r1.apk", SYS_APKS_BASE_URL),
+    ("e2fsprogs-1.47.3-r1.apk", SYS_APKS_BASE_URL),
+    ("libext2fs2-1.47.3-r1.apk", SYS_APKS_BASE_URL),
+    ("libcomerr0-1.47.3-r1.apk", SYS_APKS_BASE_URL),
+    ("libss2-1.47.3-r1.apk", SYS_APKS_BASE_URL),
+    ("block-mount-2026.02.15~8d377aa6-r1.apk", SYS_APKS_TARGET_URL),
+    ("blockd-2026.02.15~8d377aa6-r1.apk", SYS_APKS_TARGET_URL),
+]
+
 
 def run(cmd: list[str], check: bool = True) -> subprocess.CompletedProcess[bytes]:
     log_info(f"[EXEC] {' '.join(cmd)}")
@@ -65,9 +84,32 @@ def download_images() -> None:
 
 
 # ---------------------------------------------------------------------------
+# System APK download
+# ---------------------------------------------------------------------------
+def download_system_apks(dest_dir: Path) -> None:
+    """Download the required OpenWrt system APKs to a host folder."""
+    log_info(f"[INFO] Downloading system APKs to {dest_dir}...")
+    dest_dir.mkdir(exist_ok=True, parents=True)
+
+    for filename, base_url in SYS_APKS:
+        file_path = dest_dir / filename
+        if file_path.exists():
+            log_info(f"[INFO] {filename} already exists, skipping download.")
+            continue
+
+        url = f"{base_url}/{filename}"
+        log_info(f"[INFO] Downloading {url} -> {file_path}")
+        try:
+            urllib.request.urlretrieve(url, file_path)
+        except urllib.error.URLError as e:
+            log_error(f"[ERROR] Failed to download {url}: {e}")
+            raise
+
+
+# ---------------------------------------------------------------------------
 # Disk creation
 # ---------------------------------------------------------------------------
-def create_apk_disk(apk_dir: Path, repo_root: Path) -> str:
+def create_apk_disk(apk_dir: Path, sys_apk_dir: Path, repo_root: Path) -> str:
     """Create an ext4 disk with APKs in bin/ and deploy scripts at root."""
     log_info("[INFO] Creating APK data disk...")
     apk_disk = "apks.img"
@@ -86,7 +128,12 @@ def create_apk_disk(apk_dir: Path, repo_root: Path) -> str:
         apk_files = list(apk_dir.glob("*.apk"))
         for apk in apk_files:
             run(["sudo", "cp", str(apk), str(bin_dir / apk.name)])
-        log_info(f"[INFO] Copied {len(apk_files)} APKs to disk bin/.")
+        log_info(f"[INFO] Copied {len(apk_files)} project APKs to disk bin/.")
+
+        sys_apk_files = list(sys_apk_dir.glob("*.apk"))
+        for apk in sys_apk_files:
+            run(["sudo", "cp", str(apk), str(bin_dir / apk.name)])
+        log_info(f"[INFO] Copied {len(sys_apk_files)} system APKs to disk bin/.")
 
         # Copy deploy scripts
         for script in DEPLOY_SCRIPTS:
@@ -340,6 +387,9 @@ if __name__ == "__main__":
     repo_root = Path(__file__).resolve().parent.parent
 
     download_images()
-    apk_disk = create_apk_disk(Path(apk_dir_arg), repo_root)
+    sys_apk_dir = repo_root / "dl_sys_apks"
+    download_system_apks(sys_apk_dir)
+
+    apk_disk = create_apk_disk(Path(apk_dir_arg), sys_apk_dir, repo_root)
     extroot_disk = create_extroot_disk()
     run_test(apk_disk, extroot_disk)

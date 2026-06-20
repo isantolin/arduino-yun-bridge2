@@ -49,6 +49,19 @@ get_device_uuid() {
         uuid=$(ls -l /dev/disk/by-uuid | grep "$(basename "$dev")" | awk '{print $9}')
     fi
 
+    # Method 5: Direct ext4 superblock read fallback using dd + od/hexdump
+    if [ -z "$uuid" ]; then
+        local hex_val=""
+        if command -v od >/dev/null 2>&1; then
+            hex_val=$(dd if="$dev" bs=1 skip=1128 count=16 2>/dev/null | od -An -tx1 | tr -d ' \n')
+        elif command -v hexdump >/dev/null 2>&1; then
+            hex_val=$(dd if="$dev" bs=1 skip=1128 count=16 2>/dev/null | hexdump -e '16/1 "%02x"')
+        fi
+        if [ -n "$hex_val" ] && [ "${#hex_val}" -eq 32 ]; then
+            uuid=$(echo "$hex_val" | sed -E 's/(.{8})(.{4})(.{4})(.{4})(.{12})/\1-\2-\3-\4-\5/')
+        fi
+    fi
+
     echo "$uuid"
 }
 

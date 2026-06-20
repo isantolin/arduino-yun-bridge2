@@ -28,6 +28,7 @@
 #if defined(__AVR__) || defined(ARDUINO_ARCH_AVR)
 #define NO_64BIT
 #undef TIME_OVERRIDES
+#define CHACHA_AEAD_SLOW
 #endif
 
 /* Features enabled for McuBridge */

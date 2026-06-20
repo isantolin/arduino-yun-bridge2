@@ -770,6 +770,15 @@ def ensure_nanopb_core_files() -> None:
                 sys.stderr.write(f"Error downloading {f}: {e}\n")
                 sys.exit(1)
 
+    pb_h = src_dir / "pb.h"
+    if pb_h.exists():
+        content = pb_h.read_text(encoding="utf-8")
+        if "/* #define PB_BUFFER_ONLY 1 */" in content:
+            sys.stderr.write("Configuring PB_BUFFER_ONLY in pb.h...\n")
+            pb_h.write_text(
+                content.replace("/* #define PB_BUFFER_ONLY 1 */", "#define PB_BUFFER_ONLY 1"), encoding="utf-8"
+            )
+
 
 def main() -> None:
     ensure_nanopb_core_files()

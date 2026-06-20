@@ -322,10 +322,8 @@ class BridgeClass {
     bool decoded = false;
     if (ctx.envelope->which_payload_type ==
         rpc_pb_RpcEnvelope_encrypted_payload_tag) {
-      pb_istream_t stream = pb_istream_from_buffer(
-          ctx.envelope->payload_type.encrypted_payload.bytes,
-          ctx.envelope->payload_type.encrypted_payload.size);
-      decoded = pb_decode(&stream, rpc::Payload::get_fields<T>(), &res_msg);
+      decoded =
+          b._decodePayloadHelper(ctx, rpc::Payload::get_fields<T>(), &res_msg);
     } else if (ctx.envelope->which_payload_type == rpc::Payload::get_tag<T>()) {
       res_msg = rpc::Payload::get<T>(*ctx.envelope);
       decoded = true;
@@ -349,10 +347,8 @@ class BridgeClass {
     bool decoded = false;
     if (ctx.envelope->which_payload_type ==
         rpc_pb_RpcEnvelope_encrypted_payload_tag) {
-      pb_istream_t stream = pb_istream_from_buffer(
-          ctx.envelope->payload_type.encrypted_payload.bytes,
-          ctx.envelope->payload_type.encrypted_payload.size);
-      decoded = pb_decode(&stream, rpc::Payload::get_fields<T>(), &res_msg);
+      decoded =
+          b._decodePayloadHelper(ctx, rpc::Payload::get_fields<T>(), &res_msg);
     } else if (ctx.envelope->which_payload_type == rpc::Payload::get_tag<T>()) {
       res_msg = rpc::Payload::get<T>(*ctx.envelope);
       decoded = true;
@@ -393,10 +389,8 @@ class BridgeClass {
     bool decoded = false;
     if (ctx.envelope->which_payload_type ==
         rpc_pb_RpcEnvelope_encrypted_payload_tag) {
-      pb_istream_t stream = pb_istream_from_buffer(
-          ctx.envelope->payload_type.encrypted_payload.bytes,
-          ctx.envelope->payload_type.encrypted_payload.size);
-      decoded = pb_decode(&stream, rpc::Payload::get_fields<T>(), &res_msg);
+      decoded =
+          b._decodePayloadHelper(ctx, rpc::Payload::get_fields<T>(), &res_msg);
     } else if (ctx.envelope->which_payload_type == rpc::Payload::get_tag<T>()) {
       res_msg = rpc::Payload::get<T>(*ctx.envelope);
       decoded = true;
@@ -424,10 +418,8 @@ class BridgeClass {
     T res_msg = {};
     if (ctx.envelope->which_payload_type ==
         rpc_pb_RpcEnvelope_encrypted_payload_tag) {
-      pb_istream_t stream = pb_istream_from_buffer(
-          ctx.envelope->payload_type.encrypted_payload.bytes,
-          ctx.envelope->payload_type.encrypted_payload.size);
-      if (pb_decode(&stream, rpc::Payload::get_fields<T>(), &res_msg)) {
+      if (b._decodePayloadHelper(ctx, rpc::Payload::get_fields<T>(),
+                                 &res_msg)) {
         (b.*Handler)(res_msg);
       }
     } else if (ctx.envelope->which_payload_type == rpc::Payload::get_tag<T>()) {
@@ -468,6 +460,8 @@ class BridgeClass {
       const rpc_pb_MailboxAvailableResponse& m);
 #endif
   static DispatchHandler _getHandler(uint16_t command_id);
+  static bool _decodePayloadHelper(const bridge::router::CommandContext& ctx,
+                                   const pb_msgdesc_t* fields, void* dest);
 
   void _clearPendingTxQueue();
   void _flushPendingTxQueue();

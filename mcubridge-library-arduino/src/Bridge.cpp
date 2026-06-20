@@ -691,6 +691,19 @@ void BridgeClass::signalXon() {
   }
 }
 
+bool BridgeClass::_decodePayloadHelper(
+    const bridge::router::CommandContext& ctx, const pb_msgdesc_t* fields,
+    void* dest) {
+  if (ctx.envelope->which_payload_type ==
+      rpc_pb_RpcEnvelope_encrypted_payload_tag) {
+    pb_istream_t stream = pb_istream_from_buffer(
+        ctx.envelope->payload_type.encrypted_payload.bytes,
+        ctx.envelope->payload_type.encrypted_payload.size);
+    return pb_decode(&stream, fields, dest);
+  }
+  return false;
+}
+
 namespace bridge {
 void SafeStatePolicy::handle(::BridgeClass& bridge, const etl::exception&) {
   bridge.enterSafeState();

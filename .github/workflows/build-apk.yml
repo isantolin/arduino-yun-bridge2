@@ -67,6 +67,20 @@ jobs:
           gettext git libncurses-dev libssl-dev rsync unzip zlib1g-dev file wget zstd protobuf-compiler
           python3 -m pip install jinja2 pdm-backend hatchling protobuf nanopb grpcio-tools maturin setuptools-rust
 
+      - name: Pre-download Python feed dependencies to bypass PyPI mirror issues
+        run: |
+          mkdir -p dl
+          pip download --no-binary=:all: --no-deps -d dl \
+            aiomqtt==2.5.1 \
+            cobs==1.2.2 \
+            cryptography==49.0.0 \
+            paho-mqtt==2.1.0 \
+            prometheus-client==0.25.0 \
+            serialx==1.8.2 \
+            structlog==26.1.0 \
+            tenacity==9.1.4 \
+            uvloop==0.22.1
+
       - name: Compile Packages
         run: |
           ./1_compile.sh --skip-host-deps

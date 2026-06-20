@@ -6,7 +6,7 @@ PKG_RELEASE:=1
 
 PYPI_NAME:=structlog
 PKG_SOURCE:=$(PYPI_NAME)-$(PKG_VERSION).tar.gz
-PKG_HASH:=098522a3bebed9153d4570c6d0288abf80a031dfdb2048d59a49e9dc2190fc98
+PKG_HASH:=f63a716cbd1b1291cf7661de7794b455acfa4c43c5bcf1630e6ad5ddc1adb3b7
 
 PKG_MAINTAINER:=Ignacio Santolin <isantolin@gmail.com>
 PKG_LICENSE:=Apache-2.0+MIT

@@ -28,7 +28,7 @@ void test_surgical_bridge_errors() {
   f.version = rpc::PROTOCOL_VERSION;
   f.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_LINK_SYNC);
   f.sequence_id = 1;
-  f.payload_type.encrypted_payload.size = 32;
+  f.payload_type.encrypted_payload_with_tag.size = 32;
   // Bridge saves the last counter. We'll dispatch once.
   ba.dispatch(f);
   // Dispatch again with same nonce (implicit counter 0 in header)

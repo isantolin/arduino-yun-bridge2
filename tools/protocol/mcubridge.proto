@@ -1348,9 +1348,8 @@ message RpcEnvelope {
     uint32 command_id = 2;
     uint32 sequence_id = 3;
     bytes nonce = 4;
-    bytes tag = 5;
     oneof payload_type {
-        bytes encrypted_payload = 6;
+        bytes encrypted_payload_with_tag = 6;
         VersionResponse version_response = 7;
         FreeMemoryResponse free_memory_response = 8;
         Capabilities capabilities = 9;

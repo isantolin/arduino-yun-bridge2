@@ -1,7 +1,6 @@
 # [SIL-2] Static limits for Zero-Heap operation
-rpc.pb.RpcEnvelope.encrypted_payload max_size:64
+rpc.pb.RpcEnvelope.encrypted_payload_with_tag max_size:80
 rpc.pb.RpcEnvelope.nonce         max_size:12
-rpc.pb.RpcEnvelope.tag           max_size:16
 rpc.pb.RpcEnvelope.daemon_metrics type:FT_IGNORE
 rpc.pb.ConsoleWrite.data          max_size:64
 rpc.pb.DatastorePut.key           max_size:32

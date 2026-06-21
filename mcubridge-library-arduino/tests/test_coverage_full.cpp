@@ -85,7 +85,7 @@ void test_bridge_coverage() {
   }());  // Invalid pin
   ba.dispatch(f_pin);
 
-  f_pin.payload_type.encrypted_payload.size = 0;  // Malformed
+  f_pin.payload_type.encrypted_payload_with_tag.size = 0;  // Malformed
   ba.dispatch(f_pin);
 
   rpc_pb_RpcEnvelope f_dw = {};

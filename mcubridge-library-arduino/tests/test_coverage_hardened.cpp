@@ -306,8 +306,8 @@ void test_checksum_direct_library_path() {
   f.sequence_id = 0;
 
   uint32_t crc = rpc::checksum::compute(
-      etl::span<const uint8_t>(f.payload_type.encrypted_payload.bytes,
-                               f.payload_type.encrypted_payload
+      etl::span<const uint8_t>(f.payload_type.encrypted_payload_with_tag.bytes,
+                               f.payload_type.encrypted_payload_with_tag
                                    .size));  // Adjusted for new checksum logic
   (void)crc;
 }
@@ -361,7 +361,7 @@ void test_bridge_duplicate_packet() {
   f.version = rpc::PROTOCOL_VERSION;
   f.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_DIGITAL_WRITE);
   f.sequence_id = 10;
-  f.payload_type.encrypted_payload.size = 2;  // dummy
+  f.payload_type.encrypted_payload_with_tag.size = 2;  // dummy
 
   bridge::router::CommandContext ctx(&f, f.command_id, 10, true, true);
   ba.dispatch(f);

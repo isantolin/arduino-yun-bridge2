@@ -275,6 +275,12 @@ inline rpc_pb_RpcEnvelope build_envelope(uint16_t cmd_id, uint16_t seq_id,
   env.command_id = cmd_id;
   env.sequence_id = seq_id;
 
+  const bool is_excluded = (cmd_id >= rpc::RPC_STATUS_CODE_MIN &&
+                            cmd_id <= rpc::RPC_STATUS_CODE_MAX) ||
+                           (cmd_id >= rpc::RPC_SYSTEM_COMMAND_MIN &&
+                            cmd_id <= rpc::RPC_SYSTEM_COMMAND_MAX);
+  const bool do_encrypt = !is_excluded;
+
   if (!nonce.empty()) {
     const size_t n_size =
         etl::min(nonce.size(), static_cast<size_t>(AEAD_NONCE_SIZE));
@@ -282,20 +288,30 @@ inline rpc_pb_RpcEnvelope build_envelope(uint16_t cmd_id, uint16_t seq_id,
     env.nonce.size = static_cast<pb_size_t>(n_size);
   }
 
-  if (!tag.empty()) {
-    const size_t t_size =
-        etl::min(tag.size(), static_cast<size_t>(AEAD_TAG_SIZE));
-    etl::copy_n(tag.begin(), t_size, env.tag.bytes);
-    env.tag.size = static_cast<pb_size_t>(t_size);
-  }
-
   if (!payload.empty()) {
     const size_t p_size =
         etl::min(payload.size(), static_cast<size_t>(MAX_PAYLOAD_SIZE));
-    env.which_payload_type = rpc_pb_RpcEnvelope_encrypted_payload_tag;
+    env.which_payload_type = rpc_pb_RpcEnvelope_encrypted_payload_with_tag_tag;
     etl::copy_n(payload.begin(), p_size,
-                env.payload_type.encrypted_payload.bytes);
-    env.payload_type.encrypted_payload.size = static_cast<pb_size_t>(p_size);
+                env.payload_type.encrypted_payload_with_tag.bytes);
+    size_t total_size = p_size;
+    if (!tag.empty() && do_encrypt) {
+      const size_t t_size =
+          etl::min(tag.size(), static_cast<size_t>(AEAD_TAG_SIZE));
+      etl::copy_n(tag.begin(), t_size,
+                  env.payload_type.encrypted_payload_with_tag.bytes + p_size);
+      total_size += t_size;
+    }
+    env.payload_type.encrypted_payload_with_tag.size =
+        static_cast<pb_size_t>(total_size);
+  } else if (!tag.empty() && do_encrypt) {
+    const size_t t_size =
+        etl::min(tag.size(), static_cast<size_t>(AEAD_TAG_SIZE));
+    env.which_payload_type = rpc_pb_RpcEnvelope_encrypted_payload_with_tag_tag;
+    etl::copy_n(tag.begin(), t_size,
+                env.payload_type.encrypted_payload_with_tag.bytes);
+    env.payload_type.encrypted_payload_with_tag.size =
+        static_cast<pb_size_t>(t_size);
   }
 
   return env;
@@ -306,11 +322,11 @@ inline rpc_pb_RpcEnvelope build_envelope(uint16_t cmd_id, uint16_t seq_id,
 namespace bridge::test {
 template <typename T>
 void set_pb_payload(rpc_pb_RpcEnvelope& frame, const T& msg) {
-  frame.which_payload_type = rpc_pb_RpcEnvelope_encrypted_payload_tag;
-  pb_ostream_t stream =
-      pb_ostream_from_buffer(frame.payload_type.encrypted_payload.bytes, 64U);
+  frame.which_payload_type = rpc_pb_RpcEnvelope_encrypted_payload_with_tag_tag;
+  pb_ostream_t stream = pb_ostream_from_buffer(
+      frame.payload_type.encrypted_payload_with_tag.bytes, 80U);
   if (pb_encode(&stream, rpc::Payload::get_fields<T>(), &msg)) {
-    frame.payload_type.encrypted_payload.size =
+    frame.payload_type.encrypted_payload_with_tag.size =
         static_cast<pb_size_t>(stream.bytes_written);
   }
 }

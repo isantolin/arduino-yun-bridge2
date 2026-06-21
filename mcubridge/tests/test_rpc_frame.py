@@ -9,7 +9,7 @@ def test_build_and_parse_round_trip() -> None:
     raw = build_frame(command_id=TEST_CMD_ID, sequence_id=0, payload=payload)
 
     # Protobuf Envelope length is variable, but at least includes our data + overhead
-    assert len(raw) > len(payload) + 32
+    assert len(raw) > len(payload) + 16
 
     decoded = parse_frame(raw)
     assert decoded.envelope.command_id == TEST_CMD_ID

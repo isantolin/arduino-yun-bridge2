@@ -134,7 +134,7 @@ void test_bridge_brute_force_commands() {
   // Mailbox
 
   f.command_id = (uint16_t)rpc::CommandId::CMD_MAILBOX_READ;
-  f.payload_type.encrypted_payload.size = 0;
+  f.payload_type.encrypted_payload_with_tag.size = 0;
   ba.dispatch(f);
 
   f.command_id = (uint16_t)rpc::CommandId::CMD_MAILBOX_AVAILABLE;

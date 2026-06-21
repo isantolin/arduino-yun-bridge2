@@ -80,9 +80,9 @@ rpc_pb_RpcEnvelope make_malformed_payload_frame(uint16_t cmd, uint16_t seq) {
   frame.version = rpc::PROTOCOL_VERSION;
   frame.command_id = cmd;
   frame.sequence_id = seq;
-  frame.which_payload_type = rpc_pb_RpcEnvelope_encrypted_payload_tag;
-  frame.payload_type.encrypted_payload.size = 1;
-  frame.payload_type.encrypted_payload.bytes[0] = 0xC1;
+  frame.which_payload_type = rpc_pb_RpcEnvelope_encrypted_payload_with_tag_tag;
+  frame.payload_type.encrypted_payload_with_tag.size = 1;
+  frame.payload_type.encrypted_payload_with_tag.bytes[0] = 0xC1;
   return frame;
 }
 

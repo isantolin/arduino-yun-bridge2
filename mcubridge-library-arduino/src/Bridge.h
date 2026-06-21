@@ -286,7 +286,12 @@ class BridgeClass {
   using DispatchHandler = void (*)(BridgeClass&,
                                    const bridge::router::CommandContext&);
 
-  // [SIL-2] Architectural De-layering: Direct Template Dispatch
+  // [SIL-2] Architectural De-layering: Consolidated Non-Template Payload Decode
+  // Helper
+  static bool _decodePayload(const bridge::router::CommandContext& ctx,
+                             const pb_msgdesc_t* fields, void* dest,
+                             pb_size_t expected_tag, size_t struct_size);
+
   template <typename T, void (BridgeClass::*Handler)(const T&)>
   static void _dispatchAck(BridgeClass& b,
                            const bridge::router::CommandContext& ctx) {
@@ -295,20 +300,13 @@ class BridgeClass {
       return;
     }
     T res_msg = {};
-    bool decoded = false;
-    if (ctx.envelope->which_payload_type ==
-        rpc_pb_RpcEnvelope_encrypted_payload_tag) {
-      decoded =
-          b._decodePayloadHelper(ctx, rpc::Payload::get_fields<T>(), &res_msg);
-    } else if (ctx.envelope->which_payload_type == rpc::Payload::get_tag<T>()) {
-      res_msg = rpc::Payload::get<T>(*ctx.envelope);
-      decoded = true;
-    }
-    if (decoded) {
+    if (_decodePayload(ctx, rpc::Payload::get_fields<T>(), &res_msg,
+                       rpc::Payload::get_tag<T>(), sizeof(T))) {
       b._processAck(ctx.raw_command, ctx.sequence_id);
       (b.*Handler)(res_msg);
-    } else
+    } else {
       b.emitStatus(rpc::StatusCode::STATUS_MALFORMED);
+    }
   }
 
   template <typename T, void (BridgeClass::*Handler)(
@@ -320,20 +318,13 @@ class BridgeClass {
       return;
     }
     T res_msg = {};
-    bool decoded = false;
-    if (ctx.envelope->which_payload_type ==
-        rpc_pb_RpcEnvelope_encrypted_payload_tag) {
-      decoded =
-          b._decodePayloadHelper(ctx, rpc::Payload::get_fields<T>(), &res_msg);
-    } else if (ctx.envelope->which_payload_type == rpc::Payload::get_tag<T>()) {
-      res_msg = rpc::Payload::get<T>(*ctx.envelope);
-      decoded = true;
-    }
-    if (decoded) {
+    if (_decodePayload(ctx, rpc::Payload::get_fields<T>(), &res_msg,
+                       rpc::Payload::get_tag<T>(), sizeof(T))) {
       b._processAck(ctx.raw_command, ctx.sequence_id);
       (b.*Handler)(ctx, res_msg);
-    } else
+    } else {
       b.emitStatus(rpc::StatusCode::STATUS_MALFORMED);
+    }
   }
 
   template <void (BridgeClass::*Handler)(const bridge::router::CommandContext&)>
@@ -362,19 +353,12 @@ class BridgeClass {
       return;
     }
     T res_msg = {};
-    bool decoded = false;
-    if (ctx.envelope->which_payload_type ==
-        rpc_pb_RpcEnvelope_encrypted_payload_tag) {
-      decoded =
-          b._decodePayloadHelper(ctx, rpc::Payload::get_fields<T>(), &res_msg);
-    } else if (ctx.envelope->which_payload_type == rpc::Payload::get_tag<T>()) {
-      res_msg = rpc::Payload::get<T>(*ctx.envelope);
-      decoded = true;
-    }
-    if (decoded) {
+    if (_decodePayload(ctx, rpc::Payload::get_fields<T>(), &res_msg,
+                       rpc::Payload::get_tag<T>(), sizeof(T))) {
       (b.*Handler)(ctx, res_msg);
-    } else
+    } else {
       b.emitStatus(rpc::StatusCode::STATUS_MALFORMED);
+    }
   }
 
   // Overload for cases without a payload (e.g. simple requests)
@@ -392,14 +376,9 @@ class BridgeClass {
   static void _dispatchPayload(BridgeClass& b,
                                const bridge::router::CommandContext& ctx) {
     T res_msg = {};
-    if (ctx.envelope->which_payload_type ==
-        rpc_pb_RpcEnvelope_encrypted_payload_tag) {
-      if (b._decodePayloadHelper(ctx, rpc::Payload::get_fields<T>(),
-                                 &res_msg)) {
-        (b.*Handler)(res_msg);
-      }
-    } else if (ctx.envelope->which_payload_type == rpc::Payload::get_tag<T>()) {
-      (b.*Handler)(rpc::Payload::get<T>(*ctx.envelope));
+    if (_decodePayload(ctx, rpc::Payload::get_fields<T>(), &res_msg,
+                       rpc::Payload::get_tag<T>(), sizeof(T))) {
+      (b.*Handler)(res_msg);
     }
   }
 
@@ -436,8 +415,6 @@ class BridgeClass {
       const rpc_pb_MailboxAvailableResponse& m);
 #endif
   static DispatchHandler _getHandler(uint16_t command_id);
-  static bool _decodePayloadHelper(const bridge::router::CommandContext& ctx,
-                                   const pb_msgdesc_t* fields, void* dest);
   bool _sendEncryptedHelper(uint16_t raw_cmd, uint16_t seq,
                             const pb_msgdesc_t* fields, const void* packet);
 

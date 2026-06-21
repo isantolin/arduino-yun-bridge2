@@ -302,14 +302,22 @@ void BridgeClass::_transmit(uint16_t command_id, uint16_t sequence_id,
   env.sequence_id = sequence_id;
   etl::copy_n(nonce.begin(), rpc::AEAD_NONCE_SIZE, env.nonce.bytes);
   env.nonce.size = static_cast<pb_size_t>(rpc::AEAD_NONCE_SIZE);
-  etl::copy_n(tag.begin(), rpc::AEAD_TAG_SIZE, env.tag.bytes);
-  env.tag.size = static_cast<pb_size_t>(rpc::AEAD_TAG_SIZE);
   const size_t pl_size = etl::min(final_payload.size(),
                                   static_cast<size_t>(rpc::MAX_PAYLOAD_SIZE));
-  env.which_payload_type = rpc_pb_RpcEnvelope_encrypted_payload_tag;
-  etl::copy_n(final_payload.begin(), pl_size,
-              env.payload_type.encrypted_payload.bytes);
-  env.payload_type.encrypted_payload.size = static_cast<pb_size_t>(pl_size);
+  env.which_payload_type = rpc_pb_RpcEnvelope_encrypted_payload_with_tag_tag;
+  if (do_encrypt) {
+    etl::copy_n(final_payload.begin(), pl_size,
+                env.payload_type.encrypted_payload_with_tag.bytes);
+    etl::copy_n(tag.begin(), rpc::AEAD_TAG_SIZE,
+                env.payload_type.encrypted_payload_with_tag.bytes + pl_size);
+    env.payload_type.encrypted_payload_with_tag.size =
+        static_cast<pb_size_t>(pl_size + rpc::AEAD_TAG_SIZE);
+  } else {
+    etl::copy_n(final_payload.begin(), pl_size,
+                env.payload_type.encrypted_payload_with_tag.bytes);
+    env.payload_type.encrypted_payload_with_tag.size =
+        static_cast<pb_size_t>(pl_size);
+  }
   size_t len = rpc::serialize_frame(env, buffer);
   if (len > 0)
     _packet_serial.send(_stream, etl::span<const uint8_t>(buffer.data(), len));
@@ -569,21 +577,12 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx,
 void BridgeClass::_handleLinkReset(const bridge::router::CommandContext& ctx) {
   if (ctx.envelope->which_payload_type != 0) {
     rpc_pb_HandshakeConfig res_msg = rpc_pb_HandshakeConfig_init_default;
-    bool decoded = false;
-    if (ctx.envelope->which_payload_type ==
-        rpc_pb_RpcEnvelope_encrypted_payload_tag) {
-      pb_istream_t stream = pb_istream_from_buffer(
-          ctx.envelope->payload_type.encrypted_payload.bytes,
-          ctx.envelope->payload_type.encrypted_payload.size);
-      decoded =
-          pb_decode(&stream, rpc::Payload::get_fields<rpc_pb_HandshakeConfig>(),
-                    &res_msg);
-    } else if (ctx.envelope->which_payload_type ==
-               rpc::Payload::get_tag<rpc_pb_HandshakeConfig>()) {
-      res_msg = rpc::Payload::get<rpc_pb_HandshakeConfig>(*ctx.envelope);
-      decoded = true;
+    if (_decodePayload(ctx, rpc::Payload::get_fields<rpc_pb_HandshakeConfig>(),
+                       &res_msg,
+                       rpc::Payload::get_tag<rpc_pb_HandshakeConfig>(),
+                       sizeof(rpc_pb_HandshakeConfig))) {
+      _handleSetTiming(res_msg);
     }
-    if (decoded) _handleSetTiming(res_msg);
   }
   _fsm.receive(bridge::fsm::EvReset());
   if (!sendFrame(rpc::CommandId::CMD_LINK_RESET_RESP, ctx.sequence_id)) {
@@ -653,22 +652,34 @@ void BridgeClass::_handleReceivedFrame(etl::span<const uint8_t> p) {
                            (raw_cmd >= rpc::RPC_SYSTEM_COMMAND_MIN &&
                             raw_cmd <= rpc::RPC_SYSTEM_COMMAND_MAX);
   if (isSynchronized() && !_shared_secret.empty() && !is_excluded) {
+    if (envelope.payload_type.encrypted_payload_with_tag.size < 16) {
+      emitStatus(rpc::StatusCode::STATUS_ERROR);
+      return;
+    }
+    const size_t ct_size =
+        envelope.payload_type.encrypted_payload_with_tag.size - 16;
     etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> dec_pl;
     if (!rpc::security::aead_decrypt_frame(
             raw_cmd, envelope.sequence_id,
             etl::span<const uint8_t>(
-                envelope.payload_type.encrypted_payload.bytes,
-                envelope.payload_type.encrypted_payload.size),
-            etl::span<const uint8_t>(envelope.tag.bytes, 16), _session_key,
-            etl::span<const uint8_t>(envelope.nonce.bytes, 12), dec_pl) ||
+                envelope.payload_type.encrypted_payload_with_tag.bytes,
+                ct_size),
+            etl::span<const uint8_t>(
+                envelope.payload_type.encrypted_payload_with_tag.bytes +
+                    ct_size,
+                16),
+            _session_key, etl::span<const uint8_t>(envelope.nonce.bytes, 12),
+            dec_pl) ||
         !rpc::security::validate_frame_nonce(
             etl::span<const uint8_t>(envelope.nonce.bytes, 12),
             &_rx_nonce_counter)) {
       emitStatus(rpc::StatusCode::STATUS_ERROR);
       return;
     }
-    etl::copy_n(dec_pl.data(), envelope.payload_type.encrypted_payload.size,
-                envelope.payload_type.encrypted_payload.bytes);
+    etl::copy_n(dec_pl.data(), ct_size,
+                envelope.payload_type.encrypted_payload_with_tag.bytes);
+    envelope.payload_type.encrypted_payload_with_tag.size =
+        static_cast<pb_size_t>(ct_size);
   }
   _dispatchCommand(envelope);
 }
@@ -691,15 +702,19 @@ void BridgeClass::signalXon() {
   }
 }
 
-bool BridgeClass::_decodePayloadHelper(
-    const bridge::router::CommandContext& ctx, const pb_msgdesc_t* fields,
-    void* dest) {
+bool BridgeClass::_decodePayload(const bridge::router::CommandContext& ctx,
+                                 const pb_msgdesc_t* fields, void* dest,
+                                 pb_size_t expected_tag, size_t struct_size) {
   if (ctx.envelope->which_payload_type ==
-      rpc_pb_RpcEnvelope_encrypted_payload_tag) {
+      rpc_pb_RpcEnvelope_encrypted_payload_with_tag_tag) {
     pb_istream_t stream = pb_istream_from_buffer(
-        ctx.envelope->payload_type.encrypted_payload.bytes,
-        ctx.envelope->payload_type.encrypted_payload.size);
+        ctx.envelope->payload_type.encrypted_payload_with_tag.bytes,
+        ctx.envelope->payload_type.encrypted_payload_with_tag.size);
     return pb_decode(&stream, fields, dest);
+  } else if (ctx.envelope->which_payload_type == expected_tag) {
+    etl::copy_n(reinterpret_cast<const uint8_t*>(&ctx.envelope->payload_type),
+                struct_size, reinterpret_cast<uint8_t*>(dest));
+    return true;
   }
   return false;
 }

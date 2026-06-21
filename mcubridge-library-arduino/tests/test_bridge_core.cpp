@@ -92,13 +92,12 @@ void test_bridge_process_rx() {
 
   etl::array<uint8_t, rpc::MAX_FRAME_SIZE> frame_raw;
   etl::array<uint8_t, rpc::AEAD_NONCE_SIZE> frame_nonce = {};
-  etl::array<uint8_t, rpc::AEAD_TAG_SIZE> frame_tag = {};
 
   size_t len = rpc::serialize_frame(
       rpc::build_envelope(
           rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE), 10,
           etl::span<const uint8_t>(pl_buf.data(), pbos.bytes_written),
-          frame_nonce, frame_tag),
+          frame_nonce, {}),
       frame_raw);
 
   auto frame_res = rpc::parse_frame(etl::span<uint8_t>(frame_raw.data(), len));
@@ -124,13 +123,12 @@ void test_bridge_dedup_console_write() {
 
   etl::array<uint8_t, rpc::MAX_FRAME_SIZE> frame_raw;
   etl::array<uint8_t, rpc::AEAD_NONCE_SIZE> frame_nonce = {};
-  etl::array<uint8_t, rpc::AEAD_TAG_SIZE> frame_tag = {};
 
   size_t len = rpc::serialize_frame(
       rpc::build_envelope(
           rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE), 55,
           etl::span<const uint8_t>(pl_buf.data(), pbos.bytes_written),
-          frame_nonce, frame_tag),
+          frame_nonce, {}),
       frame_raw);
 
   auto frame_res = rpc::parse_frame(etl::span<uint8_t>(frame_raw.data(), len));

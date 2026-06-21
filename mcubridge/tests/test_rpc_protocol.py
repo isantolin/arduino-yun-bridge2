@@ -13,7 +13,7 @@ def test_frame_build_appends_crc_bytes() -> None:
     payload = b"\x01\x02\x03"
     raw = build_frame(command_id=protocol.Command.CMD_LINK_RESET.value, sequence_id=0, payload=payload)
     # Protobuf Envelope length is variable
-    assert len(raw) > len(payload) + 32
+    assert len(raw) > len(payload) + 16
 
 
 def test_frame_build_uses_crc32() -> None:
@@ -22,4 +22,4 @@ def test_frame_build_uses_crc32() -> None:
     raw = build_frame(command_id=protocol.Command.CMD_LINK_RESET.value, sequence_id=0, payload=payload)
 
     # Protobuf Envelope length is variable
-    assert len(raw) > len(payload) + 32
+    assert len(raw) > len(payload) + 16

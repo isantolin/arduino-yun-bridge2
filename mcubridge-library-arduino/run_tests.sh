@@ -75,8 +75,8 @@ WOLFSSL_PATH="$ARDUINO_LIBS/wolfSSL"
 if [ ! -d "$WOLFSSL_PATH" ]; then WOLFSSL_PATH="$ARDUINO_LIBS/wolfssl"; fi
 if [ ! -d "$WOLFSSL_PATH" ]; then WOLFSSL_PATH="$REPO_ROOT/.dummy_libs/wolfSSL"; fi
 # 3. PacketSerial
-PSERIAL_PATH="$ARDUINO_LIBS/PacketSerial"
-if [ ! -d "$PSERIAL_PATH" ]; then PSERIAL_PATH="$REPO_ROOT/.dummy_libs/PacketSerial"; fi
+PACKETSERIAL_PATH="$ARDUINO_LIBS/PacketSerial"
+if [ ! -d "$PACKETSERIAL_PATH" ]; then PACKETSERIAL_PATH="$REPO_ROOT/.dummy_libs/PacketSerial"; fi
 
 # 4. Unity
 # 5. Build Artifacts
@@ -87,6 +87,7 @@ mkdir -p "${OBJ_DIR}"
 COMMON_FLAGS="-O2 -g -Wall -DBRIDGE_HOST_TEST=1 -DUNITY_INCLUDE_DOUBLE -DBRIDGE_ENABLE_SPI=1 -DWOLFSSL_USER_SETTINGS -DETL_NO_STL -Isrc -Isrc/config -Isrc/protocol -Itests/Unity/src -I../tools/arduino_stub/include -I$ETL_PATH -I$ETL_PATH/include -I$ETL_PATH/arduino -I$WOLFSSL_PATH -I$PACKETSERIAL_PATH -I$PACKETSERIAL_PATH/src"
 
 SOURCES=(
+    "src/Instantiations.cpp"
     "src/security/security.cpp"
     "src/hal/hal.cpp"
     "src/Bridge.cpp"

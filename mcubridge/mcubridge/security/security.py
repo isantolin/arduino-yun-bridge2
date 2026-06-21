@@ -14,11 +14,11 @@ Reference standards:
 from __future__ import annotations
 
 import ctypes
-import hashlib
 import secrets
 import struct
 import structlog
 from typing import Final
+from cryptography.hazmat.primitives import hashes, hmac
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 
 from ..protocol import protocol
@@ -79,16 +79,15 @@ def validate_nonce_counter(nonce: bytes, last_counter: int) -> tuple[bool, int]:
 def verify_crypto_integrity() -> bool:
     """Perform Known Answer Tests (KAT) for cryptographic primitives."""
     # 1. SHA256 KAT
-    if hashlib.sha256(b"abc").hexdigest() != ("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"):
+    digest = hashes.Hash(hashes.SHA256())
+    digest.update(b"abc")
+    if digest.finalize().hex() != "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad":
         return False
 
     # 2. HMAC-SHA256 KAT
-    import hmac
-
-    if (
-        hmac.new(b"\x00" * 32, b"abc", hashlib.sha256).hexdigest()
-        != "fd7adb152c05ef80dccf50a1fa4c05d5a3ec6da95575fc312ae7c5d091836351"
-    ):
+    h = hmac.HMAC(b"\x00" * 32, hashes.SHA256())
+    h.update(b"abc")
+    if h.finalize().hex() != "fd7adb152c05ef80dccf50a1fa4c05d5a3ec6da95575fc312ae7c5d091836351":
         return False
 
     # 3. ChaCha20-Poly1305 KAT

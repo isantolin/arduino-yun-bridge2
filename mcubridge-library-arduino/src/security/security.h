@@ -15,7 +15,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "../etl_ext/CounterIterator.h"
 #include "../protocol/rpc_protocol.h"
 
 /* [WOLFSSL] Core headers */
@@ -92,19 +91,6 @@ inline void secure_zero(etl::span<uint8_t> buf) {
  * @return true if all tests pass, false otherwise.
  */
 bool run_cryptographic_self_tests();
-
-/**
- * @brief Timing-safe memory comparison.
- */
-inline bool timing_safe_equal(etl::span<const uint8_t> a,
-                              etl::span<const uint8_t> b) {
-  if (a.size() != b.size()) return false;
-  volatile uint8_t result = 0;
-  using bridge::etl_ext::CounterIterator;
-  etl::for_each(CounterIterator<size_t>(0U), CounterIterator<size_t>(a.size()),
-                [&](size_t i) { result |= (a[i] ^ b[i]); });
-  return result == 0;
-}
 
 }  // namespace security
 }  // namespace rpc

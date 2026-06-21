@@ -89,12 +89,12 @@ def test_security_coverage_boost() -> None:
     assert ok is False
 
     # 4. verify_crypto_integrity KAT failures
-    with patch("hashlib.sha256") as mock_sha:
-        mock_sha.return_value.hexdigest.return_value = "invalid"
+    with patch("mcubridge.security.security.hashes.Hash") as mock_hash:
+        mock_hash.return_value.finalize.return_value = b"invalid"
         assert verify_crypto_integrity() is False
 
-    with patch("hmac.new") as mock_hmac:
-        mock_hmac.return_value.hexdigest.return_value = "invalid"
+    with patch("mcubridge.security.security.hmac.HMAC") as mock_hmac:
+        mock_hmac.return_value.finalize.return_value = b"invalid"
         assert verify_crypto_integrity() is False
 
     with patch("mcubridge.security.security.ChaCha20Poly1305", side_effect=ValueError):

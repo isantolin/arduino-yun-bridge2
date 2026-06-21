@@ -13,6 +13,8 @@
 #include <wolfssl/wolfcrypt/hash.h>
 #include <wolfssl/wolfcrypt/hmac.h>
 #include <wolfssl/wolfcrypt/kdf.h>
+#define WOLFSSL_MISC_INCLUDED
+#include <wolfcrypt/src/misc.c>
 
 #include "../protocol/rpc_structs.h"
 #include "pb_decode.h"
@@ -63,9 +65,13 @@ bool handshake_authenticate(etl::span<const uint8_t> secret,
 
   bool tag_ok = true;
   if (!received_tag.empty()) {
-    tag_ok = timing_safe_equal(
-        etl::span<const uint8_t>(out_tag.data(), rpc::RPC_HANDSHAKE_TAG_LENGTH),
-        received_tag);
+    if (received_tag.size() != rpc::RPC_HANDSHAKE_TAG_LENGTH) {
+      tag_ok = false;
+    } else {
+      tag_ok = (ConstantCompare(
+                    out_tag.data(), received_tag.data(),
+                    static_cast<int>(rpc::RPC_HANDSHAKE_TAG_LENGTH)) == 0);
+    }
   }
   secure_zero(handshake_key);
   return tag_ok;

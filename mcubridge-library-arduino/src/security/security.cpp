@@ -13,6 +13,8 @@
 #include <wolfssl/wolfcrypt/hash.h>
 #include <wolfssl/wolfcrypt/hmac.h>
 #include <wolfssl/wolfcrypt/kdf.h>
+#undef min
+#undef max
 #define WOLFSSL_MISC_INCLUDED
 #include <wolfcrypt/src/misc.c>
 

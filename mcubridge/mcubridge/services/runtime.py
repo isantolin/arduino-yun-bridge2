@@ -1126,7 +1126,9 @@ class BridgeService:
                     if not s or s.at_eof():
                         return b"", False
                     try:
-                        return await asyncio.wait_for(s.read(protocol.MAX_PAYLOAD_SIZE - 32), 0.01), not s.at_eof()
+                        async with asyncio.timeout(0.01):
+                            data = await s.read(protocol.MAX_PAYLOAD_SIZE - 32)
+                        return data, not s.at_eof()
                     except TimeoutError:
                         return b"", True
 
@@ -1389,7 +1391,7 @@ class BridgeService:
             tls_context=tls_context,
             logger=logging.getLogger("mcubridge.mqtt.client"),
             protocol=aiomqtt.ProtocolVersion.V5,
-            clean_session=None,
+            clean_start=True,
             will=will,
             properties=connect_props,
         ) as client:

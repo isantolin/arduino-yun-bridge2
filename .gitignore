@@ -126,3 +126,4 @@ feeds/luci-app-mcubridge
 feeds/mcubridge
 tools/protocol/templates/protocol.py
 build_output/
+*.adb

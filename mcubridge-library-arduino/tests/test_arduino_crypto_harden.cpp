@@ -78,8 +78,6 @@ void test_bridge_full_crypto_handshake_and_data() {
   f_data.nonce.bytes[2] = 'U';
   f_data.nonce.bytes[11] = 5;  // Counter = 5
   f_data.nonce.size = 12;
-  memset(f_data.tag.bytes, 0xEE, 16);
-  f_data.tag.size = 16;
 
   ba.dispatch(f_data);
 

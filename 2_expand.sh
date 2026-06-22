@@ -81,7 +81,7 @@ install_pkg() {
         for candidate in "${dir}/${pkg}"[_-]*.apk; do
             if [ -f "$candidate" ]; then
                 log_info "Installing $pkg from local bundle: $candidate"
-                if apk add --allow-untrusted --force-overwrite "$candidate"; then
+                if apk add --no-network --allow-untrusted --force-overwrite "$candidate" "${dir}"/*.apk; then
                     return 0
                 fi
             fi
@@ -175,8 +175,23 @@ esac
 # --- 1. Dependencies ---
 
 echo "1. Checking and installing required packages..."
-# [FIX] Update package feeds before attempting to install packages
-apk update || log_warn "Failed to update package database. Trying installation anyway..."
+# [SIL-2] Skip online package feed update if local packages are present to avoid network timeouts
+HAS_LOCAL_APKS=0
+for dir in "/mnt/bin" "./bin" "/root/deploy/bin" "/tmp/bin"; do
+    for f in "${dir}"/*.apk; do
+        if [ -f "$f" ]; then
+            HAS_LOCAL_APKS=1
+            break 2
+        fi
+    done
+done
+
+if [ "$HAS_LOCAL_APKS" -eq 1 ]; then
+    log_info "Local candidate packages detected. Skipping online repository update."
+else
+    # [FIX] Update package feeds before attempting to install packages
+    apk update || log_warn "Failed to update package database. Trying installation anyway..."
+fi
 install_pkg e2fsprogs
 install_pkg block-mount
 install_pkg fdisk

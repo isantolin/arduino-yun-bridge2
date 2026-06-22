@@ -255,8 +255,7 @@ async def test_mqtt_file_host_read_asserts_read(
 
     service.enqueue_mqtt.assert_called_once()
     queued_pub = service.enqueue_mqtt.call_args[0][0]
-    assert "br/file/read/host/test.txt" in queued_pub.topic_name
-    assert queued_pub.topic_name.endswith("response")
+    assert queued_pub.topic_name == "br/file/read/response/host/test.txt"
     assert queued_pub.payload == b"disk_data"
 
 

@@ -100,7 +100,7 @@ install_dependency() {
     if [ -n "$local_apk" ]; then
         echo "[INFO] Installing $pkg from bundled APK ($local_apk)..."
         # [FIX] removed --force-reinstall
-        if apk add $LOCAL_APK_INSTALL_FLAGS "./$local_apk"; then
+        if apk add $LOCAL_APK_INSTALL_FLAGS "./$local_apk" bin/*.apk; then
             return 0
         fi
         echo "[WARN] Failed to install $pkg from bundled APK; trying configured feeds." >&2

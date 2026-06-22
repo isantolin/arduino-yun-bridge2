@@ -55,6 +55,7 @@ SYS_APKS = [
     ("libsmartcols1-2.41.5-r1.apk", SYS_APKS_BASE_URL),
     ("libblkid1-2.41.5-r1.apk", SYS_APKS_BASE_URL),
     ("libuuid1-2.41.5-r1.apk", SYS_APKS_BASE_URL),
+    ("libncurses6-6.4-r3.apk", SYS_APKS_BASE_URL),
     ("e2fsprogs-1.47.3-r1.apk", SYS_APKS_BASE_URL),
     ("libext2fs2-1.47.3-r1.apk", SYS_APKS_BASE_URL),
     ("libcomerr0-1.47.3-r1.apk", SYS_APKS_BASE_URL),

@@ -292,20 +292,24 @@ class BridgeClass {
                              const pb_msgdesc_t* fields, void* dest,
                              pb_size_t expected_tag, size_t struct_size);
 
+  static bool _dispatchHelper(BridgeClass& b,
+                              const bridge::router::CommandContext& ctx,
+                              const pb_msgdesc_t* fields, void* dest,
+                              pb_size_t expected_tag, size_t struct_size);
+
+  static bool _dispatchResponseHelper(BridgeClass& b,
+                                      const bridge::router::CommandContext& ctx,
+                                      const pb_msgdesc_t* fields, void* dest,
+                                      pb_size_t expected_tag,
+                                      size_t struct_size);
+
   template <typename T, void (BridgeClass::*Handler)(const T&)>
   static void _dispatchAck(BridgeClass& b,
                            const bridge::router::CommandContext& ctx) {
-    if (ctx.is_duplicate) {
-      b._processAck(ctx.raw_command, ctx.sequence_id);
-      return;
-    }
     T res_msg = {};
-    if (_decodePayload(ctx, rpc::Payload::get_fields<T>(), &res_msg,
-                       rpc::Payload::get_tag<T>(), sizeof(T))) {
-      b._processAck(ctx.raw_command, ctx.sequence_id);
+    if (_dispatchHelper(b, ctx, rpc::Payload::get_fields<T>(), &res_msg,
+                        rpc::Payload::get_tag<T>(), sizeof(T))) {
       (b.*Handler)(res_msg);
-    } else {
-      b.emitStatus(rpc::StatusCode::STATUS_MALFORMED);
     }
   }
 
@@ -313,17 +317,10 @@ class BridgeClass {
                             const bridge::router::CommandContext&, const T&)>
   static void _dispatchAckCtx(BridgeClass& b,
                               const bridge::router::CommandContext& ctx) {
-    if (ctx.is_duplicate) {
-      b._processAck(ctx.raw_command, ctx.sequence_id);
-      return;
-    }
     T res_msg = {};
-    if (_decodePayload(ctx, rpc::Payload::get_fields<T>(), &res_msg,
-                       rpc::Payload::get_tag<T>(), sizeof(T))) {
-      b._processAck(ctx.raw_command, ctx.sequence_id);
+    if (_dispatchHelper(b, ctx, rpc::Payload::get_fields<T>(), &res_msg,
+                        rpc::Payload::get_tag<T>(), sizeof(T))) {
       (b.*Handler)(ctx, res_msg);
-    } else {
-      b.emitStatus(rpc::StatusCode::STATUS_MALFORMED);
     }
   }
 
@@ -348,16 +345,10 @@ class BridgeClass {
                             const bridge::router::CommandContext&, const T&)>
   static void _dispatchResponseCtx(BridgeClass& b,
                                    const bridge::router::CommandContext& ctx) {
-    if (ctx.is_duplicate) {
-      b._retransmitLastFrame();
-      return;
-    }
     T res_msg = {};
-    if (_decodePayload(ctx, rpc::Payload::get_fields<T>(), &res_msg,
-                       rpc::Payload::get_tag<T>(), sizeof(T))) {
+    if (_dispatchResponseHelper(b, ctx, rpc::Payload::get_fields<T>(), &res_msg,
+                                rpc::Payload::get_tag<T>(), sizeof(T))) {
       (b.*Handler)(ctx, res_msg);
-    } else {
-      b.emitStatus(rpc::StatusCode::STATUS_MALFORMED);
     }
   }
 

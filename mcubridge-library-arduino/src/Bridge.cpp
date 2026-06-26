@@ -719,6 +719,37 @@ bool BridgeClass::_decodePayload(const bridge::router::CommandContext& ctx,
   return false;
 }
 
+bool BridgeClass::_dispatchHelper(BridgeClass& b,
+                                  const bridge::router::CommandContext& ctx,
+                                  const pb_msgdesc_t* fields, void* dest,
+                                  pb_size_t expected_tag, size_t struct_size) {
+  if (ctx.is_duplicate) {
+    b._processAck(ctx.raw_command, ctx.sequence_id);
+    return false;
+  }
+  if (_decodePayload(ctx, fields, dest, expected_tag, struct_size)) {
+    b._processAck(ctx.raw_command, ctx.sequence_id);
+    return true;
+  }
+  b.emitStatus(rpc::StatusCode::STATUS_MALFORMED);
+  return false;
+}
+
+bool BridgeClass::_dispatchResponseHelper(
+    BridgeClass& b, const bridge::router::CommandContext& ctx,
+    const pb_msgdesc_t* fields, void* dest, pb_size_t expected_tag,
+    size_t struct_size) {
+  if (ctx.is_duplicate) {
+    b._retransmitLastFrame();
+    return false;
+  }
+  if (_decodePayload(ctx, fields, dest, expected_tag, struct_size)) {
+    return true;
+  }
+  b.emitStatus(rpc::StatusCode::STATUS_MALFORMED);
+  return false;
+}
+
 bool BridgeClass::_sendEncryptedHelper(uint16_t raw_cmd, uint16_t seq,
                                        const pb_msgdesc_t* fields,
                                        const void* packet) {

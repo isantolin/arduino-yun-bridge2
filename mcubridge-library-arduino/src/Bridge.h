@@ -27,7 +27,9 @@
 #include <etl/pool.h>
 #include <etl/span.h>
 #include <etl/string_view.h>
+#include <etl/variant.h>
 #include <etl/vector.h>
+#include <etl/visitor.h>
 
 #include "config/bridge_config.h"
 #include "etl_ext/CounterIterator.h"
@@ -61,6 +63,42 @@ struct CommandContext {
         is_duplicate(dup),
         requires_ack(ack) {}
 };
+
+using DecodedCommand =
+    etl::variant<etl::monostate, rpc_pb_AckPacket, rpc_pb_LinkSync,
+                 rpc_pb_SetBaudratePacket, rpc_pb_EnterBootloader,
+                 rpc_pb_PinMode, rpc_pb_DigitalWrite, rpc_pb_AnalogWrite,
+                 rpc_pb_PinRead, rpc_pb_ConsoleWrite
+#if BRIDGE_ENABLE_DATASTORE
+                 ,
+                 rpc_pb_DatastoreGetResponse
+#endif
+#if BRIDGE_ENABLE_MAILBOX
+                 ,
+                 rpc_pb_MailboxPush, rpc_pb_MailboxReadResponse,
+                 rpc_pb_MailboxAvailableResponse
+#endif
+#if BRIDGE_ENABLE_FILESYSTEM
+                 ,
+                 rpc_pb_FileWrite, rpc_pb_FileRead, rpc_pb_FileRemove,
+                 rpc_pb_FileReadResponse
+#endif
+#if BRIDGE_ENABLE_PROCESS
+                 ,
+                 rpc_pb_ProcessKill, rpc_pb_ProcessRunAsyncResponse,
+                 rpc_pb_ProcessPollResponse
+#endif
+#if BRIDGE_ENABLE_SPI
+                 ,
+                 rpc_pb_SpiTransfer, rpc_pb_SpiConfig
+#endif
+                 >;
+
+struct DecodedResult {
+  bool success;
+  DecodedCommand command;
+};
+
 }  // namespace router
 }  // namespace bridge
 
@@ -283,95 +321,14 @@ class BridgeClass {
 
   void _processAck(uint16_t command_id, uint16_t sequence_id);
 
-  using DispatchHandler = void (*)(BridgeClass&,
-                                   const bridge::router::CommandContext&);
-
-  // [SIL-2] Architectural De-layering: Consolidated Non-Template Payload Decode
-  // Helper
   static bool _decodePayload(const bridge::router::CommandContext& ctx,
                              const pb_msgdesc_t* fields, void* dest,
                              pb_size_t expected_tag, size_t struct_size);
 
-  static bool _dispatchHelper(BridgeClass& b,
-                              const bridge::router::CommandContext& ctx,
-                              const pb_msgdesc_t* fields, void* dest,
-                              pb_size_t expected_tag, size_t struct_size);
+  bridge::router::DecodedResult _decodePayloadToVariant(
+      const bridge::router::CommandContext& ctx);
 
-  static bool _dispatchResponseHelper(BridgeClass& b,
-                                      const bridge::router::CommandContext& ctx,
-                                      const pb_msgdesc_t* fields, void* dest,
-                                      pb_size_t expected_tag,
-                                      size_t struct_size);
-
-  template <typename T, void (BridgeClass::*Handler)(const T&)>
-  static void _dispatchAck(BridgeClass& b,
-                           const bridge::router::CommandContext& ctx) {
-    T res_msg = {};
-    if (_dispatchHelper(b, ctx, rpc::Payload::get_fields<T>(), &res_msg,
-                        rpc::Payload::get_tag<T>(), sizeof(T))) {
-      (b.*Handler)(res_msg);
-    }
-  }
-
-  template <typename T, void (BridgeClass::*Handler)(
-                            const bridge::router::CommandContext&, const T&)>
-  static void _dispatchAckCtx(BridgeClass& b,
-                              const bridge::router::CommandContext& ctx) {
-    T res_msg = {};
-    if (_dispatchHelper(b, ctx, rpc::Payload::get_fields<T>(), &res_msg,
-                        rpc::Payload::get_tag<T>(), sizeof(T))) {
-      (b.*Handler)(ctx, res_msg);
-    }
-  }
-
-  template <void (BridgeClass::*Handler)(const bridge::router::CommandContext&)>
-  static void _dispatchSimple(BridgeClass& b,
-                              const bridge::router::CommandContext& ctx) {
-    (b.*Handler)(ctx);
-  }
-
-  template <void (BridgeClass::*Handler)(const bridge::router::CommandContext&)>
-  static void _dispatchSimpleAck(BridgeClass& b,
-                                 const bridge::router::CommandContext& ctx) {
-    if (ctx.is_duplicate) {
-      b._processAck(ctx.raw_command, ctx.sequence_id);
-      return;
-    }
-    b._processAck(ctx.raw_command, ctx.sequence_id);
-    (b.*Handler)(ctx);
-  }
-
-  template <typename T, void (BridgeClass::*Handler)(
-                            const bridge::router::CommandContext&, const T&)>
-  static void _dispatchResponseCtx(BridgeClass& b,
-                                   const bridge::router::CommandContext& ctx) {
-    T res_msg = {};
-    if (_dispatchResponseHelper(b, ctx, rpc::Payload::get_fields<T>(), &res_msg,
-                                rpc::Payload::get_tag<T>(), sizeof(T))) {
-      (b.*Handler)(ctx, res_msg);
-    }
-  }
-
-  // Overload for cases without a payload (e.g. simple requests)
-  template <void (BridgeClass::*Handler)(const bridge::router::CommandContext&)>
-  static void _dispatchResponse(BridgeClass& b,
-                                const bridge::router::CommandContext& ctx) {
-    if (ctx.is_duplicate) {
-      b._retransmitLastFrame();
-      return;
-    }
-    (b.*Handler)(ctx);
-  }
-
-  template <typename T, void (BridgeClass::*Handler)(const T&)>
-  static void _dispatchPayload(BridgeClass& b,
-                               const bridge::router::CommandContext& ctx) {
-    T res_msg = {};
-    if (_decodePayload(ctx, rpc::Payload::get_fields<T>(), &res_msg,
-                       rpc::Payload::get_tag<T>(), sizeof(T))) {
-      (b.*Handler)(res_msg);
-    }
-  }
+  friend struct CommandVisitor;
 
   void _handleSetPinMode(const rpc_pb_PinMode& m);
   void _handleDigitalWrite(const rpc_pb_DigitalWrite& m);
@@ -405,7 +362,6 @@ class BridgeClass {
   void _handleMailboxAvailableResponse(
       const rpc_pb_MailboxAvailableResponse& m);
 #endif
-  static DispatchHandler _getHandler(uint16_t command_id);
   bool _sendEncryptedHelper(uint16_t raw_cmd, uint16_t seq,
                             const pb_msgdesc_t* fields, const void* packet);
 

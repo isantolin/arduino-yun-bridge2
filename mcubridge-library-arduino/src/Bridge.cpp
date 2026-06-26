@@ -710,7 +710,7 @@ bool BridgeClass::_decodePayload(const bridge::router::CommandContext& ctx,
     pb_istream_t stream = pb_istream_from_buffer(
         ctx.envelope->payload_type.encrypted_payload_with_tag.bytes,
         ctx.envelope->payload_type.encrypted_payload_with_tag.size);
-    return pb_decode(&stream, fields, dest);
+    return pb_decode_noinit(&stream, fields, dest);
   } else if (ctx.envelope->which_payload_type == expected_tag) {
     etl::copy_n(reinterpret_cast<const uint8_t*>(&ctx.envelope->payload_type),
                 struct_size, reinterpret_cast<uint8_t*>(dest));

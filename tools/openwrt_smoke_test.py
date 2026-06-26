@@ -244,6 +244,8 @@ def phase_expand(child: Any) -> None:
     send_and_wait(child, "ip link show", timeout=5)
     send_and_wait(
         child,
+        "sysctl -w net.ipv6.conf.all.disable_ipv6=1 || true; "
+        "sysctl -w net.ipv6.conf.default.disable_ipv6=1 || true; "
         "NET_IF=$(ip -o link show | awk -F': ' '$2 != \"lo\" {print $2; exit}'); "
         'if [ -n "$NET_IF" ]; then '
         'echo "Found interface: $NET_IF"; ip link set $NET_IF up; udhcpc -i $NET_IF -q 2>/dev/null; '
@@ -292,6 +294,8 @@ def phase_install(child: Any) -> None:
     # Bring up network for apk update via udhcpc
     send_and_wait(
         child,
+        "sysctl -w net.ipv6.conf.all.disable_ipv6=1 || true; "
+        "sysctl -w net.ipv6.conf.default.disable_ipv6=1 || true; "
         "NET_IF=$(ip -o link show | awk -F': ' '$2 != \"lo\" {print $2; exit}'); "
         'if [ -n "$NET_IF" ]; then ip link set $NET_IF up; udhcpc -i $NET_IF -q 2>/dev/null; fi || true',
         timeout=20,

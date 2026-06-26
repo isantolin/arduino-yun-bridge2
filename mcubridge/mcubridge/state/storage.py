@@ -41,12 +41,12 @@ class DbmDeque:
         except dbm.error as e:
             logger.warning("DbmDeque database corrupt or incomplete, recreating: %s", e)
             for suffix in ("", ".db", ".dir", ".pag", ".bak"):
-                try:
-                    os.unlink(self.path + suffix)
-                except FileNotFoundError:
-                    pass
-                except OSError:
-                    pass
+                target_path = self.path + suffix
+                if os.path.exists(target_path):
+                    try:
+                        os.unlink(target_path)
+                    except OSError as exc:
+                        logger.warning("Failed to unlink target path", path=target_path, error=exc)
             db = dbm.open(self.path, "n")
             db[b"head"] = b"0"
             db[b"tail"] = b"0"
@@ -124,12 +124,12 @@ class DbmCache:
         except dbm.error as e:
             logger.warning("DbmCache database corrupt or incomplete, recreating: %s", e)
             for suffix in ("", ".db", ".dir", ".pag", ".bak"):
-                try:
-                    os.unlink(self.path + suffix)
-                except FileNotFoundError:
-                    pass
-                except OSError:
-                    pass
+                target_path = self.path + suffix
+                if os.path.exists(target_path):
+                    try:
+                        os.unlink(target_path)
+                    except OSError as exc:
+                        logger.warning("Failed to unlink target path", path=target_path, error=exc)
             return dbm.open(self.path, "n")
 
     def __setitem__(self, key: str, value: bytes) -> None:

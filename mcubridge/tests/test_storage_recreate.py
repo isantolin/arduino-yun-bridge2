@@ -10,8 +10,8 @@ def test_dbm_deque_recreate_on_corrupt() -> None:
 
     with (
         patch("dbm.open", side_effect=side_effects) as mock_open,
-        patch("os.path.exists", return_value=True),
-        patch("os.unlink") as mock_unlink,
+        patch("mcubridge.state.storage.Path.exists", return_value=True),
+        patch("mcubridge.state.storage.Path.unlink") as mock_unlink,
         patch("mcubridge.state.storage.logger") as mock_logger,
     ):
 
@@ -31,8 +31,8 @@ def test_dbm_deque_unlink_os_error() -> None:
 
     with (
         patch("dbm.open", side_effect=side_effects),
-        patch("os.path.exists", return_value=True),
-        patch("os.unlink", side_effect=OSError("Permission denied")),
+        patch("mcubridge.state.storage.Path.exists", return_value=True),
+        patch("mcubridge.state.storage.Path.unlink", side_effect=OSError("Permission denied")),
         patch("mcubridge.state.storage.logger") as mock_logger,
     ):
 
@@ -49,8 +49,8 @@ def test_dbm_cache_recreate_on_corrupt() -> None:
 
     with (
         patch("dbm.open", side_effect=side_effects) as mock_open,
-        patch("os.path.exists", return_value=True),
-        patch("os.unlink") as mock_unlink,
+        patch("mcubridge.state.storage.Path.exists", return_value=True),
+        patch("mcubridge.state.storage.Path.unlink") as mock_unlink,
         patch("mcubridge.state.storage.logger") as mock_logger,
     ):
 
@@ -70,8 +70,8 @@ def test_dbm_cache_unlink_os_error() -> None:
 
     with (
         patch("dbm.open", side_effect=side_effects),
-        patch("os.path.exists", return_value=True),
-        patch("os.unlink", side_effect=OSError("Permission denied")),
+        patch("mcubridge.state.storage.Path.exists", return_value=True),
+        patch("mcubridge.state.storage.Path.unlink", side_effect=OSError("Permission denied")),
         patch("mcubridge.state.storage.logger") as mock_logger,
     ):
 

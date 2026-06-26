@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import dbm
-import os
+from pathlib import Path
 from typing import Any, Literal, TypeVar
 
 import structlog
@@ -23,9 +23,7 @@ class DbmDeque:
     def __init__(self, path: str, maxlen: int | None = None) -> None:
         self.path = path
         self.maxlen = maxlen
-        directory = os.path.dirname(self.path)
-        if directory:
-            os.makedirs(directory, exist_ok=True)
+        Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         # Initialize if not exists
         with self._open_db("c"):
             pass
@@ -41,12 +39,12 @@ class DbmDeque:
         except dbm.error as e:
             logger.warning("DbmDeque database corrupt or incomplete, recreating: %s", e)
             for suffix in ("", ".db", ".dir", ".pag", ".bak"):
-                target_path = self.path + suffix
-                if os.path.exists(target_path):
+                target_path = Path(self.path + suffix)
+                if target_path.exists():
                     try:
-                        os.unlink(target_path)
+                        target_path.unlink()
                     except OSError as exc:
-                        logger.warning("Failed to unlink target path", path=target_path, error=exc)
+                        logger.warning("Failed to unlink target path", path=str(target_path), error=exc)
             db = dbm.open(self.path, "n")
             db[b"head"] = b"0"
             db[b"tail"] = b"0"
@@ -112,9 +110,7 @@ class DbmCache:
 
     def __init__(self, path: str) -> None:
         self.path = path
-        directory = os.path.dirname(self.path)
-        if directory:
-            os.makedirs(directory, exist_ok=True)
+        Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         with self._open_db("c"):
             pass
 
@@ -124,12 +120,12 @@ class DbmCache:
         except dbm.error as e:
             logger.warning("DbmCache database corrupt or incomplete, recreating: %s", e)
             for suffix in ("", ".db", ".dir", ".pag", ".bak"):
-                target_path = self.path + suffix
-                if os.path.exists(target_path):
+                target_path = Path(self.path + suffix)
+                if target_path.exists():
                     try:
-                        os.unlink(target_path)
+                        target_path.unlink()
                     except OSError as exc:
-                        logger.warning("Failed to unlink target path", path=target_path, error=exc)
+                        logger.warning("Failed to unlink target path", path=str(target_path), error=exc)
             return dbm.open(self.path, "n")
 
     def __setitem__(self, key: str, value: bytes) -> None:

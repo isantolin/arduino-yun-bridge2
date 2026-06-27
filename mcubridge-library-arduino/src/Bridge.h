@@ -95,7 +95,7 @@ using DecodedCommand =
                  >;
 
 struct DecodedResult {
-  bool success;
+  bool success = false;
   DecodedCommand command;
 };
 
@@ -296,7 +296,7 @@ class BridgeClass {
 
   void _applyTimingConfig(const rpc::payload::HandshakeConfig& msg);
 
-  void _handleStatusOk(const bridge::router::CommandContext& ctx);
+  static void _handleStatusOk(const bridge::router::CommandContext& ctx);
   void _handleStatusMalformed(const bridge::router::CommandContext& ctx);
   void _handleStatusAck(const bridge::router::CommandContext& ctx,
                         const rpc_pb_AckPacket& m);
@@ -311,8 +311,8 @@ class BridgeClass {
   void _handleSetBaudrate(const rpc::payload::SetBaudratePacket& msg);
   void _handleSetTiming(const rpc::payload::HandshakeConfig& msg);
   void _handleEnterBootloader(const rpc::payload::EnterBootloader& msg);
-  void _handleSpiBegin(const bridge::router::CommandContext& ctx);
-  void _handleSpiEnd(const bridge::router::CommandContext& ctx);
+  static void _handleSpiBegin(const bridge::router::CommandContext& ctx);
+  static void _handleSpiEnd(const bridge::router::CommandContext& ctx);
   __attribute__((noinline)) void _handleSpiTransfer(
       const bridge::router::CommandContext& ctx, const rpc_pb_SpiTransfer& m);
   __attribute__((noinline)) void _handleReceivedFrame(
@@ -330,36 +330,39 @@ class BridgeClass {
 
   friend struct CommandVisitor;
 
-  void _handleSetPinMode(const rpc_pb_PinMode& m);
-  void _handleDigitalWrite(const rpc_pb_DigitalWrite& m);
-  void _handleAnalogWrite(const rpc_pb_AnalogWrite& m);
+  static void _handleSetPinMode(const rpc_pb_PinMode& m);
+  static void _handleDigitalWrite(const rpc_pb_DigitalWrite& m);
+  static void _handleAnalogWrite(const rpc_pb_AnalogWrite& m);
   void _handleDigitalRead(const bridge::router::CommandContext& ctx,
                           const rpc_pb_PinRead& m);
   void _handleAnalogRead(const bridge::router::CommandContext& ctx,
                          const rpc_pb_PinRead& m);
-  void _handleConsoleWrite(const rpc_pb_ConsoleWrite& m);
-  void _handleDataStoreGetResponse(const bridge::router::CommandContext& ctx,
-                                   const rpc_pb_DatastoreGetResponse& m);
-  void _handleFileWrite(const bridge::router::CommandContext& ctx,
-                        const rpc_pb_FileWrite& m);
-  void _handleFileRead(const bridge::router::CommandContext& ctx,
-                       const rpc_pb_FileRead& m);
-  void _handleFileRemove(const bridge::router::CommandContext& ctx,
-                         const rpc_pb_FileRemove& m);
-  void _handleFileReadResponse(const bridge::router::CommandContext& ctx,
-                               const rpc_pb_FileReadResponse& m);
-  void _handleProcessKill(const bridge::router::CommandContext& ctx,
-                          const rpc_pb_ProcessKill& m);
-  void _handleProcessRunAsyncResponse(const bridge::router::CommandContext& ctx,
-                                      const rpc_pb_ProcessRunAsyncResponse& m);
-  void _handleProcessPollResponse(const bridge::router::CommandContext& ctx,
-                                  const rpc_pb_ProcessPollResponse& m);
-  void _handleSpiSetConfig(const rpc_pb_SpiConfig& m);
+  static void _handleConsoleWrite(const rpc_pb_ConsoleWrite& m);
+  static void _handleDataStoreGetResponse(
+      const bridge::router::CommandContext& ctx,
+      const rpc_pb_DatastoreGetResponse& m);
+  static void _handleFileWrite(const bridge::router::CommandContext& ctx,
+                               const rpc_pb_FileWrite& m);
+  static void _handleFileRead(const bridge::router::CommandContext& ctx,
+                              const rpc_pb_FileRead& m);
+  static void _handleFileRemove(const bridge::router::CommandContext& ctx,
+                                const rpc_pb_FileRemove& m);
+  static void _handleFileReadResponse(const bridge::router::CommandContext& ctx,
+                                      const rpc_pb_FileReadResponse& m);
+  static void _handleProcessKill(const bridge::router::CommandContext& ctx,
+                                 const rpc_pb_ProcessKill& m);
+  static void _handleProcessRunAsyncResponse(
+      const bridge::router::CommandContext& ctx,
+      const rpc_pb_ProcessRunAsyncResponse& m);
+  static void _handleProcessPollResponse(
+      const bridge::router::CommandContext& ctx,
+      const rpc_pb_ProcessPollResponse& m);
+  static void _handleSpiSetConfig(const rpc_pb_SpiConfig& m);
 #if BRIDGE_ENABLE_MAILBOX
-  void _handleMailboxPush(const bridge::router::CommandContext& ctx,
-                          const rpc_pb_MailboxPush& m);
-  void _handleMailboxReadResponse(const rpc_pb_MailboxReadResponse& m);
-  void _handleMailboxAvailableResponse(
+  static void _handleMailboxPush(const bridge::router::CommandContext& ctx,
+                                 const rpc_pb_MailboxPush& m);
+  static void _handleMailboxReadResponse(const rpc_pb_MailboxReadResponse& m);
+  static void _handleMailboxAvailableResponse(
       const rpc_pb_MailboxAvailableResponse& m);
 #endif
   bool _sendEncryptedHelper(uint16_t raw_cmd, uint16_t seq,

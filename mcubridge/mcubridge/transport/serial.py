@@ -16,7 +16,7 @@ from mcubridge.protocol import mcubridge_pb2 as pb
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from cobs import cobs
 import serialx
@@ -298,27 +298,28 @@ class SerialTransport:
                     retry=tenacity.retry_if_exception_type(self._RetryableSerialError),
                     reraise=True,
                 )
-                async for attempt in retryer:
-                    with attempt:
-                        pending.attempts = (pending.attempts or 0) + 1
-                        pending.ack_received = False
-                        pending.success = None
 
-                        if not await self.send_raw(command_id, payload):
-                            raise self._FatalSerialError(None)
+                async def _send_attempt() -> Any:
+                    pending.attempts = (pending.attempts or 0) + 1
+                    pending.ack_received = False
+                    pending.success = None
 
-                        try:
-                            async with asyncio.timeout(self._response_timeout):
-                                await pending.completion.wait()
-                                if pending.success:
-                                    return pending.response_payload if pending.response_payload is not None else True
-                        except TimeoutError:
-                            raise self._RetryableSerialError()
+                    if not await self.send_raw(command_id, payload):
+                        raise self._FatalSerialError(None)
 
-                        if pending.failure_status is not None:
-                            raise self._FatalSerialError(pending.failure_status)
+                    try:
+                        async with asyncio.timeout(self._response_timeout):
+                            await pending.completion.wait()
+                            if pending.success:
+                                return pending.response_payload if pending.response_payload is not None else True
+                    except TimeoutError:
                         raise self._RetryableSerialError()
-                return True
+
+                    if pending.failure_status is not None:
+                        raise self._FatalSerialError(pending.failure_status)
+                    raise self._RetryableSerialError()
+
+                return await retryer(_send_attempt)
             except self._FatalSerialError as exc:
                 pending.mark_failure(exc.status)
                 return False

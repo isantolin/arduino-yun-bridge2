@@ -1359,9 +1359,11 @@ class BridgeService:
         )
 
         try:
-            async for attempt in retryer:
-                with attempt:
-                    await self.connect_mqtt_session(tls_context)
+
+            async def _connect_attempt() -> None:
+                await self.connect_mqtt_session(tls_context)
+
+            await retryer(_connect_attempt)
         except asyncio.CancelledError:
             logger.info("MQTT transport stopping.")
             raise
@@ -1457,10 +1459,12 @@ class BridgeService:
         )
 
         try:
-            async for attempt in retryer:
-                with attempt:
-                    logger.debug("Supervisor starting task", task=name)
-                    await factory()
+
+            async def _run_task() -> None:
+                logger.debug("Supervisor starting task", task=name)
+                await factory()
+
+            await retryer(_run_task)
         except asyncio.CancelledError:
             logger.debug("Supervisor task cancelled", task=name)
             raise

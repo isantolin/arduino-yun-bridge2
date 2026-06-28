@@ -12,4 +12,3 @@ exclude =
     openwrt-sdk,
     mcubridge-library-arduino,
     mcubridge/mcubridge.egg-info
-select = E,F,W,C90

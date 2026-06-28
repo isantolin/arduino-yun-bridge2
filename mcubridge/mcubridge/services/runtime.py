@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast, Final
 
+import aiosqlite
 from ..state.storage import SqliteDeque
 import structlog
 from google.protobuf.message import (
@@ -248,32 +249,30 @@ class BridgeService:
             return False
         try:
             if self.state.mqtt_queue_limit > 0:
-                spool_len = await asyncio.to_thread(len, spool)
+                spool_len = await spool.length()
                 while spool_len >= self.state.mqtt_queue_limit:
                     try:
-                        popleft_fn = spool.popleft
-                        await asyncio.to_thread(popleft_fn)
+                        await spool.popleft()
                         self.state.mqtt_spool_dropped_limit += 1
                     except IndexError as exc:
                         logger.error("Spool popped while empty during limit check", error=str(exc))
                         break
-                    except OSError as exc:
+                    except (aiosqlite.Error, OSError) as exc:
                         logger.error("Database error during spool popleft", error=str(exc))
                         break
-                    spool_len = await asyncio.to_thread(len, spool)
+                    spool_len = await spool.length()
 
                 if self.state.mqtt_spool_dropped_limit > 0:
                     self.state.mqtt_spool_trim_events += 1
                     self.state.mqtt_spool_last_trim_unix = time.time()
 
             encoded = encode_queued_publish(message)
-            append_fn = spool.append
-            await asyncio.to_thread(append_fn, encoded)
+            await spool.append(encoded)
 
-            pending_count = await asyncio.to_thread(len, spool)
+            pending_count = await spool.length()
             self._mark_mqtt_spool_healthy(pending_count)
             return True
-        except OSError as exc:
+        except (aiosqlite.Error, OSError) as exc:
             self._mark_mqtt_spool_failure(str(exc))
             return False
         except ProtobufSerializationError as exc:
@@ -286,18 +285,14 @@ class BridgeService:
             return
 
         try:
-            spool_len = await asyncio.to_thread(len, spool)
-        except OSError as exc:
+            spool_len = await spool.length()
+        except (aiosqlite.Error, OSError) as exc:
             self._mark_mqtt_spool_failure(str(exc))
             return
 
         while spool_len > 0:
             try:
-
-                def peek_fn() -> bytes:
-                    return spool[0]
-
-                encoded = peek_fn()
+                encoded = await spool.peek()
                 queued = decode_queued_publish(encoded)
             except IndexError as exc:
                 logger.error("Spool is empty during peek", error=str(exc))
@@ -305,23 +300,22 @@ class BridgeService:
             except (ValueError, TypeError, ProtobufDecodeError) as exc:
                 logger.error("Dropping corrupt MQTT spool entry", error=str(exc))
                 try:
-                    spool_len = await asyncio.to_thread(len, spool)
+                    spool_len = await spool.length()
                     if spool_len > 0:
-                        popleft_fn = spool.popleft
-                        await asyncio.to_thread(popleft_fn)
+                        await spool.popleft()
                 except IndexError as pop_exc:
                     logger.error("Failed to pop corrupt entry", error=str(pop_exc))
                     break
-                except OSError as pop_exc:
+                except (aiosqlite.Error, OSError) as pop_exc:
                     logger.error("Database error while popping corrupt entry", error=str(pop_exc))
                     break
                 self.state.mqtt_spool_corrupt_dropped += 1
                 try:
-                    spool_len = await asyncio.to_thread(len, spool)
-                except OSError:
+                    spool_len = await spool.length()
+                except (aiosqlite.Error, OSError):
                     break
                 continue
-            except OSError as exc:
+            except (aiosqlite.Error, OSError) as exc:
                 self._mark_mqtt_spool_failure(str(exc))
                 break
 
@@ -329,28 +323,27 @@ class BridgeService:
                 break
 
             try:
-                popleft_fn = spool.popleft
-                await asyncio.to_thread(popleft_fn)
+                await spool.popleft()
             except IndexError as exc:
                 logger.error("Spool was empty during popleft", error=str(exc))
                 break
-            except OSError as exc:
+            except (aiosqlite.Error, OSError) as exc:
                 self._mark_mqtt_spool_failure(str(exc))
                 break
 
             try:
-                spool_len = await asyncio.to_thread(len, spool)
-            except OSError as exc:
+                spool_len = await spool.length()
+            except (aiosqlite.Error, OSError) as exc:
                 self._mark_mqtt_spool_failure(str(exc))
                 break
 
         try:
-            pending_count = await asyncio.to_thread(len, spool)
+            pending_count = await spool.length()
             if not self.state.mqtt_spool_degraded:
                 self._mark_mqtt_spool_healthy(pending_count)
             else:
                 self.state.mqtt_spool_pending_messages = pending_count
-        except OSError as exc:
+        except (aiosqlite.Error, OSError) as exc:
             self._mark_mqtt_spool_failure(str(exc))
 
     async def _publish_mqtt_message(self, message: pb.MqttQueuedPublish) -> bool:
@@ -419,7 +412,12 @@ class BridgeService:
         spool = self._mqtt_spool
         if spool is not None:
             try:
-                spool.close()
+                res = spool.close()
+                if asyncio.iscoroutine(res):
+                    try:
+                        res.send(None)
+                    except StopIteration:
+                        pass
             except (AttributeError, OSError, RuntimeError) as e:
                 logger.debug("Spool cache close error during cleanup", error=e)
             self._mqtt_spool = None
@@ -533,7 +531,7 @@ class BridgeService:
 
     async def _on_mcu_datastore_put(self, p: pb.DatastorePut) -> bool:
         if self.state.datastore_cache is not None:
-            self.state.datastore_cache[p.key] = bytes(p.value)
+            await self.state.datastore_cache.set(p.key, bytes(p.value))
         await self._publish_datastore_value(p.key, bytes(p.value))
         return True
 
@@ -542,7 +540,7 @@ class BridgeService:
         if not serial:
             return False
         cache = cast(Any, self.state.datastore_cache)
-        val = bytes(cache.get(p.key, b"") if cache else b"")
+        val = bytes((await cache.get(p.key, b"")) if cache else b"")
         res = await serial.send(
             Command.CMD_DATASTORE_GET_RESP.value,
             pb.DatastoreGetResponse(value=val[:255]),
@@ -550,7 +548,7 @@ class BridgeService:
         return bool(res)
 
     async def _on_mcu_mailbox_push(self, p: pb.MailboxPush) -> bool:
-        self.state.mailbox_incoming_queue.append(bytes(p.data))
+        await self.state.mailbox_incoming_queue.append(bytes(p.data))
         await self.enqueue_mqtt(
             create_queued_publish(get_topic_for_message(self.state.mqtt_topic_prefix, p) or "", bytes(p.data))
         )
@@ -560,9 +558,10 @@ class BridgeService:
         serial = self.serial
         if not serial:
             return False
+        count = await self.state.mailbox_queue.length()
         res = await serial.send(
             Command.CMD_MAILBOX_AVAILABLE_RESP.value,
-            pb.MailboxAvailableResponse(count=len(self.state.mailbox_queue)),
+            pb.MailboxAvailableResponse(count=count),
         )
         return bool(res)
 
@@ -570,9 +569,14 @@ class BridgeService:
         serial = self.serial
         if not serial:
             return False
+        content = b""
+        try:
+            content = await self.state.mailbox_queue.popleft()
+        except IndexError:
+            pass
         res = await serial.send(
             Command.CMD_MAILBOX_READ_RESP.value,
-            pb.MailboxReadResponse(content=self.state.mailbox_queue.popleft() if self.state.mailbox_queue else b""),
+            pb.MailboxReadResponse(content=content),
         )
         return bool(res)
 
@@ -737,11 +741,11 @@ class BridgeService:
         if route.identifier == DatastoreAction.PUT:
             if len(key.encode()) <= 255 and len(pl) <= 255:
                 if self.state.datastore_cache is not None:
-                    self.state.datastore_cache[key] = pl
+                    await self.state.datastore_cache.set(key, pl)
                 await self._publish_datastore_value(key, pl, reply_context=inbound)
         elif route.identifier == DatastoreAction.GET:
             cache = cast(Any, self.state.datastore_cache)
-            val = cache.get(key) if cache else None
+            val = (await cache.get(key)) if cache else None
             if val is not None:
                 await self._publish_datastore_value(key, bytes(val), reply_context=inbound)
             elif route.remainder and route.remainder[-1] == "request":
@@ -753,10 +757,13 @@ class BridgeService:
             return
         pl = bytes(inbound.payload)
         if route.identifier == MailboxAction.WRITE:
-            self.state.mailbox_queue.append(pl)
+            await self.state.mailbox_queue.append(pl)
             await serial.send(Command.CMD_MAILBOX_PUSH.value, pb.MailboxPush(data=pl))
         elif route.identifier == MailboxAction.READ:
-            data = self.state.mailbox_incoming_queue.popleft() if self.state.mailbox_incoming_queue else b""
+            try:
+                data = await self.state.mailbox_incoming_queue.popleft()
+            except IndexError:
+                data = b""
             await self.enqueue_mqtt(
                 create_queued_publish(
                     topic_path(

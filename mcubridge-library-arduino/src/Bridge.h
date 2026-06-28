@@ -311,8 +311,8 @@ class BridgeClass {
   void _handleSetBaudrate(const rpc::payload::SetBaudratePacket& msg);
   void _handleSetTiming(const rpc::payload::HandshakeConfig& msg);
   void _handleEnterBootloader(const rpc::payload::EnterBootloader& msg);
-  static void _handleSpiBegin(const bridge::router::CommandContext& ctx);
-  static void _handleSpiEnd(const bridge::router::CommandContext& ctx);
+  void _handleSpiBegin(const bridge::router::CommandContext& ctx);
+  void _handleSpiEnd(const bridge::router::CommandContext& ctx);
   __attribute__((noinline)) void _handleSpiTransfer(
       const bridge::router::CommandContext& ctx, const rpc_pb_SpiTransfer& m);
   __attribute__((noinline)) void _handleReceivedFrame(

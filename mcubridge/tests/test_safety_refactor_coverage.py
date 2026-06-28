@@ -4,6 +4,7 @@ import pytest
 from typing import Any, cast
 from unittest.mock import MagicMock, patch, AsyncMock
 from mcubridge.state.context import RuntimeState, create_runtime_state
+from mcubridge.state.storage import SqliteDeque, InMemoryDeque
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.services.runtime import BridgeService
 from mcubridge.transport.serial import SerialTransport
@@ -14,7 +15,12 @@ from google.protobuf.message import EncodeError as ProtobufSerializationError
 def _replace_mailbox_queue(state: RuntimeState, replacement: Any) -> None:
     if hasattr(state.mailbox_queue, "close"):
         try:
-            cast(Any, state.mailbox_queue).close()
+            res = cast(Any, state.mailbox_queue).close()
+            if asyncio.iscoroutine(res):
+                try:
+                    res.send(None)
+                except StopIteration:
+                    pass
         except (OSError, RuntimeError):
             pass
     state.mailbox_queue = cast(collections.deque[bytes], replacement)
@@ -63,7 +69,6 @@ async def test_context_cleanup_coverage(real_config: RuntimeConfig) -> None:
 
 @pytest.mark.asyncio
 async def test_runtime_safety_coverage(real_config: RuntimeConfig) -> None:
-
     state = create_runtime_state(real_config)
     serial = AsyncMock(spec=SerialTransport)
     service = BridgeService(real_config, state, serial)
@@ -80,7 +85,7 @@ async def test_runtime_safety_coverage(real_config: RuntimeConfig) -> None:
             )
             assert success is False
 
-        with patch("asyncio.to_thread", side_effect=OSError("DB error")):
+        with patch.object(spool, "length", side_effect=OSError("DB error")):
             await getattr(service, "_flush_mqtt_spool_locked")()
     finally:
         service.cleanup()
@@ -109,7 +114,7 @@ async def test_spool_trim_and_limit(real_config: RuntimeConfig) -> None:
     service = BridgeService(real_config, state, serial)
     try:
         spool = getattr(service, "_mqtt_spool")
-        spool.clear()
+        await spool.clear()
 
         msg1 = create_queued_publish(topic_name="test1", payload=b"payload1")
         msg2 = create_queued_publish(topic_name="test2", payload=b"payload2")
@@ -119,9 +124,11 @@ async def test_spool_trim_and_limit(real_config: RuntimeConfig) -> None:
         assert await getattr(service, "_spool_mqtt_message_locked")(msg2) is True
         assert await getattr(service, "_spool_mqtt_message_locked")(msg3) is True
 
-        assert len(spool) == 2
-        el1 = decode_queued_publish(spool[0])
-        el2 = decode_queued_publish(spool[1])
+        assert await spool.length() == 2
+        item1 = await spool.popleft()
+        item2 = await spool.popleft()
+        el1 = decode_queued_publish(item1)
+        el2 = decode_queued_publish(item2)
         assert el1.topic_name == "test2"
         assert el2.topic_name == "test3"
         assert service.state.mqtt_spool_dropped_limit == 1
@@ -140,15 +147,15 @@ async def test_corrupt_item_handling(real_config: RuntimeConfig) -> None:
     service.set_mqtt_client(mock_client)
     try:
         spool = getattr(service, "_mqtt_spool")
-        spool.clear()
+        await spool.clear()
 
-        spool.append(b"invalid_bytes_not_protobuf")
+        await spool.append(b"invalid_bytes_not_protobuf")
         valid_msg = create_queued_publish(topic_name="valid", payload=b"valid_payload")
-        spool.append(encode_queued_publish(valid_msg))
+        await spool.append(encode_queued_publish(valid_msg))
 
         await getattr(service, "_flush_mqtt_spool_locked")()
 
-        assert len(spool) == 0
+        assert await spool.length() == 0
         assert service.state.mqtt_spool_corrupt_dropped == 1
         mock_client.publish.assert_awaited_once()
     finally:
@@ -176,7 +183,6 @@ async def test_serialization_failure(real_config: RuntimeConfig) -> None:
 
 @pytest.mark.asyncio
 async def test_peeking_or_popping_errors(real_config: RuntimeConfig) -> None:
-
     state = create_runtime_state(real_config)
     serial = AsyncMock(spec=SerialTransport)
     service = BridgeService(real_config, state, serial)
@@ -184,51 +190,39 @@ async def test_peeking_or_popping_errors(real_config: RuntimeConfig) -> None:
     service.set_mqtt_client(mock_client)
     try:
         spool = getattr(service, "_mqtt_spool")
-        spool.clear()
+        await spool.clear()
 
         valid_msg = create_queued_publish(topic_name="valid", payload=b"payload")
-        spool.append(encode_queued_publish(valid_msg))
+        await spool.append(encode_queued_publish(valid_msg))
 
         # 1. IndexError on peek
-        def mock_to_thread_index_error(func: Any, *args: Any, **kwargs: Any) -> Any:
-            if func == len:
-                return 1
-            raise IndexError("Mock empty")
-
-        with patch("asyncio.to_thread", side_effect=mock_to_thread_index_error):
+        with patch.object(spool, "peek", side_effect=IndexError("Mock empty")):
             await getattr(service, "_flush_mqtt_spool_locked")()
-        assert len(spool) == 1
+        assert await spool.length() == 1
 
         # 2. OSError on peek
-        def mock_to_thread_sqlite_error(func: Any, *args: Any, **kwargs: Any) -> Any:
-            if func == len:
-                return 1
-            raise OSError("DB error")
-
-        with patch("asyncio.to_thread", side_effect=mock_to_thread_sqlite_error):
+        with patch.object(spool, "peek", side_effect=OSError("DB error")):
             await getattr(service, "_flush_mqtt_spool_locked")()
         assert state.mqtt_spool_degraded is True
         state.mqtt_spool_degraded = False
 
         # 3. IndexError on popleft when corrupt
-        spool.clear()
-        spool.append(b"corrupt")
-        popleft_mock = MagicMock(side_effect=IndexError("Pop empty"))
-        with patch.object(spool, "popleft", popleft_mock):
+        await spool.clear()
+        await spool.append(b"corrupt")
+        with patch.object(spool, "popleft", side_effect=IndexError("Pop empty")):
             await getattr(service, "_flush_mqtt_spool_locked")()
         assert state.mqtt_spool_corrupt_dropped == 0
 
         # 4. OSError on popleft when corrupt
-        spool.clear()
-        spool.append(b"corrupt")
-        popleft_mock = MagicMock(side_effect=OSError("DB error during pop"))
-        with patch.object(spool, "popleft", popleft_mock):
+        await spool.clear()
+        await spool.append(b"corrupt")
+        with patch.object(spool, "popleft", side_effect=OSError("DB error during pop")):
             await getattr(service, "_flush_mqtt_spool_locked")()
         assert state.mqtt_spool_corrupt_dropped == 0
 
         # 5. OSError on popleft after publish
-        spool.clear()
-        spool.append(encode_queued_publish(valid_msg))
+        await spool.clear()
+        await spool.append(encode_queued_publish(valid_msg))
         popleft_mock = MagicMock(side_effect=OSError("DB error during pop"))
         with patch.object(spool, "popleft", popleft_mock):
             await getattr(service, "_flush_mqtt_spool_locked")()
@@ -247,4 +241,4 @@ async def test_mailbox_queue_close_error(real_config: RuntimeConfig) -> None:
             raise OSError("mock error")
 
     object.__setattr__(state, "mailbox_queue", MagicMock(cache=FakeCache()))
-    _replace_mailbox_queue(state, collections.deque())
+    _replace_mailbox_queue(state, InMemoryDeque())

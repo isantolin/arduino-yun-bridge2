@@ -9,7 +9,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Final, TypeVar, cast
 
-from .storage import SqliteDeque, SqliteCache
+from .storage import SqliteDeque, SqliteCache, InMemoryDeque
 import structlog
 
 from ..config.const import (
@@ -84,9 +84,9 @@ class RuntimeState:
         self.allow_non_tmp_paths: bool = kwargs.get("allow_non_tmp_paths", False)
         self.datastore_cache: SqliteCache | None = kwargs.get("datastore_cache")
 
-        self.mailbox_queue: collections.deque[bytes] = kwargs.get("mailbox_queue") or collections.deque()
-        self.mailbox_incoming_queue: collections.deque[bytes] = (
-            kwargs.get("mailbox_incoming_queue") or collections.deque()
+        self.mailbox_queue: SqliteDeque | InMemoryDeque = kwargs.get("mailbox_queue") or InMemoryDeque()
+        self.mailbox_incoming_queue: SqliteDeque | InMemoryDeque = (
+            kwargs.get("mailbox_incoming_queue") or InMemoryDeque()
         )
 
         self.mcu_is_paused: bool = kwargs.get("mcu_is_paused", False)
@@ -261,7 +261,12 @@ class RuntimeState:
         def _safe_close(resource: Any) -> None:
             try:
                 if hasattr(resource, "close"):
-                    resource.close()
+                    res = resource.close()
+                    if asyncio.iscoroutine(res):
+                        try:
+                            res.send(None)
+                        except StopIteration:
+                            pass
             except (OSError, RuntimeError, AttributeError) as e:
                 logger.debug("Resource closure notice during reconfiguration", error=e)
 
@@ -291,7 +296,7 @@ class RuntimeState:
                 except (OSError, RuntimeError):
                     logger.warning("Spool '%s' falling back to RAM", subdir)
 
-            return cast(Any, collections.deque[bytes](maxlen=self.mailbox_queue_limit))
+            return InMemoryDeque(maxlen=self.mailbox_queue_limit)
 
         self.mailbox_queue = _create_spool("mailbox_out")
         self.mailbox_incoming_queue = _create_spool("mailbox_in")
@@ -461,29 +466,44 @@ class RuntimeState:
     def cleanup(self) -> None:
         try:
             if hasattr(self.mailbox_queue, "close"):
-                cast(Any, self.mailbox_queue).close()
+                res = cast(Any, self.mailbox_queue).close()
+                if asyncio.iscoroutine(res):
+                    try:
+                        res.send(None)
+                    except StopIteration:
+                        pass
         except (OSError, RuntimeError, AttributeError) as e:
             logger.debug("Mailbox queue cleanup notice", error=e)
 
         try:
             if hasattr(self.mailbox_incoming_queue, "close"):
-                cast(Any, self.mailbox_incoming_queue).close()
+                res = cast(Any, self.mailbox_incoming_queue).close()
+                if asyncio.iscoroutine(res):
+                    try:
+                        res.send(None)
+                    except StopIteration:
+                        pass
         except (OSError, RuntimeError, AttributeError) as e:
             logger.debug("Mailbox incoming queue cleanup notice", error=e)
 
-        self.mailbox_queue = collections.deque()
-        self.mailbox_incoming_queue = collections.deque()
+        self.mailbox_queue = InMemoryDeque()
+        self.mailbox_incoming_queue = InMemoryDeque()
         self.console_to_mcu_queue = collections.deque()
 
         if self.datastore_cache is not None:
             try:
-                self.datastore_cache.close()
+                res = self.datastore_cache.close()
+                if asyncio.iscoroutine(res):
+                    try:
+                        res.send(None)
+                    except StopIteration:
+                        pass
             except (OSError, RuntimeError, AttributeError) as e:
                 logger.debug("Resource cleanup notice", error=e)
             self.datastore_cache = None
 
-        self.mailbox_queue = collections.deque()
-        self.mailbox_incoming_queue = collections.deque()
+        self.mailbox_queue = InMemoryDeque()
+        self.mailbox_incoming_queue = InMemoryDeque()
 
         import gc
 

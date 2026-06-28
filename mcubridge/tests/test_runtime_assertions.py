@@ -94,7 +94,7 @@ async def test_mqtt_datastore_put_asserts_cache(
     await service.handle_mqtt_message(msg)
 
     assert state.datastore_cache is not None
-    assert state.datastore_cache["my_key"] == b"my_value"
+    assert await state.datastore_cache.get("my_key") == b"my_value"
 
 
 @pytest.mark.asyncio

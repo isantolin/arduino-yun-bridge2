@@ -1,21 +1,47 @@
-import sqlite3
-from unittest.mock import MagicMock, patch
+import aiosqlite
+from unittest.mock import AsyncMock, MagicMock, patch
+import pytest
 
 from mcubridge.state.storage import SqliteCache, SqliteDeque
 
 
-def test_sqlite_deque_recreate_on_corrupt() -> None:
-    mock_conn = MagicMock()
-    # First call to connect raises sqlite3.DatabaseError (corruption), second succeeds
-    side_effects = [sqlite3.DatabaseError("Corrupt DB"), mock_conn]
+class MockCursorHelper:
+    def __init__(self, val=None):
+        self.val = val
+
+    def __await__(self):
+        async def _await_impl():
+            return self
+
+        return _await_impl().__await__()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        pass
+
+    async def fetchone(self):
+        return self.val
+
+
+@pytest.mark.asyncio
+async def test_sqlite_deque_recreate_on_corrupt() -> None:
+    mock_conn = AsyncMock()
+    entered_conn = mock_conn.__aenter__.return_value
+    entered_conn.execute = MagicMock(return_value=MockCursorHelper((0,)))
+
+    # First call to connect raises aiosqlite.DatabaseError (corruption), second succeeds
+    side_effects = [aiosqlite.DatabaseError("Corrupt DB"), mock_conn]
 
     with (
-        patch("sqlite3.connect", side_effect=side_effects) as mock_connect,
+        patch("aiosqlite.connect", side_effect=side_effects) as mock_connect,
         patch("mcubridge.state.storage.Path.exists", return_value=True),
         patch("mcubridge.state.storage.Path.unlink") as mock_unlink,
         patch("mcubridge.state.storage.logger") as mock_logger,
     ):
-        SqliteDeque("mock_path")
+        dq = SqliteDeque("mock_path")
+        await dq.append(b"item")
 
         assert mock_connect.call_count == 2
         mock_connect.assert_any_call("mock_path")
@@ -27,17 +53,22 @@ def test_sqlite_deque_recreate_on_corrupt() -> None:
         )
 
 
-def test_sqlite_deque_unlink_os_error() -> None:
-    mock_conn = MagicMock()
-    side_effects = [sqlite3.DatabaseError("Corrupt DB"), mock_conn]
+@pytest.mark.asyncio
+async def test_sqlite_deque_unlink_os_error() -> None:
+    mock_conn = AsyncMock()
+    entered_conn = mock_conn.__aenter__.return_value
+    entered_conn.execute = MagicMock(return_value=MockCursorHelper((0,)))
+
+    side_effects = [aiosqlite.DatabaseError("Corrupt DB"), mock_conn]
 
     with (
-        patch("sqlite3.connect", side_effect=side_effects),
+        patch("aiosqlite.connect", side_effect=side_effects),
         patch("mcubridge.state.storage.Path.exists", return_value=True),
         patch("mcubridge.state.storage.Path.unlink", side_effect=OSError("Permission denied")),
         patch("mcubridge.state.storage.logger") as mock_logger,
     ):
-        SqliteDeque("mock_path")
+        dq = SqliteDeque("mock_path")
+        await dq.append(b"item")
 
         mock_logger.warning.assert_any_call(
             "Failed to unlink target path",
@@ -46,17 +77,22 @@ def test_sqlite_deque_unlink_os_error() -> None:
         )
 
 
-def test_sqlite_cache_recreate_on_corrupt() -> None:
-    mock_conn = MagicMock()
-    side_effects = [sqlite3.OperationalError("Corrupt DB"), mock_conn]
+@pytest.mark.asyncio
+async def test_sqlite_cache_recreate_on_corrupt() -> None:
+    mock_conn = AsyncMock()
+    entered_conn = mock_conn.__aenter__.return_value
+    entered_conn.execute = MagicMock(return_value=MockCursorHelper(None))
+
+    side_effects = [aiosqlite.OperationalError("Corrupt DB"), mock_conn]
 
     with (
-        patch("sqlite3.connect", side_effect=side_effects) as mock_connect,
+        patch("aiosqlite.connect", side_effect=side_effects) as mock_connect,
         patch("mcubridge.state.storage.Path.exists", return_value=True),
         patch("mcubridge.state.storage.Path.unlink") as mock_unlink,
         patch("mcubridge.state.storage.logger") as mock_logger,
     ):
-        SqliteCache("mock_path")
+        cache = SqliteCache("mock_path")
+        await cache.get("test_key")
 
         assert mock_connect.call_count == 2
         mock_connect.assert_any_call("mock_path")
@@ -68,17 +104,22 @@ def test_sqlite_cache_recreate_on_corrupt() -> None:
         )
 
 
-def test_sqlite_cache_unlink_os_error() -> None:
-    mock_conn = MagicMock()
-    side_effects = [sqlite3.OperationalError("Corrupt DB"), mock_conn]
+@pytest.mark.asyncio
+async def test_sqlite_cache_unlink_os_error() -> None:
+    mock_conn = AsyncMock()
+    entered_conn = mock_conn.__aenter__.return_value
+    entered_conn.execute = MagicMock(return_value=MockCursorHelper(None))
+
+    side_effects = [aiosqlite.OperationalError("Corrupt DB"), mock_conn]
 
     with (
-        patch("sqlite3.connect", side_effect=side_effects),
+        patch("aiosqlite.connect", side_effect=side_effects),
         patch("mcubridge.state.storage.Path.exists", return_value=True),
         patch("mcubridge.state.storage.Path.unlink", side_effect=OSError("Permission denied")),
         patch("mcubridge.state.storage.logger") as mock_logger,
     ):
-        SqliteCache("mock_path")
+        cache = SqliteCache("mock_path")
+        await cache.get("test_key")
 
         mock_logger.warning.assert_any_call(
             "Failed to unlink target path",

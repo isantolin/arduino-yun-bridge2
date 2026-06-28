@@ -86,3 +86,10 @@ name = "xxd"
 openwrt = "xxd"
 pip = ""
 rationale = "Hex-dump utility used by diagnostic scripts [BUILD-ONLY]"
+
+[[dependency]]
+name = "aiosqlite"
+openwrt = "python3-aiosqlite"
+pip = "aiosqlite==0.20.0"
+rationale = "Async SQLite connection wrapper for non-blocking I/O database operations (SIL-2)"
+

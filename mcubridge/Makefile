@@ -55,7 +55,8 @@ define Package/$(PKG_NAME)
 		python3-uvloop \
 		python3-cryptography \
 		python3-structlog \
-		mosquitto-client
+		mosquitto-client \
+		python3-aiosqlite
 	# AUTO-GENERATED RUNTIME DEPENDS END
 endef
 

@@ -26,12 +26,17 @@ async def push_file(topic: str, data: bytes) -> None:
             hostname=config.mqtt_host,
             port=config.mqtt_port,
             username=config.mqtt_user or None,
-            password=config.mqtt_pass or None,
-            tls_context=tls_context,
+            password=(config.mqtt_pass.encode("utf-8") if config.mqtt_pass else None),
+            ssl_context=tls_context,
         ) as client:
-            await client.publish(topic, payload=data, qos=1)
+            await client.publish(
+                topic,
+                payload=data,
+                qos=aiomqtt.QoS.AT_LEAST_ONCE,
+                packet_id=next(client.packet_ids),
+            )
             logger.info("File push successful", topic=topic, size=len(data))
-    except (aiomqtt.MqttError, OSError, RuntimeError) as e:
+    except (aiomqtt.ConnectError, aiomqtt.ProtocolError, aiomqtt.NegativeAckError, OSError, RuntimeError) as e:
         logger.error("File push failed", error=str(e), topic=topic)
         sys.exit(1)
 

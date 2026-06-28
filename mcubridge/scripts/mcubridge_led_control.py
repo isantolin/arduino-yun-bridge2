@@ -21,11 +21,16 @@ async def do_publish(topic: str, payload: str) -> None:
             hostname=config.mqtt_host,
             port=config.mqtt_port,
             username=config.mqtt_user or None,
-            password=config.mqtt_pass or None,
-            tls_context=tls_context,
+            password=(config.mqtt_pass.encode("utf-8") if config.mqtt_pass else None),
+            ssl_context=tls_context,
         ) as client:
-            await client.publish(topic, payload=payload, qos=1)
-    except (aiomqtt.MqttError, OSError, RuntimeError) as e:
+            await client.publish(
+                topic,
+                payload=payload.encode("utf-8"),
+                qos=aiomqtt.QoS.AT_LEAST_ONCE,
+                packet_id=next(client.packet_ids),
+            )
+    except (aiomqtt.ConnectError, aiomqtt.ProtocolError, aiomqtt.NegativeAckError, OSError, RuntimeError) as e:
         sys.stderr.write(f"Error: MQTT publication failed: {e}\n")
         sys.exit(4)
 

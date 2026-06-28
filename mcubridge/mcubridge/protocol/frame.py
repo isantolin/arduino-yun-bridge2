@@ -11,7 +11,6 @@ between the Linux daemon and the Arduino MCU.
 
 from __future__ import annotations
 
-import struct
 from binascii import crc32
 from typing import Final, NamedTuple
 
@@ -89,7 +88,7 @@ def build_frame(
             envelope.encrypted_payload_with_tag = payload
 
     body = envelope.SerializeToString()
-    return body + struct.pack("<I", crc32(body) & protocol.CRC32_MASK)
+    return body + (crc32(body) & protocol.CRC32_MASK).to_bytes(4, "little")
 
 
 def parse_frame(raw_frame_buffer: bytes | bytearray | memoryview, session_key: bytes | None = None) -> DecodedFrame:
@@ -99,7 +98,7 @@ def parse_frame(raw_frame_buffer: bytes | bytearray | memoryview, session_key: b
         raise ValueError("Incomplete frame: too short")
 
     body, crc_bytes = buf[:-_CRC_SIZE], buf[-_CRC_SIZE:]
-    if (crc32(body) & protocol.CRC32_MASK) != struct.unpack("<I", crc_bytes)[0]:
+    if (crc32(body) & protocol.CRC32_MASK) != int.from_bytes(crc_bytes, "little"):
         raise ValueError("CRC mismatch")
 
     envelope = pb.RpcEnvelope()

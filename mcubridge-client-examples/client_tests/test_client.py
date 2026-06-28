@@ -37,7 +37,7 @@ async def test_client_digital_write(mock_client) -> None:
     assert client_instance.publish.called
     last_call = client_instance.publish.call_args_list[-1]
     assert "br/d/13" in last_call.args[0]
-    assert last_call.args[1] == "1"
+    assert last_call.args[1] == b"1"
 
 
 @pytest.mark.asyncio
@@ -51,7 +51,7 @@ async def test_client_analog_write(mock_client) -> None:
     assert client_instance.publish.called
     last_call = client_instance.publish.call_args_list[-1]
     assert "br/a/3" in last_call.args[0]
-    assert last_call.args[1] == "128"
+    assert last_call.args[1] == b"128"
 
 
 @pytest.mark.asyncio
@@ -65,15 +65,13 @@ async def test_client_datastore_put(mock_client) -> None:
         if "datastore/put/" in topic:
             key = topic.split("/")[-1]
             resp_topic = f"br/datastore/get/{key}"
-            props = kwargs.get("properties")
-            correlation = getattr(props, "CorrelationData", None)
+            correlation = kwargs.get("correlation_data")
 
-            # [SIL-2] Use spec=aiomqtt.Message
-            msg = AsyncMock(spec=aiomqtt.Message)
+            # [SIL-2] Use spec=aiomqtt.PublishPacket
+            msg = AsyncMock(spec=aiomqtt.PublishPacket)
             msg.topic = resp_topic
             msg.payload = b"OK"
-            msg.properties = AsyncMock()
-            msg.properties.CorrelationData = correlation
+            msg.correlation_data = correlation
 
             if correlation in bridge._correlation_routes:
                 bridge._correlation_routes[correlation].put_nowait(msg)
@@ -94,7 +92,7 @@ async def test_client_file_write(mock_client) -> None:
     assert client_instance.publish.called
     last_call = client_instance.publish.call_args_list[-1]
     assert "br/file/write/test.txt" in last_call.args[0]
-    assert last_call.args[1] == "content"
+    assert last_call.args[1] == b"content"
 
 
 @pytest.mark.asyncio

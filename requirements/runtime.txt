@@ -1,5 +1,5 @@
 # Generated via tools/sync_runtime_deps.py; do not edit.
-aiomqtt==2.5.1
+aiomqtt==3.0.0a1
 aiosqlite==0.22.1
 cobs==1.2.2
 cryptography==49.0.0

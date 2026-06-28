@@ -1,5 +1,6 @@
 import asyncio
 import sys
+import aiomqtt
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from google.protobuf.message import Message as ProtobufMessage
@@ -278,10 +279,10 @@ async def test_daemon_coverage_boost(tmp_path: Path) -> None:
                 raise StopAsyncIteration
             return self.items.pop(0)
 
-    msg = MagicMock()
+    msg = MagicMock(spec=aiomqtt.PublishPacket)
     msg.topic = "br/mcu/cmd"
     msg.payload = b"msg"
-    mock_client.messages = AsyncIter([msg])
+    mock_client.messages = MagicMock(return_value=AsyncIter([msg]))
 
     with patch("aiomqtt.Client", return_value=mock_client):
         await daemon_mqtt.connect_mqtt_session(None)
@@ -298,7 +299,7 @@ async def test_daemon_coverage_boost(tmp_path: Path) -> None:
         async def __anext__(self) -> Any:
             raise ExceptionGroup("mqtt group", [ValueError("group error")])
 
-    mock_client2.messages = ExceptionIter()
+    mock_client2.messages = MagicMock(return_value=ExceptionIter())
     with patch("aiomqtt.Client", return_value=mock_client2):
         with pytest.raises(ExceptionGroup):
             await daemon_mqtt.connect_mqtt_session(None)

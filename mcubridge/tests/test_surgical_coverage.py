@@ -3,7 +3,7 @@ import asyncio
 from typing import Any
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from aiomqtt.message import Message
+from aiomqtt import PublishPacket, QoS
 from pathlib import Path
 import sys
 
@@ -17,6 +17,24 @@ from mcubridge.protocol.protocol import (
 from mcubridge.protocol.structures import (
     PendingPinRequest,
 )
+
+
+def Message(
+    topic: str,
+    payload: bytes,
+    qos: int = 0,
+    retain: bool = False,
+    mid: int = 0,
+    properties: Any | None = None,
+) -> PublishPacket:
+    return PublishPacket(
+        topic=topic,
+        payload=payload,
+        qos=QoS(qos),
+        retain=retain,
+        packet_id=mid if qos > 0 else None,
+    )
+
 
 # Mock 'uci' globally for tests that import scripts directly
 sys.modules["uci"] = MagicMock()

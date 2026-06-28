@@ -9,7 +9,7 @@ rationale = "Base interpreter shipped on the target image"
 [[dependency]]
 name = "aiomqtt"
 openwrt = "python3-aiomqtt"
-pip = "aiomqtt==2.5.1"
+pip = "aiomqtt==3.0.0a1"
 rationale = "Async MQTT v5 client used for runtime telemetry (Python 3.13 compatible)"
 
 [[dependency]]

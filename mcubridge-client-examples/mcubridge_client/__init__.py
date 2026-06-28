@@ -14,8 +14,7 @@ from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import TypedDict
 
-from aiomqtt import Client, MqttError, ProtocolVersion
-from aiomqtt.message import Message
+from aiomqtt import Client, ConnectError, ProtocolError, NegativeAckError, PublishPacket, QoS
 
 from .definitions import (
     DEFAULT_MQTT_HOST,
@@ -35,6 +34,8 @@ from .protocol import (
 )
 from .spi import SpiDevice
 
+MqttError = (ConnectError, ProtocolError, NegativeAckError)
+
 __all__ = [
     "Bridge",
     "SpiBitOrder",
@@ -46,6 +47,7 @@ __all__ = [
     "Command",
     "Topic",
     "MqttQueuedPublish",
+    "build_mqtt_properties",
 ]
 
 logger = logging.getLogger(__name__)
@@ -108,7 +110,7 @@ class Bridge:
         self.tls_context = tls_context or _default_tls_context()
 
         self._client: Client | None = None
-        self._correlation_routes: dict[bytes, asyncio.Queue[Message]] = {}
+        self._correlation_routes: dict[bytes, asyncio.Queue[PublishPacket]] = {}
         self._reply_topic: str | None = None
         self._console_queue: asyncio.Queue[bytes] = asyncio.Queue()
         self._listener_task: asyncio.Task[None] | None = None
@@ -121,16 +123,15 @@ class Bridge:
             hostname=self.host,
             port=self.port,
             username=self.username,
-            password=self.password,
+            password=(self.password.encode("utf-8") if self.password else None),
             logger=logging.getLogger("mcubridge.client"),
-            protocol=ProtocolVersion.V5,
-            tls_context=self.tls_context,
+            ssl_context=self.tls_context,
         )
         await self._exit_stack.enter_async_context(self._client)
         self._reply_topic = f"{self.topic_prefix}/client/{uuid.uuid4().hex}/reply"
-        await self._client.subscribe(self._reply_topic, qos=0)
+        await self._client.subscribe(self._reply_topic, max_qos=QoS.AT_MOST_ONCE)
         self._console_topic = str(Topic.build(Topic.CONSOLE, "out"))
-        await self._client.subscribe(self._console_topic, qos=0)
+        await self._client.subscribe(self._console_topic, max_qos=QoS.AT_MOST_ONCE)
         self._listener_task = asyncio.create_task(self._message_listener())
         logger.info("Connected to %s:%d. Reply topic: %s", self.host, self.port, self._reply_topic)
 
@@ -149,13 +150,13 @@ class Bridge:
         if not self._client:
             return
         try:
-            async for message in self._client.messages:
-                props = message.properties
-                correlation = getattr(props, "CorrelationData", None) if props else None
-                if correlation and (queue := self._correlation_routes.pop(correlation, None)):
-                    queue.put_nowait(message)
-                elif Topic.matches(self._console_topic, message.topic.value):
-                    self._console_queue.put_nowait(bytes(message.payload) if message.payload else b"")
+            async for message in self._client.messages():
+                if isinstance(message, PublishPacket):
+                    correlation = message.correlation_data
+                    if correlation and (queue := self._correlation_routes.pop(correlation, None)):
+                        queue.put_nowait(message)
+                    elif Topic.matches(self._console_topic, message.topic):
+                        self._console_queue.put_nowait(message.payload if message.payload else b"")
         except MqttError as e:
             logger.error("MQTT listener error", exc_info=e)
 
@@ -172,7 +173,7 @@ class Bridge:
             raise ConnectionError("Not connected")
 
         correlation = secrets.token_bytes(12)
-        queue: asyncio.Queue[Message] = asyncio.Queue(maxsize=1)
+        queue: asyncio.Queue[PublishPacket] = asyncio.Queue(maxsize=1)
         self._correlation_routes[correlation] = queue
 
         if resp_topic:
@@ -188,9 +189,17 @@ class Bridge:
                 msg.response_topic = self._reply_topic
             if correlation:
                 msg.correlation_data = correlation
-            await self._client.publish(msg.topic_name, msg.payload, properties=build_mqtt_properties(msg))
+
+            await self._client.publish(
+                msg.topic_name,
+                msg.payload,
+                response_topic=msg.response_topic if msg.HasField("response_topic") else None,
+                correlation_data=msg.correlation_data if msg.HasField("correlation_data") else None,
+                content_type=msg.content_type if msg.HasField("content_type") else None,
+                user_properties=[(p.key, p.value) for p in msg.user_properties] if msg.user_properties else None,
+            )
             delivered = await asyncio.wait_for(queue.get(), timeout=timeout)
-            return bytes(delivered.payload)
+            return bytes(delivered.payload) if delivered.payload else b""
         finally:
             self._correlation_routes.pop(correlation, None)
             if resp_topic:
@@ -213,10 +222,10 @@ class Bridge:
             return None
 
     async def digital_write(self, pin: int, value: int) -> None:
-        await self._client.publish(Topic.build(Topic.DIGITAL, pin), str(value)) if self._client else None
+        await self._client.publish(Topic.build(Topic.DIGITAL, pin), str(value).encode()) if self._client else None
 
     async def analog_write(self, pin: int, value: int) -> None:
-        await self._client.publish(Topic.build(Topic.ANALOG, pin), str(value)) if self._client else None
+        await self._client.publish(Topic.build(Topic.ANALOG, pin), str(value).encode()) if self._client else None
 
     async def digital_read(self, pin: int, timeout: float = 15) -> int:
         res = await self._publish_and_wait(
@@ -283,7 +292,10 @@ class Bridge:
 
     async def file_write(self, filename: str, content: str | bytes) -> None:
         (
-            await self._client.publish(Topic.build(Topic.FILE, "write", filename.lstrip("/")), content)
+            await self._client.publish(
+                Topic.build(Topic.FILE, "write", filename.lstrip("/")),
+                content if isinstance(content, bytes) else content.encode(),
+            )
             if self._client
             else None
         )
@@ -302,7 +314,9 @@ class Bridge:
 
     async def mailbox_write(self, message: str | bytes) -> None:
         if self._client:
-            await self._client.publish(Topic.build(Topic.MAILBOX, "write"), message)
+            await self._client.publish(
+                Topic.build(Topic.MAILBOX, "write"), message if isinstance(message, bytes) else message.encode()
+            )
 
     async def mailbox_read(self, timeout: float = 5.0) -> bytes | None:
         try:
@@ -317,7 +331,7 @@ class Bridge:
 
     async def set_digital_mode(self, pin: int, mode: int) -> None:
         if self._client:
-            await self._client.publish(Topic.build(Topic.DIGITAL, pin, "mode"), str(mode))
+            await self._client.publish(Topic.build(Topic.DIGITAL, pin, "mode"), str(mode).encode())
 
     async def get_free_memory(self, timeout: float = 15) -> int:
         res = await self._publish_and_wait(
@@ -330,7 +344,12 @@ class Bridge:
 
     async def enter_bootloader(self) -> None:
         if self._client:
-            await self._client.publish(Topic.build(Topic.SYSTEM, "bootloader"), b"", qos=1)
+            await self._client.publish(
+                Topic.build(Topic.SYSTEM, "bootloader"),
+                b"",
+                qos=QoS.AT_LEAST_ONCE,
+                packet_id=next(self._client.packet_ids),
+            )
 
     async def spi_transfer(self, data: bytes, timeout: float = 15) -> bytes:
         return await self._publish_and_wait(

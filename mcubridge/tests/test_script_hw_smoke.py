@@ -41,11 +41,11 @@ def test_hw_smoke_success(runtime_config: Any) -> None:
 
         # Simulate incoming version message
         async def _mock_messages() -> Any:
-            msg = MagicMock(spec=aiomqtt.Message)
+            msg = MagicMock(spec=aiomqtt.PublishPacket)
             msg.payload = b"1.2.3"
             yield msg
 
-        mock_client.messages = _mock_messages()
+        mock_client.messages = MagicMock(return_value=_mock_messages())
 
         main()
         assert mock_client.publish.called
@@ -71,7 +71,7 @@ def test_hw_smoke_timeout(runtime_config: Any) -> None:
                 yield  # empty generator
             await asyncio.sleep(1)
 
-        mock_client.messages = _mock_empty_messages()
+        mock_client.messages = MagicMock(return_value=_mock_empty_messages())
 
         main()
     assert exc.value.code == 1

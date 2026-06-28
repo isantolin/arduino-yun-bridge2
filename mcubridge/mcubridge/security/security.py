@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import ctypes
 import secrets
-import struct
 import structlog
 from typing import Final
 from cryptography.hazmat.primitives import hashes, hmac
@@ -23,16 +22,12 @@ from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 
 from ..protocol import protocol
 
-# [SIL-2] Security Constants from protocol spec
-# For ChaCha20-Poly1305, nonce is exactly 12 bytes (96 bits).
 AEAD_NONCE_SIZE: Final[int] = protocol.AEAD_NONCE_SIZE
 NONCE_TOTAL_BYTES: Final[int] = AEAD_NONCE_SIZE
 AEAD_TAG_SIZE: Final[int] = protocol.AEAD_TAG_SIZE
-NONCE_RANDOM_BYTES: Final[int] = 4  # Derived
-NONCE_COUNTER_BYTES: Final[int] = 8  # Derived
+NONCE_RANDOM_BYTES: Final[int] = 4
+NONCE_COUNTER_BYTES: Final[int] = 8
 logger = structlog.get_logger("mcubridge.security")
-
-_FULL_NONCE_STRUCT = struct.Struct(">4sQ")
 
 
 def secure_zero(data: bytearray | memoryview) -> None:
@@ -50,7 +45,7 @@ def generate_nonce_with_counter(counter: int) -> tuple[bytes, int]:
     if counter >= protocol.NONCE_COUNTER_MASK or counter < 0:
         raise ValueError("Nonce counter overflow")
     new_counter = counter + 1
-    nonce = _FULL_NONCE_STRUCT.pack(secrets.token_bytes(NONCE_RANDOM_BYTES), new_counter)
+    nonce = secrets.token_bytes(NONCE_RANDOM_BYTES) + new_counter.to_bytes(8, "big")
     return nonce, new_counter
 
 
@@ -58,10 +53,7 @@ def extract_nonce_counter(nonce: bytes) -> int:
     """Extract the counter from a 12-byte nonce."""
     if len(nonce) != AEAD_NONCE_SIZE:
         raise ValueError(f"Nonce must be {AEAD_NONCE_SIZE} bytes, got {len(nonce)}")
-    try:
-        return _FULL_NONCE_STRUCT.unpack(nonce)[1]
-    except struct.error as e:
-        raise ValueError(f"Malformed nonce format: {e}") from e
+    return int.from_bytes(nonce[4:], "big")
 
 
 def validate_nonce_counter(nonce: bytes, last_counter: int) -> tuple[bool, int]:

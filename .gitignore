@@ -127,3 +127,4 @@ feeds/mcubridge
 tools/protocol/templates/protocol.py
 build_output/
 *.adb
+mock_path

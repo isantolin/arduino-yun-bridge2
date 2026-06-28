@@ -29,8 +29,8 @@ class SmokeTester:
                 hostname=self.config.mqtt_host,
                 port=self.config.mqtt_port,
                 username=self.config.mqtt_user or None,
-                password=self.config.mqtt_pass or None,
-                tls_context=tls_context,
+                password=(self.config.mqtt_pass.encode("utf-8") if self.config.mqtt_pass else None),
+                ssl_context=tls_context,
             ) as client:
                 logger.info(
                     "Starting hardware smoke test",
@@ -47,12 +47,15 @@ class SmokeTester:
 
                 try:
                     async with asyncio.timeout(timeout):
-                        async for msg in client.messages:
-                            payload_raw: Any = msg.payload
-                            payload_str = payload_raw.decode() if isinstance(payload_raw, bytes) else str(payload_raw)
-                            logger.info("Connectivity verified", mcu_version=payload_str)
-                            self.results["connectivity"] = True
-                            break
+                        async for msg in client.messages():
+                            if isinstance(msg, aiomqtt.PublishPacket):
+                                payload_raw: Any = msg.payload
+                                payload_str = (
+                                    payload_raw.decode() if isinstance(payload_raw, bytes) else str(payload_raw)
+                                )
+                                logger.info("Connectivity verified", mcu_version=payload_str)
+                                self.results["connectivity"] = True
+                                break
                 except TimeoutError:
                     logger.error("Timeout waiting for version response")
                     self.results["connectivity"] = False
@@ -70,7 +73,7 @@ class SmokeTester:
                 self.results["gpio"] = True
                 logger.info("GPIO test successful", pin=pin)
 
-        except (aiomqtt.MqttError, OSError, RuntimeError) as e:
+        except (aiomqtt.ConnectError, aiomqtt.ProtocolError, aiomqtt.NegativeAckError, OSError, RuntimeError) as e:
             logger.error("MQTT Error during smoke test", error=str(e))
             self.results["connectivity"] = False
 

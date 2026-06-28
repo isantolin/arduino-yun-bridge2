@@ -451,14 +451,23 @@ def resolve_mqtt_context(message: pb.MqttQueuedPublish, context: Any | None) -> 
     if context is None:
         return message
 
-    props = getattr(context, "properties", None)
     updates: dict[str, Any] = {}
 
-    if props:
-        if rt := getattr(props, "ResponseTopic", None):
-            updates["topic_name"] = str(rt)
-        if cd := getattr(props, "CorrelationData", None):
-            updates["correlation_data"] = bytes(cd)
+    rt = getattr(context, "response_topic", None)
+    if rt is None:
+        props = getattr(context, "properties", None)
+        if props:
+            rt = getattr(props, "ResponseTopic", None)
+    if rt is not None:
+        updates["topic_name"] = str(rt)
+
+    cd = getattr(context, "correlation_data", None)
+    if cd is None:
+        props = getattr(context, "properties", None)
+        if props:
+            cd = getattr(props, "CorrelationData", None)
+    if cd is not None:
+        updates["correlation_data"] = bytes(cd)
 
     user_props = [(p.key, p.value) for p in message.user_properties]
     if req_topic := getattr(context, "topic", None):

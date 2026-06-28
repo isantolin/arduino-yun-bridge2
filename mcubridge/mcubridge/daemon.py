@@ -99,7 +99,9 @@ def app(args: list[str] | None = None) -> None:
         RuntimeError,
         ValueError,
         TypeError,
-        aiomqtt.MqttError,
+        aiomqtt.ConnectError,
+        aiomqtt.ProtocolError,
+        aiomqtt.NegativeAckError,
         SerialHandshakeFatal,
         tenacity.RetryError,
     ) as exc:
@@ -113,7 +115,9 @@ def app(args: list[str] | None = None) -> None:
                 ValueError,
                 TypeError,
                 asyncio.TimeoutError,
-                aiomqtt.MqttError,
+                aiomqtt.ConnectError,
+                aiomqtt.ProtocolError,
+                aiomqtt.NegativeAckError,
                 SerialHandshakeFatal,
                 tenacity.RetryError,
             )

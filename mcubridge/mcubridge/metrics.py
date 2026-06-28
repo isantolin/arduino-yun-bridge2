@@ -17,9 +17,9 @@ from .protocol import structures
 from .protocol.structures import PROTOBUF_CONTENT_TYPE, create_queued_publish
 from .protocol.topics import Topic, topic_path
 from .state.context import RuntimeState
+from .config import const
 
 logger = structlog.get_logger("mcubridge.metrics")
-_BRIDGE_SNAPSHOT_EXPIRY_SECONDS = 30
 
 PublishEnqueue = Callable[[pb.MqttQueuedPublish], Awaitable[None]]
 
@@ -345,7 +345,7 @@ def _build_bridge_snapshot_message(
         topic_name=topic,
         payload=snapshot.SerializeToString(),
         content_type=PROTOBUF_CONTENT_TYPE,
-        message_expiry_interval=_BRIDGE_SNAPSHOT_EXPIRY_SECONDS,
+        message_expiry_interval=const.BRIDGE_SNAPSHOT_EXPIRY_SECONDS,
         user_properties=(("bridge-snapshot", flavor),),
     )
 

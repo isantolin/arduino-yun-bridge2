@@ -1,27 +1,28 @@
 import aiosqlite
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
+from typing import Any, Generator
 
 from mcubridge.state.storage import SqliteCache, SqliteDeque
 
 
 class MockCursorHelper:
-    def __init__(self, val=None):
+    def __init__(self, val: Any = None) -> None:
         self.val = val
 
-    def __await__(self):
-        async def _await_impl():
+    def __await__(self) -> Generator[Any, None, "MockCursorHelper"]:
+        async def _await_impl() -> MockCursorHelper:
             return self
 
         return _await_impl().__await__()
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> "MockCursorHelper":
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         pass
 
-    async def fetchone(self):
+    async def fetchone(self) -> Any:
         return self.val
 
 

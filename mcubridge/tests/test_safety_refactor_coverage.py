@@ -1,10 +1,9 @@
 import asyncio
-import collections
 import pytest
 from typing import Any, cast
 from unittest.mock import MagicMock, patch, AsyncMock
 from mcubridge.state.context import RuntimeState, create_runtime_state
-from mcubridge.state.storage import SqliteDeque, InMemoryDeque
+from mcubridge.state.storage import InMemoryDeque
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.services.runtime import BridgeService
 from mcubridge.transport.serial import SerialTransport
@@ -23,7 +22,7 @@ def _replace_mailbox_queue(state: RuntimeState, replacement: Any) -> None:
                     pass
         except (OSError, RuntimeError):
             pass
-    state.mailbox_queue = cast(collections.deque[bytes], replacement)
+    state.mailbox_queue = replacement
 
 
 @pytest.mark.asyncio

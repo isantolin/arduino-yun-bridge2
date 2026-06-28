@@ -23,6 +23,12 @@ from mcubridge.protocol import mcubridge_pb2 as pb
 
 from . import protocol, is_system_command
 
+_PAYLOAD_FIELD_MAP: dict[str, str] = {
+    f.message_type.name: f.name
+    for f in pb.RpcEnvelope.DESCRIPTOR.oneofs_by_name["payload_type"].fields
+    if f.message_type is not None
+}
+
 _NONCE_SIZE: Final = protocol.AEAD_NONCE_SIZE
 _TAG_SIZE: Final = protocol.AEAD_TAG_SIZE
 _CRC_SIZE: Final = protocol.CRC_SIZE
@@ -74,10 +80,9 @@ def build_frame(
         # Unencrypted! [SIL-2] Holistic payload extraction natively handled by Protobuf.
         if isinstance(payload, ProtobufMessage):
             # [SIL-2] Use descriptor-based field mapping to eliminate manual string logic.
-            for field in envelope.DESCRIPTOR.oneofs_by_name["payload_type"].fields:
-                if field.message_type == payload.DESCRIPTOR:
-                    getattr(envelope, field.name).CopyFrom(payload)
-                    break
+            field_name = _PAYLOAD_FIELD_MAP.get(payload.DESCRIPTOR.name)
+            if field_name:
+                getattr(envelope, field_name).CopyFrom(payload)
         else:
             if len(payload) > protocol.MAX_PAYLOAD_SIZE:
                 raise ValueError(f"Payload size {len(payload)} exceeds maximum {protocol.MAX_PAYLOAD_SIZE}")

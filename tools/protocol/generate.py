@@ -878,7 +878,7 @@ def main() -> None:
 
     # Step 4: Generate type stubs for untyped libraries using pyright
     # [SIL-2] Generate type stubs for untyped libraries using pyright if any are defined.
-    untyped_libs: list[str] = ["cobs", "paho-mqtt", "serialx", "uci"]
+    untyped_libs: list[str] = ["cobs", "paho", "prometheus_client", "serialx", "uci", "uvloop"]
     # [SIL-2] Log only if there are libs to process
     if untyped_libs:
         sys.stderr.write(f"Generating type stubs for {', ' .join(untyped_libs)}...\n")
@@ -888,6 +888,34 @@ def main() -> None:
                 subprocess.run(stub_cmd, check=False, capture_output=True)
             except (OSError, RuntimeError, subprocess.SubprocessError) as e:
                 sys.stderr.write(f"Warning: Failed to generate stubs for {lib}: {e}\n")
+
+            # [SIL-2] Fix generated prometheus_client core.pyi stub to export necessary types
+            if lib == "prometheus_client":
+                core_stub = REPO_ROOT / "typings" / "prometheus_client" / "core.pyi"
+                if core_stub.exists():
+                    core_content = (
+                        "from .metrics_core import (\n"
+                        "    Metric,\n"
+                        "    UnknownMetricFamily,\n"
+                        "    UntypedMetricFamily,\n"
+                        "    CounterMetricFamily,\n"
+                        "    GaugeMetricFamily,\n"
+                        "    SummaryMetricFamily,\n"
+                        "    HistogramMetricFamily,\n"
+                        "    GaugeHistogramMetricFamily,\n"
+                        "    InfoMetricFamily,\n"
+                        "    StateSetMetricFamily,\n"
+                        ")\n"
+                        "from .metrics import Counter, Enum, Gauge, Histogram, Info, Summary\n"
+                        "from .registry import CollectorRegistry, REGISTRY\n"
+                        "from .samples import Sample, Exemplar, NativeHistogram, Timestamp\n\n"
+                        "__all__ = ('BucketSpan', 'CollectorRegistry', 'Counter', "
+                        "'CounterMetricFamily', 'Enum', 'Exemplar', 'Gauge', 'GaugeHistogramMetricFamily', "
+                        "'GaugeMetricFamily', 'Histogram', 'HistogramMetricFamily', 'Info', 'InfoMetricFamily', "
+                        "'Metric', 'NativeHistogram', 'REGISTRY', 'Sample', 'StateSetMetricFamily', 'Summary', "
+                        "'SummaryMetricFamily', 'Timestamp', 'UnknownMetricFamily', 'UntypedMetricFamily')\n"
+                    )
+                    core_stub.write_text(core_content, encoding="utf-8")
 
 
 if __name__ == "__main__":

@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast, Final
 
-from ..state.storage import DbmDeque
+from ..state.storage import SqliteDeque
 import structlog
 from google.protobuf.message import (
     DecodeError as ProtobufDecodeError,
@@ -111,7 +111,7 @@ class BridgeService:
     _pending_mcu_read: _PendingMcuRead | None
     _process_slots: asyncio.Semaphore
     _mqtt_publish_lock: asyncio.Lock
-    _mqtt_spool: DbmDeque | None
+    _mqtt_spool: SqliteDeque | None
     mcu_registry: dict[int, McuHandler]
     _topic_aliases: dict[str, int]
     _next_alias_id: int
@@ -137,7 +137,7 @@ class BridgeService:
         self._mqtt_publish_lock = asyncio.Lock()
         self._mqtt_spool = None
         if self.config.mqtt_spool_dir:
-            self._mqtt_spool = DbmDeque(
+            self._mqtt_spool = SqliteDeque(
                 path=str(Path(self.config.mqtt_spool_dir) / "spool.db"), maxlen=self.state.mqtt_queue_limit
             )
         self._topic_aliases = {}

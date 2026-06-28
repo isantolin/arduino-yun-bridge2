@@ -9,7 +9,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Final, TypeVar, cast
 
-from .storage import DbmDeque, DbmCache
+from .storage import SqliteDeque, SqliteCache
 import structlog
 
 from ..config.const import (
@@ -82,7 +82,7 @@ class RuntimeState:
         ) or _make_mqtt_publish_queue(self.mqtt_queue_limit)
         self.mqtt_drop_counts: dict[str, int] = kwargs.get("mqtt_drop_counts") or {}
         self.allow_non_tmp_paths: bool = kwargs.get("allow_non_tmp_paths", False)
-        self.datastore_cache: DbmCache | None = kwargs.get("datastore_cache")
+        self.datastore_cache: SqliteCache | None = kwargs.get("datastore_cache")
 
         self.mailbox_queue: collections.deque[bytes] = kwargs.get("mailbox_queue") or collections.deque()
         self.mailbox_incoming_queue: collections.deque[bytes] = (
@@ -287,7 +287,7 @@ class RuntimeState:
             if directory and self.file_system_root:
                 try:
                     directory.mkdir(parents=True, exist_ok=True)
-                    return DbmDeque(path=str(directory / "spool.db"), maxlen=self.mailbox_queue_limit)
+                    return SqliteDeque(path=str(directory / "spool.db"), maxlen=self.mailbox_queue_limit)
                 except (OSError, RuntimeError):
                     logger.warning("Spool '%s' falling back to RAM", subdir)
 
@@ -304,7 +304,7 @@ class RuntimeState:
         if ds_dir and self.file_system_root:
             try:
                 ds_dir.mkdir(parents=True, exist_ok=True)
-                self.datastore_cache = DbmCache(str(ds_dir / "data.db"))
+                self.datastore_cache = SqliteCache(str(ds_dir / "data.db"))
             except (OSError, RuntimeError):
                 logger.warning("Datastore falling back to RAM cache")
                 self.datastore_cache = None

@@ -274,8 +274,12 @@ if [ "${swap_total_kb:-0}" -lt "$MIN_SWAP_KB" ]; then
         fi
     fi
     if [ "${swap_total_kb:-0}" -lt "$MIN_SWAP_KB" ]; then
-        echo "[ERROR] System swap below 1GB. Run './2_expand.sh' first." >&2
-        exit 1
+        if [ "${FORCE:-0}" = "1" ]; then
+            echo "[WARN] System swap below 1GB. FORCE=1 bypasses this check."
+        else
+            echo "[ERROR] System swap below 1GB. Run './2_expand.sh' first." >&2
+            exit 1
+        fi
     fi
 fi
 

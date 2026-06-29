@@ -17,7 +17,6 @@ def measure_imports() -> list[tuple[str, float]]:
     modules = [
         "asyncio",
         "aiomqtt",
-        "paho.mqtt",
         "mcubridge.protocol.frame",
         "mcubridge.protocol.structures",
     ]

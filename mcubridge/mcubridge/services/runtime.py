@@ -34,6 +34,7 @@ from ..config.const import (
     TOPIC_FORBIDDEN_REASON,
     SUPERVISOR_DEFAULT_MAX_BACKOFF,
     SUPERVISOR_DEFAULT_MIN_BACKOFF,
+    MCU_FS_PREFIX,
 )
 from ..config.settings import RuntimeConfig
 from ..protocol import protocol, structures
@@ -825,16 +826,16 @@ class BridgeService:
         act, target = route.action, "/".join(route.remainder)
         if not (act and target):
             return
-        if target.startswith("mcu/"):
+        if target.startswith(MCU_FS_PREFIX):
             if act == FileAction.READ:
                 await self._handle_mqtt_file_mcu_read(inbound, target)
             elif act == FileAction.WRITE:
                 await serial.send(
                     Command.CMD_FILE_WRITE.value,
-                    pb.FileWrite(path=target[4:], data=bytes(inbound.payload)),
+                    pb.FileWrite(path=target[len(MCU_FS_PREFIX) :], data=bytes(inbound.payload)),
                 )
             elif act == FileAction.REMOVE:
-                await serial.send(Command.CMD_FILE_REMOVE.value, pb.FileRemove(path=target[4:]))
+                await serial.send(Command.CMD_FILE_REMOVE.value, pb.FileRemove(path=target[len(MCU_FS_PREFIX) :]))
         else:
             path = self._get_safe_path(target)
             if not path:
@@ -881,7 +882,7 @@ class BridgeService:
             self._pending_mcu_read = _PendingMcuRead(target, asyncio.get_running_loop().create_future())
             if not await serial.send_raw(
                 Command.CMD_FILE_READ.value,
-                pb.FileRead(path=target[4:]),
+                pb.FileRead(path=target[len(MCU_FS_PREFIX) :]),
             ):
                 logger.error("MCU file read dispatch failed", target=target)
                 await self.enqueue_mqtt(

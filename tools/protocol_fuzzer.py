@@ -6,7 +6,6 @@ Mission: Stress test the MCU state machine by injecting protocol-level entropy.
 
 import asyncio
 import random
-import struct
 import argparse
 from binascii import crc32
 from cobs import cobs
@@ -14,12 +13,12 @@ import serialx
 import structlog
 from typing import Final
 from mcubridge.protocol import protocol
+from mcubridge.protocol.frame import build_frame
+from mcubridge.protocol import mcubridge_pb2 as pb
 
 # Constants from protocol spec
 PROTOCOL_VERSION: Final[int] = protocol.PROTOCOL_VERSION
 FRAME_DELIMITER: Final[bytes] = protocol.FRAME_DELIMITER
-_HEADER_STRUCT = struct.Struct(">BHHH")
-_CRC_STRUCT = struct.Struct(">I")
 
 logger = structlog.get_logger("fuzzer")
 
@@ -37,12 +36,18 @@ class ProtocolFuzzer:
         logger.info("connected", port=self.port, baudrate=self.baudrate)
 
     def _build_raw_frame(self, cmd: int, seq: int, payload: bytes, override_crc: int | None = None) -> bytes:
-        # Re-packing header properly based on frame.py: version(8), len(16), cmd(16), seq(16)
-        header = _HEADER_STRUCT.pack(PROTOCOL_VERSION, len(payload), cmd, seq)
-        body = header + payload
-        crc = override_crc if override_crc is not None else (crc32(body) & protocol.CRC32_MASK)
-        full = body + _CRC_STRUCT.pack(crc)
-        return cobs.encode(full) + FRAME_DELIMITER
+        if override_crc is None:
+            raw_frame = build_frame(command_id=cmd, sequence_id=seq, payload=payload)
+        else:
+            envelope = pb.RpcEnvelope(
+                version=PROTOCOL_VERSION,
+                command_id=cmd,
+                sequence_id=seq,
+                encrypted_payload_with_tag=payload,
+            )
+            body = envelope.SerializeToString()
+            raw_frame = body + (override_crc & protocol.CRC32_MASK).to_bytes(4, "little")
+        return cobs.encode(raw_frame) + FRAME_DELIMITER
 
     async def send_raw(self, data: bytes) -> None:
         if self.writer:
@@ -75,10 +80,15 @@ class ProtocolFuzzer:
             await self.send_raw(frame)
 
         elif mode == "invalid_version":
-            header = _HEADER_STRUCT.pack(0xFF, 3, 0x0001, self.seq_id)
-            body = header + b"VER"
+            envelope = pb.RpcEnvelope(
+                version=0xFF,
+                command_id=0x0001,
+                sequence_id=self.seq_id,
+                encrypted_payload_with_tag=b"VER",
+            )
+            body = envelope.SerializeToString()
             crc = crc32(body) & protocol.CRC32_MASK
-            frame = cobs.encode(body + _CRC_STRUCT.pack(crc)) + FRAME_DELIMITER
+            frame = cobs.encode(body + crc.to_bytes(4, "little")) + FRAME_DELIMITER
             await self.send_raw(frame)
 
         elif mode == "malformed_cobs":
@@ -86,8 +96,16 @@ class ProtocolFuzzer:
             await self.send_raw(bad_data + FRAME_DELIMITER)
 
         elif mode == "oversized_payload":
-            header = _HEADER_STRUCT.pack(PROTOCOL_VERSION, 4096, 0x0001, self.seq_id)
-            await self.send_raw(cobs.encode(header + b"SHORT") + FRAME_DELIMITER)
+            envelope = pb.RpcEnvelope(
+                version=PROTOCOL_VERSION,
+                command_id=0x0001,
+                sequence_id=self.seq_id,
+                encrypted_payload_with_tag=b"A" * 300,
+            )
+            body = envelope.SerializeToString()
+            crc = crc32(body) & protocol.CRC32_MASK
+            frame = cobs.encode(body + crc.to_bytes(4, "little")) + FRAME_DELIMITER
+            await self.send_raw(frame)
 
         elif mode == "random_garbage":
             garbage = bytes([random.getrandbits(8) for _ in range(random.randint(1, 32))])

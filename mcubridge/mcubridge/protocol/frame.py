@@ -31,6 +31,7 @@ _PAYLOAD_FIELD_MAP: dict[str, str] = {
 _NONCE_SIZE: Final = protocol.AEAD_NONCE_SIZE
 _TAG_SIZE: Final = protocol.AEAD_TAG_SIZE
 _CRC_SIZE: Final = protocol.CRC_SIZE
+_ENDIANNESS: Final = "little"
 
 
 class DecodedFrame(NamedTuple):
@@ -88,7 +89,7 @@ def build_frame(
             envelope.encrypted_payload_with_tag = payload
 
     body = envelope.SerializeToString()
-    return body + (crc32(body) & protocol.CRC32_MASK).to_bytes(4, "little")
+    return body + (crc32(body) & protocol.CRC32_MASK).to_bytes(_CRC_SIZE, _ENDIANNESS)
 
 
 def parse_frame(raw_frame_buffer: bytes | bytearray | memoryview, session_key: bytes | None = None) -> DecodedFrame:
@@ -98,7 +99,7 @@ def parse_frame(raw_frame_buffer: bytes | bytearray | memoryview, session_key: b
         raise ValueError("Incomplete frame: too short")
 
     body, crc_bytes = buf[:-_CRC_SIZE], buf[-_CRC_SIZE:]
-    if (crc32(body) & protocol.CRC32_MASK) != int.from_bytes(crc_bytes, "little"):
+    if (crc32(body) & protocol.CRC32_MASK) != int.from_bytes(crc_bytes, _ENDIANNESS):
         raise ValueError("CRC mismatch")
 
     envelope = pb.RpcEnvelope()

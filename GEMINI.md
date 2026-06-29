@@ -43,7 +43,7 @@ Arduino MCU Bridge 2 is a modern, high-performance communication system between 
 ## Development Conventions
 
 ### Python (Linux MPU)
-*   **Direct Library Calls:** Zero-wrapper policy. Use libraries directly (e.g., `aiomqtt` for the async daemon, `paho.mqtt` for legacy synchronous CGI scripts) instead of custom abstraction layers.
+*   **Direct Library Calls:** Zero-wrapper policy. Use libraries directly (e.g., `aiomqtt` for the async daemon and CGI scripts) instead of custom abstraction layers.
 *   **Strict Typing:** `pyright` in strict mode. All tests must use `unittest.mock.AsyncMock(spec=Interface)`.
 *   **No "Dummy" Classes:** Manual mock classes are prohibited in favor of standardized `AsyncMock`.
 *   **Async Patterns:** Mandatory `asyncio` usage; no blocking calls in the main event loop. `uvloop` is used on target for maximum throughput.

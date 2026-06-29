@@ -6,7 +6,7 @@ PKG_RELEASE:=1
 
 PYPI_NAME:=aiomqtt
 PKG_SOURCE:=aiomqtt-$(PKG_VERSION).tar.gz
-PKG_HASH:=25a0a47d157e8f158d2da1110ea4786c0615518751e94f7b04976c977a8ff20d
+PKG_HASH:=6499d41b9a933a7a42a1ccbee3baa7e2ccf1e11848f42513f8c0cea4ddff93fe
 
 PKG_MAINTAINER:=Ignacio Santolin <ignacio.santolin@gmail.com>
 PKG_LICENSE:=BSD-3-Clause

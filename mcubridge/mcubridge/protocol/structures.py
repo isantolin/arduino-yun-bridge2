@@ -23,9 +23,6 @@ from typing import (
     cast,
 )
 
-from paho.mqtt.packettypes import PacketTypes
-from paho.mqtt.properties import Properties
-
 
 def iter_chunks(data: bytes, chunk_size: int) -> Iterable[bytes]:
     """Zero-copy chunking using memoryview for maximum throughput. [SIL-2]"""
@@ -391,41 +388,6 @@ class PendingPinRequest:
 
 
 UserProperty = tuple[str, str]
-
-
-def build_mqtt_properties(message: pb.MqttQueuedPublish) -> Properties:
-    """Construct MQTT 5.0 properties object for aiomqtt/paho. [SIL-2]"""
-    props = Properties(PacketTypes.PUBLISH)
-    for field_desc in pb.MqttQueuedPublish.DESCRIPTOR.fields:
-        field_name = field_desc.name
-        if field_name in ("topic_name", "payload", "qos", "retain"):
-            continue
-        if field_desc.has_presence and not message.HasField(cast(Any, field_name)):
-            continue
-        val = getattr(message, field_name)
-        if field_name == "user_properties":
-            val = [(p.key, p.value) for p in message.user_properties]
-            if not val:
-                continue
-        elif field_name == "subscription_identifier":
-            val = list(message.subscription_identifier)
-            if not val:
-                continue
-        if val is None:
-            continue
-        paho_name = "".join(part.capitalize() for part in field_name.split("_"))
-        if paho_name == "UserProperties":
-            paho_name = "UserProperty"
-        ident = props.getIdentFromName(paho_name)
-        if ident != -1:
-            properties_dict = cast(dict[int, Any], props.properties)
-            if ident in properties_dict:
-                if PacketTypes.PUBLISH in properties_dict[ident][1]:
-                    if paho_name in ("UserProperty", "SubscriptionIdentifier"):
-                        setattr(props, paho_name, val)
-                    else:
-                        setattr(props, paho_name, val)
-    return props
 
 
 def replace_mqtt_publish(message: pb.MqttQueuedPublish, **kwargs: Any) -> pb.MqttQueuedPublish:

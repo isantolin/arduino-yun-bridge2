@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 from mcubridge.config import common
 
-from mcubridge.protocol.structures import create_queued_publish, create_allowed_policy
+from mcubridge.protocol.structures import create_allowed_policy
 from mcubridge.protocol import protocol
 
 
@@ -123,49 +123,3 @@ def test_encode_status_reason_trims_to_max_payload() -> None:
     reason = "x" * (protocol.MAX_PAYLOAD_SIZE + 50)
     payload = reason.encode("utf-8", errors="strict")[: protocol.MAX_PAYLOAD_SIZE]
     assert len(payload) == protocol.MAX_PAYLOAD_SIZE
-
-
-def test_queued_publish_properties_empty() -> None:
-    from mcubridge_client.definitions import build_mqtt_properties
-
-    message = create_queued_publish(
-        topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test",
-        payload=b"hi",
-    )
-    # The new helper always returns a Properties object (empty or not)
-    props = build_mqtt_properties(message)
-    assert not any(
-        getattr(props, attr, None)
-        for attr in [
-            "ContentType",
-            "PayloadFormatIndicator",
-            "MessageExpiryInterval",
-            "ResponseTopic",
-            "CorrelationData",
-            "UserProperty",
-        ]
-    )
-
-
-def test_build_mqtt_properties_populates_fields() -> None:
-    from mcubridge_client.definitions import build_mqtt_properties
-
-    message = create_queued_publish(
-        topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test",
-        payload=b"hi",
-        content_type="text/plain",
-        message_expiry_interval=10,
-        user_properties=(("k", "v"),),
-    )
-    message.payload_format_indicator = 1
-    message.response_topic = f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/response"
-    message.correlation_data = b"cid"
-
-    props = build_mqtt_properties(message)
-    assert props is not None
-    assert props.ContentType == "text/plain"
-    assert props.PayloadFormatIndicator == 1
-    assert props.MessageExpiryInterval == 10
-    assert props.ResponseTopic == f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/response"
-    assert props.CorrelationData == b"cid"
-    assert ("k", "v") in list(props.UserProperty)

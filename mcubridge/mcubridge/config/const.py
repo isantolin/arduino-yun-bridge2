@@ -134,6 +134,28 @@ SUPERVISOR_MIN_RESTART_WINDOW: float = 1.0
 DEFAULT_MQTT_TLS_INSECURE: bool = False
 DEFAULT_ALLOW_NON_TMP_PATHS: bool = False
 
+# -- Telemetry and Metadata Constants --
+PROP_KEY_BRIDGE_SPOOL: Final[str] = "bridge-spool"
+PROP_KEY_BRIDGE_FILES: Final[str] = "bridge-files"
+PROP_KEY_WATCHDOG_ENABLED: Final[str] = "bridge-watchdog-enabled"
+PROP_KEY_WATCHDOG_INTERVAL: Final[str] = "bridge-watchdog-interval"
+
+PROP_VAL_UNKNOWN: Final[str] = "unknown"
+PROP_VAL_QUOTA_BLOCKED: Final[str] = "quota-blocked"
+PROP_VAL_WRITE_LIMIT: Final[str] = "write-limit"
+PROP_VAL_ENABLED_TRUE: Final[str] = "1"
+PROP_VAL_ENABLED_FALSE: Final[str] = "0"
+
+# -- MQTT Lifecycle Payloads --
+MQTT_STATUS_OFFLINE_PAYLOAD: Final[bytes] = b'{"status": "offline", "reason": "unexpected_disconnect"}'
+MQTT_STATUS_ONLINE_PAYLOAD: Final[bytes] = b'{"status": "online"}'
+
+# -- Async Control and Process Timeouts (Seconds) --
+DEFAULT_SYNC_TIMEOUT_SECONDS: Final[float] = float(protocol.SYNC_TIMEOUT_MS) / 1000.0
+STREAM_POLL_TIMEOUT_SECONDS: Final[float] = 0.01
+PROCESS_TERM_GRACE_PERIOD_SECONDS: Final[float] = 0.5
+FLOW_CONTROL_WAIT_TIMEOUT_SECONDS: Final[float] = 30.0
+
 # ==============================================================================
 # STATUS CODES (Application Logic) — loaded after defaults to avoid circular
 # imports with mcubridge.protocol.structures.RuntimeConfig.
@@ -217,4 +239,19 @@ __all__ = [
     "VOLATILE_STORAGE_PATHS",
     "SYSTEMD_PRIVATE_PREFIX",
     "BRIDGE_SNAPSHOT_EXPIRY_SECONDS",
+    "PROP_KEY_BRIDGE_SPOOL",
+    "PROP_KEY_BRIDGE_FILES",
+    "PROP_KEY_WATCHDOG_ENABLED",
+    "PROP_KEY_WATCHDOG_INTERVAL",
+    "PROP_VAL_UNKNOWN",
+    "PROP_VAL_QUOTA_BLOCKED",
+    "PROP_VAL_WRITE_LIMIT",
+    "PROP_VAL_ENABLED_TRUE",
+    "PROP_VAL_ENABLED_FALSE",
+    "MQTT_STATUS_OFFLINE_PAYLOAD",
+    "MQTT_STATUS_ONLINE_PAYLOAD",
+    "DEFAULT_SYNC_TIMEOUT_SECONDS",
+    "STREAM_POLL_TIMEOUT_SECONDS",
+    "PROCESS_TERM_GRACE_PERIOD_SECONDS",
+    "FLOW_CONTROL_WAIT_TIMEOUT_SECONDS",
 ]

@@ -31,6 +31,7 @@ from mcubridge.config.const import (
     SERIAL_FAILURE_STATUS_CODES,
     SERIAL_SUCCESS_STATUS_CODES,
     SERIAL_MIN_ACK_TIMEOUT,
+    FLOW_CONTROL_WAIT_TIMEOUT_SECONDS,
 )
 from mcubridge.protocol import protocol, is_system_command
 from mcubridge.protocol.protocol import (
@@ -336,7 +337,7 @@ class SerialTransport:
 
         if not self.state.serial_tx_allowed.is_set():
             try:
-                async with asyncio.timeout(30.0):
+                async with asyncio.timeout(FLOW_CONTROL_WAIT_TIMEOUT_SECONDS):
                     await self.state.serial_tx_allowed.wait()
             except TimeoutError:
                 logger.error("Timed out waiting for serial TX flow control")

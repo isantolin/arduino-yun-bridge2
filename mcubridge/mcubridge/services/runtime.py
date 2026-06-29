@@ -35,6 +35,11 @@ from ..config.const import (
     SUPERVISOR_DEFAULT_MAX_BACKOFF,
     SUPERVISOR_DEFAULT_MIN_BACKOFF,
     MCU_FS_PREFIX,
+    MQTT_STATUS_OFFLINE_PAYLOAD,
+    MQTT_STATUS_ONLINE_PAYLOAD,
+    DEFAULT_SYNC_TIMEOUT_SECONDS,
+    STREAM_POLL_TIMEOUT_SECONDS,
+    PROCESS_TERM_GRACE_PERIOD_SECONDS,
 )
 from ..config.settings import RuntimeConfig
 from ..protocol import protocol, structures
@@ -518,7 +523,7 @@ class BridgeService:
         if route := parse_topic(self.state.mqtt_topic_prefix, str(inbound.topic)):
             if route.topic != Topic.SYSTEM:
                 try:
-                    async with asyncio.timeout(30.0):
+                    async with asyncio.timeout(DEFAULT_SYNC_TIMEOUT_SECONDS):
                         await self.state.link_sync_event.wait()
                 except asyncio.TimeoutError:
                     logger.error("Timed out waiting for MCU link synchronization", topic=str(inbound.topic))
@@ -1158,7 +1163,9 @@ class BridgeService:
                 try:
                     ctx.exit_code = await asyncio.wait_for(ctx.handle.wait(), float(self.state.process_timeout))
                 except TimeoutError:
-                    ctx.exit_code = await self._terminate_process(pid, ctx, grace_period=0.5)
+                    ctx.exit_code = await self._terminate_process(
+                        pid, ctx, grace_period=PROCESS_TERM_GRACE_PERIOD_SECONDS
+                    )
         finally:
             self._finalize_process(pid)
 
@@ -1181,7 +1188,7 @@ class BridgeService:
                     if not s or s.at_eof():
                         return b"", False
                     try:
-                        async with asyncio.timeout(0.01):
+                        async with asyncio.timeout(STREAM_POLL_TIMEOUT_SECONDS):
                             data = await s.read(protocol.MAX_PAYLOAD_SIZE - 32)
                         return data, not s.at_eof()
                     except TimeoutError:
@@ -1212,7 +1219,7 @@ class BridgeService:
         if not ctx:
             return False
         try:
-            ctx.exit_code = await self._terminate_process(pid, ctx, grace_period=0.5)
+            ctx.exit_code = await self._terminate_process(pid, ctx, grace_period=PROCESS_TERM_GRACE_PERIOD_SECONDS)
         except (OSError, ProcessLookupError) as exc:
             logger.error("Process termination failed", pid=pid, error=str(exc))
         self._finalize_process(pid)
@@ -1233,7 +1240,7 @@ class BridgeService:
 
         os.killpg(ctx.handle.pid, signal.SIGKILL)
         try:
-            return int(await asyncio.wait_for(ctx.handle.wait(), 0.5))
+            return int(await asyncio.wait_for(ctx.handle.wait(), PROCESS_TERM_GRACE_PERIOD_SECONDS))
         except TimeoutError:
             return -1
 
@@ -1440,7 +1447,7 @@ class BridgeService:
         will_topic = get_topic_for_message(self.state.mqtt_topic_prefix, "Status") or ""
         will = aiomqtt.Will(
             topic=will_topic,
-            payload=b'{"status": "offline", "reason": "unexpected_disconnect"}',
+            payload=MQTT_STATUS_OFFLINE_PAYLOAD,
             qos=aiomqtt.QoS.AT_LEAST_ONCE,
             retain=True,
         )
@@ -1468,7 +1475,7 @@ class BridgeService:
                     await client.subscribe(topic, max_qos=aiomqtt.QoS(qos_val))
                 await client.publish(
                     will_topic,
-                    b'{"status": "online"}',
+                    MQTT_STATUS_ONLINE_PAYLOAD,
                     qos=aiomqtt.QoS.AT_LEAST_ONCE,
                     retain=True,
                     packet_id=next(client.packet_ids),

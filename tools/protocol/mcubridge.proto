@@ -141,12 +141,9 @@ message Handshake {
 }
 
 message DataFormats {
-    string crc_covered_header_format = 1 [(cpp_name) = "", (cpp_type) = "", (py_name) = "FRAME_HEADER_FORMAT", (py_type) = "str"];
-    string crc_format = 2 [(cpp_name) = "", (cpp_type) = "", (py_name) = "FRAME_CRC_FORMAT", (py_type) = "str"];
     string uint8_format = 3 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
     string uint16_format = 4 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
     string uint32_format = 5 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
-    string nonce_counter_format = 6 [(cpp_name) = "", (cpp_type) = "", (py_name) = "NONCE_COUNTER_FORMAT", (py_type) = "str"];
 }
 
 message MqttSuffixes {
@@ -455,12 +452,9 @@ option (rpc.pb.handshake) = {
 };
 
 option (rpc.pb.data_formats) = {
-    crc_covered_header_format: "<BHHH"
-    crc_format: "<I"
     uint8_format: "<B"
     uint16_format: "<H"
     uint32_format: "<I"
-    nonce_counter_format: "<Q"
 };
 
 option (rpc.pb.mqtt_suffixes) = {

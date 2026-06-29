@@ -46,17 +46,22 @@ def _build_metrics_message(
 
     extra_props: list[tuple[str, str]] = []
     if snapshot.mqtt_spool_degraded:
-        extra_props.append(("bridge-spool", snapshot.mqtt_spool_failure_reason or "unknown"))
+        extra_props.append((const.PROP_KEY_BRIDGE_SPOOL, snapshot.mqtt_spool_failure_reason or const.PROP_VAL_UNKNOWN))
 
     # Extra props for files
     if state.file_storage_limit_rejections > 0:
-        extra_props.append(("bridge-files", "quota-blocked"))
+        extra_props.append((const.PROP_KEY_BRIDGE_FILES, const.PROP_VAL_QUOTA_BLOCKED))
     elif state.file_write_limit_rejections > 0:
-        extra_props.append(("bridge-files", "write-limit"))
+        extra_props.append((const.PROP_KEY_BRIDGE_FILES, const.PROP_VAL_WRITE_LIMIT))
 
-    extra_props.append(("bridge-watchdog-enabled", "1" if snapshot.watchdog_enabled else "0"))
+    extra_props.append(
+        (
+            const.PROP_KEY_WATCHDOG_ENABLED,
+            const.PROP_VAL_ENABLED_TRUE if snapshot.watchdog_enabled else const.PROP_VAL_ENABLED_FALSE,
+        )
+    )
     if snapshot.watchdog_enabled:
-        extra_props.append(("bridge-watchdog-interval", str(snapshot.watchdog_interval)))
+        extra_props.append((const.PROP_KEY_WATCHDOG_INTERVAL, str(snapshot.watchdog_interval)))
 
     if extra_props:
         user_props = [(p.key, p.value) for p in message.user_properties]

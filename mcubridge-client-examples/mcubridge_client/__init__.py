@@ -150,6 +150,8 @@ class Bridge:
         try:
             async for message in self._client.messages():
                 if isinstance(message, PublishPacket):
+                    if message.qos == QoS.AT_LEAST_ONCE and message.packet_id is not None:
+                        await self._client.puback(message.packet_id)
                     correlation = message.correlation_data
                     if correlation and (queue := self._correlation_routes.pop(correlation, None)):
                         queue.put_nowait(message)
@@ -173,9 +175,6 @@ class Bridge:
         correlation = secrets.token_bytes(12)
         queue: asyncio.Queue[PublishPacket] = asyncio.Queue(maxsize=1)
         self._correlation_routes[correlation] = queue
-
-        if resp_topic:
-            await self._client.subscribe(resp_topic)
 
         try:
             msg = create_queued_publish(
@@ -202,8 +201,6 @@ class Bridge:
             return bytes(delivered.payload) if delivered.payload else b""
         finally:
             self._correlation_routes.pop(correlation, None)
-            if resp_topic:
-                await self._client.unsubscribe(resp_topic)
 
     async def _publish(self, topic: str | Topic, payload: bytes) -> None:
         if self._client:

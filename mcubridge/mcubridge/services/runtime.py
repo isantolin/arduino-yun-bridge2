@@ -1502,6 +1502,15 @@ class BridgeService:
                         payload_hex=(message.payload.hex() if message.payload else None),
                     )
                 finally:
+                    if self._mqtt_client and message.qos == aiomqtt.QoS.AT_LEAST_ONCE and message.packet_id is not None:
+                        try:
+                            await self._mqtt_client.puback(message.packet_id)
+                        except Exception as exc:
+                            logger.warning(
+                                "Failed to acknowledge message",
+                                topic=str(message.topic),
+                                error=str(exc),
+                            )
                     self._mqtt_incoming_queue.task_done()
             except asyncio.CancelledError:
                 break

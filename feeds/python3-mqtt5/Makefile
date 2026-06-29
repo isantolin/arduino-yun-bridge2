@@ -29,6 +29,8 @@ define Build/Configure
 	echo "include_dir=$(STAGING_DIR)/usr/include/python$(PYTHON3_VERSION)" >> $(PKG_BUILD_DIR)/pyo3-config.txt
 	echo "lib_dir=$(STAGING_DIR)/usr/lib" >> $(PKG_BUILD_DIR)/pyo3-config.txt
 	$(if $(filter be,$(BOARD)),echo "target=mips-unknown-linux-musl" >> $(PKG_BUILD_DIR)/pyo3-config.txt)
+	# Update pyo3 in Cargo.lock to v0.28.3 to fix 32-bit/MIPS atomic compilation
+	cargo update -p pyo3 --manifest-path $(PKG_BUILD_DIR)/Cargo.toml || true
 endef
 
 define Package/python3-mqtt5

@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 import logging
-import paho.mqtt.publish
+import asyncio
+import aiomqtt
 import time
 
 
-def trigger_bootloader():
+async def _publish(topic: str, broker: str) -> None:
+    async with aiomqtt.Client(hostname=broker) as client:
+        await client.publish(topic, b"", qos=1)
+
+
+def trigger_bootloader() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
     log = logging.getLogger("bootloader_sim")
 
@@ -16,7 +22,7 @@ def trigger_bootloader():
     time.sleep(30)
 
     log.info(f"Triggering bootloader via MQTT topic: {topic}")
-    paho.mqtt.publish.single(topic, b"", hostname=broker, qos=1)
+    asyncio.run(_publish(topic, broker))
 
     log.info("Message published. Watching for MCU output (5s)...")
     time.sleep(5)

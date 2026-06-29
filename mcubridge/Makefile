@@ -47,7 +47,6 @@ define Package/$(PKG_NAME)
 		python3 \
 		python3-aiomqtt \
 		python3-mqtt5 \
-		python3-paho-mqtt \
 		python3-cobs \
 		python3-protobuf \
 		python3-prometheus-client \

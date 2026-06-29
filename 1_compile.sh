@@ -477,8 +477,7 @@ echo "[INFO] Re-installing essential feeds..."
 ./scripts/feeds update -a
 
 # [FIX] Remove duplicate/problematic upstream packages to avoid recursion
-echo "[FIX] Removing duplicate upstream packages (paho-mqtt, etc)..."
-rm -rf feeds/packages/lang/python/python-paho-mqtt
+echo "[FIX] Removing duplicate upstream packages (etc)..."
 rm -rf feeds/packages/lang/python/python-cryptography
 
 ./scripts/feeds install mcubridge luci-app-mcubridge
@@ -535,7 +534,7 @@ if [ $LOCAL_FEED_ENABLED -eq 1 ]; then
     # [FIX] Eliminar conflictos de paquetes Python (System vs Local)
     # Estos paquetes existen en el feed oficial 'packages' pero necesitamos las versiones
     # optimizadas o más recientes del feed 'mcubridge'.
-    for pkg_conflict in python-paho-mqtt python-cryptography; do
+    for pkg_conflict in python-cryptography; do
         if [ -d "package/feeds/packages/$pkg_conflict" ]; then
             echo "[FIX] Removing upstream $pkg_conflict to prioritize local mcubridge version..."
             rm -rf "package/feeds/packages/$pkg_conflict"
@@ -597,7 +596,7 @@ fi
 # Enable Packages
 REQUIRED_PKGS="mcubridge luci-app-mcubridge"
 # [FIX] Dependencias explícitas para asegurar selección en .config.
-REQUIRED_DEPS="python3-paho-mqtt python3-aiomqtt python3-tenacity mosquitto-client luaposix"
+REQUIRED_DEPS="python3-aiomqtt python3-tenacity mosquitto-client luaposix"
 
 # [FIX] Forzar limpieza total de metadatos de configuración para evitar errores de recursión
 # heredados de escaneos previos del SDK.

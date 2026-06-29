@@ -55,30 +55,3 @@ async def test_daemon_supervise_cancelled(service_stack: tuple[BridgeService, An
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
-
-
-def test_init_check_dependencies_success() -> None:
-    import mcubridge
-
-    _check_dependencies = getattr(mcubridge, "_check_dependencies")
-
-    # This should pass in the test environment as we have paho-mqtt 2.x
-    _check_dependencies()
-
-
-def test_init_check_dependencies_failure() -> None:
-    import mcubridge
-
-    _check_dependencies = getattr(mcubridge, "_check_dependencies")
-
-    # Mocking paho.mqtt.client without CallbackAPIVersion
-    with patch("importlib.import_module") as mock_import:
-        import types
-
-        mock_mqtt = types.ModuleType("mqtt_client")
-        # No CallbackAPIVersion
-        mock_import.return_value = mock_mqtt
-
-        with pytest.raises(SystemExit) as excinfo:
-            _check_dependencies()
-        assert excinfo.value.code == 1

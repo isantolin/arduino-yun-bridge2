@@ -20,11 +20,6 @@ pip = "mqtt5==0.5.0"
 check_latest = false
 rationale = "Low-level Rust-based MQTTv5 packet codec required by aiomqtt v3 (SIL-2)"
 
-[[dependency]]
-name = "paho-mqtt"
-openwrt = "python3-paho-mqtt"
-pip = "paho-mqtt==2.1.0"
-rationale = "Synchronous MQTT client for legacy CGI scripts"
 
 [[dependency]]
 name = "python-cobs"

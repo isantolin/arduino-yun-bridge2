@@ -43,7 +43,7 @@ def test_cgi_success(cgi_env: Any) -> None:
     env = cgi_env(body=json.dumps({"state": "ON"}).encode("utf-8"))
     start_response = MagicMock()
 
-    with patch("paho.mqtt.publish.single") as mock_publish:
+    with patch("pin_rest_cgi.publish_sync") as mock_publish:
         with patch("pin_rest_cgi.load_runtime_config") as mock_load:
             mock_config = MagicMock()
             mock_config.mqtt_topic = "br"
@@ -55,7 +55,7 @@ def test_cgi_success(cgi_env: Any) -> None:
 
             assert start_response.called
             assert "200 OK" in start_response.call_args[0][0]
-            mock_publish.assert_called()
+            mock_publish.assert_called_once_with("br/d/13", "1", mock_config)
 
             data = json.loads(
                 res[0],

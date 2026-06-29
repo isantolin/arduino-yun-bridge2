@@ -8,7 +8,8 @@ import re
 from typing import Any
 from wsgiref.handlers import CGIHandler
 
-import paho.mqtt.publish
+import asyncio
+import aiomqtt
 from google.protobuf import json_format
 from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import load_runtime_config
@@ -19,26 +20,20 @@ from mcubridge.protocol.topics import Topic, topic_path
 logger = logging.getLogger("mcubridge.pin_rest")
 
 
-def publish_sync(topic: str, payload: str, config: RuntimeConfig) -> None:
-    """Synchronous MQTT publish for CGI context using direct library call."""
-    tls_config: Any = None
-    if tls_ctx := config.get_ssl_context():
-        # paho.mqtt.publish.single takes a dict for tls or an SSLContext
-        tls_config = {"context": tls_ctx}
-
-    auth: Any = None
-    if config.mqtt_user:
-        auth = {"username": config.mqtt_user, "password": config.mqtt_pass}
-
-    paho.mqtt.publish.single(
-        topic,
-        payload=payload,
-        qos=1,
+async def _publish_async(topic: str, payload: str, config: RuntimeConfig) -> None:
+    async with aiomqtt.Client(
         hostname=config.mqtt_host,
         port=config.mqtt_port,
-        auth=auth,
-        tls=tls_config,
-    )
+        username=config.mqtt_user or None,
+        password=config.mqtt_pass or None,
+        ssl_context=config.get_ssl_context(),
+    ) as client:
+        await client.publish(topic, payload.encode("utf-8"), qos=aiomqtt.QoS.AT_LEAST_ONCE)
+
+
+def publish_sync(topic: str, payload: str, config: RuntimeConfig) -> None:
+    """Synchronous MQTT publish for CGI context using aiomqtt."""
+    asyncio.run(_publish_async(topic, payload, config))
 
 
 def json_res(start_response: Any, status: str, response: pb.PinControlResponse) -> list[bytes]:

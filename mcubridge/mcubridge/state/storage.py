@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import deque
 from pathlib import Path
 from typing import Awaitable, Callable, TypeVar
+import asyncio
 import aiosqlite
 import structlog
 
@@ -58,30 +59,37 @@ class SqliteDeque:
         self._length = 0
 
     async def _execute(self, func: Callable[[aiosqlite.Connection], Awaitable[T]]) -> T:
+        conn = None
         try:
-            async with aiosqlite.connect(self.path) as conn:
-                await conn.execute("PRAGMA journal_mode=WAL;")
-                await conn.execute("PRAGMA synchronous=NORMAL;")
-                await conn.execute(
-                    "CREATE TABLE IF NOT EXISTS deque (id INTEGER PRIMARY KEY AUTOINCREMENT, item BLOB NOT NULL)"
-                )
-                await conn.commit()
-                res = await func(conn)
-                await conn.commit()
-                return res
+            conn = await aiosqlite.connect(self.path)
+            await conn.execute("PRAGMA journal_mode=WAL;")
+            await conn.execute("PRAGMA synchronous=NORMAL;")
+            await conn.execute(
+                "CREATE TABLE IF NOT EXISTS deque (id INTEGER PRIMARY KEY AUTOINCREMENT, item BLOB NOT NULL)"
+            )
+            await conn.commit()
+            res = await func(conn)
+            await conn.commit()
+            return res
         except (aiosqlite.Error, OSError) as e:
             logger.warning("SqliteDeque database corrupt or incomplete, recreating: %s", e)
             await self._recreate_db()
-            async with aiosqlite.connect(self.path) as conn:
-                await conn.execute("PRAGMA journal_mode=WAL;")
-                await conn.execute("PRAGMA synchronous=NORMAL;")
-                await conn.execute(
-                    "CREATE TABLE IF NOT EXISTS deque (id INTEGER PRIMARY KEY AUTOINCREMENT, item BLOB NOT NULL)"
-                )
-                await conn.commit()
-                res = await func(conn)
-                await conn.commit()
-                return res
+            if conn is not None:
+                await asyncio.shield(conn.close())
+                conn = None
+            conn = await aiosqlite.connect(self.path)
+            await conn.execute("PRAGMA journal_mode=WAL;")
+            await conn.execute("PRAGMA synchronous=NORMAL;")
+            await conn.execute(
+                "CREATE TABLE IF NOT EXISTS deque (id INTEGER PRIMARY KEY AUTOINCREMENT, item BLOB NOT NULL)"
+            )
+            await conn.commit()
+            res = await func(conn)
+            await conn.commit()
+            return res
+        finally:
+            if conn is not None:
+                await asyncio.shield(conn.close())
 
     async def append(self, item: bytes) -> None:
         async def _append_impl(conn: aiosqlite.Connection) -> None:
@@ -161,26 +169,33 @@ class SqliteCache:
                     logger.warning("Failed to unlink target path", path=str(target_path), error=exc)
 
     async def _execute(self, func: Callable[[aiosqlite.Connection], Awaitable[T]]) -> T:
+        conn = None
         try:
-            async with aiosqlite.connect(self.path) as conn:
-                await conn.execute("PRAGMA journal_mode=WAL;")
-                await conn.execute("PRAGMA synchronous=NORMAL;")
-                await conn.execute("CREATE TABLE IF NOT EXISTS cache (key TEXT PRIMARY KEY, value BLOB NOT NULL)")
-                await conn.commit()
-                res = await func(conn)
-                await conn.commit()
-                return res
+            conn = await aiosqlite.connect(self.path)
+            await conn.execute("PRAGMA journal_mode=WAL;")
+            await conn.execute("PRAGMA synchronous=NORMAL;")
+            await conn.execute("CREATE TABLE IF NOT EXISTS cache (key TEXT PRIMARY KEY, value BLOB NOT NULL)")
+            await conn.commit()
+            res = await func(conn)
+            await conn.commit()
+            return res
         except (aiosqlite.Error, OSError) as e:
             logger.warning("SqliteCache database corrupt or incomplete, recreating: %s", e)
             await self._recreate_db()
-            async with aiosqlite.connect(self.path) as conn:
-                await conn.execute("PRAGMA journal_mode=WAL;")
-                await conn.execute("PRAGMA synchronous=NORMAL;")
-                await conn.execute("CREATE TABLE IF NOT EXISTS cache (key TEXT PRIMARY KEY, value BLOB NOT NULL)")
-                await conn.commit()
-                res = await func(conn)
-                await conn.commit()
-                return res
+            if conn is not None:
+                await asyncio.shield(conn.close())
+                conn = None
+            conn = await aiosqlite.connect(self.path)
+            await conn.execute("PRAGMA journal_mode=WAL;")
+            await conn.execute("PRAGMA synchronous=NORMAL;")
+            await conn.execute("CREATE TABLE IF NOT EXISTS cache (key TEXT PRIMARY KEY, value BLOB NOT NULL)")
+            await conn.commit()
+            res = await func(conn)
+            await conn.commit()
+            return res
+        finally:
+            if conn is not None:
+                await asyncio.shield(conn.close())
 
     async def set(self, key: str, value: bytes) -> None:
         async def _setitem_impl(conn: aiosqlite.Connection) -> None:

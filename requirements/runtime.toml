@@ -13,6 +13,12 @@ pip = "aiomqtt==3.0.0a1"
 rationale = "Async MQTT v5 client used for runtime telemetry (Python 3.13 compatible)"
 
 [[dependency]]
+name = "mqtt5"
+openwrt = "python3-mqtt5"
+pip = "mqtt5==0.5.0"
+rationale = "Low-level Rust-based MQTTv5 packet codec required by aiomqtt v3 (SIL-2)"
+
+[[dependency]]
 name = "paho-mqtt"
 openwrt = "python3-paho-mqtt"
 pip = "paho-mqtt==2.1.0"

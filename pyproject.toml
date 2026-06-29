@@ -12,6 +12,7 @@ dependencies = [
     "aiosqlite==0.22.1",
     "cobs==1.2.2",
     "cryptography==49.0.0",
+    "mqtt5==0.5.0",
     "paho-mqtt==2.1.0",
     "prometheus-client==0.25.0",
     "protobuf==7.35.1",

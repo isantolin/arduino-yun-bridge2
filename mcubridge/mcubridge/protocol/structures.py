@@ -493,12 +493,14 @@ def create_queued_publish(
     content_type: str | None = None,
     message_expiry_interval: int | None = None,
     user_properties: Iterable[tuple[str, str]] = (),
+    qos: int = 1,
 ) -> pb.MqttQueuedPublish:
     """Factory to create a MqttQueuedPublish message. [SIL-2]"""
     msg = pb.MqttQueuedPublish(
         topic_name=topic_name,
         payload=payload,
         content_type=content_type or "",
+        qos=qos,
     )
     if message_expiry_interval is not None:
         msg.message_expiry_interval = message_expiry_interval

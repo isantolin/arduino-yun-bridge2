@@ -46,6 +46,7 @@ define Package/$(PKG_NAME)
 	DEPENDS+= \
 		python3 \
 		python3-aiomqtt \
+		python3-mqtt5 \
 		python3-paho-mqtt \
 		python3-cobs \
 		python3-protobuf \

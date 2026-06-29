@@ -35,7 +35,7 @@ def test_structures_coverage_boost():
     qp = create_queued_publish(topic_name="topic", payload=b"payload")
     assert qp.topic_name == "topic"
     assert qp.payload == b"payload"
-    assert qp.qos == 0
+    assert qp.qos == 1
 
     # Cover TopicAuthorization
     ta = pb.TopicAuthorization()

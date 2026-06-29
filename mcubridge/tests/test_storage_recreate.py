@@ -26,11 +26,18 @@ class MockCursorHelper:
         return self.val
 
 
+class AwaitableMockConn(AsyncMock):
+    def __await__(self) -> Generator[Any, None, Any]:
+        async def _await_conn() -> Any:
+            return self
+
+        return _await_conn().__await__()
+
+
 @pytest.mark.asyncio
 async def test_sqlite_deque_recreate_on_corrupt() -> None:
-    mock_conn = AsyncMock()
-    entered_conn = mock_conn.__aenter__.return_value
-    entered_conn.execute = MagicMock(return_value=MockCursorHelper((0,)))
+    mock_conn = AwaitableMockConn()
+    mock_conn.execute = MagicMock(return_value=MockCursorHelper((0,)))
 
     # First call to connect raises aiosqlite.DatabaseError (corruption), second succeeds
     side_effects = [aiosqlite.DatabaseError("Corrupt DB"), mock_conn]
@@ -56,9 +63,8 @@ async def test_sqlite_deque_recreate_on_corrupt() -> None:
 
 @pytest.mark.asyncio
 async def test_sqlite_deque_unlink_os_error() -> None:
-    mock_conn = AsyncMock()
-    entered_conn = mock_conn.__aenter__.return_value
-    entered_conn.execute = MagicMock(return_value=MockCursorHelper((0,)))
+    mock_conn = AwaitableMockConn()
+    mock_conn.execute = MagicMock(return_value=MockCursorHelper((0,)))
 
     side_effects = [aiosqlite.DatabaseError("Corrupt DB"), mock_conn]
 
@@ -80,9 +86,8 @@ async def test_sqlite_deque_unlink_os_error() -> None:
 
 @pytest.mark.asyncio
 async def test_sqlite_cache_recreate_on_corrupt() -> None:
-    mock_conn = AsyncMock()
-    entered_conn = mock_conn.__aenter__.return_value
-    entered_conn.execute = MagicMock(return_value=MockCursorHelper(None))
+    mock_conn = AwaitableMockConn()
+    mock_conn.execute = MagicMock(return_value=MockCursorHelper(None))
 
     side_effects = [aiosqlite.OperationalError("Corrupt DB"), mock_conn]
 
@@ -107,9 +112,8 @@ async def test_sqlite_cache_recreate_on_corrupt() -> None:
 
 @pytest.mark.asyncio
 async def test_sqlite_cache_unlink_os_error() -> None:
-    mock_conn = AsyncMock()
-    entered_conn = mock_conn.__aenter__.return_value
-    entered_conn.execute = MagicMock(return_value=MockCursorHelper(None))
+    mock_conn = AwaitableMockConn()
+    mock_conn.execute = MagicMock(return_value=MockCursorHelper(None))
 
     side_effects = [aiosqlite.OperationalError("Corrupt DB"), mock_conn]
 

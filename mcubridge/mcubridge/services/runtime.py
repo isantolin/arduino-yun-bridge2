@@ -119,12 +119,14 @@ class BridgeService:
     mcu_registry: dict[int, McuHandler]
     _topic_aliases: dict[str, int]
     _next_alias_id: int
+    _mqtt_incoming_queue: asyncio.Queue[aiomqtt.PublishPacket]
 
     def __init__(self, config: RuntimeConfig, state: RuntimeState, serial: SerialTransport) -> None:
         self.config, self.state, self.serial = config, state, serial
         self._mqtt_client, self._task_group = None, None
         self.watchdog: WatchdogKeepalive | None = None
         self.exporter: PrometheusExporter | None = None
+        self._mqtt_incoming_queue = asyncio.Queue()
 
         self.handshake = SerialHandshakeManager(
             config=config,
@@ -358,8 +360,8 @@ class BridgeService:
             conn_future = getattr(self._mqtt_client, "_connected", None)
             if isinstance(conn_future, asyncio.Future) and conn_future.done():
                 try:
-                    connack_packet: Any = conn_future.result()
-                    val = getattr(connack_packet, "topic_alias_max", 0)
+                    connack_packet = cast(Any, conn_future.result())
+                    val = cast(Any, getattr(connack_packet, "topic_alias_max", 0))
                     if isinstance(val, int) and not isinstance(val, bool):
                         topic_alias_max = val
                 except Exception:
@@ -434,6 +436,18 @@ class BridgeService:
             if self._task_group:
                 await self._task_group.__aexit__(et, ev, tb)
         finally:
+            if self._mqtt_spool is not None:
+                try:
+                    await self._mqtt_spool.close()
+                except Exception:
+                    pass
+                self._mqtt_spool = None
+            if self.state and self.state.datastore_cache is not None:
+                try:
+                    await self.state.datastore_cache.close()
+                except Exception:
+                    pass
+                self.state.datastore_cache = None
             self.cleanup()
 
     def cleanup(self) -> None:
@@ -1460,19 +1474,37 @@ class BridgeService:
                 )
                 await self.flush_mqtt_spool()
 
-                async for message in client.messages():
-                    if isinstance(message, aiomqtt.PublishPacket):
-                        try:
-                            await self.handle_mqtt_message(message)
-                        except (ValueError, RuntimeError, asyncio.QueueFull) as e:
-                            logger.error(
-                                "Error processing MQTT message",
-                                topic=str(message.topic),
-                                error=str(e),
-                                payload_hex=(message.payload.hex() if message.payload else None),
-                            )
+                worker_task = asyncio.create_task(self._mqtt_incoming_worker())
+                try:
+                    async for message in client.messages():
+                        if isinstance(message, aiomqtt.PublishPacket):
+                            self._mqtt_incoming_queue.put_nowait(message)
+                finally:
+                    worker_task.cancel()
+                    try:
+                        await worker_task
+                    except asyncio.CancelledError:
+                        pass
             finally:
                 self.set_mqtt_client(None)
+
+    async def _mqtt_incoming_worker(self) -> None:
+        while True:
+            try:
+                message = await self._mqtt_incoming_queue.get()
+                try:
+                    await self.handle_mqtt_message(message)
+                except (ValueError, RuntimeError, asyncio.QueueFull) as e:
+                    logger.error(
+                        "Error processing MQTT message",
+                        topic=str(message.topic),
+                        error=str(e),
+                        payload_hex=(message.payload.hex() if message.payload else None),
+                    )
+                finally:
+                    self._mqtt_incoming_queue.task_done()
+            except asyncio.CancelledError:
+                break
 
     async def supervise(
         self,

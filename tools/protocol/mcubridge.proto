@@ -493,127 +493,127 @@ option (rpc.pb.status_reasons) = {
 option (rpc.pb.mqtt_subscriptions) = {
     topic: "DIGITAL"
     segments: ["+", "mode"]
-    qos: 0
+    qos: 1
 };
 option (rpc.pb.mqtt_subscriptions) = {
     topic: "DIGITAL"
     segments: ["+", "read"]
-    qos: 0
+    qos: 1
 };
 option (rpc.pb.mqtt_subscriptions) = {
     topic: "DIGITAL"
     segments: ["+"]
-    qos: 0
+    qos: 1
 };
 option (rpc.pb.mqtt_subscriptions) = {
     topic: "ANALOG"
     segments: ["+", "read"]
-    qos: 0
+    qos: 1
 };
 option (rpc.pb.mqtt_subscriptions) = {
     topic: "ANALOG"
     segments: ["+"]
-    qos: 0
+    qos: 1
 };
 option (rpc.pb.mqtt_subscriptions) = {
     topic: "CONSOLE"
     segments: ["in"]
-    qos: 0
+    qos: 1
 };
 option (rpc.pb.mqtt_subscriptions) = {
     topic: "DATASTORE"
     segments: ["put", "#"]
-    qos: 0
+    qos: 1
 };
 option (rpc.pb.mqtt_subscriptions) = {
     topic: "DATASTORE"
     segments: ["get", "#"]
-    qos: 0
+    qos: 1
 };
 option (rpc.pb.mqtt_subscriptions) = {
     topic: "MAILBOX"
     segments: ["write"]
-    qos: 0
+    qos: 1
 };
 option (rpc.pb.mqtt_subscriptions) = {
     topic: "MAILBOX"
     segments: ["read"]
-    qos: 0
+    qos: 1
 };
 option (rpc.pb.mqtt_subscriptions) = {
     topic: "SHELL"
     segments: ["run_async"]
-    qos: 0
+    qos: 1
 };
 option (rpc.pb.mqtt_subscriptions) = {
     topic: "SHELL"
     segments: ["poll", "#"]
-    qos: 0
+    qos: 1
 };
 option (rpc.pb.mqtt_subscriptions) = {
     topic: "SHELL"
     segments: ["kill", "#"]
-    qos: 0
+    qos: 1
 };
 option (rpc.pb.mqtt_subscriptions) = {
     topic: "SYSTEM"
     segments: ["free_memory", "get"]
-    qos: 0
+    qos: 1
 };
 option (rpc.pb.mqtt_subscriptions) = {
     topic: "SYSTEM"
     segments: ["version", "get"]
-    qos: 0
+    qos: 1
 };
 option (rpc.pb.mqtt_subscriptions) = {
     topic: "SYSTEM"
     segments: ["bridge", "handshake", "get"]
-    qos: 0
+    qos: 1
 };
 option (rpc.pb.mqtt_subscriptions) = {
     topic: "SYSTEM"
     segments: ["bridge", "summary", "get"]
-    qos: 0
+    qos: 1
 };
 option (rpc.pb.mqtt_subscriptions) = {
     topic: "SYSTEM"
     segments: ["bridge", "state", "get"]
-    qos: 0
+    qos: 1
 };
 option (rpc.pb.mqtt_subscriptions) = {
     topic: "FILE"
     segments: ["write", "#"]
-    qos: 0
+    qos: 1
 };
 option (rpc.pb.mqtt_subscriptions) = {
     topic: "FILE"
     segments: ["read", "#"]
-    qos: 0
+    qos: 1
 };
 option (rpc.pb.mqtt_subscriptions) = {
     topic: "FILE"
     segments: ["remove", "#"]
-    qos: 0
+    qos: 1
 };
 option (rpc.pb.mqtt_subscriptions) = {
     topic: "SPI"
     segments: ["begin"]
-    qos: 0
+    qos: 1
 };
 option (rpc.pb.mqtt_subscriptions) = {
     topic: "SPI"
     segments: ["end"]
-    qos: 0
+    qos: 1
 };
 option (rpc.pb.mqtt_subscriptions) = {
     topic: "SPI"
     segments: ["transfer"]
-    qos: 0
+    qos: 1
 };
 option (rpc.pb.mqtt_subscriptions) = {
     topic: "SPI"
     segments: ["config"]
-    qos: 0
+    qos: 1
 };
 
 option (rpc.pb.topics) = {

@@ -20,15 +20,15 @@ define Package/python3-aiomqtt
 	SECTION:=lang
 	CATEGORY:=Languages
 	SUBMENU:=Python
-	TITLE:=Idiomatic asyncio MQTT client (v2.5.1)
+	TITLE:=Idiomatic asyncio MQTT client
 	URL:=https://github.com/empicano/aiomqtt
 	PKG_ARCH:=all
-	DEPENDS:=+python3-light +python3-paho-mqtt
+	DEPENDS:=+python3-light +python3-mqtt5
 endef
 
 define Package/python3-aiomqtt/description
  The idiomatic asyncio MQTT client (formerly asyncio-mqtt).
- Targeting Paho MQTT v2.x compatibility.
+ Idiomatic asyncio MQTT client (v3.0.0a1)
 endef
 
 $(eval $(call Py3Package,python3-aiomqtt))

@@ -129,9 +129,9 @@ class Bridge:
         )
         await self._exit_stack.enter_async_context(self._client)
         self._reply_topic = f"{self.topic_prefix}/client/{uuid.uuid4().hex}/reply"
-        await self._client.subscribe(self._reply_topic, max_qos=QoS.AT_MOST_ONCE)
+        await self._client.subscribe(self._reply_topic, max_qos=QoS.AT_LEAST_ONCE)
         self._console_topic = str(Topic.build(Topic.CONSOLE, "out"))
-        await self._client.subscribe(self._console_topic, max_qos=QoS.AT_MOST_ONCE)
+        await self._client.subscribe(self._console_topic, max_qos=QoS.AT_LEAST_ONCE)
         self._listener_task = asyncio.create_task(self._message_listener())
         logger.info("Connected to %s:%d. Reply topic: %s", self.host, self.port, self._reply_topic)
 
@@ -205,11 +205,20 @@ class Bridge:
             if resp_topic:
                 await self._client.unsubscribe(resp_topic)
 
+    async def _publish(self, topic: str | Topic, payload: bytes) -> None:
+        if self._client:
+            await self._client.publish(
+                str(topic),
+                payload,
+                qos=QoS.AT_LEAST_ONCE,
+                packet_id=next(self._client.packet_ids),
+            )
+
     # --- Declarative API (Eradicates manual methods) ---
 
     async def console_write(self, data: str | bytes) -> None:
         payload = data if isinstance(data, bytes) else data.encode()
-        await self._client.publish(Topic.build(Topic.CONSOLE, "in"), payload) if self._client else None
+        await self._publish(Topic.build(Topic.CONSOLE, "in"), payload)
 
     async def console_read_async(self) -> str | None:
         try:
@@ -222,10 +231,10 @@ class Bridge:
             return None
 
     async def digital_write(self, pin: int, value: int) -> None:
-        await self._client.publish(Topic.build(Topic.DIGITAL, pin), str(value).encode()) if self._client else None
+        await self._publish(Topic.build(Topic.DIGITAL, pin), str(value).encode())
 
     async def analog_write(self, pin: int, value: int) -> None:
-        await self._client.publish(Topic.build(Topic.ANALOG, pin), str(value).encode()) if self._client else None
+        await self._publish(Topic.build(Topic.ANALOG, pin), str(value).encode())
 
     async def digital_read(self, pin: int, timeout: float = 15) -> int:
         res = await self._publish_and_wait(
@@ -291,13 +300,9 @@ class Bridge:
         }
 
     async def file_write(self, filename: str, content: str | bytes) -> None:
-        (
-            await self._client.publish(
-                Topic.build(Topic.FILE, "write", filename.lstrip("/")),
-                content if isinstance(content, bytes) else content.encode(),
-            )
-            if self._client
-            else None
+        await self._publish(
+            Topic.build(Topic.FILE, "write", filename.lstrip("/")),
+            content if isinstance(content, bytes) else content.encode(),
         )
 
     async def file_read(self, filename: str, timeout: float = 15) -> bytes:
@@ -309,14 +314,12 @@ class Bridge:
         )
 
     async def file_remove(self, filename: str) -> None:
-        if self._client:
-            await self._client.publish(Topic.build(Topic.FILE, "remove", filename.lstrip("/")), b"")
+        await self._publish(Topic.build(Topic.FILE, "remove", filename.lstrip("/")), b"")
 
     async def mailbox_write(self, message: str | bytes) -> None:
-        if self._client:
-            await self._client.publish(
-                Topic.build(Topic.MAILBOX, "write"), message if isinstance(message, bytes) else message.encode()
-            )
+        await self._publish(
+            Topic.build(Topic.MAILBOX, "write"), message if isinstance(message, bytes) else message.encode()
+        )
 
     async def mailbox_read(self, timeout: float = 5.0) -> bytes | None:
         try:
@@ -330,8 +333,7 @@ class Bridge:
             return None
 
     async def set_digital_mode(self, pin: int, mode: int) -> None:
-        if self._client:
-            await self._client.publish(Topic.build(Topic.DIGITAL, pin, "mode"), str(mode).encode())
+        await self._publish(Topic.build(Topic.DIGITAL, pin, "mode"), str(mode).encode())
 
     async def get_free_memory(self, timeout: float = 15) -> int:
         res = await self._publish_and_wait(
@@ -360,20 +362,17 @@ class Bridge:
         )
 
     async def spi_begin(self) -> None:
-        if self._client:
-            await self._client.publish(Topic.build(Topic.SPI, "begin"), b"")
+        await self._publish(Topic.build(Topic.SPI, "begin"), b"")
 
     async def spi_end(self) -> None:
-        if self._client:
-            await self._client.publish(Topic.build(Topic.SPI, "end"), b"")
+        await self._publish(Topic.build(Topic.SPI, "end"), b"")
 
     async def spi_config(self, frequency: int, bit_order: int, data_mode: int) -> None:
-        if self._client:
-            config = pb.SpiConfig(frequency=frequency, bit_order=bit_order, data_mode=data_mode)
-            await self._client.publish(
-                Topic.build(Topic.SPI, "config"),
-                config.SerializeToString(),
-            )
+        config = pb.SpiConfig(frequency=frequency, bit_order=bit_order, data_mode=data_mode)
+        await self._publish(
+            Topic.build(Topic.SPI, "config"),
+            config.SerializeToString(),
+        )
 
     def spi(
         self,

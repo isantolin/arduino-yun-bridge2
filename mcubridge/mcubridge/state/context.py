@@ -505,10 +505,6 @@ class RuntimeState:
         self.mailbox_queue = InMemoryDeque()
         self.mailbox_incoming_queue = InMemoryDeque()
 
-        import gc
-
-        gc.collect()
-
         while not self.mqtt_publish_queue.empty():
             try:
                 self.mqtt_publish_queue.get_nowait()

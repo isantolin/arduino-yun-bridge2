@@ -191,6 +191,8 @@ class Bridge:
             await self._client.publish(
                 msg.topic_name,
                 msg.payload,
+                qos=QoS.AT_LEAST_ONCE,
+                packet_id=next(self._client.packet_ids),
                 response_topic=msg.response_topic if msg.HasField("response_topic") else None,
                 correlation_data=msg.correlation_data if msg.HasField("correlation_data") else None,
                 content_type=msg.content_type if msg.HasField("content_type") else None,

@@ -2,11 +2,11 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=python3-aiosqlite
-PKG_VERSION:=0.20.0
+PKG_VERSION:=0.22.1
 PKG_RELEASE:=1
 
 PYPI_NAME:=aiosqlite
-PKG_HASH:=skip
+PKG_HASH:=043e0bd78d32888c0a9ca90fc788b38796843360c855a7262a532813133a0650
 
 include ../../packages/lang/python/pypi.mk
 include $(INCLUDE_DIR)/package.mk

@@ -2,11 +2,11 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=python3-protobuf
-PKG_VERSION:=5.27.1
+PKG_VERSION:=7.35.1
 PKG_RELEASE:=1
 
 PYPI_NAME:=protobuf
-PKG_HASH:=skip
+PKG_HASH:=ce115a26fe0c39a2c29973d914d327e516a6455464489fe3cd1e51a1b354f81a
 
 include ../../packages/lang/python/pypi.mk
 include $(INCLUDE_DIR)/package.mk

@@ -60,7 +60,7 @@ Arduino MCU Bridge 2 is a modern, high-performance communication system between 
 ### Build Pipeline
 1.  **Compile:** `./1_compile.sh` for OpenWrt APK creation.
 2.  **Install:** `./3_install.sh` on target device.
-3.  **Validate:** ALL `tox` environments configured in `tox.ini` must run. The full log of the execution must be thoroughly analyzed, and absolutely every notice or warning must be treated as a test failure/error. `tox -e coverage` generates Python (90%+) and C++ (75%+) reports.
+3.  **Validate:** ALL `tox` environments configured in `tox.ini` must run. The full log of the execution must be thoroughly analyzed, and absolutely every notice or warning must be treated as a test failure/error. `tox -e coverage` generates Python (83%+) and C++ (85%+) reports.
 
 ### Observability
 *   **Metrics:** Prometheus exporter on port 9130.

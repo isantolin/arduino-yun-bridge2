@@ -23,6 +23,13 @@
 
 namespace rpc {
 
+/// [SIL-2] Single source of truth for system/status command classification.
+/// Replaces repeated inline range checks across send paths.
+inline constexpr bool is_system_command(uint16_t cmd) {
+  return (cmd >= RPC_STATUS_CODE_MIN && cmd <= RPC_STATUS_CODE_MAX) ||
+         (cmd >= RPC_SYSTEM_COMMAND_MIN && cmd <= RPC_SYSTEM_COMMAND_MAX);
+}
+
 inline constexpr size_t AEAD_NONCE_SIZE = rpc::RPC_AEAD_NONCE_SIZE;
 inline constexpr size_t AEAD_TAG_SIZE = rpc::RPC_AEAD_TAG_SIZE;
 inline constexpr size_t CRC_TRAILER_SIZE = rpc::RPC_CRC_SIZE;

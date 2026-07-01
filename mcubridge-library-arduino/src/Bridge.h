@@ -145,10 +145,7 @@ class BridgeClass {
     static_assert(etl::is_enum_v<T> || etl::is_integral_v<T>,
                   "Command must be enum or integral");
     const uint16_t cmd = static_cast<uint16_t>(command);
-    const bool is_system =
-        (cmd >= rpc::RPC_STATUS_CODE_MIN && cmd <= rpc::RPC_STATUS_CODE_MAX) ||
-        (cmd >= rpc::RPC_SYSTEM_COMMAND_MIN &&
-         cmd <= rpc::RPC_SYSTEM_COMMAND_MAX);
+    const bool is_system = rpc::is_system_command(cmd);
     if (!_tx_enabled && !is_system) return false;
     if (is_reliable_cmd(cmd)) {
       BRIDGE_ATOMIC_BLOCK {
@@ -185,10 +182,7 @@ class BridgeClass {
   template <typename T>
   [[nodiscard]] bool send(rpc::CommandId c, uint16_t seq, const T& packet) {
     const uint16_t raw_cmd = rpc::to_underlying(c);
-    const bool is_excluded = (raw_cmd >= rpc::RPC_STATUS_CODE_MIN &&
-                              raw_cmd <= rpc::RPC_STATUS_CODE_MAX) ||
-                             (raw_cmd >= rpc::RPC_SYSTEM_COMMAND_MIN &&
-                              raw_cmd <= rpc::RPC_SYSTEM_COMMAND_MAX);
+    const bool is_excluded = rpc::is_system_command(raw_cmd);
     const bool do_encrypt =
         isSynchronized() && !_shared_secret.empty() && !is_excluded;
 
@@ -309,9 +303,9 @@ class BridgeClass {
 
   void _processAck(uint16_t command_id, uint16_t sequence_id);
 
-  static bool _decodePayload(const bridge::router::CommandContext& ctx,
-                             const pb_msgdesc_t* fields, void* dest,
-                             pb_size_t expected_tag, size_t struct_size);
+  static __attribute__((noinline)) bool _decodePayload(
+      const bridge::router::CommandContext& ctx, const pb_msgdesc_t* fields,
+      void* dest, pb_size_t expected_tag);
 
   bridge::router::DecodedResult _decodePayloadToVariant(
       const bridge::router::CommandContext& ctx);

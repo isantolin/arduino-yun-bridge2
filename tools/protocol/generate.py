@@ -878,7 +878,7 @@ def main() -> None:
 
     # Step 4: Generate type stubs for untyped libraries using pyright
     # [SIL-2] Generate type stubs for untyped libraries using pyright if any are defined.
-    untyped_libs: list[str] = ["cobs", "paho", "prometheus_client", "serialx", "uci", "uvloop"]
+    untyped_libs: list[str] = ["cobs", "prometheus_client", "serialx", "uci", "uvloop"]
     # [SIL-2] Log only if there are libs to process
     if untyped_libs:
         sys.stderr.write(f"Generating type stubs for {', ' .join(untyped_libs)}...\n")

@@ -1,11 +1,14 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=python3-aiomqtt
-PKG_VERSION:=3.0.0a1
+# APK requires Alpine version syntax (_alpha/_beta/_rc), not Python's (a1/b1/rc1).
+# PKG_SOURCE and PKG_BUILD_DIR are pinned to the real PyPI filename (3.0.0a1).
+PKG_VERSION:=3.0.0_alpha1
 PKG_RELEASE:=1
 
 PYPI_NAME:=aiomqtt
-PKG_SOURCE:=aiomqtt-$(PKG_VERSION).tar.gz
+PKG_SOURCE:=aiomqtt-3.0.0a1.tar.gz
+PKG_BUILD_DIR:=$(BUILD_DIR)/pypi/aiomqtt-3.0.0a1
 PKG_HASH:=6499d41b9a933a7a42a1ccbee3baa7e2ccf1e11848f42513f8c0cea4ddff93fe
 
 PKG_MAINTAINER:=Ignacio Santolin <ignacio.santolin@gmail.com>

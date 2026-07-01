@@ -743,17 +743,18 @@ void BridgeClass::enterSafeState() {
   SPIService.onLost();
 }
 
-bool BridgeClass::_sendFrameRaw(const rpc_pb_RpcEnvelope& env,
-                                uint16_t command_id) {
-  const bool is_system = rpc::is_system_command(command_id);
-  if (!_tx_enabled && !is_system) return false;
+void BridgeClass::_serialize_and_send(const rpc_pb_RpcEnvelope& env) {
   etl::array<uint8_t, rpc::MAX_FRAME_SIZE> buffer;
   const size_t len = rpc::serialize_frame(env, buffer);
-  if (len > 0) {
+  if (len > 0)
     _packet_serial.send(_stream, etl::span<const uint8_t>(buffer.data(), len));
-    return true;
-  }
-  return false;
+}
+
+bool BridgeClass::_sendFrameRaw(const rpc_pb_RpcEnvelope& env,
+                                uint16_t command_id) {
+  if (!_tx_enabled && !rpc::is_system_command(command_id)) return false;
+  _serialize_and_send(env);
+  return true;
 }
 
 void BridgeClass::_transmit(uint16_t command_id, uint16_t sequence_id,
@@ -773,7 +774,6 @@ void BridgeClass::_transmit(uint16_t command_id, uint16_t sequence_id,
       return;
     final_payload = etl::span<const uint8_t>(enc_pl.data(), payload.size());
   }
-  etl::array<uint8_t, rpc::MAX_FRAME_SIZE> buffer;
   rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
   env.version = rpc::PROTOCOL_VERSION;
   env.command_id = command_id;
@@ -796,9 +796,7 @@ void BridgeClass::_transmit(uint16_t command_id, uint16_t sequence_id,
     env.payload_type.encrypted_payload_with_tag.size =
         static_cast<pb_size_t>(pl_size);
   }
-  size_t len = rpc::serialize_frame(env, buffer);
-  if (len > 0)
-    _packet_serial.send(_stream, etl::span<const uint8_t>(buffer.data(), len));
+  _serialize_and_send(env);
 }
 
 void BridgeClass::_flushPendingTxQueue() {

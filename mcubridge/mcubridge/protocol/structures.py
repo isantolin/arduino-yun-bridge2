@@ -147,122 +147,89 @@ def allows_topic(auth: pb.TopicAuthorization, topic: str, action: str) -> bool:
 # =============================================================================
 
 
-class RuntimeConfig:
-    """Strongly typed configuration for the daemon, backed by Protobuf."""
+# Type alias — RuntimeConfig IS pb.RuntimeConfig, no proxy layer needed.
+RuntimeConfig = pb.RuntimeConfig
 
-    pb_obj: pb.RuntimeConfig
 
-    def __init__(self, pb_msg: pb.RuntimeConfig | None = None, **kwargs: Any):
-        if pb_msg is None:
-            if not kwargs.get("bypass_defaults"):
-                from mcubridge.config.common import get_default_config
+def validate_config(cfg: pb.RuntimeConfig) -> None:
+    """Validate and normalize a RuntimeConfig in-place. [SIL-2]"""
+    from mcubridge.config.const import (
+        DEFAULT_SERIAL_SHARED_SECRET,
+        VOLATILE_STORAGE_PATHS,
+    )
 
-                defaults = get_default_config()
-                for k, v in defaults.items():
-                    if k not in kwargs:
-                        kwargs[k] = v
-            kwargs.pop("bypass_defaults", None)
-            if isinstance(kwargs.get("serial_shared_secret"), str):
-                kwargs["serial_shared_secret"] = kwargs["serial_shared_secret"].encode("utf-8")
-            self.pb_obj = pb.RuntimeConfig(**kwargs)
+    cfg.allowed_policy.CopyFrom(create_allowed_policy(cfg.allowed_commands))
+    del cfg.allowed_commands[:]
+    cfg.allowed_commands.extend(cfg.allowed_policy.entries)
+
+    if not any(getattr(cfg.topic_authorization, f.name) for f in cfg.topic_authorization.DESCRIPTOR.fields):
+        for field in [f.name for f in cfg.topic_authorization.DESCRIPTOR.fields]:
+            setattr(cfg.topic_authorization, field, True)
+
+    if not cfg.mqtt_topic or not any(filter(None, cfg.mqtt_topic.split("/"))):
+        raise ValueError("mqtt_topic must contain at least one segment")
+
+    if cfg.serial_response_timeout < cfg.serial_retry_timeout * 2:
+        raise ValueError("serial_response_timeout must be at least 2x serial_retry_timeout")
+
+    if cfg.watchdog_enabled and cfg.watchdog_interval < 0.5:
+        raise ValueError("watchdog_interval must be >= 0.5s when enabled")
+
+    if not cfg.serial_shared_secret:
+        raise ValueError("serial_shared_secret must be configured")
+
+    if cfg.serial_shared_secret == b"changeme123":
+        raise ValueError("serial_shared_secret placeholder is insecure")
+
+    unique_symbols = {byte for byte in cfg.serial_shared_secret}
+    if len(unique_symbols) < 4 and cfg.serial_shared_secret != DEFAULT_SERIAL_SHARED_SECRET:
+        raise ValueError("serial_shared_secret must contain at least four distinct bytes")
+
+    if cfg.file_storage_quota_bytes < cfg.file_write_max_bytes:
+        raise ValueError("file_storage_quota_bytes must be greater than or equal to file_write_max_bytes")
+
+    if cfg.mailbox_queue_bytes_limit < cfg.mailbox_queue_limit:
+        raise ValueError("mailbox_queue_bytes_limit must be greater than or equal to mailbox_queue_limit")
+
+    if not cfg.allow_non_tmp_paths:
+        if not any(cfg.mqtt_spool_dir.startswith(p) for p in VOLATILE_STORAGE_PATHS):
+            msg = f"FLASH PROTECTION: mqtt_spool_dir ({cfg.mqtt_spool_dir}) must be in volatile storage"
+            raise ValueError(msg)
+        if not any(cfg.file_system_root.startswith(p) for p in VOLATILE_STORAGE_PATHS):
+            raise ValueError(f"FLASH PROTECTION: file_system_root ({cfg.file_system_root}) must be in volatile storage")
+
+
+def get_ssl_context(cfg: pb.RuntimeConfig) -> Any | None:
+    """Create an ssl.SSLContext based on cfg. [SIL-2]"""
+    if not cfg.mqtt_tls:
+        return None
+
+    import ssl
+    from mcubridge.config.const import MQTT_TLS_MIN_VERSION
+
+    try:
+        if cfg.mqtt_cafile:
+            ca_path = Path(cfg.mqtt_cafile)
+            if not ca_path.exists():
+                raise RuntimeError(f"MQTT TLS CA file missing: {cfg.mqtt_cafile}")
+            context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH, cafile=str(ca_path))
         else:
-            self.pb_obj = pb_msg
-        self._validate()
+            context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
 
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self.pb_obj, name)
+        context.minimum_version = MQTT_TLS_MIN_VERSION
 
-    def __setattr__(self, name: str, value: Any) -> None:
-        if name == "pb_obj":
-            super().__setattr__(name, value)
-        else:
-            setattr(self.pb_obj, name, value)
+        if cfg.mqtt_tls_insecure:
+            context.check_hostname = False
+            context.verify_mode = ssl.CERT_NONE
 
-    def get_ssl_context(self) -> Any | None:
-        """Create an ssl.SSLContext based on the current configuration (SIL-2)."""
-        if not self.pb_obj.mqtt_tls:
-            return None
+        if cfg.mqtt_certfile or cfg.mqtt_keyfile:
+            if not (cfg.mqtt_certfile and cfg.mqtt_keyfile):
+                raise ValueError("Both mqtt_certfile and mqtt_keyfile must be provided for mTLS.")
+            context.load_cert_chain(cfg.mqtt_certfile, cfg.mqtt_keyfile)
 
-        import ssl
-        from mcubridge.config.const import MQTT_TLS_MIN_VERSION
-
-        try:
-            if self.pb_obj.mqtt_cafile:
-                ca_path = Path(self.pb_obj.mqtt_cafile)
-                if not ca_path.exists():
-                    raise RuntimeError(f"MQTT TLS CA file missing: {self.pb_obj.mqtt_cafile}")
-                context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH, cafile=str(ca_path))
-            else:
-                context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
-
-            context.minimum_version = MQTT_TLS_MIN_VERSION
-
-            if self.pb_obj.mqtt_tls_insecure:
-                context.check_hostname = False
-                context.verify_mode = ssl.CERT_NONE
-
-            if self.pb_obj.mqtt_certfile or self.pb_obj.mqtt_keyfile:
-                if not (self.pb_obj.mqtt_certfile and self.pb_obj.mqtt_keyfile):
-                    raise ValueError("Both mqtt_certfile and mqtt_keyfile must be provided for mTLS.")
-                context.load_cert_chain(self.pb_obj.mqtt_certfile, self.pb_obj.mqtt_keyfile)
-
-            return context
-        except (OSError, ssl.SSLError, ValueError) as exc:
-            raise RuntimeError(f"TLS setup failed: {exc}") from exc
-
-    @property
-    def tls_enabled(self) -> bool:
-        return self.pb_obj.mqtt_tls
-
-    def _validate(self) -> None:
-        from mcubridge.config.const import (
-            DEFAULT_SERIAL_SHARED_SECRET,
-            VOLATILE_STORAGE_PATHS,
-        )
-
-        self.pb_obj.allowed_policy.CopyFrom(create_allowed_policy(self.pb_obj.allowed_commands))
-        del self.pb_obj.allowed_commands[:]
-        self.pb_obj.allowed_commands.extend(self.pb_obj.allowed_policy.entries)
-
-        if not any(
-            getattr(self.pb_obj.topic_authorization, f.name) for f in self.pb_obj.topic_authorization.DESCRIPTOR.fields
-        ):
-            for field in [f.name for f in self.pb_obj.topic_authorization.DESCRIPTOR.fields]:
-                setattr(self.pb_obj.topic_authorization, field, True)
-
-        if not self.pb_obj.mqtt_topic or not any(filter(None, self.pb_obj.mqtt_topic.split("/"))):
-            raise ValueError("mqtt_topic must contain at least one segment")
-
-        if self.pb_obj.serial_response_timeout < self.pb_obj.serial_retry_timeout * 2:
-            raise ValueError("serial_response_timeout must be at least 2x serial_retry_timeout")
-
-        if self.pb_obj.watchdog_enabled and self.pb_obj.watchdog_interval < 0.5:
-            raise ValueError("watchdog_interval must be >= 0.5s when enabled")
-
-        if not self.pb_obj.serial_shared_secret:
-            raise ValueError("serial_shared_secret must be configured")
-
-        if self.pb_obj.serial_shared_secret == b"changeme123":
-            raise ValueError("serial_shared_secret placeholder is insecure")
-
-        unique_symbols = {byte for byte in self.pb_obj.serial_shared_secret}
-        if len(unique_symbols) < 4 and self.pb_obj.serial_shared_secret != DEFAULT_SERIAL_SHARED_SECRET:
-            raise ValueError("serial_shared_secret must contain at least four distinct bytes")
-
-        if self.pb_obj.file_storage_quota_bytes < self.pb_obj.file_write_max_bytes:
-            raise ValueError("file_storage_quota_bytes must be greater than or equal to file_write_max_bytes")
-
-        if self.pb_obj.mailbox_queue_bytes_limit < self.pb_obj.mailbox_queue_limit:
-            raise ValueError("mailbox_queue_bytes_limit must be greater than or equal to mailbox_queue_limit")
-
-        if not self.pb_obj.allow_non_tmp_paths:
-            if not any(self.pb_obj.mqtt_spool_dir.startswith(p) for p in VOLATILE_STORAGE_PATHS):
-                msg = f"FLASH PROTECTION: mqtt_spool_dir ({self.pb_obj.mqtt_spool_dir}) must be in volatile storage"
-                raise ValueError(msg)
-            if not any(self.pb_obj.file_system_root.startswith(p) for p in VOLATILE_STORAGE_PATHS):
-                raise ValueError(
-                    f"FLASH PROTECTION: file_system_root ({self.pb_obj.file_system_root}) must be in volatile storage"
-                )
+        return context
+    except (OSError, ssl.SSLError, ValueError) as exc:
+        raise RuntimeError(f"TLS setup failed: {exc}") from exc
 
 
 # =============================================================================
@@ -275,8 +242,6 @@ def _flatten_structured_value(
     value: Any,
     entries: list[pb.StructuredEntry],
 ) -> None:
-    if hasattr(value, "pb_obj"):
-        value = getattr(value, "pb_obj")
 
     if isinstance(value, ProtobufMessage):
         from google.protobuf.json_format import MessageToDict

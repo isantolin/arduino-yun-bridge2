@@ -18,7 +18,7 @@ from ..config.common import (
     get_default_config,
     get_uci_config,
 )
-from mcubridge.protocol.structures import RuntimeConfig
+from mcubridge.protocol.structures import RuntimeConfig, validate_config
 from mcubridge.protocol import mcubridge_pb2 as pb
 
 logger = structlog.get_logger(__name__)
@@ -141,7 +141,8 @@ def load_runtime_config(overrides: dict[str, Any] | None = None) -> RuntimeConfi
             setattr(msg, field.name, coerced)
 
     try:
-        return RuntimeConfig(msg)
+        validate_config(msg)
+        return msg
     except (ValueError, TypeError) as e:
         if source == "uci":
             logger.critical("FATAL: UCI configuration is invalid: %s", e)

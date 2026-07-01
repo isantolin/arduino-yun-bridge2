@@ -539,7 +539,7 @@ def create_runtime_state(config: RuntimeConfig | dict[str, Any]) -> RuntimeState
     else:
         cfg = config
 
-    cfg_dict = json_format.MessageToDict(cfg.pb_obj, preserving_proto_field_name=True)
+    cfg_dict = json_format.MessageToDict(cfg, preserving_proto_field_name=True)
 
     if "mqtt_topic" in cfg_dict:
         cfg_dict["mqtt_topic_prefix"] = cfg_dict.pop("mqtt_topic")

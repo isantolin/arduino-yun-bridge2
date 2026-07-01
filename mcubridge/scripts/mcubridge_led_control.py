@@ -8,13 +8,14 @@ import sys
 import argparse
 import aiomqtt
 from mcubridge.config.settings import load_runtime_config
+from mcubridge.protocol.structures import get_ssl_context
 from mcubridge.protocol.topics import Topic, topic_path
 
 
 async def do_publish(topic: str, payload: str) -> None:
     """Publish LED state using core configuration."""
     config = load_runtime_config()
-    tls_context = config.get_ssl_context()
+    tls_context = get_ssl_context(config)
 
     try:
         async with aiomqtt.Client(

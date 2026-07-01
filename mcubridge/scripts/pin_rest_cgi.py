@@ -14,7 +14,7 @@ from google.protobuf import json_format
 from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import load_runtime_config
 from mcubridge.protocol import mcubridge_pb2 as pb
-from mcubridge.protocol.structures import RuntimeConfig
+from mcubridge.protocol.structures import get_ssl_context, RuntimeConfig
 from mcubridge.protocol.topics import Topic, topic_path
 
 logger = logging.getLogger("mcubridge.pin_rest")
@@ -25,8 +25,8 @@ async def _publish_async(topic: str, payload: str, config: RuntimeConfig) -> Non
         hostname=config.mqtt_host,
         port=config.mqtt_port,
         username=config.mqtt_user or None,
-        password=config.mqtt_pass or None,
-        ssl_context=config.get_ssl_context(),
+        password=(config.mqtt_pass.encode("utf-8") if config.mqtt_pass else None),
+        ssl_context=get_ssl_context(config),
     ) as client:
         await client.publish(topic, payload.encode("utf-8"), qos=aiomqtt.QoS.AT_LEAST_ONCE)
 

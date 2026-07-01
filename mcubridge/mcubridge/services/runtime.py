@@ -65,6 +65,7 @@ from ..protocol.structures import (
     create_queued_publish,
     is_command_allowed,
     allows_topic,
+    get_ssl_context,
 )
 from ..protocol.topics import Topic, get_topic_for_message, parse_topic, topic_path
 from ..metrics import (
@@ -1402,7 +1403,7 @@ class BridgeService:
             logger.info("MQTT transport is DISABLED in configuration.")
             return
 
-        tls_context = self.config.get_ssl_context()
+        tls_context = get_ssl_context(self.config)
         reconnect_delay = max(1, self.config.reconnect_delay)
 
         retryer = tenacity.AsyncRetrying(

@@ -10,6 +10,7 @@ import structlog
 from typing import Any
 import aiomqtt
 from mcubridge.config.settings import load_runtime_config
+from mcubridge.protocol.structures import get_ssl_context
 
 # [SIL-2] Structured logging towards syslog/stderr
 logger = structlog.get_logger("mcubridge.hw-smoke")
@@ -22,7 +23,7 @@ class SmokeTester:
         self.results: dict[str, bool] = {}
 
     async def run(self, pin: int, timeout: float) -> None:
-        tls_context = self.config.get_ssl_context()
+        tls_context = get_ssl_context(self.config)
 
         try:
             async with aiomqtt.Client(

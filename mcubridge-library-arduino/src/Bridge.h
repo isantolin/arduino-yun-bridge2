@@ -347,6 +347,7 @@ class BridgeClass {
   static void _handleMailboxAvailableResponse(
       const rpc_pb_MailboxAvailableResponse& m);
 #endif
+  void _serialize_and_send(const rpc_pb_RpcEnvelope& env);
   [[nodiscard]] bool _sendFrameRaw(const rpc_pb_RpcEnvelope& env,
                                    uint16_t command_id);
   bool _sendEncryptedHelper(uint16_t raw_cmd, uint16_t seq,

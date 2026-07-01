@@ -75,7 +75,7 @@ async def test_handshake_rate_limiting(
 ) -> None:
     """Verify handshake rate limiting protects MCU from thrashing."""
     manager, state, _ = handshake_setup
-    getattr(manager, "_config").pb_obj.serial_handshake_min_interval = 1.0
+    getattr(manager, "_config").serial_handshake_min_interval = 1.0
 
     state.mark_synchronized()
     state.link_handshake_nonce = b"pending"

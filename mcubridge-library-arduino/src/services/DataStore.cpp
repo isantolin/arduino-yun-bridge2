@@ -6,11 +6,9 @@
 
 #if BRIDGE_ENABLE_DATASTORE
 
-template <typename T>
-DataStoreClass<T>::DataStoreClass() {}
+DataStoreClass::DataStoreClass() {}
 
-template <typename T>
-void DataStoreClass<T>::set(etl::string_view key,
+void DataStoreClass::set(etl::string_view key,
                             etl::span<const uint8_t> value) {
   rpc::payload::DatastorePut p = {};
   const size_t k_copy = etl::min(key.size(), sizeof(p.key) - 1U);
@@ -27,9 +25,8 @@ void DataStoreClass<T>::set(etl::string_view key,
   }
 }
 
-template <typename T>
-void DataStoreClass<T>::get(etl::string_view key,
-                            typename DataStoreClass<T>::GetHandler handler) {
+void DataStoreClass::get(etl::string_view key,
+                            typename DataStoreClass::GetHandler handler) {
   if (_pending_gets.full()) {
     Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
     return;
@@ -46,7 +43,7 @@ void DataStoreClass<T>::get(etl::string_view key,
     return;
   }
 
-  typename DataStoreClass<T>::PendingGet pending = {};
+  typename DataStoreClass::PendingGet pending = {};
   const size_t to_copy = etl::min(
       key.size(), static_cast<size_t>(rpc::RPC_MAX_DATASTORE_KEY_LENGTH));
   pending.key.assign(key.data(), to_copy);
@@ -54,12 +51,11 @@ void DataStoreClass<T>::get(etl::string_view key,
   _pending_gets.push(pending);
 }
 
-template <typename T>
-void DataStoreClass<T>::_onResponse(
+void DataStoreClass::_onResponse(
     const rpc::payload::DatastoreGetResponse& msg) {
   if (_pending_gets.empty()) return;
 
-  const typename DataStoreClass<T>::PendingGet pending = _pending_gets.front();
+  const typename DataStoreClass::PendingGet pending = _pending_gets.front();
   _pending_gets.pop();
   if (!pending.handler.is_valid()) return;
 
@@ -68,7 +64,6 @@ void DataStoreClass<T>::_onResponse(
                   etl::span<const uint8_t>(msg.value.bytes, msg.value.size));
 }
 
-template class DataStoreClass<void>;
 DataStoreType DataStore;
 
 #endif

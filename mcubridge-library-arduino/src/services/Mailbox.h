@@ -11,7 +11,6 @@
 
 #include "protocol/rpc_structs.h"
 
-template <typename T = void>
 class MailboxClass {
  public:
   using MessageCallback = etl::delegate<void(etl::span<const uint8_t>)>;
@@ -48,7 +47,7 @@ class MailboxClass {
   static etl::queue<MailboxMessage, 8> _queue;
 };
 
-using MailboxType = MailboxClass<>;
+using MailboxType = MailboxClass;
 extern MailboxType Mailbox;
 
 #endif

@@ -12,7 +12,6 @@
 
 #include "protocol/rpc_structs.h"
 
-template <typename T = void>
 class SPIServiceClass {
  public:
   SPIServiceClass();
@@ -29,7 +28,7 @@ class SPIServiceClass {
   SPISettings _settings;
 };
 
-using SPIServiceType = SPIServiceClass<>;
+using SPIServiceType = SPIServiceClass;
 extern SPIServiceType SPIService;
 
 #endif  // BRIDGE_ENABLE_SPI

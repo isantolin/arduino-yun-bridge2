@@ -21,11 +21,9 @@ void send_read_response(etl::span<const uint8_t> content) {
 }
 }  // namespace
 
-template <typename T>
-FileSystemClass<T>::FileSystemClass() {}
+FileSystemClass::FileSystemClass() {}
 
-template <typename T>
-void FileSystemClass<T>::write(etl::string_view path,
+void FileSystemClass::write(etl::string_view path,
                                etl::span<const uint8_t> data) {
   rpc::payload::FileWrite p = {};
   const size_t p_copy = etl::min(path.size(), sizeof(p.path) - 1U);
@@ -42,10 +40,9 @@ void FileSystemClass<T>::write(etl::string_view path,
   }
 }
 
-template <typename T>
-void FileSystemClass<T>::read(
+void FileSystemClass::read(
     etl::string_view path,
-    typename FileSystemClass<T>::FileSystemReadHandler handler) {
+    typename FileSystemClass::FileSystemReadHandler handler) {
   _read_handler = handler;
   rpc::payload::FileRead p = {};
   const size_t p_copy = etl::min(path.size(), sizeof(p.path) - 1U);
@@ -58,8 +55,7 @@ void FileSystemClass<T>::read(
   }
 }
 
-template <typename T>
-void FileSystemClass<T>::remove(etl::string_view path) {
+void FileSystemClass::remove(etl::string_view path) {
   rpc::payload::FileRemove p = {};
   const size_t p_copy = etl::min(path.size(), sizeof(p.path) - 1U);
   if (p_copy > 0U) {
@@ -69,8 +65,7 @@ void FileSystemClass<T>::remove(etl::string_view path) {
   }
 }
 
-template <typename T>
-void FileSystemClass<T>::_onWrite(const rpc::payload::FileWrite& msg) {
+void FileSystemClass::_onWrite(const rpc::payload::FileWrite& msg) {
   auto res = bridge::hal::writeFile(
       etl::string_view(msg.path),
       etl::span<const uint8_t>(msg.data.bytes, msg.data.size));
@@ -79,8 +74,7 @@ void FileSystemClass<T>::_onWrite(const rpc::payload::FileWrite& msg) {
   }
 }
 
-template <typename T>
-void FileSystemClass<T>::_onRead(const rpc::payload::FileRead& msg) {
+void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
   BRIDGE_FS_DEBUG("[DEBUG] FS: Reading file: %s\n", msg.path);
   size_t offset = 0;
   etl::array<uint8_t, kReadChunkSize> buffer;
@@ -123,16 +117,14 @@ void FileSystemClass<T>::_onRead(const rpc::payload::FileRead& msg) {
   }
 }
 
-template <typename T>
-void FileSystemClass<T>::_onRemove(const rpc::payload::FileRemove& msg) {
+void FileSystemClass::_onRemove(const rpc::payload::FileRemove& msg) {
   auto res = bridge::hal::removeFile(etl::string_view(msg.path));
   if (!Bridge.sendFrame(res ? rpc::StatusCode::STATUS_OK
                             : rpc::StatusCode::STATUS_ERROR)) {
   }
 }
 
-template <typename T>
-void FileSystemClass<T>::_onResponse(
+void FileSystemClass::_onResponse(
     const rpc::payload::FileReadResponse& msg) {
   if (_read_handler.is_valid()) {
     _read_handler(
@@ -140,7 +132,6 @@ void FileSystemClass<T>::_onResponse(
   }
 }
 
-template class FileSystemClass<void>;
 FileSystemType FileSystem;
 
 #endif

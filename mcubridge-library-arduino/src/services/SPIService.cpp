@@ -6,29 +6,24 @@
 
 /* [SIL-2] SPI implementation with timeout protection */
 
-template <typename T>
-SPIServiceClass<T>::SPIServiceClass()
+SPIServiceClass::SPIServiceClass()
     : _initialized(false), _settings(4000000, MSBFIRST, SPI_MODE0) {}
 
-template <typename T>
-void SPIServiceClass<T>::begin() {
+void SPIServiceClass::begin() {
   SPI.begin();
   _initialized = true;
 }
 
-template <typename T>
-void SPIServiceClass<T>::end() {
+void SPIServiceClass::end() {
   SPI.end();
   _initialized = false;
 }
 
-template <typename T>
-void SPIServiceClass<T>::setConfig(const rpc::payload::SpiConfig& config) {
+void SPIServiceClass::setConfig(const rpc::payload::SpiConfig& config) {
   _settings = SPISettings(config.frequency, config.bit_order, config.data_mode);
 }
 
-template <typename T>
-size_t SPIServiceClass<T>::transfer(etl::span<uint8_t> buffer) {
+size_t SPIServiceClass::transfer(etl::span<uint8_t> buffer) {
   if (!_initialized) return 0;
   if (buffer.empty()) return 0;
 
@@ -51,7 +46,6 @@ size_t SPIServiceClass<T>::transfer(etl::span<uint8_t> buffer) {
   return buffer.size();
 }
 
-template class SPIServiceClass<void>;
 SPIServiceType SPIService;
 
 #endif  // BRIDGE_ENABLE_SPI

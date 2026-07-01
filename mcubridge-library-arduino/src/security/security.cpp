@@ -13,6 +13,8 @@
 #include <wolfssl/wolfcrypt/hash.h>
 #include <wolfssl/wolfcrypt/hmac.h>
 #include <wolfssl/wolfcrypt/kdf.h>
+
+#include "../config/bridge_config.h"
 #undef min
 #undef max
 #define WOLFSSL_MISC_INCLUDED
@@ -24,21 +26,6 @@
 
 namespace rpc {
 namespace security {
-
-namespace {
-
-int aead_kat_encrypt(etl::span<const uint8_t> key,
-                     etl::span<const uint8_t> nonce,
-                     etl::span<const uint8_t> ad, etl::span<const uint8_t> in,
-                     etl::span<uint8_t> out, etl::span<uint8_t> tag) {
-  return wc_ChaCha20Poly1305_Encrypt(
-      const_cast<byte*>(key.data()), const_cast<byte*>(nonce.data()),
-      const_cast<byte*>(ad.data()), static_cast<word32>(ad.size()),
-      const_cast<byte*>(in.data()), static_cast<word32>(in.size()), out.data(),
-      tag.data());
-}
-
-}  // namespace
 
 // --- HKDF Implementation ---
 
@@ -154,7 +141,8 @@ bool validate_frame_nonce(etl::span<const uint8_t> nonce,
   if (nonce.size() < 12) return false;
   uint64_t counter = 0;
   const auto nonce_sub = nonce.subspan(4);
-  etl::byte_stream_reader n_reader(nonce_sub.data(), nonce_sub.size(), etl::endian::big);
+  etl::byte_stream_reader n_reader(nonce_sub.data(), nonce_sub.size(),
+                                   etl::endian::big);
   if (auto c_opt = n_reader.read<uint64_t>()) {
     counter = *c_opt;
   }
@@ -168,6 +156,21 @@ bool validate_frame_nonce(etl::span<const uint8_t> nonce,
 // --- Self-Tests Implementation ---
 
 #if BRIDGE_ENABLE_POST_TESTS
+
+namespace {
+
+int aead_kat_encrypt(etl::span<const uint8_t> key,
+                     etl::span<const uint8_t> nonce,
+                     etl::span<const uint8_t> ad, etl::span<const uint8_t> in,
+                     etl::span<uint8_t> out, etl::span<uint8_t> tag) {
+  return wc_ChaCha20Poly1305_Encrypt(
+      const_cast<byte*>(key.data()), const_cast<byte*>(nonce.data()),
+      const_cast<byte*>(ad.data()), static_cast<word32>(ad.size()),
+      const_cast<byte*>(in.data()), static_cast<word32>(in.size()), out.data(),
+      tag.data());
+}
+
+}  // namespace
 
 static constexpr etl::array<uint8_t, 3> kat_sha256_msg PROGMEM = {
     {'a', 'b', 'c'}};

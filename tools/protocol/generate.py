@@ -770,8 +770,6 @@ def ensure_nanopb_core_files() -> None:
                 sys.stderr.write(f"Error downloading {f}: {e}\n")
                 sys.exit(1)
 
-    pb_h = src_dir / "pb.h"
-
 
 def main() -> None:
     ensure_nanopb_core_files()

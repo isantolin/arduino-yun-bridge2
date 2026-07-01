@@ -169,25 +169,12 @@ class BridgeClass {
   template <typename T>
   [[nodiscard]] bool sendSinglePass(uint16_t command_id, uint16_t sequence_id,
                                     const T& packet) {
-    const bool is_system = (command_id >= rpc::RPC_STATUS_CODE_MIN &&
-                            command_id <= rpc::RPC_STATUS_CODE_MAX) ||
-                           (command_id >= rpc::RPC_SYSTEM_COMMAND_MIN &&
-                            command_id <= rpc::RPC_SYSTEM_COMMAND_MAX);
-    if (!_tx_enabled && !is_system) return false;
-
-    etl::array<uint8_t, rpc::MAX_FRAME_SIZE> buffer;
     rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
     env.version = rpc::PROTOCOL_VERSION;
     env.command_id = command_id;
     env.sequence_id = sequence_id;
     rpc::Payload::set<T>(env, packet);
-    size_t len = rpc::serialize_frame(env, buffer);
-    if (len > 0) {
-      _packet_serial.send(_stream,
-                          etl::span<const uint8_t>(buffer.data(), len));
-      return true;
-    }
-    return false;
+    return _sendFrameRaw(env, command_id);
   }
 
   template <typename T>
@@ -220,7 +207,8 @@ class BridgeClass {
   void onStatus(StatusHandler h) { _status_handler = h; }
   void flushStream() { _stream.flush(); }
 
-  void _dispatchCommand(const rpc_pb_RpcEnvelope& envelope);
+  __attribute__((noinline)) void _dispatchCommand(
+      const rpc_pb_RpcEnvelope& envelope);
   static void _onBootloaderDelay();
   void _onAckTimeout();
   void _onRxDedupe();
@@ -333,10 +321,10 @@ class BridgeClass {
   static void _handleSetPinMode(const rpc_pb_PinMode& m);
   static void _handleDigitalWrite(const rpc_pb_DigitalWrite& m);
   static void _handleAnalogWrite(const rpc_pb_AnalogWrite& m);
-  void _handleDigitalRead(const bridge::router::CommandContext& ctx,
-                          const rpc_pb_PinRead& m);
-  void _handleAnalogRead(const bridge::router::CommandContext& ctx,
-                         const rpc_pb_PinRead& m);
+  __attribute__((noinline)) void _handleDigitalRead(
+      const bridge::router::CommandContext& ctx, const rpc_pb_PinRead& m);
+  __attribute__((noinline)) void _handleAnalogRead(
+      const bridge::router::CommandContext& ctx, const rpc_pb_PinRead& m);
   static void _handleConsoleWrite(const rpc_pb_ConsoleWrite& m);
   static void _handleDataStoreGetResponse(
       const bridge::router::CommandContext& ctx,
@@ -365,6 +353,8 @@ class BridgeClass {
   static void _handleMailboxAvailableResponse(
       const rpc_pb_MailboxAvailableResponse& m);
 #endif
+  [[nodiscard]] bool _sendFrameRaw(const rpc_pb_RpcEnvelope& env,
+                                   uint16_t command_id);
   bool _sendEncryptedHelper(uint16_t raw_cmd, uint16_t seq,
                             const pb_msgdesc_t* fields, const void* packet);
 

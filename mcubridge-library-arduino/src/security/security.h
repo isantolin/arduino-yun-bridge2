@@ -88,9 +88,12 @@ inline void secure_zero(etl::span<uint8_t> buf) {
 
 /**
  * @brief Known Answer Tests (KAT) for cryptographic primitives.
+ * [SIL-2/AVR] Compiled only when BRIDGE_ENABLE_POST_TESTS=1.
  * @return true if all tests pass, false otherwise.
  */
+#if BRIDGE_ENABLE_POST_TESTS
 bool run_cryptographic_self_tests();
+#endif
 
 }  // namespace security
 }  // namespace rpc

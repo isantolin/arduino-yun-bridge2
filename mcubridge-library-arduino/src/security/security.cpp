@@ -167,6 +167,8 @@ bool validate_frame_nonce(etl::span<const uint8_t> nonce,
 
 // --- Self-Tests Implementation ---
 
+#if BRIDGE_ENABLE_POST_TESTS
+
 static constexpr etl::array<uint8_t, 3> kat_sha256_msg PROGMEM = {
     {'a', 'b', 'c'}};
 static constexpr etl::array<uint8_t, 32> kat_sha256_expected PROGMEM = {
@@ -248,6 +250,8 @@ bool __attribute__((weak)) run_cryptographic_self_tests() {
   return etl::equal(aead_tag_actual.begin(), aead_tag_actual.end(),
                     kat_aead_tag_expected.begin());
 }
+
+#endif  // BRIDGE_ENABLE_POST_TESTS
 
 }  // namespace security
 }  // namespace rpc

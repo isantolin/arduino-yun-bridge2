@@ -773,11 +773,15 @@ def ensure_nanopb_core_files() -> None:
     pb_h = src_dir / "pb.h"
     if pb_h.exists():
         content = pb_h.read_text(encoding="utf-8")
-        if "/* #define PB_BUFFER_ONLY 1 */" in content:
+        patched = content
+        if "/* #define PB_BUFFER_ONLY 1 */" in patched:
             sys.stderr.write("Configuring PB_BUFFER_ONLY in pb.h...\n")
-            pb_h.write_text(
-                content.replace("/* #define PB_BUFFER_ONLY 1 */", "#define PB_BUFFER_ONLY 1"), encoding="utf-8"
-            )
+            patched = patched.replace("/* #define PB_BUFFER_ONLY 1 */", "#define PB_BUFFER_ONLY 1")
+        if "/* #define PB_NO_ERRMSG 1 */" in patched:
+            sys.stderr.write("Configuring PB_NO_ERRMSG in pb.h...\n")
+            patched = patched.replace("/* #define PB_NO_ERRMSG 1 */", "#define PB_NO_ERRMSG 1")
+        if patched != content:
+            pb_h.write_text(patched, encoding="utf-8")
 
 
 def main() -> None:

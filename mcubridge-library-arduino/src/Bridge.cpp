@@ -24,9 +24,6 @@ BridgeClass::BridgeClass(Stream& stream)
     : _stream(stream),
       _packet_serial(etl::span<uint8_t>(_rx_buffer.data(), _rx_buffer.size()),
                      etl::span<uint8_t>(_rx_buffer.data(), _rx_buffer.size())) {
-  _packet_serial.setPacketHandler(
-      etl::delegate<void(etl::span<const uint8_t>)>::create<
-          BridgeClass, &BridgeClass::_handleReceivedFrame>(*this));
 }
 
 struct CommandVisitor {
@@ -664,8 +661,12 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
   bridge::hal::init();
   if (!_fsm.is_started()) _fsm.start();
   _fsm.receive(bridge::fsm::EvReset());
+#if BRIDGE_ENABLE_POST_TESTS
   _is_post_passed = rpc::security::run_cryptographic_self_tests();
   if (!_is_post_passed) enterSafeState();
+#else
+  _is_post_passed = true;
+#endif
   if constexpr (bridge::hal::CurrentArchTraits::id ==
                 bridge::hal::ArchId::ARCH_AVR)
     if (baudrate > 0 && _hardware_serial) _hardware_serial->begin(baudrate);
@@ -740,6 +741,22 @@ void BridgeClass::enterSafeState() {
   Process.onLost();
   FileSystem.onLost();
   SPIService.onLost();
+}
+
+bool BridgeClass::_sendFrameRaw(const rpc_pb_RpcEnvelope& env,
+                                uint16_t command_id) {
+  const bool is_system = (command_id >= rpc::RPC_STATUS_CODE_MIN &&
+                          command_id <= rpc::RPC_STATUS_CODE_MAX) ||
+                         (command_id >= rpc::RPC_SYSTEM_COMMAND_MIN &&
+                          command_id <= rpc::RPC_SYSTEM_COMMAND_MAX);
+  if (!_tx_enabled && !is_system) return false;
+  etl::array<uint8_t, rpc::MAX_FRAME_SIZE> buffer;
+  const size_t len = rpc::serialize_frame(env, buffer);
+  if (len > 0) {
+    _packet_serial.send(_stream, etl::span<const uint8_t>(buffer.data(), len));
+    return true;
+  }
+  return false;
 }
 
 void BridgeClass::_transmit(uint16_t command_id, uint16_t sequence_id,

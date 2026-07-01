@@ -10,7 +10,7 @@ not used.
 from __future__ import annotations
 
 import structlog
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 from pathlib import Path
 
 
@@ -18,10 +18,37 @@ from ..config.common import (
     get_default_config,
     get_uci_config,
 )
-from mcubridge.protocol.structures import RuntimeConfig, validate_config
+from mcubridge.protocol.structures import validate_config
 from mcubridge.protocol import mcubridge_pb2 as pb
 
 logger = structlog.get_logger(__name__)
+
+# [SIL-2] RuntimeConfig is pb.RuntimeConfig at type-check time (zero wrapper).
+# At runtime, this callable factory applies defaults + validate_config(),
+# preserving backward compatibility with direct construction from kwargs.
+if TYPE_CHECKING:
+    RuntimeConfig = pb.RuntimeConfig
+else:
+
+    def RuntimeConfig(  # type: ignore[misc]
+        pb_msg: pb.RuntimeConfig | None = None,
+        *,
+        bypass_defaults: bool = False,
+        **kwargs: Any,
+    ) -> pb.RuntimeConfig:
+        """Factory: create a validated pb.RuntimeConfig from kwargs or a pre-built message."""
+        if pb_msg is not None:
+            return pb_msg
+        if not bypass_defaults:
+            defaults = get_default_config()
+            for k, v in defaults.items():
+                if k not in kwargs:
+                    kwargs[k] = v
+        if isinstance(kwargs.get("serial_shared_secret"), str):
+            kwargs["serial_shared_secret"] = kwargs["serial_shared_secret"].encode("utf-8")
+        cfg = pb.RuntimeConfig(**kwargs)
+        validate_config(cfg)
+        return cfg
 
 
 def _load_raw_config() -> tuple[dict[str, Any], str]:

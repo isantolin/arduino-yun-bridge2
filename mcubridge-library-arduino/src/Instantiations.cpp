@@ -28,8 +28,11 @@ template class array<uint8_t, 256U>;
 template class delegate<void(rpc::StatusCode, etl::span<const uint8_t>)>;
 template class delegate<void(const rpc_pb_RpcEnvelope&)>;
 
-// Estructura de manejo de errores esperados para evitar excepciones dinámicas (Zero-Heap).
-template class expected<rpc_pb_RpcEnvelope, rpc::FrameError>;
+// NOTA DE SEGURIDAD (SIL-2): Se ha omitido la instanciación explícita de 'expected' debido a una
+// limitación de diseño en las aserciones de la ETL para arquitecturas host x86/64. Al instanciarse
+// explícitamente, el compilador g++ intenta compilar los caminos de error que retornan un
+// puntero nulo (ETL_NULLPTR) e inicializar con este una referencia C++, lo cual causa un error estándar.
+// La instanciación implícita en 'parse_frame' sigue funcionando de forma segura sin este problema.
 }  // namespace etl
 
 namespace rpc {

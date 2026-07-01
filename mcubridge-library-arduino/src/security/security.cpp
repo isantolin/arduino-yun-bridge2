@@ -98,7 +98,7 @@ bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
   etl::fill(out_nonce.begin(), out_nonce.end(), 0U);
   constexpr etl::string_view mcu_prefix("MCU");
   etl::copy_n(mcu_prefix.begin(), 3, out_nonce.begin());
-  etl::byte_stream_writer n_writer(out_nonce.data() + 4, 8, etl::endian::big);
+  etl::byte_stream_writer n_writer(out_nonce.subspan(4), etl::endian::big);
   n_writer.write<uint64_t>(current_nonce);
 
   payload::RpcEnvelope aad_env = {};
@@ -153,7 +153,8 @@ bool validate_frame_nonce(etl::span<const uint8_t> nonce,
                           uint64_t* last_seen_counter) {
   if (nonce.size() < 12) return false;
   uint64_t counter = 0;
-  etl::byte_stream_reader n_reader(nonce.data() + 4, 8, etl::endian::big);
+  const auto nonce_sub = nonce.subspan(4);
+  etl::byte_stream_reader n_reader(nonce_sub.data(), nonce_sub.size(), etl::endian::big);
   if (auto c_opt = n_reader.read<uint64_t>()) {
     counter = *c_opt;
   }

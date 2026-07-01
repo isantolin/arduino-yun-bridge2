@@ -30,7 +30,8 @@ etl::expected<rpc_pb_RpcEnvelope, FrameError> parse_frame(
   const size_t crc_offset = buffer.size() - CRC_TRAILER_SIZE;
   const uint32_t crc_calc = checksum::compute(buffer.subspan(0, crc_offset));
   uint32_t crc_received = 0;
-  etl::byte_stream_reader reader(buffer.data() + crc_offset, CRC_TRAILER_SIZE,
+  const auto crc_tail = buffer.subspan(crc_offset);
+  etl::byte_stream_reader reader(crc_tail.data(), crc_tail.size(),
                                  etl::endian::little);
   if (auto val = reader.read<uint32_t>()) {
     crc_received = *val;

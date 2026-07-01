@@ -6,11 +6,16 @@ PKG_VERSION:=0.22.1
 PKG_RELEASE:=1
 
 PYPI_NAME:=aiosqlite
+PKG_SOURCE:=$(PYPI_NAME)-$(PKG_VERSION).tar.gz
 PKG_HASH:=043e0bd78d32888c0a9ca90fc788b38796843360c855a7262a532813133a0650
 
-include ../../packages/lang/python/pypi.mk
+PKG_MAINTAINER:=Ignacio Santolin <isantolin@gmail.com>
+PKG_LICENSE:=MIT
+PKG_LICENSE_FILES:=LICENSE
+
+include $(TOPDIR)/feeds/packages/lang/python/pypi.mk
 include $(INCLUDE_DIR)/package.mk
-include ../../packages/lang/python/python3-package.mk
+include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
 
 define Package/python3-aiosqlite
   SECTION:=lang

@@ -6,11 +6,16 @@ PKG_VERSION:=7.35.1
 PKG_RELEASE:=1
 
 PYPI_NAME:=protobuf
+PKG_SOURCE:=$(PYPI_NAME)-$(PKG_VERSION).tar.gz
 PKG_HASH:=ce115a26fe0c39a2c29973d914d327e516a6455464489fe3cd1e51a1b354f81a
 
-include ../../packages/lang/python/pypi.mk
+PKG_MAINTAINER:=Ignacio Santolin <isantolin@gmail.com>
+PKG_LICENSE:=BSD-3-Clause
+PKG_LICENSE_FILES:=LICENSE
+
+include $(TOPDIR)/feeds/packages/lang/python/pypi.mk
 include $(INCLUDE_DIR)/package.mk
-include ../../packages/lang/python/python3-package.mk
+include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
 
 define Package/python3-protobuf
   SECTION:=lang

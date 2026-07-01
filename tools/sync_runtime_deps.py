@@ -200,6 +200,19 @@ def _parse_pip_spec(spec: str) -> tuple[str, str]:
     return name, version.strip()
 
 
+def _normalize_apk_version(version: str) -> str:
+    """Convert Python pre-release notation to APK (Alpine) version notation.
+
+    APK requires _alpha/_beta/_rc/_pre suffixes, not Python's a/b/rc/dev.
+    Examples: 3.0.0a1 -> 3.0.0_alpha1, 2.1b2 -> 2.1_beta2, 1.0rc3 -> 1.0_rc3
+    """
+    version = re.sub(r"(\d)a(\d+)$", r"\1_alpha\2", version)
+    version = re.sub(r"(\d)b(\d+)$", r"\1_beta\2", version)
+    version = re.sub(r"(\d)rc(\d+)$", r"\1_rc\2", version)
+    version = re.sub(r"\.dev(\d+)$", r"_pre\1", version)
+    return version
+
+
 def _fetch_latest_version(package_name: str) -> str | None:
     """Query PyPI JSON API for the latest release version."""
     url = f"https://pypi.org/pypi/{package_name}/json"
@@ -241,13 +254,14 @@ def update_feeds(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
         if not version:
             continue
 
+        apk_version = _normalize_apk_version(version)
         makefile = FEEDS_DIR / openwrt_pkg / "Makefile"
         if not makefile.exists():
             continue
 
         content = makefile.read_text(encoding="utf-8")
-        # Update PKG_VERSION
-        new_content = re.sub(r"PKG_VERSION:=[^\n]+", f"PKG_VERSION:={version}", content)
+        # Update PKG_VERSION with APK-normalized version
+        new_content = re.sub(r"PKG_VERSION:=[^\n]+", f"PKG_VERSION:={apk_version}", content)
 
         # When version changes, PKG_RELEASE should typically reset to 1
         if new_content != content:

@@ -932,15 +932,15 @@ void BridgeClass::_handleDataStoreGetResponse(
 #if BRIDGE_ENABLE_MAILBOX
 void BridgeClass::_handleMailboxPush(const bridge::router::CommandContext&,
                                      const rpc_pb_MailboxPush& m) {
-  MailboxClass<>::_onPush(m);
+  MailboxClass::_onPush(m);
 }
 void BridgeClass::_handleMailboxReadResponse(
     const rpc_pb_MailboxReadResponse& m) {
-  MailboxClass<>::_onReadResponse(m);
+  MailboxClass::_onReadResponse(m);
 }
 void BridgeClass::_handleMailboxAvailableResponse(
     const rpc_pb_MailboxAvailableResponse& m) {
-  MailboxClass<>::_onAvailableResponse(m);
+  MailboxClass::_onAvailableResponse(m);
 }
 #endif
 

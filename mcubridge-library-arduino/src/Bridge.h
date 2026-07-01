@@ -27,9 +27,7 @@
 #include <etl/pool.h>
 #include <etl/span.h>
 #include <etl/string_view.h>
-#include <etl/variant.h>
 #include <etl/vector.h>
-#include <etl/visitor.h>
 
 #include "config/bridge_config.h"
 #include "etl_ext/CounterIterator.h"
@@ -62,41 +60,6 @@ struct CommandContext {
         sequence_id(seq),
         is_duplicate(dup),
         requires_ack(ack) {}
-};
-
-using DecodedCommand =
-    etl::variant<etl::monostate, rpc_pb_AckPacket, rpc_pb_LinkSync,
-                 rpc_pb_SetBaudratePacket, rpc_pb_EnterBootloader,
-                 rpc_pb_PinMode, rpc_pb_DigitalWrite, rpc_pb_AnalogWrite,
-                 rpc_pb_PinRead, rpc_pb_ConsoleWrite
-#if BRIDGE_ENABLE_DATASTORE
-                 ,
-                 rpc_pb_DatastoreGetResponse
-#endif
-#if BRIDGE_ENABLE_MAILBOX
-                 ,
-                 rpc_pb_MailboxPush, rpc_pb_MailboxReadResponse,
-                 rpc_pb_MailboxAvailableResponse
-#endif
-#if BRIDGE_ENABLE_FILESYSTEM
-                 ,
-                 rpc_pb_FileWrite, rpc_pb_FileRead, rpc_pb_FileRemove,
-                 rpc_pb_FileReadResponse
-#endif
-#if BRIDGE_ENABLE_PROCESS
-                 ,
-                 rpc_pb_ProcessKill, rpc_pb_ProcessRunAsyncResponse,
-                 rpc_pb_ProcessPollResponse
-#endif
-#if BRIDGE_ENABLE_SPI
-                 ,
-                 rpc_pb_SpiTransfer, rpc_pb_SpiConfig
-#endif
-                 >;
-
-struct DecodedResult {
-  bool success = false;
-  DecodedCommand command;
 };
 
 }  // namespace router
@@ -306,11 +269,6 @@ class BridgeClass {
   static __attribute__((noinline)) bool _decodePayload(
       const bridge::router::CommandContext& ctx, const pb_msgdesc_t* fields,
       void* dest, pb_size_t expected_tag, size_t struct_size);
-
-  bridge::router::DecodedResult _decodePayloadToVariant(
-      const bridge::router::CommandContext& ctx);
-
-  friend struct CommandVisitor;
 
   static void _handleSetPinMode(const rpc_pb_PinMode& m);
   static void _handleDigitalWrite(const rpc_pb_DigitalWrite& m);

@@ -16,9 +16,9 @@ constexpr int32_t kProcessInvalidPid = -1;
 
 ProcessClass::ProcessClass() {}
 
-void ProcessClass::runAsync(
-    etl::string_view cmd, etl::span<const etl::string_view> args,
-    typename ProcessClass::ProcessRunHandler handler) {
+void ProcessClass::runAsync(etl::string_view cmd,
+                            etl::span<const etl::string_view> args,
+                            typename ProcessClass::ProcessRunHandler handler) {
   if (handler.is_valid() && Process._pending_run_async.full()) {
     Bridge.emitStatus(
         rpc::StatusCode::STATUS_ERROR,
@@ -72,8 +72,8 @@ void ProcessClass::runAsync(
   if (handler.is_valid()) Process._pending_run_async.push({handler});
 }
 
-void ProcessClass::poll(
-    int32_t pid, typename ProcessClass::ProcessPollHandler handler) {
+void ProcessClass::poll(int32_t pid,
+                        typename ProcessClass::ProcessPollHandler handler) {
   if (handler.is_valid() && _pending_polls.full()) {
     Bridge.emitStatus(
         rpc::StatusCode::STATUS_ERROR,

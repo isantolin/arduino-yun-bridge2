@@ -30,8 +30,7 @@ void MailboxClass::push(etl::span<const uint8_t> data) {
 
 typename MailboxClass::MessageCallback MailboxClass::_message_callback;
 
-typename MailboxClass::AvailableCallback
-    MailboxClass::_available_callback;
+typename MailboxClass::AvailableCallback MailboxClass::_available_callback;
 
 etl::queue<typename MailboxClass::MailboxMessage, 8> MailboxClass::_queue;
 
@@ -84,9 +83,7 @@ void MailboxClass::process() {
   }
 }
 
-void MailboxClass::onLost() {
-  _queue.clear();
-}
+void MailboxClass::onLost() { _queue.clear(); }
 
 MailboxType Mailbox;
 

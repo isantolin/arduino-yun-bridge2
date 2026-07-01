@@ -24,7 +24,7 @@ void send_read_response(etl::span<const uint8_t> content) {
 FileSystemClass::FileSystemClass() {}
 
 void FileSystemClass::write(etl::string_view path,
-                               etl::span<const uint8_t> data) {
+                            etl::span<const uint8_t> data) {
   rpc::payload::FileWrite p = {};
   const size_t p_copy = etl::min(path.size(), sizeof(p.path) - 1U);
   if (p_copy > 0U) {
@@ -124,8 +124,7 @@ void FileSystemClass::_onRemove(const rpc::payload::FileRemove& msg) {
   }
 }
 
-void FileSystemClass::_onResponse(
-    const rpc::payload::FileReadResponse& msg) {
+void FileSystemClass::_onResponse(const rpc::payload::FileReadResponse& msg) {
   if (_read_handler.is_valid()) {
     _read_handler(
         etl::span<const uint8_t>(msg.content.bytes, msg.content.size));

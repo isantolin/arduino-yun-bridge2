@@ -305,7 +305,7 @@ class BridgeClass {
 
   static __attribute__((noinline)) bool _decodePayload(
       const bridge::router::CommandContext& ctx, const pb_msgdesc_t* fields,
-      void* dest, pb_size_t expected_tag);
+      void* dest, pb_size_t expected_tag, size_t struct_size);
 
   bridge::router::DecodedResult _decodePayloadToVariant(
       const bridge::router::CommandContext& ctx);

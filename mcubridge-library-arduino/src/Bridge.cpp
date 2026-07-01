@@ -1174,7 +1174,7 @@ void BridgeClass::signalXon() {
 
 bool BridgeClass::_decodePayload(const bridge::router::CommandContext& ctx,
                                  const pb_msgdesc_t* fields, void* dest,
-                                 pb_size_t expected_tag) {
+                                 pb_size_t expected_tag, size_t struct_size) {
   if (ctx.envelope->which_payload_type ==
       rpc_pb_RpcEnvelope_encrypted_payload_with_tag_tag) {
     pb_istream_t stream = pb_istream_from_buffer(
@@ -1183,7 +1183,7 @@ bool BridgeClass::_decodePayload(const bridge::router::CommandContext& ctx,
     return pb_decode_noinit(&stream, fields, dest);
   } else if (ctx.envelope->which_payload_type == expected_tag) {
     etl::copy_n(reinterpret_cast<const uint8_t*>(&ctx.envelope->payload_type),
-                fields->msg_size, reinterpret_cast<uint8_t*>(dest));
+                struct_size, reinterpret_cast<uint8_t*>(dest));
     return true;
   }
   return false;

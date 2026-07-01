@@ -35,7 +35,7 @@ Aprovecha las capacidades de **MQTT v5** para correlacionar peticiones y respues
 
 ## Dependencias empaquetadas
 
-Los scripts reutilizan las mismas dependencias instaladas en la MCU por `3_install.sh`: `aiomqtt` (v3), `mqtt5`, `paho-mqtt`, `cobs` y `prometheus-client`.
+Los scripts reutilizan las mismas dependencias instaladas en la MCU por `3_install.sh`: `aiomqtt` (v3), `mqtt5`, `cobs` y `prometheus-client`.
 
 Si ejecutas los ejemplos directamente desde el repositorio, instala las dependencias:
 
@@ -43,7 +43,6 @@ Si ejecutas los ejemplos directamente desde el repositorio, instala las dependen
 pip install \
 	"aiomqtt>=3.0.0a1,<4" \
 	"mqtt5>=0.5.0,<1" \
-	"paho-mqtt>=2.1,<3" \
 	"prometheus-client>=0.20,<1" \
 	"tenacity>=9.0,<10" \
 	"cobs>=1.2,<2"

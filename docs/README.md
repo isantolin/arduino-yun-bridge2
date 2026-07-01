@@ -60,7 +60,7 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 
 
 - Especificación única del protocolo en `../tools/protocol/mcubridge.proto` con generador (`../tools/protocol/generate.py`) que emite `../mcubridge/mcubridge/rpc/protocol.py` y `../mcubridge-library-arduino/src/protocol/rpc_protocol.h`, garantizando consistencia MCU↔MPU.
-- Migración del stack MQTT a **aiomqtt 3.0.0a1** con decodificador de bajo nivel escrito en Rust (`mqtt5` 0.5.0): el daemon usa la API idiomática nativa de `aiomqtt` v3, ofreciendo compatibilidad completa con MQTT v5 de forma nativa sin depender de la biblioteca `paho-mqtt` para la ejecución del daemon asíncrono o los scripts CGI, reduciendo de manera drástica el overhead de memoria y CPU y eliminando por completo la dependencia de `paho-mqtt` del ecosistema.
+- Migración del stack MQTT a **aiomqtt 3.0.0a1** con decodificador de bajo nivel escrito en Rust (`mqtt5` 0.5.0): el daemon usa la API idiomática nativa de `aiomqtt` v3, ofreciendo compatibilidad completa con MQTT v5 de forma nativa, reduciendo de manera drástica el overhead de memoria y CPU.
 - **Correlación automática de peticiones MQTT v5:** todas las respuestas generadas por el daemon reutilizan `response_topic` y `correlation_data` cuando el cliente lo solicita. Además, se adjuntan propiedades de usuario (`bridge-request-topic`, `bridge-pin`, `bridge-datastore-key`, `bridge-file-path`, `bridge-process-pid`, etc.) y `message_expiry_interval` específicos por servicio para que los consumidores puedan validar el contexto original incluso cuando los mensajes pasan por brokers compartidos.
 - Revisión manual de los bindings regenerados ejecutando `console_test.py`, `led13_test.py` y `datastore_test.py` del paquete `mcubridge-client-examples`, confirmando compatibilidad funcional.
 - Instrumentación de logging en `../mcubridge/mcubridge/daemon.py` para diferenciar errores de COBS decode de fallos al parsear frames, facilitando el diagnóstico de problemas en serie.
@@ -216,7 +216,7 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 
 > ¿Buscas detalles adicionales sobre flujos internos, controles de seguridad, observabilidad y el contrato del protocolo? Revisa [`PROTOCOL.md`](PROTOCOL.md) para obtener el documento actualizado.
 
-> **Nota:** Todas las dependencias del daemon se compilan localmente como APKs en `feeds/` y se instalan desde `bin/` durante `3_install.sh`. Las librerías Python (`aiomqtt`, `mqtt5`, `paho-mqtt`, `cobs`, `prometheus-client`) tienen sus propios Makefiles en el feed `mcubridge`. El inventario completo vive en `../requirements/runtime.toml`; ejecuta `./tools/sync_runtime_deps.py` tras modificarlo para regenerar `requirements/runtime.txt` y refrescar los Makefiles.
+> **Nota:** Todas las dependencias del daemon se compilan localmente como APKs en `feeds/` y se instalan desde `bin/` durante `3_install.sh`. Las librerías Python (`aiomqtt`, `mqtt5`, `cobs`, `prometheus-client`) tienen sus propios Makefiles en el feed `mcubridge`. El inventario completo vive en `../requirements/runtime.toml`; ejecuta `./tools/sync_runtime_deps.py` tras modificarlo para regenerar `requirements/runtime.txt` y refrescar los Makefiles.
 
 ## Primeros Pasos
 

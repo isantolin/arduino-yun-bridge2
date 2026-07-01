@@ -18,7 +18,6 @@ class SqliteDeque:
     """SIL-2 persistent queue implementation over aiosqlite.
 
     Provides append/popleft with O(1) complexity.
-    Opens/closes DB on each operation to ensure safety and simplicity.
     """
 
     def __init__(self, path: str, maxlen: int | None = None) -> None:
@@ -58,16 +57,21 @@ class SqliteDeque:
                     logger.warning("Failed to unlink target path", path=str(target_path), error=exc)
         self._length = 0
 
+    @staticmethod
+    async def _init_deque_db(conn: aiosqlite.Connection) -> None:
+        """Apply WAL pragmas and ensure the deque schema exists."""
+        await conn.execute("PRAGMA journal_mode=WAL;")
+        await conn.execute("PRAGMA synchronous=NORMAL;")
+        await conn.execute(
+            "CREATE TABLE IF NOT EXISTS deque (id INTEGER PRIMARY KEY AUTOINCREMENT, item BLOB NOT NULL)"
+        )
+        await conn.commit()
+
     async def _execute(self, func: Callable[[aiosqlite.Connection], Awaitable[T]]) -> T:
         conn = None
         try:
             conn = await aiosqlite.connect(self.path)
-            await conn.execute("PRAGMA journal_mode=WAL;")
-            await conn.execute("PRAGMA synchronous=NORMAL;")
-            await conn.execute(
-                "CREATE TABLE IF NOT EXISTS deque (id INTEGER PRIMARY KEY AUTOINCREMENT, item BLOB NOT NULL)"
-            )
-            await conn.commit()
+            await self._init_deque_db(conn)
             res = await func(conn)
             await conn.commit()
             return res
@@ -78,12 +82,7 @@ class SqliteDeque:
                 await asyncio.shield(conn.close())
                 conn = None
             conn = await aiosqlite.connect(self.path)
-            await conn.execute("PRAGMA journal_mode=WAL;")
-            await conn.execute("PRAGMA synchronous=NORMAL;")
-            await conn.execute(
-                "CREATE TABLE IF NOT EXISTS deque (id INTEGER PRIMARY KEY AUTOINCREMENT, item BLOB NOT NULL)"
-            )
-            await conn.commit()
+            await self._init_deque_db(conn)
             res = await func(conn)
             await conn.commit()
             return res
@@ -168,14 +167,19 @@ class SqliteCache:
                 except OSError as exc:
                     logger.warning("Failed to unlink target path", path=str(target_path), error=exc)
 
+    @staticmethod
+    async def _init_cache_db(conn: aiosqlite.Connection) -> None:
+        """Apply WAL pragmas and ensure the cache schema exists."""
+        await conn.execute("PRAGMA journal_mode=WAL;")
+        await conn.execute("PRAGMA synchronous=NORMAL;")
+        await conn.execute("CREATE TABLE IF NOT EXISTS cache (key TEXT PRIMARY KEY, value BLOB NOT NULL)")
+        await conn.commit()
+
     async def _execute(self, func: Callable[[aiosqlite.Connection], Awaitable[T]]) -> T:
         conn = None
         try:
             conn = await aiosqlite.connect(self.path)
-            await conn.execute("PRAGMA journal_mode=WAL;")
-            await conn.execute("PRAGMA synchronous=NORMAL;")
-            await conn.execute("CREATE TABLE IF NOT EXISTS cache (key TEXT PRIMARY KEY, value BLOB NOT NULL)")
-            await conn.commit()
+            await self._init_cache_db(conn)
             res = await func(conn)
             await conn.commit()
             return res
@@ -186,10 +190,7 @@ class SqliteCache:
                 await asyncio.shield(conn.close())
                 conn = None
             conn = await aiosqlite.connect(self.path)
-            await conn.execute("PRAGMA journal_mode=WAL;")
-            await conn.execute("PRAGMA synchronous=NORMAL;")
-            await conn.execute("CREATE TABLE IF NOT EXISTS cache (key TEXT PRIMARY KEY, value BLOB NOT NULL)")
-            await conn.commit()
+            await self._init_cache_db(conn)
             res = await func(conn)
             await conn.commit()
             return res

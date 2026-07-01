@@ -370,8 +370,10 @@ class BridgeService:
                     val = cast(Any, getattr(connack_packet, "topic_alias_max", 0))
                     if isinstance(val, int) and not isinstance(val, bool):
                         topic_alias_max = val
-                except Exception:
-                    pass
+                except asyncio.CancelledError as exc:
+                    logger.debug("CONNACK future was cancelled; topic_alias_max defaults to 0", error=exc)
+                except (AttributeError, TypeError) as exc:
+                    logger.debug("CONNACK packet has no topic_alias_max attribute", error=exc)
 
         pub_message = message
         if topic_alias_max > 0:
@@ -445,14 +447,14 @@ class BridgeService:
             if self._mqtt_spool is not None:
                 try:
                     await self._mqtt_spool.close()
-                except Exception:
-                    pass
+                except (aiosqlite.Error, OSError) as exc:
+                    logger.debug("mqtt_spool close failed during teardown", error=exc)
                 self._mqtt_spool = None
             if self.state and self.state.datastore_cache is not None:
                 try:
                     await self.state.datastore_cache.close()
-                except Exception:
-                    pass
+                except (aiosqlite.Error, OSError) as exc:
+                    logger.debug("datastore_cache close failed during teardown", error=exc)
                 self.state.datastore_cache = None
             self.cleanup()
 

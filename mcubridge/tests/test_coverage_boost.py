@@ -77,9 +77,10 @@ def test_frame_coverage_boost() -> None:
 
 
 def test_security_coverage_boost() -> None:
-    # 1. secure_zero exception path using mock patch
+    # 1. secure_zero propagates exceptions (security violation = explicit error [SIL-2])
     with patch("ctypes.memset", side_effect=TypeError("mock error")):
-        secure_zero(bytearray(b"test"))
+        with pytest.raises(TypeError, match="mock error"):
+            secure_zero(bytearray(b"test"))
 
     # 2. extract_nonce_counter invalid length
     with pytest.raises(ValueError, match="Nonce must be 12 bytes"):

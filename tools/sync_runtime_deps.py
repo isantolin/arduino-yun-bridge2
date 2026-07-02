@@ -250,7 +250,7 @@ def update_feeds(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
         if not openwrt_pkg or not openwrt_pkg.startswith("python3-"):
             continue
 
-        _, version = _parse_pip_spec(dep.get("pip", ""))
+        pip_name, version = _parse_pip_spec(dep.get("pip", ""))
         if not version:
             continue
 
@@ -266,6 +266,15 @@ def update_feeds(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
         # When version changes, PKG_RELEASE should typically reset to 1
         if new_content != content:
             new_content = re.sub(r"PKG_RELEASE:=[^\n]+", "PKG_RELEASE:=1", new_content)
+
+        # If PKG_SOURCE is explicitly set and version notation differs (pre-release),
+        # keep it in sync using the original Python version notation, not APK.
+        if version != apk_version and "PKG_SOURCE:=" in new_content:
+            new_content = re.sub(
+                r"PKG_SOURCE:=[^\n]+\.tar\.gz",
+                f"PKG_SOURCE:={pip_name}-{version}.tar.gz",
+                new_content,
+            )
 
         if new_content != content:
             any_updated = True

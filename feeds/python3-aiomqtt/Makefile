@@ -12,6 +12,11 @@ PKG_LICENSE:=BSD-3-Clause
 PKG_LICENSE_FILES:=LICENSE
 
 include $(TOPDIR)/feeds/packages/lang/python/pypi.mk
+
+# PyPI distributes pre-release tarballs with Python notation (e.g. 3.0.0a1),
+# not APK notation (3.0.0_alpha1). Override PKG_SOURCE after pypi.mk include.
+PKG_SOURCE:=aiomqtt-3.0.0a1.tar.gz
+
 include $(INCLUDE_DIR)/package.mk
 include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
 

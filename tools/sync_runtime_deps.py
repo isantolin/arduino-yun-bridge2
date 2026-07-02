@@ -260,22 +260,42 @@ def update_feeds(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
 
         content = makefile.read_text(encoding="utf-8")
 
-        # Packages that include pypi.mk must use Python notation for PKG_VERSION
-        # so that pypi.mk's host-pip-requirements version check passes.
-        # Packages that do NOT include pypi.mk use APK notation (e.g. 3.0.0_alpha1)
-        # because apk mkpkg enforces Alpine versioning rules.
-        # Detect if pypi.mk is actually included (not just mentioned in comments).
+        # Packages that include pypi.mk AND declare PYTHON3_PKG_WHEEL_VERSION use
+        # a split notation: PKG_VERSION is APK notation (for apk mkpkg), while
+        # PYTHON3_PKG_WHEEL_VERSION stays in Python notation (for wheel glob matching).
+        # Packages that include pypi.mk WITHOUT the wheel override use Python notation.
+        # Packages without pypi.mk use APK notation with explicit source/builddir.
         uses_pypi_mk = bool(re.search(r"^\s*include\b.*\bpypi\.mk\b", content, re.MULTILINE))
-        pkg_version = version if uses_pypi_mk else _to_apk_version(version)
+        has_wheel_version_override = "PYTHON3_PKG_WHEEL_VERSION:=" in content
 
-        new_content = re.sub(r"PKG_VERSION:=[^\n]+", f"PKG_VERSION:={pkg_version}", content)
-
-        # When version changes, PKG_RELEASE should typically reset to 1
-        if new_content != content:
-            new_content = re.sub(r"PKG_RELEASE:=[^\n]+", "PKG_RELEASE:=1", new_content)
-
-        # For non-pypi.mk packages, PKG_SOURCE and PKG_BUILD_DIR use Python notation.
-        if not uses_pypi_mk:
+        if uses_pypi_mk and has_wheel_version_override:
+            # Pre-release: APK version for PKG_VERSION, Python version for wheel glob.
+            pkg_version = _to_apk_version(version)
+            new_content = re.sub(r"PKG_VERSION:=[^\n]+", f"PKG_VERSION:={pkg_version}", content)
+            new_content = re.sub(
+                r"PYTHON3_PKG_WHEEL_VERSION:=[^\n]+",
+                f"PYTHON3_PKG_WHEEL_VERSION:={version}",
+                new_content,
+            )
+            # PKG_SOURCE and PKG_BUILD_DIR use Python notation (tarball uses 3.0.0a1)
+            new_content = re.sub(
+                r"PKG_SOURCE:=[^\n]+\.tar\.gz",
+                f"PKG_SOURCE:={pip_name}-{version}.tar.gz",
+                new_content,
+            )
+            new_content = re.sub(
+                r"PKG_BUILD_DIR:=[^\n]+",
+                f"PKG_BUILD_DIR:=$(BUILD_DIR)/pypi/{pip_name}-{version}",
+                new_content,
+            )
+        elif uses_pypi_mk:
+            # Standard pypi.mk package: Python notation throughout.
+            pkg_version = version
+            new_content = re.sub(r"PKG_VERSION:=[^\n]+", f"PKG_VERSION:={pkg_version}", content)
+        else:
+            # Non-pypi.mk package: APK notation for PKG_VERSION, Python for source/builddir.
+            pkg_version = _to_apk_version(version)
+            new_content = re.sub(r"PKG_VERSION:=[^\n]+", f"PKG_VERSION:={pkg_version}", content)
             new_content = re.sub(
                 r"PKG_SOURCE:=[^\n]+\.tar\.gz",
                 f"PKG_SOURCE:={pip_name}-{version}.tar.gz",

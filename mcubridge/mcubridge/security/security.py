@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import ctypes
 import secrets
-import structlog
 from typing import Final
 from cryptography.hazmat.primitives import hashes, hmac
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
@@ -27,17 +26,19 @@ NONCE_TOTAL_BYTES: Final[int] = AEAD_NONCE_SIZE
 AEAD_TAG_SIZE: Final[int] = protocol.AEAD_TAG_SIZE
 NONCE_RANDOM_BYTES: Final[int] = 4
 NONCE_COUNTER_BYTES: Final[int] = 8
-logger = structlog.get_logger("mcubridge.security")
 
 
 def secure_zero(data: bytearray | memoryview) -> None:
-    """Securely zero memory, resistant to interpreter optimization."""
+    """Securely zero memory, resistant to interpreter optimization. [MIL-SPEC]
+
+    The first pass (slice assignment) zeroes the Python-visible buffer.
+    The second pass (ctypes.memset) defeats compiler/interpreter dead-store
+    elimination on the underlying C memory.  Both passes MUST succeed;
+    a failure in either is a security violation and propagates as-is.
+    """
     data[:] = protocol.FRAME_DELIMITER * len(data)
-    try:
-        buf = (ctypes.c_char * len(data)).from_buffer(data)
-        ctypes.memset(ctypes.addressof(buf), 0, len(data))
-    except (TypeError, ValueError, AttributeError) as exc:
-        logger.warning("secure_zero: failed to zero memory", error=exc)
+    buf = (ctypes.c_char * len(data)).from_buffer(data)
+    ctypes.memset(ctypes.addressof(buf), 0, len(data))
 
 
 def generate_nonce_with_counter(counter: int) -> tuple[bytes, int]:

@@ -12,6 +12,7 @@ from . import mcubridge_pb2 as pb
 import asyncio
 import enum
 import functools
+import itertools
 import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
@@ -25,12 +26,10 @@ from typing import (
 
 
 def iter_chunks(data: bytes, chunk_size: int) -> Iterable[bytes]:
-    """Zero-copy chunking using memoryview for maximum throughput. [SIL-2]"""
+    """Chunk bytes into fixed-size pieces using itertools.batched. [SIL-2]"""
     if not data:
         return
-    view = memoryview(data)
-    for i in range(0, len(data), chunk_size):
-        yield bytes(view[i : i + chunk_size])
+    yield from (bytes(chunk) for chunk in itertools.batched(data, chunk_size))
 
 
 PROTOBUF_CONTENT_TYPE: Final[str] = "application/x-protobuf"
@@ -44,11 +43,7 @@ _TOKEN_SEP: Final = re.compile(r"[,\s]+")
 def _get_action_lookup_map() -> dict[str, Any]:
     from .protocol import FileAction, ShellAction, SystemAction
 
-    mapping: dict[str, Any] = {}
-    for enum_cls in (FileAction, ShellAction, SystemAction):
-        for e in enum_cls:
-            mapping[e.value] = e
-    return mapping
+    return {e.value: e for e in itertools.chain(FileAction, ShellAction, SystemAction)}
 
 
 class TopicRoute(NamedTuple):
@@ -98,14 +93,11 @@ def is_command_allowed(policy: pb.AllowedCommandPolicy, command: str) -> bool:
 
 def create_allowed_policy(entries: Iterable[str]) -> pb.AllowedCommandPolicy:
     """Create a normalized AllowedCommandPolicy Protobuf message. [SIL-2]"""
-    all_tokens: list[str] = []
-    for c in entries:
-        if not c:
-            continue
-        tokens = _TOKEN_SEP.split(c.strip().lower())
-        all_tokens.extend(t for t in tokens if t)
+    all_tokens = list(
+        itertools.chain.from_iterable(filter(None, _TOKEN_SEP.split(c.strip().lower())) for c in entries if c)
+    )
     items: set[str] = set(all_tokens)
-    normalised = ["*"] if "*" in items else sorted(list(items))
+    normalised = ["*"] if "*" in items else sorted(items)
     return pb.AllowedCommandPolicy(entries=normalised)
 
 
@@ -116,20 +108,19 @@ def _get_topic_auth_mapping_v3() -> dict[tuple[str, str], str]:
 
     mapping: dict[tuple[str, str], str] = {}
     fields = [f.name for f in pb.TopicAuthorization.DESCRIPTOR.fields]
-    for field in fields:
-        for t in Topic:
-            prefix = t.name.lower()
-            if field.startswith(f"{prefix}_"):
-                suffix = field[len(prefix) + 1 :]
-                action_class_name = f"{t.name.title()}Action"
-                if t == Topic.SPI:
-                    action_class_name = "SpiAction"
-                action_cls = getattr(proto, action_class_name, None)
-                if action_cls is not None:
-                    for act in action_cls:
-                        if act.value == suffix or (suffix == "input" and act.value == "in"):
-                            mapping[(t.value, act.value)] = field
-                            break
+    for field, t in itertools.product(fields, Topic):
+        prefix = t.name.lower()
+        if not field.startswith(f"{prefix}_"):
+            continue
+        suffix = field[len(prefix) + 1 :]
+        action_class_name = "SpiAction" if t == Topic.SPI else f"{t.name.title()}Action"
+        action_cls = getattr(proto, action_class_name, None)
+        if action_cls is None:
+            continue
+        for act in action_cls:
+            if act.value == suffix or (suffix == "input" and act.value == "in"):
+                mapping[(t.value, act.value)] = field
+                break
     return mapping
 
 

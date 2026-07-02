@@ -241,7 +241,6 @@ class BridgeClass {
 
   void _applyTimingConfig(const rpc::payload::HandshakeConfig& msg);
 
-  static void _handleStatusOk(const bridge::router::CommandContext& ctx);
   void _handleStatusMalformed(const bridge::router::CommandContext& ctx);
   void _handleStatusAck(const bridge::router::CommandContext& ctx,
                         const rpc_pb_AckPacket& m);
@@ -254,7 +253,6 @@ class BridgeClass {
   void _handleXoff(const bridge::router::CommandContext& ctx);
   void _handleXon(const bridge::router::CommandContext& ctx);
   void _handleSetBaudrate(const rpc::payload::SetBaudratePacket& msg);
-  void _handleSetTiming(const rpc::payload::HandshakeConfig& msg);
   void _handleEnterBootloader(const rpc::payload::EnterBootloader& msg);
   void _handleSpiBegin(const bridge::router::CommandContext& ctx);
   void _handleSpiEnd(const bridge::router::CommandContext& ctx);

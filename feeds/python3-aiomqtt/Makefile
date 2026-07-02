@@ -1,13 +1,10 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=python3-aiomqtt
-# APK requires Alpine version syntax (_alpha/_beta/_rc), not Python's (a1/b1/rc1).
-PKG_VERSION:=3.0.0_alpha1
+PKG_VERSION:=3.0.0a1
 PKG_RELEASE:=1
 
 PYPI_NAME:=aiomqtt
-# Real PyPI tarball name — pypi.mk cannot derive it from PKG_VERSION.
-PKG_SOURCE:=aiomqtt-3.0.0a1.tar.gz
 PKG_HASH:=6499d41b9a933a7a42a1ccbee3baa7e2ccf1e11848f42513f8c0cea4ddff93fe
 
 PKG_MAINTAINER:=Ignacio Santolin <ignacio.santolin@gmail.com>
@@ -18,13 +15,6 @@ include $(TOPDIR)/feeds/packages/lang/python/pypi.mk
 include $(INCLUDE_DIR)/package.mk
 include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
 
-define Build/Prepare
-	$(call Build/Prepare/Default)
-	@if [ -d "$(PKG_BUILD_DIR)/$(PYPI_NAME)-3.0.0a1" ]; then \
-		mv "$(PKG_BUILD_DIR)/$(PYPI_NAME)-3.0.0a1/"* "$(PKG_BUILD_DIR)/"; \
-		rm -rf "$(PKG_BUILD_DIR)/$(PYPI_NAME)-3.0.0a1"; \
-	fi
-endef
 
 define Package/python3-aiomqtt
 	SECTION:=lang

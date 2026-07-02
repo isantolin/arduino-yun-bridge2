@@ -448,17 +448,6 @@ class SerialHandshakeManager:
             extra=extra,
         )
 
-    def raise_if_handshake_fatal(self) -> None:
-        reason = self._state.handshake_fatal_reason
-        if not reason:
-            return
-
-        hint = (
-            "Verify mcubridge.general.serial_shared_secret (configured via UCI/LuCI) "
-            "matches the BRIDGE_SERIAL_SHARED_SECRET define compiled into your sketches."
-        )
-        raise SerialHandshakeFatal(f"MCU rejected the serial shared secret (reason={reason}). {hint}")
-
     async def _wait_for_link_sync_confirmation(self, nonce: bytes) -> bool:
         timeout = max(0.5, (self._timing.response_timeout_ms / 1000.0))
         try:
@@ -480,12 +469,6 @@ class SerialHandshakeManager:
         self._state.link_handshake_nonce = None
         self._state.link_expected_tag = None
         self._state.link_nonce_length = 0
-
-    def _handshake_backoff_remaining(self) -> float:
-        deadline = self._state.handshake_backoff_until
-        if deadline <= 0:
-            return 0.0
-        return max(0.0, deadline - time.monotonic())
 
     async def _publish_handshake_event(
         self,

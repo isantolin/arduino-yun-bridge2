@@ -10,18 +10,16 @@ from . import mcubridge_pb2 as pb
 
 
 import asyncio
-import enum
 import functools
 import itertools
 import re
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import (
     Any,
     Final,
     NamedTuple,
-    cast,
 )
 
 
@@ -228,98 +226,6 @@ def get_ssl_context(cfg: pb.RuntimeConfig) -> Any | None:
 # =============================================================================
 
 
-def _flatten_structured_value(
-    key_prefix: str,
-    value: Any,
-    entries: list[pb.StructuredEntry],
-) -> None:
-
-    if isinstance(value, ProtobufMessage):
-        from google.protobuf.json_format import MessageToDict
-
-        proto_fields = MessageToDict(value, preserving_proto_field_name=True)
-        for key, nested in proto_fields.items():
-            _flatten_structured_value(f"{key_prefix}.{key}" if key_prefix else key, nested, entries)
-        return
-
-    if isinstance(value, (list, tuple)):
-        nested: Any
-        for i, nested in enumerate(cast(list[Any] | tuple[Any, ...], value)):
-            _flatten_structured_value(f"{key_prefix}.{i}" if key_prefix else str(i), nested, entries)
-        return
-    if isinstance(value, Mapping):
-        mapped_value = cast(Mapping[str, Any], value)
-        for key, nested in mapped_value.items():
-            key_name = str(key)
-            _flatten_structured_value(f"{key_prefix}.{key_name}" if key_prefix else key_name, nested, entries)
-        return
-
-    entry = pb.StructuredEntry(key=key_prefix)
-    if value is None:
-        entry.null_value = True
-    elif isinstance(value, bytes):
-        entry.bytes_value = value
-    elif isinstance(value, str):
-        entry.string_value = value
-    elif isinstance(value, bool):
-        entry.bool_value = value
-    elif isinstance(value, enum.IntEnum):
-        entry.int_value = int(value)
-    elif isinstance(value, int):
-        entry.int_value = value
-    elif isinstance(value, float):
-        entry.float_value = value
-    else:
-        raise TypeError(f"Unsupported structured payload value for '{key_prefix}': {type(value)!r}")
-    entries.append(entry)
-
-
-def encode_structured_payload(payload: Mapping[str, Any]) -> bytes:
-    message = pb.StructuredPayload()
-    entries: list[pb.StructuredEntry] = []
-    for key, value in payload.items():
-        _flatten_structured_value(str(key), value, entries)
-    message.entries.extend(entries)
-    return message.SerializeToString()
-
-
-def _entry_value(entry: pb.StructuredEntry) -> Any:
-    match entry.WhichOneof("value"):
-        case "string_value":
-            return entry.string_value
-        case "bytes_value":
-            return bytes(entry.bytes_value)
-        case "bool_value":
-            return entry.bool_value
-        case "int_value":
-            return entry.int_value
-        case "float_value":
-            return entry.float_value
-        case "null_value":
-            return None
-        case _:
-            raise ValueError(f"StructuredEntry '{entry.key}' missing value")
-
-
-def decode_structured_payload(data: bytes) -> dict[str, Any]:
-    message = pb.StructuredPayload()
-    message.ParseFromString(data)
-    decoded: dict[str, Any] = {}
-    for entry in message.entries:
-        cursor: dict[str, Any] = decoded
-        parts = entry.key.split(".")
-        for part in parts[:-1]:
-            next_cursor_obj = cursor.get(part)
-            if not isinstance(next_cursor_obj, dict):
-                next_cursor: dict[str, Any] = {}
-                cursor[part] = next_cursor
-            else:
-                next_cursor = cast(dict[str, Any], next_cursor_obj)
-            cursor = next_cursor
-        cursor[parts[-1]] = _entry_value(entry)
-    return decoded
-
-
 # --- Binary Protocol Packets ---
 
 
@@ -428,15 +334,11 @@ def create_queued_publish(
 
 
 def encode_queued_publish(message: pb.MqttQueuedPublish) -> bytes:
-    """Helper to serialize MqttQueuedPublish to Protobuf binary format."""
     return message.SerializeToString()
 
 
 def decode_queued_publish(data: bytes) -> pb.MqttQueuedPublish:
-    """Helper to deserialize MqttQueuedPublish from Protobuf binary format."""
-    pb_msg = pb.MqttQueuedPublish()
-    pb_msg.ParseFromString(data)
-    return pb_msg
+    return pb.MqttQueuedPublish.FromString(data)
 
 
 # --- Serial Flow Structures ---

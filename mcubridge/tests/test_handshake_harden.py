@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from mcubridge.services.handshake import SerialHandshakeManager, SerialHandshakeFatal
+from mcubridge.services.handshake import SerialHandshakeManager
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.state.context import create_runtime_state, RuntimeState
 from mcubridge.protocol.protocol import Command, Status
@@ -99,8 +99,7 @@ async def test_handshake_fatal_threshold(
         await manager.handle_handshake_failure("sync_auth_mismatch")
 
     assert state.handshake_fatal_count == 3
-    with pytest.raises(SerialHandshakeFatal):
-        manager.raise_if_handshake_fatal()
+    assert state.handshake_fatal_reason is not None
 
 
 @pytest.mark.asyncio

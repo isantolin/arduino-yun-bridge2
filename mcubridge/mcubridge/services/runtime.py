@@ -102,7 +102,6 @@ _STATUS_VALUES: Final = {s.value for s in Status}
 
 @dataclass
 class _PendingMcuRead:
-    identifier: str
     future: asyncio.Future[bytes]
     chunks: list[bytes] = field(default_factory=list[bytes])
 
@@ -887,7 +886,7 @@ class BridgeService:
             target,
         )
         async with self._mcu_read_lock:
-            self._pending_mcu_read = _PendingMcuRead(target, asyncio.get_running_loop().create_future())
+            self._pending_mcu_read = _PendingMcuRead(asyncio.get_running_loop().create_future())
             if not await serial.send_raw(
                 Command.CMD_FILE_READ.value,
                 pb.FileRead(path=target[len(MCU_FS_PREFIX) :]),

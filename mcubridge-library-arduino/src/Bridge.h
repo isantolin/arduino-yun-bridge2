@@ -97,9 +97,6 @@ class BridgeClass {
       }
     }
   }
-  void emitStatus(rpc::StatusCode s) {
-    emitStatus(s, etl::span<const uint8_t>());
-  }
 
   void signalXoff();
   void signalXon();

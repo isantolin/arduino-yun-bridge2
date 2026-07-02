@@ -84,6 +84,7 @@ class BridgeClass {
                   const T& payload = etl::span<const uint8_t>()) {
     if constexpr (etl::is_same_v<T, etl::span<const uint8_t>>) {
       if (!sendFrame(s, 0, payload)) {
+        enterSafeState();
       }
     } else if constexpr (etl::is_same_v<T, etl::string_view>) {
       rpc_pb_GenericResponse resp = rpc_pb_GenericResponse_init_default;
@@ -92,6 +93,7 @@ class BridgeClass {
       if (to_copy > 0U) etl::copy_n(payload.begin(), to_copy, resp.message);
       resp.message[to_copy] = 0;
       if (!send(s, 0, resp)) {
+        enterSafeState();
       }
     }
   }

@@ -41,8 +41,8 @@ void BridgeClass::_dispatchCommand(const rpc_pb_RpcEnvelope& envelope) {
   }
 
   if (!_isSecurityCheckPassed(ctx.raw_command)) {
-    if (!sendFrame(rpc::StatusCode::STATUS_ERROR, ctx.sequence_id)) {
-    }
+    if (!sendFrame(rpc::StatusCode::STATUS_ERROR, ctx.sequence_id))
+      enterSafeState();
     return;
   }
 
@@ -736,8 +736,8 @@ void BridgeClass::_onAckTimeout() {
 void BridgeClass::_processAck(uint16_t command_id, uint16_t sequence_id) {
   rpc_pb_AckPacket p = {};
   p.command_id = command_id;
-  if (!send(rpc::StatusCode::STATUS_ACK, sequence_id, p)) {
-  }
+  if (!send(rpc::StatusCode::STATUS_ACK, sequence_id, p))
+    emitStatus(rpc::StatusCode::STATUS_ERROR);
 }
 
 void BridgeClass::_handleAck(uint16_t cmd) {
@@ -1060,12 +1060,12 @@ bool BridgeClass::_isSecurityCheckPassed(uint16_t cmd) const {
 }
 
 void BridgeClass::signalXoff() {
-  if (!sendFrame(rpc::CommandId::CMD_XOFF)) {
-  }
+  if (!sendFrame(rpc::CommandId::CMD_XOFF))
+    emitStatus(rpc::StatusCode::STATUS_ERROR);
 }
 void BridgeClass::signalXon() {
-  if (!sendFrame(rpc::CommandId::CMD_XON)) {
-  }
+  if (!sendFrame(rpc::CommandId::CMD_XON))
+    emitStatus(rpc::StatusCode::STATUS_ERROR);
 }
 
 bool BridgeClass::_decodePayload(const bridge::router::CommandContext& ctx,

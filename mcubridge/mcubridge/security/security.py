@@ -77,10 +77,10 @@ def verify_crypto_integrity() -> bool:
     if digest.finalize().hex() != "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad":
         return False
 
-    # 2. HMAC-SHA256 KAT
-    h = hmac.HMAC(b"\x00" * 32, hashes.SHA256())
-    h.update(b"abc")
-    if h.finalize().hex() != "fd7adb152c05ef80dccf50a1fa4c05d5a3ec6da95575fc312ae7c5d091836351":
+    # 2. HMAC-SHA256 KAT (aligns with C++ KAT vector in security.cpp)
+    h = hmac.HMAC(b"key", hashes.SHA256())
+    h.update(b"The quick brown fox jumps over the lazy dog")
+    if h.finalize().hex() != "f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8":
         return False
 
     # 3. ChaCha20-Poly1305 KAT

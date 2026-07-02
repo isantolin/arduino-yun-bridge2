@@ -1,52 +1,136 @@
-#include "FileSystem.h"
-#include <etl/algorithm.h>
-#include <etl/string_view.h>
+#include "services/FileSystem.h"
 
-// [SIL-2] Componente defensivo del Sistema de Archivos sin Heap.
-// Prohíbe el uso de cadenas crudas de C y ciclos iterativos manuales vulnerables a desbordamiento.
+#include "Bridge.h"
 
-namespace rpc {
+#if BRIDGE_ENABLE_FILESYSTEM
 
-// El sandbox restringe las operaciones de escritura estrictamente a la RAM (/tmp/) para evitar desgaste
-static constexpr etl::string_view SAFE_SANDBOX_PATH("/tmp/");
-static constexpr size_t MAX_WRITE_QUOTA_BYTES = 4096U;
-static size_t s_total_bytes_written = 0;
+namespace {
+constexpr size_t kReadChunkSize = 64U;
 
-bool FileSystem_Write(etl::span<const char> filepath, etl::span<const uint8_t> data) {
-  // Validación de seguridad sin bucles crudos: uso de string_view para chequeo seguro de rutas
-  etl::string_view path_view(filepath.data(), filepath.size());
-  
-  if (path_view.size() < SAFE_SANDBOX_PATH.size()) {
-    return false;
+#define BRIDGE_FS_DEBUG(...)
+
+void send_read_response(etl::span<const uint8_t> content) {
+  rpc::payload::FileReadResponse p = {};
+  const size_t to_copy = etl::min(content.size(), sizeof(p.content.bytes));
+  p.content.size = (pb_size_t)to_copy;
+  if (to_copy > 0U) {
+    etl::copy_n(content.data(), to_copy, p.content.bytes);
+  }
+  if (!Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 0, p)) {
+  }
+}
+}  // namespace
+
+FileSystemClass::FileSystemClass() {}
+
+void FileSystemClass::write(etl::string_view path,
+                            etl::span<const uint8_t> data) {
+  rpc::payload::FileWrite p = {};
+  const size_t p_copy = etl::min(path.size(), sizeof(p.path) - 1U);
+  if (p_copy > 0U) {
+    etl::copy_n(path.begin(), p_copy, p.path);
   }
 
-  // Verificar si la ruta de destino comienza exactamente con el prefijo seguro
-  etl::string_view path_prefix = path_view.substr(0, SAFE_SANDBOX_PATH.size());
-  if (path_prefix != SAFE_SANDBOX_PATH) {
-    return false; // Intento de evasión del sandbox detectado (Fallo Seguro)
+  const size_t d_copy = etl::min(data.size(), sizeof(p.data.bytes));
+  p.data.size = (pb_size_t)d_copy;
+  if (d_copy > 0U) {
+    etl::copy_n(data.data(), d_copy, p.data.bytes);
   }
-
-  // Comprobar la cuota global contra desgaste de memoria Flash
-  if (s_total_bytes_written + data.size() > MAX_WRITE_QUOTA_BYTES) {
-    return false; // Cuota excedida para resguardar el hardware
+  if (!Bridge.send(rpc::CommandId::CMD_FILE_WRITE, 0, p)) {
   }
-
-  // Buffer de escritura física pre-asignado en RAM
-  static etl::array<uint8_t, 256U> s_write_buffer;
-  if (data.size() > s_write_buffer.size()) {
-    return false;
-  }
-
-  // Erradicación de bucles manuales: copia segura de memoria mediante etl::copy
-  etl::fill(s_write_buffer.begin(), s_write_buffer.end(), 0);
-  etl::copy(data.begin(), data.end(), s_write_buffer.begin());
-
-  s_total_bytes_written += data.size();
-  return true;
 }
 
-void FileSystem_ResetQuota() {
-  s_total_bytes_written = 0;
+void FileSystemClass::read(
+    etl::string_view path,
+    typename FileSystemClass::FileSystemReadHandler handler) {
+  _read_handler = handler;
+  rpc::payload::FileRead p = {};
+  const size_t p_copy = etl::min(path.size(), sizeof(p.path) - 1U);
+  if (p_copy > 0U) {
+    etl::copy_n(path.begin(), p_copy, p.path);
+  }
+
+  if (!Bridge.send(rpc::CommandId::CMD_FILE_READ, 0, p)) {
+    Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
+  }
 }
 
-} // namespace rpc
+void FileSystemClass::remove(etl::string_view path) {
+  rpc::payload::FileRemove p = {};
+  const size_t p_copy = etl::min(path.size(), sizeof(p.path) - 1U);
+  if (p_copy > 0U) {
+    etl::copy_n(path.begin(), p_copy, p.path);
+  }
+  if (!Bridge.send(rpc::CommandId::CMD_FILE_REMOVE, 0, p)) {
+  }
+}
+
+void FileSystemClass::_onWrite(const rpc::payload::FileWrite& msg) {
+  auto res = bridge::hal::writeFile(
+      etl::string_view(msg.path),
+      etl::span<const uint8_t>(msg.data.bytes, msg.data.size));
+  if (!Bridge.sendFrame(res ? rpc::StatusCode::STATUS_OK
+                            : rpc::StatusCode::STATUS_ERROR)) {
+  }
+}
+
+void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
+  BRIDGE_FS_DEBUG("[DEBUG] FS: Reading file: %s\n", msg.path);
+  size_t offset = 0;
+  etl::array<uint8_t, kReadChunkSize> buffer;
+  const uint32_t start_ms = millis();
+  const etl::string_view path(msg.path);
+
+  using bridge::etl_ext::CounterIterator;
+  if (etl::find_if(
+          CounterIterator<uint16_t>(0U),
+          CounterIterator(bridge::config::FILE_MAX_READ_CHUNKS),
+          [&](uint32_t chunk_idx) {
+            (void)chunk_idx;
+            if (millis() - start_ms >= bridge::config::SERIAL_TIMEOUT_MS) {
+              BRIDGE_FS_DEBUG("[DEBUG] FS: Read TIMEOUT at offset %zu\n",
+                              offset);
+              return true;
+            }
+
+            auto res = bridge::hal::readFileChunk(
+                path, offset, etl::span<uint8_t>(buffer.data(), buffer.size()));
+            if (!res) {
+              BRIDGE_FS_DEBUG("[DEBUG] FS: Read FAILED at offset %zu\n",
+                              offset);
+              if (!Bridge.sendFrame(rpc::StatusCode::STATUS_ERROR)) {
+              }
+              return true;
+            }
+            BRIDGE_FS_DEBUG(
+                "[DEBUG] FS: Sending chunk %u (%zu bytes, has_more=%d)\n",
+                (unsigned int)chunk_idx, res->bytes_read, res->has_more);
+            send_read_response(
+                etl::span<const uint8_t>(buffer.data(), res->bytes_read));
+            if (!res->has_more) {
+              send_read_response(etl::span<const uint8_t>());
+              return true;
+            }
+            offset += res->bytes_read;
+            return false;
+          }) != CounterIterator(bridge::config::FILE_MAX_READ_CHUNKS)) {
+  }
+}
+
+void FileSystemClass::_onRemove(const rpc::payload::FileRemove& msg) {
+  auto res = bridge::hal::removeFile(etl::string_view(msg.path));
+  if (!Bridge.sendFrame(res ? rpc::StatusCode::STATUS_OK
+                            : rpc::StatusCode::STATUS_ERROR)) {
+  }
+}
+
+void FileSystemClass::_onResponse(const rpc::payload::FileReadResponse& msg) {
+  if (_read_handler.is_valid()) {
+    _read_handler(
+        etl::span<const uint8_t>(msg.content.bytes, msg.content.size));
+  }
+}
+
+FileSystemType FileSystem;
+
+#endif

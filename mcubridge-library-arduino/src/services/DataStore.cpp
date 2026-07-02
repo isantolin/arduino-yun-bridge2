@@ -1,77 +1,68 @@
-#include "DataStore.h"
+#include "services/DataStore.h"
+
 #include <etl/algorithm.h>
-#include <etl/vector.h>
-#include <etl/string_view.h>
 
-// [SIL-2] Servicio optimizado de almacenamiento clave-valor sin Heap.
-// Utiliza algoritmos funcionales de ETL en lugar de bucles iterativos manuales.
+#include "Bridge.h"
 
-namespace rpc {
+#if BRIDGE_ENABLE_DATASTORE
 
-struct DataEntry {
-  etl::array<char, 32U> key;
-  etl::array<char, 64U> value;
-  bool active;
-};
+DataStoreClass::DataStoreClass() {}
 
-// Almacenamiento local pre-asignado estáticamente en Flash/RAM para evitar fragmentación.
-static etl::vector<DataEntry, 16U> s_datastore;
-
-bool DataStore_Get(etl::span<const char> key, etl::span<char> out_value, size_t& out_len) {
-  // Erradicación de bucles manuales: uso de etl::find_if para búsquedas seguras con predicados
-  auto it = etl::find_if(s_datastore.begin(), s_datastore.end(), [&key](const DataEntry& entry) {
-    if (!entry.active) return false;
-    // Comparación segura utilizando string_view de ETL
-    etl::string_view entry_key(entry.key.data(), entry.key.size());
-    etl::string_view search_key(key.data(), key.size());
-    return entry_key == search_key;
-  });
-
-  if (it != s_datastore.end() && out_value.size() >= it->value.size()) {
-    etl::copy(it->value.begin(), it->value.end(), out_value.begin());
-    out_len = it->value.size();
-    return true;
+void DataStoreClass::set(etl::string_view key, etl::span<const uint8_t> value) {
+  rpc::payload::DatastorePut p = {};
+  const size_t k_copy = etl::min(key.size(), sizeof(p.key) - 1U);
+  if (k_copy > 0U) {
+    etl::copy_n(key.begin(), k_copy, p.key);
   }
-  return false;
+
+  const size_t v_copy = etl::min(value.size(), sizeof(p.value.bytes));
+  p.value.size = (pb_size_t)v_copy;
+  if (v_copy > 0U) {
+    etl::copy_n(value.data(), v_copy, p.value.bytes);
+  }
+  if (!Bridge.send(rpc::CommandId::CMD_DATASTORE_PUT, 0, p)) {
+  }
 }
 
-bool DataStore_Put(etl::span<const char> key, etl::span<const char> value) {
-  if (key.size() > 32U || value.size() > 64U) {
-    return false;
+void DataStoreClass::get(etl::string_view key,
+                         typename DataStoreClass::GetHandler handler) {
+  if (_pending_gets.full()) {
+    Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
+    return;
   }
 
-  // Buscar si la clave ya existe para actualizarla
-  auto it = etl::find_if(s_datastore.begin(), s_datastore.end(), [&key](const DataEntry& entry) {
-    if (!entry.active) return false;
-    etl::string_view entry_key(entry.key.data(), entry.key.size());
-    etl::string_view search_key(key.data(), key.size());
-    return entry_key == search_key;
-  });
-
-  if (it != s_datastore.end()) {
-    etl::fill(it->value.begin(), it->value.end(), 0);
-    etl::copy(value.begin(), value.end(), it->value.begin());
-    return true;
+  rpc::payload::DatastoreGet p = {};
+  const size_t k_copy = etl::min(key.size(), sizeof(p.key) - 1U);
+  if (k_copy > 0U) {
+    etl::copy_n(key.begin(), k_copy, p.key);
   }
 
-  // Si no existe, insertar un nuevo registro si hay capacidad en el vector pre-asignado
-  if (s_datastore.full()) {
-    return false;
+  if (!Bridge.send(rpc::CommandId::CMD_DATASTORE_GET, 0, p)) {
+    Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
+    return;
   }
 
-  DataEntry new_entry;
-  etl::fill(new_entry.key.begin(), new_entry.key.end(), 0);
-  etl::fill(new_entry.value.begin(), new_entry.value.end(), 0);
-  etl::copy(key.begin(), key.end(), new_entry.key.begin());
-  etl::copy(value.begin(), value.end(), new_entry.value.begin());
-  new_entry.active = true;
-
-  s_datastore.push_back(new_entry);
-  return true;
+  typename DataStoreClass::PendingGet pending = {};
+  const size_t to_copy = etl::min(
+      key.size(), static_cast<size_t>(rpc::RPC_MAX_DATASTORE_KEY_LENGTH));
+  pending.key.assign(key.data(), to_copy);
+  pending.handler = handler;
+  _pending_gets.push(pending);
 }
 
-void DataStore_Clear() {
-  s_datastore.clear();
+void DataStoreClass::_onResponse(
+    const rpc::payload::DatastoreGetResponse& msg) {
+  if (_pending_gets.empty()) return;
+
+  const typename DataStoreClass::PendingGet pending = _pending_gets.front();
+  _pending_gets.pop();
+  if (!pending.handler.is_valid()) return;
+
+  const etl::string_view key(pending.key.data(), pending.key.size());
+  pending.handler(key,
+                  etl::span<const uint8_t>(msg.value.bytes, msg.value.size));
 }
 
-} // namespace rpc
+DataStoreType DataStore;
+
+#endif

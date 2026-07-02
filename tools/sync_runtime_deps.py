@@ -250,31 +250,24 @@ def update_feeds(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
         if not openwrt_pkg or not openwrt_pkg.startswith("python3-"):
             continue
 
-        pip_name, version = _parse_pip_spec(dep.get("pip", ""))
+        _, version = _parse_pip_spec(dep.get("pip", ""))
         if not version:
             continue
 
-        apk_version = _normalize_apk_version(version)
         makefile = FEEDS_DIR / openwrt_pkg / "Makefile"
         if not makefile.exists():
             continue
 
         content = makefile.read_text(encoding="utf-8")
-        # Update PKG_VERSION with APK-normalized version
-        new_content = re.sub(r"PKG_VERSION:=[^\n]+", f"PKG_VERSION:={apk_version}", content)
+
+        # pypi.mk-based packages use PKG_VERSION in Python notation (e.g. 3.0.0a1)
+        # so that pypi.mk host-pip-requirements checks and pip installs work correctly.
+        # Do NOT normalize to APK notation (_alpha/_beta/_rc) here.
+        new_content = re.sub(r"PKG_VERSION:=[^\n]+", f"PKG_VERSION:={version}", content)
 
         # When version changes, PKG_RELEASE should typically reset to 1
         if new_content != content:
             new_content = re.sub(r"PKG_RELEASE:=[^\n]+", "PKG_RELEASE:=1", new_content)
-
-        # If PKG_SOURCE is explicitly set and version notation differs (pre-release),
-        # keep it in sync using the original Python version notation, not APK.
-        if version != apk_version and "PKG_SOURCE:=" in new_content:
-            new_content = re.sub(
-                r"PKG_SOURCE:=[^\n]+\.tar\.gz",
-                f"PKG_SOURCE:={pip_name}-{version}.tar.gz",
-                new_content,
-            )
 
         if new_content != content:
             any_updated = True

@@ -344,7 +344,7 @@ class SerialHandshakeManager:
                 multiplier=SERIAL_HANDSHAKE_BACKOFF_BASE,
                 max=SERIAL_HANDSHAKE_BACKOFF_MAX,
             ),
-            retry=tenacity.retry_if_exception_type(asyncio.TimeoutError),
+            retry=tenacity.retry_if_exception_type(TimeoutError),
             before_sleep=tenacity.before_sleep_log(self._logger, logging.DEBUG),
             reraise=False,
         )

@@ -94,29 +94,26 @@ class SqliteDeque:
         async def _append_impl(conn: aiosqlite.Connection) -> None:
             await conn.execute("INSERT INTO deque (item) VALUES (?)", (item,))
             self._length += 1
-            if self.maxlen is not None:
-                async with conn.execute("SELECT COUNT(*) FROM deque") as cursor:
-                    row = await cursor.fetchone()
-                    count = row[0] if row else 0
-                if count > self.maxlen:
-                    to_delete = count - self.maxlen
-                    await conn.execute(
-                        "DELETE FROM deque WHERE id IN (SELECT id FROM deque ORDER BY id ASC LIMIT ?)", (to_delete,)
-                    )
-                    self._length = self.maxlen
+            if self.maxlen is not None and self._length > self.maxlen:
+                to_delete = self._length - self.maxlen
+                await conn.execute(
+                    "DELETE FROM deque WHERE id IN (SELECT id FROM deque ORDER BY id ASC LIMIT ?)",
+                    (to_delete,),
+                )
+                self._length = self.maxlen
 
         await self._execute(_append_impl)
 
     async def popleft(self) -> bytes:
         async def _popleft_impl(conn: aiosqlite.Connection) -> bytes:
-            async with conn.execute("SELECT id, item FROM deque ORDER BY id ASC LIMIT 1") as cursor:
+            async with conn.execute(
+                "DELETE FROM deque WHERE id = (SELECT MIN(id) FROM deque) RETURNING item"
+            ) as cursor:
                 row = await cursor.fetchone()
             if row is None:
                 raise IndexError("popfrom empty deque")
-            row_id, item = row
-            await conn.execute("DELETE FROM deque WHERE id = ?", (row_id,))
             self._length = max(0, self._length - 1)
-            return item
+            return row[0]
 
         try:
             return await self._execute(_popleft_impl)

@@ -18,13 +18,11 @@ include $(TOPDIR)/feeds/packages/lang/python/pypi.mk
 include $(INCLUDE_DIR)/package.mk
 include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
 
-# pypi.mk derives PKG_BUILD_DIR from PKG_VERSION (3.0.0_alpha1), but the tarball
-# extracts to aiomqtt-3.0.0a1/. Rename to align both paths.
 define Build/Prepare
 	$(call Build/Prepare/Default)
-	@if [ -d "$(BUILD_DIR)/pypi/$(PYPI_NAME)-3.0.0a1" ] && \
-	    [ ! -d "$(PKG_BUILD_DIR)" ]; then \
-		mv "$(BUILD_DIR)/pypi/$(PYPI_NAME)-3.0.0a1" "$(PKG_BUILD_DIR)"; \
+	@if [ -d "$(PKG_BUILD_DIR)/$(PYPI_NAME)-3.0.0a1" ]; then \
+		mv "$(PKG_BUILD_DIR)/$(PYPI_NAME)-3.0.0a1/"* "$(PKG_BUILD_DIR)/"; \
+		rm -rf "$(PKG_BUILD_DIR)/$(PYPI_NAME)-3.0.0a1"; \
 	fi
 endef
 

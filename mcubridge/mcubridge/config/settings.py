@@ -23,6 +23,7 @@ from mcubridge.protocol import mcubridge_pb2 as pb
 
 logger = structlog.get_logger(__name__)
 
+
 def _runtime_config_factory(
     pb_msg: pb.RuntimeConfig | None = None,
     *,

@@ -122,7 +122,6 @@ def parse_frame(raw_frame_buffer: bytes | bytearray | memoryview, session_key: b
         ).SerializeToString()
 
         try:
-            assert session_key is not None
             decrypted = ChaCha20Poly1305(session_key).decrypt(envelope.nonce, envelope.encrypted_payload_with_tag, aad)
         except InvalidTag as exc:
             raise ValueError("AEAD decryption failed") from exc

@@ -235,9 +235,7 @@ async def test_peeking_or_popping_errors(real_config: RuntimeConfig) -> None:
 async def test_mailbox_queue_close_error(real_config: RuntimeConfig) -> None:
     state = create_runtime_state(real_config)
 
-    class FakeCache:
-        def close(self):
-            raise OSError("mock error")
-
-    object.__setattr__(state, "mailbox_queue", MagicMock(cache=FakeCache()))
+    fake_cache = MagicMock()
+    fake_cache.close.side_effect = OSError("mock error")
+    object.__setattr__(state, "mailbox_queue", MagicMock(cache=fake_cache))
     _replace_mailbox_queue(state, InMemoryDeque())

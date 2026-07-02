@@ -200,19 +200,6 @@ def _parse_pip_spec(spec: str) -> tuple[str, str]:
     return name, version.strip()
 
 
-def _normalize_apk_version(version: str) -> str:
-    """Convert Python pre-release notation to APK (Alpine) version notation.
-
-    APK requires _alpha/_beta/_rc/_pre suffixes, not Python's a/b/rc/dev.
-    Examples: 3.0.0a1 -> 3.0.0_alpha1, 2.1b2 -> 2.1_beta2, 1.0rc3 -> 1.0_rc3
-    """
-    version = re.sub(r"(\d)a(\d+)$", r"\1_alpha\2", version)
-    version = re.sub(r"(\d)b(\d+)$", r"\1_beta\2", version)
-    version = re.sub(r"(\d)rc(\d+)$", r"\1_rc\2", version)
-    version = re.sub(r"\.dev(\d+)$", r"_pre\1", version)
-    return version
-
-
 def _fetch_latest_version(package_name: str) -> str | None:
     """Query PyPI JSON API for the latest release version."""
     url = f"https://pypi.org/pypi/{package_name}/json"
@@ -240,6 +227,19 @@ def check_latest_versions(deps: Sequence[_DepEntry]) -> list[tuple[str, str, str
     return outdated
 
 
+def _to_apk_version(version: str) -> str:
+    """Convert Python pre-release notation to APK (Alpine) version notation.
+
+    Required for Makefiles that do NOT include pypi.mk and package directly
+    via apk mkpkg, which enforces Alpine versioning (_alpha/_beta/_rc/_pre).
+    """
+    version = re.sub(r"(\d)a(\d+)$", r"\1_alpha\2", version)
+    version = re.sub(r"(\d)b(\d+)$", r"\1_beta\2", version)
+    version = re.sub(r"(\d)rc(\d+)$", r"\1_rc\2", version)
+    version = re.sub(r"\.dev(\d+)$", r"_pre\1", version)
+    return version
+
+
 def update_feeds(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
     if not FEEDS_DIR.exists():
         return False
@@ -250,7 +250,7 @@ def update_feeds(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
         if not openwrt_pkg or not openwrt_pkg.startswith("python3-"):
             continue
 
-        _, version = _parse_pip_spec(dep.get("pip", ""))
+        pip_name, version = _parse_pip_spec(dep.get("pip", ""))
         if not version:
             continue
 
@@ -260,14 +260,32 @@ def update_feeds(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
 
         content = makefile.read_text(encoding="utf-8")
 
-        # pypi.mk-based packages use PKG_VERSION in Python notation (e.g. 3.0.0a1)
-        # so that pypi.mk host-pip-requirements checks and pip installs work correctly.
-        # Do NOT normalize to APK notation (_alpha/_beta/_rc) here.
-        new_content = re.sub(r"PKG_VERSION:=[^\n]+", f"PKG_VERSION:={version}", content)
+        # Packages that include pypi.mk must use Python notation for PKG_VERSION
+        # so that pypi.mk's host-pip-requirements version check passes.
+        # Packages that do NOT include pypi.mk use APK notation (e.g. 3.0.0_alpha1)
+        # because apk mkpkg enforces Alpine versioning rules.
+        # Detect if pypi.mk is actually included (not just mentioned in comments).
+        uses_pypi_mk = bool(re.search(r"^\s*include\b.*\bpypi\.mk\b", content, re.MULTILINE))
+        pkg_version = version if uses_pypi_mk else _to_apk_version(version)
+
+        new_content = re.sub(r"PKG_VERSION:=[^\n]+", f"PKG_VERSION:={pkg_version}", content)
 
         # When version changes, PKG_RELEASE should typically reset to 1
         if new_content != content:
             new_content = re.sub(r"PKG_RELEASE:=[^\n]+", "PKG_RELEASE:=1", new_content)
+
+        # For non-pypi.mk packages, PKG_SOURCE and PKG_BUILD_DIR use Python notation.
+        if not uses_pypi_mk:
+            new_content = re.sub(
+                r"PKG_SOURCE:=[^\n]+\.tar\.gz",
+                f"PKG_SOURCE:={pip_name}-{version}.tar.gz",
+                new_content,
+            )
+            new_content = re.sub(
+                r"PKG_BUILD_DIR:=[^\n]+",
+                f"PKG_BUILD_DIR:=$(BUILD_DIR)/pypi/{pip_name}-{version}",
+                new_content,
+            )
 
         if new_content != content:
             any_updated = True

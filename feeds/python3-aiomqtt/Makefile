@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=python3-aiomqtt
-PKG_VERSION:=3.0.0a1
+PKG_VERSION:=3.0.0_alpha1
 PKG_RELEASE:=1
 
 PYPI_NAME:=aiomqtt

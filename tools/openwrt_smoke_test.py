@@ -257,6 +257,7 @@ def phase_expand(child: Any) -> None:
     # Avoid overwriting nameserver 8.8.8.8 in QEMU SLIRP as it breaks DNS forwarding via gateway (10.0.2.3)
     send_and_wait(child, "date -s '2026-01-01 12:00:00'", timeout=5)
     send_and_wait(child, "echo 'alias wget=\"wget -4\"' >> /etc/profile", timeout=5)
+    send_and_wait(child, "sed -i 's/https:/http:/g' /etc/apk/repositories || true", timeout=5)
     send_and_wait(child, "ping -c 2 8.8.8.8 || true", timeout=15)
 
     # Wait for network to establish
@@ -305,6 +306,7 @@ def phase_install(child: Any) -> None:
     # Avoid overwriting nameserver 8.8.8.8 in QEMU SLIRP as it breaks DNS forwarding via gateway (10.0.2.3)
     send_and_wait(child, "date -s '2026-01-01 12:00:00'", timeout=5)
     send_and_wait(child, "echo 'alias wget=\"wget -4\"' >> /etc/profile", timeout=5)
+    send_and_wait(child, "sed -i 's/https:/http:/g' /etc/apk/repositories || true", timeout=5)
     send_and_wait(child, "ping -c 2 8.8.8.8 || true", timeout=15)
 
     # Wait for network to establish

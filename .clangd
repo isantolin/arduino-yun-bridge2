@@ -1,0 +1,20 @@
+CompileFlags:
+  Add: [
+    "-I/home/ignaciosantolin/arduino-yun-bridge2/mcubridge-library-arduino/src",
+    "-I/home/ignaciosantolin/arduino-yun-bridge2/tools/arduino_stub/include",
+    "-I/home/ignaciosantolin/arduino-yun-bridge2/.tmp_tests/arduino_libs/Embedded_Template_Library/include",
+    "-I/home/ignaciosantolin/arduino-yun-bridge2/.tmp_tests/arduino_libs/Embedded_Template_Library/arduino",
+    "-I/home/ignaciosantolin/arduino-yun-bridge2/.tmp_tests/arduino_libs/wolfSSL",
+    "-I/home/ignaciosantolin/arduino-yun-bridge2/.tmp_tests/arduino_libs/PacketSerial/src",
+    "-I/home/ignaciosantolin/arduino-yun-bridge2/.dummy_libs/Embedded_Template_Library/include",
+    "-I/home/ignaciosantolin/arduino-yun-bridge2/.dummy_libs/Embedded_Template_Library/arduino",
+    "-I/home/ignaciosantolin/arduino-yun-bridge2/.dummy_libs/wolfSSL",
+    "-I/home/ignaciosantolin/arduino-yun-bridge2/.dummy_libs/PacketSerial/src",
+    "-DBRIDGE_HOST_TEST=1",
+    "-DUNITY_INCLUDE_DOUBLE",
+    "-DBRIDGE_ENABLE_SPI=1",
+    "-DWOLFSSL_USER_SETTINGS",
+    "-DETL_NO_STL",
+    "-x", "c++",
+    "-std=c++17"
+  ]

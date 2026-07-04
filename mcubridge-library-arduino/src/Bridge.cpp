@@ -48,11 +48,10 @@ void BridgeClass::_dispatchCommand(const rpc_pb_RpcEnvelope& envelope) {
 
   switch (ctx.raw_command) {
     case rpc::to_underlying(rpc::StatusCode::STATUS_OK): {
+      _processAck(ctx.raw_command, ctx.sequence_id);
       if (ctx.is_duplicate) {
-        _processAck(ctx.raw_command, ctx.sequence_id);
         return;
       }
-      _processAck(ctx.raw_command, ctx.sequence_id);
       break;
     }
 
@@ -80,11 +79,10 @@ void BridgeClass::_dispatchCommand(const rpc_pb_RpcEnvelope& envelope) {
     }
 
     case rpc::to_underlying(rpc::CommandId::CMD_LINK_RESET): {
+      _processAck(ctx.raw_command, ctx.sequence_id);
       if (ctx.is_duplicate) {
-        _processAck(ctx.raw_command, ctx.sequence_id);
         return;
       }
-      _processAck(ctx.raw_command, ctx.sequence_id);
       _handleLinkReset(ctx);
       break;
     }
@@ -99,42 +97,38 @@ void BridgeClass::_dispatchCommand(const rpc_pb_RpcEnvelope& envelope) {
     }
 
     case rpc::to_underlying(rpc::CommandId::CMD_XOFF): {
+      _processAck(ctx.raw_command, ctx.sequence_id);
       if (ctx.is_duplicate) {
-        _processAck(ctx.raw_command, ctx.sequence_id);
         return;
       }
-      _processAck(ctx.raw_command, ctx.sequence_id);
       _handleXoff(ctx);
       break;
     }
 
     case rpc::to_underlying(rpc::CommandId::CMD_XON): {
+      _processAck(ctx.raw_command, ctx.sequence_id);
       if (ctx.is_duplicate) {
-        _processAck(ctx.raw_command, ctx.sequence_id);
         return;
       }
-      _processAck(ctx.raw_command, ctx.sequence_id);
       _handleXon(ctx);
       break;
     }
 
 #if BRIDGE_ENABLE_SPI
     case rpc::to_underlying(rpc::CommandId::CMD_SPI_BEGIN): {
+      _processAck(ctx.raw_command, ctx.sequence_id);
       if (ctx.is_duplicate) {
-        _processAck(ctx.raw_command, ctx.sequence_id);
         return;
       }
-      _processAck(ctx.raw_command, ctx.sequence_id);
       _handleSpiBegin(ctx);
       break;
     }
 
     case rpc::to_underlying(rpc::CommandId::CMD_SPI_END): {
+      _processAck(ctx.raw_command, ctx.sequence_id);
       if (ctx.is_duplicate) {
-        _processAck(ctx.raw_command, ctx.sequence_id);
         return;
       }
-      _processAck(ctx.raw_command, ctx.sequence_id);
       _handleSpiEnd(ctx);
       break;
     }
@@ -148,11 +142,10 @@ void BridgeClass::_dispatchCommand(const rpc_pb_RpcEnvelope& envelope) {
         emitStatus(rpc::StatusCode::STATUS_MALFORMED);
         return;
       }
+      _processAck(ctx.raw_command, ctx.sequence_id);
       if (ctx.is_duplicate) {
-        _processAck(ctx.raw_command, ctx.sequence_id);
         return;
       }
-      _processAck(ctx.raw_command, ctx.sequence_id);
       _handleStatusAck(ctx, m);
       break;
     }
@@ -165,11 +158,10 @@ void BridgeClass::_dispatchCommand(const rpc_pb_RpcEnvelope& envelope) {
         emitStatus(rpc::StatusCode::STATUS_MALFORMED);
         return;
       }
+      _processAck(ctx.raw_command, ctx.sequence_id);
       if (ctx.is_duplicate) {
-        _processAck(ctx.raw_command, ctx.sequence_id);
         return;
       }
-      _processAck(ctx.raw_command, ctx.sequence_id);
       _handleLinkSync(ctx, m);
       break;
     }
@@ -183,11 +175,10 @@ void BridgeClass::_dispatchCommand(const rpc_pb_RpcEnvelope& envelope) {
         emitStatus(rpc::StatusCode::STATUS_MALFORMED);
         return;
       }
+      _processAck(ctx.raw_command, ctx.sequence_id);
       if (ctx.is_duplicate) {
-        _processAck(ctx.raw_command, ctx.sequence_id);
         return;
       }
-      _processAck(ctx.raw_command, ctx.sequence_id);
       _handleSetBaudrate(m);
       break;
     }
@@ -201,11 +192,10 @@ void BridgeClass::_dispatchCommand(const rpc_pb_RpcEnvelope& envelope) {
         emitStatus(rpc::StatusCode::STATUS_MALFORMED);
         return;
       }
+      _processAck(ctx.raw_command, ctx.sequence_id);
       if (ctx.is_duplicate) {
-        _processAck(ctx.raw_command, ctx.sequence_id);
         return;
       }
-      _processAck(ctx.raw_command, ctx.sequence_id);
       _handleEnterBootloader(m);
       break;
     }
@@ -218,11 +208,10 @@ void BridgeClass::_dispatchCommand(const rpc_pb_RpcEnvelope& envelope) {
         emitStatus(rpc::StatusCode::STATUS_MALFORMED);
         return;
       }
+      _processAck(ctx.raw_command, ctx.sequence_id);
       if (ctx.is_duplicate) {
-        _processAck(ctx.raw_command, ctx.sequence_id);
         return;
       }
-      _processAck(ctx.raw_command, ctx.sequence_id);
       _handleSetPinMode(m);
       break;
     }
@@ -235,11 +224,10 @@ void BridgeClass::_dispatchCommand(const rpc_pb_RpcEnvelope& envelope) {
         emitStatus(rpc::StatusCode::STATUS_MALFORMED);
         return;
       }
+      _processAck(ctx.raw_command, ctx.sequence_id);
       if (ctx.is_duplicate) {
-        _processAck(ctx.raw_command, ctx.sequence_id);
         return;
       }
-      _processAck(ctx.raw_command, ctx.sequence_id);
       _handleDigitalWrite(m);
       break;
     }
@@ -252,11 +240,10 @@ void BridgeClass::_dispatchCommand(const rpc_pb_RpcEnvelope& envelope) {
         emitStatus(rpc::StatusCode::STATUS_MALFORMED);
         return;
       }
+      _processAck(ctx.raw_command, ctx.sequence_id);
       if (ctx.is_duplicate) {
-        _processAck(ctx.raw_command, ctx.sequence_id);
         return;
       }
-      _processAck(ctx.raw_command, ctx.sequence_id);
       _handleAnalogWrite(m);
       break;
     }
@@ -291,11 +278,10 @@ void BridgeClass::_dispatchCommand(const rpc_pb_RpcEnvelope& envelope) {
         emitStatus(rpc::StatusCode::STATUS_MALFORMED);
         return;
       }
+      _processAck(ctx.raw_command, ctx.sequence_id);
       if (ctx.is_duplicate) {
-        _processAck(ctx.raw_command, ctx.sequence_id);
         return;
       }
-      _processAck(ctx.raw_command, ctx.sequence_id);
       _handleConsoleWrite(m);
       break;
     }
@@ -310,11 +296,10 @@ void BridgeClass::_dispatchCommand(const rpc_pb_RpcEnvelope& envelope) {
         emitStatus(rpc::StatusCode::STATUS_MALFORMED);
         return;
       }
+      _processAck(ctx.raw_command, ctx.sequence_id);
       if (ctx.is_duplicate) {
-        _processAck(ctx.raw_command, ctx.sequence_id);
         return;
       }
-      _processAck(ctx.raw_command, ctx.sequence_id);
       _handleDataStoreGetResponse(ctx, m);
       break;
     }
@@ -329,11 +314,10 @@ void BridgeClass::_dispatchCommand(const rpc_pb_RpcEnvelope& envelope) {
         emitStatus(rpc::StatusCode::STATUS_MALFORMED);
         return;
       }
+      _processAck(ctx.raw_command, ctx.sequence_id);
       if (ctx.is_duplicate) {
-        _processAck(ctx.raw_command, ctx.sequence_id);
         return;
       }
-      _processAck(ctx.raw_command, ctx.sequence_id);
       _handleMailboxPush(ctx, m);
       break;
     }
@@ -374,11 +358,10 @@ void BridgeClass::_dispatchCommand(const rpc_pb_RpcEnvelope& envelope) {
         emitStatus(rpc::StatusCode::STATUS_MALFORMED);
         return;
       }
+      _processAck(ctx.raw_command, ctx.sequence_id);
       if (ctx.is_duplicate) {
-        _processAck(ctx.raw_command, ctx.sequence_id);
         return;
       }
-      _processAck(ctx.raw_command, ctx.sequence_id);
       _handleFileWrite(ctx, m);
       break;
     }
@@ -391,11 +374,10 @@ void BridgeClass::_dispatchCommand(const rpc_pb_RpcEnvelope& envelope) {
         emitStatus(rpc::StatusCode::STATUS_MALFORMED);
         return;
       }
+      _processAck(ctx.raw_command, ctx.sequence_id);
       if (ctx.is_duplicate) {
-        _processAck(ctx.raw_command, ctx.sequence_id);
         return;
       }
-      _processAck(ctx.raw_command, ctx.sequence_id);
       _handleFileRead(ctx, m);
       break;
     }
@@ -408,11 +390,10 @@ void BridgeClass::_dispatchCommand(const rpc_pb_RpcEnvelope& envelope) {
         emitStatus(rpc::StatusCode::STATUS_MALFORMED);
         return;
       }
+      _processAck(ctx.raw_command, ctx.sequence_id);
       if (ctx.is_duplicate) {
-        _processAck(ctx.raw_command, ctx.sequence_id);
         return;
       }
-      _processAck(ctx.raw_command, ctx.sequence_id);
       _handleFileRemove(ctx, m);
       break;
     }
@@ -426,11 +407,10 @@ void BridgeClass::_dispatchCommand(const rpc_pb_RpcEnvelope& envelope) {
         emitStatus(rpc::StatusCode::STATUS_MALFORMED);
         return;
       }
+      _processAck(ctx.raw_command, ctx.sequence_id);
       if (ctx.is_duplicate) {
-        _processAck(ctx.raw_command, ctx.sequence_id);
         return;
       }
-      _processAck(ctx.raw_command, ctx.sequence_id);
       _handleFileReadResponse(ctx, m);
       break;
     }
@@ -445,11 +425,10 @@ void BridgeClass::_dispatchCommand(const rpc_pb_RpcEnvelope& envelope) {
         emitStatus(rpc::StatusCode::STATUS_MALFORMED);
         return;
       }
+      _processAck(ctx.raw_command, ctx.sequence_id);
       if (ctx.is_duplicate) {
-        _processAck(ctx.raw_command, ctx.sequence_id);
         return;
       }
-      _processAck(ctx.raw_command, ctx.sequence_id);
       _handleProcessKill(ctx, m);
       break;
     }
@@ -463,11 +442,10 @@ void BridgeClass::_dispatchCommand(const rpc_pb_RpcEnvelope& envelope) {
         emitStatus(rpc::StatusCode::STATUS_MALFORMED);
         return;
       }
+      _processAck(ctx.raw_command, ctx.sequence_id);
       if (ctx.is_duplicate) {
-        _processAck(ctx.raw_command, ctx.sequence_id);
         return;
       }
-      _processAck(ctx.raw_command, ctx.sequence_id);
       _handleProcessRunAsyncResponse(ctx, m);
       break;
     }
@@ -481,11 +459,10 @@ void BridgeClass::_dispatchCommand(const rpc_pb_RpcEnvelope& envelope) {
         emitStatus(rpc::StatusCode::STATUS_MALFORMED);
         return;
       }
+      _processAck(ctx.raw_command, ctx.sequence_id);
       if (ctx.is_duplicate) {
-        _processAck(ctx.raw_command, ctx.sequence_id);
         return;
       }
-      _processAck(ctx.raw_command, ctx.sequence_id);
       _handleProcessPollResponse(ctx, m);
       break;
     }
@@ -516,11 +493,10 @@ void BridgeClass::_dispatchCommand(const rpc_pb_RpcEnvelope& envelope) {
         emitStatus(rpc::StatusCode::STATUS_MALFORMED);
         return;
       }
+      _processAck(ctx.raw_command, ctx.sequence_id);
       if (ctx.is_duplicate) {
-        _processAck(ctx.raw_command, ctx.sequence_id);
         return;
       }
-      _processAck(ctx.raw_command, ctx.sequence_id);
       _handleSpiSetConfig(m);
       break;
     }

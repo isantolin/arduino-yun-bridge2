@@ -47,7 +47,7 @@ from mcubridge.config.settings import (
 from mcubridge.security.security import verify_crypto_integrity
 from mcubridge.services.handshake import SerialHandshakeFatal
 from mcubridge.services.runtime import BridgeService
-from mcubridge.state.context import create_runtime_state
+from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.transport.serial import SerialTransport
 
 logger = structlog.get_logger("mcubridge")
@@ -60,6 +60,7 @@ def app(args: list[str] | None = None) -> None:
     parser.parse_args(args)
 
     service: BridgeService | None = None
+    state: RuntimeState | None = None
 
     try:
         config = load_runtime_config()
@@ -132,6 +133,8 @@ def app(args: list[str] | None = None) -> None:
     finally:
         if service is not None:
             service.cleanup()
+        elif state is not None:
+            state.cleanup()
 
 
 if __name__ == "__main__":

@@ -318,10 +318,12 @@ stop_daemon
 
 echo "[STEP 3/6] Updating system packages..."
 # [FIX] Convert repository URLs to HTTP to bypass SSL verification issues in unprovisioned systems
-if [ -f /etc/apk/repositories ]; then
-    echo "[INFO] Patching /etc/apk/repositories to use HTTP..."
-    sed -i 's/https:/http:/g' /etc/apk/repositories || true
-fi
+for f in /etc/apk/repositories /etc/apk/repositories.d/*.list; do
+    if [ -f "$f" ]; then
+        echo "[INFO] Patching $f to use HTTP..."
+        sed -i 's/https:/http:/g' "$f" || true
+    fi
+done
 
 apk update || echo "[WARN] Failed to update package feeds. Continuing with local packages..."
 

@@ -176,7 +176,7 @@ async def test_serial_transport_coverage_boost(tmp_path: Path) -> None:
         await transport._read_loop(mock_serial_reader)
         mock_serial_reader.read.assert_awaited_once_with(1024)
     except AssertionError as e:
-        with open("/home/ignaciosantolin/arduino-yun-bridge2/.tmp_calls.txt", "w") as f:
+        with open(Path(__file__).parent.parent.parent / ".tmp_calls.txt", "w") as f:
             f.write(f"mock_reader.mock_calls: {mock_serial_reader.mock_calls}\n")
             f.write(f"mock_reader.readuntil.mock_calls: {mock_serial_reader.readuntil.mock_calls}\n")
             f.write(f"mock_reader.read.mock_calls: {mock_serial_reader.read.mock_calls}\n")

@@ -27,7 +27,7 @@ defaults:
 
 jobs:
   triage:
-    runs-on: 'ubuntu-latest'
+    runs-on: 'ubuntu-26.04'
     timeout-minutes: 7
     permissions:
       contents: 'read'
@@ -192,7 +192,7 @@ jobs:
           prompt: '/gemini-scheduled-triage'
 
   label:
-    runs-on: 'ubuntu-latest'
+    runs-on: 'ubuntu-26.04'
     needs:
       - 'triage'
     if: |-

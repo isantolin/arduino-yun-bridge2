@@ -34,7 +34,7 @@ jobs:
       - name: Install protoc
         if: matrix.env == 'protocol' || matrix.env == 'typecheck' || matrix.env == 'lint' || matrix.env == 'py313' || matrix.env == 'arduino' || matrix.env == 'cppcheck'
         run: |
-          PROTOC_VERSION=29.3
+          PROTOC_VERSION=35.1
           PROTOC_ZIP=protoc-${PROTOC_VERSION}-linux-x86_64.zip
           curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${PROTOC_ZIP}
           sudo unzip -o ${PROTOC_ZIP} -d /usr/local
@@ -96,7 +96,7 @@ jobs:
       - uses: actions/checkout@v6
       - name: Install protoc
         run: |
-          PROTOC_VERSION=29.3
+          PROTOC_VERSION=35.1
           PROTOC_ZIP=protoc-${PROTOC_VERSION}-linux-x86_64.zip
           curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${PROTOC_ZIP}
           sudo unzip -o ${PROTOC_ZIP} -d /usr/local
@@ -141,7 +141,7 @@ jobs:
       - uses: actions/checkout@v6
       - name: Install protoc
         run: |
-          PROTOC_VERSION=29.3
+          PROTOC_VERSION=35.1
           PROTOC_ZIP=protoc-${PROTOC_VERSION}-linux-x86_64.zip
           curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${PROTOC_ZIP}
           sudo unzip -o ${PROTOC_ZIP} -d /usr/local
@@ -220,7 +220,7 @@ jobs:
       - uses: actions/checkout@v6
       - name: Install protoc
         run: |
-          PROTOC_VERSION=29.3
+          PROTOC_VERSION=35.1
           PROTOC_ZIP=protoc-${PROTOC_VERSION}-linux-x86_64.zip
           curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${PROTOC_ZIP}
           sudo unzip -o ${PROTOC_ZIP} -d /usr/local
@@ -254,7 +254,7 @@ jobs:
       - uses: actions/checkout@v6
       - name: Install protoc
         run: |
-          PROTOC_VERSION=29.3
+          PROTOC_VERSION=35.1
           PROTOC_ZIP=protoc-${PROTOC_VERSION}-linux-x86_64.zip
           curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${PROTOC_ZIP}
           sudo unzip -o ${PROTOC_ZIP} -d /usr/local
@@ -281,7 +281,7 @@ jobs:
       - uses: actions/checkout@v6
       - name: Install protoc
         run: |
-          PROTOC_VERSION=29.3
+          PROTOC_VERSION=35.1
           PROTOC_ZIP=protoc-${PROTOC_VERSION}-linux-x86_64.zip
           curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${PROTOC_ZIP}
           sudo unzip -o ${PROTOC_ZIP} -d /usr/local

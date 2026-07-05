@@ -863,10 +863,17 @@ class BridgeService:
             if act == FileAction.READ:
                 await self._handle_mqtt_file_mcu_read(inbound, target)
             elif act == FileAction.WRITE:
-                await serial.send(
+                if await serial.send(
                     Command.CMD_FILE_WRITE.value,
                     pb.FileWrite(path=target[len(MCU_FS_PREFIX) :], data=bytes(inbound.payload)),
-                )
+                ):
+                    await self.enqueue_mqtt(
+                        create_queued_publish(
+                            topic_path(self.state.mqtt_topic_prefix, Topic.FILE, FileAction.READ, target),
+                            bytes(inbound.payload),
+                        ),
+                        reply_context=inbound,
+                    )
             elif act == FileAction.REMOVE:
                 await serial.send(Command.CMD_FILE_REMOVE.value, pb.FileRemove(path=target[len(MCU_FS_PREFIX) :]))
         else:

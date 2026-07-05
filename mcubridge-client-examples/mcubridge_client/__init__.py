@@ -265,10 +265,12 @@ class Bridge:
             "stderr_truncated": packet.stderr_truncated,
         }
 
-    async def file_write(self, filename: str, content: str | bytes) -> None:
-        await self._publish(
+    async def file_write(self, filename: str, content: str | bytes, timeout: float = 15) -> None:
+        await self._publish_and_wait(
             Topic.build(Topic.FILE, "write", filename.lstrip("/")),
             content if isinstance(content, bytes) else content.encode(),
+            resp_topic=Topic.build(Topic.FILE, "read", filename.lstrip("/")),
+            timeout=timeout,
         )
 
     async def file_read(self, filename: str, timeout: float = 15) -> bytes:

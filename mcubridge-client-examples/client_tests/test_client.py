@@ -105,6 +105,21 @@ async def test_client_file_write(mock_socket) -> None:
     bridge = Bridge(socket_path="/var/run/test.sock")
     await bridge.connect()
 
+    resp = pb.MqttQueuedPublish(
+        topic_name="br/file/read/test.txt",
+        payload=b"content",
+    )
+
+    def capture_write(data):
+        if len(data) > 4:
+            msg = pb.MqttQueuedPublish.FromString(data)
+            resp.correlation_data = msg.correlation_data
+            resp_bytes = resp.SerializeToString()
+            resp_len = len(resp_bytes).to_bytes(4, byteorder="big")
+            mock_reader.readexactly.side_effect = [resp_len, resp_bytes, asyncio.CancelledError()]
+
+    mock_writer.write.side_effect = capture_write
+
     await bridge.file_write("test.txt", "content")
 
     assert mock_writer.write.called

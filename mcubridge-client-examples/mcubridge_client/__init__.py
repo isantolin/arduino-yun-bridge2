@@ -9,10 +9,9 @@ import os
 import secrets
 import shlex
 import ssl
-from pathlib import Path
 from typing import TypedDict
 
-from aiomqtt import ConnectError, ProtocolError, NegativeAckError, QoS
+from aiomqtt import ConnectError, ProtocolError, NegativeAckError
 
 from .definitions import (
     DEFAULT_MQTT_HOST,
@@ -66,9 +65,6 @@ class ShellPollResponse(TypedDict, total=False):
     finished: bool
     stdout_truncated: bool
     stderr_truncated: bool
-
-
-
 
 
 class Bridge:

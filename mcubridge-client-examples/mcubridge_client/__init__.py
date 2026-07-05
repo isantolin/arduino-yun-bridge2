@@ -56,12 +56,7 @@ class Bridge:
 
     def __init__(
         self,
-        host: str | None = None,
-        port: int | None = None,
         topic_prefix: str = "br",
-        username: str | None = None,
-        password: str | None = None,
-        tls_context: ssl.SSLContext | None = None,
         socket_path: str = "/var/run/mcubridge.sock",
     ) -> None:
         self.topic_prefix = topic_prefix

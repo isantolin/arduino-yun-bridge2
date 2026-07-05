@@ -1,32 +1,29 @@
 #!/usr/bin/env python3
 import logging
 import asyncio
-import aiomqtt
-import time
+from mcubridge_client import Bridge
 
 
-async def _publish(topic: str, broker: str) -> None:
-    async with aiomqtt.Client(hostname=broker) as client:
-        await client.publish(topic, b"", qos=1)
-
-
-def trigger_bootloader() -> None:
+async def run() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
     log = logging.getLogger("bootloader_sim")
 
-    topic = "br/system/bootloader"
-    broker = "localhost"
-
-    # Handshake completo toma ~20s en el emulador
+    # Handshake completes in ~20s in the emulator
     log.info("Waiting 30s for Full Link Synchronization...")
-    time.sleep(30)
+    await asyncio.sleep(30)
 
-    log.info(f"Triggering bootloader via MQTT topic: {topic}")
-    asyncio.run(_publish(topic, broker))
+    log.info("Triggering bootloader via UNIX socket...")
+    bridge = Bridge()
+    await bridge.connect()
+    try:
+        await bridge.enter_bootloader()
+        log.info("Bootloader command sent.")
+    finally:
+        await bridge.disconnect()
 
-    log.info("Message published. Watching for MCU output (5s)...")
-    time.sleep(5)
+    log.info("Watching for MCU output (5s)...")
+    await asyncio.sleep(5)
 
 
 if __name__ == "__main__":
-    trigger_bootloader()
+    asyncio.run(run())

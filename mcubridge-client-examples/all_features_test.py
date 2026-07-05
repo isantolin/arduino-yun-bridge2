@@ -11,8 +11,8 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("all-features-test")
 
 
-async def run_test(host: str, port: int, user: str | None, password: str | None) -> None:
-    client = Bridge(host=host, port=port, username=user, password=password)
+async def run_test(socket_path: str | None, topic_prefix: str) -> None:
+    client = Bridge(socket_path=socket_path, topic_prefix=topic_prefix)
     logger.info("--- Starting UNIFIED ALL-FEATURES E2E Test ---")
     async with client:
         # 1. LED test
@@ -78,16 +78,13 @@ async def run_test(host: str, port: int, user: str | None, password: str | None)
     logger.info("ALL FEATURES PASSED.")
 
 
-def main(host: str = "127.0.0.1", port: int = 1883, user: str = "", password: str = ""):
-    # Pass None if empty to rely on anonymous
-    asyncio.run(run_test(host, port, user or None, password or None))
+def main(socket_path: str | None = None, topic_prefix: str = "br"):
+    asyncio.run(run_test(socket_path, topic_prefix))
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Unified e2e feature test for mcubridge.")
-    parser.add_argument("--host", default="127.0.0.1", help="MQTT Broker Host")
-    parser.add_argument("--port", type=int, default=1883, help="MQTT Broker Port")
-    parser.add_argument("--user", default="", help="MQTT Username")
-    parser.add_argument("--password", default="", help="MQTT Password")
+    parser.add_argument("--socket-path", default=None, help="UNIX Domain Socket Path")
+    parser.add_argument("--topic-prefix", default="br", help="Topic prefix")
     _args = parser.parse_args()
-    main(_args.host, _args.port, _args.user, _args.password)
+    main(_args.socket_path, _args.topic_prefix)

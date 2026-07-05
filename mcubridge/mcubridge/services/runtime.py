@@ -78,6 +78,15 @@ from ..watchdog import WatchdogKeepalive
 from ..state.context import ProcessContext, RuntimeState
 from .handshake import SerialHandshakeManager, SerialHandshakeFatal, derive_serial_timing
 
+
+@dataclass
+class BridgeRequest:
+    topic: str
+    payload: bytes
+    correlation_data: bytes | None = None
+    response_topic: str | None = None
+
+
 if TYPE_CHECKING:
     from ..transport.serial import SerialTransport
 
@@ -220,7 +229,7 @@ class BridgeService:
         self._topic_aliases.clear()
         self._next_alias_id = 1
 
-    async def enqueue_mqtt(self, message: pb.MqttQueuedPublish, *, reply_context: PublishPacket | None = None) -> None:
+    async def enqueue_mqtt(self, message: pb.MqttQueuedPublish, *, reply_context: Any | None = None) -> None:
         resolved_message = structures.resolve_mqtt_context(message, reply_context)
         correlation = resolved_message.correlation_data if resolved_message.HasField("correlation_data") else None
         if correlation and correlation in self._ipc_requests:
@@ -547,14 +556,32 @@ class BridgeService:
             self.state.metrics.unknown_command_count.inc()
             await serial.send(Status.NOT_IMPLEMENTED.value, b"")
 
-    async def handle_mqtt_message(self, inbound: PublishPacket) -> None:
-        if route := parse_topic(self.state.mqtt_topic_prefix, str(inbound.topic)):
+    async def handle_request(self, inbound: Any) -> None:
+        if isinstance(inbound, BridgeRequest):
+            request = inbound
+        else:
+            props = getattr(inbound, "properties", None)
+            rt = getattr(inbound, "response_topic", None)
+            if rt is None and props:
+                rt = getattr(props, "ResponseTopic", None)
+            cd = getattr(inbound, "correlation_data", None)
+            if cd is None and props:
+                cd = getattr(props, "CorrelationData", None)
+
+            request = BridgeRequest(
+                topic=str(inbound.topic),
+                payload=bytes(inbound.payload),
+                correlation_data=bytes(cd) if cd else None,
+                response_topic=str(rt) if rt else None,
+            )
+
+        if route := parse_topic(self.state.mqtt_topic_prefix, request.topic):
             if route.topic != Topic.SYSTEM:
                 try:
                     async with asyncio.timeout(DEFAULT_SYNC_TIMEOUT_SECONDS):
                         await self.state.link_sync_event.wait()
                 except asyncio.TimeoutError:
-                    logger.error("Timed out waiting for MCU link synchronization", topic=str(inbound.topic))
+                    logger.error("Timed out waiting for MCU link synchronization", topic=request.topic)
             action = self._deduce_action(route)
             topic_str = route.topic.value if isinstance(route.topic, Topic) else route.topic
             if action and not (
@@ -562,27 +589,27 @@ class BridgeService:
                 if self.state.topic_authorization
                 else False
             ):
-                await self._reject_mqtt(inbound, route.topic, action)
+                await self._reject_mqtt(request, route.topic, action)
                 return
 
-            # Unified MQTT Dispatch
+            # Unified Dispatch
             match route.topic:
                 case Topic.CONSOLE:
-                    await self._handle_mqtt_console(inbound)
+                    await self._handle_console(request)
                 case Topic.DATASTORE:
-                    await self._handle_mqtt_datastore(route, inbound)
+                    await self._handle_datastore(route, request)
                 case Topic.MAILBOX:
-                    await self._handle_mqtt_mailbox(route, inbound)
+                    await self._handle_mailbox(route, request)
                 case Topic.FILE:
-                    await self._handle_mqtt_file(route, inbound)
+                    await self._handle_file(route, request)
                 case Topic.SHELL:
-                    await self._handle_mqtt_shell(route, inbound)
+                    await self._handle_shell(route, request)
                 case Topic.SPI:
-                    await self._handle_mqtt_spi(route, inbound)
+                    await self._handle_spi(route, request)
                 case Topic.DIGITAL | Topic.ANALOG:
-                    await self._handle_mqtt_pin(route, inbound)
+                    await self._handle_pin(route, request)
                 case Topic.SYSTEM:
-                    await self._handle_mqtt_system(route, inbound)
+                    await self._handle_system(route, request)
                 case _:
                     pass
 
@@ -801,14 +828,14 @@ class BridgeService:
             )
         )
 
-    # --- MQTT Specific Handlers (Cleaned) ---
+    # --- Direct Service Request Handlers (Cleaned) ---
 
-    async def _handle_mqtt_console(self, inbound: PublishPacket) -> None:
+    async def _handle_console(self, inbound: BridgeRequest) -> None:
         if pl := bytes(inbound.payload):
             self.state.console_to_mcu_queue.append(pl)
             await self._flush_console_queue()
 
-    async def _handle_mqtt_datastore(self, route: TopicRoute, inbound: PublishPacket) -> None:
+    async def _handle_datastore(self, route: TopicRoute, inbound: BridgeRequest) -> None:
         key_parts = list(route.remainder)
         if key_parts and key_parts[-1] in ("request", "response"):
             key_parts.pop()
@@ -829,7 +856,7 @@ class BridgeService:
             elif route.remainder and route.remainder[-1] == "request":
                 await self._publish_datastore_value(key, b"", reply_context=inbound, error="datastore-miss")
 
-    async def _handle_mqtt_mailbox(self, route: TopicRoute, inbound: PublishPacket) -> None:
+    async def _handle_mailbox(self, route: TopicRoute, inbound: BridgeRequest) -> None:
         serial = self.serial
         if not serial:
             return
@@ -852,7 +879,7 @@ class BridgeService:
                 reply_context=inbound,
             )
 
-    async def _handle_mqtt_file(self, route: TopicRoute, inbound: PublishPacket) -> None:
+    async def _handle_file(self, route: TopicRoute, inbound: BridgeRequest) -> None:
         serial = self.serial
         if not serial:
             return
@@ -861,7 +888,7 @@ class BridgeService:
             return
         if target.startswith(MCU_FS_PREFIX):
             if act == FileAction.READ:
-                await self._handle_mqtt_file_mcu_read(inbound, target)
+                await self._handle_file_mcu_read(inbound, target)
             elif act == FileAction.WRITE:
                 if await serial.send(
                     Command.CMD_FILE_WRITE.value,
@@ -907,7 +934,7 @@ class BridgeService:
             elif act == FileAction.REMOVE and await asyncio.to_thread(path.exists):
                 await asyncio.to_thread(path.unlink)
 
-    async def _handle_mqtt_file_mcu_read(self, ctx: PublishPacket, target: str) -> None:
+    async def _handle_file_mcu_read(self, ctx: BridgeRequest, target: str) -> None:
         serial = self.serial
         if not serial:
             return
@@ -958,7 +985,7 @@ class BridgeService:
             finally:
                 self._pending_mcu_read = None
 
-    async def _handle_mqtt_shell(self, route: TopicRoute, inbound: PublishPacket) -> None:
+    async def _handle_shell(self, route: TopicRoute, inbound: BridgeRequest) -> None:
         act = route.segments[0] if route.segments else None
         pl = bytes(inbound.payload)
         if act == ShellAction.RUN_ASYNC:
@@ -974,7 +1001,7 @@ class BridgeService:
                     cmd = pl.decode().strip()
                 pid = await self._run_process(cmd)
             except (ProtobufDecodeError, UnicodeDecodeError, ValueError, OSError) as exc:
-                logger.error("MQTT shell run_async rejected", error=str(exc))
+                logger.error("Shell run_async rejected", error=str(exc))
                 payload = pb.ProcessRunAsyncResponse(pid=0).SerializeToString()
             else:
                 payload = pb.ProcessRunAsyncResponse(pid=pid).SerializeToString()
@@ -1012,7 +1039,7 @@ class BridgeService:
             else:
                 await self._stop_process(pid)
 
-    async def _handle_mqtt_spi(self, route: TopicRoute, inbound: PublishPacket) -> None:
+    async def _handle_spi(self, route: TopicRoute, inbound: BridgeRequest) -> None:
         serial = self.serial
         if not serial:
             return
@@ -1049,7 +1076,7 @@ class BridgeService:
             case _:
                 return
 
-    async def _handle_mqtt_pin(self, route: TopicRoute, inbound: PublishPacket) -> None:
+    async def _handle_pin(self, route: TopicRoute, inbound: BridgeRequest) -> None:
         serial = self.serial
         if not serial:
             return
@@ -1093,7 +1120,7 @@ class BridgeService:
             cmd = Command.CMD_DIGITAL_WRITE if route.topic == Topic.DIGITAL else Command.CMD_ANALOG_WRITE
             await serial.send(cmd.value, pb.DigitalWrite(pin=pin, value=int(pl) if pl.isdigit() else 0))
 
-    async def _handle_mqtt_system(self, route: TopicRoute, inbound: PublishPacket) -> None:
+    async def _handle_system(self, route: TopicRoute, inbound: BridgeRequest) -> None:
         serial = self.serial
         if not serial:
             return
@@ -1137,7 +1164,7 @@ class BridgeService:
 
     # --- Low-level Helpers ---
 
-    async def _request_mcu_version(self, inbound: PublishPacket | None = None) -> bool:
+    async def _request_mcu_version(self, inbound: BridgeRequest | None = None) -> bool:
         serial = self.serial
         if not serial:
             return False
@@ -1149,7 +1176,7 @@ class BridgeService:
             return True
         return False
 
-    async def _publish_version(self, v: tuple[int, int, int], ctx: PublishPacket | None) -> None:
+    async def _publish_version(self, v: tuple[int, int, int], ctx: BridgeRequest | None) -> None:
         pl = f"{v[0]}.{v[1]}.{v[2]}".encode()
         tp = get_topic_for_message(self.state.mqtt_topic_prefix, pb.VersionResponse)
         if tp:
@@ -1539,7 +1566,7 @@ class BridgeService:
             try:
                 message = await self._mqtt_incoming_queue.get()
                 try:
-                    await self.handle_mqtt_message(message)
+                    await self.handle_request(message)
                 except (ValueError, RuntimeError, asyncio.QueueFull) as e:
                     logger.error(
                         "Error processing MQTT message",
@@ -1679,19 +1706,13 @@ class BridgeService:
         active_correlations.add(correlation)
 
         try:
+            req = BridgeRequest(
+                topic=request.topic_name,
+                payload=request.payload,
+                correlation_data=correlation,
+            )
 
-            class MockPublishPacket:
-                def __init__(self, topic: str, payload: bytes, correlation_data: bytes):
-                    self.topic = topic
-                    self.payload = payload
-                    self.correlation_data = correlation_data
-                    self.qos = 1
-                    self.packet_id = 1
-                    self.response_topic = None
-
-            inbound = MockPublishPacket(topic=request.topic_name, payload=request.payload, correlation_data=correlation)
-
-            await self.handle_mqtt_message(cast(aiomqtt.PublishPacket, inbound))
+            await self.handle_request(req)
 
             # Only wait for a response if correlation_data was explicitly provided by the client
             if request.HasField("correlation_data"):

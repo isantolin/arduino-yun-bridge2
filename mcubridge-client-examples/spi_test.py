@@ -13,18 +13,10 @@ logger = logging.getLogger(__name__)
 
 
 async def run_test(
-    host: str,
-    port: int,
-    user: str | None,
-    password: str | None,
-    tls_insecure: bool,
+    socket_path: str | None,
+    topic_prefix: str,
 ) -> None:
-    bridge = Bridge(host=host, port=port, username=user, password=password)
-    if tls_insecure and bridge.tls_context:
-        bridge.tls_context.check_hostname = False
-        import ssl
-
-        bridge.tls_context.verify_mode = ssl.CERT_NONE
+    bridge = Bridge(socket_path=socket_path, topic_prefix=topic_prefix)
 
     await bridge.connect()
     logger.info("--- Starting SPI Service Test ---")
@@ -54,26 +46,15 @@ async def run_test(
 
 
 def main(
-    host: str = "127.0.0.1",
-    port: int = 1883,
-    user: str | None = None,
-    password: str | None = None,
-    tls_insecure: bool = True,
+    socket_path: str | None = None,
+    topic_prefix: str = "br",
 ) -> None:
-    asyncio.run(run_test(host, port, user, password, tls_insecure))
+    asyncio.run(run_test(socket_path, topic_prefix))
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Test script for SPI service and Auto-Baudrate fallback.")
-    parser.add_argument("--host", default="127.0.0.1", help="MQTT Broker Host")
-    parser.add_argument("--port", type=int, default=1883, help="MQTT Broker Port")
-    parser.add_argument("--user", default=None, help="MQTT Username")
-    parser.add_argument("--password", default=None, help="MQTT Password")
-    parser.add_argument(
-        "--tls-insecure",
-        action="store_true",
-        default=True,
-        help="Disable TLS certificate verification",
-    )
+    parser.add_argument("--socket-path", default=None, help="UNIX Domain Socket Path")
+    parser.add_argument("--topic-prefix", default="br", help="Topic prefix")
     _args = parser.parse_args()
-    main(_args.host, _args.port, _args.user, _args.password, _args.tls_insecure)
+    main(_args.socket_path, _args.topic_prefix)

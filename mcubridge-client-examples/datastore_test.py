@@ -13,14 +13,11 @@ configure_logging()
 
 
 async def run_test(
-    host: str | None,
-    port: int | None,
-    user: str | None,
-    password: str | None,
-    tls_insecure: bool,
+    socket_path: str | None,
+    topic_prefix: str,
 ) -> None:
 
-    async with bridge_session(host, port, user, password, tls_insecure) as bridge:
+    async with bridge_session(socket_path, topic_prefix) as bridge:
         logging.info("--- Starting DataStore Bridge Client Test ---")
 
         # --- Test 1: Put and Get a new key-value pair ---
@@ -67,26 +64,15 @@ async def run_test(
 
 
 def main(
-    host: str | None = None,
-    port: int | None = None,
-    user: str | None = None,
-    password: str | None = None,
-    tls_insecure: bool = False,
+    socket_path: str | None = None,
+    topic_prefix: str = "br",
 ) -> None:
-    asyncio.run(run_test(host, port, user, password, tls_insecure))
+    asyncio.run(run_test(socket_path, topic_prefix))
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Exercise datastore interactions using the bridge client.")
-    parser.add_argument("--host", default=None, help="MQTT Broker Host")
-    parser.add_argument("--port", type=int, default=None, help="MQTT Broker Port")
-    parser.add_argument("--user", default=None, help="MQTT Username")
-    parser.add_argument("--password", default=None, help="MQTT Password")
-    parser.add_argument(
-        "--tls-insecure",
-        action="store_true",
-        default=False,
-        help="Disable TLS certificate verification",
-    )
+    parser.add_argument("--socket-path", default=None, help="UNIX Domain Socket Path")
+    parser.add_argument("--topic-prefix", default="br", help="Topic prefix")
     _args = parser.parse_args()
-    main(_args.host, _args.port, _args.user, _args.password, _args.tls_insecure)
+    main(_args.socket_path, _args.topic_prefix)

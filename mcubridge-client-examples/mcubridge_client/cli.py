@@ -20,15 +20,12 @@ def configure_logging() -> None:
 
 @contextlib.asynccontextmanager
 async def bridge_session(
-    host: str | None,
-    port: int | None,
-    user: str | None,
-    password: str | None,
-    tls_insecure: bool = False,
+    socket_path: str | None = None,
+    topic_prefix: str = "br",
 ) -> AsyncGenerator[Bridge]:
     """Connect a Bridge and guarantee disconnect on exit."""
     dump_client_env(logging.getLogger(__name__))
-    bridge_args = build_bridge_args(host, port, user, password, tls_insecure)
+    bridge_args = build_bridge_args(socket_path, topic_prefix)
     bridge = Bridge(**cast("dict[str, Any]", bridge_args))
     await bridge.connect()
     try:

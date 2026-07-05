@@ -35,7 +35,7 @@ define Package/$(PKG_NAME)
 	SUBMENU:=3. Applications
 	TITLE:=LuCI Support for McuBridge (system Python only)
 	PKG_ARCH:=all
-	DEPENDS:=+luci-base +luci-compat +luci-lua-runtime +uhttpd-mod-lua +mcubridge +mosquitto-client +lua +luaposix
+	DEPENDS:=+luci-base +luci-compat +luci-lua-runtime +uhttpd-mod-lua +mcubridge +lua +luaposix
 endef
 
 define Package/$(PKG_NAME)/description

@@ -13,16 +13,13 @@ configure_logging()
 
 
 async def run_test(
-    host: str | None,
-    port: int | None,
-    user: str | None,
-    password: str | None,
+    socket_path: str | None,
+    topic_prefix: str,
     pin: str,
     interval: float,
-    tls_insecure: bool,
 ) -> None:
 
-    async with bridge_session(host, port, user, password, tls_insecure) as bridge:
+    async with bridge_session(socket_path, topic_prefix) as bridge:
         logging.info(
             "Requesting a reading from pin %s every %.1f seconds.",
             pin,
@@ -64,41 +61,27 @@ async def run_test(
 
 
 def main(
-    host: str | None = None,
-    port: int | None = None,
-    user: str | None = None,
-    password: str | None = None,
+    socket_path: str | None = None,
+    topic_prefix: str = "br",
     pin: str = "d13",
     interval: float = 2.0,
-    tls_insecure: bool = False,
 ) -> None:
     try:
-        asyncio.run(run_test(host, port, user, password, pin, interval, tls_insecure))
+        asyncio.run(run_test(socket_path, topic_prefix, pin, interval))
     except KeyboardInterrupt:
         pass
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Poll sensor values via the async bridge client.")
-    parser.add_argument("--host", default=None, help="MQTT Broker Host")
-    parser.add_argument("--port", type=int, default=None, help="MQTT Broker Port")
-    parser.add_argument("--user", default=None, help="MQTT Username")
-    parser.add_argument("--password", default=None, help="MQTT Password")
+    parser.add_argument("--socket-path", default=None, help="UNIX Domain Socket Path")
+    parser.add_argument("--topic-prefix", default="br", help="Topic prefix")
     parser.add_argument("--pin", default="d13", help="Pin to read (e.g., 'd13' or 'a0').")
     parser.add_argument("--interval", type=float, default=2.0, help="Read interval in seconds.")
-    parser.add_argument(
-        "--tls-insecure",
-        action="store_true",
-        default=False,
-        help="Disable TLS certificate verification",
-    )
     _args = parser.parse_args()
     main(
-        _args.host,
-        _args.port,
-        _args.user,
-        _args.password,
+        _args.socket_path,
+        _args.topic_prefix,
         _args.pin,
         _args.interval,
-        _args.tls_insecure,
     )

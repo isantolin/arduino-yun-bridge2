@@ -21,28 +21,54 @@ module("luci.controller.mcubridge", package.seeall)
 local fs = require "nixio.fs"
 local uci = require "luci.model.uci".cursor()
 local sys = require "luci.sys"
+local nixio = require "nixio"
 
-local function shellquote(s)
-    return "'" .. tostring(s):gsub("'", "'\\''") .. "'"
+local function encode_varint(n)
+    local bytes = {}
+    while n >= 128 do
+        bytes[#bytes + 1] = string.char((n % 128) + 128)
+        n = math.floor(n / 128)
+    end
+    bytes[#bytes + 1] = string.char(n)
+    return table.concat(bytes)
 end
 
-local function mosquitto_publish(argv, attempts)
-    attempts = attempts or 3
-    local parts = {}
-    for i = 2, #argv do
-        parts[#parts + 1] = shellquote(argv[i])
-    end
-    local cmd = "mosquitto_pub " .. table.concat(parts, " ")
-    for attempt = 1, attempts do
-        if sys.call(cmd) == 0 then
-            return true
-        end
-        if attempt < attempts then
-            sys.call("sleep 1")
-        end
-    end
-    return false
+local function encode_string(field_num, s)
+    if not s or s == "" then return "" end
+    local tag = string.char((field_num * 8) + 2)
+    return tag .. encode_varint(#s) .. s
 end
+
+local function serialize_publish(topic, payload)
+    local f1 = encode_string(1, topic)
+    local f2 = encode_string(2, payload)
+    local body = f1 .. f2
+    local len = #body
+    local len_bytes = string.char(
+        math.floor(len / 16777216) % 256,
+        math.floor(len / 65536) % 256,
+        math.floor(len / 256) % 256,
+        len % 256
+    )
+    return len_bytes .. body
+end
+
+local function socket_publish(topic, payload)
+    local socket_path = uci:get("mcubridge", "general", "socket_path") or "/var/run/mcubridge.sock"
+    local sock = nixio.socket("unix", "stream")
+    if not sock then return false end
+    
+    if not sock:connect(socket_path) then
+        sock:close()
+        return false
+    end
+    
+    local data = serialize_publish(topic, payload)
+    local sent, err = sock:send(data)
+    sock:close()
+    return sent == #data
+end
+
 
 function index()
     -- Configuration and status pages
@@ -120,65 +146,24 @@ function action_api(...)
         return send_json(400, { status = "error", message = 'State must be "ON" or "OFF".' })
     end
 
-    -- Get MQTT config from UCI
-    local host = uci:get("mcubridge", "general", "mqtt_host") or "127.0.0.1"
-    local port = uci:get("mcubridge", "general", "mqtt_port") or "8883"
+    -- Send command via UNIX socket to the daemon
     local topic_prefix = uci:get("mcubridge", "general", "mqtt_topic") or "br"
-    local tls = uci:get("mcubridge", "general", "mqtt_tls") or "1"
-    local tls_insecure = uci:get("mcubridge", "general", "mqtt_tls_insecure") or "0"
-    local cafile = uci:get("mcubridge", "general", "mqtt_cafile") or ""
-
-    -- Prepare mosquitto_pub arguments without relying on a shell
     local payload = (state == "ON") and "1" or "0"
     local topic = string.format("%s/d/%s", topic_prefix, pin_number)
-    local client_id = string.format("luci-api-%s-%s", pin_number, os.time())
-    local pub_args = {
-        "mosquitto_pub",
-        "-h", host,
-        "-p", tostring(port),
-        "-t", topic,
-        "-m", payload,
-        "-i", client_id,
-        "-r"
-    }
 
-    if tls == "1" then
-        if cafile ~= "" then
-            pub_args[#pub_args + 1] = "--cafile"
-            pub_args[#pub_args + 1] = cafile
-        else
-            -- Match daemon defaults: if UCI cafile is empty, fall back to system bundle/capath.
-            if fs.access("/etc/ssl/certs/ca-certificates.crt") then
-                pub_args[#pub_args + 1] = "--cafile"
-                pub_args[#pub_args + 1] = "/etc/ssl/certs/ca-certificates.crt"
-            elseif fs.access("/etc/ssl/certs") then
-                pub_args[#pub_args + 1] = "--capath"
-                pub_args[#pub_args + 1] = "/etc/ssl/certs"
-            end
-        end
-
-        if tls_insecure == "1" then
-            pub_args[#pub_args + 1] = "--insecure"
-        end
-
-        pub_args[#pub_args + 1] = "--tls-version"
-        pub_args[#pub_args + 1] = "tlsv1.2"
-    end
-
-    local ok = mosquitto_publish(pub_args, 3)
+    local ok = socket_publish(topic, payload)
 
     if ok then
         send_json(200, {
             status = "ok",
             pin = tonumber(pin_number),
             state = state,
-            message = "Command sent via MQTT."
+            message = "Command sent via UNIX socket."
         })
     else
         send_json(500, {
             status = "error",
-            message = "Failed to execute mosquitto_pub. Is mosquitto-client installed?",
-            argv = pub_args
+            message = "Failed to communicate with MCU Bridge daemon via UNIX socket."
         })
     end
 end

@@ -1604,7 +1604,7 @@ class BridgeService:
     async def run_ipc_server(self) -> None:
         """Run the lightweight UNIX socket IPC server for local clients."""
 
-        socket_path = "/var/run/mcubridge.sock"
+        socket_path = os.environ.get("MCUBRIDGE_SOCKET_PATH") or "/var/run/mcubridge.sock"
         try:
             if os.path.exists(socket_path):
                 os.unlink(socket_path)

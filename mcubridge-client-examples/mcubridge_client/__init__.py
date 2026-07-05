@@ -167,7 +167,7 @@ class Bridge:
             await self.writer.drain()
 
             delivered = await asyncio.wait_for(queue.get(), timeout=timeout)
-            return bytes(delivered.payload) if delivered.payload else b""
+            return delivered.payload if delivered.payload else b""
         finally:
             self._correlation_routes.pop(correlation, None)
 
@@ -249,7 +249,7 @@ class Bridge:
             timeout=timeout,
             content_type=PROTOBUF_CONTENT_TYPE,
         )
-        return int(pb.ProcessRunAsyncResponse.FromString(res).pid)
+        return pb.ProcessRunAsyncResponse.FromString(res).pid
 
     async def poll_shell_process(self, pid: int, timeout: float = 15) -> ShellPollResponse:
         res = await self._publish_and_wait(
@@ -260,13 +260,13 @@ class Bridge:
         )
         packet = pb.ProcessPollResponse.FromString(res)
         return {
-            "status_byte": int(packet.status),
-            "exit_code": int(packet.exit_code),
-            "stdout_chunk": bytes(packet.stdout_data),
-            "stderr_chunk": bytes(packet.stderr_data),
-            "finished": bool(packet.finished),
-            "stdout_truncated": bool(packet.stdout_truncated),
-            "stderr_truncated": bool(packet.stderr_truncated),
+            "status_byte": packet.status,
+            "exit_code": packet.exit_code,
+            "stdout_chunk": packet.stdout_data,
+            "stderr_chunk": packet.stderr_data,
+            "finished": packet.finished,
+            "stdout_truncated": packet.stdout_truncated,
+            "stderr_truncated": packet.stderr_truncated,
         }
 
     async def file_write(self, filename: str, content: str | bytes) -> None:

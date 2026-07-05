@@ -1,4 +1,4 @@
-"""Minimalistic Async MQTT Client for MCU Bridge."""
+"""Minimalistic Async Client for MCU Bridge."""
 
 from __future__ import annotations
 from . import mcubridge_pb2 as pb
@@ -11,26 +11,19 @@ import shlex
 import ssl
 from typing import TypedDict
 
-from aiomqtt import ConnectError, ProtocolError, NegativeAckError
-
 from .definitions import (
-    DEFAULT_MQTT_HOST,
-    DEFAULT_MQTT_PORT,
-    DEFAULT_MQTT_TOPIC,
     MqttQueuedPublish,
     SpiBitOrder,
     SpiMode,
     build_bridge_args,
 )
 from mcubridge.protocol.structures import create_queued_publish
-from .env import dump_client_env, read_uci_general
+from .env import dump_client_env
 from .protocol import (
     Command,
     Topic,
 )
 from .spi import SpiDevice
-
-MqttError = (ConnectError, ProtocolError, NegativeAckError)
 
 __all__ = [
     "Bridge",
@@ -39,7 +32,6 @@ __all__ = [
     "SpiDevice",
     "build_bridge_args",
     "dump_client_env",
-    "MqttError",
     "Command",
     "Topic",
     "MqttQueuedPublish",
@@ -47,14 +39,6 @@ __all__ = [
 
 logger = logging.getLogger(__name__)
 PROTOBUF_CONTENT_TYPE = "application/x-protobuf"
-_UCI_GENERAL = read_uci_general()
-
-MQTT_HOST = os.environ.get("MCUBRIDGE_MQTT_HOST") or _UCI_GENERAL.get("mqtt_host", DEFAULT_MQTT_HOST)
-MQTT_PORT = int(os.environ.get("MCUBRIDGE_MQTT_PORT") or _UCI_GENERAL.get("mqtt_port", str(DEFAULT_MQTT_PORT)))
-MQTT_TOPIC_PREFIX = os.environ.get("MCUBRIDGE_MQTT_TOPIC") or _UCI_GENERAL.get("mqtt_topic", DEFAULT_MQTT_TOPIC)
-MQTT_USER = os.environ.get("MCUBRIDGE_MQTT_USER") or _UCI_GENERAL.get("mqtt_user") or None
-MQTT_PASS = os.environ.get("MCUBRIDGE_MQTT_PASS") or _UCI_GENERAL.get("mqtt_pass") or None
-MQTT_TLS_INSECURE = os.environ.get("MCUBRIDGE_MQTT_TLS_INSECURE") or _UCI_GENERAL.get("mqtt_tls_insecure") or "0"
 
 
 class ShellPollResponse(TypedDict, total=False):
@@ -72,11 +56,11 @@ class Bridge:
 
     def __init__(
         self,
-        host: str = MQTT_HOST,
-        port: int = MQTT_PORT,
-        topic_prefix: str = MQTT_TOPIC_PREFIX,
-        username: str | None = MQTT_USER,
-        password: str | None = MQTT_PASS,
+        host: str | None = None,
+        port: int | None = None,
+        topic_prefix: str = "mcubridge",
+        username: str | None = None,
+        password: str | None = None,
         tls_context: ssl.SSLContext | None = None,
         socket_path: str = "/var/run/mcubridge.sock",
     ) -> None:

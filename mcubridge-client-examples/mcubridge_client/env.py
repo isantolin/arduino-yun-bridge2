@@ -49,7 +49,7 @@ def read_uci_general() -> dict[str, str]:
 
 
 def dump_client_env(logger: logging.Logger | None = None) -> None:
-    """Log the MQTT-related UCI settings for quick diagnostics."""
+    """Log the IPC socket settings for quick diagnostics."""
 
     def _emit(message: str) -> None:
         if logger is not None:
@@ -60,26 +60,12 @@ def dump_client_env(logger: logging.Logger | None = None) -> None:
 
     _emit("MCU Bridge client configuration snapshot (UCI):")
     cfg = read_uci_general()
-    if not cfg:
-        _emit("  <UCI unavailable or mcubridge.general missing>")
-        return
-
-    for key in (
-        "mqtt_host",
-        "mqtt_port",
-        "mqtt_tls",
-        "mqtt_tls_insecure",
-        "mqtt_user",
-        "mqtt_topic",
-        "mqtt_cafile",
-    ):
-        value = cfg.get(key)
-        if not value:
-            _emit(f"  {key}=<unset>")
-        elif key == "mqtt_user":
-            _emit(f"  {key}='{value}'")
-        else:
-            _emit(f"  {key}='{value}'")
+    socket_path = (
+        os.environ.get("MCUBRIDGE_SOCKET_PATH")
+        or (cfg.get("socket_path") if cfg else None)
+        or "/var/run/mcubridge.sock"
+    )
+    _emit(f"  socket_path='{socket_path}'")
 
 
 __all__: Iterable[str] = ("dump_client_env", "read_uci_general")

@@ -27,6 +27,7 @@ from google.protobuf.message import (
 import aiomqtt
 import logging
 import tenacity
+from .mqtt_patch import apply_aiomqtt_patches
 
 from aiomqtt import PublishPacket
 
@@ -91,7 +92,6 @@ if TYPE_CHECKING:
     from ..transport.serial import SerialTransport
 
 
-from .mqtt_patch import apply_aiomqtt_patches
 
 apply_aiomqtt_patches()
 

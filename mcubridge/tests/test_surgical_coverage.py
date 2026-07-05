@@ -109,9 +109,9 @@ async def test_surgical_runtime_edge_cases(
     with patch.object(service.handshake, "synchronize", side_effect=Exception("fail")):
         with pytest.raises(Exception, match="fail"):
             await service.on_serial_connected()
-    # handle_mqtt_message with invalid topic
+    # handle_request with invalid topic
     msg = Message(topic="invalid", payload=b"", qos=0, retain=False, mid=1, properties=None)
-    await service.handle_mqtt_message(msg)
+    await service.handle_request(msg)
 
 
 def test_surgical_scripts_coverage() -> None:

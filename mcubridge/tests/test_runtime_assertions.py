@@ -83,7 +83,7 @@ async def test_mqtt_file_write_asserts_serial(
         properties=None,
     )
 
-    await service.handle_mqtt_message(msg)
+    await service.handle_request(msg)
 
     serial.send.assert_called_once()
     assert serial.send.call_args[0][0] == Command.CMD_FILE_WRITE.value
@@ -109,7 +109,7 @@ async def test_mqtt_datastore_put_asserts_cache(
         properties=None,
     )
 
-    await service.handle_mqtt_message(msg)
+    await service.handle_request(msg)
 
     assert state.datastore_cache is not None
     assert await state.datastore_cache.get("my_key") == b"my_value"
@@ -165,7 +165,7 @@ async def test_mqtt_mailbox_write_asserts_serial(
         properties=None,
     )
 
-    await service.handle_mqtt_message(msg)
+    await service.handle_request(msg)
 
     serial.send.assert_called_once()
     assert serial.send.call_args[0][0] == Command.CMD_MAILBOX_PUSH.value
@@ -215,7 +215,7 @@ async def test_mqtt_spi_transfer_asserts_serial(
         properties=None,
     )
 
-    await service.handle_mqtt_message(msg)
+    await service.handle_request(msg)
 
     serial.send.assert_called_once()
     assert serial.send.call_args[0][0] == Command.CMD_SPI_TRANSFER.value
@@ -242,7 +242,7 @@ async def test_mqtt_file_host_write_asserts_cache(
     )
 
     with patch("mcubridge.services.runtime.BridgeService._write_with_quota", return_value=True):
-        await service.handle_mqtt_message(msg)
+        await service.handle_request(msg)
 
     service.enqueue_mqtt.assert_called_once()
     queued_pub = service.enqueue_mqtt.call_args[0][0]
@@ -269,7 +269,7 @@ async def test_mqtt_file_host_read_asserts_read(
 
     with patch("pathlib.Path.is_file", return_value=True):
         with patch("pathlib.Path.read_bytes", return_value=b"disk_data"):
-            await service.handle_mqtt_message(msg)
+            await service.handle_request(msg)
 
     service.enqueue_mqtt.assert_called_once()
     queued_pub = service.enqueue_mqtt.call_args[0][0]
@@ -305,7 +305,7 @@ async def test_mqtt_shell_poll_asserts_mqtt(
             stderr_truncated=False,
         )
         with patch("mcubridge.services.runtime.BridgeService._poll_process", return_value=mock_batch):
-            await service.handle_mqtt_message(msg)
+            await service.handle_request(msg)
 
     service.enqueue_mqtt.assert_called_once()
     queued_pub = service.enqueue_mqtt.call_args[0][0]
@@ -330,7 +330,7 @@ async def test_mqtt_shell_kill_asserts_mqtt(
 
     with patch("mcubridge.services.runtime.is_command_allowed", return_value=True):
         with patch("mcubridge.services.runtime.BridgeService._stop_process", return_value=True) as mock_stop:
-            await service.handle_mqtt_message(msg)
+            await service.handle_request(msg)
 
     mock_stop.assert_called_once_with(123)
 
@@ -358,7 +358,7 @@ async def test_mqtt_shell_run_asserts_exec(
             mock_proc.pid = 999
             mock_exec.return_value = mock_proc
 
-            await service.handle_mqtt_message(msg)
+            await service.handle_request(msg)
 
             mock_exec.assert_called_once()
             service.enqueue_mqtt.assert_called_once()

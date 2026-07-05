@@ -8,7 +8,6 @@ import logging
 import os
 import secrets
 import shlex
-import ssl
 from typing import Any, TypedDict
 
 from .definitions import (

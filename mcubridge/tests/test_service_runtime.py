@@ -118,7 +118,7 @@ async def test_handle_mqtt_console_queues_and_flushes() -> None:
         mock_msg.topic = "br/console/in"
         mock_msg.payload = b"hello"
 
-        await service.handle_mqtt_message(mock_msg)
+        await service.handle_request(mock_msg)
 
         mock_serial.send.assert_called()
     finally:
@@ -184,7 +184,7 @@ async def test_handle_mqtt_pin_overflow_reports_error() -> None:
             message.payload = b""
             message.properties = None
 
-            await service.handle_mqtt_message(message)
+            await service.handle_request(message)
 
         assert captured
         assert any(

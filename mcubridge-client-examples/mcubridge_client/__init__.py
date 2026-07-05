@@ -58,7 +58,7 @@ class Bridge:
         self,
         host: str | None = None,
         port: int | None = None,
-        topic_prefix: str = "mcubridge",
+        topic_prefix: str = "br",
         username: str | None = None,
         password: str | None = None,
         tls_context: ssl.SSLContext | None = None,

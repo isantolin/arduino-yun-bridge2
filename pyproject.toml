@@ -85,6 +85,7 @@ exclude = '''
   | \.tox
   | \.venv
   | \.venv_debug
+  | \.tmp_tests
   | typings
   | openwrt-sdk.*
   | tools/protocol/templates
@@ -94,7 +95,7 @@ exclude = '''
 [tool.ruff]
 target-version = "py313"
 line-length = 120
-exclude = ["*_pb2.py", "*_pb2.pyi", "typings", "tools/protocol/templates"]
+exclude = ["*_pb2.py", "*_pb2.pyi", "typings", "tools/protocol/templates", ".tmp_tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "C90", "A", "PLW"]

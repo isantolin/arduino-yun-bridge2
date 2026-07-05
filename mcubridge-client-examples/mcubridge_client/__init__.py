@@ -68,21 +68,7 @@ class ShellPollResponse(TypedDict, total=False):
     stderr_truncated: bool
 
 
-def _default_tls_context() -> ssl.SSLContext | None:
-    mqtt_tls = _UCI_GENERAL.get("mqtt_tls", "0")
-    if str(mqtt_tls).strip() not in {"1", "true", "yes", "on"}:
-        return None
-    try:
-        cafile = (_UCI_GENERAL.get("mqtt_cafile") or "").strip()
-        if not cafile and Path("/etc/ssl/certs/ca-certificates.crt").exists():
-            cafile = "/etc/ssl/certs/ca-certificates.crt"
 
-        ctx = ssl.create_default_context(cafile=cafile) if cafile else ssl.create_default_context()
-        if str(MQTT_TLS_INSECURE).strip() in {"1", "true", "yes", "on"}:
-            ctx.check_hostname = False
-        return ctx
-    except (ssl.SSLError, OSError, ValueError):
-        return None
 
 
 class Bridge:
@@ -333,13 +319,7 @@ class Bridge:
         return int(res.decode())
 
     async def enter_bootloader(self) -> None:
-        if self._client:
-            await self._client.publish(
-                Topic.build(Topic.SYSTEM, "bootloader"),
-                b"",
-                qos=QoS.AT_LEAST_ONCE,
-                packet_id=next(self._client.packet_ids),
-            )
+        await self._publish(Topic.build(Topic.SYSTEM, "bootloader"), b"")
 
     async def spi_transfer(self, data: bytes, timeout: float = 15) -> bytes:
         return await self._publish_and_wait(

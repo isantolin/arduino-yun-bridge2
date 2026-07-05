@@ -21,7 +21,7 @@ MIN_SWAP_KB=$((REQUIRED_SWAP_KB * 99 / 100))
 TMPDIR=/overlay/upper/tmp
 
 # [FIX] Removed --force-reinstall as it is not supported by OpenWrt's apk
-LOCAL_APK_INSTALL_FLAGS="--allow-untrusted --force-overwrite --no-network"
+LOCAL_APK_INSTALL_FLAGS="--allow-untrusted --force-overwrite"
 
 SERIAL_SECRET_PLACEHOLDER="changeme123"
 BOOTSTRAP_SERIAL_SECRET="755142925659b6f5d3ab00b7b280d72fc1cc17f0dad9f52fff9f65efd8caf8e3"

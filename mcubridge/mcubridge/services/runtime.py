@@ -126,6 +126,8 @@ class BridgeService:
     _topic_aliases: dict[str, int]
     _next_alias_id: int
     _mqtt_incoming_queue: asyncio.Queue[aiomqtt.PublishPacket]
+    _ipc_requests: dict[bytes, asyncio.Queue[pb.MqttQueuedPublish]]
+    _ipc_writers: list[asyncio.StreamWriter]
 
     def __init__(self, config: RuntimeConfig, state: RuntimeState, serial: SerialTransport) -> None:
         self.config, self.state, self.serial = config, state, serial
@@ -133,6 +135,8 @@ class BridgeService:
         self.watchdog: WatchdogKeepalive | None = None
         self.exporter: PrometheusExporter | None = None
         self._mqtt_incoming_queue = asyncio.Queue()
+        self._ipc_requests = {}
+        self._ipc_writers = []
 
         self.handshake = SerialHandshakeManager(
             config=config,
@@ -218,6 +222,21 @@ class BridgeService:
 
     async def enqueue_mqtt(self, message: pb.MqttQueuedPublish, *, reply_context: PublishPacket | None = None) -> None:
         resolved_message = structures.resolve_mqtt_context(message, reply_context)
+        correlation = resolved_message.correlation_data if resolved_message.HasField("correlation_data") else None
+        if correlation and correlation in self._ipc_requests:
+            self._ipc_requests[correlation].put_nowait(resolved_message)
+            return
+
+        if "console" in resolved_message.topic_name:
+            for w in list(self._ipc_writers):
+                try:
+                    data = resolved_message.SerializeToString()
+                    w.write(len(data).to_bytes(4, byteorder="big"))
+                    w.write(data)
+                    asyncio.create_task(w.drain())
+                except OSError:
+                    pass
+
         self.state.mqtt_publish_queue.put_nowait(resolved_message)
         try:
             async with self._mqtt_publish_lock:
@@ -460,6 +479,13 @@ class BridgeService:
 
     def cleanup(self) -> None:
         """Explicitly cleanup and close the spool cache database connection (SIL 2)."""
+        socket_path = os.environ.get("MCUBRIDGE_SOCKET_PATH") or "/var/run/mcubridge.sock"
+        try:
+            if os.path.exists(socket_path):
+                os.unlink(socket_path)
+        except OSError:
+            pass
+
         self.serial = None
         spool = self._mqtt_spool
         if spool is not None:
@@ -1375,6 +1401,9 @@ class BridgeService:
                     )
                     tg.create_task(self.supervise("prometheus-exporter", self.exporter.run))
 
+                # 5. Local IPC Server (UNIX Socket)
+                tg.create_task(self.supervise("ipc-server", self.run_ipc_server))
+
         except* asyncio.CancelledError:
             logger.info("Daemon shutdown initiated (Cancelled).")
         except* (
@@ -1571,3 +1600,105 @@ class BridgeService:
         except Exception as exc:
             logger.critical("Supervisor task failed unexpectedly", task=name, error=str(exc))
             raise
+
+    async def run_ipc_server(self) -> None:
+        """Run the lightweight UNIX socket IPC server for local clients."""
+
+        socket_path = "/var/run/mcubridge.sock"
+        try:
+            if os.path.exists(socket_path):
+                os.unlink(socket_path)
+        except OSError:
+            pass
+
+        # Create parent directory if it doesn't exist
+        os.makedirs(os.path.dirname(socket_path), exist_ok=True)
+
+        server = await asyncio.start_unix_server(self.handle_ipc_client, path=socket_path)
+        try:
+            os.chmod(socket_path, 0o660)
+        except OSError as e:
+            logger.warning("Failed to set permissions on UNIX socket", error=e)
+
+        async with server:
+            logger.info("Local IPC server listening on %s", socket_path)
+            await server.serve_forever()
+
+    async def handle_ipc_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        self._ipc_writers.append(writer)
+        active_correlations: set[bytes] = set()
+        try:
+            while True:
+                try:
+                    len_bytes = await reader.readexactly(4)
+                except asyncio.IncompleteReadError:
+                    break  # EOF, client disconnected cleanly
+
+                length = int.from_bytes(len_bytes, byteorder="big")
+                if length > 65536:
+                    logger.error("IPC request size exceeded limit", size=length)
+                    break
+
+                data = await reader.readexactly(length)
+                request = pb.MqttQueuedPublish.FromString(data)
+
+                # Process request in background task so we don't block reading other requests
+                asyncio.create_task(self._process_ipc_request(request, writer, active_correlations))
+        except (asyncio.IncompleteReadError, OSError, asyncio.CancelledError):
+            pass
+        except Exception as e:
+            logger.debug("IPC client error occurred", error=type(e).__name__)
+        finally:
+            if writer in self._ipc_writers:
+                self._ipc_writers.remove(writer)
+
+            for corr in active_correlations:
+                self._ipc_requests.pop(corr, None)
+
+            writer.close()
+            try:
+                await writer.wait_closed()
+            except OSError:
+                pass
+
+    async def _process_ipc_request(
+        self, request: pb.MqttQueuedPublish, writer: asyncio.StreamWriter, active_correlations: set[bytes]
+    ) -> None:
+        import secrets
+
+        correlation = request.correlation_data if request.HasField("correlation_data") else secrets.token_bytes(12)
+        response_queue: asyncio.Queue[pb.MqttQueuedPublish] = asyncio.Queue(maxsize=1)
+        self._ipc_requests[correlation] = response_queue
+        active_correlations.add(correlation)
+
+        try:
+
+            class MockPublishPacket:
+                def __init__(self, topic: str, payload: bytes, correlation_data: bytes):
+                    self.topic = topic
+                    self.payload = payload
+                    self.correlation_data = correlation_data
+                    self.qos = 1
+                    self.packet_id = 1
+                    self.response_topic = None
+
+            inbound = MockPublishPacket(topic=request.topic_name, payload=request.payload, correlation_data=correlation)
+
+            await self.handle_mqtt_message(cast(aiomqtt.PublishPacket, inbound))
+
+            # Only wait for a response if correlation_data was explicitly provided by the client
+            if request.HasField("correlation_data"):
+                try:
+                    async with asyncio.timeout(15.0):
+                        response = await response_queue.get()
+                        resp_data = response.SerializeToString()
+                        writer.write(len(resp_data).to_bytes(4, byteorder="big"))
+                        writer.write(resp_data)
+                        await writer.drain()
+                except TimeoutError:
+                    logger.warning("IPC request timed out", topic=request.topic_name)
+        except OSError:
+            pass  # connection closed/broken
+        finally:
+            active_correlations.discard(correlation)
+            self._ipc_requests.pop(correlation, None)

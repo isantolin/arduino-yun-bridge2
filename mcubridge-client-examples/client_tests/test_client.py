@@ -1,113 +1,130 @@
 import pytest
-import aiomqtt
-from unittest.mock import AsyncMock, MagicMock
+import asyncio
+from unittest.mock import AsyncMock
 from mcubridge_client import Bridge
+from mcubridge.protocol import mcubridge_pb2 as pb
 
 
 @pytest.fixture
-def mock_client(monkeypatch):
-    # [SIL-2] Use MagicMock for class and AsyncMock for instance to correctly support context manager
-    mock_instance = AsyncMock(spec=aiomqtt.Client)
-    mock_instance.subscribe = AsyncMock()
-    mock_instance.unsubscribe = AsyncMock()
-    mock_instance.publish = AsyncMock()
+def mock_socket(monkeypatch):
+    mock_reader = AsyncMock(spec=asyncio.StreamReader)
+    mock_writer = AsyncMock(spec=asyncio.StreamWriter)
 
-    mock_cls = MagicMock(return_value=mock_instance)
-    monkeypatch.setattr("mcubridge_client.Client", mock_cls)
-    return mock_cls
+    mock_open = AsyncMock(return_value=(mock_reader, mock_writer))
+    monkeypatch.setattr("asyncio.open_unix_connection", mock_open)
+    return mock_open, mock_reader, mock_writer
 
 
 @pytest.mark.asyncio
-async def test_client_connect_disconnect(mock_client) -> None:
-    bridge = Bridge(host="127.0.0.1", port=1883, tls_context=None)
+async def test_client_connect_disconnect(mock_socket) -> None:
+    mock_open, mock_reader, mock_writer = mock_socket
+    bridge = Bridge(socket_path="/var/run/test.sock")
     await bridge.connect()
-    assert bridge._client is not None
+    assert bridge.writer is not None
+    assert mock_open.called
+    assert mock_open.call_args[0][0] == "/var/run/test.sock"
+
     await bridge.disconnect()
-    assert bridge._client is None
+    assert bridge.writer is None
 
 
 @pytest.mark.asyncio
-async def test_client_digital_write(mock_client) -> None:
-    bridge = Bridge(host="127.0.0.1", port=1883, tls_context=None)
+async def test_client_digital_write(mock_socket) -> None:
+    mock_open, mock_reader, mock_writer = mock_socket
+    bridge = Bridge(socket_path="/var/run/test.sock")
     await bridge.connect()
-    client_instance = mock_client.return_value
 
     await bridge.digital_write(13, 1)
 
-    assert client_instance.publish.called
-    last_call = client_instance.publish.call_args_list[-1]
-    assert "br/d/13" in last_call.args[0]
-    assert last_call.args[1] == b"1"
+    assert mock_writer.write.called
+    calls = mock_writer.write.call_args_list
+    assert len(calls) == 2
+
+    length_bytes = calls[0][0][0]
+    data_bytes = calls[1][0][0]
+
+    assert len(length_bytes) == 4
+    assert int.from_bytes(length_bytes, byteorder="big") == len(data_bytes)
+
+    msg = pb.MqttQueuedPublish.FromString(data_bytes)
+    assert msg.topic_name == "br/d/13"
+    assert msg.payload == b"1"
 
 
 @pytest.mark.asyncio
-async def test_client_analog_write(mock_client) -> None:
-    bridge = Bridge(host="127.0.0.1", port=1883, tls_context=None)
+async def test_client_analog_write(mock_socket) -> None:
+    mock_open, mock_reader, mock_writer = mock_socket
+    bridge = Bridge(socket_path="/var/run/test.sock")
     await bridge.connect()
-    client_instance = mock_client.return_value
 
     await bridge.analog_write(3, 128)
 
-    assert client_instance.publish.called
-    last_call = client_instance.publish.call_args_list[-1]
-    assert "br/a/3" in last_call.args[0]
-    assert last_call.args[1] == b"128"
+    assert mock_writer.write.called
+    calls = mock_writer.write.call_args_list
+    assert len(calls) == 2
+
+    length_bytes = calls[0][0][0]
+    data_bytes = calls[1][0][0]
+
+    assert len(length_bytes) == 4
+    assert int.from_bytes(length_bytes, byteorder="big") == len(data_bytes)
+
+    msg = pb.MqttQueuedPublish.FromString(data_bytes)
+    assert msg.topic_name == "br/a/3"
+    assert msg.payload == b"128"
 
 
 @pytest.mark.asyncio
-async def test_client_datastore_put(mock_client) -> None:
-    bridge = Bridge(host="127.0.0.1", port=1883, tls_context=None)
+async def test_client_datastore_put(mock_socket) -> None:
+    mock_open, mock_reader, mock_writer = mock_socket
+    bridge = Bridge(socket_path="/var/run/test.sock")
     await bridge.connect()
-    client_instance = mock_client.return_value
 
-    async def simulate_response(*args, **kwargs):
-        topic = args[0]
-        if "datastore/put/" in topic:
-            key = topic.split("/")[-1]
-            resp_topic = f"br/datastore/get/{key}"
-            correlation = kwargs.get("correlation_data")
+    resp = pb.MqttQueuedPublish(
+        topic_name="br/datastore/get/test_key",
+        payload=b"OK",
+    )
 
-            # [SIL-2] Use spec=aiomqtt.PublishPacket
-            msg = AsyncMock(spec=aiomqtt.PublishPacket)
-            msg.topic = resp_topic
-            msg.payload = b"OK"
-            msg.correlation_data = correlation
+    def capture_write(data):
+        if len(data) > 4:
+            msg = pb.MqttQueuedPublish.FromString(data)
+            resp.correlation_data = msg.correlation_data
+            resp_bytes = resp.SerializeToString()
+            resp_len = len(resp_bytes).to_bytes(4, byteorder="big")
+            mock_reader.readexactly.side_effect = [resp_len, resp_bytes, asyncio.CancelledError()]
 
-            if correlation in bridge._correlation_routes:
-                bridge._correlation_routes[correlation].put_nowait(msg)
+    mock_writer.write.side_effect = capture_write
 
-    client_instance.publish.side_effect = simulate_response
     await bridge.put("test_key", "test_value")
-    assert client_instance.publish.called
+    assert mock_writer.write.called
 
 
 @pytest.mark.asyncio
-async def test_client_file_write(mock_client) -> None:
-    bridge = Bridge(host="127.0.0.1", port=1883, tls_context=None)
+async def test_client_file_write(mock_socket) -> None:
+    mock_open, mock_reader, mock_writer = mock_socket
+    bridge = Bridge(socket_path="/var/run/test.sock")
     await bridge.connect()
-    client_instance = mock_client.return_value
 
     await bridge.file_write("test.txt", "content")
 
-    assert client_instance.publish.called
-    last_call = client_instance.publish.call_args_list[-1]
-    assert "br/file/write/test.txt" in last_call.args[0]
-    assert last_call.args[1] == b"content"
+    assert mock_writer.write.called
+    calls = mock_writer.write.call_args_list
+    assert len(calls) == 2
+
+    data_bytes = calls[1][0][0]
+    msg = pb.MqttQueuedPublish.FromString(data_bytes)
+    assert msg.topic_name == "br/file/write/test.txt"
+    assert msg.payload == b"content"
 
 
 @pytest.mark.asyncio
-async def test_client_analog_read_timeout(mock_client) -> None:
-    bridge = Bridge(host="127.0.0.1", port=1883, tls_context=None)
+async def test_client_analog_read_timeout(mock_socket) -> None:
+    mock_open, mock_reader, mock_writer = mock_socket
+    bridge = Bridge(socket_path="/var/run/test.sock")
     await bridge.connect()
+
+    # Empty mock side effect so it hangs and times out
+    mock_reader.readexactly.side_effect = asyncio.Future
 
     with pytest.raises(TimeoutError):
         await bridge.analog_read(0, timeout=0.1)
-
-
-@pytest.mark.asyncio
-async def test_client_analog_write_direct(mock_client) -> None:
-    bridge = Bridge(host="127.0.0.1", port=1883, tls_context=None)
-    await bridge.connect()
-    client_instance = mock_client.return_value
-    await bridge.analog_write(5, 255)
-    assert client_instance.publish.called

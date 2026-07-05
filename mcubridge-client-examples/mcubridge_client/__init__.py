@@ -9,12 +9,10 @@ import os
 import secrets
 import shlex
 import ssl
-import uuid
-from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import TypedDict
 
-from aiomqtt import Client, ConnectError, ProtocolError, NegativeAckError, PublishPacket, QoS
+from aiomqtt import ConnectError, ProtocolError, NegativeAckError, QoS
 
 from .definitions import (
     DEFAULT_MQTT_HOST,
@@ -98,40 +96,25 @@ class Bridge:
         username: str | None = MQTT_USER,
         password: str | None = MQTT_PASS,
         tls_context: ssl.SSLContext | None = None,
+        socket_path: str = "/var/run/mcubridge.sock",
     ) -> None:
-        self.host = host
-        self.port = port
         self.topic_prefix = topic_prefix
         Topic.PREFIX = topic_prefix
-        self.username = username
-        self.password = password
-        self.tls_context = tls_context or _default_tls_context()
+        self.socket_path = os.environ.get("MCUBRIDGE_SOCKET_PATH") or socket_path
 
-        self._client: Client | None = None
-        self._correlation_routes: dict[bytes, asyncio.Queue[PublishPacket]] = {}
-        self._reply_topic: str | None = None
+        self.reader: asyncio.StreamReader | None = None
+        self.writer: asyncio.StreamWriter | None = None
+        self._correlation_routes: dict[bytes, asyncio.Queue[pb.MqttQueuedPublish]] = {}
         self._console_queue: asyncio.Queue[bytes] = asyncio.Queue()
         self._listener_task: asyncio.Task[None] | None = None
-        self._exit_stack = AsyncExitStack()
 
     async def connect(self) -> None:
-        if self._client:
+        if self.writer:
             await self.disconnect()
-        self._client = Client(
-            hostname=self.host,
-            port=self.port,
-            username=self.username,
-            password=(self.password.encode("utf-8") if self.password else None),
-            logger=logging.getLogger("mcubridge.client"),
-            ssl_context=self.tls_context,
-        )
-        await self._exit_stack.enter_async_context(self._client)
-        self._reply_topic = f"{self.topic_prefix}/client/{uuid.uuid4().hex}/reply"
-        await self._client.subscribe(self._reply_topic, max_qos=QoS.AT_LEAST_ONCE)
-        self._console_topic = str(Topic.build(Topic.CONSOLE, "out"))
-        await self._client.subscribe(self._console_topic, max_qos=QoS.AT_LEAST_ONCE)
+
+        self.reader, self.writer = await asyncio.open_unix_connection(self.socket_path)
         self._listener_task = asyncio.create_task(self._message_listener())
-        logger.info("Connected to %s:%d. Reply topic: %s", self.host, self.port, self._reply_topic)
+        logger.info("Connected to local IPC socket: %s", self.socket_path)
 
     async def disconnect(self) -> None:
         if self._listener_task:
@@ -139,26 +122,38 @@ class Bridge:
             try:
                 await self._listener_task
             except asyncio.CancelledError:
-                logger.debug("Listener task cancelled during disconnect")
-        await self._exit_stack.aclose()
-        self._client = None
-        logger.info("Disconnected.")
+                pass
+            self._listener_task = None
+
+        if self.writer:
+            self.writer.close()
+            try:
+                await self.writer.wait_closed()
+            except OSError:
+                pass
+            self.writer = None
+        self.reader = None
+        logger.info("Disconnected from local IPC socket.")
 
     async def _message_listener(self) -> None:
-        if not self._client:
+        if not self.reader:
             return
         try:
-            async for message in self._client.messages():
-                if isinstance(message, PublishPacket):
-                    if message.qos == QoS.AT_LEAST_ONCE and message.packet_id is not None:
-                        await self._client.puback(message.packet_id)
-                    correlation = message.correlation_data
-                    if correlation and (queue := self._correlation_routes.pop(correlation, None)):
-                        queue.put_nowait(message)
-                    elif Topic.matches(self._console_topic, message.topic):
-                        self._console_queue.put_nowait(message.payload if message.payload else b"")
-        except MqttError as e:
-            logger.error("MQTT listener error", exc_info=e)
+            while True:
+                len_bytes = await self.reader.readexactly(4)
+                length = int.from_bytes(len_bytes, byteorder="big")
+                data = await self.reader.readexactly(length)
+                message = pb.MqttQueuedPublish.FromString(data)
+
+                correlation = message.correlation_data if message.HasField("correlation_data") else None
+                if correlation and (queue := self._correlation_routes.pop(correlation, None)):
+                    queue.put_nowait(message)
+                elif "console" in message.topic_name:
+                    self._console_queue.put_nowait(message.payload if message.payload else b"")
+        except (asyncio.IncompleteReadError, OSError, asyncio.CancelledError):
+            pass
+        except Exception as e:
+            logger.error("IPC listener error", exc_info=e)
 
     async def _publish_and_wait(
         self,
@@ -169,11 +164,11 @@ class Bridge:
         timeout: float = 15,
         content_type: str | None = None,
     ) -> bytes:
-        if not self._client:
+        if not self.writer:
             raise ConnectionError("Not connected")
 
         correlation = secrets.token_bytes(12)
-        queue: asyncio.Queue[PublishPacket] = asyncio.Queue(maxsize=1)
+        queue: asyncio.Queue[pb.MqttQueuedPublish] = asyncio.Queue(maxsize=1)
         self._correlation_routes[correlation] = queue
 
         try:
@@ -182,34 +177,30 @@ class Bridge:
                 payload=payload.encode() if isinstance(payload, str) else payload,
                 content_type=content_type,
             )
-            if self._reply_topic:
-                msg.response_topic = self._reply_topic
-            if correlation:
-                msg.correlation_data = correlation
+            msg.correlation_data = correlation
 
-            await self._client.publish(
-                msg.topic_name,
-                msg.payload,
-                qos=QoS.AT_LEAST_ONCE,
-                packet_id=next(self._client.packet_ids),
-                response_topic=msg.response_topic if msg.HasField("response_topic") else None,
-                correlation_data=msg.correlation_data if msg.HasField("correlation_data") else None,
-                content_type=msg.content_type if msg.HasField("content_type") else None,
-                user_properties=[(p.key, p.value) for p in msg.user_properties] if msg.user_properties else None,
-            )
+            data = msg.SerializeToString()
+            self.writer.write(len(data).to_bytes(4, byteorder="big"))
+            self.writer.write(data)
+            await self.writer.drain()
+
             delivered = await asyncio.wait_for(queue.get(), timeout=timeout)
             return bytes(delivered.payload) if delivered.payload else b""
         finally:
             self._correlation_routes.pop(correlation, None)
 
     async def _publish(self, topic: str | Topic, payload: bytes) -> None:
-        if self._client:
-            await self._client.publish(
-                str(topic),
-                payload,
-                qos=QoS.AT_LEAST_ONCE,
-                packet_id=next(self._client.packet_ids),
-            )
+        if not self.writer:
+            raise ConnectionError("Not connected")
+
+        msg = create_queued_publish(
+            topic_name=str(topic),
+            payload=payload,
+        )
+        data = msg.SerializeToString()
+        self.writer.write(len(data).to_bytes(4, byteorder="big"))
+        self.writer.write(data)
+        await self.writer.drain()
 
     # --- Declarative API (Eradicates manual methods) ---
 

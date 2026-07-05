@@ -371,3 +371,4 @@ def service_stack(runtime_config: RuntimeConfig):
         yield service, state, serial
     finally:
         service.cleanup()
+        state.cleanup()

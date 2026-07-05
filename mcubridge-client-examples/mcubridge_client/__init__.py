@@ -74,6 +74,18 @@ class Bridge:
         self._console_queue: asyncio.Queue[bytes] = asyncio.Queue()
         self._listener_task: asyncio.Task[None] | None = None
 
+    async def __aenter__(self) -> Bridge:
+        await self.connect()
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: Any,
+    ) -> None:
+        await self.disconnect()
+
     async def connect(self) -> None:
         if self.writer:
             await self.disconnect()

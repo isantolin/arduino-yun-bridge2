@@ -14,8 +14,7 @@ logger = logging.getLogger("all-features-test")
 async def run_test(host: str, port: int, user: str | None, password: str | None) -> None:
     client = Bridge(host=host, port=port, username=user, password=password)
     logger.info("--- Starting UNIFIED ALL-FEATURES E2E Test ---")
-    async with client._exit_stack:
-        await client.connect()
+    async with client:
         # 1. LED test
         logger.info("Testing LED (Digital Write)...")
         await client.digital_write(13, 1)

@@ -1,65 +1,53 @@
 # Arquitectura del Cliente del Puente de MCU v2
 
 [![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![MQTT](https://img.shields.io/badge/MQTT-v5-660066?logo=mqtt)](https://mqtt.org/)
-[![aiomqtt](https://img.shields.io/badge/aiomqtt-2.5+-blue)](https://sbtinstruments.github.io/aiomqtt/)
+[![Socket](https://img.shields.io/badge/IPC-UNIX_Socket-blue?logo=linux)](https://en.wikipedia.org/wiki/Unix_domain_socket)
+[![Protobuf](https://img.shields.io/badge/Serialization-Protobuf-green?logo=protobuf)](https://protobuf.dev/)
 [![OpenWrt](https://img.shields.io/badge/OpenWrt-25.12.4-00B5E2?logo=openwrt)](https://openwrt.org/)
 
-Este componente (`openwrt-mcu-client-python`) proporciona las herramientas para que las aplicaciones que se ejecutan en el lado Linux del Arduino MCU interactúen con el microcontrolador a través de `mcubridge/daemon.py`. Las utilidades de este paquete se apoyan en **aiomqtt 2.5** y hablan MQTT v5 de forma predeterminada, consumiendo directamente `aiomqtt.client.Message` junto con los DTOs serializables (`QueuedPublish`) que expone el daemon.
+Este componente (`openwrt-mcu-client-python`) proporciona las herramientas para que las aplicaciones que se ejecutan en el lado Linux del Arduino MCU interactúen con el microcontrolador a través del socket UNIX expuesto por el daemon. El cliente de Python utiliza conexiones asíncronas persistentes sobre `/var/run/mcubridge.sock` y serialización mediante tramas Protobuf (`MqttQueuedPublish`).
 
-## API de Comunicación: MQTT
+## API de Comunicación: Socket UNIX local
 
-El ecosistema utiliza MQTT como el mecanismo principal de comunicación.
+El ecosistema utiliza Sockets UNIX como el mecanismo principal de IPC local.
 
--   **Propósito:** Para scripts y aplicaciones que se ejecutan **tanto en el procesador Linux del MCU como externamente**.
--   **Mecanismo:** `mcubridge/daemon.py` expone la funcionalidad del microcontrolador a través de un broker MQTT.
--   **Caso de uso:** Un script de Python en el MCU que monitoriza el uso de CPU y quiere mostrar el resultado en una pantalla LCD, o un panel de control web que muestra la temperatura leída por un sensor.
+- **Propósito:** Para scripts y aplicaciones que se ejecutan en el procesador Linux del MPU (como CGI scripts y CLI de administración).
+- **Mecanismo:** El daemon expone un socket UNIX en `/var/run/mcubridge.sock` (configurable mediante la variable de entorno `MCUBRIDGE_SOCKET_PATH`).
+- **Caso de uso:** Un script de Python local que lee pines analógicos/digitales, manipula el sistema de archivos del microcontrolador, o ejecuta subprocesos asíncronos y monitorea su progreso.
 
-### Flujo request/response con MQTT v5
+### Formato de tramas y serialización
 
-Aprovecha las capacidades de **MQTT v5** para correlacionar peticiones y respuestas:
+Toda la comunicación en el socket UNIX se realiza mediante tramas binarias prefijadas con su longitud:
 
-- Al invocar métodos como `Bridge._publish_and_wait(...)`, el cliente genera un `correlation_data` aleatorio y fija su propio `response_topic` privado (`br/client/<uuid>/reply`).
-- Cada servicio añade metadatos en `user_properties` para inspeccionar el contexto original sin parsear el payload:
+- **Estructura de la Trama:** `[Longitud (4 bytes big-endian)] [Payload Protobuf (MqttQueuedPublish)]`
+- **Mensaje de Consola MCU:** El daemon transmite automáticamente las salidas de la consola del MCU (`/console/out`) a todos los clientes conectados al socket.
 
-	| Propiedad                    | Servicio(s)                                      | Descripción                                                          |
-	| --------------------------- | ------------------------------------------------ | -------------------------------------------------------------------- |
-	| `bridge-request-topic`      | Todos                                            | Tópico original que originó la petición MQTT.                        |
-	| `bridge-pin`                | GPIO digital/analógico                           | Identificador del pin asociado a la lectura/respuesta.               |
-	| `bridge-datastore-key`      | Datastore                                        | Clave afectada por la operación `put/get`.                           |
-	| `bridge-file-path`          | Sistema de archivos                              | Ruta absoluta (normalizada) del fichero leído.                       |
-	| `bridge-process-pid`        | Procesos (poll/pipeline)                         | PID interno rastreado por el daemon.                                 |
-	| `bridge-status`             | `system/status`                                  | Código de estado publicado.                                          |
+## Dependencias
 
-- Los servicios asignan `message_expiry_interval` acordes a la semántica (p. ej. pines = 5 s).
-
-## Dependencias empaquetadas
-
-Los scripts reutilizan las mismas dependencias instaladas en la MCU por `3_install.sh`: `aiomqtt` (v3), `mqtt5`, `cobs` y `prometheus-client`.
+Los scripts y herramientas CLI utilizan únicamente `protobuf`, `cobs`, y `prometheus-client`. Ya no se requiere configurar ni instalar brokers locales de MQTT ni TLS en las dependencias del cliente.
 
 Si ejecutas los ejemplos directamente desde el repositorio, instala las dependencias:
 
 ```sh
 pip install \
-	"aiomqtt>=3.0.0a1,<4" \
-	"mqtt5>=0.5.0,<1" \
+	"protobuf==7.35.1" \
 	"prometheus-client>=0.20,<1" \
 	"tenacity>=9.0,<10" \
 	"cobs>=1.2,<2"
 ```
 
-### Puesta en marcha del broker MQTT
+### Puesta en marcha del Daemon
 
-Los ejemplos asumen que existe un broker accesible (por defecto `127.0.0.1:1883` para emulación).
+Los ejemplos asumen que existe una instancia del daemon corriendo y escuchando en el socket UNIX.
 
 ```sh
-# En el dispositivo o en tu máquina de desarrollo
+# Arrancar el daemon en modo depuración (creará el socket UNIX)
 python3 -m mcubridge.daemon --debug
 ```
 
 ### Configuración (solo UCI)
 
-El daemon y la librería cliente leen la configuración desde OpenWrt UCI (`mcubridge.general.*`).
+El daemon lee la configuración general desde OpenWrt UCI (`mcubridge.general.*`).
 
 ```sh
 # Activa depuración
@@ -67,9 +55,11 @@ uci set mcubridge.general.debug='1'
 uci commit mcubridge && /etc/init.d/mcubridge restart
 ```
 
-### Nuevos ejemplos y flujos
+### Ejemplos incluidos
 
-- `process_test.py`: ilustra cómo consumir el `stdout`/`stderr` de procesos largos mediante polls consecutivos.
-- `br/system/status`: subscríbete para recibir estados de error globales.
-- `br/datastore/get/<clave>/request`: peticiones de lectura al datastore (las respuestas se publican en `br/datastore/get/<clave>`).
-- `analog_write(pin, value)`: permite el control de PWM (0-255) desde Python.
+- `process_test.py`: ilustra cómo lanzar y monitorizar subprocesos asíncronos en el MPU a través del socket.
+- `mailbox_read_test.py`: demuestra la lectura y escritura sobre el mailbox del microcontrolador.
+- `sensor_reader_test.py`: lectura periódica del pin digital `d13` o analógicos de la placa.
+- `led13_test.py`: control de encendido y apagado del LED integrado en la placa.
+- `spi_test.py`: lectura y escritura a través de buses periféricos SPI.
+

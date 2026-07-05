@@ -30,7 +30,8 @@ Este documento unifica y reemplaza documentación histórica y dispersa.
 
 Notas:
 - Serial RPC: típicamente Linux→MCU requests y MCU→Linux responses, con comandos bidireccionales/push simétrico donde aplica.
-- MQTT: clientes→daemon (comandos) y daemon→MQTT (respuestas/snapshots/metrics).
+- Local IPC: comunicación entre clientes locales (como CLI y CGI) y el daemon a través de UNIX Domain Sockets (`/var/run/mcubridge.sock`) utilizando tramas binarias Protobuf prefijadas por longitud.
+- MQTT: comunicación entre el daemon y la nube (external broker) para telemetría, métricas y comandos remotos.
 ```
 
 ## Fuente de verdad

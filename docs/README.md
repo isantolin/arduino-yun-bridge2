@@ -20,6 +20,11 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 - **MIL-SPEC Compliance (FIPS 140-3):** Implementación de **HKDF-SHA256** para derivación de claves y **Power-On Self-Tests (POST)** que validan el motor criptográfico en cada arranque.
 - **Protección de Flash:** Bloqueo de inicio si las rutas de escritura intensa (`file_system_root`, `mqtt_spool_dir`) no están en `/tmp` (RAM).
 
+### Novedades (julio 2026)
+
+- **Migración a Sockets UNIX (v2.8.5)**: Reemplazo del broker MQTT local loopback en el Linux MPU por una arquitectura de IPC local de alto rendimiento basada en Sockets UNIX (`/var/run/mcubridge.sock`) y tramas binarias Protobuf prefijadas por longitud. Esto reduce las dependencias locales del cliente (removiendo `aiomqtt`) y elimina la necesidad de correr brokers MQTT locales.
+- **Exclusión de Directorios Temporales**: Optimización del linter (`black`/`ruff`) excluyendo `.tmp_tests` para evitar bloqueos e inconsistencias durante compilaciones concurrentes y ejecuciones de tests E2E.
+
 ### Novedades (junio 2026)
 
 - **Migración Integral a Protobuf (v2.8.5)**: Las estructuras de telemetría, métricas y políticas de seguridad han sido migradas íntegramente de `msgspec` a **Protobuf + Nanopb**. Esto establece una Fuente Única de Verdad (SSOT) en `mcubridge.proto`, garantizando una consistencia binaria absoluta y reduciendo el overhead de procesamiento en el MPU.

@@ -239,18 +239,15 @@ def phase_expand(child: Any) -> None:
         timeout=10,
     )
 
-    # Bring up network for apk update via udhcpc
-    # Detect first non-loopback interface and log it
-    send_and_wait(child, "ip link show", timeout=5)
+    # Bring up network for apk update via DHCP on LAN bridge
     send_and_wait(
         child,
         "sysctl -w net.ipv6.conf.all.disable_ipv6=1 || true; "
         "sysctl -w net.ipv6.conf.default.disable_ipv6=1 || true; "
-        "NET_IF=$(ip -o link show | awk -F': ' '$2 != \"lo\" {print $2; exit}'); "
-        'if [ -n "$NET_IF" ]; then '
-        'echo "Found interface: $NET_IF"; ip link set $NET_IF up; udhcpc -i $NET_IF -q 2>/dev/null; '
-        'else echo "NO NETWORK INTERFACE FOUND"; fi || true',
-        timeout=20,
+        "uci set network.lan.proto='dhcp'; "
+        "uci commit network; "
+        "/etc/init.d/network restart",
+        timeout=30,
     )
 
     # [SIL-2] Strong Network Fix: DNS + Time + Force IPv4 for wget
@@ -296,14 +293,15 @@ def phase_install(child: Any) -> None:
     send_and_wait(child, "cp /mnt/bin/*.apk /root/deploy/bin/", timeout=10)
     send_and_wait(child, "umount /mnt", timeout=5)
 
-    # Bring up network for apk update via udhcpc
+    # Bring up network for apk update via DHCP on LAN bridge
     send_and_wait(
         child,
         "sysctl -w net.ipv6.conf.all.disable_ipv6=1 || true; "
         "sysctl -w net.ipv6.conf.default.disable_ipv6=1 || true; "
-        "NET_IF=$(ip -o link show | awk -F': ' '$2 != \"lo\" {print $2; exit}'); "
-        'if [ -n "$NET_IF" ]; then ip link set $NET_IF up; udhcpc -i $NET_IF -q 2>/dev/null; fi || true',
-        timeout=20,
+        "uci set network.lan.proto='dhcp'; "
+        "uci commit network; "
+        "/etc/init.d/network restart",
+        timeout=30,
     )
 
     # [SIL-2] Strong Network Fix: DNS + Time + Force IPv4 for wget

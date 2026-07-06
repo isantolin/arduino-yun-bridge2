@@ -57,14 +57,14 @@ local function socket_publish(topic, payload)
     local socket_path = uci:get("mcubridge", "general", "socket_path") or "/var/run/mcubridge.sock"
     local sock = nixio.socket("unix", "stream")
     if not sock then return false end
-    
+
     if not sock:connect(socket_path) then
         sock:close()
         return false
     end
-    
+
     local data = serialize_publish(topic, payload)
-    local sent, err = sock:send(data)
+    local sent = sock:send(data)
     sock:close()
     return sent == #data
 end

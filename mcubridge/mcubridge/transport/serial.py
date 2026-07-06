@@ -241,8 +241,17 @@ class SerialTransport:
 
     def _correlate_frame(self, command_id: int, payload: bytes | ProtobufMessage) -> None:
         pending = self._current
-        logger.debug("_correlate_frame entry", command_id=command_id, pending_cmd=(pending.command_id if pending else None))
+        logger.debug(
+            "_correlate_frame entry", command_id=command_id, pending_cmd=(pending.command_id if pending else None)
+        )
         if pending is None:
+            return
+        if pending.success is not None:
+            logger.debug(
+                "Pending command already resolved, ignoring further correlation",
+                pending_cmd=pending.command_id,
+                command_id=command_id,
+            )
             return
         if command_id == Status.ACK.value:
             ack_target = pending.command_id
@@ -254,14 +263,23 @@ class SerialTransport:
                         ack_target = pb.AckPacket.FromString(payload).command_id
                 except (ProtobufDecodeError, TypeError, ValueError) as e:
                     logger.error("Failed to decode MCU ACK payload", error=e)
-            logger.debug("Correlation ACK match", ack_target=ack_target, pending_cmd=pending.command_id, expected_resp_ids=pending.expected_resp_ids)
+            logger.debug(
+                "Correlation ACK match",
+                ack_target=ack_target,
+                pending_cmd=pending.command_id,
+                expected_resp_ids=pending.expected_resp_ids,
+            )
             if ack_target == pending.command_id:
                 pending.ack_received = True
                 if not pending.expected_resp_ids:
                     logger.debug("Marking pending command success on ACK")
                     pending.mark_success(payload)
             return
-        logger.debug("Correlation check response_to_request", resp_req=response_to_request(command_id), pending_cmd=pending.command_id)
+        logger.debug(
+            "Correlation check response_to_request",
+            resp_req=response_to_request(command_id),
+            pending_cmd=pending.command_id,
+        )
         if response_to_request(command_id) == pending.command_id:
             logger.debug("Marking pending command success on response")
             pending.mark_success(payload)

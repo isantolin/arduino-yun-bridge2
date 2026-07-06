@@ -230,7 +230,13 @@ class BridgeService:
     async def enqueue_mqtt(self, message: pb.MqttQueuedPublish, *, reply_context: Any | None = None) -> None:
         resolved_message = structures.resolve_mqtt_context(message, reply_context)
         correlation = resolved_message.correlation_data if resolved_message.HasField("correlation_data") else None
-        logger.debug("enqueue_mqtt debug info", topic=resolved_message.topic_name, correlation=correlation.hex() if correlation else None, in_ipc_requests=(correlation in self._ipc_requests if correlation else False), registered_keys=[k.hex() for k in self._ipc_requests.keys()])
+        logger.debug(
+            "enqueue_mqtt debug info",
+            topic=resolved_message.topic_name,
+            correlation=correlation.hex() if correlation else None,
+            in_ipc_requests=(correlation in self._ipc_requests if correlation else False),
+            registered_keys=[k.hex() for k in self._ipc_requests.keys()],
+        )
         if correlation and correlation in self._ipc_requests:
             self._ipc_requests[correlation].put_nowait(resolved_message)
             return

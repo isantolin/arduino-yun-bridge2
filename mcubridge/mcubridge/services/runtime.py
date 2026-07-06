@@ -29,7 +29,6 @@ import logging
 import tenacity
 from .mqtt_patch import apply_aiomqtt_patches
 
-from aiomqtt import PublishPacket
 
 from ..config.const import (
     TOPIC_FORBIDDEN_REASON,
@@ -90,7 +89,6 @@ class BridgeRequest:
 
 if TYPE_CHECKING:
     from ..transport.serial import SerialTransport
-
 
 
 apply_aiomqtt_patches()
@@ -1342,7 +1340,7 @@ class BridgeService:
             return "write" if len(r.segments) == 1 else (r.segments[1].lower() if len(r.segments) > 1 else None)
         return "in" if r.topic == Topic.CONSOLE and r.identifier == "in" else (r.identifier or None)
 
-    async def _reject_mqtt(self, ctx: PublishPacket, tp: Topic | str, act: str) -> None:
+    async def _reject_mqtt(self, ctx: Any, tp: Topic | str, act: str) -> None:
         val = tp.value if isinstance(tp, Topic) else tp
         await self.enqueue_mqtt(
             create_queued_publish(
@@ -1355,7 +1353,7 @@ class BridgeService:
         )
 
     async def _publish_datastore_value(
-        self, key: str, val: bytes, reply_context: PublishPacket | None = None, error: str | None = None
+        self, key: str, val: bytes, reply_context: Any | None = None, error: str | None = None
     ) -> None:
         tp = topic_path(
             self.state.mqtt_topic_prefix, Topic.DATASTORE, DatastoreAction.GET, *filter(None, key.split("/"))

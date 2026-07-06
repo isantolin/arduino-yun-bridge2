@@ -70,6 +70,7 @@ exclude = [
     "**/node_modules",
     "**/*_pb2.py",
     "**/*_pb2.pyi",
+    "*__pyrefly_virtual__",
     "**/.*"
 ]
 reportMissingImports = true

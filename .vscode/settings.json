@@ -1,7 +1,7 @@
 {
-  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+  "python.defaultInterpreterPath": "./.venv/bin/python",
   "python.testing.cwd": "${workspaceFolder}",
-  "python.testing.pytestPath": "${workspaceFolder}/.venv/bin/pytest",
+  "python.testing.pytestPath": "./.venv/bin/pytest",
   "python.testing.pytestEnabled": true,
   "python.testing.unittestEnabled": false,
   "python.testing.pytestArgs": [
@@ -31,10 +31,10 @@
   "makefile.dryrunSwitches": [],
   "python.analysis.autoImportCompletions": true,
   "flake8.interpreter": [
-    "${workspaceFolder}/.venv/bin/python"
+    "./.venv/bin/python"
   ],
   "flake8.path": [
-    "${workspaceFolder}/.venv/bin/flake8"
+    "./.venv/bin/flake8"
   ],
   "python.analysis.languageServerMode": "full",
   "markdown.validate.enabled": true

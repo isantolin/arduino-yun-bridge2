@@ -14,12 +14,12 @@ import ssl
 import struct
 import sys
 from pathlib import Path
-from mcubridge.protocol import mcubridge_pb2 as pb
 
 # Ensure workspace packages are importable if run directly from workspace
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "mcubridge"))
+from mcubridge.protocol import mcubridge_pb2 as pb
 
 logging.basicConfig(
     level=logging.INFO,

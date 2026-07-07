@@ -482,24 +482,7 @@ rm -rf feeds/packages/lang/python/python-cryptography
 
 ./scripts/feeds install mcubridge luci-app-mcubridge
 
-# ==============================================================================
-# [FIX] Patch host-pip-requirements for aiomqtt APK version notation
-# ==============================================================================
-# The upstream packages feed uses Python pre-release notation (3.0.0a1) in
-# host-pip-requirements. Our PKG_VERSION uses APK notation (3.0.0_alpha1),
-# which the OpenWrt apk tool requires. Patch the requirements file so that
-# python3-package.mk's version consistency check accepts our APK-notation version.
-# Note: host-pip-requirements is used only for version validation, not pip install.
-HOST_PIP_DIR="feeds/packages/lang/python/host-pip-requirements"
-if [ -d "$HOST_PIP_DIR" ]; then
-    for f in "$HOST_PIP_DIR"/*.txt; do
-        if [ -f "$f" ] && grep -q "aiomqtt==" "$f"; then
-            echo "[FIX] Normalizing aiomqtt version in $(basename "$f") for APK compatibility..."
-            sed -i 's/aiomqtt==3\.0\.0a1/aiomqtt==3.0.0_alpha1/' "$f"
-        fi
-    done
-fi
-# ==============================================================================
+
 
 # [FIX] Patch python-uci to include setuptools build dependency (Critical for Python 3.13+)
 # ... (rest of patches) ...
@@ -613,7 +596,7 @@ fi
 # Enable Packages
 REQUIRED_PKGS="mcubridge luci-app-mcubridge"
 # [FIX] Dependencias explícitas para asegurar selección en .config.
-REQUIRED_DEPS="python3-aiomqtt python3-tenacity mosquitto-client luaposix"
+REQUIRED_DEPS="python3-tenacity luaposix"
 
 # [FIX] Forzar limpieza total de metadatos de configuración para evitar errores de recursión
 # heredados de escaneos previos del SDK.

@@ -233,14 +233,14 @@ ensure_secure_serial_secret() {
 
     if [ "$rotation_ok" -ne 1 ] || [ -z "$final_secret" ]; then
         final_secret=$(generate_random_hex 32)
-        local mqtt_pass mqtt_user
-        mqtt_pass=$(generate_random_b64 32)
-        mqtt_user=$(uci_get_general mqtt_user)
-        [ -z "$mqtt_user" ] && mqtt_user="mcubridge"
+        local cloud_pass cloud_user
+        cloud_pass=$(generate_random_b64 32)
+        cloud_user=$(uci_get_general cloud_user)
+        [ -z "$cloud_user" ] && cloud_user="mcubridge"
 
         uci_set_general serial_shared_secret "$final_secret"
-        uci_set_general mqtt_user "$mqtt_user"
-        uci_set_general mqtt_pass "$mqtt_pass"
+        uci_set_general cloud_user "$cloud_user"
+        uci_set_general cloud_pass "$cloud_pass"
         uci_commit_general
     fi
 

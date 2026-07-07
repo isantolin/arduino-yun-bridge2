@@ -24,10 +24,8 @@ from google.protobuf.message import (
     EncodeError as ProtobufSerializationError,
 )
 
-import aiomqtt
-import logging
 import tenacity
-from .mqtt_patch import apply_aiomqtt_patches
+import struct
 
 
 from ..config.const import (
@@ -35,8 +33,6 @@ from ..config.const import (
     SUPERVISOR_DEFAULT_MAX_BACKOFF,
     SUPERVISOR_DEFAULT_MIN_BACKOFF,
     MCU_FS_PREFIX,
-    MQTT_STATUS_OFFLINE_PAYLOAD,
-    MQTT_STATUS_ONLINE_PAYLOAD,
     DEFAULT_SYNC_TIMEOUT_SECONDS,
     STREAM_POLL_TIMEOUT_SECONDS,
     PROCESS_TERM_GRACE_PERIOD_SECONDS,
@@ -44,7 +40,6 @@ from ..config.const import (
 from ..config.settings import RuntimeConfig
 from ..protocol import protocol, structures
 from ..protocol.protocol import (
-    MQTT_COMMAND_SUBSCRIPTIONS,
     Command,
     DatastoreAction,
     FileAction,
@@ -91,9 +86,6 @@ if TYPE_CHECKING:
     from ..transport.serial import SerialTransport
 
 
-apply_aiomqtt_patches()
-
-
 logger = structlog.get_logger("mcubridge.service")
 
 McuHandler = Callable[[int, bytes | ProtobufMessage], Coroutine[Any, Any, bool | bytes | ProtobufMessage | None]]
@@ -119,7 +111,8 @@ class BridgeService:
     config: RuntimeConfig
     state: RuntimeState
     serial: SerialTransport | None
-    _mqtt_client: aiomqtt.Client | None
+    _cloud_reader: asyncio.StreamReader | None
+    _cloud_writer: asyncio.StreamWriter | None
     _task_group: asyncio.TaskGroup | None
 
     handshake: SerialHandshakeManager
@@ -132,13 +125,13 @@ class BridgeService:
     mcu_registry: dict[int, McuHandler]
     _topic_aliases: dict[str, int]
     _next_alias_id: int
-    _mqtt_incoming_queue: asyncio.Queue[aiomqtt.PublishPacket]
+    _mqtt_incoming_queue: asyncio.Queue[BridgeRequest]
     _ipc_requests: dict[bytes, asyncio.Queue[pb.MqttQueuedPublish]]
     _ipc_writers: list[asyncio.StreamWriter]
 
     def __init__(self, config: RuntimeConfig, state: RuntimeState, serial: SerialTransport) -> None:
         self.config, self.state, self.serial = config, state, serial
-        self._mqtt_client, self._task_group = None, None
+        self._cloud_reader, self._cloud_writer, self._task_group = None, None, None
         self.watchdog: WatchdogKeepalive | None = None
         self.exporter: PrometheusExporter | None = None
         self._mqtt_incoming_queue = asyncio.Queue()
@@ -156,12 +149,12 @@ class BridgeService:
         )
 
         self._storage_lock, self._mcu_read_lock, self._pending_mcu_read = asyncio.Lock(), asyncio.Lock(), None
-        self._process_slots = asyncio.Semaphore(int(state.process_max_concurrent))
+        self._process_slots = asyncio.Semaphore(state.process_max_concurrent)
         self._mqtt_publish_lock = asyncio.Lock()
         self._mqtt_spool = None
-        if self.config.mqtt_spool_dir:
+        if self.config.cloud_spool_dir:
             self._mqtt_spool = SqliteDeque(
-                path=str(Path(self.config.mqtt_spool_dir) / "spool.db"), maxlen=self.state.mqtt_queue_limit
+                path=str(Path(self.config.cloud_spool_dir) / "spool.db"), maxlen=self.state.mqtt_queue_limit
             )
         self._topic_aliases = {}
         self._next_alias_id = 1
@@ -222,11 +215,6 @@ class BridgeService:
 
     # --- External Interface ---
 
-    def set_mqtt_client(self, client: aiomqtt.Client | None) -> None:
-        self._mqtt_client = client
-        self._topic_aliases.clear()
-        self._next_alias_id = 1
-
     async def enqueue_mqtt(self, message: pb.MqttQueuedPublish, *, reply_context: Any | None = None) -> None:
         resolved_message = structures.resolve_mqtt_context(message, reply_context)
         correlation = resolved_message.correlation_data if resolved_message.HasField("correlation_data") else None
@@ -276,7 +264,7 @@ class BridgeService:
         self.state.metrics.mqtt_messages_dropped.inc()
 
     def _mqtt_spool_dir(self) -> Path:
-        return Path(self.config.mqtt_spool_dir)
+        return Path(self.config.cloud_spool_dir)
 
     def _mark_mqtt_spool_failure(self, reason: str) -> None:
         self.state.mqtt_spool_degraded = True
@@ -325,7 +313,7 @@ class BridgeService:
 
     async def _flush_mqtt_spool_locked(self) -> None:
         spool = self._mqtt_spool
-        if not self._mqtt_client or spool is None:
+        if not self._cloud_writer or spool is None:
             return
 
         try:
@@ -391,78 +379,51 @@ class BridgeService:
             self._mark_mqtt_spool_failure(str(exc))
 
     async def _publish_mqtt_message(self, message: pb.MqttQueuedPublish) -> bool:
-        if not self._mqtt_client:
+        if not self._cloud_writer:
             return False
 
-        topic_alias_max = 0
-        if self._mqtt_client and hasattr(self._mqtt_client, "_connected"):
-            conn_future = getattr(self._mqtt_client, "_connected", None)
-            if isinstance(conn_future, asyncio.Future) and conn_future.done():
-                try:
-                    connack_packet = cast(Any, conn_future.result())
-                    val = cast(Any, getattr(connack_packet, "topic_alias_max", 0))
-                    if isinstance(val, int) and not isinstance(val, bool):
-                        topic_alias_max = val
-                except asyncio.CancelledError as exc:
-                    logger.debug("CONNACK future was cancelled; topic_alias_max defaults to 0", error=exc)
-                except (AttributeError, TypeError) as exc:
-                    logger.debug("CONNACK packet has no topic_alias_max attribute", error=exc)
-
-        pub_message = message
-        if topic_alias_max > 0:
-            if message.topic_name in self._topic_aliases:
-                alias_id = self._topic_aliases[message.topic_name]
-                pub_message = structures.replace_mqtt_publish(
-                    message,
-                    topic_name="",
-                    topic_alias=alias_id,
-                )
-            elif message.topic_name:
-                if self._next_alias_id <= topic_alias_max:
-                    alias_id = self._next_alias_id
-                    self._topic_aliases[message.topic_name] = alias_id
-                    self._next_alias_id += 1
-                    pub_message = structures.replace_mqtt_publish(
-                        message,
-                        topic_alias=alias_id,
-                    )
-
         try:
-            qos_val = aiomqtt.QoS(int(pub_message.qos))
-            kwargs: dict[str, Any] = {
-                "qos": qos_val,
-                "retain": pub_message.retain,
-            }
-            if qos_val != aiomqtt.QoS.AT_MOST_ONCE:
-                kwargs["packet_id"] = next(self._mqtt_client.packet_ids)
-            if pub_message.HasField("message_expiry_interval"):
-                kwargs["message_expiry_interval"] = pub_message.message_expiry_interval
-            if pub_message.HasField("content_type"):
-                kwargs["content_type"] = pub_message.content_type
-            if pub_message.HasField("response_topic"):
-                kwargs["response_topic"] = pub_message.response_topic
-            if pub_message.HasField("correlation_data"):
-                kwargs["correlation_data"] = pub_message.correlation_data
-            if pub_message.user_properties:
-                kwargs["user_properties"] = [(p.key, p.value) for p in pub_message.user_properties]
-            if pub_message.HasField("topic_alias"):
-                kwargs["topic_alias"] = pub_message.topic_alias
+            # Check if this is a command response
+            if message.correlation_data:
+                seq_id = int.from_bytes(message.correlation_data, "big")
+                envelope = pb.CloudEnvelope(
+                    protocol_version=2,
+                    device_id=self.state.device_id,
+                    sequence_id=seq_id,
+                    command_response=pb.CommandResponse(
+                        status_code=200,
+                        payload=message.payload,
+                    ),
+                )
+            else:
+                # Telemetry report
+                report = pb.TelemetryReport()
+                if "metrics" in message.topic_name:
+                    report.daemon_metrics_blob = message.payload
+                elif "summary" in message.topic_name:
+                    report.bridge_snapshot_blob = message.payload
+                elif "handshake" in message.topic_name:
+                    report.handshake_snapshot_blob = message.payload
+                else:
+                    report.system_status_blob = message.payload
 
-            await cast(Any, self._mqtt_client).publish(
-                pub_message.topic_name,
-                pub_message.payload,
-                **kwargs,
-            )
+                envelope = pb.CloudEnvelope(
+                    protocol_version=2,
+                    device_id=self.state.device_id,
+                    sequence_id=0,
+                    telemetry=report,
+                )
+
+            # Send CloudEnvelope
+            data = envelope.SerializeToString()
+            prefix = struct.pack(">I", len(data))
+            self._cloud_writer.write(prefix + data)
+            await self._cloud_writer.drain()
+
             self.state.metrics.mqtt_messages_published.inc()
             return True
-        except (
-            aiomqtt.ConnectError,
-            aiomqtt.ProtocolError,
-            aiomqtt.NegativeAckError,
-            OSError,
-            RuntimeError,
-        ) as exc:
-            logger.error("MQTT publish failure: %s", exc)
+        except Exception as exc:
+            logger.error("Cloud publish failure: %s", exc)
             return False
 
     # --- Lifecycle ---
@@ -514,7 +475,7 @@ class BridgeService:
                 logger.debug("Spool cache close error during cleanup", error=e)
             self._mqtt_spool = None
 
-        if self.state:
+        if self.state is not None:
             self.state.cleanup()
 
     def __del__(self) -> None:
@@ -641,8 +602,8 @@ class BridgeService:
 
     async def _on_mcu_datastore_put(self, p: pb.DatastorePut) -> bool:
         if self.state.datastore_cache is not None:
-            await self.state.datastore_cache.set(p.key, bytes(p.value))
-        await self._publish_datastore_value(p.key, bytes(p.value))
+            await self.state.datastore_cache.set(p.key, p.value)
+        await self._publish_datastore_value(p.key, p.value)
         return True
 
     async def _on_mcu_datastore_get(self, p: pb.DatastoreGet) -> bool:
@@ -658,9 +619,9 @@ class BridgeService:
         return bool(res)
 
     async def _on_mcu_mailbox_push(self, p: pb.MailboxPush) -> bool:
-        await self.state.mailbox_incoming_queue.append(bytes(p.data))
+        await self.state.mailbox_incoming_queue.append(p.data)
         await self.enqueue_mqtt(
-            create_queued_publish(get_topic_for_message(self.state.mqtt_topic_prefix, p) or "", bytes(p.data))
+            create_queued_publish(get_topic_for_message(self.state.mqtt_topic_prefix, p) or "", p.data)
         )
         return True
 
@@ -836,7 +797,7 @@ class BridgeService:
     # --- Direct Service Request Handlers (Cleaned) ---
 
     async def _handle_console(self, inbound: BridgeRequest) -> None:
-        if pl := bytes(inbound.payload):
+        if pl := inbound.payload:
             self.state.console_to_mcu_queue.append(pl)
             await self._flush_console_queue()
 
@@ -845,7 +806,7 @@ class BridgeService:
         if key_parts and key_parts[-1] in ("request", "response"):
             key_parts.pop()
         key = "/".join(key_parts)
-        pl = bytes(inbound.payload)
+        pl = inbound.payload
         if not key:
             return
         if route.identifier == DatastoreAction.PUT:
@@ -857,7 +818,7 @@ class BridgeService:
             cache = cast(Any, self.state.datastore_cache)
             val = (await cache.get(key)) if cache else None
             if val is not None:
-                await self._publish_datastore_value(key, bytes(val), reply_context=inbound)
+                await self._publish_datastore_value(key, val, reply_context=inbound)
             elif route.remainder and route.remainder[-1] == "request":
                 await self._publish_datastore_value(key, b"", reply_context=inbound, error="datastore-miss")
 
@@ -865,7 +826,7 @@ class BridgeService:
         serial = self.serial
         if not serial:
             return
-        pl = bytes(inbound.payload)
+        pl = inbound.payload
         if route.identifier == MailboxAction.WRITE:
             await self.state.mailbox_queue.append(pl)
             await serial.send(Command.CMD_MAILBOX_PUSH.value, pb.MailboxPush(data=pl))
@@ -897,12 +858,12 @@ class BridgeService:
             elif act == FileAction.WRITE:
                 if await serial.send(
                     Command.CMD_FILE_WRITE.value,
-                    pb.FileWrite(path=target[len(MCU_FS_PREFIX) :], data=bytes(inbound.payload)),
+                    pb.FileWrite(path=target[len(MCU_FS_PREFIX) :], data=inbound.payload),
                 ):
                     await self.enqueue_mqtt(
                         create_queued_publish(
                             topic_path(self.state.mqtt_topic_prefix, Topic.FILE, FileAction.READ, target),
-                            bytes(inbound.payload),
+                            inbound.payload,
                         ),
                         reply_context=inbound,
                     )
@@ -913,16 +874,16 @@ class BridgeService:
             if not path:
                 return
             if act == FileAction.WRITE:
-                if await self._write_with_quota(path, bytes(inbound.payload)):
+                if await self._write_with_quota(path, inbound.payload):
                     await self.enqueue_mqtt(
                         create_queued_publish(
                             topic_path(self.state.mqtt_topic_prefix, Topic.FILE, FileAction.READ, target),
-                            bytes(inbound.payload),
+                            inbound.payload,
                         ),
                         reply_context=inbound,
                     )
             elif act == FileAction.READ and await asyncio.to_thread(path.is_file):
-                if not str(inbound.topic).endswith(protocol.MQTT_SUFFIX_RESPONSE):
+                if not inbound.topic.endswith(protocol.MQTT_SUFFIX_RESPONSE):
                     await self.enqueue_mqtt(
                         create_queued_publish(
                             topic_path(
@@ -992,7 +953,7 @@ class BridgeService:
 
     async def _handle_shell(self, route: TopicRoute, inbound: BridgeRequest) -> None:
         act = route.segments[0] if route.segments else None
-        pl = bytes(inbound.payload)
+        pl = inbound.payload
         if act == ShellAction.RUN_ASYNC:
             try:
                 content_type = getattr(inbound, "content_type", None)
@@ -1063,7 +1024,7 @@ class BridgeService:
                 if inbound.payload:
                     res = await serial.send(
                         Command.CMD_SPI_TRANSFER.value,
-                        pb.SpiTransfer(data=bytes(inbound.payload)),
+                        pb.SpiTransfer(data=inbound.payload),
                     )
                     if isinstance(res, bytes):
                         await self.enqueue_mqtt(
@@ -1088,7 +1049,7 @@ class BridgeService:
         pin = self._parse_pin(route.segments[0])
         if pin < 0:
             return
-        pl = bytes(inbound.payload).decode()
+        pl = inbound.payload.decode()
         if len(route.segments) == 2:
             if route.segments[1] == PinAction.MODE:
                 await serial.send(Command.CMD_SET_PIN_MODE.value, pb.PinMode(pin=pin, mode=cast(Any, int(pl))))
@@ -1294,20 +1255,20 @@ class BridgeService:
 
     async def _terminate_process(self, pid: int, ctx: ProcessContext, *, grace_period: float) -> int:
         if ctx.handle.returncode is not None:
-            return int(ctx.handle.returncode)
+            return ctx.handle.returncode
         try:
             os.killpg(ctx.handle.pid, signal.SIGTERM)
         except ProcessLookupError:
-            return int(ctx.handle.returncode or -1)
+            return ctx.handle.returncode or -1
 
         try:
-            return int(await asyncio.wait_for(ctx.handle.wait(), grace_period))
+            return await asyncio.wait_for(ctx.handle.wait(), grace_period)
         except TimeoutError:
             logger.error("Process exceeded graceful shutdown window; escalating to SIGKILL", pid=pid)
 
         os.killpg(ctx.handle.pid, signal.SIGKILL)
         try:
-            return int(await asyncio.wait_for(ctx.handle.wait(), PROCESS_TERM_GRACE_PERIOD_SECONDS))
+            return await asyncio.wait_for(ctx.handle.wait(), PROCESS_TERM_GRACE_PERIOD_SECONDS)
         except TimeoutError:
             return -1
 
@@ -1409,7 +1370,7 @@ class BridgeService:
                         lambda: publish_metrics(
                             self.state,
                             self.enqueue_mqtt,
-                            float(self.config.status_interval),
+                            self.config.status_interval,
                         ),
                     )
                 )
@@ -1422,8 +1383,8 @@ class BridgeService:
                             lambda: publish_bridge_snapshots(
                                 self.state,
                                 self.enqueue_mqtt,
-                                summary_interval=float(self.config.bridge_summary_interval),
-                                handshake_interval=float(self.config.bridge_handshake_interval),
+                                summary_interval=self.config.bridge_summary_interval,
+                                handshake_interval=self.config.bridge_handshake_interval,
                             ),
                         )
                     )
@@ -1451,9 +1412,6 @@ class BridgeService:
             RuntimeError,
             ValueError,
             TypeError,
-            aiomqtt.ConnectError,
-            aiomqtt.ProtocolError,
-            aiomqtt.NegativeAckError,
             tenacity.RetryError,
             SerialHandshakeFatal,
         ) as exc_group:
@@ -1466,8 +1424,8 @@ class BridgeService:
             logger.info("MCU Bridge daemon stopped.")
 
     async def run_mqtt(self) -> None:
-        if not self.config.mqtt_enabled:
-            logger.info("MQTT transport is DISABLED in configuration.")
+        if not self.config.cloud_enabled:
+            logger.info("Cloud transport is DISABLED in configuration.")
             return
 
         tls_context = get_ssl_context(self.config)
@@ -1477,94 +1435,106 @@ class BridgeService:
             wait=tenacity.wait_exponential(multiplier=reconnect_delay, max=60) + tenacity.wait_random(0, 2),
             retry=tenacity.retry_if_exception_type(
                 (
-                    aiomqtt.ConnectError,
-                    aiomqtt.ProtocolError,
-                    aiomqtt.NegativeAckError,
                     OSError,
                     asyncio.TimeoutError,
                 )
             ),
             before_sleep=lambda rs: logger.error(
-                "MQTT connection retry",
+                "Cloud connection retry",
                 attempt=rs.attempt_number,
                 wait=getattr(rs.next_action, "sleep", 0),
             ),
-            after=lambda rs: self.state.metrics.retries.labels(component="mqtt_connect").inc(),
+            after=lambda rs: self.state.metrics.retries.labels(component="cloud_connect").inc(),
             reraise=True,
         )
 
         try:
 
             async def _connect_attempt() -> None:
-                await self.connect_mqtt_session(tls_context)
+                await self.connect_cloud_session(tls_context)
 
             await retryer(_connect_attempt)
         except asyncio.CancelledError:
-            logger.info("MQTT transport stopping.")
+            logger.info("Cloud transport stopping.")
             raise
         except (TimeoutError, ConnectionError, OSError) as exc:
-            logger.critical("MQTT transport fatal error: %s", exc)
-            raise
-        except ExceptionGroup as eg:
-            for exc in eg.exceptions:
-                logger.critical("MQTT transport fatal error: %s", exc)
+            logger.critical("Cloud transport fatal error: %s", exc)
             raise
 
-    async def connect_mqtt_session(self, tls_context: Any) -> None:
-        if not self.config.mqtt_user:
-            logger.error("MQTT connecting without authentication (anonymous)")
-
-        will_topic = get_topic_for_message(self.state.mqtt_topic_prefix, "Status") or ""
-        will = aiomqtt.Will(
-            topic=will_topic,
-            payload=MQTT_STATUS_OFFLINE_PAYLOAD,
-            qos=aiomqtt.QoS.AT_LEAST_ONCE,
-            retain=True,
+    async def connect_cloud_session(self, tls_context: Any) -> None:
+        logger.info("Connecting to Cloud Gateway at %s:%d...", self.config.cloud_host, self.config.cloud_port)
+        reader, writer = await asyncio.open_connection(
+            self.config.cloud_host,
+            self.config.cloud_port,
+            ssl=tls_context,
         )
+        self._cloud_reader = reader
+        self._cloud_writer = writer
+        logger.info("Connected to Cloud Gateway.")
+        try:
+            # Emit status online event
+            await self._send_cloud_event("status_online", "info", "Device online")
+            await self.flush_mqtt_spool()
 
-        async with aiomqtt.Client(
-            hostname=self.config.mqtt_host,
-            port=self.config.mqtt_port,
-            username=self.config.mqtt_user or None,
-            password=(self.config.mqtt_pass.encode("utf-8") if self.config.mqtt_pass else None),
-            ssl_context=tls_context,
-            logger=logging.getLogger("mcubridge.mqtt.client"),
-            clean_start=True,
-            will=will,
-            session_expiry_interval=0,
-            request_response_info=True,
-            request_problem_info=True,
-        ) as client:
-            logger.info("Connected to MQTT broker (Paho v2/MQTTv5).")
-            self.set_mqtt_client(client)
+            worker_task = asyncio.create_task(self._mqtt_incoming_worker())
             try:
-                topics = [
-                    (topic_path(self.state.mqtt_topic_prefix, t, *s), int(q)) for t, s, q in MQTT_COMMAND_SUBSCRIPTIONS
-                ]
-                for topic, qos_val in topics:
-                    await client.subscribe(topic, max_qos=aiomqtt.QoS(qos_val))
-                await client.publish(
-                    will_topic,
-                    MQTT_STATUS_ONLINE_PAYLOAD,
-                    qos=aiomqtt.QoS.AT_LEAST_ONCE,
-                    retain=True,
-                    packet_id=next(client.packet_ids),
-                )
-                await self.flush_mqtt_spool()
+                # Read loop
+                while True:
+                    len_bytes = await reader.readexactly(4)
+                    length = struct.unpack(">I", len_bytes)[0]
+                    data = await reader.readexactly(length)
 
-                worker_task = asyncio.create_task(self._mqtt_incoming_worker())
-                try:
-                    async for message in client.messages():
-                        if isinstance(message, aiomqtt.PublishPacket):
-                            self._mqtt_incoming_queue.put_nowait(message)
-                finally:
-                    worker_task.cancel()
-                    try:
-                        await worker_task
-                    except asyncio.CancelledError:
-                        pass
+                    envelope = pb.CloudEnvelope()
+                    envelope.ParseFromString(data)
+
+                    payload_type = envelope.WhichOneof("payload")
+                    if payload_type == "pong":
+                        logger.debug("Received keepalive pong from cloud.")
+                        continue
+
+                    if payload_type == "command_request":
+                        cmd = envelope.command_request
+                        # Map to BridgeRequest
+                        request = BridgeRequest(
+                            topic=topic_path(self.state.topic_prefix, cmd.command_path),
+                            payload=cmd.payload,
+                            correlation_data=envelope.sequence_id.to_bytes(8, "big"),
+                            response_topic="cloud",
+                        )
+                        self._mqtt_incoming_queue.put_nowait(request)
             finally:
-                self.set_mqtt_client(None)
+                worker_task.cancel()
+                try:
+                    await worker_task
+                except asyncio.CancelledError:
+                    pass
+        finally:
+            self._cloud_reader = None
+            self._cloud_writer = None
+            writer.close()
+            try:
+                await writer.wait_closed()
+            except OSError:
+                pass
+
+    async def _send_cloud_event(self, event_type: str, severity: str, description: str) -> None:
+        envelope = pb.CloudEnvelope(
+            protocol_version=2,
+            device_id=self.state.device_id,
+            sequence_id=0,
+            timestamp_utc=int(time.time()),
+            event=pb.EventNotification(
+                event_type=event_type,
+                severity=severity,
+                description=description,
+            ),
+        )
+        writer = self._cloud_writer
+        if writer:
+            data = envelope.SerializeToString()
+            prefix = struct.pack(">I", len(data))
+            writer.write(prefix + data)
+            await writer.drain()
 
     async def _mqtt_incoming_worker(self) -> None:
         while True:
@@ -1575,20 +1545,11 @@ class BridgeService:
                 except (ValueError, RuntimeError, asyncio.QueueFull) as e:
                     logger.error(
                         "Error processing MQTT message",
-                        topic=str(message.topic),
+                        topic=message.topic,
                         error=str(e),
                         payload_hex=(message.payload.hex() if message.payload else None),
                     )
                 finally:
-                    if self._mqtt_client and message.qos == aiomqtt.QoS.AT_LEAST_ONCE and message.packet_id is not None:
-                        try:
-                            await self._mqtt_client.puback(message.packet_id)
-                        except Exception as exc:
-                            logger.warning(
-                                "Failed to acknowledge message",
-                                topic=str(message.topic),
-                                error=str(exc),
-                            )
                     self._mqtt_incoming_queue.task_done()
             except asyncio.CancelledError:
                 break

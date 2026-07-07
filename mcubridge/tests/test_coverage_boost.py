@@ -1,6 +1,5 @@
 import asyncio
 import sys
-import aiomqtt
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from google.protobuf.message import Message as ProtobufMessage
@@ -229,15 +228,15 @@ async def test_daemon_coverage_boost(tmp_path: Path) -> None:
     test_spool.mkdir()
 
     config = RuntimeConfig(
-        mqtt_topic="br",
+        topic_prefix="br",
         serial_port="/dev/testport",
-        mqtt_enabled=False,
+        cloud_enabled=False,
         watchdog_enabled=True,
         metrics_enabled=False,
         bridge_summary_interval=1.0,
         bridge_handshake_interval=1.0,
         file_system_root=str(test_root),
-        mqtt_spool_dir=str(test_spool),
+        cloud_spool_dir=str(test_spool),
     )
 
     state = create_runtime_state(config)
@@ -247,14 +246,13 @@ async def test_daemon_coverage_boost(tmp_path: Path) -> None:
     await daemon.run_mqtt()
 
     config_mqtt = RuntimeConfig(
-        mqtt_topic="br",
+        topic_prefix="br",
         serial_port="/dev/testport",
-        mqtt_enabled=True,
-        mqtt_host="localhost",
-        mqtt_port=1883,
-        mqtt_user="",
+        cloud_enabled=True,
+        cloud_host="localhost",
+        cloud_port=8443,
         file_system_root=str(test_root / "mqtt_files"),
-        mqtt_spool_dir=str(test_spool / "mqtt_spool"),
+        cloud_spool_dir=str(test_spool / "mqtt_spool"),
     )
 
     (test_root / "mqtt_files").mkdir()
@@ -265,45 +263,43 @@ async def test_daemon_coverage_boost(tmp_path: Path) -> None:
     daemon_mqtt: Any = BridgeService(config_mqtt, state_mqtt, serial_mqtt)
     serial_mqtt.service = daemon_mqtt
 
-    mock_client = AsyncMock()
-    mock_client.__aenter__.return_value = mock_client
+    mock_reader = AsyncMock()
+    mock_writer = AsyncMock()
 
-    class AsyncIter:
-        def __init__(self, items: list[Any]) -> None:
-            self.items = items
+    envelope = pb.CloudEnvelope(
+        sequence_id=1,
+        command_request=pb.CommandRequest(
+            command_path="system/version/get",
+            payload=b"",
+        ),
+    )
+    req_data = envelope.SerializeToString()
+    header = len(req_data).to_bytes(4, byteorder="big")
 
-        def __aiter__(self) -> "AsyncIter":
-            return self
+    read_results = [header, req_data]
 
-        async def __anext__(self) -> Any:
-            if not self.items:
-                raise StopAsyncIteration
-            return self.items.pop(0)
+    async def read_mock(n):
+        if not read_results:
+            raise ConnectionResetError()
+        return read_results.pop(0)
 
-    msg = MagicMock(spec=aiomqtt.PublishPacket)
-    msg.topic = "br/mcu/cmd"
-    msg.payload = b"msg"
-    mock_client.messages = MagicMock(return_value=AsyncIter([msg]))
+    mock_reader.readexactly.side_effect = read_mock
 
-    with patch("aiomqtt.Client", return_value=mock_client):
-        await daemon_mqtt.connect_mqtt_session(None)
-        assert daemon_mqtt._mqtt_client is None
+    with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
+        try:
+            await daemon_mqtt.connect_cloud_session(None)
+        except ConnectionResetError:
+            pass
 
-    # Connect MQTT session ExceptionGroup path
-    mock_client2 = AsyncMock()
-    mock_client2.__aenter__.return_value = mock_client2
+    # Connect Cloud session exception path
+    async def read_mock_fail(n):
+        raise OSError("connection reset")
 
-    class ExceptionIter:
-        def __aiter__(self) -> "ExceptionIter":
-            return self
-
-        async def __anext__(self) -> Any:
-            raise ExceptionGroup("mqtt group", [ValueError("group error")])
-
-    mock_client2.messages = MagicMock(return_value=ExceptionIter())
-    with patch("aiomqtt.Client", return_value=mock_client2):
-        with pytest.raises(ExceptionGroup):
-            await daemon_mqtt.connect_mqtt_session(None)
+    mock_reader2 = AsyncMock()
+    mock_reader2.readexactly.side_effect = read_mock_fail
+    with patch("asyncio.open_connection", return_value=(mock_reader2, mock_writer)):
+        with pytest.raises(OSError):
+            await daemon_mqtt.connect_cloud_session(None)
 
     # 3. supervise with fatal exceptions
     from mcubridge.services.handshake import SerialHandshakeFatal

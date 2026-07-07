@@ -1,14 +1,11 @@
 import pytest
-import aiomqtt
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 from typing import Any
 from collections.abc import Coroutine
 import importlib.util
 from pathlib import Path
 import sys
 import io
-
-_AIOMQTT_CLIENT_TYPE = aiomqtt.Client
 
 
 def load_script(name: str) -> Any:
@@ -38,15 +35,15 @@ async def test_file_push_script(runtime_config: Any) -> None:
     script = load_script("mcubridge-file-push")
     with (
         patch("mcubridge_file_push.load_runtime_config", return_value=runtime_config),
-        patch("aiomqtt.Client") as mock_client_cls,
+        patch("socket.socket") as mock_sock_cls,
         patch("sys.argv", ["mcubridge-file-push", "local.txt", "mcu/remote.txt"]),
         patch("pathlib.Path.read_bytes", return_value=b"data"),
         patch("pathlib.Path.exists", return_value=True),
-        patch("asyncio.run", side_effect=mock_asyncio_run),
     ):
-        mock_client = AsyncMock(spec=_AIOMQTT_CLIENT_TYPE)
-        mock_client_cls.return_value.__aenter__.return_value = mock_client
+        mock_sock = MagicMock()
+        mock_sock_cls.return_value = mock_sock
         script.main()
+        mock_sock.connect.assert_called_once_with("/var/run/mcubridge.sock")
 
 
 @pytest.mark.asyncio
@@ -54,34 +51,30 @@ async def test_led_control_script(runtime_config: Any) -> None:
     script = load_script("mcubridge-led-control")
     with (
         patch("mcubridge_led_control.load_runtime_config", return_value=runtime_config),
-        patch("aiomqtt.Client") as mock_client_cls,
+        patch("socket.socket") as mock_sock_cls,
         patch("sys.argv", ["mcubridge-led-control", "on"]),
-        patch("asyncio.run", side_effect=mock_asyncio_run),
     ):
-        mock_client = AsyncMock(spec=_AIOMQTT_CLIENT_TYPE)
-        mock_client_cls.return_value.__aenter__.return_value = mock_client
+        mock_sock = MagicMock()
+        mock_sock_cls.return_value = mock_sock
         script.main()
+        mock_sock.connect.assert_called_once_with("/var/run/mcubridge.sock")
 
 
 @pytest.mark.asyncio
 async def test_rotate_credentials_script(runtime_config: Any) -> None:
     script = load_script("mcubridge-rotate-credentials")
     with (
-        patch("aiomqtt.Client") as mock_client_cls,
         patch("sys.argv", ["mcubridge-rotate-credentials", "--force", "--no-restart"]),
         patch("subprocess.run"),
         patch("uci.Uci"),
         patch("mcubridge_rotate_credentials.update_uci_credentials") as mock_update,
         patch("sys.stdout", new_callable=io.StringIO) as stdout,
-        patch("asyncio.run", side_effect=mock_asyncio_run),
     ):
-        mock_client = AsyncMock(spec=_AIOMQTT_CLIENT_TYPE)
-        mock_client_cls.return_value.__aenter__.return_value = mock_client
         script.main()
         assert mock_update.called
         output = stdout.getvalue()
         assert "SERIAL_SECRET=" in output
-        assert "MQTT_PASSWORD=" in output
+        assert "CLOUD_PASSWORD=" in output
 
 
 @pytest.mark.asyncio

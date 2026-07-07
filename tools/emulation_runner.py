@@ -36,8 +36,8 @@ import tempfile
 
 # --- Constants ---
 SOCAT_PORT0 = "/tmp/ttyBRIDGE0"
-MQTT_HOST = "127.0.0.1"
-MQTT_PORT = 1883
+CLOUD_HOST = "127.0.0.1"
+CLOUD_PORT = 8443
 
 logging.basicConfig(
     level=logging.INFO,
@@ -60,7 +60,7 @@ class EmulationState:
             logger.info("[%s] %s", source, clean_line)
 
 
-class MqttVerifier:
+class CloudVerifier:
     def __init__(self, host: str, port: int) -> None:
         self.host = host
         self.port = port
@@ -140,10 +140,10 @@ def run_emulation(
     run_scripts: list[str] | None = None,
 ):
     state = EmulationState()
-    mqtt = MqttVerifier(MQTT_HOST, MQTT_PORT)
+    cloud_verify = CloudVerifier(CLOUD_HOST, CLOUD_PORT)
 
-    if not mqtt.wait_for_ready():
-        logger.error("MQTT broker not available")
+    if not cloud_verify.wait_for_ready():
+        logger.error("Cloud Gateway not available")
         sys.exit(1)
 
     # 1. Start Unified socat linking PTY to MCU EXEC
@@ -203,10 +203,10 @@ def run_emulation(
                     "serial_port": SOCAT_PORT0,
                     "serial_baud": str(protocol.DEFAULT_BAUDRATE),
                     "serial_safe_baud": str(protocol.DEFAULT_SAFE_BAUDRATE),
-                    "mqtt_host": MQTT_HOST,
-                    "mqtt_port": str(MQTT_PORT),
-                    "mqtt_tls": "0",
-                    "mqtt_tls_insecure": "1",
+                    "cloud_host": CLOUD_HOST,
+                    "cloud_port": str(CLOUD_PORT),
+                    "cloud_tls": "0",
+                    "cloud_tls_insecure": "1",
                     "serial_shared_secret": "DEBUG_INSECURE",
                     "allowed_commands": "*",
                     "debug": "1",

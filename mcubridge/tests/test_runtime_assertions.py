@@ -5,7 +5,6 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_asyncio
-from aiomqtt import PublishPacket, QoS
 from typing import Any
 
 from mcubridge.protocol import mcubridge_pb2 as pb
@@ -14,6 +13,27 @@ from mcubridge.protocol.protocol import Command
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState
 from mcubridge.transport.serial import SerialTransport
+
+
+class QoS:
+    def __init__(self, value: int) -> None:
+        self.value = value
+
+
+class PublishPacket:
+    def __init__(
+        self,
+        topic: str,
+        payload: bytes,
+        qos: QoS,
+        retain: bool = False,
+        packet_id: int | None = None,
+    ) -> None:
+        self.topic = topic
+        self.payload = payload
+        self.qos = qos
+        self.retain = retain
+        self.packet_id = packet_id
 
 
 def Message(
@@ -43,7 +63,7 @@ async def service_setup(
     serial.acknowledge.return_value = True
     service = BridgeService(runtime_config, runtime_state, serial)
     mock_mqtt = AsyncMock()
-    service.set_mqtt_client(mock_mqtt)
+    service._cloud_writer = mock_mqtt
     return service, runtime_state, serial, mock_mqtt
 
 

@@ -3,14 +3,14 @@
 
 from __future__ import annotations
 
-import asyncio
+import socket
+import time
 import argparse
 import sys
 import structlog
-from typing import Any
-import aiomqtt
 from mcubridge.config.settings import load_runtime_config
-from mcubridge.protocol.structures import get_ssl_context
+from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.protocol.topics import Topic, topic_path
 
 # [SIL-2] Structured logging towards syslog/stderr
 logger = structlog.get_logger("mcubridge.hw-smoke")
@@ -19,75 +19,49 @@ logger = structlog.get_logger("mcubridge.hw-smoke")
 class SmokeTester:
     def __init__(self) -> None:
         self.config = load_runtime_config()
-        self.prefix = self.config.mqtt_topic
+        self.prefix = self.config.topic_prefix
         self.results: dict[str, bool] = {}
 
-    async def run(self, pin: int, timeout: float) -> None:
-        tls_context = get_ssl_context(self.config)
-
+    def run(self, pin: int, timeout: float) -> None:
+        logger.info("Starting hardware smoke test via UNIX socket IPC...")
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         try:
-            async with aiomqtt.Client(
-                hostname=self.config.mqtt_host,
-                port=self.config.mqtt_port,
-                username=self.config.mqtt_user or None,
-                password=(self.config.mqtt_pass.encode("utf-8") if self.config.mqtt_pass else None),
-                ssl_context=tls_context,
-            ) as client:
-                logger.info(
-                    "Starting hardware smoke test",
-                    host=self.config.mqtt_host,
-                    port=self.config.mqtt_port,
-                )
+            sock.connect("/var/run/mcubridge.sock")
+            self.results["connectivity"] = True
+            logger.info("Connectivity to UNIX socket verified")
 
-                # 1. Connectivity & Version
-                version_topic = f"{self.prefix}/system/version/get"
-                resp_topic = f"{self.prefix}/system/version/response"
+            # Toggle Pin
+            topic = topic_path(self.prefix, Topic.DIGITAL, str(pin))
+            # Send ON
+            msg_on = pb.MqttQueuedPublish(topic_name=topic, payload=b"1", qos=1)
+            data_on = msg_on.SerializeToString()
+            sock.sendall(len(data_on).to_bytes(4, byteorder="big") + data_on)
 
-                await client.subscribe(resp_topic)
-                await client.publish(version_topic, payload=b"")
+            time.sleep(0.5)
 
-                try:
-                    async with asyncio.timeout(timeout):
-                        async for msg in client.messages():
-                            if isinstance(msg, aiomqtt.PublishPacket):
-                                payload_raw: Any = msg.payload
-                                payload_str = (
-                                    payload_raw.decode() if isinstance(payload_raw, bytes) else str(payload_raw)
-                                )
-                                logger.info("Connectivity verified", mcu_version=payload_str)
-                                self.results["connectivity"] = True
-                                break
-                except TimeoutError:
-                    logger.error("Timeout waiting for version response")
-                    self.results["connectivity"] = False
+            # Send OFF
+            msg_off = pb.MqttQueuedPublish(topic_name=topic, payload=b"0", qos=1)
+            data_off = msg_off.SerializeToString()
+            sock.sendall(len(data_off).to_bytes(4, byteorder="big") + data_off)
 
-                if not self.results.get("connectivity"):
-                    return
-
-                # 2. GPIO Toggle
-                logger.info("Testing GPIO toggle", pin=pin)
-                digital_topic = f"{self.prefix}/d/{pin}"
-                # [SIL-2] Payloads in hex
-                await client.publish(digital_topic, payload=b"1")
-                await asyncio.sleep(0.5)
-                await client.publish(digital_topic, payload=b"0")
-                self.results["gpio"] = True
-                logger.info("GPIO test successful", pin=pin)
-
-        except (aiomqtt.ConnectError, aiomqtt.ProtocolError, aiomqtt.NegativeAckError, OSError, RuntimeError) as e:
-            logger.error("MQTT Error during smoke test", error=str(e))
+            self.results["gpio"] = True
+            logger.info("GPIO toggle commands sent successfully")
+        except OSError as e:
+            logger.error("Connection to UNIX socket failed", error=str(e))
             self.results["connectivity"] = False
+        finally:
+            sock.close()
 
 
 def main() -> None:
-    """Execute a suite of hardware diagnostic tests via MQTT."""
+    """Execute a suite of hardware diagnostic tests via UNIX socket."""
     parser = argparse.ArgumentParser(description="Diagnostic smoke test for MCU hardware.")
     parser.add_argument("--pin", type=int, default=13, help="Pin to toggle during test")
     parser.add_argument("--timeout", type=float, default=5.0, help="Timeout for responses")
     args = parser.parse_args()
 
     tester = SmokeTester()
-    asyncio.run(tester.run(args.pin, args.timeout))
+    tester.run(args.pin, args.timeout)
 
     success = all(tester.results.values()) and bool(tester.results)
     if success:

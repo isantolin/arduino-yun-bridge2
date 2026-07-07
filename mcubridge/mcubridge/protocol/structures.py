@@ -155,8 +155,8 @@ def validate_config(cfg: pb.RuntimeConfig) -> None:
         for field in [f.name for f in cfg.topic_authorization.DESCRIPTOR.fields]:
             setattr(cfg.topic_authorization, field, True)
 
-    if not cfg.mqtt_topic or not any(filter(None, cfg.mqtt_topic.split("/"))):
-        raise ValueError("mqtt_topic must contain at least one segment")
+    if not cfg.topic_prefix or not any(filter(None, cfg.topic_prefix.split("/"))):
+        raise ValueError("topic_prefix must contain at least one segment")
 
     if cfg.serial_response_timeout < cfg.serial_retry_timeout * 2:
         raise ValueError("serial_response_timeout must be at least 2x serial_retry_timeout")
@@ -190,31 +190,31 @@ def validate_config(cfg: pb.RuntimeConfig) -> None:
 
 def get_ssl_context(cfg: pb.RuntimeConfig) -> Any | None:
     """Create an ssl.SSLContext based on cfg. [SIL-2]"""
-    if not cfg.mqtt_tls:
+    if not cfg.cloud_tls:
         return None
 
     import ssl
-    from mcubridge.config.const import MQTT_TLS_MIN_VERSION
+    from mcubridge.config.const import CLOUD_TLS_MIN_VERSION
 
     try:
-        if cfg.mqtt_cafile:
-            ca_path = Path(cfg.mqtt_cafile)
+        if cfg.cloud_cafile:
+            ca_path = Path(cfg.cloud_cafile)
             if not ca_path.exists():
-                raise RuntimeError(f"MQTT TLS CA file missing: {cfg.mqtt_cafile}")
+                raise RuntimeError(f"Cloud TLS CA file missing: {cfg.cloud_cafile}")
             context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH, cafile=str(ca_path))
         else:
             context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
 
-        context.minimum_version = MQTT_TLS_MIN_VERSION
+        context.minimum_version = CLOUD_TLS_MIN_VERSION
 
-        if cfg.mqtt_tls_insecure:
+        if cfg.cloud_tls_insecure:
             context.check_hostname = False
             context.verify_mode = ssl.CERT_NONE
 
-        if cfg.mqtt_certfile or cfg.mqtt_keyfile:
-            if not (cfg.mqtt_certfile and cfg.mqtt_keyfile):
-                raise ValueError("Both mqtt_certfile and mqtt_keyfile must be provided for mTLS.")
-            context.load_cert_chain(cfg.mqtt_certfile, cfg.mqtt_keyfile)
+        if cfg.cloud_certfile or cfg.cloud_keyfile:
+            if not (cfg.cloud_certfile and cfg.cloud_keyfile):
+                raise ValueError("Both cloud_certfile and cloud_keyfile must be provided for mTLS.")
+            context.load_cert_chain(cfg.cloud_certfile, cfg.cloud_keyfile)
 
         return context
     except (OSError, ssl.SSLError, ValueError) as exc:

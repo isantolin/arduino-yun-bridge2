@@ -36,8 +36,6 @@ import tenacity
 import structlog
 import uvloop
 
-import aiomqtt
-
 from mcubridge.config.logging import configure_logging
 from mcubridge.config.const import DEFAULT_SERIAL_SHARED_SECRET
 from mcubridge.config.settings import (
@@ -74,8 +72,8 @@ def app(args: list[str] | None = None) -> None:
 
         # [SIL-2] Strict Mode Security Gate
         if config.serial_shared_secret == DEFAULT_SERIAL_SHARED_SECRET:
-            config.mqtt_enabled = False
-            logger.error("STRICT MODE: MQTT transport has been DISABLED for security.")
+            config.cloud_enabled = False
+            logger.error("STRICT MODE: Cloud transport has been DISABLED for security.")
 
         # 1. Create Serial Transport
         serial_transport = SerialTransport(config, state, None)
@@ -100,9 +98,6 @@ def app(args: list[str] | None = None) -> None:
         RuntimeError,
         ValueError,
         TypeError,
-        aiomqtt.ConnectError,
-        aiomqtt.ProtocolError,
-        aiomqtt.NegativeAckError,
         SerialHandshakeFatal,
         tenacity.RetryError,
     ) as exc:
@@ -116,9 +111,6 @@ def app(args: list[str] | None = None) -> None:
                 ValueError,
                 TypeError,
                 asyncio.TimeoutError,
-                aiomqtt.ConnectError,
-                aiomqtt.ProtocolError,
-                aiomqtt.NegativeAckError,
                 SerialHandshakeFatal,
                 tenacity.RetryError,
             )

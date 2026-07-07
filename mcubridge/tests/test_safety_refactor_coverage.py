@@ -107,7 +107,7 @@ async def test_additional_coverage_boost(real_config: RuntimeConfig) -> None:
 
 @pytest.mark.asyncio
 async def test_spool_trim_and_limit(real_config: RuntimeConfig) -> None:
-    real_config.mqtt_queue_limit = 2
+    real_config.cloud_queue_limit = 2
     state = create_runtime_state(real_config)
     serial = AsyncMock(spec=SerialTransport)
     service = BridgeService(real_config, state, serial)
@@ -143,7 +143,7 @@ async def test_corrupt_item_handling(real_config: RuntimeConfig) -> None:
     serial = AsyncMock(spec=SerialTransport)
     service = BridgeService(real_config, state, serial)
     mock_client = AsyncMock()
-    service.set_mqtt_client(mock_client)
+    service._cloud_writer = mock_client
     try:
         spool = getattr(service, "_mqtt_spool")
         await spool.clear()
@@ -156,7 +156,7 @@ async def test_corrupt_item_handling(real_config: RuntimeConfig) -> None:
 
         assert await spool.length() == 0
         assert service.state.mqtt_spool_corrupt_dropped == 1
-        mock_client.publish.assert_awaited_once()
+        mock_client.write.assert_called_once()
     finally:
         service.cleanup()
         state.cleanup()
@@ -186,7 +186,7 @@ async def test_peeking_or_popping_errors(real_config: RuntimeConfig) -> None:
     serial = AsyncMock(spec=SerialTransport)
     service = BridgeService(real_config, state, serial)
     mock_client = AsyncMock()
-    service.set_mqtt_client(mock_client)
+    service._cloud_writer = mock_client
     try:
         spool = getattr(service, "_mqtt_spool")
         await spool.clear()

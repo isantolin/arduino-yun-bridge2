@@ -3,43 +3,39 @@
 
 from __future__ import annotations
 
-import asyncio
 import sys
 import argparse
 from pathlib import Path
-import aiomqtt
+import socket
 import structlog
 from mcubridge.config.settings import load_runtime_config
-from mcubridge.protocol.structures import get_ssl_context
+from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol.topics import Topic, topic_path
 
 # [SIL-2] Structured logging towards syslog/stderr
 logger = structlog.get_logger("mcubridge.file-push")
 
 
-async def push_file(topic: str, data: bytes) -> None:
-    """Publish file data using core configuration."""
-    config = load_runtime_config()
-    tls_context = get_ssl_context(config)
+def push_file(topic: str, data: bytes) -> None:
+    """Publish file data using direct UNIX socket IPC."""
+    msg = pb.MqttQueuedPublish(
+        topic_name=topic,
+        payload=data,
+        qos=1,
+    )
+    payload_data = msg.SerializeToString()
+    prefix = len(payload_data).to_bytes(4, byteorder="big")
 
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     try:
-        async with aiomqtt.Client(
-            hostname=config.mqtt_host,
-            port=config.mqtt_port,
-            username=config.mqtt_user or None,
-            password=(config.mqtt_pass.encode("utf-8") if config.mqtt_pass else None),
-            ssl_context=tls_context,
-        ) as client:
-            await client.publish(
-                topic,
-                payload=data,
-                qos=aiomqtt.QoS.AT_LEAST_ONCE,
-                packet_id=next(client.packet_ids),
-            )
-            logger.info("File push successful", topic=topic, size=len(data))
-    except (aiomqtt.ConnectError, aiomqtt.ProtocolError, aiomqtt.NegativeAckError, OSError, RuntimeError) as e:
+        sock.connect("/var/run/mcubridge.sock")
+        sock.sendall(prefix + payload_data)
+        logger.info("File push successful", topic=topic, size=len(data))
+    except OSError as e:
         logger.error("File push failed", error=str(e), topic=topic)
         sys.exit(1)
+    finally:
+        sock.close()
 
 
 def main() -> None:
@@ -80,7 +76,7 @@ def main() -> None:
         payload_hex=hexdump,
     )
 
-    asyncio.run(push_file(topic, data))
+    push_file(topic, data)
 
 
 if __name__ == "__main__":

@@ -5,7 +5,7 @@ from mcubridge.config.settings import RuntimeConfig
 
 
 def test_state_metrics_exhaustive() -> None:
-    config = RuntimeConfig(mqtt_topic="br", serial_port="/dev/test")
+    config = RuntimeConfig(topic_prefix="br", serial_port="/dev/test")
     state = create_runtime_state(config)
 
     state.mark_transport_connected()

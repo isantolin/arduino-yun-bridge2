@@ -935,22 +935,22 @@ message RuntimeConfig {
     string serial_port = 1;
     uint32 serial_baud = 2;
     uint32 serial_safe_baud = 3;
-    string mqtt_host = 4;
-    uint32 mqtt_port = 5;
-    optional string mqtt_user = 6;
-    optional string mqtt_pass = 7;
-    bool mqtt_tls = 8;
-    optional string mqtt_cafile = 9;
-    optional string mqtt_certfile = 10;
-    optional string mqtt_keyfile = 11;
-    string mqtt_topic = 12;
+    string cloud_host = 4;
+    uint32 cloud_port = 5;
+    optional string cloud_user = 6;
+    optional string cloud_pass = 7;
+    bool cloud_tls = 8;
+    optional string cloud_cafile = 9;
+    optional string cloud_certfile = 10;
+    optional string cloud_keyfile = 11;
+    string topic_prefix = 12;
     repeated string allowed_commands = 13;
     string file_system_root = 14;
     uint32 process_timeout = 15;
-    bool mqtt_tls_insecure = 16;
+    bool cloud_tls_insecure = 16;
     uint32 file_write_max_bytes = 17;
     uint32 file_storage_quota_bytes = 18;
-    uint32 mqtt_queue_limit = 19;
+    uint32 cloud_queue_limit = 19;
     uint32 reconnect_delay = 20;
     uint32 status_interval = 21;
     bool debug = 22;
@@ -964,11 +964,11 @@ message RuntimeConfig {
     uint32 serial_fallback_threshold = 30;
     float serial_handshake_min_interval = 31;
     uint32 serial_handshake_fatal_failures = 32;
-    bool mqtt_enabled = 33;
+    bool cloud_enabled = 33;
     bool watchdog_enabled = 34;
     float watchdog_interval = 35;
     bytes serial_shared_secret = 36;
-    string mqtt_spool_dir = 37;
+    string cloud_spool_dir = 37;
     uint32 process_max_output_bytes = 38;
     uint32 process_max_concurrent = 39;
     bool metrics_enabled = 40;
@@ -1404,3 +1404,52 @@ message BridgeStatus {
     repeated ProcessStats process_stats = 3;
     SystemStatus system = 4;
 }
+
+message KeepalivePing {
+    uint32 interval_ms = 1;
+}
+
+message KeepalivePong {
+    uint32 roundtrip_ms = 1;
+}
+
+message TelemetryReport {
+    bytes daemon_metrics_blob = 1;
+    bytes system_status_blob = 2;
+    bytes bridge_snapshot_blob = 3;
+    bytes handshake_snapshot_blob = 4;
+}
+
+message CommandRequest {
+    string command_path = 1;
+    bytes payload = 2;
+}
+
+message CommandResponse {
+    uint32 status_code = 1;
+    string error_message = 2;
+    bytes payload = 3;
+}
+
+message EventNotification {
+    string event_type = 1;
+    string severity = 2;
+    string description = 3;
+}
+
+message CloudEnvelope {
+    uint32 protocol_version = 1;
+    string device_id = 2;
+    uint64 sequence_id = 3;
+    uint64 timestamp_utc = 4;
+    bytes hmac_signature = 5;
+    oneof payload {
+        KeepalivePing ping = 6;
+        KeepalivePong pong = 7;
+        TelemetryReport telemetry = 8;
+        CommandRequest command_request = 9;
+        CommandResponse command_response = 10;
+        EventNotification event = 11;
+    }
+}
+

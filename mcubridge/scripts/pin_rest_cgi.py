@@ -8,32 +8,36 @@ import re
 from typing import Any
 from wsgiref.handlers import CGIHandler
 
-import asyncio
-import aiomqtt
+import socket
 from google.protobuf import json_format
 from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import load_runtime_config
 from mcubridge.protocol import mcubridge_pb2 as pb
-from mcubridge.protocol.structures import get_ssl_context, RuntimeConfig
+from mcubridge.protocol.structures import RuntimeConfig
 from mcubridge.protocol.topics import Topic, topic_path
 
 logger = logging.getLogger("mcubridge.pin_rest")
 
 
-async def _publish_async(topic: str, payload: str, config: RuntimeConfig) -> None:
-    async with aiomqtt.Client(
-        hostname=config.mqtt_host,
-        port=config.mqtt_port,
-        username=config.mqtt_user or None,
-        password=(config.mqtt_pass.encode("utf-8") if config.mqtt_pass else None),
-        ssl_context=get_ssl_context(config),
-    ) as client:
-        await client.publish(topic, payload.encode("utf-8"), qos=aiomqtt.QoS.AT_LEAST_ONCE)
-
-
 def publish_sync(topic: str, payload: str, config: RuntimeConfig) -> None:
-    """Synchronous MQTT publish for CGI context using aiomqtt."""
-    asyncio.run(_publish_async(topic, payload, config))
+    """Synchronous publish to local UNIX domain socket IPC."""
+    msg = pb.MqttQueuedPublish(
+        topic_name=topic,
+        payload=payload.encode("utf-8"),
+        qos=1,
+    )
+    data = msg.SerializeToString()
+    prefix = len(data).to_bytes(4, byteorder="big")
+
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        sock.connect("/var/run/mcubridge.sock")
+        sock.sendall(prefix + data)
+    except OSError as exc:
+        logger.error("Failed to connect to UNIX socket: %s", exc)
+        raise
+    finally:
+        sock.close()
 
 
 def json_res(start_response: Any, status: str, response: pb.PinControlResponse) -> list[bytes]:
@@ -86,7 +90,7 @@ def application(environ: dict[str, Any], start_response: Any) -> list[bytes]:
                 pb.PinControlResponse(status="error", message="Invalid state"),
             )
 
-        topic = topic_path(config.mqtt_topic, Topic.DIGITAL, str(pin))
+        topic = topic_path(config.topic_prefix, Topic.DIGITAL, str(pin))
         publish_sync(topic, "1" if state == "ON" else "0", config)
 
         return json_res(

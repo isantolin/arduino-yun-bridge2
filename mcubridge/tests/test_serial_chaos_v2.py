@@ -13,7 +13,7 @@ def transport_setup():
     from mcubridge.protocol.structures import RuntimeConfig
     from mcubridge.state.context import create_runtime_state
 
-    config = RuntimeConfig(mqtt_topic="br", serial_port="/dev/test")
+    config = RuntimeConfig(topic_prefix="br", serial_port="/dev/test")
     state = create_runtime_state(config)
     return config, state
 

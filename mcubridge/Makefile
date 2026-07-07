@@ -45,8 +45,6 @@ define Package/$(PKG_NAME)
 	# AUTO-GENERATED RUNTIME DEPENDS BEGIN
 	DEPENDS+= \
 		python3 \
-		python3-aiomqtt \
-		python3-mqtt5 \
 		python3-cobs \
 		python3-protobuf \
 		python3-prometheus-client \
@@ -55,7 +53,6 @@ define Package/$(PKG_NAME)
 		python3-uvloop \
 		python3-cryptography \
 		python3-structlog \
-		mosquitto-client \
 		python3-aiosqlite
 	# AUTO-GENERATED RUNTIME DEPENDS END
 endef

@@ -82,18 +82,36 @@ original_get_default_config = mcubridge.config.common.get_default_config
 
 class PatchedRuntimeConfig:
     def __new__(cls, *args: Any, **kwargs: Any) -> RuntimeConfig:
+        mappings = {
+            "mqtt_topic": "topic_prefix",
+            "mqtt_spool_dir": "cloud_spool_dir",
+            "mqtt_queue_limit": "cloud_queue_limit",
+            "mqtt_enabled": "cloud_enabled",
+            "mqtt_host": "cloud_host",
+            "mqtt_port": "cloud_port",
+            "mqtt_user": "cloud_user",
+            "mqtt_pass": "cloud_pass",
+            "mqtt_tls": "cloud_tls",
+            "mqtt_cafile": "cloud_cafile",
+            "mqtt_certfile": "cloud_certfile",
+            "mqtt_keyfile": "cloud_keyfile",
+        }
+        for old, new in mappings.items():
+            if old in kwargs:
+                kwargs[new] = kwargs.pop(old)
+
         defaults = original_get_default_config()
         for k, v in defaults.items():
             if k not in kwargs:
                 kwargs[k] = v
-        default_spool = mcubridge.config.const.DEFAULT_MQTT_SPOOL_DIR
+        default_spool = mcubridge.config.const.DEFAULT_CLOUD_SPOOL_DIR
         default_fs = mcubridge.config.const.DEFAULT_FILE_SYSTEM_ROOT
         if (
-            "mqtt_spool_dir" not in kwargs
-            or kwargs["mqtt_spool_dir"] == "/tmp/mcubridge/spool"
-            or kwargs["mqtt_spool_dir"] == default_spool
+            "cloud_spool_dir" not in kwargs
+            or kwargs["cloud_spool_dir"] == "/tmp/mcubridge/spool"
+            or kwargs["cloud_spool_dir"] == default_spool
         ):
-            kwargs["mqtt_spool_dir"] = get_unique_test_spool()
+            kwargs["cloud_spool_dir"] = get_unique_test_spool()
         if (
             "file_system_root" not in kwargs
             or kwargs["file_system_root"] == "/tmp/mcubridge"
@@ -107,7 +125,7 @@ class PatchedRuntimeConfig:
 
 def patched_get_default_config() -> dict[str, Any]:
     cfg = original_get_default_config()
-    cfg["mqtt_spool_dir"] = get_unique_test_spool()
+    cfg["cloud_spool_dir"] = get_unique_test_spool()
     cfg["file_system_root"] = get_unique_test_fs()
     return cfg
 
@@ -353,7 +371,7 @@ def real_config():
     raw["process_max_concurrent"] = 4
     raw["allow_non_tmp_paths"] = True
 
-    raw["mqtt_spool_dir"] = mcubridge.config.const.DEFAULT_MQTT_SPOOL_DIR
+    raw["cloud_spool_dir"] = mcubridge.config.const.DEFAULT_CLOUD_SPOOL_DIR
     raw["file_system_root"] = mcubridge.config.const.DEFAULT_FILE_SYSTEM_ROOT
 
     config = load_runtime_config(raw)

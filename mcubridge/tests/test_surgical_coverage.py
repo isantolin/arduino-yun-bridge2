@@ -3,7 +3,6 @@ import asyncio
 from typing import Any
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from aiomqtt import PublishPacket, QoS
 from pathlib import Path
 import sys
 
@@ -17,6 +16,27 @@ from mcubridge.protocol.protocol import (
 from mcubridge.protocol.structures import (
     PendingPinRequest,
 )
+
+
+class QoS:
+    def __init__(self, value: int) -> None:
+        self.value = value
+
+
+class PublishPacket:
+    def __init__(
+        self,
+        topic: str,
+        payload: bytes,
+        qos: QoS,
+        retain: bool = False,
+        packet_id: int | None = None,
+    ) -> None:
+        self.topic = topic
+        self.payload = payload
+        self.qos = qos
+        self.retain = retain
+        self.packet_id = packet_id
 
 
 def Message(
@@ -44,7 +64,7 @@ sys.modules["uci"] = MagicMock()
 def service_setup(
     tmp_path: Path,
 ) -> tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock]:
-    config = RuntimeConfig(mqtt_topic="br", serial_port="/dev/test", file_system_root=str(tmp_path))
+    config = RuntimeConfig(topic_prefix="br", serial_port="/dev/test", file_system_root=str(tmp_path))
     state = create_runtime_state(config)
     serial = AsyncMock(spec=SerialTransport)
     mqtt = AsyncMock()
@@ -117,14 +137,14 @@ async def test_surgical_runtime_edge_cases(
 def test_surgical_scripts_coverage() -> None:
     from scripts import mcubridge_file_push as file_push
 
-    mock_mqtt = MagicMock()
+    mock_sock_cls = MagicMock()
     with patch("sys.argv", ["file-push", "local.txt", "remote.txt"]):
-        with patch("aiomqtt.Client", return_value=mock_mqtt):
+        with patch("socket.socket", return_value=mock_sock_cls):
             with patch("builtins.open", MagicMock()):
                 with patch.object(Path, "exists", return_value=True):
                     with patch.object(Path, "read_bytes", return_value=b"data"):
                         file_push.main()
-                        assert mock_mqtt.__aenter__.called
+                        assert mock_sock_cls.connect.called
 
     from scripts import mcubridge_rotate_credentials as rotate
 

@@ -18,7 +18,7 @@ from ..config.const import (
     DEFAULT_FILE_WRITE_MAX_BYTES,
     DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
     DEFAULT_MAILBOX_QUEUE_LIMIT,
-    DEFAULT_MQTT_QUEUE_LIMIT,
+    DEFAULT_CLOUD_QUEUE_LIMIT,
     DEFAULT_PENDING_PIN_REQUESTS,
     DEFAULT_PROCESS_MAX_CONCURRENT,
     DEFAULT_PROCESS_TIMEOUT,
@@ -76,7 +76,7 @@ class RuntimeState:
         self.serial_writer: asyncio.BaseTransport | None = kwargs.get("serial_writer")
         self.state: str = kwargs.get("state", "disconnected")
 
-        self.mqtt_queue_limit: int = kwargs.get("mqtt_queue_limit", DEFAULT_MQTT_QUEUE_LIMIT)
+        self.mqtt_queue_limit: int = kwargs.get("mqtt_queue_limit", DEFAULT_CLOUD_QUEUE_LIMIT)
         self.mqtt_publish_queue: asyncio.Queue[pb.MqttQueuedPublish] = kwargs.get(
             "mqtt_publish_queue"
         ) or _make_mqtt_publish_queue(self.mqtt_queue_limit)
@@ -190,6 +190,16 @@ class RuntimeState:
         self.mqtt_spool_degraded: bool = kwargs.get("mqtt_spool_degraded", False)
         self.mqtt_spool_failure_reason: str | None = kwargs.get("mqtt_spool_failure_reason")
         self.mqtt_spool_pending_messages: int = kwargs.get("mqtt_spool_pending_messages", 0)
+
+    @property
+    def device_id(self) -> str:
+        import socket
+
+        return socket.gethostname()
+
+    @property
+    def topic_prefix(self) -> str:
+        return self.mqtt_topic_prefix
 
     @property
     def is_connected(self) -> bool:

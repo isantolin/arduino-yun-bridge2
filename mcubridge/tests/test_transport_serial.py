@@ -21,11 +21,11 @@ def _make_config() -> RuntimeConfig:
     f".tmp_tests/mcubridge-test-spool-{os.getpid()}-{time.time_ns()}"
     return RuntimeConfig(
         serial_port="/dev/ttyATH0",
-        mqtt_topic="br",
+        topic_prefix="br",
         allowed_commands=("*",),
         serial_shared_secret=b"secret123",
         file_system_root=fs_root,
-        mqtt_spool_dir="",
+        cloud_spool_dir="",
         allow_non_tmp_paths=True,
     )
 

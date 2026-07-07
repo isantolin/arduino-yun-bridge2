@@ -14,12 +14,12 @@ import structlog
 logger = structlog.get_logger("mcubridge.rotate-credentials")
 
 
-def update_uci_credentials(new_secret: str, new_mqtt_password: str) -> None:
+def update_uci_credentials(new_secret: str, new_cloud_password: str) -> None:
     """Update the rotated credentials in mcubridge.general."""
     try:
         u = uci.Uci()
         u.set("mcubridge", "general", "serial_shared_secret", new_secret)
-        u.set("mcubridge", "general", "mqtt_pass", new_mqtt_password)
+        u.set("mcubridge", "general", "cloud_pass", new_cloud_password)
         u.commit("mcubridge")
         logger.info("UCI configuration updated successfully")
     except (uci.UciException, RuntimeError) as e:
@@ -53,14 +53,14 @@ def main() -> None:
             sys.exit(0)
 
     new_secret = secrets.token_hex(args.length)
-    new_mqtt_password = secrets.token_urlsafe(max(24, args.length))
+    new_cloud_password = secrets.token_urlsafe(max(24, args.length))
     # [SIL-2] Sensitive data masked in logs
     masked_secret = f"{new_secret[:4]}...{new_secret[-4:]}"
     logger.info("Generating new shared secret", masked_secret=masked_secret)
 
-    update_uci_credentials(new_secret, new_mqtt_password)
+    update_uci_credentials(new_secret, new_cloud_password)
     sys.stdout.write(f"SERIAL_SECRET={new_secret}\n")
-    sys.stdout.write(f"MQTT_PASSWORD={new_mqtt_password}\n")
+    sys.stdout.write(f"CLOUD_PASSWORD={new_cloud_password}\n")
     sys.stdout.flush()
 
     if not args.no_restart:

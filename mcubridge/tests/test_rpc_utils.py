@@ -12,8 +12,8 @@ from mcubridge.protocol import protocol
 def test_get_default_config_matches_constants():
     config = common.get_default_config()
 
-    assert config["mqtt_host"] == const.DEFAULT_MQTT_HOST
-    assert config["mqtt_port"] == const.DEFAULT_MQTT_PORT
+    assert config["cloud_host"] == const.DEFAULT_CLOUD_HOST
+    assert config["cloud_port"] == const.DEFAULT_CLOUD_PORT
     assert config["serial_port"] == const.DEFAULT_SERIAL_PORT
     assert config["serial_baud"] == protocol.DEFAULT_BAUDRATE
     assert config["serial_retry_attempts"] == protocol.DEFAULT_RETRY_LIMIT
@@ -26,10 +26,10 @@ def test_get_uci_config_preserves_types(monkeypatch: pytest.MonkeyPatch):
         ".name": "general",
         ".type": "mcubridge",
         "serial_port": "uci-port",
-        "mqtt_host": "127.0.0.1",
-        "mqtt_port": 1883,
+        "cloud_host": "127.0.0.1",
+        "cloud_port": 1883,
         "allowed_commands": ("ls", "echo"),
-        "mqtt_queue_limit": 42,
+        "cloud_queue_limit": 42,
     }
 
     mock_cursor = MagicMock()
@@ -49,7 +49,7 @@ def test_get_uci_config_preserves_types(monkeypatch: pytest.MonkeyPatch):
     assert config["serial_port"] == "uci-port"
     # Raw tuple preserved in raw reader
     assert config["allowed_commands"] == ("ls", "echo")
-    assert config["mqtt_queue_limit"] == 42
+    assert config["cloud_queue_limit"] == 42
 
 
 def test_get_uci_config_falls_back_on_errors(monkeypatch: pytest.MonkeyPatch):
@@ -76,8 +76,8 @@ def test_get_uci_config_falls_back_on_errors(monkeypatch: pytest.MonkeyPatch):
             "serial_retry_attempts": 5,
             "serial_retry_timeout": 10.0,
             "serial_response_timeout": 20.0,
-            "mqtt_host": "127.0.0.1",
-            "mqtt_port": 1883,
+            "cloud_host": "127.0.0.1",
+            "cloud_port": 1883,
             "debug": False,
         }
 

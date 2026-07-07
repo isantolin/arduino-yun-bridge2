@@ -46,7 +46,7 @@ def test_cgi_success(cgi_env: Any) -> None:
     with patch("pin_rest_cgi.publish_sync") as mock_publish:
         with patch("pin_rest_cgi.load_runtime_config") as mock_load:
             mock_config = MagicMock()
-            mock_config.mqtt_topic = "br"
+            mock_config.topic_prefix = "br"
             mock_config.get_ssl_context.return_value = None
             mock_config.mqtt_user = None
             mock_load.return_value = mock_config

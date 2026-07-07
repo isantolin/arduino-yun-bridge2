@@ -181,8 +181,8 @@ def validate_config(cfg: pb.RuntimeConfig) -> None:
         raise ValueError("mailbox_queue_bytes_limit must be greater than or equal to mailbox_queue_limit")
 
     if not cfg.allow_non_tmp_paths:
-        if not any(cfg.mqtt_spool_dir.startswith(p) for p in VOLATILE_STORAGE_PATHS):
-            msg = f"FLASH PROTECTION: mqtt_spool_dir ({cfg.mqtt_spool_dir}) must be in volatile storage"
+        if not any(cfg.cloud_spool_dir.startswith(p) for p in VOLATILE_STORAGE_PATHS):
+            msg = f"FLASH PROTECTION: cloud_spool_dir ({cfg.cloud_spool_dir}) must be in volatile storage"
             raise ValueError(msg)
         if not any(cfg.file_system_root.startswith(p) for p in VOLATILE_STORAGE_PATHS):
             raise ValueError(f"FLASH PROTECTION: file_system_root ({cfg.file_system_root}) must be in volatile storage")

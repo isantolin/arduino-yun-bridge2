@@ -17,7 +17,7 @@ from mcubridge.protocol.protocol import Command, Status
 @pytest.fixture
 def handshake_setup(tmp_path: Path) -> Iterator[tuple[SerialHandshakeManager, RuntimeState, AsyncMock]]:
     config = RuntimeConfig(
-        mqtt_topic="br",
+        topic_prefix="br",
         serial_port="/dev/test",
         serial_shared_secret=b"secure_secret_123456789012345678",
         serial_handshake_fatal_failures=3,

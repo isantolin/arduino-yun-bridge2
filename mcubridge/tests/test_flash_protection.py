@@ -20,34 +20,34 @@ class TestFlashProtection(unittest.TestCase):
                 "serial_baud": 57600,
                 "serial_safe_baud": 9600,
                 "serial_port": "/dev/ttyS0",
-                "mqtt_host": "localhost",
-                "mqtt_port": 1883,
-                "mqtt_topic": "bridge",
-                "mqtt_tls": True,
+                "cloud_host": "localhost",
+                "cloud_port": 1883,
+                "topic_prefix": "bridge",
+                "cloud_tls": True,
             }
         )
         with patch("mcubridge.config.settings.get_uci_config", return_value=unsafe_conf):
             with self.assertRaises(RuntimeError):
                 load_runtime_config()
 
-    def test_mqtt_spool_dir_must_be_volatile(self):
-        """Ensure mqtt_spool_dir raises ValueError if not in /tmp."""
+    def test_cloud_spool_dir_must_be_volatile(self):
+        """Ensure cloud_spool_dir raises ValueError if not in /tmp."""
         from mcubridge.config import common
 
         unsafe_conf = common.get_default_config()
         unsafe_conf.update(
             {
-                "mqtt_spool_dir": "/mnt/flash/spool",
+                "cloud_spool_dir": "/mnt/flash/spool",
                 # Spool must be safe
                 "allow_non_tmp_paths": False,
                 "serial_shared_secret": "valid_secret_1234",
                 "serial_baud": 57600,
                 "serial_safe_baud": 9600,
                 "serial_port": "/dev/ttyS0",
-                "mqtt_host": "localhost",
-                "mqtt_port": 1883,
-                "mqtt_topic": "bridge",
-                "mqtt_tls": True,
+                "cloud_host": "localhost",
+                "cloud_port": 1883,
+                "topic_prefix": "bridge",
+                "cloud_tls": True,
             }
         )
         with patch("mcubridge.config.settings.get_uci_config", return_value=unsafe_conf):
@@ -67,11 +67,11 @@ class TestFlashProtection(unittest.TestCase):
                 "serial_baud": 57600,
                 "serial_safe_baud": 9600,
                 "serial_port": "/dev/ttyS0",
-                "mqtt_host": "localhost",
-                "mqtt_port": 1883,
-                "mqtt_topic": "bridge",
-                "mqtt_tls": True,
-                "mqtt_spool_dir": ".tmp_tests/spool",
+                "cloud_host": "localhost",
+                "cloud_port": 1883,
+                "topic_prefix": "bridge",
+                "cloud_tls": True,
+                "cloud_spool_dir": ".tmp_tests/spool",
             }
         )
         with patch("mcubridge.config.settings.get_uci_config", return_value=unsafe_conf):

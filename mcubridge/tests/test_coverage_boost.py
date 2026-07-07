@@ -111,14 +111,14 @@ async def test_serial_transport_coverage_boost(tmp_path: Path) -> None:
     test_spool.mkdir()
 
     config = RuntimeConfig(
-        mqtt_topic="br",
+        topic_prefix="br",
         serial_port="/dev/testport",
         serial_fallback_threshold=2,
         serial_baud=115200,
         serial_safe_baud=9600,
         # Forzar aislamiento absoluto de archivos DBM en el hilo actual
         file_system_root=str(test_root),
-        mqtt_spool_dir=str(test_spool),
+        cloud_spool_dir=str(test_spool),
     )
 
     # Ahora la base de datos se creará de forma aislada y determinista
@@ -264,7 +264,9 @@ async def test_daemon_coverage_boost(tmp_path: Path) -> None:
     serial_mqtt.service = daemon_mqtt
 
     mock_reader = AsyncMock()
-    mock_writer = AsyncMock()
+    mock_writer = MagicMock()
+    mock_writer.drain = AsyncMock()
+    mock_writer.wait_closed = AsyncMock()
 
     envelope = pb.CloudEnvelope(
         sequence_id=1,
@@ -278,7 +280,7 @@ async def test_daemon_coverage_boost(tmp_path: Path) -> None:
 
     read_results = [header, req_data]
 
-    async def read_mock(n):
+    def read_mock(n: int) -> bytes:
         if not read_results:
             raise ConnectionResetError()
         return read_results.pop(0)
@@ -292,7 +294,7 @@ async def test_daemon_coverage_boost(tmp_path: Path) -> None:
             pass
 
     # Connect Cloud session exception path
-    async def read_mock_fail(n):
+    def read_mock_fail(n: int) -> bytes:
         raise OSError("connection reset")
 
     mock_reader2 = AsyncMock()
@@ -334,7 +336,7 @@ def test_daemon_main_coverage() -> None:
 
     # 2. default shared secret warning block
     config = RuntimeConfig(
-        mqtt_topic="br",
+        topic_prefix="br",
         serial_port="/dev/testport",
         serial_shared_secret=DEFAULT_SERIAL_SHARED_SECRET,
     )
@@ -373,7 +375,7 @@ async def test_handshake_coverage_boost() -> None:
     from mcubridge.services.handshake import SerialHandshakeManager, derive_serial_timing
 
     config = RuntimeConfig(
-        mqtt_topic="br",
+        topic_prefix="br",
         serial_port="/dev/testport",
         serial_handshake_fatal_failures=2,
         serial_shared_secret=b"secret1234",

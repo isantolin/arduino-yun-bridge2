@@ -1,7 +1,7 @@
 """Assertive, deterministic tests for McuBridge runtime service."""
 
 from __future__ import annotations
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
@@ -56,14 +56,15 @@ def Message(
 @pytest_asyncio.fixture
 async def service_setup(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
-) -> tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock]:
+) -> tuple[BridgeService, RuntimeState, AsyncMock, Any]:
     serial = AsyncMock(spec=SerialTransport)
     serial.send.return_value = True
     serial.send_raw.return_value = True
     serial.acknowledge.return_value = True
     service = BridgeService(runtime_config, runtime_state, serial)
-    mock_mqtt = AsyncMock()
-    service._cloud_writer = mock_mqtt
+    mock_mqtt = MagicMock()
+    mock_mqtt.drain = AsyncMock()
+    object.__setattr__(service, "_cloud_writer", mock_mqtt)
     return service, runtime_state, serial, mock_mqtt
 
 

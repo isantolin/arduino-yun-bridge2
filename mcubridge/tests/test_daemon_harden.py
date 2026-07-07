@@ -95,6 +95,6 @@ def test_main_insecure_secret_warning() -> None:
                 with patch("asyncio.Runner"):
                     app([])
 
-                    # Check that config passed to BridgeService has mqtt_enabled=False
+                    # Check that config passed to BridgeService has cloud_enabled=False
                     config = cast(RuntimeConfig, mock_service_cls.call_args[0][0])
-                    assert config.mqtt_enabled is False
+                    assert config.cloud_enabled is False

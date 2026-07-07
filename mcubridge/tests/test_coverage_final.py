@@ -24,12 +24,12 @@ from mcubridge.security.security import (
 @pytest.mark.asyncio
 async def test_status_writer_coverage() -> None:
     config = RuntimeConfig(
-        mqtt_topic="br",
+        topic_prefix="br",
         serial_port="/dev/ttytest",
         serial_baud=protocol.DEFAULT_BAUDRATE,
         serial_safe_baud=9600,
-        mqtt_host="localhost",
-        mqtt_port=1883,
+        cloud_host="localhost",
+        cloud_port=1883,
     )
     state = create_runtime_state(config)
     try:
@@ -55,12 +55,12 @@ def test_write_status_file_errors() -> None:
 
 def test_logging_coverage() -> None:
     config = RuntimeConfig(
-        mqtt_topic="br",
+        topic_prefix="br",
         serial_port="/dev/ttytest",
         serial_baud=protocol.DEFAULT_BAUDRATE,
         serial_safe_baud=9600,
-        mqtt_host="localhost",
-        mqtt_port=1883,
+        cloud_host="localhost",
+        cloud_port=1883,
         debug=True,
     )
     configure_logging(config)

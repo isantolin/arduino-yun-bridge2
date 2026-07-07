@@ -16,20 +16,20 @@ def test_load_runtime_config_applies_env_and_defaults(
         "serial_port": "/dev/custom",
         "serial_baud": 57600,
         "serial_safe_baud": 9600,
-        "mqtt_host": "broker",
-        "mqtt_port": 321,
-        "mqtt_user": " user ",
-        "mqtt_pass": " pass ",
-        "mqtt_tls": True,
-        "mqtt_cafile": " /etc/cafile ",
-        "mqtt_certfile": " ",
-        "mqtt_keyfile": "",
-        "mqtt_topic": " custom/topic ",
+        "cloud_host": "broker",
+        "cloud_port": 321,
+        "cloud_user": " user ",
+        "cloud_pass": " pass ",
+        "cloud_tls": True,
+        "cloud_cafile": " /etc/cafile ",
+        "cloud_certfile": " ",
+        "cloud_keyfile": "",
+        "topic_prefix": " custom/topic ",
         "allowed_commands": "  ls  ECHO ls  ",
         "file_system_root": "/data",
         "allow_non_tmp_paths": True,
         "process_timeout": 60,
-        "mqtt_queue_limit": 1,
+        "cloud_queue_limit": 1,
         "reconnect_delay": 7,
         "status_interval": 5,
         "console_queue_limit_bytes": 4096,
@@ -49,19 +49,19 @@ def test_load_runtime_config_applies_env_and_defaults(
 
     assert config.serial_port == "/dev/custom"
     assert config.serial_baud == 57600
-    assert config.mqtt_host == "broker"
-    assert config.mqtt_port == 321
-    assert config.mqtt_user == "user"
-    assert config.mqtt_pass == "pass"
-    assert config.mqtt_tls is True
-    assert config.mqtt_cafile == "/etc/cafile"
-    assert config.mqtt_certfile == ""
-    assert config.mqtt_keyfile == ""
-    assert config.mqtt_topic == "custom/topic"
+    assert config.cloud_host == "broker"
+    assert config.cloud_port == 321
+    assert config.cloud_user == "user"
+    assert config.cloud_pass == "pass"
+    assert config.cloud_tls is True
+    assert config.cloud_cafile == "/etc/cafile"
+    assert config.cloud_certfile == ""
+    assert config.cloud_keyfile == ""
+    assert config.topic_prefix == "custom/topic"
     assert config.allowed_commands == ["echo", "ls"]
     assert config.file_system_root == "/data"
     assert config.process_timeout == 60
-    assert config.mqtt_queue_limit == 1
+    assert config.cloud_queue_limit == 1
     assert config.reconnect_delay == 7
     assert config.status_interval == 5
     assert config.console_queue_limit_bytes == 4096
@@ -97,7 +97,7 @@ def test_load_runtime_config_rejects_non_tmp_paths_when_disabled(
     monkeypatch: pytest.MonkeyPatch,
 ):
     raw_config = {
-        "mqtt_spool_dir": "/var/spool/mcu",
+        "cloud_spool_dir": "/var/spool/mcu",
         "file_system_root": "/var/lib/mcu",
         "allow_non_tmp_paths": False,
     }
@@ -113,14 +113,14 @@ def test_load_runtime_config_allows_empty_mqtt_user_value(
     monkeypatch: pytest.MonkeyPatch,
 ):
     raw_config = {
-        "mqtt_user": "",
-        "mqtt_pass": " ",
+        "cloud_user": "",
+        "cloud_pass": " ",
     }
     monkeypatch.setattr(settings, "_load_raw_config", lambda: (raw_config, "test"))
 
     config = settings.load_runtime_config()
-    assert config.mqtt_user == ""
-    assert config.mqtt_pass == ""
+    assert config.cloud_user == ""
+    assert config.cloud_pass == ""
 
 
 def test_load_runtime_config_prefers_uci_config(monkeypatch: pytest.MonkeyPatch):
@@ -153,7 +153,7 @@ def test_get_uci_config_flattens_nested_structures(monkeypatch: pytest.MonkeyPat
         "get_uci_config",
         lambda: {
             "allowed_commands": ["ls", "uptime"],
-            "mqtt_topic": "br",
+            "topic_prefix": "br",
         },
     )
     raw, _ = getattr(settings, "_load_raw_config")()
@@ -174,11 +174,11 @@ def test_load_runtime_config_parses_watchdog(monkeypatch: pytest.MonkeyPatch):
             "serial_port": "/dev/ttyS1",
             "serial_baud": protocol.DEFAULT_BAUDRATE,
             "serial_safe_baud": protocol.DEFAULT_SAFE_BAUDRATE,
-            "mqtt_host": "broker",
-            "mqtt_port": 8883,
-            "mqtt_tls": True,
-            "mqtt_cafile": "/etc/ca.pem",
-            "mqtt_topic": "br",
+            "cloud_host": "broker",
+            "cloud_port": 8883,
+            "cloud_tls": True,
+            "cloud_cafile": "/etc/ca.pem",
+            "topic_prefix": "br",
             "allowed_commands": "uptime",
             "file_system_root": "/tmp/tests",
             "process_timeout": 10,

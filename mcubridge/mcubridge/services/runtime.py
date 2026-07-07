@@ -475,8 +475,9 @@ class BridgeService:
                 logger.debug("Spool cache close error during cleanup", error=e)
             self._mqtt_spool = None
 
-        if self.state is not None:
-            self.state.cleanup()
+        state = getattr(self, "state", None)
+        if state is not None:
+            state.cleanup()
 
     def __del__(self) -> None:
         """Last-resort cleanup for spool database cache connections."""

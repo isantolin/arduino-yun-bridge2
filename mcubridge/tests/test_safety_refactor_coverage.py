@@ -142,8 +142,9 @@ async def test_corrupt_item_handling(real_config: RuntimeConfig) -> None:
     state = create_runtime_state(real_config)
     serial = AsyncMock(spec=SerialTransport)
     service = BridgeService(real_config, state, serial)
-    mock_client = AsyncMock()
-    service._cloud_writer = mock_client
+    mock_client = MagicMock()
+    mock_client.drain = AsyncMock()
+    object.__setattr__(service, "_cloud_writer", mock_client)
     try:
         spool = getattr(service, "_mqtt_spool")
         await spool.clear()
@@ -185,8 +186,9 @@ async def test_peeking_or_popping_errors(real_config: RuntimeConfig) -> None:
     state = create_runtime_state(real_config)
     serial = AsyncMock(spec=SerialTransport)
     service = BridgeService(real_config, state, serial)
-    mock_client = AsyncMock()
-    service._cloud_writer = mock_client
+    mock_client = MagicMock()
+    mock_client.drain = AsyncMock()
+    object.__setattr__(service, "_cloud_writer", mock_client)
     try:
         spool = getattr(service, "_mqtt_spool")
         await spool.clear()

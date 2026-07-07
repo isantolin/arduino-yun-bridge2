@@ -236,26 +236,26 @@ def isolate_test_paths() -> Iterator[None]:
     _test_paths["fs"] = None
 
     original_fs = mcubridge.config.const.DEFAULT_FILE_SYSTEM_ROOT
-    original_spool = mcubridge.config.const.DEFAULT_MQTT_SPOOL_DIR
+    original_spool = mcubridge.config.const.DEFAULT_CLOUD_SPOOL_DIR
 
     mcubridge.config.const.DEFAULT_FILE_SYSTEM_ROOT = get_unique_test_fs()
-    mcubridge.config.const.DEFAULT_MQTT_SPOOL_DIR = get_unique_test_spool()
+    mcubridge.config.const.DEFAULT_CLOUD_SPOOL_DIR = get_unique_test_spool()
 
     os.makedirs(mcubridge.config.const.DEFAULT_FILE_SYSTEM_ROOT, exist_ok=True)
-    os.makedirs(mcubridge.config.const.DEFAULT_MQTT_SPOOL_DIR, exist_ok=True)
+    os.makedirs(mcubridge.config.const.DEFAULT_CLOUD_SPOOL_DIR, exist_ok=True)
 
     yield
 
     try:
         if os.path.exists(mcubridge.config.const.DEFAULT_FILE_SYSTEM_ROOT):
             shutil.rmtree(mcubridge.config.const.DEFAULT_FILE_SYSTEM_ROOT)
-        if os.path.exists(mcubridge.config.const.DEFAULT_MQTT_SPOOL_DIR):
-            shutil.rmtree(mcubridge.config.const.DEFAULT_MQTT_SPOOL_DIR)
+        if os.path.exists(mcubridge.config.const.DEFAULT_CLOUD_SPOOL_DIR):
+            shutil.rmtree(mcubridge.config.const.DEFAULT_CLOUD_SPOOL_DIR)
     except OSError as e:
         logging.getLogger("mcubridge.tests").warning("Teardown path cleanup notice: %s", e)
 
     mcubridge.config.const.DEFAULT_FILE_SYSTEM_ROOT = original_fs
-    mcubridge.config.const.DEFAULT_MQTT_SPOOL_DIR = original_spool
+    mcubridge.config.const.DEFAULT_CLOUD_SPOOL_DIR = original_spool
 
 
 @pytest.fixture(autouse=True)
@@ -321,19 +321,19 @@ def runtime_config() -> RuntimeConfig:
         serial_port="/dev/null",
         serial_baud=DEFAULT_BAUDRATE,
         serial_safe_baud=DEFAULT_SAFE_BAUDRATE,
-        mqtt_host="localhost",
-        mqtt_port=DEFAULT_MQTT_PORT,
-        mqtt_user=None,
-        mqtt_pass=None,
-        mqtt_tls=True,
-        mqtt_cafile=os.path.join(TMP_TESTS_DIR, "test-ca.pem"),
-        mqtt_certfile=None,
-        mqtt_keyfile=None,
-        mqtt_topic=protocol.MQTT_DEFAULT_TOPIC_PREFIX,
+        cloud_host="localhost",
+        cloud_port=DEFAULT_MQTT_PORT,
+        cloud_user=None,
+        cloud_pass=None,
+        cloud_tls=True,
+        cloud_cafile=os.path.join(TMP_TESTS_DIR, "test-ca.pem"),
+        cloud_certfile=None,
+        cloud_keyfile=None,
+        topic_prefix=protocol.MQTT_DEFAULT_TOPIC_PREFIX,
         allowed_commands=(),
         file_system_root=get_unique_test_fs(),
         process_timeout=DEFAULT_PROCESS_TIMEOUT,
-        mqtt_queue_limit=8,
+        cloud_queue_limit=8,
         reconnect_delay=DEFAULT_RECONNECT_DELAY,
         status_interval=DEFAULT_STATUS_INTERVAL,
         debug=False,
@@ -344,7 +344,7 @@ def runtime_config() -> RuntimeConfig:
         serial_response_timeout=0.1,
         serial_retry_attempts=1,
         serial_shared_secret=b"s_e_c_r_e_t_mock",
-        mqtt_spool_dir=get_unique_test_spool(),
+        cloud_spool_dir=get_unique_test_spool(),
         allow_non_tmp_paths=True,
     )
 

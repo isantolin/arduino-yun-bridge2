@@ -118,4 +118,4 @@ def test_rotate_credentials_updates_expected_uci_keys() -> None:
     with patch("uci.Uci", return_value=mock_cursor):
         script.update_uci_credentials("serial-secret", "mqtt-password")
     assert mock_cursor.set.call_args_list[0].args == ("mcubridge", "general", "serial_shared_secret", "serial-secret")
-    assert mock_cursor.set.call_args_list[1].args == ("mcubridge", "general", "mqtt_pass", "mqtt-password")
+    assert mock_cursor.set.call_args_list[1].args == ("mcubridge", "general", "cloud_pass", "mqtt-password")

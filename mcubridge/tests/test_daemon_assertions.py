@@ -20,7 +20,7 @@ from mcubridge.services.runtime import BridgeService
 def runtime_config(tmp_path: Path) -> RuntimeConfig:
     return RuntimeConfig(
         serial_port="/dev/ttyDummy",
-        mqtt_enabled=True,
+        cloud_enabled=True,
         metrics_enabled=False,
         watchdog_enabled=False,
         bridge_summary_interval=0.0,
@@ -39,9 +39,14 @@ async def test_daemon_supervise_retries_on_failure(service_stack: tuple[BridgeSe
 @pytest.mark.asyncio
 async def test_daemon_mqtt_run_disabled(service_stack: tuple[BridgeService, Any, Any]) -> None:
     service, _, _ = service_stack
-    service.config.mqtt_enabled = False
+    new_cfg = RuntimeConfig(
+        serial_port=service.config.serial_port,
+        cloud_enabled=False,
+        file_system_root=service.config.file_system_root,
+    )
+    object.__setattr__(service, "config", new_cfg)
     # Should return immediately without connecting
-    with patch("mcubridge.services.runtime.BridgeService.connect_mqtt_session") as mock_connect:
+    with patch("mcubridge.services.runtime.BridgeService.connect_cloud_session") as mock_connect:
         await service.run_mqtt()
         mock_connect.assert_not_called()
 
@@ -70,7 +75,7 @@ async def test_daemon_run_orchestrates_tasks(service_stack: tuple[BridgeService,
 def test_main_strict_mode_when_default_secret(tmp_path: Path) -> None:
     # Test that the daemon disables MQTT when the default secret is used
     mock_config = RuntimeConfig(
-        serial_shared_secret=b"failsafe_secret_mode", mqtt_enabled=True, file_system_root=str(tmp_path)
+        serial_shared_secret=b"failsafe_secret_mode", cloud_enabled=True, file_system_root=str(tmp_path)
     )
 
     with patch("mcubridge.daemon.load_runtime_config", return_value=mock_config):
@@ -81,7 +86,7 @@ def test_main_strict_mode_when_default_secret(tmp_path: Path) -> None:
 
                     assert mock_service_class.called
                     used_config = mock_service_class.call_args[0][0]
-                    assert used_config.mqtt_enabled is False
+                    assert used_config.cloud_enabled is False
 
 
 def test_main_aborts_on_crypto_failure(tmp_path: Path) -> None:

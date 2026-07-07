@@ -551,8 +551,10 @@ def create_runtime_state(config: RuntimeConfig | dict[str, Any]) -> RuntimeState
 
     cfg_dict = json_format.MessageToDict(cfg, preserving_proto_field_name=True)
 
-    if "mqtt_topic" in cfg_dict:
-        cfg_dict["mqtt_topic_prefix"] = cfg_dict.pop("mqtt_topic")
+    if "topic_prefix" in cfg_dict:
+        cfg_dict["mqtt_topic_prefix"] = cfg_dict.pop("topic_prefix")
+    if "cloud_queue_limit" in cfg_dict:
+        cfg_dict["mqtt_queue_limit"] = cfg_dict.pop("cloud_queue_limit")
     if "process_max_output_bytes" in cfg_dict:
         cfg_dict["process_output_limit"] = cfg_dict.pop("process_max_output_bytes")
 

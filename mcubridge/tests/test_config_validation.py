@@ -19,15 +19,15 @@ def _config_kwargs(**overrides: Any) -> dict[str, Any]:
         "serial_port": "/dev/null",
         "serial_baud": protocol.DEFAULT_BAUDRATE,
         "serial_safe_baud": protocol.DEFAULT_SAFE_BAUDRATE,
-        "mqtt_host": "localhost",
-        "mqtt_port": protocol.DEFAULT_MQTT_PORT,
-        "mqtt_user": None,
-        "mqtt_pass": None,
-        "mqtt_tls": True,
-        "mqtt_cafile": ".tmp_tests/test-ca.pem",
-        "mqtt_certfile": None,
-        "mqtt_keyfile": None,
-        "mqtt_topic": "mcubridge",
+        "cloud_host": "localhost",
+        "cloud_port": protocol.DEFAULT_MQTT_PORT,
+        "cloud_user": None,
+        "cloud_pass": None,
+        "cloud_tls": True,
+        "cloud_cafile": ".tmp_tests/test-ca.pem",
+        "cloud_certfile": None,
+        "cloud_keyfile": None,
+        "topic_prefix": "mcubridge",
         "allowed_commands": (),
         "file_system_root": ".tmp_tests",
         "process_timeout": DEFAULT_PROCESS_TIMEOUT,
@@ -46,25 +46,25 @@ def test_runtime_config_topic_and_paths(
     os.path.abspath(root_input)
 
     raw = _config_kwargs(
-        mqtt_topic="/demo//prefix/",
+        topic_prefix="/demo//prefix/",
         file_system_root=root_input,
     )
     monkeypatch.setattr(settings, "_load_raw_config", lambda: (raw, "test"))
 
     config = settings.load_runtime_config()
 
-    assert config.mqtt_topic == "/demo//prefix/"
+    assert config.topic_prefix == "/demo//prefix/"
     assert config.file_system_root == "/tmp/tests/bridge"
 
 
 def test_runtime_config_rejects_empty_topic(monkeypatch: pytest.MonkeyPatch) -> None:
     # Use load_runtime_config to trigger boundary normalization and segment check
-    raw = _config_kwargs(mqtt_topic="//")
+    raw = _config_kwargs(topic_prefix="//")
     monkeypatch.setattr(settings, "_load_raw_config", lambda: (raw, "test"))
 
     # settings.py now raises ValueError during test source for invalid topic
 
-    with pytest.raises(ValueError, match="mqtt_topic must contain at least one segment"):
+    with pytest.raises(ValueError, match="topic_prefix must contain at least one segment"):
         settings.load_runtime_config()
 
 

@@ -51,7 +51,7 @@ def main() -> None:
         sys.exit(2)
 
     config = load_runtime_config()
-    prefix = config.mqtt_topic
+    prefix = config.topic_prefix
 
     clean_target = args.target.lstrip("/")
 

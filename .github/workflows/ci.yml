@@ -205,17 +205,6 @@ jobs:
               mcubridge-client-examples/console_test.py
               mcubridge-client-examples/mailbox_read_test.py
     timeout-minutes: 20
-    services:
-      mosquitto:
-        image: eclipse-mosquitto:2
-        ports:
-          - 1883:1883
-        options: >-
-          --name mosquitto
-          --health-cmd "mosquitto_sub -t '$SYS/#' -C 1"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
     steps:
       - uses: actions/checkout@v6
       - name: Install protoc
@@ -240,10 +229,13 @@ jobs:
           ./mcubridge-library-arduino/tools/install.sh "$DUMMY_ARDUINO_LIBS"
       - name: Compile & Run Emulation
         run: |
+          python3 mcubridge-gateway/gateway.py --no-tls --port 8443 &
+          gateway_pid=$!
           ./tools/compile_emulator.sh
           python3 -u tools/emulation_runner.py \
             --firmware ${{ matrix.firmware }} \
             ${{ matrix.scripts }}
+          kill $gateway_pid
 
   protocol-fuzzing:
     name: Protocol Stress Test (Fuzzing)

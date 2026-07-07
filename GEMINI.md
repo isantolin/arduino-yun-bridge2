@@ -12,7 +12,7 @@ Arduino MCU Bridge 2 is a modern, high-performance communication system between 
 *   **C++:** Arduino library (C++17), **Zero-Heap** (no STL, no `malloc`), `etl::fsm` for deterministic states, `wolfSSL` for AEAD, and Nanopb for de-bloated payload parsing (ChaCha20-Poly1305).
 *   **Safety (SIL-2):** Static allocation only, O(1) jump tables for dispatch, rigorous validation gates.
 *   **OpenWrt:** Target OS is **OpenWrt 25.12.4** (APK based).
-*   **Communication:** Custom binary RPC over serial (COBS + CRC32) + AEAD encryption + MQTT v5 (aiomqtt) for external cloud connectivity + Local IPC over UNIX Domain Sockets. Protocol validation uses O(1) `etl::find` logic.
+*   **Communication:** Custom binary RPC over serial (COBS + CRC32) + AEAD encryption + Protobuf Cloud Gateway (TCP/TLS) for external cloud connectivity + Local IPC over UNIX Domain Sockets. Protocol validation uses O(1) `etl::find` logic.
 
 ## Core Rules & Priorities
 
@@ -43,7 +43,7 @@ Arduino MCU Bridge 2 is a modern, high-performance communication system between 
 ## Development Conventions
 
 ### Python (Linux MPU)
-*   **Direct Library Calls:** Zero-wrapper policy. Use libraries directly (e.g., `aiomqtt` for the async daemon's remote cloud link, and direct `asyncio.open_unix_connection` for local CGI scripts and CLI clients) instead of custom abstraction layers.
+*   **Direct Library Calls:** Zero-wrapper policy. Use libraries directly (e.g., direct `asyncio.open_connection` for the async daemon's remote cloud link, and direct `asyncio.open_unix_connection` for local CGI scripts and CLI clients) instead of custom abstraction layers.
 *   **Strict Typing:** `pyright` in strict mode. All tests must use `unittest.mock.AsyncMock(spec=Interface)`.
 *   **No "Dummy" Classes:** Manual mock classes are prohibited in favor of standardized `AsyncMock`.
 *   **Async Patterns:** Mandatory `asyncio` usage; no blocking calls in the main event loop. `uvloop` is used on target for maximum throughput.

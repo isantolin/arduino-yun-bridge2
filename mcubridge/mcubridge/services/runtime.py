@@ -375,6 +375,9 @@ class BridgeService:
                 self._mark_cloud_spool_healthy(pending_count)
             else:
                 self.state.cloud_spool_pending_messages = pending_count
+
+            if pending_count == 0:
+                await spool.vacuum()
         except (aiosqlite.Error, OSError) as exc:
             self._mark_cloud_spool_failure(str(exc))
 

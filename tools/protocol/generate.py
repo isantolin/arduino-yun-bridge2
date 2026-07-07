@@ -771,6 +771,35 @@ def ensure_nanopb_core_files() -> None:
                 sys.exit(1)
 
 
+def check_incremental_build(args: argparse.Namespace, version: str) -> tuple[bool, Path, str]:
+    import hashlib
+
+    proto_path = args.spec.resolve()
+    h = hashlib.sha256()
+    h.update(proto_path.read_bytes())
+    h.update(version.encode("utf-8"))
+    current_hash = h.hexdigest()
+
+    hash_file = proto_path.parent / ".mcubridge.proto.hash"
+
+    # Check if all output files exist
+    outputs_exist = True
+    for out in [args.cpp, args.cpp_structs, args.py, args.py_client]:
+        if out and not out.exists():
+            outputs_exist = False
+            break
+
+    # Also check if mcubridge_pb2.py exists in target locations
+    if outputs_exist:
+        if args.py and not (args.py.parent / "mcubridge_pb2.py").exists():
+            outputs_exist = False
+        if args.py_client and not (args.py_client.parent / "mcubridge_pb2.py").exists():
+            outputs_exist = False
+
+    up_to_date = bool(outputs_exist and hash_file.exists() and hash_file.read_text().strip() == current_hash)
+    return up_to_date, hash_file, current_hash
+
+
 def main() -> None:
     ensure_nanopb_core_files()
     parser = argparse.ArgumentParser(description="Protocol binding generator for MCU Bridge v2.")
@@ -783,6 +812,11 @@ def main() -> None:
     args = parser.parse_args()
     gen = JinjaGenerator()
     version = read_version()
+
+    up_to_date, hash_file, current_hash = check_incremental_build(args, version)
+    if up_to_date:
+        sys.stderr.write("Protocol bindings up-to-date, skipping generation.\n")
+        return
 
     update_metadata(version)
 
@@ -907,6 +941,9 @@ def main() -> None:
                         "'SummaryMetricFamily', 'Timestamp', 'UnknownMetricFamily', 'UntypedMetricFamily')\n"
                     )
                     core_stub.write_text(core_content, encoding="utf-8")
+
+    # Save hash for incremental compilation
+    hash_file.write_text(current_hash, encoding="utf-8")
 
 
 if __name__ == "__main__":

@@ -144,6 +144,14 @@ class SqliteDeque:
 
         await self._execute(_no_op)
 
+    async def vacuum(self) -> None:
+        """Coerce database defragmentation (VACUUM) to release space."""
+
+        async def _vacuum_impl(conn: aiosqlite.Connection) -> None:
+            await conn.execute("VACUUM;")
+
+        await self._execute(_vacuum_impl)
+
     async def close(self) -> None:
         pass
 

@@ -83,6 +83,7 @@ nohup.out
 .ruff_cache/
 .pytest_cache/
 .mypy_cache/
+.mcubridge.proto.hash
 
 # Database artifacts
 *.db

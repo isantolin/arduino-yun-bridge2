@@ -7,7 +7,6 @@ import binascii
 import sys
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import cast
 
 import serialx
 from google.protobuf.message import Message as ProtobufMessage

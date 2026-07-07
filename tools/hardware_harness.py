@@ -3,7 +3,7 @@ import asyncio
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 REPO_ROOT = Path(__file__).parent.parent
 EXAMPLE_MANIFEST = REPO_ROOT / "hardware" / "targets.example.toml"

@@ -5,8 +5,9 @@ from mcubridge.protocol import mcubridge_pb2 as pb
 
 import asyncio
 import collections
+import functools
 import os
-
+import secrets
 import signal
 import shlex
 import time
@@ -61,6 +62,7 @@ from ..protocol.structures import (
     is_command_allowed,
     allows_topic,
     get_ssl_context,
+    iter_chunks,
 )
 from ..protocol.topics import Topic, get_topic_for_message, parse_topic, topic_path
 from ..metrics import (
@@ -113,7 +115,6 @@ class BridgeService:
     serial: SerialTransport | None
     _cloud_reader: asyncio.StreamReader | None
     _cloud_writer: asyncio.StreamWriter | None
-    _task_group: asyncio.TaskGroup | None
 
     handshake: SerialHandshakeManager
     _storage_lock: asyncio.Lock
@@ -131,7 +132,7 @@ class BridgeService:
 
     def __init__(self, config: RuntimeConfig, state: RuntimeState, serial: SerialTransport) -> None:
         self.config, self.state, self.serial = config, state, serial
-        self._cloud_reader, self._cloud_writer, self._task_group = None, None, None
+        self._cloud_reader, self._cloud_writer = None, None
         self.watchdog: WatchdogKeepalive | None = None
         self.exporter: PrometheusExporter | None = None
         self._cloud_incoming_queue = asyncio.Queue()
@@ -163,7 +164,7 @@ class BridgeService:
         self.mcu_registry: dict[int, McuHandler] = self._setup_mcu_registry(serial)
         for s in Status:
             if s != Status.ACK:
-                self.mcu_registry[s.value] = self._make_status_handler(s)
+                self.mcu_registry[s.value] = functools.partial(self._handle_mcu_status, s)
 
     def _setup_mcu_registry(self, serial: SerialTransport) -> dict[int, McuHandler]:
         return {
@@ -205,13 +206,6 @@ class BridgeService:
             Command.CMD_LINK_RESET_RESP.value: self.handshake.handle_link_reset_resp,
             Status.ACK.value: self._on_mcu_ack,
         }
-
-    def _make_status_handler(self, status: Status) -> McuHandler:
-        async def _handler(seq: int, payload: bytes | ProtobufMessage) -> bool | ProtobufMessage | None:
-            await self._handle_mcu_status(seq, status, payload)
-            return True
-
-        return _handler
 
     # --- External Interface ---
 
@@ -425,35 +419,11 @@ class BridgeService:
 
             self.state.metrics.cloud_messages_published.inc()
             return True
-        except Exception as exc:
+        except (OSError, struct.error, ProtobufSerializationError) as exc:
             logger.error("Cloud publish failure: %s", exc)
             return False
 
     # --- Lifecycle ---
-
-    async def __aenter__(self) -> BridgeService:
-        self._task_group = asyncio.TaskGroup()
-        await self._task_group.__aenter__()
-        return self
-
-    async def __aexit__(self, et: Any, ev: Any, tb: Any) -> None:
-        try:
-            if self._task_group:
-                await self._task_group.__aexit__(et, ev, tb)
-        finally:
-            if self._cloud_spool is not None:
-                try:
-                    await self._cloud_spool.close()
-                except (aiosqlite.Error, OSError) as exc:
-                    logger.debug("cloud_spool close failed during teardown", error=exc)
-                self._cloud_spool = None
-            if self.state and self.state.datastore_cache is not None:
-                try:
-                    await self.state.datastore_cache.close()
-                except (aiosqlite.Error, OSError) as exc:
-                    logger.debug("datastore_cache close failed during teardown", error=exc)
-                self.state.datastore_cache = None
-            self.cleanup()
 
     def cleanup(self) -> None:
         """Explicitly cleanup and close the spool cache database connection (SIL 2)."""
@@ -766,7 +736,7 @@ class BridgeService:
         except (ProtobufDecodeError, TypeError, ValueError) as e:
             logger.error("Failed to decode MCU ACK packet", error=e)
 
-    async def _handle_mcu_status(self, seq_id: int, status: Status, payload: bytes | ProtobufMessage) -> None:
+    async def _handle_mcu_status(self, status: Status, seq_id: int, payload: bytes | ProtobufMessage) -> None:
         text = ""
         if payload:
             try:
@@ -1161,7 +1131,6 @@ class BridgeService:
             return
         while self.state.console_to_mcu_queue and not self.state.mcu_is_paused:
             buf = self.state.console_to_mcu_queue.popleft()
-            from ..protocol.structures import iter_chunks
 
             for chunk in iter_chunks(buf, protocol.MAX_PAYLOAD_SIZE):
                 if not await serial.send(Command.CMD_CONSOLE_WRITE.value, pb.ConsoleWrite(data=chunk)):
@@ -1344,7 +1313,7 @@ class BridgeService:
     async def run(self) -> None:
         """Main entry point for daemon execution using native TaskGroup orchestration."""
         try:
-            async with self, asyncio.TaskGroup() as tg:
+            async with asyncio.TaskGroup() as tg:
                 # 1. Serial Link (Critical)
                 tg.create_task(
                     self.supervise(
@@ -1424,6 +1393,18 @@ class BridgeService:
                 logger.critical("Fatal task error: %s", e, exc_info=e)
             raise
         finally:
+            if self._cloud_spool is not None:
+                try:
+                    await self._cloud_spool.close()
+                except (aiosqlite.Error, OSError) as exc:
+                    logger.debug("cloud_spool close failed during teardown", error=exc)
+                self._cloud_spool = None
+            if self.state and self.state.datastore_cache is not None:
+                try:
+                    await self.state.datastore_cache.close()
+                except (aiosqlite.Error, OSError) as exc:
+                    logger.debug("datastore_cache close failed during teardown", error=exc)
+                self.state.datastore_cache = None
             self.cleanup()
             STATUS_FILE.unlink(missing_ok=True)
             logger.info("MCU Bridge daemon stopped.")
@@ -1602,7 +1583,7 @@ class BridgeService:
         except fatal_exceptions as exc:
             logger.critical("Supervisor task failed with fatal exception", task=name, error=str(exc))
             raise
-        except Exception as exc:
+        except (RuntimeError, ValueError, OSError, tenacity.RetryError) as exc:
             logger.critical("Supervisor task failed unexpectedly", task=name, error=str(exc))
             raise
 
@@ -1651,8 +1632,8 @@ class BridgeService:
                 asyncio.create_task(self._process_ipc_request(request, writer, active_correlations))
         except (asyncio.IncompleteReadError, OSError, asyncio.CancelledError):
             pass
-        except Exception as e:
-            logger.debug("IPC client error occurred", error=type(e).__name__)
+        except (ProtobufDecodeError, ValueError, RuntimeError) as e:
+            logger.error("IPC client error occurred", error=type(e).__name__)
         finally:
             if writer in self._ipc_writers:
                 self._ipc_writers.remove(writer)
@@ -1669,8 +1650,6 @@ class BridgeService:
     async def _process_ipc_request(
         self, request: pb.CloudQueuedPublish, writer: asyncio.StreamWriter, active_correlations: set[bytes]
     ) -> None:
-        import secrets
-
         correlation = request.correlation_data if request.HasField("correlation_data") else secrets.token_bytes(12)
         response_queue: asyncio.Queue[pb.CloudQueuedPublish] = asyncio.Queue(maxsize=1)
         self._ipc_requests[correlation] = response_queue
@@ -1697,8 +1676,8 @@ class BridgeService:
                         await writer.drain()
                 except TimeoutError:
                     logger.warning("IPC request timed out", topic=request.topic_name)
-        except OSError:
-            pass  # connection closed/broken
+        except OSError as exc:
+            logger.debug("IPC connection closed during response write", error=str(exc))
         finally:
             active_correlations.discard(correlation)
             self._ipc_requests.pop(correlation, None)

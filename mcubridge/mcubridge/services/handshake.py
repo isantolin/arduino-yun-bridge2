@@ -22,6 +22,7 @@ from typing import cast
 
 import tenacity
 from cryptography.hazmat.primitives import hashes, hmac
+from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from cryptography.hazmat.primitives.constant_time import bytes_eq
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from google.protobuf.message import DecodeError as ProtobufDecodeError, Message as ProtobufMessage
@@ -315,8 +316,6 @@ class SerialHandshakeManager:
         # [SIL-2] Ensure session key is derived on successful sync
         if self._config.serial_shared_secret:
             self._state.link_session_key = self.calculate_session_key(self._config.serial_shared_secret, nonce)
-            from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
-
             self._state.link_aead_cipher = ChaCha20Poly1305(self._state.link_session_key)
         payload = nonce
 

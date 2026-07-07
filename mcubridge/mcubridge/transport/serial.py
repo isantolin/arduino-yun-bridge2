@@ -40,11 +40,13 @@ from mcubridge.protocol.protocol import (
     expected_responses,
     response_to_request,
 )
+from mcubridge.protocol.frame import build_frame, parse_frame
 from mcubridge.protocol.structures import (
     PendingCommand,
 )
 from mcubridge.security.security import (
     generate_nonce_with_counter,
+    validate_nonce_counter,
 )
 from mcubridge.services.handshake import SerialHandshakeFatal
 
@@ -195,8 +197,6 @@ class SerialTransport:
 
     async def _process_packet(self, encoded_packet: bytes | memoryview) -> None:
         """Processes a packet from the serial stream. [FLATTENED] [SIL-2]"""
-        from mcubridge.protocol.frame import parse_frame
-
         try:
             # Ensure we have bytes for cobs.decode
             raw_bytes = bytes(encoded_packet) if isinstance(encoded_packet, memoryview) else encoded_packet
@@ -223,8 +223,6 @@ class SerialTransport:
             protocol.SYSTEM_COMMAND_MIN <= cmd_id <= protocol.SYSTEM_COMMAND_MAX
         )
         if self.state.is_synchronized and not is_excluded:
-            from mcubridge.security.security import validate_nonce_counter
-
             ok, new_counter = validate_nonce_counter(envelope.nonce, self.state.link_last_nonce_counter)
             if not ok:
                 logger.error("Anti-replay validation failed")
@@ -376,8 +374,6 @@ class SerialTransport:
         if self.state.is_synchronized and not is_excluded:
             nonce, new_counter = generate_nonce_with_counter(self.state.link_nonce_counter)
             self.state.link_nonce_counter = new_counter
-
-        from mcubridge.protocol.frame import build_frame
 
         encoded = (
             cobs.encode(

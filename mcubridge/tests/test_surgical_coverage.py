@@ -110,13 +110,13 @@ async def test_surgical_runtime_exhaustive(
         pb.SpiTransferResponse(data=b"resp").SerializeToString(),
     )
 
-    # Test TaskGroup cancel path
-    with patch("asyncio.TaskGroup.__aexit__", side_effect=asyncio.CancelledError()):
-        try:
-            async with service:
+    # Test run() cancel path: verify CancelledError from TaskGroup is handled gracefully
+    with patch.object(service, "supervise", side_effect=asyncio.CancelledError()):
+        with patch("asyncio.TaskGroup.__aexit__", return_value=None):
+            try:
+                await service.run()
+            except* asyncio.CancelledError:
                 pass
-        except asyncio.CancelledError:
-            pass
 
 
 @pytest.mark.asyncio

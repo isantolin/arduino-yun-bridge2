@@ -82,7 +82,7 @@ async def test_runtime_safety_coverage(real_config: RuntimeConfig) -> None:
             success = await getattr(service, "_spool_cloud_message_locked")(
                 create_queued_publish(topic_name="test", payload=b"")
             )
-            assert success is False
+            assert not success
 
         with patch.object(spool, "length", side_effect=OSError("DB error")):
             await getattr(service, "_flush_cloud_spool_locked")()
@@ -119,9 +119,9 @@ async def test_spool_trim_and_limit(real_config: RuntimeConfig) -> None:
         msg2 = create_queued_publish(topic_name="test2", payload=b"payload2")
         msg3 = create_queued_publish(topic_name="test3", payload=b"payload3")
 
-        assert await getattr(service, "_spool_cloud_message_locked")(msg1) is True
-        assert await getattr(service, "_spool_cloud_message_locked")(msg2) is True
-        assert await getattr(service, "_spool_cloud_message_locked")(msg3) is True
+        assert await getattr(service, "_spool_cloud_message_locked")(msg1)
+        assert await getattr(service, "_spool_cloud_message_locked")(msg2)
+        assert await getattr(service, "_spool_cloud_message_locked")(msg3)
 
         assert await spool.length() == 2
         item1 = await spool.popleft()
@@ -175,7 +175,7 @@ async def test_serialization_failure(real_config: RuntimeConfig) -> None:
             side_effect=ProtobufSerializationError("Serialization error"),
         ):
             success = await getattr(service, "_spool_cloud_message_locked")(msg)
-            assert success is False
+            assert not success
     finally:
         service.cleanup()
         state.cleanup()
@@ -204,7 +204,7 @@ async def test_peeking_or_popping_errors(real_config: RuntimeConfig) -> None:
         # 2. OSError on peek
         with patch.object(spool, "peek", side_effect=OSError("DB error")):
             await getattr(service, "_flush_cloud_spool_locked")()
-        assert state.cloud_spool_degraded is True
+        assert state.cloud_spool_degraded
         state.cloud_spool_degraded = False
 
         # 3. IndexError on popleft when corrupt
@@ -227,7 +227,7 @@ async def test_peeking_or_popping_errors(real_config: RuntimeConfig) -> None:
         popleft_mock = MagicMock(side_effect=OSError("DB error during pop"))
         with patch.object(spool, "popleft", popleft_mock):
             await getattr(service, "_flush_cloud_spool_locked")()
-        assert state.cloud_spool_degraded is True
+        assert state.cloud_spool_degraded
     finally:
         service.cleanup()
         state.cleanup()

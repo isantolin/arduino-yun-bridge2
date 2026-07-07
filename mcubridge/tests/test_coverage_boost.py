@@ -87,19 +87,19 @@ def test_security_coverage_boost() -> None:
 
     # 3. validate_nonce_counter length check fail
     ok, _ = validate_nonce_counter(b"too-short", 0)
-    assert ok is False
+    assert not ok
 
     # 4. verify_crypto_integrity KAT failures
     with patch("mcubridge.security.security.hashes.Hash") as mock_hash:
         mock_hash.return_value.finalize.return_value = b"invalid"
-        assert verify_crypto_integrity() is False
+        assert not verify_crypto_integrity()
 
     with patch("mcubridge.security.security.hmac.HMAC") as mock_hmac:
         mock_hmac.return_value.finalize.return_value = b"invalid"
-        assert verify_crypto_integrity() is False
+        assert not verify_crypto_integrity()
 
     with patch("mcubridge.security.security.ChaCha20Poly1305", side_effect=ValueError):
-        assert verify_crypto_integrity() is False
+        assert not verify_crypto_integrity()
 
 
 @pytest.mark.asyncio
@@ -208,13 +208,13 @@ async def test_serial_transport_coverage_boost(tmp_path: Path) -> None:
 
     # 9. send_raw when serial is None
     transport.serial = None
-    assert await transport.send_raw(1, b"") is False
+    assert not await transport.send_raw(1, b"")
 
     # 10. send_raw with write error
     mock_serial2 = AsyncMock()
     mock_serial2.write.side_effect = OSError("write error")
     transport.serial = mock_serial2
-    assert await transport.send_raw(1, b"") is False
+    assert not await transport.send_raw(1, b"")
 
 
 @pytest.mark.asyncio
@@ -396,23 +396,23 @@ async def test_handshake_coverage_boost() -> None:
 
     # 1. handle_link_sync_resp without pending nonce
     state.link_handshake_nonce = None
-    assert await manager.handle_link_sync_resp(1, b"") is False
+    assert not await manager.handle_link_sync_resp(1, b"")
 
     # 2. handle_link_sync_resp throttled due to rate limit
     state.link_handshake_nonce = b"\x00" * 16
     state.handshake_rate_until = 99999999.0
     with patch("time.monotonic", return_value=0.0):
-        assert await manager.handle_link_sync_resp(1, b"") is False
+        assert not await manager.handle_link_sync_resp(1, b"")
 
     # 3. handle_link_sync_resp protobuf decode failure
     state.handshake_rate_until = 0.0
-    assert await manager.handle_link_sync_resp(1, b"bad protobuf") is False
+    assert not await manager.handle_link_sync_resp(1, b"bad protobuf")
 
     # 4. handle_link_sync_resp mismatch tag
     state.link_handshake_nonce = b"\x00" * 16
     state.link_expected_tag = b"correct_tag"
     sync_resp_pb = pb.LinkSync(nonce=b"\x00" * 16, tag=b"wrong_tag_16_bytes")
-    assert await manager.handle_link_sync_resp(1, sync_resp_pb.SerializeToString()) is False
+    assert not await manager.handle_link_sync_resp(1, sync_resp_pb.SerializeToString())
 
     # 5. handle_handshake_failure fatal
     state.handshake_failure_streak = 5

@@ -41,7 +41,7 @@ async def test_send_frame_via_transport() -> None:
 
         assert service.serial is not None
         ok = await service.serial.send(protocol.Command.CMD_GET_VERSION.value, b"x")
-        assert ok is True
+        assert ok
         mock_serial.send.assert_called_once()
     finally:
         if service is not None:
@@ -84,12 +84,12 @@ async def test_handle_mcu_xon_xoff() -> None:
         state.state = "synchronized"
 
         await service.handle_mcu_frame(protocol.Command.CMD_XOFF.value, 1, b"")
-        assert state.mcu_is_paused is True
-        assert state.serial_tx_allowed.is_set() is False
+        assert state.mcu_is_paused
+        assert not state.serial_tx_allowed.is_set()
 
         await service.handle_mcu_frame(protocol.Command.CMD_XON.value, 2, b"")
-        assert state.mcu_is_paused is False
-        assert state.serial_tx_allowed.is_set() is True
+        assert not state.mcu_is_paused
+        assert state.serial_tx_allowed.is_set()
     finally:
         if service is not None:
             service.cleanup()

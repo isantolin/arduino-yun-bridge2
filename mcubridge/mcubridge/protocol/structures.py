@@ -8,8 +8,8 @@ from __future__ import annotations
 from google.protobuf.message import Message as ProtobufMessage
 from . import mcubridge_pb2 as pb
 
-
 import asyncio
+import fnmatch
 import functools
 import itertools
 import re
@@ -21,6 +21,7 @@ from typing import (
     Final,
     NamedTuple,
 )
+from mcubridge.config.const import ALLOWED_COMMAND_WILDCARD
 
 
 def iter_chunks(data: bytes, chunk_size: int) -> Iterable[bytes]:
@@ -31,7 +32,6 @@ def iter_chunks(data: bytes, chunk_size: int) -> Iterable[bytes]:
 
 
 PROTOBUF_CONTENT_TYPE: Final[str] = "application/x-protobuf"
-
 
 # [SIL-2] Compiled once at module load; reused across all AllowedCommandPolicy instances.
 _TOKEN_SEP: Final = re.compile(r"[,\s]+")
@@ -78,9 +78,6 @@ class TopicRoute(NamedTuple):
 
 def is_command_allowed(policy: pb.AllowedCommandPolicy, command: str) -> bool:
     """Check if a shell/process command is allowed by the policy. [SIL-2]"""
-    import fnmatch
-    from mcubridge.config.const import ALLOWED_COMMAND_WILDCARD
-
     pieces = command.strip().split()
     if not pieces:
         return False

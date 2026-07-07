@@ -77,7 +77,7 @@ class TestTopicAuthorization:
     def test_default_policy_allows_all_tracked_actions(self, topic: str, action: str) -> None:
         """Verify a default policy allows all tracked actions."""
         policy = make_topic_auth()
-        assert allows_topic(policy, topic, action) is True
+        assert allows_topic(policy, topic, action)
 
     @pytest.mark.parametrize(
         "topic, action",
@@ -90,7 +90,7 @@ class TestTopicAuthorization:
     def test_default_policy_denies_unknown_actions(self, topic: str, action: str) -> None:
         """Verify topic/action pairs outside the map default to deny."""
         policy = make_topic_auth()
-        assert allows_topic(policy, topic, action) is False
+        assert not allows_topic(policy, topic, action)
 
     def test_selective_denial(self) -> None:
         """Verify that specific actions can be denied."""
@@ -99,15 +99,15 @@ class TestTopicAuthorization:
             datastore_put=False,
             shell_run_async=False,
         )
-        assert allows_topic(policy, Topic.FILE.value, "write") is False
-        assert allows_topic(policy, Topic.DATASTORE.value, "put") is False
-        assert allows_topic(policy, Topic.SHELL.value, "run_async") is False
+        assert not allows_topic(policy, Topic.FILE.value, "write")
+        assert not allows_topic(policy, Topic.DATASTORE.value, "put")
+        assert not allows_topic(policy, Topic.SHELL.value, "run_async")
 
         # Check that others are still allowed
-        assert allows_topic(policy, Topic.FILE.value, "read") is True
-        assert allows_topic(policy, Topic.DATASTORE.value, "get") is True
-        assert allows_topic(policy, Topic.MAILBOX.value, "write") is True
-        assert allows_topic(policy, Topic.SHELL.value, "kill") is True
+        assert allows_topic(policy, Topic.FILE.value, "read")
+        assert allows_topic(policy, Topic.DATASTORE.value, "get")
+        assert allows_topic(policy, Topic.MAILBOX.value, "write")
+        assert allows_topic(policy, Topic.SHELL.value, "kill")
 
     @pytest.mark.parametrize(
         "kwargs, topic, action",
@@ -122,10 +122,10 @@ class TestTopicAuthorization:
     )
     def test_console_and_pin_toggles_respected(self, kwargs: dict[str, bool], topic: str, action: str) -> None:
         policy = make_topic_auth(**kwargs)
-        assert allows_topic(policy, topic, action) is False
+        assert not allows_topic(policy, topic, action)
 
     def test_case_insensitivity(self) -> None:
         """Verify topic and action matching is case-insensitive."""
         policy = make_topic_auth(file_read=False)
-        assert allows_topic(policy, "FiLe", "ReAd") is False
-        assert allows_topic(policy, "file", "read") is False
+        assert not allows_topic(policy, "FiLe", "ReAd")
+        assert not allows_topic(policy, "file", "read")

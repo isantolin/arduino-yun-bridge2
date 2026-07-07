@@ -40,4 +40,4 @@ def test_structures_coverage_boost():
     # Cover TopicAuthorization
     ta = pb.TopicAuthorization()
     ta.file_read = True
-    assert ta.file_read is True
+    assert ta.file_read

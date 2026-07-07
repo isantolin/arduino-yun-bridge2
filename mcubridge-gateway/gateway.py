@@ -97,8 +97,10 @@ class ProtobufGateway:
                         for key, val in sub:
                             if key == "commonName":
                                 device_id = val
-            except Exception as e:
+            except (ssl.SSLError, AttributeError, KeyError, TypeError) as e:
                 logger.error("Failed to parse client certificate: %s", e)
+                writer.close()
+                return
 
         logger.info("Device connected: %s", device_id)
         self._connections[device_id] = writer

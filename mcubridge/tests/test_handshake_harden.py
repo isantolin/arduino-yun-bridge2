@@ -64,7 +64,7 @@ async def test_handshake_auth_mismatch(
     payload = pb.LinkSync(nonce=nonce, tag=bad_tag).SerializeToString()
 
     result = await manager.handle_link_sync_resp(1, payload)
-    assert result is False
+    assert not result
     assert state.handshake_failure_streak == 1
     assert state.last_handshake_error == "sync_auth_mismatch"
 
@@ -83,7 +83,7 @@ async def test_handshake_rate_limiting(
 
     # Try to process response while rate limited
     result = await manager.handle_link_sync_resp(1, b"")
-    assert result is False
+    assert not result
     assert state.last_handshake_error == "sync_rate_limited"
 
 
@@ -139,7 +139,7 @@ async def test_handshake_capabilities_retry(
         ]  # Empty map
 
         result = await getattr(manager, "_fetch_capabilities")()
-        assert result is True
+        assert result
         assert send_frame.call_count == 3
 
 
@@ -152,7 +152,7 @@ async def test_handshake_malformed_sync_resp(
     state.link_handshake_nonce = b"pending"
 
     result = await manager.handle_link_sync_resp(1, b"\xff\xff\xff")  # Invalid protobuf
-    assert result is False
+    assert not result
     assert state.last_handshake_error == "sync_decode_failed"
     cast(AsyncMock, getattr(manager, "_acknowledge_frame")).assert_called_with(
         Command.CMD_LINK_SYNC_RESP.value, 1, status=Status.MALFORMED

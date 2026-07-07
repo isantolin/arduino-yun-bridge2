@@ -81,10 +81,10 @@ def test_security_primitives_coverage() -> None:
     assert next_c == 11
     assert extract_nonce_counter(nonce) == 11
     ok, cur = validate_nonce_counter(nonce, 10)
-    assert ok is True
+    assert ok
     assert cur == 11
     ok, cur = validate_nonce_counter(nonce, 11)
-    assert ok is False
+    assert not ok
     with pytest.raises(ValueError, match="Nonce counter overflow"):
         generate_nonce_with_counter(protocol.NONCE_COUNTER_MASK)
     with pytest.raises(ValueError, match="Nonce counter overflow"):

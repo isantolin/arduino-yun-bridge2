@@ -37,7 +37,8 @@ def read_uci_general() -> dict[str, str]:
 
     try:
         config = get_uci_config()
-    except RuntimeError:
+    except RuntimeError as exc:
+        logging.getLogger(__name__).warning("UCI config read failed: %s", exc)
         return {}
 
     clean: dict[str, str] = {}

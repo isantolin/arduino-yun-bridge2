@@ -75,7 +75,7 @@ async def test_publish_metrics_publishes_snapshot(
     assert message.topic_name == expected_topic
     decoded = pb.DaemonMetrics()
     decoded.ParseFromString(message.payload)
-    assert decoded.cloud_spool_degraded is True
+    assert decoded.cloud_spool_degraded
     assert decoded.cloud_spool_failure_reason == "disk-full"
     assert message.content_type == PROTOBUF_CONTENT_TYPE
     props = [(p.key, p.value) for p in message.user_properties]

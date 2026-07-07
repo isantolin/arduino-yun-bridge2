@@ -53,7 +53,7 @@ def test_load_runtime_config_applies_env_and_defaults(
     assert config.cloud_port == 321
     assert config.cloud_user == "user"
     assert config.cloud_pass == "pass"
-    assert config.cloud_tls is True
+    assert config.cloud_tls
     assert config.cloud_cafile == "/etc/cafile"
     assert config.cloud_certfile == ""
     assert config.cloud_keyfile == ""
@@ -71,7 +71,7 @@ def test_load_runtime_config_applies_env_and_defaults(
     assert config.serial_response_timeout == 1.5
     assert config.serial_retry_attempts == 1
     assert config.serial_shared_secret == b"envsecret"
-    assert config.watchdog_enabled is True
+    assert config.watchdog_enabled
     assert config.watchdog_interval == 0.5
 
 
@@ -86,7 +86,7 @@ def test_load_runtime_config_metrics(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(settings, "_load_raw_config", lambda: (raw_config, "test"))
 
     config = settings.load_runtime_config()
-    assert config.metrics_enabled is True
+    assert config.metrics_enabled
     assert config.metrics_host == "0.0.0.0"
     assert config.metrics_port == 9999
     assert config.bridge_summary_interval == 10.5
@@ -164,7 +164,7 @@ def test_get_uci_config_handles_value_wrappers(monkeypatch: pytest.MonkeyPatch):
     # Mocking UCI internal list handling
     monkeypatch.setattr(settings, "get_uci_config", lambda: {"debug": True})
     config = settings.load_runtime_config()
-    assert config.debug is True
+    assert config.debug
 
 
 def test_load_runtime_config_parses_watchdog(monkeypatch: pytest.MonkeyPatch):
@@ -191,5 +191,5 @@ def test_load_runtime_config_parses_watchdog(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(settings, "_load_raw_config", lambda: (raw_config, "test"))
 
     config = settings.load_runtime_config()
-    assert config.watchdog_enabled is True
+    assert config.watchdog_enabled
     assert config.watchdog_interval == 0.5

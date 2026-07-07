@@ -31,8 +31,8 @@ def test_mark_transport_connected_updates_state(runtime_config: RuntimeConfig) -
     state = create_runtime_state(runtime_config)
     try:
         state.mark_transport_connected()
-        assert state.is_connected is True
-        assert state.is_synchronized is False
+        assert state.is_connected
+        assert not state.is_synchronized
     finally:
         state.cleanup()
 
@@ -42,7 +42,7 @@ def test_mark_synchronized_sets_flag(runtime_config: RuntimeConfig) -> None:
     try:
         state.mark_transport_connected()
         state.mark_synchronized()
-        assert state.is_synchronized is True
+        assert state.is_synchronized
     finally:
         state.cleanup()
 
@@ -103,7 +103,7 @@ def test_build_metrics_snapshot_includes_spool_state(runtime_config: RuntimeConf
         state.cloud_spool_failure_reason = "disk-full"
         state.cloud_spool_pending_messages = 3
         snapshot = state.build_metrics_snapshot()
-        assert snapshot.cloud_spool_degraded is True
+        assert snapshot.cloud_spool_degraded
         assert snapshot.cloud_spool_failure_reason == "disk-full"
         assert snapshot.cloud_spool_pending_messages == 3
     finally:

@@ -86,7 +86,7 @@ def test_main_strict_mode_when_default_secret(tmp_path: Path) -> None:
 
                     assert mock_service_class.called
                     used_config = mock_service_class.call_args[0][0]
-                    assert used_config.cloud_enabled is False
+                    assert not used_config.cloud_enabled
 
 
 def test_main_aborts_on_crypto_failure(tmp_path: Path) -> None:

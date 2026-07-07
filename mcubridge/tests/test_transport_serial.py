@@ -109,7 +109,7 @@ async def test_process_packet_negotiation_ack_switches_local_baudrate() -> None:
         )
         await getattr(transport, "_process_packet")(encoded)
 
-        assert await getattr(transport, "_negotiation_future") is True
+        assert await getattr(transport, "_negotiation_future")
         assert mock_serial.transport.serial.baudrate == config.serial_baud
     finally:
         state.cleanup()
@@ -159,7 +159,7 @@ async def test_write_frame_debug_logs_unknown_command(
         )
 
         ok = await transport.send(0xFE, b"payload")
-        assert ok is True
+        assert ok
         assert mock_serial.write.called
         # Check that the command 0xFE is present in the encoded hex string
         assert "fe" in seen.get("msg", "").lower()
@@ -181,7 +181,7 @@ async def test_write_frame_returns_false_on_write_error() -> None:
         transport.serial = mock_serial
 
         ok = await transport.send(Command.CMD_CONSOLE_WRITE.value, b"hi")
-        assert ok is False
+        assert not ok
     finally:
         state.cleanup()
 

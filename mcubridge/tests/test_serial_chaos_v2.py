@@ -65,4 +65,4 @@ async def test_serial_transport_negotiation_failure_final_v3(transport_setup: An
     mock_serial = AsyncMock(spec=serialx.AsyncSerial)
     mock_serial.readuntil.side_effect = [b"invalid\x00", asyncio.IncompleteReadError(b"", None)]
     await getattr(transport, "_read_loop")(mock_serial)
-    assert state.is_connected is False
+    assert not state.is_connected

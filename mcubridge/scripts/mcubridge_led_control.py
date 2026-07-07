@@ -12,7 +12,7 @@ from mcubridge.protocol.topics import Topic, topic_path
 
 def do_publish(topic: str, payload: str) -> None:
     """Publish LED state using direct UNIX socket IPC."""
-    msg = pb.MqttQueuedPublish(
+    msg = pb.CloudQueuedPublish(
         topic_name=topic,
         payload=payload.encode("utf-8"),
         qos=1,
@@ -32,11 +32,11 @@ def do_publish(topic: str, payload: str) -> None:
 
 
 def main() -> None:
-    """Set the MCU pin state via MQTT bridge."""
+    """Set the MCU pin state via CLOUD bridge."""
     import sys
     import argparse
 
-    parser = argparse.ArgumentParser(description="Control MCU LED via MQTT.")
+    parser = argparse.ArgumentParser(description="Control MCU LED via CLOUD.")
     parser.add_argument("state", help="State to set (on/off)")
     parser.add_argument("pin", type=int, nargs="?", default=13, help="Pin number")
     args = parser.parse_args()

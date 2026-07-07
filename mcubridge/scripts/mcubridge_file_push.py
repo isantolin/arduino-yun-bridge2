@@ -18,7 +18,7 @@ logger = structlog.get_logger("mcubridge.file-push")
 
 def push_file(topic: str, data: bytes) -> None:
     """Publish file data using direct UNIX socket IPC."""
-    msg = pb.MqttQueuedPublish(
+    msg = pb.CloudQueuedPublish(
         topic_name=topic,
         payload=data,
         qos=1,
@@ -39,7 +39,7 @@ def push_file(topic: str, data: bytes) -> None:
 
 
 def main() -> None:
-    """Push file data to the bridge via MQTT."""
+    """Push file data to the bridge via CLOUD."""
     parser = argparse.ArgumentParser(description="Push files to MCU or Linux storage.")
     parser.add_argument("source", type=Path, help="Source file to push")
     parser.add_argument("target", help="Target path on the bridge")

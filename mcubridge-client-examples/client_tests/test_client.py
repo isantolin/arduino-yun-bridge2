@@ -46,7 +46,7 @@ async def test_client_digital_write(mock_socket) -> None:
     assert len(length_bytes) == 4
     assert int.from_bytes(length_bytes, byteorder="big") == len(data_bytes)
 
-    msg = pb.MqttQueuedPublish.FromString(data_bytes)
+    msg = pb.CloudQueuedPublish.FromString(data_bytes)
     assert msg.topic_name == "br/d/13"
     assert msg.payload == b"1"
 
@@ -69,7 +69,7 @@ async def test_client_analog_write(mock_socket) -> None:
     assert len(length_bytes) == 4
     assert int.from_bytes(length_bytes, byteorder="big") == len(data_bytes)
 
-    msg = pb.MqttQueuedPublish.FromString(data_bytes)
+    msg = pb.CloudQueuedPublish.FromString(data_bytes)
     assert msg.topic_name == "br/a/3"
     assert msg.payload == b"128"
 
@@ -80,14 +80,14 @@ async def test_client_datastore_put(mock_socket) -> None:
     bridge = Bridge(socket_path="/var/run/test.sock")
     await bridge.connect()
 
-    resp = pb.MqttQueuedPublish(
+    resp = pb.CloudQueuedPublish(
         topic_name="br/datastore/get/test_key",
         payload=b"OK",
     )
 
     def capture_write(data):
         if len(data) > 4:
-            msg = pb.MqttQueuedPublish.FromString(data)
+            msg = pb.CloudQueuedPublish.FromString(data)
             resp.correlation_data = msg.correlation_data
             resp_bytes = resp.SerializeToString()
             resp_len = len(resp_bytes).to_bytes(4, byteorder="big")
@@ -105,14 +105,14 @@ async def test_client_file_write(mock_socket) -> None:
     bridge = Bridge(socket_path="/var/run/test.sock")
     await bridge.connect()
 
-    resp = pb.MqttQueuedPublish(
+    resp = pb.CloudQueuedPublish(
         topic_name="br/file/read/test.txt",
         payload=b"content",
     )
 
     def capture_write(data):
         if len(data) > 4:
-            msg = pb.MqttQueuedPublish.FromString(data)
+            msg = pb.CloudQueuedPublish.FromString(data)
             resp.correlation_data = msg.correlation_data
             resp_bytes = resp.SerializeToString()
             resp_len = len(resp_bytes).to_bytes(4, byteorder="big")
@@ -127,7 +127,7 @@ async def test_client_file_write(mock_socket) -> None:
     assert len(calls) == 2
 
     data_bytes = calls[1][0][0]
-    msg = pb.MqttQueuedPublish.FromString(data_bytes)
+    msg = pb.CloudQueuedPublish.FromString(data_bytes)
     assert msg.topic_name == "br/file/write/test.txt"
     assert msg.payload == b"content"
 

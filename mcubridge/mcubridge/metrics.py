@@ -21,7 +21,7 @@ from .config import const
 
 logger = structlog.get_logger("mcubridge.metrics")
 
-PublishEnqueue = Callable[[pb.MqttQueuedPublish], Awaitable[None]]
+PublishEnqueue = Callable[[pb.CloudQueuedPublish], Awaitable[None]]
 
 
 def _build_metrics_message(
@@ -29,9 +29,9 @@ def _build_metrics_message(
     snapshot: pb.DaemonMetrics,
     *,
     expiry_seconds: float,
-) -> pb.MqttQueuedPublish:
+) -> pb.CloudQueuedPublish:
     topic = topic_path(
-        state.mqtt_topic_prefix,
+        state.cloud_topic_prefix,
         Topic.SYSTEM,
         "metrics",
     )
@@ -45,8 +45,8 @@ def _build_metrics_message(
     )
 
     extra_props: list[tuple[str, str]] = []
-    if snapshot.mqtt_spool_degraded:
-        extra_props.append((const.PROP_KEY_BRIDGE_SPOOL, snapshot.mqtt_spool_failure_reason or const.PROP_VAL_UNKNOWN))
+    if snapshot.cloud_spool_degraded:
+        extra_props.append((const.PROP_KEY_BRIDGE_SPOOL, snapshot.cloud_spool_failure_reason or const.PROP_VAL_UNKNOWN))
 
     # Extra props for files
     if state.file_storage_limit_rejections > 0:
@@ -66,7 +66,7 @@ def _build_metrics_message(
     if extra_props:
         user_props = [(p.key, p.value) for p in message.user_properties]
         user_props.extend(extra_props)
-        message = structures.replace_mqtt_publish(message, user_properties=user_props)
+        message = structures.replace_cloud_publish(message, user_properties=user_props)
 
     return message
 
@@ -125,7 +125,7 @@ async def publish_metrics(
     *,
     min_interval: float = 5.0,
 ) -> None:
-    """Publish runtime metrics to MQTT at a fixed cadence."""
+    """Publish runtime metrics to CLOUD at a fixed cadence."""
 
     if interval <= 0:
         raise ValueError("interval must be greater than zero")
@@ -222,7 +222,7 @@ class RuntimeStateCollector(Collector):
             "Current number of items in internal asynchronous queues",
             labels=["queue"],
         )
-        q_depths.add_metric(["mqtt_publish"], float(state.mqtt_publish_queue.qsize()))
+        q_depths.add_metric(["cloud_publish"], float(state.cloud_publish_queue.qsize()))
         q_depths.add_metric(["console_tx"], float(len(state.console_to_mcu_queue)))
 
         q_depths.add_metric(["mailbox_tx"], float(state.mailbox_queue_depth()))
@@ -337,12 +337,12 @@ def _build_bridge_snapshot_message(
     state: RuntimeState,
     flavor: str,
     snapshot: Any,
-) -> pb.MqttQueuedPublish:
+) -> pb.CloudQueuedPublish:
     segments: Sequence[str] = (
         ("bridge", "handshake", "value") if flavor == "handshake" else ("bridge", "summary", "value")
     )
     topic = topic_path(
-        state.mqtt_topic_prefix,
+        state.cloud_topic_prefix,
         Topic.SYSTEM,
         *segments,
     )

@@ -26,7 +26,7 @@ def handshake_setup(tmp_path: Path) -> Iterator[tuple[SerialHandshakeManager, Ru
     state = create_runtime_state(config)
 
     send_frame = AsyncMock(return_value=True)
-    enqueue_mqtt = AsyncMock()
+    enqueue_cloud = AsyncMock()
     acknowledge_frame = AsyncMock()
 
     from mcubridge.services.handshake import derive_serial_timing
@@ -38,7 +38,7 @@ def handshake_setup(tmp_path: Path) -> Iterator[tuple[SerialHandshakeManager, Ru
         state=state,
         serial_timing=timing,
         send_frame=send_frame,
-        enqueue_mqtt=enqueue_mqtt,
+        enqueue_cloud=enqueue_cloud,
         acknowledge_frame=acknowledge_frame,
     )
     yield manager, state, send_frame

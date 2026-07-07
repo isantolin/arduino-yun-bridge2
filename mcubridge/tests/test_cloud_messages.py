@@ -9,9 +9,9 @@ from mcubridge.protocol import protocol
 
 
 def test_queued_publish_protobuf_roundtrip() -> None:
-    """Verify that MqttQueuedPublish correctly roundtrips via protobuf serialization."""
+    """Verify that CloudQueuedPublish correctly roundtrips via protobuf serialization."""
     message = create_queued_publish(
-        topic_name=f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/test",
+        topic_name=f"{protocol.CLOUD_DEFAULT_TOPIC_PREFIX}/test",
         payload=b"hello",
         content_type="application/octet-stream",
         message_expiry_interval=30,
@@ -20,7 +20,7 @@ def test_queued_publish_protobuf_roundtrip() -> None:
     message.qos = 1
     message.retain = True
     message.payload_format_indicator = 1
-    message.response_topic = f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/resp"
+    message.response_topic = f"{protocol.CLOUD_DEFAULT_TOPIC_PREFIX}/resp"
     message.correlation_data = b"cid"
 
     # Use direct library calls as per zero-wrapper mandate

@@ -20,7 +20,7 @@ def _config_kwargs(**overrides: Any) -> dict[str, Any]:
         "serial_baud": protocol.DEFAULT_BAUDRATE,
         "serial_safe_baud": protocol.DEFAULT_SAFE_BAUDRATE,
         "cloud_host": "localhost",
-        "cloud_port": protocol.DEFAULT_MQTT_PORT,
+        "cloud_port": protocol.DEFAULT_CLOUD_PORT,
         "cloud_user": None,
         "cloud_pass": None,
         "cloud_tls": True,

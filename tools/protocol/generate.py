@@ -84,7 +84,7 @@ class CommandDef:
         description: str | None = None,
         requires_ack: bool = False,
         expects_direct_response: bool = False,
-        mqtt_topic: str | None = None,
+        cloud_topic: str | None = None,
     ) -> None:
         self.name = name
         self.value = value
@@ -93,7 +93,7 @@ class CommandDef:
         self.description = description
         self.requires_ack = requires_ack
         self.expects_direct_response = expects_direct_response
-        self.mqtt_topic = mqtt_topic
+        self.cloud_topic = cloud_topic
 
 
 class StatusDef:
@@ -111,14 +111,14 @@ class ProtocolSpec:
         commands: list[CommandDef],
         statuses: list[StatusDef],
         handshake: dict[str, Any],
-        mqtt_subscriptions: list[dict[str, Any]],
+        cloud_subscriptions: list[dict[str, Any]],
         actions: list[dict[str, Any]],
         topics: list[dict[str, Any]],
         capabilities: dict[str, int],
         architectures: dict[str, int],
         data_formats: dict[str, str],
-        mqtt_suffixes: dict[str, str],
-        mqtt_defaults: dict[str, str],
+        cloud_suffixes: dict[str, str],
+        cloud_defaults: dict[str, str],
         status_reasons: dict[str, str],
         architecture_display_names: dict[str, str],
         message_topics: dict[str, str],
@@ -128,14 +128,14 @@ class ProtocolSpec:
         self.commands = commands
         self.statuses = statuses
         self.handshake = handshake
-        self.mqtt_subscriptions = mqtt_subscriptions
+        self.cloud_subscriptions = cloud_subscriptions
         self.actions = actions
         self.topics = topics
         self.capabilities = capabilities
         self.architectures = architectures
         self.data_formats = data_formats
-        self.mqtt_suffixes = mqtt_suffixes
-        self.mqtt_defaults = mqtt_defaults
+        self.cloud_suffixes = cloud_suffixes
+        self.cloud_defaults = cloud_defaults
         self.status_reasons = status_reasons
         self.architecture_display_names = architecture_display_names
         self.message_topics = message_topics
@@ -165,10 +165,10 @@ def load_spec_from_proto(proto_path: Path) -> ProtocolSpec:
     hardware_opt = options.Extensions[mcubridge_pb2.hardware]
     handshake_opt = options.Extensions[mcubridge_pb2.handshake]
     data_formats_opt = options.Extensions[mcubridge_pb2.data_formats]
-    mqtt_suffixes_opt = options.Extensions[mcubridge_pb2.mqtt_suffixes]
-    mqtt_defaults_opt = options.Extensions[mcubridge_pb2.mqtt_defaults]
+    cloud_suffixes_opt = options.Extensions[mcubridge_pb2.cloud_suffixes]
+    cloud_defaults_opt = options.Extensions[mcubridge_pb2.cloud_defaults]
     status_reasons_opt = options.Extensions[mcubridge_pb2.status_reasons]
-    mqtt_subscriptions_opt = options.Extensions[mcubridge_pb2.mqtt_subscriptions]
+    cloud_subscriptions_opt = options.Extensions[mcubridge_pb2.cloud_subscriptions]
     topics_opt = options.Extensions[mcubridge_pb2.topics]
     actions_opt = options.Extensions[mcubridge_pb2.actions]
     architectures_opt = options.Extensions[mcubridge_pb2.architectures]
@@ -184,19 +184,19 @@ def load_spec_from_proto(proto_path: Path) -> ProtocolSpec:
     data_formats = MessageToDict(
         data_formats_opt, preserving_proto_field_name=True, always_print_fields_with_no_presence=True
     )
-    mqtt_suffixes = MessageToDict(
-        mqtt_suffixes_opt, preserving_proto_field_name=True, always_print_fields_with_no_presence=True
+    cloud_suffixes = MessageToDict(
+        cloud_suffixes_opt, preserving_proto_field_name=True, always_print_fields_with_no_presence=True
     )
-    mqtt_defaults = MessageToDict(
-        mqtt_defaults_opt, preserving_proto_field_name=True, always_print_fields_with_no_presence=True
+    cloud_defaults = MessageToDict(
+        cloud_defaults_opt, preserving_proto_field_name=True, always_print_fields_with_no_presence=True
     )
     status_reasons = MessageToDict(
         status_reasons_opt, preserving_proto_field_name=True, always_print_fields_with_no_presence=True
     )
 
-    mqtt_subscriptions = [
+    cloud_subscriptions = [
         MessageToDict(sub, preserving_proto_field_name=True, always_print_fields_with_no_presence=True)
-        for sub in mqtt_subscriptions_opt
+        for sub in cloud_subscriptions_opt
     ]
     topics = [
         MessageToDict(t, preserving_proto_field_name=True, always_print_fields_with_no_presence=True)
@@ -234,23 +234,23 @@ def load_spec_from_proto(proto_path: Path) -> ProtocolSpec:
                 description=opts.description or None,
                 requires_ack=opts.requires_ack,
                 expects_direct_response=opts.expects_direct_response,
-                mqtt_topic=opts.mqtt_topic or None,
+                cloud_topic=opts.cloud_topic or None,
             )
         )
 
-    # Load Message MQTT topics
+    # Load Message CLOUD topics
     message_topics: dict[str, str] = {}
     for msg_name, msg_desc in file_desc.message_types_by_name.items():
         opts = msg_desc.GetOptions()
-        if opts.HasExtension(mcubridge_pb2.msg_mqtt_topic):
-            message_topics[msg_name] = opts.Extensions[mcubridge_pb2.msg_mqtt_topic]
+        if opts.HasExtension(mcubridge_pb2.msg_cloud_topic):
+            message_topics[msg_name] = opts.Extensions[mcubridge_pb2.msg_cloud_topic]
 
-    # Load Enum MQTT topics (like Status)
+    # Load Enum CLOUD topics (like Status)
     for enum_name, enum_desc in file_desc.enum_types_by_name.items():
         opts = enum_desc.GetOptions()
-        if opts.HasExtension(mcubridge_pb2.enum_mqtt_topic):
+        if opts.HasExtension(mcubridge_pb2.enum_cloud_topic):
             # For enums, we treat it as a special mapping or just add to message_topics with a prefix
-            message_topics[f"{enum_name}_ENUM"] = opts.Extensions[mcubridge_pb2.enum_mqtt_topic]
+            message_topics[f"{enum_name}_ENUM"] = opts.Extensions[mcubridge_pb2.enum_cloud_topic]
 
     # Load Status enum
     status_enum_desc = file_desc.enum_types_by_name["Status"]
@@ -267,14 +267,14 @@ def load_spec_from_proto(proto_path: Path) -> ProtocolSpec:
         commands=commands,
         statuses=statuses,
         handshake=handshake,
-        mqtt_subscriptions=mqtt_subscriptions,
+        cloud_subscriptions=cloud_subscriptions,
         actions=actions,
         topics=topics,
         capabilities=capabilities,
         architectures=architectures,
         data_formats=data_formats,
-        mqtt_suffixes=mqtt_suffixes,
-        mqtt_defaults=mqtt_defaults,
+        cloud_suffixes=cloud_suffixes,
+        cloud_defaults=cloud_defaults,
         status_reasons=status_reasons,
         architecture_display_names=architecture_display_names,
         message_topics=message_topics,
@@ -461,9 +461,9 @@ class JinjaGenerator:
                 val = getattr(spec.data_formats_opt, field.name)
                 constants.append({"name": py_name, "type": py_type, "value": f'"{val}"'})
 
-        # Mqtt suffixes
-        for key, val in spec.mqtt_suffixes.items():
-            py_name = f"MQTT_SUFFIX_{key.upper()}"
+        # Cloud suffixes
+        for key, val in spec.cloud_suffixes.items():
+            py_name = f"CLOUD_SUFFIX_{key.upper()}"
             constants.append({"name": py_name, "type": "str", "value": f'"{val}"'})
 
         return constants
@@ -509,14 +509,14 @@ class JinjaGenerator:
     def _process_python_subscriptions(self, spec: ProtocolSpec) -> list[dict[str, Any]]:
         valid_topic_names = {t["name"] for t in spec.topics}
         subscriptions: list[dict[str, Any]] = []
-        for sub in spec.mqtt_subscriptions:
+        for sub in spec.cloud_subscriptions:
             segments: list[str] = []
             topic_str = sub["topic"]
             for s in sub.get("segments", []):
                 if s == "+":
-                    segments.append("MQTT_WILDCARD_SINGLE")
+                    segments.append("CLOUD_WILDCARD_SINGLE")
                 elif s == "#":
-                    segments.append("MQTT_WILDCARD_MULTI")
+                    segments.append("CLOUD_WILDCARD_MULTI")
                 else:
                     mapped = False
                     if topic_str in valid_topic_names:
@@ -561,8 +561,8 @@ class JinjaGenerator:
             architectures=spec.architectures,
             architecture_display_names=spec.architecture_display_names,
             data_formats=spec.data_formats,
-            mqtt_suffixes=spec.mqtt_suffixes,
-            mqtt_defaults=spec.mqtt_defaults,
+            cloud_suffixes=spec.cloud_suffixes,
+            cloud_defaults=spec.cloud_defaults,
             status_reasons=spec.status_reasons,
             statuses=spec.statuses,
             commands=spec.commands,

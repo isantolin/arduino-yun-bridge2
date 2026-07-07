@@ -2,7 +2,7 @@
 
 Submodules:
 - ``const``: compile-time defaults and magic constants.
-- ``common``: UCI / MQTT / parsing helpers.
+- ``common``: UCI / CLOUD / parsing helpers.
 - ``settings``: ``RuntimeConfig`` struct and loader.
 - ``logging``: structured JSON log setup.
 """

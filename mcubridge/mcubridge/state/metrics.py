@@ -25,15 +25,15 @@ class DaemonMetrics:
             registry=self.registry,
         )
 
-        # MQTT Metrics
-        self.mqtt_messages_published = Counter(
-            "mcubridge_mqtt_messages_published_total",
-            "Total MQTT messages published",
+        # CLOUD Metrics
+        self.cloud_messages_published = Counter(
+            "mcubridge_cloud_messages_published_total",
+            "Total CLOUD messages published",
             registry=self.registry,
         )
-        self.mqtt_messages_dropped = Counter(
-            "mcubridge_mqtt_messages_dropped_total",
-            "Total MQTT messages dropped due to queue overflow",
+        self.cloud_messages_dropped = Counter(
+            "mcubridge_cloud_messages_dropped_total",
+            "Total CLOUD messages dropped due to queue overflow",
             registry=self.registry,
         )
 
@@ -87,7 +87,7 @@ class DaemonMetrics:
         )
         self.rpc_latency_ms = Histogram(
             "mcubridge_rpc_latency_ms",
-            "MQTT -> MCU command round-trip latency in milliseconds",
+            "CLOUD -> MCU command round-trip latency in milliseconds",
             buckets=(50, 100, 250, 500, 1000, 2500, 5000),
             registry=self.registry,
         )

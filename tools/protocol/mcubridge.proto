@@ -11,7 +11,7 @@ message Constants {
     uint32 protocol_version = 4 [(cpp_name) = "PROTOCOL_VERSION", (cpp_type) = "uint8_t", (py_name) = "PROTOCOL_VERSION", (py_type) = "int", (client_constant) = true];
     uint32 default_baudrate = 5 [(cpp_name) = "RPC_DEFAULT_BAUDRATE", (cpp_type) = "unsigned long", (py_name) = "DEFAULT_BAUDRATE", (py_type) = "int", (client_constant) = true];
     uint32 default_safe_baudrate = 6 [(cpp_name) = "RPC_DEFAULT_SAFE_BAUDRATE", (cpp_type) = "unsigned long", (py_name) = "DEFAULT_SAFE_BAUDRATE", (py_type) = "int"];
-    uint32 default_mqtt_port = 7 [(py_name) = "DEFAULT_MQTT_PORT", (py_type) = "int", (client_constant) = true];
+    uint32 default_cloud_port = 7 [(py_name) = "DEFAULT_CLOUD_PORT", (py_type) = "int", (client_constant) = true];
     uint32 max_payload_size = 8 [(cpp_name) = "MAX_PAYLOAD_SIZE", (cpp_type) = "size_t", (py_name) = "MAX_PAYLOAD_SIZE", (py_type) = "int", (client_constant) = true];
     uint32 max_filepath_length = 9 [(cpp_name) = "RPC_MAX_FILEPATH_LENGTH", (cpp_type) = "size_t", (py_name) = "MAX_FILEPATH_LENGTH", (py_type) = "int", (client_constant) = true];
     uint32 max_datastore_key_length = 10 [(cpp_name) = "RPC_MAX_DATASTORE_KEY_LENGTH", (cpp_type) = "size_t", (py_name) = "MAX_DATASTORE_KEY_LENGTH", (py_type) = "int", (client_constant) = true];
@@ -61,11 +61,11 @@ message Constants {
     uint32 max_serial_frame_bytes = 54 [(py_name) = "MAX_SERIAL_FRAME_BYTES", (py_type) = "int"];
     uint32 default_serial_handshake_fatal_failures = 55 [(py_name) = "DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES", (py_type) = "int"];
     uint32 default_serial_fallback_threshold = 56 [(py_name) = "DEFAULT_SERIAL_FALLBACK_THRESHOLD", (py_type) = "int"];
-    uint32 mqtt_expiry_pin = 57 [(py_name) = "MQTT_EXPIRY_PIN", (py_type) = "int"];
-    uint32 mqtt_expiry_console = 58 [(py_name) = "MQTT_EXPIRY_CONSOLE", (py_type) = "int"];
-    uint32 mqtt_expiry_datastore = 59 [(py_name) = "MQTT_EXPIRY_DATASTORE", (py_type) = "int"];
-    uint32 mqtt_expiry_shell = 60 [(py_name) = "MQTT_EXPIRY_SHELL", (py_type) = "int"];
-    uint32 mqtt_expiry_default = 61 [(py_name) = "MQTT_EXPIRY_DEFAULT", (py_type) = "int"];
+    uint32 cloud_expiry_pin = 57 [(py_name) = "CLOUD_EXPIRY_PIN", (py_type) = "int"];
+    uint32 cloud_expiry_console = 58 [(py_name) = "CLOUD_EXPIRY_CONSOLE", (py_type) = "int"];
+    uint32 cloud_expiry_datastore = 59 [(py_name) = "CLOUD_EXPIRY_DATASTORE", (py_type) = "int"];
+    uint32 cloud_expiry_shell = 60 [(py_name) = "CLOUD_EXPIRY_SHELL", (py_type) = "int"];
+    uint32 cloud_expiry_default = 61 [(py_name) = "CLOUD_EXPIRY_DEFAULT", (py_type) = "int"];
     uint32 default_process_max_output_bytes = 62 [(py_name) = "DEFAULT_PROCESS_MAX_OUTPUT_BYTES", (py_type) = "int"];
     uint32 default_console_queue_limit_bytes = 63 [(py_name) = "DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES", (py_type) = "int"];
     uint32 prometheus_port = 64 [(py_name) = "PROMETHEUS_PORT", (py_type) = "int"];
@@ -146,14 +146,14 @@ message DataFormats {
     string uint32_format = 5 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
 }
 
-message MqttSuffixes {
+message CloudSuffixes {
     string incoming_available = 1;
     string outgoing_available = 2;
     string response = 3;
     string error = 4;
 }
 
-message MqttDefaults {
+message CloudDefaults {
     string default_topic_prefix = 1;
 }
 
@@ -173,7 +173,7 @@ message StatusReasons {
     string process_kill_failed = 13;
 }
 
-message MqttSubscription {
+message CloudSubscription {
     string topic = 1;
     repeated string segments = 2;
     uint32 qos = 3;
@@ -208,15 +208,15 @@ message CommandOptions {
     bool requires_ack = 3;
     bool expects_direct_response = 4;
     string description = 5;
-    string mqtt_topic = 6;
+    string cloud_topic = 6;
 }
 
 extend google.protobuf.MessageOptions {
-    string msg_mqtt_topic = 1020;
+    string msg_cloud_topic = 1020;
 }
 
 extend google.protobuf.EnumOptions {
-    string enum_mqtt_topic = 1021;
+    string enum_cloud_topic = 1021;
 }
 
 message StatusOptions {
@@ -228,10 +228,10 @@ extend google.protobuf.FileOptions {
     Hardware hardware = 1002;
     Handshake handshake = 1003;
     DataFormats data_formats = 1004;
-    MqttSuffixes mqtt_suffixes = 1005;
-    MqttDefaults mqtt_defaults = 1006;
+    CloudSuffixes cloud_suffixes = 1005;
+    CloudDefaults cloud_defaults = 1006;
     StatusReasons status_reasons = 1007;
-    repeated MqttSubscription mqtt_subscriptions = 1008;
+    repeated CloudSubscription cloud_subscriptions = 1008;
     repeated TopicConfig topics = 1009;
     repeated ActionConfig actions = 1010;
     repeated ArchConfig architectures = 1011;
@@ -253,7 +253,7 @@ extend google.protobuf.FieldOptions {
 
 enum Status {
     STATUS_UNSPECIFIED = 0;
-    option (enum_mqtt_topic) = "system/status";
+    option (enum_cloud_topic) = "system/status";
     OK = 48 [(status_opts) = { description: "Operation completed successfully." }];
     ERROR = 49 [(status_opts) = { description: "Generic failure." }];
     CMD_UNKNOWN = 50 [(status_opts) = { description: "Command not recognized." }];
@@ -268,15 +268,15 @@ enum Status {
 enum Command {
     CMD_UNSPECIFIED = 0;
     CMD_GET_VERSION = 64 [(cmd_opts) = { category: "system", directions: ["linux_to_mcu"], expects_direct_response: true }];
-    CMD_GET_VERSION_RESP = 65 [(cmd_opts) = { category: "system", directions: ["mcu_to_linux"], mqtt_topic: "system/version/value" }];
+    CMD_GET_VERSION_RESP = 65 [(cmd_opts) = { category: "system", directions: ["mcu_to_linux"], cloud_topic: "system/version/value" }];
     CMD_GET_FREE_MEMORY = 66 [(cmd_opts) = { category: "system", directions: ["linux_to_mcu"], expects_direct_response: true }];
-    CMD_GET_FREE_MEMORY_RESP = 67 [(cmd_opts) = { category: "system", directions: ["mcu_to_linux"], mqtt_topic: "system/free_memory/value" }];
+    CMD_GET_FREE_MEMORY_RESP = 67 [(cmd_opts) = { category: "system", directions: ["mcu_to_linux"], cloud_topic: "system/free_memory/value" }];
     CMD_LINK_SYNC = 68 [(cmd_opts) = { category: "system", directions: ["linux_to_mcu"], expects_direct_response: true, description: "Synchronize link state with mutual authentication. Payload: [16-byte Nonce] + [16-byte HMAC Tag (optional)]." }];
     CMD_LINK_SYNC_RESP = 69 [(cmd_opts) = { category: "system", directions: ["mcu_to_linux"] }];
     CMD_LINK_RESET = 70 [(cmd_opts) = { category: "system", directions: ["linux_to_mcu"], expects_direct_response: true, description: "Reset link state. Accepts optional payload with 'config_format' to update timing parameters." }];
     CMD_LINK_RESET_RESP = 71 [(cmd_opts) = { category: "system", directions: ["mcu_to_linux"] }];
     CMD_GET_CAPABILITIES = 72 [(cmd_opts) = { category: "system", directions: ["linux_to_mcu"], expects_direct_response: true }];
-    CMD_GET_CAPABILITIES_RESP = 73 [(cmd_opts) = { category: "system", directions: ["mcu_to_linux"], mqtt_topic: "system/capabilities/value" }];
+    CMD_GET_CAPABILITIES_RESP = 73 [(cmd_opts) = { category: "system", directions: ["mcu_to_linux"], cloud_topic: "system/capabilities/value" }];
     CMD_SET_BAUDRATE = 74 [(cmd_opts) = { category: "system", directions: ["linux_to_mcu"], requires_ack: true }];
     CMD_SET_BAUDRATE_RESP = 75 [(cmd_opts) = { category: "system", directions: ["mcu_to_linux"] }];
     CMD_ENTER_BOOTLOADER = 76 [(cmd_opts) = { category: "system", directions: ["linux_to_mcu"], requires_ack: true }];
@@ -322,7 +322,7 @@ option (rpc.pb.constants) = {
     protocol_version: 2
     default_baudrate: 115200
     default_safe_baudrate: 115200
-    default_mqtt_port: 8883
+    default_cloud_port: 8883
     max_payload_size: 64
     max_filepath_length: 64
     max_datastore_key_length: 32
@@ -372,11 +372,11 @@ option (rpc.pb.constants) = {
     max_serial_frame_bytes: 1024
     default_serial_handshake_fatal_failures: 15
     default_serial_fallback_threshold: 5
-    mqtt_expiry_pin: 5
-    mqtt_expiry_console: 5
-    mqtt_expiry_datastore: 60
-    mqtt_expiry_shell: 30
-    mqtt_expiry_default: 10
+    cloud_expiry_pin: 5
+    cloud_expiry_console: 5
+    cloud_expiry_datastore: 60
+    cloud_expiry_shell: 30
+    cloud_expiry_default: 10
     default_process_max_output_bytes: 65536
     default_console_queue_limit_bytes: 16384
     prometheus_port: 9130
@@ -457,14 +457,14 @@ option (rpc.pb.data_formats) = {
     uint32_format: "<I"
 };
 
-option (rpc.pb.mqtt_suffixes) = {
+option (rpc.pb.cloud_suffixes) = {
     incoming_available: "incoming_available"
     outgoing_available: "outgoing_available"
     response: "response"
     error: "error"
 };
 
-option (rpc.pb.mqtt_defaults) = {
+option (rpc.pb.cloud_defaults) = {
     default_topic_prefix: "br"
 };
 
@@ -484,127 +484,127 @@ option (rpc.pb.status_reasons) = {
     process_kill_failed: "process_kill_failed"
 };
 
-option (rpc.pb.mqtt_subscriptions) = {
+option (rpc.pb.cloud_subscriptions) = {
     topic: "DIGITAL"
     segments: ["+", "mode"]
     qos: 1
 };
-option (rpc.pb.mqtt_subscriptions) = {
+option (rpc.pb.cloud_subscriptions) = {
     topic: "DIGITAL"
     segments: ["+", "read"]
     qos: 1
 };
-option (rpc.pb.mqtt_subscriptions) = {
+option (rpc.pb.cloud_subscriptions) = {
     topic: "DIGITAL"
     segments: ["+"]
     qos: 1
 };
-option (rpc.pb.mqtt_subscriptions) = {
+option (rpc.pb.cloud_subscriptions) = {
     topic: "ANALOG"
     segments: ["+", "read"]
     qos: 1
 };
-option (rpc.pb.mqtt_subscriptions) = {
+option (rpc.pb.cloud_subscriptions) = {
     topic: "ANALOG"
     segments: ["+"]
     qos: 1
 };
-option (rpc.pb.mqtt_subscriptions) = {
+option (rpc.pb.cloud_subscriptions) = {
     topic: "CONSOLE"
     segments: ["in"]
     qos: 1
 };
-option (rpc.pb.mqtt_subscriptions) = {
+option (rpc.pb.cloud_subscriptions) = {
     topic: "DATASTORE"
     segments: ["put", "#"]
     qos: 1
 };
-option (rpc.pb.mqtt_subscriptions) = {
+option (rpc.pb.cloud_subscriptions) = {
     topic: "DATASTORE"
     segments: ["get", "#"]
     qos: 1
 };
-option (rpc.pb.mqtt_subscriptions) = {
+option (rpc.pb.cloud_subscriptions) = {
     topic: "MAILBOX"
     segments: ["write"]
     qos: 1
 };
-option (rpc.pb.mqtt_subscriptions) = {
+option (rpc.pb.cloud_subscriptions) = {
     topic: "MAILBOX"
     segments: ["read"]
     qos: 1
 };
-option (rpc.pb.mqtt_subscriptions) = {
+option (rpc.pb.cloud_subscriptions) = {
     topic: "SHELL"
     segments: ["run_async"]
     qos: 1
 };
-option (rpc.pb.mqtt_subscriptions) = {
+option (rpc.pb.cloud_subscriptions) = {
     topic: "SHELL"
     segments: ["poll", "#"]
     qos: 1
 };
-option (rpc.pb.mqtt_subscriptions) = {
+option (rpc.pb.cloud_subscriptions) = {
     topic: "SHELL"
     segments: ["kill", "#"]
     qos: 1
 };
-option (rpc.pb.mqtt_subscriptions) = {
+option (rpc.pb.cloud_subscriptions) = {
     topic: "SYSTEM"
     segments: ["free_memory", "get"]
     qos: 1
 };
-option (rpc.pb.mqtt_subscriptions) = {
+option (rpc.pb.cloud_subscriptions) = {
     topic: "SYSTEM"
     segments: ["version", "get"]
     qos: 1
 };
-option (rpc.pb.mqtt_subscriptions) = {
+option (rpc.pb.cloud_subscriptions) = {
     topic: "SYSTEM"
     segments: ["bridge", "handshake", "get"]
     qos: 1
 };
-option (rpc.pb.mqtt_subscriptions) = {
+option (rpc.pb.cloud_subscriptions) = {
     topic: "SYSTEM"
     segments: ["bridge", "summary", "get"]
     qos: 1
 };
-option (rpc.pb.mqtt_subscriptions) = {
+option (rpc.pb.cloud_subscriptions) = {
     topic: "SYSTEM"
     segments: ["bridge", "state", "get"]
     qos: 1
 };
-option (rpc.pb.mqtt_subscriptions) = {
+option (rpc.pb.cloud_subscriptions) = {
     topic: "FILE"
     segments: ["write", "#"]
     qos: 1
 };
-option (rpc.pb.mqtt_subscriptions) = {
+option (rpc.pb.cloud_subscriptions) = {
     topic: "FILE"
     segments: ["read", "#"]
     qos: 1
 };
-option (rpc.pb.mqtt_subscriptions) = {
+option (rpc.pb.cloud_subscriptions) = {
     topic: "FILE"
     segments: ["remove", "#"]
     qos: 1
 };
-option (rpc.pb.mqtt_subscriptions) = {
+option (rpc.pb.cloud_subscriptions) = {
     topic: "SPI"
     segments: ["begin"]
     qos: 1
 };
-option (rpc.pb.mqtt_subscriptions) = {
+option (rpc.pb.cloud_subscriptions) = {
     topic: "SPI"
     segments: ["end"]
     qos: 1
 };
-option (rpc.pb.mqtt_subscriptions) = {
+option (rpc.pb.cloud_subscriptions) = {
     topic: "SPI"
     segments: ["transfer"]
     qos: 1
 };
-option (rpc.pb.mqtt_subscriptions) = {
+option (rpc.pb.cloud_subscriptions) = {
     topic: "SPI"
     segments: ["config"]
     qos: 1
@@ -881,14 +881,14 @@ enum PinModeType {
 }
 
 message VersionResponse {
-    option (msg_mqtt_topic) = "system/version/value";
+    option (msg_cloud_topic) = "system/version/value";
     uint32 major = 1;
     uint32 minor = 2;
     uint32 patch = 3;
 }
 
 message FreeMemoryResponse {
-    option (msg_mqtt_topic) = "system/free_memory/value";
+    option (msg_cloud_topic) = "system/free_memory/value";
     uint32 value = 1;
 }
 
@@ -990,7 +990,7 @@ message AnalogReadResponse {
 }
 
 message ConsoleWrite {
-    option (msg_mqtt_topic) = "console/out";
+    option (msg_cloud_topic) = "console/out";
     bytes data = 1;
 }
 
@@ -1008,12 +1008,12 @@ message DatastoreGetResponse {
 }
 
 message MailboxPush {
-    option (msg_mqtt_topic) = "mailbox/incoming";
+    option (msg_cloud_topic) = "mailbox/incoming";
     bytes data = 1;
 }
 
 message MailboxProcessed {
-    option (msg_mqtt_topic) = "mailbox/processed";
+    option (msg_cloud_topic) = "mailbox/processed";
     uint32 message_id = 1;
 }
 
@@ -1117,7 +1117,7 @@ message SpiTransfer {
 }
 
 message SpiTransferResponse {
-    option (msg_mqtt_topic) = "spi/transfer/resp";
+    option (msg_cloud_topic) = "spi/transfer/resp";
     bytes data = 1;
 }
 
@@ -1150,7 +1150,7 @@ message SerialLinkSnapshot {
 }
 
 message HandshakeSnapshot {
-    option (msg_mqtt_topic) = "system/bridge/handshake/value";
+    option (msg_cloud_topic) = "system/bridge/handshake/value";
     bool synchronised = 1;
     uint32 attempts = 2;
     uint32 successes = 3;
@@ -1196,7 +1196,7 @@ message SerialFlowSnapshot {
 }
 
 message BridgeSnapshot {
-    option (msg_mqtt_topic) = "system/bridge/summary/value";
+    option (msg_cloud_topic) = "system/bridge/summary/value";
     SerialLinkSnapshot serial_link = 1;
     HandshakeSnapshot handshake = 2;
     SerialPipelineSnapshot serial_pipeline = 3;
@@ -1264,7 +1264,7 @@ message UserProperty {
     string value = 2;
 }
 
-message MqttQueuedPublish {
+message CloudQueuedPublish {
     string topic_name = 1;
     bytes payload = 2;
     uint32 qos = 3;
@@ -1283,13 +1283,13 @@ message MqttQueuedPublish {
 
 
 
-message MqttDropCount {
+message CloudDropCount {
     string topic = 1;
     uint32 count = 2;
 }
 
 message QueueDepths {
-    uint32 mqtt_publish = 1;
+    uint32 cloud_publish = 1;
     uint32 console = 2;
     uint32 mailbox_outgoing = 3;
     uint32 mailbox_incoming = 4;
@@ -1302,16 +1302,16 @@ message SupervisorEntry {
 }
 
 message DaemonMetrics {
-    uint32 mqtt_queue_depth = 1;
-    uint32 mqtt_dropped_messages = 2;
-    repeated MqttDropCount mqtt_drop_counts = 3;
-    uint32 mqtt_spool_corrupt_dropped = 4;
-    uint32 mqtt_spool_dropped_limit = 5;
-    uint32 mqtt_spool_trim_events = 6;
-    double mqtt_spool_last_trim_unix = 7;
-    bool mqtt_spool_degraded = 8;
-    string mqtt_spool_failure_reason = 9;
-    uint32 mqtt_spool_pending_messages = 10;
+    uint32 cloud_queue_depth = 1;
+    uint32 cloud_dropped_messages = 2;
+    repeated CloudDropCount cloud_drop_counts = 3;
+    uint32 cloud_spool_corrupt_dropped = 4;
+    uint32 cloud_spool_dropped_limit = 5;
+    uint32 cloud_spool_trim_events = 6;
+    double cloud_spool_last_trim_unix = 7;
+    bool cloud_spool_degraded = 8;
+    string cloud_spool_failure_reason = 9;
+    uint32 cloud_spool_pending_messages = 10;
     QueueDepths queue_depths = 11;
     bool link_synchronised = 12;
     uint32 unknown_command_count = 13;
@@ -1387,7 +1387,7 @@ message RpcEnvelope {
 
 
 message StatusReport {
-    option (msg_mqtt_topic) = "system/status";
+    option (msg_cloud_topic) = "system/status";
     uint32 status = 1;
     string name = 2;
     string description = 3;

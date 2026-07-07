@@ -29,20 +29,20 @@ class Command(IntEnum):
     {{ cmd.name }} = {{ cmd.value }}  # {{ cmd.description|default('None', true)|wordwrap(80)|replace('\n', '\n    # ') }}
     {%- endfor %}
 
-# MQTT Topic Helpers
+# CLOUD Topic Helpers
 class Topic:
-    """MQTT topic path builder and matcher (SIL-2)."""
+    """CLOUD topic path builder and matcher (SIL-2)."""
     PREFIX: str = "br"
 
     @staticmethod
     def build(topic: str, *segments: str | int, prefix: str | None = None) -> str:
-        """Build an MQTT topic path. Identical algorithm to daemon topic_path()."""
+        """Build an CLOUD topic path. Identical algorithm to daemon topic_path()."""
         parts = [str(s).strip("/") for s in (prefix or Topic.PREFIX, topic, *segments) if str(s).strip("/")]
         return posixpath.join(*parts) if parts else ""
 
     @staticmethod
     def matches(pattern: str, topic: str) -> bool:
-        """Check if a topic matches an MQTT wildcard pattern."""
+        """Check if a topic matches an CLOUD wildcard pattern."""
         import fnmatch
         return fnmatch.fnmatch(topic, pattern.replace("+", "*").replace("#", "*"))
 

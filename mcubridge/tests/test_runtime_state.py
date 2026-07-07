@@ -11,7 +11,7 @@ from mcubridge.state.context import create_runtime_state
 def test_create_runtime_state_initializes_queues(runtime_config: RuntimeConfig) -> None:
     state = create_runtime_state(runtime_config)
     try:
-        assert state.mqtt_publish_queue is not None
+        assert state.cloud_publish_queue is not None
         assert state.console_to_mcu_queue is not None
         assert state.mailbox_queue is not None
     finally:
@@ -62,16 +62,16 @@ def test_record_watchdog_beat_updates_counters(runtime_config: RuntimeConfig) ->
         state.cleanup()
 
 
-def test_record_mqtt_drop_increments_counter(runtime_config: RuntimeConfig) -> None:
+def test_record_cloud_drop_increments_counter(runtime_config: RuntimeConfig) -> None:
     state = create_runtime_state(runtime_config)
     try:
         topic = "test/topic"
         # [SIL-2] Direct metrics recording (No Wrapper)
-        state.mqtt_drop_counts[topic] = state.mqtt_drop_counts.get(topic, 0) + 1
-        state.mqtt_dropped_messages += 1
-        state.metrics.mqtt_messages_dropped.inc()
+        state.cloud_drop_counts[topic] = state.cloud_drop_counts.get(topic, 0) + 1
+        state.cloud_dropped_messages += 1
+        state.metrics.cloud_messages_dropped.inc()
 
-        assert state.mqtt_dropped_messages == 1
+        assert state.cloud_dropped_messages == 1
     finally:
         state.cleanup()
 
@@ -99,12 +99,12 @@ def test_system_snapshot_removed(runtime_config: RuntimeConfig) -> None:
 def test_build_metrics_snapshot_includes_spool_state(runtime_config: RuntimeConfig) -> None:
     state = create_runtime_state(runtime_config)
     try:
-        state.mqtt_spool_degraded = True
-        state.mqtt_spool_failure_reason = "disk-full"
-        state.mqtt_spool_pending_messages = 3
+        state.cloud_spool_degraded = True
+        state.cloud_spool_failure_reason = "disk-full"
+        state.cloud_spool_pending_messages = 3
         snapshot = state.build_metrics_snapshot()
-        assert snapshot.mqtt_spool_degraded is True
-        assert snapshot.mqtt_spool_failure_reason == "disk-full"
-        assert snapshot.mqtt_spool_pending_messages == 3
+        assert snapshot.cloud_spool_degraded is True
+        assert snapshot.cloud_spool_failure_reason == "disk-full"
+        assert snapshot.cloud_spool_pending_messages == 3
     finally:
         state.cleanup()

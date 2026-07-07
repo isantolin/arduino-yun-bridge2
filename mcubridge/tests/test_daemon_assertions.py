@@ -1,4 +1,4 @@
-"""Assertive tests for BridgeService orchestration and MQTT handling."""
+"""Assertive tests for BridgeService orchestration and CLOUD handling."""
 
 from __future__ import annotations
 from pathlib import Path
@@ -37,7 +37,7 @@ async def test_daemon_supervise_retries_on_failure(service_stack: tuple[BridgeSe
 
 
 @pytest.mark.asyncio
-async def test_daemon_mqtt_run_disabled(service_stack: tuple[BridgeService, Any, Any]) -> None:
+async def test_daemon_cloud_run_disabled(service_stack: tuple[BridgeService, Any, Any]) -> None:
     service, _, _ = service_stack
     new_cfg = RuntimeConfig(
         serial_port=service.config.serial_port,
@@ -47,7 +47,7 @@ async def test_daemon_mqtt_run_disabled(service_stack: tuple[BridgeService, Any,
     object.__setattr__(service, "config", new_cfg)
     # Should return immediately without connecting
     with patch("mcubridge.services.runtime.BridgeService.connect_cloud_session") as mock_connect:
-        await service.run_mqtt()
+        await service.run_cloud()
         mock_connect.assert_not_called()
 
 
@@ -57,7 +57,7 @@ async def test_daemon_run_orchestrates_tasks(service_stack: tuple[BridgeService,
 
     # We mock the underlying methods to avoid real I/O
     serial.run = AsyncMock()
-    service.run_mqtt = AsyncMock()
+    service.run_cloud = AsyncMock()
 
     async def fail_soon() -> None:
         await asyncio.sleep(0.05)
@@ -69,11 +69,11 @@ async def test_daemon_run_orchestrates_tasks(service_stack: tuple[BridgeService,
         await service.run()
 
     assert serial.run.called
-    assert service.run_mqtt.called
+    assert service.run_cloud.called
 
 
 def test_main_strict_mode_when_default_secret(tmp_path: Path) -> None:
-    # Test that the daemon disables MQTT when the default secret is used
+    # Test that the daemon disables CLOUD when the default secret is used
     mock_config = RuntimeConfig(
         serial_shared_secret=b"failsafe_secret_mode", cloud_enabled=True, file_system_root=str(tmp_path)
     )

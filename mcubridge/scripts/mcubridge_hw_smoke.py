@@ -33,14 +33,14 @@ class SmokeTester:
             # Toggle Pin
             topic = topic_path(self.prefix, Topic.DIGITAL, str(pin))
             # Send ON
-            msg_on = pb.MqttQueuedPublish(topic_name=topic, payload=b"1", qos=1)
+            msg_on = pb.CloudQueuedPublish(topic_name=topic, payload=b"1", qos=1)
             data_on = msg_on.SerializeToString()
             sock.sendall(len(data_on).to_bytes(4, byteorder="big") + data_on)
 
             time.sleep(0.5)
 
             # Send OFF
-            msg_off = pb.MqttQueuedPublish(topic_name=topic, payload=b"0", qos=1)
+            msg_off = pb.CloudQueuedPublish(topic_name=topic, payload=b"0", qos=1)
             data_off = msg_off.SerializeToString()
             sock.sendall(len(data_off).to_bytes(4, byteorder="big") + data_off)
 

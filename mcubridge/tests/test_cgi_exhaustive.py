@@ -48,7 +48,7 @@ def test_cgi_success(cgi_env: Any) -> None:
             mock_config = MagicMock()
             mock_config.topic_prefix = "br"
             mock_config.get_ssl_context.return_value = None
-            mock_config.mqtt_user = None
+            mock_config.cloud_user = None
             mock_load.return_value = mock_config
 
             res = application(env, start_response)

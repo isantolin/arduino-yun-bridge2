@@ -3,7 +3,7 @@
 
 This module contains the main entry point and orchestration logic for the
 MCU Bridge daemon, which manages communication between OpenWrt Linux and
-the Arduino MCU over serial and MQTT.
+the Arduino MCU over serial and CLOUD.
 
 [SIL-2 COMPLIANCE]
 The daemon implements robust error handling:
@@ -16,7 +16,7 @@ The daemon implements robust error handling:
 Architecture:
     main() -> BridgeService -> TaskGroup
         ├── serial-link (SerialTransport)
-        ├── mqtt-link (mqtt_task)
+        ├── cloud-link (cloud_task)
         ├── status-writer (status_writer)
         ├── metrics-publisher (publish_metrics)
         ├── bridge-snapshots (optional)

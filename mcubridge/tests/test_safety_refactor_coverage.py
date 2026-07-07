@@ -72,20 +72,20 @@ async def test_runtime_safety_coverage(real_config: RuntimeConfig) -> None:
     serial = AsyncMock(spec=SerialTransport)
     service = BridgeService(real_config, state, serial)
     try:
-        # Trigger QueueEmpty in enqueue_mqtt finally block
-        with patch.object(state.mqtt_publish_queue, "get_nowait", side_effect=asyncio.QueueEmpty()):
-            await service.enqueue_mqtt(create_queued_publish(topic_name="test", payload=b""))
+        # Trigger QueueEmpty in enqueue_cloud finally block
+        with patch.object(state.cloud_publish_queue, "get_nowait", side_effect=asyncio.QueueEmpty()):
+            await service.enqueue_cloud(create_queued_publish(topic_name="test", payload=b""))
 
         # Mock Deque methods to throw OSError for error branch coverage
-        spool = getattr(service, "_mqtt_spool")
+        spool = getattr(service, "_cloud_spool")
         with patch.object(spool, "append", side_effect=OSError("DB error")):
-            success = await getattr(service, "_spool_mqtt_message_locked")(
+            success = await getattr(service, "_spool_cloud_message_locked")(
                 create_queued_publish(topic_name="test", payload=b"")
             )
             assert success is False
 
         with patch.object(spool, "length", side_effect=OSError("DB error")):
-            await getattr(service, "_flush_mqtt_spool_locked")()
+            await getattr(service, "_flush_cloud_spool_locked")()
     finally:
         service.cleanup()
         state.cleanup()
@@ -112,16 +112,16 @@ async def test_spool_trim_and_limit(real_config: RuntimeConfig) -> None:
     serial = AsyncMock(spec=SerialTransport)
     service = BridgeService(real_config, state, serial)
     try:
-        spool = getattr(service, "_mqtt_spool")
+        spool = getattr(service, "_cloud_spool")
         await spool.clear()
 
         msg1 = create_queued_publish(topic_name="test1", payload=b"payload1")
         msg2 = create_queued_publish(topic_name="test2", payload=b"payload2")
         msg3 = create_queued_publish(topic_name="test3", payload=b"payload3")
 
-        assert await getattr(service, "_spool_mqtt_message_locked")(msg1) is True
-        assert await getattr(service, "_spool_mqtt_message_locked")(msg2) is True
-        assert await getattr(service, "_spool_mqtt_message_locked")(msg3) is True
+        assert await getattr(service, "_spool_cloud_message_locked")(msg1) is True
+        assert await getattr(service, "_spool_cloud_message_locked")(msg2) is True
+        assert await getattr(service, "_spool_cloud_message_locked")(msg3) is True
 
         assert await spool.length() == 2
         item1 = await spool.popleft()
@@ -130,8 +130,8 @@ async def test_spool_trim_and_limit(real_config: RuntimeConfig) -> None:
         el2 = decode_queued_publish(item2)
         assert el1.topic_name == "test2"
         assert el2.topic_name == "test3"
-        assert service.state.mqtt_spool_dropped_limit == 1
-        assert service.state.mqtt_spool_trim_events == 1
+        assert service.state.cloud_spool_dropped_limit == 1
+        assert service.state.cloud_spool_trim_events == 1
     finally:
         service.cleanup()
         state.cleanup()
@@ -146,17 +146,17 @@ async def test_corrupt_item_handling(real_config: RuntimeConfig) -> None:
     mock_client.drain = AsyncMock()
     object.__setattr__(service, "_cloud_writer", mock_client)
     try:
-        spool = getattr(service, "_mqtt_spool")
+        spool = getattr(service, "_cloud_spool")
         await spool.clear()
 
         await spool.append(b"invalid_bytes_not_protobuf")
         valid_msg = create_queued_publish(topic_name="valid", payload=b"valid_payload")
         await spool.append(encode_queued_publish(valid_msg))
 
-        await getattr(service, "_flush_mqtt_spool_locked")()
+        await getattr(service, "_flush_cloud_spool_locked")()
 
         assert await spool.length() == 0
-        assert service.state.mqtt_spool_corrupt_dropped == 1
+        assert service.state.cloud_spool_corrupt_dropped == 1
         mock_client.write.assert_called_once()
     finally:
         service.cleanup()
@@ -174,7 +174,7 @@ async def test_serialization_failure(real_config: RuntimeConfig) -> None:
             "mcubridge.services.runtime.encode_queued_publish",
             side_effect=ProtobufSerializationError("Serialization error"),
         ):
-            success = await getattr(service, "_spool_mqtt_message_locked")(msg)
+            success = await getattr(service, "_spool_cloud_message_locked")(msg)
             assert success is False
     finally:
         service.cleanup()
@@ -190,7 +190,7 @@ async def test_peeking_or_popping_errors(real_config: RuntimeConfig) -> None:
     mock_client.drain = AsyncMock()
     object.__setattr__(service, "_cloud_writer", mock_client)
     try:
-        spool = getattr(service, "_mqtt_spool")
+        spool = getattr(service, "_cloud_spool")
         await spool.clear()
 
         valid_msg = create_queued_publish(topic_name="valid", payload=b"payload")
@@ -198,36 +198,36 @@ async def test_peeking_or_popping_errors(real_config: RuntimeConfig) -> None:
 
         # 1. IndexError on peek
         with patch.object(spool, "peek", side_effect=IndexError("Mock empty")):
-            await getattr(service, "_flush_mqtt_spool_locked")()
+            await getattr(service, "_flush_cloud_spool_locked")()
         assert await spool.length() == 1
 
         # 2. OSError on peek
         with patch.object(spool, "peek", side_effect=OSError("DB error")):
-            await getattr(service, "_flush_mqtt_spool_locked")()
-        assert state.mqtt_spool_degraded is True
-        state.mqtt_spool_degraded = False
+            await getattr(service, "_flush_cloud_spool_locked")()
+        assert state.cloud_spool_degraded is True
+        state.cloud_spool_degraded = False
 
         # 3. IndexError on popleft when corrupt
         await spool.clear()
         await spool.append(b"corrupt")
         with patch.object(spool, "popleft", side_effect=IndexError("Pop empty")):
-            await getattr(service, "_flush_mqtt_spool_locked")()
-        assert state.mqtt_spool_corrupt_dropped == 0
+            await getattr(service, "_flush_cloud_spool_locked")()
+        assert state.cloud_spool_corrupt_dropped == 0
 
         # 4. OSError on popleft when corrupt
         await spool.clear()
         await spool.append(b"corrupt")
         with patch.object(spool, "popleft", side_effect=OSError("DB error during pop")):
-            await getattr(service, "_flush_mqtt_spool_locked")()
-        assert state.mqtt_spool_corrupt_dropped == 0
+            await getattr(service, "_flush_cloud_spool_locked")()
+        assert state.cloud_spool_corrupt_dropped == 0
 
         # 5. OSError on popleft after publish
         await spool.clear()
         await spool.append(encode_queued_publish(valid_msg))
         popleft_mock = MagicMock(side_effect=OSError("DB error during pop"))
         with patch.object(spool, "popleft", popleft_mock):
-            await getattr(service, "_flush_mqtt_spool_locked")()
-        assert state.mqtt_spool_degraded is True
+            await getattr(service, "_flush_cloud_spool_locked")()
+        assert state.cloud_spool_degraded is True
     finally:
         service.cleanup()
         state.cleanup()

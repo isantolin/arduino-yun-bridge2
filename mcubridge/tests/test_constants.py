@@ -31,7 +31,7 @@ def test_topics_edge_cases():
 
 def test_structures_coverage_boost():
 
-    # Cover MqttQueuedPublish properties
+    # Cover CloudQueuedPublish properties
     qp = create_queued_publish(topic_name="topic", payload=b"payload")
     assert qp.topic_name == "topic"
     assert qp.payload == b"payload"

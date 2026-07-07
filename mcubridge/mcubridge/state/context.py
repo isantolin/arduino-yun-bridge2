@@ -46,9 +46,9 @@ logger = structlog.get_logger("mcubridge.state")
 SpoolSnapshot = dict[str, int | float]
 
 
-def _make_mqtt_publish_queue(maxsize: int = 0) -> asyncio.Queue[pb.MqttQueuedPublish]:
+def _make_cloud_publish_queue(maxsize: int = 0) -> asyncio.Queue[pb.CloudQueuedPublish]:
     normalized = max(0, int(maxsize))
-    return cast(asyncio.Queue[pb.MqttQueuedPublish], asyncio.Queue(maxsize=normalized))
+    return cast(asyncio.Queue[pb.CloudQueuedPublish], asyncio.Queue(maxsize=normalized))
 
 
 __all__: Final[tuple[str, ...]] = (
@@ -76,11 +76,11 @@ class RuntimeState:
         self.serial_writer: asyncio.BaseTransport | None = kwargs.get("serial_writer")
         self.state: str = kwargs.get("state", "disconnected")
 
-        self.mqtt_queue_limit: int = kwargs.get("mqtt_queue_limit", DEFAULT_CLOUD_QUEUE_LIMIT)
-        self.mqtt_publish_queue: asyncio.Queue[pb.MqttQueuedPublish] = kwargs.get(
-            "mqtt_publish_queue"
-        ) or _make_mqtt_publish_queue(self.mqtt_queue_limit)
-        self.mqtt_drop_counts: dict[str, int] = kwargs.get("mqtt_drop_counts") or {}
+        self.cloud_queue_limit: int = kwargs.get("cloud_queue_limit", DEFAULT_CLOUD_QUEUE_LIMIT)
+        self.cloud_publish_queue: asyncio.Queue[pb.CloudQueuedPublish] = kwargs.get(
+            "cloud_publish_queue"
+        ) or _make_cloud_publish_queue(self.cloud_queue_limit)
+        self.cloud_drop_counts: dict[str, int] = kwargs.get("cloud_drop_counts") or {}
         self.allow_non_tmp_paths: bool = kwargs.get("allow_non_tmp_paths", False)
         self.datastore_cache: SqliteCache | None = kwargs.get("datastore_cache")
 
@@ -112,7 +112,7 @@ class RuntimeState:
         self.file_storage_bytes_used: int = kwargs.get("file_storage_bytes_used", 0)
         self.file_write_limit_rejections: int = kwargs.get("file_write_limit_rejections", 0)
         self.file_storage_limit_rejections: int = kwargs.get("file_storage_limit_rejections", 0)
-        self.mqtt_topic_prefix: str = kwargs.get("mqtt_topic_prefix", protocol.MQTT_DEFAULT_TOPIC_PREFIX)
+        self.cloud_topic_prefix: str = kwargs.get("cloud_topic_prefix", protocol.CLOUD_DEFAULT_TOPIC_PREFIX)
         self.watchdog_enabled: bool = kwargs.get("watchdog_enabled", False)
         self.watchdog_interval: float = kwargs.get("watchdog_interval", DEFAULT_WATCHDOG_INTERVAL)
         self.last_watchdog_beat: float = kwargs.get("last_watchdog_beat", 0.0)
@@ -177,19 +177,19 @@ class RuntimeState:
         self.supervisor_failures: int = kwargs.get("supervisor_failures", 0)
         self.last_supervisor_error: str | None = kwargs.get("last_supervisor_error")
 
-        self.mqtt_dropped_messages: int = kwargs.get("mqtt_dropped_messages", 0)
+        self.cloud_dropped_messages: int = kwargs.get("cloud_dropped_messages", 0)
         self.serial_decode_errors: int = kwargs.get("serial_decode_errors", 0)
         self.handshake_attempts: int = kwargs.get("handshake_attempts", 0)
         self.handshake_successes: int = kwargs.get("handshake_successes", 0)
         self.watchdog_beats: int = kwargs.get("watchdog_beats", 0)
 
-        self.mqtt_spool_corrupt_dropped: int = kwargs.get("mqtt_spool_corrupt_dropped", 0)
-        self.mqtt_spool_dropped_limit: int = kwargs.get("mqtt_spool_dropped_limit", 0)
-        self.mqtt_spool_trim_events: int = kwargs.get("mqtt_spool_trim_events", 0)
-        self.mqtt_spool_last_trim_unix: float = kwargs.get("mqtt_spool_last_trim_unix", 0.0)
-        self.mqtt_spool_degraded: bool = kwargs.get("mqtt_spool_degraded", False)
-        self.mqtt_spool_failure_reason: str | None = kwargs.get("mqtt_spool_failure_reason")
-        self.mqtt_spool_pending_messages: int = kwargs.get("mqtt_spool_pending_messages", 0)
+        self.cloud_spool_corrupt_dropped: int = kwargs.get("cloud_spool_corrupt_dropped", 0)
+        self.cloud_spool_dropped_limit: int = kwargs.get("cloud_spool_dropped_limit", 0)
+        self.cloud_spool_trim_events: int = kwargs.get("cloud_spool_trim_events", 0)
+        self.cloud_spool_last_trim_unix: float = kwargs.get("cloud_spool_last_trim_unix", 0.0)
+        self.cloud_spool_degraded: bool = kwargs.get("cloud_spool_degraded", False)
+        self.cloud_spool_failure_reason: str | None = kwargs.get("cloud_spool_failure_reason")
+        self.cloud_spool_pending_messages: int = kwargs.get("cloud_spool_pending_messages", 0)
 
     @property
     def device_id(self) -> str:
@@ -199,7 +199,7 @@ class RuntimeState:
 
     @property
     def topic_prefix(self) -> str:
-        return self.mqtt_topic_prefix
+        return self.cloud_topic_prefix
 
     @property
     def is_connected(self) -> bool:
@@ -289,7 +289,7 @@ class RuntimeState:
             self.datastore_cache = None
 
         # Re-initialize transient queues
-        self.mqtt_publish_queue = _make_mqtt_publish_queue(self.mqtt_queue_limit)
+        self.cloud_publish_queue = _make_cloud_publish_queue(self.cloud_queue_limit)
         self.console_to_mcu_queue = collections.deque[bytes](maxlen=self.mailbox_queue_limit)
 
         def _create_spool(
@@ -366,34 +366,34 @@ class RuntimeState:
     def _apply_spool_observation(self, observation: Mapping[str, Any]) -> None:
         """Update internal state from spool statistics."""
         if "corrupt_dropped" in observation:
-            self.mqtt_spool_corrupt_dropped = int(observation["corrupt_dropped"])
+            self.cloud_spool_corrupt_dropped = int(observation["corrupt_dropped"])
         if "dropped_due_to_limit" in observation:
-            self.mqtt_spool_dropped_limit = int(observation["dropped_due_to_limit"])
+            self.cloud_spool_dropped_limit = int(observation["dropped_due_to_limit"])
         if "trim_events" in observation:
-            self.mqtt_spool_trim_events = int(observation["trim_events"])
+            self.cloud_spool_trim_events = int(observation["trim_events"])
         if "last_trim_unix" in observation:
-            self.mqtt_spool_last_trim_unix = float(observation["last_trim_unix"])
+            self.cloud_spool_last_trim_unix = float(observation["last_trim_unix"])
 
     def build_metrics_snapshot(self) -> pb.DaemonMetrics:
         """Build a concrete metrics snapshot for telemetry. [SIL-2]"""
         supervisors = [pb.SupervisorEntry(name=name, stats=stats) for name, stats in self.supervisor_stats.items()]
-        mqtt_drop_counts = [
-            pb.MqttDropCount(topic=topic, count=count) for topic, count in self.mqtt_drop_counts.items()
+        cloud_drop_counts = [
+            pb.CloudDropCount(topic=topic, count=count) for topic, count in self.cloud_drop_counts.items()
         ]
 
         return pb.DaemonMetrics(
-            mqtt_queue_depth=self.mqtt_publish_queue.qsize(),
-            mqtt_dropped_messages=self.mqtt_dropped_messages,
-            mqtt_drop_counts=mqtt_drop_counts,
-            mqtt_spool_corrupt_dropped=self.mqtt_spool_corrupt_dropped,
-            mqtt_spool_dropped_limit=self.mqtt_spool_dropped_limit,
-            mqtt_spool_trim_events=self.mqtt_spool_trim_events,
-            mqtt_spool_last_trim_unix=self.mqtt_spool_last_trim_unix,
-            mqtt_spool_degraded=self.mqtt_spool_degraded,
-            mqtt_spool_failure_reason=self.mqtt_spool_failure_reason or "",
-            mqtt_spool_pending_messages=self.mqtt_spool_pending_messages,
+            cloud_queue_depth=self.cloud_publish_queue.qsize(),
+            cloud_dropped_messages=self.cloud_dropped_messages,
+            cloud_drop_counts=cloud_drop_counts,
+            cloud_spool_corrupt_dropped=self.cloud_spool_corrupt_dropped,
+            cloud_spool_dropped_limit=self.cloud_spool_dropped_limit,
+            cloud_spool_trim_events=self.cloud_spool_trim_events,
+            cloud_spool_last_trim_unix=self.cloud_spool_last_trim_unix,
+            cloud_spool_degraded=self.cloud_spool_degraded,
+            cloud_spool_failure_reason=self.cloud_spool_failure_reason or "",
+            cloud_spool_pending_messages=self.cloud_spool_pending_messages,
             queue_depths=pb.QueueDepths(
-                mqtt_publish=self.mqtt_publish_queue.qsize(),
+                cloud_publish=self.cloud_publish_queue.qsize(),
                 console=len(self.console_to_mcu_queue),
                 mailbox_outgoing=len(self.mailbox_queue),
                 mailbox_incoming=len(self.mailbox_incoming_queue),
@@ -515,12 +515,12 @@ class RuntimeState:
         self.mailbox_queue = InMemoryDeque()
         self.mailbox_incoming_queue = InMemoryDeque()
 
-        while not self.mqtt_publish_queue.empty():
+        while not self.cloud_publish_queue.empty():
             try:
-                self.mqtt_publish_queue.get_nowait()
+                self.cloud_publish_queue.get_nowait()
             except (OSError, RuntimeError, AttributeError) as e:
                 logger.debug("Resource cleanup notice", error=e)
-        self.mqtt_publish_queue = _make_mqtt_publish_queue(self.mqtt_queue_limit)
+        self.cloud_publish_queue = _make_cloud_publish_queue(self.cloud_queue_limit)
 
         if self.running_processes:
             for ctx in list(self.running_processes.values()):
@@ -552,9 +552,9 @@ def create_runtime_state(config: RuntimeConfig | dict[str, Any]) -> RuntimeState
     cfg_dict = json_format.MessageToDict(cfg, preserving_proto_field_name=True)
 
     if "topic_prefix" in cfg_dict:
-        cfg_dict["mqtt_topic_prefix"] = cfg_dict.pop("topic_prefix")
+        cfg_dict["cloud_topic_prefix"] = cfg_dict.pop("topic_prefix")
     if "cloud_queue_limit" in cfg_dict:
-        cfg_dict["mqtt_queue_limit"] = cfg_dict.pop("cloud_queue_limit")
+        cfg_dict["cloud_queue_limit"] = cfg_dict.pop("cloud_queue_limit")
     if "process_max_output_bytes" in cfg_dict:
         cfg_dict["process_output_limit"] = cfg_dict.pop("process_max_output_bytes")
 

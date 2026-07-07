@@ -45,7 +45,7 @@ def _get_action_lookup_map() -> dict[str, Any]:
 
 
 class TopicRoute(NamedTuple):
-    """Parsed representation of an MQTT topic targeting the daemon."""
+    """Parsed representation of an CLOUD topic targeting the daemon."""
 
     raw: str
     prefix: str
@@ -230,7 +230,7 @@ def get_ssl_context(cfg: pb.RuntimeConfig) -> Any | None:
 
 
 class PayloadValidationError(ValueError):
-    """Raised when an inbound MQTT payload cannot be validated."""
+    """Raised when an inbound CLOUD payload cannot be validated."""
 
     def __init__(self, message: str) -> None:
         super().__init__(message)
@@ -246,15 +246,15 @@ class PendingPinRequest:
     reply_context: Any | None = None
 
 
-# --- MQTT Spool Helpers ---
+# --- CLOUD Spool Helpers ---
 
 
 UserProperty = tuple[str, str]
 
 
-def replace_mqtt_publish(message: pb.MqttQueuedPublish, **kwargs: Any) -> pb.MqttQueuedPublish:
-    """Create a new MqttQueuedPublish with fields replaced."""
-    newpb_obj = pb.MqttQueuedPublish()
+def replace_cloud_publish(message: pb.CloudQueuedPublish, **kwargs: Any) -> pb.CloudQueuedPublish:
+    """Create a new CloudQueuedPublish with fields replaced."""
+    newpb_obj = pb.CloudQueuedPublish()
     newpb_obj.CopyFrom(message)
     for k, v in kwargs.items():
         if k == "user_properties":
@@ -270,8 +270,8 @@ def replace_mqtt_publish(message: pb.MqttQueuedPublish, **kwargs: Any) -> pb.Mqt
     return newpb_obj
 
 
-def resolve_mqtt_context(message: pb.MqttQueuedPublish, context: Any | None) -> pb.MqttQueuedPublish:
-    """Resolve MQTT request-reply context into the publish message."""
+def resolve_cloud_context(message: pb.CloudQueuedPublish, context: Any | None) -> pb.CloudQueuedPublish:
+    """Resolve CLOUD request-reply context into the publish message."""
     if context is None:
         return message
 
@@ -297,7 +297,7 @@ def resolve_mqtt_context(message: pb.MqttQueuedPublish, context: Any | None) -> 
     if req_topic := getattr(context, "topic", None):
         user_props.append(("bridge-request-topic", str(req_topic)))
 
-    newpb_obj = pb.MqttQueuedPublish()
+    newpb_obj = pb.CloudQueuedPublish()
     newpb_obj.CopyFrom(message)
     if "topic_name" in updates:
         newpb_obj.topic_name = updates["topic_name"]
@@ -318,9 +318,9 @@ def create_queued_publish(
     message_expiry_interval: int | None = None,
     user_properties: Iterable[tuple[str, str]] = (),
     qos: int = 1,
-) -> pb.MqttQueuedPublish:
-    """Factory to create a MqttQueuedPublish message. [SIL-2]"""
-    msg = pb.MqttQueuedPublish(
+) -> pb.CloudQueuedPublish:
+    """Factory to create a CloudQueuedPublish message. [SIL-2]"""
+    msg = pb.CloudQueuedPublish(
         topic_name=topic_name,
         payload=payload,
         content_type=content_type or "",
@@ -333,12 +333,12 @@ def create_queued_publish(
     return msg
 
 
-def encode_queued_publish(message: pb.MqttQueuedPublish) -> bytes:
+def encode_queued_publish(message: pb.CloudQueuedPublish) -> bytes:
     return message.SerializeToString()
 
 
-def decode_queued_publish(data: bytes) -> pb.MqttQueuedPublish:
-    return pb.MqttQueuedPublish.FromString(data)
+def decode_queued_publish(data: bytes) -> pb.CloudQueuedPublish:
+    return pb.CloudQueuedPublish.FromString(data)
 
 
 # --- Serial Flow Structures ---

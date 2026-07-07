@@ -109,7 +109,7 @@ def test_load_runtime_config_rejects_non_tmp_paths_when_disabled(
         settings.load_runtime_config()
 
 
-def test_load_runtime_config_allows_empty_mqtt_user_value(
+def test_load_runtime_config_allows_empty_cloud_user_value(
     monkeypatch: pytest.MonkeyPatch,
 ):
     raw_config = {

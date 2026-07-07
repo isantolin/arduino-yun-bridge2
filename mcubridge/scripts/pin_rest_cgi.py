@@ -21,7 +21,7 @@ logger = logging.getLogger("mcubridge.pin_rest")
 
 def publish_sync(topic: str, payload: str, config: RuntimeConfig) -> None:
     """Synchronous publish to local UNIX domain socket IPC."""
-    msg = pb.MqttQueuedPublish(
+    msg = pb.CloudQueuedPublish(
         topic_name=topic,
         payload=payload.encode("utf-8"),
         qos=1,

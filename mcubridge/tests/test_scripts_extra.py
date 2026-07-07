@@ -116,6 +116,6 @@ def test_rotate_credentials_updates_expected_uci_keys() -> None:
     script = load_script("mcubridge-rotate-credentials")
     mock_cursor = MagicMock()
     with patch("uci.Uci", return_value=mock_cursor):
-        script.update_uci_credentials("serial-secret", "mqtt-password")
+        script.update_uci_credentials("serial-secret", "cloud-password")
     assert mock_cursor.set.call_args_list[0].args == ("mcubridge", "general", "serial_shared_secret", "serial-secret")
-    assert mock_cursor.set.call_args_list[1].args == ("mcubridge", "general", "cloud_pass", "mqtt-password")
+    assert mock_cursor.set.call_args_list[1].args == ("mcubridge", "general", "cloud_pass", "cloud-password")

@@ -1,6 +1,6 @@
-"""MQTT topic helpers shared across McuBridge components.
+"""CLOUD topic helpers shared across McuBridge components.
 
-This module is the SINGLE SOURCE OF TRUTH for MQTT topic structures.
+This module is the SINGLE SOURCE OF TRUTH for CLOUD topic structures.
 Avoid hardcoding topic strings elsewhere.
 """
 
@@ -23,7 +23,7 @@ def topic_path(prefix: str, topic: str | Topic, *segments: str | int) -> str:
 
 
 def get_topic_for_message(prefix: str, message: ProtobufMessage | type[ProtobufMessage] | int | str) -> str | None:
-    """Resolve the canonical MQTT topic for a given message instance, class, command ID or enum name. [SIL-2]"""
+    """Resolve the canonical CLOUD topic for a given message instance, class, command ID or enum name. [SIL-2]"""
     from .protocol import COMMAND_TO_TOPIC, MESSAGE_TO_TOPIC
 
     rel = None
@@ -52,7 +52,7 @@ def _get_prefix_segs(prefix: str) -> tuple[str, ...]:
 
 @functools.lru_cache(maxsize=256)
 def parse_topic(prefix: str, topic_name: str) -> TopicRoute | None:
-    """Parse an incoming MQTT topic into a TopicRoute.
+    """Parse an incoming CLOUD topic into a TopicRoute.
     Returns None if the topic does not match the prefix or is malformed.
     """
     if not topic_name or not prefix:

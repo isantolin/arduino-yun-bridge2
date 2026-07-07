@@ -98,7 +98,7 @@ async def test_handle_mcu_xon_xoff() -> None:
 
 
 @pytest.mark.asyncio
-async def test_handle_mqtt_console_queues_and_flushes() -> None:
+async def test_handle_cloud_console_queues_and_flushes() -> None:
     service = None
     config = _make_config()
     state = create_runtime_state(config)
@@ -128,7 +128,7 @@ async def test_handle_mqtt_console_queues_and_flushes() -> None:
 
 
 @pytest.mark.asyncio
-async def test_enqueue_mqtt_spools_until_client_recovers() -> None:
+async def test_enqueue_cloud_spools_until_client_recovers() -> None:
     service = None
     config = _make_config()
     state = create_runtime_state(config)
@@ -136,17 +136,17 @@ async def test_enqueue_mqtt_spools_until_client_recovers() -> None:
         service = BridgeService(config, state, AsyncMock(spec=SerialTransport))
         message = create_queued_publish("br/system/status", b"payload")
 
-        await service.enqueue_mqtt(message)
+        await service.enqueue_cloud(message)
 
-        assert state.mqtt_spool_pending_messages == 1
+        assert state.cloud_spool_pending_messages == 1
 
         mock_client = MagicMock()
         mock_client.drain = AsyncMock()
         object.__setattr__(service, "_cloud_writer", mock_client)
-        await service.flush_mqtt_spool()
+        await service.flush_cloud_spool()
 
         mock_client.write.assert_called_once()
-        assert state.mqtt_spool_pending_messages == 0
+        assert state.cloud_spool_pending_messages == 0
     finally:
         if service is not None:
             service.cleanup()
@@ -155,7 +155,7 @@ async def test_enqueue_mqtt_spools_until_client_recovers() -> None:
 
 
 @pytest.mark.asyncio
-async def test_handle_mqtt_pin_overflow_reports_error() -> None:
+async def test_handle_cloud_pin_overflow_reports_error() -> None:
     service = None
     config = _make_config()
     state = create_runtime_state(config)
@@ -170,13 +170,13 @@ async def test_handle_mqtt_pin_overflow_reports_error() -> None:
         state.pending_pin_request_limit = 1
         state.pending_digital_reads.append(PendingPinRequest(pin=13, reply_context=None))
 
-        captured: list[pb.MqttQueuedPublish] = []
+        captured: list[pb.CloudQueuedPublish] = []
 
-        async def capture_enqueue(message: pb.MqttQueuedPublish, *, reply_context: object | None = None) -> None:
+        async def capture_enqueue(message: pb.CloudQueuedPublish, *, reply_context: object | None = None) -> None:
             del reply_context
             captured.append(message)
 
-        with patch.object(service, "enqueue_mqtt", side_effect=capture_enqueue):
+        with patch.object(service, "enqueue_cloud", side_effect=capture_enqueue):
 
             class PublishPacket:
                 def __init__(self, topic: str, payload: bytes) -> None:

@@ -31,7 +31,7 @@ from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import (
     DEFAULT_BAUDRATE,
-    DEFAULT_MQTT_PORT,
+    DEFAULT_CLOUD_PORT,
     DEFAULT_RECONNECT_DELAY,
     DEFAULT_SAFE_BAUDRATE,
 )
@@ -83,18 +83,18 @@ original_get_default_config = mcubridge.config.common.get_default_config
 class PatchedRuntimeConfig:
     def __new__(cls, *args: Any, **kwargs: Any) -> RuntimeConfig:
         mappings = {
-            "mqtt_topic": "topic_prefix",
-            "mqtt_spool_dir": "cloud_spool_dir",
-            "mqtt_queue_limit": "cloud_queue_limit",
-            "mqtt_enabled": "cloud_enabled",
-            "mqtt_host": "cloud_host",
-            "mqtt_port": "cloud_port",
-            "mqtt_user": "cloud_user",
-            "mqtt_pass": "cloud_pass",
-            "mqtt_tls": "cloud_tls",
-            "mqtt_cafile": "cloud_cafile",
-            "mqtt_certfile": "cloud_certfile",
-            "mqtt_keyfile": "cloud_keyfile",
+            "cloud_topic": "topic_prefix",
+            "cloud_spool_dir": "cloud_spool_dir",
+            "cloud_queue_limit": "cloud_queue_limit",
+            "cloud_enabled": "cloud_enabled",
+            "cloud_host": "cloud_host",
+            "cloud_port": "cloud_port",
+            "cloud_user": "cloud_user",
+            "cloud_pass": "cloud_pass",
+            "cloud_tls": "cloud_tls",
+            "cloud_cafile": "cloud_cafile",
+            "cloud_certfile": "cloud_certfile",
+            "cloud_keyfile": "cloud_keyfile",
         }
         for old, new in mappings.items():
             if old in kwargs:
@@ -228,7 +228,7 @@ mcubridge.config.const.VOLATILE_STORAGE_PATHS = frozenset(
 
 @pytest.fixture(autouse=True)
 def isolate_test_paths() -> Iterator[None]:
-    """Give each test unique file_system_root and mqtt_spool_dir to prevent cross-test interference.
+    """Give each test unique file_system_root and cloud_spool_dir to prevent cross-test interference.
     [SIL-2] FLASH PROTECTION: Always use /tmp (RAMFS) or verified .tmp_tests.
     """
     # Reset path cache to generate new paths for the current test case
@@ -322,14 +322,14 @@ def runtime_config() -> RuntimeConfig:
         serial_baud=DEFAULT_BAUDRATE,
         serial_safe_baud=DEFAULT_SAFE_BAUDRATE,
         cloud_host="localhost",
-        cloud_port=DEFAULT_MQTT_PORT,
+        cloud_port=DEFAULT_CLOUD_PORT,
         cloud_user=None,
         cloud_pass=None,
         cloud_tls=True,
         cloud_cafile=os.path.join(TMP_TESTS_DIR, "test-ca.pem"),
         cloud_certfile=None,
         cloud_keyfile=None,
-        topic_prefix=protocol.MQTT_DEFAULT_TOPIC_PREFIX,
+        topic_prefix=protocol.CLOUD_DEFAULT_TOPIC_PREFIX,
         allowed_commands=(),
         file_system_root=get_unique_test_fs(),
         process_timeout=DEFAULT_PROCESS_TIMEOUT,

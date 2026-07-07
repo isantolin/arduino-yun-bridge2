@@ -1,4 +1,4 @@
-"""Flattened Service Core for MCU and MQTT orchestration. [SIL-2]"""
+"""Flattened Service Core for MCU and CLOUD orchestration. [SIL-2]"""
 
 from __future__ import annotations
 from mcubridge.protocol import mcubridge_pb2 as pb
@@ -120,13 +120,13 @@ class BridgeService:
     _mcu_read_lock: asyncio.Lock
     _pending_mcu_read: _PendingMcuRead | None
     _process_slots: asyncio.Semaphore
-    _mqtt_publish_lock: asyncio.Lock
-    _mqtt_spool: SqliteDeque | None
+    _cloud_publish_lock: asyncio.Lock
+    _cloud_spool: SqliteDeque | None
     mcu_registry: dict[int, McuHandler]
     _topic_aliases: dict[str, int]
     _next_alias_id: int
-    _mqtt_incoming_queue: asyncio.Queue[BridgeRequest]
-    _ipc_requests: dict[bytes, asyncio.Queue[pb.MqttQueuedPublish]]
+    _cloud_incoming_queue: asyncio.Queue[BridgeRequest]
+    _ipc_requests: dict[bytes, asyncio.Queue[pb.CloudQueuedPublish]]
     _ipc_writers: list[asyncio.StreamWriter]
 
     def __init__(self, config: RuntimeConfig, state: RuntimeState, serial: SerialTransport) -> None:
@@ -134,7 +134,7 @@ class BridgeService:
         self._cloud_reader, self._cloud_writer, self._task_group = None, None, None
         self.watchdog: WatchdogKeepalive | None = None
         self.exporter: PrometheusExporter | None = None
-        self._mqtt_incoming_queue = asyncio.Queue()
+        self._cloud_incoming_queue = asyncio.Queue()
         self._ipc_requests = {}
         self._ipc_writers = []
 
@@ -143,18 +143,18 @@ class BridgeService:
             state=state,
             serial_timing=derive_serial_timing(config),
             send_frame=serial.send_raw,
-            enqueue_mqtt=self.enqueue_mqtt,
+            enqueue_cloud=self.enqueue_cloud,
             acknowledge_frame=serial.acknowledge,
             logger_=logger,
         )
 
         self._storage_lock, self._mcu_read_lock, self._pending_mcu_read = asyncio.Lock(), asyncio.Lock(), None
         self._process_slots = asyncio.Semaphore(state.process_max_concurrent)
-        self._mqtt_publish_lock = asyncio.Lock()
-        self._mqtt_spool = None
+        self._cloud_publish_lock = asyncio.Lock()
+        self._cloud_spool = None
         if self.config.cloud_spool_dir:
-            self._mqtt_spool = SqliteDeque(
-                path=str(Path(self.config.cloud_spool_dir) / "spool.db"), maxlen=self.state.mqtt_queue_limit
+            self._cloud_spool = SqliteDeque(
+                path=str(Path(self.config.cloud_spool_dir) / "spool.db"), maxlen=self.state.cloud_queue_limit
             )
         self._topic_aliases = {}
         self._next_alias_id = 1
@@ -215,11 +215,11 @@ class BridgeService:
 
     # --- External Interface ---
 
-    async def enqueue_mqtt(self, message: pb.MqttQueuedPublish, *, reply_context: Any | None = None) -> None:
-        resolved_message = structures.resolve_mqtt_context(message, reply_context)
+    async def enqueue_cloud(self, message: pb.CloudQueuedPublish, *, reply_context: Any | None = None) -> None:
+        resolved_message = structures.resolve_cloud_context(message, reply_context)
         correlation = resolved_message.correlation_data if resolved_message.HasField("correlation_data") else None
         logger.debug(
-            "enqueue_mqtt debug info",
+            "enqueue_cloud debug info",
             topic=resolved_message.topic_name,
             correlation=correlation.hex() if correlation else None,
             in_ipc_requests=(correlation in self._ipc_requests if correlation else False),
@@ -239,53 +239,53 @@ class BridgeService:
                 except OSError:
                     pass
 
-        self.state.mqtt_publish_queue.put_nowait(resolved_message)
+        self.state.cloud_publish_queue.put_nowait(resolved_message)
         try:
-            async with self._mqtt_publish_lock:
-                await self._flush_mqtt_spool_locked()
-                if await self._publish_mqtt_message(resolved_message):
+            async with self._cloud_publish_lock:
+                await self._flush_cloud_spool_locked()
+                if await self._publish_cloud_message(resolved_message):
                     return
-                if await self._spool_mqtt_message_locked(resolved_message):
+                if await self._spool_cloud_message_locked(resolved_message):
                     return
-                self._record_mqtt_drop(resolved_message.topic_name)
+                self._record_cloud_drop(resolved_message.topic_name)
         finally:
             try:
-                self.state.mqtt_publish_queue.get_nowait()
+                self.state.cloud_publish_queue.get_nowait()
             except asyncio.QueueEmpty:
-                logger.debug("MQTT publish queue already empty during pop")
+                logger.debug("CLOUD publish queue already empty during pop")
 
-    async def flush_mqtt_spool(self) -> None:
-        async with self._mqtt_publish_lock:
-            await self._flush_mqtt_spool_locked()
+    async def flush_cloud_spool(self) -> None:
+        async with self._cloud_publish_lock:
+            await self._flush_cloud_spool_locked()
 
-    def _record_mqtt_drop(self, topic_name: str) -> None:
-        self.state.mqtt_drop_counts[topic_name] = self.state.mqtt_drop_counts.get(topic_name, 0) + 1
-        self.state.mqtt_dropped_messages += 1
-        self.state.metrics.mqtt_messages_dropped.inc()
+    def _record_cloud_drop(self, topic_name: str) -> None:
+        self.state.cloud_drop_counts[topic_name] = self.state.cloud_drop_counts.get(topic_name, 0) + 1
+        self.state.cloud_dropped_messages += 1
+        self.state.metrics.cloud_messages_dropped.inc()
 
-    def _mqtt_spool_dir(self) -> Path:
+    def _cloud_spool_dir(self) -> Path:
         return Path(self.config.cloud_spool_dir)
 
-    def _mark_mqtt_spool_failure(self, reason: str) -> None:
-        self.state.mqtt_spool_degraded = True
-        self.state.mqtt_spool_failure_reason = reason
+    def _mark_cloud_spool_failure(self, reason: str) -> None:
+        self.state.cloud_spool_degraded = True
+        self.state.cloud_spool_failure_reason = reason
 
-    def _mark_mqtt_spool_healthy(self, pending_count: int) -> None:
-        self.state.mqtt_spool_degraded = False
-        self.state.mqtt_spool_failure_reason = None
-        self.state.mqtt_spool_pending_messages = pending_count
+    def _mark_cloud_spool_healthy(self, pending_count: int) -> None:
+        self.state.cloud_spool_degraded = False
+        self.state.cloud_spool_failure_reason = None
+        self.state.cloud_spool_pending_messages = pending_count
 
-    async def _spool_mqtt_message_locked(self, message: pb.MqttQueuedPublish) -> bool:
-        spool = self._mqtt_spool
+    async def _spool_cloud_message_locked(self, message: pb.CloudQueuedPublish) -> bool:
+        spool = self._cloud_spool
         if spool is None:
             return False
         try:
-            if self.state.mqtt_queue_limit > 0:
+            if self.state.cloud_queue_limit > 0:
                 spool_len = await spool.length()
-                while spool_len >= self.state.mqtt_queue_limit:
+                while spool_len >= self.state.cloud_queue_limit:
                     try:
                         await spool.popleft()
-                        self.state.mqtt_spool_dropped_limit += 1
+                        self.state.cloud_spool_dropped_limit += 1
                     except IndexError as exc:
                         logger.error("Spool popped while empty during limit check", error=str(exc))
                         break
@@ -294,32 +294,32 @@ class BridgeService:
                         break
                     spool_len = await spool.length()
 
-                if self.state.mqtt_spool_dropped_limit > 0:
-                    self.state.mqtt_spool_trim_events += 1
-                    self.state.mqtt_spool_last_trim_unix = time.time()
+                if self.state.cloud_spool_dropped_limit > 0:
+                    self.state.cloud_spool_trim_events += 1
+                    self.state.cloud_spool_last_trim_unix = time.time()
 
             encoded = encode_queued_publish(message)
             await spool.append(encoded)
 
             pending_count = await spool.length()
-            self._mark_mqtt_spool_healthy(pending_count)
+            self._mark_cloud_spool_healthy(pending_count)
             return True
         except (aiosqlite.Error, OSError) as exc:
-            self._mark_mqtt_spool_failure(str(exc))
+            self._mark_cloud_spool_failure(str(exc))
             return False
         except ProtobufSerializationError as exc:
             logger.error("Serialization failure for spool message", error=str(exc))
             return False
 
-    async def _flush_mqtt_spool_locked(self) -> None:
-        spool = self._mqtt_spool
+    async def _flush_cloud_spool_locked(self) -> None:
+        spool = self._cloud_spool
         if not self._cloud_writer or spool is None:
             return
 
         try:
             spool_len = await spool.length()
         except (aiosqlite.Error, OSError) as exc:
-            self._mark_mqtt_spool_failure(str(exc))
+            self._mark_cloud_spool_failure(str(exc))
             return
 
         while spool_len > 0:
@@ -330,7 +330,7 @@ class BridgeService:
                 logger.error("Spool is empty during peek", error=str(exc))
                 break
             except (ValueError, TypeError, ProtobufDecodeError) as exc:
-                logger.error("Dropping corrupt MQTT spool entry", error=str(exc))
+                logger.error("Dropping corrupt CLOUD spool entry", error=str(exc))
                 try:
                     spool_len = await spool.length()
                     if spool_len > 0:
@@ -341,17 +341,17 @@ class BridgeService:
                 except (aiosqlite.Error, OSError) as pop_exc:
                     logger.error("Database error while popping corrupt entry", error=str(pop_exc))
                     break
-                self.state.mqtt_spool_corrupt_dropped += 1
+                self.state.cloud_spool_corrupt_dropped += 1
                 try:
                     spool_len = await spool.length()
                 except (aiosqlite.Error, OSError):
                     break
                 continue
             except (aiosqlite.Error, OSError) as exc:
-                self._mark_mqtt_spool_failure(str(exc))
+                self._mark_cloud_spool_failure(str(exc))
                 break
 
-            if not await self._publish_mqtt_message(queued):
+            if not await self._publish_cloud_message(queued):
                 break
 
             try:
@@ -360,25 +360,25 @@ class BridgeService:
                 logger.error("Spool was empty during popleft", error=str(exc))
                 break
             except (aiosqlite.Error, OSError) as exc:
-                self._mark_mqtt_spool_failure(str(exc))
+                self._mark_cloud_spool_failure(str(exc))
                 break
 
             try:
                 spool_len = await spool.length()
             except (aiosqlite.Error, OSError) as exc:
-                self._mark_mqtt_spool_failure(str(exc))
+                self._mark_cloud_spool_failure(str(exc))
                 break
 
         try:
             pending_count = await spool.length()
-            if not self.state.mqtt_spool_degraded:
-                self._mark_mqtt_spool_healthy(pending_count)
+            if not self.state.cloud_spool_degraded:
+                self._mark_cloud_spool_healthy(pending_count)
             else:
-                self.state.mqtt_spool_pending_messages = pending_count
+                self.state.cloud_spool_pending_messages = pending_count
         except (aiosqlite.Error, OSError) as exc:
-            self._mark_mqtt_spool_failure(str(exc))
+            self._mark_cloud_spool_failure(str(exc))
 
-    async def _publish_mqtt_message(self, message: pb.MqttQueuedPublish) -> bool:
+    async def _publish_cloud_message(self, message: pb.CloudQueuedPublish) -> bool:
         if not self._cloud_writer:
             return False
 
@@ -420,7 +420,7 @@ class BridgeService:
             self._cloud_writer.write(prefix + data)
             await self._cloud_writer.drain()
 
-            self.state.metrics.mqtt_messages_published.inc()
+            self.state.metrics.cloud_messages_published.inc()
             return True
         except Exception as exc:
             logger.error("Cloud publish failure: %s", exc)
@@ -438,12 +438,12 @@ class BridgeService:
             if self._task_group:
                 await self._task_group.__aexit__(et, ev, tb)
         finally:
-            if self._mqtt_spool is not None:
+            if self._cloud_spool is not None:
                 try:
-                    await self._mqtt_spool.close()
+                    await self._cloud_spool.close()
                 except (aiosqlite.Error, OSError) as exc:
-                    logger.debug("mqtt_spool close failed during teardown", error=exc)
-                self._mqtt_spool = None
+                    logger.debug("cloud_spool close failed during teardown", error=exc)
+                self._cloud_spool = None
             if self.state and self.state.datastore_cache is not None:
                 try:
                     await self.state.datastore_cache.close()
@@ -462,7 +462,7 @@ class BridgeService:
             pass
 
         self.serial = None
-        spool = self._mqtt_spool
+        spool = self._cloud_spool
         if spool is not None:
             try:
                 res = spool.close()
@@ -473,7 +473,7 @@ class BridgeService:
                         pass
             except (AttributeError, OSError, RuntimeError) as e:
                 logger.debug("Spool cache close error during cleanup", error=e)
-            self._mqtt_spool = None
+            self._cloud_spool = None
 
         state = getattr(self, "state", None)
         if state is not None:
@@ -542,7 +542,7 @@ class BridgeService:
                 response_topic=str(rt) if rt else None,
             )
 
-        if route := parse_topic(self.state.mqtt_topic_prefix, request.topic):
+        if route := parse_topic(self.state.cloud_topic_prefix, request.topic):
             if route.topic != Topic.SYSTEM:
                 try:
                     async with asyncio.timeout(DEFAULT_SYNC_TIMEOUT_SECONDS):
@@ -556,7 +556,7 @@ class BridgeService:
                 if self.state.topic_authorization
                 else False
             ):
-                await self._reject_mqtt(request, route.topic, action)
+                await self._reject_cloud(request, route.topic, action)
                 return
 
             # Unified Dispatch
@@ -593,11 +593,11 @@ class BridgeService:
 
     async def _on_mcu_console_write(self, p: pb.ConsoleWrite) -> None:
         if p.data:
-            await self.enqueue_mqtt(
+            await self.enqueue_cloud(
                 create_queued_publish(
-                    get_topic_for_message(self.state.mqtt_topic_prefix, p) or "",
+                    get_topic_for_message(self.state.cloud_topic_prefix, p) or "",
                     p.data,
-                    message_expiry_interval=protocol.MQTT_EXPIRY_CONSOLE,
+                    message_expiry_interval=protocol.CLOUD_EXPIRY_CONSOLE,
                 )
             )
 
@@ -621,8 +621,8 @@ class BridgeService:
 
     async def _on_mcu_mailbox_push(self, p: pb.MailboxPush) -> bool:
         await self.state.mailbox_incoming_queue.append(p.data)
-        await self.enqueue_mqtt(
-            create_queued_publish(get_topic_for_message(self.state.mqtt_topic_prefix, p) or "", p.data)
+        await self.enqueue_cloud(
+            create_queued_publish(get_topic_for_message(self.state.cloud_topic_prefix, p) or "", p.data)
         )
         return True
 
@@ -653,9 +653,9 @@ class BridgeService:
         return bool(res)
 
     async def _on_mcu_mailbox_processed(self, p: pb.MailboxProcessed) -> None:
-        await self.enqueue_mqtt(
+        await self.enqueue_cloud(
             create_queued_publish(
-                topic_name=get_topic_for_message(self.state.mqtt_topic_prefix, p) or "",
+                topic_name=get_topic_for_message(self.state.cloud_topic_prefix, p) or "",
                 payload=p.SerializeToString(),
                 content_type=PROTOBUF_CONTENT_TYPE,
             )
@@ -738,19 +738,19 @@ class BridgeService:
 
     async def _on_pin_resp(self, p: Any, tp: Topic, q: collections.deque[structures.PendingPinRequest]) -> None:
         req = q.popleft() if q else None
-        await self.enqueue_mqtt(
+        await self.enqueue_cloud(
             create_queued_publish(
-                topic_path(self.state.mqtt_topic_prefix, tp, str(req.pin) if req else "unknown", "value"),
+                topic_path(self.state.cloud_topic_prefix, tp, str(req.pin) if req else "unknown", "value"),
                 str(p.value).encode(),
-                message_expiry_interval=protocol.MQTT_EXPIRY_PIN,
+                message_expiry_interval=protocol.CLOUD_EXPIRY_PIN,
                 user_properties=(("bridge-pin", str(req.pin) if req else "unknown"),),
             ),
             reply_context=req.reply_context if req else None,
         )
 
     async def _on_mcu_spi_resp(self, p: pb.SpiTransferResponse) -> None:
-        await self.enqueue_mqtt(
-            create_queued_publish(get_topic_for_message(self.state.mqtt_topic_prefix, p) or "", p.data)
+        await self.enqueue_cloud(
+            create_queued_publish(get_topic_for_message(self.state.cloud_topic_prefix, p) or "", p.data)
         )
 
     async def _on_mcu_ack(self, seq: int, payload: bytes | ProtobufMessage) -> None:
@@ -781,9 +781,9 @@ class BridgeService:
                     text = str(payload)
         log_func = logger.error if status not in {Status.OK, Status.ACK} else logger.debug
         log_func("MCU > %s: %s %s", status.name, status.description, text)
-        await self.enqueue_mqtt(
+        await self.enqueue_cloud(
             create_queued_publish(
-                get_topic_for_message(self.state.mqtt_topic_prefix, pb.StatusReport) or "",
+                get_topic_for_message(self.state.cloud_topic_prefix, pb.StatusReport) or "",
                 pb.StatusReport(
                     status=status.value,
                     name=status.name,
@@ -836,10 +836,10 @@ class BridgeService:
                 data = await self.state.mailbox_incoming_queue.popleft()
             except IndexError:
                 data = b""
-            await self.enqueue_mqtt(
+            await self.enqueue_cloud(
                 create_queued_publish(
                     topic_path(
-                        self.state.mqtt_topic_prefix, Topic.MAILBOX, MailboxAction.READ, protocol.MQTT_SUFFIX_RESPONSE
+                        self.state.cloud_topic_prefix, Topic.MAILBOX, MailboxAction.READ, protocol.CLOUD_SUFFIX_RESPONSE
                     ),
                     data,
                 ),
@@ -861,9 +861,9 @@ class BridgeService:
                     Command.CMD_FILE_WRITE.value,
                     pb.FileWrite(path=target[len(MCU_FS_PREFIX) :], data=inbound.payload),
                 ):
-                    await self.enqueue_mqtt(
+                    await self.enqueue_cloud(
                         create_queued_publish(
-                            topic_path(self.state.mqtt_topic_prefix, Topic.FILE, FileAction.READ, target),
+                            topic_path(self.state.cloud_topic_prefix, Topic.FILE, FileAction.READ, target),
                             inbound.payload,
                         ),
                         reply_context=inbound,
@@ -876,22 +876,22 @@ class BridgeService:
                 return
             if act == FileAction.WRITE:
                 if await self._write_with_quota(path, inbound.payload):
-                    await self.enqueue_mqtt(
+                    await self.enqueue_cloud(
                         create_queued_publish(
-                            topic_path(self.state.mqtt_topic_prefix, Topic.FILE, FileAction.READ, target),
+                            topic_path(self.state.cloud_topic_prefix, Topic.FILE, FileAction.READ, target),
                             inbound.payload,
                         ),
                         reply_context=inbound,
                     )
             elif act == FileAction.READ and await asyncio.to_thread(path.is_file):
-                if not inbound.topic.endswith(protocol.MQTT_SUFFIX_RESPONSE):
-                    await self.enqueue_mqtt(
+                if not inbound.topic.endswith(protocol.CLOUD_SUFFIX_RESPONSE):
+                    await self.enqueue_cloud(
                         create_queued_publish(
                             topic_path(
-                                self.state.mqtt_topic_prefix,
+                                self.state.cloud_topic_prefix,
                                 Topic.FILE,
                                 FileAction.READ,
-                                protocol.MQTT_SUFFIX_RESPONSE,
+                                protocol.CLOUD_SUFFIX_RESPONSE,
                                 target,
                             ),
                             await asyncio.to_thread(path.read_bytes),
@@ -906,10 +906,10 @@ class BridgeService:
         if not serial:
             return
         response_topic = topic_path(
-            self.state.mqtt_topic_prefix,
+            self.state.cloud_topic_prefix,
             Topic.FILE,
             FileAction.READ,
-            protocol.MQTT_SUFFIX_RESPONSE,
+            protocol.CLOUD_SUFFIX_RESPONSE,
             target,
         )
         async with self._mcu_read_lock:
@@ -919,7 +919,7 @@ class BridgeService:
                 pb.FileRead(path=target[len(MCU_FS_PREFIX) :]),
             ):
                 logger.error("MCU file read dispatch failed", target=target)
-                await self.enqueue_mqtt(
+                await self.enqueue_cloud(
                     create_queued_publish(
                         response_topic,
                         b"error:mcu_file_read_dispatch_failed",
@@ -932,7 +932,7 @@ class BridgeService:
             try:
                 timeout_seconds = max(0.1, self.state.serial_response_timeout_ms / 1000.0)
                 res = await asyncio.wait_for(self._pending_mcu_read.future, timeout_seconds)
-                await self.enqueue_mqtt(
+                await self.enqueue_cloud(
                     create_queued_publish(
                         response_topic,
                         res,
@@ -941,7 +941,7 @@ class BridgeService:
                 )
             except TimeoutError:
                 logger.error("Timed out waiting for MCU file read response", target=target)
-                await self.enqueue_mqtt(
+                await self.enqueue_cloud(
                     create_queued_publish(
                         response_topic,
                         b"error:mcu_file_read_timeout",
@@ -972,13 +972,13 @@ class BridgeService:
                 payload = pb.ProcessRunAsyncResponse(pid=0).SerializeToString()
             else:
                 payload = pb.ProcessRunAsyncResponse(pid=pid).SerializeToString()
-            await self.enqueue_mqtt(
+            await self.enqueue_cloud(
                 create_queued_publish(
                     topic_path(
-                        self.state.mqtt_topic_prefix,
+                        self.state.cloud_topic_prefix,
                         Topic.SHELL,
                         ShellAction.RUN_ASYNC,
-                        protocol.MQTT_SUFFIX_RESPONSE,
+                        protocol.CLOUD_SUFFIX_RESPONSE,
                     ),
                     payload,
                     content_type=PROTOBUF_CONTENT_TYPE,
@@ -989,14 +989,14 @@ class BridgeService:
             pid = int(route.segments[1])
             if act == ShellAction.POLL:
                 batch = await self._poll_process(pid)
-                await self.enqueue_mqtt(
+                await self.enqueue_cloud(
                     create_queued_publish(
                         topic_path(
-                            self.state.mqtt_topic_prefix,
+                            self.state.cloud_topic_prefix,
                             Topic.SHELL,
                             ShellAction.POLL,
                             str(pid),
-                            protocol.MQTT_SUFFIX_RESPONSE,
+                            protocol.CLOUD_SUFFIX_RESPONSE,
                         ),
                         batch.SerializeToString(),
                         content_type=PROTOBUF_CONTENT_TYPE,
@@ -1028,13 +1028,13 @@ class BridgeService:
                         pb.SpiTransfer(data=inbound.payload),
                     )
                     if isinstance(res, bytes):
-                        await self.enqueue_mqtt(
+                        await self.enqueue_cloud(
                             create_queued_publish(
                                 topic_path(
-                                    self.state.mqtt_topic_prefix,
+                                    self.state.cloud_topic_prefix,
                                     Topic.SPI,
                                     SpiAction.TRANSFER,
-                                    protocol.MQTT_SUFFIX_RESPONSE,
+                                    protocol.CLOUD_SUFFIX_RESPONSE,
                                 ),
                                 pb.SpiTransferResponse.FromString(res).data,
                             ),
@@ -1065,9 +1065,9 @@ class BridgeService:
                     q.append(structures.PendingPinRequest(pin=pin, reply_context=inbound))
                     await serial.send(cmd.value, pb.PinRead(pin=pin))
                 else:
-                    await self.enqueue_mqtt(
+                    await self.enqueue_cloud(
                         create_queued_publish(
-                            get_topic_for_message(self.state.mqtt_topic_prefix, pb.StatusReport) or "",
+                            get_topic_for_message(self.state.cloud_topic_prefix, pb.StatusReport) or "",
                             pb.StatusReport(
                                 status=int(Status.ERROR),
                                 topic=str(route.topic.value),
@@ -1100,9 +1100,9 @@ class BridgeService:
             case SystemAction.FREE_MEMORY if "get" in route.segments:
                 pl = await serial.send(Command.CMD_GET_FREE_MEMORY.value, b"")
                 if isinstance(pl, bytes):
-                    tp = get_topic_for_message(self.state.mqtt_topic_prefix, pb.FreeMemoryResponse)
+                    tp = get_topic_for_message(self.state.cloud_topic_prefix, pb.FreeMemoryResponse)
                     if tp:
-                        await self.enqueue_mqtt(
+                        await self.enqueue_cloud(
                             create_queued_publish(
                                 tp,
                                 str(pb.FreeMemoryResponse.FromString(pl).value).encode(),
@@ -1118,9 +1118,9 @@ class BridgeService:
                     if flavor == "handshake"
                     else self.state.build_bridge_snapshot()
                 )
-                await self.enqueue_mqtt(
+                await self.enqueue_cloud(
                     create_queued_publish(
-                        get_topic_for_message(self.state.mqtt_topic_prefix, snap) or "",
+                        get_topic_for_message(self.state.cloud_topic_prefix, snap) or "",
                         snap.SerializeToString(),
                         content_type=PROTOBUF_CONTENT_TYPE,
                     ),
@@ -1145,10 +1145,11 @@ class BridgeService:
 
     async def _publish_version(self, v: tuple[int, int, int], ctx: BridgeRequest | None) -> None:
         pl = f"{v[0]}.{v[1]}.{v[2]}".encode()
-        tp = get_topic_for_message(self.state.mqtt_topic_prefix, pb.VersionResponse)
+        tp = get_topic_for_message(self.state.cloud_topic_prefix, pb.VersionResponse)
         if tp:
-            await self.enqueue_mqtt(
-                create_queued_publish(tp, pl, message_expiry_interval=protocol.MQTT_EXPIRY_DATASTORE), reply_context=ctx
+            await self.enqueue_cloud(
+                create_queued_publish(tp, pl, message_expiry_interval=protocol.CLOUD_EXPIRY_DATASTORE),
+                reply_context=ctx,
             )
 
     async def _flush_console_queue(self) -> None:
@@ -1309,11 +1310,11 @@ class BridgeService:
             return "write" if len(r.segments) == 1 else (r.segments[1].lower() if len(r.segments) > 1 else None)
         return "in" if r.topic == Topic.CONSOLE and r.identifier == "in" else (r.identifier or None)
 
-    async def _reject_mqtt(self, ctx: Any, tp: Topic | str, act: str) -> None:
+    async def _reject_cloud(self, ctx: Any, tp: Topic | str, act: str) -> None:
         val = tp.value if isinstance(tp, Topic) else tp
-        await self.enqueue_mqtt(
+        await self.enqueue_cloud(
             create_queued_publish(
-                get_topic_for_message(self.state.mqtt_topic_prefix, pb.StatusReport) or "",
+                get_topic_for_message(self.state.cloud_topic_prefix, pb.StatusReport) or "",
                 pb.StatusReport(status=403, topic=val, action=act, reason="forbidden").SerializeToString(),
                 content_type=PROTOBUF_CONTENT_TYPE,
                 user_properties=(("bridge-error", TOPIC_FORBIDDEN_REASON),),
@@ -1325,12 +1326,12 @@ class BridgeService:
         self, key: str, val: bytes, reply_context: Any | None = None, error: str | None = None
     ) -> None:
         tp = topic_path(
-            self.state.mqtt_topic_prefix, Topic.DATASTORE, DatastoreAction.GET, *filter(None, key.split("/"))
+            self.state.cloud_topic_prefix, Topic.DATASTORE, DatastoreAction.GET, *filter(None, key.split("/"))
         )
         props = (("bridge-datastore-key", key), ("bridge-error", error)) if error else (("bridge-datastore-key", key),)
-        await self.enqueue_mqtt(
+        await self.enqueue_cloud(
             create_queued_publish(
-                tp, val, message_expiry_interval=protocol.MQTT_EXPIRY_DATASTORE, user_properties=props
+                tp, val, message_expiry_interval=protocol.CLOUD_EXPIRY_DATASTORE, user_properties=props
             ),
             reply_context=reply_context,
         )
@@ -1350,11 +1351,11 @@ class BridgeService:
                     )
                 )
 
-                # 2. MQTT Link
+                # 2. CLOUD Link
                 tg.create_task(
                     self.supervise(
-                        "mqtt-link",
-                        self.run_mqtt,
+                        "cloud-link",
+                        self.run_cloud,
                     )
                 )
 
@@ -1370,7 +1371,7 @@ class BridgeService:
                         "metrics-publisher",
                         lambda: publish_metrics(
                             self.state,
-                            self.enqueue_mqtt,
+                            self.enqueue_cloud,
                             self.config.status_interval,
                         ),
                     )
@@ -1383,7 +1384,7 @@ class BridgeService:
                             "bridge-snapshots",
                             lambda: publish_bridge_snapshots(
                                 self.state,
-                                self.enqueue_mqtt,
+                                self.enqueue_cloud,
                                 summary_interval=self.config.bridge_summary_interval,
                                 handshake_interval=self.config.bridge_handshake_interval,
                             ),
@@ -1424,7 +1425,7 @@ class BridgeService:
             STATUS_FILE.unlink(missing_ok=True)
             logger.info("MCU Bridge daemon stopped.")
 
-    async def run_mqtt(self) -> None:
+    async def run_cloud(self) -> None:
         if not self.config.cloud_enabled:
             logger.info("Cloud transport is DISABLED in configuration.")
             return
@@ -1475,9 +1476,9 @@ class BridgeService:
         try:
             # Emit status online event
             await self._send_cloud_event("status_online", "info", "Device online")
-            await self.flush_mqtt_spool()
+            await self.flush_cloud_spool()
 
-            worker_task = asyncio.create_task(self._mqtt_incoming_worker())
+            worker_task = asyncio.create_task(self._cloud_incoming_worker())
             try:
                 # Read loop
                 while True:
@@ -1502,7 +1503,7 @@ class BridgeService:
                             correlation_data=envelope.sequence_id.to_bytes(8, "big"),
                             response_topic="cloud",
                         )
-                        self._mqtt_incoming_queue.put_nowait(request)
+                        self._cloud_incoming_queue.put_nowait(request)
             finally:
                 worker_task.cancel()
                 try:
@@ -1537,21 +1538,21 @@ class BridgeService:
             writer.write(prefix + data)
             await writer.drain()
 
-    async def _mqtt_incoming_worker(self) -> None:
+    async def _cloud_incoming_worker(self) -> None:
         while True:
             try:
-                message = await self._mqtt_incoming_queue.get()
+                message = await self._cloud_incoming_queue.get()
                 try:
                     await self.handle_request(message)
                 except (ValueError, RuntimeError, asyncio.QueueFull) as e:
                     logger.error(
-                        "Error processing MQTT message",
+                        "Error processing CLOUD message",
                         topic=message.topic,
                         error=str(e),
                         payload_hex=(message.payload.hex() if message.payload else None),
                     )
                 finally:
-                    self._mqtt_incoming_queue.task_done()
+                    self._cloud_incoming_queue.task_done()
             except asyncio.CancelledError:
                 break
 
@@ -1641,7 +1642,7 @@ class BridgeService:
                     break
 
                 data = await reader.readexactly(length)
-                request = pb.MqttQueuedPublish.FromString(data)
+                request = pb.CloudQueuedPublish.FromString(data)
 
                 # Process request in background task so we don't block reading other requests
                 asyncio.create_task(self._process_ipc_request(request, writer, active_correlations))
@@ -1663,12 +1664,12 @@ class BridgeService:
                 pass
 
     async def _process_ipc_request(
-        self, request: pb.MqttQueuedPublish, writer: asyncio.StreamWriter, active_correlations: set[bytes]
+        self, request: pb.CloudQueuedPublish, writer: asyncio.StreamWriter, active_correlations: set[bytes]
     ) -> None:
         import secrets
 
         correlation = request.correlation_data if request.HasField("correlation_data") else secrets.token_bytes(12)
-        response_queue: asyncio.Queue[pb.MqttQueuedPublish] = asyncio.Queue(maxsize=1)
+        response_queue: asyncio.Queue[pb.CloudQueuedPublish] = asyncio.Queue(maxsize=1)
         self._ipc_requests[correlation] = response_queue
         active_correlations.add(correlation)
         logger.debug("Registering IPC request correlation", topic=request.topic_name, correlation=correlation.hex())

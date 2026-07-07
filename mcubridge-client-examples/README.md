@@ -5,7 +5,7 @@
 [![Protobuf](https://img.shields.io/badge/Serialization-Protobuf-green?logo=protobuf)](https://protobuf.dev/)
 [![OpenWrt](https://img.shields.io/badge/OpenWrt-25.12.4-00B5E2?logo=openwrt)](https://openwrt.org/)
 
-Este componente (`openwrt-mcu-client-python`) proporciona las herramientas para que las aplicaciones que se ejecutan en el lado Linux del Arduino MCU interactúen con el microcontrolador a través del socket UNIX expuesto por el daemon. El cliente de Python utiliza conexiones asíncronas persistentes sobre `/var/run/mcubridge.sock` y serialización mediante tramas Protobuf (`MqttQueuedPublish`).
+Este componente (`openwrt-mcu-client-python`) proporciona las herramientas para que las aplicaciones que se ejecutan en el lado Linux del Arduino MCU interactúen con el microcontrolador a través del socket UNIX expuesto por el daemon. El cliente de Python utiliza conexiones asíncronas persistentes sobre `/var/run/mcubridge.sock` y serialización mediante tramas Protobuf (`CloudQueuedPublish`).
 
 ## API de Comunicación: Socket UNIX local
 
@@ -19,12 +19,12 @@ El ecosistema utiliza Sockets UNIX como el mecanismo principal de IPC local.
 
 Toda la comunicación en el socket UNIX se realiza mediante tramas binarias prefijadas con su longitud:
 
-- **Estructura de la Trama:** `[Longitud (4 bytes big-endian)] [Payload Protobuf (MqttQueuedPublish)]`
+- **Estructura de la Trama:** `[Longitud (4 bytes big-endian)] [Payload Protobuf (CloudQueuedPublish)]`
 - **Mensaje de Consola MCU:** El daemon transmite automáticamente las salidas de la consola del MCU (`/console/out`) a todos los clientes conectados al socket.
 
 ## Dependencias
 
-Los scripts y herramientas CLI utilizan únicamente `protobuf`, `cobs`, y `prometheus-client`. Ya no se requiere configurar ni instalar brokers locales de MQTT ni TLS en las dependencias del cliente.
+Los scripts y herramientas CLI utilizan únicamente `protobuf`, `cobs`, y `prometheus-client`. Ya no se requiere configurar ni instalar brokers locales de CLOUD ni TLS en las dependencias del cliente.
 
 Si ejecutas los ejemplos directamente desde el repositorio, instala las dependencias:
 

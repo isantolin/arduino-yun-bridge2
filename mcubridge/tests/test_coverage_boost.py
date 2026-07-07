@@ -243,25 +243,25 @@ async def test_daemon_coverage_boost(tmp_path: Path) -> None:
     serial = SerialTransport(config, state, None)
     daemon = BridgeService(config, state, serial)
     serial.service = daemon
-    await daemon.run_mqtt()
+    await daemon.run_cloud()
 
-    config_mqtt = RuntimeConfig(
+    config_cloud = RuntimeConfig(
         topic_prefix="br",
         serial_port="/dev/testport",
         cloud_enabled=True,
         cloud_host="localhost",
         cloud_port=8443,
-        file_system_root=str(test_root / "mqtt_files"),
-        cloud_spool_dir=str(test_spool / "mqtt_spool"),
+        file_system_root=str(test_root / "cloud_files"),
+        cloud_spool_dir=str(test_spool / "cloud_spool"),
     )
 
-    (test_root / "mqtt_files").mkdir()
-    (test_spool / "mqtt_spool").mkdir()
+    (test_root / "cloud_files").mkdir()
+    (test_spool / "cloud_spool").mkdir()
 
-    state_mqtt = create_runtime_state(config_mqtt)
-    serial_mqtt = SerialTransport(config_mqtt, state_mqtt, None)
-    daemon_mqtt: Any = BridgeService(config_mqtt, state_mqtt, serial_mqtt)
-    serial_mqtt.service = daemon_mqtt
+    state_cloud = create_runtime_state(config_cloud)
+    serial_cloud = SerialTransport(config_cloud, state_cloud, None)
+    daemon_cloud: Any = BridgeService(config_cloud, state_cloud, serial_cloud)
+    serial_cloud.service = daemon_cloud
 
     mock_reader = AsyncMock()
     mock_writer = MagicMock()
@@ -289,7 +289,7 @@ async def test_daemon_coverage_boost(tmp_path: Path) -> None:
 
     with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
         try:
-            await daemon_mqtt.connect_cloud_session(None)
+            await daemon_cloud.connect_cloud_session(None)
         except ConnectionResetError:
             pass
 
@@ -301,7 +301,7 @@ async def test_daemon_coverage_boost(tmp_path: Path) -> None:
     mock_reader2.readexactly.side_effect = read_mock_fail
     with patch("asyncio.open_connection", return_value=(mock_reader2, mock_writer)):
         with pytest.raises(OSError):
-            await daemon_mqtt.connect_cloud_session(None)
+            await daemon_cloud.connect_cloud_session(None)
 
     # 3. supervise with fatal exceptions
     from mcubridge.services.handshake import SerialHandshakeFatal
@@ -310,7 +310,7 @@ async def test_daemon_coverage_boost(tmp_path: Path) -> None:
         raise SerialHandshakeFatal("fatal")
 
     with pytest.raises(SerialHandshakeFatal):
-        await daemon_mqtt.supervise("test-fatal", mock_fatal_factory, fatal_exceptions=(SerialHandshakeFatal,))
+        await daemon_cloud.supervise("test-fatal", mock_fatal_factory, fatal_exceptions=(SerialHandshakeFatal,))
 
     # 4. daemon.run with ExceptionGroup
     with patch("asyncio.TaskGroup.__aexit__", side_effect=ExceptionGroup("tasks", [OSError("task error")])):
@@ -382,7 +382,7 @@ async def test_handshake_coverage_boost() -> None:
     )
     state = create_runtime_state(config)
     send_frame = AsyncMock(return_value=True)
-    enqueue_mqtt = AsyncMock()
+    enqueue_cloud = AsyncMock()
     acknowledge_frame = AsyncMock()
 
     manager = SerialHandshakeManager(
@@ -390,7 +390,7 @@ async def test_handshake_coverage_boost() -> None:
         state=state,
         serial_timing=derive_serial_timing(config),
         send_frame=send_frame,
-        enqueue_mqtt=enqueue_mqtt,
+        enqueue_cloud=enqueue_cloud,
         acknowledge_frame=acknowledge_frame,
     )
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 from enum import IntEnum
 
 from mcubridge.protocol.structures import UserProperty
-from mcubridge.protocol.mcubridge_pb2 import MqttQueuedPublish
+from mcubridge.protocol.mcubridge_pb2 import CloudQueuedPublish
 from .protocol import MAX_PAYLOAD_SIZE
 
 DEFAULT_SOCKET_PATH: str = "/var/run/mcubridge.sock"
@@ -43,7 +43,7 @@ __all__ = [
     "DEFAULT_SOCKET_PATH",
     "DEFAULT_TOPIC_PREFIX",
     "MAX_PAYLOAD_SIZE",
-    "MqttQueuedPublish",
+    "CloudQueuedPublish",
     "SpiBitOrder",
     "SpiMode",
     "UserProperty",

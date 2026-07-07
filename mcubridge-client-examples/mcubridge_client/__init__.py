@@ -11,7 +11,7 @@ import shlex
 from typing import Any, TypedDict
 
 from .definitions import (
-    MqttQueuedPublish,
+    CloudQueuedPublish,
     SpiBitOrder,
     SpiMode,
     build_bridge_args,
@@ -33,7 +33,7 @@ __all__ = [
     "dump_client_env",
     "Command",
     "Topic",
-    "MqttQueuedPublish",
+    "CloudQueuedPublish",
 ]
 
 logger = logging.getLogger(__name__)
@@ -64,7 +64,7 @@ class Bridge:
 
         self.reader: asyncio.StreamReader | None = None
         self.writer: asyncio.StreamWriter | None = None
-        self._correlation_routes: dict[bytes, asyncio.Queue[pb.MqttQueuedPublish]] = {}
+        self._correlation_routes: dict[bytes, asyncio.Queue[pb.CloudQueuedPublish]] = {}
         self._console_queue: asyncio.Queue[bytes] = asyncio.Queue()
         self._listener_task: asyncio.Task[None] | None = None
 
@@ -115,7 +115,7 @@ class Bridge:
                 len_bytes = await self.reader.readexactly(4)
                 length = int.from_bytes(len_bytes, byteorder="big")
                 data = await self.reader.readexactly(length)
-                message = pb.MqttQueuedPublish.FromString(data)
+                message = pb.CloudQueuedPublish.FromString(data)
 
                 correlation = message.correlation_data if message.HasField("correlation_data") else None
                 if correlation and (queue := self._correlation_routes.pop(correlation, None)):
@@ -140,7 +140,7 @@ class Bridge:
             raise ConnectionError("Not connected")
 
         correlation = secrets.token_bytes(12)
-        queue: asyncio.Queue[pb.MqttQueuedPublish] = asyncio.Queue(maxsize=1)
+        queue: asyncio.Queue[pb.CloudQueuedPublish] = asyncio.Queue(maxsize=1)
         self._correlation_routes[correlation] = queue
 
         try:

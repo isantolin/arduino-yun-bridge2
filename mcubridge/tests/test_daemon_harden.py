@@ -23,7 +23,7 @@ async def test_daemon_run_lifecycle(service_setup: BridgeService) -> None:
     # Mock transports to avoid real IO
     if service.serial:
         service.serial.run = AsyncMock()
-    service.run_mqtt = AsyncMock()
+    service.run_cloud = AsyncMock()
 
     # Run and immediately cancel
     task = asyncio.create_task(service.run())
@@ -85,7 +85,7 @@ def test_main_crypto_post_failure() -> None:
 
 
 def test_main_insecure_secret_warning() -> None:
-    """Verify MQTT is disabled if default secret is used."""
+    """Verify CLOUD is disabled if default secret is used."""
     from mcubridge.config.const import DEFAULT_SERIAL_SHARED_SECRET
 
     insecure_config = RuntimeConfig(serial_shared_secret=DEFAULT_SERIAL_SHARED_SECRET)

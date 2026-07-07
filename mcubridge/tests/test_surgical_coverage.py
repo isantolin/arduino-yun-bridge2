@@ -67,9 +67,9 @@ def service_setup(
     config = RuntimeConfig(topic_prefix="br", serial_port="/dev/test", file_system_root=str(tmp_path))
     state = create_runtime_state(config)
     serial = AsyncMock(spec=SerialTransport)
-    mqtt = AsyncMock()
+    cloud = AsyncMock()
     service = BridgeService(config, state, serial)
-    return service, state, serial, mqtt
+    return service, state, serial, cloud
 
 
 @pytest.mark.asyncio

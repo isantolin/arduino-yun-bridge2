@@ -61,7 +61,7 @@ def get_default_config() -> dict[str, Any]:
         cloud_port=const.DEFAULT_CLOUD_PORT,
         cloud_tls=True,
         cloud_cafile=const.DEFAULT_CLOUD_CAFILE,
-        topic_prefix=protocol.MQTT_DEFAULT_TOPIC_PREFIX,
+        topic_prefix=protocol.CLOUD_DEFAULT_TOPIC_PREFIX,
         allowed_commands=[],
         file_system_root=const.DEFAULT_FILE_SYSTEM_ROOT,
         process_timeout=const.DEFAULT_PROCESS_TIMEOUT,

@@ -51,7 +51,7 @@ class SendFrameCallable(Protocol):
     async def __call__(self, command_id: int, payload: bytes | Message, seq_id: int | None = None) -> bool: ...
 
 
-EnqueueMessageCallable = Callable[[pb.MqttQueuedPublish], Awaitable[None]]
+EnqueueMessageCallable = Callable[[pb.CloudQueuedPublish], Awaitable[None]]
 AcknowledgeFrameCallable = Callable[..., Awaitable[None]]
 
 logger = structlog.get_logger("mcubridge.service.handshake")
@@ -96,7 +96,7 @@ class SerialHandshakeManager:
         state: RuntimeState,
         serial_timing: pb.HandshakeConfig,
         send_frame: SendFrameCallable,
-        enqueue_mqtt: EnqueueMessageCallable,
+        enqueue_cloud: EnqueueMessageCallable,
         acknowledge_frame: AcknowledgeFrameCallable,
         logger_: logging.Logger | None = None,
     ) -> None:
@@ -104,7 +104,7 @@ class SerialHandshakeManager:
         self._state = state
         self._timing = serial_timing
         self._send_frame = send_frame
-        self._enqueue_mqtt = enqueue_mqtt
+        self._enqueue_cloud = enqueue_cloud
         self._acknowledge_frame = acknowledge_frame
         self._logger = logger_ or logger
         self._fatal_threshold = max(1, config.serial_handshake_fatal_failures)
@@ -486,12 +486,12 @@ class SerialHandshakeManager:
         snapshot.fsm_state = str(self.fsm_state)
 
         message = create_queued_publish(
-            topic_name=get_topic_for_message(self._state.mqtt_topic_prefix, snapshot) or "",
+            topic_name=get_topic_for_message(self._state.cloud_topic_prefix, snapshot) or "",
             payload=snapshot.SerializeToString(),
             content_type=PROTOBUF_CONTENT_TYPE,
             user_properties=(("bridge-event", "handshake"),),
         )
-        await self._enqueue_mqtt(message)
+        await self._enqueue_cloud(message)
 
     async def _handle_handshake_success(self) -> None:
         # [SIL-2] Direct metrics recording (No Wrapper)

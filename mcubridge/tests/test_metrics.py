@@ -24,27 +24,27 @@ async def test_publish_metrics_publishes_snapshot(
     """Verify that publish_metrics enqueues payload with telemetry metadata."""
 
     event = asyncio.Event()
-    captured: dict[str, pb.MqttQueuedPublish] = {}
+    captured: dict[str, pb.CloudQueuedPublish] = {}
 
-    async def fake_enqueue(message: pb.MqttQueuedPublish) -> None:
+    async def fake_enqueue(message: pb.CloudQueuedPublish) -> None:
         captured["message"] = message
         event.set()
 
     # [SIL-2] State updated directly on context for extra_props logic
-    runtime_state.mqtt_spool_degraded = True
-    runtime_state.mqtt_spool_failure_reason = "disk-full"
+    runtime_state.cloud_spool_degraded = True
+    runtime_state.cloud_spool_failure_reason = "disk-full"
     runtime_state.watchdog_enabled = True
     runtime_state.watchdog_interval = 7.5
     runtime_state.file_storage_limit_rejections = 1
 
     fake_snapshot = pb.DaemonMetrics(
-        mqtt_spool_degraded=True,
-        mqtt_spool_failure_reason="disk-full",
+        cloud_spool_degraded=True,
+        cloud_spool_failure_reason="disk-full",
         watchdog_enabled=True,
         watchdog_interval=7.5,
     )
 
-    runtime_state.mqtt_topic_prefix = "test/prefix"
+    runtime_state.cloud_topic_prefix = "test/prefix"
 
     def mock_build_metrics(self: Any) -> Any:
         return fake_snapshot
@@ -75,8 +75,8 @@ async def test_publish_metrics_publishes_snapshot(
     assert message.topic_name == expected_topic
     decoded = pb.DaemonMetrics()
     decoded.ParseFromString(message.payload)
-    assert decoded.mqtt_spool_degraded is True
-    assert decoded.mqtt_spool_failure_reason == "disk-full"
+    assert decoded.cloud_spool_degraded is True
+    assert decoded.cloud_spool_failure_reason == "disk-full"
     assert message.content_type == PROTOBUF_CONTENT_TYPE
     props = [(p.key, p.value) for p in message.user_properties]
     assert ("bridge-spool", "disk-full") in props
@@ -92,15 +92,15 @@ async def test_publish_metrics_marks_unknown_spool_reason(
     """Ensure bridge-spool user property defaults to 'unknown'."""
 
     event = asyncio.Event()
-    captured: dict[str, pb.MqttQueuedPublish] = {}
+    captured: dict[str, pb.CloudQueuedPublish] = {}
 
-    async def fake_enqueue(message: pb.MqttQueuedPublish) -> None:
+    async def fake_enqueue(message: pb.CloudQueuedPublish) -> None:
         captured["message"] = message
         event.set()
 
     def mock_build_metrics_degraded(self: Any) -> Any:
         return pb.DaemonMetrics(
-            mqtt_spool_degraded=True,
+            cloud_spool_degraded=True,
         )
 
     with patch.object(
@@ -109,8 +109,8 @@ async def test_publish_metrics_marks_unknown_spool_reason(
         side_effect=mock_build_metrics_degraded,
         autospec=True,
     ):
-        runtime_state.mqtt_spool_degraded = True
-        runtime_state.mqtt_spool_failure_reason = None
+        runtime_state.cloud_spool_degraded = True
+        runtime_state.cloud_spool_failure_reason = None
         runtime_state.watchdog_enabled = False
 
         task = asyncio.create_task(
@@ -137,9 +137,9 @@ async def test_publish_bridge_snapshots_emits_summary_and_handshake(
     runtime_state: RuntimeState,
 ) -> None:
     event = asyncio.Event()
-    messages: list[pb.MqttQueuedPublish] = []
+    messages: list[pb.CloudQueuedPublish] = []
 
-    async def fake_enqueue(message: pb.MqttQueuedPublish) -> None:
+    async def fake_enqueue(message: pb.CloudQueuedPublish) -> None:
         messages.append(message)
         if len(messages) >= 2:
             event.set()
@@ -192,8 +192,8 @@ async def test_publish_bridge_snapshots_emits_summary_and_handshake(
             await task
 
     topics = {message.topic_name for message in messages}
-    assert f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/bridge/summary/value" in topics
-    assert f"{protocol.MQTT_DEFAULT_TOPIC_PREFIX}/system/bridge/handshake/value" in topics
+    assert f"{protocol.CLOUD_DEFAULT_TOPIC_PREFIX}/system/bridge/summary/value" in topics
+    assert f"{protocol.CLOUD_DEFAULT_TOPIC_PREFIX}/system/bridge/handshake/value" in topics
     props = [(p.key, p.value) for message in messages for p in message.user_properties]
     assert ("bridge-snapshot", "summary") in props
     assert ("bridge-snapshot", "handshake") in props
@@ -203,9 +203,9 @@ async def test_publish_bridge_snapshots_emits_summary_and_handshake(
 async def test_publish_bridge_snapshots_noop_when_disabled(
     runtime_state: RuntimeState,
 ) -> None:
-    messages: list[pb.MqttQueuedPublish] = []
+    messages: list[pb.CloudQueuedPublish] = []
 
-    async def fake_enqueue(message: pb.MqttQueuedPublish) -> None:
+    async def fake_enqueue(message: pb.CloudQueuedPublish) -> None:
         messages.append(message)
 
     task = asyncio.create_task(

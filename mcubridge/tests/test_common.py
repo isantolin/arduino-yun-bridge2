@@ -34,16 +34,16 @@ def test_get_uci_config_success():
     # Simulate standard UCI dict return with minimum required fields
     mock_cursor.get_all.return_value = {
         ".type": "general",
-        "mqtt_host": "127.0.0.1",
+        "cloud_host": "127.0.0.1",
         "debug": "1",
         "serial_port": "/dev/ttyATH0",
-        "mqtt_port": "1883",
+        "cloud_port": "1883",
     }
 
     with patch.dict("sys.modules", {"uci": mock_module}):
         importlib.reload(common)
         config = common.get_uci_config()
-        assert config["mqtt_host"] == "127.0.0.1"
+        assert config["cloud_host"] == "127.0.0.1"
         assert config["debug"] == "1"
         # Ensure other defaults are present
         assert "serial_port" in config
@@ -104,17 +104,17 @@ def test_get_uci_config_skips_internal_keys() -> None:
     mock_cursor.get_all.return_value = {
         ".type": "general",
         "_meta": "ignore",
-        "mqtt_host": ["example.com", 1883],
-        "mqtt_tls": 0,
+        "cloud_host": ["example.com", 1883],
+        "cloud_tls": 0,
         "serial_port": "/dev/ttyATH0",
-        "mqtt_port": "1883",
+        "cloud_port": "1883",
     }
     with patch.dict("sys.modules", {"uci": mock_module}):
         importlib.reload(common)
         config = common.get_uci_config()
         # Raw list preserved in the raw reader; flattening happens in settings.load_runtime_config
-        assert config["mqtt_host"] == ["example.com", 1883]
-        assert config["mqtt_tls"] == 0
+        assert config["cloud_host"] == ["example.com", 1883]
+        assert config["cloud_tls"] == 0
         assert ".type" not in config
         assert "_meta" not in config
 

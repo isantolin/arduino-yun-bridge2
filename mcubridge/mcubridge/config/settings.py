@@ -95,7 +95,7 @@ def _coerce_value(val: Any, target_type: int, field_name: str = "") -> Any:
     if target_type == FieldDescriptor.TYPE_STRING:
         s_val = str(val).strip()
         is_path_field = any(
-            x in field_name for x in ("_dir", "_file", "_root", "serial_port", "mqtt_ca", "mqtt_cert", "mqtt_key")
+            x in field_name for x in ("_dir", "_file", "_root", "serial_port", "cloud_ca", "cloud_cert", "cloud_key")
         )
         if is_path_field and ("~" in s_val or "/" in s_val) and "\n" not in s_val:
             return str(Path(s_val).expanduser().resolve())

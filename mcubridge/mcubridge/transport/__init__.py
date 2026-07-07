@@ -1,4 +1,4 @@
-"""Transport abstractions (serial, MQTT) for the MCU Bridge daemon."""
+"""Transport abstractions (serial, CLOUD) for the MCU Bridge daemon."""
 
 from .serial import (
     SerialTransport,

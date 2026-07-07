@@ -9,8 +9,8 @@ from . import mcubridge_pb2 as pb
 from enum import IntEnum, StrEnum
 from typing import Final
 
-MQTT_WILDCARD_SINGLE: Final[str] = "+"
-MQTT_WILDCARD_MULTI: Final[str] = "#"
+CLOUD_WILDCARD_SINGLE: Final[str] = "+"
+CLOUD_WILDCARD_MULTI: Final[str] = "#"
 
 {% for const in constants %}
 {{ const.name }}: Final[{{ const.type }}] = {{ const.value }}
@@ -100,16 +100,16 @@ COMMAND_TO_PB: Final[dict[int, type]] = {
     {%- endfor %}
 }
 
-# Mapping of Command IDs to their default MQTT topic paths. [SIL-2]
+# Mapping of Command IDs to their default CLOUD topic paths. [SIL-2]
 COMMAND_TO_TOPIC: Final[dict[int, str]] = {
     {%- for cmd in commands %}
-    {%- if cmd.mqtt_topic %}
-    Command.{{ cmd.name }}.value: {{ cmd.mqtt_topic|tojson }},
+    {%- if cmd.cloud_topic %}
+    Command.{{ cmd.name }}.value: {{ cmd.cloud_topic|tojson }},
     {%- endif %}
     {%- endfor %}
 }
 
-# Mapping of Protobuf message classes to their default MQTT topic paths. [SIL-2]
+# Mapping of Protobuf message classes to their default CLOUD topic paths. [SIL-2]
 MESSAGE_TO_TOPIC: Final[dict[type | str, str]] = {
     {%- for msg_name, topic in message_topics.items() %}
     {%- if msg_name.endswith("_ENUM") %}
@@ -156,11 +156,11 @@ class {{ action.class_name }}(StrEnum):
 
 {% endfor %}
 
-MQTT_COMMAND_SUBSCRIPTIONS: Final[tuple[tuple[Topic, tuple[str, ...], int], ...]] = (
+CLOUD_COMMAND_SUBSCRIPTIONS: Final[tuple[tuple[Topic, tuple[str, ...], int], ...]] = (
     {%- for sub in subscriptions %}
     (Topic.{{ sub.topic }}, {{ sub.segments_tuple }}, {{ sub.qos }}),
     {%- endfor %}
 )
 
 
-MQTT_DEFAULT_TOPIC_PREFIX: Final[str] = {{ mqtt_defaults.default_topic_prefix|tojson }}
+CLOUD_DEFAULT_TOPIC_PREFIX: Final[str] = {{ cloud_defaults.default_topic_prefix|tojson }}

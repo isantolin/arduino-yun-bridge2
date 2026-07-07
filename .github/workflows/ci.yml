@@ -229,9 +229,9 @@ jobs:
           ./mcubridge-library-arduino/tools/install.sh "$DUMMY_ARDUINO_LIBS"
       - name: Compile & Run Emulation
         run: |
+          ./tools/compile_emulator.sh
           python mcubridge-gateway/gateway.py --no-tls --port 8443 &
           gateway_pid=$!
-          ./tools/compile_emulator.sh
           python -u tools/emulation_runner.py \
             --firmware ${{ matrix.firmware }} \
             ${{ matrix.scripts }}

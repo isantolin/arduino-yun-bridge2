@@ -46,7 +46,7 @@ def _coerce_list(value: Any) -> list[str]:
     if value is None:
         return []
     if isinstance(value, list):
-        return [str(i) for i in cast(list[Any], value)]
+        return [str(i) for i in value]
     return [str(value)]
 
 
@@ -142,12 +142,12 @@ def load_manifest(path: Path) -> list[Target]:
         extra_args = _coerce_list(entry.extra_args) if entry.extra_args is not None else []
         timeout_val = entry.timeout if entry.timeout is not None else manifest.defaults.timeout
         retries = entry.retries if entry.retries is not None else manifest.defaults.retries
-        env = {str(k): str(v) for k, v in entry.env.items()}
+        env = {k: str(v) for k, v in entry.env.items()}
         parsed.append(
             Target(
                 name=entry.name,
-                host=str(entry.host) if entry.host else None,
-                user=str(user) if user else None,
+                host=entry.host if entry.host else None,
+                user=user if user else None,
                 ssh_args=ssh_args,
                 extra_args=extra_args,
                 tags=tags,
@@ -155,7 +155,7 @@ def load_manifest(path: Path) -> list[Target]:
                 timeout=timeout_val,
                 retries=retries,
                 env=env,
-                notes=str(entry.notes) if entry.notes is not None else None,
+                notes=entry.notes if entry.notes is not None else None,
             )
         )
     return parsed

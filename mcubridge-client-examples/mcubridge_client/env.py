@@ -42,9 +42,9 @@ def read_uci_general() -> dict[str, str]:
 
     clean: dict[str, str] = {}
     for key, value in config.items():
-        if str(key).startswith((".", "_")):
+        if key.startswith((".", "_")):
             continue
-        clean[str(key)] = str(value)
+        clean[key] = value
     return clean
 
 

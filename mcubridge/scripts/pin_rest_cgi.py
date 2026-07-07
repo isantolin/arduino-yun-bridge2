@@ -81,7 +81,7 @@ def application(environ: dict[str, Any], start_response: Any) -> list[bytes]:
         if body_len:
             json_format.Parse(body_data, req)
 
-        state = str(req.state).upper()
+        state = req.state.upper()
 
         if state not in ("ON", "OFF"):
             return json_res(

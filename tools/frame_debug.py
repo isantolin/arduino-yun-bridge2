@@ -68,7 +68,7 @@ def resolve_command(cmd_str: str) -> int:
     for enum_cls in (protocol.Command, protocol.Status):
         for entry in enum_cls:
             if entry.name.upper() == cmd_str.upper():
-                return cast(int, entry.value)
+                return entry.value
 
     raise ValueError(f"Unknown command: {cmd_str}")
 
@@ -137,7 +137,7 @@ def _print_response(decoded: DecodedFrame) -> None:
 
     sys.stdout.write(
         f"[FrameDebug] --- MCU Response ---\n"
-        f"cmd_id=0x{int(envelope.command_id):02X}\n"
+        f"cmd_id=0x{envelope.command_id:02X}\n"
         f"seq_id={envelope.sequence_id}\n"
         f"payload_len={payload_len}\n"
     )

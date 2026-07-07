@@ -47,7 +47,7 @@ SpoolSnapshot = dict[str, int | float]
 
 
 def _make_cloud_publish_queue(maxsize: int = 0) -> asyncio.Queue[pb.CloudQueuedPublish]:
-    normalized = max(0, int(maxsize))
+    normalized = max(0, maxsize)
     return cast(asyncio.Queue[pb.CloudQueuedPublish], asyncio.Queue(maxsize=normalized))
 
 
@@ -262,10 +262,10 @@ class RuntimeState:
             self.supervisor_stats[name].backoff_seconds = 0.0
 
     def mailbox_queue_depth(self) -> int:
-        return int(len(self.mailbox_queue))
+        return len(self.mailbox_queue)
 
     def mailbox_incoming_queue_depth(self) -> int:
-        return int(len(self.mailbox_incoming_queue))
+        return len(self.mailbox_incoming_queue)
 
     def configure(self) -> None:
         def _safe_close(resource: Any) -> None:

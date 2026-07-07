@@ -59,9 +59,9 @@ logger = structlog.get_logger("mcubridge.service.handshake")
 
 def derive_serial_timing(config: RuntimeConfig) -> pb.HandshakeConfig:
     """Derive timing windows from config with strict declarative validation."""
-    ack_ms = int(round(config.serial_retry_timeout * 1000.0))
-    response_ms = int(round(config.serial_response_timeout * 1000.0))
-    retry_limit = int(config.serial_retry_attempts)
+    ack_ms = round(config.serial_retry_timeout * 1000.0)
+    response_ms = round(config.serial_response_timeout * 1000.0)
+    retry_limit = config.serial_retry_attempts
     response_ms = max(response_ms, ack_ms)
     return pb.HandshakeConfig(ack_timeout_ms=ack_ms, response_timeout_ms=response_ms, ack_retry_limit=retry_limit)
 
@@ -260,8 +260,8 @@ class SerialHandshakeManager:
                 sync_pkt = cast(pb.LinkSync, payload)
             else:
                 sync_pkt = pb.LinkSync.FromString(payload)
-            nonce = bytes(sync_pkt.nonce)
-            tag_bytes = bytes(sync_pkt.tag)
+            nonce = sync_pkt.nonce
+            tag_bytes = sync_pkt.tag
         except (ProtobufDecodeError, ValueError, TypeError):
             self._logger.error(
                 "LINK_SYNC_RESP protobuf decode failed (len=%d)",
@@ -483,7 +483,7 @@ class SerialHandshakeManager:
         snapshot.event = event
         snapshot.reason = reason or ""
         snapshot.detail = detail or ""
-        snapshot.fsm_state = str(self.fsm_state)
+        snapshot.fsm_state = self.fsm_state
 
         message = create_queued_publish(
             topic_name=get_topic_for_message(self._state.cloud_topic_prefix, snapshot) or "",

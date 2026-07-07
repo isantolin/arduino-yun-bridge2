@@ -32,7 +32,7 @@ logger = logging.getLogger("mcubridge.gateway")
 
 
 class ProtobufGateway:
-    """High-performance direct TCP/TLS Gateway replacing MQTT broker."""
+    """High-performance direct TCP/TLS Gateway."""
 
     def __init__(
         self,

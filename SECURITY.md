@@ -37,7 +37,7 @@ All serial communication requires a successful handshake using a pre-shared secr
 - **Poly1305 MAC:** Every encrypted frame includes a 128-bit authentication tag protecting the header and payload.
 
 ### 3. Flash & Resource Protection
-- **RAM-only storage:** The daemon enforces that frequent writes (like MQTT spooling and file operations) occur in `/tmp` (volatile memory).
+- **RAM-only storage:** The daemon enforces that frequent writes (like cloud payload spooling and file operations) occur in `/tmp` (volatile memory).
 - **Strict Boundaries:** Payloads are strictly bounded to `MAX_PAYLOAD_SIZE` (64 bytes) to prevent buffer overflows.
 
 ### 4. Cryptographic Self-Validation

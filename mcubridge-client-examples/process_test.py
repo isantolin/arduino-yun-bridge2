@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Example: Run an async shell command and stream its output via MQTT polls."""
+"""Example: Run an async shell command and stream its output via periodic polls."""
 
 from __future__ import annotations
 
@@ -96,7 +96,7 @@ def main(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run an async shell command and stream its output via MQTT polls.")
+    parser = argparse.ArgumentParser(description="Run an async shell command and stream its output via periodic polls.")
     parser.add_argument("--socket-path", default=None, help="UNIX Domain Socket Path")
     parser.add_argument("--topic-prefix", default="br", help="Topic prefix")
     _args = parser.parse_args()

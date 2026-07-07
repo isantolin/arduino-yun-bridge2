@@ -3,7 +3,7 @@ import asyncio
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 REPO_ROOT = Path(__file__).parent.parent
 EXAMPLE_MANIFEST = REPO_ROOT / "hardware" / "targets.example.toml"
@@ -46,7 +46,8 @@ def _coerce_list(value: Any) -> list[str]:
     if value is None:
         return []
     if isinstance(value, list):
-        return [str(i) for i in value]
+        return [str(i) for i in cast(list[Any], value)]
+
     return [str(value)]
 
 

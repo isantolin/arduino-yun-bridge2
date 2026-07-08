@@ -229,10 +229,6 @@ def get_ssl_context(cfg: pb.RuntimeConfig) -> Any | None:
 class PayloadValidationError(ValueError):
     """Raised when an inbound CLOUD payload cannot be validated."""
 
-    def __init__(self, message: str) -> None:
-        super().__init__(message)
-        self.message = message
-
 
 # --- High-Level Structure ---
 
@@ -328,14 +324,6 @@ def create_queued_publish(
     for k, v in user_properties:
         msg.user_properties.add(key=k, value=v)
     return msg
-
-
-def encode_queued_publish(message: pb.CloudQueuedPublish) -> bytes:
-    return message.SerializeToString()
-
-
-def decode_queued_publish(data: bytes) -> pb.CloudQueuedPublish:
-    return pb.CloudQueuedPublish.FromString(data)
 
 
 # --- Serial Flow Structures ---

@@ -7,7 +7,8 @@ from mcubridge.state.storage import InMemoryDeque
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.services.runtime import BridgeService
 from mcubridge.transport.serial import SerialTransport
-from mcubridge.protocol.structures import create_queued_publish, encode_queued_publish, decode_queued_publish
+from mcubridge.protocol.structures import create_queued_publish
+from mcubridge.protocol import mcubridge_pb2 as pb
 from google.protobuf.message import EncodeError as ProtobufSerializationError
 
 
@@ -126,8 +127,8 @@ async def test_spool_trim_and_limit(real_config: RuntimeConfig) -> None:
         assert await spool.length() == 2
         item1 = await spool.popleft()
         item2 = await spool.popleft()
-        el1 = decode_queued_publish(item1)
-        el2 = decode_queued_publish(item2)
+        el1 = pb.CloudQueuedPublish.FromString(item1)
+        el2 = pb.CloudQueuedPublish.FromString(item2)
         assert el1.topic_name == "test2"
         assert el2.topic_name == "test3"
         assert service.state.cloud_spool_dropped_limit == 1
@@ -151,7 +152,7 @@ async def test_corrupt_item_handling(real_config: RuntimeConfig) -> None:
 
         await spool.append(b"invalid_bytes_not_protobuf")
         valid_msg = create_queued_publish(topic_name="valid", payload=b"valid_payload")
-        await spool.append(encode_queued_publish(valid_msg))
+        await spool.append(valid_msg.SerializeToString())
 
         await getattr(service, "_flush_cloud_spool_locked")()
 
@@ -171,7 +172,7 @@ async def test_serialization_failure(real_config: RuntimeConfig) -> None:
     try:
         msg = create_queued_publish(topic_name="test", payload=b"payload")
         with patch(
-            "mcubridge.services.runtime.encode_queued_publish",
+            "mcubridge.protocol.mcubridge_pb2.CloudQueuedPublish.SerializeToString",
             side_effect=ProtobufSerializationError("Serialization error"),
         ):
             success = await getattr(service, "_spool_cloud_message_locked")(msg)
@@ -194,7 +195,7 @@ async def test_peeking_or_popping_errors(real_config: RuntimeConfig) -> None:
         await spool.clear()
 
         valid_msg = create_queued_publish(topic_name="valid", payload=b"payload")
-        await spool.append(encode_queued_publish(valid_msg))
+        await spool.append(valid_msg.SerializeToString())
 
         # 1. IndexError on peek
         with patch.object(spool, "peek", side_effect=IndexError("Mock empty")):
@@ -223,7 +224,7 @@ async def test_peeking_or_popping_errors(real_config: RuntimeConfig) -> None:
 
         # 5. OSError on popleft after publish
         await spool.clear()
-        await spool.append(encode_queued_publish(valid_msg))
+        await spool.append(valid_msg.SerializeToString())
         popleft_mock = MagicMock(side_effect=OSError("DB error during pop"))
         with patch.object(spool, "popleft", popleft_mock):
             await getattr(service, "_flush_cloud_spool_locked")()

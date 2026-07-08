@@ -45,7 +45,19 @@ from ..security.security import (
 from ..state.context import RuntimeState
 
 from google.protobuf.message import Message
+from enum import StrEnum
 from typing import Protocol
+
+
+class HandshakeState(StrEnum):
+    """[SIL-2] Strongly-typed FSM states for serial handshake. Prevents silent typos."""
+
+    UNSYNCHRONIZED = "unsynchronized"
+    RESETTING = "resetting"
+    SYNCING = "syncing"
+    CONFIRMING = "confirming"
+    SYNCHRONIZED = "synchronized"
+    FAULT = "fault"
 
 
 class SendFrameCallable(Protocol):
@@ -82,14 +94,6 @@ _IMMEDIATE_FATAL_HANDSHAKE_REASONS: frozenset[str] = frozenset(
 class SerialHandshakeManager:
     """Encapsulates MCU serial handshake orchestration and telemetry."""
 
-    # FSM States
-    STATE_UNSYNCHRONIZED = "unsynchronized"
-    STATE_RESETTING = "resetting"
-    STATE_SYNCING = "syncing"
-    STATE_CONFIRMING = "confirming"
-    STATE_SYNCHRONIZED = "synchronized"
-    STATE_FAULT = "fault"
-
     def __init__(
         self,
         *,
@@ -112,9 +116,9 @@ class SerialHandshakeManager:
         # [SIL-2] Serialize handshake timing as protobuf.
         self._reset_payload = self._timing
         self._capabilities_future: asyncio.Future[bytes | ProtobufMessage] | None = None
-        self.fsm_state = self.STATE_UNSYNCHRONIZED
+        self.fsm_state: HandshakeState = HandshakeState.UNSYNCHRONIZED
 
-    def _set_fsm_state(self, new_state: str) -> None:
+    def _set_fsm_state(self, new_state: HandshakeState) -> None:
         """Update FSM state and associated metrics."""
         old_state = self.fsm_state
         if old_state == new_state:
@@ -123,9 +127,9 @@ class SerialHandshakeManager:
         self.fsm_state = new_state
         self._state.metrics.handshake_state.state(new_state)
 
-        if new_state == self.STATE_SYNCHRONIZED:
+        if new_state == HandshakeState.SYNCHRONIZED:
             self._state.mark_synchronized()
-        elif old_state == self.STATE_SYNCHRONIZED:
+        elif old_state == HandshakeState.SYNCHRONIZED:
             self._state.mark_transport_connected()
 
     async def synchronize(self) -> bool:
@@ -148,7 +152,7 @@ class SerialHandshakeManager:
             self._state.handshake_last_started = time.monotonic()
             self._state.handshake_attempts += 1
             self._state.metrics.handshake_attempts.inc()
-            self._set_fsm_state(self.STATE_UNSYNCHRONIZED)  # Ensure clean slate
+            self._set_fsm_state(HandshakeState.UNSYNCHRONIZED)  # Ensure clean slate
             return await self._synchronize_attempt()
 
         try:
@@ -156,13 +160,13 @@ class SerialHandshakeManager:
             self._logger.debug("Handshake stats: %s", retryer.statistics)
             return ok
         except tenacity.RetryError:
-            self._set_fsm_state(self.STATE_FAULT)
+            self._set_fsm_state(HandshakeState.FAULT)
             return False
 
     async def _synchronize_attempt(self) -> bool:
 
         # Transition to RESETTING
-        self._set_fsm_state(self.STATE_RESETTING)
+        self._set_fsm_state(HandshakeState.RESETTING)
         self._state.link_sync_event.clear()
 
         # [MIL-SPEC] Generate random nonce for session derivation
@@ -186,7 +190,7 @@ class SerialHandshakeManager:
         await asyncio.sleep(0.1)
 
         # Transition to SYNCING
-        self._set_fsm_state(self.STATE_SYNCING)
+        self._set_fsm_state(HandshakeState.SYNCING)
         await asyncio.sleep(0.05)
 
         # [MIL-SPEC] Send LINK_SYNC with mutual authentication tag
@@ -200,18 +204,22 @@ class SerialHandshakeManager:
             return False
 
         # [SIL-2] Race Condition Guard: check if async response already put us in fault or success.
-        if self.fsm_state == self.STATE_FAULT:
+        if self.fsm_state == HandshakeState.FAULT:
             return False
 
         # Transition to CONFIRMING only if we are still in SYNCING.
         # High-speed emulators may have already triggered complete_handshake().
-        if self.fsm_state == self.STATE_SYNCING:
-            self._set_fsm_state(self.STATE_CONFIRMING)
+        if self.fsm_state == HandshakeState.SYNCING:
+            self._set_fsm_state(HandshakeState.CONFIRMING)
 
         confirmed = await self._wait_for_link_sync_confirmation(nonce)
+        # Re-read fsm_state via cast: the async call above may have changed it
+        # via handle_link_sync_resp. cast() breaks pyright's over-eager literal
+        # narrowing without suppressing type safety. [SIL-2]
+        current_state = cast(HandshakeState, self.fsm_state)
         if not confirmed:
             # [SIL-2] Double check if we didn't just transition to fault via async path.
-            if self.fsm_state == self.STATE_FAULT:
+            if current_state == HandshakeState.FAULT:
                 return False
 
             pending_nonce = self._state.link_handshake_nonce
@@ -221,10 +229,10 @@ class SerialHandshakeManager:
             return False
 
         # Transition to SYNCHRONIZED happens in handle_link_sync_resp (or implicitly confirmed here)
-        if self.fsm_state != self.STATE_SYNCHRONIZED and self.fsm_state != self.STATE_FAULT:
-            self._set_fsm_state(self.STATE_SYNCHRONIZED)
+        if current_state != HandshakeState.SYNCHRONIZED and current_state != HandshakeState.FAULT:
+            self._set_fsm_state(HandshakeState.SYNCHRONIZED)
 
-        return self.fsm_state == self.STATE_SYNCHRONIZED
+        return self.fsm_state == HandshakeState.SYNCHRONIZED
 
     async def handle_link_sync_resp(self, seq_id: int, payload: bytes | ProtobufMessage) -> bool:
         expected = self._state.link_handshake_nonce
@@ -320,7 +328,7 @@ class SerialHandshakeManager:
         payload = nonce
 
         # FSM Transition to SYNCHRONIZED
-        self._set_fsm_state(self.STATE_SYNCHRONIZED)
+        self._set_fsm_state(HandshakeState.SYNCHRONIZED)
 
         self.clear_handshake_expectations()
         await self._handle_handshake_success()
@@ -401,7 +409,7 @@ class SerialHandshakeManager:
         detail: str | None = None,
     ) -> None:
         # [SIL-2] Native state transition to FAULT
-        self._set_fsm_state(self.STATE_FAULT)
+        self._set_fsm_state(HandshakeState.FAULT)
 
         # [SIL-2] Direct metrics recording (No Wrapper)
         self._state.handshake_failure_streak += 1

@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from mcubridge.protocol.structures import (
     create_queued_publish,
-    encode_queued_publish,
-    decode_queued_publish,
 )
+from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol import protocol
 
 
@@ -23,9 +22,9 @@ def test_queued_publish_protobuf_roundtrip() -> None:
     message.response_topic = f"{protocol.CLOUD_DEFAULT_TOPIC_PREFIX}/resp"
     message.correlation_data = b"cid"
 
-    # Use direct library calls as per zero-wrapper mandate
-    encoded = encode_queued_publish(message)
-    restored = decode_queued_publish(encoded)
+    # Direct Protobuf calls — Zero-Wrapper policy
+    encoded = message.SerializeToString()
+    restored = pb.CloudQueuedPublish.FromString(encoded)
 
     assert restored.topic_name == message.topic_name
     assert restored.payload == message.payload

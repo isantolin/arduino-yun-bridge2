@@ -3,6 +3,7 @@
 #include <etl/algorithm.h>
 #include <etl/functional.h>
 #include <etl/iterator.h>
+#include <etl/utility.h>
 #include <wolfssl/wolfcrypt/settings.h>
 #include <wolfssl/wolfcrypt/types.h>
 
@@ -755,11 +756,16 @@ void BridgeClass::_handleEnterBootloader(const rpc_pb_EnterBootloader& msg) {
 }
 
 void BridgeClass::_handleSetPinMode(const rpc_pb_PinMode& m) {
-  uint8_t m_val = INPUT;
-  if (m.mode == rpc_pb_PinModeType_PIN_OUTPUT)
-    m_val = OUTPUT;
-  else if (m.mode == rpc_pb_PinModeType_PIN_INPUT_PULLUP)
-    m_val = INPUT_PULLUP;
+  constexpr etl::array<etl::pair<rpc_pb_PinModeType, uint8_t>, 3> kPinModeMap{{
+      {rpc_pb_PinModeType_PIN_INPUT, INPUT},
+      {rpc_pb_PinModeType_PIN_OUTPUT, OUTPUT},
+      {rpc_pb_PinModeType_PIN_INPUT_PULLUP, INPUT_PULLUP},
+  }};
+  auto it = etl::find_if(kPinModeMap.begin(), kPinModeMap.end(),
+                         [&m](const etl::pair<rpc_pb_PinModeType, uint8_t>& p) {
+                           return p.first == m.mode;
+                         });
+  const uint8_t m_val = (it != kPinModeMap.end()) ? it->second : INPUT;
   pinMode(m.pin, m_val);
 }
 

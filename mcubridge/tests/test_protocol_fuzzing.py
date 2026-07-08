@@ -31,7 +31,7 @@ def _assert_only_expected_exception(
         operation()
     except expected as exc:
         assert isinstance(exc, expected)
-    except Exception as exc:
+    except (ValueError, TypeError, LookupError, RuntimeError, AttributeError, UnicodeDecodeError) as exc:
         pytest.fail(
             f"{label} crashed on iteration {iteration} with unhandled exception: "
             f"{type(exc).__name__}: {exc}. Data hex: {raw_data.hex()}"

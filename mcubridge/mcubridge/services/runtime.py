@@ -8,8 +8,10 @@ import collections
 import functools
 import os
 import secrets
-import signal
 import shlex
+import shutil
+import signal
+import struct
 import time
 from collections.abc import Coroutine, Callable, Awaitable
 from dataclasses import dataclass, field
@@ -26,7 +28,6 @@ from google.protobuf.message import (
 )
 
 import tenacity
-import struct
 
 
 from ..config.const import (
@@ -56,8 +57,6 @@ from ..protocol.protocol import (
 from ..protocol.structures import (
     PROTOBUF_CONTENT_TYPE,
     TopicRoute,
-    encode_queued_publish,
-    decode_queued_publish,
     create_queued_publish,
     is_command_allowed,
     allows_topic,
@@ -292,7 +291,7 @@ class BridgeService:
                     self.state.cloud_spool_trim_events += 1
                     self.state.cloud_spool_last_trim_unix = time.time()
 
-            encoded = encode_queued_publish(message)
+            encoded = message.SerializeToString()
             await spool.append(encoded)
 
             pending_count = await spool.length()
@@ -319,7 +318,7 @@ class BridgeService:
         while spool_len > 0:
             try:
                 encoded = await spool.peek()
-                queued = decode_queued_publish(encoded)
+                queued = pb.CloudQueuedPublish.FromString(encoded)
             except IndexError as exc:
                 logger.error("Spool is empty during peek", error=str(exc))
                 break
@@ -431,8 +430,8 @@ class BridgeService:
         try:
             if os.path.exists(socket_path):
                 os.unlink(socket_path)
-        except OSError:
-            pass
+        except OSError as exc:
+            logger.debug("Could not remove UNIX socket during cleanup", path=socket_path, error=str(exc))
 
         self.serial = None
         spool = self._cloud_spool
@@ -655,8 +654,6 @@ class BridgeService:
             if not data:
                 await serial.send(Command.CMD_FILE_READ_RESP.value, pb.FileReadResponse(content=b""))
             else:
-                from ..protocol.structures import iter_chunks
-
                 for chunk in iter_chunks(data, protocol.MAX_PAYLOAD_SIZE - 3):
                     await serial.send(Command.CMD_FILE_READ_RESP.value, pb.FileReadResponse(content=chunk))
             return
@@ -1257,8 +1254,6 @@ class BridgeService:
 
     async def _write_with_quota(self, path: Path, data: bytes) -> bool:
         async with self._storage_lock:
-            import shutil
-
             try:
                 usage = await asyncio.to_thread(shutil.disk_usage, self.config.file_system_root)
                 self.state.file_storage_bytes_used = usage.used
@@ -1435,11 +1430,7 @@ class BridgeService:
         )
 
         try:
-
-            async def _connect_attempt() -> None:
-                await self.connect_cloud_session(tls_context)
-
-            await retryer(_connect_attempt)
+            await retryer(functools.partial(self.connect_cloud_session, tls_context))
         except asyncio.CancelledError:
             logger.info("Cloud transport stopping.")
             raise
@@ -1571,12 +1562,17 @@ class BridgeService:
         )
 
         try:
+            logger.debug("Supervisor starting task", task=name)
 
-            async def _run_task() -> None:
-                logger.debug("Supervisor starting task", task=name)
+            # [SIL-2] The indirection via _task_runner is required: tenacity calls
+            # factory() to create the awaitable BEFORE awaiting it. If TaskGroup
+            # cancellation arrives between creation and await, the coroutine leaks
+            # (RuntimeWarning: coroutine never awaited). The wrapper defers factory()
+            # to inside the async context so it is immediately consumed.
+            async def _task_runner() -> None:
                 await factory()
 
-            await retryer(_run_task)
+            await retryer(_task_runner)
         except asyncio.CancelledError:
             logger.debug("Supervisor task cancelled", task=name)
             raise
@@ -1630,8 +1626,10 @@ class BridgeService:
 
                 # Process request in background task so we don't block reading other requests
                 asyncio.create_task(self._process_ipc_request(request, writer, active_correlations))
-        except (asyncio.IncompleteReadError, OSError, asyncio.CancelledError):
-            pass
+        except asyncio.CancelledError:
+            raise
+        except (asyncio.IncompleteReadError, OSError) as exc:
+            logger.debug("IPC client connection closed", error=str(exc))
         except (ProtobufDecodeError, ValueError, RuntimeError) as e:
             logger.error("IPC client error occurred", error=type(e).__name__)
         finally:

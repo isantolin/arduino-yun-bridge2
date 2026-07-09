@@ -229,8 +229,8 @@ class BridgeService:
                     w.write(len(data).to_bytes(4, byteorder="big"))
                     w.write(data)
                     asyncio.create_task(w.drain())
-                except OSError:
-                    pass
+                except OSError as exc:
+                    logger.debug("IPC writer closed during console broadcast", error=str(exc))
 
         self.state.cloud_publish_queue.put_nowait(resolved_message)
         try:
@@ -434,18 +434,9 @@ class BridgeService:
             logger.debug("Could not remove UNIX socket during cleanup", path=socket_path, error=str(exc))
 
         self.serial = None
-        spool = self._cloud_spool
-        if spool is not None:
-            try:
-                res = spool.close()
-                if asyncio.iscoroutine(res):
-                    try:
-                        res.send(None)
-                    except StopIteration:
-                        pass
-            except (AttributeError, OSError, RuntimeError) as e:
-                logger.debug("Spool cache close error during cleanup", error=e)
-            self._cloud_spool = None
+        # [SIL-2] Async spool close is handled by run() finally block.
+        # cleanup() only nullifies the reference to prevent double-close.
+        self._cloud_spool = None
 
         state = getattr(self, "state", None)
         if state is not None:
@@ -617,7 +608,7 @@ class BridgeService:
         try:
             content = await self.state.mailbox_queue.popleft()
         except IndexError:
-            pass
+            logger.debug("Mailbox queue empty on MCU read request")
         res = await serial.send(
             Command.CMD_MAILBOX_READ_RESP.value,
             pb.MailboxReadResponse(content=content),
@@ -1590,8 +1581,8 @@ class BridgeService:
         try:
             if os.path.exists(socket_path):
                 os.unlink(socket_path)
-        except OSError:
-            pass
+        except OSError as exc:
+            logger.debug("Could not remove stale IPC socket", path=socket_path, error=str(exc))
 
         # Create parent directory if it doesn't exist
         os.makedirs(os.path.dirname(socket_path), exist_ok=True)
@@ -1648,11 +1639,15 @@ class BridgeService:
     async def _process_ipc_request(
         self, request: pb.CloudQueuedPublish, writer: asyncio.StreamWriter, active_correlations: set[bytes]
     ) -> None:
-        correlation = request.correlation_data if request.HasField("correlation_data") else secrets.token_bytes(12)
-        response_queue: asyncio.Queue[pb.CloudQueuedPublish] = asyncio.Queue(maxsize=1)
-        self._ipc_requests[correlation] = response_queue
-        active_correlations.add(correlation)
-        logger.debug("Registering IPC request correlation", topic=request.topic_name, correlation=correlation.hex())
+        # [SIL-2] Only register a correlation entry when the client explicitly requires a reply.
+        has_correlation = request.HasField("correlation_data")
+        correlation = request.correlation_data if has_correlation else secrets.token_bytes(12)
+
+        if has_correlation:
+            response_queue: asyncio.Queue[pb.CloudQueuedPublish] = asyncio.Queue(maxsize=1)
+            self._ipc_requests[correlation] = response_queue
+            active_correlations.add(correlation)
+            logger.debug("Registering IPC request correlation", topic=request.topic_name, correlation=correlation.hex())
 
         try:
             req = BridgeRequest(
@@ -1663,8 +1658,7 @@ class BridgeService:
 
             await self.handle_request(req)
 
-            # Only wait for a response if correlation_data was explicitly provided by the client
-            if request.HasField("correlation_data"):
+            if has_correlation:
                 try:
                     async with asyncio.timeout(15.0):
                         response = await response_queue.get()
@@ -1677,5 +1671,6 @@ class BridgeService:
         except OSError as exc:
             logger.debug("IPC connection closed during response write", error=str(exc))
         finally:
-            active_correlations.discard(correlation)
-            self._ipc_requests.pop(correlation, None)
+            if has_correlation:
+                active_correlations.discard(correlation)
+                self._ipc_requests.pop(correlation, None)

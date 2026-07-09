@@ -1482,8 +1482,8 @@ class BridgeService:
             writer.close()
             try:
                 await writer.wait_closed()
-            except OSError:
-                pass
+            except OSError as exc:
+                logger.debug("Cloud writer already closed on wait_closed", error=str(exc))
 
     async def _send_cloud_event(self, event_type: str, severity: str, description: str) -> None:
         envelope = pb.CloudEnvelope(
@@ -1643,8 +1643,10 @@ class BridgeService:
         has_correlation = request.HasField("correlation_data")
         correlation = request.correlation_data if has_correlation else secrets.token_bytes(12)
 
+        # [SIL-2] Initialize to None; narrowed to Queue only when has_correlation is True.
+        response_queue: asyncio.Queue[pb.CloudQueuedPublish] | None = None
         if has_correlation:
-            response_queue: asyncio.Queue[pb.CloudQueuedPublish] = asyncio.Queue(maxsize=1)
+            response_queue = asyncio.Queue(maxsize=1)
             self._ipc_requests[correlation] = response_queue
             active_correlations.add(correlation)
             logger.debug("Registering IPC request correlation", topic=request.topic_name, correlation=correlation.hex())
@@ -1658,7 +1660,7 @@ class BridgeService:
 
             await self.handle_request(req)
 
-            if has_correlation:
+            if has_correlation and response_queue is not None:
                 try:
                     async with asyncio.timeout(15.0):
                         response = await response_queue.get()

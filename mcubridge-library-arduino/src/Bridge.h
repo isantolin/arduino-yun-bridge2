@@ -238,7 +238,47 @@ class BridgeClass {
 
   etl::circular_buffer<uint16_t, bridge::config::RX_HISTORY_SIZE> _rx_history;
 
+  // [SIL-2] Tag type: marks payload-free dispatch cases (no Protobuf decode).
+  struct _NoPayload {};
+
+  // [SIL-2] Unified template dispatcher — consolidates decode + ack + dup-check
+  // boilerplate from _dispatchCommand into a single auditable point.
+  // Template wrapper per Rule 3 (AGENTS.md): only template wrappers allowed.
+  //
+  // Handler signature for _NoPayload: (const bridge::router::CommandContext&)
+  // Handler signature for typed PB:   (const bridge::router::CommandContext&,
+  //                                    const MsgType&)
+  template <typename MsgType, typename Handler>
+  bool _dispatchCmd(const bridge::router::CommandContext& ctx,
+                    Handler handler,
+                    bool needs_ack = true,
+                    bool retransmit_on_dup = false) {
+    if constexpr (!etl::is_same_v<MsgType, _NoPayload>) {
+      MsgType m = {};
+      if (!_decodePayload(ctx, rpc::Payload::get_fields<MsgType>(), &m,
+                          rpc::Payload::get_tag<MsgType>(), sizeof(MsgType))) {
+        emitStatus(rpc::StatusCode::STATUS_MALFORMED);
+        return false;
+      }
+      if (needs_ack) _processAck(ctx.raw_command, ctx.sequence_id);
+      if (ctx.is_duplicate) {
+        if (retransmit_on_dup) _retransmitLastFrame();
+        return false;
+      }
+      handler(ctx, m);
+    } else {
+      if (needs_ack) _processAck(ctx.raw_command, ctx.sequence_id);
+      if (ctx.is_duplicate) {
+        if (retransmit_on_dup) _retransmitLastFrame();
+        return false;
+      }
+      handler(ctx);
+    }
+    return true;
+  }
+
   void _applyTimingConfig(const rpc::payload::HandshakeConfig& msg);
+
 
   void _handleStatusMalformed(const bridge::router::CommandContext& ctx);
   void _handleStatusAck(const bridge::router::CommandContext& ctx,

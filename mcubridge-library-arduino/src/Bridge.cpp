@@ -48,281 +48,154 @@ void BridgeClass::_dispatchCommand(const rpc_pb_RpcEnvelope& envelope) {
   }
 
   switch (ctx.raw_command) {
+    // [F] Special: no decode, no handler — only ack + dup guard.
     case rpc::to_underlying(rpc::StatusCode::STATUS_OK): {
       _processAck(ctx.raw_command, ctx.sequence_id);
-      if (ctx.is_duplicate) {
-        return;
-      }
+      if (ctx.is_duplicate) return;
       break;
     }
 
+    // [F] Special: no decode, no ack, no dup-check — immediate error handler.
     case rpc::to_underlying(rpc::StatusCode::STATUS_MALFORMED): {
       _handleStatusMalformed(ctx);
       break;
     }
 
-    case rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION): {
-      if (ctx.is_duplicate) {
-        _retransmitLastFrame();
-        return;
-      }
-      _handleGetVersion(ctx);
-      break;
-    }
+    // [A] No-payload, no-ack, retransmit-on-dup (query commands).
+    case rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION):
+      _dispatchCmd<_NoPayload>(
+          ctx,
+          [this](const bridge::router::CommandContext& c) {
+            _handleGetVersion(c);
+          },
+          false, true);
+      return;
 
-    case rpc::to_underlying(rpc::CommandId::CMD_GET_FREE_MEMORY): {
-      if (ctx.is_duplicate) {
-        _retransmitLastFrame();
-        return;
-      }
-      _handleGetFreeMemory(ctx);
-      break;
-    }
+    case rpc::to_underlying(rpc::CommandId::CMD_GET_FREE_MEMORY):
+      _dispatchCmd<_NoPayload>(
+          ctx,
+          [this](const bridge::router::CommandContext& c) {
+            _handleGetFreeMemory(c);
+          },
+          false, true);
+      return;
 
-    case rpc::to_underlying(rpc::CommandId::CMD_LINK_RESET): {
-      _processAck(ctx.raw_command, ctx.sequence_id);
-      if (ctx.is_duplicate) {
-        return;
-      }
-      _handleLinkReset(ctx);
-      break;
-    }
+    case rpc::to_underlying(rpc::CommandId::CMD_GET_CAPABILITIES):
+      _dispatchCmd<_NoPayload>(
+          ctx,
+          [this](const bridge::router::CommandContext& c) {
+            _handleGetCapabilities(c);
+          },
+          false, true);
+      return;
 
-    case rpc::to_underlying(rpc::CommandId::CMD_GET_CAPABILITIES): {
-      if (ctx.is_duplicate) {
-        _retransmitLastFrame();
-        return;
-      }
-      _handleGetCapabilities(ctx);
-      break;
-    }
+    // [B] No-payload, ack, no-retransmit (fire-and-forget control commands).
+    case rpc::to_underlying(rpc::CommandId::CMD_LINK_RESET):
+      _dispatchCmd<_NoPayload>(ctx,
+                               [this](const bridge::router::CommandContext& c) {
+                                 _handleLinkReset(c);
+                               });
+      return;
 
-    case rpc::to_underlying(rpc::CommandId::CMD_XOFF): {
-      _processAck(ctx.raw_command, ctx.sequence_id);
-      if (ctx.is_duplicate) {
-        return;
-      }
-      _handleXoff(ctx);
-      break;
-    }
+    case rpc::to_underlying(rpc::CommandId::CMD_XOFF):
+      _dispatchCmd<_NoPayload>(
+          ctx,
+          [this](const bridge::router::CommandContext& c) { _handleXoff(c); });
+      return;
 
-    case rpc::to_underlying(rpc::CommandId::CMD_XON): {
-      _processAck(ctx.raw_command, ctx.sequence_id);
-      if (ctx.is_duplicate) {
-        return;
-      }
-      _handleXon(ctx);
-      break;
-    }
+    case rpc::to_underlying(rpc::CommandId::CMD_XON):
+      _dispatchCmd<_NoPayload>(
+          ctx,
+          [this](const bridge::router::CommandContext& c) { _handleXon(c); });
+      return;
 
 #if BRIDGE_ENABLE_SPI
-    case rpc::to_underlying(rpc::CommandId::CMD_SPI_BEGIN): {
-      _processAck(ctx.raw_command, ctx.sequence_id);
-      if (ctx.is_duplicate) {
-        return;
-      }
-      _handleSpiBegin(ctx);
-      break;
-    }
+    case rpc::to_underlying(rpc::CommandId::CMD_SPI_BEGIN):
+      _dispatchCmd<_NoPayload>(ctx,
+                               [this](const bridge::router::CommandContext& c) {
+                                 _handleSpiBegin(c);
+                               });
+      return;
 
-    case rpc::to_underlying(rpc::CommandId::CMD_SPI_END): {
-      _processAck(ctx.raw_command, ctx.sequence_id);
-      if (ctx.is_duplicate) {
-        return;
-      }
-      _handleSpiEnd(ctx);
-      break;
-    }
+    case rpc::to_underlying(rpc::CommandId::CMD_SPI_END):
+      _dispatchCmd<_NoPayload>(ctx,
+                               [this](const bridge::router::CommandContext& c) {
+                                 _handleSpiEnd(c);
+                               });
+      return;
 #endif
 
-    case rpc::to_underlying(rpc::StatusCode::STATUS_ACK): {
-      rpc_pb_AckPacket m = {};
-      if (!_decodePayload(ctx, rpc::Payload::get_fields<rpc_pb_AckPacket>(), &m,
-                          rpc::Payload::get_tag<rpc_pb_AckPacket>(),
-                          sizeof(rpc_pb_AckPacket))) {
-        emitStatus(rpc::StatusCode::STATUS_MALFORMED);
-        return;
-      }
-      _processAck(ctx.raw_command, ctx.sequence_id);
-      if (ctx.is_duplicate) {
-        return;
-      }
-      _handleStatusAck(ctx, m);
-      break;
-    }
+    // [C] Typed, ack, no-retransmit — standard bidirectional pattern.
+    case rpc::to_underlying(rpc::StatusCode::STATUS_ACK):
+      _dispatchCmd<rpc_pb_AckPacket>(
+          ctx, [this](const bridge::router::CommandContext& c,
+                      const rpc_pb_AckPacket& m) { _handleStatusAck(c, m); });
+      return;
 
-    case rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC): {
-      rpc_pb_LinkSync m = {};
-      if (!_decodePayload(ctx, rpc::Payload::get_fields<rpc_pb_LinkSync>(), &m,
-                          rpc::Payload::get_tag<rpc_pb_LinkSync>(),
-                          sizeof(rpc_pb_LinkSync))) {
-        emitStatus(rpc::StatusCode::STATUS_MALFORMED);
-        return;
-      }
-      _processAck(ctx.raw_command, ctx.sequence_id);
-      if (ctx.is_duplicate) {
-        return;
-      }
-      _handleLinkSync(ctx, m);
-      break;
-    }
+    case rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC):
+      _dispatchCmd<rpc_pb_LinkSync>(
+          ctx, [this](const bridge::router::CommandContext& c,
+                      const rpc_pb_LinkSync& m) { _handleLinkSync(c, m); });
+      return;
 
-    case rpc::to_underlying(rpc::CommandId::CMD_SET_BAUDRATE): {
-      rpc_pb_SetBaudratePacket m = {};
-      if (!_decodePayload(ctx,
-                          rpc::Payload::get_fields<rpc_pb_SetBaudratePacket>(),
-                          &m, rpc::Payload::get_tag<rpc_pb_SetBaudratePacket>(),
-                          sizeof(rpc_pb_SetBaudratePacket))) {
-        emitStatus(rpc::StatusCode::STATUS_MALFORMED);
-        return;
-      }
-      _processAck(ctx.raw_command, ctx.sequence_id);
-      if (ctx.is_duplicate) {
-        return;
-      }
-      _handleSetBaudrate(m);
-      break;
-    }
+    case rpc::to_underlying(rpc::CommandId::CMD_SET_BAUDRATE):
+      _dispatchCmd<rpc_pb_SetBaudratePacket>(
+          ctx,
+          [this](const bridge::router::CommandContext&,
+                 const rpc_pb_SetBaudratePacket& m) { _handleSetBaudrate(m); });
+      return;
 
-    case rpc::to_underlying(rpc::CommandId::CMD_ENTER_BOOTLOADER): {
-      rpc_pb_EnterBootloader m = {};
-      if (!_decodePayload(ctx,
-                          rpc::Payload::get_fields<rpc_pb_EnterBootloader>(),
-                          &m, rpc::Payload::get_tag<rpc_pb_EnterBootloader>(),
-                          sizeof(rpc_pb_EnterBootloader))) {
-        emitStatus(rpc::StatusCode::STATUS_MALFORMED);
-        return;
-      }
-      _processAck(ctx.raw_command, ctx.sequence_id);
-      if (ctx.is_duplicate) {
-        return;
-      }
-      _handleEnterBootloader(m);
-      break;
-    }
+    case rpc::to_underlying(rpc::CommandId::CMD_ENTER_BOOTLOADER):
+      _dispatchCmd<rpc_pb_EnterBootloader>(
+          ctx, [this](const bridge::router::CommandContext&,
+                      const rpc_pb_EnterBootloader& m) {
+            _handleEnterBootloader(m);
+          });
+      return;
 
-    case rpc::to_underlying(rpc::CommandId::CMD_SET_PIN_MODE): {
-      rpc_pb_PinMode m = {};
-      if (!_decodePayload(ctx, rpc::Payload::get_fields<rpc_pb_PinMode>(), &m,
-                          rpc::Payload::get_tag<rpc_pb_PinMode>(),
-                          sizeof(rpc_pb_PinMode))) {
-        emitStatus(rpc::StatusCode::STATUS_MALFORMED);
-        return;
-      }
-      _processAck(ctx.raw_command, ctx.sequence_id);
-      if (ctx.is_duplicate) {
-        return;
-      }
-      _handleSetPinMode(m);
-      break;
-    }
+    case rpc::to_underlying(rpc::CommandId::CMD_SET_PIN_MODE):
+      _dispatchCmd<rpc_pb_PinMode>(
+          ctx, [](const bridge::router::CommandContext&,
+                  const rpc_pb_PinMode& m) { _handleSetPinMode(m); });
+      return;
 
-    case rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE): {
-      rpc_pb_DigitalWrite m = {};
-      if (!_decodePayload(ctx, rpc::Payload::get_fields<rpc_pb_DigitalWrite>(),
-                          &m, rpc::Payload::get_tag<rpc_pb_DigitalWrite>(),
-                          sizeof(rpc_pb_DigitalWrite))) {
-        emitStatus(rpc::StatusCode::STATUS_MALFORMED);
-        return;
-      }
-      _processAck(ctx.raw_command, ctx.sequence_id);
-      if (ctx.is_duplicate) {
-        return;
-      }
-      _handleDigitalWrite(m);
-      break;
-    }
+    case rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE):
+      _dispatchCmd<rpc_pb_DigitalWrite>(
+          ctx, [](const bridge::router::CommandContext&,
+                  const rpc_pb_DigitalWrite& m) { _handleDigitalWrite(m); });
+      return;
 
-    case rpc::to_underlying(rpc::CommandId::CMD_ANALOG_WRITE): {
-      rpc_pb_AnalogWrite m = {};
-      if (!_decodePayload(ctx, rpc::Payload::get_fields<rpc_pb_AnalogWrite>(),
-                          &m, rpc::Payload::get_tag<rpc_pb_AnalogWrite>(),
-                          sizeof(rpc_pb_AnalogWrite))) {
-        emitStatus(rpc::StatusCode::STATUS_MALFORMED);
-        return;
-      }
-      _processAck(ctx.raw_command, ctx.sequence_id);
-      if (ctx.is_duplicate) {
-        return;
-      }
-      _handleAnalogWrite(m);
-      break;
-    }
+    case rpc::to_underlying(rpc::CommandId::CMD_ANALOG_WRITE):
+      _dispatchCmd<rpc_pb_AnalogWrite>(
+          ctx, [](const bridge::router::CommandContext&,
+                  const rpc_pb_AnalogWrite& m) { _handleAnalogWrite(m); });
+      return;
 
-    case rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_READ):
-    case rpc::to_underlying(rpc::CommandId::CMD_ANALOG_READ): {
-      rpc_pb_PinRead m = {};
-      if (!_decodePayload(ctx, rpc::Payload::get_fields<rpc_pb_PinRead>(), &m,
-                          rpc::Payload::get_tag<rpc_pb_PinRead>(),
-                          sizeof(rpc_pb_PinRead))) {
-        emitStatus(rpc::StatusCode::STATUS_MALFORMED);
-        return;
-      }
-      if (ctx.is_duplicate) {
-        _retransmitLastFrame();
-        return;
-      }
-      if (ctx.raw_command ==
-          rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_READ)) {
-        _handleDigitalRead(ctx, m);
-      } else {
-        _handleAnalogRead(ctx, m);
-      }
-      break;
-    }
-
-    case rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE): {
-      rpc_pb_ConsoleWrite m = {};
-      if (!_decodePayload(ctx, rpc::Payload::get_fields<rpc_pb_ConsoleWrite>(),
-                          &m, rpc::Payload::get_tag<rpc_pb_ConsoleWrite>(),
-                          sizeof(rpc_pb_ConsoleWrite))) {
-        emitStatus(rpc::StatusCode::STATUS_MALFORMED);
-        return;
-      }
-      _processAck(ctx.raw_command, ctx.sequence_id);
-      if (ctx.is_duplicate) {
-        return;
-      }
-      _handleConsoleWrite(m);
-      break;
-    }
+    case rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE):
+      _dispatchCmd<rpc_pb_ConsoleWrite>(
+          ctx, [](const bridge::router::CommandContext&,
+                  const rpc_pb_ConsoleWrite& m) { _handleConsoleWrite(m); });
+      return;
 
 #if BRIDGE_ENABLE_DATASTORE
-    case rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_GET_RESP): {
-      rpc_pb_DatastoreGetResponse m = {};
-      if (!_decodePayload(
-              ctx, rpc::Payload::get_fields<rpc_pb_DatastoreGetResponse>(), &m,
-              rpc::Payload::get_tag<rpc_pb_DatastoreGetResponse>(),
-              sizeof(rpc_pb_DatastoreGetResponse))) {
-        emitStatus(rpc::StatusCode::STATUS_MALFORMED);
-        return;
-      }
-      _processAck(ctx.raw_command, ctx.sequence_id);
-      if (ctx.is_duplicate) {
-        return;
-      }
-      _handleDataStoreGetResponse(ctx, m);
-      break;
-    }
+    case rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_GET_RESP):
+      _dispatchCmd<rpc_pb_DatastoreGetResponse>(
+          ctx, [](const bridge::router::CommandContext& c,
+                  const rpc_pb_DatastoreGetResponse& m) {
+            _handleDataStoreGetResponse(c, m);
+          });
+      return;
 #endif
 
 #if BRIDGE_ENABLE_MAILBOX
-    case rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH): {
-      rpc_pb_MailboxPush m = {};
-      if (!_decodePayload(ctx, rpc::Payload::get_fields<rpc_pb_MailboxPush>(),
-                          &m, rpc::Payload::get_tag<rpc_pb_MailboxPush>(),
-                          sizeof(rpc_pb_MailboxPush))) {
-        emitStatus(rpc::StatusCode::STATUS_MALFORMED);
-        return;
-      }
-      _processAck(ctx.raw_command, ctx.sequence_id);
-      if (ctx.is_duplicate) {
-        return;
-      }
-      _handleMailboxPush(ctx, m);
-      break;
-    }
+    case rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH):
+      _dispatchCmd<rpc_pb_MailboxPush>(
+          ctx, [](const bridge::router::CommandContext& c,
+                  const rpc_pb_MailboxPush& m) { _handleMailboxPush(c, m); });
+      return;
 
+    // [E] No ack, no dup-check — keep as-is: altering semantics would break
+    // the protocol contract for response-only messages.
     case rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_READ_RESP): {
       rpc_pb_MailboxReadResponse m = {};
       if (!_decodePayload(
@@ -351,130 +224,81 @@ void BridgeClass::_dispatchCommand(const rpc_pb_RpcEnvelope& envelope) {
 #endif
 
 #if BRIDGE_ENABLE_FILESYSTEM
-    case rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE): {
-      rpc_pb_FileWrite m = {};
-      if (!_decodePayload(ctx, rpc::Payload::get_fields<rpc_pb_FileWrite>(), &m,
-                          rpc::Payload::get_tag<rpc_pb_FileWrite>(),
-                          sizeof(rpc_pb_FileWrite))) {
-        emitStatus(rpc::StatusCode::STATUS_MALFORMED);
-        return;
-      }
-      _processAck(ctx.raw_command, ctx.sequence_id);
-      if (ctx.is_duplicate) {
-        return;
-      }
-      _handleFileWrite(ctx, m);
-      break;
-    }
+    case rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE):
+      _dispatchCmd<rpc_pb_FileWrite>(
+          ctx, [](const bridge::router::CommandContext& c,
+                  const rpc_pb_FileWrite& m) { _handleFileWrite(c, m); });
+      return;
 
-    case rpc::to_underlying(rpc::CommandId::CMD_FILE_READ): {
-      rpc_pb_FileRead m = {};
-      if (!_decodePayload(ctx, rpc::Payload::get_fields<rpc_pb_FileRead>(), &m,
-                          rpc::Payload::get_tag<rpc_pb_FileRead>(),
-                          sizeof(rpc_pb_FileRead))) {
-        emitStatus(rpc::StatusCode::STATUS_MALFORMED);
-        return;
-      }
-      _processAck(ctx.raw_command, ctx.sequence_id);
-      if (ctx.is_duplicate) {
-        return;
-      }
-      _handleFileRead(ctx, m);
-      break;
-    }
+    case rpc::to_underlying(rpc::CommandId::CMD_FILE_READ):
+      _dispatchCmd<rpc_pb_FileRead>(
+          ctx, [](const bridge::router::CommandContext& c,
+                  const rpc_pb_FileRead& m) { _handleFileRead(c, m); });
+      return;
 
-    case rpc::to_underlying(rpc::CommandId::CMD_FILE_REMOVE): {
-      rpc_pb_FileRemove m = {};
-      if (!_decodePayload(ctx, rpc::Payload::get_fields<rpc_pb_FileRemove>(),
-                          &m, rpc::Payload::get_tag<rpc_pb_FileRemove>(),
-                          sizeof(rpc_pb_FileRemove))) {
-        emitStatus(rpc::StatusCode::STATUS_MALFORMED);
-        return;
-      }
-      _processAck(ctx.raw_command, ctx.sequence_id);
-      if (ctx.is_duplicate) {
-        return;
-      }
-      _handleFileRemove(ctx, m);
-      break;
-    }
+    case rpc::to_underlying(rpc::CommandId::CMD_FILE_REMOVE):
+      _dispatchCmd<rpc_pb_FileRemove>(
+          ctx, [](const bridge::router::CommandContext& c,
+                  const rpc_pb_FileRemove& m) { _handleFileRemove(c, m); });
+      return;
 
-    case rpc::to_underlying(rpc::CommandId::CMD_FILE_READ_RESP): {
-      rpc_pb_FileReadResponse m = {};
-      if (!_decodePayload(ctx,
-                          rpc::Payload::get_fields<rpc_pb_FileReadResponse>(),
-                          &m, rpc::Payload::get_tag<rpc_pb_FileReadResponse>(),
-                          sizeof(rpc_pb_FileReadResponse))) {
-        emitStatus(rpc::StatusCode::STATUS_MALFORMED);
-        return;
-      }
-      _processAck(ctx.raw_command, ctx.sequence_id);
-      if (ctx.is_duplicate) {
-        return;
-      }
-      _handleFileReadResponse(ctx, m);
-      break;
-    }
+    case rpc::to_underlying(rpc::CommandId::CMD_FILE_READ_RESP):
+      _dispatchCmd<rpc_pb_FileReadResponse>(
+          ctx, [](const bridge::router::CommandContext& c,
+                  const rpc_pb_FileReadResponse& m) {
+            _handleFileReadResponse(c, m);
+          });
+      return;
 #endif
 
 #if BRIDGE_ENABLE_PROCESS
-    case rpc::to_underlying(rpc::CommandId::CMD_PROCESS_KILL): {
-      rpc_pb_ProcessKill m = {};
-      if (!_decodePayload(ctx, rpc::Payload::get_fields<rpc_pb_ProcessKill>(),
-                          &m, rpc::Payload::get_tag<rpc_pb_ProcessKill>(),
-                          sizeof(rpc_pb_ProcessKill))) {
-        emitStatus(rpc::StatusCode::STATUS_MALFORMED);
-        return;
-      }
-      _processAck(ctx.raw_command, ctx.sequence_id);
-      if (ctx.is_duplicate) {
-        return;
-      }
-      _handleProcessKill(ctx, m);
-      break;
-    }
+    case rpc::to_underlying(rpc::CommandId::CMD_PROCESS_KILL):
+      _dispatchCmd<rpc_pb_ProcessKill>(
+          ctx, [](const bridge::router::CommandContext& c,
+                  const rpc_pb_ProcessKill& m) { _handleProcessKill(c, m); });
+      return;
 
-    case rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP): {
-      rpc_pb_ProcessRunAsyncResponse m = {};
-      if (!_decodePayload(
-              ctx, rpc::Payload::get_fields<rpc_pb_ProcessRunAsyncResponse>(),
-              &m, rpc::Payload::get_tag<rpc_pb_ProcessRunAsyncResponse>(),
-              sizeof(rpc_pb_ProcessRunAsyncResponse))) {
-        emitStatus(rpc::StatusCode::STATUS_MALFORMED);
-        return;
-      }
-      _processAck(ctx.raw_command, ctx.sequence_id);
-      if (ctx.is_duplicate) {
-        return;
-      }
-      _handleProcessRunAsyncResponse(ctx, m);
-      break;
-    }
+    case rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP):
+      _dispatchCmd<rpc_pb_ProcessRunAsyncResponse>(
+          ctx, [](const bridge::router::CommandContext& c,
+                  const rpc_pb_ProcessRunAsyncResponse& m) {
+            _handleProcessRunAsyncResponse(c, m);
+          });
+      return;
 
-    case rpc::to_underlying(rpc::CommandId::CMD_PROCESS_POLL_RESP): {
-      rpc_pb_ProcessPollResponse m = {};
-      if (!_decodePayload(
-              ctx, rpc::Payload::get_fields<rpc_pb_ProcessPollResponse>(), &m,
-              rpc::Payload::get_tag<rpc_pb_ProcessPollResponse>(),
-              sizeof(rpc_pb_ProcessPollResponse))) {
-        emitStatus(rpc::StatusCode::STATUS_MALFORMED);
-        return;
-      }
-      _processAck(ctx.raw_command, ctx.sequence_id);
-      if (ctx.is_duplicate) {
-        return;
-      }
-      _handleProcessPollResponse(ctx, m);
-      break;
-    }
+    case rpc::to_underlying(rpc::CommandId::CMD_PROCESS_POLL_RESP):
+      _dispatchCmd<rpc_pb_ProcessPollResponse>(
+          ctx, [](const bridge::router::CommandContext& c,
+                  const rpc_pb_ProcessPollResponse& m) {
+            _handleProcessPollResponse(c, m);
+          });
+      return;
 #endif
 
 #if BRIDGE_ENABLE_SPI
-    case rpc::to_underlying(rpc::CommandId::CMD_SPI_TRANSFER): {
-      rpc_pb_SpiTransfer m = {};
-      if (!_decodePayload(ctx, rpc::Payload::get_fields<rpc_pb_SpiTransfer>(),
-                          &m, rpc::Payload::get_tag<rpc_pb_SpiTransfer>(),
-                          sizeof(rpc_pb_SpiTransfer))) {
+    // [D] Typed, no-ack, retransmit-on-dup (SPI transfer query).
+    case rpc::to_underlying(rpc::CommandId::CMD_SPI_TRANSFER):
+      _dispatchCmd<rpc_pb_SpiTransfer>(
+          ctx,
+          [this](const bridge::router::CommandContext& c,
+                 const rpc_pb_SpiTransfer& m) { _handleSpiTransfer(c, m); },
+          false, true);
+      return;
+
+    case rpc::to_underlying(rpc::CommandId::CMD_SPI_SET_CONFIG):
+      _dispatchCmd<rpc_pb_SpiConfig>(
+          ctx, [](const bridge::router::CommandContext&,
+                  const rpc_pb_SpiConfig& m) { _handleSpiSetConfig(m); });
+      return;
+#endif
+
+    // [E] Shared case: two command IDs, same decode, divergent handler.
+    case rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_READ):
+    case rpc::to_underlying(rpc::CommandId::CMD_ANALOG_READ): {
+      rpc_pb_PinRead m = {};
+      if (!_decodePayload(ctx, rpc::Payload::get_fields<rpc_pb_PinRead>(), &m,
+                          rpc::Payload::get_tag<rpc_pb_PinRead>(),
+                          sizeof(rpc_pb_PinRead))) {
         emitStatus(rpc::StatusCode::STATUS_MALFORMED);
         return;
       }
@@ -482,26 +306,14 @@ void BridgeClass::_dispatchCommand(const rpc_pb_RpcEnvelope& envelope) {
         _retransmitLastFrame();
         return;
       }
-      _handleSpiTransfer(ctx, m);
+      if (ctx.raw_command ==
+          rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_READ)) {
+        _handleDigitalRead(ctx, m);
+      } else {
+        _handleAnalogRead(ctx, m);
+      }
       break;
     }
-
-    case rpc::to_underlying(rpc::CommandId::CMD_SPI_SET_CONFIG): {
-      rpc_pb_SpiConfig m = {};
-      if (!_decodePayload(ctx, rpc::Payload::get_fields<rpc_pb_SpiConfig>(), &m,
-                          rpc::Payload::get_tag<rpc_pb_SpiConfig>(),
-                          sizeof(rpc_pb_SpiConfig))) {
-        emitStatus(rpc::StatusCode::STATUS_MALFORMED);
-        return;
-      }
-      _processAck(ctx.raw_command, ctx.sequence_id);
-      if (ctx.is_duplicate) {
-        return;
-      }
-      _handleSpiSetConfig(m);
-      break;
-    }
-#endif
 
     default:
       onUnknownCommand(ctx);

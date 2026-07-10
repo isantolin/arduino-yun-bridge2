@@ -13,14 +13,21 @@ import ssl
 import sys
 from pathlib import Path
 
-# Ensure workspace packages are importable if run directly from workspace
-REPO_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO_ROOT))
-sys.path.insert(0, str(REPO_ROOT / "mcubridge"))
+from typing import TYPE_CHECKING
 
 from grpclib.server import Server, Stream
-from mcubridge.protocol import mcubridge_pb2 as pb
-from mcubridge.protocol.mcubridge_grpc import CloudBridgeBase
+
+if TYPE_CHECKING:
+    from mcubridge.protocol import mcubridge_pb2 as pb
+    from mcubridge.protocol.mcubridge_grpc import CloudBridgeBase
+else:
+    # Ensure workspace packages are importable if run directly from workspace
+    REPO_ROOT = Path(__file__).resolve().parent.parent
+    sys.path.insert(0, str(REPO_ROOT))
+    sys.path.insert(0, str(REPO_ROOT / "mcubridge"))
+
+    from mcubridge.protocol import mcubridge_pb2 as pb
+    from mcubridge.protocol.mcubridge_grpc import CloudBridgeBase
 
 logging.basicConfig(
     level=logging.INFO,
@@ -50,7 +57,7 @@ class CloudBridgeService(CloudBridgeBase):
                 return
 
         logger.info("Device connected: %s", device_id)
-        self.gateway._connections[device_id] = stream
+        self.gateway.connections[device_id] = stream
 
         try:
             async for envelope in stream:
@@ -86,7 +93,7 @@ class CloudBridgeService(CloudBridgeBase):
             pass
         finally:
             logger.info("Device disconnected: %s", device_id)
-            self.gateway._connections.pop(device_id, None)
+            self.gateway.connections.pop(device_id, None)
 
 
 class ProtobufGateway:
@@ -108,7 +115,7 @@ class ProtobufGateway:
         self.key_file = key_file
         self.ca_file = ca_file
         self.server: Server | None = None
-        self._connections: dict[str, Stream[pb.CloudEnvelope, pb.CloudEnvelope]] = {}
+        self.connections: dict[str, Stream[pb.CloudEnvelope, pb.CloudEnvelope]] = {}
 
     def _get_ssl_context(self) -> ssl.SSLContext | None:
         if not self.use_tls:

@@ -25,10 +25,11 @@ from mcubridge.config.const import ALLOWED_COMMAND_WILDCARD
 
 
 def iter_chunks(data: bytes, chunk_size: int) -> Iterable[bytes]:
-    """Chunk bytes into fixed-size pieces using itertools.batched. [SIL-2]"""
+    """Chunk bytes into fixed-size pieces using direct slices. [SIL-2]"""
     if not data:
         return
-    yield from (bytes(chunk) for chunk in itertools.batched(data, chunk_size))
+    for i in range(0, len(data), chunk_size):
+        yield data[i : i + chunk_size]
 
 
 PROTOBUF_CONTENT_TYPE: Final[str] = "application/x-protobuf"

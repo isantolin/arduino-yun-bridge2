@@ -413,7 +413,8 @@ class BridgeService:
             # Send CloudEnvelope
             data = envelope.SerializeToString()
             prefix = struct.pack(">I", len(data))
-            self._cloud_writer.write(prefix + data)
+            self._cloud_writer.write(prefix)
+            self._cloud_writer.write(data)
             await self._cloud_writer.drain()
 
             self.state.metrics.cloud_messages_published.inc()

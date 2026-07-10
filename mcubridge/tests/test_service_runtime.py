@@ -145,7 +145,7 @@ async def test_enqueue_cloud_spools_until_client_recovers() -> None:
         object.__setattr__(service, "_cloud_writer", mock_client)
         await service.flush_cloud_spool()
 
-        mock_client.write.assert_called_once()
+        assert mock_client.write.call_count == 2
         assert state.cloud_spool_pending_messages == 0
     finally:
         if service is not None:

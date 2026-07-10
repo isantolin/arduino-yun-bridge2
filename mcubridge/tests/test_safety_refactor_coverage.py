@@ -158,7 +158,7 @@ async def test_corrupt_item_handling(real_config: RuntimeConfig) -> None:
 
         assert await spool.length() == 0
         assert service.state.cloud_spool_corrupt_dropped == 1
-        mock_client.write.assert_called_once()
+        assert mock_client.write.call_count == 2
     finally:
         service.cleanup()
         state.cleanup()

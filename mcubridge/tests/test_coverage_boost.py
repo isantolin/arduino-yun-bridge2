@@ -280,7 +280,10 @@ async def test_daemon_coverage_boost(tmp_path: Path) -> None:
     async def mock_aiter():
         yield envelope
 
-    mock_stream.__aiter__ = lambda s: mock_aiter()
+    def mock_aiter_method(s: Any) -> Any:
+        return mock_aiter()
+
+    mock_stream.__aiter__ = mock_aiter_method
 
     mock_open = MagicMock()
     mock_open.__aenter__ = AsyncMock(return_value=mock_stream)

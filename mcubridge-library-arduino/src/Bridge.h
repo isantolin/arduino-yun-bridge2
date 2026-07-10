@@ -249,10 +249,8 @@ class BridgeClass {
   // Handler signature for typed PB:   (const bridge::router::CommandContext&,
   //                                    const MsgType&)
   template <typename MsgType, typename Handler>
-  bool _dispatchCmd(const bridge::router::CommandContext& ctx,
-                    Handler handler,
-                    bool needs_ack = true,
-                    bool retransmit_on_dup = false) {
+  bool _dispatchCmd(const bridge::router::CommandContext& ctx, Handler handler,
+                    bool needs_ack = true, bool retransmit_on_dup = false) {
     if constexpr (!etl::is_same_v<MsgType, _NoPayload>) {
       MsgType m = {};
       if (!_decodePayload(ctx, rpc::Payload::get_fields<MsgType>(), &m,
@@ -278,7 +276,6 @@ class BridgeClass {
   }
 
   void _applyTimingConfig(const rpc::payload::HandshakeConfig& msg);
-
 
   void _handleStatusMalformed(const bridge::router::CommandContext& ctx);
   void _handleStatusAck(const bridge::router::CommandContext& ctx,

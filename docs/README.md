@@ -14,14 +14,16 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 ## Características Principales
 
 - **Límites configurables:** Los buffers internos de consola y mailbox se pueden ajustar vía UCI (`console_queue_limit_bytes`, `mailbox_queue_limit`, `mailbox_queue_bytes_limit`) para prevenir desbordes. Se incluyen límites estrictos como `pending_pin_request_limit`, `file_write_max_bytes` y `file_storage_quota_bytes`.
-- **Backpressure en MQTT con MQTT v5:** Control de flujo mediante `mqtt_queue_limit` y uso de propiedades MQTT v5 para negociar flujos de respuesta.
-- **Respuestas correladas en MQTT:** Propagación de `correlation_data` y `response_topic` para asociaciones inequívocas entre peticiones y respuestas.
+- **Control de Flujo (Backpressure) en la Nube:** Regulación mediante colas de telemetría y buffer backpressure en el stream gRPC.
+- **Respuestas correladas sobre gRPC:** El flujo bidireccional gRPC correlaciona de forma nativa peticiones y respuestas mediante identificadores estables (`sequence_id`).
 - **Seguridad Funcional (SIL-2):** Librería MCU escrita en C++17 sin STL y sin alocación dinámica, garantizando determinismo y estabilidad.
 - **MIL-SPEC Compliance (FIPS 140-3):** Implementación de **HKDF-SHA256** para derivación de claves y **Power-On Self-Tests (POST)** que validan el motor criptográfico en cada arranque.
-- **Protección de Flash:** Bloqueo de inicio si las rutas de escritura intensa (`file_system_root`, `mqtt_spool_dir`) no están en `/tmp` (RAM).
+- **Protección de Flash:** Bloqueo de inicio si las rutas de escritura intensa (`file_system_root`, `cloud_spool_dir`) no están en `/tmp` (RAM).
 
 ### Novedades (julio 2026)
 
+- **Migración Integral a gRPC para Enlace con la Nube (v2.8.5)**: Reemplazo del protocolo de red TCP/TLS crudo en la conexión MPU-Nube por una arquitectura moderna y eficiente de **gRPC sobre HTTP/2 asíncrono y bidireccional (streaming)**. El daemon y el Cloud Gateway ahora se comunican de forma determinista mediante stubs de servicio tipados generados a partir de `mcubridge.proto` usando `grpclib`.
+- **Exclusión de Archivos Autogenerados**: Los archivos autogenerados de gRPC y Protobuf (`*_grpc.py` y `*_pb2.py`) han sido excluidos formalmente de las validaciones estáticas de tipos y linters en `pyproject.toml`, e incorporados al archivo `.gitignore`.
 - **Migración a Sockets UNIX (v2.8.5)**: Reemplazo del broker MQTT local loopback en el Linux MPU por una arquitectura de IPC local de alto rendimiento basada en Sockets UNIX (`/var/run/mcubridge.sock`) y tramas binarias Protobuf prefijadas por longitud. Esto reduce las dependencias locales del cliente (removiendo `aiomqtt`) y elimina la necesidad de correr brokers MQTT locales.
 - **Exclusión de Directorios Temporales**: Optimización del linter (`black`/`ruff`) excluyendo `.tmp_tests` para evitar bloqueos e inconsistencias durante compilaciones concurrentes y ejecuciones de tests E2E.
 

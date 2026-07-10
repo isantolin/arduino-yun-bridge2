@@ -6,16 +6,16 @@ Este documento unifica y reemplaza documentación histórica y dispersa.
 
 ```
                  ┌──────────────────────────────────────────────┐
-                 │                MQTT v5 Broker                │
+                 │          gRPC Cloud Gateway (WAN)            │
                  └──────────────────────────────────────────────┘
                                ▲                     │
-                               │ daemon publishes     │ clients publish
-                               │ (responses/snapshots)│ (commands)
+                               │ bidirectional       │ bidirectional
+                               │ gRPC stream         │ gRPC stream
                                │                     ▼
                       ┌────────────────────────────────────┐
                       │   McuBridge daemon (Linux / MPU)   │
                       │  - Policy (allow/deny)             │
-                      │  - Dispatcher (MCU + MQTT routes)  │
+                      │  - Dispatcher (MCU + Cloud routes) │
                       │  - RuntimeState snapshots          │
                       └────────────────────────────────────┘
                                ▲
@@ -31,7 +31,7 @@ Este documento unifica y reemplaza documentación histórica y dispersa.
 Notas:
 - Serial RPC: típicamente Linux→MCU requests y MCU→Linux responses, con comandos bidireccionales/push simétrico donde aplica.
 - Local IPC: comunicación entre clientes locales (como CLI y CGI) y el daemon a través de UNIX Domain Sockets (`/var/run/mcubridge.sock`) utilizando tramas binarias Protobuf prefijadas por longitud.
-- MQTT: comunicación entre el daemon y la nube (external broker) para telemetría, métricas y comandos remotos.
+- gRPC: comunicación bidireccional asíncrona (streaming) entre el daemon y la nube (gRPC Cloud Gateway) para telemetría, métricas y comandos remotos.
 ```
 
 ## Fuente de verdad
@@ -145,23 +145,21 @@ Gestiona el ciclo de vida del enlace serie seguro entre el daemon y el MCU.
 
 ---
 
-### 2. MQTT Transport FSM (Python Daemon)
+### 2. Cloud Transport FSM (Python Daemon)
 
-Controla la conectividad con el broker MQTT v5 y la gestión de suscripciones.
+Controla la conectividad de gRPC con el Cloud Gateway y el inicio del stream bidireccional.
 
 #### Estados
 | Estado | Descripción |
 |--------|-------------|
-| `disconnected` | Sin conexión al broker. |
-| `connecting` | Intentando establecer sesión TCP/TLS. |
-| `subscribing` | Sesión establecida, registrando topics de comando. |
-| `ready` | Suscripciones activas. Procesando mensajes bidireccionalmente. |
+| `disconnected` | Sin conexión al Cloud Gateway. |
+| `connecting` | Intentando abrir canal gRPC/HTTP/2 con TLS. |
+| `streaming` | Conexión activa y stream bidireccional establecido. Listo para procesar mensajes. |
 
 #### Transiciones
-- `connect`: `*` → `connecting` (Inicia intento de conexión)
-- `connected`: `connecting` → `subscribing` (Sesión TCP/TLS exitosa)
-- `subscribed`: `subscribing` → `ready` (Todos los topics registrados)
-- `disconnect`: `*` → `disconnected` (Error de red o parada controlada)
+- `connect`: `*` → `connecting` (Inicia canal gRPC)
+- `stream_opened`: `connecting` → `streaming` (Handshake HTTP/2 y stream establecido)
+- `disconnect`: `*` → `disconnected` (Error de red, timeout o parada controlada)
 
 ---
 
@@ -688,22 +686,17 @@ Notas:
 ## 6. Consideraciones adicionales
 
 - **Truncado**: si una respuesta supera `MAX_PAYLOAD_SIZE`, los datos se truncan.
-- **MQTT**: además del RPC serie, el daemon expone una API MQTT.
-  - Dirección: MQTT clientes → daemon (comandos), daemon → MQTT (respuestas/snapshots).
-  - La lista de suscripciones (incluyendo comodines y QoS) vive en `tools/protocol/mcubridge.proto` (`option (rpc.pb.mqtt_subscriptions)`) y se genera a Python como `MQTT_COMMAND_SUBSCRIPTIONS`.
+- **Cloud Gateway**: además del RPC serie, el daemon se comunica con el Cloud Gateway mediante un stream bidireccional gRPC.
+  - Dirección: Cloud Gateway → daemon (comandos remotos en `CloudEnvelope.command_request`), daemon → Cloud Gateway (respuestas/telemetría y eventos de estado en `CloudEnvelope`).
 
 ---
 
 
-### MQTT: snapshots del bridge (SYSTEM/bridge/*)
+### gRPC: snapshots del bridge y eventos de estado
 
-Además de los comandos anteriores, el daemon expone endpoints de lectura de estado:
-
-- `br/system/bridge/handshake/get` → publica `br/system/bridge/handshake/value`.
-- `br/system/bridge/summary/get` → publica `br/system/bridge/summary/value`.
-- `br/system/bridge/state/get` → publica `br/system/bridge/summary/value` (alias histórico).
-
-Estos topics forman parte del contrato operativo y deben estar definidos en `tools/protocol/mcubridge.proto`.
+Además de los comandos anteriores, el daemon transmite eventos periódicos y lecturas de estado al Cloud Gateway sobre el stream gRPC:
+- `CloudEnvelope.event` transmite eventos de estado en tiempo real.
+- `CloudEnvelope.telemetry` transmite snapshots periódicos del bridge.
 
 ---
 
@@ -745,8 +738,7 @@ python3 tools/frame_debug.py 02001000044A1B2C3D4...
 watch -n1 'cat /tmp/mcubridge_status.json | jq .serial_flow_stats'
 
 # Check handshake state
-mosquitto_sub -h 127.0.0.1 -p 8883 --cafile /etc/mcubridge/ca.crt \
-  -t 'br/system/bridge/handshake/value' -C 1 | jq .
+cat /tmp/mcubridge_status.json | jq .is_synchronized
 ```
 
 ---
@@ -759,12 +751,11 @@ El sistema implementa múltiples estrategias de fallback para mantener operació
 
 | Componente | Trigger | Fallback | Observable | Auto-Recovery |
 |------------|---------|----------|------------|---------------|
-| **MQTT Spool** | I/O error, ENOSPC, non-/tmp | Memory-only queue | `mqtt_spool_degraded=true` | ✅ Retry con backoff |
+| **Cloud Spool** | I/O error, ENOSPC, non-/tmp | Memory-only queue | `cloud_spool_degraded=true` | ✅ Retry con backoff |
 | **UCI Config** | OSError, ValidationError | Defaults hardcoded | `config_source="defaults"` | ❌ Requiere reinicio |
 | **Serial Link** | Desconexión, timeout | Reconexión exponencial | `serial_link_connected` | ✅ Automático |
 | **Handshake** | Auth failure streak | Backoff exponencial | `handshake_failure_streak` | ✅ Con límite fatal |
 | **Command Resolution** | Unknown enum ID | Hex string `0xNN` | `unknown_command_ids` | N/A |
-| **MQTT Auth** | Sin credenciales | Conexión anónima | Warning en logs | N/A |
 
 ### 9.2 Observabilidad de Fallbacks
 
@@ -773,8 +764,8 @@ Todos los fallbacks se exponen en `/tmp/mcubridge_status.json` y métricas Prome
 ```json
 {
   "config_source": "uci",           // "uci" o "defaults"
-  "mqtt_spool_degraded": false,     // true si usando memoria
-  "mqtt_spool_failure_reason": null,// "disk_full", "io_error", etc.
+  "cloud_spool_degraded": false,     // true si usando memoria
+  "cloud_spool_failure_reason": null,// "disk_full", "io_error", etc.
   "unknown_command_ids": 0,         // Contador de IDs no reconocidos
   "serial_link_connected": true,
   "handshake_failure_streak": 0
@@ -783,11 +774,11 @@ Todos los fallbacks se exponen en `/tmp/mcubridge_status.json` y métricas Prome
 
 ### 9.3 Comportamiento en Modo Degradado
 
-#### MQTT Spool Degradado
+#### Cloud Spool Degradado
 - **Causa**: Disco lleno, error de I/O, directorio fuera de `/tmp`
 - **Comportamiento**: Mensajes se almacenan en RAM
 - **Riesgo**: Pérdida de mensajes si el daemon reinicia antes de publicar
-- **Acción**: Monitorear `mqtt_spool_degraded` y liberar espacio en disco
+- **Acción**: Monitorear `cloud_spool_degraded` y liberar espacio en disco
 
 #### UCI Config Fallback
 - **Causa**: Archivo UCI corrupto, permisos incorrectos
@@ -806,12 +797,12 @@ Todos los fallbacks se exponen en `/tmp/mcubridge_status.json` y métricas Prome
 ```sh
 # Prometheus alert rules (ejemplo)
 - alert: McuBridgeSpoolDegraded
-  expr: mcubridge_mqtt_spool_degraded == 1
+  expr: mcubridge_cloud_spool_degraded == 1
   for: 5m
   labels:
     severity: warning
   annotations:
-    summary: "MQTT spool en modo memoria-only"
+    summary: "Cloud spool en modo memoria-only"
 
 - alert: McuBridgeConfigFallback
   expr: mcubridge_config_source_info{source="defaults"} == 1

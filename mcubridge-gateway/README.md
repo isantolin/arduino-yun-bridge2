@@ -1,10 +1,10 @@
 # Protobuf Cloud Gateway
 
-The Protobuf Cloud Gateway is a high-performance direct TCP/TLS server that replaces Mosquitto and standard MQTT brokers for external cloud connectivity.
+The Protobuf Cloud Gateway is a high-performance gRPC over HTTP/2 bidirectional streaming server that replaces Mosquitto and standard MQTT brokers for external cloud connectivity.
 
 ## Features
-- Direct TCP or secure TLS connections
-- Decodes `CloudEnvelope` messages natively
+- gRPC bidirectional streaming over HTTP/2 (with TLS/mTLS support)
+- Uses `grpclib` to process `CloudEnvelope` messages natively in a bidirectional stream
 - Low-memory footprint (does not require broker processes)
 
 ## Running

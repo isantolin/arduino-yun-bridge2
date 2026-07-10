@@ -84,14 +84,14 @@ rationale = "Async SQLite connection wrapper for non-blocking I/O database opera
 [[dependency]]
 name = "h2"
 openwrt = "python3-h2"
-pip = "h2==4.1.0"
+pip = "h2==4.3.0"
 rationale = "Pure Python HTTP/2 protocol implementation for grpclib"
 
 
 [[dependency]]
 name = "grpclib"
 openwrt = "python3-grpclib"
-pip = "grpclib==0.4.7"
+pip = "grpclib==0.4.9"
 rationale = "Pure Python asyncio gRPC library for MPU-to-Cloud communication"
 
 

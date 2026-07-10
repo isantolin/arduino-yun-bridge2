@@ -658,6 +658,7 @@ class JinjaGenerator:
             str(protoc_bin),
             f"--python_out={out_dir}",
             f"--pyi_out={out_dir}",
+            f"--grpclib_python_out={out_dir}",
             f"--plugin=protoc-gen-pyi={wrapper_path}",
             f"--proto_path={proto_path.parent}",
             f"--proto_path={nanopb_include_path}",
@@ -800,6 +801,41 @@ def check_incremental_build(args: argparse.Namespace, version: str) -> tuple[boo
     return up_to_date, hash_file, current_hash
 
 
+def _copy_generated_python_files(proto_path: Path, args: Any) -> None:
+    py_pb2 = proto_path.parent / "mcubridge_pb2.py"
+    py_pb2_stub = proto_path.parent / "mcubridge_pb2.pyi"
+    if py_pb2.exists():
+        pb2_data = py_pb2.read_bytes()
+        if args.py:
+            (args.py.parent / "mcubridge_pb2.py").write_bytes(pb2_data)
+        if args.py_client:
+            (args.py_client.parent / "mcubridge_pb2.py").write_bytes(pb2_data)
+        py_pb2.unlink(missing_ok=True)
+    if py_pb2_stub.exists():
+        pb2_stub_text = py_pb2_stub.read_text()
+        pb2_stub_text = pb2_stub_text.replace(
+            "_Union[StructuredEntry, _Mapping]]",
+            "_Union[StructuredEntry, _Mapping[str, object]]]",
+        )
+        pb2_stub_data = pb2_stub_text.encode()
+        if args.py:
+            (args.py.parent / "mcubridge_pb2.pyi").write_bytes(pb2_stub_data)
+        if args.py_client:
+            (args.py_client.parent / "mcubridge_pb2.pyi").write_bytes(pb2_stub_data)
+        py_pb2_stub.unlink(missing_ok=True)
+
+    py_grpc = proto_path.parent / "mcubridge_grpc.py"
+    if py_grpc.exists():
+        grpc_text = py_grpc.read_text()
+        grpc_text = grpc_text.replace("import mcubridge_pb2", "from . import mcubridge_pb2")
+        grpc_data = grpc_text.encode()
+        if args.py:
+            (args.py.parent / "mcubridge_grpc.py").write_bytes(grpc_data)
+        if args.py_client:
+            (args.py_client.parent / "mcubridge_grpc.py").write_bytes(grpc_data)
+        py_grpc.unlink(missing_ok=True)
+
+
 def main() -> None:
     ensure_nanopb_core_files()
     parser = argparse.ArgumentParser(description="Protocol binding generator for MCU Bridge v2.")
@@ -852,27 +888,7 @@ def main() -> None:
                 target_c.write_bytes(cpp_pb_c.read_bytes())
                 cpp_pb_c.unlink(missing_ok=True)
 
-        py_pb2 = proto_path.parent / "mcubridge_pb2.py"
-        py_pb2_stub = proto_path.parent / "mcubridge_pb2.pyi"
-        if py_pb2.exists():
-            pb2_data = py_pb2.read_bytes()
-            if args.py:
-                (args.py.parent / "mcubridge_pb2.py").write_bytes(pb2_data)
-            if args.py_client:
-                (args.py_client.parent / "mcubridge_pb2.py").write_bytes(pb2_data)
-            py_pb2.unlink(missing_ok=True)
-        if py_pb2_stub.exists():
-            pb2_stub_text = py_pb2_stub.read_text()
-            pb2_stub_text = pb2_stub_text.replace(
-                "_Union[StructuredEntry, _Mapping]]",
-                "_Union[StructuredEntry, _Mapping[str, object]]]",
-            )
-            pb2_stub_data = pb2_stub_text.encode()
-            if args.py:
-                (args.py.parent / "mcubridge_pb2.pyi").write_bytes(pb2_stub_data)
-            if args.py_client:
-                (args.py_client.parent / "mcubridge_pb2.pyi").write_bytes(pb2_stub_data)
-            py_pb2_stub.unlink(missing_ok=True)
+        _copy_generated_python_files(proto_path, args)
 
     if args.cpp:
         args.cpp.parent.mkdir(parents=True, exist_ok=True)

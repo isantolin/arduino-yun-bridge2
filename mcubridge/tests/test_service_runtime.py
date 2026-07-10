@@ -140,12 +140,12 @@ async def test_enqueue_cloud_spools_until_client_recovers() -> None:
 
         assert state.cloud_spool_pending_messages == 1
 
-        mock_client = MagicMock()
-        mock_client.drain = AsyncMock()
-        object.__setattr__(service, "_cloud_writer", mock_client)
+        mock_stream = MagicMock()
+        mock_stream.send_message = AsyncMock()
+        object.__setattr__(service, "_cloud_stream", mock_stream)
         await service.flush_cloud_spool()
 
-        assert mock_client.write.call_count == 2
+        mock_stream.send_message.assert_called_once()
         assert state.cloud_spool_pending_messages == 0
     finally:
         if service is not None:

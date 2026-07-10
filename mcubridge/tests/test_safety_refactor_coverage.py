@@ -143,9 +143,9 @@ async def test_corrupt_item_handling(real_config: RuntimeConfig) -> None:
     state = create_runtime_state(real_config)
     serial = AsyncMock(spec=SerialTransport)
     service = BridgeService(real_config, state, serial)
-    mock_client = MagicMock()
-    mock_client.drain = AsyncMock()
-    object.__setattr__(service, "_cloud_writer", mock_client)
+    mock_stream = MagicMock()
+    mock_stream.send_message = AsyncMock()
+    object.__setattr__(service, "_cloud_stream", mock_stream)
     try:
         spool = getattr(service, "_cloud_spool")
         await spool.clear()
@@ -158,7 +158,7 @@ async def test_corrupt_item_handling(real_config: RuntimeConfig) -> None:
 
         assert await spool.length() == 0
         assert service.state.cloud_spool_corrupt_dropped == 1
-        assert mock_client.write.call_count == 2
+        mock_stream.send_message.assert_called_once()
     finally:
         service.cleanup()
         state.cleanup()
@@ -187,9 +187,9 @@ async def test_peeking_or_popping_errors(real_config: RuntimeConfig) -> None:
     state = create_runtime_state(real_config)
     serial = AsyncMock(spec=SerialTransport)
     service = BridgeService(real_config, state, serial)
-    mock_client = MagicMock()
-    mock_client.drain = AsyncMock()
-    object.__setattr__(service, "_cloud_writer", mock_client)
+    mock_stream = MagicMock()
+    mock_stream.send_message = AsyncMock()
+    object.__setattr__(service, "_cloud_stream", mock_stream)
     try:
         spool = getattr(service, "_cloud_spool")
         await spool.clear()

@@ -1453,3 +1453,8 @@ message CloudEnvelope {
     }
 }
 
+service CloudBridge {
+    rpc Session(stream CloudEnvelope) returns (stream CloudEnvelope);
+}
+
+

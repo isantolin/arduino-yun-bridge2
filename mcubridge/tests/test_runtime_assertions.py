@@ -63,8 +63,8 @@ async def service_setup(
     serial.acknowledge.return_value = True
     service = BridgeService(runtime_config, runtime_state, serial)
     mock_cloud = MagicMock()
-    mock_cloud.drain = AsyncMock()
-    object.__setattr__(service, "_cloud_writer", mock_cloud)
+    mock_cloud.send_message = AsyncMock()
+    object.__setattr__(service, "_cloud_stream", mock_cloud)
     return service, runtime_state, serial, mock_cloud
 
 

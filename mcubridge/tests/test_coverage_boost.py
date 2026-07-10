@@ -263,10 +263,11 @@ async def test_daemon_coverage_boost(tmp_path: Path) -> None:
     daemon_cloud: Any = BridgeService(config_cloud, state_cloud, serial_cloud)
     serial_cloud.service = daemon_cloud
 
-    mock_reader = AsyncMock()
-    mock_writer = MagicMock()
-    mock_writer.drain = AsyncMock()
-    mock_writer.wait_closed = AsyncMock()
+    mock_channel = MagicMock()
+    mock_channel.close = MagicMock()
+
+    mock_stream = MagicMock()
+    mock_stream.send_message = AsyncMock()
 
     envelope = pb.CloudEnvelope(
         sequence_id=1,
@@ -275,31 +276,42 @@ async def test_daemon_coverage_boost(tmp_path: Path) -> None:
             payload=b"",
         ),
     )
-    req_data = envelope.SerializeToString()
-    header = len(req_data).to_bytes(4, byteorder="big")
 
-    read_results = [header, req_data]
+    async def mock_aiter():
+        yield envelope
 
-    def read_mock(n: int) -> bytes:
-        if not read_results:
-            raise ConnectionResetError()
-        return read_results.pop(0)
+    mock_stream.__aiter__ = lambda s: mock_aiter()
 
-    mock_reader.readexactly.side_effect = read_mock
+    mock_open = MagicMock()
+    mock_open.__aenter__ = AsyncMock(return_value=mock_stream)
+    mock_open.__aexit__ = AsyncMock(return_value=None)
 
-    with patch("asyncio.open_connection", return_value=(mock_reader, mock_writer)):
+    mock_stub = MagicMock()
+    mock_stub.Session = MagicMock()
+    mock_stub.Session.open = MagicMock(return_value=mock_open)
+
+    with (
+        patch("mcubridge.services.runtime.Channel", return_value=mock_channel),
+        patch("mcubridge.services.runtime.CloudBridgeStub", return_value=mock_stub),
+    ):
         try:
             await daemon_cloud.connect_cloud_session(None)
         except ConnectionResetError:
             pass
 
     # Connect Cloud session exception path
-    def read_mock_fail(n: int) -> bytes:
-        raise OSError("connection reset")
+    mock_open_fail = MagicMock()
+    mock_open_fail.__aenter__ = AsyncMock(side_effect=OSError("connection reset"))
+    mock_open_fail.__aexit__ = AsyncMock(return_value=None)
 
-    mock_reader2 = AsyncMock()
-    mock_reader2.readexactly.side_effect = read_mock_fail
-    with patch("asyncio.open_connection", return_value=(mock_reader2, mock_writer)):
+    mock_stub_fail = MagicMock()
+    mock_stub_fail.Session = MagicMock()
+    mock_stub_fail.Session.open = MagicMock(return_value=mock_open_fail)
+
+    with (
+        patch("mcubridge.services.runtime.Channel", return_value=mock_channel),
+        patch("mcubridge.services.runtime.CloudBridgeStub", return_value=mock_stub_fail),
+    ):
         with pytest.raises(OSError):
             await daemon_cloud.connect_cloud_session(None)
 

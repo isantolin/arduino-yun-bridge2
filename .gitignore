@@ -3,6 +3,7 @@ mcubridge.pb.c
 mcubridge.pb.h
 mcubridge_pb2.py
 mcubridge_pb2.pyi
+mcubridge_grpc.py
 .tmp_arduino_build/
 # OpenWRT SDK and build artifacts
 openwrt-sdk/
@@ -111,8 +112,10 @@ mcubridge-client-examples/mcubridge_client/protocol.py
 # Nanopb and Protobuf generated/vendored files
 mcubridge-client-examples/mcubridge_client/mcubridge_pb2.py
 mcubridge-client-examples/mcubridge_client/mcubridge_pb2.pyi
+mcubridge-client-examples/mcubridge_client/mcubridge_grpc.py
 mcubridge/mcubridge/protocol/mcubridge_pb2.py
 mcubridge/mcubridge/protocol/mcubridge_pb2.pyi
+mcubridge/mcubridge/protocol/mcubridge_grpc.py
 mcubridge-library-arduino/src/protocol/mcubridge.pb.c
 mcubridge-library-arduino/src/protocol/mcubridge.pb.h
 mcubridge-library-arduino/src/pb.h

@@ -11,6 +11,8 @@ dependencies = [
     "aiosqlite==0.22.1",
     "cobs==1.2.2",
     "cryptography==49.0.0",
+    "grpclib==0.4.7",
+    "h2==4.1.0",
     "prometheus-client==0.25.0",
     "protobuf==7.35.1",
     "serialx==1.8.2",

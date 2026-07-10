@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 from mcubridge.protocol import mcubridge_pb2 as pb
+from grpclib.client import Channel
+from mcubridge.protocol.mcubridge_grpc import CloudBridgeStub
 
 import asyncio
 import collections
@@ -112,8 +114,8 @@ class BridgeService:
     config: RuntimeConfig
     state: RuntimeState
     serial: SerialTransport | None
-    _cloud_reader: asyncio.StreamReader | None
-    _cloud_writer: asyncio.StreamWriter | None
+    _cloud_channel: Channel | None
+    _cloud_stream: Any | None
 
     handshake: SerialHandshakeManager
     _storage_lock: asyncio.Lock
@@ -131,7 +133,7 @@ class BridgeService:
 
     def __init__(self, config: RuntimeConfig, state: RuntimeState, serial: SerialTransport) -> None:
         self.config, self.state, self.serial = config, state, serial
-        self._cloud_reader, self._cloud_writer = None, None
+        self._cloud_channel, self._cloud_stream = None, None
         self.watchdog: WatchdogKeepalive | None = None
         self.exporter: PrometheusExporter | None = None
         self._cloud_incoming_queue = asyncio.Queue()
@@ -306,7 +308,7 @@ class BridgeService:
 
     async def _flush_cloud_spool_locked(self) -> None:
         spool = self._cloud_spool
-        if not self._cloud_writer or spool is None:
+        if not self._cloud_stream or spool is None:
             return
 
         try:
@@ -375,7 +377,7 @@ class BridgeService:
             self._mark_cloud_spool_failure(str(exc))
 
     async def _publish_cloud_message(self, message: pb.CloudQueuedPublish) -> bool:
-        if not self._cloud_writer:
+        if not self._cloud_stream:
             return False
 
         try:
@@ -410,12 +412,8 @@ class BridgeService:
                     telemetry=report,
                 )
 
-            # Send CloudEnvelope
-            data = envelope.SerializeToString()
-            prefix = struct.pack(">I", len(data))
-            self._cloud_writer.write(prefix)
-            self._cloud_writer.write(data)
-            await self._cloud_writer.drain()
+            # Send CloudEnvelope via gRPC
+            await self._cloud_stream.send_message(envelope)
 
             self.state.metrics.cloud_messages_published.inc()
             return True
@@ -1432,59 +1430,51 @@ class BridgeService:
 
     async def connect_cloud_session(self, tls_context: Any) -> None:
         logger.info("Connecting to Cloud Gateway at %s:%d...", self.config.cloud_host, self.config.cloud_port)
-        reader, writer = await asyncio.open_connection(
+        channel = Channel(
             self.config.cloud_host,
             self.config.cloud_port,
             ssl=tls_context,
         )
-        self._cloud_reader = reader
-        self._cloud_writer = writer
-        logger.info("Connected to Cloud Gateway.")
+        self._cloud_channel = channel
+        stub = CloudBridgeStub(channel)
         try:
-            # Emit status online event
-            await self._send_cloud_event("status_online", "info", "Device online")
-            await self.flush_cloud_spool()
+            async with stub.Session.open() as stream:
+                self._cloud_stream = stream
+                logger.info("Connected to Cloud Gateway via gRPC.")
 
-            worker_task = asyncio.create_task(self._cloud_incoming_worker())
-            try:
-                # Read loop
-                while True:
-                    len_bytes = await reader.readexactly(4)
-                    length = struct.unpack(">I", len_bytes)[0]
-                    data = await reader.readexactly(length)
+                # Emit status online event
+                await self._send_cloud_event("status_online", "info", "Device online")
+                await self.flush_cloud_spool()
 
-                    envelope = pb.CloudEnvelope()
-                    envelope.ParseFromString(data)
-
-                    payload_type = envelope.WhichOneof("payload")
-                    if payload_type == "pong":
-                        logger.debug("Received keepalive pong from cloud.")
-                        continue
-
-                    if payload_type == "command_request":
-                        cmd = envelope.command_request
-                        # Map to BridgeRequest
-                        request = BridgeRequest(
-                            topic=topic_path(self.state.topic_prefix, cmd.command_path),
-                            payload=cmd.payload,
-                            correlation_data=envelope.sequence_id.to_bytes(8, "big"),
-                            response_topic="cloud",
-                        )
-                        self._cloud_incoming_queue.put_nowait(request)
-            finally:
-                worker_task.cancel()
+                worker_task = asyncio.create_task(self._cloud_incoming_worker())
                 try:
-                    await worker_task
-                except asyncio.CancelledError:
-                    pass
+                    # Read loop
+                    async for envelope in stream:
+                        payload_type = envelope.WhichOneof("payload")
+                        if payload_type == "pong":
+                            logger.debug("Received keepalive pong from cloud.")
+                            continue
+
+                        if payload_type == "command_request":
+                            cmd = envelope.command_request
+                            # Map to BridgeRequest
+                            request = BridgeRequest(
+                                topic=topic_path(self.state.topic_prefix, cmd.command_path),
+                                payload=cmd.payload,
+                                correlation_data=envelope.sequence_id.to_bytes(8, "big"),
+                                response_topic="cloud",
+                            )
+                            self._cloud_incoming_queue.put_nowait(request)
+                finally:
+                    worker_task.cancel()
+                    try:
+                        await worker_task
+                    except asyncio.CancelledError:
+                        pass
         finally:
-            self._cloud_reader = None
-            self._cloud_writer = None
-            writer.close()
-            try:
-                await writer.wait_closed()
-            except OSError as exc:
-                logger.debug("Cloud writer already closed on wait_closed", error=str(exc))
+            self._cloud_stream = None
+            self._cloud_channel = None
+            channel.close()
 
     async def _send_cloud_event(self, event_type: str, severity: str, description: str) -> None:
         envelope = pb.CloudEnvelope(
@@ -1498,12 +1488,8 @@ class BridgeService:
                 description=description,
             ),
         )
-        writer = self._cloud_writer
-        if writer:
-            data = envelope.SerializeToString()
-            prefix = struct.pack(">I", len(data))
-            writer.write(prefix + data)
-            await writer.drain()
+        if self._cloud_stream:
+            await self._cloud_stream.send_message(envelope)
 
     async def _cloud_incoming_worker(self) -> None:
         while True:

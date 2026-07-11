@@ -53,7 +53,6 @@ etl::expected<rpc_pb_RpcEnvelope, FrameError> parse_frame(
 
   const size_t crc_offset = buffer.size() - CRC_TRAILER_SIZE;
   const uint32_t crc_calc = checksum::compute(buffer.subspan(0, crc_offset));
-  uint32_t crc_received = 0;
   const auto crc_tail = buffer.subspan(crc_offset);
 
   // Deserialización segura del CRC de cola

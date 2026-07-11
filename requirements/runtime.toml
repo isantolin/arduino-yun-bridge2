@@ -4,6 +4,7 @@
 name = "python3"
 openwrt = "python3"
 pip = ""
+gateway = true
 rationale = "Base interpreter shipped on the target image"
 
 
@@ -27,6 +28,7 @@ rationale = "Template engine for professional and auditable code generation [BUI
 name = "protobuf"
 openwrt = "python3-protobuf"
 pip = "protobuf==7.35.1"
+gateway = true
 rationale = "Generated protobuf runtime required for daemon and Cloud payload serialization [VULN-PATCHED: CVE-2026-0994]"
 
 
@@ -85,6 +87,7 @@ rationale = "Async SQLite connection wrapper for non-blocking I/O database opera
 name = "h2"
 openwrt = "python3-h2"
 pip = "h2==4.3.0"
+gateway = true
 rationale = "Pure Python HTTP/2 protocol implementation for grpclib"
 
 
@@ -92,6 +95,7 @@ rationale = "Pure Python HTTP/2 protocol implementation for grpclib"
 name = "grpclib"
 openwrt = "python3-grpclib"
 pip = "grpclib==0.4.9"
+gateway = true
 rationale = "Pure Python asyncio gRPC library for MPU-to-Cloud communication"
 
 

@@ -128,6 +128,22 @@ void test_filesystem_on_remove() {
   FileSystem._onRemove(msg);
 }
 
+void test_filesystem_api_empty_and_error_paths() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream);
+
+  // Empty write
+  FileSystem.write("", etl::span<const uint8_t>());
+
+  // Empty read
+  FileSystem.read(
+      "",
+      FileSystemType::FileSystemReadHandler::create<test_fs_read_callback>());
+
+  // Empty remove
+  FileSystem.remove("");
+}
+
 }  // namespace
 
 int main() {
@@ -140,5 +156,6 @@ int main() {
   RUN_TEST(test_filesystem_on_write);
   RUN_TEST(test_filesystem_on_read);
   RUN_TEST(test_filesystem_on_remove);
+  RUN_TEST(test_filesystem_api_empty_and_error_paths);
   return UNITY_END();
 }

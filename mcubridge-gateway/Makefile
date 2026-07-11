@@ -37,11 +37,13 @@ define Package/$(PKG_NAME)
 	CATEGORY:=Utilities
 	TITLE:=MCU Bridge Cloud Gateway
 	PKG_ARCH:=all
-	DEPENDS:= \
+	# AUTO-GENERATED RUNTIME DEPENDS BEGIN
+	DEPENDS+= \
 		python3 \
 		python3-protobuf \
-		python3-cryptography \
+		python3-h2 \
 		python3-grpclib
+	# AUTO-GENERATED RUNTIME DEPENDS END
 endef
 
 define Package/$(PKG_NAME)/description

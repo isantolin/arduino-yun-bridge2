@@ -67,7 +67,42 @@ void test_surgical_fsm_resets() {
 }
 
 void test_surgical_security_failures() {
-  // Eradicated with thin wrappers
+  // 1. Handshake authenticate wrong tag size
+  etl::array<uint8_t, 32> secret = {0};
+  etl::array<uint8_t, 12> nonce = {0};
+  etl::array<uint8_t, 16> out_tag = {0};
+  etl::array<uint8_t, 5> bad_tag = {0};
+  bool ok = rpc::security::handshake_authenticate(secret, nonce, bad_tag, out_tag);
+  TEST_ASSERT_FALSE(ok);
+
+  // 2. aead_encrypt_frame with null nonce_counter
+  etl::array<uint8_t, 4> in = {1, 2, 3, 4};
+  etl::array<uint8_t, 32> key = {0};
+  etl::array<uint8_t, 4> out_payload = {0};
+  etl::array<uint8_t, 12> out_nonce = {0};
+  etl::array<uint8_t, 16> out_tag2 = {0};
+  bool enc_ok = rpc::security::aead_encrypt_frame(
+      1, 1, in, key, nullptr, out_payload, out_nonce, out_tag2);
+  TEST_ASSERT(enc_ok);
+
+  // 3. validate_frame_nonce with null last_seen_counter
+  etl::array<uint8_t, 12> valid_nonce = {0};
+  valid_nonce[0] = 'M'; valid_nonce[1] = 'C'; valid_nonce[2] = 'U';
+  bool val_ok = rpc::security::validate_frame_nonce(valid_nonce, nullptr);
+  TEST_ASSERT(val_ok);
+
+  // 4. validate_frame_nonce with nonce of size < 12
+  etl::array<uint8_t, 10> short_nonce = {0};
+  bool short_ok = rpc::security::validate_frame_nonce(short_nonce, nullptr);
+  TEST_ASSERT_FALSE(short_ok);
+
+  // 5. validate_frame_nonce with counter <= last_seen
+  uint64_t last_seen = 100;
+  etl::array<uint8_t, 12> old_nonce = {0};
+  old_nonce[0] = 'M'; old_nonce[1] = 'C'; old_nonce[2] = 'U';
+  old_nonce[11] = 50;
+  bool old_ok = rpc::security::validate_frame_nonce(old_nonce, &last_seen);
+  TEST_ASSERT_FALSE(old_ok);
 }
 
 void test_surgical_tasks_flow() {

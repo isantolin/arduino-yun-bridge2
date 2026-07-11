@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include <etl/array.h>
 #include <unity.h>
+#include "protocol/rpc_frame.h"
 
 HardwareSerial Serial;
 HardwareSerial Serial1;

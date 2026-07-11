@@ -139,13 +139,10 @@ bool aead_decrypt_frame(uint16_t cmd_id, uint16_t seq_id,
 bool validate_frame_nonce(etl::span<const uint8_t> nonce,
                           uint64_t* last_seen_counter) {
   if (nonce.size() < 12) return false;
-  uint64_t counter = 0;
   const auto nonce_sub = nonce.subspan(4);
   etl::byte_stream_reader n_reader(nonce_sub.data(), nonce_sub.size(),
                                    etl::endian::big);
-  if (auto c_opt = n_reader.read<uint64_t>()) {
-    counter = *c_opt;
-  }
+  const uint64_t counter = n_reader.read<uint64_t>().value();
   if (last_seen_counter && counter <= *last_seen_counter) {
     return false;
   }

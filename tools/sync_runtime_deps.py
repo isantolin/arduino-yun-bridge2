@@ -20,6 +20,8 @@ MANIFEST_PATH = ROOT / "requirements" / "runtime.toml"
 REQUIREMENTS_PATH = ROOT / "requirements" / "runtime.txt"
 PYPROJECT_PATH = ROOT / "pyproject.toml"
 MAKEFILE_PATH = ROOT / "mcubridge" / "Makefile"
+GATEWAY_REQUIREMENTS_PATH = ROOT / "mcubridge-gateway" / "requirements.txt"
+GATEWAY_MAKEFILE_PATH = ROOT / "mcubridge-gateway" / "Makefile"
 FEEDS_DIR = ROOT / "feeds"
 BLOCK_START = "# AUTO-GENERATED RUNTIME DEPENDS BEGIN"
 BLOCK_END = "# AUTO-GENERATED RUNTIME DEPENDS END"
@@ -42,6 +44,7 @@ class _DepEntry(TypedDict):
     openwrt: str
     pip: str
     check_latest: bool
+    gateway: bool
 
 
 def load_manifest() -> list[_DepEntry]:
@@ -63,6 +66,7 @@ def load_manifest() -> list[_DepEntry]:
                 openwrt=openwrt,
                 pip=pip_spec,
                 check_latest=bool(entry.get("check_latest", True)),
+                gateway=bool(entry.get("gateway", False)),
             )
         )
     return normalized
@@ -92,6 +96,21 @@ def write_requirements(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> b
             return False
     if not dry_run:
         REQUIREMENTS_PATH.write_text(new_text, encoding="utf-8")
+    return True
+
+
+def write_gateway_requirements(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
+    gateway_deps = [dep for dep in deps if dep.get("gateway")]
+    pip_specs = collect_pip_specs(gateway_deps)
+    content = ["# Generated via tools/sync_runtime_deps.py; do not edit."]
+    content.extend(pip_specs)
+    new_text = "\n".join(content) + "\n"
+    if GATEWAY_REQUIREMENTS_PATH.exists():
+        existing = GATEWAY_REQUIREMENTS_PATH.read_text(encoding="utf-8")
+        if existing == new_text:
+            return False
+    if not dry_run:
+        GATEWAY_REQUIREMENTS_PATH.write_text(new_text, encoding="utf-8")
     return True
 
 
@@ -187,6 +206,42 @@ def update_makefile(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool
         return False
     if not dry_run:
         MAKEFILE_PATH.write_text(updated, encoding="utf-8")
+    return True
+
+
+def update_gateway_makefile(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
+    if not GATEWAY_MAKEFILE_PATH.exists():
+        return False
+    makefile_text = GATEWAY_MAKEFILE_PATH.read_text(encoding="utf-8")
+    if BLOCK_START not in makefile_text or BLOCK_END not in makefile_text:
+        raise ManifestError("Gateway Makefile is missing dependency markers")
+    gateway_deps = [dep for dep in deps if dep.get("gateway")]
+    tokens = [f"{pkg}" for pkg in collect_openwrt_packages(gateway_deps)]
+    if tokens:
+        block_lines = ["\tDEPENDS+= \\"]
+        block_lines.extend(format_openwrt_lines(tokens))
+    else:
+        block_lines = ["\tDEPENDS+="]
+    rendered_block = "\n".join(block_lines)
+    new_text: list[str] = []
+    in_block = False
+    for line in makefile_text.splitlines():
+        if BLOCK_START in line:
+            in_block = True
+            new_text.append(line)
+            new_text.append(rendered_block)
+            continue
+        if BLOCK_END in line:
+            in_block = False
+            new_text.append(line)
+            continue
+        if not in_block:
+            new_text.append(line)
+    updated = "\n".join(new_text) + "\n"
+    if updated == makefile_text:
+        return False
+    if not dry_run:
+        GATEWAY_MAKEFILE_PATH.write_text(updated, encoding="utf-8")
     return True
 
 
@@ -359,9 +414,18 @@ def main(argv: list[str] | None = None) -> None:
     updated_makefile = update_makefile(deps, dry_run=check)
     updated_pyproject = update_pyproject(deps, dry_run=check)
     updated_feeds = update_feeds(deps, dry_run=check)
+    updated_gw_req = write_gateway_requirements(deps, dry_run=check)
+    updated_gw_makefile = update_gateway_makefile(deps, dry_run=check)
 
     fail = False
-    if check and (updated_requirements or updated_makefile or updated_pyproject or updated_feeds):
+    if check and (
+        updated_requirements
+        or updated_makefile
+        or updated_pyproject
+        or updated_feeds
+        or updated_gw_req
+        or updated_gw_makefile
+    ):
         fail = True
 
     if check_latest:

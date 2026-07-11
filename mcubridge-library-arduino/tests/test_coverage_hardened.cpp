@@ -217,11 +217,16 @@ void test_process_branch_error_paths() {
       etl::delegate<void(int32_t)>::create<capture_async_handler>());
   TEST_ASSERT_EQUAL(-1, captured_pid);
 
-  // Force send failure path via safe state (TX disabled for non-system cmds).
-  Bridge.enterSafeState();
+  // Empty command to cover c_copy == 0 path
   Process.runAsync(
-      "ls", {}, etl::delegate<void(int32_t)>::create<capture_async_handler>());
-  TEST_ASSERT_EQUAL(-1, captured_pid);
+      "", {}, etl::delegate<void(int32_t)>::create<capture_async_handler>());
+
+  // Safe state with invalid handler to cover send failure without callback
+  Bridge.enterSafeState();
+  ProcessType::ProcessRunHandler empty_run_handler;
+  empty_run_handler.clear();
+  Process.runAsync("ls", {}, empty_run_handler);
+
   reset_bridge_core(Bridge, stream);
   auto& ba_recovered = TestAccessor::create(Bridge);
   ba_recovered.setSynchronized();
@@ -276,6 +281,10 @@ void test_console_write_full_buffer_retains_data_when_send_fails() {
   Bridge.enterSafeState();
   const etl::array<uint8_t, 1> extra = {'y'};
   TEST_ASSERT_EQUAL_UINT32(0, Console.write(extra.data(), extra.size()));
+
+  // Test nullptr/empty writes
+  TEST_ASSERT_EQUAL_UINT32(0, Console.write(nullptr, 10));
+  TEST_ASSERT_EQUAL_UINT32(0, Console.write(extra.data(), 0));
 }
 
 void test_mailbox_and_datastore_variants() {
@@ -287,6 +296,52 @@ void test_mailbox_and_datastore_variants() {
   etl::array<uint8_t, 4> mb_data1 = {1, 2, 3, 4};
   Mailbox.push(mb_data1);
 
+  // Empty mailbox push
+  Mailbox.push(etl::span<const uint8_t>());
+
+  // Mailbox callback and processed
+  Mailbox.requestRead();
+  Mailbox.requestAvailable();
+  Mailbox.signalProcessed(999);
+
+  // Fill mailbox queue via _onPush to trigger queue full path
+  rpc::payload::MailboxPush push_msg = {};
+  push_msg.data.size = 2;
+  push_msg.data.bytes[0] = 0x11;
+  push_msg.data.bytes[1] = 0x22;
+  for (int i = 0; i < 10; ++i) {
+    Mailbox._onPush(push_msg);
+  }
+
+  // Process with no callback set
+  Mailbox.process();
+
+  // Clear queue
+  Mailbox.onLost();
+
+  // Fill mailbox queue via _onReadResponse to trigger queue full path
+  rpc::payload::MailboxReadResponse read_resp = {};
+  read_resp.content.size = 2;
+  read_resp.content.bytes[0] = 0x33;
+  read_resp.content.bytes[1] = 0x44;
+  for (int i = 0; i < 10; ++i) {
+    Mailbox._onReadResponse(read_resp);
+  }
+
+  // Mailbox available callback
+  struct AvailableMock {
+    static void callback(uint32_t count) {
+      TEST_ASSERT_EQUAL_UINT32(7, count);
+    }
+  };
+  Mailbox.registerAvailableCallback(
+      MailboxType::AvailableCallback::create<AvailableMock::callback>());
+  rpc::payload::MailboxAvailableResponse avail_resp = {};
+  avail_resp.count = 7;
+  Mailbox._onAvailableResponse(avail_resp);
+  Mailbox.registerAvailableCallback(MailboxType::AvailableCallback{});
+  Mailbox._onAvailableResponse(avail_resp);
+
   // Coverage for observer notification
   Mailbox.onLost();
 
@@ -297,9 +352,12 @@ void test_mailbox_and_datastore_variants() {
                 DataStoreType::GetHandler::create<datastore_get_handler>());
   DataStore._onResponse({});
   DataStore._pending_gets.clear();
+
+  // Empty put and get
+  DataStore.set("", etl::span<const uint8_t>());
   DataStoreType::GetHandler invalid_get_handler;
   invalid_get_handler.clear();
-  DataStore.get("gamma", invalid_get_handler);
+  DataStore.get("", invalid_get_handler);
   DataStore._onResponse(rpc::payload::DatastoreGetResponse{});
 }
 

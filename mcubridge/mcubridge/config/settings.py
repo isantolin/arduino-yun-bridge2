@@ -172,11 +172,10 @@ def load_runtime_config(overrides: dict[str, Any] | None = None) -> RuntimeConfi
 
     # Load topic authorizations dynamically from raw_values/UCI
     for auth_field in msg.topic_authorization.DESCRIPTOR.fields:
-        # Match either "cloud_allow_<name>", "allow_<name>" or "mqtt_allow_<name>"
+        # Match either "cloud_allow_<name>" or "allow_<name>"
         for key_candidate in (
             f"cloud_allow_{auth_field.name}",
             f"allow_{auth_field.name}",
-            f"mqtt_allow_{auth_field.name}",
         ):
             if key_candidate in raw_values:
                 coerced = _coerce_value(raw_values[key_candidate], auth_field.type, auth_field.name)

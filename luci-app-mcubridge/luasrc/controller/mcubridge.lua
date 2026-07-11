@@ -182,7 +182,7 @@ function action_status()
     luci.http.write(content)
 end
 
--- Deleted: action_log_daemon, action_log_mqtt, action_log_script and helper functions
+-- Deleted: action_log_daemon, action_log_gateway, action_log_script and helper functions
 
 function action_rotate_credentials()
     local cmd = "/usr/bin/mcubridge-rotate-credentials"

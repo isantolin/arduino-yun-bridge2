@@ -193,3 +193,17 @@ def test_load_runtime_config_parses_watchdog(monkeypatch: pytest.MonkeyPatch):
     config = settings.load_runtime_config()
     assert config.watchdog_enabled
     assert config.watchdog_interval == 0.5
+
+
+def test_load_runtime_config_http3(monkeypatch: pytest.MonkeyPatch):
+    raw_config = {
+        "cloud_http3_enabled": True,
+        "cloud_http3_port": 8843,
+        "cloud_http3_congestion_control": "cubic",
+    }
+    monkeypatch.setattr(settings, "_load_raw_config", lambda: (raw_config, "test"))
+
+    config = settings.load_runtime_config()
+    assert config.cloud_http3_enabled is True
+    assert config.cloud_http3_port == 8843
+    assert config.cloud_http3_congestion_control == "cubic"

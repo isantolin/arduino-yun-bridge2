@@ -22,7 +22,7 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 
 ### Novedades (julio 2026)
 
-- **Migración Integral a gRPC para Enlace con la Nube (v2.8.5)**: Reemplazo del protocolo de red TCP/TLS crudo en la conexión MPU-Nube por una arquitectura moderna y eficiente de **gRPC sobre HTTP/2 asíncrono y bidireccional (streaming)**. El daemon y el Cloud Gateway ahora se comunican de forma determinista mediante stubs de servicio tipados generados a partir de `mcubridge.proto` usando `grpclib`.
+- **Migración Integral a gRPC para Enlace con la Nube (v2.8.5)**: Reemplazo del protocolo de red TCP/TLS crudo en la conexión MPU-Nube por una arquitectura moderna y eficiente de **gRPC sobre HTTP/3 (QUIC) asíncrono y bidireccional (streaming) con soporte de fallback HTTP/2**. El daemon y el Cloud Gateway ahora se comunican de forma determinista mediante stubs de servicio tipados generados a partir de `mcubridge.proto` usando `grpclib`.
 - **Exclusión de Archivos Autogenerados**: Los archivos autogenerados de gRPC y Protobuf (`*_grpc.py` y `*_pb2.py`) han sido excluidos formalmente de las validaciones estáticas de tipos y linters en `pyproject.toml`, e incorporados al archivo `.gitignore`.
 - **Migración a Sockets UNIX (v2.8.5)**: Adopción de una arquitectura de IPC local de alto rendimiento basada en Sockets UNIX (`/var/run/mcubridge.sock`) y tramas binarias Protobuf prefijadas por longitud en el Linux MPU. Esto reduce las dependencias locales y elimina la necesidad de intermediarios de mensajería locales.
 - **Exclusión de Directorios Temporales**: Optimización del linter (`black`/`ruff`) excluyendo `.tmp_tests` para evitar bloqueos e inconsistencias durante compilaciones concurrentes y ejecuciones de tests E2E.
@@ -67,7 +67,7 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 
 ### Detalles Técnicos del Stack gRPC & Sockets UNIX (v2.8.5)
 
-- **Cloud Gateway en gRPC:** La comunicación externa se realiza vía gRPC bidireccional sobre HTTP/2, ofreciendo un canal seguro, tipado y de baja latencia.
+- **Cloud Gateway en gRPC:** La comunicación externa se realiza vía gRPC bidireccional sobre HTTP/3 (QUIC) con soporte para fallback HTTP/2, ofreciendo un canal seguro, tipado y de baja latencia.
 - **Local IPC por Socket UNIX:** El daemon escucha localmente en `/var/run/mcubridge.sock`. Todos los clientes locales y CGI interaccionan mediante este socket, previniendo loops y reduciendo el overhead.
 - **Datastore sin ida y vuelta al MCU:** Las consultas de datos locales se resuelven de forma inmediata en Linux usando la caché en memoria sincronizada por el daemon.
 - **Telemetría consolidada:** `RuntimeState` registra métricas de drop/truncamiento por canal (`console_dropped_chunks`, `mailbox_truncated_messages`, etc.) y las expone en `/tmp/mcubridge_status.json`.

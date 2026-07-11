@@ -153,12 +153,12 @@ Controla la conectividad de gRPC con el Cloud Gateway y el inicio del stream bid
 | Estado | Descripción |
 |--------|-------------|
 | `disconnected` | Sin conexión al Cloud Gateway. |
-| `connecting` | Intentando abrir canal gRPC/HTTP/2 con TLS. |
+| `connecting` | Intentando abrir canal gRPC/HTTP/3 (QUIC) con TLS (con fallback a HTTP/2). |
 | `streaming` | Conexión activa y stream bidireccional establecido. Listo para procesar mensajes. |
 
 #### Transiciones
 - `connect`: `*` → `connecting` (Inicia canal gRPC)
-- `stream_opened`: `connecting` → `streaming` (Handshake HTTP/2 y stream establecido)
+- `stream_opened`: `connecting` → `streaming` (Handshake HTTP/3 o HTTP/2 y stream establecido)
 - `disconnect`: `*` → `disconnected` (Error de red, timeout o parada controlada)
 
 ---

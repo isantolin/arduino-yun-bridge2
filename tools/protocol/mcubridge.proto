@@ -979,6 +979,9 @@ message RuntimeConfig {
     bool allow_non_tmp_paths = 45;
     AllowedCommandPolicy allowed_policy = 46;
     TopicAuthorization topic_authorization = 47;
+    bool cloud_http3_enabled = 48;
+    uint32 cloud_http3_port = 49;
+    string cloud_http3_congestion_control = 50;
 }
 
 message DigitalReadResponse {

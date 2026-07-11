@@ -130,6 +130,12 @@ void test_surgical_tasks_flow() {
   // Test etl::handle_error
   etl::exception test_exc("msg", "file", 100);
   etl::handle_error(test_exc);
+
+  // Test timer lambda coverage
+  ba.startTimersForCoverage();
+  ba.setTimerLastTick(0);
+  bridge::test::fault::advance_clock_ms(2000);
+  ba.invokeTimerTask();
 }
 
 int main() {

@@ -3,8 +3,6 @@
 #include <etl/array.h>
 #include <unity.h>
 
-#include "protocol/rpc_frame.h"
-
 HardwareSerial Serial;
 HardwareSerial Serial1;
 Stream* g_arduino_stream_delegate = nullptr;
@@ -68,8 +66,8 @@ void test_protocol_frame_logic_exhaustive() {
   malformed_proto_buf[6] = (calc_crc >> 16) & 0xFF;
   malformed_proto_buf[7] = (calc_crc >> 24) & 0xFF;
 
-  auto res_malformed = parse_frame(
-      etl::span<const uint8_t>(malformed_proto_buf.data(), 8));
+  auto res_malformed =
+      parse_frame(etl::span<const uint8_t>(malformed_proto_buf.data(), 8));
   TEST_ASSERT(!res_malformed.has_value());
   TEST_ASSERT(res_malformed.error() == FrameError::MALFORMED);
 }

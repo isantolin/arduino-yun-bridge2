@@ -6,7 +6,6 @@
 #include "ArchTraits.h"
 #include "config/bridge_config.h"
 #include "protocol/rpc_protocol.h"
-#include "protocol/rpc_structs.h"
 
 #if defined(ARDUINO_ARCH_AVR)
 extern "C" {
@@ -44,8 +43,7 @@ constexpr uint8_t ANALOG_PINS =
 namespace {
 template <size_t I>
 void _forceSinglePin() {
-  if constexpr (bridge::config::
-                    SAFE_START_PINS_ENABLED) {
+  if constexpr (bridge::config::SAFE_START_PINS_ENABLED) {
     ::pinMode(static_cast<uint8_t>(I), OUTPUT);
     ::digitalWrite(static_cast<uint8_t>(I), LOW);
   } else {
@@ -74,8 +72,7 @@ void watchdog_kick() {
 #if defined(ARDUINO_ARCH_AVR)
       wdt_reset();
 #endif
-    } else if constexpr (Traits::id ==
-                         ArchId::ARCH_ESP32) {
+    } else if constexpr (Traits::id == ArchId::ARCH_ESP32) {
 #if defined(ARDUINO_ARCH_ESP32)
       esp_task_wdt_reset();
 #endif
@@ -97,8 +94,7 @@ uint16_t getFreeMemory() {
 #else
     return Traits::default_free_memory;
 #endif
-  } else if constexpr (Traits::id ==
-                       ArchId::ARCH_ESP32) {
+  } else if constexpr (Traits::id == ArchId::ARCH_ESP32) {
 #if defined(ARDUINO_ARCH_ESP32)
     return static_cast<uint16_t>(ESP.getFreeHeap());
 #else
@@ -115,8 +111,7 @@ void init() {
 #if defined(ARDUINO_ARCH_AVR)
       wdt_enable(WDTO_4S);
 #endif
-    } else if constexpr (Traits::id ==
-                         ArchId::ARCH_ESP32) {
+    } else if constexpr (Traits::id == ArchId::ARCH_ESP32) {
 #if defined(ARDUINO_ARCH_ESP32)
       esp_task_wdt_init(4, true);
       esp_task_wdt_add(nullptr);

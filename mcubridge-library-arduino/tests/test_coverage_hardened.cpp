@@ -330,9 +330,7 @@ void test_mailbox_and_datastore_variants() {
 
   // Mailbox available callback
   struct AvailableMock {
-    static void callback(uint32_t count) {
-      TEST_ASSERT_EQUAL_UINT32(7, count);
-    }
+    static void callback(uint32_t count) { TEST_ASSERT_EQUAL_UINT32(7, count); }
   };
   Mailbox.registerAvailableCallback(
       MailboxType::AvailableCallback::create<AvailableMock::callback>());
@@ -520,7 +518,7 @@ void test_bridge_additional_coverage() {
     env.command_id = (uint16_t)rpc::CommandId::CMD_ANALOG_READ;
     env.sequence_id = 46;
     rpc_pb_PinRead pr_payload = {};
-    pr_payload.pin = 99; // invalid pin
+    pr_payload.pin = 99;  // invalid pin
     rpc::Payload::set<rpc_pb_PinRead>(env, pr_payload);
     ba.dispatch(env);
   }
@@ -532,7 +530,7 @@ void test_bridge_additional_coverage() {
     env.command_id = (uint16_t)rpc::CommandId::CMD_DIGITAL_READ;
     env.sequence_id = 47;
     rpc_pb_PinRead pr_payload = {};
-    pr_payload.pin = 99; // invalid pin
+    pr_payload.pin = 99;  // invalid pin
     rpc::Payload::set<rpc_pb_PinRead>(env, pr_payload);
     ba.dispatch(env);
   }
@@ -543,7 +541,7 @@ void test_bridge_additional_coverage() {
     env.version = rpc::PROTOCOL_VERSION;
     env.command_id = (uint16_t)rpc::CommandId::CMD_XOFF;
     env.sequence_id = 48;
-    env.which_payload_type = 0; // no payload
+    env.which_payload_type = 0;  // no payload
     ba.dispatch(env);
   }
 
@@ -565,12 +563,12 @@ void test_bridge_additional_coverage() {
     env.version = rpc::PROTOCOL_VERSION;
     env.command_id = (uint16_t)rpc::CommandId::CMD_XON;
     env.sequence_id = 50;
-    env.which_payload_type = 0; // no payload
+    env.which_payload_type = 0;  // no payload
     ba.dispatch(env);
   }
 
-  // 7. Test send failures for CMD_GET_VERSION, CMD_GET_CAPABILITIES, CMD_GET_FREE_MEMORY
-  // setting _tx_enabled = false
+  // 7. Test send failures for CMD_GET_VERSION, CMD_GET_CAPABILITIES,
+  // CMD_GET_FREE_MEMORY setting _tx_enabled = false
   {
     rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
     env.version = rpc::PROTOCOL_VERSION;
@@ -599,7 +597,7 @@ void test_bridge_additional_coverage() {
     env.sequence_id = 54;
     ba.dispatch(env);
   }
-  
+
   // Turn it back on with XON
   {
     rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
@@ -615,7 +613,7 @@ void test_bridge_additional_coverage() {
     env.version = rpc::PROTOCOL_VERSION;
     env.command_id = (uint16_t)rpc::CommandId::CMD_DIGITAL_READ;
     env.sequence_id = 56;
-    env.which_payload_type = 999; // invalid tag
+    env.which_payload_type = 999;  // invalid tag
     ba.dispatch(env);
   }
 

@@ -93,7 +93,8 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
               return true;
             }
 
-            auto res = bridge::hal::readFileChunk(path, offset, etl::span<uint8_t>(buffer.data(), buffer.size()));
+            auto res = bridge::hal::readFileChunk(
+                path, offset, etl::span<uint8_t>(buffer.data(), buffer.size()));
             if (!res) {
               BRIDGE_FS_DEBUG("[DEBUG] FS: Read FAILED at offset %zu\n",
                               offset);

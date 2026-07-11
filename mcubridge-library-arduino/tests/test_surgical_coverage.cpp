@@ -1,11 +1,11 @@
 #define BRIDGE_ENABLE_TEST_INTERFACE
+#include <BridgeFaultInjection.h>
 #include <unity.h>
 
 #include "Bridge.h"
 #include "BridgeTestInterface.h"
 #include "security/security.h"
 #include "test_support.h"
-#include <BridgeFaultInjection.h>
 
 // Arduino Stubs for Linker
 HardwareSerial Serial;
@@ -77,7 +77,8 @@ void test_surgical_security_failures() {
   etl::array<uint8_t, 12> nonce = {0};
   etl::array<uint8_t, 16> out_tag = {0};
   etl::array<uint8_t, 5> bad_tag = {0};
-  bool ok = rpc::security::handshake_authenticate(secret, nonce, bad_tag, out_tag);
+  bool ok =
+      rpc::security::handshake_authenticate(secret, nonce, bad_tag, out_tag);
   TEST_ASSERT_FALSE(ok);
 
   // 2. aead_encrypt_frame with null nonce_counter
@@ -92,7 +93,9 @@ void test_surgical_security_failures() {
 
   // 3. validate_frame_nonce with null last_seen_counter
   etl::array<uint8_t, 12> valid_nonce = {0};
-  valid_nonce[0] = 'M'; valid_nonce[1] = 'C'; valid_nonce[2] = 'U';
+  valid_nonce[0] = 'M';
+  valid_nonce[1] = 'C';
+  valid_nonce[2] = 'U';
   bool val_ok = rpc::security::validate_frame_nonce(valid_nonce, nullptr);
   TEST_ASSERT(val_ok);
 
@@ -104,7 +107,9 @@ void test_surgical_security_failures() {
   // 5. validate_frame_nonce with counter <= last_seen
   uint64_t last_seen = 100;
   etl::array<uint8_t, 12> old_nonce = {0};
-  old_nonce[0] = 'M'; old_nonce[1] = 'C'; old_nonce[2] = 'U';
+  old_nonce[0] = 'M';
+  old_nonce[1] = 'C';
+  old_nonce[2] = 'U';
   old_nonce[11] = 50;
   bool old_ok = rpc::security::validate_frame_nonce(old_nonce, &last_seen);
   TEST_ASSERT_FALSE(old_ok);
@@ -134,7 +139,7 @@ void test_surgical_tasks_flow() {
 
   // Test timer lambda coverage
   ba.startTimersForCoverage();
-  ba.setTimerLastTick(0);
+  ba.setTimerLastTick(1);
   bridge::test::fault::advance_clock_ms(2000);
   ba.invokeTimerTask();
 }

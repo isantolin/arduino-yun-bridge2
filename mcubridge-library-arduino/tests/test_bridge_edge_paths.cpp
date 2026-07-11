@@ -398,7 +398,7 @@ void test_timer_link_and_bootloader_edges() {
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buf;
   rpc::payload::LinkSync sync = {};
   memset(sync.nonce.bytes, 0x11, 12);
-  sync.nonce.size = 12;
+  sync.nonce.size = 20;
   memset(sync.tag.bytes, 0x22, 16);
   sync.tag.size = 16;
   auto linksync = make_payload_frame(
@@ -557,8 +557,10 @@ void test_encrypted_rx_nonce_paths() {
     }
     etl::array<uint8_t, rpc::MAX_FRAME_SIZE> wire_tampered;
     size_t wire_tampered_len = rpc::serialize_frame(
-        tampered, etl::span<uint8_t>(wire_tampered.data(), wire_tampered.size()));
-    ba.invokePacketReceived(etl::span<const uint8_t>(wire_tampered.data(), wire_tampered_len));
+        tampered,
+        etl::span<uint8_t>(wire_tampered.data(), wire_tampered.size()));
+    ba.invokePacketReceived(
+        etl::span<const uint8_t>(wire_tampered.data(), wire_tampered_len));
   }
 }
 

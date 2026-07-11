@@ -223,8 +223,7 @@ static bool extract_next_valid_frame(const ByteBuffer<N>& buffer,
     while (end < buffer.len && buffer.data[end] != rpc::RPC_FRAME_DELIMITER)
       end++;
 
-    const size_t segment_len =
-        (end < buffer.len) ? (end - cursor + 1) : (end - cursor);
+    const size_t segment_len = end - cursor;
     size_t decoded_len =
         TestCOBS::decode(&buffer.data[cursor], segment_len, decoded_buf.data());
 

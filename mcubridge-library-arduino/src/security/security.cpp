@@ -237,13 +237,16 @@ bool __attribute__((weak)) run_cryptographic_self_tests() {
       etl::span<const uint8_t>(kat_aead_nonce),
       etl::span<const uint8_t>(kat_aead_ad),
       etl::span<const uint8_t>(reinterpret_cast<const uint8_t*>("test"), 4),
-      etl::span<uint8_t>(aead_out),
-      etl::span<uint8_t>(aead_tag_actual));
+      etl::span<uint8_t>(aead_out), etl::span<uint8_t>(aead_tag_actual));
 
   bool aead_res_ok = (encrypt_res == 0);
   bool aead_tag_ok = etl::equal(aead_tag_actual.begin(), aead_tag_actual.end(),
-                               kat_aead_tag_expected.begin());
-  return ok & hmac_ok & aead_res_ok & aead_tag_ok;
+                                kat_aead_tag_expected.begin());
+  const uint8_t val_ok = ok ? 1U : 0U;
+  const uint8_t val_hmac = hmac_ok ? 1U : 0U;
+  const uint8_t val_aead_res = aead_res_ok ? 1U : 0U;
+  const uint8_t val_aead_tag = aead_tag_ok ? 1U : 0U;
+  return (val_ok & val_hmac & val_aead_res & val_aead_tag) != 0U;
 }
 
 #endif  // BRIDGE_ENABLE_POST_TESTS

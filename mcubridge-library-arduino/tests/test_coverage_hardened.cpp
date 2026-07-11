@@ -98,6 +98,20 @@ void test_filesystem_read_edge_cases() {
   // This will use the new CounterIterator in _onRead
   FileSystem._onRead(req);
 
+  // Write a large file (> 64 bytes) to test multi-chunk reading
+  etl::array<uint8_t, 100> large_data;
+  large_data.fill(0xAA);
+  bridge::hal::writeFile("test_large.txt", large_data);
+
+  rpc::payload::FileRead req_large;
+  strncpy(req_large.path, "test_large.txt", sizeof(req_large.path));
+  FileSystem._onRead(req_large);
+
+  // Trigger timeout path
+  bridge::test::fault::enable(
+      bridge::test::fault::FaultPoint::FILESYSTEM_TIMEOUT);
+  FileSystem._onRead(req_large);
+
   // Coverage for observer notification
   FileSystem.onLost();
 }
@@ -231,19 +245,21 @@ void test_process_branch_error_paths() {
                ProcessType::ProcessPollHandler::create<capture_poll_handler>());
   ba_recovered.setSynchronized();
 
-  // Exercise invalid pending handlers in response dispatch.
-  ProcessType::ProcessRunHandler invalid_pending_run;
-  invalid_pending_run.clear();
-  Process._pending_run_async.push({invalid_pending_run});
-  Process._onRunAsyncResponse([]() {
-    rpc::payload::ProcessRunAsyncResponse p;
-    p.pid = 777;
-    return p;
-  }());
-  ProcessType::ProcessPollHandler invalid_pending_poll;
-  invalid_pending_poll.clear();
-  Process._pending_polls.push({1, invalid_pending_poll});
-  Process._onPollResponse(rpc::payload::ProcessPollResponse{});
+  // Command that overflows command_buffer immediately (> 64 bytes)
+  etl::array<char, 70> long_cmd = {};
+  long_cmd.fill('a');
+  captured_pid = 0;
+  Process.runAsync(
+      etl::string_view(long_cmd.data(), 70), {},
+      etl::delegate<void(int32_t)>::create<capture_async_handler>());
+  TEST_ASSERT_EQUAL(-1, captured_pid);
+
+  // Command with valid arguments successfully appended
+  etl::array<etl::string_view, 2> valid_args = {etl::string_view("arg1"),
+                                                etl::string_view("arg2")};
+  Process.runAsync(
+      "ls", etl::span<const etl::string_view>(valid_args.data(), 2),
+      etl::delegate<void(int32_t)>::create<capture_async_handler>());
 }
 
 void test_console_write_full_buffer_retains_data_when_send_fails() {

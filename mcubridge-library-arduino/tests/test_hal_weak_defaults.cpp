@@ -3,8 +3,8 @@
 #include "protocol/rpc_protocol.h"
 #include "protocol/rpc_structs.h"
 
-extern bool g_host_has_sd;
-extern bool g_host_fs_enabled;
+bool g_host_has_sd = false;
+bool g_host_fs_enabled = false;
 
 void setUp() {}
 void tearDown() {}

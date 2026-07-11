@@ -145,7 +145,11 @@ pushd "${BUILD_DIR}" > /dev/null
 for suite in "${TEST_SUITES[@]}"; do
     suite_src="${TEST_ROOT}/${suite}.cpp"
     suite_bin="${BUILD_DIR}/${suite}"
-    g++ -std=c++17 "${BASE_FLAGS[@]}" "${suite_src}" "${OBJECTS[@]}" "${MOCK_OBJ}" "${UNITY_OBJ}" -o "${suite_bin}"
+    if [ "${suite}" = "test_hal_weak_defaults" ]; then
+        g++ -std=c++17 "${BASE_FLAGS[@]}" "${suite_src}" "${OBJECTS[@]}" "${UNITY_OBJ}" -o "${suite_bin}"
+    else
+        g++ -std=c++17 "${BASE_FLAGS[@]}" "${suite_src}" "${OBJECTS[@]}" "${MOCK_OBJ}" "${UNITY_OBJ}" -o "${suite_bin}"
+    fi
     "${suite_bin}"
 done
 popd > /dev/null

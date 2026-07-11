@@ -115,9 +115,7 @@ void ProcessClass::_onRunAsyncResponse(
   const typename ProcessClass::PendingRunAsync pending =
       _pending_run_async.front();
   _pending_run_async.pop();
-  if (pending.handler.is_valid()) {
-    pending.handler(static_cast<int32_t>(msg.pid));
-  }
+  pending.handler(static_cast<int32_t>(msg.pid));
 }
 
 void ProcessClass::_onPollResponse(
@@ -125,12 +123,10 @@ void ProcessClass::_onPollResponse(
   if (_pending_polls.empty()) return;
   const typename ProcessClass::PendingPoll pending = _pending_polls.front();
   _pending_polls.pop();
-  if (pending.handler.is_valid()) {
-    pending.handler(
-        static_cast<rpc::StatusCode>(msg.status), msg.exit_code,
-        etl::span<const uint8_t>(msg.stdout_data.bytes, msg.stdout_data.size),
-        etl::span<const uint8_t>(msg.stderr_data.bytes, msg.stderr_data.size));
-  }
+  pending.handler(
+      static_cast<rpc::StatusCode>(msg.status), msg.exit_code,
+      etl::span<const uint8_t>(msg.stdout_data.bytes, msg.stdout_data.size),
+      etl::span<const uint8_t>(msg.stderr_data.bytes, msg.stderr_data.size));
 }
 
 void ProcessClass::reset() {

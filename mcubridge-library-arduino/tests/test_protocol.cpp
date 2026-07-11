@@ -54,6 +54,24 @@ void test_protocol_frame_logic_exhaustive() {
   raw[v_len - 1] ^= 0xFF;  // Restore CRC
   TEST_ASSERT(
       parse_frame(etl::span<const uint8_t>(raw.data(), v_len)).has_value());
+
+  // Malformed Protobuf with valid CRC
+  etl::array<uint8_t, 8> malformed_proto_buf;
+  malformed_proto_buf[0] = 0xFF;
+  malformed_proto_buf[1] = 0xFF;
+  malformed_proto_buf[2] = 0xFF;
+  malformed_proto_buf[3] = 0xFF;
+  const uint32_t calc_crc = checksum::compute(
+      etl::span<const uint8_t>(malformed_proto_buf.data(), 4));
+  malformed_proto_buf[4] = calc_crc & 0xFF;
+  malformed_proto_buf[5] = (calc_crc >> 8) & 0xFF;
+  malformed_proto_buf[6] = (calc_crc >> 16) & 0xFF;
+  malformed_proto_buf[7] = (calc_crc >> 24) & 0xFF;
+
+  auto res_malformed = parse_frame(
+      etl::span<const uint8_t>(malformed_proto_buf.data(), 8));
+  TEST_ASSERT(!res_malformed.has_value());
+  TEST_ASSERT(res_malformed.error() == FrameError::MALFORMED);
 }
 
 void test_protocol_builder_exhaustive() {

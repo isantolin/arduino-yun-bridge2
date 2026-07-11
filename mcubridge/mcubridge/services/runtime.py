@@ -3,7 +3,8 @@
 from __future__ import annotations
 from mcubridge.protocol import mcubridge_pb2 as pb
 from grpclib.client import Channel
-from mcubridge.protocol.mcubridge_grpc import CloudBridgeStub
+from grpclib.server import Server, Stream
+from mcubridge.protocol.mcubridge_grpc import CloudBridgeStub, LocalBridgeBase
 
 import asyncio
 import collections
@@ -129,7 +130,7 @@ class BridgeService:
     _next_alias_id: int
     _cloud_incoming_queue: asyncio.Queue[BridgeRequest]
     _ipc_requests: dict[bytes, asyncio.Queue[pb.CloudQueuedPublish]]
-    _ipc_writers: list[asyncio.StreamWriter]
+    _console_queues: list[asyncio.Queue[pb.CloudQueuedPublish]]
 
     def __init__(self, config: RuntimeConfig, state: RuntimeState, serial: SerialTransport) -> None:
         self.config, self.state, self.serial = config, state, serial
@@ -138,7 +139,7 @@ class BridgeService:
         self.exporter: PrometheusExporter | None = None
         self._cloud_incoming_queue = asyncio.Queue()
         self._ipc_requests = {}
-        self._ipc_writers = []
+        self._console_queues = []
 
         self.handshake = SerialHandshakeManager(
             config=config,
@@ -225,14 +226,8 @@ class BridgeService:
             return
 
         if "console" in resolved_message.topic_name:
-            for w in list(self._ipc_writers):
-                try:
-                    data = resolved_message.SerializeToString()
-                    w.write(len(data).to_bytes(4, byteorder="big"))
-                    w.write(data)
-                    asyncio.create_task(w.drain())
-                except OSError as exc:
-                    logger.debug("IPC writer closed during console broadcast", error=str(exc))
+            for q in list(self._console_queues):
+                q.put_nowait(resolved_message)
 
         self.state.cloud_publish_queue.put_nowait(resolved_message)
         try:
@@ -1562,8 +1557,7 @@ class BridgeService:
             raise
 
     async def run_ipc_server(self) -> None:
-        """Run the lightweight UNIX socket IPC server for local clients."""
-
+        """Run the gRPC UNIX socket IPC server for local clients."""
         socket_path = os.environ.get("MCUBRIDGE_SOCKET_PATH") or "/var/run/mcubridge.sock"
         try:
             if os.path.exists(socket_path):
@@ -1574,68 +1568,40 @@ class BridgeService:
         # Create parent directory if it doesn't exist
         os.makedirs(os.path.dirname(socket_path), exist_ok=True)
 
-        server = await asyncio.start_unix_server(self.handle_ipc_client, path=socket_path)
+        local_handler = LocalBridgeService(self)
+        server = Server([local_handler])
+
         try:
-            os.chmod(socket_path, 0o660)
-        except OSError as e:
-            logger.warning("Failed to set permissions on UNIX socket", error=e)
-
-        async with server:
-            logger.info("Local IPC server listening on %s", socket_path)
-            await server.serve_forever()
-
-    async def handle_ipc_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        self._ipc_writers.append(writer)
-        active_correlations: set[bytes] = set()
-        try:
-            while True:
-                try:
-                    len_bytes = await reader.readexactly(4)
-                except asyncio.IncompleteReadError:
-                    break  # EOF, client disconnected cleanly
-
-                length = int.from_bytes(len_bytes, byteorder="big")
-                if length > 65536:
-                    logger.error("IPC request size exceeded limit", size=length)
-                    break
-
-                data = await reader.readexactly(length)
-                request = pb.CloudQueuedPublish.FromString(data)
-
-                # Process request in background task so we don't block reading other requests
-                asyncio.create_task(self._process_ipc_request(request, writer, active_correlations))
-        except asyncio.CancelledError:
-            raise
-        except (asyncio.IncompleteReadError, OSError) as exc:
-            logger.debug("IPC client connection closed", error=str(exc))
-        except (ProtobufDecodeError, ValueError, RuntimeError) as e:
-            logger.error("IPC client error occurred", error=type(e).__name__)
-        finally:
-            if writer in self._ipc_writers:
-                self._ipc_writers.remove(writer)
-
-            for corr in active_correlations:
-                self._ipc_requests.pop(corr, None)
-
-            writer.close()
+            await server.start(path=socket_path)
             try:
-                await writer.wait_closed()
-            except OSError:
-                pass
+                os.chmod(socket_path, 0o660)
+            except OSError as e:
+                logger.warning("Failed to set permissions on UNIX socket", error=e)
 
-    async def _process_ipc_request(
-        self, request: pb.CloudQueuedPublish, writer: asyncio.StreamWriter, active_correlations: set[bytes]
-    ) -> None:
-        # [SIL-2] Only register a correlation entry when the client explicitly requires a reply.
+            logger.info("Local gRPC IPC server listening on %s", socket_path)
+            await server.wait_closed()
+        finally:
+            server.close()
+
+
+class LocalBridgeService(LocalBridgeBase):
+    """Implementation of the Local gRPC service for local MPU clients."""
+
+    def __init__(self, runtime_service: BridgeService) -> None:
+        self.runtime_service = runtime_service
+
+    async def Publish(self, stream: Stream[pb.CloudQueuedPublish, pb.CloudQueuedPublish]) -> None:
+        request = await stream.recv_message()
+        if request is None:
+            return
+
         has_correlation = request.HasField("correlation_data")
         correlation = request.correlation_data if has_correlation else secrets.token_bytes(12)
 
-        # [SIL-2] Initialize to None; narrowed to Queue only when has_correlation is True.
         response_queue: asyncio.Queue[pb.CloudQueuedPublish] | None = None
         if has_correlation:
             response_queue = asyncio.Queue(maxsize=1)
-            self._ipc_requests[correlation] = response_queue
-            active_correlations.add(correlation)
+            self.runtime_service._ipc_requests[correlation] = response_queue
             logger.debug("Registering IPC request correlation", topic=request.topic_name, correlation=correlation.hex())
 
         try:
@@ -1645,21 +1611,39 @@ class BridgeService:
                 correlation_data=correlation,
             )
 
-            await self.handle_request(req)
+            await self.runtime_service.handle_request(req)
 
             if has_correlation and response_queue is not None:
                 try:
                     async with asyncio.timeout(15.0):
                         response = await response_queue.get()
-                        resp_data = response.SerializeToString()
-                        writer.write(len(resp_data).to_bytes(4, byteorder="big"))
-                        writer.write(resp_data)
-                        await writer.drain()
+                        await stream.send_message(response)
                 except TimeoutError:
                     logger.warning("IPC request timed out", topic=request.topic_name)
+                    await stream.send_message(pb.CloudQueuedPublish())
+            else:
+                await stream.send_message(pb.CloudQueuedPublish())
         except OSError as exc:
             logger.debug("IPC connection closed during response write", error=str(exc))
         finally:
             if has_correlation:
-                active_correlations.discard(correlation)
-                self._ipc_requests.pop(correlation, None)
+                self.runtime_service._ipc_requests.pop(correlation, None)
+
+    async def SubscribeConsole(self, stream: Stream[pb.SubscribeRequest, pb.CloudQueuedPublish]) -> None:
+        request = await stream.recv_message()
+        if request is None:
+            return
+
+        queue: asyncio.Queue[pb.CloudQueuedPublish] = asyncio.Queue()
+        self.runtime_service._console_queues.append(queue)
+        try:
+            while True:
+                msg = await queue.get()
+                await stream.send_message(msg)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.debug("Local IPC console stream error", error=str(e))
+        finally:
+            if queue in self.runtime_service._console_queues:
+                self.runtime_service._console_queues.remove(queue)

@@ -3,10 +3,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import sys
 import argparse
 from pathlib import Path
-import socket
+from grpclib.client import Channel
+from mcubridge.protocol.mcubridge_grpc import LocalBridgeStub
 import structlog
 from mcubridge.config.settings import load_runtime_config
 from mcubridge.protocol import mcubridge_pb2 as pb
@@ -17,25 +19,27 @@ logger = structlog.get_logger("mcubridge.file-push")
 
 
 def push_file(topic: str, data: bytes) -> None:
-    """Publish file data using direct UNIX socket IPC."""
-    msg = pb.CloudQueuedPublish(
-        topic_name=topic,
-        payload=data,
-        qos=1,
-    )
-    payload_data = msg.SerializeToString()
-    prefix = len(payload_data).to_bytes(4, byteorder="big")
+    """Publish file data using local gRPC UNIX socket IPC."""
+    async def _run():
+        channel = None
+        try:
+            channel = Channel(path="/var/run/mcubridge.sock")
+            stub = LocalBridgeStub(channel)
+            msg = pb.CloudQueuedPublish(
+                topic_name=topic,
+                payload=data,
+                qos=1,
+            )
+            await stub.Publish(msg)
+            logger.info("File push successful", topic=topic, size=len(data))
+        except Exception as e:
+            logger.error("File push failed", error=str(e), topic=topic)
+            sys.exit(1)
+        finally:
+            if channel is not None:
+                channel.close()
 
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    try:
-        sock.connect("/var/run/mcubridge.sock")
-        sock.sendall(prefix + payload_data)
-        logger.info("File push successful", topic=topic, size=len(data))
-    except OSError as e:
-        logger.error("File push failed", error=str(e), topic=topic)
-        sys.exit(1)
-    finally:
-        sock.close()
+    asyncio.run(_run())
 
 
 def main() -> None:

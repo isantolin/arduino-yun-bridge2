@@ -137,14 +137,17 @@ async def test_surgical_runtime_edge_cases(
 def test_surgical_scripts_coverage() -> None:
     from scripts import mcubridge_file_push as file_push
 
-    mock_sock_cls = MagicMock()
+    mock_stub = MagicMock()
+    mock_stub.Publish = AsyncMock()
     with patch("sys.argv", ["file-push", "local.txt", "remote.txt"]):
-        with patch("socket.socket", return_value=mock_sock_cls):
-            with patch("builtins.open", MagicMock()):
-                with patch.object(Path, "exists", return_value=True):
-                    with patch.object(Path, "read_bytes", return_value=b"data"):
-                        file_push.main()
-                        assert mock_sock_cls.connect.called
+        with patch("scripts.mcubridge_file_push.Channel") as mock_channel_cls:
+            with patch("scripts.mcubridge_file_push.LocalBridgeStub", return_value=mock_stub):
+                with patch("builtins.open", MagicMock()):
+                    with patch.object(Path, "exists", return_value=True):
+                        with patch.object(Path, "read_bytes", return_value=b"data"):
+                            file_push.main()
+                            assert mock_channel_cls.called
+                            assert mock_stub.Publish.called
 
     from scripts import mcubridge_rotate_credentials as rotate
 

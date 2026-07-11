@@ -3,10 +3,11 @@
 
 from __future__ import annotations
 
-import socket
-import time
+import asyncio
 import argparse
 import sys
+from grpclib.client import Channel
+from mcubridge.protocol.mcubridge_grpc import LocalBridgeStub
 import structlog
 from mcubridge.config.settings import load_runtime_config
 from mcubridge.protocol import mcubridge_pb2 as pb
@@ -23,34 +24,37 @@ class SmokeTester:
         self.results: dict[str, bool] = {}
 
     def run(self, pin: int, timeout: float) -> None:
-        logger.info("Starting hardware smoke test via UNIX socket IPC...")
-        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        try:
-            sock.connect("/var/run/mcubridge.sock")
-            self.results["connectivity"] = True
-            logger.info("Connectivity to UNIX socket verified")
+        logger.info("Starting hardware smoke test via local gRPC IPC...")
+        async def _run():
+            channel = None
+            try:
+                channel = Channel(path="/var/run/mcubridge.sock")
+                stub = LocalBridgeStub(channel)
+                self.results["connectivity"] = True
+                logger.info("Connectivity to local gRPC socket verified")
 
-            # Toggle Pin
-            topic = topic_path(self.prefix, Topic.DIGITAL, str(pin))
-            # Send ON
-            msg_on = pb.CloudQueuedPublish(topic_name=topic, payload=b"1", qos=1)
-            data_on = msg_on.SerializeToString()
-            sock.sendall(len(data_on).to_bytes(4, byteorder="big") + data_on)
+                # Toggle Pin
+                topic = topic_path(self.prefix, Topic.DIGITAL, str(pin))
+                # Send ON
+                msg_on = pb.CloudQueuedPublish(topic_name=topic, payload=b"1", qos=1)
+                await stub.Publish(msg_on)
 
-            time.sleep(0.5)
+                await asyncio.sleep(0.5)
 
-            # Send OFF
-            msg_off = pb.CloudQueuedPublish(topic_name=topic, payload=b"0", qos=1)
-            data_off = msg_off.SerializeToString()
-            sock.sendall(len(data_off).to_bytes(4, byteorder="big") + data_off)
+                # Send OFF
+                msg_off = pb.CloudQueuedPublish(topic_name=topic, payload=b"0", qos=1)
+                await stub.Publish(msg_off)
 
-            self.results["gpio"] = True
-            logger.info("GPIO toggle commands sent successfully")
-        except OSError as e:
-            logger.error("Connection to UNIX socket failed", error=str(e))
-            self.results["connectivity"] = False
-        finally:
-            sock.close()
+                self.results["gpio"] = True
+                logger.info("GPIO toggle commands sent successfully")
+            except Exception as e:
+                logger.error("Connection or call to local gRPC socket failed", error=str(e))
+                self.results["connectivity"] = False
+            finally:
+                if channel is not None:
+                    channel.close()
+
+        asyncio.run(_run())
 
 
 def main() -> None:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock, AsyncMock
 from typing import Any
 import importlib.util
 from pathlib import Path
@@ -26,13 +26,16 @@ def test_hw_smoke_success(runtime_config: Any) -> None:
             "mcubridge_hw_smoke.load_runtime_config",
             return_value=runtime_config,
         ),
-        patch("socket.socket") as mock_sock_cls,
+        patch("mcubridge_hw_smoke.Channel") as mock_channel_cls,
+        patch("mcubridge_hw_smoke.LocalBridgeStub") as mock_stub_cls,
         patch("sys.argv", ["mcubridge_hw_smoke", "--pin", "13", "--timeout", "0.1"]),
     ):
-        mock_sock = mock_sock_cls.return_value
+        mock_stub = MagicMock()
+        mock_stub_cls.return_value = mock_stub
+        mock_stub.Publish = AsyncMock()
         main()
-        mock_sock.connect.assert_called_once_with("/var/run/mcubridge.sock")
-        assert mock_sock.sendall.call_count >= 1
+        mock_channel_cls.assert_called_once_with(path="/var/run/mcubridge.sock")
+        assert mock_stub.Publish.call_count >= 1
 
 
 def test_hw_smoke_timeout(runtime_config: Any) -> None:
@@ -41,11 +44,10 @@ def test_hw_smoke_timeout(runtime_config: Any) -> None:
             "mcubridge_hw_smoke.load_runtime_config",
             return_value=runtime_config,
         ),
-        patch("socket.socket") as mock_sock_cls,
+        patch("mcubridge_hw_smoke.Channel") as mock_channel_cls,
         patch("sys.argv", ["mcubridge_hw_smoke", "--timeout", "0.01"]),
         pytest.raises(SystemExit) as exc,
     ):
-        mock_sock = mock_sock_cls.return_value
-        mock_sock.connect.side_effect = OSError("Connection refused")
+        mock_channel_cls.side_effect = Exception("Connection refused")
         main()
     assert exc.value.code == 1

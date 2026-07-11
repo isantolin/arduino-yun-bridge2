@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 from . import mcubridge_pb2 as pb
+from grpclib.client import Channel
+from .mcubridge_grpc import LocalBridgeStub
 
 import asyncio
 import logging
@@ -62,9 +64,8 @@ class Bridge:
         Topic.PREFIX = topic_prefix
         self.socket_path = os.environ.get("MCUBRIDGE_SOCKET_PATH") or socket_path
 
-        self.reader: asyncio.StreamReader | None = None
-        self.writer: asyncio.StreamWriter | None = None
-        self._correlation_routes: dict[bytes, asyncio.Queue[pb.CloudQueuedPublish]] = {}
+        self.channel: Channel | None = None
+        self.stub: LocalBridgeStub | None = None
         self._console_queue: asyncio.Queue[bytes] = asyncio.Queue()
         self._listener_task: asyncio.Task[None] | None = None
 
@@ -81,12 +82,13 @@ class Bridge:
         await self.disconnect()
 
     async def connect(self) -> None:
-        if self.writer:
+        if self.channel:
             await self.disconnect()
 
-        self.reader, self.writer = await asyncio.open_unix_connection(self.socket_path)
-        self._listener_task = asyncio.create_task(self._message_listener())
-        logger.info("Connected to local IPC socket: %s", self.socket_path)
+        self.channel = Channel(path=self.socket_path)
+        self.stub = LocalBridgeStub(self.channel)
+        self._listener_task = asyncio.create_task(self._console_listener())
+        logger.info("Connected to local gRPC IPC socket: %s", self.socket_path)
 
     async def disconnect(self) -> None:
         if self._listener_task:
@@ -97,35 +99,20 @@ class Bridge:
                 pass
             self._listener_task = None
 
-        if self.writer:
-            self.writer.close()
-            try:
-                await self.writer.wait_closed()
-            except OSError:
-                pass
-            self.writer = None
-        self.reader = None
-        logger.info("Disconnected from local IPC socket.")
+        if self.channel:
+            self.channel.close()
+            self.channel = None
+            self.stub = None
+        logger.info("Disconnected from local IPC.")
 
-    async def _message_listener(self) -> None:
-        if not self.reader:
+    async def _console_listener(self) -> None:
+        if not self.stub:
             return
         try:
-            while True:
-                len_bytes = await self.reader.readexactly(4)
-                length = int.from_bytes(len_bytes, byteorder="big")
-                data = await self.reader.readexactly(length)
-                message = pb.CloudQueuedPublish.FromString(data)
-
-                correlation = message.correlation_data if message.HasField("correlation_data") else None
-                if correlation and (queue := self._correlation_routes.pop(correlation, None)):
-                    queue.put_nowait(message)
-                elif "console" in message.topic_name:
-                    self._console_queue.put_nowait(message.payload if message.payload else b"")
-        except (asyncio.IncompleteReadError, OSError, asyncio.CancelledError):
-            pass
-        except Exception as e:
-            logger.error("IPC listener error", exc_info=e)
+            async for msg in self.stub.SubscribeConsole(pb.SubscribeRequest()):
+                self._console_queue.put_nowait(msg.payload if msg.payload else b"")
+        except (asyncio.CancelledError, Exception) as e:
+            logger.debug("IPC console listener closed: %s", e)
 
     async def _publish_and_wait(
         self,
@@ -136,43 +123,34 @@ class Bridge:
         timeout: float = 15,
         content_type: str | None = None,
     ) -> bytes:
-        if not self.writer:
+        if not self.stub:
             raise ConnectionError("Not connected")
 
         correlation = secrets.token_bytes(12)
-        queue: asyncio.Queue[pb.CloudQueuedPublish] = asyncio.Queue(maxsize=1)
-        self._correlation_routes[correlation] = queue
+        msg = create_queued_publish(
+            topic_name=topic,
+            payload=payload.encode() if isinstance(payload, str) else payload,
+            content_type=content_type,
+        )
+        msg.correlation_data = correlation
 
         try:
-            msg = create_queued_publish(
-                topic_name=topic,
-                payload=payload.encode() if isinstance(payload, str) else payload,
-                content_type=content_type,
-            )
-            msg.correlation_data = correlation
-
-            data = msg.SerializeToString()
-            self.writer.write(len(data).to_bytes(4, byteorder="big"))
-            self.writer.write(data)
-            await self.writer.drain()
-
-            delivered = await asyncio.wait_for(queue.get(), timeout=timeout)
-            return delivered.payload if delivered.payload else b""
-        finally:
-            self._correlation_routes.pop(correlation, None)
+            async with asyncio.timeout(timeout):
+                resp = await self.stub.Publish(msg)
+                return resp.payload if resp.payload else b""
+        except TimeoutError:
+            logger.warning("IPC request timed out: %s", topic)
+            raise
 
     async def _publish(self, topic: str | Topic, payload: bytes) -> None:
-        if not self.writer:
+        if not self.stub:
             raise ConnectionError("Not connected")
 
         msg = create_queued_publish(
             topic_name=str(topic),
             payload=payload,
         )
-        data = msg.SerializeToString()
-        self.writer.write(len(data).to_bytes(4, byteorder="big"))
-        self.writer.write(data)
-        await self.writer.drain()
+        await self.stub.Publish(msg)
 
     # --- Declarative API (Eradicates manual methods) ---
 

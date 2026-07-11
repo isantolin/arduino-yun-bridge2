@@ -8,7 +8,9 @@ import re
 from typing import Any
 from wsgiref.handlers import CGIHandler
 
-import socket
+import asyncio
+from grpclib.client import Channel
+from mcubridge.protocol.mcubridge_grpc import LocalBridgeStub
 from google.protobuf import json_format
 from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import load_runtime_config
@@ -20,24 +22,25 @@ logger = logging.getLogger("mcubridge.pin_rest")
 
 
 def publish_sync(topic: str, payload: str, config: RuntimeConfig) -> None:
-    """Synchronous publish to local UNIX domain socket IPC."""
-    msg = pb.CloudQueuedPublish(
-        topic_name=topic,
-        payload=payload.encode("utf-8"),
-        qos=1,
-    )
-    data = msg.SerializeToString()
-    prefix = len(data).to_bytes(4, byteorder="big")
+    """Synchronous publish to local UNIX domain socket IPC via gRPC."""
+    async def _run():
+        channel = Channel(path="/var/run/mcubridge.sock")
+        stub = LocalBridgeStub(channel)
+        try:
+            msg = pb.CloudQueuedPublish(
+                topic_name=topic,
+                payload=payload.encode("utf-8"),
+                qos=1,
+            )
+            await stub.Publish(msg)
+        finally:
+            channel.close()
 
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     try:
-        sock.connect("/var/run/mcubridge.sock")
-        sock.sendall(prefix + data)
-    except OSError as exc:
-        logger.error("Failed to connect to UNIX socket: %s", exc)
+        asyncio.run(_run())
+    except Exception as exc:
+        logger.error("Failed to publish via local gRPC IPC: %s", exc)
         raise
-    finally:
-        sock.close()
 
 
 def json_res(start_response: Any, status: str, response: pb.PinControlResponse) -> list[bytes]:

@@ -1457,4 +1457,12 @@ service CloudBridge {
     rpc Session(stream CloudEnvelope) returns (stream CloudEnvelope);
 }
 
+message SubscribeRequest {}
+
+service LocalBridge {
+    rpc Publish(CloudQueuedPublish) returns (CloudQueuedPublish);
+    rpc SubscribeConsole(SubscribeRequest) returns (stream CloudQueuedPublish);
+}
+
+
 

@@ -3,32 +3,35 @@
 
 from __future__ import annotations
 
-import socket
+import asyncio
 import sys
+from grpclib.client import Channel
+from mcubridge.protocol.mcubridge_grpc import LocalBridgeStub
 from mcubridge.config.settings import load_runtime_config
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol.topics import Topic, topic_path
 
 
 def do_publish(topic: str, payload: str) -> None:
-    """Publish LED state using direct UNIX socket IPC."""
-    msg = pb.CloudQueuedPublish(
-        topic_name=topic,
-        payload=payload.encode("utf-8"),
-        qos=1,
-    )
-    payload_data = msg.SerializeToString()
-    prefix = len(payload_data).to_bytes(4, byteorder="big")
+    """Publish LED state using local gRPC UNIX socket IPC."""
+    async def _run():
+        channel = Channel(path="/var/run/mcubridge.sock")
+        stub = LocalBridgeStub(channel)
+        try:
+            msg = pb.CloudQueuedPublish(
+                topic_name=topic,
+                payload=payload.encode("utf-8"),
+                qos=1,
+            )
+            await stub.Publish(msg)
+        finally:
+            channel.close()
 
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     try:
-        sock.connect("/var/run/mcubridge.sock")
-        sock.sendall(prefix + payload_data)
-    except OSError as e:
-        sys.stderr.write(f"Error: UNIX socket publication failed: {e}\n")
+        asyncio.run(_run())
+    except Exception as e:
+        sys.stderr.write(f"Error: local gRPC IPC publication failed: {e}\n")
         sys.exit(4)
-    finally:
-        sock.close()
 
 
 def main() -> None:

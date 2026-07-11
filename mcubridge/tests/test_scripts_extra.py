@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock
 from typing import Any
 from collections.abc import Coroutine
 import importlib.util
@@ -30,38 +30,41 @@ def mock_asyncio_run(coro: Coroutine[Any, Any, Any]) -> None:
     coro.close()
 
 
-@pytest.mark.asyncio
-async def test_file_push_script(runtime_config: Any) -> None:
+def test_file_push_script(runtime_config: Any) -> None:
     script = load_script("mcubridge-file-push")
     with (
         patch("mcubridge_file_push.load_runtime_config", return_value=runtime_config),
-        patch("socket.socket") as mock_sock_cls,
+        patch("mcubridge_file_push.Channel") as mock_channel_cls,
+        patch("mcubridge_file_push.LocalBridgeStub") as mock_stub_cls,
         patch("sys.argv", ["mcubridge-file-push", "local.txt", "mcu/remote.txt"]),
         patch("pathlib.Path.read_bytes", return_value=b"data"),
         patch("pathlib.Path.exists", return_value=True),
     ):
-        mock_sock = MagicMock()
-        mock_sock_cls.return_value = mock_sock
+        mock_stub = MagicMock()
+        mock_stub_cls.return_value = mock_stub
+        mock_stub.Publish = AsyncMock()
         script.main()
-        mock_sock.connect.assert_called_once_with("/var/run/mcubridge.sock")
+        mock_channel_cls.assert_called_once_with(path="/var/run/mcubridge.sock")
+        assert mock_stub.Publish.called
 
 
-@pytest.mark.asyncio
-async def test_led_control_script(runtime_config: Any) -> None:
+def test_led_control_script(runtime_config: Any) -> None:
     script = load_script("mcubridge-led-control")
     with (
         patch("mcubridge_led_control.load_runtime_config", return_value=runtime_config),
-        patch("socket.socket") as mock_sock_cls,
+        patch("mcubridge_led_control.Channel") as mock_channel_cls,
+        patch("mcubridge_led_control.LocalBridgeStub") as mock_stub_cls,
         patch("sys.argv", ["mcubridge-led-control", "on"]),
     ):
-        mock_sock = MagicMock()
-        mock_sock_cls.return_value = mock_sock
+        mock_stub = MagicMock()
+        mock_stub_cls.return_value = mock_stub
+        mock_stub.Publish = AsyncMock()
         script.main()
-        mock_sock.connect.assert_called_once_with("/var/run/mcubridge.sock")
+        mock_channel_cls.assert_called_once_with(path="/var/run/mcubridge.sock")
+        assert mock_stub.Publish.called
 
 
-@pytest.mark.asyncio
-async def test_rotate_credentials_script(runtime_config: Any) -> None:
+def test_rotate_credentials_script(runtime_config: Any) -> None:
     script = load_script("mcubridge-rotate-credentials")
     with (
         patch("sys.argv", ["mcubridge-rotate-credentials", "--force", "--no-restart"]),
@@ -77,8 +80,7 @@ async def test_rotate_credentials_script(runtime_config: Any) -> None:
         assert "CLOUD_PASSWORD=" in output
 
 
-@pytest.mark.asyncio
-async def test_file_push_error_cases(runtime_config: Any) -> None:
+def test_file_push_error_cases(runtime_config: Any) -> None:
     script = load_script("mcubridge-file-push")
     with (
         patch("mcubridge_file_push.load_runtime_config", return_value=runtime_config),
@@ -89,8 +91,7 @@ async def test_file_push_error_cases(runtime_config: Any) -> None:
         script.main()
 
 
-@pytest.mark.asyncio
-async def test_led_control_invalid_state(runtime_config: Any) -> None:
+def test_led_control_invalid_state(runtime_config: Any) -> None:
     script = load_script("mcubridge-led-control")
     with (
         patch("mcubridge_led_control.load_runtime_config", return_value=runtime_config),
@@ -100,8 +101,7 @@ async def test_led_control_invalid_state(runtime_config: Any) -> None:
         script.main()
 
 
-@pytest.mark.asyncio
-async def test_rotate_credentials_abort(runtime_config: Any) -> None:
+def test_rotate_credentials_abort(runtime_config: Any) -> None:
     script = load_script("mcubridge-rotate-credentials")
     with (
         patch("sys.argv", ["mcubridge-rotate-credentials"]),

@@ -23,51 +23,7 @@ local uci = require "luci.model.uci".cursor()
 local sys = require "luci.sys"
 local nixio = require "nixio"
 
-local function encode_varint(n)
-    local bytes = {}
-    while n >= 128 do
-        bytes[#bytes + 1] = string.char((n % 128) + 128)
-        n = math.floor(n / 128)
-    end
-    bytes[#bytes + 1] = string.char(n)
-    return table.concat(bytes)
-end
 
-local function encode_string(field_num, s)
-    if not s or s == "" then return "" end
-    local tag = string.char((field_num * 8) + 2)
-    return tag .. encode_varint(#s) .. s
-end
-
-local function serialize_publish(topic, payload)
-    local f1 = encode_string(1, topic)
-    local f2 = encode_string(2, payload)
-    local body = f1 .. f2
-    local len = #body
-    local len_bytes = string.char(
-        math.floor(len / 16777216) % 256,
-        math.floor(len / 65536) % 256,
-        math.floor(len / 256) % 256,
-        len % 256
-    )
-    return len_bytes .. body
-end
-
-local function socket_publish(topic, payload)
-    local socket_path = uci:get("mcubridge", "general", "socket_path") or "/var/run/mcubridge.sock"
-    local sock = nixio.socket("unix", "stream")
-    if not sock then return false end
-
-    if not sock:connect(socket_path) then
-        sock:close()
-        return false
-    end
-
-    local data = serialize_publish(topic, payload)
-    local sent = sock:send(data)
-    sock:close()
-    return sent == #data
-end
 
 
 function index()
@@ -145,24 +101,20 @@ function action_api(...)
         return send_json(400, { status = "error", message = 'State must be "ON" or "OFF".' })
     end
 
-    -- Send command via UNIX socket to the daemon
-    local topic_prefix = uci:get("mcubridge", "general", "topic_prefix") or "br"
-    local payload = (state == "ON") and "1" or "0"
-    local topic = string.format("%s/d/%s", topic_prefix, pin_number)
+    -- Send command via mcubridge-led-control script
+    local rc = sys.call(string.format("/usr/bin/mcubridge-led-control %q %q >/dev/null 2>&1", state:lower(), pin_number))
 
-    local ok = socket_publish(topic, payload)
-
-    if ok then
+    if rc == 0 then
         send_json(200, {
             status = "ok",
             pin = tonumber(pin_number),
             state = state,
-            message = "Command sent via UNIX socket."
+            message = "Command sent via mcubridge-led-control."
         })
     else
         send_json(500, {
             status = "error",
-            message = "Failed to communicate with MCU Bridge daemon via UNIX socket."
+            message = "Failed to communicate with MCU Bridge daemon via mcubridge-led-control."
         })
     end
 end

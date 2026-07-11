@@ -433,3 +433,405 @@ async def test_handshake_coverage_boost() -> None:
     state.handshake_failure_streak = 5
     await manager.handle_handshake_failure("sync_auth_mismatch", detail="test_detail")
     assert state.handshake_fatal_count > 0
+
+
+@pytest.mark.asyncio
+async def test_local_bridge_service_coverage(tmp_path: Path) -> None:
+    from mcubridge.services.runtime import LocalBridgeService, BridgeService, BridgeRequest
+    from grpclib.server import Stream
+
+    test_root = tmp_path / "yun_files"
+    test_spool = tmp_path / "spool"
+    test_root.mkdir(exist_ok=True)
+    test_spool.mkdir(exist_ok=True)
+    config = RuntimeConfig(
+        allowed_commands=("echo", "ls"),
+        serial_shared_secret=b"testshared",
+        file_system_root=str(test_root),
+        cloud_spool_dir=str(test_spool),
+        allow_non_tmp_paths=True,
+    )
+    state = create_runtime_state(config)
+    mock_serial = AsyncMock(spec=SerialTransport)
+    runtime_service = BridgeService(config, state, mock_serial)
+    service = LocalBridgeService(runtime_service)
+
+    # 1. Publish without correlation_data
+    mock_stream_1 = AsyncMock(spec=Stream)
+    req_pub = pb.CloudQueuedPublish(
+        topic_name="br/d/13",
+        payload=b"payload"
+    )
+    mock_stream_1.recv_message.return_value = req_pub
+
+    runtime_service.handle_request = AsyncMock()
+
+    await service.Publish(mock_stream_1)
+
+    runtime_service.handle_request.assert_awaited_once()
+    mock_stream_1.send_message.assert_awaited_once_with(pb.CloudQueuedPublish())
+
+    # 2. Publish with correlation_data (success path)
+    mock_stream_2 = AsyncMock(spec=Stream)
+    correlation_id = b"corr12345678"
+    req_pub_corr = pb.CloudQueuedPublish(
+        topic_name="br/d/13",
+        payload=b"payload",
+        correlation_data=correlation_id
+    )
+    mock_stream_2.recv_message.return_value = req_pub_corr
+
+    async def side_effect_handle(req: BridgeRequest) -> None:
+        queue = runtime_service.ipc_requests.get(correlation_id)
+        if queue:
+            await queue.put(pb.CloudQueuedPublish(topic_name="response"))
+
+    runtime_service.handle_request.side_effect = side_effect_handle
+
+    await service.Publish(mock_stream_2)
+    mock_stream_2.send_message.assert_awaited_with(pb.CloudQueuedPublish(topic_name="response"))
+
+    # 3. Publish with correlation_data (timeout path)
+    mock_stream_3 = AsyncMock(spec=Stream)
+    req_pub_corr_timeout = pb.CloudQueuedPublish(
+        topic_name="br/d/13",
+        payload=b"payload",
+        correlation_data=b"timeout_corr"
+    )
+    mock_stream_3.recv_message.return_value = req_pub_corr_timeout
+
+    with patch("asyncio.timeout", side_effect=TimeoutError):
+        await service.Publish(mock_stream_3)
+    mock_stream_3.send_message.assert_awaited_with(pb.CloudQueuedPublish())
+
+    # 4. SubscribeConsole (success path)
+    mock_stream_4 = AsyncMock(spec=Stream)
+    mock_stream_4.recv_message.return_value = pb.SubscribeRequest()
+
+    async def mock_send(msg: pb.CloudQueuedPublish) -> None:
+        raise asyncio.CancelledError()
+
+    mock_stream_4.send_message.side_effect = mock_send
+
+    async def feed_console() -> None:
+        await asyncio.sleep(0.05)
+        assert len(runtime_service.console_queues) == 1
+        queue = runtime_service.console_queues[0]
+        await queue.put(pb.CloudQueuedPublish(topic_name="console_out"))
+
+    feed_task = asyncio.create_task(feed_console())
+    try:
+        await service.SubscribeConsole(mock_stream_4)
+    except asyncio.CancelledError:
+        pass
+    await feed_task
+    assert len(runtime_service.console_queues) == 0
+
+
+@pytest.mark.asyncio
+async def test_cloud_incoming_worker_coverage(tmp_path: Path) -> None:
+    from mcubridge.services.runtime import BridgeService, BridgeRequest
+
+    test_root = tmp_path / "yun_files"
+    test_spool = tmp_path / "spool"
+    test_root.mkdir(exist_ok=True)
+    test_spool.mkdir(exist_ok=True)
+
+    config = RuntimeConfig(
+        topic_prefix="br",
+        serial_port="/dev/testport",
+        file_system_root=str(test_root),
+        cloud_spool_dir=str(test_spool),
+    )
+    state = create_runtime_state(config)
+    mock_serial = AsyncMock(spec=SerialTransport)
+    daemon = BridgeService(config, state, mock_serial)
+
+    # 1. Start worker in task
+    task = asyncio.create_task(daemon._cloud_incoming_worker())
+
+    # 2. Push message that succeeds
+    daemon.handle_request = AsyncMock()
+    req = BridgeRequest(topic="br/d/13", payload=b"")
+    daemon._cloud_incoming_queue.put_nowait(req)
+
+    # 3. Push message that fails handle_request to cover error path
+    daemon.handle_request.side_effect = ValueError("test error")
+    daemon._cloud_incoming_queue.put_nowait(req)
+
+    await asyncio.sleep(0.05)
+
+    # 4. Cancel worker to cover CancelledError path
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+
+@pytest.mark.asyncio
+async def test_daemon_full_run_coverage(tmp_path: Path) -> None:
+    from mcubridge.services.runtime import BridgeService
+
+    test_root = tmp_path / "yun_files"
+    test_spool = tmp_path / "spool"
+    test_root.mkdir(exist_ok=True)
+    test_spool.mkdir(exist_ok=True)
+
+    config = RuntimeConfig(
+        topic_prefix="br",
+        serial_port="/dev/testport",
+        watchdog_enabled=True,
+        metrics_enabled=True,
+        bridge_summary_interval=0.1,
+        bridge_handshake_interval=0.1,
+        file_system_root=str(test_root),
+        cloud_spool_dir=str(test_spool),
+    )
+    state = create_runtime_state(config)
+    mock_serial = AsyncMock(spec=SerialTransport)
+    mock_serial.run = AsyncMock()
+
+    daemon = BridgeService(config, state, mock_serial)
+    daemon.run_ipc_server = AsyncMock()
+    daemon.run_cloud = AsyncMock()
+
+    with patch("mcubridge.services.runtime.PrometheusExporter.run", AsyncMock()):
+        task = asyncio.create_task(daemon.run())
+        await asyncio.sleep(0.05)
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+
+@pytest.mark.asyncio
+async def test_serial_transport_extra_coverage_boost(tmp_path: Path) -> None:
+    from mcubridge.transport.serial import SerialTransport
+    from mcubridge.services.handshake import SerialHandshakeFatal
+    import serialx
+
+    test_root = tmp_path / "yun_files"
+    test_spool = tmp_path / "spool"
+    test_root.mkdir(exist_ok=True)
+    test_spool.mkdir(exist_ok=True)
+
+    config = RuntimeConfig(
+        topic_prefix="br",
+        serial_port="/dev/testport",
+        serial_fallback_threshold=2,
+        serial_baud=115200,
+        serial_safe_baud=9600,
+        file_system_root=str(test_root),
+        cloud_spool_dir=str(test_spool),
+    )
+    state = create_runtime_state(config)
+
+    # 1. _switch_local_baudrate when self.serial is None
+    service = MagicMock()
+    service.on_serial_connected = AsyncMock()
+    service.on_serial_disconnected = AsyncMock()
+    transport = SerialTransport(config, state, service)
+    assert transport.serial is None
+    transport._switch_local_baudrate(9600)
+
+    # 2. _toggle_dtr when exception occurs
+    mock_serial = AsyncMock()
+    mock_serial.set_modem_pins = AsyncMock(side_effect=OSError("modem error"))
+    transport.serial = mock_serial
+    await transport._toggle_dtr()
+
+    # 3. ConnectionError in _connect_and_run when baudrate negotiation fails
+    transport._toggle_dtr = AsyncMock()
+    transport._read_loop = AsyncMock()
+    transport._negotiate_baudrate = AsyncMock(return_value=False)
+
+    with patch("serialx.AsyncSerial", return_value=mock_serial):
+        with pytest.raises(ConnectionError, match="Baudrate negotiation failed"):
+            await transport._connect_and_run()
+
+    # 4. ConnectionError in _connect_and_run when read task is done first
+    transport._negotiate_baudrate = AsyncMock(return_value=True)
+    async def mock_read_loop(ser):
+        pass
+    transport._read_loop = mock_read_loop
+
+    with patch("serialx.AsyncSerial", return_value=mock_serial):
+        with pytest.raises(ConnectionError, match="Serial connection lost"):
+            await transport._connect_and_run()
+
+    # 5. Exception during disconnect cleanup in _connect_and_run
+    service.on_serial_disconnected = AsyncMock(side_effect=TypeError("cleanup fail"))
+    with patch("serialx.AsyncSerial", return_value=mock_serial):
+        with pytest.raises(ConnectionError):
+            await transport._connect_and_run()
+
+    # 6. SerialTransport.run handling SerialHandshakeFatal
+    transport._connect_and_run = AsyncMock(side_effect=SerialHandshakeFatal("fatal"))
+    with pytest.raises(SerialHandshakeFatal):
+        await transport.run()
+
+    # 7. SerialTransport.run handling CancelledError
+    transport._connect_and_run = AsyncMock(side_effect=asyncio.CancelledError())
+    await transport.run()
+
+
+@pytest.mark.asyncio
+async def test_structures_extra_coverage_boost(tmp_path: Path) -> None:
+    from mcubridge.protocol.structures import validate_config, get_ssl_context, allows_topic
+    from mcubridge.protocol import mcubridge_pb2 as pb
+
+    # 1. allows_topic default return False
+    auth = pb.TopicAuthorization()
+    assert not allows_topic(auth, "unknown_topic", "unknown_action")
+
+    # 2. validate_config exceptions
+    cfg = pb.RuntimeConfig(topic_prefix="")
+    with pytest.raises(ValueError, match="topic_prefix must contain at least one segment"):
+        validate_config(cfg)
+
+    cfg = pb.RuntimeConfig(
+        topic_prefix="br",
+        serial_response_timeout=1,
+        serial_retry_timeout=1,
+    )
+    with pytest.raises(ValueError, match="serial_response_timeout must be at least 2x serial_retry_timeout"):
+        validate_config(cfg)
+
+    cfg = pb.RuntimeConfig(
+        topic_prefix="br",
+        serial_response_timeout=10,
+        serial_retry_timeout=2,
+        watchdog_enabled=True,
+        watchdog_interval=0.1,
+    )
+    with pytest.raises(ValueError, match="watchdog_interval must be >= 0.5s when enabled"):
+        validate_config(cfg)
+
+    cfg = pb.RuntimeConfig(
+        topic_prefix="br",
+        serial_response_timeout=10,
+        serial_retry_timeout=2,
+        watchdog_enabled=False,
+        serial_shared_secret=b"",
+    )
+    with pytest.raises(ValueError, match="serial_shared_secret must be configured"):
+        validate_config(cfg)
+
+    cfg.serial_shared_secret = b"changeme123"
+    with pytest.raises(ValueError, match="serial_shared_secret placeholder is insecure"):
+        validate_config(cfg)
+
+    cfg.serial_shared_secret = b"aaaa"
+    with pytest.raises(ValueError, match="serial_shared_secret must contain at least four distinct bytes"):
+        validate_config(cfg)
+
+    cfg.serial_shared_secret = b"abcd"
+    cfg.file_storage_quota_bytes = 10
+    cfg.file_write_max_bytes = 20
+    with pytest.raises(ValueError, match="file_storage_quota_bytes must be greater than or equal to file_write_max_bytes"):
+        validate_config(cfg)
+
+    cfg.file_storage_quota_bytes = 100
+    cfg.file_write_max_bytes = 20
+    cfg.mailbox_queue_bytes_limit = 10
+    cfg.mailbox_queue_limit = 20
+    with pytest.raises(ValueError, match="mailbox_queue_bytes_limit must be greater than or equal to mailbox_queue_limit"):
+        validate_config(cfg)
+
+    cfg.mailbox_queue_bytes_limit = 100
+    cfg.mailbox_queue_limit = 10
+    cfg.allow_non_tmp_paths = False
+    cfg.cloud_spool_dir = "/usr/bin/spool"
+    cfg.file_system_root = "/tmp"
+    with pytest.raises(ValueError, match="FLASH PROTECTION: cloud_spool_dir .* must be in volatile storage"):
+        validate_config(cfg)
+
+    cfg.cloud_spool_dir = "/tmp"
+    cfg.file_system_root = "/usr/bin/fs"
+    with pytest.raises(ValueError, match="FLASH PROTECTION: file_system_root .* must be in volatile storage"):
+        validate_config(cfg)
+
+    # 3. get_ssl_context
+    cfg_ssl = pb.RuntimeConfig(cloud_tls=True, cloud_cafile=str(tmp_path / "nonexistent_ca.crt"))
+    with pytest.raises(RuntimeError, match="Cloud TLS CA file missing"):
+        get_ssl_context(cfg_ssl)
+
+    cfg_ssl2 = pb.RuntimeConfig(cloud_tls=True, cloud_cafile="", cloud_certfile="cert.pem")
+    with pytest.raises(RuntimeError, match="TLS setup failed"):
+        get_ssl_context(cfg_ssl2)
+
+
+@pytest.mark.asyncio
+async def test_handshake_manager_extra_coverage() -> None:
+    from mcubridge.services.handshake import SerialHandshakeManager, derive_serial_timing, HandshakeState
+    from mcubridge.services.handshake import SerialHandshakeFatal
+
+    config = RuntimeConfig(
+        topic_prefix="br",
+        serial_port="/dev/testport",
+        serial_handshake_fatal_failures=2,
+        serial_shared_secret=b"secret1234",
+    )
+    state = create_runtime_state(config)
+    send_frame = AsyncMock(return_value=True)
+    enqueue_cloud = AsyncMock()
+    acknowledge_frame = AsyncMock()
+
+    manager = SerialHandshakeManager(
+        config=config,
+        state=state,
+        serial_timing=derive_serial_timing(config),
+        send_frame=send_frame,
+        enqueue_cloud=enqueue_cloud,
+        acknowledge_frame=acknowledge_frame,
+    )
+
+    # 1. Test HandshakeState transitions
+    manager._set_fsm_state(HandshakeState.SYNCHRONIZED)
+    assert manager.fsm_state == HandshakeState.SYNCHRONIZED
+    manager._set_fsm_state(HandshakeState.UNSYNCHRONIZED)
+    assert manager.fsm_state == HandshakeState.UNSYNCHRONIZED
+
+    # 2. _synchronize_attempt reset_ok is False
+    send_frame.return_value = False
+    assert not await manager._synchronize_attempt()
+
+    # 3. _synchronize_attempt sync_ok is False
+    send_frame.side_effect = [True, False]
+    assert not await manager._synchronize_attempt()
+
+    # 4. _synchronize_attempt fsm_state == FAULT early exit
+    send_frame.side_effect = None
+    send_frame.return_value = True
+    manager.fsm_state = HandshakeState.FAULT
+    assert not await manager._synchronize_attempt()
+
+    # 5. _synchronize_attempt timeout (confirmed is False)
+    manager.fsm_state = HandshakeState.UNSYNCHRONIZED
+    manager._wait_for_link_sync_confirmation = AsyncMock(return_value=False)
+    assert not await manager._synchronize_attempt()
+
+    # 6. RetryError in synchronize
+    manager._synchronize_attempt = AsyncMock(return_value=False)
+    with patch.object(manager, "_fatal_threshold", 1):
+        assert not await manager.synchronize()
+        assert manager.fsm_state == HandshakeState.FAULT
+
+    # 7. _fetch_capabilities success and fail paths
+    manager.fsm_state = HandshakeState.SYNCHRONIZED
+    send_frame.return_value = True
+    manager._send_frame = AsyncMock(return_value=True)
+    async def mock_wait(cmd, resp_ids, timeout):
+        cap = pb.CapabilitiesPacket(protocol_version=2)
+        return pb.RpcEnvelope(payload_type="capabilities", capabilities=cap).SerializeToString()
+    manager._wait_for_response = mock_wait
+
+    assert await manager._fetch_capabilities()
+
+    manager._wait_for_response = AsyncMock(return_value=None)
+    with patch("tenacity.nap.time.sleep", return_value=None):
+        assert not await manager._fetch_capabilities()
+
+

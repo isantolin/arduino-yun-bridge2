@@ -6,6 +6,7 @@
 #include "ArchTraits.h"
 #include "config/bridge_config.h"
 #include "protocol/rpc_protocol.h"
+#include "protocol/rpc_structs.h"
 
 #if defined(ARDUINO_ARCH_AVR)
 extern "C" {

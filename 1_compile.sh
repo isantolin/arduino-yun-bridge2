@@ -423,7 +423,7 @@ fi
 
 # Fallback: if local feed is NOT enabled, optionally copy package sources into the SDK.
 if [ "$LOCAL_FEED_ENABLED" -ne 1 ] && [ "$SYNC_PACKAGES_TO_SDK" -eq 1 ]; then
-    for pkg in luci-app-mcubridge mcubridge; do
+    for pkg in luci-app-mcubridge mcubridge mcubridge-gateway; do
         if [ -d "$pkg" ]; then
             echo "[INFO] Syncing $pkg to SDK..."
             rm -rf "$SDK_DIR/package/$pkg"
@@ -452,7 +452,7 @@ done
 # [FIX] SIL-2: Install ONLY required packages to avoid recursive dependency hell 
 # in unrelated packages like bigclown, nginx, asterisk, etc.
 echo "[INFO] Installing required packages and their dependencies..."
-./scripts/feeds install mcubridge luci-app-mcubridge
+./scripts/feeds install mcubridge luci-app-mcubridge mcubridge-gateway
 
 # ==============================================================================
 # [FIX CRITICO] Breaking Kconfig Recursive Dependencies (SDK 25.12.4)
@@ -480,7 +480,7 @@ echo "[INFO] Re-installing essential feeds..."
 echo "[FIX] Removing duplicate upstream packages (etc)..."
 rm -rf feeds/packages/lang/python/python-cryptography
 
-./scripts/feeds install mcubridge luci-app-mcubridge
+./scripts/feeds install mcubridge luci-app-mcubridge mcubridge-gateway
 
 
 
@@ -594,7 +594,7 @@ if [ -f "$USB_MODULES_MK" ]; then
 fi
 
 # Enable Packages
-REQUIRED_PKGS="mcubridge luci-app-mcubridge"
+REQUIRED_PKGS="mcubridge luci-app-mcubridge mcubridge-gateway"
 # [FIX] Dependencias explícitas para asegurar selección en .config.
 REQUIRED_DEPS="python3-tenacity luaposix"
 
@@ -659,7 +659,7 @@ for lib in $LIBS; do
 done
 
 # Luego paquetes principales
-for pkg in luci-app-mcubridge mcubridge; do
+for pkg in luci-app-mcubridge mcubridge mcubridge-gateway; do
     echo "[BUILD] Building package $pkg (.apk)..."
     if [ "$VERBOSE" -eq 1 ]; then
         make "package/$pkg/compile" -j$(nproc) V=s || exit 1
@@ -675,6 +675,18 @@ for pkg in luci-app-mcubridge mcubridge; do
 done
 cd "$REPO_ROOT" || exit 1
 
+# Build RPM package if rpmbuild is available
+if command -v rpmbuild >/dev/null 2>&1; then
+    echo "[INFO] rpmbuild detected. Building RPM package for mcubridge-gateway..."
+    if [ -x "$REPO_ROOT/mcubridge-gateway/build_rpm.sh" ]; then
+        "$REPO_ROOT/mcubridge-gateway/build_rpm.sh" || echo "[WARN] RPM build failed"
+    else
+        echo "[WARN] build_rpm.sh not executable or not found at $REPO_ROOT/mcubridge-gateway/build_rpm.sh"
+    fi
+else
+    echo "[INFO] rpmbuild not found. Skipping RPM package build."
+fi
+
 # Checksums
 if ls "$BIN_DIR"/*.apk >/dev/null 2>&1; then
     if command -v sha256sum >/dev/null 2>&1; then
@@ -688,7 +700,7 @@ fi
 echo "\n[OK] Build finished. Check the bin/ directory."
 
 # Cleanup
-for pkg in mcubridge luci-app-mcubridge; do
+for pkg in mcubridge luci-app-mcubridge mcubridge-gateway; do
     find "$pkg" -type d -name build -exec rm -rf {} +
     find "$pkg" -type d -name bin -exec rm -rf {} +
     find "$pkg" -type d -name dist -exec rm -rf {} +

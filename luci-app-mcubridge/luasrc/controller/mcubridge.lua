@@ -85,8 +85,6 @@ function index()
     entry({"admin", "services", "mcubridge", "status_raw"}, call("action_status")).leaf = true
     -- Logs actions removed
 
-    entry({"admin", "services", "mcubridge", "mqtt_ws_auth"}, call("action_mqtt_ws_auth")).leaf = true
-    entry({"admin", "services", "mcubridge", "mqtt_ws_url"}, call("action_mqtt_ws_url")).leaf = true
     entry({"admin", "services", "mcubridge", "rotate_credentials"}, call("action_rotate_credentials")).leaf = true
     entry({"admin", "services", "mcubridge", "hw_smoke"}, call("action_hw_smoke")).leaf = true
 
@@ -106,7 +104,8 @@ local function redact_secret_lines(output)
         return output
     end
     local redacted = output:gsub("SERIAL_SECRET=[^\r\n]*", "SERIAL_SECRET=[redacted]")
-    redacted = redacted:gsub("MQTT_PASSWORD=[^\r\n]*", "MQTT_PASSWORD=[redacted]")
+    redacted = redacted:gsub("CLOUD_PASSWORD=[^\r\n]*", "CLOUD_PASSWORD=[redacted]")
+    redacted = redacted:gsub("CLOUD_PASS=[^\r\n]*", "CLOUD_PASS=[redacted]")
     return redacted
 end
 
@@ -147,7 +146,7 @@ function action_api(...)
     end
 
     -- Send command via UNIX socket to the daemon
-    local topic_prefix = uci:get("mcubridge", "general", "mqtt_topic") or "br"
+    local topic_prefix = uci:get("mcubridge", "general", "topic_prefix") or "br"
     local payload = (state == "ON") and "1" or "0"
     local topic = string.format("%s/d/%s", topic_prefix, pin_number)
 
@@ -169,20 +168,7 @@ function action_api(...)
 end
 
 
-function action_mqtt_ws_auth()
-    local topic_prefix = uci:get("mcubridge", "general", "mqtt_topic") or "br"
-    local auth_required = (uci:get("mcubridge", "general", "mqtt_user") or "") ~= ""
-    send_json(200, {auth_required = auth_required, topic_prefix = topic_prefix})
-end
 
-function action_mqtt_ws_url()
-    local host = uci:get("mcubridge", "general", "mqtt_host") or "127.0.0.1"
-    local ws_port = uci:get("mcubridge", "general", "mqtt_ws_port") or "9001"
-    local scheme = (luci.http.getenv("HTTPS") == "on") and "wss" or "ws"
-local url = string.format("%s://%s:%s", scheme, host, ws_port)
-    luci.http.prepare_content("text/plain")
-    luci.http.write(url)
-end
 
 function action_status()
     local content = fs.readfile("/tmp/mcubridge_status.json")

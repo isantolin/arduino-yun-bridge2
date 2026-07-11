@@ -335,6 +335,9 @@ def phase_verify(child: Any) -> None:
     # Init script exists
     send_and_wait(child, "ls -l /etc/init.d/mcubridge", timeout=10)
 
+    # Cloud gateway exists
+    send_and_wait(child, "ls -l /usr/bin/mcubridge-gateway", timeout=10)
+
     # UCI configuration was created
     send_and_wait(child, "uci show mcubridge 2>/dev/null | head -10", timeout=10)
 

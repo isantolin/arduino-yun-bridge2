@@ -36,7 +36,7 @@ Notas:
 
 ## Fuente de verdad
 
-La **fuente de verdad machine-readable** del protocolo se vive íntegramente en `tools/protocol/mcubridge.proto` (mensajes, constantes de aplicación, suscripciones MQTT, contrato binario y IDs de comando). El sistema exige el cumplimiento estricto de la **versión 0x02**. Cualquier frame con una versión diferente es rechazado inmediatamente.
+La **fuente de verdad machine-readable** del protocolo se vive íntegramente en `tools/protocol/mcubridge.proto` (mensajes, constantes de aplicación, namespaces, contrato binario y IDs de comando). El sistema exige el cumplimiento estricto de la **versión 0x02**. Cualquier frame con una versión diferente es rechazado inmediatamente.
 
 ### Serialización de Payloads (Protobuf)
 Todos los payloads del protocolo se definen como mensajes en `tools/protocol/mcubridge.proto` y se serializan como **protobuf** dentro del frame RPC.
@@ -52,7 +52,7 @@ La librería C++ utiliza el namespace `rpc::Payload` para un desempaquetado de d
 ### Despacho de Comandos (Deterministic Switch Dispatch)
 El MCU utiliza un despacho basado en una estructura `switch` optimizada sobre punteros a métodos. Esto garantiza un tiempo de despacho determinista, elimina la redundancia de código y minimiza el uso de RAM al evitar tablas de salto estáticas de gran tamaño, cumpliendo con los requisitos más estrictos de SIL-2. Esto garantiza un tiempo de despacho constante (O(1)), elimina la redundancia de código y reduce drásticamente la profundidad de la pila de llamadas, cumpliendo con los requisitos más estrictos de SIL-2.
 
-- **Contrato MQTT público**: prefijo por defecto, sufijos y tokens canónicos que impactan interoperabilidad (`MQTT_DEFAULT_TOPIC_PREFIX`, `MQTT_SUFFIX_*`, `STATUS_REASON_*`).
+- **Contrato de tópicos público**: prefijo por defecto, sufijos y tokens canónicos que impactan interoperabilidad (`CLOUD_DEFAULT_TOPIC_PREFIX`, `CLOUD_SUFFIX_*`, `STATUS_REASON_*`).
 
 ### Determinismo C++17 y Zero-Cost Abstractions
 La librería C++ utiliza intensivamente `constexpr` e `if constexpr` para:
@@ -64,11 +64,11 @@ Qué se centraliza en `mcubridge.proto` (y se genera a Python/C++ vía el genera
 
 - **Layouts de payload**: cada mensaje RPC tiene un mensaje protobuf (`ConsoleWrite`, `ProcessPoll`, `AckPacket`, etc.) con campos tipados y tamaños máximos definidos por las opciones del generador.
 
-Este documento **no duplica listados enumerados** (por ejemplo `[mqtt_suffixes]`, `[status_reasons]`, `[[mqtt_subscriptions]]`, `[[topics]]`, `[[actions]]`) para evitar drift; esos catálogos se consideran canónicos en `mcubridge.proto` y en los bindings generados.
+Este documento **no duplica listados enumerados** para evitar drift; esos catálogos se consideran canónicos en `mcubridge.proto` y en los bindings generados.
 
 Qué **no** se centraliza en el spec (porque es decisión de despliegue/runtime):
 
-- **Defaults de OpenWrt/daemon**: `DEFAULT_MQTT_HOST`, `DEFAULT_MQTT_PORT`, rutas `/tmp`, spool dir, límites de colas del daemon, parámetros del exporter/metrics, timeouts en segundos de tareas del daemon, etc. Esto vive en UCI y en `mcubridge/mcubridge/const.py`.
+- **Defaults de OpenWrt/daemon**: `DEFAULT_CLOUD_HOST`, `DEFAULT_CLOUD_PORT`, rutas `/tmp`, spool dir, límites de colas del daemon, parámetros del exporter/metrics, timeouts en segundos de tareas del daemon, etc. Esto vive en UCI y en `mcubridge/mcubridge/const.py`.
 
 Al ejecutar:
 
@@ -91,29 +91,29 @@ Esta sección resume cómo se articula el daemon, qué garantías de seguridad o
 
 ## Componentes
 
-- **BridgeService (Python 3.13.9-r2)**: orquesta la comunicación MCU↔Linux, aplica políticas de topics y delega en componentes operativos (`FileComponent`, `ProcessComponent`, `DatastoreComponent`, etc.).
-- **ProcessComponent**: gestiona de forma unificada la ejecución de subprocesos asíncronos y los comandos de shell/consola MQTT, aplicando la política de seguridad y controlando la concurrencia.
-- **RuntimeState**: mantiene el estado mutable (colas MQTT, handshake, spool, métricas) y expone snapshots consistentes para status, MQTT y Prometheus.
+- **BridgeService (Python 3.13.9-r2)**: orquesta la comunicación MCU↔Linux, aplica políticas de rutas y delega en componentes operativos (`FileComponent`, `ProcessComponent`, `DatastoreComponent`, etc.).
+- **ProcessComponent**: gestiona de forma unificada la ejecución de subprocesos asíncronos y los comandos de shell/consola, aplicando la política de seguridad y controlando la concurrencia.
+- **RuntimeState**: mantiene el estado mutable (colas de red, handshake, spool, métricas) y expone snapshots consistentes para status, gRPC y Prometheus.
 - **High-Performance Transport**: El daemon utiliza `serialx` para consolidar la E/S serie síncrona/asíncrona, el control de modem pins y el transporte tipado del enlace.
-- **MQTT Publisher**: publica respuestas/telemetría con MQTT v5 (correlation data, response_topic, expiración, metadatos).
+- **gRPC Bidirectional Stream**: gestiona la comunicación asíncrona tipada y de baja latencia con el Cloud Gateway.
 - **MCU Firmware (mcubridge-library-arduino)**: implementa el protocolo binario bajo normativa SIL-2 y vela por el secreto compartido del enlace serie.
 - **Instrumentación**: el daemon escribe `/tmp/mcubridge_status.json` (snapshot en tmpfs; se pierde al reboot), publica métricas en `br/system/metrics` (protobuf) y puede exponer Prometheus por HTTP.
 
 ## Seguridad
 
-1. **TLS recomendado**: `mqtt_tls=1` por defecto y se exige `mqtt_cafile` para levantar TLS. TLS puede desactivarse para depuración, pero el daemon lo registra como advertencia.
+1. **TLS recomendado**: `cloud_tls=1` por defecto y se exige `cloud_cafile` para levantar TLS. TLS puede desactivarse para depuración, pero el daemon lo registra como advertencia.
 2. **Derivación de Claves (HKDF)**: Se utiliza **HKDF-SHA256 (RFC 5869)** para derivar la clave de autenticación del handshake a partir del `serial_shared_secret`. Esto evita el uso directo del secreto en el bus y proporciona aislamiento criptográfico.
 3. **Secreto serie fuerte**: handshake MCU↔Linux con nonce de 16 bytes y `HMAC-SHA256(derived_key, nonce)` truncado a 16 bytes. El daemon rechaza el placeholder `changeme123`.
 4. **Auto-Validación (KAT)**: Tanto el MCU como el daemon realizan **Known Answer Tests (KAT)** para SHA256 y HMAC-SHA256 en cada arranque. Si la validación falla, el sistema entra en modo **Fail-Secure** y aborta la operación.
 5. **Lista blanca de comandos**: `allowed_commands` se normaliza en `AllowedCommandPolicy` y se aplica al ejecutar procesos/shell.
-4. **Topics sensibles**: `TopicAuthorization` gobierna toggles `mqtt_allow_*` (consola, archivos, datastore, mailbox, shell, GPIO, etc.).
-5. **Sandbox de archivos**: `FileComponent` normaliza rutas, bloquea `..`, obliga a permanecer bajo `file_system_root`, aplica `file_write_max_bytes` y `file_storage_quota_bytes`.
+6. **Namespaces sensibles**: `TopicAuthorization` gobierna toggles `cloud_allow_*` (consola, archivos, datastore, mailbox, shell, GPIO, etc.).
+7. **Sandbox de archivos**: `FileComponent` normaliza rutas, bloquea `..`, obliga a permanecer bajo `file_system_root`, aplica `file_write_max_bytes` y `file_storage_quota_bytes`.
 
 ## Observabilidad
 
 - **Logging estructurado**: logs JSON (`ts`, `level`, `logger`, `message`, `extra`) enviados a syslog.
 - **Destino de logs**: Por defecto OpenWrt usa `logread` (ring buffer en RAM), NO escribe a `/var/log/` en flash.
-- **Metrics MQTT**: snapshots periódicos en `br/system/metrics`.
+- **Métricas locales**: snapshots periódicos escritos en `/tmp/mcubridge_status.json`.
 - **Exportador Prometheus**: opcional (por defecto `127.0.0.1:9130`). Campos no numéricos se exponen como `*_info{...} 1`.
 - **Status Writer**: `/tmp/mcubridge_status.json` como snapshot local (JSON para compatibilidad LuCI).
 
@@ -263,14 +263,13 @@ El sistema implementa recuperación automática con backoff exponencial:
 ```
 Handshake retry: base=1s, max=60s, factor=2x
 Serial reconnect: base=reconnect_delay (UCI), max=8x base
-MQTT spool retry: base=5s, max=60s
+Cloud spool retry: base=5s, max=60s
 ```
 
 ### Monitoreo de Estado Seguro
 
 El estado de salud del enlace se expone en:
 - `/tmp/mcubridge_status.json` → campo `is_synchronized`
-- MQTT topic `br/system/bridge/summary/value` → snapshot completo
 - Prometheus metric `mcubridge_serial_link_synchronized` (si habilitado)
 
 ## Configuración relevante
@@ -282,13 +281,13 @@ El estado de salud del enlace se expone en:
 | `metrics_port` | Puerto TCP del exportador. | `9130` |
 | `debug_logging` | Fuerza logs `DEBUG`. | `0` |
 | `allowed_commands` | Lista blanca de comandos shell. | `""` |
-| `file_write_max_bytes` | Máximo por write (MQTT y/o `CMD_FILE_WRITE`). | `262144` |
+| `file_write_max_bytes` | Máximo por write (gRPC/IPC y/o `CMD_FILE_WRITE`). | `262144` |
 | `file_storage_quota_bytes` | Cuota global dentro de `file_system_root`. | `4194304` |
 
 ## Flujo de inicio (resumen)
 
 1. `main()` carga config, inicializa logging, crea `RuntimeState`.
-2. Se arranca un `TaskGroup` con lector serie, MQTT, status writer, métricas MQTT, watchdog opcional, Prometheus opcional.
+2. Se arranca un `TaskGroup` con lector serie, gRPC/IPC publisher, status writer, watchdog opcional, Prometheus opcional.
 3. Fallas críticas se elevan como `CRITICAL` para reinicios supervisados (`procd`).
 
 ---
@@ -644,7 +643,7 @@ Raw:
 Notas operativas:
 
 - El datastore del daemon es **volátil (RAM)**: se mantiene en memoria mientras el proceso está vivo y **no persiste a disco**.
-- La persistencia “durable” del sistema se limita al spool MQTT (si está habilitado) y por defecto se ubica en `/tmp` para minimizar desgaste de flash.
+- La persistencia “durable” del sistema se limita al spool de Nube (si está habilitado) y por defecto se ubica en `/tmp` para minimizar desgaste de flash.
 
 ### 5.5 Mailbox (0x80)
 

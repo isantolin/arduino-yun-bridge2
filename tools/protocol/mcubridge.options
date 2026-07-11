@@ -24,7 +24,7 @@ rpc.pb.SpiTransferResponse.data   max_size:64
 rpc.pb.GenericResponse.status      max_size:8
 rpc.pb.GenericResponse.message     max_size:48
 
-# Exclude MQTT-only & Telemetry structures from MCU firmware compilation
+# Exclude Telemetry structures from MCU firmware compilation
 rpc.pb.StructuredEntry        skip_message:true
 rpc.pb.StructuredPayload      skip_message:true
 rpc.pb.SupervisorSnapshot     skip_message:true
@@ -38,7 +38,6 @@ rpc.pb.BridgeSnapshot         skip_message:true
 rpc.pb.DaemonMetrics          skip_message:true
 rpc.pb.BridgeStatus           skip_message:true
 rpc.pb.StatusReport           skip_message:true
-rpc.pb.MqttDropCount          skip_message:true
 rpc.pb.QueueDepths           skip_message:true
 rpc.pb.SupervisorEntry        skip_message:true
 
@@ -47,10 +46,7 @@ rpc.pb.Constants skip_message:true
 rpc.pb.Hardware skip_message:true
 rpc.pb.Handshake skip_message:true
 rpc.pb.DataFormats skip_message:true
-rpc.pb.MqttSuffixes skip_message:true
-rpc.pb.MqttDefaults skip_message:true
 rpc.pb.StatusReasons skip_message:true
-rpc.pb.MqttSubscription skip_message:true
 rpc.pb.TopicConfig skip_message:true
 rpc.pb.ActionConfig skip_message:true
 rpc.pb.ArchConfig skip_message:true
@@ -63,10 +59,7 @@ rpc.pb.constants type:FT_IGNORE
 rpc.pb.hardware type:FT_IGNORE
 rpc.pb.handshake type:FT_IGNORE
 rpc.pb.data_formats type:FT_IGNORE
-rpc.pb.mqtt_suffixes type:FT_IGNORE
-rpc.pb.mqtt_defaults type:FT_IGNORE
 rpc.pb.status_reasons type:FT_IGNORE
-rpc.pb.mqtt_subscriptions type:FT_IGNORE
 rpc.pb.topics type:FT_IGNORE
 rpc.pb.actions type:FT_IGNORE
 rpc.pb.architectures type:FT_IGNORE

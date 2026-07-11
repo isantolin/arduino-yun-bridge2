@@ -19,7 +19,7 @@ The system is designed with a strict layering to separate the wire protocol from
 
 ### 3. The Application Defaults (`mcubridge.config.const`)
 - **Role:** Application Configuration Defaults.
-- **Content:** OS-specific limits, MQTT topics, and paths.
+- **Content:** OS-specific limits, Cloud topics, and paths.
 
 ### 3. The Runtime Configuration (`mcubridge.config.settings`)
 - **Role:** Operational State.

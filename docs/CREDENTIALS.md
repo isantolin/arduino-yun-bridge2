@@ -1,6 +1,6 @@
 # McuBridge Credential Rotation
 
-Secure deployments require the MCU, the Linux daemon, and the MQTT broker to agree on the same shared materials. This guide explains how to regenerate those secrets with the provided tooling and how to keep the Arduino firmware synchronized without leaking credentials into version control.
+Secure deployments require the MCU, the Linux daemon, and the Cloud Gateway to agree on the same shared materials. This guide explains how to regenerate those secrets with the provided tooling and how to keep the Arduino firmware synchronized without leaking credentials into version control.
 
 ## Rotation Flow Overview
 
@@ -31,7 +31,7 @@ flowchart TD
 
 - **Before shipping a device**: The repository ships with placeholder secrets so the bridge works immediately after flashing. Rotate them before exposing the hardware outside of a lab network.
 - **After servicing hardware**: Any time the MCU or daemon image is reflashed on an untrusted bench.
-- **On a schedule**: Align with your org’s security cadence (e.g., every 90 days) so MQTT credentials and serial secrets do not become stale.
+- **On a schedule**: Align with your org’s security cadence (e.g., every 90 days) so Cloud credentials and serial secrets do not become stale.
 
 ## Quick rotation from your workstation
 
@@ -43,7 +43,7 @@ flowchart TD
 What happens:
 
 1. The script connects via SSH (default user `root`) and runs `/usr/bin/mcubridge-rotate-credentials` on the device.
-2. The helper writes the regenerated secrets to UCI (`/etc/config/mcubridge`), updates `mcubridge.general.mqtt_pass`, and restarts the daemon.
+2. The helper writes the regenerated secrets to UCI (`/etc/config/mcubridge`), updates `mcubridge.general.cloud_pass`, and restarts the daemon.
 3. The script captures the freshly generated serial shared secret (stored in `mcubridge.general.serial_shared_secret`, also printed as `SERIAL_SECRET=...`) and prints a ready-to-paste snippet:
 
    ```c
@@ -95,25 +95,18 @@ Following this workflow keeps the MCU and daemon secrets aligned and makes rotat
 | `Anti-replay: nonce reused` | MCU reset without daemon restart | Restart daemon: `service mcubridge restart` |
 | `Key derivation error` | Invalid secret length | Ensure secret is exactly 64 hex chars (32 bytes) |
 
-### Manual Verification with MQTT
+### Manual Verification with local status
 
-After rotation, verify end-to-end connectivity using `mosquitto_pub` and `mosquitto_sub`:
+After rotation, verify end-to-end connectivity by checking `/tmp/mcubridge_status.json`:
 
 ```sh
-# Terminal 1: Subscribe to status topic
-mosquitto_sub -h 127.0.0.1 -p 8883 \
-  --cafile /etc/mcubridge/ca.crt \
-  -t 'br/system/status' -v
-
-# Terminal 2: Request system info (triggers MCU response)
-mosquitto_pub -h 127.0.0.1 -p 8883 \
-  --cafile /etc/mcubridge/ca.crt \
-  -t 'br/system/info' -m ''
+# Read the status snapshot (tmpfs)
+cat /tmp/mcubridge_status.json
 ```
 
-Expected output on Terminal 1:
+Expected JSON output containing status:
 ```json
-br/system/status {"synchronised":true,"mcu_version":{"major":1,"minor":0},...}
+{"synchronised":true,"mcu_version":{"major":1,"minor":0},...}
 ```
 
 If `synchronised` is `false`, the handshake failed—check the errors above.

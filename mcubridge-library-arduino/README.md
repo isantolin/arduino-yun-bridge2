@@ -82,7 +82,7 @@ void loop() {
 - The library targets AVR-based Arduino MCU boards. Ensure the Arduino AVR core is installed.
 - The shared protocol headers are kept aligned with the Python daemon under `mcubridge/mcubridge/protocol`.
 - All payload serialization uses **nanopb/protobuf** via generated `rpc_pb_*` structs serialised and deserialised via `rpc::Payload::serialize` and `rpc::Payload::parse`.
-- MCU sketches should no longer attempt to initiate pin reads directly; GPIO reads are exclusively driven from the Linux daemon via MQTT (`CMD_DIGITAL_READ`/`CMD_ANALOG_READ`).
+- MCU sketches should no longer attempt to initiate pin reads directly; GPIO reads are exclusively driven from the Linux daemon via Cloud/IPC requests (`CMD_DIGITAL_READ`/`CMD_ANALOG_READ`).
 
 ## Contributing
 

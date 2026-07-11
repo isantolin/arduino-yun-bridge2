@@ -17,7 +17,7 @@
 - **O(1) C++ Dispatch**: Replaced switch/case with jump tables for deterministic execution.
 - **Python 3.13.9+**: Full compatibility and optimization using uvloop and Protobuf.
 - **Mutual Auth Handshake**: Robust HKDF-SHA256 based synchronization with anti-replay protection.
-- **Protobuf over MQTT**: Migrated from JSON to protobuf payloads for deterministic binary interoperability.
+- **Protobuf over gRPC**: Migrated from JSON to protobuf payloads for deterministic binary interoperability.
 - **Strong Type Safety**: Integrated PEP-561 type stubs for third-party libraries.
 - **100% Protocol Sync**: Guaranteed consistency between MPU and MCU via automated code generation.
 - **Protobuf Payload Serialization**: All RPC payloads migrated to protobuf/nanopb with zero-heap codecs.

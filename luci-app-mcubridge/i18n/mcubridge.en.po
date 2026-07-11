@@ -4,14 +4,14 @@ msgstr "McuBridge Configuration"
 msgid "Main Settings"
 msgstr "Main Settings"
 
-msgid "MQTT Host"
-msgstr "MQTT Host"
+msgid "Cloud Host"
+msgstr "Cloud Host"
 
-msgid "MQTT Port"
-msgstr "MQTT Port"
+msgid "Cloud Port"
+msgstr "Cloud Port"
 
-msgid "MQTT Topic Prefix"
-msgstr "MQTT Topic Prefix"
+msgid "Topic Prefix"
+msgstr "Topic Prefix"
 
 msgid "Serial Port"
 msgstr "Serial Port"
@@ -31,11 +31,11 @@ msgstr "Recent Log Output"
 msgid "Web UI"
 msgstr "Web UI"
 
-msgid "MQTT WebSocket Port"
-msgstr "MQTT WebSocket Port"
+msgid "Cloud WebSocket Port"
+msgstr "Cloud WebSocket Port"
 
-msgid "Strongly recommended. Disabling TLS sends MQTT credentials and payloads in plaintext."
-msgstr "Strongly recommended. Disabling TLS sends MQTT credentials and payloads in plaintext."
+msgid "Strongly recommended. Disabling TLS sends credentials and payloads in plaintext."
+msgstr "Strongly recommended. Disabling TLS sends credentials and payloads in plaintext."
 
 msgid "Serial Shared Secret"
 msgstr "Serial Shared Secret"
@@ -61,8 +61,8 @@ msgstr "Initial baudrate for negotiation. Use 115200 for safety."
 msgid "Status snapshot is read from /tmp/mcubridge_status.json (tmpfs) and may be empty after reboot or while the daemon is starting."
 msgstr "Status snapshot is read from /tmp/mcubridge_status.json (tmpfs) and may be empty after reboot or while the daemon is starting."
 
-msgid "Configure the McuBridge daemon which proxies RPC frames between the MCU and MQTT. Runtime status snapshots are written to /tmp/mcubridge_status.json (tmpfs) and are cleared on reboot."
-msgstr "Configure the McuBridge daemon which proxies RPC frames between the MCU and MQTT. Runtime status snapshots are written to /tmp/mcubridge_status.json (tmpfs) and are cleared on reboot."
+msgid "Configure the McuBridge daemon which proxies RPC frames between the MCU and Cloud. Runtime status snapshots are written to /tmp/mcubridge_status.json (tmpfs) and are cleared on reboot."
+msgstr "Configure the McuBridge daemon which proxies RPC frames between the MCU and Cloud. Runtime status snapshots are written to /tmp/mcubridge_status.json (tmpfs) and are cleared on reboot."
 
 msgid "Daemon Settings"
 msgstr "Daemon Settings"
@@ -76,11 +76,11 @@ msgstr "Enable Debug Logging"
 msgid "Serial Baud Rate"
 msgstr "Serial Baud Rate"
 
-msgid "MQTT Username"
-msgstr "MQTT Username"
+msgid "Cloud Username"
+msgstr "Cloud Username"
 
-msgid "MQTT Password"
-msgstr "MQTT Password"
+msgid "Cloud Password"
+msgstr "Cloud Password"
 
 msgid "Enable TLS/SSL"
 msgstr "Enable TLS/SSL"
@@ -103,14 +103,14 @@ msgstr "Base topic used for bridge messages (for example br/d/<pin>)."
 msgid "Topic prefix cannot be empty."
 msgstr "Topic prefix cannot be empty."
 
-msgid "Topic prefix cannot contain MQTT wildcards."
-msgstr "Topic prefix cannot contain MQTT wildcards."
+msgid "Topic prefix cannot contain Cloud wildcards."
+msgstr "Topic prefix cannot contain Cloud wildcards."
 
-msgid "MQTT Spool Directory"
-msgstr "MQTT Spool Directory"
+msgid "Cloud Spool Directory"
+msgstr "Cloud Spool Directory"
 
-msgid "Directory used to spool MQTT messages when the broker is unavailable. Keep this on /tmp (tmpfs) or an external mount to avoid Flash wear."
-msgstr "Directory used to spool MQTT messages when the broker is unavailable. Keep this on /tmp (tmpfs) or an external mount to avoid Flash wear."
+msgid "Directory used to spool messages when the broker is unavailable. Keep this on /tmp (tmpfs) or an external mount to avoid Flash wear."
+msgstr "Directory used to spool messages when the broker is unavailable. Keep this on /tmp (tmpfs) or an external mount to avoid Flash wear."
 
 msgid "Spool directory cannot be empty."
 msgstr "Spool directory cannot be empty."
@@ -139,20 +139,20 @@ msgstr "Space separated whitelist for shell execution (leave empty to disable)."
 msgid "Allow file reads"
 msgstr "Allow file reads"
 
-msgid "Accept MQTT requests that read files via br/fs/read."
-msgstr "Accept MQTT requests that read files via br/fs/read."
+msgid "Accept requests that read files via br/fs/read."
+msgstr "Accept requests that read files via br/fs/read."
 
 msgid "Allow file writes"
 msgstr "Allow file writes"
 
-msgid "Accept MQTT requests that write files via br/fs/write."
-msgstr "Accept MQTT requests that write files via br/fs/write."
+msgid "Accept requests that write files via br/fs/write."
+msgstr "Accept requests that write files via br/fs/write."
 
 msgid "Allow file deletes"
 msgstr "Allow file deletes"
 
-msgid "Accept MQTT requests that delete files via br/fs/remove."
-msgstr "Accept MQTT requests that delete files via br/fs/remove."
+msgid "Accept requests that delete files via br/fs/remove."
+msgstr "Accept requests that delete files via br/fs/remove."
 
 msgid "Allow datastore get"
 msgstr "Allow datastore get"
@@ -169,14 +169,14 @@ msgstr "Allow clients to modify key/value pairs via br/datastore/put."
 msgid "Allow mailbox read"
 msgstr "Allow mailbox read"
 
-msgid "Permit MQTT reads from the MCU mailbox."
-msgstr "Permit MQTT reads from the MCU mailbox."
+msgid "Permit reads from the MCU mailbox."
+msgstr "Permit reads from the MCU mailbox."
 
 msgid "Allow mailbox write"
 msgstr "Allow mailbox write"
 
-msgid "Permit MQTT writes into the MCU mailbox queue."
-msgstr "Permit MQTT writes into the MCU mailbox queue."
+msgid "Permit writes into the MCU mailbox queue."
+msgstr "Permit writes into the MCU mailbox queue."
 
 msgid "Allow shell run"
 msgstr "Allow shell run"
@@ -205,38 +205,38 @@ msgstr "Allow canceling asynchronous shell jobs via br/sh/kill."
 msgid "Allow console input"
 msgstr "Allow console input"
 
-msgid "Permit MQTT writes to br/console/in to reach the MCU console."
-msgstr "Permit MQTT writes to br/console/in to reach the MCU console."
+msgid "Permit writes to br/console/in to reach the MCU console."
+msgstr "Permit writes to br/console/in to reach the MCU console."
 
 msgid "Allow digital write"
 msgstr "Allow digital write"
 
-msgid "Allow MQTT writes to br/d/<pin>/write."
-msgstr "Allow MQTT writes to br/d/<pin>/write."
+msgid "Allow writes to br/d/<pin>/write."
+msgstr "Allow writes to br/d/<pin>/write."
 
 msgid "Allow digital read"
 msgstr "Allow digital read"
 
-msgid "Allow MQTT reads via br/d/<pin>/read."
-msgstr "Allow MQTT reads via br/d/<pin>/read."
+msgid "Allow reads via br/d/<pin>/read."
+msgstr "Allow reads via br/d/<pin>/read."
 
 msgid "Allow digital mode"
 msgstr "Allow digital mode"
 
-msgid "Allow MQTT access to br/d/<pin>/mode."
-msgstr "Allow MQTT access to br/d/<pin>/mode."
+msgid "Allow access to br/d/<pin>/mode."
+msgstr "Allow access to br/d/<pin>/mode."
 
 msgid "Allow analog write"
 msgstr "Allow analog write"
 
-msgid "Allow MQTT writes to br/a/<pin>/write."
-msgstr "Allow MQTT writes to br/a/<pin>/write."
+msgid "Allow writes to br/a/<pin>/write."
+msgstr "Allow writes to br/a/<pin>/write."
 
 msgid "Allow analog read"
 msgstr "Allow analog read"
 
-msgid "Allow MQTT reads via br/a/<pin>/read."
-msgstr "Allow MQTT reads via br/a/<pin>/read."
+msgid "Allow reads via br/a/<pin>/read."
+msgstr "Allow reads via br/a/<pin>/read."
 
 msgid "Managed via UCI. Use the Credentials & TLS tab to rotate secrets."
 msgstr "Managed via UCI. Use the Credentials & TLS tab to rotate secrets."
@@ -250,8 +250,8 @@ msgstr "Manage shared secrets and TLS material without leaving LuCI."
 msgid "Rotate Credentials"
 msgstr "Rotate Credentials"
 
-msgid "This regenerates the serial shared secret (serial_shared_secret) and the MQTT password, writes them to UCI, and restarts the daemon."
-msgstr "This regenerates the serial shared secret (serial_shared_secret) and the MQTT password, writes them to UCI, and restarts the daemon."
+msgid "This regenerates the serial shared secret (serial_shared_secret) and the Cloud password, writes them to UCI, and restarts the daemon."
+msgstr "This regenerates the serial shared secret (serial_shared_secret) and the Cloud password, writes them to UCI, and restarts the daemon."
 
 msgid "Rotate now"
 msgstr "Rotate now"
@@ -268,8 +268,8 @@ msgstr "Point the daemon to the new paths using the main configuration page."
 msgid "Hardware Smoke Test"
 msgstr "Hardware Smoke Test"
 
-msgid "Runs /usr/bin/mcubridge-hw-smoke to verify MQTT round trips and service health."
-msgstr "Runs /usr/bin/mcubridge-hw-smoke to verify MQTT round trips and service health."
+msgid "Runs /usr/bin/mcubridge-hw-smoke to verify cloud gateway round trips and service health."
+msgstr "Runs /usr/bin/mcubridge-hw-smoke to verify cloud gateway round trips and service health."
 
 msgid "Run smoke test"
 msgstr "Run smoke test"

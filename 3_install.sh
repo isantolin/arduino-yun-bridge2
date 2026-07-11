@@ -37,6 +37,7 @@ DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES="3"
 PROJECT_APK_PATTERNS="\
 python3*.apk \
 mcubridge*.apk \
+mcubridge-gateway*.apk \
 luci-app-mcubridge*.apk"
 
 UCI_GENERAL_DIRTY=0
@@ -340,7 +341,6 @@ python3-serialx \
 openssl-util \
 coreutils-stty \
 xxd \
-mosquitto-client-ssl \
 uhttpd-mod-lua \
 luci-base \
 luci-compat \

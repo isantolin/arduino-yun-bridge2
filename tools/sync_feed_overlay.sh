@@ -50,6 +50,7 @@ done
 PACKAGES=(
     luci-app-mcubridge
     mcubridge
+    mcubridge-gateway
 )
 
 compute_link_target() {

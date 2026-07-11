@@ -39,7 +39,7 @@ jobs:
           path: |
             openwrt-sdk/staging_dir/hostpkg
             openwrt-sdk/staging_dir/host
-          key: ${{ runner.os }}-openwrt-host-25.12.4-${{ hashFiles('1_compile.sh') }}
+          key: ${{ runner.os }}-openwrt-host-25.12.4-${{ hashFiles('1_compile.sh', 'mcubridge-gateway/Makefile') }}
           restore-keys: |
             ${{ runner.os }}-openwrt-host-25.12.4-
 
@@ -48,7 +48,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: openwrt-sdk
-          key: ${{ runner.os }}-openwrt-sdk-25.12.4-${{ hashFiles('1_compile.sh', 'mcubridge/Makefile', 'feeds/**/Makefile') }}
+          key: ${{ runner.os }}-openwrt-sdk-25.12.4-${{ hashFiles('1_compile.sh', 'mcubridge/Makefile', 'mcubridge-gateway/Makefile', 'feeds/**/Makefile') }}
           restore-keys: |
             ${{ runner.os }}-openwrt-sdk-25.12.4-
 
@@ -64,7 +64,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential clang flex bison g++ gawk gcc-multilib g++-multilib \
-          gettext git libncurses-dev libssl-dev rsync unzip zlib1g-dev file wget zstd protobuf-compiler
+          gettext git libncurses-dev libssl-dev rsync unzip zlib1g-dev file wget zstd protobuf-compiler rpm
           python3 -m pip install jinja2 pdm-backend hatchling protobuf nanopb grpcio-tools maturin setuptools-rust
 
       - name: Pre-download Python feed dependencies to bypass PyPI mirror issues

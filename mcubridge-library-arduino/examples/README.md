@@ -31,4 +31,4 @@ Tips:
 2. From Linux run `mcubridge-client-examples/mailbox_read_test.py` to send `ON`/`OFF` messages and verify the LED reacts.
 3. When you need frame-level diagnostics, use `tools/frame_debug.py` from Linux to inspect COBS/CRC behavior without relying on sketch-only debug APIs.
 
-These steps keep the examples aligned with the modern stack (TLS enabled by default, strong handshake, and MQTT v5 topics) described in [PROTOCOL.md](../../../docs/PROTOCOL.md).
+These steps keep the examples aligned with the modern stack (TLS enabled by default, strong handshake, and Cloud topics) described in [PROTOCOL.md](../../../docs/PROTOCOL.md).

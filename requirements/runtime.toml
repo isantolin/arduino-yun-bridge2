@@ -27,7 +27,7 @@ rationale = "Template engine for professional and auditable code generation [BUI
 name = "protobuf"
 openwrt = "python3-protobuf"
 pip = "protobuf==7.35.1"
-rationale = "Generated protobuf runtime required for daemon and MQTT payload serialization [VULN-PATCHED: CVE-2026-0994]"
+rationale = "Generated protobuf runtime required for daemon and Cloud payload serialization [VULN-PATCHED: CVE-2026-0994]"
 
 
 [[dependency]]

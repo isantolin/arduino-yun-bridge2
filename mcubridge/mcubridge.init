@@ -5,8 +5,8 @@ START=99
 STOP=10
 USE_PROCD=1
 
-# Dependencias críticas de red y broker local
-DEPENDS="mosquitto network"
+# Dependencias críticas de red
+DEPENDS="network"
 
 start_service() {
     local spool_dir="/tmp/mcubridge/spool"
@@ -19,7 +19,7 @@ start_service() {
     local respawn_retry="0"
 
     if command -v uci >/dev/null 2>&1; then
-        spool_dir="$(uci -q get mcubridge.general.mqtt_spool_dir || echo "$spool_dir")"
+        spool_dir="$(uci -q get mcubridge.general.cloud_spool_dir || echo "$spool_dir")"
         file_root="$(uci -q get mcubridge.general.file_system_root || echo "$file_root")"
         watchdog_enabled="$(uci -q get mcubridge.general.watchdog_enabled || echo "$watchdog_enabled")"
         watchdog_interval="$(uci -q get mcubridge.general.watchdog_interval || echo "$watchdog_interval")"

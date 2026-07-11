@@ -7,21 +7,7 @@ PKG_RELEASE:=1
 
 PKG_MAINTAINER:=Ignacio Santolin and contributors
 
-MQTT_JS_VERSION:=5.15.0
-MQTT_JS_HASH:=da59b6b115b417a83af00778f56a99e9148f481d7d086bd947993ee58ec39a75
-MQTT_JS_URL:=https://unpkg.com/mqtt@$(MQTT_JS_VERSION)/dist/
-MQTT_JS_DL_FILE:=mqtt-$(MQTT_JS_VERSION).min.js
-
 include $(INCLUDE_DIR)/package.mk
-
-define Download/mqtt_js
-	FILE:=$(MQTT_JS_DL_FILE)
-	URL:=$(MQTT_JS_URL)
-	URL_FILE:=mqtt.min.js
-	HASH:=$(MQTT_JS_HASH)
-endef
-
-$(eval $(call Download,mqtt_js))
 
 PKG_BUILD_DIR := $(BUILD_DIR)/$(PKG_NAME)-$(PKG_VERSION)
 
@@ -60,13 +46,9 @@ define Package/$(PKG_NAME)/install
 	$(CP) ./luasrc/view/mcubridge/webui.htm $(1)/usr/lib/lua/luci/view/mcubridge/
 	$(CP) ./luasrc/view/mcubridge/credentials.htm $(1)/usr/lib/lua/luci/view/mcubridge/
 	$(CP) ./luasrc/view/mcubridge/capabilities.htm $(1)/usr/lib/lua/luci/view/mcubridge/
-	# Install MQTT port helper view
-	$(CP) ./luasrc/view/mcubridge/mqtt_port_helper.htm $(1)/usr/lib/lua/luci/view/mcubridge/
 	
 	$(CP) -r ./root/etc/config/mcubridge $(1)/etc/config/
 	[ -d ./root/www/mcubridge ] && $(CP) -r ./root/www/mcubridge $(1)/www/ || true
-	$(INSTALL_DIR) $(1)/www/mcubridge
-	$(INSTALL_DATA) $(DL_DIR)/$(MQTT_JS_DL_FILE) $(1)/www/mcubridge/mqtt.min.js
 endef
 
 $(eval $(call BuildPackage,$(PKG_NAME)))

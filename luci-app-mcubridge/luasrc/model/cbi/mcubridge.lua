@@ -40,20 +40,19 @@ local function ensure_general_section()
             serial_port = "/dev/ttyATH0",
             serial_baud = "115200",
             serial_safe_baud = "115200",
-            mqtt_host = "127.0.0.1",
-            mqtt_port = "8883",
-            mqtt_topic = "br",
-            mqtt_user = "",
-            mqtt_pass = "",
-            mqtt_ws_port = "9001",
-            mqtt_tls = "1",
-            mqtt_tls_insecure = "0",
-            mqtt_cafile = "/etc/ssl/certs/ca-certificates.crt",
-            mqtt_certfile = "",
-            mqtt_keyfile = "",
+            cloud_host = "127.0.0.1",
+            cloud_port = "8443",
+            topic_prefix = "br",
+            cloud_user = "",
+            cloud_pass = "",
+            cloud_tls = "1",
+            cloud_tls_insecure = "0",
+            cloud_cafile = "/etc/ssl/certs/ca-certificates.crt",
+            cloud_certfile = "",
+            cloud_keyfile = "",
             -- Default to tmpfs to avoid Flash wear on devices without external storage.
             file_system_root = "/tmp/yun_files",
-            mqtt_spool_dir = "/tmp/mcubridge/spool",
+            cloud_spool_dir = "/tmp/mcubridge/spool",
             process_timeout = "10",
             allowed_commands = "",
         })
@@ -68,7 +67,7 @@ local m = Map(
     "mcubridge",
     translate("McuBridge Configuration"),
     translate(
-        "Configure the McuBridge daemon which proxies RPC frames between the MCU and MQTT. " ..
+        "Configure the McuBridge daemon which proxies RPC frames between the MCU and the Cloud. " ..
         "Runtime status snapshots are written to /tmp/mcubridge_status.json (tmpfs) and are cleared on reboot."
     )
 )
@@ -126,95 +125,90 @@ serial_safe_baud:value("1000000")
 serial_safe_baud.default = "115200"
 serial_safe_baud.rmempty = false
 
-local mqtt_host = s:option(Value, "mqtt_host", translate("MQTT Host"))
-mqtt_host.placeholder = "127.0.0.1"
-mqtt_host.rmempty = false
+local cloud_host = s:option(Value, "cloud_host", translate("Cloud Host"))
+cloud_host.placeholder = "127.0.0.1"
+cloud_host.rmempty = false
 
-local mqtt_port = s:option(Value, "mqtt_port", translate("MQTT Port"))
-mqtt_port.datatype = "port"
-mqtt_port.placeholder = "8883"
-mqtt_port.rmempty = false
+local cloud_port = s:option(Value, "cloud_port", translate("Cloud Port"))
+cloud_port.datatype = "port"
+cloud_port.placeholder = "8443"
+cloud_port.rmempty = false
 
-local mqtt_user = s:option(Value, "mqtt_user", translate("MQTT Username"))
-mqtt_user.rmempty = true
+local cloud_user = s:option(Value, "cloud_user", translate("Cloud Username"))
+cloud_user.rmempty = true
 
-local mqtt_pass = s:option(Value, "mqtt_pass", translate("MQTT Password"))
-mqtt_pass.password = true
-mqtt_pass.rmempty = true
+local cloud_pass = s:option(Value, "cloud_pass", translate("Cloud Password"))
+cloud_pass.password = true
+cloud_pass.rmempty = true
 
-local mqtt_tls = s:option(Flag, "mqtt_tls", translate("Enable TLS/SSL"))
-mqtt_tls.rmempty = false
-mqtt_tls.default = "1"
-mqtt_tls.description = translate("Strongly recommended. Disabling TLS sends MQTT credentials " ..
+local cloud_tls = s:option(Flag, "cloud_tls", translate("Enable TLS/SSL"))
+cloud_tls.rmempty = false
+cloud_tls.default = "1"
+cloud_tls.description = translate("Strongly recommended. Disabling TLS sends credentials " ..
     "and payloads in plaintext.")
 
-local mqtt_tls_insecure = s:option(
+local cloud_tls_insecure = s:option(
     Flag,
-    "mqtt_tls_insecure",
+    "cloud_tls_insecure",
     translate("Disable TLS Hostname Verification")
 )
-mqtt_tls_insecure.rmempty = true
-mqtt_tls_insecure.default = "0"
-mqtt_tls_insecure:depends("mqtt_tls", "1")
-mqtt_tls_insecure.description = translate(
-    "Equivalent to mosquitto --insecure. Allows connecting via IP even when the broker certificate " ..
-    "CN/SAN is a DNS name. Less secure; use only for trusted/self-hosted brokers."
+cloud_tls_insecure.rmempty = true
+cloud_tls_insecure.default = "0"
+cloud_tls_insecure:depends("cloud_tls", "1")
+cloud_tls_insecure.description = translate(
+    "Equivalent to insecure TLS. Allows connecting via IP even when the certificate " ..
+    "CN/SAN is a DNS name. Less secure; use only for trusted/self-hosted gateways."
 )
 
-local mqtt_cafile = s:option(Value, "mqtt_cafile", translate("CA File Path"))
-mqtt_cafile.placeholder = "/etc/ssl/certs/ca-certificates.crt"
-mqtt_cafile:depends("mqtt_tls", "1")
-mqtt_cafile.rmempty = true
+local cloud_cafile = s:option(Value, "cloud_cafile", translate("CA File Path"))
+cloud_cafile.placeholder = "/etc/ssl/certs/ca-certificates.crt"
+cloud_cafile:depends("cloud_tls", "1")
+cloud_cafile.rmempty = true
 
-function mqtt_cafile.validate(_, value, _)
+function cloud_cafile.validate(_, value, _)
     return value
 end
 
-local mqtt_certfile = s:option(Value, "mqtt_certfile", translate("Client Certificate Path"))
-mqtt_certfile.placeholder = "/etc/mcubridge/client.crt"
-mqtt_certfile:depends("mqtt_tls", "1")
-mqtt_certfile.rmempty = true
-mqtt_certfile.description = translate(
-    "Optional. Only required if your MQTT broker enforces client certificates (mTLS)."
+local cloud_certfile = s:option(Value, "cloud_certfile", translate("Client Certificate Path"))
+cloud_certfile.placeholder = "/etc/mcubridge/client.crt"
+cloud_certfile:depends("cloud_tls", "1")
+cloud_certfile.rmempty = true
+cloud_certfile.description = translate(
+    "Optional. Only required if your Cloud Gateway enforces client certificates (mTLS)."
 )
 
-local mqtt_keyfile = s:option(Value, "mqtt_keyfile", translate("Client Key Path"))
-mqtt_keyfile.placeholder = "/etc/mcubridge/client.key"
-mqtt_keyfile:depends("mqtt_tls", "1")
-mqtt_keyfile.rmempty = true
-mqtt_keyfile.description = translate(
-    "Optional. Only required if your MQTT broker enforces client certificates (mTLS)."
+local cloud_keyfile = s:option(Value, "cloud_keyfile", translate("Client Key Path"))
+cloud_keyfile.placeholder = "/etc/mcubridge/client.key"
+cloud_keyfile:depends("cloud_tls", "1")
+cloud_keyfile.rmempty = true
+cloud_keyfile.description = translate(
+    "Optional. Only required if your Cloud Gateway enforces client certificates (mTLS)."
 )
 
-local mqtt_topic = s:option(Value, "mqtt_topic", translate("MQTT Topic Prefix"))
-mqtt_topic.placeholder = "br"
-mqtt_topic.rmempty = false
-mqtt_topic.description = translate("Base topic used for bridge messages (for example br/d/<pin>).")
-function mqtt_topic.validate(_, value, _)
+local topic_prefix = s:option(Value, "topic_prefix", translate("Topic Prefix"))
+topic_prefix.placeholder = "br"
+topic_prefix.rmempty = false
+topic_prefix.description = translate("Base prefix used for messages (for example br/d/<pin>).")
+function topic_prefix.validate(_, value, _)
     if not value or value == "" then
         return nil, translate("Topic prefix cannot be empty.")
     end
 
     if value:find("[#+]") then
-        return nil, translate("Topic prefix cannot contain MQTT wildcards.")
+        return nil, translate("Topic prefix cannot contain wildcards.")
     end
 
     return value
 end
 
-local mqtt_ws_port = s:option(Value, "mqtt_ws_port", translate("MQTT WebSocket Port"))
-mqtt_ws_port.datatype = "port"
-mqtt_ws_port.placeholder = "9001"
-mqtt_ws_port.rmempty = true
-
-local mqtt_spool_dir = s:option(Value, "mqtt_spool_dir", translate("MQTT Spool Directory"))
-mqtt_spool_dir.placeholder = "/tmp/mcubridge/spool"
-mqtt_spool_dir.rmempty = false
-mqtt_spool_dir.description = translate(
-    "Directory used to spool MQTT messages when the broker is unavailable. " ..
+local cloud_spool_dir = s:option(Value, "cloud_spool_dir", translate("Cloud Spool Directory"))
+cloud_spool_dir.placeholder = "/tmp/mcubridge/spool"
+cloud_spool_dir.rmempty = false
+cloud_spool_dir.description = translate(
+    "Directory used to spool messages when the Cloud Gateway is unavailable. " ..
     "Keep this on /tmp (tmpfs) or an external mount to avoid Flash wear."
 )
-function mqtt_spool_dir.validate(_, value, _)
+function cloud_spool_dir.validate(_, value, _)
     if not value or value == "" then
         return nil, translate("Spool directory cannot be empty.")
     end
@@ -244,8 +238,8 @@ allowed_commands.placeholder = "date uptime"
 allowed_commands.rmempty = true
 allowed_commands.description = translate("Space separated whitelist for shell execution (leave empty to disable).")
 
--- MQTT topic permissions ----------------------------------------------------
-local function mqtt_acl_option(key, label, description)
+-- Cloud topic permissions ----------------------------------------------------
+local function cloud_acl_option(key, label, description)
     local opt = s:option(Flag, key, translate(label))
     opt.rmempty = false
     opt.default = "1"
@@ -255,100 +249,96 @@ local function mqtt_acl_option(key, label, description)
     return opt
 end
 
-mqtt_acl_option(
-    "mqtt_allow_file_read",
+cloud_acl_option(
+    "cloud_allow_file_read",
     "Allow file reads",
-    "Accept MQTT requests that read files via br/fs/read."
+    "Accept requests that read files via br/fs/read."
 )
-mqtt_acl_option(
-    "mqtt_allow_file_write",
+cloud_acl_option(
+    "cloud_allow_file_write",
     "Allow file writes",
-    "Accept MQTT requests that write files via br/fs/write."
+    "Accept requests that write files via br/fs/write."
 )
-mqtt_acl_option(
-    "mqtt_allow_file_remove",
+cloud_acl_option(
+    "cloud_allow_file_remove",
     "Allow file deletes",
-    "Accept MQTT requests that delete files via br/fs/remove."
+    "Accept requests that delete files via br/fs/remove."
 )
-mqtt_acl_option(
-    "mqtt_allow_datastore_get",
+cloud_acl_option(
+    "cloud_allow_datastore_get",
     "Allow datastore get",
     "Allow clients to read key/value pairs via br/datastore/get."
 )
-mqtt_acl_option(
-    "mqtt_allow_datastore_put",
+cloud_acl_option(
+    "cloud_allow_datastore_put",
     "Allow datastore put",
     "Allow clients to modify key/value pairs via br/datastore/put."
 )
-mqtt_acl_option(
-    "mqtt_allow_mailbox_read",
+cloud_acl_option(
+    "cloud_allow_mailbox_read",
     "Allow mailbox read",
-    "Permit MQTT reads from the MCU mailbox."
+    "Permit reads from the MCU mailbox."
 )
-mqtt_acl_option(
-    "mqtt_allow_mailbox_write",
+cloud_acl_option(
+    "cloud_allow_mailbox_write",
     "Allow mailbox write",
-    "Permit MQTT writes into the MCU mailbox queue."
+    "Permit writes into the MCU mailbox queue."
 )
-mqtt_acl_option(
-    "mqtt_allow_shell_run",
+cloud_acl_option(
+    "cloud_allow_shell_run",
     "Allow shell run",
     "Allow synchronous shell execution via br/sh/run."
 )
-mqtt_acl_option(
-    "mqtt_allow_shell_run_async",
+cloud_acl_option(
+    "cloud_allow_shell_run_async",
     "Allow shell run_async",
     "Allow asynchronous shell execution via br/sh/run_async."
 )
-mqtt_acl_option(
-    "mqtt_allow_shell_poll",
+cloud_acl_option(
+    "cloud_allow_shell_poll",
     "Allow shell poll",
     "Allow polling of asynchronous shell jobs via br/sh/poll."
 )
-mqtt_acl_option(
-    "mqtt_allow_shell_kill",
+cloud_acl_option(
+    "cloud_allow_shell_kill",
     "Allow shell kill",
     "Allow canceling asynchronous shell jobs via br/sh/kill."
 )
-mqtt_acl_option(
-    "mqtt_allow_console_input",
+cloud_acl_option(
+    "cloud_allow_console_input",
     "Allow console input",
-    "Permit MQTT writes to br/console/in to reach the MCU console."
+    "Permit writes to br/console/in to reach the MCU console."
 )
-mqtt_acl_option(
-    "mqtt_allow_digital_write",
+cloud_acl_option(
+    "cloud_allow_digital_write",
     "Allow digital write",
-    "Allow MQTT writes to br/d/<pin>/write."
+    "Allow writes to br/d/<pin>/write."
 )
-mqtt_acl_option(
-    "mqtt_allow_digital_read",
+cloud_acl_option(
+    "cloud_allow_digital_read",
     "Allow digital read",
-    "Allow MQTT reads via br/d/<pin>/read."
+    "Allow reads via br/d/<pin>/read."
 )
-mqtt_acl_option(
-    "mqtt_allow_digital_mode",
+cloud_acl_option(
+    "cloud_allow_digital_mode",
     "Allow digital mode",
-    "Allow MQTT access to br/d/<pin>/mode."
+    "Allow access to br/d/<pin>/mode."
 )
-mqtt_acl_option(
-    "mqtt_allow_analog_write",
+cloud_acl_option(
+    "cloud_allow_analog_write",
     "Allow analog write",
-    "Allow MQTT writes to br/a/<pin>/write."
+    "Allow writes to br/a/<pin>/write."
 )
-mqtt_acl_option(
-    "mqtt_allow_analog_read",
+cloud_acl_option(
+    "cloud_allow_analog_read",
     "Allow analog read",
-    "Allow MQTT reads via br/a/<pin>/read."
+    "Allow reads via br/a/<pin>/read."
 )
 
 local serial_secret = s:option(Value, "serial_shared_secret", translate("Serial Shared Secret"))
 serial_secret.password = true
 serial_secret.rmempty = false
 serial_secret.description = translate("Shared secret for serial authentication (BRIDGE_SERIAL_SHARED_SECRET).")
-
--- Helper script to toggle MQTT port based on TLS setting
-local script_s = m:section(SimpleSection)
-script_s.template = "mcubridge/mqtt_port_helper"
 
 -- Deleted: Manual required_field_rules table and validation functions.
 -- LuCI handles dependencies (depends) and required fields (rmempty=false) natively.

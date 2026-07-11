@@ -128,7 +128,7 @@ int main() {
   UNITY_BEGIN();
   RUN_TEST(test_surgical_bridge_errors);
   RUN_TEST(test_surgical_fsm_resets);
-  // RUN_TEST(test_surgical_security_failures);
+  RUN_TEST(test_surgical_security_failures);
   RUN_TEST(test_surgical_tasks_flow);
   return UNITY_END();
 }

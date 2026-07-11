@@ -395,7 +395,6 @@ void test_bridge_timer_callbacks() {
   Bridge._onAckTimeout();
   Bridge._onRxDedupe();
   Bridge._onBaudrateChange();
-  Bridge._onBootloaderDelay();
 }
 
 void test_bridge_packet_errors() {

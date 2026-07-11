@@ -23,6 +23,7 @@ logger = logging.getLogger("mcubridge.pin_rest")
 
 def publish_sync(topic: str, payload: str, config: RuntimeConfig) -> None:
     """Synchronous publish to local UNIX domain socket IPC via gRPC."""
+
     async def _run():
         channel = Channel(path="/var/run/mcubridge.sock")
         stub = LocalBridgeStub(channel)

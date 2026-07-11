@@ -25,6 +25,7 @@ class SmokeTester:
 
     def run(self, pin: int, timeout: float) -> None:
         logger.info("Starting hardware smoke test via local gRPC IPC...")
+
         async def _run():
             channel = None
             try:

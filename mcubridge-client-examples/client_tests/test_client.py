@@ -9,18 +9,19 @@ from mcubridge.protocol import mcubridge_pb2 as pb
 def mock_grpc(monkeypatch):
     mock_channel = MagicMock()
     mock_stub = MagicMock()
-    
+
     mock_stub.Publish = AsyncMock()
     mock_stub.SubscribeConsole = MagicMock()
-    
+
     async def empty_gen(*args, **kwargs):
         if False:
             yield None
+
     mock_stub.SubscribeConsole.return_value = empty_gen()
 
     monkeypatch.setattr("mcubridge_client.Channel", MagicMock(return_value=mock_channel))
     monkeypatch.setattr("mcubridge_client.LocalBridgeStub", MagicMock(return_value=mock_stub))
-    
+
     return mock_channel, mock_stub
 
 
@@ -111,6 +112,7 @@ async def test_client_analog_read_timeout(mock_grpc) -> None:
     async def raise_timeout(*args, **kwargs):
         await asyncio.sleep(0.5)
         raise TimeoutError()
+
     mock_stub.Publish.side_effect = raise_timeout
 
     with pytest.raises(TimeoutError):

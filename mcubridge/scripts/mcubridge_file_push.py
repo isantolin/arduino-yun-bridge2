@@ -20,6 +20,7 @@ logger = structlog.get_logger("mcubridge.file-push")
 
 def push_file(topic: str, data: bytes) -> None:
     """Publish file data using local gRPC UNIX socket IPC."""
+
     async def _run():
         channel = None
         try:

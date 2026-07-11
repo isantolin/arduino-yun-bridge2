@@ -18,7 +18,6 @@ from .definitions import (
     SpiMode,
     build_bridge_args,
 )
-from mcubridge.protocol.structures import create_queued_publish
 from .env import dump_client_env
 from .protocol import (
     Command,
@@ -109,8 +108,10 @@ class Bridge:
         if not self.stub:
             return
         try:
-            async for msg in self.stub.SubscribeConsole(pb.SubscribeRequest()):
-                self._console_queue.put_nowait(msg.payload if msg.payload else b"")
+            async with self.stub.SubscribeConsole.open() as stream:
+                await stream.send_message(pb.SubscribeRequest())
+                async for msg in stream:
+                    self._console_queue.put_nowait(msg.payload if msg.payload else b"")
         except (asyncio.CancelledError, Exception) as e:
             logger.debug("IPC console listener closed: %s", e)
 
@@ -127,12 +128,13 @@ class Bridge:
             raise ConnectionError("Not connected")
 
         correlation = secrets.token_bytes(12)
-        msg = create_queued_publish(
+        msg = pb.CloudQueuedPublish(
             topic_name=topic,
             payload=payload.encode() if isinstance(payload, str) else payload,
             content_type=content_type,
+            qos=1,
+            correlation_data=correlation,
         )
-        msg.correlation_data = correlation
 
         try:
             async with asyncio.timeout(timeout):
@@ -146,9 +148,10 @@ class Bridge:
         if not self.stub:
             raise ConnectionError("Not connected")
 
-        msg = create_queued_publish(
+        msg = pb.CloudQueuedPublish(
             topic_name=str(topic),
             payload=payload,
+            qos=1,
         )
         await self.stub.Publish(msg)
 

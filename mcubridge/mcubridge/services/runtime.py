@@ -129,8 +129,8 @@ class BridgeService:
     _topic_aliases: dict[str, int]
     _next_alias_id: int
     _cloud_incoming_queue: asyncio.Queue[BridgeRequest]
-    _ipc_requests: dict[bytes, asyncio.Queue[pb.CloudQueuedPublish]]
-    _console_queues: list[asyncio.Queue[pb.CloudQueuedPublish]]
+    ipc_requests: dict[bytes, asyncio.Queue[pb.CloudQueuedPublish]]
+    console_queues: list[asyncio.Queue[pb.CloudQueuedPublish]]
 
     def __init__(self, config: RuntimeConfig, state: RuntimeState, serial: SerialTransport) -> None:
         self.config, self.state, self.serial = config, state, serial
@@ -138,8 +138,8 @@ class BridgeService:
         self.watchdog: WatchdogKeepalive | None = None
         self.exporter: PrometheusExporter | None = None
         self._cloud_incoming_queue = asyncio.Queue()
-        self._ipc_requests = {}
-        self._console_queues = []
+        self.ipc_requests = {}
+        self.console_queues = []
 
         self.handshake = SerialHandshakeManager(
             config=config,
@@ -218,15 +218,15 @@ class BridgeService:
             "enqueue_cloud debug info",
             topic=resolved_message.topic_name,
             correlation=correlation.hex() if correlation else None,
-            in_ipc_requests=(correlation in self._ipc_requests if correlation else False),
-            registered_keys=[k.hex() for k in self._ipc_requests.keys()],
+            in_ipc_requests=(correlation in self.ipc_requests if correlation else False),
+            registered_keys=[k.hex() for k in self.ipc_requests.keys()],
         )
-        if correlation and correlation in self._ipc_requests:
-            self._ipc_requests[correlation].put_nowait(resolved_message)
+        if correlation and correlation in self.ipc_requests:
+            self.ipc_requests[correlation].put_nowait(resolved_message)
             return
 
         if "console" in resolved_message.topic_name:
-            for q in list(self._console_queues):
+            for q in list(self.console_queues):
                 q.put_nowait(resolved_message)
 
         self.state.cloud_publish_queue.put_nowait(resolved_message)
@@ -1601,7 +1601,7 @@ class LocalBridgeService(LocalBridgeBase):
         response_queue: asyncio.Queue[pb.CloudQueuedPublish] | None = None
         if has_correlation:
             response_queue = asyncio.Queue(maxsize=1)
-            self.runtime_service._ipc_requests[correlation] = response_queue
+            self.runtime_service.ipc_requests[correlation] = response_queue
             logger.debug("Registering IPC request correlation", topic=request.topic_name, correlation=correlation.hex())
 
         try:
@@ -1627,7 +1627,7 @@ class LocalBridgeService(LocalBridgeBase):
             logger.debug("IPC connection closed during response write", error=str(exc))
         finally:
             if has_correlation:
-                self.runtime_service._ipc_requests.pop(correlation, None)
+                self.runtime_service.ipc_requests.pop(correlation, None)
 
     async def SubscribeConsole(self, stream: Stream[pb.SubscribeRequest, pb.CloudQueuedPublish]) -> None:
         request = await stream.recv_message()
@@ -1635,7 +1635,7 @@ class LocalBridgeService(LocalBridgeBase):
             return
 
         queue: asyncio.Queue[pb.CloudQueuedPublish] = asyncio.Queue()
-        self.runtime_service._console_queues.append(queue)
+        self.runtime_service.console_queues.append(queue)
         try:
             while True:
                 msg = await queue.get()
@@ -1645,5 +1645,5 @@ class LocalBridgeService(LocalBridgeBase):
         except Exception as e:
             logger.debug("Local IPC console stream error", error=str(e))
         finally:
-            if queue in self.runtime_service._console_queues:
-                self.runtime_service._console_queues.remove(queue)
+            if queue in self.runtime_service.console_queues:
+                self.runtime_service.console_queues.remove(queue)

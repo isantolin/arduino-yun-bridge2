@@ -14,6 +14,7 @@ from mcubridge.protocol.topics import Topic, topic_path
 
 def do_publish(topic: str, payload: str) -> None:
     """Publish LED state using local gRPC UNIX socket IPC."""
+
     async def _run():
         channel = Channel(path="/var/run/mcubridge.sock")
         stub = LocalBridgeStub(channel)

@@ -219,6 +219,7 @@ def run_emulation(
                 "PYTHONPATH": f"{uci_dir}:{p_root}:{p_root}/mcubridge:{p_root}/mcubridge-client-examples",
                 "MCUBRIDGE_FORCE_UCI": "1",
                 "MCUBRIDGE_NON_INTERACTIVE": "1",
+                "MCUBRIDGE_LOG_STREAM": "1",
                 "MCUBRIDGE_SOCKET_PATH": os.environ.get("MCUBRIDGE_SOCKET_PATH") or str(uci_dir / "mcubridge.sock"),
             }
 

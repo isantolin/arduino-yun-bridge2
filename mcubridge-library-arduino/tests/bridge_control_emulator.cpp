@@ -47,6 +47,7 @@ void delay(unsigned long ms) { usleep(ms * 1000); }
 // We need to define setup() and loop() from the .ino file.
 // Since .ino files are just C++ without some headers, we can include it
 // directly if we provide the necessary context.
+#define BRIDGE_SERIAL_SHARED_SECRET "DEBUG_INSECURE"
 #define main arduino_main  // Rename sketch main if any
 #include "../examples/BridgeControl/BridgeControl.ino"
 #undef main

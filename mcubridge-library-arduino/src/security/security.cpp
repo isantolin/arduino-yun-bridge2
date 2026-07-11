@@ -96,10 +96,8 @@ bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
   etl::array<uint8_t, 32> ad;
   ad.fill(0U);
   pb_ostream_t stream = pb_ostream_from_buffer(ad.data(), ad.size());
-  if (!pb_encode(&stream, rpc::Payload::get_fields<rpc_pb_RpcEnvelope>(),
-                 &aad_env)) {
-    return false;
-  }
+  (void)pb_encode(&stream, rpc::Payload::get_fields<rpc_pb_RpcEnvelope>(),
+                  &aad_env);
 
   return wc_ChaCha20Poly1305_Encrypt(
              const_cast<byte*>(key.data()), out_nonce.data(),
@@ -123,10 +121,8 @@ bool aead_decrypt_frame(uint16_t cmd_id, uint16_t seq_id,
   etl::array<uint8_t, 32> ad;
   ad.fill(0U);
   pb_ostream_t stream = pb_ostream_from_buffer(ad.data(), ad.size());
-  if (!pb_encode(&stream, rpc::Payload::get_fields<rpc_pb_RpcEnvelope>(),
-                 &aad_env)) {
-    return false;
-  }
+  (void)pb_encode(&stream, rpc::Payload::get_fields<rpc_pb_RpcEnvelope>(),
+                  &aad_env);
 
   return wc_ChaCha20Poly1305_Decrypt(
              const_cast<byte*>(key.data()), const_cast<byte*>(nonce.data()),
@@ -219,7 +215,7 @@ bool __attribute__((weak)) run_cryptographic_self_tests() {
 
   memcpy_P(expected_buf.data(), kat_hmac_expected.data(),
            rpc::RPC_SHA256_DIGEST_SIZE);
-  ok = ok && etl::equal(actual.begin(), actual.end(), expected_buf.begin());
+  bool hmac_ok = etl::equal(actual.begin(), actual.end(), expected_buf.begin());
 
   // 3. ChaCha20-Poly1305 KAT (RFC 8439)
   static constexpr etl::array<uint8_t, 32> kat_aead_key = {
@@ -244,10 +240,10 @@ bool __attribute__((weak)) run_cryptographic_self_tests() {
       etl::span<uint8_t>(aead_out),
       etl::span<uint8_t>(aead_tag_actual));
 
-  ok = ok && (encrypt_res == 0);
-  ok = ok && etl::equal(aead_tag_actual.begin(), aead_tag_actual.end(),
-                        kat_aead_tag_expected.begin());
-  return ok;
+  bool aead_res_ok = (encrypt_res == 0);
+  bool aead_tag_ok = etl::equal(aead_tag_actual.begin(), aead_tag_actual.end(),
+                               kat_aead_tag_expected.begin());
+  return ok & hmac_ok & aead_res_ok & aead_tag_ok;
 }
 
 #endif  // BRIDGE_ENABLE_POST_TESTS

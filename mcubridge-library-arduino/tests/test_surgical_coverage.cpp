@@ -11,6 +11,10 @@ HardwareSerial Serial;
 HardwareSerial Serial1;
 Stream* g_arduino_stream_delegate = nullptr;
 
+namespace etl {
+void handle_error(const etl::exception& e);
+}
+
 using bridge::test::TestAccessor;
 
 void setUp(void) {}
@@ -122,6 +126,10 @@ void test_surgical_tasks_flow() {
   // TimerTask ACK timeout
   ba.setSynchronized();
   ba.onAckTimeout();
+
+  // Test etl::handle_error
+  etl::exception test_exc("msg", "file", 100);
+  etl::handle_error(test_exc);
 }
 
 int main() {

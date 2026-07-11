@@ -164,7 +164,7 @@ void test_bridge_security_pre_sync_rejection() {
   // Try to send a restricted command before sync
   rpc_pb_RpcEnvelope f;
   f.version = rpc::PROTOCOL_VERSION;
-  f.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_GET_FREE_MEMORY);
+  f.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_CONSOLE_WRITE);
   f.sequence_id = 1;
 
   ba.dispatch(f);

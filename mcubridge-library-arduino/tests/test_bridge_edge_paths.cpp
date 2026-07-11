@@ -538,10 +538,27 @@ void test_encrypted_rx_nonce_paths() {
   size_t cursor = 0;
   rpc_pb_RpcEnvelope encrypted;
   if (extract_encrypted_frame(stream.tx_buf, cursor, encrypted, 4)) {
+    rpc_pb_RpcEnvelope valid_env = encrypted;
+
+    // 1. Success case
     etl::array<uint8_t, rpc::MAX_FRAME_SIZE> wire;
     size_t wire_len = rpc::serialize_frame(
-        encrypted, etl::span<uint8_t>(wire.data(), wire.size()));
+        valid_env, etl::span<uint8_t>(wire.data(), wire.size()));
     ba.invokePacketReceived(etl::span<const uint8_t>(wire.data(), wire_len));
+
+    // 2. Replay attack (nonce reuse)
+    ba.invokePacketReceived(etl::span<const uint8_t>(wire.data(), wire_len));
+
+    // 3. Decrypt failure (corrupt tag/payload bytes)
+    rpc_pb_RpcEnvelope tampered = valid_env;
+    tampered.sequence_id = 999;
+    if (tampered.payload_type.encrypted_payload_with_tag.size > 0) {
+      tampered.payload_type.encrypted_payload_with_tag.bytes[0] ^= 0xFF;
+    }
+    etl::array<uint8_t, rpc::MAX_FRAME_SIZE> wire_tampered;
+    size_t wire_tampered_len = rpc::serialize_frame(
+        tampered, etl::span<uint8_t>(wire_tampered.data(), wire_tampered.size()));
+    ba.invokePacketReceived(etl::span<const uint8_t>(wire_tampered.data(), wire_tampered_len));
   }
 }
 

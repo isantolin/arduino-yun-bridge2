@@ -19,7 +19,7 @@ import time
 from collections.abc import Coroutine, Callable, Awaitable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast, Final
+from typing import TYPE_CHECKING, Any, cast, Final, TypeVar
 
 import aiosqlite
 from ..state.storage import SqliteDeque
@@ -95,6 +95,17 @@ logger = structlog.get_logger("mcubridge.service")
 McuHandler = Callable[[int, bytes | ProtobufMessage], Coroutine[Any, Any, bool | bytes | ProtobufMessage | None]]
 
 
+F = TypeVar("F", bound=Callable[..., Any])
+
+
+def mcu_handler(cmd: Command | Status) -> Callable[[F], F]:
+    def decorator(func: F) -> F:
+        setattr(func, "_mcu_command_id", cmd.value)
+        return func
+
+    return decorator
+
+
 _PRE_SYNC_ALLOWED_COMMANDS: Final = {
     Command.CMD_LINK_SYNC_RESP.value,
     Command.CMD_LINK_RESET_RESP.value,
@@ -168,46 +179,62 @@ class BridgeService:
             if s != Status.ACK:
                 self.mcu_registry[s.value] = functools.partial(self._handle_mcu_status, s)
 
+    def _wrap_mcu_handler(self, handler: Callable[..., Any]) -> McuHandler:
+        import inspect
+
+        sig = inspect.signature(handler)
+        params = list(sig.parameters.values())
+
+        if len(params) == 0:
+
+            async def wrapper_0(_seq: int, _payload: Any) -> Any:
+                return await handler()
+
+            return wrapper_0
+
+        elif len(params) == 1:
+            param = params[0]
+            if param.name == "seq" or param.annotation is int:
+
+                async def wrapper_seq(seq: int, _payload: Any) -> Any:
+                    return await handler(seq)
+
+                return wrapper_seq
+            else:
+
+                async def wrapper_payload(_seq: int, payload: Any) -> Any:
+                    return await handler(payload)
+
+                return wrapper_payload
+
+        else:
+
+            async def wrapper_2(seq: int, payload: Any) -> Any:
+                return await handler(seq, payload)
+
+            return wrapper_2
+
     def _setup_mcu_registry(self, serial: SerialTransport) -> dict[int, McuHandler]:
-        return {
-            Command.CMD_XOFF.value: lambda _seq, _payload: self._handle_mcu_xoff(),
-            Command.CMD_XON.value: lambda _seq, _payload: self._handle_mcu_xon(),
-            Command.CMD_CONSOLE_WRITE.value: lambda _seq, p: self._on_mcu_console_write(cast(pb.ConsoleWrite, p)),
-            Command.CMD_DATASTORE_PUT.value: lambda _seq, p: self._on_mcu_datastore_put(cast(pb.DatastorePut, p)),
-            Command.CMD_DATASTORE_GET.value: lambda _seq, p: self._on_mcu_datastore_get(cast(pb.DatastoreGet, p)),
-            Command.CMD_MAILBOX_PUSH.value: lambda _seq, p: self._on_mcu_mailbox_push(cast(pb.MailboxPush, p)),
-            Command.CMD_MAILBOX_AVAILABLE.value: lambda seq, _payload: self._on_mcu_mailbox_available(seq),
-            Command.CMD_MAILBOX_READ.value: lambda seq, _payload: self._on_mcu_mailbox_read(seq),
-            Command.CMD_MAILBOX_PROCESSED.value: lambda _seq, p: self._on_mcu_mailbox_processed(
-                cast(pb.MailboxProcessed, p)
-            ),
-            Command.CMD_FILE_WRITE.value: lambda _seq, p: self._on_mcu_file_write(cast(pb.FileWrite, p)),
-            Command.CMD_FILE_READ.value: lambda _seq, p: self._on_mcu_file_read(cast(pb.FileRead, p)),
-            Command.CMD_FILE_REMOVE.value: lambda _seq, p: self._on_mcu_file_remove(cast(pb.FileRemove, p)),
-            Command.CMD_FILE_READ_RESP.value: lambda _seq, p: self._on_mcu_file_read_resp(cast(pb.FileReadResponse, p)),
-            Command.CMD_PROCESS_RUN_ASYNC.value: lambda _seq, p: self._on_mcu_process_run(cast(pb.ProcessRunAsync, p)),
-            Command.CMD_PROCESS_POLL.value: lambda _seq, p: self._on_mcu_process_poll(cast(pb.ProcessPoll, p)),
-            Command.CMD_PROCESS_KILL.value: lambda _seq, p: self._stop_process(cast(pb.ProcessKill, p).pid),
-            Command.CMD_DIGITAL_READ.value: lambda _seq, _payload: serial.send(
-                Status.NOT_IMPLEMENTED.value,
-                pb.GenericResponse(message="linux_originates_digital_read_requests"),
-            ),
-            Command.CMD_ANALOG_READ.value: lambda _seq, _payload: serial.send(
-                Status.NOT_IMPLEMENTED.value,
-                pb.GenericResponse(message="linux_originates_analog_read_requests"),
-            ),
-            Command.CMD_DIGITAL_READ_RESP.value: lambda _seq, p: self._on_pin_resp(
-                p, Topic.DIGITAL, self.state.pending_digital_reads
-            ),
-            Command.CMD_ANALOG_READ_RESP.value: lambda _seq, p: self._on_pin_resp(
-                p, Topic.ANALOG, self.state.pending_analog_reads
-            ),
-            Command.CMD_SPI_TRANSFER_RESP.value: lambda _seq, p: self._on_mcu_spi_resp(cast(pb.SpiTransferResponse, p)),
-            Command.CMD_GET_CAPABILITIES_RESP.value: self.handshake.handle_capabilities_resp,
-            Command.CMD_LINK_SYNC_RESP.value: self.handshake.handle_link_sync_resp,
-            Command.CMD_LINK_RESET_RESP.value: self.handshake.handle_link_reset_resp,
-            Status.ACK.value: self._on_mcu_ack,
-        }
+        registry: dict[int, McuHandler] = {}
+        for attr_name in dir(self):
+            attr = getattr(self, attr_name)
+            if hasattr(attr, "_mcu_command_id"):
+                cmd_id = getattr(attr, "_mcu_command_id")
+                registry[cmd_id] = self._wrap_mcu_handler(attr)
+
+        registry[Command.CMD_DIGITAL_READ.value] = lambda _seq, _payload: serial.send(
+            Status.NOT_IMPLEMENTED.value,
+            pb.GenericResponse(message="linux_originates_digital_read_requests"),
+        )
+        registry[Command.CMD_ANALOG_READ.value] = lambda _seq, _payload: serial.send(
+            Status.NOT_IMPLEMENTED.value,
+            pb.GenericResponse(message="linux_originates_analog_read_requests"),
+        )
+        registry[Command.CMD_GET_CAPABILITIES_RESP.value] = self.handshake.handle_capabilities_resp
+        registry[Command.CMD_LINK_SYNC_RESP.value] = self.handshake.handle_link_sync_resp
+        registry[Command.CMD_LINK_RESET_RESP.value] = self.handshake.handle_link_reset_resp
+
+        return registry
 
     # --- External Interface ---
 
@@ -539,15 +566,18 @@ class BridgeService:
 
     # --- Business Logic Implementation ---
 
+    @mcu_handler(Command.CMD_XON)
     async def _handle_mcu_xon(self) -> None:
         self.state.mcu_is_paused = False
         self.state.serial_tx_allowed.set()
         await self._flush_console_queue()
 
+    @mcu_handler(Command.CMD_XOFF)
     async def _handle_mcu_xoff(self) -> None:
         self.state.mcu_is_paused = True
         self.state.serial_tx_allowed.clear()
 
+    @mcu_handler(Command.CMD_CONSOLE_WRITE)
     async def _on_mcu_console_write(self, p: pb.ConsoleWrite) -> None:
         if p.data:
             await self.enqueue_cloud(
@@ -558,12 +588,14 @@ class BridgeService:
                 )
             )
 
+    @mcu_handler(Command.CMD_DATASTORE_PUT)
     async def _on_mcu_datastore_put(self, p: pb.DatastorePut) -> bool:
         if self.state.datastore_cache is not None:
             await self.state.datastore_cache.set(p.key, p.value)
         await self._publish_datastore_value(p.key, p.value)
         return True
 
+    @mcu_handler(Command.CMD_DATASTORE_GET)
     async def _on_mcu_datastore_get(self, p: pb.DatastoreGet) -> bool:
         serial = self.serial
         if not serial:
@@ -576,6 +608,7 @@ class BridgeService:
         )
         return bool(res)
 
+    @mcu_handler(Command.CMD_MAILBOX_PUSH)
     async def _on_mcu_mailbox_push(self, p: pb.MailboxPush) -> bool:
         await self.state.mailbox_incoming_queue.append(p.data)
         await self.enqueue_cloud(
@@ -583,6 +616,7 @@ class BridgeService:
         )
         return True
 
+    @mcu_handler(Command.CMD_MAILBOX_AVAILABLE)
     async def _on_mcu_mailbox_available(self, seq: int) -> bool:
         serial = self.serial
         if not serial:
@@ -594,6 +628,7 @@ class BridgeService:
         )
         return bool(res)
 
+    @mcu_handler(Command.CMD_MAILBOX_READ)
     async def _on_mcu_mailbox_read(self, seq: int) -> bool:
         serial = self.serial
         if not serial:
@@ -609,6 +644,7 @@ class BridgeService:
         )
         return bool(res)
 
+    @mcu_handler(Command.CMD_MAILBOX_PROCESSED)
     async def _on_mcu_mailbox_processed(self, p: pb.MailboxProcessed) -> None:
         await self.enqueue_cloud(
             create_queued_publish(
@@ -618,6 +654,7 @@ class BridgeService:
             )
         )
 
+    @mcu_handler(Command.CMD_FILE_WRITE)
     async def _on_mcu_file_write(self, p: pb.FileWrite) -> bool:
         serial = self.serial
         if not serial:
@@ -629,6 +666,7 @@ class BridgeService:
         res = await serial.send(Status.ERROR.value, pb.GenericResponse(message="Write failed"))
         return bool(res)
 
+    @mcu_handler(Command.CMD_FILE_READ)
     async def _on_mcu_file_read(self, p: pb.FileRead) -> None:
         serial = self.serial
         if not serial:
@@ -644,6 +682,7 @@ class BridgeService:
             return
         await serial.send(Status.ERROR.value, pb.GenericResponse(message="Read failed"))
 
+    @mcu_handler(Command.CMD_FILE_REMOVE)
     async def _on_mcu_file_remove(self, p: pb.FileRemove) -> bool:
         serial = self.serial
         if not serial:
@@ -656,6 +695,7 @@ class BridgeService:
         res = await serial.send(Status.ERROR.value, pb.GenericResponse(message="Remove failed"))
         return bool(res)
 
+    @mcu_handler(Command.CMD_FILE_READ_RESP)
     async def _on_mcu_file_read_resp(self, p: pb.FileReadResponse) -> bool:
         if not self._pending_mcu_read:
             return False
@@ -665,6 +705,7 @@ class BridgeService:
             self._pending_mcu_read.future.set_result(b"".join(self._pending_mcu_read.chunks))
         return True
 
+    @mcu_handler(Command.CMD_PROCESS_RUN_ASYNC)
     async def _on_mcu_process_run(self, p: pb.ProcessRunAsync) -> bool:
         serial = self.serial
         if not serial:
@@ -680,6 +721,7 @@ class BridgeService:
         await serial.send(Status.ERROR.value, pb.GenericResponse(message="Exec failed"))
         return False
 
+    @mcu_handler(Command.CMD_PROCESS_POLL)
     async def _on_mcu_process_poll(self, p: pb.ProcessPoll) -> bool:
         serial = self.serial
         if not serial:
@@ -703,11 +745,13 @@ class BridgeService:
             reply_context=req.reply_context if req else None,
         )
 
+    @mcu_handler(Command.CMD_SPI_TRANSFER_RESP)
     async def _on_mcu_spi_resp(self, p: pb.SpiTransferResponse) -> None:
         await self.enqueue_cloud(
             create_queued_publish(get_topic_for_message(self.state.cloud_topic_prefix, p) or "", p.data)
         )
 
+    @mcu_handler(Status.ACK)
     async def _on_mcu_ack(self, seq: int, payload: bytes | ProtobufMessage) -> None:
         try:
             if isinstance(payload, ProtobufMessage):
@@ -717,6 +761,18 @@ class BridgeService:
             logger.debug("MCU > ACK for 0x%02X", p.command_id)
         except (ProtobufDecodeError, TypeError, ValueError) as e:
             logger.error("Failed to decode MCU ACK packet", error=e)
+
+    @mcu_handler(Command.CMD_DIGITAL_READ_RESP)
+    async def _on_mcu_digital_read_resp(self, p: pb.DigitalReadResponse) -> None:
+        await self._on_pin_resp(p, Topic.DIGITAL, self.state.pending_digital_reads)
+
+    @mcu_handler(Command.CMD_ANALOG_READ_RESP)
+    async def _on_mcu_analog_read_resp(self, p: pb.AnalogReadResponse) -> None:
+        await self._on_pin_resp(p, Topic.ANALOG, self.state.pending_analog_reads)
+
+    @mcu_handler(Command.CMD_PROCESS_KILL)
+    async def _on_mcu_process_kill(self, p: pb.ProcessKill) -> None:
+        await self._stop_process(p.pid)
 
     async def _handle_mcu_status(self, status: Status, seq_id: int, payload: bytes | ProtobufMessage) -> None:
         text = ""

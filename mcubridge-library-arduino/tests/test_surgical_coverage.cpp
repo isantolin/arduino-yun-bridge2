@@ -5,6 +5,7 @@
 #include "BridgeTestInterface.h"
 #include "security/security.h"
 #include "test_support.h"
+#include <BridgeFaultInjection.h>
 
 // Arduino Stubs for Linker
 HardwareSerial Serial;

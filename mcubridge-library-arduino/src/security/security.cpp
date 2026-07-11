@@ -202,8 +202,7 @@ bool __attribute__((weak)) run_cryptographic_self_tests() {
   etl::array<uint8_t, rpc::RPC_SHA256_DIGEST_SIZE> expected_buf;
   memcpy_P(expected_buf.data(), kat_sha256_expected.data(),
            rpc::RPC_SHA256_DIGEST_SIZE);
-  if (!etl::equal(actual.begin(), actual.end(), expected_buf.begin()))
-    return false;
+  bool ok = etl::equal(actual.begin(), actual.end(), expected_buf.begin());
 
   // 2. HMAC-SHA256 KAT
   Hmac hmac;
@@ -220,8 +219,7 @@ bool __attribute__((weak)) run_cryptographic_self_tests() {
 
   memcpy_P(expected_buf.data(), kat_hmac_expected.data(),
            rpc::RPC_SHA256_DIGEST_SIZE);
-  if (!etl::equal(actual.begin(), actual.end(), expected_buf.begin()))
-    return false;
+  ok = ok && etl::equal(actual.begin(), actual.end(), expected_buf.begin());
 
   // 3. ChaCha20-Poly1305 KAT (RFC 8439)
   static constexpr etl::array<uint8_t, 32> kat_aead_key = {
@@ -238,17 +236,18 @@ bool __attribute__((weak)) run_cryptographic_self_tests() {
 
   etl::array<uint8_t, 16> aead_tag_actual;
   etl::array<uint8_t, 4> aead_out;
-  if (aead_kat_encrypt(
-          etl::span<const uint8_t>(kat_aead_key),
-          etl::span<const uint8_t>(kat_aead_nonce),
-          etl::span<const uint8_t>(kat_aead_ad),
-          etl::span<const uint8_t>(reinterpret_cast<const uint8_t*>("test"), 4),
-          etl::span<uint8_t>(aead_out),
-          etl::span<uint8_t>(aead_tag_actual)) != 0)
-    return false;
+  int encrypt_res = aead_kat_encrypt(
+      etl::span<const uint8_t>(kat_aead_key),
+      etl::span<const uint8_t>(kat_aead_nonce),
+      etl::span<const uint8_t>(kat_aead_ad),
+      etl::span<const uint8_t>(reinterpret_cast<const uint8_t*>("test"), 4),
+      etl::span<uint8_t>(aead_out),
+      etl::span<uint8_t>(aead_tag_actual));
 
-  return etl::equal(aead_tag_actual.begin(), aead_tag_actual.end(),
-                    kat_aead_tag_expected.begin());
+  ok = ok && (encrypt_res == 0);
+  ok = ok && etl::equal(aead_tag_actual.begin(), aead_tag_actual.end(),
+                        kat_aead_tag_expected.begin());
+  return ok;
 }
 
 #endif  // BRIDGE_ENABLE_POST_TESTS

@@ -496,6 +496,183 @@ void test_bridge_exhaustive_command_handlers() {
   }());
 }
 
+void test_bridge_additional_coverage() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
+
+  // 1. Trigger CMD_ANALOG_READ
+  {
+    rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
+    env.version = rpc::PROTOCOL_VERSION;
+    env.command_id = (uint16_t)rpc::CommandId::CMD_ANALOG_READ;
+    env.sequence_id = 45;
+    rpc_pb_PinRead pr_payload = {};
+    pr_payload.pin = 3;
+    rpc::Payload::set<rpc_pb_PinRead>(env, pr_payload);
+    ba.dispatch(env);
+  }
+
+  // 2. Trigger CMD_ANALOG_READ with pin >= DIGITAL_PINS to test error path
+  {
+    rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
+    env.version = rpc::PROTOCOL_VERSION;
+    env.command_id = (uint16_t)rpc::CommandId::CMD_ANALOG_READ;
+    env.sequence_id = 46;
+    rpc_pb_PinRead pr_payload = {};
+    pr_payload.pin = 99; // invalid pin
+    rpc::Payload::set<rpc_pb_PinRead>(env, pr_payload);
+    ba.dispatch(env);
+  }
+
+  // 3. Trigger CMD_DIGITAL_READ with pin >= DIGITAL_PINS to test error path
+  {
+    rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
+    env.version = rpc::PROTOCOL_VERSION;
+    env.command_id = (uint16_t)rpc::CommandId::CMD_DIGITAL_READ;
+    env.sequence_id = 47;
+    rpc_pb_PinRead pr_payload = {};
+    pr_payload.pin = 99; // invalid pin
+    rpc::Payload::set<rpc_pb_PinRead>(env, pr_payload);
+    ba.dispatch(env);
+  }
+
+  // 4. Trigger XOFF and XON commands
+  {
+    rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
+    env.version = rpc::PROTOCOL_VERSION;
+    env.command_id = (uint16_t)rpc::CommandId::CMD_XOFF;
+    env.sequence_id = 48;
+    env.which_payload_type = 0; // no payload
+    ba.dispatch(env);
+  }
+
+  // 5. Test that sending a non-system command fails when _tx_enabled is false
+  {
+    rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
+    env.version = rpc::PROTOCOL_VERSION;
+    env.command_id = (uint16_t)rpc::CommandId::CMD_DIGITAL_READ;
+    env.sequence_id = 49;
+    rpc_pb_PinRead pr_payload = {};
+    pr_payload.pin = 3;
+    rpc::Payload::set<rpc_pb_PinRead>(env, pr_payload);
+    ba.dispatch(env);
+  }
+
+  // 6. Turn it back on with XON
+  {
+    rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
+    env.version = rpc::PROTOCOL_VERSION;
+    env.command_id = (uint16_t)rpc::CommandId::CMD_XON;
+    env.sequence_id = 50;
+    env.which_payload_type = 0; // no payload
+    ba.dispatch(env);
+  }
+
+  // 7. Test send failures for CMD_GET_VERSION, CMD_GET_CAPABILITIES, CMD_GET_FREE_MEMORY
+  // setting _tx_enabled = false
+  {
+    rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
+    env.version = rpc::PROTOCOL_VERSION;
+    env.command_id = (uint16_t)rpc::CommandId::CMD_XOFF;
+    env.sequence_id = 51;
+    ba.dispatch(env);
+  }
+  {
+    rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
+    env.version = rpc::PROTOCOL_VERSION;
+    env.command_id = (uint16_t)rpc::CommandId::CMD_GET_VERSION;
+    env.sequence_id = 52;
+    ba.dispatch(env);
+  }
+  {
+    rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
+    env.version = rpc::PROTOCOL_VERSION;
+    env.command_id = (uint16_t)rpc::CommandId::CMD_GET_CAPABILITIES;
+    env.sequence_id = 53;
+    ba.dispatch(env);
+  }
+  {
+    rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
+    env.version = rpc::PROTOCOL_VERSION;
+    env.command_id = (uint16_t)rpc::CommandId::CMD_GET_FREE_MEMORY;
+    env.sequence_id = 54;
+    ba.dispatch(env);
+  }
+  
+  // Turn it back on with XON
+  {
+    rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
+    env.version = rpc::PROTOCOL_VERSION;
+    env.command_id = (uint16_t)rpc::CommandId::CMD_XON;
+    env.sequence_id = 55;
+    ba.dispatch(env);
+  }
+
+  // 8. Test decode failure path in pin read
+  {
+    rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
+    env.version = rpc::PROTOCOL_VERSION;
+    env.command_id = (uint16_t)rpc::CommandId::CMD_DIGITAL_READ;
+    env.sequence_id = 56;
+    env.which_payload_type = 999; // invalid tag
+    ba.dispatch(env);
+  }
+
+  // 9. Test _processAck failure path when _tx_enabled is false
+  {
+    // First, turn off tx
+    rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
+    env.version = rpc::PROTOCOL_VERSION;
+    env.command_id = (uint16_t)rpc::CommandId::CMD_XOFF;
+    env.sequence_id = 57;
+    ba.dispatch(env);
+
+    // Send a reliable command (CMD_DIGITAL_WRITE) to trigger processAck.
+    env.command_id = (uint16_t)rpc::CommandId::CMD_DIGITAL_WRITE;
+    env.sequence_id = 58;
+    rpc_pb_DigitalWrite dw = {};
+    dw.pin = 13;
+    dw.value = 1;
+    rpc::Payload::set<rpc_pb_DigitalWrite>(env, dw);
+    ba.dispatch(env);
+
+    // Turn tx back on
+    env.command_id = (uint16_t)rpc::CommandId::CMD_XON;
+    env.sequence_id = 59;
+    env.which_payload_type = 0;
+    ba.dispatch(env);
+  }
+
+#if BRIDGE_ENABLE_SPI
+  // 10. Test SPI transfer response send failure when _tx_enabled is false
+  {
+    // First, turn off tx
+    rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
+    env.version = rpc::PROTOCOL_VERSION;
+    env.command_id = (uint16_t)rpc::CommandId::CMD_XOFF;
+    env.sequence_id = 60;
+    ba.dispatch(env);
+
+    // Send CMD_SPI_TRANSFER
+    env.command_id = (uint16_t)rpc::CommandId::CMD_SPI_TRANSFER;
+    env.sequence_id = 61;
+    rpc_pb_SpiTransfer spi_t = {};
+    spi_t.data.size = 1;
+    spi_t.data.bytes[0] = 0xAA;
+    rpc::Payload::set<rpc_pb_SpiTransfer>(env, spi_t);
+    ba.dispatch(env);
+
+    // Turn tx back on
+    env.command_id = (uint16_t)rpc::CommandId::CMD_XON;
+    env.sequence_id = 62;
+    env.which_payload_type = 0;
+    ba.dispatch(env);
+  }
+#endif
+}
+
 int main() {
   (void)poll_handler;
   (void)async_handler;
@@ -517,5 +694,6 @@ int main() {
   RUN_TEST(test_bridge_template_coverage);
   RUN_TEST(test_bridge_duplicate_packet);
   RUN_TEST(test_bridge_exhaustive_command_handlers);
+  RUN_TEST(test_bridge_additional_coverage);
   return UNITY_END();
 }

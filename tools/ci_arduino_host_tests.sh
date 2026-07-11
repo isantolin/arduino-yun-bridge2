@@ -167,7 +167,18 @@ test_names=()
 for test_file in "${TEST_FILES[@]}"; do
     (
         test_name=$(basename "${test_file}" .cpp)
-        if g++ -std=c++17 "${BASE_FLAGS[@]}" "${test_file}" "${OBJECTS[@]}" "${UNITY_OBJ}" -o "${BUILD_DIR}/${test_name}" 2>&1; then
+        if [ "${test_name}" = "test_hal_weak_defaults" ]; then
+            LOCAL_OBJECTS=()
+            for obj in "${OBJECTS[@]}"; do
+                if [[ "$(basename "${obj}")" != "test_host_filesystem_mock.cpp.o" ]]; then
+                    LOCAL_OBJECTS+=("${obj}")
+                fi
+            done
+            g++ -std=c++17 "${BASE_FLAGS[@]}" "${test_file}" "${LOCAL_OBJECTS[@]}" "${UNITY_OBJ}" -o "${BUILD_DIR}/${test_name}" 2>&1
+        else
+            g++ -std=c++17 "${BASE_FLAGS[@]}" "${test_file}" "${OBJECTS[@]}" "${UNITY_OBJ}" -o "${BUILD_DIR}/${test_name}" 2>&1
+        fi
+        if [ $? -eq 0 ]; then
             :
         else
             status=$?

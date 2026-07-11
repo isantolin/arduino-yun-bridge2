@@ -19,9 +19,7 @@
 module("luci.controller.mcubridge", package.seeall)
 
 local fs = require "nixio.fs"
-local uci = require "luci.model.uci".cursor()
 local sys = require "luci.sys"
-local nixio = require "nixio"
 
 
 
@@ -101,8 +99,8 @@ function action_api(...)
         return send_json(400, { status = "error", message = 'State must be "ON" or "OFF".' })
     end
 
-    -- Send command via mcubridge-led-control script
-    local rc = sys.call(string.format("/usr/bin/mcubridge-led-control %q %q >/dev/null 2>&1", state:lower(), pin_number))
+    local cmd = string.format("/usr/bin/mcubridge-led-control %q %q >/dev/null 2>&1", state:lower(), pin_number)
+    local rc = sys.call(cmd)
 
     if rc == 0 then
         send_json(200, {

@@ -675,24 +675,9 @@ void test_uncovered_branch_and_coverage_boost() {
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
 
-  // 1. Unreliable Encrypted Command Path in _sendEncryptedHelper
-  const char* secret_str = "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe";
-  ba.setSharedSecret(etl::span<const uint8_t>(
-      reinterpret_cast<const uint8_t*>(secret_str), strlen(secret_str)));
-  ba.setSynchronized();
-  
-  // CMD_DATASTORE_GET is unreliable and will be encrypted since bridge is synchronized.
-  DataStore.get("alpha", DataStoreType::GetHandler::create<datastore_get_handler>());
-
-  // 2. Process.runAsync when Send Fails
+  // 1. Process.runAsync when Send Fails (must be unsynchronized so sendSinglePass is used)
   // Disable transmission
-  {
-    rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
-    env.version = rpc::PROTOCOL_VERSION;
-    env.command_id = (uint16_t)rpc::CommandId::CMD_XOFF;
-    env.sequence_id = 90;
-    ba.dispatch(env);
-  }
+  Bridge.signalXoff();
 
   // Call Process.runAsync with valid handler
   captured_pid = 0;
@@ -705,14 +690,16 @@ void test_uncovered_branch_and_coverage_boost() {
   Process.runAsync("ls", {}, invalid_run_handler);
 
   // Re-enable transmission
-  {
-    rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
-    env.version = rpc::PROTOCOL_VERSION;
-    env.command_id = (uint16_t)rpc::CommandId::CMD_XON;
-    env.sequence_id = 91;
-    env.which_payload_type = 0;
-    ba.dispatch(env);
-  }
+  Bridge.signalXon();
+
+  // 2. Unreliable Encrypted Command Path in _sendEncryptedHelper
+  const char* secret_str = "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe";
+  ba.setSharedSecret(etl::span<const uint8_t>(
+      reinterpret_cast<const uint8_t*>(secret_str), strlen(secret_str)));
+  ba.setSynchronized();
+  
+  // CMD_DATASTORE_GET is unreliable and will be encrypted since bridge is synchronized.
+  DataStore.get("alpha", DataStoreType::GetHandler::create<datastore_get_handler>());
 
   // 3. DataStore.get Queue Full
   DataStore._pending_gets.clear();

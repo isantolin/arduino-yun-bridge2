@@ -8,7 +8,6 @@
 
 #include <stdint.h>
 
-#include "etl_profile.h"
 #include "hal/hal.h"
 
 #if defined(ARDUINO_ARCH_AVR)
@@ -16,7 +15,7 @@
 #endif
 // clang-format off
 #include <PacketSerial.h>
-#include <Codecs/COBS.h>
+#include <Codecs/COBSR.h>
 // clang-format on
 #include <etl/algorithm.h>
 #include <etl/array.h>
@@ -30,12 +29,10 @@
 #include <etl/vector.h>
 
 #include "config/bridge_config.h"
-#include "etl_ext/CounterIterator.h"
 #include "fsm/bridge_fsm.h"
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
 #include "protocol/rpc_structs.h"
-#include "security/security.h"
 
 // [SIL-2] Template De-bloating: Extern declarations
 namespace etl {
@@ -206,7 +203,7 @@ class BridgeClass {
   uint32_t _pending_baudrate = 0;
 
   etl::array<uint8_t, bridge::config::RX_BUFFER_SIZE> _rx_buffer;
-  PacketSerial2::PacketSerial<PacketSerial2::COBS, PacketSerial2::NoCRC,
+  PacketSerial2::PacketSerial<PacketSerial2::COBSR, PacketSerial2::NoCRC,
                               PacketSerial2::NoLock, PacketSerial2::NoWatchdog>
       _packet_serial;
 

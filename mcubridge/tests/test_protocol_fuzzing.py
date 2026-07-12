@@ -2,7 +2,7 @@ import random
 from collections.abc import Callable
 
 import pytest
-from cobs import cobs
+from cobs import cobsr
 from mcubridge.protocol.frame import parse_frame
 from mcubridge.protocol.protocol import CRC_COVERED_HEADER_SIZE
 from tests.test_constants import TEST_RANDOM_SEED
@@ -16,7 +16,7 @@ EXPECTED_PARSE_ERRORS = (
     RuntimeError,
     AttributeError,
 )
-EXPECTED_COBS_ERRORS = (cobs.DecodeError, ValueError, TypeError)
+EXPECTED_COBS_ERRORS = (cobsr.DecodeError, ValueError, TypeError)
 
 
 def _assert_only_expected_exception(
@@ -68,10 +68,10 @@ def test_cobs_decoding_resilience():
         raw_data = random.randbytes(length)
 
         _assert_only_expected_exception(
-            lambda: cobs.decode(raw_data),
+            lambda: cobsr.decode(raw_data),
             EXPECTED_COBS_ERRORS,
             iteration=i,
-            label="cobs.decode",
+            label="cobsr.decode",
             raw_data=raw_data,
         )
 

@@ -1,6 +1,7 @@
 #include "services/FileSystem.h"
 
 #include "Bridge.h"
+#include "etl_ext/CounterIterator.h"
 
 #if BRIDGE_ENABLE_FILESYSTEM
 

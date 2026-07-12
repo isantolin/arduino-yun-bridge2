@@ -3,7 +3,7 @@ from typing import Any
 
 import asyncio
 import pytest
-from cobs import cobs
+from cobs import cobsr
 from mcubridge.protocol import protocol
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.frame import build_frame
@@ -48,7 +48,7 @@ async def test_process_packet_crc_mismatch_reports_crc(
         def mock_decode(data: Any) -> bytes:
             return raw
 
-        monkeypatch.setattr(cobs, "decode", mock_decode)
+        monkeypatch.setattr(cobsr, "decode", mock_decode)
 
         # Manual call to async method
         await getattr(transport, "_process_packet")(b"\x02encoded")
@@ -68,7 +68,7 @@ async def test_process_packet_success_dispatches() -> None:
         service.handle_mcu_frame = AsyncMock()
 
         frame_bytes = build_frame(command_id=Command.CMD_CONSOLE_WRITE.value, sequence_id=0, payload=b"hi")
-        encoded = cobs.encode(frame_bytes)
+        encoded = cobsr.encode(frame_bytes)
         transport = SerialTransport(config, state, service)
         await getattr(transport, "_process_packet")(encoded)
 
@@ -100,7 +100,7 @@ async def test_process_packet_negotiation_ack_switches_local_baudrate() -> None:
         setattr(transport, "_negotiating", True)
         setattr(transport, "_negotiation_future", asyncio.get_running_loop().create_future())
 
-        encoded = cobs.encode(
+        encoded = cobsr.encode(
             build_frame(
                 command_id=Command.CMD_SET_BAUDRATE_RESP.value,
                 sequence_id=0,
@@ -211,7 +211,7 @@ async def test_process_packet_fallback_triggers_negotiation(
         def mock_decode_fallback(data: Any) -> bytes:
             return raw
 
-        monkeypatch.setattr(cobs, "decode", mock_decode_fallback)
+        monkeypatch.setattr(cobsr, "decode", mock_decode_fallback)
 
         await getattr(transport, "_process_packet")(b"\x02encoded")
         assert getattr(transport, "_consecutive_crc_errors") == 1

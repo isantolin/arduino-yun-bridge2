@@ -11,7 +11,6 @@
 
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
-#include "protocol/rpc_structs.h"
 #include "unity.h"
 
 namespace rpc::payload {
@@ -36,13 +35,6 @@ inline void copy_to_pb_string(PbStringArray& dest, etl::string_view src) {
   dest[to_copy] = '\0';
 }
 }  // namespace rpc::payload
-
-static inline uint32_t crc32_ieee(const void* data, size_t len) {
-  etl::crc32 crc_calc;
-  crc_calc.add(reinterpret_cast<const uint8_t*>(data),
-               reinterpret_cast<const uint8_t*>(data) + len);
-  return crc_calc.value();
-}
 
 /* Legacy convenience macros – map to Unity assertions. */
 #define TEST_ASSERT_EQ_UINT(actual, expected) \
@@ -152,54 +144,28 @@ class BiStream : public Stream {
 };
 
 // ---------------------------------------------------------------------------
-// COBS encoder/decoder for building test frames.
-// [SIL-2] Mirrors the PacketSerial2::COBS codec used in production.
+#include <Codecs/COBSR.h>
+#include <PacketSerial.h>
+
+// COBS/R encoder/decoder for building test frames.
+// [SIL-2] Mirrors the PacketSerial2::COBSR codec used in production.
 // Validated by roundtrip tests in test_protocol.cpp and test_bridge_core.cpp.
 // ---------------------------------------------------------------------------
 
 struct TestCOBS {
   static size_t encode(const uint8_t* src, size_t len, uint8_t* dst) {
-    uint8_t* start = dst;
-    uint8_t* code_ptr = dst++;
-    uint8_t code = 1;
-    etl::for_each(src, src + len, [&](uint8_t b) {
-      if (b == 0) {
-        *code_ptr = code;
-        code_ptr = dst++;
-        code = 1;
-      } else {
-        *dst++ = b;
-        if (++code == rpc::RPC_UINT8_MASK) {
-          *code_ptr = code;
-          code_ptr = dst++;
-          code = 1;
-        }
-      }
-    });
-    *code_ptr = code;
-    return static_cast<size_t>(dst - start);
+    PacketSerial2::COBSR codec;
+    auto res = codec.encode(etl::span<const uint8_t>(src, len),
+                            etl::span<uint8_t>(dst, len + (len / 254) + 10));
+    return res ? res.value() : 0;
   }
 
   static size_t decode(const uint8_t* source, size_t length,
                        uint8_t* destination) {
-    const uint8_t* src = source;
-    const uint8_t* end = source + length;
-    uint8_t* out = destination;
-    while (src < end) {
-      uint8_t code = *src++;
-      if (code == 0) return 0;
-      for (uint8_t i = 1; i < code; ++i) {
-        if (src < end) {
-          *out++ = *src++;
-        } else {
-          break;
-        }
-      }
-      if (code < 0xFF && src < end) {
-        *out++ = 0;
-      }
-    }
-    return static_cast<size_t>(out - destination);
+    PacketSerial2::COBSR codec;
+    auto res = codec.decode(etl::span<const uint8_t>(source, length),
+                            etl::span<uint8_t>(destination, 1024));
+    return res ? res.value() : 0;
   }
 };
 

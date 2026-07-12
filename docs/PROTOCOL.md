@@ -408,7 +408,7 @@ CRC32 (4 bytes, Big Endian) sobre Header + Nonce + Payload + Tag. Polinomio IEEE
 | Componente | Función | Implementación MCU (Arduino/C++) | Implementación Daemon (Python) |
 | :--- | :--- | :--- | :--- |
 | **Criptografía AEAD** | Cifrado y Autenticación | **wolfCrypt** (ChaCha20-Poly1305). | **cryptography** (OpenSSL backend). |
-| **COBS** | Framing / Escaping | **Externa**: `PacketSerial2`. | **Externa**: `cobs` (paquete PyPI). |
+| **COBS/R** | Framing / Escaping | **Externa**: `PacketSerial2` (`COBSR`). | **Externa**: `cobs` (módulo `cobsr` de PyPI). |
 | **CRC32** | Integridad adicional | **Interna**: `etl::crc32` (ETL SIL-2 certified). | **Interna**: `binascii.crc32` (IEEE 802.3 standard). |
 | **Payload Serialization** | Codificación de payloads | **nanopb/protobuf** (sin heap dinámico en runtime). | **protobuf** (`google.protobuf`, clases `Packet` en `structures.py`). |
 | **Endianness** | Byte Order | `etl::endian::big`. | `struct.pack('>...')` (Big Endian). |

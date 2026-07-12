@@ -18,7 +18,7 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
 
-from cobs import cobs
+from cobs import cobsr
 import serialx
 import structlog
 import tenacity
@@ -200,9 +200,9 @@ class SerialTransport:
         try:
             # Ensure we have bytes for cobs.decode
             raw_bytes = bytes(encoded_packet) if isinstance(encoded_packet, memoryview) else encoded_packet
-            decoded = cobs.decode(raw_bytes)
+            decoded = cobsr.decode(raw_bytes)
             decoded_frame = parse_frame(decoded, self.state.link_session_key if self.state.is_synchronized else None)
-        except (cobs.DecodeError, ValueError, TypeError, RuntimeError) as exc:
+        except (cobsr.DecodeError, ValueError, TypeError, RuntimeError) as exc:
             logger.error("[SERIAL <- MCU] [MALFORMED]: %s", exc)
             self.state.serial_decode_errors += 1
             await self._check_baudrate_fallback()
@@ -376,7 +376,7 @@ class SerialTransport:
             self.state.link_nonce_counter = new_counter
 
         encoded = (
-            cobs.encode(
+            cobsr.encode(
                 build_frame(
                     command_id=command_id,
                     sequence_id=seq_id,

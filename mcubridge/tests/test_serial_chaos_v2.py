@@ -3,7 +3,7 @@ import asyncio
 from unittest.mock import AsyncMock
 from mcubridge.transport.serial import SerialTransport
 from mcubridge.protocol.frame import build_frame
-from cobs import cobs
+from cobs import cobsr
 from typing import Any
 from mcubridge.services.runtime import BridgeService
 
@@ -30,7 +30,7 @@ async def test_serial_transport_loops_final_v3(transport_setup: Any) -> None:
     transport.serial = mock_serial
 
     frame_bytes = build_frame(command_id=0x01, sequence_id=1, payload=b"ok")
-    encoded = cobs.encode(frame_bytes) + b"\x00"
+    encoded = cobsr.encode(frame_bytes) + b"\x00"
 
     call_count = 0
 

@@ -8,6 +8,7 @@
 #include <etl/span.h>
 
 #include "Bridge.h"
+#include "security/security.h"
 
 namespace bridge::test {
 

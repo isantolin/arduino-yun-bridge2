@@ -9,6 +9,8 @@
  * Cambiar los #define BRIDGE_ENABLE_... de 1 a 0 según sea necesario.
  */
 
+#include <wolfssl.h>
+#include <wolfssl/wolfcrypt/settings.h>
 #include <Bridge.h>
 #include <services/Console.h>
 #include <services/FileSystem.h>

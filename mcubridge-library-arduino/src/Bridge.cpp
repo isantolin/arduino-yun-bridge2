@@ -539,8 +539,7 @@ void BridgeClass::_onAckTimeout() {
 void BridgeClass::_processAck(uint16_t command_id, uint16_t sequence_id) {
   rpc_pb_AckPacket p = {};
   p.command_id = command_id;
-  if (!send(rpc::StatusCode::STATUS_ACK, sequence_id, p))
-    emitStatus(rpc::StatusCode::STATUS_ERROR);
+  (void)send(rpc::StatusCode::STATUS_ACK, sequence_id, p);
 }
 
 void BridgeClass::_handleAck(uint16_t cmd) {
@@ -859,12 +858,10 @@ bool BridgeClass::_isSecurityCheckPassed(uint16_t cmd) const {
 }
 
 void BridgeClass::signalXoff() {
-  if (!sendFrame(rpc::CommandId::CMD_XOFF))
-    emitStatus(rpc::StatusCode::STATUS_ERROR);
+  (void)sendFrame(rpc::CommandId::CMD_XOFF);
 }
 void BridgeClass::signalXon() {
-  if (!sendFrame(rpc::CommandId::CMD_XON))
-    emitStatus(rpc::StatusCode::STATUS_ERROR);
+  (void)sendFrame(rpc::CommandId::CMD_XON);
 }
 
 bool BridgeClass::_decodePayload(const bridge::router::CommandContext& ctx,

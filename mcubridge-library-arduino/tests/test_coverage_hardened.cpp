@@ -670,6 +670,69 @@ void test_bridge_additional_coverage() {
 #endif
 }
 
+void test_uncovered_branch_and_coverage_boost() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+
+  // 1. Unreliable Encrypted Command Path in _sendEncryptedHelper
+  const char* secret_str = "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe";
+  ba.setSharedSecret(etl::span<const uint8_t>(
+      reinterpret_cast<const uint8_t*>(secret_str), strlen(secret_str)));
+  ba.setSynchronized();
+  
+  // CMD_DATASTORE_GET is unreliable and will be encrypted since bridge is synchronized.
+  DataStore.get("alpha", DataStoreType::GetHandler::create<datastore_get_handler>());
+
+  // 2. Process.runAsync when Send Fails
+  // Disable transmission
+  {
+    rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
+    env.version = rpc::PROTOCOL_VERSION;
+    env.command_id = (uint16_t)rpc::CommandId::CMD_XOFF;
+    env.sequence_id = 90;
+    ba.dispatch(env);
+  }
+
+  // Call Process.runAsync with valid handler
+  captured_pid = 0;
+  Process.runAsync("ls", {}, etl::delegate<void(int32_t)>::create<capture_async_handler>());
+  TEST_ASSERT_EQUAL(-1, captured_pid);
+
+  // Call Process.runAsync with invalid handler
+  ProcessType::ProcessRunHandler invalid_run_handler;
+  invalid_run_handler.clear();
+  Process.runAsync("ls", {}, invalid_run_handler);
+
+  // Re-enable transmission
+  {
+    rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
+    env.version = rpc::PROTOCOL_VERSION;
+    env.command_id = (uint16_t)rpc::CommandId::CMD_XON;
+    env.sequence_id = 91;
+    env.which_payload_type = 0;
+    ba.dispatch(env);
+  }
+
+  // 3. DataStore.get Queue Full
+  DataStore._pending_gets.clear();
+  for (size_t i = 0; i < bridge::config::MAX_PENDING_DATASTORE; ++i) {
+    DataStore.get("key", DataStoreType::GetHandler::create<datastore_get_handler>());
+  }
+  // Try one more to trigger full-queue branch
+  DataStore.get("overflow", DataStoreType::GetHandler::create<datastore_get_handler>());
+
+  // 4. Protobuf encoding failure path in _sendEncryptedHelper
+  // A command payload exceeding the 64-byte pool limit.
+  // The command field in ProcessRunAsync is 256 bytes, but the pool buffer size is 64 bytes.
+  // So a 60-character command + overhead will exceed the 64-byte buffer size and fail to encode.
+  etl::array<char, 60> large_cmd_buf;
+  large_cmd_buf.fill('x');
+  large_cmd_buf[59] = '\0';
+  Process.runAsync(etl::string_view(large_cmd_buf.data(), 59), {},
+                   etl::delegate<void(int32_t)>::create<capture_async_handler>());
+}
+
 int main() {
   (void)poll_handler;
   (void)async_handler;
@@ -692,5 +755,6 @@ int main() {
   RUN_TEST(test_bridge_duplicate_packet);
   RUN_TEST(test_bridge_exhaustive_command_handlers);
   RUN_TEST(test_bridge_additional_coverage);
+  RUN_TEST(test_uncovered_branch_and_coverage_boost);
   return UNITY_END();
 }

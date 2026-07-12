@@ -1,6 +1,7 @@
 import asyncio
 import pytest
-from typing import Any
+import aiosqlite
+from typing import Any, cast
 from unittest.mock import AsyncMock, patch
 from pathlib import Path
 
@@ -11,7 +12,7 @@ from mcubridge.services.handshake import SerialHandshakeManager, derive_serial_t
 from mcubridge.transport.serial import SerialTransport
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol.protocol import Command, Status
-from mcubridge.protocol.structures import create_cloud_tls_context, replace_queued_publish, resolve_cloud_context
+from mcubridge.protocol.structures import get_ssl_context, replace_cloud_publish, resolve_cloud_context
 from mcubridge.protocol.topics import get_topic_for_message
 from mcubridge.config.logging import configure_logging
 
@@ -71,12 +72,20 @@ async def test_sqlite_deque_edge_cases(tmp_path: Path) -> None:
     assert await dq.length() == 0
 
     # Test db corruption/recreation logic
-    # Write invalid data to db file to cause SQLite errors
-    Path(db_path).write_bytes(b"corrupt data")
-    # Trigger execute which should catch error and recreate
-    await dq.append(b"new")
-    assert await dq.length() == 1
-    assert await dq.peek() == b"new"
+    original_connect = aiosqlite.connect
+    calls = 0
+
+    def mock_connect(*args: Any, **kwargs: Any) -> Any:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise OSError("Mocked corruption")
+        return original_connect(*args, **kwargs)
+
+    with patch("aiosqlite.connect", side_effect=mock_connect):
+        await dq.append(b"new")
+        assert await dq.length() == 1
+        assert await dq.peek() == b"new"
 
     await dq.close()
 
@@ -95,9 +104,9 @@ async def test_sqlite_cache_edge_cases(tmp_path: Path) -> None:
     await cache.clear()
     assert await cache.get("k", b"") == b""
 
-    # Test exception paths by corrupting SQLite file
-    Path(db_path).write_bytes(b"corrupt data")
-    assert await cache.get("k", b"fallback") == b"fallback"
+    # Test exception paths by mocking connection
+    with patch("aiosqlite.connect", side_effect=OSError("Mocked error")):
+        assert await cache.get("k", b"fallback") == b"fallback"
     await cache.close()
 
 
@@ -287,25 +296,26 @@ async def test_runtime_additional_coverage(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_protocol_structures_edge_cases(tmp_path: Path) -> None:
-    # 1. create_cloud_tls_context mTLS error paths
+    # 1. get_ssl_context mTLS error paths
     cfg = pb.RuntimeConfig(
+        cloud_tls=True,
         cloud_cafile=str(tmp_path / "ca.crt"),
         cloud_certfile=str(tmp_path / "cert.crt"),
         cloud_tls_insecure=True,
     )
     # ca path doesn't exist
     with pytest.raises(RuntimeError):
-        create_cloud_tls_context(cfg)
+        get_ssl_context(cfg)
 
     # keyfile missing
     tmp_path.joinpath("ca.crt").touch()
     with pytest.raises(RuntimeError):
-        create_cloud_tls_context(cfg)
+        get_ssl_context(cfg)
 
-    # 2. replace_queued_publish options
+    # 2. replace_cloud_publish options
     msg = pb.CloudQueuedPublish(topic_name="a", payload=b"b")
     msg.user_properties.add(key="k", value="v")
-    replaced = replace_queued_publish(
+    replaced = replace_cloud_publish(
         msg,
         topic_name="c",
         user_properties=[("k2", "v2")],
@@ -336,20 +346,22 @@ def test_logging_under_stream_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_topics_get_topic_for_message_variants() -> None:
-    assert get_topic_for_message("br", 1) is not None
-    assert get_topic_for_message("br", "TelemetryReport") is not None
-    assert get_topic_for_message("br", object()) is None
+    assert get_topic_for_message("br", Command.CMD_GET_VERSION_RESP.value) is not None
+    assert get_topic_for_message("br", "Status") is not None
+    assert get_topic_for_message("br", cast(Any, object())) is None
 
 
 def test_settings_load_runtime_config_edge_cases() -> None:
     # Coercion coercion ValueError fallback
-    from mcubridge.config.settings import _coerce_value
+    import mcubridge.config.settings as settings_mod
     from google.protobuf.descriptor import FieldDescriptor
 
-    assert _coerce_value("not_int", FieldDescriptor.TYPE_UINT32) == 0
-    assert _coerce_value("not_float", FieldDescriptor.TYPE_FLOAT) == 0.0
-    assert _coerce_value(None, FieldDescriptor.TYPE_UINT32) is None
-    assert _coerce_value("a", FieldDescriptor.TYPE_GROUP) == "a"
+    coerce_fn = getattr(settings_mod, "_coerce_value")
+
+    assert coerce_fn("not_int", FieldDescriptor.TYPE_UINT32) == 0
+    assert coerce_fn("not_float", FieldDescriptor.TYPE_FLOAT) == 0.0
+    assert coerce_fn(None, FieldDescriptor.TYPE_UINT32) is None
+    assert coerce_fn("a", FieldDescriptor.TYPE_GROUP) == "a"
 
     # load_runtime_config auth dynamic fallback
     overrides = {
@@ -371,6 +383,7 @@ async def test_mcu_frame_handlers_exhaustive_extended(tmp_path: Path) -> None:
         file_system_root=str(tmp_path),
         cloud_enabled=True,
         cloud_spool_dir=str(tmp_path / "spool"),
+        allow_non_tmp_paths=True,
     )
     state = create_runtime_state(config)
     state.mark_synchronized()

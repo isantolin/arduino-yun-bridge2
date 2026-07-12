@@ -28,6 +28,20 @@ BridgeClass::BridgeClass(Stream& stream)
                      etl::span<uint8_t>(_rx_buffer.data(), _rx_buffer.size())) {
 }
 
+bool BridgeClass::_preDispatch(const bridge::router::CommandContext& ctx,
+                               bool needs_ack, bool retransmit_on_dup) {
+  if (needs_ack) {
+    _processAck(ctx.raw_command, ctx.sequence_id);
+  }
+  if (ctx.is_duplicate) {
+    if (retransmit_on_dup) {
+      _retransmitLastFrame();
+    }
+    return false;
+  }
+  return true;
+}
+
 void BridgeClass::_dispatchCommand(const rpc_pb_RpcEnvelope& envelope) {
   const uint16_t cmd_id = envelope.command_id;
   auto it =

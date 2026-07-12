@@ -1,10 +1,10 @@
 /*
  * CorrectedSmokeTest.ino - Full-stack E2E Verification
  */
-#include <wolfssl.h>
-#include <wolfssl/wolfcrypt/settings.h>
 #include <Bridge.h>
 #include <services/Console.h>
+#include <wolfssl.h>
+#include <wolfssl/wolfcrypt/settings.h>
 
 // [MIL-SPEC] Shared secret must match the daemon configuration.
 #ifndef BRIDGE_SERIAL_SHARED_SECRET

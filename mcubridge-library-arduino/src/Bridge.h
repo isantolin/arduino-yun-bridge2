@@ -235,6 +235,9 @@ class BridgeClass {
 
   etl::circular_buffer<uint16_t, bridge::config::RX_HISTORY_SIZE> _rx_history;
 
+  bool _preDispatch(const bridge::router::CommandContext& ctx, bool needs_ack,
+                    bool retransmit_on_dup);
+
   // [SIL-2] Tag type: marks payload-free dispatch cases (no Protobuf decode).
   struct _NoPayload {};
 
@@ -248,6 +251,9 @@ class BridgeClass {
   template <typename MsgType, typename Handler>
   bool _dispatchCmd(const bridge::router::CommandContext& ctx, Handler handler,
                     bool needs_ack = true, bool retransmit_on_dup = false) {
+    if (!_preDispatch(ctx, needs_ack, retransmit_on_dup)) {
+      return false;
+    }
     if constexpr (!etl::is_same_v<MsgType, _NoPayload>) {
       MsgType m = {};
       if (!_decodePayload(ctx, rpc::Payload::get_fields<MsgType>(), &m,
@@ -255,18 +261,8 @@ class BridgeClass {
         emitStatus(rpc::StatusCode::STATUS_MALFORMED);
         return false;
       }
-      if (needs_ack) _processAck(ctx.raw_command, ctx.sequence_id);
-      if (ctx.is_duplicate) {
-        if (retransmit_on_dup) _retransmitLastFrame();
-        return false;
-      }
       handler(ctx, m);
     } else {
-      if (needs_ack) _processAck(ctx.raw_command, ctx.sequence_id);
-      if (ctx.is_duplicate) {
-        if (retransmit_on_dup) _retransmitLastFrame();
-        return false;
-      }
       handler(ctx);
     }
     return true;

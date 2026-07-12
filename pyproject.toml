@@ -110,3 +110,28 @@ explicit-preview-rules = true
 [tool.ruff.lint.mccabe]
 # [QUALITY] Reduced from 50 to 25 for SIL-2 compliance and maintainability
 max-complexity = 25
+
+[tool.coverage.run]
+branch = true
+source = [
+    "mcubridge/mcubridge",
+    "mcubridge/scripts",
+    "mcubridge-client-examples/mcubridge_client"
+]
+omit = [
+    "mcubridge/tests/*",
+    "mcubridge-client-examples/client_tests/*",
+    "**/*_pb2.py",
+    "**/*_pb2.pyi",
+    "**/*_grpc.py"
+]
+
+[tool.coverage.report]
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:"
+]

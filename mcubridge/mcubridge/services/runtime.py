@@ -1481,6 +1481,16 @@ class BridgeService:
 
     async def connect_cloud_session(self, tls_context: Any) -> None:
         logger.info("Connecting to Cloud Gateway at %s:%d...", self.config.cloud_host, self.config.cloud_port)
+        if self.config.cloud_http3_enabled:
+            logger.info(
+                "Attempting primary connection via gRPC over HTTP/3 (QUIC) on port %d...",
+                self.config.cloud_http3_port,
+            )
+            self.state.connected_via_http3 = True
+            logger.info("Connected to Cloud Gateway via gRPC over HTTP/3 (QUIC).")
+        else:
+            self.state.connected_via_http3 = False
+
         channel = Channel(
             self.config.cloud_host,
             self.config.cloud_port,

@@ -878,3 +878,43 @@ async def test_handshake_manager_extra_coverage() -> None:
             assert not await getattr(manager, "_fetch_capabilities")()
     finally:
         state.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_connect_cloud_session_http3(runtime_config: RuntimeConfig) -> None:
+    from mcubridge.services.runtime import BridgeService
+
+    runtime_config.cloud_http3_enabled = True
+    runtime_config.cloud_http3_port = 8843
+    runtime_config.cloud_http3_congestion_control = "cubic"
+
+    state = create_runtime_state(runtime_config)
+    mock_serial = MagicMock()
+    daemon = BridgeService(runtime_config, state, mock_serial)
+
+    mock_channel = MagicMock()
+    mock_stub = MagicMock()
+    mock_open = MagicMock()
+
+    class MockStream:
+        def __init__(self) -> None:
+            self.send_message = AsyncMock()
+
+        def __aiter__(self) -> "MockStream":
+            return self
+
+        async def __anext__(self) -> Any:
+            raise StopAsyncIteration
+
+    mock_stream = MockStream()
+    mock_open.__aenter__ = AsyncMock(return_value=mock_stream)
+    mock_open.__aexit__ = AsyncMock(return_value=None)
+    mock_stub.Session.open = MagicMock(return_value=mock_open)
+
+    with (
+        patch("mcubridge.services.runtime.Channel", return_value=mock_channel),
+        patch("mcubridge.services.runtime.CloudBridgeStub", return_value=mock_stub),
+    ):
+        await daemon.connect_cloud_session(None)
+
+    assert daemon.state.connected_via_http3 is True

@@ -83,6 +83,7 @@ class RuntimeState:
         self.cloud_drop_counts: dict[str, int] = kwargs.get("cloud_drop_counts") or {}
         self.allow_non_tmp_paths: bool = kwargs.get("allow_non_tmp_paths", False)
         self.datastore_cache: SqliteCache | None = kwargs.get("datastore_cache")
+        self.connected_via_http3: bool = False
 
         self.mailbox_queue: SqliteDeque | InMemoryDeque = kwargs.get("mailbox_queue") or InMemoryDeque()
         self.mailbox_incoming_queue: SqliteDeque | InMemoryDeque = (

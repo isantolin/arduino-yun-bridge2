@@ -98,3 +98,38 @@ def test_main_insecure_secret_warning() -> None:
                     # Check that config passed to BridgeService has cloud_enabled=False
                     config = cast(RuntimeConfig, mock_service_cls.call_args[0][0])
                     assert not config.cloud_enabled
+
+
+def test_main_keyboard_interrupt() -> None:
+    """Verify app handles KeyboardInterrupt gracefully."""
+    with patch("mcubridge.daemon.verify_crypto_integrity", return_value=True):
+        with patch("mcubridge.daemon.load_runtime_config", side_effect=KeyboardInterrupt):
+            app([])
+
+
+def test_main_value_error() -> None:
+    """Verify app handles ValueError and exits with 1."""
+    with patch("mcubridge.daemon.verify_crypto_integrity", return_value=True):
+        with patch("mcubridge.daemon.load_runtime_config", side_effect=ValueError("invalid config")):
+            with pytest.raises(SystemExit) as exc:
+                app([])
+            assert exc.value.code == 1
+
+
+def test_main_exception_group_handled() -> None:
+    """Verify app handles ExceptionGroup and exits with 1 if exceptions are handled."""
+    with patch("mcubridge.daemon.verify_crypto_integrity", return_value=True):
+        exc_group = ExceptionGroup("group", [ValueError("nested value error")])
+        with patch("mcubridge.daemon.load_runtime_config", side_effect=exc_group):
+            with pytest.raises(SystemExit) as exc:
+                app([])
+            assert exc.value.code == 1
+
+
+def test_main_exception_group_unhandled() -> None:
+    """Verify app raises unhandled exception groups."""
+    with patch("mcubridge.daemon.verify_crypto_integrity", return_value=True):
+        exc_group = ExceptionGroup("group", [KeyError("unhandled")])
+        with patch("mcubridge.daemon.load_runtime_config", side_effect=exc_group):
+            with pytest.raises(ExceptionGroup):
+                app([])

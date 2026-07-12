@@ -675,13 +675,14 @@ void test_uncovered_branch_and_coverage_boost() {
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
 
-  // 1. Process.runAsync when Send Fails (must be unsynchronized so sendSinglePass is used)
-  // Disable transmission
+  // 1. Process.runAsync when Send Fails (must be unsynchronized so
+  // sendSinglePass is used) Disable transmission
   ba.setTxEnabled(false);
 
   // Call Process.runAsync with valid handler
   captured_pid = 0;
-  Process.runAsync("ls", {}, etl::delegate<void(int32_t)>::create<capture_async_handler>());
+  Process.runAsync(
+      "ls", {}, etl::delegate<void(int32_t)>::create<capture_async_handler>());
   TEST_ASSERT_EQUAL(-1, captured_pid);
 
   // Call Process.runAsync with invalid handler
@@ -693,31 +694,38 @@ void test_uncovered_branch_and_coverage_boost() {
   ba.setTxEnabled(true);
 
   // 2. Unreliable Encrypted Command Path in _sendEncryptedHelper
-  const char* secret_str = "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe";
+  const char* secret_str =
+      "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe";
   ba.setSharedSecret(etl::span<const uint8_t>(
       reinterpret_cast<const uint8_t*>(secret_str), strlen(secret_str)));
   ba.setSynchronized();
-  
-  // CMD_DATASTORE_GET is unreliable and will be encrypted since bridge is synchronized.
-  DataStore.get("alpha", DataStoreType::GetHandler::create<datastore_get_handler>());
+
+  // CMD_DATASTORE_GET is unreliable and will be encrypted since bridge is
+  // synchronized.
+  DataStore.get("alpha",
+                DataStoreType::GetHandler::create<datastore_get_handler>());
 
   // 3. DataStore.get Queue Full
   DataStore._pending_gets.clear();
   for (size_t i = 0; i < bridge::config::MAX_PENDING_DATASTORE; ++i) {
-    DataStore.get("key", DataStoreType::GetHandler::create<datastore_get_handler>());
+    DataStore.get("key",
+                  DataStoreType::GetHandler::create<datastore_get_handler>());
   }
   // Try one more to trigger full-queue branch
-  DataStore.get("overflow", DataStoreType::GetHandler::create<datastore_get_handler>());
+  DataStore.get("overflow",
+                DataStoreType::GetHandler::create<datastore_get_handler>());
 
   // 4. Protobuf encoding failure path in _sendEncryptedHelper
   // A command payload exceeding the 64-byte pool limit.
-  // The command field in ProcessRunAsync is 256 bytes, but the pool buffer size is 64 bytes.
-  // So a 60-character command + overhead will exceed the 64-byte buffer size and fail to encode.
+  // The command field in ProcessRunAsync is 256 bytes, but the pool buffer size
+  // is 64 bytes. So a 60-character command + overhead will exceed the 64-byte
+  // buffer size and fail to encode.
   etl::array<char, 60> large_cmd_buf;
   large_cmd_buf.fill('x');
   large_cmd_buf[59] = '\0';
-  Process.runAsync(etl::string_view(large_cmd_buf.data(), 59), {},
-                   etl::delegate<void(int32_t)>::create<capture_async_handler>());
+  Process.runAsync(
+      etl::string_view(large_cmd_buf.data(), 59), {},
+      etl::delegate<void(int32_t)>::create<capture_async_handler>());
 }
 
 int main() {

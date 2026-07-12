@@ -1,21 +1,28 @@
 import asyncio
 import sys
 import pytest
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from pathlib import Path
+from dataclasses import dataclass
 
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.services.runtime import BridgeService, BridgeRequest
 from mcubridge.transport.serial import SerialTransport
-from mcubridge.state.context import create_runtime_state
+from mcubridge.state.context import create_runtime_state, RuntimeState
 from mcubridge.config.settings import RuntimeConfig
 
 # Mock 'uci' globally
 sys.modules["uci"] = MagicMock()
 
 
+@dataclass
+class CustomBridgeRequest(BridgeRequest):
+    content_type: str | None = None
+
+
 @pytest.fixture
-def service_setup(tmp_path: Path):
+def service_setup(tmp_path: Path) -> tuple[BridgeService, RuntimeState, Any]:
     config = RuntimeConfig(
         topic_prefix="br",
         serial_port="/dev/test",
@@ -25,64 +32,65 @@ def service_setup(tmp_path: Path):
     )
     state = create_runtime_state(config)
     state.link_sync_event.set()  # Don't block on synchronization
-    serial = AsyncMock(spec=SerialTransport)
+    serial: Any = AsyncMock(spec=SerialTransport)
     service = BridgeService(config, state, serial)
     return service, state, serial
 
 
 @pytest.mark.asyncio
-async def test_mcu_file_operations_success(service_setup) -> None:
-    service, state, serial = service_setup
+async def test_mcu_file_operations_success(service_setup: tuple[BridgeService, RuntimeState, Any]) -> None:
+    service, _, serial = service_setup
 
     # Mock success path of MCU file read
-    async def mock_send_raw(*args, **kwargs):
+    async def mock_send_raw(*args: Any, **kwargs: Any) -> bool:
         await asyncio.sleep(0.01)
-        if service._pending_mcu_read:
-            service._pending_mcu_read.future.set_result(b"mcu_file_data")
+        pending = getattr(service, "_pending_mcu_read")
+        if pending is not None:
+            pending.future.set_result(b"mcu_file_data")
         return True
 
     serial.send_raw.side_effect = mock_send_raw
 
     # Send read request
-    inbound = BridgeRequest(topic="br/file/read/mcu/test.txt", payload=b"")
+    inbound = CustomBridgeRequest(topic="br/file/read/mcu/test.txt", payload=b"")
     await service.handle_request(inbound)
     assert serial.send_raw.called
 
 
 @pytest.mark.asyncio
-async def test_mcu_file_operations_fail_and_timeout(service_setup) -> None:
+async def test_mcu_file_operations_fail_and_timeout(service_setup: tuple[BridgeService, RuntimeState, Any]) -> None:
     service, state, serial = service_setup
 
     # 1. Send raw fails
     serial.send_raw.side_effect = None
     serial.send_raw.return_value = False
-    inbound = BridgeRequest(topic="br/file/read/mcu/test.txt", payload=b"")
+    inbound = CustomBridgeRequest(topic="br/file/read/mcu/test.txt", payload=b"")
     await service.handle_request(inbound)
 
     # 2. Timeout
     serial.send_raw.return_value = True
     state.serial_response_timeout_ms = 10
-    inbound = BridgeRequest(topic="br/file/read/mcu/test.txt", payload=b"")
+    inbound = CustomBridgeRequest(topic="br/file/read/mcu/test.txt", payload=b"")
     await service.handle_request(inbound)
 
 
 @pytest.mark.asyncio
-async def test_mcu_file_write_and_remove(service_setup) -> None:
-    service, state, serial = service_setup
+async def test_mcu_file_write_and_remove(service_setup: tuple[BridgeService, RuntimeState, Any]) -> None:
+    service, _, serial = service_setup
 
     # Write
     serial.send.return_value = True
-    inbound = BridgeRequest(topic="br/file/write/mcu/test.txt", payload=b"data")
+    inbound = CustomBridgeRequest(topic="br/file/write/mcu/test.txt", payload=b"data")
     await service.handle_request(inbound)
 
     # Remove
-    inbound = BridgeRequest(topic="br/file/remove/mcu/test.txt", payload=b"")
+    inbound = CustomBridgeRequest(topic="br/file/remove/mcu/test.txt", payload=b"")
     await service.handle_request(inbound)
 
 
 @pytest.mark.asyncio
-async def test_shell_operations_run_async(service_setup) -> None:
-    service, state, serial = service_setup
+async def test_shell_operations_run_async(service_setup: tuple[BridgeService, RuntimeState, Any]) -> None:
+    service, _, _ = service_setup
 
     mock_proc = AsyncMock()
     mock_proc.pid = 9999
@@ -95,76 +103,80 @@ async def test_shell_operations_run_async(service_setup) -> None:
 
     with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
         # Run text command
-        inbound = BridgeRequest(topic="br/shell/run_async", payload=b"echo hello")
+        inbound = CustomBridgeRequest(topic="br/shell/run_async", payload=b"echo hello")
         await service.handle_request(inbound)
 
         # Run protobuf command
         pb_req = pb.ProcessRunAsync(command="echo pb")
-        inbound = BridgeRequest(
+        inbound2 = CustomBridgeRequest(
             topic="br/shell/run_async",
             payload=pb_req.SerializeToString(),
+            content_type="application/x-protobuf",
         )
-        inbound.content_type = "application/x-protobuf"
-        await service.handle_request(inbound)
+        await service.handle_request(inbound2)
 
 
 @pytest.mark.asyncio
-async def test_shell_operations_poll_and_kill(service_setup) -> None:
-    service, state, serial = service_setup
+async def test_shell_operations_poll_and_kill(service_setup: tuple[BridgeService, RuntimeState, Any]) -> None:
+    service, _, _ = service_setup
 
     # Test polling with invalid PID
-    inbound = BridgeRequest(topic="br/shell/poll/1234", payload=b"")
+    inbound = CustomBridgeRequest(topic="br/shell/poll/1234", payload=b"")
     await service.handle_request(inbound)
 
     # Test killing with invalid PID
-    inbound = BridgeRequest(topic="br/shell/kill/1234", payload=b"")
+    inbound = CustomBridgeRequest(topic="br/shell/kill/1234", payload=b"")
     await service.handle_request(inbound)
 
 
 @pytest.mark.asyncio
-async def test_gpio_pin_handlers(service_setup) -> None:
+async def test_gpio_pin_handlers(service_setup: tuple[BridgeService, RuntimeState, Any]) -> None:
     service, state, serial = service_setup
 
     # Digital read
     serial.send.return_value = True
-    inbound = BridgeRequest(topic="br/digital/read/13", payload=b"")
+    inbound = CustomBridgeRequest(topic="br/digital/read/13", payload=b"")
     # Run in background to set future
     task = asyncio.create_task(service.handle_request(inbound))
     await asyncio.sleep(0.01)
     if state.pending_digital_reads:
-        state.pending_digital_reads[0].reply_context.set_result(1)
+        future = state.pending_digital_reads[0].reply_context
+        if future is not None:
+            future.set_result(1)
     await task
 
     # Digital write
-    inbound = BridgeRequest(topic="br/digital/write/13", payload=b"1")
+    inbound = CustomBridgeRequest(topic="br/digital/write/13", payload=b"1")
     await service.handle_request(inbound)
 
     # Analog read
-    inbound = BridgeRequest(topic="br/analog/read/2", payload=b"")
+    inbound = CustomBridgeRequest(topic="br/analog/read/2", payload=b"")
     task = asyncio.create_task(service.handle_request(inbound))
     await asyncio.sleep(0.01)
     if state.pending_analog_reads:
-        state.pending_analog_reads[0].reply_context.set_result(512)
+        future = state.pending_analog_reads[0].reply_context
+        if future is not None:
+            future.set_result(512)
     await task
 
     # Analog write
-    inbound = BridgeRequest(topic="br/analog/write/3", payload=b"255")
+    inbound = CustomBridgeRequest(topic="br/analog/write/3", payload=b"255")
     await service.handle_request(inbound)
 
 
 @pytest.mark.asyncio
-async def test_spi_operations(service_setup) -> None:
-    service, state, serial = service_setup
+async def test_spi_operations(service_setup: tuple[BridgeService, RuntimeState, Any]) -> None:
+    service, _, serial = service_setup
 
     # SPI Begin
-    inbound = BridgeRequest(topic="br/spi/begin", payload=b"")
+    inbound = CustomBridgeRequest(topic="br/spi/begin", payload=b"")
     await service.handle_request(inbound)
 
     # SPI End
-    inbound = BridgeRequest(topic="br/spi/end", payload=b"")
+    inbound = CustomBridgeRequest(topic="br/spi/end", payload=b"")
     await service.handle_request(inbound)
 
     # SPI Transfer
     serial.send.return_value = pb.SpiTransferResponse(data=b"world").SerializeToString()
-    inbound = BridgeRequest(topic="br/spi/transfer", payload=b"hello")
+    inbound = CustomBridgeRequest(topic="br/spi/transfer", payload=b"hello")
     await service.handle_request(inbound)

@@ -857,12 +857,8 @@ bool BridgeClass::_isSecurityCheckPassed(uint16_t cmd) const {
   return _fsm.isSynchronized();
 }
 
-void BridgeClass::signalXoff() {
-  (void)sendFrame(rpc::CommandId::CMD_XOFF);
-}
-void BridgeClass::signalXon() {
-  (void)sendFrame(rpc::CommandId::CMD_XON);
-}
+void BridgeClass::signalXoff() { (void)sendFrame(rpc::CommandId::CMD_XOFF); }
+void BridgeClass::signalXon() { (void)sendFrame(rpc::CommandId::CMD_XON); }
 
 bool BridgeClass::_decodePayload(const bridge::router::CommandContext& ctx,
                                  const pb_msgdesc_t* fields, void* dest,

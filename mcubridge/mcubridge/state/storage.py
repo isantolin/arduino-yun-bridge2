@@ -266,3 +266,6 @@ class InMemoryDeque:
 
     async def close(self) -> None:
         pass
+
+    async def vacuum(self) -> None:
+        pass

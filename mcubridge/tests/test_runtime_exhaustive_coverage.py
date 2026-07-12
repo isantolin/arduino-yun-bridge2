@@ -185,7 +185,8 @@ async def test_spi_operations(service_setup: tuple[BridgeService, RuntimeState, 
 
 @pytest.mark.asyncio
 async def test_mcu_frame_handlers_exhaustive(service_setup: tuple[BridgeService, RuntimeState, Any]) -> None:
-    service, _, serial = service_setup
+    service, state, serial = service_setup
+    state.mark_synchronized()
 
     # Console Write
     await service.handle_mcu_frame(Command.CMD_CONSOLE_WRITE.value, 1, pb.ConsoleWrite(data=b"test console"))

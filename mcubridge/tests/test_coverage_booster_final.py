@@ -1,14 +1,19 @@
 import asyncio
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from typing import Any
+from unittest.mock import AsyncMock, patch
 from pathlib import Path
 
 from mcubridge.state.storage import InMemoryDeque, SqliteDeque, SqliteCache
 from mcubridge.state.context import create_runtime_state
-from mcubridge.config.settings import RuntimeConfig
-from mcubridge.services.handshake import SerialHandshakeManager
+from mcubridge.config.settings import RuntimeConfig, load_runtime_config
+from mcubridge.services.handshake import SerialHandshakeManager, derive_serial_timing
 from mcubridge.transport.serial import SerialTransport
 from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.protocol.protocol import Command, Status
+from mcubridge.protocol.structures import create_cloud_tls_context, replace_queued_publish, resolve_cloud_context
+from mcubridge.protocol.topics import get_topic_for_message
+from mcubridge.config.logging import configure_logging
 
 
 @pytest.mark.asyncio
@@ -37,6 +42,7 @@ async def test_in_memory_deque() -> None:
     await dq.append(b"d")
     await dq.clear()
     assert len(dq) == 0
+    await dq.vacuum()
     await dq.close()
 
 
@@ -148,7 +154,7 @@ async def test_runtime_state_coverage(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_handshake_manager_edge_cases() -> None:
-    config = RuntimeConfig(serial_shared_secret=b"shared")
+    config = RuntimeConfig(serial_shared_secret=b"shared", serial_handshake_fatal_failures=1)
     state = create_runtime_state(config)
     send_frame = AsyncMock(return_value=True)
     enqueue_cloud = AsyncMock()
@@ -157,7 +163,7 @@ async def test_handshake_manager_edge_cases() -> None:
     manager = SerialHandshakeManager(
         config=config,
         state=state,
-        serial_timing=MagicMock(),
+        serial_timing=derive_serial_timing(config),
         send_frame=send_frame,
         enqueue_cloud=enqueue_cloud,
         acknowledge_frame=acknowledge_frame,
@@ -178,9 +184,13 @@ async def test_handshake_manager_edge_cases() -> None:
     assert not await manager.handle_link_sync_resp(1, resp.SerializeToString())
 
     # Wait for sync timeout
-    with patch("asyncio.wait_for", side_effect=asyncio.TimeoutError):
-        res = await manager.synchronize()
-        assert not res
+    async def mock_wait() -> Any:
+        await asyncio.sleep(0.01)
+        raise TimeoutError()
+
+    state.link_sync_event.wait = mock_wait
+    res = await manager.synchronize()
+    assert not res
 
 
 @pytest.mark.asyncio
@@ -273,3 +283,132 @@ async def test_runtime_additional_coverage(tmp_path: Path) -> None:
     # 4. cleanup and __del__
     service.cleanup()
     service.__del__()
+
+
+@pytest.mark.asyncio
+async def test_protocol_structures_edge_cases(tmp_path: Path) -> None:
+    # 1. create_cloud_tls_context mTLS error paths
+    cfg = pb.RuntimeConfig(
+        cloud_cafile=str(tmp_path / "ca.crt"),
+        cloud_certfile=str(tmp_path / "cert.crt"),
+        cloud_tls_insecure=True,
+    )
+    # ca path doesn't exist
+    with pytest.raises(RuntimeError):
+        create_cloud_tls_context(cfg)
+
+    # keyfile missing
+    tmp_path.joinpath("ca.crt").touch()
+    with pytest.raises(RuntimeError):
+        create_cloud_tls_context(cfg)
+
+    # 2. replace_queued_publish options
+    msg = pb.CloudQueuedPublish(topic_name="a", payload=b"b")
+    msg.user_properties.add(key="k", value="v")
+    replaced = replace_queued_publish(
+        msg,
+        topic_name="c",
+        user_properties=[("k2", "v2")],
+        subscription_identifier=[1, 2],
+    )
+    assert replaced.topic_name == "c"
+    assert replaced.user_properties[0].key == "k2"
+    assert list(replaced.subscription_identifier) == [1, 2]
+
+    # 3. resolve_cloud_context properties
+    class MockContext:
+        class MockProperties:
+            ResponseTopic = "resp_topic"
+            CorrelationData = b"corr"
+
+        properties = MockProperties()
+        topic = "req_topic"
+
+    resolved = resolve_cloud_context(msg, MockContext())
+    assert resolved.topic_name == "resp_topic"
+    assert resolved.correlation_data == b"corr"
+
+
+def test_logging_under_stream_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MCUBRIDGE_LOG_STREAM", "1")
+    cfg = pb.RuntimeConfig(debug=True)
+    configure_logging(cfg)
+
+
+def test_topics_get_topic_for_message_variants() -> None:
+    assert get_topic_for_message("br", 1) is not None
+    assert get_topic_for_message("br", "TelemetryReport") is not None
+    assert get_topic_for_message("br", object()) is None
+
+
+def test_settings_load_runtime_config_edge_cases() -> None:
+    # Coercion coercion ValueError fallback
+    from mcubridge.config.settings import _coerce_value
+    from google.protobuf.descriptor import FieldDescriptor
+
+    assert _coerce_value("not_int", FieldDescriptor.TYPE_UINT32) == 0
+    assert _coerce_value("not_float", FieldDescriptor.TYPE_FLOAT) == 0.0
+    assert _coerce_value(None, FieldDescriptor.TYPE_UINT32) is None
+    assert _coerce_value("a", FieldDescriptor.TYPE_GROUP) == "a"
+
+    # load_runtime_config auth dynamic fallback
+    overrides = {
+        "allow_digital_write": "true",
+        "cloud_allow_analog_write": "yes",
+    }
+    cfg = load_runtime_config(overrides)
+    assert cfg.topic_authorization.digital_write is True
+    assert cfg.topic_authorization.analog_write is True
+
+
+@pytest.mark.asyncio
+async def test_mcu_frame_handlers_exhaustive_extended(tmp_path: Path) -> None:
+    from mcubridge.services.runtime import BridgeService
+
+    config = RuntimeConfig(
+        topic_prefix="br",
+        serial_port="/dev/test",
+        file_system_root=str(tmp_path),
+        cloud_enabled=True,
+        cloud_spool_dir=str(tmp_path / "spool"),
+    )
+    state = create_runtime_state(config)
+    state.mark_synchronized()
+    serial = AsyncMock(spec=SerialTransport)
+    service = BridgeService(config, state, serial)
+
+    # 1. Datastore get/put with cache
+    await service.handle_mcu_frame(Command.CMD_DATASTORE_PUT.value, 1, pb.DatastorePut(key="k", value=b"v"))
+    await service.handle_mcu_frame(Command.CMD_DATASTORE_GET.value, 2, pb.DatastoreGet(key="k"))
+    serial.send.assert_called_with(Command.CMD_DATASTORE_GET_RESP.value, pb.DatastoreGetResponse(value=b"v"))
+
+    # 2. Mailbox push and read
+    await service.handle_mcu_frame(Command.CMD_MAILBOX_PUSH.value, 3, pb.MailboxPush(data=b"hello"))
+    # Non-empty read
+    await service.handle_mcu_frame(Command.CMD_MAILBOX_READ.value, 4, b"")
+
+    # 3. File operations: safe paths vs unsafe paths
+    # Unsafe file write
+    await service.handle_mcu_frame(Command.CMD_FILE_WRITE.value, 5, pb.FileWrite(path="../etc/passwd", data=b"data"))
+    serial.send.assert_called_with(Status.ERROR.value, pb.GenericResponse(message="Write failed"))
+
+    # Safe file read empty vs non-empty
+    safe_file = tmp_path / "empty.txt"
+    safe_file.touch()
+    await service.handle_mcu_frame(Command.CMD_FILE_READ.value, 6, pb.FileRead(path="empty.txt"))
+
+    safe_file_data = tmp_path / "data.txt"
+    safe_file_data.write_bytes(b"some data bytes")
+    await service.handle_mcu_frame(Command.CMD_FILE_READ.value, 7, pb.FileRead(path="data.txt"))
+
+    # Unsafe file read
+    await service.handle_mcu_frame(Command.CMD_FILE_READ.value, 8, pb.FileRead(path="../passwd"))
+    serial.send.assert_called_with(Status.ERROR.value, pb.GenericResponse(message="Read failed"))
+
+    # Safe file remove
+    await service.handle_mcu_frame(Command.CMD_FILE_REMOVE.value, 9, pb.FileRemove(path="data.txt"))
+    # Unsafe file remove
+    await service.handle_mcu_frame(Command.CMD_FILE_REMOVE.value, 10, pb.FileRemove(path="../passwd"))
+
+    # File Read Response without pending
+    await service.handle_mcu_frame(Command.CMD_FILE_READ_RESP.value, 11, pb.FileReadResponse(content=b"data"))

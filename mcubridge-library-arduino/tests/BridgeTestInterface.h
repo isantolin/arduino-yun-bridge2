@@ -47,6 +47,7 @@ class TestAccessor : public BridgeClass {
   void dispatch(const rpc_pb_RpcEnvelope& frame) { _dispatchCommand(frame); }
 
   bool isSharedSecretEmpty() const { return _shared_secret.empty(); }
+  void setTxEnabled(bool enabled) { _tx_enabled = enabled; }
   void setSharedSecret(etl::span<const uint8_t> secret) {
     _shared_secret.assign(secret.begin(), secret.end());
   }

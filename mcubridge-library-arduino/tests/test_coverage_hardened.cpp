@@ -677,7 +677,7 @@ void test_uncovered_branch_and_coverage_boost() {
 
   // 1. Process.runAsync when Send Fails (must be unsynchronized so sendSinglePass is used)
   // Disable transmission
-  Bridge.signalXoff();
+  ba.setTxEnabled(false);
 
   // Call Process.runAsync with valid handler
   captured_pid = 0;
@@ -690,7 +690,7 @@ void test_uncovered_branch_and_coverage_boost() {
   Process.runAsync("ls", {}, invalid_run_handler);
 
   // Re-enable transmission
-  Bridge.signalXon();
+  ba.setTxEnabled(true);
 
   // 2. Unreliable Encrypted Command Path in _sendEncryptedHelper
   const char* secret_str = "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe";

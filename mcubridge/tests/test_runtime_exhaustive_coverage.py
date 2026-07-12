@@ -11,6 +11,7 @@ from mcubridge.services.runtime import BridgeService, BridgeRequest
 from mcubridge.transport.serial import SerialTransport
 from mcubridge.state.context import create_runtime_state, RuntimeState
 from mcubridge.config.settings import RuntimeConfig
+from mcubridge.protocol.protocol import Command
 
 # Mock 'uci' globally
 sys.modules["uci"] = MagicMock()
@@ -180,3 +181,94 @@ async def test_spi_operations(service_setup: tuple[BridgeService, RuntimeState, 
     serial.send.return_value = pb.SpiTransferResponse(data=b"world").SerializeToString()
     inbound = CustomBridgeRequest(topic="br/spi/transfer", payload=b"hello")
     await service.handle_request(inbound)
+
+
+@pytest.mark.asyncio
+async def test_mcu_frame_handlers_exhaustive(service_setup: tuple[BridgeService, RuntimeState, Any]) -> None:
+    service, _, serial = service_setup
+
+    # Console Write
+    await service.handle_mcu_frame(Command.CMD_CONSOLE_WRITE.value, 1, pb.ConsoleWrite(data=b"test console"))
+
+    # Datastore Put
+    await service.handle_mcu_frame(Command.CMD_DATASTORE_PUT.value, 2, pb.DatastorePut(key="mykey", value=b"myval"))
+
+    # Datastore Get
+    serial.send.return_value = True
+    await service.handle_mcu_frame(Command.CMD_DATASTORE_GET.value, 3, pb.DatastoreGet(key="mykey"))
+
+    # Mailbox Push
+    await service.handle_mcu_frame(Command.CMD_MAILBOX_PUSH.value, 4, pb.MailboxPush(data=b"msg"))
+
+    # Mailbox Available
+    await service.handle_mcu_frame(Command.CMD_MAILBOX_AVAILABLE.value, 5, b"")
+
+    # Mailbox Read
+    await service.handle_mcu_frame(Command.CMD_MAILBOX_READ.value, 6, b"")
+
+    # Mailbox Processed
+    await service.handle_mcu_frame(Command.CMD_MAILBOX_PROCESSED.value, 7, pb.MailboxProcessed(message_id=1))
+
+    # File Write
+    await service.handle_mcu_frame(Command.CMD_FILE_WRITE.value, 8, pb.FileWrite(path="test.txt", data=b"content"))
+
+    # File Remove
+    await service.handle_mcu_frame(Command.CMD_FILE_REMOVE.value, 9, pb.FileRemove(path="test.txt"))
+
+    # File Read Response
+    class MockPendingMcuRead:
+        def __init__(self, future: asyncio.Future[bytes]) -> None:
+            self.future = future
+            self.chunks: list[bytes] = []
+
+    pending = MockPendingMcuRead(asyncio.get_running_loop().create_future())
+    setattr(service, "_pending_mcu_read", pending)
+    await service.handle_mcu_frame(Command.CMD_FILE_READ_RESP.value, 10, pb.FileReadResponse(content=b"chunk1"))
+    await service.handle_mcu_frame(Command.CMD_FILE_READ_RESP.value, 11, pb.FileReadResponse(content=b""))
+
+
+@pytest.mark.asyncio
+async def test_system_operations(service_setup: tuple[BridgeService, RuntimeState, Any]) -> None:
+    service, _, serial = service_setup
+
+    # Bootloader
+    inbound = CustomBridgeRequest(topic="br/system/bootloader", payload=b"")
+    await service.handle_request(inbound)
+
+    # Free Memory
+    serial.send.return_value = pb.FreeMemoryResponse(value=2048).SerializeToString()
+    inbound = CustomBridgeRequest(topic="br/system/free_memory/get", payload=b"")
+    await service.handle_request(inbound)
+
+    # Version
+    serial.send.return_value = pb.VersionResponse(major=1, minor=0, patch=0).SerializeToString()
+    inbound = CustomBridgeRequest(topic="br/system/version/get", payload=b"")
+    await service.handle_request(inbound)
+
+    # Bridge Summary
+    inbound = CustomBridgeRequest(topic="br/system/bridge", payload=b"")
+    await service.handle_request(inbound)
+
+    # Bridge Handshake Snapshot
+    inbound = CustomBridgeRequest(topic="br/system/bridge/handshake", payload=b"")
+    await service.handle_request(inbound)
+
+
+@pytest.mark.asyncio
+async def test_mcu_process_run(service_setup: tuple[BridgeService, RuntimeState, Any]) -> None:
+    service, _, _ = service_setup
+    mock_proc = AsyncMock()
+    mock_proc.pid = 8888
+    mock_proc.stdout.read = AsyncMock(return_value=b"stdout")
+    mock_proc.stdout.at_eof.side_effect = [False, True]
+    mock_proc.stderr.read = AsyncMock(return_value=b"stderr")
+    mock_proc.stderr.at_eof.side_effect = [False, True]
+    mock_proc.wait = AsyncMock(return_value=0)
+    mock_proc.returncode = 0
+
+    with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+        await service.handle_mcu_frame(
+            Command.CMD_PROCESS_RUN_ASYNC.value,
+            1,
+            pb.ProcessRunAsync(command="echo hello").SerializeToString(),
+        )

@@ -37,8 +37,11 @@ class SqliteDeque:
                 )
                 conn.commit()
                 cursor = conn.execute("SELECT COUNT(*) FROM deque")
-                row = cursor.fetchone()
-                self._length = row[0] if row else 0
+                try:
+                    row = cursor.fetchone()
+                    self._length = row[0] if row else 0
+                finally:
+                    cursor.close()
             finally:
                 conn.close()
         except (sqlite3.Error, OSError):

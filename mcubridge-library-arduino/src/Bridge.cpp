@@ -388,6 +388,13 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
       _timers.register_timer([]() { Bridge._onBootloaderDelay(); },
                              bridge::config::BOOTLOADER_DELAY_MS,
                              etl::timer::mode::SINGLE_SHOT);
+  // [SIL-2/H-2] Handshake response watchdog: fires EvTimeout if MPU does not
+  // complete CMD_LINK_SYNC within _response_timeout_ms after a reset.
+  _timer_ids[bridge::scheduler::TIMER_HANDSHAKE_TIMEOUT] =
+      _timers.register_timer([]() { Bridge._onHandshakeTimeout(); },
+                             _response_timeout_ms,
+                             etl::timer::mode::SINGLE_SHOT);
+  _timers.start(_timer_ids[bridge::scheduler::TIMER_HANDSHAKE_TIMEOUT]);
   _packet_serial.setPacketHandler(
       etl::delegate<void(etl::span<const uint8_t>)>::create<
           BridgeClass, &BridgeClass::_handleReceivedFrame>(*this));
@@ -561,6 +568,15 @@ void BridgeClass::_clearPendingTxQueue() {
 }
 
 void BridgeClass::_onRxDedupe() { _rx_history.clear(); }
+
+// [SIL-2/H-2] Fires if the MPU has not completed the handshake within
+// _response_timeout_ms. Drives the FSM to FAULT, which calls
+// hal::forceSafeState() on entry, then disables TX.
+void BridgeClass::_onHandshakeTimeout() {
+  if (_fsm.isSynchronized()) return;  // stale callback after a late sync
+  _fsm.receive(bridge::fsm::EvTimeout());
+  _tx_enabled = false;
+}
 void BridgeClass::_onBaudrateChange() {
   if (_pending_baudrate > 0) {
     if (_hardware_serial) _hardware_serial->begin(_pending_baudrate);
@@ -598,7 +614,7 @@ void BridgeClass::_handleDigitalWrite(const rpc_pb_DigitalWrite& m) {
   digitalWrite(m.pin, (m.value == 0) ? LOW : HIGH);
 }
 void BridgeClass::_handleAnalogWrite(const rpc_pb_AnalogWrite& m) {
-  analogWrite(m.pin, (int)m.value);
+  analogWrite(m.pin, static_cast<int>(m.value));  // [SIL-2/H-6] no C-cast
 }
 
 void BridgeClass::_handleDigitalRead(const bridge::router::CommandContext& ctx,
@@ -614,7 +630,9 @@ void BridgeClass::_handleDigitalRead(const bridge::router::CommandContext& ctx,
 
 void BridgeClass::_handleAnalogRead(const bridge::router::CommandContext& ctx,
                                     const rpc_pb_PinRead& m) {
-  if (m.pin < bridge::config::DIGITAL_PINS) {
+  // [SIL-2/H-7] Analog pins are indexed differently from digital pins;
+  // validate against ANALOG_PINS, not DIGITAL_PINS.
+  if (m.pin < bridge::config::ANALOG_PINS) {
     rpc_pb_AnalogReadResponse resp = rpc_pb_AnalogReadResponse_init_default;
     resp.value = static_cast<uint32_t>(::analogRead(m.pin));
     if (!send(rpc::CommandId::CMD_ANALOG_READ_RESP, ctx.sequence_id, resp))
@@ -698,17 +716,20 @@ void BridgeClass::_handleSpiEnd(const bridge::router::CommandContext& ctx) {
 }
 void BridgeClass::_handleSpiTransfer(const bridge::router::CommandContext& ctx,
                                      const rpc_pb_SpiTransfer& m) {
-  size_t len = etl::min((size_t)m.data.size, _rx_buffer.size());
-  etl::copy_n(m.data.bytes, len, _rx_buffer.begin());
-  size_t tr = SPIService.transfer(etl::span<uint8_t>(_rx_buffer.data(), len));
+  // [SIL-2/H-5] Use the dedicated _spi_buffer instead of _rx_buffer.
+  // _rx_buffer is owned by PacketSerial and can be written by a serial ISR
+  // (on ESP32/SAMD) while a blocking SPI transfer is in progress.
+  size_t len = etl::min(static_cast<size_t>(m.data.size), _spi_buffer.size());
+  etl::copy_n(m.data.bytes, len, _spi_buffer.begin());
+  size_t tr = SPIService.transfer(etl::span<uint8_t>(_spi_buffer.data(), len));
   if (tr == 0) {
     emitStatus(rpc::StatusCode::STATUS_ERROR);
     return;
   }
   rpc_pb_SpiTransferResponse resp = rpc_pb_SpiTransferResponse_init_default;
   const size_t to_copy = etl::min(len, sizeof(resp.data.bytes));
-  resp.data.size = (pb_size_t)to_copy;
-  if (to_copy > 0) etl::copy_n(_rx_buffer.data(), to_copy, resp.data.bytes);
+  resp.data.size = static_cast<pb_size_t>(to_copy);
+  if (to_copy > 0) etl::copy_n(_spi_buffer.data(), to_copy, resp.data.bytes);
   if (!send(rpc::CommandId::CMD_SPI_TRANSFER_RESP, ctx.sequence_id, resp))
     emitStatus(rpc::StatusCode::STATUS_ERROR);
 }
@@ -752,6 +773,9 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx,
   }
   _fsm.receive(bridge::fsm::EvHandshakeStart());
   _fsm.receive(bridge::fsm::EvHandshakeComplete());
+  // [SIL-2/H-2] Handshake complete: cancel the watchdog timer so it does not
+  // fire a spurious EvTimeout after a successful synchronisation.
+  _timers.stop(_timer_ids[bridge::scheduler::TIMER_HANDSHAKE_TIMEOUT]);
   (void)send(rpc::CommandId::CMD_LINK_SYNC_RESP, ctx.sequence_id, resp);
 }
 
@@ -766,6 +790,13 @@ void BridgeClass::_handleLinkReset(const bridge::router::CommandContext& ctx) {
     }
   }
   _fsm.receive(bridge::fsm::EvReset());
+  // [SIL-2/H-2] Restart the handshake watchdog with the (possibly updated)
+  // _response_timeout_ms. If the MPU does not complete CMD_LINK_SYNC within
+  // this window, _onHandshakeTimeout() will drive the FSM to FAULT.
+  _timers.stop(_timer_ids[bridge::scheduler::TIMER_HANDSHAKE_TIMEOUT]);
+  _timers.set_period(_timer_ids[bridge::scheduler::TIMER_HANDSHAKE_TIMEOUT],
+                     _response_timeout_ms);
+  _timers.start(_timer_ids[bridge::scheduler::TIMER_HANDSHAKE_TIMEOUT]);
   (void)sendFrame(rpc::CommandId::CMD_LINK_RESET_RESP, ctx.sequence_id);
 }
 
@@ -863,18 +894,28 @@ void BridgeClass::signalXon() { (void)sendFrame(rpc::CommandId::CMD_XON); }
 bool BridgeClass::_decodePayload(const bridge::router::CommandContext& ctx,
                                  const pb_msgdesc_t* fields, void* dest,
                                  pb_size_t expected_tag, size_t struct_size) {
+  // [SIL-2/H-3] Both branches now use pb_decode_noinit, which is the only
+  // safe, standard-conforming way to deserialise a Nanopb message from a
+  // byte buffer. The previous 'else' branch used reinterpret_cast + copy_n,
+  // which is UB in C++17 and could misfire on targets with different struct
+  // padding (e.g. SAMD/ESP32 vs AVR).
+  const uint8_t* src = nullptr;
+  size_t src_len = 0U;
   if (ctx.envelope->which_payload_type ==
       rpc_pb_RpcEnvelope_encrypted_payload_with_tag_tag) {
-    pb_istream_t stream = pb_istream_from_buffer(
-        ctx.envelope->payload_type.encrypted_payload_with_tag.bytes,
-        ctx.envelope->payload_type.encrypted_payload_with_tag.size);
-    return pb_decode_noinit(&stream, fields, dest);
+    src = ctx.envelope->payload_type.encrypted_payload_with_tag.bytes;
+    src_len = ctx.envelope->payload_type.encrypted_payload_with_tag.size;
   } else if (ctx.envelope->which_payload_type == expected_tag) {
-    etl::copy_n(reinterpret_cast<const uint8_t*>(&ctx.envelope->payload_type),
-                struct_size, reinterpret_cast<uint8_t*>(dest));
-    return true;
+    // The expected typed-union member is serialised by Nanopb at the start
+    // of the union. Extract the bytes from the first member (always present).
+    src = ctx.envelope->payload_type.encrypted_payload_with_tag.bytes;
+    src_len = ctx.envelope->payload_type.encrypted_payload_with_tag.size;
+  } else {
+    return false;
   }
-  return false;
+  (void)struct_size;  // retained in signature for API stability
+  pb_istream_t stream = pb_istream_from_buffer(src, src_len);
+  return pb_decode_noinit(&stream, fields, dest);
 }
 
 bool BridgeClass::_sendEncryptedHelper(uint16_t raw_cmd, uint16_t seq,

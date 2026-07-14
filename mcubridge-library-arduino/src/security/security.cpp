@@ -83,6 +83,14 @@ bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
   const uint64_t current_nonce = nonce_counter ? *nonce_counter : 0;
 
   etl::fill(out_nonce.begin(), out_nonce.end(), 0U);
+  // [SIL-2/H-4] Compile-time verification of the nonce layout:
+  // bytes [0..2] = "MCU" prefix (3 bytes)
+  // byte  [3]   = 0x00 padding (zeroed by fill above)
+  // bytes [4..11] = 64-bit counter big-endian (8 bytes)
+  // Total = 12 bytes == AEAD_NONCE_SIZE.
+  static_assert(3U + 1U + sizeof(uint64_t) == rpc::RPC_AEAD_NONCE_SIZE,
+                "[SIL-2] Nonce layout mismatch: prefix(3) + pad(1) + "
+                "counter(8) must equal RPC_AEAD_NONCE_SIZE");
   constexpr etl::string_view mcu_prefix("MCU");
   etl::copy_n(mcu_prefix.begin(), 3, out_nonce.begin());
   etl::byte_stream_writer n_writer(out_nonce.subspan(4), etl::endian::big);
@@ -183,7 +191,10 @@ static constexpr etl::array<uint8_t, 32> kat_hmac_expected PROGMEM = {
      0xE6, 0xAA, 0x6F, 0xB1, 0x43, 0xEF, 0x4D, 0x59, 0xA1, 0x49, 0x46,
      0x17, 0x59, 0x97, 0x47, 0x9D, 0xBC, 0x2D, 0x1A, 0x3C, 0xD8}};
 
-bool __attribute__((weak)) run_cryptographic_self_tests() {
+// [SIL-2/H-1] NOT marked [[weak]]: cryptographic KATs MUST NOT be bypassable
+// via linker substitution. Doing so would violate FIPS 140-3 requirements for
+// Power-On Self-Tests. Use the test build flag to skip them instead.
+bool run_cryptographic_self_tests() {
   etl::array<uint8_t, rpc::RPC_SHA256_DIGEST_SIZE> actual;
   etl::array<uint8_t, rpc::RPC_SHA256_KAT_BUFFER_SIZE> buffer;
 

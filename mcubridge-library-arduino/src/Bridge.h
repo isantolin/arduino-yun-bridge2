@@ -216,6 +216,8 @@ class BridgeClass {
   static __attribute__((noinline)) void _watchdogTask();
   __attribute__((noinline)) void _serialTask();
   __attribute__((noinline)) void _timerTask();
+  void
+  _onHandshakeTimeout();  // [SIL-2/H-2] Handshake response watchdog callback
 
   uint32_t _timer_last_tick_ms = 0;
   bool _serial_xoff_sent = false;
@@ -224,6 +226,11 @@ class BridgeClass {
   etl::array<etl::timer::id::type, bridge::scheduler::NUMBER_OF_TIMERS>
       _timer_ids;
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> _transient_buffer;
+#if BRIDGE_ENABLE_SPI
+  // [SIL-2/H-5] Dedicated SPI buffer: prevents race with _rx_buffer on
+  // ESP32/SAMD where serial interrupts can fire during blocking SPI transfer.
+  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> _spi_buffer;
+#endif
 
   bool _is_post_passed = false;
   bool _tx_enabled = true;

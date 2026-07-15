@@ -169,49 +169,49 @@ class BridgeClass {
   void _retransmitLastFrame();
   bool _isSecurityCheckPassed(uint16_t command_id) const;
 
-  // [ETL] Per-command dispatch wrappers — one per protocol command ID.
-  // Populated into _dispatch_table by _initializeRuntime().
-  void _onCmd_StatusAck(const bridge::router::CommandContext& ctx);
-  void _onCmd_GetVersion(const bridge::router::CommandContext& ctx);
-  void _onCmd_GetFreeMemory(const bridge::router::CommandContext& ctx);
-  void _onCmd_LinkSync(const bridge::router::CommandContext& ctx);
-  void _onCmd_LinkReset(const bridge::router::CommandContext& ctx);
-  void _onCmd_GetCapabilities(const bridge::router::CommandContext& ctx);
-  void _onCmd_SetBaudrate(const bridge::router::CommandContext& ctx);
-  void _onCmd_EnterBootloader(const bridge::router::CommandContext& ctx);
-  void _onCmd_Xoff(const bridge::router::CommandContext& ctx);
-  void _onCmd_Xon(const bridge::router::CommandContext& ctx);
-  void _onCmd_SetPinMode(const bridge::router::CommandContext& ctx);
-  void _onCmd_DigitalWrite(const bridge::router::CommandContext& ctx);
-  void _onCmd_AnalogWrite(const bridge::router::CommandContext& ctx);
-  // _onCmd_PinRead handles both CMD_DIGITAL_READ and CMD_ANALOG_READ:
-  // two entries in the table point to the same method; branching is by ctx.raw_command.
-  void _onCmd_PinRead(const bridge::router::CommandContext& ctx);
-  void _onCmd_ConsoleWrite(const bridge::router::CommandContext& ctx);
+  // [ETL] Per-command dispatch handlers — declared static so their addresses
+  // can be stored in a constexpr-compatible function pointer (not a member fn
+  // pointer). Each accesses BridgeClass state via the explicit `self` reference.
+  static void _onCmd_StatusAck(BridgeClass& self, const bridge::router::CommandContext& ctx);
+  static void _onCmd_GetVersion(BridgeClass& self, const bridge::router::CommandContext& ctx);
+  static void _onCmd_GetFreeMemory(BridgeClass& self, const bridge::router::CommandContext& ctx);
+  static void _onCmd_LinkSync(BridgeClass& self, const bridge::router::CommandContext& ctx);
+  static void _onCmd_LinkReset(BridgeClass& self, const bridge::router::CommandContext& ctx);
+  static void _onCmd_GetCapabilities(BridgeClass& self, const bridge::router::CommandContext& ctx);
+  static void _onCmd_SetBaudrate(BridgeClass& self, const bridge::router::CommandContext& ctx);
+  static void _onCmd_EnterBootloader(BridgeClass& self, const bridge::router::CommandContext& ctx);
+  static void _onCmd_Xoff(BridgeClass& self, const bridge::router::CommandContext& ctx);
+  static void _onCmd_Xon(BridgeClass& self, const bridge::router::CommandContext& ctx);
+  static void _onCmd_SetPinMode(BridgeClass& self, const bridge::router::CommandContext& ctx);
+  static void _onCmd_DigitalWrite(BridgeClass& self, const bridge::router::CommandContext& ctx);
+  static void _onCmd_AnalogWrite(BridgeClass& self, const bridge::router::CommandContext& ctx);
+  // Two table entries point to this handler; internal branch on ctx.raw_command.
+  static void _onCmd_PinRead(BridgeClass& self, const bridge::router::CommandContext& ctx);
+  static void _onCmd_ConsoleWrite(BridgeClass& self, const bridge::router::CommandContext& ctx);
 #if BRIDGE_ENABLE_DATASTORE
-  void _onCmd_DatastoreGetResp(const bridge::router::CommandContext& ctx);
+  static void _onCmd_DatastoreGetResp(BridgeClass& self, const bridge::router::CommandContext& ctx);
 #endif
 #if BRIDGE_ENABLE_MAILBOX
-  void _onCmd_MailboxPush(const bridge::router::CommandContext& ctx);
-  void _onCmd_MailboxReadResp(const bridge::router::CommandContext& ctx);
-  void _onCmd_MailboxAvailableResp(const bridge::router::CommandContext& ctx);
+  static void _onCmd_MailboxPush(BridgeClass& self, const bridge::router::CommandContext& ctx);
+  static void _onCmd_MailboxReadResp(BridgeClass& self, const bridge::router::CommandContext& ctx);
+  static void _onCmd_MailboxAvailableResp(BridgeClass& self, const bridge::router::CommandContext& ctx);
 #endif
 #if BRIDGE_ENABLE_FILESYSTEM
-  void _onCmd_FileWrite(const bridge::router::CommandContext& ctx);
-  void _onCmd_FileRead(const bridge::router::CommandContext& ctx);
-  void _onCmd_FileRemove(const bridge::router::CommandContext& ctx);
-  void _onCmd_FileReadResp(const bridge::router::CommandContext& ctx);
+  static void _onCmd_FileWrite(BridgeClass& self, const bridge::router::CommandContext& ctx);
+  static void _onCmd_FileRead(BridgeClass& self, const bridge::router::CommandContext& ctx);
+  static void _onCmd_FileRemove(BridgeClass& self, const bridge::router::CommandContext& ctx);
+  static void _onCmd_FileReadResp(BridgeClass& self, const bridge::router::CommandContext& ctx);
 #endif
 #if BRIDGE_ENABLE_PROCESS
-  void _onCmd_ProcessKill(const bridge::router::CommandContext& ctx);
-  void _onCmd_ProcessRunAsyncResp(const bridge::router::CommandContext& ctx);
-  void _onCmd_ProcessPollResp(const bridge::router::CommandContext& ctx);
+  static void _onCmd_ProcessKill(BridgeClass& self, const bridge::router::CommandContext& ctx);
+  static void _onCmd_ProcessRunAsyncResp(BridgeClass& self, const bridge::router::CommandContext& ctx);
+  static void _onCmd_ProcessPollResp(BridgeClass& self, const bridge::router::CommandContext& ctx);
 #endif
 #if BRIDGE_ENABLE_SPI
-  void _onCmd_SpiBegin(const bridge::router::CommandContext& ctx);
-  void _onCmd_SpiTransfer(const bridge::router::CommandContext& ctx);
-  void _onCmd_SpiEnd(const bridge::router::CommandContext& ctx);
-  void _onCmd_SpiSetConfig(const bridge::router::CommandContext& ctx);
+  static void _onCmd_SpiBegin(BridgeClass& self, const bridge::router::CommandContext& ctx);
+  static void _onCmd_SpiTransfer(BridgeClass& self, const bridge::router::CommandContext& ctx);
+  static void _onCmd_SpiEnd(BridgeClass& self, const bridge::router::CommandContext& ctx);
+  static void _onCmd_SpiSetConfig(BridgeClass& self, const bridge::router::CommandContext& ctx);
 #endif
 
   static constexpr bool is_reliable_cmd(uint16_t id) {
@@ -293,14 +293,16 @@ class BridgeClass {
   // [SIL-2] Tag type: marks payload-free dispatch cases (no Protobuf decode).
   struct _NoPayload {};
 
-  // [ETL] Dispatch table entry: maps a command_id to its handler method.
-  // The table is sorted by command_id so etl::lower_bound gives O(log N) lookup.
+  // [ETL] Dispatch table entry. Uses a regular (non-member) function pointer so
+  // the table can be defined as `static const` in Bridge.cpp without adding any
+  // data to sizeof(BridgeClass) — critical for AVR RAM budgets.
   struct DispatchEntry {
     uint16_t command_id;
-    void (BridgeClass::*fn)(const bridge::router::CommandContext&);
+    void (*fn)(BridgeClass&, const bridge::router::CommandContext&);
   };
-  etl::vector<DispatchEntry, bridge::config::MAX_DISPATCH_ENTRIES>
-      _dispatch_table;
+  // Sorted table defined in Bridge.cpp; size exported as k_dispatch_table_size.
+  static const DispatchEntry k_dispatch_table[];
+  static const size_t k_dispatch_table_size;
 
   // [SIL-2] Unified template dispatcher — consolidates decode + ack + dup-check
   // boilerplate from _dispatchCommand into a single auditable point.

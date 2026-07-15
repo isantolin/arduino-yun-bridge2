@@ -654,16 +654,28 @@ void BridgeClass::_handleDigitalRead(const bridge::router::CommandContext& ctx,
 
 void BridgeClass::_handleAnalogRead(const bridge::router::CommandContext& ctx,
                                     const rpc_pb_PinRead& m) {
-  // [SIL-2/H-7] Analog pins are indexed differently from digital pins;
-  // validate against ANALOG_PINS, not DIGITAL_PINS.
+  // [SIL-2/H-7] Analog pins are indexed differently from digital pins.
+  // #if guard is used instead of `if constexpr` because cppcheck does not
+  // honour constexpr branch elimination and would flag the unsigned comparison
+  // `m.pin < ANALOG_PINS` as [unsignedLessThanZero] when ANALOG_PINS == 0
+  // (non-AVR/SAMD fallback target).  The preprocessor guard ensures cppcheck
+  // only sees the `emitStatus` path on the fallback configuration.
+#if defined(ARDUINO_ARCH_AVR) || defined(ARDUINO_ARCH_SAMD)
   if (m.pin < bridge::config::ANALOG_PINS) {
     rpc_pb_AnalogReadResponse resp = rpc_pb_AnalogReadResponse_init_default;
     resp.value = static_cast<uint32_t>(::analogRead(m.pin));
     if (!send(rpc::CommandId::CMD_ANALOG_READ_RESP, ctx.sequence_id, resp))
       emitStatus(rpc::StatusCode::STATUS_ERROR);
-  } else
+  } else {
     emitStatus(rpc::StatusCode::STATUS_ERROR);
+  }
+#else
+  // Fallback target: no analog pins — every request is out of range.
+  static_cast<void>(m);
+  emitStatus(rpc::StatusCode::STATUS_ERROR);
+#endif
 }
+
 
 void BridgeClass::_handleConsoleWrite(const rpc_pb_ConsoleWrite& m) {
   Console._push(m);

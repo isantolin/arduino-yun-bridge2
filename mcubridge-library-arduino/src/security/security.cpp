@@ -21,8 +21,9 @@
 #include <wolfcrypt/src/misc.c>
 
 #include "../protocol/rpc_structs.h"
-#include "pb_decode.h"
 #include "pb_encode.h"
+
+
 
 namespace rpc {
 namespace security {

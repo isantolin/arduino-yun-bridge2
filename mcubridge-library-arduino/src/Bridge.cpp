@@ -671,9 +671,11 @@ void BridgeClass::_handleAnalogRead(const bridge::router::CommandContext& ctx,
   }
 #else
   // Fallback target: no analog pins — every request is out of range.
+  static_cast<void>(ctx);
   static_cast<void>(m);
   emitStatus(rpc::StatusCode::STATUS_ERROR);
 #endif
+
 }
 
 

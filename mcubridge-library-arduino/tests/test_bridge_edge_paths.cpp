@@ -10,8 +10,8 @@
 #include "services/Console.h"
 #include "services/DataStore.h"
 #include "services/FileSystem.h"
-#include "services/Mailbox.h"
 #include "services/Process.h"
+
 #include "services/SPIService.h"
 #include "test_support.h"
 

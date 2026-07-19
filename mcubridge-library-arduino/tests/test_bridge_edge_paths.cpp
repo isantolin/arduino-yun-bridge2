@@ -24,11 +24,6 @@ using bridge::test::TestAccessor;
 void setUp() { bridge::test::fault::reset(); }
 void tearDown() {}
 
-static bool g_test_self_tests_pass = true;
-
-namespace rpc::security {
-bool run_cryptographic_self_tests() { return g_test_self_tests_pass; }
-}  // namespace rpc::security
 
 namespace {
 
@@ -579,9 +574,9 @@ void test_fault_injection_harness_paths() {
       static_cast<uint32_t>(SPIService.transfer(etl::span<uint8_t>(spi_buf))));
   SPIService.end();
 
-  g_test_self_tests_pass = false;
-  TEST_ASSERT_FALSE(rpc::security::run_cryptographic_self_tests());
-  g_test_self_tests_pass = true;
+  wolfCrypt_Init();
+  TEST_ASSERT_TRUE(rpc::security::run_cryptographic_self_tests());
+
   bridge::test::fault::enable(
       bridge::test::fault::FaultPoint::BRIDGE_FORCE_POST_FAIL);
   Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, "top-secret");

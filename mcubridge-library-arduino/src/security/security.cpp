@@ -23,8 +23,6 @@
 #include "../protocol/rpc_structs.h"
 #include "pb_encode.h"
 
-
-
 namespace rpc {
 namespace security {
 
@@ -260,9 +258,6 @@ bool run_cryptographic_self_tests() {
   const uint8_t val_aead_tag = aead_tag_ok ? 1U : 0U;
   return (val_ok & val_hmac & val_aead_res & val_aead_tag) != 0U;
 }
-
-
-
 
 #endif  // BRIDGE_ENABLE_POST_TESTS
 

@@ -51,92 +51,125 @@ bool BridgeClass::_preDispatch(const bridge::router::CommandContext& ctx,
 // that call non-static _handleXxx methods use [&self].
 // =============================================================================
 
-void BridgeClass::_onCmd_StatusAck(BridgeClass& self, const bridge::router::CommandContext& ctx) {
+void BridgeClass::_onCmd_StatusAck(BridgeClass& self,
+                                   const bridge::router::CommandContext& ctx) {
   self._dispatchCmd<rpc_pb_AckPacket>(
       ctx, [&self](const bridge::router::CommandContext& c,
                    const rpc_pb_AckPacket& m) { self._handleStatusAck(c, m); });
 }
 
 // [A] No-payload, no-ack, retransmit-on-dup (idempotent query commands).
-void BridgeClass::_onCmd_GetVersion(BridgeClass& self, const bridge::router::CommandContext& ctx) {
+void BridgeClass::_onCmd_GetVersion(BridgeClass& self,
+                                    const bridge::router::CommandContext& ctx) {
   self._dispatchCmd<_NoPayload>(
       ctx,
-      [&self](const bridge::router::CommandContext& c) { self._handleGetVersion(c); },
+      [&self](const bridge::router::CommandContext& c) {
+        self._handleGetVersion(c);
+      },
       false, true);
 }
-void BridgeClass::_onCmd_GetFreeMemory(BridgeClass& self, const bridge::router::CommandContext& ctx) {
+void BridgeClass::_onCmd_GetFreeMemory(
+    BridgeClass& self, const bridge::router::CommandContext& ctx) {
   self._dispatchCmd<_NoPayload>(
       ctx,
-      [&self](const bridge::router::CommandContext& c) { self._handleGetFreeMemory(c); },
+      [&self](const bridge::router::CommandContext& c) {
+        self._handleGetFreeMemory(c);
+      },
       false, true);
 }
-void BridgeClass::_onCmd_GetCapabilities(BridgeClass& self, const bridge::router::CommandContext& ctx) {
+void BridgeClass::_onCmd_GetCapabilities(
+    BridgeClass& self, const bridge::router::CommandContext& ctx) {
   self._dispatchCmd<_NoPayload>(
       ctx,
-      [&self](const bridge::router::CommandContext& c) { self._handleGetCapabilities(c); },
+      [&self](const bridge::router::CommandContext& c) {
+        self._handleGetCapabilities(c);
+      },
       false, true);
 }
 
 // [B] No-payload, ack, no-retransmit (fire-and-forget control commands).
-void BridgeClass::_onCmd_LinkReset(BridgeClass& self, const bridge::router::CommandContext& ctx) {
+void BridgeClass::_onCmd_LinkReset(BridgeClass& self,
+                                   const bridge::router::CommandContext& ctx) {
   self._dispatchCmd<_NoPayload>(
-      ctx, [&self](const bridge::router::CommandContext& c) { self._handleLinkReset(c); });
+      ctx, [&self](const bridge::router::CommandContext& c) {
+        self._handleLinkReset(c);
+      });
 }
-void BridgeClass::_onCmd_Xoff(BridgeClass& self, const bridge::router::CommandContext& ctx) {
+void BridgeClass::_onCmd_Xoff(BridgeClass& self,
+                              const bridge::router::CommandContext& ctx) {
   self._dispatchCmd<_NoPayload>(
-      ctx, [&self](const bridge::router::CommandContext& c) { self._handleXoff(c); });
+      ctx, [&self](const bridge::router::CommandContext& c) {
+        self._handleXoff(c);
+      });
 }
-void BridgeClass::_onCmd_Xon(BridgeClass& self, const bridge::router::CommandContext& ctx) {
+void BridgeClass::_onCmd_Xon(BridgeClass& self,
+                             const bridge::router::CommandContext& ctx) {
   self._dispatchCmd<_NoPayload>(
-      ctx, [&self](const bridge::router::CommandContext& c) { self._handleXon(c); });
+      ctx,
+      [&self](const bridge::router::CommandContext& c) { self._handleXon(c); });
 }
 
 // [C] Typed, ack, no-retransmit (standard bidirectional commands).
-void BridgeClass::_onCmd_LinkSync(BridgeClass& self, const bridge::router::CommandContext& ctx) {
+void BridgeClass::_onCmd_LinkSync(BridgeClass& self,
+                                  const bridge::router::CommandContext& ctx) {
   self._dispatchCmd<rpc_pb_LinkSync>(
       ctx, [&self](const bridge::router::CommandContext& c,
                    const rpc_pb_LinkSync& m) { self._handleLinkSync(c, m); });
 }
-void BridgeClass::_onCmd_SetBaudrate(BridgeClass& self, const bridge::router::CommandContext& ctx) {
+void BridgeClass::_onCmd_SetBaudrate(
+    BridgeClass& self, const bridge::router::CommandContext& ctx) {
   self._dispatchCmd<rpc_pb_SetBaudratePacket>(
-      ctx,
-      [&self](const bridge::router::CommandContext&,
-              const rpc_pb_SetBaudratePacket& m) { self._handleSetBaudrate(m); });
+      ctx, [&self](const bridge::router::CommandContext&,
+                   const rpc_pb_SetBaudratePacket& m) {
+        self._handleSetBaudrate(m);
+      });
 }
-void BridgeClass::_onCmd_EnterBootloader(BridgeClass& self, const bridge::router::CommandContext& ctx) {
+void BridgeClass::_onCmd_EnterBootloader(
+    BridgeClass& self, const bridge::router::CommandContext& ctx) {
   self._dispatchCmd<rpc_pb_EnterBootloader>(
       ctx, [&self](const bridge::router::CommandContext&,
-                   const rpc_pb_EnterBootloader& m) { self._handleEnterBootloader(m); });
+                   const rpc_pb_EnterBootloader& m) {
+        self._handleEnterBootloader(m);
+      });
 }
 // Static handlers (_handleSetPinMode, _handleDigitalWrite, _handleAnalogWrite,
 // _handleConsoleWrite): []  no-capture lambda is correct (static members).
-void BridgeClass::_onCmd_SetPinMode(BridgeClass& self, const bridge::router::CommandContext& ctx) {
+void BridgeClass::_onCmd_SetPinMode(BridgeClass& self,
+                                    const bridge::router::CommandContext& ctx) {
   self._dispatchCmd<rpc_pb_PinMode>(
-      ctx, [](const bridge::router::CommandContext&,
-              const rpc_pb_PinMode& m) { _handleSetPinMode(m); });
+      ctx, [](const bridge::router::CommandContext&, const rpc_pb_PinMode& m) {
+        _handleSetPinMode(m);
+      });
 }
-void BridgeClass::_onCmd_DigitalWrite(BridgeClass& self, const bridge::router::CommandContext& ctx) {
+void BridgeClass::_onCmd_DigitalWrite(
+    BridgeClass& self, const bridge::router::CommandContext& ctx) {
   self._dispatchCmd<rpc_pb_DigitalWrite>(
       ctx, [](const bridge::router::CommandContext&,
               const rpc_pb_DigitalWrite& m) { _handleDigitalWrite(m); });
 }
-void BridgeClass::_onCmd_AnalogWrite(BridgeClass& self, const bridge::router::CommandContext& ctx) {
+void BridgeClass::_onCmd_AnalogWrite(
+    BridgeClass& self, const bridge::router::CommandContext& ctx) {
   self._dispatchCmd<rpc_pb_AnalogWrite>(
       ctx, [](const bridge::router::CommandContext&,
               const rpc_pb_AnalogWrite& m) { _handleAnalogWrite(m); });
 }
-void BridgeClass::_onCmd_ConsoleWrite(BridgeClass& self, const bridge::router::CommandContext& ctx) {
+void BridgeClass::_onCmd_ConsoleWrite(
+    BridgeClass& self, const bridge::router::CommandContext& ctx) {
   self._dispatchCmd<rpc_pb_ConsoleWrite>(
       ctx, [](const bridge::router::CommandContext&,
               const rpc_pb_ConsoleWrite& m) { _handleConsoleWrite(m); });
 }
 
-// [D] Typed, no-ack, retransmit-on-dup (shared PinRead decode; internal branch).
-void BridgeClass::_onCmd_PinRead(BridgeClass& self, const bridge::router::CommandContext& ctx) {
+// [D] Typed, no-ack, retransmit-on-dup (shared PinRead decode; internal
+// branch).
+void BridgeClass::_onCmd_PinRead(BridgeClass& self,
+                                 const bridge::router::CommandContext& ctx) {
   self._dispatchCmd<rpc_pb_PinRead>(
       ctx,
-      [&self](const bridge::router::CommandContext& c, const rpc_pb_PinRead& m) {
-        if (c.raw_command == rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_READ)) {
+      [&self](const bridge::router::CommandContext& c,
+              const rpc_pb_PinRead& m) {
+        if (c.raw_command ==
+            rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_READ)) {
           self._handleDigitalRead(c, m);
         } else {
           self._handleAnalogRead(c, m);
@@ -146,7 +179,8 @@ void BridgeClass::_onCmd_PinRead(BridgeClass& self, const bridge::router::Comman
 }
 
 #if BRIDGE_ENABLE_DATASTORE
-void BridgeClass::_onCmd_DatastoreGetResp(BridgeClass& self, const bridge::router::CommandContext& ctx) {
+void BridgeClass::_onCmd_DatastoreGetResp(
+    BridgeClass& self, const bridge::router::CommandContext& ctx) {
   self._dispatchCmd<rpc_pb_DatastoreGetResponse>(
       ctx, [](const bridge::router::CommandContext& c,
               const rpc_pb_DatastoreGetResponse& m) {
@@ -156,25 +190,28 @@ void BridgeClass::_onCmd_DatastoreGetResp(BridgeClass& self, const bridge::route
 #endif
 
 #if BRIDGE_ENABLE_MAILBOX
-void BridgeClass::_onCmd_MailboxPush(BridgeClass& self, const bridge::router::CommandContext& ctx) {
+void BridgeClass::_onCmd_MailboxPush(
+    BridgeClass& self, const bridge::router::CommandContext& ctx) {
   self._dispatchCmd<rpc_pb_MailboxPush>(
       ctx, [](const bridge::router::CommandContext& c,
               const rpc_pb_MailboxPush& m) { _handleMailboxPush(c, m); });
 }
 
 // [E] No ack, no dup-check — response-only messages are always processed.
-void BridgeClass::_onCmd_MailboxReadResp(BridgeClass& self, const bridge::router::CommandContext& ctx) {
+void BridgeClass::_onCmd_MailboxReadResp(
+    BridgeClass& self, const bridge::router::CommandContext& ctx) {
   rpc_pb_MailboxReadResponse m = {};
-  if (!self._decodePayload(ctx,
-                      rpc::Payload::get_fields<rpc_pb_MailboxReadResponse>(),
-                      &m, rpc::Payload::get_tag<rpc_pb_MailboxReadResponse>(),
-                      sizeof(rpc_pb_MailboxReadResponse))) {
+  if (!self._decodePayload(
+          ctx, rpc::Payload::get_fields<rpc_pb_MailboxReadResponse>(), &m,
+          rpc::Payload::get_tag<rpc_pb_MailboxReadResponse>(),
+          sizeof(rpc_pb_MailboxReadResponse))) {
     self.emitStatus(rpc::StatusCode::STATUS_MALFORMED);
     return;
   }
   _handleMailboxReadResponse(m);
 }
-void BridgeClass::_onCmd_MailboxAvailableResp(BridgeClass& self, const bridge::router::CommandContext& ctx) {
+void BridgeClass::_onCmd_MailboxAvailableResp(
+    BridgeClass& self, const bridge::router::CommandContext& ctx) {
   rpc_pb_MailboxAvailableResponse m = {};
   if (!self._decodePayload(
           ctx, rpc::Payload::get_fields<rpc_pb_MailboxAvailableResponse>(), &m,
@@ -188,42 +225,50 @@ void BridgeClass::_onCmd_MailboxAvailableResp(BridgeClass& self, const bridge::r
 #endif
 
 #if BRIDGE_ENABLE_FILESYSTEM
-void BridgeClass::_onCmd_FileWrite(BridgeClass& self, const bridge::router::CommandContext& ctx) {
+void BridgeClass::_onCmd_FileWrite(BridgeClass& self,
+                                   const bridge::router::CommandContext& ctx) {
   self._dispatchCmd<rpc_pb_FileWrite>(
       ctx, [](const bridge::router::CommandContext& c,
               const rpc_pb_FileWrite& m) { _handleFileWrite(c, m); });
 }
-void BridgeClass::_onCmd_FileRead(BridgeClass& self, const bridge::router::CommandContext& ctx) {
+void BridgeClass::_onCmd_FileRead(BridgeClass& self,
+                                  const bridge::router::CommandContext& ctx) {
   self._dispatchCmd<rpc_pb_FileRead>(
       ctx, [](const bridge::router::CommandContext& c,
               const rpc_pb_FileRead& m) { _handleFileRead(c, m); });
 }
-void BridgeClass::_onCmd_FileRemove(BridgeClass& self, const bridge::router::CommandContext& ctx) {
+void BridgeClass::_onCmd_FileRemove(BridgeClass& self,
+                                    const bridge::router::CommandContext& ctx) {
   self._dispatchCmd<rpc_pb_FileRemove>(
       ctx, [](const bridge::router::CommandContext& c,
               const rpc_pb_FileRemove& m) { _handleFileRemove(c, m); });
 }
-void BridgeClass::_onCmd_FileReadResp(BridgeClass& self, const bridge::router::CommandContext& ctx) {
+void BridgeClass::_onCmd_FileReadResp(
+    BridgeClass& self, const bridge::router::CommandContext& ctx) {
   self._dispatchCmd<rpc_pb_FileReadResponse>(
-      ctx, [](const bridge::router::CommandContext& c,
-              const rpc_pb_FileReadResponse& m) { _handleFileReadResponse(c, m); });
+      ctx,
+      [](const bridge::router::CommandContext& c,
+         const rpc_pb_FileReadResponse& m) { _handleFileReadResponse(c, m); });
 }
 #endif
 
 #if BRIDGE_ENABLE_PROCESS
-void BridgeClass::_onCmd_ProcessKill(BridgeClass& self, const bridge::router::CommandContext& ctx) {
+void BridgeClass::_onCmd_ProcessKill(
+    BridgeClass& self, const bridge::router::CommandContext& ctx) {
   self._dispatchCmd<rpc_pb_ProcessKill>(
       ctx, [](const bridge::router::CommandContext& c,
               const rpc_pb_ProcessKill& m) { _handleProcessKill(c, m); });
 }
-void BridgeClass::_onCmd_ProcessRunAsyncResp(BridgeClass& self, const bridge::router::CommandContext& ctx) {
+void BridgeClass::_onCmd_ProcessRunAsyncResp(
+    BridgeClass& self, const bridge::router::CommandContext& ctx) {
   self._dispatchCmd<rpc_pb_ProcessRunAsyncResponse>(
       ctx, [](const bridge::router::CommandContext& c,
               const rpc_pb_ProcessRunAsyncResponse& m) {
         _handleProcessRunAsyncResponse(c, m);
       });
 }
-void BridgeClass::_onCmd_ProcessPollResp(BridgeClass& self, const bridge::router::CommandContext& ctx) {
+void BridgeClass::_onCmd_ProcessPollResp(
+    BridgeClass& self, const bridge::router::CommandContext& ctx) {
   self._dispatchCmd<rpc_pb_ProcessPollResponse>(
       ctx, [](const bridge::router::CommandContext& c,
               const rpc_pb_ProcessPollResponse& m) {
@@ -233,25 +278,31 @@ void BridgeClass::_onCmd_ProcessPollResp(BridgeClass& self, const bridge::router
 #endif
 
 #if BRIDGE_ENABLE_SPI
-void BridgeClass::_onCmd_SpiBegin(BridgeClass& self, const bridge::router::CommandContext& ctx) {
+void BridgeClass::_onCmd_SpiBegin(BridgeClass& self,
+                                  const bridge::router::CommandContext& ctx) {
   self._dispatchCmd<_NoPayload>(
-      ctx,
-      [&self](const bridge::router::CommandContext& c) { self._handleSpiBegin(c); });
+      ctx, [&self](const bridge::router::CommandContext& c) {
+        self._handleSpiBegin(c);
+      });
 }
 // [D] Typed, no-ack, retransmit-on-dup (SPI transfer query).
-void BridgeClass::_onCmd_SpiTransfer(BridgeClass& self, const bridge::router::CommandContext& ctx) {
+void BridgeClass::_onCmd_SpiTransfer(
+    BridgeClass& self, const bridge::router::CommandContext& ctx) {
   self._dispatchCmd<rpc_pb_SpiTransfer>(
       ctx,
       [&self](const bridge::router::CommandContext& c,
               const rpc_pb_SpiTransfer& m) { self._handleSpiTransfer(c, m); },
       false, true);
 }
-void BridgeClass::_onCmd_SpiEnd(BridgeClass& self, const bridge::router::CommandContext& ctx) {
+void BridgeClass::_onCmd_SpiEnd(BridgeClass& self,
+                                const bridge::router::CommandContext& ctx) {
   self._dispatchCmd<_NoPayload>(
-      ctx,
-      [&self](const bridge::router::CommandContext& c) { self._handleSpiEnd(c); });
+      ctx, [&self](const bridge::router::CommandContext& c) {
+        self._handleSpiEnd(c);
+      });
 }
-void BridgeClass::_onCmd_SpiSetConfig(BridgeClass& self, const bridge::router::CommandContext& ctx) {
+void BridgeClass::_onCmd_SpiSetConfig(
+    BridgeClass& self, const bridge::router::CommandContext& ctx) {
   self._dispatchCmd<rpc_pb_SpiConfig>(
       ctx, [](const bridge::router::CommandContext&,
               const rpc_pb_SpiConfig& m) { _handleSpiSetConfig(m); });
@@ -338,21 +389,23 @@ void BridgeClass::_dispatchCommand(const rpc_pb_RpcEnvelope& envelope) {
     _processAck(ctx.raw_command, ctx.sequence_id);
     return;
   }
-  if (ctx.raw_command == rpc::to_underlying(rpc::StatusCode::STATUS_MALFORMED)) {
+  if (ctx.raw_command ==
+      rpc::to_underlying(rpc::StatusCode::STATUS_MALFORMED)) {
     _handleStatusMalformed(ctx);
     return;
   }
 
   // [ETL] O(log N) binary search in the static sorted dispatch table.
-  // Table is defined in Bridge.cpp and never mutated at runtime (zero RAM growth).
+  // Table is defined in Bridge.cpp and never mutated at runtime (zero RAM
+  // growth).
   const DispatchEntry key{ctx.raw_command, nullptr};
   const DispatchEntry* const table_end =
       k_dispatch_table + k_dispatch_table_size;
-  const DispatchEntry* found = etl::lower_bound(
-      k_dispatch_table, table_end, key,
-      [](const DispatchEntry& e, const DispatchEntry& k) {
-        return e.command_id < k.command_id;
-      });
+  const DispatchEntry* found =
+      etl::lower_bound(k_dispatch_table, table_end, key,
+                       [](const DispatchEntry& e, const DispatchEntry& k) {
+                         return e.command_id < k.command_id;
+                       });
   if (found != table_end && found->command_id == ctx.raw_command) {
     found->fn(*this, ctx);
   } else {
@@ -371,7 +424,8 @@ void BridgeClass::_initializeRuntime() {
                 bridge::hal::ArchId::ARCH_AVR)
     _hardware_serial = static_cast<HardwareSerial*>(&_stream);
   else
-    _hardware_serial = nullptr;}
+    _hardware_serial = nullptr;
+}
 
 void BridgeClass::begin(uint32_t baudrate, const char* secret) {
   _initializeRuntime();
@@ -660,7 +714,8 @@ void BridgeClass::_handleAnalogRead(const bridge::router::CommandContext& ctx,
   // `m.pin < ANALOG_PINS` as [unsignedLessThanZero] when ANALOG_PINS == 0
   // (non-AVR/SAMD fallback target).  The preprocessor guard ensures cppcheck
   // only sees the `emitStatus` path on the fallback configuration.
-#if defined(ARDUINO_ARCH_AVR) || defined(ARDUINO_ARCH_SAMD) || defined(BRIDGE_HOST_TEST)
+#if defined(ARDUINO_ARCH_AVR) || defined(ARDUINO_ARCH_SAMD) || \
+    defined(BRIDGE_HOST_TEST)
   if (m.pin < bridge::config::ANALOG_PINS) {
     rpc_pb_AnalogReadResponse resp = rpc_pb_AnalogReadResponse_init_default;
     resp.value = static_cast<uint32_t>(::analogRead(m.pin));
@@ -675,9 +730,7 @@ void BridgeClass::_handleAnalogRead(const bridge::router::CommandContext& ctx,
   static_cast<void>(m);
   emitStatus(rpc::StatusCode::STATUS_ERROR);
 #endif
-
 }
-
 
 void BridgeClass::_handleConsoleWrite(const rpc_pb_ConsoleWrite& m) {
   Console._push(m);
@@ -936,7 +989,8 @@ bool BridgeClass::_decodePayload(const bridge::router::CommandContext& ctx,
   (void)struct_size;
   if (ctx.envelope->which_payload_type ==
       rpc_pb_RpcEnvelope_encrypted_payload_with_tag_tag) {
-    const uint8_t* src = ctx.envelope->payload_type.encrypted_payload_with_tag.bytes;
+    const uint8_t* src =
+        ctx.envelope->payload_type.encrypted_payload_with_tag.bytes;
     size_t src_len = ctx.envelope->payload_type.encrypted_payload_with_tag.size;
     pb_istream_t stream = pb_istream_from_buffer(src, src_len);
     return pb_decode_noinit(&stream, fields, dest);

@@ -11,7 +11,6 @@
 #include "services/DataStore.h"
 #include "services/FileSystem.h"
 #include "services/Process.h"
-
 #include "services/SPIService.h"
 #include "test_support.h"
 
@@ -23,7 +22,6 @@ using bridge::test::TestAccessor;
 
 void setUp() { bridge::test::fault::reset(); }
 void tearDown() {}
-
 
 namespace {
 

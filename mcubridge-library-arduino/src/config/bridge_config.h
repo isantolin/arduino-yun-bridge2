@@ -36,7 +36,6 @@ static constexpr bool ENABLE_WATCHDOG = true;
 // [SIL-2] Maximum time to wait for Linux handshake before entering safe state.
 static constexpr uint32_t SYNC_TIMEOUT_MS = rpc::SYNC_TIMEOUT_MS;
 
-
 // --- Feature Flags (Manual overrides via build system) ---
 #ifndef BRIDGE_ENABLE_DATASTORE
 #define BRIDGE_ENABLE_DATASTORE 1

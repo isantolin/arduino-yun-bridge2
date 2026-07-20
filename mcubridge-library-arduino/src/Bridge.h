@@ -171,47 +171,79 @@ class BridgeClass {
 
   // [ETL] Per-command dispatch handlers — declared static so their addresses
   // can be stored in a constexpr-compatible function pointer (not a member fn
-  // pointer). Each accesses BridgeClass state via the explicit `self` reference.
-  static void _onCmd_StatusAck(BridgeClass& self, const bridge::router::CommandContext& ctx);
-  static void _onCmd_GetVersion(BridgeClass& self, const bridge::router::CommandContext& ctx);
-  static void _onCmd_GetFreeMemory(BridgeClass& self, const bridge::router::CommandContext& ctx);
-  static void _onCmd_LinkSync(BridgeClass& self, const bridge::router::CommandContext& ctx);
-  static void _onCmd_LinkReset(BridgeClass& self, const bridge::router::CommandContext& ctx);
-  static void _onCmd_GetCapabilities(BridgeClass& self, const bridge::router::CommandContext& ctx);
-  static void _onCmd_SetBaudrate(BridgeClass& self, const bridge::router::CommandContext& ctx);
-  static void _onCmd_EnterBootloader(BridgeClass& self, const bridge::router::CommandContext& ctx);
-  static void _onCmd_Xoff(BridgeClass& self, const bridge::router::CommandContext& ctx);
-  static void _onCmd_Xon(BridgeClass& self, const bridge::router::CommandContext& ctx);
-  static void _onCmd_SetPinMode(BridgeClass& self, const bridge::router::CommandContext& ctx);
-  static void _onCmd_DigitalWrite(BridgeClass& self, const bridge::router::CommandContext& ctx);
-  static void _onCmd_AnalogWrite(BridgeClass& self, const bridge::router::CommandContext& ctx);
-  // Two table entries point to this handler; internal branch on ctx.raw_command.
-  static void _onCmd_PinRead(BridgeClass& self, const bridge::router::CommandContext& ctx);
-  static void _onCmd_ConsoleWrite(BridgeClass& self, const bridge::router::CommandContext& ctx);
+  // pointer). Each accesses BridgeClass state via the explicit `self`
+  // reference.
+  static void _onCmd_StatusAck(BridgeClass& self,
+                               const bridge::router::CommandContext& ctx);
+  static void _onCmd_GetVersion(BridgeClass& self,
+                                const bridge::router::CommandContext& ctx);
+  static void _onCmd_GetFreeMemory(BridgeClass& self,
+                                   const bridge::router::CommandContext& ctx);
+  static void _onCmd_LinkSync(BridgeClass& self,
+                              const bridge::router::CommandContext& ctx);
+  static void _onCmd_LinkReset(BridgeClass& self,
+                               const bridge::router::CommandContext& ctx);
+  static void _onCmd_GetCapabilities(BridgeClass& self,
+                                     const bridge::router::CommandContext& ctx);
+  static void _onCmd_SetBaudrate(BridgeClass& self,
+                                 const bridge::router::CommandContext& ctx);
+  static void _onCmd_EnterBootloader(BridgeClass& self,
+                                     const bridge::router::CommandContext& ctx);
+  static void _onCmd_Xoff(BridgeClass& self,
+                          const bridge::router::CommandContext& ctx);
+  static void _onCmd_Xon(BridgeClass& self,
+                         const bridge::router::CommandContext& ctx);
+  static void _onCmd_SetPinMode(BridgeClass& self,
+                                const bridge::router::CommandContext& ctx);
+  static void _onCmd_DigitalWrite(BridgeClass& self,
+                                  const bridge::router::CommandContext& ctx);
+  static void _onCmd_AnalogWrite(BridgeClass& self,
+                                 const bridge::router::CommandContext& ctx);
+  // Two table entries point to this handler; internal branch on
+  // ctx.raw_command.
+  static void _onCmd_PinRead(BridgeClass& self,
+                             const bridge::router::CommandContext& ctx);
+  static void _onCmd_ConsoleWrite(BridgeClass& self,
+                                  const bridge::router::CommandContext& ctx);
 #if BRIDGE_ENABLE_DATASTORE
-  static void _onCmd_DatastoreGetResp(BridgeClass& self, const bridge::router::CommandContext& ctx);
+  static void _onCmd_DatastoreGetResp(
+      BridgeClass& self, const bridge::router::CommandContext& ctx);
 #endif
 #if BRIDGE_ENABLE_MAILBOX
-  static void _onCmd_MailboxPush(BridgeClass& self, const bridge::router::CommandContext& ctx);
-  static void _onCmd_MailboxReadResp(BridgeClass& self, const bridge::router::CommandContext& ctx);
-  static void _onCmd_MailboxAvailableResp(BridgeClass& self, const bridge::router::CommandContext& ctx);
+  static void _onCmd_MailboxPush(BridgeClass& self,
+                                 const bridge::router::CommandContext& ctx);
+  static void _onCmd_MailboxReadResp(BridgeClass& self,
+                                     const bridge::router::CommandContext& ctx);
+  static void _onCmd_MailboxAvailableResp(
+      BridgeClass& self, const bridge::router::CommandContext& ctx);
 #endif
 #if BRIDGE_ENABLE_FILESYSTEM
-  static void _onCmd_FileWrite(BridgeClass& self, const bridge::router::CommandContext& ctx);
-  static void _onCmd_FileRead(BridgeClass& self, const bridge::router::CommandContext& ctx);
-  static void _onCmd_FileRemove(BridgeClass& self, const bridge::router::CommandContext& ctx);
-  static void _onCmd_FileReadResp(BridgeClass& self, const bridge::router::CommandContext& ctx);
+  static void _onCmd_FileWrite(BridgeClass& self,
+                               const bridge::router::CommandContext& ctx);
+  static void _onCmd_FileRead(BridgeClass& self,
+                              const bridge::router::CommandContext& ctx);
+  static void _onCmd_FileRemove(BridgeClass& self,
+                                const bridge::router::CommandContext& ctx);
+  static void _onCmd_FileReadResp(BridgeClass& self,
+                                  const bridge::router::CommandContext& ctx);
 #endif
 #if BRIDGE_ENABLE_PROCESS
-  static void _onCmd_ProcessKill(BridgeClass& self, const bridge::router::CommandContext& ctx);
-  static void _onCmd_ProcessRunAsyncResp(BridgeClass& self, const bridge::router::CommandContext& ctx);
-  static void _onCmd_ProcessPollResp(BridgeClass& self, const bridge::router::CommandContext& ctx);
+  static void _onCmd_ProcessKill(BridgeClass& self,
+                                 const bridge::router::CommandContext& ctx);
+  static void _onCmd_ProcessRunAsyncResp(
+      BridgeClass& self, const bridge::router::CommandContext& ctx);
+  static void _onCmd_ProcessPollResp(BridgeClass& self,
+                                     const bridge::router::CommandContext& ctx);
 #endif
 #if BRIDGE_ENABLE_SPI
-  static void _onCmd_SpiBegin(BridgeClass& self, const bridge::router::CommandContext& ctx);
-  static void _onCmd_SpiTransfer(BridgeClass& self, const bridge::router::CommandContext& ctx);
-  static void _onCmd_SpiEnd(BridgeClass& self, const bridge::router::CommandContext& ctx);
-  static void _onCmd_SpiSetConfig(BridgeClass& self, const bridge::router::CommandContext& ctx);
+  static void _onCmd_SpiBegin(BridgeClass& self,
+                              const bridge::router::CommandContext& ctx);
+  static void _onCmd_SpiTransfer(BridgeClass& self,
+                                 const bridge::router::CommandContext& ctx);
+  static void _onCmd_SpiEnd(BridgeClass& self,
+                            const bridge::router::CommandContext& ctx);
+  static void _onCmd_SpiSetConfig(BridgeClass& self,
+                                  const bridge::router::CommandContext& ctx);
 #endif
 
   static constexpr bool is_reliable_cmd(uint16_t id) {
@@ -320,8 +352,10 @@ class BridgeClass {
     if constexpr (!etl::is_same_v<MsgType, _NoPayload>) {
       const pb_size_t expected_tag = rpc::Payload::get_tag<MsgType>();
       if (ctx.envelope->which_payload_type == expected_tag) {
-        // [Zero-Copy] Direct reference to active union member in Nanopb envelope
-        const auto& m = *reinterpret_cast<const MsgType*>(&ctx.envelope->payload_type);
+        // [Zero-Copy] Direct reference to active union member in Nanopb
+        // envelope
+        const auto& m =
+            *reinterpret_cast<const MsgType*>(&ctx.envelope->payload_type);
         handler(ctx, m);
       } else if (ctx.envelope->which_payload_type ==
                  rpc_pb_RpcEnvelope_encrypted_payload_with_tag_tag) {

@@ -932,16 +932,14 @@ void BridgeClass::signalXon() { (void)sendFrame(rpc::CommandId::CMD_XON); }
 bool BridgeClass::_decodePayload(const bridge::router::CommandContext& ctx,
                                  const pb_msgdesc_t* fields, void* dest,
                                  pb_size_t expected_tag, size_t struct_size) {
+  (void)expected_tag;
+  (void)struct_size;
   if (ctx.envelope->which_payload_type ==
       rpc_pb_RpcEnvelope_encrypted_payload_with_tag_tag) {
     const uint8_t* src = ctx.envelope->payload_type.encrypted_payload_with_tag.bytes;
     size_t src_len = ctx.envelope->payload_type.encrypted_payload_with_tag.size;
     pb_istream_t stream = pb_istream_from_buffer(src, src_len);
     return pb_decode_noinit(&stream, fields, dest);
-  }
-  if (ctx.envelope->which_payload_type == expected_tag) {
-    std::memcpy(dest, &ctx.envelope->payload_type, struct_size);
-    return true;
   }
   return false;
 }

@@ -318,13 +318,24 @@ class BridgeClass {
       return false;
     }
     if constexpr (!etl::is_same_v<MsgType, _NoPayload>) {
-      MsgType m = {};
-      if (!_decodePayload(ctx, rpc::Payload::get_fields<MsgType>(), &m,
-                          rpc::Payload::get_tag<MsgType>(), sizeof(MsgType))) {
+      const pb_size_t expected_tag = rpc::Payload::get_tag<MsgType>();
+      if (ctx.envelope->which_payload_type == expected_tag) {
+        // [Zero-Copy] Direct reference to active union member in Nanopb envelope
+        const auto& m = *reinterpret_cast<const MsgType*>(&ctx.envelope->payload_type);
+        handler(ctx, m);
+      } else if (ctx.envelope->which_payload_type ==
+                 rpc_pb_RpcEnvelope_encrypted_payload_with_tag_tag) {
+        MsgType m = {};
+        if (!_decodePayload(ctx, rpc::Payload::get_fields<MsgType>(), &m,
+                            expected_tag, sizeof(MsgType))) {
+          emitStatus(rpc::StatusCode::STATUS_MALFORMED);
+          return false;
+        }
+        handler(ctx, m);
+      } else {
         emitStatus(rpc::StatusCode::STATUS_MALFORMED);
         return false;
       }
-      handler(ctx, m);
     } else {
       handler(ctx);
     }

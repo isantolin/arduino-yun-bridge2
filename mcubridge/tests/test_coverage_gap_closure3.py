@@ -22,6 +22,8 @@ from mcubridge.transport.serial import SerialTransport
 
 # Dynamic script imports
 def _load_script(name: str) -> Any:
+    if name in sys.modules:
+        return sys.modules[name]
     path = Path(__file__).parent.parent / "scripts" / f"{name}.py"
     spec = importlib.util.spec_from_file_location(name, str(path))
     assert spec is not None and spec.loader is not None

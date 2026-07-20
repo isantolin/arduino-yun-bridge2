@@ -26,9 +26,8 @@ from mcubridge.protocol.structures import (
 from mcubridge.security.security import verify_crypto_integrity
 from mcubridge.services.handshake import SerialHandshakeManager, derive_serial_timing
 from mcubridge.state.context import RuntimeState, create_runtime_state
-from mcubridge.state.status import status_writer, _write_status_file
+from mcubridge.state import status as status_mod
 from mcubridge.transport.serial import SerialTransport
-
 
 # ==============================================================================
 # Fixtures
@@ -60,9 +59,7 @@ def state(cfg: RuntimeConfig) -> Iterator[RuntimeState]:
 
 
 @pytest.fixture
-def handshake_manager(
-    cfg: RuntimeConfig, state: RuntimeState
-) -> SerialHandshakeManager:
+def handshake_manager(cfg: RuntimeConfig, state: RuntimeState) -> SerialHandshakeManager:
     timing = derive_serial_timing(cfg)
     return SerialHandshakeManager(
         config=cfg,
@@ -87,24 +84,22 @@ def test_verify_crypto_integrity_succeeds() -> None:
 def test_verify_crypto_integrity_sha256_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     """Force SHA-256 KAT failure branch."""
     from mcubridge.security import security as sec_mod
-    from cryptography.hazmat.primitives import hashes as _hashes
 
     class _BadHash:
         def update(self, data: bytes) -> None: ...  # noqa: E704
         def finalize(self) -> bytes:
             return b"\x00" * 32
 
-    monkeypatch.setattr(
-        sec_mod.hashes, "Hash", lambda *a, **kw: _BadHash()
-    )
+    def _bad_hash_factory(*_args: object, **_kwargs: object) -> _BadHash:
+        return _BadHash()
+
+    monkeypatch.setattr(sec_mod.hashes, "Hash", _bad_hash_factory)
     assert sec_mod.verify_crypto_integrity() is False
 
 
 def test_verify_crypto_integrity_chacha_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     """Force ChaCha20-Poly1305 KAT failure via ValueError."""
     from mcubridge.security import security as sec_mod
-
-    original_cls = sec_mod.ChaCha20Poly1305
 
     class _BadAEAD:
         def __init__(self, key: bytes) -> None:
@@ -283,7 +278,6 @@ def test_resolve_cloud_context_with_correlation_data() -> None:
 
 def test_allows_topic_true() -> None:
     """allows_topic returns True when field is set (line 128)."""
-    from mcubridge.protocol.topics import Topic
 
     auth = pb.TopicAuthorization()
     # Find a field that exists in TopicAuthorization and set it
@@ -312,7 +306,7 @@ def test_allows_topic_unknown() -> None:
 @pytest.mark.asyncio
 async def test_status_writer_cancelled(tmp_path: Path, cfg: RuntimeConfig, state: RuntimeState) -> None:
     """status_writer raises CancelledError cleanly (lines 44-46)."""
-    task = asyncio.create_task(status_writer(state, interval=0))
+    task = asyncio.create_task(status_mod.status_writer(state, interval=0))
     await asyncio.sleep(0.05)
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
@@ -327,7 +321,7 @@ async def test_status_writer_write_tick_cancelled(cfg: RuntimeConfig, state: Run
         raise asyncio.CancelledError
 
     with patch("mcubridge.state.status.asyncio.to_thread", side_effect=_raise_cancelled):
-        task = asyncio.create_task(status_writer(state, interval=100))
+        task = asyncio.create_task(status_mod.status_writer(state, interval=100))
         await asyncio.sleep(0.05)
         task.cancel()
         try:
@@ -343,7 +337,8 @@ def test_write_status_file_oserror(tmp_path: Path, state: RuntimeState) -> None:
         # Parent dir does not exist and mkdir is mocked to raise
         with patch.object(Path, "mkdir", side_effect=OSError("no space")):
             # Must not raise
-            _write_status_file(status)
+            fn = getattr(status_mod, "_write_status_file")
+            fn(status)
 
 
 # ==============================================================================
@@ -369,13 +364,10 @@ async def test_send_raw_flow_control_timeout(cfg: RuntimeConfig, state: RuntimeS
     state.serial_tx_allowed.clear()
 
     # Patch asyncio.timeout to raise TimeoutError immediately
-    async def _timeout_ctx(*args: Any, **kwargs: Any) -> Any:
-        raise TimeoutError("flow control")
-
     with patch("mcubridge.transport.serial.asyncio.timeout") as mock_to:
         mock_to.return_value.__aenter__ = AsyncMock(side_effect=TimeoutError("flow"))
         mock_to.return_value.__aexit__ = AsyncMock(return_value=False)
-        result = await transport.send_raw(Command.CMD_GET_VERSION.value, b"")
+        await transport.send_raw(Command.CMD_GET_VERSION.value, b"")
     # should still succeed (write proceeds after timeout)
     state.serial_tx_allowed.set()
 
@@ -411,9 +403,7 @@ async def test_correlate_frame_already_resolved(cfg: RuntimeConfig, state: Runti
 
 
 @pytest.mark.asyncio
-async def test_correlate_frame_ack_with_protobuf_payload(
-    cfg: RuntimeConfig, state: RuntimeState
-) -> None:
+async def test_correlate_frame_ack_with_protobuf_payload(cfg: RuntimeConfig, state: RuntimeState) -> None:
     """ACK correlation with ProtobufMessage payload path (lines 258-259)."""
     transport = SerialTransport(cfg, state, None)
     cmd_id = Command.CMD_GET_VERSION.value
@@ -426,9 +416,7 @@ async def test_correlate_frame_ack_with_protobuf_payload(
 
 
 @pytest.mark.asyncio
-async def test_correlate_frame_success_status_code(
-    cfg: RuntimeConfig, state: RuntimeState
-) -> None:
+async def test_correlate_frame_success_status_code(cfg: RuntimeConfig, state: RuntimeState) -> None:
     """Success status code on pending with no expected resp (lines 288-290)."""
     from mcubridge.transport.serial import SERIAL_SUCCESS_STATUS_CODES
 
@@ -443,9 +431,7 @@ async def test_correlate_frame_success_status_code(
 
 
 @pytest.mark.asyncio
-async def test_check_baudrate_fallback_same_baud(
-    cfg: RuntimeConfig, state: RuntimeState
-) -> None:
+async def test_check_baudrate_fallback_same_baud(cfg: RuntimeConfig, state: RuntimeState) -> None:
     """_check_baudrate_fallback: baud == safe_baud skips negotiate (line 297)."""
     transport = SerialTransport(cfg, state, None)
     transport._consecutive_crc_errors = 0  # type: ignore[attr-defined]
@@ -469,9 +455,7 @@ async def test_acknowledge_sends_ack(cfg: RuntimeConfig, state: RuntimeState) ->
 
 
 @pytest.mark.asyncio
-async def test_negotiate_baudrate_future_already_done(
-    cfg: RuntimeConfig, state: RuntimeState
-) -> None:
+async def test_negotiate_baudrate_future_already_done(cfg: RuntimeConfig, state: RuntimeState) -> None:
     """_negotiate_baudrate handles already-done future (lines 415-417)."""
     transport = SerialTransport(cfg, state, None)
     mock_serial = AsyncMock()
@@ -529,9 +513,7 @@ async def test_handle_capabilities_resp_future_already_done(
 
 
 @pytest.mark.asyncio
-async def test_parse_capabilities_with_protobuf(
-    handshake_manager: SerialHandshakeManager, state: RuntimeState
-) -> None:
+async def test_parse_capabilities_with_protobuf(handshake_manager: SerialHandshakeManager, state: RuntimeState) -> None:
     """_parse_capabilities accepts ProtobufMessage directly (line 389-390)."""
     caps = pb.Capabilities()
     handshake_manager._parse_capabilities(caps)  # type: ignore[attr-defined]
@@ -571,9 +553,7 @@ async def test_wait_for_link_sync_already_synchronized(
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(3)
-async def test_wait_for_link_sync_timeout(
-    handshake_manager: SerialHandshakeManager, state: RuntimeState
-) -> None:
+async def test_wait_for_link_sync_timeout(handshake_manager: SerialHandshakeManager, state: RuntimeState) -> None:
     """_wait_for_link_sync_confirmation times out and returns False."""
     # Not synchronized, event never set → timeout with minimal timing
     handshake_manager._timing.response_timeout_ms = 100  # type: ignore[attr-defined]

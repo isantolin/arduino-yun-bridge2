@@ -166,11 +166,9 @@ void test_surgical_send_fail_branches() {
     ba.dispatch([&]() {
       rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
       env.version = rpc::PROTOCOL_VERSION;
-      env.command_id =
-          static_cast<uint16_t>(rpc::CommandId::CMD_SET_BAUDRATE);
+      env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_SET_BAUDRATE);
       env.sequence_id = 10;
-      env.which_payload_type =
-          rpc_pb_RpcEnvelope_set_baudrate_packet_tag;
+      env.which_payload_type = rpc_pb_RpcEnvelope_set_baudrate_packet_tag;
       env.payload_type.set_baudrate_packet = msg;
       return env;
     }());
@@ -179,11 +177,9 @@ void test_surgical_send_fail_branches() {
     ba.dispatch([&]() {
       rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
       env.version = rpc::PROTOCOL_VERSION;
-      env.command_id =
-          static_cast<uint16_t>(rpc::CommandId::CMD_SET_BAUDRATE);
+      env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_SET_BAUDRATE);
       env.sequence_id = 11;
-      env.which_payload_type =
-          rpc_pb_RpcEnvelope_set_baudrate_packet_tag;
+      env.which_payload_type = rpc_pb_RpcEnvelope_set_baudrate_packet_tag;
       env.payload_type.set_baudrate_packet = msg;
       return env;
     }());
@@ -208,8 +204,7 @@ void test_surgical_send_fail_branches() {
     // CMD_DIGITAL_READ with valid pin — send will fail
     rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
     env.version = rpc::PROTOCOL_VERSION;
-    env.command_id =
-        static_cast<uint16_t>(rpc::CommandId::CMD_DIGITAL_READ);
+    env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_DIGITAL_READ);
     env.sequence_id = 20;
     env.which_payload_type = rpc_pb_RpcEnvelope_pin_read_tag;
     env.payload_type.pin_read.pin = 0U;  // valid pin
@@ -219,8 +214,7 @@ void test_surgical_send_fail_branches() {
     // CMD_ANALOG_READ with valid pin — send will fail
     rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
     env.version = rpc::PROTOCOL_VERSION;
-    env.command_id =
-        static_cast<uint16_t>(rpc::CommandId::CMD_ANALOG_READ);
+    env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_ANALOG_READ);
     env.sequence_id = 21;
     env.which_payload_type = rpc_pb_RpcEnvelope_pin_read_tag;
     env.payload_type.pin_read.pin = 0U;  // valid pin
@@ -232,13 +226,11 @@ void test_surgical_send_fail_branches() {
   {
     rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
     env.version = rpc::PROTOCOL_VERSION;
-    env.command_id =
-        static_cast<uint16_t>(rpc::CommandId::CMD_SET_PIN_MODE);
+    env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_SET_PIN_MODE);
     env.sequence_id = 22;
     env.which_payload_type = rpc_pb_RpcEnvelope_pin_mode_tag;
     // Use a mode value not in the lookup table
-    env.payload_type.pin_mode.mode =
-        static_cast<rpc_pb_PinModeType>(0xFF);
+    env.payload_type.pin_mode.mode = static_cast<rpc_pb_PinModeType>(0xFF);
     env.payload_type.pin_mode.pin = 0U;
     ba.dispatch(env);
   }
@@ -248,8 +240,7 @@ void test_surgical_send_fail_branches() {
   {
     rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
     env.version = rpc::PROTOCOL_VERSION;
-    env.command_id =
-        static_cast<uint16_t>(rpc::CommandId::CMD_LINK_SYNC);
+    env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_LINK_SYNC);
     env.sequence_id = 30;
     env.which_payload_type = rpc_pb_RpcEnvelope_link_sync_tag;
     env.payload_type.link_sync.nonce.size = 16U;

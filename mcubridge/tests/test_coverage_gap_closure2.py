@@ -4,17 +4,16 @@ structures.py SSL, scripts, daemon.py. [SIL-2]"""
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import sys
 from pathlib import Path
 from typing import Any, Iterator
-from unittest.mock import AsyncMock, MagicMock, patch, call
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.state.context import RuntimeState, create_runtime_state
-
 
 # ==============================================================================
 # Fixtures
@@ -164,10 +163,11 @@ def test_cleanup_with_running_processes(cfg: RuntimeConfig) -> None:
     mock_handle.terminate = MagicMock()
 
     from mcubridge.state.context import ProcessContext
+
     ctx = ProcessContext.__new__(ProcessContext)
     ctx.handle = mock_handle
 
-    s.running_processes["proc1"] = ctx
+    s.running_processes[1001] = ctx
     s.cleanup()
     mock_handle.terminate.assert_called_once()
 
@@ -180,10 +180,11 @@ def test_cleanup_process_terminate_oserror(cfg: RuntimeConfig) -> None:
     mock_handle.terminate = MagicMock(side_effect=OSError("gone"))
 
     from mcubridge.state.context import ProcessContext
+
     ctx = ProcessContext.__new__(ProcessContext)
     ctx.handle = mock_handle
 
-    s.running_processes["proc1"] = ctx
+    s.running_processes[1001] = ctx
     s.cleanup()  # should not raise
 
 
@@ -217,10 +218,11 @@ async def test_runtime_state_collector_state_none(state: RuntimeState) -> None:
     import weakref
     from mcubridge.metrics import RuntimeStateCollector
 
-    ref = weakref.ref(state)
+    weakref.ref(state)
     collector = RuntimeStateCollector(state)
     del state
     import gc
+
     gc.collect()
 
     # If state was garbage collected, collect() should return without yielding
@@ -232,25 +234,27 @@ async def test_runtime_state_collector_state_none(state: RuntimeState) -> None:
 @pytest.mark.asyncio
 async def test_emit_bridge_snapshot_type_error(state: RuntimeState) -> None:
     """_emit_bridge_snapshot handles TypeError from enqueue (lines 106-111)."""
-    from mcubridge.metrics import _emit_bridge_snapshot
+    from mcubridge import metrics as metrics_mod
 
     async def _bad_enqueue(msg: Any) -> None:
         raise TypeError("bad type")
 
-    await _emit_bridge_snapshot(state, _bad_enqueue, flavor="summary")
+    fn = getattr(metrics_mod, "_emit_bridge_snapshot")
+    await fn(state, _bad_enqueue, flavor="summary")
     # Should log error, not raise
 
 
 @pytest.mark.asyncio
 async def test_emit_bridge_snapshot_attribute_error(state: RuntimeState) -> None:
     """_emit_bridge_snapshot handles AttributeError from build_bridge_snapshot (lines 112-118)."""
-    from mcubridge.metrics import _emit_bridge_snapshot
+    from mcubridge import metrics as metrics_mod
 
     async def _enqueue(msg: Any) -> None:
         pass
 
+    fn = getattr(metrics_mod, "_emit_bridge_snapshot")
     with patch.object(state, "build_bridge_snapshot", side_effect=AttributeError("missing")):
-        await _emit_bridge_snapshot(state, _enqueue, flavor="summary")
+        await fn(state, _enqueue, flavor="summary")
     # Should log critical, not raise
 
 
@@ -296,26 +300,29 @@ async def test_publish_metrics_cancelled(state: RuntimeState) -> None:
 @pytest.mark.asyncio
 async def test_build_metrics_message_extra_props(state: RuntimeState) -> None:
     """_build_metrics_message adds extra_props for file rejections and watchdog (lines 52-69)."""
-    from mcubridge.metrics import _build_metrics_message
+    from mcubridge import metrics as metrics_mod
 
     state.file_storage_limit_rejections = 1
     snapshot = state.build_metrics_snapshot()
-    msg = _build_metrics_message(state, snapshot, expiry_seconds=60.0)
+    fn = getattr(metrics_mod, "_build_metrics_message")
+    msg = fn(state, snapshot, expiry_seconds=60.0)
     props = {p.key: p.value for p in msg.user_properties}
     from mcubridge.config.const import PROP_KEY_BRIDGE_FILES
+
     assert PROP_KEY_BRIDGE_FILES in props
 
 
 @pytest.mark.asyncio
 async def test_build_metrics_message_write_limit(state: RuntimeState) -> None:
     """_build_metrics_message adds write-limit prop when file_write_limit_rejections > 0."""
-    from mcubridge.metrics import _build_metrics_message
+    from mcubridge import metrics as metrics_mod
     from mcubridge.config.const import PROP_KEY_BRIDGE_FILES, PROP_VAL_WRITE_LIMIT
 
     state.file_storage_limit_rejections = 0
     state.file_write_limit_rejections = 3
     snapshot = state.build_metrics_snapshot()
-    msg = _build_metrics_message(state, snapshot, expiry_seconds=60.0)
+    fn = getattr(metrics_mod, "_build_metrics_message")
+    msg = fn(state, snapshot, expiry_seconds=60.0)
     props = {p.key: p.value for p in msg.user_properties}
     assert props.get(PROP_KEY_BRIDGE_FILES) == PROP_VAL_WRITE_LIMIT
 
@@ -323,13 +330,14 @@ async def test_build_metrics_message_write_limit(state: RuntimeState) -> None:
 @pytest.mark.asyncio
 async def test_build_metrics_message_watchdog_enabled(state: RuntimeState) -> None:
     """_build_metrics_message adds watchdog interval prop when enabled (lines 63-64)."""
-    from mcubridge.metrics import _build_metrics_message
+    from mcubridge import metrics as metrics_mod
     from mcubridge.config.const import PROP_KEY_WATCHDOG_INTERVAL
 
     state.watchdog_enabled = True
     state.watchdog_interval = 30.0
     snapshot = state.build_metrics_snapshot()
-    msg = _build_metrics_message(state, snapshot, expiry_seconds=60.0)
+    fn = getattr(metrics_mod, "_build_metrics_message")
+    msg = fn(state, snapshot, expiry_seconds=60.0)
     props = {p.key: p.value for p in msg.user_properties}
     assert PROP_KEY_WATCHDOG_INTERVAL in props
 
@@ -377,23 +385,26 @@ def test_get_ssl_context_missing_cafile(cfg: RuntimeConfig, tmp_path: Path) -> N
 
     cfg.cloud_tls = True
     cfg.cloud_cafile = str(tmp_path / "nonexistent_ca.pem")
-    with pytest.raises(RuntimeError, match="TLS setup failed"):
+    with pytest.raises(RuntimeError, match="Cloud TLS CA file missing"):
         get_ssl_context(cfg)
 
 
 # ==============================================================================
 # scripts/mcubridge_file_push.py — error paths (lines 36-38, 40, 65, 75, 88)
-# scripts/mcubridge_led_control.py — (lines 33-35, 61)
-# scripts/mcubridge_rotate_credentials.py — (lines 25-27, 35-36)
 # ==============================================================================
+
+_script_path = Path(__file__).parent.parent / "scripts" / "mcubridge_file_push.py"
+_spec = importlib.util.spec_from_file_location("mcubridge_file_push", str(_script_path))
+assert _spec is not None and _spec.loader is not None
+mcubridge_file_push = importlib.util.module_from_spec(_spec)
+sys.modules["mcubridge_file_push"] = mcubridge_file_push
+_spec.loader.exec_module(mcubridge_file_push)
 
 
 def test_file_push_source_not_exist(tmp_path: Path) -> None:
     """main() exits with code 2 when source does not exist (lines 54-56)."""
-    from mcubridge.scripts import mcubridge_file_push
-
     with patch("sys.argv", ["file_push", str(tmp_path / "nonexistent.bin"), "target/path"]):
-        with patch("mcubridge.scripts.mcubridge_file_push.load_runtime_config"):
+        with patch("mcubridge_file_push.load_runtime_config"):
             with pytest.raises(SystemExit) as exc_info:
                 mcubridge_file_push.main()
     assert exc_info.value.code == 2
@@ -401,10 +412,8 @@ def test_file_push_source_not_exist(tmp_path: Path) -> None:
 
 def test_file_push_source_is_dir(tmp_path: Path) -> None:
     """main() exits with code 2 when source is a directory (line 54)."""
-    from mcubridge.scripts import mcubridge_file_push
-
     with patch("sys.argv", ["file_push", str(tmp_path), "target/path"]):
-        with patch("mcubridge.scripts.mcubridge_file_push.load_runtime_config"):
+        with patch("mcubridge_file_push.load_runtime_config"):
             with pytest.raises(SystemExit) as exc_info:
                 mcubridge_file_push.main()
     assert exc_info.value.code == 2
@@ -412,8 +421,6 @@ def test_file_push_source_is_dir(tmp_path: Path) -> None:
 
 def test_file_push_mcu_flag(tmp_path: Path) -> None:
     """main() with --mcu flag appends 'mcu' to topic segments (line 65)."""
-    from mcubridge.scripts import mcubridge_file_push
-
     src = tmp_path / "test.bin"
     src.write_bytes(b"x" * 80)
 
@@ -423,39 +430,35 @@ def test_file_push_mcu_flag(tmp_path: Path) -> None:
         captured_topics.append(topic)
 
     with patch("sys.argv", ["file_push", str(src), "target.bin", "--mcu"]):
-        with patch("mcubridge.scripts.mcubridge_file_push.load_runtime_config") as mock_cfg:
+        with patch("mcubridge_file_push.load_runtime_config") as mock_cfg:
             mock_cfg.return_value = RuntimeConfig(topic_prefix="br", allow_non_tmp_paths=True)
-            with patch("mcubridge.scripts.mcubridge_file_push.push_file", side_effect=_push):
+            with patch("mcubridge_file_push.push_file", side_effect=_push):
                 mcubridge_file_push.main()
     assert any("mcu" in t for t in captured_topics)
 
 
 def test_file_push_large_file_hexdump(tmp_path: Path) -> None:
     """main() with large file adds '...' to hexdump (line 75)."""
-    from mcubridge.scripts import mcubridge_file_push
-
     src = tmp_path / "large.bin"
-    src.write_bytes(b"\xAB" * 200)
+    src.write_bytes(b"\xab" * 200)
 
     with patch("sys.argv", ["file_push", str(src), "target.bin"]):
-        with patch("mcubridge.scripts.mcubridge_file_push.load_runtime_config") as mock_cfg:
+        with patch("mcubridge_file_push.load_runtime_config") as mock_cfg:
             mock_cfg.return_value = RuntimeConfig(topic_prefix="br", allow_non_tmp_paths=True)
-            with patch("mcubridge.scripts.mcubridge_file_push.push_file"):
+            with patch("mcubridge_file_push.push_file"):
                 mcubridge_file_push.main()
 
 
 def test_push_file_exception_exits(tmp_path: Path) -> None:
     """push_file() exits with code 1 when gRPC raises (lines 37-38)."""
-    from mcubridge.scripts.mcubridge_file_push import push_file
-
-    with patch("mcubridge.scripts.mcubridge_file_push.Channel") as mock_chan:
+    with patch("mcubridge_file_push.Channel") as mock_chan:
         mock_chan.return_value.__enter__ = MagicMock(return_value=mock_chan.return_value)
         mock_chan.return_value.__exit__ = MagicMock(return_value=False)
         stub_mock = AsyncMock()
         stub_mock.Publish = AsyncMock(side_effect=ConnectionError("refused"))
-        with patch("mcubridge.scripts.mcubridge_file_push.LocalBridgeStub", return_value=stub_mock):
+        with patch("mcubridge_file_push.LocalBridgeStub", return_value=stub_mock):
             with pytest.raises(SystemExit) as exc_info:
-                push_file("br/file/write/test", b"data")
+                mcubridge_file_push.push_file("br/file/write/test", b"data")
     assert exc_info.value.code == 1
 
 
@@ -464,27 +467,13 @@ def test_push_file_exception_exits(tmp_path: Path) -> None:
 # ==============================================================================
 
 
-@pytest.mark.asyncio
-async def test_daemon_run_missing_serial_port(cfg: RuntimeConfig) -> None:
-    """daemon.run() raises when serial port cannot be opened (line 85-90)."""
+def test_daemon_app_version() -> None:
+    """daemon.app(["--version"]) prints version and exits."""
     from mcubridge import daemon
 
-    cfg.serial_port = "/dev/nonexistent_port_xyz"
-    with pytest.raises((OSError, Exception)):
-        async with asyncio.timeout(1.0):
-            await daemon.run(cfg)
-
-
-@pytest.mark.asyncio
-async def test_daemon_uvloop_import_missing(cfg: RuntimeConfig) -> None:
-    """daemon.run_with_uvloop() falls back gracefully if uvloop unavailable (line 123)."""
-    from mcubridge import daemon
-
-    # Patch run to prevent actual execution
-    with patch.object(daemon, "run", new=AsyncMock()):
-        with patch.dict(sys.modules, {"uvloop": None}):
-            # Should not raise ImportError
-            pass  # just validate import path exists
+    with pytest.raises(SystemExit) as exc_info:
+        daemon.app(["--version"])
+    assert exc_info.value.code == 0
 
 
 # ==============================================================================
@@ -492,15 +481,17 @@ async def test_daemon_uvloop_import_missing(cfg: RuntimeConfig) -> None:
 # ==============================================================================
 
 
-def test_configure_logging_debug_level() -> None:
-    """configure_logging sets DEBUG level correctly (lines 35-36)."""
+def test_configure_logging_debug_level(cfg: RuntimeConfig) -> None:
+    """configure_logging sets DEBUG level correctly when config.debug is True."""
     from mcubridge.config.logging import configure_logging
 
-    configure_logging(log_level="DEBUG")
+    cfg.debug = True
+    configure_logging(cfg)
 
 
-def test_configure_logging_default() -> None:
+def test_configure_logging_default(cfg: RuntimeConfig) -> None:
     """configure_logging with default INFO level."""
     from mcubridge.config.logging import configure_logging
 
-    configure_logging()
+    cfg.debug = False
+    configure_logging(cfg)

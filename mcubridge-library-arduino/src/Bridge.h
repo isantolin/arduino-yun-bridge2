@@ -146,8 +146,7 @@ class BridgeClass {
         isSynchronized() && !_shared_secret.empty() && !is_excluded;
 
     if (do_encrypt) {
-      return _sendEncryptedHelper(raw_cmd, seq, rpc::Payload::get_fields<T>(),
-                                  &packet);
+      return _sendEncryptedHelper<T>(raw_cmd, seq, packet);
     } else {
       return sendSinglePass<T>(raw_cmd, seq, packet);
     }
@@ -443,8 +442,37 @@ class BridgeClass {
   void _serialize_and_send(const rpc_pb_RpcEnvelope& env);
   [[nodiscard]] bool _sendFrameRaw(const rpc_pb_RpcEnvelope& env,
                                    uint16_t command_id);
-  bool _sendEncryptedHelper(uint16_t raw_cmd, uint16_t seq,
-                            const pb_msgdesc_t* fields, const void* packet);
+  template <typename T>
+  bool _sendEncryptedHelper(uint16_t raw_cmd, uint16_t seq, const T& packet) {
+    const pb_msgdesc_t* fields = rpc::Payload::get_fields<T>();
+    if (is_reliable_cmd(raw_cmd)) {
+      BRIDGE_ATOMIC_BLOCK {
+        if (_pending_tx_queue.full()) return false;
+        auto* buf = _tx_payload_pool.allocate();
+        if (!buf) return false;
+        pb_ostream_t out_stream =
+            pb_ostream_from_buffer(buf->data.data(), buf->data.size());
+        if (pb_encode(&out_stream, fields, &packet)) {
+          _pending_tx_queue.push_back(
+              {raw_cmd, seq, buf, out_stream.bytes_written});
+          if (!_fsm.isAwaitingAck()) _flushPendingTxQueue();
+          return true;
+        }
+        _tx_payload_pool.release(buf);
+        return false;
+      }
+    } else {
+      pb_ostream_t out_stream = pb_ostream_from_buffer(_transient_buffer.data(),
+                                                       rpc::MAX_PAYLOAD_SIZE);
+      if (pb_encode(&out_stream, fields, &packet)) {
+        _transmit(raw_cmd, seq,
+                  etl::span<const uint8_t>(_transient_buffer.data(),
+                                           out_stream.bytes_written));
+        return true;
+      }
+      return false;
+    }
+  }
 
   void _clearPendingTxQueue();
   void _flushPendingTxQueue();

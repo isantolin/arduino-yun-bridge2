@@ -2,6 +2,7 @@
 structures.py SSL, scripts, daemon.py. [SIL-2]"""
 
 from __future__ import annotations
+from typing import cast
 
 import asyncio
 import importlib.util
@@ -63,10 +64,12 @@ def test_mark_transport_disconnected_clears_event(state: RuntimeState) -> None:
     assert state.state == "disconnected"
 
 
+
+
 def test_mark_transport_disconnected_no_event(cfg: RuntimeConfig) -> None:
     """mark_transport_disconnected with link_sync_event=None doesn't crash."""
     s = create_runtime_state(cfg)
-    s.link_sync_event = None  # type: ignore[assignment]
+    cast(Any, s).link_sync_event = None
     s.mark_transport_disconnected()  # should not raise
     s.cleanup()
 

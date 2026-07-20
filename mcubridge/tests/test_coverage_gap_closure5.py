@@ -136,7 +136,7 @@ async def test_on_mcu_datastore_get_no_serial(cfg: RuntimeConfig, state: Runtime
     service = BridgeService(cfg, state, AsyncMock(spec=SerialTransport))
     service.serial = None
     fn = getattr(service, "_on_mcu_datastore_get")
-    res = await fn(pb.DatastoreGet(key="k1"))
+    res = await fn(1, pb.DatastoreGet(key="k1"))
     assert res is False
 
 
@@ -149,7 +149,7 @@ async def test_on_mcu_datastore_get_no_cache(cfg: RuntimeConfig, state: RuntimeS
 
     state.datastore_cache = None
     fn = getattr(service, "_on_mcu_datastore_get")
-    res = await fn(pb.DatastoreGet(key="k1"))
+    res = await fn(1, pb.DatastoreGet(key="k1"))
     assert res is True
     mock_serial.send.assert_awaited_once()
 
@@ -160,7 +160,7 @@ async def test_on_mcu_datastore_put_no_cache(cfg: RuntimeConfig, state: RuntimeS
     service = BridgeService(cfg, state, AsyncMock(spec=SerialTransport))
     state.datastore_cache = None
     fn = getattr(service, "_on_mcu_datastore_put")
-    res = await fn(pb.DatastorePut(key="k1", value=b"v1"))
+    res = await fn(1, pb.DatastorePut(key="k1", value=b"v1"))
     assert res is True
 
 
@@ -170,7 +170,7 @@ async def test_on_mcu_console_write_empty_data(cfg: RuntimeConfig, state: Runtim
     service = BridgeService(cfg, state, AsyncMock(spec=SerialTransport))
     with patch.object(service, "enqueue_cloud", new=AsyncMock()) as mock_enqueue:
         fn = getattr(service, "_on_mcu_console_write")
-        await fn(pb.ConsoleWrite(data=b""))
+        await fn(1, pb.ConsoleWrite(data=b""))
         mock_enqueue.assert_not_called()
 
 
@@ -180,6 +180,6 @@ async def test_on_mcu_mailbox_push(cfg: RuntimeConfig, state: RuntimeState) -> N
     service = BridgeService(cfg, state, AsyncMock(spec=SerialTransport))
     with patch.object(service, "enqueue_cloud", new=AsyncMock()) as mock_enqueue:
         fn = getattr(service, "_on_mcu_mailbox_push")
-        res = await fn(pb.MailboxPush(data=b"hello mailbox"))
+        res = await fn(1, pb.MailboxPush(data=b"hello mailbox"))
         assert res is True
         mock_enqueue.assert_awaited_once()

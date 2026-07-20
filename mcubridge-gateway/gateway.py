@@ -89,8 +89,11 @@ class CloudBridgeService(CloudBridgeBase):
                         device_id,
                         envelope.command_response.status_code,
                     )
-        except (asyncio.CancelledError, OSError):
-            pass
+        except asyncio.CancelledError:
+            logger.info("Session cancelled for device: %s", device_id)
+            raise
+        except OSError as exc:
+            logger.warning("Network OS error for device %s: %s", device_id, exc)
         finally:
             logger.info("Device disconnected: %s", device_id)
             self.gateway.connections.pop(device_id, None)

@@ -179,48 +179,13 @@ class BridgeService:
             if s != Status.ACK:
                 self.mcu_registry[s.value] = functools.partial(self._handle_mcu_status, s)
 
-    def _wrap_mcu_handler(self, handler: Callable[..., Any]) -> McuHandler:
-        import inspect
-
-        sig = inspect.signature(handler)
-        params = list(sig.parameters.values())
-
-        if len(params) == 0:
-
-            async def wrapper_0(_seq: int, _payload: Any) -> Any:
-                return await handler()
-
-            return wrapper_0
-
-        elif len(params) == 1:
-            param = params[0]
-            if param.name == "seq" or param.annotation is int:
-
-                async def wrapper_seq(seq: int, _payload: Any) -> Any:
-                    return await handler(seq)
-
-                return wrapper_seq
-            else:
-
-                async def wrapper_payload(_seq: int, payload: Any) -> Any:
-                    return await handler(payload)
-
-                return wrapper_payload
-
-        else:
-
-            async def wrapper_2(seq: int, payload: Any) -> Any:
-                return await handler(seq, payload)
-
-            return wrapper_2
-
     def _setup_mcu_registry(self, serial: SerialTransport) -> dict[int, McuHandler]:
         registry: dict[int, McuHandler] = {}
         for attr_name in dir(self):
             attr = getattr(self, attr_name)
             if hasattr(attr, "_mcu_command_id"):
                 cmd_id = getattr(attr, "_mcu_command_id")
-                registry[cmd_id] = self._wrap_mcu_handler(attr)
+                registry[cmd_id] = attr
 
         registry[Command.CMD_DIGITAL_READ.value] = lambda _seq, _payload: serial.send(
             Status.NOT_IMPLEMENTED.value,
@@ -567,18 +532,18 @@ class BridgeService:
     # --- Business Logic Implementation ---
 
     @mcu_handler(Command.CMD_XON)
-    async def _handle_mcu_xon(self) -> None:
+    async def _handle_mcu_xon(self, seq: int, payload: Any) -> None:
         self.state.mcu_is_paused = False
         self.state.serial_tx_allowed.set()
         await self._flush_console_queue()
 
     @mcu_handler(Command.CMD_XOFF)
-    async def _handle_mcu_xoff(self) -> None:
+    async def _handle_mcu_xoff(self, seq: int, payload: Any) -> None:
         self.state.mcu_is_paused = True
         self.state.serial_tx_allowed.clear()
 
     @mcu_handler(Command.CMD_CONSOLE_WRITE)
-    async def _on_mcu_console_write(self, p: pb.ConsoleWrite) -> None:
+    async def _on_mcu_console_write(self, seq: int, p: pb.ConsoleWrite) -> None:
         if p.data:
             await self.enqueue_cloud(
                 create_queued_publish(
@@ -589,14 +554,14 @@ class BridgeService:
             )
 
     @mcu_handler(Command.CMD_DATASTORE_PUT)
-    async def _on_mcu_datastore_put(self, p: pb.DatastorePut) -> bool:
+    async def _on_mcu_datastore_put(self, seq: int, p: pb.DatastorePut) -> bool:
         if self.state.datastore_cache is not None:
             await self.state.datastore_cache.set(p.key, p.value)
         await self._publish_datastore_value(p.key, p.value)
         return True
 
     @mcu_handler(Command.CMD_DATASTORE_GET)
-    async def _on_mcu_datastore_get(self, p: pb.DatastoreGet) -> bool:
+    async def _on_mcu_datastore_get(self, seq: int, p: pb.DatastoreGet) -> bool:
         serial = self.serial
         if not serial:
             return False
@@ -609,7 +574,7 @@ class BridgeService:
         return bool(res)
 
     @mcu_handler(Command.CMD_MAILBOX_PUSH)
-    async def _on_mcu_mailbox_push(self, p: pb.MailboxPush) -> bool:
+    async def _on_mcu_mailbox_push(self, seq: int, p: pb.MailboxPush) -> bool:
         await self.state.mailbox_incoming_queue.append(p.data)
         await self.enqueue_cloud(
             create_queued_publish(get_topic_for_message(self.state.cloud_topic_prefix, p) or "", p.data)
@@ -617,7 +582,7 @@ class BridgeService:
         return True
 
     @mcu_handler(Command.CMD_MAILBOX_AVAILABLE)
-    async def _on_mcu_mailbox_available(self, seq: int) -> bool:
+    async def _on_mcu_mailbox_available(self, seq: int, p: Any) -> bool:
         serial = self.serial
         if not serial:
             return False
@@ -629,7 +594,7 @@ class BridgeService:
         return bool(res)
 
     @mcu_handler(Command.CMD_MAILBOX_READ)
-    async def _on_mcu_mailbox_read(self, seq: int) -> bool:
+    async def _on_mcu_mailbox_read(self, seq: int, p: Any) -> bool:
         serial = self.serial
         if not serial:
             return False
@@ -645,7 +610,7 @@ class BridgeService:
         return bool(res)
 
     @mcu_handler(Command.CMD_MAILBOX_PROCESSED)
-    async def _on_mcu_mailbox_processed(self, p: pb.MailboxProcessed) -> None:
+    async def _on_mcu_mailbox_processed(self, seq: int, p: pb.MailboxProcessed) -> None:
         await self.enqueue_cloud(
             create_queued_publish(
                 topic_name=get_topic_for_message(self.state.cloud_topic_prefix, p) or "",
@@ -655,7 +620,7 @@ class BridgeService:
         )
 
     @mcu_handler(Command.CMD_FILE_WRITE)
-    async def _on_mcu_file_write(self, p: pb.FileWrite) -> bool:
+    async def _on_mcu_file_write(self, seq: int, p: pb.FileWrite) -> bool:
         serial = self.serial
         if not serial:
             return False
@@ -667,7 +632,7 @@ class BridgeService:
         return bool(res)
 
     @mcu_handler(Command.CMD_FILE_READ)
-    async def _on_mcu_file_read(self, p: pb.FileRead) -> None:
+    async def _on_mcu_file_read(self, seq: int, p: pb.FileRead) -> None:
         serial = self.serial
         if not serial:
             return
@@ -683,7 +648,7 @@ class BridgeService:
         await serial.send(Status.ERROR.value, pb.GenericResponse(message="Read failed"))
 
     @mcu_handler(Command.CMD_FILE_REMOVE)
-    async def _on_mcu_file_remove(self, p: pb.FileRemove) -> bool:
+    async def _on_mcu_file_remove(self, seq: int, p: pb.FileRemove) -> bool:
         serial = self.serial
         if not serial:
             return False
@@ -696,7 +661,7 @@ class BridgeService:
         return bool(res)
 
     @mcu_handler(Command.CMD_FILE_READ_RESP)
-    async def _on_mcu_file_read_resp(self, p: pb.FileReadResponse) -> bool:
+    async def _on_mcu_file_read_resp(self, seq: int, p: pb.FileReadResponse) -> bool:
         if not self._pending_mcu_read:
             return False
         if p.content:
@@ -706,7 +671,7 @@ class BridgeService:
         return True
 
     @mcu_handler(Command.CMD_PROCESS_RUN_ASYNC)
-    async def _on_mcu_process_run(self, p: pb.ProcessRunAsync) -> bool:
+    async def _on_mcu_process_run(self, seq: int, p: pb.ProcessRunAsync) -> bool:
         serial = self.serial
         if not serial:
             return False
@@ -722,7 +687,7 @@ class BridgeService:
         return False
 
     @mcu_handler(Command.CMD_PROCESS_POLL)
-    async def _on_mcu_process_poll(self, p: pb.ProcessPoll) -> bool:
+    async def _on_mcu_process_poll(self, seq: int, p: pb.ProcessPoll) -> bool:
         serial = self.serial
         if not serial:
             return False
@@ -746,7 +711,7 @@ class BridgeService:
         )
 
     @mcu_handler(Command.CMD_SPI_TRANSFER_RESP)
-    async def _on_mcu_spi_resp(self, p: pb.SpiTransferResponse) -> None:
+    async def _on_mcu_spi_resp(self, seq: int, p: pb.SpiTransferResponse) -> None:
         await self.enqueue_cloud(
             create_queued_publish(get_topic_for_message(self.state.cloud_topic_prefix, p) or "", p.data)
         )
@@ -763,15 +728,15 @@ class BridgeService:
             logger.error("Failed to decode MCU ACK packet", error=e)
 
     @mcu_handler(Command.CMD_DIGITAL_READ_RESP)
-    async def _on_mcu_digital_read_resp(self, p: pb.DigitalReadResponse) -> None:
+    async def _on_mcu_digital_read_resp(self, seq: int, p: pb.DigitalReadResponse) -> None:
         await self._on_pin_resp(p, Topic.DIGITAL, self.state.pending_digital_reads)
 
     @mcu_handler(Command.CMD_ANALOG_READ_RESP)
-    async def _on_mcu_analog_read_resp(self, p: pb.AnalogReadResponse) -> None:
+    async def _on_mcu_analog_read_resp(self, seq: int, p: pb.AnalogReadResponse) -> None:
         await self._on_pin_resp(p, Topic.ANALOG, self.state.pending_analog_reads)
 
     @mcu_handler(Command.CMD_PROCESS_KILL)
-    async def _on_mcu_process_kill(self, p: pb.ProcessKill) -> None:
+    async def _on_mcu_process_kill(self, seq: int, p: pb.ProcessKill) -> None:
         await self._stop_process(p.pid)
 
     async def _handle_mcu_status(self, status: Status, seq_id: int, payload: bytes | ProtobufMessage) -> None:

@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from typing import Iterator
+from typing import Any, Iterator, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -59,7 +59,7 @@ async def test_runtime_on_mcu_process_poll_no_serial(cfg: RuntimeConfig, state: 
     service.serial = None
     poll_req = pb.ProcessPoll(pid=100)
     fn = getattr(service, "_on_mcu_process_poll")
-    res = await fn(poll_req)
+    res = await fn(1, poll_req)
     assert res is False
 
 
@@ -206,7 +206,7 @@ async def test_serial_correlate_frame_bad_ack_payload(cfg: RuntimeConfig, state:
     """_correlate_frame handles invalid protobuf ACK payload (lines 262-263)."""
     transport = SerialTransport(cfg, state, None)
     pending = PendingCommand(command_id=Command.CMD_GET_VERSION.value)
-    transport._current = pending  # type: ignore[attr-defined]
+    cast(Any, transport)._current = pending
 
     # Correlate ACK with invalid bytes payload
     fn = getattr(transport, "_correlate_frame")

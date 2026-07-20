@@ -6,7 +6,7 @@ from __future__ import annotations
 import asyncio
 import time
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Iterator, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -395,9 +395,9 @@ async def test_correlate_frame_already_resolved(cfg: RuntimeConfig, state: Runti
     transport = SerialTransport(cfg, state, None)
     pending = PendingCommand(command_id=Command.CMD_GET_VERSION.value)
     pending.mark_success(b"already")
-    transport._current = pending  # type: ignore[attr-defined]
+    cast(Any, transport)._current = pending
 
-    transport._correlate_frame(Status.ACK.value, b"")  # type: ignore[attr-defined]
+    cast(Any, transport)._correlate_frame(Status.ACK.value, b"")
     # success remains True (not reset)
     assert pending.success is True
 
@@ -408,10 +408,10 @@ async def test_correlate_frame_ack_with_protobuf_payload(cfg: RuntimeConfig, sta
     transport = SerialTransport(cfg, state, None)
     cmd_id = Command.CMD_GET_VERSION.value
     pending = PendingCommand(command_id=cmd_id, expected_resp_ids=set())
-    transport._current = pending  # type: ignore[attr-defined]
+    cast(Any, transport)._current = pending
 
     ack_msg = pb.AckPacket(command_id=cmd_id)
-    transport._correlate_frame(Status.ACK.value, ack_msg)  # type: ignore[attr-defined]
+    cast(Any, transport)._correlate_frame(Status.ACK.value, ack_msg)
     assert pending.success is True
 
 
@@ -423,10 +423,10 @@ async def test_correlate_frame_success_status_code(cfg: RuntimeConfig, state: Ru
     transport = SerialTransport(cfg, state, None)
     cmd_id = Command.CMD_GET_VERSION.value
     pending = PendingCommand(command_id=cmd_id, expected_resp_ids=set())
-    transport._current = pending  # type: ignore[attr-defined]
+    cast(Any, transport)._current = pending
 
     success_code = next(iter(SERIAL_SUCCESS_STATUS_CODES))
-    transport._correlate_frame(success_code, b"")  # type: ignore[attr-defined]
+    cast(Any, transport)._correlate_frame(success_code, b"")
     assert pending.success is True
 
 
@@ -434,12 +434,12 @@ async def test_correlate_frame_success_status_code(cfg: RuntimeConfig, state: Ru
 async def test_check_baudrate_fallback_same_baud(cfg: RuntimeConfig, state: RuntimeState) -> None:
     """_check_baudrate_fallback: baud == safe_baud skips negotiate (line 297)."""
     transport = SerialTransport(cfg, state, None)
-    transport._consecutive_crc_errors = 0  # type: ignore[attr-defined]
-    transport.config.serial_fallback_threshold = 1  # type: ignore[attr-defined]
+    cast(Any, transport)._consecutive_crc_errors = 0
+    cast(Any, transport.config).serial_fallback_threshold = 1
     # Set safe_baud == serial_baud to exercise the != guard
-    transport.config.serial_safe_baud = transport.config.serial_baud  # type: ignore[attr-defined]
+    cast(Any, transport.config).serial_safe_baud = transport.config.serial_baud
     with patch.object(transport, "_negotiate_baudrate", new_callable=AsyncMock) as mock_neg:
-        await transport._check_baudrate_fallback()  # type: ignore[attr-defined]
+        await cast(Any, transport)._check_baudrate_fallback()
         mock_neg.assert_not_called()
 
 
@@ -471,7 +471,7 @@ async def test_negotiate_baudrate_future_already_done(cfg: RuntimeConfig, state:
 
     with patch.object(transport, "send_raw", new_callable=AsyncMock, return_value=True):
         with patch.object(loop, "create_future", return_value=future):
-            result = await transport._negotiate_baudrate(115200)  # type: ignore[attr-defined]
+            result = await cast(Any, transport)._negotiate_baudrate(115200)
     assert result is True
 
 
@@ -490,7 +490,7 @@ async def test_handle_capabilities_resp_sets_future(
     """handle_capabilities_resp sets the capabilities future result (lines 382-384)."""
     loop = asyncio.get_running_loop()
     future: asyncio.Future[Any] = loop.create_future()
-    handshake_manager._capabilities_future = future  # type: ignore[attr-defined]
+    cast(Any, handshake_manager)._capabilities_future = future
 
     result = await handshake_manager.handle_capabilities_resp(1, b"")
     assert result is True
@@ -505,7 +505,7 @@ async def test_handle_capabilities_resp_future_already_done(
     loop = asyncio.get_running_loop()
     future: asyncio.Future[Any] = loop.create_future()
     future.set_result(b"done")
-    handshake_manager._capabilities_future = future  # type: ignore[attr-defined]
+    cast(Any, handshake_manager)._capabilities_future = future
 
     result = await handshake_manager.handle_capabilities_resp(1, b"extra")
     assert result is True
@@ -516,7 +516,7 @@ async def test_handle_capabilities_resp_future_already_done(
 async def test_parse_capabilities_with_protobuf(handshake_manager: SerialHandshakeManager, state: RuntimeState) -> None:
     """_parse_capabilities accepts ProtobufMessage directly (line 389-390)."""
     caps = pb.Capabilities()
-    handshake_manager._parse_capabilities(caps)  # type: ignore[attr-defined]
+    cast(Any, handshake_manager)._parse_capabilities(caps)
     assert state.mcu_capabilities is not None
 
 
@@ -525,7 +525,7 @@ async def test_parse_capabilities_invalid(
     handshake_manager: SerialHandshakeManager,
 ) -> None:
     """_parse_capabilities with invalid bytes logs error and doesn't raise."""
-    handshake_manager._parse_capabilities(b"\xff\xff\xff")  # type: ignore[attr-defined]
+    cast(Any, handshake_manager)._parse_capabilities(b"\xff\xff\xff")
 
 
 @pytest.mark.asyncio
@@ -547,7 +547,7 @@ async def test_wait_for_link_sync_already_synchronized(
     """_wait_for_link_sync_confirmation skips wait if already synchronized (line 462-464)."""
     state.mark_synchronized()
     nonce = b"\x01" * 16
-    result = await handshake_manager._wait_for_link_sync_confirmation(nonce)  # type: ignore[attr-defined]
+    result = await cast(Any, handshake_manager)._wait_for_link_sync_confirmation(nonce)
     assert result is True
 
 
@@ -556,9 +556,9 @@ async def test_wait_for_link_sync_already_synchronized(
 async def test_wait_for_link_sync_timeout(handshake_manager: SerialHandshakeManager, state: RuntimeState) -> None:
     """_wait_for_link_sync_confirmation times out and returns False."""
     # Not synchronized, event never set → timeout with minimal timing
-    handshake_manager._timing.response_timeout_ms = 100  # type: ignore[attr-defined]
+    cast(Any, handshake_manager)._timing.response_timeout_ms = 100
     nonce = b"\x02" * 16
-    result = await handshake_manager._wait_for_link_sync_confirmation(nonce)  # type: ignore[attr-defined]
+    result = await cast(Any, handshake_manager)._wait_for_link_sync_confirmation(nonce)
     assert result is False
 
 
@@ -581,8 +581,8 @@ async def test_synchronize_attempt_fault_already_set(
     """Fault race guard: if FSM is already FAULT after sync, return False (line 207-208)."""
     from mcubridge.services.handshake import HandshakeState
 
-    handshake_manager._timing.response_timeout_ms = 100  # type: ignore[attr-defined]
-    send_frame: AsyncMock = handshake_manager._send_frame  # type: ignore[attr-defined]
+    cast(Any, handshake_manager)._timing.response_timeout_ms = 100
+    send_frame: AsyncMock = cast(Any, handshake_manager)._send_frame
 
     call_count = 0
 
@@ -591,12 +591,12 @@ async def test_synchronize_attempt_fault_already_set(
         call_count += 1
         if call_count >= 2:
             # Simulate MCU response that transitions to FAULT concurrently
-            handshake_manager._set_fsm_state(HandshakeState.FAULT)  # type: ignore[attr-defined]
+            cast(Any, handshake_manager)._set_fsm_state(HandshakeState.FAULT)
         return True
 
     send_frame.side_effect = _send_and_fault
 
-    result = await handshake_manager._synchronize_attempt()  # type: ignore[attr-defined]
+    result = await cast(Any, handshake_manager)._synchronize_attempt()
     assert result is False
 
 
@@ -611,7 +611,7 @@ async def test_handle_handshake_success_resets_streak(
 
     # Patch _publish_handshake_event to avoid state snapshot issues
     with patch.object(handshake_manager, "_publish_handshake_event", new_callable=AsyncMock):
-        await handshake_manager._handle_handshake_success()  # type: ignore[attr-defined]
+        await cast(Any, handshake_manager)._handle_handshake_success()
     assert state.handshake_failure_streak == 0
     assert state.handshake_successes == 1
 
@@ -622,7 +622,7 @@ async def test_fetch_capabilities_send_fails(
     handshake_manager: SerialHandshakeManager,
 ) -> None:
     """_fetch_capabilities returns False when send_frame returns False."""
-    send_frame: AsyncMock = handshake_manager._send_frame  # type: ignore[attr-defined]
+    send_frame: AsyncMock = cast(Any, handshake_manager)._send_frame
     send_frame.return_value = False
 
     # Patch tenacity to stop after 1 attempt (prevent long retry loop)
@@ -632,7 +632,7 @@ async def test_fetch_capabilities_send_fails(
         "mcubridge.services.handshake.tenacity.stop_after_attempt",
         return_value=_tenacity.stop_after_attempt(1),
     ):
-        result = await handshake_manager._fetch_capabilities()  # type: ignore[attr-defined]
+        result = await cast(Any, handshake_manager)._fetch_capabilities()
     assert result is False
 
 
@@ -661,7 +661,7 @@ async def test_handle_link_sync_resp_rate_limited(
     """Rate limiting rejects LINK_SYNC_RESP (lines 252-263)."""
     import os
 
-    handshake_manager._config.serial_handshake_min_interval = 60.0  # type: ignore[attr-defined]
+    cast(Any, handshake_manager)._config.serial_handshake_min_interval = 60.0
     state.handshake_rate_until = time.monotonic() + 60.0
     nonce = os.urandom(16)
     state.link_handshake_nonce = nonce
@@ -678,7 +678,7 @@ async def test_synchronize_nonce_already_cleared_no_failure(
     handshake_manager: SerialHandshakeManager, state: RuntimeState
 ) -> None:
     """_synchronize_attempt: when nonce cleared before timeout, skip failure report (line 227)."""
-    handshake_manager._timing.response_timeout_ms = 100  # type: ignore[attr-defined]
+    cast(Any, handshake_manager)._timing.response_timeout_ms = 100
 
     call_count = 0
 
@@ -690,9 +690,9 @@ async def test_synchronize_nonce_already_cleared_no_failure(
             state.link_handshake_nonce = None
         return True
 
-    handshake_manager._send_frame.side_effect = _send_reset_and_clear  # type: ignore[attr-defined]
+    cast(Any, handshake_manager)._send_frame.side_effect = _send_reset_and_clear
 
-    result = await handshake_manager._synchronize_attempt()  # type: ignore[attr-defined]
+    result = await cast(Any, handshake_manager)._synchronize_attempt()
     assert result is False  # timed out or fault
 
 
@@ -702,7 +702,7 @@ async def test_synchronize_attempt_success_state_transition(
     handshake_manager: SerialHandshakeManager, state: RuntimeState
 ) -> None:
     """_synchronize_attempt succeeds when link_sync_event is set in time."""
-    handshake_manager._timing.response_timeout_ms = 500  # type: ignore[attr-defined]
+    cast(Any, handshake_manager)._timing.response_timeout_ms = 500
 
     sent_nonces: list[bytes] = []
 
@@ -715,7 +715,7 @@ async def test_synchronize_attempt_success_state_transition(
             state.link_sync_event.set()
         return True
 
-    handshake_manager._send_frame.side_effect = _send_and_complete  # type: ignore[attr-defined]
+    cast(Any, handshake_manager)._send_frame.side_effect = _send_and_complete
 
-    result = await handshake_manager._synchronize_attempt()  # type: ignore[attr-defined]
+    result = await cast(Any, handshake_manager)._synchronize_attempt()
     assert result is True

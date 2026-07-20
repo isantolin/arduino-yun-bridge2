@@ -144,11 +144,125 @@ void test_surgical_tasks_flow() {
   ba.invokeTimerTask();
 }
 
+void test_surgical_send_fail_branches() {
+  static BiStream stream;
+  stream.clear();
+  reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
+
+  // 1. _flushPendingTxQueue early return: tx disabled
+  // Enqueue a frame then disable TX — flush should abort (line 591 branch)
+  ba.setTxEnabled(false);
+  ba.clearPendingTxQueue();
+  // Nothing should crash
+  ba.setTxEnabled(true);
+
+  // 2. _handleSetBaudrate: same baudrate guard (line 667 branch)
+  ba.setPendingBaudrate(115200U);
+  {
+    rpc_pb_SetBaudratePacket msg = rpc_pb_SetBaudratePacket_init_default;
+    msg.baudrate = 115200U;  // same as _pending_baudrate → early return
+    ba.dispatch([&]() {
+      rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
+      env.version = rpc::PROTOCOL_VERSION;
+      env.command_id =
+          static_cast<uint16_t>(rpc::CommandId::CMD_SET_BAUDRATE);
+      env.sequence_id = 10;
+      env.which_payload_type =
+          rpc_pb_RpcEnvelope_set_baudrate_packet_tag;
+      env.payload_type.set_baudrate_packet = msg;
+      return env;
+    }());
+    // Also zero baudrate → early return
+    msg.baudrate = 0U;
+    ba.dispatch([&]() {
+      rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
+      env.version = rpc::PROTOCOL_VERSION;
+      env.command_id =
+          static_cast<uint16_t>(rpc::CommandId::CMD_SET_BAUDRATE);
+      env.sequence_id = 11;
+      env.which_payload_type =
+          rpc_pb_RpcEnvelope_set_baudrate_packet_tag;
+      env.payload_type.set_baudrate_packet = msg;
+      return env;
+    }());
+  }
+
+  // 3. _handleEnterBootloader: wrong magic (line 673 branch)
+  {
+    rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
+    env.version = rpc::PROTOCOL_VERSION;
+    env.command_id =
+        static_cast<uint16_t>(rpc::CommandId::CMD_ENTER_BOOTLOADER);
+    env.sequence_id = 12;
+    env.which_payload_type = rpc_pb_RpcEnvelope_enter_bootloader_tag;
+    env.payload_type.enter_bootloader.magic = 0xDEAD;  // wrong magic
+    ba.dispatch(env);
+  }
+
+  // 4. CMD_DIGITAL_READ / CMD_ANALOG_READ send-fail (lines 703-704, 722-723)
+  // Disable TX so send() returns false → emitStatus(STATUS_ERROR) branch
+  ba.setTxEnabled(false);
+  {
+    // CMD_DIGITAL_READ with valid pin — send will fail
+    rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
+    env.version = rpc::PROTOCOL_VERSION;
+    env.command_id =
+        static_cast<uint16_t>(rpc::CommandId::CMD_DIGITAL_READ);
+    env.sequence_id = 20;
+    env.which_payload_type = rpc_pb_RpcEnvelope_pin_read_tag;
+    env.payload_type.pin_read.pin = 0U;  // valid pin
+    ba.dispatch(env);
+  }
+  {
+    // CMD_ANALOG_READ with valid pin — send will fail
+    rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
+    env.version = rpc::PROTOCOL_VERSION;
+    env.command_id =
+        static_cast<uint16_t>(rpc::CommandId::CMD_ANALOG_READ);
+    env.sequence_id = 21;
+    env.which_payload_type = rpc_pb_RpcEnvelope_pin_read_tag;
+    env.payload_type.pin_read.pin = 0U;  // valid pin
+    ba.dispatch(env);
+  }
+  ba.setTxEnabled(true);
+
+  // 5. _handleSetPinMode with unknown mode (line 687 branch)
+  {
+    rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
+    env.version = rpc::PROTOCOL_VERSION;
+    env.command_id =
+        static_cast<uint16_t>(rpc::CommandId::CMD_SET_PIN_MODE);
+    env.sequence_id = 22;
+    env.which_payload_type = rpc_pb_RpcEnvelope_pin_mode_tag;
+    // Use a mode value not in the lookup table
+    env.payload_type.pin_mode.mode =
+        static_cast<rpc_pb_PinModeType>(0xFF);
+    env.payload_type.pin_mode.pin = 0U;
+    ba.dispatch(env);
+  }
+
+  // 6. _handleLinkSync with empty shared secret (line 842 false branch)
+  ba.clearSharedSecret();
+  {
+    rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
+    env.version = rpc::PROTOCOL_VERSION;
+    env.command_id =
+        static_cast<uint16_t>(rpc::CommandId::CMD_LINK_SYNC);
+    env.sequence_id = 30;
+    env.which_payload_type = rpc_pb_RpcEnvelope_link_sync_tag;
+    env.payload_type.link_sync.nonce.size = 16U;
+    ba.dispatch(env);
+  }
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_surgical_bridge_errors);
   RUN_TEST(test_surgical_fsm_resets);
   RUN_TEST(test_surgical_security_failures);
   RUN_TEST(test_surgical_tasks_flow);
+  RUN_TEST(test_surgical_send_fail_branches);
   return UNITY_END();
 }

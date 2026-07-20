@@ -397,6 +397,7 @@ class SerialTransport:
 
         try:
             await self.serial.write(encoded)
+            await self.serial.drain()
             self.state.metrics.serial_bytes_sent.inc(len(encoded))
             self.state.metrics.serial_frames_sent.inc()
             return True

@@ -660,7 +660,7 @@ void BridgeClass::_handleAnalogRead(const bridge::router::CommandContext& ctx,
   // `m.pin < ANALOG_PINS` as [unsignedLessThanZero] when ANALOG_PINS == 0
   // (non-AVR/SAMD fallback target).  The preprocessor guard ensures cppcheck
   // only sees the `emitStatus` path on the fallback configuration.
-#if defined(ARDUINO_ARCH_AVR) || defined(ARDUINO_ARCH_SAMD)
+#if defined(ARDUINO_ARCH_AVR) || defined(ARDUINO_ARCH_SAMD) || defined(BRIDGE_HOST_TEST)
   if (m.pin < bridge::config::ANALOG_PINS) {
     rpc_pb_AnalogReadResponse resp = rpc_pb_AnalogReadResponse_init_default;
     resp.value = static_cast<uint32_t>(::analogRead(m.pin));
@@ -932,28 +932,18 @@ void BridgeClass::signalXon() { (void)sendFrame(rpc::CommandId::CMD_XON); }
 bool BridgeClass::_decodePayload(const bridge::router::CommandContext& ctx,
                                  const pb_msgdesc_t* fields, void* dest,
                                  pb_size_t expected_tag, size_t struct_size) {
-  // [SIL-2/H-3] Both branches now use pb_decode_noinit, which is the only
-  // safe, standard-conforming way to deserialise a Nanopb message from a
-  // byte buffer. The previous 'else' branch used reinterpret_cast + copy_n,
-  // which is UB in C++17 and could misfire on targets with different struct
-  // padding (e.g. SAMD/ESP32 vs AVR).
-  const uint8_t* src = nullptr;
-  size_t src_len = 0U;
   if (ctx.envelope->which_payload_type ==
       rpc_pb_RpcEnvelope_encrypted_payload_with_tag_tag) {
-    src = ctx.envelope->payload_type.encrypted_payload_with_tag.bytes;
-    src_len = ctx.envelope->payload_type.encrypted_payload_with_tag.size;
-  } else if (ctx.envelope->which_payload_type == expected_tag) {
-    // The expected typed-union member is serialised by Nanopb at the start
-    // of the union. Extract the bytes from the first member (always present).
-    src = ctx.envelope->payload_type.encrypted_payload_with_tag.bytes;
-    src_len = ctx.envelope->payload_type.encrypted_payload_with_tag.size;
-  } else {
-    return false;
+    const uint8_t* src = ctx.envelope->payload_type.encrypted_payload_with_tag.bytes;
+    size_t src_len = ctx.envelope->payload_type.encrypted_payload_with_tag.size;
+    pb_istream_t stream = pb_istream_from_buffer(src, src_len);
+    return pb_decode_noinit(&stream, fields, dest);
   }
-  (void)struct_size;  // retained in signature for API stability
-  pb_istream_t stream = pb_istream_from_buffer(src, src_len);
-  return pb_decode_noinit(&stream, fields, dest);
+  if (ctx.envelope->which_payload_type == expected_tag) {
+    std::memcpy(dest, &ctx.envelope->payload_type, struct_size);
+    return true;
+  }
+  return false;
 }
 
 bool BridgeClass::_sendEncryptedHelper(uint16_t raw_cmd, uint16_t seq,

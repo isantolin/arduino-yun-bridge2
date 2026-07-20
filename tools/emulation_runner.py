@@ -173,7 +173,7 @@ def run_emulation(
             "-d",
             "-d",
             f"PTY,link={SOCAT_PORT0},raw,echo=0",
-            f"EXEC:{firmware_path.absolute()}",
+            f"EXEC:{firmware_path.absolute()},pty,raw,echo=0",
         ],
         stderr=subprocess.PIPE,
         bufsize=0,

@@ -527,7 +527,7 @@ class BridgeService:
             )
 
         if route := parse_topic(self.state.cloud_topic_prefix, request.topic):
-            if route.topic != Topic.SYSTEM:
+            if route.topic in (Topic.DIGITAL, Topic.ANALOG, Topic.CONSOLE, Topic.SPI):
                 try:
                     async with asyncio.timeout(DEFAULT_SYNC_TIMEOUT_SECONDS):
                         await self.state.link_sync_event.wait()
@@ -1206,6 +1206,7 @@ class BridgeService:
                     ctx.exit_code = await self._terminate_process(
                         pid, ctx, grace_period=PROCESS_TERM_GRACE_PERIOD_SECONDS
                     )
+                await asyncio.sleep(60.0)
         finally:
             self._finalize_process(pid)
 

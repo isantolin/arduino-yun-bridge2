@@ -27,7 +27,7 @@ static constexpr uint8_t ANALOG_PINS = SAMD_ANALOG_PINS;
 #else
 static constexpr bool IS_AVR = false;
 static constexpr uint8_t DIGITAL_PINS = FALLBACK_MAX_PIN;
-static constexpr uint8_t ANALOG_PINS = 0;
+static constexpr uint8_t ANALOG_PINS = AVR_ANALOG_PINS;
 #endif
 
 static constexpr bool SAFE_START_PINS_ENABLED = true;

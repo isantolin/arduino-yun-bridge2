@@ -1,7 +1,7 @@
 # Arduino MCU Bridge 2
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-[![OpenWrt](https://img.shields.io/badge/OpenWrt-25.12.4-00B5E2?logo=openwrt)](https://openwrt.org/releases/25.12.4)
+[![OpenWrt](https://img.shields.io/badge/OpenWrt-25.12.5-00B5E2?logo=openwrt)](https://openwrt.org/releases/25.12.5)
 [![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/release/python-3130/)
 [![C++ Standard](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=cplusplus)](https://isocpp.org/)
 [![ETL](https://img.shields.io/badge/ETL-SIL--2%20Compliant-green)](https://www.etlcpp.com/)
@@ -102,7 +102,7 @@ uci commit mcubridge
 | Capa | Estado actual | Próximo paso controlado | Cómo se valida |
 | --- | --- | --- | --- |
 | Python (daemon en el MPU) | Base en Python 3.13.9-r2. | Mantener compatibilidad con futuras versiones. | `tox -e py313` |
-| Toolchain OpenWrt | SDK 25.12.4 (APK). | Compilación de paquetes APK. | `./1_compile.sh` |
+| Toolchain OpenWrt | SDK 25.12.5 (APK). | Compilación de paquetes APK. | `./1_compile.sh` |
 | MCU Firmware | C++17 / ETL (SIL-2). | Cobertura extrema sin STL. | `./tools/coverage_arduino.sh` |
 
 - Para personalizar el SDK durante la compilación basta pasar la versión/target como argumentos:

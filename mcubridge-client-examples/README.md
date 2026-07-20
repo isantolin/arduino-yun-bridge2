@@ -3,7 +3,7 @@
 [![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Socket](https://img.shields.io/badge/IPC-UNIX_Socket-blue?logo=linux)](https://en.wikipedia.org/wiki/Unix_domain_socket)
 [![Protobuf](https://img.shields.io/badge/Serialization-Protobuf-green?logo=protobuf)](https://protobuf.dev/)
-[![OpenWrt](https://img.shields.io/badge/OpenWrt-25.12.4-00B5E2?logo=openwrt)](https://openwrt.org/)
+[![OpenWrt](https://img.shields.io/badge/OpenWrt-25.12.5-00B5E2?logo=openwrt)](https://openwrt.org/)
 
 Este componente (`openwrt-mcu-client-python`) proporciona las herramientas para que las aplicaciones que se ejecutan en el lado Linux del Arduino MCU interactúen con el microcontrolador a través del socket UNIX expuesto por el daemon. El cliente de Python utiliza conexiones asíncronas persistentes sobre `/var/run/mcubridge.sock` y serialización mediante tramas Protobuf (`CloudQueuedPublish`).
 

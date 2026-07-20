@@ -1,6 +1,6 @@
 # Arduino MCU Bridge 2 — Copilot Instructions
 
-Arduino MCU Bridge 2 (v2.8.5) is a **SIL-2 / MIL-SPEC** communication system between Arduino MCUs and a Linux MPU (OpenWrt 25.12.4). It exposes Arduino peripherals over local IPC (UNIX domain sockets) and a Protobuf Cloud Gateway (gRPC) via a binary RPC protocol running over serial.
+Arduino MCU Bridge 2 (v2.8.5) is a **SIL-2 / MIL-SPEC** communication system between Arduino MCUs and a Linux MPU (OpenWrt 25.12.5). It exposes Arduino peripherals over local IPC (UNIX domain sockets) and a Protobuf Cloud Gateway (gRPC) via a binary RPC protocol running over serial.
 
 ## Build, Test, and Lint
 

@@ -11,7 +11,7 @@ Arduino MCU Bridge 2 is a modern, high-performance communication system between 
 *   **Python:** Main daemon (3.13.9+), `asyncio` for high-concurrency with `uvloop` integration, Protobuf, and Protobuf for all protocol-crossing structures, `cryptography` for AEAD, and protobuf bindings for payload serialization.
 *   **C++:** Arduino library (C++17), **Zero-Heap** (no STL, no `malloc`), `etl::fsm` for deterministic states, `wolfSSL` for AEAD, and Nanopb for de-bloated payload parsing (ChaCha20-Poly1305).
 *   **Safety (SIL-2):** Static allocation only, O(1) jump tables for dispatch, rigorous validation gates.
-*   **OpenWrt:** Target OS is **OpenWrt 25.12.4** (APK based).
+*   **OpenWrt:** Target OS is **OpenWrt 25.12.5** (APK based).
 *   **Communication:** Custom binary RPC over serial (COBS/R + CRC32) + AEAD encryption + Protobuf Cloud Gateway (gRPC over HTTP/3 (QUIC) with HTTP/2 fallback support) for external cloud connectivity + Local IPC over UNIX Domain Sockets. Protocol validation uses O(1) `etl::find` logic.
 
 ## Core Rules & Priorities

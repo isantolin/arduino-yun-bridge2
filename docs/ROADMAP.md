@@ -1,6 +1,6 @@
 # Roadmap
 
-> **Current Release**: v2.8.5 (OpenWrt 25.12.4 final compatible)
+> **Current Release**: v2.8.5 (OpenWrt 25.12.5 final compatible)
 
 ## Completed (Q1-Q2 2026)
 
@@ -8,7 +8,7 @@
 - **ChaCha20-Poly1305 AEAD**: Full ecosystem migration to authenticated encryption with original header preservation (Zero-Copy AD).
 - **Zero-Wrapper Architecture**: Total flattening of the Python daemon; eradicated 8 redundant component classes for a lean, direct `BridgeService`.
 - **Integrated Flow Control**: Merged `SerialFlowController` into `SerialTransport` with native `tenacity` retry support.
-- **OpenWrt 25.12.4 Support**: Hardened for the latest APK-based OpenWrt release.
+- **OpenWrt 25.12.5 Support**: Hardened for the latest APK-based OpenWrt release.
 - **100% E2E Coverage**: Restored and expanded end-to-end testing to cover all example clients.
 
 ### 2. OpenWrt 25.12 & SIL-2 Modernization (C++17)

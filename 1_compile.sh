@@ -661,12 +661,16 @@ done
 # Luego paquetes principales
 for pkg in luci-app-mcubridge mcubridge mcubridge-gateway; do
     echo "[BUILD] Building package $pkg (.apk)..."
+    PKG_PATH="package/feeds/mcubridge/$pkg"
+    if [ ! -d "$PKG_PATH" ] && [ -d "package/$pkg" ]; then
+        PKG_PATH="package/$pkg"
+    fi
     if [ "$VERBOSE" -eq 1 ]; then
-        make "package/$pkg/compile" -j$(nproc) V=s || exit 1
+        make "$PKG_PATH/compile" -j$(nproc) V=s || exit 1
     else
-        if ! make "package/$pkg/compile" -j$(nproc); then
+        if ! make "$PKG_PATH/compile" -j$(nproc); then
             echo "[RETRY] Build failed for $pkg. Rerunning with -j1 V=s to expose error details..."
-            make "package/$pkg/compile" -j1 V=s || exit 1
+            make "$PKG_PATH/compile" -j1 V=s || exit 1
         fi
     fi
 

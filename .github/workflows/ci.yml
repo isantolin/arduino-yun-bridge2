@@ -34,9 +34,10 @@ jobs:
       - name: Install protoc
         if: matrix.env == 'protocol' || matrix.env == 'typecheck' || matrix.env == 'lint' || matrix.env == 'py313' || matrix.env == 'arduino' || matrix.env == 'cppcheck'
         run: |
-          PROTOC_VERSION=35.1
+          PROTOC_TAG=36.0-rc1
+          PROTOC_VERSION=36.0-rc-1
           PROTOC_ZIP=protoc-${PROTOC_VERSION}-linux-x86_64.zip
-          curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${PROTOC_ZIP}
+          curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_TAG}/${PROTOC_ZIP}
           sudo unzip -o ${PROTOC_ZIP} -d /usr/local
           rm -f ${PROTOC_ZIP}
           protoc --version

@@ -1,3 +1,5 @@
+from pathlib import Path
+from typing import Any, cast
 import asyncio
 import logging
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -79,7 +81,7 @@ async def test_local_bridge_service_subscribe_console_exception():
 
 
 @pytest.mark.asyncio
-async def test_runtime_service_teardown_and_ipc_start(tmp_path):
+async def test_runtime_service_teardown_and_ipc_start(tmp_path: Path):
     cfg = load_runtime_config()
     cfg.cloud_enabled = False
     cfg.cloud_host = "127.0.0.1"
@@ -96,14 +98,15 @@ async def test_runtime_service_teardown_and_ipc_start(tmp_path):
     # Test cleanup exceptions handling
     mock_spool = AsyncMock()
     mock_spool.close.side_effect = OSError("Disk unmount error")
-    runtime._cloud_spool = mock_spool
+    cast(Any, runtime)._cloud_spool = mock_spool
 
-    if runtime._cloud_spool is not None:
+    spool = cast(Any, runtime)._cloud_spool
+    if spool is not None:
         try:
-            await runtime._cloud_spool.close()
+            await spool.close()
         except (Exception, OSError):
             pass
-        runtime._cloud_spool = None
+        cast(Any, runtime)._cloud_spool = None
 
     runtime.cleanup()
-    assert runtime._cloud_spool is None
+    assert cast(Any, runtime)._cloud_spool is None

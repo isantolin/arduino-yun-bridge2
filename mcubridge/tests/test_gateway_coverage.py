@@ -1,6 +1,6 @@
+from typing import Any, cast
 import asyncio
 from pathlib import Path
-import ssl
 import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -23,21 +23,15 @@ async def test_gateway_service_session_ping_and_events():
     mock_stream = AsyncMock()
     mock_stream.peer = MagicMock()
     mock_stream.peer.addr.return_value = ("127.0.0.1", 12345)
-    mock_stream.peer.cert.return_value = {
-        "subject": ((("commonName", "test-device-01"),),)
-    }
+    mock_stream.peer.cert.return_value = {"subject": ((("commonName", "test-device-01"),),)}
 
     env_ping = pb.CloudEnvelope(sequence_id=1, ping=pb.KeepalivePing())
-    env_telemetry = pb.CloudEnvelope(
-        sequence_id=2, telemetry=pb.TelemetryReport()
-    )
+    env_telemetry = pb.CloudEnvelope(sequence_id=2, telemetry=pb.TelemetryReport())
     env_event = pb.CloudEnvelope(
         sequence_id=3,
         event=pb.EventNotification(event_type="INFO", description="Test event"),
     )
-    env_response = pb.CloudEnvelope(
-        sequence_id=4, command_response=pb.CommandResponse(status_code=200)
-    )
+    env_response = pb.CloudEnvelope(sequence_id=4, command_response=pb.CommandResponse(status_code=200))
 
     mock_stream.__aiter__.return_value = [
         env_ping,
@@ -94,19 +88,19 @@ async def test_gateway_service_session_cancelled_error():
         await service.Session(mock_stream)
 
 
-def test_protobuf_gateway_ssl_context(tmp_path):
+def test_protobuf_gateway_ssl_context(tmp_path: Path):
     # No TLS
     gw_no_tls = ProtobufGateway(use_tls=False)
-    assert gw_no_tls._get_ssl_context() is None
+    assert cast(Any, gw_no_tls)._get_ssl_context() is None
 
     # TLS without cert files
     gw_no_cert = ProtobufGateway(use_tls=True)
-    assert gw_no_cert._get_ssl_context() is None
+    assert cast(Any, gw_no_cert)._get_ssl_context() is None
 
     # TLS with cert files
-    cert_file = tmp_path / "cert.pem"
-    key_file = tmp_path / "key.pem"
-    ca_file = tmp_path / "ca.pem"
+    cert_file: Path = tmp_path / "cert.pem"
+    key_file: Path = tmp_path / "key.pem"
+    ca_file: Path = tmp_path / "ca.pem"
     cert_file.write_text("dummy")
     key_file.write_text("dummy")
     ca_file.write_text("dummy")
@@ -121,14 +115,10 @@ def test_protobuf_gateway_ssl_context(tmp_path):
     with patch("ssl.create_default_context") as mock_ssl_ctx:
         mock_ctx_inst = MagicMock()
         mock_ssl_ctx.return_value = mock_ctx_inst
-        ctx = gw_tls._get_ssl_context()
+        ctx = cast(Any, gw_tls)._get_ssl_context()
         assert ctx is mock_ctx_inst
-        mock_ctx_inst.load_cert_chain.assert_called_once_with(
-            certfile=str(cert_file), keyfile=str(key_file)
-        )
-        mock_ctx_inst.load_verify_locations.assert_called_once_with(
-            cafile=str(ca_file)
-        )
+        mock_ctx_inst.load_cert_chain.assert_called_once_with(certfile=str(cert_file), keyfile=str(key_file))
+        mock_ctx_inst.load_verify_locations.assert_called_once_with(cafile=str(ca_file))
 
 
 @pytest.mark.asyncio
@@ -145,9 +135,7 @@ async def test_protobuf_gateway_run():
 
 
 def test_gateway_main():
-    with patch(
-        "sys.argv", ["gateway.py", "--no-tls", "--host", "127.0.0.1", "--port", "8443"]
-    ):
+    with patch("sys.argv", ["gateway.py", "--no-tls", "--host", "127.0.0.1", "--port", "8443"]):
         with patch("gateway.ProtobufGateway.run", new_callable=AsyncMock) as mock_run:
             main()
             mock_run.assert_called_once()

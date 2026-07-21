@@ -129,5 +129,5 @@ def app(args: list[str] | None = None) -> None:
             state.cleanup()
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     app()

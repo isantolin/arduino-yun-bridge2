@@ -115,7 +115,6 @@ max-complexity = 25
 branch = true
 source = [
     "mcubridge/mcubridge",
-    "mcubridge/scripts",
     "mcubridge-client-examples/mcubridge_client"
 ]
 omit = [

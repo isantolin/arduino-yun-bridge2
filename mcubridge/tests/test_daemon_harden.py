@@ -32,7 +32,7 @@ async def test_daemon_run_lifecycle(service_setup: BridgeService) -> None:
 
     # The daemon catches CancelledError and logs it, so it should exit cleanly
     await task
-
+    service.cleanup()
     assert service.state.state in ("connected", "disconnected", "synchronized")
 
 

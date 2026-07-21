@@ -513,9 +513,6 @@ class RuntimeState:
                 logger.debug("Resource cleanup notice", error=e)
             self.datastore_cache = None
 
-        self.mailbox_queue = InMemoryDeque()
-        self.mailbox_incoming_queue = InMemoryDeque()
-
         while not self.cloud_publish_queue.empty():
             try:
                 self.cloud_publish_queue.get_nowait()

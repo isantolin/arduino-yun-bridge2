@@ -27,12 +27,6 @@ namespace rpc {
 namespace security {
 
 /**
- * @brief HKDF (RFC 5869) wrapping wolfCrypt wc_HKDF.
- */
-void hkdf_sha256(etl::span<uint8_t> out, etl::span<const uint8_t> key,
-                 etl::span<const uint8_t> salt, etl::span<const uint8_t> info);
-
-/**
  * @brief Perform timing-safe HMAC-SHA256 handshake authentication.
  * [MEM-SAVE] Centralizing this logic avoids duplication in BridgeClass
  * handlers.

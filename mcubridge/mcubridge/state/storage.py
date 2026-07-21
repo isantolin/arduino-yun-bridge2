@@ -109,19 +109,16 @@ class SqliteDeque:
 
     async def popleft(self) -> bytes:
         async def _popleft_impl(conn: aiosqlite.Connection) -> bytes:
-            async with conn.execute(
-                "DELETE FROM deque WHERE id = (SELECT MIN(id) FROM deque) RETURNING item"
-            ) as cursor:
+            async with conn.execute("SELECT id, item FROM deque ORDER BY id ASC LIMIT 1") as cursor:
                 row = await cursor.fetchone()
-            if row is None:
-                raise IndexError("popfrom empty deque")
-            self._length = max(0, self._length - 1)
-            return row[0]
+                if row is None:
+                    raise IndexError("popleft from empty deque")
+                row_id, item = row[0], row[1]
+                await conn.execute("DELETE FROM deque WHERE id = ?", (row_id,))
+                self._length = max(0, self._length - 1)
+                return item
 
-        try:
-            return await self._execute(_popleft_impl)
-        except IndexError:
-            raise
+        return await self._execute(_popleft_impl)
 
     async def length(self) -> int:
         return self._length
@@ -130,22 +127,17 @@ class SqliteDeque:
         async def _peek_impl(conn: aiosqlite.Connection) -> bytes:
             async with conn.execute("SELECT item FROM deque ORDER BY id ASC LIMIT 1") as cursor:
                 row = await cursor.fetchone()
-            if row is None:
-                raise IndexError("peek from empty deque")
-            return row[0]
+                if row is None:
+                    raise IndexError("peek from empty deque")
+                return row[0]
 
-        try:
-            return await self._execute(_peek_impl)
-        except IndexError:
-            raise
+        return await self._execute(_peek_impl)
 
     async def clear(self) -> None:
         await self._recreate_db()
 
-        async def _no_op(conn: aiosqlite.Connection) -> None:
-            pass
-
-        await self._execute(_no_op)
+    async def close(self) -> None:
+        pass
 
     async def vacuum(self) -> None:
         """Coerce database defragmentation (VACUUM) to release space."""
@@ -155,16 +147,26 @@ class SqliteDeque:
 
         await self._execute(_vacuum_impl)
 
-    async def close(self) -> None:
-        pass
-
 
 class SqliteCache:
-    """SIL-2 persistent key-value store over aiosqlite."""
+    """SIL-2 persistent key-value cache implementation over aiosqlite."""
 
     def __init__(self, path: str) -> None:
         self.path = path
         Path(self.path).parent.mkdir(parents=True, exist_ok=True)
+        import sqlite3
+
+        try:
+            conn = sqlite3.connect(self.path)
+            try:
+                conn.execute("PRAGMA journal_mode=WAL;")
+                conn.execute("PRAGMA synchronous=NORMAL;")
+                conn.execute("CREATE TABLE IF NOT EXISTS cache (key TEXT PRIMARY KEY, value BLOB NOT NULL)")
+                conn.commit()
+            finally:
+                conn.close()
+        except (sqlite3.Error, OSError) as e:
+            logger.warning("Failed to initialize SqliteCache schema", path=self.path, error=e)
 
     async def _recreate_db(self) -> None:
         for suffix in ("", "-wal", "-shm"):

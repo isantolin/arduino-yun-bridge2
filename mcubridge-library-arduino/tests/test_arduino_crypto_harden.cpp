@@ -38,12 +38,12 @@ void test_bridge_full_crypto_handshake_and_data() {
 
   // Handshake Key Derivation
   etl::array<uint8_t, 32> handshake_key;
-  rpc::security::hkdf_sha256(
-      etl::span<uint8_t>(handshake_key),
-      etl::span<const uint8_t>(reinterpret_cast<const uint8_t*>(secret_str),
-                               32),
-      etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_SALT),
-      etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH));
+  wc_HKDF(WC_SHA256, reinterpret_cast<const uint8_t*>(secret_str), 32,
+          rpc::RPC_HANDSHAKE_HKDF_SALT.data(),
+          static_cast<word32>(rpc::RPC_HANDSHAKE_HKDF_SALT.size()),
+          rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH.data(),
+          static_cast<word32>(rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH.size()),
+          handshake_key.data(), 32);
 
   Hmac hmac;
   wc_HmacSetKey(&hmac, WC_SHA256, handshake_key.data(), 32);

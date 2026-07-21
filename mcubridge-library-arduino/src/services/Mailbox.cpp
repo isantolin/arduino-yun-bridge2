@@ -2,18 +2,9 @@
 
 #include <etl/algorithm.h>
 
-#include "Bridge.h"
-
 #if BRIDGE_ENABLE_MAILBOX
 
-namespace {
-
-void send_mailbox_command(rpc::CommandId command_id) {
-  if (!Bridge.sendFrame(command_id)) {
-  }
-}
-
-}  // namespace
+#include "Bridge.h"
 
 MailboxClass::MailboxClass() {}
 
@@ -35,11 +26,11 @@ typename MailboxClass::AvailableCallback MailboxClass::_available_callback;
 etl::queue<typename MailboxClass::MailboxMessage, 8> MailboxClass::_queue;
 
 void MailboxClass::requestRead() {
-  send_mailbox_command(rpc::CommandId::CMD_MAILBOX_READ);
+  (void)Bridge.sendFrame(rpc::CommandId::CMD_MAILBOX_READ);
 }
 
 void MailboxClass::requestAvailable() {
-  send_mailbox_command(rpc::CommandId::CMD_MAILBOX_AVAILABLE);
+  (void)Bridge.sendFrame(rpc::CommandId::CMD_MAILBOX_AVAILABLE);
 }
 
 void MailboxClass::signalProcessed(uint32_t message_id) {

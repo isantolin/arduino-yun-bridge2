@@ -8,44 +8,6 @@ namespace {
 constexpr size_t kReadChunkSize = 64U;
 
 #define BRIDGE_FS_DEBUG(...)
-
-void send_read_response(etl::span<const uint8_t> content) {
-  rpc::payload::FileReadResponse p = {};
-  const size_t to_copy = etl::min(content.size(), sizeof(p.content.bytes));
-  p.content.size = (pb_size_t)to_copy;
-  if (to_copy > 0U) {
-    etl::copy_n(content.data(), to_copy, p.content.bytes);
-  }
-  if (!Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 0, p)) {
-  }
-}
-
-void _readChunksRecursive(const etl::string_view& path, size_t offset,
-                          uint16_t chunks_remaining, uint32_t start_ms) {
-  if (chunks_remaining == 0U) return;
-  if (millis() - start_ms >= bridge::config::SERIAL_TIMEOUT_MS) {
-    BRIDGE_FS_DEBUG("[DEBUG] FS: Read TIMEOUT at offset %zu\n", offset);
-    return;
-  }
-  etl::array<uint8_t, kReadChunkSize> buffer;
-  auto res = bridge::hal::readFileChunk(
-      path, offset, etl::span<uint8_t>(buffer.data(), buffer.size()));
-  if (!res) {
-    BRIDGE_FS_DEBUG("[DEBUG] FS: Read FAILED at offset %zu\n", offset);
-    if (!Bridge.sendFrame(rpc::StatusCode::STATUS_ERROR)) {
-    }
-    return;
-  }
-  BRIDGE_FS_DEBUG("[DEBUG] FS: Sending chunk (%zu bytes, has_more=%d)\n",
-                  res->bytes_read, res->has_more);
-  send_read_response(etl::span<const uint8_t>(buffer.data(), res->bytes_read));
-  if (!res->has_more) {
-    send_read_response(etl::span<const uint8_t>());
-    return;
-  }
-  _readChunksRecursive(path, offset + res->bytes_read, chunks_remaining - 1U,
-                       start_ms);
-}
 }  // namespace
 
 FileSystemClass::FileSystemClass() {}
@@ -103,8 +65,43 @@ void FileSystemClass::_onWrite(const rpc::payload::FileWrite& msg) {
 
 void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
   BRIDGE_FS_DEBUG("[DEBUG] FS: Reading file: %s\n", msg.path);
-  _readChunksRecursive(etl::string_view(msg.path), 0U,
-                       bridge::config::FILE_MAX_READ_CHUNKS, millis());
+  const etl::string_view path(msg.path);
+  size_t offset = 0U;
+  const uint32_t start_ms = millis();
+
+  for (uint16_t chunk = 0U; chunk < bridge::config::FILE_MAX_READ_CHUNKS;
+       ++chunk) {
+    if (millis() - start_ms >= bridge::config::SERIAL_TIMEOUT_MS) {
+      BRIDGE_FS_DEBUG("[DEBUG] FS: Read TIMEOUT at offset %zu\n", offset);
+      return;
+    }
+    etl::array<uint8_t, kReadChunkSize> buffer;
+    auto res = bridge::hal::readFileChunk(
+        path, offset, etl::span<uint8_t>(buffer.data(), buffer.size()));
+    if (!res) {
+      BRIDGE_FS_DEBUG("[DEBUG] FS: Read FAILED at offset %zu\n", offset);
+      (void)Bridge.sendFrame(rpc::StatusCode::STATUS_ERROR);
+      return;
+    }
+    BRIDGE_FS_DEBUG("[DEBUG] FS: Sending chunk (%zu bytes, has_more=%d)\n",
+                    res->bytes_read, res->has_more);
+
+    rpc::payload::FileReadResponse p = {};
+    const size_t to_copy = etl::min(res->bytes_read, sizeof(p.content.bytes));
+    p.content.size = static_cast<pb_size_t>(to_copy);
+    if (to_copy > 0U) {
+      etl::copy_n(buffer.data(), to_copy, p.content.bytes);
+    }
+    (void)Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 0, p);
+
+    if (!res->has_more) {
+      rpc::payload::FileReadResponse empty_p = {};
+      empty_p.content.size = 0U;
+      (void)Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 0, empty_p);
+      return;
+    }
+    offset += res->bytes_read;
+  }
 }
 
 void FileSystemClass::_onRemove(const rpc::payload::FileRemove& msg) {

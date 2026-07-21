@@ -28,22 +28,17 @@ namespace security {
 
 // --- HKDF Implementation ---
 
-void hkdf_sha256(etl::span<uint8_t> out, etl::span<const uint8_t> key,
-                 etl::span<const uint8_t> salt, etl::span<const uint8_t> info) {
-  wc_HKDF(WC_SHA256, key.data(), static_cast<word32>(key.size()), salt.data(),
-          static_cast<word32>(salt.size()), info.data(),
-          static_cast<word32>(info.size()), out.data(),
-          static_cast<word32>(out.size()));
-}
-
 bool handshake_authenticate(etl::span<const uint8_t> secret,
                             etl::span<const uint8_t> nonce,
                             etl::span<const uint8_t> received_tag,
                             etl::span<uint8_t> out_tag) {
-  etl::array<uint8_t, rpc::RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH> handshake_key;
-  hkdf_sha256(etl::span<uint8_t>(handshake_key), secret,
-              etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_SALT),
-              etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH));
+  etl::array<uint8_t, rpc::RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH> handshake_key = {};
+  wc_HKDF(WC_SHA256, secret.data(), static_cast<word32>(secret.size()),
+          rpc::RPC_HANDSHAKE_HKDF_SALT.data(),
+          static_cast<word32>(rpc::RPC_HANDSHAKE_HKDF_SALT.size()),
+          rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH.data(),
+          static_cast<word32>(rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH.size()),
+          handshake_key.data(), static_cast<word32>(handshake_key.size()));
 
   Hmac hmac_engine;
   wc_HmacSetKey(&hmac_engine, WC_SHA256, handshake_key.data(),
@@ -61,15 +56,18 @@ bool handshake_authenticate(etl::span<const uint8_t> secret,
                     static_cast<int>(rpc::RPC_HANDSHAKE_TAG_LENGTH)) == 0);
     }
   }
-  secure_zero(handshake_key);
+  secure_zero(etl::span<uint8_t>(handshake_key.data(), handshake_key.size()));
   return tag_ok;
 }
 
 void derive_session_key(etl::span<const uint8_t> secret,
                         etl::span<const uint8_t> nonce,
                         etl::span<uint8_t> out_key) {
-  hkdf_sha256(out_key, secret, nonce,
-              etl::span<const uint8_t>(rpc::RPC_HANDSHAKE_HKDF_INFO_SESSION));
+  wc_HKDF(WC_SHA256, secret.data(), static_cast<word32>(secret.size()),
+          nonce.data(), static_cast<word32>(nonce.size()),
+          rpc::RPC_HANDSHAKE_HKDF_INFO_SESSION.data(),
+          static_cast<word32>(rpc::RPC_HANDSHAKE_HKDF_INFO_SESSION.size()),
+          out_key.data(), static_cast<word32>(out_key.size()));
 }
 
 bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,

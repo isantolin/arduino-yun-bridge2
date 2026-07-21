@@ -51,7 +51,6 @@ typings/*
 
 # Persist static mission-critical stubs
 !typings/stubs/
-!typings/cobs/
 
 # Editor/OS files
 .DS_Store

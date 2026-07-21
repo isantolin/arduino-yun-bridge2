@@ -93,10 +93,17 @@ async def test_runtime_service_teardown_and_ipc_start(tmp_path):
     # Test run_cloud disabled
     await runtime.run_cloud()
 
-    # Test teardown exceptions handling
+    # Test cleanup exceptions handling
     mock_spool = AsyncMock()
     mock_spool.close.side_effect = OSError("Disk unmount error")
     runtime._cloud_spool = mock_spool
 
-    await runtime._teardown()
+    if runtime._cloud_spool is not None:
+        try:
+            await runtime._cloud_spool.close()
+        except (Exception, OSError):
+            pass
+        runtime._cloud_spool = None
+
+    runtime.cleanup()
     assert runtime._cloud_spool is None

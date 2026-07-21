@@ -290,6 +290,63 @@ static void test_surgical_extra_branches() {
     env.payload_type.pin_mode.mode = rpc_pb_PinModeType_PIN_OUTPUT;
     ba.dispatch(env);
   }
+
+  // 4. Digital read out of bounds pin
+  {
+    rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
+    env.version = rpc::PROTOCOL_VERSION;
+    env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_DIGITAL_READ);
+    env.sequence_id = 43;
+    env.which_payload_type = rpc_pb_RpcEnvelope_pin_read_tag;
+    env.payload_type.pin_read.pin = 255U;
+    ba.dispatch(env);
+  }
+
+  // 5. Set baudrate command dispatch
+  {
+    rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
+    env.version = rpc::PROTOCOL_VERSION;
+    env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_SET_BAUDRATE);
+    env.sequence_id = 44;
+    env.which_payload_type = rpc_pb_RpcEnvelope_set_baudrate_packet_tag;
+    env.payload_type.set_baudrate_packet.baudrate = 115200U;
+    ba.dispatch(env);
+  }
+
+  // 6. Enter bootloader command dispatch
+  {
+    rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
+    env.version = rpc::PROTOCOL_VERSION;
+    env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_ENTER_BOOTLOADER);
+    env.sequence_id = 45;
+    env.which_payload_type = rpc_pb_RpcEnvelope_enter_bootloader_tag;
+    env.payload_type.enter_bootloader.magic = 0xDEADBEEFU;
+    ba.dispatch(env);
+  }
+
+  // 7. SPI config command dispatch
+  {
+    rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
+    env.version = rpc::PROTOCOL_VERSION;
+    env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_SPI_SET_CONFIG);
+    env.sequence_id = 46;
+    env.which_payload_type = rpc_pb_RpcEnvelope_spi_config_tag;
+    env.payload_type.spi_config.bit_order = 0U;
+    env.payload_type.spi_config.data_mode = 0U;
+    ba.dispatch(env);
+  }
+
+  // 8. File write response dispatch
+  {
+    rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
+    env.version = rpc::PROTOCOL_VERSION;
+    env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_FILE_WRITE);
+    env.sequence_id = 47;
+    env.which_payload_type = rpc_pb_RpcEnvelope_file_write_tag;
+    env.payload_type.file_write.path[0] = 't';
+    env.payload_type.file_write.path[1] = '\0';
+    ba.dispatch(env);
+  }
 }
 
 int main() {

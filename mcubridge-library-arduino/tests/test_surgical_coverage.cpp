@@ -317,7 +317,8 @@ static void test_surgical_extra_branches() {
   {
     rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
     env.version = rpc::PROTOCOL_VERSION;
-    env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_ENTER_BOOTLOADER);
+    env.command_id =
+        static_cast<uint16_t>(rpc::CommandId::CMD_ENTER_BOOTLOADER);
     env.sequence_id = 45;
     env.which_payload_type = rpc_pb_RpcEnvelope_enter_bootloader_tag;
     env.payload_type.enter_bootloader.magic = 0xDEADBEEFU;

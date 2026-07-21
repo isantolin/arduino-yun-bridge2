@@ -85,7 +85,7 @@ else
 fi
 
 $PYTHON_BIN -m pytest \
-  -v \
+  -q \
   -p pytest_asyncio \
   -o log_cli=false \
   --timeout=300 \

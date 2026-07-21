@@ -929,9 +929,12 @@ def main() -> None:
     if untyped_libs:
         sys.stderr.write(f"Generating type stubs for {', ' .join(untyped_libs)}...\n")
         for lib in untyped_libs:
-            stub_cmd = [sys.executable, "-m", "pyright", "--createstub", lib]
             try:
-                subprocess.run(stub_cmd, check=False, capture_output=True)
+                res = subprocess.run(
+                    [sys.executable, "-m", "pyright", "--createstub", lib], check=False, capture_output=True
+                )
+                if res.returncode != 0:
+                    subprocess.run(["pyright", "--createstub", lib], check=False, capture_output=True)
             except (OSError, RuntimeError, subprocess.SubprocessError) as e:
                 sys.stderr.write(f"Warning: Failed to generate stubs for {lib}: {e}\n")
 

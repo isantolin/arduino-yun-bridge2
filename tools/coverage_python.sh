@@ -105,5 +105,5 @@ if [[ "$ENABLE_JSON" -eq 1 ]]; then
     -o "$COVERAGE_ROOT/coverage.json" >/dev/null
 fi
 
-$PYTHON_BIN -m coverage report --fail-under="${PYTHON_COVERAGE_MIN}"
+$PYTHON_BIN -m coverage report --data-file="$COVERAGE_ROOT/.coverage" --fail-under="${PYTHON_COVERAGE_MIN}"
 

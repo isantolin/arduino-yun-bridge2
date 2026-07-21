@@ -24,7 +24,6 @@ from cryptography.hazmat.primitives import hashes, hmac
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from cryptography.hazmat.primitives.constant_time import bytes_eq
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-from google.protobuf.json_format import MessageToDict
 from google.protobuf.message import DecodeError as ProtobufDecodeError, Message as ProtobufMessage
 
 from ..config.const import (

@@ -795,12 +795,17 @@ def check_incremental_build(args: argparse.Namespace, version: str) -> tuple[boo
             outputs_exist = False
             break
 
-    # Also check if mcubridge_pb2.py exists in target locations
+    # Also check if mcubridge_pb2.py and untyped_libs type stubs exist in target locations
     if outputs_exist:
         if args.py and not (args.py.parent / "mcubridge_pb2.py").exists():
             outputs_exist = False
         if args.py_client and not (args.py_client.parent / "mcubridge_pb2.py").exists():
             outputs_exist = False
+        untyped_libs = ["cobs", "prometheus_client", "serialx", "uci", "uvloop"]
+        for lib in untyped_libs:
+            if not (REPO_ROOT / "typings" / lib).exists():
+                outputs_exist = False
+                break
 
     up_to_date = bool(outputs_exist and hash_file.exists() and hash_file.read_text().strip() == current_hash)
     return up_to_date, hash_file, current_hash
@@ -924,7 +929,7 @@ def main() -> None:
 
     # Step 4: Generate type stubs for untyped libraries using pyright
     # [SIL-2] Generate type stubs for untyped libraries using pyright if any are defined.
-    untyped_libs: list[str] = ["cobs", "prometheus_client", "serialx", "uci", "uvloop"]
+    untyped_libs: list[str] = ["prometheus_client", "serialx", "uci", "uvloop"]
     # [SIL-2] Log only if there are libs to process
     if untyped_libs:
         sys.stderr.write(f"Generating type stubs for {', ' .join(untyped_libs)}...\n")

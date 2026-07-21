@@ -37,11 +37,12 @@ class FaultState;
 
 // --- State Classes ---
 
-class StartupState
+ class StartupState
     : public etl::fsm_state<BridgeFsm, StartupState,
                             static_cast<etl::fsm_state_id_t>(StateId::STARTUP),
                             EvReset, EvHandshakeFailed, EvTimeout> {
  public:
+  StartupState() = default;
   etl::fsm_state_id_t on_event(const EvReset&) {
     return static_cast<etl::fsm_state_id_t>(StateId::UNSYNCHRONIZED);
   }
@@ -62,6 +63,7 @@ class UnsynchronizedState
           static_cast<etl::fsm_state_id_t>(StateId::UNSYNCHRONIZED),
           EvHandshakeStart, EvReset, EvHandshakeFailed, EvTimeout> {
  public:
+  UnsynchronizedState() = default;
   etl::fsm_state_id_t on_event(const EvHandshakeStart&) {
     return static_cast<etl::fsm_state_id_t>(StateId::HANDSHAKE);
   }
@@ -85,6 +87,7 @@ class HandshakeState
           static_cast<etl::fsm_state_id_t>(StateId::HANDSHAKE),
           EvHandshakeComplete, EvHandshakeFailed, EvReset, EvTimeout> {
  public:
+  HandshakeState() = default;
   etl::fsm_state_id_t on_event(const EvHandshakeComplete&) {
     return static_cast<etl::fsm_state_id_t>(StateId::SYNCHRONIZED);
   }
@@ -108,6 +111,7 @@ class SynchronizedState
           static_cast<etl::fsm_state_id_t>(StateId::SYNCHRONIZED),
           EvSendCritical, EvReset, EvHandshakeFailed, EvTimeout> {
  public:
+  SynchronizedState() = default;
   etl::fsm_state_id_t on_event(const EvSendCritical&) {
     return static_cast<etl::fsm_state_id_t>(StateId::AWAITING_ACK);
   }
@@ -131,6 +135,7 @@ class AwaitingAckState
           static_cast<etl::fsm_state_id_t>(StateId::AWAITING_ACK),
           EvAckReceived, EvTimeout, EvReset, EvHandshakeFailed> {
  public:
+  AwaitingAckState() = default;
   etl::fsm_state_id_t on_event(const EvAckReceived&) {
     return static_cast<etl::fsm_state_id_t>(StateId::SYNCHRONIZED);
   }
@@ -153,6 +158,7 @@ class FaultState
                             static_cast<etl::fsm_state_id_t>(StateId::FAULT),
                             EvReset> {
  public:
+  FaultState() = default;
   // [SIL-2] Force hardware safe state on every entry to FAULT — regardless of
   // which event caused the transition (ACK timeout, handshake failure, etc.).
   etl::fsm_state_id_t on_enter_state() override {

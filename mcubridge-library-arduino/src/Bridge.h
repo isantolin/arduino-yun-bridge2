@@ -301,12 +301,8 @@ class BridgeClass {
   etl::callback_timer<bridge::scheduler::NUMBER_OF_TIMERS> _timers;
   etl::array<etl::timer::id::type, bridge::scheduler::NUMBER_OF_TIMERS>
       _timer_ids;
-  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> _transient_buffer;
-#if BRIDGE_ENABLE_SPI
-  // [SIL-2/H-5] Dedicated SPI buffer: prevents race with _rx_buffer on
-  // ESP32/SAMD where serial interrupts can fire during blocking SPI transfer.
-  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> _spi_buffer;
-#endif
+  // Shared working buffer for transient operations (unencrypted encoding, SPI transfer)
+  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> _working_buffer;
 
   bool _is_post_passed = false;
   bool _tx_enabled = true;
@@ -407,6 +403,9 @@ class BridgeClass {
   static void _handleSetPinMode(const rpc_pb_PinMode& m);
   static void _handleDigitalWrite(const rpc_pb_DigitalWrite& m);
   static void _handleAnalogWrite(const rpc_pb_AnalogWrite& m);
+  void _handlePinReadCommon(const bridge::router::CommandContext& ctx,
+                            uint8_t pin, uint8_t max_pins,
+                            rpc::CommandId cmd_id, int (*read_fn)(uint8_t));
   __attribute__((noinline)) void _handleDigitalRead(
       const bridge::router::CommandContext& ctx, const rpc_pb_PinRead& m);
   __attribute__((noinline)) void _handleAnalogRead(
@@ -462,11 +461,11 @@ class BridgeClass {
         return false;
       }
     } else {
-      pb_ostream_t out_stream = pb_ostream_from_buffer(_transient_buffer.data(),
+      pb_ostream_t out_stream = pb_ostream_from_buffer(_working_buffer.data(),
                                                        rpc::MAX_PAYLOAD_SIZE);
       if (pb_encode(&out_stream, fields, &packet)) {
         _transmit(raw_cmd, seq,
-                  etl::span<const uint8_t>(_transient_buffer.data(),
+                  etl::span<const uint8_t>(_working_buffer.data(),
                                            out_stream.bytes_written));
         return true;
       }

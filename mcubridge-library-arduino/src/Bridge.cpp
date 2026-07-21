@@ -695,37 +695,42 @@ void BridgeClass::_handleAnalogWrite(const rpc_pb_AnalogWrite& m) {
   analogWrite(m.pin, static_cast<int>(m.value));  // [SIL-2/H-6] no C-cast
 }
 
+void BridgeClass::_handlePinReadCommon(
+    const bridge::router::CommandContext& ctx, uint8_t pin, uint8_t max_pins,
+    rpc::CommandId cmd_id, int (*read_fn)(uint8_t)) {
+  if (pin < max_pins) {
+    bool ok = false;
+    const uint32_t val = static_cast<uint32_t>(read_fn(pin));
+    if (cmd_id == rpc::CommandId::CMD_DIGITAL_READ_RESP) {
+      rpc_pb_DigitalReadResponse resp = rpc_pb_DigitalReadResponse_init_default;
+      resp.value = val;
+      ok = send(cmd_id, ctx.sequence_id, resp);
+    } else {
+      rpc_pb_AnalogReadResponse resp = rpc_pb_AnalogReadResponse_init_default;
+      resp.value = val;
+      ok = send(cmd_id, ctx.sequence_id, resp);
+    }
+    if (!ok) {
+      emitStatus(rpc::StatusCode::STATUS_ERROR);
+    }
+  } else {
+    emitStatus(rpc::StatusCode::STATUS_ERROR);
+  }
+}
+
 void BridgeClass::_handleDigitalRead(const bridge::router::CommandContext& ctx,
                                      const rpc_pb_PinRead& m) {
-  if (m.pin < bridge::config::DIGITAL_PINS) {
-    rpc_pb_DigitalReadResponse resp = rpc_pb_DigitalReadResponse_init_default;
-    resp.value = static_cast<uint32_t>(::digitalRead(m.pin));
-    if (!send(rpc::CommandId::CMD_DIGITAL_READ_RESP, ctx.sequence_id, resp))
-      emitStatus(rpc::StatusCode::STATUS_ERROR);
-  } else
-    emitStatus(rpc::StatusCode::STATUS_ERROR);
+  _handlePinReadCommon(ctx, m.pin, bridge::config::DIGITAL_PINS,
+                       rpc::CommandId::CMD_DIGITAL_READ_RESP, ::digitalRead);
 }
 
 void BridgeClass::_handleAnalogRead(const bridge::router::CommandContext& ctx,
                                     const rpc_pb_PinRead& m) {
-  // [SIL-2/H-7] Analog pins are indexed differently from digital pins.
-  // #if guard is used instead of `if constexpr` because cppcheck does not
-  // honour constexpr branch elimination and would flag the unsigned comparison
-  // `m.pin < ANALOG_PINS` as [unsignedLessThanZero] when ANALOG_PINS == 0
-  // (non-AVR/SAMD fallback target).  The preprocessor guard ensures cppcheck
-  // only sees the `emitStatus` path on the fallback configuration.
 #if defined(ARDUINO_ARCH_AVR) || defined(ARDUINO_ARCH_SAMD) || \
     defined(BRIDGE_HOST_TEST)
-  if (m.pin < bridge::config::ANALOG_PINS) {
-    rpc_pb_AnalogReadResponse resp = rpc_pb_AnalogReadResponse_init_default;
-    resp.value = static_cast<uint32_t>(::analogRead(m.pin));
-    if (!send(rpc::CommandId::CMD_ANALOG_READ_RESP, ctx.sequence_id, resp))
-      emitStatus(rpc::StatusCode::STATUS_ERROR);
-  } else {
-    emitStatus(rpc::StatusCode::STATUS_ERROR);
-  }
+  _handlePinReadCommon(ctx, m.pin, bridge::config::ANALOG_PINS,
+                       rpc::CommandId::CMD_ANALOG_READ_RESP, ::analogRead);
 #else
-  // Fallback target: no analog pins — every request is out of range.
   static_cast<void>(ctx);
   static_cast<void>(m);
   emitStatus(rpc::StatusCode::STATUS_ERROR);
@@ -807,12 +812,12 @@ void BridgeClass::_handleSpiEnd(const bridge::router::CommandContext& ctx) {
 }
 void BridgeClass::_handleSpiTransfer(const bridge::router::CommandContext& ctx,
                                      const rpc_pb_SpiTransfer& m) {
-  // [SIL-2/H-5] Use the dedicated _spi_buffer instead of _rx_buffer.
+  // [SIL-2/H-5] Use the shared _working_buffer instead of _rx_buffer.
   // _rx_buffer is owned by PacketSerial and can be written by a serial ISR
   // (on ESP32/SAMD) while a blocking SPI transfer is in progress.
-  size_t len = etl::min(static_cast<size_t>(m.data.size), _spi_buffer.size());
-  etl::copy_n(m.data.bytes, len, _spi_buffer.begin());
-  size_t tr = SPIService.transfer(etl::span<uint8_t>(_spi_buffer.data(), len));
+  size_t len = etl::min(static_cast<size_t>(m.data.size), _working_buffer.size());
+  etl::copy_n(m.data.bytes, len, _working_buffer.begin());
+  size_t tr = SPIService.transfer(etl::span<uint8_t>(_working_buffer.data(), len));
   if (tr == 0) {
     emitStatus(rpc::StatusCode::STATUS_ERROR);
     return;
@@ -820,7 +825,7 @@ void BridgeClass::_handleSpiTransfer(const bridge::router::CommandContext& ctx,
   rpc_pb_SpiTransferResponse resp = rpc_pb_SpiTransferResponse_init_default;
   const size_t to_copy = etl::min(len, sizeof(resp.data.bytes));
   resp.data.size = static_cast<pb_size_t>(to_copy);
-  if (to_copy > 0) etl::copy_n(_spi_buffer.data(), to_copy, resp.data.bytes);
+  if (to_copy > 0) etl::copy_n(_working_buffer.data(), to_copy, resp.data.bytes);
   if (!send(rpc::CommandId::CMD_SPI_TRANSFER_RESP, ctx.sequence_id, resp))
     emitStatus(rpc::StatusCode::STATUS_ERROR);
 }

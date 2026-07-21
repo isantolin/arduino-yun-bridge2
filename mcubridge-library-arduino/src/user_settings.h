@@ -39,6 +39,11 @@
 #define HAVE_CHACHA
 #define HAVE_POLY1305
 
+/* Flash optimizations for AVR/SIL-2 */
+#define WOLFSSL_SMALL_FOOTPRINT 1
+#define POLY1305_NO_UNROLL 1
+#define PB_NO_ERRMSG 1
+
 /* Protocol protections */
 #define NO_AES
 #define NO_RSA

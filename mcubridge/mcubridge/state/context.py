@@ -137,7 +137,7 @@ class RuntimeState:
         self.mailbox_incoming_truncated_messages: int = kwargs.get("mailbox_incoming_truncated_messages", 0)
 
         self.mcu_version: tuple[int, int, int] | None = kwargs.get("mcu_version")
-        self.mcu_capabilities: dict[str, Any] | None = kwargs.get("mcu_capabilities")
+        self.mcu_capabilities: pb.Capabilities | dict[str, Any] | None = kwargs.get("mcu_capabilities")
         self.link_handshake_nonce: bytes | None = kwargs.get("link_handshake_nonce")
         self.link_sync_event: asyncio.Event = kwargs.get("link_sync_event") or asyncio.Event()
         self.link_expected_tag: bytes | None = kwargs.get("link_expected_tag")
@@ -449,8 +449,11 @@ class RuntimeState:
 
         capabilitiespb_obj = None
         if self.mcu_capabilities is not None:
-            capabilitiespb_obj = pb.Capabilities()
-            ParseDict(self.mcu_capabilities, capabilitiespb_obj)
+            if isinstance(self.mcu_capabilities, pb.Capabilities):
+                capabilitiespb_obj = self.mcu_capabilities
+            else:
+                capabilitiespb_obj = pb.Capabilities()
+                ParseDict(self.mcu_capabilities, capabilitiespb_obj)
 
         return pb.BridgeSnapshot(
             serial_link=pb.SerialLinkSnapshot(

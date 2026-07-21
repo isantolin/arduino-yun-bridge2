@@ -421,7 +421,8 @@ class JinjaGenerator:
                     if msg_type not in skipped_messages:
                         payload_structs.append({"name": msg_type, "field": field_name})
 
-        render = template.render(all_structs=all_structs, payload_structs=payload_structs)
+        payload_names = [s["name"] for s in payload_structs]
+        render = template.render(all_structs=all_structs, payload_structs=payload_structs, payload_names=payload_names)
         out_path.write_text(render, encoding="utf-8")
 
     def generate_cpp_hw_config(self, spec: ProtocolSpec, out_path: Path) -> None:
@@ -779,6 +780,10 @@ def check_incremental_build(args: argparse.Namespace, version: str) -> tuple[boo
     h = hashlib.sha256()
     h.update(proto_path.read_bytes())
     h.update(version.encode("utf-8"))
+    templates_dir = Path(__file__).resolve().parent / "templates"
+    if templates_dir.exists():
+        for t_file in sorted(templates_dir.glob("*.j2")):
+            h.update(t_file.read_bytes())
     current_hash = h.hexdigest()
 
     hash_file = proto_path.parent / ".mcubridge.proto.hash"

@@ -39,41 +39,51 @@ using {{ s.name }} = rpc_pb_{{ s.name }};
 namespace rpc::Payload {
 
 template <typename T>
-const pb_msgdesc_t* get_fields();
-
-{% for s in all_structs %}
-template <>
-inline const pb_msgdesc_t* get_fields<rpc_pb_{{ s.name }}>() {
-    return rpc_pb_{{ s.name }}_fields;
-}
-{% endfor %}
-
-template <typename T>
-pb_size_t get_tag();
-
-template <typename T>
-void set(rpc_pb_RpcEnvelope& env, const T& packet);
-
-template <typename T>
-const T& get(const rpc_pb_RpcEnvelope& env);
+struct payload_traits;
 
 {% for s in payload_structs %}
 template <>
-inline pb_size_t get_tag<rpc_pb_{{ s.name }}>() {
-    return rpc_pb_RpcEnvelope_{{ s.field }}_tag;
-}
-
-template <>
-inline void set<rpc_pb_{{ s.name }}>(rpc_pb_RpcEnvelope& env, const rpc_pb_{{ s.name }}& packet) {
-    env.which_payload_type = rpc_pb_RpcEnvelope_{{ s.field }}_tag;
-    env.payload_type.{{ s.field }} = packet;
-}
-
-template <>
-inline const rpc_pb_{{ s.name }}& get<rpc_pb_{{ s.name }}>(const rpc_pb_RpcEnvelope& env) {
-    return env.payload_type.{{ s.field }};
-}
+struct payload_traits<rpc_pb_{{ s.name }}> {
+    static constexpr pb_size_t tag = rpc_pb_RpcEnvelope_{{ s.field }}_tag;
+    static const pb_msgdesc_t* fields() { return rpc_pb_{{ s.name }}_fields; }
+    static void set(rpc_pb_RpcEnvelope& env, const rpc_pb_{{ s.name }}& packet) {
+        env.which_payload_type = tag;
+        env.payload_type.{{ s.field }} = packet;
+    }
+    static const rpc_pb_{{ s.name }}& get(const rpc_pb_RpcEnvelope& env) {
+        return env.payload_type.{{ s.field }};
+    }
+};
 {% endfor %}
+
+{% for s in all_structs %}
+{% if s.name not in payload_names %}
+template <>
+struct payload_traits<rpc_pb_{{ s.name }}> {
+    static const pb_msgdesc_t* fields() { return rpc_pb_{{ s.name }}_fields; }
+};
+{% endif %}
+{% endfor %}
+
+template <typename T>
+inline const pb_msgdesc_t* get_fields() {
+    return payload_traits<T>::fields();
+}
+
+template <typename T>
+inline pb_size_t get_tag() {
+    return payload_traits<T>::tag;
+}
+
+template <typename T>
+inline void set(rpc_pb_RpcEnvelope& env, const T& packet) {
+    payload_traits<T>::set(env, packet);
+}
+
+template <typename T>
+inline const T& get(const rpc_pb_RpcEnvelope& env) {
+    return payload_traits<T>::get(env);
+}
 
 template <typename T>
 inline etl::expected<size_t, bool> serialize(const T& packet, etl::span<uint8_t> buffer) {

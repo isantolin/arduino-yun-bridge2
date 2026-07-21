@@ -66,14 +66,17 @@ async def test_handshake_capabilities_flow(cfg: RuntimeConfig, state: RuntimeSta
     cap_pb = pb.Capabilities(ver=2, dig=13)
     fn_parse = getattr(hs, "_parse_capabilities")
     fn_parse(cap_pb)
-    caps = state.mcu_capabilities or {}
-    assert caps.get("dig") == 13 or caps.get("ver") == 2
+    caps = state.mcu_capabilities
+    if isinstance(caps, pb.Capabilities):
+        assert caps.dig == 13 or caps.ver == 2
+    elif isinstance(caps, dict):
+        assert caps.get("dig") == 13 or caps.get("ver") == 2
 
     fn_parse(cap_pb.SerializeToString())
 
-    # Exception path: MessageToDict exception
-    with patch("mcubridge.services.handshake.MessageToDict", side_effect=TypeError("invalid msg")):
-        fn_parse(cap_pb)
+    # Exception path: FromString exception
+    with patch("mcubridge.protocol.mcubridge_pb2.Capabilities.FromString", side_effect=TypeError("invalid msg")):
+        fn_parse(b"invalid")
 
     # 2. handle_capabilities_resp when _capabilities_future is active
     loop = asyncio.get_running_loop()

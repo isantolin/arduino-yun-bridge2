@@ -94,18 +94,18 @@ def build_frame(
 
 
 def parse_frame(raw_frame_buffer: bytes | bytearray | memoryview, session_key: bytes | None = None) -> DecodedFrame:
-    """Parses binary buffer directly into a Protobuf envelope. [SIL-2]"""
-    buf = bytes(raw_frame_buffer)
-    if len(buf) < _CRC_SIZE:
+    """Parses binary buffer directly into a Protobuf envelope using zero-copy memoryview. [SIL-2]"""
+    mv = memoryview(raw_frame_buffer)
+    if len(mv) < _CRC_SIZE:
         raise ValueError("Incomplete frame: too short")
 
-    body, crc_bytes = buf[:-_CRC_SIZE], buf[-_CRC_SIZE:]
+    body, crc_bytes = mv[:-_CRC_SIZE], mv[-_CRC_SIZE:]
     if (crc32(body) & protocol.CRC32_MASK) != int.from_bytes(crc_bytes, _ENDIANNESS):
         raise ValueError("CRC mismatch")
 
     envelope = pb.RpcEnvelope()
     try:
-        envelope.ParseFromString(body)
+        envelope.ParseFromString(bytes(body))
     except DecodeError as e:
         raise ValueError(f"Failed to parse Protobuf envelope: {e}") from e
 

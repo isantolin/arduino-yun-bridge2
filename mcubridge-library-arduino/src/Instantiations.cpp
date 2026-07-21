@@ -55,11 +55,10 @@ etl::expected<rpc_pb_RpcEnvelope, FrameError> parse_frame(
   const uint32_t crc_calc = checksum::compute(buffer.subspan(0, crc_offset));
   const auto crc_tail = buffer.subspan(crc_offset);
 
-  // Deserialización segura del CRC de cola
-  const uint32_t crc_received = static_cast<uint32_t>(crc_tail[0]) |
-                                (static_cast<uint32_t>(crc_tail[1]) << 8) |
-                                (static_cast<uint32_t>(crc_tail[2]) << 16) |
-                                (static_cast<uint32_t>(crc_tail[3]) << 24);
+  // Deserialización segura del CRC de cola mediante etl::byte_stream_reader
+  etl::byte_stream_reader reader(crc_tail.data(), crc_tail.size(),
+                                 etl::endian::little);
+  const uint32_t crc_received = reader.read<uint32_t>().value_or(0U);
 
   if (crc_received != crc_calc) {
     return etl::unexpected<FrameError>(FrameError::CRC_MISMATCH);

@@ -7,7 +7,7 @@ from __future__ import annotations
 from . import mcubridge_pb2 as pb
 
 from enum import IntEnum, StrEnum
-from typing import Final
+from typing import Any, Final
 
 CLOUD_WILDCARD_SINGLE: Final[str] = "+"
 CLOUD_WILDCARD_MULTI: Final[str] = "#"
@@ -109,12 +109,13 @@ COMMAND_TO_TOPIC: Final[dict[int, str]] = {
     {%- endfor %}
 }
 
-# Mapping of Protobuf message classes to their default CLOUD topic paths. [SIL-2]
-MESSAGE_TO_TOPIC: Final[dict[type | str, str]] = {
+# Mapping of Protobuf message classes/descriptors to their default CLOUD topic paths. [SIL-2]
+MESSAGE_TO_TOPIC: Final[dict[Any, str]] = {
     {%- for msg_name, topic in message_topics.items() %}
     {%- if msg_name.endswith("_ENUM") %}
     "{{ msg_name[:-5] }}": {{ topic|tojson }},
     {%- else %}
+    pb.{{ msg_name }}.DESCRIPTOR: {{ topic|tojson }},
     pb.{{ msg_name }}: {{ topic|tojson }},
     {%- endif %}
     {%- endfor %}

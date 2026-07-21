@@ -12,7 +12,6 @@ from mcubridge.protocol import mcubridge_pb2 as pb
 
 import asyncio
 import logging
-from google.protobuf.json_format import MessageToDict
 import secrets
 import structlog
 import time
@@ -25,6 +24,7 @@ from cryptography.hazmat.primitives import hashes, hmac
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from cryptography.hazmat.primitives.constant_time import bytes_eq
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from google.protobuf.json_format import MessageToDict
 from google.protobuf.message import DecodeError as ProtobufDecodeError, Message as ProtobufMessage
 
 from ..config.const import (
@@ -385,13 +385,14 @@ class SerialHandshakeManager:
 
     def _parse_capabilities(self, payload: bytes | ProtobufMessage) -> None:
         try:
-            # [SIL-2] Decode capabilities as protobuf.
-            if isinstance(payload, ProtobufMessage):
+            # [SIL-2] Decode and retain native pb.Capabilities object directly.
+            if isinstance(payload, pb.Capabilities):
+                p = payload
+            elif isinstance(payload, ProtobufMessage):
                 p = cast(pb.Capabilities, payload)
             else:
                 p = pb.Capabilities.FromString(payload)
-            features: dict[str, Any] = MessageToDict(p, always_print_fields_with_no_presence=True)
-            self._state.mcu_capabilities = features
+            self._state.mcu_capabilities = p
             self._logger.info("MCU Capabilities: %s", self._state.mcu_capabilities)
         except (ProtobufDecodeError, ValueError, TypeError, KeyError) as exc:
             self._logger.error("Failed to unpack capabilities: %s", exc)

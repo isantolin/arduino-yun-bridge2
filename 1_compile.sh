@@ -249,11 +249,12 @@ else
 fi
 
 # --- PROTOCOL & DEPS SYNC ---
+PYTHON_BIN="${PYTHON_EXE:-python3}"
 echo "[INFO] Synchronizing runtime dependency manifests..."
-python3 "$REPO_ROOT/tools/sync_runtime_deps.py" || exit 1
+"$PYTHON_BIN" "$REPO_ROOT/tools/sync_runtime_deps.py" || exit 1
 
 echo "[INFO] Regenerating protocol files from spec..."
-python3 "$REPO_ROOT/tools/protocol/generate.py" \
+"$PYTHON_BIN" "$REPO_ROOT/tools/protocol/generate.py" \
     --spec "$REPO_ROOT/tools/protocol/mcubridge.proto" \
     --py "$REPO_ROOT/mcubridge/mcubridge/protocol/protocol.py" \
     --cpp "$REPO_ROOT/mcubridge-library-arduino/src/protocol/rpc_protocol.h" \

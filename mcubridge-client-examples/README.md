@@ -30,7 +30,7 @@ Si ejecutas los ejemplos directamente desde el repositorio, instala las dependen
 
 ```sh
 pip install \
-	"protobuf==7.35.1" \
+	"protobuf==7.36.0rc1" \
 	"prometheus-client>=0.20,<1" \
 	"tenacity>=9.0,<10" \
 	"cobs>=1.2,<2"

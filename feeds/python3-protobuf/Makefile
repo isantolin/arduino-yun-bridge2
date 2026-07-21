@@ -2,12 +2,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=python3-protobuf
-PKG_VERSION:=7.35.1
+PKG_VERSION:=7.36.0rc1
 PKG_RELEASE:=1
 
 PYPI_NAME:=protobuf
 PKG_SOURCE:=$(PYPI_NAME)-$(PKG_VERSION).tar.gz
-PKG_HASH:=ce115a26fe0c39a2c29973d914d327e516a6455464489fe3cd1e51a1b354f81a
+PKG_HASH:=a7cf7138eff7c0d1c456eea80bc5854d02ac36a76460c33b3ebec216b2024d53
 
 PKG_MAINTAINER:=Ignacio Santolin <isantolin@gmail.com>
 PKG_LICENSE:=BSD-3-Clause

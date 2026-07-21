@@ -41,19 +41,17 @@ size_t ConsoleClass::write(uint8_t c) {
 }
 
 size_t ConsoleClass::write(const uint8_t* buffer, size_t size) {
-  if (buffer == nullptr || size == 0) return 0;
+  if (!buffer || size == 0) return 0;
   if (_tx_buffer.full()) process();
-  const size_t to_write = etl::min(size, _tx_buffer.available());
-  _tx_buffer.insert(_tx_buffer.end(), buffer, buffer + to_write);
-  if (to_write < size && _tx_buffer.full()) {
+  const size_t c1 = etl::min(size, _tx_buffer.available());
+  _tx_buffer.insert(_tx_buffer.end(), buffer, buffer + c1);
+  if (c1 < size && _tx_buffer.full()) {
     process();
-    const size_t extra_write =
-        etl::min(size - to_write, _tx_buffer.available());
-    _tx_buffer.insert(_tx_buffer.end(), buffer + to_write,
-                      buffer + to_write + extra_write);
-    return to_write + extra_write;
+    const size_t c2 = etl::min(size - c1, _tx_buffer.available());
+    _tx_buffer.insert(_tx_buffer.end(), buffer + c1, buffer + c1 + c2);
+    return c1 + c2;
   }
-  return to_write;
+  return c1;
 }
 
 int ConsoleClass::available() { return static_cast<int>(_rx_buffer.size()); }

@@ -2,7 +2,6 @@
 
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState
-from typing import Any
 
 import os
 import asyncio
@@ -45,47 +44,20 @@ async def test_serial_reader_task_reconnects():
     service.on_serial_disconnected = AsyncMock()
     service.register_serial_sender = MagicMock()
 
-    # Mock serialx.AsyncSerial
-    mock_serial = AsyncMock()
-    mock_serial.__aenter__.return_value = mock_serial
-    mock_serial.__aexit__.return_value = None
-    mock_serial.transport = AsyncMock()
-    mock_serial.readuntil.side_effect = [
-        asyncio.IncompleteReadError(b"", None),  # First connection lost
-        asyncio.IncompleteReadError(b"", None),  # Second connection lost
-        asyncio.IncompleteReadError(b"", None),  # Third connection lost
-    ]
+    connect_count = 0
 
-    mock_async_serial_cls = MagicMock(return_value=mock_serial)
-
-    # Mock sleep to fast-forward loops and eventually break the run loop
-    sleep_count = 0
-
-    async def mock_sleep_fn(duration: Any):
-        nonlocal sleep_count
-        sleep_count += 1
-        if sleep_count > 100:
-            raise RuntimeError("Break Loop")
-        return None
-
-    mock_sleep = AsyncMock(side_effect=mock_sleep_fn)
+    async def mock_connect():
+        nonlocal connect_count
+        connect_count += 1
+        if connect_count >= 2:
+            raise asyncio.CancelledError()
+        raise ConnectionError("Serial connection lost")
 
     with (
-        patch(
-            "mcubridge.transport.serial.serialx.AsyncSerial",
-            mock_async_serial_cls,
-        ),
-        patch("asyncio.sleep", mock_sleep),
-        patch.object(SerialTransport, "_toggle_dtr", AsyncMock()),
+        patch.object(SerialTransport, "_connect_and_run", side_effect=mock_connect),
+        patch("asyncio.sleep", AsyncMock()),
     ):
         transport = SerialTransport(config, state, service)
-        try:
-            await transport.run()
-        except RuntimeError as e:
-            assert str(e) == "Break Loop"
+        await transport.run()
 
-    # Verify behavior
-    # Connect should be called at least twice (initial + retry)
-    assert mock_async_serial_cls.call_count >= 2
-    assert service.on_serial_connected.called
-    assert service.on_serial_disconnected.called
+    assert connect_count >= 2

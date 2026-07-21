@@ -133,35 +133,41 @@ class SerialTransport:
             ) as self.serial:
                 self.state.serial_writer = self.serial.transport
                 await self._toggle_dtr()
-                read_task = asyncio.get_running_loop().create_task(self._read_loop(self.serial))
                 try:
-                    if self.config.serial_baud != connect_baud and not await self._negotiate_baudrate(
-                        self.config.serial_baud
-                    ):
-                        raise ConnectionError("Baudrate negotiation failed")
-                    if self.service:
-                        await self.service.on_serial_connected()
-
-                    # Wait for either stop event or read task failure
-                    wait_stop = asyncio.create_task(self._stop_event.wait())
-                    done, _ = await asyncio.wait([wait_stop, read_task], return_when=asyncio.FIRST_COMPLETED)
-                    if not wait_stop.done():
-                        wait_stop.cancel()
-
-                    # If read_task finished first, it means connection was lost
-                    if read_task in done:
-                        raise ConnectionError("Serial connection lost")
-                finally:
-                    read_task.cancel()
-                    try:
-                        await read_task
-                    except (asyncio.IncompleteReadError, asyncio.CancelledError):
-                        logger.debug("Serial read task cancelled or incomplete during cleanup")
-                    if self.service:
+                    async with asyncio.TaskGroup() as tg:
+                        read_task = tg.create_task(self._read_loop(self.serial))
                         try:
-                            await self.service.on_serial_disconnected()
-                        except (OSError, RuntimeError, ValueError, TypeError) as e:
-                            logger.error("Error during serial disconnect cleanup", error=e)
+                            if self.config.serial_baud != connect_baud and not await self._negotiate_baudrate(
+                                self.config.serial_baud
+                            ):
+                                raise ConnectionError("Baudrate negotiation failed")
+                            if self.service:
+                                await self.service.on_serial_connected()
+
+                            stop_task = tg.create_task(self._stop_event.wait())
+                            while not stop_task.done() and not read_task.done():
+                                await asyncio.sleep(0.01)
+
+                            if read_task.done() and not self._stop_event.is_set():
+                                stop_task.cancel()
+                                raise ConnectionError("Serial connection lost")
+                            stop_task.cancel()
+                            read_task.cancel()
+                        finally:
+                            if self.service:
+                                try:
+                                    await self.service.on_serial_disconnected()
+                                except (OSError, RuntimeError, ValueError, TypeError) as e:
+                                    logger.error("Error during serial disconnect cleanup", error=e)
+                except* (
+                    ConnectionError,
+                    RuntimeError,
+                    OSError,
+                    SerialHandshakeFatal,
+                    EOFError,
+                    asyncio.IncompleteReadError,
+                ) as eg:
+                    raise eg.exceptions[0] from None
         finally:
             self.serial = None
 
@@ -189,7 +195,7 @@ class SerialTransport:
             except asyncio.LimitOverrunError:
                 self.state.serial_decode_errors += 1
                 await serial.read(protocol.MAX_SERIAL_FRAME_BYTES)
-            except asyncio.IncompleteReadError:
+            except (asyncio.IncompleteReadError, asyncio.CancelledError):
                 break
             except (OSError, RuntimeError, ValueError, TypeError, serialx.SerialException) as exc:
                 logger.error("Error in _read_loop: %s", exc)
@@ -239,54 +245,29 @@ class SerialTransport:
 
     def _correlate_frame(self, command_id: int, payload: bytes | ProtobufMessage) -> None:
         pending = self._current
-        logger.debug(
-            "_correlate_frame entry", command_id=command_id, pending_cmd=(pending.command_id if pending else None)
-        )
-        if pending is None:
-            return
-        if pending.success is not None:
-            logger.debug(
-                "Pending command already resolved, ignoring further correlation",
-                pending_cmd=pending.command_id,
-                command_id=command_id,
-            )
+        if pending is None or pending.success is not None:
             return
         if command_id == Status.ACK.value:
             ack_target = pending.command_id
             if payload:
                 try:
-                    if isinstance(payload, ProtobufMessage):
+                    if isinstance(payload, ProtobufMessage) and payload.DESCRIPTOR == pb.AckPacket.DESCRIPTOR:
                         ack_target = getattr(payload, "command_id", ack_target)
-                    else:
+                    elif isinstance(payload, bytes):
                         ack_target = pb.AckPacket.FromString(payload).command_id
                 except (ProtobufDecodeError, TypeError, ValueError) as e:
                     logger.error("Failed to decode MCU ACK payload", error=e)
-            logger.debug(
-                "Correlation ACK match",
-                ack_target=ack_target,
-                pending_cmd=pending.command_id,
-                expected_resp_ids=pending.expected_resp_ids,
-            )
             if ack_target == pending.command_id:
                 pending.ack_received = True
                 if not pending.expected_resp_ids:
-                    logger.debug("Marking pending command success on ACK")
                     pending.mark_success(payload)
             return
-        logger.debug(
-            "Correlation check response_to_request",
-            resp_req=response_to_request(command_id),
-            pending_cmd=pending.command_id,
-        )
         if response_to_request(command_id) == pending.command_id:
-            logger.debug("Marking pending command success on response")
             pending.mark_success(payload)
             return
         if command_id in SERIAL_FAILURE_STATUS_CODES:
-            logger.debug("Marking pending command failure")
             pending.mark_failure(command_id)
         elif command_id in SERIAL_SUCCESS_STATUS_CODES and not pending.expected_resp_ids:
-            logger.debug("Marking pending command success on success status")
             pending.mark_success(payload)
 
     async def _check_baudrate_fallback(self) -> None:

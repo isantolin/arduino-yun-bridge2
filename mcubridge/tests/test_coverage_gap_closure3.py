@@ -249,12 +249,12 @@ def test_led_control_do_publish_error() -> None:
 
 @pytest.mark.asyncio
 async def test_runtime_spool_cloud_message_limit_trim(cfg: RuntimeConfig, state: RuntimeState) -> None:
-    """_spool_cloud_message_locked trims spool when limit reached (lines 300-317)."""
+    """_spool_cloud_message_locked appends message and reads pending count."""
+    # [SIL-2] Trim-on-limit was removed during de-layering; _spool_cloud_message_locked
+    # now directly appends and reads length via aiosqlite SqliteDeque.
     service = BridgeService(cfg, state, AsyncMock(spec=SerialTransport))
     mock_spool = AsyncMock()
-    # Return 10 first time (trigger trim loop), then 3 (exit trim loop), then 4 for pending_count
-    mock_spool.length = AsyncMock(side_effect=[10, 3, 4])
-    mock_spool.popleft = AsyncMock()
+    mock_spool.length = AsyncMock(return_value=3)
     mock_spool.append = AsyncMock()
 
     state.cloud_queue_limit = 5
@@ -264,7 +264,8 @@ async def test_runtime_spool_cloud_message_limit_trim(cfg: RuntimeConfig, state:
     fn = getattr(service, "_spool_cloud_message_locked")
     res = await fn(msg)
     assert res is True
-    mock_spool.popleft.assert_awaited()
+    mock_spool.append.assert_awaited_once()
+    assert mock_spool.length.await_count == 2
 
 
 @pytest.mark.asyncio

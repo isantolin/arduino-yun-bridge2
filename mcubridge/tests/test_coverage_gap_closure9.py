@@ -3,7 +3,6 @@ and handshake success/backoff paths to pass 95% total Python coverage. [SIL-2]""
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 from typing import Any, Iterator
 from unittest.mock import AsyncMock, patch
@@ -58,6 +57,7 @@ async def test_handshake_capabilities_flow(cfg: RuntimeConfig, state: RuntimeSta
         state=state,
         serial_timing=timing,
         send_frame=AsyncMock(return_value=True),
+        send_tracked=AsyncMock(return_value=True),
         enqueue_cloud=AsyncMock(),
         acknowledge_frame=AsyncMock(),
     )
@@ -78,13 +78,23 @@ async def test_handshake_capabilities_flow(cfg: RuntimeConfig, state: RuntimeSta
     with patch("mcubridge.protocol.mcubridge_pb2.Capabilities.FromString", side_effect=TypeError("invalid msg")):
         fn_parse(b"invalid")
 
-    # 2. handle_capabilities_resp when _capabilities_future is active
-    loop = asyncio.get_running_loop()
-    fut = loop.create_future()
-    setattr(hs, "_capabilities_future", fut)
-    res = await hs.handle_capabilities_resp(1, b"cap_bytes")
+    # 2. _fetch_capabilities when send_tracked returns payload directly
+    # [SIL-2] handle_capabilities_resp and _capabilities_future were eliminated;
+    # the response is now returned directly by the tracked send path.
+    cap_bytes = pb.Capabilities(ver=2, dig=13).SerializeToString()
+    send_tracked_mock = AsyncMock(return_value=cap_bytes)
+    hs2 = SerialHandshakeManager(
+        config=cfg,
+        state=state,
+        serial_timing=timing,
+        send_frame=AsyncMock(return_value=True),
+        send_tracked=send_tracked_mock,
+        enqueue_cloud=AsyncMock(),
+        acknowledge_frame=AsyncMock(),
+    )
+    res = await getattr(hs2, "_fetch_capabilities")()
     assert res is True
-    assert fut.result() == b"cap_bytes"
+    assert state.mcu_capabilities is not None
 
     # 3. handle_link_reset_resp
     res = await hs.handle_link_reset_resp(1, b"\x01\x02")
@@ -102,6 +112,7 @@ async def test_handshake_success_and_backoff(cfg: RuntimeConfig, state: RuntimeS
         state=state,
         serial_timing=timing,
         send_frame=AsyncMock(return_value=True),
+        send_tracked=AsyncMock(return_value=True),
         enqueue_cloud=AsyncMock(),
         acknowledge_frame=AsyncMock(),
     )
@@ -147,6 +158,7 @@ async def test_fetch_capabilities_send_failure(cfg: RuntimeConfig, state: Runtim
         state=state,
         serial_timing=timing,
         send_frame=AsyncMock(return_value=False),
+        send_tracked=AsyncMock(return_value=False),
         enqueue_cloud=AsyncMock(),
         acknowledge_frame=AsyncMock(),
     )

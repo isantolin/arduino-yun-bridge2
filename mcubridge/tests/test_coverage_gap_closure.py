@@ -66,6 +66,7 @@ def handshake_manager(cfg: RuntimeConfig, state: RuntimeState) -> SerialHandshak
         state=state,
         serial_timing=timing,
         send_frame=AsyncMock(return_value=True),
+        send_tracked=AsyncMock(return_value=True),
         enqueue_cloud=AsyncMock(),
         acknowledge_frame=AsyncMock(),
     )
@@ -486,30 +487,30 @@ async def test_negotiate_baudrate_future_already_done(cfg: RuntimeConfig, state:
 @pytest.mark.asyncio
 async def test_handle_capabilities_resp_sets_future(
     handshake_manager: SerialHandshakeManager,
+    state: RuntimeState,
 ) -> None:
-    """handle_capabilities_resp sets the capabilities future result (lines 382-384)."""
-    loop = asyncio.get_running_loop()
-    future: asyncio.Future[Any] = loop.create_future()
-    cast(Any, handshake_manager)._capabilities_future = future
-
-    result = await handshake_manager.handle_capabilities_resp(1, b"")
-    assert result is True
-    assert future.done()
+    """_parse_capabilities stores capabilities directly (replaces handle_capabilities_resp shim)."""
+    # [SIL-2] handle_capabilities_resp and _capabilities_future were eliminated.
+    # Capabilities are now parsed inline by _fetch_capabilities via _parse_capabilities.
+    caps_bytes = pb.Capabilities(ver=1, dig=5).SerializeToString()
+    cast(Any, handshake_manager)._parse_capabilities(caps_bytes)
+    assert state.mcu_capabilities is not None
+    assert isinstance(state.mcu_capabilities, pb.Capabilities)
 
 
 @pytest.mark.asyncio
 async def test_handle_capabilities_resp_future_already_done(
     handshake_manager: SerialHandshakeManager,
+    state: RuntimeState,
 ) -> None:
-    """handle_capabilities_resp when future already done doesn't set again."""
-    loop = asyncio.get_running_loop()
-    future: asyncio.Future[Any] = loop.create_future()
-    future.set_result(b"done")
-    cast(Any, handshake_manager)._capabilities_future = future
-
-    result = await handshake_manager.handle_capabilities_resp(1, b"extra")
-    assert result is True
-    assert future.result() == b"done"  # unchanged
+    """_parse_capabilities overrides prior capabilities on repeated calls."""
+    # [SIL-2] No Future shim — parse is idempotent and overwrites state.
+    caps1 = pb.Capabilities(ver=1).SerializeToString()
+    caps2 = pb.Capabilities(ver=2, dig=7).SerializeToString()
+    cast(Any, handshake_manager)._parse_capabilities(caps1)
+    cast(Any, handshake_manager)._parse_capabilities(caps2)
+    assert state.mcu_capabilities is not None
+    assert isinstance(state.mcu_capabilities, pb.Capabilities)
 
 
 @pytest.mark.asyncio

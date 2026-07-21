@@ -28,20 +28,17 @@ void ProcessClass::runAsync(etl::string_view cmd,
   }
 
   etl::string<kProcessCommandBufferSize> command_buffer;
-  bool ok = true;
-  if (cmd.size() <= command_buffer.available()) {
+  bool ok = (cmd.size() <= command_buffer.available());
+  if (ok) {
     command_buffer.append(cmd.begin(), cmd.end());
-  } else {
-    ok = false;
-  }
-
-  for (const auto& arg : args) {
-    if (1U + arg.size() > command_buffer.available()) {
-      ok = false;
-      break;
-    }
-    command_buffer.append(" ");
-    command_buffer.append(arg.begin(), arg.end());
+    etl::for_each(args.begin(), args.end(), [&](etl::string_view arg) {
+      if (ok && 1U + arg.size() <= command_buffer.available()) {
+        command_buffer.append(" ");
+        command_buffer.append(arg.begin(), arg.end());
+      } else {
+        ok = false;
+      }
+    });
   }
 
   if (!ok) {

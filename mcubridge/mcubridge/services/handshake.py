@@ -63,6 +63,14 @@ class SendFrameCallable(Protocol):
     async def __call__(self, command_id: int, payload: bytes | Message, seq_id: int | None = None) -> bool: ...
 
 
+class SendTrackedCallable(Protocol):
+    """Tracked send: returns the response payload (bytes | Message) or True/False."""
+
+    async def __call__(
+        self, command_id: int, payload: bytes | Message, seq_id: int | None = None
+    ) -> bool | bytes | Message: ...
+
+
 EnqueueMessageCallable = Callable[[pb.CloudQueuedPublish], Awaitable[None]]
 AcknowledgeFrameCallable = Callable[..., Awaitable[None]]
 
@@ -100,6 +108,7 @@ class SerialHandshakeManager:
         state: RuntimeState,
         serial_timing: pb.HandshakeConfig,
         send_frame: SendFrameCallable,
+        send_tracked: SendTrackedCallable,
         enqueue_cloud: EnqueueMessageCallable,
         acknowledge_frame: AcknowledgeFrameCallable,
         logger_: logging.Logger | None = None,
@@ -108,13 +117,13 @@ class SerialHandshakeManager:
         self._state = state
         self._timing = serial_timing
         self._send_frame = send_frame
+        self._send_tracked = send_tracked
         self._enqueue_cloud = enqueue_cloud
         self._acknowledge_frame = acknowledge_frame
         self._logger = logger_ or logger
         self._fatal_threshold = max(1, config.serial_handshake_fatal_failures)
         # [SIL-2] Serialize handshake timing as protobuf.
         self._reset_payload = self._timing
-        self._capabilities_future: asyncio.Future[bytes | ProtobufMessage] | None = None
         self.fsm_state: HandshakeState = HandshakeState.UNSYNCHRONIZED
 
     def _set_fsm_state(self, new_state: HandshakeState) -> None:
@@ -340,47 +349,14 @@ class SerialHandshakeManager:
         await self._fetch_capabilities()
 
     async def _fetch_capabilities(self) -> bool:
-        loop = asyncio.get_running_loop()
         cmd_id = Command.CMD_GET_CAPABILITIES.value
         self._logger.debug("Starting capabilities discovery using Command ID 0x%02X", cmd_id)
-
-        retryer = tenacity.AsyncRetrying(
-            stop=tenacity.stop_after_attempt(5),
-            wait=tenacity.wait_exponential(
-                multiplier=SERIAL_HANDSHAKE_BACKOFF_BASE,
-                max=SERIAL_HANDSHAKE_BACKOFF_MAX,
-            ),
-            retry=tenacity.retry_if_exception_type(TimeoutError),
-            before_sleep=tenacity.before_sleep_log(self._logger, logging.DEBUG),
-            reraise=False,
-        )
-
-        async def _attempt() -> bool:
-            self._capabilities_future = loop.create_future()
-            ok = await self._send_frame(Command.CMD_GET_CAPABILITIES.value, b"")
-            if not ok:
-                self._capabilities_future = None
-                raise TimeoutError("Send failed")
-
-            try:
-                timeout = max(5.0, (self._timing.response_timeout_ms / 1000.0))
-                payload = await asyncio.wait_for(self._capabilities_future, timeout=timeout)
-                self._parse_capabilities(payload)
-                return True
-            except TimeoutError:
-                raise
-            finally:
-                self._capabilities_future = None
-
-        try:
-            return await retryer(_attempt)
-        except tenacity.RetryError:
-            return False
-
-    async def handle_capabilities_resp(self, seq_id: int, payload: bytes | ProtobufMessage) -> bool:
-        if self._capabilities_future and not self._capabilities_future.done():
-            self._capabilities_future.set_result(payload)
-        return True
+        # [SIL-2] Use tracked send so the response payload is returned directly.
+        res = await self._send_tracked(cmd_id, b"")
+        if res and res is not True:
+            self._parse_capabilities(res)
+            return True
+        return False
 
     def _parse_capabilities(self, payload: bytes | ProtobufMessage) -> None:
         try:

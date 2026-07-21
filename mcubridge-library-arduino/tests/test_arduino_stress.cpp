@@ -94,6 +94,8 @@ void test_bridge_fsm_illegal_transitions() {
   TEST_ASSERT_TRUE(true);
 }
 
+}  // namespace
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_bridge_reliable_retry_exhaustion);

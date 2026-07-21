@@ -255,12 +255,16 @@ def _parse_pip_spec(spec: str) -> tuple[str, str]:
     return name, version.strip()
 
 
-def _fetch_latest_version(package_name: str) -> str | None:
+def _fetch_latest_version(package_name: str, *, include_prerelease: bool = False) -> str | None:
     """Query PyPI JSON API for the latest release version."""
     url = f"https://pypi.org/pypi/{package_name}/json"
     try:
         with urllib.request.urlopen(url, timeout=10) as resp:
             data = json.loads(resp.read())
+            if include_prerelease and "releases" in data:
+                all_versions = list(data["releases"].keys())
+                if all_versions:
+                    return all_versions[-1]
             return data["info"]["version"]
     except (urllib.error.URLError, ValueError, KeyError, json.JSONDecodeError):
         return None
@@ -276,7 +280,8 @@ def check_latest_versions(deps: Sequence[_DepEntry]) -> list[tuple[str, str, str
         name, pinned = _parse_pip_spec(spec)
         if not pinned:
             continue
-        latest = _fetch_latest_version(name)
+        is_prerelease = any(tag in pinned for tag in ("rc", "a", "b", "dev"))
+        latest = _fetch_latest_version(name, include_prerelease=is_prerelease)
         if latest and latest != pinned:
             outdated.append((name, pinned, latest))
     return outdated

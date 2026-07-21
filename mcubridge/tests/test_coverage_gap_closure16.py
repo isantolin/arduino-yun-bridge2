@@ -1,6 +1,5 @@
 """Exhaustive gap closure suite 16 for Python daemon SIL-2 coverage (95%+ target)."""
 
-import asyncio
 import tempfile
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -31,10 +30,10 @@ async def test_client_console_listener_and_disconnect():
         async def __aenter__(self):
             return self
 
-        async def __aexit__(self, *args):
+        async def __aexit__(self, *args: Any):
             pass
 
-        async def send_message(self, msg):
+        async def send_message(self, msg: Any):
             pass
 
         def __aiter__(self):
@@ -56,6 +55,7 @@ async def test_client_console_listener_and_disconnect():
 @pytest.mark.asyncio
 async def test_system_and_mcu_status_formatting():
     from mcubridge.protocol.structures import TopicRoute
+
     cfg = load_runtime_config()
     state = create_runtime_state(cfg)
     mock_serial = AsyncMock()
@@ -82,6 +82,7 @@ async def test_system_and_mcu_status_formatting():
 @pytest.mark.asyncio
 async def test_serial_correlate_frame_branches():
     from mcubridge.transport.serial import SerialTransport
+
     cfg = load_runtime_config()
     state = create_runtime_state(cfg)
     mock_serial = AsyncMock()
@@ -112,7 +113,7 @@ async def test_serial_correlate_frame_branches():
 async def test_storage_db_error_paths():
     from mcubridge.state.storage import SqliteCache, SqliteDeque
 
-    async def raising_connect(*args, **kwargs):
+    async def raising_connect(*args: Any, **kwargs: Any):
         raise OSError("DB error")
 
     with tempfile.NamedTemporaryFile(suffix=".db") as tf:

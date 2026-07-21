@@ -91,7 +91,7 @@ $PYTHON_BIN -m pytest \
   --timeout=300 \
   --timeout-method=thread \
   --cov="$ROOT_DIR/mcubridge/mcubridge" \
-  --cov=gateway \
+  --cov="$ROOT_DIR/mcubridge-client-examples/mcubridge_client" \
   --cov-branch \
   --cov-fail-under="${PYTHON_COVERAGE_MIN}" \
   --cov-report=xml:"$COVERAGE_ROOT/coverage.xml" \

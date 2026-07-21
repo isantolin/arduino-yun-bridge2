@@ -248,6 +248,50 @@ void test_surgical_send_fail_branches() {
   }
 }
 
+static void test_surgical_extra_branches() {
+  static BiStream stream;
+  stream.clear();
+  reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
+
+  // 1. Digital write out of bounds pin
+  {
+    rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
+    env.version = rpc::PROTOCOL_VERSION;
+    env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_DIGITAL_WRITE);
+    env.sequence_id = 40;
+    env.which_payload_type = rpc_pb_RpcEnvelope_digital_write_tag;
+    env.payload_type.digital_write.pin = 255U;
+    env.payload_type.digital_write.value = 1U;
+    ba.dispatch(env);
+  }
+
+  // 2. Analog write out of bounds pin
+  {
+    rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
+    env.version = rpc::PROTOCOL_VERSION;
+    env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_ANALOG_WRITE);
+    env.sequence_id = 41;
+    env.which_payload_type = rpc_pb_RpcEnvelope_analog_write_tag;
+    env.payload_type.analog_write.pin = 255U;
+    env.payload_type.analog_write.value = 500U;
+    ba.dispatch(env);
+  }
+
+  // 3. Pin mode out of bounds pin
+  {
+    rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
+    env.version = rpc::PROTOCOL_VERSION;
+    env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_SET_PIN_MODE);
+    env.sequence_id = 42;
+    env.which_payload_type = rpc_pb_RpcEnvelope_pin_mode_tag;
+    env.payload_type.pin_mode.pin = 255U;
+    env.payload_type.pin_mode.mode = rpc_pb_PinModeType_PIN_OUTPUT;
+    ba.dispatch(env);
+  }
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_surgical_bridge_errors);
@@ -255,5 +299,6 @@ int main() {
   RUN_TEST(test_surgical_security_failures);
   RUN_TEST(test_surgical_tasks_flow);
   RUN_TEST(test_surgical_send_fail_branches);
+  RUN_TEST(test_surgical_extra_branches);
   return UNITY_END();
 }

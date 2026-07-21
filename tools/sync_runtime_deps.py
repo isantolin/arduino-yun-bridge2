@@ -326,28 +326,50 @@ def update_feeds(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
         # Packages that include pypi.mk WITHOUT the wheel override use Python notation.
         # Packages without pypi.mk use APK notation with explicit source/builddir.
         uses_pypi_mk = bool(re.search(r"^\s*include\b.*\bpypi\.mk\b", content, re.MULTILINE))
-        has_wheel_version_override = "PYTHON3_PKG_WHEEL_VERSION:=" in content
+        is_prerelease = _to_apk_version(version) != version
+        has_wheel_version_override = "PYTHON3_PKG_WHEEL_VERSION:=" in content or is_prerelease
 
         if uses_pypi_mk and has_wheel_version_override:
             # Pre-release: APK version for PKG_VERSION, Python version for wheel glob.
             pkg_version = _to_apk_version(version)
             new_content = re.sub(r"PKG_VERSION:=[^\n]+", f"PKG_VERSION:={pkg_version}", content)
-            new_content = re.sub(
-                r"PYTHON3_PKG_WHEEL_VERSION:=[^\n]+",
-                f"PYTHON3_PKG_WHEEL_VERSION:={version}",
-                new_content,
-            )
+            if "PYTHON3_PKG_WHEEL_VERSION:=" in new_content:
+                new_content = re.sub(
+                    r"PYTHON3_PKG_WHEEL_VERSION:=[^\n]+",
+                    f"PYTHON3_PKG_WHEEL_VERSION:={version}",
+                    new_content,
+                )
+            else:
+                new_content = re.sub(
+                    r"(PYPI_NAME:=[^\n]+\n)",
+                    f"\\1PYTHON3_PKG_WHEEL_VERSION:={version}\n",
+                    new_content,
+                )
             # PKG_SOURCE and PKG_BUILD_DIR use Python notation (tarball uses 3.0.0a1)
-            new_content = re.sub(
-                r"PKG_SOURCE:=[^\n]+\.tar\.gz",
-                f"PKG_SOURCE:={pip_name}-{version}.tar.gz",
-                new_content,
-            )
-            new_content = re.sub(
-                r"PKG_BUILD_DIR:=[^\n]+",
-                f"PKG_BUILD_DIR:=$(BUILD_DIR)/pypi/{pip_name}-{version}",
-                new_content,
-            )
+            if "PKG_SOURCE:=" in new_content:
+                new_content = re.sub(
+                    r"PKG_SOURCE:=[^\n]+",
+                    f"PKG_SOURCE:={pip_name}-{version}.tar.gz",
+                    new_content,
+                )
+            else:
+                new_content = re.sub(
+                    r"(PYTHON3_PKG_WHEEL_VERSION:=[^\n]+\n)",
+                    f"\\1PKG_SOURCE:={pip_name}-{version}.tar.gz\n",
+                    new_content,
+                )
+            if "PKG_BUILD_DIR:=" in new_content:
+                new_content = re.sub(
+                    r"PKG_BUILD_DIR:=[^\n]+",
+                    f"PKG_BUILD_DIR:=$(BUILD_DIR)/pypi/{pip_name}-{version}",
+                    new_content,
+                )
+            else:
+                new_content = re.sub(
+                    r"(PKG_SOURCE:=[^\n]+\n)",
+                    f"\\1PKG_BUILD_DIR:=$(BUILD_DIR)/pypi/{pip_name}-{version}\n",
+                    new_content,
+                )
         elif uses_pypi_mk:
             # Standard pypi.mk package: Python notation throughout.
             pkg_version = version

@@ -2,20 +2,26 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=python3-protobuf
-PKG_VERSION:=7.36.0rc1
+PKG_VERSION:=7.36.0_rc1
 PKG_RELEASE:=1
 
 PYPI_NAME:=protobuf
-PKG_SOURCE:=$(PYPI_NAME)-$(PKG_VERSION).tar.gz
+PYTHON3_PKG_WHEEL_VERSION:=7.36.0rc1
+PKG_SOURCE:=protobuf-7.36.0rc1.tar.gz
+PKG_BUILD_DIR:=$(BUILD_DIR)/pypi/protobuf-7.36.0rc1
 PKG_HASH:=a7cf7138eff7c0d1c456eea80bc5854d02ac36a76460c33b3ebec216b2024d53
 
 PKG_MAINTAINER:=Ignacio Santolin <isantolin@gmail.com>
 PKG_LICENSE:=BSD-3-Clause
 PKG_LICENSE_FILES:=LICENSE
 
+PKG_BUILD_DEPENDS:=python3-setuptools/host python-build/host python-installer/host python-wheel/host
+
 include $(TOPDIR)/feeds/packages/lang/python/pypi.mk
 include $(INCLUDE_DIR)/package.mk
 include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
+
+TARGET_CFLAGS += -I$(STAGING_DIR)/usr/include/python$(PYTHON3_VERSION)
 
 define Package/python3-protobuf
   SECTION:=lang
@@ -32,3 +38,4 @@ endef
 
 $(eval $(call Py3Package,python3-protobuf))
 $(eval $(call BuildPackage,python3-protobuf))
+

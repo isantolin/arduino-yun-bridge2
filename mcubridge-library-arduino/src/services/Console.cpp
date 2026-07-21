@@ -3,7 +3,6 @@
 #include <etl/algorithm.h>
 
 #include "Bridge.h"
-#include "etl_ext/CounterIterator.h"
 
 ConsoleClass::ConsoleClass() : _flags(0) {}
 
@@ -43,22 +42,18 @@ size_t ConsoleClass::write(uint8_t c) {
 
 size_t ConsoleClass::write(const uint8_t* buffer, size_t size) {
   if (buffer == nullptr || size == 0) return 0;
-  size_t written = 0;
-  using bridge::etl_ext::CounterIterator;
-  const uint16_t max_chunks = static_cast<uint16_t>(size);
-  if (etl::find_if(CounterIterator<uint16_t>(0U),
-                   CounterIterator<uint16_t>(max_chunks + 1U), [&](uint16_t) {
-                     if (_tx_buffer.full()) process();
-                     if (_tx_buffer.full()) return true;
-                     const size_t to_write =
-                         etl::min(size - written, _tx_buffer.available());
-                     _tx_buffer.insert(_tx_buffer.end(), buffer + written,
-                                       buffer + written + to_write);
-                     written += to_write;
-                     return written >= size;
-                   }) != CounterIterator<uint16_t>(max_chunks + 1U)) {
+  if (_tx_buffer.full()) process();
+  const size_t to_write = etl::min(size, _tx_buffer.available());
+  _tx_buffer.insert(_tx_buffer.end(), buffer, buffer + to_write);
+  if (to_write < size && _tx_buffer.full()) {
+    process();
+    const size_t extra_write =
+        etl::min(size - to_write, _tx_buffer.available());
+    _tx_buffer.insert(_tx_buffer.end(), buffer + to_write,
+                      buffer + to_write + extra_write);
+    return to_write + extra_write;
   }
-  return written;
+  return to_write;
 }
 
 int ConsoleClass::available() { return static_cast<int>(_rx_buffer.size()); }

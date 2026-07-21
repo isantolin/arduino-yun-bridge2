@@ -5,7 +5,6 @@
 #include "Bridge.h"
 #include "BridgeFaultInjection.h"
 #include "BridgeTestInterface.h"
-#include "etl_ext/CounterIterator.h"
 #include "fsm/bridge_fsm.h"
 #include "services/Console.h"
 #include "services/DataStore.h"
@@ -311,10 +310,9 @@ void test_console_and_policy_edges() {
   ba.setSynchronized();
   Console.begin();
 
-  bridge::etl_ext::CounterIterator<size_t> begin(0);
-  bridge::etl_ext::CounterIterator<size_t> end(
-      bridge::config::CONSOLE_TX_BUFFER_SIZE);
-  etl::for_each(begin, end, [](size_t) { (void)Console.write('x'); });
+  for (size_t i = 0; i < bridge::config::CONSOLE_TX_BUFFER_SIZE; ++i) {
+    (void)Console.write('x');
+  }
 
   Bridge.enterSafeState();
   TEST_ASSERT_EQUAL_UINT32(0, static_cast<uint32_t>(Console.write('z')));

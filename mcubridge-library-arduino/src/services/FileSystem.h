@@ -20,7 +20,7 @@ class FileSystemClass {
   static void remove(etl::string_view path);
 
   static void _onWrite(const rpc::payload::FileWrite& msg);
-  void _onRead(const rpc::payload::FileRead& msg);
+  static void _onRead(const rpc::payload::FileRead& msg);
   static void _onRemove(const rpc::payload::FileRemove& msg);
   void _onResponse(const rpc::payload::FileReadResponse& msg);
 

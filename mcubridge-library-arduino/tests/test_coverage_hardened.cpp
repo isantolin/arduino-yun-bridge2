@@ -3,7 +3,6 @@
 
 #include "Bridge.h"
 #include "BridgeTestInterface.h"
-#include "etl_ext/CounterIterator.h"
 #include "services/Console.h"
 #include "services/DataStore.h"
 #include "services/FileSystem.h"
@@ -64,13 +63,10 @@ void test_bridge_queue_full_and_retransmit() {
   ba.setSynchronized();
 
   // Fill the TX queue with reliable commands to trigger full condition
-  bridge::etl_ext::CounterIterator<uint32_t> fill_begin(0);
-  bridge::etl_ext::CounterIterator<uint32_t> fill_end(
-      bridge::config::MAX_PENDING_TX_FRAMES);
-  etl::for_each(fill_begin, fill_end, [&ba](uint32_t i) {
+  for (uint32_t i = 0; i < bridge::config::MAX_PENDING_TX_FRAMES; ++i) {
     // Use a reliable command (e.g., CMD_CONSOLE_WRITE)
     (void)ba.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, 100 + i, {});
-  });
+  }
 
   // Next one should return false (queue full)
   bool ok = ba.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, 999, {});
@@ -95,7 +91,6 @@ void test_filesystem_read_edge_cases() {
   rpc::payload::FileRead req;
   strncpy(req.path, path_sv.data(), sizeof(req.path));
 
-  // This will use the new CounterIterator in _onRead
   FileSystem._onRead(req);
 
   // Write a large file (> 64 bytes) to test multi-chunk reading

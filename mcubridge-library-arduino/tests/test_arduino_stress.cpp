@@ -1,27 +1,34 @@
 #define BRIDGE_ENABLE_TEST_INTERFACE
 #include <Arduino.h>
-#include <unity.h>
+#include <etl/array.h>
 
 #include "Bridge.h"
 #include "BridgeTestInterface.h"
-#include "etl_ext/CounterIterator.h"
 #include "test_support.h"
 
-// [SIL-2] Global stub definitions
+// [SIL-2] Global stub definitions for host environment
+Stream* g_arduino_stream_delegate = nullptr;
 HardwareSerial Serial;
 HardwareSerial Serial1;
-Stream* g_arduino_stream_delegate = nullptr;
+void setUp(void) {}
+void tearDown(void) {}
+
+unsigned long g_test_millis = 0;
+unsigned long millis() { return g_test_millis; }
+void delay(unsigned long ms) { g_test_millis += ms; }
+
+namespace etl {
+void handle_error(const etl::exception& e);
+}
+
+namespace {
 
 using bridge::test::TestAccessor;
-
-void setUp() {}
-void tearDown() {}
 
 void test_bridge_reliable_retry_exhaustion() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
-  ba.setIdle();
   ba.setSynchronized();
 
   // 1. Send reliable frame
@@ -29,12 +36,10 @@ void test_bridge_reliable_retry_exhaustion() {
   TEST_ASSERT_TRUE(ba.isAwaitingAck());
 
   // 2. Trigger timeout multiple times until limit
-  bridge::etl_ext::CounterIterator<int> retry_begin(1);
-  bridge::etl_ext::CounterIterator<int> retry_end(rpc::RPC_DEFAULT_RETRY_LIMIT);
-  etl::for_each(retry_begin, retry_end, [&ba](int) {
+  for (int i = 1; i < rpc::RPC_DEFAULT_RETRY_LIMIT; ++i) {
     ba.onAckTimeout();
     TEST_ASSERT_TRUE(ba.isAwaitingAck());
-  });
+  }
 
   // Final call that triggers transition
   ba.onAckTimeout();

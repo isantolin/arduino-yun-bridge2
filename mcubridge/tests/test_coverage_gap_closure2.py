@@ -64,8 +64,6 @@ def test_mark_transport_disconnected_clears_event(state: RuntimeState) -> None:
     assert state.state == "disconnected"
 
 
-
-
 def test_mark_transport_disconnected_no_event(cfg: RuntimeConfig) -> None:
     """mark_transport_disconnected with link_sync_event=None doesn't crash."""
     s = create_runtime_state(cfg)

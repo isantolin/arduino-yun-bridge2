@@ -4,7 +4,6 @@
 
 #include "Bridge.h"
 #include "BridgeTestInterface.h"
-#include "etl_ext/CounterIterator.h"
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
 #include "test_support.h"
@@ -35,7 +34,6 @@ void handle_error(const etl::exception& e);
 
 namespace {
 
-using bridge::etl_ext::CounterIterator;
 using bridge::test::TestAccessor;
 
 void test_bridge_basic_lifecycle() {

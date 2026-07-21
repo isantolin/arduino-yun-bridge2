@@ -3,7 +3,6 @@
 
 #include "Bridge.h"
 #include "BridgeTestInterface.h"
-#include "etl_ext/CounterIterator.h"
 #include "hal/hal.h"
 #include "services/Console.h"
 #include "services/DataStore.h"
@@ -122,11 +121,9 @@ void test_bridge_coverage() {
   printf("  - Step 4: Console\n");
   Console.begin();
   (void)Console.write('a');
-  bridge::etl_ext::CounterIterator<int> console_begin(0);
-  bridge::etl_ext::CounterIterator<int> console_end(
-      bridge::config::CONSOLE_TX_BUFFER_SIZE + 1);
-  etl::for_each(console_begin, console_end,
-                [](int) { (void)Console.write('x'); });
+  for (int i = 0; i <= bridge::config::CONSOLE_TX_BUFFER_SIZE; ++i) {
+    (void)Console.write('x');
+  }
   Console.process();
 
   rpc::payload::ConsoleWrite cmsg;

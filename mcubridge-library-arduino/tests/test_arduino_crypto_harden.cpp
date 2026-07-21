@@ -5,7 +5,6 @@
 
 #include "Bridge.h"
 #include "BridgeTestInterface.h"
-#include "etl_ext/CounterIterator.h"
 #include "test_support.h"
 
 // [SIL-2] Global stub definitions
@@ -97,9 +96,9 @@ void test_bridge_ack_timeout_retry_to_fault() {
   TEST_ASSERT_TRUE(ba.isAwaitingAck());
 
   // Trigger timeout 3 times (Default limit)
-  bridge::etl_ext::CounterIterator<int> retry_begin(0);
-  bridge::etl_ext::CounterIterator<int> retry_end(rpc::RPC_DEFAULT_RETRY_LIMIT);
-  etl::for_each(retry_begin, retry_end, [&ba](int) { ba.onAckTimeout(); });
+  for (int i = 0; i < rpc::RPC_DEFAULT_RETRY_LIMIT; ++i) {
+    ba.onAckTimeout();
+  }
 
   // After limit, it should transition out of Awaiting Ack
   TEST_ASSERT_FALSE(ba.isAwaitingAck());

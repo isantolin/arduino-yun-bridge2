@@ -4,7 +4,7 @@ from mcubridge.protocol import mcubridge_pb2 as pb
 import asyncio
 import time
 from typing import cast, Iterator
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -38,7 +38,6 @@ def handshake_setup(tmp_path: Path) -> Iterator[tuple[SerialHandshakeManager, Ru
         state=state,
         serial_timing=timing,
         send_frame=send_frame,
-        send_tracked=AsyncMock(return_value=True),
         enqueue_cloud=enqueue_cloud,
         acknowledge_frame=acknowledge_frame,
     )
@@ -125,19 +124,23 @@ async def test_handshake_streak_fatal_threshold(
 async def test_handshake_capabilities_retry(
     handshake_setup: tuple[SerialHandshakeManager, RuntimeState, AsyncMock],
 ) -> None:
-    """Verify capabilities discovery parses response directly from _send_tracked."""
-    manager, state, _ = handshake_setup
+    """Verify capabilities discovery retries on timeout."""
+    manager, _, send_frame = handshake_setup
 
-    # [SIL-2] _fetch_capabilities uses _send_tracked directly; no asyncio.wait_for.
-    # Mock returns serialized Capabilities payload to exercise _parse_capabilities.
-    cap_payload = pb.Capabilities(ver=3, dig=7).SerializeToString()
-    send_tracked_mock = AsyncMock(return_value=cap_payload)
-    setattr(manager, "_send_tracked", send_tracked_mock)
+    # Simulate timeout on first 2 attempts, success on 3rd
+    timing = cast(pb.HandshakeConfig, getattr(manager, "_timing"))
+    setattr(timing, "response_timeout_ms", 10)
 
-    result = await getattr(manager, "_fetch_capabilities")()
-    assert result
-    send_tracked_mock.assert_awaited_once()
-    assert state.mcu_capabilities is not None
+    with patch("asyncio.wait_for") as mock_wait:
+        mock_wait.side_effect = [
+            asyncio.TimeoutError,
+            asyncio.TimeoutError,
+            b"\x80",
+        ]  # Empty map
+
+        result = await getattr(manager, "_fetch_capabilities")()
+        assert result
+        assert send_frame.call_count == 3
 
 
 @pytest.mark.asyncio

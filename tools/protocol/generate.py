@@ -797,14 +797,9 @@ def check_incremental_build(args: argparse.Namespace, version: str) -> tuple[boo
 
     # Also check if mcubridge_pb2.py and untyped_libs type stubs exist in target locations
     if outputs_exist:
-        # [SIL-2] The proto-dir copy is the one loaded by load_spec_from_proto via
-        # importlib. If it is absent (e.g. after a clean checkout or gitignore wipe)
-        # but the hash matches, we must still regenerate.
-        if not (proto_path.parent / "mcubridge_pb2.py").exists():
+        if args.py and not (args.py.parent / "mcubridge_pb2.py").exists():
             outputs_exist = False
-        if outputs_exist and args.py and not (args.py.parent / "mcubridge_pb2.py").exists():
-            outputs_exist = False
-        if outputs_exist and args.py_client and not (args.py_client.parent / "mcubridge_pb2.py").exists():
+        if args.py_client and not (args.py_client.parent / "mcubridge_pb2.py").exists():
             outputs_exist = False
         untyped_libs = ["cobs", "prometheus_client", "serialx", "uci", "uvloop"]
         for lib in untyped_libs:

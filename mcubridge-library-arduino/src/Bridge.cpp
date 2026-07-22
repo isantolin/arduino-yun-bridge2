@@ -1,7 +1,6 @@
 #include "Bridge.h"
 
 #include <etl/algorithm.h>
-#include <etl/flat_map.h>
 #include <etl/functional.h>
 #include <etl/iterator.h>
 #include <etl/utility.h>
@@ -503,8 +502,12 @@ void BridgeClass::_serialTask() {
 
 void BridgeClass::_timerTask() {
   const uint32_t now = ::millis();
-  if (_timer_last_tick_ms > 0) _timers.tick(now - _timer_last_tick_ms);
-  _timer_last_tick_ms = now;
+  if (_timer_last_tick_ms == 0) _timer_last_tick_ms = now;
+  const uint32_t elapsed = now - _timer_last_tick_ms;
+  if (elapsed > 0) {
+    _timers.tick(elapsed);
+    _timer_last_tick_ms = now;
+  }
 }
 bool BridgeClass::isSynchronized() const { return _fsm.isSynchronized(); }
 void BridgeClass::onUnknownCommand(const bridge::router::CommandContext& ctx) {
@@ -619,8 +622,9 @@ void BridgeClass::_onAckTimeout() {
 }
 
 void BridgeClass::_processAck(uint16_t command_id, uint16_t sequence_id) {
-  (void)send(rpc::StatusCode::STATUS_ACK, sequence_id,
-             rpc_pb_AckPacket{command_id});
+  rpc_pb_AckPacket p = {};
+  p.command_id = command_id;
+  (void)send(rpc::StatusCode::STATUS_ACK, sequence_id, p);
 }
 
 void BridgeClass::_handleAck(uint16_t cmd) {
@@ -671,14 +675,17 @@ void BridgeClass::_handleEnterBootloader(const rpc_pb_EnterBootloader& msg) {
 }
 
 void BridgeClass::_handleSetPinMode(const rpc_pb_PinMode& m) {
-  static constexpr etl::array<etl::pair<rpc_pb_PinModeType, uint8_t>, 3>
-      kPinModePairs{{{rpc_pb_PinModeType_PIN_INPUT, INPUT},
-                     {rpc_pb_PinModeType_PIN_OUTPUT, OUTPUT},
-                     {rpc_pb_PinModeType_PIN_INPUT_PULLUP, INPUT_PULLUP}}};
-  static const etl::flat_map<rpc_pb_PinModeType, uint8_t, 3> kPinModeMap(
-      kPinModePairs.begin(), kPinModePairs.end());
-  auto it = kPinModeMap.find(m.mode);
-  pinMode(m.pin, (it != kPinModeMap.end()) ? it->second : INPUT);
+  constexpr etl::array<etl::pair<rpc_pb_PinModeType, uint8_t>, 3> kPinModeMap{{
+      {rpc_pb_PinModeType_PIN_INPUT, INPUT},
+      {rpc_pb_PinModeType_PIN_OUTPUT, OUTPUT},
+      {rpc_pb_PinModeType_PIN_INPUT_PULLUP, INPUT_PULLUP},
+  }};
+  auto it = etl::find_if(kPinModeMap.begin(), kPinModeMap.end(),
+                         [&m](const etl::pair<rpc_pb_PinModeType, uint8_t>& p) {
+                           return p.first == m.mode;
+                         });
+  const uint8_t m_val = (it != kPinModeMap.end()) ? it->second : INPUT;
+  pinMode(m.pin, m_val);
 }
 
 void BridgeClass::_handleDigitalWrite(const rpc_pb_DigitalWrite& m) {
@@ -691,16 +698,24 @@ void BridgeClass::_handleAnalogWrite(const rpc_pb_AnalogWrite& m) {
 void BridgeClass::_handlePinReadCommon(
     const bridge::router::CommandContext& ctx, uint8_t pin, uint8_t max_pins,
     rpc::CommandId cmd_id, int (*read_fn)(uint8_t)) {
-  if (pin >= max_pins) {
+  if (pin < max_pins) {
+    bool ok = false;
+    const uint32_t val = static_cast<uint32_t>(read_fn(pin));
+    if (cmd_id == rpc::CommandId::CMD_DIGITAL_READ_RESP) {
+      rpc_pb_DigitalReadResponse resp = rpc_pb_DigitalReadResponse_init_default;
+      resp.value = val;
+      ok = send(cmd_id, ctx.sequence_id, resp);
+    } else {
+      rpc_pb_AnalogReadResponse resp = rpc_pb_AnalogReadResponse_init_default;
+      resp.value = val;
+      ok = send(cmd_id, ctx.sequence_id, resp);
+    }
+    if (!ok) {
+      emitStatus(rpc::StatusCode::STATUS_ERROR);
+    }
+  } else {
     emitStatus(rpc::StatusCode::STATUS_ERROR);
-    return;
   }
-  const uint32_t val = static_cast<uint32_t>(read_fn(pin));
-  const bool ok =
-      (cmd_id == rpc::CommandId::CMD_DIGITAL_READ_RESP)
-          ? send(cmd_id, ctx.sequence_id, rpc_pb_DigitalReadResponse{val})
-          : send(cmd_id, ctx.sequence_id, rpc_pb_AnalogReadResponse{val});
-  if (!ok) emitStatus(rpc::StatusCode::STATUS_ERROR);
 }
 
 void BridgeClass::_handleDigitalRead(const bridge::router::CommandContext& ctx,
@@ -800,11 +815,9 @@ void BridgeClass::_handleSpiTransfer(const bridge::router::CommandContext& ctx,
   // [SIL-2/H-5] Use the shared _working_buffer instead of _rx_buffer.
   // _rx_buffer is owned by PacketSerial and can be written by a serial ISR
   // (on ESP32/SAMD) while a blocking SPI transfer is in progress.
-  size_t len =
-      etl::min(static_cast<size_t>(m.data.size), _working_buffer.size());
+  size_t len = etl::min(static_cast<size_t>(m.data.size), _working_buffer.size());
   etl::copy_n(m.data.bytes, len, _working_buffer.begin());
-  size_t tr =
-      SPIService.transfer(etl::span<uint8_t>(_working_buffer.data(), len));
+  size_t tr = SPIService.transfer(etl::span<uint8_t>(_working_buffer.data(), len));
   if (tr == 0) {
     emitStatus(rpc::StatusCode::STATUS_ERROR);
     return;
@@ -812,8 +825,7 @@ void BridgeClass::_handleSpiTransfer(const bridge::router::CommandContext& ctx,
   rpc_pb_SpiTransferResponse resp = rpc_pb_SpiTransferResponse_init_default;
   const size_t to_copy = etl::min(len, sizeof(resp.data.bytes));
   resp.data.size = static_cast<pb_size_t>(to_copy);
-  if (to_copy > 0)
-    etl::copy_n(_working_buffer.data(), to_copy, resp.data.bytes);
+  if (to_copy > 0) etl::copy_n(_working_buffer.data(), to_copy, resp.data.bytes);
   if (!send(rpc::CommandId::CMD_SPI_TRANSFER_RESP, ctx.sequence_id, resp))
     emitStatus(rpc::StatusCode::STATUS_ERROR);
 }
@@ -904,17 +916,18 @@ void BridgeClass::_handleStatusAck(
 }
 
 void BridgeClass::_handleGetVersion(const bridge::router::CommandContext& ctx) {
-  (void)send(rpc::CommandId::CMD_GET_VERSION_RESP, ctx.sequence_id,
-             rpc_pb_VersionResponse{
-                 rpc::FIRMWARE_VERSION_MAJOR, rpc::FIRMWARE_VERSION_MINOR,
-                 static_cast<uint32_t>(rpc::FIRMWARE_VERSION_PATCH)});
+  rpc_pb_VersionResponse resp = {};
+  resp.major = rpc::FIRMWARE_VERSION_MAJOR;
+  resp.minor = rpc::FIRMWARE_VERSION_MINOR;
+  resp.patch = (uint32_t)rpc::FIRMWARE_VERSION_PATCH;
+  (void)send(rpc::CommandId::CMD_GET_VERSION_RESP, ctx.sequence_id, resp);
 }
 
 void BridgeClass::_handleGetFreeMemory(
     const bridge::router::CommandContext& ctx) {
-  (void)send(rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, ctx.sequence_id,
-             rpc_pb_FreeMemoryResponse{
-                 static_cast<uint32_t>(bridge::hal::getFreeMemory())});
+  rpc_pb_FreeMemoryResponse resp = {};
+  resp.value = (uint32_t)bridge::hal::getFreeMemory();
+  (void)send(rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, ctx.sequence_id, resp);
 }
 
 void BridgeClass::_applyTimingConfig(const rpc_pb_HandshakeConfig& msg) {

@@ -174,7 +174,6 @@ async def test_handshake_manager_edge_cases() -> None:
         state=state,
         serial_timing=derive_serial_timing(config),
         send_frame=send_frame,
-        send_tracked=AsyncMock(return_value=True),
         enqueue_cloud=enqueue_cloud,
         acknowledge_frame=acknowledge_frame,
     )

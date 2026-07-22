@@ -1,7 +1,5 @@
 #include "SPIService.h"
 
-#include <etl/algorithm.h>
-
 #include "Bridge.h"
 
 #if BRIDGE_ENABLE_SPI
@@ -29,18 +27,21 @@ size_t SPIServiceClass::transfer(etl::span<uint8_t> buffer) {
   if (!_initialized || buffer.empty()) return 0;
 
   SPI.beginTransaction(_settings);
+  // [SIL-2] Timeout protection for SPI
   const uint32_t start = millis();
   size_t transferred = 0U;
 
-  etl::for_each(buffer.begin(), buffer.end(), [&](uint8_t& b) {
-    if (millis() - start <= rpc::RPC_SPI_TIMEOUT_MS) {
-      b = SPI.transfer(b);
-      ++transferred;
+  for (auto& b : buffer) {
+    if (millis() - start > rpc::RPC_SPI_TIMEOUT_MS) {
+      SPI.endTransaction();
+      return 0;  // Hardware failure (timeout)
     }
-  });
+    b = SPI.transfer(b);
+    ++transferred;
+  }
 
   SPI.endTransaction();
-  return (transferred == buffer.size()) ? transferred : 0;
+  return transferred;
 }
 
 SPIServiceType SPIService;

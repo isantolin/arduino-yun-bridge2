@@ -398,7 +398,6 @@ async def test_handshake_coverage_boost() -> None:
     )
     state = create_runtime_state(config)
     send_frame = AsyncMock(return_value=True)
-    send_tracked: AsyncMock = AsyncMock(return_value=True)
     enqueue_cloud = AsyncMock()
     acknowledge_frame = AsyncMock()
 
@@ -407,7 +406,6 @@ async def test_handshake_coverage_boost() -> None:
         state=state,
         serial_timing=derive_serial_timing(config),
         send_frame=send_frame,
-        send_tracked=send_tracked,
         enqueue_cloud=enqueue_cloud,
         acknowledge_frame=acknowledge_frame,
     )
@@ -793,7 +791,6 @@ async def test_handshake_manager_extra_coverage() -> None:
 
     try:
         send_frame = AsyncMock(return_value=True)
-        send_tracked: AsyncMock = AsyncMock(return_value=True)
         enqueue_cloud = AsyncMock()
         acknowledge_frame = AsyncMock()
 
@@ -802,7 +799,6 @@ async def test_handshake_manager_extra_coverage() -> None:
             state=state,
             serial_timing=derive_serial_timing(config),
             send_frame=send_frame,
-            send_tracked=send_tracked,
             enqueue_cloud=enqueue_cloud,
             acknowledge_frame=acknowledge_frame,
         )
@@ -846,20 +842,25 @@ async def test_handshake_manager_extra_coverage() -> None:
             assert manager.fsm_state == HandshakeState.FAULT
 
         # 7. _fetch_capabilities success and fail paths
-        # [SIL-2] _fetch_capabilities uses _send_tracked (tracked path returns payload).
         manager.fsm_state = HandshakeState.SYNCHRONIZED
 
-        async def mock_send_caps(
+        async def mock_send(
             command_id: int,
             payload: bytes | ProtobufMessage,
             seq_id: int | None = None,
-        ) -> bytes:
-            # [SIL-2] pb.Capabilities() → b'' (falsy); must set a field for non-empty bytes.
-            return pb.Capabilities(ver=1).SerializeToString()
+        ) -> bool:
+            future = getattr(manager, "_capabilities_future")
+            if future and not future.done():
+                cap = pb.Capabilities()
+                future.set_result(cap.SerializeToString())
+            return True
 
-        setattr(manager, "_send_tracked", mock_send_caps)
+        setattr(manager, "_send_frame", mock_send)
 
-        assert await getattr(manager, "_fetch_capabilities")()
+        try:
+            assert await getattr(manager, "_fetch_capabilities")()
+        except Exception:
+            raise
 
         async def mock_send_fail(
             command_id: int,
@@ -868,7 +869,7 @@ async def test_handshake_manager_extra_coverage() -> None:
         ) -> bool:
             return False
 
-        setattr(manager, "_send_tracked", mock_send_fail)
+        setattr(manager, "_send_frame", mock_send_fail)
 
         async def mock_async_sleep(delay: float) -> None:
             pass

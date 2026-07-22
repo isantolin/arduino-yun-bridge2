@@ -16,10 +16,10 @@ import shutil
 import signal
 import struct
 import time
-from collections.abc import Callable, Awaitable
+from collections.abc import Coroutine, Callable, Awaitable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast, Final
+from typing import TYPE_CHECKING, Any, cast, Final, TypeVar
 
 import aiosqlite
 from ..state.storage import SqliteDeque
@@ -92,7 +92,18 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger("mcubridge.service")
 
-McuHandler = Callable[[int, Any], Awaitable[Any]]
+McuHandler = Callable[[int, bytes | ProtobufMessage], Coroutine[Any, Any, bool | bytes | ProtobufMessage | None]]
+
+
+F = TypeVar("F", bound=Callable[..., Any])
+
+
+def mcu_handler(cmd: Command | Status) -> Callable[[F], F]:
+    def decorator(func: F) -> F:
+        setattr(func, "_mcu_command_id", cmd.value)
+        return func
+
+    return decorator
 
 
 _PRE_SYNC_ALLOWED_COMMANDS: Final = {
@@ -146,7 +157,6 @@ class BridgeService:
             state=state,
             serial_timing=derive_serial_timing(config),
             send_frame=serial.send_raw,
-            send_tracked=serial.send,
             enqueue_cloud=self.enqueue_cloud,
             acknowledge_frame=serial.acknowledge,
             logger_=logger,
@@ -166,42 +176,30 @@ class BridgeService:
         # [SIL-2] O(1) MCU Dispatch Registry
         self.mcu_registry: dict[int, McuHandler] = self._setup_mcu_registry(serial)
         for s in Status:
-            if s != Status.ACK and s.value not in self.mcu_registry:
+            if s != Status.ACK:
                 self.mcu_registry[s.value] = functools.partial(self._handle_mcu_status, s)
 
     def _setup_mcu_registry(self, serial: SerialTransport) -> dict[int, McuHandler]:
-        return {
-            Command.CMD_XON.value: self._handle_mcu_xon,
-            Command.CMD_XOFF.value: self._handle_mcu_xoff,
-            Command.CMD_CONSOLE_WRITE.value: self._on_mcu_console_write,
-            Command.CMD_DATASTORE_PUT.value: self._on_mcu_datastore_put,
-            Command.CMD_DATASTORE_GET.value: self._on_mcu_datastore_get,
-            Command.CMD_MAILBOX_PUSH.value: self._on_mcu_mailbox_push,
-            Command.CMD_MAILBOX_AVAILABLE.value: self._on_mcu_mailbox_available,
-            Command.CMD_MAILBOX_READ.value: self._on_mcu_mailbox_read,
-            Command.CMD_MAILBOX_PROCESSED.value: self._on_mcu_mailbox_processed,
-            Command.CMD_FILE_WRITE.value: self._on_mcu_file_write,
-            Command.CMD_FILE_READ.value: self._on_mcu_file_read,
-            Command.CMD_FILE_REMOVE.value: self._on_mcu_file_remove,
-            Command.CMD_FILE_READ_RESP.value: self._on_mcu_file_read_resp,
-            Command.CMD_PROCESS_RUN_ASYNC.value: self._on_mcu_process_run,
-            Command.CMD_PROCESS_POLL.value: self._on_mcu_process_poll,
-            Command.CMD_PROCESS_KILL.value: self._on_mcu_process_kill,
-            Command.CMD_DIGITAL_READ_RESP.value: self._on_mcu_digital_read_resp,
-            Command.CMD_ANALOG_READ_RESP.value: self._on_mcu_analog_read_resp,
-            Command.CMD_SPI_TRANSFER_RESP.value: self._on_mcu_spi_resp,
-            Command.CMD_DIGITAL_READ.value: lambda _seq, _payload: serial.send(
-                Status.NOT_IMPLEMENTED.value,
-                pb.GenericResponse(message="linux_originates_digital_read_requests"),
-            ),
-            Command.CMD_ANALOG_READ.value: lambda _seq, _payload: serial.send(
-                Status.NOT_IMPLEMENTED.value,
-                pb.GenericResponse(message="linux_originates_analog_read_requests"),
-            ),
-            Command.CMD_LINK_SYNC_RESP.value: self.handshake.handle_link_sync_resp,
-            Command.CMD_LINK_RESET_RESP.value: self.handshake.handle_link_reset_resp,
-            Status.ACK.value: self._on_mcu_ack,
-        }
+        registry: dict[int, McuHandler] = {}
+        for attr_name in dir(self):
+            attr = getattr(self, attr_name)
+            if hasattr(attr, "_mcu_command_id"):
+                cmd_id = getattr(attr, "_mcu_command_id")
+                registry[cmd_id] = attr
+
+        registry[Command.CMD_DIGITAL_READ.value] = lambda _seq, _payload: serial.send(
+            Status.NOT_IMPLEMENTED.value,
+            pb.GenericResponse(message="linux_originates_digital_read_requests"),
+        )
+        registry[Command.CMD_ANALOG_READ.value] = lambda _seq, _payload: serial.send(
+            Status.NOT_IMPLEMENTED.value,
+            pb.GenericResponse(message="linux_originates_analog_read_requests"),
+        )
+        registry[Command.CMD_GET_CAPABILITIES_RESP.value] = self.handshake.handle_capabilities_resp
+        registry[Command.CMD_LINK_SYNC_RESP.value] = self.handshake.handle_link_sync_resp
+        registry[Command.CMD_LINK_RESET_RESP.value] = self.handshake.handle_link_reset_resp
+
+        return registry
 
     # --- External Interface ---
 
@@ -264,16 +262,28 @@ class BridgeService:
         if spool is None:
             return False
         try:
-            prev_len = await spool.length()
+            if self.state.cloud_queue_limit > 0:
+                spool_len = await spool.length()
+                while spool_len >= self.state.cloud_queue_limit:
+                    try:
+                        await spool.popleft()
+                        self.state.cloud_spool_dropped_limit += 1
+                    except IndexError as exc:
+                        logger.error("Spool popped while empty during limit check", error=str(exc))
+                        break
+                    except (aiosqlite.Error, OSError) as exc:
+                        logger.error("Database error during spool popleft", error=str(exc))
+                        break
+                    spool_len = await spool.length()
+
+                if self.state.cloud_spool_dropped_limit > 0:
+                    self.state.cloud_spool_trim_events += 1
+                    self.state.cloud_spool_last_trim_unix = time.time()
+
             encoded = message.SerializeToString()
             await spool.append(encoded)
 
             pending_count = await spool.length()
-            maxlen = getattr(spool, "maxlen", None)
-            if isinstance(maxlen, int) and prev_len >= maxlen and self.state.cloud_queue_limit > 0:
-                self.state.cloud_spool_dropped_limit += 1
-                self.state.cloud_spool_trim_events += 1
-
             self._mark_cloud_spool_healthy(pending_count)
             return True
         except (aiosqlite.Error, OSError) as exc:
@@ -521,15 +531,18 @@ class BridgeService:
 
     # --- Business Logic Implementation ---
 
+    @mcu_handler(Command.CMD_XON)
     async def _handle_mcu_xon(self, seq: int, payload: Any) -> None:
         self.state.mcu_is_paused = False
         self.state.serial_tx_allowed.set()
         await self._flush_console_queue()
 
+    @mcu_handler(Command.CMD_XOFF)
     async def _handle_mcu_xoff(self, seq: int, payload: Any) -> None:
         self.state.mcu_is_paused = True
         self.state.serial_tx_allowed.clear()
 
+    @mcu_handler(Command.CMD_CONSOLE_WRITE)
     async def _on_mcu_console_write(self, seq: int, p: pb.ConsoleWrite) -> None:
         if p.data:
             await self.enqueue_cloud(
@@ -540,12 +553,14 @@ class BridgeService:
                 )
             )
 
+    @mcu_handler(Command.CMD_DATASTORE_PUT)
     async def _on_mcu_datastore_put(self, seq: int, p: pb.DatastorePut) -> bool:
         if self.state.datastore_cache is not None:
             await self.state.datastore_cache.set(p.key, p.value)
         await self._publish_datastore_value(p.key, p.value)
         return True
 
+    @mcu_handler(Command.CMD_DATASTORE_GET)
     async def _on_mcu_datastore_get(self, seq: int, p: pb.DatastoreGet) -> bool:
         serial = self.serial
         if not serial:
@@ -558,6 +573,7 @@ class BridgeService:
         )
         return bool(res)
 
+    @mcu_handler(Command.CMD_MAILBOX_PUSH)
     async def _on_mcu_mailbox_push(self, seq: int, p: pb.MailboxPush) -> bool:
         await self.state.mailbox_incoming_queue.append(p.data)
         await self.enqueue_cloud(
@@ -565,6 +581,7 @@ class BridgeService:
         )
         return True
 
+    @mcu_handler(Command.CMD_MAILBOX_AVAILABLE)
     async def _on_mcu_mailbox_available(self, seq: int, p: Any) -> bool:
         serial = self.serial
         if not serial:
@@ -576,6 +593,7 @@ class BridgeService:
         )
         return bool(res)
 
+    @mcu_handler(Command.CMD_MAILBOX_READ)
     async def _on_mcu_mailbox_read(self, seq: int, p: Any) -> bool:
         serial = self.serial
         if not serial:
@@ -591,6 +609,7 @@ class BridgeService:
         )
         return bool(res)
 
+    @mcu_handler(Command.CMD_MAILBOX_PROCESSED)
     async def _on_mcu_mailbox_processed(self, seq: int, p: pb.MailboxProcessed) -> None:
         await self.enqueue_cloud(
             create_queued_publish(
@@ -600,6 +619,7 @@ class BridgeService:
             )
         )
 
+    @mcu_handler(Command.CMD_FILE_WRITE)
     async def _on_mcu_file_write(self, seq: int, p: pb.FileWrite) -> bool:
         serial = self.serial
         if not serial:
@@ -611,6 +631,7 @@ class BridgeService:
         res = await serial.send(Status.ERROR.value, pb.GenericResponse(message="Write failed"))
         return bool(res)
 
+    @mcu_handler(Command.CMD_FILE_READ)
     async def _on_mcu_file_read(self, seq: int, p: pb.FileRead) -> None:
         serial = self.serial
         if not serial:
@@ -626,6 +647,7 @@ class BridgeService:
             return
         await serial.send(Status.ERROR.value, pb.GenericResponse(message="Read failed"))
 
+    @mcu_handler(Command.CMD_FILE_REMOVE)
     async def _on_mcu_file_remove(self, seq: int, p: pb.FileRemove) -> bool:
         serial = self.serial
         if not serial:
@@ -638,6 +660,7 @@ class BridgeService:
         res = await serial.send(Status.ERROR.value, pb.GenericResponse(message="Remove failed"))
         return bool(res)
 
+    @mcu_handler(Command.CMD_FILE_READ_RESP)
     async def _on_mcu_file_read_resp(self, seq: int, p: pb.FileReadResponse) -> bool:
         if not self._pending_mcu_read:
             return False
@@ -647,6 +670,7 @@ class BridgeService:
             self._pending_mcu_read.future.set_result(b"".join(self._pending_mcu_read.chunks))
         return True
 
+    @mcu_handler(Command.CMD_PROCESS_RUN_ASYNC)
     async def _on_mcu_process_run(self, seq: int, p: pb.ProcessRunAsync) -> bool:
         serial = self.serial
         if not serial:
@@ -662,6 +686,7 @@ class BridgeService:
         await serial.send(Status.ERROR.value, pb.GenericResponse(message="Exec failed"))
         return False
 
+    @mcu_handler(Command.CMD_PROCESS_POLL)
     async def _on_mcu_process_poll(self, seq: int, p: pb.ProcessPoll) -> bool:
         serial = self.serial
         if not serial:
@@ -685,11 +710,13 @@ class BridgeService:
             reply_context=req.reply_context if req else None,
         )
 
+    @mcu_handler(Command.CMD_SPI_TRANSFER_RESP)
     async def _on_mcu_spi_resp(self, seq: int, p: pb.SpiTransferResponse) -> None:
         await self.enqueue_cloud(
             create_queued_publish(get_topic_for_message(self.state.cloud_topic_prefix, p) or "", p.data)
         )
 
+    @mcu_handler(Status.ACK)
     async def _on_mcu_ack(self, seq: int, payload: bytes | ProtobufMessage) -> None:
         try:
             if isinstance(payload, ProtobufMessage):
@@ -700,12 +727,15 @@ class BridgeService:
         except (ProtobufDecodeError, TypeError, ValueError) as e:
             logger.error("Failed to decode MCU ACK packet", error=e)
 
+    @mcu_handler(Command.CMD_DIGITAL_READ_RESP)
     async def _on_mcu_digital_read_resp(self, seq: int, p: pb.DigitalReadResponse) -> None:
         await self._on_pin_resp(p, Topic.DIGITAL, self.state.pending_digital_reads)
 
+    @mcu_handler(Command.CMD_ANALOG_READ_RESP)
     async def _on_mcu_analog_read_resp(self, seq: int, p: pb.AnalogReadResponse) -> None:
         await self._on_pin_resp(p, Topic.ANALOG, self.state.pending_analog_reads)
 
+    @mcu_handler(Command.CMD_PROCESS_KILL)
     async def _on_mcu_process_kill(self, seq: int, p: pb.ProcessKill) -> None:
         await self._stop_process(p.pid)
 

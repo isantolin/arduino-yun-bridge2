@@ -37,7 +37,7 @@ class FaultState;
 
 // --- State Classes ---
 
-class StartupState
+ class StartupState
     : public etl::fsm_state<BridgeFsm, StartupState,
                             static_cast<etl::fsm_state_id_t>(StateId::STARTUP),
                             EvReset, EvHandshakeFailed, EvTimeout> {

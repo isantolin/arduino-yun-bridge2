@@ -301,8 +301,7 @@ class BridgeClass {
   etl::callback_timer<bridge::scheduler::NUMBER_OF_TIMERS> _timers;
   etl::array<etl::timer::id::type, bridge::scheduler::NUMBER_OF_TIMERS>
       _timer_ids;
-  // Shared working buffer for transient operations (unencrypted encoding, SPI
-  // transfer)
+  // Shared working buffer for transient operations (unencrypted encoding, SPI transfer)
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> _working_buffer;
 
   bool _is_post_passed = false;
@@ -462,8 +461,8 @@ class BridgeClass {
         return false;
       }
     } else {
-      pb_ostream_t out_stream =
-          pb_ostream_from_buffer(_working_buffer.data(), rpc::MAX_PAYLOAD_SIZE);
+      pb_ostream_t out_stream = pb_ostream_from_buffer(_working_buffer.data(),
+                                                       rpc::MAX_PAYLOAD_SIZE);
       if (pb_encode(&out_stream, fields, &packet)) {
         _transmit(raw_cmd, seq,
                   etl::span<const uint8_t>(_working_buffer.data(),

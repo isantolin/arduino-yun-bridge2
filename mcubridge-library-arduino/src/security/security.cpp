@@ -70,20 +70,6 @@ void derive_session_key(etl::span<const uint8_t> secret,
           out_key.data(), static_cast<word32>(out_key.size()));
 }
 
-namespace {
-size_t encode_aad(uint16_t cmd_id, uint16_t seq_id, etl::span<uint8_t> out_ad) {
-  etl::fill(out_ad.begin(), out_ad.end(), 0U);
-  payload::RpcEnvelope aad_env = {};
-  aad_env.version = rpc::PROTOCOL_VERSION;
-  aad_env.command_id = cmd_id;
-  aad_env.sequence_id = seq_id;
-  pb_ostream_t stream = pb_ostream_from_buffer(out_ad.data(), out_ad.size());
-  (void)pb_encode(&stream, rpc::Payload::get_fields<rpc_pb_RpcEnvelope>(),
-                  &aad_env);
-  return stream.bytes_written;
-}
-}  // namespace
-
 bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
                         etl::span<const uint8_t> in,
                         etl::span<const uint8_t> key, uint64_t* nonce_counter,
@@ -107,12 +93,21 @@ bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
   etl::byte_stream_writer n_writer(out_nonce.subspan(4), etl::endian::big);
   n_writer.write<uint64_t>(current_nonce);
 
+  payload::RpcEnvelope aad_env = {};
+  aad_env.version = rpc::PROTOCOL_VERSION;
+  aad_env.command_id = cmd_id;
+  aad_env.sequence_id = seq_id;
+
   etl::array<uint8_t, 32> ad;
-  const size_t ad_len = encode_aad(cmd_id, seq_id, ad);
+  ad.fill(0U);
+  pb_ostream_t stream = pb_ostream_from_buffer(ad.data(), ad.size());
+  (void)pb_encode(&stream, rpc::Payload::get_fields<rpc_pb_RpcEnvelope>(),
+                  &aad_env);
 
   return wc_ChaCha20Poly1305_Encrypt(
              const_cast<byte*>(key.data()), out_nonce.data(),
-             const_cast<byte*>(ad.data()), static_cast<word32>(ad_len),
+             const_cast<byte*>(ad.data()),
+             static_cast<word32>(stream.bytes_written),
              const_cast<byte*>(in.data()), static_cast<word32>(in.size()),
              out_payload.data(), out_tag.data()) == 0;
 }
@@ -123,12 +118,21 @@ bool aead_decrypt_frame(uint16_t cmd_id, uint16_t seq_id,
                         etl::span<const uint8_t> key,
                         etl::span<const uint8_t> nonce,
                         etl::span<uint8_t> out_payload) {
+  payload::RpcEnvelope aad_env = {};
+  aad_env.version = rpc::PROTOCOL_VERSION;
+  aad_env.command_id = cmd_id;
+  aad_env.sequence_id = seq_id;
+
   etl::array<uint8_t, 32> ad;
-  const size_t ad_len = encode_aad(cmd_id, seq_id, ad);
+  ad.fill(0U);
+  pb_ostream_t stream = pb_ostream_from_buffer(ad.data(), ad.size());
+  (void)pb_encode(&stream, rpc::Payload::get_fields<rpc_pb_RpcEnvelope>(),
+                  &aad_env);
 
   return wc_ChaCha20Poly1305_Decrypt(
              const_cast<byte*>(key.data()), const_cast<byte*>(nonce.data()),
-             const_cast<byte*>(ad.data()), static_cast<word32>(ad_len),
+             const_cast<byte*>(ad.data()),
+             static_cast<word32>(stream.bytes_written),
              const_cast<byte*>(in.data()), static_cast<word32>(in.size()),
              const_cast<byte*>(tag.data()), out_payload.data()) == 0;
 }

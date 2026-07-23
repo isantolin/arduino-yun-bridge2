@@ -1602,7 +1602,7 @@ class BridgeService:
         server = Server([local_handler])
 
         try:
-            await server.start(path=socket_path)
+            await server.start(path=str(socket_path))
             try:
                 os.chmod(socket_path, 0o660)
             except OSError as e:

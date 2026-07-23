@@ -198,8 +198,7 @@ class SerialTransport:
     async def _process_packet(self, encoded_packet: bytes | memoryview) -> None:
         """Processes a packet from the serial stream. [FLATTENED] [SIL-2]"""
         try:
-            # Ensure we have bytes for cobs.decode
-            raw_bytes = bytes(encoded_packet) if isinstance(encoded_packet, memoryview) else encoded_packet
+            raw_bytes = encoded_packet.tobytes() if isinstance(encoded_packet, memoryview) else encoded_packet
             decoded = cobsr.decode(raw_bytes)
             decoded_frame = parse_frame(decoded, self.state.link_session_key if self.state.is_synchronized else None)
         except (cobsr.DecodeError, ValueError, TypeError, RuntimeError) as exc:

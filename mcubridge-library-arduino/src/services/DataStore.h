@@ -25,11 +25,7 @@ class DataStoreClass {
 
   void onLost() { _pending_gets.clear(); }
 
-  struct PendingGet {
-    etl::string<rpc::RPC_MAX_DATASTORE_KEY_LENGTH> key;
-    GetHandler handler;
-  };
-  etl::queue<PendingGet, bridge::config::MAX_PENDING_DATASTORE> _pending_gets;
+  etl::queue<GetHandler, bridge::config::MAX_PENDING_DATASTORE> _pending_gets;
 };
 
 using DataStoreType = DataStoreClass;

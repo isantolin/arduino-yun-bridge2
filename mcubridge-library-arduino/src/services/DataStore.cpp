@@ -42,25 +42,19 @@ void DataStoreClass::get(etl::string_view key,
     return;
   }
 
-  typename DataStoreClass::PendingGet pending = {};
-  const size_t to_copy = etl::min(
-      key.size(), static_cast<size_t>(rpc::RPC_MAX_DATASTORE_KEY_LENGTH));
-  pending.key.assign(key.data(), to_copy);
-  pending.handler = handler;
-  _pending_gets.push(pending);
+  _pending_gets.push(handler);
 }
 
 void DataStoreClass::_onResponse(
     const rpc::payload::DatastoreGetResponse& msg) {
   if (_pending_gets.empty()) return;
 
-  const typename DataStoreClass::PendingGet pending = _pending_gets.front();
+  const GetHandler handler = _pending_gets.front();
   _pending_gets.pop();
-  if (!pending.handler.is_valid()) return;
+  if (!handler.is_valid()) return;
 
-  const etl::string_view key(pending.key.data(), pending.key.size());
-  pending.handler(key,
-                  etl::span<const uint8_t>(msg.value.bytes, msg.value.size));
+  handler(etl::string_view(),
+          etl::span<const uint8_t>(msg.value.bytes, msg.value.size));
 }
 
 DataStoreType DataStore;

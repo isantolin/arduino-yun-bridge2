@@ -475,8 +475,16 @@ void BridgeClass::_dispatchCommand(const rpc_pb_RpcEnvelope& envelope) {
     return tbl;
   }();
 
+#if defined(__AVR__) || defined(ARDUINO_ARCH_AVR)
+  HandlerFn handler = nullptr;
+  if (ctx.raw_command < 256U) {
+    handler = reinterpret_cast<HandlerFn>(
+        pgm_read_ptr(&(DISPATCH_TABLE[ctx.raw_command])));
+  }
+#else
   const HandlerFn handler =
       (ctx.raw_command < 256U) ? DISPATCH_TABLE[ctx.raw_command] : nullptr;
+#endif
   if (handler != nullptr) {
     handler(*this, ctx);
   } else {

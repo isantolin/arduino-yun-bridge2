@@ -1410,6 +1410,17 @@ class BridgeService:
                 except (aiosqlite.Error, OSError) as exc:
                     logger.debug("datastore_cache close failed during teardown", error=exc)
                 self.state.datastore_cache = None
+                
+            if self.state and getattr(self.state, "mailbox_queue", None) is not None:
+                try:
+                    await self.state.mailbox_queue.close()
+                except Exception:
+                    pass
+            if self.state and getattr(self.state, "mailbox_incoming_queue", None) is not None:
+                try:
+                    await self.state.mailbox_incoming_queue.close()
+                except Exception:
+                    pass
             self.cleanup()
             STATUS_FILE.unlink(missing_ok=True)
             logger.info("MCU Bridge daemon stopped.")

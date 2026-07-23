@@ -51,14 +51,9 @@ async def test_serial_transport_loops_final_v3(transport_setup: Any) -> None:
     except TimeoutError:
         pass
 
-    import itertools
-
-    setattr(transport, "_tx_sequence_counter", itertools.count(0xFFFE))
-    # send_raw consumes 0xFFFE (65534 & 0xFFFF = 65534)
+    setattr(transport, "_tx_sequence_id", 0xFFFE)
     await transport.send_raw(0x01, b"")
-    # Next value from counter is 65535; the one after that wraps: 65536 & 0xFFFF = 0
-    consumed_next = next(__import__("typing").cast("Any", getattr(transport, "_tx_sequence_counter")))
-    assert consumed_next == 0xFFFF  # 65535 — counter advanced correctly
+    assert getattr(transport, "_tx_sequence_id") == 65535
 
 
 @pytest.mark.asyncio

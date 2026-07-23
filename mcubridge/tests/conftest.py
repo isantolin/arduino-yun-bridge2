@@ -76,12 +76,6 @@ def get_unique_test_fs() -> str:
     return _test_paths["fs"]
 
 
-_tmp_tests_abs = os.path.abspath(".tmp_tests")
-_extended_volatile = frozenset(list(mcubridge.config.const.VOLATILE_STORAGE_PATHS) + [".tmp_tests", _tmp_tests_abs])
-mcubridge.config.const.VOLATILE_STORAGE_PATHS = _extended_volatile
-settings.VOLATILE_STORAGE_PATHS = _extended_volatile
-
-
 OriginalRuntimeConfig = mcubridge.protocol.structures.RuntimeConfig
 original_get_default_config = mcubridge.config.common.get_default_config
 
@@ -223,7 +217,7 @@ def force_gc_cleanup():
 
 # [TEST FIX] Global absolute path for temporary test data.
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-TMP_TESTS_DIR = str(Path(os.path.join(PROJECT_ROOT, ".tmp_tests")).resolve())
+TMP_TESTS_DIR = os.path.join(PROJECT_ROOT, ".tmp_tests")
 os.makedirs(TMP_TESTS_DIR, exist_ok=True)
 
 # [TEST FIX] Global injection is needed before any tests run to ensure Settings validation passes.

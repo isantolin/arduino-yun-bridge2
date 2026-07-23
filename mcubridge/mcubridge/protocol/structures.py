@@ -138,8 +138,13 @@ def allows_topic(auth: pb.TopicAuthorization, topic: str, action: str) -> bool:
 RuntimeConfig = pb.RuntimeConfig
 
 
-def apply_derived_fields(cfg: pb.RuntimeConfig) -> None:
+def validate_config(cfg: pb.RuntimeConfig) -> None:
     """Validate and normalize a RuntimeConfig in-place. [SIL-2]"""
+    from mcubridge.config.const import (
+        DEFAULT_SERIAL_SHARED_SECRET,
+        VOLATILE_STORAGE_PATHS,
+    )
+
     cfg.allowed_policy.CopyFrom(create_allowed_policy(cfg.allowed_commands))
     del cfg.allowed_commands[:]
     cfg.allowed_commands.extend(cfg.allowed_policy.entries)
@@ -147,6 +152,38 @@ def apply_derived_fields(cfg: pb.RuntimeConfig) -> None:
     if not any(getattr(cfg.topic_authorization, f.name) for f in cfg.topic_authorization.DESCRIPTOR.fields):
         for field in [f.name for f in cfg.topic_authorization.DESCRIPTOR.fields]:
             setattr(cfg.topic_authorization, field, True)
+
+    if not cfg.topic_prefix or not any(filter(None, cfg.topic_prefix.split("/"))):
+        raise ValueError("topic_prefix must contain at least one segment")
+
+    if cfg.serial_response_timeout < cfg.serial_retry_timeout * 2:
+        raise ValueError("serial_response_timeout must be at least 2x serial_retry_timeout")
+
+    if cfg.watchdog_enabled and cfg.watchdog_interval < 0.5:
+        raise ValueError("watchdog_interval must be >= 0.5s when enabled")
+
+    if not cfg.serial_shared_secret:
+        raise ValueError("serial_shared_secret must be configured")
+
+    if cfg.serial_shared_secret == b"changeme123":
+        raise ValueError("serial_shared_secret placeholder is insecure")
+
+    unique_symbols = {byte for byte in cfg.serial_shared_secret}
+    if len(unique_symbols) < 4 and cfg.serial_shared_secret != DEFAULT_SERIAL_SHARED_SECRET:
+        raise ValueError("serial_shared_secret must contain at least four distinct bytes")
+
+    if cfg.file_storage_quota_bytes < cfg.file_write_max_bytes:
+        raise ValueError("file_storage_quota_bytes must be greater than or equal to file_write_max_bytes")
+
+    if cfg.mailbox_queue_bytes_limit < cfg.mailbox_queue_limit:
+        raise ValueError("mailbox_queue_bytes_limit must be greater than or equal to mailbox_queue_limit")
+
+    if not cfg.allow_non_tmp_paths:
+        if not any(cfg.cloud_spool_dir.startswith(p) for p in VOLATILE_STORAGE_PATHS):
+            msg = f"FLASH PROTECTION: cloud_spool_dir ({cfg.cloud_spool_dir}) must be in volatile storage"
+            raise ValueError(msg)
+        if not any(cfg.file_system_root.startswith(p) for p in VOLATILE_STORAGE_PATHS):
+            raise ValueError(f"FLASH PROTECTION: file_system_root ({cfg.file_system_root}) must be in volatile storage")
 
 
 def get_ssl_context(cfg: pb.RuntimeConfig) -> Any | None:

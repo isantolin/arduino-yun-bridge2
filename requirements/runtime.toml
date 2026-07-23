@@ -99,9 +99,3 @@ gateway = true
 rationale = "Pure Python asyncio gRPC library for MPU-to-Cloud communication"
 
 
-
-[[dependency]]
-name = "pydantic"
-openwrt = "python3-pydantic"
-pip = "pydantic"
-rationale = "Pydantic v2 for configuration validation"

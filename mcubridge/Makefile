@@ -55,8 +55,7 @@ define Package/$(PKG_NAME)
 		python3-structlog \
 		python3-aiosqlite \
 		python3-h2 \
-		python3-grpclib \
-		python3-pydantic
+		python3-grpclib
 	# AUTO-GENERATED RUNTIME DEPENDS END
 endef
 

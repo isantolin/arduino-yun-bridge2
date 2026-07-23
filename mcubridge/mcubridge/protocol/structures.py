@@ -14,12 +14,11 @@ import functools
 import itertools
 import re
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import (
     Any,
     Final,
-    NamedTuple,
 )
 from mcubridge.config.const import ALLOWED_COMMAND_WILDCARD
 
@@ -45,7 +44,8 @@ def _get_action_lookup_map() -> dict[str, Any]:
     return {e.value: e for e in itertools.chain(FileAction, ShellAction, SystemAction)}
 
 
-class TopicRoute(NamedTuple):
+@dataclass(slots=True, frozen=True)
+class TopicRoute:
     """Parsed representation of an CLOUD topic targeting the daemon."""
 
     raw: str
@@ -104,18 +104,18 @@ def _get_topic_auth_mapping_v3() -> dict[tuple[str, str], str]:
 
     mapping: dict[tuple[str, str], str] = {}
     fields = [f.name for f in pb.TopicAuthorization.DESCRIPTOR.fields]
-    for field, t in itertools.product(fields, Topic):
+    for f_name, t in itertools.product(fields, Topic):
         prefix = t.name.lower()
-        if not field.startswith(f"{prefix}_"):
+        if not f_name.startswith(f"{prefix}_"):
             continue
-        suffix = field[len(prefix) + 1 :]
+        suffix = f_name[len(prefix) + 1 :]
         action_class_name = "SpiAction" if t == Topic.SPI else f"{t.name.title()}Action"
         action_cls = getattr(proto, action_class_name, None)
         if action_cls is None:
             continue
         for act in action_cls:
             if act.value == suffix or (suffix == "input" and act.value == "in"):
-                mapping[(t.value, act.value)] = field
+                mapping[(t.value, act.value)] = f_name
                 break
     return mapping
 
@@ -234,7 +234,7 @@ class PayloadValidationError(ValueError):
 # --- High-Level Structure ---
 
 
-@dataclass
+@dataclass(slots=True)
 class PendingPinRequest:
     pin: int
     reply_context: Any | None = None
@@ -330,26 +330,20 @@ def create_queued_publish(
 # --- Serial Flow Structures ---
 
 
+@dataclass(slots=True)
 class PendingCommand:
     """Book-keeping for a tracked command in flight. [SIL-2]"""
 
-    def __init__(
-        self,
-        command_id: int,
-        expected_resp_ids: Iterable[int] = (),
-        reply_topic: str | None = None,
-        correlation_data: bytes | None = None,
-    ) -> None:
-        self.command_id = command_id
-        self.expected_resp_ids = list(expected_resp_ids)
-        self.reply_topic = reply_topic
-        self.correlation_data = correlation_data
-        self.attempts = 0
-        self.success: bool | None = None
-        self.failure_status: int | None = None
-        self.ack_received = False
-        self.completion = asyncio.Event()
-        self.response_payload: bytes | ProtobufMessage | None = None
+    command_id: int
+    expected_resp_ids: list[int] = field(default_factory=lambda: [])
+    reply_topic: str | None = None
+    correlation_data: bytes | None = None
+    attempts: int = 0
+    success: bool | None = None
+    failure_status: int | None = None
+    ack_received: bool = False
+    completion: asyncio.Event = field(default_factory=asyncio.Event)
+    response_payload: bytes | ProtobufMessage | None = None
 
     def mark_success(self, payload: bytes | ProtobufMessage | None = None) -> None:
         self.response_payload = payload

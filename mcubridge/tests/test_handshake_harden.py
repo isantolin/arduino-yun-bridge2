@@ -148,9 +148,10 @@ async def test_handshake_capabilities_retry(
     async def mock_send_frame(cmd: int, *args: Any, **kwargs: Any) -> bool:
         nonlocal attempts
         attempts += 1
+        fut: Any = getattr(manager, "_capabilities_future", None)
         if attempts < 3:
-            if manager._capabilities_future and not manager._capabilities_future.done():
-                manager._capabilities_future.set_exception(TimeoutError("mock timeout"))
+            if fut is not None and not fut.done():
+                fut.set_exception(TimeoutError("mock timeout"))
         elif attempts == 3:
             asyncio.create_task(manager.handle_capabilities_resp(1, b"\x80"))
         return True

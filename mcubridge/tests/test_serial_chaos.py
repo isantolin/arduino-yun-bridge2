@@ -11,7 +11,7 @@ def _make_config() -> RuntimeConfig:
         serial_port="/dev/test",
         topic_prefix="br",
         serial_shared_secret=b"secret",
-        file_system_root=".tmp",
+        file_system_root="/tmp",
     )
 
 

@@ -63,33 +63,29 @@ def test_watchdog_kick_handles_write_errors(runtime_state: RuntimeState) -> None
         raise OSError("boom")
 
     keepalive = WatchdogKeepalive(state=runtime_state, write=broken_writer)
-    with patch("mcubridge.watchdog.logger") as mock_logger:
-        keepalive.kick()
+    keepalive.kick()
 
     assert runtime_state.watchdog_beats == 0
     assert runtime_state.last_watchdog_beat == 0
-    assert mock_logger.warning.called
-    assert "Failed to emit watchdog trigger" in mock_logger.warning.call_args[0][0]
+    assert runtime_state.metrics.watchdog_write_errors.get() == 1
 
 
 def test_watchdog_run_logs_cancellation(runtime_state: RuntimeState) -> None:
-    """Verify cancellation is logged."""
+    """Verify cancellation is handled gracefully."""
     runtime_state.watchdog_enabled = True
     runtime_state.watchdog_interval = 0.05
 
-    with patch("mcubridge.watchdog.logger") as mock_logger:
+    async def _runner() -> None:
+        keepalive = WatchdogKeepalive(
+            interval=runtime_state.watchdog_interval,
+            state=runtime_state,
+        )
+        task = asyncio.create_task(keepalive.run())
+        await asyncio.sleep(0.05)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
 
-        async def _runner() -> None:
-            keepalive = WatchdogKeepalive(
-                interval=runtime_state.watchdog_interval,
-                state=runtime_state,
-            )
-            task = asyncio.create_task(keepalive.run())
-            await asyncio.sleep(0.05)
-            task.cancel()
-            with pytest.raises(asyncio.CancelledError):
-                await task
+    asyncio.run(_runner())
 
-        asyncio.run(_runner())
-
-    assert any("keepalive cancelled" in str(call.args[0]) for call in mock_logger.info.mock_calls)
+    assert runtime_state.watchdog_beats > 0

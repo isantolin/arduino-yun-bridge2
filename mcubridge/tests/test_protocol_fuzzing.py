@@ -3,6 +3,7 @@ from collections.abc import Callable
 
 import pytest
 from cobs import cobsr
+from google.protobuf.message import DecodeError
 from mcubridge.protocol.frame import parse_frame
 from mcubridge.protocol.protocol import CRC_COVERED_HEADER_SIZE
 from tests.test_constants import TEST_RANDOM_SEED
@@ -11,31 +12,19 @@ from tests.test_constants import TEST_RANDOM_SEED
 FUZZ_ITERATIONS = 5000
 EXPECTED_PARSE_ERRORS = (
     ValueError,
-    TypeError,
-    LookupError,
-    RuntimeError,
-    AttributeError,
+    DecodeError,
 )
-EXPECTED_COBS_ERRORS = (cobsr.DecodeError, ValueError, TypeError)
+EXPECTED_COBS_ERRORS = (cobsr.DecodeError, ValueError)
 
 
 def _assert_only_expected_exception(
     operation: Callable[[], object],
     expected: tuple[type[Exception], ...],
-    *,
-    iteration: int,
-    label: str,
-    raw_data: bytes,
 ) -> None:
     try:
         operation()
-    except expected as exc:
-        assert isinstance(exc, expected)
-    except (ValueError, TypeError, LookupError, RuntimeError, AttributeError, UnicodeDecodeError) as exc:
-        pytest.fail(
-            f"{label} crashed on iteration {iteration} with unhandled exception: "
-            f"{type(exc).__name__}: {exc}. Data hex: {raw_data.hex()}"
-        )
+    except expected:
+        pass
 
 
 @pytest.mark.fuzz
@@ -52,9 +41,6 @@ def test_frame_parsing_resilience_to_fuzzing():
         _assert_only_expected_exception(
             lambda: parse_frame(raw_data),
             EXPECTED_PARSE_ERRORS,
-            iteration=i,
-            label="parse_frame",
-            raw_data=raw_data,
         )
 
 
@@ -70,9 +56,6 @@ def test_cobs_decoding_resilience():
         _assert_only_expected_exception(
             lambda: cobsr.decode(raw_data),
             EXPECTED_COBS_ERRORS,
-            iteration=i,
-            label="cobsr.decode",
-            raw_data=raw_data,
         )
 
 
@@ -88,8 +71,5 @@ def test_frame_header_parsing_resilience():
 
         _assert_only_expected_exception(
             lambda: parse_frame(raw_data),
-            (ValueError, TypeError, LookupError),
-            iteration=i,
-            label="header parsing",
-            raw_data=raw_data,
+            (ValueError, DecodeError),
         )

@@ -15,7 +15,7 @@ from mcubridge.protocol.protocol import Command, Status
 
 
 @pytest.fixture
-def handshake_setup(tmp_path: Path) -> Iterator[tuple[SerialHandshakeManager, RuntimeState, AsyncMock]]:
+def handshake_setup(tmp_path: Path) -> Iterator[tuple[SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, pb.HandshakeConfig, AsyncMock]]:
     config = RuntimeConfig(
         topic_prefix="br",
         serial_port="/dev/test",
@@ -41,7 +41,7 @@ def handshake_setup(tmp_path: Path) -> Iterator[tuple[SerialHandshakeManager, Ru
         enqueue_cloud=enqueue_cloud,
         acknowledge_frame=acknowledge_frame,
     )
-    yield manager, state, send_frame
+    yield manager, state, send_frame, config, timing, acknowledge_frame
     state.cleanup()
 
 
@@ -50,7 +50,7 @@ async def test_handshake_auth_mismatch(
     handshake_setup: tuple[SerialHandshakeManager, RuntimeState, AsyncMock],
 ) -> None:
     """Verify rejection of invalid HMAC tags during sync."""
-    manager, state, _ = handshake_setup
+    manager, state, _, config, _, _ = handshake_setup
 
     # Start sync to set expectations
     asyncio.create_task(manager.synchronize())
@@ -74,8 +74,8 @@ async def test_handshake_rate_limiting(
     handshake_setup: tuple[SerialHandshakeManager, RuntimeState, AsyncMock],
 ) -> None:
     """Verify handshake rate limiting protects MCU from thrashing."""
-    manager, state, _ = handshake_setup
-    getattr(manager, "_config").serial_handshake_min_interval = 1.0
+    manager, state, _, config, _, _ = handshake_setup
+    config.serial_handshake_min_interval = 1.0
 
     state.mark_synchronized()
     state.link_handshake_nonce = b"pending"
@@ -92,7 +92,7 @@ async def test_handshake_fatal_threshold(
     handshake_setup: tuple[SerialHandshakeManager, RuntimeState, AsyncMock],
 ) -> None:
     """Verify transition to permanent failure after threshold is reached."""
-    manager, state, _ = handshake_setup
+    manager, state, _, config, _, _ = handshake_setup
 
     # sync_auth_mismatch is an immediate fatal reason, so it increments every time
     for _ in range(3):
@@ -107,7 +107,7 @@ async def test_handshake_streak_fatal_threshold(
     handshake_setup: tuple[SerialHandshakeManager, RuntimeState, AsyncMock],
 ) -> None:
     """Verify transition to permanent failure after streak threshold is reached for non-immediate errors."""
-    manager, state, _ = handshake_setup
+    manager, state, _, config, _, _ = handshake_setup
 
     # non-immediate reason
     reason = "link_reset_send_failed"
@@ -122,28 +122,22 @@ async def test_handshake_streak_fatal_threshold(
 
 @pytest.mark.asyncio
 async def test_handshake_capabilities_retry(
-    handshake_setup: tuple[SerialHandshakeManager, RuntimeState, AsyncMock],
+    handshake_setup: tuple[SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, pb.HandshakeConfig, AsyncMock],
 ) -> None:
     """Verify capabilities discovery retries on timeout."""
-    manager, _, send_frame = handshake_setup
+    manager, state, send_frame, config, timing, _ = handshake_setup
 
-    # Simulate timeout on first 2 attempts, success on 3rd
-    timing = cast(pb.HandshakeConfig, getattr(manager, "_timing"))
-    setattr(timing, "response_timeout_ms", 10)
+    timing.response_timeout_ms = 10
 
     attempts = 0
 
     from typing import Any
 
-    async def mock_send_frame(*args: Any, **kwargs: Any) -> bool:
+    async def mock_send_frame(cmd: int, *args: Any, **kwargs: Any) -> bool:
         nonlocal attempts
         attempts += 1
-        fut = getattr(manager, "_capabilities_future")
-        if fut is not None:
-            if attempts <= 2:
-                fut.set_exception(TimeoutError())
-            else:
-                fut.set_result(b"\x80")
+        if attempts == 3:
+            asyncio.create_task(manager.handle_capabilities_resp(1, b"\x80"))
         return True
 
     send_frame.side_effect = mock_send_frame
@@ -158,12 +152,12 @@ async def test_handshake_malformed_sync_resp(
     handshake_setup: tuple[SerialHandshakeManager, RuntimeState, AsyncMock],
 ) -> None:
     """Verify handling of corrupt protobuf in sync response."""
-    manager, state, _ = handshake_setup
+    manager, state, _, config, _, _ = handshake_setup
     state.link_handshake_nonce = b"pending"
 
     result = await manager.handle_link_sync_resp(1, b"\xff\xff\xff")  # Invalid protobuf
     assert not result
     assert state.last_handshake_error == "sync_decode_failed"
-    cast(AsyncMock, getattr(manager, "_acknowledge_frame")).assert_called_with(
+    handshake_setup[-1].assert_called_with(
         Command.CMD_LINK_SYNC_RESP.value, 1, status=Status.MALFORMED
     )

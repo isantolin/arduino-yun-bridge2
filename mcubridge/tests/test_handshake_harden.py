@@ -49,7 +49,9 @@ def handshake_setup(
 
 @pytest.mark.asyncio
 async def test_handshake_auth_mismatch(
-    handshake_setup: tuple[SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, pb.HandshakeConfig, AsyncMock],
+    handshake_setup: tuple[
+        SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, pb.HandshakeConfig, AsyncMock
+    ],
 ) -> None:
     """Verify rejection of invalid HMAC tags during sync."""
     manager, state, _, _config, _timing, _ack = handshake_setup
@@ -73,10 +75,12 @@ async def test_handshake_auth_mismatch(
 
 @pytest.mark.asyncio
 async def test_handshake_rate_limiting(
-    handshake_setup: tuple[SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, pb.HandshakeConfig, AsyncMock],
+    handshake_setup: tuple[
+        SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, pb.HandshakeConfig, AsyncMock
+    ],
 ) -> None:
     """Verify handshake rate limiting protects MCU from thrashing."""
-    manager, state, _, _config, _timing, _ack = handshake_setup
+    manager, state, _, config, _timing, _ack = handshake_setup
     config.serial_handshake_min_interval = 1.0
 
     state.mark_synchronized()
@@ -91,7 +95,9 @@ async def test_handshake_rate_limiting(
 
 @pytest.mark.asyncio
 async def test_handshake_fatal_threshold(
-    handshake_setup: tuple[SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, pb.HandshakeConfig, AsyncMock],
+    handshake_setup: tuple[
+        SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, pb.HandshakeConfig, AsyncMock
+    ],
 ) -> None:
     """Verify transition to permanent failure after threshold is reached."""
     manager, state, _, _config, _timing, _ack = handshake_setup
@@ -106,7 +112,9 @@ async def test_handshake_fatal_threshold(
 
 @pytest.mark.asyncio
 async def test_handshake_streak_fatal_threshold(
-    handshake_setup: tuple[SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, pb.HandshakeConfig, AsyncMock],
+    handshake_setup: tuple[
+        SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, pb.HandshakeConfig, AsyncMock
+    ],
 ) -> None:
     """Verify transition to permanent failure after streak threshold is reached for non-immediate errors."""
     manager, state, _, _config, _timing, _ack = handshake_setup
@@ -129,7 +137,7 @@ async def test_handshake_capabilities_retry(
     ],
 ) -> None:
     """Verify capabilities discovery retries on timeout."""
-    manager, state, send_frame, _config, timing, _ack = handshake_setup
+    manager, _state, send_frame, _config, timing, _ack = handshake_setup
 
     timing.response_timeout_ms = 10
 
@@ -140,7 +148,10 @@ async def test_handshake_capabilities_retry(
     async def mock_send_frame(cmd: int, *args: Any, **kwargs: Any) -> bool:
         nonlocal attempts
         attempts += 1
-        if attempts == 3:
+        if attempts < 3:
+            if manager._capabilities_future and not manager._capabilities_future.done():
+                manager._capabilities_future.set_exception(TimeoutError("mock timeout"))
+        elif attempts == 3:
             asyncio.create_task(manager.handle_capabilities_resp(1, b"\x80"))
         return True
 
@@ -153,7 +164,9 @@ async def test_handshake_capabilities_retry(
 
 @pytest.mark.asyncio
 async def test_handshake_malformed_sync_resp(
-    handshake_setup: tuple[SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, pb.HandshakeConfig, AsyncMock],
+    handshake_setup: tuple[
+        SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, pb.HandshakeConfig, AsyncMock
+    ],
 ) -> None:
     """Verify handling of corrupt protobuf in sync response."""
     manager, state, _, _config, _timing, _ack = handshake_setup

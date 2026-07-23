@@ -9,7 +9,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Final, TypeVar, cast
 
-from .storage import SqliteDeque, SqliteCache, InMemoryDeque
+from .storage import SqliteDeque, SqliteCache
 import structlog
 
 from ..config.const import (
@@ -85,10 +85,8 @@ class RuntimeState:
         self.datastore_cache: SqliteCache | None = kwargs.get("datastore_cache")
         self.connected_via_http3: bool = False
 
-        self.mailbox_queue: SqliteDeque | InMemoryDeque = kwargs.get("mailbox_queue") or InMemoryDeque()
-        self.mailbox_incoming_queue: SqliteDeque | InMemoryDeque = (
-            kwargs.get("mailbox_incoming_queue") or InMemoryDeque()
-        )
+        self.mailbox_queue: SqliteDeque = kwargs.get("mailbox_queue") or SqliteDeque(path=":memory:")
+        self.mailbox_incoming_queue: SqliteDeque = kwargs.get("mailbox_incoming_queue") or SqliteDeque(path=":memory:")
 
         self.mcu_is_paused: bool = kwargs.get("mcu_is_paused", False)
         self.serial_tx_allowed: asyncio.Event = kwargs.get("serial_tx_allowed") or asyncio.Event()
@@ -307,7 +305,7 @@ class RuntimeState:
                 except (OSError, RuntimeError):
                     logger.warning("Spool '%s' falling back to RAM", subdir)
 
-            return InMemoryDeque(maxlen=self.mailbox_queue_limit)
+            return SqliteDeque(path=":memory:", maxlen=self.mailbox_queue_limit)
 
         self.mailbox_queue = _create_spool("mailbox_out")
         self.mailbox_incoming_queue = _create_spool("mailbox_in")
@@ -478,43 +476,10 @@ class RuntimeState:
         self.cleanup()
 
     def cleanup(self) -> None:
-        try:
-            if hasattr(self.mailbox_queue, "close"):
-                res = cast(Any, self.mailbox_queue).close()
-                if asyncio.iscoroutine(res):
-                    try:
-                        res.send(None)
-                    except StopIteration:
-                        pass
-        except (OSError, RuntimeError, AttributeError) as e:
-            logger.debug("Mailbox queue cleanup notice", error=e)
-
-        try:
-            if hasattr(self.mailbox_incoming_queue, "close"):
-                res = cast(Any, self.mailbox_incoming_queue).close()
-                if asyncio.iscoroutine(res):
-                    try:
-                        res.send(None)
-                    except StopIteration:
-                        pass
-        except (OSError, RuntimeError, AttributeError) as e:
-            logger.debug("Mailbox incoming queue cleanup notice", error=e)
-
-        self.mailbox_queue = InMemoryDeque()
-        self.mailbox_incoming_queue = InMemoryDeque()
+        self.mailbox_queue = SqliteDeque(path=":memory:")
+        self.mailbox_incoming_queue = SqliteDeque(path=":memory:")
         self.console_to_mcu_queue = collections.deque()
-
-        if self.datastore_cache is not None:
-            try:
-                res = self.datastore_cache.close()
-                if asyncio.iscoroutine(res):
-                    try:
-                        res.send(None)
-                    except StopIteration:
-                        pass
-            except (OSError, RuntimeError, AttributeError) as e:
-                logger.debug("Resource cleanup notice", error=e)
-            self.datastore_cache = None
+        self.datastore_cache = None
 
         while not self.cloud_publish_queue.empty():
             try:

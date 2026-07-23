@@ -30,7 +30,7 @@ def do_publish(topic: str, payload: str) -> None:
 
     try:
         asyncio.run(_run())
-    except Exception as e:
+    except (OSError, RuntimeError, ValueError) as e:
         sys.stderr.write(f"Error: local gRPC IPC publication failed: {e}\n")
         sys.exit(4)
 

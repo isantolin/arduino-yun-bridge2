@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Interactive console helper for the Arduino bridge."""
+"""Interactive console helper for the Arduino bridge using direct LocalBridgeStub."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ import logging
 import os
 import sys
 
+from mcubridge_client import Topic, pb
 from mcubridge_client.cli import bridge_session, configure_logging
 
 configure_logging()
@@ -19,48 +20,52 @@ async def run_test(
     topic_prefix: str,
 ) -> None:
 
-    async with bridge_session(socket_path, topic_prefix) as bridge:
-        # Start a task to listen for console messages
+    async with bridge_session(socket_path, topic_prefix) as (_channel, stub):
+
         async def console_listener() -> None:
-            while True:
-                message = await bridge.console_read_async()
-                if message is not None:
-                    logging.info("Received from Arduino: %s", message)
-                else:
-                    await asyncio.sleep(0.1)
+            try:
+                async with stub.SubscribeConsole.open() as stream:
+                    await stream.send_message(pb.SubscribeRequest())
+                    async for msg in stream:
+                        payload_str = (msg.payload or b"").decode("utf-8", errors="replace")
+                        logging.info("Received from Arduino: %s", payload_str)
+            except asyncio.CancelledError:
+                pass
+            except (OSError, RuntimeError) as e:
+                logging.debug("Console listener closed: %s", e)
 
         listener_task: asyncio.Task[None] = asyncio.create_task(console_listener())
 
-        # [CI] Automatic Echo Test if not in a TTY or forced via env
         is_interactive = sys.stdin.isatty() and os.environ.get("MCUBRIDGE_NON_INTERACTIVE") != "1"
+        topic_cw = Topic.build(Topic.CONSOLE, "write", prefix=topic_prefix)
 
         if not is_interactive:
             logging.info("Non-interactive mode. Running Echo Test (ping/pong)...")
-            await bridge.console_write("ping")
-
-            # Wait up to 5 seconds for a response
-            start = asyncio.get_running_loop().time()
-            while asyncio.get_running_loop().time() - start < 5.0:
-                # The listener task will log the pong if it arrives
-                await asyncio.sleep(0.5)
+            await stub.Publish(pb.CloudQueuedPublish(topic_name=topic_cw, payload=b"ping", qos=1))
+            await asyncio.sleep(2.0)
             logging.info("Echo Test phase completed.")
         else:
             logging.info("Enter text to send to the Arduino console. Type 'exit' to quit.")
             while True:
                 try:
-                    # Run blocking input in a separate thread
                     user_input = await asyncio.to_thread(input)
                     if user_input.lower() == "exit":
                         break
-                    await bridge.console_write(user_input)
+                    await stub.Publish(
+                        pb.CloudQueuedPublish(
+                            topic_name=topic_cw,
+                            payload=user_input.encode("utf-8"),
+                            qos=1,
+                        )
+                    )
                 except EOFError:
                     break
 
-        # Clean up the listener task
         listener_task.cancel()
-        await asyncio.gather(listener_task, return_exceptions=True)
-
-    logging.info("Done.")
+        try:
+            await listener_task
+        except asyncio.CancelledError:
+            pass
 
 
 def main(
@@ -71,7 +76,7 @@ def main(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Interactive console helper for the Arduino bridge.")
+    parser = argparse.ArgumentParser(description="Interactive console helper using direct LocalBridgeStub.")
     parser.add_argument("--socket-path", default=None, help="UNIX Domain Socket Path")
     parser.add_argument("--topic-prefix", default="br", help="Topic prefix")
     _args = parser.parse_args()

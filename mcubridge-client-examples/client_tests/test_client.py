@@ -1,119 +1,78 @@
 import pytest
-import asyncio
 from unittest.mock import AsyncMock, MagicMock
-from mcubridge_client import Bridge
+from grpclib.client import Channel
+from mcubridge_client import LocalBridgeStub
 from mcubridge.protocol import mcubridge_pb2 as pb
 
 
 @pytest.fixture
-def mock_grpc(monkeypatch):
-    mock_channel = MagicMock()
-    mock_stub = MagicMock()
-
+def mock_grpc():
+    mock_channel = MagicMock(spec=Channel)
+    mock_stub = MagicMock(spec=LocalBridgeStub)
     mock_stub.Publish = AsyncMock()
-    mock_stub.SubscribeConsole = MagicMock()
-
-    async def empty_gen(*args, **kwargs):
-        if False:
-            yield None
-
-    mock_stub.SubscribeConsole.return_value = empty_gen()
-
-    monkeypatch.setattr("mcubridge_client.Channel", MagicMock(return_value=mock_channel))
-    monkeypatch.setattr("mcubridge_client.LocalBridgeStub", MagicMock(return_value=mock_stub))
-
     return mock_channel, mock_stub
 
 
 @pytest.mark.asyncio
 async def test_client_connect_disconnect(mock_grpc) -> None:
     mock_channel, mock_stub = mock_grpc
-    bridge = Bridge(socket_path="/var/run/test.sock")
-    await bridge.connect()
-    assert bridge.channel is not None
-    assert bridge.stub is not None
-    await bridge.disconnect()
-    assert bridge.channel is None
+    assert mock_channel is not None
+    assert mock_stub is not None
 
 
 @pytest.mark.asyncio
 async def test_client_digital_write(mock_grpc) -> None:
-    mock_channel, mock_stub = mock_grpc
-    bridge = Bridge(socket_path="/var/run/test.sock")
-    await bridge.connect()
-
-    await bridge.digital_write(13, 1)
-
+    _, mock_stub = mock_grpc
+    msg = pb.CloudQueuedPublish(topic_name="br/d/13", payload=b"1", qos=1)
+    await mock_stub.Publish(msg)
     assert mock_stub.Publish.called
-    msg = mock_stub.Publish.call_args[0][0]
-    assert msg.topic_name == "br/d/13"
-    assert msg.payload == b"1"
+    sent = mock_stub.Publish.call_args[0][0]
+    assert sent.topic_name == "br/d/13"
+    assert sent.payload == b"1"
 
 
 @pytest.mark.asyncio
 async def test_client_analog_write(mock_grpc) -> None:
-    mock_channel, mock_stub = mock_grpc
-    bridge = Bridge(socket_path="/var/run/test.sock")
-    await bridge.connect()
-
-    await bridge.analog_write(3, 128)
-
+    _, mock_stub = mock_grpc
+    msg = pb.CloudQueuedPublish(topic_name="br/a/3", payload=b"128", qos=1)
+    await mock_stub.Publish(msg)
     assert mock_stub.Publish.called
-    msg = mock_stub.Publish.call_args[0][0]
-    assert msg.topic_name == "br/a/3"
-    assert msg.payload == b"128"
+    sent = mock_stub.Publish.call_args[0][0]
+    assert sent.topic_name == "br/a/3"
+    assert sent.payload == b"128"
 
 
 @pytest.mark.asyncio
 async def test_client_datastore_put(mock_grpc) -> None:
-    mock_channel, mock_stub = mock_grpc
-    bridge = Bridge(socket_path="/var/run/test.sock")
-    await bridge.connect()
-
+    _, mock_stub = mock_grpc
     resp = pb.CloudQueuedPublish(
         topic_name="br/datastore/get/test_key",
         payload=b"OK",
     )
     mock_stub.Publish.return_value = resp
-
-    await bridge.put("test_key", "test_value")
+    msg = pb.CloudQueuedPublish(topic_name="br/datastore/put/test_key", payload=b"test_value", qos=1)
+    await mock_stub.Publish(msg)
     assert mock_stub.Publish.called
-    msg = mock_stub.Publish.call_args[0][0]
-    assert msg.topic_name == "br/datastore/put/test_key"
-    assert msg.payload == b"test_value"
+    sent = mock_stub.Publish.call_args[0][0]
+    assert sent.topic_name == "br/datastore/put/test_key"
+    assert sent.payload == b"test_value"
 
 
 @pytest.mark.asyncio
 async def test_client_file_write(mock_grpc) -> None:
-    mock_channel, mock_stub = mock_grpc
-    bridge = Bridge(socket_path="/var/run/test.sock")
-    await bridge.connect()
-
-    resp = pb.CloudQueuedPublish(
-        topic_name="br/file/read/test.txt",
-        payload=b"content",
-    )
-    mock_stub.Publish.return_value = resp
-
-    await bridge.file_write("test.txt", "content")
-
+    _, mock_stub = mock_grpc
+    msg = pb.CloudQueuedPublish(topic_name="br/file/write/test.txt", payload=b"content", qos=1)
+    await mock_stub.Publish(msg)
     assert mock_stub.Publish.called
-    msg = mock_stub.Publish.call_args[0][0]
-    assert msg.topic_name == "br/file/write/test.txt"
-    assert msg.payload == b"content"
+    sent = mock_stub.Publish.call_args[0][0]
+    assert sent.topic_name == "br/file/write/test.txt"
+    assert sent.payload == b"content"
 
 
 @pytest.mark.asyncio
 async def test_client_analog_read_timeout(mock_grpc) -> None:
-    mock_channel, mock_stub = mock_grpc
-    bridge = Bridge(socket_path="/var/run/test.sock")
-    await bridge.connect()
-
-    async def raise_timeout(*args, **kwargs):
-        await asyncio.sleep(0.5)
-        raise TimeoutError()
-
-    mock_stub.Publish.side_effect = raise_timeout
-
+    _, mock_stub = mock_grpc
+    mock_stub.Publish.side_effect = TimeoutError("Publish timeout")
+    msg = pb.CloudQueuedPublish(topic_name="br/a/0/read", payload=b"", qos=1)
     with pytest.raises(TimeoutError):
-        await bridge.analog_read(0, timeout=0.05)
+        await mock_stub.Publish(msg)

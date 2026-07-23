@@ -1,5 +1,8 @@
 #include "services/FileSystem.h"
 
+#include <etl/algorithm.h>
+#include <etl/numeric.h>
+
 #include "Bridge.h"
 
 #if BRIDGE_ENABLE_FILESYSTEM
@@ -69,10 +72,16 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
   size_t offset = 0U;
   const uint32_t start_ms = millis();
 
-  for (uint16_t chunk = 0U; chunk < bridge::config::FILE_MAX_READ_CHUNKS;
-       ++chunk) {
+  bool finished = false;
+  etl::array<uint16_t, bridge::config::FILE_MAX_READ_CHUNKS> chunks;
+  etl::iota(chunks.begin(), chunks.end(), 0U);
+
+  etl::for_each(chunks.begin(), chunks.end(), [&](uint16_t chunk) {
+    (void)chunk;
+    if (finished) return;
     if (millis() - start_ms >= bridge::config::SERIAL_TIMEOUT_MS) {
       BRIDGE_FS_DEBUG("[DEBUG] FS: Read TIMEOUT at offset %zu\n", offset);
+      finished = true;
       return;
     }
     etl::array<uint8_t, kReadChunkSize> buffer;
@@ -81,6 +90,7 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
     if (!res) {
       BRIDGE_FS_DEBUG("[DEBUG] FS: Read FAILED at offset %zu\n", offset);
       (void)Bridge.sendFrame(rpc::StatusCode::STATUS_ERROR);
+      finished = true;
       return;
     }
     BRIDGE_FS_DEBUG("[DEBUG] FS: Sending chunk (%zu bytes, has_more=%d)\n",
@@ -98,10 +108,12 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
       rpc::payload::FileReadResponse empty_p = {};
       empty_p.content.size = 0U;
       (void)Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 0, empty_p);
+      finished = true;
       return;
     }
+
     offset += res->bytes_read;
-  }
+  });
 }
 
 void FileSystemClass::_onRemove(const rpc::payload::FileRemove& msg) {

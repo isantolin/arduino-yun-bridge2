@@ -48,6 +48,6 @@ def test_hw_smoke_timeout(runtime_config: Any) -> None:
         patch("sys.argv", ["mcubridge_hw_smoke", "--timeout", "0.01"]),
         pytest.raises(SystemExit) as exc,
     ):
-        mock_channel_cls.side_effect = Exception("Connection refused")
+        mock_channel_cls.side_effect = ConnectionRefusedError("Connection refused")
         main()
     assert exc.value.code == 1

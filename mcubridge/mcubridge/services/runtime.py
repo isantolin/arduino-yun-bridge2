@@ -370,7 +370,7 @@ class BridgeService:
         try:
             # Check if this is a command response
             if message.correlation_data:
-                seq_id = int.from_bytes(message.correlation_data, "big")
+                seq_id = int.from_bytes(message.correlation_data[:8], "big")
                 envelope = pb.CloudEnvelope(
                     protocol_version=2,
                     device_id=self.state.device_id,
@@ -1672,10 +1672,9 @@ class LocalBridgeService(LocalBridgeBase):
             while True:
                 msg = await queue.get()
                 await stream.send_message(msg)
-        except asyncio.CancelledError:
+        except (OSError, RuntimeError) as e:
+            logger.error("Local IPC console stream error", error=str(e))
             raise
-        except Exception as e:
-            logger.debug("Local IPC console stream error", error=str(e))
         finally:
             if queue in self.runtime_service.console_queues:
                 self.runtime_service.console_queues.remove(queue)

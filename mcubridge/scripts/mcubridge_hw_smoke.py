@@ -48,7 +48,7 @@ class SmokeTester:
 
                 self.results["gpio"] = True
                 logger.info("GPIO toggle commands sent successfully")
-            except Exception as e:
+            except (OSError, RuntimeError, ValueError) as e:
                 logger.error("Connection or call to local gRPC socket failed", error=str(e))
                 self.results["connectivity"] = False
             finally:

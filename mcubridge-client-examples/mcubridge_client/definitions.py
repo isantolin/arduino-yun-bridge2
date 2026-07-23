@@ -6,6 +6,8 @@ from mcubridge.protocol.structures import UserProperty
 from mcubridge.protocol.mcubridge_pb2 import CloudQueuedPublish
 from .protocol import MAX_PAYLOAD_SIZE
 
+import os
+
 DEFAULT_SOCKET_PATH: str = "/var/run/mcubridge.sock"
 DEFAULT_TOPIC_PREFIX: str = "br"
 
@@ -32,8 +34,9 @@ def build_bridge_args(
 ) -> dict[str, object]:
     """Build Bridge constructor keyword arguments from CLI/env parameters."""
     args: dict[str, object] = {}
-    if socket_path:
-        args["socket_path"] = socket_path
+    effective_socket = socket_path or os.environ.get("MCUBRIDGE_SOCKET_PATH") or DEFAULT_SOCKET_PATH
+    if effective_socket:
+        args["socket_path"] = effective_socket
     if topic_prefix:
         args["topic_prefix"] = topic_prefix
     return args

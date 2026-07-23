@@ -83,22 +83,25 @@ constexpr etl::underlying_type_t<E> to_underlying(E value) {
     return static_cast<etl::underlying_type_t<E>>(value);
 }
 
-constexpr bool requires_ack(CommandId command_id) {
+constexpr bool requires_ack(uint16_t command_id) {
 {%- if ack_commands %}
-    constexpr etl::array<CommandId, {{ ack_commands | length }}U> ACK_COMMANDS = {
+    constexpr etl::array<bool, 256U> ACK_TABLE = []() {
+        etl::array<bool, 256U> tbl{};
+        tbl.fill(false);
         {%- for cmd in ack_commands %}
-        CommandId::{{ cmd.name }},
+        tbl[static_cast<size_t>(CommandId::{{ cmd.name }})] = true;
         {%- endfor %}
-    };
-    return etl::find(ACK_COMMANDS.begin(), ACK_COMMANDS.end(), command_id) != ACK_COMMANDS.end();
+        return tbl;
+    }();
+    return (command_id < 256U) ? ACK_TABLE[command_id] : false;
 {%- else %}
     (void)command_id;
     return false;
 {%- endif %}
 }
 
-constexpr bool requires_ack(uint16_t command_id) {
-    return requires_ack(static_cast<CommandId>(command_id));
+constexpr bool requires_ack(CommandId command_id) {
+    return requires_ack(static_cast<uint16_t>(command_id));
 }
 
 } // namespace rpc

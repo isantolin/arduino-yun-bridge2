@@ -1,4 +1,4 @@
-"""Test script for SPI service and Auto-Baudrate fallback."""
+"""Test script for SPI service using SpiDevice with direct LocalBridgeStub and bridge_session."""
 
 from __future__ import annotations
 
@@ -6,7 +6,8 @@ import argparse
 import asyncio
 import logging
 
-from mcubridge_client import Bridge
+from mcubridge_client import SpiDevice
+from mcubridge_client.cli import bridge_session
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -16,33 +17,22 @@ async def run_test(
     socket_path: str | None,
     topic_prefix: str,
 ) -> None:
-    bridge = Bridge(socket_path=socket_path, topic_prefix=topic_prefix)
-
-    await bridge.connect()
     logger.info("--- Starting SPI Service Test ---")
 
-    try:
-        # Use high-level SpiDevice abstraction
-        async with bridge.spi(frequency=4000000, mode=0) as spi:
+    async with bridge_session(socket_path, topic_prefix) as (_channel, stub):
+        device = SpiDevice(stub=stub, frequency=4000000, topic_prefix=topic_prefix)
+        async with device as spi:
             logger.info("SPI session started automatically (begin + config)")
 
             test_data = [0xAA, 0xBB, 0xCC, 0xDD]
             logger.info("Transferring data (list): %s", test_data)
 
-            # This will wait for SPI_TRANSFER_RESP
             resp = await spi.transfer(test_data)
             logger.info("Received SPI data: %s", resp.hex())
 
             logger.info("SPI session ends automatically (end)")
 
         logger.info("SPI Service Test PASSED.")
-
-        logger.info("--- Starting Bootloader Test ---")
-        await bridge.enter_bootloader()
-        logger.info("Bootloader command sent (MCU should reset).")
-
-    finally:
-        await bridge.disconnect()
 
 
 def main(
@@ -53,8 +43,8 @@ def main(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Test script for SPI service and Auto-Baudrate fallback.")
+    parser = argparse.ArgumentParser(description="Test SPI service using direct LocalBridgeStub.")
     parser.add_argument("--socket-path", default=None, help="UNIX Domain Socket Path")
     parser.add_argument("--topic-prefix", default="br", help="Topic prefix")
-    _args = parser.parse_args()
-    main(_args.socket_path, _args.topic_prefix)
+    args = parser.parse_args()
+    main(args.socket_path, args.topic_prefix)

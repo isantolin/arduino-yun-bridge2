@@ -1,5 +1,6 @@
 from __future__ import annotations
 import asyncio
+import sys
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -185,10 +186,10 @@ async def run_command(
     except (asyncio.TimeoutError, TimeoutError):
         try:
             proc.kill()
-        except OSError:
-            pass
+        except OSError as kill_err:
+            sys.stderr.write(f"Failed to kill proc on timeout: {kill_err}\n")
         return (-1, None, "timeout")
-    except Exception as e:
+    except (OSError, RuntimeError, ValueError) as e:
         return (1, None, str(e))
 
 

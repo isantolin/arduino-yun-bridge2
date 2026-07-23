@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections import deque
 from pathlib import Path
 from typing import Awaitable, Callable, TypeVar
 import asyncio
@@ -136,9 +135,6 @@ class SqliteDeque:
     async def clear(self) -> None:
         await self._recreate_db()
 
-    async def close(self) -> None:
-        pass
-
     async def vacuum(self) -> None:
         """Coerce database defragmentation (VACUUM) to release space."""
 
@@ -146,6 +142,10 @@ class SqliteDeque:
             await conn.execute("VACUUM;")
 
         await self._execute(_vacuum_impl)
+
+    async def close(self) -> None:
+        """Close storage resources."""
+        return None
 
 
 class SqliteCache:
@@ -231,43 +231,6 @@ class SqliteCache:
     async def clear(self) -> None:
         await self._recreate_db()
 
-        async def _no_op(conn: aiosqlite.Connection) -> None:
-            pass
-
-        await self._execute(_no_op)
-
     async def close(self) -> None:
-        pass
-
-
-class InMemoryDeque:
-    """Async RAM-backed fallback queue for SIL-2 compatibility."""
-
-    def __init__(self, maxlen: int | None = None) -> None:
-        self._deque: deque[bytes] = deque(maxlen=maxlen)
-
-    def __len__(self) -> int:
-        return len(self._deque)
-
-    async def append(self, item: bytes) -> None:
-        self._deque.append(item)
-
-    async def popleft(self) -> bytes:
-        return self._deque.popleft()
-
-    async def length(self) -> int:
-        return len(self._deque)
-
-    async def peek(self) -> bytes:
-        if not self._deque:
-            raise IndexError("peek from empty deque")
-        return self._deque[0]
-
-    async def clear(self) -> None:
-        self._deque.clear()
-
-    async def close(self) -> None:
-        pass
-
-    async def vacuum(self) -> None:
-        pass
+        """Close storage resources."""
+        return None

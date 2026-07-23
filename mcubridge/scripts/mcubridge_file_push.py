@@ -33,7 +33,7 @@ def push_file(topic: str, data: bytes) -> None:
             )
             await stub.Publish(msg)
             logger.info("File push successful", topic=topic, size=len(data))
-        except Exception as e:
+        except (OSError, RuntimeError, ValueError) as e:
             logger.error("File push failed", error=str(e), topic=topic)
             sys.exit(1)
         finally:

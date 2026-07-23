@@ -35,14 +35,15 @@ void ProcessClass::runAsync(etl::string_view cmd,
     ok = false;
   }
 
-  for (const auto& arg : args) {
+  etl::for_each(args.begin(), args.end(), [&](const auto& arg) {
+    if (!ok) return;
     if (1U + arg.size() > command_buffer.available()) {
       ok = false;
-      break;
+      return;
     }
     command_buffer.append(" ");
     command_buffer.append(arg.begin(), arg.end());
-  }
+  });
 
   if (!ok) {
     Bridge.emitStatus(

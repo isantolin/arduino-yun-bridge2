@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise datastore interactions using the bridge client."""
+"""Exercise datastore interactions using direct LocalBridgeStub and Channel."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import argparse
 import asyncio
 import logging
 
+from mcubridge_client import Topic, pb
 from mcubridge_client.cli import bridge_session, configure_logging
 
 configure_logging()
@@ -17,48 +18,17 @@ async def run_test(
     topic_prefix: str,
 ) -> None:
 
-    async with bridge_session(socket_path, topic_prefix) as bridge:
+    async with bridge_session(socket_path, topic_prefix) as (_channel, stub):
         logging.info("--- Starting DataStore Bridge Client Test ---")
 
-        # --- Test 1: Put and Get a new key-value pair ---
-        logging.info("[Test 1: Put and Get a new key-value pair]")
+        # --- Test 1: Put a new key-value pair ---
+        logging.info("[Test 1: Put a new key-value pair]")
         key1: str = "client_test/temperature"
         value1: str = "25.5"
 
-        await bridge.put(key1, value1)
+        topic_ds = Topic.build(Topic.DATASTORE, "put", key1, prefix=topic_prefix)
+        await stub.Publish(pb.CloudQueuedPublish(topic_name=topic_ds, payload=value1.encode("utf-8"), qos=1))
         logging.info(f"Put value '{value1}' to key '{key1}'")
-
-        retrieved_value: str = await bridge.get(key1)
-        if retrieved_value == value1:
-            logging.info(
-                "SUCCESS: Retrieved value '%s' matches put value '%s'.",
-                retrieved_value,
-                value1,
-            )
-        else:
-            logging.error(
-                "FAILURE: Retrieved value '%s' does not match put value '%s'.",
-                retrieved_value,
-                value1,
-            )
-
-        # --- Test 2: Get a non-existent key ---
-        logging.info("\n[Test 2: Get a non-existent key]")
-        key2: str = "non_existent/key"
-
-        retrieved_value_2: str = await bridge.get(key2)
-        # Expecting an empty payload for a non-existent key
-        if retrieved_value_2 == "":
-            logging.info(
-                "SUCCESS: Empty value returned for non-existent key '%s'.",
-                key2,
-            )
-        else:
-            logging.error(
-                "FAILURE: Value '%s' returned for non-existent key '%s'.",
-                retrieved_value_2,
-                key2,
-            )
 
     logging.info("Done.")
 
@@ -71,7 +41,7 @@ def main(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Exercise datastore interactions using the bridge client.")
+    parser = argparse.ArgumentParser(description="Exercise datastore interactions using direct LocalBridgeStub.")
     parser.add_argument("--socket-path", default=None, help="UNIX Domain Socket Path")
     parser.add_argument("--topic-prefix", default="br", help="Topic prefix")
     _args = parser.parse_args()

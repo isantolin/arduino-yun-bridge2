@@ -31,13 +31,20 @@ size_t SPIServiceClass::transfer(etl::span<uint8_t> buffer) {
   const uint32_t start = millis();
   size_t transferred = 0U;
 
-  for (auto& b : buffer) {
+  bool timed_out = false;
+  etl::for_each(buffer.begin(), buffer.end(), [&](auto& b) {
+    if (timed_out) return;
     if (millis() - start > rpc::RPC_SPI_TIMEOUT_MS) {
-      SPI.endTransaction();
-      return 0;  // Hardware failure (timeout)
+      timed_out = true;
+      return;
     }
     b = SPI.transfer(b);
     ++transferred;
+  });
+
+  if (timed_out) {
+    SPI.endTransaction();
+    return 0;
   }
 
   SPI.endTransaction();

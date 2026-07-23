@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Poll sensor values via the async bridge client."""
+"""Poll sensor values via direct LocalBridgeStub Publish calls."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import argparse
 import asyncio
 import logging
 
+from mcubridge_client import Topic, pb
 from mcubridge_client.cli import bridge_session, configure_logging
 
 configure_logging()
@@ -19,7 +20,7 @@ async def run_test(
     interval: float,
 ) -> None:
 
-    async with bridge_session(socket_path, topic_prefix) as bridge:
+    async with bridge_session(socket_path, topic_prefix) as (_channel, stub):
         logging.info(
             "Requesting a reading from pin %s every %.1f seconds.",
             pin,
@@ -28,12 +29,11 @@ async def run_test(
         logging.info("Press Ctrl+C to exit.")
 
         is_analog = pin.lower().startswith("a")
-        # Handle optional 'd' or 'a' prefix safely
         try:
             raw_pin_str = pin[1:] if pin[0].isalpha() else pin
             pin_number = int(raw_pin_str)
         except ValueError:
-            logging.error(f"Invalid pin format: {pin}")
+            logging.error("Invalid pin format: %s", pin)
             raise SystemExit(1)
 
         start_time = asyncio.get_running_loop().time()
@@ -43,41 +43,44 @@ async def run_test(
                 break
 
             if is_analog:
-                value: int = await bridge.analog_read(pin_number)
-                logging.info(
-                    "Received analog value for pin %s: %d",
-                    pin,
-                    value,
-                )
+                topic_ar = Topic.build(Topic.ANALOG, str(pin_number), prefix=topic_prefix)
+                res = await stub.Publish(pb.CloudQueuedPublish(topic_name=topic_ar, payload=b"", qos=1))
+                val_str = res.payload.decode("utf-8", errors="replace") if (res and res.payload) else "0"
+                try:
+                    value = int(val_str)
+                except ValueError:
+                    value = 0
+                logging.info("Received analog value for pin %s: %d", pin, value)
             else:
-                value = await bridge.digital_read(pin_number)
-                logging.info(
-                    "Received digital value for pin %s: %d",
-                    pin,
-                    value,
-                )
+                topic_dr = Topic.build(Topic.DIGITAL, str(pin_number), prefix=topic_prefix)
+                res = await stub.Publish(pb.CloudQueuedPublish(topic_name=topic_dr, payload=b"", qos=1))
+                val_str = res.payload.decode("utf-8", errors="replace") if (res and res.payload) else "0"
+                try:
+                    value = int(val_str)
+                except ValueError:
+                    value = 0
+                logging.info("Received digital value for pin %s: %d", pin, value)
 
             await asyncio.sleep(interval)
+
+    logging.info("Done.")
 
 
 def main(
     socket_path: str | None = None,
     topic_prefix: str = "br",
-    pin: str = "d13",
-    interval: float = 2.0,
+    pin: str = "A0",
+    interval: float = 1.0,
 ) -> None:
-    try:
-        asyncio.run(run_test(socket_path, topic_prefix, pin, interval))
-    except KeyboardInterrupt:
-        pass
+    asyncio.run(run_test(socket_path, topic_prefix, pin, interval))
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Poll sensor values via the async bridge client.")
+    parser = argparse.ArgumentParser(description="Poll sensor values via direct LocalBridgeStub.")
     parser.add_argument("--socket-path", default=None, help="UNIX Domain Socket Path")
     parser.add_argument("--topic-prefix", default="br", help="Topic prefix")
-    parser.add_argument("--pin", default="d13", help="Pin to read (e.g., 'd13' or 'a0').")
-    parser.add_argument("--interval", type=float, default=2.0, help="Read interval in seconds.")
+    parser.add_argument("--pin", default="A0", help="Pin to read (e.g. A0, A1, D13, 13)")
+    parser.add_argument("--interval", type=float, default=1.0, help="Poll interval in seconds")
     _args = parser.parse_args()
     main(
         _args.socket_path,

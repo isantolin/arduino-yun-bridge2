@@ -14,6 +14,8 @@ import importlib.util
 import re
 import subprocess
 import sys
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -744,7 +746,6 @@ def _format_python_file(path: Path) -> None:
 
 def ensure_nanopb_core_files() -> None:
     """Ensure the core Nanopb C files exist in mcubridge-library-arduino/src/."""
-    import urllib.request
 
     src_dir = REPO_ROOT / "mcubridge-library-arduino" / "src"
     version = "nanopb-0.4.9.1"
@@ -768,7 +769,7 @@ def ensure_nanopb_core_files() -> None:
             try:
                 with urllib.request.urlopen(url, timeout=20) as response:
                     target.write_bytes(response.read())
-            except Exception as e:
+            except (urllib.error.URLError, OSError, TimeoutError, ValueError) as e:
                 sys.stderr.write(f"Error downloading {f}: {e}\n")
                 sys.exit(1)
 

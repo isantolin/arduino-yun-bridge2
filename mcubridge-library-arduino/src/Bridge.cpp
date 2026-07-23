@@ -395,19 +395,90 @@ void BridgeClass::_dispatchCommand(const rpc_pb_RpcEnvelope& envelope) {
     return;
   }
 
-  // [ETL] O(log N) binary search in the static sorted dispatch table.
-  // Table is defined in Bridge.cpp and never mutated at runtime (zero RAM
-  // growth).
-  const DispatchEntry key{ctx.raw_command, nullptr};
-  const DispatchEntry* const table_end =
-      k_dispatch_table + k_dispatch_table_size;
-  const DispatchEntry* found =
-      etl::lower_bound(k_dispatch_table, table_end, key,
-                       [](const DispatchEntry& e, const DispatchEntry& k) {
-                         return e.command_id < k.command_id;
-                       });
-  if (found != table_end && found->command_id == ctx.raw_command) {
-    found->fn(*this, ctx);
+  // [SIL-2] O(1) constexpr etl::array jump table dispatch
+  using HandlerFn =
+      void (*)(BridgeClass&, const bridge::router::CommandContext&);
+  static const etl::array<HandlerFn, 256U> DISPATCH_TABLE = []() {
+    etl::array<HandlerFn, 256U> tbl{};
+    tbl.fill(nullptr);
+    tbl[rpc::to_underlying(rpc::StatusCode::STATUS_ACK)] =
+        &BridgeClass::_onCmd_StatusAck;
+    tbl[rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION)] =
+        &BridgeClass::_onCmd_GetVersion;
+    tbl[rpc::to_underlying(rpc::CommandId::CMD_GET_FREE_MEMORY)] =
+        &BridgeClass::_onCmd_GetFreeMemory;
+    tbl[rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC)] =
+        &BridgeClass::_onCmd_LinkSync;
+    tbl[rpc::to_underlying(rpc::CommandId::CMD_LINK_RESET)] =
+        &BridgeClass::_onCmd_LinkReset;
+    tbl[rpc::to_underlying(rpc::CommandId::CMD_GET_CAPABILITIES)] =
+        &BridgeClass::_onCmd_GetCapabilities;
+    tbl[rpc::to_underlying(rpc::CommandId::CMD_SET_BAUDRATE)] =
+        &BridgeClass::_onCmd_SetBaudrate;
+    tbl[rpc::to_underlying(rpc::CommandId::CMD_ENTER_BOOTLOADER)] =
+        &BridgeClass::_onCmd_EnterBootloader;
+    tbl[rpc::to_underlying(rpc::CommandId::CMD_XOFF)] =
+        &BridgeClass::_onCmd_Xoff;
+    tbl[rpc::to_underlying(rpc::CommandId::CMD_XON)] = &BridgeClass::_onCmd_Xon;
+    tbl[rpc::to_underlying(rpc::CommandId::CMD_SET_PIN_MODE)] =
+        &BridgeClass::_onCmd_SetPinMode;
+    tbl[rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE)] =
+        &BridgeClass::_onCmd_DigitalWrite;
+    tbl[rpc::to_underlying(rpc::CommandId::CMD_ANALOG_WRITE)] =
+        &BridgeClass::_onCmd_AnalogWrite;
+    tbl[rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_READ)] =
+        &BridgeClass::_onCmd_PinRead;
+    tbl[rpc::to_underlying(rpc::CommandId::CMD_ANALOG_READ)] =
+        &BridgeClass::_onCmd_PinRead;
+    tbl[rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE)] =
+        &BridgeClass::_onCmd_ConsoleWrite;
+#if BRIDGE_ENABLE_DATASTORE
+    tbl[rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_GET_RESP)] =
+        &BridgeClass::_onCmd_DatastoreGetResp;
+#endif
+#if BRIDGE_ENABLE_MAILBOX
+    tbl[rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH)] =
+        &BridgeClass::_onCmd_MailboxPush;
+    tbl[rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_READ_RESP)] =
+        &BridgeClass::_onCmd_MailboxReadResp;
+    tbl[rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP)] =
+        &BridgeClass::_onCmd_MailboxAvailableResp;
+#endif
+#if BRIDGE_ENABLE_FILESYSTEM
+    tbl[rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE)] =
+        &BridgeClass::_onCmd_FileWrite;
+    tbl[rpc::to_underlying(rpc::CommandId::CMD_FILE_READ)] =
+        &BridgeClass::_onCmd_FileRead;
+    tbl[rpc::to_underlying(rpc::CommandId::CMD_FILE_REMOVE)] =
+        &BridgeClass::_onCmd_FileRemove;
+    tbl[rpc::to_underlying(rpc::CommandId::CMD_FILE_READ_RESP)] =
+        &BridgeClass::_onCmd_FileReadResp;
+#endif
+#if BRIDGE_ENABLE_PROCESS
+    tbl[rpc::to_underlying(rpc::CommandId::CMD_PROCESS_KILL)] =
+        &BridgeClass::_onCmd_ProcessKill;
+    tbl[rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP)] =
+        &BridgeClass::_onCmd_ProcessRunAsyncResp;
+    tbl[rpc::to_underlying(rpc::CommandId::CMD_PROCESS_POLL_RESP)] =
+        &BridgeClass::_onCmd_ProcessPollResp;
+#endif
+#if BRIDGE_ENABLE_SPI
+    tbl[rpc::to_underlying(rpc::CommandId::CMD_SPI_BEGIN)] =
+        &BridgeClass::_onCmd_SpiBegin;
+    tbl[rpc::to_underlying(rpc::CommandId::CMD_SPI_TRANSFER)] =
+        &BridgeClass::_onCmd_SpiTransfer;
+    tbl[rpc::to_underlying(rpc::CommandId::CMD_SPI_END)] =
+        &BridgeClass::_onCmd_SpiEnd;
+    tbl[rpc::to_underlying(rpc::CommandId::CMD_SPI_SET_CONFIG)] =
+        &BridgeClass::_onCmd_SpiSetConfig;
+#endif
+    return tbl;
+  }();
+
+  const HandlerFn handler =
+      (ctx.raw_command < 256U) ? DISPATCH_TABLE[ctx.raw_command] : nullptr;
+  if (handler != nullptr) {
+    handler(*this, ctx);
   } else {
     onUnknownCommand(ctx);
   }
@@ -815,9 +886,11 @@ void BridgeClass::_handleSpiTransfer(const bridge::router::CommandContext& ctx,
   // [SIL-2/H-5] Use the shared _working_buffer instead of _rx_buffer.
   // _rx_buffer is owned by PacketSerial and can be written by a serial ISR
   // (on ESP32/SAMD) while a blocking SPI transfer is in progress.
-  size_t len = etl::min(static_cast<size_t>(m.data.size), _working_buffer.size());
+  size_t len =
+      etl::min(static_cast<size_t>(m.data.size), _working_buffer.size());
   etl::copy_n(m.data.bytes, len, _working_buffer.begin());
-  size_t tr = SPIService.transfer(etl::span<uint8_t>(_working_buffer.data(), len));
+  size_t tr =
+      SPIService.transfer(etl::span<uint8_t>(_working_buffer.data(), len));
   if (tr == 0) {
     emitStatus(rpc::StatusCode::STATUS_ERROR);
     return;
@@ -825,7 +898,8 @@ void BridgeClass::_handleSpiTransfer(const bridge::router::CommandContext& ctx,
   rpc_pb_SpiTransferResponse resp = rpc_pb_SpiTransferResponse_init_default;
   const size_t to_copy = etl::min(len, sizeof(resp.data.bytes));
   resp.data.size = static_cast<pb_size_t>(to_copy);
-  if (to_copy > 0) etl::copy_n(_working_buffer.data(), to_copy, resp.data.bytes);
+  if (to_copy > 0)
+    etl::copy_n(_working_buffer.data(), to_copy, resp.data.bytes);
   if (!send(rpc::CommandId::CMD_SPI_TRANSFER_RESP, ctx.sequence_id, resp))
     emitStatus(rpc::StatusCode::STATUS_ERROR);
 }

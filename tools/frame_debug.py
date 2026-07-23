@@ -186,7 +186,7 @@ async def run_debug_loop(
                         try:
                             decoded = _decode_frame(packet[:-1])
                             _print_response(decoded)
-                        except Exception as e:
+                        except (OSError, ValueError, RuntimeError, TypeError) as e:
                             sys.stderr.write(f"Error decoding response: {e}\n")
             except TimeoutError:
                 sys.stdout.write("[FrameDebug] Timeout waiting for response\n")
@@ -194,7 +194,7 @@ async def run_debug_loop(
             if count == 0 or i < count - 1:
                 await asyncio.sleep(interval)
 
-    except Exception as e:
+    except (OSError, ValueError, RuntimeError, TypeError) as e:
         sys.stderr.write(f"Serial Error: {e}\n")
         sys.exit(1)
 

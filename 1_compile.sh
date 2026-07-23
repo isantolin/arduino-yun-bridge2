@@ -168,7 +168,11 @@ inject_rust_into_sdk() {
         ln -sf "$(command -v rustdoc)" "$sdk_hostpkg_bin/rustdoc"
         mkdir -p "$SDK_DIR/staging_dir/host/stamp" "$SDK_DIR/staging_dir/hostpkg/stamp"
         touch "$SDK_DIR/staging_dir/host/stamp/.rust_installed"
+        touch "$SDK_DIR/staging_dir/host/stamp/.package_rust_installed"
+        touch "$SDK_DIR/staging_dir/host/stamp/.rust_host_installed"
         touch "$SDK_DIR/staging_dir/hostpkg/stamp/.rust_installed"
+        touch "$SDK_DIR/staging_dir/hostpkg/stamp/.package_rust_installed"
+        touch "$SDK_DIR/staging_dir/hostpkg/stamp/.rust_host_installed"
         
         # Inyectar maturin solo si Rust es funcional
         if command -v maturin >/dev/null 2>&1; then
@@ -566,17 +570,21 @@ for macro in ["Host/Prepare", "Host/Configure", "Host/Compile", "Host/Install"]:
 
 stub_code = """
 define Host/Prepare
-\ttrue
+\t@mkdir -p $(HOST_BUILD_DIR)
+\t@touch $(HOST_BUILD_DIR)/.prepared
 endef
 define Host/Configure
-\ttrue
+\t@mkdir -p $(HOST_BUILD_DIR)
+\t@touch $(HOST_BUILD_DIR)/.configured
 endef
 define Host/Compile
-\ttrue
+\t@mkdir -p $(HOST_BUILD_DIR) $(STAGING_DIR_HOST)/stamp $(STAGING_DIR_HOSTPKG)/stamp
+\t@touch $(HOST_BUILD_DIR)/.prepared $(HOST_BUILD_DIR)/.configured $(HOST_BUILD_DIR)/.built
 endef
 define Host/Install
-\tmkdir -p $(STAGING_DIR_HOST)/bin $(STAGING_DIR_HOSTPKG)/bin
-\ttouch $(STAGING_DIR_HOST)/stamp/.rust_installed
+\t@mkdir -p $(STAGING_DIR_HOST)/bin $(STAGING_DIR_HOSTPKG)/bin $(STAGING_DIR_HOST)/stamp $(STAGING_DIR_HOSTPKG)/stamp
+\t@touch $(STAGING_DIR_HOST)/stamp/.rust_installed $(STAGING_DIR_HOST)/stamp/.package_rust_installed
+\t@touch $(STAGING_DIR_HOSTPKG)/stamp/.rust_installed $(STAGING_DIR_HOSTPKG)/stamp/.package_rust_installed
 endef
 """
 if "$(eval $(call HostBuild))" in content:

@@ -310,7 +310,7 @@ class SerialTransport:
             return await self.send_raw(command_id, payload, seq_id)
 
         async with self._flow_lock:
-            pending = PendingCommand(command_id=command_id, expected_resp_ids=set(expected_responses(command_id)))
+            pending = PendingCommand(command_id=command_id, expected_resp_ids=list(expected_responses(command_id)))
             self._current = pending
             try:
                 retryer = tenacity.AsyncRetrying(

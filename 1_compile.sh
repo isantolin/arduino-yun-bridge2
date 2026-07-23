@@ -550,11 +550,11 @@ fi
 # ==============================================================================
 # Rust bootstrap (x.py) panics on CI if download-ci-llvm is 'true' or 'if-unchanged'
 # without a managed Git repo. Debe ser 'false' para GitHub Actions.
-RUST_MAKEFILE="package/feeds/packages/rust/Makefile"
-if [ -f "$RUST_MAKEFILE" ]; then
-    if [ -f "$SDK_DIR/staging_dir/host/bin/rustc" ]; then
-        echo "[FIX] Host Rust injected. Stubbing out SDK Rust compilation macros in $RUST_MAKEFILE..."
-        python3 -c '
+for RUST_MAKEFILE in "package/feeds/packages/rust/Makefile" "feeds/packages/lang/rust/Makefile" "package/feeds/mcubridge/rust/Makefile"; do
+    if [ -f "$RUST_MAKEFILE" ]; then
+        if [ -f "$SDK_DIR/staging_dir/host/bin/rustc" ]; then
+            echo "[FIX] Host Rust injected. Stubbing out SDK Rust compilation macros in $RUST_MAKEFILE..."
+            python3 -c '
 import re, sys
 filepath = sys.argv[1]
 with open(filepath, "r") as f:
@@ -567,12 +567,13 @@ for macro in ["Host/Prepare", "Host/Compile", "Host/Install"]:
 with open(filepath, "w") as f:
     f.write(content)
 ' "$RUST_MAKEFILE"
-    else
-        echo "[FIX] Host Rust NOT injected. Patching rust host build config for CI..."
-        sed -i 's/llvm.download-ci-llvm=true/llvm.download-ci-llvm=false/g' "$RUST_MAKEFILE"
-        sed -i 's/llvm.download-ci-llvm=if-unchanged/llvm.download-ci-llvm=false/g' "$RUST_MAKEFILE"
+        else
+            echo "[FIX] Host Rust NOT injected. Patching rust host build config for CI..."
+            sed -i 's/llvm.download-ci-llvm=true/llvm.download-ci-llvm=false/g' "$RUST_MAKEFILE"
+            sed -i 's/llvm.download-ci-llvm=if-unchanged/llvm.download-ci-llvm=false/g' "$RUST_MAKEFILE"
+        fi
     fi
-fi
+done
 # ==============================================================================
 
 # [FIX] Cleanup uboot again

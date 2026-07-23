@@ -11,7 +11,7 @@ PKG_HASH:=90c912ec8ceb4ae26a7dca158ca21e5bd8d73ddfc93c5e8d8b101a22ddccbb9a
 PKG_MAINTAINER:=Ignacio Santolin <isantolin@gmail.com>
 PKG_LICENSE:=Apache-2.0
 
-PKG_BUILD_DEPENDS:=python-setuptools/host python-setuptools-rust/host python-setuptools-scm/host python-build/host python-installer/host python-wheel/host rust/host
+PKG_BUILD_DEPENDS:=python3-setuptools/host python3-setuptools-rust/host python3-setuptools-scm/host python3-build/host python3-installer/host python3-wheel/host rust/host
 
 include $(TOPDIR)/feeds/packages/lang/python/pypi.mk
 include $(INCLUDE_DIR)/package.mk

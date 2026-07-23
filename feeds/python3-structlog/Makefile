@@ -12,7 +12,7 @@ PKG_MAINTAINER:=Ignacio Santolin <isantolin@gmail.com>
 PKG_LICENSE:=Apache-2.0+MIT
 PKG_LICENSE_FILES:=LICENSE
 
-PKG_BUILD_DEPENDS:=python-hatch-vcs/host python-hatchling/host
+PKG_BUILD_DEPENDS:=python3-hatch-vcs/host python3-hatchling/host
 
 include $(TOPDIR)/feeds/packages/lang/python/pypi.mk
 include $(INCLUDE_DIR)/package.mk

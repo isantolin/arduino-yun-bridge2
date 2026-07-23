@@ -4,7 +4,7 @@ from mcubridge.protocol import mcubridge_pb2 as pb
 import asyncio
 import time
 from typing import cast, Iterator
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -131,16 +131,26 @@ async def test_handshake_capabilities_retry(
     timing = cast(pb.HandshakeConfig, getattr(manager, "_timing"))
     setattr(timing, "response_timeout_ms", 10)
 
-    with patch("asyncio.wait_for") as mock_wait:
-        mock_wait.side_effect = [
-            asyncio.TimeoutError,
-            asyncio.TimeoutError,
-            b"\x80",
-        ]  # Empty map
+    attempts = 0
 
-        result = await getattr(manager, "_fetch_capabilities")()
-        assert result
-        assert send_frame.call_count == 3
+    from typing import Any
+
+    async def mock_send_frame(*args: Any, **kwargs: Any) -> bool:
+        nonlocal attempts
+        attempts += 1
+        fut = getattr(manager, "_capabilities_future")
+        if fut is not None:
+            if attempts <= 2:
+                fut.set_exception(TimeoutError())
+            else:
+                fut.set_result(b"\x80")
+        return True
+
+    send_frame.side_effect = mock_send_frame
+
+    result = await getattr(manager, "_fetch_capabilities")()
+    assert result
+    assert send_frame.call_count == 3
 
 
 @pytest.mark.asyncio

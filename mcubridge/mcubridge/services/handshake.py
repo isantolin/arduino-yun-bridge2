@@ -364,7 +364,8 @@ class SerialHandshakeManager:
 
             try:
                 timeout = max(5.0, (self._timing.response_timeout_ms / 1000.0))
-                payload = await asyncio.wait_for(self._capabilities_future, timeout=timeout)
+                async with asyncio.timeout(timeout):
+                    payload = await self._capabilities_future
                 self._parse_capabilities(payload)
                 return True
             except TimeoutError:

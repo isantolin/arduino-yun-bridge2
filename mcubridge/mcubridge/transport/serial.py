@@ -412,7 +412,8 @@ class SerialTransport:
             if not await self.send_raw(protocol.Command.CMD_SET_BAUDRATE.value, payload):
                 return False
             if self._negotiation_future:
-                await asyncio.wait_for(self._negotiation_future, timeout=SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT)
+                async with asyncio.timeout(SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT):
+                    await self._negotiation_future
             return True
         except (asyncio.TimeoutError, OSError, RuntimeError, ValueError, serialx.SerialException) as exc:
             logger.error("Baudrate negotiation failed: %s", exc)

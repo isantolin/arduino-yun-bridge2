@@ -142,6 +142,7 @@ class BridgeService:
     _cloud_incoming_queue: asyncio.Queue[BridgeRequest]
     ipc_requests: dict[bytes, asyncio.Queue[pb.CloudQueuedPublish]]
     console_queues: list[asyncio.Queue[pb.CloudQueuedPublish]]
+    _tg: asyncio.TaskGroup | None
 
     def __init__(self, config: RuntimeConfig, state: RuntimeState, serial: SerialTransport) -> None:
         self.config, self.state, self.serial = config, state, serial
@@ -151,6 +152,7 @@ class BridgeService:
         self._cloud_incoming_queue = asyncio.Queue()
         self.ipc_requests = {}
         self.console_queues = []
+        self._tg = None
 
         self.handshake = SerialHandshakeManager(
             config=config,
@@ -906,7 +908,8 @@ class BridgeService:
                 return
             try:
                 timeout_seconds = max(0.1, self.state.serial_response_timeout_ms / 1000.0)
-                res = await asyncio.wait_for(self._pending_mcu_read.future, timeout_seconds)
+                async with asyncio.timeout(timeout_seconds):
+                    res = await self._pending_mcu_read.future
                 await self.enqueue_cloud(
                     create_queued_publish(
                         response_topic,
@@ -1153,7 +1156,11 @@ class BridgeService:
             pid = p.pid & 0xFFFF
             async with self.state.process_lock:
                 self.state.running_processes[pid] = ProcessContext(p)
-            asyncio.create_task(self._monitor_process(pid))
+            tg = self._tg
+            if tg is not None:
+                tg.create_task(self._monitor_process(pid))
+            else:
+                asyncio.create_task(self._monitor_process(pid))
             return pid
         except OSError:
             self._process_slots.release()
@@ -1165,7 +1172,8 @@ class BridgeService:
                 ctx = self.state.running_processes.get(pid)
             if ctx:
                 try:
-                    ctx.exit_code = await asyncio.wait_for(ctx.handle.wait(), float(self.state.process_timeout))
+                    async with asyncio.timeout(float(self.state.process_timeout)):
+                        ctx.exit_code = await ctx.handle.wait()
                 except TimeoutError:
                     ctx.exit_code = await self._terminate_process(
                         pid, ctx, grace_period=PROCESS_TERM_GRACE_PERIOD_SECONDS
@@ -1239,13 +1247,15 @@ class BridgeService:
             return ctx.handle.returncode or -1
 
         try:
-            return await asyncio.wait_for(ctx.handle.wait(), grace_period)
+            async with asyncio.timeout(grace_period):
+                return await ctx.handle.wait()
         except TimeoutError:
             logger.error("Process exceeded graceful shutdown window; escalating to SIGKILL", pid=pid)
 
         os.killpg(ctx.handle.pid, signal.SIGKILL)
         try:
-            return await asyncio.wait_for(ctx.handle.wait(), PROCESS_TERM_GRACE_PERIOD_SECONDS)
+            async with asyncio.timeout(PROCESS_TERM_GRACE_PERIOD_SECONDS):
+                return await ctx.handle.wait()
         except TimeoutError:
             return -1
 
@@ -1315,6 +1325,7 @@ class BridgeService:
         """Main entry point for daemon execution using native TaskGroup orchestration."""
         try:
             async with asyncio.TaskGroup() as tg:
+                self._tg = tg
                 # 1. Serial Link (Critical)
                 tg.create_task(
                     self.supervise(
@@ -1472,31 +1483,28 @@ class BridgeService:
                 await self._send_cloud_event("status_online", "info", "Device online")
                 await self.flush_cloud_spool()
 
-                worker_task = asyncio.create_task(self._cloud_incoming_worker())
-                try:
-                    # Read loop
-                    async for envelope in stream:
-                        payload_type = envelope.WhichOneof("payload")
-                        if payload_type == "pong":
-                            logger.debug("Received keepalive pong from cloud.")
-                            continue
-
-                        if payload_type == "command_request":
-                            cmd = envelope.command_request
-                            # Map to BridgeRequest
-                            request = BridgeRequest(
-                                topic=topic_path(self.state.topic_prefix, cmd.command_path),
-                                payload=cmd.payload,
-                                correlation_data=envelope.sequence_id.to_bytes(8, "big"),
-                                response_topic="cloud",
-                            )
-                            self._cloud_incoming_queue.put_nowait(request)
-                finally:
-                    worker_task.cancel()
+                async with asyncio.TaskGroup() as tg:
+                    worker_task = tg.create_task(self._cloud_incoming_worker())
                     try:
-                        await worker_task
-                    except asyncio.CancelledError:
-                        pass
+                        # Read loop
+                        async for envelope in stream:
+                            payload_type = envelope.WhichOneof("payload")
+                            if payload_type == "pong":
+                                logger.debug("Received keepalive pong from cloud.")
+                                continue
+
+                            if payload_type == "command_request":
+                                cmd = envelope.command_request
+                                # Map to BridgeRequest
+                                request = BridgeRequest(
+                                    topic=topic_path(self.state.topic_prefix, cmd.command_path),
+                                    payload=cmd.payload,
+                                    correlation_data=envelope.sequence_id.to_bytes(8, "big"),
+                                    response_topic="cloud",
+                                )
+                                self._cloud_incoming_queue.put_nowait(request)
+                    finally:
+                        worker_task.cancel()
         finally:
             self._cloud_stream = None
             self._cloud_channel = None
@@ -1547,6 +1555,8 @@ class BridgeService:
     ) -> None:
         """[SIL-2] Supervise a critical daemon task with automatic restarts using tenacity."""
 
+        log = logger.bind(task=name)
+
         retryer = tenacity.AsyncRetrying(
             stop=tenacity.stop_after_attempt(max_restarts) if max_restarts else tenacity.stop_never,
             wait=(
@@ -1555,9 +1565,8 @@ class BridgeService:
                 else tenacity.wait_exponential(multiplier=min_backoff, max=max_backoff)
             ),
             retry=tenacity.retry_if_not_exception_type((asyncio.CancelledError, *fatal_exceptions)),
-            before_sleep=lambda rs: logger.error(
+            before_sleep=lambda rs: log.error(
                 "Task supervisor restarting",
-                task=name,
                 attempt=rs.attempt_number,
                 error=str(rs.outcome.exception()) if rs.outcome else None,
             ),
@@ -1566,7 +1575,7 @@ class BridgeService:
         )
 
         try:
-            logger.debug("Supervisor starting task", task=name)
+            log.debug("Supervisor starting task")
 
             # [SIL-2] The indirection via _task_runner is required: tenacity calls
             # factory() to create the awaitable BEFORE awaiting it. If TaskGroup
@@ -1578,13 +1587,13 @@ class BridgeService:
 
             await retryer(_task_runner)
         except asyncio.CancelledError:
-            logger.debug("Supervisor task cancelled", task=name)
+            log.debug("Supervisor task cancelled")
             raise
         except fatal_exceptions as exc:
-            logger.critical("Supervisor task failed with fatal exception", task=name, error=str(exc))
+            log.critical("Supervisor task failed with fatal exception", error=str(exc))
             raise
         except (RuntimeError, ValueError, OSError, tenacity.RetryError) as exc:
-            logger.critical("Supervisor task failed unexpectedly", task=name, error=str(exc))
+            log.critical("Supervisor task failed unexpectedly", error=str(exc))
             raise
 
     async def run_ipc_server(self) -> None:

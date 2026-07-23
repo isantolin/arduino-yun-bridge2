@@ -15,6 +15,7 @@ dependencies = [
     "h2==4.3.0",
     "prometheus-client==0.25.0",
     "protobuf==7.36.0rc1",
+    "pydantic",
     "serialx==1.8.2",
     "structlog==26.1.0",
     "tenacity==9.1.4",

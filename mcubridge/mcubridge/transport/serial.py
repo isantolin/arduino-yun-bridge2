@@ -15,6 +15,7 @@ from __future__ import annotations
 from mcubridge.protocol import mcubridge_pb2 as pb
 
 import asyncio
+import itertools
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -76,7 +77,7 @@ class SerialTransport:
         self._negotiating = False
         self._negotiation_future: asyncio.Future[bool] | None = None
         self._consecutive_crc_errors = 0
-        self._tx_sequence_id = 0
+        self._tx_sequence_counter: itertools.count[int] = itertools.count(1)
 
         self._current: PendingCommand | None = None
         self._flow_lock = asyncio.Lock()
@@ -365,8 +366,7 @@ class SerialTransport:
                 logger.error("Timed out waiting for serial TX flow control")
 
         if seq_id is None:
-            self._tx_sequence_id = (self._tx_sequence_id + 1) & protocol.UINT16_MAX
-            seq_id = self._tx_sequence_id
+            seq_id = next(self._tx_sequence_counter) & protocol.UINT16_MAX
 
         is_excluded = is_system_command(command_id)
         nonce = b"\x00" * protocol.AEAD_NONCE_SIZE

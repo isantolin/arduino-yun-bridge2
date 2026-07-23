@@ -25,8 +25,8 @@ void __attribute__((weak)) handle_error(const etl::exception& e) {
 BridgeClass::BridgeClass(Stream& stream)
     : _stream(stream),
       _packet_serial(etl::span<uint8_t>(_rx_buffer.data(), _rx_buffer.size()),
-                     etl::span<uint8_t>(_rx_buffer.data(), _rx_buffer.size())) {
-}
+                     etl::span<uint8_t>(_rx_buffer.data(), _rx_buffer.size())),
+      _tx_envelope(rpc_pb_RpcEnvelope_init_zero) {}
 
 bool BridgeClass::_preDispatch(const bridge::router::CommandContext& ctx,
                                bool needs_ack, bool retransmit_on_dup) {
@@ -578,7 +578,8 @@ void BridgeClass::_transmit(uint16_t command_id, uint16_t sequence_id,
                                            _session_key, &_tx_nonce_counter,
                                            _crypto_buffer, nonce, tag))
       return;
-    final_payload = etl::span<const uint8_t>(_crypto_buffer.data(), payload.size());
+    final_payload =
+        etl::span<const uint8_t>(_crypto_buffer.data(), payload.size());
   }
   _tx_envelope = rpc_pb_RpcEnvelope_init_default;
   _tx_envelope.version = rpc::PROTOCOL_VERSION;

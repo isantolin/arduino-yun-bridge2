@@ -306,7 +306,7 @@ class BridgeClass {
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> _working_buffer;
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> _crypto_buffer;
   etl::array<uint8_t, rpc::MAX_FRAME_SIZE> _tx_frame_buffer;
-  rpc_pb_RpcEnvelope _tx_envelope;
+  rpc_pb_RpcEnvelope _tx_envelope = rpc_pb_RpcEnvelope_init_zero;
 
   bool _is_post_passed = false;
   bool _tx_enabled = true;

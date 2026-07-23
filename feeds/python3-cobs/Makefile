@@ -15,6 +15,8 @@ PKG_MAINTAINER:=Ignacio Santolin <ignacio.santolin@gmail.com>
 PKG_LICENSE:=MIT
 PKG_LICENSE_FILES:=LICENSE
 
+PKG_BUILD_DEPENDS:=python3-setuptools/host python-build/host python-installer/host python-wheel/host
+
 # CORRECCIÓN: Forzar el nombre del wheel para que coincida con el output del build
 PYTHON3_PKG_WHEEL_NAME:=$(PYPI_NAME)
 

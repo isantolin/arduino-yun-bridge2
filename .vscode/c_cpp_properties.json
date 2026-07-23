@@ -3,32 +3,34 @@
         {
             "name": "Linux",
             "includePath": [
-                "${workspaceFolder}/mcubridge-library-arduino/src/**",
-                "${workspaceFolder}/mcubridge-library-arduino/tests/**",
-                "${workspaceFolder}/tools/arduino_stub/include/**",
-                "${workspaceFolder}/.tmp_tests/arduino_libs/Embedded_Template_Library/include/**",
-                "${workspaceFolder}/.tmp_tests/arduino_libs/Embedded_Template_Library/arduino/**",
-                "${workspaceFolder}/.tmp_tests/arduino_libs/wolfSSL/**",
-                "${workspaceFolder}/.tmp_tests/arduino_libs/PacketSerial/src/**",
-                "${workspaceFolder}/.dummy_libs/Embedded_Template_Library/include/**",
-                "${workspaceFolder}/.dummy_libs/Embedded_Template_Library/arduino/**",
-                "${workspaceFolder}/.dummy_libs/wolfSSL/**",
-                "${workspaceFolder}/.dummy_libs/PacketSerial/src/**"
+                "${workspaceFolder}/mcubridge-library-arduino/src",
+                "${workspaceFolder}/mcubridge-library-arduino/tests",
+                "${workspaceFolder}/tools/arduino_stub/include",
+                "${workspaceFolder}/.tmp_tests/arduino_libs/Embedded_Template_Library/include",
+                "${workspaceFolder}/.tmp_tests/arduino_libs/Embedded_Template_Library/arduino",
+                "${workspaceFolder}/.tmp_tests/arduino_libs/wolfSSL",
+                "${workspaceFolder}/.tmp_tests/arduino_libs/PacketSerial/src",
+                "${workspaceFolder}/.dummy_libs/Embedded_Template_Library/include",
+                "${workspaceFolder}/.dummy_libs/Embedded_Template_Library/arduino",
+                "${workspaceFolder}/.dummy_libs/wolfSSL",
+                "${workspaceFolder}/.dummy_libs/PacketSerial/src"
             ],
             "defines": [
                 "ARDUINO=10800",
+                "BRIDGE_HOST_TEST=1",
                 "BRIDGE_ENABLE_SPI=1",
                 "BRIDGE_ENABLE_DATASTORE=1",
                 "BRIDGE_ENABLE_MAILBOX=1",
                 "BRIDGE_ENABLE_FILESYSTEM=1",
                 "BRIDGE_ENABLE_PROCESS=1",
-                "BRIDGE_ENABLE_POST_TESTS=1"
+                "BRIDGE_ENABLE_POST_TESTS=1",
+                "WOLFSSL_USER_SETTINGS",
+                "ETL_NO_STL"
             ],
             "compilerPath": "/usr/bin/g++",
             "cStandard": "c17",
             "cppStandard": "c++17",
-            "intelliSenseMode": "linux-gcc-x64",
-            "compileCommands": "${workspaceFolder}/compile_commands.json"
+            "intelliSenseMode": "linux-gcc-x64"
         }
     ],
     "version": 4

@@ -168,7 +168,7 @@ def validate_config(cfg: pb.RuntimeConfig) -> None:
     if cfg.serial_shared_secret == b"changeme123":
         raise ValueError("serial_shared_secret placeholder is insecure")
 
-    unique_symbols = {byte for byte in cfg.serial_shared_secret}
+    unique_symbols = set(cfg.serial_shared_secret)
     if len(unique_symbols) < 4 and cfg.serial_shared_secret != DEFAULT_SERIAL_SHARED_SECRET:
         raise ValueError("serial_shared_secret must contain at least four distinct bytes")
 

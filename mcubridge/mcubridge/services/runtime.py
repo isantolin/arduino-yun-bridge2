@@ -412,10 +412,9 @@ class BridgeService:
 
     def cleanup(self) -> None:
         """Explicitly cleanup and close the spool cache database connection (SIL 2)."""
-        socket_path = os.environ.get("MCUBRIDGE_SOCKET_PATH") or "/var/run/mcubridge.sock"
+        socket_path = Path(os.environ.get("MCUBRIDGE_SOCKET_PATH", "/var/run/mcubridge.sock"))
         try:
-            if os.path.exists(socket_path):
-                os.unlink(socket_path)
+            socket_path.unlink(missing_ok=True)
         except OSError as exc:
             logger.debug("Could not remove UNIX socket during cleanup", path=socket_path, error=str(exc))
 
@@ -1590,15 +1589,14 @@ class BridgeService:
 
     async def run_ipc_server(self) -> None:
         """Run the gRPC UNIX socket IPC server for local clients."""
-        socket_path = os.environ.get("MCUBRIDGE_SOCKET_PATH") or "/var/run/mcubridge.sock"
+        socket_path = Path(os.environ.get("MCUBRIDGE_SOCKET_PATH", "/var/run/mcubridge.sock"))
         try:
-            if os.path.exists(socket_path):
-                os.unlink(socket_path)
+            socket_path.unlink(missing_ok=True)
         except OSError as exc:
-            logger.debug("Could not remove stale IPC socket", path=socket_path, error=str(exc))
+            logger.warning("Could not remove existing Unix socket %s: %s", socket_path, exc)
 
         # Create parent directory if it doesn't exist
-        os.makedirs(os.path.dirname(socket_path), exist_ok=True)
+        socket_path.parent.mkdir(parents=True, exist_ok=True)
 
         local_handler = LocalBridgeService(self)
         server = Server([local_handler])

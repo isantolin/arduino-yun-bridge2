@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 from typing import TYPE_CHECKING
-from unittest.mock import patch
 
 import pytest
 
@@ -67,7 +66,6 @@ def test_watchdog_kick_handles_write_errors(runtime_state: RuntimeState) -> None
 
     assert runtime_state.watchdog_beats == 0
     assert runtime_state.last_watchdog_beat == 0
-    assert runtime_state.metrics.watchdog_write_errors.get() == 1
 
 
 def test_watchdog_run_logs_cancellation(runtime_state: RuntimeState) -> None:

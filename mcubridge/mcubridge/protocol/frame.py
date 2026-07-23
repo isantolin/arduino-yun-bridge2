@@ -108,7 +108,7 @@ def parse_frame(raw_frame_buffer: bytes | bytearray | memoryview, session_key: b
 
     envelope = pb.RpcEnvelope()
     try:
-        envelope.ParseFromString(body)
+        envelope.ParseFromString(bytes(body))
     except DecodeError as e:
         raise ValueError(f"Failed to parse Protobuf envelope: {e}") from e
 

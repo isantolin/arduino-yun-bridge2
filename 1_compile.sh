@@ -559,13 +559,34 @@ import re, sys
 filepath = sys.argv[1]
 with open(filepath, "r") as f:
     content = f.read()
-for macro in ["Host/Prepare", "Host/Compile", "Host/Install"]:
-    pattern = r"(define\s+" + re.escape(macro) + r"(?:\s|#|$)[^\n]*\n.*?endef)"
-    replacement = f"define {macro}\n\ttrue\nendef"
-    content, count = re.subn(pattern, replacement, content, flags=re.DOTALL)
-    print(f"Stubbed {macro}: {count} replacements")
+
+for macro in ["Host/Prepare", "Host/Configure", "Host/Compile", "Host/Install"]:
+    pattern = r"define\s+" + re.escape(macro) + r"[^\n]*\n.*?endef\n?"
+    content = re.sub(pattern, "", content, flags=re.DOTALL)
+
+stub_code = """
+define Host/Prepare
+\ttrue
+endef
+define Host/Configure
+\ttrue
+endef
+define Host/Compile
+\ttrue
+endef
+define Host/Install
+\tmkdir -p $(STAGING_DIR_HOST)/bin $(STAGING_DIR_HOSTPKG)/bin
+\ttouch $(STAGING_DIR_HOST)/stamp/.rust_installed
+endef
+"""
+if "$(eval $(call HostBuild))" in content:
+    content = content.replace("$(eval $(call HostBuild))", stub_code + "\n$(eval $(call HostBuild))")
+else:
+    content += "\n" + stub_code
+
 with open(filepath, "w") as f:
     f.write(content)
+print(f"Successfully stubbed Host macros in {filepath}")
 ' "$RUST_MAKEFILE"
         else
             echo "[FIX] Host Rust NOT injected. Patching rust host build config for CI..."

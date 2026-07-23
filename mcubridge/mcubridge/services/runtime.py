@@ -170,16 +170,21 @@ class BridgeService:
             if s != Status.ACK:
                 self.mcu_registry[s.value] = functools.partial(self._handle_mcu_status, s)
 
-    def _setup_mcu_registry(self, serial: SerialTransport) -> dict[int, McuHandler]:
-        async def _unsupported_digital(_seq: int, _payload: Any) -> Any:
-            return await serial.send(
-                Status.NOT_IMPLEMENTED.value, pb.GenericResponse(message="linux_originates_digital_read_requests")
-            )
+    async def _unsupported_digital(self, _seq: int, _payload: Any) -> Any:
+        if not self.serial:
+            return False
+        return await self.serial.send(
+            Status.NOT_IMPLEMENTED.value, pb.GenericResponse(message="linux_originates_digital_read_requests")
+        )
 
-        async def _unsupported_analog(_seq: int, _payload: Any) -> Any:
-            return await serial.send(
-                Status.NOT_IMPLEMENTED.value, pb.GenericResponse(message="linux_originates_analog_read_requests")
-            )
+    async def _unsupported_analog(self, _seq: int, _payload: Any) -> Any:
+        if not self.serial:
+            return False
+        return await self.serial.send(
+            Status.NOT_IMPLEMENTED.value, pb.GenericResponse(message="linux_originates_analog_read_requests")
+        )
+
+    def _setup_mcu_registry(self, serial: SerialTransport) -> dict[int, McuHandler]:
 
         registry = cast(
             dict[int, McuHandler],
@@ -204,8 +209,8 @@ class BridgeService:
                 Command.CMD_DIGITAL_READ_RESP.value: self._on_mcu_digital_read_resp,
                 Command.CMD_ANALOG_READ_RESP.value: self._on_mcu_analog_read_resp,
                 Command.CMD_PROCESS_KILL.value: self._on_mcu_process_kill,
-                Command.CMD_DIGITAL_READ.value: _unsupported_digital,
-                Command.CMD_ANALOG_READ.value: _unsupported_analog,
+                Command.CMD_DIGITAL_READ.value: self._unsupported_digital,
+                Command.CMD_ANALOG_READ.value: self._unsupported_analog,
                 Command.CMD_GET_CAPABILITIES_RESP.value: self.handshake.handle_capabilities_resp,
                 Command.CMD_LINK_SYNC_RESP.value: self.handshake.handle_link_sync_resp,
                 Command.CMD_LINK_RESET_RESP.value: self.handshake.handle_link_reset_resp,

@@ -374,30 +374,29 @@ class SerialTransport:
             nonce, new_counter = generate_nonce_with_counter(self.state.link_nonce_counter)
             self.state.link_nonce_counter = new_counter
 
-        encoded = (
-            cobsr.encode(
-                build_frame(
-                    command_id=command_id,
-                    sequence_id=seq_id,
-                    payload=payload,
-                    nonce=nonce,
-                    session_key=self.state.link_session_key if self.state.is_synchronized else None,
-                )
+        encoded = cobsr.encode(
+            build_frame(
+                command_id=command_id,
+                sequence_id=seq_id,
+                payload=payload,
+                nonce=nonce,
+                session_key=self.state.link_session_key if self.state.is_synchronized else None,
             )
-            + protocol.FRAME_DELIMITER
         )
 
         if logger.is_enabled_for(logging.DEBUG):
             logger.debug(
-                "[SERIAL -> MCU] [CMD:0x%02X] [RAW]: [%s]",
+                "[SERIAL -> MCU] [CMD:0x%02X] [RAW]: [%s%s]",
                 command_id,
                 encoded.hex().upper(),
+                protocol.FRAME_DELIMITER.hex().upper(),
             )
 
         try:
             await self.serial.write(encoded)
+            await self.serial.write(protocol.FRAME_DELIMITER)
             await self.serial.drain()
-            self.state.metrics.serial_bytes_sent.inc(len(encoded))
+            self.state.metrics.serial_bytes_sent.inc(len(encoded) + len(protocol.FRAME_DELIMITER))
             self.state.metrics.serial_frames_sent.inc()
             return True
         except (AttributeError, OSError, RuntimeError, ValueError, serialx.SerialException) as exc:

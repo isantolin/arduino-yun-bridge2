@@ -316,7 +316,11 @@ void BridgeClass::_onCmd_SpiSetConfig(
 // IMPORTANT: keep entries in ascending command_id order.
 // =============================================================================
 // clang-format off
+#if defined(__AVR__) || defined(ARDUINO_ARCH_AVR)
+const BridgeClass::DispatchEntry BridgeClass::k_dispatch_table[] PROGMEM = {
+#else
 const BridgeClass::DispatchEntry BridgeClass::k_dispatch_table[] = {
+#endif
     {rpc::to_underlying(rpc::StatusCode::STATUS_ACK),            &BridgeClass::_onCmd_StatusAck},
     {rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION),        &BridgeClass::_onCmd_GetVersion},
     {rpc::to_underlying(rpc::CommandId::CMD_GET_FREE_MEMORY),    &BridgeClass::_onCmd_GetFreeMemory},
@@ -395,96 +399,33 @@ void BridgeClass::_dispatchCommand(const rpc_pb_RpcEnvelope& envelope) {
     return;
   }
 
-  // [SIL-2] O(1) constexpr etl::array jump table dispatch
   using HandlerFn =
       void (*)(BridgeClass&, const bridge::router::CommandContext&);
-  static const etl::array<HandlerFn, 256U> DISPATCH_TABLE = []() {
-    etl::array<HandlerFn, 256U> tbl{};
-    tbl.fill(nullptr);
-    tbl[rpc::to_underlying(rpc::StatusCode::STATUS_ACK)] =
-        &BridgeClass::_onCmd_StatusAck;
-    tbl[rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION)] =
-        &BridgeClass::_onCmd_GetVersion;
-    tbl[rpc::to_underlying(rpc::CommandId::CMD_GET_FREE_MEMORY)] =
-        &BridgeClass::_onCmd_GetFreeMemory;
-    tbl[rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC)] =
-        &BridgeClass::_onCmd_LinkSync;
-    tbl[rpc::to_underlying(rpc::CommandId::CMD_LINK_RESET)] =
-        &BridgeClass::_onCmd_LinkReset;
-    tbl[rpc::to_underlying(rpc::CommandId::CMD_GET_CAPABILITIES)] =
-        &BridgeClass::_onCmd_GetCapabilities;
-    tbl[rpc::to_underlying(rpc::CommandId::CMD_SET_BAUDRATE)] =
-        &BridgeClass::_onCmd_SetBaudrate;
-    tbl[rpc::to_underlying(rpc::CommandId::CMD_ENTER_BOOTLOADER)] =
-        &BridgeClass::_onCmd_EnterBootloader;
-    tbl[rpc::to_underlying(rpc::CommandId::CMD_XOFF)] =
-        &BridgeClass::_onCmd_Xoff;
-    tbl[rpc::to_underlying(rpc::CommandId::CMD_XON)] = &BridgeClass::_onCmd_Xon;
-    tbl[rpc::to_underlying(rpc::CommandId::CMD_SET_PIN_MODE)] =
-        &BridgeClass::_onCmd_SetPinMode;
-    tbl[rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE)] =
-        &BridgeClass::_onCmd_DigitalWrite;
-    tbl[rpc::to_underlying(rpc::CommandId::CMD_ANALOG_WRITE)] =
-        &BridgeClass::_onCmd_AnalogWrite;
-    tbl[rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_READ)] =
-        &BridgeClass::_onCmd_PinRead;
-    tbl[rpc::to_underlying(rpc::CommandId::CMD_ANALOG_READ)] =
-        &BridgeClass::_onCmd_PinRead;
-    tbl[rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE)] =
-        &BridgeClass::_onCmd_ConsoleWrite;
-#if BRIDGE_ENABLE_DATASTORE
-    tbl[rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_GET_RESP)] =
-        &BridgeClass::_onCmd_DatastoreGetResp;
-#endif
-#if BRIDGE_ENABLE_MAILBOX
-    tbl[rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH)] =
-        &BridgeClass::_onCmd_MailboxPush;
-    tbl[rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_READ_RESP)] =
-        &BridgeClass::_onCmd_MailboxReadResp;
-    tbl[rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP)] =
-        &BridgeClass::_onCmd_MailboxAvailableResp;
-#endif
-#if BRIDGE_ENABLE_FILESYSTEM
-    tbl[rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE)] =
-        &BridgeClass::_onCmd_FileWrite;
-    tbl[rpc::to_underlying(rpc::CommandId::CMD_FILE_READ)] =
-        &BridgeClass::_onCmd_FileRead;
-    tbl[rpc::to_underlying(rpc::CommandId::CMD_FILE_REMOVE)] =
-        &BridgeClass::_onCmd_FileRemove;
-    tbl[rpc::to_underlying(rpc::CommandId::CMD_FILE_READ_RESP)] =
-        &BridgeClass::_onCmd_FileReadResp;
-#endif
-#if BRIDGE_ENABLE_PROCESS
-    tbl[rpc::to_underlying(rpc::CommandId::CMD_PROCESS_KILL)] =
-        &BridgeClass::_onCmd_ProcessKill;
-    tbl[rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP)] =
-        &BridgeClass::_onCmd_ProcessRunAsyncResp;
-    tbl[rpc::to_underlying(rpc::CommandId::CMD_PROCESS_POLL_RESP)] =
-        &BridgeClass::_onCmd_ProcessPollResp;
-#endif
-#if BRIDGE_ENABLE_SPI
-    tbl[rpc::to_underlying(rpc::CommandId::CMD_SPI_BEGIN)] =
-        &BridgeClass::_onCmd_SpiBegin;
-    tbl[rpc::to_underlying(rpc::CommandId::CMD_SPI_TRANSFER)] =
-        &BridgeClass::_onCmd_SpiTransfer;
-    tbl[rpc::to_underlying(rpc::CommandId::CMD_SPI_END)] =
-        &BridgeClass::_onCmd_SpiEnd;
-    tbl[rpc::to_underlying(rpc::CommandId::CMD_SPI_SET_CONFIG)] =
-        &BridgeClass::_onCmd_SpiSetConfig;
-#endif
-    return tbl;
-  }();
-
-#if defined(__AVR__) || defined(ARDUINO_ARCH_AVR)
   HandlerFn handler = nullptr;
-  if (ctx.raw_command < 256U) {
-    handler = reinterpret_cast<HandlerFn>(
-        pgm_read_ptr(&(DISPATCH_TABLE[ctx.raw_command])));
-  }
+
+  int left = 0;
+  int right = k_dispatch_table_size - 1;
+  while (left <= right) {
+    int mid = left + (right - left) / 2;
+#if defined(__AVR__) || defined(ARDUINO_ARCH_AVR)
+    uint16_t mid_cmd = pgm_read_word(&k_dispatch_table[mid].command_id);
 #else
-  const HandlerFn handler =
-      (ctx.raw_command < 256U) ? DISPATCH_TABLE[ctx.raw_command] : nullptr;
+    uint16_t mid_cmd = k_dispatch_table[mid].command_id;
 #endif
+    if (mid_cmd == ctx.raw_command) {
+#if defined(__AVR__) || defined(ARDUINO_ARCH_AVR)
+      handler =
+          reinterpret_cast<HandlerFn>(pgm_read_ptr(&k_dispatch_table[mid].fn));
+#else
+      handler = k_dispatch_table[mid].fn;
+#endif
+      break;
+    } else if (mid_cmd < ctx.raw_command) {
+      left = mid + 1;
+    } else {
+      right = mid - 1;
+    }
+  }
   if (handler != nullptr) {
     handler(*this, ctx);
   } else {
@@ -610,10 +551,10 @@ void BridgeClass::enterSafeState() {
 }
 
 void BridgeClass::_serialize_and_send(const rpc_pb_RpcEnvelope& env) {
-  etl::array<uint8_t, rpc::MAX_FRAME_SIZE> buffer;
-  const size_t len = rpc::serialize_frame(env, buffer);
+  const size_t len = rpc::serialize_frame(env, _tx_frame_buffer);
   if (len > 0)
-    _packet_serial.send(_stream, etl::span<const uint8_t>(buffer.data(), len));
+    _packet_serial.send(_stream,
+                        etl::span<const uint8_t>(_tx_frame_buffer.data(), len));
 }
 
 bool BridgeClass::_sendFrameRaw(const rpc_pb_RpcEnvelope& env,
@@ -631,38 +572,39 @@ void BridgeClass::_transmit(uint16_t command_id, uint16_t sequence_id,
       isSynchronized() && !_shared_secret.empty() && !is_excluded;
   etl::array<uint8_t, rpc::AEAD_NONCE_SIZE> nonce = {};
   etl::array<uint8_t, rpc::AEAD_TAG_SIZE> tag = {};
-  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> enc_pl;
   etl::span<const uint8_t> final_payload = payload;
   if (do_encrypt) {
     if (!rpc::security::aead_encrypt_frame(raw_cmd, sequence_id, payload,
                                            _session_key, &_tx_nonce_counter,
-                                           enc_pl, nonce, tag))
+                                           _crypto_buffer, nonce, tag))
       return;
-    final_payload = etl::span<const uint8_t>(enc_pl.data(), payload.size());
+    final_payload = etl::span<const uint8_t>(_crypto_buffer.data(), payload.size());
   }
-  rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
-  env.version = rpc::PROTOCOL_VERSION;
-  env.command_id = command_id;
-  env.sequence_id = sequence_id;
-  etl::copy_n(nonce.begin(), rpc::AEAD_NONCE_SIZE, env.nonce.bytes);
-  env.nonce.size = static_cast<pb_size_t>(rpc::AEAD_NONCE_SIZE);
+  _tx_envelope = rpc_pb_RpcEnvelope_init_default;
+  _tx_envelope.version = rpc::PROTOCOL_VERSION;
+  _tx_envelope.command_id = command_id;
+  _tx_envelope.sequence_id = sequence_id;
+  etl::copy_n(nonce.begin(), rpc::AEAD_NONCE_SIZE, _tx_envelope.nonce.bytes);
+  _tx_envelope.nonce.size = static_cast<pb_size_t>(rpc::AEAD_NONCE_SIZE);
   const size_t pl_size = etl::min(final_payload.size(),
                                   static_cast<size_t>(rpc::MAX_PAYLOAD_SIZE));
-  env.which_payload_type = rpc_pb_RpcEnvelope_encrypted_payload_with_tag_tag;
+  _tx_envelope.which_payload_type =
+      rpc_pb_RpcEnvelope_encrypted_payload_with_tag_tag;
   if (do_encrypt) {
     etl::copy_n(final_payload.begin(), pl_size,
-                env.payload_type.encrypted_payload_with_tag.bytes);
-    etl::copy_n(tag.begin(), rpc::AEAD_TAG_SIZE,
-                env.payload_type.encrypted_payload_with_tag.bytes + pl_size);
-    env.payload_type.encrypted_payload_with_tag.size =
+                _tx_envelope.payload_type.encrypted_payload_with_tag.bytes);
+    etl::copy_n(
+        tag.begin(), rpc::AEAD_TAG_SIZE,
+        _tx_envelope.payload_type.encrypted_payload_with_tag.bytes + pl_size);
+    _tx_envelope.payload_type.encrypted_payload_with_tag.size =
         static_cast<pb_size_t>(pl_size + rpc::AEAD_TAG_SIZE);
   } else {
     etl::copy_n(final_payload.begin(), pl_size,
-                env.payload_type.encrypted_payload_with_tag.bytes);
-    env.payload_type.encrypted_payload_with_tag.size =
+                _tx_envelope.payload_type.encrypted_payload_with_tag.bytes);
+    _tx_envelope.payload_type.encrypted_payload_with_tag.size =
         static_cast<pb_size_t>(pl_size);
   }
-  _serialize_and_send(env);
+  _serialize_and_send(_tx_envelope);
 }
 
 void BridgeClass::_flushPendingTxQueue() {

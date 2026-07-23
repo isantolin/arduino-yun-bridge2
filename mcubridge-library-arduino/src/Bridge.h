@@ -304,6 +304,9 @@ class BridgeClass {
   // Shared working buffer for transient operations (unencrypted encoding, SPI
   // transfer)
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> _working_buffer;
+  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> _crypto_buffer;
+  etl::array<uint8_t, rpc::MAX_FRAME_SIZE> _tx_frame_buffer;
+  rpc_pb_RpcEnvelope _tx_envelope;
 
   bool _is_post_passed = false;
   bool _tx_enabled = true;
@@ -329,7 +332,11 @@ class BridgeClass {
     void (*fn)(BridgeClass&, const bridge::router::CommandContext&);
   };
   // Sorted table defined in Bridge.cpp; size exported as k_dispatch_table_size.
+#if defined(__AVR__) || defined(ARDUINO_ARCH_AVR)
+  static const DispatchEntry k_dispatch_table[] PROGMEM;
+#else
   static const DispatchEntry k_dispatch_table[];
+#endif
   static const size_t k_dispatch_table_size;
 
   // [SIL-2] Unified template dispatcher — consolidates decode + ack + dup-check

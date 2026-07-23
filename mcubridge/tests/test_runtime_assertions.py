@@ -339,6 +339,9 @@ async def test_cloud_shell_kill_asserts_cloud(
 ) -> None:
     service, state, _, _ = service_setup
     state.mark_synchronized()
+    from unittest.mock import MagicMock
+
+    state.running_processes[123] = MagicMock()
 
     msg = Message(
         topic="br/sh/kill/123",
@@ -350,10 +353,10 @@ async def test_cloud_shell_kill_asserts_cloud(
     )
 
     with patch("mcubridge.services.runtime.is_command_allowed", return_value=True):
-        with patch("mcubridge.services.runtime.BridgeService._stop_process", return_value=True) as mock_stop:
+        with patch("mcubridge.services.runtime.BridgeService._terminate_process", return_value=0) as mock_stop:
             await service.handle_request(msg)
-
-    mock_stop.assert_called_once_with(123)
+    mock_stop.assert_called_once()
+    assert mock_stop.call_args[0][0] == 123
 
 
 @pytest.mark.asyncio

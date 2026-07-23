@@ -27,6 +27,7 @@ from jinja2 import Environment, FileSystemLoader
 # ═════════════════════════════════════════════════════════════════════════════
 REQUIRED_DEPS = ["jinja2", "google.protobuf", "nanopb"]
 MISSING_DEPS: list[str] = []
+UNTYPED_LIBS = ["cobs", "prometheus_client", "serialx", "uci", "uvloop"]
 
 for dep in REQUIRED_DEPS:
     if importlib.util.find_spec(dep.split(".")[0]) is None:
@@ -699,13 +700,6 @@ class JinjaGenerator:
         out_path.write_text(render, encoding="utf-8")
 
 
-def read_version() -> str:
-    if not VERSION_PATH.exists():
-        sys.stderr.write(f"Warning: VERSION file not found at {VERSION_PATH}, using fallback.\n")
-        return "0.0.0"
-    return VERSION_PATH.read_text(encoding="utf-8").strip()
-
-
 def update_metadata(version: str):
     # 1. pyproject.toml
     pyproj = REPO_ROOT / "pyproject.toml"
@@ -802,8 +796,7 @@ def check_incremental_build(args: argparse.Namespace, version: str) -> tuple[boo
             outputs_exist = False
         if args.py_client and not (args.py_client.parent / "mcubridge_pb2.py").exists():
             outputs_exist = False
-        untyped_libs = ["cobs", "prometheus_client", "serialx", "uci", "uvloop"]
-        for lib in untyped_libs:
+        for lib in UNTYPED_LIBS:
             if not (REPO_ROOT / "typings" / lib).exists():
                 outputs_exist = False
                 break
@@ -858,7 +851,9 @@ def main() -> None:
 
     args = parser.parse_args()
     gen = JinjaGenerator()
-    version = read_version()
+    version = VERSION_PATH.read_text(encoding="utf-8").strip() if VERSION_PATH.exists() else "0.0.0"
+    if version == "0.0.0":
+        sys.stderr.write(f"Warning: VERSION file not found at {VERSION_PATH}, using fallback.\n")
 
     up_to_date, hash_file, current_hash = check_incremental_build(args, version)
     if up_to_date:
@@ -928,13 +923,11 @@ def main() -> None:
         _format_python_file(args.py_client)
         sys.stderr.write(f"Generated {args.py_client}\n")
 
-    # Step 4: Generate type stubs for untyped libraries using pyright
     # [SIL-2] Generate type stubs for untyped libraries using pyright if any are defined.
-    untyped_libs: list[str] = ["prometheus_client", "serialx", "uci", "uvloop"]
     # [SIL-2] Log only if there are libs to process
-    if untyped_libs:
-        sys.stderr.write(f"Generating type stubs for {', ' .join(untyped_libs)}...\n")
-        for lib in untyped_libs:
+    if UNTYPED_LIBS:
+        sys.stderr.write(f"Generating type stubs for {', '.join(UNTYPED_LIBS)}...\n")
+        for lib in UNTYPED_LIBS:
             try:
                 res = subprocess.run(
                     [sys.executable, "-m", "pyright", "--createstub", lib], check=False, capture_output=True

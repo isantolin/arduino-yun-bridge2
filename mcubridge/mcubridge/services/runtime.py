@@ -19,7 +19,7 @@ import time
 from collections.abc import Coroutine, Callable, Awaitable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast, Final, TypeVar
+from typing import TYPE_CHECKING, Any, cast, Final
 
 import aiosqlite
 from ..state.storage import SqliteDeque
@@ -93,17 +93,6 @@ if TYPE_CHECKING:
 logger = structlog.get_logger("mcubridge.service")
 
 McuHandler = Callable[[int, bytes | ProtobufMessage], Coroutine[Any, Any, bool | bytes | ProtobufMessage | None]]
-
-
-F = TypeVar("F", bound=Callable[..., Any])
-
-
-def mcu_handler(cmd: Command | Status) -> Callable[[F], F]:
-    def decorator(func: F) -> F:
-        setattr(func, "_mcu_command_id", cmd.value)
-        return func
-
-    return decorator
 
 
 _PRE_SYNC_ALLOWED_COMMANDS: Final = {
@@ -182,25 +171,46 @@ class BridgeService:
                 self.mcu_registry[s.value] = functools.partial(self._handle_mcu_status, s)
 
     def _setup_mcu_registry(self, serial: SerialTransport) -> dict[int, McuHandler]:
-        registry: dict[int, McuHandler] = {}
-        for attr_name in dir(self):
-            attr = getattr(self, attr_name)
-            if hasattr(attr, "_mcu_command_id"):
-                cmd_id = getattr(attr, "_mcu_command_id")
-                registry[cmd_id] = attr
+        async def _unsupported_digital(_seq: int, _payload: Any) -> Any:
+            return await serial.send(
+                Status.NOT_IMPLEMENTED.value, pb.GenericResponse(message="linux_originates_digital_read_requests")
+            )
 
-        registry[Command.CMD_DIGITAL_READ.value] = lambda _seq, _payload: serial.send(
-            Status.NOT_IMPLEMENTED.value,
-            pb.GenericResponse(message="linux_originates_digital_read_requests"),
-        )
-        registry[Command.CMD_ANALOG_READ.value] = lambda _seq, _payload: serial.send(
-            Status.NOT_IMPLEMENTED.value,
-            pb.GenericResponse(message="linux_originates_analog_read_requests"),
-        )
-        registry[Command.CMD_GET_CAPABILITIES_RESP.value] = self.handshake.handle_capabilities_resp
-        registry[Command.CMD_LINK_SYNC_RESP.value] = self.handshake.handle_link_sync_resp
-        registry[Command.CMD_LINK_RESET_RESP.value] = self.handshake.handle_link_reset_resp
+        async def _unsupported_analog(_seq: int, _payload: Any) -> Any:
+            return await serial.send(
+                Status.NOT_IMPLEMENTED.value, pb.GenericResponse(message="linux_originates_analog_read_requests")
+            )
 
+        registry = cast(
+            dict[int, McuHandler],
+            {
+                Command.CMD_XON.value: self._handle_mcu_xon,
+                Command.CMD_XOFF.value: self._handle_mcu_xoff,
+                Command.CMD_CONSOLE_WRITE.value: self._on_mcu_console_write,
+                Command.CMD_DATASTORE_PUT.value: self._on_mcu_datastore_put,
+                Command.CMD_DATASTORE_GET.value: self._on_mcu_datastore_get,
+                Command.CMD_MAILBOX_PUSH.value: self._on_mcu_mailbox_push,
+                Command.CMD_MAILBOX_AVAILABLE.value: self._on_mcu_mailbox_available,
+                Command.CMD_MAILBOX_READ.value: self._on_mcu_mailbox_read,
+                Command.CMD_MAILBOX_PROCESSED.value: self._on_mcu_mailbox_processed,
+                Command.CMD_FILE_WRITE.value: self._on_mcu_file_write,
+                Command.CMD_FILE_READ.value: self._on_mcu_file_read,
+                Command.CMD_FILE_REMOVE.value: self._on_mcu_file_remove,
+                Command.CMD_FILE_READ_RESP.value: self._on_mcu_file_read_resp,
+                Command.CMD_PROCESS_RUN_ASYNC.value: self._on_mcu_process_run,
+                Command.CMD_PROCESS_POLL.value: self._on_mcu_process_poll,
+                Command.CMD_SPI_TRANSFER_RESP.value: self._on_mcu_spi_resp,
+                Status.ACK.value: self._on_mcu_ack,
+                Command.CMD_DIGITAL_READ_RESP.value: self._on_mcu_digital_read_resp,
+                Command.CMD_ANALOG_READ_RESP.value: self._on_mcu_analog_read_resp,
+                Command.CMD_PROCESS_KILL.value: self._on_mcu_process_kill,
+                Command.CMD_DIGITAL_READ.value: _unsupported_digital,
+                Command.CMD_ANALOG_READ.value: _unsupported_analog,
+                Command.CMD_GET_CAPABILITIES_RESP.value: self.handshake.handle_capabilities_resp,
+                Command.CMD_LINK_SYNC_RESP.value: self.handshake.handle_link_sync_resp,
+                Command.CMD_LINK_RESET_RESP.value: self.handshake.handle_link_reset_resp,
+            },
+        )
         return registry
 
     # --- External Interface ---
@@ -250,15 +260,6 @@ class BridgeService:
     def _cloud_spool_dir(self) -> Path:
         return Path(self.config.cloud_spool_dir)
 
-    def _mark_cloud_spool_failure(self, reason: str) -> None:
-        self.state.cloud_spool_degraded = True
-        self.state.cloud_spool_failure_reason = reason
-
-    def _mark_cloud_spool_healthy(self, pending_count: int) -> None:
-        self.state.cloud_spool_degraded = False
-        self.state.cloud_spool_failure_reason = None
-        self.state.cloud_spool_pending_messages = pending_count
-
     async def _spool_cloud_message_locked(self, message: pb.CloudQueuedPublish) -> bool:
         spool = self._cloud_spool
         if spool is None:
@@ -286,10 +287,13 @@ class BridgeService:
             await spool.append(encoded)
 
             pending_count = await spool.length()
-            self._mark_cloud_spool_healthy(pending_count)
+            self.state.cloud_spool_degraded = False
+            self.state.cloud_spool_failure_reason = None
+            self.state.cloud_spool_pending_messages = pending_count
             return True
         except (aiosqlite.Error, OSError) as exc:
-            self._mark_cloud_spool_failure(str(exc))
+            self.state.cloud_spool_degraded = True
+            self.state.cloud_spool_failure_reason = str(exc)
             return False
         except ProtobufSerializationError as exc:
             logger.error("Serialization failure for spool message", error=str(exc))
@@ -303,7 +307,8 @@ class BridgeService:
         try:
             spool_len = await spool.length()
         except (aiosqlite.Error, OSError) as exc:
-            self._mark_cloud_spool_failure(str(exc))
+            self.state.cloud_spool_degraded = True
+            self.state.cloud_spool_failure_reason = str(exc)
             return
 
         while spool_len > 0:
@@ -332,7 +337,8 @@ class BridgeService:
                     break
                 continue
             except (aiosqlite.Error, OSError) as exc:
-                self._mark_cloud_spool_failure(str(exc))
+                self.state.cloud_spool_degraded = True
+                self.state.cloud_spool_failure_reason = str(exc)
                 break
 
             if not await self._publish_cloud_message(queued):
@@ -344,26 +350,31 @@ class BridgeService:
                 logger.error("Spool was empty during popleft", error=str(exc))
                 break
             except (aiosqlite.Error, OSError) as exc:
-                self._mark_cloud_spool_failure(str(exc))
+                self.state.cloud_spool_degraded = True
+                self.state.cloud_spool_failure_reason = str(exc)
                 break
 
             try:
                 spool_len = await spool.length()
             except (aiosqlite.Error, OSError) as exc:
-                self._mark_cloud_spool_failure(str(exc))
+                self.state.cloud_spool_degraded = True
+                self.state.cloud_spool_failure_reason = str(exc)
                 break
 
         try:
             pending_count = await spool.length()
             if not self.state.cloud_spool_degraded:
-                self._mark_cloud_spool_healthy(pending_count)
+                self.state.cloud_spool_degraded = False
+                self.state.cloud_spool_failure_reason = None
+                self.state.cloud_spool_pending_messages = pending_count
             else:
                 self.state.cloud_spool_pending_messages = pending_count
 
             if pending_count == 0:
                 await spool.vacuum()
         except (aiosqlite.Error, OSError) as exc:
-            self._mark_cloud_spool_failure(str(exc))
+            self.state.cloud_spool_degraded = True
+            self.state.cloud_spool_failure_reason = str(exc)
 
     async def _publish_cloud_message(self, message: pb.CloudQueuedPublish) -> bool:
         if not self._cloud_stream:
@@ -428,10 +439,6 @@ class BridgeService:
         state = getattr(self, "state", None)
         if state is not None:
             state.cleanup()
-
-    def __del__(self) -> None:
-        """Last-resort cleanup for spool database cache connections."""
-        self.cleanup()
 
     async def on_serial_connected(self) -> None:
         self.state.mark_transport_connected()
@@ -532,18 +539,15 @@ class BridgeService:
 
     # --- Business Logic Implementation ---
 
-    @mcu_handler(Command.CMD_XON)
     async def _handle_mcu_xon(self, seq: int, payload: Any) -> None:
         self.state.mcu_is_paused = False
         self.state.serial_tx_allowed.set()
         await self._flush_console_queue()
 
-    @mcu_handler(Command.CMD_XOFF)
     async def _handle_mcu_xoff(self, seq: int, payload: Any) -> None:
         self.state.mcu_is_paused = True
         self.state.serial_tx_allowed.clear()
 
-    @mcu_handler(Command.CMD_CONSOLE_WRITE)
     async def _on_mcu_console_write(self, seq: int, p: pb.ConsoleWrite) -> None:
         if p.data:
             await self.enqueue_cloud(
@@ -554,14 +558,12 @@ class BridgeService:
                 )
             )
 
-    @mcu_handler(Command.CMD_DATASTORE_PUT)
     async def _on_mcu_datastore_put(self, seq: int, p: pb.DatastorePut) -> bool:
         if self.state.datastore_cache is not None:
             await self.state.datastore_cache.set(p.key, p.value)
         await self._publish_datastore_value(p.key, p.value)
         return True
 
-    @mcu_handler(Command.CMD_DATASTORE_GET)
     async def _on_mcu_datastore_get(self, seq: int, p: pb.DatastoreGet) -> bool:
         serial = self.serial
         if not serial:
@@ -574,7 +576,6 @@ class BridgeService:
         )
         return bool(res)
 
-    @mcu_handler(Command.CMD_MAILBOX_PUSH)
     async def _on_mcu_mailbox_push(self, seq: int, p: pb.MailboxPush) -> bool:
         await self.state.mailbox_incoming_queue.append(p.data)
         await self.enqueue_cloud(
@@ -582,7 +583,6 @@ class BridgeService:
         )
         return True
 
-    @mcu_handler(Command.CMD_MAILBOX_AVAILABLE)
     async def _on_mcu_mailbox_available(self, seq: int, p: Any) -> bool:
         serial = self.serial
         if not serial:
@@ -594,7 +594,6 @@ class BridgeService:
         )
         return bool(res)
 
-    @mcu_handler(Command.CMD_MAILBOX_READ)
     async def _on_mcu_mailbox_read(self, seq: int, p: Any) -> bool:
         serial = self.serial
         if not serial:
@@ -610,7 +609,6 @@ class BridgeService:
         )
         return bool(res)
 
-    @mcu_handler(Command.CMD_MAILBOX_PROCESSED)
     async def _on_mcu_mailbox_processed(self, seq: int, p: pb.MailboxProcessed) -> None:
         await self.enqueue_cloud(
             create_queued_publish(
@@ -620,7 +618,6 @@ class BridgeService:
             )
         )
 
-    @mcu_handler(Command.CMD_FILE_WRITE)
     async def _on_mcu_file_write(self, seq: int, p: pb.FileWrite) -> bool:
         serial = self.serial
         if not serial:
@@ -632,7 +629,6 @@ class BridgeService:
         res = await serial.send(Status.ERROR.value, pb.GenericResponse(message="Write failed"))
         return bool(res)
 
-    @mcu_handler(Command.CMD_FILE_READ)
     async def _on_mcu_file_read(self, seq: int, p: pb.FileRead) -> None:
         serial = self.serial
         if not serial:
@@ -648,7 +644,6 @@ class BridgeService:
             return
         await serial.send(Status.ERROR.value, pb.GenericResponse(message="Read failed"))
 
-    @mcu_handler(Command.CMD_FILE_REMOVE)
     async def _on_mcu_file_remove(self, seq: int, p: pb.FileRemove) -> bool:
         serial = self.serial
         if not serial:
@@ -661,7 +656,6 @@ class BridgeService:
         res = await serial.send(Status.ERROR.value, pb.GenericResponse(message="Remove failed"))
         return bool(res)
 
-    @mcu_handler(Command.CMD_FILE_READ_RESP)
     async def _on_mcu_file_read_resp(self, seq: int, p: pb.FileReadResponse) -> bool:
         if not self._pending_mcu_read:
             return False
@@ -671,7 +665,6 @@ class BridgeService:
             self._pending_mcu_read.future.set_result(b"".join(self._pending_mcu_read.chunks))
         return True
 
-    @mcu_handler(Command.CMD_PROCESS_RUN_ASYNC)
     async def _on_mcu_process_run(self, seq: int, p: pb.ProcessRunAsync) -> bool:
         serial = self.serial
         if not serial:
@@ -687,7 +680,6 @@ class BridgeService:
         await serial.send(Status.ERROR.value, pb.GenericResponse(message="Exec failed"))
         return False
 
-    @mcu_handler(Command.CMD_PROCESS_POLL)
     async def _on_mcu_process_poll(self, seq: int, p: pb.ProcessPoll) -> bool:
         serial = self.serial
         if not serial:
@@ -711,13 +703,11 @@ class BridgeService:
             reply_context=req.reply_context if req else None,
         )
 
-    @mcu_handler(Command.CMD_SPI_TRANSFER_RESP)
     async def _on_mcu_spi_resp(self, seq: int, p: pb.SpiTransferResponse) -> None:
         await self.enqueue_cloud(
             create_queued_publish(get_topic_for_message(self.state.cloud_topic_prefix, p) or "", p.data)
         )
 
-    @mcu_handler(Status.ACK)
     async def _on_mcu_ack(self, seq: int, payload: bytes | ProtobufMessage) -> None:
         try:
             if isinstance(payload, ProtobufMessage):
@@ -728,17 +718,23 @@ class BridgeService:
         except (ProtobufDecodeError, TypeError, ValueError) as e:
             logger.error("Failed to decode MCU ACK packet", error=e)
 
-    @mcu_handler(Command.CMD_DIGITAL_READ_RESP)
     async def _on_mcu_digital_read_resp(self, seq: int, p: pb.DigitalReadResponse) -> None:
         await self._on_pin_resp(p, Topic.DIGITAL, self.state.pending_digital_reads)
 
-    @mcu_handler(Command.CMD_ANALOG_READ_RESP)
     async def _on_mcu_analog_read_resp(self, seq: int, p: pb.AnalogReadResponse) -> None:
         await self._on_pin_resp(p, Topic.ANALOG, self.state.pending_analog_reads)
 
-    @mcu_handler(Command.CMD_PROCESS_KILL)
     async def _on_mcu_process_kill(self, seq: int, p: pb.ProcessKill) -> None:
-        await self._stop_process(p.pid)
+        async with self.state.process_lock:
+            ctx = self.state.running_processes.get(p.pid)
+        if not ctx:
+            return
+        try:
+            ctx.exit_code = await self._terminate_process(p.pid, ctx, grace_period=PROCESS_TERM_GRACE_PERIOD_SECONDS)
+        except (OSError, ProcessLookupError) as exc:
+            logger.error("Process termination failed", pid=p.pid, error=str(exc))
+        if self.state.running_processes.pop(p.pid, None):
+            self._process_slots.release()
 
     async def _handle_mcu_status(self, status: Status, seq_id: int, payload: bytes | ProtobufMessage) -> None:
         text = ""
@@ -781,8 +777,6 @@ class BridgeService:
 
     async def _handle_datastore(self, route: TopicRoute, inbound: BridgeRequest) -> None:
         key_parts = list(route.remainder)
-        if key_parts and key_parts[-1] in ("request", "response"):
-            key_parts.pop()
         key = "/".join(key_parts)
         pl = inbound.payload
         if not key:
@@ -982,7 +976,17 @@ class BridgeService:
                     reply_context=inbound,
                 )
             else:
-                await self._stop_process(pid)
+                async with self.state.process_lock:
+                    ctx = self.state.running_processes.get(pid)
+                if ctx:
+                    try:
+                        ctx.exit_code = await self._terminate_process(
+                            pid, ctx, grace_period=PROCESS_TERM_GRACE_PERIOD_SECONDS
+                        )
+                    except (OSError, ProcessLookupError) as exc:
+                        logger.error("Process termination failed", pid=pid, error=str(exc))
+                    if self.state.running_processes.pop(pid, None):
+                        self._process_slots.release()
 
     async def _handle_spi(self, route: TopicRoute, inbound: BridgeRequest) -> None:
         serial = self.serial
@@ -1117,18 +1121,16 @@ class BridgeService:
         if isinstance(pl, bytes):
             p = pb.VersionResponse.FromString(pl)
             self.state.mcu_version = (p.major, p.minor, p.patch)
-            await self._publish_version(self.state.mcu_version, inbound)
+
+            pl_out = f"{p.major}.{p.minor}.{p.patch}".encode()
+            tp = get_topic_for_message(self.state.cloud_topic_prefix, pb.VersionResponse)
+            if tp:
+                await self.enqueue_cloud(
+                    create_queued_publish(tp, pl_out, message_expiry_interval=protocol.CLOUD_EXPIRY_DATASTORE),
+                    reply_context=inbound,
+                )
             return True
         return False
-
-    async def _publish_version(self, v: tuple[int, int, int], ctx: BridgeRequest | None) -> None:
-        pl = f"{v[0]}.{v[1]}.{v[2]}".encode()
-        tp = get_topic_for_message(self.state.cloud_topic_prefix, pb.VersionResponse)
-        if tp:
-            await self.enqueue_cloud(
-                create_queued_publish(tp, pl, message_expiry_interval=protocol.CLOUD_EXPIRY_DATASTORE),
-                reply_context=ctx,
-            )
 
     async def _flush_console_queue(self) -> None:
         serial = self.serial
@@ -1180,7 +1182,8 @@ class BridgeService:
                     )
                 await asyncio.sleep(60.0)
         finally:
-            self._finalize_process(pid)
+            if self.state.running_processes.pop(pid, None):
+                self._process_slots.release()
 
     async def _poll_process(self, pid: int) -> pb.ProcessPollResponse:
         async with self.state.process_lock:
@@ -1215,7 +1218,8 @@ class BridgeService:
                     and (ctx.handle.stdout is None or ctx.handle.stdout.at_eof())
                     and (ctx.handle.stderr is None or ctx.handle.stderr.at_eof())
                 ):
-                    self._finalize_process(pid)
+                    if self.state.running_processes.pop(pid, None):
+                        self._process_slots.release()
                 return pb.ProcessPollResponse(
                     status=Status.OK.value,
                     exit_code=ctx.exit_code,
@@ -1225,18 +1229,6 @@ class BridgeService:
                     stdout_truncated=to,
                     stderr_truncated=te,
                 )
-
-    async def _stop_process(self, pid: int) -> bool:
-        async with self.state.process_lock:
-            ctx = self.state.running_processes.get(pid)
-        if not ctx:
-            return False
-        try:
-            ctx.exit_code = await self._terminate_process(pid, ctx, grace_period=PROCESS_TERM_GRACE_PERIOD_SECONDS)
-        except (OSError, ProcessLookupError) as exc:
-            logger.error("Process termination failed", pid=pid, error=str(exc))
-        self._finalize_process(pid)
-        return True
 
     async def _terminate_process(self, pid: int, ctx: ProcessContext, *, grace_period: float) -> int:
         if ctx.handle.returncode is not None:
@@ -1258,10 +1250,6 @@ class BridgeService:
                 return await ctx.handle.wait()
         except TimeoutError:
             return -1
-
-    def _finalize_process(self, pid: int) -> None:
-        if self.state.running_processes.pop(pid, None):
-            self._process_slots.release()
 
     def _get_safe_path(self, p_str: str) -> Path | None:
         root = Path(self.config.file_system_root).resolve()

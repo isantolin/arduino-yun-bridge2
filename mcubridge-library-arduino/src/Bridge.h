@@ -23,6 +23,7 @@
 #include <etl/delegate.h>
 #include <etl/deque.h>
 #include <etl/fsm.h>
+#include <etl/observer.h>
 #include <etl/pool.h>
 #include <etl/span.h>
 #include <etl/string_view.h>
@@ -43,6 +44,19 @@ extern template class span<const char>;
 }  // namespace etl
 
 namespace bridge {
+
+enum class SystemEvent : uint8_t {
+  SAFE_STATE_ENTERED = 0,
+  SYNCHRONIZED = 1,
+  UNSYNCHRONIZED = 2
+};
+
+class BridgeObserver {
+ public:
+  virtual ~BridgeObserver() = default;
+  virtual void notification(SystemEvent event) = 0;
+};
+
 namespace router {
 struct CommandContext {
   const rpc_pb_RpcEnvelope* envelope;
@@ -64,7 +78,8 @@ struct CommandContext {
 
 #include "ErrorPolicy.h"
 
-class BridgeClass {
+class BridgeClass : public etl::observable<bridge::BridgeObserver,
+                                           bridge::config::MAX_OBSERVERS> {
  public:
   using ErrorPolicy = bridge::SafeStatePolicy;
   explicit BridgeClass(Stream& stream);
@@ -264,6 +279,7 @@ class BridgeClass {
                                            uint16_t sequence_id,
                                            etl::span<const uint8_t> payload);
   void _initializeRuntime();
+  void _initObservers();
 
   // STRICT ORDER FOR CONSTRUCTOR
   Stream& _stream;
@@ -299,8 +315,6 @@ class BridgeClass {
   bool _serial_xoff_sent = false;
 
   etl::callback_timer<bridge::scheduler::NUMBER_OF_TIMERS> _timers;
-  etl::array<etl::timer::id::type, bridge::scheduler::NUMBER_OF_TIMERS>
-      _timer_ids;
   // Shared working buffer for transient operations (unencrypted encoding, SPI
   // transfer)
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> _working_buffer;

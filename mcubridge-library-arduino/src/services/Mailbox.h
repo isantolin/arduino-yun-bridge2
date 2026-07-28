@@ -9,9 +9,10 @@
 #include <etl/queue.h>
 #include <etl/span.h>
 
+#include "Bridge.h"
 #include "protocol/rpc_structs.h"
 
-class MailboxClass {
+class MailboxClass : public bridge::BridgeObserver {
  public:
   using MessageCallback = etl::delegate<void(etl::span<const uint8_t>)>;
   using AvailableCallback = etl::delegate<void(uint32_t)>;
@@ -36,6 +37,13 @@ class MailboxClass {
 
   static void process();
   static void onLost();
+
+  void notification(bridge::SystemEvent event) override {
+    if (event == bridge::SystemEvent::SAFE_STATE_ENTERED ||
+        event == bridge::SystemEvent::UNSYNCHRONIZED) {
+      onLost();
+    }
+  }
 
  private:
   struct MailboxMessage {

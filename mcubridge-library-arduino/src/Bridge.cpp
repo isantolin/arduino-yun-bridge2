@@ -22,11 +22,35 @@ void __attribute__((weak)) handle_error(const etl::exception& e) {
 }
 }  // namespace etl
 
+void BridgeClass::_initObservers() {
+  clear_observers();
+#if BRIDGE_ENABLE_CONSOLE
+  add_observer(Console);
+#endif
+#if BRIDGE_ENABLE_DATASTORE
+  add_observer(DataStore);
+#endif
+#if BRIDGE_ENABLE_MAILBOX
+  add_observer(Mailbox);
+#endif
+#if BRIDGE_ENABLE_PROCESS
+  add_observer(Process);
+#endif
+#if BRIDGE_ENABLE_FILESYSTEM
+  add_observer(FileSystem);
+#endif
+#if BRIDGE_ENABLE_SPI
+  add_observer(SPIService);
+#endif
+}
+
 BridgeClass::BridgeClass(Stream& stream)
     : _stream(stream),
       _packet_serial(etl::span<uint8_t>(_rx_buffer.data(), _rx_buffer.size()),
                      etl::span<uint8_t>(_rx_buffer.data(), _rx_buffer.size())),
-      _tx_envelope(rpc_pb_RpcEnvelope_init_zero) {}
+      _tx_envelope(rpc_pb_RpcEnvelope_init_zero) {
+  _initObservers();
+}
 
 bool BridgeClass::_preDispatch(const bridge::router::CommandContext& ctx,
                                bool needs_ack, bool retransmit_on_dup) {
@@ -437,6 +461,7 @@ void BridgeClass::_dispatchCommand(const rpc_pb_RpcEnvelope& envelope) {
 }
 
 void BridgeClass::_initializeRuntime() {
+  _initObservers();
   _timer_last_tick_ms = 0;
   _serial_xoff_sent = false;
 
@@ -476,26 +501,22 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
     if (baudrate > 0 && _hardware_serial) _hardware_serial->begin(baudrate);
   _tx_enabled = true;
   _timers.clear();
-  _timer_ids[bridge::scheduler::TIMER_ACK_TIMEOUT] =
-      _timers.register_timer([]() { Bridge._onAckTimeout(); }, _ack_timeout_ms,
-                             etl::timer::mode::REPEATING);
-  _timer_ids[bridge::scheduler::TIMER_RX_DEDUPE] = _timers.register_timer(
-      []() { Bridge._onRxDedupe(); }, bridge::config::RX_DEDUPE_INTERVAL_MS,
-      etl::timer::mode::REPEATING);
-  _timer_ids[bridge::scheduler::TIMER_BAUDRATE_CHANGE] = _timers.register_timer(
-      []() { Bridge._onBaudrateChange(); },
-      bridge::config::BAUDRATE_CHANGE_DELAY_MS, etl::timer::mode::SINGLE_SHOT);
-  _timer_ids[bridge::scheduler::TIMER_BOOTLOADER_DELAY] =
-      _timers.register_timer([]() { Bridge._onBootloaderDelay(); },
-                             bridge::config::BOOTLOADER_DELAY_MS,
-                             etl::timer::mode::SINGLE_SHOT);
+  _timers.register_timer([]() { Bridge._onAckTimeout(); }, _ack_timeout_ms,
+                         etl::timer::mode::REPEATING);
+  _timers.register_timer([]() { Bridge._onRxDedupe(); },
+                         bridge::config::RX_DEDUPE_INTERVAL_MS,
+                         etl::timer::mode::REPEATING);
+  _timers.register_timer([]() { Bridge._onBaudrateChange(); },
+                         bridge::config::BAUDRATE_CHANGE_DELAY_MS,
+                         etl::timer::mode::SINGLE_SHOT);
+  _timers.register_timer([]() { Bridge._onBootloaderDelay(); },
+                         bridge::config::BOOTLOADER_DELAY_MS,
+                         etl::timer::mode::SINGLE_SHOT);
   // [SIL-2/H-2] Handshake response watchdog: fires EvTimeout if MPU does not
   // complete CMD_LINK_SYNC within _response_timeout_ms after a reset.
-  _timer_ids[bridge::scheduler::TIMER_HANDSHAKE_TIMEOUT] =
-      _timers.register_timer([]() { Bridge._onHandshakeTimeout(); },
-                             _response_timeout_ms,
-                             etl::timer::mode::SINGLE_SHOT);
-  _timers.start(_timer_ids[bridge::scheduler::TIMER_HANDSHAKE_TIMEOUT]);
+  _timers.register_timer([]() { Bridge._onHandshakeTimeout(); },
+                         _response_timeout_ms, etl::timer::mode::SINGLE_SHOT);
+  _timers.start(bridge::scheduler::TIMER_HANDSHAKE_TIMEOUT);
   _packet_serial.setPacketHandler(
       etl::delegate<void(etl::span<const uint8_t>)>::create<
           BridgeClass, &BridgeClass::_handleReceivedFrame>(*this));
@@ -545,12 +566,7 @@ void BridgeClass::enterSafeState() {
   _tx_enabled = false;
   _clearPendingTxQueue();
   _fsm.receive(bridge::fsm::EvReset());
-  Console.onLost();
-  DataStore.onLost();
-  Mailbox.onLost();
-  Process.onLost();
-  FileSystem.onLost();
-  SPIService.onLost();
+  notify_observers(bridge::SystemEvent::SAFE_STATE_ENTERED);
 }
 
 void BridgeClass::_serialize_and_send(const rpc_pb_RpcEnvelope& env) {
@@ -620,7 +636,7 @@ void BridgeClass::_flushPendingTxQueue() {
     _fsm.receive(bridge::fsm::EvSendCritical());
     _transmit(f.command_id, f.sequence_id,
               etl::span<const uint8_t>(f.buffer->data.data(), f.length));
-    _timers.start(_timer_ids[bridge::scheduler::TIMER_ACK_TIMEOUT]);
+    _timers.start(bridge::scheduler::TIMER_ACK_TIMEOUT);
   }
 }
 
@@ -630,14 +646,14 @@ void BridgeClass::_retransmitLastFrame() {
     const auto& f = _pending_tx_queue.front();
     _transmit(f.command_id, f.sequence_id,
               etl::span<const uint8_t>(f.buffer->data.data(), f.length));
-    _timers.start(_timer_ids[bridge::scheduler::TIMER_ACK_TIMEOUT]);
+    _timers.start(bridge::scheduler::TIMER_ACK_TIMEOUT);
   }
 }
 
 void BridgeClass::_onAckTimeout() {
   if (!_fsm.isAwaitingAck()) return;
   if (++_retry_count >= _retry_limit) {
-    _timers.stop(_timer_ids[bridge::scheduler::TIMER_ACK_TIMEOUT]);
+    _timers.stop(bridge::scheduler::TIMER_ACK_TIMEOUT);
     _fsm.receive(bridge::fsm::EvTimeout());
     _tx_enabled = false;
     _clearPendingTxQueue();
@@ -654,7 +670,7 @@ void BridgeClass::_processAck(uint16_t command_id, uint16_t sequence_id) {
 
 void BridgeClass::_handleAck(uint16_t cmd) {
   if (!_fsm.isAwaitingAck() || cmd != _last_command_id) return;
-  _timers.stop(_timer_ids[bridge::scheduler::TIMER_ACK_TIMEOUT]);
+  _timers.stop(bridge::scheduler::TIMER_ACK_TIMEOUT);
   _clearPendingTxQueue();
   _fsm.receive(bridge::fsm::EvAckReceived());
   _flushPendingTxQueue();
@@ -691,12 +707,12 @@ void BridgeClass::_onBootloaderDelay() { bridge::hal::enterBootloader(); }
 void BridgeClass::_handleSetBaudrate(const rpc_pb_SetBaudratePacket& msg) {
   if (msg.baudrate == 0 || msg.baudrate == _pending_baudrate) return;
   _pending_baudrate = msg.baudrate;
-  _timers.start(_timer_ids[bridge::scheduler::TIMER_BAUDRATE_CHANGE]);
+  _timers.start(bridge::scheduler::TIMER_BAUDRATE_CHANGE);
 }
 
 void BridgeClass::_handleEnterBootloader(const rpc_pb_EnterBootloader& msg) {
   if (msg.magic == rpc::RPC_BOOTLOADER_MAGIC)
-    _timers.start(_timer_ids[bridge::scheduler::TIMER_BOOTLOADER_DELAY]);
+    _timers.start(bridge::scheduler::TIMER_BOOTLOADER_DELAY);
 }
 
 void BridgeClass::_handleSetPinMode(const rpc_pb_PinMode& m) {
@@ -899,7 +915,7 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx,
   _fsm.receive(bridge::fsm::EvHandshakeComplete());
   // [SIL-2/H-2] Handshake complete: cancel the watchdog timer so it does not
   // fire a spurious EvTimeout after a successful synchronisation.
-  _timers.stop(_timer_ids[bridge::scheduler::TIMER_HANDSHAKE_TIMEOUT]);
+  _timers.stop(bridge::scheduler::TIMER_HANDSHAKE_TIMEOUT);
   (void)send(rpc::CommandId::CMD_LINK_SYNC_RESP, ctx.sequence_id, resp);
 }
 
@@ -917,10 +933,10 @@ void BridgeClass::_handleLinkReset(const bridge::router::CommandContext& ctx) {
   // [SIL-2/H-2] Restart the handshake watchdog with the (possibly updated)
   // _response_timeout_ms. If the MPU does not complete CMD_LINK_SYNC within
   // this window, _onHandshakeTimeout() will drive the FSM to FAULT.
-  _timers.stop(_timer_ids[bridge::scheduler::TIMER_HANDSHAKE_TIMEOUT]);
-  _timers.set_period(_timer_ids[bridge::scheduler::TIMER_HANDSHAKE_TIMEOUT],
+  _timers.stop(bridge::scheduler::TIMER_HANDSHAKE_TIMEOUT);
+  _timers.set_period(bridge::scheduler::TIMER_HANDSHAKE_TIMEOUT,
                      _response_timeout_ms);
-  _timers.start(_timer_ids[bridge::scheduler::TIMER_HANDSHAKE_TIMEOUT]);
+  _timers.start(bridge::scheduler::TIMER_HANDSHAKE_TIMEOUT);
   (void)sendFrame(rpc::CommandId::CMD_LINK_RESET_RESP, ctx.sequence_id);
 }
 

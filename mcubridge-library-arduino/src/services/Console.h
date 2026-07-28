@@ -10,15 +10,23 @@
 #include <etl/circular_buffer.h>
 #include <etl/vector.h>
 
+#include "Bridge.h"
 #include "protocol/rpc_protocol.h"
 #include "protocol/rpc_structs.h"
 
-class ConsoleClass : public Stream {
+class ConsoleClass : public Stream, public bridge::BridgeObserver {
  public:
   ConsoleClass();
   void begin();
   void _push(const rpc::payload::ConsoleWrite& msg);
   void process();
+
+  void notification(bridge::SystemEvent event) override {
+    if (event == bridge::SystemEvent::SAFE_STATE_ENTERED ||
+        event == bridge::SystemEvent::UNSYNCHRONIZED) {
+      onLost();
+    }
+  }
 
   void onLost() { _flags.reset(BEGUN); }
 

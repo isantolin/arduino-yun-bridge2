@@ -8,9 +8,10 @@
 #include <etl/span.h>
 #include <etl/string_view.h>
 
+#include "Bridge.h"
 #include "protocol/rpc_structs.h"
 
-class FileSystemClass {
+class FileSystemClass : public bridge::BridgeObserver {
  public:
   using FileSystemReadHandler = etl::delegate<void(etl::span<const uint8_t>)>;
 
@@ -23,6 +24,13 @@ class FileSystemClass {
   static void _onRead(const rpc::payload::FileRead& msg);
   static void _onRemove(const rpc::payload::FileRemove& msg);
   void _onResponse(const rpc::payload::FileReadResponse& msg);
+
+  void notification(bridge::SystemEvent event) override {
+    if (event == bridge::SystemEvent::SAFE_STATE_ENTERED ||
+        event == bridge::SystemEvent::UNSYNCHRONIZED) {
+      onLost();
+    }
+  }
 
   void onLost() { _read_handler = FileSystemReadHandler{}; }
 

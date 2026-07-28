@@ -95,8 +95,8 @@ class TestAccessor : public BridgeClass {
   void invokeSerialTask() { _serialTask(); }
   void invokeTimerTask() { _timerTask(); }
   void startTimersForCoverage() {
-    _timers.start(_timer_ids[bridge::scheduler::TIMER_RX_DEDUPE]);
-    _timers.start(_timer_ids[bridge::scheduler::TIMER_BAUDRATE_CHANGE]);
+    _timers.start(bridge::scheduler::TIMER_RX_DEDUPE);
+    _timers.start(bridge::scheduler::TIMER_BAUDRATE_CHANGE);
   }
   void setSerialTaskXoffSent(bool value) { _serial_xoff_sent = value; }
   void setSerialTaskBridgeNull() {}

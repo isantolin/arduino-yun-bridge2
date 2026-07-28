@@ -36,5 +36,9 @@
     "./.venv/bin/flake8"
   ],
   "python.analysis.languageServerMode": "full",
-  "markdown.validate.enabled": true
+  "markdown.validate.enabled": true,
+  "yaml.schemas": {
+    "https://json.schemastore.org/github-action.json": ".github/actions/*/action.yml",
+    "https://json.schemastore.org/github-workflow.json": ".github/workflows/*.yml"
+  }
 }

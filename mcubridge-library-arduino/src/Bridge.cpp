@@ -1002,11 +1002,12 @@ void BridgeClass::_handleReceivedFrame(etl::span<const uint8_t> p) {
             etl::span<const uint8_t>(
                 envelope.payload_type.encrypted_payload_with_tag.bytes,
                 ct_size),
+            _session_key,
+            etl::span<const uint8_t>(envelope.nonce.bytes, 12),
             etl::span<const uint8_t>(
                 envelope.payload_type.encrypted_payload_with_tag.bytes +
                     ct_size,
                 16),
-            _session_key, etl::span<const uint8_t>(envelope.nonce.bytes, 12),
             dec_pl) ||
         !rpc::security::validate_frame_nonce(
             etl::span<const uint8_t>(envelope.nonce.bytes, 12),

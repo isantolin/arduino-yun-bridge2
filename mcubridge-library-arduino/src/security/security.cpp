@@ -114,9 +114,9 @@ bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
 
 bool aead_decrypt_frame(uint16_t cmd_id, uint16_t seq_id,
                         etl::span<const uint8_t> in,
-                        etl::span<const uint8_t> tag,
                         etl::span<const uint8_t> key,
                         etl::span<const uint8_t> nonce,
+                        etl::span<const uint8_t> tag,
                         etl::span<uint8_t> out_payload) {
   payload::RpcEnvelope aad_env = {};
   aad_env.version = rpc::PROTOCOL_VERSION;
@@ -129,12 +129,26 @@ bool aead_decrypt_frame(uint16_t cmd_id, uint16_t seq_id,
   (void)pb_encode(&stream, rpc::Payload::get_fields<rpc_pb_RpcEnvelope>(),
                   &aad_env);
 
-  return wc_ChaCha20Poly1305_Decrypt(
+  int res = wc_ChaCha20Poly1305_Decrypt(
              const_cast<byte*>(key.data()), const_cast<byte*>(nonce.data()),
              const_cast<byte*>(ad.data()),
              static_cast<word32>(stream.bytes_written),
              const_cast<byte*>(in.data()), static_cast<word32>(in.size()),
-             const_cast<byte*>(tag.data()), out_payload.data()) == 0;
+             const_cast<byte*>(tag.data()), out_payload.data());
+  if (res != 0) {
+    printf("[AEAD_FAIL] res=%d ad_len=%zu\n  ad=", res, stream.bytes_written);
+    for(size_t i=0; i<stream.bytes_written; i++) printf("%02x", ad[i]);
+    printf("\n  key=");
+    for(size_t i=0; i<key.size(); i++) printf("%02x", key[i]);
+    printf("\n  nonce=");
+    for(size_t i=0; i<nonce.size(); i++) printf("%02x", nonce[i]);
+    printf("\n  tag=");
+    for(size_t i=0; i<tag.size(); i++) printf("%02x", tag[i]);
+    printf("\n  in=");
+    for(size_t i=0; i<in.size(); i++) printf("%02x", in[i]);
+    printf("\n");
+  }
+  return res == 0;
 }
 
 bool validate_frame_nonce(etl::span<const uint8_t> nonce,

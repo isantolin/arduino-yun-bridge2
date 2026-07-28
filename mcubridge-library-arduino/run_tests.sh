@@ -63,20 +63,24 @@ if [ ! -f "src/protocol/rpc_protocol.h" ] || [ ! -f "src/protocol/mcubridge.pb.c
 fi
 
 # Detect Arduino libraries directory
-ARDUINO_LIBS="$HOME/Arduino/libraries"
-if [ ! -d "$ARDUINO_LIBS" ]; then ARDUINO_LIBS="$HOME/Documents/Arduino/libraries"; fi
+if [ -d "$REPO_ROOT/.dummy_libs" ]; then
+    ARDUINO_LIBS="$REPO_ROOT/.dummy_libs"
+elif [ -d "$HOME/Arduino/libraries" ]; then
+    ARDUINO_LIBS="$HOME/Arduino/libraries"
+else
+    ARDUINO_LIBS="$HOME/Documents/Arduino/libraries"
+fi
 
 # 1. Embedded Template Library (ETL)
 ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library"
-if [ ! -d "$ETL_PATH" ]; then ETL_PATH="$REPO_ROOT/.dummy_libs/Embedded_Template_Library"; fi
+if [ ! -d "$ETL_PATH" ]; then ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library_ETL"; fi
 
 # 2. wolfSSL (official)
 WOLFSSL_PATH="$ARDUINO_LIBS/wolfSSL"
 if [ ! -d "$WOLFSSL_PATH" ]; then WOLFSSL_PATH="$ARDUINO_LIBS/wolfssl"; fi
-if [ ! -d "$WOLFSSL_PATH" ]; then WOLFSSL_PATH="$REPO_ROOT/.dummy_libs/wolfSSL"; fi
+
 # 3. PacketSerial
 PACKETSERIAL_PATH="$ARDUINO_LIBS/PacketSerial"
-if [ ! -d "$PACKETSERIAL_PATH" ]; then PACKETSERIAL_PATH="$REPO_ROOT/.dummy_libs/PacketSerial"; fi
 
 # 4. Unity
 # 5. Build Artifacts

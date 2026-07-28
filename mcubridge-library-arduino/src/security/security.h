@@ -58,9 +58,9 @@ bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
  */
 bool aead_decrypt_frame(uint16_t cmd_id, uint16_t seq_id,
                         etl::span<const uint8_t> in,
-                        etl::span<const uint8_t> tag,
                         etl::span<const uint8_t> key,
                         etl::span<const uint8_t> nonce,
+                        etl::span<const uint8_t> tag,
                         etl::span<uint8_t> out_payload);
 
 /**

@@ -35,7 +35,7 @@ rationale = "Generated protobuf runtime required for daemon and Cloud payload se
 [[dependency]]
 name = "prometheus-client"
 openwrt = "python3-prometheus-client"
-pip = "prometheus-client==0.25.0"
+pip = "prometheus-client==0.26.0"
 rationale = "Expose runtime metrics via the Prometheus Python client"
 
 [[dependency]]

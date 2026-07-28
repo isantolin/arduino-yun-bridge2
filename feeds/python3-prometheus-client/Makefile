@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=python3-prometheus-client
-PKG_VERSION:=0.25.0
+PKG_VERSION:=0.26.0
 PKG_RELEASE:=1
 
 PYPI_NAME:=prometheus_client

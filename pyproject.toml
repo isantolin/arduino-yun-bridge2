@@ -13,7 +13,7 @@ dependencies = [
     "cryptography==49.0.0",
     "grpclib==0.4.9",
     "h2==4.4.0",
-    "prometheus-client==0.25.0",
+    "prometheus-client==0.26.0",
     "protobuf==7.36.0rc1",
     "serialx==1.8.2",
     "structlog==26.1.0",

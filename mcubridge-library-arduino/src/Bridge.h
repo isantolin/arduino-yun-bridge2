@@ -54,7 +54,13 @@ enum class SystemEvent : uint8_t {
 class BridgeObserver {
  public:
   virtual ~BridgeObserver() = default;
-  virtual void notification(SystemEvent event) = 0;
+  virtual void notification(SystemEvent event) {
+    if (event == SystemEvent::SAFE_STATE_ENTERED ||
+        event == SystemEvent::UNSYNCHRONIZED) {
+      onLost();
+    }
+  }
+  virtual void onLost() {}
 };
 
 namespace router {

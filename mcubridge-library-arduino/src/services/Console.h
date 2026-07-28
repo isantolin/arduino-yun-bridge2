@@ -3,7 +3,6 @@
 
 #include <Stream.h>
 
-#include "config/bridge_config.h"
 #undef min
 #undef max
 #include <etl/bitset.h>
@@ -11,7 +10,6 @@
 #include <etl/vector.h>
 
 #include "Bridge.h"
-#include "protocol/rpc_protocol.h"
 #include "protocol/rpc_structs.h"
 
 class ConsoleClass : public Stream, public bridge::BridgeObserver {
@@ -21,14 +19,7 @@ class ConsoleClass : public Stream, public bridge::BridgeObserver {
   void _push(const rpc::payload::ConsoleWrite& msg);
   void process();
 
-  void notification(bridge::SystemEvent event) override {
-    if (event == bridge::SystemEvent::SAFE_STATE_ENTERED ||
-        event == bridge::SystemEvent::UNSYNCHRONIZED) {
-      onLost();
-    }
-  }
-
-  void onLost() { _flags.reset(BEGUN); }
+  void onLost() override { _flags.reset(BEGUN); }
 
   // Stream implementation
   size_t write(uint8_t c) override;

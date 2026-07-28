@@ -1,7 +1,6 @@
 #ifndef SERVICES_DATASTORE_H
 #define SERVICES_DATASTORE_H
 
-#include "config/bridge_config.h"
 #undef min
 #undef max
 #include <etl/delegate.h>
@@ -24,14 +23,7 @@ class DataStoreClass : public bridge::BridgeObserver {
 
   void _onResponse(const rpc::payload::DatastoreGetResponse& msg);
 
-  void notification(bridge::SystemEvent event) override {
-    if (event == bridge::SystemEvent::SAFE_STATE_ENTERED ||
-        event == bridge::SystemEvent::UNSYNCHRONIZED) {
-      onLost();
-    }
-  }
-
-  void onLost() { _pending_gets.clear(); }
+  void onLost() override { _pending_gets.clear(); }
 
   etl::queue<GetHandler, bridge::config::MAX_PENDING_DATASTORE> _pending_gets;
 };

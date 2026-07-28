@@ -1,7 +1,6 @@
 #ifndef SERVICES_MAILBOX_H
 #define SERVICES_MAILBOX_H
 
-#include "config/bridge_config.h"
 #undef min
 #undef max
 #include <etl/array.h>
@@ -36,14 +35,7 @@ class MailboxClass : public bridge::BridgeObserver {
       const rpc::payload::MailboxAvailableResponse& msg);
 
   static void process();
-  static void onLost();
-
-  void notification(bridge::SystemEvent event) override {
-    if (event == bridge::SystemEvent::SAFE_STATE_ENTERED ||
-        event == bridge::SystemEvent::UNSYNCHRONIZED) {
-      onLost();
-    }
-  }
+  void onLost() override;
 
  private:
   struct MailboxMessage {

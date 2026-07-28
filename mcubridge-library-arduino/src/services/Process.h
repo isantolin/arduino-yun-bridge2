@@ -1,7 +1,6 @@
 #ifndef SERVICES_PROCESS_H
 #define SERVICES_PROCESS_H
 
-#include "config/bridge_config.h"
 #undef min
 #undef max
 #include <etl/delegate.h>
@@ -32,14 +31,7 @@ class ProcessClass : public bridge::BridgeObserver {
   void _onPollResponse(const rpc::payload::ProcessPollResponse& msg);
   void reset();
 
-  void notification(bridge::SystemEvent event) override {
-    if (event == bridge::SystemEvent::SAFE_STATE_ENTERED ||
-        event == bridge::SystemEvent::UNSYNCHRONIZED) {
-      onLost();
-    }
-  }
-
-  void onLost() { reset(); }
+  void onLost() override { reset(); }
 
   struct PendingRunAsync {
     ProcessRunHandler handler;

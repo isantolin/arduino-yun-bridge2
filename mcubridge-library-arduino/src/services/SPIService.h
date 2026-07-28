@@ -1,7 +1,7 @@
 #ifndef BRIDGE_SPI_SERVICE_H
 #define BRIDGE_SPI_SERVICE_H
 
-#include "config/bridge_config.h"
+#include "Bridge.h"
 
 #if BRIDGE_ENABLE_SPI
 
@@ -10,7 +10,6 @@
 #undef max
 #include <etl/span.h>
 
-#include "Bridge.h"
 #include "protocol/rpc_structs.h"
 
 class SPIServiceClass : public bridge::BridgeObserver {
@@ -22,14 +21,7 @@ class SPIServiceClass : public bridge::BridgeObserver {
   void setConfig(const rpc::payload::SpiConfig& config);
   size_t transfer(etl::span<uint8_t> buffer);
 
-  void notification(bridge::SystemEvent event) override {
-    if (event == bridge::SystemEvent::SAFE_STATE_ENTERED ||
-        event == bridge::SystemEvent::UNSYNCHRONIZED) {
-      onLost();
-    }
-  }
-
-  void onLost() { end(); }
+  void onLost() override { end(); }
 
  private:
   bool _initialized;

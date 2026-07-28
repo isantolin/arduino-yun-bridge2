@@ -1,7 +1,6 @@
 #ifndef SERVICES_FILESYSTEM_H
 #define SERVICES_FILESYSTEM_H
 
-#include "config/bridge_config.h"
 #undef min
 #undef max
 #include <etl/delegate.h>
@@ -25,14 +24,7 @@ class FileSystemClass : public bridge::BridgeObserver {
   static void _onRemove(const rpc::payload::FileRemove& msg);
   void _onResponse(const rpc::payload::FileReadResponse& msg);
 
-  void notification(bridge::SystemEvent event) override {
-    if (event == bridge::SystemEvent::SAFE_STATE_ENTERED ||
-        event == bridge::SystemEvent::UNSYNCHRONIZED) {
-      onLost();
-    }
-  }
-
-  void onLost() { _read_handler = FileSystemReadHandler{}; }
+  void onLost() override { _read_handler = FileSystemReadHandler{}; }
 
  private:
   FileSystemReadHandler _read_handler;

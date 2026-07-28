@@ -44,6 +44,7 @@ jobs:
       - uses: ./.github/actions/setup-python-tox
         with:
           install-system-deps: 'true'
+          cache-suffix: ${{ matrix.env }}
       - name: Install System Dependencies
         if: matrix.env == 'lua' || matrix.env == 'cppcheck' || matrix.env == 'typecheck' || matrix.env == 'protocol' || matrix.env == 'lint'
         run: |
@@ -113,6 +114,8 @@ jobs:
           arduino-cli core install arduino:avr
           arduino-cli lib install "Embedded Template Library ETL"
       - uses: ./.github/actions/setup-python-tox
+        with:
+          cache-suffix: arduino-examples
       - name: Compile Examples
         run: |
           mkdir -p arduino-build
@@ -149,6 +152,8 @@ jobs:
           rm -f ${PROTOC_ZIP}
           protoc --version
       - uses: ./.github/actions/setup-python-tox
+        with:
+          cache-suffix: coverage
       - name: Install Build Tools
         run: |
           sudo apt-get update && sudo apt-get install -y g++ make
@@ -217,6 +222,8 @@ jobs:
           rm -f ${PROTOC_ZIP}
           protoc --version
       - uses: ./.github/actions/setup-python-tox
+        with:
+          cache-suffix: emulation
       - name: Install Python Dependencies
         run: pip install -r requirements/runtime.txt nanopb
       - name: Install Emulation Tools
@@ -254,6 +261,8 @@ jobs:
           rm -f ${PROTOC_ZIP}
           protoc --version
       - uses: ./.github/actions/setup-python-tox
+        with:
+          cache-suffix: fuzz
       - name: Install Emulation Tools
         run: |
           sudo apt-get update
@@ -281,6 +290,8 @@ jobs:
           rm -f ${PROTOC_ZIP}
           protoc --version
       - uses: ./.github/actions/setup-python-tox
+        with:
+          cache-suffix: summary
 
       - name: Download Python Coverage
         uses: actions/download-artifact@v8

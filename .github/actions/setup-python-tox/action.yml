@@ -13,6 +13,10 @@ inputs:
     description: 'Install system dependencies (libreadline-dev)'
     required: false
     default: 'false'
+  cache-suffix:
+    description: 'Suffix to differentiate parallel matrix cache entries'
+    required: false
+    default: ''
 
 runs:
   using: 'composite'
@@ -27,8 +31,9 @@ runs:
       uses: actions/cache@v5
       with:
         path: .tox
-        key: tox-${{ runner.os }}-py${{ inputs.python-version }}-${{ hashFiles('tox.ini', 'pyproject.toml', 'requirements/runtime.txt') }}
+        key: tox-${{ runner.os }}-py${{ inputs.python-version }}-${{ inputs.cache-suffix }}-${{ hashFiles('tox.ini', 'pyproject.toml', 'requirements/runtime.toml', 'requirements/runtime.txt') }}
         restore-keys: |
+          tox-${{ runner.os }}-py${{ inputs.python-version }}-${{ inputs.cache-suffix }}-
           tox-${{ runner.os }}-py${{ inputs.python-version }}-
 
     - name: Install System Dependencies

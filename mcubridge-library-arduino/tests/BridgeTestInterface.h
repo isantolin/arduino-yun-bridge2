@@ -23,6 +23,10 @@ class TestAccessor : public BridgeClass {
   void setSynchronized() {
     _fsm.receive(bridge::fsm::EvHandshakeStart());
     _fsm.receive(bridge::fsm::EvHandshakeComplete());
+    _tx_enabled = true;
+    etl::array<uint8_t, 32> dummy_key;
+    dummy_key.fill(0xAA);
+    setSessionKey(dummy_key);
   }
 
   bool isFault() const {

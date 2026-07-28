@@ -403,27 +403,30 @@ void BridgeClass::_dispatchCommand(const rpc_pb_RpcEnvelope& envelope) {
       void (*)(BridgeClass&, const bridge::router::CommandContext&);
   HandlerFn handler = nullptr;
 
-  int left = 0;
-  int right = k_dispatch_table_size - 1;
-  while (left <= right) {
-    int mid = left + (right - left) / 2;
+  auto comp = [](const DispatchEntry& entry, uint16_t val) {
 #if defined(__AVR__) || defined(ARDUINO_ARCH_AVR)
-    uint16_t mid_cmd = pgm_read_word(&k_dispatch_table[mid].command_id);
+    return pgm_read_word(&entry.command_id) < val;
 #else
-    uint16_t mid_cmd = k_dispatch_table[mid].command_id;
+    return entry.command_id < val;
 #endif
-    if (mid_cmd == ctx.raw_command) {
+  };
+  const DispatchEntry* entry_it =
+      etl::lower_bound<const DispatchEntry*, uint16_t, decltype(comp)>(
+          k_dispatch_table, k_dispatch_table + k_dispatch_table_size,
+          ctx.raw_command, comp);
+
+  if (entry_it != k_dispatch_table + k_dispatch_table_size) {
 #if defined(__AVR__) || defined(ARDUINO_ARCH_AVR)
-      handler =
-          reinterpret_cast<HandlerFn>(pgm_read_ptr(&k_dispatch_table[mid].fn));
+    uint16_t found_cmd = pgm_read_word(&entry_it->command_id);
 #else
-      handler = k_dispatch_table[mid].fn;
+    uint16_t found_cmd = entry_it->command_id;
 #endif
-      break;
-    } else if (mid_cmd < ctx.raw_command) {
-      left = mid + 1;
-    } else {
-      right = mid - 1;
+    if (found_cmd == ctx.raw_command) {
+#if defined(__AVR__) || defined(ARDUINO_ARCH_AVR)
+      handler = reinterpret_cast<HandlerFn>(pgm_read_ptr(&entry_it->fn));
+#else
+      handler = entry_it->fn;
+#endif
     }
   }
   if (handler != nullptr) {

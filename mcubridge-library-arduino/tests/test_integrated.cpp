@@ -17,9 +17,11 @@ Stream* g_arduino_stream_delegate = nullptr;
 
 namespace {
 
+static BiStream g_test_stream;
+
 void integrated_test_bridge_core() {
-  BiStream stream;
-  reset_bridge_core(Bridge, stream);
+  g_test_stream.clear();
+  reset_bridge_core(Bridge, g_test_stream);
   auto& accessor = bridge::test::TestAccessor::create(Bridge);
 
   rpc::payload::LinkSync sync_req = {};
@@ -36,16 +38,15 @@ void integrated_test_bridge_core() {
 }
 
 void integrated_test_components() {
-  static BiStream stream;
-  stream.clear();
-  reset_bridge_core(Bridge, stream);
+  g_test_stream.clear();
+  reset_bridge_core(Bridge, g_test_stream, 0, "");
   auto& ba = bridge::test::TestAccessor::create(Bridge);
   ba.setSynchronized();
 
   Console.begin();
   Console.write('H');
   Console.process();
-  TEST_ASSERT(stream.tx_buf.len > 0);
+  TEST_ASSERT(g_test_stream.tx_buf.len > 0);
 
   FileSystem.remove("test.txt");
 

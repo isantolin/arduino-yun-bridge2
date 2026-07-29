@@ -2,11 +2,12 @@
 """Modernized File Push utility for MCU Bridge (SIL-2)."""
 
 from __future__ import annotations
+from typing import Annotated
 
 import asyncio
 import sys
-import argparse
 from pathlib import Path
+import typer
 from grpclib.client import Channel
 from mcubridge.protocol.mcubridge_grpc import LocalBridgeStub
 import structlog
@@ -16,6 +17,7 @@ from mcubridge.protocol.topics import Topic, topic_path
 
 # [SIL-2] Structured logging towards syslog/stderr
 logger = structlog.get_logger("mcubridge.file-push")
+app = typer.Typer(help="Push files to MCU or Linux storage.", add_completion=False)
 
 
 def push_file(topic: str, data: bytes) -> None:
@@ -43,31 +45,30 @@ def push_file(topic: str, data: bytes) -> None:
     asyncio.run(_run())
 
 
-def main() -> None:
+@app.command()
+def main(
+    source: Annotated[Path, typer.Argument(help="Source file to push")],
+    target: Annotated[str, typer.Argument(help="Target path on the bridge")],
+    mcu: Annotated[bool, typer.Option(help="Target MCU storage")] = False,
+) -> None:
     """Push file data to the bridge via CLOUD."""
-    parser = argparse.ArgumentParser(description="Push files to MCU or Linux storage.")
-    parser.add_argument("source", type=Path, help="Source file to push")
-    parser.add_argument("target", help="Target path on the bridge")
-    parser.add_argument("--mcu", action="store_true", help="Target MCU storage")
-    args = parser.parse_args()
-
-    if not args.source.exists() or args.source.is_dir():
-        logger.error("Source file does not exist", source=str(args.source))
+    if not source.exists() or source.is_dir():
+        logger.error("Source file does not exist", source=str(source))
         sys.exit(2)
 
     config = load_runtime_config()
     prefix = config.topic_prefix
 
-    clean_target = args.target.lstrip("/")
+    clean_target = target.lstrip("/")
 
     segments = ["write"]
-    if args.mcu:
+    if mcu:
         segments.append("mcu")
     segments.append(clean_target)
 
     topic = topic_path(prefix, Topic.FILE, *segments)
 
-    data = args.source.read_bytes()
+    data = source.read_bytes()
 
     # [SIL-2] Binary payloads must be logged in HEXADECIMAL
     hexdump = data[:64].hex(" ").upper()
@@ -85,4 +86,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    app()

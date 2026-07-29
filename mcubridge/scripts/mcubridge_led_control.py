@@ -2,6 +2,7 @@
 """Modernized LED control script for MCU Bridge (SIL-2)."""
 
 from __future__ import annotations
+from typing import Annotated
 
 import asyncio
 import sys
@@ -10,6 +11,11 @@ from mcubridge.protocol.mcubridge_grpc import LocalBridgeStub
 from mcubridge.config.settings import load_runtime_config
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol.topics import Topic, topic_path
+
+
+import typer
+
+app = typer.Typer(help="Control MCU LED via CLOUD.", add_completion=False)
 
 
 def do_publish(topic: str, payload: str) -> None:
@@ -35,27 +41,23 @@ def do_publish(topic: str, payload: str) -> None:
         sys.exit(4)
 
 
-def main() -> None:
+@app.command()
+def main(
+    state: Annotated[str, typer.Argument(help="State to set (on/off)")],
+    pin: Annotated[int, typer.Argument(help="Pin number")] = 13,
+) -> None:
     """Set the MCU pin state via CLOUD bridge."""
-    import sys
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Control MCU LED via CLOUD.")
-    parser.add_argument("state", help="State to set (on/off)")
-    parser.add_argument("pin", type=int, nargs="?", default=13, help="Pin number")
-    args = parser.parse_args()
-
-    state_norm = args.state.lower()
+    state_norm = state.lower()
     if state_norm not in ("on", "off"):
-        sys.stderr.write(f"Error: invalid state '{args.state}'. Use on|off.\n")
+        sys.stderr.write(f"Error: invalid state '{state}'. Use on|off.\n")
         sys.exit(2)
 
     config = load_runtime_config()
-    topic = topic_path(config.topic_prefix, Topic.DIGITAL, args.pin)
+    topic = topic_path(config.topic_prefix, Topic.DIGITAL, pin)
     payload = "1" if state_norm == "on" else "0"
 
     do_publish(topic, payload)
 
 
 if __name__ == "__main__":
-    main()
+    app()

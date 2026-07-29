@@ -98,4 +98,11 @@ pip = "grpclib==0.4.9"
 gateway = true
 rationale = "Pure Python asyncio gRPC library for MPU-to-Cloud communication"
 
+[[dependency]]
+name = "typer"
+openwrt = "python3-typer"
+pip = "typer>=0.12.0"
+rationale = "Declarative CLI application builder for MPU diagnostic utilities"
+
+
 

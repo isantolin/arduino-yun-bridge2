@@ -43,7 +43,7 @@ def test_file_push_script(runtime_config: Any) -> None:
         mock_stub = MagicMock()
         mock_stub_cls.return_value = mock_stub
         mock_stub.Publish = AsyncMock()
-        script.main()
+        script.app(standalone_mode=False)
         mock_channel_cls.assert_called_once_with(path="/var/run/mcubridge.sock")
         assert mock_stub.Publish.called
 
@@ -59,7 +59,7 @@ def test_led_control_script(runtime_config: Any) -> None:
         mock_stub = MagicMock()
         mock_stub_cls.return_value = mock_stub
         mock_stub.Publish = AsyncMock()
-        script.main()
+        script.app(standalone_mode=False)
         mock_channel_cls.assert_called_once_with(path="/var/run/mcubridge.sock")
         assert mock_stub.Publish.called
 
@@ -73,7 +73,7 @@ def test_rotate_credentials_script(runtime_config: Any) -> None:
         patch("mcubridge_rotate_credentials.update_uci_credentials") as mock_update,
         patch("sys.stdout", new_callable=io.StringIO) as stdout,
     ):
-        script.main()
+        script.app(standalone_mode=False)
         assert mock_update.called
         output = stdout.getvalue()
         assert "SERIAL_SECRET=" in output
@@ -88,7 +88,7 @@ def test_file_push_error_cases(runtime_config: Any) -> None:
         patch("pathlib.Path.exists", return_value=False),
         pytest.raises(SystemExit),
     ):
-        script.main()
+        script.app(standalone_mode=False)
 
 
 def test_led_control_invalid_state(runtime_config: Any) -> None:
@@ -98,7 +98,7 @@ def test_led_control_invalid_state(runtime_config: Any) -> None:
         patch("sys.argv", ["mcubridge-led-control", "invalid"]),
         pytest.raises(SystemExit),
     ):
-        script.main()
+        script.app(standalone_mode=False)
 
 
 def test_rotate_credentials_abort(runtime_config: Any) -> None:
@@ -108,7 +108,7 @@ def test_rotate_credentials_abort(runtime_config: Any) -> None:
         patch("sys.stdin.readline", return_value="n\n"),
         pytest.raises(SystemExit) as exc,
     ):
-        script.main()
+        script.app(standalone_mode=False)
     assert exc.value.code == 0
 
 

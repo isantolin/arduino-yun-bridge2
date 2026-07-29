@@ -68,11 +68,17 @@ mkdir -p "$WOLF_INC"
 cp "$PWD/mcubridge-library-arduino/src/user_settings.h" "$WOLF_INC/user_settings.h"
 
 # [HOT-PATCH] Fix gmtime_r conflict in wc_port.c
-echo "Patching wc_port.c to avoid gmtime_r conflict..."
+WCF_PORT=""
 if [ -f "$WOLF_ROOT/src/wolfcrypt/src/wc_port.c" ]; then
-    sed -i 's/#if defined(WOLFSSL_GMTIME)/#if defined(WOLFSSL_GMTIME) \&\& !defined(HAVE_GMTIME_R)/' "$WOLF_ROOT/src/wolfcrypt/src/wc_port.c"
+    WCF_PORT="$WOLF_ROOT/src/wolfcrypt/src/wc_port.c"
+elif [ -f "$WOLF_ROOT/wolfcrypt/src/wc_port.c" ]; then
+    WCF_PORT="$WOLF_ROOT/wolfcrypt/src/wc_port.c"
+fi
+
+if [ -n "$WCF_PORT" ]; then
+    sed -i 's/#if defined(WOLFSSL_GMTIME)/#if defined(WOLFSSL_GMTIME) \&\& !defined(HAVE_GMTIME_R)/' "$WCF_PORT"
 else
-    echo "Warning: wc_port.c not found for patching at $WOLF_ROOT/src/wolfcrypt/src/wc_port.c"
+    echo "Warning: wc_port.c not found for patching at $WOLF_ROOT"
 fi
 
 # Define library path (current repo's library folder)

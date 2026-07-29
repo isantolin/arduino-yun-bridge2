@@ -15,16 +15,19 @@
 #include <wolfssl/wolfcrypt/kdf.h>
 
 #include "../config/bridge_config.h"
-#undef min
-#undef max
-#define WOLFSSL_MISC_INCLUDED
-#include <wolfcrypt/src/misc.c>
-
 #include "../protocol/rpc_structs.h"
 #include "pb_encode.h"
 
 namespace rpc {
 namespace security {
+
+static bool constant_time_equal(const uint8_t* a, const uint8_t* b, size_t len) {
+  uint8_t diff = 0;
+  for (size_t i = 0; i < len; ++i) {
+    diff |= a[i] ^ b[i];
+  }
+  return diff == 0;
+}
 
 // --- HKDF Implementation ---
 
@@ -51,9 +54,8 @@ bool handshake_authenticate(etl::span<const uint8_t> secret,
     if (received_tag.size() != rpc::RPC_HANDSHAKE_TAG_LENGTH) {
       tag_ok = false;
     } else {
-      tag_ok = (ConstantCompare(
-                    out_tag.data(), received_tag.data(),
-                    static_cast<int>(rpc::RPC_HANDSHAKE_TAG_LENGTH)) == 0);
+      tag_ok = constant_time_equal(out_tag.data(), received_tag.data(),
+                                  rpc::RPC_HANDSHAKE_TAG_LENGTH);
     }
   }
   secure_zero(etl::span<uint8_t>(handshake_key.data(), handshake_key.size()));
@@ -68,6 +70,18 @@ void derive_session_key(etl::span<const uint8_t> secret,
           rpc::RPC_HANDSHAKE_HKDF_INFO_SESSION.data(),
           static_cast<word32>(rpc::RPC_HANDSHAKE_HKDF_INFO_SESSION.size()),
           out_key.data(), static_cast<word32>(out_key.size()));
+}
+
+static size_t build_aad(uint16_t cmd_id, uint16_t seq_id, etl::span<uint8_t> out_ad) {
+  payload::RpcEnvelope aad_env = rpc_pb_RpcEnvelope_init_zero;
+  aad_env.version = rpc::PROTOCOL_VERSION;
+  aad_env.command_id = cmd_id;
+  aad_env.sequence_id = seq_id;
+
+  etl::fill(out_ad.begin(), out_ad.end(), 0U);
+  pb_ostream_t stream = pb_ostream_from_buffer(out_ad.data(), out_ad.size());
+  (void)pb_encode(&stream, rpc::Payload::get_fields<rpc_pb_RpcEnvelope>(), &aad_env);
+  return stream.bytes_written;
 }
 
 bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
@@ -93,21 +107,12 @@ bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
   etl::byte_stream_writer n_writer(out_nonce.subspan(4), etl::endian::big);
   n_writer.write<uint64_t>(current_nonce);
 
-  payload::RpcEnvelope aad_env = {};
-  aad_env.version = rpc::PROTOCOL_VERSION;
-  aad_env.command_id = cmd_id;
-  aad_env.sequence_id = seq_id;
-
   etl::array<uint8_t, 32> ad;
-  ad.fill(0U);
-  pb_ostream_t stream = pb_ostream_from_buffer(ad.data(), ad.size());
-  (void)pb_encode(&stream, rpc::Payload::get_fields<rpc_pb_RpcEnvelope>(),
-                  &aad_env);
+  const size_t ad_len = build_aad(cmd_id, seq_id, etl::span<uint8_t>(ad));
 
   return wc_ChaCha20Poly1305_Encrypt(
              const_cast<byte*>(key.data()), out_nonce.data(),
-             const_cast<byte*>(ad.data()),
-             static_cast<word32>(stream.bytes_written),
+             const_cast<byte*>(ad.data()), static_cast<word32>(ad_len),
              const_cast<byte*>(in.data()), static_cast<word32>(in.size()),
              out_payload.data(), out_tag.data()) == 0;
 }
@@ -118,37 +123,14 @@ bool aead_decrypt_frame(uint16_t cmd_id, uint16_t seq_id,
                         etl::span<const uint8_t> nonce,
                         etl::span<const uint8_t> tag,
                         etl::span<uint8_t> out_payload) {
-  payload::RpcEnvelope aad_env = {};
-  aad_env.version = rpc::PROTOCOL_VERSION;
-  aad_env.command_id = cmd_id;
-  aad_env.sequence_id = seq_id;
-
   etl::array<uint8_t, 32> ad;
-  ad.fill(0U);
-  pb_ostream_t stream = pb_ostream_from_buffer(ad.data(), ad.size());
-  (void)pb_encode(&stream, rpc::Payload::get_fields<rpc_pb_RpcEnvelope>(),
-                  &aad_env);
+  const size_t ad_len = build_aad(cmd_id, seq_id, etl::span<uint8_t>(ad));
 
-  int res = wc_ChaCha20Poly1305_Decrypt(
+  return wc_ChaCha20Poly1305_Decrypt(
              const_cast<byte*>(key.data()), const_cast<byte*>(nonce.data()),
-             const_cast<byte*>(ad.data()),
-             static_cast<word32>(stream.bytes_written),
+             const_cast<byte*>(ad.data()), static_cast<word32>(ad_len),
              const_cast<byte*>(in.data()), static_cast<word32>(in.size()),
-             const_cast<byte*>(tag.data()), out_payload.data());
-  if (res != 0) {
-    printf("[AEAD_FAIL] res=%d ad_len=%zu\n  ad=", res, stream.bytes_written);
-    for(size_t i=0; i<stream.bytes_written; i++) printf("%02x", ad[i]);
-    printf("\n  key=");
-    for(size_t i=0; i<key.size(); i++) printf("%02x", key[i]);
-    printf("\n  nonce=");
-    for(size_t i=0; i<nonce.size(); i++) printf("%02x", nonce[i]);
-    printf("\n  tag=");
-    for(size_t i=0; i<tag.size(); i++) printf("%02x", tag[i]);
-    printf("\n  in=");
-    for(size_t i=0; i<in.size(); i++) printf("%02x", in[i]);
-    printf("\n");
-  }
-  return res == 0;
+             const_cast<byte*>(tag.data()), out_payload.data()) == 0;
 }
 
 bool validate_frame_nonce(etl::span<const uint8_t> nonce,

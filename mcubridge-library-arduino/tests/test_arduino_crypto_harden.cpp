@@ -6,7 +6,6 @@
 #include "Bridge.h"
 #include "BridgeTestInterface.h"
 #include "test_support.h"
-#include <wolfssl/wolfcrypt/chacha20_poly1305.h>
 
 // [SIL-2] Global stub definitions
 HardwareSerial Serial;
@@ -137,25 +136,8 @@ void test_aead_decrypt_and_validate_nonce() {
   TEST_ASSERT_TRUE(enc_ok);
   TEST_ASSERT_EQUAL_UINT64(1U, tx_ctr);
 
-  // Direct test of wc_ChaCha20Poly1305_Decrypt
-  rpc::payload::RpcEnvelope aad_env = {};
-  aad_env.version = rpc::PROTOCOL_VERSION;
-  aad_env.command_id = cmd;
-  aad_env.sequence_id = seq;
-  etl::array<uint8_t, 32> ad;
-  ad.fill(0U);
-  pb_ostream_t stream = pb_ostream_from_buffer(ad.data(), ad.size());
-  pb_encode(&stream, rpc::Payload::get_fields<rpc_pb_RpcEnvelope>(), &aad_env);
-
+  // Decrypt and verify plaintext is recovered
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> dec_out;
-  int direct_res = wc_ChaCha20Poly1305_Decrypt(
-      const_cast<byte*>(session_key.data()), const_cast<byte*>(nonce.data()),
-      ad.data(), static_cast<word32>(stream.bytes_written), enc_out.data(),
-      static_cast<word32>(plaintext.size()), tag.data(), dec_out.data());
-  if (direct_res != 0) {
-    printf("[DIRECT_DEBUG] direct_res=%d ad_len=%zu\n", direct_res, stream.bytes_written);
-  }
-  TEST_ASSERT_EQUAL_INT(0, direct_res);
 
   bool dec_ok = rpc::security::aead_decrypt_frame(
       cmd, seq, etl::span<const uint8_t>(enc_out.data(), plaintext.size()),

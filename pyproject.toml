@@ -18,6 +18,7 @@ dependencies = [
     "serialx==1.8.2",
     "structlog==26.1.0",
     "tenacity==9.1.4",
+    "typer>=0.12.0",
     "uvloop==0.22.1",
 ]
 

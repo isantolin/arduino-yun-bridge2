@@ -613,6 +613,21 @@ class JinjaGenerator:
         assert nanopb_file is not None
         nanopb_include_path = Path(nanopb_file).parent / "generator" / "proto"
 
+        v_proto = proto_path.parent / "validate" / "validate.proto"
+        if v_proto.exists():
+            v_cmd = [
+                sys.executable,
+                "-m",
+                "nanopb.generator.nanopb_generator",
+                "-v",
+                "-I",
+                str(proto_path.parent),
+                "-I",
+                str(nanopb_include_path),
+                "validate/validate.proto",
+            ]
+            subprocess.run(v_cmd, check=False, capture_output=True, text=True, cwd=str(proto_path.parent))
+
         cmd = [
             sys.executable,
             "-m",
@@ -657,6 +672,16 @@ class JinjaGenerator:
         # Ensure the user's local site-packages are in the path for the wrapper
         user_site = site.getusersitepackages()
         env["PYTHONPATH"] = f"{user_site}:{env.get('PYTHONPATH', '')}"
+
+        validate_proto = proto_path.parent / "validate" / "validate.proto"
+        if validate_proto.exists():
+            v_cmd = [
+                str(protoc_bin),
+                f"--python_out={out_dir}",
+                f"--proto_path={proto_path.parent}",
+                str(validate_proto),
+            ]
+            subprocess.run(v_cmd, check=False, capture_output=True, env=env)
 
         cmd = [
             str(protoc_bin),
@@ -806,10 +831,26 @@ def check_incremental_build(args: argparse.Namespace, version: str) -> tuple[boo
 
 
 def _copy_generated_python_files(proto_path: Path, args: Any) -> None:
+    v_pb2 = proto_path.parent / "validate" / "validate_pb2.py"
+    if v_pb2.exists():
+        v_data = v_pb2.read_bytes()
+        if args.py:
+            v_dir = args.py.parent / "validate"
+            v_dir.mkdir(parents=True, exist_ok=True)
+            (v_dir / "validate_pb2.py").write_bytes(v_data)
+            (v_dir / "__init__.py").write_bytes(b"")
+        if args.py_client:
+            vc_dir = args.py_client.parent / "validate"
+            vc_dir.mkdir(parents=True, exist_ok=True)
+            (vc_dir / "validate_pb2.py").write_bytes(v_data)
+            (vc_dir / "__init__.py").write_bytes(b"")
+
     py_pb2 = proto_path.parent / "mcubridge_pb2.py"
     py_pb2_stub = proto_path.parent / "mcubridge_pb2.pyi"
     if py_pb2.exists():
-        pb2_data = py_pb2.read_bytes()
+        pb2_text = py_pb2.read_text()
+        pb2_text = pb2_text.replace("from validate import validate_pb2", "from .validate import validate_pb2")
+        pb2_data = pb2_text.encode()
         if args.py:
             (args.py.parent / "mcubridge_pb2.py").write_bytes(pb2_data)
         if args.py_client:
@@ -832,6 +873,7 @@ def _copy_generated_python_files(proto_path: Path, args: Any) -> None:
     if py_grpc.exists():
         grpc_text = py_grpc.read_text()
         grpc_text = grpc_text.replace("import mcubridge_pb2", "from . import mcubridge_pb2")
+        grpc_text = grpc_text.replace("import validate.validate_pb2", "from .validate import validate_pb2")
         grpc_data = grpc_text.encode()
         if args.py:
             (args.py.parent / "mcubridge_grpc.py").write_bytes(grpc_data)
@@ -888,7 +930,9 @@ def main() -> None:
             if cpp_pb_h.exists():
                 target_h.write_bytes(cpp_pb_h.read_bytes())
                 # Fix pb.h include for relative path in Arduino library structure
-                target_h.write_text(target_h.read_text().replace("#include <pb.h>", '#include "../pb.h"'))
+                h_text = target_h.read_text().replace("#include <pb.h>", '#include "../pb.h"')
+                h_text = h_text.replace('#include "validate/validate.pb.h"', '/* #include "validate/validate.pb.h" */')
+                target_h.write_text(h_text)
                 cpp_pb_h.unlink(missing_ok=True)
             if cpp_pb_c.exists():
                 target_c.write_bytes(cpp_pb_c.read_bytes())

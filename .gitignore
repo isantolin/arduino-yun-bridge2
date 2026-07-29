@@ -4,6 +4,16 @@ mcubridge.pb.h
 mcubridge_pb2.py
 mcubridge_pb2.pyi
 mcubridge_grpc.py
+validate.pb.c
+validate.pb.h
+validate_pb2.py
+mcubridge/mcubridge/protocol/validate/
+mcubridge-client-examples/mcubridge_client/validate/
+mcubridge-library-arduino/src/protocol/validate/
+tools/protocol/validate/validate_pb2.py
+tools/protocol/validate/validate.pb.c
+tools/protocol/validate/validate.pb.h
+tools/protocol/validate/__pycache__/
 .tmp_arduino_build/
 # OpenWRT SDK and build artifacts
 openwrt-sdk/

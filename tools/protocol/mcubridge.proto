@@ -3,6 +3,7 @@ syntax = "proto3";
 package rpc.pb;
 
 import "google/protobuf/descriptor.proto";
+import "validate/validate.proto";
 
 message Constants {
     uint32 aead_nonce_size = 1 [(cpp_name) = "RPC_AEAD_NONCE_SIZE", (cpp_type) = "size_t", (py_name) = "AEAD_NONCE_SIZE", (py_type) = "int"];
@@ -932,18 +933,18 @@ message PinRead {
 }
 
 message RuntimeConfig {
-    string serial_port = 1;
+    string serial_port = 1 [(validate.rules).string.min_len = 1];
     uint32 serial_baud = 2;
     uint32 serial_safe_baud = 3;
     string cloud_host = 4;
-    uint32 cloud_port = 5;
+    uint32 cloud_port = 5 [(validate.rules).uint32 = {gte: 1, lte: 65535}];
     optional string cloud_user = 6;
     optional string cloud_pass = 7;
     bool cloud_tls = 8;
     optional string cloud_cafile = 9;
     optional string cloud_certfile = 10;
     optional string cloud_keyfile = 11;
-    string topic_prefix = 12;
+    string topic_prefix = 12 [(validate.rules).string.min_len = 1];
     repeated string allowed_commands = 13;
     string file_system_root = 14;
     uint32 process_timeout = 15;
@@ -966,21 +967,21 @@ message RuntimeConfig {
     uint32 serial_handshake_fatal_failures = 32;
     bool cloud_enabled = 33;
     bool watchdog_enabled = 34;
-    float watchdog_interval = 35;
-    bytes serial_shared_secret = 36;
+    float watchdog_interval = 35 [(validate.rules).float.gte = 0.5];
+    bytes serial_shared_secret = 36 [(validate.rules).bytes.min_len = 1];
     string cloud_spool_dir = 37;
     uint32 process_max_output_bytes = 38;
     uint32 process_max_concurrent = 39;
     bool metrics_enabled = 40;
     string metrics_host = 41;
-    uint32 metrics_port = 42;
+    uint32 metrics_port = 42 [(validate.rules).uint32 = {gte: 1, lte: 65535}];
     float bridge_summary_interval = 43;
     float bridge_handshake_interval = 44;
     bool allow_non_tmp_paths = 45;
     AllowedCommandPolicy allowed_policy = 46;
     TopicAuthorization topic_authorization = 47;
     bool cloud_http3_enabled = 48;
-    uint32 cloud_http3_port = 49;
+    uint32 cloud_http3_port = 49 [(validate.rules).uint32 = {gte: 1, lte: 65535}];
     string cloud_http3_congestion_control = 50;
 }
 

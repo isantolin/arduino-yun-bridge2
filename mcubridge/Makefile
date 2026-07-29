@@ -56,7 +56,8 @@ define Package/$(PKG_NAME)
 		python3-aiosqlite \
 		python3-h2 \
 		python3-grpclib \
-		python3-typer
+		python3-typer \
+		python3-protoc-gen-validate
 	# AUTO-GENERATED RUNTIME DEPENDS END
 endef
 

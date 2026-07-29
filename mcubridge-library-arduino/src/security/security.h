@@ -18,6 +18,7 @@
 /* [WOLFSSL] Core headers */
 #include <wolfssl.h>
 #include <wolfssl/wolfcrypt/hmac.h>
+#include <wolfssl/wolfcrypt/memory.h>
 #include <wolfssl/wolfcrypt/settings.h>
 #include <wolfssl/wolfcrypt/sha256.h>
 
@@ -72,10 +73,7 @@ bool validate_frame_nonce(etl::span<const uint8_t> nonce,
  */
 inline void secure_zero(etl::span<uint8_t> buf) {
   if (buf.empty()) return;
-  etl::fill(buf.begin(), buf.end(), 0);
-#if defined(__GNUC__) || defined(__clang__)
-  asm volatile("" : : "r"(buf.data()) : "memory");
-#endif
+  wc_ForceZero(buf.data(), buf.size());
 }
 
 /**

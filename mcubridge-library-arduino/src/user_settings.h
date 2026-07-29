@@ -56,8 +56,8 @@
 #define NO_SHA
 #define NO_RC4
 #define NO_ASN
-#define NO_FILESYSTEM
 #define NO_MAIN_DRIVER
+#define WC_NO_RNG
 
 /* Time configuration */
 #define USER_TIME

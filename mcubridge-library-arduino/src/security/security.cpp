@@ -21,7 +21,8 @@
 namespace rpc {
 namespace security {
 
-static bool constant_time_equal(const uint8_t* a, const uint8_t* b, size_t len) {
+static bool constant_time_equal(const uint8_t* a, const uint8_t* b,
+                                size_t len) {
   return etl::accumulate(a, a + len, uint8_t(0),
                          [&b](uint8_t acc, uint8_t val) {
                            return static_cast<uint8_t>(acc | (val ^ *b++));
@@ -54,7 +55,7 @@ bool handshake_authenticate(etl::span<const uint8_t> secret,
       tag_ok = false;
     } else {
       tag_ok = constant_time_equal(out_tag.data(), received_tag.data(),
-                                  rpc::RPC_HANDSHAKE_TAG_LENGTH);
+                                   rpc::RPC_HANDSHAKE_TAG_LENGTH);
     }
   }
   secure_zero(etl::span<uint8_t>(handshake_key.data(), handshake_key.size()));
@@ -71,7 +72,8 @@ void derive_session_key(etl::span<const uint8_t> secret,
           out_key.data(), static_cast<word32>(out_key.size()));
 }
 
-static size_t build_aad(uint16_t cmd_id, uint16_t seq_id, etl::span<uint8_t> out_ad) {
+static size_t build_aad(uint16_t cmd_id, uint16_t seq_id,
+                        etl::span<uint8_t> out_ad) {
   payload::RpcEnvelope aad_env = rpc_pb_RpcEnvelope_init_zero;
   aad_env.version = rpc::PROTOCOL_VERSION;
   aad_env.command_id = cmd_id;
@@ -79,7 +81,8 @@ static size_t build_aad(uint16_t cmd_id, uint16_t seq_id, etl::span<uint8_t> out
 
   etl::fill(out_ad.begin(), out_ad.end(), 0U);
   pb_ostream_t stream = pb_ostream_from_buffer(out_ad.data(), out_ad.size());
-  (void)pb_encode(&stream, rpc::Payload::get_fields<rpc_pb_RpcEnvelope>(), &aad_env);
+  (void)pb_encode(&stream, rpc::Payload::get_fields<rpc_pb_RpcEnvelope>(),
+                  &aad_env);
   return stream.bytes_written;
 }
 

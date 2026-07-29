@@ -22,11 +22,10 @@ namespace rpc {
 namespace security {
 
 static bool constant_time_equal(const uint8_t* a, const uint8_t* b, size_t len) {
-  uint8_t diff = 0;
-  for (size_t i = 0; i < len; ++i) {
-    diff |= a[i] ^ b[i];
-  }
-  return diff == 0;
+  return etl::accumulate(a, a + len, uint8_t(0),
+                         [&b](uint8_t acc, uint8_t val) {
+                           return static_cast<uint8_t>(acc | (val ^ *b++));
+                         }) == 0;
 }
 
 // --- HKDF Implementation ---

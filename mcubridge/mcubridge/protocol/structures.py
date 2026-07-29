@@ -97,33 +97,36 @@ def create_allowed_policy(entries: Iterable[str]) -> pb.AllowedCommandPolicy:
     return pb.AllowedCommandPolicy(entries=normalised)
 
 
-@functools.lru_cache(maxsize=1)
-def _get_topic_auth_mapping_v3() -> dict[tuple[str, str], str]:
-    import mcubridge.protocol.protocol as proto
-    from mcubridge.protocol.topics import Topic
-
-    mapping: dict[tuple[str, str], str] = {}
-    fields = [f.name for f in pb.TopicAuthorization.DESCRIPTOR.fields]
-    for f_name, t in itertools.product(fields, Topic):
-        prefix = t.name.lower()
-        if not f_name.startswith(f"{prefix}_"):
-            continue
-        suffix = f_name[len(prefix) + 1 :]
-        action_class_name = "SpiAction" if t == Topic.SPI else f"{t.name.title()}Action"
-        action_cls = getattr(proto, action_class_name, None)
-        if action_cls is None:
-            continue
-        for act in action_cls:
-            if act.value == suffix or (suffix == "input" and act.value == "in"):
-                mapping[(t.value, act.value)] = f_name
-                break
-    return mapping
+_TOPIC_AUTH_MAP: Final[dict[tuple[str, str], str]] = {
+    ("a", "read"): "analog_read",
+    ("a", "write"): "analog_write",
+    ("console", "in"): "console_input",
+    ("d", "mode"): "digital_mode",
+    ("d", "read"): "digital_read",
+    ("d", "write"): "digital_write",
+    ("datastore", "get"): "datastore_get",
+    ("datastore", "put"): "datastore_put",
+    ("file", "read"): "file_read",
+    ("file", "remove"): "file_remove",
+    ("file", "write"): "file_write",
+    ("mailbox", "read"): "mailbox_read",
+    ("mailbox", "write"): "mailbox_write",
+    ("sh", "kill"): "shell_kill",
+    ("sh", "poll"): "shell_poll",
+    ("sh", "run_async"): "shell_run_async",
+    ("spi", "begin"): "spi_begin",
+    ("spi", "config"): "spi_config",
+    ("spi", "end"): "spi_end",
+    ("spi", "transfer"): "spi_transfer",
+    ("system", "bootloader"): "system_bootloader",
+    ("system", "free_memory"): "system_free_memory",
+    ("system", "version"): "system_version",
+}
 
 
 def allows_topic(auth: pb.TopicAuthorization, topic: str, action: str) -> bool:
     """Check if a specific topic/action combination is authorized. [SIL-2]"""
-    mapping = _get_topic_auth_mapping_v3()
-    field_name = mapping.get((topic.lower(), action.lower()))
+    field_name = _TOPIC_AUTH_MAP.get((topic.lower(), action.lower()))
     if field_name is not None:
         return bool(getattr(auth, field_name))
     return False

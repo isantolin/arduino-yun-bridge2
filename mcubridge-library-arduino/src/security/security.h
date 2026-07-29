@@ -15,9 +15,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "../config/bridge_config.h"
-#include "../protocol/rpc_protocol.h"
-
 /* [WOLFSSL] Core headers */
 #include <wolfssl.h>
 #include <wolfssl/wolfcrypt/hmac.h>

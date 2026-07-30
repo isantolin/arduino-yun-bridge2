@@ -330,9 +330,21 @@ def update_feeds(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
         has_wheel_version_override = "PYTHON3_PKG_WHEEL_VERSION:=" in content or is_prerelease
 
         if uses_pypi_mk and has_wheel_version_override:
-            # Pre-release: APK version for PKG_VERSION, Python version for wheel glob.
+            # Pre-release: APK version for PKG_VERSION, Python version for wheel glob & PyPI source.
             pkg_version = _to_apk_version(version)
             new_content = re.sub(r"PKG_VERSION:=[^\n]+", f"PKG_VERSION:={pkg_version}", content)
+            if "PYPI_SOURCE_NAME:=" in new_content:
+                new_content = re.sub(
+                    r"PYPI_SOURCE_NAME:=[^\n]+",
+                    f"PYPI_SOURCE_NAME:={pip_name}-{version}",
+                    new_content,
+                )
+            else:
+                new_content = re.sub(
+                    r"(PYPI_NAME:=[^\n]+\n)",
+                    f"\\1PYPI_SOURCE_NAME:={pip_name}-{version}\n",
+                    new_content,
+                )
             if "PYTHON3_PKG_WHEEL_VERSION:=" in new_content:
                 new_content = re.sub(
                     r"PYTHON3_PKG_WHEEL_VERSION:=[^\n]+",
@@ -341,7 +353,7 @@ def update_feeds(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
                 )
             else:
                 new_content = re.sub(
-                    r"(PYPI_NAME:=[^\n]+\n)",
+                    r"(PYPI_SOURCE_NAME:=[^\n]+\n)",
                     f"\\1PYTHON3_PKG_WHEEL_VERSION:={version}\n",
                     new_content,
                 )

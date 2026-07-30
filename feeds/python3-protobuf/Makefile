@@ -6,6 +6,7 @@ PKG_VERSION:=7.36.0_rc1
 PKG_RELEASE:=1
 
 PYPI_NAME:=protobuf
+PYPI_SOURCE_NAME:=protobuf-7.36.0rc1
 PYTHON3_PKG_WHEEL_VERSION:=7.36.0rc1
 PKG_SOURCE:=protobuf-7.36.0rc1.tar.gz
 PKG_BUILD_DIR:=$(BUILD_DIR)/pypi/protobuf-7.36.0rc1

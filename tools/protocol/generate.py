@@ -304,13 +304,6 @@ TEMPLATE_DIR = Path(__file__).parent / "templates"
 VERSION_PATH = REPO_ROOT / "VERSION"
 
 
-def packet_class_name(proto_name: str) -> str:
-    """Convert proto message name to Python Packet class name."""
-    if proto_name.endswith("Packet"):
-        return proto_name
-    return f"{proto_name}Packet"
-
-
 class JinjaGenerator:
     def __init__(self) -> None:
         self.env = Environment(

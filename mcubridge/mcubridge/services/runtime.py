@@ -544,16 +544,16 @@ class BridgeService:
 
     # --- Business Logic Implementation ---
 
-    async def _handle_mcu_xon(self, seq: int, payload: Any) -> None:
+    async def _handle_mcu_xon(self, _seq: int, payload: Any) -> None:
         self.state.mcu_is_paused = False
         self.state.serial_tx_allowed.set()
         await self._flush_console_queue()
 
-    async def _handle_mcu_xoff(self, seq: int, payload: Any) -> None:
+    async def _handle_mcu_xoff(self, _seq: int, payload: Any) -> None:
         self.state.mcu_is_paused = True
         self.state.serial_tx_allowed.clear()
 
-    async def _on_mcu_console_write(self, seq: int, p: pb.ConsoleWrite) -> None:
+    async def _on_mcu_console_write(self, _seq: int, p: pb.ConsoleWrite) -> None:
         if p.data:
             await self.enqueue_cloud(
                 create_queued_publish(
@@ -563,13 +563,13 @@ class BridgeService:
                 )
             )
 
-    async def _on_mcu_datastore_put(self, seq: int, p: pb.DatastorePut) -> bool:
+    async def _on_mcu_datastore_put(self, _seq: int, p: pb.DatastorePut) -> bool:
         if self.state.datastore_cache is not None:
             await self.state.datastore_cache.set(p.key, p.value)
         await self._publish_datastore_value(p.key, p.value)
         return True
 
-    async def _on_mcu_datastore_get(self, seq: int, p: pb.DatastoreGet) -> bool:
+    async def _on_mcu_datastore_get(self, _seq: int, p: pb.DatastoreGet) -> bool:
         serial = self.serial
         if not serial:
             return False
@@ -581,14 +581,14 @@ class BridgeService:
         )
         return bool(res)
 
-    async def _on_mcu_mailbox_push(self, seq: int, p: pb.MailboxPush) -> bool:
+    async def _on_mcu_mailbox_push(self, _seq: int, p: pb.MailboxPush) -> bool:
         await self.state.mailbox_incoming_queue.append(p.data)
         await self.enqueue_cloud(
             create_queued_publish(get_topic_for_message(self.state.cloud_topic_prefix, p) or "", p.data)
         )
         return True
 
-    async def _on_mcu_mailbox_available(self, seq: int, p: Any) -> bool:
+    async def _on_mcu_mailbox_available(self, _seq: int, p: Any) -> bool:
         serial = self.serial
         if not serial:
             return False
@@ -599,7 +599,7 @@ class BridgeService:
         )
         return bool(res)
 
-    async def _on_mcu_mailbox_read(self, seq: int, p: Any) -> bool:
+    async def _on_mcu_mailbox_read(self, _seq: int, p: Any) -> bool:
         serial = self.serial
         if not serial:
             return False
@@ -614,7 +614,7 @@ class BridgeService:
         )
         return bool(res)
 
-    async def _on_mcu_mailbox_processed(self, seq: int, p: pb.MailboxProcessed) -> None:
+    async def _on_mcu_mailbox_processed(self, _seq: int, p: pb.MailboxProcessed) -> None:
         await self.enqueue_cloud(
             create_queued_publish(
                 topic_name=get_topic_for_message(self.state.cloud_topic_prefix, p) or "",
@@ -623,7 +623,7 @@ class BridgeService:
             )
         )
 
-    async def _on_mcu_file_write(self, seq: int, p: pb.FileWrite) -> bool:
+    async def _on_mcu_file_write(self, _seq: int, p: pb.FileWrite) -> bool:
         serial = self.serial
         if not serial:
             return False
@@ -634,7 +634,7 @@ class BridgeService:
         res = await serial.send(Status.ERROR.value, pb.GenericResponse(message="Write failed"))
         return bool(res)
 
-    async def _on_mcu_file_read(self, seq: int, p: pb.FileRead) -> None:
+    async def _on_mcu_file_read(self, _seq: int, p: pb.FileRead) -> None:
         serial = self.serial
         if not serial:
             return
@@ -649,7 +649,7 @@ class BridgeService:
             return
         await serial.send(Status.ERROR.value, pb.GenericResponse(message="Read failed"))
 
-    async def _on_mcu_file_remove(self, seq: int, p: pb.FileRemove) -> bool:
+    async def _on_mcu_file_remove(self, _seq: int, p: pb.FileRemove) -> bool:
         serial = self.serial
         if not serial:
             return False
@@ -661,7 +661,7 @@ class BridgeService:
         res = await serial.send(Status.ERROR.value, pb.GenericResponse(message="Remove failed"))
         return bool(res)
 
-    async def _on_mcu_file_read_resp(self, seq: int, p: pb.FileReadResponse) -> bool:
+    async def _on_mcu_file_read_resp(self, _seq: int, p: pb.FileReadResponse) -> bool:
         if not self._pending_mcu_read:
             return False
         if p.content:
@@ -670,7 +670,7 @@ class BridgeService:
             self._pending_mcu_read.future.set_result(b"".join(self._pending_mcu_read.chunks))
         return True
 
-    async def _on_mcu_process_run(self, seq: int, p: pb.ProcessRunAsync) -> bool:
+    async def _on_mcu_process_run(self, _seq: int, p: pb.ProcessRunAsync) -> bool:
         serial = self.serial
         if not serial:
             return False
@@ -685,7 +685,7 @@ class BridgeService:
         await serial.send(Status.ERROR.value, pb.GenericResponse(message="Exec failed"))
         return False
 
-    async def _on_mcu_process_poll(self, seq: int, p: pb.ProcessPoll) -> bool:
+    async def _on_mcu_process_poll(self, _seq: int, p: pb.ProcessPoll) -> bool:
         serial = self.serial
         if not serial:
             return False
@@ -708,12 +708,12 @@ class BridgeService:
             reply_context=req.reply_context if req else None,
         )
 
-    async def _on_mcu_spi_resp(self, seq: int, p: pb.SpiTransferResponse) -> None:
+    async def _on_mcu_spi_resp(self, _seq: int, p: pb.SpiTransferResponse) -> None:
         await self.enqueue_cloud(
             create_queued_publish(get_topic_for_message(self.state.cloud_topic_prefix, p) or "", p.data)
         )
 
-    async def _on_mcu_ack(self, seq: int, payload: bytes | ProtobufMessage) -> None:
+    async def _on_mcu_ack(self, _seq: int, payload: bytes | ProtobufMessage) -> None:
         try:
             if isinstance(payload, ProtobufMessage):
                 p = cast(pb.AckPacket, payload)
@@ -723,13 +723,13 @@ class BridgeService:
         except (ProtobufDecodeError, TypeError, ValueError) as e:
             logger.error("Failed to decode MCU ACK packet", error=e)
 
-    async def _on_mcu_digital_read_resp(self, seq: int, p: pb.DigitalReadResponse) -> None:
+    async def _on_mcu_digital_read_resp(self, _seq: int, p: pb.DigitalReadResponse) -> None:
         await self._on_pin_resp(p, Topic.DIGITAL, self.state.pending_digital_reads)
 
-    async def _on_mcu_analog_read_resp(self, seq: int, p: pb.AnalogReadResponse) -> None:
+    async def _on_mcu_analog_read_resp(self, _seq: int, p: pb.AnalogReadResponse) -> None:
         await self._on_pin_resp(p, Topic.ANALOG, self.state.pending_analog_reads)
 
-    async def _on_mcu_process_kill(self, seq: int, p: pb.ProcessKill) -> None:
+    async def _on_mcu_process_kill(self, _seq: int, p: pb.ProcessKill) -> None:
         async with self.state.process_lock:
             ctx = self.state.running_processes.get(p.pid)
         if not ctx:

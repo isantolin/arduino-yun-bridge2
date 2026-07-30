@@ -999,12 +999,12 @@ message ConsoleWrite {
 }
 
 message DatastorePut {
-    string key = 1;
-    bytes value = 2;
+    string key = 1 [(validate.rules).string = {min_len: 1, max_len: 64}];
+    bytes value = 2 [(validate.rules).bytes.max_len = 512];
 }
 
 message DatastoreGet {
-    string key = 1;
+    string key = 1 [(validate.rules).string = {min_len: 1, max_len: 64}];
 }
 
 message DatastoreGetResponse {
@@ -1030,16 +1030,16 @@ message MailboxReadResponse {
 }
 
 message FileWrite {
-    string path = 1;
+    string path = 1 [(validate.rules).string = {min_len: 1, max_len: 255}];
     bytes data = 2;
 }
 
 message FileRead {
-    string path = 1;
+    string path = 1 [(validate.rules).string = {min_len: 1, max_len: 255}];
 }
 
 message FileRemove {
-    string path = 1;
+    string path = 1 [(validate.rules).string = {min_len: 1, max_len: 255}];
 }
 
 message FileReadResponse {
@@ -1047,7 +1047,7 @@ message FileReadResponse {
 }
 
 message ProcessRunAsync {
-    string command = 1;
+    string command = 1 [(validate.rules).string = {min_len: 1, max_len: 255}];
 }
 
 message ProcessRunAsyncResponse {
@@ -1055,7 +1055,7 @@ message ProcessRunAsyncResponse {
 }
 
 message ProcessPoll {
-    uint32 pid = 1;
+    uint32 pid = 1 [(validate.rules).uint32.gt = 0];
 }
 
 message ProcessPollResponse {
@@ -1069,7 +1069,7 @@ message ProcessPollResponse {
 }
 
 message ProcessKill {
-    uint32 pid = 1;
+    uint32 pid = 1 [(validate.rules).uint32.gt = 0];
 }
 
 message GenericResponse {
@@ -1104,7 +1104,7 @@ message HandshakeConfig {
 }
 
 message SetBaudratePacket {
-    uint32 baudrate = 1;
+    uint32 baudrate = 1 [(validate.rules).uint32 = {in: [300, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200, 230400, 250000, 500000, 1000000, 2000000]}];
 }
 
 message LinkSync {
@@ -1269,9 +1269,9 @@ message UserProperty {
 }
 
 message CloudQueuedPublish {
-    string topic_name = 1;
+    string topic_name = 1 [(validate.rules).string.min_len = 1];
     bytes payload = 2;
-    uint32 qos = 3;
+    uint32 qos = 3 [(validate.rules).uint32.lte = 2];
     bool retain = 4;
     optional string content_type = 5;
     optional uint32 payload_format_indicator = 6;

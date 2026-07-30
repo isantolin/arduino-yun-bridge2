@@ -86,23 +86,23 @@ def application(environ: dict[str, Any], start_response: Any) -> list[bytes]:
             json_format.Parse(body_data, req)
 
         state = req.state.upper()
-
         if state not in ("ON", "OFF"):
             return json_res(
                 start_response,
                 "400 Bad Request",
                 pb.PinControlResponse(status="error", message="Invalid state"),
             )
+        pin_data = pb.PinControlData(pin=pin, state=state)
 
-        topic = topic_path(config.topic_prefix, Topic.DIGITAL, str(pin))
-        publish_sync(topic, "1" if state == "ON" else "0", config)
+        topic = topic_path(config.topic_prefix, Topic.DIGITAL, str(pin_data.pin))
+        publish_sync(topic, "1" if pin_data.state == "ON" else "0", config)
 
         return json_res(
             start_response,
             "200 OK",
             pb.PinControlResponse(
                 status="ok",
-                data=pb.PinControlData(pin=pin, state=state),
+                data=pin_data,
             ),
         )
 

@@ -185,37 +185,23 @@ class BridgeService:
         )
 
     def _setup_mcu_registry(self, serial: SerialTransport) -> dict[int, McuHandler]:
+        """Build O(1) MCU dispatch registry reflectively from Protobuf Command Enum Descriptors. [SIL-2]"""
+        registry: dict[int, McuHandler] = {}
+        for enum_val in pb.Command.DESCRIPTOR.values:
+            cmd_name = enum_val.name.lower().removeprefix("cmd_")
+            handler = getattr(self, f"_on_mcu_{cmd_name}", None)
+            if handler:
+                registry[enum_val.number] = handler
 
-        registry = cast(
-            dict[int, McuHandler],
-            {
-                Command.CMD_XON.value: self._handle_mcu_xon,
-                Command.CMD_XOFF.value: self._handle_mcu_xoff,
-                Command.CMD_CONSOLE_WRITE.value: self._on_mcu_console_write,
-                Command.CMD_DATASTORE_PUT.value: self._on_mcu_datastore_put,
-                Command.CMD_DATASTORE_GET.value: self._on_mcu_datastore_get,
-                Command.CMD_MAILBOX_PUSH.value: self._on_mcu_mailbox_push,
-                Command.CMD_MAILBOX_AVAILABLE.value: self._on_mcu_mailbox_available,
-                Command.CMD_MAILBOX_READ.value: self._on_mcu_mailbox_read,
-                Command.CMD_MAILBOX_PROCESSED.value: self._on_mcu_mailbox_processed,
-                Command.CMD_FILE_WRITE.value: self._on_mcu_file_write,
-                Command.CMD_FILE_READ.value: self._on_mcu_file_read,
-                Command.CMD_FILE_REMOVE.value: self._on_mcu_file_remove,
-                Command.CMD_FILE_READ_RESP.value: self._on_mcu_file_read_resp,
-                Command.CMD_PROCESS_RUN_ASYNC.value: self._on_mcu_process_run,
-                Command.CMD_PROCESS_POLL.value: self._on_mcu_process_poll,
-                Command.CMD_SPI_TRANSFER_RESP.value: self._on_mcu_spi_resp,
-                Status.ACK.value: self._on_mcu_ack,
-                Command.CMD_DIGITAL_READ_RESP.value: self._on_mcu_digital_read_resp,
-                Command.CMD_ANALOG_READ_RESP.value: self._on_mcu_analog_read_resp,
-                Command.CMD_PROCESS_KILL.value: self._on_mcu_process_kill,
-                Command.CMD_DIGITAL_READ.value: self._unsupported_digital,
-                Command.CMD_ANALOG_READ.value: self._unsupported_analog,
-                Command.CMD_GET_CAPABILITIES_RESP.value: self.handshake.handle_capabilities_resp,
-                Command.CMD_LINK_SYNC_RESP.value: self.handshake.handle_link_sync_resp,
-                Command.CMD_LINK_RESET_RESP.value: self.handshake.handle_link_reset_resp,
-            },
-        )
+        # Special status, flow-control and handshake entries
+        registry[Status.ACK.value] = self._on_mcu_ack
+        registry[Command.CMD_XON.value] = self._handle_mcu_xon
+        registry[Command.CMD_XOFF.value] = self._handle_mcu_xoff
+        registry[Command.CMD_DIGITAL_READ.value] = self._unsupported_digital
+        registry[Command.CMD_ANALOG_READ.value] = self._unsupported_analog
+        registry[Command.CMD_GET_CAPABILITIES_RESP.value] = self.handshake.handle_capabilities_resp
+        registry[Command.CMD_LINK_SYNC_RESP.value] = self.handshake.handle_link_sync_resp
+        registry[Command.CMD_LINK_RESET_RESP.value] = self.handshake.handle_link_reset_resp
         return registry
 
     def _dispatch_protobuf_reflection(self, seq: int, envelope: pb.RpcEnvelope) -> Any:

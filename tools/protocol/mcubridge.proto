@@ -1098,9 +1098,9 @@ message AckPacket {
 }
 
 message HandshakeConfig {
-    uint32 ack_timeout_ms = 1;
-    uint32 ack_retry_limit = 2;
-    uint32 response_timeout_ms = 3;
+    uint32 ack_timeout_ms = 1 [(validate.rules).uint32 = {gte: 50, lte: 10000}];
+    uint32 ack_retry_limit = 2 [(validate.rules).uint32 = {gte: 1, lte: 20}];
+    uint32 response_timeout_ms = 3 [(validate.rules).uint32 = {gte: 100, lte: 30000}];
 }
 
 message SetBaudratePacket {
@@ -1288,7 +1288,7 @@ message CloudQueuedPublish {
 
 
 message CloudDropCount {
-    string topic = 1;
+    string topic = 1 [(validate.rules).string.min_len = 1];
     uint32 count = 2;
 }
 
@@ -1331,8 +1331,8 @@ message PinControlRequest {
 }
 
 message PinControlData {
-    uint32 pin = 1;
-    string state = 2;
+    uint32 pin = 1 [(validate.rules).uint32.lte = 100];
+    string state = 2 [(validate.rules).string = {in: ["ON", "OFF", "on", "off", "1", "0"]}];
 }
 
 message PinControlResponse {

@@ -1327,7 +1327,7 @@ message DaemonMetrics {
 }
 
 message PinControlRequest {
-    string state = 1;
+    string state = 1 [(validate.rules).string = {in: ["ON", "OFF", "on", "off", "1", "0"]}];
 }
 
 message PinControlData {

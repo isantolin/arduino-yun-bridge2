@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Modernized Credential Rotation utility for MCU Bridge (SIL-2)."""
 
+# pyright: reportUnknownMemberType=false
 from __future__ import annotations
 from typing import Annotated
 

@@ -160,6 +160,16 @@ def load_spec_from_proto(proto_path: Path) -> ProtocolSpec:
     if "mcubridge_pb2" in sys.modules:
         del sys.modules["mcubridge_pb2"]
 
+    # Pre-register local validate package to prevent collision with
+    # system 'validate' package (e.g. on Python 3.14+ / Ubuntu 26.04)
+    validate_dir = proto_path.parent / "validate"
+    if validate_dir.is_dir() and "validate" not in sys.modules:
+        import types
+
+        validate_mod = types.ModuleType("validate")
+        validate_mod.__path__ = [str(validate_dir)]
+        sys.modules["validate"] = validate_mod
+
     mcubridge_pb2 = importlib.import_module("mcubridge_pb2")
     file_desc = mcubridge_pb2.DESCRIPTOR
     options = file_desc.GetOptions()

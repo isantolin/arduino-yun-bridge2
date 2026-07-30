@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from mcubridge.config.logging import configure_logging, hexdump_processor
@@ -42,8 +42,17 @@ def test_configure_logging_syslog_paths() -> None:
     cfg = pb.RuntimeConfig(debug=False)
     with patch.dict("os.environ", {}, clear=True):
         with patch("pathlib.Path.exists", side_effect=lambda: True):
-            with patch("logging.handlers.SysLogHandler.__init__", return_value=None):
+            mock_handler = MagicMock()
+            mock_handler.level = 0
+            with patch("logging.handlers.SysLogHandler", return_value=mock_handler):
                 configure_logging(cfg)
+                import logging
+
+                root = logging.getLogger()
+                for h in root.handlers:
+                    if hasattr(h, "close"):
+                        h.close()
+                root.handlers.clear()
 
 
 # =============================================================================

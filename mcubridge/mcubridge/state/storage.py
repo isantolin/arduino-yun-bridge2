@@ -90,7 +90,15 @@ class SqliteDeque:
             return res
         finally:
             if conn is not None:
-                await asyncio.shield(conn.close())
+                try:
+                    await asyncio.shield(conn.close())
+                finally:
+                    underlying = getattr(conn, "_connection", None)
+                    if underlying is not None:
+                        try:
+                            underlying.close()
+                        except Exception:
+                            pass
 
     async def append(self, item: bytes) -> None:
         async def _append_impl(conn: aiosqlite.Connection) -> None:
@@ -206,7 +214,15 @@ class SqliteCache:
             return res
         finally:
             if conn is not None:
-                await asyncio.shield(conn.close())
+                try:
+                    await asyncio.shield(conn.close())
+                finally:
+                    underlying = getattr(conn, "_connection", None)
+                    if underlying is not None:
+                        try:
+                            underlying.close()
+                        except Exception:
+                            pass
 
     async def set(self, key: str, value: bytes) -> None:
         async def _setitem_impl(conn: aiosqlite.Connection) -> None:

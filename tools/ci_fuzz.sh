@@ -5,6 +5,9 @@ set -euo pipefail
 # Ensure emulator is compiled
 ./tools/compile_emulator.sh
 
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export PYTHONPATH="${ROOT_DIR}:${ROOT_DIR}/mcubridge:${PYTHONPATH:-}"
+
 FUZZ_PTY="/tmp/ttyBRIDGE_FUZZ"
 EMULATOR_BIN="mcubridge-library-arduino/tests/bridge_control_emulator"
 

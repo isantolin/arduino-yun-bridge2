@@ -347,31 +347,21 @@ def update_feeds(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
                     f"\\1PYTHON3_PKG_WHEEL_VERSION:={version}\n",
                     new_content,
                 )
-            # PKG_SOURCE and PKG_BUILD_DIR use Python notation (tarball uses 3.0.0a1)
-            if "PKG_SOURCE:=" in new_content:
+            if "PYPI_SOURCE_NAME_VERSION:=" in new_content:
                 new_content = re.sub(
-                    r"PKG_SOURCE:=[^\n]+",
-                    f"PKG_SOURCE:={pip_name}-{version}.tar.gz",
+                    r"PYPI_SOURCE_NAME_VERSION:=[^\n]+",
+                    f"PYPI_SOURCE_NAME_VERSION:={version}",
                     new_content,
                 )
             else:
                 new_content = re.sub(
                     r"(PYTHON3_PKG_WHEEL_VERSION:=[^\n]+\n)",
-                    f"\\1PKG_SOURCE:={pip_name}-{version}.tar.gz\n",
+                    f"\\1PYPI_SOURCE_NAME_VERSION:={version}\n",
                     new_content,
                 )
-            if "PKG_BUILD_DIR:=" in new_content:
-                new_content = re.sub(
-                    r"PKG_BUILD_DIR:=[^\n]+",
-                    f"PKG_BUILD_DIR:=$(BUILD_DIR)/pypi/{pip_name}-{version}",
-                    new_content,
-                )
-            else:
-                new_content = re.sub(
-                    r"(include\s+.*\bpypi\.mk\n)",
-                    f"\\1PKG_BUILD_DIR:=$(BUILD_DIR)/pypi/{pip_name}-{version}\n",
-                    new_content,
-                )
+            # Remove redundant explicit PKG_SOURCE and PKG_BUILD_DIR if present
+            new_content = re.sub(r"PKG_SOURCE:=[^\n]+\n?", "", new_content)
+            new_content = re.sub(r"PKG_BUILD_DIR:=[^\n]+\n?", "", new_content)
         elif uses_pypi_mk:
             # Standard pypi.mk package: Python notation throughout.
             pkg_version = version

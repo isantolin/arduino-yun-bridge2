@@ -105,8 +105,6 @@ async def test_handle_mcu_frame_rpc_handlers(
     )
 
 
-
-
 @pytest.mark.asyncio
 async def test_handle_request_routing(
     runtime_setup: tuple[BridgeService, RuntimeState, AsyncMock],

@@ -193,21 +193,16 @@ class BridgeService:
             if handler:
                 registry[enum_val.number] = handler
 
-        # Special status, flow-control, pin response and handshake entries
+        # Special status, flow-control and handshake entries
         registry[Status.ACK.value] = self._on_mcu_ack
         registry[Command.CMD_XON.value] = self._handle_mcu_xon
         registry[Command.CMD_XOFF.value] = self._handle_mcu_xoff
         registry[Command.CMD_DIGITAL_READ.value] = self._unsupported_digital
         registry[Command.CMD_ANALOG_READ.value] = self._unsupported_analog
-        registry[Command.CMD_DIGITAL_READ_RESP.value] = functools.partial(
-            self._on_pin_resp, tp=Topic.DIGITAL, q=self.state.pending_digital_reads
-        )
-        registry[Command.CMD_ANALOG_READ_RESP.value] = functools.partial(
-            self._on_pin_resp, tp=Topic.ANALOG, q=self.state.pending_analog_reads
-        )
         registry[Command.CMD_GET_CAPABILITIES_RESP.value] = self.handshake.handle_capabilities_resp
         registry[Command.CMD_LINK_SYNC_RESP.value] = self.handshake.handle_link_sync_resp
         registry[Command.CMD_LINK_RESET_RESP.value] = self.handshake.handle_link_reset_resp
+        return registry
         return registry
 
     def _dispatch_protobuf_reflection(self, seq: int, envelope: pb.RpcEnvelope) -> Any:
@@ -726,6 +721,12 @@ class BridgeService:
             logger.debug("MCU > ACK for 0x%02X", p.command_id)
         except (ProtobufDecodeError, TypeError, ValueError) as e:
             logger.error("Failed to decode MCU ACK packet", error=e)
+
+    async def _on_mcu_digital_read_resp(self, _seq: int, p: pb.DigitalReadResponse) -> None:
+        await self._on_pin_resp(p, Topic.DIGITAL, self.state.pending_digital_reads)
+
+    async def _on_mcu_analog_read_resp(self, _seq: int, p: pb.AnalogReadResponse) -> None:
+        await self._on_pin_resp(p, Topic.ANALOG, self.state.pending_analog_reads)
 
     async def _on_mcu_process_kill(self, _seq: int, p: pb.ProcessKill) -> None:
         async with self.state.process_lock:

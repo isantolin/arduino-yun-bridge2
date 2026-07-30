@@ -156,17 +156,20 @@ async def test_file_handlers_exhaustive(
 
     # 1. File Write
     fw = pb.FileWrite(path=file_path, data=b"hello file")
-    res_w = await service._on_mcu_file_write(1, fw)
+    on_fw = getattr(service, "_on_mcu_file_write")
+    res_w = await on_fw(1, fw)
     assert res_w is True
 
     # 2. File Read
     fr = pb.FileRead(path=file_path)
-    await service._on_mcu_file_read(2, fr)
+    on_fr = getattr(service, "_on_mcu_file_read")
+    await on_fr(2, fr)
     assert transport.send.called
 
     # 3. File Remove
     fm = pb.FileRemove(path=file_path)
-    res_m = await service._on_mcu_file_remove(3, fm)
+    on_fm = getattr(service, "_on_mcu_file_remove")
+    res_m = await on_fm(3, fm)
     assert res_m is True
 
 
@@ -178,13 +181,16 @@ async def test_datastore_handlers_exhaustive(
     state.link_session_key = b"0123456789abcdef0123456789abcdef"
     transport.send = AsyncMock(return_value=True)
 
+    on_dp = getattr(service, "_on_mcu_datastore_put")
+    on_dg = getattr(service, "_on_mcu_datastore_get")
+
     # 1. Put
     dp = pb.DatastorePut(key="k1", value=b"v1")
-    assert await service._on_mcu_datastore_put(1, dp) is True
+    assert await on_dp(1, dp) is True
 
     # 2. Get
     dg = pb.DatastoreGet(key="k1")
-    assert await service._on_mcu_datastore_get(2, dg) is True
+    assert await on_dg(2, dg) is True
 
 
 @pytest.mark.asyncio
@@ -195,19 +201,24 @@ async def test_mailbox_handlers_exhaustive(
     state.link_session_key = b"0123456789abcdef0123456789abcdef"
     transport.send = AsyncMock(return_value=True)
 
+    on_mp = getattr(service, "_on_mcu_mailbox_push")
+    on_ma = getattr(service, "_on_mcu_mailbox_available")
+    on_mr = getattr(service, "_on_mcu_mailbox_read")
+    on_mpr = getattr(service, "_on_mcu_mailbox_processed")
+
     # 1. Mailbox Push
     mp = pb.MailboxPush(data=b"msg1")
-    assert await service._on_mcu_mailbox_push(1, mp) is True
+    assert await on_mp(1, mp) is True
 
     # 2. Mailbox Available
-    assert await service._on_mcu_mailbox_available(2, None) is True
+    assert await on_ma(2, None) is True
 
     # 3. Mailbox Read
-    assert await service._on_mcu_mailbox_read(3, None) is True
+    assert await on_mr(3, None) is True
 
     # 4. Mailbox Processed
     mpr = pb.MailboxProcessed(message_id=1)
-    await service._on_mcu_mailbox_processed(4, mpr)
+    await on_mpr(4, mpr)
 
 
 @pytest.mark.asyncio
@@ -218,10 +229,13 @@ async def test_process_and_spi_handlers_exhaustive(
     state.link_session_key = b"0123456789abcdef0123456789abcdef"
     transport.send = AsyncMock(return_value=True)
 
+    on_spi = getattr(service, "_on_mcu_spi_resp")
+    on_cw = getattr(service, "_on_mcu_console_write")
+
     # SPI Resp
     spi_resp = pb.SpiTransferResponse(data=b"\x01\x02")
-    await service._on_mcu_spi_resp(1, spi_resp)
+    await on_spi(1, spi_resp)
 
     # Console Write
     cw = pb.ConsoleWrite(data=b"test console output\n")
-    await service._on_mcu_console_write(2, cw)
+    await on_cw(2, cw)

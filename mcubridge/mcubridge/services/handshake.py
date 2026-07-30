@@ -368,6 +368,9 @@ class SerialHandshakeManager:
                 return True
             except TimeoutError:
                 raise
+            except (ProtobufDecodeError, ValueError, TypeError, KeyError) as exc:
+                self._logger.error("[SIL-2] Capabilities payload corrupt; aborting: %s", exc)
+                return False
             finally:
                 self._capabilities_future = None
 
@@ -382,18 +385,15 @@ class SerialHandshakeManager:
         return True
 
     def _parse_capabilities(self, payload: bytes | ProtobufMessage) -> None:
-        try:
-            # [SIL-2] Decode and retain native pb.Capabilities object directly.
-            if isinstance(payload, pb.Capabilities):
-                p = payload
-            elif isinstance(payload, ProtobufMessage):
-                p = cast(pb.Capabilities, payload)
-            else:
-                p = pb.Capabilities.FromString(payload)
-            self._state.mcu_capabilities = p
-            self._logger.info("MCU Capabilities: %s", self._state.mcu_capabilities)
-        except (ProtobufDecodeError, ValueError, TypeError, KeyError) as exc:
-            self._logger.error("Failed to unpack capabilities: %s", exc)
+        # [SIL-2] Decode and retain native pb.Capabilities object directly.
+        if isinstance(payload, pb.Capabilities):
+            p = payload
+        elif isinstance(payload, ProtobufMessage):
+            p = cast(pb.Capabilities, payload)
+        else:
+            p = pb.Capabilities.FromString(payload)
+        self._state.mcu_capabilities = p
+        self._logger.info("MCU Capabilities: %s", self._state.mcu_capabilities)
 
     async def handle_link_reset_resp(self, seq_id: int, payload: bytes | ProtobufMessage) -> bool:
         self._logger.info(
@@ -497,6 +497,12 @@ class SerialHandshakeManager:
             content_type=PROTOBUF_CONTENT_TYPE,
             user_properties=(("bridge-event", "handshake"),),
         )
+        if not message.topic_name:
+            self._logger.warning(
+                "[SIL-2] Handshake event topic could not be resolved; skipping publish (event=%s)",
+                event,
+            )
+            return
         await self._enqueue_cloud(message)
 
     async def _handle_handshake_success(self) -> None:

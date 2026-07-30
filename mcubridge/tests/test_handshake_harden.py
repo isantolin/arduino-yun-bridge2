@@ -136,7 +136,7 @@ async def test_handshake_capabilities_retry(
         SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, pb.HandshakeConfig, AsyncMock
     ],
 ) -> None:
-    """Verify capabilities discovery retries on timeout."""
+    """Verify capabilities discovery retries on timeout then succeeds with valid payload."""
     manager, _state, send_frame, _config, timing, _ack = handshake_setup
 
     timing.response_timeout_ms = 10
@@ -153,7 +153,8 @@ async def test_handshake_capabilities_retry(
             if fut is not None and not fut.done():
                 fut.set_exception(TimeoutError("mock timeout"))
         elif attempts == 3:
-            asyncio.create_task(manager.handle_capabilities_resp(1, b"\x80"))
+            # [SIL-2] Use valid empty Capabilities payload (serialized empty protobuf)
+            asyncio.create_task(manager.handle_capabilities_resp(1, pb.Capabilities().SerializeToString()))
         return True
 
     send_frame.side_effect = mock_send_frame
@@ -161,6 +162,31 @@ async def test_handshake_capabilities_retry(
     result = await getattr(manager, "_fetch_capabilities")()
     assert result
     assert send_frame.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_handshake_capabilities_corrupt_payload(
+    handshake_setup: tuple[
+        SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, pb.HandshakeConfig, AsyncMock
+    ],
+) -> None:
+    """Verify capabilities discovery returns False immediately on corrupt payload. [SIL-2]"""
+    manager, _state, send_frame, _config, timing, _ack = handshake_setup
+
+    timing.response_timeout_ms = 200
+
+    from typing import Any
+
+    async def mock_send_frame_corrupt(cmd: int, *args: Any, **kwargs: Any) -> bool:
+        fut: Any = getattr(manager, "_capabilities_future", None)
+        if fut is not None and not fut.done():
+            asyncio.create_task(manager.handle_capabilities_resp(1, b"\x80"))
+        return True
+
+    send_frame.side_effect = mock_send_frame_corrupt
+
+    result = await getattr(manager, "_fetch_capabilities")()
+    assert not result
 
 
 @pytest.mark.asyncio

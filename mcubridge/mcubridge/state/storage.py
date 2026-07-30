@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
+import sqlite3
 from pathlib import Path
 from typing import Awaitable, Callable, TypeVar
-import asyncio
+
 import aiosqlite
 import structlog
 
@@ -24,8 +26,6 @@ class SqliteDeque:
         self.maxlen = maxlen
         self._length = 0
         Path(self.path).parent.mkdir(parents=True, exist_ok=True)
-        import sqlite3
-
         try:
             conn = sqlite3.connect(self.path)
             try:
@@ -97,8 +97,8 @@ class SqliteDeque:
                     if underlying is not None:
                         try:
                             underlying.close()
-                        except Exception:
-                            pass
+                        except OSError as exc:
+                            logger.debug("SqliteDeque underlying connection close failed", error=exc)
 
     async def append(self, item: bytes) -> None:
         async def _append_impl(conn: aiosqlite.Connection) -> None:
@@ -162,8 +162,6 @@ class SqliteCache:
     def __init__(self, path: str) -> None:
         self.path = path
         Path(self.path).parent.mkdir(parents=True, exist_ok=True)
-        import sqlite3
-
         try:
             conn = sqlite3.connect(self.path)
             try:
@@ -221,8 +219,8 @@ class SqliteCache:
                     if underlying is not None:
                         try:
                             underlying.close()
-                        except Exception:
-                            pass
+                        except OSError as exc:
+                            logger.debug("SqliteCache underlying connection close failed", error=exc)
 
     async def set(self, key: str, value: bytes) -> None:
         async def _setitem_impl(conn: aiosqlite.Connection) -> None:

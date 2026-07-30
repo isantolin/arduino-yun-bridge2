@@ -5,8 +5,6 @@ Binary parsing uses stdlib struct; high-level schemas use Protobuf (SIL-2) [TEST
 """
 
 from __future__ import annotations
-from google.protobuf.message import Message as ProtobufMessage
-from . import mcubridge_pb2 as pb
 
 import asyncio
 import fnmatch
@@ -15,20 +13,22 @@ import itertools
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass, field
+from itertools import batched
 from pathlib import Path
 from typing import (
     Any,
     Final,
 )
+
+from google.protobuf.message import Message as ProtobufMessage
+
+from . import mcubridge_pb2 as pb
 from mcubridge.config.const import ALLOWED_COMMAND_WILDCARD
 
 
 def iter_chunks(data: bytes, chunk_size: int) -> Iterable[bytes]:
-    """Chunk bytes into fixed-size pieces using direct slices. [SIL-2]"""
-    if not data:
-        return
-    for i in range(0, len(data), chunk_size):
-        yield data[i : i + chunk_size]
+    """Chunk bytes into fixed-size pieces. [SIL-2] Delegates to itertools.batched."""
+    return (bytes(chunk) for chunk in batched(data, chunk_size))
 
 
 PROTOBUF_CONTENT_TYPE: Final[str] = "application/x-protobuf"
@@ -149,9 +149,10 @@ def validate_config(cfg: pb.RuntimeConfig) -> None:
     del cfg.allowed_commands[:]
     cfg.allowed_commands.extend(cfg.allowed_policy.entries)
 
-    if not any(getattr(cfg.topic_authorization, f.name) for f in cfg.topic_authorization.DESCRIPTOR.fields):
-        for field in [f.name for f in cfg.topic_authorization.DESCRIPTOR.fields]:
-            setattr(cfg.topic_authorization, field, True)
+    auth_fields = [f.name for f in cfg.topic_authorization.DESCRIPTOR.fields]
+    if not any(getattr(cfg.topic_authorization, name) for name in auth_fields):
+        for name in auth_fields:
+            setattr(cfg.topic_authorization, name, True)
 
     if not cfg.topic_prefix or not any(filter(None, cfg.topic_prefix.split("/"))):
         raise ValueError("topic_prefix must contain at least one segment")

@@ -1418,13 +1418,13 @@ class BridgeService:
             if self.state and getattr(self.state, "mailbox_queue", None) is not None:
                 try:
                     await self.state.mailbox_queue.close()
-                except Exception:
-                    pass
+                except (aiosqlite.Error, OSError) as exc:
+                    logger.debug("mailbox_queue close failed during teardown", error=exc)
             if self.state and getattr(self.state, "mailbox_incoming_queue", None) is not None:
                 try:
                     await self.state.mailbox_incoming_queue.close()
-                except Exception:
-                    pass
+                except (aiosqlite.Error, OSError) as exc:
+                    logger.debug("mailbox_incoming_queue close failed during teardown", error=exc)
             self.cleanup()
             STATUS_FILE.unlink(missing_ok=True)
             logger.info("MCU Bridge daemon stopped.")

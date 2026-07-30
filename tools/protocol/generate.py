@@ -756,22 +756,28 @@ def update_metadata(version: str):
 
 def _format_python_file(path: Path) -> None:
     """Post-process a generated Python file with black for canonical formatting. [SIL-2]"""
-    res = subprocess.run(
-        [sys.executable, "-m", "black", "--quiet", str(path)],
-        check=False,
-        capture_output=True,
-    )
-    if res.returncode != 0:
-        res_fallback = subprocess.run(
-            ["black", "--quiet", str(path)],
+    try:
+        res = subprocess.run(
+            [sys.executable, "-m", "black", "--quiet", str(path)],
             check=False,
             capture_output=True,
         )
-        if res_fallback.returncode != 0:
-            raise RuntimeError(
-                f"black is mandatory and failed to format {path}. "
-                f"Ensure black is installed: {res_fallback.stderr.decode()}"
+        if res.returncode != 0:
+            res_fallback = subprocess.run(
+                ["black", "--quiet", str(path)],
+                check=False,
+                capture_output=True,
             )
+            if res_fallback.returncode != 0:
+                raise RuntimeError(
+                    f"black is mandatory and failed to format {path}. "
+                    f"Ensure black is installed: {res_fallback.stderr.decode()}"
+                )
+    except FileNotFoundError as err:
+        raise RuntimeError(
+            f"black is mandatory and was not found in PATH or Python environment ({sys.executable}). "
+            f"Please install black (`pip install black` / `apt install python3-black`)."
+        ) from err
 
 
 def ensure_nanopb_core_files() -> None:

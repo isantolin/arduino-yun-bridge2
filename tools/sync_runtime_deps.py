@@ -333,18 +333,8 @@ def update_feeds(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
             # Pre-release: APK version for PKG_VERSION, Python version for wheel glob & PyPI source.
             pkg_version = _to_apk_version(version)
             new_content = re.sub(r"PKG_VERSION:=[^\n]+", f"PKG_VERSION:={pkg_version}", content)
-            if "PYPI_SOURCE_NAME:=" in new_content:
-                new_content = re.sub(
-                    r"PYPI_SOURCE_NAME:=[^\n]+",
-                    f"PYPI_SOURCE_NAME:={pip_name}-{version}",
-                    new_content,
-                )
-            else:
-                new_content = re.sub(
-                    r"(PYPI_NAME:=[^\n]+\n)",
-                    f"\\1PYPI_SOURCE_NAME:={pip_name}-{version}\n",
-                    new_content,
-                )
+            # Remove any erroneous PYPI_SOURCE_NAME line if present
+            new_content = re.sub(r"PYPI_SOURCE_NAME:=[^\n]+\n?", "", new_content)
             if "PYTHON3_PKG_WHEEL_VERSION:=" in new_content:
                 new_content = re.sub(
                     r"PYTHON3_PKG_WHEEL_VERSION:=[^\n]+",
@@ -353,7 +343,7 @@ def update_feeds(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
                 )
             else:
                 new_content = re.sub(
-                    r"(PYPI_SOURCE_NAME:=[^\n]+\n)",
+                    r"(PYPI_NAME:=[^\n]+\n)",
                     f"\\1PYTHON3_PKG_WHEEL_VERSION:={version}\n",
                     new_content,
                 )
@@ -378,7 +368,7 @@ def update_feeds(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
                 )
             else:
                 new_content = re.sub(
-                    r"(PKG_SOURCE:=[^\n]+\n)",
+                    r"(include\s+.*\bpypi\.mk\n)",
                     f"\\1PKG_BUILD_DIR:=$(BUILD_DIR)/pypi/{pip_name}-{version}\n",
                     new_content,
                 )

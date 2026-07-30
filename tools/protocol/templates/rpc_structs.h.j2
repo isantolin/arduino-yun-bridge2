@@ -85,11 +85,34 @@ inline const T& get(const rpc_pb_RpcEnvelope& env) {
     return payload_traits<T>::get(env);
 }
 
+inline bool _encode_impl(const pb_msgdesc_t* fields, const void* src, etl::span<uint8_t> buffer, size_t* written) {
+    pb_ostream_t stream = pb_ostream_from_buffer(buffer.data(), buffer.size());
+    if (pb_encode(&stream, fields, src)) {
+        if (written != nullptr) *written = stream.bytes_written;
+        return true;
+    }
+    return false;
+}
+
+inline bool _decode_impl(const pb_msgdesc_t* fields, void* dest, etl::span<const uint8_t> buffer) {
+    pb_istream_t stream = pb_istream_from_buffer(buffer.data(), buffer.size());
+    return pb_decode(&stream, fields, dest);
+}
+
 template <typename T>
 inline etl::expected<size_t, bool> serialize(const T& packet, etl::span<uint8_t> buffer) {
-    pb_ostream_t stream = pb_ostream_from_buffer(buffer.data(), buffer.size());
-    if (pb_encode(&stream, get_fields<T>(), &packet)) {
-        return stream.bytes_written;
+    size_t written = 0;
+    if (_encode_impl(get_fields<T>(), &packet, buffer, &written)) {
+        return written;
+    }
+    return etl::unexpected<bool>(false);
+}
+
+template <typename T>
+inline etl::expected<T, bool> deserialize(etl::span<const uint8_t> buffer) {
+    T packet = {};
+    if (_decode_impl(get_fields<T>(), &packet, buffer)) {
+        return packet;
     }
     return etl::unexpected<bool>(false);
 }

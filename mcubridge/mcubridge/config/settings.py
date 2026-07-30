@@ -85,14 +85,20 @@ def get_config_source() -> str:
     return _config_source[0]
 
 
-def _coerce_value(val: Any, target_type: int, field_name: str = "") -> Any:
-    """Coerce UCI string values to target Protobuf types. [SIL-2]"""
+def _coerce_value(val: Any, field: Any, field_name: str = "") -> Any:
+    """Coerce UCI string values to target Protobuf types using FieldDescriptor metadata. [SIL-2]"""
     from google.protobuf.descriptor import FieldDescriptor
 
     if val is None:
         return None
 
-    if target_type == FieldDescriptor.TYPE_STRING:
+    cpp_type = field.cpp_type if hasattr(field, "cpp_type") else None
+    target_type = field.type if hasattr(field, "type") else field
+
+    if target_type == FieldDescriptor.TYPE_BYTES:
+        return val if isinstance(val, bytes) else str(val).strip().encode("utf-8")
+
+    if cpp_type == FieldDescriptor.CPPTYPE_STRING or target_type == FieldDescriptor.TYPE_STRING:
         s_val = str(val).strip()
         is_path_field = any(
             x in field_name for x in ("_dir", "_file", "_root", "serial_port", "cloud_ca", "cloud_cert", "cloud_key")
@@ -101,7 +107,12 @@ def _coerce_value(val: Any, target_type: int, field_name: str = "") -> Any:
             return str(Path(s_val).expanduser().resolve())
         return s_val or None
 
-    if target_type in (
+    if cpp_type in (
+        FieldDescriptor.CPPTYPE_INT32,
+        FieldDescriptor.CPPTYPE_INT64,
+        FieldDescriptor.CPPTYPE_UINT32,
+        FieldDescriptor.CPPTYPE_UINT64,
+    ) or target_type in (
         FieldDescriptor.TYPE_UINT32,
         FieldDescriptor.TYPE_INT32,
         FieldDescriptor.TYPE_UINT64,
@@ -112,21 +123,19 @@ def _coerce_value(val: Any, target_type: int, field_name: str = "") -> Any:
         except (ValueError, TypeError):
             return 0
 
-    if target_type in (FieldDescriptor.TYPE_FLOAT, FieldDescriptor.TYPE_DOUBLE):
+    if cpp_type in (FieldDescriptor.CPPTYPE_FLOAT, FieldDescriptor.CPPTYPE_DOUBLE) or target_type in (
+        FieldDescriptor.TYPE_FLOAT,
+        FieldDescriptor.TYPE_DOUBLE,
+    ):
         try:
             return float(val)
         except (ValueError, TypeError):
             return 0.0
 
-    if target_type == FieldDescriptor.TYPE_BOOL:
+    if cpp_type == FieldDescriptor.CPPTYPE_BOOL or target_type == FieldDescriptor.TYPE_BOOL:
         if isinstance(val, bool):
             return val
         return str(val).lower() in ("1", "true", "yes", "on")
-
-    if target_type == FieldDescriptor.TYPE_BYTES:
-        if isinstance(val, bytes):
-            return val
-        return str(val).strip().encode("utf-8")
 
     return val
 
@@ -162,23 +171,22 @@ def load_runtime_config(overrides: dict[str, Any] | None = None) -> RuntimeConfi
 
         if hasattr(getattr(msg, field.name), "extend"):
             if isinstance(val, (list, tuple)):
-                items = [_coerce_value(i, field.type, field.name) for i in cast("list[Any]", val)]
+                items = [_coerce_value(i, field, field.name) for i in cast("list[Any]", val)]
                 getattr(msg, field.name).extend(items)
             continue
 
-        coerced = _coerce_value(val, field.type, field.name)
+        coerced = _coerce_value(val, field, field.name)
         if coerced is not None:
             setattr(msg, field.name, coerced)
 
     # Load topic authorizations dynamically from raw_values/UCI
     for auth_field in msg.topic_authorization.DESCRIPTOR.fields:
-        # Match either "cloud_allow_<name>" or "allow_<name>"
         for key_candidate in (
             f"cloud_allow_{auth_field.name}",
             f"allow_{auth_field.name}",
         ):
             if key_candidate in raw_values:
-                coerced = _coerce_value(raw_values[key_candidate], auth_field.type, auth_field.name)
+                coerced = _coerce_value(raw_values[key_candidate], auth_field, auth_field.name)
                 if coerced is not None:
                     setattr(msg.topic_authorization, auth_field.name, coerced)
                 break

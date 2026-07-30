@@ -218,6 +218,18 @@ class BridgeService:
         )
         return registry
 
+    def _dispatch_protobuf_reflection(self, seq: int, envelope: pb.RpcEnvelope) -> Any:
+        """Reflectively dispatch an incoming RpcEnvelope based on its Oneof payload_type. [SIL-2]"""
+        field_name = envelope.WhichOneof("payload_type")
+        if not field_name:
+            return None
+        submsg = getattr(envelope, field_name)
+        handler_name = f"_on_mcu_{field_name}"
+        handler = getattr(self, handler_name, None)
+        if callable(handler):
+            return handler(seq, submsg)
+        return None
+
     # --- External Interface ---
 
     async def enqueue_cloud(self, message: pb.CloudQueuedPublish, *, reply_context: Any | None = None) -> None:

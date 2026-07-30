@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
 from cobs import cobsr
@@ -28,15 +28,17 @@ def mock_serial_setup() -> tuple[SerialTransport, RuntimeState, MagicMock]:
     mock_serial.drain = AsyncMock(return_value=None)
     transport.serial = mock_serial
     state.serial_writer = mock_serial.transport
+    state.serial_tx_allowed.set()
 
     return transport, state, mock_serial
 
 
 def test_switch_local_baudrate_failure(mock_serial_setup: tuple[SerialTransport, RuntimeState, MagicMock]) -> None:
     transport, _state, mock_serial = mock_serial_setup
-    type(mock_serial.transport.serial).baudrate = property(
-        fget=lambda self: 115200, fset=MagicMock(side_effect=OSError("Baudrate error"))
-    )
+    mock_inner_serial = MagicMock()
+    type(mock_inner_serial).baudrate = PropertyMock(side_effect=OSError("Baudrate error"))
+    mock_serial.transport.serial = mock_inner_serial
+
     switch_fn = getattr(transport, "_switch_local_baudrate")
     with pytest.raises(RuntimeError, match="UART access failed"):
         switch_fn(9600)
@@ -119,7 +121,7 @@ async def test_send_raw_success(
 
     res = await transport.send_raw(command_id=0x01, payload=b"test")
     assert res is True
-    mock_serial.write.assert_called_once()
+    assert mock_serial.write.call_count == 2
 
 
 @pytest.mark.asyncio

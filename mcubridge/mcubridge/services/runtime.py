@@ -787,10 +787,14 @@ class BridgeService:
         if not key:
             return
         if route.identifier == DatastoreAction.PUT:
-            if len(key.encode()) <= 255 and len(pl) <= 255:
+            try:
+                ds_put = pb.DatastorePut(key=key, value=pl)
+            except (ValueError, TypeError):
+                return
+            if len(ds_put.key.encode()) <= protocol.MAX_DATASTORE_KEY_LENGTH and len(ds_put.value) <= 512:
                 if self.state.datastore_cache is not None:
-                    await self.state.datastore_cache.set(key, pl)
-                await self._publish_datastore_value(key, pl, reply_context=inbound)
+                    await self.state.datastore_cache.set(ds_put.key, ds_put.value)
+                await self._publish_datastore_value(ds_put.key, ds_put.value, reply_context=inbound)
         elif route.identifier == DatastoreAction.GET:
             cache = cast(Any, self.state.datastore_cache)
             val = (await cache.get(key)) if cache else None

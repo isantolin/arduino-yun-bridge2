@@ -25,6 +25,7 @@ def mock_serial_setup() -> tuple[SerialTransport, RuntimeState, MagicMock]:
     mock_serial.transport.serial.baudrate = 115200
     mock_serial.readuntil = AsyncMock()
     mock_serial.write = AsyncMock()
+    mock_serial.drain = AsyncMock()
     transport.serial = mock_serial
     state.serial_writer = mock_serial.transport
 
@@ -106,22 +107,24 @@ async def test_read_loop_valid_frame_dispatch(
 
 
 @pytest.mark.asyncio
-async def test_write_frame_raw_success(
+async def test_send_raw_success(
     mock_serial_setup: tuple[SerialTransport, RuntimeState, MagicMock],
 ) -> None:
     transport, _state, mock_serial = mock_serial_setup
+    mock_serial.is_open = True
 
-    res = await transport.write_frame_raw(command_id=0x01, payload=b"test")
+    res = await transport.send_raw(command_id=0x01, payload=b"test")
     assert res is True
     mock_serial.write.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_write_frame_raw_write_error(
+async def test_send_raw_write_error(
     mock_serial_setup: tuple[SerialTransport, RuntimeState, MagicMock],
 ) -> None:
     transport, _state, mock_serial = mock_serial_setup
+    mock_serial.is_open = True
     mock_serial.write.side_effect = OSError("Write failed")
 
-    res = await transport.write_frame_raw(command_id=0x01, payload=b"test")
+    res = await transport.send_raw(command_id=0x01, payload=b"test")
     assert res is False

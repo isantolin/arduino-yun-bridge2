@@ -757,13 +757,19 @@ def update_metadata(version: str):
 def _format_python_file(path: Path) -> None:
     """Post-process a generated Python file with black for canonical formatting."""
     try:
-        subprocess.run(
+        res = subprocess.run(
             [sys.executable, "-m", "black", "--quiet", str(path)],
-            check=True,
+            check=False,
             capture_output=True,
         )
-    except (OSError, subprocess.CalledProcessError) as e:
-        sys.stderr.write(f"Warning: black formatting failed for {path}: {e}\n")
+        if res.returncode != 0:
+            subprocess.run(
+                ["black", "--quiet", str(path)],
+                check=False,
+                capture_output=True,
+            )
+    except (OSError, subprocess.SubprocessError):
+        pass
 
 
 def ensure_nanopb_core_files() -> None:
@@ -970,11 +976,11 @@ def main() -> None:
         _format_python_file(args.py_client)
         sys.stderr.write(f"Generated {args.py_client}\n")
 
-    # [SIL-2] Generate type stubs for untyped libraries using pyright if any are defined.
-    # [SIL-2] Log only if there are libs to process
-    if UNTYPED_LIBS:
-        sys.stderr.write(f"Generating type stubs for {', '.join(UNTYPED_LIBS)}...\n")
-        for lib in UNTYPED_LIBS:
+    # [SIL-2] Generate type stubs for untyped libraries using pyright only if stub directory is missing.
+    missing_stubs = [lib for lib in UNTYPED_LIBS if not (REPO_ROOT / "typings" / lib).exists()]
+    if missing_stubs:
+        sys.stderr.write(f"Generating type stubs for {', '.join(missing_stubs)}...\n")
+        for lib in missing_stubs:
             try:
                 res = subprocess.run(
                     [sys.executable, "-m", "pyright", "--createstub", lib], check=False, capture_output=True

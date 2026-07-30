@@ -25,7 +25,7 @@ jobs:
 
       # Cache layer 1: Downloaded source tarballs (very stable, survives build script changes)
       - name: Cache Downloads
-        uses: actions/cache@v7
+        uses: actions/cache@v6
         with:
           path: dl
           key: ${{ runner.os }}-openwrt-dl-25.12.5
@@ -34,7 +34,7 @@ jobs:
 
       # Cache layer 2: Host toolchain (SDK Python, host tools — expensive to rebuild, rarely changes)
       - name: Cache Host Toolchain
-        uses: actions/cache@v7
+        uses: actions/cache@v6
         with:
           path: |
             openwrt-sdk/staging_dir/hostpkg
@@ -45,7 +45,7 @@ jobs:
 
       # Cache layer 3: Full SDK (staging_dir/target, build_dir, feeds)
       - name: Cache OpenWrt SDK
-        uses: actions/cache@v7
+        uses: actions/cache@v6
         with:
           path: openwrt-sdk
           key: ${{ runner.os }}-openwrt-sdk-25.12.5-${{ hashFiles('1_compile.sh', 'mcubridge/Makefile', 'mcubridge-gateway/Makefile', 'feeds/**/Makefile') }}

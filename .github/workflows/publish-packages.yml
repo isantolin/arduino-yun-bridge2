@@ -68,7 +68,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Cache Downloads
-        uses: actions/cache@v7
+        uses: actions/cache@v6
         with:
           path: dl
           key: ${{ runner.os }}-openwrt-dl-25.12.5
@@ -76,7 +76,7 @@ jobs:
             ${{ runner.os }}-openwrt-dl-
 
       - name: Cache Host Toolchain
-        uses: actions/cache@v7
+        uses: actions/cache@v6
         with:
           path: |
             openwrt-sdk/staging_dir/hostpkg
@@ -86,7 +86,7 @@ jobs:
             ${{ runner.os }}-openwrt-host-25.12.5-
 
       - name: Cache OpenWrt SDK
-        uses: actions/cache@v7
+        uses: actions/cache@v6
         with:
           path: openwrt-sdk
           key: ${{ runner.os }}-openwrt-sdk-25.12.5-${{ hashFiles('1_compile.sh', 'mcubridge/Makefile', 'mcubridge-gateway/Makefile', 'feeds/**/Makefile') }}

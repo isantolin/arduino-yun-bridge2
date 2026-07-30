@@ -29,7 +29,7 @@ runs:
         cache: 'pip'
 
     - name: Cache tox environments
-      uses: actions/cache@v7
+      uses: actions/cache@v6
       with:
         path: .tox
         key: tox-${{ runner.os }}-py${{ inputs.python-version }}-${{ inputs.cache-suffix }}-${{ hashFiles('tox.ini', 'pyproject.toml', 'requirements/runtime.toml', 'requirements/runtime.txt') }}

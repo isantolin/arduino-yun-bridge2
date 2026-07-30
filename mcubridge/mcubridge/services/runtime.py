@@ -170,19 +170,10 @@ class BridgeService:
             if s != Status.ACK:
                 self.mcu_registry[s.value] = functools.partial(self._handle_mcu_status, s)
 
-    async def _unsupported_digital(self, _seq: int, _payload: Any) -> Any:
+    async def _unsupported_mcu_request(self, _seq: int, _payload: Any, msg: str = "unsupported_request") -> Any:
         if not self.serial:
             return False
-        return await self.serial.send(
-            Status.NOT_IMPLEMENTED.value, pb.GenericResponse(message="linux_originates_digital_read_requests")
-        )
-
-    async def _unsupported_analog(self, _seq: int, _payload: Any) -> Any:
-        if not self.serial:
-            return False
-        return await self.serial.send(
-            Status.NOT_IMPLEMENTED.value, pb.GenericResponse(message="linux_originates_analog_read_requests")
-        )
+        return await self.serial.send(Status.NOT_IMPLEMENTED.value, pb.GenericResponse(message=msg))
 
     def _setup_mcu_registry(self, serial: SerialTransport) -> dict[int, McuHandler]:
         """Build O(1) MCU dispatch registry reflectively from Protobuf Command Enum Descriptors. [SIL-2]"""
@@ -197,12 +188,15 @@ class BridgeService:
         registry[Status.ACK.value] = self._on_mcu_ack
         registry[Command.CMD_XON.value] = self._handle_mcu_xon
         registry[Command.CMD_XOFF.value] = self._handle_mcu_xoff
-        registry[Command.CMD_DIGITAL_READ.value] = self._unsupported_digital
-        registry[Command.CMD_ANALOG_READ.value] = self._unsupported_analog
+        registry[Command.CMD_DIGITAL_READ.value] = functools.partial(
+            self._unsupported_mcu_request, msg="linux_originates_digital_read_requests"
+        )
+        registry[Command.CMD_ANALOG_READ.value] = functools.partial(
+            self._unsupported_mcu_request, msg="linux_originates_analog_read_requests"
+        )
         registry[Command.CMD_GET_CAPABILITIES_RESP.value] = self.handshake.handle_capabilities_resp
         registry[Command.CMD_LINK_SYNC_RESP.value] = self.handshake.handle_link_sync_resp
         registry[Command.CMD_LINK_RESET_RESP.value] = self.handshake.handle_link_reset_resp
-        return registry
         return registry
 
     def _dispatch_protobuf_reflection(self, seq: int, envelope: pb.RpcEnvelope) -> Any:

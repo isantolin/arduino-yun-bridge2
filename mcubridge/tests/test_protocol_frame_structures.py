@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from google.protobuf.message import Message as ProtobufMessage
 from mcubridge.protocol import frame, mcubridge_pb2 as pb, protocol, structures
-
 
 # =============================================================================
 # 1. Tests for mcubridge.protocol.frame
@@ -89,14 +87,14 @@ def test_parse_frame_incomplete() -> None:
 
 def test_parse_frame_crc_mismatch() -> None:
     raw = frame.build_frame(command_id=0x01, sequence_id=1, payload=b"test")
-    corrupt = raw[:-1] + b"\xFF"
+    corrupt = raw[:-1] + b"\xff"
     with pytest.raises(ValueError, match="CRC mismatch"):
         frame.parse_frame(corrupt)
 
 
 def test_parse_frame_protobuf_decode_error() -> None:
     # Payload with invalid protobuf byte stream before CRC
-    corrupt_body = b"\xFF\xFF\xFF\xFF"
+    corrupt_body = b"\xff\xff\xff\xff"
     from binascii import crc32
 
     crc_bytes = (crc32(corrupt_body) & protocol.CRC32_MASK).to_bytes(4, "little")
@@ -156,9 +154,7 @@ def test_topic_route_properties() -> None:
     assert route_empty.remainder == ()
     assert route_empty.action is None
 
-    route_resp = structures.TopicRoute(
-        raw="prefix/d/response", prefix="prefix", topic="d", segments=("response",)
-    )
+    route_resp = structures.TopicRoute(raw="prefix/d/response", prefix="prefix", topic="d", segments=("response",))
     assert route_resp.action is None
 
 

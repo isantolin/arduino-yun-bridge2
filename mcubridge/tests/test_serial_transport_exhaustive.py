@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from cobs import cobsr
 from mcubridge.config.settings import load_runtime_config
-from mcubridge.protocol import mcubridge_pb2 as pb, protocol
+from mcubridge.protocol import protocol
 from mcubridge.protocol.frame import build_frame
 from mcubridge.state.context import RuntimeState
 from mcubridge.transport.serial import SerialTransport
@@ -23,9 +23,9 @@ def mock_serial_setup() -> tuple[SerialTransport, RuntimeState, MagicMock]:
 
     mock_serial = MagicMock()
     mock_serial.transport.serial.baudrate = 115200
-    mock_serial.readuntil = AsyncMock()
-    mock_serial.write = AsyncMock()
-    mock_serial.drain = AsyncMock()
+    mock_serial.readuntil = AsyncMock(return_value=b"")
+    mock_serial.write = AsyncMock(return_value=None)
+    mock_serial.drain = AsyncMock(return_value=None)
     transport.serial = mock_serial
     state.serial_writer = mock_serial.transport
 
@@ -37,17 +37,18 @@ def test_switch_local_baudrate_failure(mock_serial_setup: tuple[SerialTransport,
     type(mock_serial.transport.serial).baudrate = property(
         fget=lambda self: 115200, fset=MagicMock(side_effect=OSError("Baudrate error"))
     )
+    switch_fn = getattr(transport, "_switch_local_baudrate")
     with pytest.raises(RuntimeError, match="UART access failed"):
-        transport._switch_local_baudrate(9600)
+        switch_fn(9600)
 
 
 @pytest.mark.asyncio
 async def test_reset(mock_serial_setup: tuple[SerialTransport, RuntimeState, MagicMock]) -> None:
     transport, _state, _ = mock_serial_setup
     cmd = MagicMock()
-    transport._current = cmd
+    setattr(transport, "_current", cmd)
     await transport.reset()
-    assert transport._current is None
+    assert getattr(transport, "_current") is None
     cmd.mark_failure.assert_called_once()
 
 
@@ -59,12 +60,13 @@ async def test_read_loop_cobs_decode_error(
 
     # First call returns invalid COBS packet + delimiter, second raises CancelledError to end loop
     mock_serial.readuntil.side_effect = [
-        b"\xFF\xFF" + protocol.FRAME_DELIMITER,
+        b"\xff\xff" + protocol.FRAME_DELIMITER,
         asyncio.CancelledError(),
     ]
 
+    read_loop_fn = getattr(transport, "_read_loop")
     with pytest.raises(asyncio.CancelledError):
-        await transport._read_loop(mock_serial)
+        await read_loop_fn(mock_serial)
 
 
 @pytest.mark.asyncio
@@ -82,9 +84,10 @@ async def test_read_loop_crc_error_recovery(
         asyncio.CancelledError(),
     ]
 
+    read_loop_fn = getattr(transport, "_read_loop")
     with pytest.raises(asyncio.CancelledError):
-        await transport._read_loop(mock_serial)
-    assert transport._consecutive_crc_errors == 1
+        await read_loop_fn(mock_serial)
+    assert getattr(transport, "_consecutive_crc_errors") == 1
 
 
 @pytest.mark.asyncio
@@ -101,9 +104,10 @@ async def test_read_loop_valid_frame_dispatch(
         asyncio.CancelledError(),
     ]
 
+    read_loop_fn = getattr(transport, "_read_loop")
     with pytest.raises(asyncio.CancelledError):
-        await transport._read_loop(mock_serial)
-    assert transport._consecutive_crc_errors == 0
+        await read_loop_fn(mock_serial)
+    assert getattr(transport, "_consecutive_crc_errors") == 0
 
 
 @pytest.mark.asyncio

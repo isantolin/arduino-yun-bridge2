@@ -1,19 +1,17 @@
 """Exhaustive tests for mcubridge.config.logging and mcubridge.config.settings modules. [SIL-2]"""
 
 from __future__ import annotations
+from mcubridge.config import settings
 
 from unittest.mock import MagicMock, patch
 
 import pytest
 from mcubridge.config.logging import configure_logging, hexdump_processor
 from mcubridge.config.settings import (
-    RuntimeConfig,
-    _coerce_value,
     get_config_source,
     load_runtime_config,
 )
 from mcubridge.protocol import mcubridge_pb2 as pb
-
 
 # =============================================================================
 # 1. Tests for mcubridge.config.logging
@@ -61,11 +59,12 @@ def test_configure_logging_syslog_paths() -> None:
 
 
 def test_runtime_config_factory() -> None:
+    factory = getattr(settings, "_runtime_config_factory")
     prebuilt = pb.RuntimeConfig(topic_prefix="test")
-    res = RuntimeConfig(pb_msg=prebuilt)
+    res = factory(pb_msg=prebuilt)
     assert res == prebuilt
 
-    res2 = RuntimeConfig(serial_shared_secret="my_secret")
+    res2 = factory(serial_shared_secret="my_secret")
     assert res2.serial_shared_secret == b"my_secret"
 
 
@@ -76,29 +75,31 @@ def test_get_config_source() -> None:
 def test_coerce_value() -> None:
     from google.protobuf.descriptor import FieldDescriptor
 
-    assert _coerce_value(None, FieldDescriptor.TYPE_STRING) is None
+    coerce_fn = getattr(settings, "_coerce_value")
+
+    assert coerce_fn(None, FieldDescriptor.TYPE_STRING) is None
 
     # String & Path
-    assert _coerce_value("  hello  ", FieldDescriptor.TYPE_STRING) == "hello"
-    assert _coerce_value("   ", FieldDescriptor.TYPE_STRING) is None
-    assert "/tmp" in _coerce_value("/tmp", FieldDescriptor.TYPE_STRING, "cloud_spool_dir")
+    assert coerce_fn("  hello  ", FieldDescriptor.TYPE_STRING) == "hello"
+    assert coerce_fn("   ", FieldDescriptor.TYPE_STRING) is None
+    assert "/tmp" in coerce_fn("/tmp", FieldDescriptor.TYPE_STRING, "cloud_spool_dir")
 
     # Integer types
-    assert _coerce_value("123", FieldDescriptor.TYPE_UINT32) == 123
-    assert _coerce_value("invalid", FieldDescriptor.TYPE_UINT32) == 0
+    assert coerce_fn("123", FieldDescriptor.TYPE_UINT32) == 123
+    assert coerce_fn("invalid", FieldDescriptor.TYPE_UINT32) == 0
 
     # Float types
-    assert _coerce_value("45.6", FieldDescriptor.TYPE_FLOAT) == 45.6
-    assert _coerce_value("invalid", FieldDescriptor.TYPE_FLOAT) == 0.0
+    assert coerce_fn("45.6", FieldDescriptor.TYPE_FLOAT) == 45.6
+    assert coerce_fn("invalid", FieldDescriptor.TYPE_FLOAT) == 0.0
 
     # Bool types
-    assert _coerce_value(True, FieldDescriptor.TYPE_BOOL) is True
-    assert _coerce_value("yes", FieldDescriptor.TYPE_BOOL) is True
-    assert _coerce_value("off", FieldDescriptor.TYPE_BOOL) is False
+    assert coerce_fn(True, FieldDescriptor.TYPE_BOOL) is True
+    assert coerce_fn("yes", FieldDescriptor.TYPE_BOOL) is True
+    assert coerce_fn("off", FieldDescriptor.TYPE_BOOL) is False
 
     # Bytes types
-    assert _coerce_value(b"bytes", FieldDescriptor.TYPE_BYTES) == b"bytes"
-    assert _coerce_value("str_bytes", FieldDescriptor.TYPE_BYTES) == b"str_bytes"
+    assert coerce_fn(b"bytes", FieldDescriptor.TYPE_BYTES) == b"bytes"
+    assert coerce_fn("str_bytes", FieldDescriptor.TYPE_BYTES) == b"str_bytes"
 
 
 def test_load_runtime_config_uci_error_fallback() -> None:

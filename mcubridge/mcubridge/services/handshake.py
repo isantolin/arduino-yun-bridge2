@@ -289,7 +289,6 @@ class SerialHandshakeManager:
 
         nonce_mismatch = not bytes_eq(nonce, expected)
         missing_expected_tag = expected_tag is None
-        bad_tag_length = len(tag_bytes) != protocol.AEAD_TAG_SIZE
         tag_mismatch = not bytes_eq(tag_bytes, recalculated_tag)
 
         if nonce_mismatch:
@@ -300,11 +299,10 @@ class SerialHandshakeManager:
             )
             return False
 
-        if missing_expected_tag or bad_tag_length or tag_mismatch:
+        if missing_expected_tag or tag_mismatch:
             self._logger.error(
-                "LINK_SYNC_RESP auth mismatch: missing_tag=%s, bad_len=%s, tag_mismatch=%s (nonce=%s)",
+                "LINK_SYNC_RESP auth mismatch: missing_tag=%s, tag_mismatch=%s (nonce=%s)",
                 missing_expected_tag,
-                bad_tag_length,
                 tag_mismatch,
                 nonce.hex(),
             )

@@ -914,22 +914,22 @@ message Capabilities {
 }
 
 message PinMode {
-    uint32 pin = 1;
-    PinModeType mode = 2;
+    uint32 pin = 1 [(validate.rules).uint32.lte = 100];
+    PinModeType mode = 2 [(validate.rules).enum.defined_only = true];
 }
 
 message DigitalWrite {
-    uint32 pin = 1;
-    uint32 value = 2;
+    uint32 pin = 1 [(validate.rules).uint32.lte = 100];
+    uint32 value = 2 [(validate.rules).uint32.lte = 1];
 }
 
 message AnalogWrite {
-    uint32 pin = 1;
-    uint32 value = 2;
+    uint32 pin = 1 [(validate.rules).uint32.lte = 100];
+    uint32 value = 2 [(validate.rules).uint32.lte = 4095];
 }
 
 message PinRead {
-    uint32 pin = 1;
+    uint32 pin = 1 [(validate.rules).uint32.lte = 100];
 }
 
 message RuntimeConfig {
@@ -995,7 +995,7 @@ message AnalogReadResponse {
 
 message ConsoleWrite {
     option (msg_cloud_topic) = "console/out";
-    bytes data = 1;
+    bytes data = 1 [(validate.rules).bytes = {min_len: 1, max_len: 1024}];
 }
 
 message DatastorePut {
@@ -1013,7 +1013,7 @@ message DatastoreGetResponse {
 
 message MailboxPush {
     option (msg_cloud_topic) = "mailbox/incoming";
-    bytes data = 1;
+    bytes data = 1 [(validate.rules).bytes = {min_len: 1, max_len: 512}];
 }
 
 message MailboxProcessed {
@@ -1108,16 +1108,16 @@ message SetBaudratePacket {
 }
 
 message LinkSync {
-    bytes nonce = 1;
-    bytes tag = 2;
+    bytes nonce = 1 [(validate.rules).bytes = {min_len: 16, max_len: 16}];
+    bytes tag = 2 [(validate.rules).bytes = {min_len: 16, max_len: 16}];
 }
 
 message EnterBootloader {
-    uint32 magic = 1;
+    uint32 magic = 1 [(validate.rules).uint32.const = 3735929054];
 }
 
 message SpiTransfer {
-    bytes data = 1;
+    bytes data = 1 [(validate.rules).bytes = {min_len: 1, max_len: 256}];
 }
 
 message SpiTransferResponse {
@@ -1126,9 +1126,9 @@ message SpiTransferResponse {
 }
 
 message SpiConfig {
-    uint32 bit_order = 1;
-    uint32 data_mode = 2;
-    uint32 frequency = 3;
+    uint32 bit_order = 1 [(validate.rules).uint32.lte = 1];
+    uint32 data_mode = 2 [(validate.rules).uint32.lte = 3];
+    uint32 frequency = 3 [(validate.rules).uint32 = {gte: 100000, lte: 20000000}];
 }
 
 message SupervisorSnapshot {

@@ -142,3 +142,86 @@ async def test_enqueue_cloud_spool_and_flush(
     assert popped_bytes is not None
     msg_popped = pb.CloudQueuedPublish.FromString(popped_bytes)
     assert msg_popped.topic_name == "br/status"
+
+
+@pytest.mark.asyncio
+async def test_file_handlers_exhaustive(
+    runtime_setup: tuple[BridgeService, RuntimeState, AsyncMock],
+) -> None:
+    service, state, transport = runtime_setup
+    state.link_session_key = b"0123456789abcdef0123456789abcdef"
+    transport.send = AsyncMock(return_value=True)
+
+    file_path = "test.txt"
+
+    # 1. File Write
+    fw = pb.FileWrite(path=file_path, data=b"hello file")
+    res_w = await service._on_mcu_file_write(1, fw)
+    assert res_w is True
+
+    # 2. File Read
+    fr = pb.FileRead(path=file_path)
+    await service._on_mcu_file_read(2, fr)
+    assert transport.send.called
+
+    # 3. File Remove
+    fm = pb.FileRemove(path=file_path)
+    res_m = await service._on_mcu_file_remove(3, fm)
+    assert res_m is True
+
+
+@pytest.mark.asyncio
+async def test_datastore_handlers_exhaustive(
+    runtime_setup: tuple[BridgeService, RuntimeState, AsyncMock],
+) -> None:
+    service, state, transport = runtime_setup
+    state.link_session_key = b"0123456789abcdef0123456789abcdef"
+    transport.send = AsyncMock(return_value=True)
+
+    # 1. Put
+    dp = pb.DatastorePut(key="k1", value=b"v1")
+    assert await service._on_mcu_datastore_put(1, dp) is True
+
+    # 2. Get
+    dg = pb.DatastoreGet(key="k1")
+    assert await service._on_mcu_datastore_get(2, dg) is True
+
+
+@pytest.mark.asyncio
+async def test_mailbox_handlers_exhaustive(
+    runtime_setup: tuple[BridgeService, RuntimeState, AsyncMock],
+) -> None:
+    service, state, transport = runtime_setup
+    state.link_session_key = b"0123456789abcdef0123456789abcdef"
+    transport.send = AsyncMock(return_value=True)
+
+    # 1. Mailbox Push
+    mp = pb.MailboxPush(data=b"msg1")
+    assert await service._on_mcu_mailbox_push(1, mp) is True
+
+    # 2. Mailbox Available
+    assert await service._on_mcu_mailbox_available(2, None) is True
+
+    # 3. Mailbox Read
+    assert await service._on_mcu_mailbox_read(3, None) is True
+
+    # 4. Mailbox Processed
+    mpr = pb.MailboxProcessed(message_id=1)
+    await service._on_mcu_mailbox_processed(4, mpr)
+
+
+@pytest.mark.asyncio
+async def test_process_and_spi_handlers_exhaustive(
+    runtime_setup: tuple[BridgeService, RuntimeState, AsyncMock],
+) -> None:
+    service, state, transport = runtime_setup
+    state.link_session_key = b"0123456789abcdef0123456789abcdef"
+    transport.send = AsyncMock(return_value=True)
+
+    # SPI Resp
+    spi_resp = pb.SpiTransferResponse(data=b"\x01\x02")
+    await service._on_mcu_spi_resp(1, spi_resp)
+
+    # Console Write
+    cw = pb.ConsoleWrite(data=b"test console output\n")
+    await service._on_mcu_console_write(2, cw)

@@ -1,5 +1,6 @@
 # Generated via tools/sync_runtime_deps.py; do not edit.
 aiosqlite==0.22.1
+black>=25.1.0
 cobs==1.2.2
 cryptography==49.0.0
 grpclib==0.4.9

@@ -755,21 +755,23 @@ def update_metadata(version: str):
 
 
 def _format_python_file(path: Path) -> None:
-    """Post-process a generated Python file with black for canonical formatting."""
-    try:
-        res = subprocess.run(
-            [sys.executable, "-m", "black", "--quiet", str(path)],
+    """Post-process a generated Python file with black for canonical formatting. [SIL-2]"""
+    res = subprocess.run(
+        [sys.executable, "-m", "black", "--quiet", str(path)],
+        check=False,
+        capture_output=True,
+    )
+    if res.returncode != 0:
+        res_fallback = subprocess.run(
+            ["black", "--quiet", str(path)],
             check=False,
             capture_output=True,
         )
-        if res.returncode != 0:
-            subprocess.run(
-                ["black", "--quiet", str(path)],
-                check=False,
-                capture_output=True,
+        if res_fallback.returncode != 0:
+            raise RuntimeError(
+                f"black is mandatory and failed to format {path}. "
+                f"Ensure black is installed: {res_fallback.stderr.decode()}"
             )
-    except (OSError, subprocess.SubprocessError):
-        pass
 
 
 def ensure_nanopb_core_files() -> None:

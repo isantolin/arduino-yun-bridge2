@@ -110,6 +110,12 @@ openwrt = "python3-protoc-gen-validate"
 pip = "protoc-gen-validate>=1.3.3"
 rationale = "Protobuf Native Validation Rules (PGV / buf.validate) for schema-driven SIL-2 constraints"
 
+[[dependency]]
+name = "black"
+openwrt = "python3-black"
+pip = "black>=25.1.0"
+rationale = "PEP 8 canonical code formatter required for generated code and development environments [BUILD-ONLY]"
+
 
 
 

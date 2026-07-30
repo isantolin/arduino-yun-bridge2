@@ -92,13 +92,14 @@ class SqliteDeque:
             if conn is not None:
                 try:
                     await asyncio.shield(conn.close())
-                finally:
-                    underlying = getattr(conn, "_connection", None)
-                    if underlying is not None:
-                        try:
-                            underlying.close()
-                        except OSError as exc:
-                            logger.debug("SqliteDeque underlying connection close failed", error=exc)
+                except (Exception, OSError):
+                    pass
+                underlying = getattr(conn, "_connection", None)
+                if underlying is not None:
+                    try:
+                        underlying.close()
+                    except (Exception, OSError) as exc:
+                        logger.debug("SqliteDeque underlying connection close failed", error=exc)
 
     async def append(self, item: bytes) -> None:
         async def _append_impl(conn: aiosqlite.Connection) -> None:
@@ -214,13 +215,14 @@ class SqliteCache:
             if conn is not None:
                 try:
                     await asyncio.shield(conn.close())
-                finally:
-                    underlying = getattr(conn, "_connection", None)
-                    if underlying is not None:
-                        try:
-                            underlying.close()
-                        except OSError as exc:
-                            logger.debug("SqliteCache underlying connection close failed", error=exc)
+                except (Exception, OSError):
+                    pass
+                underlying = getattr(conn, "_connection", None)
+                if underlying is not None:
+                    try:
+                        underlying.close()
+                    except (Exception, OSError) as exc:
+                        logger.debug("SqliteCache underlying connection close failed", error=exc)
 
     async def set(self, key: str, value: bytes) -> None:
         async def _setitem_impl(conn: aiosqlite.Connection) -> None:

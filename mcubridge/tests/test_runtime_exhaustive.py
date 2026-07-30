@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from mcubridge.config.settings import load_runtime_config
 from mcubridge.protocol import mcubridge_pb2 as pb, protocol
-from mcubridge.services.runtime import BridgeRequest, BridgeService
+from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState
 
 
@@ -28,7 +28,7 @@ def runtime_setup(
     state = RuntimeState()
     transport = AsyncMock()
 
-    service = BridgeService(config, state, transport)
+    service = BridgeService(config=config, state=state, serial=transport)
     return service, state, transport
 
 
@@ -115,7 +115,7 @@ async def test_handle_request_routing(
 
     route = parse_topic("br", "br/d/13/mode")
     assert route is not None
-    req = BridgeRequest(topic="br/d/13/mode", payload=b"1")
+    req = pb.CloudQueuedPublish(topic_name="br/d/13/mode", payload=b"1")
 
     handle_pin_fn = getattr(service, "_handle_pin")
     await handle_pin_fn(route, req)

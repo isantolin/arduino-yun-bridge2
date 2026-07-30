@@ -77,15 +77,6 @@ from ..watchdog import WatchdogKeepalive
 from ..state.context import ProcessContext, RuntimeState
 from .handshake import SerialHandshakeManager, SerialHandshakeFatal, derive_serial_timing
 
-
-@dataclass
-class BridgeRequest:
-    topic: str
-    payload: bytes
-    correlation_data: bytes | None = None
-    response_topic: str | None = None
-
-
 if TYPE_CHECKING:
     from ..transport.serial import SerialTransport
 
@@ -128,7 +119,7 @@ class BridgeService:
     mcu_registry: dict[int, McuHandler]
     _topic_aliases: dict[str, int]
     _next_alias_id: int
-    _cloud_incoming_queue: asyncio.Queue[BridgeRequest]
+    _cloud_incoming_queue: asyncio.Queue[pb.CloudQueuedPublish]
     ipc_requests: dict[bytes, asyncio.Queue[pb.CloudQueuedPublish]]
     console_queues: list[asyncio.Queue[pb.CloudQueuedPublish]]
     _tg: asyncio.TaskGroup | None
@@ -479,7 +470,7 @@ class BridgeService:
             await serial.send(Status.NOT_IMPLEMENTED.value, b"")
 
     async def handle_request(self, inbound: Any) -> None:
-        if isinstance(inbound, BridgeRequest):
+        if isinstance(inbound, pb.CloudQueuedPublish):
             request = inbound
         else:
             props = getattr(inbound, "properties", None)
@@ -490,20 +481,21 @@ class BridgeService:
             if cd is None and props:
                 cd = getattr(props, "CorrelationData", None)
 
-            request = BridgeRequest(
-                topic=str(inbound.topic),
-                payload=bytes(inbound.payload),
-                correlation_data=bytes(cd) if cd else None,
-                response_topic=str(rt) if rt else None,
+            request = pb.CloudQueuedPublish(
+                topic_name=str(getattr(inbound, "topic_name", None) or getattr(inbound, "topic", "")),
+                payload=bytes(getattr(inbound, "payload", b"")),
+                correlation_data=bytes(cd) if cd else b"",
+                response_topic=str(rt) if rt else "",
             )
 
-        if route := parse_topic(self.state.cloud_topic_prefix, request.topic):
+        topic_val = request.topic_name if request.topic_name else getattr(request, "topic", "")
+        if route := parse_topic(self.state.cloud_topic_prefix, topic_val):
             if route.topic in (Topic.DIGITAL, Topic.ANALOG, Topic.CONSOLE, Topic.SPI):
                 try:
                     async with asyncio.timeout(DEFAULT_SYNC_TIMEOUT_SECONDS):
                         await self.state.link_sync_event.wait()
                 except asyncio.TimeoutError:
-                    logger.error("Timed out waiting for MCU link synchronization", topic=request.topic)
+                    logger.error("Timed out waiting for MCU link synchronization", topic=topic_val)
             action = self._deduce_action(route)
             topic_str = route.topic.value if isinstance(route.topic, Topic) else route.topic
             if action and not (
@@ -768,12 +760,12 @@ class BridgeService:
 
     # --- Direct Service Request Handlers (Cleaned) ---
 
-    async def _handle_console(self, inbound: BridgeRequest) -> None:
+    async def _handle_console(self, inbound: pb.CloudQueuedPublish) -> None:
         if pl := inbound.payload:
             self.state.console_to_mcu_queue.append(pl)
             await self._flush_console_queue()
 
-    async def _handle_datastore(self, route: TopicRoute, inbound: BridgeRequest) -> None:
+    async def _handle_datastore(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         key_parts = list(route.remainder)
         key = "/".join(key_parts)
         pl = inbound.payload
@@ -796,7 +788,7 @@ class BridgeService:
             elif route.remainder and route.remainder[-1] == "request":
                 await self._publish_datastore_value(key, b"", reply_context=inbound, error="datastore-miss")
 
-    async def _handle_mailbox(self, route: TopicRoute, inbound: BridgeRequest) -> None:
+    async def _handle_mailbox(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         serial = self.serial
         if not serial:
             return
@@ -819,7 +811,7 @@ class BridgeService:
                 reply_context=inbound,
             )
 
-    async def _handle_file(self, route: TopicRoute, inbound: BridgeRequest) -> None:
+    async def _handle_file(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         serial = self.serial
         if not serial:
             return
@@ -857,7 +849,8 @@ class BridgeService:
                         reply_context=inbound,
                     )
             elif act == FileAction.READ and await asyncio.to_thread(path.is_file):
-                if not inbound.topic.endswith(protocol.CLOUD_SUFFIX_RESPONSE):
+                inbound_topic = inbound.topic_name if inbound.topic_name else getattr(inbound, "topic", "")
+                if not inbound_topic.endswith(protocol.CLOUD_SUFFIX_RESPONSE):
                     await self.enqueue_cloud(
                         create_queued_publish(
                             topic_path(
@@ -874,7 +867,7 @@ class BridgeService:
             elif act == FileAction.REMOVE and await asyncio.to_thread(path.exists):
                 await asyncio.to_thread(path.unlink)
 
-    async def _handle_file_mcu_read(self, ctx: BridgeRequest, target: str) -> None:
+    async def _handle_file_mcu_read(self, ctx: pb.CloudQueuedPublish, target: str) -> None:
         serial = self.serial
         if not serial:
             return
@@ -926,7 +919,7 @@ class BridgeService:
             finally:
                 self._pending_mcu_read = None
 
-    async def _handle_shell(self, route: TopicRoute, inbound: BridgeRequest) -> None:
+    async def _handle_shell(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         act = route.segments[0] if route.segments else None
         pl = inbound.payload
         if act == ShellAction.RUN_ASYNC:
@@ -990,7 +983,7 @@ class BridgeService:
                     if self.state.running_processes.pop(pid, None):
                         self._process_slots.release()
 
-    async def _handle_spi(self, route: TopicRoute, inbound: BridgeRequest) -> None:
+    async def _handle_spi(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         serial = self.serial
         if not serial:
             return
@@ -1027,7 +1020,7 @@ class BridgeService:
             case _:
                 return
 
-    async def _handle_pin(self, route: TopicRoute, inbound: BridgeRequest) -> None:
+    async def _handle_pin(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         serial = self.serial
         if not serial:
             return
@@ -1071,7 +1064,7 @@ class BridgeService:
             cmd = Command.CMD_DIGITAL_WRITE if route.topic == Topic.DIGITAL else Command.CMD_ANALOG_WRITE
             await serial.send(cmd.value, pb.DigitalWrite(pin=pin, value=int(pl) if pl.isdigit() else 0))
 
-    async def _handle_system(self, route: TopicRoute, inbound: BridgeRequest) -> None:
+    async def _handle_system(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         serial = self.serial
         if not serial:
             return
@@ -1115,7 +1108,7 @@ class BridgeService:
 
     # --- Low-level Helpers ---
 
-    async def _request_mcu_version(self, inbound: BridgeRequest | None = None) -> bool:
+    async def _request_mcu_version(self, inbound: pb.CloudQueuedPublish | None = None) -> bool:
         serial = self.serial
         if not serial:
             return False
@@ -1496,9 +1489,8 @@ class BridgeService:
 
                             if payload_type == "command_request":
                                 cmd = envelope.command_request
-                                # Map to BridgeRequest
-                                request = BridgeRequest(
-                                    topic=topic_path(self.state.topic_prefix, cmd.command_path),
+                                request = pb.CloudQueuedPublish(
+                                    topic_name=topic_path(self.state.topic_prefix, cmd.command_path),
                                     payload=cmd.payload,
                                     correlation_data=envelope.sequence_id.to_bytes(8, "big"),
                                     response_topic="cloud",
@@ -1535,7 +1527,7 @@ class BridgeService:
                 except (ValueError, RuntimeError, asyncio.QueueFull) as e:
                     logger.error(
                         "Error processing CLOUD message",
-                        topic=message.topic,
+                        topic=message.topic_name,
                         error=str(e),
                         payload_hex=(message.payload.hex() if message.payload else None),
                     )
@@ -1645,8 +1637,8 @@ class LocalBridgeService(LocalBridgeBase):
             logger.debug("Registering IPC request correlation", topic=request.topic_name, correlation=correlation.hex())
 
         try:
-            req = BridgeRequest(
-                topic=request.topic_name,
+            req = pb.CloudQueuedPublish(
+                topic_name=request.topic_name,
                 payload=request.payload,
                 correlation_data=correlation,
             )

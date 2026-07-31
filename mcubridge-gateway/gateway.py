@@ -159,6 +159,7 @@ def main(
     key: Annotated[Path | None, typer.Option(help="Path to server SSL private key file")] = None,
     ca: Annotated[Path | None, typer.Option(help="Path to CA file for client certificate verification")] = None,
 ) -> None:
+    """MCU Bridge Protobuf Gateway."""
     gateway = ProtobufGateway(
         host=host,
         port=port,

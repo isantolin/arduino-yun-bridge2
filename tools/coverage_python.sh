@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEFAULT_COVERAGE_ROOT="$ROOT_DIR/coverage/python"
-DEFAULT_TARGETS=("mcubridge/tests" "mcubridge-client-examples/client_tests")
+DEFAULT_TARGETS=("mcubridge/tests" "mcubridge-client-examples/client_tests" "mcubridge-gateway/tests")
 
 usage() {
   cat <<'EOF'
@@ -92,6 +92,7 @@ $PYTHON_BIN -m pytest \
   --timeout-method=thread \
   --cov="$ROOT_DIR/mcubridge/mcubridge" \
   --cov="$ROOT_DIR/mcubridge-client-examples/mcubridge_client" \
+  --cov="$ROOT_DIR/mcubridge-gateway" \
   --cov-branch \
   --cov-fail-under="${PYTHON_COVERAGE_MIN}" \
   --cov-report=xml:"$COVERAGE_ROOT/coverage.xml" \

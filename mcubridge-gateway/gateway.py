@@ -87,6 +87,8 @@ class CloudBridgeService(CloudBridgeBase):
                             device_id,
                             envelope.command_response.status_code,
                         )
+                    case _:
+                        logger.debug("Received unhandled or empty payload type: %s", payload_type)
         except asyncio.CancelledError:
             logger.info("Session cancelled for device: %s", device_id)
             raise

@@ -40,7 +40,10 @@ async def test_session_ping_pong(cloud_service: CloudBridgeService) -> None:
     async def async_iter():
         yield ping_envelope
 
-    mock_stream.__aiter__ = lambda self: async_iter()
+    def _aiter(self: object):
+        return async_iter()
+
+    mock_stream.__aiter__ = _aiter
 
     await cloud_service.Session(mock_stream)
 
@@ -65,7 +68,10 @@ async def test_session_client_cert_common_name(cloud_service: CloudBridgeService
     async def async_iter():
         yield pb.CloudEnvelope(protocol_version=2, telemetry=pb.TelemetryReport(daemon_metrics_blob=b"data"))
 
-    mock_stream.__aiter__ = lambda self: async_iter()
+    def _aiter(self: object):
+        return async_iter()
+
+    mock_stream.__aiter__ = _aiter
 
     await cloud_service.Session(mock_stream)
     assert "device-mips-01" not in cloud_service.gateway.connections
@@ -91,7 +97,10 @@ async def test_session_event_and_command_response(cloud_service: CloudBridgeServ
         yield event_envelope
         yield cmd_resp_envelope
 
-    mock_stream.__aiter__ = lambda self: async_iter()
+    def _aiter(self: object):
+        return async_iter()
+
+    mock_stream.__aiter__ = _aiter
 
     await cloud_service.Session(mock_stream)
 

@@ -5,7 +5,6 @@ PKG_VERSION:=1.8.2
 PKG_RELEASE:=1
 
 PYPI_NAME:=serialx
-PKG_SOURCE:=$(PYPI_NAME)-$(PKG_VERSION).tar.gz
 PKG_HASH:=90c912ec8ceb4ae26a7dca158ca21e5bd8d73ddfc93c5e8d8b101a22ddccbb9a
 
 PKG_MAINTAINER:=Ignacio Santolin <isantolin@gmail.com>

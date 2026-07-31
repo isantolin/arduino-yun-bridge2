@@ -5,7 +5,6 @@ PKG_VERSION:=0.22.1
 PKG_RELEASE:=3
 
 PYPI_NAME:=uvloop
-PKG_SOURCE:=uvloop-$(PKG_VERSION).tar.gz
 PKG_HASH:=6c84bae345b9147082b17371e3dd5d42775bddce91f885499017f4607fdaf39f
 
 PKG_MAINTAINER:=Ignacio Santolin <ignacio.santolin@gmail.com>

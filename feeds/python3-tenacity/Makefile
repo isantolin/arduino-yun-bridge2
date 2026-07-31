@@ -5,7 +5,6 @@ PKG_VERSION:=9.1.4
 PKG_RELEASE:=1
 
 PYPI_NAME:=tenacity
-PKG_SOURCE:=$(PYPI_NAME)-$(PKG_VERSION).tar.gz
 PKG_HASH:=adb31d4c263f2bd041081ab33b498309a57c77f9acf2db65aadf0898179cf93a
 
 PKG_MAINTAINER:=Ignacio Santolin <isantolin@gmail.com>

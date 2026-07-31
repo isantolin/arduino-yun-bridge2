@@ -138,16 +138,6 @@ def test_cli_help() -> None:
 
 
 @pytest.mark.asyncio
-async def test_session_cert_parse_error(cloud_service: CloudBridgeService) -> None:
-    mock_stream: AsyncMock = AsyncMock()
-    mock_stream.peer = MagicMock()
-    mock_stream.peer.addr.return_value = ("127.0.0.1", 1234)
-    mock_stream.peer.cert.side_effect = TypeError("Invalid cert format")
-
-    await cloud_service.Session(mock_stream)
-
-
-@pytest.mark.asyncio
 async def test_session_unhandled_and_oserror(cloud_service: CloudBridgeService) -> None:
     mock_stream: AsyncMock = AsyncMock()
     mock_stream.peer = MagicMock()

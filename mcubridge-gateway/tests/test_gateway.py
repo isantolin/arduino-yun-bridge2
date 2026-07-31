@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -33,7 +34,7 @@ async def test_session_ping_pong(cloud_service: CloudBridgeService) -> None:
         protocol_version=2,
         device_id="DEV_001",
         sequence_id=10,
-        ping=pb.KeepalivePing(timestamp_ms=1000),
+        ping=pb.KeepalivePing(interval_ms=1000),
     )
 
     async def async_iter():
@@ -62,7 +63,7 @@ async def test_session_client_cert_common_name(cloud_service: CloudBridgeService
     }
 
     async def async_iter():
-        yield pb.CloudEnvelope(protocol_version=2, telemetry=pb.CloudQueuedPublish(topic_name="test", payload=b"data"))
+        yield pb.CloudEnvelope(protocol_version=2, telemetry=pb.TelemetryReport(daemon_metrics_blob=b"data"))
 
     mock_stream.__aiter__ = lambda self: async_iter()
 
@@ -79,11 +80,11 @@ async def test_session_event_and_command_response(cloud_service: CloudBridgeServ
 
     event_envelope = pb.CloudEnvelope(
         protocol_version=2,
-        event=pb.CloudBridgeEvent(event_type="boot", severity="info", description="MCU reset"),
+        event=pb.EventNotification(event_type="boot", severity="info", description="MCU reset"),
     )
     cmd_resp_envelope = pb.CloudEnvelope(
         protocol_version=2,
-        command_response=pb.CloudCommandResponse(command_id=0x10, status_code=200),
+        command_response=pb.CommandResponse(status_code=200, error_message="", payload=b""),
     )
 
     async def async_iter():
@@ -122,6 +123,6 @@ def test_protobuf_gateway_ssl_context_valid(tmp_path: Path) -> None:
 
 def test_cli_help() -> None:
     runner = CliRunner()
-    result = runner.invoke(app, ["--help"])
+    result = runner.invoke(cast(Any, app), ["--help"])
     assert result.exit_code == 0
     assert "MCU Bridge Protobuf Gateway" in result.stdout

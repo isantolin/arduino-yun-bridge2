@@ -5,6 +5,8 @@ This server acts as the primary cloud endpoint for MPU Daemons, running as a gRP
 """
 
 from __future__ import annotations
+from typing import Annotated
+import typer
 
 import asyncio
 import logging
@@ -116,7 +118,7 @@ class ProtobufGateway:
         self.server: Server | None = None
         self.connections: dict[str, Stream[pb.CloudEnvelope, pb.CloudEnvelope]] = {}
 
-    def _get_ssl_context(self) -> ssl.SSLContext | None:
+    def get_ssl_context(self) -> ssl.SSLContext | None:
         if not self.use_tls:
             return None
 
@@ -136,7 +138,7 @@ class ProtobufGateway:
         return context
 
     async def run(self) -> None:
-        ssl_context = self._get_ssl_context()
+        ssl_context = self.get_ssl_context()
         self.server = Server([CloudBridgeService(self)])
         await self.server.start(self.host, self.port, ssl=ssl_context)
 
@@ -144,9 +146,6 @@ class ProtobufGateway:
         logger.info("gRPC Cloud Gateway running on %s://%s:%d", scheme, self.host, self.port)
         await self.server.wait_closed()
 
-
-import typer
-from typing import Annotated
 
 app = typer.Typer(help="MCU Bridge Protobuf Gateway", add_completion=False)
 

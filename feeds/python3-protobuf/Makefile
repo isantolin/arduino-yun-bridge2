@@ -2,7 +2,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=python3-protobuf
-PKG_VERSION:=7.36.0_rc1
+PKG_VERSION:=7.36.0rc1
 PKG_RELEASE:=1
 
 PYPI_NAME:=protobuf
@@ -16,7 +16,6 @@ PKG_LICENSE_FILES:=LICENSE
 
 # PKG_BUILD_DEPENDS pre-injected into hostpkg
 
-PKG_BUILD_DIR:=$(BUILD_DIR)/pypi/protobuf-7.36.0rc1
 include $(TOPDIR)/feeds/packages/lang/python/pypi.mk
 include $(INCLUDE_DIR)/package.mk
 include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk

@@ -135,3 +135,76 @@ def test_cli_help() -> None:
     result = runner.invoke(cast(Any, app), ["--help"])
     assert result.exit_code == 0
     assert "MCU Bridge Protobuf Gateway" in result.stdout
+
+
+@pytest.mark.asyncio
+async def test_session_cert_parse_error(cloud_service: CloudBridgeService) -> None:
+    mock_stream: AsyncMock = AsyncMock()
+    mock_stream.peer = MagicMock()
+    mock_stream.peer.addr.return_value = ("127.0.0.1", 1234)
+    mock_stream.peer.cert.side_effect = TypeError("Invalid cert format")
+
+    await cloud_service.Session(mock_stream)
+
+
+@pytest.mark.asyncio
+async def test_session_unhandled_and_oserror(cloud_service: CloudBridgeService) -> None:
+    mock_stream: AsyncMock = AsyncMock()
+    mock_stream.peer = MagicMock()
+    mock_stream.peer.addr.return_value = ("127.0.0.1", 1234)
+    mock_stream.peer.cert.return_value = None
+
+    async def async_iter():
+        yield pb.CloudEnvelope(protocol_version=2)
+        raise OSError("Connection reset by peer")
+
+    def _aiter(self: object):
+        return async_iter()
+
+    mock_stream.__aiter__ = _aiter
+    await cloud_service.Session(mock_stream)
+
+
+def test_protobuf_gateway_mtls(tmp_path: Path) -> None:
+    cert_file = tmp_path / "server.crt"
+    key_file = tmp_path / "server.key"
+    ca_file = tmp_path / "ca.crt"
+    cert_file.write_text("cert")
+    key_file.write_text("key")
+    ca_file.write_text("ca")
+
+    gw = ProtobufGateway(
+        use_tls=True,
+        cert_file=str(cert_file),
+        key_file=str(key_file),
+        ca_file=str(ca_file),
+    )
+    with patch("ssl.create_default_context") as mock_ssl_ctx:
+        mock_ctx = MagicMock()
+        mock_ssl_ctx.return_value = mock_ctx
+        ctx = gw.get_ssl_context()
+        assert ctx is mock_ctx
+        assert mock_ctx.load_verify_locations.called
+
+
+@pytest.mark.asyncio
+async def test_protobuf_gateway_run() -> None:
+    gw = ProtobufGateway(use_tls=False)
+    with patch("gateway.Server") as mock_server_cls:
+        mock_server = AsyncMock()
+        mock_server_cls.return_value = mock_server
+        await gw.run()
+        assert mock_server.start.called
+        assert mock_server.wait_closed.called
+
+
+def test_cli_main_invocation() -> None:
+    runner = CliRunner()
+    def _mock_run(coro: Any) -> None:
+        if hasattr(coro, "close"):
+            coro.close()
+
+    with patch("asyncio.run", side_effect=_mock_run):
+        result = runner.invoke(cast(Any, app), ["--no-tls", "--port", "9090"])
+        assert result.exit_code == 0
+

@@ -66,29 +66,26 @@ class CloudBridgeService(CloudBridgeBase):
                     "Received envelope from %s (seq=%d, payload=%s)", device_id, envelope.sequence_id, payload_type
                 )
 
-                if payload_type == "ping":
-                    # Respond with KeepalivePong
-                    pong = pb.CloudEnvelope(
-                        protocol_version=2,
-                        device_id="CLOUD_GW",
-                        sequence_id=envelope.sequence_id,
-                        pong=pb.KeepalivePong(roundtrip_ms=0),
-                    )
-                    await stream.send_message(pong)
-
-                elif payload_type == "telemetry":
-                    logger.info("Processed telemetry from %s", device_id)
-
-                elif payload_type == "event":
-                    evt = envelope.event
-                    logger.warning("Event from %s: [%s] %s", device_id, evt.event_type, evt.description)
-
-                elif payload_type == "command_response":
-                    logger.info(
-                        "Received command response from %s (status=%d)",
-                        device_id,
-                        envelope.command_response.status_code,
-                    )
+                match payload_type:
+                    case "ping":
+                        pong = pb.CloudEnvelope(
+                            protocol_version=2,
+                            device_id="CLOUD_GW",
+                            sequence_id=envelope.sequence_id,
+                            pong=pb.KeepalivePong(roundtrip_ms=0),
+                        )
+                        await stream.send_message(pong)
+                    case "telemetry":
+                        logger.info("Processed telemetry from %s", device_id)
+                    case "event":
+                        evt = envelope.event
+                        logger.warning("Event from %s: [%s] %s", device_id, evt.event_type, evt.description)
+                    case "command_response":
+                        logger.info(
+                            "Received command response from %s (status=%d)",
+                            device_id,
+                            envelope.command_response.status_code,
+                        )
         except asyncio.CancelledError:
             logger.info("Session cancelled for device: %s", device_id)
             raise

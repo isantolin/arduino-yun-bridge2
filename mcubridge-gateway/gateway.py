@@ -6,7 +6,6 @@ This server acts as the primary cloud endpoint for MPU Daemons, running as a gRP
 
 from __future__ import annotations
 
-import argparse
 import asyncio
 import logging
 import ssl
@@ -146,23 +145,28 @@ class ProtobufGateway:
         await self.server.wait_closed()
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="MCU Bridge Protobuf Gateway")
-    parser.add_argument("--host", default="127.0.0.1", help="Host to bind to")
-    parser.add_argument("--port", type=int, default=8443, help="Port to listen on")
-    parser.add_argument("--no-tls", action="store_true", help="Disable TLS (insecure mode)")
-    parser.add_argument("--cert", help="Path to server SSL certificate file")
-    parser.add_argument("--key", help="Path to server SSL private key file")
-    parser.add_argument("--ca", help="Path to CA file for client certificate verification")
-    args = parser.parse_args()
+import typer
+from typing import Annotated
 
+app = typer.Typer(help="MCU Bridge Protobuf Gateway", add_completion=False)
+
+
+@app.command()
+def main(
+    host: Annotated[str, typer.Option(help="Host to bind to")] = "127.0.0.1",
+    port: Annotated[int, typer.Option(help="Port to listen on")] = 8443,
+    no_tls: Annotated[bool, typer.Option("--no-tls", help="Disable TLS (insecure mode)")] = False,
+    cert: Annotated[Path | None, typer.Option(help="Path to server SSL certificate file")] = None,
+    key: Annotated[Path | None, typer.Option(help="Path to server SSL private key file")] = None,
+    ca: Annotated[Path | None, typer.Option(help="Path to CA file for client certificate verification")] = None,
+) -> None:
     gateway = ProtobufGateway(
-        host=args.host,
-        port=args.port,
-        use_tls=not args.no_tls,
-        cert_file=args.cert,
-        key_file=args.key,
-        ca_file=args.ca,
+        host=host,
+        port=port,
+        use_tls=not no_tls,
+        cert_file=str(cert) if cert else None,
+        key_file=str(key) if key else None,
+        ca_file=str(ca) if ca else None,
     )
 
     try:
@@ -172,4 +176,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    app()

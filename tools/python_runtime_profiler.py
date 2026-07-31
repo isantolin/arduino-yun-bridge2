@@ -6,24 +6,36 @@ from __future__ import annotations
 import argparse
 import time
 import os
-from pathlib import Path
+import sys
 import tracemalloc
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "mcubridge"))
 
 # Start tracing early to capture all allocations
 tracemalloc.start()
 
 
 def measure_imports() -> list[tuple[str, float]]:
+    import importlib
+
     modules = [
         "asyncio",
         "mcubridge.protocol.frame",
         "mcubridge.protocol.structures",
+        "mcubridge.protocol.protocol",
+        "mcubridge.services.runtime",
+        "mcubridge.services.handshake",
+        "mcubridge.transport.serial",
+        "mcubridge.state.storage",
+        "mcubridge.state.metrics",
     ]
     results: list[tuple[str, float]] = []
     for mod in modules:
         start = time.perf_counter()
         try:
-            __import__(mod)
+            importlib.import_module(mod)
         except ImportError:
             pass
         end = time.perf_counter()

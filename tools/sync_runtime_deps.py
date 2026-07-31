@@ -326,9 +326,10 @@ def update_feeds(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
         # Packages that include pypi.mk WITHOUT the wheel override use Python notation.
         # Packages without pypi.mk use APK notation with explicit source/builddir.
         uses_pypi_mk = bool(re.search(r"^\s*include\b.*\bpypi\.mk\b", content, re.MULTILINE))
+        is_prerelease = _to_apk_version(version) != version
 
-        if uses_pypi_mk:
-            # Standard pypi.mk package: Python notation throughout.
+        if uses_pypi_mk and not is_prerelease:
+            # Standard pypi.mk package without pre-release: Python notation throughout.
             pkg_version = version
             new_content = re.sub(r"PKG_VERSION:=[^\n]+", f"PKG_VERSION:={pkg_version}", content)
             new_content = re.sub(r"PYTHON3_PKG_WHEEL_VERSION:=[^\n]+\n?", "", new_content)
@@ -336,6 +337,34 @@ def update_feeds(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
             new_content = re.sub(r"PKG_BUILD_DIR:=[^\n]+\n?", "", new_content)
             new_content = re.sub(r"PYPI_SOURCE_NAME:=[^\n]+\n?", "", new_content)
             new_content = re.sub(r"PYPI_SOURCE_NAME_VERSION:=[^\n]+\n?", "", new_content)
+        elif uses_pypi_mk and is_prerelease:
+            # Pre-release pypi.mk package: APK version for PKG_VERSION, Python version for wheel & PyPI source.
+            pkg_version = _to_apk_version(version)
+            new_content = re.sub(r"PKG_VERSION:=[^\n]+", f"PKG_VERSION:={pkg_version}", content)
+            if "PYPI_SOURCE_NAME:=" in new_content:
+                new_content = re.sub(
+                    r"PYPI_SOURCE_NAME:=[^\n]+",
+                    f"PYPI_SOURCE_NAME:={pip_name}-{version}",
+                    new_content,
+                )
+            else:
+                new_content = re.sub(
+                    r"(PYPI_NAME:=[^\n]+\n)",
+                    f"\\1PYPI_SOURCE_NAME:={pip_name}-{version}\n",
+                    new_content,
+                )
+            if "PYTHON3_PKG_WHEEL_VERSION:=" in new_content:
+                new_content = re.sub(
+                    r"PYTHON3_PKG_WHEEL_VERSION:=[^\n]+",
+                    f"PYTHON3_PKG_WHEEL_VERSION:={version}",
+                    new_content,
+                )
+            else:
+                new_content = re.sub(
+                    r"(PYPI_SOURCE_NAME:=[^\n]+\n)",
+                    f"\\1PYTHON3_PKG_WHEEL_VERSION:={version}\n",
+                    new_content,
+                )
         else:
             # Non-pypi.mk package: APK notation for PKG_VERSION, Python for source/builddir.
             pkg_version = _to_apk_version(version)

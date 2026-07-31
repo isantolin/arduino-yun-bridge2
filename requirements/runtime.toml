@@ -102,7 +102,8 @@ rationale = "Pure Python asyncio gRPC library for MPU-to-Cloud communication"
 name = "typer"
 openwrt = "python3-typer"
 pip = "typer>=0.12.0"
-rationale = "Declarative CLI application builder for MPU diagnostic utilities"
+gateway = true
+rationale = "Declarative CLI application builder for MPU diagnostic utilities and Gateway CLI"
 
 [[dependency]]
 name = "protoc-gen-validate"

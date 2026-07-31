@@ -224,13 +224,13 @@ def run_emulation(
             }
 
             logger.info("Starting Daemon...")
+            daemon_cmd = [sys.executable, "-u"]
+            if os.environ.get("COVERAGE_FILE"):
+                daemon_cmd.extend(["-m", "coverage", "run", "--append", "--rcfile", str(p_root / "pyproject.toml")])
+            daemon_cmd.extend(["-m", "mcubridge.daemon"])
+
             daemon_proc = subprocess.Popen(
-                [
-                    sys.executable,
-                    "-u",
-                    "-m",
-                    "mcubridge.daemon",
-                ],
+                daemon_cmd,
                 env=daemon_env,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,

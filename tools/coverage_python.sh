@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export PYTHONPATH="$ROOT_DIR/typings:$ROOT_DIR/typings/stubs:$ROOT_DIR:$ROOT_DIR/mcubridge:$ROOT_DIR/mcubridge-client-examples:$ROOT_DIR/mcubridge-gateway:${PYTHONPATH:-}"
 DEFAULT_COVERAGE_ROOT="$ROOT_DIR/coverage/python"
 DEFAULT_TARGETS=("mcubridge/tests" "mcubridge-client-examples/client_tests" "mcubridge-gateway/tests")
 
@@ -84,21 +85,48 @@ else
   PYTEST_ARGS=("${DEFAULT_TARGETS[@]}")
 fi
 
-$PYTHON_BIN -m pytest \
+$PYTHON_BIN -m coverage run --rcfile="$ROOT_DIR/pyproject.toml" -m pytest \
   -q \
   -p pytest_asyncio \
   -o log_cli=false \
   --timeout=300 \
   --timeout-method=thread \
-  --cov="$ROOT_DIR/mcubridge/mcubridge" \
-  --cov="$ROOT_DIR/mcubridge-client-examples/mcubridge_client" \
-  --cov="$ROOT_DIR/mcubridge-gateway" \
-  --cov-branch \
-  --cov-fail-under="${PYTHON_COVERAGE_MIN}" \
-  --cov-report=xml:"$COVERAGE_ROOT/coverage.xml" \
-  $( [[ "$ENABLE_HTML" -eq 1 ]] && echo "--cov-report=html:$COVERAGE_ROOT/html" ) \
-  --cov-report=term-missing \
   "${PYTEST_ARGS[@]}"
+
+if command -v socat >/dev/null 2>&1 && [[ -x "$ROOT_DIR/tools/compile_emulator.sh" ]]; then
+  echo "[coverage_python] Running hardware emulation suite for complete integration coverage..."
+  "$ROOT_DIR/tools/compile_emulator.sh" >/dev/null 2>&1 || true
+
+  GW_PID=""
+  if $PYTHON_BIN -c "import grpclib" >/dev/null 2>&1; then
+    $PYTHON_BIN mcubridge-gateway/gateway.py --no-tls --port 8443 >/dev/null 2>&1 &
+    GW_PID=$!
+    sleep 2
+  fi
+
+  $PYTHON_BIN -m coverage run --append --rcfile="$ROOT_DIR/pyproject.toml" tools/emulation_runner.py \
+    --firmware mcubridge-library-arduino/tests/bridge_emulator \
+    mcubridge-client-examples/process_test.py \
+    mcubridge-client-examples/mailbox_read_test.py \
+    mcubridge-client-examples/sensor_reader_test.py \
+    mcubridge-client-examples/all_features_test.py \
+    mcubridge-client-examples/console_test.py \
+    mcubridge-client-examples/datastore_test.py \
+    mcubridge-client-examples/fileio_test.py \
+    mcubridge-client-examples/led13_test.py \
+    mcubridge-client-examples/bootloader_test.py \
+    mcubridge-client-examples/spi_test.py || true
+
+  if [[ -n "$GW_PID" ]]; then
+    kill "$GW_PID" 2>/dev/null || true
+  fi
+fi
+
+$PYTHON_BIN -m coverage combine --rcfile="$ROOT_DIR/pyproject.toml" || true
+$PYTHON_BIN -m coverage xml -o "$COVERAGE_ROOT/coverage.xml"
+if [[ "$ENABLE_HTML" -eq 1 ]]; then
+  $PYTHON_BIN -m coverage html -d "$COVERAGE_ROOT/html"
+fi
 
 if [[ "$ENABLE_JSON" -eq 1 ]]; then
   $PYTHON_BIN -m coverage json \

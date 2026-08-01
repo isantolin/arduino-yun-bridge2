@@ -344,26 +344,25 @@ def update_feeds(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
             # and PKG_BUILD_DIR (via :=, so pypi.mk's own assignment always wins,
             # regardless of anything set before its `include`) as
             # "$(PYPI_SOURCE_NAME)-$(PKG_VERSION)". The real PyPI sdist is named
-            # "$(PYPI_SOURCE_NAME).tar.gz" and extracts into a "$(PYPI_SOURCE_NAME)/"
-            # directory (raw Python version, no APK "_rc" suffix), so PKG_BUILD_DIR
-            # must be re-pinned to the raw PYPI_SOURCE_NAME *after* pypi.mk's
-            # `include` line, otherwise pypi.mk silently overwrites it and the
-            # package builds from a directory that was never actually extracted into.
+            # "$(PYPI_SOURCE_NAME)-<raw version>.tar.gz" and extracts into a matching
+            # directory (raw Python version, no APK "_rc" suffix), so PKG_SOURCE and
+            # PKG_BUILD_DIR must be re-pinned to that raw name/version explicitly
+            # (PKG_BUILD_DIR *after* pypi.mk's `include` line, otherwise pypi.mk
+            # silently overwrites it and the package builds from a directory that
+            # was never actually extracted into).
+            #
+            # IMPORTANT: PYPI_SOURCE_NAME must NOT be overridden with the version
+            # baked in (e.g. "protobuf-7.36.0rc1"). python3-package.mk derives
+            # PYTHON3_PKG_WHEEL_NAME from PYPI_SOURCE_NAME when set, so baking the
+            # version into it produces a bogus wheel glob (e.g.
+            # "protobuf_7.36.0rc1-7.36.0rc1-*.whl" instead of the real
+            # "protobuf-7.36.0rc1-*.whl"), which fails at the `installer` step even
+            # though the extension compiled successfully. Leave PYPI_SOURCE_NAME
+            # unset so it defaults to the bare PYPI_NAME (e.g. "protobuf").
             pkg_version = _to_apk_version(version)
             pypi_source_name = f"{pip_name}-{version}"
             new_content = re.sub(r"PKG_VERSION:=[^\n]+", f"PKG_VERSION:={pkg_version}", content)
-            if "PYPI_SOURCE_NAME:=" in new_content:
-                new_content = re.sub(
-                    r"PYPI_SOURCE_NAME:=[^\n]+",
-                    f"PYPI_SOURCE_NAME:={pypi_source_name}",
-                    new_content,
-                )
-            else:
-                new_content = re.sub(
-                    r"(PYPI_NAME:=[^\n]+\n)",
-                    f"\\1PYPI_SOURCE_NAME:={pypi_source_name}\n",
-                    new_content,
-                )
+            new_content = re.sub(r"[ \t]*PYPI_SOURCE_NAME:=[^\n]+\n", "", new_content)
             if "PKG_SOURCE:=" in new_content:
                 new_content = re.sub(
                     r"PKG_SOURCE:=[^\n]+",
@@ -372,7 +371,7 @@ def update_feeds(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
                 )
             else:
                 new_content = re.sub(
-                    r"(PYPI_SOURCE_NAME:=[^\n]+\n)",
+                    r"(PYPI_NAME:=[^\n]+\n)",
                     f"\\1PKG_SOURCE:={pypi_source_name}.tar.gz\n",
                     new_content,
                 )

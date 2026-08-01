@@ -1,5 +1,6 @@
 local uci = require "luci.model.uci".cursor()
 local sys = require "luci.sys"
+local fs = require "nixio.fs"
 
 -- Guarantee the daemon always has a 'general' section to edit.
 local function ensure_general_section()
@@ -166,6 +167,30 @@ cloud_cafile:depends("cloud_tls", "1")
 cloud_cafile.rmempty = true
 
 function cloud_cafile.validate(_, value, _)
+    if not value or value == "" then
+        return value
+    end
+
+    if value:sub(1, 1) ~= "/" then
+        return nil, translate("CA file path must be absolute.")
+    end
+
+    local stat = fs.stat(value)
+    if not stat or stat.type ~= "reg" then
+        return nil, translate("CA file does not exist or is not a regular file.")
+    end
+
+    local fh = io.open(value, "r")
+    if not fh then
+        return nil, translate("CA file cannot be opened for reading.")
+    end
+    local content = fh:read("a")
+    fh:close()
+
+    if not content or not content:find("-----BEGIN CERTIFICATE-----", 1, true) then
+        return nil, translate("CA file does not contain a valid PEM certificate.")
+    end
+
     return value
 end
 

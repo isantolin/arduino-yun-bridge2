@@ -146,3 +146,4 @@ mock_path
 compile_commands.json
 
 openwrt-sdk-25.12.5-malta-be_gcc-14.3.0_musl.Linux-x86_64/build_dir/target-mips_24kc_musl/*
+mcubridge-library-arduino/tests/.Unity.install.lock

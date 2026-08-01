@@ -29,26 +29,27 @@ class SmokeTester:
         async def _run():
             channel = None
             try:
-                channel = Channel(path="/var/run/mcubridge.sock")
-                stub = LocalBridgeStub(channel)
-                self.results["connectivity"] = True
-                logger.info("Connectivity to local gRPC socket verified")
+                async with asyncio.timeout(timeout):
+                    channel = Channel(path="/var/run/mcubridge.sock")
+                    stub = LocalBridgeStub(channel)
+                    self.results["connectivity"] = True
+                    logger.info("Connectivity to local gRPC socket verified")
 
-                # Toggle Pin
-                topic = topic_path(self.prefix, Topic.DIGITAL, str(pin))
-                # Send ON
-                msg_on = pb.CloudQueuedPublish(topic_name=topic, payload=b"1", qos=1)
-                await stub.Publish(msg_on)
+                    # Toggle Pin
+                    topic = topic_path(self.prefix, Topic.DIGITAL, str(pin))
+                    # Send ON
+                    msg_on = pb.CloudQueuedPublish(topic_name=topic, payload=b"1", qos=1)
+                    await stub.Publish(msg_on)
 
-                await asyncio.sleep(0.5)
+                    await asyncio.sleep(0.5)
 
-                # Send OFF
-                msg_off = pb.CloudQueuedPublish(topic_name=topic, payload=b"0", qos=1)
-                await stub.Publish(msg_off)
+                    # Send OFF
+                    msg_off = pb.CloudQueuedPublish(topic_name=topic, payload=b"0", qos=1)
+                    await stub.Publish(msg_off)
 
-                self.results["gpio"] = True
-                logger.info("GPIO toggle commands sent successfully")
-            except (OSError, RuntimeError, ValueError) as e:
+                    self.results["gpio"] = True
+                    logger.info("GPIO toggle commands sent successfully")
+            except (OSError, RuntimeError, ValueError, TimeoutError) as e:
                 logger.error("Connection or call to local gRPC socket failed", error=str(e))
                 self.results["connectivity"] = False
             finally:

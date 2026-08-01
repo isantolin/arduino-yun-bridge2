@@ -1026,6 +1026,25 @@ def main() -> None:
                     )
                     core_stub.write_text(core_content, encoding="utf-8")
 
+            # [SIL-2] Fix generated typer stubs: pyright's --createstub leaves
+            # click.ParamType (a Generic class) unparameterized, which makes
+            # every overload of typer.Option/Argument/OptionInfo/ArgumentInfo
+            # "partially unknown" under pyright strict (reportUnknownMemberType),
+            # even though the call site itself resolves cleanly. Parameterize
+            # every bare occurrence with `click.ParamType[Any]` / `click.types.ParamType[Any]`
+            # so the stub's declared type is fully known.
+            if lib == "typer":
+                for stub_name in ("params.pyi", "models.pyi", "core.pyi", "main.pyi"):
+                    typer_stub = REPO_ROOT / "typings" / "typer" / stub_name
+                    if typer_stub.exists():
+                        typer_content = typer_stub.read_text(encoding="utf-8")
+                        typer_content = typer_content.replace("click.ParamType | None", "click.ParamType[Any] | None")
+                        typer_content = typer_content.replace(
+                            "click.types.ParamType | Any | None", "click.types.ParamType[Any] | None"
+                        )
+                        typer_content = typer_content.replace("-> click.ParamType:", "-> click.ParamType[Any]:")
+                        typer_stub.write_text(typer_content, encoding="utf-8")
+
     # Save hash for incremental compilation
     hash_file.write_text(current_hash, encoding="utf-8")
 

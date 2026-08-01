@@ -72,53 +72,81 @@ download_zip() {
     fi
 }
 
+# Marker file written only after a dependency has been fully staged and
+# atomically moved into place. Its presence (with matching URL) is the sole
+# source of truth for "already installed" — a single header/source file is
+# not sufficient evidence, since a partially copied tree (e.g. a run
+# interrupted by a CI timeout, disk pressure, or a concurrent invocation of
+# this script against the same target directory) can still contain that one
+# file while missing hundreds of others.
+INSTALL_MARKER=".mcubridge_install_complete"
+
 install_dependency() {
     local name=$1
     local url=$2
     local check_file=$3
-    local sub_path=${4:-}""
-    local target_base=${5:-"$LIB_DIR"}
+    local target_base=${4:-"$LIB_DIR"}
 
-    if [ -f "$target_base/$name/$check_file" ] || \
-       [ -f "$target_base/$name/src/$check_file" ] || \
-       [ -f "$target_base/$name/etl/$check_file" ]; then
-        echo "[INFO] $name already installed."
-        return 0
-    fi
+    mkdir -p "$target_base"
+    local lock_file="$target_base/.${name}.install.lock"
 
-    echo "[WARN] $name missing. Installing..."
-    local tmp_dir
-    tmp_dir=$(mktemp -d -p "$LIB_DIR")
-    local zip_path="$tmp_dir/$name.zip"
+    # Serialize concurrent invocations of this script against the same
+    # target_base (e.g. parallel tox environments or agents sharing a
+    # checkout). Without this lock, two processes can interleave
+    # rm -rf/cp -a on the same destination and leave a corrupted,
+    # partially-populated directory that the next run would otherwise
+    # trust as "installed".
+    (
+        flock -x 200
 
-    if ! download_zip "$name" "$url" "$zip_path"; then
-        echo "[ERROR] Failed to download $name." >&2
+        if [ -f "$target_base/$name/$INSTALL_MARKER" ] && \
+           grep -qxF "$url" "$target_base/$name/$INSTALL_MARKER" && \
+           { [ -f "$target_base/$name/$check_file" ] || \
+             [ -f "$target_base/$name/src/$check_file" ] || \
+             [ -f "$target_base/$name/etl/$check_file" ]; }; then
+            echo "[INFO] $name already installed."
+            exit 0
+        fi
+
+        echo "[WARN] $name missing or incomplete. Installing..."
+        local tmp_dir
+        tmp_dir=$(mktemp -d -p "$target_base")
+        local zip_path="$tmp_dir/$name.zip"
+
+        if ! download_zip "$name" "$url" "$zip_path"; then
+            echo "[ERROR] Failed to download $name." >&2
+            rm -rf "$tmp_dir"
+            exit 1
+        fi
+
+        unzip -q "$zip_path" -d "$tmp_dir"
+        # Find the directory that contains the files (excluding the zip itself)
+        local extracted_root
+        extracted_root=$(find "$tmp_dir" -maxdepth 1 -type d ! -path "$tmp_dir" | head -n1)
+
+        if [ -z "$extracted_root" ]; then
+            echo "[ERROR] Could not find extracted directory for $name." >&2
+            rm -rf "$tmp_dir"
+            exit 1
+        fi
+
+        # Stage the full copy in a private, not-yet-visible directory. Only
+        # once staging is fully complete do we write the completion marker
+        # and atomically rename it into its final place (mv is atomic within
+        # the same filesystem). This guarantees "$target_base/$name" is
+        # never observable in a partially-copied state: it is either the
+        # previous complete install, absent, or the new complete install.
+        local staged_dir="$tmp_dir/staged-$name"
+        mkdir -p "$staged_dir"
+        cp -a "$extracted_root/." "$staged_dir/"
+        printf '%s\n' "$url" > "$staged_dir/$INSTALL_MARKER"
+
+        rm -rf "$target_base/$name"
+        mv "$staged_dir" "$target_base/$name"
+
+        echo "[OK] $name installed."
         rm -rf "$tmp_dir"
-        return 1
-    fi
-
-    unzip -q "$zip_path" -d "$tmp_dir"
-    # Find the directory that contains the files (excluding the zip itself)
-    local extracted_root
-    extracted_root=$(find "$tmp_dir" -maxdepth 1 -type d ! -path "$tmp_dir" | head -n1)
-    
-    if [ -z "$extracted_root" ]; then
-        echo "[ERROR] Could not find extracted directory for $name." >&2
-        rm -rf "$tmp_dir"
-        return 1
-    fi
-
-    local source_path="$extracted_root"
-    # if [ -n "$sub_path" ]; then
-    #    source_path="$extracted_root/$sub_path"
-    # fi
-
-    mkdir -p "$target_base/$name"
-    # Copy ALL contents of extracted_root to target_base/$name
-    cp -a "$extracted_root/." "$target_base/$name/"
-    
-    echo "[OK] $name installed."
-    rm -rf "$tmp_dir"
+    ) 200>"$lock_file"
 }
 
 # 1. Official Dependencies (Library Manager)
@@ -130,16 +158,15 @@ if [ "${1:-}" == "" ]; then
 else
     # In CI/CD or when a target directory is provided, we install them.
     # ETL: We copy the whole repository to the library directory.
-    install_dependency "Embedded_Template_Library" "https://codeload.github.com/ETLCPP/etl/zip/refs/tags/20.48.1" "include/etl/algorithm.h" "" "$LIB_DIR"
-    install_dependency "wolfSSL" "https://codeload.github.com/wolfSSL/wolfssl/zip/refs/tags/v5.9.2-stable" "wolfssl/wolfcrypt/settings.h" "" "$LIB_DIR"
-    install_dependency "PacketSerial" "https://codeload.github.com/isantolin/PacketSerial2/zip/refs/heads/master" "src/Codecs/COBSR.h" "" "$LIB_DIR"
+    install_dependency "Embedded_Template_Library" "https://codeload.github.com/ETLCPP/etl/zip/refs/tags/20.48.1" "include/etl/algorithm.h" "$LIB_DIR"
+    install_dependency "wolfSSL" "https://codeload.github.com/wolfSSL/wolfssl/zip/refs/tags/v5.9.2-stable" "wolfssl/wolfcrypt/settings.h" "$LIB_DIR"
+    install_dependency "PacketSerial" "https://codeload.github.com/isantolin/PacketSerial2/zip/refs/heads/master" "src/Codecs/COBSR.h" "$LIB_DIR"
 fi
 
 # Unity test framework (host tests only)
 install_dependency "Unity" \
     "https://codeload.github.com/ThrowTheSwitch/Unity/zip/refs/tags/v2.6.1" \
     "unity.h" \
-    "src" \
     "${LIB_ROOT}/tests"
 
 # --- Nanopb Core C Files ---

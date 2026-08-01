@@ -83,17 +83,18 @@ constexpr etl::underlying_type_t<E> to_underlying(E value) {
     return static_cast<etl::underlying_type_t<E>>(value);
 }
 
+{%- if ack_commands %}
+inline constexpr etl::array<CommandId, {{ ack_commands|length }}U> ACK_REQUIRED_COMMANDS RPC_PROGMEM = {
+    {%- for cmd in ack_commands %}
+    CommandId::{{ cmd.name }}{{ "," if not loop.last }}
+    {%- endfor %}
+};
+{%- endif %}
+
 constexpr bool requires_ack(uint16_t command_id) {
 {%- if ack_commands %}
-    constexpr etl::array<bool, 256U> ACK_TABLE = []() {
-        etl::array<bool, 256U> tbl{};
-        tbl.fill(false);
-        {%- for cmd in ack_commands %}
-        tbl[static_cast<size_t>(CommandId::{{ cmd.name }})] = true;
-        {%- endfor %}
-        return tbl;
-    }();
-    return (command_id < 256U) ? ACK_TABLE[command_id] : false;
+    return etl::find(ACK_REQUIRED_COMMANDS.begin(), ACK_REQUIRED_COMMANDS.end(),
+                      static_cast<CommandId>(command_id)) != ACK_REQUIRED_COMMANDS.end();
 {%- else %}
     (void)command_id;
     return false;

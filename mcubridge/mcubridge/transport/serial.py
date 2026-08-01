@@ -218,10 +218,7 @@ class SerialTransport:
                 return
 
         # Anti-replay validation
-        is_excluded = (protocol.STATUS_CODE_MIN <= cmd_id <= protocol.STATUS_CODE_MAX) or (
-            protocol.SYSTEM_COMMAND_MIN <= cmd_id <= protocol.SYSTEM_COMMAND_MAX
-        )
-        if self.state.is_synchronized and not is_excluded:
+        if self.state.is_synchronized and not is_system_command(cmd_id):
             ok, new_counter = validate_nonce_counter(envelope.nonce, self.state.link_last_nonce_counter)
             if not ok:
                 logger.error("Anti-replay validation failed")

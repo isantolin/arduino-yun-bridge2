@@ -210,10 +210,6 @@ def get_ssl_context(cfg: pb.RuntimeConfig) -> Any | None:
 # --- Binary Protocol Packets ---
 
 
-class PayloadValidationError(ValueError):
-    """Raised when an inbound CLOUD payload cannot be validated."""
-
-
 # --- High-Level Structure ---
 
 

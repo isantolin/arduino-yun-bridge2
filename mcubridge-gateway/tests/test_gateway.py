@@ -190,6 +190,7 @@ async def test_protobuf_gateway_run() -> None:
 
 def test_cli_main_invocation() -> None:
     runner = CliRunner()
+
     def _mock_run(coro: Any) -> None:
         if hasattr(coro, "close"):
             coro.close()
@@ -197,4 +198,3 @@ def test_cli_main_invocation() -> None:
     with patch("asyncio.run", side_effect=_mock_run):
         result = runner.invoke(cast(Any, app), ["--no-tls", "--port", "9090"])
         assert result.exit_code == 0
-

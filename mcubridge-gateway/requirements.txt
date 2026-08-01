@@ -1,5 +1,0 @@
-# Generated via tools/sync_runtime_deps.py; do not edit.
-grpclib==0.4.9
-h2==4.4.0
-protobuf==7.36.0rc1
-typer>=0.12.0

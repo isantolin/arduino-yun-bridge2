@@ -10,6 +10,7 @@ Copyright (C) 2025-2026 Ignacio Santolin and contributors
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import re
 import subprocess
@@ -27,7 +28,7 @@ from jinja2 import Environment, FileSystemLoader
 # ═════════════════════════════════════════════════════════════════════════════
 REQUIRED_DEPS = ["jinja2", "google.protobuf", "nanopb"]
 MISSING_DEPS: list[str] = []
-UNTYPED_LIBS = ["cobs", "prometheus_client", "serialx", "uci", "uvloop", "typer", "protoc_gen_validate"]
+UNTYPED_LIBS = ["cobs", "prometheus_client", "serialx", "uci", "uvloop", "typer"]
 
 for dep in REQUIRED_DEPS:
     if importlib.util.find_spec(dep.split(".")[0]) is None:
@@ -160,15 +161,20 @@ def load_spec_from_proto(proto_path: Path) -> ProtocolSpec:
     if "mcubridge_pb2" in sys.modules:
         del sys.modules["mcubridge_pb2"]
 
-    # Pre-register local validate package to prevent collision with
-    # system 'validate' package (e.g. on Python 3.14+ / Ubuntu 26.04)
-    validate_dir = proto_path.parent / "validate"
-    if validate_dir.is_dir() and "validate" not in sys.modules:
+    # Pre-register local buf.validate package to prevent collision with
+    # any system 'buf' package (e.g. on Python 3.14+ / Ubuntu 26.04)
+    buf_dir = proto_path.parent / "buf"
+    buf_validate_dir = buf_dir / "validate"
+    if buf_validate_dir.is_dir() and "buf" not in sys.modules:
         import types
 
-        validate_mod = types.ModuleType("validate")
-        validate_mod.__path__ = [str(validate_dir)]
-        sys.modules["validate"] = validate_mod
+        buf_mod = types.ModuleType("buf")
+        buf_mod.__path__ = [str(buf_dir)]
+        sys.modules["buf"] = buf_mod
+
+        buf_validate_mod = types.ModuleType("buf.validate")
+        buf_validate_mod.__path__ = [str(buf_validate_dir)]
+        sys.modules["buf.validate"] = buf_validate_mod
 
     mcubridge_pb2 = importlib.import_module("mcubridge_pb2")
     file_desc = mcubridge_pb2.DESCRIPTOR
@@ -616,7 +622,7 @@ class JinjaGenerator:
         assert nanopb_file is not None
         nanopb_include_path = Path(nanopb_file).parent / "generator" / "proto"
 
-        v_proto = proto_path.parent / "validate" / "validate.proto"
+        v_proto = proto_path.parent / "buf" / "validate" / "validate.proto"
         if v_proto.exists():
             v_cmd = [
                 sys.executable,
@@ -627,7 +633,7 @@ class JinjaGenerator:
                 str(proto_path.parent),
                 "-I",
                 str(nanopb_include_path),
-                "validate/validate.proto",
+                "buf/validate/validate.proto",
             ]
             subprocess.run(v_cmd, check=False, capture_output=True, text=True, cwd=str(proto_path.parent))
 
@@ -676,11 +682,13 @@ class JinjaGenerator:
         user_site = site.getusersitepackages()
         env["PYTHONPATH"] = f"{user_site}:{env.get('PYTHONPATH', '')}"
 
-        validate_proto = proto_path.parent / "validate" / "validate.proto"
+        validate_proto = proto_path.parent / "buf" / "validate" / "validate.proto"
         if validate_proto.exists():
             v_cmd = [
                 str(protoc_bin),
                 f"--python_out={out_dir}",
+                f"--pyi_out={out_dir}",
+                f"--plugin=protoc-gen-pyi={wrapper_path}",
                 f"--proto_path={proto_path.parent}",
                 str(validate_proto),
             ]
@@ -810,9 +818,46 @@ def ensure_nanopb_core_files() -> None:
                 sys.exit(1)
 
 
-def check_incremental_build(args: argparse.Namespace, version: str) -> tuple[bool, Path, str]:
-    import hashlib
+def ensure_protovalidate_proto_files() -> None:
+    """Ensure the vendored buf/validate/validate.proto exists.
 
+    This is the upstream schema for protovalidate's `(buf.validate.field)` /
+    `(buf.validate.message)` annotations. It ships with the bufbuild/protovalidate
+    project (not with the protovalidate PyPI wheel, which expects consumers to
+    generate/vendor it themselves), so it is downloaded on demand from the
+    pinned release tag and verified against a pinned hash, exactly like
+    ensure_nanopb_core_files() does for Nanopb. Kept in sync with the version
+    pinned in feeds/python3-protovalidate/Makefile.
+    """
+
+    target = REPO_ROOT / "tools" / "protocol" / "buf" / "validate" / "validate.proto"
+    if target.exists():
+        return
+
+    version = "v1.2.0"
+    expected_sha256 = "817951eab518442950f1982be24b2c3154b214b40e42f49b915cbf5181e6ee80"
+    url = f"https://raw.githubusercontent.com/bufbuild/protovalidate/{version}/proto/protovalidate/buf/validate/validate.proto"
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    sys.stderr.write(f"Downloading vendored protovalidate schema from {url}...\n")
+    try:
+        with urllib.request.urlopen(url, timeout=20) as response:
+            data = response.read()
+    except (urllib.error.URLError, OSError, TimeoutError, ValueError) as e:
+        sys.stderr.write(f"Error downloading {url}: {e}\n")
+        sys.exit(1)
+
+    actual_sha256 = hashlib.sha256(data).hexdigest()
+    if actual_sha256 != expected_sha256:
+        sys.stderr.write(
+            "Hash mismatch for vendored validate.proto: " f"expected {expected_sha256}, got {actual_sha256}\n"
+        )
+        sys.exit(1)
+
+    target.write_bytes(data)
+
+
+def check_incremental_build(args: argparse.Namespace, version: str) -> tuple[bool, Path, str]:
     proto_path = args.spec.resolve()
     h = hashlib.sha256()
     h.update(proto_path.read_bytes())
@@ -838,6 +883,10 @@ def check_incremental_build(args: argparse.Namespace, version: str) -> tuple[boo
             outputs_exist = False
         if args.py_client and not (args.py_client.parent / "mcubridge_pb2.py").exists():
             outputs_exist = False
+        if args.py and not (args.py.parent.parent.parent / "buf" / "validate" / "validate_pb2.pyi").exists():
+            outputs_exist = False
+        if args.py_client and not (args.py_client.parent / "buf" / "validate" / "validate_pb2.pyi").exists():
+            outputs_exist = False
         for lib in UNTYPED_LIBS:
             if not (REPO_ROOT / "typings" / lib).exists():
                 outputs_exist = False
@@ -848,30 +897,51 @@ def check_incremental_build(args: argparse.Namespace, version: str) -> tuple[boo
 
 
 def _copy_generated_python_files(proto_path: Path, args: Any) -> None:
-    v_pb2 = proto_path.parent / "validate" / "validate_pb2.py"
+    # The `mcubridge` package (daemon side) calls protovalidate.validate() at
+    # runtime, and protovalidate's own internal validator hard-imports the
+    # absolute top-level module `buf.validate.validate_pb2` (it does not ship
+    # this generated stub itself). To share a single FileDescriptor
+    # registration for "buf/validate/validate.proto" between our generated
+    # mcubridge_pb2.py and protovalidate, `buf` must be installed as a
+    # genuine top-level package (declared in pyproject.toml's `packages`),
+    # not nested inside mcubridge.protocol. The client library never calls
+    # protovalidate directly, so it keeps a self-contained, relatively
+    # imported nested copy instead.
+    v_pb2 = proto_path.parent / "buf" / "validate" / "validate_pb2.py"
+    v_pb2_stub = proto_path.parent / "buf" / "validate" / "validate_pb2.pyi"
     if v_pb2.exists():
         v_data = v_pb2.read_bytes()
+        v_stub_data = v_pb2_stub.read_bytes() if v_pb2_stub.exists() else None
         if args.py:
-            v_dir = args.py.parent / "validate"
+            v_dir = args.py.parent.parent.parent / "buf" / "validate"
             v_dir.mkdir(parents=True, exist_ok=True)
             (v_dir / "validate_pb2.py").write_bytes(v_data)
             (v_dir / "__init__.py").write_bytes(b"")
+            (args.py.parent.parent.parent / "buf" / "__init__.py").write_bytes(b"")
+            if v_stub_data is not None:
+                (v_dir / "validate_pb2.pyi").write_bytes(v_stub_data)
         if args.py_client:
-            vc_dir = args.py_client.parent / "validate"
+            vc_dir = args.py_client.parent / "buf" / "validate"
             vc_dir.mkdir(parents=True, exist_ok=True)
             (vc_dir / "validate_pb2.py").write_bytes(v_data)
             (vc_dir / "__init__.py").write_bytes(b"")
+            (args.py_client.parent / "buf" / "__init__.py").write_bytes(b"")
+            if v_stub_data is not None:
+                (vc_dir / "validate_pb2.pyi").write_bytes(v_stub_data)
 
     py_pb2 = proto_path.parent / "mcubridge_pb2.py"
     py_pb2_stub = proto_path.parent / "mcubridge_pb2.pyi"
     if py_pb2.exists():
         pb2_text = py_pb2.read_text()
-        pb2_text = pb2_text.replace("from validate import validate_pb2", "from .validate import validate_pb2")
+        pb2_text_client = pb2_text.replace(
+            "from buf.validate import validate_pb2", "from .buf.validate import validate_pb2"
+        )
         pb2_data = pb2_text.encode()
+        pb2_data_client = pb2_text_client.encode()
         if args.py:
             (args.py.parent / "mcubridge_pb2.py").write_bytes(pb2_data)
         if args.py_client:
-            (args.py_client.parent / "mcubridge_pb2.py").write_bytes(pb2_data)
+            (args.py_client.parent / "mcubridge_pb2.py").write_bytes(pb2_data_client)
         py_pb2.unlink(missing_ok=True)
     if py_pb2_stub.exists():
         pb2_stub_text = py_pb2_stub.read_text()
@@ -890,17 +960,21 @@ def _copy_generated_python_files(proto_path: Path, args: Any) -> None:
     if py_grpc.exists():
         grpc_text = py_grpc.read_text()
         grpc_text = grpc_text.replace("import mcubridge_pb2", "from . import mcubridge_pb2")
-        grpc_text = grpc_text.replace("import validate.validate_pb2", "from .validate import validate_pb2")
+        grpc_text_client = grpc_text.replace(
+            "import buf.validate.validate_pb2", "from .buf.validate import validate_pb2"
+        )
         grpc_data = grpc_text.encode()
+        grpc_data_client = grpc_text_client.encode()
         if args.py:
             (args.py.parent / "mcubridge_grpc.py").write_bytes(grpc_data)
         if args.py_client:
-            (args.py_client.parent / "mcubridge_grpc.py").write_bytes(grpc_data)
+            (args.py_client.parent / "mcubridge_grpc.py").write_bytes(grpc_data_client)
         py_grpc.unlink(missing_ok=True)
 
 
 def main() -> None:
     ensure_nanopb_core_files()
+    ensure_protovalidate_proto_files()
     parser = argparse.ArgumentParser(description="Protocol binding generator for MCU Bridge v2.")
     parser.add_argument("--spec", type=Path, required=True, help="Protocol specification file (.proto)")
     parser.add_argument("--cpp", type=Path, default=None, help="C++ header output")
@@ -948,7 +1022,9 @@ def main() -> None:
                 target_h.write_bytes(cpp_pb_h.read_bytes())
                 # Fix pb.h include for relative path in Arduino library structure
                 h_text = target_h.read_text().replace("#include <pb.h>", '#include "../pb.h"')
-                h_text = h_text.replace('#include "validate/validate.pb.h"', '/* #include "validate/validate.pb.h" */')
+                h_text = h_text.replace(
+                    '#include "buf/validate/validate.pb.h"', '/* #include "buf/validate/validate.pb.h" */'
+                )
                 target_h.write_text(h_text)
                 cpp_pb_h.unlink(missing_ok=True)
             if cpp_pb_c.exists():

@@ -106,10 +106,52 @@ gateway = true
 rationale = "Declarative CLI application builder for MPU diagnostic utilities and Gateway CLI"
 
 [[dependency]]
-name = "protoc-gen-validate"
-openwrt = "python3-protoc-gen-validate"
-pip = "protoc-gen-validate>=1.3.3"
-rationale = "Protobuf Native Validation Rules (PGV / buf.validate) for schema-driven SIL-2 constraints"
+name = "protovalidate"
+openwrt = "python3-protovalidate"
+pip = "protovalidate==1.2.0"
+rationale = "Declarative protobuf message validator (buf.validate) replacing protoc-gen-validate, which is broken with modern protobuf/upb runtimes; enforces schema-driven SIL-2 constraints"
+
+[[dependency]]
+name = "cel-python"
+openwrt = "python3-cel-python"
+pip = "cel-python==0.5.0"
+rationale = "Transitive dependency of protovalidate required to evaluate CEL (Common Expression Language) constraint expressions"
+
+[[dependency]]
+name = "google-re2"
+openwrt = "python3-google-re2"
+pip = "google-re2==1.1.20251105"
+rationale = "Mandatory dependency of cel-python (unconditional 'import re2') used for RE2 regex evaluation in CEL string constraints"
+
+[[dependency]]
+name = "lark"
+openwrt = "python3-lark"
+pip = "lark==1.3.1"
+rationale = "Mandatory dependency of cel-python (unconditional 'import lark') used to parse the CEL grammar"
+
+[[dependency]]
+name = "pendulum"
+openwrt = "python3-pendulum"
+pip = "pendulum==3.2.0"
+rationale = "Mandatory dependency of cel-python (unconditional 'import pendulum') used for CEL timestamp/duration type evaluation"
+
+[[dependency]]
+name = "tzdata"
+openwrt = "python3-tzdata"
+pip = "tzdata==2026.3"
+rationale = "Transitive dependency of pendulum providing the IANA time zone database"
+
+[[dependency]]
+name = "jmespath"
+openwrt = "python3-jmespath"
+pip = "jmespath>=1.0.1"
+rationale = "Declared runtime dependency of cel-python (celpy.c7nlib) per its distributed wheel metadata"
+
+[[dependency]]
+name = "pyyaml"
+openwrt = "python3-yaml"
+pip = "pyyaml>=6.0.2"
+rationale = "Declared runtime dependency of cel-python per its distributed wheel metadata"
 
 [[dependency]]
 name = "black"

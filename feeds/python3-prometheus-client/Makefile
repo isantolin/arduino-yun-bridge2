@@ -5,7 +5,7 @@ PKG_VERSION:=0.26.0
 PKG_RELEASE:=1
 
 PYPI_NAME:=prometheus_client
-PKG_HASH:=5e373b75c31afb3c86f1a52fa1ad470c9aace18082d39ec0d2f918d11cc9ba28
+PKG_HASH:=04a91bcf94e2cf74a44a1a874d651a2e853ed354b6e822f3b7487751465d5c2b
 
 PKG_MAINTAINER:=Ignacio Santolin <ignacio.santolin@gmail.com>
 PKG_LICENSE:=Apache-2.0

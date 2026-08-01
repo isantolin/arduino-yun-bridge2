@@ -28,6 +28,11 @@ runs:
         python-version: ${{ inputs.python-version }}
         cache: 'pip'
 
+    - name: Generate runtime dependency lockfiles
+      shell: bash
+      run: |
+        python tools/sync_runtime_deps.py
+
     - name: Cache tox environments
       uses: actions/cache@v6
       with:

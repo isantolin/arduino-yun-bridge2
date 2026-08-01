@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 from mcubridge.protocol import frame, mcubridge_pb2 as pb, protocol, structures
+from typing import Any
 
 # =============================================================================
 # 1. Tests for mcubridge.protocol.frame
@@ -183,30 +184,40 @@ def test_allows_topic() -> None:
     assert structures.allows_topic(auth, "unknown", "action") is False
 
 
-def test_validate_config_invalid() -> None:
-    cfg = pb.RuntimeConfig(
-        topic_prefix="",
+def _valid_runtime_config(**overrides: Any) -> pb.RuntimeConfig:
+    """Build a RuntimeConfig satisfying all buf.validate rules, with overrides for testing."""
+    base: dict[str, Any] = dict(
+        serial_port="/dev/ttyATH0",
+        cloud_port=8883,
+        topic_prefix="bridge",
         watchdog_enabled=True,
-        watchdog_interval=0.1,  # < 0.5s
+        watchdog_interval=1.0,
+        serial_shared_secret=b"secret",
+        metrics_port=9130,
+        cloud_http3_port=443,
         allow_non_tmp_paths=False,
-        cloud_spool_dir="/invalid/flash/path",
+        cloud_spool_dir="/tmp/spool",
         file_system_root="/tmp",
     )
-    with pytest.raises(ValueError, match="topic_prefix must contain"):
-        structures.validate_config(cfg)
+    base.update(overrides)
+    return pb.RuntimeConfig(**base)
 
-    cfg.topic_prefix = "br"
+
+def test_validate_config_invalid() -> None:
+    with pytest.raises(ValueError, match="topic_prefix"):
+        structures.validate_config(_valid_runtime_config(topic_prefix=""))
+
     with pytest.raises(ValueError, match="watchdog_interval must be >= 0.5s"):
-        structures.validate_config(cfg)
+        structures.validate_config(_valid_runtime_config(watchdog_interval=0.1))
 
-    cfg.watchdog_enabled = False
+    # Disabling the watchdog lifts the CEL constraint on watchdog_interval.
+    structures.validate_config(_valid_runtime_config(watchdog_enabled=False, watchdog_interval=0.1))
+
     with pytest.raises(ValueError, match="cloud_spool_dir"):
-        structures.validate_config(cfg)
+        structures.validate_config(_valid_runtime_config(cloud_spool_dir="/invalid/flash/path"))
 
-    cfg.cloud_spool_dir = "/tmp/spool"
-    cfg.file_system_root = "/invalid/root"
     with pytest.raises(ValueError, match="file_system_root"):
-        structures.validate_config(cfg)
+        structures.validate_config(_valid_runtime_config(file_system_root="/invalid/root"))
 
 
 def test_get_ssl_context() -> None:

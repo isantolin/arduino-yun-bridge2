@@ -129,5 +129,5 @@ def test_load_runtime_config_uci_invalid_fatal() -> None:
 
 def test_load_runtime_config_cli_invalid_fatal() -> None:
     with patch("mcubridge.config.settings._load_raw_config", return_value=({"topic_prefix": ""}, "defaults")):
-        with pytest.raises(ValueError, match="topic_prefix must contain"):
+        with pytest.raises(ValueError, match="topic_prefix"):
             load_runtime_config(overrides={"topic_prefix": ""})

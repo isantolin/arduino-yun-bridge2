@@ -32,7 +32,7 @@ BLOCK_END = "# AUTO-GENERATED RUNTIME DEPENDS END"
 SYSTEM_ONLY_PACKAGES = {"uci"}
 
 # Dev/CI host build-only packages (excluded from OpenWrt MPU package dependencies).
-BUILD_ONLY_PACKAGES = {"jinja2", "nanopb", "grpcio-tools", "xxd", "protoc-gen-validate", "black"}
+BUILD_ONLY_PACKAGES = {"jinja2", "nanopb", "grpcio-tools", "xxd", "black"}
 
 
 class ManifestError(RuntimeError):

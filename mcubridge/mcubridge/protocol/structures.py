@@ -20,6 +20,8 @@ from typing import (
     Final,
 )
 
+import protovalidate
+from buf.validate.validate_pb2 import Violation as ProtovalidateViolation
 from google.protobuf.message import Message as ProtobufMessage
 
 from . import mcubridge_pb2 as pb
@@ -141,9 +143,31 @@ def allows_topic(auth: pb.TopicAuthorization, topic: str, action: str) -> bool:
 RuntimeConfig = pb.RuntimeConfig
 
 
+def _format_violation(violation: ProtovalidateViolation) -> str:
+    """Render a protovalidate Violation as 'field: message' (or bare message for message-level CEL rules)."""
+    field_elements = violation.field.elements
+    if field_elements:
+        field_name = ".".join(e.field_name for e in field_elements)
+        return f"{field_name}: {violation.message}"
+    return violation.message
+
+
 def validate_config(cfg: pb.RuntimeConfig) -> None:
     """Validate and normalize a RuntimeConfig in-place. [SIL-2]"""
     from mcubridge.config.const import VOLATILE_STORAGE_PATHS
+
+    # Declarative validation (min_len/pattern/gte/lte, e.g. topic_prefix and
+    # watchdog_interval) MUST run before any normalization mutates cfg below.
+    # protovalidate.ValidationError.violations lack field context in their
+    # default str(); re-raise as ValueError with field-qualified detail so
+    # callers/tests can match on the offending field name. exc.to_proto()
+    # returns the public buf.validate.Violations protobuf message, avoiding
+    # any dependency on protovalidate's internal module layout.
+    try:
+        protovalidate.validate(cfg)
+    except protovalidate.ValidationError as exc:
+        details = "; ".join(_format_violation(v) for v in exc.to_proto().violations)
+        raise ValueError(details) from exc
 
     cfg.allowed_policy.CopyFrom(create_allowed_policy(cfg.allowed_commands))
     del cfg.allowed_commands[:]
@@ -153,12 +177,6 @@ def validate_config(cfg: pb.RuntimeConfig) -> None:
     if not any(getattr(cfg.topic_authorization, name) for name in auth_fields):
         for name in auth_fields:
             setattr(cfg.topic_authorization, name, True)
-
-    if not cfg.topic_prefix or not any(filter(None, cfg.topic_prefix.split("/"))):
-        raise ValueError("topic_prefix must contain at least one segment")
-
-    if cfg.watchdog_enabled and cfg.watchdog_interval < 0.5:
-        raise ValueError("watchdog_interval must be >= 0.5s when enabled")
 
     if not cfg.allow_non_tmp_paths:
         if not any(cfg.cloud_spool_dir.startswith(p) for p in VOLATILE_STORAGE_PATHS):

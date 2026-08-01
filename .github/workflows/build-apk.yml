@@ -67,6 +67,10 @@ jobs:
           gettext git libncurses-dev libssl-dev rsync unzip zlib1g-dev file wget zstd protobuf-compiler rpm
           python3 -m pip install jinja2 pdm-backend hatchling "protobuf==7.36.0rc1" nanopb grpcio-tools maturin setuptools-rust grpclib black
 
+      - name: Generate runtime dependency lockfiles
+        run: |
+          python3 tools/sync_runtime_deps.py
+
       - name: Pre-download Python feed dependencies to bypass PyPI mirror issues
         run: |
           mkdir -p dl

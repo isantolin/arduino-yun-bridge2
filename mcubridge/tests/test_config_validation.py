@@ -64,7 +64,7 @@ def test_runtime_config_rejects_empty_topic(monkeypatch: pytest.MonkeyPatch) -> 
 
     # settings.py now raises ValueError during test source for invalid topic
 
-    with pytest.raises(ValueError, match="topic_prefix must contain at least one segment"):
+    with pytest.raises(ValueError, match=r"topic_prefix: does not match regex pattern"):
         settings.load_runtime_config()
 
 

@@ -172,6 +172,9 @@ message StatusReasons {
     string process_kill_malformed = 11;
     string process_not_found = 12;
     string process_kill_failed = 13;
+    string datastore_put_failed = 14;
+    string mailbox_push_failed = 15;
+    string mailbox_processed_failed = 16;
 }
 
 message CloudSubscription {
@@ -483,6 +486,9 @@ option (rpc.pb.status_reasons) = {
     process_kill_malformed: "process_kill_malformed"
     process_not_found: "process_not_found"
     process_kill_failed: "process_kill_failed"
+    datastore_put_failed: "datastore_put_failed"
+    mailbox_push_failed: "mailbox_push_failed"
+    mailbox_processed_failed: "mailbox_processed_failed"
 };
 
 option (rpc.pb.cloud_subscriptions) = {

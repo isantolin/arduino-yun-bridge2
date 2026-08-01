@@ -21,6 +21,8 @@ void DataStoreClass::set(etl::string_view key, etl::span<const uint8_t> value) {
     etl::copy_n(value.data(), v_copy, p.value.bytes);
   }
   if (!Bridge.send(rpc::CommandId::CMD_DATASTORE_PUT, 0, p)) {
+    Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR,
+                       etl::string_view(rpc::status_reason::DATASTORE_PUT_FAILED));
   }
 }
 

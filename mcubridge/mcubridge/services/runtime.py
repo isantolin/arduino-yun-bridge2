@@ -190,18 +190,6 @@ class BridgeService:
         registry[Command.CMD_LINK_RESET_RESP.value] = self.handshake.handle_link_reset_resp
         return registry
 
-    def _dispatch_protobuf_reflection(self, seq: int, envelope: pb.RpcEnvelope) -> Any:
-        """Reflectively dispatch an incoming RpcEnvelope based on its Oneof payload_type. [SIL-2]"""
-        field_name = envelope.WhichOneof("payload_type")
-        if not field_name:
-            return None
-        submsg = getattr(envelope, field_name)
-        handler_name = f"_on_mcu_{field_name}"
-        handler = getattr(self, handler_name, None)
-        if callable(handler):
-            return handler(seq, submsg)
-        return None
-
     # --- External Interface ---
 
     async def enqueue_cloud(self, message: pb.CloudQueuedPublish, *, reply_context: Any | None = None) -> None:
@@ -245,9 +233,6 @@ class BridgeService:
         self.state.cloud_drop_counts[topic_name] = self.state.cloud_drop_counts.get(topic_name, 0) + 1
         self.state.cloud_dropped_messages += 1
         self.state.metrics.cloud_messages_dropped.inc()
-
-    def _cloud_spool_dir(self) -> Path:
-        return Path(self.config.cloud_spool_dir)
 
     async def _spool_cloud_message_locked(self, message: pb.CloudQueuedPublish) -> bool:
         spool = self._cloud_spool

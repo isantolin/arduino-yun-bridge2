@@ -339,18 +339,41 @@ def update_feeds(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
             new_content = re.sub(r"PYPI_SOURCE_NAME_VERSION:=[^\n]+\n?", "", new_content)
         elif uses_pypi_mk and is_prerelease:
             # Pre-release pypi.mk package: APK version for PKG_VERSION, Python version for wheel & PyPI source.
+            #
+            # pypi.mk derives PKG_SOURCE (via ?=, so an earlier explicit value wins)
+            # and PKG_BUILD_DIR (via :=, so pypi.mk's own assignment always wins,
+            # regardless of anything set before its `include`) as
+            # "$(PYPI_SOURCE_NAME)-$(PKG_VERSION)". The real PyPI sdist is named
+            # "$(PYPI_SOURCE_NAME).tar.gz" and extracts into a "$(PYPI_SOURCE_NAME)/"
+            # directory (raw Python version, no APK "_rc" suffix), so PKG_BUILD_DIR
+            # must be re-pinned to the raw PYPI_SOURCE_NAME *after* pypi.mk's
+            # `include` line, otherwise pypi.mk silently overwrites it and the
+            # package builds from a directory that was never actually extracted into.
             pkg_version = _to_apk_version(version)
+            pypi_source_name = f"{pip_name}-{version}"
             new_content = re.sub(r"PKG_VERSION:=[^\n]+", f"PKG_VERSION:={pkg_version}", content)
             if "PYPI_SOURCE_NAME:=" in new_content:
                 new_content = re.sub(
                     r"PYPI_SOURCE_NAME:=[^\n]+",
-                    f"PYPI_SOURCE_NAME:={pip_name}-{version}",
+                    f"PYPI_SOURCE_NAME:={pypi_source_name}",
                     new_content,
                 )
             else:
                 new_content = re.sub(
                     r"(PYPI_NAME:=[^\n]+\n)",
-                    f"\\1PYPI_SOURCE_NAME:={pip_name}-{version}\n",
+                    f"\\1PYPI_SOURCE_NAME:={pypi_source_name}\n",
+                    new_content,
+                )
+            if "PKG_SOURCE:=" in new_content:
+                new_content = re.sub(
+                    r"PKG_SOURCE:=[^\n]+",
+                    f"PKG_SOURCE:={pypi_source_name}.tar.gz",
+                    new_content,
+                )
+            else:
+                new_content = re.sub(
+                    r"(PYPI_SOURCE_NAME:=[^\n]+\n)",
+                    f"\\1PKG_SOURCE:={pypi_source_name}.tar.gz\n",
                     new_content,
                 )
             if "PYTHON3_PKG_WHEEL_VERSION:=" in new_content:
@@ -361,10 +384,17 @@ def update_feeds(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
                 )
             else:
                 new_content = re.sub(
-                    r"(PYPI_SOURCE_NAME:=[^\n]+\n)",
+                    r"(PKG_SOURCE:=[^\n]+\n)",
                     f"\\1PYTHON3_PKG_WHEEL_VERSION:={version}\n",
                     new_content,
                 )
+            # Must come after pypi.mk's `include` (":=" assignment there would
+            # otherwise clobber a value set earlier in the file).
+            build_dir_line = f"PKG_BUILD_DIR:=$(BUILD_DIR)/pypi/{pypi_source_name}\n"
+            pypi_mk_include = re.compile(r"(^\s*include\b.*\bpypi\.mk\b[^\n]*\n)", re.MULTILINE)
+            if "PKG_BUILD_DIR:=" in new_content:
+                new_content = re.sub(r"[ \t]*PKG_BUILD_DIR:=[^\n]+\n", "", new_content)
+            new_content = pypi_mk_include.sub(lambda m: m.group(1) + build_dir_line, new_content, count=1)
         else:
             # Non-pypi.mk package: APK notation for PKG_VERSION, Python for source/builddir.
             pkg_version = _to_apk_version(version)

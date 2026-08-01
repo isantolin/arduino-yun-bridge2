@@ -30,7 +30,7 @@ void FileSystemClass::write(etl::string_view path,
   }
   if (!Bridge.send(rpc::CommandId::CMD_FILE_WRITE, 0, p)) {
     Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR,
-                       etl::string_view(rpc::status_reason::WRITE_FAILED));
+                      etl::string_view(rpc::status_reason::WRITE_FAILED));
   }
 }
 
@@ -57,7 +57,7 @@ void FileSystemClass::remove(etl::string_view path) {
   }
   if (!Bridge.send(rpc::CommandId::CMD_FILE_REMOVE, 0, p)) {
     Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR,
-                       etl::string_view(rpc::status_reason::REMOVE_FAILED));
+                      etl::string_view(rpc::status_reason::REMOVE_FAILED));
   }
 }
 

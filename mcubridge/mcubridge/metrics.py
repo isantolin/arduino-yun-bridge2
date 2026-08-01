@@ -125,10 +125,13 @@ async def publish_metrics(
     *,
     min_interval: float = 5.0,
 ) -> None:
-    """Publish runtime metrics to CLOUD at a fixed cadence."""
+    """Publish runtime metrics to CLOUD at a fixed cadence.
 
-    if interval <= 0:
-        raise ValueError("interval must be greater than zero")
+    interval is sourced from RuntimeConfig.status_interval, which enforces
+    (buf.validate.field).uint32.gt = 0 declaratively at config-validation
+    time, so no runtime guard is needed here.
+    """
+
     tick_seconds = max(1, math.ceil(max(min_interval, interval)))
     expiry = float(tick_seconds * 2)
 

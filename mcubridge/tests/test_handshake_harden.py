@@ -24,6 +24,7 @@ def handshake_setup(
         serial_shared_secret=b"secure_secret_123456789012345678",
         serial_handshake_fatal_failures=3,
         file_system_root=str(tmp_path),
+        allow_non_tmp_paths=True,
     )
     state = create_runtime_state(config)
 

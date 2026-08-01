@@ -198,6 +198,7 @@ def _valid_runtime_config(**overrides: Any) -> pb.RuntimeConfig:
         allow_non_tmp_paths=False,
         cloud_spool_dir="/tmp/spool",
         file_system_root="/tmp",
+        status_interval=60,
     )
     base.update(overrides)
     return pb.RuntimeConfig(**base)

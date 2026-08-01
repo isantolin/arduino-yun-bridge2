@@ -154,10 +154,9 @@ def _format_violation(violation: ProtovalidateViolation) -> str:
 
 def validate_config(cfg: pb.RuntimeConfig) -> None:
     """Validate and normalize a RuntimeConfig in-place. [SIL-2]"""
-    from mcubridge.config.const import VOLATILE_STORAGE_PATHS
-
-    # Declarative validation (min_len/pattern/gte/lte, e.g. topic_prefix and
-    # watchdog_interval) MUST run before any normalization mutates cfg below.
+    # Declarative validation (min_len/pattern/gte/lte, cross-field CEL rules
+    # e.g. watchdog_interval, FLASH PROTECTION paths, mTLS cert/key pairing)
+    # MUST run before any normalization mutates cfg below.
     # protovalidate.ValidationError.violations lack field context in their
     # default str(); re-raise as ValueError with field-qualified detail so
     # callers/tests can match on the offending field name. exc.to_proto()
@@ -177,14 +176,6 @@ def validate_config(cfg: pb.RuntimeConfig) -> None:
     if not any(getattr(cfg.topic_authorization, name) for name in auth_fields):
         for name in auth_fields:
             setattr(cfg.topic_authorization, name, True)
-
-    if not cfg.allow_non_tmp_paths:
-        if not any(cfg.cloud_spool_dir.startswith(p) for p in VOLATILE_STORAGE_PATHS):
-            msg = f"FLASH PROTECTION: cloud_spool_dir ({cfg.cloud_spool_dir}) must be in volatile storage"
-            raise ValueError(msg)
-        if not any(cfg.file_system_root.startswith(p) for p in VOLATILE_STORAGE_PATHS):
-            msg = f"FLASH PROTECTION: file_system_root ({cfg.file_system_root}) must be in volatile storage"
-            raise ValueError(msg)
 
 
 def get_ssl_context(cfg: pb.RuntimeConfig) -> Any | None:
@@ -210,9 +201,10 @@ def get_ssl_context(cfg: pb.RuntimeConfig) -> Any | None:
             context.check_hostname = False
             context.verify_mode = ssl.CERT_NONE
 
-        if cfg.cloud_certfile or cfg.cloud_keyfile:
-            if not (cfg.cloud_certfile and cfg.cloud_keyfile):
-                raise ValueError("Both cloud_certfile and cloud_keyfile must be provided for mTLS.")
+        # Pairing of cloud_certfile/cloud_keyfile is enforced declaratively by
+        # the mtls_cert_key_pair CEL rule on RuntimeConfig; only the actual
+        # cert chain loading (filesystem I/O) remains here.
+        if cfg.cloud_certfile:
             context.load_cert_chain(cfg.cloud_certfile, cfg.cloud_keyfile)
 
         return context

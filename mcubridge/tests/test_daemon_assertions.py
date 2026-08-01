@@ -25,6 +25,7 @@ def runtime_config(tmp_path: Path) -> RuntimeConfig:
         watchdog_enabled=False,
         bridge_summary_interval=0.0,
         file_system_root=str(tmp_path),
+        allow_non_tmp_paths=True,
     )
 
 
@@ -43,6 +44,7 @@ async def test_daemon_cloud_run_disabled(service_stack: tuple[BridgeService, Any
         serial_port=service.config.serial_port,
         cloud_enabled=False,
         file_system_root=service.config.file_system_root,
+        allow_non_tmp_paths=True,
     )
     object.__setattr__(service, "config", new_cfg)
     # Should return immediately without connecting
@@ -75,7 +77,10 @@ async def test_daemon_run_orchestrates_tasks(service_stack: tuple[BridgeService,
 def test_main_strict_mode_when_default_secret(tmp_path: Path) -> None:
     # Test that the daemon disables CLOUD when the default secret is used
     mock_config = RuntimeConfig(
-        serial_shared_secret=b"failsafe_secret_mode", cloud_enabled=True, file_system_root=str(tmp_path)
+        serial_shared_secret=b"failsafe_secret_mode",
+        cloud_enabled=True,
+        file_system_root=str(tmp_path),
+        allow_non_tmp_paths=True,
     )
 
     with patch("mcubridge.daemon.load_runtime_config", return_value=mock_config):
@@ -90,7 +95,7 @@ def test_main_strict_mode_when_default_secret(tmp_path: Path) -> None:
 
 
 def test_main_aborts_on_crypto_failure(tmp_path: Path) -> None:
-    mock_config = RuntimeConfig(file_system_root=str(tmp_path))
+    mock_config = RuntimeConfig(file_system_root=str(tmp_path), allow_non_tmp_paths=True)
     with patch("mcubridge.daemon.load_runtime_config", return_value=mock_config):
         with patch("mcubridge.daemon.verify_crypto_integrity", return_value=False):
             with patch("asyncio.Runner"):

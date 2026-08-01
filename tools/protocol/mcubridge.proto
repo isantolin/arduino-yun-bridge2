@@ -944,6 +944,21 @@ message RuntimeConfig {
         message: "watchdog_interval must be >= 0.5s when enabled",
         expression: "!this.watchdog_enabled || this.watchdog_interval >= 0.5"
     };
+    option (buf.validate.message).cel = {
+        id: "flash_protection_spool_dir",
+        message: "cloud_spool_dir must be in volatile storage (/tmp, /var/run, /run, /dev/shm) unless allow_non_tmp_paths is set",
+        expression: "this.allow_non_tmp_paths || this.cloud_spool_dir.startsWith('/tmp') || this.cloud_spool_dir.startsWith('/var/run') || this.cloud_spool_dir.startsWith('/run') || this.cloud_spool_dir.startsWith('/dev/shm')"
+    };
+    option (buf.validate.message).cel = {
+        id: "flash_protection_fs_root",
+        message: "file_system_root must be in volatile storage (/tmp, /var/run, /run, /dev/shm) unless allow_non_tmp_paths is set",
+        expression: "this.allow_non_tmp_paths || this.file_system_root.startsWith('/tmp') || this.file_system_root.startsWith('/var/run') || this.file_system_root.startsWith('/run') || this.file_system_root.startsWith('/dev/shm')"
+    };
+    option (buf.validate.message).cel = {
+        id: "mtls_cert_key_pair",
+        message: "cloud_certfile and cloud_keyfile must both be set or both be empty",
+        expression: "has(this.cloud_certfile) == has(this.cloud_keyfile)"
+    };
 
     string serial_port = 1 [(buf.validate.field).string.min_len = 1];
     uint32 serial_baud = 2;
@@ -968,7 +983,7 @@ message RuntimeConfig {
     uint32 file_storage_quota_bytes = 18;
     uint32 cloud_queue_limit = 19;
     uint32 reconnect_delay = 20;
-    uint32 status_interval = 21;
+    uint32 status_interval = 21 [(buf.validate.field).uint32.gt = 0];
     bool debug = 22;
     uint32 console_queue_limit_bytes = 23;
     uint32 mailbox_queue_limit = 24;

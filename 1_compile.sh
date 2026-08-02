@@ -131,6 +131,7 @@ inject_rust_into_sdk() {
                 ;;
         esac
 
+
         # [FIX] Si rustup está presente, intentamos instalar el target faltante automáticamente
         if command -v rustup >/dev/null 2>&1; then
             if [ "$rustup_std_available" -eq 1 ] && ! rustup target list --installed 2>/dev/null | grep -q "^$target$"; then
@@ -138,6 +139,12 @@ inject_rust_into_sdk() {
                 rustup target add "$target" || echo "[WARN] Failed to install Rust target $target via rustup."
             elif [ "$rustup_std_available" -eq 0 ]; then
                 echo "[INFO] Skipping rustup target add for $target: stable does not provide prebuilt rust-std."
+                
+                # [NUEVO] Instalar rust-src automáticamente si falta para Tier 3 targets
+                if ! rustup component list --installed 2>/dev/null | grep -q "^rust-src"; then
+                    echo "[INFO] Auto-installing 'rust-src' component needed for Tier-3 cross-compilation (build-std)..."
+                    rustup component add rust-src || echo "[WARN] Failed to auto-install rust-src via rustup."
+                fi
             fi
         fi
 
@@ -240,7 +247,7 @@ if [ "$INSTALL_HOST_DEPS" = "1" ]; then
                     tk-devel tcl-devel libuuid-devel xz-devel \
                     bluez-libs-devel libbsd-devel binutils-devel asciidoctor \
                     glibc-devel.i686 libstdc++-devel.i686 \
-                    mingw64-gcc mingw64-binutils
+                    mingw64-gcc mingw64-binutils libffi-devel openssl-devel
             fi
         else
             echo "[WARN] Unrecognized Linux distro. Please install build-essential equivalents manually."
@@ -641,6 +648,20 @@ for pkg in $REQUIRED_PKGS $REQUIRED_DEPS; do
         echo "CONFIG_PACKAGE_${pkg}=y" >> ".config"
     fi
 done
+
+# [NUEVO FIX] Deshabilitar agresivamente la compilación de kmods en el SDK
+# El SDK no debe intentar compilar módulos del kernel (Video, USB, etc)
+echo "Deshabilitando kmods conflictivos en la configuración base..."
+echo "CONFIG_PACKAGE_kmod-usb-core=n" >> ".config"
+echo "CONFIG_PACKAGE_kmod-usb-xhci-hcd=n" >> ".config"
+echo "CONFIG_PACKAGE_kmod-video-core=n" >> ".config"
+echo "CONFIG_PACKAGE_kmod-video-uvc=n" >> ".config"
+echo "CONFIG_PACKAGE_kmod-w1=n" >> ".config"
+echo "CONFIG_PACKAGE_kmod-ieee802154=n" >> ".config"
+
+# Evitar que se compilen todos los kmods genéricamente
+sed -i 's/CONFIG_ALL_KMODS=y/# CONFIG_ALL_KMODS is not set/g' .config 2>/dev/null || true
+
 make defconfig
 
 # 3. Compilation

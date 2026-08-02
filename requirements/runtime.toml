@@ -150,13 +150,13 @@ rationale = "Declared runtime dependency of cel-python (celpy.c7nlib) per its di
 [[dependency]]
 name = "pyyaml"
 openwrt = "python3-yaml"
-pip = "pyyaml>=6.0.2"
+pip = "pyyaml==6.0.3"
 rationale = "Declared runtime dependency of cel-python per its distributed wheel metadata"
 
 [[dependency]]
 name = "black"
 openwrt = "python3-black"
-pip = "black>=25.1.0"
+pip = "black==26.5.1"
 rationale = "PEP 8 canonical code formatter required for generated code and development environments [BUILD-ONLY]"
 
 

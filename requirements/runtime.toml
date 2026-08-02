@@ -101,7 +101,7 @@ rationale = "Pure Python asyncio gRPC library for MPU-to-Cloud communication"
 [[dependency]]
 name = "typer"
 openwrt = "python3-typer"
-pip = "typer>=0.12.0"
+pip = "typer>=0.27.0"
 gateway = true
 rationale = "Declarative CLI application builder for MPU diagnostic utilities and Gateway CLI"
 
@@ -144,7 +144,7 @@ rationale = "Transitive dependency of pendulum providing the IANA time zone data
 [[dependency]]
 name = "jmespath"
 openwrt = "python3-jmespath"
-pip = "jmespath>=1.0.1"
+pip = "jmespath>=1.1.0"
 rationale = "Declared runtime dependency of cel-python (celpy.c7nlib) per its distributed wheel metadata"
 
 [[dependency]]

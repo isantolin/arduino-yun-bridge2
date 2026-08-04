@@ -248,10 +248,10 @@ bool run_cryptographic_self_tests() {
   bool aead_res_ok = (encrypt_res == 0);
   bool aead_tag_ok = etl::equal(aead_tag_actual.begin(), aead_tag_actual.end(),
                                 kat_aead_tag_expected.begin());
-  const uint8_t val_ok = ok ? 1U : 0U;
-  const uint8_t val_hmac = hmac_ok ? 1U : 0U;
-  const uint8_t val_aead_res = aead_res_ok ? 1U : 0U;
-  const uint8_t val_aead_tag = aead_tag_ok ? 1U : 0U;
+  const uint8_t val_ok = static_cast<uint8_t>(ok);
+  const uint8_t val_hmac = static_cast<uint8_t>(hmac_ok);
+  const uint8_t val_aead_res = static_cast<uint8_t>(aead_res_ok);
+  const uint8_t val_aead_tag = static_cast<uint8_t>(aead_tag_ok);
   return (val_ok & val_hmac & val_aead_res & val_aead_tag) != 0U;
 }
 

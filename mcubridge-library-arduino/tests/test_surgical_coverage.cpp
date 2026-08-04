@@ -4,6 +4,7 @@
 
 #include "Bridge.h"
 #include "BridgeTestInterface.h"
+#include "hal/hal.h"
 #include "security/security.h"
 #include "services/Console.h"
 #include "services/DataStore.h"
@@ -587,6 +588,16 @@ static void test_surgical_mailbox_datastore_edges() {
   Mailbox.requestAvailable();
   Mailbox.signalProcessed(456U);
   DataStore.set("key", etl::span<const uint8_t>(payload_bytes, 5));
+
+  // 6. Send-fail branches: Mailbox::push, signalProcessed & DataStore::set
+  //    Clear shared secret so send() routes through sendSinglePass (not
+  //    _sendEncryptedHelper), which checks _tx_enabled and returns false.
+  ba.clearSharedSecret();
+  ba.setTxEnabled(false);
+  Mailbox.push(etl::span<const uint8_t>(payload_bytes, 5));
+  Mailbox.signalProcessed(789U);
+  DataStore.set("key2", etl::span<const uint8_t>(payload_bytes, 3));
+  ba.setTxEnabled(true);
 }
 
 static void test_surgical_console_edges() {
@@ -720,6 +731,24 @@ static void test_surgical_filesystem_edges() {
   const char* val_path = "test.txt";
   etl::copy_n(val_path, strlen(val_path), fread_valid.path);
   FileSystem._onRead(fread_valid);
+
+  // 8. FileSystem write() & remove() send-fail branches (lines 29-31, 56-58).
+  //    Clear shared secret so send() routes through sendSinglePass (which
+  //    checks _tx_enabled). With TX disabled, Bridge.send() returns false.
+  ba.clearSharedSecret();
+  ba.setTxEnabled(false);
+  uint8_t fsdata[] = {1, 2};
+  FileSystem.write("send_fail.txt", etl::span<const uint8_t>(fsdata, 2));
+  FileSystem.remove("send_fail.txt");
+  ba.setTxEnabled(true);
+
+  // 9. _onRead of an empty file to cover the to_copy == 0 branch (L99).
+  //    Write a 0-byte file via the mock, then call _onRead.
+  bridge::hal::writeFile("empty.txt", etl::span<const uint8_t>());
+  rpc_pb_FileRead fread_empty = {};
+  const char* empty_path = "empty.txt";
+  etl::copy_n(empty_path, strlen(empty_path), fread_empty.path);
+  FileSystem._onRead(fread_empty);
 }
 
 int main() {

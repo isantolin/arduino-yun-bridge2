@@ -5,6 +5,12 @@
 #include "Bridge.h"
 #include "BridgeTestInterface.h"
 #include "security/security.h"
+#include "services/Console.h"
+#include "services/DataStore.h"
+#include "services/FileSystem.h"
+#include "services/Mailbox.h"
+#include "services/Process.h"
+#include "services/SPIService.h"
 #include "test_support.h"
 
 // Arduino Stubs for Linker
@@ -104,7 +110,12 @@ void test_surgical_security_failures() {
   bool short_ok = rpc::security::validate_frame_nonce(short_nonce, nullptr);
   TEST_ASSERT_FALSE(short_ok);
 
-  // 5. validate_frame_nonce with counter <= last_seen
+  // 5. Handshake authenticate empty tag
+  bool empty_tag_ok = rpc::security::handshake_authenticate(
+      secret, nonce, etl::span<const uint8_t>(), out_tag);
+  TEST_ASSERT_TRUE(empty_tag_ok);
+
+  // 6. validate_frame_nonce with counter <= last_seen
   uint64_t last_seen = 100;
   etl::array<uint8_t, 12> old_nonce = {0};
   old_nonce[0] = 'M';
@@ -348,6 +359,220 @@ static void test_surgical_extra_branches() {
     env.payload_type.file_write.path[1] = '\0';
     ba.dispatch(env);
   }
+
+  // 9. Send non-system command when tx disabled
+  ba.setTxEnabled(false);
+  rpc::payload::DigitalWrite dw_payload = {};
+  (void)Bridge.send(rpc::CommandId::CMD_DIGITAL_WRITE, 0, dw_payload);
+  ba.setTxEnabled(true);
+
+  // 10. Dispatch XOFF, XON, GetFreeMemory, GetCapabilities
+  {
+    rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
+    env.version = rpc::PROTOCOL_VERSION;
+    env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_XOFF);
+    env.sequence_id = 50;
+    ba.dispatch(env);
+
+    env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_XON);
+    env.sequence_id = 51;
+    ba.dispatch(env);
+
+    env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_GET_FREE_MEMORY);
+    env.sequence_id = 52;
+    ba.dispatch(env);
+
+    env.command_id =
+        static_cast<uint16_t>(rpc::CommandId::CMD_GET_CAPABILITIES);
+    env.sequence_id = 53;
+    ba.dispatch(env);
+
+    // 11. Malformed MailboxReadResp & MailboxAvailableResp, valid Process
+    // responses
+    env.command_id =
+        static_cast<uint16_t>(rpc::CommandId::CMD_MAILBOX_READ_RESP);
+    env.sequence_id = 60;
+    env.which_payload_type = rpc_pb_RpcEnvelope_digital_write_tag;
+    ba.dispatch(env);
+
+    env.command_id =
+        static_cast<uint16_t>(rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP);
+    env.sequence_id = 61;
+    ba.dispatch(env);
+
+    env.command_id =
+        static_cast<uint16_t>(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP);
+    env.sequence_id = 62;
+    env.which_payload_type = rpc_pb_RpcEnvelope_process_run_async_response_tag;
+    env.payload_type.process_run_async_response.pid = 123;
+    ba.dispatch(env);
+
+    env.command_id =
+        static_cast<uint16_t>(rpc::CommandId::CMD_PROCESS_POLL_RESP);
+    env.sequence_id = 63;
+    env.which_payload_type = rpc_pb_RpcEnvelope_process_poll_response_tag;
+    env.payload_type.process_poll_response.exit_code = 0;
+    env.payload_type.process_poll_response.finished = true;
+    ba.dispatch(env);
+  }
+}
+
+static uint32_t g_av_count = 0;
+static bool g_msg_received = false;
+static void dummy_av_handler(uint32_t c) { g_av_count = c; }
+static void dummy_msg_handler(etl::span<const uint8_t>) {
+  g_msg_received = true;
+}
+static void dummy_ds_handler(etl::string_view, etl::span<const uint8_t>) {}
+
+static void test_surgical_mailbox_datastore_edges() {
+  static BiStream stream;
+  stream.clear();
+  reset_bridge_core(Bridge, stream);
+
+  // 1. Mailbox empty push & send fail
+  Mailbox.push(etl::span<const uint8_t>());
+  Mailbox.signalProcessed(123U);
+
+  // 2. Mailbox queue full branches
+  rpc::payload::MailboxPush push_msg = {};
+  push_msg.data.size = 2;
+  push_msg.data.bytes[0] = 'a';
+  push_msg.data.bytes[1] = 'b';
+  for (int i = 0; i < 10; ++i) {
+    Mailbox._onPush(push_msg);
+  }
+
+  rpc::payload::MailboxReadResponse read_resp = {};
+  read_resp.content.size = 2;
+  Mailbox._onReadResponse(read_resp);
+
+  // 3. Mailbox callbacks & process
+  Mailbox.registerAvailableCallback(
+      MailboxClass::AvailableCallback::create<&dummy_av_handler>());
+  rpc::payload::MailboxAvailableResponse av_resp = {};
+  av_resp.count = 42U;
+  Mailbox._onAvailableResponse(av_resp);
+  TEST_ASSERT_EQUAL(42U, g_av_count);
+
+  Mailbox.registerMessageCallback(
+      MailboxClass::MessageCallback::create<&dummy_msg_handler>());
+  Mailbox.process();
+  TEST_ASSERT_TRUE(g_msg_received);
+  Mailbox.onLost();
+
+  // 4. DataStore empty key/val & pending gets full
+  DataStore.set(etl::string_view(), etl::span<const uint8_t>());
+  rpc::payload::DatastoreGetResponse ds_resp = {};
+  DataStore._onResponse(ds_resp);
+
+  auto dummy_handler = DataStoreClass::GetHandler::create<&dummy_ds_handler>();
+  for (int i = 0; i < 10; ++i) {
+    DataStore.get("k", dummy_handler);
+  }
+
+  // DataStore response with invalid handler
+  DataStoreClass::GetHandler invalid_handler;
+  DataStore.get("k2", invalid_handler);
+  DataStore._onResponse(ds_resp);
+
+  // 5. Synchronized Mailbox/DataStore calls
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
+  uint8_t payload_bytes[] = {'h', 'e', 'l', 'l', 'o'};
+  Mailbox.push(etl::span<const uint8_t>(payload_bytes, 5));
+  Mailbox.requestRead();
+  Mailbox.requestAvailable();
+  Mailbox.signalProcessed(456U);
+  DataStore.set("key", etl::span<const uint8_t>(payload_bytes, 5));
+}
+
+static void test_surgical_console_edges() {
+  static BiStream stream;
+  stream.clear();
+  reset_bridge_core(Bridge, stream);
+
+  // Console write null/empty & rx buffer read/peek when empty
+  Console.begin();
+  TEST_ASSERT_EQUAL(0U, Console.write(nullptr, 10));
+  TEST_ASSERT_EQUAL(0U, Console.write((const uint8_t*)"abc", 0));
+  TEST_ASSERT_EQUAL(-1, Console.read());
+  TEST_ASSERT_EQUAL(-1, Console.peek());
+
+  // Console rx buffer push & read/peek
+  rpc::payload::ConsoleWrite cwrite = {};
+  cwrite.data.size = 3;
+  cwrite.data.bytes[0] = 'X';
+  cwrite.data.bytes[1] = 'Y';
+  cwrite.data.bytes[2] = 'Z';
+  Console._push(cwrite);
+
+  TEST_ASSERT_EQUAL((int)'X', Console.peek());
+  TEST_ASSERT_EQUAL(3, Console.available());
+  TEST_ASSERT_EQUAL((int)'X', Console.read());
+}
+
+static void test_surgical_process_spi_edges() {
+  static BiStream stream;
+  stream.clear();
+  reset_bridge_core(Bridge, stream);
+
+  // 1. SPI edge paths: uninitialized, empty buffer, timeout
+  SPIService.end();
+  etl::array<uint8_t, 4> spi_buf = {1, 2, 3, 4};
+  size_t t1 = SPIService.transfer(etl::span<uint8_t>(spi_buf));
+  TEST_ASSERT_EQUAL(0U, t1);
+
+  SPIService.begin();
+  size_t t2 = SPIService.transfer(etl::span<uint8_t>());
+  TEST_ASSERT_EQUAL(0U, t2);
+
+  bridge::test::fault::enable(bridge::test::fault::FaultPoint::SPI_TIMEOUT);
+  size_t t3 = SPIService.transfer(etl::span<uint8_t>(spi_buf));
+  TEST_ASSERT_EQUAL(0U, t3);
+  bridge::test::fault::disable(bridge::test::fault::FaultPoint::SPI_TIMEOUT);
+
+  // 2. Process edge paths: command buffer overflow
+  char long_cmd[100];
+  etl::fill_n(long_cmd, 99, 'x');
+  long_cmd[99] = '\0';
+  Process.runAsync(long_cmd, etl::span<const etl::string_view>(),
+                   ProcessClass::ProcessRunHandler());
+  Process.kill(999);
+}
+
+static void dummy_fs_handler(etl::span<const uint8_t>) {}
+
+static void test_surgical_filesystem_edges() {
+  static BiStream stream;
+  stream.clear();
+  reset_bridge_core(Bridge, stream);
+
+  // 1. FileSystem write, read, remove with empty path/data (unsynchronized send
+  // failure)
+  FileSystem.write(etl::string_view(), etl::span<const uint8_t>());
+  FileSystem.read(etl::string_view(), FileSystemClass::FileSystemReadHandler());
+  FileSystem.remove(etl::string_view());
+
+  // 2. FileSystem read response with invalid handler
+  rpc::payload::FileReadResponse rresp = {};
+  FileSystem._onResponse(rresp);
+
+  // 3. FileSystem read with valid handler
+  FileSystem.read(
+      "test.txt",
+      FileSystemClass::FileSystemReadHandler::create<&dummy_fs_handler>());
+  FileSystem._onResponse(rresp);
+
+  // 4. FileSystem write, read, remove when synchronized
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
+  uint8_t data[] = {1, 2, 3};
+  FileSystem.write("test.txt", etl::span<const uint8_t>(data, 3));
+  FileSystem.read(
+      "test.txt",
+      FileSystemClass::FileSystemReadHandler::create<&dummy_fs_handler>());
+  FileSystem.remove("test.txt");
 }
 
 int main() {
@@ -358,5 +583,9 @@ int main() {
   RUN_TEST(test_surgical_tasks_flow);
   RUN_TEST(test_surgical_send_fail_branches);
   RUN_TEST(test_surgical_extra_branches);
+  RUN_TEST(test_surgical_mailbox_datastore_edges);
+  RUN_TEST(test_surgical_console_edges);
+  RUN_TEST(test_surgical_process_spi_edges);
+  RUN_TEST(test_surgical_filesystem_edges);
   return UNITY_END();
 }

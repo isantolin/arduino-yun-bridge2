@@ -102,6 +102,12 @@ void test_filesystem_read_edge_cases() {
   strncpy(req_large.path, "test_large.txt", sizeof(req_large.path));
   FileSystem._onRead(req_large);
 
+  // Trigger read failure branch (file not found)
+  rpc::payload::FileRead req_non_existent;
+  strncpy(req_non_existent.path, "non_existent_file.txt",
+          sizeof(req_non_existent.path));
+  FileSystem._onRead(req_non_existent);
+
   // Trigger timeout path
   bridge::test::fault::enable(
       bridge::test::fault::FaultPoint::FILESYSTEM_TIMEOUT);

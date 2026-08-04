@@ -69,6 +69,7 @@ class TestAccessor : public BridgeClass {
   }
 
   void onAckTimeout() { _onAckTimeout(); }
+  void onHandshakeTimeout() { _onHandshakeTimeout(); }
   void handleAck(uint16_t cmd) { _handleAck(cmd); }
   void handleGetVersion(const bridge::router::CommandContext& ctx) {
     _handleGetVersion(ctx);

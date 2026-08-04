@@ -414,7 +414,79 @@ static void test_surgical_extra_branches() {
     env.payload_type.process_poll_response.exit_code = 0;
     env.payload_type.process_poll_response.finished = true;
     ba.dispatch(env);
+
+    // 12. DigitalRead & AnalogRead with invalid pin >= max_pins
+    env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_DIGITAL_READ);
+    env.sequence_id = 70;
+    env.which_payload_type = rpc_pb_RpcEnvelope_pin_read_tag;
+    env.payload_type.pin_read.pin = 250;
+    ba.dispatch(env);
+
+    env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_ANALOG_READ);
+    env.sequence_id = 71;
+    env.which_payload_type = rpc_pb_RpcEnvelope_pin_read_tag;
+    env.payload_type.pin_read.pin = 250;
+    ba.dispatch(env);
+
+    // 14. Dispatch SPI commands & StatusMalformed
+    env.command_id = static_cast<uint16_t>(rpc::StatusCode::STATUS_MALFORMED);
+    env.sequence_id = 79;
+    ba.dispatch(env);
+
+    env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_SPI_SET_CONFIG);
+    env.sequence_id = 80;
+    env.which_payload_type = rpc_pb_RpcEnvelope_spi_config_tag;
+    env.payload_type.spi_config.frequency = 1000000;
+    env.payload_type.spi_config.bit_order = MSBFIRST;
+    env.payload_type.spi_config.data_mode = SPI_MODE0;
+    ba.dispatch(env);
+
+    env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_SPI_BEGIN);
+    env.sequence_id = 81;
+    ba.dispatch(env);
+
+    env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_SPI_END);
+    env.sequence_id = 82;
+    ba.dispatch(env);
+
+    SPIService.begin();
+    env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_SPI_TRANSFER);
+    env.sequence_id = 83;
+    env.which_payload_type = rpc_pb_RpcEnvelope_spi_transfer_tag;
+    env.payload_type.spi_transfer.data.size = 2;
+    env.payload_type.spi_transfer.data.bytes[0] = 0xAA;
+    env.payload_type.spi_transfer.data.bytes[1] = 0xBB;
+    ba.dispatch(env);
+
+    // 15. CMD_LINK_RESET with HandshakeConfig payload
+    env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_LINK_RESET);
+    env.sequence_id = 90;
+    env.which_payload_type = rpc_pb_RpcEnvelope_encrypted_payload_with_tag_tag;
+    rpc_pb_HandshakeConfig hs_cfg = rpc_pb_HandshakeConfig_init_default;
+    hs_cfg.ack_timeout_ms = 500;
+    hs_cfg.ack_retry_limit = 5;
+    hs_cfg.response_timeout_ms = 2000;
+    pb_ostream_t hs_os = pb_ostream_from_buffer(
+        env.payload_type.encrypted_payload_with_tag.bytes, 100);
+    pb_encode(&hs_os, rpc_pb_HandshakeConfig_fields, &hs_cfg);
+    env.payload_type.encrypted_payload_with_tag.size =
+        static_cast<pb_size_t>(hs_os.bytes_written);
+    ba.dispatch(env);
+
+    // 16. Dispatch STATUS_OK
+    env.command_id = static_cast<uint16_t>(rpc::StatusCode::STATUS_OK);
+    env.sequence_id = 91;
+    ba.dispatch(env);
   }
+
+  // 17. Bridge.begin with nullptr secret
+  Bridge.begin(115200, nullptr);
+
+  // 13. Stale handshake timeout & 0 pending baudrate change
+  ba.setSynchronized();
+  ba.onHandshakeTimeout();
+  ba.setPendingBaudrate(0);
+  ba.onBaudrateChange();
 }
 
 static uint32_t g_av_count = 0;
@@ -455,10 +527,19 @@ static void test_surgical_mailbox_datastore_edges() {
   Mailbox._onAvailableResponse(av_resp);
   TEST_ASSERT_EQUAL(42U, g_av_count);
 
+  // Available response with null callback
+  Mailbox.registerAvailableCallback(MailboxClass::AvailableCallback());
+  Mailbox._onAvailableResponse(av_resp);
+
   Mailbox.registerMessageCallback(
       MailboxClass::MessageCallback::create<&dummy_msg_handler>());
   Mailbox.process();
   TEST_ASSERT_TRUE(g_msg_received);
+
+  // Process with queue non-empty but null message callback
+  Mailbox._onPush(push_msg);
+  Mailbox.registerMessageCallback(MailboxClass::MessageCallback());
+  Mailbox.process();
   Mailbox.onLost();
 
   // 4. DataStore empty key/val & pending gets full
@@ -474,6 +555,10 @@ static void test_surgical_mailbox_datastore_edges() {
   // DataStore response with invalid handler
   DataStoreClass::GetHandler invalid_handler;
   DataStore.get("k2", invalid_handler);
+  DataStore._onResponse(ds_resp);
+
+  // DataStore response when pending gets queue is empty
+  while (!DataStore._pending_gets.empty()) DataStore._pending_gets.pop();
   DataStore._onResponse(ds_resp);
 
   // 5. Synchronized Mailbox/DataStore calls

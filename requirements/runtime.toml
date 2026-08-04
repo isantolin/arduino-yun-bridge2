@@ -108,7 +108,7 @@ rationale = "Declarative CLI application builder for MPU diagnostic utilities an
 [[dependency]]
 name = "protovalidate"
 openwrt = "python3-protovalidate"
-pip = "protovalidate==1.2.0"
+pip = "protovalidate==1.2.2"
 rationale = "Declarative protobuf message validator (buf.validate) replacing protoc-gen-validate, which is broken with modern protobuf/upb runtimes; enforces schema-driven SIL-2 constraints"
 
 [[dependency]]

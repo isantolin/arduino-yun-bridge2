@@ -20,7 +20,7 @@ dependencies = [
     "pendulum==3.2.0",
     "prometheus-client==0.26.0",
     "protobuf==7.36.0rc1",
-    "protovalidate==1.2.0",
+    "protovalidate==1.2.2",
     "pyyaml==6.0.3",
     "serialx==1.8.2",
     "structlog==26.1.0",

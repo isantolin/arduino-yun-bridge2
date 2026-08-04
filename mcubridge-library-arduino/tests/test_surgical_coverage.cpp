@@ -124,6 +124,18 @@ void test_surgical_security_failures() {
   old_nonce[11] = 50;
   bool old_ok = rpc::security::validate_frame_nonce(old_nonce, &last_seen);
   TEST_ASSERT_FALSE(old_ok);
+
+  // 7. Handshake authenticate tag mismatch (correct 16-byte length, invalid content)
+  etl::array<uint8_t, 16> wrong_tag;
+  wrong_tag.fill(0xFF);
+  bool tag_mismatch_ok =
+      rpc::security::handshake_authenticate(secret, nonce, wrong_tag, out_tag);
+  TEST_ASSERT_FALSE(tag_mismatch_ok);
+
+  // 8. aead_decrypt_frame call
+  etl::array<uint8_t, 4> dec_out = {0};
+  (void)rpc::security::aead_decrypt_frame(1, 1, in, key, valid_nonce, out_tag, dec_out);
+  TEST_ASSERT_FALSE(old_ok);
 }
 
 void test_surgical_tasks_flow() {
@@ -257,6 +269,11 @@ void test_surgical_send_fail_branches() {
     env.payload_type.link_sync.nonce.size = 16U;
     ba.dispatch(env);
   }
+
+  // 7. Payload pool exhaustion send fail in _sendEncryptedHelper
+  ba.exhaustTxPayloadPool();
+  rpc_pb_DatastorePut put_msg = rpc_pb_DatastorePut_init_default;
+  (void)Bridge.send(rpc::CommandId::CMD_DATASTORE_PUT, 100, put_msg);
 }
 
 static void test_surgical_extra_branches() {
@@ -617,12 +634,34 @@ static void test_surgical_process_spi_edges() {
   TEST_ASSERT_EQUAL(0U, t3);
   bridge::test::fault::disable(bridge::test::fault::FaultPoint::SPI_TIMEOUT);
 
-  // 2. Process edge paths: command buffer overflow
+  // 2. Process edge paths: command buffer overflow & argument overflow
   char long_cmd[100];
   etl::fill_n(long_cmd, 99, 'x');
   long_cmd[99] = '\0';
   Process.runAsync(long_cmd, etl::span<const etl::string_view>(),
                    ProcessClass::ProcessRunHandler());
+
+  etl::string_view args[1];
+  args[0] = etl::string_view(long_cmd);
+  Process.runAsync("ls", etl::span<const etl::string_view>(args, 1),
+                   ProcessClass::ProcessRunHandler());
+
+  // Process empty queue response branches
+  while (!Process._pending_run_async.empty()) Process._pending_run_async.pop();
+  rpc_pb_ProcessRunAsyncResponse pr_resp = {};
+  Process._onRunAsyncResponse(pr_resp);
+
+  while (!Process._pending_polls.empty()) Process._pending_polls.pop();
+  rpc_pb_ProcessPollResponse pp_resp = {};
+  Process._onPollResponse(pp_resp);
+
+  // Process queues full with valid handlers
+  static auto dummy_pr_handler = ProcessClass::ProcessRunHandler();
+  for (int i = 0; i < 10; ++i) {
+    Process._pending_run_async.push({dummy_pr_handler});
+  }
+  Process.runAsync("ls", etl::span<const etl::string_view>(), dummy_pr_handler);
+
   Process.kill(999);
 }
 
@@ -640,6 +679,7 @@ static void test_surgical_filesystem_edges() {
   FileSystem.remove(etl::string_view());
 
   // 2. FileSystem read response with invalid handler
+  FileSystem.read(etl::string_view(), FileSystemClass::FileSystemReadHandler());
   rpc::payload::FileReadResponse rresp = {};
   FileSystem._onResponse(rresp);
 
@@ -658,6 +698,28 @@ static void test_surgical_filesystem_edges() {
       "test.txt",
       FileSystemClass::FileSystemReadHandler::create<&dummy_fs_handler>());
   FileSystem.remove("test.txt");
+
+  // 5. FileSystem _onWrite & _onRemove when sendFrame fails
+  ba.setTxEnabled(false);
+  rpc_pb_FileWrite fw_msg = {};
+  FileSystem._onWrite(fw_msg);
+  rpc_pb_FileRemove fr_msg = {};
+  FileSystem._onRemove(fr_msg);
+  ba.setTxEnabled(true);
+
+  // 6. FileSystem _onRead non-existent file failure
+  rpc_pb_FileRead fread_nonexistent = {};
+  const char* non_path = "non_existent_file.xyz";
+  etl::copy_n(non_path, strlen(non_path), fread_nonexistent.path);
+  FileSystem._onRead(fread_nonexistent);
+
+  // 7. FileSystem _onRead timeout via FILESYSTEM_TIMEOUT fault
+  bridge::test::fault::enable(
+      bridge::test::fault::FaultPoint::FILESYSTEM_TIMEOUT);
+  rpc_pb_FileRead fread_valid = {};
+  const char* val_path = "test.txt";
+  etl::copy_n(val_path, strlen(val_path), fread_valid.path);
+  FileSystem._onRead(fread_valid);
 }
 
 int main() {

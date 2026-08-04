@@ -5,12 +5,13 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any
+from typing import Any, cast
 from wsgiref.handlers import CGIHandler
 
 import asyncio
 from grpclib.client import Channel
 from mcubridge.protocol.mcubridge_grpc import LocalBridgeStub
+import protovalidate
 from google.protobuf import json_format
 from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import load_runtime_config
@@ -46,7 +47,7 @@ def publish_sync(topic: str, payload: str, config: RuntimeConfig) -> None:
 
 def json_res(start_response: Any, status: str, response: pb.PinControlResponse) -> list[bytes]:
     """Serialize PinControlResponse Protobuf message to JSON for CGI output."""
-    body = json_format.MessageToJson(response, preserving_proto_field_name=True).encode("utf-8")
+    body = json_format.MessageToJson(cast(Any, response), preserving_proto_field_name=True).encode("utf-8")
     headers = [
         ("Content-Type", "application/json"),
         ("Content-Length", str(len(body))),
@@ -80,19 +81,30 @@ def application(environ: dict[str, Any], start_response: Any) -> list[bytes]:
         body_len = int(environ.get("CONTENT_LENGTH", "0"))
         body_data = environ["wsgi.input"].read(body_len)
 
-        # [SIL-2] Parse request using Protobuf model via JSON mapping
+        # [SIL-2] Parse request and validate using Protobuf model via protovalidate
         req = pb.PinControlRequest()
         if body_len:
-            json_format.Parse(body_data, req)
+            json_format.Parse(body_data, cast(Any, req))
 
-        state = req.state.upper()
-        if state not in ("ON", "OFF"):
+        try:
+            protovalidate.validate(cast(Any, req))
+        except Exception as val_err:
             return json_res(
                 start_response,
                 "400 Bad Request",
-                pb.PinControlResponse(status="error", message="Invalid state"),
+                pb.PinControlResponse(status="error", message=f"Invalid state: {val_err}"),
             )
+
+        state = req.state.upper()
         pin_data = pb.PinControlData(pin=pin, state=state)
+        try:
+            protovalidate.validate(cast(Any, pin_data))
+        except Exception as val_err:
+            return json_res(
+                start_response,
+                "400 Bad Request",
+                pb.PinControlResponse(status="error", message=f"Invalid pin data: {val_err}"),
+            )
 
         topic = topic_path(config.topic_prefix, Topic.DIGITAL, str(pin_data.pin))
         publish_sync(topic, "1" if pin_data.state == "ON" else "0", config)

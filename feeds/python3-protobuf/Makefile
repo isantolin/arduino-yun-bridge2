@@ -2,13 +2,13 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=python3-protobuf
-PKG_VERSION:=7.36.0_rc1
+PKG_VERSION:=7.36.0_rc2
 PKG_RELEASE:=1
 
 PYPI_NAME:=protobuf
-PKG_SOURCE:=protobuf-7.36.0rc1.tar.gz
-PYTHON3_PKG_WHEEL_VERSION:=7.36.0rc1
-PKG_HASH:=a7cf7138eff7c0d1c456eea80bc5854d02ac36a76460c33b3ebec216b2024d53
+PKG_SOURCE:=protobuf-7.36.0rc2.tar.gz
+PYTHON3_PKG_WHEEL_VERSION:=7.36.0rc2
+PKG_HASH:=af5194b5cd9370d0a4f849c356ae05a0482ecc942570ae12bb37539b8c68c066
 
 PKG_MAINTAINER:=Ignacio Santolin <isantolin@gmail.com>
 PKG_LICENSE:=BSD-3-Clause
@@ -17,7 +17,7 @@ PKG_LICENSE_FILES:=LICENSE
 # PKG_BUILD_DEPENDS pre-injected into hostpkg
 
 include $(TOPDIR)/feeds/packages/lang/python/pypi.mk
-PKG_BUILD_DIR:=$(BUILD_DIR)/pypi/protobuf-7.36.0rc1
+PKG_BUILD_DIR:=$(BUILD_DIR)/pypi/protobuf-7.36.0rc2
 include $(INCLUDE_DIR)/package.mk
 include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
 

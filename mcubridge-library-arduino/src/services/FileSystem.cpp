@@ -9,8 +9,6 @@
 
 namespace {
 constexpr size_t kReadChunkSize = 64U;
-
-#define BRIDGE_FS_DEBUG(...)
 }  // namespace
 
 FileSystemClass::FileSystemClass() {}
@@ -71,7 +69,6 @@ void FileSystemClass::_onWrite(const rpc::payload::FileWrite& msg) {
 }
 
 void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
-  BRIDGE_FS_DEBUG("[DEBUG] FS: Reading file: %s\n", msg.path);
   const etl::string_view path(msg.path);
   size_t offset = 0U;
   const uint32_t start_ms = millis();
@@ -84,7 +81,6 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
     (void)chunk;
     if (finished) return;
     if (millis() - start_ms >= bridge::config::SERIAL_TIMEOUT_MS) {
-      BRIDGE_FS_DEBUG("[DEBUG] FS: Read TIMEOUT at offset %zu\n", offset);
       finished = true;
       return;
     }
@@ -92,13 +88,10 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
     auto res = bridge::hal::readFileChunk(
         path, offset, etl::span<uint8_t>(buffer.data(), buffer.size()));
     if (!res) {
-      BRIDGE_FS_DEBUG("[DEBUG] FS: Read FAILED at offset %zu\n", offset);
       (void)Bridge.sendFrame(rpc::StatusCode::STATUS_ERROR);
       finished = true;
       return;
     }
-    BRIDGE_FS_DEBUG("[DEBUG] FS: Sending chunk (%zu bytes, has_more=%d)\n",
-                    res->bytes_read, res->has_more);
 
     rpc::payload::FileReadResponse p = {};
     const size_t to_copy = etl::min(res->bytes_read, sizeof(p.content.bytes));

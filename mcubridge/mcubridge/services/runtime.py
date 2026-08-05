@@ -117,8 +117,6 @@ class BridgeService:
     _cloud_publish_lock: asyncio.Lock
     _cloud_spool: SqliteDeque | None
     mcu_registry: dict[int, McuHandler]
-    _topic_aliases: dict[str, int]
-    _next_alias_id: int
     _cloud_incoming_queue: asyncio.Queue[pb.CloudQueuedPublish]
     ipc_requests: dict[bytes, asyncio.Queue[pb.CloudQueuedPublish]]
     console_queues: list[asyncio.Queue[pb.CloudQueuedPublish]]
@@ -152,9 +150,6 @@ class BridgeService:
             self._cloud_spool = SqliteDeque(
                 path=str(Path(self.config.cloud_spool_dir) / "spool.db"), maxlen=self.state.cloud_queue_limit
             )
-        self._topic_aliases = {}
-        self._next_alias_id = 1
-
         # [SIL-2] O(1) MCU Dispatch Registry
         self.mcu_registry: dict[int, McuHandler] = self._setup_mcu_registry(serial)
         for s in Status:

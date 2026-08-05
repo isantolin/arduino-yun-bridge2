@@ -385,13 +385,11 @@ class SerialHandshakeManager:
         return True
 
     def _parse_capabilities(self, payload: bytes | ProtobufMessage) -> None:
-        # [SIL-2] Decode and retain native pb.Capabilities object directly.
-        if isinstance(payload, pb.Capabilities):
-            p = payload
-        elif isinstance(payload, ProtobufMessage):
-            p = cast(pb.Capabilities, payload)
-        else:
-            p = pb.Capabilities.FromString(payload)
+        p = (
+            payload
+            if isinstance(payload, pb.Capabilities)
+            else (pb.Capabilities.FromString(payload) if isinstance(payload, bytes) else cast(pb.Capabilities, payload))
+        )
         self._state.mcu_capabilities = p
         self._logger.info("MCU Capabilities: %s", self._state.mcu_capabilities)
 

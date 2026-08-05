@@ -43,8 +43,6 @@ T = TypeVar("T")
 
 logger = structlog.get_logger("mcubridge.state")
 
-SpoolSnapshot = dict[str, int | float]
-
 
 def _make_cloud_publish_queue(maxsize: int = 0) -> asyncio.Queue[pb.CloudQueuedPublish]:
     normalized = max(0, maxsize)
@@ -451,7 +449,7 @@ class RuntimeState:
                 capabilitiespb_obj = self.mcu_capabilities
             else:
                 capabilitiespb_obj = pb.Capabilities()
-                ParseDict(self.mcu_capabilities, capabilitiespb_obj)
+                ParseDict(self.mcu_capabilities, cast(Any, capabilitiespb_obj))
 
         return pb.BridgeSnapshot(
             serial_link=pb.SerialLinkSnapshot(
@@ -515,7 +513,7 @@ def create_runtime_state(config: RuntimeConfig | dict[str, Any]) -> RuntimeState
     else:
         cfg = config
 
-    cfg_dict = json_format.MessageToDict(cfg, preserving_proto_field_name=True)
+    cfg_dict = json_format.MessageToDict(cast(Any, cfg), preserving_proto_field_name=True)
 
     if "topic_prefix" in cfg_dict:
         cfg_dict["cloud_topic_prefix"] = cfg_dict.pop("topic_prefix")

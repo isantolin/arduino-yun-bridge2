@@ -159,6 +159,20 @@ openwrt = "python3-black"
 pip = "black==26.5.1"
 rationale = "PEP 8 canonical code formatter required for generated code and development environments [BUILD-ONLY]"
 
+[[dependency]]
+name = "nanopb"
+openwrt = "nanopb"
+pip = "nanopb==0.4.9.1"
+rationale = "Zero-heap C protobuf generator and runtime library [BUILD-ONLY]"
+
+[[dependency]]
+name = "grpcio-tools"
+openwrt = "python3-grpcio-tools"
+pip = "grpcio-tools==1.83.0"
+rationale = "Protobuf and gRPC stubs compiler for code generation [BUILD-ONLY]"
+
+
+
 
 
 

@@ -123,11 +123,7 @@ def update_pyproject(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> boo
         [
             dep["pip"]
             for dep in deps
-            if (
-                dep.get("pip")
-                and dep["name"] not in BUILD_ONLY_PACKAGES
-                and not any(dep["pip"].startswith(p) for p in SYSTEM_ONLY_PACKAGES)
-            )
+            if (dep.get("pip") and not any(dep["pip"].startswith(p) for p in SYSTEM_ONLY_PACKAGES))
         ]
     )
 

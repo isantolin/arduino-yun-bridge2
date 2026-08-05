@@ -11,20 +11,22 @@ from __future__ import annotations
 from mcubridge.protocol import mcubridge_pb2 as pb
 
 import asyncio
-import logging
 import secrets
 import structlog
 import time
 from collections.abc import Awaitable, Callable
-from typing import Any
-from typing import cast
+from enum import StrEnum
+from typing import Any, Protocol, cast
 
 import tenacity
 from cryptography.hazmat.primitives import hashes, hmac
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from cryptography.hazmat.primitives.constant_time import bytes_eq
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-from google.protobuf.message import DecodeError as ProtobufDecodeError, Message as ProtobufMessage
+from google.protobuf.message import (
+    DecodeError as ProtobufDecodeError,
+    Message as ProtobufMessage,
+)
 
 from ..config.const import (
     SERIAL_HANDSHAKE_BACKOFF_BASE,
@@ -43,9 +45,6 @@ from ..security.security import (
 )
 from ..state.context import RuntimeState
 
-from google.protobuf.message import Message
-from enum import StrEnum
-from typing import Protocol
 
 
 class HandshakeState(StrEnum):

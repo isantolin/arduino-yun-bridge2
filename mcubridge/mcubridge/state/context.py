@@ -506,26 +506,23 @@ class RuntimeState:
 
 def create_runtime_state(config: RuntimeConfig | dict[str, Any]) -> RuntimeState:
     from ..config.settings import load_runtime_config
-    from google.protobuf import json_format
 
-    if isinstance(config, dict):
-        cfg = load_runtime_config(config)
-    else:
-        cfg = config
+    cfg = load_runtime_config(config) if isinstance(config, dict) else config
 
-    cfg_dict = json_format.MessageToDict(cast(Any, cfg), preserving_proto_field_name=True)
-
-    if "topic_prefix" in cfg_dict:
-        cfg_dict["cloud_topic_prefix"] = cfg_dict.pop("topic_prefix")
-    if "cloud_queue_limit" in cfg_dict:
-        cfg_dict["cloud_queue_limit"] = cfg_dict.pop("cloud_queue_limit")
-    if "process_max_output_bytes" in cfg_dict:
-        cfg_dict["process_output_limit"] = cfg_dict.pop("process_max_output_bytes")
-
-    cfg_dict["allowed_policy"] = cfg.allowed_policy
-    cfg_dict["topic_authorization"] = cfg.topic_authorization
-
-    state = RuntimeState(**cfg_dict)
+    state = RuntimeState(
+        cloud_topic_prefix=cfg.topic_prefix,
+        cloud_queue_limit=cfg.cloud_queue_limit,
+        process_output_limit=cfg.process_max_output_bytes,
+        process_timeout=cfg.process_timeout,
+        process_max_concurrent=cfg.process_max_concurrent,
+        file_system_root=cfg.file_system_root,
+        file_write_max_bytes=cfg.file_write_max_bytes,
+        file_storage_quota_bytes=cfg.file_storage_quota_bytes,
+        watchdog_enabled=cfg.watchdog_enabled,
+        watchdog_interval=cfg.watchdog_interval,
+        allowed_policy=cfg.allowed_policy,
+        topic_authorization=cfg.topic_authorization,
+    )
     state.serial_tx_allowed.set()
     state.configure()
 

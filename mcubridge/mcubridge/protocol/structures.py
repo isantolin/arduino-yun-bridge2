@@ -91,10 +91,7 @@ def is_command_allowed(policy: pb.AllowedCommandPolicy, command: str) -> bool:
 
 def create_allowed_policy(entries: Iterable[str]) -> pb.AllowedCommandPolicy:
     """Create a normalized AllowedCommandPolicy Protobuf message. [SIL-2]"""
-    all_tokens = list(
-        itertools.chain.from_iterable(filter(None, _TOKEN_SEP.split(c.strip().lower())) for c in entries if c)
-    )
-    items: set[str] = set(all_tokens)
+    items = {item for c in entries if c for item in _TOKEN_SEP.split(c.strip().lower()) if item}
     normalised = ["*"] if "*" in items else sorted(items)
     return pb.AllowedCommandPolicy(entries=normalised)
 

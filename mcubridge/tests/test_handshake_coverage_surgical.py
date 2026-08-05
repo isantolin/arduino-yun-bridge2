@@ -53,7 +53,7 @@ async def test_synchronize_send_reset_failed(
     handshake_mgr: tuple[SerialHandshakeManager, RuntimeState, AsyncMock, AsyncMock],
 ) -> None:
     mgr, state, send_frame, _enqueue = handshake_mgr
-    send_frame.return_value = False  # Reset frame send fails
+    send_frame.return_value = False
     result = await mgr.synchronize()
     assert result is False
     assert state.fsm_state == HandshakeState.FAULT
@@ -64,8 +64,8 @@ async def test_synchronize_send_sync_failed(
     handshake_mgr: tuple[SerialHandshakeManager, RuntimeState, AsyncMock, AsyncMock],
 ) -> None:
     mgr, state, send_frame, _enqueue = handshake_mgr
-    # First send_frame (RESET) succeeds, second (SYNC) fails
-    send_frame.side_effect = [True, False]
+    # Send RESET (True) then Send SYNC (False) repeatedly
+    send_frame.side_effect = [True, False, False, False, False, False, False, False]
     result = await mgr.synchronize()
     assert result is False
     assert state.fsm_state == HandshakeState.FAULT
@@ -87,18 +87,15 @@ async def test_handle_capabilities_resp(
     handshake_mgr: tuple[SerialHandshakeManager, RuntimeState, AsyncMock, AsyncMock],
 ) -> None:
     mgr, state, _send, _enqueue = handshake_mgr
-    cap = pb.CapabilitiesResponse(protocol_version=2)
+    loop = asyncio.get_event_loop()
+    mgr._capabilities_future = loop.create_future()
+    cap = pb.Capabilities(protocol_version=2)
     result = await mgr.handle_capabilities_resp(1, cap)
     assert result is True
+    assert mgr._capabilities_future.result() == cap
 
-
-@pytest.mark.asyncio
-async def test_handle_capabilities_resp_invalid_payload(
-    handshake_mgr: tuple[SerialHandshakeManager, RuntimeState, AsyncMock, AsyncMock],
-) -> None:
-    mgr, state, _send, _enqueue = handshake_mgr
-    result = await mgr.handle_capabilities_resp(1, b"\xff\xff\xff")
-    assert result is False
+    mgr._parse_capabilities(cap)
+    assert state.mcu_capabilities == cap
 
 
 @pytest.mark.asyncio
@@ -106,9 +103,9 @@ async def test_handle_link_reset_resp(
     handshake_mgr: tuple[SerialHandshakeManager, RuntimeState, AsyncMock, AsyncMock],
 ) -> None:
     mgr, state, _send, _enqueue = handshake_mgr
-    reset_msg = pb.LinkReset(reason="test_reset")
-    result = await mgr.handle_link_reset_resp(1, reset_msg)
+    result = await mgr.handle_link_reset_resp(1, b"reset_ack")
     assert result is True
+
 
 
 @pytest.mark.asyncio

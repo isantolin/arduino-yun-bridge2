@@ -1,19 +1,17 @@
+# pyright: reportPrivateUsage=false
 """Surgical coverage tests for SerialHandshakeManager in services/handshake.py. [SIL-2]"""
 
 from __future__ import annotations
 
 import asyncio
-import os
-import time
 from collections.abc import Iterator
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcubridge_pb2 as pb
-from mcubridge.protocol.protocol import Command, Status
 from mcubridge.services.handshake import HandshakeState, SerialHandshakeManager, derive_serial_timing
 from mcubridge.state.context import RuntimeState, create_runtime_state
 
@@ -52,23 +50,23 @@ def handshake_mgr(tmp_path: Path) -> Iterator[tuple[SerialHandshakeManager, Runt
 async def test_synchronize_send_reset_failed(
     handshake_mgr: tuple[SerialHandshakeManager, RuntimeState, AsyncMock, AsyncMock],
 ) -> None:
-    mgr, state, send_frame, _enqueue = handshake_mgr
+    mgr, _state, send_frame, _enqueue = handshake_mgr
     send_frame.return_value = False
     result = await mgr.synchronize()
     assert result is False
-    assert state.fsm_state == HandshakeState.FAULT
+    assert mgr.fsm_state == HandshakeState.FAULT
 
 
 @pytest.mark.asyncio
 async def test_synchronize_send_sync_failed(
     handshake_mgr: tuple[SerialHandshakeManager, RuntimeState, AsyncMock, AsyncMock],
 ) -> None:
-    mgr, state, send_frame, _enqueue = handshake_mgr
+    mgr, _state, send_frame, _enqueue = handshake_mgr
     # Send RESET (True) then Send SYNC (False) repeatedly
     send_frame.side_effect = [True, False, False, False, False, False, False, False]
     result = await mgr.synchronize()
     assert result is False
-    assert state.fsm_state == HandshakeState.FAULT
+    assert mgr.fsm_state == HandshakeState.FAULT
 
 
 @pytest.mark.asyncio
@@ -89,7 +87,7 @@ async def test_handle_capabilities_resp(
     mgr, state, _send, _enqueue = handshake_mgr
     loop = asyncio.get_event_loop()
     mgr._capabilities_future = loop.create_future()
-    cap = pb.Capabilities(protocol_version=2)
+    cap = pb.Capabilities()
     result = await mgr.handle_capabilities_resp(1, cap)
     assert result is True
     assert mgr._capabilities_future.result() == cap
@@ -102,10 +100,9 @@ async def test_handle_capabilities_resp(
 async def test_handle_link_reset_resp(
     handshake_mgr: tuple[SerialHandshakeManager, RuntimeState, AsyncMock, AsyncMock],
 ) -> None:
-    mgr, state, _send, _enqueue = handshake_mgr
+    mgr, _state, _send, _enqueue = handshake_mgr
     result = await mgr.handle_link_reset_resp(1, b"reset_ack")
     assert result is True
-
 
 
 @pytest.mark.asyncio

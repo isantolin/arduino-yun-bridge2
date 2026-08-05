@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false
 """Surgical coverage tests for BridgeService MCU handlers. [SIL-2]"""
 
 from __future__ import annotations
@@ -5,16 +6,15 @@ from __future__ import annotations
 import asyncio
 import os
 import time
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from collections.abc import Iterator
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcubridge_pb2 as pb
-from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Command, Status
-from mcubridge.protocol.structures import PendingPinRequest, create_queued_publish
+from mcubridge.protocol.structures import PendingPinRequest
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.transport.serial import SerialTransport
@@ -236,11 +236,11 @@ async def test_on_mcu_file_read_missing_file(
 async def test_on_mcu_file_read_existing_nonempty(
     svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
-    service, state, serial = svc
+    service, _state, serial = svc
     serial.send.return_value = True
     # Write a real file into the sandbox
     fs_root = service.config.file_system_root
-    (f := __import__("pathlib").Path(fs_root) / "read_test.txt").write_bytes(b"hello world")
+    (__import__("pathlib").Path(fs_root) / "read_test.txt").write_bytes(b"hello world")
     p = pb.FileRead(path="read_test.txt")
     await service._on_mcu_file_read(1, p)
     assert serial.send.called
@@ -509,7 +509,7 @@ async def test_on_mcu_spi_resp(
         captured.append(msg)
 
     with patch.object(service, "enqueue_cloud", side_effect=_cap):
-        p = pb.SpiTransferResponse(data=b"\xAA\xBB")
+        p = pb.SpiTransferResponse(data=b"\xaa\xbb")
         await service._on_mcu_spi_resp(1, p)
     assert captured
 

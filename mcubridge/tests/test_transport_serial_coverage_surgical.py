@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false
 """Surgical coverage tests for SerialTransport in transport/serial.py. [SIL-2]"""
 
 from __future__ import annotations

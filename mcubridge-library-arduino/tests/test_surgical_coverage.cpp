@@ -126,7 +126,8 @@ void test_surgical_security_failures() {
   bool old_ok = rpc::security::validate_frame_nonce(old_nonce, &last_seen);
   TEST_ASSERT_FALSE(old_ok);
 
-  // 7. Handshake authenticate tag mismatch (correct 16-byte length, invalid content)
+  // 7. Handshake authenticate tag mismatch (correct 16-byte length, invalid
+  // content)
   etl::array<uint8_t, 16> wrong_tag;
   wrong_tag.fill(0xFF);
   bool tag_mismatch_ok =
@@ -135,7 +136,8 @@ void test_surgical_security_failures() {
 
   // 8. aead_decrypt_frame call
   etl::array<uint8_t, 4> dec_out = {0};
-  (void)rpc::security::aead_decrypt_frame(1, 1, in, key, valid_nonce, out_tag, dec_out);
+  (void)rpc::security::aead_decrypt_frame(1, 1, in, key, valid_nonce, out_tag,
+                                          dec_out);
   TEST_ASSERT_FALSE(old_ok);
 }
 

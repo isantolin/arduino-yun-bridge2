@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false
 """Surgical tests for state/status.py, state/storage.py, and state/metrics.py. [SIL-2]"""
 
 from __future__ import annotations
@@ -6,7 +7,7 @@ import asyncio
 import os
 import time
 from collections.abc import Iterator
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 

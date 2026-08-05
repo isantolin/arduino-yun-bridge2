@@ -46,7 +46,7 @@ logger = structlog.get_logger("mcubridge.state")
 
 def _make_cloud_publish_queue(maxsize: int = 0) -> asyncio.Queue[pb.CloudQueuedPublish]:
     normalized = max(0, maxsize)
-    return cast(asyncio.Queue[pb.CloudQueuedPublish], asyncio.Queue(maxsize=normalized))
+    return asyncio.Queue[pb.CloudQueuedPublish](maxsize=normalized)
 
 
 __all__: Final[tuple[str, ...]] = (

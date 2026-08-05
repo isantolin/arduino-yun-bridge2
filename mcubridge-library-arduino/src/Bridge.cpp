@@ -483,8 +483,8 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
   if (secret != nullptr) {
     const etl::string_view s(secret);
     const size_t len = etl::min(s.size(), _shared_secret.capacity());
-    const auto data_ptr =
-        static_cast<const uint8_t*>(static_cast<const void*>(s.data()));
+    const auto data_ptr = reinterpret_cast<const uint8_t*>(s.data());
+
     _shared_secret.assign(data_ptr, data_ptr + len);
   }
   bridge::hal::init();

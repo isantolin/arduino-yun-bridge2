@@ -212,10 +212,8 @@ class SerialHandshakeManager:
             self._set_fsm_state(HandshakeState.CONFIRMING)
 
         confirmed = await self._wait_for_link_sync_confirmation(nonce)
-        # Re-read fsm_state via cast: the async call above may have changed it
-        # via handle_link_sync_resp. cast() breaks pyright's over-eager literal
-        # narrowing without suppressing type safety. [SIL-2]
         current_state = cast(HandshakeState, self.fsm_state)
+
         if not confirmed:
             # [SIL-2] Double check if we didn't just transition to fault via async path.
             if current_state == HandshakeState.FAULT:

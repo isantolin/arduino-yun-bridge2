@@ -24,20 +24,16 @@ Architecture:
         ├── prometheus-exporter (optional)
 """
 
-from __future__ import annotations
-
-import argparse
 import asyncio
 import sys
 
-import tenacity
-
-# [SIL-2] Deterministic Import: uvloop is MANDATORY for performance on OpenWrt.
 import structlog
+import tenacity
+import typer
 import uvloop
 
-from mcubridge.config.logging import configure_logging
 from mcubridge.config.const import DEFAULT_SERIAL_SHARED_SECRET
+from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import (
     get_config_source,
     load_runtime_config,
@@ -49,14 +45,11 @@ from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.transport.serial import SerialTransport
 
 logger = structlog.get_logger("mcubridge")
+cli = typer.Typer(help="Arduino MCU Bridge v2 Daemon", add_completion=False)
 
 
-def app(args: list[str] | None = None) -> None:
-    """CLI entry point for mcubridge daemon."""
-    parser = argparse.ArgumentParser(description="Arduino MCU Bridge v2 Daemon")
-    parser.add_argument("--version", action="version", version="mcubridge v2.x")
-    parser.parse_args(args)
-
+def run_daemon() -> None:
+    """Core daemon execution lifecycle. [SIL-2]"""
     service: BridgeService | None = None
     state: RuntimeState | None = None
 
@@ -127,6 +120,20 @@ def app(args: list[str] | None = None) -> None:
             service.cleanup()
         elif state is not None:
             state.cleanup()
+
+
+@cli.command()
+def main() -> None:
+    """CLI entry point for mcubridge daemon."""
+    run_daemon()
+
+
+def app(args: list[str] | None = None) -> None:
+    """CLI entry point wrapper for mcubridge daemon."""
+    if args:
+        cli(args)
+    else:
+        run_daemon()
 
 
 if __name__ == "__main__":

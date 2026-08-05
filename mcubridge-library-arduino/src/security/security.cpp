@@ -14,6 +14,7 @@
 #include <wolfssl/wolfcrypt/hmac.h>
 #include <wolfssl/wolfcrypt/kdf.h>
 
+#include "../config/bridge_config.h"  // IWYU pragma: keep
 #include "../protocol/rpc_structs.h"
 #include "pb_encode.h"
 

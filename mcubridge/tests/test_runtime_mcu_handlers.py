@@ -9,18 +9,18 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from collections.abc import Iterator
+from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.protocol.structures import PendingPinRequest, create_queued_publish
 from mcubridge.services.runtime import BridgeService
-from mcubridge.state.context import create_runtime_state
+from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.transport.serial import SerialTransport
 
 
-def _make_config() -> protocol.structures.RuntimeConfig:
-    from mcubridge.config.settings import RuntimeConfig
-
+def _make_config() -> RuntimeConfig:
     fs_root = f".tmp_tests/rt-mcu-fs-{os.getpid()}-{time.time_ns()}"
     spool = f".tmp_tests/rt-mcu-spool-{os.getpid()}-{time.time_ns()}"
     os.makedirs(fs_root, exist_ok=True)
@@ -35,7 +35,7 @@ def _make_config() -> protocol.structures.RuntimeConfig:
 
 
 @pytest.fixture
-def svc() -> tuple[BridgeService, object, AsyncMock]:
+def svc() -> Iterator[tuple[BridgeService, RuntimeState, AsyncMock]]:
     config = _make_config()
     state = create_runtime_state(config)
     state.state = "synchronized"
@@ -59,7 +59,7 @@ def svc() -> tuple[BridgeService, object, AsyncMock]:
 
 @pytest.mark.asyncio
 async def test_unsupported_mcu_request_no_serial(
-    svc: tuple[BridgeService, object, AsyncMock],
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, _serial = svc
     service.serial = None  # type: ignore[assignment]
@@ -69,7 +69,7 @@ async def test_unsupported_mcu_request_no_serial(
 
 @pytest.mark.asyncio
 async def test_unsupported_mcu_request_sends(
-    svc: tuple[BridgeService, object, AsyncMock],
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, serial = svc
     serial.send.return_value = True
@@ -84,7 +84,7 @@ async def test_unsupported_mcu_request_sends(
 
 @pytest.mark.asyncio
 async def test_on_mcu_mailbox_available_no_serial(
-    svc: tuple[BridgeService, object, AsyncMock],
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, _serial = svc
     service.serial = None  # type: ignore[assignment]
@@ -94,7 +94,7 @@ async def test_on_mcu_mailbox_available_no_serial(
 
 @pytest.mark.asyncio
 async def test_on_mcu_mailbox_available_with_items(
-    svc: tuple[BridgeService, object, AsyncMock],
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, state, serial = svc
     await state.mailbox_queue.append(b"hello")
@@ -111,7 +111,7 @@ async def test_on_mcu_mailbox_available_with_items(
 
 @pytest.mark.asyncio
 async def test_on_mcu_mailbox_read_no_serial(
-    svc: tuple[BridgeService, object, AsyncMock],
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, _serial = svc
     service.serial = None  # type: ignore[assignment]
@@ -121,7 +121,7 @@ async def test_on_mcu_mailbox_read_no_serial(
 
 @pytest.mark.asyncio
 async def test_on_mcu_mailbox_read_empty_queue(
-    svc: tuple[BridgeService, object, AsyncMock],
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, serial = svc
     serial.send.return_value = True
@@ -132,7 +132,7 @@ async def test_on_mcu_mailbox_read_empty_queue(
 
 @pytest.mark.asyncio
 async def test_on_mcu_mailbox_read_with_content(
-    svc: tuple[BridgeService, object, AsyncMock],
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, state, serial = svc
     await state.mailbox_queue.append(b"data_payload")
@@ -150,7 +150,7 @@ async def test_on_mcu_mailbox_read_with_content(
 
 @pytest.mark.asyncio
 async def test_on_mcu_mailbox_processed(
-    svc: tuple[BridgeService, object, AsyncMock],
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, _serial = svc
     p = pb.MailboxProcessed(message_id=1)
@@ -171,7 +171,7 @@ async def test_on_mcu_mailbox_processed(
 
 @pytest.mark.asyncio
 async def test_on_mcu_file_write_no_serial(
-    svc: tuple[BridgeService, object, AsyncMock],
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, _serial = svc
     service.serial = None  # type: ignore[assignment]
@@ -182,7 +182,7 @@ async def test_on_mcu_file_write_no_serial(
 
 @pytest.mark.asyncio
 async def test_on_mcu_file_write_unsafe_path(
-    svc: tuple[BridgeService, object, AsyncMock],
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, serial = svc
     serial.send.return_value = True
@@ -195,7 +195,7 @@ async def test_on_mcu_file_write_unsafe_path(
 
 @pytest.mark.asyncio
 async def test_on_mcu_file_write_success(
-    svc: tuple[BridgeService, object, AsyncMock],
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, serial = svc
     serial.send.return_value = True
@@ -211,7 +211,7 @@ async def test_on_mcu_file_write_success(
 
 @pytest.mark.asyncio
 async def test_on_mcu_file_read_no_serial(
-    svc: tuple[BridgeService, object, AsyncMock],
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, _serial = svc
     service.serial = None  # type: ignore[assignment]
@@ -222,7 +222,7 @@ async def test_on_mcu_file_read_no_serial(
 
 @pytest.mark.asyncio
 async def test_on_mcu_file_read_missing_file(
-    svc: tuple[BridgeService, object, AsyncMock],
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, serial = svc
     serial.send.return_value = True
@@ -234,7 +234,7 @@ async def test_on_mcu_file_read_missing_file(
 
 @pytest.mark.asyncio
 async def test_on_mcu_file_read_existing_nonempty(
-    svc: tuple[BridgeService, object, AsyncMock],
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, state, serial = svc
     serial.send.return_value = True
@@ -248,7 +248,7 @@ async def test_on_mcu_file_read_existing_nonempty(
 
 @pytest.mark.asyncio
 async def test_on_mcu_file_read_existing_empty(
-    svc: tuple[BridgeService, object, AsyncMock],
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, serial = svc
     serial.send.return_value = True
@@ -268,7 +268,7 @@ async def test_on_mcu_file_read_existing_empty(
 
 @pytest.mark.asyncio
 async def test_on_mcu_file_remove_no_serial(
-    svc: tuple[BridgeService, object, AsyncMock],
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, _serial = svc
     service.serial = None  # type: ignore[assignment]
@@ -279,7 +279,7 @@ async def test_on_mcu_file_remove_no_serial(
 
 @pytest.mark.asyncio
 async def test_on_mcu_file_remove_missing(
-    svc: tuple[BridgeService, object, AsyncMock],
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, serial = svc
     serial.send.return_value = True
@@ -292,7 +292,7 @@ async def test_on_mcu_file_remove_missing(
 
 @pytest.mark.asyncio
 async def test_on_mcu_file_remove_existing(
-    svc: tuple[BridgeService, object, AsyncMock],
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, serial = svc
     serial.send.return_value = True
@@ -312,7 +312,7 @@ async def test_on_mcu_file_remove_existing(
 
 @pytest.mark.asyncio
 async def test_on_mcu_file_read_resp_no_pending(
-    svc: tuple[BridgeService, object, AsyncMock],
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, _serial = svc
     service._pending_mcu_read = None
@@ -323,7 +323,7 @@ async def test_on_mcu_file_read_resp_no_pending(
 
 @pytest.mark.asyncio
 async def test_on_mcu_file_read_resp_accumulates_chunks(
-    svc: tuple[BridgeService, object, AsyncMock],
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, _serial = svc
     loop = asyncio.get_event_loop()
@@ -339,7 +339,7 @@ async def test_on_mcu_file_read_resp_accumulates_chunks(
 
 @pytest.mark.asyncio
 async def test_on_mcu_file_read_resp_completes_future(
-    svc: tuple[BridgeService, object, AsyncMock],
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, _serial = svc
     loop = asyncio.get_event_loop()
@@ -361,7 +361,7 @@ async def test_on_mcu_file_read_resp_completes_future(
 
 @pytest.mark.asyncio
 async def test_on_mcu_ack_valid(
-    svc: tuple[BridgeService, object, AsyncMock],
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, _serial = svc
     p = pb.AckPacket(command_id=0x01)
@@ -370,7 +370,7 @@ async def test_on_mcu_ack_valid(
 
 @pytest.mark.asyncio
 async def test_on_mcu_ack_raw_bytes(
-    svc: tuple[BridgeService, object, AsyncMock],
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, _serial = svc
     raw = pb.AckPacket(command_id=0x02).SerializeToString()
@@ -379,7 +379,7 @@ async def test_on_mcu_ack_raw_bytes(
 
 @pytest.mark.asyncio
 async def test_on_mcu_ack_corrupt_bytes(
-    svc: tuple[BridgeService, object, AsyncMock],
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, _serial = svc
     # Garbage bytes → logs error without raising
@@ -393,7 +393,7 @@ async def test_on_mcu_ack_corrupt_bytes(
 
 @pytest.mark.asyncio
 async def test_handle_mcu_status_ok_no_payload(
-    svc: tuple[BridgeService, object, AsyncMock],
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, _serial = svc
     captured: list[object] = []
@@ -408,7 +408,7 @@ async def test_handle_mcu_status_ok_no_payload(
 
 @pytest.mark.asyncio
 async def test_handle_mcu_status_error_with_generic_response(
-    svc: tuple[BridgeService, object, AsyncMock],
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, _serial = svc
     captured: list[object] = []
@@ -424,7 +424,7 @@ async def test_handle_mcu_status_error_with_generic_response(
 
 @pytest.mark.asyncio
 async def test_handle_mcu_status_error_with_protobuf_message(
-    svc: tuple[BridgeService, object, AsyncMock],
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, _serial = svc
     captured: list[object] = []
@@ -440,7 +440,7 @@ async def test_handle_mcu_status_error_with_protobuf_message(
 
 @pytest.mark.asyncio
 async def test_handle_mcu_status_with_hex_payload(
-    svc: tuple[BridgeService, object, AsyncMock],
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, _serial = svc
     captured: list[object] = []
@@ -461,7 +461,7 @@ async def test_handle_mcu_status_with_hex_payload(
 
 @pytest.mark.asyncio
 async def test_on_mcu_digital_read_resp(
-    svc: tuple[BridgeService, object, AsyncMock],
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, state, _serial = svc
     state.pending_digital_reads.append(PendingPinRequest(pin=13, reply_context=None))
@@ -478,7 +478,7 @@ async def test_on_mcu_digital_read_resp(
 
 @pytest.mark.asyncio
 async def test_on_mcu_analog_read_resp(
-    svc: tuple[BridgeService, object, AsyncMock],
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, state, _serial = svc
     state.pending_analog_reads.append(PendingPinRequest(pin=0, reply_context=None))
@@ -500,7 +500,7 @@ async def test_on_mcu_analog_read_resp(
 
 @pytest.mark.asyncio
 async def test_on_mcu_spi_resp(
-    svc: tuple[BridgeService, object, AsyncMock],
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, _serial = svc
     captured: list[object] = []
@@ -521,7 +521,7 @@ async def test_on_mcu_spi_resp(
 
 @pytest.mark.asyncio
 async def test_on_mcu_process_run_async_no_serial(
-    svc: tuple[BridgeService, object, AsyncMock],
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, _serial = svc
     service.serial = None  # type: ignore[assignment]
@@ -532,7 +532,7 @@ async def test_on_mcu_process_run_async_no_serial(
 
 @pytest.mark.asyncio
 async def test_on_mcu_process_run_async_disallowed(
-    svc: tuple[BridgeService, object, AsyncMock],
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, serial = svc
     serial.send.return_value = True
@@ -545,7 +545,7 @@ async def test_on_mcu_process_run_async_disallowed(
 
 @pytest.mark.asyncio
 async def test_on_mcu_process_run_async_allowed(
-    svc: tuple[BridgeService, object, AsyncMock],
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, serial = svc
     serial.send.return_value = True
@@ -559,7 +559,7 @@ async def test_on_mcu_process_run_async_allowed(
 
 @pytest.mark.asyncio
 async def test_on_mcu_process_run_async_pid_zero(
-    svc: tuple[BridgeService, object, AsyncMock],
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, serial = svc
     serial.send.return_value = True
@@ -576,7 +576,7 @@ async def test_on_mcu_process_run_async_pid_zero(
 
 @pytest.mark.asyncio
 async def test_on_mcu_process_poll_no_serial(
-    svc: tuple[BridgeService, object, AsyncMock],
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, _serial = svc
     service.serial = None  # type: ignore[assignment]
@@ -587,7 +587,7 @@ async def test_on_mcu_process_poll_no_serial(
 
 @pytest.mark.asyncio
 async def test_on_mcu_process_poll_with_result(
-    svc: tuple[BridgeService, object, AsyncMock],
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, serial = svc
     serial.send.return_value = True

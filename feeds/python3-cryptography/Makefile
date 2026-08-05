@@ -20,7 +20,7 @@ TARGET_CFLAGS += -I$(STAGING_DIR)/usr/include/python$(PYTHON3_VERSION)
 PYTHON3_PKG_BUILD_VARS += \
 	PYO3_CONFIG_FILE=$(PKG_BUILD_DIR)/pyo3-config.txt \
 	PYO3_NO_PYTHON=1 \
-	MATURIN_PEP517_ARGS="--no-build-isolation"
+	MATURIN_PEP517_ARGS="-- --no-build-isolation"
 
 define Build/Prepare
 	$(call Build/Prepare/Default)

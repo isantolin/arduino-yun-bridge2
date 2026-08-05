@@ -14,7 +14,6 @@
 #include <wolfssl/wolfcrypt/hmac.h>
 #include <wolfssl/wolfcrypt/kdf.h>
 
-#include "../config/bridge_config.h"
 #include "../protocol/rpc_structs.h"
 #include "pb_encode.h"
 

@@ -11,6 +11,7 @@ from __future__ import annotations
 from mcubridge.protocol import mcubridge_pb2 as pb
 
 import asyncio
+import logging
 import secrets
 import structlog
 import time
@@ -25,6 +26,7 @@ from cryptography.hazmat.primitives.constant_time import bytes_eq
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from google.protobuf.message import (
     DecodeError as ProtobufDecodeError,
+    Message,
     Message as ProtobufMessage,
 )
 
@@ -44,7 +46,6 @@ from ..security.security import (
     secure_zero,
 )
 from ..state.context import RuntimeState
-
 
 
 class HandshakeState(StrEnum):

@@ -15,13 +15,13 @@ PKG_LICENSE_FILES:=LICENSE
 # Force usage of system libuv (provided by DEPENDS:=+libuv)
 PYTHON3_PKG_BUILD_VARS+=UVLOOP_USE_SYSTEM_LIBUV=1 UVLOOP_BUILD_LIBUV=0 LIBUV_CONFIGURE_HOST=$(GNU_TARGET_NAME)
 
-TARGET_CFLAGS += -I$(STAGING_DIR)/usr/include -I$(STAGING_DIR)/usr/include/python$(PYTHON3_VERSION)
-TARGET_LDFLAGS += -L$(STAGING_DIR)/usr/lib
-
 include $(TOPDIR)/feeds/packages/lang/python/pypi.mk
 
 include $(INCLUDE_DIR)/package.mk
 include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
+
+TARGET_CFLAGS += -I$(STAGING_DIR)/usr/include -I$(STAGING_DIR)/usr/include/python$(PYTHON3_VERSION)
+TARGET_LDFLAGS += -L$(STAGING_DIR)/usr/lib
 
 define Package/python3-uvloop
 	SECTION:=lang

@@ -1138,6 +1138,11 @@ message SetBaudratePacket {
 }
 
 message LinkSync {
+    option (buf.validate.message).cel = {
+        id: "linksync_nonce_tag_equal_length",
+        message: "nonce and tag must have identical length of 16 bytes",
+        expression: "size(this.nonce) == size(this.tag)"
+    };
     bytes nonce = 1 [(buf.validate.field).bytes = {min_len: 16, max_len: 16}];
     bytes tag = 2 [(buf.validate.field).bytes = {min_len: 16, max_len: 16}];
 }

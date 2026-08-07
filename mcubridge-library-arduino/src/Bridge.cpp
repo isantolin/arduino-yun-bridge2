@@ -1036,6 +1036,9 @@ bool BridgeClass::_decodePayload(const bridge::router::CommandContext& ctx,
                                  pb_size_t expected_tag, size_t struct_size) {
   (void)expected_tag;
   (void)struct_size;
+  if (!fields || !dest) return false;
+  pb_field_iter_t iter;
+  if (!pb_field_iter_begin(&iter, fields, dest)) return false;
   if (ctx.envelope->which_payload_type ==
       rpc_pb_RpcEnvelope_encrypted_payload_with_tag_tag) {
     const uint8_t* src =
@@ -1045,6 +1048,38 @@ bool BridgeClass::_decodePayload(const bridge::router::CommandContext& ctx,
     return pb_decode_noinit(&stream, fields, dest);
   }
   return false;
+}
+
+bool BridgeClass::_sendEncryptedImpl(uint16_t raw_cmd, uint16_t seq,
+                                     const pb_msgdesc_t* fields,
+                                     const void* src) {
+  if (is_reliable_cmd(raw_cmd)) {
+    BRIDGE_ATOMIC_BLOCK {
+      if (_pending_tx_queue.full()) return false;
+      auto* buf = _tx_payload_pool.allocate();
+      if (!buf) return false;
+      pb_ostream_t out_stream =
+          pb_ostream_from_buffer(buf->data.data(), buf->data.size());
+      if (pb_encode(&out_stream, fields, src)) {
+        _pending_tx_queue.push_back(
+            {raw_cmd, seq, buf, static_cast<uint16_t>(out_stream.bytes_written)});
+        if (!_fsm.isAwaitingAck()) _flushPendingTxQueue();
+        return true;
+      }
+      _tx_payload_pool.release(buf);
+      return false;
+    }
+  } else {
+    pb_ostream_t out_stream =
+        pb_ostream_from_buffer(_working_buffer.data(), rpc::MAX_PAYLOAD_SIZE);
+    if (pb_encode(&out_stream, fields, src)) {
+      _transmit(raw_cmd, seq,
+                etl::span<const uint8_t>(_working_buffer.data(),
+                                         out_stream.bytes_written));
+      return true;
+    }
+    return false;
+  }
 }
 
 namespace bridge {

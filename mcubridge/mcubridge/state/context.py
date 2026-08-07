@@ -69,6 +69,101 @@ class ProcessContext:
 class RuntimeState:
     """Aggregated mutable state shared across the daemon layers. [SIL-2]"""
 
+    metrics: DaemonMetrics
+    serial_writer: asyncio.BaseTransport | None
+    state: str
+    cloud_queue_limit: int
+    cloud_publish_queue: asyncio.Queue[pb.CloudQueuedPublish]
+    cloud_drop_counts: dict[str, int]
+    allow_non_tmp_paths: bool
+    datastore_cache: SqliteCache | None
+    connected_via_http3: bool
+    mailbox_queue: SqliteDeque
+    mailbox_incoming_queue: SqliteDeque
+    mcu_is_paused: bool
+    serial_tx_allowed: asyncio.Event
+    console_to_mcu_queue: collections.deque[bytes]
+    console_queue_limit_bytes: int
+    console_queue_bytes: int
+    console_dropped_chunks: int
+    console_truncated_chunks: int
+    running_processes: dict[int, ProcessContext]
+    process_lock: asyncio.Lock
+    next_pid: int
+    allowed_policy: pb.AllowedCommandPolicy
+    topic_authorization: pb.TopicAuthorization | None
+    process_timeout: int
+    file_system_root: str
+    file_write_max_bytes: int
+    file_storage_quota_bytes: int
+    file_storage_bytes_used: int
+    file_write_limit_rejections: int
+    file_storage_limit_rejections: int
+    cloud_topic_prefix: str
+    watchdog_enabled: bool
+    watchdog_interval: float
+    last_watchdog_beat: float
+    pending_digital_reads: collections.deque[PendingPinRequest]
+    pending_analog_reads: collections.deque[PendingPinRequest]
+    mailbox_queue_limit: int
+    mailbox_queue_bytes_limit: int
+    pending_pin_request_limit: int
+    mailbox_queue_bytes: int
+    mailbox_dropped_messages: int
+    mailbox_truncated_messages: int
+    mailbox_incoming_queue_bytes: int
+    mailbox_incoming_dropped_messages: int
+    mailbox_incoming_truncated_messages: int
+    mcu_version: tuple[int, int, int] | None
+    mcu_capabilities: pb.Capabilities | dict[str, Any] | None
+    link_handshake_nonce: bytes | None
+    link_sync_event: asyncio.Event
+    link_expected_tag: bytes | None
+    link_session_key: bytes | None
+    link_aead_cipher: Any | None
+    link_nonce_length: int
+    link_nonce_counter: int
+    link_last_nonce_counter: int
+    handshake_failure_streak: int
+    handshake_backoff_until: float
+    handshake_rate_until: float
+    last_handshake_error: str | None
+    last_handshake_unix: float
+    handshake_last_duration: float
+    handshake_fatal_count: int
+    handshake_fatal_reason: str | None
+    handshake_fatal_detail: str | None
+    handshake_fatal_unix: float
+    handshake_last_started: float
+    serial_flow_stats: pb.SerialFlowSnapshot
+    serial_throughput_stats: pb.SerialThroughputStats
+    serial_pipeline_inflight: dict[str, Any] | None
+    serial_pipeline_last: dict[str, Any] | None
+    process_output_limit: int
+    process_max_concurrent: int
+    unknown_command_count: int
+    unknown_command_last_id: int
+    config_source: str
+    serial_ack_timeout_ms: int
+    serial_response_timeout_ms: int
+    serial_retry_limit: int
+    mcu_status_counts: dict[str, int]
+    supervisor_stats: dict[str, pb.SupervisorSnapshot]
+    supervisor_failures: int
+    last_supervisor_error: str | None
+    cloud_dropped_messages: int
+    serial_decode_errors: int
+    handshake_attempts: int
+    handshake_successes: int
+    watchdog_beats: int
+    cloud_spool_corrupt_dropped: int
+    cloud_spool_dropped_limit: int
+    cloud_spool_trim_events: int
+    cloud_spool_last_trim_unix: float
+    cloud_spool_degraded: bool
+    cloud_spool_failure_reason: str | None
+    cloud_spool_pending_messages: int
+
     def __init__(self, **kwargs: Any) -> None:
         self.metrics: DaemonMetrics = kwargs.get("metrics") or DaemonMetrics()
         self.serial_writer: asyncio.BaseTransport | None = kwargs.get("serial_writer")

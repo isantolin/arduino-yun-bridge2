@@ -16,8 +16,9 @@ from mcubridge.protocol import mcubridge_pb2 as pb
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
+import protovalidate
 from cobs import cobsr
 import serialx
 import structlog
@@ -224,6 +225,15 @@ class SerialTransport:
                 logger.error("Anti-replay validation failed")
                 return
             self.state.link_last_nonce_counter = new_counter
+
+        # SIL-2 Transport Gate: Validate incoming Protobuf payload before dispatch
+        if isinstance(payload, ProtobufMessage):
+            try:
+                protovalidate.validate(cast(Any, payload))
+            except (protovalidate.ValidationError, ValueError, TypeError) as exc:
+                logger.error("Protovalidate gate rejected invalid payload from MCU: %s", exc)
+                self.state.serial_decode_errors += 1
+                return
 
         # Correlation and Service dispatch
         self._correlate_frame(cmd_id, payload)

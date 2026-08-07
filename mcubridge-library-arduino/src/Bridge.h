@@ -80,6 +80,29 @@ struct CommandContext {
 };
 
 }  // namespace router
+
+namespace utils {
+
+template <typename Src, typename DstElem, size_t DstSize>
+constexpr size_t copy_to_buf(const Src& src, DstElem (&dst)[DstSize]) {
+  const size_t to_copy = etl::min(src.size(), DstSize - 1U);
+  if (to_copy > 0U) {
+    etl::copy_n(src.begin(), to_copy, dst);
+  }
+  dst[to_copy] = static_cast<DstElem>(0);
+  return to_copy;
+}
+
+template <typename Src, typename DstElem, size_t DstSize>
+constexpr size_t copy_bytes_to_buf(const Src& src, DstElem (&dst)[DstSize]) {
+  const size_t to_copy = etl::min(src.size(), DstSize);
+  if (to_copy > 0U) {
+    etl::copy_n(src.data(), to_copy, dst);
+  }
+  return to_copy;
+}
+
+}  // namespace utils
 }  // namespace bridge
 
 #include "ErrorPolicy.h"

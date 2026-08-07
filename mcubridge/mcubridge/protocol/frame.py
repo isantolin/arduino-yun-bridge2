@@ -41,39 +41,28 @@ def _get_cipher(session_key: bytes) -> ChaCha20Poly1305:
     return ChaCha20Poly1305(session_key)
 
 
-def _build_aad_bytes(version: int, command_id: int, sequence_id: int) -> bytes:
-    """Fast binary Protobuf Varint encoder for RpcEnvelope AAD (fields 1, 2, 3).
-
-    Avoids instantiating and serializing a full pb.RpcEnvelope object for AEAD AAD,
-    yielding a ~4x speedup during build_frame and parse_frame. [SIL-2 / MIL-SPEC]
-    """
-    # Field 1: version (tag 0x08 = (1<<3)|0)
-    # Field 2: command_id (tag 0x10 = (2<<3)|0)
-    # Field 3: sequence_id (tag 0x18 = (3<<3)|0)
+def _encode_varint(value: int) -> bytes:
+    """Encode an integer into standard Protobuf Varint bytes. [SIL-2]"""
     buf = bytearray()
-
-    # version varint
-    buf.append(0x08)
-    while version >= 0x80:
-        buf.append((version & 0x7F) | 0x80)
-        version >>= 7
-    buf.append(version & 0x7F)
-
-    # command_id varint
-    buf.append(0x10)
-    while command_id >= 0x80:
-        buf.append((command_id & 0x7F) | 0x80)
-        command_id >>= 7
-    buf.append(command_id & 0x7F)
-
-    # sequence_id varint
-    buf.append(0x18)
-    while sequence_id >= 0x80:
-        buf.append((sequence_id & 0x7F) | 0x80)
-        sequence_id >>= 7
-    buf.append(sequence_id & 0x7F)
-
+    while value >= 0x80:
+        buf.append((value & 0x7F) | 0x80)
+        value >>= 7
+    buf.append(value & 0x7F)
     return bytes(buf)
+
+
+def _build_aad_bytes(version: int, command_id: int, sequence_id: int) -> bytes:
+    """Fast binary Protobuf Varint encoder for RpcEnvelope AAD (fields 1, 2, 3). [SIL-2]"""
+    return b"".join(
+        (
+            b"\x08",
+            _encode_varint(version),
+            b"\x10",
+            _encode_varint(command_id),
+            b"\x18",
+            _encode_varint(sequence_id),
+        )
+    )
 
 
 class DecodedFrame(NamedTuple):

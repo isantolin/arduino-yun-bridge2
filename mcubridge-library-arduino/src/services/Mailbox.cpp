@@ -10,11 +10,8 @@ MailboxClass::MailboxClass() {}
 
 void MailboxClass::push(etl::span<const uint8_t> data) {
   rpc::payload::MailboxPush p = {};
-  const size_t to_copy = etl::min(data.size(), sizeof(p.data.bytes));
-  p.data.size = (pb_size_t)to_copy;
-  if (to_copy > 0U) {
-    etl::copy_n(data.data(), to_copy, p.data.bytes);
-  }
+  p.data.size = static_cast<pb_size_t>(
+      bridge::utils::copy_bytes_to_buf(data, p.data.bytes));
   if (!Bridge.send(rpc::CommandId::CMD_MAILBOX_PUSH, 0, p)) {
     Bridge.emitStatus(
         rpc::StatusCode::STATUS_ERROR,

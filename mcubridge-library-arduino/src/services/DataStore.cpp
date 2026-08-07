@@ -10,16 +10,10 @@ DataStoreClass::DataStoreClass() {}
 
 void DataStoreClass::set(etl::string_view key, etl::span<const uint8_t> value) {
   rpc::payload::DatastorePut p = {};
-  const size_t k_copy = etl::min(key.size(), sizeof(p.key) - 1U);
-  if (k_copy > 0U) {
-    etl::copy_n(key.begin(), k_copy, p.key);
-  }
+  bridge::utils::copy_to_buf(key, p.key);
+  p.value.size = static_cast<pb_size_t>(
+      bridge::utils::copy_bytes_to_buf(value, p.value.bytes));
 
-  const size_t v_copy = etl::min(value.size(), sizeof(p.value.bytes));
-  p.value.size = (pb_size_t)v_copy;
-  if (v_copy > 0U) {
-    etl::copy_n(value.data(), v_copy, p.value.bytes);
-  }
   if (!Bridge.send(rpc::CommandId::CMD_DATASTORE_PUT, 0, p)) {
     Bridge.emitStatus(
         rpc::StatusCode::STATUS_ERROR,
@@ -35,10 +29,7 @@ void DataStoreClass::get(etl::string_view key,
   }
 
   rpc::payload::DatastoreGet p = {};
-  const size_t k_copy = etl::min(key.size(), sizeof(p.key) - 1U);
-  if (k_copy > 0U) {
-    etl::copy_n(key.begin(), k_copy, p.key);
-  }
+  bridge::utils::copy_to_buf(key, p.key);
 
   if (!Bridge.send(rpc::CommandId::CMD_DATASTORE_GET, 0, p)) {
     Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);

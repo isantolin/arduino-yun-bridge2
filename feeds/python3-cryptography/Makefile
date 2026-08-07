@@ -16,8 +16,13 @@ include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
 
 TARGET_CFLAGS += -I$(STAGING_DIR)/usr/include/python$(PYTHON3_VERSION)
 
-# Se desactiva el aislamiento de dependencias de PEP517
+# Se desactiva el aislamiento de dependencias de PEP517 y se pasan variables de OpenSSL/Cargo
 PYTHON3_PKG_BUILD_VARS += \
+	OPENSSL_NO_VENDOR=1 \
+	OPENSSL_DIR=$(STAGING_DIR)/usr \
+	OPENSSL_INCLUDE_DIR=$(STAGING_DIR)/usr/include \
+	OPENSSL_LIB_DIR=$(STAGING_DIR)/usr/lib \
+	CARGO_TARGET_MIPS_UNKNOWN_LINUX_MUSL_LINKER=$(TARGET_CC) \
 	PYO3_CONFIG_FILE=$(PKG_BUILD_DIR)/pyo3-config.txt \
 	PYO3_NO_PYTHON=1 \
 	MATURIN_PEP517_ARGS="-- --no-build-isolation"
@@ -37,8 +42,9 @@ define Build/Configure
 	echo "abi3=false" >> $(PKG_BUILD_DIR)/pyo3-config.txt
 	echo "include_dir=$(STAGING_DIR)/usr/include/python$(PYTHON3_VERSION)" >> $(PKG_BUILD_DIR)/pyo3-config.txt
 	echo "lib_dir=$(STAGING_DIR)/usr/lib" >> $(PKG_BUILD_DIR)/pyo3-config.txt
-	$(if $(filter be,$(BOARD)),echo "target=mips-unknown-linux-musl" >> $(PKG_BUILD_DIR)/pyo3-config.txt)
+	echo "target=mips-unknown-linux-musl" >> $(PKG_BUILD_DIR)/pyo3-config.txt
 endef
+
 
 define Package/python3-cryptography
 	SECTION:=lang

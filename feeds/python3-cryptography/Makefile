@@ -24,8 +24,7 @@ PYTHON3_PKG_BUILD_VARS += \
 	OPENSSL_LIB_DIR=$(STAGING_DIR)/usr/lib \
 	CARGO_TARGET_MIPS_UNKNOWN_LINUX_MUSL_LINKER=$(TARGET_CC) \
 	PYO3_CONFIG_FILE=$(PKG_BUILD_DIR)/pyo3-config.txt \
-	PYO3_NO_PYTHON=1 \
-	MATURIN_PEP517_ARGS="-- --no-build-isolation"
+	PYO3_NO_PYTHON=1
 
 define Build/Prepare
 	$(call Build/Prepare/Default)

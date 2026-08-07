@@ -92,7 +92,7 @@ def application(environ: dict[str, Any], start_response: Any) -> list[bytes]:
 
         try:
             protovalidate.validate(cast(Any, req))
-        except Exception as val_err:
+        except (protovalidate.ValidationError, ValueError, TypeError) as val_err:
             return json_res(
                 start_response,
                 "400 Bad Request",
@@ -103,7 +103,7 @@ def application(environ: dict[str, Any], start_response: Any) -> list[bytes]:
         pin_data = pb.PinControlData(pin=pin, state=state)
         try:
             protovalidate.validate(cast(Any, pin_data))
-        except Exception as val_err:
+        except (protovalidate.ValidationError, ValueError, TypeError) as val_err:
             return json_res(
                 start_response,
                 "400 Bad Request",

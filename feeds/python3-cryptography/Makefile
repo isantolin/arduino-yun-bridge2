@@ -22,13 +22,14 @@ PYTHON3_PKG_BUILD_VARS += \
 	OPENSSL_DIR=$(STAGING_DIR)/usr \
 	OPENSSL_INCLUDE_DIR=$(STAGING_DIR)/usr/include \
 	OPENSSL_LIB_DIR=$(STAGING_DIR)/usr/lib \
-	CARGO_TARGET_MIPS_UNKNOWN_LINUX_MUSL_LINKER=$(TARGET_CC) \
+	CARGO_TARGET_MIPS_UNKNOWN_LINUX_MUSL_LINKER=$(TARGET_CROSS)gcc \
+	CARGO_TARGET_MIPS_UNKNOWN_LINUX_MUSL_RUSTFLAGS="-C link-arg=-L$(STAGING_DIR)/usr/lib -C link-arg=-L$(STAGING_DIR)/lib" \
 	PYO3_CONFIG_FILE=$(PKG_BUILD_DIR)/pyo3-config.txt \
 	PYO3_NO_PYTHON=1
 
 define Build/Prepare
 	$(call Build/Prepare/Default)
-	sed -i 's|b.finalize_options();|b.finalize_options(); b.include_dirs=[\x27$(STAGING_DIR)/usr/include/python$(PYTHON3_VERSION)\x27];|g' $(PKG_BUILD_DIR)/src/rust/cryptography-cffi/build.rs
+	sed -i 's|b.finalize_options();|b.finalize_options(); b.include_dirs=[\x27$(STAGING_DIR)/usr/include/python$(PYTHON3_VERSION)\x27];|g' $(PKG_BUILD_DIR)/src/rust/cryptography-cffi/build.rs || true
 	# Se relaja la restricción de versión de cffi en pyproject.toml
 	sed -i 's/"cffi>=2.0.0[^"]*"/"cffi"/g' $(PKG_BUILD_DIR)/pyproject.toml || true
 endef
@@ -39,6 +40,7 @@ define Build/Configure
 	echo "version=$(PYTHON3_VERSION)" >> $(PKG_BUILD_DIR)/pyo3-config.txt
 	echo "shared=true" >> $(PKG_BUILD_DIR)/pyo3-config.txt
 	echo "abi3=false" >> $(PKG_BUILD_DIR)/pyo3-config.txt
+	echo "pointer_width=32" >> $(PKG_BUILD_DIR)/pyo3-config.txt
 	echo "include_dir=$(STAGING_DIR)/usr/include/python$(PYTHON3_VERSION)" >> $(PKG_BUILD_DIR)/pyo3-config.txt
 	echo "lib_dir=$(STAGING_DIR)/usr/lib" >> $(PKG_BUILD_DIR)/pyo3-config.txt
 	echo "target=mips-unknown-linux-musl" >> $(PKG_BUILD_DIR)/pyo3-config.txt

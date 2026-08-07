@@ -92,13 +92,13 @@ class SqliteDeque:
             if conn is not None:
                 try:
                     await asyncio.shield(conn.close())
-                except (Exception, OSError):
-                    pass
+                except (aiosqlite.Error, sqlite3.Error, OSError) as exc:
+                    logger.debug("SqliteDeque connection close failed", error=exc)
                 underlying = getattr(conn, "_connection", None)
                 if underlying is not None:
                     try:
                         underlying.close()
-                    except (Exception, OSError) as exc:
+                    except (sqlite3.Error, OSError) as exc:
                         logger.debug("SqliteDeque underlying connection close failed", error=exc)
 
     async def append(self, item: bytes) -> None:
@@ -215,13 +215,13 @@ class SqliteCache:
             if conn is not None:
                 try:
                     await asyncio.shield(conn.close())
-                except (Exception, OSError):
-                    pass
+                except (aiosqlite.Error, sqlite3.Error, OSError) as exc:
+                    logger.debug("SqliteCache connection close failed", error=exc)
                 underlying = getattr(conn, "_connection", None)
                 if underlying is not None:
                     try:
                         underlying.close()
-                    except (Exception, OSError) as exc:
+                    except (sqlite3.Error, OSError) as exc:
                         logger.debug("SqliteCache underlying connection close failed", error=exc)
 
     async def set(self, key: str, value: bytes) -> None:

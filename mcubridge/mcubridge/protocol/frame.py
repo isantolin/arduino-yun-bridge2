@@ -10,29 +10,29 @@ between the Linux daemon and the Arduino MCU.
 """
 
 from __future__ import annotations
-from google.protobuf.internal.encoder import _VarintBytes  # type: ignore[import-untyped]
 
 import struct
 from binascii import crc32
 from functools import lru_cache
-from typing import Callable, Final, NamedTuple, cast
+from typing import Final, NamedTuple
 
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
+from google.protobuf.message import DecodeError, Message as ProtobufMessage
 
-from mcubridge.protocol import protocol_pb2 as pb
+from mcubridge.protocol import mcubridge_pb2 as pb
+from . import is_system_command, protocol
 
-# ═════════════════════════════════════════════════════════════════════════════
-# FRAME PROTOCOL CONSTANTS
-# ═════════════════════════════════════════════════════════════════════════════
-FRAME_HEADER_MAGIC: Final[int] = 0xAA
-FRAME_HEADER_SIZE: Final[int] = 5  # Magic(1) + Version(1) + Cmd(1) + Seq(1) + PayloadLen(1)
-FRAME_CRC_SIZE: Final[int] = 4
-FRAME_MIN_SIZE: Final[int] = FRAME_HEADER_SIZE + FRAME_CRC_SIZE
-PROTOCOL_VERSION: Final[int] = 1
+_PAYLOAD_FIELD_MAP: dict[str, str] = {
+    f.message_type.name: f.name
+    for f in pb.RpcEnvelope.DESCRIPTOR.oneofs_by_name["payload_type"].fields
+    if f.message_type is not None
+}
 
-# Mask for CRC32 calculations to ensure unsigned 32-bit integer representation
-CRC32_MASK: Final[int] = 0xFFFFFFFF
+_CRC_STRUCT: Final = struct.Struct("<I")
+_NONCE_SIZE: Final = protocol.AEAD_NONCE_SIZE
+_TAG_SIZE: Final = protocol.AEAD_TAG_SIZE
+_CRC_SIZE: Final = protocol.CRC_SIZE
 
 
 @lru_cache(maxsize=16)
@@ -41,7 +41,14 @@ def _get_cipher(session_key: bytes) -> ChaCha20Poly1305:
     return ChaCha20Poly1305(session_key)
 
 
-_encode_varint: Callable[[int], bytes] = cast(Callable[[int], bytes], _VarintBytes)
+def _encode_varint(value: int) -> bytes:
+    """Encode an integer into standard Protobuf Varint bytes. [SIL-2]"""
+    buf = bytearray()
+    while value >= 0x80:
+        buf.append((value & 0x7F) | 0x80)
+        value >>= 7
+    buf.append(value & 0x7F)
+    return bytes(buf)
 
 
 def _build_aad_bytes(version: int, command_id: int, sequence_id: int) -> bytes:
@@ -58,126 +65,102 @@ def _build_aad_bytes(version: int, command_id: int, sequence_id: int) -> bytes:
     )
 
 
-class ParsedFrame(NamedTuple):
-    """Immutable representation of a validated binary frame parsed from the serial link."""
-
-    version: int
-    command_id: int
-    sequence_id: int
-    payload: bytes
-    raw: bytes
-
-
-class FrameError(Exception):
-    """Base exception for all frame decoding/verification failures."""
-
-
-class HeaderError(FrameError):
-    """Raised when the frame magic byte or version check fails."""
-
-
-class IntegrityError(FrameError):
-    """Raised when CRC32 checksum or AEAD tag verification fails."""
-
-
-class DecodeError(FrameError):
-    """Raised when Protobuf payload deserialization fails."""
+class DecodedFrame(NamedTuple):
+    envelope: pb.RpcEnvelope
+    payload: bytes | ProtobufMessage
 
 
 def build_frame(
     command_id: int,
     sequence_id: int,
-    payload: bytes = b"",
-    *,
-    version: int = PROTOCOL_VERSION,
+    payload: bytes | ProtobufMessage = b"",
+    nonce: bytes | None = None,
+    tag: bytes | None = None,
     session_key: bytes | None = None,
 ) -> bytes:
-    """Build a framed binary packet with CRC32 integrity check and optional AEAD encryption."""
-    if not (0 <= command_id <= 255):
-        raise ValueError(f"Command ID out of range 0..255: {command_id}")
-    if not (0 <= sequence_id <= 255):
-        raise ValueError(f"Sequence ID out of range 0..255: {sequence_id}")
-    if not (0 <= version <= 255):
-        raise ValueError(f"Protocol version out of range 0..255: {version}")
+    """Builds a binary frame using a Protobuf envelope directly with high-performance AEAD. [SIL-2]"""
+    if not (0 <= command_id <= protocol.UINT16_MAX):
+        raise ValueError(f"Invalid command ID: {command_id}")
 
-    aad = _build_aad_bytes(version, command_id, sequence_id)
+    is_excluded = is_system_command(command_id)
 
-    if session_key is not None:
-        cipher = _get_cipher(session_key)
-        # Nonce format: 4 bytes sequence + 8 zero bytes = 12 bytes
-        nonce = sequence_id.to_bytes(4, byteorder="big") + (b"\x00" * 8)
-        payload = cipher.encrypt(nonce, payload, aad)
-
-    payload_len = len(payload)
-    if payload_len > 255:
-        raise ValueError(f"Payload length exceeds maximum allowable frame size (255): {payload_len}")
-
-    header = struct.pack(">BBBBB", FRAME_HEADER_MAGIC, version, command_id, sequence_id, payload_len)
-    data_to_checksum = header + payload
-    checksum = crc32(data_to_checksum) & CRC32_MASK
-    return data_to_checksum + struct.pack(">I", checksum)
-
-
-def parse_frame(
-    raw_frame: bytes | memoryview,
-    *,
-    expected_version: int = PROTOCOL_VERSION,
-    session_key: bytes | None = None,
-) -> ParsedFrame:
-    """Parse and validate a binary frame from serial data."""
-    frame_view = memoryview(raw_frame) if not isinstance(raw_frame, memoryview) else raw_frame
-    frame_len = len(frame_view)
-
-    if frame_len < FRAME_MIN_SIZE:
-        raise HeaderError(f"Frame length {frame_len} is smaller than minimum header size ({FRAME_MIN_SIZE})")
-
-    magic, version, command_id, sequence_id, payload_len = struct.unpack_from(">BBBBB", frame_view, 0)
-
-    if magic != FRAME_HEADER_MAGIC:
-        raise HeaderError(f"Invalid frame magic byte: 0x{magic:02X} (expected 0x{FRAME_HEADER_MAGIC:02X})")
-
-    if version != expected_version:
-        raise HeaderError(f"Unsupported protocol version: {version} (expected {expected_version})")
-
-    expected_total_len = FRAME_HEADER_SIZE + payload_len + FRAME_CRC_SIZE
-    if frame_len != expected_total_len:
-        raise HeaderError(
-            f"Frame size mismatch: buffer has {frame_len} bytes, header specifies {expected_total_len}"
-        )
-
-    expected_crc = struct.unpack_from(">I", frame_view, FRAME_HEADER_SIZE + payload_len)[0]
-    data_view = frame_view[: FRAME_HEADER_SIZE + payload_len]
-    actual_crc = crc32(data_view) & CRC32_MASK
-
-    if actual_crc != expected_crc:
-        raise IntegrityError(f"CRC32 checksum mismatch: got 0x{actual_crc:08X}, expected 0x{expected_crc:08X}")
-
-    payload = bytes(frame_view[FRAME_HEADER_SIZE : FRAME_HEADER_SIZE + payload_len])
-
-    if session_key is not None:
-        cipher = _get_cipher(session_key)
-        nonce = sequence_id.to_bytes(4, byteorder="big") + (b"\x00" * 8)
-        aad = _build_aad_bytes(version, command_id, sequence_id)
-        try:
-            payload = cipher.decrypt(nonce, payload, aad)
-        except InvalidTag as exc:
-            raise IntegrityError("AEAD decryption failed: invalid authentication tag or corrupted frame") from exc
-
-    return ParsedFrame(
-        version=version,
+    # Initialize RpcEnvelope directly
+    envelope = pb.RpcEnvelope(
+        version=protocol.PROTOCOL_VERSION,
         command_id=command_id,
         sequence_id=sequence_id,
-        payload=payload,
-        raw=bytes(frame_view),
+        nonce=nonce or (b"\x00" * _NONCE_SIZE),
     )
 
+    # AEAD Encryption (if session key provided)
+    do_encrypt = bool(session_key and not is_excluded)
 
-def decode_envelope(payload: bytes) -> pb.RpcEnvelope:
-    """Decode a Protobuf RpcEnvelope from a parsed frame payload."""
+    if do_encrypt:
+        if session_key is None:
+            raise ValueError("AEAD session key is required for encryption")
+        payload_bytes = payload.SerializeToString() if isinstance(payload, ProtobufMessage) else payload
+        if len(payload_bytes) > protocol.MAX_PAYLOAD_SIZE:
+            raise ValueError(f"Payload size {len(payload_bytes)} exceeds maximum {protocol.MAX_PAYLOAD_SIZE}")
+
+        # Optimization: Fast Varint AAD binary builder + Cached ChaCha20Poly1305 cipher
+        aad = _build_aad_bytes(envelope.version, envelope.command_id, envelope.sequence_id)
+        cipher = _get_cipher(session_key)
+        envelope.encrypted_payload_with_tag = cipher.encrypt(envelope.nonce, payload_bytes, aad)
+    else:
+        # Unencrypted! [SIL-2] Holistic payload extraction natively handled by Protobuf.
+        if isinstance(payload, ProtobufMessage):
+            # [SIL-2] Use descriptor-based field mapping to eliminate manual string logic.
+            field_name = _PAYLOAD_FIELD_MAP.get(payload.DESCRIPTOR.name)
+            if field_name:
+                getattr(envelope, field_name).CopyFrom(payload)
+        else:
+            if len(payload) > protocol.MAX_PAYLOAD_SIZE:
+                raise ValueError(f"Payload size {len(payload)} exceeds maximum {protocol.MAX_PAYLOAD_SIZE}")
+            envelope.encrypted_payload_with_tag = payload
+
+    body = envelope.SerializeToString()
+    return body + _CRC_STRUCT.pack(crc32(body) & protocol.CRC32_MASK)
+
+
+def parse_frame(raw_frame_buffer: bytes | bytearray | memoryview, session_key: bytes | None = None) -> DecodedFrame:
+    """Parses binary buffer directly into a Protobuf envelope using zero-copy memoryview. [SIL-2]"""
+    mv = memoryview(raw_frame_buffer)
+    if len(mv) < _CRC_SIZE:
+        raise ValueError("Incomplete frame: too short")
+
+    body, crc_bytes = mv[:-_CRC_SIZE], mv[-_CRC_SIZE:]
+    if (crc32(body) & protocol.CRC32_MASK) != _CRC_STRUCT.unpack(crc_bytes)[0]:
+        raise ValueError("CRC mismatch")
+
     envelope = pb.RpcEnvelope()
     try:
-        envelope.ParseFromString(payload)
-    except Exception as exc:
-        raise DecodeError(f"Failed to decode RpcEnvelope protobuf: {exc}") from exc
+        envelope.ParseFromString(bytes(body))
+    except DecodeError as e:
+        raise ValueError(f"Failed to parse Protobuf envelope: {e}") from e
 
-    return envelope
+    if envelope.version != protocol.PROTOCOL_VERSION:
+        raise ValueError("Invalid protocol version")
+
+    is_excluded = is_system_command(envelope.command_id)
+
+    # AEAD Decryption
+    if session_key and not is_excluded:
+        # Optimization: Fast Varint AAD binary builder + Cached ChaCha20Poly1305 cipher
+        aad = _build_aad_bytes(envelope.version, envelope.command_id, envelope.sequence_id)
+        cipher = _get_cipher(session_key)
+
+        try:
+            decrypted = cipher.decrypt(envelope.nonce, envelope.encrypted_payload_with_tag, aad)
+        except InvalidTag as exc:
+            raise ValueError("AEAD decryption failed") from exc
+    else:
+        # Unencrypted! [SIL-2] Holistic payload extraction from the native oneof field.
+        field = envelope.WhichOneof("payload_type")
+        if field == "encrypted_payload_with_tag":
+            decrypted = envelope.encrypted_payload_with_tag
+        elif field:
+            decrypted = getattr(envelope, field)
+        else:
+            decrypted = b""
+
+    return DecodedFrame(envelope=envelope, payload=decrypted)

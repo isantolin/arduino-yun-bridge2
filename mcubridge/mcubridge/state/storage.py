@@ -18,14 +18,13 @@ T = TypeVar("T")
 class SqliteDeque:
     """SIL-2 persistent queue implementation over aiosqlite.
 
-    Provides append/popleft with O(1) complexity using persistent aiosqlite connections.
+    Provides append/popleft with O(1) complexity.
     """
 
     def __init__(self, path: str, maxlen: int | None = None) -> None:
         self.path = path
         self.maxlen = maxlen
         self._length = 0
-        self._conn: aiosqlite.Connection | None = None
         Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         try:
             conn = sqlite3.connect(self.path)
@@ -50,29 +49,7 @@ class SqliteDeque:
     def __len__(self) -> int:
         return self._length
 
-    def detach_connection(self) -> None:
-        """Safely detach aiosqlite connection without ResourceWarning."""
-        conn = self._conn
-        if conn is not None:
-            self._conn = None
-            try:
-                object.__setattr__(conn, "_connection", None)
-            except Exception:
-                pass
-
-    def __del__(self) -> None:
-        self.detach_connection()
-
     async def _recreate_db(self) -> None:
-        if self._conn is not None:
-            conn = self._conn
-            self._conn = None
-            try:
-                await conn.close()
-            except (Exception, OSError):
-                pass
-            finally:
-                object.__setattr__(conn, "_connection", None)
         for suffix in ("", "-wal", "-shm"):
             target_path = Path(self.path + suffix)
             if target_path.exists():
@@ -92,27 +69,37 @@ class SqliteDeque:
         )
         await conn.commit()
 
-    async def _get_conn(self) -> aiosqlite.Connection:
-        if self._conn is None:
-            self._conn = await aiosqlite.connect(self.path)
-            await self._init_deque_db(self._conn)
-        return self._conn
-
     async def _execute(self, func: Callable[[aiosqlite.Connection], Awaitable[T]]) -> T:
+        conn = None
         try:
-            conn = await self._get_conn()
+            conn = await aiosqlite.connect(self.path)
+            await self._init_deque_db(conn)
             res = await func(conn)
             await conn.commit()
             return res
         except (aiosqlite.Error, OSError) as e:
             logger.warning("SqliteDeque database corrupt or incomplete, recreating: %s", e)
             await self._recreate_db()
+            if conn is not None:
+                await asyncio.shield(conn.close())
+                conn = None
             conn = await aiosqlite.connect(self.path)
             await self._init_deque_db(conn)
-            self._conn = conn
             res = await func(conn)
             await conn.commit()
             return res
+        finally:
+            if conn is not None:
+                try:
+                    await asyncio.shield(conn.close())
+                except (Exception, OSError):
+                    pass
+                underlying = getattr(conn, "_connection", None)
+                if underlying is not None:
+                    try:
+                        underlying.close()
+                    except (Exception, OSError) as exc:
+                        logger.debug("SqliteDeque underlying connection close failed", error=exc)
 
     async def append(self, item: bytes) -> None:
         async def _append_impl(conn: aiosqlite.Connection) -> None:
@@ -142,12 +129,6 @@ class SqliteDeque:
         return await self._execute(_popleft_impl)
 
     async def length(self) -> int:
-        async def _len_impl(conn: aiosqlite.Connection) -> int:
-            async with conn.execute("SELECT COUNT(*) FROM deque") as cursor:
-                row = await cursor.fetchone()
-                return row[0] if row else 0
-
-        self._length = await self._execute(_len_impl)
         return self._length
 
     async def peek(self) -> bytes:
@@ -173,7 +154,7 @@ class SqliteDeque:
 
     async def close(self) -> None:
         """Close storage resources."""
-        self.detach_connection()
+        return None
 
 
 class SqliteCache:
@@ -181,7 +162,6 @@ class SqliteCache:
 
     def __init__(self, path: str) -> None:
         self.path = path
-        self._conn: aiosqlite.Connection | None = None
         Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         try:
             conn = sqlite3.connect(self.path)
@@ -195,29 +175,7 @@ class SqliteCache:
         except (sqlite3.Error, OSError) as e:
             logger.warning("Failed to initialize SqliteCache schema", path=self.path, error=e)
 
-    def detach_connection(self) -> None:
-        """Safely detach aiosqlite connection without ResourceWarning."""
-        conn = self._conn
-        if conn is not None:
-            self._conn = None
-            try:
-                object.__setattr__(conn, "_connection", None)
-            except Exception:
-                pass
-
-    def __del__(self) -> None:
-        self.detach_connection()
-
     async def _recreate_db(self) -> None:
-        if self._conn is not None:
-            conn = self._conn
-            self._conn = None
-            try:
-                await conn.close()
-            except (Exception, OSError):
-                pass
-            finally:
-                object.__setattr__(conn, "_connection", None)
         for suffix in ("", "-wal", "-shm"):
             target_path = Path(self.path + suffix)
             if target_path.exists():
@@ -234,27 +192,37 @@ class SqliteCache:
         await conn.execute("CREATE TABLE IF NOT EXISTS cache (key TEXT PRIMARY KEY, value BLOB NOT NULL)")
         await conn.commit()
 
-    async def _get_conn(self) -> aiosqlite.Connection:
-        if self._conn is None:
-            self._conn = await aiosqlite.connect(self.path)
-            await self._init_cache_db(self._conn)
-        return self._conn
-
     async def _execute(self, func: Callable[[aiosqlite.Connection], Awaitable[T]]) -> T:
+        conn = None
         try:
-            conn = await self._get_conn()
+            conn = await aiosqlite.connect(self.path)
+            await self._init_cache_db(conn)
             res = await func(conn)
             await conn.commit()
             return res
         except (aiosqlite.Error, OSError) as e:
             logger.warning("SqliteCache database corrupt or incomplete, recreating: %s", e)
             await self._recreate_db()
+            if conn is not None:
+                await asyncio.shield(conn.close())
+                conn = None
             conn = await aiosqlite.connect(self.path)
             await self._init_cache_db(conn)
-            self._conn = conn
             res = await func(conn)
             await conn.commit()
             return res
+        finally:
+            if conn is not None:
+                try:
+                    await asyncio.shield(conn.close())
+                except (Exception, OSError):
+                    pass
+                underlying = getattr(conn, "_connection", None)
+                if underlying is not None:
+                    try:
+                        underlying.close()
+                    except (Exception, OSError) as exc:
+                        logger.debug("SqliteCache underlying connection close failed", error=exc)
 
     async def set(self, key: str, value: bytes) -> None:
         async def _setitem_impl(conn: aiosqlite.Connection) -> None:
@@ -281,4 +249,4 @@ class SqliteCache:
 
     async def close(self) -> None:
         """Close storage resources."""
-        self.detach_connection()
+        return None

@@ -10,6 +10,7 @@ async def test_mailbox_static_queue_overflow() -> None:
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tf:
         path = tf.name
 
+    q: SqliteDeque | None = None
     try:
         q = SqliteDeque(path=path, maxlen=8)
 
@@ -37,5 +38,7 @@ async def test_mailbox_static_queue_overflow() -> None:
         # Queue should be empty now
         assert await q.length() == 0
     finally:
+        if q is not None:
+            await q.close()
         if os.path.exists(path):
             os.unlink(path)

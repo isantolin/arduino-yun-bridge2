@@ -50,13 +50,29 @@ class SqliteDeque:
     def __len__(self) -> int:
         return self._length
 
+    def detach_connection(self) -> None:
+        """Safely detach aiosqlite connection without ResourceWarning."""
+        conn = self._conn
+        if conn is not None:
+            self._conn = None
+            try:
+                object.__setattr__(conn, "_connection", None)
+            except Exception:
+                pass
+
+    def __del__(self) -> None:
+        self.detach_connection()
+
     async def _recreate_db(self) -> None:
         if self._conn is not None:
+            conn = self._conn
+            self._conn = None
             try:
-                await asyncio.shield(self._conn.close())
+                await conn.close()
             except (Exception, OSError):
                 pass
-            self._conn = None
+            finally:
+                object.__setattr__(conn, "_connection", None)
         for suffix in ("", "-wal", "-shm"):
             target_path = Path(self.path + suffix)
             if target_path.exists():
@@ -126,6 +142,12 @@ class SqliteDeque:
         return await self._execute(_popleft_impl)
 
     async def length(self) -> int:
+        async def _len_impl(conn: aiosqlite.Connection) -> int:
+            async with conn.execute("SELECT COUNT(*) FROM deque") as cursor:
+                row = await cursor.fetchone()
+                return row[0] if row else 0
+
+        self._length = await self._execute(_len_impl)
         return self._length
 
     async def peek(self) -> bytes:
@@ -151,12 +173,7 @@ class SqliteDeque:
 
     async def close(self) -> None:
         """Close storage resources."""
-        if self._conn is not None:
-            try:
-                await asyncio.shield(self._conn.close())
-            except (Exception, OSError):
-                pass
-            self._conn = None
+        self.detach_connection()
 
 
 class SqliteCache:
@@ -178,13 +195,29 @@ class SqliteCache:
         except (sqlite3.Error, OSError) as e:
             logger.warning("Failed to initialize SqliteCache schema", path=self.path, error=e)
 
+    def detach_connection(self) -> None:
+        """Safely detach aiosqlite connection without ResourceWarning."""
+        conn = self._conn
+        if conn is not None:
+            self._conn = None
+            try:
+                object.__setattr__(conn, "_connection", None)
+            except Exception:
+                pass
+
+    def __del__(self) -> None:
+        self.detach_connection()
+
     async def _recreate_db(self) -> None:
         if self._conn is not None:
+            conn = self._conn
+            self._conn = None
             try:
-                await asyncio.shield(self._conn.close())
+                await conn.close()
             except (Exception, OSError):
                 pass
-            self._conn = None
+            finally:
+                object.__setattr__(conn, "_connection", None)
         for suffix in ("", "-wal", "-shm"):
             target_path = Path(self.path + suffix)
             if target_path.exists():
@@ -248,9 +281,4 @@ class SqliteCache:
 
     async def close(self) -> None:
         """Close storage resources."""
-        if self._conn is not None:
-            try:
-                await asyncio.shield(self._conn.close())
-            except (Exception, OSError):
-                pass
-            self._conn = None
+        self.detach_connection()

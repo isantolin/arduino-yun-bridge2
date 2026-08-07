@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from itertools import chain
 import math
 import weakref
 from collections.abc import Awaitable, Callable, Iterable, Sequence
@@ -64,8 +65,7 @@ def _build_metrics_message(
         extra_props.append((const.PROP_KEY_WATCHDOG_INTERVAL, str(snapshot.watchdog_interval)))
 
     if extra_props:
-        user_props = [(p.key, p.value) for p in message.user_properties]
-        user_props.extend(extra_props)
+        user_props = list(chain(((p.key, p.value) for p in message.user_properties), extra_props))
         message = structures.replace_cloud_publish(message, user_properties=user_props)
 
     return message
@@ -257,8 +257,8 @@ class RuntimeStateCollector(Collector):
             "Total restarts per internal worker task",
             labels=["worker"],
         )
-        # [SIL-2] Iterative reduction
-        [super_health.add_metric([k], float(v.restarts)) for k, v in state.supervisor_stats.items()]
+        for k, v in state.supervisor_stats.items():
+            super_health.add_metric([k], float(v.restarts))
         yield super_health
 
 

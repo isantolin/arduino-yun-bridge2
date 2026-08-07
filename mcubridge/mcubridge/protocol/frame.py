@@ -41,14 +41,9 @@ def _get_cipher(session_key: bytes) -> ChaCha20Poly1305:
     return ChaCha20Poly1305(session_key)
 
 
-def _encode_varint(value: int) -> bytes:
-    """Encode an integer into standard Protobuf Varint bytes. [SIL-2]"""
-    buf = bytearray()
-    while value >= 0x80:
-        buf.append((value & 0x7F) | 0x80)
-        value >>= 7
-    buf.append(value & 0x7F)
-    return bytes(buf)
+from google.protobuf.internal.encoder import _VarintBytes  # type: ignore[import-untyped]
+
+_encode_varint = _VarintBytes
 
 
 def _build_aad_bytes(version: int, command_id: int, sequence_id: int) -> bytes:

@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
-"""Modernized Pin REST CGI helper for MCU Bridge (SIL-2)."""
+"""Modernized Pin REST CGI and Typer CLI helper for MCU Bridge (SIL-2)."""
 
 from __future__ import annotations
 
 import logging
+import os
 import re
-from typing import Any, cast
+from typing import Annotated, Any, cast
 from wsgiref.handlers import CGIHandler
 
 import asyncio
+import typer
 from grpclib.client import Channel
 from mcubridge.protocol.mcubridge_grpc import LocalBridgeStub
 import protovalidate
@@ -20,6 +22,8 @@ from mcubridge.protocol.structures import RuntimeConfig
 from mcubridge.protocol.topics import Topic, topic_path
 
 logger = logging.getLogger("mcubridge.pin_rest")
+
+app = typer.Typer(help="Pin REST CGI and CLI interface for MCU Bridge.", add_completion=False)
 
 
 def publish_sync(topic: str, payload: str, config: RuntimeConfig) -> None:
@@ -127,9 +131,33 @@ def application(environ: dict[str, Any], start_response: Any) -> list[bytes]:
         )
 
 
+@app.command()
+def control(
+    pin: Annotated[int, typer.Option("--pin", "-p", help="Pin number to set")] = 13,
+    state: Annotated[str, typer.Option("--state", "-s", help="State (ON/OFF)")] = "ON",
+) -> None:
+    """CLI entry point for direct pin control."""
+    config = load_runtime_config()
+    configure_logging(config)
+    pin_data = pb.PinControlData(pin=pin, state=state.upper())
+    protovalidate.validate(cast(Any, pin_data))
+    topic = topic_path(config.topic_prefix, Topic.DIGITAL, str(pin_data.pin))
+    publish_sync(topic, "1" if pin_data.state == "ON" else "0", config)
+    print(f"Pin {pin} set to {state.upper()} on topic {topic}")
+
+
+@app.command()
+def cgi() -> None:
+    """Execute as CGI WSGI script."""
+    CGIHandler().run(application)
+
+
 def run_cgi() -> None:
     """Entry point for CGI execution."""
-    CGIHandler().run(application)
+    if "GATEWAY_INTERFACE" in os.environ or "REQUEST_METHOD" in os.environ:
+        CGIHandler().run(application)
+    else:
+        app()
 
 
 if __name__ == "__main__":

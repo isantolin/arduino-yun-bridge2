@@ -83,11 +83,9 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
     }
 
     rpc::payload::FileReadResponse p = {};
-    const size_t to_copy = etl::min(res->bytes_read, sizeof(p.content.bytes));
-    p.content.size = static_cast<pb_size_t>(to_copy);
-    if (to_copy > 0U) {
-      etl::copy_n(buffer.data(), to_copy, p.content.bytes);
-    }
+    p.content.size = static_cast<pb_size_t>(bridge::utils::copy_bytes_to_buf(
+        etl::span<const uint8_t>(buffer.data(), res->bytes_read),
+        p.content.bytes));
     (void)Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 0, p);
 
     if (!res->has_more) {

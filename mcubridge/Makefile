@@ -65,7 +65,7 @@ define Package/$(PKG_NAME)
 		python3-jmespath \
 		python3-yaml \
 		python3-lmdb
-	# AUTO-GENERATED RUNTIME DEPENDS END
+# AUTO-GENERATED RUNTIME DEPENDS END
 endef
 
 define Package/$(PKG_NAME)/description

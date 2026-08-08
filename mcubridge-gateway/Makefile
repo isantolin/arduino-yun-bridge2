@@ -44,7 +44,7 @@ define Package/$(PKG_NAME)
 		python3-h2 \
 		python3-grpclib \
 		python3-typer
-	# AUTO-GENERATED RUNTIME DEPENDS END
+# AUTO-GENERATED RUNTIME DEPENDS END
 endef
 
 define Package/$(PKG_NAME)/description

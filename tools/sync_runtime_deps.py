@@ -6,16 +6,16 @@ from __future__ import annotations
 import argparse
 import re
 import sys
-import urllib.request
-import urllib.error
 from collections.abc import Sequence
 from pathlib import Path
 from typing import TypedDict
 
 import json
 import tomllib
+from distlib.locators import PyPIJSONLocator
 from graphlib import TopologicalSorter
 from packaging.requirements import Requirement
+from packaging.version import parse as parse_version
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = ROOT / "requirements" / "runtime.toml"
@@ -231,22 +231,32 @@ def _parse_pip_spec(spec: str) -> tuple[str, str]:
 
 
 def _fetch_latest_version(package_name: str, *, include_prerelease: bool = False) -> str | None:
-    """Query PyPI JSON API for the latest release version."""
-    url = f"https://pypi.org/pypi/{package_name}/json"
+    """Fetch latest package version from PyPI using distlib PyPIJSONLocator and packaging.version sorting."""
     try:
-        with urllib.request.urlopen(url, timeout=10) as resp:
-            data = json.loads(resp.read())
-            if include_prerelease and "releases" in data:
-                all_versions = list(data["releases"].keys())
-                if all_versions:
-                    return all_versions[-1]
-            return data["info"]["version"]
-    except (urllib.error.URLError, ValueError, KeyError, json.JSONDecodeError):
+        locator = PyPIJSONLocator("https://pypi.org/pypi")
+        project_data = locator.get_project(package_name)
+        if not project_data:
+            return None
+        parsed_versions = []
+        for ver_str in project_data.keys():
+            if ver_str in ("urls", "digests"):
+                continue
+            try:
+                v = parse_version(ver_str)
+                if include_prerelease or not v.is_prerelease:
+                    parsed_versions.append((v, ver_str))
+            except Exception:
+                continue
+        if parsed_versions:
+            parsed_versions.sort(key=lambda item: item[0])
+            return parsed_versions[-1][1]
+        return None
+    except Exception:
         return None
 
 
 def check_latest_versions(deps: Sequence[_DepEntry]) -> list[tuple[str, str, str]]:
-    """Return list of (package, pinned, latest) for outdated packages."""
+    """Return list of (package, pinned, latest) for outdated packages using packaging.version comparison."""
     outdated: list[tuple[str, str, str]] = []
     pip_specs = [(dep["pip"], dep["check_latest"]) for dep in deps if dep.get("pip")]
     for spec, should_check_latest in pip_specs:
@@ -255,10 +265,22 @@ def check_latest_versions(deps: Sequence[_DepEntry]) -> list[tuple[str, str, str
         name, pinned = _parse_pip_spec(spec)
         if not pinned:
             continue
-        is_prerelease = any(tag in pinned for tag in ("rc", "a", "b", "dev"))
-        latest = _fetch_latest_version(name, include_prerelease=is_prerelease)
-        if latest and latest != pinned:
-            outdated.append((name, pinned, latest))
+        try:
+            pinned_v = parse_version(pinned)
+            is_prerelease = pinned_v.is_prerelease
+        except Exception:
+            is_prerelease = False
+            pinned_v = None
+
+        latest_str = _fetch_latest_version(name, include_prerelease=is_prerelease)
+        if latest_str:
+            try:
+                latest_v = parse_version(latest_str)
+                if pinned_v and latest_v > pinned_v:
+                    outdated.append((name, pinned, latest_str))
+            except Exception:
+                if latest_str != pinned:
+                    outdated.append((name, pinned, latest_str))
     return outdated
 
 

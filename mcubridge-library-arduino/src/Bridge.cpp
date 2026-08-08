@@ -15,6 +15,7 @@
 #include "services/Mailbox.h"
 #include "services/Process.h"
 #include "services/SPIService.h"
+#include "pb_common.h"
 
 namespace etl {
 void __attribute__((weak)) handle_error(const etl::exception& e) {

@@ -1,129 +1,93 @@
-import aiosqlite
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 import pytest
-from typing import Any, Generator
+import lmdb
 
-from mcubridge.state.storage import SqliteCache, SqliteDeque
-
-
-class _ExecCtx:
-    """Protocol shim for aiosqlite._ExecuteContextManager.
-
-    Implements both Awaitable and AsyncContextManager protocols, which is
-    required by the production code that uses both `await conn.execute(...)`
-    and `async with conn.execute(...) as cursor:` on the same connection.
-    This dual-protocol cannot be replicated with AsyncMock alone in Python 3.14+.
-    """
-
-    def __init__(self, cursor: AsyncMock) -> None:
-        self._cursor = cursor
-
-    def __await__(self) -> Generator[Any, None, AsyncMock]:
-        async def _coro() -> AsyncMock:
-            return self._cursor
-
-        return _coro().__await__()
-
-    async def __aenter__(self) -> AsyncMock:
-        return self._cursor
-
-    async def __aexit__(self, *args: Any) -> None:
-        pass
-
-
-def _make_conn_mock(cursor_fetchone_val: object = None) -> tuple[MagicMock, AsyncMock]:
-    """Return (mock_conn, mock_cursor) using AsyncMock(spec=...) — no AwaitableMockConn."""
-    mock_cursor = AsyncMock(spec=aiosqlite.Cursor)
-    mock_cursor.fetchone = AsyncMock(return_value=cursor_fetchone_val)
-    mock_conn = MagicMock(spec=aiosqlite.Connection)
-    mock_conn.execute = MagicMock(return_value=_ExecCtx(mock_cursor))
-    mock_conn.commit = AsyncMock()
-    return mock_conn, mock_cursor
+from mcubridge.state.storage import LmdbCache, LmdbDeque
 
 
 @pytest.mark.asyncio
-async def test_sqlite_deque_recreate_on_corrupt() -> None:
-    mock_conn, _ = _make_conn_mock((0,))
-    db_error = aiosqlite.DatabaseError("Corrupt DB")
+async def test_sqlite_deque_recreate_on_corrupt(tmp_path: object) -> None:
+    db_path = str(tmp_path) + "/deque_test"
+    db_error = lmdb.Error("Corrupt DB")
+
+    mock_env = MagicMock()
+    mock_env.open_db.return_value = MagicMock()
+    mock_txn = MagicMock()
+    mock_txn.get.return_value = None
+    mock_txn.cursor.return_value = MagicMock(first=MagicMock(return_value=False), last=MagicMock(return_value=False))
+    mock_env.begin.return_value.__enter__.return_value = mock_txn
 
     with (
-        patch("aiosqlite.connect", new_callable=AsyncMock, side_effect=[db_error, mock_conn]) as mock_connect,
-        patch("mcubridge.state.storage.Path.exists", return_value=True),
-        patch("mcubridge.state.storage.Path.unlink") as mock_unlink,
+        patch("lmdb.open", side_effect=[db_error, mock_env]) as mock_open,
         patch("mcubridge.state.storage.logger") as mock_logger,
     ):
-        dq = SqliteDeque("mock_path")
+        dq = LmdbDeque(db_path)
         await dq.append(b"item")
 
-        assert mock_connect.call_count == 2
-        mock_connect.assert_any_call("mock_path")
-        assert mock_unlink.call_count == 3
+        assert mock_open.call_count == 2
         mock_logger.warning.assert_any_call(
-            "SqliteDeque database corrupt or incomplete, recreating: %s",
+            "LmdbDeque database corrupt or invalid, recreating: %s",
             db_error,
         )
 
 
 @pytest.mark.asyncio
-async def test_sqlite_deque_unlink_os_error() -> None:
-    mock_conn, _ = _make_conn_mock((0,))
-    db_error = aiosqlite.DatabaseError("Corrupt DB")
+async def test_lmdb_deque_unlink_os_error(tmp_path: object) -> None:
+    db_path = str(tmp_path) + "/deque_unlink_test"
+    db_error = lmdb.Error("Corrupt DB")
+
+    mock_env = MagicMock()
+    mock_env.open_db.return_value = MagicMock()
 
     with (
-        patch("aiosqlite.connect", new_callable=AsyncMock, side_effect=[db_error, mock_conn]),
+        patch("lmdb.open", side_effect=[db_error, mock_env]),
         patch("mcubridge.state.storage.Path.exists", return_value=True),
         patch("mcubridge.state.storage.Path.unlink", side_effect=OSError("Permission denied")),
         patch("mcubridge.state.storage.logger") as mock_logger,
     ):
-        dq = SqliteDeque("mock_path")
-        await dq.append(b"item")
+        dq = LmdbDeque(db_path)
 
-        mock_logger.warning.assert_any_call(
-            "Failed to unlink target path",
-            path="mock_path",
-            error=mock_logger.warning.call_args[1]["error"],
-        )
+        unlink_call = next(c for c in mock_logger.warning.call_args_list if c.args and c.args[0] == "Failed to unlink target path")
+        assert unlink_call.kwargs["path"] == db_path
 
 
 @pytest.mark.asyncio
-async def test_sqlite_cache_recreate_on_corrupt() -> None:
-    mock_conn, _ = _make_conn_mock(None)
-    db_error = aiosqlite.OperationalError("Corrupt DB")
+async def test_lmdb_cache_recreate_on_corrupt(tmp_path: object) -> None:
+    db_path = str(tmp_path) + "/cache_test"
+    db_error = lmdb.Error("Corrupt DB")
+
+    mock_env = MagicMock()
+    mock_env.open_db.return_value = MagicMock()
 
     with (
-        patch("aiosqlite.connect", new_callable=AsyncMock, side_effect=[db_error, mock_conn]) as mock_connect,
-        patch("mcubridge.state.storage.Path.exists", return_value=True),
-        patch("mcubridge.state.storage.Path.unlink") as mock_unlink,
+        patch("lmdb.open", side_effect=[db_error, mock_env]) as mock_open,
         patch("mcubridge.state.storage.logger") as mock_logger,
     ):
-        cache = SqliteCache("mock_path")
+        cache = LmdbCache(db_path)
         await cache.get("test_key")
 
-        assert mock_connect.call_count == 2
-        mock_connect.assert_any_call("mock_path")
-        assert mock_unlink.call_count == 3
+        assert mock_open.call_count == 2
         mock_logger.warning.assert_any_call(
-            "SqliteCache database corrupt or incomplete, recreating: %s",
+            "Failed to initialize LmdbCache schema: %s",
             db_error,
         )
 
 
 @pytest.mark.asyncio
-async def test_sqlite_cache_unlink_os_error() -> None:
-    mock_conn, _ = _make_conn_mock(None)
-    db_error = aiosqlite.OperationalError("Corrupt DB")
+async def test_lmdb_cache_unlink_os_error(tmp_path: object) -> None:
+    db_path = str(tmp_path) + "/cache_unlink_test"
+    db_error = lmdb.Error("Corrupt DB")
+
+    mock_env = MagicMock()
+    mock_env.open_db.return_value = MagicMock()
 
     with (
-        patch("aiosqlite.connect", new_callable=AsyncMock, side_effect=[db_error, mock_conn]),
+        patch("lmdb.open", side_effect=[db_error, mock_env]),
         patch("mcubridge.state.storage.Path.exists", return_value=True),
         patch("mcubridge.state.storage.Path.unlink", side_effect=OSError("Permission denied")),
         patch("mcubridge.state.storage.logger") as mock_logger,
     ):
-        cache = SqliteCache("mock_path")
-        await cache.get("test_key")
+        cache = LmdbCache(db_path)
 
-        mock_logger.warning.assert_any_call(
-            "Failed to unlink target path",
-            path="mock_path",
-            error=mock_logger.warning.call_args[1]["error"],
-        )
+        unlink_call = next(c for c in mock_logger.warning.call_args_list if c.args and c.args[0] == "Failed to unlink target path")
+        assert unlink_call.kwargs["path"] == db_path

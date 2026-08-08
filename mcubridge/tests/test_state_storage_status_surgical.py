@@ -14,7 +14,7 @@ import pytest
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.state.status import _write_status_file, status_writer
-from mcubridge.state.storage import SqliteCache, SqliteDeque
+from mcubridge.state.storage import LmdbCache, LmdbDeque
 
 
 @pytest.fixture
@@ -74,19 +74,18 @@ def test_write_status_file_handles_oserror() -> None:
 
 
 # ---------------------------------------------------------------------------
-# storage.py SqliteDeque & SqliteKVStorage tests
+# storage.py LmdbDeque & LmdbKVStorage tests
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_sqlite_deque_db_recreation_on_corruption(tmp_path: object) -> None:
+async def test_lmdb_deque_db_recreation_on_corruption(tmp_path: object) -> None:
     db_path = str(tmp_path) + "/corrupt_deque.db"
     # Write garbage to simulate corrupted database
     with open(db_path, "wb") as f:
-        f.write(b"NOT A SQLITE FILE")
+        f.write(b"NOT A VALID LMDB FILE")
 
-    deque = SqliteDeque(db_path, maxlen=10)
-    # _execute will fail, trigger _recreate_db(), and succeed
+    deque = LmdbDeque(db_path, maxlen=10)
     await deque.append(b"item1")
     assert await deque.length() == 1
     assert await deque.peek() == b"item1"
@@ -99,21 +98,21 @@ async def test_sqlite_deque_db_recreation_on_corruption(tmp_path: object) -> Non
 
 
 @pytest.mark.asyncio
-async def test_sqlite_deque_popleft_empty_raises(tmp_path: object) -> None:
+async def test_lmdb_deque_popleft_empty_raises(tmp_path: object) -> None:
     db_path = str(tmp_path) + "/empty_deque.db"
-    deque = SqliteDeque(db_path)
+    deque = LmdbDeque(db_path)
     with pytest.raises(IndexError):
         await deque.popleft()
     await deque.close()
 
 
 @pytest.mark.asyncio
-async def test_sqlite_cache_corruption_recovery(tmp_path: object) -> None:
+async def test_lmdb_cache_corruption_recovery(tmp_path: object) -> None:
     db_path = str(tmp_path) + "/corrupt_kv.db"
     with open(db_path, "wb") as f:
         f.write(b"GARBAGE")
 
-    kv = SqliteCache(db_path)
+    kv = LmdbCache(db_path)
     await kv.set("key1", b"value1")
     assert await kv.get("key1") == b"value1"
     assert await kv.get("nonexistent", b"default") == b"default"

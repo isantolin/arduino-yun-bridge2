@@ -21,8 +21,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast, Final
 
-import aiosqlite
-from ..state.storage import SqliteDeque
+import lmdb
+from ..state.storage import LmdbDeque
 import structlog
 from google.protobuf.message import (
     DecodeError as ProtobufDecodeError,
@@ -115,7 +115,7 @@ class BridgeService:
     _pending_mcu_read: _PendingMcuRead | None
     _process_slots: asyncio.Semaphore
     _cloud_publish_lock: asyncio.Lock
-    _cloud_spool: SqliteDeque | None
+    _cloud_spool: LmdbDeque | None
     mcu_registry: dict[int, McuHandler]
     _cloud_incoming_queue: asyncio.Queue[pb.CloudQueuedPublish]
     ipc_requests: dict[bytes, asyncio.Queue[pb.CloudQueuedPublish]]
@@ -147,8 +147,8 @@ class BridgeService:
         self._cloud_publish_lock = asyncio.Lock()
         self._cloud_spool = None
         if self.config.cloud_spool_dir:
-            self._cloud_spool = SqliteDeque(
-                path=str(Path(self.config.cloud_spool_dir) / "spool.db"), maxlen=self.state.cloud_queue_limit
+            self._cloud_spool = LmdbDeque(
+                path=str(Path(self.config.cloud_spool_dir) / "spool_lmdb"), maxlen=self.state.cloud_queue_limit
             )
         # [SIL-2] O(1) MCU Dispatch Registry
         self.mcu_registry: dict[int, McuHandler] = self._setup_mcu_registry(serial)
@@ -243,7 +243,7 @@ class BridgeService:
                     except IndexError as exc:
                         logger.error("Spool popped while empty during limit check", error=str(exc))
                         break
-                    except (aiosqlite.Error, OSError) as exc:
+                    except (lmdb.Error, OSError) as exc:
                         logger.error("Database error during spool popleft", error=str(exc))
                         break
                     spool_len = await spool.length()
@@ -260,7 +260,7 @@ class BridgeService:
             self.state.cloud_spool_failure_reason = None
             self.state.cloud_spool_pending_messages = pending_count
             return True
-        except (aiosqlite.Error, OSError) as exc:
+        except (lmdb.Error, OSError) as exc:
             self.state.cloud_spool_degraded = True
             self.state.cloud_spool_failure_reason = str(exc)
             return False
@@ -275,7 +275,7 @@ class BridgeService:
 
         try:
             spool_len = await spool.length()
-        except (aiosqlite.Error, OSError) as exc:
+        except (lmdb.Error, OSError) as exc:
             self.state.cloud_spool_degraded = True
             self.state.cloud_spool_failure_reason = str(exc)
             return
@@ -296,16 +296,16 @@ class BridgeService:
                 except IndexError as pop_exc:
                     logger.error("Failed to pop corrupt entry", error=str(pop_exc))
                     break
-                except (aiosqlite.Error, OSError) as pop_exc:
+                except (lmdb.Error, OSError) as pop_exc:
                     logger.error("Database error while popping corrupt entry", error=str(pop_exc))
                     break
                 self.state.cloud_spool_corrupt_dropped += 1
                 try:
                     spool_len = await spool.length()
-                except (aiosqlite.Error, OSError):
+                except (lmdb.Error, OSError):
                     break
                 continue
-            except (aiosqlite.Error, OSError) as exc:
+            except (lmdb.Error, OSError) as exc:
                 self.state.cloud_spool_degraded = True
                 self.state.cloud_spool_failure_reason = str(exc)
                 break
@@ -318,14 +318,14 @@ class BridgeService:
             except IndexError as exc:
                 logger.error("Spool was empty during popleft", error=str(exc))
                 break
-            except (aiosqlite.Error, OSError) as exc:
+            except (lmdb.Error, OSError) as exc:
                 self.state.cloud_spool_degraded = True
                 self.state.cloud_spool_failure_reason = str(exc)
                 break
 
             try:
                 spool_len = await spool.length()
-            except (aiosqlite.Error, OSError) as exc:
+            except (lmdb.Error, OSError) as exc:
                 self.state.cloud_spool_degraded = True
                 self.state.cloud_spool_failure_reason = str(exc)
                 break
@@ -341,7 +341,7 @@ class BridgeService:
 
             if pending_count == 0:
                 await spool.vacuum()
-        except (aiosqlite.Error, OSError) as exc:
+        except (lmdb.Error, OSError) as exc:
             self.state.cloud_spool_degraded = True
             self.state.cloud_spool_failure_reason = str(exc)
 
@@ -1372,25 +1372,25 @@ class BridgeService:
             if self._cloud_spool is not None:
                 try:
                     await self._cloud_spool.close()
-                except (aiosqlite.Error, OSError) as exc:
+                except (lmdb.Error, OSError) as exc:
                     logger.debug("cloud_spool close failed during teardown", error=exc)
                 self._cloud_spool = None
             if self.state and self.state.datastore_cache is not None:
                 try:
                     await self.state.datastore_cache.close()
-                except (aiosqlite.Error, OSError) as exc:
+                except (lmdb.Error, OSError) as exc:
                     logger.debug("datastore_cache close failed during teardown", error=exc)
                 self.state.datastore_cache = None
 
             if self.state and getattr(self.state, "mailbox_queue", None) is not None:
                 try:
                     await self.state.mailbox_queue.close()
-                except (aiosqlite.Error, OSError) as exc:
+                except (lmdb.Error, OSError) as exc:
                     logger.debug("mailbox_queue close failed during teardown", error=exc)
             if self.state and getattr(self.state, "mailbox_incoming_queue", None) is not None:
                 try:
                     await self.state.mailbox_incoming_queue.close()
-                except (aiosqlite.Error, OSError) as exc:
+                except (lmdb.Error, OSError) as exc:
                     logger.debug("mailbox_incoming_queue close failed during teardown", error=exc)
             self.cleanup()
             STATUS_FILE.unlink(missing_ok=True)

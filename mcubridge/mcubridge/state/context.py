@@ -9,7 +9,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Final, TypeVar, cast
 
-from .storage import SqliteDeque, SqliteCache
+from .storage import LmdbDeque, LmdbCache
 import structlog
 
 from ..config.const import (
@@ -76,10 +76,10 @@ class RuntimeState:
     cloud_publish_queue: asyncio.Queue[pb.CloudQueuedPublish]
     cloud_drop_counts: dict[str, int]
     allow_non_tmp_paths: bool
-    datastore_cache: SqliteCache | None
+    datastore_cache: LmdbCache | None
     connected_via_http3: bool
-    mailbox_queue: SqliteDeque
-    mailbox_incoming_queue: SqliteDeque
+    mailbox_queue: LmdbDeque
+    mailbox_incoming_queue: LmdbDeque
     mcu_is_paused: bool
     serial_tx_allowed: asyncio.Event
     console_to_mcu_queue: collections.deque[bytes]
@@ -175,11 +175,11 @@ class RuntimeState:
         ) or _make_cloud_publish_queue(self.cloud_queue_limit)
         self.cloud_drop_counts: dict[str, int] = kwargs.get("cloud_drop_counts") or {}
         self.allow_non_tmp_paths: bool = kwargs.get("allow_non_tmp_paths", False)
-        self.datastore_cache: SqliteCache | None = kwargs.get("datastore_cache")
+        self.datastore_cache: LmdbCache | None = kwargs.get("datastore_cache")
         self.connected_via_http3: bool = False
 
-        self.mailbox_queue: SqliteDeque = kwargs.get("mailbox_queue") or SqliteDeque(path=":memory:")
-        self.mailbox_incoming_queue: SqliteDeque = kwargs.get("mailbox_incoming_queue") or SqliteDeque(path=":memory:")
+        self.mailbox_queue: LmdbDeque = kwargs.get("mailbox_queue") or LmdbDeque(path=":memory:")
+        self.mailbox_incoming_queue: LmdbDeque = kwargs.get("mailbox_incoming_queue") or LmdbDeque(path=":memory:")
 
         self.mcu_is_paused: bool = kwargs.get("mcu_is_paused", False)
         self.serial_tx_allowed: asyncio.Event = kwargs.get("serial_tx_allowed") or asyncio.Event()
@@ -394,16 +394,16 @@ class RuntimeState:
             if directory and self.file_system_root:
                 try:
                     directory.mkdir(parents=True, exist_ok=True)
-                    return SqliteDeque(path=str(directory / "spool.db"), maxlen=self.mailbox_queue_limit)
+                    return LmdbDeque(path=str(directory / "spool_lmdb"), maxlen=self.mailbox_queue_limit)
                 except (OSError, RuntimeError):
                     logger.warning("Spool '%s' falling back to RAM", subdir)
 
-            return SqliteDeque(path=":memory:", maxlen=self.mailbox_queue_limit)
+            return LmdbDeque(path=":memory:", maxlen=self.mailbox_queue_limit)
 
         self.mailbox_queue = _create_spool("mailbox_out")
         self.mailbox_incoming_queue = _create_spool("mailbox_in")
 
-        # [SIL-2] Initialize datastore with dbm for ACID persistence
+        # [SIL-2] Initialize datastore with LMDB for ACID persistence
         ds_dir = None
         if self.allow_non_tmp_paths or self.file_system_root.startswith("/tmp/"):
             ds_dir = Path(self.file_system_root) / "datastore"
@@ -411,7 +411,7 @@ class RuntimeState:
         if ds_dir and self.file_system_root:
             try:
                 ds_dir.mkdir(parents=True, exist_ok=True)
-                self.datastore_cache = SqliteCache(str(ds_dir / "data.db"))
+                self.datastore_cache = LmdbCache(str(ds_dir / "data_lmdb"))
             except (OSError, RuntimeError):
                 logger.warning("Datastore falling back to RAM cache")
                 self.datastore_cache = None
@@ -569,8 +569,8 @@ class RuntimeState:
         self.cleanup()
 
     def cleanup(self) -> None:
-        self.mailbox_queue = SqliteDeque(path=":memory:")
-        self.mailbox_incoming_queue = SqliteDeque(path=":memory:")
+        self.mailbox_queue = LmdbDeque(path=":memory:")
+        self.mailbox_incoming_queue = LmdbDeque(path=":memory:")
         self.console_to_mcu_queue = collections.deque()
         self.datastore_cache = None
 

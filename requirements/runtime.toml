@@ -76,12 +76,6 @@ openwrt = "xxd"
 pip = ""
 rationale = "Hex-dump utility used by diagnostic scripts [BUILD-ONLY]"
 
-[[dependency]]
-name = "aiosqlite"
-openwrt = "python3-aiosqlite"
-pip = "aiosqlite==0.22.1"
-rationale = "Async SQLite connection wrapper for non-blocking I/O database operations (SIL-2)"
-
 
 [[dependency]]
 name = "h2"
@@ -170,6 +164,12 @@ name = "grpcio-tools"
 openwrt = "python3-grpcio-tools"
 pip = "grpcio-tools==1.83.0"
 rationale = "Protobuf and gRPC stubs compiler for code generation [BUILD-ONLY]"
+
+[[dependency]]
+name = "lmdb"
+openwrt = "python3-lmdb"
+pip = "lmdb==2.3.0"
+rationale = "Ultra-fast memory-mapped C storage engine for persistent queues and key-value datastores"
 
 
 

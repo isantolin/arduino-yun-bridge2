@@ -1,252 +1,202 @@
-"""SIL-2 Persistent Storage Primitives based on aiosqlite."""
+"""SIL-2 Persistent Storage Primitives based on LMDB (Lightning Memory-Mapped Database)."""
 
 from __future__ import annotations
 
-import asyncio
-import sqlite3
+import collections
+import struct
 from pathlib import Path
-from typing import Awaitable, Callable, TypeVar
+from typing import Any, TypeVar
 
-import aiosqlite
+import lmdb
 import structlog
 
 logger = structlog.get_logger(__name__)
 
 T = TypeVar("T")
+_U64 = struct.Struct(">Q")
 
 
-class SqliteDeque:
-    """SIL-2 persistent queue implementation over aiosqlite.
-
-    Provides append/popleft with O(1) complexity.
-    """
+class LmdbDeque:
+    """SIL-2 persistent FIFO queue implementation backed by LMDB C transactions."""
 
     def __init__(self, path: str, maxlen: int | None = None) -> None:
         self.path = path
         self.maxlen = maxlen
-        self._length = 0
-        Path(self.path).parent.mkdir(parents=True, exist_ok=True)
+        self.is_mem = path.startswith(":memory:")
+        self._mem: collections.deque[bytes] = collections.deque(maxlen=maxlen)
+        self._head = 0
+        self._tail = 0
+        self.env: lmdb.Environment | None = None
+        self.db: Any = None
+
+        if not self.is_mem:
+            self._open_env()
+
+    def _open_env(self) -> None:
+        p = Path(self.path)
+        if p.is_dir():
+            env_path = str(p / "deque.db")
+        else:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            env_path = self.path
+
         try:
-            conn = sqlite3.connect(self.path)
-            try:
-                conn.execute("PRAGMA journal_mode=WAL;")
-                conn.execute("PRAGMA synchronous=NORMAL;")
-                conn.execute(
-                    "CREATE TABLE IF NOT EXISTS deque (id INTEGER PRIMARY KEY AUTOINCREMENT, item BLOB NOT NULL)"
-                )
-                conn.commit()
-                cursor = conn.execute("SELECT COUNT(*) FROM deque")
+            self.env = lmdb.open(env_path, max_dbs=1, map_size=10485760, readahead=False, meminit=False, subdir=False)
+            self.db = self.env.open_db(b"deque")
+            with self.env.begin(db=self.db) as txn:
+                cur = txn.cursor()
+                self._head = _U64.unpack(cur.key())[0] if cur.first() else 0
+                self._tail = _U64.unpack(cur.key())[0] + 1 if cur.last() else 0
+        except (lmdb.Error, OSError) as exc:
+            logger.warning("LmdbDeque database corrupt or invalid, recreating: %s", exc)
+            self.env = None
+            target = Path(env_path)
+            if target.exists():
                 try:
-                    row = cursor.fetchone()
-                    self._length = row[0] if row else 0
-                finally:
-                    cursor.close()
-            finally:
-                conn.close()
-        except (sqlite3.Error, OSError):
-            self._length = 0
+                    target.unlink()
+                except OSError as e:
+                    logger.warning("Failed to unlink target path", path=str(target), error=e)
+            try:
+                self.env = lmdb.open(env_path, max_dbs=1, map_size=10485760, readahead=False, meminit=False, subdir=False)
+                self.db = self.env.open_db(b"deque")
+                self._head = self._tail = 0
+            except (lmdb.Error, OSError) as e:
+                logger.error("Failed to reinitialize LMDB deque: %s", e)
 
     def __len__(self) -> int:
-        return self._length
-
-    async def _recreate_db(self) -> None:
-        for suffix in ("", "-wal", "-shm"):
-            target_path = Path(self.path + suffix)
-            if target_path.exists():
-                try:
-                    target_path.unlink()
-                except OSError as exc:
-                    logger.warning("Failed to unlink target path", path=str(target_path), error=exc)
-        self._length = 0
-
-    @staticmethod
-    async def _init_deque_db(conn: aiosqlite.Connection) -> None:
-        """Apply WAL pragmas and ensure the deque schema exists."""
-        await conn.execute("PRAGMA journal_mode=WAL;")
-        await conn.execute("PRAGMA synchronous=NORMAL;")
-        await conn.execute(
-            "CREATE TABLE IF NOT EXISTS deque (id INTEGER PRIMARY KEY AUTOINCREMENT, item BLOB NOT NULL)"
-        )
-        await conn.commit()
-
-    async def _execute(self, func: Callable[[aiosqlite.Connection], Awaitable[T]]) -> T:
-        conn = None
-        try:
-            conn = await aiosqlite.connect(self.path)
-            await self._init_deque_db(conn)
-            res = await func(conn)
-            await conn.commit()
-            return res
-        except (aiosqlite.Error, OSError) as e:
-            logger.warning("SqliteDeque database corrupt or incomplete, recreating: %s", e)
-            await self._recreate_db()
-            if conn is not None:
-                await asyncio.shield(conn.close())
-                conn = None
-            conn = await aiosqlite.connect(self.path)
-            await self._init_deque_db(conn)
-            res = await func(conn)
-            await conn.commit()
-            return res
-        finally:
-            if conn is not None:
-                try:
-                    await asyncio.shield(conn.close())
-                except (aiosqlite.Error, sqlite3.Error, OSError) as exc:
-                    logger.debug("SqliteDeque connection close failed", error=exc)
-                underlying = getattr(conn, "_connection", None)
-                if underlying is not None:
-                    try:
-                        underlying.close()
-                    except (sqlite3.Error, OSError) as exc:
-                        logger.debug("SqliteDeque underlying connection close failed", error=exc)
+        return len(self._mem) if self.is_mem else max(0, self._tail - self._head)
 
     async def append(self, item: bytes) -> None:
-        async def _append_impl(conn: aiosqlite.Connection) -> None:
-            await conn.execute("INSERT INTO deque (item) VALUES (?)", (item,))
-            self._length += 1
-            if self.maxlen is not None and self._length > self.maxlen:
-                to_delete = self._length - self.maxlen
-                await conn.execute(
-                    "DELETE FROM deque WHERE id IN (SELECT id FROM deque ORDER BY id ASC LIMIT ?)",
-                    (to_delete,),
-                )
-                self._length = self.maxlen
-
-        await self._execute(_append_impl)
+        if self.is_mem:
+            self._mem.append(item)
+            return
+        if not self.env:
+            return
+        with self.env.begin(write=True, db=self.db) as txn:
+            txn.put(_U64.pack(self._tail), item)
+            self._tail += 1
+            if self.maxlen is not None and len(self) > self.maxlen:
+                txn.delete(_U64.pack(self._head))
+                self._head += 1
 
     async def popleft(self) -> bytes:
-        async def _popleft_impl(conn: aiosqlite.Connection) -> bytes:
-            async with conn.execute("SELECT id, item FROM deque ORDER BY id ASC LIMIT 1") as cursor:
-                row = await cursor.fetchone()
-                if row is None:
-                    raise IndexError("popleft from empty deque")
-                row_id, item = row[0], row[1]
-                await conn.execute("DELETE FROM deque WHERE id = ?", (row_id,))
-                self._length = max(0, self._length - 1)
-                return item
-
-        return await self._execute(_popleft_impl)
-
-    async def length(self) -> int:
-        return self._length
+        if self.is_mem:
+            if not self._mem:
+                raise IndexError("popleft from empty deque")
+            return self._mem.popleft()
+        if not self.env or len(self) == 0:
+            raise IndexError("popleft from empty deque")
+        with self.env.begin(write=True, db=self.db) as txn:
+            key = _U64.pack(self._head)
+            val = txn.get(key)
+            if val is None:
+                raise IndexError("popleft from empty deque")
+            txn.delete(key)
+            self._head += 1
+            return val
 
     async def peek(self) -> bytes:
-        async def _peek_impl(conn: aiosqlite.Connection) -> bytes:
-            async with conn.execute("SELECT item FROM deque ORDER BY id ASC LIMIT 1") as cursor:
-                row = await cursor.fetchone()
-                if row is None:
-                    raise IndexError("peek from empty deque")
-                return row[0]
+        if self.is_mem:
+            if not self._mem:
+                raise IndexError("peek from empty deque")
+            return self._mem[0]
+        if not self.env or len(self) == 0:
+            raise IndexError("peek from empty deque")
+        with self.env.begin(db=self.db) as txn:
+            val = txn.get(_U64.pack(self._head))
+            if val is None:
+                raise IndexError("peek from empty deque")
+            return val
 
-        return await self._execute(_peek_impl)
+    async def length(self) -> int:
+        return len(self)
 
     async def clear(self) -> None:
-        await self._recreate_db()
+        if self.is_mem:
+            self._mem.clear()
+        else:
+            self._open_env()
 
     async def vacuum(self) -> None:
-        """Coerce database defragmentation (VACUUM) to release space."""
-
-        async def _vacuum_impl(conn: aiosqlite.Connection) -> None:
-            await conn.execute("VACUUM;")
-
-        await self._execute(_vacuum_impl)
+        pass
 
     async def close(self) -> None:
-        """Close storage resources."""
-        return None
+        if self.env:
+            self.env.close()
+            self.env = None
 
 
-class SqliteCache:
-    """SIL-2 persistent key-value cache implementation over aiosqlite."""
+class LmdbCache:
+    """SIL-2 persistent key-value cache implementation backed by LMDB."""
 
     def __init__(self, path: str) -> None:
         self.path = path
-        Path(self.path).parent.mkdir(parents=True, exist_ok=True)
+        self.is_mem = path.startswith(":memory:")
+        self._mem: dict[str, bytes] = {}
+        self.env: lmdb.Environment | None = None
+        self.db: Any = None
+
+        if not self.is_mem:
+            self._open_env()
+
+    def _open_env(self) -> None:
+        p = Path(self.path)
+        if p.is_dir():
+            env_path = str(p / "cache.db")
+        else:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            env_path = self.path
+
         try:
-            conn = sqlite3.connect(self.path)
+            self.env = lmdb.open(env_path, max_dbs=1, map_size=10485760, readahead=False, meminit=False, subdir=False)
+            self.db = self.env.open_db(b"cache")
+        except (lmdb.Error, OSError) as exc:
+            logger.warning("Failed to initialize LmdbCache schema: %s", exc)
+            self.env = None
+            target = Path(env_path)
+            if target.exists():
+                try:
+                    target.unlink()
+                except OSError as e:
+                    logger.warning("Failed to unlink target path", path=str(target), error=e)
             try:
-                conn.execute("PRAGMA journal_mode=WAL;")
-                conn.execute("PRAGMA synchronous=NORMAL;")
-                conn.execute("CREATE TABLE IF NOT EXISTS cache (key TEXT PRIMARY KEY, value BLOB NOT NULL)")
-                conn.commit()
-            finally:
-                conn.close()
-        except (sqlite3.Error, OSError) as e:
-            logger.warning("Failed to initialize SqliteCache schema", path=self.path, error=e)
-
-    async def _recreate_db(self) -> None:
-        for suffix in ("", "-wal", "-shm"):
-            target_path = Path(self.path + suffix)
-            if target_path.exists():
-                try:
-                    target_path.unlink()
-                except OSError as exc:
-                    logger.warning("Failed to unlink target path", path=str(target_path), error=exc)
-
-    @staticmethod
-    async def _init_cache_db(conn: aiosqlite.Connection) -> None:
-        """Apply WAL pragmas and ensure the cache schema exists."""
-        await conn.execute("PRAGMA journal_mode=WAL;")
-        await conn.execute("PRAGMA synchronous=NORMAL;")
-        await conn.execute("CREATE TABLE IF NOT EXISTS cache (key TEXT PRIMARY KEY, value BLOB NOT NULL)")
-        await conn.commit()
-
-    async def _execute(self, func: Callable[[aiosqlite.Connection], Awaitable[T]]) -> T:
-        conn = None
-        try:
-            conn = await aiosqlite.connect(self.path)
-            await self._init_cache_db(conn)
-            res = await func(conn)
-            await conn.commit()
-            return res
-        except (aiosqlite.Error, OSError) as e:
-            logger.warning("SqliteCache database corrupt or incomplete, recreating: %s", e)
-            await self._recreate_db()
-            if conn is not None:
-                await asyncio.shield(conn.close())
-                conn = None
-            conn = await aiosqlite.connect(self.path)
-            await self._init_cache_db(conn)
-            res = await func(conn)
-            await conn.commit()
-            return res
-        finally:
-            if conn is not None:
-                try:
-                    await asyncio.shield(conn.close())
-                except (aiosqlite.Error, sqlite3.Error, OSError) as exc:
-                    logger.debug("SqliteCache connection close failed", error=exc)
-                underlying = getattr(conn, "_connection", None)
-                if underlying is not None:
-                    try:
-                        underlying.close()
-                    except (sqlite3.Error, OSError) as exc:
-                        logger.debug("SqliteCache underlying connection close failed", error=exc)
+                self.env = lmdb.open(env_path, max_dbs=1, map_size=10485760, readahead=False, meminit=False, subdir=False)
+                self.db = self.env.open_db(b"cache")
+            except (lmdb.Error, OSError) as e:
+                logger.error("Failed to reinitialize LMDB cache: %s", e)
 
     async def set(self, key: str, value: bytes) -> None:
-        async def _setitem_impl(conn: aiosqlite.Connection) -> None:
-            await conn.execute("INSERT OR REPLACE INTO cache (key, value) VALUES (?, ?)", (key, value))
-
-        await self._execute(_setitem_impl)
+        if self.is_mem:
+            self._mem[key] = value
+            return
+        if not self.env:
+            return
+        with self.env.begin(write=True, db=self.db) as txn:
+            txn.put(key.encode("utf-8"), value)
 
     async def get(self, key: str, default: T | None = None) -> bytes | T | None:
-        """Get an item with a default value. [SIL-2] Catching only expected IO errors."""
+        if self.is_mem:
+            return self._mem.get(key, default)
+        if not self.env:
+            return default
         try:
-
-            async def _get_impl(conn: aiosqlite.Connection) -> bytes | T | None:
-                async with conn.execute("SELECT value FROM cache WHERE key = ?", (key,)) as cursor:
-                    row = await cursor.fetchone()
-                return row[0] if row is not None else default
-
-            return await self._execute(_get_impl)
-        except (aiosqlite.Error, OSError) as exc:
+            with self.env.begin(db=self.db) as txn:
+                val = txn.get(key.encode("utf-8"))
+                return val if val is not None else default
+        except (lmdb.Error, OSError) as exc:
             logger.error("SqliteCache get failed", path=self.path, key=key, error=exc)
             return default
 
     async def clear(self) -> None:
-        await self._recreate_db()
+        if self.is_mem:
+            self._mem.clear()
+        else:
+            self._open_env()
 
     async def close(self) -> None:
-        """Close storage resources."""
-        return None
+        if self.env:
+            self.env.close()
+            self.env = None
+
+
+__all__: tuple[str, ...] = ("LmdbDeque", "LmdbCache")

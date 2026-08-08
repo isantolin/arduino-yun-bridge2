@@ -1,17 +1,16 @@
 import pytest
 import tempfile
 import os
-from mcubridge.state.storage import SqliteDeque
+from mcubridge.state.storage import LmdbDeque
 
 
 @pytest.mark.asyncio
 async def test_mailbox_static_queue_overflow() -> None:
-    # Use a real file instead of :memory: because aiosqlite creates a new db per connection for :memory:
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tf:
         path = tf.name
 
     try:
-        q = SqliteDeque(path=path, maxlen=8)
+        q = LmdbDeque(path=path, maxlen=8)
 
         # Fill the queue up to limit (0..7)
         for i in range(8):

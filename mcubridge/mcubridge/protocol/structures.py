@@ -11,6 +11,7 @@ import fnmatch
 import functools
 import itertools
 import re
+import ssl
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from itertools import batched
@@ -25,7 +26,7 @@ from buf.validate.validate_pb2 import Violation as ProtovalidateViolation
 from google.protobuf.message import Message as ProtobufMessage
 
 from . import mcubridge_pb2 as pb
-from mcubridge.config.const import ALLOWED_COMMAND_WILDCARD
+from mcubridge.config.const import ALLOWED_COMMAND_WILDCARD, CLOUD_TLS_MIN_VERSION
 
 
 def iter_chunks(data: bytes, chunk_size: int) -> Iterable[bytes]:
@@ -179,9 +180,6 @@ def get_ssl_context(cfg: pb.RuntimeConfig) -> Any | None:
     """Create an ssl.SSLContext based on cfg. [SIL-2]"""
     if not cfg.cloud_tls:
         return None
-
-    import ssl
-    from mcubridge.config.const import CLOUD_TLS_MIN_VERSION
 
     try:
         if cfg.cloud_cafile:

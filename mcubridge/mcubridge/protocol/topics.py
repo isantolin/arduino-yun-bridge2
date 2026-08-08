@@ -6,10 +6,9 @@ Avoid hardcoding topic strings elsewhere.
 
 from __future__ import annotations
 
-from .protocol import Topic
+from .protocol import COMMAND_TO_TOPIC, MESSAGE_TO_TOPIC, Topic
 from .structures import TopicRoute
 from google.protobuf.message import Message as ProtobufMessage
-
 
 import posixpath
 import functools
@@ -17,15 +16,16 @@ import functools
 
 def topic_path(prefix: str, topic: str | Topic, *segments: str | int) -> str:
     """[SIL-2] Construct topic path using direct join/filter delegation."""
-    # Eradicate manual part.append() loops in favor of a single generator.
-    parts = [str(s).strip("/") for s in (prefix, topic, *segments) if str(s).strip("/")]
+    parts: list[str] = []
+    for s in (prefix, topic, *segments):
+        clean = str(s).strip("/")
+        if clean:
+            parts.append(clean)
     return posixpath.join(*parts) if parts else ""
 
 
 def get_topic_for_message(prefix: str, message: ProtobufMessage | type[ProtobufMessage] | int | str) -> str | None:
     """Resolve the canonical CLOUD topic for a given message instance, class, command ID or enum name. [SIL-2]"""
-    from .protocol import COMMAND_TO_TOPIC, MESSAGE_TO_TOPIC
-
     if isinstance(message, int):
         rel = COMMAND_TO_TOPIC.get(message)
     else:

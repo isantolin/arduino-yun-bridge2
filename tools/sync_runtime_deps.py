@@ -251,9 +251,9 @@ def _fetch_latest_version(package_name: str, *, include_prerelease: bool = False
             if ver_str in ("urls", "digests"):
                 continue
             try:
-                v = parse_version(str(ver_str))
+                v = parse_version(ver_str)
                 if include_prerelease or not v.is_prerelease:
-                    parsed_versions.append((v, str(ver_str)))
+                    parsed_versions.append((v, ver_str))
             except Exception:
                 continue
         if parsed_versions:

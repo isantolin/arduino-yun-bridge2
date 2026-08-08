@@ -5,9 +5,6 @@ This server acts as the primary cloud endpoint for MPU Daemons, running as a gRP
 """
 
 from __future__ import annotations
-from mcubridge.protocol.mcubridge_grpc import CloudBridgeBase
-from mcubridge.protocol import mcubridge_pb2 as pb
-from grpclib.server import Server, Stream
 from typing import Annotated
 import typer
 
@@ -22,6 +19,9 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
     sys.path.insert(0, str(REPO_ROOT / "mcubridge"))
 
+from grpclib.server import Server, Stream
+from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.protocol.mcubridge_grpc import CloudBridgeBase
 
 logging.basicConfig(
     level=logging.INFO,

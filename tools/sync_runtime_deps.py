@@ -3,20 +3,17 @@
 
 from __future__ import annotations
 
+import argparse
 import re
 import sys
-import typer
+import urllib.request
+import urllib.error
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Annotated, Any, TypedDict, cast
+from typing import TypedDict
 
+import json
 import tomllib
-from distlib.locators import PyPIJSONLocator  # type: ignore[import-untyped]
-from graphlib import TopologicalSorter
-from packaging.requirements import Requirement
-from packaging.version import parse as parse_version
-
-app = typer.Typer(help="Generate derived dependency files from the runtime manifest.")
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = ROOT / "requirements" / "runtime.toml"
@@ -50,17 +47,6 @@ class _DepEntry(TypedDict):
     gateway: bool
 
 
-def sort_dependencies_topologically(deps: Sequence[_DepEntry]) -> list[_DepEntry]:
-    """Sorts dependencies in topological order using standard graphlib."""
-    ts: TopologicalSorter[str] = TopologicalSorter()
-    dep_map = {dep["name"]: dep for dep in deps}
-
-    for dep in deps:
-        ts.add(dep["name"])
-
-    return [dep_map[name] for name in ts.static_order() if name in dep_map]
-
-
 def load_manifest() -> list[_DepEntry]:
     if not MANIFEST_PATH.exists():
         raise ManifestError(f"Missing manifest: {MANIFEST_PATH}")
@@ -83,7 +69,7 @@ def load_manifest() -> list[_DepEntry]:
                 gateway=bool(entry.get("gateway", False)),
             )
         )
-    return sort_dependencies_topologically(normalized)
+    return normalized
 
 
 def collect_pip_specs(deps: Sequence[_DepEntry]) -> list[str]:
@@ -132,6 +118,7 @@ def update_pyproject(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> boo
     if not PYPROJECT_PATH.exists():
         return False
 
+    # Collect only runtime dependencies for project.dependencies
     runtime_pip_specs = sorted(
         [
             dep["pip"]
@@ -141,17 +128,33 @@ def update_pyproject(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> boo
     )
 
     content = PYPROJECT_PATH.read_text(encoding="utf-8")
-    formatted_deps = "dependencies = [\n" + "\n".join(f'    "{spec}",' for spec in runtime_pip_specs) + "\n]"
-    start_marker = "dependencies = ["
-    if start_marker in content:
-        start_idx = content.index(start_marker)
-        end_idx = content.find("]", start_idx)
-        if end_idx != -1:
-            new_content = content[:start_idx] + formatted_deps + content[end_idx + 1 :]
-        else:
-            new_content = content
-    else:
-        new_content = content
+
+    # Robust replacement of dependencies block
+    lines = content.splitlines()
+    new_lines: list[str] = []
+    in_dependencies = False
+    replaced = False
+
+    for line in lines:
+        if not replaced and line.strip() == "dependencies = [":
+            in_dependencies = True
+            new_lines.append(line)
+            for spec in runtime_pip_specs:
+                new_lines.append(f'    "{spec}",')
+            # Remove trailing comma from last dependency for strictly valid TOML if preferred,
+            # though most parsers handle it. Ruff likes it.
+            replaced = True
+            continue
+
+        if in_dependencies:
+            if line.strip() == "]":
+                in_dependencies = False
+                new_lines.append(line)
+            continue
+
+        new_lines.append(line)
+
+    new_content = "\n".join(new_lines) + "\n"
 
     if new_content == content:
         return False
@@ -169,17 +172,6 @@ def format_openwrt_lines(tokens: Sequence[str]) -> list[str]:
     return lines
 
 
-def _replace_block(text: str, start_marker: str, end_marker: str, replacement: str) -> str:
-    start_pos = text.find(start_marker)
-    end_pos = text.find(end_marker)
-    if start_pos == -1 or end_pos == -1 or end_pos < start_pos:
-        return text
-    start_cut = start_pos + len(start_marker)
-    if text[start_cut : start_cut + 1] == "\n":
-        start_cut += 1
-    return text[:start_cut] + replacement + "\n" + text[end_pos:]
-
-
 def update_makefile(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
     makefile_text = MAKEFILE_PATH.read_text(encoding="utf-8")
     if BLOCK_START not in makefile_text or BLOCK_END not in makefile_text:
@@ -191,7 +183,21 @@ def update_makefile(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool
     else:
         block_lines = ["\tDEPENDS+="]
     rendered_block = "\n".join(block_lines)
-    updated = _replace_block(makefile_text, BLOCK_START, BLOCK_END, rendered_block)
+    new_text: list[str] = []
+    in_block = False
+    for line in makefile_text.splitlines():
+        if BLOCK_START in line:
+            in_block = True
+            new_text.append(line)
+            new_text.append(rendered_block)
+            continue
+        if BLOCK_END in line:
+            in_block = False
+            new_text.append(line)
+            continue
+        if not in_block:
+            new_text.append(line)
+    updated = "\n".join(new_text) + "\n"
     if updated == makefile_text:
         return False
     if not dry_run:
@@ -213,7 +219,21 @@ def update_gateway_makefile(deps: Sequence[_DepEntry], *, dry_run: bool = False)
     else:
         block_lines = ["\tDEPENDS+="]
     rendered_block = "\n".join(block_lines)
-    updated = _replace_block(makefile_text, BLOCK_START, BLOCK_END, rendered_block)
+    new_text: list[str] = []
+    in_block = False
+    for line in makefile_text.splitlines():
+        if BLOCK_START in line:
+            in_block = True
+            new_text.append(line)
+            new_text.append(rendered_block)
+            continue
+        if BLOCK_END in line:
+            in_block = False
+            new_text.append(line)
+            continue
+        if not in_block:
+            new_text.append(line)
+    updated = "\n".join(new_text) + "\n"
     if updated == makefile_text:
         return False
     if not dry_run:
@@ -222,52 +242,32 @@ def update_gateway_makefile(deps: Sequence[_DepEntry], *, dry_run: bool = False)
 
 
 def _parse_pip_spec(spec: str) -> tuple[str, str]:
-    """Extract (package_name, pinned_version) from a pip spec using packaging library."""
-    if not spec:
-        return "", ""
-    try:
-        req = Requirement(spec)
-        version = ""
-        for specifier in req.specifier:
-            if specifier.operator == "==":
-                version = specifier.version
-                break
-        return req.name, version
-    except Exception:
-        if "==" in spec:
-            name_part, ver = spec.split("==", 1)
-            return name_part.split("[")[0].strip(), ver.strip()
-        return spec.split("[")[0].strip(), ""
+    """Extract (package_name, pinned_version) from a pip spec like 'foo==1.2.3'."""
+    if "==" not in spec:
+        return spec, ""
+    # Handle extras: 'typer[all]==0.24.1' -> 'typer', '0.24.1'
+    name_part, version = spec.split("==", 1)
+    name = name_part.split("[")[0].strip()
+    return name, version.strip()
 
 
 def _fetch_latest_version(package_name: str, *, include_prerelease: bool = False) -> str | None:
-    """Fetch latest package version from PyPI using distlib PyPIJSONLocator and packaging.version sorting."""
+    """Query PyPI JSON API for the latest release version."""
+    url = f"https://pypi.org/pypi/{package_name}/json"
     try:
-        locator: Any = cast(Any, PyPIJSONLocator)("https://pypi.org/pypi")
-        project_data: dict[str, Any] = cast(dict[str, Any], locator.get_project(package_name))
-        if not project_data:
-            return None
-        parsed_versions: list[tuple[Any, str]] = []
-        keys_list: list[str] = list(project_data.keys())
-        for ver_str in keys_list:
-            if ver_str in ("urls", "digests"):
-                continue
-            try:
-                v = parse_version(ver_str)
-                if include_prerelease or not v.is_prerelease:
-                    parsed_versions.append((v, ver_str))
-            except Exception:
-                continue
-        if parsed_versions:
-            parsed_versions.sort(key=lambda item: item[0])
-            return parsed_versions[-1][1]
-        return None
-    except Exception:
+        with urllib.request.urlopen(url, timeout=10) as resp:
+            data = json.loads(resp.read())
+            if include_prerelease and "releases" in data:
+                all_versions = list(data["releases"].keys())
+                if all_versions:
+                    return all_versions[-1]
+            return data["info"]["version"]
+    except (urllib.error.URLError, ValueError, KeyError, json.JSONDecodeError):
         return None
 
 
 def check_latest_versions(deps: Sequence[_DepEntry]) -> list[tuple[str, str, str]]:
-    """Return list of (package, pinned, latest) for outdated packages using packaging.version comparison."""
+    """Return list of (package, pinned, latest) for outdated packages."""
     outdated: list[tuple[str, str, str]] = []
     pip_specs = [(dep["pip"], dep["check_latest"]) for dep in deps if dep.get("pip")]
     for spec, should_check_latest in pip_specs:
@@ -276,39 +276,24 @@ def check_latest_versions(deps: Sequence[_DepEntry]) -> list[tuple[str, str, str
         name, pinned = _parse_pip_spec(spec)
         if not pinned:
             continue
-        try:
-            pinned_v = parse_version(pinned)
-            is_prerelease = pinned_v.is_prerelease
-        except Exception:
-            is_prerelease = False
-            pinned_v = None
-
-        latest_str = _fetch_latest_version(name, include_prerelease=is_prerelease)
-        if latest_str:
-            try:
-                latest_v = parse_version(latest_str)
-                if pinned_v and latest_v > pinned_v:
-                    outdated.append((name, pinned, latest_str))
-            except Exception:
-                if latest_str != pinned:
-                    outdated.append((name, pinned, latest_str))
+        is_prerelease = any(tag in pinned for tag in ("rc", "a", "b", "dev"))
+        latest = _fetch_latest_version(name, include_prerelease=is_prerelease)
+        if latest and latest != pinned:
+            outdated.append((name, pinned, latest))
     return outdated
 
 
 def _to_apk_version(version: str) -> str:
-    """Convert Python pre-release notation to APK (Alpine) version notation using packaging.version."""
-    try:
-        v = parse_version(version)
-        base = f"{v.major}.{v.minor}.{v.micro}"
-        if v.pre:
-            phase, num = v.pre
-            phase_map = {"a": "_alpha", "b": "_beta", "rc": "_rc"}
-            base += f"{phase_map.get(phase, f'_{phase}')}{num}"
-        if v.dev is not None:
-            base += f"_pre{v.dev}"
-        return base
-    except Exception:
-        return version
+    """Convert Python pre-release notation to APK (Alpine) version notation.
+
+    Required for Makefiles that do NOT include pypi.mk and package directly
+    via apk mkpkg, which enforces Alpine versioning (_alpha/_beta/_rc/_pre).
+    """
+    version = re.sub(r"(\d)a(\d+)$", r"\1_alpha\2", version)
+    version = re.sub(r"(\d)b(\d+)$", r"\1_beta\2", version)
+    version = re.sub(r"(\d)rc(\d+)$", r"\1_rc\2", version)
+    version = re.sub(r"\.dev(\d+)$", r"_pre\1", version)
+    return version
 
 
 def update_feeds(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
@@ -429,19 +414,37 @@ def update_feeds(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
     return any_updated
 
 
-@app.command()
-def main(
-    check: Annotated[
-        bool, typer.Option("--check", help="Exit with status 1 if running would change any files")
-    ] = False,
-    check_latest: Annotated[
-        bool, typer.Option("--check-latest", help="Query PyPI and warn about outdated pinned versions")
-    ] = False,
-    print_openwrt: Annotated[
-        bool, typer.Option("--print-openwrt", help="Print OpenWrt package names and exit")
-    ] = False,
-    print_pip: Annotated[bool, typer.Option("--print-pip", help="Print pip requirement specifiers and exit")] = False,
-) -> None:
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description="Generate derived dependency files from the runtime manifest.")
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        default=False,
+        help="Exit with status 1 if running would change any files",
+    )
+    parser.add_argument(
+        "--check-latest",
+        action="store_true",
+        default=False,
+        help="Query PyPI and warn about outdated pinned versions",
+    )
+    parser.add_argument(
+        "--print-openwrt",
+        action="store_true",
+        default=False,
+        help="Print OpenWrt package names and exit",
+    )
+    parser.add_argument(
+        "--print-pip",
+        action="store_true",
+        default=False,
+        help="Print pip requirement specifiers and exit",
+    )
+    args = parser.parse_args(argv)
+    check: bool = args.check
+    check_latest: bool = args.check_latest
+    print_openwrt: bool = args.print_openwrt
+    print_pip: bool = args.print_pip
     deps = load_manifest()
     if print_openwrt:
         sys.stdout.write("\n".join(collect_openwrt_packages(deps)) + "\n")
@@ -483,4 +486,4 @@ def main(
 
 
 if __name__ == "__main__":
-    app()
+    main()

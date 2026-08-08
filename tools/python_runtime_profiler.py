@@ -3,14 +3,12 @@
 
 from __future__ import annotations
 
-import sys
+import argparse
 import time
+import os
+import sys
 import tracemalloc
-import typer
 from pathlib import Path
-from typing import Annotated
-
-app = typer.Typer(help="Profiling tool for the MCU Bridge Python architecture (SIL-2).")
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "mcubridge"))
@@ -68,13 +66,14 @@ def get_module_size(mod_name: str) -> int:
 
         spec = importlib.util.find_spec(mod_name)
         if spec and spec.origin:
-            return Path(spec.origin).stat().st_size
+            return os.path.getsize(spec.origin)
     except OSError:
         pass
     return 0
 
 
 def generate_report(github_step_summary: Path | None = None) -> None:
+
     import_stats = measure_imports()
     mem_rss = measure_runtime_memory()
     object_symbols = measure_object_symbols()
@@ -132,14 +131,8 @@ def generate_report(github_step_summary: Path | None = None) -> None:
             f.write("\n" + report + "\n")
 
 
-@app.command()
-def main(
-    github_step_summary: Annotated[
-        Path | None, typer.Option("--github-step-summary", help="Path to GitHub step summary file")
-    ] = None,
-) -> None:
-    generate_report(github_step_summary)
-
-
 if __name__ == "__main__":
-    app()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--github-step-summary", type=Path, default=None)
+    args = parser.parse_args()
+    generate_report(args.github_step_summary)

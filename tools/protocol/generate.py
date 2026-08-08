@@ -18,11 +18,10 @@ import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Annotated, Any, cast
-import typer
-from jinja2 import Environment, FileSystemLoader  # type: ignore[import-untyped]
+from typing import Any
 
-app = typer.Typer(help="Protocol binding generator for MCU Bridge v2.")
+import argparse
+from jinja2 import Environment, FileSystemLoader
 
 # ═════════════════════════════════════════════════════════════════════════════
 # DEPENDENCY VALIDATION (CRITICAL)
@@ -313,8 +312,8 @@ VERSION_PATH = REPO_ROOT / "VERSION"
 
 class JinjaGenerator:
     def __init__(self) -> None:
-        self.env: Any = cast(Any, Environment)(
-            loader=cast(Any, FileSystemLoader)(str(TEMPLATE_DIR)),
+        self.env = Environment(
+            loader=FileSystemLoader(str(TEMPLATE_DIR)),
             keep_trailing_newline=True,
         )
         self.env.filters["cpp_digits"] = self._cpp_digit_separator
@@ -858,7 +857,7 @@ def ensure_protovalidate_proto_files() -> None:
     target.write_bytes(data)
 
 
-def check_incremental_build(args: Any, version: str) -> tuple[bool, Path, str]:
+def check_incremental_build(args: argparse.Namespace, version: str) -> tuple[bool, Path, str]:
     proto_path = args.spec.resolve()
     h = hashlib.sha256()
     h.update(proto_path.read_bytes())
@@ -973,35 +972,17 @@ def _copy_generated_python_files(proto_path: Path, args: Any) -> None:
         py_grpc.unlink(missing_ok=True)
 
 
-@app.command()
-def main(
-    spec: Annotated[Path, typer.Option("--spec", help="Protocol specification file (.proto)")] = Path(
-        "tools/protocol/mcubridge.proto"
-    ),
-    cpp: Annotated[Path | None, typer.Option("--cpp", help="C++ header output")] = None,
-    cpp_structs: Annotated[Path | None, typer.Option("--cpp-structs", help="C++ structs output")] = None,
-    py: Annotated[Path | None, typer.Option("--py", help="Python output")] = None,
-    py_client: Annotated[Path | None, typer.Option("--py-client", help="Python client output")] = None,
-) -> None:
+def main() -> None:
     ensure_nanopb_core_files()
     ensure_protovalidate_proto_files()
+    parser = argparse.ArgumentParser(description="Protocol binding generator for MCU Bridge v2.")
+    parser.add_argument("--spec", type=Path, required=True, help="Protocol specification file (.proto)")
+    parser.add_argument("--cpp", type=Path, default=None, help="C++ header output")
+    parser.add_argument("--cpp-structs", type=Path, default=None, help="C++ structs output")
+    parser.add_argument("--py", type=Path, default=None, help="Python output")
+    parser.add_argument("--py-client", type=Path, default=None, help="Python client output")
 
-    class ArgsObj:
-        def __init__(
-            self,
-            spec_val: Path,
-            cpp_val: Path | None,
-            cpp_structs_val: Path | None,
-            py_val: Path | None,
-            py_client_val: Path | None,
-        ) -> None:
-            self.spec = spec_val
-            self.cpp = cpp_val
-            self.cpp_structs = cpp_structs_val
-            self.py = py_val
-            self.py_client = py_client_val
-
-    args = ArgsObj(spec, cpp, cpp_structs, py, py_client)
+    args = parser.parse_args()
     gen = JinjaGenerator()
     version = VERSION_PATH.read_text(encoding="utf-8").strip() if VERSION_PATH.exists() else "0.0.0"
     if version == "0.0.0":
@@ -1027,7 +1008,7 @@ def main(
         gen.generate_nanopb(proto_path)
 
     # Now load the compiled descriptor
-    spec_data = load_spec_from_proto(proto_path)
+    spec = load_spec_from_proto(proto_path)
 
     # Move generated files to target locations
     if proto_path.exists():
@@ -1054,28 +1035,28 @@ def main(
 
     if args.cpp:
         args.cpp.parent.mkdir(parents=True, exist_ok=True)
-        gen.generate_cpp_header(spec_data, args.cpp, version)
+        gen.generate_cpp_header(spec, args.cpp, version)
         sys.stderr.write(f"Generated {args.cpp}\n")
 
         # Generate hardware config next to the main header
         hw_config_path = args.cpp.parent / "rpc_hw_config.h"
-        gen.generate_cpp_hw_config(spec_data, hw_config_path)
+        gen.generate_cpp_hw_config(spec, hw_config_path)
         sys.stderr.write(f"Generated {hw_config_path}\n")
 
     if args.cpp_structs:
         args.cpp_structs.parent.mkdir(parents=True, exist_ok=True)
-        gen.generate_cpp_structs(spec_data, args.cpp_structs)
+        gen.generate_cpp_structs(spec, args.cpp_structs)
         sys.stderr.write(f"Generated {args.cpp_structs}\n")
 
     if args.py:
         args.py.parent.mkdir(parents=True, exist_ok=True)
-        gen.generate_python(spec_data, args.py)
+        gen.generate_python(spec, args.py)
         _format_python_file(args.py)
         sys.stderr.write(f"Generated {args.py}\n")
 
     if args.py_client:
         args.py_client.parent.mkdir(parents=True, exist_ok=True)
-        gen.generate_python_client(spec_data, args.py_client)
+        gen.generate_python_client(spec, args.py_client)
         _format_python_file(args.py_client)
         sys.stderr.write(f"Generated {args.py_client}\n")
 

@@ -4,7 +4,6 @@
 #undef min
 #undef max
 #include <etl/delegate.h>
-#include <etl/optional.h>
 #include <etl/span.h>
 #include <etl/string_view.h>
 

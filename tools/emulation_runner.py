@@ -30,12 +30,9 @@ except ModuleNotFoundError as exc:
     sys.path.insert(0, str(repo_root))
     from mcubridge.protocol import protocol
 
+import argparse
 import json
 import tempfile
-import typer
-from typing import Annotated
-
-app = typer.Typer(help="Hardware Emulation Runner")
 
 # --- Constants ---
 SOCAT_PORT0 = "/tmp/ttyBRIDGE0"
@@ -300,18 +297,20 @@ def run_emulation(
         logger.info("Emulation SUCCESS.")
 
 
-@app.command()
-def main(
-    firmware: Annotated[Path, typer.Option("--firmware", help="Path to MCU firmware binary")],
-    package_root: Annotated[Path, typer.Option("--package-root", help="Root of mcubridge package")] = Path("."),
-    run_scripts: Annotated[list[str] | None, typer.Argument(help="Client scripts to run")] = None,
-) -> None:
-    run_emulation(
-        firmware_path=firmware,
-        package_root=package_root,
-        run_scripts=run_scripts or [],
-    )
-
-
 if __name__ == "__main__":
-    app()
+    parser = argparse.ArgumentParser(description="Hardware Emulation Runner")
+    parser.add_argument("--firmware", type=Path, required=True, help="Path to MCU firmware binary")
+    parser.add_argument(
+        "--package-root",
+        type=Path,
+        default=Path("."),
+        help="Root of mcubridge package",
+    )
+    parser.add_argument("run_scripts", nargs="*", help="Client scripts to run")
+    args = parser.parse_args()
+
+    run_emulation(
+        firmware_path=args.firmware,
+        package_root=args.package_root,
+        run_scripts=args.run_scripts,
+    )

@@ -3,16 +3,14 @@
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import logging
-import typer
-from typing import Annotated
 
 from mcubridge_client import Topic, pb
 from mcubridge_client.cli import bridge_session, configure_logging
 
 configure_logging()
-app = typer.Typer(help="Test file I/O using direct LocalBridgeStub.")
 
 
 async def run_test(
@@ -65,13 +63,16 @@ async def run_test(
     logging.info("Done.")
 
 
-@app.command()
 def main(
-    socket_path: Annotated[str | None, typer.Option("--socket-path", help="UNIX Domain Socket Path")] = None,
-    topic_prefix: Annotated[str, typer.Option("--topic-prefix", help="Topic prefix")] = "br",
+    socket_path: str | None = None,
+    topic_prefix: str = "br",
 ) -> None:
     asyncio.run(run_test(socket_path, topic_prefix))
 
 
 if __name__ == "__main__":
-    app()
+    parser = argparse.ArgumentParser(description="Test file I/O using direct LocalBridgeStub.")
+    parser.add_argument("--socket-path", default=None, help="UNIX Domain Socket Path")
+    parser.add_argument("--topic-prefix", default="br", help="Topic prefix")
+    _args = parser.parse_args()
+    main(_args.socket_path, _args.topic_prefix)

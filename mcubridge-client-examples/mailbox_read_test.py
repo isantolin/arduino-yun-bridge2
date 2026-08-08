@@ -3,16 +3,14 @@
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import logging
-import typer
-from typing import Annotated
 
 from mcubridge_client import Topic, pb
 from mcubridge_client.cli import bridge_session, configure_logging
 
 configure_logging()
-app = typer.Typer(help="Send a mailbox message and read back responses using direct LocalBridgeStub.")
 logger = logging.getLogger(__name__)
 
 
@@ -72,14 +70,29 @@ async def run_test(
     logger.info("Done.")
 
 
-@app.command()
 def main(
-    socket_path: Annotated[str | None, typer.Option("--socket-path", help="UNIX Domain Socket Path")] = None,
-    topic_prefix: Annotated[str, typer.Option("--topic-prefix", help="Topic prefix")] = "br",
-    max_polls: Annotated[int, typer.Option("--max-polls", help="Maximum number of polls for mailbox messages.")] = 1,
+    socket_path: str | None = None,
+    topic_prefix: str = "br",
+    max_polls: int = 1,
 ) -> None:
     asyncio.run(run_test(socket_path, topic_prefix, max_polls))
 
 
 if __name__ == "__main__":
-    app()
+    parser = argparse.ArgumentParser(
+        description="Send a mailbox message and read back responses using direct LocalBridgeStub."
+    )
+    parser.add_argument("--socket-path", default=None, help="UNIX Domain Socket Path")
+    parser.add_argument("--topic-prefix", default="br", help="Topic prefix")
+    parser.add_argument(
+        "--max-polls",
+        type=int,
+        default=1,
+        help="Max read attempts (0=infinite)",
+    )
+    _args = parser.parse_args()
+    main(
+        _args.socket_path,
+        _args.topic_prefix,
+        _args.max_polls,
+    )

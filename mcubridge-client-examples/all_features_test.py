@@ -3,17 +3,15 @@
 
 from __future__ import annotations
 
+import argparse
 import asyncio
 import logging
 import uuid
-import typer
-from typing import Annotated
 
 from mcubridge_client import Topic, pb
-from mcubridge_client.cli import bridge_session, configure_logging
+from mcubridge_client.cli import bridge_session
 
-configure_logging()
-app = typer.Typer(help="Unified e2e feature test using direct LocalBridgeStub.")
+logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger("all-features-test")
 
 
@@ -64,13 +62,13 @@ async def run_test(socket_path: str | None, topic_prefix: str) -> None:
     logger.info("--- ALL-FEATURES TEST SUCCEEDED ---")
 
 
-@app.command()
-def main(
-    socket_path: Annotated[str | None, typer.Option("--socket-path", help="UNIX Domain Socket Path")] = None,
-    topic_prefix: Annotated[str, typer.Option("--topic-prefix", help="Topic prefix")] = "br",
-) -> None:
+def main(socket_path: str | None = None, topic_prefix: str = "br") -> None:
     asyncio.run(run_test(socket_path, topic_prefix))
 
 
 if __name__ == "__main__":
-    app()
+    parser = argparse.ArgumentParser(description="Unified e2e feature test using direct LocalBridgeStub.")
+    parser.add_argument("--socket-path", default=None, help="UNIX Domain Socket Path")
+    parser.add_argument("--topic-prefix", default="br", help="Topic prefix")
+    args = parser.parse_args()
+    main(args.socket_path, args.topic_prefix)

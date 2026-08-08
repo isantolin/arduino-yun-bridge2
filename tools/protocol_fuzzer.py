@@ -3,26 +3,24 @@
 [MIL-SPEC/SIL-2] McuBridge Protocol Fuzzer
 Mission: Stress test the MCU state machine by injecting protocol-level entropy.
 """
-from mcubridge.protocol import mcubridge_pb2 as pb
-from mcubridge.protocol.frame import build_frame
-from mcubridge.protocol import protocol
 
 import asyncio
 import random
-import typer
+import argparse
 from binascii import crc32
 from cobs import cobs
 import serialx
-import structlog  # type: ignore[import-untyped]
-from typing import Annotated, Any, Final, cast
-
-app = typer.Typer(help="[MIL-SPEC/SIL-2] McuBridge Protocol Fuzzer")
+import structlog
+from typing import Final
+from mcubridge.protocol import protocol
+from mcubridge.protocol.frame import build_frame
+from mcubridge.protocol import mcubridge_pb2 as pb
 
 # Constants from protocol spec
 PROTOCOL_VERSION: Final[int] = protocol.PROTOCOL_VERSION
 FRAME_DELIMITER: Final[bytes] = protocol.FRAME_DELIMITER
 
-logger: Any = cast(Any, structlog).get_logger("fuzzer")
+logger = structlog.get_logger("fuzzer")
 
 
 class ProtocolFuzzer:
@@ -156,18 +154,15 @@ class ProtocolFuzzer:
             logger.info("fuzzing_complete", iterations=iterations)
 
 
-@app.command()
-def main(
-    port: Annotated[str, typer.Option("--port", help="Serial port URL")] = "/dev/ttyUSB0",
-    baud: Annotated[int, typer.Option("--baud", help="Serial baudrate")] = protocol.DEFAULT_BAUDRATE,
-    count: Annotated[int, typer.Option("--count", help="Number of fuzzing iterations")] = 1000,
-) -> None:
-    fuzzer = ProtocolFuzzer(port, baud)
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--port", default="/dev/ttyUSB0")
+    parser.add_argument("--baud", type=int, default=protocol.DEFAULT_BAUDRATE)
+    parser.add_argument("--count", type=int, default=1000)
+    args = parser.parse_args()
+
+    fuzzer = ProtocolFuzzer(args.port, args.baud)
     try:
-        asyncio.run(fuzzer.run(count))
+        asyncio.run(fuzzer.run(args.count))
     except KeyboardInterrupt:
         pass
-
-
-if __name__ == "__main__":
-    app()

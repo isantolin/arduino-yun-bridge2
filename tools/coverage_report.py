@@ -3,18 +3,16 @@
 
 from __future__ import annotations
 
+import argparse
 import sys
-import typer
 import xml.etree.ElementTree
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Any, cast
+from typing import Any, cast
 
 import json
-import rich.console  # type: ignore[import-untyped]
-from rich.table import Table  # type: ignore[import-untyped]
-
-app = typer.Typer(help="Aggregate Python and Arduino coverage results into a single summary.")
+import rich.console
+from rich.table import Table
 
 
 @dataclass
@@ -175,8 +173,8 @@ def _build_combined_metrics(
 
 
 def _render_rich_table(rows: list[CoverageMetrics]) -> None:
-    console: Any = cast(Any, rich).console.Console()
-    table: Any = cast(Any, Table)(title="MCU Bridge Coverage Summary")
+    console = rich.console.Console()
+    table = Table(title="MCU Bridge Coverage Summary")
 
     table.add_column("Suite", style="cyan")
     table.add_column("Lines (hit/total)", justify="right")
@@ -232,24 +230,44 @@ def _append_optional(path: str | None, content: str) -> None:
             handle.write("\n")
 
 
-@app.command()
-def main(
-    python_xml: Annotated[Path, typer.Option("--python-xml", help="Path to Python coverage.xml.")] = Path(
-        "coverage/python/coverage.xml"
-    ),
-    arduino_summary: Annotated[
-        Path, typer.Option("--arduino-summary", help="Path to Arduino gcovr summary JSON.")
-    ] = Path("coverage/arduino/summary.json"),
-    output_markdown: Annotated[
-        Path | None, typer.Option("--output-markdown", help="Write the table to the given markdown file.")
-    ] = None,
-    output_json: Annotated[
-        Path | None, typer.Option("--output-json", help="Write machine-readable metrics to this path.")
-    ] = None,
-    github_step_summary: Annotated[
-        Path | None, typer.Option("--github-step-summary", help="Append the table to GitHub step summary output.")
-    ] = None,
-) -> None:
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description="Aggregate Python and Arduino coverage results into a single summary.")
+    parser.add_argument(
+        "--python-xml",
+        type=Path,
+        default=Path("coverage/python/coverage.xml"),
+        help="Path to Python Cobertura coverage XML.",
+    )
+    parser.add_argument(
+        "--arduino-summary",
+        type=Path,
+        default=Path("coverage/arduino/summary.json"),
+        help="Path to Arduino gcovr summary JSON.",
+    )
+    parser.add_argument(
+        "--output-markdown",
+        type=Path,
+        default=None,
+        help="Write the table to the given markdown file.",
+    )
+    parser.add_argument(
+        "--output-json",
+        type=Path,
+        default=None,
+        help="Write machine-readable metrics to this path.",
+    )
+    parser.add_argument(
+        "--github-step-summary",
+        type=Path,
+        default=None,
+        help="Append the table to GitHub step summary output.",
+    )
+    args = parser.parse_args(argv)
+    python_xml: Path = args.python_xml
+    arduino_summary: Path = args.arduino_summary
+    output_markdown: Path | None = args.output_markdown
+    output_json: Path | None = args.output_json
+    github_step_summary: Path | None = args.github_step_summary
     python_metrics = _read_python_metrics(python_xml)
     arduino_metrics = _read_arduino_metrics(arduino_summary)
 
@@ -293,4 +311,4 @@ def main(
 
 
 if __name__ == "__main__":
-    app()
+    main()

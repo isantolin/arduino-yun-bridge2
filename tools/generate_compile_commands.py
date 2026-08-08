@@ -1,13 +1,8 @@
 #!/usr/bin/env python3
-"""Generate compile_commands.json for C++ tooling and LSP server configuration."""
-
-from __future__ import annotations
-
+import os
 import json
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-root_str = str(ROOT)
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 cmd_str = (
     "/usr/bin/g++ -std=c++17 -O2 -g -Wall -Wextra -Werror "
@@ -29,16 +24,18 @@ cmd_str = (
 
 commands = [
     {
-        "directory": root_str,
+        "directory": ROOT,
         "command": cmd_str,
-        "file": str(ROOT / "mcubridge-library-arduino" / "src" / "Bridge.cpp"),
+        "file": os.path.join(ROOT, "mcubridge-library-arduino/src/Bridge.cpp"),
     },
     {
-        "directory": root_str,
+        "directory": ROOT,
         "command": cmd_str,
-        "file": str(ROOT / "mcubridge-library-arduino" / "src" / "Bridge.h"),
+        "file": os.path.join(ROOT, "mcubridge-library-arduino/src/Bridge.h"),
     },
 ]
 
-(ROOT / "compile_commands.json").write_text(json.dumps(commands, indent=2), encoding="utf-8")
+with open(os.path.join(ROOT, "compile_commands.json"), "w") as f:
+    json.dump(commands, f, indent=2)
+
 print("Generated compile_commands.json with root:", ROOT)

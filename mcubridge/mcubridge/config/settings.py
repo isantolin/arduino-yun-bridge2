@@ -161,33 +161,23 @@ def load_runtime_config(overrides: dict[str, Any] | None = None) -> RuntimeConfi
     elif raw_values.get("allowed_commands") is None:
         raw_values["allowed_commands"] = []
 
-    from google.protobuf.json_format import ParseDict
-
-    # Clean up dictionary for ParseDict conversion
-    json_dict: dict[str, Any] = {}
     for field in msg.DESCRIPTOR.fields:
         if field.name in ("allowed_policy", "topic_authorization"):
             continue
+
         val = raw_values.get(field.name)
         if val is None:
             continue
+
         if hasattr(getattr(msg, field.name), "extend"):
             if isinstance(val, (list, tuple)):
-                items = [_coerce_value(i, field, field.name) for i in cast("list[Any]", val) if i is not None]
+                items = [_coerce_value(i, field, field.name) for i in cast("list[Any]", val)]
                 getattr(msg, field.name).extend(items)
             continue
 
         coerced = _coerce_value(val, field, field.name)
         if coerced is not None:
-            json_dict[field.name] = coerced
-
-    if json_dict:
-        try:
-            ParseDict(json_dict, msg, ignore_unknown_fields=True)
-        except Exception:
-            for fname, fval in json_dict.items():
-                if hasattr(msg, fname):
-                    setattr(msg, fname, fval)
+            setattr(msg, field.name, coerced)
 
     # Load topic authorizations dynamically from raw_values/UCI
     for auth_field in msg.topic_authorization.DESCRIPTOR.fields:

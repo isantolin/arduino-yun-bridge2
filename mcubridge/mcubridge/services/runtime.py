@@ -7,6 +7,7 @@ from grpclib.server import Server, Stream
 from mcubridge.protocol.mcubridge_grpc import CloudBridgeStub, LocalBridgeBase
 
 import asyncio
+from contextlib import AsyncExitStack
 import collections
 import functools
 import logging
@@ -1288,10 +1289,11 @@ class BridgeService:
     # --- De-layered Orchestration [SIL-2] ---
 
     async def run(self) -> None:
-        """Main entry point for daemon execution using native TaskGroup orchestration."""
+        """Main entry point for daemon execution using native TaskGroup orchestration and AsyncExitStack."""
         try:
-            async with asyncio.TaskGroup() as tg:
-                self._tg = tg
+            async with AsyncExitStack() as stack:
+                async with asyncio.TaskGroup() as tg:
+                    self._tg = tg
                 # 1. Serial Link (Critical)
                 tg.create_task(
                     self.supervise(

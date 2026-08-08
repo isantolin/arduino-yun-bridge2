@@ -9,6 +9,7 @@ from mcubridge.protocol.mcubridge_grpc import CloudBridgeStub, LocalBridgeBase
 import asyncio
 import collections
 import functools
+import logging
 import os
 import secrets
 import shlex
@@ -190,7 +191,7 @@ class BridgeService:
     async def enqueue_cloud(self, message: pb.CloudQueuedPublish, *, reply_context: Any | None = None) -> None:
         resolved_message = structures.resolve_cloud_context(message, reply_context)
         correlation = resolved_message.correlation_data if resolved_message.HasField("correlation_data") else None
-        if logger.is_enabled_for("debug"):
+        if logger.is_enabled_for(logging.DEBUG):
             logger.debug(
                 "enqueue_cloud debug info",
                 topic=resolved_message.topic_name,

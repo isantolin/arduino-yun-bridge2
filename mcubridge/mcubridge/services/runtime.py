@@ -190,7 +190,7 @@ class BridgeService:
     async def enqueue_cloud(self, message: pb.CloudQueuedPublish, *, reply_context: Any | None = None) -> None:
         resolved_message = structures.resolve_cloud_context(message, reply_context)
         correlation = resolved_message.correlation_data if resolved_message.HasField("correlation_data") else None
-        if logger.is_enabled_for(logging.DEBUG):
+        if logger.is_enabled_for("debug"):
             logger.debug(
                 "enqueue_cloud debug info",
                 topic=resolved_message.topic_name,

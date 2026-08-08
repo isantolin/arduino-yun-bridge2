@@ -130,7 +130,6 @@ def update_pyproject(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> boo
     if not PYPROJECT_PATH.exists():
         return False
 
-    # Collect only runtime dependencies for project.dependencies
     runtime_pip_specs = sorted(
         [
             dep["pip"]
@@ -140,33 +139,8 @@ def update_pyproject(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> boo
     )
 
     content = PYPROJECT_PATH.read_text(encoding="utf-8")
-
-    # Robust replacement of dependencies block
-    lines = content.splitlines()
-    new_lines: list[str] = []
-    in_dependencies = False
-    replaced = False
-
-    for line in lines:
-        if not replaced and line.strip() == "dependencies = [":
-            in_dependencies = True
-            new_lines.append(line)
-            for spec in runtime_pip_specs:
-                new_lines.append(f'    "{spec}",')
-            # Remove trailing comma from last dependency for strictly valid TOML if preferred,
-            # though most parsers handle it. Ruff likes it.
-            replaced = True
-            continue
-
-        if in_dependencies:
-            if line.strip() == "]":
-                in_dependencies = False
-                new_lines.append(line)
-            continue
-
-        new_lines.append(line)
-
-    new_content = "\n".join(new_lines) + "\n"
+    formatted_deps = "dependencies = [\n" + "\n".join(f'    "{spec}",' for spec in runtime_pip_specs)
+    new_content = re.sub(r"dependencies = \[\n.*?\n\]", f"{formatted_deps}\n]", content, flags=re.DOTALL)
 
     if new_content == content:
         return False
@@ -184,6 +158,11 @@ def format_openwrt_lines(tokens: Sequence[str]) -> list[str]:
     return lines
 
 
+def _replace_block(text: str, start_marker: str, end_marker: str, replacement: str) -> str:
+    pattern = re.compile(rf"({re.escape(start_marker)}\n)(.*?)({re.escape(end_marker)})", re.DOTALL)
+    return pattern.sub(rf"\1{replacement}\n\3", text)
+
+
 def update_makefile(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
     makefile_text = MAKEFILE_PATH.read_text(encoding="utf-8")
     if BLOCK_START not in makefile_text or BLOCK_END not in makefile_text:
@@ -195,21 +174,7 @@ def update_makefile(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool
     else:
         block_lines = ["\tDEPENDS+="]
     rendered_block = "\n".join(block_lines)
-    new_text: list[str] = []
-    in_block = False
-    for line in makefile_text.splitlines():
-        if BLOCK_START in line:
-            in_block = True
-            new_text.append(line)
-            new_text.append(rendered_block)
-            continue
-        if BLOCK_END in line:
-            in_block = False
-            new_text.append(line)
-            continue
-        if not in_block:
-            new_text.append(line)
-    updated = "\n".join(new_text) + "\n"
+    updated = _replace_block(makefile_text, BLOCK_START, BLOCK_END, rendered_block)
     if updated == makefile_text:
         return False
     if not dry_run:
@@ -231,21 +196,7 @@ def update_gateway_makefile(deps: Sequence[_DepEntry], *, dry_run: bool = False)
     else:
         block_lines = ["\tDEPENDS+="]
     rendered_block = "\n".join(block_lines)
-    new_text: list[str] = []
-    in_block = False
-    for line in makefile_text.splitlines():
-        if BLOCK_START in line:
-            in_block = True
-            new_text.append(line)
-            new_text.append(rendered_block)
-            continue
-        if BLOCK_END in line:
-            in_block = False
-            new_text.append(line)
-            continue
-        if not in_block:
-            new_text.append(line)
-    updated = "\n".join(new_text) + "\n"
+    updated = _replace_block(makefile_text, BLOCK_START, BLOCK_END, rendered_block)
     if updated == makefile_text:
         return False
     if not dry_run:

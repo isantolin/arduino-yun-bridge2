@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import binascii
 import sys
 import typer
 from collections.abc import Iterable
 from dataclasses import dataclass
+from typing import Annotated
 
 import serialx
 from google.protobuf.message import Message as ProtobufMessage

@@ -4,8 +4,9 @@
 from __future__ import annotations
 
 import asyncio
-import argparse
 import sys
+import typer
+from typing import Annotated
 from grpclib.client import Channel
 from mcubridge.protocol.mcubridge_grpc import LocalBridgeStub
 import structlog
@@ -15,6 +16,7 @@ from mcubridge.protocol.topics import Topic, topic_path
 
 # [SIL-2] Structured logging towards syslog/stderr
 logger = structlog.get_logger("mcubridge.hw-smoke")
+app = typer.Typer(help="Diagnostic smoke test for MCU hardware.")
 
 
 class SmokeTester:
@@ -61,15 +63,14 @@ class SmokeTester:
         asyncio.run(_run())
 
 
-def main() -> None:
+@app.command()
+def main(
+    pin: Annotated[int, typer.Option("--pin", help="Pin to toggle during test")] = 13,
+    timeout: Annotated[float, typer.Option("--timeout", help="Timeout for responses")] = 5.0,
+) -> None:
     """Execute a suite of hardware diagnostic tests via UNIX socket."""
-    parser = argparse.ArgumentParser(description="Diagnostic smoke test for MCU hardware.")
-    parser.add_argument("--pin", type=int, default=13, help="Pin to toggle during test")
-    parser.add_argument("--timeout", type=float, default=5.0, help="Timeout for responses")
-    args = parser.parse_args()
-
     tester = SmokeTester()
-    tester.run(args.pin, args.timeout)
+    tester.run(pin, timeout)
 
     success = all(tester.results.values()) and bool(tester.results)
     if success:
@@ -80,4 +81,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    app()

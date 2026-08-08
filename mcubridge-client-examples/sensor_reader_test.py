@@ -3,14 +3,16 @@
 
 from __future__ import annotations
 
-import argparse
 import asyncio
 import logging
+import typer
+from typing import Annotated
 
 from mcubridge_client import Topic, pb
 from mcubridge_client.cli import bridge_session, configure_logging
 
 configure_logging()
+app = typer.Typer(help="Poll sensor values via direct LocalBridgeStub.")
 
 
 async def run_test(
@@ -66,25 +68,15 @@ async def run_test(
     logging.info("Done.")
 
 
+@app.command()
 def main(
-    socket_path: str | None = None,
-    topic_prefix: str = "br",
-    pin: str = "A0",
-    interval: float = 1.0,
+    socket_path: Annotated[str | None, typer.Option("--socket-path", help="UNIX Domain Socket Path")] = None,
+    topic_prefix: Annotated[str, typer.Option("--topic-prefix", help="Topic prefix")] = "br",
+    pin: Annotated[str, typer.Option("--pin", help="Pin to read (e.g. A0, A1, D13, 13)")] = "A0",
+    interval: Annotated[float, typer.Option("--interval", help="Poll interval in seconds")] = 1.0,
 ) -> None:
     asyncio.run(run_test(socket_path, topic_prefix, pin, interval))
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Poll sensor values via direct LocalBridgeStub.")
-    parser.add_argument("--socket-path", default=None, help="UNIX Domain Socket Path")
-    parser.add_argument("--topic-prefix", default="br", help="Topic prefix")
-    parser.add_argument("--pin", default="A0", help="Pin to read (e.g. A0, A1, D13, 13)")
-    parser.add_argument("--interval", type=float, default=1.0, help="Poll interval in seconds")
-    _args = parser.parse_args()
-    main(
-        _args.socket_path,
-        _args.topic_prefix,
-        _args.pin,
-        _args.interval,
-    )
+    app()

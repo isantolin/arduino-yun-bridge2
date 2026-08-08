@@ -1289,11 +1289,10 @@ class BridgeService:
     # --- De-layered Orchestration [SIL-2] ---
 
     async def run(self) -> None:
-        """Main entry point for daemon execution using native TaskGroup orchestration and AsyncExitStack."""
+        """Main entry point for daemon execution using native TaskGroup orchestration."""
         try:
-            async with AsyncExitStack() as stack:
-                async with asyncio.TaskGroup() as tg:
-                    self._tg = tg
+            async with asyncio.TaskGroup() as tg:
+                self._tg = tg
                 # 1. Serial Link (Critical)
                 tg.create_task(
                     self.supervise(

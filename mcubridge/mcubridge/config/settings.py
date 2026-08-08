@@ -171,15 +171,15 @@ def load_runtime_config(overrides: dict[str, Any] | None = None) -> RuntimeConfi
         val = raw_values.get(field.name)
         if val is None:
             continue
+        if hasattr(getattr(msg, field.name), "extend"):
+            if isinstance(val, (list, tuple)):
+                items = [_coerce_value(i, field, field.name) for i in cast("list[Any]", val) if i is not None]
+                getattr(msg, field.name).extend(items)
+            continue
+
         coerced = _coerce_value(val, field, field.name)
         if coerced is not None:
-            if hasattr(getattr(msg, field.name), "extend"):
-                if isinstance(coerced, (list, tuple)):
-                    getattr(msg, field.name).extend(coerced)
-                elif isinstance(coerced, str):
-                    getattr(msg, field.name).append(coerced)
-            else:
-                json_dict[field.name] = coerced
+            json_dict[field.name] = coerced
 
     if json_dict:
         try:

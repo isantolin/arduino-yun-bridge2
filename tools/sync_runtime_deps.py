@@ -140,8 +140,17 @@ def update_pyproject(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> boo
     )
 
     content = PYPROJECT_PATH.read_text(encoding="utf-8")
-    formatted_deps = "dependencies = [\n" + "\n".join(f'    "{spec}",' for spec in runtime_pip_specs)
-    new_content = re.sub(r"dependencies = \[\n.*?\n\]", f"{formatted_deps}\n]", content, flags=re.DOTALL)
+    formatted_deps = "dependencies = [\n" + "\n".join(f'    "{spec}",' for spec in runtime_pip_specs) + "\n]"
+    start_marker = "dependencies = ["
+    if start_marker in content:
+        start_idx = content.index(start_marker)
+        end_idx = content.find("]", start_idx)
+        if end_idx != -1:
+            new_content = content[:start_idx] + formatted_deps + content[end_idx + 1 :]
+        else:
+            new_content = content
+    else:
+        new_content = content
 
     if new_content == content:
         return False
@@ -285,16 +294,19 @@ def check_latest_versions(deps: Sequence[_DepEntry]) -> list[tuple[str, str, str
 
 
 def _to_apk_version(version: str) -> str:
-    """Convert Python pre-release notation to APK (Alpine) version notation.
-
-    Required for Makefiles that do NOT include pypi.mk and package directly
-    via apk mkpkg, which enforces Alpine versioning (_alpha/_beta/_rc/_pre).
-    """
-    version = re.sub(r"(\d)a(\d+)$", r"\1_alpha\2", version)
-    version = re.sub(r"(\d)b(\d+)$", r"\1_beta\2", version)
-    version = re.sub(r"(\d)rc(\d+)$", r"\1_rc\2", version)
-    version = re.sub(r"\.dev(\d+)$", r"_pre\1", version)
-    return version
+    """Convert Python pre-release notation to APK (Alpine) version notation using packaging.version."""
+    try:
+        v = parse_version(version)
+        base = f"{v.major}.{v.minor}.{v.micro}"
+        if v.pre:
+            phase, num = v.pre
+            phase_map = {"a": "_alpha", "b": "_beta", "rc": "_rc"}
+            base += f"{phase_map.get(phase, f'_{phase}')}{num}"
+        if v.dev is not None:
+            base += f"_pre{v.dev}"
+        return base
+    except Exception:
+        return version
 
 
 def update_feeds(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:

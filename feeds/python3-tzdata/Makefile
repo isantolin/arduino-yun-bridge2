@@ -1,10 +1,12 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=python3-tzdata
-PKG_VERSION:=2026.3
+PKG_VERSION:=2026.3.0
 PKG_RELEASE:=1
 
 PYPI_NAME:=tzdata
+PKG_SOURCE:=tzdata-2026.3.tar.gz
+PYTHON3_PKG_WHEEL_VERSION:=2026.3
 PKG_HASH:=4a1518b8993086a7982523e071643f3c0e5f213e75b21318e78bcabfff9d1415
 
 PKG_MAINTAINER:=Ignacio Santolin <isantolin@gmail.com>
@@ -14,6 +16,7 @@ PKG_LICENSE_FILES:=LICENSE
 # PKG_BUILD_DEPENDS pre-injected into hostpkg
 
 include $(TOPDIR)/feeds/packages/lang/python/pypi.mk
+PKG_BUILD_DIR:=$(BUILD_DIR)/pypi/tzdata-2026.3
 include $(INCLUDE_DIR)/package.mk
 include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
 

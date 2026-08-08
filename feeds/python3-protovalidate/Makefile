@@ -11,7 +11,7 @@ PKG_MAINTAINER:=Ignacio Santolin <isantolin@gmail.com>
 PKG_LICENSE:=Apache-2.0
 PKG_LICENSE_FILES:=LICENSE
 
-PKG_BUILD_DEPENDS:=python3-hatchling/host
+# PKG_BUILD_DEPENDS pre-injected into hostpkg
 
 include $(TOPDIR)/feeds/packages/lang/python/pypi.mk
 include $(INCLUDE_DIR)/package.mk
@@ -23,6 +23,7 @@ define Build/Prepare
 	sed -i 's/"hatch-vcs",//' $(PKG_BUILD_DIR)/pyproject.toml
 	sed -i '/\[tool.hatch.version\]/d' $(PKG_BUILD_DIR)/pyproject.toml
 	sed -i '/source = "vcs"/d' $(PKG_BUILD_DIR)/pyproject.toml
+	sed -i '/raw-options/d' $(PKG_BUILD_DIR)/pyproject.toml
 endef
 
 define Package/python3-protovalidate

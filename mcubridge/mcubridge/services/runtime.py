@@ -190,13 +190,14 @@ class BridgeService:
     async def enqueue_cloud(self, message: pb.CloudQueuedPublish, *, reply_context: Any | None = None) -> None:
         resolved_message = structures.resolve_cloud_context(message, reply_context)
         correlation = resolved_message.correlation_data if resolved_message.HasField("correlation_data") else None
-        logger.debug(
-            "enqueue_cloud debug info",
-            topic=resolved_message.topic_name,
-            correlation=correlation.hex() if correlation else None,
-            in_ipc_requests=(correlation in self.ipc_requests if correlation else False),
-            registered_keys=[k.hex() for k in self.ipc_requests.keys()],
-        )
+        if logger.is_enabled_for(logging.DEBUG):
+            logger.debug(
+                "enqueue_cloud debug info",
+                topic=resolved_message.topic_name,
+                correlation=correlation.hex() if correlation else None,
+                in_ipc_requests=(correlation in self.ipc_requests if correlation else False),
+                registered_keys=[k.hex() for k in self.ipc_requests.keys()],
+            )
         if correlation and correlation in self.ipc_requests:
             self.ipc_requests[correlation].put_nowait(resolved_message)
             return

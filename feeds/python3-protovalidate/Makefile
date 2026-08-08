@@ -11,11 +11,17 @@ PKG_MAINTAINER:=Ignacio Santolin <isantolin@gmail.com>
 PKG_LICENSE:=Apache-2.0
 PKG_LICENSE_FILES:=LICENSE
 
-# PKG_BUILD_DEPENDS pre-injected into hostpkg
-
 include $(TOPDIR)/feeds/packages/lang/python/pypi.mk
 include $(INCLUDE_DIR)/package.mk
 include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
+
+define Build/Prepare
+	$(call Build/Prepare/Default)
+	sed -i 's/dynamic = \["version"\]/version = "$(PKG_VERSION)"/' $(PKG_BUILD_DIR)/pyproject.toml
+	sed -i 's/"hatch-vcs",//' $(PKG_BUILD_DIR)/pyproject.toml
+	sed -i '/\[tool.hatch.version\]/d' $(PKG_BUILD_DIR)/pyproject.toml
+	sed -i '/source = "vcs"/d' $(PKG_BUILD_DIR)/pyproject.toml
+endef
 
 define Package/python3-protovalidate
 	SECTION:=lang
@@ -23,7 +29,7 @@ define Package/python3-protovalidate
 	SUBMENU:=Python
 	TITLE:=Protocol Buffer Validation for Python
 	URL:=https://github.com/bufbuild/protovalidate-python
-	DEPENDS:=+python3 +python3-protobuf +python3-cel-python
+	DEPENDS:=+python3 +python3-protobuf +python3-cel-python +python3-google-re2
 endef
 
 define Package/python3-protovalidate/description

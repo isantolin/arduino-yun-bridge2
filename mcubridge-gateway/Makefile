@@ -80,6 +80,7 @@ define Package/$(PKG_NAME)/install
 	# Install Protocol Stubs for self-contained imports
 	$(CP) $(PKG_BUILD_DIR)/mcubridge/__init__.py $(1)/usr/lib/python3.13/site-packages/mcubridge/
 	$(CP) $(PKG_BUILD_DIR)/mcubridge/protocol/* $(1)/usr/lib/python3.13/site-packages/mcubridge/protocol/
+	python3 -m compileall -o 2 -q $(1)/usr/lib/python3.13/site-packages/mcubridge || true
 endef
 
 define Package/$(PKG_NAME)/clean

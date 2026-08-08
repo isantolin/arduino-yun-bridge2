@@ -215,7 +215,7 @@ if [ "$INSTALL_HOST_DEPS" = "1" ]; then
                 echo "[INFO] Installing packages for Ubuntu/Debian..."
                 "${PKG_PREFIX[@]}" apt-get update
                 "${PKG_PREFIX[@]}" apt-get install -y \
-                    build-essential python3 python3-pip python3-setuptools python3-wheel python3-build python3-hatchling python3-black python3-packaging python3-distlib \
+                    build-essential python3 python3-pip python3-setuptools python3-wheel python3-build python3-hatchling python3-black python3-packaging python3-distlib python3-typer \
                     git unzip tar gzip bzip2 xz-utils coreutils libncurses5-dev libncursesw5-dev libreadline-dev \
                     zstd wget python3-docutils libelf-dev libpolkit-agent-1-dev libpolkit-gobject-1-dev \
                     libunwind-dev systemtap-sdt-dev libc6-dev libsysprof-capture-dev \
@@ -239,7 +239,7 @@ if [ "$INSTALL_HOST_DEPS" = "1" ]; then
                 echo "[INFO] Installing packages for Fedora..."
                 "${PKG_PREFIX[@]}" dnf install -y \
                     make automake gcc gcc-c++ kernel-devel \
-                    python3 python3-pip python3-setuptools python3-wheel python3-build python3-hatchling python3-black python3-packaging python3-distlib \
+                    python3 python3-pip python3-setuptools python3-wheel python3-build python3-hatchling python3-black python3-packaging python3-distlib python3-typer \
                     git unzip tar gzip bzip2 xz coreutils ncurses-devel readline-devel zstd wget \
                     python3-docutils elfutils-libelf-devel elfutils-devel polkit-devel \
                     libunwind-devel systemtap-sdt-devel glibc-devel sysprof-devel \

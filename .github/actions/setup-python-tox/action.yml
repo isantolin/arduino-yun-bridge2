@@ -31,7 +31,7 @@ runs:
     - name: Install bootstrap packaging tools
       shell: bash
       run: |
-        python -m pip install packaging distlib
+        python -m pip install packaging distlib typer
 
     - name: Generate runtime dependency lockfiles
       shell: bash

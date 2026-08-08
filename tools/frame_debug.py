@@ -163,7 +163,6 @@ async def run_debug_loop(
     sys.stdout.write(f"[FrameDebug] Initialized transport on {port} ({baudrate} bps)\n" f"{snapshot.render()}\n\n")
 
     try:
-        import asyncio
         reader, writer = await serialx.open_serial_connection(url=port, baudrate=baudrate)
         for i in _iter_counts(count):
             sys.stdout.write(f"[FrameDebug] [{i}] Sending frame...\n")
@@ -213,7 +212,6 @@ def main(
     count: Annotated[int, typer.Option("--count", help="Number of frames (0 for infinite)")] = 1,
     generate: Annotated[bool, typer.Option("--generate", help="Only generate and print frame")] = False,
 ) -> None:
-    import asyncio
     if generate:
         asyncio.run(run_generate_only(command, payload))
     elif port:

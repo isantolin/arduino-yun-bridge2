@@ -8,11 +8,10 @@ import re
 import sys
 from collections.abc import Sequence
 from pathlib import Path
-from typing import TypedDict
+from typing import Any, TypedDict, cast
 
-import json
 import tomllib
-from distlib.locators import PyPIJSONLocator
+from distlib.locators import PyPIJSONLocator  # type: ignore[import-untyped]
 from graphlib import TopologicalSorter
 from packaging.requirements import Requirement
 from packaging.version import parse as parse_version
@@ -242,18 +241,19 @@ def _parse_pip_spec(spec: str) -> tuple[str, str]:
 def _fetch_latest_version(package_name: str, *, include_prerelease: bool = False) -> str | None:
     """Fetch latest package version from PyPI using distlib PyPIJSONLocator and packaging.version sorting."""
     try:
-        locator = PyPIJSONLocator("https://pypi.org/pypi")
-        project_data = locator.get_project(package_name)
+        locator: Any = cast(Any, PyPIJSONLocator)("https://pypi.org/pypi")
+        project_data: dict[str, Any] = cast(dict[str, Any], locator.get_project(package_name))
         if not project_data:
             return None
-        parsed_versions = []
-        for ver_str in project_data.keys():
+        parsed_versions: list[tuple[Any, str]] = []
+        keys_list: list[str] = list(project_data.keys())
+        for ver_str in keys_list:
             if ver_str in ("urls", "digests"):
                 continue
             try:
-                v = parse_version(ver_str)
+                v = parse_version(str(ver_str))
                 if include_prerelease or not v.is_prerelease:
-                    parsed_versions.append((v, ver_str))
+                    parsed_versions.append((v, str(ver_str)))
             except Exception:
                 continue
         if parsed_versions:

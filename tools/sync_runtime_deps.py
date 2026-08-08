@@ -15,6 +15,7 @@ from typing import TypedDict
 import json
 import tomllib
 from graphlib import TopologicalSorter
+from packaging.requirements import Requirement
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = ROOT / "requirements" / "runtime.toml"
@@ -159,8 +160,14 @@ def format_openwrt_lines(tokens: Sequence[str]) -> list[str]:
 
 
 def _replace_block(text: str, start_marker: str, end_marker: str, replacement: str) -> str:
-    pattern = re.compile(rf"({re.escape(start_marker)}\n)(.*?)({re.escape(end_marker)})", re.DOTALL)
-    return pattern.sub(rf"\1{replacement}\n\3", text)
+    start_pos = text.find(start_marker)
+    end_pos = text.find(end_marker)
+    if start_pos == -1 or end_pos == -1 or end_pos < start_pos:
+        return text
+    start_cut = start_pos + len(start_marker)
+    if text[start_cut : start_cut + 1] == "\n":
+        start_cut += 1
+    return text[:start_cut] + replacement + "\n" + text[end_pos:]
 
 
 def update_makefile(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
@@ -205,13 +212,22 @@ def update_gateway_makefile(deps: Sequence[_DepEntry], *, dry_run: bool = False)
 
 
 def _parse_pip_spec(spec: str) -> tuple[str, str]:
-    """Extract (package_name, pinned_version) from a pip spec like 'foo==1.2.3'."""
-    if "==" not in spec:
-        return spec, ""
-    # Handle extras: 'typer[all]==0.24.1' -> 'typer', '0.24.1'
-    name_part, version = spec.split("==", 1)
-    name = name_part.split("[")[0].strip()
-    return name, version.strip()
+    """Extract (package_name, pinned_version) from a pip spec using packaging library."""
+    if not spec:
+        return "", ""
+    try:
+        req = Requirement(spec)
+        version = ""
+        for specifier in req.specifier:
+            if specifier.operator == "==":
+                version = specifier.version
+                break
+        return req.name, version
+    except Exception:
+        if "==" in spec:
+            name_part, ver = spec.split("==", 1)
+            return name_part.split("[")[0].strip(), ver.strip()
+        return spec.split("[")[0].strip(), ""
 
 
 def _fetch_latest_version(package_name: str, *, include_prerelease: bool = False) -> str | None:

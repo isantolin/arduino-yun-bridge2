@@ -3,18 +3,20 @@
 
 from __future__ import annotations
 
-import argparse
 import re
 import sys
+import typer
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, TypedDict, cast
+from typing import Annotated, Any, TypedDict, cast
 
 import tomllib
 from distlib.locators import PyPIJSONLocator  # type: ignore[import-untyped]
 from graphlib import TopologicalSorter
 from packaging.requirements import Requirement
 from packaging.version import parse as parse_version
+
+app = typer.Typer(help="Generate derived dependency files from the runtime manifest.")
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = ROOT / "requirements" / "runtime.toml"
@@ -427,37 +429,13 @@ def update_feeds(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
     return any_updated
 
 
-def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(description="Generate derived dependency files from the runtime manifest.")
-    parser.add_argument(
-        "--check",
-        action="store_true",
-        default=False,
-        help="Exit with status 1 if running would change any files",
-    )
-    parser.add_argument(
-        "--check-latest",
-        action="store_true",
-        default=False,
-        help="Query PyPI and warn about outdated pinned versions",
-    )
-    parser.add_argument(
-        "--print-openwrt",
-        action="store_true",
-        default=False,
-        help="Print OpenWrt package names and exit",
-    )
-    parser.add_argument(
-        "--print-pip",
-        action="store_true",
-        default=False,
-        help="Print pip requirement specifiers and exit",
-    )
-    args = parser.parse_args(argv)
-    check: bool = args.check
-    check_latest: bool = args.check_latest
-    print_openwrt: bool = args.print_openwrt
-    print_pip: bool = args.print_pip
+@app.command()
+def main(
+    check: Annotated[bool, typer.Option("--check", help="Exit with status 1 if running would change any files")] = False,
+    check_latest: Annotated[bool, typer.Option("--check-latest", help="Query PyPI and warn about outdated pinned versions")] = False,
+    print_openwrt: Annotated[bool, typer.Option("--print-openwrt", help="Print OpenWrt package names and exit")] = False,
+    print_pip: Annotated[bool, typer.Option("--print-pip", help="Print pip requirement specifiers and exit")] = False,
+) -> None:
     deps = load_manifest()
     if print_openwrt:
         sys.stdout.write("\n".join(collect_openwrt_packages(deps)) + "\n")
@@ -499,4 +477,4 @@ def main(argv: list[str] | None = None) -> None:
 
 
 if __name__ == "__main__":
-    main()
+    app()

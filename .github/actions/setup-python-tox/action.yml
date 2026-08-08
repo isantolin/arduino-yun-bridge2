@@ -28,6 +28,12 @@ runs:
         python-version: ${{ inputs.python-version }}
         cache: 'pip'
 
+    - name: Install Tooling Dependencies
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install packaging distlib tox
+
     - name: Generate runtime dependency lockfiles
       shell: bash
       run: |
@@ -48,9 +54,3 @@ runs:
       run: |
         sudo apt-get update
         sudo apt-get install -y libreadline-dev
-
-    - name: Install pip + tox
-      shell: bash
-      run: |
-        python -m pip install --upgrade pip
-        python -m pip install tox

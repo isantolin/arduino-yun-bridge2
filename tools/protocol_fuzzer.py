@@ -3,6 +3,9 @@
 [MIL-SPEC/SIL-2] McuBridge Protocol Fuzzer
 Mission: Stress test the MCU state machine by injecting protocol-level entropy.
 """
+from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.protocol.frame import build_frame
+from mcubridge.protocol import protocol
 
 import asyncio
 import random
@@ -14,9 +17,6 @@ import structlog  # type: ignore[import-untyped]
 from typing import Annotated, Any, Final, cast
 
 app = typer.Typer(help="[MIL-SPEC/SIL-2] McuBridge Protocol Fuzzer")
-from mcubridge.protocol import protocol
-from mcubridge.protocol.frame import build_frame
-from mcubridge.protocol import mcubridge_pb2 as pb
 
 # Constants from protocol spec
 PROTOCOL_VERSION: Final[int] = protocol.PROTOCOL_VERSION

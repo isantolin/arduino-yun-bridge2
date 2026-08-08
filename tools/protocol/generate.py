@@ -972,9 +972,12 @@ def _copy_generated_python_files(proto_path: Path, args: Any) -> None:
             (args.py_client.parent / "mcubridge_grpc.py").write_bytes(grpc_data_client)
         py_grpc.unlink(missing_ok=True)
 
+
 @app.command()
 def main(
-    spec: Annotated[Path, typer.Option("--spec", help="Protocol specification file (.proto)")] = Path("tools/protocol/mcubridge.proto"),
+    spec: Annotated[Path, typer.Option("--spec", help="Protocol specification file (.proto)")] = Path(
+        "tools/protocol/mcubridge.proto"
+    ),
     cpp: Annotated[Path | None, typer.Option("--cpp", help="C++ header output")] = None,
     cpp_structs: Annotated[Path | None, typer.Option("--cpp-structs", help="C++ structs output")] = None,
     py: Annotated[Path | None, typer.Option("--py", help="Python output")] = None,

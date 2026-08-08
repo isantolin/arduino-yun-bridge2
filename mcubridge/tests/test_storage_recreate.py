@@ -45,9 +45,11 @@ async def test_lmdb_deque_unlink_os_error(tmp_path: object) -> None:
         patch("mcubridge.state.storage.Path.unlink", side_effect=OSError("Permission denied")),
         patch("mcubridge.state.storage.logger") as mock_logger,
     ):
-        dq = LmdbDeque(db_path)
+        LmdbDeque(db_path)
 
-        unlink_call = next(c for c in mock_logger.warning.call_args_list if c.args and c.args[0] == "Failed to unlink target path")
+        unlink_call = next(
+            c for c in mock_logger.warning.call_args_list if c.args and c.args[0] == "Failed to unlink target path"
+        )
         assert unlink_call.kwargs["path"] == db_path
 
 
@@ -87,7 +89,9 @@ async def test_lmdb_cache_unlink_os_error(tmp_path: object) -> None:
         patch("mcubridge.state.storage.Path.unlink", side_effect=OSError("Permission denied")),
         patch("mcubridge.state.storage.logger") as mock_logger,
     ):
-        cache = LmdbCache(db_path)
+        LmdbCache(db_path)
 
-        unlink_call = next(c for c in mock_logger.warning.call_args_list if c.args and c.args[0] == "Failed to unlink target path")
+        unlink_call = next(
+            c for c in mock_logger.warning.call_args_list if c.args and c.args[0] == "Failed to unlink target path"
+        )
         assert unlink_call.kwargs["path"] == db_path

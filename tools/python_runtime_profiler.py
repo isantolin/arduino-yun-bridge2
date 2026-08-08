@@ -134,7 +134,9 @@ def generate_report(github_step_summary: Path | None = None) -> None:
 
 @app.command()
 def main(
-    github_step_summary: Annotated[Path | None, typer.Option("--github-step-summary", help="Path to GitHub step summary file")] = None,
+    github_step_summary: Annotated[
+        Path | None, typer.Option("--github-step-summary", help="Path to GitHub step summary file")
+    ] = None,
 ) -> None:
     generate_report(github_step_summary)
 

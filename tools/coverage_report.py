@@ -234,11 +234,21 @@ def _append_optional(path: str | None, content: str) -> None:
 
 @app.command()
 def main(
-    python_xml: Annotated[Path, typer.Option("--python-xml", help="Path to Python coverage.xml.")] = Path("coverage/python/coverage.xml"),
-    arduino_summary: Annotated[Path, typer.Option("--arduino-summary", help="Path to Arduino gcovr summary JSON.")] = Path("coverage/arduino/summary.json"),
-    output_markdown: Annotated[Path | None, typer.Option("--output-markdown", help="Write the table to the given markdown file.")] = None,
-    output_json: Annotated[Path | None, typer.Option("--output-json", help="Write machine-readable metrics to this path.")] = None,
-    github_step_summary: Annotated[Path | None, typer.Option("--github-step-summary", help="Append the table to GitHub step summary output.")] = None,
+    python_xml: Annotated[Path, typer.Option("--python-xml", help="Path to Python coverage.xml.")] = Path(
+        "coverage/python/coverage.xml"
+    ),
+    arduino_summary: Annotated[
+        Path, typer.Option("--arduino-summary", help="Path to Arduino gcovr summary JSON.")
+    ] = Path("coverage/arduino/summary.json"),
+    output_markdown: Annotated[
+        Path | None, typer.Option("--output-markdown", help="Write the table to the given markdown file.")
+    ] = None,
+    output_json: Annotated[
+        Path | None, typer.Option("--output-json", help="Write machine-readable metrics to this path.")
+    ] = None,
+    github_step_summary: Annotated[
+        Path | None, typer.Option("--github-step-summary", help="Append the table to GitHub step summary output.")
+    ] = None,
 ) -> None:
     python_metrics = _read_python_metrics(python_xml)
     arduino_metrics = _read_arduino_metrics(arduino_summary)

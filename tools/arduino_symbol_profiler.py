@@ -82,7 +82,9 @@ def profile_elf(build_dir: Path, elf_path: Path, nm_bin: str) -> str:
 @app.command()
 def main(
     build_dir: Annotated[Path, typer.Argument(help="Directory containing .elf files.")],
-    github_step_summary: Annotated[Path | None, typer.Option("--github-step-summary", help="Path to GitHub step summary file")] = None,
+    github_step_summary: Annotated[
+        Path | None, typer.Option("--github-step-summary", help="Path to GitHub step summary file")
+    ] = None,
     output: Annotated[Path | None, typer.Option("--output", help="Save report to a file.")] = None,
 ) -> None:
     if not build_dir.exists():

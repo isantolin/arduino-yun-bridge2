@@ -431,9 +431,15 @@ def update_feeds(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
 
 @app.command()
 def main(
-    check: Annotated[bool, typer.Option("--check", help="Exit with status 1 if running would change any files")] = False,
-    check_latest: Annotated[bool, typer.Option("--check-latest", help="Query PyPI and warn about outdated pinned versions")] = False,
-    print_openwrt: Annotated[bool, typer.Option("--print-openwrt", help="Print OpenWrt package names and exit")] = False,
+    check: Annotated[
+        bool, typer.Option("--check", help="Exit with status 1 if running would change any files")
+    ] = False,
+    check_latest: Annotated[
+        bool, typer.Option("--check-latest", help="Query PyPI and warn about outdated pinned versions")
+    ] = False,
+    print_openwrt: Annotated[
+        bool, typer.Option("--print-openwrt", help="Print OpenWrt package names and exit")
+    ] = False,
     print_pip: Annotated[bool, typer.Option("--print-pip", help="Print pip requirement specifiers and exit")] = False,
 ) -> None:
     deps = load_manifest()

@@ -315,7 +315,9 @@ def render_markdown(imp: ImportMetrics, benchmarks: list[BenchmarkResult]) -> st
 
 @app.command()
 def main(
-    github_step_summary: Annotated[Path | None, typer.Option("--github-step-summary", help="Append the report to GitHub step summary output.")] = None,
+    github_step_summary: Annotated[
+        Path | None, typer.Option("--github-step-summary", help="Append the report to GitHub step summary output.")
+    ] = None,
     json_output: Annotated[Path | None, typer.Option("--json", help="Write metrics as JSON to this path.")] = None,
     iterations: Annotated[int, typer.Option("--iterations", help="Number of iterations per benchmark.")] = 5000,
 ) -> None:

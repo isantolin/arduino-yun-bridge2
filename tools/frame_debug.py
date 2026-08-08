@@ -120,17 +120,14 @@ def _decode_frame(packet: bytes) -> DecodedFrame:
     return parse_frame(packet)
 
 
-from typing import Annotated
+
 
 def _print_response(decoded: DecodedFrame) -> None:
     cmd_id = decoded.envelope.command_id
     seq_id = decoded.envelope.sequence_id
     cmd_name = name_for_command(cmd_id)
     payload_len = len(decoded.payload) if isinstance(decoded.payload, bytes) else decoded.payload.ByteSize()
-    sys.stdout.write(
-        f"[FrameDebug] RX Frame: {cmd_name} (0x{cmd_id:02X}) "
-        f"seq={seq_id} payload_len={payload_len}\n"
-    )
+    sys.stdout.write(f"[FrameDebug] RX Frame: {cmd_name} (0x{cmd_id:02X}) " f"seq={seq_id} payload_len={payload_len}\n")
 
 
 def _iter_counts(count: int) -> Iterable[int]:

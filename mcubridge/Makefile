@@ -107,7 +107,7 @@ define Package/$(PKG_NAME)/install
 	# Daemon
 	$(CP) $(PKG_BUILD_DIR)/mcubridge/* $(1)/usr/libexec/mcubridge/
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/mcubridge.init $(1)/etc/init.d/mcubridge
-	find $(1)/usr/libexec/mcubridge -name "__pycache__" -type d -exec rm -rf {} +
+	$(PYTHON3) -m compileall -o 2 -q $(1)/usr/libexec/mcubridge || true
 	
 	# Core config files
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/mcubridge.files $(1)/etc/mcubridge/

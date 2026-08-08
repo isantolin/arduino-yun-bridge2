@@ -245,9 +245,10 @@ class SerialTransport:
 
     def _correlate_frame(self, command_id: int, payload: bytes | ProtobufMessage) -> None:
         pending = self._current
-        logger.debug(
-            "_correlate_frame entry", command_id=command_id, pending_cmd=(pending.command_id if pending else None)
-        )
+        if logger.is_enabled_for(logging.DEBUG):
+            logger.debug(
+                "_correlate_frame entry", command_id=command_id, pending_cmd=(pending.command_id if pending else None)
+            )
         if pending is None:
             return
         if pending.success is not None:

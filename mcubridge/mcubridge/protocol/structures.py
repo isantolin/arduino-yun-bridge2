@@ -176,33 +176,39 @@ def validate_config(cfg: pb.RuntimeConfig) -> None:
             setattr(cfg.topic_authorization, name, True)
 
 
+@functools.lru_cache(maxsize=4)
+def _build_cached_ssl_context(
+    cloud_cafile: str, cloud_certfile: str, cloud_keyfile: str, cloud_tls_insecure: bool
+) -> ssl.SSLContext:
+    if cloud_cafile:
+        ca_path = Path(cloud_cafile)
+        if not ca_path.exists():
+            raise RuntimeError(f"Cloud TLS CA file missing: {cloud_cafile}")
+        context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH, cafile=str(ca_path))
+    else:
+        context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+
+    context.minimum_version = CLOUD_TLS_MIN_VERSION
+
+    if cloud_tls_insecure:
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+
+    if cloud_certfile:
+        context.load_cert_chain(cloud_certfile, cloud_keyfile)
+
+    return context
+
+
 def get_ssl_context(cfg: pb.RuntimeConfig) -> Any | None:
     """Create an ssl.SSLContext based on cfg. [SIL-2]"""
     if not cfg.cloud_tls:
         return None
 
     try:
-        if cfg.cloud_cafile:
-            ca_path = Path(cfg.cloud_cafile)
-            if not ca_path.exists():
-                raise RuntimeError(f"Cloud TLS CA file missing: {cfg.cloud_cafile}")
-            context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH, cafile=str(ca_path))
-        else:
-            context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
-
-        context.minimum_version = CLOUD_TLS_MIN_VERSION
-
-        if cfg.cloud_tls_insecure:
-            context.check_hostname = False
-            context.verify_mode = ssl.CERT_NONE
-
-        # Pairing of cloud_certfile/cloud_keyfile is enforced declaratively by
-        # the mtls_cert_key_pair CEL rule on RuntimeConfig; only the actual
-        # cert chain loading (filesystem I/O) remains here.
-        if cfg.cloud_certfile:
-            context.load_cert_chain(cfg.cloud_certfile, cfg.cloud_keyfile)
-
-        return context
+        return _build_cached_ssl_context(
+            cfg.cloud_cafile, cfg.cloud_certfile, cfg.cloud_keyfile, cfg.cloud_tls_insecure
+        )
     except (OSError, ssl.SSLError, ValueError) as exc:
         raise RuntimeError(f"TLS setup failed: {exc}") from exc
 

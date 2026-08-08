@@ -8,6 +8,7 @@
 #include <wolfssl/wolfcrypt/types.h>
 
 #include "hal/ArchTraits.h"
+#include "pb_common.h"
 #include "security/security.h"
 #include "services/Console.h"
 #include "services/DataStore.h"
@@ -15,7 +16,6 @@
 #include "services/Mailbox.h"
 #include "services/Process.h"
 #include "services/SPIService.h"
-#include "pb_common.h"
 
 namespace etl {
 void __attribute__((weak)) handle_error(const etl::exception& e) {
@@ -1063,7 +1063,8 @@ bool BridgeClass::_sendEncryptedImpl(uint16_t raw_cmd, uint16_t seq,
           pb_ostream_from_buffer(buf->data.data(), buf->data.size());
       if (pb_encode(&out_stream, fields, src)) {
         _pending_tx_queue.push_back(
-            {raw_cmd, seq, buf, static_cast<uint16_t>(out_stream.bytes_written)});
+            {raw_cmd, seq, buf,
+             static_cast<uint16_t>(out_stream.bytes_written)});
         if (!_fsm.isAwaitingAck()) _flushPendingTxQueue();
         return true;
       }

@@ -9,6 +9,7 @@ Copyright (C) 2025-2026 Ignacio Santolin and contributors
 """
 
 from __future__ import annotations
+import shutil
 
 import hashlib
 import importlib.util
@@ -20,15 +21,17 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-import argparse
 from jinja2 import Environment, FileSystemLoader
+from packaging.version import Version
+import typer
+from typing_extensions import Annotated
 
 # ═════════════════════════════════════════════════════════════════════════════
 # DEPENDENCY VALIDATION (CRITICAL)
 # ═════════════════════════════════════════════════════════════════════════════
 REQUIRED_DEPS = ["jinja2", "google.protobuf", "nanopb"]
 MISSING_DEPS: list[str] = []
-UNTYPED_LIBS = ["cobs", "prometheus_client", "serialx", "uci", "uvloop", "typer", "lmdb"]
+UNTYPED_LIBS = ["cobs", "prometheus_client", "serialx", "uci", "uvloop", "typer", "lmdb", "nanopb", "distlib"]
 
 for dep in REQUIRED_DEPS:
     if importlib.util.find_spec(dep.split(".")[0]) is None:
@@ -36,13 +39,34 @@ for dep in REQUIRED_DEPS:
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
-# Check for protoc binary (check local project bin first)
-# Use lowercase to avoid Pyright constant redefinition error
-protoc_bin = (REPO_ROOT / "bin" / "protoc").resolve()
-if not protoc_bin.exists():
-    protoc_bin = Path("protoc")
 
-HAS_PROTOC = subprocess.run([str(protoc_bin), "--version"], capture_output=True, check=False).returncode == 0
+def resolve_protoc_bin() -> Path:
+    p_bin = (REPO_ROOT / "bin" / "protoc").resolve()
+    if p_bin.exists():
+        return p_bin
+    which_p = shutil.which("protoc")
+    if which_p:
+        return Path(which_p)
+    try:
+        import nanopb
+
+        nanopb_p = Path(nanopb.__file__).parent / "generator" / "protoc"
+        if nanopb_p.exists():
+            return nanopb_p
+    except Exception:
+        pass
+    return Path("protoc")
+
+
+def _check_has_protoc(bin_path: Path) -> bool:
+    try:
+        return subprocess.run([str(bin_path), "--version"], capture_output=True, check=False).returncode == 0
+    except FileNotFoundError:
+        return False
+
+
+protoc_bin: Path = resolve_protoc_bin()
+HAS_PROTOC: bool = _check_has_protoc(protoc_bin)
 
 if MISSING_DEPS or not HAS_PROTOC:
     sys.stderr.write("\n" + "!" * 80 + "\n")
@@ -339,7 +363,8 @@ class JinjaGenerator:
     def generate_cpp_header(self, spec: ProtocolSpec, out_path: Path, version: str) -> None:
         template = self.env.get_template("rpc_protocol.h.j2")
 
-        v_major, v_minor, v_patch = map(int, version.split("."))
+        parsed_version = Version(version)
+        v_major, v_minor, v_patch = parsed_version.major, parsed_version.minor, parsed_version.micro
 
         constants: list[dict[str, Any]] = []
         # Reflection from spec.constants_opt descriptor fields
@@ -857,7 +882,7 @@ def ensure_protovalidate_proto_files() -> None:
     target.write_bytes(data)
 
 
-def check_incremental_build(args: argparse.Namespace, version: str) -> tuple[bool, Path, str]:
+def check_incremental_build(args: Any, version: str) -> tuple[bool, Path, str]:
     proto_path = args.spec.resolve()
     h = hashlib.sha256()
     h.update(proto_path.read_bytes())
@@ -972,17 +997,36 @@ def _copy_generated_python_files(proto_path: Path, args: Any) -> None:
         py_grpc.unlink(missing_ok=True)
 
 
-def main() -> None:
+cli = typer.Typer(help="Protocol binding generator for MCU Bridge v2.", add_completion=False)
+
+
+@cli.command()
+def main(
+    spec_file: Annotated[Path, typer.Option("--spec", help="Protocol specification file (.proto)")],
+    cpp: Annotated[Path | None, typer.Option("--cpp", help="C++ header output")] = None,
+    cpp_structs: Annotated[Path | None, typer.Option("--cpp-structs", help="C++ structs output")] = None,
+    py: Annotated[Path | None, typer.Option("--py", help="Python output")] = None,
+    py_client: Annotated[Path | None, typer.Option("--py-client", help="Python client output")] = None,
+) -> None:
     ensure_nanopb_core_files()
     ensure_protovalidate_proto_files()
-    parser = argparse.ArgumentParser(description="Protocol binding generator for MCU Bridge v2.")
-    parser.add_argument("--spec", type=Path, required=True, help="Protocol specification file (.proto)")
-    parser.add_argument("--cpp", type=Path, default=None, help="C++ header output")
-    parser.add_argument("--cpp-structs", type=Path, default=None, help="C++ structs output")
-    parser.add_argument("--py", type=Path, default=None, help="Python output")
-    parser.add_argument("--py-client", type=Path, default=None, help="Python client output")
 
-    args = parser.parse_args()
+    class Args:
+        def __init__(
+            self,
+            spec: Path,
+            cpp: Path | None,
+            cpp_structs: Path | None,
+            py: Path | None,
+            py_client: Path | None,
+        ) -> None:
+            self.spec = spec
+            self.cpp = cpp
+            self.cpp_structs = cpp_structs
+            self.py = py
+            self.py_client = py_client
+
+    args = Args(spec=spec_file, cpp=cpp, cpp_structs=cpp_structs, py=py, py_client=py_client)
     gen = JinjaGenerator()
     version = VERSION_PATH.read_text(encoding="utf-8").strip() if VERSION_PATH.exists() else "0.0.0"
     if version == "0.0.0":
@@ -1008,7 +1052,7 @@ def main() -> None:
         gen.generate_nanopb(proto_path)
 
     # Now load the compiled descriptor
-    spec = load_spec_from_proto(proto_path)
+    proto_spec = load_spec_from_proto(proto_path)
 
     # Move generated files to target locations
     if proto_path.exists():
@@ -1035,28 +1079,28 @@ def main() -> None:
 
     if args.cpp:
         args.cpp.parent.mkdir(parents=True, exist_ok=True)
-        gen.generate_cpp_header(spec, args.cpp, version)
+        gen.generate_cpp_header(proto_spec, args.cpp, version)
         sys.stderr.write(f"Generated {args.cpp}\n")
 
         # Generate hardware config next to the main header
         hw_config_path = args.cpp.parent / "rpc_hw_config.h"
-        gen.generate_cpp_hw_config(spec, hw_config_path)
+        gen.generate_cpp_hw_config(proto_spec, hw_config_path)
         sys.stderr.write(f"Generated {hw_config_path}\n")
 
     if args.cpp_structs:
         args.cpp_structs.parent.mkdir(parents=True, exist_ok=True)
-        gen.generate_cpp_structs(spec, args.cpp_structs)
+        gen.generate_cpp_structs(proto_spec, args.cpp_structs)
         sys.stderr.write(f"Generated {args.cpp_structs}\n")
 
     if args.py:
         args.py.parent.mkdir(parents=True, exist_ok=True)
-        gen.generate_python(spec, args.py)
+        gen.generate_python(proto_spec, args.py)
         _format_python_file(args.py)
         sys.stderr.write(f"Generated {args.py}\n")
 
     if args.py_client:
         args.py_client.parent.mkdir(parents=True, exist_ok=True)
-        gen.generate_python_client(spec, args.py_client)
+        gen.generate_python_client(proto_spec, args.py_client)
         _format_python_file(args.py_client)
         sys.stderr.write(f"Generated {args.py_client}\n")
 
@@ -1126,4 +1170,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    cli()

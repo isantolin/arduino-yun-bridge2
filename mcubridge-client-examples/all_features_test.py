@@ -3,10 +3,11 @@
 
 from __future__ import annotations
 
-import argparse
 import asyncio
 import logging
 import uuid
+import typer
+from typing_extensions import Annotated
 
 from mcubridge_client import Topic, pb
 from mcubridge_client.cli import bridge_session
@@ -66,9 +67,16 @@ def main(socket_path: str | None = None, topic_prefix: str = "br") -> None:
     asyncio.run(run_test(socket_path, topic_prefix))
 
 
+cli = typer.Typer(help="Unified e2e feature test using direct LocalBridgeStub.", add_completion=False)
+
+
+@cli.command()
+def cli_main(
+    socket_path: Annotated[str | None, typer.Option("--socket-path", help="UNIX Domain Socket Path")] = None,
+    topic_prefix: Annotated[str, typer.Option("--topic-prefix", help="Topic prefix")] = "br",
+) -> None:
+    main(socket_path, topic_prefix)
+
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Unified e2e feature test using direct LocalBridgeStub.")
-    parser.add_argument("--socket-path", default=None, help="UNIX Domain Socket Path")
-    parser.add_argument("--topic-prefix", default="br", help="Topic prefix")
-    args = parser.parse_args()
-    main(args.socket_path, args.topic_prefix)
+    cli()

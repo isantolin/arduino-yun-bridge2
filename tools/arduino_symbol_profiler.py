@@ -3,11 +3,13 @@
 
 from __future__ import annotations
 
-import argparse
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+import typer
+from typing_extensions import Annotated
 
 
 def resolve_nm_binary() -> str:
@@ -76,17 +78,21 @@ def profile_elf(build_dir: Path, elf_path: Path, nm_bin: str) -> str:
     return "\n".join(md_lines) + "\n"
 
 
-def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(description="Profile Arduino ELF symbols.")
-    parser.add_argument("build_dir", type=Path, help="Directory containing .elf files.")
-    parser.add_argument("--github-step-summary", type=Path, default=None)
-    parser.add_argument("--output", type=Path, default=None, help="Save report to a file.")
+cli = typer.Typer(help="Profile Arduino ELF symbols.", add_completion=False)
 
-    args = parser.parse_args(argv)
-    build_dir: Path = args.build_dir
-    github_step_summary: Path | None = args.github_step_summary
-    output_file: Path | None = args.output
 
+@cli.command()
+def main(
+    build_dir: Annotated[Path, typer.Argument(help="Directory containing .elf files.")],
+    github_step_summary: Annotated[
+        Path | None,
+        typer.Option("--github-step-summary", help="Path to GitHub step summary markdown output"),
+    ] = None,
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", help="Save report to a file."),
+    ] = None,
+) -> None:
     if not build_dir.exists():
         print(f"Error: {build_dir} not found.", file=sys.stderr)
         return
@@ -96,7 +102,6 @@ def main(argv: list[str] | None = None) -> None:
     seen_paths: set[Path] = set()
     seen_sections: set[tuple[str, str]] = set()
 
-    # Search for .elf files in build directories
     for elf_file in sorted(build_dir.rglob("*.elf")):
         resolved = elf_file.resolve()
         if resolved in seen_paths:
@@ -122,9 +127,9 @@ def main(argv: list[str] | None = None) -> None:
         with github_step_summary.open("a", encoding="utf-8") as f:
             f.write("\n---\n" + full_report + "\n")
 
-    if output_file:
-        output_file.write_text(full_report, encoding="utf-8")
+    if output:
+        output.write_text(full_report, encoding="utf-8")
 
 
 if __name__ == "__main__":
-    main()
+    cli()

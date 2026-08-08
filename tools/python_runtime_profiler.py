@@ -3,12 +3,14 @@
 
 from __future__ import annotations
 
-import argparse
-import time
 import os
 import sys
+import time
 import tracemalloc
 from pathlib import Path
+
+import typer
+from typing_extensions import Annotated
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "mcubridge"))
@@ -131,8 +133,18 @@ def generate_report(github_step_summary: Path | None = None) -> None:
             f.write("\n" + report + "\n")
 
 
+cli = typer.Typer(help="Profiling tool for the MCU Bridge Python architecture.", add_completion=False)
+
+
+@cli.command()
+def main(
+    github_step_summary: Annotated[
+        Path | None,
+        typer.Option("--github-step-summary", help="Path to GitHub step summary markdown output"),
+    ] = None,
+) -> None:
+    generate_report(github_step_summary)
+
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--github-step-summary", type=Path, default=None)
-    args = parser.parse_args()
-    generate_report(args.github_step_summary)
+    cli()

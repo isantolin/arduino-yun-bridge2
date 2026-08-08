@@ -57,7 +57,9 @@ class LmdbDeque:
                 except OSError as e:
                     logger.warning("Failed to unlink target path", path=str(target), error=e)
             try:
-                self.env = lmdb.open(env_path, max_dbs=1, map_size=10485760, readahead=False, meminit=False, subdir=False)
+                self.env = lmdb.open(
+                    env_path, max_dbs=1, map_size=10485760, readahead=False, meminit=False, subdir=False
+                )
                 self.db = self.env.open_db(b"deque")
                 self._head = self._tail = 0
             except (lmdb.Error, OSError) as e:
@@ -160,7 +162,9 @@ class LmdbCache:
                 except OSError as e:
                     logger.warning("Failed to unlink target path", path=str(target), error=e)
             try:
-                self.env = lmdb.open(env_path, max_dbs=1, map_size=10485760, readahead=False, meminit=False, subdir=False)
+                self.env = lmdb.open(
+                    env_path, max_dbs=1, map_size=10485760, readahead=False, meminit=False, subdir=False
+                )
                 self.db = self.env.open_db(b"cache")
             except (lmdb.Error, OSError) as e:
                 logger.error("Failed to reinitialize LMDB cache: %s", e)

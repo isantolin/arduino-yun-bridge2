@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-import argparse
 import binascii
 import sys
 from collections.abc import Iterable
 from dataclasses import dataclass
+
+import typer
+from typing_extensions import Annotated
 
 import serialx
 from google.protobuf.message import Message as ProtobufMessage
@@ -211,36 +213,38 @@ async def run_generate_only(command_str: str, payload_str: str) -> None:
     sys.stdout.write(f"{snapshot.render()}\n")
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="MCU Bridge Frame Debugger")
-    parser.add_argument("--port", help="Serial port device (e.g. /dev/ttyATH0)")
-    parser.add_argument("--baudrate", type=int, default=DEFAULT_BAUDRATE, help="Baudrate")
-    parser.add_argument("--command", required=True, help="Command ID (hex, int, or name)")
-    parser.add_argument("--payload", default="", help="Payload hex string")
-    parser.add_argument("--interval", type=float, default=1.0, help="Interval between frames")
-    parser.add_argument("--count", type=int, default=1, help="Number of frames (0 for infinite)")
-    parser.add_argument("--generate", action="store_true", help="Only generate and print frame")
+cli = typer.Typer(help="MCU Bridge Frame Debugger", add_completion=False)
 
-    args = parser.parse_args()
 
-    if args.generate:
-        asyncio.run(run_generate_only(args.command, args.payload))
-    elif args.port:
+@cli.command()
+def main(
+    command: Annotated[str, typer.Option("--command", help="Command ID (hex, int, or name)")],
+    port: Annotated[str | None, typer.Option("--port", help="Serial port device (e.g. /dev/ttyATH0)")] = None,
+    baudrate: Annotated[int, typer.Option("--baudrate", help="Baudrate")] = DEFAULT_BAUDRATE,
+    payload: Annotated[str, typer.Option("--payload", help="Payload hex string")] = "",
+    interval: Annotated[float, typer.Option("--interval", help="Interval between frames")] = 1.0,
+    count: Annotated[int, typer.Option("--count", help="Number of frames (0 for infinite)")] = 1,
+    generate: Annotated[bool, typer.Option("--generate", help="Only generate and print frame")] = False,
+) -> None:
+    if generate:
+        asyncio.run(run_generate_only(command, payload))
+    elif port:
         asyncio.run(
             run_debug_loop(
-                args.port,
-                args.baudrate,
-                args.command,
-                args.payload,
-                args.interval,
-                args.count,
+                port,
+                baudrate,
+                command,
+                payload,
+                interval,
+                count,
             )
         )
     else:
-        parser.print_help()
+        sys.stderr.write("Error: Must specify --generate or --port <device>\n")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
     import asyncio
 
-    main()
+    cli()

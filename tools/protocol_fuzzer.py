@@ -6,12 +6,14 @@ Mission: Stress test the MCU state machine by injecting protocol-level entropy.
 
 import asyncio
 import random
-import argparse
 from binascii import crc32
+from typing import Final
+
 from cobs import cobs
 import serialx
 import structlog
-from typing import Final
+import typer
+from typing_extensions import Annotated
 from mcubridge.protocol import protocol
 from mcubridge.protocol.frame import build_frame
 from mcubridge.protocol import mcubridge_pb2 as pb
@@ -154,15 +156,21 @@ class ProtocolFuzzer:
             logger.info("fuzzing_complete", iterations=iterations)
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--port", default="/dev/ttyUSB0")
-    parser.add_argument("--baud", type=int, default=protocol.DEFAULT_BAUDRATE)
-    parser.add_argument("--count", type=int, default=1000)
-    args = parser.parse_args()
+cli = typer.Typer(help="[MIL-SPEC/SIL-2] McuBridge Protocol Fuzzer", add_completion=False)
 
-    fuzzer = ProtocolFuzzer(args.port, args.baud)
+
+@cli.command()
+def main(
+    port: Annotated[str, typer.Option("--port", help="Serial port device")] = "/dev/ttyUSB0",
+    baud: Annotated[int, typer.Option("--baud", help="Serial baudrate")] = protocol.DEFAULT_BAUDRATE,
+    count: Annotated[int, typer.Option("--count", help="Number of fuzz iterations")] = 1000,
+) -> None:
+    fuzzer = ProtocolFuzzer(port, baud)
     try:
-        asyncio.run(fuzzer.run(args.count))
+        asyncio.run(fuzzer.run(count))
     except KeyboardInterrupt:
         pass
+
+
+if __name__ == "__main__":
+    cli()

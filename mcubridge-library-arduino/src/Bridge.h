@@ -498,7 +498,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   template <typename T>
   bool _sendEncryptedHelper(uint16_t raw_cmd, uint16_t seq, const T& packet) {
     return _sendEncryptedImpl(raw_cmd, seq, rpc::Payload::get_fields<T>(),
-                            &packet);
+                              &packet);
   }
 
   void _clearPendingTxQueue();

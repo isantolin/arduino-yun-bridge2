@@ -64,7 +64,9 @@ define Package/$(PKG_NAME)
 		python3-tzdata \
 		python3-jmespath \
 		python3-yaml \
-		python3-lmdb
+		python3-lmdb \
+		python3-packaging \
+		python3-distlib
 	# AUTO-GENERATED RUNTIME DEPENDS END
 endef
 

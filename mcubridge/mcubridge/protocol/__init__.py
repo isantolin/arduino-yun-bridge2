@@ -7,4 +7,3 @@ def is_system_command(command_id: int) -> bool:
     return (protocol.STATUS_CODE_MIN <= raw_cmd <= protocol.STATUS_CODE_MAX) or (
         protocol.SYSTEM_COMMAND_MIN <= raw_cmd <= protocol.SYSTEM_COMMAND_MAX
     )
-

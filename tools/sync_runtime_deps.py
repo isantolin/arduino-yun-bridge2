@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
 """Generate derived dependency files from the runtime manifest."""
 
-from __future__ import annotations
-
-import argparse
+import json
 import re
 import sys
-import urllib.request
+import tomllib
 import urllib.error
+import urllib.request
 from collections.abc import Sequence
 from pathlib import Path
 from typing import TypedDict
 
-import json
-import tomllib
+from distlib.version import NormalizedVersion
+from packaging.requirements import Requirement
+from packaging.version import Version
+import typer
+from typing_extensions import Annotated
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = ROOT / "requirements" / "runtime.toml"
@@ -242,32 +244,53 @@ def update_gateway_makefile(deps: Sequence[_DepEntry], *, dry_run: bool = False)
 
 
 def _parse_pip_spec(spec: str) -> tuple[str, str]:
-    """Extract (package_name, pinned_version) from a pip spec like 'foo==1.2.3'."""
-    if "==" not in spec:
-        return spec, ""
-    # Handle extras: 'typer[all]==0.24.1' -> 'typer', '0.24.1'
-    name_part, version = spec.split("==", 1)
-    name = name_part.split("[")[0].strip()
-    return name, version.strip()
+    """Extract (package_name, pinned_version) from a pip spec using packaging.Requirement."""
+    if not spec:
+        return "", ""
+    try:
+        req = Requirement(spec)
+        name = req.name
+        pinned = ""
+        for specifier in req.specifier:
+            if specifier.operator in ("==", "==="):
+                pinned = specifier.version
+                break
+        return name, pinned
+    except Exception:
+        if "==" not in spec:
+            return spec, ""
+        name_part, version = spec.split("==", 1)
+        name = name_part.split("[")[0].strip()
+        return name, version.strip()
 
 
 def _fetch_latest_version(package_name: str, *, include_prerelease: bool = False) -> str | None:
-    """Query PyPI JSON API for the latest release version."""
+    """Query PyPI JSON API for the latest release version using packaging.Version & distlib."""
     url = f"https://pypi.org/pypi/{package_name}/json"
     try:
         with urllib.request.urlopen(url, timeout=10) as resp:
             data = json.loads(resp.read())
-            if include_prerelease and "releases" in data:
-                all_versions = list(data["releases"].keys())
-                if all_versions:
-                    return all_versions[-1]
-            return data["info"]["version"]
+            if "releases" in data and data["releases"]:
+                parsed_versions: list[Version] = []
+                for v_str in data["releases"].keys():
+                    try:
+                        v = Version(v_str)
+                        _ = NormalizedVersion(v_str)
+                        if not include_prerelease and v.is_prerelease:
+                            continue
+                        parsed_versions.append(v)
+                    except Exception:
+                        continue
+                if parsed_versions:
+                    parsed_versions.sort()
+                    return str(parsed_versions[-1])
+            return str(data["info"]["version"])
     except (urllib.error.URLError, ValueError, KeyError, json.JSONDecodeError):
         return None
 
 
 def check_latest_versions(deps: Sequence[_DepEntry]) -> list[tuple[str, str, str]]:
-    """Return list of (package, pinned, latest) for outdated packages."""
+    """Return list of (package, pinned, latest) for outdated packages using packaging.Version."""
     outdated: list[tuple[str, str, str]] = []
     pip_specs = [(dep["pip"], dep["check_latest"]) for dep in deps if dep.get("pip")]
     for spec, should_check_latest in pip_specs:
@@ -276,19 +299,35 @@ def check_latest_versions(deps: Sequence[_DepEntry]) -> list[tuple[str, str, str
         name, pinned = _parse_pip_spec(spec)
         if not pinned:
             continue
-        is_prerelease = any(tag in pinned for tag in ("rc", "a", "b", "dev"))
-        latest = _fetch_latest_version(name, include_prerelease=is_prerelease)
-        if latest and latest != pinned:
-            outdated.append((name, pinned, latest))
+        try:
+            pinned_ver = Version(pinned)
+            is_prerelease = pinned_ver.is_prerelease
+        except Exception:
+            is_prerelease = any(tag in pinned for tag in ("rc", "a", "b", "dev"))
+            pinned_ver = None
+
+        latest_str = _fetch_latest_version(name, include_prerelease=is_prerelease)
+        if latest_str:
+            try:
+                latest_ver = Version(latest_str)
+                if pinned_ver and latest_ver > pinned_ver:
+                    outdated.append((name, pinned, latest_str))
+                elif not pinned_ver and latest_str != pinned:
+                    outdated.append((name, pinned, latest_str))
+            except Exception:
+                if latest_str != pinned:
+                    outdated.append((name, pinned, latest_str))
     return outdated
 
 
 def _to_apk_version(version: str) -> str:
-    """Convert Python pre-release notation to APK (Alpine) version notation.
-
-    Required for Makefiles that do NOT include pypi.mk and package directly
-    via apk mkpkg, which enforces Alpine versioning (_alpha/_beta/_rc/_pre).
-    """
+    """Convert Python pre-release notation to APK (Alpine) version notation."""
+    try:
+        parsed = Version(version)
+        if not parsed.is_prerelease:
+            return version
+    except Exception:
+        pass
     version = re.sub(r"(\d)a(\d+)$", r"\1_alpha\2", version)
     version = re.sub(r"(\d)b(\d+)$", r"\1_beta\2", version)
     version = re.sub(r"(\d)rc(\d+)$", r"\1_rc\2", version)
@@ -316,16 +355,10 @@ def update_feeds(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
 
         content = makefile.read_text(encoding="utf-8")
 
-        # Packages that include pypi.mk AND declare PYTHON3_PKG_WHEEL_VERSION use
-        # a split notation: PKG_VERSION is APK notation (for apk mkpkg), while
-        # PYTHON3_PKG_WHEEL_VERSION stays in Python notation (for wheel glob matching).
-        # Packages that include pypi.mk WITHOUT the wheel override use Python notation.
-        # Packages without pypi.mk use APK notation with explicit source/builddir.
         uses_pypi_mk = bool(re.search(r"^\s*include\b.*\bpypi\.mk\b", content, re.MULTILINE))
         is_prerelease = _to_apk_version(version) != version
 
         if uses_pypi_mk and not is_prerelease:
-            # Standard pypi.mk package without pre-release: Python notation throughout.
             pkg_version = version
             new_content = re.sub(r"PKG_VERSION:=[^\n]+", f"PKG_VERSION:={pkg_version}", content)
             new_content = re.sub(r"PYTHON3_PKG_WHEEL_VERSION:=[^\n]+\n?", "", new_content)
@@ -334,27 +367,6 @@ def update_feeds(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
             new_content = re.sub(r"PYPI_SOURCE_NAME:=[^\n]+\n?", "", new_content)
             new_content = re.sub(r"PYPI_SOURCE_NAME_VERSION:=[^\n]+\n?", "", new_content)
         elif uses_pypi_mk and is_prerelease:
-            # Pre-release pypi.mk package: APK version for PKG_VERSION, Python version for wheel & PyPI source.
-            #
-            # pypi.mk derives PKG_SOURCE (via ?=, so an earlier explicit value wins)
-            # and PKG_BUILD_DIR (via :=, so pypi.mk's own assignment always wins,
-            # regardless of anything set before its `include`) as
-            # "$(PYPI_SOURCE_NAME)-$(PKG_VERSION)". The real PyPI sdist is named
-            # "$(PYPI_SOURCE_NAME)-<raw version>.tar.gz" and extracts into a matching
-            # directory (raw Python version, no APK "_rc" suffix), so PKG_SOURCE and
-            # PKG_BUILD_DIR must be re-pinned to that raw name/version explicitly
-            # (PKG_BUILD_DIR *after* pypi.mk's `include` line, otherwise pypi.mk
-            # silently overwrites it and the package builds from a directory that
-            # was never actually extracted into).
-            #
-            # IMPORTANT: PYPI_SOURCE_NAME must NOT be overridden with the version
-            # baked in (e.g. "protobuf-7.36.0rc1"). python3-package.mk derives
-            # PYTHON3_PKG_WHEEL_NAME from PYPI_SOURCE_NAME when set, so baking the
-            # version into it produces a bogus wheel glob (e.g.
-            # "protobuf_7.36.0rc1-7.36.0rc1-*.whl" instead of the real
-            # "protobuf-7.36.0rc1-*.whl"), which fails at the `installer` step even
-            # though the extension compiled successfully. Leave PYPI_SOURCE_NAME
-            # unset so it defaults to the bare PYPI_NAME (e.g. "protobuf").
             pkg_version = _to_apk_version(version)
             pypi_source_name = f"{pip_name}-{version}"
             new_content = re.sub(r"PKG_VERSION:=[^\n]+", f"PKG_VERSION:={pkg_version}", content)
@@ -383,15 +395,12 @@ def update_feeds(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
                     f"\\1PYTHON3_PKG_WHEEL_VERSION:={version}\n",
                     new_content,
                 )
-            # Must come after pypi.mk's `include` (":=" assignment there would
-            # otherwise clobber a value set earlier in the file).
             build_dir_line = f"PKG_BUILD_DIR:=$(BUILD_DIR)/pypi/{pypi_source_name}\n"
             pypi_mk_include = re.compile(r"(^\s*include\b.*\bpypi\.mk\b[^\n]*\n)", re.MULTILINE)
             if "PKG_BUILD_DIR:=" in new_content:
                 new_content = re.sub(r"[ \t]*PKG_BUILD_DIR:=[^\n]+\n", "", new_content)
             new_content = pypi_mk_include.sub(lambda m: m.group(1) + build_dir_line, new_content, count=1)
         else:
-            # Non-pypi.mk package: APK notation for PKG_VERSION, Python for source/builddir.
             pkg_version = _to_apk_version(version)
             new_content = re.sub(r"PKG_VERSION:=[^\n]+", f"PKG_VERSION:={pkg_version}", content)
             new_content = re.sub(
@@ -414,37 +423,28 @@ def update_feeds(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
     return any_updated
 
 
-def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(description="Generate derived dependency files from the runtime manifest.")
-    parser.add_argument(
-        "--check",
-        action="store_true",
-        default=False,
-        help="Exit with status 1 if running would change any files",
-    )
-    parser.add_argument(
-        "--check-latest",
-        action="store_true",
-        default=False,
-        help="Query PyPI and warn about outdated pinned versions",
-    )
-    parser.add_argument(
-        "--print-openwrt",
-        action="store_true",
-        default=False,
-        help="Print OpenWrt package names and exit",
-    )
-    parser.add_argument(
-        "--print-pip",
-        action="store_true",
-        default=False,
-        help="Print pip requirement specifiers and exit",
-    )
-    args = parser.parse_args(argv)
-    check: bool = args.check
-    check_latest: bool = args.check_latest
-    print_openwrt: bool = args.print_openwrt
-    print_pip: bool = args.print_pip
+cli = typer.Typer(help="Generate derived dependency files from the runtime manifest.", add_completion=False)
+
+
+@cli.command()
+def main(
+    check: Annotated[
+        bool,
+        typer.Option("--check", help="Exit with status 1 if running would change any files"),
+    ] = False,
+    check_latest: Annotated[
+        bool,
+        typer.Option("--check-latest", help="Query PyPI and warn about outdated pinned versions"),
+    ] = False,
+    print_openwrt: Annotated[
+        bool,
+        typer.Option("--print-openwrt", help="Print OpenWrt package names and exit"),
+    ] = False,
+    print_pip: Annotated[
+        bool,
+        typer.Option("--print-pip", help="Print pip requirement specifiers and exit"),
+    ] = False,
+) -> None:
     deps = load_manifest()
     if print_openwrt:
         sys.stdout.write("\n".join(collect_openwrt_packages(deps)) + "\n")
@@ -486,4 +486,4 @@ def main(argv: list[str] | None = None) -> None:
 
 
 if __name__ == "__main__":
-    main()
+    cli()

@@ -171,6 +171,19 @@ openwrt = "python3-lmdb"
 pip = "lmdb==2.3.0"
 rationale = "Ultra-fast memory-mapped C storage engine for persistent queues and key-value datastores"
 
+[[dependency]]
+name = "packaging"
+openwrt = "python3-packaging"
+pip = "packaging>=24.0"
+rationale = "Standardized core utilities for Python package version parsing and requirement specifiers"
+
+[[dependency]]
+name = "distlib"
+openwrt = "python3-distlib"
+pip = "distlib>=0.3.8"
+rationale = "Low-level distribution and packaging utilities for version normalization and dependency resolution"
+
+
 
 
 

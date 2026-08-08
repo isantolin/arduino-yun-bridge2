@@ -13,15 +13,17 @@ Outputs a Markdown table suitable for ``$GITHUB_STEP_SUMMARY``.
 from __future__ import annotations
 from mcubridge.protocol import mcubridge_pb2 as pb
 
-import argparse
 import importlib
 import resource
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from collections.abc import Callable
+
+import typer
+from typing_extensions import Annotated
 
 # ---------------------------------------------------------------------------
 # Data structures
@@ -311,33 +313,25 @@ def render_markdown(imp: ImportMetrics, benchmarks: list[BenchmarkResult]) -> st
 # ---------------------------------------------------------------------------
 
 
-def main(argv: list[str] | None = None) -> None:
-    """Profile the MCU Bridge daemon and generate a resource report."""
-    parser = argparse.ArgumentParser(description="Profile the MCU Bridge daemon and report resource usage.")
-    parser.add_argument(
-        "--github-step-summary",
-        type=Path,
-        default=None,
-        help="Append the report to GitHub step summary output.",
-    )
-    parser.add_argument(
-        "--json",
-        dest="json_output",
-        type=Path,
-        default=None,
-        help="Write metrics as JSON to this path.",
-    )
-    parser.add_argument(
-        "--iterations",
-        type=int,
-        default=5000,
-        help="Number of iterations per benchmark.",
-    )
-    args = parser.parse_args(argv)
-    github_step_summary: Path | None = args.github_step_summary
-    json_output: Path | None = args.json_output
-    iterations: int = args.iterations
+cli = typer.Typer(help="Profile the MCU Bridge daemon and report resource usage.", add_completion=False)
 
+
+@cli.command()
+def main(
+    github_step_summary: Annotated[
+        Path | None,
+        typer.Option("--github-step-summary", help="Append the report to GitHub step summary output."),
+    ] = None,
+    json_output: Annotated[
+        Path | None,
+        typer.Option("--json", help="Write metrics as JSON to this path."),
+    ] = None,
+    iterations: Annotated[
+        int,
+        typer.Option("--iterations", help="Number of iterations per benchmark."),
+    ] = 5000,
+) -> None:
+    """Profile the MCU Bridge daemon and generate a resource report."""
     print("Measuring daemon import...")
     imp = measure_import()
 
@@ -380,4 +374,4 @@ def main(argv: list[str] | None = None) -> None:
 
 
 if __name__ == "__main__":
-    main()
+    cli()

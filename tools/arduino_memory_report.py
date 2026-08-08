@@ -3,11 +3,13 @@
 
 from __future__ import annotations
 
-import argparse
 import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+
+import typer
+from typing_extensions import Annotated
 
 BOARD_MAPPING = {
     "arduino-avr-yun": "Arduino Yún",
@@ -90,18 +92,20 @@ def render_markdown(metrics: list[MemoryMetrics]) -> str:
     return "\n".join(header + rows)
 
 
-def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(description="Parse Arduino compilation logs and generate a memory usage report.")
-    parser.add_argument("log_dir", type=Path, help="Directory containing build log files.")
-    parser.add_argument(
-        "--github-step-summary",
-        type=Path,
-        default=None,
-        help="Append the table to GitHub step summary output.",
-    )
-    args = parser.parse_args(argv)
-    log_dir: Path = args.log_dir
-    github_step_summary: Path | None = args.github_step_summary
+cli = typer.Typer(
+    help="Parse Arduino compilation logs and generate a memory usage report.",
+    add_completion=False,
+)
+
+
+@cli.command()
+def main(
+    log_dir: Annotated[Path, typer.Argument(help="Directory containing build log files.")],
+    github_step_summary: Annotated[
+        Path | None,
+        typer.Option("--github-step-summary", help="Append the table to GitHub step summary output."),
+    ] = None,
+) -> None:
     if not log_dir.exists() or not log_dir.is_dir():
         print(
             f"Warning: Directory {log_dir} does not exist. Skipping memory report.",
@@ -128,4 +132,4 @@ def main(argv: list[str] | None = None) -> None:
 
 
 if __name__ == "__main__":
-    main()
+    cli()

@@ -33,7 +33,7 @@ except ModuleNotFoundError as exc:
 import json
 import tempfile
 import typer
-from typing_extensions import Annotated
+from typing import Annotated
 
 # --- Constants ---
 SOCAT_PORT0 = "/tmp/ttyBRIDGE0"

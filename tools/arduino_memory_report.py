@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import typer
-from typing_extensions import Annotated
+from typing import Annotated
 
 BOARD_MAPPING = {
     "arduino-avr-yun": "Arduino Yún",

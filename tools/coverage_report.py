@@ -13,7 +13,7 @@ from typing import Any, cast
 import rich.console
 import typer
 from rich.table import Table
-from typing_extensions import Annotated
+from typing import Annotated
 
 
 @dataclass

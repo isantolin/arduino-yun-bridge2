@@ -8,7 +8,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 
 import typer
-from typing_extensions import Annotated
+from typing import Annotated
 
 import serialx
 from google.protobuf.message import Message as ProtobufMessage

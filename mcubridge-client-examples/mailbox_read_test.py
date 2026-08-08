@@ -6,7 +6,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import typer
-from typing_extensions import Annotated
+from typing import Annotated
 
 from mcubridge_client import Topic, pb
 from mcubridge_client.cli import bridge_session, configure_logging

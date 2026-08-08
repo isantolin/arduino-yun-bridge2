@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 import typer
-from typing_extensions import Annotated
+from typing import Annotated
 
 
 def resolve_nm_binary() -> str:

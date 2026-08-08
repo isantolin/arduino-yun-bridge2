@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 import typer
-from typing_extensions import Annotated
+from typing import Annotated
 
 # ---------------------------------------------------------------------------
 # Data structures

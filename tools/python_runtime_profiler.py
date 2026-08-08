@@ -10,7 +10,7 @@ import tracemalloc
 from pathlib import Path
 
 import typer
-from typing_extensions import Annotated
+from typing import Annotated
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "mcubridge"))

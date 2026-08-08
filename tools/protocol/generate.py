@@ -19,12 +19,11 @@ import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 from jinja2 import Environment, FileSystemLoader
 from packaging.version import Version
 import typer
-from typing_extensions import Annotated
 
 # ═════════════════════════════════════════════════════════════════════════════
 # DEPENDENCY VALIDATION (CRITICAL)

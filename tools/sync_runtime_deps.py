@@ -9,13 +9,12 @@ import urllib.error
 import urllib.request
 from collections.abc import Sequence
 from pathlib import Path
-from typing import TypedDict
+from typing import Annotated, TypedDict
 
 from distlib.version import NormalizedVersion
 from packaging.requirements import Requirement
 from packaging.version import Version
 import typer
-from typing_extensions import Annotated
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = ROOT / "requirements" / "runtime.toml"

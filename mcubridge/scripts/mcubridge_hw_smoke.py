@@ -8,7 +8,7 @@ import sys
 from grpclib.client import Channel
 import structlog
 import typer
-from typing_extensions import Annotated
+from typing import Annotated
 from mcubridge.protocol.mcubridge_grpc import LocalBridgeStub
 from mcubridge.config.settings import load_runtime_config
 from mcubridge.protocol import mcubridge_pb2 as pb

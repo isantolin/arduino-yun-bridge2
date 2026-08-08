@@ -1,6 +1,6 @@
 """Formal metrics container for McuBridge using prometheus_client primitives."""
 
-from __future__ import annotations
+import importlib.metadata
 
 from prometheus_client import (
     CollectorRegistry,
@@ -165,8 +165,6 @@ class DaemonMetrics:
 
     def _set_build_info(self) -> None:
         """Populate build info from package metadata."""
-        import importlib.metadata
-
         try:
             version = importlib.metadata.version("mcubridge")
         except importlib.metadata.PackageNotFoundError:

@@ -8,7 +8,10 @@ import weakref
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 from typing import Any
 
-from prometheus_client.core import Metric
+from wsgiref.simple_server import make_server
+import prometheus_client
+from prometheus_client import ProcessCollector
+from prometheus_client.core import GaugeMetricFamily, Metric
 from prometheus_client.registry import Collector
 import structlog
 
@@ -217,8 +220,6 @@ class RuntimeStateCollector(Collector):
         if state is None:
             return
 
-        from prometheus_client.core import GaugeMetricFamily
-
         # 1. Queue Depths (Dimensional)
         q_depths = GaugeMetricFamily(
             "mcubridge_queue_depth",
@@ -266,10 +267,6 @@ class PrometheusExporter:
     """Expose RuntimeState snapshots via the official Prometheus HTTP server."""
 
     def __init__(self, state: RuntimeState, host: str, port: int) -> None:
-        from prometheus_client import ProcessCollector
-        import prometheus_client
-        from wsgiref.simple_server import make_server
-
         pc: Any = prometheus_client
         make_wsgi_app: Any = pc.make_wsgi_app
 

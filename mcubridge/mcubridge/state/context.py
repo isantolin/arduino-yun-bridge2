@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import collections
+import socket
 import time
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Final, TypeVar, cast
 
+from google.protobuf.json_format import ParseDict
 from .storage import LmdbDeque, LmdbCache
 import structlog
 
@@ -285,8 +287,6 @@ class RuntimeState:
 
     @property
     def device_id(self) -> str:
-        import socket
-
         return socket.gethostname()
 
     @property
@@ -528,8 +528,6 @@ class RuntimeState:
         )
 
     def build_bridge_snapshot(self) -> pb.BridgeSnapshot:
-        from google.protobuf.json_format import ParseDict
-
         versionpb_obj = None
         if self.mcu_version is not None:
             versionpb_obj = pb.VersionResponse(

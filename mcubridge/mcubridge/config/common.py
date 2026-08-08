@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
-import structlog
 from typing import Any, Final
+import structlog
+from google.protobuf import json_format
+from mcubridge.config import const
+from mcubridge.protocol import mcubridge_pb2 as pb, protocol
 
 logger = structlog.get_logger(__name__)
 
@@ -48,11 +51,6 @@ def get_uci_config() -> dict[str, Any]:
 
 def get_default_config() -> dict[str, Any]:
     """Return the complete default configuration as a dictionary (SIL 2)."""
-    from mcubridge.protocol import mcubridge_pb2 as pb
-    from mcubridge.protocol import protocol
-    from mcubridge.config import const
-    from google.protobuf import json_format
-
     msg = pb.RuntimeConfig(
         serial_port=const.DEFAULT_SERIAL_PORT,
         serial_baud=protocol.DEFAULT_BAUDRATE,

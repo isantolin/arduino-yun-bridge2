@@ -14,6 +14,7 @@ from typing import TypedDict
 
 import json
 import tomllib
+from graphlib import TopologicalSorter
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = ROOT / "requirements" / "runtime.toml"
@@ -47,6 +48,17 @@ class _DepEntry(TypedDict):
     gateway: bool
 
 
+def sort_dependencies_topologically(deps: Sequence[_DepEntry]) -> list[_DepEntry]:
+    """Sorts dependencies in topological order using standard graphlib."""
+    ts: TopologicalSorter[str] = TopologicalSorter()
+    dep_map = {dep["name"]: dep for dep in deps}
+
+    for dep in deps:
+        ts.add(dep["name"])
+
+    return [dep_map[name] for name in ts.static_order() if name in dep_map]
+
+
 def load_manifest() -> list[_DepEntry]:
     if not MANIFEST_PATH.exists():
         raise ManifestError(f"Missing manifest: {MANIFEST_PATH}")
@@ -69,7 +81,7 @@ def load_manifest() -> list[_DepEntry]:
                 gateway=bool(entry.get("gateway", False)),
             )
         )
-    return normalized
+    return sort_dependencies_topologically(normalized)
 
 
 def collect_pip_specs(deps: Sequence[_DepEntry]) -> list[str]:

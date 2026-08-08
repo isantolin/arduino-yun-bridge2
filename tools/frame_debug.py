@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import argparse
 import binascii
 import sys
+import typer
 from collections.abc import Iterable
 from dataclasses import dataclass
 
@@ -16,6 +16,8 @@ from cobs import cobs
 from mcubridge.protocol import protocol
 from mcubridge.protocol.frame import build_frame, parse_frame, DecodedFrame
 from mcubridge.protocol.protocol import DEFAULT_BAUDRATE, FRAME_DELIMITER
+
+app = typer.Typer(help="MCU Bridge Frame Debugger")
 
 
 @dataclass(frozen=True)
@@ -98,18 +100,10 @@ def build_snapshot(command_id: int, payload: bytes | ProtobufMessage) -> FrameDe
     crc = int.from_bytes(raw_frame[-protocol.CRC_SIZE :], "little")
     encoded_body = cobs.encode(raw_frame)
     encoded_packet = encoded_body + FRAME_DELIMITER
-
-    if isinstance(payload, (bytes, bytearray, memoryview)):
-        payload_length = len(payload)
-    elif hasattr(payload, "SerializeToString"):
-        payload_length = len(payload.SerializeToString())
-    else:
-        payload_length = 0
-
     return FrameDebugSnapshot(
         command_id=command_id,
         command_name=name_for_command(command_id),
-        payload_length=payload_length,
+        payload_length=len(payload) if isinstance(payload, bytes) else payload.ByteSize(),
         crc=crc,
         raw_length=len(raw_frame),
         cobs_length=len(encoded_body),
@@ -120,25 +114,15 @@ def build_snapshot(command_id: int, payload: bytes | ProtobufMessage) -> FrameDe
     )
 
 
-def _decode_frame(encoded_packet: bytes) -> DecodedFrame:
-    return parse_frame(cobs.decode(encoded_packet))
+def _decode_frame(packet: bytes) -> DecodedFrame:
+    return parse_frame(packet)
 
 
 def _print_response(decoded: DecodedFrame) -> None:
-    envelope = decoded.envelope
-    payload = decoded.payload
-    if isinstance(payload, (bytes, bytearray, memoryview)):
-        payload_len = len(payload)
-    elif hasattr(payload, "SerializeToString"):
-        payload_len = len(payload.SerializeToString())
-    else:
-        payload_len = 0
-
+    cmd_name = name_for_command(decoded.command_id)
     sys.stdout.write(
-        f"[FrameDebug] --- MCU Response ---\n"
-        f"cmd_id=0x{envelope.command_id:02X}\n"
-        f"seq_id={envelope.sequence_id}\n"
-        f"payload_len={payload_len}\n"
+        f"[FrameDebug] RX Frame: {cmd_name} (0x{decoded.command_id:02X}) "
+        f"seq={decoded.sequence_id} payload_len={len(decoded.payload)}\n"
     )
 
 
@@ -172,6 +156,7 @@ async def run_debug_loop(
     sys.stdout.write(f"[FrameDebug] Initialized transport on {port} ({baudrate} bps)\n" f"{snapshot.render()}\n\n")
 
     try:
+        import asyncio
         reader, writer = await serialx.open_serial_connection(url=port, baudrate=baudrate)
         for i in _iter_counts(count):
             sys.stdout.write(f"[FrameDebug] [{i}] Sending frame...\n")
@@ -211,36 +196,34 @@ async def run_generate_only(command_str: str, payload_str: str) -> None:
     sys.stdout.write(f"{snapshot.render()}\n")
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="MCU Bridge Frame Debugger")
-    parser.add_argument("--port", help="Serial port device (e.g. /dev/ttyATH0)")
-    parser.add_argument("--baudrate", type=int, default=DEFAULT_BAUDRATE, help="Baudrate")
-    parser.add_argument("--command", required=True, help="Command ID (hex, int, or name)")
-    parser.add_argument("--payload", default="", help="Payload hex string")
-    parser.add_argument("--interval", type=float, default=1.0, help="Interval between frames")
-    parser.add_argument("--count", type=int, default=1, help="Number of frames (0 for infinite)")
-    parser.add_argument("--generate", action="store_true", help="Only generate and print frame")
-
-    args = parser.parse_args()
-
-    if args.generate:
-        asyncio.run(run_generate_only(args.command, args.payload))
-    elif args.port:
+@app.command()
+def main(
+    command: str = typer.Option(..., "--command", help="Command ID (hex, int, or name)"),
+    port: str | None = typer.Option(None, "--port", help="Serial port device (e.g. /dev/ttyATH0)"),
+    baudrate: int = typer.Option(DEFAULT_BAUDRATE, "--baudrate", help="Baudrate"),
+    payload: str = typer.Option("", "--payload", help="Payload hex string"),
+    interval: float = typer.Option(1.0, "--interval", help="Interval between frames"),
+    count: int = typer.Option(1, "--count", help="Number of frames (0 for infinite)"),
+    generate: bool = typer.Option(False, "--generate", help="Only generate and print frame"),
+) -> None:
+    import asyncio
+    if generate:
+        asyncio.run(run_generate_only(command, payload))
+    elif port:
         asyncio.run(
             run_debug_loop(
-                args.port,
-                args.baudrate,
-                args.command,
-                args.payload,
-                args.interval,
-                args.count,
+                port,
+                baudrate,
+                command,
+                payload,
+                interval,
+                count,
             )
         )
     else:
-        parser.print_help()
+        typer.echo("Error: --port or --generate must be specified", err=True)
+        raise typer.Exit(1)
 
 
 if __name__ == "__main__":
-    import asyncio
-
-    main()
+    app()

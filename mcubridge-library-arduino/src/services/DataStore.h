@@ -4,6 +4,8 @@
 #undef min
 #undef max
 #include <etl/delegate.h>
+#include <etl/flat_map.h>
+#include <etl/optional.h>
 #include <etl/queue.h>
 #include <etl/span.h>
 #include <etl/string.h>

@@ -118,11 +118,16 @@ def _decode_frame(packet: bytes) -> DecodedFrame:
     return parse_frame(packet)
 
 
+from typing import Annotated
+
 def _print_response(decoded: DecodedFrame) -> None:
-    cmd_name = name_for_command(decoded.command_id)
+    cmd_id = decoded.envelope.command_id
+    seq_id = decoded.envelope.sequence_id
+    cmd_name = name_for_command(cmd_id)
+    payload_len = len(decoded.payload) if isinstance(decoded.payload, bytes) else decoded.payload.ByteSize()
     sys.stdout.write(
-        f"[FrameDebug] RX Frame: {cmd_name} (0x{decoded.command_id:02X}) "
-        f"seq={decoded.sequence_id} payload_len={len(decoded.payload)}\n"
+        f"[FrameDebug] RX Frame: {cmd_name} (0x{cmd_id:02X}) "
+        f"seq={seq_id} payload_len={payload_len}\n"
     )
 
 
@@ -198,13 +203,13 @@ async def run_generate_only(command_str: str, payload_str: str) -> None:
 
 @app.command()
 def main(
-    command: str = typer.Option(..., "--command", help="Command ID (hex, int, or name)"),
-    port: str | None = typer.Option(None, "--port", help="Serial port device (e.g. /dev/ttyATH0)"),
-    baudrate: int = typer.Option(DEFAULT_BAUDRATE, "--baudrate", help="Baudrate"),
-    payload: str = typer.Option("", "--payload", help="Payload hex string"),
-    interval: float = typer.Option(1.0, "--interval", help="Interval between frames"),
-    count: int = typer.Option(1, "--count", help="Number of frames (0 for infinite)"),
-    generate: bool = typer.Option(False, "--generate", help="Only generate and print frame"),
+    command: Annotated[str, typer.Option("--command", help="Command ID (hex, int, or name)")],
+    port: Annotated[str | None, typer.Option("--port", help="Serial port device (e.g. /dev/ttyATH0)")] = None,
+    baudrate: Annotated[int, typer.Option("--baudrate", help="Baudrate")] = DEFAULT_BAUDRATE,
+    payload: Annotated[str, typer.Option("--payload", help="Payload hex string")] = "",
+    interval: Annotated[float, typer.Option("--interval", help="Interval between frames")] = 1.0,
+    count: Annotated[int, typer.Option("--count", help="Number of frames (0 for infinite)")] = 1,
+    generate: Annotated[bool, typer.Option("--generate", help="Only generate and print frame")] = False,
 ) -> None:
     import asyncio
     if generate:
@@ -221,8 +226,8 @@ def main(
             )
         )
     else:
-        typer.echo("Error: --port or --generate must be specified", err=True)
-        raise typer.Exit(1)
+        sys.stderr.write("Error: --port or --generate must be specified\n")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

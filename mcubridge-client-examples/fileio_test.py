@@ -48,7 +48,7 @@ async def run_test(
                 )
             )
             content = res.payload if res else b""
-            logging.info("Read content: %s", content.decode("utf-8", errors="replace"))
+            logging.info("Read content: %s", content.decode("utf-8"))
 
         finally:
             # --- Test File Remove ---

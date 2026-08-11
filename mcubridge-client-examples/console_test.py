@@ -28,10 +28,10 @@ async def run_test(
                 async with stub.SubscribeConsole.open() as stream:
                     await stream.send_message(pb.SubscribeRequest())
                     async for msg in stream:
-                        payload_str = (msg.payload or b"").decode("utf-8", errors="replace")
+                        payload_str = (msg.payload or b"").decode("utf-8")
                         logging.info("Received from Arduino: %s", payload_str)
             except asyncio.CancelledError:
-                pass
+                logging.debug("Console listener task cancelled.")
             except (OSError, RuntimeError) as e:
                 logging.debug("Console listener closed: %s", e)
 
@@ -66,7 +66,7 @@ async def run_test(
         try:
             await listener_task
         except asyncio.CancelledError:
-            pass
+            logging.debug("Listener task cleanup complete.")
 
 
 def main(

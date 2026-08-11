@@ -46,7 +46,7 @@ async def run_test(
             if is_analog:
                 topic_ar = Topic.build(Topic.ANALOG, str(pin_number), prefix=topic_prefix)
                 res = await stub.Publish(pb.CloudQueuedPublish(topic_name=topic_ar, payload=b"", qos=1))
-                val_str = res.payload.decode("utf-8", errors="replace") if (res and res.payload) else "0"
+                val_str = res.payload.decode("utf-8") if (res and res.payload) else "0"
                 try:
                     value = int(val_str)
                 except ValueError:
@@ -55,7 +55,7 @@ async def run_test(
             else:
                 topic_dr = Topic.build(Topic.DIGITAL, str(pin_number), prefix=topic_prefix)
                 res = await stub.Publish(pb.CloudQueuedPublish(topic_name=topic_dr, payload=b"", qos=1))
-                val_str = res.payload.decode("utf-8", errors="replace") if (res and res.payload) else "0"
+                val_str = res.payload.decode("utf-8") if (res and res.payload) else "0"
                 try:
                     value = int(val_str)
                 except ValueError:

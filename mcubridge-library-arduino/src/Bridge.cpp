@@ -964,20 +964,22 @@ void BridgeClass::_handleGetVersion(const bridge::router::CommandContext& ctx) {
   rpc_pb_VersionResponse resp = {};
   resp.major = rpc::FIRMWARE_VERSION_MAJOR;
   resp.minor = rpc::FIRMWARE_VERSION_MINOR;
-  resp.patch = (uint32_t)rpc::FIRMWARE_VERSION_PATCH;
+  resp.patch = static_cast<uint32_t>(rpc::FIRMWARE_VERSION_PATCH);
   (void)send(rpc::CommandId::CMD_GET_VERSION_RESP, ctx.sequence_id, resp);
 }
 
 void BridgeClass::_handleGetFreeMemory(
     const bridge::router::CommandContext& ctx) {
   rpc_pb_FreeMemoryResponse resp = {};
-  resp.value = (uint32_t)bridge::hal::getFreeMemory();
+  resp.value = static_cast<uint32_t>(bridge::hal::getFreeMemory());
   (void)send(rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, ctx.sequence_id, resp);
 }
 
 void BridgeClass::_applyTimingConfig(const rpc_pb_HandshakeConfig& msg) {
-  _ack_timeout_ms = (uint16_t)msg.ack_timeout_ms;
-  _retry_limit = (uint8_t)msg.ack_retry_limit;
+  _ack_timeout_ms = static_cast<uint16_t>(
+      etl::clamp<uint32_t>(msg.ack_timeout_ms, 0U, 65535U));  // [SIL-2] range-safe narrowing
+  _retry_limit = static_cast<uint8_t>(
+      etl::clamp<uint32_t>(msg.ack_retry_limit, 0U, 255U));   // [SIL-2] range-safe narrowing
   _response_timeout_ms = msg.response_timeout_ms;
 }
 

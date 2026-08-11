@@ -5,7 +5,7 @@ between the Linux daemon and the Arduino MCU.
 
 [SIL-2 / MIL-SPEC OPTIMIZATIONS]
 - LRU caching of ChaCha20Poly1305 cipher contexts per session key to eliminate OpenSSL re-allocations.
-- Direct binary Varint AAD builder (_build_aad_bytes) replacing redundant Protobuf envelope instantiations.
+- Standard Protobuf serialization for AEAD AAD construction (RpcEnvelope header fields). [SIL-2]
 - Zero-copy memoryview parsing and fast CRC32 verification using binascii C extension.
 """
 
@@ -14,11 +14,11 @@ from __future__ import annotations
 import struct
 from binascii import crc32
 from functools import lru_cache
-from typing import Final, NamedTuple, cast
+from typing import Final, NamedTuple
 
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
-from google.protobuf.internal.encoder import _VarintBytes  # type: ignore[import-untyped]
+
 from google.protobuf.message import DecodeError, Message as ProtobufMessage
 
 from mcubridge.protocol import mcubridge_pb2 as pb
@@ -43,11 +43,12 @@ def _get_cipher(session_key: bytes) -> ChaCha20Poly1305:
 
 
 def _build_aad_bytes(version: int, command_id: int, sequence_id: int) -> bytes:
-    """Protobuf Varint AAD builder for RpcEnvelope fields (1=version, 2=command_id, 3=sequence_id). [SIL-2]"""
-    v_enc = cast(bytes, _VarintBytes(version))
-    cmd_enc = cast(bytes, _VarintBytes(command_id))
-    seq_enc = cast(bytes, _VarintBytes(sequence_id))
-    return b"\x08" + v_enc + b"\x10" + cmd_enc + b"\x18" + seq_enc
+    """Build AEAD AAD via standard Protobuf serialization of RpcEnvelope header fields. [SIL-2]"""
+    return pb.RpcEnvelope(
+        version=version,
+        command_id=command_id,
+        sequence_id=sequence_id,
+    ).SerializeToString()
 
 
 class DecodedFrame(NamedTuple):

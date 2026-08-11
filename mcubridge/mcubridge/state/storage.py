@@ -120,7 +120,24 @@ class LmdbDeque:
             self._open_env()
 
     async def vacuum(self) -> None:
-        pass
+        """[SIL-2] Compact LMDB storage to reclaim disk space after spool flush."""
+        if self.is_mem or not self.env:
+            return
+        p = Path(self.path)
+        env_path = p / "deque.db" if p.is_dir() else p
+        compact_path = Path(str(env_path) + ".compact")
+        try:
+            self.env.copy(str(compact_path), compact=True)
+            self.env.close()
+            self.env = None
+            compact_path.replace(env_path)
+            self._open_env()
+        except (lmdb.Error, OSError) as exc:
+            logger.warning("LMDB vacuum failed, compaction skipped: %s", exc)
+            try:
+                compact_path.unlink(missing_ok=True)
+            except OSError:
+                pass
 
     async def close(self) -> None:
         if self.env:
@@ -188,7 +205,7 @@ class LmdbCache:
                 val = txn.get(key.encode("utf-8"))
                 return val if val is not None else default
         except (lmdb.Error, OSError) as exc:
-            logger.error("SqliteCache get failed", path=self.path, key=key, error=exc)
+            logger.error("LmdbCache get failed", path=self.path, key=key, error=exc)
             return default
 
     async def clear(self) -> None:

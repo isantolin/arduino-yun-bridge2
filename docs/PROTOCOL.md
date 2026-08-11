@@ -49,8 +49,8 @@ El generador produce automáticamente `rpc::Payload::parse<T>(const rpc_pb_RpcEn
 ### Validación Estática (C++)
 La librería C++ utiliza el namespace `rpc::Payload` para un desempaquetado de datos seguro y tipado.
 
-### Despacho de Comandos (Deterministic Switch Dispatch)
-El MCU utiliza un despacho basado en una estructura `switch` optimizada sobre punteros a métodos. Esto garantiza un tiempo de despacho determinista, elimina la redundancia de código y minimiza el uso de RAM al evitar tablas de salto estáticas de gran tamaño, cumpliendo con los requisitos más estrictos de SIL-2. Esto garantiza un tiempo de despacho constante (O(1)), elimina la redundancia de código y reduce drásticamente la profundidad de la pila de llamadas, cumpliendo con los requisitos más estrictos de SIL-2.
+### Despacho de Comandos (Binary Search Dispatch)
+El MCU utiliza un despacho basado en una tabla estática `k_dispatch_table[]` ordenada por `command_id`, almacenada en PROGMEM para AVR. El lookup se realiza con `etl::lower_bound` (O(log N) sobre tabla contigua), eliminando el overhead de switch/case y la dependencia en rangos de enum contiguos. Esto garantiza un tiempo de despacho determinista y acotado, elimina la redundancia de código y minimiza el uso de RAM al ubicar la tabla en Flash (PROGMEM), cumpliendo con los requisitos más estrictos de SIL-2.
 
 - **Contrato de tópicos público**: prefijo por defecto, sufijos y tokens canónicos que impactan interoperabilidad (`CLOUD_DEFAULT_TOPIC_PREFIX`, `CLOUD_SUFFIX_*`, `STATUS_REASON_*`).
 
@@ -188,36 +188,52 @@ Rastrea el ciclo de vida de cada subproceso asíncrono ejecutado en Linux a peti
 ### 4. ETL FSM (MCU Firmware) — IEC 61508 / SIL 2
 
 Máquina de estados estática en el MCU (C++) para la gestión del enlace RPC.
+Implementada con `etl::fsm` y `enum class StateId : uint8_t` para cero conversiones narrowing.
 
 #### Estados
 | Estado | ID | Descripción |
 |--------|----|-------------|
-| `StateUnsynchronized` | 0 | Enlace no establecido. Esperando handshake. |
-| `StateIdle` | 1 | Enlace sincronizado, listo para operar. |
-| `StateAwaitingAck` | 2 | Frame crítico enviado, esperando confirmación. |
-| `StateFault` | 3 | Fallo criptográfico detectado. Estado terminal. |
+| `STARTUP` | 0 | Estado inicial al arrancar. Esperando primer reset. |
+| `UNSYNCHRONIZED` | 1 | Enlace no establecido. Esperando handshake. |
+| `HANDSHAKE` | 2 | Handshake en progreso (`CMD_LINK_SYNC` enviado). |
+| `SYNCHRONIZED` | 3 | Enlace sincronizado y autenticado, listo para operar. |
+| `AWAITING_ACK` | 4 | Frame crítico enviado, esperando confirmación ACK. |
+| `FAULT` | 5 | Fallo crítico (timeout, auth fail). Llama `hal::forceSafeState()`. |
 
 #### Diagrama de Transiciones (MCU)
 
 ```
                     ┌─────────────────────┐
-                    │   Unsynchronized    │◄────────────────┐
-                    │        (0)          │                 │
-                    └──────────┬──────────┘                 │
-                               │ EvHandshakeComplete        │ EvReset
-                               ▼                            │
-                    ┌─────────────────────┐                 │
-              ┌────►│        Idle         │─────────────────┤
-              │     │        (1)          │                 │
-              │     └──────────┬──────────┘                 │
-              │                │ EvSendCritical             │
-              │                ▼                            │
-              │     ┌─────────────────────┐                 │
- EvAckReceived│     │    AwaitingAck      │─────────────────┘
-              │     │        (2)          │
-              │     └──────────┬──────────┘
-              │                │ EvTimeout
-              └────────────────┘
+                    │       STARTUP       │◄────────────────────┐
+                    │        (0)          │◄─ EvHandshakeFailed ┤
+                    └──────────┬──────────┘                     │
+                               │ EvReset                        │
+                               ▼                                │
+                    ┌─────────────────────┐                     │
+                    │   UNSYNCHRONIZED    │─── EvTimeout ──► FAULT
+                    │        (1)          │                     │
+                    └──────────┬──────────┘                     │
+                               │ EvHandshakeStart               │
+                               ▼                                │
+                    ┌─────────────────────┐                     │
+                    │     HANDSHAKE       │─── EvTimeout ──────►┤
+                    │        (2)          │                     │
+                    └──────────┬──────────┘                     │
+                               │ EvHandshakeComplete            │
+                               ▼                                │
+               ┌──────────────────────────┐                    │
+   EvAckRcvd ◄─┤      SYNCHRONIZED        │─── EvTimeout ─────►┤
+               │           (3)            │                    │
+               └──────────┬───────────────┘                    │
+                          │ EvSendCritical                      │
+                          ▼                                     │
+               ┌─────────────────────┐                         │
+               │    AWAITING_ACK     │─── EvTimeout ──────────►┘
+               │        (4)          │
+               └─────────────────────┘
+
+[FAULT (5)] ──► EvReset ──► UNSYNCHRONIZED
+FaultState::on_enter_state() → hal::forceSafeState() [SIL-2]
 ```
 
 ---

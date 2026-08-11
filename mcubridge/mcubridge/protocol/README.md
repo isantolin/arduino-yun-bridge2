@@ -14,8 +14,8 @@ The system is designed with a strict layering to separate the wire protocol from
 
 ### 2. The Data Structures (`protocol/structures.py`)
 - **Role:** Typed Single Source of Truth.
-- **Content:** Protobuf/Construct hybrid structures for all RPC packets.
-- **Benefit:** Provides automatic validation, binary parsing, and high-performance serialization.
+- **Content:** Protobuf-backed wrappers and validation helpers for all RPC packets.
+- **Benefit:** Provides automatic validation, binary parsing, and high-performance serialization via `google.protobuf`.
 
 ### 3. The Application Defaults (`mcubridge.config.const`)
 - **Role:** Application Configuration Defaults.

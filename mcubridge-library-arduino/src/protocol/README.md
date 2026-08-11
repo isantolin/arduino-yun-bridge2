@@ -4,8 +4,8 @@ This directory contains the auto-generated C++ protocol definitions for the Ardu
 
 ## Source of Truth
 The protocol is formally defined in two files at the repository root:
-- `tools/protocol/mcubridge.proto` — enums, constants, command IDs, and Cloud topics.
-- `tools/protocol/mcubridge.proto` — payload message schemas (proto3).
+- `tools/protocol/mcubridge.proto` — enums, constants, command IDs, Cloud topics, and payload message schemas (proto3).
+- Generated nanopb bindings: `mcubridge.pb.h` / `mcubridge.pb.c` — C structs for all Protobuf messages (no heap, static sizing).
 
 All files in this directory should be considered **read-only artifacts** of the generation process, with the exception of helper classes that wrap the generated structures.
 

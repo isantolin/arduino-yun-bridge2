@@ -6,7 +6,7 @@ Currently, only the latest major version of Arduino MCU Bridge 2 is actively sup
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 2.5.x   | :white_check_mark: |
+| 2.8.x   | :white_check_mark: |
 | 2.x.x   | :white_check_mark: |
 | 1.x.x   | :x:                |
 
@@ -50,5 +50,4 @@ All serial communication requires a successful handshake using a pre-shared secr
 
 ### 5. Determinism (C++)
 
-- **No STL / No Dynamic Memory:** The Arduino library uses the Embedded Template Library (ETL) with static allocation to ensure deterministic behavior and prevent heap fragmentation.
-havior and prevent heap fragmentation.
+- **No STL / No Dynamic Memory:** The Arduino library uses the Embedded Template Library (ETL) with `etl::array` static allocation and `etl::fsm` to ensure deterministic behavior and prevent heap fragmentation.

@@ -241,7 +241,7 @@ jobs:
       - name: Compile & Run Emulation
         run: |
           ./tools/compile_emulator.sh
-          python mcubridge-gateway/gateway.py --no-tls --port 8443 &
+          PYTHONPATH=mcubridge:mcubridge-client-examples python mcubridge-gateway/gateway.py --no-tls --port 8443 &
           gateway_pid=$!
           python -u tools/emulation_runner.py \
             --firmware ${{ matrix.firmware }} \

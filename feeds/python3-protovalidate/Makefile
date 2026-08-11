@@ -21,7 +21,7 @@ define Build/Prepare
 	$(call Build/Prepare/Default)
 	sed -i 's/dynamic = \["version"\]/version = "$(PKG_VERSION)"/' $(PKG_BUILD_DIR)/pyproject.toml
 	sed -i 's/"hatch-vcs",//' $(PKG_BUILD_DIR)/pyproject.toml
-	sed -i '/\[tool.hatch.version\]/d' $(PKG_BUILD_DIR)/pyproject.toml
+	sed -i '/\[tool.hatch/d' $(PKG_BUILD_DIR)/pyproject.toml
 	sed -i '/source = "vcs"/d' $(PKG_BUILD_DIR)/pyproject.toml
 	sed -i '/raw-options/d' $(PKG_BUILD_DIR)/pyproject.toml
 endef

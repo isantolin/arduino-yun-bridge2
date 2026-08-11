@@ -14,10 +14,11 @@ from __future__ import annotations
 import struct
 from binascii import crc32
 from functools import lru_cache
-from typing import Final, NamedTuple
+from typing import Final, NamedTuple, cast
 
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
+from google.protobuf.internal.encoder import _VarintBytes  # type: ignore[import-untyped]
 from google.protobuf.message import DecodeError, Message as ProtobufMessage
 
 from mcubridge.protocol import mcubridge_pb2 as pb
@@ -42,26 +43,11 @@ def _get_cipher(session_key: bytes) -> ChaCha20Poly1305:
 
 
 def _build_aad_bytes(version: int, command_id: int, sequence_id: int) -> bytes:
-    """Fast binary Protobuf Varint encoder for RpcEnvelope AAD (fields 1, 2, 3). [SIL-2]"""
-    aad = bytearray(b"\x08")
-    while version >= 0x80:
-        aad.append((version & 0x7F) | 0x80)
-        version >>= 7
-    aad.append(version & 0x7F)
-
-    aad.append(0x10)
-    while command_id >= 0x80:
-        aad.append((command_id & 0x7F) | 0x80)
-        command_id >>= 7
-    aad.append(command_id & 0x7F)
-
-    aad.append(0x18)
-    while sequence_id >= 0x80:
-        aad.append((sequence_id & 0x7F) | 0x80)
-        sequence_id >>= 7
-    aad.append(sequence_id & 0x7F)
-
-    return bytes(aad)
+    """Protobuf Varint AAD builder for RpcEnvelope fields (1=version, 2=command_id, 3=sequence_id). [SIL-2]"""
+    v_enc = cast(bytes, _VarintBytes(version))
+    cmd_enc = cast(bytes, _VarintBytes(command_id))
+    seq_enc = cast(bytes, _VarintBytes(sequence_id))
+    return b"\x08" + v_enc + b"\x10" + cmd_enc + b"\x18" + seq_enc
 
 
 class DecodedFrame(NamedTuple):

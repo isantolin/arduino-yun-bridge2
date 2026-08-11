@@ -1,4 +1,6 @@
 from __future__ import annotations
+from typing import Annotated
+import typer
 import asyncio
 import sys
 import tomllib
@@ -193,9 +195,22 @@ async def run_command(
         return (1, None, str(e))
 
 
-def main():
-    pass
+app = typer.Typer(help="Hardware test target harness runner.", add_completion=False)
+
+
+@app.command()
+def main(
+    manifest_path: Annotated[Path, typer.Option("--manifest", help="Path to targets.toml manifest")] = EXAMPLE_MANIFEST,
+) -> None:
+    """Load and validate hardware harness manifest targets."""
+    targets = load_manifest(manifest_path)
+    if not targets:
+        print(f"No targets found in manifest: {manifest_path}")
+        return
+    print(f"Loaded {len(targets)} hardware target(s) from {manifest_path.name}:")
+    for t in targets:
+        print(f"  - {t.name} (host={t.host}, local={t.local}, tags={t.tags})")
 
 
 if __name__ == "__main__":
-    main()
+    app()

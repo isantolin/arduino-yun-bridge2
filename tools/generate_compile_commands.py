@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
-import os
-import json
+"""Generate compile_commands.json for C++ tooling and LSP analysis."""
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from __future__ import annotations
+
+import json
+from pathlib import Path
+import typer
+
+ROOT = Path(__file__).resolve().parent.parent
+app = typer.Typer(help="Generate compile_commands.json for Arduino MCU C++ tooling.", add_completion=False)
 
 cmd_str = (
     "/usr/bin/g++ -std=c++17 -O2 -g -Wall -Wextra -Werror "
@@ -22,20 +28,28 @@ cmd_str = (
     "-c mcubridge-library-arduino/src/Bridge.cpp -o /dev/null"
 )
 
-commands = [
-    {
-        "directory": ROOT,
-        "command": cmd_str,
-        "file": os.path.join(ROOT, "mcubridge-library-arduino/src/Bridge.cpp"),
-    },
-    {
-        "directory": ROOT,
-        "command": cmd_str,
-        "file": os.path.join(ROOT, "mcubridge-library-arduino/src/Bridge.h"),
-    },
-]
 
-with open(os.path.join(ROOT, "compile_commands.json"), "w") as f:
-    json.dump(commands, f, indent=2)
+@app.command()
+def main(
+    output: Path = ROOT / "compile_commands.json",
+) -> None:
+    """Generate compile_commands.json file for compile database tooling."""
+    commands = [
+        {
+            "directory": str(ROOT),
+            "command": cmd_str,
+            "file": str(ROOT / "mcubridge-library-arduino/src/Bridge.cpp"),
+        },
+        {
+            "directory": str(ROOT),
+            "command": cmd_str,
+            "file": str(ROOT / "mcubridge-library-arduino/src/Bridge.h"),
+        },
+    ]
 
-print("Generated compile_commands.json with root:", ROOT)
+    output.write_text(json.dumps(commands, indent=2), encoding="utf-8")
+    print(f"Generated compile_commands.json at {output}")
+
+
+if __name__ == "__main__":
+    app()

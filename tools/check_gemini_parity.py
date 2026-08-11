@@ -2,6 +2,8 @@
 """Validate parity between .agent/workflows/*.md and .github/commands/*.toml,
 and verify agent.json model matches the canonical tools/gemini_model file."""
 
+import typer
+
 import json
 import re
 import sys
@@ -80,7 +82,14 @@ def check_prompt_parity() -> list[str]:
     return errors
 
 
-if __name__ == "__main__":
+app = typer.Typer(
+    help="Validate parity between .agent/workflows/*.md and .github/commands/*.toml.",
+    add_completion=False,
+)
+
+
+@app.command()
+def main() -> None:
     errors = check_model_parity() + check_prompt_parity()
     if errors:
         print("PARITY FAILURES:", file=sys.stderr)
@@ -88,3 +97,7 @@ if __name__ == "__main__":
             print(f"  - {e}", file=sys.stderr)
         sys.exit(1)
     print(f"All parity checks passed ({len(WORKFLOWS)} workflow pairs + model).")
+
+
+if __name__ == "__main__":
+    app()

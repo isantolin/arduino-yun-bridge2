@@ -301,6 +301,7 @@ check_python_module "setuptools"
 check_python_module "black"
 check_python_module "packaging"
 check_python_module "distlib"
+check_python_module "typer"
 
 # --- DOWNLOAD CACHE SYMLINK SETUP ---
 setup_dl_symlink() {

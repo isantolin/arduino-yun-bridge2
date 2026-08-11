@@ -976,10 +976,10 @@ void BridgeClass::_handleGetFreeMemory(
 }
 
 void BridgeClass::_applyTimingConfig(const rpc_pb_HandshakeConfig& msg) {
-  _ack_timeout_ms = static_cast<uint16_t>(
-      etl::clamp<uint32_t>(msg.ack_timeout_ms, 0U, 65535U));  // [SIL-2] range-safe narrowing
-  _retry_limit = static_cast<uint8_t>(
-      etl::clamp<uint32_t>(msg.ack_retry_limit, 0U, 255U));   // [SIL-2] range-safe narrowing
+  _ack_timeout_ms = static_cast<uint16_t>(etl::clamp<uint32_t>(
+      msg.ack_timeout_ms, 0U, 65535U));  // [SIL-2] range-safe narrowing
+  _retry_limit = static_cast<uint8_t>(etl::clamp<uint32_t>(
+      msg.ack_retry_limit, 0U, 255U));  // [SIL-2] range-safe narrowing
   _response_timeout_ms = msg.response_timeout_ms;
 }
 

@@ -11,13 +11,17 @@ Runs the full deployment pipeline inside a QEMU VM:
 Requires: qemu-system-mips, python3-pexpect, wget, e2fsprogs
 """
 
-import sys
-import subprocess
-import shutil
+from __future__ import annotations
+
 from pathlib import Path
-from typing import Any
-import urllib.request
+import shutil
+import subprocess
+import sys
+from typing import Annotated, Any
 import urllib.error
+import urllib.request
+
+import typer
 
 
 def log_info(msg: str) -> None:
@@ -394,18 +398,23 @@ def run_test(apk_disk: str, extroot_disk: str) -> None:
         sys.exit(1)
 
 
-if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        log_error(f"Usage: {sys.argv[0]} <apk_directory>")
-        sys.exit(1)
+app = typer.Typer(help="OpenWrt Smoke Test using QEMU (MIPS Malta).", add_completion=False)
 
-    apk_dir_arg = sys.argv[1]
+
+@app.command()
+def main(
+    apk_directory: Annotated[Path, typer.Argument(help="Path to directory containing APK packages")],
+) -> None:
     repo_root = Path(__file__).resolve().parent.parent
 
     download_images()
     sys_apk_dir = repo_root / "dl_sys_apks"
     download_system_apks(sys_apk_dir)
 
-    apk_disk = create_apk_disk(Path(apk_dir_arg), sys_apk_dir, repo_root)
+    apk_disk = create_apk_disk(apk_directory, sys_apk_dir, repo_root)
     extroot_disk = create_extroot_disk()
     run_test(apk_disk, extroot_disk)
+
+
+if __name__ == "__main__":
+    app()

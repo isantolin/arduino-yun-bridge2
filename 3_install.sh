@@ -338,6 +338,9 @@ python3 \
 python3-asyncio \
 python3-uci \
 python3-serialx \
+python3-packaging \
+python3-distlib \
+python3-typer \
 openssl-util \
 coreutils-stty \
 xxd \

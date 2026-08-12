@@ -17,6 +17,7 @@ include $(INCLUDE_DIR)/package.mk
 include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
 
 PYTHON3_PKG_BUILD_VARS += \
+	SETUPTOOLS_SCM_PRETEND_VERSION=$(PKG_VERSION) \
 	PYO3_CONFIG_FILE=$(PKG_BUILD_DIR)/pyo3-config.txt \
 	PYO3_NO_PYTHON=1
 

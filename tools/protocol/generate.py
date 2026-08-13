@@ -856,7 +856,7 @@ def check_incremental_build(args: Any, version: str) -> tuple[bool, Path, str]:
         if args.py_client and not (args.py_client.parent / "buf" / "validate" / "validate_pb2.pyi").exists():
             outputs_exist = False
         for lib in UNTYPED_LIBS:
-            if not (REPO_ROOT / "typings" / lib).exists():
+            if not (REPO_ROOT / "typings" / lib).exists() and not (REPO_ROOT / "typings" / "stubs" / lib).exists():
                 outputs_exist = False
                 break
 
@@ -1042,7 +1042,11 @@ def main(
 
     # [SIL-2] Generate type stubs for untyped libraries using pyright if stub
     # directory is missing (auto-installs pyright if needed).
-    missing_stubs = [lib for lib in UNTYPED_LIBS if not (REPO_ROOT / "typings" / lib).exists()]
+    missing_stubs = [
+        lib
+        for lib in UNTYPED_LIBS
+        if not (REPO_ROOT / "typings" / lib).exists() and not (REPO_ROOT / "typings" / "stubs" / lib).exists()
+    ]
     if missing_stubs:
         has_pyright = shutil.which("pyright") is not None or importlib.util.find_spec("pyright") is not None
         if not has_pyright:

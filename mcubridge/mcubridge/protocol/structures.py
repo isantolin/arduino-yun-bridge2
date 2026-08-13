@@ -10,7 +10,7 @@ import asyncio
 import fnmatch
 import functools
 import itertools
-import re
+import re2
 import ssl
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -36,8 +36,8 @@ def iter_chunks(data: bytes, chunk_size: int) -> Iterable[bytes]:
 
 PROTOBUF_CONTENT_TYPE: Final[str] = "application/x-protobuf"
 
-# [SIL-2] Compiled once at module load; reused across all AllowedCommandPolicy instances.
-_TOKEN_SEP: Final = re.compile(r"[,\s]+")
+# [SIL-2] Compiled once at module load with google-re2 (linear-time, ReDoS-safe)
+_TOKEN_SEP: Final = re2.compile(r"[,\s]+")
 
 
 @functools.lru_cache(maxsize=1)

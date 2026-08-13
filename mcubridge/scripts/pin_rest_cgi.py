@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import logging
 import os
-import re
+import re2
 from typing import Annotated, Any, cast
 from wsgiref.handlers import CGIHandler
 
@@ -67,7 +67,7 @@ def application(environ: dict[str, Any], start_response: Any) -> list[bytes]:
         configure_logging(config)
 
         path = environ.get("PATH_INFO", "")
-        if not (match := re.match(r"/pin/(\d+)", path)):
+        if not (match := re2.match(r"/pin/(\d+)", path)):
             return json_res(
                 start_response,
                 "400 Bad Request",

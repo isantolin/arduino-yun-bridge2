@@ -6,6 +6,7 @@ from mcubridge.transport.serial import SerialTransport
 from mcubridge.services.runtime import BridgeService, LocalBridgeService
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.config.settings import RuntimeConfig
+from mcubridge.state.context import RuntimeState
 
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -148,6 +149,76 @@ async def test_local_bridge_service_subscribe_console() -> None:
             await local_svc.SubscribeConsole(mock_stream)
     finally:
         state.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_process_poll_stream_timeout(runtime_config: RuntimeConfig, runtime_state: RuntimeState) -> None:
+    mock_serial = AsyncMock(spec=SerialTransport)
+    svc = BridgeService(runtime_config, runtime_state, mock_serial)
+
+    mock_proc = MagicMock()
+    mock_proc.pid = 8888
+    mock_proc.returncode = None
+
+    mock_stdout = MagicMock()
+    mock_stdout.at_eof.return_value = False
+    mock_stdout.read = AsyncMock(return_value=b"partial data")
+    mock_proc.stdout = mock_stdout
+    mock_proc.stderr = None
+
+    ctx = MagicMock()
+    ctx.handle = mock_proc
+    ctx.exit_code = 0
+    ctx.io_lock = asyncio.Lock()
+
+    runtime_state.running_processes[8888] = ctx
+
+    res = await svc._poll_process(8888)
+    assert res.finished is False
+    assert res.stdout_truncated is True
+
+
+@pytest.mark.asyncio
+async def test_connect_cloud_session(runtime_config: RuntimeConfig, runtime_state: RuntimeState) -> None:
+    mock_serial = AsyncMock(spec=SerialTransport)
+    runtime_config.cloud_http3_enabled = True
+    svc = BridgeService(runtime_config, runtime_state, mock_serial)
+
+    envelope_pong = MagicMock()
+    envelope_pong.WhichOneof.return_value = "pong"
+
+    envelope_cmd = MagicMock()
+    envelope_cmd.WhichOneof.return_value = "command_request"
+    envelope_cmd.command_request.command_path = "system/version/get"
+    envelope_cmd.command_request.payload = b""
+    envelope_cmd.sequence_id = 1234
+
+    class AsyncStreamMock:
+        def __aiter__(self):
+            async def _gen():
+                yield envelope_pong
+                yield envelope_cmd
+
+            return _gen()
+
+    mock_stream = AsyncStreamMock()
+
+    mock_open_ctx = AsyncMock()
+    mock_open_ctx.__aenter__.return_value = mock_stream
+    mock_open_ctx.__aexit__.return_value = None
+
+    with (
+        patch("mcubridge.services.runtime.Channel"),
+        patch("mcubridge.services.runtime.CloudBridgeStub") as mock_stub_cls,
+        patch.object(svc, "_send_cloud_event", new_callable=AsyncMock),
+        patch.object(svc, "flush_cloud_spool", new_callable=AsyncMock),
+    ):
+        mock_stub = MagicMock()
+        mock_stub.Session.open.return_value = mock_open_ctx
+        mock_stub_cls.return_value = mock_stub
+
+        await svc.connect_cloud_session(None)
+        assert runtime_state.connected_via_http3 is True
 
 
 @pytest.mark.asyncio

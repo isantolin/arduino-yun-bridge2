@@ -48,7 +48,11 @@ download_zip() {
     if [ -f "$dest" ]; then return 0; fi
     echo "[INFO] Downloading $name..."
     if command -v curl >/dev/null 2>&1; then
-        curl --http3 -fsSL --retry 3 --retry-delay 2 --connect-timeout 20 --max-time 180 "$url" -o "$dest"
+        local h3_flag=""
+        if curl --version 2>&1 | grep -qi "HTTP3"; then
+            h3_flag="--http3"
+        fi
+        curl $h3_flag -fsSL --retry 3 --retry-delay 2 --connect-timeout 20 --max-time 180 "$url" -o "$dest"
         return $?
     elif command -v wget >/dev/null 2>&1; then
         wget --tries=5 --waitretry=2 --timeout=20 -qO "$dest" "$url"

@@ -355,7 +355,11 @@ if [ ! -d "$SDK_DIR" ]; then
             echo "[INFO] Using wget with infinite retries for maximum resilience..."
             wget --tries=0 --timeout=15 --waitretry=5 --retry-connrefused -O sdk.tar.zst "$OPENWRT_URL"
         else
-            curl -L --http3 --retry 10 --retry-delay 5 -o sdk.tar.zst "$OPENWRT_URL"
+            CURL_H3=""
+            if curl --version 2>&1 | grep -qi "HTTP3"; then
+                CURL_H3="--http3"
+            fi
+            curl -L $CURL_H3 --retry 10 --retry-delay 5 -o sdk.tar.zst "$OPENWRT_URL"
         fi
 
         # [SECURITY] SHA256 integrity verification of downloaded SDK

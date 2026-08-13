@@ -116,5 +116,6 @@ All new data crossing the serial boundary must be defined in `mcubridge.proto` f
 - Zero-loop imperative rule (C++): substitute manual `for`/`while` loops with `etl::` algorithms (`etl::find`, `etl::copy`, `etl::transform`).
 - Eradicate passthrough methods: access internal members directly if a wrapper method adds no business logic.
 - Managed task concurrency: manage async tasks via `asyncio.TaskGroup` or context managers instead of manual `try-finally` cancellation blocks.
+- Genuine test integrity: tests must assert real component state/responses; superficial line-hitting without assertions or dummy mocks are strictly forbidden.
 - If a test fails because of a correct implementation, fix the test — never compromise the implementation for test compatibility.
 - `tox -e gemini-parity` (`tools/check_gemini_parity.py`) validates consistency between GEMINI.md, AGENTS.md, and `.copilot-instructions` to ensure all AI config files remain in sync.

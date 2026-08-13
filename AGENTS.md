@@ -29,6 +29,7 @@ Arduino MCU Bridge 2 is a modern, high-performance communication system between 
 8. **Zero-Loop Imperative Rule (C++):** Strictly substitute 100% of manual `for`/`while` loops with STL-free `etl::` algorithms (`etl::find`, `etl::copy`, `etl::all_of`, `etl::equal`, `etl::transform`).
 9. **Eradication of Passthrough Methods:** Prohibit passthrough/proxy wrapper methods whose sole purpose is delegating a call to an internal member without business logic. Access the member directly.
 10. **Structured Task Concurrency:** Manage async task lifecycles using `asyncio.TaskGroup()` or `@asynccontextmanager` context managers, eliminating manual `try-finally` task cancellation blocks.
+11. **Genuine Test Integrity & Zero-Cheat Coverage Gate:** All tests must genuinely exercise underlying business logic, state transitions, and error paths by asserting concrete return values, mutated state, or emitted protocol frames. "Cheating" mechanisms — including superficial line-hitting without state validation, empty test calls, dummy assertions (e.g., `assert True`), or mocking internal components to bypass execution — are strictly prohibited. Every test MUST verify the actual functional contract.
 
 ## Resource Optimization (AVR/SIL-2)
 

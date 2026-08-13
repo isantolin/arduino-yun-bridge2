@@ -35,6 +35,7 @@ def _make_transport(tmp_path: Path | None = None) -> tuple[SerialTransport, Any,
         serial_safe_baud=57600,
         serial_fallback_threshold=3,
         cloud_spool_dir=d,
+        allow_non_tmp_paths=True,
     )
     state = create_runtime_state(config)
     mock_serialx = AsyncMock(spec=serialx.AsyncSerial)

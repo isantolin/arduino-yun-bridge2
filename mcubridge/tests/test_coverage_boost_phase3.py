@@ -46,6 +46,7 @@ def _make_config(tmp_path: Path | None = None) -> RuntimeConfig:
         serial_baud=115200,
         cloud_spool_dir=d,
         cloud_queue_limit=10,
+        allow_non_tmp_paths=True,
     )
 
 
@@ -825,5 +826,112 @@ async def test_service_publish_cloud_message_flavors(tmp_path: Path) -> None:
     mock_stream.send_message.side_effect = OSError("network drop")
     res_err = await service._publish_cloud_message(m_msg)
     assert res_err is False
+
+    state.cleanup()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 7. Mailbox, Shell & Advanced MCU Handlers
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+@pytest.mark.asyncio
+async def test_runtime_mailbox_handlers(tmp_path: Path) -> None:
+    config = _make_config(tmp_path)
+    service, state, mock_serial = _make_service(config)
+
+    # 1. Mailbox Write
+    route_w = TopicRoute(
+        raw="test/br/mailbox/write", prefix=config.topic_prefix, topic=Topic.MAILBOX, segments=("write",)
+    )
+    inbound_w = pb.CloudQueuedPublish(topic_name="test/br/mailbox/write", payload=b"msg1")
+    await service._handle_mailbox(route_w, inbound_w)
+    assert mock_serial.send.called
+    assert len(state.mailbox_queue) == 1
+
+    # 2. Mailbox Read (Empty)
+    route_r = TopicRoute(
+        raw="test/br/mailbox/read", prefix=config.topic_prefix, topic=Topic.MAILBOX, segments=("read",)
+    )
+    inbound_r = pb.CloudQueuedPublish(topic_name="test/br/mailbox/read", payload=b"")
+    await service._handle_mailbox(route_r, inbound_r)
+
+    # 3. Mailbox Read (Non-empty)
+    await state.mailbox_incoming_queue.append(b"incoming_data")
+    await service._handle_mailbox(route_r, inbound_r)
+
+    state.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_runtime_mcu_file_read_and_timeouts(tmp_path: Path) -> None:
+    config = _make_config(tmp_path)
+    service, state, mock_serial = _make_service(config)
+
+    inbound = pb.CloudQueuedPublish(topic_name="test/br/file/read", payload=b"mcu:test.txt")
+
+    # 1. Send failure
+    mock_serial.send_raw.return_value = False
+    await service._file_dispatch_mcu_read("mcu:test.txt", inbound, None)
+
+    # 2. Timeout waiting for response
+    mock_serial.send_raw.return_value = True
+    state.serial_response_timeout_ms = 10
+    await service._file_dispatch_mcu_read("mcu:test.txt", inbound, None)
+
+    state.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_runtime_shell_dispatch_handlers(tmp_path: Path) -> None:
+    config = _make_config(tmp_path)
+    service, state, _ = _make_service(config)
+
+    # 1. Shell run async
+    route_run = TopicRoute(
+        raw="test/br/shell/run_async", prefix=config.topic_prefix, topic=Topic.SHELL, segments=("run_async",)
+    )
+    inbound_run = pb.CloudQueuedPublish(topic_name="test/br/shell/run_async", payload=b"echo hello")
+    with patch.object(service, "_run_process", new_callable=AsyncMock, return_value=123):
+        await service._handle_shell(route_run, inbound_run)
+
+    # 2. Shell run async with error
+    with patch.object(service, "_run_process", side_effect=OSError("spawn error")):
+        await service._handle_shell(route_run, inbound_run)
+
+    # 3. Shell write
+    mock_proc = MagicMock()
+    mock_stdin = AsyncMock()
+    mock_proc.stdin = mock_stdin
+    ctx = ProcessContext(handle=mock_proc)
+    state.running_processes[123] = ctx
+
+    route_write = TopicRoute(
+        raw="test/br/shell/write/123", prefix=config.topic_prefix, topic=Topic.SHELL, segments=("write", "123")
+    )
+    inbound_write = pb.CloudQueuedPublish(topic_name="test/br/shell/write/123", payload=b"input_data")
+    await service._handle_shell(route_write, inbound_write)
+    assert mock_stdin.write.called
+
+    state.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_runtime_console_flush_and_queues(tmp_path: Path) -> None:
+    config = _make_config(tmp_path)
+    service, state, mock_serial = _make_service(config)
+
+    state.mark_synchronized()
+
+    # 1. Flush console queue
+    state.console_to_mcu_queue.append(b"console_chunk")
+    await service._flush_console_queue()
+    assert mock_serial.send.called
+
+    # 2. Flush console queue when serial send fails
+    mock_serial.send.return_value = False
+    state.console_to_mcu_queue.append(b"fail_chunk")
+    await service._flush_console_queue()
+    assert len(state.console_to_mcu_queue) > 0
 
     state.cleanup()

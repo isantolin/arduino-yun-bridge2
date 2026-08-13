@@ -17,6 +17,16 @@ include $(TOPDIR)/feeds/packages/lang/python/pypi.mk
 include $(INCLUDE_DIR)/package.mk
 include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
 
+PYTHON3_PKG_BUILD_VARS += \
+	SETUPTOOLS_SCM_PRETEND_VERSION=$(PKG_VERSION)
+
+define Build/Prepare
+	$(call Build/Prepare/Default)
+	sed -i 's/"setuptools_scm\[toml\]>=[0-9.]*",//g' $(PKG_BUILD_DIR)/pyproject.toml 2>/dev/null || true
+	sed -i 's/"setuptools_scm",//g' $(PKG_BUILD_DIR)/pyproject.toml 2>/dev/null || true
+	sed -i 's/dynamic = \["version"\]/version = "$(PKG_VERSION)"/g' $(PKG_BUILD_DIR)/pyproject.toml 2>/dev/null || true
+endef
+
 define Package/python3-tenacity
 	SECTION:=lang
 	CATEGORY:=Languages

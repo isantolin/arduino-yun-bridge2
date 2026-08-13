@@ -942,3 +942,86 @@ async def test_runtime_console_flush_and_queues(tmp_path: Path) -> None:
     assert len(state.console_to_mcu_queue) > 0
 
     state.cleanup()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 8. Cloud Stream Session & Corrupt Spool Flush Hardening
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+@pytest.mark.asyncio
+async def test_runtime_cloud_session_stream_flow(tmp_path: Path) -> None:
+    config = _make_config(tmp_path)
+    config.cloud_http3_enabled = True
+    service, state, _ = _make_service(config)
+
+    envelope_pong = pb.CloudEnvelope(
+        protocol_version=2,
+        device_id=state.device_id,
+        sequence_id=1,
+        pong=pb.KeepalivePong(roundtrip_ms=10),
+    )
+    envelope_cmd = pb.CloudEnvelope(
+        protocol_version=2,
+        device_id=state.device_id,
+        sequence_id=2,
+        command_request=pb.CommandRequest(command_path="d/13/mode", payload=b"1"),
+    )
+
+    class MockAsyncStream:
+        def __init__(self) -> None:
+            self._messages = [envelope_pong, envelope_cmd]
+            self.send_message = AsyncMock()
+
+        def __aiter__(self) -> MockAsyncStream:
+            return self
+
+        async def __anext__(self) -> pb.CloudEnvelope:
+            if self._messages:
+                return self._messages.pop(0)
+            raise StopAsyncIteration
+
+    class MockSessionContext:
+        async def __aenter__(self) -> MockAsyncStream:
+            return MockAsyncStream()
+
+        async def __aexit__(self, *args: Any) -> None:
+            pass
+
+    with (
+        patch("mcubridge.services.runtime.Channel") as mock_chan_cls,
+        patch("mcubridge.services.runtime.CloudBridgeStub") as mock_stub_cls,
+    ):
+        mock_chan = MagicMock()
+        mock_chan.close = MagicMock()
+        mock_chan_cls.return_value = mock_chan
+
+        mock_stub = MagicMock()
+        mock_stub.Session.open.return_value = MockSessionContext()
+        mock_stub_cls.return_value = mock_stub
+
+        await service.connect_cloud_session(None)
+        assert state.connected_via_http3
+        assert not service._cloud_incoming_queue.empty()
+
+    state.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_runtime_flush_cloud_spool_corrupt_and_errors(tmp_path: Path) -> None:
+    config = _make_config(tmp_path)
+    service, state, _ = _make_service(config)
+
+    mock_spool = AsyncMock(spec=LmdbDeque)
+    mock_spool.length = AsyncMock(side_effect=[2, 1, 0, 0, 0, 0])
+    # Return corrupt bytes first to test corruption handling
+    mock_spool.peek = AsyncMock(side_effect=[b"\xff\xffinvalid_protobuf", b""])
+    mock_spool.popleft = AsyncMock()
+
+    service._cloud_spool = mock_spool
+    service._cloud_stream = AsyncMock()
+
+    await service._flush_cloud_spool_locked()
+    assert state.cloud_spool_corrupt_dropped > 0
+
+    state.cleanup()

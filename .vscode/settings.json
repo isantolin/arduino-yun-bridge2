@@ -35,7 +35,27 @@
   "C_Cpp.intelliSenseEngine": "default",
   "C_Cpp.default.cppStandard": "c++17",
   "C_Cpp.default.compilerPath": "/usr/bin/g++",
-  "makefile.configureOnOpen": false,
+  "makefile.configurations": [
+    {
+      "name": "mcubridge",
+      "makefilePath": "${workspaceFolder}/mcubridge/Makefile",
+      "makeDirectory": "${workspaceFolder}/mcubridge"
+    },
+    {
+      "name": "mcubridge-gateway",
+      "makefilePath": "${workspaceFolder}/mcubridge-gateway/Makefile",
+      "makeDirectory": "${workspaceFolder}/mcubridge-gateway"
+    },
+    {
+      "name": "luci-app-mcubridge",
+      "makefilePath": "${workspaceFolder}/luci-app-mcubridge/Makefile",
+      "makeDirectory": "${workspaceFolder}/luci-app-mcubridge"
+    }
+  ],
+  "makefile.defaultConfiguration": "mcubridge",
+  "makefile.makefilePath": "${workspaceFolder}/mcubridge/Makefile",
+  "makefile.makeDirectory": "${workspaceFolder}/mcubridge",
+  "makefile.configureOnOpen": true,
   "makefile.configureAfterCommand": false,
   "makefile.loggingLevel": "Normal",
   "makefile.dryrunSwitches": [],

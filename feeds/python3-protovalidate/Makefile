@@ -19,18 +19,7 @@ include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
 
 define Build/Prepare
 	$(call Build/Prepare/Default)
-	sed -i 's/dynamic = \["version"\]/version = "$(PKG_VERSION)"/' $(PKG_BUILD_DIR)/pyproject.toml
-	sed -i 's/"hatch-vcs",//' $(PKG_BUILD_DIR)/pyproject.toml
-	python3 -c '\
-path = "$(PKG_BUILD_DIR)/pyproject.toml"; \
-lines = open(path, "r", encoding="utf-8").read().splitlines(); \
-out = []; skip = False; \
-for line in lines: \
-    if line.startswith("[tool.hatch"): skip = True; continue; \
-    elif line.startswith("["): skip = False; \
-    if not skip: out.append(line); \
-open(path, "w", encoding="utf-8").write("\n".join(out) + "\n"); \
-'
+	python3 -c "import re, pathlib; p = pathlib.Path('$(PKG_BUILD_DIR)/pyproject.toml'); c = p.read_text(); c = c.replace('dynamic = [\"version\"]', 'version = \"$(PKG_VERSION)\"').replace('\"hatch-vcs\",', ''); c = re.sub(r'\[tool\.hatch\.version\][\s\S]*?(?=\n\[|\Z)', '', c); p.write_text(c)"
 endef
 
 define Package/python3-protovalidate

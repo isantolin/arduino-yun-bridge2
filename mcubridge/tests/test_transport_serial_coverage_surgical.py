@@ -155,3 +155,40 @@ async def test_reset_marks_failure(mock_config: RuntimeConfig, mock_state: Runti
 
     pending.mark_failure.assert_called_once_with(Status.TIMEOUT.value)
     assert transport._current is None
+
+
+@pytest.mark.asyncio
+async def test_send_raw_no_serial(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+    transport = SerialTransport(mock_config, mock_state, None)
+    transport.serial = None
+    ok = await transport.send_raw(Command.CMD_GET_VERSION.value, b"")
+    assert ok is False
+
+
+@pytest.mark.asyncio
+async def test_check_baudrate_fallback_triggers(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+    transport = SerialTransport(mock_config, mock_state, None)
+    transport._consecutive_crc_errors = mock_config.serial_fallback_threshold - 1
+
+    with patch.object(transport, "_negotiate_baudrate", new_callable=AsyncMock) as mock_neg:
+        mock_neg.return_value = True
+        await transport._check_baudrate_fallback()
+        assert transport._consecutive_crc_errors == 0
+        mock_neg.assert_awaited_once_with(mock_config.serial_safe_baud)
+
+
+@pytest.mark.asyncio
+async def test_correlate_frame_failure_status(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+    from mcubridge.protocol.structures import PendingCommand
+
+    transport = SerialTransport(mock_config, mock_state, None)
+    pending = PendingCommand(
+        command_id=Command.CMD_FILE_READ.value, expected_resp_ids=[Command.CMD_FILE_READ_RESP.value]
+    )
+    transport._current = pending
+
+    # Response to request matching
+    transport._correlate_frame(Command.CMD_FILE_READ_RESP.value, b"content")
+    assert pending.completion.is_set()
+    assert pending.success is True
+    assert pending.response_payload == b"content"

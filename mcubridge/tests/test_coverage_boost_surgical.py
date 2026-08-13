@@ -17,16 +17,18 @@ import sys
 import types
 from pathlib import Path
 
-# Mock 'uci' before importing pin_rest_cgi
-uci_mock = types.ModuleType("uci")
-sys.modules["uci"] = uci_mock
+# Ensure 'uci' mock exists before importing pin_rest_cgi
+if "uci" not in sys.modules:
+    sys.modules["uci"] = types.ModuleType("uci")
 
-script_path = Path(__file__).parent.parent / "scripts" / "pin_rest_cgi.py"
-spec = importlib.util.spec_from_file_location("pin_rest_cgi", str(script_path))
-pin_rest_cgi = importlib.util.module_from_spec(spec)  # type: ignore
-sys.modules["pin_rest_cgi"] = pin_rest_cgi
-spec.loader.exec_module(pin_rest_cgi)  # type: ignore
-
+if "pin_rest_cgi" in sys.modules:
+    pin_rest_cgi = sys.modules["pin_rest_cgi"]
+else:
+    script_path = Path(__file__).parent.parent / "scripts" / "pin_rest_cgi.py"
+    spec = importlib.util.spec_from_file_location("pin_rest_cgi", str(script_path))
+    pin_rest_cgi = importlib.util.module_from_spec(spec)  # type: ignore
+    sys.modules["pin_rest_cgi"] = pin_rest_cgi
+    spec.loader.exec_module(pin_rest_cgi)  # type: ignore
 
 
 def test_pin_rest_cgi_publish_sync_error() -> None:
@@ -105,6 +107,45 @@ async def test_local_bridge_service_ipc() -> None:
         asyncio.create_task(_respond())
         await local_svc.Publish(mock_stream)
         mock_stream.send_message.assert_awaited()
+    finally:
+        state.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_local_bridge_service_subscribe_console() -> None:
+    from mcubridge.state.context import create_runtime_state
+    import time
+    import os
+
+    fs_root = f".tmp_tests/mcubridge-test-fs-{os.getpid()}-{time.time_ns()}"
+    spool_dir = f".tmp_tests/mcubridge-test-spool-{os.getpid()}-{time.time_ns()}"
+    config = RuntimeConfig(
+        allowed_commands=("echo", "ls"),
+        serial_shared_secret=b"testshared",
+        file_system_root=fs_root,
+        cloud_spool_dir=spool_dir,
+        allow_non_tmp_paths=True,
+    )
+    state = create_runtime_state(config)
+    try:
+        mock_serial = AsyncMock(spec=SerialTransport)
+        svc = BridgeService(config, state, mock_serial)
+        local_svc = LocalBridgeService(svc)
+
+        mock_stream = AsyncMock()
+        mock_stream.recv_message.return_value = pb.SubscribeRequest()
+        mock_stream.send_message.side_effect = OSError("Connection reset")
+
+        q_msg = pb.CloudQueuedPublish(topic_name="br/console/out", payload=b"hello console")
+
+        async def _push():
+            await asyncio.sleep(0.01)
+            if svc.console_queues:
+                await svc.console_queues[0].put(q_msg)
+
+        asyncio.create_task(_push())
+        with pytest.raises(OSError):
+            await local_svc.SubscribeConsole(mock_stream)
     finally:
         state.cleanup()
 

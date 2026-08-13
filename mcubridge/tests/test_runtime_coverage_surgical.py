@@ -14,6 +14,7 @@ from mcubridge.protocol.protocol import Status
 from mcubridge.protocol.topics import parse_topic
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState, create_runtime_state
+from mcubridge.transport.serial import SerialTransport
 
 
 def _make_config() -> RuntimeConfig:
@@ -230,3 +231,59 @@ async def test_cloud_events_and_incoming_worker(test_config: RuntimeConfig, mock
         pass
 
     svc.handle_request.assert_awaited_with(msg)
+
+
+@pytest.mark.asyncio
+async def test_handle_system_and_mcu_version(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
+    from mcubridge.protocol import protocol
+    from mcubridge.protocol.topics import parse_topic, topic_path
+    from mcubridge.protocol.protocol import Topic, SystemAction
+
+    mock_serial = AsyncMock(spec=SerialTransport)
+    mock_serial.send.return_value = pb.VersionResponse(major=2, minor=8, patch=5).SerializeToString()
+    svc = BridgeService(test_config, mock_bridge_state, mock_serial)
+    svc.enqueue_cloud = AsyncMock()
+
+    # Bootloader action
+    t_bootloader = topic_path(mock_bridge_state.cloud_topic_prefix, Topic.SYSTEM, SystemAction.BOOTLOADER)
+    route_bootloader = parse_topic(mock_bridge_state.cloud_topic_prefix, t_bootloader)
+    assert route_bootloader is not None
+    await svc._handle_system(route_bootloader, pb.CloudQueuedPublish())
+    mock_serial.send.assert_awaited_with(
+        protocol.Command.CMD_ENTER_BOOTLOADER.value, pb.EnterBootloader(magic=protocol.BOOTLOADER_MAGIC)
+    )
+
+    # Version action
+    t_version = topic_path(mock_bridge_state.cloud_topic_prefix, Topic.SYSTEM, SystemAction.VERSION, SystemAction.GET)
+    route_version = parse_topic(mock_bridge_state.cloud_topic_prefix, t_version)
+    assert route_version is not None
+    await svc._handle_system(route_version, pb.CloudQueuedPublish())
+    assert mock_bridge_state.mcu_version == (2, 8, 5)
+
+    # Bridge summary / handshake action
+    t_summary = topic_path(
+        mock_bridge_state.cloud_topic_prefix, Topic.SYSTEM, SystemAction.BRIDGE, SystemAction.SUMMARY, SystemAction.GET
+    )
+    route_summary = parse_topic(mock_bridge_state.cloud_topic_prefix, t_summary)
+    assert route_summary is not None
+    await svc._handle_system(route_summary, pb.CloudQueuedPublish())
+    svc.enqueue_cloud.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_process_poll_and_terminate(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
+    from mcubridge.protocol.protocol import Status
+
+    mock_serial = AsyncMock(spec=SerialTransport)
+    svc = BridgeService(test_config, mock_bridge_state, mock_serial)
+
+    # Missing PID poll
+    resp = await svc._poll_process(99999)
+    assert resp.status == Status.ERROR.value
+    assert resp.finished is True
+
+    # Process termination wait
+    mock_ctx = MagicMock()
+    mock_ctx.handle.returncode = 0
+    code = await svc._terminate_process(1234, mock_ctx, grace_period=0.1)
+    assert code == 0

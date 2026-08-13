@@ -9,18 +9,23 @@ Copyright (C) 2025-2026 Ignacio Santolin and contributors
 """
 
 from __future__ import annotations
-import shutil
-
+from dataclasses import dataclass
 import hashlib
+import importlib
 import importlib.util
+import os
 import re
+import shutil
+import site
 import subprocess
 import sys
+import types
 import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Annotated, Any
 
+from google.protobuf.json_format import MessageToDict
 from jinja2 import Environment, FileSystemLoader
 from packaging.version import Version
 import typer
@@ -101,82 +106,51 @@ def cmd_name_to_pb_class(cmd_name: str) -> str:
     return "".join(mapped_segments)
 
 
+@dataclass
 class CommandDef:
-    def __init__(
-        self,
-        name: str,
-        value: int,
-        directions: list[str],
-        category: str | None = None,
-        description: str | None = None,
-        requires_ack: bool = False,
-        expects_direct_response: bool = False,
-        cloud_topic: str | None = None,
-    ) -> None:
-        self.name = name
-        self.value = value
-        self.directions = directions
-        self.category = category
-        self.description = description
-        self.requires_ack = requires_ack
-        self.expects_direct_response = expects_direct_response
-        self.cloud_topic = cloud_topic
+    name: str
+    value: int
+    directions: list[str]
+    category: str | None = None
+    description: str | None = None
+    requires_ack: bool = False
+    expects_direct_response: bool = False
+    cloud_topic: str | None = None
 
 
+@dataclass
 class StatusDef:
-    def __init__(self, name: str, value: int, description: str) -> None:
-        self.name = name
-        self.value = value
-        self.description = description
+    name: str
+    value: int
+    description: str
 
 
+@dataclass
 class ProtocolSpec:
-    def __init__(
-        self,
-        constants: dict[str, Any],
-        hardware: dict[str, Any],
-        commands: list[CommandDef],
-        statuses: list[StatusDef],
-        handshake: dict[str, Any],
-        cloud_subscriptions: list[dict[str, Any]],
-        actions: list[dict[str, Any]],
-        topics: list[dict[str, Any]],
-        capabilities: dict[str, int],
-        architectures: dict[str, int],
-        data_formats: dict[str, str],
-        cloud_suffixes: dict[str, str],
-        cloud_defaults: dict[str, str],
-        status_reasons: dict[str, str],
-        architecture_display_names: dict[str, str],
-        message_topics: dict[str, str],
-    ) -> None:
-        self.constants = constants
-        self.hardware = hardware
-        self.commands = commands
-        self.statuses = statuses
-        self.handshake = handshake
-        self.cloud_subscriptions = cloud_subscriptions
-        self.actions = actions
-        self.topics = topics
-        self.capabilities = capabilities
-        self.architectures = architectures
-        self.data_formats = data_formats
-        self.cloud_suffixes = cloud_suffixes
-        self.cloud_defaults = cloud_defaults
-        self.status_reasons = status_reasons
-        self.architecture_display_names = architecture_display_names
-        self.message_topics = message_topics
-        self.constants_opt: Any = None
-        self.hardware_opt: Any = None
-        self.handshake_opt: Any = None
-        self.data_formats_opt: Any = None
-        self.pb_module: Any = None
+    constants: dict[str, Any]
+    hardware: dict[str, Any]
+    commands: list[CommandDef]
+    statuses: list[StatusDef]
+    handshake: dict[str, Any]
+    cloud_subscriptions: list[dict[str, Any]]
+    actions: list[dict[str, Any]]
+    topics: list[dict[str, Any]]
+    capabilities: dict[str, int]
+    architectures: dict[str, int]
+    data_formats: dict[str, str]
+    cloud_suffixes: dict[str, str]
+    cloud_defaults: dict[str, str]
+    status_reasons: dict[str, str]
+    architecture_display_names: dict[str, str]
+    message_topics: dict[str, str]
+    constants_opt: Any = None
+    hardware_opt: Any = None
+    handshake_opt: Any = None
+    data_formats_opt: Any = None
+    pb_module: Any = None
 
 
 def load_spec_from_proto(proto_path: Path) -> ProtocolSpec:
-    import importlib
-    from google.protobuf.json_format import MessageToDict
-
     proto_dir = str(proto_path.parent)
     if proto_dir not in sys.path:
         sys.path.insert(0, proto_dir)
@@ -189,8 +163,6 @@ def load_spec_from_proto(proto_path: Path) -> ProtocolSpec:
     buf_dir = proto_path.parent / "buf"
     buf_validate_dir = buf_dir / "validate"
     if buf_validate_dir.is_dir() and "buf" not in sys.modules:
-        import types
-
         buf_mod = types.ModuleType("buf")
         buf_mod.__path__ = [str(buf_dir)]
         sys.modules["buf"] = buf_mod
@@ -427,35 +399,25 @@ class JinjaGenerator:
 
     def generate_cpp_structs(self, spec: ProtocolSpec, out_path: Path) -> None:
         template = self.env.get_template("rpc_structs.h.j2")
-        proto_path = (REPO_ROOT / "tools" / "protocol" / "mcubridge.proto").resolve()
-        proto_content = proto_path.read_text(encoding="utf-8")
-
-        # 1. Extract ALL messages for basic aliases and get_fields
-        all_msg_names = re.findall(r"(?:^|\n)\s*message\s+(\w+)\s*{", proto_content)
         options_path = (REPO_ROOT / "tools" / "protocol" / "mcubridge.options").resolve()
         options_content = options_path.read_text(encoding="utf-8")
-        skipped_messages = re.findall(r"rpc\.pb\.(\w+)\s+skip_message:true", options_content)
+        skipped_messages = set(re.findall(r"rpc\.pb\.(\w+)\s+skip_message:true", options_content))
 
+        # 1. Extract ALL message names via Protobuf Descriptor reflection
+        file_desc = spec.pb_module.DESCRIPTOR
+        all_msg_names = list(file_desc.message_types_by_name.keys())
         all_structs = [
             {"name": name} for name in all_msg_names if name not in skipped_messages and name != "RpcContainer"
         ]
 
-        # 2. Extract messages inside RpcEnvelope oneof for payload helpers
-        oneof_match = re.search(r"oneof payload_type\s*{(.*?)}", proto_content, re.DOTALL)
+        # 2. Extract messages inside RpcEnvelope oneof via Descriptor oneof reflection
+        envelope_desc = file_desc.message_types_by_name.get("RpcEnvelope")
         payload_structs: list[dict[str, str]] = []
-        if oneof_match:
-            oneof_content = oneof_match.group(1)
-            for raw_line in oneof_content.strip().split("\n"):
-                line = raw_line.strip()
-                if not line or line.startswith("//"):
-                    continue
-                m = re.search(r"(\w+)\s+(\w+)\s*=\s*(\d+);", line)
-                if m:
-                    msg_type, field_name, _ = m.groups()
-                    if msg_type == "bytes":
-                        continue
-                    if msg_type not in skipped_messages:
-                        payload_structs.append({"name": msg_type, "field": field_name})
+        if envelope_desc and "payload_type" in envelope_desc.oneofs_by_name:
+            oneof_desc = envelope_desc.oneofs_by_name["payload_type"]
+            for field_desc in oneof_desc.fields:
+                if field_desc.message_type and field_desc.message_type.name not in skipped_messages:
+                    payload_structs.append({"name": field_desc.message_type.name, "field": field_desc.name})
 
         payload_names = [s["name"] for s in payload_structs]
         render = template.render(all_structs=all_structs, payload_structs=payload_structs, payload_names=payload_names)
@@ -639,8 +601,6 @@ class JinjaGenerator:
 
     def generate_nanopb(self, proto_path: Path) -> None:
         """Invoke nanopb_generator.py to create C++ headers/sources."""
-        import importlib
-
         nanopb = importlib.import_module("nanopb")
         nanopb_file = nanopb.__file__
         assert nanopb_file is not None
@@ -691,10 +651,6 @@ class JinjaGenerator:
             f'#!/bin/bash\n{sys.executable} -c "from mypy_protobuf.main import main; main()" "$@"\n'
         )
         wrapper_path.chmod(0o755)
-
-        import os
-        import site
-        import importlib
 
         nanopb = importlib.import_module("nanopb")
         nanopb_file = nanopb.__file__
@@ -760,30 +716,18 @@ class JinjaGenerator:
         out_path.write_text(render, encoding="utf-8")
 
 
-def update_metadata(version: str):
-    # 1. pyproject.toml
-    pyproj = REPO_ROOT / "pyproject.toml"
-    if pyproj.exists():
-        content = pyproj.read_text(encoding="utf-8")
-        content = re.sub(r'version\s*=\s*"[^"]+"', f'version = "{version}"', content, count=1)
-        pyproj.write_text(content, encoding="utf-8")
-        sys.stderr.write(f"Updated {pyproj} to version {version}\n")
-
-    # 2. mcubridge/Makefile
-    makefile = REPO_ROOT / "mcubridge" / "Makefile"
-    if makefile.exists():
-        content = makefile.read_text(encoding="utf-8")
-        content = re.sub(r"PKG_VERSION:=[^\n]+", f"PKG_VERSION:={version}", content)
-        makefile.write_text(content, encoding="utf-8")
-        sys.stderr.write(f"Updated {makefile} to version {version}\n")
-
-    # 3. mcubridge-library-arduino/library.properties
-    lib_prop = REPO_ROOT / "mcubridge-library-arduino" / "library.properties"
-    if lib_prop.exists():
-        content = lib_prop.read_text(encoding="utf-8")
-        content = re.sub(r"version=[^\n]+", f"version={version}", content)
-        lib_prop.write_text(content, encoding="utf-8")
-        sys.stderr.write(f"Updated {lib_prop} to version {version}\n")
+def update_metadata(version: str) -> None:
+    targets = [
+        (REPO_ROOT / "pyproject.toml", r'version\s*=\s*"[^"]+"', f'version = "{version}"', 1),
+        (REPO_ROOT / "mcubridge" / "Makefile", r"PKG_VERSION:=[^\n]+", f"PKG_VERSION:={version}", 0),
+        (REPO_ROOT / "mcubridge-library-arduino" / "library.properties", r"version=[^\n]+", f"version={version}", 0),
+    ]
+    for target_path, pattern, repl, count in targets:
+        if target_path.exists():
+            content = target_path.read_text(encoding="utf-8")
+            updated = re.sub(pattern, repl, content, count=count)
+            target_path.write_text(updated, encoding="utf-8")
+            sys.stderr.write(f"Updated {target_path} to version {version}\n")
 
 
 def _format_python_file(path: Path) -> None:
@@ -1010,20 +954,13 @@ def main(
     ensure_nanopb_core_files()
     ensure_protovalidate_proto_files()
 
+    @dataclass
     class Args:
-        def __init__(
-            self,
-            spec: Path,
-            cpp: Path | None,
-            cpp_structs: Path | None,
-            py: Path | None,
-            py_client: Path | None,
-        ) -> None:
-            self.spec = spec
-            self.cpp = cpp
-            self.cpp_structs = cpp_structs
-            self.py = py
-            self.py_client = py_client
+        spec: Path
+        cpp: Path | None
+        cpp_structs: Path | None
+        py: Path | None
+        py_client: Path | None
 
     args = Args(spec=spec_file, cpp=cpp, cpp_structs=cpp_structs, py=py, py_client=py_client)
     gen = JinjaGenerator()

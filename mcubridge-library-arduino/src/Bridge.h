@@ -201,7 +201,6 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
       etl::delegate<void(rpc::StatusCode, etl::span<const uint8_t>)>;
   void onCommand(CommandHandler h) { _command_handler = h; }
   void onStatus(StatusHandler h) { _status_handler = h; }
-  void flushStream() { _stream.flush(); }
 
   __attribute__((noinline)) void _dispatchCommand(
       const rpc_pb_RpcEnvelope& envelope);

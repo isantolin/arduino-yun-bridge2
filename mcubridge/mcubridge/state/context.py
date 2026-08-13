@@ -6,7 +6,6 @@ import asyncio
 import collections
 import socket
 import time
-from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Final, TypeVar, cast
 
@@ -330,29 +329,6 @@ class RuntimeState:
         """Return the current allowed command list from policy."""
         return tuple(self.allowed_policy.entries)
 
-    def record_supervisor_failure(self, name: str, backoff: float, exc: BaseException | None) -> None:
-        """Record an internal service task failure."""
-        stats = self.supervisor_stats.setdefault(name, pb.SupervisorSnapshot())
-        stats.restarts += 1
-        stats.last_failure_unix = time.time()
-        stats.last_exception = f"{exc.__class__.__name__}: {exc}" if exc else "unknown"
-        stats.backoff_seconds = backoff
-
-        self.supervisor_failures += 1
-        self.metrics.supervisor_failures.labels(task=name).inc()
-        self.last_supervisor_error = f"{name}: {exc}" if exc else f"{name}: unknown"
-        logger.warning(
-            "Supervisor task '%s' failed. Backoff: %.2fs. Error: %s",
-            name,
-            backoff,
-            exc,
-        )
-
-    def mark_supervisor_healthy(self, name: str) -> None:
-        """Mark a task supervisor healthy, resetting its backoff. [SIL-2]"""
-        if name in self.supervisor_stats:
-            self.supervisor_stats[name].backoff_seconds = 0.0
-
     def mailbox_queue_depth(self) -> int:
         return len(self.mailbox_queue)
 
@@ -441,30 +417,6 @@ class RuntimeState:
             inflight=inflightpb_obj,
             last_completion=lastpb_obj,
         )
-
-    def apply_handshake_stats(self, observation: Mapping[str, Any]) -> None:
-        """Update internal state from external handshake statistics."""
-        try:
-            self.handshake_attempts = int(observation.get("attempts") or 0)
-            self.handshake_successes = int(observation.get("successes") or 0)
-            self.handshake_failure_streak = int(observation.get("failure_streak") or 0)
-            self.handshake_last_duration = float(observation.get("last_duration") or 0.0)
-            self.last_handshake_unix = float(observation.get("last_unix") or 0.0)
-            self.handshake_backoff_until = float(observation.get("backoff_until") or 0.0)
-            self.handshake_rate_until = float(observation.get("rate_limit_until") or 0.0)
-        except (ValueError, TypeError) as exc:
-            logger.warning("Failed to apply handshake stats", error=exc)
-
-    def _apply_spool_observation(self, observation: Mapping[str, Any]) -> None:
-        """Update internal state from spool statistics."""
-        if "corrupt_dropped" in observation:
-            self.cloud_spool_corrupt_dropped = int(observation["corrupt_dropped"])
-        if "dropped_due_to_limit" in observation:
-            self.cloud_spool_dropped_limit = int(observation["dropped_due_to_limit"])
-        if "trim_events" in observation:
-            self.cloud_spool_trim_events = int(observation["trim_events"])
-        if "last_trim_unix" in observation:
-            self.cloud_spool_last_trim_unix = float(observation["last_trim_unix"])
 
     def build_metrics_snapshot(self) -> pb.DaemonMetrics:
         """Build a concrete metrics snapshot for telemetry. [SIL-2]"""

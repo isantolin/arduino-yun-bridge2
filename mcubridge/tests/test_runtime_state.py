@@ -76,18 +76,6 @@ def test_record_cloud_drop_increments_counter(runtime_config: RuntimeConfig) -> 
         state.cleanup()
 
 
-def test_mark_supervisor_healthy_resets_backoff(runtime_config: RuntimeConfig) -> None:
-    state = create_runtime_state(runtime_config)
-    try:
-        state.record_supervisor_failure("test_svc", 10.0, RuntimeError("fail"))
-        assert state.supervisor_stats["test_svc"].backoff_seconds == 10.0
-
-        state.mark_supervisor_healthy("test_svc")
-        assert state.supervisor_stats["test_svc"].backoff_seconds == 0.0
-    finally:
-        state.cleanup()
-
-
 def test_system_snapshot_removed(runtime_config: RuntimeConfig) -> None:
     """Verify collect_system_metrics was removed as dead code (always returned {})."""
 

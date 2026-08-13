@@ -420,7 +420,6 @@ void test_bridge_template_coverage() {
   // Mock handlers
   Bridge.onCommand(BridgeClass::CommandHandler::create<dummy_cmd_handler>());
   Bridge.onStatus(BridgeClass::StatusHandler::create<dummy_status_handler>());
-  Bridge.flushStream();
 }
 
 void test_bridge_duplicate_packet() {

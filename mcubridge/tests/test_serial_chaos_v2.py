@@ -34,7 +34,7 @@ async def test_serial_transport_loops_final_v3(transport_setup: Any) -> None:
 
     call_count = 0
 
-    async def readuntil_mock_impl(sep: bytes = b"\x00") -> bytes:
+    async def readuntil_mock_impl(_sep: bytes = b"\x00") -> bytes:
         nonlocal call_count
         call_count += 1
         if call_count == 1:

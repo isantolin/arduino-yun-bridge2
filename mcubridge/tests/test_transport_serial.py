@@ -130,7 +130,7 @@ async def test_write_frame_debug_logs_unknown_command(
         mock_serial.is_open = True
         transport.serial = mock_serial
 
-        def mock_is_enabled(lvl: int) -> bool:
+        def mock_is_enabled(_lvl: int) -> bool:
             return True
 
         monkeypatch.setattr(
@@ -149,7 +149,7 @@ async def test_write_frame_debug_logs_unknown_command(
             mock_debug,
         )
 
-        def mock_log(lvl: int, msg: str, *args: Any) -> Any:
+        def mock_log(_lvl: int, msg: str, *args: Any) -> Any:
             return seen.setdefault("msg", msg % args)
 
         monkeypatch.setattr(

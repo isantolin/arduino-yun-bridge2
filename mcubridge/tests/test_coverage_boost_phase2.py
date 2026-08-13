@@ -523,29 +523,6 @@ class TestRuntimeStateContext:
         assert snapshot.last_completion.event == "complete"
         state.cleanup()
 
-    def test_apply_handshake_stats_invalid_values(self) -> None:
-        config = _make_config()
-        state = _make_state(config)
-        # Should not raise with invalid types
-        state.apply_handshake_stats({"attempts": "not_a_number"})
-        state.cleanup()
-
-    def test_apply_spool_observation(self) -> None:
-        config = _make_config()
-        state = _make_state(config)
-        state._apply_spool_observation(
-            {
-                "corrupt_dropped": 3,
-                "dropped_due_to_limit": 5,
-                "trim_events": 2,
-                "last_trim_unix": 1234567890.0,
-            }
-        )
-        assert state.cloud_spool_corrupt_dropped == 3
-        assert state.cloud_spool_dropped_limit == 5
-        assert state.cloud_spool_trim_events == 2
-        state.cleanup()
-
     def test_handshake_duration_since_start(self) -> None:
         config = _make_config()
         state = _make_state(config)
@@ -554,16 +531,6 @@ class TestRuntimeStateContext:
         state.handshake_last_started = time.monotonic() - 1.0
         duration = state.handshake_duration_since_start()
         assert duration > 0.5
-        state.cleanup()
-
-    def test_mark_supervisor_healthy(self) -> None:
-        config = _make_config()
-        state = _make_state(config)
-        state.record_supervisor_failure("task1", 5.0, RuntimeError("err"))
-        assert state.supervisor_stats["task1"].backoff_seconds == 5.0
-
-        state.mark_supervisor_healthy("task1")
-        assert state.supervisor_stats["task1"].backoff_seconds == 0.0
         state.cleanup()
 
 

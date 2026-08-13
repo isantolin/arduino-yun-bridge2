@@ -192,9 +192,6 @@ class BridgeService:
         if path is not None:
             await self._handle_file_local_remove(path, target, inbound)
 
-    async def _noop(self) -> None:
-        pass
-
     async def _unsupported_mcu_request(self, _seq: int, _payload: Any, msg: str = "unsupported_request") -> Any:
         if not self.serial:
             return False

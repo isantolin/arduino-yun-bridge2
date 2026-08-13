@@ -1,9 +1,9 @@
+# pyright: reportPrivateUsage=false
 """Surgical unit test suite targeting uncovered branches in runtime.py."""
 
 from __future__ import annotations
 
 import asyncio
-import time
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -171,7 +171,6 @@ async def test_handle_mailbox_read_write(test_config: RuntimeConfig, mock_bridge
 
     prefix = mock_bridge_state.cloud_topic_prefix
     write_topic = f"{prefix}/mailbox/write"
-    read_topic = f"{prefix}/mailbox/read"
 
     # WRITE Action
     route_write = parse_topic(prefix, write_topic)
@@ -181,6 +180,8 @@ async def test_handle_mailbox_read_write(test_config: RuntimeConfig, mock_bridge
     mock_serial.send.assert_awaited_once()
 
     # READ Action
+
+
 @pytest.mark.asyncio
 async def test_handle_file_mcu_read_success_and_timeout(
     test_config: RuntimeConfig, mock_bridge_state: RuntimeState
@@ -206,9 +207,7 @@ async def test_handle_file_mcu_read_success_and_timeout(
 
 
 @pytest.mark.asyncio
-async def test_cloud_events_and_incoming_worker(
-    test_config: RuntimeConfig, mock_bridge_state: RuntimeState
-) -> None:
+async def test_cloud_events_and_incoming_worker(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
     svc = BridgeService(test_config, mock_bridge_state, MagicMock())
     mock_stream = AsyncMock()
     svc._cloud_stream = mock_stream
@@ -231,4 +230,3 @@ async def test_cloud_events_and_incoming_worker(
         pass
 
     svc.handle_request.assert_awaited_with(msg)
-

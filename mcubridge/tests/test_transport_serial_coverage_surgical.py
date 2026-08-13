@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false
 """Surgical unit test suite for transport/serial.py covering edge paths and error branches."""
 
 from __future__ import annotations

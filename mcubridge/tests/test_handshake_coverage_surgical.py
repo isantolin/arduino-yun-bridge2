@@ -144,6 +144,9 @@ async def test_fetch_capabilities_failure_paths(
     mgr, _state, send_frame, _enqueue = handshake_mgr
     send_frame.return_value = False
 
-    with patch("tenacity.wait_exponential", return_value=lambda rs: 0.0):
+    def _zero_wait(_rs: object) -> float:
+        return 0.0
+
+    with patch("tenacity.wait_exponential", return_value=_zero_wait):
         res = await mgr._fetch_capabilities()
         assert res is False

@@ -40,12 +40,6 @@
   "makefile.loggingLevel": "Normal",
   "makefile.dryrunSwitches": [],
   "python.analysis.autoImportCompletions": true,
-  "flake8.interpreter": [
-    "${workspaceFolder}/.venv/bin/python"
-  ],
-  "flake8.path": [
-    "./.venv/bin/flake8"
-  ],
   "python.analysis.languageServerMode": "full",
   "markdown.validate.enabled": true,
   "yaml.schemas": {

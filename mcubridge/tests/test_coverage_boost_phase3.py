@@ -899,19 +899,26 @@ async def test_runtime_shell_dispatch_handlers(tmp_path: Path) -> None:
     with patch.object(service, "_run_process", side_effect=OSError("spawn error")):
         await service._handle_shell(route_run, inbound_run)
 
-    # 3. Shell write
+    # 3. Shell poll
     mock_proc = MagicMock()
-    mock_stdin = AsyncMock()
-    mock_proc.stdin = mock_stdin
     ctx = ProcessContext(handle=mock_proc)
     state.running_processes[123] = ctx
 
-    route_write = TopicRoute(
-        raw="test/br/shell/write/123", prefix=config.topic_prefix, topic=Topic.SHELL, segments=("write", "123")
+    route_poll = TopicRoute(
+        raw="test/br/shell/poll/123", prefix=config.topic_prefix, topic=Topic.SHELL, segments=("poll", "123")
     )
-    inbound_write = pb.CloudQueuedPublish(topic_name="test/br/shell/write/123", payload=b"input_data")
-    await service._handle_shell(route_write, inbound_write)
-    assert mock_stdin.write.called
+    inbound_poll = pb.CloudQueuedPublish(topic_name="test/br/shell/poll/123", payload=b"")
+    with patch.object(service, "_poll_process", new_callable=AsyncMock) as mock_poll:
+        mock_poll.return_value = pb.ProcessPollResponse(status=Status.OK.value, exit_code=0, finished=True)
+        await service._handle_shell(route_poll, inbound_poll)
+
+    # 4. Shell kill
+    route_kill = TopicRoute(
+        raw="test/br/shell/kill/123", prefix=config.topic_prefix, topic=Topic.SHELL, segments=("kill", "123")
+    )
+    inbound_kill = pb.CloudQueuedPublish(topic_name="test/br/shell/kill/123", payload=b"")
+    with patch.object(service, "_terminate_process", new_callable=AsyncMock, return_value=0):
+        await service._handle_shell(route_kill, inbound_kill)
 
     state.cleanup()
 

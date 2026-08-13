@@ -21,9 +21,16 @@ define Build/Prepare
 	$(call Build/Prepare/Default)
 	sed -i 's/dynamic = \["version"\]/version = "$(PKG_VERSION)"/' $(PKG_BUILD_DIR)/pyproject.toml
 	sed -i 's/"hatch-vcs",//' $(PKG_BUILD_DIR)/pyproject.toml
-	sed -i '/\[tool.hatch/d' $(PKG_BUILD_DIR)/pyproject.toml
-	sed -i '/source = "vcs"/d' $(PKG_BUILD_DIR)/pyproject.toml
-	sed -i '/raw-options/d' $(PKG_BUILD_DIR)/pyproject.toml
+	python3 -c '\
+path = "$(PKG_BUILD_DIR)/pyproject.toml"; \
+lines = open(path, "r", encoding="utf-8").read().splitlines(); \
+out = []; skip = False; \
+for line in lines: \
+    if line.startswith("[tool.hatch"): skip = True; continue; \
+    elif line.startswith("["): skip = False; \
+    if not skip: out.append(line); \
+open(path, "w", encoding="utf-8").write("\n".join(out) + "\n"); \
+'
 endef
 
 define Package/python3-protovalidate

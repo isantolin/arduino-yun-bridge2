@@ -19,7 +19,7 @@ include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
 
 define Build/Prepare
 	$(call Build/Prepare/Default)
-	python3 -c "import re, pathlib; p = pathlib.Path('$(PKG_BUILD_DIR)/pyproject.toml'); c = p.read_text(); c = c.replace('dynamic = [\"version\"]', 'version = \"$(PKG_VERSION)\"').replace('\"hatch-vcs\",', ''); c = re.sub(r'\[tool\.hatch\.version\][\s\S]*?(?=\n\[|\Z)', '', c); p.write_text(c)"
+	python3 -c "import pathlib; p = pathlib.Path('$(PKG_BUILD_DIR)/pyproject.toml'); p.write_text('[build-system]\nrequires = [\"setuptools>=61.0\"]\nbuild-backend = \"setuptools.build_meta\"\n\n[project]\nname = \"protovalidate\"\nversion = \"$(PKG_VERSION)\"\ndescription = \"Protocol Buffer Validation for Python\"\nreadme = \"README.md\"\nrequires-python = \">=3.10\"\nlicense = {text = \"Apache-2.0\"}\ndependencies = [\n  \"cel-python>=0.5\",\n  \"google-re2>=1\",\n  \"protobuf>=5\",\n]\n\n[tool.setuptools.packages.find]\nwhere = [\"gen\", \".\"]\n', encoding='utf-8')"
 endef
 
 define Package/python3-protovalidate

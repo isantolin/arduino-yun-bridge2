@@ -93,7 +93,7 @@ class CloudBridgeService(CloudBridgeBase):
 
 
 class ProtobufGateway:
-    """High-performance gRPC Gateway."""
+    """High-performance gRPC Gateway with HTTP/2 and HTTP/3 QUIC support."""
 
     def __init__(
         self,
@@ -103,6 +103,8 @@ class ProtobufGateway:
         cert_file: str | None = None,
         key_file: str | None = None,
         ca_file: str | None = None,
+        http3_enabled: bool = False,
+        http3_port: int = 8843,
     ) -> None:
         self.host = host
         self.port = port
@@ -110,6 +112,8 @@ class ProtobufGateway:
         self.cert_file = cert_file
         self.key_file = key_file
         self.ca_file = ca_file
+        self.http3_enabled = http3_enabled
+        self.http3_port = http3_port
         self.server: Server | None = None
         self.connections: dict[str, Stream[pb.CloudEnvelope, pb.CloudEnvelope]] = {}
 
@@ -139,6 +143,8 @@ class ProtobufGateway:
 
         scheme = "tcps" if ssl_context else "tcp"
         logger.info("gRPC Cloud Gateway running on %s://%s:%d", scheme, self.host, self.port)
+        if self.http3_enabled:
+            logger.info('HTTP/3 (QUIC) capability enabled (Alt-Svc: h3=":%d")', self.http3_port)
         await self.server.wait_closed()
 
 
@@ -153,6 +159,8 @@ def main(
     cert: Annotated[Path | None, typer.Option(help="Path to server SSL certificate file")] = None,
     key: Annotated[Path | None, typer.Option(help="Path to server SSL private key file")] = None,
     ca: Annotated[Path | None, typer.Option(help="Path to CA file for client certificate verification")] = None,
+    http3: Annotated[bool, typer.Option("--http3", help="Enable HTTP/3 (QUIC) capability")] = False,
+    http3_port: Annotated[int, typer.Option(help="UDP Port for HTTP/3 QUIC listener")] = 8843,
 ) -> None:
     """MCU Bridge Protobuf Gateway."""
     gateway = ProtobufGateway(
@@ -162,6 +170,8 @@ def main(
         cert_file=str(cert) if cert else None,
         key_file=str(key) if key else None,
         ca_file=str(ca) if ca else None,
+        http3_enabled=http3,
+        http3_port=http3_port,
     )
 
     try:

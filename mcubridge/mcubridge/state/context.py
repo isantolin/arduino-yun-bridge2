@@ -322,7 +322,7 @@ class RuntimeState:
     @property
     def handshake_failures(self) -> int:
         """Total handshake failures (Calculated)."""
-        return self.handshake_attempts - self.handshake_successes
+        return max(0, self.handshake_attempts - self.handshake_successes)
 
     @property
     def allowed_commands(self) -> tuple[str, ...]:

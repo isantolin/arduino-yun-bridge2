@@ -198,3 +198,41 @@ def test_cli_main_invocation() -> None:
     with patch("asyncio.run", side_effect=_mock_run):
         result = runner.invoke(cast(Any, app), ["--no-tls", "--port", "9090"])
         assert result.exit_code == 0
+
+
+def test_cli_main_keyboard_interrupt() -> None:
+    runner = CliRunner()
+
+    def _mock_run_interrupt(coro: Any) -> None:
+        if hasattr(coro, "close"):
+            coro.close()
+        raise KeyboardInterrupt
+
+    with patch("asyncio.run", side_effect=_mock_run_interrupt):
+        result = runner.invoke(cast(Any, app), ["--no-tls", "--http3"])
+        assert result.exit_code == 0
+
+
+@pytest.mark.asyncio
+async def test_protobuf_gateway_http3_run() -> None:
+    gw = ProtobufGateway(use_tls=False, http3_enabled=True, http3_port=9999)
+    with patch("gateway.Server") as mock_server_cls:
+        mock_server = AsyncMock()
+        mock_server_cls.return_value = mock_server
+        await gw.run()
+        assert mock_server.start.called
+
+
+@pytest.mark.asyncio
+async def test_cloud_bridge_service_cert_parse_error() -> None:
+    gw = ProtobufGateway(use_tls=False)
+    service = CloudBridgeService(gw)
+
+    mock_stream = AsyncMock()
+    mock_stream.peer = MagicMock()
+    mock_stream.peer.addr.return_value = ("127.0.0.1", 12345)
+    # Return invalid cert subject structure to trigger parsing error
+    mock_stream.peer.cert.return_value = {"subject": [None]}
+
+    await service.Session(mock_stream)
+    assert len(gw.connections) == 0

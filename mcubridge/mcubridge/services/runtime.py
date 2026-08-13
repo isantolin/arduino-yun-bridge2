@@ -157,6 +157,29 @@ class BridgeService:
             if s != Status.ACK:
                 self.mcu_registry[s.value] = functools.partial(self._handle_mcu_status, s)
 
+        # [SIL-2] Declarative File and Shell Action Dispatch Tables
+        self._mcu_file_dispatch: Final[
+            dict[FileAction, Callable[[str, pb.CloudQueuedPublish], Coroutine[Any, Any, None]]]
+        ] = {
+            FileAction.READ: lambda target, inbound: self._handle_file_mcu_read(inbound, target),
+            FileAction.WRITE: self._handle_file_mcu_write,
+            FileAction.REMOVE: self._handle_file_mcu_remove,
+        }
+        self._local_file_dispatch: Final[
+            dict[FileAction, Callable[[Path, str, pb.CloudQueuedPublish], Coroutine[Any, Any, None]]]
+        ] = {
+            FileAction.READ: self._handle_file_local_read,
+            FileAction.WRITE: self._handle_file_local_write,
+            FileAction.REMOVE: self._handle_file_local_remove,
+        }
+        self._shell_dispatch: Final[
+            dict[ShellAction, Callable[[int, pb.CloudQueuedPublish], Coroutine[Any, Any, None]]]
+        ] = {
+            ShellAction.RUN_ASYNC: self._handle_shell_run_async,
+            ShellAction.POLL: self._handle_shell_poll,
+            ShellAction.KILL: self._handle_shell_kill,
+        }
+
     async def _unsupported_mcu_request(self, _seq: int, _payload: Any, msg: str = "unsupported_request") -> Any:
         if not self.serial:
             return False
@@ -801,53 +824,71 @@ class BridgeService:
         if not (act and target):
             return
         if target.startswith(MCU_FS_PREFIX):
-            if act == FileAction.READ:
-                await self._handle_file_mcu_read(inbound, target)
-            elif act == FileAction.WRITE:
-                if await serial.send(
-                    Command.CMD_FILE_WRITE.value,
-                    pb.FileWrite(path=target[len(MCU_FS_PREFIX) :], data=inbound.payload),
-                ):
-                    await self.enqueue_cloud(
-                        create_queued_publish(
-                            topic_path(self.state.cloud_topic_prefix, Topic.FILE, FileAction.READ, target),
-                            inbound.payload,
-                        ),
-                        reply_context=inbound,
-                    )
-            elif act == FileAction.REMOVE:
-                await serial.send(Command.CMD_FILE_REMOVE.value, pb.FileRemove(path=target[len(MCU_FS_PREFIX) :]))
+            await self._handle_file_mcu(act, target, inbound)
         else:
             path = self._get_safe_path(target)
             if not path:
                 return
-            if act == FileAction.WRITE:
-                if await self._write_with_quota(path, inbound.payload):
-                    await self.enqueue_cloud(
-                        create_queued_publish(
-                            topic_path(self.state.cloud_topic_prefix, Topic.FILE, FileAction.READ, target),
-                            inbound.payload,
+            if handler := self._local_file_dispatch.get(act):
+                await handler(path, target, inbound)
+
+    async def _handle_file_mcu(self, act: FileAction, target: str, inbound: pb.CloudQueuedPublish) -> None:
+        serial = self.serial
+        if not serial:
+            return
+        if handler := self._mcu_file_dispatch.get(act):
+            await handler(target, inbound)
+
+    async def _handle_file_mcu_write(self, target: str, inbound: pb.CloudQueuedPublish) -> None:
+        serial = self.serial
+        if serial and await serial.send(
+            Command.CMD_FILE_WRITE.value,
+            pb.FileWrite(path=target[len(MCU_FS_PREFIX) :], data=inbound.payload),
+        ):
+            await self.enqueue_cloud(
+                create_queued_publish(
+                    topic_path(self.state.cloud_topic_prefix, Topic.FILE, FileAction.READ, target),
+                    inbound.payload,
+                ),
+                reply_context=inbound,
+            )
+
+    async def _handle_file_mcu_remove(self, target: str, _inbound: pb.CloudQueuedPublish) -> None:
+        serial = self.serial
+        if serial:
+            await serial.send(Command.CMD_FILE_REMOVE.value, pb.FileRemove(path=target[len(MCU_FS_PREFIX) :]))
+
+    async def _handle_file_local_write(self, path: Path, target: str, inbound: pb.CloudQueuedPublish) -> None:
+        if await self._write_with_quota(path, inbound.payload):
+            await self.enqueue_cloud(
+                create_queued_publish(
+                    topic_path(self.state.cloud_topic_prefix, Topic.FILE, FileAction.READ, target),
+                    inbound.payload,
+                ),
+                reply_context=inbound,
+            )
+
+    async def _handle_file_local_read(self, path: Path, target: str, inbound: pb.CloudQueuedPublish) -> None:
+        if await asyncio.to_thread(path.is_file):
+            inbound_topic = inbound.topic_name if inbound.topic_name else getattr(inbound, "topic", "")
+            if not inbound_topic.endswith(protocol.CLOUD_SUFFIX_RESPONSE):
+                await self.enqueue_cloud(
+                    create_queued_publish(
+                        topic_path(
+                            self.state.cloud_topic_prefix,
+                            Topic.FILE,
+                            FileAction.READ,
+                            protocol.CLOUD_SUFFIX_RESPONSE,
+                            target,
                         ),
-                        reply_context=inbound,
-                    )
-            elif act == FileAction.READ and await asyncio.to_thread(path.is_file):
-                inbound_topic = inbound.topic_name if inbound.topic_name else getattr(inbound, "topic", "")
-                if not inbound_topic.endswith(protocol.CLOUD_SUFFIX_RESPONSE):
-                    await self.enqueue_cloud(
-                        create_queued_publish(
-                            topic_path(
-                                self.state.cloud_topic_prefix,
-                                Topic.FILE,
-                                FileAction.READ,
-                                protocol.CLOUD_SUFFIX_RESPONSE,
-                                target,
-                            ),
-                            await asyncio.to_thread(path.read_bytes),
-                        ),
-                        reply_context=inbound,
-                    )
-            elif act == FileAction.REMOVE and await asyncio.to_thread(path.exists):
-                await asyncio.to_thread(path.unlink)
+                        await asyncio.to_thread(path.read_bytes),
+                    ),
+                    reply_context=inbound,
+                )
+
+    async def _handle_file_local_remove(self, path: Path, _target: str, _inbound: pb.CloudQueuedPublish) -> None:
+        if await asyncio.to_thread(path.exists):
+            await asyncio.to_thread(path.unlink)
 
     async def _handle_file_mcu_read(self, ctx: pb.CloudQueuedPublish, target: str) -> None:
         serial = self.serial
@@ -902,68 +943,76 @@ class BridgeService:
                 self._pending_mcu_read = None
 
     async def _handle_shell(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
-        act = route.segments[0] if route.segments else None
+        raw_act = route.segments[0] if route.segments else None
+        if not raw_act:
+            return
+        try:
+            act = ShellAction(raw_act)
+        except ValueError:
+            return
+        pid = int(route.segments[1]) if len(route.segments) == 2 and route.segments[1].isdigit() else 0
+        if handler := self._shell_dispatch.get(act):
+            await handler(pid, inbound)
+
+    async def _handle_shell_run_async(self, _pid: int, inbound: pb.CloudQueuedPublish) -> None:
         pl = inbound.payload
-        if act == ShellAction.RUN_ASYNC:
-            try:
-                content_type = getattr(inbound, "content_type", None)
-                if content_type is None:
-                    properties = getattr(inbound, "properties", None)
-                    if properties:
-                        content_type = getattr(properties, "ContentType", None)
-                if content_type == PROTOBUF_CONTENT_TYPE or pl.startswith(b"\x0a"):
-                    cmd = pb.ProcessRunAsync.FromString(pl).command
-                else:
-                    cmd = pl.decode().strip()
-                pid = await self._run_process(cmd)
-            except (ProtobufDecodeError, UnicodeDecodeError, ValueError, OSError) as exc:
-                logger.error("Shell run_async rejected", error=str(exc))
-                payload = pb.ProcessRunAsyncResponse(pid=0).SerializeToString()
+        try:
+            content_type = getattr(inbound, "content_type", None)
+            if content_type is None:
+                properties = getattr(inbound, "properties", None)
+                if properties:
+                    content_type = getattr(properties, "ContentType", None)
+            if content_type == PROTOBUF_CONTENT_TYPE or pl.startswith(b"\x0a"):
+                cmd = pb.ProcessRunAsync.FromString(pl).command
             else:
-                payload = pb.ProcessRunAsyncResponse(pid=pid).SerializeToString()
-            await self.enqueue_cloud(
-                create_queued_publish(
-                    topic_path(
-                        self.state.cloud_topic_prefix,
-                        Topic.SHELL,
-                        ShellAction.RUN_ASYNC,
-                        protocol.CLOUD_SUFFIX_RESPONSE,
-                    ),
-                    payload,
-                    content_type=PROTOBUF_CONTENT_TYPE,
+                cmd = pl.decode().strip()
+            pid = await self._run_process(cmd)
+        except (ProtobufDecodeError, UnicodeDecodeError, ValueError, OSError) as exc:
+            logger.error("Shell run_async rejected", error=str(exc))
+            payload = pb.ProcessRunAsyncResponse(pid=0).SerializeToString()
+        else:
+            payload = pb.ProcessRunAsyncResponse(pid=pid).SerializeToString()
+        await self.enqueue_cloud(
+            create_queued_publish(
+                topic_path(
+                    self.state.cloud_topic_prefix,
+                    Topic.SHELL,
+                    ShellAction.RUN_ASYNC,
+                    protocol.CLOUD_SUFFIX_RESPONSE,
                 ),
-                reply_context=inbound,
-            )
-        elif act in (ShellAction.POLL, ShellAction.KILL) and len(route.segments) == 2:
-            pid = int(route.segments[1])
-            if act == ShellAction.POLL:
-                batch = await self._poll_process(pid)
-                await self.enqueue_cloud(
-                    create_queued_publish(
-                        topic_path(
-                            self.state.cloud_topic_prefix,
-                            Topic.SHELL,
-                            ShellAction.POLL,
-                            str(pid),
-                            protocol.CLOUD_SUFFIX_RESPONSE,
-                        ),
-                        batch.SerializeToString(),
-                        content_type=PROTOBUF_CONTENT_TYPE,
-                    ),
-                    reply_context=inbound,
-                )
-            else:
-                async with self.state.process_lock:
-                    ctx = self.state.running_processes.get(pid)
-                if ctx:
-                    try:
-                        ctx.exit_code = await self._terminate_process(
-                            pid, ctx, grace_period=PROCESS_TERM_GRACE_PERIOD_SECONDS
-                        )
-                    except (OSError, ProcessLookupError) as exc:
-                        logger.error("Process termination failed", pid=pid, error=str(exc))
-                    if self.state.running_processes.pop(pid, None):
-                        self._process_slots.release()
+                payload,
+                content_type=PROTOBUF_CONTENT_TYPE,
+            ),
+            reply_context=inbound,
+        )
+
+    async def _handle_shell_poll(self, pid: int, inbound: pb.CloudQueuedPublish) -> None:
+        batch = await self._poll_process(pid)
+        await self.enqueue_cloud(
+            create_queued_publish(
+                topic_path(
+                    self.state.cloud_topic_prefix,
+                    Topic.SHELL,
+                    ShellAction.POLL,
+                    str(pid),
+                    protocol.CLOUD_SUFFIX_RESPONSE,
+                ),
+                batch.SerializeToString(),
+                content_type=PROTOBUF_CONTENT_TYPE,
+            ),
+            reply_context=inbound,
+        )
+
+    async def _handle_shell_kill(self, pid: int, _inbound: pb.CloudQueuedPublish) -> None:
+        async with self.state.process_lock:
+            ctx = self.state.running_processes.get(pid)
+        if ctx:
+            try:
+                ctx.exit_code = await self._terminate_process(pid, ctx, grace_period=PROCESS_TERM_GRACE_PERIOD_SECONDS)
+            except (OSError, ProcessLookupError) as exc:
+                logger.error("Process termination failed", pid=pid, error=str(exc))
+            if self.state.running_processes.pop(pid, None):
+                self._process_slots.release()
 
     async def _handle_spi(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         serial = self.serial

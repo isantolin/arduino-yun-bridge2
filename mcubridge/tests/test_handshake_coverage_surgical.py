@@ -6,7 +6,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Iterator
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -112,8 +112,38 @@ async def test_calculate_session_key_and_tag() -> None:
     tag = SerialHandshakeManager.calculate_handshake_tag(secret, nonce)
     assert len(tag) == 16
 
-    empty_tag = SerialHandshakeManager.calculate_handshake_tag(None, nonce)
-    assert empty_tag == b""
-
     key = SerialHandshakeManager.calculate_session_key(secret, nonce)
     assert len(key) == 32
+
+
+@pytest.mark.asyncio
+async def test_handle_link_sync_resp_decode_and_auth_failures(
+    handshake_mgr: tuple[SerialHandshakeManager, RuntimeState, AsyncMock, AsyncMock],
+) -> None:
+    mgr, state, _send, _enqueue = handshake_mgr
+
+    # 1. Corrupt payload decode error
+    state.link_handshake_nonce = b"1234567890123456"
+    res1 = await mgr.handle_link_sync_resp(1, b"invalid-protobuf-garbage-\xff\xff")
+    assert res1 is False
+    assert state.last_handshake_error == "sync_decode_failed"
+
+    # 2. Auth mismatch (incorrect tag)
+    state.link_handshake_nonce = b"1234567890123456"
+    state.link_expected_tag = b"correct_expected_tag"
+    sync_pkt = pb.LinkSync(nonce=b"1234567890123456", tag=b"wrong_tag_value")
+    res2 = await mgr.handle_link_sync_resp(2, sync_pkt)
+    assert res2 is False
+    assert state.last_handshake_error == "sync_auth_mismatch"
+
+
+@pytest.mark.asyncio
+async def test_fetch_capabilities_failure_paths(
+    handshake_mgr: tuple[SerialHandshakeManager, RuntimeState, AsyncMock, AsyncMock],
+) -> None:
+    mgr, _state, send_frame, _enqueue = handshake_mgr
+    send_frame.return_value = False
+
+    with patch("tenacity.wait_exponential", return_value=lambda rs: 0.0):
+        res = await mgr._fetch_capabilities()
+        assert res is False

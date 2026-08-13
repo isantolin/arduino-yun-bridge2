@@ -200,3 +200,32 @@ def load_runtime_config(overrides: dict[str, Any] | None = None) -> RuntimeConfi
             raise RuntimeError(f"Invalid system configuration: {e}") from e
         logger.critical("Configuration validation failed: %s", e)
         raise
+
+
+def load_runtime_config_from_json(
+    data: str | bytes | dict[str, Any],
+    overrides: dict[str, Any] | None = None,
+) -> RuntimeConfig:
+    """Load, parse, and validate RuntimeConfig from JSON or Dict using native Protobuf json_format. [SIL-2]"""
+    from google.protobuf import json_format
+
+    msg = pb.RuntimeConfig()
+    defaults = get_default_config()
+    for k, v in defaults.items():
+        if isinstance(v, bytes):
+            defaults[k] = v.decode("utf-8", errors="replace")
+    json_format.ParseDict(defaults, msg, ignore_unknown_fields=True)
+
+    if isinstance(data, (str, bytes)):
+        json_format.Parse(data, msg, ignore_unknown_fields=True)
+    else:
+        json_format.ParseDict(data, msg, ignore_unknown_fields=True)
+
+    if overrides:
+        for k, v in overrides.items():
+            if hasattr(msg, k):
+                setattr(msg, k, v)
+
+    validate_config(msg)
+    _config_source[0] = "json"
+    return msg

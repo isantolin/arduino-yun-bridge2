@@ -243,3 +243,25 @@ async def test_runtime_pin_analog_and_invalid_digits(tmp_path: Path) -> None:
     mock_serial.send.assert_called_with(Command.CMD_DIGITAL_WRITE.value, pb.DigitalWrite(pin=13, value=0))
 
     state.cleanup()
+
+
+def test_runtime_load_config_from_json() -> None:
+    from mcubridge.config.settings import get_config_source, load_runtime_config_from_json
+
+    # 1. Load from JSON string
+    json_str = '{"topic_prefix": "json/prefix", "serial_baud": 115200, "allow_non_tmp_paths": true}'
+    cfg1 = load_runtime_config_from_json(json_str)
+    assert cfg1.topic_prefix == "json/prefix"
+    assert cfg1.serial_baud == 115200
+    assert get_config_source() == "json"
+
+    # 2. Load from JSON bytes with overrides
+    json_bytes = b'{"topic_prefix": "bytes/prefix", "allow_non_tmp_paths": true}'
+    cfg2 = load_runtime_config_from_json(json_bytes, overrides={"serial_baud": 57600})
+    assert cfg2.topic_prefix == "bytes/prefix"
+    assert cfg2.serial_baud == 57600
+
+    # 3. Load from Dict
+    dict_data = {"topic_prefix": "dict/prefix", "allow_non_tmp_paths": True}
+    cfg3 = load_runtime_config_from_json(dict_data)
+    assert cfg3.topic_prefix == "dict/prefix"

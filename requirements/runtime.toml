@@ -136,18 +136,6 @@ pip = "tzdata==2026.3"
 rationale = "Transitive dependency of pendulum providing the IANA time zone database"
 
 [[dependency]]
-name = "jmespath"
-openwrt = "python3-jmespath"
-pip = "jmespath>=1.1.0"
-rationale = "Declared runtime dependency of cel-python (celpy.c7nlib) per its distributed wheel metadata"
-
-[[dependency]]
-name = "pyyaml"
-openwrt = "python3-yaml"
-pip = "pyyaml==6.0.3"
-rationale = "Declared runtime dependency of cel-python per its distributed wheel metadata"
-
-[[dependency]]
 name = "black"
 openwrt = "python3-black"
 pip = "black==26.5.1"

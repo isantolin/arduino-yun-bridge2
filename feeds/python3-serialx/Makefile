@@ -21,6 +21,12 @@ PYTHON3_PKG_BUILD_VARS += \
 	PYO3_CONFIG_FILE=$(PKG_BUILD_DIR)/pyo3-config.txt \
 	PYO3_NO_PYTHON=1
 
+define Build/Prepare
+	$(call Build/Prepare/Default)
+	sed -i 's/"setuptools-scm\[simple\]>=8",//g' $(PKG_BUILD_DIR)/pyproject.toml
+	sed -i 's/dynamic = \["version"\]/version = "$(PKG_VERSION)"/g' $(PKG_BUILD_DIR)/pyproject.toml
+endef
+
 define Build/Configure
 	$(call Build/Configure/Default)
 	echo "implementation=CPython" > $(PKG_BUILD_DIR)/pyo3-config.txt

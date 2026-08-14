@@ -19,7 +19,7 @@ include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
 
 define Build/Prepare
 	$(call Build/Prepare/Default)
-	python3 -c "import pathlib; p = pathlib.Path('$(PKG_BUILD_DIR)/pyproject.toml'); p.write_text('[build-system]\nrequires = [\"hatchling\"]\nbuild-backend = \"hatchling.build\"\n\n[project]\nname = \"protovalidate\"\nversion = \"$(PKG_VERSION)\"\ndescription = \"Protocol Buffer Validation for Python\"\nreadme = \"README.md\"\nrequires-python = \">=3.10\"\nlicense = \"Apache-2.0\"\ndependencies = [\n  \"cel-python>=0.5\",\n  \"google-re2>=1\",\n  \"protobuf>=5\",\n]\n\n[tool.hatch.build.targets.wheel]\npackages = [\"protovalidate\", \"gen/buf\", \"gen/cel\"]\n\n[tool.hatch.build.targets.wheel.sources]\n\"gen\" = \"\"\n', encoding='utf-8')"
+	python3 -c "import pathlib; p = pathlib.Path('$(PKG_BUILD_DIR)/pyproject.toml'); p.write_text('[build-system]\nrequires = [\"setuptools>=61.0\"]\nbuild-backend = \"setuptools.build_meta\"\n\n[project]\nname = \"protovalidate\"\nversion = \"$(PKG_VERSION)\"\ndescription = \"Protocol Buffer Validation for Python\"\nreadme = \"README.md\"\nrequires-python = \">=3.10\"\n\n[tool.setuptools]\npackages = [\"protovalidate\", \"protovalidate.internal\", \"buf\", \"buf.validate\", \"cel\", \"cel.expr\"]\npackage-dir = {\"buf\" = \"gen/buf\", \"cel\" = \"gen/cel\"}\n', encoding='utf-8')"
 endef
 
 define Package/python3-protovalidate

@@ -93,8 +93,19 @@ exclude = [
     "**/*_pb2.py",
     "**/*_pb2.pyi",
     "**/*_grpc.py",
-    "*__pyrefly_virtual__",
+    "**/_pyrefly_virtual__/**",
+    "**/__pyrefly_virtual__/**",
+    "**/inmemory/**",
+    "*_pyrefly_virtual_*",
+    "*__pyrefly_virtual_*",
     "**/.*"
+]
+ignore = [
+    "**/_pyrefly_virtual__/**",
+    "**/__pyrefly_virtual__/**",
+    "**/inmemory/**",
+    "*_pyrefly_virtual_*",
+    "*__pyrefly_virtual_*"
 ]
 reportMissingImports = true
 reportMissingTypeStubs = true

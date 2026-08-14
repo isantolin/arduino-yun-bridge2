@@ -61,6 +61,26 @@
   "makefile.dryrunSwitches": [],
   "python.analysis.autoImportCompletions": true,
   "python.analysis.languageServerMode": "full",
+  "python.analysis.exclude": [
+    "**/_pyrefly_virtual__/**",
+    "**/__pyrefly_virtual__/**",
+    "**/inmemory/**",
+    "**/*_pb2.py",
+    "**/*_pb2.pyi",
+    "**/*_grpc.py",
+    ".tox",
+    ".venv"
+  ],
+  "python.analysis.ignore": [
+    "**/_pyrefly_virtual__/**",
+    "**/__pyrefly_virtual__/**",
+    "**/inmemory/**"
+  ],
+  "files.watcherExclude": {
+    "**/_pyrefly_virtual__/**": true,
+    "**/__pyrefly_virtual__/**": true,
+    "**/inmemory/**": true
+  },
   "markdown.validate.enabled": true,
   "yaml.schemas": {
     "https://json.schemastore.org/github-action.json": ".github/actions/*/action.yml",

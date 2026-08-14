@@ -105,12 +105,9 @@ constexpr size_t copy_bytes_to_buf(const Src& src, DstElem (&dst)[DstSize]) {
 }  // namespace utils
 }  // namespace bridge
 
-#include "ErrorPolicy.h"
-
 class BridgeClass : public etl::observable<bridge::BridgeObserver,
                                            bridge::config::MAX_OBSERVERS> {
  public:
-  using ErrorPolicy = bridge::SafeStatePolicy;
   explicit BridgeClass(Stream& stream);
 
   void begin(uint32_t baudrate = 0, const char* secret = nullptr);

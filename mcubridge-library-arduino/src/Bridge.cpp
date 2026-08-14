@@ -18,8 +18,8 @@
 #include "services/SPIService.h"
 
 namespace etl {
-void __attribute__((weak)) handle_error(const etl::exception& e) {
-  BridgeClass::ErrorPolicy::handle(Bridge, e);
+void __attribute__((weak)) handle_error(const etl::exception&) {
+  Bridge.enterSafeState();
 }
 }  // namespace etl
 
@@ -1085,9 +1085,3 @@ bool BridgeClass::_sendEncryptedImpl(uint16_t raw_cmd, uint16_t seq,
     return false;
   }
 }
-
-namespace bridge {
-void SafeStatePolicy::handle(::BridgeClass& bridge, const etl::exception&) {
-  bridge.enterSafeState();
-}
-}  // namespace bridge

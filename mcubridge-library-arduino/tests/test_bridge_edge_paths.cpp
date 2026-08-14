@@ -347,8 +347,7 @@ void test_console_and_policy_edges() {
   TEST_ASSERT_TRUE(
       ba.isSecurityCheckPassed(rpc::to_underlying(rpc::StatusCode::STATUS_OK)));
 
-  etl::exception ex("coverage", __FILE__, __LINE__);
-  bridge::SafeStatePolicy::handle(Bridge, ex);
+  Bridge.enterSafeState();
 }
 
 void test_observer_and_task_runtime_edges() {

@@ -689,7 +689,7 @@ _SDK_PY="$SDK_DIR/staging_dir/hostpkg/bin/python3"
 if [ -x "$_SDK_PY" ]; then
     echo "[INFO] Injecting build backends (and CFFI dependency) into SDK Python ($($_SDK_PY --version))..."
     "$_SDK_PY" -m pip install --no-cache-dir --ignore-installed --prefix "$SDK_DIR/staging_dir/hostpkg" \
-        "pdm-backend>=2.4.0" "maturin>=1.4" "Cython>=3.1" "hatchling" "hatch-vcs" "setuptools-rust" "setuptools-scm>=8.0" "cffi" 2>&1 | tail -5
+        "pdm-backend>=2.4.0" "maturin>=1.4" "Cython>=3.1" "hatchling" "hatch-vcs" "hatch-fancy-pypi-readme" "setuptools-rust" "setuptools-scm>=8.0" "cffi" 2>&1 | tail -5
 else
     echo "[WARN] SDK Python not found at $_SDK_PY after host build; build backends may be missing."
 fi

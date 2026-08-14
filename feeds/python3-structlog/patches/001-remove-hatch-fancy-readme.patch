@@ -1,5 +1,5 @@
---- a/pyproject.toml
-+++ b/pyproject.toml
+--- a/pyproject.toml	2026-06-06 04:18:48.000000000 -0300
++++ b/pyproject.toml	2026-08-14 14:57:41.300148007 -0300
 @@ -1,12 +1,13 @@
  # SPDX-License-Identifier: MIT OR Apache-2.0
  
@@ -16,14 +16,110 @@
  name = "structlog"
  description = "Structured Logging for Python"
  authors = [{ name = "Hynek Schlawack", email = "hs@ox.cx" }]
-@@ -75,10 +76,6 @@ dev = [
+@@ -67,9 +68,6 @@
  ]
  
  
 -[tool.hatch.version]
 -source = "vcs"
 -raw-options = { local_scheme = "no-local-version" }
--
+ 
  
  [tool.pytest.ini_options]
- addopts = ["--strict-markers", "--strict-config", "--import-mode=importlib"]
+@@ -193,96 +191,8 @@
+ project-includes = ["tests/typing"]
+ 
+ 
+-[tool.hatch.metadata.hooks.fancy-pypi-readme]
+-content-type = "text/markdown"
+-
+-[[tool.hatch.metadata.hooks.fancy-pypi-readme.fragments]]
+-text = '''<p align="center">
+-    <img
+-        src="https://www.structlog.org/en/stable/_static/structlog_logo_small.png"
+-        alt="structlog mascot"
+-    />
+-</p>
+-'''
+-
+-[[tool.hatch.metadata.hooks.fancy-pypi-readme.fragments]]
+-path = "README.md"
+-start-after = "<!-- begin-short -->\n"
+-end-before = "\n<!-- end-short -->"
+-
+-[[tool.hatch.metadata.hooks.fancy-pypi-readme.fragments]]
+-path = "README.md"
+-start-after = "<!-- begin-meta -->\n"
+-
+-[[tool.hatch.metadata.hooks.fancy-pypi-readme.fragments]]
+-text = """
+-
+-
+-## Release Information
+-
+-"""
+-
+-[[tool.hatch.metadata.hooks.fancy-pypi-readme.fragments]]
+-path = "CHANGELOG.md"
+-start-after = "<!-- changelog follows -->"
+-pattern = "\n(###.+?\n)## "
+-
+-[[tool.hatch.metadata.hooks.fancy-pypi-readme.fragments]]
+-text = """
+----
+-
+-[Full Changelog →](https://www.structlog.org/en/stable/changelog.html)
+-
+-
+-"""
+-
+-[[tool.hatch.metadata.hooks.fancy-pypi-readme.fragments]]
+-path = "README.md"
+-start-at = "## Credits"
+-end-before = "<!-- begin-meta -->"
+-
+-# Point sponsor image URLs to versions.
+-[[tool.hatch.metadata.hooks.fancy-pypi-readme.substitutions]]
+-pattern = 'docs\/_static\/sponsors'
+-replacement = 'https://www.structlog.org/en/$HFPR_VERSION/_static/sponsors'
+-
+-
+ [[tool.sponcon.sponsors]]
+ title = "Variomedia AG"
+ url = "https://www.variomedia.de/"
+ img = "Variomedia.svg"
+ 
+-[[tool.sponcon.sponsors]]
+-title = "Tidelift"
+-url = "https://tidelift.com/?utm_source=lifter&utm_medium=referral&utm_campaign=hynek"
+-img = "Tidelift.svg"
+-
+-[[tool.sponcon.sponsors]]
+-title = "Kraken Tech"
+-url = "https://kraken.tech/"
+-img = "Kraken.svg"
+-
+-[[tool.sponcon.sponsors]]
+-title = "Privacy Solutions"
+-url = "https://privacy-solutions.org/"
+-img = "Privacy-Solutions.svg"
+-
+-[[tool.sponcon.sponsors]]
+-title = "Klaviyo"
+-url = "https://klaviyo.com/"
+-img = "Klaviyo.svg"
+-
+-[[tool.sponcon.sponsors]]
+-title = "FilePreviews"
+-url = "https://filepreviews.io/"
+-img = "FilePreviews.svg"
+-
+-[[tool.sponcon.sponsors]]
+-title = "TestMu AI"
+-url = "https://www.testmuai.com/?utm_medium=sponsor&utm_source=structlog"
+-img = "TestMu-AI.svg"
+-
+-[[tool.sponcon.sponsors]]
+-title = "Polar"
+-url = "https://polar.sh/"
+-img = "Polar.svg"

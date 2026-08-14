@@ -29,7 +29,7 @@ name = "protobuf"
 openwrt = "python3-protobuf"
 pip = "protobuf==7.36.0rc2"
 gateway = true
-rationale = "Generated protobuf runtime required for daemon and Cloud payload serialization [RELEASE CANDIDATE v36.0-rc1: Edition 2026 naming & UPB performance features]"
+rationale = "Generated protobuf runtime required for daemon and Cloud payload serialization [RELEASE CANDIDATE v36.0-rc2: Edition 2026 naming & UPB performance features]"
 
 
 [[dependency]]

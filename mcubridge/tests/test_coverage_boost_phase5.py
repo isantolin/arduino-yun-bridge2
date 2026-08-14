@@ -196,8 +196,32 @@ async def test_flush_cloud_spool_corrupt_and_index_error(test_config: RuntimeCon
         await svc._flush_cloud_spool_locked()
 
 
+class _MockCloudStream:
+    def __init__(self, items: list[pb.CloudEnvelope]) -> None:
+        self._items = items
+
+    async def __aenter__(self) -> _MockCloudStream:
+        return self
+
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        pass
+
+    def __aiter__(self) -> _MockCloudStream:
+        self._iter = iter(self._items)
+        return self
+
+    async def __anext__(self) -> pb.CloudEnvelope:
+        try:
+            return next(self._iter)
+        except StopIteration:
+            raise StopAsyncIteration
+
+    async def send_message(self, msg: Any) -> None:
+        pass
+
+
 @pytest.mark.asyncio
-async def test_connect_cloud_session_http3_and_http2(test_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+async def test_connect_cloud_session_http3(test_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     serial = AsyncMock(spec=SerialTransport)
     svc = BridgeService(test_config, mock_state, serial)
 
@@ -208,33 +232,9 @@ async def test_connect_cloud_session_http3_and_http2(test_config: RuntimeConfig,
         command_request=pb.CommandRequest(command_path="system/version/read", payload=b""),
     )
 
-    class MockStream:
-        def __init__(self, items: list[pb.CloudEnvelope]) -> None:
-            self._items = items
-
-        async def __aenter__(self) -> MockStream:
-            return self
-
-        async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-            pass
-
-        def __aiter__(self) -> MockStream:
-            self._iter = iter(self._items)
-            return self
-
-        async def __anext__(self) -> pb.CloudEnvelope:
-            try:
-                return next(self._iter)
-            except StopIteration:
-                raise StopAsyncIteration
-
-        async def send_message(self, msg: Any) -> None:
-            pass
-
-    # Test HTTP/3 branch
     svc.config.cloud_http3_enabled = True
     with patch("mcubridge.services.runtime.Channel"), patch("mcubridge.services.runtime.CloudBridgeStub") as mock_stub:
-        mock_stub.return_value.Session.open.return_value = MockStream([envelope_pong, envelope_cmd])
+        mock_stub.return_value.Session.open.return_value = _MockCloudStream([envelope_pong, envelope_cmd])
         with patch.object(svc, "_send_cloud_event", new_callable=AsyncMock):
             with patch.object(svc, "flush_cloud_spool", new_callable=AsyncMock):
                 with patch.object(svc, "_cloud_incoming_worker", new_callable=AsyncMock):
@@ -242,10 +242,15 @@ async def test_connect_cloud_session_http3_and_http2(test_config: RuntimeConfig,
                     assert svc.state.connected_via_http3 is True
                     assert not svc._cloud_incoming_queue.empty()
 
-    # Test HTTP/2 fallback branch
+
+@pytest.mark.asyncio
+async def test_connect_cloud_session_http2_fallback(test_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+    serial = AsyncMock(spec=SerialTransport)
+    svc = BridgeService(test_config, mock_state, serial)
+
     svc.config.cloud_http3_enabled = False
     with patch("mcubridge.services.runtime.Channel"), patch("mcubridge.services.runtime.CloudBridgeStub") as mock_stub:
-        mock_stub.return_value.Session.open.return_value = MockStream([])
+        mock_stub.return_value.Session.open.return_value = _MockCloudStream([])
         with patch.object(svc, "_send_cloud_event", new_callable=AsyncMock):
             with patch.object(svc, "flush_cloud_spool", new_callable=AsyncMock):
                 with patch.object(svc, "_cloud_incoming_worker", new_callable=AsyncMock):

@@ -77,4 +77,3 @@ Arduino MCU Bridge 2 is a modern, high-performance communication system between 
 
 **Current Version:** v2.8.5 - **Flight-Ready**
 The ecosystem is fully refactored and modernized. Primary service components utilize `AsyncMock` for testing, ensuring high interface fidelity. The C++ library follows strict SIL-2 guidelines with O(1) dispatching and strong typing. End-to-end testing verifies the complete integration between the Python daemon and the C++ logic.
-

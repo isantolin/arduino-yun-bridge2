@@ -82,21 +82,56 @@ def check_prompt_parity() -> list[str]:
     return errors
 
 
+def check_rules_parity() -> list[str]:
+    canonical_path = ROOT / "GEMINI.md"
+    if not canonical_path.exists():
+        return [f"Canonical rules file missing: {canonical_path}"]
+    canonical = canonical_path.read_text(encoding="utf-8").strip()
+
+    errors: list[str] = []
+    targets = [
+        ROOT / "AGENTS.md",
+        ROOT / ".copilot-instructions",
+        ROOT / ".github" / "copilot-instructions",
+        ROOT / ".agent" / "rules" / "openwrt-architect-arduino.agent.md",
+    ]
+
+    for target in targets:
+        if not target.exists():
+            errors.append(f"Missing rules target: {target}")
+            continue
+        content = target.read_text(encoding="utf-8").strip()
+        if content != canonical:
+            errors.append(f"Rules mismatch: {target.relative_to(ROOT)} does not match GEMINI.md")
+
+    agent_path = ROOT / ".agent" / "agents" / "openwrt-architect-arduino" / "agent.json"
+    if agent_path.exists():
+        try:
+            agent = json.loads(agent_path.read_text(encoding="utf-8"))
+            instructions = str(agent.get("instructions", "")).strip()
+            if instructions != canonical:
+                errors.append(f"Rules mismatch: {agent_path.relative_to(ROOT)} 'instructions' does not match GEMINI.md")
+        except json.JSONDecodeError as exc:
+            errors.append(f"Invalid JSON in {agent_path}: {exc}")
+
+    return errors
+
+
 app = typer.Typer(
-    help="Validate parity between .agent/workflows/*.md and .github/commands/*.toml.",
+    help="Validate parity between .agent/workflows/*.md, .github/commands/*.toml, and AI rules.",
     add_completion=False,
 )
 
 
 @app.command()
 def main() -> None:
-    errors = check_model_parity() + check_prompt_parity()
+    errors = check_model_parity() + check_prompt_parity() + check_rules_parity()
     if errors:
         print("PARITY FAILURES:", file=sys.stderr)
         for e in errors:
             print(f"  - {e}", file=sys.stderr)
         sys.exit(1)
-    print(f"All parity checks passed ({len(WORKFLOWS)} workflow pairs + model).")
+    print(f"All parity checks passed ({len(WORKFLOWS)} workflow pairs + model + rules).")
 
 
 if __name__ == "__main__":

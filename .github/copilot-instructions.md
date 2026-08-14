@@ -39,7 +39,7 @@ tox -e arduino     # host test binary via ci_arduino_host_tests.sh
 ### Coverage
 
 ```bash
-tox -e coverage    # Python ≥83% + C++ ≥85%, runs in parallel
+tox -e coverage    # Python ≥95% + C++ ≥95%, runs in parallel
 ```
 
 ### OpenWrt package build / deploy
@@ -60,7 +60,7 @@ Every tox environment re-runs protocol codegen first (`commands_pre`). All warni
 ## Architecture
 
 ```
-Serial (COBS + CRC32 + ChaCha20-Poly1305 AEAD)
+Serial (COBS/R + CRC32 + ChaCha20-Poly1305 AEAD)
         │
         ▼
 [Arduino MCU — C++17 library]          [Linux MPU — Python daemon]
@@ -74,7 +74,7 @@ Serial (COBS + CRC32 + ChaCha20-Poly1305 AEAD)
                                           services/handshake.py
                                           state/context.py / storage.py
                                           ▼
-                                       Protobuf Cloud Gateway (gRPC) / UNIX Domain Sockets
+                                       Protobuf Cloud Gateway (gRPC over HTTP/3 / HTTP/2) / UNIX Domain Sockets
 ```
 
 **Single source of truth:** `tools/protocol/mcubridge.proto` — all constants, command IDs, and payload types are generated from this file into both Python and C++ via `tools/protocol/generate.py` (Jinja2 templates). **Never edit generated files directly.**

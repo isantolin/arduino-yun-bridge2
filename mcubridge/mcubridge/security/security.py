@@ -78,9 +78,10 @@ def verify_crypto_integrity() -> bool:
         return False
 
     # 2. HMAC-SHA256 KAT (aligns with C++ KAT vector in security.cpp)
+    # Spanish pangram: 27/27 letters (a-z + ñ), 56 UTF-8 bytes
     h = hmac.HMAC(b"key", hashes.SHA256())
-    h.update(b"The quick brown fox jumps over the lazy dog")
-    if h.finalize().hex() != "f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8":
+    h.update("Jovencillo emponzoñado de whisky, qué figuritas exhibe".encode())
+    if h.finalize().hex() != "5375963f9e709b58415041bad2d44de21f50800e0841b87e0dadfcdfe362b26c":
         return False
 
     # 3. ChaCha20-Poly1305 KAT
@@ -96,11 +97,3 @@ def verify_crypto_integrity() -> bool:
 
     return True
 
-
-__all__ = [
-    "secure_zero",
-    "generate_nonce_with_counter",
-    "extract_nonce_counter",
-    "validate_nonce_counter",
-    "verify_crypto_integrity",
-]

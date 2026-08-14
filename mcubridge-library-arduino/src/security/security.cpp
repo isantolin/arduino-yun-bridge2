@@ -177,14 +177,17 @@ static constexpr etl::array<uint8_t, 32> kat_sha256_expected PROGMEM = {
 
 static constexpr etl::array<uint8_t, 3> kat_hmac_key PROGMEM = {
     {'k', 'e', 'y'}};
-static constexpr etl::array<uint8_t, 43> kat_hmac_data PROGMEM = {
-    {'T', 'h', 'e', ' ', 'q', 'u', 'i', 'c', 'k', ' ', 'b', 'r', 'o', 'w', 'n',
-     ' ', 'f', 'o', 'x', ' ', 'j', 'u', 'm', 'p', 's', ' ', 'o', 'v', 'e', 'r',
-     ' ', 't', 'h', 'e', ' ', 'l', 'a', 'z', 'y', ' ', 'd', 'o', 'g'}};
+static constexpr etl::array<uint8_t, 56> kat_hmac_data PROGMEM = {
+    // "Jovencillo emponzoñado de whisky, qué figuritas exhibe"
+    // Spanish pangram: 27/27 letters (a-z + ñ), 56 UTF-8 bytes
+    {'J', 'o', 'v', 'e', 'n', 'c', 'i', 'l', 'l', 'o', ' ', 'e', 'm', 'p',
+     'o', 'n', 'z', 'o', 0xC3, 0xB1, 'a', 'd', 'o', ' ', 'd', 'e', ' ', 'w',
+     'h', 'i', 's', 'k', 'y', ',', ' ', 'q', 'u', 0xC3, 0xA9, ' ', 'f', 'i',
+     'g', 'u', 'r', 'i', 't', 'a', 's', ' ', 'e', 'x', 'h', 'i', 'b', 'e'}};
 static constexpr etl::array<uint8_t, 32> kat_hmac_expected PROGMEM = {
-    {0xF7, 0xBC, 0x83, 0xF4, 0x30, 0x53, 0x84, 0x24, 0xB1, 0x32, 0x98,
-     0xE6, 0xAA, 0x6F, 0xB1, 0x43, 0xEF, 0x4D, 0x59, 0xA1, 0x49, 0x46,
-     0x17, 0x59, 0x97, 0x47, 0x9D, 0xBC, 0x2D, 0x1A, 0x3C, 0xD8}};
+    {0x53, 0x75, 0x96, 0x3F, 0x9E, 0x70, 0x9B, 0x58, 0x41, 0x50, 0x41,
+     0xBA, 0xD2, 0xD4, 0x4D, 0xE2, 0x1F, 0x50, 0x80, 0x0E, 0x08, 0x41,
+     0xB8, 0x7E, 0x0D, 0xAD, 0xFC, 0xDF, 0xE3, 0x62, 0xB2, 0x6C}};
 
 // [SIL-2/H-1] NOT marked [[weak]]: cryptographic KATs MUST NOT be bypassable
 // via linker substitution. Doing so would violate FIPS 140-3 requirements for

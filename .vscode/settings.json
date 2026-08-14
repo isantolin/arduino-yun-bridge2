@@ -65,6 +65,7 @@
     "**/_pyrefly_virtual__/**",
     "**/__pyrefly_virtual__/**",
     "**/inmemory/**",
+    "/__pyrefly_virtual__/**",
     "**/*_pb2.py",
     "**/*_pb2.pyi",
     "**/*_grpc.py",
@@ -74,8 +75,26 @@
   "python.analysis.ignore": [
     "**/_pyrefly_virtual__/**",
     "**/__pyrefly_virtual__/**",
-    "**/inmemory/**"
+    "**/inmemory/**",
+    "/__pyrefly_virtual__/**"
   ],
+  "pyrefly.analysis.exclude": [
+    "**/_pyrefly_virtual__/**",
+    "**/__pyrefly_virtual__/**",
+    "**/inmemory/**",
+    "/__pyrefly_virtual__/**"
+  ],
+  "pyrefly.analysis.ignore": [
+    "**/_pyrefly_virtual__/**",
+    "**/__pyrefly_virtual__/**",
+    "**/inmemory/**",
+    "/__pyrefly_virtual__/**"
+  ],
+  "files.exclude": {
+    "**/_pyrefly_virtual__/**": true,
+    "**/__pyrefly_virtual__/**": true,
+    "**/inmemory/**": true
+  },
   "files.watcherExclude": {
     "**/_pyrefly_virtual__/**": true,
     "**/__pyrefly_virtual__/**": true,

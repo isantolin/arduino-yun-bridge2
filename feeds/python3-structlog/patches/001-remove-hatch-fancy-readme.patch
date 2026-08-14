@@ -5,14 +5,14 @@
  
  [build-system]
 -requires = ["hatchling", "hatch-vcs", "hatch-fancy-pypi-readme>=22.8.0"]
-+requires = ["hatchling", "hatch-vcs"]
++requires = ["hatchling"]
  build-backend = "hatchling.build"
  
  
  [project]
 -dynamic = ["readme", "version"]
-+dynamic = ["version"]
 +readme = "README.md"
++version = "26.1.0"
  name = "structlog"
  description = "Structured Logging for Python"
  authors = [{ name = "Hynek Schlawack", email = "hs@ox.cx" }]

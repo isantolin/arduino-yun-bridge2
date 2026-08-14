@@ -19,7 +19,7 @@ include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
 
 define Build/Prepare
 	$(call Build/Prepare/Default)
-	sed -i -n '/\[tool.hatch.metadata.hooks.fancy-pypi-readme\]/q;p' $(PKG_BUILD_DIR)/pyproject.toml
+	sed -i '/\[tool.hatch.version\]/,/^$$/d' $(PKG_BUILD_DIR)/pyproject.toml
 endef
 
 define Package/python3-structlog

@@ -110,9 +110,6 @@ class LmdbDeque:
                 raise IndexError("peek from empty deque")
             return val
 
-    async def length(self) -> int:
-        return len(self)
-
     async def clear(self) -> None:
         if self.is_mem:
             self._mem.clear()

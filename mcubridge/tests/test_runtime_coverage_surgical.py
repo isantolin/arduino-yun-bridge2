@@ -70,10 +70,10 @@ async def test_enqueue_cloud_console_queue(test_config: RuntimeConfig, mock_brid
 async def test_spool_cloud_message_trim_limit(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
     svc = BridgeService(test_config, mock_bridge_state, MagicMock())
     mock_bridge_state.cloud_queue_limit = 5
-    mock_spool = AsyncMock()
-    mock_spool.length.side_effect = [5, 4, 4]  # Trim once, then length is 4
-    mock_spool.popleft.return_value = None
-    mock_spool.append.return_value = None
+    mock_spool = MagicMock()
+    mock_spool.__len__.side_effect = [5, 4, 4]  # Trim once, then length is 4
+    mock_spool.popleft = AsyncMock(return_value=None)
+    mock_spool.append = AsyncMock(return_value=None)
     svc._cloud_spool = mock_spool
 
     msg = pb.CloudQueuedPublish(topic_name="mcu/test", payload=b"data")
@@ -93,9 +93,9 @@ async def test_spool_cloud_message_exceptions(test_config: RuntimeConfig, mock_b
     assert await svc._spool_cloud_message_locked(msg) is False
 
     # Case 2: Database error on append
-    mock_spool = AsyncMock()
-    mock_spool.length.return_value = 0
-    mock_spool.append.side_effect = OSError("Disk full")
+    mock_spool = MagicMock()
+    mock_spool.__len__.return_value = 0
+    mock_spool.append = AsyncMock(side_effect=OSError("Disk full"))
     svc._cloud_spool = mock_spool
     assert await svc._spool_cloud_message_locked(msg) is False
     assert mock_bridge_state.cloud_spool_degraded is True
@@ -104,15 +104,15 @@ async def test_spool_cloud_message_exceptions(test_config: RuntimeConfig, mock_b
 @pytest.mark.asyncio
 async def test_flush_cloud_spool_corrupt_entry(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
     svc = BridgeService(test_config, mock_bridge_state, MagicMock())
-    mock_spool = AsyncMock()
+    mock_spool = MagicMock()
     svc._cloud_stream = MagicMock()
     svc._cloud_spool = mock_spool
 
     # First peek returns garbage bytes, causing ProtobufDecodeError/ValueError
-    mock_spool.length.side_effect = [2, 1, 0, 0]
-    mock_spool.peek.return_value = b"\xff\xff\xff\xff"
-    mock_spool.popleft.return_value = None
-    mock_spool.vacuum.return_value = None
+    mock_spool.__len__.side_effect = [2, 1, 0, 0]
+    mock_spool.peek = AsyncMock(return_value=b"\xff\xff\xff\xff")
+    mock_spool.popleft = AsyncMock(return_value=None)
+    mock_spool.vacuum = AsyncMock(return_value=None)
 
     await svc._flush_cloud_spool_locked()
 

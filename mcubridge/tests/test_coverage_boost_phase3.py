@@ -1047,11 +1047,12 @@ async def test_runtime_flush_cloud_spool_corrupt_and_errors(tmp_path: Path) -> N
     config = _make_config(tmp_path)
     service, state, _ = _make_service(config)
 
-    mock_spool = AsyncMock(spec=LmdbDeque)
-    mock_spool.length = AsyncMock(side_effect=[2, 1, 0, 0, 0, 0])
+    mock_spool = MagicMock(spec=LmdbDeque)
+    mock_spool.__len__.side_effect = [2, 1, 0, 0, 0, 0]
     # Return corrupt bytes first to test corruption handling
     mock_spool.peek = AsyncMock(side_effect=[b"\xff\xffinvalid_protobuf", b""])
     mock_spool.popleft = AsyncMock()
+    mock_spool.vacuum = AsyncMock()
 
     service._cloud_spool = mock_spool
     service._cloud_stream = AsyncMock()

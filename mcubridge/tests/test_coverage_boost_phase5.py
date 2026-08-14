@@ -166,32 +166,28 @@ async def test_flush_cloud_spool_corrupt_and_index_error(test_config: RuntimeCon
     svc = BridgeService(test_config, mock_state, serial)
     svc._cloud_stream = AsyncMock()
 
-    mock_spool = AsyncMock(spec=LmdbDeque)
+    mock_spool = MagicMock(spec=LmdbDeque)
     svc._cloud_spool = mock_spool
-
-    # Case 1: spool.length raises OSError
-    mock_spool.length.side_effect = OSError("DB read error")
-    await svc._flush_cloud_spool_locked()
-    assert svc.state.cloud_spool_degraded is True
-    assert "DB read error" in (svc.state.cloud_spool_failure_reason or "")
 
     # Case 2: spool.peek raises IndexError
     svc.state.cloud_spool_degraded = False
-    mock_spool.length.side_effect = None
-    mock_spool.length.return_value = 1
-    mock_spool.peek.side_effect = IndexError("empty")
+    mock_spool.__len__.return_value = 1
+    mock_spool.peek = AsyncMock(side_effect=IndexError("empty"))
+    mock_spool.popleft = AsyncMock()
+    mock_spool.vacuum = AsyncMock()
     await svc._flush_cloud_spool_locked()
 
     # Case 3: spool.peek returns corrupt data and popleft raises OSError
-    mock_spool.peek.side_effect = None
-    mock_spool.peek.return_value = b"not-a-valid-protobuf"
-    mock_spool.popleft.side_effect = OSError("Disk failure")
+    mock_spool.__len__.side_effect = [1, 1, 0, 0]
+    mock_spool.peek = AsyncMock(return_value=b"not-a-valid-protobuf")
+    mock_spool.popleft = AsyncMock(side_effect=OSError("Disk failure"))
     await svc._flush_cloud_spool_locked()
 
     # Case 4: spool.popleft raises IndexError after publish
     valid_msg = pb.CloudQueuedPublish(topic_name="br/test", payload=b"ok")
-    mock_spool.peek.return_value = valid_msg.SerializeToString()
-    mock_spool.popleft.side_effect = IndexError("popped early")
+    mock_spool.__len__.side_effect = [1, 0, 0, 0]
+    mock_spool.peek = AsyncMock(return_value=valid_msg.SerializeToString())
+    mock_spool.popleft = AsyncMock(side_effect=IndexError("popped early"))
     with patch.object(svc, "_publish_cloud_message", new_callable=AsyncMock, return_value=True):
         await svc._flush_cloud_spool_locked()
 
@@ -600,13 +596,13 @@ async def test_runtime_cloud_spool_trimming_and_drop(test_config: RuntimeConfig,
     svc = BridgeService(test_config, mock_state, serial)
 
     svc.state.cloud_queue_limit = 2
-    mock_spool = AsyncMock(spec=LmdbDeque)
+    mock_spool = MagicMock(spec=LmdbDeque)
     svc._cloud_spool = mock_spool
 
     # Simulate spool length decreasing below limit to exit while loop
-    mock_spool.length.side_effect = [3, 1, 1]
-    mock_spool.popleft.return_value = b"old"
-    mock_spool.append.return_value = None
+    mock_spool.__len__.side_effect = [3, 1, 1]
+    mock_spool.popleft = AsyncMock(return_value=b"old")
+    mock_spool.append = AsyncMock(return_value=None)
 
     msg = pb.CloudQueuedPublish(topic_name="br/test", payload=b"data")
     res = await svc._spool_cloud_message_locked(msg)
@@ -1178,9 +1174,9 @@ async def test_runtime_cloud_spool_locked_lmdb_errors(test_config: RuntimeConfig
     mock_stream = AsyncMock()
     svc._cloud_stream = mock_stream
 
-    mock_spool = AsyncMock()
-    mock_spool.length.return_value = 1
-    mock_spool.peek.side_effect = lmdb.Error("Disk I/O error")
+    mock_spool = MagicMock()
+    mock_spool.__len__.return_value = 1
+    mock_spool.peek = AsyncMock(side_effect=lmdb.Error("Disk I/O error"))
     svc._cloud_spool = mock_spool
 
     await svc._flush_cloud_spool_locked()

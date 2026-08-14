@@ -87,10 +87,10 @@ async def test_lmdb_deque_db_recreation_on_corruption(tmp_path: object) -> None:
 
     deque = LmdbDeque(db_path, maxlen=10)
     await deque.append(b"item1")
-    assert await deque.length() == 1
+    assert len(deque) == 1
     assert await deque.peek() == b"item1"
     assert await deque.popleft() == b"item1"
-    assert await deque.length() == 0
+    assert len(deque) == 0
 
     await deque.clear()
     await deque.vacuum()

@@ -384,29 +384,12 @@ class RuntimeState:
                 self.datastore_cache = None
 
     def build_serial_pipeline_snapshot(self) -> pb.SerialPipelineSnapshot:
-        def _dict_topb_obj_pipeline_event(ev_dict: dict[str, Any] | None) -> pb.PipelineEvent:
-            if not ev_dict:
-                return pb.PipelineEvent(event="none")
-            return pb.PipelineEvent(
-                event=str(ev_dict.get("event", "none")),
-                command_id=int(ev_dict.get("command_id", 0)),
-                attempt=int(ev_dict.get("attempt", 0)),
-                ack_received=bool(ev_dict.get("ack_received", False)),
-                status=int(ev_dict.get("status", 0)),
-                timestamp=float(ev_dict.get("timestamp", 0.0)),
-            )
-
-        inflightpb_obj = pb.PipelineEvent(event="none")
-        if self.serial_pipeline_inflight is not None:
-            inflightpb_obj = _dict_topb_obj_pipeline_event(self.serial_pipeline_inflight)
-
-        lastpb_obj = pb.PipelineEvent(event="none")
-        if self.serial_pipeline_last is not None:
-            lastpb_obj = _dict_topb_obj_pipeline_event(self.serial_pipeline_last)
+        def _to_pipeline_event(ev_dict: dict[str, Any] | None) -> pb.PipelineEvent:
+            return pb.PipelineEvent(**ev_dict) if ev_dict else pb.PipelineEvent(event="none")
 
         return pb.SerialPipelineSnapshot(
-            inflight=inflightpb_obj,
-            last_completion=lastpb_obj,
+            inflight=_to_pipeline_event(self.serial_pipeline_inflight),
+            last_completion=_to_pipeline_event(self.serial_pipeline_last),
         )
 
     def build_metrics_snapshot(self) -> pb.DaemonMetrics:

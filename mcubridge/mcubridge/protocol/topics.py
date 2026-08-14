@@ -16,11 +16,7 @@ import functools
 
 def topic_path(prefix: str, topic: str | Topic, *segments: str | int) -> str:
     """[SIL-2] Construct topic path using direct join/filter delegation."""
-    parts: list[str] = []
-    for s in (prefix, topic, *segments):
-        clean = str(s).strip("/")
-        if clean:
-            parts.append(clean)
+    parts = [clean for s in (prefix, topic, *segments) if (clean := str(s).strip("/"))]
     return posixpath.join(*parts) if parts else ""
 
 

@@ -246,7 +246,7 @@ class BridgeService:
             return False
         try:
             if self.state.cloud_queue_limit > 0:
-                spool_len = await spool.length()
+                spool_len = len(spool)
                 while spool_len >= self.state.cloud_queue_limit:
                     try:
                         await spool.popleft()
@@ -257,7 +257,7 @@ class BridgeService:
                     except (lmdb.Error, OSError) as exc:
                         logger.error("Database error during spool popleft", error=str(exc))
                         break
-                    spool_len = await spool.length()
+                    spool_len = len(spool)
 
                 if self.state.cloud_spool_dropped_limit > 0:
                     self.state.cloud_spool_trim_events += 1
@@ -266,7 +266,7 @@ class BridgeService:
             encoded = message.SerializeToString()
             await spool.append(encoded)
 
-            pending_count = await spool.length()
+            pending_count = len(spool)
             self.state.cloud_spool_degraded = False
             self.state.cloud_spool_failure_reason = None
             self.state.cloud_spool_pending_messages = pending_count
@@ -284,12 +284,7 @@ class BridgeService:
         if not self._cloud_stream or spool is None:
             return
 
-        try:
-            spool_len = await spool.length()
-        except (lmdb.Error, OSError) as exc:
-            self.state.cloud_spool_degraded = True
-            self.state.cloud_spool_failure_reason = str(exc)
-            return
+        spool_len = len(spool)
 
         while spool_len > 0:
             try:
@@ -301,7 +296,7 @@ class BridgeService:
             except (ValueError, TypeError, ProtobufDecodeError) as exc:
                 logger.error("Dropping corrupt CLOUD spool entry", error=str(exc))
                 try:
-                    spool_len = await spool.length()
+                    spool_len = len(spool)
                     if spool_len > 0:
                         await spool.popleft()
                 except IndexError as pop_exc:
@@ -311,10 +306,7 @@ class BridgeService:
                     logger.error("Database error while popping corrupt entry", error=str(pop_exc))
                     break
                 self.state.cloud_spool_corrupt_dropped += 1
-                try:
-                    spool_len = await spool.length()
-                except (lmdb.Error, OSError):
-                    break
+                spool_len = len(spool)
                 continue
             except (lmdb.Error, OSError) as exc:
                 self.state.cloud_spool_degraded = True
@@ -334,15 +326,10 @@ class BridgeService:
                 self.state.cloud_spool_failure_reason = str(exc)
                 break
 
-            try:
-                spool_len = await spool.length()
-            except (lmdb.Error, OSError) as exc:
-                self.state.cloud_spool_degraded = True
-                self.state.cloud_spool_failure_reason = str(exc)
-                break
+            spool_len = len(spool)
 
         try:
-            pending_count = await spool.length()
+            pending_count = len(spool)
             if not self.state.cloud_spool_degraded:
                 self.state.cloud_spool_degraded = False
                 self.state.cloud_spool_failure_reason = None
@@ -568,7 +555,7 @@ class BridgeService:
         serial = self.serial
         if not serial:
             return False
-        count = await self.state.mailbox_queue.length()
+        count = len(self.state.mailbox_queue)
         res = await serial.send(
             Command.CMD_MAILBOX_AVAILABLE_RESP.value,
             pb.MailboxAvailableResponse(count=count),

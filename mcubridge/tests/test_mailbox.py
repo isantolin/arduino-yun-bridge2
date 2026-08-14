@@ -16,13 +16,13 @@ async def test_mailbox_static_queue_overflow() -> None:
         for i in range(8):
             await q.append(f"message_{i}".encode())
 
-        assert await q.length() == 8
+        assert len(q) == 8
 
         # Push two more elements (8 and 9) causing overflow
         await q.append(b"message_8")
         await q.append(b"message_9")
 
-        assert await q.length() == 8
+        assert len(q) == 8
 
         # Verify deterministic drop: oldest messages (message_0, message_1) must be dropped
         # resulting in message_2 as the first available
@@ -34,7 +34,7 @@ async def test_mailbox_static_queue_overflow() -> None:
             assert await q.popleft() == f"message_{i}".encode()
 
         # Queue should be empty now
-        assert await q.length() == 0
+        assert len(q) == 0
     finally:
         if os.path.exists(path):
             os.unlink(path)

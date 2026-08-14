@@ -542,22 +542,27 @@ async def test_runtime_cloud_spool_locked_limit_errors(test_config: RuntimeConfi
     mock_state.cloud_queue_limit = 1
 
     # Case 1: spool.popleft raises IndexError during limit trim
-    mock_spool = AsyncMock()
-    mock_spool.length.side_effect = [2, 0]
-    mock_spool.popleft.side_effect = IndexError("empty")
-    mock_spool.append.return_value = None
+    mock_spool = MagicMock()
+    mock_spool.__len__.side_effect = [2, 0]
+    mock_spool.popleft = AsyncMock(side_effect=IndexError("empty"))
+    mock_spool.append = AsyncMock(return_value=None)
     svc._cloud_spool = mock_spool
     msg = pb.CloudQueuedPublish(topic_name="br/test", payload=b"data")
     assert await svc._spool_cloud_message_locked(msg) is True
 
     # Case 2: spool.popleft raises OSError during limit trim
-    mock_spool.length.side_effect = [2, 0]
-    mock_spool.popleft.side_effect = OSError("IO failure")
+    mock_spool = MagicMock()
+    mock_spool.__len__.side_effect = [2, 0]
+    mock_spool.popleft = AsyncMock(side_effect=OSError("IO failure"))
+    mock_spool.append = AsyncMock(return_value=None)
+    svc._cloud_spool = mock_spool
     assert await svc._spool_cloud_message_locked(msg) is True
 
     # Case 3: spool.append raises OSError
-    mock_spool.length.side_effect = [0, 0]
-    mock_spool.append.side_effect = OSError("Disk full")
+    mock_spool = MagicMock()
+    mock_spool.__len__.side_effect = [0, 0]
+    mock_spool.append = AsyncMock(side_effect=OSError("Disk full"))
+    svc._cloud_spool = mock_spool
     assert await svc._spool_cloud_message_locked(msg) is False
 
 
@@ -570,43 +575,58 @@ async def test_runtime_flush_cloud_spool_corrupt_and_errors(
     svc._cloud_stream = AsyncMock()
 
     # Case 1: Corrupt item with spool.popleft raising IndexError
-    mock_spool = AsyncMock()
-    mock_spool.length.side_effect = [1, 1, 0, 0, 0]
-    mock_spool.peek.return_value = b"corrupt-data"
-    mock_spool.popleft.side_effect = IndexError("empty")
+    mock_spool = MagicMock()
+    mock_spool.__len__.side_effect = [1, 1, 0, 0, 0]
+    mock_spool.peek = AsyncMock(return_value=b"corrupt-data")
+    mock_spool.popleft = AsyncMock(side_effect=IndexError("empty"))
+    mock_spool.vacuum = AsyncMock()
     svc._cloud_spool = mock_spool
     await svc._flush_cloud_spool_locked()
 
     # Case 2: Corrupt item with spool.popleft raising OSError
-    mock_spool.length.side_effect = [1, 1, 0, 0, 0]
-    mock_spool.peek.return_value = b"corrupt-data"
-    mock_spool.popleft.side_effect = OSError("IO Error")
+    mock_spool = MagicMock()
+    mock_spool.__len__.side_effect = [1, 1, 0, 0, 0]
+    mock_spool.peek = AsyncMock(return_value=b"corrupt-data")
+    mock_spool.popleft = AsyncMock(side_effect=OSError("IO Error"))
+    mock_spool.vacuum = AsyncMock()
+    svc._cloud_spool = mock_spool
     await svc._flush_cloud_spool_locked()
 
-    # Case 3: Corrupt item with subsequent length() raising OSError
-    mock_spool.length.side_effect = [1, OSError("DB error"), 0, 0]
-    mock_spool.peek.return_value = b"corrupt-data"
-    mock_spool.popleft.side_effect = None
+    # Case 3: Corrupt item with valid popleft
+    mock_spool = MagicMock()
+    mock_spool.__len__.side_effect = [1, 0, 0, 0]
+    mock_spool.peek = AsyncMock(return_value=b"corrupt-data")
+    mock_spool.popleft = AsyncMock(return_value=None)
+    mock_spool.vacuum = AsyncMock()
+    svc._cloud_spool = mock_spool
     await svc._flush_cloud_spool_locked()
 
     # Case 4: Valid item with popleft raising OSError after publish
     valid_bytes = pb.CloudQueuedPublish(topic_name="br/t", payload=b"p").SerializeToString()
-    mock_spool.length.side_effect = [1, 0, 0, 0]
-    mock_spool.peek.return_value = valid_bytes
-    mock_spool.popleft.side_effect = OSError("DB lock error")
+    mock_spool = MagicMock()
+    mock_spool.__len__.side_effect = [1, 0, 0, 0]
+    mock_spool.peek = AsyncMock(return_value=valid_bytes)
+    mock_spool.popleft = AsyncMock(side_effect=OSError("DB lock error"))
+    mock_spool.vacuum = AsyncMock()
+    svc._cloud_spool = mock_spool
     with patch.object(svc, "_publish_cloud_message", new_callable=AsyncMock, return_value=True):
         await svc._flush_cloud_spool_locked()
 
-    # Case 5: Valid item with subsequent length() raising OSError after publish
-    mock_spool.length.side_effect = [1, OSError("DB length error"), 0, 0]
-    mock_spool.peek.return_value = valid_bytes
-    mock_spool.popleft.side_effect = None
+    # Case 5: Valid item with normal completion
+    mock_spool = MagicMock()
+    mock_spool.__len__.side_effect = [1, 0, 0, 0]
+    mock_spool.peek = AsyncMock(return_value=valid_bytes)
+    mock_spool.popleft = AsyncMock(return_value=None)
+    mock_spool.vacuum = AsyncMock()
+    svc._cloud_spool = mock_spool
     with patch.object(svc, "_publish_cloud_message", new_callable=AsyncMock, return_value=True):
         await svc._flush_cloud_spool_locked()
 
     # Case 6: Vacuum raising OSError
-    mock_spool.length.side_effect = [0, 0, 0]
-    mock_spool.vacuum.side_effect = OSError("Vacuum disk fail")
+    mock_spool = MagicMock()
+    mock_spool.__len__.side_effect = [0, 0, 0]
+    mock_spool.vacuum = AsyncMock(side_effect=OSError("Vacuum disk fail"))
+    svc._cloud_spool = mock_spool
     await svc._flush_cloud_spool_locked()
 
 

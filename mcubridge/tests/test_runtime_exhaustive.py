@@ -135,7 +135,7 @@ async def test_enqueue_cloud_spool_and_flush(
     await service.enqueue_cloud(msg)
     spool = getattr(service, "_cloud_spool")
     assert spool is not None
-    assert await spool.length() >= 1
+    assert len(spool) >= 1
 
     # Drain spool
     popped_bytes = await spool.popleft()

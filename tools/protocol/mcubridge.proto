@@ -75,76 +75,76 @@ message Constants {
 }
 
 message Hardware {
-    uint32 max_observers_avr = 1 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
-    uint32 max_observers_other = 2 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
-    uint32 rx_history_size = 3 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
-    uint32 rx_buffer_size_avr = 4 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
-    uint32 rx_buffer_size_other = 5 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
-    uint32 max_pending_tx_frames_avr = 6 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
-    uint32 max_pending_tx_frames_other = 7 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
-    uint32 console_rx_buffer_size_avr = 8 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
-    uint32 console_rx_buffer_size_other = 9 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
-    uint32 console_tx_buffer_size_avr = 10 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
-    uint32 console_tx_buffer_size_other = 11 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
-    uint32 mailbox_rx_buffer_size_avr = 12 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
-    uint32 mailbox_rx_buffer_size_other = 13 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
-    uint32 max_pending_datastore = 14 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
-    uint32 max_pending_process_polls = 15 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
-    uint32 file_large_warning_bytes = 16 [(cpp_name) = "", (cpp_type) = "", (py_name) = "FILE_LARGE_WARNING_BYTES", (py_type) = "int"];
-    uint32 startup_drain_per_tick = 17 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
-    uint32 startup_drain_final = 18 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
-    uint32 startup_stabilization_ms = 19 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
-    uint32 baudrate_change_delay_ms = 20 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
-    uint32 max_consecutive_crc_errors = 21 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
-    uint32 rx_dedupe_interval_ms = 22 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
-    uint32 flow_control_xoff_threshold = 23 [(cpp_name) = "", (cpp_type) = "", (py_name) = "FLOW_CONTROL_XOFF_THRESHOLD", (py_type) = "int"];
-    uint32 flow_control_xon_threshold = 24 [(cpp_name) = "", (cpp_type) = "", (py_name) = "FLOW_CONTROL_XON_THRESHOLD", (py_type) = "int"];
-    uint32 hkdf_key_length = 25 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
-    uint32 key_and_digest_buffer_size = 26 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
-    uint32 avr_digital_pins = 27 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
-    uint32 avr_analog_pins = 28 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
-    uint32 samd_digital_pins = 29 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
-    uint32 samd_analog_pins = 30 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
-    uint32 fallback_max_pin = 31 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
-    uint32 fallback_free_memory = 32 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
-    uint32 capabilities_feat_extended = 33 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
+    uint32 max_observers_avr = 1;
+    uint32 max_observers_other = 2;
+    uint32 rx_history_size = 3;
+    uint32 rx_buffer_size_avr = 4;
+    uint32 rx_buffer_size_other = 5;
+    uint32 max_pending_tx_frames_avr = 6;
+    uint32 max_pending_tx_frames_other = 7;
+    uint32 console_rx_buffer_size_avr = 8;
+    uint32 console_rx_buffer_size_other = 9;
+    uint32 console_tx_buffer_size_avr = 10;
+    uint32 console_tx_buffer_size_other = 11;
+    uint32 mailbox_rx_buffer_size_avr = 12;
+    uint32 mailbox_rx_buffer_size_other = 13;
+    uint32 max_pending_datastore = 14;
+    uint32 max_pending_process_polls = 15;
+    uint32 file_large_warning_bytes = 16 [(py_name) = "FILE_LARGE_WARNING_BYTES", (py_type) = "int"];
+    uint32 startup_drain_per_tick = 17;
+    uint32 startup_drain_final = 18;
+    uint32 startup_stabilization_ms = 19;
+    uint32 baudrate_change_delay_ms = 20;
+    uint32 max_consecutive_crc_errors = 21;
+    uint32 rx_dedupe_interval_ms = 22;
+    uint32 flow_control_xoff_threshold = 23 [(py_name) = "FLOW_CONTROL_XOFF_THRESHOLD", (py_type) = "int"];
+    uint32 flow_control_xon_threshold = 24 [(py_name) = "FLOW_CONTROL_XON_THRESHOLD", (py_type) = "int"];
+    uint32 hkdf_key_length = 25;
+    uint32 key_and_digest_buffer_size = 26;
+    uint32 avr_digital_pins = 27;
+    uint32 avr_analog_pins = 28;
+    uint32 samd_digital_pins = 29;
+    uint32 samd_analog_pins = 30;
+    uint32 fallback_max_pin = 31;
+    uint32 fallback_free_memory = 32;
+    uint32 capabilities_feat_extended = 33;
     uint32 serial_timeout_ms = 34 [(cpp_name) = "RPC_SERIAL_TIMEOUT_MS", (cpp_type) = "uint32_t", (py_name) = "SERIAL_TIMEOUT_MS", (py_type) = "int"];
     uint32 spi_timeout_ms = 35 [(cpp_name) = "RPC_SPI_TIMEOUT_MS", (cpp_type) = "uint32_t", (py_name) = "SPI_TIMEOUT_MS", (py_type) = "int"];
-    uint32 bootloader_delay_ms = 36 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
-    uint32 file_max_read_chunks = 37 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
+    uint32 bootloader_delay_ms = 36;
+    uint32 file_max_read_chunks = 37;
     uint32 sha256_digest_size = 38 [(cpp_name) = "RPC_SHA256_DIGEST_SIZE", (cpp_type) = "uint8_t", (py_name) = "SHA256_DIGEST_SIZE", (py_type) = "int"];
     uint32 sha256_kat_buffer_size = 39 [(cpp_name) = "RPC_SHA256_KAT_BUFFER_SIZE", (cpp_type) = "uint8_t", (py_name) = "SHA256_KAT_BUFFER_SIZE", (py_type) = "int"];
-    uint32 hkdf_handshake_key_length = 40 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
-    uint32 hkdf_handshake_full_tag_size = 41 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
+    uint32 hkdf_handshake_key_length = 40;
+    uint32 hkdf_handshake_full_tag_size = 41;
 }
 
 message Handshake {
     uint32 nonce_length = 1 [(cpp_name) = "RPC_HANDSHAKE_NONCE_LENGTH", (cpp_type) = "unsigned int", (py_name) = "HANDSHAKE_NONCE_LENGTH", (py_type) = "int"];
     uint32 tag_length = 2 [(cpp_name) = "RPC_HANDSHAKE_TAG_LENGTH", (cpp_type) = "unsigned int", (py_name) = "HANDSHAKE_TAG_LENGTH", (py_type) = "int"];
-    string tag_algorithm = 3 [(cpp_name) = "", (cpp_type) = "", (py_name) = "HANDSHAKE_TAG_ALGORITHM", (py_type) = "str"];
-    string tag_description = 4 [(cpp_name) = "", (cpp_type) = "", (py_name) = "HANDSHAKE_TAG_DESCRIPTION", (py_type) = "str"];
+    string tag_algorithm = 3 [(py_name) = "HANDSHAKE_TAG_ALGORITHM", (py_type) = "str"];
+    string tag_description = 4 [(py_name) = "HANDSHAKE_TAG_DESCRIPTION", (py_type) = "str"];
     uint32 ack_timeout_min_ms = 5 [(cpp_name) = "RPC_HANDSHAKE_ACK_TIMEOUT_MIN_MS", (cpp_type) = "uint32_t", (py_name) = "HANDSHAKE_ACK_TIMEOUT_MIN_MS", (py_type) = "int"];
     uint32 ack_timeout_max_ms = 6 [(cpp_name) = "RPC_HANDSHAKE_ACK_TIMEOUT_MAX_MS", (cpp_type) = "uint32_t", (py_name) = "HANDSHAKE_ACK_TIMEOUT_MAX_MS", (py_type) = "int"];
     uint32 response_timeout_min_ms = 7 [(cpp_name) = "RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS", (cpp_type) = "uint32_t", (py_name) = "HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS", (py_type) = "int"];
     uint32 response_timeout_max_ms = 8 [(cpp_name) = "RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS", (cpp_type) = "uint32_t", (py_name) = "HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS", (py_type) = "int"];
     uint32 retry_limit_min = 9 [(cpp_name) = "RPC_HANDSHAKE_RETRY_LIMIT_MIN", (cpp_type) = "uint8_t", (py_name) = "HANDSHAKE_RETRY_LIMIT_MIN", (py_type) = "int"];
     uint32 retry_limit_max = 10 [(cpp_name) = "RPC_HANDSHAKE_RETRY_LIMIT_MAX", (cpp_type) = "uint8_t", (py_name) = "HANDSHAKE_RETRY_LIMIT_MAX", (py_type) = "int"];
-    string hkdf_algorithm = 11 [(cpp_name) = "", (cpp_type) = "", (py_name) = "HANDSHAKE_HKDF_ALGORITHM", (py_type) = "str"];
-    string hkdf_salt = 12 [(cpp_name) = "", (cpp_type) = "", (py_name) = "HANDSHAKE_HKDF_SALT", (py_type) = "bytes"];
-    string hkdf_info_auth = 13 [(cpp_name) = "", (cpp_type) = "", (py_name) = "HANDSHAKE_HKDF_INFO_AUTH", (py_type) = "bytes"];
-    string hkdf_info_session = 14 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
+    string hkdf_algorithm = 11 [(py_name) = "HANDSHAKE_HKDF_ALGORITHM", (py_type) = "str"];
+    string hkdf_salt = 12 [(py_name) = "HANDSHAKE_HKDF_SALT", (py_type) = "bytes"];
+    string hkdf_info_auth = 13 [(py_name) = "HANDSHAKE_HKDF_INFO_AUTH", (py_type) = "bytes"];
+    string hkdf_info_session = 14;
     uint32 hkdf_output_length = 15 [(cpp_name) = "RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH", (cpp_type) = "unsigned int", (py_name) = "HANDSHAKE_HKDF_OUTPUT_LENGTH", (py_type) = "int"];
     uint32 nonce_random_bytes = 16 [(cpp_name) = "RPC_HANDSHAKE_NONCE_RANDOM_BYTES", (cpp_type) = "unsigned int", (py_name) = "HANDSHAKE_NONCE_RANDOM_BYTES", (py_type) = "int"];
     uint32 nonce_counter_bytes = 17 [(cpp_name) = "RPC_HANDSHAKE_NONCE_COUNTER_BYTES", (cpp_type) = "unsigned int", (py_name) = "HANDSHAKE_NONCE_COUNTER_BYTES", (py_type) = "int"];
-    string nonce_format_description = 18 [(cpp_name) = "", (cpp_type) = "", (py_name) = "HANDSHAKE_NONCE_FORMAT_DESCRIPTION", (py_type) = "str"];
-    string aead_algorithm = 19 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
-    string aead_description = 20 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
+    string nonce_format_description = 18 [(py_name) = "HANDSHAKE_NONCE_FORMAT_DESCRIPTION", (py_type) = "str"];
+    string aead_algorithm = 19;
+    string aead_description = 20;
 }
 
 message DataFormats {
-    string uint8_format = 3 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
-    string uint16_format = 4 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
-    string uint32_format = 5 [(cpp_name) = "", (cpp_type) = "", (py_name) = "", (py_type) = ""];
+    string uint8_format = 3;
+    string uint16_format = 4;
+    string uint32_format = 5;
 }
 
 message CloudSuffixes {
@@ -502,127 +502,102 @@ option (rpc.pb.status_reasons) = {
 option (rpc.pb.cloud_subscriptions) = {
     topic: "DIGITAL"
     segments: ["+", "mode"]
-    qos: 1
 };
 option (rpc.pb.cloud_subscriptions) = {
     topic: "DIGITAL"
     segments: ["+", "read"]
-    qos: 1
 };
 option (rpc.pb.cloud_subscriptions) = {
     topic: "DIGITAL"
     segments: ["+"]
-    qos: 1
 };
 option (rpc.pb.cloud_subscriptions) = {
     topic: "ANALOG"
     segments: ["+", "read"]
-    qos: 1
 };
 option (rpc.pb.cloud_subscriptions) = {
     topic: "ANALOG"
     segments: ["+"]
-    qos: 1
 };
 option (rpc.pb.cloud_subscriptions) = {
     topic: "CONSOLE"
     segments: ["in"]
-    qos: 1
 };
 option (rpc.pb.cloud_subscriptions) = {
     topic: "DATASTORE"
     segments: ["put", "#"]
-    qos: 1
 };
 option (rpc.pb.cloud_subscriptions) = {
     topic: "DATASTORE"
     segments: ["get", "#"]
-    qos: 1
 };
 option (rpc.pb.cloud_subscriptions) = {
     topic: "MAILBOX"
     segments: ["write"]
-    qos: 1
 };
 option (rpc.pb.cloud_subscriptions) = {
     topic: "MAILBOX"
     segments: ["read"]
-    qos: 1
 };
 option (rpc.pb.cloud_subscriptions) = {
     topic: "SHELL"
     segments: ["run_async"]
-    qos: 1
 };
 option (rpc.pb.cloud_subscriptions) = {
     topic: "SHELL"
     segments: ["poll", "#"]
-    qos: 1
 };
 option (rpc.pb.cloud_subscriptions) = {
     topic: "SHELL"
     segments: ["kill", "#"]
-    qos: 1
 };
 option (rpc.pb.cloud_subscriptions) = {
     topic: "SYSTEM"
     segments: ["free_memory", "get"]
-    qos: 1
 };
 option (rpc.pb.cloud_subscriptions) = {
     topic: "SYSTEM"
     segments: ["version", "get"]
-    qos: 1
 };
 option (rpc.pb.cloud_subscriptions) = {
     topic: "SYSTEM"
     segments: ["bridge", "handshake", "get"]
-    qos: 1
 };
 option (rpc.pb.cloud_subscriptions) = {
     topic: "SYSTEM"
     segments: ["bridge", "summary", "get"]
-    qos: 1
 };
 option (rpc.pb.cloud_subscriptions) = {
     topic: "SYSTEM"
     segments: ["bridge", "state", "get"]
-    qos: 1
 };
 option (rpc.pb.cloud_subscriptions) = {
     topic: "FILE"
     segments: ["write", "#"]
-    qos: 1
 };
 option (rpc.pb.cloud_subscriptions) = {
     topic: "FILE"
     segments: ["read", "#"]
-    qos: 1
 };
 option (rpc.pb.cloud_subscriptions) = {
     topic: "FILE"
     segments: ["remove", "#"]
-    qos: 1
 };
 option (rpc.pb.cloud_subscriptions) = {
     topic: "SPI"
     segments: ["begin"]
-    qos: 1
 };
 option (rpc.pb.cloud_subscriptions) = {
     topic: "SPI"
     segments: ["end"]
-    qos: 1
 };
 option (rpc.pb.cloud_subscriptions) = {
     topic: "SPI"
     segments: ["transfer"]
-    qos: 1
 };
 option (rpc.pb.cloud_subscriptions) = {
     topic: "SPI"
     segments: ["config"]
-    qos: 1
 };
 
 option (rpc.pb.topics) = {

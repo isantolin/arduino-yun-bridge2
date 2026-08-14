@@ -193,17 +193,26 @@ def load_spec_from_proto(proto_path: Path) -> ProtocolSpec:
     cloud_suffixes = MessageToDict(
         cloud_suffixes_opt, preserving_proto_field_name=True, always_print_fields_with_no_presence=True
     )
+    for field_desc in mcubridge_pb2.CloudSuffixes.DESCRIPTOR.fields:
+        if not cloud_suffixes.get(field_desc.name):
+            cloud_suffixes[field_desc.name] = field_desc.name
+
     cloud_defaults = MessageToDict(
         cloud_defaults_opt, preserving_proto_field_name=True, always_print_fields_with_no_presence=True
     )
     status_reasons = MessageToDict(
         status_reasons_opt, preserving_proto_field_name=True, always_print_fields_with_no_presence=True
     )
+    for field_desc in mcubridge_pb2.StatusReasons.DESCRIPTOR.fields:
+        if not status_reasons.get(field_desc.name):
+            status_reasons[field_desc.name] = field_desc.name
 
-    cloud_subscriptions = [
-        MessageToDict(sub, preserving_proto_field_name=True, always_print_fields_with_no_presence=True)
-        for sub in cloud_subscriptions_opt
-    ]
+    cloud_subscriptions: list[dict[str, Any]] = []
+    for sub in cloud_subscriptions_opt:
+        sub_dict = MessageToDict(sub, preserving_proto_field_name=True, always_print_fields_with_no_presence=True)
+        if not sub_dict.get("qos"):
+            sub_dict["qos"] = 1
+        cloud_subscriptions.append(sub_dict)
     topics = [
         MessageToDict(t, preserving_proto_field_name=True, always_print_fields_with_no_presence=True)
         for t in topics_opt

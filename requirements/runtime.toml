@@ -172,6 +172,77 @@ pip = "distlib>=0.3.8"
 rationale = "Low-level distribution and packaging utilities for version normalization and dependency resolution"
 
 
+# =============================================================================
+# C++ / Arduino Microcontroller Dependencies (SIL-2 Zero-Heap)
+# =============================================================================
+
+[[cpp_dependency]]
+name = "Embedded_Template_Library"
+github = "ETLCPP/etl"
+ref_type = "tags"
+version = "20.48.1"
+check_file = "include/etl/algorithm.h"
+rationale = "Zero-heap, STL-free deterministic C++ template library for SIL-2 MCU algorithms"
+
+[[cpp_dependency]]
+name = "wolfSSL"
+github = "wolfSSL/wolfssl"
+ref_type = "tags"
+version = "v5.9.2-stable"
+check_file = "wolfssl/wolfcrypt/settings.h"
+rationale = "FIPS 140-3 / SIL-2 compliant cryptography engine (ChaCha20-Poly1305, HKDF, SHA-256)"
+
+[[cpp_dependency]]
+name = "PacketSerial"
+github = "isantolin/PacketSerial2"
+ref_type = "heads"
+version = "master"
+check_file = "src/Codecs/COBSR.h"
+rationale = "COBS/R framing and packet encoder/decoder for serial stream synchronization"
+
+[[cpp_dependency]]
+name = "Unity"
+github = "ThrowTheSwitch/Unity"
+ref_type = "tags"
+version = "v2.7.0"
+check_file = "unity.h"
+target_dir = "tests"
+rationale = "Host-based deterministic C/C++ unit testing harness for MCU components"
+
+[[cpp_dependency]]
+name = "nanopb_core"
+github = "nanopb/nanopb"
+ref_type = "version"
+version = "0.4.9.1"
+check_file = "pb.h"
+rationale = "Lightweight zero-heap C Protobuf serialization runtime for embedded MCUs"
+
+
+# =============================================================================
+# Development, Linting and Verification Tooling (CI/Dev SSOT)
+# =============================================================================
+
+[[dev_dependency]]
+name = "coverage"
+pip = "coverage==7.15.4"
+rationale = "Strict code coverage measurement and reporting tool"
+
+[[dev_dependency]]
+name = "pyright"
+pip = "pyright==1.1.411"
+rationale = "Strict static type checker enforcing zero-warning type safety across the Python stack"
+
+[[dev_dependency]]
+name = "ruff"
+pip = "ruff==0.16.3"
+rationale = "Fast Python linter and code quality validator"
+
+[[dev_dependency]]
+name = "mypy-protobuf"
+pip = "mypy-protobuf==5.1.0"
+rationale = "Protoc plugin for generating strict type stubs (.pyi) from Protobuf definitions"
+
+
 
 
 

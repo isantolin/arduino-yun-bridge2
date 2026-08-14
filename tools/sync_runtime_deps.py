@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Generate derived dependency files from the runtime manifest."""
 
+from dataclasses import dataclass
 import json
 import re
 import sys
@@ -9,7 +10,7 @@ import urllib.error
 import urllib.request
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Annotated, TypedDict
+from typing import Annotated, Any, TypedDict, cast
 
 from distlib.version import NormalizedVersion
 from packaging.requirements import Requirement
@@ -24,8 +25,14 @@ MAKEFILE_PATH = ROOT / "mcubridge" / "Makefile"
 GATEWAY_REQUIREMENTS_PATH = ROOT / "mcubridge-gateway" / "requirements.txt"
 GATEWAY_MAKEFILE_PATH = ROOT / "mcubridge-gateway" / "Makefile"
 FEEDS_DIR = ROOT / "feeds"
+TOX_PATH = ROOT / "tox.ini"
+ARDUINO_INSTALL_SCRIPT_PATH = ROOT / "mcubridge-library-arduino" / "tools" / "install.sh"
+ARDUINO_LIBRARY_PROPERTIES_PATH = ROOT / "mcubridge-library-arduino" / "library.properties"
+
 BLOCK_START = "# AUTO-GENERATED RUNTIME DEPENDS BEGIN"
 BLOCK_END = "# AUTO-GENERATED RUNTIME DEPENDS END"
+CPP_BLOCK_START = "# --- [AUTO-GENERATED C++ DEPENDENCIES BEGIN] ---"
+CPP_BLOCK_END = "# --- [AUTO-GENERATED C++ DEPENDENCIES END] ---"
 
 # --- [FILTRADO INTELIGENTE DE DEPENDENCIAS] ---
 
@@ -48,7 +55,30 @@ class _DepEntry(TypedDict):
     gateway: bool
 
 
-def load_manifest() -> list[_DepEntry]:
+class _CppDepEntry(TypedDict):
+    name: str
+    github: str
+    ref_type: str
+    version: str
+    check_file: str
+    rationale: str
+    target_dir: str
+
+
+class _DevDepEntry(TypedDict):
+    name: str
+    pip: str
+    rationale: str
+
+
+@dataclass(slots=True, frozen=True)
+class ManifestData:
+    runtime: list[_DepEntry]
+    cpp: list[_CppDepEntry]
+    dev: list[_DevDepEntry]
+
+
+def load_manifest() -> ManifestData:
     if not MANIFEST_PATH.exists():
         raise ManifestError(f"Missing manifest: {MANIFEST_PATH}")
 
@@ -56,12 +86,12 @@ def load_manifest() -> list[_DepEntry]:
     entries = data.get("dependency")
     if not entries:
         raise ManifestError("Manifest must declare at least one dependency")
-    normalized: list[_DepEntry] = []
+    normalized_runtime: list[_DepEntry] = []
     for entry in entries:
         openwrt = entry.get("openwrt", "").strip()
         pip_spec = entry.get("pip", "").strip()
         name = entry.get("name") or openwrt or "(unnamed)"
-        normalized.append(
+        normalized_runtime.append(
             _DepEntry(
                 name=name,
                 openwrt=openwrt,
@@ -70,7 +100,32 @@ def load_manifest() -> list[_DepEntry]:
                 gateway=bool(entry.get("gateway", False)),
             )
         )
-    return normalized
+
+    normalized_cpp: list[_CppDepEntry] = []
+    for entry in data.get("cpp_dependency", []):
+        normalized_cpp.append(
+            _CppDepEntry(
+                name=entry.get("name", "").strip(),
+                github=entry.get("github", "").strip(),
+                ref_type=entry.get("ref_type", "tags").strip(),
+                version=entry.get("version", "").strip(),
+                check_file=entry.get("check_file", "").strip(),
+                rationale=entry.get("rationale", "").strip(),
+                target_dir=entry.get("target_dir", "").strip(),
+            )
+        )
+
+    normalized_dev: list[_DevDepEntry] = []
+    for entry in data.get("dev_dependency", []):
+        normalized_dev.append(
+            _DevDepEntry(
+                name=entry.get("name", "").strip(),
+                pip=entry.get("pip", "").strip(),
+                rationale=entry.get("rationale", "").strip(),
+            )
+        )
+
+    return ManifestData(runtime=normalized_runtime, cpp=normalized_cpp, dev=normalized_dev)
 
 
 def collect_pip_specs(deps: Sequence[_DepEntry]) -> list[str]:
@@ -142,8 +197,6 @@ def update_pyproject(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> boo
             new_lines.append(line)
             for spec in runtime_pip_specs:
                 new_lines.append(f'    "{spec}",')
-            # Remove trailing comma from last dependency for strictly valid TOML if preferred,
-            # though most parsers handle it. Ruff likes it.
             replaced = True
             continue
 
@@ -242,6 +295,59 @@ def update_gateway_makefile(deps: Sequence[_DepEntry], *, dry_run: bool = False)
     return True
 
 
+def update_cpp_install_script(cpp_deps: Sequence[_CppDepEntry], *, dry_run: bool = False) -> bool:
+    """Synchronize C++ dependency versions into Arduino install.sh script."""
+    if not ARDUINO_INSTALL_SCRIPT_PATH.exists():
+        return False
+    content = ARDUINO_INSTALL_SCRIPT_PATH.read_text(encoding="utf-8")
+    if CPP_BLOCK_START not in content or CPP_BLOCK_END not in content:
+        return False
+
+    var_map = {
+        "Embedded_Template_Library": "ETL_VERSION",
+        "wolfSSL": "WOLFSSL_VERSION",
+        "PacketSerial": "PACKETSERIAL_REF",
+        "Unity": "UNITY_VERSION",
+        "nanopb_core": "NANOPB_VERSION",
+    }
+    lines: list[str] = []
+    for dep in cpp_deps:
+        var_name = var_map.get(dep["name"])
+        if not var_name:
+            continue
+        val = f"{dep['ref_type']}/{dep['version']}" if dep["ref_type"] == "heads" else dep["version"]
+        lines.append(f'{var_name}="{val}"')
+
+    rendered_block = "\n".join(lines)
+    parts_before = content.split(CPP_BLOCK_START)
+    parts_after = parts_before[1].split(CPP_BLOCK_END)
+    new_content = f"{parts_before[0]}{CPP_BLOCK_START}\n{rendered_block}\n{CPP_BLOCK_END}{parts_after[1]}"
+
+    if new_content == content:
+        return False
+    if not dry_run:
+        ARDUINO_INSTALL_SCRIPT_PATH.write_text(new_content, encoding="utf-8")
+    return True
+
+
+def update_tox_dev_deps(dev_deps: Sequence[_DevDepEntry], *, dry_run: bool = False) -> bool:
+    """Synchronize pinned versions in tox.ini with manifest dev_dependency declarations."""
+    if not TOX_PATH.exists():
+        return False
+    content = TOX_PATH.read_text(encoding="utf-8")
+    new_content = content
+    for dep in dev_deps:
+        name, version = _parse_pip_spec(dep["pip"])
+        if name and version:
+            new_content = re.sub(rf"\b{re.escape(name)}==[^\s\n]+", f"{name}=={version}", new_content)
+
+    if new_content == content:
+        return False
+    if not dry_run:
+        TOX_PATH.write_text(new_content, encoding="utf-8")
+    return True
+
+
 def _parse_pip_spec(spec: str) -> tuple[str, str]:
     """Extract (package_name, pinned_version) from a pip spec using packaging.Requirement."""
     if not spec:
@@ -267,8 +373,9 @@ def _fetch_latest_version(package_name: str, *, include_prerelease: bool = False
     """Query PyPI JSON API for the latest release version using packaging.Version & distlib."""
     url = f"https://pypi.org/pypi/{package_name}/json"
     try:
-        with urllib.request.urlopen(url, timeout=10) as resp:
-            data = json.loads(resp.read())
+        req = urllib.request.Request(url, headers={"User-Agent": "McuBridge-DepsSync/2.8"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
             if "releases" in data and data["releases"]:
                 parsed_versions: list[Version] = []
                 for v_str in data["releases"].keys():
@@ -288,9 +395,46 @@ def _fetch_latest_version(package_name: str, *, include_prerelease: bool = False
         return None
 
 
-def check_latest_versions(deps: Sequence[_DepEntry]) -> list[tuple[str, str, str]]:
-    """Return list of (package, pinned, latest) for outdated packages using packaging.Version."""
+def _fetch_github_latest_version(repo: str) -> str | None:
+    """Query GitHub API for latest release or tag using standard library."""
+    url = f"https://api.github.com/repos/{repo}/releases/latest"
+    req = urllib.request.Request(
+        url,
+        headers={"User-Agent": "McuBridge-DepsSync/2.8", "Accept": "application/vnd.github.v3+json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            data = cast(dict[str, Any], json.loads(resp.read().decode("utf-8")))
+            tag: Any = data.get("tag_name")
+            if tag is not None:
+                return str(tag)
+    except Exception:
+        tag_url = f"https://api.github.com/repos/{repo}/tags"
+        tag_req = urllib.request.Request(
+            tag_url,
+            headers={"User-Agent": "McuBridge-DepsSync/2.8", "Accept": "application/vnd.github.v3+json"},
+        )
+        try:
+            with urllib.request.urlopen(tag_req, timeout=8) as resp:
+                tags_data = cast(list[dict[str, Any]], json.loads(resp.read().decode("utf-8")))
+                if tags_data:
+                    first = tags_data[0]
+                    if "name" in first:
+                        return str(first["name"])
+        except Exception:
+            return None
+    return None
+
+
+def check_latest_versions(
+    deps: Sequence[_DepEntry],
+    cpp_deps: Sequence[_CppDepEntry] = (),
+    dev_deps: Sequence[_DevDepEntry] = (),
+) -> list[tuple[str, str, str]]:
+    """Return list of (package, pinned, latest) for outdated packages using packaging.Version & GitHub API."""
     outdated: list[tuple[str, str, str]] = []
+
+    # 1. Python runtime dependencies (PyPI)
     pip_specs = [(dep["pip"], dep["check_latest"]) for dep in deps if dep.get("pip")]
     for spec, should_check_latest in pip_specs:
         if not should_check_latest:
@@ -316,6 +460,37 @@ def check_latest_versions(deps: Sequence[_DepEntry]) -> list[tuple[str, str, str
             except Exception:
                 if latest_str != pinned:
                     outdated.append((name, pinned, latest_str))
+
+    # 2. Development & Quality tools (PyPI)
+    for dev_dep in dev_deps:
+        name, pinned = _parse_pip_spec(dev_dep["pip"])
+        if not pinned:
+            continue
+        latest_str = _fetch_latest_version(name)
+        if latest_str:
+            try:
+                if Version(latest_str) > Version(pinned):
+                    outdated.append((name, pinned, latest_str))
+            except Exception:
+                if latest_str != pinned:
+                    outdated.append((name, pinned, latest_str))
+
+    # 3. C++ / MCU Arduino libraries (GitHub Releases / Tags)
+    for cpp_dep in cpp_deps:
+        if cpp_dep["ref_type"] == "heads":
+            continue
+        pinned = cpp_dep["version"]
+        gh_latest = _fetch_github_latest_version(cpp_dep["github"])
+        if gh_latest:
+            clean_pinned = pinned.lstrip("v").removeprefix("nanopb-")
+            clean_latest = gh_latest.lstrip("v").removeprefix("nanopb-")
+            try:
+                if Version(clean_latest) > Version(clean_pinned):
+                    outdated.append((cpp_dep["name"], pinned, gh_latest))
+            except Exception:
+                if gh_latest != pinned:
+                    outdated.append((cpp_dep["name"], pinned, gh_latest))
+
     return outdated
 
 
@@ -433,7 +608,7 @@ def main(
     ] = False,
     check_latest: Annotated[
         bool,
-        typer.Option("--check-latest", help="Query PyPI and warn about outdated pinned versions"),
+        typer.Option("--check-latest", help="Query PyPI and GitHub to check for outdated pinned versions"),
     ] = False,
     print_openwrt: Annotated[
         bool,
@@ -444,7 +619,11 @@ def main(
         typer.Option("--print-pip", help="Print pip requirement specifiers and exit"),
     ] = False,
 ) -> None:
-    deps = load_manifest()
+    manifest = load_manifest()
+    deps = manifest.runtime
+    cpp_deps = manifest.cpp
+    dev_deps = manifest.dev
+
     if print_openwrt:
         sys.stdout.write("\n".join(collect_openwrt_packages(deps)) + "\n")
         raise SystemExit(0)
@@ -458,6 +637,8 @@ def main(
     updated_feeds = update_feeds(deps, dry_run=check)
     updated_gw_req = write_gateway_requirements(deps, dry_run=check)
     updated_gw_makefile = update_gateway_makefile(deps, dry_run=check)
+    updated_cpp = update_cpp_install_script(cpp_deps, dry_run=check)
+    updated_tox = update_tox_dev_deps(dev_deps, dry_run=check)
 
     fail = False
     if check and (
@@ -467,11 +648,13 @@ def main(
         or updated_feeds
         or updated_gw_req
         or updated_gw_makefile
+        or updated_cpp
+        or updated_tox
     ):
         fail = True
 
     if check_latest:
-        outdated = check_latest_versions(deps)
+        outdated = check_latest_versions(deps, cpp_deps, dev_deps)
         if outdated:
             print("Outdated dependencies:")
             for name, pinned, latest in outdated:

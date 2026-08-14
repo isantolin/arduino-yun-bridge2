@@ -139,6 +139,14 @@ install_dependency() {
     ) 200>"$lock_file"
 }
 
+# --- [AUTO-GENERATED C++ DEPENDENCIES BEGIN] ---
+ETL_VERSION="20.48.1"
+WOLFSSL_VERSION="v5.9.2-stable"
+PACKETSERIAL_REF="heads/master"
+UNITY_VERSION="v2.7.0"
+NANOPB_VERSION="0.4.9.1"
+# --- [AUTO-GENERATED C++ DEPENDENCIES END] ---
+
 # 1. Official Dependencies (Library Manager)
 # We no longer vendor ETL or wolfSSL files into src/. 
 # Users should install these libraries via the Arduino Library Manager.
@@ -148,14 +156,14 @@ if [ "${1:-}" == "" ]; then
 else
     # In CI/CD or when a target directory is provided, we install them.
     # ETL: We copy the whole repository to the library directory.
-    install_dependency "Embedded_Template_Library" "https://codeload.github.com/ETLCPP/etl/zip/refs/tags/20.48.1" "include/etl/algorithm.h" "$LIB_DIR"
-    install_dependency "wolfSSL" "https://codeload.github.com/wolfSSL/wolfssl/zip/refs/tags/v5.9.2-stable" "wolfssl/wolfcrypt/settings.h" "$LIB_DIR"
-    install_dependency "PacketSerial" "https://codeload.github.com/isantolin/PacketSerial2/zip/refs/heads/master" "src/Codecs/COBSR.h" "$LIB_DIR"
+    install_dependency "Embedded_Template_Library" "https://codeload.github.com/ETLCPP/etl/zip/refs/tags/${ETL_VERSION}" "include/etl/algorithm.h" "$LIB_DIR"
+    install_dependency "wolfSSL" "https://codeload.github.com/wolfSSL/wolfssl/zip/refs/tags/${WOLFSSL_VERSION}" "wolfssl/wolfcrypt/settings.h" "$LIB_DIR"
+    install_dependency "PacketSerial" "https://codeload.github.com/isantolin/PacketSerial2/zip/refs/${PACKETSERIAL_REF}" "src/Codecs/COBSR.h" "$LIB_DIR"
 fi
 
 # Unity test framework (host tests only)
 install_dependency "Unity" \
-    "https://codeload.github.com/ThrowTheSwitch/Unity/zip/refs/tags/v2.6.1" \
+    "https://codeload.github.com/ThrowTheSwitch/Unity/zip/refs/tags/${UNITY_VERSION}" \
     "unity.h" \
     "${LIB_ROOT}/tests"
 
@@ -163,7 +171,7 @@ install_dependency "Unity" \
 # Since these are ignored by .gitignore, we download them dynamically if missing.
 install_nanopb_core() {
     local target_dir="${LIB_ROOT}/src"
-    local version="nanopb-0.4.9.1"
+    local version="nanopb-${NANOPB_VERSION}"
     local base_url="https://raw.githubusercontent.com/nanopb/nanopb/${version}"
     local files=(
         "pb.h"

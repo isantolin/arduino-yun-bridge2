@@ -110,9 +110,9 @@ def test_settings_coerce_value_types() -> None:
     assert _coerce_value("115200", field_int, "serial_baud") == 115200
     assert _coerce_value("invalid_int", field_int, "serial_baud") == 0
 
-    field_float = pb.RuntimeConfig.DESCRIPTOR.fields_by_name["status_interval"]
-    assert _coerce_value("1.5", field_float, "status_interval") == 1.5
-    assert _coerce_value("invalid_float", field_float, "status_interval") == 0.0
+    field_float = pb.RuntimeConfig.DESCRIPTOR.fields_by_name["bridge_summary_interval"]
+    assert _coerce_value("1.5", field_float, "bridge_summary_interval") == 1.5
+    assert _coerce_value("invalid_float", field_float, "bridge_summary_interval") == 0.0
 
     field_str = pb.RuntimeConfig.DESCRIPTOR.fields_by_name["topic_prefix"]
     assert _coerce_value("   ", field_str, "topic_prefix") is None

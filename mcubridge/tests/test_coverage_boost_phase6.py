@@ -520,3 +520,231 @@ async def test_client_spi_transfer_branches() -> None:
     # Transfer when not active (auto calls begin) and with list data
     res = await dev.transfer([1, 2, 3])
     assert res == b"\x01\x02\x03"
+
+
+# ==========================================
+# 6. Deep Runtime & Protocol Branch Tests
+# ==========================================
+
+
+@pytest.mark.asyncio
+async def test_runtime_cloud_spool_locked_limit_errors(test_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+    serial = AsyncMock(spec=SerialTransport)
+    svc = BridgeService(test_config, mock_state, serial)
+    mock_state.cloud_queue_limit = 1
+
+    # Case 1: spool.popleft raises IndexError during limit trim
+    mock_spool = AsyncMock()
+    mock_spool.length.side_effect = [2, 0]
+    mock_spool.popleft.side_effect = IndexError("empty")
+    mock_spool.append.return_value = None
+    svc._cloud_spool = mock_spool
+    msg = pb.CloudQueuedPublish(topic_name="br/test", payload=b"data")
+    assert await svc._spool_cloud_message_locked(msg) is True
+
+    # Case 2: spool.popleft raises OSError during limit trim
+    mock_spool.length.side_effect = [2, 0]
+    mock_spool.popleft.side_effect = OSError("IO failure")
+    assert await svc._spool_cloud_message_locked(msg) is True
+
+    # Case 3: spool.append raises OSError
+    mock_spool.length.side_effect = [0, 0]
+    mock_spool.append.side_effect = OSError("Disk full")
+    assert await svc._spool_cloud_message_locked(msg) is False
+
+
+@pytest.mark.asyncio
+async def test_runtime_flush_cloud_spool_corrupt_and_errors(
+    test_config: RuntimeConfig, mock_state: RuntimeState
+) -> None:
+    serial = AsyncMock(spec=SerialTransport)
+    svc = BridgeService(test_config, mock_state, serial)
+    svc._cloud_stream = AsyncMock()
+
+    # Case 1: Corrupt item with spool.popleft raising IndexError
+    mock_spool = AsyncMock()
+    mock_spool.length.side_effect = [1, 1, 0, 0, 0]
+    mock_spool.peek.return_value = b"corrupt-data"
+    mock_spool.popleft.side_effect = IndexError("empty")
+    svc._cloud_spool = mock_spool
+    await svc._flush_cloud_spool_locked()
+
+    # Case 2: Corrupt item with spool.popleft raising OSError
+    mock_spool.length.side_effect = [1, 1, 0, 0, 0]
+    mock_spool.peek.return_value = b"corrupt-data"
+    mock_spool.popleft.side_effect = OSError("IO Error")
+    await svc._flush_cloud_spool_locked()
+
+    # Case 3: Corrupt item with subsequent length() raising OSError
+    mock_spool.length.side_effect = [1, OSError("DB error"), 0, 0]
+    mock_spool.peek.return_value = b"corrupt-data"
+    mock_spool.popleft.side_effect = None
+    await svc._flush_cloud_spool_locked()
+
+    # Case 4: Valid item with popleft raising OSError after publish
+    valid_bytes = pb.CloudQueuedPublish(topic_name="br/t", payload=b"p").SerializeToString()
+    mock_spool.length.side_effect = [1, 0, 0, 0]
+    mock_spool.peek.return_value = valid_bytes
+    mock_spool.popleft.side_effect = OSError("DB lock error")
+    with patch.object(svc, "_publish_cloud_message", new_callable=AsyncMock, return_value=True):
+        await svc._flush_cloud_spool_locked()
+
+    # Case 5: Valid item with subsequent length() raising OSError after publish
+    mock_spool.length.side_effect = [1, OSError("DB length error"), 0, 0]
+    mock_spool.peek.return_value = valid_bytes
+    mock_spool.popleft.side_effect = None
+    with patch.object(svc, "_publish_cloud_message", new_callable=AsyncMock, return_value=True):
+        await svc._flush_cloud_spool_locked()
+
+    # Case 6: Vacuum raising OSError
+    mock_spool.length.side_effect = [0, 0, 0]
+    mock_spool.vacuum.side_effect = OSError("Vacuum disk fail")
+    await svc._flush_cloud_spool_locked()
+
+
+@pytest.mark.asyncio
+async def test_runtime_handle_mcu_status_unusual_payloads(test_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+    serial = AsyncMock(spec=SerialTransport)
+    svc = BridgeService(test_config, mock_state, serial)
+
+    # 1. Non-bytes, non-protobuf payload
+    await svc._handle_mcu_status(Status.TIMEOUT, 1, cast(Any, 12345))
+
+    # 2. Non-utf8 binary bytes falling back to hex representation
+    non_utf8 = b"\xff\xfe\xfd\x80"
+    await svc._handle_mcu_status(Status.CRC_MISMATCH, 2, non_utf8)
+
+
+@pytest.mark.asyncio
+async def test_runtime_handle_datastore_empty_key_and_request_miss(
+    test_config: RuntimeConfig, mock_state: RuntimeState
+) -> None:
+    serial = AsyncMock(spec=SerialTransport)
+    svc = BridgeService(test_config, mock_state, serial)
+
+    # Empty key
+    route_empty = TopicRoute(raw="", prefix="bridge", topic=Topic.DATASTORE, segments=(DatastoreAction.PUT.value,))
+    await svc._handle_datastore(route_empty, pb.CloudQueuedPublish(payload=b"val"))
+
+    # GET with 'request' in remainder and cache miss
+    route_req = TopicRoute(
+        raw="", prefix="bridge", topic=Topic.DATASTORE, segments=(DatastoreAction.GET.value, "key1", "request")
+    )
+    with patch.object(svc, "_publish_datastore_value", new_callable=AsyncMock) as mock_pub:
+        await svc._handle_datastore(route_req, pb.CloudQueuedPublish(payload=b""))
+        mock_pub.assert_called_once_with(
+            "key1/request",
+            b"",
+            reply_context=pytest.approx(mock_pub.call_args[1]["reply_context"]),
+            error="datastore-miss",
+        )
+
+
+@pytest.mark.asyncio
+async def test_runtime_handle_mailbox_edge_branches(test_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+    serial = AsyncMock(spec=SerialTransport)
+    svc = BridgeService(test_config, mock_state, serial)
+
+    # serial=None
+    svc.serial = None
+    route = TopicRoute(raw="", prefix="bridge", topic=Topic.MAILBOX, segments=("write",))
+    await svc._handle_mailbox(route, pb.CloudQueuedPublish(payload=b"hi"))
+
+    # Read with empty incoming queue
+    svc.serial = serial
+    await mock_state.mailbox_incoming_queue.clear()
+    route_read = TopicRoute(raw="", prefix="bridge", topic=Topic.MAILBOX, segments=("read",))
+    await svc._handle_mailbox(route_read, pb.CloudQueuedPublish(payload=b""))
+
+
+@pytest.mark.asyncio
+async def test_runtime_handle_file_and_shell_edge_branches(
+    test_config: RuntimeConfig, mock_state: RuntimeState
+) -> None:
+    serial = AsyncMock(spec=SerialTransport)
+    svc = BridgeService(test_config, mock_state, serial)
+
+    # File with serial=None
+    svc.serial = None
+    route_file = TopicRoute(raw="", prefix="bridge", topic=Topic.FILE, segments=("read", "test.txt"))
+    await svc._handle_file(route_file, pb.CloudQueuedPublish(payload=b""))
+
+    # File with empty remainder
+    svc.serial = serial
+    route_no_rem = TopicRoute(raw="", prefix="bridge", topic=Topic.FILE, segments=())
+    await svc._handle_file(route_no_rem, pb.CloudQueuedPublish(payload=b""))
+
+    # File safe path returning None for unsafe target
+    route_unsafe = TopicRoute(raw="", prefix="bridge", topic=Topic.FILE, segments=("read", "../../../etc/shadow"))
+    with patch.object(svc, "_get_safe_path", return_value=None):
+        await svc._handle_file(route_unsafe, pb.CloudQueuedPublish(payload=b""))
+
+    # Shell with empty segments
+    route_shell_empty = TopicRoute(raw="", prefix="bridge", topic=Topic.SHELL, segments=())
+    await svc._handle_shell(route_shell_empty, pb.CloudQueuedPublish(payload=b""))
+
+    # Shell run_async with inbound properties ContentType
+    class Props:
+        ContentType = "application/x-protobuf"
+
+    class InboundWithProps:
+        payload = pb.ProcessRunAsync(command="echo prop").SerializeToString()
+        properties = Props()
+
+    with patch.object(svc, "_run_process", new_callable=AsyncMock, return_value=123):
+        await svc._handle_shell_run_async(0, cast(Any, InboundWithProps()))
+
+    # Shell kill raising ProcessLookupError
+    mock_ctx = ProcessContext(AsyncMock())
+    mock_state.running_processes[777] = mock_ctx
+    with patch.object(svc, "_terminate_process", side_effect=ProcessLookupError("No such process")):
+        await svc._handle_shell_kill(777, pb.CloudQueuedPublish(payload=b""))
+
+
+@pytest.mark.asyncio
+async def test_runtime_handle_spi_and_pin_edge_branches(test_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+    serial = AsyncMock(spec=SerialTransport)
+    svc = BridgeService(test_config, mock_state, serial)
+
+    # SPI with serial=None
+    svc.serial = None
+    route_spi = TopicRoute(raw="", prefix="bridge", topic=Topic.SPI, segments=("begin",))
+    await svc._handle_spi(route_spi, pb.CloudQueuedPublish(payload=b""))
+
+    # SPI config with invalid protobuf
+    svc.serial = serial
+    route_spi_cfg = TopicRoute(raw="", prefix="bridge", topic=Topic.SPI, segments=("config",))
+    await svc._handle_spi(route_spi_cfg, pb.CloudQueuedPublish(payload=b"not-proto"))
+
+    # SPI transfer with non-bytes response
+    serial.send.return_value = False
+    route_spi_xfer = TopicRoute(raw="", prefix="bridge", topic=Topic.SPI, segments=("transfer",))
+    await svc._handle_spi(route_spi_xfer, pb.CloudQueuedPublish(payload=b"data"))
+
+    # Pin with serial=None
+    svc.serial = None
+    route_pin = TopicRoute(raw="", prefix="bridge", topic=Topic.DIGITAL, segments=("13", "write"))
+    await svc._handle_pin(route_pin, pb.CloudQueuedPublish(payload=b"1"))
+
+    # Pin with invalid segments (< 2 segments or non-digit pin)
+    svc.serial = serial
+    route_pin_invalid = TopicRoute(raw="", prefix="bridge", topic=Topic.DIGITAL, segments=("invalid_pin", "write"))
+    await svc._handle_pin(route_pin_invalid, pb.CloudQueuedPublish(payload=b"1"))
+
+    route_pin_short = TopicRoute(raw="", prefix="bridge", topic=Topic.DIGITAL, segments=("13",))
+    await svc._handle_pin(route_pin_short, pb.CloudQueuedPublish(payload=b"1"))
+
+
+@pytest.mark.asyncio
+async def test_runtime_request_mcu_version_failures(test_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+    serial = AsyncMock(spec=SerialTransport)
+    svc = BridgeService(test_config, mock_state, serial)
+
+    # 1. serial is None
+    svc.serial = None
+    assert await svc._request_mcu_version() is False
+
+    # 2. serial.send returns False
+    svc.serial = serial
+    serial.send.return_value = False
+    assert await svc._request_mcu_version() is False

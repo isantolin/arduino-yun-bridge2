@@ -175,6 +175,10 @@ message StatusReasons {
     string datastore_put_failed = 14;
     string mailbox_push_failed = 15;
     string mailbox_processed_failed = 16;
+    string sync_auth_mismatch = 17;
+    string sync_length_mismatch = 18;
+    string mcu_file_read_dispatch_failed = 19;
+    string mcu_file_read_timeout = 20;
 }
 
 message CloudSubscription {
@@ -489,6 +493,10 @@ option (rpc.pb.status_reasons) = {
     datastore_put_failed: "datastore_put_failed"
     mailbox_push_failed: "mailbox_push_failed"
     mailbox_processed_failed: "mailbox_processed_failed"
+    sync_auth_mismatch: "sync_auth_mismatch"
+    sync_length_mismatch: "sync_length_mismatch"
+    mcu_file_read_dispatch_failed: "mcu_file_read_dispatch_failed"
+    mcu_file_read_timeout: "mcu_file_read_timeout"
 };
 
 option (rpc.pb.cloud_subscriptions) = {

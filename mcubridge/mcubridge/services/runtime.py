@@ -85,7 +85,6 @@ if TYPE_CHECKING:
 logger = structlog.get_logger("mcubridge.service")
 
 McuHandler = Callable[[int, bytes | ProtobufMessage], Coroutine[Any, Any, bool | bytes | ProtobufMessage | None]]
-FileHandler = Callable[[str, pb.CloudQueuedPublish, Path | None], Coroutine[Any, Any, None]]
 
 
 _PRE_SYNC_ALLOWED_COMMANDS: Final = {
@@ -154,15 +153,6 @@ class BridgeService:
             )
         # [SIL-2] O(1) MCU Dispatch Registry
         self.mcu_registry: dict[int, McuHandler] = self._setup_mcu_registry(serial)
-        # [SIL-2] Unified Declarative File and Shell Action Dispatch Tables
-        self._file_dispatch: Final[dict[tuple[bool, FileAction], FileHandler]] = {
-            (True, FileAction.READ): self._file_dispatch_mcu_read,
-            (True, FileAction.WRITE): self._file_dispatch_mcu_write,
-            (True, FileAction.REMOVE): self._file_dispatch_mcu_remove,
-            (False, FileAction.READ): self._file_dispatch_local_read,
-            (False, FileAction.WRITE): self._file_dispatch_local_write,
-            (False, FileAction.REMOVE): self._file_dispatch_local_remove,
-        }
         self._shell_dispatch: Final[
             dict[ShellAction, Callable[[int, pb.CloudQueuedPublish], Coroutine[Any, Any, None]]]
         ] = {
@@ -171,28 +161,9 @@ class BridgeService:
             ShellAction.KILL: self._handle_shell_kill,
         }
 
-    async def _file_dispatch_mcu_read(self, target: str, inbound: pb.CloudQueuedPublish, _path: Path | None) -> None:
-        await self._handle_file_mcu_read(inbound, target)
-
-    async def _file_dispatch_mcu_write(self, target: str, inbound: pb.CloudQueuedPublish, _path: Path | None) -> None:
-        await self._handle_file_mcu_write(target, inbound)
-
-    async def _file_dispatch_mcu_remove(self, target: str, inbound: pb.CloudQueuedPublish, _path: Path | None) -> None:
-        await self._handle_file_mcu_remove(target, inbound)
-
-    async def _file_dispatch_local_read(self, target: str, inbound: pb.CloudQueuedPublish, path: Path | None) -> None:
-        if path is not None:
-            await self._handle_file_local_read(path, target, inbound)
-
-    async def _file_dispatch_local_write(self, target: str, inbound: pb.CloudQueuedPublish, path: Path | None) -> None:
-        if path is not None:
-            await self._handle_file_local_write(path, target, inbound)
-
-    async def _file_dispatch_local_remove(self, target: str, inbound: pb.CloudQueuedPublish, path: Path | None) -> None:
-        if path is not None:
-            await self._handle_file_local_remove(path, target, inbound)
-
-    async def _unsupported_mcu_request(self, _seq: int, _payload: Any, msg: str = "unsupported_request") -> Any:
+    async def _unsupported_mcu_request(
+        self, _seq: int, _payload: Any, msg: str = protocol.STATUS_REASON_COMMAND_VALIDATION_FAILED
+    ) -> Any:
         if not self.serial:
             return False
         return await self.serial.send(Status.NOT_IMPLEMENTED.value, pb.GenericResponse(message=msg))
@@ -241,7 +212,7 @@ class BridgeService:
             self.ipc_requests[correlation].put_nowait(resolved_message)
             return
 
-        if "console" in resolved_message.topic_name:
+        if Topic.CONSOLE in resolved_message.topic_name:
             for q in list(self.console_queues):
                 q.put_nowait(resolved_message)
 
@@ -838,12 +809,22 @@ class BridgeService:
         act, target = route.action, "/".join(route.remainder)
         if not (act and target):
             return
-        is_mcu = target.startswith(MCU_FS_PREFIX)
-        path = None if is_mcu else self._get_safe_path(target)
-        if not is_mcu and path is None:
+        if target.startswith(MCU_FS_PREFIX):
+            if act == FileAction.READ:
+                await self._handle_file_mcu_read(inbound, target)
+            elif act == FileAction.WRITE:
+                await self._handle_file_mcu_write(target, inbound)
+            elif act == FileAction.REMOVE:
+                await self._handle_file_mcu_remove(target, inbound)
             return
-        if handler := self._file_dispatch.get((is_mcu, act)):
-            await handler(target, inbound, path)
+
+        if path := self._get_safe_path(target):
+            if act == FileAction.READ:
+                await self._handle_file_local_read(path, target, inbound)
+            elif act == FileAction.WRITE:
+                await self._handle_file_local_write(path, target, inbound)
+            elif act == FileAction.REMOVE:
+                await self._handle_file_local_remove(path, target, inbound)
 
     async def _handle_file_mcu_write(self, target: str, inbound: pb.CloudQueuedPublish) -> None:
         serial = self.serial
@@ -917,7 +898,7 @@ class BridgeService:
                 await self.enqueue_cloud(
                     create_queued_publish(
                         response_topic,
-                        b"error:mcu_file_read_dispatch_failed",
+                        f"error:{protocol.STATUS_REASON_MCU_FILE_READ_DISPATCH_FAILED}".encode(),
                         user_properties=(("bridge-error", "mcu-file-read-dispatch-failed"),),
                     ),
                     reply_context=ctx,
@@ -940,7 +921,7 @@ class BridgeService:
                 await self.enqueue_cloud(
                     create_queued_publish(
                         response_topic,
-                        b"error:mcu_file_read_timeout",
+                        f"error:{protocol.STATUS_REASON_MCU_FILE_READ_TIMEOUT}".encode(),
                         user_properties=(("bridge-error", "mcu-file-read-timeout"),),
                     ),
                     reply_context=ctx,

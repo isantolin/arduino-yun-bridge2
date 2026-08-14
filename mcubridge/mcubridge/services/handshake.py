@@ -84,8 +84,8 @@ class SerialHandshakeFatal(RuntimeError):
 
 _IMMEDIATE_FATAL_HANDSHAKE_REASONS: frozenset[str] = frozenset(
     {
-        "sync_auth_mismatch",
-        "sync_length_mismatch",
+        protocol.STATUS_REASON_SYNC_AUTH_MISMATCH,
+        protocol.STATUS_REASON_SYNC_LENGTH_MISMATCH,
     }
 )
 

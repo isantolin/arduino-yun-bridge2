@@ -94,16 +94,8 @@ if MISSING_DEPS or not HAS_PROTOC:
 
 def cmd_name_to_pb_class(cmd_name: str) -> str:
     """Convert CMD_X_Y style command name to CamelCase class name."""
-    if cmd_name.startswith("CMD_"):
-        cmd_name = cmd_name[4:]
-    segments = cmd_name.split("_")
-    mapped_segments: list[str] = []
-    for seg in segments:
-        if seg == "RESP":
-            mapped_segments.append("Response")
-        else:
-            mapped_segments.append(seg.capitalize())
-    return "".join(mapped_segments)
+    clean_name = cmd_name.removeprefix("CMD_")
+    return "".join("Response" if seg == "RESP" else seg.capitalize() for seg in clean_name.split("_"))
 
 
 @dataclass

@@ -276,10 +276,15 @@ async def test_runtime_file_dispatch_local_methods_none_path(
     svc = BridgeService(test_config, mock_state, serial)
     req = pb.CloudQueuedPublish(topic_name="bridge/file/read/test", payload=b"")
 
-    # Call with path=None to hit if path is not None: False branch
-    await svc._file_dispatch_local_read("test", req, None)
-    await svc._file_dispatch_local_write("test", req, None)
-    await svc._file_dispatch_local_remove("test", req, None)
+    # Call with unsafe path so that _get_safe_path returns None
+    route = TopicRoute(
+        raw="bridge/file/read/../../secret",
+        prefix=test_config.topic_prefix,
+        topic=Topic.FILE,
+        segments=("read", "..", "..", "secret"),
+    )
+    await svc._handle_file(route, req)
+    assert serial.send.call_count == 0
 
 
 @pytest.mark.asyncio

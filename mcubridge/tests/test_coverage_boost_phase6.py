@@ -30,6 +30,7 @@ from mcubridge.protocol.protocol import (
     Topic,
 )
 from mcubridge.protocol.structures import (
+    PROTOBUF_CONTENT_TYPE,
     PendingCommand,
     TopicRoute,
 )
@@ -1242,9 +1243,11 @@ async def test_handshake_fetch_capabilities_with_delay_called(
 
 
 def test_daemon_main_block_simulation() -> None:
-    with patch("mcubridge.daemon.app") as mock_app:
-        exec("if __name__ == '__main__': app()", {"__name__": "__main__", "app": mock_app})
-        assert mock_app.called
+    from mcubridge import daemon
+
+    with patch.object(daemon, "run_daemon") as mock_rd:
+        daemon.app()
+        assert mock_rd.called
 
 
 @pytest.mark.asyncio
@@ -1279,10 +1282,14 @@ async def test_serial_transport_run_loop_branches(test_config: RuntimeConfig, mo
     # 1. service is None on connect/disconnect
     with patch("serialx.AsyncSerial") as mock_serial_cls:
         mock_serial_cls.return_value.__aenter__.return_value = mock_serial_inst
+
+        async def _pending_read(_s: Any) -> None:
+            await asyncio.Event().wait()
+
         with patch.object(transport, "_toggle_dtr", new_callable=AsyncMock):
-            with patch.object(transport, "_read_loop", new_callable=AsyncMock):
+            with patch.object(transport, "_read_loop", side_effect=_pending_read):
                 transport._stop_event.set()
-                await transport._run_loop()
+                await transport._connect_and_run()
 
     # 2. read_task finishes first -> raises ConnectionError
     transport._stop_event.clear()
@@ -1292,7 +1299,7 @@ async def test_serial_transport_run_loop_branches(test_config: RuntimeConfig, mo
             with patch.object(transport, "_read_loop", new_callable=AsyncMock) as mock_read:
                 mock_read.return_value = None
                 with pytest.raises(ConnectionError, match="Serial connection lost"):
-                    await transport._run_loop()
+                    await transport._connect_and_run()
 
 
 @pytest.mark.asyncio
@@ -1323,3 +1330,95 @@ async def test_runtime_system_and_pin_edge_branches(test_config: RuntimeConfig, 
     # 5. _handle_pin analog write
     route_pin_aw = TopicRoute(raw="", prefix="bridge", topic=Topic.ANALOG, segments=("3",))
     await svc._handle_pin(route_pin_aw, pb.CloudQueuedPublish(payload=b"128"))
+
+
+@pytest.mark.asyncio
+async def test_runtime_inbound_unhandled_topic(test_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+    serial = AsyncMock(spec=SerialTransport)
+    svc = BridgeService(test_config, mock_state, serial)
+    req = pb.CloudQueuedPublish(topic_name="bridge/status/unhandled", payload=b"test")
+    await svc.handle_request(req)
+
+
+@pytest.mark.asyncio
+async def test_runtime_shell_properties_content_type(test_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+    serial = AsyncMock(spec=SerialTransport)
+    svc = BridgeService(test_config, mock_state, serial)
+    mock_props = MagicMock()
+    mock_props.ContentType = PROTOBUF_CONTENT_TYPE
+    inbound = MagicMock()
+    inbound.content_type = None
+    inbound.properties = mock_props
+    inbound.payload = pb.ProcessRunAsync(command="echo prop").SerializeToString()
+
+    async def _mock_run_p(_cmd: str) -> int:
+        return 42
+
+    async def _mock_enq(_msg: Any, **_kwargs: Any) -> bool:
+        return True
+
+    with patch.object(svc, "_run_process", side_effect=_mock_run_p):
+        with patch.object(svc, "enqueue_cloud", side_effect=_mock_enq):
+            await svc._handle_shell_run_async(0, inbound)
+
+
+@pytest.mark.asyncio
+async def test_runtime_run_process_with_task_group(test_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+    serial = AsyncMock(spec=SerialTransport)
+    svc = BridgeService(test_config, mock_state, serial)
+
+    async def _mock_mon(_pid: int) -> None:
+        pass
+
+    def _mock_create_task(coro: Any) -> None:
+        if hasattr(coro, "close"):
+            coro.close()
+
+    mock_tg = MagicMock()
+    mock_tg.create_task.side_effect = _mock_create_task
+    svc._tg = mock_tg
+    with patch.object(svc, "_monitor_process", side_effect=_mock_mon):
+        with patch("asyncio.create_subprocess_exec") as mock_exec:
+            mock_p = MagicMock()
+            mock_p.pid = 456
+            mock_exec.return_value = mock_p
+            pid = await svc._run_process("echo tg")
+            assert pid == 456
+            assert mock_tg.create_task.called
+    svc._tg = None
+
+
+@pytest.mark.asyncio
+async def test_runtime_run_cloud_cancelled(test_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+    serial = AsyncMock(spec=SerialTransport)
+    svc = BridgeService(test_config, mock_state, serial)
+
+    async def _mock_cloud_cancel(_tls: Any) -> None:
+        raise asyncio.CancelledError()
+
+    with patch.object(svc, "connect_cloud_session", side_effect=_mock_cloud_cancel):
+        with pytest.raises(asyncio.CancelledError):
+            await svc.run_cloud()
+
+
+@pytest.mark.asyncio
+async def test_metrics_prometheus_exporter_finally_branches(mock_state: RuntimeState) -> None:
+    from mcubridge.metrics import PrometheusExporter
+
+    mock_server = MagicMock()
+    mock_server.server_address = ("127.0.0.1", 9130)
+    with patch("mcubridge.metrics.make_server", return_value=mock_server):
+        exp = PrometheusExporter(mock_state, host="127.0.0.1", port=9130)
+        mock_collector = MagicMock()
+        exp._collector = mock_collector
+        mock_reg = MagicMock()
+        mock_reg.unregister.side_effect = KeyError("not found")
+        exp._registry = mock_reg
+
+        async def _mock_run_in_executor(*_args: Any, **_kwargs: Any) -> None:
+            raise asyncio.CancelledError()
+
+        with patch("asyncio.get_running_loop") as mock_loop:
+            mock_loop.return_value.run_in_executor = _mock_run_in_executor
+            with pytest.raises(asyncio.CancelledError):
+                await exp.run()

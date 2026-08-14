@@ -253,7 +253,9 @@ async def test_cloud_bridge_service_session_cancelled() -> None:
 
 
 def test_gateway_main_block_simulation() -> None:
-    with patch("gateway.app") as mock_app:
-        # Simulate python gateway.py execution
-        exec("if __name__ == '__main__': app()", {"__name__": "__main__", "app": mock_app})
-        assert mock_app.called
+    import runpy
+    import sys
+
+    with patch.object(sys, "argv", ["gateway.py", "--help"]):
+        with pytest.raises(SystemExit):
+            runpy.run_path("mcubridge-gateway/gateway.py", run_name="__main__")

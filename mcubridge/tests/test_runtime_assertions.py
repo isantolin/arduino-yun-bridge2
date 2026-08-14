@@ -4,7 +4,6 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-import pytest_asyncio
 from typing import Any
 
 from mcubridge.protocol import mcubridge_pb2 as pb
@@ -53,8 +52,8 @@ def Message(
     )
 
 
-@pytest_asyncio.fixture
-async def service_setup(
+@pytest.fixture
+def service_setup(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> tuple[BridgeService, RuntimeState, AsyncMock, Any]:
     serial = AsyncMock(spec=SerialTransport)

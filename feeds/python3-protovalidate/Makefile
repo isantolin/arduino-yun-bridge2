@@ -21,9 +21,9 @@ define Build/Prepare
 	$(call Build/Prepare/Default)
 	python3 -c "import pathlib; \
 p1 = pathlib.Path('$(PKG_BUILD_DIR)/setup.py'); \
-p1.write_text('from setuptools import setup\nsetup(\n    name=\"protovalidate\",\n    version=\"$(PKG_VERSION)\",\n    packages=[\"protovalidate\", \"protovalidate.internal\", \"buf\", \"buf.validate\", \"cel\", \"cel.expr\"],\n    package_dir={\"buf\": \"gen/buf\", \"cel\": \"gen/cel\"},\n)\n', encoding='utf-8'); \
+p1.write_text('from setuptools import setup, find_namespace_packages\npackages = [\"protovalidate\", \"protovalidate.internal\"] + find_namespace_packages(where=\"gen\")\nsetup(\n    name=\"protovalidate\",\n    version=\"$(PKG_VERSION)\",\n    packages=packages,\n    package_dir={\"\": \"gen\", \"protovalidate\": \"protovalidate\"},\n    package_data={\"\": [\"*.pyi\", \"py.typed\"]},\n)\n', encoding='utf-8'); \
 p2 = pathlib.Path('$(PKG_BUILD_DIR)/pyproject.toml'); \
-p2.write_text('[build-system]\nrequires = [\"setuptools>=61.0\"]\nbuild-backend = \"setuptools.build_meta\"\n\n[project]\nname = \"protovalidate\"\nversion = \"$(PKG_VERSION)\"\ndescription = \"Protocol Buffer Validation for Python\"\nreadme = \"README.md\"\nrequires-python = \">=3.10\"\n\n[tool.setuptools]\npackages = [\"protovalidate\", \"protovalidate.internal\", \"buf\", \"buf.validate\", \"cel\", \"cel.expr\"]\n\n[tool.setuptools.package-dir]\nbuf = \"gen/buf\"\ncel = \"gen/cel\"\n', encoding='utf-8')"
+p2.write_text('[build-system]\nrequires = [\"setuptools>=61.0\"]\nbuild-backend = \"setuptools.build_meta\"\n\n[project]\nname = \"protovalidate\"\nversion = \"$(PKG_VERSION)\"\ndescription = \"Protocol Buffer Validation for Python\"\nreadme = \"README.md\"\nrequires-python = \">=3.10\"\n', encoding='utf-8')"
 endef
 
 define Package/python3-protovalidate

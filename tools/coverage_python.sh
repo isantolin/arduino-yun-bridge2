@@ -20,7 +20,8 @@ Any remaining arguments are passed to pytest. If no pytest args are supplied,
 the default targets are mcubridge/tests and mcubridge-client-examples/client_tests.
 
 Environment:
-PYTHON_COVERAGE_MIN  Minimum total coverage percentage (default: 95)
+PYTHON_COVERAGE_MIN         Minimum total coverage percentage (default: 95)
+PYTHON_COVERAGE_MIN_BRANCH  Minimum pure branch coverage percentage (default: 95)
 EOF
 }
 
@@ -28,6 +29,7 @@ COVERAGE_ROOT="$DEFAULT_COVERAGE_ROOT"
 ENABLE_HTML=1
 ENABLE_JSON=0
 PYTHON_COVERAGE_MIN=${PYTHON_COVERAGE_MIN:-95}
+PYTHON_COVERAGE_MIN_BRANCH=${PYTHON_COVERAGE_MIN_BRANCH:-95}
 
 PYTHON_BIN="${PYTHON_EXE:-python}"
 echo "[coverage_python] Debug: Python path: $(which $PYTHON_BIN || echo 'not found') ($PYTHON_BIN)"
@@ -101,9 +103,25 @@ $PYTHON_BIN -m pytest \
   --cov-report=term-missing \
   "${PYTEST_ARGS[@]}"
 
-if [[ "$ENABLE_JSON" -eq 1 ]]; then
-  $PYTHON_BIN -m coverage json \
-    --include "$ROOT_DIR/mcubridge/mcubridge/*" \
-    -o "$COVERAGE_ROOT/coverage.json" >/dev/null
-fi
+$PYTHON_BIN -m coverage json \
+  --data-file="$COVERAGE_FILE" \
+  -o "$COVERAGE_ROOT/coverage.json" >/dev/null
+
+BRANCH_CHECK_OUTPUT=$($PYTHON_BIN -c '
+import json, sys
+with open("'"$COVERAGE_ROOT"'/coverage.json") as f:
+    totals = json.load(f).get("totals", {})
+branch_pct = totals.get("percent_branches_covered", 0.0)
+num_branches = totals.get("num_branches", 0)
+covered = totals.get("covered_branches", 0)
+min_branch = float("'"$PYTHON_COVERAGE_MIN_BRANCH"'")
+print(f"{branch_pct:.2f}% ({covered}/{num_branches})")
+if branch_pct < min_branch:
+    sys.exit(1)
+') || {
+  echo "FAIL Required pure branch test coverage of ${PYTHON_COVERAGE_MIN_BRANCH}% not reached. Pure branch coverage: ${BRANCH_CHECK_OUTPUT}" >&2
+  exit 1
+}
+
+echo "Required pure branch test coverage of ${PYTHON_COVERAGE_MIN_BRANCH}% reached. Pure branch coverage: ${BRANCH_CHECK_OUTPUT}"
 

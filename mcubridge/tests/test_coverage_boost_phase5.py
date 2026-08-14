@@ -1299,3 +1299,106 @@ def test_daemon_exception_group_with_unhandled_and_state_cleanup() -> None:
                         with pytest.raises(ExceptionGroup):
                             run_daemon()
                         assert mock_st.cleanup.called
+
+
+# ==========================================
+# 25. Serial Correlation, SSL/CA Context & Handshake Transitions
+# ==========================================
+
+
+def test_serial_correlate_frame_debug_and_corrupt_ack_payload(
+    test_config: RuntimeConfig, mock_state: RuntimeState
+) -> None:
+    from mcubridge.transport.serial import PendingCommand
+
+    transport = SerialTransport(test_config, mock_state, None)
+
+    # 1. Pending is None
+    transport._correlate_frame(Status.ACK.value, b"")
+
+    # 2. Pending already resolved
+    transport._current = PendingCommand(
+        command_id=Command.CMD_DIGITAL_WRITE.value,
+        expected_resp_ids=[],
+        success=True,
+    )
+    transport._correlate_frame(Status.ACK.value, b"")
+
+    # 3. Pending with corrupted Protobuf ACK payload
+    transport._current = PendingCommand(
+        command_id=Command.CMD_DIGITAL_WRITE.value,
+        expected_resp_ids=[],
+    )
+    transport._correlate_frame(Status.ACK.value, b"\xff\xff\xff\xff")
+
+
+def test_structures_build_ssl_context_with_real_ca_and_resolve_properties(tmp_path: Path) -> None:
+    from mcubridge.protocol.structures import _build_cached_ssl_context, resolve_cloud_context
+
+    ca_file = tmp_path / "ca.crt"
+    ca_file.write_text("dummy-ca-data")
+
+    with patch("ssl.create_default_context"):
+        ctx = _build_cached_ssl_context(
+            cloud_cafile=str(ca_file),
+            cloud_certfile="",
+            cloud_keyfile="",
+            cloud_tls_insecure=False,
+        )
+        assert ctx is not None
+
+    # Test resolve_cloud_context with properties
+    class DummyProps:
+        ResponseTopic = "cloud/response/topic"
+        CorrelationData = b"corr-token-123"
+
+    class DummyCtx:
+        properties = DummyProps()
+        topic = "bridge/in/topic"
+
+    msg = pb.CloudQueuedPublish(topic_name="bridge/default", payload=b"test-data")
+    resolved = resolve_cloud_context(msg, DummyCtx())
+    assert resolved.topic_name == "cloud/response/topic"
+    assert resolved.correlation_data == b"corr-token-123"
+
+
+def test_config_get_uci_config_import_error() -> None:
+    import builtins
+    from mcubridge.config.common import get_uci_config
+
+    orig_import = builtins.__import__
+
+    def _import_mock(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name == "uci":
+            raise ImportError("No module named uci")
+        return orig_import(name, *args, **kwargs)
+
+    with patch("builtins.__import__", side_effect=_import_mock):
+        cfg = get_uci_config()
+        assert "serial_port" in cfg
+
+
+@pytest.mark.asyncio
+async def test_handshake_state_transition_from_sync_to_unsync_and_retry_stats(
+    test_config: RuntimeConfig, mock_state: RuntimeState
+) -> None:
+    from mcubridge.services.handshake import HandshakeState, SerialHandshakeManager
+
+    fsm = SerialHandshakeManager(
+        config=test_config,
+        state=mock_state,
+        serial_timing=pb.HandshakeConfig(),
+        send_frame=AsyncMock(return_value=True),
+        enqueue_cloud=AsyncMock(),
+        acknowledge_frame=AsyncMock(),
+    )
+
+    # 1. Transition from SYNCHRONIZED to UNSYNCHRONIZED
+    fsm.fsm_state = HandshakeState.SYNCHRONIZED
+    fsm._set_fsm_state(HandshakeState.UNSYNCHRONIZED)
+    assert fsm.fsm_state == HandshakeState.UNSYNCHRONIZED
+
+    # 2. Synchronize success debugging stats
+    with patch.object(fsm, "_synchronize_attempt", new_callable=AsyncMock, return_value=True):
+        ok = await fsm.synchronize()
+        assert ok is True

@@ -22,9 +22,11 @@ PYTHON3_PKG_BUILD_VARS += \
 
 define Build/Prepare
 	$(call Build/Prepare/Default)
-	sed -i 's/"setuptools_scm\[toml\]>=[0-9.]*",//g' $(PKG_BUILD_DIR)/pyproject.toml 2>/dev/null || true
-	sed -i 's/"setuptools_scm",//g' $(PKG_BUILD_DIR)/pyproject.toml 2>/dev/null || true
-	sed -i 's/dynamic = \["version"\]/version = "$(PKG_VERSION)"/g' $(PKG_BUILD_DIR)/pyproject.toml 2>/dev/null || true
+	sed -i '/setuptools_scm/d' $(PKG_BUILD_DIR)/pyproject.toml 2>/dev/null || true
+	sed -i '/\[tool.setuptools_scm\]/d' $(PKG_BUILD_DIR)/pyproject.toml 2>/dev/null || true
+	sed -i 's/use_scm_version=True/version="$(PKG_VERSION)"/g' $(PKG_BUILD_DIR)/setup.py 2>/dev/null || true
+	sed -i 's/setup_requires=\["setuptools_scm"\],*//g' $(PKG_BUILD_DIR)/setup.py 2>/dev/null || true
+	sed -i '/\[metadata\]/a version = $(PKG_VERSION)' $(PKG_BUILD_DIR)/setup.cfg 2>/dev/null || true
 endef
 
 define Package/python3-tenacity

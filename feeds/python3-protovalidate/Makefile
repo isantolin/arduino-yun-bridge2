@@ -11,7 +11,7 @@ PKG_MAINTAINER:=Ignacio Santolin <isantolin@gmail.com>
 PKG_LICENSE:=Apache-2.0
 PKG_LICENSE_FILES:=LICENSE
 
-# PKG_BUILD_DEPENDS pre-injected into hostpkg
+PKG_BUILD_DEPENDS:=python3-setuptools/host python3-build/host python3-installer/host python3-wheel/host
 
 include $(TOPDIR)/feeds/packages/lang/python/pypi.mk
 include $(INCLUDE_DIR)/package.mk
@@ -19,7 +19,11 @@ include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
 
 define Build/Prepare
 	$(call Build/Prepare/Default)
-	python3 -c "import pathlib; p = pathlib.Path('$(PKG_BUILD_DIR)/pyproject.toml'); p.write_text('[build-system]\nrequires = [\"setuptools>=61.0\"]\nbuild-backend = \"setuptools.build_meta\"\n\n[project]\nname = \"protovalidate\"\nversion = \"$(PKG_VERSION)\"\ndescription = \"Protocol Buffer Validation for Python\"\nreadme = \"README.md\"\nrequires-python = \">=3.10\"\n\n[tool.setuptools]\npackages = [\"protovalidate\", \"protovalidate.internal\", \"buf\", \"buf.validate\", \"cel\", \"cel.expr\"]\npackage-dir = {\"buf\" = \"gen/buf\", \"cel\" = \"gen/cel\"}\n', encoding='utf-8')"
+	python3 -c "import pathlib; \
+p1 = pathlib.Path('$(PKG_BUILD_DIR)/setup.py'); \
+p1.write_text('from setuptools import setup\nsetup(\n    name=\"protovalidate\",\n    version=\"$(PKG_VERSION)\",\n    packages=[\"protovalidate\", \"protovalidate.internal\", \"buf\", \"buf.validate\", \"cel\", \"cel.expr\"],\n    package_dir={\"buf\": \"gen/buf\", \"cel\": \"gen/cel\"},\n)\n', encoding='utf-8'); \
+p2 = pathlib.Path('$(PKG_BUILD_DIR)/pyproject.toml'); \
+p2.write_text('[build-system]\nrequires = [\"setuptools>=61.0\"]\nbuild-backend = \"setuptools.build_meta\"\n\n[project]\nname = \"protovalidate\"\nversion = \"$(PKG_VERSION)\"\ndescription = \"Protocol Buffer Validation for Python\"\nreadme = \"README.md\"\nrequires-python = \">=3.10\"\n\n[tool.setuptools]\npackages = [\"protovalidate\", \"protovalidate.internal\", \"buf\", \"buf.validate\", \"cel\", \"cel.expr\"]\n\n[tool.setuptools.package-dir]\nbuf = \"gen/buf\"\ncel = \"gen/cel\"\n', encoding='utf-8')"
 endef
 
 define Package/python3-protovalidate

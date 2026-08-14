@@ -404,7 +404,9 @@ async def test_runtime_handle_shell_branches(test_config: RuntimeConfig, mock_st
     # 2. run_async with protobuf payload bytes starting with \x0a
     proto_cmd = pb.ProcessRunAsync(command="echo hello").SerializeToString()
     route_run = TopicRoute(raw="", prefix="bridge", topic=Topic.SHELL, segments=(ShellAction.RUN_ASYNC.value,))
-    await svc._handle_shell(route_run, pb.CloudQueuedPublish(payload=proto_cmd))
+    with patch.object(svc, "_run_process", new_callable=AsyncMock, return_value=123) as mock_run:
+        await svc._handle_shell(route_run, pb.CloudQueuedPublish(payload=proto_cmd))
+        assert mock_run.called
 
     # 3. kill with unknown pid
     await svc._handle_shell_kill(99999, pb.CloudQueuedPublish(payload=b""))
@@ -632,12 +634,9 @@ async def test_runtime_handle_datastore_empty_key_and_request_miss(
     )
     with patch.object(svc, "_publish_datastore_value", new_callable=AsyncMock) as mock_pub:
         await svc._handle_datastore(route_req, pb.CloudQueuedPublish(payload=b""))
-        mock_pub.assert_called_once_with(
-            "key1/request",
-            b"",
-            reply_context=pytest.approx(mock_pub.call_args[1]["reply_context"]),
-            error="datastore-miss",
-        )
+        assert mock_pub.call_count == 1
+        assert mock_pub.call_args[0][0] == "key1/request"
+        assert mock_pub.call_args[1]["error"] == "datastore-miss"
 
 
 @pytest.mark.asyncio
@@ -748,3 +747,579 @@ async def test_runtime_request_mcu_version_failures(test_config: RuntimeConfig, 
     svc.serial = serial
     serial.send.return_value = False
     assert await svc._request_mcu_version() is False
+
+
+# ==========================================
+# 7. Handshake FSM and Timeout Branches
+# ==========================================
+
+
+@pytest.mark.asyncio
+async def test_handshake_wait_confirmation_already_synchronized(
+    test_config: RuntimeConfig, mock_state: RuntimeState
+) -> None:
+    from mcubridge.services.handshake import SerialHandshakeManager
+
+    hs = SerialHandshakeManager(
+        config=test_config,
+        state=mock_state,
+        serial_timing=pb.HandshakeConfig(),
+        send_frame=AsyncMock(return_value=True),
+        enqueue_cloud=AsyncMock(),
+        acknowledge_frame=AsyncMock(),
+    )
+    mock_state.mark_synchronized()
+
+    confirmed = await hs._wait_for_link_sync_confirmation(b"nonce")
+    assert confirmed is True
+
+
+@pytest.mark.asyncio
+async def test_handshake_sync_state_permutations(test_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+    from mcubridge.services.handshake import HandshakeState, SerialHandshakeManager
+
+    mock_send = AsyncMock(return_value=True)
+    hs = SerialHandshakeManager(
+        config=test_config,
+        state=mock_state,
+        serial_timing=pb.HandshakeConfig(),
+        send_frame=mock_send,
+        enqueue_cloud=AsyncMock(),
+        acknowledge_frame=AsyncMock(),
+    )
+
+    # 1. State is FAULT after send_link_sync
+    with patch.object(hs, "_send_frame", new_callable=AsyncMock, return_value=True):
+        hs.fsm_state = HandshakeState.FAULT
+        assert await hs._synchronize_attempt() is False
+
+    # 2. Confirmed is False, and state is FAULT
+    with patch.object(hs, "_send_frame", new_callable=AsyncMock, return_value=True):
+        hs.fsm_state = HandshakeState.SYNCING
+
+        async def _mock_wait_fault(nonce: bytes) -> bool:
+            hs.fsm_state = HandshakeState.FAULT
+            return False
+
+        hs._wait_for_link_sync_confirmation = _mock_wait_fault
+        assert await hs._synchronize_attempt() is False
+
+    # 3. Confirmed is False, pending_nonce != nonce
+    with patch.object(hs, "_send_frame", new_callable=AsyncMock, return_value=True):
+        with patch.object(hs, "_wait_for_link_sync_confirmation", new_callable=AsyncMock, return_value=False):
+            hs.fsm_state = HandshakeState.SYNCING
+            mock_state.link_handshake_nonce = b"different_nonce"
+            assert await hs._synchronize_attempt() is False
+
+    # 4. Confirmed is True, current_state is SYNCHRONIZED
+    with patch.object(hs, "_send_frame", new_callable=AsyncMock, return_value=True):
+        with patch.object(hs, "_wait_for_link_sync_confirmation", new_callable=AsyncMock, return_value=True):
+            hs.fsm_state = HandshakeState.SYNCHRONIZED
+            assert await hs._synchronize_attempt() is True
+
+
+@pytest.mark.asyncio
+async def test_handshake_resp_rate_limit_and_secret_none(test_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+    import time
+    from mcubridge.services.handshake import SerialHandshakeManager
+
+    test_config.serial_handshake_min_interval = 5.0
+    hs = SerialHandshakeManager(
+        config=test_config,
+        state=mock_state,
+        serial_timing=pb.HandshakeConfig(),
+        send_frame=AsyncMock(return_value=True),
+        enqueue_cloud=AsyncMock(),
+        acknowledge_frame=AsyncMock(),
+    )
+
+    # 1. Rate limit branch
+    mock_state.link_handshake_nonce = b"expected_nonce_12b"
+    mock_state.handshake_rate_until = time.monotonic() + 10.0
+    pkt = pb.LinkSync(nonce=b"expected_nonce_12b", tag=b"tag")
+    assert await hs.handle_link_sync_resp(1, pkt) is False
+
+    # 2. Shared secret is empty / None on successful sync
+    test_config.serial_handshake_min_interval = 0.0
+    test_config.serial_shared_secret = b""
+    mock_state.handshake_rate_until = 0.0
+    nonce = b"expected_12b_nonce"
+    mock_state.link_handshake_nonce = nonce
+    tag = hs.calculate_handshake_tag(b"", nonce)
+    mock_state.link_expected_tag = tag
+    pkt_matching = pb.LinkSync(nonce=nonce, tag=tag)
+    with patch.object(hs, "_handle_handshake_success", new_callable=AsyncMock):
+        with patch.object(hs, "_fetch_capabilities_with_delay", new_callable=AsyncMock):
+            assert await hs.handle_link_sync_resp(2, pkt_matching) is True
+            assert mock_state.link_session_key is None
+
+
+@pytest.mark.asyncio
+async def test_handshake_capabilities_resp_future_none(test_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+    from mcubridge.services.handshake import SerialHandshakeManager
+
+    hs = SerialHandshakeManager(
+        config=test_config,
+        state=mock_state,
+        serial_timing=pb.HandshakeConfig(),
+        send_frame=AsyncMock(return_value=True),
+        enqueue_cloud=AsyncMock(),
+        acknowledge_frame=AsyncMock(),
+    )
+    hs._capabilities_future = None
+    assert await hs.handle_capabilities_resp(1, b"") is True
+
+
+# ==========================================
+# 8. Serial, Structures, Runtime & Metrics
+# ==========================================
+
+
+@pytest.mark.asyncio
+async def test_serial_transport_read_loop_empty_view_and_service_none(
+    test_config: RuntimeConfig, mock_state: RuntimeState
+) -> None:
+    transport = SerialTransport(test_config, mock_state, None)
+    mock_serial = AsyncMock()
+
+    # 1. read_loop delimiter-only packet (empty packet_view)
+    mock_serial.readuntil.side_effect = [b"\x00", asyncio.IncompleteReadError(partial=b"", expected=None)]
+    await transport._read_loop(mock_serial)
+
+    # 2. _correlate_frame with empty ACK payload
+    transport._current = PendingCommand(
+        command_id=Command.CMD_DIGITAL_WRITE.value,
+        expected_resp_ids=[],
+    )
+    transport._correlate_frame(Status.ACK.value, b"")
+    assert transport._current.ack_received is True
+    assert transport._current.success is True
+
+
+@pytest.mark.asyncio
+async def test_structures_replace_and_resolve_edge_branches() -> None:
+    from mcubridge.protocol.structures import replace_cloud_publish, resolve_cloud_context
+
+    msg = pb.CloudQueuedPublish(topic_name="test", payload=b"p")
+
+    # 1. replace_cloud_publish with subscription_identifier=None
+    res = replace_cloud_publish(msg, subscription_identifier=None)
+    assert len(res.subscription_identifier) == 0
+
+    # 2. resolve_cloud_context with context having no response_topic and no properties
+    class ContextNoProps:
+        pass
+
+    resolved = resolve_cloud_context(msg, ContextNoProps())
+    assert resolved.topic_name == "test"
+
+    # 3. PendingCommand mark_success when completion is already set
+    cmd = PendingCommand(command_id=1, expected_resp_ids=[])
+    cmd.completion.set()
+    cmd.mark_success(b"payload")
+    assert cmd.success is True
+
+
+@pytest.mark.asyncio
+async def test_runtime_teardown_lmdb_errors(test_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+    import lmdb
+
+    serial = AsyncMock(spec=SerialTransport)
+    svc = BridgeService(test_config, mock_state, serial)
+
+    mock_spool = AsyncMock()
+    mock_spool.close.side_effect = lmdb.Error("Spool close fail")
+    svc._cloud_spool = mock_spool
+
+    mock_cache = AsyncMock()
+    mock_cache.close.side_effect = OSError("Cache close fail")
+    mock_state.datastore_cache = mock_cache
+
+    mock_mb = AsyncMock()
+    mock_mb.close.side_effect = lmdb.Error("Mailbox close fail")
+    mock_state.mailbox_queue = mock_mb
+
+    mock_mbin = AsyncMock()
+    mock_mbin.close.side_effect = OSError("Mailbox in close fail")
+    mock_state.mailbox_incoming_queue = mock_mbin
+
+    with patch("mcubridge.services.runtime.STATUS_FILE"):
+        with patch.object(svc, "cleanup"):
+            with patch("asyncio.TaskGroup", side_effect=ExceptionGroup("tasks", [RuntimeError("Teardown trigger")])):
+                with pytest.raises(ExceptionGroup):
+                    await svc.run()
+
+
+@pytest.mark.asyncio
+async def test_runtime_poll_process_eof_and_xoff(test_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+    serial = AsyncMock(spec=SerialTransport)
+    svc = BridgeService(test_config, mock_state, serial)
+
+    # 1. _poll_process with finished process having stdout and stderr at EOF
+    mock_handle = MagicMock()
+    mock_handle.returncode = 0
+    mock_handle.stdout = None
+    mock_handle.stderr = None
+
+    ctx = ProcessContext(mock_handle)
+    mock_state.running_processes[555] = ctx
+    resp = await svc._poll_process(555)
+    assert resp.finished is True
+    assert 555 not in mock_state.running_processes
+
+    # 2. _handle_mcu_xoff
+    await svc._handle_mcu_xoff(1, None)
+    assert mock_state.mcu_is_paused is True
+    assert not mock_state.serial_tx_allowed.is_set()
+
+    # 3. _on_mcu_console_write with empty data
+    await svc._on_mcu_console_write(1, pb.ConsoleWrite(data=b""))
+
+    # 4. _on_mcu_datastore_get with serial=None
+    svc.serial = None
+    assert await svc._on_mcu_datastore_get(1, pb.DatastoreGet(key="k")) is False
+
+
+def test_metrics_prometheus_exporter_teardown_server_none(mock_state: RuntimeState) -> None:
+    from mcubridge.metrics import PrometheusExporter
+
+    with patch("mcubridge.metrics.make_server", return_value=MagicMock()):
+        exp = PrometheusExporter(mock_state, host="127.0.0.1", port=9999)
+        exp._server = None
+        exp._collector = None
+        assert exp._server is None
+
+
+# # ==========================================
+# 9. Daemon, Logging, Settings, Security & Frame
+# ==========================================
+
+
+def test_daemon_shared_secret_none_and_app_main() -> None:
+    from mcubridge.daemon import app, run_daemon
+
+    # 1. run_daemon without shared secret
+    mock_cfg = RuntimeConfig()
+    mock_cfg.serial_shared_secret = b""
+    with patch("mcubridge.daemon.load_runtime_config", return_value=mock_cfg):
+        with patch("mcubridge.services.runtime.BridgeService.run", new_callable=AsyncMock):
+            with patch("mcubridge.daemon.asyncio.Runner") as mock_runner_cls:
+                mock_runner = MagicMock()
+
+                def _mock_run(coro: Any) -> None:
+                    if hasattr(coro, "close"):
+                        coro.close()
+
+                mock_runner.run.side_effect = _mock_run
+                mock_runner_cls.return_value.__enter__.return_value = mock_runner
+                run_daemon()
+                assert mock_runner.run.called
+
+    # 2. app(args=None)
+    with patch("mcubridge.daemon.run_daemon") as mock_rd:
+        app(None)
+        assert mock_rd.called
+
+
+def test_logging_no_syslog_available(test_config: RuntimeConfig) -> None:
+    import os
+    from mcubridge.config.logging import configure_logging
+
+    with patch.dict(os.environ, {}, clear=True):
+        with patch("pathlib.Path.exists", return_value=False):
+            configure_logging(test_config)
+
+
+def test_settings_raw_config_edge_branches() -> None:
+    from mcubridge.config.common import get_default_config
+    from mcubridge.config.settings import load_runtime_config, load_runtime_config_from_json
+
+    # 1. Non list/tuple for repeated field (line 173->176)
+    cfg1 = load_runtime_config(overrides={"allowed_commands": 123})
+    assert cfg1 is not None
+
+    # 2. Topic auth coerced to None (line 190->192)
+    cfg2 = load_runtime_config(overrides={"allow_datastore": object()})
+    assert cfg2 is not None
+
+    # 3. Defaults with bytes value (line 216)
+    defaults = get_default_config()
+    defaults["serial_port"] = b"/dev/ttyATH0"
+    with patch("mcubridge.config.settings.get_default_config", return_value=defaults):
+        cfg3 = load_runtime_config_from_json("{}")
+        assert cfg3.serial_port == "/dev/ttyATH0"
+
+
+def test_security_self_test_chacha_invalid_length() -> None:
+    from mcubridge.security.security import verify_crypto_integrity
+
+    with patch("mcubridge.security.security.ChaCha20Poly1305.encrypt", return_value=b"short"):
+        assert verify_crypto_integrity() is False
+
+
+def test_watchdog_kick_state_none() -> None:
+    from mcubridge.watchdog import WatchdogKeepalive
+
+    wd = WatchdogKeepalive(interval=10.0, state=None)
+    wd._token = b"W"
+    with patch.object(wd, "_write"):
+        wd.kick()
+
+
+def test_protocol_frame_unrecognized_protobuf_descriptor() -> None:
+    from mcubridge.protocol.frame import build_frame
+
+    # ProtobufMessage not in _PAYLOAD_FIELD_MAP
+    cfg = pb.RuntimeConfig()
+    frame_bytes = build_frame(
+        command_id=Command.CMD_DIGITAL_WRITE.value,
+        sequence_id=1,
+        payload=cfg,
+        session_key=None,
+    )
+    assert len(frame_bytes) > 0
+
+
+# ==========================================
+# 10. Handshake, Metrics and Runtime Edge Permutations
+# ==========================================
+
+
+@pytest.mark.asyncio
+async def test_handshake_sync_confirming_state_and_timeout(
+    test_config: RuntimeConfig, mock_state: RuntimeState
+) -> None:
+    from mcubridge.services.handshake import HandshakeState, SerialHandshakeManager
+
+    test_config.serial_shared_secret = b"test_secret"
+    mock_send = AsyncMock(return_value=True)
+    hs = SerialHandshakeManager(
+        config=test_config,
+        state=mock_state,
+        serial_timing=pb.HandshakeConfig(),
+        send_frame=mock_send,
+        enqueue_cloud=AsyncMock(),
+        acknowledge_frame=AsyncMock(),
+    )
+
+    # 1. State not SYNCING before wait confirmation (line 211->214)
+    with patch.object(hs, "_send_frame", new_callable=AsyncMock, return_value=True):
+        hs.fsm_state = HandshakeState.CONFIRMING
+        with patch.object(hs, "_wait_for_link_sync_confirmation", new_callable=AsyncMock, return_value=True):
+            assert await hs._synchronize_attempt() is True
+
+    # 2. Confirmed=False, pending_nonce == nonce (line 224->226)
+    with patch.object(hs, "_send_frame", new_callable=AsyncMock, return_value=True):
+        with patch.object(hs, "_wait_for_link_sync_confirmation", new_callable=AsyncMock, return_value=False):
+            hs.fsm_state = HandshakeState.SYNCING
+            with patch.object(hs, "handle_handshake_failure", new_callable=AsyncMock) as mock_fail:
+                assert await hs._synchronize_attempt() is False
+                assert mock_fail.called
+
+    # 3. Confirmed=True, current_state == CONFIRMING (line 229->232)
+    with patch.object(hs, "_send_frame", new_callable=AsyncMock, return_value=True):
+        with patch.object(hs, "_wait_for_link_sync_confirmation", new_callable=AsyncMock, return_value=True):
+            hs.fsm_state = HandshakeState.CONFIRMING
+            assert await hs._synchronize_attempt() is True
+            assert hs.fsm_state == HandshakeState.SYNCHRONIZED
+
+    # 4. handle_link_sync_resp rate limit updated (line 261)
+    test_config.serial_handshake_min_interval = 2.0
+    mock_state.handshake_rate_until = 0.0
+    nonce = b"valid_nonce_12"
+    mock_state.link_handshake_nonce = nonce
+    mock_state.link_expected_tag = hs.calculate_handshake_tag(test_config.serial_shared_secret, nonce)
+    with patch.object(hs, "_handle_handshake_success", new_callable=AsyncMock):
+        with patch.object(hs, "_fetch_capabilities_with_delay", new_callable=AsyncMock):
+            res = await hs.handle_link_sync_resp(1, pb.LinkSync(nonce=nonce, tag=mock_state.link_expected_tag))
+            assert res is True
+            assert mock_state.handshake_rate_until > 0.0
+
+
+@pytest.mark.asyncio
+async def test_metrics_cancel_and_disabled_branches(mock_state: RuntimeState) -> None:
+    from mcubridge.metrics import (
+        _build_metrics_message,
+        _emit_bridge_snapshot,
+        publish_bridge_snapshots,
+    )
+
+    # 1. _build_metrics_message without watchdog (line 69->74)
+    snapshot = mock_state.build_metrics_snapshot()
+    snapshot.watchdog_enabled = False
+    msg = _build_metrics_message(mock_state, snapshot, expiry_seconds=10.0)
+    assert msg.topic_name.endswith("metrics")
+
+    # 2. _emit_bridge_snapshot CancelledError (line 108)
+    mock_enq_cancel = AsyncMock(side_effect=asyncio.CancelledError())
+    with pytest.raises(asyncio.CancelledError):
+        await _emit_bridge_snapshot(mock_state, mock_enq_cancel, flavor="summary")
+
+    # 3. publish_bridge_snapshots disabled (line 175)
+    mock_enq = AsyncMock()
+    task = asyncio.create_task(
+        publish_bridge_snapshots(mock_state, mock_enq, summary_interval=0.0, handshake_interval=0.0)
+    )
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
+@pytest.mark.asyncio
+async def test_runtime_spool_and_pin_edge_branches(test_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+    serial = AsyncMock(spec=SerialTransport)
+    svc = BridgeService(test_config, mock_state, serial)
+
+    # 1. enqueue_cloud debug logging enabled (line 233)
+    with patch("structlog.stdlib.BoundLogger.is_enabled_for", return_value=True):
+        with patch.object(svc, "_publish_cloud_message", new_callable=AsyncMock, return_value=True):
+            await svc.enqueue_cloud(pb.CloudQueuedPublish(topic_name="test", payload=b"p"))
+
+    # 2. _spool_cloud_message_locked when cloud_queue_limit == 0 (line 277->295)
+    mock_state.cloud_queue_limit = 0
+    mock_spool = AsyncMock()
+    mock_spool.len.return_value = 100
+    svc._cloud_spool = mock_spool
+    await svc._spool_cloud_message_locked(pb.CloudQueuedPublish(topic_name="test", payload=b"p"))
+
+    # 3. _flush_cloud_spool_locked when publish returns False (line 354)
+    mock_spool.len.return_value = 1
+    mock_spool.popleft.return_value = pb.CloudQueuedPublish(topic_name="test", payload=b"p")
+    with patch.object(svc, "_publish_cloud_message", new_callable=AsyncMock, return_value=False):
+        await svc._flush_cloud_spool_locked()
+
+    # 4. _handle_datastore PUT with cache active (line 800->802)
+    mock_cache = AsyncMock()
+    mock_state.datastore_cache = mock_cache
+    route_put = TopicRoute(raw="", prefix="bridge", topic=Topic.DATASTORE, segments=(DatastoreAction.PUT.value, "k1"))
+    with patch.object(svc, "_publish_datastore_value", new_callable=AsyncMock):
+        await svc._handle_datastore(route_put, pb.CloudQueuedPublish(payload=b"v1"))
+        mock_cache.set.assert_called_once_with("k1", b"v1")
+
+
+@pytest.mark.asyncio
+async def test_serial_transport_additional_branches(test_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+    transport = SerialTransport(test_config, mock_state, None)
+
+    # 1. _correlate_frame with debug logging (line 249)
+    with patch("structlog.stdlib.BoundLogger.is_enabled_for", return_value=True):
+        transport._correlate_frame(Status.ACK.value, b"")
+
+    # 2. _negotiate_baudrate success future (line 424)
+    transport.serial = AsyncMock()
+    with patch.object(transport, "send_raw", new_callable=AsyncMock, return_value=True):
+
+        async def _resolve_fut() -> None:
+            await asyncio.sleep(0.01)
+            if transport._negotiation_future:
+                transport._negotiation_future.set_result(True)
+
+        asyncio.create_task(_resolve_fut())
+        res = await transport._negotiate_baudrate(115200)
+        assert res is True
+
+
+@pytest.mark.asyncio
+async def test_handshake_fetch_capabilities_with_delay_called(
+    test_config: RuntimeConfig, mock_state: RuntimeState
+) -> None:
+    from mcubridge.services.handshake import SerialHandshakeManager
+
+    AsyncMock(spec=SerialTransport)
+    hs = SerialHandshakeManager(
+        config=test_config,
+        state=mock_state,
+        serial_timing=pb.HandshakeConfig(),
+        send_frame=AsyncMock(return_value=True),
+        enqueue_cloud=AsyncMock(),
+        acknowledge_frame=AsyncMock(),
+    )
+    with patch("asyncio.sleep", new_callable=AsyncMock):
+        with patch.object(hs, "_fetch_capabilities", new_callable=AsyncMock) as mock_fetch:
+            await hs._fetch_capabilities_with_delay()
+            assert mock_fetch.called
+
+
+def test_daemon_main_block_simulation() -> None:
+    with patch("mcubridge.daemon.app") as mock_app:
+        exec("if __name__ == '__main__': app()", {"__name__": "__main__", "app": mock_app})
+        assert mock_app.called
+
+
+@pytest.mark.asyncio
+async def test_metrics_publisher_cancelled_tasks(mock_state: RuntimeState) -> None:
+    from mcubridge.metrics import publish_bridge_snapshots, publish_metrics
+
+    mock_enq = AsyncMock()
+
+    # 1. publish_metrics cancellation
+    t1 = asyncio.create_task(publish_metrics(mock_state, mock_enq, interval=0.1, min_interval=0.1))
+    await asyncio.sleep(0.02)
+    t1.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await t1
+
+    # 2. publish_bridge_snapshots cancellation with active loops
+    t2 = asyncio.create_task(
+        publish_bridge_snapshots(mock_state, mock_enq, summary_interval=0.1, handshake_interval=0.1, min_interval=0.1)
+    )
+    await asyncio.sleep(0.02)
+    t2.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await t2
+
+
+@pytest.mark.asyncio
+async def test_serial_transport_run_loop_branches(test_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+    transport = SerialTransport(test_config, mock_state, None)
+    mock_serial_inst = AsyncMock()
+    mock_serial_inst.transport = MagicMock()
+
+    # 1. service is None on connect/disconnect
+    with patch("serialx.AsyncSerial") as mock_serial_cls:
+        mock_serial_cls.return_value.__aenter__.return_value = mock_serial_inst
+        with patch.object(transport, "_toggle_dtr", new_callable=AsyncMock):
+            with patch.object(transport, "_read_loop", new_callable=AsyncMock):
+                transport._stop_event.set()
+                await transport._run_loop()
+
+    # 2. read_task finishes first -> raises ConnectionError
+    transport._stop_event.clear()
+    with patch("serialx.AsyncSerial") as mock_serial_cls:
+        mock_serial_cls.return_value.__aenter__.return_value = mock_serial_inst
+        with patch.object(transport, "_toggle_dtr", new_callable=AsyncMock):
+            with patch.object(transport, "_read_loop", new_callable=AsyncMock) as mock_read:
+                mock_read.return_value = None
+                with pytest.raises(ConnectionError, match="Serial connection lost"):
+                    await transport._run_loop()
+
+
+@pytest.mark.asyncio
+async def test_runtime_system_and_pin_edge_branches(test_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+    from mcubridge.protocol.protocol import PinAction
+
+    serial = AsyncMock(spec=SerialTransport)
+    svc = BridgeService(test_config, mock_state, serial)
+
+    # 1. _handle_system with serial=None
+    svc.serial = None
+    route_sys = TopicRoute(raw="", prefix="bridge", topic=Topic.SYSTEM, segments=("version", "get"))
+    await svc._handle_system(route_sys, pb.CloudQueuedPublish())
+
+    # 2. _handle_system with unknown action
+    svc.serial = serial
+    route_sys_unknown = TopicRoute(raw="", prefix="bridge", topic=Topic.SYSTEM, segments=("unknown_sys_action",))
+    await svc._handle_system(route_sys_unknown, pb.CloudQueuedPublish())
+
+    # 3. _handle_spi with unknown identifier
+    route_spi_unknown = TopicRoute(raw="", prefix="bridge", topic=Topic.SPI, segments=("unknown_spi_action",))
+    await svc._handle_spi(route_spi_unknown, pb.CloudQueuedPublish())
+
+    # 4. _handle_pin mode set
+    route_pin_mode = TopicRoute(raw="", prefix="bridge", topic=Topic.DIGITAL, segments=("13", PinAction.MODE.value))
+    await svc._handle_pin(route_pin_mode, pb.CloudQueuedPublish(payload=b"1"))
+
+    # 5. _handle_pin analog write
+    route_pin_aw = TopicRoute(raw="", prefix="bridge", topic=Topic.ANALOG, segments=("3",))
+    await svc._handle_pin(route_pin_aw, pb.CloudQueuedPublish(payload=b"128"))

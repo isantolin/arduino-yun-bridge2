@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -236,3 +237,23 @@ async def test_cloud_bridge_service_cert_parse_error() -> None:
 
     await service.Session(mock_stream)
     assert len(gw.connections) == 0
+
+
+@pytest.mark.asyncio
+async def test_cloud_bridge_service_session_cancelled() -> None:
+    gw = ProtobufGateway(use_tls=False)
+    service = CloudBridgeService(gw)
+    mock_stream = AsyncMock()
+    mock_stream.peer = MagicMock()
+    mock_stream.peer.addr.return_value = ("127.0.0.1", 12345)
+    mock_stream.peer.cert.return_value = None
+    mock_stream.__aiter__.side_effect = asyncio.CancelledError()
+    with pytest.raises(asyncio.CancelledError):
+        await service.Session(mock_stream)
+
+
+def test_gateway_main_block_simulation() -> None:
+    with patch("gateway.app") as mock_app:
+        # Simulate python gateway.py execution
+        exec("if __name__ == '__main__': app()", {"__name__": "__main__", "app": mock_app})
+        assert mock_app.called

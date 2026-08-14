@@ -28,7 +28,6 @@ from mcubridge.metrics import (
 )
 from mcubridge.protocol.protocol import (
     Command,
-    FileAction,
     Status,
     Topic,
 )
@@ -83,35 +82,53 @@ async def test_runtime_file_dispatch_handlers(tmp_path: Path) -> None:
     )
 
     # 1. Local Read
-    route_read = TopicRoute(raw="file/read/hello.txt", prefix=config.topic_prefix, topic=Topic.FILE, segments=("read", "hello.txt"))
+    route_read = TopicRoute(
+        raw="file/read/hello.txt", prefix=config.topic_prefix, topic=Topic.FILE, segments=("read", "hello.txt")
+    )
     await service._handle_file(route_read, inbound)
     assert state.cloud_publish_queue.qsize() == 0
 
     # 2. Local Write
-    route_write = TopicRoute(raw="file/write/hello2.txt", prefix=config.topic_prefix, topic=Topic.FILE, segments=("write", "hello2.txt"))
+    route_write = TopicRoute(
+        raw="file/write/hello2.txt", prefix=config.topic_prefix, topic=Topic.FILE, segments=("write", "hello2.txt")
+    )
     await service._handle_file(route_write, inbound)
     assert (tmp_path / "hello2.txt").exists()
 
     # 3. Local Remove
-    route_remove = TopicRoute(raw="file/remove/hello2.txt", prefix=config.topic_prefix, topic=Topic.FILE, segments=("remove", "hello2.txt"))
+    route_remove = TopicRoute(
+        raw="file/remove/hello2.txt", prefix=config.topic_prefix, topic=Topic.FILE, segments=("remove", "hello2.txt")
+    )
     await service._handle_file(route_remove, inbound)
     assert not (tmp_path / "hello2.txt").exists()
 
     # 4. MCU Write
     mock_serial.send.reset_mock()
-    route_mcu_write = TopicRoute(raw="file/write/mcu/test.txt", prefix=config.topic_prefix, topic=Topic.FILE, segments=("write", "mcu", "test.txt"))
+    route_mcu_write = TopicRoute(
+        raw="file/write/mcu/test.txt",
+        prefix=config.topic_prefix,
+        topic=Topic.FILE,
+        segments=("write", "mcu", "test.txt"),
+    )
     await service._handle_file(route_mcu_write, inbound)
     assert mock_serial.send.called
 
     # 5. MCU Remove
     mock_serial.send.reset_mock()
-    route_mcu_remove = TopicRoute(raw="file/remove/mcu/test.txt", prefix=config.topic_prefix, topic=Topic.FILE, segments=("remove", "mcu", "test.txt"))
+    route_mcu_remove = TopicRoute(
+        raw="file/remove/mcu/test.txt",
+        prefix=config.topic_prefix,
+        topic=Topic.FILE,
+        segments=("remove", "mcu", "test.txt"),
+    )
     await service._handle_file(route_mcu_remove, inbound)
     assert mock_serial.send.called
 
     # 6. MCU Read
     mock_serial.send_raw.reset_mock()
-    route_mcu_read = TopicRoute(raw="file/read/mcu/test.txt", prefix=config.topic_prefix, topic=Topic.FILE, segments=("read", "mcu", "test.txt"))
+    route_mcu_read = TopicRoute(
+        raw="file/read/mcu/test.txt", prefix=config.topic_prefix, topic=Topic.FILE, segments=("read", "mcu", "test.txt")
+    )
     mock_serial.send_raw.return_value = False
     await service._handle_file(route_mcu_read, inbound)
 

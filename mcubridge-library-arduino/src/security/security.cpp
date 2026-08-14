@@ -180,10 +180,10 @@ static constexpr etl::array<uint8_t, 3> kat_hmac_key PROGMEM = {
 static constexpr etl::array<uint8_t, 56> kat_hmac_data PROGMEM = {
     // "Jovencillo emponzoñado de whisky, qué figuritas exhibe"
     // Spanish pangram: 27/27 letters (a-z + ñ), 56 UTF-8 bytes
-    {'J', 'o', 'v', 'e', 'n', 'c', 'i', 'l', 'l', 'o', ' ', 'e', 'm', 'p',
-     'o', 'n', 'z', 'o', 0xC3, 0xB1, 'a', 'd', 'o', ' ', 'd', 'e', ' ', 'w',
-     'h', 'i', 's', 'k', 'y', ',', ' ', 'q', 'u', 0xC3, 0xA9, ' ', 'f', 'i',
-     'g', 'u', 'r', 'i', 't', 'a', 's', ' ', 'e', 'x', 'h', 'i', 'b', 'e'}};
+    {'J', 'o', 'v', 'e', 'n',  'c',  'i', 'l', 'l', 'o',  ' ',  'e', 'm', 'p',
+     'o', 'n', 'z', 'o', 0xC3, 0xB1, 'a', 'd', 'o', ' ',  'd',  'e', ' ', 'w',
+     'h', 'i', 's', 'k', 'y',  ',',  ' ', 'q', 'u', 0xC3, 0xA9, ' ', 'f', 'i',
+     'g', 'u', 'r', 'i', 't',  'a',  's', ' ', 'e', 'x',  'h',  'i', 'b', 'e'}};
 static constexpr etl::array<uint8_t, 32> kat_hmac_expected PROGMEM = {
     {0x53, 0x75, 0x96, 0x3F, 0x9E, 0x70, 0x9B, 0x58, 0x41, 0x50, 0x41,
      0xBA, 0xD2, 0xD4, 0x4D, 0xE2, 0x1F, 0x50, 0x80, 0x0E, 0x08, 0x41,

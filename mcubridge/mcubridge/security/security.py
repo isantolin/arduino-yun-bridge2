@@ -96,4 +96,3 @@ def verify_crypto_integrity() -> bool:
         return False
 
     return True
-

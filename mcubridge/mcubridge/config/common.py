@@ -98,9 +98,3 @@ def get_default_config() -> dict[str, Any]:
         cloud_http3_congestion_control="bbr",
     )
     return json_format.MessageToDict(msg, preserving_proto_field_name=True)
-
-
-__all__: Final[tuple[str, ...]] = (
-    "get_default_config",
-    "get_uci_config",
-)

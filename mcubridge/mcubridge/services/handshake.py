@@ -571,6 +571,3 @@ class SerialHandshakeManager:
             reason in _IMMEDIATE_FATAL_HANDSHAKE_REASONS
             or self._state.handshake_failure_streak >= self._fatal_threshold
         )
-
-
-__all__ = ["SerialHandshakeManager", "SerialHandshakeFatal", "derive_serial_timing"]

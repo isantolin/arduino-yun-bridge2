@@ -17,10 +17,7 @@ include $(TOPDIR)/feeds/packages/lang/python/pypi.mk
 include $(INCLUDE_DIR)/package.mk
 include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
 
-define Build/Prepare
-	$(call Build/Prepare/Default)
-	sed -i '/\[tool.hatch.version\]/,/^$$/d' $(PKG_BUILD_DIR)/pyproject.toml
-endef
+
 
 define Package/python3-structlog
 	SECTION:=lang

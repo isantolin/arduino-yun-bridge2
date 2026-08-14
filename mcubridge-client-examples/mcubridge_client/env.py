@@ -11,7 +11,7 @@ import importlib.util
 import logging
 import os
 import sys
-from collections.abc import Callable, Iterable
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
@@ -67,6 +67,3 @@ def dump_client_env(logger: logging.Logger | None = None) -> None:
         or "/var/run/mcubridge.sock"
     )
     _emit(f"  socket_path='{socket_path}'")
-
-
-__all__: Iterable[str] = ("dump_client_env", "read_uci_general")

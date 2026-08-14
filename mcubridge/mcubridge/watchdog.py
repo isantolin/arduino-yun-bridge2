@@ -73,6 +73,3 @@ class WatchdogKeepalive:
         except asyncio.CancelledError:
             logger.info("Watchdog keepalive cancelled")
             raise
-
-
-__all__ = ["WatchdogKeepalive"]

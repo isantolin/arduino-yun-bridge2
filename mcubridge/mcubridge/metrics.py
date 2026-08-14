@@ -353,10 +353,3 @@ def _build_bridge_snapshot_message(
         message_expiry_interval=const.BRIDGE_SNAPSHOT_EXPIRY_SECONDS,
         user_properties=(("bridge-snapshot", flavor),),
     )
-
-
-__all__ = [
-    "PrometheusExporter",
-    "publish_bridge_snapshots",
-    "publish_metrics",
-]

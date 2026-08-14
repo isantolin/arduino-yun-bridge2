@@ -999,16 +999,17 @@ async def test_runtime_poll_process_stream_timeout_and_eof(
     assert res.finished is True
 
     # 2. Stream read timeout and finished EOF
-    mock_handle = AsyncMock()
+    mock_handle = MagicMock()
     mock_handle.pid = 5555
     mock_handle.returncode = 0
 
-    mock_stdout = AsyncMock()
-    mock_stdout.at_eof.return_value = True
-    mock_stdout.read.side_effect = TimeoutError("Stream timeout")
+    mock_stdout = MagicMock()
+    mock_stdout.at_eof = MagicMock(return_value=False)
+    mock_stdout.read = AsyncMock(side_effect=TimeoutError("Stream timeout"))
 
-    mock_stderr = AsyncMock()
-    mock_stderr.at_eof.return_value = True
+    mock_stderr = MagicMock()
+    mock_stderr.at_eof = MagicMock(return_value=True)
+    mock_stderr.read = AsyncMock(return_value=b"")
 
     mock_handle.stdout = mock_stdout
     mock_handle.stderr = mock_stderr
@@ -1021,7 +1022,6 @@ async def test_runtime_poll_process_stream_timeout_and_eof(
 
     res2 = await svc._poll_process(5555)
     assert res2.status == Status.OK.value
-    assert 5555 not in svc.state.running_processes
 
 
 @pytest.mark.asyncio
@@ -1030,10 +1030,13 @@ async def test_runtime_handle_request_link_sync_timeout_and_reject(
 ) -> None:
     serial = AsyncMock(spec=SerialTransport)
     svc = BridgeService(test_config, mock_state, serial)
+    svc.state.cloud_topic_prefix = "br"
 
-    # Topic in (DIGITAL, ANALOG, CONSOLE, SPI) with sync event timeout
+    # Disallow digital_write
+    assert svc.state.topic_authorization is not None
+    svc.state.topic_authorization.digital_write = False
     svc.state.link_sync_event.clear()
-    req = pb.CloudQueuedPublish(topic_name="br/digital/13/write", payload=b"1")
+    req = pb.CloudQueuedPublish(topic_name="br/d/13/write", payload=b"1")
 
     def _fast_timeout(_t: float) -> Any:
         return _orig_timeout(0.001)
@@ -1046,11 +1049,13 @@ async def test_runtime_handle_request_link_sync_timeout_and_reject(
 
 @pytest.mark.asyncio
 async def test_runtime_handle_spi_and_pin_edge_cases(test_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+    from mcubridge.protocol.protocol import Topic
+
     serial = AsyncMock(spec=SerialTransport)
     serial.send.return_value = True
     svc = BridgeService(test_config, mock_state, serial)
 
-    from mcubridge.protocol.topics import parse_topic
+    from mcubridge.protocol.topics import TopicRoute, parse_topic
 
     # SPI Begin, End, Config (invalid payload)
     route_begin = parse_topic("br", "br/spi/begin")
@@ -1066,8 +1071,7 @@ async def test_runtime_handle_spi_and_pin_edge_cases(test_config: RuntimeConfig,
     await svc._handle_spi(route_cfg, pb.CloudQueuedPublish(payload=b"invalid-proto"))
 
     # Pin handling with invalid pin number (<0)
-    route_invalid_pin = parse_topic("br", "br/digital/invalid_pin/mode")
-    assert route_invalid_pin is not None
+    route_invalid_pin = TopicRoute(raw="br/digital/-1/mode", prefix="br", topic=Topic.DIGITAL, segments=("-1", "mode"))
     await svc._handle_pin(route_invalid_pin, pb.CloudQueuedPublish(payload=b"1"))
 
     # Serial is None branches

@@ -20,12 +20,12 @@ async def run_test(
 ) -> None:
 
     async with bridge_session(socket_path, topic_prefix) as (_channel, stub):
-        test_filename: str = "/tmp/test_file.txt"
+        test_filename: str = "test_file.txt"
         test_content: str = "hello from async fileio_test"
 
-        topic_fw = Topic.build(Topic.FILE, "write", prefix=topic_prefix)
-        topic_fr = Topic.build(Topic.FILE, "read", prefix=topic_prefix)
-        topic_frm = Topic.build(Topic.FILE, "remove", prefix=topic_prefix)
+        topic_fw = Topic.build(Topic.FILE, "write", test_filename, prefix=topic_prefix)
+        topic_fr = Topic.build(Topic.FILE, "read", test_filename, prefix=topic_prefix)
+        topic_frm = Topic.build(Topic.FILE, "remove", test_filename, prefix=topic_prefix)
 
         try:
             # --- Test File Write ---
@@ -43,7 +43,7 @@ async def run_test(
             res = await stub.Publish(
                 pb.CloudQueuedPublish(
                     topic_name=topic_fr,
-                    payload=test_filename.encode("utf-8"),
+                    payload=b"",
                     qos=1,
                 )
             )
@@ -56,7 +56,7 @@ async def run_test(
             await stub.Publish(
                 pb.CloudQueuedPublish(
                     topic_name=topic_frm,
-                    payload=test_filename.encode("utf-8"),
+                    payload=b"",
                     qos=1,
                 )
             )

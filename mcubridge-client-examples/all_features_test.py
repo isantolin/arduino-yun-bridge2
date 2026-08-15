@@ -56,7 +56,7 @@ async def run_test(socket_path: str | None, topic_prefix: str) -> None:
 
         # 5. FileIO test
         logger.info("Testing FileIO...")
-        topic_fw = Topic.build(Topic.FILE, "write", prefix=topic_prefix)
+        topic_fw = Topic.build(Topic.FILE, "write", "test_file.txt", prefix=topic_prefix)
         await stub.Publish(pb.CloudQueuedPublish(topic_name=topic_fw, payload=b"e2e-data", qos=1))
         logger.info("File write requested.")
 

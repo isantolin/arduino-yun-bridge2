@@ -52,7 +52,11 @@ class SpiDevice:
         await self._stub.Publish(pb.CloudQueuedPublish(topic_name=topic_begin, payload=b"", qos=1))
 
         topic_cfg = Topic.build(Topic.SPI, "config", prefix=self._topic_prefix)
-        cfg_payload = f"{self._frequency},{self._bit_order.value},{self._mode.value}".encode("utf-8")
+        cfg_payload = pb.SpiConfig(
+            frequency=self._frequency,
+            bit_order=self._bit_order.value,
+            data_mode=self._mode.value,
+        ).SerializeToString()
         await self._stub.Publish(pb.CloudQueuedPublish(topic_name=topic_cfg, payload=cfg_payload, qos=1))
         self._active = True
 

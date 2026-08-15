@@ -6,7 +6,6 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include <time.h>
 
 #define WOLFSSL_ARDUINO
 #define WOLFCRYPT_ONLY

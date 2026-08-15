@@ -49,6 +49,10 @@ async def run_test(
             )
             content = res.payload if res else b""
             logging.info("Read content: %s", content.decode("utf-8"))
+            if content != test_content.encode("utf-8"):
+                raise AssertionError(
+                    f"File content mismatch: expected {test_content!r}, got {content.decode('utf-8')!r}"
+                )
 
         finally:
             # --- Test File Remove ---

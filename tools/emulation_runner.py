@@ -250,6 +250,9 @@ def run_emulation(
                     sys.stdout.write(f"{'=' * 80}\n\n")
                     sys.stdout.flush()
 
+                    with state.lock:
+                        lines_before = len(state.output_lines)
+
                     try:
                         # Run with captured output but echoing to parent stdout/stderr
                         subprocess.run([sys.executable, script], env=daemon_env, check=True, timeout=60)
@@ -259,6 +262,21 @@ def run_emulation(
                         subprocess.TimeoutExpired,
                     ) as exc:
                         logger.error("Script %s FAILED: %s", script, exc)
+                        all_success = False
+                        break
+
+                    # [SIL-2 Log Audit] Verify that the daemon or MCU emitted zero error logs during test execution
+                    with state.lock:
+                        new_lines = list(state.output_lines[lines_before:])
+                    script_errors = [
+                        f"[{src}] {line}"
+                        for src, line in new_lines
+                        if '"level": "error"' in line or '"level":"error"' in line or "MCU > ERROR:" in line
+                    ]
+                    if script_errors:
+                        logger.error("Script %s produced %d unexpected error log events:", script, len(script_errors))
+                        for err in script_errors:
+                            logger.error("  -> %s", err)
                         all_success = False
                         break
 

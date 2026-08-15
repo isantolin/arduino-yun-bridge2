@@ -474,7 +474,7 @@ class BridgeService:
                         await self.state.link_sync_event.wait()
                 except asyncio.TimeoutError:
                     logger.error("Timed out waiting for MCU link synchronization", topic=topic_val)
-            action = self._deduce_action(route)
+            action = self.deduce_action(route)
             topic_str = route.topic.value if isinstance(route.topic, Topic) else route.topic
             if action and not (
                 allows_topic(self.state.topic_authorization, topic_str, action)
@@ -1275,7 +1275,7 @@ class BridgeService:
         s = s.upper()
         return int(s[1:]) if s.startswith("A") and s[1:].isdigit() else (int(s) if s.isdigit() else -1)
 
-    def _deduce_action(self, r: TopicRoute) -> str | None:
+    def deduce_action(self, r: TopicRoute) -> str | None:
         if r.topic == Topic.SYSTEM:
             return None
         if r.topic in (Topic.DIGITAL, Topic.ANALOG):
@@ -1634,13 +1634,34 @@ class LocalBridgeService(LocalBridgeBase):
             return
 
         has_correlation = request.HasField("correlation_data")
-        correlation = request.correlation_data if has_correlation else secrets.token_bytes(12)
+        route = parse_topic(self.runtime_service.state.cloud_topic_prefix, request.topic_name)
+        action = self.runtime_service.deduce_action(route) if route else None
+
+        is_query = has_correlation or (
+            route is not None
+            and (
+                (route.topic in (Topic.DIGITAL, Topic.ANALOG) and action == PinAction.READ)
+                or (route.topic == Topic.DATASTORE and action == DatastoreAction.GET)
+                or (
+                    route.topic == Topic.SYSTEM
+                    and ("get" in route.segments or action in ("version", "freeram", "bridge"))
+                )
+                or (route.topic == Topic.FILE and action == FileAction.READ)
+                or (route.topic == Topic.SPI and action == SpiAction.TRANSFER)
+            )
+        )
+
+        correlation = request.correlation_data if has_correlation else (secrets.token_bytes(12) if is_query else b"")
 
         response_queue: asyncio.Queue[pb.CloudQueuedPublish] | None = None
-        if has_correlation:
+        if is_query and correlation:
             response_queue = asyncio.Queue(maxsize=1)
             self.runtime_service.ipc_requests[correlation] = response_queue
-            logger.debug("Registering IPC request correlation", topic=request.topic_name, correlation=correlation.hex())
+            logger.debug(
+                "Registering IPC request correlation",
+                topic=request.topic_name,
+                correlation=correlation.hex(),
+            )
 
         try:
             req = pb.CloudQueuedPublish(
@@ -1651,7 +1672,7 @@ class LocalBridgeService(LocalBridgeBase):
 
             await self.runtime_service.handle_request(req)
 
-            if has_correlation and response_queue is not None:
+            if is_query and response_queue is not None:
                 try:
                     async with asyncio.timeout(15.0):
                         response = await response_queue.get()
@@ -1664,7 +1685,7 @@ class LocalBridgeService(LocalBridgeBase):
         except OSError as exc:
             logger.debug("IPC connection closed during response write", error=str(exc))
         finally:
-            if has_correlation:
+            if is_query and correlation:
                 self.runtime_service.ipc_requests.pop(correlation, None)
 
     async def SubscribeConsole(self, stream: Stream[pb.SubscribeRequest, pb.CloudQueuedPublish]) -> None:

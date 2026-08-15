@@ -42,7 +42,6 @@
 /* Flash optimizations for AVR/SIL-2 */
 #define WOLFSSL_SMALL_FOOTPRINT 1
 #define POLY1305_NO_UNROLL 1
-#define PB_NO_ERRMSG 1
 #define NO_ERROR_STRINGS
 #define NO_WOLFSSL_MEMORY
 #define WC_NO_ASYNC

@@ -15,6 +15,7 @@ from mcubridge_client import (
     SpiMode,
     build_bridge_args,
     dump_client_env,
+    pb,
 )
 from mcubridge_client.cli import bridge_session, configure_logging
 from mcubridge_client.env import _is_openwrt, read_uci_general
@@ -121,6 +122,17 @@ async def test_spi_device_lifecycle_and_transfer() -> None:
     async with dev as active_dev:
         assert active_dev is dev
         assert mock_stub.Publish.call_count >= 2
+
+        # Verify protobuf SpiConfig payload was sent accurately
+        calls = mock_stub.Publish.call_args_list
+        begin_call, cfg_call = calls[0][0][0], calls[1][0][0]
+        assert begin_call.topic_name == "br/spi/begin"
+        assert begin_call.payload == b""
+        assert cfg_call.topic_name == "br/spi/config"
+        cfg_pb = pb.SpiConfig.FromString(cfg_call.payload)
+        assert cfg_pb.frequency == 2000000
+        assert cfg_pb.bit_order == SpiBitOrder.LSBFIRST.value
+        assert cfg_pb.data_mode == SpiMode.MODE1.value
 
         # Idempotent begin
         await dev.begin()

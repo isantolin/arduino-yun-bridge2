@@ -46,20 +46,16 @@ async def run_test(
             if is_analog:
                 topic_ar = Topic.build(Topic.ANALOG, str(pin_number), "read", prefix=topic_prefix)
                 res = await stub.Publish(pb.CloudQueuedPublish(topic_name=topic_ar, payload=b"", qos=1))
-                val_str = res.payload.decode("utf-8") if (res and res.payload) else "0"
-                try:
-                    value = int(val_str)
-                except ValueError:
-                    value = 0
+                if not (res and res.payload):
+                    raise RuntimeError(f"Analog pin {pin} read returned empty response")
+                value = int(res.payload.decode("utf-8"))
                 logging.info("Received analog value for pin %s: %d", pin, value)
             else:
                 topic_dr = Topic.build(Topic.DIGITAL, str(pin_number), "read", prefix=topic_prefix)
                 res = await stub.Publish(pb.CloudQueuedPublish(topic_name=topic_dr, payload=b"", qos=1))
-                val_str = res.payload.decode("utf-8") if (res and res.payload) else "0"
-                try:
-                    value = int(val_str)
-                except ValueError:
-                    value = 0
+                if not (res and res.payload):
+                    raise RuntimeError(f"Digital pin {pin} read returned empty response")
+                value = int(res.payload.decode("utf-8"))
                 logging.info("Received digital value for pin %s: %d", pin, value)
 
             await asyncio.sleep(interval)

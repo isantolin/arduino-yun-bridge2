@@ -363,14 +363,34 @@ async def test_local_bridge_grpc_service(tmp_path: Path) -> None:
     await t
     assert mock_stream.send_message.called
 
-    # 2. Publish without correlation
+    # 2. Publish fire-and-forget without correlation
     mock_stream.reset_mock()
     request_no_cor = pb.CloudQueuedPublish(
-        topic_name=f"{config.topic_prefix}/system/version/get",
-        payload=b"",
+        topic_name=f"{config.topic_prefix}/digital/13",
+        payload=b"1",
     )
     mock_stream.recv_message.return_value = request_no_cor
     await local_service.Publish(mock_stream)
+    assert mock_stream.send_message.called
+
+    # 2b. Publish query without explicit correlation (auto-correlated)
+    mock_stream.reset_mock()
+    request_auto_cor = pb.CloudQueuedPublish(
+        topic_name=f"{config.topic_prefix}/system/version/get",
+        payload=b"",
+    )
+    mock_stream.recv_message.return_value = request_auto_cor
+
+    async def reply_auto_cor() -> None:
+        while not service.ipc_requests:
+            await asyncio.sleep(0.001)
+        auto_key = next(iter(service.ipc_requests.keys()))
+        resp = pb.CloudQueuedPublish(topic_name="reply/version", payload=b"2.8.5")
+        service.ipc_requests[auto_key].put_nowait(resp)
+
+    t_auto = asyncio.create_task(reply_auto_cor())
+    await local_service.Publish(mock_stream)
+    await t_auto
     assert mock_stream.send_message.called
 
     # 3. Publish when recv_message returns None

@@ -1094,9 +1094,7 @@ class BridgeService:
             pb.EnterBootloader(magic=protocol.BOOTLOADER_MAGIC),
         )
 
-    async def _handle_system_free_memory(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
-        if "get" not in route.segments:
-            return
+    async def _handle_system_free_memory(self, _route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         pl = await cast("SerialTransport", self.serial).send(Command.CMD_GET_FREE_MEMORY.value, b"")
         if isinstance(pl, bytes):
             tp = get_topic_for_message(self.state.cloud_topic_prefix, pb.FreeMemoryResponse)
@@ -1109,9 +1107,7 @@ class BridgeService:
                     reply_context=inbound,
                 )
 
-    async def _handle_system_version(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
-        if "get" not in route.segments:
-            return
+    async def _handle_system_version(self, _route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         await self._request_mcu_version(inbound)
 
     async def _handle_system_bridge(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:

@@ -1462,3 +1462,82 @@ def test_protocol_frame_protovalidate_validation_error() -> None:
     with patch("protovalidate.validate", side_effect=protovalidate.ValidationError("invalid frame", violations=[])):
         with pytest.raises(ValueError, match="Invalid frame envelope"):
             frame.parse_frame(valid_frame)
+
+
+@pytest.mark.asyncio
+async def test_runtime_service_spi_and_system_branches(mock_bridge_service: Any) -> None:
+    from mcubridge.protocol.topics import Topic, parse_topic
+    from mcubridge.protocol.protocol import SpiAction, SystemAction
+    from mcubridge.protocol import mcubridge_pb2 as pb
+    from unittest.mock import AsyncMock
+
+    service = mock_bridge_service
+    service.serial = AsyncMock()
+
+    # SPI begin & end
+    route_begin = parse_topic("br", "br/spi/begin")
+    assert route_begin is not None
+    await service._handle_spi(route_begin, pb.CloudQueuedPublish(payload=b""))
+    service.serial.send.assert_awaited()
+
+    route_end = parse_topic("br", "br/spi/end")
+    assert route_end is not None
+    await service._handle_spi(route_end, pb.CloudQueuedPublish(payload=b""))
+    service.serial.send.assert_awaited()
+
+    # SPI config (valid & invalid)
+    route_cfg = parse_topic("br", "br/spi/config")
+    assert route_cfg is not None
+    cfg_pb = pb.SpiConfig(frequency=4000000, bit_order=1, data_mode=0)
+    await service._handle_spi(route_cfg, pb.CloudQueuedPublish(payload=cfg_pb.SerializeToString()))
+    await service._handle_spi(route_cfg, pb.CloudQueuedPublish(payload=b"\xff\xff\xff\xff"))
+
+    # SPI transfer (empty payload & populated with response)
+    route_tr = parse_topic("br", "br/spi/transfer")
+    assert route_tr is not None
+    await service._handle_spi(route_tr, pb.CloudQueuedPublish(payload=b""))
+    
+    resp_payload = pb.SpiTransferResponse(data=b"\xde\xad\xbe\xef").SerializeToString()
+    service.serial.send.return_value = resp_payload
+    await service._handle_spi(route_tr, pb.CloudQueuedPublish(payload=b"\x01\x02\x03\x04"))
+
+    # System bootloader
+    route_boot = parse_topic("br", "br/system/bootloader")
+    assert route_boot is not None
+    await service._handle_system(route_boot, pb.CloudQueuedPublish())
+
+    # System free memory
+    route_mem = parse_topic("br", "br/system/free_memory/get")
+    assert route_mem is not None
+    service.serial.send.return_value = pb.FreeMemoryResponse(value=1024).SerializeToString()
+    await service._handle_system(route_mem, pb.CloudQueuedPublish())
+
+    # System version
+    route_ver = parse_topic("br", "br/system/version/get")
+    assert route_ver is not None
+    service.serial.send.return_value = pb.VersionResponse(major=2, minor=8, patch=5).SerializeToString()
+    await service._handle_system(route_ver, pb.CloudQueuedPublish())
+
+    # System bridge snapshots (summary & handshake)
+    route_snap = parse_topic("br", "br/system/bridge/summary")
+    assert route_snap is not None
+    await service._handle_system(route_snap, pb.CloudQueuedPublish())
+
+    route_hs = parse_topic("br", "br/system/bridge/handshake")
+    assert route_hs is not None
+    await service._handle_system(route_hs, pb.CloudQueuedPublish())
+
+
+def test_structures_replace_cloud_publish_variations() -> None:
+    from mcubridge.protocol.structures import replace_cloud_publish
+    from mcubridge.protocol import mcubridge_pb2 as pb
+
+    orig = pb.CloudQueuedPublish(topic_name="test/topic", payload=b"hello")
+    res1 = replace_cloud_publish(orig, user_properties=[("k1", "v1")], subscription_identifier=[1, 2])
+    assert len(res1.user_properties) == 1
+    assert len(res1.subscription_identifier) == 2
+
+    res2 = replace_cloud_publish(orig, user_properties=[], subscription_identifier=[])
+    assert len(res2.user_properties) == 0
+    assert len(res2.subscription_identifier) == 0
+

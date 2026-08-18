@@ -502,6 +502,9 @@ option (rpc.pb.status_reasons) = {
     sync_length_mismatch: "sync_length_mismatch"
     mcu_file_read_dispatch_failed: "mcu_file_read_dispatch_failed"
     mcu_file_read_timeout: "mcu_file_read_timeout"
+    pending_pin_overflow: "pending-pin-overflow"
+    unsupported_digital_read: "linux_originates_digital_read_requests"
+    unsupported_analog_read: "linux_originates_analog_read_requests"
 };
 
 option (rpc.pb.cloud_subscriptions) = {

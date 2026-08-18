@@ -320,9 +320,13 @@ class PrometheusExporter:
                 except KeyError:
                     logger.debug("Collector already unregistered from registry")
 
-            # Shutdown stops the serve_forever loop
+            # Shutdown stops the serve_forever loop without blocking event loop
             if self._server:
-                self._server.shutdown()
+                loop = asyncio.get_running_loop()
+                try:
+                    await asyncio.wait_for(loop.run_in_executor(None, self._server.shutdown), timeout=1.0)
+                except (TimeoutError, asyncio.CancelledError):
+                    log.warning("Prometheus exporter shutdown timed out or cancelled; forcing socket close")
                 # server_close releases the socket (avoids ResourceWarning)
                 self._server.server_close()
 

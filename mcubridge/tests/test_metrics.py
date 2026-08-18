@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from mcubridge.metrics import (
+    PrometheusExporter,
     publish_bridge_snapshots,
     publish_metrics,
 )
@@ -221,3 +222,57 @@ async def test_publish_bridge_snapshots_noop_when_disabled(
     with pytest.raises(asyncio.CancelledError):
         await task
     assert messages == []
+
+
+@pytest.mark.asyncio
+async def test_prometheus_exporter_run_cancellation_and_cleanup(
+    runtime_state: RuntimeState,
+) -> None:
+    import threading
+
+    stop_event = threading.Event()
+    mock_server = MagicMock()
+    mock_server.server_address = ("127.0.0.1", 9999)
+    mock_server.serve_forever = stop_event.wait
+    mock_server.shutdown = stop_event.set
+    mock_server.server_close = MagicMock()
+
+    with patch("mcubridge.metrics.make_server", return_value=mock_server):
+        exporter = PrometheusExporter(runtime_state, host="127.0.0.1", port=0)
+        assert exporter.port == 9999
+
+        task = asyncio.create_task(exporter.run())
+        await asyncio.sleep(0.02)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    mock_server.server_close.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_prometheus_exporter_run_shutdown_timeout_handled(
+    runtime_state: RuntimeState,
+) -> None:
+    import threading
+
+    stop_event = threading.Event()
+    mock_server = MagicMock()
+    mock_server.server_address = ("127.0.0.1", 9999)
+    mock_server.serve_forever = stop_event.wait
+    mock_server.shutdown = stop_event.set
+    mock_server.server_close = MagicMock()
+
+    with (
+        patch("mcubridge.metrics.make_server", return_value=mock_server),
+        patch("asyncio.wait_for", side_effect=TimeoutError()),
+    ):
+        exporter = PrometheusExporter(runtime_state, host="127.0.0.1", port=0)
+        task = asyncio.create_task(exporter.run())
+        await asyncio.sleep(0.02)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    stop_event.set()
+    mock_server.server_close.assert_called_once()

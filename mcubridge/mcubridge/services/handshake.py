@@ -31,6 +31,7 @@ from google.protobuf.message import (
 )
 
 from ..config.const import (
+    PROP_KEY_BRIDGE_EVENT,
     SERIAL_HANDSHAKE_BACKOFF_BASE,
     SERIAL_HANDSHAKE_BACKOFF_MAX,
 )
@@ -491,7 +492,7 @@ class SerialHandshakeManager:
             topic_name=get_topic_for_message(self._state.cloud_topic_prefix, snapshot) or "",
             payload=snapshot.SerializeToString(),
             content_type=PROTOBUF_CONTENT_TYPE,
-            user_properties=(("bridge-event", "handshake"),),
+            user_properties=((PROP_KEY_BRIDGE_EVENT, "handshake"),),
         )
         if not message.topic_name:
             self._logger.warning(

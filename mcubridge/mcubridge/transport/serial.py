@@ -377,7 +377,7 @@ class SerialTransport:
             seq_id = self._tx_sequence_id
 
         is_excluded = is_system_command(command_id)
-        nonce = b"\x00" * protocol.AEAD_NONCE_SIZE
+        nonce = protocol.ZERO_NONCE
         if self.state.is_synchronized and not is_excluded:
             nonce, new_counter = generate_nonce_with_counter(self.state.link_nonce_counter)
             self.state.link_nonce_counter = new_counter

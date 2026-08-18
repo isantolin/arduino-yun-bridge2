@@ -79,7 +79,7 @@ def build_frame(
         version=protocol.PROTOCOL_VERSION,
         command_id=command_id,
         sequence_id=sequence_id,
-        nonce=nonce or (b"\x00" * _NONCE_SIZE),
+        nonce=nonce or protocol.ZERO_NONCE,
     )
 
     # AEAD Encryption (if session key provided)

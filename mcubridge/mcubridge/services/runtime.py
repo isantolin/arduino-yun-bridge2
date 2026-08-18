@@ -35,13 +35,18 @@ import tenacity
 
 
 from ..config.const import (
-    TOPIC_FORBIDDEN_REASON,
+    DEFAULT_SYNC_TIMEOUT_SECONDS,
+    MCU_FS_PREFIX,
+    PROCESS_TERM_GRACE_PERIOD_SECONDS,
+    PROP_KEY_BRIDGE_DATASTORE_KEY,
+    PROP_KEY_BRIDGE_ERROR,
+    PROP_KEY_BRIDGE_PIN,
+    PROP_KEY_BRIDGE_SNAPSHOTS,
+    PROP_KEY_BRIDGE_STATUS,
+    STREAM_POLL_TIMEOUT_SECONDS,
     SUPERVISOR_DEFAULT_MAX_BACKOFF,
     SUPERVISOR_DEFAULT_MIN_BACKOFF,
-    MCU_FS_PREFIX,
-    DEFAULT_SYNC_TIMEOUT_SECONDS,
-    STREAM_POLL_TIMEOUT_SECONDS,
-    PROCESS_TERM_GRACE_PERIOD_SECONDS,
+    TOPIC_FORBIDDEN_REASON,
 )
 from ..config.settings import RuntimeConfig
 from ..protocol import protocol, structures
@@ -220,10 +225,10 @@ class BridgeService:
         registry[Command.CMD_XON.value] = self._handle_mcu_xon
         registry[Command.CMD_XOFF.value] = self._handle_mcu_xoff
         registry[Command.CMD_DIGITAL_READ.value] = functools.partial(
-            self._unsupported_mcu_request, msg="linux_originates_digital_read_requests"
+            self._unsupported_mcu_request, msg=protocol.STATUS_REASON_UNSUPPORTED_DIGITAL_READ
         )
         registry[Command.CMD_ANALOG_READ.value] = functools.partial(
-            self._unsupported_mcu_request, msg="linux_originates_analog_read_requests"
+            self._unsupported_mcu_request, msg=protocol.STATUS_REASON_UNSUPPORTED_ANALOG_READ
         )
         registry[Command.CMD_GET_CAPABILITIES_RESP.value] = self.handshake.handle_capabilities_resp
         registry[Command.CMD_LINK_SYNC_RESP.value] = self.handshake.handle_link_sync_resp
@@ -555,7 +560,7 @@ class BridgeService:
         val = bytes((await cache.get(p.key, b"")) if cache else b"")
         res = await serial.send(
             Command.CMD_DATASTORE_GET_RESP.value,
-            pb.DatastoreGetResponse(value=val[:255]),
+            pb.DatastoreGetResponse(value=val[: protocol.MAX_DATASTORE_VALUE_SIZE]),
         )
         return bool(res)
 
@@ -681,7 +686,7 @@ class BridgeService:
                 topic_path(self.state.cloud_topic_prefix, tp, str(req.pin) if req else "unknown", "value"),
                 str(p.value).encode(),
                 message_expiry_interval=protocol.CLOUD_EXPIRY_PIN,
-                user_properties=(("bridge-pin", str(req.pin) if req else "unknown"),),
+                user_properties=((PROP_KEY_BRIDGE_PIN, str(req.pin) if req else "unknown"),),
             ),
             reply_context=req.reply_context if req else None,
         )
@@ -747,7 +752,7 @@ class BridgeService:
                     message=text,
                 ).SerializeToString(),
                 content_type=PROTOBUF_CONTENT_TYPE,
-                user_properties=(("bridge-status", status.name),),
+                user_properties=((PROP_KEY_BRIDGE_STATUS, status.name),),
             )
         )
 
@@ -901,7 +906,9 @@ class BridgeService:
                     create_queued_publish(
                         response_topic,
                         f"error:{protocol.STATUS_REASON_MCU_FILE_READ_DISPATCH_FAILED}".encode(),
-                        user_properties=(("bridge-error", "mcu-file-read-dispatch-failed"),),
+                        user_properties=(
+                            (PROP_KEY_BRIDGE_ERROR, protocol.STATUS_REASON_MCU_FILE_READ_DISPATCH_FAILED),
+                        ),
                     ),
                     reply_context=ctx,
                 )
@@ -924,7 +931,7 @@ class BridgeService:
                     create_queued_publish(
                         response_topic,
                         f"error:{protocol.STATUS_REASON_MCU_FILE_READ_TIMEOUT}".encode(),
-                        user_properties=(("bridge-error", "mcu-file-read-timeout"),),
+                        user_properties=((PROP_KEY_BRIDGE_ERROR, protocol.STATUS_REASON_MCU_FILE_READ_TIMEOUT),),
                     ),
                     reply_context=ctx,
                 )
@@ -1078,8 +1085,8 @@ class BridgeService:
                             ).SerializeToString(),
                             content_type=PROTOBUF_CONTENT_TYPE,
                             user_properties=(
-                                ("bridge-error", "pending-pin-overflow"),
-                                ("bridge-pin", str(pin)),
+                                (PROP_KEY_BRIDGE_ERROR, protocol.STATUS_REASON_PENDING_PIN_OVERFLOW),
+                                (PROP_KEY_BRIDGE_PIN, str(pin)),
                             ),
                         ),
                         reply_context=inbound,
@@ -1170,7 +1177,7 @@ class BridgeService:
                 stderr=asyncio.subprocess.PIPE,
                 start_new_session=True,
             )
-            pid = p.pid & 0xFFFF
+            pid = p.pid & protocol.UINT16_MAX
             async with self.state.process_lock:
                 self.state.running_processes[pid] = ProcessContext(p)
             tg = self._tg
@@ -1303,7 +1310,7 @@ class BridgeService:
                 get_topic_for_message(self.state.cloud_topic_prefix, pb.StatusReport) or "",
                 pb.StatusReport(status=403, topic=val, action=act, reason="forbidden").SerializeToString(),
                 content_type=PROTOBUF_CONTENT_TYPE,
-                user_properties=(("bridge-error", TOPIC_FORBIDDEN_REASON),),
+                user_properties=((PROP_KEY_BRIDGE_ERROR, TOPIC_FORBIDDEN_REASON),),
             ),
             reply_context=ctx,
         )
@@ -1314,7 +1321,11 @@ class BridgeService:
         tp = topic_path(
             self.state.cloud_topic_prefix, Topic.DATASTORE, DatastoreAction.GET, *filter(None, key.split("/"))
         )
-        props = (("bridge-datastore-key", key), ("bridge-error", error)) if error else (("bridge-datastore-key", key),)
+        props = (
+            ((PROP_KEY_BRIDGE_DATASTORE_KEY, key), (PROP_KEY_BRIDGE_ERROR, error))
+            if error
+            else ((PROP_KEY_BRIDGE_DATASTORE_KEY, key),)
+        )
         await self.enqueue_cloud(
             create_queued_publish(
                 tp, val, message_expiry_interval=protocol.CLOUD_EXPIRY_DATASTORE, user_properties=props
@@ -1368,7 +1379,7 @@ class BridgeService:
                 if self.config.bridge_summary_interval > 0.0 or self.config.bridge_handshake_interval > 0.0:
                     tg.create_task(
                         self.supervise(
-                            "bridge-snapshots",
+                            PROP_KEY_BRIDGE_SNAPSHOTS,
                             lambda: publish_bridge_snapshots(
                                 self.state,
                                 self.enqueue_cloud,

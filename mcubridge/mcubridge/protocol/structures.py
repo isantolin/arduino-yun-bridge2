@@ -26,7 +26,11 @@ from buf.validate.validate_pb2 import Violation as ProtovalidateViolation
 from google.protobuf.message import Message as ProtobufMessage
 
 from . import mcubridge_pb2 as pb, protocol
-from mcubridge.config.const import ALLOWED_COMMAND_WILDCARD, CLOUD_TLS_MIN_VERSION
+from mcubridge.config.const import (
+    ALLOWED_COMMAND_WILDCARD,
+    CLOUD_TLS_MIN_VERSION,
+    PROP_KEY_BRIDGE_REQUEST_TOPIC,
+)
 
 
 def iter_chunks(data: bytes, chunk_size: int) -> Iterable[bytes]:
@@ -251,7 +255,7 @@ def resolve_cloud_context(message: pb.CloudQueuedPublish, context: Any | None) -
         newpb_obj.correlation_data = bytes(cd)
 
     if req_topic := getattr(context, "topic", None):
-        newpb_obj.user_properties.add(key="bridge-request-topic", value=str(req_topic))
+        newpb_obj.user_properties.add(key=PROP_KEY_BRIDGE_REQUEST_TOPIC, value=str(req_topic))
 
     return newpb_obj
 

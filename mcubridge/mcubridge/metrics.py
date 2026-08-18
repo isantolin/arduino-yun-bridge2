@@ -351,5 +351,5 @@ def _build_bridge_snapshot_message(
         payload=snapshot.SerializeToString(),
         content_type=PROTOBUF_CONTENT_TYPE,
         message_expiry_interval=const.BRIDGE_SNAPSHOT_EXPIRY_SECONDS,
-        user_properties=(("bridge-snapshot", flavor),),
+        user_properties=((const.PROP_KEY_BRIDGE_SNAPSHOT, flavor),),
     )

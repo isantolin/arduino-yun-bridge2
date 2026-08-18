@@ -130,11 +130,23 @@ SUPERVISOR_MIN_RESTART_WINDOW: float = 1.0
 DEFAULT_CLOUD_TLS_INSECURE: bool = False
 DEFAULT_ALLOW_NON_TMP_PATHS: bool = False
 
+# -- Cloud HTTP/3 Defaults --
+DEFAULT_CLOUD_HTTP3_PORT: int = 8443
+DEFAULT_CLOUD_HTTP3_CONGESTION_CONTROL: str = "bbr"
+
 # -- Telemetry and Metadata Constants --
 PROP_KEY_BRIDGE_SPOOL: Final[str] = "bridge-spool"
 PROP_KEY_BRIDGE_FILES: Final[str] = "bridge-files"
 PROP_KEY_WATCHDOG_ENABLED: Final[str] = "bridge-watchdog-enabled"
 PROP_KEY_WATCHDOG_INTERVAL: Final[str] = "bridge-watchdog-interval"
+PROP_KEY_BRIDGE_ERROR: Final[str] = "bridge-error"
+PROP_KEY_BRIDGE_PIN: Final[str] = "bridge-pin"
+PROP_KEY_BRIDGE_STATUS: Final[str] = "bridge-status"
+PROP_KEY_BRIDGE_DATASTORE_KEY: Final[str] = "bridge-datastore-key"
+PROP_KEY_BRIDGE_EVENT: Final[str] = "bridge-event"
+PROP_KEY_BRIDGE_SNAPSHOT: Final[str] = "bridge-snapshot"
+PROP_KEY_BRIDGE_REQUEST_TOPIC: Final[str] = "bridge-request-topic"
+PROP_KEY_BRIDGE_SNAPSHOTS: Final[str] = "bridge-snapshots"
 
 PROP_VAL_UNKNOWN: Final[str] = "unknown"
 PROP_VAL_QUOTA_BLOCKED: Final[str] = "quota-blocked"

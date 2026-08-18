@@ -71,6 +71,7 @@ message Constants {
     uint32 default_console_queue_limit_bytes = 63 [(py_name) = "DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES", (py_type) = "int"];
     uint32 prometheus_port = 64 [(py_name) = "PROMETHEUS_PORT", (py_type) = "int"];
     uint32 sync_timeout_ms = 65 [(cpp_name) = "SYNC_TIMEOUT_MS", (cpp_type) = "uint32_t", (py_name) = "SYNC_TIMEOUT_MS", (py_type) = "int"];
+    uint32 max_datastore_value_size = 66 [(cpp_name) = "RPC_MAX_DATASTORE_VALUE_SIZE", (cpp_type) = "size_t", (py_name) = "MAX_DATASTORE_VALUE_SIZE", (py_type) = "int", (client_constant) = true];
 
 }
 
@@ -179,6 +180,9 @@ message StatusReasons {
     string sync_length_mismatch = 18;
     string mcu_file_read_dispatch_failed = 19;
     string mcu_file_read_timeout = 20;
+    string pending_pin_overflow = 21;
+    string unsupported_digital_read = 22;
+    string unsupported_analog_read = 23;
 }
 
 message CloudSubscription {
@@ -389,6 +393,7 @@ option (rpc.pb.constants) = {
     default_console_queue_limit_bytes: 16384
     prometheus_port: 9130
     sync_timeout_ms: 30000
+    max_datastore_value_size: 255
 
 };
 

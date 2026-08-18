@@ -94,7 +94,7 @@ def get_default_config() -> dict[str, Any]:
         bridge_handshake_interval=const.DEFAULT_BRIDGE_HANDSHAKE_INTERVAL,
         allow_non_tmp_paths=const.DEFAULT_ALLOW_NON_TMP_PATHS,
         cloud_http3_enabled=False,
-        cloud_http3_port=8443,
-        cloud_http3_congestion_control="bbr",
+        cloud_http3_port=const.DEFAULT_CLOUD_HTTP3_PORT,
+        cloud_http3_congestion_control=const.DEFAULT_CLOUD_HTTP3_CONGESTION_CONTROL,
     )
     return json_format.MessageToDict(msg, preserving_proto_field_name=True)

@@ -11,19 +11,20 @@ PKG_MAINTAINER:=Ignacio Santolin <isantolin@gmail.com>
 PKG_LICENSE:=Apache-2.0
 PKG_LICENSE_FILES:=LICENSE
 
-PKG_BUILD_DEPENDS:=python3-setuptools/host python3-build/host python3-installer/host python3-wheel/host
+# PKG_BUILD_DEPENDS pre-injected into hostpkg
 
 include $(TOPDIR)/feeds/packages/lang/python/pypi.mk
 include $(INCLUDE_DIR)/package.mk
 include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
 
+PYTHON3_PKG_BUILD_VARS += \
+	SETUPTOOLS_SCM_PRETEND_VERSION=$(PKG_VERSION) \
+	HATCH_VCS_RECORD_VERSION=$(PKG_VERSION)
+
 define Build/Prepare
 	$(call Build/Prepare/Default)
-	python3 -c "import pathlib; \
-p1 = pathlib.Path('$(PKG_BUILD_DIR)/setup.py'); \
-p1.write_text('from setuptools import setup, find_namespace_packages\npackages = [\"protovalidate\", \"protovalidate.internal\"] + find_namespace_packages(where=\"gen\")\nsetup(\n    name=\"protovalidate\",\n    version=\"$(PKG_VERSION)\",\n    packages=packages,\n    package_dir={\"\": \"gen\", \"protovalidate\": \"protovalidate\"},\n    package_data={\"\": [\"*.pyi\", \"py.typed\"]},\n)\n', encoding='utf-8'); \
-p2 = pathlib.Path('$(PKG_BUILD_DIR)/pyproject.toml'); \
-p2.write_text('[build-system]\nrequires = [\"setuptools>=61.0\"]\nbuild-backend = \"setuptools.build_meta\"\n\n[project]\nname = \"protovalidate\"\nversion = \"$(PKG_VERSION)\"\ndescription = \"Protocol Buffer Validation for Python\"\nreadme = \"README.md\"\nrequires-python = \">=3.10\"\n', encoding='utf-8')"
+	sed -i 's/dynamic = \["version"\]/version = "$(PKG_VERSION)"/g' $(PKG_BUILD_DIR)/pyproject.toml 2>/dev/null || true
+	sed -i '/\[tool.hatch.version\]/,+2d' $(PKG_BUILD_DIR)/pyproject.toml 2>/dev/null || true
 endef
 
 define Package/python3-protovalidate

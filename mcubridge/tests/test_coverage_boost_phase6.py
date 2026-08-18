@@ -1465,25 +1465,25 @@ def test_protocol_frame_protovalidate_validation_error() -> None:
 
 
 @pytest.mark.asyncio
-async def test_runtime_service_spi_and_system_branches(mock_bridge_service: Any) -> None:
-    from mcubridge.protocol.topics import Topic, parse_topic
-    from mcubridge.protocol.protocol import SpiAction, SystemAction
+async def test_runtime_service_spi_and_system_branches(runtime_config: Any, runtime_state: Any) -> None:
+    from mcubridge.protocol.topics import parse_topic
     from mcubridge.protocol import mcubridge_pb2 as pb
+    from mcubridge.services.runtime import BridgeService
     from unittest.mock import AsyncMock
 
-    service = mock_bridge_service
-    service.serial = AsyncMock()
+    serial = AsyncMock()
+    service = BridgeService(runtime_config, runtime_state, serial)
 
     # SPI begin & end
     route_begin = parse_topic("br", "br/spi/begin")
     assert route_begin is not None
     await service._handle_spi(route_begin, pb.CloudQueuedPublish(payload=b""))
-    service.serial.send.assert_awaited()
+    serial.send.assert_awaited()
 
     route_end = parse_topic("br", "br/spi/end")
     assert route_end is not None
     await service._handle_spi(route_end, pb.CloudQueuedPublish(payload=b""))
-    service.serial.send.assert_awaited()
+    serial.send.assert_awaited()
 
     # SPI config (valid & invalid)
     route_cfg = parse_topic("br", "br/spi/config")
@@ -1492,13 +1492,16 @@ async def test_runtime_service_spi_and_system_branches(mock_bridge_service: Any)
     await service._handle_spi(route_cfg, pb.CloudQueuedPublish(payload=cfg_pb.SerializeToString()))
     await service._handle_spi(route_cfg, pb.CloudQueuedPublish(payload=b"\xff\xff\xff\xff"))
 
-    # SPI transfer (empty payload & populated with response)
+    # SPI transfer (empty payload, non-bytes response, and populated with bytes response)
     route_tr = parse_topic("br", "br/spi/transfer")
     assert route_tr is not None
     await service._handle_spi(route_tr, pb.CloudQueuedPublish(payload=b""))
-    
+
+    serial.send.return_value = False
+    await service._handle_spi(route_tr, pb.CloudQueuedPublish(payload=b"\x01\x02"))
+
     resp_payload = pb.SpiTransferResponse(data=b"\xde\xad\xbe\xef").SerializeToString()
-    service.serial.send.return_value = resp_payload
+    serial.send.return_value = resp_payload
     await service._handle_spi(route_tr, pb.CloudQueuedPublish(payload=b"\x01\x02\x03\x04"))
 
     # System bootloader
@@ -1506,16 +1509,18 @@ async def test_runtime_service_spi_and_system_branches(mock_bridge_service: Any)
     assert route_boot is not None
     await service._handle_system(route_boot, pb.CloudQueuedPublish())
 
-    # System free memory
+    # System free memory (non-bytes and bytes response)
     route_mem = parse_topic("br", "br/system/free_memory/get")
     assert route_mem is not None
-    service.serial.send.return_value = pb.FreeMemoryResponse(value=1024).SerializeToString()
+    serial.send.return_value = False
+    await service._handle_system(route_mem, pb.CloudQueuedPublish())
+    serial.send.return_value = pb.FreeMemoryResponse(value=1024).SerializeToString()
     await service._handle_system(route_mem, pb.CloudQueuedPublish())
 
     # System version
     route_ver = parse_topic("br", "br/system/version/get")
     assert route_ver is not None
-    service.serial.send.return_value = pb.VersionResponse(major=2, minor=8, patch=5).SerializeToString()
+    serial.send.return_value = pb.VersionResponse(major=2, minor=8, patch=5).SerializeToString()
     await service._handle_system(route_ver, pb.CloudQueuedPublish())
 
     # System bridge snapshots (summary & handshake)
@@ -1526,6 +1531,36 @@ async def test_runtime_service_spi_and_system_branches(mock_bridge_service: Any)
     route_hs = parse_topic("br", "br/system/bridge/handshake")
     assert route_hs is not None
     await service._handle_system(route_hs, pb.CloudQueuedPublish())
+
+    # Serial is None paths & unknown action paths
+    service.serial = None
+    await service._handle_spi(route_begin, pb.CloudQueuedPublish())
+    await service._handle_system(route_boot, pb.CloudQueuedPublish())
+    await service._handle_pin(route_boot, pb.CloudQueuedPublish())
+
+    service.serial = serial
+    unknown_route = parse_topic("br", "br/system/nonexistent_action")
+    if unknown_route:
+        await service._handle_system(unknown_route, pb.CloudQueuedPublish())
+
+    # Cloud publish branches
+    assert await service._publish_cloud_message(pb.CloudQueuedPublish()) is False
+    service._cloud_stream = AsyncMock()
+    for topic_sample in ["br/metrics/report", "br/summary/report", "br/handshake/report", "br/status/report"]:
+        assert (
+            await service._publish_cloud_message(pb.CloudQueuedPublish(topic_name=topic_sample, payload=b"test"))
+            is True
+        )
+
+    assert (
+        await service._publish_cloud_message(
+            pb.CloudQueuedPublish(correlation_data=b"\x00\x00\x00\x00\x00\x00\x00\x01", payload=b"ok")
+        )
+        is True
+    )
+
+    service._cloud_stream.send_message.side_effect = OSError("network down")
+    assert await service._publish_cloud_message(pb.CloudQueuedPublish(topic_name="br/metrics/report")) is False
 
 
 def test_structures_replace_cloud_publish_variations() -> None:
@@ -1540,4 +1575,3 @@ def test_structures_replace_cloud_publish_variations() -> None:
     res2 = replace_cloud_publish(orig, user_properties=[], subscription_identifier=[])
     assert len(res2.user_properties) == 0
     assert len(res2.subscription_identifier) == 0
-

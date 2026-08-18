@@ -9,6 +9,7 @@ from mcubridge.protocol.mcubridge_grpc import CloudBridgeBase
 from mcubridge.protocol import mcubridge_pb2 as pb
 from grpclib.server import Server, Stream
 from typing import Annotated
+import protovalidate
 import typer
 
 import asyncio
@@ -55,6 +56,12 @@ class CloudBridgeService(CloudBridgeBase):
 
         try:
             async for envelope in stream:
+                try:
+                    protovalidate.validate(envelope)
+                except protovalidate.ValidationError as err:
+                    logger.warning("Invalid cloud envelope from %s: %s", device_id, err)
+                    continue
+
                 payload_type = envelope.WhichOneof("payload")
                 logger.debug(
                     "Received envelope from %s (seq=%d, payload=%s)", device_id, envelope.sequence_id, payload_type

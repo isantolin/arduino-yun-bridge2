@@ -111,7 +111,7 @@ def test_parse_frame_invalid_version() -> None:
 
     crc_bytes = (crc32(body) & protocol.CRC32_MASK).to_bytes(4, "little")
     raw = body + crc_bytes
-    with pytest.raises(ValueError, match="Invalid frame envelope"):
+    with pytest.raises(ValueError, match="Unsupported protocol version"):
         frame.parse_frame(raw)
 
 

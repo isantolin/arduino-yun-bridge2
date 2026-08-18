@@ -16,7 +16,6 @@ from binascii import crc32
 from functools import lru_cache
 from typing import Final, NamedTuple
 
-import protovalidate
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 
@@ -66,6 +65,11 @@ def build_frame(
     session_key: bytes | None = None,
 ) -> bytes:
     """Builds a binary frame using a Protobuf envelope directly with high-performance AEAD. [SIL-2]"""
+    if not (0 <= command_id <= protocol.UINT16_MAX):
+        raise ValueError(f"Invalid command ID: {command_id}")
+    if not (0 <= sequence_id <= protocol.UINT16_MAX):
+        raise ValueError(f"Invalid sequence ID: {sequence_id}")
+
     is_excluded = is_system_command(command_id)
 
     # Initialize RpcEnvelope directly (Protobuf rejects negative uint32 automatically)
@@ -102,11 +106,6 @@ def build_frame(
                 raise ValueError(f"Payload size {len(payload)} exceeds maximum {protocol.MAX_PAYLOAD_SIZE}")
             envelope.encrypted_payload_with_tag = payload
 
-    try:
-        protovalidate.validate(envelope)
-    except protovalidate.ValidationError as exc:
-        raise ValueError(f"Invalid frame envelope: {exc}") from exc
-
     body = envelope.SerializeToString()
     return body + _CRC_STRUCT.pack(crc32(body) & protocol.CRC32_MASK)
 
@@ -127,10 +126,8 @@ def parse_frame(raw_frame_buffer: bytes | bytearray | memoryview, session_key: b
     except DecodeError as e:
         raise ValueError(f"Failed to parse Protobuf envelope: {e}") from e
 
-    try:
-        protovalidate.validate(envelope)
-    except protovalidate.ValidationError as exc:
-        raise ValueError(f"Invalid frame envelope: {exc}") from exc
+    if envelope.version != protocol.PROTOCOL_VERSION:
+        raise ValueError(f"Unsupported protocol version: {envelope.version}")
 
     is_excluded = is_system_command(envelope.command_id)
 

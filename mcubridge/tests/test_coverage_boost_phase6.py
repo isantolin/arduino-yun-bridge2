@@ -1449,19 +1449,34 @@ async def test_metrics_prometheus_exporter_finally_branches(mock_state: RuntimeS
                 await exp.run()
 
 
-def test_protocol_frame_protovalidate_validation_error() -> None:
-    from mcubridge.protocol import frame
-    import protovalidate
-    from unittest.mock import patch
+def test_protocol_frame_validation_error_paths() -> None:
+    from mcubridge.protocol import frame, protocol
 
-    with patch("protovalidate.validate", side_effect=protovalidate.ValidationError("invalid frame", violations=[])):
-        with pytest.raises(ValueError, match="Invalid frame envelope"):
-            frame.build_frame(1, 1)
+    with pytest.raises(ValueError, match="Invalid command ID"):
+        frame.build_frame(-1, 1)
+
+    with pytest.raises(ValueError, match="Invalid command ID"):
+        frame.build_frame(protocol.UINT16_MAX + 1, 1)
+
+    with pytest.raises(ValueError, match="Invalid sequence ID"):
+        frame.build_frame(1, -1)
+
+    with pytest.raises(ValueError, match="Invalid sequence ID"):
+        frame.build_frame(1, protocol.UINT16_MAX + 1)
 
     valid_frame = frame.build_frame(1, 1)
-    with patch("protovalidate.validate", side_effect=protovalidate.ValidationError("invalid frame", violations=[])):
-        with pytest.raises(ValueError, match="Invalid frame envelope"):
-            frame.parse_frame(valid_frame)
+    # Tamper with version field
+    bytearray(valid_frame)
+    # Repack with invalid version
+    from mcubridge.protocol import mcubridge_pb2 as pb
+    from binascii import crc32
+    import struct
+
+    env = pb.RpcEnvelope(version=99, command_id=1, sequence_id=1)
+    body = env.SerializeToString()
+    bad_ver_frame = body + struct.pack("<I", crc32(body) & protocol.CRC32_MASK)
+    with pytest.raises(ValueError, match="Unsupported protocol version"):
+        frame.parse_frame(bad_ver_frame)
 
 
 @pytest.mark.asyncio

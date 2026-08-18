@@ -25,15 +25,7 @@ async def status_writer(state: RuntimeState, interval: int) -> None:
         try:
             # [SIL-2] Use BridgeStatus Protobuf for holistic snapshot
             status = state.build_status_snapshot()
-
-            write_task = asyncio.create_task(asyncio.to_thread(_write_status_file, status))
-            try:
-                await asyncio.shield(write_task)
-            except asyncio.CancelledError:
-                await write_task
-                raise
-        except asyncio.CancelledError:
-            raise
+            await asyncio.to_thread(_write_status_file, status)
         except (OSError, RuntimeError, ValueError) as e:
             logger.error("Periodic status write failed: %s", e)
 

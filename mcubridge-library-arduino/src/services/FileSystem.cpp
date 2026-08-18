@@ -52,9 +52,8 @@ void FileSystemClass::_onWrite(const rpc::payload::FileWrite& msg) {
   auto res = bridge::hal::writeFile(
       etl::string_view(msg.path),
       etl::span<const uint8_t>(msg.data.bytes, msg.data.size));
-  if (!Bridge.sendFrame(res ? rpc::StatusCode::STATUS_OK
-                            : rpc::StatusCode::STATUS_ERROR)) {
-  }
+  (void)Bridge.sendFrame(res ? rpc::StatusCode::STATUS_OK
+                             : rpc::StatusCode::STATUS_ERROR);
 }
 
 void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
@@ -102,9 +101,8 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
 
 void FileSystemClass::_onRemove(const rpc::payload::FileRemove& msg) {
   auto res = bridge::hal::removeFile(etl::string_view(msg.path));
-  if (!Bridge.sendFrame(res ? rpc::StatusCode::STATUS_OK
-                            : rpc::StatusCode::STATUS_ERROR)) {
-  }
+  (void)Bridge.sendFrame(res ? rpc::StatusCode::STATUS_OK
+                             : rpc::StatusCode::STATUS_ERROR);
 }
 
 void FileSystemClass::_onResponse(const rpc::payload::FileReadResponse& msg) {

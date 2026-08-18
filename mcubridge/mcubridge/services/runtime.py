@@ -94,6 +94,12 @@ _PRE_SYNC_ALLOWED_COMMANDS: Final = {
 
 _STATUS_VALUES: Final = {s.value for s in Status}
 
+_TELEMETRY_TOPIC_FIELD_MAP: Final[dict[str, str]] = {
+    "metrics": "daemon_metrics_blob",
+    "summary": "bridge_snapshot_blob",
+    "handshake": "handshake_snapshot_blob",
+}
+
 
 @dataclass
 class _PendingMcuRead:
@@ -159,6 +165,35 @@ class BridgeService:
             ShellAction.RUN_ASYNC: self._handle_shell_run_async,
             ShellAction.POLL: self._handle_shell_poll,
             ShellAction.KILL: self._handle_shell_kill,
+        }
+        self._topic_dispatch: Final[
+            dict[Topic, Callable[[TopicRoute, pb.CloudQueuedPublish], Coroutine[Any, Any, None]]]
+        ] = {
+            Topic.CONSOLE: lambda _r, req: self._handle_console(req),
+            Topic.DATASTORE: self._handle_datastore,
+            Topic.MAILBOX: self._handle_mailbox,
+            Topic.FILE: self._handle_file,
+            Topic.SHELL: self._handle_shell,
+            Topic.SPI: self._handle_spi,
+            Topic.DIGITAL: self._handle_pin,
+            Topic.ANALOG: self._handle_pin,
+            Topic.SYSTEM: self._handle_system,
+        }
+        self._spi_dispatch: Final[
+            dict[SpiAction | str, Callable[[TopicRoute, pb.CloudQueuedPublish], Coroutine[Any, Any, None]]]
+        ] = {
+            SpiAction.BEGIN: self._handle_spi_begin,
+            SpiAction.END: self._handle_spi_end,
+            SpiAction.CONFIG: self._handle_spi_config,
+            SpiAction.TRANSFER: self._handle_spi_transfer,
+        }
+        self._system_dispatch: Final[
+            dict[SystemAction | str, Callable[[TopicRoute, pb.CloudQueuedPublish], Coroutine[Any, Any, None]]]
+        ] = {
+            SystemAction.BOOTLOADER: self._handle_system_bootloader,
+            SystemAction.FREE_MEMORY: self._handle_system_free_memory,
+            SystemAction.VERSION: self._handle_system_version,
+            SystemAction.BRIDGE: self._handle_system_bridge,
         }
 
     async def _unsupported_mcu_request(
@@ -363,14 +398,11 @@ class BridgeService:
             else:
                 # Telemetry report
                 report = pb.TelemetryReport()
-                if "metrics" in message.topic_name:
-                    report.daemon_metrics_blob = message.payload
-                elif "summary" in message.topic_name:
-                    report.bridge_snapshot_blob = message.payload
-                elif "handshake" in message.topic_name:
-                    report.handshake_snapshot_blob = message.payload
-                else:
-                    report.system_status_blob = message.payload
+                telemetry_attr = next(
+                    (attr for key, attr in _TELEMETRY_TOPIC_FIELD_MAP.items() if key in message.topic_name),
+                    "system_status_blob",
+                )
+                setattr(report, telemetry_attr, message.payload)
 
                 envelope = pb.CloudEnvelope(
                     protocol_version=2,
@@ -485,25 +517,8 @@ class BridgeService:
                 return
 
             # Unified Dispatch
-            match route.topic:
-                case Topic.CONSOLE:
-                    await self._handle_console(request)
-                case Topic.DATASTORE:
-                    await self._handle_datastore(route, request)
-                case Topic.MAILBOX:
-                    await self._handle_mailbox(route, request)
-                case Topic.FILE:
-                    await self._handle_file(route, request)
-                case Topic.SHELL:
-                    await self._handle_shell(route, request)
-                case Topic.SPI:
-                    await self._handle_spi(route, request)
-                case Topic.DIGITAL | Topic.ANALOG:
-                    await self._handle_pin(route, request)
-                case Topic.SYSTEM:
-                    await self._handle_system(route, request)
-                case _:
-                    pass
+            if handler := self._topic_dispatch.get(route.topic):
+                await handler(route, request)
 
     # --- Business Logic Implementation ---
 
@@ -988,42 +1003,45 @@ class BridgeService:
             if self.state.running_processes.pop(pid, None):
                 self._process_slots.release()
 
-    async def _handle_spi(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
-        serial = self.serial
-        if not serial:
+    async def _handle_spi_begin(self, _route: TopicRoute, _inbound: pb.CloudQueuedPublish) -> None:
+        await cast("SerialTransport", self.serial).send(Command.CMD_SPI_BEGIN.value, b"")
+
+    async def _handle_spi_end(self, _route: TopicRoute, _inbound: pb.CloudQueuedPublish) -> None:
+        await cast("SerialTransport", self.serial).send(Command.CMD_SPI_END.value, b"")
+
+    async def _handle_spi_config(self, _route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
+        try:
+            p = pb.SpiConfig.FromString(inbound.payload)
+            await cast("SerialTransport", self.serial).send(Command.CMD_SPI_SET_CONFIG.value, p)
+        except (ProtobufDecodeError, TypeError, ValueError) as exc:
+            logger.error("SPI config error: %s", exc)
+
+    async def _handle_spi_transfer(self, _route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
+        if not inbound.payload:
             return
-        match route.identifier:
-            case SpiAction.BEGIN:
-                await serial.send(Command.CMD_SPI_BEGIN.value, b"")
-            case SpiAction.END:
-                await serial.send(Command.CMD_SPI_END.value, b"")
-            case SpiAction.CONFIG:
-                try:
-                    p = pb.SpiConfig.FromString(inbound.payload)
-                    await serial.send(Command.CMD_SPI_SET_CONFIG.value, p)
-                except (ProtobufDecodeError, TypeError, ValueError) as exc:
-                    logger.error("SPI config error: %s", exc)
-            case SpiAction.TRANSFER:
-                if inbound.payload:
-                    res = await serial.send(
-                        Command.CMD_SPI_TRANSFER.value,
-                        pb.SpiTransfer(data=inbound.payload),
-                    )
-                    if isinstance(res, bytes):
-                        await self.enqueue_cloud(
-                            create_queued_publish(
-                                topic_path(
-                                    self.state.cloud_topic_prefix,
-                                    Topic.SPI,
-                                    SpiAction.TRANSFER,
-                                    protocol.CLOUD_SUFFIX_RESPONSE,
-                                ),
-                                pb.SpiTransferResponse.FromString(res).data,
-                            ),
-                            reply_context=inbound,
-                        )
-            case _:
-                return
+        res = await cast("SerialTransport", self.serial).send(
+            Command.CMD_SPI_TRANSFER.value,
+            pb.SpiTransfer(data=inbound.payload),
+        )
+        if isinstance(res, bytes):
+            await self.enqueue_cloud(
+                create_queued_publish(
+                    topic_path(
+                        self.state.cloud_topic_prefix,
+                        Topic.SPI,
+                        SpiAction.TRANSFER,
+                        protocol.CLOUD_SUFFIX_RESPONSE,
+                    ),
+                    pb.SpiTransferResponse.FromString(res).data,
+                ),
+                reply_context=inbound,
+            )
+
+    async def _handle_spi(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
+        if not self.serial:
+            return
+        if handler := self._spi_dispatch.get(route.identifier):
+            await handler(route, inbound)
 
     async def _handle_pin(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         serial = self.serial
@@ -1070,47 +1088,49 @@ class BridgeService:
             cmd = Command.CMD_DIGITAL_WRITE if route.topic == Topic.DIGITAL else Command.CMD_ANALOG_WRITE
             await serial.send(cmd.value, pb.DigitalWrite(pin=pin, value=int(pl) if pl.isdigit() else 0))
 
-    async def _handle_system(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
-        serial = self.serial
-        if not serial:
+    async def _handle_system_bootloader(self, _route: TopicRoute, _inbound: pb.CloudQueuedPublish) -> None:
+        await cast("SerialTransport", self.serial).send(
+            Command.CMD_ENTER_BOOTLOADER.value,
+            pb.EnterBootloader(magic=protocol.BOOTLOADER_MAGIC),
+        )
+
+    async def _handle_system_free_memory(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
+        if "get" not in route.segments:
             return
-        match route.identifier:
-            case SystemAction.BOOTLOADER:
-                await serial.send(
-                    Command.CMD_ENTER_BOOTLOADER.value,
-                    pb.EnterBootloader(magic=protocol.BOOTLOADER_MAGIC),
-                )
-            case SystemAction.FREE_MEMORY if "get" in route.segments:
-                pl = await serial.send(Command.CMD_GET_FREE_MEMORY.value, b"")
-                if isinstance(pl, bytes):
-                    tp = get_topic_for_message(self.state.cloud_topic_prefix, pb.FreeMemoryResponse)
-                    if tp:
-                        await self.enqueue_cloud(
-                            create_queued_publish(
-                                tp,
-                                str(pb.FreeMemoryResponse.FromString(pl).value).encode(),
-                            ),
-                            reply_context=inbound,
-                        )
-            case SystemAction.VERSION if "get" in route.segments:
-                await self._request_mcu_version(inbound)
-            case SystemAction.BRIDGE:
-                flavor = route.segments[1] if len(route.segments) > 1 else "summary"
-                snap = (
-                    self.state.build_handshake_snapshot()
-                    if flavor == "handshake"
-                    else self.state.build_bridge_snapshot()
-                )
+        pl = await cast("SerialTransport", self.serial).send(Command.CMD_GET_FREE_MEMORY.value, b"")
+        if isinstance(pl, bytes):
+            tp = get_topic_for_message(self.state.cloud_topic_prefix, pb.FreeMemoryResponse)
+            if tp:
                 await self.enqueue_cloud(
                     create_queued_publish(
-                        get_topic_for_message(self.state.cloud_topic_prefix, snap) or "",
-                        snap.SerializeToString(),
-                        content_type=PROTOBUF_CONTENT_TYPE,
+                        tp,
+                        str(pb.FreeMemoryResponse.FromString(pl).value).encode(),
                     ),
                     reply_context=inbound,
                 )
-            case _:
-                return
+
+    async def _handle_system_version(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
+        if "get" not in route.segments:
+            return
+        await self._request_mcu_version(inbound)
+
+    async def _handle_system_bridge(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
+        flavor = route.segments[1] if len(route.segments) > 1 else "summary"
+        snap = self.state.build_handshake_snapshot() if flavor == "handshake" else self.state.build_bridge_snapshot()
+        await self.enqueue_cloud(
+            create_queued_publish(
+                get_topic_for_message(self.state.cloud_topic_prefix, snap) or "",
+                snap.SerializeToString(),
+                content_type=PROTOBUF_CONTENT_TYPE,
+            ),
+            reply_context=inbound,
+        )
+
+    async def _handle_system(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
+        if not self.serial:
+            return
+        if handler := self._system_dispatch.get(route.identifier):
+            await handler(route, inbound)
 
     # --- Low-level Helpers ---
 

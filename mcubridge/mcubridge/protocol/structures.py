@@ -243,8 +243,13 @@ def replace_cloud_publish(message: pb.CloudQueuedPublish, **kwargs: Any) -> pb.C
     for k, v in kwargs.items():
         if k == "user_properties":
             del newpb_obj.user_properties[:]
-            for pk, pv in v:
-                newpb_obj.user_properties.add(key=pk, value=pv)
+            if v:
+                newpb_obj.user_properties.extend(
+                    [
+                        item if isinstance(item, pb.UserProperty) else pb.UserProperty(key=item[0], value=item[1])
+                        for item in v
+                    ]
+                )
         elif k == "subscription_identifier":
             del newpb_obj.subscription_identifier[:]
             if v is not None:
@@ -259,38 +264,23 @@ def resolve_cloud_context(message: pb.CloudQueuedPublish, context: Any | None) -
     if context is None:
         return message
 
-    updates: dict[str, Any] = {}
-
-    rt = getattr(context, "response_topic", None)
-    if rt is None:
-        props = getattr(context, "properties", None)
-        if props:
-            rt = getattr(props, "ResponseTopic", None)
-    if rt is not None:
-        updates["topic_name"] = str(rt)
-
-    cd = getattr(context, "correlation_data", None)
-    if cd is None:
-        props = getattr(context, "properties", None)
-        if props:
-            cd = getattr(props, "CorrelationData", None)
-    if cd is not None:
-        updates["correlation_data"] = bytes(cd)
-
-    user_props = [(p.key, p.value) for p in message.user_properties]
-    if req_topic := getattr(context, "topic", None):
-        user_props.append(("bridge-request-topic", str(req_topic)))
-
     newpb_obj = pb.CloudQueuedPublish()
     newpb_obj.CopyFrom(message)
-    if "topic_name" in updates:
-        newpb_obj.topic_name = updates["topic_name"]
-    if "correlation_data" in updates:
-        newpb_obj.correlation_data = updates["correlation_data"]
 
-    del newpb_obj.user_properties[:]
-    for k, v in user_props:
-        newpb_obj.user_properties.add(key=k, value=v)
+    rt = getattr(context, "response_topic", None)
+    if rt is None and (props := getattr(context, "properties", None)):
+        rt = getattr(props, "ResponseTopic", None)
+    if rt is not None:
+        newpb_obj.topic_name = str(rt)
+
+    cd = getattr(context, "correlation_data", None)
+    if cd is None and (props := getattr(context, "properties", None)):
+        cd = getattr(props, "CorrelationData", None)
+    if cd is not None:
+        newpb_obj.correlation_data = bytes(cd)
+
+    if req_topic := getattr(context, "topic", None):
+        newpb_obj.user_properties.add(key="bridge-request-topic", value=str(req_topic))
 
     return newpb_obj
 

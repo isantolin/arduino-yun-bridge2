@@ -1097,15 +1097,14 @@ class BridgeService:
     async def _handle_system_free_memory(self, _route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         pl = await cast("SerialTransport", self.serial).send(Command.CMD_GET_FREE_MEMORY.value, b"")
         if isinstance(pl, bytes):
-            tp = get_topic_for_message(self.state.cloud_topic_prefix, pb.FreeMemoryResponse)
-            if tp:
-                await self.enqueue_cloud(
-                    create_queued_publish(
-                        tp,
-                        str(pb.FreeMemoryResponse.FromString(pl).value).encode(),
-                    ),
-                    reply_context=inbound,
-                )
+            tp = get_topic_for_message(self.state.cloud_topic_prefix, pb.FreeMemoryResponse) or ""
+            await self.enqueue_cloud(
+                create_queued_publish(
+                    tp,
+                    str(pb.FreeMemoryResponse.FromString(pl).value).encode(),
+                ),
+                reply_context=inbound,
+            )
 
     async def _handle_system_version(self, _route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         await self._request_mcu_version(inbound)
@@ -1140,12 +1139,11 @@ class BridgeService:
             self.state.mcu_version = (p.major, p.minor, p.patch)
 
             pl_out = f"{p.major}.{p.minor}.{p.patch}".encode()
-            tp = get_topic_for_message(self.state.cloud_topic_prefix, pb.VersionResponse)
-            if tp:
-                await self.enqueue_cloud(
-                    create_queued_publish(tp, pl_out, message_expiry_interval=protocol.CLOUD_EXPIRY_DATASTORE),
-                    reply_context=inbound,
-                )
+            tp = get_topic_for_message(self.state.cloud_topic_prefix, pb.VersionResponse) or ""
+            await self.enqueue_cloud(
+                create_queued_publish(tp, pl_out, message_expiry_interval=protocol.CLOUD_EXPIRY_DATASTORE),
+                reply_context=inbound,
+            )
             return True
         return False
 

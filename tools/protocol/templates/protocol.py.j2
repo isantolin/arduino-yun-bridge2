@@ -121,6 +121,20 @@ MESSAGE_TO_TOPIC: Final[dict[Any, str]] = {
     {%- endfor %}
 }
 
+# Mapping of Protobuf message descriptor names to RpcEnvelope payload_type oneof field names. [SIL-2]
+PAYLOAD_FIELD_MAP: Final[dict[str, str]] = {
+    {%- for item in payload_fields %}
+    "{{ item.name }}": "{{ item.field }}",
+    {%- endfor %}
+}
+
+# Mapping of (topic, action) tuples to TopicAuthorization Protobuf field names. [SIL-2]
+TOPIC_AUTH_MAP: Final[dict[tuple[str, str], str]] = {
+    {%- for (topic, action), field_name in topic_auth_map.items()|sort %}
+    ("{{ topic }}", "{{ action }}"): "{{ field_name }}",
+    {%- endfor %}
+}
+
 def expected_responses(command_id: int) -> frozenset[int]:
     """Look up the expected MCU responses for the given command ID."""
     return _REQUEST_RESPONSE_MAP.get(command_id, frozenset())

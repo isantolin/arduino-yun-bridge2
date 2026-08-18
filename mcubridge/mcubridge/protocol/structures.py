@@ -25,7 +25,7 @@ import protovalidate
 from buf.validate.validate_pb2 import Violation as ProtovalidateViolation
 from google.protobuf.message import Message as ProtobufMessage
 
-from . import mcubridge_pb2 as pb
+from . import mcubridge_pb2 as pb, protocol
 from mcubridge.config.const import ALLOWED_COMMAND_WILDCARD, CLOUD_TLS_MIN_VERSION
 
 
@@ -97,36 +97,9 @@ def create_allowed_policy(entries: Iterable[str]) -> pb.AllowedCommandPolicy:
     return pb.AllowedCommandPolicy(entries=normalised)
 
 
-_TOPIC_AUTH_MAP: Final[dict[tuple[str, str], str]] = {
-    ("a", "read"): "analog_read",
-    ("a", "write"): "analog_write",
-    ("console", "in"): "console_input",
-    ("d", "mode"): "digital_mode",
-    ("d", "read"): "digital_read",
-    ("d", "write"): "digital_write",
-    ("datastore", "get"): "datastore_get",
-    ("datastore", "put"): "datastore_put",
-    ("file", "read"): "file_read",
-    ("file", "remove"): "file_remove",
-    ("file", "write"): "file_write",
-    ("mailbox", "read"): "mailbox_read",
-    ("mailbox", "write"): "mailbox_write",
-    ("sh", "kill"): "shell_kill",
-    ("sh", "poll"): "shell_poll",
-    ("sh", "run_async"): "shell_run_async",
-    ("spi", "begin"): "spi_begin",
-    ("spi", "config"): "spi_config",
-    ("spi", "end"): "spi_end",
-    ("spi", "transfer"): "spi_transfer",
-    ("system", "bootloader"): "system_bootloader",
-    ("system", "free_memory"): "system_free_memory",
-    ("system", "version"): "system_version",
-}
-
-
 def allows_topic(auth: pb.TopicAuthorization, topic: str, action: str) -> bool:
     """Check if a specific topic/action combination is authorized. [SIL-2]"""
-    field_name = _TOPIC_AUTH_MAP.get((topic.lower(), action.lower()))
+    field_name = protocol.TOPIC_AUTH_MAP.get((topic.lower(), action.lower()))
     if field_name is not None:
         return bool(getattr(auth, field_name))
     return False

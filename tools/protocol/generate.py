@@ -585,8 +585,47 @@ class JinjaGenerator:
             response_to_req_map=self._build_resp_to_req_map(spec),
             command_to_pb=command_to_pb,
             message_topics=spec.message_topics,
+            payload_fields=self._extract_payload_fields(spec),
+            topic_auth_map=self._extract_topic_auth_map(spec),
         )
         out_path.write_text(render, encoding="utf-8")
+
+    @staticmethod
+    def _extract_payload_fields(spec: ProtocolSpec) -> list[dict[str, str]]:
+        envelope_desc = spec.pb_module.DESCRIPTOR.message_types_by_name.get("RpcEnvelope")
+        payload_fields: list[dict[str, str]] = []
+        if envelope_desc and "payload_type" in envelope_desc.oneofs_by_name:
+            oneof_desc = envelope_desc.oneofs_by_name["payload_type"]
+            for field_desc in oneof_desc.fields:
+                if field_desc.message_type:
+                    payload_fields.append({"name": field_desc.message_type.name, "field": field_desc.name})
+        return payload_fields
+
+    @staticmethod
+    def _extract_topic_auth_map(spec: ProtocolSpec) -> dict[tuple[str, str], str]:
+        topic_prefix_map = {
+            "analog": "a",
+            "digital": "d",
+            "shell": "sh",
+        }
+        auth_desc = getattr(spec.pb_module, "TopicAuthorization", None)
+        if not auth_desc:
+            return {}
+        auth_map: dict[tuple[str, str], str] = {}
+        for f in auth_desc.DESCRIPTOR.fields:
+            name = f.name
+            if name == "console_input":
+                auth_map[("console", "in")] = name
+                continue
+            for long_name, short_val in topic_prefix_map.items():
+                if name.startswith(long_name + "_"):
+                    auth_map[(short_val, name[len(long_name) + 1 :])] = name
+                    break
+            else:
+                parts = name.split("_", 1)
+                if len(parts) == 2:
+                    auth_map[(parts[0], parts[1])] = name
+        return auth_map
 
     @staticmethod
     def _build_req_resp_map(spec: ProtocolSpec) -> dict[str, list[str]]:

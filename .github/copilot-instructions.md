@@ -91,6 +91,10 @@ Serial (COBS/R + CRC32 + ChaCha20-Poly1305 AEAD)
 
 ## Key Conventions
 
+### Architectural Priorities
+1. **Code Reduction first**: aggressively eliminate boilerplate, wrappers, shims, dead/abandoned code, and redundant manual functions.
+2. **Library-First**: utilize 100% of implemented standard and external libraries directly rather than rolling manual implementations.
+
 ### Protocol changes
 All new data crossing the serial boundary must be defined in `mcubridge.proto` first. Run `tox -e protocol` to regenerate. `msgspec` is deprecated for protocol types — use Protobuf only.
 
@@ -115,7 +119,10 @@ All new data crossing the serial boundary must be defined in `mcubridge.proto` f
 - Declarative dispatch & Protobuf native copying: use `dict[Command, Callable]` dispatch tables and `CopyFrom()` / `MergeFrom()`.
 - Zero-loop imperative rule (C++): substitute manual `for`/`while` loops with `etl::` algorithms (`etl::find`, `etl::copy`, `etl::transform`).
 - Eradicate passthrough methods: access internal members directly if a wrapper method adds no business logic.
-- Managed task concurrency: manage async tasks via `asyncio.TaskGroup` or context managers instead of manual `try-finally` cancellation blocks.
+- Managed task concurrency: manage async task lifecycles via `asyncio.TaskGroup` or context managers instead of manual `try-finally` cancellation blocks.
 - Genuine test integrity: tests must assert real component state/responses; superficial line-hitting without assertions or dummy mocks are strictly forbidden.
+- **Line-by-line test & log audit**: test execution outputs and full execution logs MUST be audited line by line regardless of whether tests pass. Treat every notice, warning, unhandled trace, or implicit anomaly as a critical failure.
+- **Continuous test hardening & defect remediation**: whenever a defect, unhandled edge condition, or logic bug is discovered that was not caught by the existing test suite, immediately implement corresponding test cases and strict assertions to guarantee future automated detection and regression prevention.
+- **Maximal test verbosity rule**: ALL test runners, validation environments, and test harnesses across the entire ecosystem MUST ALWAYS execute with maximum verbosity (e.g., `pytest -vv`, detailed Unity/C++ runner outputs). Compressed or silent output modes are strictly prohibited.
 - If a test fails because of a correct implementation, fix the test — never compromise the implementation for test compatibility.
 - `tox -e gemini-parity` (`tools/check_gemini_parity.py`) validates consistency between GEMINI.md, AGENTS.md, and `.copilot-instructions` to ensure all AI config files remain in sync.

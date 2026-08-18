@@ -347,37 +347,3 @@ class PendingCommand:
             self.failure_status = status
         if not self.completion.is_set():
             self.completion.set()
-
-
-def parse_pin_spec(pin_spec: str | int) -> tuple[str, int]:
-    """Parse and normalize pin specification to (topic_code, pin_number). [SIL-2]
-
-    Accepts: 'A0', 'a0', '13', 13, etc.
-    Returns: ('a' or 'd', pin_number)
-    """
-    if isinstance(pin_spec, int):
-        return "d", pin_spec
-    s = str(pin_spec).strip()
-    if s.upper().startswith("A") and s[1:].isdigit():
-        return "a", int(s[1:])
-    if s.isdigit():
-        return "d", int(s)
-    return "d", -1
-
-
-def is_query_route(route: TopicRoute | None, action: str | None) -> bool:
-    """Determine declaratively if a TopicRoute and action constitute a query expecting a reply. [SIL-2]"""
-    if route is None:
-        return False
-    tp = route.topic.value if hasattr(route.topic, "value") else str(route.topic)
-    if tp in ("d", "a"):
-        return action == "read"
-    if tp == "datastore":
-        return action == "get"
-    if tp == "system":
-        return "get" in route.segments or action in ("version", "freeram", "free_memory", "bridge")
-    if tp == "file":
-        return action == "read"
-    if tp == "spi":
-        return action == "transfer"
-    return False

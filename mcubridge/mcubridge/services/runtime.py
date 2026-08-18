@@ -65,9 +65,7 @@ from ..protocol.structures import (
     is_command_allowed,
     allows_topic,
     get_ssl_context,
-    is_query_route,
     iter_chunks,
-    parse_pin_spec,
 )
 from ..protocol.topics import Topic, get_topic_for_message, parse_topic, topic_path
 from ..metrics import (
@@ -1274,8 +1272,8 @@ class BridgeService:
             return True
 
     def _parse_pin(self, s: str) -> int:
-        _, pin = parse_pin_spec(s)
-        return pin
+        s = s.upper()
+        return int(s[1:]) if s.startswith("A") and s[1:].isdigit() else (int(s) if s.isdigit() else -1)
 
     def deduce_action(self, r: TopicRoute) -> str | None:
         if r.topic == Topic.SYSTEM:
@@ -1639,7 +1637,19 @@ class LocalBridgeService(LocalBridgeBase):
         route = parse_topic(self.runtime_service.state.cloud_topic_prefix, request.topic_name)
         action = self.runtime_service.deduce_action(route) if route else None
 
-        is_query = has_correlation or is_query_route(route, action)
+        is_query = has_correlation or (
+            route is not None
+            and (
+                (route.topic in (Topic.DIGITAL, Topic.ANALOG) and action == PinAction.READ)
+                or (route.topic == Topic.DATASTORE and action == DatastoreAction.GET)
+                or (
+                    route.topic == Topic.SYSTEM
+                    and ("get" in route.segments or action in ("version", "freeram", "bridge"))
+                )
+                or (route.topic == Topic.FILE and action == FileAction.READ)
+                or (route.topic == Topic.SPI and action == SpiAction.TRANSFER)
+            )
+        )
 
         correlation = request.correlation_data if has_correlation else (secrets.token_bytes(12) if is_query else b"")
 

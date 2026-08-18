@@ -15,6 +15,7 @@
 #include <wolfssl/wolfcrypt/kdf.h>
 
 #include "../config/bridge_config.h"  // IWYU pragma: keep
+#include "../protocol/rpc_structs.h"
 #include "pb_encode.h"
 
 namespace rpc {
@@ -73,17 +74,15 @@ void derive_session_key(etl::span<const uint8_t> secret,
 
 static size_t build_aad(uint16_t cmd_id, uint16_t seq_id,
                         etl::span<uint8_t> out_ad) {
+  payload::RpcEnvelope aad_env = rpc_pb_RpcEnvelope_init_zero;
+  aad_env.version = rpc::PROTOCOL_VERSION;
+  aad_env.command_id = cmd_id;
+  aad_env.sequence_id = seq_id;
+
   etl::fill(out_ad.begin(), out_ad.end(), 0U);
   pb_ostream_t stream = pb_ostream_from_buffer(out_ad.data(), out_ad.size());
-  if (!pb_encode_tag(&stream, PB_WT_VARINT, 1U) ||
-      !pb_encode_varint(&stream,
-                        static_cast<uint32_t>(rpc::PROTOCOL_VERSION)) ||
-      !pb_encode_tag(&stream, PB_WT_VARINT, 2U) ||
-      !pb_encode_varint(&stream, static_cast<uint32_t>(cmd_id)) ||
-      !pb_encode_tag(&stream, PB_WT_VARINT, 3U) ||
-      !pb_encode_varint(&stream, static_cast<uint32_t>(seq_id))) {
-    return 0U;
-  }
+  (void)pb_encode(&stream, rpc::Payload::get_fields<rpc_pb_RpcEnvelope>(),
+                  &aad_env);
   return stream.bytes_written;
 }
 

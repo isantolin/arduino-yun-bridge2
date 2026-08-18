@@ -16,7 +16,6 @@ from .mcubridge_pb2 import CloudQueuedPublish as CloudQueuedPublish
 from .protocol import (
     Command as Command,
     Topic as Topic,
-    parse_pin_spec as parse_pin_spec,
 )
 from .spi import SpiDevice as SpiDevice
 

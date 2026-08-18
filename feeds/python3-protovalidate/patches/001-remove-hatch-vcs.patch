@@ -1,0 +1,25 @@
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -33,7 +33,7 @@
+   # Ref: https://github.com/protocolbuffers/protobuf/pull/20594
+   "protobuf>=6.31.0; python_version >= '3.14'",
+ ]
+-dynamic = ["version"]
++version = "1.2.0"
+ 
+ [project.urls]
+ Documentation = "https://protovalidate.com"
+@@ -52,12 +52,7 @@
+ ]
+ 
+ [build-system]
+-requires = ["hatch-vcs", "hatchling"]
++requires = ["hatchling"]
+ build-backend = "hatchling.build"
+ 
+-[tool.hatch.version]
+-source = "vcs"
+-raw-options = { fallback_version = "0.0.0" }
+-
+ [tool.mypy]
+ mypy_path = "gen"

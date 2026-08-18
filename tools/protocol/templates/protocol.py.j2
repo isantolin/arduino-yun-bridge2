@@ -20,6 +20,7 @@ CLOUD_WILDCARD_MULTI: Final[str] = "#"
 {{ const.name }}: Final[{{ const.type }}] = {{ const.value }}
 {%- endfor %}
 HANDSHAKE_CONFIG_SIZE: Final[int] = 7
+ZERO_NONCE: Final[bytes] = b"\x00" * AEAD_NONCE_SIZE
 
 
 {% for cap, val in capabilities.items() %}

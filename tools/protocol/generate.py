@@ -35,7 +35,17 @@ import typer
 # ═════════════════════════════════════════════════════════════════════════════
 REQUIRED_DEPS = ["jinja2", "google.protobuf", "nanopb"]
 MISSING_DEPS: list[str] = []
-UNTYPED_LIBS = ["cobs", "prometheus_client", "serialx", "uci", "uvloop", "typer", "lmdb", "nanopb", "distlib"]
+UNTYPED_LIBS = [
+    "cobs",
+    "prometheus_client",
+    "serialx",
+    "uci",
+    "uvloop",
+    "typer",
+    "lmdb",
+    "nanopb",
+    "distlib",
+]
 
 for dep in REQUIRED_DEPS:
     if importlib.util.find_spec(dep.split(".")[0]) is None:

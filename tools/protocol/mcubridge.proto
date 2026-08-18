@@ -1363,12 +1363,12 @@ message PinControlResponse {
 }
 
 message RpcEnvelope {
-    uint32 version = 1;
-    uint32 command_id = 2;
-    uint32 sequence_id = 3;
+    uint32 version = 1 [(buf.validate.field).uint32.const = 2];
+    uint32 command_id = 2 [(buf.validate.field).uint32.lte = 65535];
+    uint32 sequence_id = 3 [(buf.validate.field).uint32.lte = 65535];
     bytes nonce = 4;
     oneof payload_type {
-        bytes encrypted_payload_with_tag = 6;
+        bytes encrypted_payload_with_tag = 6 [(buf.validate.field).bytes.max_len = 1040];
         VersionResponse version_response = 7;
         FreeMemoryResponse free_memory_response = 8;
         Capabilities capabilities = 9;

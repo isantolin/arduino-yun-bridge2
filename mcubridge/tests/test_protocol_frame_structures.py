@@ -12,10 +12,10 @@ from typing import Any
 
 
 def test_build_frame_invalid_command_id() -> None:
-    with pytest.raises(ValueError, match="Invalid command ID"):
+    with pytest.raises(ValueError):
         frame.build_frame(-1, 1)
 
-    with pytest.raises(ValueError, match="Invalid command ID"):
+    with pytest.raises(ValueError):
         frame.build_frame(0x10000, 1)
 
 
@@ -111,7 +111,7 @@ def test_parse_frame_invalid_version() -> None:
 
     crc_bytes = (crc32(body) & protocol.CRC32_MASK).to_bytes(4, "little")
     raw = body + crc_bytes
-    with pytest.raises(ValueError, match="Invalid protocol version"):
+    with pytest.raises(ValueError, match="Invalid frame envelope"):
         frame.parse_frame(raw)
 
 

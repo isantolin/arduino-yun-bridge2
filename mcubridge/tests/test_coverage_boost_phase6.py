@@ -1447,3 +1447,18 @@ async def test_metrics_prometheus_exporter_finally_branches(mock_state: RuntimeS
             mock_loop.return_value.run_in_executor = _mock_run_in_executor
             with pytest.raises(asyncio.CancelledError):
                 await exp.run()
+
+
+def test_protocol_frame_protovalidate_validation_error() -> None:
+    from mcubridge.protocol import frame
+    import protovalidate
+    from unittest.mock import patch
+
+    with patch("protovalidate.validate", side_effect=protovalidate.ValidationError("invalid frame", violations=[])):
+        with pytest.raises(ValueError, match="Invalid frame envelope"):
+            frame.build_frame(1, 1)
+
+    valid_frame = frame.build_frame(1, 1)
+    with patch("protovalidate.validate", side_effect=protovalidate.ValidationError("invalid frame", violations=[])):
+        with pytest.raises(ValueError, match="Invalid frame envelope"):
+            frame.parse_frame(valid_frame)

@@ -5,9 +5,6 @@ Direct PTY-PTY link via socat, with MCU opening its PTY directly.
 """
 
 from __future__ import annotations
-from mcubridge.config.logging import configure_logging
-import structlog
-
 import contextlib
 import os
 import signal
@@ -19,28 +16,27 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-try:
-    from mcubridge.protocol import protocol
-except ModuleNotFoundError as exc:
-    # CI can invoke this script without tox's PYTHONPATH wiring.
-    if exc.name not in {"mcubridge", "mcubridge.protocol"}:
-        raise
-    repo_root = Path(__file__).resolve().parents[1]
+repo_root = Path(__file__).resolve().parents[1]
+if str(repo_root / "mcubridge") not in sys.path:
     sys.path.insert(0, str(repo_root / "mcubridge"))
+if str(repo_root / "mcubridge-client-examples") not in sys.path:
     sys.path.insert(0, str(repo_root / "mcubridge-client-examples"))
+if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
-    from mcubridge.protocol import protocol
 
 import json
 import tempfile
+import structlog
 import typer
 from typing import Annotated
+
+from mcubridge.config.logging import configure_logging
+from mcubridge.protocol import protocol
 
 # --- Constants ---
 SOCAT_PORT0 = "/tmp/ttyBRIDGE0"
 CLOUD_HOST = "127.0.0.1"
 CLOUD_PORT = 8443
-
 
 configure_logging(console=True)
 logger = structlog.get_logger("emulation-runner")

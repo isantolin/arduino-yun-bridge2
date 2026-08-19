@@ -51,9 +51,9 @@ void test_bridge_handshake() {
 
   // 2. Build LinkSync frame using FrameBuilder
   etl::array<uint8_t, rpc::MAX_FRAME_SIZE> frame_raw;
-  etl::array<uint8_t, rpc::AEAD_NONCE_SIZE> frame_nonce = {};
+  etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> frame_nonce = {};
   // [MEM-SAVE] Reusing nonce for handshake (aligned with protocol spec).
-  etl::copy_n(nonce.begin(), rpc::AEAD_NONCE_SIZE, frame_nonce.begin());
+  etl::copy_n(nonce.begin(), rpc::RPC_AEAD_NONCE_SIZE, frame_nonce.begin());
 
   size_t len = rpc::serialize_frame(
       rpc::build_envelope(
@@ -95,7 +95,7 @@ void test_bridge_process_rx() {
   (void)pb_encode(&pbos, rpc::Payload::get_fields<decltype(msg)>(), &msg);
 
   etl::array<uint8_t, rpc::MAX_FRAME_SIZE> frame_raw;
-  etl::array<uint8_t, rpc::AEAD_NONCE_SIZE> frame_nonce = {};
+  etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> frame_nonce = {};
 
   size_t len = rpc::serialize_frame(
       rpc::build_envelope(
@@ -126,7 +126,7 @@ void test_bridge_dedup_console_write() {
   (void)pb_encode(&pbos, rpc::Payload::get_fields<decltype(msg)>(), &msg);
 
   etl::array<uint8_t, rpc::MAX_FRAME_SIZE> frame_raw;
-  etl::array<uint8_t, rpc::AEAD_NONCE_SIZE> frame_nonce = {};
+  etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> frame_nonce = {};
 
   size_t len = rpc::serialize_frame(
       rpc::build_envelope(
@@ -167,8 +167,8 @@ void test_bridge_status_ack() {
   (void)pb_encode(&pbos, rpc::Payload::get_fields<decltype(p)>(), &p);
 
   etl::array<uint8_t, rpc::MAX_FRAME_SIZE> frame_raw;
-  etl::array<uint8_t, rpc::AEAD_NONCE_SIZE> frame_nonce = {};
-  etl::array<uint8_t, rpc::AEAD_TAG_SIZE> frame_tag = {};
+  etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> frame_nonce = {};
+  etl::array<uint8_t, rpc::RPC_AEAD_TAG_SIZE> frame_tag = {};
 
   size_t len = rpc::serialize_frame(
       rpc::build_envelope(

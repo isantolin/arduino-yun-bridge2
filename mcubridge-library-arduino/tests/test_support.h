@@ -248,21 +248,21 @@ inline rpc_pb_RpcEnvelope build_envelope(uint16_t cmd_id, uint16_t seq_id,
 
   if (!nonce.empty()) {
     const size_t n_size =
-        etl::min(nonce.size(), static_cast<size_t>(AEAD_NONCE_SIZE));
+        etl::min(nonce.size(), static_cast<size_t>(rpc::RPC_AEAD_NONCE_SIZE));
     etl::copy_n(nonce.begin(), n_size, env.nonce.bytes);
     env.nonce.size = static_cast<pb_size_t>(n_size);
   }
 
   if (!payload.empty()) {
     const size_t p_size =
-        etl::min(payload.size(), static_cast<size_t>(MAX_PAYLOAD_SIZE));
+        etl::min(payload.size(), static_cast<size_t>(rpc::MAX_PAYLOAD_SIZE));
     env.which_payload_type = rpc_pb_RpcEnvelope_encrypted_payload_with_tag_tag;
     etl::copy_n(payload.begin(), p_size,
                 env.payload_type.encrypted_payload_with_tag.bytes);
     size_t total_size = p_size;
     if (!tag.empty() && do_encrypt) {
       const size_t t_size =
-          etl::min(tag.size(), static_cast<size_t>(AEAD_TAG_SIZE));
+          etl::min(tag.size(), static_cast<size_t>(rpc::RPC_AEAD_TAG_SIZE));
       etl::copy_n(tag.begin(), t_size,
                   env.payload_type.encrypted_payload_with_tag.bytes + p_size);
       total_size += t_size;
@@ -271,7 +271,7 @@ inline rpc_pb_RpcEnvelope build_envelope(uint16_t cmd_id, uint16_t seq_id,
         static_cast<pb_size_t>(total_size);
   } else if (!tag.empty() && do_encrypt) {
     const size_t t_size =
-        etl::min(tag.size(), static_cast<size_t>(AEAD_TAG_SIZE));
+        etl::min(tag.size(), static_cast<size_t>(rpc::RPC_AEAD_TAG_SIZE));
     env.which_payload_type = rpc_pb_RpcEnvelope_encrypted_payload_with_tag_tag;
     etl::copy_n(tag.begin(), t_size,
                 env.payload_type.encrypted_payload_with_tag.bytes);

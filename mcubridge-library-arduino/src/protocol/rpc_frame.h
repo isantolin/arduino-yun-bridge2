@@ -19,7 +19,6 @@
 #include <etl/span.h>
 
 #include "rpc_protocol.h"
-#include "rpc_structs.h"
 
 namespace rpc {
 

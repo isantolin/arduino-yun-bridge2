@@ -595,8 +595,8 @@ void BridgeClass::_transmit(uint16_t command_id, uint16_t sequence_id,
   const bool is_excluded = rpc::is_system_command(raw_cmd);
   const bool do_encrypt =
       isSynchronized() && !_shared_secret.empty() && !is_excluded;
-  etl::array<uint8_t, rpc::AEAD_NONCE_SIZE> nonce = {};
-  etl::array<uint8_t, rpc::AEAD_TAG_SIZE> tag = {};
+  etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> nonce = {};
+  etl::array<uint8_t, rpc::RPC_AEAD_TAG_SIZE> tag = {};
   etl::span<const uint8_t> final_payload = payload;
   if (do_encrypt) {
     if (!rpc::security::aead_encrypt_frame(raw_cmd, sequence_id, payload,
@@ -610,8 +610,9 @@ void BridgeClass::_transmit(uint16_t command_id, uint16_t sequence_id,
   _tx_envelope.version = rpc::PROTOCOL_VERSION;
   _tx_envelope.command_id = command_id;
   _tx_envelope.sequence_id = sequence_id;
-  etl::copy_n(nonce.begin(), rpc::AEAD_NONCE_SIZE, _tx_envelope.nonce.bytes);
-  _tx_envelope.nonce.size = static_cast<pb_size_t>(rpc::AEAD_NONCE_SIZE);
+  etl::copy_n(nonce.begin(), rpc::RPC_AEAD_NONCE_SIZE,
+              _tx_envelope.nonce.bytes);
+  _tx_envelope.nonce.size = static_cast<pb_size_t>(rpc::RPC_AEAD_NONCE_SIZE);
   const size_t pl_size = etl::min(final_payload.size(),
                                   static_cast<size_t>(rpc::MAX_PAYLOAD_SIZE));
   _tx_envelope.which_payload_type =
@@ -620,10 +621,10 @@ void BridgeClass::_transmit(uint16_t command_id, uint16_t sequence_id,
     etl::copy_n(final_payload.begin(), pl_size,
                 _tx_envelope.payload_type.encrypted_payload_with_tag.bytes);
     etl::copy_n(
-        tag.begin(), rpc::AEAD_TAG_SIZE,
+        tag.begin(), rpc::RPC_AEAD_TAG_SIZE,
         _tx_envelope.payload_type.encrypted_payload_with_tag.bytes + pl_size);
     _tx_envelope.payload_type.encrypted_payload_with_tag.size =
-        static_cast<pb_size_t>(pl_size + rpc::AEAD_TAG_SIZE);
+        static_cast<pb_size_t>(pl_size + rpc::RPC_AEAD_TAG_SIZE);
   } else {
     etl::copy_n(final_payload.begin(), pl_size,
                 _tx_envelope.payload_type.encrypted_payload_with_tag.bytes);

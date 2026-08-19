@@ -5,7 +5,6 @@
 #include <etl/span.h>
 #include <stdint.h>
 
-#include "etl_profile.h"
 #include "protocol/rpc_frame.h"
 
 // [SIL-2] Instanciaciones explícitas de plantillas para reducir el crecimiento

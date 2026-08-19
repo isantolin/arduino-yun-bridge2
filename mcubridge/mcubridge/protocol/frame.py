@@ -11,10 +11,9 @@ between the Linux daemon and the Arduino MCU.
 
 from __future__ import annotations
 
-import struct
 from binascii import crc32
 from functools import lru_cache
-from typing import Final, NamedTuple
+from typing import Final
 
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
@@ -24,7 +23,6 @@ from google.protobuf.message import DecodeError, Message as ProtobufMessage
 from mcubridge.protocol import mcubridge_pb2 as pb
 from . import is_system_command, protocol
 
-_CRC_STRUCT: Final = struct.Struct("<I")
 _NONCE_SIZE: Final = protocol.AEAD_NONCE_SIZE
 _TAG_SIZE: Final = protocol.AEAD_TAG_SIZE
 _CRC_SIZE: Final = protocol.CRC_SIZE
@@ -36,8 +34,30 @@ def _get_cipher(session_key: bytes) -> ChaCha20Poly1305:
     return ChaCha20Poly1305(session_key)
 
 
+@lru_cache(maxsize=4096)
 def _build_aad_bytes(version: int, command_id: int, sequence_id: int) -> bytes:
-    """Build AEAD AAD via standard Protobuf serialization of RpcEnvelope header fields. [SIL-2]"""
+    """Build AEAD AAD via fast direct varint encoding and cached Protobuf serialization. [SIL-2]"""
+    if version == 1:
+        if command_id < 0x80 and sequence_id < 0x80:
+            return bytes((0x08, 0x01, 0x10, command_id, 0x18, sequence_id))
+        if command_id < 0x80 and sequence_id < 0x4000:
+            return bytes((0x08, 0x01, 0x10, command_id, 0x18, (sequence_id & 0x7F) | 0x80, sequence_id >> 7))
+        if command_id < 0x4000 and sequence_id < 0x80:
+            return bytes((0x08, 0x01, 0x10, (command_id & 0x7F) | 0x80, command_id >> 7, 0x18, sequence_id))
+        if command_id < 0x4000 and sequence_id < 0x4000:
+            return bytes(
+                (
+                    0x08,
+                    0x01,
+                    0x10,
+                    (command_id & 0x7F) | 0x80,
+                    command_id >> 7,
+                    0x18,
+                    (sequence_id & 0x7F) | 0x80,
+                    sequence_id >> 7,
+                )
+            )
+
     return pb.RpcEnvelope(
         version=version,
         command_id=command_id,
@@ -45,9 +65,34 @@ def _build_aad_bytes(version: int, command_id: int, sequence_id: int) -> bytes:
     ).SerializeToString()
 
 
-class DecodedFrame(NamedTuple):
-    envelope: pb.RpcEnvelope
-    payload: bytes | ProtobufMessage
+class DecodedFrame:
+    """High-performance decoded frame structure with zero NamedTuple overhead. [SIL-2]"""
+
+    __slots__ = ("envelope", "payload")
+
+    def __init__(self, envelope: pb.RpcEnvelope, payload: bytes | ProtobufMessage) -> None:
+        self.envelope = envelope
+        self.payload = payload
+
+    def __iter__(self):
+        yield self.envelope
+        yield self.payload
+
+    def __getitem__(self, index: int) -> pb.RpcEnvelope | bytes | ProtobufMessage:
+        if index == 0:
+            return self.envelope
+        if index == 1:
+            return self.payload
+        raise IndexError("DecodedFrame index out of range")
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, DecodedFrame):
+            return self.envelope == other.envelope and self.payload == other.payload
+        if isinstance(other, tuple) and len(other) == 2:
+            return self.envelope == other[0] and self.payload == other[1]
+        return False
+
+    __hash__ = None
 
 
 def build_frame(
@@ -107,7 +152,8 @@ def build_frame(
             envelope.encrypted_payload_with_tag = payload
 
     body = envelope.SerializeToString()
-    return body + _CRC_STRUCT.pack(crc32(body) & protocol.CRC32_MASK)
+    crc = crc32(body) & protocol.CRC32_MASK
+    return body + crc.to_bytes(4, "little")
 
 
 def parse_frame(raw_frame_buffer: bytes | bytearray | memoryview, session_key: bytes | None = None) -> DecodedFrame:
@@ -118,17 +164,20 @@ def parse_frame(raw_frame_buffer: bytes | bytearray | memoryview, session_key: b
     - Fast native version verification and C-extension Protobuf parsing guarantee deterministic,
       safe, and high-frequency serial packet deserialization.
     """
-    mv = memoryview(raw_frame_buffer)
-    if len(mv) < _CRC_SIZE:
+    buf_len = len(raw_frame_buffer)
+    if buf_len < _CRC_SIZE:
         raise ValueError("Incomplete frame: too short")
 
-    body, crc_bytes = mv[:-_CRC_SIZE], mv[-_CRC_SIZE:]
-    if (crc32(body) & protocol.CRC32_MASK) != _CRC_STRUCT.unpack(crc_bytes)[0]:
+    body = raw_frame_buffer[:-_CRC_SIZE]
+    crc_bytes = raw_frame_buffer[-_CRC_SIZE:]
+    expected_crc = int.from_bytes(crc_bytes, "little")
+    actual_crc = crc32(body) & protocol.CRC32_MASK
+    if actual_crc != expected_crc:
         raise ValueError("CRC mismatch")
 
     envelope = pb.RpcEnvelope()
     try:
-        envelope.ParseFromString(bytes(body))
+        envelope.ParseFromString(body if isinstance(body, bytes) else bytes(body))
     except DecodeError as e:
         raise ValueError(f"Failed to parse Protobuf envelope: {e}") from e
 

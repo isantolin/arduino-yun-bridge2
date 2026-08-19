@@ -491,12 +491,13 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
   bridge::hal::init();
   if (!_fsm.is_started()) _fsm.start();
   _fsm.receive(bridge::fsm::EvReset());
-#if BRIDGE_ENABLE_POST_TESTS
-  _is_post_passed = rpc::security::run_cryptographic_self_tests();
-  if (!_is_post_passed) enterSafeState();
-#else
-  _is_post_passed = true;
-#endif
+
+  _is_post_passed = bridge::hal::run_power_on_self_tests();
+  if (!_is_post_passed) {
+    enterSafeState();
+    return;
+  }
+
   if constexpr (bridge::hal::CurrentArchTraits::id ==
                 bridge::hal::ArchId::ARCH_AVR)
     if (baudrate > 0 && _hardware_serial) _hardware_serial->begin(baudrate);
@@ -524,10 +525,23 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
 }
 
 void BridgeClass::process() {
+  const uint32_t start_us = ::micros();
+
+  // [SIL-2] Continuous Stack Sentinel & Watermarking verification
+  if (!bridge::hal::checkStackOverflow()) {
+    enterSafeState();
+    return;
+  }
+
   _watchdogTask();
   _serialTask();
   _timerTask();
   if constexpr (bridge::config::ENABLE_MAILBOX) Mailbox.process();
+
+  const uint32_t elapsed_us = ::micros() - start_us;
+  if (elapsed_us > _wcet_max_micros) {
+    _wcet_max_micros = elapsed_us;
+  }
 }
 void BridgeClass::_watchdogTask() { bridge::hal::watchdog_kick(); }
 

@@ -1,3 +1,4 @@
+#define BRIDGE_ENABLE_TEST_INTERFACE
 #include <etl/array.h>
 #include <etl/span.h>
 #include <unity.h>
@@ -5,7 +6,7 @@
 #include "Bridge.h"
 #include "BridgeTestInterface.h"
 #include "services/Console.h"
-#include "test_support.h"
+#include "test_support.h"  // IWYU pragma: keep
 
 using namespace bridge::test;
 
@@ -182,6 +183,23 @@ void test_bridge_status_ack() {
   TEST_ASSERT_FALSE(ba.isAwaitingAck());
 }
 
+void test_bridge_post_and_stack_sentinel() {
+  TEST_ASSERT_TRUE(bridge::hal::run_power_on_self_tests());
+  TEST_ASSERT_TRUE(bridge::hal::checkStackOverflow());
+  TEST_ASSERT_GREATER_OR_EQUAL_UINT16(bridge::hal::MIN_STACK_MARGIN_BYTES,
+                                      bridge::hal::getFreeStackMargin());
+  TEST_ASSERT_TRUE(Bridge.isPostPassed());
+  TEST_ASSERT_GREATER_OR_EQUAL_UINT16(bridge::hal::MIN_STACK_MARGIN_BYTES,
+                                      Bridge.getFreeStackMargin());
+}
+
+void test_bridge_wcet_tracking() {
+  Bridge.resetWcetStats();
+  TEST_ASSERT_EQUAL_UINT32(0, Bridge.getWcetMaxMicros());
+  Bridge.process();
+  TEST_ASSERT_GREATER_OR_EQUAL_UINT32(0, Bridge.getWcetMaxMicros());
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_bridge_initialization);
@@ -190,5 +208,7 @@ int main() {
   RUN_TEST(test_bridge_process_rx);
   RUN_TEST(test_bridge_dedup_console_write);
   RUN_TEST(test_bridge_status_ack);
+  RUN_TEST(test_bridge_post_and_stack_sentinel);
+  RUN_TEST(test_bridge_wcet_tracking);
   return UNITY_END();
 }

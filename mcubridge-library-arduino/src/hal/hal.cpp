@@ -6,7 +6,8 @@
 #include "ArchTraits.h"
 #include "config/bridge_config.h"
 #include "protocol/rpc_protocol.h"
-#include "protocol/rpc_structs.h"
+#include "protocol/rpc_structs.h"  // IWYU pragma: keep
+#include "security/security.h"
 
 #if defined(ARDUINO_ARCH_AVR)
 extern "C" {
@@ -93,20 +94,67 @@ uint16_t getFreeMemory() {
         (__brkval == 0 ? reinterpret_cast<uintptr_t>(&__heap_start)
                        : reinterpret_cast<uintptr_t>(__brkval)));
 #else
-    return Traits::default_free_memory;
+    return static_cast<uint16_t>(Traits::default_free_memory);
 #endif
   } else if constexpr (Traits::id == ArchId::ARCH_ESP32) {
 #if defined(ARDUINO_ARCH_ESP32)
     return static_cast<uint16_t>(ESP.getFreeHeap());
 #else
-    return Traits::default_free_memory;
+    return static_cast<uint16_t>(Traits::default_free_memory);
 #endif
+  } else if constexpr (Traits::id == ArchId::ARCH_HOST) {
+    return static_cast<uint16_t>(Traits::default_free_memory);
   }
-  return bridge::config::FALLBACK_FREE_MEMORY;
+  return static_cast<uint16_t>(Traits::default_free_memory);
+}
+
+static volatile uint32_t s_stack_canary = STACK_CANARY_VALUE;
+
+void initStackCanary() {
+#if defined(ARDUINO_ARCH_AVR)
+  char* heap_ptr = (__brkval == 0 ? &__heap_start : __brkval);
+  *reinterpret_cast<volatile uint32_t*>(heap_ptr) = STACK_CANARY_VALUE;
+#endif
+  s_stack_canary = STACK_CANARY_VALUE;
+}
+
+uint16_t getFreeStackMargin() { return getFreeMemory(); }
+
+bool checkStackOverflow() {
+#if defined(ARDUINO_ARCH_AVR)
+  char* heap_ptr = (__brkval == 0 ? &__heap_start : __brkval);
+  if (*reinterpret_cast<volatile uint32_t*>(heap_ptr) != STACK_CANARY_VALUE) {
+    return false;
+  }
+#endif
+  return (s_stack_canary == STACK_CANARY_VALUE) &&
+         (getFreeStackMargin() >= MIN_STACK_MARGIN_BYTES);
+}
+
+static bool run_sram_march_test() {
+  etl::array<uint8_t, 32> march_probe{};
+  constexpr etl::array<uint8_t, 4> patterns = {0x55, 0xAA, 0x00, 0xFF};
+
+  return etl::all_of(
+      patterns.begin(), patterns.end(), [&march_probe](uint8_t pat) {
+        etl::fill(march_probe.begin(), march_probe.end(), pat);
+        return etl::all_of(march_probe.begin(), march_probe.end(),
+                           [pat](uint8_t v) { return v == pat; });
+      });
+}
+
+bool run_power_on_self_tests() {
+  initStackCanary();
+  return run_sram_march_test() && checkStackOverflow()
+#if BRIDGE_ENABLE_POST_TESTS
+         && rpc::security::run_cryptographic_self_tests()
+#endif
+      ;
 }
 
 void init() {
   forceSafeState();
+  initStackCanary();
   if constexpr (bridge::config::ENABLE_WATCHDOG) {
     if constexpr (Traits::id == ArchId::ARCH_AVR) {
 #if defined(ARDUINO_ARCH_AVR)

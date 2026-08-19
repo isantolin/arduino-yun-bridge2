@@ -164,6 +164,12 @@ EOF
 	```
 - TopicAuthorization ahora opera en modo "deny-by-default": cualquier combinación no autorizada explícitamente se rechaza.
 
+## Documentación Técnica y Normativa
+
+- [Manual de Seguridad Funcional SIL-2](file:///home/ignaciosantolin/arduino-yun-bridge2/docs/safety/SIL2_SAFETY_MANUAL.md): Especificación formal de arquitectura Zero-Heap, POST de hardware, Stack Sentinel y WCET.
+- [Política de Seguridad Criptográfica FIPS 140-3](file:///home/ignaciosantolin/arduino-yun-bridge2/docs/security/FIPS140_3_SECURITY_POLICY.md): Límites criptográficos, roles, Known-Answer Tests (KATs) y zeroización.
+- [Especificación del Protocolo Binario](file:///home/ignaciosantolin/arduino-yun-bridge2/docs/PROTOCOL.md): Encuadre COBS/R, CRC32, AEAD y tablas de comandos.
+
 ## Verificación y control de calidad
 
 - **Tipado estático:** Ejecuta `pyright` en la raíz del repositorio.

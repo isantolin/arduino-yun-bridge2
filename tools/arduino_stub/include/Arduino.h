@@ -58,9 +58,11 @@ inline long round(T x) {
 // ARDUINO_STUB_CUSTOM_MILLIS before including Arduino headers.
 #ifdef ARDUINO_STUB_CUSTOM_MILLIS
 unsigned long millis();
+unsigned long micros();
 void delay(unsigned long);
 #else
 inline unsigned long millis() { return 0; }
+inline unsigned long micros() { return 0; }
 inline void delay(unsigned long) {}
 #endif
 // Fix: Comment out unused parameter name to avoid compiler warning

@@ -84,15 +84,16 @@ def verify_crypto_integrity() -> bool:
     if h.finalize().hex() != "5375963f9e709b58415041bad2d44de21f50800e0841b87e0dadfcdfe362b26c":
         return False
 
-    # 3. ChaCha20-Poly1305 KAT
+    # 3. ChaCha20-Poly1305 KAT (RFC 8439 test vector with AAD and Tag verification)
     try:
-        key = b"\x00" * 32
-        nonce = b"\x00" * 12
+        key = bytes(range(0x80, 0xA0))
+        nonce = b"\x07\x00\x00\x00\x40\x41\x42\x43\x44\x45\x46\x47"
+        ad = b"\x50\x51\x52\x53\xc0\xc1\xc2\xc3\xc4\xc5\xc6\xc7"
         aead = ChaCha20Poly1305(key)
-        ct = aead.encrypt(nonce, b"", None)
-        if len(ct) != 16:
+        ct = aead.encrypt(nonce, b"test", ad)
+        if len(ct) != 20 or ct[-16:].hex() != "7dca8479787a5c190f58eedae6a06bcf":
             return False
-    except ValueError:
+    except (ValueError, TypeError):
         return False
 
     return True

@@ -2,6 +2,8 @@ CompileFlags:
   Add: [
     "-I/home/ignaciosantolin/arduino-yun-bridge2/mcubridge-library-arduino/src",
     "-I/home/ignaciosantolin/arduino-yun-bridge2/mcubridge-library-arduino/tests",
+    "-I/home/ignaciosantolin/arduino-yun-bridge2/mcubridge-library-arduino/tests/Unity/src",
+    "-I/home/ignaciosantolin/arduino-yun-bridge2/.dummy_libs/Unity/src",
     "-I/home/ignaciosantolin/arduino-yun-bridge2/tools/arduino_stub/include",
     "-I/home/ignaciosantolin/arduino-yun-bridge2/.dummy_libs/Embedded_Template_Library/include",
     "-I/home/ignaciosantolin/arduino-yun-bridge2/.dummy_libs/Embedded_Template_Library/arduino",
@@ -12,6 +14,7 @@ CompileFlags:
     "-I/home/ignaciosantolin/Arduino/libraries/wolfSSL",
     "-I/home/ignaciosantolin/Arduino/libraries/PacketSerial/src",
     "-DBRIDGE_HOST_TEST=1",
+    "-DBRIDGE_ENABLE_TEST_INTERFACE=1",
     "-DBRIDGE_ENABLE_SPI=1",
     "-DBRIDGE_ENABLE_DATASTORE=1",
     "-DBRIDGE_ENABLE_MAILBOX=1",

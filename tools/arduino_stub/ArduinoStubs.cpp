@@ -1,6 +1,6 @@
 #include "SPI.h"
 #include "Arduino.h"
-#include "BridgeFaultInjection.h"
+#include "BridgeFaultInjection.h"  // IWYU pragma: keep
 
 SPIClass SPI;
 HardwareSerial Serial __attribute__((weak));
@@ -12,6 +12,11 @@ Stream* g_arduino_stream_delegate __attribute__((weak)) = nullptr;
 unsigned long millis() __attribute__((weak));
 unsigned long millis() {
     return bridge::test::fault::clock_ms();
+}
+
+unsigned long micros() __attribute__((weak));
+unsigned long micros() {
+    return bridge::test::fault::clock_ms() * 1000UL;
 }
 
 void delay(unsigned long ms) __attribute__((weak));

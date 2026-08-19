@@ -113,6 +113,12 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   void begin(uint32_t baudrate = 0, const char* secret = nullptr);
   void process();
   bool isSynchronized() const;
+  bool isPostPassed() const { return _is_post_passed; }
+  uint32_t getWcetMaxMicros() const { return _wcet_max_micros; }
+  void resetWcetStats() { _wcet_max_micros = 0; }
+  static uint16_t getFreeStackMargin() {
+    return bridge::hal::getFreeStackMargin();
+  }
 
   // Explicit registration if needed, otherwise direct calls
   void enterSafeState();
@@ -349,6 +355,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
 
   bool _is_post_passed = false;
   bool _tx_enabled = true;
+  uint32_t _wcet_max_micros = 0;
 
   etl::pool<TxPayloadBuffer, bridge::config::MAX_PENDING_TX_FRAMES>
       _tx_payload_pool;

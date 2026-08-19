@@ -117,6 +117,41 @@ uint8_t getArchId();
 void getPinCounts(uint8_t& digital, uint8_t& analog);
 
 /**
+ * @brief [SIL-2] Value of the stack boundary sentinel canary.
+ */
+inline constexpr uint32_t STACK_CANARY_VALUE = 0x55AA55AA;
+
+/**
+ * [SIL-2] Minimum safe stack margin (in bytes) before considering stack
+ * overflow.
+ */
+inline constexpr uint16_t MIN_STACK_MARGIN_BYTES = 64;
+
+/**
+ * @brief [SIL-2] Initialize the stack canary sentinel at the memory boundary.
+ */
+void initStackCanary();
+
+/**
+ * @brief [SIL-2] Verify stack integrity and check for stack overflow.
+ * @return true if stack is intact and margin is safe, false if
+ * overflow/corrupt.
+ */
+bool checkStackOverflow();
+
+/**
+ * @brief [SIL-2] Get free stack margin in bytes.
+ */
+uint16_t getFreeStackMargin();
+
+/**
+ * @brief [SIL-2/FIPS 140-3] Run Power-On Self-Tests (SRAM March Test, Memory
+ * Sentinel & Crypto KATs).
+ * @return true if all self-tests pass, false otherwise.
+ */
+bool run_power_on_self_tests();
+
+/**
  * @brief [SIL-2] Enter MCU bootloader. Flushes state and triggers a
  * watchdog-driven reset into the bootloader. This function does not return.
  */

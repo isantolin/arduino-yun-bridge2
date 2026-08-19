@@ -39,9 +39,8 @@ def generate_nonce_with_counter(counter: int) -> tuple[bytes, int]:
     if counter >= protocol.NONCE_COUNTER_MASK or counter < 0:
         raise ValueError("Nonce counter overflow")
     new_counter = counter + 1
-    nonce = secrets.token_bytes(protocol.HANDSHAKE_NONCE_RANDOM_BYTES) + new_counter.to_bytes(
-        protocol.HANDSHAKE_NONCE_COUNTER_BYTES, "big"
-    )
+    random_bytes = protocol.AEAD_NONCE_SIZE - 8
+    nonce = secrets.token_bytes(random_bytes) + new_counter.to_bytes(8, "big")
     return nonce, new_counter
 
 
@@ -49,7 +48,7 @@ def extract_nonce_counter(nonce: bytes) -> int:
     """Extract the counter from a 12-byte nonce."""
     if len(nonce) != protocol.AEAD_NONCE_SIZE:
         raise ValueError(f"Nonce must be {protocol.AEAD_NONCE_SIZE} bytes, got {len(nonce)}")
-    return int.from_bytes(nonce[protocol.HANDSHAKE_NONCE_RANDOM_BYTES :], "big")
+    return int.from_bytes(nonce[protocol.AEAD_NONCE_SIZE - 8 :], "big")
 
 
 def validate_nonce_counter(nonce: bytes, last_counter: int) -> tuple[bool, int]:

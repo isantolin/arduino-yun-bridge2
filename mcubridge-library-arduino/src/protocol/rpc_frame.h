@@ -17,7 +17,10 @@
 #include <etl/crc32.h>
 #include <etl/expected.h>
 #include <etl/span.h>
+#include <pb_decode.h>
+#include <pb_encode.h>
 
+#include "mcubridge.pb.h"
 #include "rpc_protocol.h"
 
 namespace rpc {

@@ -217,8 +217,8 @@ static bool extract_next_valid_frame(const ByteBuffer<N>& buffer,
 #include "BridgeTestInterface.h"
 
 inline void reset_bridge_core(BridgeClass& bridge, Stream& stream,
-                               unsigned long baudrate = 0,
-                               const char* secret = "top-secret") {
+                              unsigned long baudrate = 0,
+                              const char* secret = "top-secret") {
   bridge.~BridgeClass();
   new (&bridge) bridge::test::TestAccessor(stream);
   if (baudrate) {

@@ -379,8 +379,9 @@ if [ -n "$apks_to_install" ]; then
 fi
 
 if [ "$project_apk_installed" -eq 0 ]; then
-    echo "[WARN] No project .apk files found in bin/. 'mcubridge' package was NOT installed."
-    echo "[HINT] Run './1_compile.sh' first to build the packages."
+    echo "[ERROR] No project .apk files found in bin/. 'mcubridge' package was NOT installed." >&2
+    echo "[HINT] Run './1_compile.sh' first to build the packages." >&2
+    exit 1
 else
     # Only configure secrets if the package installed successfully
     ensure_secure_serial_secret
@@ -407,11 +408,12 @@ if [ -f "$INIT_SCRIPT" ]; then
     # Ensure init script is executable
     chmod +x "$INIT_SCRIPT"
     
-    # Enable and start with error tolerance
-    "$INIT_SCRIPT" enable || echo "[WARN] Failed to enable service (non-fatal)"
-    "$INIT_SCRIPT" restart || echo "[WARN] Failed to start service (non-fatal)"
+    # Enable service
+    "$INIT_SCRIPT" enable || { echo "[ERROR] Failed to enable mcubridge service in procd." >&2; exit 1; }
+    "$INIT_SCRIPT" restart || echo "[WARN] Failed to start service (non-fatal in environments without physical serial hardware)"
 else
-    echo "[WARNING] mcubridge init script not found (installation incomplete?)."
+    echo "[ERROR] mcubridge init script not found at $INIT_SCRIPT. Installation incomplete!" >&2
+    exit 1
 fi
 
 echo -e "\n--- Installation Complete! ---"

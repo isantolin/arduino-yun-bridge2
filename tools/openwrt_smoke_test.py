@@ -362,32 +362,49 @@ def phase_verify(child: Any) -> None:
     """Phase 3: Verify mcubridge installation and daemon."""
     log_info("[PHASE 3] Verifying installation...")
 
-    # Init script exists
-    send_and_wait(child, "ls -l /etc/init.d/mcubridge", timeout=10)
+    # 1. Init script exists and is executable
+    child.sendline("test -x /etc/init.d/mcubridge && echo 'VERIFY_INIT_OK' || echo 'VERIFY_INIT_FAIL'")
+    child.expect(r"VERIFY_INIT_(OK|FAIL)", timeout=10)
+    if "VERIFY_INIT_FAIL" in child.after:
+        raise ValueError("Verification failed: /etc/init.d/mcubridge not found or not executable.")
+    wait_for_prompt(child, timeout=10)
 
-    # Cloud gateway exists
-    send_and_wait(child, "ls -l /usr/bin/mcubridge-gateway", timeout=10)
+    # 2. Cloud gateway exists and is executable
+    child.sendline("test -x /usr/bin/mcubridge-gateway && echo 'VERIFY_GW_OK' || echo 'VERIFY_GW_FAIL'")
+    child.expect(r"VERIFY_GW_(OK|FAIL)", timeout=10)
+    if "VERIFY_GW_FAIL" in child.after:
+        raise ValueError("Verification failed: /usr/bin/mcubridge-gateway not found or not executable.")
+    wait_for_prompt(child, timeout=10)
 
-    # UCI configuration was created
+    # 3. UCI configuration was created
     send_and_wait(child, "uci show mcubridge 2>/dev/null | head -10", timeout=10)
 
-    # Serial secret was generated (not placeholder)
+    # 4. Serial secret was generated (valid 64-character hex key)
     child.sendline("uci -q get mcubridge.general.serial_shared_secret")
     wait_for_prompt(child, timeout=10)
+    output = getattr(child, "before", "")
+    valid_secret = any(
+        len(line.strip()) == 64 and all(c in "0123456789abcdefABCDEF" for c in line.strip())
+        for line in output.splitlines()
+    )
+    if not valid_secret:
+        raise ValueError(f"Verification failed: invalid serial_shared_secret in UCI. Output:\n{output}")
 
-    # Daemon was attempted (may crash-loop without real serial port, but should be registered)
-    child.sendline("pgrep -f mcubridge || echo 'DAEMON_NOT_RUNNING'")
+    # 5. Service is enabled in rc.d
+    child.sendline("ls -l /etc/rc.d/*mcubridge* && echo 'VERIFY_RCD_OK' || echo 'VERIFY_RCD_FAIL'")
+    child.expect(r"VERIFY_RCD_(OK|FAIL)", timeout=10)
+    if "VERIFY_RCD_FAIL" in child.after:
+        raise ValueError("Verification failed: mcubridge service not enabled in /etc/rc.d/.")
     wait_for_prompt(child, timeout=10)
 
-    # Service is enabled
-    send_and_wait(
-        child,
-        "ls -l /etc/rc.d/*mcubridge* 2>/dev/null || echo 'SERVICE_NOT_ENABLED'",
-        timeout=10,
+    # 6. Core mcubridge packages installed in APK database
+    child.sendline(
+        "apk info -e mcubridge && apk info -e mcubridge-gateway && echo 'VERIFY_APK_OK' || echo 'VERIFY_APK_FAIL'"
     )
-
-    # Show installed mcubridge packages
-    send_and_wait(child, "apk info 2>/dev/null | grep -i mcubridge || true", timeout=10)
+    child.expect(r"VERIFY_APK_(OK|FAIL)", timeout=10)
+    if "VERIFY_APK_FAIL" in child.after:
+        raise ValueError("Verification failed: core mcubridge packages not installed in apk database.")
+    wait_for_prompt(child, timeout=10)
 
     log_info("[SUCCESS] Full pipeline smoke test passed!")
 

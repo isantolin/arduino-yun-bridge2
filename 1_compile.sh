@@ -715,8 +715,8 @@ for lib in $LIBS; do
         fi
     fi
     
-    # [FIX] Copiar artefactos .apk de librerías
-    find bin/packages/ -name "$lib*.apk" -exec cp {} "$BIN_DIR/" \;
+    # [FIX] Copiar artefactos .apk de librerías desde todo bin/
+    find bin/ -name "$lib*.apk" -exec cp {} "$BIN_DIR/" \;
 done
 
 # Luego paquetes principales
@@ -726,6 +726,7 @@ for pkg in luci-app-mcubridge mcubridge mcubridge-gateway; do
     if [ ! -d "$PKG_PATH" ] && [ -d "package/$pkg" ]; then
         PKG_PATH="package/$pkg"
     fi
+    make "$PKG_PATH/clean" 2>/dev/null || true
     if [ "$VERBOSE" -eq 1 ]; then
         make "$PKG_PATH/compile" -j$(nproc) V=s || exit 1
     else
@@ -735,10 +736,27 @@ for pkg in luci-app-mcubridge mcubridge mcubridge-gateway; do
         fi
     fi
 
-    # [FIX] Copiar artefactos .apk
-    find bin/packages/ -name "$pkg*.apk" -exec cp {} "$BIN_DIR/" \;
+    # [FIX] Copiar artefactos .apk buscando en todo el árbol de salida bin/
+    find bin/ -name "$pkg*.apk" -exec cp {} "$BIN_DIR/" \;
 done
 cd "$REPO_ROOT" || exit 1
+
+# [VALIDATION GATE] Validar que los paquetes esenciales del proyecto fueron generados
+echo "[VALIDATION] Verifying generated APKs in $BIN_DIR..."
+MISSING_REQUIRED_PKGS=0
+for req in mcubridge mcubridge-gateway luci-app-mcubridge; do
+    if ! ls "$BIN_DIR"/${req}*.apk >/dev/null 2>&1; then
+        echo "[ERROR] Mandatory package '${req}' (.apk) was not found in $BIN_DIR!" >&2
+        MISSING_REQUIRED_PKGS=1
+    else
+        echo "[OK] Found '${req}' package in $BIN_DIR."
+    fi
+done
+
+if [ "$MISSING_REQUIRED_PKGS" -ne 0 ]; then
+    echo "[FATAL] Build failed: Core packages are missing from $BIN_DIR." >&2
+    exit 1
+fi
 
 # Build RPM package if rpmbuild is available
 if command -v rpmbuild >/dev/null 2>&1; then

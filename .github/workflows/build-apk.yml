@@ -107,7 +107,8 @@ jobs:
       - name: Install Verification Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y qemu-system-mips python3-pexpect wget e2fsprogs
+          sudo apt-get install -y qemu-system-mips python3-pexpect python3-pip wget e2fsprogs
+          pip install --break-system-packages typer
 
       - name: Download APK Artifacts
         uses: actions/download-artifact@v8

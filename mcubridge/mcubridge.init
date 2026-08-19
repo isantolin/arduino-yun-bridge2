@@ -68,6 +68,9 @@ start_service() {
     # Reinicio infinito con backoff de 5s si falla
     # Si falla repetidamente antes de 3600s, se considera inestable
     procd_set_param respawn "$respawn_threshold" "$respawn_timeout" "$respawn_retry"
+    procd_set_param file /etc/config/mcubridge
+    procd_set_param limits core="unlimited" nofile="4096"
+    procd_set_param term_timeout 15
 
     # [WATCHDOG]
     # Integración con el watchdog del kernel vía procd (controlado por UCI)

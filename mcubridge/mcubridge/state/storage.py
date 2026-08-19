@@ -133,8 +133,8 @@ class LmdbDeque:
             logger.warning("LMDB vacuum failed, compaction skipped: %s", exc)
             try:
                 compact_path.unlink(missing_ok=True)
-            except OSError:
-                pass
+            except OSError as unlink_err:
+                logger.warning("Failed to clean up compact database file", path=str(compact_path), error=unlink_err)
 
     async def close(self) -> None:
         if self.env:

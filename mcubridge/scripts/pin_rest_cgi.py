@@ -30,17 +30,14 @@ def publish_sync(topic: str, payload: str, config: RuntimeConfig) -> None:
     """Synchronous publish to local UNIX domain socket IPC via gRPC."""
 
     async def _run():
-        channel = Channel(path="/var/run/mcubridge.sock")
-        stub = LocalBridgeStub(channel)
-        try:
+        async with Channel(path="/var/run/mcubridge.sock") as channel:
+            stub = LocalBridgeStub(channel)
             msg = pb.CloudQueuedPublish(
                 topic_name=topic,
                 payload=payload.encode("utf-8"),
                 qos=1,
             )
             await stub.Publish(msg)
-        finally:
-            channel.close()
 
     try:
         asyncio.run(_run())

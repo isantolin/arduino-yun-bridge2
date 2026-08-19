@@ -22,17 +22,14 @@ def do_publish(topic: str, payload: str) -> None:
     """Publish LED state using local gRPC UNIX socket IPC."""
 
     async def _run():
-        channel = Channel(path="/var/run/mcubridge.sock")
-        stub = LocalBridgeStub(channel)
-        try:
+        async with Channel(path="/var/run/mcubridge.sock") as channel:
+            stub = LocalBridgeStub(channel)
             msg = pb.CloudQueuedPublish(
                 topic_name=topic,
                 payload=payload.encode("utf-8"),
                 qos=1,
             )
             await stub.Publish(msg)
-        finally:
-            channel.close()
 
     try:
         asyncio.run(_run())

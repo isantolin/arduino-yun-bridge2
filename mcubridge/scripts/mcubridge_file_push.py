@@ -24,23 +24,19 @@ def push_file(topic: str, data: bytes) -> None:
     """Publish file data using local gRPC UNIX socket IPC."""
 
     async def _run():
-        channel = None
         try:
-            channel = Channel(path="/var/run/mcubridge.sock")
-            stub = LocalBridgeStub(channel)
-            msg = pb.CloudQueuedPublish(
-                topic_name=topic,
-                payload=data,
-                qos=1,
-            )
-            await stub.Publish(msg)
-            logger.info("File push successful", topic=topic, size=len(data))
+            async with Channel(path="/var/run/mcubridge.sock") as channel:
+                stub = LocalBridgeStub(channel)
+                msg = pb.CloudQueuedPublish(
+                    topic_name=topic,
+                    payload=data,
+                    qos=1,
+                )
+                await stub.Publish(msg)
+                logger.info("File push successful", topic=topic, size=len(data))
         except (OSError, RuntimeError, ValueError) as e:
             logger.error("File push failed", error=str(e), topic=topic)
             sys.exit(1)
-        finally:
-            if channel is not None:
-                channel.close()
 
     asyncio.run(_run())
 

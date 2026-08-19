@@ -16,9 +16,8 @@ from mcubridge.protocol import mcubridge_pb2 as pb
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
-import protovalidate
 from cobs import cobsr
 import serialx
 import structlog
@@ -227,13 +226,10 @@ class SerialTransport:
             self.state.link_last_nonce_counter = new_counter
 
         # SIL-2 Transport Gate: Validate incoming Protobuf payload before dispatch
-        if isinstance(payload, ProtobufMessage):
-            try:
-                protovalidate.validate(cast(Any, payload))
-            except (protovalidate.ValidationError, ValueError, TypeError) as exc:
-                logger.error("Protovalidate gate rejected invalid payload from MCU: %s", exc)
-                self.state.serial_decode_errors += 1
-                return
+        if isinstance(payload, ProtobufMessage) and not payload.IsInitialized():
+            logger.error("Transport gate rejected uninitialized payload from MCU")
+            self.state.serial_decode_errors += 1
+            return
 
         # Correlation and Service dispatch
         self._correlate_frame(cmd_id, payload)

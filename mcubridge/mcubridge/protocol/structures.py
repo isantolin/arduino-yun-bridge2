@@ -10,7 +10,7 @@ import asyncio
 import fnmatch
 import functools
 import itertools
-import re2
+import re
 import ssl
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -21,8 +21,6 @@ from typing import (
     Final,
 )
 
-import protovalidate
-from buf.validate.validate_pb2 import Violation as ProtovalidateViolation
 from google.protobuf.message import Message as ProtobufMessage
 
 from . import mcubridge_pb2 as pb, protocol
@@ -40,8 +38,8 @@ def iter_chunks(data: bytes, chunk_size: int) -> Iterable[bytes]:
 
 PROTOBUF_CONTENT_TYPE: Final[str] = "application/x-protobuf"
 
-# [SIL-2] Compiled once at module load with google-re2 (linear-time, ReDoS-safe)
-_TOKEN_SEP: Final = re2.compile(r"[,\s]+")
+_TOKEN_SEP: Final = re.compile(r"[,\s]+")
+_VOLATILE_STORAGE_PREFIXES: Final[tuple[str, ...]] = ("/tmp", "/var/run", "/run", "/dev/shm")
 
 
 @functools.lru_cache(maxsize=1)
@@ -118,30 +116,39 @@ def allows_topic(auth: pb.TopicAuthorization, topic: str, action: str) -> bool:
 RuntimeConfig = pb.RuntimeConfig
 
 
-def _format_violation(violation: ProtovalidateViolation) -> str:
-    """Render a protovalidate Violation as 'field: message' (or bare message for message-level CEL rules)."""
-    field_elements = violation.field.elements
-    if field_elements:
-        field_name = ".".join(e.field_name for e in field_elements)
-        return f"{field_name}: {violation.message}"
-    return violation.message
-
-
 def validate_config(cfg: pb.RuntimeConfig) -> None:
-    """Validate and normalize a RuntimeConfig in-place. [SIL-2]"""
-    # Declarative validation (min_len/pattern/gte/lte, cross-field CEL rules
-    # e.g. watchdog_interval, FLASH PROTECTION paths, mTLS cert/key pairing)
-    # MUST run before any normalization mutates cfg below.
-    # protovalidate.ValidationError.violations lack field context in their
-    # default str(); re-raise as ValueError with field-qualified detail so
-    # callers/tests can match on the offending field name. exc.to_proto()
-    # returns the public buf.validate.Violations protobuf message, avoiding
-    # any dependency on protovalidate's internal module layout.
-    try:
-        protovalidate.validate(cfg)
-    except protovalidate.ValidationError as exc:
-        details = "; ".join(_format_violation(v) for v in exc.to_proto().violations)
-        raise ValueError(details) from exc
+    """Validate and normalize a RuntimeConfig in-place natively. [SIL-2]"""
+    if not cfg.serial_port:
+        raise ValueError("serial_port: value length must be at least 1")
+    if not (1 <= cfg.cloud_port <= 65535):
+        raise ValueError(f"cloud_port: must be between 1 and 65535 (got {cfg.cloud_port})")
+    if not cfg.topic_prefix:
+        raise ValueError("topic_prefix: value length must be at least 1")
+    if not re.search(r"[^/]", cfg.topic_prefix):
+        raise ValueError("topic_prefix: does not match regex pattern '[^/]'")
+    if cfg.status_interval <= 0:
+        raise ValueError("status_interval: value must be greater than 0")
+    if cfg.watchdog_enabled and cfg.watchdog_interval < 0.5:
+        raise ValueError("watchdog_interval: watchdog_interval must be >= 0.5s when enabled")
+    if not cfg.allow_non_tmp_paths:
+        if not any(cfg.cloud_spool_dir.startswith(p) for p in _VOLATILE_STORAGE_PREFIXES):
+            raise ValueError(
+                "cloud_spool_dir: cloud_spool_dir must be in volatile storage "
+                "(/tmp, /var/run, /run, /dev/shm) unless allow_non_tmp_paths is set"
+            )
+        if not any(cfg.file_system_root.startswith(p) for p in _VOLATILE_STORAGE_PREFIXES):
+            raise ValueError(
+                "file_system_root: file_system_root must be in volatile storage "
+                "(/tmp, /var/run, /run, /dev/shm) unless allow_non_tmp_paths is set"
+            )
+    if bool(cfg.cloud_certfile) != bool(cfg.cloud_keyfile):
+        raise ValueError("cloud_certfile: cloud_certfile and cloud_keyfile must both be set or both be empty")
+    if not cfg.serial_shared_secret:
+        raise ValueError("serial_shared_secret: value length must be at least 1")
+    if cfg.metrics_port and not (1 <= cfg.metrics_port <= 65535):
+        raise ValueError(f"metrics_port: must be between 1 and 65535 (got {cfg.metrics_port})")
+    if cfg.cloud_http3_port and not (1 <= cfg.cloud_http3_port <= 65535):
+        raise ValueError(f"cloud_http3_port: must be between 1 and 65535 (got {cfg.cloud_http3_port})")
 
     cfg.allowed_policy.CopyFrom(create_allowed_policy(cfg.allowed_commands))
     del cfg.allowed_commands[:]

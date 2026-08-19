@@ -56,12 +56,6 @@ define Package/$(PKG_NAME)
 		python3-h2 \
 		python3-grpclib \
 		python3-typer \
-		python3-protovalidate \
-		python3-cel-python \
-		python3-google-re2 \
-		python3-lark \
-		python3-pendulum \
-		python3-tzdata \
 		python3-lmdb \
 		python3-packaging \
 		python3-distlib

@@ -205,13 +205,25 @@ def _valid_runtime_config(**overrides: Any) -> pb.RuntimeConfig:
 
 
 def test_validate_config_invalid() -> None:
+    with pytest.raises(ValueError, match="serial_port"):
+        structures.validate_config(_valid_runtime_config(serial_port=""))
+
+    with pytest.raises(ValueError, match="cloud_port"):
+        structures.validate_config(_valid_runtime_config(cloud_port=0))
+
+    with pytest.raises(ValueError, match="cloud_port"):
+        structures.validate_config(_valid_runtime_config(cloud_port=70000))
+
     with pytest.raises(ValueError, match="topic_prefix"):
         structures.validate_config(_valid_runtime_config(topic_prefix=""))
+
+    with pytest.raises(ValueError, match="status_interval"):
+        structures.validate_config(_valid_runtime_config(status_interval=0))
 
     with pytest.raises(ValueError, match="watchdog_interval must be >= 0.5s"):
         structures.validate_config(_valid_runtime_config(watchdog_interval=0.1))
 
-    # Disabling the watchdog lifts the CEL constraint on watchdog_interval.
+    # Disabling the watchdog lifts the constraint on watchdog_interval.
     structures.validate_config(_valid_runtime_config(watchdog_enabled=False, watchdog_interval=0.1))
 
     with pytest.raises(ValueError, match="cloud_spool_dir"):
@@ -219,6 +231,18 @@ def test_validate_config_invalid() -> None:
 
     with pytest.raises(ValueError, match="file_system_root"):
         structures.validate_config(_valid_runtime_config(file_system_root="/invalid/root"))
+
+    with pytest.raises(ValueError, match="cloud_certfile"):
+        structures.validate_config(_valid_runtime_config(cloud_certfile="/path/to/cert", cloud_keyfile=""))
+
+    with pytest.raises(ValueError, match="serial_shared_secret"):
+        structures.validate_config(_valid_runtime_config(serial_shared_secret=b""))
+
+    with pytest.raises(ValueError, match="metrics_port"):
+        structures.validate_config(_valid_runtime_config(metrics_port=70000))
+
+    with pytest.raises(ValueError, match="cloud_http3_port"):
+        structures.validate_config(_valid_runtime_config(cloud_http3_port=70000))
 
 
 def test_get_ssl_context() -> None:

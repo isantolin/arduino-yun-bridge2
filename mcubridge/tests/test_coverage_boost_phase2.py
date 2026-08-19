@@ -15,7 +15,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from cobs import cobsr
-from google.protobuf.message import Message
+
+from google.protobuf.message import Message as ProtobufMessage
 
 import mcubridge.protocol.mcubridge_pb2 as pb
 from mcubridge.config.settings import RuntimeConfig
@@ -238,9 +239,7 @@ class TestProcessPacketEdgePaths:
             # Frame should be dropped silently (no service dispatch)
 
     @pytest.mark.asyncio
-    async def test_process_packet_protovalidate_rejection(self) -> None:
-        import protovalidate
-
+    async def test_process_packet_uninitialized_payload_rejection(self) -> None:
         config = _make_config()
         state = _make_state(config)
         transport = SerialTransport(config, state, None)
@@ -252,15 +251,13 @@ class TestProcessPacketEdgePaths:
             mock_result.envelope.command_id = Command.CMD_GET_VERSION.value
             mock_result.envelope.sequence_id = 1
             mock_result.envelope.nonce = b"\x00" * 12
-            mock_result.payload = pb.VersionResponse(major=1, minor=0, patch=0)
+            mock_payload = MagicMock(spec=ProtobufMessage)
+            mock_payload.IsInitialized.return_value = False
+            mock_result.payload = mock_payload
             mock_parse.return_value = mock_result
 
-            with patch(
-                "mcubridge.transport.serial.protovalidate.validate",
-                side_effect=protovalidate.ValidationError("test", violations=[]),
-            ):
-                await transport._process_packet(raw)
-                assert state.serial_decode_errors >= 1
+            await transport._process_packet(raw)
+            assert state.serial_decode_errors >= 1
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -571,10 +568,8 @@ class TestPinRestCgiCli:
             mock_handler.run.assert_called_once()
 
     def test_application_pin_data_validation_error(self) -> None:
-        import protovalidate as pv
-
         start_response = MagicMock()
-        body = b'{"state": "ON"}'
+        body = b'{"state": "INVALID_UNKNOWN_STATE"}'
         env = {
             "PATH_INFO": "/pin/13",
             "REQUEST_METHOD": "POST",
@@ -586,22 +581,10 @@ class TestPinRestCgiCli:
             patch.object(pin_rest_cgi, "load_runtime_config", return_value=_make_config()),
             patch.object(pin_rest_cgi, "configure_logging"),
         ):
-            # First protovalidate passes, second fails
-            original_validate = pv.validate
-            call_count = 0
-
-            def _selective_validate(msg: Message) -> None:
-                nonlocal call_count
-                call_count += 1
-                if call_count == 2:
-                    raise pv.ValidationError("invalid pin data", violations=[])
-                original_validate(msg)
-
-            with patch.object(pin_rest_cgi.protovalidate, "validate", side_effect=_selective_validate):
-                result = pin_rest_cgi.application(env, start_response)
-                assert result
-                # Should return 400 for invalid pin_data
-                start_response.assert_called()
+            result = pin_rest_cgi.application(env, start_response)
+            assert result
+            # Should return 400 for invalid pin_data
+            start_response.assert_called()
 
     def test_application_method_not_allowed(self) -> None:
         start_response = MagicMock()

@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import logging
 import os
-import re2
+import re
 from typing import Annotated, Any, cast
 from wsgiref.handlers import CGIHandler
 
@@ -13,7 +13,6 @@ import asyncio
 import typer
 from grpclib.client import Channel
 from mcubridge.protocol.mcubridge_grpc import LocalBridgeStub
-import protovalidate
 from google.protobuf import json_format
 from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import load_runtime_config
@@ -64,7 +63,7 @@ def application(environ: dict[str, Any], start_response: Any) -> list[bytes]:
         configure_logging(config)
 
         path = environ.get("PATH_INFO", "")
-        if not (match := re2.match(r"/pin/(\d+)", path)):
+        if not (match := re.match(r"/pin/(\d+)", path)):
             return json_res(
                 start_response,
                 "400 Bad Request",
@@ -82,30 +81,28 @@ def application(environ: dict[str, Any], start_response: Any) -> list[bytes]:
         body_len = int(environ.get("CONTENT_LENGTH", "0"))
         body_data = environ["wsgi.input"].read(body_len)
 
-        # [SIL-2] Parse request and validate using Protobuf model via protovalidate
+        # [SIL-2] Parse request and validate using Protobuf model natively
         req = pb.PinControlRequest()
         if body_len:
             json_format.Parse(body_data, cast(Any, req))
 
-        try:
-            protovalidate.validate(cast(Any, req))
-        except (protovalidate.ValidationError, ValueError, TypeError) as val_err:
+        if not (0 <= pin <= 100):
             return json_res(
                 start_response,
                 "400 Bad Request",
-                pb.PinControlResponse(status="error", message=f"Invalid state: {val_err}"),
+                pb.PinControlResponse(status="error", message=f"Invalid pin: {pin}"),
             )
 
         state = req.state.upper()
-        pin_data = pb.PinControlData(pin=pin, state=state)
-        try:
-            protovalidate.validate(cast(Any, pin_data))
-        except (protovalidate.ValidationError, ValueError, TypeError) as val_err:
+        if state and state not in ("ON", "OFF", "HIGH", "LOW", "1", "0"):
             return json_res(
                 start_response,
                 "400 Bad Request",
-                pb.PinControlResponse(status="error", message=f"Invalid pin data: {val_err}"),
+                pb.PinControlResponse(status="error", message=f"Invalid state: {req.state}"),
             )
+
+        normalized_state = "ON" if state in ("ON", "HIGH", "1") else "OFF"
+        pin_data = pb.PinControlData(pin=pin, state=normalized_state)
 
         topic = topic_path(config.topic_prefix, Topic.DIGITAL, str(pin_data.pin))
         publish_sync(topic, "1" if pin_data.state == "ON" else "0", config)
@@ -136,11 +133,13 @@ def control(
     """CLI entry point for direct pin control."""
     config = load_runtime_config()
     configure_logging(config)
-    pin_data = pb.PinControlData(pin=pin, state=state.upper())
-    protovalidate.validate(cast(Any, pin_data))
+    normalized_state = state.upper()
+    if normalized_state not in ("ON", "OFF", "HIGH", "LOW", "1", "0"):
+        raise ValueError(f"Invalid state: {state}")
+    pin_data = pb.PinControlData(pin=pin, state="ON" if normalized_state in ("ON", "HIGH", "1") else "OFF")
     topic = topic_path(config.topic_prefix, Topic.DIGITAL, str(pin_data.pin))
     publish_sync(topic, "1" if pin_data.state == "ON" else "0", config)
-    print(f"Pin {pin} set to {state.upper()} on topic {topic}")
+    print(f"Pin {pin} set to {pin_data.state} on topic {topic}")
 
 
 @app.command()

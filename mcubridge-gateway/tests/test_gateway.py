@@ -253,27 +253,25 @@ async def test_cloud_bridge_service_session_cancelled() -> None:
 
 
 @pytest.mark.asyncio
-async def test_session_protovalidate_validation_error(cloud_service: CloudBridgeService) -> None:
-    import protovalidate
-
+async def test_session_invalid_envelope_validation(cloud_service: CloudBridgeService) -> None:
     mock_stream: AsyncMock = AsyncMock()
     mock_stream.peer = MagicMock()
     mock_stream.peer.addr.return_value = ("127.0.0.1", 54321)
     mock_stream.peer.cert.return_value = None
 
-    ping_envelope = pb.CloudEnvelope(protocol_version=2, device_id="DEV_001")
+    # Invalid envelope with wrong protocol_version (fails native check)
+    invalid_envelope = pb.CloudEnvelope(protocol_version=99, device_id="DEV_001")
 
     async def async_iter():
-        yield ping_envelope
+        yield invalid_envelope
 
     def _aiter(self: object):
         return async_iter()
 
     mock_stream.__aiter__ = _aiter
 
-    with patch("protovalidate.validate", side_effect=protovalidate.ValidationError("invalid", violations=[])):
-        await cloud_service.Session(mock_stream)
-        assert not mock_stream.send_message.called
+    await cloud_service.Session(mock_stream)
+    assert not mock_stream.send_message.called
 
 
 def test_gateway_main_block_simulation() -> None:

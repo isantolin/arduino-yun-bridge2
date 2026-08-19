@@ -8,6 +8,10 @@ on:
       - 'v*'
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
   packages: write
@@ -23,6 +27,12 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v6
+
+      - name: Setup Python 3.13 with Pip Cache
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+          cache: 'pip'
 
       # Cache layer 1: Downloaded source tarballs (very stable, survives build script changes)
       - name: Cache Downloads
@@ -81,6 +91,13 @@ jobs:
         run: |
           ./1_compile.sh --skip-host-deps
 
+      - name: Prune Transient SDK Artifacts for Cache Optimization
+        run: |
+          if [ -d openwrt-sdk ]; then
+            echo "[PRUNE] Removing transient tmp/ and logs/ from openwrt-sdk to minimize cache footprint..."
+            rm -rf openwrt-sdk/tmp openwrt-sdk/logs
+          fi
+
       - name: Upload APK Artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -105,11 +122,26 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v6
 
+      - name: Setup Python 3.13 with Pip Cache
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+
+      - name: Cache OpenWrt QEMU Images
+        uses: actions/cache@v6
+        with:
+          path: |
+            openwrt-25.12.5-malta-be-vmlinux.elf
+            openwrt-malta-rootfs.img
+            sys-apks
+          key: ${{ runner.os }}-openwrt-qemu-images-25.12.5
+
       - name: Install Verification Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y qemu-system-mips python3-pexpect python3-pip wget e2fsprogs
-          pip install --break-system-packages typer
+          sudo apt-get install -y qemu-system-mips python3-pexpect wget e2fsprogs
+          pip install typer pexpect
 
       - name: Download APK Artifacts
         uses: actions/download-artifact@v8

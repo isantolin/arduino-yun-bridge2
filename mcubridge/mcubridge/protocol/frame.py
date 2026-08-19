@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from binascii import crc32
 from functools import lru_cache
-from typing import Final
+from typing import Final, NamedTuple
 
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
@@ -36,28 +36,7 @@ def _get_cipher(session_key: bytes) -> ChaCha20Poly1305:
 
 @lru_cache(maxsize=4096)
 def _build_aad_bytes(version: int, command_id: int, sequence_id: int) -> bytes:
-    """Build AEAD AAD via fast direct varint encoding and cached Protobuf serialization. [SIL-2]"""
-    if version == 1:
-        if command_id < 0x80 and sequence_id < 0x80:
-            return bytes((0x08, 0x01, 0x10, command_id, 0x18, sequence_id))
-        if command_id < 0x80 and sequence_id < 0x4000:
-            return bytes((0x08, 0x01, 0x10, command_id, 0x18, (sequence_id & 0x7F) | 0x80, sequence_id >> 7))
-        if command_id < 0x4000 and sequence_id < 0x80:
-            return bytes((0x08, 0x01, 0x10, (command_id & 0x7F) | 0x80, command_id >> 7, 0x18, sequence_id))
-        if command_id < 0x4000 and sequence_id < 0x4000:
-            return bytes(
-                (
-                    0x08,
-                    0x01,
-                    0x10,
-                    (command_id & 0x7F) | 0x80,
-                    command_id >> 7,
-                    0x18,
-                    (sequence_id & 0x7F) | 0x80,
-                    sequence_id >> 7,
-                )
-            )
-
+    """Build AEAD AAD via native Protobuf serialization with LRU caching. [SIL-2]"""
     return pb.RpcEnvelope(
         version=version,
         command_id=command_id,
@@ -65,34 +44,9 @@ def _build_aad_bytes(version: int, command_id: int, sequence_id: int) -> bytes:
     ).SerializeToString()
 
 
-class DecodedFrame:
-    """High-performance decoded frame structure with zero NamedTuple overhead. [SIL-2]"""
-
-    __slots__ = ("envelope", "payload")
-
-    def __init__(self, envelope: pb.RpcEnvelope, payload: bytes | ProtobufMessage) -> None:
-        self.envelope = envelope
-        self.payload = payload
-
-    def __iter__(self):
-        yield self.envelope
-        yield self.payload
-
-    def __getitem__(self, index: int) -> pb.RpcEnvelope | bytes | ProtobufMessage:
-        if index == 0:
-            return self.envelope
-        if index == 1:
-            return self.payload
-        raise IndexError("DecodedFrame index out of range")
-
-    def __eq__(self, other: object) -> bool:
-        if isinstance(other, DecodedFrame):
-            return self.envelope == other.envelope and self.payload == other.payload
-        if isinstance(other, tuple) and len(other) == 2:
-            return self.envelope == other[0] and self.payload == other[1]
-        return False
-
-    __hash__ = None
+class DecodedFrame(NamedTuple):
+    envelope: pb.RpcEnvelope
+    payload: bytes | ProtobufMessage
 
 
 def build_frame(

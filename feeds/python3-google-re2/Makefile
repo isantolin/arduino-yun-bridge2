@@ -4,11 +4,7 @@ PKG_NAME:=python3-google-re2
 PKG_VERSION:=1.1.20251105
 PKG_RELEASE:=1
 
-PYPI_NAME:=google-re2
-# The sdist filename uses an underscore ("google_re2-...") even though the
-# PyPI project/directory name uses a dash ("google-re2"). Override only the
-# filename stem here (NOT the version) to avoid the wheel-name derivation
-# bug documented in feeds/python3-protobuf/Makefile's history.
+PYPI_NAME:=google_re2
 PKG_HASH:=1db14a292ee8303b91e91e7c37e05ac17d3c467f29416c79ac70a78be3e65bda
 
 PKG_MAINTAINER:=Ignacio Santolin <isantolin@gmail.com>

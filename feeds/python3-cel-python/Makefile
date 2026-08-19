@@ -4,10 +4,7 @@ PKG_NAME:=python3-cel-python
 PKG_VERSION:=0.5.0
 PKG_RELEASE:=1
 
-PYPI_NAME:=cel-python
-# The sdist filename uses an underscore ("cel_python-...") even though the
-# PyPI project name uses a dash ("cel-python"). Override only the filename
-# stem here (NOT the version).
+PYPI_NAME:=cel_python
 PKG_HASH:=3eb0a619e8df0f338d0430cda01427a742e77e3c433a1c7c3ebd409cd804c45a
 
 PKG_MAINTAINER:=Ignacio Santolin <isantolin@gmail.com>

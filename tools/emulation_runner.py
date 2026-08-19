@@ -187,10 +187,23 @@ def run_emulation(
 
     # 3. Start Daemon
     p_root = package_root.absolute()
+    fake_uci_dir = Path(tempfile.mkdtemp(prefix="mcubridge_fake_uci_"))
+    socket_path = str(fake_uci_dir / "mcubridge.sock")
+
     daemon_env = dict(os.environ)
-    daemon_env["PYTHONPATH"] = (
-        f"{p_root / 'mcubridge'}:{p_root / 'mcubridge-client-examples'}:{p_root}:{daemon_env.get('PYTHONPATH', '')}"
-    )
+    extra_paths = [
+        str(fake_uci_dir),
+        str(p_root / "mcubridge"),
+        str(p_root / "mcubridge-client-examples"),
+        str(p_root),
+    ]
+    curr_pp = daemon_env.get("PYTHONPATH", "")
+    daemon_env["PYTHONPATH"] = ":".join(extra_paths + ([curr_pp] if curr_pp else []))
+    daemon_env["PYTHONUNBUFFERED"] = "1"
+    daemon_env["MCUBRIDGE_FORCE_UCI"] = "1"
+    daemon_env["MCUBRIDGE_NON_INTERACTIVE"] = "1"
+    daemon_env["MCUBRIDGE_LOG_STREAM"] = "1"
+    daemon_env["MCUBRIDGE_SOCKET_PATH"] = socket_path
     daemon_env["MCUBRIDGE_SERIAL_PORT"] = SOCAT_PORT0
     daemon_env["MCUBRIDGE_SERIAL_SAFE_BAUD"] = "115200"
     daemon_env["MCUBRIDGE_SERIAL_BAUD"] = "115200"
@@ -201,21 +214,28 @@ def run_emulation(
     daemon_env["MCUBRIDGE_STORAGE_PATH"] = tempfile.mkdtemp(prefix="mcubridge_db_")
 
     uci_config = {
-        "general.serial_port": SOCAT_PORT0,
-        "general.serial_baud": "115200",
-        "general.serial_safe_baud": "115200",
-        "general.cloud_enabled": "1",
-        "general.cloud_host": CLOUD_HOST,
-        "general.cloud_port": str(CLOUD_PORT),
-        "general.disable_metrics": "1",
-        "general.file_system_root": str(emulator_fs_root),
-        "general.storage_path": daemon_env["MCUBRIDGE_STORAGE_PATH"],
+        "serial_port": SOCAT_PORT0,
+        "serial_baud": "115200",
+        "serial_safe_baud": "115200",
+        "cloud_enabled": "1",
+        "cloud_host": CLOUD_HOST,
+        "cloud_port": str(CLOUD_PORT),
+        "cloud_tls": "0",
+        "cloud_tls_insecure": "1",
+        "serial_shared_secret": "DEBUG_INSECURE",
+        "allowed_commands": "*",
+        "debug": "1",
+        "disable_metrics": "1",
+        "file_system_root": str(emulator_fs_root),
+        "storage_path": daemon_env["MCUBRIDGE_STORAGE_PATH"],
+        "socket_path": socket_path,
     }
-    fake_uci_dir = Path(tempfile.mkdtemp(prefix="mcubridge_fake_uci_"))
     _write_fake_uci_module(fake_uci_dir, uci_config)
-    daemon_env["PYTHONPATH"] = f"{fake_uci_dir}:{daemon_env['PYTHONPATH']}"
 
-    daemon_cmd = [sys.executable, "-m", "mcubridge.daemon"]
+    daemon_cmd = [sys.executable, "-u"]
+    if os.environ.get("COVERAGE_FILE"):
+        daemon_cmd.extend(["-m", "coverage", "run", "--append", "--rcfile", str(p_root / "pyproject.toml")])
+    daemon_cmd.extend(["-m", "mcubridge.daemon"])
     daemon_proc = None
     all_success = True
 

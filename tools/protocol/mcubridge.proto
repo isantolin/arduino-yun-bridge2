@@ -3,7 +3,6 @@ syntax = "proto3";
 package rpc.pb;
 
 import "google/protobuf/descriptor.proto";
-import "buf/validate/validate.proto";
 
 message Constants {
     uint32 aead_nonce_size = 1 [(cpp_name) = "RPC_AEAD_NONCE_SIZE", (cpp_type) = "size_t", (py_name) = "AEAD_NONCE_SIZE", (py_type) = "int"];
@@ -911,61 +910,37 @@ message Capabilities {
 }
 
 message PinMode {
-    uint32 pin = 1 [(buf.validate.field).uint32.lte = 100];
-    PinModeType mode = 2 [(buf.validate.field).enum.defined_only = true];
+    uint32 pin = 1;
+    PinModeType mode = 2;
 }
 
 message DigitalWrite {
-    uint32 pin = 1 [(buf.validate.field).uint32.lte = 100];
-    uint32 value = 2 [(buf.validate.field).uint32.lte = 1];
+    uint32 pin = 1;
+    uint32 value = 2;
 }
 
 message AnalogWrite {
-    uint32 pin = 1 [(buf.validate.field).uint32.lte = 100];
-    uint32 value = 2 [(buf.validate.field).uint32.lte = 4095];
+    uint32 pin = 1;
+    uint32 value = 2;
 }
 
 message PinRead {
-    uint32 pin = 1 [(buf.validate.field).uint32.lte = 100];
+    uint32 pin = 1;
 }
 
 message RuntimeConfig {
-    option (buf.validate.message).cel = {
-        id: "watchdog_interval_min_when_enabled",
-        message: "watchdog_interval must be >= 0.5s when enabled",
-        expression: "!this.watchdog_enabled || this.watchdog_interval >= 0.5"
-    };
-    option (buf.validate.message).cel = {
-        id: "flash_protection_spool_dir",
-        message: "cloud_spool_dir must be in volatile storage (/tmp, /var/run, /run, /dev/shm) unless allow_non_tmp_paths is set",
-        expression: "this.allow_non_tmp_paths || this.cloud_spool_dir.startsWith('/tmp') || this.cloud_spool_dir.startsWith('/var/run') || this.cloud_spool_dir.startsWith('/run') || this.cloud_spool_dir.startsWith('/dev/shm')"
-    };
-    option (buf.validate.message).cel = {
-        id: "flash_protection_fs_root",
-        message: "file_system_root must be in volatile storage (/tmp, /var/run, /run, /dev/shm) unless allow_non_tmp_paths is set",
-        expression: "this.allow_non_tmp_paths || this.file_system_root.startsWith('/tmp') || this.file_system_root.startsWith('/var/run') || this.file_system_root.startsWith('/run') || this.file_system_root.startsWith('/dev/shm')"
-    };
-    option (buf.validate.message).cel = {
-        id: "mtls_cert_key_pair",
-        message: "cloud_certfile and cloud_keyfile must both be set or both be empty",
-        expression: "has(this.cloud_certfile) == has(this.cloud_keyfile)"
-    };
-
-    string serial_port = 1 [(buf.validate.field).string.min_len = 1];
+    string serial_port = 1;
     uint32 serial_baud = 2;
     uint32 serial_safe_baud = 3;
     string cloud_host = 4;
-    uint32 cloud_port = 5 [(buf.validate.field).uint32 = {gte: 1, lte: 65535}];
+    uint32 cloud_port = 5;
     optional string cloud_user = 6;
     optional string cloud_pass = 7;
     bool cloud_tls = 8;
     optional string cloud_cafile = 9;
     optional string cloud_certfile = 10;
     optional string cloud_keyfile = 11;
-    string topic_prefix = 12 [
-        (buf.validate.field).string.min_len = 1,
-        (buf.validate.field).string.pattern = "[^/]"
-    ];
+    string topic_prefix = 12;
     repeated string allowed_commands = 13;
     string file_system_root = 14;
     uint32 process_timeout = 15;
@@ -974,7 +949,7 @@ message RuntimeConfig {
     uint32 file_storage_quota_bytes = 18;
     uint32 cloud_queue_limit = 19;
     uint32 reconnect_delay = 20;
-    uint32 status_interval = 21 [(buf.validate.field).uint32.gt = 0];
+    uint32 status_interval = 21;
     bool debug = 22;
     uint32 console_queue_limit_bytes = 23;
     uint32 mailbox_queue_limit = 24;
@@ -989,20 +964,20 @@ message RuntimeConfig {
     bool cloud_enabled = 33;
     bool watchdog_enabled = 34;
     float watchdog_interval = 35;
-    bytes serial_shared_secret = 36 [(buf.validate.field).bytes.min_len = 1];
+    bytes serial_shared_secret = 36;
     string cloud_spool_dir = 37;
     uint32 process_max_output_bytes = 38;
     uint32 process_max_concurrent = 39;
     bool metrics_enabled = 40;
     string metrics_host = 41;
-    uint32 metrics_port = 42 [(buf.validate.field).uint32 = {gte: 1, lte: 65535}];
+    uint32 metrics_port = 42;
     float bridge_summary_interval = 43;
     float bridge_handshake_interval = 44;
     bool allow_non_tmp_paths = 45;
     AllowedCommandPolicy allowed_policy = 46;
     TopicAuthorization topic_authorization = 47;
     bool cloud_http3_enabled = 48;
-    uint32 cloud_http3_port = 49 [(buf.validate.field).uint32 = {gte: 1, lte: 65535}];
+    uint32 cloud_http3_port = 49;
     string cloud_http3_congestion_control = 50;
 }
 
@@ -1016,16 +991,16 @@ message AnalogReadResponse {
 
 message ConsoleWrite {
     option (msg_cloud_topic) = "console/out";
-    bytes data = 1 [(buf.validate.field).bytes = {min_len: 1, max_len: 1024}];
+    bytes data = 1;
 }
 
 message DatastorePut {
-    string key = 1 [(buf.validate.field).string = {min_len: 1, max_len: 64}];
-    bytes value = 2 [(buf.validate.field).bytes.max_len = 512];
+    string key = 1;
+    bytes value = 2;
 }
 
 message DatastoreGet {
-    string key = 1 [(buf.validate.field).string = {min_len: 1, max_len: 64}];
+    string key = 1;
 }
 
 message DatastoreGetResponse {
@@ -1034,7 +1009,7 @@ message DatastoreGetResponse {
 
 message MailboxPush {
     option (msg_cloud_topic) = "mailbox/incoming";
-    bytes data = 1 [(buf.validate.field).bytes = {min_len: 1, max_len: 512}];
+    bytes data = 1;
 }
 
 message MailboxProcessed {
@@ -1051,16 +1026,16 @@ message MailboxReadResponse {
 }
 
 message FileWrite {
-    string path = 1 [(buf.validate.field).string = {min_len: 1, max_len: 255}];
+    string path = 1;
     bytes data = 2;
 }
 
 message FileRead {
-    string path = 1 [(buf.validate.field).string = {min_len: 1, max_len: 255}];
+    string path = 1;
 }
 
 message FileRemove {
-    string path = 1 [(buf.validate.field).string = {min_len: 1, max_len: 255}];
+    string path = 1;
 }
 
 message FileReadResponse {
@@ -1068,7 +1043,7 @@ message FileReadResponse {
 }
 
 message ProcessRunAsync {
-    string command = 1 [(buf.validate.field).string = {min_len: 1, max_len: 255}];
+    string command = 1;
 }
 
 message ProcessRunAsyncResponse {
@@ -1076,7 +1051,7 @@ message ProcessRunAsyncResponse {
 }
 
 message ProcessPoll {
-    uint32 pid = 1 [(buf.validate.field).uint32.gt = 0];
+    uint32 pid = 1;
 }
 
 message ProcessPollResponse {
@@ -1090,7 +1065,7 @@ message ProcessPollResponse {
 }
 
 message ProcessKill {
-    uint32 pid = 1 [(buf.validate.field).uint32.gt = 0];
+    uint32 pid = 1;
 }
 
 message GenericResponse {
@@ -1119,31 +1094,26 @@ message AckPacket {
 }
 
 message HandshakeConfig {
-    uint32 ack_timeout_ms = 1 [(buf.validate.field).uint32 = {gte: 50, lte: 10000}];
-    uint32 ack_retry_limit = 2 [(buf.validate.field).uint32 = {gte: 1, lte: 20}];
-    uint32 response_timeout_ms = 3 [(buf.validate.field).uint32 = {gte: 100, lte: 30000}];
+    uint32 ack_timeout_ms = 1;
+    uint32 ack_retry_limit = 2;
+    uint32 response_timeout_ms = 3;
 }
 
 message SetBaudratePacket {
-    uint32 baudrate = 1 [(buf.validate.field).uint32 = {in: [300, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200, 230400, 250000, 500000, 1000000, 2000000]}];
+    uint32 baudrate = 1;
 }
 
 message LinkSync {
-    option (buf.validate.message).cel = {
-        id: "linksync_nonce_tag_equal_length",
-        message: "nonce and tag must have identical length of 16 bytes",
-        expression: "size(this.nonce) == size(this.tag)"
-    };
-    bytes nonce = 1 [(buf.validate.field).bytes = {min_len: 16, max_len: 16}];
-    bytes tag = 2 [(buf.validate.field).bytes = {min_len: 16, max_len: 16}];
+    bytes nonce = 1;
+    bytes tag = 2;
 }
 
 message EnterBootloader {
-    uint32 magic = 1 [(buf.validate.field).uint32.const = 3735929054];
+    uint32 magic = 1;
 }
 
 message SpiTransfer {
-    bytes data = 1 [(buf.validate.field).bytes = {min_len: 1, max_len: 256}];
+    bytes data = 1;
 }
 
 message SpiTransferResponse {
@@ -1152,9 +1122,9 @@ message SpiTransferResponse {
 }
 
 message SpiConfig {
-    uint32 bit_order = 1 [(buf.validate.field).uint32.lte = 1];
-    uint32 data_mode = 2 [(buf.validate.field).uint32.lte = 3];
-    uint32 frequency = 3 [(buf.validate.field).uint32 = {gte: 100000, lte: 20000000}];
+    uint32 bit_order = 1;
+    uint32 data_mode = 2;
+    uint32 frequency = 3;
 }
 
 message SupervisorSnapshot {
@@ -1295,12 +1265,9 @@ message UserProperty {
 }
 
 message CloudQueuedPublish {
-    string topic_name = 1 [
-        (buf.validate.field).string.min_len = 1,
-        (buf.validate.field).string.pattern = "[^/]"
-    ];
+    string topic_name = 1;
     bytes payload = 2;
-    uint32 qos = 3 [(buf.validate.field).uint32.lte = 2];
+    uint32 qos = 3;
     bool retain = 4;
     optional string content_type = 5;
     optional uint32 payload_format_indicator = 6;
@@ -1317,7 +1284,7 @@ message CloudQueuedPublish {
 
 
 message CloudDropCount {
-    string topic = 1 [(buf.validate.field).string.min_len = 1];
+    string topic = 1;
     uint32 count = 2;
 }
 
@@ -1356,12 +1323,12 @@ message DaemonMetrics {
 }
 
 message PinControlRequest {
-    string state = 1 [(buf.validate.field).string = {in: ["ON", "OFF", "on", "off", "1", "0"]}];
+    string state = 1;
 }
 
 message PinControlData {
-    uint32 pin = 1 [(buf.validate.field).uint32.lte = 100];
-    string state = 2 [(buf.validate.field).string = {in: ["ON", "OFF", "on", "off", "1", "0"]}];
+    uint32 pin = 1;
+    string state = 2;
 }
 
 message PinControlResponse {
@@ -1371,12 +1338,12 @@ message PinControlResponse {
 }
 
 message RpcEnvelope {
-    uint32 version = 1 [(buf.validate.field).uint32.const = 2];
-    uint32 command_id = 2 [(buf.validate.field).uint32.lte = 65535];
-    uint32 sequence_id = 3 [(buf.validate.field).uint32.lte = 65535];
+    uint32 version = 1;
+    uint32 command_id = 2;
+    uint32 sequence_id = 3;
     bytes nonce = 4;
     oneof payload_type {
-        bytes encrypted_payload_with_tag = 6 [(buf.validate.field).bytes.max_len = 1040];
+        bytes encrypted_payload_with_tag = 6;
         VersionResponse version_response = 7;
         FreeMemoryResponse free_memory_response = 8;
         Capabilities capabilities = 9;

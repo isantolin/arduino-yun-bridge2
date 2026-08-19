@@ -47,11 +47,11 @@ namespace rpc {
 // de la tabla de símbolos.
 etl::expected<rpc_pb_RpcEnvelope, FrameError> parse_frame(
     etl::span<const uint8_t> buffer) {
-  if (buffer.size() < CRC_TRAILER_SIZE + 2U) {
+  if (buffer.size() < rpc::RPC_CRC_SIZE + 2U) {
     return etl::unexpected<FrameError>(FrameError::MALFORMED);
   }
 
-  const size_t crc_offset = buffer.size() - CRC_TRAILER_SIZE;
+  const size_t crc_offset = buffer.size() - rpc::RPC_CRC_SIZE;
   const uint32_t crc_calc = checksum::compute(buffer.subspan(0, crc_offset));
   const auto crc_tail = buffer.subspan(crc_offset);
 

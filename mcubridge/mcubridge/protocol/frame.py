@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from binascii import crc32
 from functools import lru_cache
-from typing import Final, NamedTuple
+from typing import NamedTuple
 
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
@@ -22,10 +22,6 @@ from google.protobuf.message import DecodeError, Message as ProtobufMessage
 
 from mcubridge.protocol import mcubridge_pb2 as pb
 from . import is_system_command, protocol
-
-_NONCE_SIZE: Final = protocol.AEAD_NONCE_SIZE
-_TAG_SIZE: Final = protocol.AEAD_TAG_SIZE
-_CRC_SIZE: Final = protocol.CRC_SIZE
 
 
 @lru_cache(maxsize=16)
@@ -119,11 +115,11 @@ def parse_frame(raw_frame_buffer: bytes | bytearray | memoryview, session_key: b
       safe, and high-frequency serial packet deserialization.
     """
     buf_len = len(raw_frame_buffer)
-    if buf_len < _CRC_SIZE:
+    if buf_len < protocol.CRC_SIZE:
         raise ValueError("Incomplete frame: too short")
 
-    body = raw_frame_buffer[:-_CRC_SIZE]
-    crc_bytes = raw_frame_buffer[-_CRC_SIZE:]
+    body = raw_frame_buffer[: -protocol.CRC_SIZE]
+    crc_bytes = raw_frame_buffer[-protocol.CRC_SIZE :]
     expected_crc = int.from_bytes(crc_bytes, "little")
     actual_crc = crc32(body) & protocol.CRC32_MASK
     if actual_crc != expected_crc:

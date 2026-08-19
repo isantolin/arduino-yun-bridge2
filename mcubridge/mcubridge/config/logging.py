@@ -6,17 +6,11 @@ import logging
 from logging.handlers import SysLogHandler
 import os
 from pathlib import Path
-from typing import Any, cast, Final
+from typing import Any, cast
 
 import structlog
 
 from .settings import RuntimeConfig
-
-DEBUG: Final[int] = logging.DEBUG
-INFO: Final[int] = logging.INFO
-WARNING: Final[int] = logging.WARNING
-ERROR: Final[int] = logging.ERROR
-CRITICAL: Final[int] = logging.CRITICAL
 
 
 def hexdump_processor(_: Any, __: str, event_dict: structlog.types.EventDict) -> structlog.types.EventDict:

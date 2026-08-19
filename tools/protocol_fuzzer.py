@@ -7,7 +7,6 @@ Mission: Stress test the MCU state machine by injecting protocol-level entropy.
 import asyncio
 import random
 from binascii import crc32
-from typing import Final
 
 from cobs import cobs
 import serialx
@@ -17,10 +16,6 @@ from typing import Annotated
 from mcubridge.protocol import protocol
 from mcubridge.protocol.frame import build_frame
 from mcubridge.protocol import mcubridge_pb2 as pb
-
-# Constants from protocol spec
-PROTOCOL_VERSION: Final[int] = protocol.PROTOCOL_VERSION
-FRAME_DELIMITER: Final[bytes] = protocol.FRAME_DELIMITER
 
 logger = structlog.get_logger("fuzzer")
 
@@ -42,14 +37,14 @@ class ProtocolFuzzer:
             raw_frame = build_frame(command_id=cmd, sequence_id=seq, payload=payload)
         else:
             envelope = pb.RpcEnvelope(
-                version=PROTOCOL_VERSION,
+                version=protocol.PROTOCOL_VERSION,
                 command_id=cmd,
                 sequence_id=seq,
                 encrypted_payload_with_tag=payload,
             )
             body = envelope.SerializeToString()
             raw_frame = body + (override_crc & protocol.CRC32_MASK).to_bytes(4, "little")
-        return cobs.encode(raw_frame) + FRAME_DELIMITER
+        return cobs.encode(raw_frame) + protocol.FRAME_DELIMITER
 
     async def send_raw(self, data: bytes) -> None:
         if self.writer:
@@ -90,28 +85,28 @@ class ProtocolFuzzer:
             )
             body = envelope.SerializeToString()
             crc = crc32(body) & protocol.CRC32_MASK
-            frame = cobs.encode(body + crc.to_bytes(4, "little")) + FRAME_DELIMITER
+            frame = cobs.encode(body + crc.to_bytes(4, "little")) + protocol.FRAME_DELIMITER
             await self.send_raw(frame)
 
         elif mode == "malformed_cobs":
             bad_data = b"\x03\x01\x00\x02"
-            await self.send_raw(bad_data + FRAME_DELIMITER)
+            await self.send_raw(bad_data + protocol.FRAME_DELIMITER)
 
         elif mode == "oversized_payload":
             envelope = pb.RpcEnvelope(
-                version=PROTOCOL_VERSION,
+                version=protocol.PROTOCOL_VERSION,
                 command_id=0x0001,
                 sequence_id=self.seq_id,
                 encrypted_payload_with_tag=b"A" * 300,
             )
             body = envelope.SerializeToString()
             crc = crc32(body) & protocol.CRC32_MASK
-            frame = cobs.encode(body + crc.to_bytes(4, "little")) + FRAME_DELIMITER
+            frame = cobs.encode(body + crc.to_bytes(4, "little")) + protocol.FRAME_DELIMITER
             await self.send_raw(frame)
 
         elif mode == "random_garbage":
             garbage = bytes([random.getrandbits(8) for _ in range(random.randint(1, 32))])
-            await self.send_raw(garbage + FRAME_DELIMITER)
+            await self.send_raw(garbage + protocol.FRAME_DELIMITER)
 
         elif mode == "unknown_command":
             frame = self._build_raw_frame(0x7FFF, self.seq_id, b"WHOAMI")
@@ -133,7 +128,7 @@ class ProtocolFuzzer:
 
                 try:
                     if self.reader:
-                        await asyncio.wait_for(self.reader.readuntil(FRAME_DELIMITER), timeout=0.05)
+                        await asyncio.wait_for(self.reader.readuntil(protocol.FRAME_DELIMITER), timeout=0.05)
                         latencies.append(asyncio.get_event_loop().time() - start_time)
                         success_count += 1
                 except (TimeoutError, asyncio.IncompleteReadError):

@@ -15,17 +15,10 @@ from __future__ import annotations
 
 import ctypes
 import secrets
-from typing import Final
 from cryptography.hazmat.primitives import hashes, hmac
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 
 from ..protocol import protocol
-
-AEAD_NONCE_SIZE: Final[int] = protocol.AEAD_NONCE_SIZE
-NONCE_TOTAL_BYTES: Final[int] = AEAD_NONCE_SIZE
-AEAD_TAG_SIZE: Final[int] = protocol.AEAD_TAG_SIZE
-NONCE_RANDOM_BYTES: Final[int] = 4
-NONCE_COUNTER_BYTES: Final[int] = 8
 
 
 def secure_zero(data: bytearray | memoryview) -> None:
@@ -46,15 +39,17 @@ def generate_nonce_with_counter(counter: int) -> tuple[bytes, int]:
     if counter >= protocol.NONCE_COUNTER_MASK or counter < 0:
         raise ValueError("Nonce counter overflow")
     new_counter = counter + 1
-    nonce = secrets.token_bytes(NONCE_RANDOM_BYTES) + new_counter.to_bytes(8, "big")
+    nonce = secrets.token_bytes(protocol.HANDSHAKE_NONCE_RANDOM_BYTES) + new_counter.to_bytes(
+        protocol.HANDSHAKE_NONCE_COUNTER_BYTES, "big"
+    )
     return nonce, new_counter
 
 
 def extract_nonce_counter(nonce: bytes) -> int:
     """Extract the counter from a 12-byte nonce."""
-    if len(nonce) != AEAD_NONCE_SIZE:
-        raise ValueError(f"Nonce must be {AEAD_NONCE_SIZE} bytes, got {len(nonce)}")
-    return int.from_bytes(nonce[4:], "big")
+    if len(nonce) != protocol.AEAD_NONCE_SIZE:
+        raise ValueError(f"Nonce must be {protocol.AEAD_NONCE_SIZE} bytes, got {len(nonce)}")
+    return int.from_bytes(nonce[protocol.HANDSHAKE_NONCE_RANDOM_BYTES :], "big")
 
 
 def validate_nonce_counter(nonce: bytes, last_counter: int) -> tuple[bool, int]:

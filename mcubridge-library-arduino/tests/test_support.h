@@ -3,6 +3,7 @@
 #include <etl/algorithm.h>
 #include <etl/array.h>
 #include <etl/crc32.h>
+#include <etl/string_view.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>

@@ -526,23 +526,14 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
 
 void BridgeClass::process() {
   const uint32_t start_us = ::micros();
-
-  // [SIL-2] Continuous Stack Sentinel & Watermarking verification
-  if (!bridge::hal::checkStackOverflow()) {
-    enterSafeState();
-    return;
-  }
-
   _watchdogTask();
   _serialTask();
   _timerTask();
   if constexpr (bridge::config::ENABLE_MAILBOX) Mailbox.process();
-
   const uint32_t elapsed_us = ::micros() - start_us;
-  if (elapsed_us > _wcet_max_micros) {
-    _wcet_max_micros = elapsed_us;
-  }
+  _wcet_max_micros = etl::max(_wcet_max_micros, elapsed_us);
 }
+
 void BridgeClass::_watchdogTask() { bridge::hal::watchdog_kick(); }
 
 void BridgeClass::_serialTask() {

@@ -145,11 +145,14 @@ static bool run_sram_march_test() {
 
 bool run_power_on_self_tests() {
   initStackCanary();
-  return run_sram_march_test() && checkStackOverflow()
+  const bool march_ok = run_sram_march_test();
+  const bool stack_ok = checkStackOverflow();
 #if BRIDGE_ENABLE_POST_TESTS
-         && rpc::security::run_cryptographic_self_tests()
+  const bool crypto_ok = rpc::security::run_cryptographic_self_tests();
+  return march_ok && stack_ok && crypto_ok;
+#else
+  return march_ok && stack_ok;
 #endif
-      ;
 }
 
 void init() {

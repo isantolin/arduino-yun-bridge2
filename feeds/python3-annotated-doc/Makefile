@@ -4,8 +4,7 @@ PKG_NAME:=python3-annotated-doc
 PKG_VERSION:=0.0.5
 PKG_RELEASE:=1
 
-PYPI_NAME:=annotated-doc
-PYTHON3_PKG_WHEEL_NAME:=annotated_doc
+PYPI_NAME:=annotated_doc
 PKG_HASH:=c7e58ce09192557605d8bbd92836d7e1d520ac9580096042c0bfd197efacf1bb
 
 PKG_MAINTAINER:=Ignacio Santolin <isantolin@gmail.com>

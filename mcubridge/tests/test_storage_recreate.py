@@ -26,8 +26,8 @@ async def test_sqlite_deque_recreate_on_corrupt(tmp_path: object) -> None:
 
         assert mock_open.call_count == 2
         mock_logger.warning.assert_any_call(
-            "LmdbDeque database corrupt or invalid, recreating: %s",
-            db_error,
+            "LmdbDeque database corrupt or invalid, recreating",
+            error=str(db_error),
         )
 
 
@@ -70,8 +70,8 @@ async def test_lmdb_cache_recreate_on_corrupt(tmp_path: object) -> None:
 
         assert mock_open.call_count == 2
         mock_logger.warning.assert_any_call(
-            "Failed to initialize LmdbCache schema: %s",
-            db_error,
+            "Failed to initialize LmdbCache schema",
+            error=str(db_error),
         )
 
 

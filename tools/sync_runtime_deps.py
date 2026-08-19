@@ -12,7 +12,6 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Annotated, Any, TypedDict, cast
 
-from distlib.version import NormalizedVersion
 from packaging.requirements import Requirement
 from packaging.version import Version
 import typer
@@ -370,7 +369,7 @@ def _parse_pip_spec(spec: str) -> tuple[str, str]:
 
 
 def _fetch_latest_version(package_name: str, *, include_prerelease: bool = False) -> str | None:
-    """Query PyPI JSON API for the latest release version using packaging.Version & distlib."""
+    """Query PyPI JSON API for the latest release version using packaging.Version."""
     url = f"https://pypi.org/pypi/{package_name}/json"
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "McuBridge-DepsSync/2.8"})
@@ -381,7 +380,6 @@ def _fetch_latest_version(package_name: str, *, include_prerelease: bool = False
                 for v_str in data["releases"].keys():
                     try:
                         v = Version(v_str)
-                        _ = NormalizedVersion(v_str)
                         if not include_prerelease and v.is_prerelease:
                             continue
                         parsed_versions.append(v)

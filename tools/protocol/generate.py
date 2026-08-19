@@ -43,7 +43,6 @@ UNTYPED_LIBS = [
     "typer",
     "lmdb",
     "nanopb",
-    "distlib",
 ]
 
 for dep in REQUIRED_DEPS:

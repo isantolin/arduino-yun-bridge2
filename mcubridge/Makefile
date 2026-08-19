@@ -57,8 +57,7 @@ define Package/$(PKG_NAME)
 		python3-grpclib \
 		python3-typer \
 		python3-lmdb \
-		python3-packaging \
-		python3-distlib
+		python3-packaging
 	# AUTO-GENERATED RUNTIME DEPENDS END
 endef
 

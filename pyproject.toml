@@ -11,7 +11,6 @@ dependencies = [
     "black==26.5.1",
     "cobs==1.2.2",
     "cryptography==50.0.0",
-    "distlib>=0.3.8",
     "grpcio-tools==1.83.0",
     "grpclib==0.4.9",
     "h2==4.4.1",

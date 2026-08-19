@@ -3,6 +3,7 @@
 Hardware Emulation Runner.
 Direct PTY-PTY link via socat, with MCU opening its PTY directly.
 """
+
 from __future__ import annotations
 
 import sys
@@ -31,7 +32,6 @@ import structlog  # noqa: E402
 import typer  # noqa: E402
 from mcubridge.config.logging import configure_logging  # noqa: E402
 from mcubridge.protocol import protocol  # noqa: E402
-
 
 # --- Constants ---
 SOCAT_PORT0 = "/tmp/ttyBRIDGE0"

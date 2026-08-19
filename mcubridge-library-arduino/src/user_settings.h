@@ -11,7 +11,6 @@
 #define WOLFCRYPT_ONLY
 #define SINGLE_THREADED
 #define WOLFSSL_NO_ATOMICS 1
-#define PB_NO_ERRMSG 1
 #define WC_NO_HARDEN
 #define WOLFSSL_USER_IO
 #define WOLFSSL_API

@@ -341,37 +341,42 @@ class SerialHandshakeManager:
         cmd_id = Command.CMD_GET_CAPABILITIES.value
         self._logger.debug("Starting capabilities discovery using Command ID 0x%02X", cmd_id)
 
-        try:
-            async for attempt in tenacity.AsyncRetrying(
-                stop=tenacity.stop_after_attempt(5),
-                wait=tenacity.wait_exponential(
-                    multiplier=SERIAL_HANDSHAKE_BACKOFF_BASE,
-                    max=SERIAL_HANDSHAKE_BACKOFF_MAX,
-                ),
-                retry=tenacity.retry_if_exception_type(TimeoutError),
-                before_sleep=tenacity.before_sleep_log(self._logger, logging.DEBUG),
-                reraise=True,
-            ):
-                with attempt:
-                    self._capabilities_future = loop.create_future()
-                    try:
-                        ok = await self._send_frame(cmd_id, b"")
-                        if not ok:
-                            raise TimeoutError("Send failed")
+        retryer = tenacity.AsyncRetrying(
+            stop=tenacity.stop_after_attempt(5),
+            wait=tenacity.wait_exponential(
+                multiplier=SERIAL_HANDSHAKE_BACKOFF_BASE,
+                max=SERIAL_HANDSHAKE_BACKOFF_MAX,
+            ),
+            retry=tenacity.retry_if_exception_type(TimeoutError),
+            before_sleep=tenacity.before_sleep_log(self._logger, logging.DEBUG),
+            reraise=False,
+        )
 
-                        timeout = max(5.0, (self._timing.response_timeout_ms / 1000.0))
-                        async with asyncio.timeout(timeout):
-                            payload = await self._capabilities_future
-                        self._parse_capabilities(payload)
-                        return True
-                    except (ProtobufDecodeError, ValueError, TypeError, KeyError) as exc:
-                        self._logger.error("[SIL-2] Capabilities payload corrupt; aborting: %s", exc)
-                        return False
-                    finally:
-                        self._capabilities_future = None
+        async def _attempt() -> bool:
+            self._capabilities_future = loop.create_future()
+            ok = await self._send_frame(cmd_id, b"")
+            if not ok:
+                self._capabilities_future = None
+                raise TimeoutError("Send failed")
+
+            try:
+                timeout = max(5.0, (self._timing.response_timeout_ms / 1000.0))
+                async with asyncio.timeout(timeout):
+                    payload = await self._capabilities_future
+                self._parse_capabilities(payload)
+                return True
+            except TimeoutError:
+                raise
+            except (ProtobufDecodeError, ValueError, TypeError, KeyError) as exc:
+                self._logger.error("[SIL-2] Capabilities payload corrupt; aborting: %s", exc)
+                return False
+            finally:
+                self._capabilities_future = None
+
+        try:
+            return await retryer(_attempt)
         except tenacity.RetryError:
             return False
-        return False
 
     async def handle_capabilities_resp(self, seq_id: int, payload: bytes | ProtobufMessage) -> bool:
         if self._capabilities_future and not self._capabilities_future.done():

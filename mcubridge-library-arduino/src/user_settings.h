@@ -6,7 +6,6 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include <time.h>
 
 #define WOLFSSL_ARDUINO
 #define WOLFCRYPT_ONLY
@@ -62,14 +61,10 @@
 #define NO_MAIN_DRIVER
 #define WC_NO_RNG
 
-/* Time configuration */
-#define USER_TIME
-#define XTIME wolfssl_time
-#define XGMTIME wolfssl_gmtime
-#define WOLFSSL_GMTIME
-#define HAVE_GMTIME_R
-#define HAVE_TIME_H
-#define HAVE_TIME_T_TYPE
-#define HAVE_TM_TYPE
+/* Time configuration (Not needed for ChaCha20-Poly1305 & SHA-256 / HKDF) */
+#define NO_ASN_TIME
+#define TIME_OVERRIDES
+#define XTIME(t) ((uint32_t)0)
+#define XGMTIME(c, t) ((void*)0)
 
 #endif /* MCUBRIDGE_USER_SETTINGS_H */

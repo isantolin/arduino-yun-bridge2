@@ -16,7 +16,6 @@ from prometheus_client.registry import Collector
 import structlog
 
 from .protocol import mcubridge_pb2 as pb
-from .protocol import structures
 from .protocol.structures import PROTOBUF_CONTENT_TYPE, create_queued_publish
 from .protocol.topics import Topic, topic_path
 from .state.context import RuntimeState
@@ -47,29 +46,24 @@ def _build_metrics_message(
         user_properties=(),
     )
 
-    extra_props: list[tuple[str, str]] = []
     if snapshot.cloud_spool_degraded:
-        extra_props.append((const.PROP_KEY_BRIDGE_SPOOL, snapshot.cloud_spool_failure_reason or const.PROP_VAL_UNKNOWN))
+        message.user_properties.add(
+            key=const.PROP_KEY_BRIDGE_SPOOL,
+            value=snapshot.cloud_spool_failure_reason or const.PROP_VAL_UNKNOWN,
+        )
 
     # Extra props for files
     if state.file_storage_limit_rejections > 0:
-        extra_props.append((const.PROP_KEY_BRIDGE_FILES, const.PROP_VAL_QUOTA_BLOCKED))
+        message.user_properties.add(key=const.PROP_KEY_BRIDGE_FILES, value=const.PROP_VAL_QUOTA_BLOCKED)
     elif state.file_write_limit_rejections > 0:
-        extra_props.append((const.PROP_KEY_BRIDGE_FILES, const.PROP_VAL_WRITE_LIMIT))
+        message.user_properties.add(key=const.PROP_KEY_BRIDGE_FILES, value=const.PROP_VAL_WRITE_LIMIT)
 
-    extra_props.append(
-        (
-            const.PROP_KEY_WATCHDOG_ENABLED,
-            const.PROP_VAL_ENABLED_TRUE if snapshot.watchdog_enabled else const.PROP_VAL_ENABLED_FALSE,
-        )
+    message.user_properties.add(
+        key=const.PROP_KEY_WATCHDOG_ENABLED,
+        value=const.PROP_VAL_ENABLED_TRUE if snapshot.watchdog_enabled else const.PROP_VAL_ENABLED_FALSE,
     )
     if snapshot.watchdog_enabled:
-        extra_props.append((const.PROP_KEY_WATCHDOG_INTERVAL, str(snapshot.watchdog_interval)))
-
-    if extra_props:
-        user_props = [(p.key, p.value) for p in message.user_properties]
-        user_props.extend(extra_props)
-        message = structures.replace_cloud_publish(message, user_properties=user_props)
+        message.user_properties.add(key=const.PROP_KEY_WATCHDOG_INTERVAL, value=str(snapshot.watchdog_interval))
 
     return message
 

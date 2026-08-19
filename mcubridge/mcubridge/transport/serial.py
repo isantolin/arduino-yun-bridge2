@@ -258,7 +258,9 @@ class SerialTransport:
             ack_target = pending.command_id
             if payload:
                 try:
-                    if isinstance(payload, ProtobufMessage):
+                    if isinstance(payload, pb.AckPacket):
+                        ack_target = payload.command_id
+                    elif isinstance(payload, ProtobufMessage):
                         ack_target = getattr(payload, "command_id", ack_target)
                     else:
                         ack_target = pb.AckPacket.FromString(payload).command_id
@@ -397,8 +399,7 @@ class SerialTransport:
             )
 
         try:
-            await self.serial.write(encoded)
-            await self.serial.write(protocol.FRAME_DELIMITER)
+            await self.serial.write(encoded + protocol.FRAME_DELIMITER)
             await self.serial.drain()
             self.state.metrics.serial_bytes_sent.inc(len(encoded) + len(protocol.FRAME_DELIMITER))
             self.state.metrics.serial_frames_sent.inc()

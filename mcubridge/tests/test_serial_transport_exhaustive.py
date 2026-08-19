@@ -121,7 +121,9 @@ async def test_send_raw_success(
 
     res = await transport.send_raw(command_id=0x01, payload=b"test")
     assert res is True
-    assert mock_serial.write.call_count == 2
+    assert mock_serial.write.call_count == 1
+    written_data = mock_serial.write.call_args[0][0]
+    assert written_data.endswith(protocol.FRAME_DELIMITER)
 
 
 @pytest.mark.asyncio

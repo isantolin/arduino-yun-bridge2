@@ -28,7 +28,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        env: [protocol, deps-sync, lua, cppcheck, typecheck, lint, py313, arduino]
+        env: [protocol, deps-sync, luci, cppcheck, typecheck, lint, py313, arduino]
     steps:
       - uses: actions/checkout@v6
       - name: Install protoc
@@ -46,13 +46,10 @@ jobs:
           install-system-deps: 'true'
           cache-suffix: ${{ matrix.env }}
       - name: Install System Dependencies
-        if: matrix.env == 'lua' || matrix.env == 'cppcheck' || matrix.env == 'typecheck' || matrix.env == 'protocol' || matrix.env == 'lint'
+        if: matrix.env == 'cppcheck' || matrix.env == 'typecheck' || matrix.env == 'protocol' || matrix.env == 'lint'
         run: |
-          sudo apt-get update && sudo apt-get install -y cppcheck luarocks unzip
+          sudo apt-get update && sudo apt-get install -y cppcheck unzip
           python -m pip install protobuf mypy-protobuf
-          if [ "${{ matrix.env }}" = "lua" ]; then
-            sudo luarocks install luacheck
-          fi
       - name: Install Build Tools
         if: matrix.env == 'arduino'
         run: sudo apt-get update && sudo apt-get install -y g++ make

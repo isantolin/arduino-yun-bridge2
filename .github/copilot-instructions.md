@@ -87,7 +87,7 @@ Serial (COBS/R + CRC32 + ChaCha20-Poly1305 AEAD)
 
 **Client library** (`mcubridge-client-examples/mcubridge_client/`) provides an async API for external consumers over Sockets UNIX / gRPC.
 
-**LuCI app** (`luci-app-mcubridge/`) is the OpenWrt web UI; Lua logic lives in `luasrc/`, validated by `tox -e lua` (luacheck).
+**LuCI app** (`luci-app-mcubridge/`) is the OpenWrt web UI; client-side JS views live in `htdocs/luci-static/resources/view/mcubridge/`, validated by `tox -e luci`.
 
 ## Key Conventions
 

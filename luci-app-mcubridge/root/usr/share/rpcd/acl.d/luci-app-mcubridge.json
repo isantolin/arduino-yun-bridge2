@@ -1,0 +1,26 @@
+{
+	"luci-app-mcubridge": {
+		"description": "Grant access to McuBridge LuCI app",
+		"read": {
+			"uci": [ "mcubridge" ],
+			"file": {
+				"/tmp/mcubridge_status.json": [ "read" ]
+			},
+			"ubus": {
+				"service": [ "list" ]
+			}
+		},
+		"write": {
+			"uci": [ "mcubridge" ],
+			"file": {
+				"/tmp/mcubridge-luci.*": [ "write" ]
+			},
+			"file-exec": {
+				"/usr/bin/mcubridge-rotate-credentials": [ "exec" ],
+				"/usr/bin/mcubridge-hw-smoke": [ "exec" ],
+				"/usr/bin/mcubridge-led-control": [ "exec" ],
+				"/etc/init.d/mcubridge": [ "exec" ]
+			}
+		}
+	}
+}

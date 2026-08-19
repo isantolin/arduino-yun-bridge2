@@ -1,0 +1,52 @@
+{
+	"admin/services/mcubridge": {
+		"title": "McuBridge",
+		"order": 90,
+		"action": {
+			"type": "firstchild"
+		},
+		"depends": {
+			"acl": [ "luci-app-mcubridge" ]
+		}
+	},
+	"admin/services/mcubridge/config": {
+		"title": "Configuration",
+		"order": 10,
+		"action": {
+			"type": "view",
+			"path": "mcubridge/config"
+		}
+	},
+	"admin/services/mcubridge/status": {
+		"title": "Daemon Status",
+		"order": 20,
+		"action": {
+			"type": "view",
+			"path": "mcubridge/status"
+		}
+	},
+	"admin/services/mcubridge/capabilities": {
+		"title": "Device Capabilities",
+		"order": 30,
+		"action": {
+			"type": "view",
+			"path": "mcubridge/capabilities"
+		}
+	},
+	"admin/services/mcubridge/credentials": {
+		"title": "Credentials & TLS",
+		"order": 40,
+		"action": {
+			"type": "view",
+			"path": "mcubridge/credentials"
+		}
+	},
+	"admin/services/mcubridge/webui": {
+		"title": "Web UI",
+		"order": 50,
+		"action": {
+			"type": "view",
+			"path": "mcubridge/webui"
+		}
+	}
+}

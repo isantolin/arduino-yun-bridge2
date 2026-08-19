@@ -217,7 +217,7 @@ class TestNegotiateBaudrate:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# serial.py — _process_packet anti-replay and protovalidate paths
+# serial.py — _process_packet anti-replay and uninitialized payload paths
 # ══════════════════════════════════════════════════════════════════════════════
 
 
@@ -532,7 +532,7 @@ class TestRuntimeStateContext:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# pin_rest_cgi.py — control() CLI, run_cgi(), protovalidate error on pin_data
+# pin_rest_cgi.py — control() CLI, run_cgi(), validation error on pin_data
 # ══════════════════════════════════════════════════════════════════════════════
 
 

@@ -923,9 +923,6 @@ def main(
                 target_h.write_bytes(cpp_pb_h.read_bytes())
                 # Fix pb.h include for relative path in Arduino library structure
                 h_text = target_h.read_text().replace("#include <pb.h>", '#include "../pb.h"')
-                h_text = h_text.replace(
-                    '#include "buf/validate/validate.pb.h"', '/* #include "buf/validate/validate.pb.h" */'
-                )
                 target_h.write_text(h_text)
                 cpp_pb_h.unlink(missing_ok=True)
             if cpp_pb_c.exists():

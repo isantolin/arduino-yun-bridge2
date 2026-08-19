@@ -62,8 +62,6 @@ def build_frame(
 
     [CRITICAL PERFORMANCE CONSTRAINT - HOT PATH]
     - Must maintain sub-microsecond to low-microsecond latency (< 10 µs / > 150,000 ops/sec).
-    - DO NOT add pure-Python dynamic AST/CEL evaluators (e.g. `protovalidate.validate`) inside
-      this function. CEL interpretation incurs a ~1,600 µs (300x) penalty per frame.
     - Fast native integer bounds checks combined with C-extension Protobuf serialization guarantee
       both deterministic SIL-2 memory safety and maximum throughput.
     """
@@ -117,8 +115,6 @@ def parse_frame(raw_frame_buffer: bytes | bytearray | memoryview, session_key: b
 
     [CRITICAL PERFORMANCE CONSTRAINT - HOT PATH]
     - Must maintain sub-microsecond to low-microsecond latency (< 10 µs / > 100,000 ops/sec).
-    - DO NOT add pure-Python dynamic AST/CEL evaluators (e.g. `protovalidate.validate`) inside
-      this function. CEL interpretation incurs a ~1,600 µs (200x) penalty per frame.
     - Fast native version verification and C-extension Protobuf parsing guarantee deterministic,
       safe, and high-frequency serial packet deserialization.
     """

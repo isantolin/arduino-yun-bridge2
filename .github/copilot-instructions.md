@@ -112,6 +112,12 @@ All new data crossing the serial boundary must be defined in `mcubridge.proto` f
 - **FSM states** use `enum class StateId : uint8_t` with `etl::fsm`. States: `STARTUP → UNSYNCHRONIZED → HANDSHAKE → SYNCHRONIZED ⇄ AWAITING_ACK`, with `FAULT` as terminal.
 - **CRC**: use `etl::crc32_t16` (not a full 1KB table) for AVR targets.
 - **Nanopb** handles payload encoding/decoding — avoid direct template instantiations for repetitive parsing; use `_parse_impl` helpers.
+- **SIL-2 Safety Subsystems**:
+  - **SRAM POST**: Non-destructive March tests with alternating bit patterns (`0x55`, `0xAA`, `0x00`, `0xFF`) at boot.
+  - **Stack Sentinel**: Canary monitoring (`STACK_CANARY_VALUE = 0x55AA55AA`, `MIN_STACK_MARGIN_BYTES = 64`) to prevent stack-heap collisions, triggering `enterSafeState()` upon corruption.
+  - **WCET Tracking**: Runtime microsecond tracking (`micros()`) recording peak iteration time (`_wcet_max_micros`) bounded against hardware watchdog timeout.
+- **FIPS 140-3 Cryptographic Validation**:
+  - Boot-time Known-Answer Tests (KATs) for SHA-256, HMAC-SHA256, and ChaCha20-Poly1305 AEAD with strictly non-weak linkage.
 - Before any C++ modification, check the Symbol Profiling report (`tools/arduino_symbol_profiler.py`) for Flash/RAM impact.
 
 ### Code quality gates
@@ -124,5 +130,10 @@ All new data crossing the serial boundary must be defined in `mcubridge.proto` f
 - **Line-by-line test & log audit**: test execution outputs and full execution logs MUST be audited line by line regardless of whether tests pass. Treat every notice, warning, unhandled trace, or implicit anomaly as a critical failure.
 - **Continuous test hardening & defect remediation**: whenever a defect, unhandled edge condition, or logic bug is discovered that was not caught by the existing test suite, immediately implement corresponding test cases and strict assertions to guarantee future automated detection and regression prevention.
 - **Maximal test verbosity rule**: ALL test runners, validation environments, and test harnesses across the entire ecosystem MUST ALWAYS execute with maximum verbosity (e.g., `pytest -vv`, detailed Unity/C++ runner outputs). Compressed or silent output modes are strictly prohibited.
+- **Pre-Refactoring Diagnostic & Thoroughness**:
+  - Quantitative Uncovered Branch & MC/DC inventory.
+  - Exact SRAM/Flash delta balance & WCET bound report.
+  - Multi-layer dependency parity audit (Upstream VCS Tag vs Package Registry availability vs Toolchain/ABI).
+  - FMEA / HAZOP safety pre-check and formal FSM transition matrix verification.
 - If a test fails because of a correct implementation, fix the test — never compromise the implementation for test compatibility.
 - `tox -e gemini-parity` (`tools/check_gemini_parity.py`) validates consistency between GEMINI.md, AGENTS.md, and `.copilot-instructions` to ensure all AI config files remain in sync.

@@ -3,7 +3,12 @@
 Hardware Emulation Runner.
 Direct PTY-PTY link via socat, with MCU opening its PTY directly.
 """
+
 from __future__ import annotations
+from mcubridge.protocol import protocol
+from mcubridge.config.logging import configure_logging
+import typer
+import structlog
 
 import contextlib
 import json
@@ -25,11 +30,6 @@ if str(repo_root / "mcubridge-client-examples") not in sys.path:
     sys.path.insert(0, str(repo_root / "mcubridge-client-examples"))
 if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
-
-import structlog
-import typer
-from mcubridge.config.logging import configure_logging
-from mcubridge.protocol import protocol
 
 
 # --- Constants ---

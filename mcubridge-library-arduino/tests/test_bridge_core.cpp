@@ -6,6 +6,7 @@
 #include <unity.h>
 
 #include "Bridge.h"
+#include "BridgeFaultInjection.h"
 #include "BridgeTestInterface.h"
 #include "services/Console.h"
 #include "test_support.h"  // IWYU pragma: keep
@@ -208,6 +209,22 @@ void test_bridge_begin_null_secret() {
   Bridge.process();
 }
 
+void test_bridge_handshake_timeout_not_sync() {
+  reset_bridge();
+  auto& ba = TestAccessor::create(Bridge);
+  TEST_ASSERT_FALSE(ba.isSynchronized());
+
+  // Trigger timeout when not synchronized -> FAULT state
+  ba.onHandshakeTimeout();
+  TEST_ASSERT_TRUE(ba.isFault());
+
+  // Trigger timeout when synchronized -> does not enter fault
+  reset_bridge();
+  ba.setSynchronized();
+  ba.onHandshakeTimeout();
+  TEST_ASSERT_FALSE(ba.isFault());
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_bridge_initialization);
@@ -219,5 +236,6 @@ int main() {
   RUN_TEST(test_bridge_post_and_stack_sentinel);
   RUN_TEST(test_bridge_wcet_tracking);
   RUN_TEST(test_bridge_begin_null_secret);
+  RUN_TEST(test_bridge_handshake_timeout_not_sync);
   return UNITY_END();
 }

@@ -54,7 +54,7 @@ class WatchdogKeepalive:
         try:
             self._write(self._token)
         except OSError as exc:
-            logger.warning("Failed to emit watchdog trigger: %s", exc)
+            logger.warning("Failed to emit watchdog trigger", error=str(exc))
         else:
             if self._state is not None:
                 # [SIL-2] Direct metrics recording
@@ -64,7 +64,7 @@ class WatchdogKeepalive:
 
     async def run(self) -> None:
         """Continuously emit watchdog pulses until cancelled."""
-        logger.info("Watchdog keepalive started (interval=%.2fs)", self.interval)
+        logger.info("Watchdog keepalive started", interval_seconds=self.interval)
 
         try:
             while True:

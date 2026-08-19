@@ -94,7 +94,7 @@ def run_daemon() -> None:
         SerialHandshakeFatal,
         tenacity.RetryError,
     ) as exc:
-        logger.critical("Fatal error: %s", exc, exc_info=not isinstance(exc, RuntimeError))
+        logger.critical("Fatal error", error=str(exc), exc_info=not isinstance(exc, RuntimeError))
         sys.exit(1)
     except ExceptionGroup as exc_group:
         handled, unhandled = exc_group.split(
@@ -111,7 +111,7 @@ def run_daemon() -> None:
         if handled is None:
             raise
         for exc in handled.exceptions:
-            logger.critical("Fatal grouped error: %s", exc, exc_info=exc)
+            logger.critical("Fatal grouped error", error=str(exc), exc_info=True)
         if unhandled is not None:
             raise unhandled
         sys.exit(1)

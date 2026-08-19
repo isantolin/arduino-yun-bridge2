@@ -99,7 +99,7 @@ class SerialTransport:
         try:
             if self.serial:
                 self.serial.transport.serial.baudrate = target_baud
-            logger.info("Local UART switched to %d baud", target_baud)
+            logger.info("Local UART switched baudrate", baud=target_baud)
         except (AttributeError, OSError, ValueError, serialx.SerialException) as e:
             raise RuntimeError(f"UART access failed: {e}") from e
 
@@ -121,11 +121,11 @@ class SerialTransport:
         except asyncio.CancelledError:
             logger.info("Serial transport cancelled")
         except SerialHandshakeFatal as exc:
-            logger.error("Fatal serial handshake error: %s", exc)
+            logger.error("Fatal serial handshake error", error=str(exc))
             raise
 
     async def _connect_and_run(self) -> None:
-        logger.info("Connecting to MCU on %s...", self.config.serial_port)
+        logger.info("Connecting to MCU", port=self.config.serial_port)
         connect_baud = self.config.serial_safe_baud or protocol.DEFAULT_SAFE_BAUDRATE
         try:
             async with serialx.AsyncSerial(
@@ -161,7 +161,7 @@ class SerialTransport:
                         try:
                             await self.service.on_serial_disconnected()
                         except (OSError, RuntimeError, ValueError, TypeError) as e:
-                            logger.error("Error during serial disconnect cleanup", error=e)
+                            logger.error("Error during serial disconnect cleanup", error=str(e))
         finally:
             self.serial = None
 
@@ -172,7 +172,7 @@ class SerialTransport:
                 await asyncio.sleep(0.1)
                 await self.serial.set_modem_pins(dtr=True)
         except (AttributeError, OSError, ValueError, serialx.SerialException, RuntimeError) as exc:
-            logger.error("Unable to toggle DTR on %s: %s", self.config.serial_port, exc)
+            logger.error("Unable to toggle DTR", port=self.config.serial_port, error=str(exc))
 
     async def stop(self) -> None:
         self._stop_event.set()
@@ -192,7 +192,7 @@ class SerialTransport:
             except asyncio.IncompleteReadError:
                 break
             except (OSError, RuntimeError, ValueError, TypeError, serialx.SerialException) as exc:
-                logger.error("Error in _read_loop: %s", exc)
+                logger.error("Error in serial read loop", error=str(exc))
                 break
 
     async def _process_packet(self, encoded_packet: bytes | memoryview) -> None:
@@ -202,7 +202,7 @@ class SerialTransport:
             decoded = cobsr.decode(raw_bytes)
             decoded_frame = parse_frame(decoded, self.state.link_session_key if self.state.is_synchronized else None)
         except (cobsr.DecodeError, ValueError, TypeError, RuntimeError) as exc:
-            logger.error("[SERIAL <- MCU] [MALFORMED]: %s", exc)
+            logger.error("Malformed frame received from MCU", error=str(exc))
             self.state.serial_decode_errors += 1
             await self._check_baudrate_fallback()
             return
@@ -265,7 +265,7 @@ class SerialTransport:
                     else:
                         ack_target = pb.AckPacket.FromString(payload).command_id
                 except (ProtobufDecodeError, TypeError, ValueError) as e:
-                    logger.error("Failed to decode MCU ACK payload", error=e)
+                    logger.error("Failed to decode MCU ACK payload", error=str(e))
             logger.debug(
                 "Correlation ACK match",
                 ack_target=ack_target,
@@ -297,7 +297,7 @@ class SerialTransport:
     async def _check_baudrate_fallback(self) -> None:
         self._consecutive_crc_errors += 1
         if self._consecutive_crc_errors >= self.config.serial_fallback_threshold:
-            logger.error("Fallback to %d baud", self.config.serial_safe_baud)
+            logger.error("Fallback to safe baudrate", baud=self.config.serial_safe_baud)
             self._consecutive_crc_errors = 0
             if self.config.serial_baud != self.config.serial_safe_baud:
                 await self._negotiate_baudrate(self.config.serial_safe_baud)
@@ -405,7 +405,7 @@ class SerialTransport:
             self.state.metrics.serial_frames_sent.inc()
             return True
         except (AttributeError, OSError, RuntimeError, ValueError, serialx.SerialException) as exc:
-            logger.error("Serial write failed: %s", exc)
+            logger.error("Serial write failed", error=str(exc))
             return False
 
     async def _negotiate_baudrate(self, target_baud: int) -> bool:
@@ -420,7 +420,7 @@ class SerialTransport:
                     await self._negotiation_future
             return True
         except (asyncio.TimeoutError, OSError, RuntimeError, ValueError, serialx.SerialException) as exc:
-            logger.error("Baudrate negotiation failed: %s", exc)
+            logger.error("Baudrate negotiation failed", error=str(exc))
             return False
         finally:
             self._negotiating = False

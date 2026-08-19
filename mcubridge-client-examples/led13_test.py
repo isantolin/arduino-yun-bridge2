@@ -25,11 +25,11 @@ async def run_test(
         logger.info("--- Starting LED Pin Control Test ---")
         topic_pin = Topic.build(Topic.DIGITAL, str(pin), prefix=topic_prefix)
 
-        logger.info("Turning pin %d ON", pin)
+        logger.info("Turning pin state", pin=pin, state="ON")
         await stub.Publish(pb.CloudQueuedPublish(topic_name=topic_pin, payload=b"1", qos=1))
         await asyncio.sleep(2)
 
-        logger.info("Turning pin %d OFF", pin)
+        logger.info("Turning pin state", pin=pin, state="OFF")
         await stub.Publish(pb.CloudQueuedPublish(topic_name=topic_pin, payload=b"0", qos=1))
         await asyncio.sleep(2)
 

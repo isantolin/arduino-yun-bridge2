@@ -34,14 +34,14 @@ async def run_test(socket_path: str | None, topic_prefix: str) -> None:
         topic_dr = Topic.build(Topic.DIGITAL, "13", "read", prefix=topic_prefix)
         r_dr = await stub.Publish(pb.CloudQueuedPublish(topic_name=topic_dr, payload=b"", qos=1))
         assert r_dr is not None and r_dr.payload
-        logger.info("Digital read pin 13 result: %s", r_dr.payload.decode())
+        logger.info("Digital read pin 13 result", result=r_dr.payload.decode())
 
         # 2b. Analog test
         logger.info("Testing Analog Operations...")
         topic_ar = Topic.build(Topic.ANALOG, "0", "read", prefix=topic_prefix)
         r_ar = await stub.Publish(pb.CloudQueuedPublish(topic_name=topic_ar, payload=b"", qos=1))
         assert r_ar is not None and r_ar.payload
-        logger.info("Analog read pin 0 result: %s", r_ar.payload.decode())
+        logger.info("Analog read pin 0 result", result=r_ar.payload.decode())
         topic_aw = Topic.build(Topic.ANALOG, "9", prefix=topic_prefix)
         r_aw = await stub.Publish(pb.CloudQueuedPublish(topic_name=topic_aw, payload=b"128", qos=1))
         assert r_aw is not None

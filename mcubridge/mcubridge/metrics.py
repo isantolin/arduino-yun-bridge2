@@ -137,7 +137,7 @@ async def publish_metrics(
         except asyncio.CancelledError:
             raise
         except (OSError, RuntimeError) as e:
-            logger.error("Periodic metrics emit failed: %s", e)
+            logger.error("Periodic metrics emit failed", error=str(e))
 
     try:
         while True:
@@ -177,7 +177,7 @@ async def publish_bridge_snapshots(
                     except asyncio.CancelledError:
                         raise
                     except (OSError, RuntimeError) as e:
-                        logger.error("Bridge summary emit failed: %s", e)
+                        logger.error("Bridge summary emit failed", error=str(e))
                     await asyncio.sleep(summary_seconds)
 
             tg.create_task(_summary_loop())
@@ -191,7 +191,7 @@ async def publish_bridge_snapshots(
                     except asyncio.CancelledError:
                         raise
                     except (OSError, RuntimeError) as e:
-                        logger.error("Bridge handshake emit failed: %s", e)
+                        logger.error("Bridge handshake emit failed", error=str(e))
                     await asyncio.sleep(handshake_seconds)
 
             tg.create_task(_handshake_loop())

@@ -362,8 +362,8 @@ class RuntimeState:
                 try:
                     directory.mkdir(parents=True, exist_ok=True)
                     return LmdbDeque(path=str(directory / "spool_lmdb"), maxlen=self.mailbox_queue_limit)
-                except (OSError, RuntimeError):
-                    logger.warning("Spool '%s' falling back to RAM", subdir)
+                except (OSError, RuntimeError) as exc:
+                    logger.warning("Spool falling back to RAM", spool=subdir, error=str(exc))
 
             return LmdbDeque(path=":memory:", maxlen=self.mailbox_queue_limit)
 

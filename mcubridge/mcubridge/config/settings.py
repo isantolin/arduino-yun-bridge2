@@ -196,9 +196,9 @@ def load_runtime_config(overrides: dict[str, Any] | None = None) -> RuntimeConfi
         return msg
     except (ValueError, TypeError) as e:
         if source == "uci":
-            logger.critical("FATAL: UCI configuration is invalid: %s", e)
+            logger.critical("FATAL: UCI configuration is invalid", error=str(e))
             raise RuntimeError(f"Invalid system configuration: {e}") from e
-        logger.critical("Configuration validation failed: %s", e)
+        logger.critical("Configuration validation failed", error=str(e))
         raise
 
 

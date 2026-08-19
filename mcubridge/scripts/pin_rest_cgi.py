@@ -41,7 +41,7 @@ def publish_sync(topic: str, payload: str, config: RuntimeConfig) -> None:
     try:
         asyncio.run(_run())
     except (OSError, RuntimeError, ValueError) as exc:
-        logger.error("Failed to publish via local gRPC IPC: %s", exc)
+        logger.error("Failed to publish via local gRPC IPC", error=str(exc))
         raise
 
 

@@ -37,21 +37,24 @@ class CloudBridgeService(CloudBridgeBase):
                         if key == "commonName":
                             device_id = val
             except (ssl.SSLError, AttributeError, KeyError, TypeError) as e:
-                logger.error("Failed to parse client certificate: %s", e)
+                logger.error("Failed to parse client certificate", error=str(e))
                 return
 
-        logger.info("Device connected: %s", device_id)
+        logger.info("Device connected", device_id=device_id)
         self.gateway.connections[device_id] = stream
 
         try:
             async for envelope in stream:
                 if not envelope.IsInitialized() or envelope.protocol_version != 2:
-                    logger.warning("Invalid cloud envelope from %s", device_id)
+                    logger.warning("Invalid cloud envelope", device_id=device_id)
                     continue
 
                 payload_type = envelope.WhichOneof("payload")
                 logger.debug(
-                    "Received envelope from %s (seq=%d, payload=%s)", device_id, envelope.sequence_id, payload_type
+                    "Received envelope",
+                    device_id=device_id,
+                    seq=envelope.sequence_id,
+                    payload_type=payload_type,
                 )
 
                 match payload_type:
@@ -64,25 +67,30 @@ class CloudBridgeService(CloudBridgeBase):
                         )
                         await stream.send_message(pong)
                     case "telemetry":
-                        logger.info("Processed telemetry from %s", device_id)
+                        logger.info("Processed telemetry", device_id=device_id)
                     case "event":
                         evt = envelope.event
-                        logger.warning("Event from %s: [%s] %s", device_id, evt.event_type, evt.description)
+                        logger.warning(
+                            "Device event",
+                            device_id=device_id,
+                            event_type=evt.event_type,
+                            description=evt.description,
+                        )
                     case "command_response":
                         logger.info(
-                            "Received command response from %s (status=%d)",
-                            device_id,
-                            envelope.command_response.status_code,
+                            "Received command response",
+                            device_id=device_id,
+                            status_code=envelope.command_response.status_code,
                         )
                     case _:
-                        logger.debug("Received unhandled or empty payload type: %s", payload_type)
+                        logger.debug("Received unhandled or empty payload type", payload_type=payload_type)
         except asyncio.CancelledError:
-            logger.info("Session cancelled for device: %s", device_id)
+            logger.info("Session cancelled for device", device_id=device_id)
             raise
         except OSError as exc:
-            logger.warning("Network OS error for device %s: %s", device_id, exc)
+            logger.warning("Network OS error for device", device_id=device_id, error=str(exc))
         finally:
-            logger.info("Device disconnected: %s", device_id)
+            logger.info("Device disconnected", device_id=device_id)
             self.gateway.connections.pop(device_id, None)
 
 
@@ -136,9 +144,9 @@ class ProtobufGateway:
         await self.server.start(self.host, self.port, ssl=ssl_context)
 
         scheme = "tcps" if ssl_context else "tcp"
-        logger.info("gRPC Cloud Gateway running on %s://%s:%d", scheme, self.host, self.port)
+        logger.info("gRPC Cloud Gateway running", scheme=scheme, host=self.host, port=self.port)
         if self.http3_enabled:
-            logger.info('HTTP/3 (QUIC) capability enabled (Alt-Svc: h3=":%d")', self.http3_port)
+            logger.info("HTTP/3 (QUIC) capability enabled", port=self.http3_port, alt_svc=f'h3=":{self.http3_port}"')
         await self.server.wait_closed()
 
 

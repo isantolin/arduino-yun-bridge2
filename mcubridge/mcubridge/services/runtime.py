@@ -422,7 +422,7 @@ class BridgeService:
             self.state.metrics.cloud_messages_published.inc()
             return True
         except (OSError, struct.error, ProtobufSerializationError) as exc:
-            logger.error("Cloud publish failure: %s", exc)
+            logger.error("Cloud publish failure", error=str(exc))
             return False
 
     # --- Lifecycle ---
@@ -702,9 +702,9 @@ class BridgeService:
                 p = cast(pb.AckPacket, payload)
             else:
                 p = pb.AckPacket.FromString(payload)
-            logger.debug("MCU > ACK for 0x%02X", p.command_id)
+            logger.debug("MCU ACK received", command_id=f"0x{p.command_id:02X}")
         except (ProtobufDecodeError, TypeError, ValueError) as e:
-            logger.error("Failed to decode MCU ACK packet", error=e)
+            logger.error("Failed to decode MCU ACK packet", error=str(e))
 
     async def _on_mcu_digital_read_resp(self, _seq: int, p: pb.DigitalReadResponse) -> None:
         await self._on_pin_resp(p, Topic.DIGITAL, self.state.pending_digital_reads)
@@ -1021,7 +1021,7 @@ class BridgeService:
             p = pb.SpiConfig.FromString(inbound.payload)
             await cast("SerialTransport", self.serial).send(Command.CMD_SPI_SET_CONFIG.value, p)
         except (ProtobufDecodeError, TypeError, ValueError) as exc:
-            logger.error("SPI config error: %s", exc)
+            logger.error("SPI config error", error=str(exc))
 
     async def _handle_spi_transfer(self, _route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         if not inbound.payload:
@@ -1287,7 +1287,7 @@ class BridgeService:
                     self.state.file_storage_limit_rejections += 1
                     return False
             except OSError as exc:
-                logger.error("Disk usage check failed", error=exc)
+                logger.error("Disk usage check failed", error=str(exc))
             await asyncio.to_thread(path.parent.mkdir, parents=True, exist_ok=True)
             await asyncio.to_thread(path.write_bytes, data)
             return True
@@ -1416,32 +1416,32 @@ class BridgeService:
             SerialHandshakeFatal,
         ) as exc_group:
             for e in exc_group.exceptions:
-                logger.critical("Fatal task error: %s", e, exc_info=e)
+                logger.critical("Fatal task error", error=str(e), exc_info=True)
             raise
         finally:
             if self._cloud_spool is not None:
                 try:
                     await self._cloud_spool.close()
                 except (lmdb.Error, OSError) as exc:
-                    logger.debug("cloud_spool close failed during teardown", error=exc)
+                    logger.debug("cloud_spool close failed during teardown", error=str(exc))
                 self._cloud_spool = None
             if self.state and self.state.datastore_cache is not None:
                 try:
                     await self.state.datastore_cache.close()
                 except (lmdb.Error, OSError) as exc:
-                    logger.debug("datastore_cache close failed during teardown", error=exc)
+                    logger.debug("datastore_cache close failed during teardown", error=str(exc))
                 self.state.datastore_cache = None
 
             if self.state and getattr(self.state, "mailbox_queue", None) is not None:
                 try:
                     await self.state.mailbox_queue.close()
                 except (lmdb.Error, OSError) as exc:
-                    logger.debug("mailbox_queue close failed during teardown", error=exc)
+                    logger.debug("mailbox_queue close failed during teardown", error=str(exc))
             if self.state and getattr(self.state, "mailbox_incoming_queue", None) is not None:
                 try:
                     await self.state.mailbox_incoming_queue.close()
                 except (lmdb.Error, OSError) as exc:
-                    logger.debug("mailbox_incoming_queue close failed during teardown", error=exc)
+                    logger.debug("mailbox_incoming_queue close failed during teardown", error=str(exc))
             self.cleanup()
             STATUS_FILE.unlink(missing_ok=True)
             logger.info("MCU Bridge daemon stopped.")
@@ -1477,15 +1477,15 @@ class BridgeService:
             logger.info("Cloud transport stopping.")
             raise
         except (TimeoutError, ConnectionError, OSError) as exc:
-            logger.critical("Cloud transport fatal error: %s", exc)
+            logger.critical("Cloud transport fatal error", error=str(exc))
             raise
 
     async def connect_cloud_session(self, tls_context: Any) -> None:
-        logger.info("Connecting to Cloud Gateway at %s:%d...", self.config.cloud_host, self.config.cloud_port)
+        logger.info("Connecting to Cloud Gateway", host=self.config.cloud_host, port=self.config.cloud_port)
         if self.config.cloud_http3_enabled:
             logger.info(
-                "Attempting primary connection via gRPC over HTTP/3 (QUIC) on port %d...",
-                self.config.cloud_http3_port,
+                "Attempting primary connection via gRPC over HTTP/3 (QUIC)",
+                port=self.config.cloud_http3_port,
             )
             self.state.connected_via_http3 = True
             logger.info("Connected to Cloud Gateway via gRPC over HTTP/3 (QUIC).")
@@ -1626,7 +1626,7 @@ class BridgeService:
         try:
             socket_path.unlink(missing_ok=True)
         except OSError as exc:
-            logger.warning("Could not remove existing Unix socket %s: %s", socket_path, exc)
+            logger.warning("Could not remove existing Unix socket", path=str(socket_path), error=str(exc))
 
         # Create parent directory if it doesn't exist
         socket_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1639,9 +1639,9 @@ class BridgeService:
             try:
                 os.chmod(socket_path, 0o660)
             except OSError as e:
-                logger.warning("Failed to set permissions on UNIX socket", error=e)
+                logger.warning("Failed to set permissions on UNIX socket", error=str(e))
 
-            logger.info("Local gRPC IPC server listening on %s", socket_path)
+            logger.info("Local gRPC IPC server listening", path=str(socket_path))
             await server.wait_closed()
         finally:
             server.close()

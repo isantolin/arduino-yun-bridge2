@@ -27,7 +27,7 @@ async def status_writer(state: RuntimeState, interval: int) -> None:
             status = state.build_status_snapshot()
             await asyncio.to_thread(_write_status_file, status)
         except (OSError, RuntimeError, ValueError) as e:
-            logger.error("Periodic status write failed: %s", e)
+            logger.error("Periodic status write failed", error=str(e))
 
     try:
         while True:
@@ -50,4 +50,4 @@ def _write_status_file(payload: ProtobufMessage) -> None:
             temp_name = tf.name
         Path(temp_name).replace(STATUS_FILE)
     except (ValueError, OSError) as e:
-        logger.error("Failed to write atomic status file: %s", e)
+        logger.error("Failed to write atomic status file", error=str(e))

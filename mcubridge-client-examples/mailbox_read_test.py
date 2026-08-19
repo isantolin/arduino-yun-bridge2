@@ -29,7 +29,7 @@ async def run_test(
 
         # --- Send phase ---
         message_to_send = "hello_from_mailbox_test"
-        logger.info("Sending message to mailbox: '%s'", message_to_send)
+        logger.info("Sending message to mailbox", message=message_to_send)
         await stub.Publish(
             pb.CloudQueuedPublish(
                 topic_name=topic_mw,
@@ -40,7 +40,7 @@ async def run_test(
         logger.info("Message sent successfully.")
 
         # --- Read phase ---
-        logger.info("Polling for mailbox responses (max_polls=%d)...", max_polls)
+        logger.info("Polling for mailbox responses", max_polls=max_polls)
         polls = 0
         while max_polls <= 0 or polls < max_polls:
             res = await stub.Publish(
@@ -53,7 +53,7 @@ async def run_test(
             polls += 1
             message: bytes | None = res.payload if (res and res.payload) else None
             if message is None:
-                logger.info("No mailbox message within timeout; poll %d done.", polls)
+                logger.info("No mailbox message within timeout", poll=polls)
                 continue
 
             try:
@@ -61,12 +61,12 @@ async def run_test(
             except UnicodeDecodeError:
                 preview = f"<hex:{message.hex()}>"
             logger.info(
-                "Received mailbox message (%d bytes): %s",
-                len(message),
-                preview,
+                "Received mailbox message",
+                bytes_length=len(message),
+                preview=preview,
             )
         if max_polls > 0:
-            logger.info("Reached max polls (%d), exiting.", max_polls)
+            logger.info("Reached max polls, exiting", max_polls=max_polls)
 
     logger.info("Done.")
 

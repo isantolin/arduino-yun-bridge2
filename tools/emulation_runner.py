@@ -31,7 +31,6 @@ from typing import Annotated, Any  # noqa: E402
 import structlog  # noqa: E402
 import typer  # noqa: E402
 from mcubridge.config.logging import configure_logging  # noqa: E402
-from mcubridge.protocol import protocol  # noqa: E402
 
 # --- Constants ---
 SOCAT_PORT0 = "/tmp/ttyBRIDGE0"
@@ -53,7 +52,7 @@ class EmulationState:
             return
         with self.lock:
             self.output_lines.append((source, clean_line))
-            logger.info("[%s] %s", source, clean_line)
+            logger.info("Process output", source=source, line=clean_line)
 
 
 class CloudVerifier:
@@ -147,7 +146,7 @@ def run_emulation(
         try:
             os.unlink(SOCAT_PORT0)
         except OSError as exc:
-            logger.warning("Could not unlink existing PTY %s: %s", SOCAT_PORT0, exc)
+            logger.warning("Could not unlink existing PTY", path=SOCAT_PORT0, error=str(exc))
 
     # [FIX] Ensure emulator filesystem root exists and is clean
     emulator_fs_root = Path("/tmp/mcubridge-host-fs")
@@ -157,7 +156,7 @@ def run_emulation(
         try:
             shutil.rmtree(emulator_fs_root)
         except OSError as exc:
-            logger.error("Failed to clean emulator FS root %s: %s", emulator_fs_root, exc)
+            logger.error("Failed to clean emulator FS root", path=str(emulator_fs_root), error=str(exc))
     emulator_fs_root.mkdir(parents=True, exist_ok=True)
 
     logger.info("Starting Unified MCU Emulator via socat EXEC...")
@@ -181,50 +180,48 @@ def run_emulation(
     start = time.monotonic()
     while not os.path.exists(SOCAT_PORT0):
         if time.monotonic() - start > 10.0:
-            logger.error("Timeout waiting for unified PTY %s", SOCAT_PORT0)
+            logger.error("Timeout waiting for unified PTY", path=SOCAT_PORT0)
             mcu_proc.terminate()
             sys.exit(1)
         time.sleep(0.1)
 
     # 3. Start Daemon
     p_root = package_root.absolute()
+    daemon_env = dict(os.environ)
+    daemon_env["PYTHONPATH"] = (
+        f"{p_root / 'mcubridge'}:{p_root / 'mcubridge-client-examples'}:{p_root}:{daemon_env.get('PYTHONPATH', '')}"
+    )
+    daemon_env["MCUBRIDGE_SERIAL_PORT"] = SOCAT_PORT0
+    daemon_env["MCUBRIDGE_SERIAL_SAFE_BAUD"] = "115200"
+    daemon_env["MCUBRIDGE_SERIAL_BAUD"] = "115200"
+    daemon_env["MCUBRIDGE_DISABLE_METRICS"] = "1"
+    daemon_env["MCUBRIDGE_CLOUD_ENABLED"] = "1"
+    daemon_env["MCUBRIDGE_CLOUD_HOST"] = CLOUD_HOST
+    daemon_env["MCUBRIDGE_CLOUD_PORT"] = str(CLOUD_PORT)
+    daemon_env["MCUBRIDGE_STORAGE_PATH"] = tempfile.mkdtemp(prefix="mcubridge_db_")
+
+    uci_config = {
+        "general.serial_port": SOCAT_PORT0,
+        "general.serial_baud": "115200",
+        "general.serial_safe_baud": "115200",
+        "general.cloud_enabled": "1",
+        "general.cloud_host": CLOUD_HOST,
+        "general.cloud_port": str(CLOUD_PORT),
+        "general.disable_metrics": "1",
+        "general.file_system_root": str(emulator_fs_root),
+        "general.storage_path": daemon_env["MCUBRIDGE_STORAGE_PATH"],
+    }
+    fake_uci_dir = Path(tempfile.mkdtemp(prefix="mcubridge_fake_uci_"))
+    _write_fake_uci_module(fake_uci_dir, uci_config)
+    daemon_env["PYTHONPATH"] = f"{fake_uci_dir}:{daemon_env['PYTHONPATH']}"
+
+    daemon_cmd = [sys.executable, "-m", "mcubridge.daemon"]
+    daemon_proc = None
     all_success = True
-    daemon_proc: subprocess.Popen[str] | None = None
+
     try:
-        with tempfile.TemporaryDirectory(prefix="mcubridge-e2e-uci-", dir="/tmp") as uci_tmp:
-            uci_dir = Path(uci_tmp)
-            _write_fake_uci_module(
-                uci_dir,
-                {
-                    "serial_port": SOCAT_PORT0,
-                    "serial_baud": str(protocol.DEFAULT_BAUDRATE),
-                    "serial_safe_baud": str(protocol.DEFAULT_SAFE_BAUDRATE),
-                    "cloud_host": CLOUD_HOST,
-                    "cloud_port": str(CLOUD_PORT),
-                    "cloud_tls": "0",
-                    "cloud_tls_insecure": "1",
-                    "serial_shared_secret": "DEBUG_INSECURE",
-                    "allowed_commands": "*",
-                    "debug": "1",
-                },
-            )
-
-            daemon_env = {
-                **os.environ,
-                "PYTHONUNBUFFERED": "1",
-                "PYTHONPATH": f"{uci_dir}:{p_root}:{p_root}/mcubridge:{p_root}/mcubridge-client-examples",
-                "MCUBRIDGE_FORCE_UCI": "1",
-                "MCUBRIDGE_NON_INTERACTIVE": "1",
-                "MCUBRIDGE_LOG_STREAM": "1",
-                "MCUBRIDGE_SOCKET_PATH": os.environ.get("MCUBRIDGE_SOCKET_PATH") or str(uci_dir / "mcubridge.sock"),
-            }
-
+        with contextlib.ExitStack():
             logger.info("Starting Daemon...")
-            daemon_cmd = [sys.executable, "-u"]
-            if os.environ.get("COVERAGE_FILE"):
-                daemon_cmd.extend(["-m", "coverage", "run", "--append", "--rcfile", str(p_root / "pyproject.toml")])
-            daemon_cmd.extend(["-m", "mcubridge.daemon"])
-
             daemon_proc = subprocess.Popen(
                 daemon_cmd,
                 env=daemon_env,
@@ -233,17 +230,19 @@ def run_emulation(
                 text=True,
                 bufsize=1,
             )
-            _start_worker_thread(_daemon_worker, "daemon-worker", daemon_proc, state)
+            _start_worker_thread(_daemon_worker, "daemon", daemon_proc, state)
 
-            # 4. Run Test
+            # Wait for Daemon/MCU sync
             logger.info("Waiting for stability (15s)...")
             time.sleep(15)
+
+            # 4. Run scripts
             if run_scripts:
                 for script in run_scripts:
-                    sys.stdout.write(f"\n{'=' * 80}\n")
-                    sys.stdout.write(f"=== RUNNING E2E TEST: {script}\n")
-                    sys.stdout.write(f"{'=' * 80}\n\n")
-                    sys.stdout.flush()
+                    if not os.path.exists(script):
+                        logger.error("Script not found", script=script)
+                        all_success = False
+                        break
 
                     with state.lock:
                         lines_before = len(state.output_lines)
@@ -251,12 +250,12 @@ def run_emulation(
                     try:
                         # Run with captured output but echoing to parent stdout/stderr
                         subprocess.run([sys.executable, script], env=daemon_env, check=True, timeout=60)
-                        logger.info("Script %s PASSED.", script)
+                        logger.info("Script execution passed", script=script)
                     except (
                         subprocess.CalledProcessError,
                         subprocess.TimeoutExpired,
                     ) as exc:
-                        logger.error("Script %s FAILED: %s", script, exc)
+                        logger.error("Script execution failed", script=script, error=str(exc))
                         all_success = False
                         break
 
@@ -269,16 +268,20 @@ def run_emulation(
                         if '"level": "error"' in line or '"level":"error"' in line or "MCU > ERROR:" in line
                     ]
                     if script_errors:
-                        logger.error("Script %s produced %d unexpected error log events:", script, len(script_errors))
+                        logger.error(
+                            "Script produced unexpected error log events",
+                            script=script,
+                            error_count=len(script_errors),
+                        )
                         for err in script_errors:
-                            logger.error("  -> %s", err)
+                            logger.error("Unexpected script error", detail=err)
                         all_success = False
                         break
 
                     # Small cool-down between scripts to keep logs separated
                     time.sleep(1)
     except (OSError, RuntimeError, ValueError) as exc:
-        logger.error("Emulation error: %s", exc)
+        logger.error("Emulation error", error=str(exc))
         all_success = False
     finally:
         # Terminate daemon (same process group — plain kill only)

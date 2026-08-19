@@ -158,7 +158,7 @@ class SerialHandshakeManager:
 
         try:
             ok: bool = await retryer(_attempt)
-            self._logger.debug("Handshake stats: %s", retryer.statistics)
+            self._logger.debug("Handshake statistics", stats=str(retryer.statistics))
             return ok
         except tenacity.RetryError:
             self._set_fsm_state(HandshakeState.FAULT)
@@ -329,7 +329,7 @@ class SerialHandshakeManager:
 
         self.clear_handshake_expectations()
         await self._handle_handshake_success()
-        self._logger.info("MCU link synchronised (nonce=%s)", payload.hex())
+        self._logger.info("MCU link synchronised", nonce=payload.hex())
         asyncio.create_task(self._fetch_capabilities_with_delay())
         return True
 
@@ -340,7 +340,7 @@ class SerialHandshakeManager:
     async def _fetch_capabilities(self) -> bool:
         loop = asyncio.get_running_loop()
         cmd_id = Command.CMD_GET_CAPABILITIES.value
-        self._logger.debug("Starting capabilities discovery using Command ID 0x%02X", cmd_id)
+        self._logger.debug("Starting capabilities discovery", command_id=f"0x{cmd_id:02X}")
 
         retryer = tenacity.AsyncRetrying(
             stop=tenacity.stop_after_attempt(5),
@@ -369,7 +369,7 @@ class SerialHandshakeManager:
             except TimeoutError:
                 raise
             except (ProtobufDecodeError, ValueError, TypeError, KeyError) as exc:
-                self._logger.error("[SIL-2] Capabilities payload corrupt; aborting: %s", exc)
+                self._logger.error("[SIL-2] Capabilities payload corrupt; aborting", error=str(exc))
                 return False
             finally:
                 self._capabilities_future = None
@@ -391,11 +391,12 @@ class SerialHandshakeManager:
             else (pb.Capabilities.FromString(payload) if isinstance(payload, bytes) else cast(pb.Capabilities, payload))
         )
         self._state.mcu_capabilities = p
-        self._logger.info("MCU Capabilities: %s", self._state.mcu_capabilities)
+        self._logger.info("MCU capabilities received", capabilities=str(self._state.mcu_capabilities))
 
     async def handle_link_reset_resp(self, seq_id: int, payload: bytes | ProtobufMessage) -> bool:
         self._logger.info(
-            "MCU link reset acknowledged (payload=%s)", (payload.hex() if isinstance(payload, bytes) else str(payload))
+            "MCU link reset acknowledged",
+            payload=(payload.hex() if isinstance(payload, bytes) else str(payload)),
         )
         return True
 

@@ -35,7 +35,7 @@ async def run_test(
             raw_pin_str = pin[1:] if pin[0].isalpha() else pin
             pin_number = int(raw_pin_str)
         except ValueError:
-            logger.error("Invalid pin format: %s", pin)
+            logger.error("Invalid pin format", pin=pin)
             raise SystemExit(1)
 
         start_time = asyncio.get_running_loop().time()
@@ -50,14 +50,14 @@ async def run_test(
                 if not (res and res.payload):
                     raise RuntimeError(f"Analog pin {pin} read returned empty response")
                 value = int(res.payload.decode("utf-8"))
-                logger.info("Received analog value for pin %s: %d", pin, value)
+                logger.info("Received analog value", pin=pin, value=value)
             else:
                 topic_dr = Topic.build(Topic.DIGITAL, str(pin_number), "read", prefix=topic_prefix)
                 res = await stub.Publish(pb.CloudQueuedPublish(topic_name=topic_dr, payload=b"", qos=1))
                 if not (res and res.payload):
                     raise RuntimeError(f"Digital pin {pin} read returned empty response")
                 value = int(res.payload.decode("utf-8"))
-                logger.info("Received digital value for pin %s: %d", pin, value)
+                logger.info("Received digital value", pin=pin, value=value)
 
             await asyncio.sleep(interval)
 

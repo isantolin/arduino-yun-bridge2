@@ -24,7 +24,7 @@ async def run_test(
     async with bridge_session(socket_path, topic_prefix) as (_channel, stub):
         command_to_run = ["echo", "hello from shell"]
         cmd_str = shlex.join(command_to_run)
-        logger.info("Launching command: %s", cmd_str)
+        logger.info("Launching command", command=cmd_str)
 
         topic_shell = Topic.build(Topic.SHELL, "run_async", prefix=topic_prefix)
         payload = pb.ProcessRunAsync(command=cmd_str).SerializeToString()
@@ -32,9 +32,9 @@ async def run_test(
         msg = pb.CloudQueuedPublish(topic_name=topic_shell, payload=payload, qos=1)
         res = await stub.Publish(msg)
         logger.info(
-            "Shell run_async published to %s (response topic: %s)",
-            topic_shell,
-            res.topic_name if res else "",
+            "Shell run_async published",
+            topic=topic_shell,
+            response_topic=(res.topic_name if res else ""),
         )
 
     logger.info("Done.")

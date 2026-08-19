@@ -50,14 +50,14 @@ class LmdbDeque:
                 self._head = _U64.unpack(cur.key())[0] if cur.first() else 0
                 self._tail = _U64.unpack(cur.key())[0] + 1 if cur.last() else 0
         except (lmdb.Error, OSError) as exc:
-            logger.warning("LmdbDeque database corrupt or invalid, recreating: %s", exc)
+            logger.warning("LmdbDeque database corrupt or invalid, recreating", error=str(exc))
             self.env = None
             target = Path(env_path)
             if target.exists():
                 try:
                     target.unlink()
                 except OSError as e:
-                    logger.warning("Failed to unlink target path", path=str(target), error=e)
+                    logger.warning("Failed to unlink target path", path=str(target), error=str(e))
             try:
                 self.env = lmdb.open(
                     env_path,
@@ -71,7 +71,7 @@ class LmdbDeque:
                 self.db = self.env.open_db(b"deque")
                 self._head = self._tail = 0
             except (lmdb.Error, OSError) as e:
-                logger.error("Failed to reinitialize LMDB deque: %s", e)
+                logger.error("Failed to reinitialize LMDB deque", error=str(e))
 
     def __len__(self) -> int:
         return len(self._mem) if self.is_mem else max(0, self._tail - self._head)
@@ -138,11 +138,13 @@ class LmdbDeque:
             compact_path.replace(env_path)
             self._open_env()
         except (lmdb.Error, OSError) as exc:
-            logger.warning("LMDB vacuum failed, compaction skipped: %s", exc)
+            logger.warning("LMDB vacuum failed, compaction skipped", error=str(exc))
             try:
                 compact_path.unlink(missing_ok=True)
             except OSError as unlink_err:
-                logger.warning("Failed to clean up compact database file", path=str(compact_path), error=unlink_err)
+                logger.warning(
+                    "Failed to clean up compact database file", path=str(compact_path), error=str(unlink_err)
+                )
 
     async def close(self) -> None:
         if self.env:
@@ -177,14 +179,14 @@ class LmdbCache:
             )
             self.db = self.env.open_db(b"cache")
         except (lmdb.Error, OSError) as exc:
-            logger.warning("Failed to initialize LmdbCache schema: %s", exc)
+            logger.warning("Failed to initialize LmdbCache schema", error=str(exc))
             self.env = None
             target = Path(env_path)
             if target.exists():
                 try:
                     target.unlink()
                 except OSError as e:
-                    logger.warning("Failed to unlink target path", path=str(target), error=e)
+                    logger.warning("Failed to unlink target path", path=str(target), error=str(e))
             try:
                 self.env = lmdb.open(
                     env_path,
@@ -197,7 +199,7 @@ class LmdbCache:
                 )
                 self.db = self.env.open_db(b"cache")
             except (lmdb.Error, OSError) as e:
-                logger.error("Failed to reinitialize LMDB cache: %s", e)
+                logger.error("Failed to reinitialize LMDB cache", error=str(e))
 
     async def set(self, key: str, value: bytes) -> None:
         if self.is_mem:

@@ -26,10 +26,10 @@ async def run_test(
             logger.info("SPI session started automatically (begin + config)")
 
             test_data = [0xAA, 0xBB, 0xCC, 0xDD]
-            logger.info("Transferring data (list): %s", test_data)
+            logger.info("Transferring data", data=test_data)
 
             resp = await spi.transfer(test_data)
-            logger.info("Received SPI data: %s", resp.hex())
+            logger.info("Received SPI data", data=resp.hex())
             if resp != bytes(test_data):
                 raise AssertionError(
                     f"SPI transfer response mismatch: expected {bytes(test_data).hex()}, got {resp.hex()}"

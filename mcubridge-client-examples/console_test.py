@@ -30,11 +30,11 @@ async def run_test(
                     await stream.send_message(pb.SubscribeRequest())
                     async for msg in stream:
                         payload_str = (msg.payload or b"").decode("utf-8")
-                        logger.info("Received from Arduino: %s", payload_str)
+                        logger.info("Received from Arduino", payload=payload_str)
             except asyncio.CancelledError:
                 logger.debug("Console listener task cancelled.")
             except (OSError, RuntimeError) as e:
-                logger.debug("Console listener closed: %s", e)
+                logger.debug("Console listener closed", error=str(e))
 
         listener_task: asyncio.Task[None] = asyncio.create_task(console_listener())
 

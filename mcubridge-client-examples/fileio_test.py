@@ -30,7 +30,7 @@ async def run_test(
 
         try:
             # --- Test File Write ---
-            logger.info("Writing '%s' to %s", test_content, test_filename)
+            logger.info("Writing file", filename=test_filename, content=test_content)
             await stub.Publish(
                 pb.CloudQueuedPublish(
                     topic_name=topic_fw,
@@ -40,7 +40,7 @@ async def run_test(
             )
 
             # --- Test File Read ---
-            logger.info("Reading from %s", test_filename)
+            logger.info("Reading file", filename=test_filename)
             res = await stub.Publish(
                 pb.CloudQueuedPublish(
                     topic_name=topic_fr,
@@ -49,7 +49,7 @@ async def run_test(
                 )
             )
             content = res.payload if res else b""
-            logger.info("Read content: %s", content.decode("utf-8"))
+            logger.info("Read file content", content=content.decode("utf-8"))
             if content != test_content.encode("utf-8"):
                 raise AssertionError(
                     f"File content mismatch: expected {test_content!r}, got {content.decode('utf-8')!r}"
@@ -57,7 +57,7 @@ async def run_test(
 
         finally:
             # --- Test File Remove ---
-            logger.info("Removing %s", test_filename)
+            logger.info("Removing file", filename=test_filename)
             await stub.Publish(
                 pb.CloudQueuedPublish(
                     topic_name=topic_frm,

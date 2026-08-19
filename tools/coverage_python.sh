@@ -34,7 +34,6 @@ PYTHON_COVERAGE_MIN_BRANCH=${PYTHON_COVERAGE_MIN_BRANCH:-95}
 PYTHON_BIN="${PYTHON_EXE:-python}"
 echo "[coverage_python] Debug: Python path: $(which $PYTHON_BIN || echo 'not found') ($PYTHON_BIN)"
 echo "[coverage_python] Debug: Python version: $($PYTHON_BIN --version)"
-$PYTHON_BIN -m pip list | grep pytest
 
 while [[ $# -gt 0 ]]; do
   case "$1" in

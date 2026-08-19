@@ -14,6 +14,7 @@ Requires: qemu-system-mips, python3-pexpect, wget, e2fsprogs
 from __future__ import annotations
 
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -64,9 +65,21 @@ SYS_APKS = [
     ("libext2fs2-1.47.3-r1.apk", SYS_APKS_BASE_URL),
     ("libcomerr0-1.47.3-r1.apk", SYS_APKS_BASE_URL),
     ("libss2-1.47.3-r1.apk", SYS_APKS_BASE_URL),
-    ("block-mount-2026.02.15~8d377aa6-r1.apk", SYS_APKS_TARGET_URL),
-    ("blockd-2026.02.15~8d377aa6-r1.apk", SYS_APKS_TARGET_URL),
+    ("block-mount-2026.05.23~16718b6e-r1.apk", SYS_APKS_TARGET_URL),
+    ("blockd-2026.05.23~16718b6e-r1.apk", SYS_APKS_TARGET_URL),
 ]
+
+
+def _resolve_package_name(base_url: str, pkg_prefix: str) -> str | None:
+    try:
+        with urllib.request.urlopen(base_url, timeout=15) as resp:
+            html = resp.read().decode("utf-8", errors="replace")
+        matches = re.findall(rf'href="({re.escape(pkg_prefix)}[^\"]+\.apk)"', html)
+        if matches:
+            return sorted(matches)[-1]
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        log_error(f"[WARN] Could not list directory {base_url}: {e}")
+    return None
 
 
 def run(cmd: list[str], check: bool = True) -> subprocess.CompletedProcess[bytes]:
@@ -106,6 +119,19 @@ def download_system_apks(dest_dir: Path) -> None:
         log_info(f"[INFO] Downloading {url} -> {file_path}")
         try:
             urllib.request.urlretrieve(url, file_path)
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                log_info(f"[WARN] {filename} returned 404, attempting dynamic resolution from {base_url}...")
+                pkg_prefix = filename.split("-202")[0] if "-202" in filename else filename.split("-")[0]
+                resolved_name = _resolve_package_name(base_url, pkg_prefix)
+                if resolved_name:
+                    resolved_url = f"{base_url}/{resolved_name}"
+                    resolved_file_path = dest_dir / resolved_name
+                    log_info(f"[INFO] Resolved to {resolved_url} -> {resolved_file_path}")
+                    urllib.request.urlretrieve(resolved_url, resolved_file_path)
+                    continue
+            log_error(f"[ERROR] Failed to download {url}: {e}")
+            raise
         except urllib.error.URLError as e:
             log_error(f"[ERROR] Failed to download {url}: {e}")
             raise

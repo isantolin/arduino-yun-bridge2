@@ -3,22 +3,22 @@
 from __future__ import annotations
 
 import contextlib
-import logging
 import os
 from collections.abc import AsyncGenerator
 
+import structlog
 from grpclib.client import Channel
 from .definitions import build_bridge_args
 from .env import dump_client_env
 from .mcubridge_grpc import LocalBridgeStub
 
 
-def configure_logging() -> None:
-    """Set up console logging in the standard format used by all examples."""
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - %(message)s",
-    )
+from mcubridge.config.logging import configure_logging as _central_configure_logging
+
+
+def configure_logging(debug: bool | None = None, console: bool = True) -> None:
+    """Set up structured logging for client examples using centralized config."""
+    _central_configure_logging(debug=debug, console=console)
 
 
 @contextlib.asynccontextmanager
@@ -27,7 +27,7 @@ async def bridge_session(
     topic_prefix: str = "br",
 ) -> AsyncGenerator[tuple[Channel, LocalBridgeStub]]:
     """Connect Channel + LocalBridgeStub and guarantee close on exit."""
-    dump_client_env(logging.getLogger(__name__))
+    dump_client_env(structlog.get_logger(__name__))
     bridge_args = build_bridge_args(socket_path, topic_prefix)
     sock = str(
         socket_path

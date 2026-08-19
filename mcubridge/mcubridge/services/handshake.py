@@ -11,13 +11,14 @@ from __future__ import annotations
 from mcubridge.protocol import mcubridge_pb2 as pb
 
 import asyncio
-import logging
 import secrets
 import structlog
 import time
 from collections.abc import Awaitable, Callable
 from enum import StrEnum
 from typing import Any, Protocol, cast
+
+from ..config.logging import DEBUG, WARNING
 
 import tenacity
 from cryptography.hazmat.primitives import hashes, hmac
@@ -103,7 +104,7 @@ class SerialHandshakeManager:
         send_frame: SendFrameCallable,
         enqueue_cloud: EnqueueMessageCallable,
         acknowledge_frame: AcknowledgeFrameCallable,
-        logger_: logging.Logger | None = None,
+        logger_: Any | None = None,
     ) -> None:
         self._config = config
         self._state = state
@@ -142,7 +143,7 @@ class SerialHandshakeManager:
                 jitter=1.0,
             ),
             retry=tenacity.retry_if_result(lambda res: res is False),
-            before_sleep=tenacity.before_sleep_log(logger, logging.WARNING),
+            before_sleep=tenacity.before_sleep_log(logger, WARNING),
             reraise=False,
         )
 
@@ -348,7 +349,7 @@ class SerialHandshakeManager:
                 max=SERIAL_HANDSHAKE_BACKOFF_MAX,
             ),
             retry=tenacity.retry_if_exception_type(TimeoutError),
-            before_sleep=tenacity.before_sleep_log(self._logger, logging.DEBUG),
+            before_sleep=tenacity.before_sleep_log(self._logger, DEBUG),
             reraise=False,
         )
 

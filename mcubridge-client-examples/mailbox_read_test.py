@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import asyncio
-import logging
+import structlog
 import typer
 from typing import Annotated
 
@@ -12,7 +12,7 @@ from mcubridge_client import Topic, pb
 from mcubridge_client.cli import bridge_session, configure_logging
 
 configure_logging()
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 async def run_test(

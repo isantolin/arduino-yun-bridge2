@@ -15,13 +15,13 @@ from __future__ import annotations
 from mcubridge.protocol import mcubridge_pb2 as pb
 
 import asyncio
-import logging
 from typing import TYPE_CHECKING, Any
 
 from cobs import cobsr
 import serialx
 import structlog
 import tenacity
+from ..config.logging import DEBUG, WARNING
 from google.protobuf.message import Message as ProtobufMessage, DecodeError as ProtobufDecodeError
 
 from mcubridge.config.const import (
@@ -113,7 +113,7 @@ class SerialTransport:
         retryer = tenacity.AsyncRetrying(
             wait=tenacity.wait_exponential(multiplier=1, min=1, max=10),
             retry=tenacity.retry_if_not_exception_type((asyncio.CancelledError, SerialHandshakeFatal)),
-            before_sleep=tenacity.before_sleep_log(logger, logging.WARNING),
+            before_sleep=tenacity.before_sleep_log(logger, WARNING),
             reraise=True,
         )
         try:
@@ -241,7 +241,7 @@ class SerialTransport:
 
     def _correlate_frame(self, command_id: int, payload: bytes | ProtobufMessage) -> None:
         pending = self._current
-        if logger.is_enabled_for(logging.DEBUG):
+        if logger.is_enabled_for(DEBUG):
             logger.debug(
                 "_correlate_frame entry", command_id=command_id, pending_cmd=(pending.command_id if pending else None)
             )
@@ -390,7 +390,7 @@ class SerialTransport:
             )
         )
 
-        if logger.is_enabled_for(logging.DEBUG):
+        if logger.is_enabled_for(DEBUG):
             logger.debug(
                 "[SERIAL -> MCU] [CMD:0x%02X] [RAW]: [%s%s]",
                 command_id,

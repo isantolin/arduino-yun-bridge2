@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import asyncio
-import logging
+import structlog
 import typer
 from typing import Annotated
 
@@ -12,6 +12,7 @@ from mcubridge_client import Topic, pb
 from mcubridge_client.cli import bridge_session, configure_logging
 
 configure_logging()
+logger = structlog.get_logger(__name__)
 
 
 async def run_test(
@@ -29,7 +30,7 @@ async def run_test(
 
         try:
             # --- Test File Write ---
-            logging.info("Writing '%s' to %s", test_content, test_filename)
+            logger.info("Writing '%s' to %s", test_content, test_filename)
             await stub.Publish(
                 pb.CloudQueuedPublish(
                     topic_name=topic_fw,
@@ -39,7 +40,7 @@ async def run_test(
             )
 
             # --- Test File Read ---
-            logging.info("Reading from %s", test_filename)
+            logger.info("Reading from %s", test_filename)
             res = await stub.Publish(
                 pb.CloudQueuedPublish(
                     topic_name=topic_fr,
@@ -48,7 +49,7 @@ async def run_test(
                 )
             )
             content = res.payload if res else b""
-            logging.info("Read content: %s", content.decode("utf-8"))
+            logger.info("Read content: %s", content.decode("utf-8"))
             if content != test_content.encode("utf-8"):
                 raise AssertionError(
                     f"File content mismatch: expected {test_content!r}, got {content.decode('utf-8')!r}"
@@ -56,7 +57,7 @@ async def run_test(
 
         finally:
             # --- Test File Remove ---
-            logging.info("Removing %s", test_filename)
+            logger.info("Removing %s", test_filename)
             await stub.Publish(
                 pb.CloudQueuedPublish(
                     topic_name=topic_frm,
@@ -65,7 +66,7 @@ async def run_test(
                 )
             )
 
-    logging.info("Done.")
+    logger.info("Done.")
 
 
 def main(

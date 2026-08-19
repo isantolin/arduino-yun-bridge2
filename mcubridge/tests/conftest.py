@@ -8,7 +8,6 @@ from collections.abc import Iterator
 import gc
 import importlib.util
 import inspect
-import logging
 import os
 from pathlib import Path
 import shutil
@@ -19,6 +18,7 @@ from typing import Any, cast
 
 import pytest
 import structlog
+from mcubridge.config.logging import configure_logging, reset_handlers
 
 from mcubridge.config import common, settings
 import mcubridge.config.common
@@ -135,20 +135,8 @@ mcubridge.config.common.get_default_config = patched_get_default_config
 # ==============================================================================
 
 
-# [TEST FIX] Configure structlog purely natively but route to logging for caplog compatibility.
-structlog.configure(
-    processors=[
-        structlog.contextvars.merge_contextvars,
-        structlog.processors.add_log_level,
-        structlog.processors.StackInfoRenderer(),
-        structlog.processors.ExceptionRenderer(),
-        structlog.processors.TimeStamper(fmt="iso", key="ts"),
-        structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
-    ],
-    logger_factory=structlog.stdlib.LoggerFactory(),
-    wrapper_class=structlog.make_filtering_bound_logger(logging.NOTSET),
-    cache_logger_on_first_use=False,
-)
+# Configure structlog centrally for test execution
+configure_logging(debug=True, console=True)
 
 _HAS_PYTEST_ASYNCIO = importlib.util.find_spec("pytest_asyncio") is not None
 
@@ -196,7 +184,7 @@ def pytest_pyfunc_call(pyfuncitem: pytest.Function) -> bool | None:
         try:
             loop.run_until_complete(loop.shutdown_asyncgens())
         except (RuntimeError, ValueError) as e:
-            logging.debug("Loop asyncgen shutdown notice: %s", e)
+            structlog.get_logger("mcubridge.tests").debug("Loop asyncgen shutdown notice", error=str(e))
         loop.close()
         asyncio.set_event_loop(None)
     return True
@@ -252,7 +240,7 @@ def isolate_test_paths() -> Iterator[None]:
         if os.path.exists(mcubridge.config.const.DEFAULT_CLOUD_SPOOL_DIR):
             shutil.rmtree(mcubridge.config.const.DEFAULT_CLOUD_SPOOL_DIR)
     except OSError as e:
-        logging.getLogger("mcubridge.tests").warning("Teardown path cleanup notice: %s", e)
+        structlog.get_logger("mcubridge.tests").warning("Teardown path cleanup notice", error=str(e))
 
     mcubridge.config.const.DEFAULT_FILE_SYSTEM_ROOT = original_fs
     mcubridge.config.const.DEFAULT_CLOUD_SPOOL_DIR = original_spool
@@ -262,13 +250,7 @@ def isolate_test_paths() -> Iterator[None]:
 def reset_logging_handlers():
     """Close and remove all logging handlers after each test to prevent ResourceWarnings."""
     yield
-    root = logging.getLogger()
-    for handler in root.handlers[:]:
-        try:
-            handler.close()
-        except (OSError, RuntimeError) as e:
-            logging.debug("Logging handler close notice: %s", e)
-        root.removeHandler(handler)
+    reset_handlers()
 
 
 def _remove_persistent_test_path(path: Path) -> None:

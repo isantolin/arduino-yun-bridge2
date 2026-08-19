@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import asyncio
-import logging
+import structlog
 import typer
 from typing import Annotated
 
@@ -12,6 +12,7 @@ from mcubridge_client import Topic, pb
 from mcubridge_client.cli import bridge_session, configure_logging
 
 configure_logging()
+logger = structlog.get_logger(__name__)
 
 
 async def run_test(
@@ -20,18 +21,18 @@ async def run_test(
 ) -> None:
 
     async with bridge_session(socket_path, topic_prefix) as (_channel, stub):
-        logging.info("--- Starting DataStore Bridge Client Test ---")
+        logger.info("--- Starting DataStore Bridge Client Test ---")
 
         # --- Test 1: Put a new key-value pair ---
-        logging.info("[Test 1: Put a new key-value pair]")
+        logger.info("[Test 1: Put a new key-value pair]")
         key1: str = "client_test/temperature"
         value1: str = "25.5"
 
         topic_ds = Topic.build(Topic.DATASTORE, "put", key1, prefix=topic_prefix)
         await stub.Publish(pb.CloudQueuedPublish(topic_name=topic_ds, payload=value1.encode("utf-8"), qos=1))
-        logging.info(f"Put value '{value1}' to key '{key1}'")
+        logger.info("Put value to key", key=key1, value=value1)
 
-    logging.info("Done.")
+    logger.info("Done.")
 
 
 def main(

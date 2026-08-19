@@ -317,7 +317,8 @@ class PrometheusExporter:
             if self._server:
                 loop = asyncio.get_running_loop()
                 try:
-                    await asyncio.wait_for(loop.run_in_executor(None, self._server.shutdown), timeout=1.0)
+                    async with asyncio.timeout(1.0):
+                        await loop.run_in_executor(None, self._server.shutdown)
                 except (TimeoutError, asyncio.CancelledError):
                     log.warning("Prometheus exporter shutdown timed out or cancelled; forcing socket close")
                 # server_close releases the socket (avoids ResourceWarning)

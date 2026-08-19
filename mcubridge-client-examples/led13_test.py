@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import asyncio
-import logging
+import structlog
 import typer
 from typing import Annotated
 
@@ -12,6 +12,7 @@ from mcubridge_client import Topic, pb
 from mcubridge_client.cli import bridge_session, configure_logging
 
 configure_logging()
+logger = structlog.get_logger(__name__)
 
 
 async def run_test(
@@ -21,19 +22,19 @@ async def run_test(
 ) -> None:
 
     async with bridge_session(socket_path, topic_prefix) as (_channel, stub):
-        logging.info("--- Starting LED Pin Control Test ---")
+        logger.info("--- Starting LED Pin Control Test ---")
         topic_pin = Topic.build(Topic.DIGITAL, str(pin), prefix=topic_prefix)
 
-        logging.info("Turning pin %d ON", pin)
+        logger.info("Turning pin %d ON", pin)
         await stub.Publish(pb.CloudQueuedPublish(topic_name=topic_pin, payload=b"1", qos=1))
         await asyncio.sleep(2)
 
-        logging.info("Turning pin %d OFF", pin)
+        logger.info("Turning pin %d OFF", pin)
         await stub.Publish(pb.CloudQueuedPublish(topic_name=topic_pin, payload=b"0", qos=1))
         await asyncio.sleep(2)
 
-    logging.info("--- LED Test Complete ---")
-    logging.info("Done.")
+    logger.info("--- LED Test Complete ---")
+    logger.info("Done.")
 
 
 def main(

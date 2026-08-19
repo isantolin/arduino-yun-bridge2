@@ -6,11 +6,17 @@ import logging
 from logging.handlers import SysLogHandler
 import os
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, cast, Final
 
 import structlog
 
 from .settings import RuntimeConfig
+
+DEBUG: Final[int] = logging.DEBUG
+INFO: Final[int] = logging.INFO
+WARNING: Final[int] = logging.WARNING
+ERROR: Final[int] = logging.ERROR
+CRITICAL: Final[int] = logging.CRITICAL
 
 
 def hexdump_processor(_: Any, __: str, event_dict: structlog.types.EventDict) -> structlog.types.EventDict:
@@ -22,11 +28,25 @@ def hexdump_processor(_: Any, __: str, event_dict: structlog.types.EventDict) ->
     return event_dict
 
 
-def configure_logging(config: RuntimeConfig) -> None:
-    """Configure structured logging with syslog-first transport and hex-safe payload rendering."""
+def configure_logging(
+    config: RuntimeConfig | None = None,
+    *,
+    debug: bool | None = None,
+    console: bool = False,
+) -> None:
+    """Configure structured logging with syslog-first transport and hex-safe payload rendering.
 
-    level = logging.DEBUG if getattr(config, "debug", False) else logging.INFO
-    force_stream = bool(os.environ.get("MCUBRIDGE_LOG_STREAM"))
+    Centralized Single Source of Truth for logging configuration across the ecosystem.
+    """
+    if debug is not None:
+        is_debug = debug
+    elif config is not None:
+        is_debug = getattr(config, "debug", False)
+    else:
+        is_debug = os.environ.get("MCUBRIDGE_DEBUG", "").lower() in ("1", "true", "yes")
+
+    level = logging.DEBUG if is_debug else logging.INFO
+    force_stream = console or bool(os.environ.get("MCUBRIDGE_LOG_STREAM"))
 
     syslog_address: str | None = None
     if not force_stream:
@@ -54,8 +74,14 @@ def configure_logging(config: RuntimeConfig) -> None:
         cache_logger_on_first_use=True,
     )
 
+    renderer = (
+        structlog.dev.ConsoleRenderer()
+        if (force_stream and not syslog_address and console)
+        else structlog.processors.JSONRenderer()
+    )
+
     formatter = structlog.stdlib.ProcessorFormatter(
-        processor=structlog.processors.JSONRenderer(),
+        processor=renderer,
         foreign_pre_chain=processors,
     )
 
@@ -72,3 +98,14 @@ def configure_logging(config: RuntimeConfig) -> None:
     root_logger.handlers.clear()
     root_logger.addHandler(handler)
     root_logger.setLevel(level)
+
+
+def reset_handlers() -> None:
+    """Close and clear all handlers on the root logger."""
+    root_logger = logging.getLogger()
+    for handler in root_logger.handlers[:]:
+        try:
+            handler.close()
+        except (OSError, RuntimeError):
+            pass
+        root_logger.removeHandler(handler)

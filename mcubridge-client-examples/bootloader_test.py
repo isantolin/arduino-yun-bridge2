@@ -4,15 +4,15 @@
 from __future__ import annotations
 
 import asyncio
-import logging
+import structlog
 import typer
 from typing import Annotated
 
 from mcubridge_client import Topic, pb
-from mcubridge_client.cli import bridge_session
+from mcubridge_client.cli import bridge_session, configure_logging
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-log = logging.getLogger("bootloader_sim")
+configure_logging()
+log = structlog.get_logger("bootloader_sim")
 
 
 async def run_test(socket_path: str | None = None, topic_prefix: str = "br") -> None:

@@ -65,7 +65,8 @@ async def test_publish_metrics_publishes_snapshot(
                 min_interval=0.01,
             )
         )
-        await asyncio.wait_for(event.wait(), timeout=0.5)
+        async with asyncio.timeout(0.5):
+            await event.wait()
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
@@ -122,7 +123,8 @@ async def test_publish_metrics_marks_unknown_spool_reason(
                 min_interval=0.01,
             )
         )
-        await asyncio.wait_for(event.wait(), timeout=0.5)
+        async with asyncio.timeout(0.5):
+            await event.wait()
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
@@ -187,7 +189,8 @@ async def test_publish_bridge_snapshots_emits_summary_and_handshake(
                 min_interval=0.01,
             )
         )
-        await asyncio.wait_for(event.wait(), timeout=0.5)
+        async with asyncio.timeout(0.5):
+            await event.wait()
         task.cancel()
         with pytest.raises((asyncio.CancelledError, BaseExceptionGroup)):
             await task
@@ -263,9 +266,16 @@ async def test_prometheus_exporter_run_shutdown_timeout_handled(
     mock_server.shutdown = stop_event.set
     mock_server.server_close = MagicMock()
 
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def _timeout_err(_delay: float):
+        raise TimeoutError()
+        yield
+
     with (
         patch("mcubridge.metrics.make_server", return_value=mock_server),
-        patch("asyncio.wait_for", side_effect=TimeoutError()),
+        patch("asyncio.timeout", side_effect=_timeout_err),
     ):
         exporter = PrometheusExporter(runtime_state, host="127.0.0.1", port=0)
         task = asyncio.create_task(exporter.run())

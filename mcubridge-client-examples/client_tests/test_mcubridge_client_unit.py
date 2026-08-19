@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import logging
+import structlog
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -28,7 +28,7 @@ from mcubridge_client.env import _is_openwrt, read_uci_general
 def test_cli_configure_logging() -> None:
     """configure_logging sets up basic logging without raising exceptions."""
     configure_logging()
-    logging.getLogger("test").info("logging configured")
+    structlog.get_logger("test").info("logging configured")
 
 
 @pytest.mark.asyncio

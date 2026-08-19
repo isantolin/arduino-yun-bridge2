@@ -4,27 +4,25 @@
 from __future__ import annotations
 
 import asyncio
-import logging
+import structlog
 import typer
 from typing import Annotated
 
 from mcubridge_client import dump_client_env
-from mcubridge_client.cli import bridge_session
+from mcubridge_client.cli import bridge_session, configure_logging
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-)
+configure_logging()
+logger = structlog.get_logger(__name__)
 
 
 async def run_test(
     socket_path: str | None,
     topic_prefix: str,
 ) -> None:
-    dump_client_env(logging.getLogger(__name__))
+    dump_client_env(logger)
 
     async with bridge_session(socket_path, topic_prefix) as (_channel, _stub):
-        logging.info("Bridge channel initialized via bridge_session")
+        logger.info("Bridge channel initialized via bridge_session")
 
 
 cli = typer.Typer(

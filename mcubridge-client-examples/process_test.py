@@ -4,8 +4,8 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 import shlex
+import structlog
 import typer
 from typing import Annotated
 
@@ -13,6 +13,7 @@ from mcubridge_client import Topic, pb
 from mcubridge_client.cli import bridge_session, configure_logging
 
 configure_logging()
+logger = structlog.get_logger(__name__)
 
 
 async def run_test(
@@ -23,20 +24,20 @@ async def run_test(
     async with bridge_session(socket_path, topic_prefix) as (_channel, stub):
         command_to_run = ["echo", "hello from shell"]
         cmd_str = shlex.join(command_to_run)
-        logging.info("Launching command: %s", cmd_str)
+        logger.info("Launching command: %s", cmd_str)
 
         topic_shell = Topic.build(Topic.SHELL, "run_async", prefix=topic_prefix)
         payload = pb.ProcessRunAsync(command=cmd_str).SerializeToString()
 
         msg = pb.CloudQueuedPublish(topic_name=topic_shell, payload=payload, qos=1)
         res = await stub.Publish(msg)
-        logging.info(
+        logger.info(
             "Shell run_async published to %s (response topic: %s)",
             topic_shell,
             res.topic_name if res else "",
         )
 
-    logging.info("Done.")
+    logger.info("Done.")
 
 
 def main(

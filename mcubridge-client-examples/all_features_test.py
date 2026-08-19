@@ -4,16 +4,16 @@
 from __future__ import annotations
 
 import asyncio
-import logging
+import structlog
 import uuid
 import typer
 from typing import Annotated
 
 from mcubridge_client import Topic, pb
-from mcubridge_client.cli import bridge_session
+from mcubridge_client.cli import bridge_session, configure_logging
 
-logging.basicConfig(level=logging.INFO, format="%(message)s")
-logger = logging.getLogger("all-features-test")
+configure_logging()
+logger = structlog.get_logger("all-features-test")
 
 
 async def run_test(socket_path: str | None, topic_prefix: str) -> None:

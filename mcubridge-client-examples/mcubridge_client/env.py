@@ -8,12 +8,15 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
-import logging
 import os
 import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
+
+import structlog
+
+logger = structlog.get_logger(__name__)
 
 
 def _is_openwrt() -> bool:
@@ -38,7 +41,7 @@ def read_uci_general() -> dict[str, str]:
     try:
         config = get_uci_config()
     except RuntimeError as exc:
-        logging.getLogger(__name__).warning("UCI config read failed: %s", exc)
+        logger.warning("UCI config read failed: %s", exc)
         return {}
 
     clean: dict[str, str] = {}
@@ -49,7 +52,7 @@ def read_uci_general() -> dict[str, str]:
     return clean
 
 
-def dump_client_env(logger: logging.Logger | None = None) -> None:
+def dump_client_env(logger: Any | None = None) -> None:
     """Log the IPC socket settings for quick diagnostics."""
 
     def _emit(message: str) -> None:

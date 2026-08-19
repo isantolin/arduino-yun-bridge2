@@ -3,13 +3,13 @@
 
 from __future__ import annotations
 
-import logging
 import os
 import re
 from typing import Annotated, Any, cast
 from wsgiref.handlers import CGIHandler
 
 import asyncio
+import structlog
 import typer
 from grpclib.client import Channel
 from mcubridge.protocol.mcubridge_grpc import LocalBridgeStub
@@ -20,7 +20,7 @@ from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol.structures import RuntimeConfig
 from mcubridge.protocol.topics import Topic, topic_path
 
-logger = logging.getLogger("mcubridge.pin_rest")
+logger = structlog.get_logger("mcubridge.pin_rest")
 
 app = typer.Typer(help="Pin REST CGI and CLI interface for MCU Bridge.", add_completion=False)
 

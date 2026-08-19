@@ -5,9 +5,10 @@ Direct PTY-PTY link via socat, with MCU opening its PTY directly.
 """
 
 from __future__ import annotations
+from mcubridge.config.logging import configure_logging
+import structlog
 
 import contextlib
-import logging
 import os
 import signal
 import subprocess
@@ -40,11 +41,9 @@ SOCAT_PORT0 = "/tmp/ttyBRIDGE0"
 CLOUD_HOST = "127.0.0.1"
 CLOUD_PORT = 8443
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
-logger = logging.getLogger("emulation-runner")
+
+configure_logging(console=True)
+logger = structlog.get_logger("emulation-runner")
 
 
 @dataclass

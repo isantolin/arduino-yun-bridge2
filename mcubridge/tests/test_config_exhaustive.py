@@ -3,6 +3,7 @@
 from __future__ import annotations
 from mcubridge.config import settings
 
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -22,12 +23,28 @@ def test_hexdump_processor_bytes() -> None:
     event_dict = {
         "payload": b"\xde\xad\xbe\xef",
         "empty": b"",
+        "bytearray": bytearray(b"\x01\x02"),
+        "memoryview": memoryview(b"\x03\x04"),
         "text": "normal_string",
     }
     processed = hexdump_processor(None, "event", event_dict)
     assert processed["payload"] == "[DE AD BE EF]"
     assert processed["empty"] == "[]"
+    assert processed["bytearray"] == "[01 02]"
+    assert processed["memoryview"] == "[03 04]"
     assert processed["text"] == "normal_string"
+
+
+def test_configure_logging_debug_and_console() -> None:
+    configure_logging(debug=True, console=True)
+    configure_logging(debug=False, console=False)
+
+
+def test_configure_logging_env_debug() -> None:
+    with patch.dict("os.environ", {"MCUBRIDGE_DEBUG": "1"}):
+        configure_logging()
+    with patch.dict("os.environ", {"MCUBRIDGE_DEBUG": "0"}):
+        configure_logging()
 
 
 def test_configure_logging_stream_override() -> None:
@@ -38,19 +55,29 @@ def test_configure_logging_stream_override() -> None:
 
 def test_configure_logging_syslog_paths() -> None:
     cfg = pb.RuntimeConfig(debug=False)
+    # /dev/log
     with patch.dict("os.environ", {}, clear=True):
         with patch("pathlib.Path.exists", side_effect=lambda: True):
             mock_handler = MagicMock()
             mock_handler.level = 0
             with patch("logging.handlers.SysLogHandler", return_value=mock_handler):
                 configure_logging(cfg)
-                import logging
 
-                root = logging.getLogger()
-                for h in root.handlers:
-                    if hasattr(h, "close"):
-                        h.close()
-                root.handlers.clear()
+    # /var/run/log
+    def exists_var_run(self_path: Any) -> bool:
+        return str(self_path) == "/var/run/log"
+
+    with patch.dict("os.environ", {}, clear=True):
+        with patch("pathlib.Path.exists", exists_var_run):
+            mock_handler = MagicMock()
+            mock_handler.level = 0
+            with patch("logging.handlers.SysLogHandler", return_value=mock_handler):
+                configure_logging()
+
+    # No syslog
+    with patch.dict("os.environ", {}, clear=True):
+        with patch("pathlib.Path.exists", return_value=False):
+            configure_logging()
 
 
 # =============================================================================

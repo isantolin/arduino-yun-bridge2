@@ -4,9 +4,9 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
 import sys
+import structlog
 import typer
 from typing import Annotated
 
@@ -14,6 +14,7 @@ from mcubridge_client import Topic, pb
 from mcubridge_client.cli import bridge_session, configure_logging
 
 configure_logging()
+logger = structlog.get_logger(__name__)
 
 
 async def run_test(
@@ -29,11 +30,11 @@ async def run_test(
                     await stream.send_message(pb.SubscribeRequest())
                     async for msg in stream:
                         payload_str = (msg.payload or b"").decode("utf-8")
-                        logging.info("Received from Arduino: %s", payload_str)
+                        logger.info("Received from Arduino: %s", payload_str)
             except asyncio.CancelledError:
-                logging.debug("Console listener task cancelled.")
+                logger.debug("Console listener task cancelled.")
             except (OSError, RuntimeError) as e:
-                logging.debug("Console listener closed: %s", e)
+                logger.debug("Console listener closed: %s", e)
 
         listener_task: asyncio.Task[None] = asyncio.create_task(console_listener())
 
@@ -41,12 +42,12 @@ async def run_test(
         topic_cw = Topic.build(Topic.CONSOLE, "write", prefix=topic_prefix)
 
         if not is_interactive:
-            logging.info("Non-interactive mode. Running Echo Test (ping/pong)...")
+            logger.info("Non-interactive mode. Running Echo Test (ping/pong)...")
             await stub.Publish(pb.CloudQueuedPublish(topic_name=topic_cw, payload=b"ping", qos=1))
             await asyncio.sleep(2.0)
-            logging.info("Echo Test phase completed.")
+            logger.info("Echo Test phase completed.")
         else:
-            logging.info("Enter text to send to the Arduino console. Type 'exit' to quit.")
+            logger.info("Enter text to send to the Arduino console. Type 'exit' to quit.")
             while True:
                 try:
                     user_input = await asyncio.to_thread(input)
@@ -66,7 +67,7 @@ async def run_test(
         try:
             await listener_task
         except asyncio.CancelledError:
-            logging.debug("Listener task cleanup complete.")
+            logger.debug("Listener task cleanup complete.")
 
 
 def main(

@@ -12,23 +12,13 @@ from typing import Annotated
 import typer
 
 import asyncio
-import logging
 import ssl
-import sys
 from pathlib import Path
+import structlog
+from mcubridge.config.logging import configure_logging
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-    sys.path.insert(0, str(REPO_ROOT / "mcubridge"))
-
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    stream=sys.stdout,
-)
-logger = logging.getLogger("mcubridge.gateway")
+configure_logging()
+logger = structlog.get_logger("mcubridge.gateway")
 
 
 class CloudBridgeService(CloudBridgeBase):

@@ -93,9 +93,21 @@ gateway = true
 rationale = "Pure Python asyncio gRPC library for MPU-to-Cloud communication"
 
 [[dependency]]
+name = "annotated-doc"
+openwrt = "python3-annotated-doc"
+pip = "annotated-doc==0.0.5"
+rationale = "Doc docstrings extraction runtime required by Typer"
+
+[[dependency]]
+name = "shellingham"
+openwrt = "python3-shellingham"
+pip = "shellingham==1.5.4"
+rationale = "Shell environment detection runtime required by Typer"
+
+[[dependency]]
 name = "typer"
 openwrt = "python3-typer"
-pip = "typer>=0.27.0"
+pip = "typer==0.27.1"
 gateway = true
 rationale = "Declarative CLI application builder for MPU diagnostic utilities and Gateway CLI"
 

@@ -19,7 +19,6 @@ import shutil
 import site
 import subprocess
 import sys
-import types
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -156,22 +155,6 @@ def load_spec_from_proto(proto_path: Path) -> ProtocolSpec:
     proto_dir = str(proto_path.parent)
     if proto_dir not in sys.path:
         sys.path.insert(0, proto_dir)
-
-    if "mcubridge_pb2" in sys.modules:
-        del sys.modules["mcubridge_pb2"]
-
-    # Pre-register local buf.validate package to prevent collision with
-    # any system 'buf' package (e.g. on Python 3.14+ / Ubuntu 26.04)
-    buf_dir = proto_path.parent / "buf"
-    buf_validate_dir = buf_dir / "validate"
-    if buf_validate_dir.is_dir() and "buf" not in sys.modules:
-        buf_mod = types.ModuleType("buf")
-        buf_mod.__path__ = [str(buf_dir)]
-        sys.modules["buf"] = buf_mod
-
-        buf_validate_mod = types.ModuleType("buf.validate")
-        buf_validate_mod.__path__ = [str(buf_validate_dir)]
-        sys.modules["buf.validate"] = buf_validate_mod
 
     mcubridge_pb2 = importlib.import_module("mcubridge_pb2")
     file_desc = mcubridge_pb2.DESCRIPTOR

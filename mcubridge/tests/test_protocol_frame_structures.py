@@ -185,7 +185,7 @@ def test_allows_topic() -> None:
 
 
 def _valid_runtime_config(**overrides: Any) -> pb.RuntimeConfig:
-    """Build a RuntimeConfig satisfying all buf.validate rules, with overrides for testing."""
+    """Build a RuntimeConfig satisfying all validation rules, with overrides for testing."""
     base: dict[str, Any] = dict(
         serial_port="/dev/ttyATH0",
         cloud_port=8883,

@@ -131,8 +131,7 @@ async def publish_metrics(
     """Publish runtime metrics to CLOUD at a fixed cadence.
 
     interval is sourced from RuntimeConfig.status_interval, which enforces
-    (buf.validate.field).uint32.gt = 0 declaratively at config-validation
-    time, so no runtime guard is needed here.
+    status_interval > 0 natively at config-validation time, so no runtime guard is needed here.
     """
 
     tick_seconds = max(1, math.ceil(max(min_interval, interval)))

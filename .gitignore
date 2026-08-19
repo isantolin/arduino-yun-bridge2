@@ -15,7 +15,7 @@ tools/protocol/buf/validate/validate_pb2.pyi
 tools/protocol/buf/validate/validate.pb.c
 tools/protocol/buf/validate/validate.pb.h
 tools/protocol/buf/validate/__pycache__/
-
+build_test/
 # Vendored protovalidate schema (fetched by tools/protocol/generate.py::
 # ensure_protovalidate_proto_files() from the pinned bufbuild/protovalidate tag)
 tools/protocol/buf/validate/validate.proto

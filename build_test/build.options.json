@@ -1,9 +1,0 @@
-{
-  "additionalFiles": "",
-  "compiler.optimization_flags": "",
-  "customBuildProperties": "compiler.cpp.extra_flags=-std=gnu++17 -fno-exceptions -flto -fno-strict-aliasing -DWOLFSSL_USER_SETTINGS -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1 -DETL_NO_STL -I/home/ignaciosantolin/Arduino/libraries/Embedded_Template_Library/include,compiler.c.extra_flags=-std=gnu11 -flto -fno-strict-aliasing -DWOLFSSL_USER_SETTINGS -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1 -I/home/ignaciosantolin/Arduino/libraries/Embedded_Template_Library/include",
-  "fqbn": "arduino:avr:uno",
-  "hardwareFolders": "/home/ignaciosantolin/.arduino15/packages/arduino/hardware/avr/1.8.8,/home/ignaciosantolin/.arduino15/packages/arduino/hardware/avr/1.8.8",
-  "otherLibrariesFolders": "/home/ignaciosantolin/Arduino/libraries,/home/ignaciosantolin/arduino-yun-bridge2/.dummy_libs,/home/ignaciosantolin/Arduino/libraries",
-  "sketchLocation": "/home/ignaciosantolin/arduino-yun-bridge2/mcubridge-library-arduino/examples/BridgeControl"
-}

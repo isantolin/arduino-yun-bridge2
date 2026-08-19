@@ -41,9 +41,11 @@ class LmdbDeque:
             env_path = self.path
 
         try:
-            self.env = lmdb.open(env_path, max_dbs=1, map_size=10485760, readahead=False, meminit=False, subdir=False)
+            self.env = lmdb.open(
+                env_path, max_dbs=1, map_size=10485760, readahead=False, meminit=False, map_async=True, subdir=False
+            )
             self.db = self.env.open_db(b"deque")
-            with self.env.begin(db=self.db) as txn:
+            with self.env.begin(db=self.db, buffers=True) as txn:
                 cur = txn.cursor()
                 self._head = _U64.unpack(cur.key())[0] if cur.first() else 0
                 self._tail = _U64.unpack(cur.key())[0] + 1 if cur.last() else 0
@@ -58,7 +60,13 @@ class LmdbDeque:
                     logger.warning("Failed to unlink target path", path=str(target), error=e)
             try:
                 self.env = lmdb.open(
-                    env_path, max_dbs=1, map_size=10485760, readahead=False, meminit=False, subdir=False
+                    env_path,
+                    max_dbs=1,
+                    map_size=10485760,
+                    readahead=False,
+                    meminit=False,
+                    map_async=True,
+                    subdir=False,
                 )
                 self.db = self.env.open_db(b"deque")
                 self._head = self._tail = 0
@@ -88,14 +96,14 @@ class LmdbDeque:
             return self._mem.popleft()
         if not self.env or len(self) == 0:
             raise IndexError("popleft from empty deque")
-        with self.env.begin(write=True, db=self.db) as txn:
+        with self.env.begin(write=True, db=self.db, buffers=True) as txn:
             key = _U64.pack(self._head)
             val = txn.get(key)
             if val is None:
                 raise IndexError("popleft from empty deque")
             txn.delete(key)
             self._head += 1
-            return val
+            return bytes(val)
 
     async def peek(self) -> bytes:
         if self.is_mem:
@@ -104,11 +112,11 @@ class LmdbDeque:
             return self._mem[0]
         if not self.env or len(self) == 0:
             raise IndexError("peek from empty deque")
-        with self.env.begin(db=self.db) as txn:
+        with self.env.begin(db=self.db, buffers=True) as txn:
             val = txn.get(_U64.pack(self._head))
             if val is None:
                 raise IndexError("peek from empty deque")
-            return val
+            return bytes(val)
 
     async def clear(self) -> None:
         if self.is_mem:
@@ -164,7 +172,9 @@ class LmdbCache:
             env_path = self.path
 
         try:
-            self.env = lmdb.open(env_path, max_dbs=1, map_size=10485760, readahead=False, meminit=False, subdir=False)
+            self.env = lmdb.open(
+                env_path, max_dbs=1, map_size=10485760, readahead=False, meminit=False, map_async=True, subdir=False
+            )
             self.db = self.env.open_db(b"cache")
         except (lmdb.Error, OSError) as exc:
             logger.warning("Failed to initialize LmdbCache schema: %s", exc)
@@ -177,7 +187,13 @@ class LmdbCache:
                     logger.warning("Failed to unlink target path", path=str(target), error=e)
             try:
                 self.env = lmdb.open(
-                    env_path, max_dbs=1, map_size=10485760, readahead=False, meminit=False, subdir=False
+                    env_path,
+                    max_dbs=1,
+                    map_size=10485760,
+                    readahead=False,
+                    meminit=False,
+                    map_async=True,
+                    subdir=False,
                 )
                 self.db = self.env.open_db(b"cache")
             except (lmdb.Error, OSError) as e:
@@ -198,9 +214,9 @@ class LmdbCache:
         if not self.env:
             return default
         try:
-            with self.env.begin(db=self.db) as txn:
+            with self.env.begin(db=self.db, buffers=True) as txn:
                 val = txn.get(key.encode("utf-8"))
-                return val if val is not None else default
+                return bytes(val) if val is not None else default
         except (lmdb.Error, OSError) as exc:
             logger.error("LmdbCache get failed", path=self.path, key=key, error=exc)
             return default

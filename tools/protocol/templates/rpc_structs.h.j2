@@ -18,6 +18,9 @@
 #include <etl/algorithm.h>
 #include <etl/span.h>
 #include <etl/string_view.h>
+#ifndef PB_NO_ERRMSG
+#define PB_NO_ERRMSG 1
+#endif
 #include "pb_encode.h"
 #include "pb_decode.h"
 #include <etl/expected.h>

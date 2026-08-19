@@ -3,25 +3,10 @@
 Hardware Emulation Runner.
 Direct PTY-PTY link via socat, with MCU opening its PTY directly.
 """
-
 from __future__ import annotations
-from mcubridge.protocol import protocol
-from mcubridge.config.logging import configure_logging
-import typer
-import structlog
 
-import contextlib
-import json
-import os
-import signal
-import subprocess
 import sys
-import tempfile
-import threading
-import time
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Annotated, Any
 
 repo_root = Path(__file__).resolve().parents[1]
 if str(repo_root / "mcubridge") not in sys.path:
@@ -30,6 +15,22 @@ if str(repo_root / "mcubridge-client-examples") not in sys.path:
     sys.path.insert(0, str(repo_root / "mcubridge-client-examples"))
 if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
+
+import contextlib  # noqa: E402
+import json  # noqa: E402
+import os  # noqa: E402
+import signal  # noqa: E402
+import subprocess  # noqa: E402
+import tempfile  # noqa: E402
+import threading  # noqa: E402
+import time  # noqa: E402
+from dataclasses import dataclass, field  # noqa: E402
+from typing import Annotated, Any  # noqa: E402
+
+import structlog  # noqa: E402
+import typer  # noqa: E402
+from mcubridge.config.logging import configure_logging  # noqa: E402
+from mcubridge.protocol import protocol  # noqa: E402
 
 
 # --- Constants ---

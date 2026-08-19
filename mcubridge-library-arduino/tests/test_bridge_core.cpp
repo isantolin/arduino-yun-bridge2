@@ -200,6 +200,12 @@ void test_bridge_wcet_tracking() {
   TEST_ASSERT_GREATER_OR_EQUAL_UINT32(0, Bridge.getWcetMaxMicros());
 }
 
+void test_bridge_begin_null_secret() {
+  Bridge.begin(115200, nullptr);
+  TEST_ASSERT_TRUE(Bridge.isPostPassed());
+  Bridge.process();
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_bridge_initialization);
@@ -210,5 +216,6 @@ int main() {
   RUN_TEST(test_bridge_status_ack);
   RUN_TEST(test_bridge_post_and_stack_sentinel);
   RUN_TEST(test_bridge_wcet_tracking);
+  RUN_TEST(test_bridge_begin_null_secret);
   return UNITY_END();
 }

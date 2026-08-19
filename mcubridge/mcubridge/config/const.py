@@ -34,105 +34,95 @@ from typing import Final
 from ..protocol import protocol
 
 # -- Serial Port Defaults --
-DEFAULT_SERIAL_PORT: str = "/dev/ttyATH0"
-# Initial wait for serial port availability (reconnect loop)
-
-# Maximum size of a raw serial frame including overhead
+DEFAULT_SERIAL_PORT: Final[str] = "/dev/ttyATH0"
 
 # Timeout for general serial operations (not strict RPC)
-DEFAULT_SERIAL_RETRY_TIMEOUT: float = 10.0
-DEFAULT_SERIAL_RESPONSE_TIMEOUT: float = 20.0
-# Baudrate negotiation timeout
-SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT: float = 2.0
-DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL: float = 0.0
-# How many fatal handshake failures before restarting the serial task
-
-# CRC error threshold before triggering baudrate fallback
+DEFAULT_SERIAL_RETRY_TIMEOUT: Final[float] = 10.0
+DEFAULT_SERIAL_RESPONSE_TIMEOUT: Final[float] = 20.0
+SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT: Final[float] = 2.0
+DEFAULT_SERIAL_HANDSHAKE_MIN_INTERVAL: Final[float] = 0.0
 
 # Backoff strategy for handshake retries
-SERIAL_HANDSHAKE_BACKOFF_BASE: float = 1.0
-SERIAL_HANDSHAKE_BACKOFF_MAX: float = 60.0
-SERIAL_MIN_ACK_TIMEOUT: float = float(protocol.DEFAULT_ACK_TIMEOUT_MS) / 1000.0
+SERIAL_HANDSHAKE_BACKOFF_BASE: Final[float] = 1.0
+SERIAL_HANDSHAKE_BACKOFF_MAX: Final[float] = 60.0
+SERIAL_MIN_ACK_TIMEOUT: Final[float] = float(protocol.DEFAULT_ACK_TIMEOUT_MS) / 1000.0
 
 # -- Cloud Defaults --
-DEFAULT_CLOUD_HOST: str = "127.0.0.1"
-DEFAULT_CLOUD_PORT: int = 8443
-DEFAULT_CLOUD_CAFILE: str = "/etc/ssl/certs/ca-certificates.crt"
-DEFAULT_CLOUD_QUEUE_LIMIT: int = 256
-CLOUD_TLS_MIN_VERSION: TLSVersion = TLSVersion.TLSv1_2
+DEFAULT_CLOUD_HOST: Final[str] = "127.0.0.1"
+DEFAULT_CLOUD_PORT: Final[int] = 8443
+DEFAULT_CLOUD_CAFILE: Final[str] = "/etc/ssl/certs/ca-certificates.crt"
+DEFAULT_CLOUD_QUEUE_LIMIT: Final[int] = 256
+CLOUD_TLS_MIN_VERSION: Final[TLSVersion] = TLSVersion.TLSv1_2
 # [CRITICAL] Spool directory in RAM to prevent Flash wear
-DEFAULT_CLOUD_SPOOL_DIR: str = "/tmp/mcubridge/spool"
+DEFAULT_CLOUD_SPOOL_DIR: Final[str] = "/tmp/mcubridge/spool"
 
 # -- Cloud Spool Backoff Strategy --
-SPOOL_BACKOFF_MULTIPLIER: float = 5.0
-SPOOL_BACKOFF_MIN_SECONDS: float = 5.0
-SPOOL_BACKOFF_MAX_SECONDS: float = 60.0
+SPOOL_BACKOFF_MULTIPLIER: Final[float] = 5.0
+SPOOL_BACKOFF_MIN_SECONDS: Final[float] = 5.0
+SPOOL_BACKOFF_MAX_SECONDS: Final[float] = 60.0
 
 # -- File System Defaults --
 DEFAULT_FILE_SYSTEM_ROOT: str = "/tmp/yun_files"
 MCU_FS_PREFIX: Final[str] = "mcu/"
-DEFAULT_FILE_WRITE_MAX_BYTES: int = 262144
-DEFAULT_FILE_STORAGE_QUOTA_BYTES: int = 8388608
-# Warning threshold for files growing large in RAM (Inherited from mcubridge.proto)
+DEFAULT_FILE_WRITE_MAX_BYTES: Final[int] = 262144
+DEFAULT_FILE_STORAGE_QUOTA_BYTES: Final[int] = 8388608
 
 # Paths considered safe (volatile/RAM) for writing to avoid flash wear
 VOLATILE_STORAGE_PATHS: frozenset[str] = frozenset({"/tmp", "/var/run", "/run", "/dev/shm"})
-SYSTEMD_PRIVATE_PREFIX: str = "systemd-private-"
+SYSTEMD_PRIVATE_PREFIX: Final[str] = "systemd-private-"
 
 # -- Component Limits --
-DEFAULT_PROCESS_TIMEOUT: int = 10
+DEFAULT_PROCESS_TIMEOUT: Final[int] = 10
+DEFAULT_PROCESS_MAX_CONCURRENT: Final[int] = 4
 
-DEFAULT_PROCESS_MAX_CONCURRENT: int = 4
-# [SIL-2] Process kill timeouts (seconds)
-
-DEFAULT_MAILBOX_QUEUE_LIMIT: int = 64
-DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT: int = 65536
-DEFAULT_PENDING_PIN_REQUESTS: int = 32
+DEFAULT_MAILBOX_QUEUE_LIMIT: Final[int] = 64
+DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT: Final[int] = 65536
+DEFAULT_PENDING_PIN_REQUESTS: Final[int] = 32
 
 # -- Telemetry & Status --
-STATUS_FILE_PATH: str = "/tmp/mcubridge_status.json"
-DEFAULT_STATUS_INTERVAL: int = 5
-DEFAULT_BRIDGE_SUMMARY_INTERVAL: int = 60
-DEFAULT_BRIDGE_HANDSHAKE_INTERVAL: int = 300
-DEFAULT_METRICS_HOST: str = "127.0.0.1"
-BRIDGE_SNAPSHOT_EXPIRY_SECONDS: int = 30
+STATUS_FILE_PATH: Final[str] = "/tmp/mcubridge_status.json"
+DEFAULT_STATUS_INTERVAL: Final[int] = 5
+DEFAULT_BRIDGE_SUMMARY_INTERVAL: Final[int] = 60
+DEFAULT_BRIDGE_HANDSHAKE_INTERVAL: Final[int] = 300
+DEFAULT_METRICS_HOST: Final[str] = "127.0.0.1"
+BRIDGE_SNAPSHOT_EXPIRY_SECONDS: Final[int] = 30
 
-DEFAULT_METRICS_ENABLED: bool = False
+DEFAULT_METRICS_ENABLED: Final[bool] = False
 
 # -- Logging --
-DEFAULT_DEBUG: bool = False
+DEFAULT_DEBUG: Final[bool] = False
 
 # -- Security --
-MIN_SERIAL_SHARED_SECRET_LEN: int = 8
+MIN_SERIAL_SHARED_SECRET_LEN: Final[int] = 8
 # SECURITY WARNING: This default secret is for initial setup only.
 # It MUST be rotated using 'mcubridge-rotate-credentials' before production use.
-DEFAULT_SERIAL_SHARED_SECRET: bytes = b"failsafe_secret_mode"
-ALLOWED_COMMAND_WILDCARD: str = "*"
-TOPIC_FORBIDDEN_REASON: str = "topic-action-forbidden"
+DEFAULT_SERIAL_SHARED_SECRET: Final[bytes] = b"failsafe_secret_mode"
+ALLOWED_COMMAND_WILDCARD: Final[str] = "*"
+TOPIC_FORBIDDEN_REASON: Final[str] = "topic-action-forbidden"
 
 # -- Watchdog --
-WATCHDOG_TRIGGER_TOKEN: bytes = b"WATCHDOG=trigger\n"
-DEFAULT_WATCHDOG_ENABLED: bool = False
-DEFAULT_WATCHDOG_INTERVAL: float = 10.0
-WATCHDOG_MIN_INTERVAL: float = 0.5
+WATCHDOG_TRIGGER_TOKEN: Final[bytes] = b"WATCHDOG=trigger\n"
+DEFAULT_WATCHDOG_ENABLED: Final[bool] = False
+DEFAULT_WATCHDOG_INTERVAL: Final[float] = 10.0
+WATCHDOG_MIN_INTERVAL: Final[float] = 0.5
 
 # -- Task Supervisor --
-SUPERVISOR_DEFAULT_RESTART_INTERVAL: float = 60.0
-SUPERVISOR_DEFAULT_MIN_BACKOFF: float = 1.0
-SUPERVISOR_DEFAULT_MAX_BACKOFF: float = 30.0
+SUPERVISOR_DEFAULT_RESTART_INTERVAL: Final[float] = 60.0
+SUPERVISOR_DEFAULT_MIN_BACKOFF: Final[float] = 1.0
+SUPERVISOR_DEFAULT_MAX_BACKOFF: Final[float] = 30.0
 # Specific intervals for non-critical tasks (status-writer, metrics, snapshots)
-SUPERVISOR_STATUS_RESTART_INTERVAL: float = 120.0
-SUPERVISOR_PROMETHEUS_RESTART_INTERVAL: float = 300.0
-SUPERVISOR_STATUS_MAX_BACKOFF: float = 10.0
-SUPERVISOR_MIN_RESTART_WINDOW: float = 1.0
+SUPERVISOR_STATUS_RESTART_INTERVAL: Final[float] = 120.0
+SUPERVISOR_PROMETHEUS_RESTART_INTERVAL: Final[float] = 300.0
+SUPERVISOR_STATUS_MAX_BACKOFF: Final[float] = 10.0
+SUPERVISOR_MIN_RESTART_WINDOW: Final[float] = 1.0
 
 # -- Feature Flags --
-DEFAULT_CLOUD_TLS_INSECURE: bool = False
-DEFAULT_ALLOW_NON_TMP_PATHS: bool = False
+DEFAULT_CLOUD_TLS_INSECURE: Final[bool] = False
+DEFAULT_ALLOW_NON_TMP_PATHS: Final[bool] = False
 
 # -- Cloud HTTP/3 Defaults --
-DEFAULT_CLOUD_HTTP3_PORT: int = 8443
-DEFAULT_CLOUD_HTTP3_CONGESTION_CONTROL: str = "bbr"
+DEFAULT_CLOUD_HTTP3_PORT: Final[int] = 8443
+DEFAULT_CLOUD_HTTP3_CONGESTION_CONTROL: Final[str] = "bbr"
 
 # -- Telemetry and Metadata Constants --
 PROP_KEY_BRIDGE_SPOOL: Final[str] = "bridge-spool"
@@ -162,27 +152,17 @@ PROCESS_TERM_GRACE_PERIOD_SECONDS: Final[float] = 0.5
 FLOW_CONTROL_WAIT_TIMEOUT_SECONDS: Final[float] = 30.0
 
 # ==============================================================================
-# STATUS CODES (Application Logic) — loaded after defaults to avoid circular
-# imports with mcubridge.protocol.structures.RuntimeConfig.
+# STATUS CODES (Application Logic)
 # ==============================================================================
 
-
-def _load_status_codes() -> tuple[frozenset[int], frozenset[int]]:
-    """Lazy-load protocol status codes to break circular import chain."""
-    from ..protocol import protocol
-
-    failure = frozenset(
-        {
-            protocol.Status.ERROR.value,
-            protocol.Status.CMD_UNKNOWN.value,
-            protocol.Status.MALFORMED.value,
-            protocol.Status.CRC_MISMATCH.value,
-            protocol.Status.TIMEOUT.value,
-            protocol.Status.NOT_IMPLEMENTED.value,
-        }
-    )
-    success = frozenset({protocol.Status.OK.value})
-    return failure, success
-
-
-SERIAL_FAILURE_STATUS_CODES, SERIAL_SUCCESS_STATUS_CODES = _load_status_codes()
+SERIAL_FAILURE_STATUS_CODES: Final[frozenset[int]] = frozenset(
+    {
+        protocol.Status.ERROR.value,
+        protocol.Status.CMD_UNKNOWN.value,
+        protocol.Status.MALFORMED.value,
+        protocol.Status.CRC_MISMATCH.value,
+        protocol.Status.TIMEOUT.value,
+        protocol.Status.NOT_IMPLEMENTED.value,
+    }
+)
+SERIAL_SUCCESS_STATUS_CODES: Final[frozenset[int]] = frozenset({protocol.Status.OK.value})

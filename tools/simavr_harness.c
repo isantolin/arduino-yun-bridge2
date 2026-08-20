@@ -123,7 +123,14 @@ int main(int argc, char *argv[]) {
             }
         }
 
-        avr_run(avr);
+        /* Execute AVR instructions in batches for maximum simulation throughput */
+        for (int step = 0; step < 1000; step++) {
+            avr_run(avr);
+            if (avr->state == cpu_Done || avr->state == cpu_Crashed) {
+                break;
+            }
+        }
+        usleep(100);
     }
 
     close(bridge.master_fd);

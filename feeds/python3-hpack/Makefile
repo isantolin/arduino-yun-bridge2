@@ -1,11 +1,11 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=python3-hpack
-PKG_VERSION:=4.1.0
+PKG_VERSION:=4.2.0
 PKG_RELEASE:=1
 
 PYPI_NAME:=hpack
-PKG_HASH:=ec5eca154f7056aa06f196a557655c5b009b382873ac8d1e66e79e87535f1dca
+PKG_HASH:=0895cfa3b5531fc65fe439c05eb65144f123bf7a394fcaa56aa423548d8e45c0
 
 PKG_MAINTAINER:=Ignacio Santolin <ignacio.santolin@gmail.com>
 PKG_LICENSE:=MIT

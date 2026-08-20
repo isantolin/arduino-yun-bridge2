@@ -53,6 +53,8 @@ define Package/$(PKG_NAME)
 		python3-uvloop \
 		python3-cryptography \
 		python3-structlog \
+		python3-hpack \
+		python3-hyperframe \
 		python3-h2 \
 		python3-grpclib \
 		python3-annotated-doc \

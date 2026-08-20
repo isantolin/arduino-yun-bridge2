@@ -41,6 +41,8 @@ define Package/$(PKG_NAME)
 	DEPENDS+= \
 		python3 \
 		python3-protobuf \
+		python3-hpack \
+		python3-hyperframe \
 		python3-h2 \
 		python3-grpclib \
 		python3-typer

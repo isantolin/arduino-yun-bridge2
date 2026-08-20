@@ -203,17 +203,24 @@ def run_simavr_emulation(
             str(firmware_path),
         ]
         logger.info("Spawning simavr process", cmd=simavr_cmd)
-        simavr_proc = subprocess.Popen(
-            simavr_cmd,
-            stdin=slave_fd,
-            stdout=slave_fd,
-            stderr=subprocess.PIPE,
-            text=True,
-            bufsize=1,
-            close_fds=True,
-        )
-        os.close(slave_fd)
-        _start_worker_thread(_stream_worker, "simavr-stderr", simavr_proc.stderr, state, "simavr-stderr")
+        try:
+            simavr_proc = subprocess.Popen(
+                simavr_cmd,
+                stdin=slave_fd,
+                stdout=slave_fd,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+                close_fds=True,
+            )
+            os.close(slave_fd)
+            _start_worker_thread(_stream_worker, "simavr-stderr", simavr_proc.stderr, state, "simavr-stderr")
+        except FileNotFoundError:
+            logger.error("simavr binary not found on system. Please install libsimavr-dev and simavr")
+            os.close(slave_fd)
+            if master_fd >= 0:
+                os.close(master_fd)
+            return False
 
     if not slave_name:
         logger.error("Failed to allocate virtual UART PTY device")

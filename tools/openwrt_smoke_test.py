@@ -45,7 +45,7 @@ KERNEL_FILE = f"openwrt-{OPENWRT_VERSION}-malta-be-vmlinux.elf"
 ROOTFS_GZ = f"openwrt-{OPENWRT_VERSION}-malta-be-rootfs-ext4.img.gz"
 ROOTFS_IMG = "openwrt-rootfs.img"
 
-APK_DISK_MB = 40  # APKs + deploy scripts
+APK_DISK_MB = 128  # APKs + deploy scripts
 EXTROOT_DISK_MB = 2048  # extroot overlay + swap
 
 PROMPT = r"root@.*:.*#"

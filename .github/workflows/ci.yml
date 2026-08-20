@@ -272,13 +272,44 @@ jobs:
       - name: Run Fuzzing Campaign
         run: tox -e fuzz
 
+  simavr-emulation:
+    name: simavr AVR Emulation (ATmega32u4)
+    runs-on: ubuntu-26.04
+    needs: [tox-checks]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install protoc
+        run: |
+          PROTOC_TAG=36.0-rc1
+          PROTOC_VERSION=36.0-rc-1
+          PROTOC_ZIP=protoc-${PROTOC_VERSION}-linux-x86_64.zip
+          curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_TAG}/${PROTOC_ZIP}
+          sudo unzip -o ${PROTOC_ZIP} -d /usr/local
+          rm -f ${PROTOC_ZIP}
+          protoc --version
+      - uses: ./.github/actions/setup-python-tox
+        with:
+          cache-suffix: simavr
+      - name: Setup Arduino CLI & Tools
+        run: |
+          sudo apt-get update && sudo apt-get install -y simavr libsimavr-dev socat
+          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
+          echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
+      - name: Install Arduino AVR Core
+        run: |
+          arduino-cli core update-index
+          arduino-cli core install arduino:avr
+      - name: Run simavr E2E Test Suite
+        run: tox -e simavr
+
   # ═══════════════════════════════════════════════════════════════════════════
   # STAGE 3: Consolidation - ~2min
   # ═══════════════════════════════════════════════════════════════════════════
   coverage-report:
     name: Final Summary
     runs-on: ubuntu-26.04
-    needs: [unified-tests, arduino-examples, arduino-emulation, protocol-fuzzing]
+    needs: [unified-tests, arduino-examples, arduino-emulation, protocol-fuzzing, simavr-emulation]
     if: always()
     timeout-minutes: 3
     steps:

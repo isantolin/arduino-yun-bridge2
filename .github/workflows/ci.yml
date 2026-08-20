@@ -296,10 +296,11 @@ jobs:
           sudo apt-get update && sudo apt-get install -y simavr libsimavr-dev socat
           curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
           echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
-      - name: Install Arduino AVR Core
+      - name: Install Arduino AVR Core & Libraries
         run: |
           arduino-cli core update-index
           arduino-cli core install arduino:avr
+          arduino-cli lib install wolfSSL
       - name: Run simavr E2E Test Suite
         run: tox -e simavr
 

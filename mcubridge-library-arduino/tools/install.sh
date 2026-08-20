@@ -158,6 +158,15 @@ else
     # ETL: We copy the whole repository to the library directory.
     install_dependency "Embedded_Template_Library" "https://codeload.github.com/ETLCPP/etl/zip/refs/tags/${ETL_VERSION}" "include/etl/algorithm.h" "$LIB_DIR"
     install_dependency "wolfSSL" "https://codeload.github.com/wolfSSL/wolfssl/zip/refs/tags/${WOLFSSL_VERSION}" "wolfssl/wolfcrypt/settings.h" "$LIB_DIR"
+    if [ -d "$LIB_DIR/wolfSSL" ]; then
+        mkdir -p "$LIB_DIR/wolfSSL/src"
+        if [ ! -f "$LIB_DIR/wolfSSL/wolfssl.h" ]; then
+            printf '#ifndef WOLFSSL_H\n#define WOLFSSL_H\n#include <wolfssl/wolfcrypt/settings.h>\n#endif\n' > "$LIB_DIR/wolfSSL/wolfssl.h"
+        fi
+        if [ ! -f "$LIB_DIR/wolfSSL/src/wolfssl.h" ]; then
+            printf '#ifndef WOLFSSL_H\n#define WOLFSSL_H\n#include <wolfssl/wolfcrypt/settings.h>\n#endif\n' > "$LIB_DIR/wolfSSL/src/wolfssl.h"
+        fi
+    fi
     install_dependency "PacketSerial" "https://codeload.github.com/isantolin/PacketSerial2/zip/refs/${PACKETSERIAL_REF}" "src/Codecs/COBSR.h" "$LIB_DIR"
 fi
 

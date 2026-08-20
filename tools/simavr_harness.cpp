@@ -34,6 +34,33 @@ extern "C" {
 #include <sim_avr.h>
 #include <sim_elf.h>
 #include <sim_io.h>
+#else
+// Declarations for environments without libsimavr-dev headers installed
+enum { cpu_Done = 2, cpu_Crashed = 3 };
+enum { UART_IRQ_INPUT = 0, UART_IRQ_OUTPUT = 1 };
+#define AVR_IOCTL_UART_GETIRQ(name) (0x10000 | (name))
+
+typedef struct elf_firmware_t {
+    uint32_t frequency;
+} elf_firmware_t;
+
+typedef struct avr_irq_t avr_irq_t;
+typedef void (*avr_irq_notify_t)(struct avr_irq_t *irq, uint32_t value, void *param);
+
+typedef struct avr_t {
+    uint32_t frequency;
+    int state;
+} avr_t;
+
+int elf_read_firmware(const char *file, elf_firmware_t *firmware);
+avr_t *avr_make_mcu_by_name(const char *name);
+int avr_init(avr_t *avr);
+void avr_load_firmware(avr_t *avr, elf_firmware_t *firmware);
+avr_irq_t *avr_io_getirq(avr_t *avr, uint32_t ctl, int index);
+void avr_irq_register_notify(avr_irq_t *irq, avr_irq_notify_t notify, void *param);
+void avr_raise_irq(avr_irq_t *irq, uint32_t value);
+int avr_run(avr_t *avr);
+void avr_terminate(avr_t *avr);
 #endif
 }
 

@@ -7,6 +7,8 @@
 #include <unistd.h>
 
 #include <Arduino.h>
+#include <etl/algorithm.h>
+#include <etl/span.h>
 
 /**
  * @brief Real-time Stream implementation for Linux Host.

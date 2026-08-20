@@ -124,7 +124,6 @@ def _build_simavr_harness() -> Path | None:
         str(harness_src),
         "-lsimavr",
         "-lutil",
-        "-lelf",
         "-o",
         str(harness_bin),
     ]
@@ -400,8 +399,10 @@ def main(
         test_paths = [Path(s) for s in scripts]
     else:
         test_paths = [
-            repo_root / "mcubridge-client-examples" / "client_tests" / "test_client_smoke.py",
-            repo_root / "mcubridge-client-examples" / "client_tests" / "test_bridge_control.py",
+            repo_root / "mcubridge-client-examples" / "all_features_test.py",
+            repo_root / "mcubridge-client-examples" / "led13_test.py",
+            repo_root / "mcubridge-client-examples" / "datastore_test.py",
+            repo_root / "mcubridge-client-examples" / "console_test.py",
         ]
 
     logger.info(

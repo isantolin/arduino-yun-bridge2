@@ -40,7 +40,8 @@ static void uart_output_hook(struct avr_irq_t *irq, uint32_t value, void *param)
     (void)irq;
     simavr_pty_bridge_t *b = (simavr_pty_bridge_t *)param;
     uint8_t byte = (uint8_t)value;
-    (void)write(b->master_fd, &byte, 1);
+    ssize_t written = write(b->master_fd, &byte, 1);
+    (void)written;
 }
 
 int main(int argc, char *argv[]) {

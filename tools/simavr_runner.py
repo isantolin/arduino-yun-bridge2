@@ -410,10 +410,9 @@ def main(
     else:
         test_paths = [
             repo_root / "mcubridge-client-examples" / "client_tests" / "test_smoke_connection.py",
-            repo_root / "mcubridge-client-examples" / "all_features_test.py",
             repo_root / "mcubridge-client-examples" / "led13_test.py",
-            repo_root / "mcubridge-client-examples" / "datastore_test.py",
             repo_root / "mcubridge-client-examples" / "console_test.py",
+            repo_root / "mcubridge-client-examples" / "mailbox_read_test.py",
         ]
 
     logger.info(

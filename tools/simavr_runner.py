@@ -109,7 +109,7 @@ def _write_fake_uci_module(base_dir: Path, config: dict[str, str]) -> Path:
 
 
 def _build_simavr_harness() -> Path | None:
-    harness_src = repo_root / "tools" / "simavr_harness.c"
+    harness_src = repo_root / "tools" / "simavr_harness.cpp"
     harness_bin = repo_root / "build" / "simavr" / "simavr_harness"
     if not harness_src.exists():
         return None
@@ -118,9 +118,19 @@ def _build_simavr_harness() -> Path | None:
         return harness_bin
 
     harness_bin.parent.mkdir(parents=True, exist_ok=True)
+
+    etl_include = repo_root / ".dummy_libs" / "Embedded_Template_Library" / "include"
+    arduino_etl_include = Path.home() / "Arduino" / "libraries" / "Embedded_Template_Library" / "include"
+
     compile_cmd = [
-        "gcc",
+        "g++",
+        "-std=c++17",
         "-O2",
+        "-DETL_NO_STL",
+        "-I",
+        str(etl_include),
+        "-I",
+        str(arduino_etl_include),
         str(harness_src),
         "-lsimavr",
         "-lutil",
@@ -130,11 +140,11 @@ def _build_simavr_harness() -> Path | None:
     try:
         res = subprocess.run(compile_cmd, capture_output=True, text=True, check=False)
         if res.returncode == 0 and harness_bin.exists():
-            logger.info("Compiled simavr_harness binary", binary=str(harness_bin))
+            logger.info("Compiled ETL-compliant simavr_harness binary", binary=str(harness_bin))
             return harness_bin
-        logger.warn("Failed to compile simavr_harness via gcc", stderr=res.stderr)
+        logger.warn("Failed to compile simavr_harness via g++", stderr=res.stderr)
     except Exception as exc:
-        logger.warn("gcc not available to build simavr_harness", error=str(exc))
+        logger.warn("g++ not available to build simavr_harness", error=str(exc))
     return None
 
 

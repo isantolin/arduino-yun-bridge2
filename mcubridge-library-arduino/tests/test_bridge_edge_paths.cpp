@@ -312,9 +312,8 @@ void test_console_and_policy_edges() {
 
   etl::array<char, bridge::config::CONSOLE_TX_BUFFER_SIZE> fill_chars{};
   etl::fill(fill_chars.begin(), fill_chars.end(), 'x');
-  etl::for_each(fill_chars.begin(), fill_chars.end(), [](char c) {
-    (void)Console.write(c);
-  });
+  etl::for_each(fill_chars.begin(), fill_chars.end(),
+                [](char c) { (void)Console.write(c); });
 
   Bridge.enterSafeState();
   TEST_ASSERT_EQUAL_UINT32(0, static_cast<uint32_t>(Console.write('z')));

@@ -1,4 +1,7 @@
-#define BRIDGE_ENABLE_TEST_INTERFACE
+#ifndef BRIDGE_ENABLE_TEST_INTERFACE
+#define BRIDGE_ENABLE_TEST_INTERFACE 1
+#endif
+#include <etl/numeric.h>
 #include <unity.h>
 
 #include "Bridge.h"
@@ -312,9 +315,8 @@ void test_mailbox_and_datastore_variants() {
   push_msg.data.bytes[0] = 0x11;
   push_msg.data.bytes[1] = 0x22;
   etl::array<int, 10> push_iterations{};
-  etl::for_each(push_iterations.begin(), push_iterations.end(), [&](int) {
-    Mailbox._onPush(push_msg);
-  });
+  etl::for_each(push_iterations.begin(), push_iterations.end(),
+                [&](int) { Mailbox._onPush(push_msg); });
 
   // Process with no callback set
   Mailbox.process();
@@ -328,9 +330,8 @@ void test_mailbox_and_datastore_variants() {
   read_resp.content.bytes[0] = 0x33;
   read_resp.content.bytes[1] = 0x44;
   etl::array<int, 10> read_iterations{};
-  etl::for_each(read_iterations.begin(), read_iterations.end(), [&](int) {
-    Mailbox._onReadResponse(read_resp);
-  });
+  etl::for_each(read_iterations.begin(), read_iterations.end(),
+                [&](int) { Mailbox._onReadResponse(read_resp); });
 
   // Mailbox available callback
   struct AvailableMock {

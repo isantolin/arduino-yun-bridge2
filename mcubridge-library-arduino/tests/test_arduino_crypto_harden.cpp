@@ -1,6 +1,9 @@
-#define BRIDGE_ENABLE_TEST_INTERFACE
+#ifndef BRIDGE_ENABLE_TEST_INTERFACE
+#define BRIDGE_ENABLE_TEST_INTERFACE 1
+#endif
 #include <Arduino.h>
 #include <etl/byte_stream.h>
+#include <etl/numeric.h>
 #include <unity.h>
 
 #include "Bridge.h"
@@ -32,7 +35,8 @@ void test_bridge_full_crypto_handshake_and_data() {
 
   // 1. Prepare LinkSync request from "MPU"
   rpc::payload::LinkSync sync_req = {};
-  etl::iota(sync_req.nonce.bytes, sync_req.nonce.bytes + 12, static_cast<uint8_t>(1));
+  etl::iota(sync_req.nonce.bytes, sync_req.nonce.bytes + 12,
+            static_cast<uint8_t>(1));
   sync_req.nonce.size = 12;
 
   // Handshake Key Derivation
@@ -95,9 +99,8 @@ void test_bridge_ack_timeout_retry_to_fault() {
   TEST_ASSERT_TRUE(ba.isAwaitingAck());
 
   etl::array<int, rpc::RPC_DEFAULT_RETRY_LIMIT> retry_steps{};
-  etl::for_each(retry_steps.begin(), retry_steps.end(), [&](int) {
-    ba.onAckTimeout();
-  });
+  etl::for_each(retry_steps.begin(), retry_steps.end(),
+                [&](int) { ba.onAckTimeout(); });
 
   // After limit, it should transition out of Awaiting Ack
   TEST_ASSERT_FALSE(ba.isAwaitingAck());

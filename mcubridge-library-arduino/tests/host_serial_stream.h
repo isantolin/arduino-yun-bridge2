@@ -6,7 +6,7 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 
-#include "Bridge.h"
+#include <Arduino.h>
 
 /**
  * @brief Real-time Stream implementation for Linux Host.

@@ -24,10 +24,17 @@
 #include <etl/string_view.h>
 
 extern "C" {
+#if __has_include(<simavr/avr_uart.h>)
 #include <simavr/avr_uart.h>
 #include <simavr/sim_avr.h>
 #include <simavr/sim_elf.h>
 #include <simavr/sim_io.h>
+#elif __has_include(<avr_uart.h>)
+#include <avr_uart.h>
+#include <sim_avr.h>
+#include <sim_elf.h>
+#include <sim_io.h>
+#endif
 }
 
 namespace {

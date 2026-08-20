@@ -1,5 +1,8 @@
-#define BRIDGE_ENABLE_TEST_INTERFACE
+#ifndef BRIDGE_ENABLE_TEST_INTERFACE
+#define BRIDGE_ENABLE_TEST_INTERFACE 1
+#endif
 #include <Arduino.h>
+#include <etl/numeric.h>
 #include <unity.h>
 
 #include "Bridge.h"

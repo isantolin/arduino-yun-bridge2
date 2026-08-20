@@ -1,20 +1,19 @@
+#ifndef BRIDGE_ENABLE_TEST_INTERFACE
 #define BRIDGE_ENABLE_TEST_INTERFACE 1
+#endif
+#ifndef ARDUINO_STUB_CUSTOM_MILLIS
 #define ARDUINO_STUB_CUSTOM_MILLIS 1
+#endif
 #include <etl/array.h>
+#include <etl/numeric.h>
 
 #include "Bridge.h"
 #include "BridgeTestInterface.h"
-#include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
 #include "test_support.h"
 
-// Services
+// Services used directly
 #include "services/Console.h"
-#include "services/DataStore.h"
-#include "services/FileSystem.h"
-#include "services/Mailbox.h"
-#include "services/Process.h"
-#include "services/SPIService.h"
 
 // Global stubs for host environment
 Stream* g_arduino_stream_delegate = nullptr;

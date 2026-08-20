@@ -1,4 +1,6 @@
-#define BRIDGE_ENABLE_TEST_INTERFACE
+#ifndef BRIDGE_ENABLE_TEST_INTERFACE
+#define BRIDGE_ENABLE_TEST_INTERFACE 1
+#endif
 #include <BridgeFaultInjection.h>
 #include <unity.h>
 
@@ -532,9 +534,8 @@ static void test_surgical_mailbox_datastore_edges() {
   push_msg.data.bytes[0] = 'a';
   push_msg.data.bytes[1] = 'b';
   etl::array<int, 10> push_steps{};
-  etl::for_each(push_steps.begin(), push_steps.end(), [&](int) {
-    Mailbox._onPush(push_msg);
-  });
+  etl::for_each(push_steps.begin(), push_steps.end(),
+                [&](int) { Mailbox._onPush(push_msg); });
 
   rpc::payload::MailboxReadResponse read_resp = {};
   read_resp.content.size = 2;
@@ -570,9 +571,8 @@ static void test_surgical_mailbox_datastore_edges() {
 
   auto dummy_handler = DataStoreClass::GetHandler::create<&dummy_ds_handler>();
   etl::array<int, 10> get_steps{};
-  etl::for_each(get_steps.begin(), get_steps.end(), [&](int) {
-    DataStore.get("k", dummy_handler);
-  });
+  etl::for_each(get_steps.begin(), get_steps.end(),
+                [&](int) { DataStore.get("k", dummy_handler); });
 
   // DataStore response with invalid handler
   DataStoreClass::GetHandler invalid_handler;

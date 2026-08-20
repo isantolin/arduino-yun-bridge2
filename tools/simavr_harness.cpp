@@ -3,7 +3,7 @@
  *
  * Bridges simulated AVR microcontroller (ATmega32u4 / ATmega2560 / ATmega328P) UART
  * to a Linux Pseudo-Terminal (PTY) using zero-heap ETL data structures, STL-free algorithms,
- * and deterministic RAII lifecycle management.
+ * cycle-accurate UART ISR pacing, and deterministic RAII lifecycle management.
  */
 
 #ifndef _GNU_SOURCE
@@ -66,11 +66,12 @@ void avr_terminate(avr_t *avr);
 
 namespace {
 
-constexpr size_t RX_BUFFER_CAPACITY = 128;
+constexpr size_t RX_BUFFER_CAPACITY = 256;
 constexpr size_t PTY_NAME_CAPACITY = 128;
 constexpr uint32_t DEFAULT_AVR_FREQUENCY = 16000000UL;
-constexpr size_t BATCH_INSTRUCTION_CYCLES = 1000;
-constexpr useconds_t STEP_SLEEP_MICROS = 100;
+constexpr size_t BATCH_INSTRUCTION_CYCLES = 10000;
+constexpr size_t INTER_BYTE_ISR_CYCLES = 250;
+constexpr useconds_t STEP_IDLE_SLEEP_MICROS = 100;
 
 volatile sig_atomic_t g_running = 1;
 
@@ -191,21 +192,30 @@ private:
     }
 
     void execute_cycle_batch() noexcept {
-        /* Read incoming bytes from PTY master and inject into AVR UART input IRQ */
+        /* Read incoming bytes from PTY master */
         const ssize_t bytes_read = read(master_fd_, rx_buf_.data(), rx_buf_.size());
         if (bytes_read > 0 && uart_in_irq_ != nullptr) {
+            /* Paced UART delivery: step CPU between each byte so the AVR UART RX ISR executes without overrun */
             etl::for_each(rx_buf_.begin(), rx_buf_.begin() + bytes_read, [this](uint8_t byte) {
                 avr_raise_irq(uart_in_irq_, byte);
+                etl::for_each(inter_byte_batch_.begin(), inter_byte_batch_.end(), [this](int & /* step */) {
+                    if (avr_ && avr_->state != cpu_Done && avr_->state != cpu_Crashed) {
+                        avr_run(avr_);
+                    }
+                });
             });
         }
 
-        /* Execute AVR instructions in batches using ETL iteration */
+        /* Execute standard instruction batch for main loop processing */
         etl::for_each(step_batch_.begin(), step_batch_.end(), [this](int & /* step */) {
             if (avr_ && avr_->state != cpu_Done && avr_->state != cpu_Crashed) {
                 avr_run(avr_);
             }
         });
-        usleep(STEP_SLEEP_MICROS);
+
+        if (bytes_read <= 0) {
+            usleep(STEP_IDLE_SLEEP_MICROS);
+        }
     }
 
     int master_fd_{-1};
@@ -216,6 +226,7 @@ private:
     avr_irq_t *uart_in_irq_{nullptr};
     etl::array<uint8_t, RX_BUFFER_CAPACITY> rx_buf_{};
     etl::array<int, BATCH_INSTRUCTION_CYCLES> step_batch_{};
+    etl::array<int, INTER_BYTE_ISR_CYCLES> inter_byte_batch_{};
 };
 
 }  // namespace

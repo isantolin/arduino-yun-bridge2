@@ -251,7 +251,7 @@ def run_simavr_emulation(
     daemon_cmd = [
         sys.executable,
         "-m",
-        "mcubridge",
+        "mcubridge.daemon",
         "--port",
         slave_name,
         "--socket-path",

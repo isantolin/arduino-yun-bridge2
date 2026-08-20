@@ -63,10 +63,11 @@ void test_bridge_queue_full_and_retransmit() {
   ba.setSynchronized();
 
   // Fill the TX queue with reliable commands to trigger full condition
-  for (uint32_t i = 0; i < bridge::config::MAX_PENDING_TX_FRAMES; ++i) {
-    // Use a reliable command (e.g., CMD_CONSOLE_WRITE)
-    (void)ba.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, 100 + i, {});
-  }
+  etl::array<uint16_t, bridge::config::MAX_PENDING_TX_FRAMES> tx_indices{};
+  etl::iota(tx_indices.begin(), tx_indices.end(), 100);
+  etl::for_each(tx_indices.begin(), tx_indices.end(), [&](uint16_t seq) {
+    (void)ba.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, seq, {});
+  });
 
   // Next one should return false (queue full)
   bool ok = ba.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, 999, {});
@@ -310,9 +311,10 @@ void test_mailbox_and_datastore_variants() {
   push_msg.data.size = 2;
   push_msg.data.bytes[0] = 0x11;
   push_msg.data.bytes[1] = 0x22;
-  for (int i = 0; i < 10; ++i) {
+  etl::array<int, 10> push_iterations{};
+  etl::for_each(push_iterations.begin(), push_iterations.end(), [&](int) {
     Mailbox._onPush(push_msg);
-  }
+  });
 
   // Process with no callback set
   Mailbox.process();
@@ -325,9 +327,10 @@ void test_mailbox_and_datastore_variants() {
   read_resp.content.size = 2;
   read_resp.content.bytes[0] = 0x33;
   read_resp.content.bytes[1] = 0x44;
-  for (int i = 0; i < 10; ++i) {
+  etl::array<int, 10> read_iterations{};
+  etl::for_each(read_iterations.begin(), read_iterations.end(), [&](int) {
     Mailbox._onReadResponse(read_resp);
-  }
+  });
 
   // Mailbox available callback
   struct AvailableMock {
@@ -707,10 +710,11 @@ void test_uncovered_branch_and_coverage_boost() {
 
   // 3. DataStore.get Queue Full
   DataStore._pending_gets.clear();
-  for (size_t i = 0; i < bridge::config::MAX_PENDING_DATASTORE; ++i) {
+  etl::array<int, bridge::config::MAX_PENDING_DATASTORE> ds_iterations{};
+  etl::for_each(ds_iterations.begin(), ds_iterations.end(), [](int) {
     DataStore.get("key",
                   DataStoreType::GetHandler::create<datastore_get_handler>());
-  }
+  });
   // Try one more to trigger full-queue branch
   DataStore.get("overflow",
                 DataStoreType::GetHandler::create<datastore_get_handler>());

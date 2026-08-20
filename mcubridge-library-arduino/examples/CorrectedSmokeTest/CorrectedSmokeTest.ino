@@ -2,6 +2,10 @@
  * CorrectedSmokeTest.ino - Full-stack E2E Verification
  */
 #include <Bridge.h>
+#include <etl/algorithm.h>
+#include <etl/array.h>
+#include <etl/span.h>
+#include <etl/string_view.h>
 #include <services/Console.h>
 #include <wolfssl.h>
 #include <wolfssl/wolfcrypt/settings.h>

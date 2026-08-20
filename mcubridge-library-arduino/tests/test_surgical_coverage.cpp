@@ -531,9 +531,10 @@ static void test_surgical_mailbox_datastore_edges() {
   push_msg.data.size = 2;
   push_msg.data.bytes[0] = 'a';
   push_msg.data.bytes[1] = 'b';
-  for (int i = 0; i < 10; ++i) {
+  etl::array<int, 10> push_steps{};
+  etl::for_each(push_steps.begin(), push_steps.end(), [&](int) {
     Mailbox._onPush(push_msg);
-  }
+  });
 
   rpc::payload::MailboxReadResponse read_resp = {};
   read_resp.content.size = 2;
@@ -568,9 +569,10 @@ static void test_surgical_mailbox_datastore_edges() {
   DataStore._onResponse(ds_resp);
 
   auto dummy_handler = DataStoreClass::GetHandler::create<&dummy_ds_handler>();
-  for (int i = 0; i < 10; ++i) {
+  etl::array<int, 10> get_steps{};
+  etl::for_each(get_steps.begin(), get_steps.end(), [&](int) {
     DataStore.get("k", dummy_handler);
-  }
+  });
 
   // DataStore response with invalid handler
   DataStoreClass::GetHandler invalid_handler;
@@ -578,7 +580,7 @@ static void test_surgical_mailbox_datastore_edges() {
   DataStore._onResponse(ds_resp);
 
   // DataStore response when pending gets queue is empty
-  while (!DataStore._pending_gets.empty()) DataStore._pending_gets.pop();
+  DataStore._pending_gets.clear();
   DataStore._onResponse(ds_resp);
 
   // 5. Synchronized Mailbox/DataStore calls
@@ -660,19 +662,20 @@ static void test_surgical_process_spi_edges() {
                    ProcessClass::ProcessRunHandler());
 
   // Process empty queue response branches
-  while (!Process._pending_run_async.empty()) Process._pending_run_async.pop();
+  Process._pending_run_async.clear();
   rpc_pb_ProcessRunAsyncResponse pr_resp = {};
   Process._onRunAsyncResponse(pr_resp);
 
-  while (!Process._pending_polls.empty()) Process._pending_polls.pop();
+  Process._pending_polls.clear();
   rpc_pb_ProcessPollResponse pp_resp = {};
   Process._onPollResponse(pp_resp);
 
   // Process queues full with valid handlers
   static auto dummy_pr_handler = ProcessClass::ProcessRunHandler();
-  for (int i = 0; i < 10; ++i) {
+  etl::array<int, 10> async_steps{};
+  etl::for_each(async_steps.begin(), async_steps.end(), [&](int) {
     Process._pending_run_async.push({dummy_pr_handler});
-  }
+  });
   Process.runAsync("ls", etl::span<const etl::string_view>(), dummy_pr_handler);
 
   Process.kill(999);

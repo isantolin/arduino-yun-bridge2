@@ -36,10 +36,11 @@ void test_bridge_reliable_retry_exhaustion() {
   TEST_ASSERT_TRUE(ba.isAwaitingAck());
 
   // 2. Trigger timeout multiple times until limit
-  for (int i = 1; i < rpc::RPC_DEFAULT_RETRY_LIMIT; ++i) {
+  etl::array<int, rpc::RPC_DEFAULT_RETRY_LIMIT - 1> retries{};
+  etl::for_each(retries.begin(), retries.end(), [&](int) {
     ba.onAckTimeout();
     TEST_ASSERT_TRUE(ba.isAwaitingAck());
-  }
+  });
 
   // Final call that triggers transition
   ba.onAckTimeout();

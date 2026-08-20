@@ -57,11 +57,12 @@ void test_bridge_tx_queue_full_force() {
   ba.setSynchronized();
 
   // Fill the queue
-  for (int i = 0; i < bridge::config::MAX_PENDING_TX_FRAMES; ++i) {
-    bool ok = Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE,
-                               static_cast<uint16_t>(i), {});
+  etl::array<uint16_t, bridge::config::MAX_PENDING_TX_FRAMES> frame_ids{};
+  etl::iota(frame_ids.begin(), frame_ids.end(), 0);
+  etl::for_each(frame_ids.begin(), frame_ids.end(), [](uint16_t fid) {
+    bool ok = Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, fid, {});
     TEST_ASSERT_TRUE(ok);
-  }
+  });
 
   // Next one must fail
   bool ok = Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, 99, {});

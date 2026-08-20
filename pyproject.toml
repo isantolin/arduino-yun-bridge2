@@ -113,6 +113,7 @@ exclude = '''
   | \.venv
   | \.venv_debug
   | \.tmp_tests
+  | \.dummy_libs
   | typings
   | openwrt-sdk.*
   | tools/protocol/templates

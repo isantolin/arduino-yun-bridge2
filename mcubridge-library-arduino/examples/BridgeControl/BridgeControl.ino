@@ -10,11 +10,14 @@
  */
 
 #include <Bridge.h>
+#include <etl/algorithm.h>
+#include <etl/array.h>
+#include <etl/span.h>
+#include <etl/string_view.h>
 #include <services/Console.h>
 #include <services/FileSystem.h>
 #include <services/Mailbox.h>
 #include <services/Process.h>
-#include <string.h>
 #include <wolfssl.h>
 #include <wolfssl/wolfcrypt/settings.h>
 

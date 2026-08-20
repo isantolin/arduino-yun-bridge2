@@ -34,8 +34,10 @@ class HostSerialStream : public Stream {
 
   size_t write(const uint8_t* buffer, size_t size) override {
     if (Debug) {
-      for (size_t i = 0; i < size; i++)
-        fprintf(stderr, "[MCU -> SERIAL] %02X\n", buffer[i]);
+      etl::span<const uint8_t> buf_span(buffer, size);
+      etl::for_each(buf_span.begin(), buf_span.end(), [](uint8_t b) {
+        fprintf(stderr, "[MCU -> SERIAL] %02X\n", b);
+      });
     }
     size_t n = ::write(fd_out_, buffer, size);
     fsync(fd_out_);

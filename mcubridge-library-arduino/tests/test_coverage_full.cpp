@@ -121,9 +121,11 @@ void test_bridge_coverage() {
   printf("  - Step 4: Console\n");
   Console.begin();
   (void)Console.write('a');
-  for (int i = 0; i <= bridge::config::CONSOLE_TX_BUFFER_SIZE; ++i) {
-    (void)Console.write('x');
-  }
+  etl::array<char, bridge::config::CONSOLE_TX_BUFFER_SIZE + 1> fill_chars{};
+  etl::fill(fill_chars.begin(), fill_chars.end(), 'x');
+  etl::for_each(fill_chars.begin(), fill_chars.end(), [](char c) {
+    (void)Console.write(c);
+  });
   Console.process();
 
   rpc::payload::ConsoleWrite cmsg;

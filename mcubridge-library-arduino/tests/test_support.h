@@ -186,11 +186,13 @@ static bool extract_next_valid_frame(const ByteBuffer<N>& buffer,
       continue;
     }
 
-    size_t end = cursor;
-    while (end < buffer.len && buffer.data[end] != rpc::RPC_FRAME_DELIMITER)
-      end++;
+    const uint8_t* const begin_ptr = &buffer.data[cursor];
+    const uint8_t* const end_buf_ptr = &buffer.data[buffer.len];
+    const uint8_t* const delim_ptr =
+        etl::find(begin_ptr, end_buf_ptr, rpc::RPC_FRAME_DELIMITER);
+    const size_t segment_len = static_cast<size_t>(delim_ptr - begin_ptr);
+    const size_t end = cursor + segment_len;
 
-    const size_t segment_len = end - cursor;
     size_t decoded_len =
         TestCOBS::decode(&buffer.data[cursor], segment_len, decoded_buf.data());
 

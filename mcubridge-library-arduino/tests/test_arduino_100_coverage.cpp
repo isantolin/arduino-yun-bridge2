@@ -253,8 +253,11 @@ void test_bridge_send_exhaustive() {
   (void)Bridge.send(rpc::CommandId::CMD_SPI_TRANSFER_RESP, 1, strr);
 
   // 1. Hit Queue Full
-  for (int i = 0; i < bridge::config::MAX_PENDING_TX_FRAMES; i++)
-    (void)Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, 100 + i);
+  etl::array<uint16_t, bridge::config::MAX_PENDING_TX_FRAMES> seq_ids{};
+  etl::iota(seq_ids.begin(), seq_ids.end(), 100);
+  etl::for_each(seq_ids.begin(), seq_ids.end(), [](uint16_t seq) {
+    (void)Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, seq);
+  });
   TEST_ASSERT(ba.isAwaitingAck());
   bool ok = Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, 105);
   TEST_ASSERT_FALSE(ok);

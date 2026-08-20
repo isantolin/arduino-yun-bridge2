@@ -157,16 +157,29 @@ else
     # In CI/CD or when a target directory is provided, we install them.
     # ETL: We copy the whole repository to the library directory.
     install_dependency "Embedded_Template_Library" "https://codeload.github.com/ETLCPP/etl/zip/refs/tags/${ETL_VERSION}" "include/etl/algorithm.h" "$LIB_DIR"
-    install_dependency "wolfSSL" "https://codeload.github.com/wolfSSL/wolfssl/zip/refs/tags/${WOLFSSL_VERSION}" "wolfssl/wolfcrypt/settings.h" "$LIB_DIR"
-    if [ -d "$LIB_DIR/wolfSSL" ]; then
-        mkdir -p "$LIB_DIR/wolfSSL/src"
-        if [ ! -f "$LIB_DIR/wolfSSL/wolfssl.h" ]; then
-            printf '#ifndef WOLFSSL_H\n#define WOLFSSL_H\n#include <wolfssl/wolfcrypt/settings.h>\n#endif\n' > "$LIB_DIR/wolfSSL/wolfssl.h"
-        fi
-        if [ ! -f "$LIB_DIR/wolfSSL/src/wolfssl.h" ]; then
-            printf '#ifndef WOLFSSL_H\n#define WOLFSSL_H\n#include <wolfssl/wolfcrypt/settings.h>\n#endif\n' > "$LIB_DIR/wolfSSL/src/wolfssl.h"
-        fi
+    # wolfSSL: Prefer official Arduino Library Manager package (wolfssl) if installed
+    if [ -d "$LIB_DIR/wolfssl" ] && [ -d "$LIB_DIR/wolfSSL" ]; then
+        rm -rf "$LIB_DIR/wolfSSL"
     fi
+    if [ ! -d "$LIB_DIR/wolfssl" ] && [ ! -d "$LIB_DIR/wolfSSL" ]; then
+        install_dependency "wolfSSL" "https://codeload.github.com/wolfSSL/wolfssl/zip/refs/tags/${WOLFSSL_VERSION}" "wolfssl/wolfcrypt/settings.h" "$LIB_DIR"
+    fi
+    for wdir in "$LIB_DIR/wolfSSL" "$LIB_DIR/wolfssl"; do
+        if [ -d "$wdir" ]; then
+            mkdir -p "$wdir/src"
+            if [ -f "$wdir/IDE/ARDUINO/wolfssl.h" ]; then
+                cp "$wdir/IDE/ARDUINO/wolfssl.h" "$wdir/src/wolfssl.h"
+                cp "$wdir/IDE/ARDUINO/wolfssl.h" "$wdir/wolfssl.h"
+            fi
+            cp "$LIB_ROOT/src/user_settings.h" "$wdir/src/user_settings.h"
+            cp "$LIB_ROOT/src/user_settings.h" "$wdir/user_settings.h"
+            for wcf in "$wdir/src/wolfcrypt/src/wc_port.c" "$wdir/wolfcrypt/src/wc_port.c"; do
+                if [ -f "$wcf" ]; then
+                    sed -i 's/#if defined(WOLFSSL_GMTIME)/#if defined(WOLFSSL_GMTIME) \&\& !defined(HAVE_GMTIME_R)/' "$wcf" || true
+                fi
+            done
+        fi
+    done
     install_dependency "PacketSerial" "https://codeload.github.com/isantolin/PacketSerial2/zip/refs/${PACKETSERIAL_REF}" "src/Codecs/COBSR.h" "$LIB_DIR"
 fi
 

@@ -62,24 +62,21 @@ echo "Installing libraries..."
 ./mcubridge-library-arduino/tools/install.sh "$USER_LIB_DIR"
 
 # [HOT-PATCH] Force official wolfSSL to use our settings by overwriting its user_settings.h
-echo "Patching official wolfSSL at $WOLF_INC with our user_settings.h..."
-# Ensure the directory exists (it should if install was successful)
-mkdir -p "$WOLF_INC"
-cp "$PWD/mcubridge-library-arduino/src/user_settings.h" "$WOLF_INC/user_settings.h"
-
-# [HOT-PATCH] Fix gmtime_r conflict in wc_port.c
-WCF_PORT=""
-if [ -f "$WOLF_ROOT/src/wolfcrypt/src/wc_port.c" ]; then
-    WCF_PORT="$WOLF_ROOT/src/wolfcrypt/src/wc_port.c"
-elif [ -f "$WOLF_ROOT/wolfcrypt/src/wc_port.c" ]; then
-    WCF_PORT="$WOLF_ROOT/wolfcrypt/src/wc_port.c"
-fi
-
-if [ -n "$WCF_PORT" ]; then
-    sed -i 's/#if defined(WOLFSSL_GMTIME)/#if defined(WOLFSSL_GMTIME) \&\& !defined(HAVE_GMTIME_R)/' "$WCF_PORT"
-else
-    echo "Warning: wc_port.c not found for patching at $WOLF_ROOT"
-fi
+for wolf_dir in "$USER_LIB_DIR/wolfSSL" "$USER_LIB_DIR/wolfssl"; do
+    if [ -d "$wolf_dir" ]; then
+        echo "Patching official wolfSSL at $wolf_dir with our user_settings.h..."
+        mkdir -p "$wolf_dir/src"
+        cp "$PWD/mcubridge-library-arduino/src/user_settings.h" "$wolf_dir/src/user_settings.h"
+        cp "$PWD/mcubridge-library-arduino/src/user_settings.h" "$wolf_dir/user_settings.h"
+        
+        # [HOT-PATCH] Fix gmtime_r conflict in wc_port.c
+        for wcf in "$wolf_dir/src/wolfcrypt/src/wc_port.c" "$wolf_dir/wolfcrypt/src/wc_port.c"; do
+            if [ -f "$wcf" ]; then
+                sed -i 's/#if defined(WOLFSSL_GMTIME)/#if defined(WOLFSSL_GMTIME) \&\& !defined(HAVE_GMTIME_R)/' "$wcf"
+            fi
+        done
+    fi
+done
 
 # Define library path (current repo's library folder)
 LIB_PATH="$PWD/mcubridge-library-arduino"

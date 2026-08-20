@@ -707,11 +707,11 @@ for lib in $LIBS; do
 
     echo "[BUILD] Building library $lib (.apk)..."
     if [ "$VERBOSE" -eq 1 ]; then
-        make "package/feeds/mcubridge/$lib/compile" -j$(nproc) V=s || exit 1
+        make "package/feeds/mcubridge/$lib/compile" "package/feeds/mcubridge/$lib/install" -j$(nproc) V=s || exit 1
     else
-        if ! make "package/feeds/mcubridge/$lib/compile" -j$(nproc); then
+        if ! make "package/feeds/mcubridge/$lib/compile" "package/feeds/mcubridge/$lib/install" -j$(nproc); then
             echo "[RETRY] Build failed for $lib. Rerunning with -j1 V=s to expose error details..."
-            make "package/feeds/mcubridge/$lib/compile" -j1 V=s || exit 1
+            make "package/feeds/mcubridge/$lib/compile" "package/feeds/mcubridge/$lib/install" -j1 V=s || exit 1
         fi
     fi
     
@@ -726,13 +726,12 @@ for pkg in luci-app-mcubridge mcubridge mcubridge-gateway; do
     if [ ! -d "$PKG_PATH" ] && [ -d "package/$pkg" ]; then
         PKG_PATH="package/$pkg"
     fi
-    make "$PKG_PATH/clean" 2>/dev/null || true
     if [ "$VERBOSE" -eq 1 ]; then
-        make "$PKG_PATH/compile" -j$(nproc) V=s || exit 1
+        make "$PKG_PATH/compile" "$PKG_PATH/install" -j$(nproc) V=s || exit 1
     else
-        if ! make "$PKG_PATH/compile" -j$(nproc); then
+        if ! make "$PKG_PATH/compile" "$PKG_PATH/install" -j$(nproc); then
             echo "[RETRY] Build failed for $pkg. Rerunning with -j1 V=s to expose error details..."
-            make "$PKG_PATH/compile" -j1 V=s || exit 1
+            make "$PKG_PATH/compile" "$PKG_PATH/install" -j1 V=s || exit 1
         fi
     fi
 

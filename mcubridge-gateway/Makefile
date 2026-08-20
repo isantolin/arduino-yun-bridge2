@@ -83,8 +83,4 @@ define Package/$(PKG_NAME)/install
 	python3 -m compileall -o 2 -q $(1)/usr/lib/python3.13/site-packages/mcubridge || true
 endef
 
-define Package/$(PKG_NAME)/clean
-	rm -rf $(PKG_BUILD_DIR)
-endef
-
 $(eval $(call BuildPackage,$(PKG_NAME)))

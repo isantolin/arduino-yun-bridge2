@@ -122,8 +122,4 @@ define Package/$(PKG_NAME)/install
 		done || true
 endef
 
-define Package/$(PKG_NAME)/clean
-	rm -rf $(PKG_BUILD_DIR)
-endef
-
 $(eval $(call BuildPackage,$(PKG_NAME)))

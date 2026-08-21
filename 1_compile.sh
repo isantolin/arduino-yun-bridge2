@@ -679,6 +679,7 @@ cd "$SDK_DIR" || { echo "[ERROR] Cannot enter SDK dir $SDK_DIR"; exit 1; }
 
 # Build the SDK's host Python first so we can install build backends into it.
 # python3-typer needs pdm.backend, python3-cryptography needs maturin, python3-uvloop needs Cython.
+# Modern packages like hpack>=4.2.0 and h2>=4.4.1 require setuptools>=82 and wheel>=0.46.3.
 echo "[BUILD] Pre-building SDK host Python3..."
 set -o pipefail
 make package/feeds/packages/python3/host/compile -j$(nproc) 2>&1 | tail -5
@@ -688,7 +689,11 @@ _SDK_PY="$SDK_DIR/staging_dir/hostpkg/bin/python3"
 if [ -x "$_SDK_PY" ]; then
     echo "[INFO] Injecting build backends (and CFFI dependency) into SDK Python ($($_SDK_PY --version))..."
     "$_SDK_PY" -m pip install --no-cache-dir --ignore-installed --prefix "$SDK_DIR/staging_dir/hostpkg" \
+        "setuptools>=82.0.0" "wheel>=0.46.3" "build>=1.2.0" "installer>=0.7.0" \
         "pdm-backend>=2.4.0" "maturin>=1.4" "Cython>=3.1" "hatchling" "hatch-vcs" "hatch-fancy-pypi-readme" "setuptools-rust" "setuptools-scm>=8.0" "cffi" 2>&1 | tail -5
+    # Clean up obsolete dist-info folders from previous base builds to avoid metadata version ambiguity
+    find "$SDK_DIR/staging_dir/hostpkg/lib/python3.13/site-packages" -maxdepth 1 -type d -name 'wheel-0.4[0-5]*' -exec rm -rf {} + 2>/dev/null || true
+    find "$SDK_DIR/staging_dir/hostpkg/lib/python3.13/site-packages" -maxdepth 1 -type d -name 'setuptools-[0-7]*' -exec rm -rf {} + 2>/dev/null || true
 else
     echo "[WARN] SDK Python not found at $_SDK_PY after host build; build backends may be missing."
 fi

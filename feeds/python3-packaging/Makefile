@@ -11,7 +11,7 @@ PKG_MAINTAINER:=Ignacio Santolin <ignacio.santolin@gmail.com>
 PKG_LICENSE:=Apache-2.0 OR BSD-2-Clause
 PKG_LICENSE_FILES:=LICENSE LICENSE.APACHE LICENSE.BSD
 
-PKG_BUILD_DEPENDS:=python3-setuptools/host python3-wheel/host python3-build/host python3-installer/host python3-flit-core/host
+# PKG_BUILD_DEPENDS pre-injected into hostpkg
 
 include $(TOPDIR)/feeds/packages/lang/python/pypi.mk
 include $(INCLUDE_DIR)/package.mk

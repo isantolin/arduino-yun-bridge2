@@ -27,11 +27,13 @@ echo "[simavr-build] Installing required library dependencies..."
 "${LIB_DIR}/tools/install.sh" "$USER_LIB_DIR"
 
 # Patch official wolfSSL with our user_settings.h
-for wolf_dir in "$USER_LIB_DIR/wolfSSL" "$USER_LIB_DIR/wolfssl"; do
+for wolf_dir in "$USER_LIB_DIR/wolfSSL" "$USER_LIB_DIR/wolfssl" "${ROOT_DIR}/.dummy_libs/wolfSSL" "${ROOT_DIR}/.dummy_libs/wolfssl"; do
     if [ -d "$wolf_dir" ]; then
         echo "[simavr-build] Patching wolfSSL at $wolf_dir with user_settings.h..."
-        mkdir -p "$wolf_dir/src"
+        mkdir -p "$wolf_dir/src" "$wolf_dir/wolfssl"
+        cp "$LIB_DIR/src/user_settings.h" "$wolf_dir/user_settings.h"
         cp "$LIB_DIR/src/user_settings.h" "$wolf_dir/src/user_settings.h"
+        cp "$LIB_DIR/src/user_settings.h" "$wolf_dir/wolfssl/user_settings.h"
         
         # Patch gmtime_r in wc_port.c
         for wcf in "$wolf_dir/src/wolfcrypt/src/wc_port.c" "$wolf_dir/wolfcrypt/src/wc_port.c"; do
@@ -58,7 +60,6 @@ BUILD_FLAGS=(
     "--fqbn" "$FQBN"
     "--library" "$LIB_DIR"
     "--libraries" "$USER_LIB_DIR"
-    "--libraries" "${ROOT_DIR}/.dummy_libs"
     "--warnings" "default"
     "--build-property" "compiler.cpp.extra_flags=-std=gnu++17 -fno-exceptions $COMMON_FLAGS -DETL_NO_STL -I$USER_LIB_DIR/Embedded_Template_Library/include"
     "--build-property" "compiler.c.extra_flags=-std=gnu11 $COMMON_FLAGS -I$USER_LIB_DIR/Embedded_Template_Library/include"

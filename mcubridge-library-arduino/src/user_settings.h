@@ -7,7 +7,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define WOLFSSL_ARDUINO
 #define WOLFCRYPT_ONLY
 #define SINGLE_THREADED
 #define WOLFSSL_NO_ATOMICS 1
@@ -53,6 +52,9 @@
 #define NO_RSA
 #define NO_DSA
 #define NO_DH
+#define NO_ECC
+#define NO_CURVE25519
+#define NO_ED25519
 #define NO_PWDBASED
 #define NO_DES3
 #define NO_MD5
@@ -63,6 +65,7 @@
 #define NO_FILESYSTEM
 #define NO_MAIN_DRIVER
 #define WC_NO_RNG
+#define NO_BIG_INT
 
 /* Time configuration (Not needed for ChaCha20-Poly1305 & SHA-256 / HKDF) */
 #define NO_ASN_TIME

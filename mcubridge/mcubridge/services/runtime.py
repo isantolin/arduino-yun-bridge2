@@ -1753,8 +1753,14 @@ class LocalBridgeService(LocalBridgeBase):
         request = await stream.recv_message()
         if request is None:
             return
-        val = await self.runtime_service.state.mailbox_incoming_queue.popleft()
-        await stream.send_message(pb.MailboxReadResponse(content=val or b""))
+        if len(self.runtime_service.state.mailbox_incoming_queue) == 0:
+            await stream.send_message(pb.MailboxReadResponse(content=b""))
+            return
+        try:
+            val = await self.runtime_service.state.mailbox_incoming_queue.popleft()
+            await stream.send_message(pb.MailboxReadResponse(content=val or b""))
+        except IndexError:
+            await stream.send_message(pb.MailboxReadResponse(content=b""))
 
     async def FileWrite(self, stream: Stream[pb.FileWrite, pb.GenericResponse]) -> None:
         request = await stream.recv_message()
@@ -1892,7 +1898,11 @@ class LocalBridgeService(LocalBridgeBase):
         if request is None:
             return
         serial = self.runtime_service.serial
-        ok = bool(await serial.send(Command.CMD_SPI_SET_CONFIG.value, request)) if serial else False
+        if serial:
+            await serial.send(Command.CMD_SPI_BEGIN.value, b"")
+            ok = bool(await serial.send(Command.CMD_SPI_SET_CONFIG.value, request))
+        else:
+            ok = False
         await stream.send_message(pb.GenericResponse(status="ok" if ok else "error"))
 
     async def GetVersion(self, stream: Stream[pb.SubscribeRequest, pb.VersionResponse]) -> None:

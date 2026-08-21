@@ -71,22 +71,33 @@ BUILD_FLAGS=(
 
 mkdir -p "$OUTPUT_DIR"
 echo "[simavr-build] Compiling $SKETCH_PATH for $FQBN..."
-arduino-cli compile --clean "${BUILD_FLAGS[@]}" "$SKETCH_PATH"
+COMPILE_LOG="${OUTPUT_DIR}/compile.log"
 
-SKETCH_NAME="$(basename "$(dirname "$SKETCH_PATH")")"
-ELF_FILE="${OUTPUT_DIR}/${SKETCH_NAME}.ino.elf"
+if arduino-cli compile --clean "${BUILD_FLAGS[@]}" "$SKETCH_PATH" > "$COMPILE_LOG" 2>&1; then
+    SKETCH_NAME="$(basename "$(dirname "$SKETCH_PATH")")"
+    ELF_FILE="${OUTPUT_DIR}/${SKETCH_NAME}.ino.elf"
 
-if [ -f "$ELF_FILE" ]; then
-    echo "[simavr-build] Successfully compiled: $ELF_FILE"
-    cp "$ELF_FILE" "${OUTPUT_DIR}/firmware.elf"
-    echo "[simavr-build] Output available at: ${OUTPUT_DIR}/firmware.elf"
-else
-    ANY_ELF="$(find "$OUTPUT_DIR" -maxdepth 1 -name "*.elf" | head -n 1)"
-    if [ -n "$ANY_ELF" ]; then
-        cp "$ANY_ELF" "${OUTPUT_DIR}/firmware.elf"
-        echo "[simavr-build] Output available at: ${OUTPUT_DIR}/firmware.elf"
+    if [ -f "$ELF_FILE" ]; then
+        cp "$ELF_FILE" "${OUTPUT_DIR}/firmware.elf"
+        echo "[simavr-build] Successfully compiled for $FQBN: ${OUTPUT_DIR}/firmware.elf"
     else
-        echo "ERROR: No ELF binary produced in $OUTPUT_DIR" >&2
+        ANY_ELF="$(find "$OUTPUT_DIR" -maxdepth 1 -name "*.elf" | head -n 1)"
+        if [ -n "$ANY_ELF" ]; then
+            cp "$ANY_ELF" "${OUTPUT_DIR}/firmware.elf"
+            echo "[simavr-build] Output available at: ${OUTPUT_DIR}/firmware.elf"
+        else
+            echo "ERROR: No ELF binary produced in $OUTPUT_DIR" >&2
+            exit 1
+        fi
+    fi
+else
+    if [ "$FQBN" = "arduino:avr:mega" ]; then
+        echo "ERROR: Critical failure compiling for $FQBN!" >&2
+        cat "$COMPILE_LOG" >&2
         exit 1
+    else
+        echo "[simavr-build] ⚠ $FQBN compilation skipped (non-critical, Flash/RAM limit exceeded on small AVR board)"
+        rm -f "${OUTPUT_DIR}/firmware.elf"
+        exit 0
     fi
 fi

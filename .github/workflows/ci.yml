@@ -273,10 +273,12 @@ jobs:
         run: tox -e fuzz
 
   simavr-emulation:
-    name: simavr AVR Emulation (ATmega32u4)
+    name: simavr AVR Emulation (Multi-Board Matrix)
     runs-on: ubuntu-26.04
     needs: [tox-checks]
     timeout-minutes: 15
+    env:
+      SIMAVR_METRICS_DIR: simavr-logs
     steps:
       - uses: actions/checkout@v6
       - name: Install protoc
@@ -302,7 +304,16 @@ jobs:
           arduino-cli core install arduino:avr
           arduino-cli lib install wolfSSL
       - name: Run simavr E2E Test Suite
-        run: tox -e simavr
+        run: |
+          mkdir -p simavr-logs
+          tox -e simavr
+      - name: Upload simavr Logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: simavr-logs
+          path: simavr-logs
+          if-no-files-found: ignore
 
   # ═══════════════════════════════════════════════════════════════════════════
   # STAGE 3: Consolidation - ~2min
@@ -349,6 +360,13 @@ jobs:
           path: arduino-logs
         continue-on-error: true
 
+      - name: Download simavr Logs
+        uses: actions/download-artifact@v8
+        with:
+          name: simavr-logs
+          path: simavr-logs
+        continue-on-error: true
+
       - name: Verify Artifacts
         run: |
           echo "### Artifact Verification"
@@ -356,6 +374,10 @@ jobs:
           if [ -d "arduino-logs" ]; then
             echo "Contents of arduino-logs:"
             ls -la arduino-logs/
+          fi
+          if [ -d "simavr-logs" ]; then
+            echo "Contents of simavr-logs:"
+            ls -la simavr-logs/
           fi
 
       - name: Generate Coverage Summary
@@ -376,6 +398,11 @@ jobs:
           # 2. Advanced Symbol Profiling (cat pre-generated report)
           if [ -f arduino-logs/symbol_profile.md ]; then
             cat arduino-logs/symbol_profile.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          # 3. simavr Hardware Emulation Summary
+          if [ -f simavr-logs/simavr_summary.md ]; then
+            cat simavr-logs/simavr_summary.md >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Generate Daemon Profile

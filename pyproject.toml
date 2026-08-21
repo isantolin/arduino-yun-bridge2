@@ -22,7 +22,7 @@ dependencies = [
     "nanopb==0.4.9.1",
     "packaging==26.3",
     "prometheus-client==0.26.0",
-    "protobuf==7.36.0rc2",
+    "protobuf==7.36.0",
     "serialx==1.8.2",
     "shellingham==1.5.4",
     "structlog==26.1.0",

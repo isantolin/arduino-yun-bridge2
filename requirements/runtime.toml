@@ -27,9 +27,9 @@ rationale = "Template engine for professional and auditable code generation [BUI
 [[dependency]]
 name = "protobuf"
 openwrt = "python3-protobuf"
-pip = "protobuf==7.36.0rc2"
+pip = "protobuf==7.36.0"
 gateway = true
-rationale = "Generated protobuf runtime required for daemon and Cloud payload serialization [RELEASE CANDIDATE v36.0-rc2: Edition 2026 naming & UPB performance features]"
+rationale = "Generated protobuf runtime required for daemon and Cloud payload serialization [v36.0 final: Edition 2026 naming & UPB performance features]"
 
 
 [[dependency]]
@@ -220,7 +220,7 @@ rationale = "Strict static type checker enforcing zero-warning type safety acros
 
 [[dev_dependency]]
 name = "ruff"
-pip = "ruff==0.16.3"
+pip = "ruff==0.16.4"
 rationale = "Fast Python linter and code quality validator"
 
 [[dev_dependency]]

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+import threading
 import weakref
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 from typing import Any
@@ -313,14 +314,11 @@ class PrometheusExporter:
                 except KeyError:
                     logger.debug("Collector already unregistered from registry")
 
-            # Shutdown stops the serve_forever loop without blocking event loop
+            # Shutdown stops the serve_forever loop without blocking event loop or executor
             if self._server:
-                loop = asyncio.get_running_loop()
-                try:
-                    async with asyncio.timeout(1.0):
-                        await loop.run_in_executor(None, self._server.shutdown)
-                except (TimeoutError, asyncio.CancelledError):
-                    log.warning("Prometheus exporter shutdown timed out or cancelled; forcing socket close")
+                shutdown_thread = threading.Thread(target=self._server.shutdown, daemon=True)
+                shutdown_thread.start()
+                shutdown_thread.join(timeout=1.5)
                 # server_close releases the socket (avoids ResourceWarning)
                 self._server.server_close()
 

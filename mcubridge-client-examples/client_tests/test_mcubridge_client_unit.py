@@ -145,3 +145,13 @@ async def test_spi_device_lifecycle_and_transfer() -> None:
         assert res2 == b"\x01\x02\x03"
 
     await dev.end()
+
+
+def test_topic_matches_wildcards() -> None:
+    """Verify Topic.matches works for exact and wildcard patterns."""
+    from mcubridge_client.protocol import Topic
+
+    assert Topic.matches("br/+/status", "br/system/status")
+    assert Topic.matches("br/#", "br/a/1")
+    assert Topic.matches("br/a/1", "br/a/1")
+    assert not Topic.matches("br/a/1", "br/a/2")

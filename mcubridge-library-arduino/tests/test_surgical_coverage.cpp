@@ -679,6 +679,34 @@ static void test_surgical_process_spi_edges() {
   Process.runAsync("ls", etl::span<const etl::string_view>(), dummy_pr_handler);
 
   Process.kill(999);
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setTxEnabled(false);
+  Process.kill(999);
+  ba.setTxEnabled(true);
+
+  // 3. SPI Transfer directly with empty data and with send failure
+  rpc_pb_SpiTransfer spi_req = rpc_pb_SpiTransfer_init_default;
+  spi_req.data.size = 0;
+  bridge::router::CommandContext spi_ctx(
+      nullptr, static_cast<uint16_t>(rpc::CommandId::CMD_SPI_TRANSFER), 42,
+      false, false);
+  ba.handleSpiTransfer(spi_ctx, spi_req);
+  ba.setTxEnabled(false);
+  ba.handleSpiTransfer(spi_ctx, spi_req);
+  ba.setTxEnabled(true);
+
+  // 4. LinkReset with empty payload type
+  rpc_pb_RpcEnvelope env_hc = rpc_pb_RpcEnvelope_init_default;
+  env_hc.which_payload_type = 0;
+  bridge::router::CommandContext hc_ctx(
+      &env_hc, static_cast<uint16_t>(rpc::CommandId::CMD_LINK_RESET), 43, false,
+      false);
+  ba.handleLinkReset(hc_ctx);
+
+  // 5. Serial task flow control XON path when XOFF was active
+  ba.setSerialTaskXoffSent(true);
+  ba.invokeSerialTask();
+  TEST_ASSERT_FALSE(ba.isSerialXoffSent());
 }
 
 static void dummy_fs_handler(etl::span<const uint8_t>) {}

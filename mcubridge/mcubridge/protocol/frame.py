@@ -79,8 +79,6 @@ def build_frame(
     do_encrypt = bool(session_key and not is_excluded)
 
     if do_encrypt:
-        if session_key is None:
-            raise ValueError("AEAD session key is required for encryption")
         payload_bytes = payload.SerializeToString() if isinstance(payload, ProtobufMessage) else payload
         if len(payload_bytes) > protocol.MAX_PAYLOAD_SIZE:
             raise ValueError(f"Payload size {len(payload_bytes)} exceeds maximum {protocol.MAX_PAYLOAD_SIZE}")

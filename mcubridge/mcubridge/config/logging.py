@@ -98,8 +98,5 @@ def reset_handlers() -> None:
     """Close and clear all handlers on the root logger."""
     root_logger = logging.getLogger()
     for handler in root_logger.handlers[:]:
-        try:
-            handler.close()
-        except (OSError, RuntimeError):
-            pass
+        handler.close()
         root_logger.removeHandler(handler)

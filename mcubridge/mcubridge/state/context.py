@@ -501,8 +501,8 @@ class RuntimeState:
         while not self.cloud_publish_queue.empty():
             try:
                 self.cloud_publish_queue.get_nowait()
-            except (OSError, RuntimeError, AttributeError) as e:
-                logger.debug("Resource cleanup notice", error=e)
+            except asyncio.QueueEmpty:
+                break
         self.cloud_publish_queue = _make_cloud_publish_queue(self.cloud_queue_limit)
 
         if self.running_processes:

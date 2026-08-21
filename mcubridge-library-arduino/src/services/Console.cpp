@@ -45,7 +45,7 @@ size_t ConsoleClass::write(const uint8_t* buffer, size_t size) {
   if (_tx_buffer.full()) process();
   const size_t to_write = etl::min(size, _tx_buffer.available());
   _tx_buffer.insert(_tx_buffer.end(), buffer, buffer + to_write);
-  if (to_write < size && _tx_buffer.full()) {
+  if (to_write < size) {
     process();
     const size_t extra_write =
         etl::min(size - to_write, _tx_buffer.available());

@@ -95,6 +95,14 @@ class TestAccessor : public BridgeClass {
   void invokeWatchdog() { _watchdogTask(); }
   void invokeSerialTask() { _serialTask(); }
   void invokeTimerTask() { _timerTask(); }
+  bool isSerialXoffSent() const { return _serial_xoff_sent; }
+  void handleSpiTransfer(const bridge::router::CommandContext& ctx,
+                         const rpc_pb_SpiTransfer& req) {
+    _handleSpiTransfer(ctx, req);
+  }
+  void handleLinkReset(const bridge::router::CommandContext& ctx) {
+    _handleLinkReset(ctx);
+  }
   void startTimersForCoverage() {
     _timers.start(bridge::scheduler::TIMER_RX_DEDUPE);
     _timers.start(bridge::scheduler::TIMER_BAUDRATE_CHANGE);

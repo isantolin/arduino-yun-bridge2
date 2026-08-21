@@ -70,7 +70,7 @@ constexpr size_t RX_BUFFER_CAPACITY = 256;
 constexpr size_t PTY_NAME_CAPACITY = 128;
 constexpr uint32_t DEFAULT_AVR_FREQUENCY = 16000000UL;
 constexpr size_t BATCH_INSTRUCTION_CYCLES = 50000;
-constexpr size_t INTER_BYTE_ISR_CYCLES = 300;
+constexpr size_t INTER_BYTE_ISR_CYCLES = 2000;
 constexpr useconds_t STEP_IDLE_SLEEP_MICROS = 10;
 
 volatile sig_atomic_t g_running = 1;

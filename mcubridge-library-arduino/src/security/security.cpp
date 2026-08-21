@@ -36,11 +36,21 @@ bool handshake_authenticate(etl::span<const uint8_t> secret,
                             etl::span<const uint8_t> received_tag,
                             etl::span<uint8_t> out_tag) {
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH> handshake_key = {};
+  etl::array<uint8_t, rpc::RPC_HANDSHAKE_HKDF_SALT.size()> salt;
+  etl::array<uint8_t, rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH.size()> info;
+#if defined(__AVR__) || defined(ARDUINO_ARCH_AVR)
+  memcpy_P(salt.data(), rpc::RPC_HANDSHAKE_HKDF_SALT.data(), salt.size());
+  memcpy_P(info.data(), rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH.data(), info.size());
+#else
+  etl::copy(rpc::RPC_HANDSHAKE_HKDF_SALT.begin(),
+            rpc::RPC_HANDSHAKE_HKDF_SALT.end(), salt.begin());
+  etl::copy(rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH.begin(),
+            rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH.end(), info.begin());
+#endif
+
   wc_HKDF(WC_SHA256, secret.data(), static_cast<word32>(secret.size()),
-          rpc::RPC_HANDSHAKE_HKDF_SALT.data(),
-          static_cast<word32>(rpc::RPC_HANDSHAKE_HKDF_SALT.size()),
-          rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH.data(),
-          static_cast<word32>(rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH.size()),
+          salt.data(), static_cast<word32>(salt.size()),
+          info.data(), static_cast<word32>(info.size()),
           handshake_key.data(), static_cast<word32>(handshake_key.size()));
 
   Hmac hmac_engine;
@@ -65,11 +75,19 @@ bool handshake_authenticate(etl::span<const uint8_t> secret,
 void derive_session_key(etl::span<const uint8_t> secret,
                         etl::span<const uint8_t> nonce,
                         etl::span<uint8_t> out_key) {
+  etl::array<uint8_t, rpc::RPC_HANDSHAKE_HKDF_INFO_SESSION.size()> info;
+#if defined(__AVR__) || defined(ARDUINO_ARCH_AVR)
+  memcpy_P(info.data(), rpc::RPC_HANDSHAKE_HKDF_INFO_SESSION.data(),
+           info.size());
+#else
+  etl::copy(rpc::RPC_HANDSHAKE_HKDF_INFO_SESSION.begin(),
+            rpc::RPC_HANDSHAKE_HKDF_INFO_SESSION.end(), info.begin());
+#endif
+
   wc_HKDF(WC_SHA256, secret.data(), static_cast<word32>(secret.size()),
-          nonce.data(), static_cast<word32>(nonce.size()),
-          rpc::RPC_HANDSHAKE_HKDF_INFO_SESSION.data(),
-          static_cast<word32>(rpc::RPC_HANDSHAKE_HKDF_INFO_SESSION.size()),
-          out_key.data(), static_cast<word32>(out_key.size()));
+          nonce.data(), static_cast<word32>(nonce.size()), info.data(),
+          static_cast<word32>(info.size()), out_key.data(),
+          static_cast<word32>(out_key.size()));
 }
 
 static size_t build_aad(uint16_t cmd_id, uint16_t seq_id,

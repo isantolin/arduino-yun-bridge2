@@ -63,13 +63,13 @@ class SimavrState:
         with self.lock:
             self.output_lines.append((source, clean_line))
             logger.info("Process output", source=source, line=clean_line)
-            if '"event": "MCU ACK received"' in clean_line and (
-                '"command_id": "0x44"' in clean_line or '"command_id": "0x46"' in clean_line
-            ):
+            if '"event": "MCU ACK received"' in clean_line and '"command_id": "0x44"' in clean_line:
                 self.sync_event.set()
-            elif 'event": "Handshake synchronization complete"' in clean_line:
+            elif "MCU link synchronised" in clean_line:
                 self.sync_event.set()
-            elif 'event": "Synchronized state reached"' in clean_line:
+            elif "Handshake synchronization complete" in clean_line:
+                self.sync_event.set()
+            elif '"new_state": "SYNCHRONIZED"' in clean_line:
                 self.sync_event.set()
 
 
@@ -327,12 +327,19 @@ def run_simavr_emulation(
 
     # Allow daemon and MCU to complete cryptographic handshake
     logger.info("Waiting for MCU/daemon link cryptographic synchronization...")
-    if not state.sync_event.wait(timeout=30.0):
-        logger.warning("Handshake sync event not detected within 30s, proceeding with grace period")
-        time.sleep(2.0)
-    else:
-        logger.info("MCU/daemon link synchronized successfully!")
-        time.sleep(1.0)
+    if not state.sync_event.wait(timeout=60.0):
+        daemon_proc.terminate()
+        if simavr_proc:
+            simavr_proc.terminate()
+        if master_fd >= 0:
+            with contextlib.suppress(Exception):
+                os.close(master_fd)
+        shutil.rmtree(fake_uci_dir, ignore_errors=True)
+        shutil.rmtree(storage_path, ignore_errors=True)
+        return False
+
+    logger.info("MCU/daemon link synchronized successfully!")
+    time.sleep(1.0)
 
     logger.info("Executing client test suite on synchronized link...")
     all_passed = True

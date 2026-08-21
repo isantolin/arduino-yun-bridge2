@@ -698,7 +698,7 @@ class TestFilePush:
             patch("grpclib.client.Channel", side_effect=OSError("IPC failed")),
             pytest.raises(SystemExit) as exc_info,
         ):
-            file_push.push_file("br/f/write/test.bin", b"data")
+            file_push.push_file("test.bin", b"data")
         assert exc_info.value.code == 1
 
     def test_main_source_not_found(self) -> None:
@@ -713,10 +713,7 @@ class TestFilePush:
         test_file.parent.mkdir(parents=True, exist_ok=True)
         try:
             test_file.write_bytes(b"A" * 100)
-            with (
-                patch.object(file_push, "load_runtime_config", return_value=_make_config()),
-                patch.object(file_push, "push_file") as mock_push,
-            ):
+            with patch.object(file_push, "push_file") as mock_push:
                 file_push.main(source=test_file, target="/upload/test.bin")
                 mock_push.assert_called_once()
         finally:
@@ -724,12 +721,12 @@ class TestFilePush:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# mcubridge_led_control.py — do_publish and main error paths
+# mcubridge_led_control.py — set_led_state and main error paths
 # ══════════════════════════════════════════════════════════════════════════════
 
 
 class TestLedControl:
-    def test_do_publish_error(self) -> None:
+    def test_set_led_state_error(self) -> None:
         led_control = _load_script("mcubridge_led_control")
         with (
             patch("grpclib.client.Channel") as mock_chan_cls,
@@ -739,10 +736,10 @@ class TestLedControl:
             mock_chan_cls.return_value = mock_chan
 
             mock_stub = MagicMock()
-            mock_stub.Publish = AsyncMock(side_effect=OSError("IPC failed"))
+            mock_stub.DigitalWrite = AsyncMock(side_effect=OSError("IPC failed"))
 
             with patch.object(led_control, "LocalBridgeStub", return_value=mock_stub):
-                led_control.do_publish("br/d/13/write", "1")
+                led_control.set_led_state(13, 1)
         assert exc_info.value.code == 4
 
     def test_main_invalid_state(self) -> None:
@@ -753,14 +750,9 @@ class TestLedControl:
 
     def test_main_success(self) -> None:
         led_control = _load_script("mcubridge_led_control")
-        with (
-            patch.object(led_control, "load_runtime_config", return_value=_make_config()),
-            patch.object(led_control, "do_publish") as mock_pub,
-        ):
+        with patch.object(led_control, "set_led_state") as mock_set:
             led_control.main(state="on", pin=13)
-            mock_pub.assert_called_once()
-            call_args = mock_pub.call_args[0]
-            assert call_args[1] == "1"  # ON -> "1"
+            mock_set.assert_called_once_with(13, 1)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

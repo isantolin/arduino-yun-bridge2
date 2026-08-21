@@ -19,7 +19,7 @@ from mcubridge.state.context import ProcessContext, create_runtime_state
 def _make_config(tmp_path: Path) -> RuntimeConfig:
     cfg = RuntimeConfig()
     cfg.file_system_root = str(tmp_path)
-    cfg.allowed_policy.entries.extend(["echo", "test_cmd"])
+    cfg.allowed_policy.entries.extend(["echo", "sleep", "test_cmd"])
     cfg.allow_non_tmp_paths = True
     return cfg
 
@@ -172,7 +172,7 @@ async def test_local_bridge_filesystem(tmp_path: Path) -> None:
 async def test_local_bridge_process_and_spi(tmp_path: Path) -> None:
     service, local_svc, mock_serial = _make_service(_make_config(tmp_path))
 
-    # 1. ProcessRunAsync (allowed)
+    # 1. ProcessRunAsync (allowed) and Poll
     stream = _make_mock_stream(pb.ProcessRunAsync(command="echo hi"))
     await local_svc.ProcessRunAsync(stream)
     sent = stream.send_message.call_args[0][0]
@@ -184,8 +184,13 @@ async def test_local_bridge_process_and_spi(tmp_path: Path) -> None:
     poll_resp = stream.send_message.call_args[0][0]
     assert poll_resp is not None
 
-    # ProcessKill (known)
-    stream = _make_mock_stream(pb.ProcessKill(pid=sent.pid))
+    # ProcessKill (known running process)
+    stream_sleep = _make_mock_stream(pb.ProcessRunAsync(command="sleep 10"))
+    await local_svc.ProcessRunAsync(stream_sleep)
+    sent_sleep = stream_sleep.send_message.call_args[0][0]
+    assert sent_sleep.pid > 0
+
+    stream = _make_mock_stream(pb.ProcessKill(pid=sent_sleep.pid))
     await local_svc.ProcessKill(stream)
     kill_resp = stream.send_message.call_args[0][0]
     assert kill_resp.status == "ok"

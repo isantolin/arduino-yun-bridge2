@@ -24,9 +24,6 @@ async def run_test(
     async with bridge_session(socket_path, topic_prefix) as (_channel, stub):
         logger.info("--- Starting Mailbox Read Test ---")
 
-        Topic.build(Topic.MAILBOX, "write", prefix=topic_prefix)
-        Topic.build(Topic.MAILBOX, "read", prefix=topic_prefix)
-
         # --- Send phase ---
         message_to_send = "hello_from_mailbox_test"
         logger.info("Sending message to mailbox", message=message_to_send)

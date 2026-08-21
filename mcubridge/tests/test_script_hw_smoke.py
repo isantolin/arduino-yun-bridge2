@@ -22,28 +22,20 @@ main = getattr(mcubridge_hw_smoke, "main")
 
 def test_hw_smoke_success(runtime_config: Any) -> None:
     with (
-        patch(
-            "mcubridge_hw_smoke.load_runtime_config",
-            return_value=runtime_config,
-        ),
         patch("mcubridge_hw_smoke.Channel") as mock_channel_cls,
         patch("mcubridge_hw_smoke.LocalBridgeStub") as mock_stub_cls,
         patch("sys.argv", ["mcubridge_hw_smoke", "--pin", "13", "--timeout", "0.1"]),
     ):
         mock_stub = MagicMock()
         mock_stub_cls.return_value = mock_stub
-        mock_stub.Publish = AsyncMock()
+        mock_stub.DigitalWrite = AsyncMock()
         main()
         mock_channel_cls.assert_called_once_with(path="/var/run/mcubridge.sock")
-        assert mock_stub.Publish.call_count >= 1
+        assert mock_stub.DigitalWrite.call_count >= 1
 
 
 def test_hw_smoke_timeout(runtime_config: Any) -> None:
     with (
-        patch(
-            "mcubridge_hw_smoke.load_runtime_config",
-            return_value=runtime_config,
-        ),
         patch("mcubridge_hw_smoke.Channel") as mock_channel_cls,
         patch("sys.argv", ["mcubridge_hw_smoke", "--timeout", "0.01"]),
         pytest.raises(SystemExit) as exc,

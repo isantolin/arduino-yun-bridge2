@@ -54,6 +54,7 @@ def _empty_output_lines() -> list[tuple[str, str]]:
 class SimavrState:
     output_lines: list[tuple[str, str]] = field(default_factory=_empty_output_lines)
     lock: threading.Lock = field(default_factory=threading.Lock)
+    sync_event: threading.Event = field(default_factory=threading.Event)
 
     def on_line(self, line: str, source: str) -> None:
         clean_line = line.strip()
@@ -62,6 +63,8 @@ class SimavrState:
         with self.lock:
             self.output_lines.append((source, clean_line))
             logger.info("Process output", source=source, line=clean_line)
+            if "MCU ACK received" in clean_line or "SYNCHRONIZED" in clean_line:
+                self.sync_event.set()
 
 
 def _start_worker_thread(target: Any, name: str, *args: Any) -> threading.Thread:
@@ -314,10 +317,15 @@ def run_simavr_emulation(
         return False
 
     # Allow daemon and MCU to complete cryptographic handshake
-    logger.info("Waiting for daemon/MCU link readiness...")
-    time.sleep(4.0)
+    logger.info("Waiting for MCU/daemon link cryptographic synchronization...")
+    if not state.sync_event.wait(timeout=30.0):
+        logger.warning("Handshake sync event not detected within 30s, proceeding with grace period")
+        time.sleep(2.0)
+    else:
+        logger.info("MCU/daemon link synchronized successfully!")
+        time.sleep(1.0)
 
-    logger.info("Daemon socket ready, executing client test suite...")
+    logger.info("Executing client test suite on synchronized link...")
     all_passed = True
 
     for test_path in test_scripts:

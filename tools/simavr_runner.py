@@ -239,6 +239,8 @@ def run_simavr_emulation(
         "cloud_enabled": "0",
         "metrics_enabled": "0",
         "watchdog_enabled": "0",
+        "serial_shared_secret": "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe",
+        "allowed_commands": "*",
         "storage_path": str(storage_path),
         "debug": "1",
     }
@@ -261,6 +263,7 @@ def run_simavr_emulation(
     daemon_env["MCUBRIDGE_SERIAL_PORT"] = slave_name
     daemon_env["MCUBRIDGE_SERIAL_SAFE_BAUD"] = "115200"
     daemon_env["MCUBRIDGE_SERIAL_BAUD"] = "115200"
+    daemon_env["MCUBRIDGE_SERIAL_SHARED_SECRET"] = "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe"
     daemon_env["MCUBRIDGE_DISABLE_METRICS"] = "1"
     daemon_env["MCUBRIDGE_STORAGE_PATH"] = str(storage_path)
 
@@ -310,6 +313,10 @@ def run_simavr_emulation(
         shutil.rmtree(storage_path, ignore_errors=True)
         return False
 
+    # Allow daemon and MCU to complete cryptographic handshake
+    logger.info("Waiting for daemon/MCU link readiness...")
+    time.sleep(4.0)
+
     logger.info("Daemon socket ready, executing client test suite...")
     all_passed = True
 
@@ -318,7 +325,7 @@ def run_simavr_emulation(
             logger.warn("Test script not found, skipping", path=str(test_path))
             continue
 
-        test_env = dict(os.environ)
+        test_env = dict(daemon_env)
         test_env["MCUBRIDGE_SOCKET_PATH"] = str(socket_path)
 
         logger.info("Running client test", script=test_path.name)

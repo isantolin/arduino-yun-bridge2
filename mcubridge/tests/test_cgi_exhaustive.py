@@ -43,19 +43,17 @@ def test_cgi_success(cgi_env: Any) -> None:
     env = cgi_env(body=json.dumps({"state": "ON"}).encode("utf-8"))
     start_response = MagicMock()
 
-    with patch("pin_rest_cgi.publish_sync") as mock_publish:
+    with patch("pin_rest_cgi.set_pin_digital_sync") as mock_set_pin:
         with patch("pin_rest_cgi.load_runtime_config") as mock_load:
             mock_config = MagicMock()
             mock_config.topic_prefix = "br"
-            mock_config.get_ssl_context.return_value = None
-            mock_config.cloud_user = None
             mock_load.return_value = mock_config
 
             res = application(env, start_response)
 
             assert start_response.called
             assert "200 OK" in start_response.call_args[0][0]
-            mock_publish.assert_called_once_with("br/d/13", "1", mock_config)
+            mock_set_pin.assert_called_once_with(13, 1)
 
             data = json.loads(
                 res[0],

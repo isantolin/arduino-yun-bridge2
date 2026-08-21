@@ -9,7 +9,7 @@ import structlog
 import typer
 from typing import Annotated
 
-from mcubridge_client import Topic, pb
+from mcubridge_client import pb
 from mcubridge_client.cli import bridge_session, configure_logging
 
 configure_logging()
@@ -26,15 +26,10 @@ async def run_test(
         cmd_str = shlex.join(command_to_run)
         logger.info("Launching command", command=cmd_str)
 
-        topic_shell = Topic.build(Topic.SHELL, "run_async", prefix=topic_prefix)
-        payload = pb.ProcessRunAsync(command=cmd_str).SerializeToString()
-
-        msg = pb.CloudQueuedPublish(topic_name=topic_shell, payload=payload, qos=1)
-        res = await stub.Publish(msg)
+        res = await stub.ProcessRunAsync(pb.ProcessRunAsync(command=cmd_str))
         logger.info(
-            "Shell run_async published",
-            topic=topic_shell,
-            response_topic=(res.topic_name if res else ""),
+            "Shell process launched via gRPC",
+            pid=res.pid,
         )
 
     logger.info("Done.")

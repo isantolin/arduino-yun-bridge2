@@ -32,11 +32,10 @@ else:
     spec.loader.exec_module(pin_rest_cgi)  # type: ignore
 
 
-def test_pin_rest_cgi_publish_sync_error() -> None:
-    config = RuntimeConfig(allowed_commands=("echo",), serial_shared_secret=b"testsecret")
+def test_pin_rest_cgi_set_pin_digital_sync_error() -> None:
     with patch("grpclib.client.Channel", side_effect=OSError("IPC Connection Failed")):
         with pytest.raises(OSError):
-            pin_rest_cgi.publish_sync("br/d/13/write", "1", config)
+            pin_rest_cgi.set_pin_digital_sync(13, 1)
 
 
 def test_pin_rest_cgi_application() -> None:
@@ -51,11 +50,11 @@ def test_pin_rest_cgi_application() -> None:
         "wsgi.input": BytesIO(body),
     }
 
-    with patch.object(pin_rest_cgi, "publish_sync") as mock_pub:
+    with patch.object(pin_rest_cgi, "set_pin_digital_sync") as mock_set_pin:
         res = pin_rest_cgi.application(env, start_response)
         assert res
         start_response.assert_called_once()
-        mock_pub.assert_called_once()
+        mock_set_pin.assert_called_once_with(13, 1)
 
     start_response_err = MagicMock()
     env_invalid = {"PATH_INFO": "/invalid", "REQUEST_METHOD": "GET"}

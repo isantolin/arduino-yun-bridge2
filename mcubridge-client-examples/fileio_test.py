@@ -8,7 +8,7 @@ import structlog
 import typer
 from typing import Annotated
 
-from mcubridge_client import Topic, pb
+from mcubridge_client import pb
 from mcubridge_client.cli import bridge_session, configure_logging
 
 configure_logging()
@@ -24,31 +24,24 @@ async def run_test(
         test_filename: str = "test_file.txt"
         test_content: str = "hello from async fileio_test"
 
-        topic_fw = Topic.build(Topic.FILE, "write", test_filename, prefix=topic_prefix)
-        topic_fr = Topic.build(Topic.FILE, "read", test_filename, prefix=topic_prefix)
-        topic_frm = Topic.build(Topic.FILE, "remove", test_filename, prefix=topic_prefix)
-
         try:
             # --- Test File Write ---
             logger.info("Writing file", filename=test_filename, content=test_content)
-            await stub.Publish(
-                pb.CloudQueuedPublish(
-                    topic_name=topic_fw,
-                    payload=test_content.encode("utf-8"),
-                    qos=1,
+            await stub.FileWrite(
+                pb.FileWrite(
+                    path=test_filename,
+                    data=test_content.encode("utf-8"),
                 )
             )
 
             # --- Test File Read ---
             logger.info("Reading file", filename=test_filename)
-            res = await stub.Publish(
-                pb.CloudQueuedPublish(
-                    topic_name=topic_fr,
-                    payload=b"",
-                    qos=1,
+            res = await stub.FileRead(
+                pb.FileRead(
+                    path=test_filename,
                 )
             )
-            content = res.payload if res else b""
+            content = res.content if res else b""
             logger.info("Read file content", content=content.decode("utf-8"))
             if content != test_content.encode("utf-8"):
                 raise AssertionError(
@@ -58,11 +51,9 @@ async def run_test(
         finally:
             # --- Test File Remove ---
             logger.info("Removing file", filename=test_filename)
-            await stub.Publish(
-                pb.CloudQueuedPublish(
-                    topic_name=topic_frm,
-                    payload=b"",
-                    qos=1,
+            await stub.FileRemove(
+                pb.FileRemove(
+                    path=test_filename,
                 )
             )
 

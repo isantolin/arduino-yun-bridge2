@@ -522,7 +522,11 @@ def test_definitions_build_bridge_args_empty() -> None:
 
 @pytest.mark.asyncio
 async def test_client_spi_transfer_branches() -> None:
+    def _mock_spi_transfer(req: pb.SpiTransfer) -> pb.SpiTransferResponse:
+        return pb.SpiTransferResponse(data=req.data)
+
     stub = AsyncMock()
+    stub.SpiTransfer = AsyncMock(side_effect=_mock_spi_transfer)
     dev = SpiDevice(stub)
 
     # Transfer when not active (auto calls begin) and with list data

@@ -1335,6 +1335,16 @@ class BridgeService:
             reply_context=reply_context,
         )
 
+    get_safe_path = _get_safe_path
+    write_with_quota = _write_with_quota
+    publish_datastore_value = _publish_datastore_value
+    run_process = _run_process
+    poll_process = _poll_process
+    terminate_process = _terminate_process
+
+    def release_process_slot(self) -> None:
+        self._process_slots.release()
+
     # --- De-layered Orchestration [SIL-2] ---
 
     async def run(self) -> None:
@@ -1654,6 +1664,277 @@ class LocalBridgeService(LocalBridgeBase):
 
     def __init__(self, runtime_service: BridgeService) -> None:
         self.runtime_service = runtime_service
+
+    async def SetPinMode(self, stream: Stream[pb.PinMode, pb.GenericResponse]) -> None:
+        request = await stream.recv_message()
+        if request is None:
+            return
+        serial = self.runtime_service.serial
+        ok = bool(await serial.send(Command.CMD_SET_PIN_MODE.value, request)) if serial else False
+        await stream.send_message(pb.GenericResponse(status="ok" if ok else "error"))
+
+    async def DigitalWrite(self, stream: Stream[pb.DigitalWrite, pb.GenericResponse]) -> None:
+        request = await stream.recv_message()
+        if request is None:
+            return
+        serial = self.runtime_service.serial
+        ok = bool(await serial.send(Command.CMD_DIGITAL_WRITE.value, request)) if serial else False
+        await stream.send_message(pb.GenericResponse(status="ok" if ok else "error"))
+
+    async def DigitalRead(self, stream: Stream[pb.PinRead, pb.DigitalReadResponse]) -> None:
+        request = await stream.recv_message()
+        if request is None:
+            return
+        serial = self.runtime_service.serial
+        if not serial:
+            await stream.send_message(pb.DigitalReadResponse())
+            return
+        res = await serial.send(Command.CMD_DIGITAL_READ.value, request)
+        if isinstance(res, pb.DigitalReadResponse):
+            await stream.send_message(res)
+        elif isinstance(res, (bytes, bytearray)):
+            resp = pb.DigitalReadResponse()
+            resp.ParseFromString(res)
+            await stream.send_message(resp)
+        else:
+            await stream.send_message(pb.DigitalReadResponse())
+
+    async def AnalogWrite(self, stream: Stream[pb.AnalogWrite, pb.GenericResponse]) -> None:
+        request = await stream.recv_message()
+        if request is None:
+            return
+        serial = self.runtime_service.serial
+        ok = bool(await serial.send(Command.CMD_ANALOG_WRITE.value, request)) if serial else False
+        await stream.send_message(pb.GenericResponse(status="ok" if ok else "error"))
+
+    async def AnalogRead(self, stream: Stream[pb.PinRead, pb.AnalogReadResponse]) -> None:
+        request = await stream.recv_message()
+        if request is None:
+            return
+        serial = self.runtime_service.serial
+        if not serial:
+            await stream.send_message(pb.AnalogReadResponse())
+            return
+        res = await serial.send(Command.CMD_ANALOG_READ.value, request)
+        if isinstance(res, pb.AnalogReadResponse):
+            await stream.send_message(res)
+        elif isinstance(res, (bytes, bytearray)):
+            resp = pb.AnalogReadResponse()
+            resp.ParseFromString(res)
+            await stream.send_message(resp)
+        else:
+            await stream.send_message(pb.AnalogReadResponse())
+
+    async def DatastorePut(self, stream: Stream[pb.DatastorePut, pb.GenericResponse]) -> None:
+        request = await stream.recv_message()
+        if request is None:
+            return
+        if self.runtime_service.state.datastore_cache is not None:
+            await self.runtime_service.state.datastore_cache.set(request.key, request.value)
+        await self.runtime_service.publish_datastore_value(request.key, request.value)
+        await stream.send_message(pb.GenericResponse(status="ok"))
+
+    async def DatastoreGet(self, stream: Stream[pb.DatastoreGet, pb.DatastoreGetResponse]) -> None:
+        request = await stream.recv_message()
+        if request is None:
+            return
+        cache = self.runtime_service.state.datastore_cache
+        val = (await cache.get(request.key, b"")) if cache else b""
+        await stream.send_message(pb.DatastoreGetResponse(value=val if val is not None else b""))
+
+    async def MailboxPush(self, stream: Stream[pb.MailboxPush, pb.GenericResponse]) -> None:
+        request = await stream.recv_message()
+        if request is None:
+            return
+        await self.runtime_service.state.mailbox_queue.append(request.data)
+        await stream.send_message(pb.GenericResponse(status="ok"))
+
+    async def MailboxRead(self, stream: Stream[pb.SubscribeRequest, pb.MailboxReadResponse]) -> None:
+        request = await stream.recv_message()
+        if request is None:
+            return
+        val = await self.runtime_service.state.mailbox_incoming_queue.popleft()
+        await stream.send_message(pb.MailboxReadResponse(content=val or b""))
+
+    async def FileWrite(self, stream: Stream[pb.FileWrite, pb.GenericResponse]) -> None:
+        request = await stream.recv_message()
+        if request is None:
+            return
+        if request.path.startswith(MCU_FS_PREFIX):
+            serial = self.runtime_service.serial
+            ok = (
+                bool(
+                    await serial.send(
+                        Command.CMD_FILE_WRITE.value,
+                        pb.FileWrite(path=request.path[len(MCU_FS_PREFIX) :], data=request.data),
+                    )
+                )
+                if serial
+                else False
+            )
+            await stream.send_message(pb.GenericResponse(status="ok" if ok else "error"))
+            return
+        path = self.runtime_service.get_safe_path(request.path)
+        if path and await self.runtime_service.write_with_quota(path, request.data):
+            await stream.send_message(pb.GenericResponse(status="ok"))
+        else:
+            await stream.send_message(pb.GenericResponse(status="error", message="Path not allowed or quota exceeded"))
+
+    async def FileRead(self, stream: Stream[pb.FileRead, pb.FileReadResponse]) -> None:
+        request = await stream.recv_message()
+        if request is None:
+            return
+        if request.path.startswith(MCU_FS_PREFIX):
+            serial = self.runtime_service.serial
+            if serial:
+                res = await serial.send(
+                    Command.CMD_FILE_READ.value,
+                    pb.FileRead(path=request.path[len(MCU_FS_PREFIX) :]),
+                )
+                if isinstance(res, pb.FileReadResponse):
+                    await stream.send_message(res)
+                    return
+                elif isinstance(res, (bytes, bytearray)):
+                    resp = pb.FileReadResponse()
+                    resp.ParseFromString(res)
+                    await stream.send_message(resp)
+                    return
+            await stream.send_message(pb.FileReadResponse())
+            return
+        path = self.runtime_service.get_safe_path(request.path)
+        if path and await asyncio.to_thread(path.is_file):
+            content = await asyncio.to_thread(path.read_bytes)
+            await stream.send_message(pb.FileReadResponse(content=content))
+        else:
+            await stream.send_message(pb.FileReadResponse(content=b""))
+
+    async def FileRemove(self, stream: Stream[pb.FileRemove, pb.GenericResponse]) -> None:
+        request = await stream.recv_message()
+        if request is None:
+            return
+        if request.path.startswith(MCU_FS_PREFIX):
+            serial = self.runtime_service.serial
+            ok = (
+                bool(
+                    await serial.send(
+                        Command.CMD_FILE_REMOVE.value,
+                        pb.FileRemove(path=request.path[len(MCU_FS_PREFIX) :]),
+                    )
+                )
+                if serial
+                else False
+            )
+            await stream.send_message(pb.GenericResponse(status="ok" if ok else "error"))
+            return
+        path = self.runtime_service.get_safe_path(request.path)
+        if path and await asyncio.to_thread(path.exists):
+            await asyncio.to_thread(path.unlink)
+            await stream.send_message(pb.GenericResponse(status="ok"))
+        else:
+            await stream.send_message(pb.GenericResponse(status="error", message="Path not allowed or not found"))
+
+    async def ProcessRunAsync(self, stream: Stream[pb.ProcessRunAsync, pb.ProcessRunAsyncResponse]) -> None:
+        request = await stream.recv_message()
+        if request is None:
+            return
+        if request.command and is_command_allowed(self.runtime_service.state.allowed_policy, request.command):
+            pid = await self.runtime_service.run_process(request.command)
+            await stream.send_message(pb.ProcessRunAsyncResponse(pid=pid or 0))
+        else:
+            await stream.send_message(pb.ProcessRunAsyncResponse(pid=0))
+
+    async def ProcessPoll(self, stream: Stream[pb.ProcessPoll, pb.ProcessPollResponse]) -> None:
+        request = await stream.recv_message()
+        if request is None:
+            return
+        batch = await self.runtime_service.poll_process(request.pid)
+        await stream.send_message(batch)
+
+    async def ProcessKill(self, stream: Stream[pb.ProcessKill, pb.GenericResponse]) -> None:
+        request = await stream.recv_message()
+        if request is None:
+            return
+        async with self.runtime_service.state.process_lock:
+            ctx = self.runtime_service.state.running_processes.get(request.pid)
+        if not ctx:
+            await stream.send_message(pb.GenericResponse(status="error", message="PID not found"))
+            return
+        try:
+            ctx.exit_code = await self.runtime_service.terminate_process(
+                request.pid, ctx, grace_period=PROCESS_TERM_GRACE_PERIOD_SECONDS
+            )
+            if self.runtime_service.state.running_processes.pop(request.pid, None):
+                self.runtime_service.release_process_slot()
+            await stream.send_message(pb.GenericResponse(status="ok"))
+        except (OSError, ProcessLookupError) as exc:
+            await stream.send_message(pb.GenericResponse(status="error", message=str(exc)))
+
+    async def SpiTransfer(self, stream: Stream[pb.SpiTransfer, pb.SpiTransferResponse]) -> None:
+        request = await stream.recv_message()
+        if request is None:
+            return
+        serial = self.runtime_service.serial
+        if not serial:
+            await stream.send_message(pb.SpiTransferResponse())
+            return
+        res = await serial.send(Command.CMD_SPI_TRANSFER.value, request)
+        if isinstance(res, pb.SpiTransferResponse):
+            await stream.send_message(res)
+        elif isinstance(res, (bytes, bytearray)):
+            resp = pb.SpiTransferResponse()
+            resp.ParseFromString(res)
+            await stream.send_message(resp)
+        else:
+            await stream.send_message(pb.SpiTransferResponse())
+
+    async def SpiConfigure(self, stream: Stream[pb.SpiConfig, pb.GenericResponse]) -> None:
+        request = await stream.recv_message()
+        if request is None:
+            return
+        serial = self.runtime_service.serial
+        ok = bool(await serial.send(Command.CMD_SPI_SET_CONFIG.value, request)) if serial else False
+        await stream.send_message(pb.GenericResponse(status="ok" if ok else "error"))
+
+    async def GetVersion(self, stream: Stream[pb.SubscribeRequest, pb.VersionResponse]) -> None:
+        request = await stream.recv_message()
+        if request is None:
+            return
+        serial = self.runtime_service.serial
+        if serial:
+            res = await serial.send(Command.CMD_GET_VERSION.value, b"")
+            if isinstance(res, pb.VersionResponse):
+                await stream.send_message(res)
+                return
+            elif isinstance(res, (bytes, bytearray)):
+                resp = pb.VersionResponse()
+                resp.ParseFromString(res)
+                await stream.send_message(resp)
+                return
+        await stream.send_message(pb.VersionResponse(major=0, minor=0, patch=0))
+
+    async def GetFreeMemory(self, stream: Stream[pb.SubscribeRequest, pb.FreeMemoryResponse]) -> None:
+        request = await stream.recv_message()
+        if request is None:
+            return
+        serial = self.runtime_service.serial
+        if serial:
+            res = await serial.send(Command.CMD_GET_FREE_MEMORY.value, b"")
+            if isinstance(res, pb.FreeMemoryResponse):
+                await stream.send_message(res)
+                return
+            elif isinstance(res, (bytes, bytearray)):
+                resp = pb.FreeMemoryResponse()
+                resp.ParseFromString(res)
+                await stream.send_message(resp)
+                return
+        await stream.send_message(pb.FreeMemoryResponse(value=0))
+
+    async def GetStatus(self, stream: Stream[pb.SubscribeRequest, pb.BridgeStatus]) -> None:
+        request = await stream.recv_message()
+        if request is None:
+            return
+        status = self.runtime_service.state.build_status_snapshot()
+        await stream.send_message(status)
 
     async def Publish(self, stream: Stream[pb.CloudQueuedPublish, pb.CloudQueuedPublish]) -> None:
         request = await stream.recv_message()

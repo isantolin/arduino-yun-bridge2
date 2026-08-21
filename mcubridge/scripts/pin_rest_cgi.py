@@ -17,31 +17,25 @@ from google.protobuf import json_format
 from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import load_runtime_config
 from mcubridge.protocol import mcubridge_pb2 as pb
-from mcubridge.protocol.structures import RuntimeConfig
-from mcubridge.protocol.topics import Topic, topic_path
 
 logger = structlog.get_logger("mcubridge.pin_rest")
 
 app = typer.Typer(help="Pin REST CGI and CLI interface for MCU Bridge.", add_completion=False)
 
 
-def publish_sync(topic: str, payload: str, config: RuntimeConfig) -> None:
-    """Synchronous publish to local UNIX domain socket IPC via gRPC."""
+def set_pin_digital_sync(pin: int, value: int) -> None:
+    """Synchronous digital write to local UNIX domain socket IPC via typed gRPC."""
 
     async def _run():
         async with Channel(path="/var/run/mcubridge.sock") as channel:
             stub = LocalBridgeStub(channel)
-            msg = pb.CloudQueuedPublish(
-                topic_name=topic,
-                payload=payload.encode("utf-8"),
-                qos=1,
-            )
-            await stub.Publish(msg)
+            msg = pb.DigitalWrite(pin=pin, value=value)
+            await stub.DigitalWrite(msg)
 
     try:
         asyncio.run(_run())
     except (OSError, RuntimeError, ValueError) as exc:
-        logger.error("Failed to publish via local gRPC IPC", error=str(exc))
+        logger.error("Failed to write digital pin via local gRPC IPC", error=str(exc))
         raise
 
 
@@ -104,8 +98,7 @@ def application(environ: dict[str, Any], start_response: Any) -> list[bytes]:
         normalized_state = "ON" if state in ("ON", "HIGH", "1") else "OFF"
         pin_data = pb.PinControlData(pin=pin, state=normalized_state)
 
-        topic = topic_path(config.topic_prefix, Topic.DIGITAL, str(pin_data.pin))
-        publish_sync(topic, "1" if pin_data.state == "ON" else "0", config)
+        set_pin_digital_sync(pin_data.pin, 1 if pin_data.state == "ON" else 0)
 
         return json_res(
             start_response,
@@ -137,9 +130,8 @@ def control(
     if normalized_state not in ("ON", "OFF", "HIGH", "LOW", "1", "0"):
         raise ValueError(f"Invalid state: {state}")
     pin_data = pb.PinControlData(pin=pin, state="ON" if normalized_state in ("ON", "HIGH", "1") else "OFF")
-    topic = topic_path(config.topic_prefix, Topic.DIGITAL, str(pin_data.pin))
-    publish_sync(topic, "1" if pin_data.state == "ON" else "0", config)
-    print(f"Pin {pin} set to {pin_data.state} on topic {topic}")
+    set_pin_digital_sync(pin_data.pin, 1 if pin_data.state == "ON" else 0)
+    print(f"Pin {pin} set to {pin_data.state} via gRPC DigitalWrite")
 
 
 @app.command()

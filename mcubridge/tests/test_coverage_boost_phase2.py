@@ -541,10 +541,10 @@ class TestPinRestCgiCli:
         with (
             patch.object(pin_rest_cgi, "load_runtime_config", return_value=_make_config()),
             patch.object(pin_rest_cgi, "configure_logging"),
-            patch.object(pin_rest_cgi, "publish_sync") as mock_pub,
+            patch.object(pin_rest_cgi, "set_pin_digital_sync") as mock_set_pin,
         ):
             pin_rest_cgi.control(pin=13, state="ON")
-            mock_pub.assert_called_once()
+            mock_set_pin.assert_called_once_with(13, 1)
 
     def test_run_cgi_no_gateway(self) -> None:
         with (

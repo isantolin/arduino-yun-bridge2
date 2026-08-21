@@ -2,40 +2,38 @@
 """Modernized File Push utility for MCU Bridge (SIL-2)."""
 
 from __future__ import annotations
-from typing import Annotated
-
 import asyncio
 import sys
 from pathlib import Path
+from typing import Annotated
+
+import structlog
 import typer
 from grpclib.client import Channel
-from mcubridge.protocol.mcubridge_grpc import LocalBridgeStub
-import structlog
-from mcubridge.config.settings import load_runtime_config
+
 from mcubridge.protocol import mcubridge_pb2 as pb
-from mcubridge.protocol.topics import Topic, topic_path
+from mcubridge.protocol.mcubridge_grpc import LocalBridgeStub
 
 # [SIL-2] Structured logging towards syslog/stderr
 logger = structlog.get_logger("mcubridge.file-push")
 app = typer.Typer(help="Push files to MCU or Linux storage.", add_completion=False)
 
 
-def push_file(topic: str, data: bytes) -> None:
-    """Publish file data using local gRPC UNIX socket IPC."""
+def push_file(target_path: str, data: bytes) -> None:
+    """Write file data using local gRPC UNIX socket IPC."""
 
     async def _run():
         try:
             async with Channel(path="/var/run/mcubridge.sock") as channel:
                 stub = LocalBridgeStub(channel)
-                msg = pb.CloudQueuedPublish(
-                    topic_name=topic,
-                    payload=data,
-                    qos=1,
+                msg = pb.FileWrite(
+                    path=target_path,
+                    data=data,
                 )
-                await stub.Publish(msg)
-                logger.info("File push successful", topic=topic, size=len(data))
+                await stub.FileWrite(msg)
+                logger.info("File push successful", path=target_path, size=len(data))
         except (OSError, RuntimeError, ValueError) as e:
-            logger.error("File push failed", error=str(e), topic=topic)
+            logger.error("File push failed", error=str(e), path=target_path)
             sys.exit(1)
 
     asyncio.run(_run())
@@ -47,22 +45,13 @@ def main(
     target: Annotated[str, typer.Argument(help="Target path on the bridge")],
     mcu: Annotated[bool, typer.Option(help="Target MCU storage")] = False,
 ) -> None:
-    """Push file data to the bridge via CLOUD."""
+    """Push file data to the bridge via local gRPC IPC."""
     if not source.exists() or source.is_dir():
         logger.error("Source file does not exist", source=str(source))
         sys.exit(2)
 
-    config = load_runtime_config()
-    prefix = config.topic_prefix
-
     clean_target = target.lstrip("/")
-
-    segments = ["write"]
-    if mcu:
-        segments.append("mcu")
-    segments.append(clean_target)
-
-    topic = topic_path(prefix, Topic.FILE, *segments)
+    target_path = f"mcu/{clean_target}" if mcu else clean_target
 
     data = source.read_bytes()
 
@@ -73,12 +62,12 @@ def main(
 
     logger.info(
         "Pushing file",
-        topic=topic,
+        target_path=target_path,
         size=len(data),
         payload_hex=hexdump,
     )
 
-    push_file(topic, data)
+    push_file(target_path, data)
 
 
 if __name__ == "__main__":

@@ -8,7 +8,7 @@ import structlog
 import typer
 from typing import Annotated
 
-from mcubridge_client import Topic, pb
+from mcubridge_client import pb
 from mcubridge_client.cli import bridge_session, configure_logging
 
 configure_logging()
@@ -24,35 +24,23 @@ async def run_test(
     async with bridge_session(socket_path, topic_prefix) as (_channel, stub):
         logger.info("--- Starting Mailbox Read Test ---")
 
-        topic_mw = Topic.build(Topic.MAILBOX, "write", prefix=topic_prefix)
-        topic_mr = Topic.build(Topic.MAILBOX, "read", prefix=topic_prefix)
+        Topic.build(Topic.MAILBOX, "write", prefix=topic_prefix)
+        Topic.build(Topic.MAILBOX, "read", prefix=topic_prefix)
 
         # --- Send phase ---
         message_to_send = "hello_from_mailbox_test"
         logger.info("Sending message to mailbox", message=message_to_send)
-        await stub.Publish(
-            pb.CloudQueuedPublish(
-                topic_name=topic_mw,
-                payload=message_to_send.encode("utf-8"),
-                qos=1,
-            )
-        )
+        await stub.MailboxPush(pb.MailboxPush(data=message_to_send.encode("utf-8")))
         logger.info("Message sent successfully.")
 
         # --- Read phase ---
         logger.info("Polling for mailbox responses", max_polls=max_polls)
         polls = 0
         while max_polls <= 0 or polls < max_polls:
-            res = await stub.Publish(
-                pb.CloudQueuedPublish(
-                    topic_name=topic_mr,
-                    payload=b"",
-                    qos=1,
-                )
-            )
+            res = await stub.MailboxRead(pb.SubscribeRequest())
             polls += 1
-            message: bytes | None = res.payload if (res and res.payload) else None
-            if message is None:
+            message: bytes | None = res.content if (res and res.content) else None
+            if not message:
                 logger.info("No mailbox message within timeout", poll=polls)
                 continue
 

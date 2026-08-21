@@ -8,7 +8,7 @@ import structlog
 import typer
 from typing import Annotated
 
-from mcubridge_client import Topic, pb
+from mcubridge_client import pb
 from mcubridge_client.cli import bridge_session, configure_logging
 
 configure_logging()
@@ -23,14 +23,13 @@ async def run_test(
 
     async with bridge_session(socket_path, topic_prefix) as (_channel, stub):
         logger.info("--- Starting LED Pin Control Test ---")
-        topic_pin = Topic.build(Topic.DIGITAL, str(pin), prefix=topic_prefix)
 
         logger.info("Turning pin state", pin=pin, state="ON")
-        await stub.Publish(pb.CloudQueuedPublish(topic_name=topic_pin, payload=b"1", qos=1))
+        await stub.DigitalWrite(pb.DigitalWrite(pin=pin, value=1))
         await asyncio.sleep(2)
 
         logger.info("Turning pin state", pin=pin, state="OFF")
-        await stub.Publish(pb.CloudQueuedPublish(topic_name=topic_pin, payload=b"0", qos=1))
+        await stub.DigitalWrite(pb.DigitalWrite(pin=pin, value=0))
         await asyncio.sleep(2)
 
     logger.info("--- LED Test Complete ---")

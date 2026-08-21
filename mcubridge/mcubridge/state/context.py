@@ -539,6 +539,7 @@ def create_runtime_state(config: RuntimeConfig | dict[str, Any]) -> RuntimeState
         file_storage_quota_bytes=cfg.file_storage_quota_bytes,
         watchdog_enabled=cfg.watchdog_enabled,
         watchdog_interval=cfg.watchdog_interval,
+        allow_non_tmp_paths=cfg.allow_non_tmp_paths,
         allowed_policy=cfg.allowed_policy,
         topic_authorization=cfg.topic_authorization,
     )

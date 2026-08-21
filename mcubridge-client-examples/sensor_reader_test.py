@@ -8,7 +8,7 @@ import structlog
 import typer
 from typing import Annotated
 
-from mcubridge_client import Topic, pb
+from mcubridge_client import pb
 from mcubridge_client.cli import bridge_session, configure_logging
 
 configure_logging()
@@ -45,19 +45,11 @@ async def run_test(
                 break
 
             if is_analog:
-                topic_ar = Topic.build(Topic.ANALOG, str(pin_number), "read", prefix=topic_prefix)
-                res = await stub.Publish(pb.CloudQueuedPublish(topic_name=topic_ar, payload=b"", qos=1))
-                if not (res and res.payload):
-                    raise RuntimeError(f"Analog pin {pin} read returned empty response")
-                value = int(res.payload.decode("utf-8"))
-                logger.info("Received analog value", pin=pin, value=value)
+                resp_ar = await stub.AnalogRead(pb.PinRead(pin=pin_number))
+                logger.info("Received analog value", pin=pin, value=resp_ar.value)
             else:
-                topic_dr = Topic.build(Topic.DIGITAL, str(pin_number), "read", prefix=topic_prefix)
-                res = await stub.Publish(pb.CloudQueuedPublish(topic_name=topic_dr, payload=b"", qos=1))
-                if not (res and res.payload):
-                    raise RuntimeError(f"Digital pin {pin} read returned empty response")
-                value = int(res.payload.decode("utf-8"))
-                logger.info("Received digital value", pin=pin, value=value)
+                resp_dr = await stub.DigitalRead(pb.PinRead(pin=pin_number))
+                logger.info("Received digital value", pin=pin, value=resp_dr.value)
 
             await asyncio.sleep(interval)
 

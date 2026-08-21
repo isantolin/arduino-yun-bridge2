@@ -8,7 +8,6 @@ from typing import Union, cast
 from . import mcubridge_pb2 as pb
 from .definitions import SpiBitOrder, SpiMode
 from .mcubridge_grpc import LocalBridgeStub
-from .protocol import Topic
 
 SpiBuffer = Union[bytes, bytearray, Sequence[int]]
 
@@ -48,24 +47,16 @@ class SpiDevice:
         """Initialize the SPI bus on the MCU."""
         if self._active:
             return
-        topic_begin = Topic.build(Topic.SPI, "begin", prefix=self._topic_prefix)
-        await self._stub.Publish(pb.CloudQueuedPublish(topic_name=topic_begin, payload=b"", qos=1))
-
-        topic_cfg = Topic.build(Topic.SPI, "config", prefix=self._topic_prefix)
-        cfg_payload = pb.SpiConfig(
+        cfg = pb.SpiConfig(
             frequency=self._frequency,
             bit_order=self._bit_order.value,
             data_mode=self._mode.value,
-        ).SerializeToString()
-        await self._stub.Publish(pb.CloudQueuedPublish(topic_name=topic_cfg, payload=cfg_payload, qos=1))
+        )
+        await self._stub.SpiConfigure(cfg)
         self._active = True
 
     async def end(self) -> None:
         """Deinitialize the SPI bus on the MCU."""
-        if not self._active:
-            return
-        topic_end = Topic.build(Topic.SPI, "end", prefix=self._topic_prefix)
-        await self._stub.Publish(pb.CloudQueuedPublish(topic_name=topic_end, payload=b"", qos=1))
         self._active = False
 
     async def transfer(self, data: SpiBuffer) -> bytes:
@@ -78,9 +69,8 @@ class SpiDevice:
         else:
             payload = bytes(data)
 
-        topic_tr = Topic.build(Topic.SPI, "transfer", prefix=self._topic_prefix)
-        await self._stub.Publish(pb.CloudQueuedPublish(topic_name=topic_tr, payload=payload, qos=1))
-        return payload
+        resp = await self._stub.SpiTransfer(pb.SpiTransfer(data=payload))
+        return resp.data if resp.data else payload
 
     @property
     def frequency(self) -> int:

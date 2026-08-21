@@ -111,7 +111,8 @@ def test_definitions_build_bridge_args() -> None:
 async def test_spi_device_lifecycle_and_transfer() -> None:
     """SpiDevice context manager, properties, begin/end, and transfer."""
     mock_stub = MagicMock(spec=LocalBridgeStub)
-    mock_stub.Publish = AsyncMock()
+    mock_stub.SpiConfigure = AsyncMock(return_value=pb.GenericResponse(status="ok"))
+    mock_stub.SpiTransfer = AsyncMock(side_effect=lambda req: pb.SpiTransferResponse(data=req.data))
 
     dev = SpiDevice(mock_stub, frequency=2000000, bit_order=SpiBitOrder.LSBFIRST, mode=SpiMode.MODE1)
 
@@ -121,15 +122,10 @@ async def test_spi_device_lifecycle_and_transfer() -> None:
 
     async with dev as active_dev:
         assert active_dev is dev
-        assert mock_stub.Publish.call_count >= 2
+        mock_stub.SpiConfigure.assert_called_once()
 
         # Verify protobuf SpiConfig payload was sent accurately
-        calls = mock_stub.Publish.call_args_list
-        begin_call, cfg_call = calls[0][0][0], calls[1][0][0]
-        assert begin_call.topic_name == "br/spi/begin"
-        assert begin_call.payload == b""
-        assert cfg_call.topic_name == "br/spi/config"
-        cfg_pb = pb.SpiConfig.FromString(cfg_call.payload)
+        cfg_pb = mock_stub.SpiConfigure.call_args[0][0]
         assert cfg_pb.frequency == 2000000
         assert cfg_pb.bit_order == SpiBitOrder.LSBFIRST.value
         assert cfg_pb.data_mode == SpiMode.MODE1.value

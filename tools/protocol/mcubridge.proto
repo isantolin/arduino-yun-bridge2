@@ -1460,8 +1460,43 @@ service CloudBridge {
 message SubscribeRequest {}
 
 service LocalBridge {
-    rpc Publish(CloudQueuedPublish) returns (CloudQueuedPublish);
-    rpc SubscribeConsole(SubscribeRequest) returns (stream CloudQueuedPublish);
+    // Hardware & Pin Operations
+    rpc SetPinMode(rpc.pb.PinMode) returns (rpc.pb.GenericResponse);
+    rpc DigitalWrite(rpc.pb.DigitalWrite) returns (rpc.pb.GenericResponse);
+    rpc DigitalRead(rpc.pb.PinRead) returns (rpc.pb.DigitalReadResponse);
+    rpc AnalogWrite(rpc.pb.AnalogWrite) returns (rpc.pb.GenericResponse);
+    rpc AnalogRead(rpc.pb.PinRead) returns (rpc.pb.AnalogReadResponse);
+
+    // Datastore Key-Value Operations
+    rpc DatastorePut(rpc.pb.DatastorePut) returns (rpc.pb.GenericResponse);
+    rpc DatastoreGet(rpc.pb.DatastoreGet) returns (rpc.pb.DatastoreGetResponse);
+
+    // Mailbox FIFO Operations
+    rpc MailboxPush(rpc.pb.MailboxPush) returns (rpc.pb.GenericResponse);
+    rpc MailboxRead(rpc.pb.SubscribeRequest) returns (rpc.pb.MailboxReadResponse);
+
+    // File System Operations
+    rpc FileWrite(rpc.pb.FileWrite) returns (rpc.pb.GenericResponse);
+    rpc FileRead(rpc.pb.FileRead) returns (rpc.pb.FileReadResponse);
+    rpc FileRemove(rpc.pb.FileRemove) returns (rpc.pb.GenericResponse);
+
+    // Process & Shell Execution
+    rpc ProcessRunAsync(rpc.pb.ProcessRunAsync) returns (rpc.pb.ProcessRunAsyncResponse);
+    rpc ProcessPoll(rpc.pb.ProcessPoll) returns (rpc.pb.ProcessPollResponse);
+    rpc ProcessKill(rpc.pb.ProcessKill) returns (rpc.pb.GenericResponse);
+
+    // SPI Bus Operations
+    rpc SpiTransfer(rpc.pb.SpiTransfer) returns (rpc.pb.SpiTransferResponse);
+    rpc SpiConfigure(rpc.pb.SpiConfig) returns (rpc.pb.GenericResponse);
+
+    // System Telemetry & Introspection
+    rpc GetVersion(rpc.pb.SubscribeRequest) returns (rpc.pb.VersionResponse);
+    rpc GetFreeMemory(rpc.pb.SubscribeRequest) returns (rpc.pb.FreeMemoryResponse);
+    rpc GetStatus(rpc.pb.SubscribeRequest) returns (rpc.pb.BridgeStatus);
+
+    // Real-Time Console Streaming & Generic Fallback
+    rpc SubscribeConsole(rpc.pb.SubscribeRequest) returns (stream rpc.pb.CloudQueuedPublish);
+    rpc Publish(rpc.pb.CloudQueuedPublish) returns (rpc.pb.CloudQueuedPublish);
 }
 
 

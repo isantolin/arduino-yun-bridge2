@@ -5,14 +5,14 @@ from __future__ import annotations
 
 import asyncio
 import sys
-from grpclib.client import Channel
+from typing import Annotated
+
 import structlog
 import typer
-from typing import Annotated
-from mcubridge.protocol.mcubridge_grpc import LocalBridgeStub
-from mcubridge.config.settings import load_runtime_config
+from grpclib.client import Channel
+
 from mcubridge.protocol import mcubridge_pb2 as pb
-from mcubridge.protocol.topics import Topic, topic_path
+from mcubridge.protocol.mcubridge_grpc import LocalBridgeStub
 
 # [SIL-2] Structured logging towards syslog/stderr
 logger = structlog.get_logger("mcubridge.hw-smoke")
@@ -20,8 +20,6 @@ logger = structlog.get_logger("mcubridge.hw-smoke")
 
 class SmokeTester:
     def __init__(self) -> None:
-        self.config = load_runtime_config()
-        self.prefix = self.config.topic_prefix
         self.results: dict[str, bool] = {}
 
     def run(self, pin: int, timeout: float) -> None:
@@ -35,20 +33,15 @@ class SmokeTester:
                 self.results["connectivity"] = True
                 logger.info("Connectivity to local gRPC socket verified")
 
-                # Toggle Pin
-                topic = topic_path(self.prefix, Topic.DIGITAL, str(pin))
-                # Send ON — bound only the RPC response wait to `timeout`,
-                # not the fixed inter-toggle delay below. [SIL-2]
-                msg_on = pb.CloudQueuedPublish(topic_name=topic, payload=b"1", qos=1)
+                # Toggle Pin ON
                 async with asyncio.timeout(timeout):
-                    await stub.Publish(msg_on)
+                    await stub.DigitalWrite(pb.DigitalWrite(pin=pin, value=1))
 
                 await asyncio.sleep(0.5)
 
-                # Send OFF
-                msg_off = pb.CloudQueuedPublish(topic_name=topic, payload=b"0", qos=1)
+                # Toggle Pin OFF
                 async with asyncio.timeout(timeout):
-                    await stub.Publish(msg_off)
+                    await stub.DigitalWrite(pb.DigitalWrite(pin=pin, value=0))
 
                 self.results["gpio"] = True
                 logger.info("GPIO toggle commands sent successfully")

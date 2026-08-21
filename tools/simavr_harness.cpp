@@ -200,10 +200,6 @@ private:
                 avr_run(avr_);
             }
         });
-
-        if (bytes_read <= 0) {
-            usleep(STEP_IDLE_SLEEP_MICROS);
-        }
     }
 
     int master_fd_{-1};

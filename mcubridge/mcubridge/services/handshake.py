@@ -453,7 +453,7 @@ class SerialHandshakeManager:
         )
 
     async def _wait_for_link_sync_confirmation(self, nonce: bytes) -> bool:
-        timeout = max(0.5, (self._timing.response_timeout_ms / 1000.0))
+        timeout = max(5.0, (self._timing.response_timeout_ms / 1000.0) * 2)
         try:
             async with asyncio.timeout(timeout):
                 if not self._state.is_synchronized:

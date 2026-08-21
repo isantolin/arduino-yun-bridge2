@@ -63,7 +63,13 @@ class SimavrState:
         with self.lock:
             self.output_lines.append((source, clean_line))
             logger.info("Process output", source=source, line=clean_line)
-            if "MCU ACK received" in clean_line or "SYNCHRONIZED" in clean_line:
+            if '"event": "MCU ACK received"' in clean_line and (
+                '"command_id": "0x44"' in clean_line or '"command_id": "0x46"' in clean_line
+            ):
+                self.sync_event.set()
+            elif 'event": "Handshake synchronization complete"' in clean_line:
+                self.sync_event.set()
+            elif 'event": "Synchronized state reached"' in clean_line:
                 self.sync_event.set()
 
 
@@ -178,6 +184,7 @@ def run_simavr_emulation(
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            errors="replace",
             bufsize=1,
         )
         # Parse PTY path emitted by harness
@@ -213,6 +220,7 @@ def run_simavr_emulation(
                 stdout=slave_fd,
                 stderr=subprocess.PIPE,
                 text=True,
+                errors="replace",
                 bufsize=1,
                 close_fds=True,
             )
@@ -288,6 +296,7 @@ def run_simavr_emulation(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        errors="replace",
         bufsize=1,
     )
 
@@ -342,6 +351,7 @@ def run_simavr_emulation(
             env=test_env,
             capture_output=True,
             text=True,
+            errors="replace",
             timeout=timeout_seconds,
             check=False,
         )

@@ -204,14 +204,10 @@ async def test_mcu_process_run_asserts_exec(
     payload = pb.ProcessRunAsync(command="echo hello").SerializeToString()
 
     with patch("mcubridge.services.runtime.is_command_allowed", return_value=True):
-        with patch("asyncio.create_subprocess_exec") as mock_exec:
-            mock_proc = AsyncMock()
-            mock_proc.pid = 1234
-            mock_exec.return_value = mock_proc
-
+        with patch.object(service, "_run_process", new=AsyncMock(return_value=1234)) as mock_run:
             await service.handle_mcu_frame(Command.CMD_PROCESS_RUN_ASYNC.value, 1, payload)
 
-            mock_exec.assert_called_once()
+            mock_run.assert_called_once_with("echo hello")
             serial.send.assert_called_once()
             assert serial.send.call_args[0][0] == Command.CMD_PROCESS_RUN_ASYNC_RESP.value
             resp = serial.send.call_args[0][1]
@@ -376,14 +372,10 @@ async def test_cloud_shell_run_asserts_exec(
     )
 
     with patch("mcubridge.services.runtime.is_command_allowed", return_value=True):
-        with patch("asyncio.create_subprocess_exec") as mock_exec:
-            mock_proc = AsyncMock()
-            mock_proc.pid = 999
-            mock_exec.return_value = mock_proc
-
+        with patch.object(service, "_run_process", new=AsyncMock(return_value=999)) as mock_run:
             await service.handle_request(msg)
 
-            mock_exec.assert_called_once()
+            mock_run.assert_called_once_with("ls -la")
             service.enqueue_cloud.assert_called_once()
             queued_pub = service.enqueue_cloud.call_args[0][0]
             assert "br/sh/run_async/res" in queued_pub.topic_name

@@ -1057,10 +1057,11 @@ class BridgeService:
         pin = self._parse_pin(route.segments[0])
         if pin < 0:
             return
-        pl = inbound.payload.decode()
+        payload = inbound.payload
         if len(route.segments) == 2:
             if route.segments[1] == PinAction.MODE:
-                await serial.send(Command.CMD_SET_PIN_MODE.value, pb.PinMode(pin=pin, mode=cast(Any, int(pl))))
+                val = int(payload) if payload.isdigit() else 0
+                await serial.send(Command.CMD_SET_PIN_MODE.value, pb.PinMode(pin=pin, mode=cast(Any, val)))
 
             elif route.segments[1] == PinAction.READ:
                 cmd = Command.CMD_DIGITAL_READ if route.topic == Topic.DIGITAL else Command.CMD_ANALOG_READ
@@ -1093,7 +1094,8 @@ class BridgeService:
                     )
         else:
             cmd = Command.CMD_DIGITAL_WRITE if route.topic == Topic.DIGITAL else Command.CMD_ANALOG_WRITE
-            await serial.send(cmd.value, pb.DigitalWrite(pin=pin, value=int(pl) if pl.isdigit() else 0))
+            val = int(payload) if payload.isdigit() else 0
+            await serial.send(cmd.value, pb.DigitalWrite(pin=pin, value=val))
 
     async def _handle_system_bootloader(self, _route: TopicRoute, _inbound: pb.CloudQueuedPublish) -> None:
         await cast("SerialTransport", self.serial).send(

@@ -97,9 +97,40 @@ void test_protocol_builder_exhaustive() {
   TEST_ASSERT_EQUAL(0, len);
 }
 
+void test_capabilities_frame_exact() {
+  using namespace rpc;
+  // Frame sent by Python daemon for CMD_GET_CAPABILITIES (0x48)
+  const uint8_t raw[] = {0x08, 0x02, 0x10, 0x48, 0x18, 0x04, 0x22, 0x0c, 0x00,
+                         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                         0x00, 0x00, 0x32, 0x00, 0x45, 0xba, 0x21, 0x23};
+  auto res = parse_frame(etl::span<const uint8_t>(raw, sizeof(raw)));
+  TEST_ASSERT(res.has_value());
+  TEST_ASSERT_EQUAL(2, res->version);
+  TEST_ASSERT_EQUAL(72, res->command_id);
+  TEST_ASSERT_EQUAL(4, res->sequence_id);
+  TEST_ASSERT_EQUAL(rpc_pb_RpcEnvelope_encrypted_payload_with_tag_tag,
+                    res->which_payload_type);
+}
+
+void test_ack_frame_exact() {
+  using namespace rpc;
+  const uint8_t raw[] = {0x08, 0x02, 0x10, 0x38, 0x22, 0x0c, 0x00, 0x00, 0x00,
+                         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                         0x92, 0x02, 0x02, 0x08, 0x60, 0xb8, 0x1b, 0xa5, 0xb9};
+  auto res = parse_frame(etl::span<const uint8_t>(raw, sizeof(raw)));
+  TEST_ASSERT(res.has_value());
+  TEST_ASSERT_EQUAL(2, res->version);
+  TEST_ASSERT_EQUAL(56, res->command_id);
+  TEST_ASSERT_EQUAL(0, res->sequence_id);
+  TEST_ASSERT_EQUAL(rpc_pb_RpcEnvelope_ack_packet_tag, res->which_payload_type);
+  TEST_ASSERT_EQUAL(96, res->payload_type.ack_packet.command_id);
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_protocol_frame_logic_exhaustive);
   RUN_TEST(test_protocol_builder_exhaustive);
+  RUN_TEST(test_capabilities_frame_exact);
+  RUN_TEST(test_ack_frame_exact);
   return UNITY_END();
 }

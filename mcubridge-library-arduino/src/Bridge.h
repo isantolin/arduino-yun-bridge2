@@ -403,8 +403,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
       if (ctx.envelope->which_payload_type == expected_tag) {
         // [Zero-Copy] Direct reference to active union member in Nanopb
         // envelope
-        const auto& m =
-            *reinterpret_cast<const MsgType*>(&ctx.envelope->payload_type);
+        const auto& m = rpc::Payload::get<MsgType>(*ctx.envelope);
         handler(ctx, m);
       } else if (ctx.envelope->which_payload_type ==
                  rpc_pb_RpcEnvelope_encrypted_payload_with_tag_tag) {

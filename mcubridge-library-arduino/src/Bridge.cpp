@@ -79,8 +79,10 @@ bool BridgeClass::_preDispatch(const bridge::router::CommandContext& ctx,
 void BridgeClass::_onCmd_StatusAck(BridgeClass& self,
                                    const bridge::router::CommandContext& ctx) {
   self._dispatchCmd<rpc_pb_AckPacket>(
-      ctx, [&self](const bridge::router::CommandContext& c,
-                   const rpc_pb_AckPacket& m) { self._handleStatusAck(c, m); });
+      ctx,
+      [&self](const bridge::router::CommandContext& c,
+              const rpc_pb_AckPacket& m) { self._handleStatusAck(c, m); },
+      false, false);
 }
 
 // [A] No-payload, no-ack, retransmit-on-dup (idempotent query commands).
@@ -992,7 +994,9 @@ void BridgeClass::_applyTimingConfig(const rpc_pb_HandshakeConfig& msg) {
 void BridgeClass::_handleReceivedFrame(etl::span<const uint8_t> p) {
   auto res = rpc::parse_frame(p);
   if (!res) {
-    emitStatus(rpc::StatusCode::STATUS_MALFORMED);
+    emitStatus(res.error() == rpc::FrameError::CRC_MISMATCH
+                   ? rpc::StatusCode::STATUS_CRC_MISMATCH
+                   : rpc::StatusCode::STATUS_MALFORMED);
     return;
   }
   rpc_pb_RpcEnvelope envelope = res.value();

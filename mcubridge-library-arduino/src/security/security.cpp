@@ -49,9 +49,9 @@ bool handshake_authenticate(etl::span<const uint8_t> secret,
 #endif
 
   wc_HKDF(WC_SHA256, secret.data(), static_cast<word32>(secret.size()),
-          salt.data(), static_cast<word32>(salt.size()),
-          info.data(), static_cast<word32>(info.size()),
-          handshake_key.data(), static_cast<word32>(handshake_key.size()));
+          salt.data(), static_cast<word32>(salt.size()), info.data(),
+          static_cast<word32>(info.size()), handshake_key.data(),
+          static_cast<word32>(handshake_key.size()));
 
   Hmac hmac_engine;
   wc_HmacSetKey(&hmac_engine, WC_SHA256, handshake_key.data(),

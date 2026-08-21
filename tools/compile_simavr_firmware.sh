@@ -55,7 +55,7 @@ if [ ! -f "${LIB_DIR}/src/protocol/rpc_protocol.h" ]; then
         --py-client "${ROOT_DIR}/mcubridge-client-examples/mcubridge_client/protocol.py"
 fi
 
-COMMON_FLAGS="-flto -fno-strict-aliasing -Wno-lto-type-mismatch -DWOLFSSL_USER_SETTINGS -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1"
+COMMON_FLAGS="-flto -fno-strict-aliasing -Wno-lto-type-mismatch -DWOLFSSL_USER_SETTINGS -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1 -DSERIAL_RX_BUFFER_SIZE=256 -DSERIAL_TX_BUFFER_SIZE=256"
 BUILD_FLAGS=(
     "--fqbn" "$FQBN"
     "--library" "$LIB_DIR"

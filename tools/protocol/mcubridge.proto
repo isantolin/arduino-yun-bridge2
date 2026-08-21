@@ -400,7 +400,7 @@ option (rpc.pb.hardware) = {
     max_observers_avr: 4
     max_observers_other: 8
     rx_history_size: 1
-    rx_buffer_size_avr: 128
+    rx_buffer_size_avr: 256
     rx_buffer_size_other: 512
     max_pending_tx_frames_avr: 1
     max_pending_tx_frames_other: 8

@@ -114,7 +114,7 @@ def _build_simavr_harness() -> Path | None:
     if not harness_src.exists():
         return None
 
-    if harness_bin.exists():
+    if harness_bin.exists() and harness_bin.stat().st_mtime >= harness_src.stat().st_mtime:
         return harness_bin
 
     harness_bin.parent.mkdir(parents=True, exist_ok=True)

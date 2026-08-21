@@ -142,7 +142,12 @@ public:
         printf("[SIMAVR] UART PTY ready on: %s\n", slave_name_.data());
         fflush(stdout);
 
-        pump_cycles();
+    simulation_step:
+        if (!is_active()) {
+            return;
+        }
+        execute_cycle_batch();
+        goto simulation_step;
     }
 
     [[nodiscard]] bool is_active() const noexcept {
@@ -171,23 +176,6 @@ private:
             const uint8_t byte = static_cast<uint8_t>(value);
             const ssize_t written = write(self->master_fd_, &byte, 1);
             (void)written;
-        }
-    }
-
-    void pump_cycles() noexcept {
-        if (!is_active()) {
-            return;
-        }
-        etl::array<int, 64> chunk{};
-        const bool keep_going = etl::all_of(chunk.begin(), chunk.end(), [this](int) {
-            if (!is_active()) {
-                return false;
-            }
-            execute_cycle_batch();
-            return true;
-        });
-        if (keep_going && is_active()) {
-            pump_cycles();
         }
     }
 

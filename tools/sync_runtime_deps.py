@@ -393,6 +393,21 @@ def _fetch_latest_version(package_name: str, *, include_prerelease: bool = False
         return None
 
 
+def _fetch_pypi_sdist_hash(package_name: str, version: str) -> str | None:
+    """Fetch SHA-256 hash of the sdist package from PyPI JSON API."""
+    url = f"https://pypi.org/pypi/{package_name}/{version}/json"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "McuBridge-DepsSync/2.8"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            for file_info in data.get("urls", []):
+                if file_info.get("packagetype") == "sdist":
+                    return str(file_info.get("digests", {}).get("sha256") or "")
+            return None
+    except (urllib.error.URLError, ValueError, KeyError, json.JSONDecodeError):
+        return None
+
+
 def _fetch_github_latest_version(repo: str) -> str | None:
     """Query GitHub API for latest release or tag using standard library."""
     url = f"https://api.github.com/repos/{repo}/releases/latest"
@@ -585,6 +600,11 @@ def update_feeds(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
                 f"PKG_BUILD_DIR:=$(BUILD_DIR)/pypi/{pip_name}-{version}",
                 new_content,
             )
+
+        if "PKG_HASH:=" in content:
+            new_hash = _fetch_pypi_sdist_hash(pip_name, version)
+            if new_hash:
+                new_content = re.sub(r"PKG_HASH:=[^\n]+", f"PKG_HASH:={new_hash}", new_content)
 
         if new_content != content:
             any_updated = True

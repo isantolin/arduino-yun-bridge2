@@ -20,7 +20,7 @@ import time
 from collections.abc import Coroutine, Callable, Awaitable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast, Final
+from typing import TYPE_CHECKING, Any, cast, Final, TypeVar
 
 import lmdb
 from ..state.storage import LmdbDeque
@@ -1659,6 +1659,20 @@ class BridgeService:
             server.close()
 
 
+_T_PB = TypeVar("_T_PB", bound=ProtobufMessage)
+
+
+def _parse_serial_response(res: Any, target_type: type[_T_PB], default: _T_PB) -> _T_PB:
+    """Safely decode serial response payload to target Protobuf message type. [SIL-2]"""
+    if isinstance(res, target_type):
+        return res
+    if isinstance(res, (bytes, bytearray)):
+        resp = target_type()
+        resp.ParseFromString(bytes(res))
+        return resp
+    return default
+
+
 class LocalBridgeService(LocalBridgeBase):
     """Implementation of the Local gRPC service for local MPU clients."""
 
@@ -1686,18 +1700,8 @@ class LocalBridgeService(LocalBridgeBase):
         if request is None:
             return
         serial = self.runtime_service.serial
-        if not serial:
-            await stream.send_message(pb.DigitalReadResponse())
-            return
-        res = await serial.send(Command.CMD_DIGITAL_READ.value, request)
-        if isinstance(res, pb.DigitalReadResponse):
-            await stream.send_message(res)
-        elif isinstance(res, (bytes, bytearray)):
-            resp = pb.DigitalReadResponse()
-            resp.ParseFromString(res)
-            await stream.send_message(resp)
-        else:
-            await stream.send_message(pb.DigitalReadResponse())
+        res = (await serial.send(Command.CMD_DIGITAL_READ.value, request)) if serial else None
+        await stream.send_message(_parse_serial_response(res, pb.DigitalReadResponse, pb.DigitalReadResponse()))
 
     async def AnalogWrite(self, stream: Stream[pb.AnalogWrite, pb.GenericResponse]) -> None:
         request = await stream.recv_message()
@@ -1712,18 +1716,8 @@ class LocalBridgeService(LocalBridgeBase):
         if request is None:
             return
         serial = self.runtime_service.serial
-        if not serial:
-            await stream.send_message(pb.AnalogReadResponse())
-            return
-        res = await serial.send(Command.CMD_ANALOG_READ.value, request)
-        if isinstance(res, pb.AnalogReadResponse):
-            await stream.send_message(res)
-        elif isinstance(res, (bytes, bytearray)):
-            resp = pb.AnalogReadResponse()
-            resp.ParseFromString(res)
-            await stream.send_message(resp)
-        else:
-            await stream.send_message(pb.AnalogReadResponse())
+        res = (await serial.send(Command.CMD_ANALOG_READ.value, request)) if serial else None
+        await stream.send_message(_parse_serial_response(res, pb.AnalogReadResponse, pb.AnalogReadResponse()))
 
     async def DatastorePut(self, stream: Stream[pb.DatastorePut, pb.GenericResponse]) -> None:
         request = await stream.recv_message()
@@ -1792,20 +1786,15 @@ class LocalBridgeService(LocalBridgeBase):
             return
         if request.path.startswith(MCU_FS_PREFIX):
             serial = self.runtime_service.serial
-            if serial:
-                res = await serial.send(
+            res = (
+                await serial.send(
                     Command.CMD_FILE_READ.value,
                     pb.FileRead(path=request.path[len(MCU_FS_PREFIX) :]),
                 )
-                if isinstance(res, pb.FileReadResponse):
-                    await stream.send_message(res)
-                    return
-                elif isinstance(res, (bytes, bytearray)):
-                    resp = pb.FileReadResponse()
-                    resp.ParseFromString(res)
-                    await stream.send_message(resp)
-                    return
-            await stream.send_message(pb.FileReadResponse())
+                if serial
+                else None
+            )
+            await stream.send_message(_parse_serial_response(res, pb.FileReadResponse, pb.FileReadResponse()))
             return
         path = self.runtime_service.get_safe_path(request.path)
         if path and await asyncio.to_thread(path.is_file):
@@ -1880,18 +1869,8 @@ class LocalBridgeService(LocalBridgeBase):
         if request is None:
             return
         serial = self.runtime_service.serial
-        if not serial:
-            await stream.send_message(pb.SpiTransferResponse())
-            return
-        res = await serial.send(Command.CMD_SPI_TRANSFER.value, request)
-        if isinstance(res, pb.SpiTransferResponse):
-            await stream.send_message(res)
-        elif isinstance(res, (bytes, bytearray)):
-            resp = pb.SpiTransferResponse()
-            resp.ParseFromString(res)
-            await stream.send_message(resp)
-        else:
-            await stream.send_message(pb.SpiTransferResponse())
+        res = (await serial.send(Command.CMD_SPI_TRANSFER.value, request)) if serial else None
+        await stream.send_message(_parse_serial_response(res, pb.SpiTransferResponse, pb.SpiTransferResponse()))
 
     async def SpiConfigure(self, stream: Stream[pb.SpiConfig, pb.GenericResponse]) -> None:
         request = await stream.recv_message()
@@ -1910,34 +1889,18 @@ class LocalBridgeService(LocalBridgeBase):
         if request is None:
             return
         serial = self.runtime_service.serial
-        if serial:
-            res = await serial.send(Command.CMD_GET_VERSION.value, b"")
-            if isinstance(res, pb.VersionResponse):
-                await stream.send_message(res)
-                return
-            elif isinstance(res, (bytes, bytearray)):
-                resp = pb.VersionResponse()
-                resp.ParseFromString(res)
-                await stream.send_message(resp)
-                return
-        await stream.send_message(pb.VersionResponse(major=0, minor=0, patch=0))
+        res = (await serial.send(Command.CMD_GET_VERSION.value, b"")) if serial else None
+        await stream.send_message(
+            _parse_serial_response(res, pb.VersionResponse, pb.VersionResponse(major=0, minor=0, patch=0))
+        )
 
     async def GetFreeMemory(self, stream: Stream[pb.SubscribeRequest, pb.FreeMemoryResponse]) -> None:
         request = await stream.recv_message()
         if request is None:
             return
         serial = self.runtime_service.serial
-        if serial:
-            res = await serial.send(Command.CMD_GET_FREE_MEMORY.value, b"")
-            if isinstance(res, pb.FreeMemoryResponse):
-                await stream.send_message(res)
-                return
-            elif isinstance(res, (bytes, bytearray)):
-                resp = pb.FreeMemoryResponse()
-                resp.ParseFromString(res)
-                await stream.send_message(resp)
-                return
-        await stream.send_message(pb.FreeMemoryResponse(value=0))
+        res = (await serial.send(Command.CMD_GET_FREE_MEMORY.value, b"")) if serial else None
+        await stream.send_message(_parse_serial_response(res, pb.FreeMemoryResponse, pb.FreeMemoryResponse(value=0)))
 
     async def GetStatus(self, stream: Stream[pb.SubscribeRequest, pb.BridgeStatus]) -> None:
         request = await stream.recv_message()

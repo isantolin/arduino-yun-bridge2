@@ -11,9 +11,18 @@ PKG_MAINTAINER:=Ignacio Santolin <ignacio.santolin@gmail.com>
 PKG_LICENSE:=OLDAP-2.8
 PKG_LICENSE_FILES:=LICENSE
 
+PKG_BUILD_DEPENDS:=python3-setuptools/host python3-cffi/host
+
 include $(TOPDIR)/feeds/packages/lang/python/pypi.mk
 include $(INCLUDE_DIR)/package.mk
 include $(TOPDIR)/feeds/packages/lang/python/python3-package.mk
+
+define Build/Prepare
+	$(call Build/Prepare/Default)
+	sed -i 's/, "patch-ng"//g' $(PKG_BUILD_DIR)/pyproject.toml || true
+	sed -i 's/"patch-ng", //g' $(PKG_BUILD_DIR)/pyproject.toml || true
+	sed -i 's/"patch-ng"//g' $(PKG_BUILD_DIR)/pyproject.toml || true
+endef
 
 define Package/python3-lmdb
   SECTION:=lang

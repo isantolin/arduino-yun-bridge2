@@ -301,6 +301,7 @@ check_python_module "setuptools"
 check_python_module "black"
 check_python_module "packaging"
 check_python_module "typer"
+check_python_module "patch_ng" || python3 -m pip install "patch-ng" >/dev/null 2>&1 || true
 
 # --- DOWNLOAD CACHE SYMLINK SETUP ---
 setup_dl_symlink() {

@@ -104,6 +104,7 @@ async def test_session_event_and_command_response(cloud_service: CloudBridgeServ
     mock_stream.__aiter__ = _aiter
 
     await cloud_service.Session(mock_stream)
+    assert len(cloud_service.gateway.connections) == 0
 
 
 def test_protobuf_gateway_ssl_context_disabled() -> None:
@@ -154,6 +155,7 @@ async def test_session_unhandled_and_oserror(cloud_service: CloudBridgeService) 
 
     mock_stream.__aiter__ = _aiter
     await cloud_service.Session(mock_stream)
+    assert len(cloud_service.gateway.connections) == 0
 
 
 def test_protobuf_gateway_mtls(tmp_path: Path) -> None:

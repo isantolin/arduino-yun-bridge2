@@ -4,7 +4,7 @@ from __future__ import annotations
 from mcubridge.protocol.topics import parse_topic
 
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from mcubridge.config.settings import load_runtime_config
@@ -77,32 +77,36 @@ async def test_handle_mcu_frame_handshake_routing(
 async def test_handle_mcu_frame_rpc_handlers(
     runtime_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
-    service, state, _transport = runtime_setup
+    service, state, transport = runtime_setup
     state.link_session_key = b"0123456789abcdef0123456789abcdef"
+    state.mark_synchronized()
 
-    # 1. Analog Read
-    req_analog = pb.PinControlData(pin=0)
-    await service.handle_mcu_frame(
-        command_id=protocol.Command.CMD_ANALOG_READ_RESP.value, sequence_id=10, payload=req_analog
-    )
+    # 1. MCU Mailbox Push (triggers enqueue_cloud & acknowledge)
+    with patch.object(service, "enqueue_cloud", new_callable=AsyncMock) as mock_enqueue:
+        req_mb = pb.MailboxPush(data=b"test_payload")
+        await service.handle_mcu_frame(
+            command_id=protocol.Command.CMD_MAILBOX_PUSH.value, sequence_id=10, payload=req_mb
+        )
+        assert mock_enqueue.called
+        assert transport.acknowledge.called
 
-    # 2. Digital Read
-    req_digital = pb.PinControlData(pin=13, state="1")
-    await service.handle_mcu_frame(
-        command_id=protocol.Command.CMD_DIGITAL_READ_RESP.value, sequence_id=11, payload=req_digital
-    )
+    # 2. MCU Datastore Put (triggers datastore put & acknowledge)
+    transport.acknowledge.reset_mock()
+    req_ds = pb.DatastorePut(key="k1", value=b"v1")
+    await service.handle_mcu_frame(command_id=protocol.Command.CMD_DATASTORE_PUT.value, sequence_id=11, payload=req_ds)
+    assert transport.acknowledge.called
 
-    # 3. Version Response
+    # 3. Response command (ignored by BridgeService as it is correlated at transport level)
+    transport.acknowledge.reset_mock()
     req_ver = pb.VersionResponse(major=2, minor=8, patch=5)
     await service.handle_mcu_frame(
         command_id=protocol.Command.CMD_GET_VERSION_RESP.value, sequence_id=12, payload=req_ver
     )
+    assert not transport.acknowledge.called
 
-    # 4. Free Memory Response
-    req_mem = pb.FreeMemoryResponse(value=2048)
-    await service.handle_mcu_frame(
-        command_id=protocol.Command.CMD_GET_FREE_MEMORY_RESP.value, sequence_id=13, payload=req_mem
-    )
+    # 4. Unknown command (triggers Status.NOT_IMPLEMENTED)
+    await service.handle_mcu_frame(9999, 13, b"")
+    assert transport.send.called
 
 
 @pytest.mark.asyncio
@@ -233,9 +237,13 @@ async def test_process_and_spi_handlers_exhaustive(
     on_cw = getattr(service, "_on_mcu_console_write")
 
     # SPI Resp
-    spi_resp = pb.SpiTransferResponse(data=b"\x01\x02")
-    await on_spi(1, spi_resp)
+    with patch.object(service, "enqueue_cloud", new_callable=AsyncMock) as mock_enqueue:
+        spi_resp = pb.SpiTransferResponse(data=b"\x01\x02")
+        await on_spi(1, spi_resp)
+        assert mock_enqueue.called
 
     # Console Write
-    cw = pb.ConsoleWrite(data=b"test console output\n")
-    await on_cw(2, cw)
+    with patch.object(service, "enqueue_cloud", new_callable=AsyncMock) as mock_enqueue:
+        cw = pb.ConsoleWrite(data=b"test console output\n")
+        await on_cw(2, cw)
+        assert mock_enqueue.called

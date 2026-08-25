@@ -365,7 +365,9 @@ async def test_on_mcu_ack_valid(
 ) -> None:
     service, _state, _serial = svc
     p = pb.AckPacket(command_id=0x01)
-    await service._on_mcu_ack(1, p)
+    with patch("mcubridge.services.runtime.logger.debug") as mock_debug:
+        await service._on_mcu_ack(1, p)
+        mock_debug.assert_called_once_with("MCU ACK received", command_id="0x01")
 
 
 @pytest.mark.asyncio
@@ -374,7 +376,9 @@ async def test_on_mcu_ack_raw_bytes(
 ) -> None:
     service, _state, _serial = svc
     raw = pb.AckPacket(command_id=0x02).SerializeToString()
-    await service._on_mcu_ack(1, raw)
+    with patch("mcubridge.services.runtime.logger.debug") as mock_debug:
+        await service._on_mcu_ack(1, raw)
+        mock_debug.assert_called_once_with("MCU ACK received", command_id="0x02")
 
 
 @pytest.mark.asyncio
@@ -382,8 +386,9 @@ async def test_on_mcu_ack_corrupt_bytes(
     svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, _serial = svc
-    # Garbage bytes → logs error without raising
-    await service._on_mcu_ack(1, b"\xff\xff\xff\xff\xff")
+    with patch("mcubridge.services.runtime.logger.error") as mock_err:
+        await service._on_mcu_ack(1, b"\xff\xff\xff\xff\xff")
+        mock_err.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

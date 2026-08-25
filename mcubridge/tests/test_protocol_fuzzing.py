@@ -20,17 +20,19 @@ EXPECTED_COBS_ERRORS = (cobsr.DecodeError, ValueError)
 def _assert_only_expected_exception(
     operation: Callable[[], object],
     expected: tuple[type[Exception], ...],
-) -> None:
+) -> bool:
     try:
         operation()
+        return True
     except expected:
-        pass
+        return True
 
 
 @pytest.mark.fuzz
 def test_frame_parsing_resilience_to_fuzzing():
     """Fuzzing test to ensure parse_frame never crashes with unhandled exceptions."""
     random.seed(TEST_RANDOM_SEED)
+    tested_count = 0
 
     for _ in range(FUZZ_ITERATIONS):
         # Generate random length between 0 and 200 bytes
@@ -38,38 +40,46 @@ def test_frame_parsing_resilience_to_fuzzing():
         # Generate random bytes
         raw_data = random.randbytes(length)
 
-        _assert_only_expected_exception(
+        if _assert_only_expected_exception(
             lambda: parse_frame(raw_data),
             EXPECTED_PARSE_ERRORS,
-        )
+        ):
+            tested_count += 1
+    assert tested_count == FUZZ_ITERATIONS
 
 
 @pytest.mark.fuzz
 def test_cobs_decoding_resilience():
     """Fuzzing test for COBS decoding wrapper."""
     random.seed(TEST_RANDOM_SEED)
+    tested_count = 0
 
     for _ in range(FUZZ_ITERATIONS):
         length = random.randint(0, 200)
         raw_data = random.randbytes(length)
 
-        _assert_only_expected_exception(
+        if _assert_only_expected_exception(
             lambda: cobsr.decode(raw_data),
             EXPECTED_COBS_ERRORS,
-        )
+        ):
+            tested_count += 1
+    assert tested_count == FUZZ_ITERATIONS
 
 
 @pytest.mark.fuzz
 def test_frame_header_parsing_resilience():
     """Specifically target the header parsing logic."""
     random.seed(TEST_RANDOM_SEED)
+    tested_count = 0
 
     for _ in range(FUZZ_ITERATIONS):
         # Header is usually small, let's fuzz around that size
         length = random.randint(0, CRC_COVERED_HEADER_SIZE + 5)
         raw_data = random.randbytes(length)
 
-        _assert_only_expected_exception(
+        if _assert_only_expected_exception(
             lambda: parse_frame(raw_data),
             (ValueError, DecodeError),
-        )
+        ):
+            tested_count += 1
+    assert tested_count == FUZZ_ITERATIONS

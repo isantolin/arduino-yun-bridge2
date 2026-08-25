@@ -95,7 +95,9 @@ async def test_runtime_run_cloud_disabled(tmp_path: Path) -> None:
     config.cloud_enabled = False
     service, state, _ = _make_service(config)
 
-    await service.run_cloud()
+    with patch("mcubridge.services.runtime.logger.info") as mock_info:
+        await service.run_cloud()
+        assert mock_info.called
     state.cleanup()
 
 
@@ -113,6 +115,7 @@ async def test_runtime_handle_datastore_flavors(tmp_path: Path) -> None:
     )
     inbound_put = pb.CloudQueuedPublish(topic_name="test/br/datastore/put/my_key", payload=b"my_val")
     await service._handle_datastore(route_put, inbound_put)
+    assert await state.datastore_cache.get("my_key") == b"my_val"
 
     # 2. Datastore GET (cache hit)
     route_get_hit = TopicRoute(
@@ -122,7 +125,9 @@ async def test_runtime_handle_datastore_flavors(tmp_path: Path) -> None:
         segments=("get", "my_key"),
     )
     inbound_get = pb.CloudQueuedPublish(topic_name="test/br/datastore/get/my_key", payload=b"")
-    await service._handle_datastore(route_get_hit, inbound_get)
+    with patch.object(service, "enqueue_cloud", new_callable=AsyncMock) as mock_enqueue:
+        await service._handle_datastore(route_get_hit, inbound_get)
+        assert mock_enqueue.called
 
     # 3. Datastore GET (cache miss with request suffix)
     route_get_miss = TopicRoute(
@@ -131,7 +136,9 @@ async def test_runtime_handle_datastore_flavors(tmp_path: Path) -> None:
         topic=Topic.DATASTORE,
         segments=("get", "non_existing", "request"),
     )
-    await service._handle_datastore(route_get_miss, inbound_get)
+    with patch.object(service, "enqueue_cloud", new_callable=AsyncMock) as mock_enqueue:
+        await service._handle_datastore(route_get_miss, inbound_get)
+        assert mock_enqueue.called
 
     state.cleanup()
 
@@ -141,10 +148,13 @@ async def test_runtime_handle_mcu_status_binary_undecodable(tmp_path: Path) -> N
     config = _make_config(tmp_path)
     service, state, _ = _make_service(config)
 
-    # Status with invalid UTF-8 and non-protobuf bytes
-    await service._handle_mcu_status(Status.TIMEOUT, 1, b"\xff\xfe\xfd\x80")
-    # Status with generic object
-    await service._handle_mcu_status(Status.ERROR, 2, cast(Any, 12345))
+    with patch.object(service, "enqueue_cloud", new_callable=AsyncMock) as mock_enqueue:
+        # Status with invalid UTF-8 and non-protobuf bytes
+        await service._handle_mcu_status(Status.TIMEOUT, 1, b"\xff\xfe\xfd\x80")
+        assert mock_enqueue.call_count == 1
+        # Status with generic object
+        await service._handle_mcu_status(Status.ERROR, 2, cast(Any, 12345))
+        assert mock_enqueue.call_count == 2
 
     state.cleanup()
 

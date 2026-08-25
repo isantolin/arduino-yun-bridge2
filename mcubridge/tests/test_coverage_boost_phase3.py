@@ -466,16 +466,20 @@ async def test_runtime_handle_mcu_status_payloads(tmp_path: Path) -> None:
     config = _make_config(tmp_path)
     service, state, _ = _make_service(config)
 
-    # 1. ProtobufMessage payload
-    msg = pb.GenericResponse(message="test_msg")
-    await service._handle_mcu_status(Status.ERROR, 1, msg)
+    with patch.object(service, "enqueue_cloud", new_callable=AsyncMock) as mock_enqueue:
+        # 1. ProtobufMessage payload
+        msg = pb.GenericResponse(message="test_msg")
+        await service._handle_mcu_status(Status.ERROR, 1, msg)
+        assert mock_enqueue.call_count == 1
 
-    # 2. Raw bytes payload with valid Protobuf
-    b_msg = pb.GenericResponse(message="bytes_msg").SerializeToString()
-    await service._handle_mcu_status(Status.TIMEOUT, 2, b_msg)
+        # 2. Raw bytes payload with valid Protobuf
+        b_msg = pb.GenericResponse(message="bytes_msg").SerializeToString()
+        await service._handle_mcu_status(Status.TIMEOUT, 2, b_msg)
+        assert mock_enqueue.call_count == 2
 
-    # 3. Corrupted raw bytes
-    await service._handle_mcu_status(Status.MALFORMED, 3, b"\xff\xff\xff")
+        # 3. Corrupted raw bytes
+        await service._handle_mcu_status(Status.MALFORMED, 3, b"\xff\xff\xff")
+        assert mock_enqueue.call_count == 3
 
     state.cleanup()
 
@@ -833,11 +837,11 @@ async def test_service_handle_mcu_frame_dispatch(tmp_path: Path) -> None:
 
     # 4. XON / XOFF flow control
     await service._handle_mcu_xoff(4, b"")
-    assert state.mcu_is_paused is True
+    assert state.mcu_is_paused
     assert not state.serial_tx_allowed.is_set()
 
     await service._handle_mcu_xon(5, b"")
-    assert state.mcu_is_paused is False
+    assert not state.mcu_is_paused
     assert state.serial_tx_allowed.is_set()
 
     # 5. Datastore put / get
@@ -928,11 +932,13 @@ async def test_runtime_mcu_file_read_and_timeouts(tmp_path: Path) -> None:
     # 1. Send failure
     mock_serial.send_raw.return_value = False
     await service._handle_file_mcu_read(inbound, "mcu:test.txt")
+    assert mock_serial.send_raw.called
 
     # 2. Timeout waiting for response
     mock_serial.send_raw.return_value = True
     state.serial_response_timeout_ms = 10
     await service._handle_file_mcu_read(inbound, "mcu:test.txt")
+    assert service._pending_mcu_read is None
 
     state.cleanup()
 
@@ -947,12 +953,14 @@ async def test_runtime_shell_dispatch_handlers(tmp_path: Path) -> None:
         raw="test/br/shell/run_async", prefix=config.topic_prefix, topic=Topic.SHELL, segments=("run_async",)
     )
     inbound_run = pb.CloudQueuedPublish(topic_name="test/br/shell/run_async", payload=b"echo hello")
-    with patch.object(service, "_run_process", new_callable=AsyncMock, return_value=123):
+    with patch.object(service, "_run_process", new_callable=AsyncMock, return_value=123) as mock_run:
         await service._handle_shell(route_run, inbound_run)
+        assert mock_run.called
 
     # 2. Shell run async with error
-    with patch.object(service, "_run_process", side_effect=OSError("spawn error")):
+    with patch.object(service, "_run_process", side_effect=OSError("spawn error")) as mock_err_run:
         await service._handle_shell(route_run, inbound_run)
+        assert mock_err_run.called
 
     # 3. Shell poll
     mock_proc = MagicMock()
@@ -966,14 +974,16 @@ async def test_runtime_shell_dispatch_handlers(tmp_path: Path) -> None:
     with patch.object(service, "_poll_process", new_callable=AsyncMock) as mock_poll:
         mock_poll.return_value = pb.ProcessPollResponse(status=Status.OK.value, exit_code=0, finished=True)
         await service._handle_shell(route_poll, inbound_poll)
+        assert mock_poll.called
 
     # 4. Shell kill
     route_kill = TopicRoute(
         raw="test/br/shell/kill/123", prefix=config.topic_prefix, topic=Topic.SHELL, segments=("kill", "123")
     )
     inbound_kill = pb.CloudQueuedPublish(topic_name="test/br/shell/kill/123", payload=b"")
-    with patch.object(service, "_terminate_process", new_callable=AsyncMock, return_value=0):
+    with patch.object(service, "_terminate_process", new_callable=AsyncMock, return_value=0) as mock_term:
         await service._handle_shell(route_kill, inbound_kill)
+        assert mock_term.called
 
     state.cleanup()
 

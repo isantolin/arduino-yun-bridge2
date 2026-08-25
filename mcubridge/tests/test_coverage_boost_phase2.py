@@ -226,17 +226,19 @@ class TestProcessPacketEdgePaths:
     async def test_process_packet_anti_replay_failure(self) -> None:
         config = _make_config()
         state = _make_state(config)
-        state.mark_synchronized()
-        state.link_session_key = b"K" * 32
+        key = b"K" * 32
+        state.link_session_key = key
         state.link_last_nonce_counter = 999
+        state.mark_synchronized()
         transport = SerialTransport(config, state, None)
 
-        # Build a non-system command frame without valid nonce
-        raw = cobsr.encode(build_frame(Command.CMD_GET_VERSION.value, 1))
+        # Build a non-system command frame with session key
+        raw = cobsr.encode(build_frame(Command.CMD_DIGITAL_WRITE.value, 1, session_key=key))
 
         with patch("mcubridge.transport.serial.validate_nonce_counter", return_value=(False, 999)):
-            await transport._process_packet(raw)
-            # Frame should be dropped silently (no service dispatch)
+            with patch("mcubridge.transport.serial.logger.error") as mock_err:
+                await transport._process_packet(raw)
+                assert mock_err.called
 
     @pytest.mark.asyncio
     async def test_process_packet_uninitialized_payload_rejection(self) -> None:
@@ -308,7 +310,8 @@ class TestSerialRun:
         transport = SerialTransport(config, state, None)
 
         with patch.object(transport, "_connect_and_run", new_callable=AsyncMock, side_effect=asyncio.CancelledError):
-            await transport.run()  # Should not raise
+            await transport.run()
+            assert transport.serial is None
 
     @pytest.mark.asyncio
     async def test_run_fatal_handshake(self) -> None:
@@ -414,13 +417,14 @@ class TestLmdbDequeVacuum:
 class TestLmdbCache:
     @pytest.mark.asyncio
     async def test_cache_set_no_env(self) -> None:
-        cache = LmdbCache(path=":memory:")
+        cache = LmdbCache(path=f"/tmp/test_cache_{os.getpid()}_{time.time_ns()}.db")
         cache.env = None  # Simulate broken env
         await cache.set("key", b"value")  # Should be no-op
+        assert await cache.get("key") is None
 
     @pytest.mark.asyncio
     async def test_cache_get_no_env(self) -> None:
-        cache = LmdbCache(path=":memory:")
+        cache = LmdbCache(path=f"/tmp/test_cache_{os.getpid()}_{time.time_ns()}.db")
         cache.env = None
         result = await cache.get("key", b"default")
         assert result == b"default"
@@ -652,8 +656,9 @@ class TestRotateCredentials:
             rotate_creds.subprocess,
             "run",
             side_effect=subprocess.CalledProcessError(1, "restart", stderr=b"failed"),
-        ):
-            rotate_creds.restart_service()  # Should not raise
+        ) as mock_run:
+            rotate_creds.restart_service()
+            mock_run.assert_called_once()
 
     def test_main_forced_rotation(self) -> None:
         rotate_creds = _load_script("mcubridge_rotate_credentials")
@@ -772,5 +777,6 @@ class TestStateStatus:
             with patch("mcubridge.state.status.STATUS_FILE") as mock_file:
                 mock_file.parent.mkdir = MagicMock(side_effect=OSError("Permission denied"))
                 _write_status_file(snapshot)  # Should not raise
+                assert mock_file.parent.mkdir.called
         finally:
             state.cleanup()

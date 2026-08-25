@@ -4,6 +4,7 @@ from __future__ import annotations
 from mcubridge.config import settings
 
 from typing import Any
+import logging
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -37,20 +38,25 @@ def test_hexdump_processor_bytes() -> None:
 
 def test_configure_logging_debug_and_console() -> None:
     configure_logging(debug=True, console=True)
+    assert logging.getLogger().level == logging.DEBUG
     configure_logging(debug=False, console=False)
+    assert logging.getLogger().level == logging.INFO
 
 
 def test_configure_logging_env_debug() -> None:
     with patch.dict("os.environ", {"MCUBRIDGE_DEBUG": "1"}):
         configure_logging()
+        assert logging.getLogger().level == logging.DEBUG
     with patch.dict("os.environ", {"MCUBRIDGE_DEBUG": "0"}):
         configure_logging()
+        assert logging.getLogger().level == logging.INFO
 
 
 def test_configure_logging_stream_override() -> None:
     cfg = pb.RuntimeConfig(debug=True)
     with patch.dict("os.environ", {"MCUBRIDGE_LOG_STREAM": "1"}):
         configure_logging(cfg)
+        assert logging.getLogger().level == logging.DEBUG
 
 
 def test_configure_logging_syslog_paths() -> None:
@@ -60,8 +66,9 @@ def test_configure_logging_syslog_paths() -> None:
         with patch("pathlib.Path.exists", side_effect=lambda: True):
             mock_handler = MagicMock()
             mock_handler.level = 0
-            with patch("logging.handlers.SysLogHandler", return_value=mock_handler):
+            with patch("mcubridge.config.logging.SysLogHandler", return_value=mock_handler) as mock_syslog:
                 configure_logging(cfg)
+                assert mock_syslog.called
 
     # /var/run/log
     def exists_var_run(self_path: Any) -> bool:
@@ -71,13 +78,15 @@ def test_configure_logging_syslog_paths() -> None:
         with patch("pathlib.Path.exists", exists_var_run):
             mock_handler = MagicMock()
             mock_handler.level = 0
-            with patch("logging.handlers.SysLogHandler", return_value=mock_handler):
+            with patch("mcubridge.config.logging.SysLogHandler", return_value=mock_handler) as mock_syslog:
                 configure_logging()
+                assert mock_syslog.called
 
     # No syslog
     with patch.dict("os.environ", {}, clear=True):
         with patch("pathlib.Path.exists", return_value=False):
             configure_logging()
+            assert any(isinstance(h, logging.StreamHandler) for h in logging.getLogger().handlers)
 
 
 # =============================================================================

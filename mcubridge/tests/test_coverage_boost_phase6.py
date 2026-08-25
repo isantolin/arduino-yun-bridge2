@@ -134,8 +134,9 @@ def test_logging_discover_syslog_var_run_branch(test_config: RuntimeConfig) -> N
 
     with patch.dict("os.environ", {}, clear=True):
         with patch.object(Path, "exists", _mock_exists):
-            with patch("logging.handlers.SysLogHandler"):
+            with patch("mcubridge.config.logging.SysLogHandler") as mock_syslog:
                 configure_logging(test_config)
+                assert mock_syslog.called
 
 
 # ==========================================
@@ -203,6 +204,7 @@ async def test_serial_transport_methods_with_none_serial(test_config: RuntimeCon
 
     # 4. stop() when serial is None
     await transport.stop()
+    assert transport._stop_event.is_set()
 
     # 5. _check_baudrate_fallback when baud == safe_baud
     test_config.serial_baud = test_config.serial_safe_baud
@@ -295,11 +297,17 @@ async def test_runtime_handle_mcu_frame_branches(test_config: RuntimeConfig, moc
     # 1. serial is None
     svc.serial = None
     await svc.handle_mcu_frame(Command.CMD_GET_VERSION.value, 1, b"")
+    assert not serial.send.called
 
     # 2. unhandled command with known response_to_request mapping
     svc.serial = serial
     mock_state.mark_synchronized()
-    await svc.handle_mcu_frame(Command.CMD_GET_VERSION.value, 1, pb.VersionResponse().SerializeToString())
+    await svc.handle_mcu_frame(Command.CMD_GET_VERSION_RESP.value, 1, pb.VersionResponse().SerializeToString())
+    assert not serial.send.called
+
+    # 3. Unknown command without response mapping
+    await svc.handle_mcu_frame(9999, 1, b"")
+    assert serial.send.called
 
 
 @pytest.mark.asyncio
@@ -311,6 +319,7 @@ async def test_runtime_handle_request_route_none_and_inbound_props(
 
     # 1. Route is None (topic not matching prefix)
     await svc.handle_request(pb.CloudQueuedPublish(topic_name="unmatched/topic", payload=b""))
+    assert not serial.send.called
 
     # 2. Inbound object with properties containing ResponseTopic and CorrelationData
     class InboundProps:
@@ -323,6 +332,7 @@ async def test_runtime_handle_request_route_none_and_inbound_props(
         payload = b"testpayload"
 
     await svc.handle_request(InboundObj())
+    assert not serial.send.called
 
 
 @pytest.mark.asyncio
@@ -330,6 +340,7 @@ async def test_runtime_handle_console_empty_payload(test_config: RuntimeConfig, 
     serial = AsyncMock(spec=SerialTransport)
     svc = BridgeService(test_config, mock_state, serial)
     await svc._handle_console(pb.CloudQueuedPublish(topic_name="bridge/console", payload=b""))
+    assert not serial.send.called
 
 
 @pytest.mark.asyncio
@@ -342,16 +353,19 @@ async def test_runtime_handle_datastore_branches(test_config: RuntimeConfig, moc
         raw="", prefix="bridge", topic=Topic.DATASTORE, segments=(DatastoreAction.PUT.value, "mykey")
     )
     await svc._handle_datastore(route_put, pb.CloudQueuedPublish(payload=b"x" * 600))
+    assert not serial.send.called
 
     # 2. GET cache miss without "request" suffix in remainder
     route_get = TopicRoute(
         raw="", prefix="bridge", topic=Topic.DATASTORE, segments=(DatastoreAction.GET.value, "missingkey")
     )
     await svc._handle_datastore(route_get, pb.CloudQueuedPublish(payload=b""))
+    assert not serial.send.called
 
     # 3. Unknown identifier
     route_unknown = TopicRoute(raw="", prefix="bridge", topic=Topic.DATASTORE, segments=("unknown_act", "key"))
     await svc._handle_datastore(route_unknown, pb.CloudQueuedPublish(payload=b""))
+    assert not serial.send.called
 
 
 @pytest.mark.asyncio
@@ -360,6 +374,7 @@ async def test_runtime_handle_mailbox_unknown_identifier(test_config: RuntimeCon
     svc = BridgeService(test_config, mock_state, serial)
     route = TopicRoute(raw="", prefix="bridge", topic=Topic.MAILBOX, segments=("unknown",))
     await svc._handle_mailbox(route, pb.CloudQueuedPublish(payload=b"test"))
+    assert not serial.send.called
 
 
 @pytest.mark.asyncio
@@ -376,6 +391,7 @@ async def test_runtime_handle_file_unhandled_action_and_failed_writes(
     # 2. MCU write send fails
     serial.send = AsyncMock(return_value=False)
     await svc._handle_file_mcu_write("mcu/test.txt", pb.CloudQueuedPublish(payload=b"data"))
+    assert serial.send.called
 
     # 3. MCU remove with serial=None
     svc.serial = None
@@ -396,6 +412,7 @@ async def test_runtime_handle_file_unhandled_action_and_failed_writes(
     await svc._handle_file_local_read(
         real_file, "real.txt", pb.CloudQueuedPublish(topic_name="bridge/file/read/response")
     )
+    assert real_file.exists()
 
 
 @pytest.mark.asyncio
@@ -406,6 +423,7 @@ async def test_runtime_handle_shell_branches(test_config: RuntimeConfig, mock_st
     # 1. Unregistered shell action
     route_unregistered = TopicRoute(raw="", prefix="bridge", topic=Topic.SHELL, segments=("unknown_act",))
     await svc._handle_shell(route_unregistered, pb.CloudQueuedPublish(payload=b""))
+    assert not serial.send.called
 
     # 2. run_async with protobuf payload bytes starting with \x0a
     proto_cmd = pb.ProcessRunAsync(command="echo hello").SerializeToString()
@@ -416,6 +434,7 @@ async def test_runtime_handle_shell_branches(test_config: RuntimeConfig, mock_st
 
     # 3. kill with unknown pid
     await svc._handle_shell_kill(99999, pb.CloudQueuedPublish(payload=b""))
+    assert 99999 not in svc.state.running_processes
 
 
 @pytest.mark.asyncio
@@ -426,10 +445,12 @@ async def test_runtime_handle_spi_and_pin_branches(test_config: RuntimeConfig, m
     # 1. SPI transfer with empty payload
     route_spi_xfer = TopicRoute(raw="", prefix="bridge", topic=Topic.SPI, segments=(SpiAction.TRANSFER.value,))
     await svc._handle_spi(route_spi_xfer, pb.CloudQueuedPublish(payload=b""))
+    assert not serial.send.called
 
     # 2. Pin handler with unknown action in segments[1]
     route_pin = TopicRoute(raw="", prefix="bridge", topic=Topic.DIGITAL, segments=("13", "unknown_action"))
     await svc._handle_pin(route_pin, pb.CloudQueuedPublish(payload=b"1"))
+    assert not serial.send.called
 
 
 @pytest.mark.asyncio
@@ -442,6 +463,7 @@ async def test_runtime_handle_system_free_memory_non_bytes(
 
     route = TopicRoute(raw="", prefix="bridge", topic=Topic.SYSTEM, segments=(SystemAction.FREE_MEMORY.value, "get"))
     await svc._handle_system(route, pb.CloudQueuedPublish(payload=b""))
+    assert serial.send.called
 
 
 @pytest.mark.asyncio
@@ -462,6 +484,7 @@ async def test_runtime_monitor_process_none_ctx(test_config: RuntimeConfig, mock
     svc = BridgeService(test_config, mock_state, serial)
     # Monitor non-existent process
     await svc._monitor_process(99999)
+    assert 99999 not in svc.state.running_processes
 
 
 @pytest.mark.asyncio
@@ -506,6 +529,7 @@ async def test_runtime_cloud_session_non_command_envelope(test_config: RuntimeCo
             with patch.object(svc, "flush_cloud_spool", new_callable=AsyncMock):
                 with patch.object(svc, "_send_cloud_event", new_callable=AsyncMock):
                     await svc.connect_cloud_session(None)
+                    assert svc._cloud_incoming_queue.empty()
 
 
 # ==========================================
@@ -632,6 +656,7 @@ async def test_runtime_flush_cloud_spool_corrupt_and_errors(
     mock_spool.vacuum = AsyncMock(side_effect=OSError("Vacuum disk fail"))
     svc._cloud_spool = mock_spool
     await svc._flush_cloud_spool_locked()
+    assert mock_spool.vacuum.called
 
 
 @pytest.mark.asyncio
@@ -639,12 +664,15 @@ async def test_runtime_handle_mcu_status_unusual_payloads(test_config: RuntimeCo
     serial = AsyncMock(spec=SerialTransport)
     svc = BridgeService(test_config, mock_state, serial)
 
-    # 1. Non-bytes, non-protobuf payload
-    await svc._handle_mcu_status(Status.TIMEOUT, 1, cast(Any, 12345))
+    with patch.object(svc, "enqueue_cloud", new_callable=AsyncMock) as mock_enqueue:
+        # 1. Non-bytes, non-protobuf payload
+        await svc._handle_mcu_status(Status.TIMEOUT, 1, cast(Any, 12345))
+        assert mock_enqueue.call_count == 1
 
-    # 2. Non-utf8 binary bytes falling back to hex representation
-    non_utf8 = b"\xff\xfe\xfd\x80"
-    await svc._handle_mcu_status(Status.CRC_MISMATCH, 2, non_utf8)
+        # 2. Non-utf8 binary bytes falling back to hex representation
+        non_utf8 = b"\xff\xfe\xfd\x80"
+        await svc._handle_mcu_status(Status.CRC_MISMATCH, 2, non_utf8)
+        assert mock_enqueue.call_count == 2
 
 
 @pytest.mark.asyncio
@@ -678,12 +706,14 @@ async def test_runtime_handle_mailbox_edge_branches(test_config: RuntimeConfig, 
     svc.serial = None
     route = TopicRoute(raw="", prefix="bridge", topic=Topic.MAILBOX, segments=("write",))
     await svc._handle_mailbox(route, pb.CloudQueuedPublish(payload=b"hi"))
+    assert not serial.send.called
 
     # Read with empty incoming queue
     svc.serial = serial
     await mock_state.mailbox_incoming_queue.clear()
     route_read = TopicRoute(raw="", prefix="bridge", topic=Topic.MAILBOX, segments=("read",))
     await svc._handle_mailbox(route_read, pb.CloudQueuedPublish(payload=b""))
+    assert not serial.send.called
 
 
 @pytest.mark.asyncio
@@ -697,20 +727,24 @@ async def test_runtime_handle_file_and_shell_edge_branches(
     svc.serial = None
     route_file = TopicRoute(raw="", prefix="bridge", topic=Topic.FILE, segments=("read", "test.txt"))
     await svc._handle_file(route_file, pb.CloudQueuedPublish(payload=b""))
+    assert not serial.send.called
 
     # File with empty remainder
     svc.serial = serial
     route_no_rem = TopicRoute(raw="", prefix="bridge", topic=Topic.FILE, segments=())
     await svc._handle_file(route_no_rem, pb.CloudQueuedPublish(payload=b""))
+    assert not serial.send.called
 
     # File safe path returning None for unsafe target
     route_unsafe = TopicRoute(raw="", prefix="bridge", topic=Topic.FILE, segments=("read", "../../../etc/shadow"))
     with patch.object(svc, "_get_safe_path", return_value=None):
         await svc._handle_file(route_unsafe, pb.CloudQueuedPublish(payload=b""))
+        assert not serial.send.called
 
     # Shell with empty segments
     route_shell_empty = TopicRoute(raw="", prefix="bridge", topic=Topic.SHELL, segments=())
     await svc._handle_shell(route_shell_empty, pb.CloudQueuedPublish(payload=b""))
+    assert not serial.send.called
 
     # Shell run_async with inbound properties ContentType
     class Props:
@@ -720,14 +754,16 @@ async def test_runtime_handle_file_and_shell_edge_branches(
         payload = pb.ProcessRunAsync(command="echo prop").SerializeToString()
         properties = Props()
 
-    with patch.object(svc, "_run_process", new_callable=AsyncMock, return_value=123):
+    with patch.object(svc, "_run_process", new_callable=AsyncMock, return_value=123) as mock_rp:
         await svc._handle_shell_run_async(0, cast(Any, InboundWithProps()))
+        assert mock_rp.called
 
     # Shell kill raising ProcessLookupError
     mock_ctx = ProcessContext(AsyncMock())
     mock_state.running_processes[777] = mock_ctx
     with patch.object(svc, "_terminate_process", side_effect=ProcessLookupError("No such process")):
         await svc._handle_shell_kill(777, pb.CloudQueuedPublish(payload=b""))
+        assert 777 not in mock_state.running_processes
 
 
 @pytest.mark.asyncio
@@ -739,29 +775,36 @@ async def test_runtime_handle_spi_and_pin_edge_branches(test_config: RuntimeConf
     svc.serial = None
     route_spi = TopicRoute(raw="", prefix="bridge", topic=Topic.SPI, segments=("begin",))
     await svc._handle_spi(route_spi, pb.CloudQueuedPublish(payload=b""))
+    assert not serial.send.called
 
     # SPI config with invalid protobuf
     svc.serial = serial
     route_spi_cfg = TopicRoute(raw="", prefix="bridge", topic=Topic.SPI, segments=("config",))
     await svc._handle_spi(route_spi_cfg, pb.CloudQueuedPublish(payload=b"not-proto"))
+    assert not serial.send.called
 
     # SPI transfer with non-bytes response
     serial.send.return_value = False
     route_spi_xfer = TopicRoute(raw="", prefix="bridge", topic=Topic.SPI, segments=("transfer",))
     await svc._handle_spi(route_spi_xfer, pb.CloudQueuedPublish(payload=b"data"))
+    assert serial.send.called
 
     # Pin with serial=None
+    serial.send.reset_mock()
     svc.serial = None
     route_pin = TopicRoute(raw="", prefix="bridge", topic=Topic.DIGITAL, segments=("13", "write"))
     await svc._handle_pin(route_pin, pb.CloudQueuedPublish(payload=b"1"))
+    assert not serial.send.called
 
     # Pin with invalid segments (< 2 segments or non-digit pin)
     svc.serial = serial
     route_pin_invalid = TopicRoute(raw="", prefix="bridge", topic=Topic.DIGITAL, segments=("invalid_pin", "write"))
     await svc._handle_pin(route_pin_invalid, pb.CloudQueuedPublish(payload=b"1"))
+    assert not serial.send.called
 
     route_pin_short = TopicRoute(raw="", prefix="bridge", topic=Topic.DIGITAL, segments=("13",))
     await svc._handle_pin(route_pin_short, pb.CloudQueuedPublish(payload=b"1"))
+    assert serial.send.called
 
 
 @pytest.mark.asyncio
@@ -1053,11 +1096,13 @@ def test_daemon_shared_secret_none_and_app_main() -> None:
 
 def test_logging_no_syslog_available(test_config: RuntimeConfig) -> None:
     import os
+    import logging
     from mcubridge.config.logging import configure_logging
 
     with patch.dict(os.environ, {}, clear=True):
         with patch("pathlib.Path.exists", return_value=False):
             configure_logging(test_config)
+            assert any(isinstance(h, logging.StreamHandler) for h in logging.getLogger().handlers)
 
 
 def test_settings_raw_config_edge_branches() -> None:
@@ -1092,8 +1137,9 @@ def test_watchdog_kick_state_none() -> None:
 
     wd = WatchdogKeepalive(interval=10.0, state=None)
     wd._token = b"W"
-    with patch.object(wd, "_write"):
+    with patch.object(wd, "_write") as mock_write:
         wd.kick()
+        assert mock_write.called
 
 
 def test_protocol_frame_unrecognized_protobuf_descriptor() -> None:
@@ -1342,23 +1388,29 @@ async def test_runtime_system_and_pin_edge_branches(test_config: RuntimeConfig, 
     svc.serial = None
     route_sys = TopicRoute(raw="", prefix="bridge", topic=Topic.SYSTEM, segments=("version", "get"))
     await svc._handle_system(route_sys, pb.CloudQueuedPublish())
+    assert not serial.send.called
 
     # 2. _handle_system with unknown action
     svc.serial = serial
     route_sys_unknown = TopicRoute(raw="", prefix="bridge", topic=Topic.SYSTEM, segments=("unknown_sys_action",))
     await svc._handle_system(route_sys_unknown, pb.CloudQueuedPublish())
+    assert not serial.send.called
 
     # 3. _handle_spi with unknown identifier
     route_spi_unknown = TopicRoute(raw="", prefix="bridge", topic=Topic.SPI, segments=("unknown_spi_action",))
     await svc._handle_spi(route_spi_unknown, pb.CloudQueuedPublish())
+    assert not serial.send.called
 
     # 4. _handle_pin mode set
     route_pin_mode = TopicRoute(raw="", prefix="bridge", topic=Topic.DIGITAL, segments=("13", PinAction.MODE.value))
     await svc._handle_pin(route_pin_mode, pb.CloudQueuedPublish(payload=b"1"))
+    assert serial.send.called
 
     # 5. _handle_pin analog write
+    serial.send.reset_mock()
     route_pin_aw = TopicRoute(raw="", prefix="bridge", topic=Topic.ANALOG, segments=("3",))
     await svc._handle_pin(route_pin_aw, pb.CloudQueuedPublish(payload=b"128"))
+    assert serial.send.called
 
 
 @pytest.mark.asyncio
@@ -1367,6 +1419,7 @@ async def test_runtime_inbound_unhandled_topic(test_config: RuntimeConfig, mock_
     svc = BridgeService(test_config, mock_state, serial)
     req = pb.CloudQueuedPublish(topic_name="bridge/status/unhandled", payload=b"test")
     await svc.handle_request(req)
+    assert not serial.send.called
 
 
 @pytest.mark.asyncio
@@ -1386,9 +1439,11 @@ async def test_runtime_shell_properties_content_type(test_config: RuntimeConfig,
     async def _mock_enq(_msg: Any, **_kwargs: Any) -> bool:
         return True
 
-    with patch.object(svc, "_run_process", side_effect=_mock_run_p):
-        with patch.object(svc, "enqueue_cloud", side_effect=_mock_enq):
+    with patch.object(svc, "_run_process", side_effect=_mock_run_p) as mock_rp:
+        with patch.object(svc, "enqueue_cloud", side_effect=_mock_enq) as mock_eq:
             await svc._handle_shell_run_async(0, inbound)
+            assert mock_rp.called
+            assert mock_eq.called
 
 
 @pytest.mark.asyncio

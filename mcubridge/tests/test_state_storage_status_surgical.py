@@ -69,8 +69,8 @@ def test_write_status_file_handles_oserror() -> None:
     status_msg = MagicMock()
     with patch("mcubridge.state.status.STATUS_FILE") as mock_file:
         mock_file.parent.mkdir.side_effect = OSError("Access denied")
-        # Should catch OSError and log error without raising
         _write_status_file(status_msg)
+        assert mock_file.parent.mkdir.called
 
 
 # ---------------------------------------------------------------------------

@@ -60,8 +60,8 @@ async def test_toggle_dtr_exception_handled(mock_config: RuntimeConfig, mock_sta
     mock_serial.set_modem_pins.side_effect = serialx.SerialException("DTR failed")
     transport.serial = mock_serial
 
-    # Should not raise exception
     await transport._toggle_dtr()
+    assert mock_serial.set_modem_pins.called
 
 
 @pytest.mark.asyncio
@@ -85,6 +85,7 @@ async def test_read_loop_generic_exception(mock_config: RuntimeConfig, mock_stat
     mock_serial.readuntil.side_effect = OSError("Read hardware error")
 
     await transport._read_loop(mock_serial)
+    assert mock_serial.readuntil.called
 
 
 @pytest.mark.asyncio
@@ -130,7 +131,7 @@ async def test_correlate_frame_ack_with_invalid_bytes(mock_config: RuntimeConfig
 
     # Corrupted ACK payload (invalid protobuf bytes)
     transport._correlate_frame(Status.ACK.value, b"\xff\xff\xff\xff")
-    # Should not raise exception
+    assert pending.mark_success.call_count == 0
 
 
 @pytest.mark.asyncio

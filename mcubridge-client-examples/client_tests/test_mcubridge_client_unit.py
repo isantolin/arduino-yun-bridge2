@@ -29,6 +29,7 @@ def test_cli_configure_logging() -> None:
     """configure_logging sets up basic logging without raising exceptions."""
     configure_logging()
     structlog.get_logger("test").info("logging configured")
+    assert structlog.is_configured()
 
 
 @pytest.mark.asyncio

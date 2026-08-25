@@ -102,12 +102,14 @@ async def test_serial_transport_toggle_dtr(tmp_path: Path) -> None:
 async def test_serial_transport_baudrate_fallback(tmp_path: Path) -> None:
     transport, state, _ = _make_transport(tmp_path)
 
+    transport._consecutive_crc_errors = 1
+    await transport._check_baudrate_fallback()
+    assert transport._consecutive_crc_errors == 2
+
+    # Trigger threshold (threshold = 3)
     transport._consecutive_crc_errors = 2
     await transport._check_baudrate_fallback()
-
-    # Trigger threshold
-    transport._consecutive_crc_errors = 3
-    await transport._check_baudrate_fallback()
+    assert transport._consecutive_crc_errors == 0
 
     state.cleanup()
 

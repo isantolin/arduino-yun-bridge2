@@ -105,7 +105,9 @@ def test_main_keyboard_interrupt() -> None:
     """Verify app handles KeyboardInterrupt gracefully."""
     with patch("mcubridge.daemon.verify_crypto_integrity", return_value=True):
         with patch("mcubridge.daemon.load_runtime_config", side_effect=KeyboardInterrupt):
-            app([])
+            with patch("mcubridge.daemon.logger.info") as mock_log:
+                app([])
+                assert mock_log.called
 
 
 def test_main_value_error() -> None:

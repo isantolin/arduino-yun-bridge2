@@ -176,12 +176,14 @@ async def test_flush_cloud_spool_corrupt_and_index_error(test_config: RuntimeCon
     mock_spool.popleft = AsyncMock()
     mock_spool.vacuum = AsyncMock()
     await svc._flush_cloud_spool_locked()
+    assert mock_spool.peek.called
 
     # Case 3: spool.peek returns corrupt data and popleft raises OSError
     mock_spool.__len__.side_effect = [1, 1, 0, 0]
     mock_spool.peek = AsyncMock(return_value=b"not-a-valid-protobuf")
     mock_spool.popleft = AsyncMock(side_effect=OSError("Disk failure"))
     await svc._flush_cloud_spool_locked()
+    assert mock_spool.popleft.called
 
     # Case 4: spool.popleft raises IndexError after publish
     valid_msg = pb.CloudQueuedPublish(topic_name="br/test", payload=b"ok")
@@ -190,6 +192,7 @@ async def test_flush_cloud_spool_corrupt_and_index_error(test_config: RuntimeCon
     mock_spool.popleft = AsyncMock(side_effect=IndexError("popped early"))
     with patch.object(svc, "_publish_cloud_message", new_callable=AsyncMock, return_value=True):
         await svc._flush_cloud_spool_locked()
+        assert mock_spool.peek.called
 
 
 class _MockCloudStream:
@@ -275,6 +278,7 @@ async def test_emit_bridge_snapshot_attribute_error(mock_state: RuntimeState) ->
     enqueue = AsyncMock()
     with patch.object(mock_state, "build_bridge_snapshot", side_effect=AttributeError("Missing attr")):
         await _emit_bridge_snapshot(mock_state, enqueue, flavor="summary")
+        assert enqueue.call_count == 0
 
 
 @pytest.mark.asyncio
@@ -339,6 +343,7 @@ async def test_serial_transport_toggle_dtr_error(test_config: RuntimeConfig, moc
     mock_serial.set_modem_pins.side_effect = OSError("I/O error")
     transport.serial = mock_serial
     await transport._toggle_dtr()
+    assert mock_serial.set_modem_pins.called
 
 
 def test_serial_transport_switch_local_baudrate_error(test_config: RuntimeConfig, mock_state: RuntimeState) -> None:
@@ -674,6 +679,7 @@ async def test_runtime_handle_process_kill_paths(test_config: RuntimeConfig, moc
 
     # Case 1: Process not found in running_processes
     await svc._handle_shell_kill(99999, kill_req)
+    assert 99999 not in svc.state.running_processes
 
     # Case 2: Process found and terminated with error
     mock_handle = AsyncMock()
@@ -685,15 +691,19 @@ async def test_runtime_handle_process_kill_paths(test_config: RuntimeConfig, moc
 
     with patch.object(svc, "_terminate_process", side_effect=ProcessLookupError("Term failed")):
         await svc._handle_shell_kill(88888, kill_req)
+        assert 88888 not in svc.state.running_processes
 
     # Case 3: _on_mcu_process_kill
+    svc.state.running_processes[88888] = ProcessContext(mock_handle)
     await svc._on_mcu_process_kill(10, pb.ProcessKill(pid=88888))
+    assert 88888 not in svc.state.running_processes
 
 
 @pytest.mark.asyncio
 async def test_runtime_on_mcu_file_and_datastore_handlers(
     test_config: RuntimeConfig, mock_state: RuntimeState, tmp_path: Path
 ) -> None:
+    test_config.file_system_root = str(tmp_path)
     serial = AsyncMock(spec=SerialTransport)
     serial.send.return_value = True
     svc = BridgeService(test_config, mock_state, serial)
@@ -704,6 +714,7 @@ async def test_runtime_on_mcu_file_and_datastore_handlers(
     test_file.write_bytes(b"hello world")
     read_req = pb.FileRead(path="read_target.txt")
     await svc._on_mcu_file_read(1, read_req)
+    assert serial.send.called
 
     # File Write with quota failure
     write_req = pb.FileWrite(path="write_target.txt", data=b"data")
@@ -712,9 +723,12 @@ async def test_runtime_on_mcu_file_and_datastore_handlers(
 
     # File Remove
     await svc._on_mcu_file_remove(3, pb.FileRemove(path="read_target.txt"))
+    assert not test_file.exists()
 
     # Datastore Get / Put
     await svc._on_mcu_datastore_put(4, pb.DatastorePut(key="mykey", value=b"myval"))
+    assert mock_state.datastore_cache is not None
+    assert await mock_state.datastore_cache.get("mykey") == b"myval"
     await svc._on_mcu_datastore_get(5, pb.DatastoreGet(key="mykey"))
 
 
@@ -1219,6 +1233,7 @@ async def test_runtime_cloud_incoming_worker_error_logged(test_config: RuntimeCo
         await asyncio.sleep(0.05)
         worker_task.cancel()
         await worker_task
+        assert svc._cloud_incoming_queue.empty()
 
 
 @pytest.mark.asyncio
@@ -1315,6 +1330,7 @@ def test_serial_correlate_frame_debug_and_corrupt_ack_payload(
 
     # 1. Pending is None
     transport._correlate_frame(Status.ACK.value, b"")
+    assert transport._current is None
 
     # 2. Pending already resolved
     transport._current = PendingCommand(
@@ -1323,6 +1339,7 @@ def test_serial_correlate_frame_debug_and_corrupt_ack_payload(
         success=True,
     )
     transport._correlate_frame(Status.ACK.value, b"")
+    assert transport._current.success is True
 
     # 3. Pending with corrupted Protobuf ACK payload
     transport._current = PendingCommand(
@@ -1330,6 +1347,7 @@ def test_serial_correlate_frame_debug_and_corrupt_ack_payload(
         expected_resp_ids=[],
     )
     transport._correlate_frame(Status.ACK.value, b"\xff\xff\xff\xff")
+    assert transport._current.success is True
 
 
 def test_structures_build_ssl_context_with_real_ca_and_resolve_properties(tmp_path: Path) -> None:

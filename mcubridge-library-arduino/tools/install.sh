@@ -144,7 +144,7 @@ ETL_VERSION="20.48.1"
 WOLFSSL_VERSION="v5.9.2-stable"
 PACKETSERIAL_REF="heads/master"
 UNITY_VERSION="v2.7.0"
-NANOPB_VERSION="0.4.9.1"
+NANOPB_VERSION="0.4.9.2"
 # --- [AUTO-GENERATED C++ DEPENDENCIES END] ---
 
 # 1. Official Dependencies (Library Manager)

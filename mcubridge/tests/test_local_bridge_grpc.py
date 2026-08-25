@@ -357,7 +357,7 @@ async def test_local_bridge_edge_branches(tmp_path: Path) -> None:
     await local_svc.FileRemove(stream)
     assert stream.send_message.call_args[0][0].status == "error"
 
-    # File operations on path traversal (escapes root via ../) 
+    # File operations on path traversal (escapes root via ../)
     stream = _make_mock_stream(pb.FileWrite(path="../../etc/shadow", data=b"bad"))
     await local_svc.FileWrite(stream)
     assert stream.send_message.call_args[0][0].status == "error"
@@ -421,11 +421,13 @@ async def test_local_bridge_publish_and_console(tmp_path: Path) -> None:
 
     # 2. Publish query with correlation (simulate immediate reply)
     service.handle_request = AsyncMock()
-    stream = _make_mock_stream(pb.CloudQueuedPublish(
-        topic_name="br/d/13/get",
-        correlation_data=b"test_corr_12",
-    ))
-    
+    stream = _make_mock_stream(
+        pb.CloudQueuedPublish(
+            topic_name="br/d/13/get",
+            correlation_data=b"test_corr_12",
+        )
+    )
+
     async def _fulfill():
         await asyncio.sleep(0.01)
         queue = service.ipc_requests.get(b"test_corr_12")

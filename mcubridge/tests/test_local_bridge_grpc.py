@@ -399,8 +399,6 @@ async def test_local_bridge_edge_branches(tmp_path: Path) -> None:
     # ProcessKill exception branch
     service.state.running_processes[8888] = ProcessContext(
         handle=MagicMock(),
-        command="sleep 10",
-        started_at=0.0,
     )
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(service, "terminate_process", AsyncMock(side_effect=OSError("Kill failed")))
@@ -422,6 +420,7 @@ async def test_local_bridge_publish_and_console(tmp_path: Path) -> None:
     assert sent.topic_name == ""
 
     # 2. Publish query with correlation (simulate immediate reply)
+    service.handle_request = AsyncMock()
     stream = _make_mock_stream(pb.CloudQueuedPublish(
         topic_name="br/d/13/get",
         correlation_data=b"test_corr_12",

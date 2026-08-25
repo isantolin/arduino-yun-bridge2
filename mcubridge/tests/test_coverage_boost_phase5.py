@@ -321,8 +321,7 @@ async def test_prometheus_exporter_unregister_keyerror(mock_state: RuntimeState)
         exporter._registry = MagicMock()
         exporter._registry.unregister.side_effect = KeyError("Not registered")
 
-        with patch("asyncio.get_running_loop") as mock_loop:
-            mock_loop.return_value.run_in_executor.side_effect = asyncio.CancelledError()
+        with patch("asyncio.to_thread", side_effect=asyncio.CancelledError()):
             with pytest.raises(asyncio.CancelledError):
                 await exporter.run()
         assert mock_srv.server_close.called

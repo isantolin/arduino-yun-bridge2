@@ -36,7 +36,7 @@ def get_topic_for_message(prefix: str, message: ProtobufMessage | type[ProtobufM
 # --- Service Specific Topics ---
 
 
-@functools.lru_cache(maxsize=32)
+@functools.cache
 def _get_prefix_segs(prefix: str) -> tuple[str, ...]:
     """Cache prefix segment splits. [SIL-2]"""
     return tuple(filter(None, prefix.split("/")))

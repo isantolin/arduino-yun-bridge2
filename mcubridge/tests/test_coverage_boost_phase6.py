@@ -1444,11 +1444,7 @@ async def test_metrics_prometheus_exporter_finally_branches(mock_state: RuntimeS
         mock_reg.unregister.side_effect = KeyError("not found")
         exp._registry = mock_reg
 
-        async def _mock_run_in_executor(*_args: Any, **_kwargs: Any) -> None:
-            raise asyncio.CancelledError()
-
-        with patch("asyncio.get_running_loop") as mock_loop:
-            mock_loop.return_value.run_in_executor = _mock_run_in_executor
+        with patch("asyncio.to_thread", side_effect=asyncio.CancelledError()):
             with pytest.raises(asyncio.CancelledError):
                 await exp.run()
 

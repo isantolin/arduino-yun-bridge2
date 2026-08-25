@@ -299,10 +299,9 @@ class PrometheusExporter:
         log.info("Prometheus exporter starting (official make_server)")
 
         try:
-            # We use an executor to run the blocking serve_forever()
+            # Run the blocking serve_forever() in a background thread
             # while maintaining the asyncio task alive for signal handling.
-            loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, self._server.serve_forever)
+            await asyncio.to_thread(self._server.serve_forever)
         except asyncio.CancelledError:
             log.info("Prometheus exporter shutdown requested.")
             raise

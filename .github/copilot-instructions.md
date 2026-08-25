@@ -1,140 +1,107 @@
-# Arduino MCU Bridge 2 — Copilot Instructions
+# GEMINI.md: Your AI Assistant's Guide to Arduino MCU Bridge 2 (SIL-2/MIL-SPEC)
 
-Arduino MCU Bridge 2 (v2.8.5) is a **SIL-2 / MIL-SPEC** communication system between Arduino MCUs and a Linux MPU (OpenWrt 25.12.5). It exposes Arduino peripherals over local IPC (UNIX domain sockets) and a Protobuf Cloud Gateway (gRPC) via a binary RPC protocol running over serial.
+This document provides a comprehensive overview of the Arduino MCU Bridge 2 project, optimized for AI agents following aerospace and medical engineering standards.
 
-## Build, Test, and Lint
+## Project Overview
 
-### Protocol codegen (must run before anything else)
+Arduino MCU Bridge 2 is a modern, high-performance communication system between Arduino-compatible microcontrollers (MCU) and Linux-based microprocessors (MPU). It adheres to **SIL-2** safety standards and **MIL-SPEC** (FIPS 140-3) integrity.
 
-```bash
-tox -e protocol
-# Regenerates:
-#   mcubridge/mcubridge/protocol/protocol.py
-#   mcubridge-library-arduino/src/protocol/rpc_protocol.h / rpc_structs.h
-#   mcubridge-client-examples/mcubridge_client/protocol.py
-```
+### Key Technologies & Standards
 
-### Python tests
+*   **Python:** Main daemon (3.13.9+), `asyncio` for high-concurrency with `uvloop` integration, Protobuf for all protocol-crossing structures, `cryptography` for AEAD, and protobuf bindings for payload serialization.
+*   **C++:** Arduino library (C++17), **Zero-Heap** (no STL, no `malloc`), `etl::fsm` for deterministic states, `wolfSSL` for AEAD, and Nanopb for de-bloated payload parsing (ChaCha20-Poly1305).
+*   **Safety (SIL-2):** Static allocation only, SRAM POST, stack sentinel monitoring, WCET runtime tracking, O(1) jump tables for dispatch, rigorous validation gates.
+*   **Cryptography (FIPS 140-3):** Mandatory boot-time Known-Answer Tests (KATs) for SHA-256, HMAC-SHA256, and ChaCha20-Poly1305 AEAD with non-weak linkage.
+*   **OpenWrt:** Target OS is **OpenWrt 25.12.5** (APK based).
+*   **Communication:** Custom binary RPC over serial (COBS/R + CRC32) + AEAD encryption + Protobuf Cloud Gateway (gRPC over HTTP/3 (QUIC) with HTTP/2 fallback support) for external cloud connectivity + Local IPC over UNIX Domain Sockets. Protocol validation uses O(1) `etl::find` logic.
 
-```bash
-tox -e py313                        # full suite (parallel, -n 5)
-python -m pytest mcubridge/tests/test_rpc_frame.py   # single file
-python -m pytest -k test_build_frame                 # single test
-```
+## Core Rules & Priorities
 
-### Lint / format / typecheck
+1.  **Mandatory Agent Delegation:** For *all* tasks, investigations, or modifications within this workspace, you MUST immediately invoke and delegate the work to the `@openwrt-architect-arduino` subagent. It is the principal architect and mission-critical auditor for this project.
+2.  **Top Architectural Priorities:** Priority 1: **Code Reduction**, Priority 2: **Library-First**.
+2.1. **Aggressive De-layering:** Prohibit Wrappers, Shims, Passthrough code (Pasamanos), and redundant manual implementations. Utilize 100% of implemented libraries (Standard or External) via direct calls to minimize manual code. Eradicate redundant layers regardless of refactoring size. Seek underutilized library features to replace raw values or manual logic.
+2.2. **Pre-Refactoring Diagnostic & Thoroughness:** Before any modification, provide a detailed report of findings including:
+    - **Wrappers/Shims & Redundancies:** Identified wrappers, shims, dead/abandoned code, redundant manual functions, and recommendations for new/existing libraries to substitute manual code.
+    - **Quantitative Uncovered Branch Inventory (MC/DC Awareness):** Tabulate all residual uncovered branches with file, line, logical expression, and safety justification.
+    - **Resource Delta Balance:** Report exact SRAM headroom, Flash ROM byte deltas via `arduino_symbol_profiler.py`, and WCET bounds.
+    - **Multi-Layer Dependency Parity:** Explicitly distinguish Upstream VCS Tag vs Package Registry availability (PyPI/APK) vs Toolchain/ABI compatibility.
+    - **FMEA / HAZOP Safety Pre-Check:** Pre-evaluate fault resilience (framing drops, nonce exhaustion at $2^{64}-1$, safe-state transitions).
+    - **FSM Transition Matrix:** Verify completeness of state transitions ($S \times E \rightarrow S'$) to guarantee absence of deadlocks.
+2.3. **Protobuf First:** All new structural data intended to cross the serial boundary (MPU <-> MCU) MUST use Protobuf definitions in `mcubridge.proto`. Use of `msgspec` for protocol communication is strictly deprecated in favor of Protobuf-backed wrappers.
+3.  **C++ Wrapper Policy:** Allow ONLY template wrappers; non-template wrappers are strictly prohibited.
+4.  **Absolute Suppression Ban:** Suppressions of any kind are strictly prohibited; specifically, all warnings MUST be treated as errors, and "Pokemon" exceptions (catch-all) and silencing mechanisms such as errors="ignore" are forbidden, with the sole exception of autogenerated code, which may be suppressed. If any other suppressions are found in the codebase (Including "Pokemon" exceptions like try...except: pass or errors="ignore"), they must be removed immediately. Autogenerated files (e.g., protobuf/gRPC stubs) are strictly excluded from static verification checks (Pyright, Ruff).
+5.  **Production Integrity:** Strictly prohibit the inclusion of test code, mocks, test hooks, or test-only logic within production source files. All testing artifacts must reside exclusively in dedicated test directories.
+6.  **Direct Implementation Only:** Strictly prohibit legacy code, compatibility shims, or "workaround" logic maintained solely to keep existing tests passing. Implementation must be direct and clean, utilizing the latest standards. If existing tests fail due to direct implementation, those tests must be refactored to align with the new code, rather than compromising the production implementation for test compatibility.
+7.  **Declarative Dispatch & Protobuf Native Copying:** Prohibit manual `if-elif-else` chains for command routing or payload parsing; use `dict[Command, Callable]` dispatch tables or O(1) lookup arrays and `target.CopyFrom(source)` / `target.MergeFrom(source)` native Protobuf operations.
+8.  **Zero-Loop Imperative Rule (C++):** Strictly substitute 100% of manual `for`/`while` loops with STL-free `etl::` algorithms (`etl::find`, `etl::copy`, `etl::all_of`, `etl::equal`, `etl::transform`).
+9.  **Eradication of Passthrough Methods:** Prohibit passthrough/proxy wrapper methods whose sole purpose is delegating a call to an internal member without business logic. Access the member directly.
+10. **Structured Task Concurrency:** Manage async task lifecycles using `asyncio.TaskGroup()` or `@asynccontextmanager` context managers, eliminating manual `try-finally` task cancellation blocks.
+11. **Genuine Test Integrity & Zero-Cheat Coverage Gate:** All tests must genuinely exercise underlying business logic, state transitions, and error paths by asserting concrete return values, mutated state, or emitted protocol frames. "Cheating" mechanisms — including superficial line-hitting without state validation, empty test calls, dummy assertions (e.g., `assert True`), or mocking internal components to bypass execution — are strictly prohibited. Every test MUST verify the actual functional contract.
+12. **Line-by-Line Test & Log Audit:** Test execution outputs and full execution logs MUST be analyzed and audited line by line regardless of whether tests pass. Every notice, warning, unhandled trace, or implicit anomaly discovered must be treated as a test failure/error and resolved.
+13. **Continuous Test Hardening & Undetected Defect Remediation:** Whenever a defect, unhandled edge condition, or logic bug is discovered that was not caught by the existing test suite, the agent MUST immediately implement corresponding test cases and strict assertions to guarantee future automated detection and regression prevention before concluding the task.
+14. **Maximal Test Verbosity Rule:** ALL test runners, validation environments, and test harnesses across the entire ecosystem MUST ALWAYS execute with maximum verbosity (e.g. `pytest -vv`, detailed Unity/C++ runner outputs). Silent or compressed outputs that could conceal subtle anomalies are strictly prohibited.
+15. **Prohibition of Constant Redeclarations and Alias Shims:** Strictly prohibit redeclaring, aliasing, or creating local passthrough constants (e.g., `_CRC_SIZE: Final = protocol.CRC_SIZE`, `AEAD_NONCE_SIZE = protocol.AEAD_NONCE_SIZE`, `DEBUG = logging.DEBUG`, or C++ `inline constexpr size_t AEAD_NONCE_SIZE = rpc::RPC_AEAD_NONCE_SIZE;`). All constants MUST be referenced directly from their canonical single source of truth (`protocol.*` / `rpc::*` generated from `mcubridge.proto`, or standard library modules directly).
+16. **Modern Python Dialect Standard (Python 3.13+):** Proactively audit and eradicate obsolete, legacy, or pre-3.10 Python dialect idioms across all codebase files, type stubs, tests, and tools. Strictly enforce modern syntax: PEP 604 union pipe operators (`T | None`, `A | B`) instead of `typing.Union`/`typing.Optional`; PEP 585 standard collections for type hints (`list[T]`, `dict[K, V]`, `type[T]`, `tuple[...]`) instead of `typing.List`/`typing.Dict`/`typing.Tuple`/`typing.Type`; import abstract types (`Callable`, `Iterator`, `Iterable`, `Sequence`, `Mapping`) from `collections.abc` rather than `typing`; utilize `asyncio.to_thread` instead of `loop.run_in_executor`; use `pathlib.Path` and `posixpath` over `os.path`; and employ `enum.StrEnum` over `class Foo(str, Enum)`.
+17. **Mandatory Deterministic Post-Condition & State Assertions:** Every single test function or test case across Python and C++ MUST contain explicit, deterministic assertions validating mutated state, concrete return values, emitted protocol frames, expected exception types (`pytest.raises`), or logged security events (`logger.error`/`logger.warning`). Calling methods without asserting post-conditions ("fire-and-forget" or superficial line-hitting) is strictly prohibited. Tests must never mock the primary unit under test (SUT) or bypass core business logic to artificially inflate coverage percentages.
+18. **Continuous AST & Test Integrity Gate:** Before concluding any development, refactoring, or test enhancement task, the agent MUST verify via static/AST inspection that 100% of test functions possess substantive assertions or exception validations. Any test that merely executes code without validating post-conditions is non-compliant and must be hardened immediately.
 
-```bash
-tox -e lint        # black + ruff (auto-fix) + clang-format
-tox -e typecheck   # black + ruff + pyright strict
-```
+## SIL-2 Safety & FIPS 140-3 Cryptographic Subsystems
 
-### C++ static analysis
+1. **SRAM Power-On Self-Test (POST):**
+    - Non-destructive March tests execute at boot using alternating bit patterns (`0x55`, `0xAA`, `0x00`, `0xFF`) to verify memory cell integrity.
+2. **Stack Sentinel & Overflow Protection:**
+    - Boundary canary (`STACK_CANARY_VALUE = 0x55AA55AA`) and minimum headroom margin (`MIN_STACK_MARGIN_BYTES = 64`) monitoring to detect stack-heap collisions.
+    - Deterministic transition to `enterSafeState()` upon canary corruption.
+3. **Worst-Case Execution Time (WCET) Tracking:**
+    - Microsecond timing tracking via `micros()` records peak loop iteration time (`_wcet_max_micros`), ensuring deterministic task bounds under hardware watchdog thresholds (4s).
+4. **FIPS 140-3 Cryptographic Validation (KATs):**
+    - Known-Answer Tests executed at boot for SHA-256, HMAC-SHA256, and ChaCha20-Poly1305 AEAD.
+    - Strictly non-weak linkage (`[[weak]]` prohibited) ensuring cryptographic validation cannot be bypassed.
 
-```bash
-tox -e cppcheck    # cppcheck with --error-exitcode=1
-tox -e arduino     # host test binary via ci_arduino_host_tests.sh
-```
+## Resource Optimization (AVR/SIL-2)
 
-### Coverage
+1. **Mandatory Profiling:** Before any C++ modification, analyze the latest `Symbol Profiling` report from GitHub Actions or local tools (`arduino_symbol_profiler.py`). Identify Top Symbols by size.
+2. **RAM Minimization:**
+    - Strictly prohibit large static lookup tables in RAM.
+    - **CRC32:** Always use `etl::crc32_t16` or smaller for AVR targets to save ~1KB of RAM.
+3. **Flash De-bloating (Nanopb):**
+    - Prohibit direct template instantiations for repetitive payload parsing.
+    - Use non-template implementation helpers (e.g., `_parse_impl`) to consolidate logic and eliminate template bloat.
+4. **Infrastructure Simplicity:**
+    - Prohibit complex schedulers (`etl::scheduler`) or task abstractions (`etl::task`) for single-loop components. Use direct method calls in `process()` to minimize stack/Flash overhead.
+5. **Validation:** All optimizations must be verified via `cppcheck` and `arduino-examples` build to confirm zero impact on functionality and positive impact on resource margins.
 
-```bash
-tox -e coverage    # Python ≥95% + C++ ≥95%, runs in parallel
-```
 
-### OpenWrt package build / deploy
+## Development Conventions
 
-```bash
-./1_compile.sh     # builds APK
-./3_install.sh     # installs on target device
-```
-
-### Full validation (CI baseline)
-
-```bash
-tox                # envlist: py313, protocol, lint, typecheck, cppcheck, fuzz, gemini-parity
-```
-
-Every tox environment re-runs protocol codegen first (`commands_pre`). All warnings are treated as errors (`filterwarnings = error` in pytest, `--error-exitcode=1` in cppcheck).
-
-## Architecture
-
-```
-Serial (COBS/R + CRC32 + ChaCha20-Poly1305 AEAD)
-        │
-        ▼
-[Arduino MCU — C++17 library]          [Linux MPU — Python daemon]
- mcubridge-library-arduino/src/         mcubridge/mcubridge/
-   Bridge.h / Bridge.cpp                  daemon.py  ← main entry point
-   fsm/bridge_fsm.{h,cpp}                 services/runtime.py  ← BridgeService
-   protocol/rpc_frame.h                   transport/serial.py  ← SerialTransport
-   protocol/rpc_protocol.h  (generated)   protocol/frame.py    ← frame build/parse
-   protocol/rpc_structs.h   (generated)   protocol/protocol.py (generated)
-   security/security.{h,cpp}              security/security.py
-                                          services/handshake.py
-                                          state/context.py / storage.py
-                                          ▼
-                                       Protobuf Cloud Gateway (gRPC over HTTP/3 / HTTP/2) / UNIX Domain Sockets
-```
-
-**Single source of truth:** `tools/protocol/mcubridge.proto` — all constants, command IDs, and payload types are generated from this file into both Python and C++ via `tools/protocol/generate.py` (Jinja2 templates). **Never edit generated files directly.**
-
-**Daemon task tree** (`daemon.py → BridgeService → asyncio.TaskGroup`):
-- `serial-link` (SerialTransport) — reads/writes raw COBS frames
-- `cloud-gateway` — bidirectional gRPC stream
-- `status-writer`, `metrics-publisher`, `prometheus-exporter` (port 9130)
-- `watchdog` (optional procd integration)
-
-**Client library** (`mcubridge-client-examples/mcubridge_client/`) provides an async API for external consumers over Sockets UNIX / gRPC.
-
-**LuCI app** (`luci-app-mcubridge/`) is the OpenWrt web UI; client-side JS views live in `htdocs/luci-static/resources/view/mcubridge/`, validated by `tox -e luci`.
-
-## Key Conventions
-
-### Architectural Priorities
-1. **Code Reduction first**: aggressively eliminate boilerplate, wrappers, shims, dead/abandoned code, and redundant manual functions.
-2. **Library-First**: utilize 100% of implemented standard and external libraries directly rather than rolling manual implementations.
-
-### Protocol changes
-All new data crossing the serial boundary must be defined in `mcubridge.proto` first. Run `tox -e protocol` to regenerate. `msgspec` is deprecated for protocol types — use Protobuf only.
-
-### Python
-- **Zero-wrapper policy**: call library APIs directly (`grpclib`, `cryptography`, `cobs`, `structlog`). No passthrough classes.
-- **Modern Python 3.13+ Dialect**: Proactively audit and eradicate obsolete/legacy pre-3.10 Python dialect idioms. Enforce PEP 604 union syntax (`T | None`, `A | B`), PEP 585 standard collections for generics (`list[T]`, `dict[K, V]`, `type[T]`), import abstract types (`Callable`, `Iterator`, `Iterable`) from `collections.abc`, use `pathlib.Path`/`posixpath` over `os.path`, and `asyncio.to_thread` over `run_in_executor`.
-- **Strict typing**: `pyright` in strict mode. All mocks must use `unittest.mock.AsyncMock(spec=SomeInterface)` — no handwritten dummy classes.
-- **No bare `except`**: catch-all exceptions and `errors="ignore"` are forbidden (except in autogenerated files).
-- **No blocking calls** in async paths. `uvloop` is the event loop on target.
-- Tests live in `mcubridge/tests/` and `mcubridge-client-examples/client_tests/`. No test-only logic in production source.
+### Python (Linux MPU)
+*   **Direct Library Calls:** Zero-wrapper policy. Use libraries directly (e.g., direct `grpclib.client.Channel` for the async daemon's remote cloud link, and direct `asyncio.open_unix_connection` for local CGI scripts and CLI clients) instead of custom abstraction layers.
+*   **Modern Python 3.13+ Dialect:** Zero tolerance for legacy Python 2/3.8 dialect idioms. Enforce PEP 604 (`A | B`), PEP 585 (`collections.abc`, built-in generics), `pathlib.Path`, and modern `asyncio` constructs (`to_thread`, `TaskGroup`).
+*   **Strict Typing:** `pyright` in strict mode. All tests must use `unittest.mock.AsyncMock(spec=Interface)`.
+*   **No "Dummy" Classes:** Manual mock classes are prohibited in favor of standardized `AsyncMock`.
+*   **Async Patterns:** Mandatory `asyncio` usage; no blocking calls in the main event loop. `uvloop` is used on target for maximum throughput.
 
 ### C++ (Arduino MCU)
-- **Zero-heap**: no `new`, no `malloc`, no STL containers. Use `etl::array`, `etl::vector`, `etl::deque`, `etl::pool`.
-- **ETL-first**: any logic achievable with an `etl::` component must use it. Loops must be replaced with `etl::` algorithms/structures.
-- **Template wrappers only**: non-template wrapper classes are prohibited.
-- **FSM states** use `enum class StateId : uint8_t` with `etl::fsm`. States: `STARTUP → UNSYNCHRONIZED → HANDSHAKE → SYNCHRONIZED ⇄ AWAITING_ACK`, with `FAULT` as terminal.
-- **CRC**: use `etl::crc32_t16` (not a full 1KB table) for AVR targets.
-- **Nanopb** handles payload encoding/decoding — avoid direct template instantiations for repetitive parsing; use `_parse_impl` helpers.
-- **SIL-2 Safety Subsystems**:
-  - **SRAM POST**: Non-destructive March tests with alternating bit patterns (`0x55`, `0xAA`, `0x00`, `0xFF`) at boot.
-  - **Stack Sentinel**: Canary monitoring (`STACK_CANARY_VALUE = 0x55AA55AA`, `MIN_STACK_MARGIN_BYTES = 64`) to prevent stack-heap collisions, triggering `enterSafeState()` upon corruption.
-  - **WCET Tracking**: Runtime microsecond tracking (`micros()`) recording peak iteration time (`_wcet_max_micros`) bounded against hardware watchdog timeout.
-- **FIPS 140-3 Cryptographic Validation**:
-  - Boot-time Known-Answer Tests (KATs) for SHA-256, HMAC-SHA256, and ChaCha20-Poly1305 AEAD with strictly non-weak linkage.
-- Before any C++ modification, check the Symbol Profiling report (`tools/arduino_symbol_profiler.py`) for Flash/RAM impact.
+*   **Zero-Heap:** Strictly no dynamic memory allocation. All structures and buffers are statically sized using `etl::array`.
+*   **Strongly Typed FSM:** State logic implemented via `etl::fsm` using `enum class StateId : uint8_t` for mission-critical determinism and zero narrowing conversions.
+*   **O(1) Dispatch:** Protocol verification (`requires_ack`) uses `constexpr` arrays and `etl::find` for constant-time complexity.
+*   **Observer:** Components register as observers for system events (e.g., `on_frame`, `on_reset`).
+*   **ETL Component Replacement:** Any manual C++ code (including existing and newly written code) that performs a function that can be substituted by an `etl::` component must be considered and replaced.
+*   **Loop Replacement:** En C++ los bucles deben ser sustituidos por estructuras etl::.
 
-### Code quality gates
-- Suppressions of any kind are prohibited (no `# noqa`, no `// NOLINT`, no `errors="ignore"`) except in autogenerated files.
-- Declarative dispatch & Protobuf native copying: use `dict[Command, Callable]` dispatch tables and `CopyFrom()` / `MergeFrom()`.
-- Zero-loop imperative rule (C++): substitute manual `for`/`while` loops with `etl::` algorithms (`etl::find`, `etl::copy`, `etl::transform`).
-- Eradicate passthrough methods: access internal members directly if a wrapper method adds no business logic.
-- Managed task concurrency: manage async task lifecycles via `asyncio.TaskGroup` or context managers instead of manual `try-finally` cancellation blocks.
-- Genuine test integrity: tests must assert real component state/responses; superficial line-hitting without assertions or dummy mocks are strictly forbidden.
-- **Line-by-line test & log audit**: test execution outputs and full execution logs MUST be audited line by line regardless of whether tests pass. Treat every notice, warning, unhandled trace, or implicit anomaly as a critical failure.
-- **Continuous test hardening & defect remediation**: whenever a defect, unhandled edge condition, or logic bug is discovered that was not caught by the existing test suite, immediately implement corresponding test cases and strict assertions to guarantee future automated detection and regression prevention.
-- **Maximal test verbosity rule**: ALL test runners, validation environments, and test harnesses across the entire ecosystem MUST ALWAYS execute with maximum verbosity (e.g., `pytest -vv`, detailed Unity/C++ runner outputs). Compressed or silent output modes are strictly prohibited.
-- **Pre-Refactoring Diagnostic & Thoroughness**:
-  - Quantitative Uncovered Branch & MC/DC inventory.
-  - Exact SRAM/Flash delta balance & WCET bound report.
-  - Multi-layer dependency parity audit (Upstream VCS Tag vs Package Registry availability vs Toolchain/ABI).
-  - FMEA / HAZOP safety pre-check and formal FSM transition matrix verification.
-- If a test fails because of a correct implementation, fix the test — never compromise the implementation for test compatibility.
-- `tox -e gemini-parity` (`tools/check_gemini_parity.py`) validates consistency between GEMINI.md, AGENTS.md, and `.copilot-instructions` to ensure all AI config files remain in sync.
+## Building and Running
+
+### Build Pipeline
+1.  **Compile:** `./1_compile.sh` for OpenWrt APK creation.
+2.  **Install:** `./3_install.sh` on target device.
+3.  **Validate:** ALL `tox` environments configured in `tox.ini` must run. The full log of the execution must be thoroughly analyzed line-by-line with maximal verbosity, and absolutely every notice or warning must be treated as a test failure/error. `tox -e coverage` generates Python (95%+) and C++ (95%+) reports.
+
+### Observability
+*   **Metrics:** Prometheus exporter on port 9130.
+*   **Tracing:** Structured hex logs `[MCU -> SERIAL]` for auditability via syslog.
+*   **Watchdog:** Hardware-backed watchdog support with heartbeat monitoring. Procd watchdog integration in OpenWrt.
+
+## Status
+
+**Current Version:** v2.8.5 - **Flight-Ready**
+The ecosystem is fully refactored and modernized. Primary service components utilize `AsyncMock` for testing, ensuring high interface fidelity. The C++ library follows strict SIL-2 guidelines with O(1) dispatching and strong typing. End-to-end testing verifies the complete integration between the Python daemon and the C++ logic.

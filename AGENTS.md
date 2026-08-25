@@ -41,6 +41,7 @@ Arduino MCU Bridge 2 is a modern, high-performance communication system between 
 13. **Continuous Test Hardening & Undetected Defect Remediation:** Whenever a defect, unhandled edge condition, or logic bug is discovered that was not caught by the existing test suite, the agent MUST immediately implement corresponding test cases and strict assertions to guarantee future automated detection and regression prevention before concluding the task.
 14. **Maximal Test Verbosity Rule:** ALL test runners, validation environments, and test harnesses across the entire ecosystem MUST ALWAYS execute with maximum verbosity (e.g. `pytest -vv`, detailed Unity/C++ runner outputs). Silent or compressed outputs that could conceal subtle anomalies are strictly prohibited.
 15. **Prohibition of Constant Redeclarations and Alias Shims:** Strictly prohibit redeclaring, aliasing, or creating local passthrough constants (e.g., `_CRC_SIZE: Final = protocol.CRC_SIZE`, `AEAD_NONCE_SIZE = protocol.AEAD_NONCE_SIZE`, `DEBUG = logging.DEBUG`, or C++ `inline constexpr size_t AEAD_NONCE_SIZE = rpc::RPC_AEAD_NONCE_SIZE;`). All constants MUST be referenced directly from their canonical single source of truth (`protocol.*` / `rpc::*` generated from `mcubridge.proto`, or standard library modules directly).
+16. **Modern Python Dialect Standard (Python 3.13+):** Proactively audit and eradicate obsolete, legacy, or pre-3.10 Python dialect idioms across all codebase files, type stubs, tests, and tools. Strictly enforce modern syntax: PEP 604 union pipe operators (`T | None`, `A | B`) instead of `typing.Union`/`typing.Optional`; PEP 585 standard collections for type hints (`list[T]`, `dict[K, V]`, `type[T]`, `tuple[...]`) instead of `typing.List`/`typing.Dict`/`typing.Tuple`/`typing.Type`; import abstract types (`Callable`, `Iterator`, `Iterable`, `Sequence`, `Mapping`) from `collections.abc` rather than `typing`; utilize `asyncio.to_thread` instead of `loop.run_in_executor`; use `pathlib.Path` and `posixpath` over `os.path`; and employ `enum.StrEnum` over `class Foo(str, Enum)`.
 
 ## SIL-2 Safety & FIPS 140-3 Cryptographic Subsystems
 
@@ -73,6 +74,7 @@ Arduino MCU Bridge 2 is a modern, high-performance communication system between 
 
 ### Python (Linux MPU)
 *   **Direct Library Calls:** Zero-wrapper policy. Use libraries directly (e.g., direct `grpclib.client.Channel` for the async daemon's remote cloud link, and direct `asyncio.open_unix_connection` for local CGI scripts and CLI clients) instead of custom abstraction layers.
+*   **Modern Python 3.13+ Dialect:** Zero tolerance for legacy Python 2/3.8 dialect idioms. Enforce PEP 604 (`A | B`), PEP 585 (`collections.abc`, built-in generics), `pathlib.Path`, and modern `asyncio` constructs (`to_thread`, `TaskGroup`).
 *   **Strict Typing:** `pyright` in strict mode. All tests must use `unittest.mock.AsyncMock(spec=Interface)`.
 *   **No "Dummy" Classes:** Manual mock classes are prohibited in favor of standardized `AsyncMock`.
 *   **Async Patterns:** Mandatory `asyncio` usage; no blocking calls in the main event loop. `uvloop` is used on target for maximum throughput.

@@ -3,7 +3,7 @@ from pathlib import Path
 from mcubridge.protocol import mcubridge_pb2 as pb
 import asyncio
 import time
-from typing import Iterator
+from collections.abc import Iterator
 from unittest.mock import AsyncMock
 
 import pytest

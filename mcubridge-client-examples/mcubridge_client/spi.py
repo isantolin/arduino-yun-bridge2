@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Union, cast
+from typing import cast
 
 from . import mcubridge_pb2 as pb
 from .definitions import SpiBitOrder, SpiMode
 from .mcubridge_grpc import LocalBridgeStub
 
-SpiBuffer = Union[bytes, bytearray, Sequence[int]]
+SpiBuffer = bytes | bytearray | Sequence[int]
 
 
 class SpiDevice:

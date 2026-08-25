@@ -1,4 +1,6 @@
-from typing import Any, Callable
+from __future__ import annotations
+from collections.abc import Callable
+from typing import Any
 
 class Typer:
     def __init__(self, *args: Any, **kwargs: Any) -> None: ...

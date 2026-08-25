@@ -1,9 +1,8 @@
 """Manual stub for OpenWrt UCI."""
 
 from __future__ import annotations
-from typing import Any, Optional, Dict, overload
 from types import TracebackType
-
+from typing import Any
 
 class Uci:
     def __init__(self) -> None:
@@ -14,13 +13,13 @@ class Uci:
 
     def __exit__(
         self,
-        exc_type: Optional[type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[TracebackType],
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
     ) -> bool:
         return False
 
-    def get_all(self, package: str, section: Optional[str] = None) -> Any:
+    def get_all(self, package: str, section: str | None = None) -> Any:
         return {}
 
     def get(self, package: str, section: str, option: str) -> str:

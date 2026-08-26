@@ -257,7 +257,6 @@ def phase_expand(child: Any) -> None:
     send_and_wait(child, "cp /mnt/2_expand.sh /root/2_expand.sh", timeout=5)
     send_and_wait(child, "chmod +x /root/2_expand.sh", timeout=5)
     # [SIL-2] Keep /mnt mounted during expansion so script can use local APKs
-    # send_and_wait(child, "umount /mnt", timeout=5)
 
     # Pre-set UCI to skip interactive confirmation and enable internet
     send_and_wait(

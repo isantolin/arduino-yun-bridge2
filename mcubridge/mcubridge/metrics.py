@@ -289,7 +289,6 @@ class PrometheusExporter:
     def port(self) -> int:
         """Return the actually bound port (useful for port 0)."""
         if self._server:
-            # server_address is (host, port)
             return int(self._server.server_address[1])
         return self._port
 

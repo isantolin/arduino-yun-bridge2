@@ -23,13 +23,13 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT / "mcubridge") not in sys.path:
     sys.path.insert(0, str(ROOT / "mcubridge"))
 
-from cobs import cobsr  # noqa: E402
-from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305  # noqa: E402
-import typer  # noqa: E402
+from cobs import cobsr
+from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
+import typer
 
-from mcubridge.protocol import mcubridge_pb2 as pb, protocol  # noqa: E402
-from mcubridge.protocol.frame import build_frame, parse_frame  # noqa: E402
-from mcubridge.state.storage import LmdbCache  # noqa: E402
+from mcubridge.protocol import mcubridge_pb2 as pb, protocol
+from mcubridge.protocol.frame import build_frame, parse_frame
+from mcubridge.state.storage import LmdbCache
 
 app = typer.Typer(add_completion=False)
 

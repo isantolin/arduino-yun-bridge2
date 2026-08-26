@@ -31,9 +31,9 @@ if str(repo_root / "mcubridge-client-examples") not in sys.path:
 if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
 
-import structlog  # noqa: E402
-import typer  # noqa: E402
-from mcubridge.config.logging import configure_logging  # noqa: E402
+import structlog
+import typer
+from mcubridge.config.logging import configure_logging
 
 configure_logging(console=True)
 logger = structlog.get_logger("simavr-runner")

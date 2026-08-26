@@ -702,7 +702,7 @@ async def test_runtime_handle_mailbox_edge_branches(test_config: RuntimeConfig, 
     serial = AsyncMock(spec=SerialTransport)
     svc = BridgeService(test_config, mock_state, serial)
 
-    # serial=None
+    # Test handling when serial is None
     svc.serial = None
     route = TopicRoute(raw="", prefix="bridge", topic=Topic.MAILBOX, segments=("write",))
     await svc._handle_mailbox(route, pb.CloudQueuedPublish(payload=b"hi"))

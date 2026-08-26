@@ -1145,18 +1145,21 @@ class BridgeService:
         if not serial:
             return False
         pl = await serial.send(Command.CMD_GET_VERSION.value, b"")
-        if isinstance(pl, bytes):
+        if isinstance(pl, pb.VersionResponse):
+            p = pl
+        elif isinstance(pl, bytes):
             p = pb.VersionResponse.FromString(pl)
-            self.state.mcu_version = (p.major, p.minor, p.patch)
+        else:
+            return False
+        self.state.mcu_version = (p.major, p.minor, p.patch)
 
-            pl_out = f"{p.major}.{p.minor}.{p.patch}".encode()
-            tp = get_topic_for_message(self.state.cloud_topic_prefix, pb.VersionResponse) or ""
-            await self.enqueue_cloud(
-                create_queued_publish(tp, pl_out, message_expiry_interval=protocol.CLOUD_EXPIRY_DATASTORE),
-                reply_context=inbound,
-            )
-            return True
-        return False
+        pl_out = f"{p.major}.{p.minor}.{p.patch}".encode()
+        tp = get_topic_for_message(self.state.cloud_topic_prefix, pb.VersionResponse) or ""
+        await self.enqueue_cloud(
+            create_queued_publish(tp, pl_out, message_expiry_interval=protocol.CLOUD_EXPIRY_DATASTORE),
+            reply_context=inbound,
+        )
+        return True
 
     async def _flush_console_queue(self) -> None:
         serial = self.serial
@@ -1712,16 +1715,16 @@ class LocalBridgeService(LocalBridgeBase):
         if request is None:
             return
         serial = self.runtime_service.serial
-        ok = bool(await serial.send(Command.CMD_SET_PIN_MODE.value, request)) if serial else False
-        await stream.send_message(pb.GenericResponse(status="ok" if ok else "error"))
+        res = (await serial.send(Command.CMD_SET_PIN_MODE.value, request)) if serial else None
+        await stream.send_message(pb.GenericResponse(status="ok" if res is not None else "error"))
 
     async def DigitalWrite(self, stream: Stream[pb.DigitalWrite, pb.GenericResponse]) -> None:
         request = await stream.recv_message()
         if request is None:
             return
         serial = self.runtime_service.serial
-        ok = bool(await serial.send(Command.CMD_DIGITAL_WRITE.value, request)) if serial else False
-        await stream.send_message(pb.GenericResponse(status="ok" if ok else "error"))
+        res = (await serial.send(Command.CMD_DIGITAL_WRITE.value, request)) if serial else None
+        await stream.send_message(pb.GenericResponse(status="ok" if res is not None else "error"))
 
     async def DigitalRead(self, stream: Stream[pb.PinRead, pb.DigitalReadResponse]) -> None:
         request = await stream.recv_message()
@@ -1736,8 +1739,8 @@ class LocalBridgeService(LocalBridgeBase):
         if request is None:
             return
         serial = self.runtime_service.serial
-        ok = bool(await serial.send(Command.CMD_ANALOG_WRITE.value, request)) if serial else False
-        await stream.send_message(pb.GenericResponse(status="ok" if ok else "error"))
+        res = (await serial.send(Command.CMD_ANALOG_WRITE.value, request)) if serial else None
+        await stream.send_message(pb.GenericResponse(status="ok" if res is not None else "error"))
 
     async def AnalogRead(self, stream: Stream[pb.PinRead, pb.AnalogReadResponse]) -> None:
         request = await stream.recv_message()

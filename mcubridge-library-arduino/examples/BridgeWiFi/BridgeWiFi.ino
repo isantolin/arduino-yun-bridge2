@@ -7,13 +7,39 @@
  */
 
 #include <Arduino.h>
-#if defined(ESP8266)
-#include <ESP8266WiFi.h>
-#elif defined(ESP32)
+
+#if defined(__has_include)
+#if __has_include(<WiFi.h>)
 #include <WiFi.h>
-#else
+#elif __has_include(<ESP8266WiFi.h>)
+#include <ESP8266WiFi.h>
+#elif __has_include(<WiFiNINA.h>)
 #include <WiFiNINA.h>
+#else
+// Fallback definitions for host static analysis & IDE indexers
+class WiFiClient : public Stream {
+ public:
+  int connect(const char*, uint16_t) { return 1; }
+  uint8_t connected() { return 1; }
+  int available() override { return 0; }
+  int read() override { return -1; }
+  int peek() override { return -1; }
+  void flush() override {}
+  size_t write(uint8_t) override { return 1; }
+};
+enum wl_status_t { WL_CONNECTED = 3 };
+enum WiFiMode { WIFI_STA = 1 };
+struct WiFiClass {
+  void mode(WiFiMode) {}
+  void begin(const char*, const char*) {}
+  wl_status_t status() { return WL_CONNECTED; }
+};
+inline WiFiClass WiFi;
 #endif
+#else
+#include <WiFi.h>
+#endif
+
 #include <Bridge.h>
 
 // Configuration

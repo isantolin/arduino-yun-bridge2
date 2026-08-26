@@ -46,7 +46,10 @@ def measure_imports() -> list[tuple[str, float]]:
 
 
 def measure_runtime_memory() -> int:
-    return 0
+    import resource
+
+    # On Linux ru_maxrss is in KiB
+    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024
 
 
 def measure_object_symbols() -> list[tuple[str, int, int]]:

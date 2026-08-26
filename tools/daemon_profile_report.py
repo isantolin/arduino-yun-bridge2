@@ -12,6 +12,8 @@ Outputs a Markdown table suitable for ``$GITHUB_STEP_SUMMARY``.
 
 from __future__ import annotations
 from mcubridge.protocol import mcubridge_pb2 as pb
+from typing import Annotated
+import typer
 
 import importlib
 import resource
@@ -22,8 +24,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import typer
-from typing import Annotated
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT / "mcubridge") not in sys.path:
+    sys.path.insert(0, str(ROOT / "mcubridge"))
+
 
 # ---------------------------------------------------------------------------
 # Data structures

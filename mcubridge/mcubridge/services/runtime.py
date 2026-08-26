@@ -819,21 +819,23 @@ class BridgeService:
         if not (act and target):
             return
         if target.startswith(MCU_FS_PREFIX):
-            if act == FileAction.READ:
-                await self._handle_file_mcu_read(inbound, target)
-            elif act == FileAction.WRITE:
-                await self._handle_file_mcu_write(target, inbound)
-            elif act == FileAction.REMOVE:
-                await self._handle_file_mcu_remove(target, inbound)
+            mcu_dispatch: dict[Any, Callable[[], Coroutine[Any, Any, None]]] = {
+                FileAction.READ: lambda: self._handle_file_mcu_read(inbound, target),
+                FileAction.WRITE: lambda: self._handle_file_mcu_write(target, inbound),
+                FileAction.REMOVE: lambda: self._handle_file_mcu_remove(target, inbound),
+            }
+            if handler := mcu_dispatch.get(act):
+                await handler()
             return
 
         if path := self._get_safe_path(target):
-            if act == FileAction.READ:
-                await self._handle_file_local_read(path, target, inbound)
-            elif act == FileAction.WRITE:
-                await self._handle_file_local_write(path, target, inbound)
-            elif act == FileAction.REMOVE:
-                await self._handle_file_local_remove(path, target, inbound)
+            local_dispatch: dict[Any, Callable[[], Coroutine[Any, Any, None]]] = {
+                FileAction.READ: lambda: self._handle_file_local_read(path, target, inbound),
+                FileAction.WRITE: lambda: self._handle_file_local_write(path, target, inbound),
+                FileAction.REMOVE: lambda: self._handle_file_local_remove(path, target, inbound),
+            }
+            if handler := local_dispatch.get(act):
+                await handler()
 
     async def _handle_file_mcu_write(self, target: str, inbound: pb.CloudQueuedPublish) -> None:
         serial = self.serial

@@ -16,7 +16,7 @@ from mcubridge.protocol import mcubridge_pb2 as pb
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from cobs import cobsr
 import serialx
@@ -58,8 +58,76 @@ if TYPE_CHECKING:
 logger = structlog.get_logger("mcubridge.serial")
 
 
+class AsyncTcpConnection:
+    """Zero-overhead TCP connection adapter exposing AsyncSerial interface for WiFi/Ethernet. [SIL-2]"""
+
+    __slots__ = ("reader", "writer", "host", "port", "_is_open")
+
+    def __init__(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter, host: str, port: int) -> None:
+        self.reader = reader
+        self.writer = writer
+        self.host = host
+        self.port = port
+        self._is_open = True
+
+    @property
+    def transport(self) -> asyncio.BaseTransport:
+        return self.writer.transport
+
+    @property
+    def is_open(self) -> bool:
+        return self._is_open and not self.writer.is_closing()
+
+    async def write(self, data: bytes) -> None:
+        self.writer.write(data)
+
+    async def drain(self) -> None:
+        await self.writer.drain()
+
+    async def readuntil(self, separator: bytes = b"\x00") -> bytes:
+        return await self.reader.readuntil(separator)
+
+    async def read(self, n: int = -1) -> bytes:
+        return await self.reader.read(n)
+
+    async def set_modem_pins(self, dtr: bool = True, rts: bool = True) -> None:
+        """No-op for network streams."""
+        pass
+
+    async def close(self) -> None:
+        self._is_open = False
+        self.writer.close()
+        try:
+            await self.writer.wait_closed()
+        except (OSError, asyncio.CancelledError):
+            pass
+
+    async def __aenter__(self) -> "AsyncTcpConnection":
+        return self
+
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        await self.close()
+
+
+def is_network_transport(port_str: str) -> tuple[bool, str, int]:
+    """Check if serial_port string specifies a network endpoint (TCP/WiFi/Socket). [SIL-2]"""
+    if not port_str:
+        return False, "", 0
+    clean = port_str.strip()
+    if clean.startswith(("tcp://", "wifi://", "socket://")):
+        stripped = clean.split("://", 1)[1]
+        host, _, port_s = stripped.partition(":")
+        port = int(port_s) if port_s.isdigit() else 9000
+        return True, host, port
+    if ":" in clean and not clean.startswith(("/", ".")):
+        host, _, port_s = clean.partition(":")
+        if port_s.isdigit():
+            return True, host, int(port_s)
+    return False, "", 0
+
+
 class SerialTransport:
-    """High-performance asyncio serial transport with flattened pipeline. [SIL-2]"""
+    """High-performance asyncio serial/wireless transport with flattened pipeline. [SIL-2]"""
 
     def __init__(
         self,
@@ -70,7 +138,7 @@ class SerialTransport:
         self.config = config
         self.state = state
         self.service = service
-        self.serial: serialx.AsyncSerial | None = None
+        self.serial: serialx.AsyncSerial | AsyncTcpConnection | None = None
 
         self._stop_event = asyncio.Event()
         self._negotiating = False
@@ -97,9 +165,10 @@ class SerialTransport:
 
     def _switch_local_baudrate(self, target_baud: int) -> None:
         try:
-            if self.serial:
-                self.serial.transport.serial.baudrate = target_baud
-            logger.info("Local UART switched baudrate", baud=target_baud)
+            if self.serial and not isinstance(self.serial, AsyncTcpConnection):
+                if hasattr(self.serial, "transport"):
+                    cast(Any, self.serial.transport).serial.baudrate = target_baud
+                logger.info("Local UART switched baudrate", baud=target_baud)
         except (AttributeError, OSError, ValueError, serialx.SerialException) as e:
             raise RuntimeError(f"UART access failed: {e}") from e
 
@@ -125,6 +194,41 @@ class SerialTransport:
             raise
 
     async def _connect_and_run(self) -> None:
+        is_net, host, port = is_network_transport(self.config.serial_port)
+        if is_net:
+            logger.info("Connecting to MCU via Wireless TCP/WiFi", host=host, port=port)
+            reader, writer = await asyncio.open_connection(host, port)
+            conn = AsyncTcpConnection(reader, writer, host, port)
+            self.serial = conn
+            self.state.serial_writer = conn.transport
+            read_task = asyncio.get_running_loop().create_task(self._read_loop(conn))
+            try:
+                if self.service:
+                    await self.service.on_serial_connected()
+
+                # Wait for either stop event or read task failure
+                wait_stop = asyncio.create_task(self._stop_event.wait())
+                done, _ = await asyncio.wait([wait_stop, read_task], return_when=asyncio.FIRST_COMPLETED)
+                if not wait_stop.done():
+                    wait_stop.cancel()
+
+                if read_task in done:
+                    raise ConnectionError("Wireless network connection lost")
+            finally:
+                read_task.cancel()
+                try:
+                    await read_task
+                except (asyncio.IncompleteReadError, asyncio.CancelledError):
+                    logger.debug("Network read task cancelled or incomplete during cleanup")
+                if self.service:
+                    try:
+                        await self.service.on_serial_disconnected()
+                    except (OSError, RuntimeError, ValueError, TypeError) as e:
+                        logger.error("Error during network disconnect cleanup", error=str(e))
+                await conn.close()
+                self.serial = None
+            return
+
         logger.info("Connecting to MCU", port=self.config.serial_port)
         connect_baud = self.config.serial_safe_baud or protocol.DEFAULT_SAFE_BAUDRATE
         try:
@@ -179,7 +283,7 @@ class SerialTransport:
         if self.serial:
             await self.serial.close()
 
-    async def _read_loop(self, serial: serialx.AsyncSerial) -> None:
+    async def _read_loop(self, serial: serialx.AsyncSerial | AsyncTcpConnection) -> None:
         while not self._stop_event.is_set():
             try:
                 packet_with_sep = await serial.readuntil(protocol.FRAME_DELIMITER)

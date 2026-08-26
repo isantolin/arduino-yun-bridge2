@@ -77,7 +77,7 @@ Al ejecutar:
 …se regeneran los bindings de enums/constantes. Además, el generador produce structs protobuf para ambos lados:
 
 - **Python:** clases `Packet` en `structures.py` (tipado estático)
-- **C++ (nanopb/protobuf):** structs nativos en `rpc_structs.h` con `encode()`/`decode()` (estáticos, sin heap)
+- **C++ (nanopb/protobuf):** structs nativos en `rpc_structs.h` con `encode()`/`decode()` (estáticos, sin heap). La deserialización utiliza `pb_decode_noinit` (Nanopb 0.4.9.2) para eliminar limpiezas `memset` redundantes en estructuras pre-inicializadas de memoria estática.
 
 Todos los artefactos generados deben commitearse en el mismo cambio.
 
@@ -89,15 +89,30 @@ Este documento actúa además como **contrato normativo** de direccionalidad y s
 
 Esta sección resume cómo se articula el daemon, qué garantías de seguridad ofrece y cómo se observan los flujos críticos.
 
+## Capas de Transporte del Enlace MCU ↔ MPU
+
+El protocolo binario MCU Bridge 2 está diseñado para ser completamente agnóstico al medio físico subyacente. Admite:
+
+1. **UART Serie POSIX (Físico / PTY)**:
+   - Dispositivos TTY como `/dev/ttyATH0`, `/dev/ttyUSB0`, `/dev/ttyMCU`.
+   - Control directo de baudrate y modem pins (`DTR`/`RTS`) vía `python3-serialx`.
+2. **Sockets de Red Inalámbrica (WiFi TCP / Ethernet)**:
+   - URIs de conexión configurables: `tcp://192.168.1.150:9000`, `wifi://mcu.local:8888`, `127.0.0.1:9000`.
+   - Gestión de streams asíncronos mediante el adaptador de cero sobrecarga `AsyncTcpConnection` (`(StreamReader, StreamWriter)`).
+   - En el lado MCU, se utiliza `WiFiClient` (`BridgeWiFi.ino`) manteniendo idéntico framing COBS/R, CRC32 y encriptación AEAD.
+3. **Bluetooth SPP / BLE UART**:
+   - Puertos virtuales RFCOMM (`/dev/rfcomm0`) o transceptores transparentes UART sobre BLE Nordic UART Service (NUS).
+   - En el lado MCU, se utiliza `BluetoothSerial` o `Serial1` (`BridgeBluetooth.ino`).
+
 ## Componentes
 
-- **BridgeService (Python 3.13.9-r2)**: orquesta la comunicación MCU↔Linux, aplica políticas de rutas y delega en componentes operativos (`FileComponent`, `ProcessComponent`, `DatastoreComponent`, etc.).
+- **BridgeService (Python 3.13.9+)**: orquesta la comunicación MCU↔Linux, aplica políticas de rutas y delega en componentes operativos (`FileComponent`, `ProcessComponent`, `DatastoreComponent`, etc.).
 - **ProcessComponent**: gestiona de forma unificada la ejecución de subprocesos asíncronos y los comandos de shell/consola, aplicando la política de seguridad y controlando la concurrencia.
-- **RuntimeState**: mantiene el estado mutable (colas de red, handshake, spool, métricas) y expone snapshots consistentes para status, gRPC y Prometheus.
-- **High-Performance Transport**: El daemon utiliza `serialx` para consolidar la E/S serie síncrona/asíncrona, el control de modem pins y el transporte tipado del enlace.
-- **gRPC Bidirectional Stream**: gestiona la comunicación asíncrona tipada y de baja latencia con el Cloud Gateway.
-- **MCU Firmware (mcubridge-library-arduino)**: implementa el protocolo binario bajo normativa SIL-2 y vela por el secreto compartido del enlace serie.
-- **Instrumentación**: el daemon escribe `/tmp/mcubridge_status.json` (snapshot en tmpfs; se pierde al reboot), publica métricas en `br/system/metrics` (protobuf) y puede exponer Prometheus por HTTP.
+- **RuntimeState**: mantiene el estado mutable (colas de red, handshake, spool, métricas, caché de session tickets TLS 1.3) y expone snapshots consistentes para status, gRPC y Prometheus.
+- **High-Performance Unified Transport**: El daemon utiliza `SerialTransport` con soporte polimórfico transparente para `serialx.AsyncSerial` (UART POSIX) y `AsyncTcpConnection` (WiFi TCP / sockets de red).
+- **gRPC Bidirectional Stream (HTTP/3 QUIC + TLS 1.3 0-RTT)**: gestiona la comunicación asíncrona tipada y de baja latencia con el Cloud Gateway, soportando reanudación de sesión 0-RTT mediante tickets de sesión persistidos en LMDB.
+- **MCU Firmware (mcubridge-library-arduino)**: implementa el protocolo binario bajo normativa SIL-2 (C++17, Zero-Heap, Nanopb 0.4.9.2 con `pb_decode_noinit`).
+- **Instrumentación**: el daemon escribe `/tmp/mcubridge_status.json` (snapshot en tmpfs; se pierde al reboot), publica métricas en `br/system/metrics` (protobuf) y expone Prometheus por HTTP en el puerto 9130.
 
 ## Seguridad
 

@@ -19,7 +19,7 @@ graph LR
     end
 
     subgraph Channel
-        UART((Serial UART Line))
+        UART((UART / WiFi TCP / Bluetooth SPP))
     end
 
     subgraph Linux MPU Boundary
@@ -81,3 +81,7 @@ Frames with nonces $\le$ `last_seen_counter` are immediately discarded as replay
 ### 4.3 Key Zeroization (*Safe Memory Scrubbing*)
 * **C++ MCU**: Memory containing $K_{session}$ and intermediate buffers is zeroized using `wc_ForceZero()` to defeat compiler dead-store elimination.
 * **Python MPU**: Secure zeroization performed via two-pass `ctypes.memset()` overriding underlying memory buffers.
+
+### 4.4 TLS 1.3 0-RTT Session Ticket Management (Cloud Gateway)
+* **Storage**: Ephemeral session tickets for fast gRPC 0-RTT re-handshakes are cached in LMDB (`RuntimeState.tls_session_cache`) with process-level access permissions.
+* **Lifecycle & Anti-Replay**: Session tickets have strict time-to-live bounds and single-use resumption policies, preventing TLS 1.3 early-data replay attacks.

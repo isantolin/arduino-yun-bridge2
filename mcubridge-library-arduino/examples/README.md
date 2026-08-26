@@ -4,9 +4,21 @@ The sketches under `mcubridge-library-arduino/examples/` act as smoke tests for 
 
 ## BridgeControl
 
-- Exercises the main McuBridge flow: mailbox handling, GPIO callbacks, and `STATUS_*` frames from Linux.
+- Exercises the main McuBridge flow over UART/TTY: mailbox handling, GPIO callbacks, and `STATUS_*` frames from Linux.
 - Uses `Bridge.onDigitalReadResponse`, `Bridge.onMailboxMessage`, and `Bridge.onStatus` to react to asynchronous events without busy loops.
 - Handy to confirm that the Python daemon and the MCU share the same serial secret before layering more services.
+
+## BridgeWiFi
+
+- Implements a wireless TCP bridge over WiFi (ESP32, SAMD, WiFiNINA, WiFi101).
+- Connects to an access point, establishes a TCP stream to the OpenWrt daemon (e.g. `wifi://192.168.1.1:9000`), and forwards frames with automatic reconnection.
+- Demonstrates how to pass a `WiFiClient` directly to `Bridge.begin(client)`.
+
+## BridgeBluetooth
+
+- Implements a wireless Bluetooth SPP (Serial Port Profile) or BLE UART bridge.
+- Provides a wireless bridge interface for cable-free deployment (e.g. ESP32 `BluetoothSerial`).
+- Connects transparently to the daemon running on `/dev/rfcomm0` or a virtual serial port.
 
 ## Quick build and upload
 

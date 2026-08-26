@@ -15,7 +15,10 @@ This library provides the MCU-side runtime for the Arduino MCU Bridge v2 project
   - `services/`: implementation files and classes that depend on the Arduino core (e.g. `Bridge.cpp`).
   - `protocol/`: protocol helpers shared with the Linux daemon (COBS encoder, CRC, frame builder, nanopb/protobuf payload structs).
 - `examples/`
-  - Arduino sketches demonstrating usage of the library (`BridgeControl`).
+  - Arduino sketches demonstrating usage of the library:
+    - `BridgeControl`: Standard UART/TTY wired bridge setup with GPIO, mailbox and process control.
+    - `BridgeWiFi`: Wireless WiFi TCP stream bridge (`WiFiClient`) with automatic reconnection and keepalive.
+    - `BridgeBluetooth`: Wireless Bluetooth SPP / BLE UART bridge (`BluetoothSerial`) with zero-wire setup.
 - `docs/`
   - Additional documentation and diagrams describing the protocol and library design (`../docs/PROTOCOL.md`).
 - `tools/`
@@ -25,12 +28,13 @@ This library provides the MCU-side runtime for the Arduino MCU Bridge v2 project
 ## Installation
 
 1. Run `tools/install.sh` to copy the library into your Arduino libraries folder.
-2. Open Arduino IDE and locate the `BridgeControl` example under **File > Examples > McuBridge**.
+2. Open Arduino IDE and locate the `BridgeControl`, `BridgeWiFi`, or `BridgeBluetooth` example under **File > Examples > McuBridge**.
 3. Upload to your Arduino MCU to validate the end-to-end communication with the bridge daemon.
 
 ### External dependencies
 
 - **wolfSSL**: The library utilizes wolfSSL for AEAD (ChaCha20-Poly1305) and HMAC operations, ensuring MIL-SPEC cryptographic integrity.
+- **Nanopb (0.4.9.2)**: High-efficiency, zero-heap protobuf serialization using `pb_decode_noinit` for zero-copy parsing without redundant `memset` sweeps on statically allocated memory.
 - **ETL (Embedded Template Library)**: Used for deterministic, static memory containers (`circular_buffer`, `vector`, `queue`). This ensures SIL-2 compliance by avoiding dynamic heap allocation.
 - **Internalized Dependencies**: The library now includes internal implementations for **COBS framing** and **CRC32** (IEEE 802.3).
 
@@ -46,9 +50,8 @@ This library follows IEC 61508 (SIL-2) and FIPS 140-3 (MIL-SPEC) guidelines:
 - **No Recursion:** Deterministic stack usage.
 - **Integrity:** All RPC frames are protected by CRC32.
 - **Flash Optimization**: Repetitive Nanopb instantiations are consolidated into non-template implementation helpers in .cpp files, significantly reducing binary size for 8-bit MCUs.
-- **Zero-Template Wrappers**: Public APIs like ConsoleClass have been refactored from templates to standard classes to further de-bloat the Flash memory footprint.
-
-- **Hardware Abstraction:** Automatic detection of MCU capabilities including GPIO limits, Big Buffer, EEPROM, DAC, FPU, I2C, and SPI.
+- **Zero-Copy Deserialization**: Uses `pb_decode_noinit` from Nanopb 0.4.9.2 to eliminate initialization overhead on static memory structures.
+- **Hardware Abstraction:** Automatic detection of MCU capabilities including GPIO limits, Big Buffer, EEPROM, DAC, FPU, I2C, SPI, WiFi, and Bluetooth.
 
 ## Best Practices
 

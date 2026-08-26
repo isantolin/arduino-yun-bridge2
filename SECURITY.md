@@ -26,11 +26,12 @@ If you discover a potential security vulnerability in this project, please repor
 Arduino MCU Bridge 2 is built with security and robustness as primary goals, especially for industrial and safety-critical environments (**SIL-2 compliant**).
 
 ### 1. Handshake & Encryption
-All serial communication requires a successful handshake using a pre-shared secret.
+All communication (physical UART, wireless WiFi TCP, or Bluetooth SPP) requires a successful mutual handshake using a pre-shared secret.
 - **Mutual Authentication:** HMAC-SHA256 used to authenticate the link during synchronization.
 - **AEAD (ChaCha20-Poly1305):** All functional data is encrypted and authenticated using mission-critical ChaCha20-Poly1305.
 - **Anti-Replay:** Monotonic nonces with counter validation prevent replay attacks on both the handshake and functional frames.
 - **MIL-SPEC Compliance:** HKDF-SHA256 (RFC 5869) for session key derivation following NIST standards.
+- **TLS 1.3 0-RTT:** Cloud Gateway connections support secure 0-RTT session ticket resumption with single-use anti-replay enforcement.
 
 ### 2. Integrity
 - **CRC32 (IEEE 802.3):** Every frame includes a mandatory 32-bit CRC.

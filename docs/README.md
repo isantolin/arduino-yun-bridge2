@@ -20,6 +20,13 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 - **MIL-SPEC Compliance (FIPS 140-3):** Implementación de **HKDF-SHA256** para derivación de claves y **Power-On Self-Tests (POST)** que validan el motor criptográfico en cada arranque.
 - **Protección de Flash:** Bloqueo de inicio si las rutas de escritura intensa (`file_system_root`, `cloud_spool_dir`) no están en `/tmp` (RAM).
 
+### Novedades (agosto 2026)
+
+- **Soporte Nativo Inalámbrico (WiFi TCP & Bluetooth SPP/BLE) (v2.8.5)**: Expansión del transporte a enlaces inalámbricos transparentes. Se implementa `AsyncTcpConnection` y detección automática de prefijos de red (`tcp://`, `wifi://`, `socket://`) en el Linux MPU daemon, junto con ejemplos de referencia en Arduino (`BridgeWiFi.ino` y `BridgeBluetooth.ino`). Mantiene idéntica máquina de estados, framing COBS/R, CRC32 y encriptación ChaCha20-Poly1305 sobre sockets de red.
+- **Actualización Nanopb 0.4.9.2 & Deserialización Estática Zero-Copy (`pb_decode_noinit`)**: Migración de todo el ecosistema C++ y herramientas de generación a la versión oficial Nanopb 0.4.9.2, adoptando `pb_decode_noinit` para eliminar limpiezas `memset` redundantes en estructuras estáticas pre-inicializadas.
+- **Persistencia de Session Tickets TLS 1.3 para 0-RTT en LMDB**: Persistencia criptográfica y recuperación determinista de tickets de sesión TLS 1.3 en la caché transaccional LMDB (`RuntimeState.tls_session_cache`), permitiendo reconexiones 0-RTT ultrarrápidas del Cloud Gateway ante caídas de enlace.
+- **Suite Unificada de Benchmarks & Memory Profiling (`tools/benchmark_performance.py`)**: Herramienta de benchmarking integral para medir throughput y latencia de framing COBS/R (> 460k decodes/s, ~26.7 MB/s), criptografía AEAD (> 155k ops/s), serialización Protobuf (> 385k ops/s) y memoria máxima del proceso.
+
 ### Novedades (julio 2026)
 
 - **Migración Integral a gRPC para Enlace con la Nube (v2.8.5)**: Reemplazo del protocolo de red TCP/TLS crudo en la conexión MPU-Nube por una arquitectura moderna y eficiente de **gRPC sobre HTTP/3 (QUIC) asíncrono y bidireccional (streaming) con soporte de fallback HTTP/2**. El daemon y el Cloud Gateway ahora se comunican de forma determinista mediante stubs de servicio tipados generados a partir de `mcubridge.proto` usando `grpclib`.

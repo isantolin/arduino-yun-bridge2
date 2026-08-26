@@ -5,6 +5,19 @@ Direct PTY-PTY link via socat, with MCU opening its PTY directly.
 """
 
 from __future__ import annotations
+from mcubridge.config.logging import configure_logging
+import typer
+import structlog
+from typing import Annotated, Any
+from dataclasses import dataclass, field
+import time
+import threading
+import tempfile
+import subprocess
+import signal
+import os
+import json
+import contextlib
 
 import sys
 from pathlib import Path
@@ -17,20 +30,6 @@ if str(repo_root / "mcubridge-client-examples") not in sys.path:
 if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
 
-import contextlib
-import json
-import os
-import signal
-import subprocess
-import tempfile
-import threading
-import time
-from dataclasses import dataclass, field
-from typing import Annotated, Any
-
-import structlog
-import typer
-from mcubridge.config.logging import configure_logging
 
 # --- Constants ---
 SOCAT_PORT0 = "/tmp/ttyBRIDGE0"

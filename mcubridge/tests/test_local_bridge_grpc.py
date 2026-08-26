@@ -401,7 +401,7 @@ async def test_local_bridge_edge_branches(tmp_path: Path) -> None:
         handle=MagicMock(),
     )
     with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(service, "terminate_process", AsyncMock(side_effect=OSError("Kill failed")))
+        mp.setattr(service, "_terminate_process", AsyncMock(side_effect=OSError("Kill failed")))
         stream = _make_mock_stream(pb.ProcessKill(pid=8888))
         await local_svc.ProcessKill(stream)
         assert stream.send_message.call_args[0][0].status == "error"

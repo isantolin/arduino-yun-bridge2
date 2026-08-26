@@ -715,16 +715,7 @@ class BridgeService:
         await self._on_pin_resp(p, Topic.ANALOG, self.state.pending_analog_reads)
 
     async def _on_mcu_process_kill(self, _seq: int, p: pb.ProcessKill) -> None:
-        async with self.state.process_lock:
-            ctx = self.state.running_processes.get(p.pid)
-        if not ctx:
-            return
-        try:
-            ctx.exit_code = await self._terminate_process(p.pid, ctx, grace_period=PROCESS_TERM_GRACE_PERIOD_SECONDS)
-        except (OSError, ProcessLookupError) as exc:
-            logger.error("Process termination failed", pid=p.pid, error=str(exc))
-        if self.state.running_processes.pop(p.pid, None):
-            self._process_slots.release()
+        await self.kill_process(p.pid)
 
     async def _handle_mcu_status(self, status: Status, seq_id: int, payload: bytes | ProtobufMessage) -> None:
         text = ""
@@ -1004,15 +995,7 @@ class BridgeService:
         )
 
     async def _handle_shell_kill(self, pid: int, _inbound: pb.CloudQueuedPublish) -> None:
-        async with self.state.process_lock:
-            ctx = self.state.running_processes.get(pid)
-        if ctx:
-            try:
-                ctx.exit_code = await self._terminate_process(pid, ctx, grace_period=PROCESS_TERM_GRACE_PERIOD_SECONDS)
-            except (OSError, ProcessLookupError) as exc:
-                logger.error("Process termination failed", pid=pid, error=str(exc))
-            if self.state.running_processes.pop(pid, None):
-                self._process_slots.release()
+        await self.kill_process(pid)
 
     async def _handle_spi_begin(self, _route: TopicRoute, _inbound: pb.CloudQueuedPublish) -> None:
         await cast("SerialTransport", self.serial).send(Command.CMD_SPI_BEGIN.value, b"")
@@ -1281,6 +1264,22 @@ class BridgeService:
                 return await ctx.handle.wait()
         except TimeoutError:
             return -1
+
+    async def kill_process(self, pid: int) -> tuple[bool, str | None]:
+        async with self.state.process_lock:
+            ctx = self.state.running_processes.get(pid)
+        if not ctx:
+            return False, "PID not found"
+        try:
+            ctx.exit_code = await self._terminate_process(pid, ctx, grace_period=PROCESS_TERM_GRACE_PERIOD_SECONDS)
+            if self.state.running_processes.pop(pid, None):
+                self._process_slots.release()
+            return True, None
+        except (OSError, ProcessLookupError) as exc:
+            logger.error("Process termination failed", pid=pid, error=str(exc))
+            if self.state.running_processes.pop(pid, None):
+                self._process_slots.release()
+            return False, str(exc)
 
     def _get_safe_path(self, p_str: str) -> Path | None:
         root = Path(self.config.file_system_root).resolve()
@@ -1872,20 +1871,11 @@ class LocalBridgeService(LocalBridgeBase):
     async def ProcessKill(self, stream: Stream[pb.ProcessKill, pb.GenericResponse]) -> None:
         if (request := await stream.recv_message()) is None:
             return
-        async with self.runtime_service.state.process_lock:
-            ctx = self.runtime_service.state.running_processes.get(request.pid)
-        if not ctx:
-            await stream.send_message(pb.GenericResponse(status="error", message="PID not found"))
-            return
-        try:
-            ctx.exit_code = await self.runtime_service.terminate_process(
-                request.pid, ctx, grace_period=PROCESS_TERM_GRACE_PERIOD_SECONDS
-            )
-            if self.runtime_service.state.running_processes.pop(request.pid, None):
-                self.runtime_service.release_process_slot()
+        ok, err = await self.runtime_service.kill_process(request.pid)
+        if ok:
             await stream.send_message(pb.GenericResponse(status="ok"))
-        except (OSError, ProcessLookupError) as exc:
-            await stream.send_message(pb.GenericResponse(status="error", message=str(exc)))
+        else:
+            await stream.send_message(pb.GenericResponse(status="error", message=err or "PID not found"))
 
     async def SpiTransfer(self, stream: Stream[pb.SpiTransfer, pb.SpiTransferResponse]) -> None:
         await self._dispatch_serial_typed(

@@ -1759,8 +1759,7 @@ class LocalBridgeService(LocalBridgeBase):
         )
 
     async def DatastorePut(self, stream: Stream[pb.DatastorePut, pb.GenericResponse]) -> None:
-        request = await stream.recv_message()
-        if request is None:
+        if (request := await stream.recv_message()) is None:
             return
         if self.runtime_service.state.datastore_cache is not None:
             await self.runtime_service.state.datastore_cache.set(request.key, request.value)
@@ -1768,36 +1767,27 @@ class LocalBridgeService(LocalBridgeBase):
         await stream.send_message(pb.GenericResponse(status="ok"))
 
     async def DatastoreGet(self, stream: Stream[pb.DatastoreGet, pb.DatastoreGetResponse]) -> None:
-        request = await stream.recv_message()
-        if request is None:
+        if (request := await stream.recv_message()) is None:
             return
         cache = self.runtime_service.state.datastore_cache
         val = (await cache.get(request.key, b"")) if cache else b""
-        await stream.send_message(pb.DatastoreGetResponse(value=val if val is not None else b""))
+        await stream.send_message(pb.DatastoreGetResponse(value=val or b""))
 
     async def MailboxPush(self, stream: Stream[pb.MailboxPush, pb.GenericResponse]) -> None:
-        request = await stream.recv_message()
-        if request is None:
+        if (request := await stream.recv_message()) is None:
             return
         await self.runtime_service.state.mailbox_queue.append(request.data)
         await stream.send_message(pb.GenericResponse(status="ok"))
 
     async def MailboxRead(self, stream: Stream[pb.SubscribeRequest, pb.MailboxReadResponse]) -> None:
-        request = await stream.recv_message()
-        if request is None:
+        if (await stream.recv_message()) is None:
             return
-        if len(self.runtime_service.state.mailbox_incoming_queue) == 0:
-            await stream.send_message(pb.MailboxReadResponse(content=b""))
-            return
-        try:
-            val = await self.runtime_service.state.mailbox_incoming_queue.popleft()
-            await stream.send_message(pb.MailboxReadResponse(content=val or b""))
-        except IndexError:
-            await stream.send_message(pb.MailboxReadResponse(content=b""))
+        q = self.runtime_service.state.mailbox_incoming_queue
+        val = await q.popleft() if len(q) > 0 else b""
+        await stream.send_message(pb.MailboxReadResponse(content=val or b""))
 
     async def FileWrite(self, stream: Stream[pb.FileWrite, pb.GenericResponse]) -> None:
-        request = await stream.recv_message()
-        if request is None:
+        if (request := await stream.recv_message()) is None:
             return
         if request.path.startswith(MCU_FS_PREFIX):
             serial = self.runtime_service.serial
@@ -1820,8 +1810,7 @@ class LocalBridgeService(LocalBridgeBase):
             await stream.send_message(pb.GenericResponse(status="error", message="Path not allowed or quota exceeded"))
 
     async def FileRead(self, stream: Stream[pb.FileRead, pb.FileReadResponse]) -> None:
-        request = await stream.recv_message()
-        if request is None:
+        if (request := await stream.recv_message()) is None:
             return
         if request.path.startswith(MCU_FS_PREFIX):
             serial = self.runtime_service.serial
@@ -1836,15 +1825,11 @@ class LocalBridgeService(LocalBridgeBase):
             await stream.send_message(_parse_serial_response(res, pb.FileReadResponse, pb.FileReadResponse()))
             return
         path = self.runtime_service.get_safe_path(request.path)
-        if path and await asyncio.to_thread(path.is_file):
-            content = await asyncio.to_thread(path.read_bytes)
-            await stream.send_message(pb.FileReadResponse(content=content))
-        else:
-            await stream.send_message(pb.FileReadResponse(content=b""))
+        content = await asyncio.to_thread(path.read_bytes) if path and await asyncio.to_thread(path.is_file) else b""
+        await stream.send_message(pb.FileReadResponse(content=content))
 
     async def FileRemove(self, stream: Stream[pb.FileRemove, pb.GenericResponse]) -> None:
-        request = await stream.recv_message()
-        if request is None:
+        if (request := await stream.recv_message()) is None:
             return
         if request.path.startswith(MCU_FS_PREFIX):
             serial = self.runtime_service.serial
@@ -1868,25 +1853,22 @@ class LocalBridgeService(LocalBridgeBase):
             await stream.send_message(pb.GenericResponse(status="error", message="Path not allowed or not found"))
 
     async def ProcessRunAsync(self, stream: Stream[pb.ProcessRunAsync, pb.ProcessRunAsyncResponse]) -> None:
-        request = await stream.recv_message()
-        if request is None:
+        if (request := await stream.recv_message()) is None:
             return
-        if request.command and is_command_allowed(self.runtime_service.state.allowed_policy, request.command):
-            pid = await self.runtime_service.run_process(request.command)
-            await stream.send_message(pb.ProcessRunAsyncResponse(pid=pid or 0))
-        else:
-            await stream.send_message(pb.ProcessRunAsyncResponse(pid=0))
+        pid = (
+            await self.runtime_service.run_process(request.command)
+            if request.command and is_command_allowed(self.runtime_service.state.allowed_policy, request.command)
+            else 0
+        )
+        await stream.send_message(pb.ProcessRunAsyncResponse(pid=pid or 0))
 
     async def ProcessPoll(self, stream: Stream[pb.ProcessPoll, pb.ProcessPollResponse]) -> None:
-        request = await stream.recv_message()
-        if request is None:
+        if (request := await stream.recv_message()) is None:
             return
-        batch = await self.runtime_service.poll_process(request.pid)
-        await stream.send_message(batch)
+        await stream.send_message(await self.runtime_service.poll_process(request.pid))
 
     async def ProcessKill(self, stream: Stream[pb.ProcessKill, pb.GenericResponse]) -> None:
-        request = await stream.recv_message()
-        if request is None:
+        if (request := await stream.recv_message()) is None:
             return
         async with self.runtime_service.state.process_lock:
             ctx = self.runtime_service.state.running_processes.get(request.pid)
@@ -1909,15 +1891,13 @@ class LocalBridgeService(LocalBridgeBase):
         )
 
     async def SpiConfigure(self, stream: Stream[pb.SpiConfig, pb.GenericResponse]) -> None:
-        request = await stream.recv_message()
-        if request is None:
+        if (request := await stream.recv_message()) is None:
             return
         serial = self.runtime_service.serial
+        ok = False
         if serial:
             await serial.send(Command.CMD_SPI_BEGIN.value, b"")
             ok = bool(await serial.send(Command.CMD_SPI_SET_CONFIG.value, request))
-        else:
-            ok = False
         await stream.send_message(pb.GenericResponse(status="ok" if ok else "error"))
 
     async def GetVersion(self, stream: Stream[pb.SubscribeRequest, pb.VersionResponse]) -> None:

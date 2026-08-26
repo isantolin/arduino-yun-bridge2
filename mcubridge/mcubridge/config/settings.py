@@ -8,6 +8,7 @@ not used.
 """
 
 from __future__ import annotations
+from google.protobuf.descriptor import FieldDescriptor
 
 import structlog
 from typing import TYPE_CHECKING, Any, cast
@@ -85,58 +86,72 @@ def get_config_source() -> str:
     return _config_source[0]
 
 
+def _coerce_string(val: Any, field_name: str) -> str | None:
+    s_val = str(val).strip()
+    is_path_field = any(
+        x in field_name for x in ("_dir", "_file", "_root", "serial_port", "cloud_ca", "cloud_cert", "cloud_key")
+    )
+    if is_path_field and ("~" in s_val or "/" in s_val) and "\n" not in s_val:
+        return str(Path(s_val).expanduser().resolve())
+    return s_val or None
+
+
+def _coerce_int(val: Any, _field_name: str) -> int:
+    try:
+        return int(val)
+    except (ValueError, TypeError):
+        return 0
+
+
+def _coerce_float(val: Any, _field_name: str) -> float:
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def _coerce_bool(val: Any, _field_name: str) -> bool:
+    return val if isinstance(val, bool) else str(val).lower() in ("1", "true", "yes", "on")
+
+
+def _coerce_bytes(val: Any, _field_name: str) -> bytes:
+    return val if isinstance(val, bytes) else str(val).strip().encode("utf-8")
+
+
+_COERCERS: dict[int, Any] = {
+    FieldDescriptor.TYPE_BYTES: _coerce_bytes,
+    FieldDescriptor.TYPE_STRING: _coerce_string,
+    FieldDescriptor.TYPE_INT32: _coerce_int,
+    FieldDescriptor.TYPE_INT64: _coerce_int,
+    FieldDescriptor.TYPE_UINT32: _coerce_int,
+    FieldDescriptor.TYPE_UINT64: _coerce_int,
+    FieldDescriptor.TYPE_FLOAT: _coerce_float,
+    FieldDescriptor.TYPE_DOUBLE: _coerce_float,
+    FieldDescriptor.TYPE_BOOL: _coerce_bool,
+}
+
+_CPPTYPE_COERCERS: dict[int, Any] = {
+    FieldDescriptor.CPPTYPE_STRING: _coerce_string,
+    FieldDescriptor.CPPTYPE_INT32: _coerce_int,
+    FieldDescriptor.CPPTYPE_INT64: _coerce_int,
+    FieldDescriptor.CPPTYPE_UINT32: _coerce_int,
+    FieldDescriptor.CPPTYPE_UINT64: _coerce_int,
+    FieldDescriptor.CPPTYPE_FLOAT: _coerce_float,
+    FieldDescriptor.CPPTYPE_DOUBLE: _coerce_float,
+    FieldDescriptor.CPPTYPE_BOOL: _coerce_bool,
+}
+
+
 def _coerce_value(val: Any, field: Any, field_name: str = "") -> Any:
     """Coerce UCI string values to target Protobuf types using FieldDescriptor metadata. [SIL-2]"""
-    from google.protobuf.descriptor import FieldDescriptor
-
     if val is None:
         return None
-
-    cpp_type = field.cpp_type if hasattr(field, "cpp_type") else None
-    target_type = field.type if hasattr(field, "type") else field
-
-    if target_type == FieldDescriptor.TYPE_BYTES:
-        return val if isinstance(val, bytes) else str(val).strip().encode("utf-8")
-
-    if cpp_type == FieldDescriptor.CPPTYPE_STRING or target_type == FieldDescriptor.TYPE_STRING:
-        s_val = str(val).strip()
-        is_path_field = any(
-            x in field_name for x in ("_dir", "_file", "_root", "serial_port", "cloud_ca", "cloud_cert", "cloud_key")
-        )
-        if is_path_field and ("~" in s_val or "/" in s_val) and "\n" not in s_val:
-            return str(Path(s_val).expanduser().resolve())
-        return s_val or None
-
-    if cpp_type in (
-        FieldDescriptor.CPPTYPE_INT32,
-        FieldDescriptor.CPPTYPE_INT64,
-        FieldDescriptor.CPPTYPE_UINT32,
-        FieldDescriptor.CPPTYPE_UINT64,
-    ) or target_type in (
-        FieldDescriptor.TYPE_UINT32,
-        FieldDescriptor.TYPE_INT32,
-        FieldDescriptor.TYPE_UINT64,
-        FieldDescriptor.TYPE_INT64,
-    ):
-        try:
-            return int(val)
-        except (ValueError, TypeError):
-            return 0
-
-    if cpp_type in (FieldDescriptor.CPPTYPE_FLOAT, FieldDescriptor.CPPTYPE_DOUBLE) or target_type in (
-        FieldDescriptor.TYPE_FLOAT,
-        FieldDescriptor.TYPE_DOUBLE,
-    ):
-        try:
-            return float(val)
-        except (ValueError, TypeError):
-            return 0.0
-
-    if cpp_type == FieldDescriptor.CPPTYPE_BOOL or target_type == FieldDescriptor.TYPE_BOOL:
-        if isinstance(val, bool):
-            return val
-        return str(val).lower() in ("1", "true", "yes", "on")
-
+    target_type = getattr(field, "type", field)
+    if coercer := _COERCERS.get(target_type):
+        return coercer(val, field_name)
+    cpp_type = getattr(field, "cpp_type", None)
+    if cpp_type is not None and (cpp_coercer := _CPPTYPE_COERCERS.get(cpp_type)):
+        return cpp_coercer(val, field_name)
     return val
 
 

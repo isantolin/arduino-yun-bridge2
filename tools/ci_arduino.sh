@@ -62,12 +62,33 @@ echo "Installing libraries..."
 ./mcubridge-library-arduino/tools/install.sh "$USER_LIB_DIR"
 
 # [HOT-PATCH] Force official wolfSSL to use our settings by overwriting its user_settings.h
+rm -rf "$USER_LIB_DIR/Embedded_Template_Library_ETL"
+if [ -d "$USER_LIB_DIR/Embedded_Template_Library" ]; then
+    mkdir -p "$USER_LIB_DIR/Embedded_Template_Library/src"
+    cp -ru "$USER_LIB_DIR/Embedded_Template_Library/include/"* "$USER_LIB_DIR/Embedded_Template_Library/src/" 2>/dev/null || true
+    cp -ru "$USER_LIB_DIR/Embedded_Template_Library/include/"* "$USER_LIB_DIR/Embedded_Template_Library/" 2>/dev/null || true
+    if [ -f "$USER_LIB_DIR/Embedded_Template_Library/arduino/Embedded_Template_Library.h" ]; then
+        cp "$USER_LIB_DIR/Embedded_Template_Library/arduino/Embedded_Template_Library.h" "$USER_LIB_DIR/Embedded_Template_Library/src/Embedded_Template_Library.h"
+        cp "$USER_LIB_DIR/Embedded_Template_Library/arduino/Embedded_Template_Library.h" "$USER_LIB_DIR/Embedded_Template_Library/Embedded_Template_Library.h"
+    fi
+    if ! grep -q "includes=" "$USER_LIB_DIR/Embedded_Template_Library/library.properties" 2>/dev/null; then
+        echo "includes=Embedded_Template_Library.h,etl/algorithm.h" >> "$USER_LIB_DIR/Embedded_Template_Library/library.properties"
+    fi
+fi
+
 for wolf_dir in "$USER_LIB_DIR/wolfSSL" "$USER_LIB_DIR/wolfssl"; do
     if [ -d "$wolf_dir" ]; then
         echo "Patching official wolfSSL at $wolf_dir with our user_settings.h..."
         mkdir -p "$wolf_dir/src"
         cp "$PWD/mcubridge-library-arduino/src/user_settings.h" "$wolf_dir/src/user_settings.h"
         cp "$PWD/mcubridge-library-arduino/src/user_settings.h" "$wolf_dir/user_settings.h"
+        
+        # Clean up any top-level duplicate sources so arduino-cli uses recursive src/ structure cleanly
+        rm -f "$wolf_dir/wolfssl.h" "$wolf_dir/src"/*.c 2>/dev/null || true
+        
+        if ! grep -q "includes=" "$wolf_dir/library.properties" 2>/dev/null; then
+            echo "includes=wolfssl.h" >> "$wolf_dir/library.properties"
+        fi
         
         # [HOT-PATCH] Fix gmtime_r conflict in wc_port.c
         for wcf in "$wolf_dir/src/wolfcrypt/src/wc_port.c" "$wolf_dir/wolfcrypt/src/wc_port.c"; do
@@ -124,9 +145,9 @@ compile_sketch() {
     LOG_FILE="${_LOG_DIR}/${BOARD_NAME}_${sketch_name}.log"
 
     COMMON_FLAGS="-flto -fno-strict-aliasing -Wno-lto-type-mismatch -DWOLFSSL_USER_SETTINGS -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1"
-    local BUILD_FLAGS=("--fqbn" "$FQBN" "--library" "$LIB_PATH" "--libraries" "$USER_LIB_DIR" "--libraries" "$PWD/.dummy_libs" "--warnings" "default"
-                 "--build-property" "compiler.cpp.extra_flags=-std=gnu++17 -fno-exceptions $COMMON_FLAGS -DETL_NO_STL -I$USER_LIB_DIR/Embedded_Template_Library/include"
-                 "--build-property" "compiler.c.extra_flags=-std=gnu11 $COMMON_FLAGS -I$USER_LIB_DIR/Embedded_Template_Library/include"
+    local BUILD_FLAGS=("--fqbn" "$FQBN" "--library" "$LIB_PATH" "--libraries" "$USER_LIB_DIR" "--warnings" "default"
+                 "--build-property" "compiler.cpp.extra_flags=-std=gnu++17 -fno-exceptions $COMMON_FLAGS -DETL_NO_STL"
+                 "--build-property" "compiler.c.extra_flags=-std=gnu11 $COMMON_FLAGS"
                  "--build-property" "compiler.c.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch"
                  "--build-property" "compiler.cpp.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch"
                  "--build-property" "compiler.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch")
@@ -174,8 +195,14 @@ echo "Compiling examples in parallel (max $MAX_JOBS jobs)..."
 pids=()
 CRITICAL_FAIL=0
 
+# Collect all sketches
+SKETCHES=()
+while IFS= read -r s; do
+    [ -n "$s" ] && SKETCHES+=("$s")
+done < <(find "$EXAMPLES_DIR" -name "*.ino")
+
 for FQBN in "${TARGET_BOARDS[@]}"; do
-    while IFS= read -r sketch; do
+    for sketch in "${SKETCHES[@]}"; do
         compile_sketch "$FQBN" "$sketch" &
         pids+=($!)
 
@@ -184,7 +211,7 @@ for FQBN in "${TARGET_BOARDS[@]}"; do
             wait "${pids[0]}" || CRITICAL_FAIL=1
             pids=("${pids[@]:1}")
         fi
-    done < <(find "$EXAMPLES_DIR" -name "*.ino")
+    done
 done
 
 # Wait for remaining jobs

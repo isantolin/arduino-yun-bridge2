@@ -6,17 +6,24 @@
 #ifndef BRIDGE_H
 #define BRIDGE_H
 
+#include <Arduino.h>
 #include <stdint.h>
-
-#include "hal/hal.h"
 
 #if defined(ARDUINO_ARCH_AVR)
 #include <avr/wdt.h>
 #endif
+
+#ifdef min
+#undef min
+#endif
+#ifdef max
+#undef max
+#endif
+
 // clang-format off
-#include <PacketSerial.h>
-#include <Codecs/COBSR.h>
-// clang-format on
+#include <Embedded_Template_Library.h>
+#include <wolfssl.h>
+#include <wolfssl/wolfcrypt/settings.h>
 #include <etl/algorithm.h>
 #include <etl/array.h>
 #include <etl/callback_timer.h>
@@ -28,9 +35,13 @@
 #include <etl/span.h>
 #include <etl/string_view.h>
 #include <etl/vector.h>
+#include <PacketSerial.h>
+#include <Codecs/COBSR.h>
+// clang-format on
 
 #include "config/bridge_config.h"
 #include "fsm/bridge_fsm.h"
+#include "hal/hal.h"
 #include "protocol/rpc_frame.h"
 #include "protocol/rpc_protocol.h"
 #include "protocol/rpc_structs.h"

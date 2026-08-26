@@ -156,7 +156,20 @@ if [ "${1:-}" == "" ]; then
 else
     # In CI/CD or when a target directory is provided, we install them.
     # ETL: We copy the whole repository to the library directory.
+    rm -rf "$LIB_DIR/Embedded_Template_Library_ETL"
     install_dependency "Embedded_Template_Library" "https://codeload.github.com/ETLCPP/etl/zip/refs/tags/${ETL_VERSION}" "include/etl/algorithm.h" "$LIB_DIR"
+    if [ -d "$LIB_DIR/Embedded_Template_Library" ]; then
+        mkdir -p "$LIB_DIR/Embedded_Template_Library/src"
+        cp -ru "$LIB_DIR/Embedded_Template_Library/include/"* "$LIB_DIR/Embedded_Template_Library/src/" 2>/dev/null || true
+        cp -ru "$LIB_DIR/Embedded_Template_Library/include/"* "$LIB_DIR/Embedded_Template_Library/" 2>/dev/null || true
+        if [ -f "$LIB_DIR/Embedded_Template_Library/arduino/Embedded_Template_Library.h" ]; then
+            cp "$LIB_DIR/Embedded_Template_Library/arduino/Embedded_Template_Library.h" "$LIB_DIR/Embedded_Template_Library/src/Embedded_Template_Library.h"
+            cp "$LIB_DIR/Embedded_Template_Library/arduino/Embedded_Template_Library.h" "$LIB_DIR/Embedded_Template_Library/Embedded_Template_Library.h"
+        fi
+        if ! grep -q "includes=" "$LIB_DIR/Embedded_Template_Library/library.properties" 2>/dev/null; then
+            echo "includes=Embedded_Template_Library.h,etl/algorithm.h" >> "$LIB_DIR/Embedded_Template_Library/library.properties"
+        fi
+    fi
     # wolfSSL: Prefer official Arduino Library Manager package (wolfssl) if installed
     if [ -d "$LIB_DIR/wolfssl" ] && [ -d "$LIB_DIR/wolfSSL" ]; then
         rm -rf "$LIB_DIR/wolfSSL"

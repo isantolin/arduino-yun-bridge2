@@ -41,6 +41,8 @@ inline WiFiClass WiFi;
 #endif
 
 #include <Bridge.h>
+#include <wolfssl.h>
+#include <wolfssl/wolfcrypt/settings.h>
 
 // Configuration
 constexpr const char* WIFI_SSID = "McuBridge_Network";
@@ -49,6 +51,7 @@ constexpr const char* BRIDGE_HOST = "192.168.1.1";
 constexpr uint16_t BRIDGE_PORT = 9000;
 
 WiFiClient client;
+BridgeClass BridgeWiFiInstance(client);
 unsigned long last_reconnect_attempt = 0;
 constexpr unsigned long RECONNECT_INTERVAL_MS = 3000;
 
@@ -65,14 +68,14 @@ void setup() {
 
   // Connect to Python MPU Bridge daemon over TCP
   if (client.connect(BRIDGE_HOST, BRIDGE_PORT)) {
-    Bridge.begin(client);
+    BridgeWiFiInstance.begin();
     digitalWrite(LED_BUILTIN, HIGH);
   }
 }
 
 void loop() {
   if (client.connected()) {
-    Bridge.process();
+    BridgeWiFiInstance.process();
   } else {
     digitalWrite(LED_BUILTIN, LOW);
     unsigned long now = millis();
@@ -80,7 +83,7 @@ void loop() {
       last_reconnect_attempt = now;
       if (WiFi.status() == WL_CONNECTED &&
           client.connect(BRIDGE_HOST, BRIDGE_PORT)) {
-        Bridge.begin(client);
+        BridgeWiFiInstance.begin();
         digitalWrite(LED_BUILTIN, HIGH);
       }
     }

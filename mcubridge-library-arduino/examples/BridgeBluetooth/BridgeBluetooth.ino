@@ -16,6 +16,10 @@ BluetoothSerial SerialBT;
 #define BT_STREAM Serial1
 #endif
 #include <Bridge.h>
+#include <wolfssl.h>
+#include <wolfssl/wolfcrypt/settings.h>
+
+BridgeClass BridgeBT(BT_STREAM);
 
 void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
@@ -28,8 +32,8 @@ void setup() {
 #endif
 
   // Initialize bridge directly on the Bluetooth Stream
-  Bridge.begin(BT_STREAM);
+  BridgeBT.begin();
   digitalWrite(LED_BUILTIN, HIGH);
 }
 
-void loop() { Bridge.process(); }
+void loop() { BridgeBT.process(); }

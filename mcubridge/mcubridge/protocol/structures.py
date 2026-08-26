@@ -197,6 +197,40 @@ def get_ssl_context(cfg: pb.RuntimeConfig) -> Any | None:
         raise RuntimeError(f"TLS setup failed: {exc}") from exc
 
 
+def save_tls_session_ticket(cache: Any | None, host: str, port: int, ticket_bytes: bytes) -> None:
+    """Persist TLS 1.3 / QUIC 0-RTT session ticket into LMDB storage. [SIL-2]"""
+    if cache is None or not ticket_bytes:
+        return
+    key = f"tls_ticket:{host}:{port}"
+    if hasattr(cache, "_mem"):
+        cache._mem[key] = ticket_bytes
+    if hasattr(cache, "env") and cache.env and hasattr(cache, "db"):
+        try:
+            with cache.env.begin(write=True, db=cache.db) as txn:
+                txn.put(key.encode("utf-8"), ticket_bytes)
+        except (OSError, RuntimeError):
+            pass
+
+
+def load_tls_session_ticket(cache: Any | None, host: str, port: int) -> bytes | None:
+    """Retrieve persisted TLS 1.3 / QUIC 0-RTT session ticket from LMDB storage. [SIL-2]"""
+    if cache is None:
+        return None
+    key = f"tls_ticket:{host}:{port}"
+    if hasattr(cache, "_mem") and getattr(cache, "is_mem", False):
+        return cache._mem.get(key)
+    if hasattr(cache, "env") and cache.env and hasattr(cache, "db"):
+        try:
+            with cache.env.begin(db=cache.db, buffers=True) as txn:
+                val = txn.get(key.encode("utf-8"))
+                return bytes(val) if val is not None else None
+        except (OSError, RuntimeError):
+            return None
+    if hasattr(cache, "_mem"):
+        return cache._mem.get(key)
+    return None
+
+
 # =============================================================================
 # 3. Operational Structures
 # =============================================================================

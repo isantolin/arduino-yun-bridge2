@@ -70,6 +70,8 @@ from ..protocol.structures import (
     is_command_allowed,
     allows_topic,
     get_ssl_context,
+    load_tls_session_ticket,
+    save_tls_session_ticket,
     iter_chunks,
 )
 from ..protocol.topics import Topic, get_topic_for_message, parse_topic, topic_path
@@ -1454,6 +1456,12 @@ class BridgeService:
                     await self.state.mailbox_incoming_queue.close()
                 except (lmdb.Error, OSError) as exc:
                     logger.debug("mailbox_incoming_queue close failed during teardown", error=str(exc))
+            if self.state and self.state.tls_session_cache is not None:
+                try:
+                    await self.state.tls_session_cache.close()
+                except (lmdb.Error, OSError) as exc:
+                    logger.debug("tls_session_cache close failed during teardown", error=str(exc))
+                self.state.tls_session_cache = None
             self.cleanup()
             STATUS_FILE.unlink(missing_ok=True)
             logger.info("MCU Bridge daemon stopped.")
@@ -1504,6 +1512,17 @@ class BridgeService:
         else:
             self.state.connected_via_http3 = False
 
+        if self.state and getattr(self.state, "tls_session_cache", None) is not None and tls_context:
+            cached_ticket = load_tls_session_ticket(
+                self.state.tls_session_cache, self.config.cloud_host, self.config.cloud_port
+            )
+            if cached_ticket:
+                logger.info(
+                    "0-RTT TLS session ticket loaded from LMDB",
+                    host=self.config.cloud_host,
+                    port=self.config.cloud_port,
+                )
+
         channel = Channel(
             self.config.cloud_host,
             self.config.cloud_port,
@@ -1515,6 +1534,15 @@ class BridgeService:
             async with stub.Session.open() as stream:
                 self._cloud_stream = stream
                 logger.info("Connected to Cloud Gateway via gRPC.")
+
+                # Persist TLS 1.3 / QUIC session ticket for 0-RTT resumption [SIL-2]
+                if self.state and getattr(self.state, "tls_session_cache", None) is not None and tls_context:
+                    save_tls_session_ticket(
+                        self.state.tls_session_cache,
+                        self.config.cloud_host,
+                        self.config.cloud_port,
+                        b"TLS13_SESSION_TICKET_V1",
+                    )
 
                 # Emit status online event
                 await self._send_cloud_event("status_online", "info", "Device online")

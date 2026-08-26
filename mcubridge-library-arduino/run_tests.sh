@@ -14,7 +14,7 @@ cd "$SCRIPT_DIR"
 # Since these are ignored by .gitignore, we download them dynamically if missing.
 install_nanopb_core() {
     local target_dir="src"
-    local version="nanopb-0.4.9.1"
+    local version="nanopb-0.4.9.2"
     local base_url="https://raw.githubusercontent.com/nanopb/nanopb/${version}"
     local files=(
         "pb.h"

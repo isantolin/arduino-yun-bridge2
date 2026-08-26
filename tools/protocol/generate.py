@@ -765,7 +765,7 @@ def ensure_nanopb_core_files() -> None:
     """Ensure the core Nanopb C files exist in mcubridge-library-arduino/src/."""
 
     src_dir = REPO_ROOT / "mcubridge-library-arduino" / "src"
-    version = "nanopb-0.4.9.1"
+    version = "nanopb-0.4.9.2"
     base_url = f"https://raw.githubusercontent.com/nanopb/nanopb/{version}/"
     files = [
         "pb.h",

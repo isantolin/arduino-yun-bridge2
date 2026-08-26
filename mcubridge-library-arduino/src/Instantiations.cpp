@@ -66,7 +66,7 @@ etl::expected<rpc_pb_RpcEnvelope, FrameError> parse_frame(
   rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
   pb_istream_t stream = pb_istream_from_buffer(buffer.data(), crc_offset);
 
-  if (!pb_decode(&stream, rpc_pb_RpcEnvelope_fields, &env)) {
+  if (!pb_decode_noinit(&stream, rpc_pb_RpcEnvelope_fields, &env)) {
     return etl::unexpected<FrameError>(FrameError::MALFORMED);
   }
 

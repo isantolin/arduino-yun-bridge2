@@ -1420,3 +1420,77 @@ async def test_handshake_state_transition_from_sync_to_unsync_and_retry_stats(
     with patch.object(fsm, "_synchronize_attempt", new_callable=AsyncMock, return_value=True):
         ok = await fsm.synchronize()
         assert ok is True
+
+
+def test_tls_session_ticket_persistence_memory_and_lmdb(tmp_path: Path) -> None:
+    from mcubridge.protocol.structures import load_tls_session_ticket, save_tls_session_ticket
+    from mcubridge.state.storage import LmdbCache
+
+    # 1. None cache
+    save_tls_session_ticket(None, "cloud.local", 8443, b"ticket-data")
+    assert load_tls_session_ticket(None, "cloud.local", 8443) is None
+
+    # 2. In-memory cache
+    mem_cache = LmdbCache(":memory:")
+    save_tls_session_ticket(mem_cache, "cloud.local", 8443, b"ticket-mem-123")
+    ticket = load_tls_session_ticket(mem_cache, "cloud.local", 8443)
+    assert ticket == b"ticket-mem-123"
+    assert load_tls_session_ticket(mem_cache, "other.host", 8443) is None
+
+    # 3. Disk-backed LMDB cache
+    db_path = tmp_path / "tls_session_test"
+    db_path.mkdir(parents=True, exist_ok=True)
+    disk_cache = LmdbCache(str(db_path / "tls.db"))
+    try:
+        save_tls_session_ticket(disk_cache, "cloud.example.org", 8843, b"TLS13_TICKET_456")
+        loaded = load_tls_session_ticket(disk_cache, "cloud.example.org", 8843)
+        assert loaded == b"TLS13_TICKET_456"
+        assert load_tls_session_ticket(disk_cache, "missing.host", 8843) is None
+    finally:
+        asyncio.run(disk_cache.close())
+
+
+@pytest.mark.asyncio
+async def test_connect_cloud_session_with_0rtt_session_ticket(
+    test_config: RuntimeConfig, mock_state: RuntimeState
+) -> None:
+    from mcubridge.protocol.structures import save_tls_session_ticket, load_tls_session_ticket
+    from mcubridge.state.storage import LmdbCache
+
+    mock_state.tls_session_cache = LmdbCache(":memory:")
+    save_tls_session_ticket(
+        mock_state.tls_session_cache, test_config.cloud_host, test_config.cloud_port, b"EXISTING_TICKET"
+    )
+
+    serial = AsyncMock(spec=SerialTransport)
+    svc = BridgeService(test_config, mock_state, serial)
+
+    class MockStream:
+        def __init__(self) -> None:
+            self.send_message = AsyncMock()
+
+        async def __aenter__(self) -> "MockStream":
+            return self
+
+        async def __aexit__(self, *args: Any) -> None:
+            pass
+
+        def __aiter__(self) -> Any:
+            async def _gen() -> Any:
+                if False:
+                    yield None
+
+            return _gen()
+
+    mock_stub = MagicMock()
+    mock_stub.Session.open.return_value = MockStream()
+
+    with patch("mcubridge.services.runtime.Channel"):
+        with patch("mcubridge.services.runtime.CloudBridgeStub", return_value=mock_stub):
+            await svc.connect_cloud_session(tls_context=MagicMock())
+            # Assert ticket was retained and updated
+            saved_ticket = load_tls_session_ticket(
+                mock_state.tls_session_cache, test_config.cloud_host, test_config.cloud_port
+            )
+            assert saved_ticket is not None
+            assert len(saved_ticket) > 0

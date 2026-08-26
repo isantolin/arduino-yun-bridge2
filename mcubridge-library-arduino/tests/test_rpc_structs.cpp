@@ -21,7 +21,7 @@ void test_roundtrip(const T& p) {
 
   T p2 = {};
   pb_istream_t istream = pb_istream_from_buffer(buffer, used);
-  TEST_ASSERT(pb_decode(&istream, rpc::Payload::get_fields<T>(), &p2));
+  TEST_ASSERT(pb_decode_noinit(&istream, rpc::Payload::get_fields<T>(), &p2));
 }
 
 template <typename T>
@@ -29,8 +29,9 @@ void test_chaos_decode() {
   uint8_t buffer[2] = {0x91, 0xFF};  // Junk
   T p = {};
   pb_istream_t istream = pb_istream_from_buffer(buffer, 2);
-  (void)pb_decode(&istream, rpc::Payload::get_fields<rpc_pb_DigitalWrite>(),
-                  &p);  // Should fail gracefully
+  (void)pb_decode_noinit(&istream,
+                         rpc::Payload::get_fields<rpc_pb_DigitalWrite>(),
+                         &p);  // Should fail gracefully
 }
 
 void test_all_structs_roundtrip() {

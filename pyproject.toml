@@ -132,6 +132,8 @@ preview = true
 explicit-preview-rules = true
 
 [tool.ruff.lint.per-file-ignores]
+"tools/*" = ["E402"]
+"mcubridge-gateway/*" = ["E402"]
 
 [tool.ruff.lint.mccabe]
 # [QUALITY] Reduced from 50 to 25 for SIL-2 compliance and maintainability

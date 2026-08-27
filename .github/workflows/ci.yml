@@ -241,7 +241,7 @@ jobs:
           ./tools/compile_emulator.sh
           PYTHONPATH=mcubridge:mcubridge-client-examples python mcubridge-gateway/gateway.py --no-tls --port 8443 &
           gateway_pid=$!
-          python -u tools/emulation_runner.py \
+          PYTHONPATH=mcubridge:mcubridge-client-examples python -u tools/emulation_runner.py \
             --firmware ${{ matrix.firmware }} \
             ${{ matrix.scripts }}
           kill $gateway_pid

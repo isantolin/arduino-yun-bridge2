@@ -5,17 +5,26 @@ This server acts as the primary cloud endpoint for MPU Daemons, running as a gRP
 """
 
 from __future__ import annotations
-from mcubridge.protocol.mcubridge_grpc import CloudBridgeBase
-from mcubridge.protocol import mcubridge_pb2 as pb
-from grpclib.server import Server, Stream
-from typing import Annotated
-import typer
 
 import asyncio
 import ssl
+import sys
 from pathlib import Path
+from typing import Annotated
+
+repo_root = Path(__file__).resolve().parents[1]
+if str(repo_root / "mcubridge") not in sys.path:
+    sys.path.insert(0, str(repo_root / "mcubridge"))
+if str(repo_root) not in sys.path:
+    sys.path.insert(0, str(repo_root))
+
+from grpclib.server import Server, Stream
 import structlog
+import typer
+
 from mcubridge.config.logging import configure_logging
+from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.protocol.mcubridge_grpc import CloudBridgeBase
 
 configure_logging()
 logger = structlog.get_logger("mcubridge.gateway")

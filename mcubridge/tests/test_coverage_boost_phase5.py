@@ -663,14 +663,14 @@ async def test_runtime_handle_process_kill_paths(test_config: RuntimeConfig, moc
     serial = AsyncMock(spec=SerialTransport)
     svc = BridgeService(test_config, mock_state, serial)
 
-    kill_req = pb.CloudQueuedPublish(
+    pb.CloudQueuedPublish(
         topic_name="br/process/kill",
         payload=b"99999",
         correlation_data=b"corr-kill-1",
     )
 
     # Case 1: Process not found in running_processes
-    await svc._handle_shell_kill(99999, kill_req)
+    await svc.kill_process(99999)
     assert 99999 not in svc.state.running_processes
 
     # Case 2: Process found and terminated with error
@@ -682,7 +682,7 @@ async def test_runtime_handle_process_kill_paths(test_config: RuntimeConfig, moc
     svc.state.running_processes[88888] = ProcessContext(mock_handle)
 
     with patch.object(svc, "_terminate_process", side_effect=ProcessLookupError("Term failed")):
-        await svc._handle_shell_kill(88888, kill_req)
+        await svc.kill_process(88888)
         assert 88888 not in svc.state.running_processes
 
     # Case 3: _on_mcu_process_kill

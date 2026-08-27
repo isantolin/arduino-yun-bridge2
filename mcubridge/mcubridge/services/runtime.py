@@ -167,11 +167,11 @@ class BridgeService:
         # [SIL-2] O(1) MCU Dispatch Registry
         self.mcu_registry: dict[int, McuHandler] = self._setup_mcu_registry(serial)
         self._shell_dispatch: Final[
-            dict[ShellAction, Callable[[int, pb.CloudQueuedPublish], Coroutine[Any, Any, None]]]
+            dict[ShellAction, Callable[[int, pb.CloudQueuedPublish], Coroutine[Any, Any, Any]]]
         ] = {
             ShellAction.RUN_ASYNC: self._handle_shell_run_async,
             ShellAction.POLL: self._handle_shell_poll,
-            ShellAction.KILL: self._handle_shell_kill,
+            ShellAction.KILL: lambda pid, _inb: self.kill_process(pid),
         }
         self._topic_dispatch: Final[
             dict[Topic, Callable[[TopicRoute, pb.CloudQueuedPublish], Coroutine[Any, Any, None]]]
@@ -189,8 +189,8 @@ class BridgeService:
         self._spi_dispatch: Final[
             dict[SpiAction | str, Callable[[TopicRoute, pb.CloudQueuedPublish], Coroutine[Any, Any, None]]]
         ] = {
-            SpiAction.BEGIN: self._handle_spi_begin,
-            SpiAction.END: self._handle_spi_end,
+            SpiAction.BEGIN: lambda _r, _i: self._send_spi_cmd(Command.CMD_SPI_BEGIN),
+            SpiAction.END: lambda _r, _i: self._send_spi_cmd(Command.CMD_SPI_END),
             SpiAction.CONFIG: self._handle_spi_config,
             SpiAction.TRANSFER: self._handle_spi_transfer,
         }
@@ -814,10 +814,10 @@ class BridgeService:
             return
 
         if self._get_safe_path(target):
-            local_dispatch: dict[Any, Callable[[], Coroutine[Any, Any, None]]] = {
+            local_dispatch: dict[Any, Callable[[], Coroutine[Any, Any, Any]]] = {
                 FileAction.READ: lambda: self._handle_file_local_read(target, inbound),
                 FileAction.WRITE: lambda: self._handle_file_local_write(target, inbound),
-                FileAction.REMOVE: lambda: self._handle_file_local_remove(target, inbound),
+                FileAction.REMOVE: lambda: self.safe_file_remove(target),
             }
             if handler := local_dispatch.get(act):
                 await handler()
@@ -869,9 +869,6 @@ class BridgeService:
                     ),
                     reply_context=inbound,
                 )
-
-    async def _handle_file_local_remove(self, target: str, _inbound: pb.CloudQueuedPublish) -> None:
-        await self.safe_file_remove(target)
 
     async def _handle_file_mcu_read(self, ctx: pb.CloudQueuedPublish, target: str) -> None:
         serial = self.serial
@@ -988,14 +985,9 @@ class BridgeService:
             reply_context=inbound,
         )
 
-    async def _handle_shell_kill(self, pid: int, _inbound: pb.CloudQueuedPublish) -> None:
-        await self.kill_process(pid)
-
-    async def _handle_spi_begin(self, _route: TopicRoute, _inbound: pb.CloudQueuedPublish) -> None:
-        await cast("SerialTransport", self.serial).send(Command.CMD_SPI_BEGIN.value, b"")
-
-    async def _handle_spi_end(self, _route: TopicRoute, _inbound: pb.CloudQueuedPublish) -> None:
-        await cast("SerialTransport", self.serial).send(Command.CMD_SPI_END.value, b"")
+    async def _send_spi_cmd(self, command: Command) -> None:
+        if self.serial:
+            await self.serial.send(command.value, b"")
 
     async def _handle_spi_config(self, _route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         try:

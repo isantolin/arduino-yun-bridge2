@@ -427,7 +427,7 @@ async def test_runtime_handle_shell_branches(test_config: RuntimeConfig, mock_st
         assert mock_run.called
 
     # 3. kill with unknown pid
-    await svc._handle_shell_kill(99999, pb.CloudQueuedPublish(payload=b""))
+    await svc.kill_process(99999)
     assert 99999 not in svc.state.running_processes
 
 
@@ -756,7 +756,7 @@ async def test_runtime_handle_file_and_shell_edge_branches(
     mock_ctx = ProcessContext(AsyncMock())
     mock_state.running_processes[777] = mock_ctx
     with patch.object(svc, "_terminate_process", side_effect=ProcessLookupError("No such process")):
-        await svc._handle_shell_kill(777, pb.CloudQueuedPublish(payload=b""))
+        await svc.kill_process(777)
         assert 777 not in mock_state.running_processes
 
 

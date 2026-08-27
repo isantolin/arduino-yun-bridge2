@@ -27,9 +27,10 @@ if "pin_rest_cgi" in sys.modules:
 else:
     script_path = Path(__file__).parent.parent / "scripts" / "pin_rest_cgi.py"
     spec = importlib.util.spec_from_file_location("pin_rest_cgi", str(script_path))
-    pin_rest_cgi = importlib.util.module_from_spec(spec)  # type: ignore
+    assert spec is not None and spec.loader is not None
+    pin_rest_cgi = importlib.util.module_from_spec(spec)
     sys.modules["pin_rest_cgi"] = pin_rest_cgi
-    spec.loader.exec_module(pin_rest_cgi)  # type: ignore
+    spec.loader.exec_module(pin_rest_cgi)
 
 
 def test_pin_rest_cgi_set_pin_digital_sync_error() -> None:
@@ -96,7 +97,7 @@ async def test_local_bridge_service_ipc() -> None:
         req_msg = pb.CloudQueuedPublish(topic_name="br/d/13/read", correlation_data=b"123456789012")
         mock_stream.recv_message.return_value = req_msg
 
-        svc.handle_request = AsyncMock()  # type: ignore[method-assign]
+        setattr(svc, "handle_request", AsyncMock())
 
         async def _respond():
             await asyncio.sleep(0.01)

@@ -59,7 +59,7 @@ async def test_enqueue_cloud_console_queue(test_config: RuntimeConfig, mock_brid
     svc.console_queues.append(cq)
 
     msg = pb.CloudQueuedPublish(topic_name="mcu/console/stdout", payload=b"hello")
-    svc._publish_cloud_message = AsyncMock(return_value=True)  # type: ignore[method-assign]
+    setattr(svc, "_publish_cloud_message", AsyncMock(return_value=True))
     await svc.enqueue_cloud(msg)
 
     pushed = await cq.get()
@@ -123,16 +123,17 @@ async def test_flush_cloud_spool_corrupt_entry(test_config: RuntimeConfig, mock_
 @pytest.mark.asyncio
 async def test_handle_mcu_status_formatting(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
     svc = BridgeService(test_config, mock_bridge_state, MagicMock())
-    svc.enqueue_cloud = AsyncMock()  # type: ignore[method-assign]
+    mock_enqueue = AsyncMock()
+    setattr(svc, "enqueue_cloud", mock_enqueue)
 
     # Test status with GenericResponse payload
     resp = pb.GenericResponse(message="System initialized")
     await svc._handle_mcu_status(Status.OK, 1, resp)
-    svc.enqueue_cloud.assert_awaited()
+    mock_enqueue.assert_awaited()
 
     # Test status with raw bytes payload
     await svc._handle_mcu_status(Status.ERROR, 2, b"Raw error bytes")
-    assert svc.enqueue_cloud.call_count == 2
+    assert mock_enqueue.call_count == 2
 
 
 @pytest.mark.asyncio
@@ -142,7 +143,8 @@ async def test_handle_datastore_actions(test_config: RuntimeConfig, mock_bridge_
     cache.get.return_value = b"cached-value"
     cache.set.return_value = None
     mock_bridge_state.datastore_cache = cache
-    svc.publish_datastore_value = AsyncMock()  # type: ignore[method-assign]
+    mock_publish = AsyncMock()
+    setattr(svc, "publish_datastore_value", mock_publish)
 
     prefix = mock_bridge_state.cloud_topic_prefix
     put_topic = f"{prefix}/datastore/put/temp"
@@ -160,7 +162,7 @@ async def test_handle_datastore_actions(test_config: RuntimeConfig, mock_bridge_
     assert route_get is not None
     msg_get = pb.CloudQueuedPublish(topic_name=get_topic, payload=b"")
     await svc._handle_datastore(route_get, msg_get)
-    svc.publish_datastore_value.assert_awaited_with("temp", b"cached-value", reply_context=msg_get)
+    mock_publish.assert_awaited_with("temp", b"cached-value", reply_context=msg_get)
 
 
 @pytest.mark.asyncio
@@ -168,7 +170,8 @@ async def test_handle_mailbox_read_write(test_config: RuntimeConfig, mock_bridge
     mock_serial = AsyncMock()
     mock_serial.send.return_value = True
     svc = BridgeService(test_config, mock_bridge_state, mock_serial)
-    svc.enqueue_cloud = AsyncMock()  # type: ignore[method-assign]
+    mock_enqueue = AsyncMock()
+    setattr(svc, "enqueue_cloud", mock_enqueue)
 
     prefix = mock_bridge_state.cloud_topic_prefix
     write_topic = f"{prefix}/mailbox/write"
@@ -190,7 +193,8 @@ async def test_handle_file_mcu_read_success_and_timeout(
     mock_serial = AsyncMock()
     mock_serial.send_raw.return_value = True
     svc = BridgeService(test_config, mock_bridge_state, mock_serial)
-    svc.enqueue_cloud = AsyncMock()  # type: ignore[method-assign]
+    mock_enqueue = AsyncMock()
+    setattr(svc, "enqueue_cloud", mock_enqueue)
 
     # Success Path: MCU sends chunks then empty chunk
     inbound = pb.CloudQueuedPublish(topic_name="mcu/file/read/mcu/etc/config", payload=b"")
@@ -204,7 +208,7 @@ async def test_handle_file_mcu_read_success_and_timeout(
     await svc._on_mcu_file_read_resp(3, pb.FileReadResponse(content=b""))  # Completion
 
     await read_task
-    svc.enqueue_cloud.assert_awaited()
+    mock_enqueue.assert_awaited()
 
 
 @pytest.mark.asyncio
@@ -218,7 +222,8 @@ async def test_cloud_events_and_incoming_worker(test_config: RuntimeConfig, mock
     mock_stream.send_message.assert_awaited_once()
 
     # _cloud_incoming_worker test
-    svc.handle_request = AsyncMock()  # type: ignore[method-assign]
+    mock_handle = AsyncMock()
+    setattr(svc, "handle_request", mock_handle)
     msg = pb.CloudQueuedPublish(topic_name="mcu/datastore/get/temp", payload=b"")
     svc._cloud_incoming_queue.put_nowait(msg)
 
@@ -230,7 +235,7 @@ async def test_cloud_events_and_incoming_worker(test_config: RuntimeConfig, mock
     except asyncio.CancelledError:
         pass
 
-    svc.handle_request.assert_awaited_with(msg)
+    mock_handle.assert_awaited_with(msg)
 
 
 @pytest.mark.asyncio

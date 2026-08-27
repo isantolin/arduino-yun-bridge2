@@ -6,7 +6,6 @@ Direct PTY-PTY link via socat, with MCU opening its PTY directly.
 
 from __future__ import annotations
 
-import contextlib
 import json
 import os
 import signal
@@ -239,92 +238,97 @@ def run_emulation(
     all_success = True
 
     try:
-        with contextlib.ExitStack():
-            logger.info("Starting Daemon...")
-            daemon_proc = subprocess.Popen(
-                daemon_cmd,
-                env=daemon_env,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,
-            )
-            _start_worker_thread(_daemon_worker, "daemon", daemon_proc, state)
+        logger.info("Starting Daemon...")
+        daemon_proc = subprocess.Popen(
+            daemon_cmd,
+            env=daemon_env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+        _start_worker_thread(_daemon_worker, "daemon", daemon_proc, state)
 
-            # Wait for Daemon/MCU sync
-            logger.info("Waiting for stability (15s)...")
-            time.sleep(15)
+        # Wait for Daemon/MCU sync
+        logger.info("Waiting for stability (15s)...")
+        time.sleep(15)
 
-            # 4. Run scripts
-            if run_scripts:
-                for script in run_scripts:
-                    if not os.path.exists(script):
-                        logger.error("Script not found", script=script)
-                        all_success = False
-                        break
+        # 4. Run scripts
+        if run_scripts:
+            for script in run_scripts:
+                if not os.path.exists(script):
+                    logger.error("Script not found", script=script)
+                    all_success = False
+                    break
 
-                    with state.lock:
-                        lines_before = len(state.output_lines)
+                with state.lock:
+                    lines_before = len(state.output_lines)
 
-                    try:
-                        # Run with captured output but echoing to parent stdout/stderr
-                        subprocess.run([sys.executable, script], env=daemon_env, check=True, timeout=60)
-                        logger.info("Script execution passed", script=script)
-                    except (
-                        subprocess.CalledProcessError,
-                        subprocess.TimeoutExpired,
-                    ) as exc:
-                        logger.error("Script execution failed", script=script, error=str(exc))
-                        all_success = False
-                        break
+                try:
+                    # Run with captured output but echoing to parent stdout/stderr
+                    subprocess.run([sys.executable, script], env=daemon_env, check=True, timeout=60)
+                    logger.info("Script execution passed", script=script)
+                except (
+                    subprocess.CalledProcessError,
+                    subprocess.TimeoutExpired,
+                ) as exc:
+                    logger.error("Script execution failed", script=script, error=str(exc))
+                    all_success = False
+                    break
 
-                    # [SIL-2 Log Audit] Verify that the daemon or MCU emitted zero error logs during test execution
-                    with state.lock:
-                        new_lines = list(state.output_lines[lines_before:])
-                    script_errors = [
-                        f"[{src}] {line}"
-                        for src, line in new_lines
-                        if '"level": "error"' in line or '"level":"error"' in line or "MCU > ERROR:" in line
-                    ]
-                    if script_errors:
-                        logger.error(
-                            "Script produced unexpected error log events",
-                            script=script,
-                            error_count=len(script_errors),
-                        )
-                        for err in script_errors:
-                            logger.error("Unexpected script error", detail=err)
-                        all_success = False
-                        break
+                # [SIL-2 Log Audit] Verify that the daemon or MCU emitted zero error logs during test execution
+                with state.lock:
+                    new_lines = list(state.output_lines[lines_before:])
+                script_errors = [
+                    f"[{src}] {line}"
+                    for src, line in new_lines
+                    if '"level": "error"' in line or '"level":"error"' in line or "MCU > ERROR:" in line
+                ]
+                if script_errors:
+                    logger.error(
+                        "Script produced unexpected error log events",
+                        script=script,
+                        error_count=len(script_errors),
+                    )
+                    for err in script_errors:
+                        logger.error("Unexpected script error", detail=err)
+                    all_success = False
+                    break
 
-                    # Small cool-down between scripts to keep logs separated
-                    time.sleep(1)
+                # Small cool-down between scripts to keep logs separated
+                time.sleep(1)
     except (OSError, RuntimeError, ValueError) as exc:
         logger.error("Emulation error", error=str(exc))
         all_success = False
     finally:
         # Terminate daemon (same process group — plain kill only)
-        for p in [daemon_proc]:
-            if p is None:
-                continue
-            with contextlib.suppress(Exception):
-                os.kill(p.pid, signal.SIGTERM)
-                p.wait(timeout=2)
-            with contextlib.suppress(Exception):
-                os.kill(p.pid, signal.SIGKILL)
+        if daemon_proc is not None:
+            try:
+                os.kill(daemon_proc.pid, signal.SIGTERM)
+                daemon_proc.wait(timeout=2)
+            except (ProcessLookupError, OSError, subprocess.TimeoutExpired):
+                try:
+                    os.kill(daemon_proc.pid, signal.SIGKILL)
+                    daemon_proc.wait(timeout=1)
+                except (ProcessLookupError, OSError, subprocess.TimeoutExpired):
+                    pass
+
         # Terminate socat+MCU (separate session — use process group)
-        for p in [mcu_proc]:
-            with contextlib.suppress(Exception):
+        try:
+            try:
+                os.killpg(os.getpgid(mcu_proc.pid), signal.SIGTERM)
+            except (ProcessLookupError, OSError):
+                os.kill(mcu_proc.pid, signal.SIGTERM)
+            mcu_proc.wait(timeout=2)
+        except (ProcessLookupError, OSError, subprocess.TimeoutExpired):
+            try:
                 try:
-                    os.killpg(os.getpgid(p.pid), signal.SIGTERM)
+                    os.killpg(os.getpgid(mcu_proc.pid), signal.SIGKILL)
                 except (ProcessLookupError, OSError):
-                    os.kill(p.pid, signal.SIGTERM)
-                p.wait(timeout=2)
-            with contextlib.suppress(Exception):
-                try:
-                    os.killpg(os.getpgid(p.pid), signal.SIGKILL)
-                except (ProcessLookupError, OSError):
-                    os.kill(p.pid, signal.SIGKILL)
+                    os.kill(mcu_proc.pid, signal.SIGKILL)
+                mcu_proc.wait(timeout=1)
+            except (ProcessLookupError, OSError, subprocess.TimeoutExpired):
+                pass
 
     if not all_success:
         logger.error("Emulation FAILED.")

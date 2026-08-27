@@ -62,10 +62,11 @@ def resolve_protoc_bin() -> Path:
     try:
         import nanopb
 
-        nanopb_p = Path(nanopb.__file__).parent / "generator" / "protoc"
-        if nanopb_p.exists():
-            return nanopb_p
-    except Exception:
+        if hasattr(nanopb, "__file__") and nanopb.__file__:
+            nanopb_p = Path(nanopb.__file__).parent / "generator" / "protoc"
+            if nanopb_p.exists():
+                return nanopb_p
+    except (ImportError, AttributeError, TypeError):
         pass
     return Path("protoc")
 

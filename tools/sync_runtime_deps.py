@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Annotated, Any, TypedDict, cast
 
 from packaging.requirements import Requirement
-from packaging.version import Version
+from packaging.version import InvalidVersion, Version
 import typer
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -513,7 +513,7 @@ def _to_apk_version(version: str) -> str:
         parsed = Version(version)
         if not parsed.is_prerelease:
             return version
-    except Exception:
+    except (InvalidVersion, TypeError):
         pass
     version = re.sub(r"(\d)a(\d+)$", r"\1_alpha\2", version)
     version = re.sub(r"(\d)b(\d+)$", r"\1_beta\2", version)
@@ -615,6 +615,43 @@ def update_feeds(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
     return any_updated
 
 
+def update_workflows(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
+    workflows_dir = ROOT / ".github" / "workflows"
+    if not workflows_dir.exists():
+        return False
+
+    protoc_version = ""
+    for dep in deps:
+        if dep.get("name") == "protobuf":
+            _, p_ver = _parse_pip_spec(dep.get("pip", ""))
+            if p_ver:
+                parts = p_ver.split(".")
+                if len(parts) >= 3 and parts[0] in {"7", "6", "5", "4"}:
+                    protoc_version = f"{parts[1]}.{parts[2]}"
+                else:
+                    protoc_version = p_ver
+                break
+
+    if not protoc_version:
+        return False
+
+    any_updated = False
+    for wf in sorted(workflows_dir.glob("*.yml")):
+        content = wf.read_text(encoding="utf-8")
+        new_content = re.sub(
+            r"PROTOC_VERSION=[^\n]+",
+            f"PROTOC_VERSION={protoc_version}",
+            content,
+        )
+        if new_content != content:
+            any_updated = True
+            if not dry_run:
+                wf.write_text(new_content, encoding="utf-8")
+                sys.stderr.write(f"Updated {wf.name} PROTOC_VERSION to {protoc_version}\n")
+
+    return any_updated
+
+
 cli = typer.Typer(help="Generate derived dependency files from the runtime manifest.", add_completion=False)
 
 
@@ -657,6 +694,7 @@ def main(
     updated_gw_makefile = update_gateway_makefile(deps, dry_run=check)
     updated_cpp = update_cpp_install_script(cpp_deps, dry_run=check)
     updated_tox = update_tox_dev_deps(dev_deps, dry_run=check)
+    updated_workflows = update_workflows(deps, dry_run=check)
 
     fail = False
     if check and (
@@ -668,6 +706,7 @@ def main(
         or updated_gw_makefile
         or updated_cpp
         or updated_tox
+        or updated_workflows
     ):
         fail = True
 

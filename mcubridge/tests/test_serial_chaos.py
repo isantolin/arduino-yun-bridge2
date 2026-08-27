@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false
 import pytest
 from unittest.mock import AsyncMock
 from mcubridge.transport.serial import SerialTransport
@@ -25,6 +26,6 @@ async def test_abrupt_disconnect():
     mock_serial = AsyncMock()
     mock_serial.readuntil.side_effect = OSError("boom")
 
-    await transport._read_loop(mock_serial)  # pyright: ignore[reportPrivateUsage]
+    await transport._read_loop(mock_serial)
 
     assert mock_serial.readuntil.call_count == 1

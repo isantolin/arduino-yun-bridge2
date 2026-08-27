@@ -9,6 +9,7 @@ import time
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from typing import Any, cast
 
 from collections.abc import Iterator
 from mcubridge.config.settings import RuntimeConfig
@@ -62,8 +63,8 @@ async def test_unsupported_mcu_request_no_serial(
     svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, _serial = svc
-    service.serial = None  # type: ignore[assignment]
-    result = await service._unsupported_mcu_request(1, None)  # type: ignore[arg-type]
+    setattr(service, "serial", None)
+    result = await service._unsupported_mcu_request(1, cast(Any, None))
     assert result is False
 
 
@@ -87,7 +88,7 @@ async def test_on_mcu_mailbox_available_no_serial(
     svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, _serial = svc
-    service.serial = None  # type: ignore[assignment]
+    setattr(service, "serial", None)
     result = await service._on_mcu_mailbox_available(1, None)
     assert result is False
 
@@ -114,7 +115,7 @@ async def test_on_mcu_mailbox_read_no_serial(
     svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, _serial = svc
-    service.serial = None  # type: ignore[assignment]
+    setattr(service, "serial", None)
     result = await service._on_mcu_mailbox_read(1, None)
     assert result is False
 
@@ -174,7 +175,7 @@ async def test_on_mcu_file_write_no_serial(
     svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, _serial = svc
-    service.serial = None  # type: ignore[assignment]
+    setattr(service, "serial", None)
     p = pb.FileWrite(path="test.txt", data=b"x")
     result = await service._on_mcu_file_write(1, p)
     assert result is False
@@ -214,7 +215,7 @@ async def test_on_mcu_file_read_no_serial(
     svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, _serial = svc
-    service.serial = None  # type: ignore[assignment]
+    setattr(service, "serial", None)
     p = pb.FileRead(path="test.txt")
     result = await service._on_mcu_file_read(1, p)
     assert result is None
@@ -271,7 +272,7 @@ async def test_on_mcu_file_remove_no_serial(
     svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, _serial = svc
-    service.serial = None  # type: ignore[assignment]
+    setattr(service, "serial", None)
     p = pb.FileRemove(path="x.txt")
     result = await service._on_mcu_file_remove(1, p)
     assert result is False
@@ -529,7 +530,7 @@ async def test_on_mcu_process_run_async_no_serial(
     svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, _serial = svc
-    service.serial = None  # type: ignore[assignment]
+    setattr(service, "serial", None)
     p = pb.ProcessRunAsync(command="echo hi")
     result = await service._on_mcu_process_run_async(1, p)
     assert result is False
@@ -584,7 +585,7 @@ async def test_on_mcu_process_poll_no_serial(
     svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, _serial = svc
-    service.serial = None  # type: ignore[assignment]
+    setattr(service, "serial", None)
     p = pb.ProcessPoll(pid=999)
     result = await service._on_mcu_process_poll(1, p)
     assert result is False

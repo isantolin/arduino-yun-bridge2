@@ -8,7 +8,6 @@ running full E2E client verification suites.
 
 from __future__ import annotations
 
-import contextlib
 import json
 import os
 import pty
@@ -184,7 +183,7 @@ def run_simavr_emulation(
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            errors="replace",
+            encoding="utf-8",
             bufsize=1,
         )
         # Parse PTY path emitted by harness
@@ -220,7 +219,7 @@ def run_simavr_emulation(
                 stdout=slave_fd,
                 stderr=subprocess.PIPE,
                 text=True,
-                errors="replace",
+                encoding="utf-8",
                 bufsize=1,
                 close_fds=True,
             )
@@ -296,7 +295,7 @@ def run_simavr_emulation(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
-        errors="replace",
+        encoding="utf-8",
         bufsize=1,
     )
 
@@ -319,8 +318,10 @@ def run_simavr_emulation(
         simavr_proc.terminate()
         daemon_proc.terminate()
         if master_fd >= 0:
-            with contextlib.suppress(Exception):
+            try:
                 os.close(master_fd)
+            except OSError:
+                pass
         shutil.rmtree(fake_uci_dir, ignore_errors=True)
         shutil.rmtree(storage_path, ignore_errors=True)
         return False
@@ -332,8 +333,10 @@ def run_simavr_emulation(
         if simavr_proc:
             simavr_proc.terminate()
         if master_fd >= 0:
-            with contextlib.suppress(Exception):
+            try:
                 os.close(master_fd)
+            except OSError:
+                pass
         shutil.rmtree(fake_uci_dir, ignore_errors=True)
         shutil.rmtree(storage_path, ignore_errors=True)
         return False
@@ -341,9 +344,17 @@ def run_simavr_emulation(
     logger.info("MCU/daemon link synchronized successfully!")
     time.sleep(1.0)
 
-    logger.info("Executing client test suite on synchronized link...")
-    all_passed = True
+    all_passed = _run_client_scripts(test_scripts, daemon_env, socket_path, timeout_seconds)
+    _teardown_simavr(daemon_proc, simavr_proc, master_fd, fake_uci_dir, storage_path)
+    return all_passed
 
+
+def _run_client_scripts(
+    test_scripts: list[Path],
+    daemon_env: dict[str, str],
+    socket_path: Path,
+    timeout_seconds: float,
+) -> bool:
     for test_path in test_scripts:
         if not test_path.exists():
             logger.warn("Test script not found, skipping", path=str(test_path))
@@ -358,7 +369,7 @@ def run_simavr_emulation(
             env=test_env,
             capture_output=True,
             text=True,
-            errors="replace",
+            encoding="utf-8",
             timeout=timeout_seconds,
             check=False,
         )
@@ -371,27 +382,41 @@ def run_simavr_emulation(
                 stdout=test_res.stdout,
                 stderr=test_res.stderr,
             )
-            all_passed = False
-            break
+            return False
         logger.info("Test passed", script=test_path.name)
+    return True
 
-    # Teardown processes gracefully
+
+def _teardown_simavr(
+    daemon_proc: subprocess.Popen[Any] | None,
+    simavr_proc: subprocess.Popen[Any] | None,
+    master_fd: int,
+    fake_uci_dir: Path | str,
+    storage_path: Path | str,
+) -> None:
     logger.info("Tearing down processes...")
-    daemon_proc.send_signal(signal.SIGTERM)
-    with contextlib.suppress(Exception):
-        daemon_proc.wait(timeout=5)
+    if daemon_proc is not None:
+        daemon_proc.send_signal(signal.SIGTERM)
+        try:
+            daemon_proc.wait(timeout=5)
+        except (subprocess.TimeoutExpired, ProcessLookupError, OSError):
+            daemon_proc.kill()
 
-    simavr_proc.send_signal(signal.SIGTERM)
-    with contextlib.suppress(Exception):
-        simavr_proc.wait(timeout=5)
+    if simavr_proc is not None:
+        simavr_proc.send_signal(signal.SIGTERM)
+        try:
+            simavr_proc.wait(timeout=5)
+        except (subprocess.TimeoutExpired, ProcessLookupError, OSError):
+            simavr_proc.kill()
 
     if master_fd >= 0:
-        with contextlib.suppress(Exception):
+        try:
             os.close(master_fd)
+        except OSError:
+            pass
 
     shutil.rmtree(fake_uci_dir, ignore_errors=True)
     shutil.rmtree(storage_path, ignore_errors=True)
-    return all_passed
 
 
 app = typer.Typer(

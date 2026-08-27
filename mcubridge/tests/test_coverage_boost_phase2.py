@@ -11,6 +11,7 @@ import time
 import types
 from io import BytesIO
 from pathlib import Path
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -31,8 +32,8 @@ from mcubridge.transport.serial import SerialTransport
 # ──────────────────────────────────────────────────────────────────────────────
 if "uci" not in sys.modules:
     _uci_mock = types.ModuleType("uci")
-    _uci_mock.Uci = MagicMock  # type: ignore[attr-defined]
-    _uci_mock.UciException = RuntimeError  # type: ignore[attr-defined]
+    setattr(_uci_mock, "Uci", MagicMock)
+    setattr(_uci_mock, "UciException", RuntimeError)
     sys.modules["uci"] = _uci_mock
 
 
@@ -62,7 +63,7 @@ def _make_config(**overrides: object) -> RuntimeConfig:
         "allowed_commands": ("echo", "ls"),
     }
     defaults.update(overrides)
-    return RuntimeConfig(**defaults)  # type: ignore[arg-type]
+    return RuntimeConfig(**cast(dict[str, Any], defaults))
 
 
 def _make_state(config: RuntimeConfig | None = None) -> RuntimeState:
@@ -396,9 +397,9 @@ class TestLmdbDequeVacuum:
             mock_env = MagicMock(spec=lmdb.Environment)
             mock_env.copy.side_effect = OSError("copy failed")
             original_env = deque.env
-            deque.env = mock_env  # type: ignore[assignment]
+            cast(Any, deque).env = mock_env
             await deque.vacuum()
-            deque.env = original_env
+            cast(Any, deque).env = original_env
             # Should not raise, and deque should still work
             assert len(deque) >= 0
         finally:
@@ -617,9 +618,9 @@ class TestRotateCredentials:
         if uci_mod is None:
             uci_mod = types.ModuleType("uci")
             sys.modules["uci"] = uci_mod
-        uci_mod.UciException = type("UciException", (RuntimeError,), {})  # type: ignore[attr-defined]
+        setattr(uci_mod, "UciException", type("UciException", (RuntimeError,), {}))
         if not hasattr(uci_mod, "Uci"):
-            uci_mod.Uci = MagicMock  # type: ignore[attr-defined]
+            setattr(uci_mod, "Uci", MagicMock)
 
     def test_update_uci_credentials_success(self) -> None:
         self._ensure_uci_mock()

@@ -31,9 +31,9 @@ dependencies = [
     "uvloop==0.22.1",
 ]
 
-[tool.setuptools]
-packages = ["mcubridge"]
-package-dir = {"" = "mcubridge"}
+[tool.setuptools.packages.find]
+where = ["mcubridge"]
+include = ["mcubridge*"]
 
 [tool.pytest.ini_options]
 minversion = "7.0"

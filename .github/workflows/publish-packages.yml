@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 env:
@@ -15,7 +15,7 @@ env:
 
 jobs:
   publish-python-wheel:
-    name: Publish Python Wheel to GitHub Packages
+    name: Publish Python Packages (Wheel & sdist)
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v6
@@ -48,9 +48,24 @@ jobs:
       - name: Build Python Package (sdist & wheel)
         run: python -m build
 
-      - name: Publish to GitHub Packages PyPI
+      - name: Upload Python Package Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-dist-packages
+          path: dist/
+
+      - name: Attach Wheels & Source to GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          files: dist/*
         env:
-          TWINE_USERNAME: ${{ github.actor }}
-          TWINE_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish to PyPI (if token configured)
+        if: env.TWINE_PASSWORD != ''
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
         run: |
-          twine upload --repository-url https://pypi.pkg.github.com/${{ github.repository_owner }} dist/* --skip-existing
+          twine upload dist/* --skip-existing

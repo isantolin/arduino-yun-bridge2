@@ -32,7 +32,7 @@ jobs:
           curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${PROTOC_ZIP}
           sudo unzip -o ${PROTOC_ZIP} -d /usr/local
           rm -f ${PROTOC_ZIP}
-          python -m pip install --upgrade pip build twine setuptools wheel protobuf nanopb jinja2 typer black mypy-protobuf grpcio-tools packaging
+          python -m pip install --upgrade pip build twine setuptools wheel -r requirements/runtime.txt mypy-protobuf
 
       - name: Generate Protocol Bindings
         run: |

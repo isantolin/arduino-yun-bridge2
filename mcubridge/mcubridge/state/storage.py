@@ -16,6 +16,44 @@ T = TypeVar("T")
 _U64 = struct.Struct(">Q")
 
 
+def _open_lmdb_env(
+    path: str, db_name: bytes, default_file: str, map_size: int = 10485760
+) -> tuple[lmdb.Environment | None, Any]:
+    """Canonical resilient LMDB environment opener with automatic corruption recovery. [SIL-2]"""
+    p = Path(path)
+    if p.is_dir():
+        env_path = str(p / default_file)
+    else:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        env_path = path
+
+    for attempt in range(2):
+        try:
+            env = lmdb.open(
+                env_path,
+                max_dbs=1,
+                map_size=map_size,
+                readahead=False,
+                meminit=False,
+                map_async=True,
+                subdir=False,
+            )
+            db = env.open_db(db_name)
+            return env, db
+        except (lmdb.Error, OSError) as exc:
+            if attempt == 0:
+                logger.warning("LMDB database corrupt or invalid, recreating", path=env_path, error=str(exc))
+                target = Path(env_path)
+                if target.exists():
+                    try:
+                        target.unlink()
+                    except OSError as e:
+                        logger.warning("Failed to unlink target path", path=str(target), error=str(e))
+            else:
+                logger.error("Failed to reinitialize LMDB environment", path=env_path, error=str(exc))
+    return None, None
+
+
 class LmdbDeque:
     """SIL-2 persistent FIFO queue implementation backed by LMDB C transactions."""
 
@@ -31,40 +69,7 @@ class LmdbDeque:
             self._open_env()
 
     def _open_env(self) -> None:
-        p = Path(self.path)
-        if p.is_dir():
-            env_path = str(p / "deque.db")
-        else:
-            p.parent.mkdir(parents=True, exist_ok=True)
-            env_path = self.path
-
-        try:
-            self.env = lmdb.open(
-                env_path, max_dbs=1, map_size=10485760, readahead=False, meminit=False, map_async=True, subdir=False
-            )
-            self.db = self.env.open_db(b"deque")
-        except (lmdb.Error, OSError) as exc:
-            logger.warning("LmdbDeque database corrupt or invalid, recreating", error=str(exc))
-            self.env = None
-            target = Path(env_path)
-            if target.exists():
-                try:
-                    target.unlink()
-                except OSError as e:
-                    logger.warning("Failed to unlink target path", path=str(target), error=str(e))
-            try:
-                self.env = lmdb.open(
-                    env_path,
-                    max_dbs=1,
-                    map_size=10485760,
-                    readahead=False,
-                    meminit=False,
-                    map_async=True,
-                    subdir=False,
-                )
-                self.db = self.env.open_db(b"deque")
-            except (lmdb.Error, OSError) as e:
-                logger.error("Failed to reinitialize LMDB deque", error=str(e))
+        self.env, self.db = _open_lmdb_env(self.path, b"deque", "deque.db")
 
     def __len__(self) -> int:
         if self.is_mem:
@@ -119,8 +124,9 @@ class LmdbDeque:
     async def clear(self) -> None:
         if self.is_mem:
             self._mem.clear()
-        else:
-            self._open_env()
+        elif self.env and self.db:
+            with self.env.begin(write=True, db=self.db) as txn:
+                txn.drop(self.db, delete=False)
 
     async def vacuum(self) -> None:
         """[SIL-2] Compact LMDB storage to reclaim disk space after spool flush."""
@@ -164,40 +170,7 @@ class LmdbCache:
             self._open_env()
 
     def _open_env(self) -> None:
-        p = Path(self.path)
-        if p.is_dir():
-            env_path = str(p / "cache.db")
-        else:
-            p.parent.mkdir(parents=True, exist_ok=True)
-            env_path = self.path
-
-        try:
-            self.env = lmdb.open(
-                env_path, max_dbs=1, map_size=10485760, readahead=False, meminit=False, map_async=True, subdir=False
-            )
-            self.db = self.env.open_db(b"cache")
-        except (lmdb.Error, OSError) as exc:
-            logger.warning("Failed to initialize LmdbCache schema", error=str(exc))
-            self.env = None
-            target = Path(env_path)
-            if target.exists():
-                try:
-                    target.unlink()
-                except OSError as e:
-                    logger.warning("Failed to unlink target path", path=str(target), error=str(e))
-            try:
-                self.env = lmdb.open(
-                    env_path,
-                    max_dbs=1,
-                    map_size=10485760,
-                    readahead=False,
-                    meminit=False,
-                    map_async=True,
-                    subdir=False,
-                )
-                self.db = self.env.open_db(b"cache")
-            except (lmdb.Error, OSError) as e:
-                logger.error("Failed to reinitialize LMDB cache", error=str(e))
+        self.env, self.db = _open_lmdb_env(self.path, b"cache", "cache.db")
 
     async def set(self, key: str, value: bytes) -> None:
         if self.is_mem:
@@ -224,8 +197,9 @@ class LmdbCache:
     async def clear(self) -> None:
         if self.is_mem:
             self._mem.clear()
-        else:
-            self._open_env()
+        elif self.env and self.db:
+            with self.env.begin(write=True, db=self.db) as txn:
+                txn.drop(self.db, delete=False)
 
     async def close(self) -> None:
         if self.env:

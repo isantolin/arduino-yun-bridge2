@@ -1149,6 +1149,38 @@ async def test_lmdb_deque_branch_coverage(tmp_path: Path) -> None:
     deque.env = None
     assert len(deque) == 0
 
+    # 3. Clear on disk backend
+    deque_disk = LmdbDeque(str(tmp_path / "clear_deque"))
+    await deque_disk.append(b"data")
+    assert len(deque_disk) == 1
+    await deque_disk.clear()
+    assert len(deque_disk) == 0
+
+
+@pytest.mark.asyncio
+async def test_lmdb_cache_clear(tmp_path: Path) -> None:
+    from mcubridge.state.storage import LmdbCache
+
+    # 1. Memory mode
+    cache_mem = LmdbCache(":memory:")
+    await cache_mem.set("k1", b"v1")
+    assert await cache_mem.get("k1") == b"v1"
+    await cache_mem.clear()
+    assert await cache_mem.get("k1") is None
+
+    # 2. Disk mode
+    cache_disk = LmdbCache(str(tmp_path / "cache_disk"))
+    await cache_disk.set("k_disk", b"v_disk")
+    assert await cache_disk.get("k_disk") == b"v_disk"
+    await cache_disk.clear()
+    assert await cache_disk.get("k_disk") is None
+
+    # 3. None env get/set
+    cache_disk.env = None
+    assert await cache_disk.get("k_disk", default=b"def") == b"def"
+    await cache_disk.set("k_none", b"val")
+    await cache_disk.clear()
+
 
 def test_security_self_test_chacha_invalid_length() -> None:
     from mcubridge.security.security import verify_crypto_integrity

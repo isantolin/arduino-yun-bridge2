@@ -8,6 +8,7 @@ not used.
 """
 
 from __future__ import annotations
+from google.protobuf import json_format
 from google.protobuf.descriptor import FieldDescriptor
 
 import structlog
@@ -86,73 +87,62 @@ def get_config_source() -> str:
     return _config_source[0]
 
 
-def _coerce_string(val: Any, field_name: str) -> str | None:
-    s_val = str(val).strip()
-    is_path_field = any(
-        x in field_name for x in ("_dir", "_file", "_root", "serial_port", "cloud_ca", "cloud_cert", "cloud_key")
-    )
-    if is_path_field and ("~" in s_val or "/" in s_val) and "\n" not in s_val:
-        return str(Path(s_val).expanduser().resolve())
-    return s_val or None
+def _normalize_config_dict(raw: dict[str, Any]) -> tuple[dict[str, Any], bytes | None]:
+    """Normalize raw dictionary keys and types for Protobuf ParseDict. [SIL-2]"""
+    norm: dict[str, Any] = {}
+    auth: dict[str, Any] = {}
+    secret: bytes | None = None
 
+    for k, v in raw.items():
+        if k == "serial_shared_secret":
+            if v is not None:
+                secret = v if isinstance(v, bytes) else str(v).strip().encode("utf-8")
+            continue
 
-def _coerce_int(val: Any, _field_name: str) -> int:
-    try:
-        return int(val)
-    except (ValueError, TypeError):
-        return 0
+        if k == "allowed_commands":
+            if isinstance(v, (list, tuple)):
+                items = cast("list[Any] | tuple[Any, ...]", v)
+                norm[k] = [str(x).strip() for x in items if str(x).strip()]
+            elif isinstance(v, str):
+                norm[k] = v.split()
+            else:
+                norm[k] = [] if v is None else [str(v)]
+            continue
 
+        field = pb.RuntimeConfig.DESCRIPTOR.fields_by_name.get(k)
+        if field is not None:
+            if field.type == FieldDescriptor.TYPE_BOOL:
+                norm[k] = v if isinstance(v, bool) else str(v).lower() in ("1", "true", "yes", "on")
+            elif any(x in k for x in ("_dir", "_file", "_root", "serial_port", "cloud_ca", "cloud_cert", "cloud_key")):
+                s_val = str(v).strip()
+                norm[k] = (
+                    str(Path(s_val).expanduser().resolve())
+                    if (("~" in s_val or "/" in s_val) and "\n" not in s_val)
+                    else s_val
+                )
+            elif field.type == FieldDescriptor.TYPE_STRING:
+                norm[k] = str(v).strip() if v is not None else ""
+            else:
+                norm[k] = v
+            continue
 
-def _coerce_float(val: Any, _field_name: str) -> float:
-    try:
-        return float(val)
-    except (ValueError, TypeError):
-        return 0.0
+        if k.startswith(("cloud_allow_", "allow_")):
+            prefix = "cloud_allow_" if k.startswith("cloud_allow_") else "allow_"
+            auth_key = k.removeprefix(prefix)
+            auth_bool = v if isinstance(v, bool) else str(v).lower() in ("1", "true", "yes", "on")
+            if auth_key in pb.TopicAuthorization.DESCRIPTOR.fields_by_name:
+                auth[auth_key] = auth_bool
+            else:
+                for auth_field in pb.TopicAuthorization.DESCRIPTOR.fields:
+                    if auth_field.name.startswith(f"{auth_key}_") or auth_field.name == auth_key:
+                        auth[auth_field.name] = auth_bool
+            continue
 
+        norm[k] = v
 
-def _coerce_bool(val: Any, _field_name: str) -> bool:
-    return val if isinstance(val, bool) else str(val).lower() in ("1", "true", "yes", "on")
-
-
-def _coerce_bytes(val: Any, _field_name: str) -> bytes:
-    return val if isinstance(val, bytes) else str(val).strip().encode("utf-8")
-
-
-_COERCERS: dict[int, Any] = {
-    FieldDescriptor.TYPE_BYTES: _coerce_bytes,
-    FieldDescriptor.TYPE_STRING: _coerce_string,
-    FieldDescriptor.TYPE_INT32: _coerce_int,
-    FieldDescriptor.TYPE_INT64: _coerce_int,
-    FieldDescriptor.TYPE_UINT32: _coerce_int,
-    FieldDescriptor.TYPE_UINT64: _coerce_int,
-    FieldDescriptor.TYPE_FLOAT: _coerce_float,
-    FieldDescriptor.TYPE_DOUBLE: _coerce_float,
-    FieldDescriptor.TYPE_BOOL: _coerce_bool,
-}
-
-_CPPTYPE_COERCERS: dict[int, Any] = {
-    FieldDescriptor.CPPTYPE_STRING: _coerce_string,
-    FieldDescriptor.CPPTYPE_INT32: _coerce_int,
-    FieldDescriptor.CPPTYPE_INT64: _coerce_int,
-    FieldDescriptor.CPPTYPE_UINT32: _coerce_int,
-    FieldDescriptor.CPPTYPE_UINT64: _coerce_int,
-    FieldDescriptor.CPPTYPE_FLOAT: _coerce_float,
-    FieldDescriptor.CPPTYPE_DOUBLE: _coerce_float,
-    FieldDescriptor.CPPTYPE_BOOL: _coerce_bool,
-}
-
-
-def _coerce_value(val: Any, field: Any, field_name: str = "") -> Any:
-    """Coerce UCI string values to target Protobuf types using FieldDescriptor metadata. [SIL-2]"""
-    if val is None:
-        return None
-    target_type = getattr(field, "type", field)
-    if coercer := _COERCERS.get(target_type):
-        return coercer(val, field_name)
-    cpp_type = getattr(field, "cpp_type", None)
-    if cpp_type is not None and (cpp_coercer := _CPPTYPE_COERCERS.get(cpp_type)):
-        return cpp_coercer(val, field_name)
-    return val
+    if auth:
+        norm["topic_authorization"] = auth
+    return norm, secret
 
 
 def load_runtime_config(overrides: dict[str, Any] | None = None) -> RuntimeConfig:
@@ -170,46 +160,14 @@ def load_runtime_config(overrides: dict[str, Any] | None = None) -> RuntimeConfi
     _config_source[0] = source
 
     msg = pb.RuntimeConfig()
-
-    if isinstance(raw_values.get("allowed_commands"), str):
-        raw_values["allowed_commands"] = raw_values["allowed_commands"].split()
-    elif raw_values.get("allowed_commands") is None:
-        raw_values["allowed_commands"] = []
-
-    for field in msg.DESCRIPTOR.fields:
-        if field.name in ("allowed_policy", "topic_authorization"):
-            continue
-
-        val = raw_values.get(field.name)
-        if val is None:
-            continue
-
-        if hasattr(getattr(msg, field.name), "extend"):
-            if isinstance(val, (list, tuple)):
-                items = [_coerce_value(i, field, field.name) for i in cast("list[Any]", val)]
-                getattr(msg, field.name).extend(items)
-            continue
-
-        coerced = _coerce_value(val, field, field.name)
-        if coerced is not None:
-            setattr(msg, field.name, coerced)
-
-    # Load topic authorizations dynamically from raw_values/UCI
-    for auth_field in msg.topic_authorization.DESCRIPTOR.fields:
-        for key_candidate in (
-            f"cloud_allow_{auth_field.name}",
-            f"allow_{auth_field.name}",
-        ):
-            if key_candidate in raw_values:
-                coerced = _coerce_value(raw_values[key_candidate], auth_field, auth_field.name)
-                if coerced is not None:
-                    setattr(msg.topic_authorization, auth_field.name, coerced)
-                break
-
+    norm_dict, secret = _normalize_config_dict(raw_values)
     try:
+        json_format.ParseDict(norm_dict, msg, ignore_unknown_fields=True)
+        if secret is not None:
+            msg.serial_shared_secret = secret
         validate_config(msg)
         return msg
-    except (ValueError, TypeError) as e:
+    except (ValueError, TypeError, json_format.ParseError) as e:
         if source == "uci":
             logger.critical("FATAL: UCI configuration is invalid", error=str(e))
             raise RuntimeError(f"Invalid system configuration: {e}") from e
@@ -222,8 +180,6 @@ def load_runtime_config_from_json(
     overrides: dict[str, Any] | None = None,
 ) -> RuntimeConfig:
     """Load, parse, and validate RuntimeConfig from JSON or Dict using native Protobuf json_format. [SIL-2]"""
-    from google.protobuf import json_format
-
     msg = pb.RuntimeConfig()
     defaults = get_default_config()
     for k, v in defaults.items():
@@ -234,7 +190,10 @@ def load_runtime_config_from_json(
     if isinstance(data, (str, bytes)):
         json_format.Parse(data, msg, ignore_unknown_fields=True)
     else:
-        json_format.ParseDict(data, msg, ignore_unknown_fields=True)
+        norm_data, secret = _normalize_config_dict(data)
+        json_format.ParseDict(norm_data, msg, ignore_unknown_fields=True)
+        if secret is not None:
+            msg.serial_shared_secret = secret
 
     if overrides:
         for k, v in overrides.items():

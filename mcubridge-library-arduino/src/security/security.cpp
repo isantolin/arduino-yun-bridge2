@@ -215,12 +215,9 @@ bool run_cryptographic_self_tests() {
   etl::array<uint8_t, rpc::RPC_SHA256_KAT_BUFFER_SIZE> buffer;
 
   // 1. SHA256 KAT
-  Sha256 sha;
-  wc_InitSha256(&sha);
   const size_t msg_len = kat_sha256_msg.size();
   memcpy_P(buffer.data(), kat_sha256_msg.data(), msg_len);
-  wc_Sha256Update(&sha, buffer.data(), static_cast<word32>(msg_len));
-  wc_Sha256Final(&sha, actual.data());
+  wc_Sha256Hash(buffer.data(), static_cast<word32>(msg_len), actual.data());
 
   etl::array<uint8_t, rpc::RPC_SHA256_DIGEST_SIZE> expected_buf;
   memcpy_P(expected_buf.data(), kat_sha256_expected.data(),

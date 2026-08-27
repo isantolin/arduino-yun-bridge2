@@ -24,8 +24,6 @@ class LmdbDeque:
         self.maxlen = maxlen
         self.is_mem = path.startswith(":memory:")
         self._mem: collections.deque[bytes] = collections.deque(maxlen=maxlen)
-        self._head = 0
-        self._tail = 0
         self.env: lmdb.Environment | None = None
         self.db: Any = None
 
@@ -45,10 +43,6 @@ class LmdbDeque:
                 env_path, max_dbs=1, map_size=10485760, readahead=False, meminit=False, map_async=True, subdir=False
             )
             self.db = self.env.open_db(b"deque")
-            with self.env.begin(db=self.db, buffers=True) as txn:
-                cur = txn.cursor()
-                self._head = _U64.unpack(cur.key())[0] if cur.first() else 0
-                self._tail = _U64.unpack(cur.key())[0] + 1 if cur.last() else 0
         except (lmdb.Error, OSError) as exc:
             logger.warning("LmdbDeque database corrupt or invalid, recreating", error=str(exc))
             self.env = None
@@ -69,12 +63,16 @@ class LmdbDeque:
                     subdir=False,
                 )
                 self.db = self.env.open_db(b"deque")
-                self._head = self._tail = 0
             except (lmdb.Error, OSError) as e:
                 logger.error("Failed to reinitialize LMDB deque", error=str(e))
 
     def __len__(self) -> int:
-        return len(self._mem) if self.is_mem else max(0, self._tail - self._head)
+        if self.is_mem:
+            return len(self._mem)
+        if not self.env:
+            return 0
+        with self.env.begin(db=self.db) as txn:
+            return txn.stat(self.db)["entries"]
 
     async def append(self, item: bytes) -> None:
         if self.is_mem:
@@ -83,40 +81,40 @@ class LmdbDeque:
         if not self.env:
             return
         with self.env.begin(write=True, db=self.db) as txn:
-            txn.put(_U64.pack(self._tail), item)
-            self._tail += 1
-            if self.maxlen is not None and len(self) > self.maxlen:
-                txn.delete(_U64.pack(self._head))
-                self._head += 1
+            cur = txn.cursor(self.db)
+            next_idx = (_U64.unpack(cur.key())[0] + 1) if cur.last() else 0
+            txn.put(_U64.pack(next_idx), item, db=self.db)
+            if self.maxlen is not None:
+                while txn.stat(self.db)["entries"] > self.maxlen and cur.first():
+                    cur.delete()
 
     async def popleft(self) -> bytes:
         if self.is_mem:
             if not self._mem:
                 raise IndexError("popleft from empty deque")
             return self._mem.popleft()
-        if not self.env or len(self) == 0:
+        if not self.env:
             raise IndexError("popleft from empty deque")
         with self.env.begin(write=True, db=self.db, buffers=True) as txn:
-            key = _U64.pack(self._head)
-            val = txn.get(key)
-            if val is None:
+            cur = txn.cursor(self.db)
+            if not cur.first():
                 raise IndexError("popleft from empty deque")
-            txn.delete(key)
-            self._head += 1
-            return bytes(val)
+            val = bytes(cur.value())
+            cur.delete()
+            return val
 
     async def peek(self) -> bytes:
         if self.is_mem:
             if not self._mem:
                 raise IndexError("peek from empty deque")
             return self._mem[0]
-        if not self.env or len(self) == 0:
+        if not self.env:
             raise IndexError("peek from empty deque")
         with self.env.begin(db=self.db, buffers=True) as txn:
-            val = txn.get(_U64.pack(self._head))
-            if val is None:
+            cur = txn.cursor(self.db)
+            if not cur.first():
                 raise IndexError("peek from empty deque")
-            return bytes(val)
+            return bytes(cur.value())
 
     async def clear(self) -> None:
         if self.is_mem:

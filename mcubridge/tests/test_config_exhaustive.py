@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false
 """Exhaustive tests for mcubridge.config.logging and mcubridge.config.settings modules. [SIL-2]"""
 
 from __future__ import annotations
@@ -108,34 +109,26 @@ def test_get_config_source() -> None:
     assert get_config_source() in ("uci", "defaults", "cli")
 
 
-def test_coerce_value() -> None:
-    from google.protobuf.descriptor import FieldDescriptor
-
-    coerce_fn = getattr(settings, "_coerce_value")
-
-    assert coerce_fn(None, FieldDescriptor.TYPE_STRING) is None
-
-    # String & Path
-    assert coerce_fn("  hello  ", FieldDescriptor.TYPE_STRING) == "hello"
-    assert coerce_fn("   ", FieldDescriptor.TYPE_STRING) is None
-    assert "/tmp" in coerce_fn("/tmp", FieldDescriptor.TYPE_STRING, "cloud_spool_dir")
-
-    # Integer types
-    assert coerce_fn("123", FieldDescriptor.TYPE_UINT32) == 123
-    assert coerce_fn("invalid", FieldDescriptor.TYPE_UINT32) == 0
-
-    # Float types
-    assert coerce_fn("45.6", FieldDescriptor.TYPE_FLOAT) == 45.6
-    assert coerce_fn("invalid", FieldDescriptor.TYPE_FLOAT) == 0.0
-
-    # Bool types
-    assert coerce_fn(True, FieldDescriptor.TYPE_BOOL) is True
-    assert coerce_fn("yes", FieldDescriptor.TYPE_BOOL) is True
-    assert coerce_fn("off", FieldDescriptor.TYPE_BOOL) is False
-
-    # Bytes types
-    assert coerce_fn(b"bytes", FieldDescriptor.TYPE_BYTES) == b"bytes"
-    assert coerce_fn("str_bytes", FieldDescriptor.TYPE_BYTES) == b"str_bytes"
+def test_normalize_config_dict() -> None:
+    norm, secret = settings._normalize_config_dict(
+        {
+            "serial_shared_secret": "my_secret",
+            "cloud_enabled": "1",
+            "cloud_tls": "true",
+            "watchdog_enabled": "0",
+            "cloud_spool_dir": "/tmp/spool",
+            "allowed_commands": "cat ls",
+            "cloud_allow_datastore": "true",
+        }
+    )
+    assert secret == b"my_secret"
+    assert norm["cloud_enabled"] is True
+    assert norm["cloud_tls"] is True
+    assert norm["watchdog_enabled"] is False
+    assert norm["cloud_spool_dir"] == "/tmp/spool"
+    assert norm["allowed_commands"] == ["cat", "ls"]
+    assert norm["topic_authorization"]["datastore_get"] is True
+    assert norm["topic_authorization"]["datastore_put"] is True
 
 
 def test_load_runtime_config_uci_error_fallback() -> None:

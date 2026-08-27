@@ -13,8 +13,8 @@ import pytest
 from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import (
     RuntimeConfig,
-    _coerce_value,
     _load_raw_config,
+    _normalize_config_dict,
     _runtime_config_factory,
     load_runtime_config_from_json,
 )
@@ -97,35 +97,32 @@ def test_settings_load_runtime_config_from_json_unknown_override() -> None:
     assert cfg.serial_baud == 230400
 
 
-def test_settings_coerce_value_types() -> None:
-    assert _coerce_value(None, None) is None
-
-    field_bool = pb.RuntimeConfig.DESCRIPTOR.fields_by_name["cloud_enabled"]
-    assert _coerce_value(True, field_bool, "cloud_enabled") is True
-    assert _coerce_value("true", field_bool, "cloud_enabled") is True
-    assert _coerce_value("1", field_bool, "cloud_enabled") is True
-    assert _coerce_value("false", field_bool, "cloud_enabled") is False
-    assert _coerce_value("invalid_val", field_bool, "cloud_enabled") is False
-
-    field_int = pb.RuntimeConfig.DESCRIPTOR.fields_by_name["serial_baud"]
-    assert _coerce_value("115200", field_int, "serial_baud") == 115200
-    assert _coerce_value("invalid_int", field_int, "serial_baud") == 0
-
-    field_float = pb.RuntimeConfig.DESCRIPTOR.fields_by_name["bridge_summary_interval"]
-    assert _coerce_value("1.5", field_float, "bridge_summary_interval") == 1.5
-    assert _coerce_value("invalid_float", field_float, "bridge_summary_interval") == 0.0
-
-    field_str = pb.RuntimeConfig.DESCRIPTOR.fields_by_name["topic_prefix"]
-    assert _coerce_value("   ", field_str, "topic_prefix") is None
-
-    field_bytes = pb.RuntimeConfig.DESCRIPTOR.fields_by_name["serial_shared_secret"]
-    assert _coerce_value(b"secret", field_bytes, "serial_shared_secret") == b"secret"
-    assert _coerce_value("secret", field_bytes, "serial_shared_secret") == b"secret"
-
-    class DummyField:
-        pass
-
-    assert _coerce_value("custom_val", DummyField(), "custom") == "custom_val"
+def test_settings_normalize_config_dict() -> None:
+    norm, secret = _normalize_config_dict(
+        {
+            "cloud_enabled": "1",
+            "cloud_tls": "true",
+            "watchdog_enabled": "false",
+            "serial_baud": 115200,
+            "bridge_summary_interval": 1.5,
+            "topic_prefix": "br",
+            "serial_shared_secret": "secret",
+            "allowed_commands": "cat ls",
+            "cloud_allow_datastore": "true",
+            "unknown_extra_key": "val",
+        }
+    )
+    assert norm["cloud_enabled"] is True
+    assert norm["cloud_tls"] is True
+    assert norm["watchdog_enabled"] is False
+    assert norm["serial_baud"] == 115200
+    assert norm["bridge_summary_interval"] == 1.5
+    assert norm["topic_prefix"] == "br"
+    assert secret == b"secret"
+    assert norm["allowed_commands"] == ["cat", "ls"]
+    assert norm["topic_authorization"]["datastore_get"] is True
+    assert norm["topic_authorization"]["datastore_put"] is True
+    assert norm["unknown_extra_key"] == "val"
 
 
 def test_logging_discover_syslog_var_run_branch(test_config: RuntimeConfig) -> None:
@@ -1117,12 +1114,40 @@ def test_settings_raw_config_edge_branches() -> None:
     cfg2 = load_runtime_config(overrides={"allow_datastore": object()})
     assert cfg2 is not None
 
-    # 3. Defaults with bytes value (line 216)
+    # 3. Defaults with bytes value
     defaults = get_default_config()
     defaults["serial_port"] = b"/dev/ttyATH0"
     with patch("mcubridge.config.settings.get_default_config", return_value=defaults):
         cfg3 = load_runtime_config_from_json("{}")
         assert cfg3.serial_port == "/dev/ttyATH0"
+
+    # 4. JSON dict with serial_shared_secret
+    cfg4 = load_runtime_config_from_json({"serial_shared_secret": "json_secret"})
+    assert cfg4.serial_shared_secret == b"json_secret"
+
+    # 5. Allowed commands as None
+    cfg5 = load_runtime_config(overrides={"allowed_commands": None})
+    assert list(cfg5.allowed_commands) == []
+
+
+@pytest.mark.asyncio
+async def test_lmdb_deque_branch_coverage(tmp_path: Path) -> None:
+    from mcubridge.state.storage import LmdbDeque
+
+    db_path = str(tmp_path / "branch_deque")
+    deque = LmdbDeque(db_path, maxlen=2)
+
+    # 1. Append beyond maxlen (eviction)
+    await deque.append(b"item1")
+    await deque.append(b"item2")
+    await deque.append(b"item3")
+    assert len(deque) == 2
+    assert await deque.popleft() == b"item2"
+    assert await deque.popleft() == b"item3"
+
+    # 2. Len when env is None
+    deque.env = None
+    assert len(deque) == 0
 
 
 def test_security_self_test_chacha_invalid_length() -> None:

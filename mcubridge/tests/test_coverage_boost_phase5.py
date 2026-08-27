@@ -411,15 +411,7 @@ async def test_lmdb_deque_peek_pop_none_value(tmp_path: Path) -> None:
     db_path = str(tmp_path / "test_deque")
     deque = LmdbDeque(db_path, maxlen=10)
 
-    # Mock txn.get returning None
-    mock_txn = MagicMock()
-    mock_txn.get.return_value = None
-    mock_env = MagicMock()
-    mock_env.begin.return_value.__enter__.return_value = mock_txn
-    deque.env = mock_env
-    deque._tail = 1
-    deque._head = 0
-
+    # Empty deque raises IndexError on peek and popleft
     with pytest.raises(IndexError):
         await deque.peek()
 

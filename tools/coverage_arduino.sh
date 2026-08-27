@@ -105,7 +105,7 @@ for src in "${BRIDGE_SOURCES[@]}"; do
     if [[ "${src}" == *.cpp ]]; then
         g++ -std=c++17 "${BASE_FLAGS[@]}" -c "${src}" -o "${obj}"
     else
-        gcc "${BASE_FLAGS[@]}" -c "${src}" -o "${obj}"
+        g++ -std=c++17 -x c++ "${BASE_FLAGS[@]}" -c "${src}" -o "${obj}"
     fi
     OBJECTS+=("${obj}")
 done
@@ -115,12 +115,12 @@ g++ -std=c++17 "${BASE_FLAGS[@]}" -c "${TEST_ROOT}/test_host_filesystem_mock.cpp
 
 for src in "${THIRD_PARTY_SOURCES[@]}"; do
     obj="${BUILD_DIR}/objs/$(basename "${src}").o"
-    gcc "${TP_FLAGS[@]}" -c "${src}" -o "${obj}"
+    g++ -std=c++17 -x c++ "${TP_FLAGS[@]}" -c "${src}" -o "${obj}"
     OBJECTS+=("${obj}")
 done
 
 UNITY_OBJ="${BUILD_DIR}/objs/unity.o"
-gcc "${BASE_FLAGS[@]}" -c "${TEST_ROOT}/Unity/src/unity.c" -o "${UNITY_OBJ}"
+g++ -std=c++17 -x c++ "${BASE_FLAGS[@]}" -c "${TEST_ROOT}/Unity/src/unity.c" -o "${UNITY_OBJ}"
 
 TEST_SUITES=(
     "test_arduino_100_coverage"
@@ -156,7 +156,17 @@ for suite in "${TEST_SUITES[@]}"; do
 done
 popd > /dev/null
 
-PYTHON_BIN="${PYTHON_EXE:-python}"
+if [ -z "${PYTHON_EXE:-}" ]; then
+    if [ -x "${ROOT_DIR}/.tox/coverage/bin/python" ]; then
+        PYTHON_BIN="${ROOT_DIR}/.tox/coverage/bin/python"
+    elif [ -x "${ROOT_DIR}/.tox/py313/bin/python" ]; then
+        PYTHON_BIN="${ROOT_DIR}/.tox/py313/bin/python"
+    else
+        PYTHON_BIN="python"
+    fi
+else
+    PYTHON_BIN="${PYTHON_EXE}"
+fi
 $PYTHON_BIN -m gcovr --root "${SRC_ROOT}" "${BUILD_DIR}" --filter "${SRC_ROOT}" -e ".*\\.h$" -e ".*etl.*" -e ".*wolfssl.*" -e ".*wolfcrypt.*" -e ".*rpc_protocol\.h" -e ".*rpc_structs\.h" --exclude-unreachable-branches --exclude-throw-branches --merge-mode-functions=merge-use-line-max --sort uncovered-percent --fail-under-line "${ARDUINO_COVERAGE_MIN_LINE}" --fail-under-branch "${ARDUINO_COVERAGE_MIN_BRANCH}" --html-details "${OUTPUT_ROOT}/index.html" --json-summary "${OUTPUT_ROOT}/summary.json" --json-summary-pretty --json "${OUTPUT_ROOT}/coverage.json" --print-summary > "${OUTPUT_ROOT}/summary.txt"
 
 cat "${OUTPUT_ROOT}/summary.txt"

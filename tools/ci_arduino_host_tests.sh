@@ -91,7 +91,7 @@ SOURCES=(
 UNITY_DIR="${TEST_DIR}/Unity/src"
 UNITY_OBJ="${OBJ_DIR}/unity.o"
 if [ -f "${UNITY_DIR}/unity.c" ]; then
-    gcc -c -O2 -DUNITY_INCLUDE_DOUBLE "${UNITY_DIR}/unity.c" -o "${UNITY_OBJ}"
+    g++ -std=c++17 -x c++ -c -O2 -DUNITY_INCLUDE_DOUBLE "${UNITY_DIR}/unity.c" -o "${UNITY_OBJ}"
 else
     echo "[WARN] Unity not found at ${UNITY_DIR}; test assertions will fail."
     UNITY_OBJ=""
@@ -133,7 +133,7 @@ for src in "${SOURCES[@]}"; do
     OBJECTS+=("${obj}")
     
     if [[ "${src}" == *.c ]]; then
-        gcc "${BASE_FLAGS[@]}" -c "${src}" -o "${obj}" &
+        g++ -std=c++17 -x c++ "${BASE_FLAGS[@]}" -c "${src}" -o "${obj}" &
     else
         g++ -std=c++17 "${BASE_FLAGS[@]}" -c "${src}" -o "${obj}" &
     fi

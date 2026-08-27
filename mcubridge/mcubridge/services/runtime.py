@@ -203,6 +203,12 @@ class BridgeService:
             SystemAction.BRIDGE: self._handle_system_bridge,
         }
 
+    async def _send_mcu_ok(self, payload: bytes | ProtobufMessage = b"") -> bool:
+        return bool(self.serial and await self.serial.send(Status.OK.value, payload))
+
+    async def _send_mcu_error(self, message: str) -> bool:
+        return bool(self.serial and await self.serial.send(Status.ERROR.value, pb.GenericResponse(message=message)))
+
     async def _unsupported_mcu_request(
         self, _seq: int, _payload: Any, msg: str = protocol.STATUS_REASON_COMMAND_VALIDATION_FAILED
     ) -> Any:
@@ -609,38 +615,31 @@ class BridgeService:
         )
 
     async def _on_mcu_file_write(self, _seq: int, p: pb.FileWrite) -> bool:
-        serial = self.serial
-        if not serial:
+        if not self.serial:
             return False
         if await self._safe_file_write(p.path, p.data):
-            res = await serial.send(Status.OK.value, b"")
-            return bool(res)
-        res = await serial.send(Status.ERROR.value, pb.GenericResponse(message="Write failed"))
-        return bool(res)
+            return await self._send_mcu_ok()
+        return await self._send_mcu_error("Write failed")
 
     async def _on_mcu_file_read(self, _seq: int, p: pb.FileRead) -> None:
-        serial = self.serial
-        if not serial:
+        if not self.serial:
             return
         data = await self._safe_file_read(p.path)
         if data is None:
-            await serial.send(Status.ERROR.value, pb.GenericResponse(message="Read failed"))
+            await self._send_mcu_error("Read failed")
             return
         if not data:
-            await serial.send(Command.CMD_FILE_READ_RESP.value, pb.FileReadResponse(content=b""))
+            await self.serial.send(Command.CMD_FILE_READ_RESP.value, pb.FileReadResponse(content=b""))
         else:
             for chunk in iter_chunks(data, protocol.MAX_PAYLOAD_SIZE - 3):
-                await serial.send(Command.CMD_FILE_READ_RESP.value, pb.FileReadResponse(content=chunk))
+                await self.serial.send(Command.CMD_FILE_READ_RESP.value, pb.FileReadResponse(content=chunk))
 
     async def _on_mcu_file_remove(self, _seq: int, p: pb.FileRemove) -> bool:
-        serial = self.serial
-        if not serial:
+        if not self.serial:
             return False
         if await self._safe_file_remove(p.path):
-            res = await serial.send(Status.OK.value, b"")
-            return bool(res)
-        res = await serial.send(Status.ERROR.value, pb.GenericResponse(message="Remove failed"))
-        return bool(res)
+            return await self._send_mcu_ok()
+        return await self._send_mcu_error("Remove failed")
 
     async def _on_mcu_file_read_resp(self, _seq: int, p: pb.FileReadResponse) -> bool:
         if not self._pending_mcu_read:
@@ -652,18 +651,17 @@ class BridgeService:
         return True
 
     async def _on_mcu_process_run_async(self, _seq: int, p: pb.ProcessRunAsync) -> bool:
-        serial = self.serial
-        if not serial:
+        if not self.serial:
             return False
         if p.command and is_command_allowed(self.state.allowed_policy, p.command):
             pid = await self._run_process(p.command)
             if pid:
-                res = await serial.send(
+                res = await self.serial.send(
                     Command.CMD_PROCESS_RUN_ASYNC_RESP.value,
                     pb.ProcessRunAsyncResponse(pid=pid),
                 )
                 return bool(res)
-        await serial.send(Status.ERROR.value, pb.GenericResponse(message="Exec failed"))
+        await self._send_mcu_error("Exec failed")
         return False
 
     async def _on_mcu_process_poll(self, _seq: int, p: pb.ProcessPoll) -> bool:

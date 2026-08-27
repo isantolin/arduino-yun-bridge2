@@ -25,14 +25,16 @@ jobs:
         with:
           python-version: '3.13'
 
-      - name: Install protoc & Dependencies
+      - name: Install System Dependencies & protoc
         run: |
+          sudo apt-get update && sudo apt-get install -y unzip
           PROTOC_VERSION=36.0
           PROTOC_ZIP=protoc-${PROTOC_VERSION}-linux-x86_64.zip
           curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${PROTOC_ZIP}
           sudo unzip -o ${PROTOC_ZIP} -d /usr/local
           rm -f ${PROTOC_ZIP}
-          python -m pip install --upgrade pip build twine setuptools wheel -r requirements/runtime.txt mypy-protobuf
+          protoc --version
+          python -m pip install --upgrade pip build twine setuptools wheel protobuf nanopb jinja2 typer black mypy-protobuf grpclib packaging
 
       - name: Generate Protocol Bindings
         run: |

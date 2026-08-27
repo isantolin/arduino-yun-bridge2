@@ -22,7 +22,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=mcubridge-gateway
-PKG_VERSION:=2.8.5
+PKG_VERSION:=2.8.6
 PKG_RELEASE:=1
 PKG_LICENSE:=GPL-3.0-or-later
 PKG_LICENSE_FILES:=LICENSE

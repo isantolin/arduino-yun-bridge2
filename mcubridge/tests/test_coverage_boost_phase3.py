@@ -385,7 +385,7 @@ async def test_local_bridge_grpc_service(tmp_path: Path) -> None:
         while not service.ipc_requests:
             await asyncio.sleep(0.001)
         auto_key = next(iter(service.ipc_requests.keys()))
-        resp = pb.CloudQueuedPublish(topic_name="reply/version", payload=b"2.8.5")
+        resp = pb.CloudQueuedPublish(topic_name="reply/version", payload=b"2.8.6")
         service.ipc_requests[auto_key].put_nowait(resp)
 
     t_auto = asyncio.create_task(reply_auto_cor())

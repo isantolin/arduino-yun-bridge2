@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=luci-app-mcubridge
-PKG_VERSION:=2.8.5
+PKG_VERSION:=2.8.6
 PKG_RELEASE:=1
 
 PKG_MAINTAINER:=Ignacio Santolin and contributors

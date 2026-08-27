@@ -208,3 +208,17 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Flatten APKs for Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          mkdir -p release-apks
+          find bin/ -name "*.apk" -exec cp {} release-apks/ \;
+
+      - name: Attach APKs to GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          files: release-apks/*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

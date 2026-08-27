@@ -528,12 +528,12 @@ async def test_runtime_run_process_oserror_and_not_allowed(
     svc = BridgeService(test_config, mock_state, serial)
 
     # Command not allowed
-    pid = await svc._run_process("forbidden_cmd_xyz")
+    pid = await svc.run_process("forbidden_cmd_xyz")
     assert pid == 0
 
     # Subprocess creation raises OSError
     with patch("asyncio.create_subprocess_exec", side_effect=OSError("Exec failed")):
-        pid = await svc._run_process("echo hello")
+        pid = await svc.run_process("echo hello")
         assert pid == 0
 
 
@@ -1001,7 +1001,7 @@ async def test_runtime_poll_process_stream_timeout_and_eof(
     svc = BridgeService(test_config, mock_state, serial)
 
     # 1. Process not found
-    res = await svc._poll_process(99999)
+    res = await svc.poll_process(99999)
     assert res.status == Status.ERROR.value
     assert res.finished is True
 
@@ -1027,7 +1027,7 @@ async def test_runtime_poll_process_stream_timeout_and_eof(
     ctx.exit_code = 0
     svc.state.running_processes[5555] = ctx
 
-    res2 = await svc._poll_process(5555)
+    res2 = await svc.poll_process(5555)
     assert res2.status == Status.OK.value
 
 

@@ -184,7 +184,7 @@ def load_runtime_config_from_json(
     defaults = get_default_config()
     for k, v in defaults.items():
         if isinstance(v, bytes):
-            defaults[k] = v.decode("utf-8", errors="replace")
+            defaults[k] = v.decode("utf-8")
     json_format.ParseDict(defaults, msg, ignore_unknown_fields=True)
 
     if isinstance(data, (str, bytes)):

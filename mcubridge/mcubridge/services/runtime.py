@@ -203,10 +203,10 @@ class BridgeService:
             SystemAction.BRIDGE: self._handle_system_bridge,
         }
 
-    async def _send_mcu_ok(self, payload: bytes | ProtobufMessage = b"") -> bool:
+    async def send_mcu_ok(self, payload: bytes | ProtobufMessage = b"") -> bool:
         return bool(self.serial and await self.serial.send(Status.OK.value, payload))
 
-    async def _send_mcu_error(self, message: str) -> bool:
+    async def send_mcu_error(self, message: str) -> bool:
         return bool(self.serial and await self.serial.send(Status.ERROR.value, pb.GenericResponse(message=message)))
 
     async def _unsupported_mcu_request(
@@ -557,7 +557,7 @@ class BridgeService:
     async def _on_mcu_datastore_put(self, _seq: int, p: pb.DatastorePut) -> bool:
         if self.state.datastore_cache is not None:
             await self.state.datastore_cache.set(p.key, p.value)
-        await self._publish_datastore_value(p.key, p.value)
+        await self.publish_datastore_value(p.key, p.value)
         return True
 
     async def _on_mcu_datastore_get(self, _seq: int, p: pb.DatastoreGet) -> bool:
@@ -617,16 +617,16 @@ class BridgeService:
     async def _on_mcu_file_write(self, _seq: int, p: pb.FileWrite) -> bool:
         if not self.serial:
             return False
-        if await self._safe_file_write(p.path, p.data):
-            return await self._send_mcu_ok()
-        return await self._send_mcu_error("Write failed")
+        if await self.safe_file_write(p.path, p.data):
+            return await self.send_mcu_ok()
+        return await self.send_mcu_error("Write failed")
 
     async def _on_mcu_file_read(self, _seq: int, p: pb.FileRead) -> None:
         if not self.serial:
             return
-        data = await self._safe_file_read(p.path)
+        data = await self.safe_file_read(p.path)
         if data is None:
-            await self._send_mcu_error("Read failed")
+            await self.send_mcu_error("Read failed")
             return
         if not data:
             await self.serial.send(Command.CMD_FILE_READ_RESP.value, pb.FileReadResponse(content=b""))
@@ -637,9 +637,9 @@ class BridgeService:
     async def _on_mcu_file_remove(self, _seq: int, p: pb.FileRemove) -> bool:
         if not self.serial:
             return False
-        if await self._safe_file_remove(p.path):
-            return await self._send_mcu_ok()
-        return await self._send_mcu_error("Remove failed")
+        if await self.safe_file_remove(p.path):
+            return await self.send_mcu_ok()
+        return await self.send_mcu_error("Remove failed")
 
     async def _on_mcu_file_read_resp(self, _seq: int, p: pb.FileReadResponse) -> bool:
         if not self._pending_mcu_read:
@@ -654,21 +654,21 @@ class BridgeService:
         if not self.serial:
             return False
         if p.command and is_command_allowed(self.state.allowed_policy, p.command):
-            pid = await self._run_process(p.command)
+            pid = await self.run_process(p.command)
             if pid:
                 res = await self.serial.send(
                     Command.CMD_PROCESS_RUN_ASYNC_RESP.value,
                     pb.ProcessRunAsyncResponse(pid=pid),
                 )
                 return bool(res)
-        await self._send_mcu_error("Exec failed")
+        await self.send_mcu_error("Exec failed")
         return False
 
     async def _on_mcu_process_poll(self, _seq: int, p: pb.ProcessPoll) -> bool:
         serial = self.serial
         if not serial:
             return False
-        batch = await self._poll_process(p.pid)
+        batch = await self.poll_process(p.pid)
         res = await serial.send(
             Command.CMD_PROCESS_POLL_RESP.value,
             batch,
@@ -764,14 +764,14 @@ class BridgeService:
             if len(ds_put.key.encode()) <= protocol.MAX_DATASTORE_KEY_LENGTH and len(ds_put.value) <= 512:
                 if self.state.datastore_cache is not None:
                     await self.state.datastore_cache.set(ds_put.key, ds_put.value)
-                await self._publish_datastore_value(ds_put.key, ds_put.value, reply_context=inbound)
+                await self.publish_datastore_value(ds_put.key, ds_put.value, reply_context=inbound)
         elif route.identifier == DatastoreAction.GET:
             cache = cast(Any, self.state.datastore_cache)
             val = (await cache.get(key)) if cache else None
             if val is not None:
-                await self._publish_datastore_value(key, val, reply_context=inbound)
+                await self.publish_datastore_value(key, val, reply_context=inbound)
             elif route.remainder and route.remainder[-1] == "request":
-                await self._publish_datastore_value(key, b"", reply_context=inbound, error="datastore-miss")
+                await self.publish_datastore_value(key, b"", reply_context=inbound, error="datastore-miss")
 
     async def _handle_mailbox(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         serial = self.serial
@@ -842,7 +842,7 @@ class BridgeService:
             await serial.send(Command.CMD_FILE_REMOVE.value, pb.FileRemove(path=target[len(MCU_FS_PREFIX) :]))
 
     async def _handle_file_local_write(self, target: str, inbound: pb.CloudQueuedPublish) -> None:
-        if await self._safe_file_write(target, inbound.payload):
+        if await self.safe_file_write(target, inbound.payload):
             await self.enqueue_cloud(
                 create_queued_publish(
                     topic_path(self.state.cloud_topic_prefix, Topic.FILE, FileAction.READ, target),
@@ -852,7 +852,7 @@ class BridgeService:
             )
 
     async def _handle_file_local_read(self, target: str, inbound: pb.CloudQueuedPublish) -> None:
-        data = await self._safe_file_read(target)
+        data = await self.safe_file_read(target)
         if data is not None:
             inbound_topic = inbound.topic_name if inbound.topic_name else getattr(inbound, "topic", "")
             if not inbound_topic.endswith(protocol.CLOUD_SUFFIX_RESPONSE):
@@ -871,7 +871,7 @@ class BridgeService:
                 )
 
     async def _handle_file_local_remove(self, target: str, _inbound: pb.CloudQueuedPublish) -> None:
-        await self._safe_file_remove(target)
+        await self.safe_file_remove(target)
 
     async def _handle_file_mcu_read(self, ctx: pb.CloudQueuedPublish, target: str) -> None:
         serial = self.serial
@@ -951,7 +951,7 @@ class BridgeService:
                 cmd = pb.ProcessRunAsync.FromString(pl).command
             else:
                 cmd = pl.decode().strip()
-            pid = await self._run_process(cmd)
+            pid = await self.run_process(cmd)
         except (ProtobufDecodeError, UnicodeDecodeError, ValueError, OSError) as exc:
             logger.error("Shell run_async rejected", error=str(exc))
             payload = pb.ProcessRunAsyncResponse(pid=0).SerializeToString()
@@ -972,7 +972,7 @@ class BridgeService:
         )
 
     async def _handle_shell_poll(self, pid: int, inbound: pb.CloudQueuedPublish) -> None:
-        batch = await self._poll_process(pid)
+        batch = await self.poll_process(pid)
         await self.enqueue_cloud(
             create_queued_publish(
                 topic_path(
@@ -1152,7 +1152,7 @@ class BridgeService:
                     self.state.console_to_mcu_queue.appendleft(buf)
                     return
 
-    async def _run_process(self, command: str) -> int:
+    async def run_process(self, command: str) -> int:
         if not is_command_allowed(self.state.allowed_policy, command):
             return 0
         await self._process_slots.acquire()
@@ -1176,7 +1176,7 @@ class BridgeService:
             self._process_slots.release()
             return 0
 
-    def _release_process(self, pid: int) -> ProcessContext | None:
+    def release_process(self, pid: int) -> ProcessContext | None:
         ctx = self.state.running_processes.pop(pid, None)
         if ctx is not None:
             self._process_slots.release()
@@ -1196,9 +1196,9 @@ class BridgeService:
                     )
                 await asyncio.sleep(60.0)
         finally:
-            self._release_process(pid)
+            self.release_process(pid)
 
-    async def _poll_process(self, pid: int) -> pb.ProcessPollResponse:
+    async def poll_process(self, pid: int) -> pb.ProcessPollResponse:
         async with self.state.process_lock:
             ctx = self.state.running_processes.get(pid)
             if not ctx:
@@ -1231,7 +1231,7 @@ class BridgeService:
                     and (ctx.handle.stdout is None or ctx.handle.stdout.at_eof())
                     and (ctx.handle.stderr is None or ctx.handle.stderr.at_eof())
                 ):
-                    self._release_process(pid)
+                    self.release_process(pid)
                 return pb.ProcessPollResponse(
                     status=Status.OK.value,
                     exit_code=ctx.exit_code,
@@ -1275,24 +1275,24 @@ class BridgeService:
             logger.error("Process termination failed", pid=pid, error=str(exc))
             return False, str(exc)
         finally:
-            self._release_process(pid)
+            self.release_process(pid)
 
     def _get_safe_path(self, p_str: str) -> Path | None:
         root = Path(self.config.file_system_root).resolve()
         p = root.joinpath(p_str.lstrip("/")).resolve()
         return p if p.is_relative_to(root) else None
 
-    async def _safe_file_write(self, p_str: str, data: bytes) -> bool:
+    async def safe_file_write(self, p_str: str, data: bytes) -> bool:
         path = self._get_safe_path(p_str)
         return bool(path and await self._write_with_quota(path, data))
 
-    async def _safe_file_read(self, p_str: str) -> bytes | None:
+    async def safe_file_read(self, p_str: str) -> bytes | None:
         path = self._get_safe_path(p_str)
         if path and await asyncio.to_thread(path.is_file):
             return await asyncio.to_thread(path.read_bytes)
         return None
 
-    async def _safe_file_remove(self, p_str: str) -> bool:
+    async def safe_file_remove(self, p_str: str) -> bool:
         path = self._get_safe_path(p_str)
         if path and await asyncio.to_thread(path.exists):
             await asyncio.to_thread(path.unlink)
@@ -1336,7 +1336,7 @@ class BridgeService:
             reply_context=ctx,
         )
 
-    async def _publish_datastore_value(
+    async def publish_datastore_value(
         self, key: str, val: bytes, reply_context: Any | None = None, error: str | None = None
     ) -> None:
         tp = topic_path(
@@ -1353,16 +1353,6 @@ class BridgeService:
             ),
             reply_context=reply_context,
         )
-
-    get_safe_path = _get_safe_path
-    write_with_quota = _write_with_quota
-    publish_datastore_value = _publish_datastore_value
-    run_process = _run_process
-    poll_process = _poll_process
-    terminate_process = _terminate_process
-
-    def release_process_slot(self) -> None:
-        self._process_slots.release()
 
     # --- De-layered Orchestration [SIL-2] ---
 
@@ -1817,8 +1807,7 @@ class LocalBridgeService(LocalBridgeBase):
             )
             await stream.send_message(pb.GenericResponse(status="ok" if ok else "error"))
             return
-        path = self.runtime_service.get_safe_path(request.path)
-        if path and await self.runtime_service.write_with_quota(path, request.data):
+        if await self.runtime_service.safe_file_write(request.path, request.data):
             await stream.send_message(pb.GenericResponse(status="ok"))
         else:
             await stream.send_message(pb.GenericResponse(status="error", message="Path not allowed or quota exceeded"))
@@ -1838,9 +1827,8 @@ class LocalBridgeService(LocalBridgeBase):
             )
             await stream.send_message(_parse_serial_response(res, pb.FileReadResponse, pb.FileReadResponse()))
             return
-        path = self.runtime_service.get_safe_path(request.path)
-        content = await asyncio.to_thread(path.read_bytes) if path and await asyncio.to_thread(path.is_file) else b""
-        await stream.send_message(pb.FileReadResponse(content=content))
+        content = await self.runtime_service.safe_file_read(request.path)
+        await stream.send_message(pb.FileReadResponse(content=content or b""))
 
     async def FileRemove(self, stream: Stream[pb.FileRemove, pb.GenericResponse]) -> None:
         if (request := await stream.recv_message()) is None:
@@ -1859,9 +1847,7 @@ class LocalBridgeService(LocalBridgeBase):
             )
             await stream.send_message(pb.GenericResponse(status="ok" if ok else "error"))
             return
-        path = self.runtime_service.get_safe_path(request.path)
-        if path and await asyncio.to_thread(path.exists):
-            await asyncio.to_thread(path.unlink)
+        if await self.runtime_service.safe_file_remove(request.path):
             await stream.send_message(pb.GenericResponse(status="ok"))
         else:
             await stream.send_message(pb.GenericResponse(status="error", message="Path not allowed or not found"))

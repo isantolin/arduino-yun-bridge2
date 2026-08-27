@@ -172,7 +172,7 @@ async def test_process_poll_stream_timeout(runtime_config: RuntimeConfig, runtim
 
     runtime_state.running_processes[8888] = ctx
 
-    res = await svc._poll_process(8888)
+    res = await svc.poll_process(8888)
     assert res.finished is False
     assert res.stdout_truncated is True
 

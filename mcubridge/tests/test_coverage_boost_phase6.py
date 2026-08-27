@@ -422,7 +422,7 @@ async def test_runtime_handle_shell_branches(test_config: RuntimeConfig, mock_st
     # 2. run_async with protobuf payload bytes starting with \x0a
     proto_cmd = pb.ProcessRunAsync(command="echo hello").SerializeToString()
     route_run = TopicRoute(raw="", prefix="bridge", topic=Topic.SHELL, segments=(ShellAction.RUN_ASYNC.value,))
-    with patch.object(svc, "_run_process", new_callable=AsyncMock, return_value=123) as mock_run:
+    with patch.object(svc, "run_process", new_callable=AsyncMock, return_value=123) as mock_run:
         await svc._handle_shell(route_run, pb.CloudQueuedPublish(payload=proto_cmd))
         assert mock_run.called
 
@@ -684,7 +684,7 @@ async def test_runtime_handle_datastore_empty_key_and_request_miss(
     route_req = TopicRoute(
         raw="", prefix="bridge", topic=Topic.DATASTORE, segments=(DatastoreAction.GET.value, "key1", "request")
     )
-    with patch.object(svc, "_publish_datastore_value", new_callable=AsyncMock) as mock_pub:
+    with patch.object(svc, "publish_datastore_value", new_callable=AsyncMock) as mock_pub:
         await svc._handle_datastore(route_req, pb.CloudQueuedPublish(payload=b""))
         assert mock_pub.call_count == 1
         assert mock_pub.call_args[0][0] == "key1/request"
@@ -748,7 +748,7 @@ async def test_runtime_handle_file_and_shell_edge_branches(
         payload = pb.ProcessRunAsync(command="echo prop").SerializeToString()
         properties = Props()
 
-    with patch.object(svc, "_run_process", new_callable=AsyncMock, return_value=123) as mock_rp:
+    with patch.object(svc, "run_process", new_callable=AsyncMock, return_value=123) as mock_rp:
         await svc._handle_shell_run_async(0, cast(Any, InboundWithProps()))
         assert mock_rp.called
 
@@ -1030,7 +1030,7 @@ async def test_runtime_poll_process_eof_and_xoff(test_config: RuntimeConfig, moc
 
     ctx = ProcessContext(mock_handle)
     mock_state.running_processes[555] = ctx
-    resp = await svc._poll_process(555)
+    resp = await svc.poll_process(555)
     assert resp.finished is True
     assert 555 not in mock_state.running_processes
 
@@ -1323,7 +1323,7 @@ async def test_runtime_spool_and_pin_edge_branches(test_config: RuntimeConfig, m
     mock_cache = AsyncMock()
     mock_state.datastore_cache = mock_cache
     route_put = TopicRoute(raw="", prefix="bridge", topic=Topic.DATASTORE, segments=(DatastoreAction.PUT.value, "k1"))
-    with patch.object(svc, "_publish_datastore_value", new_callable=AsyncMock):
+    with patch.object(svc, "publish_datastore_value", new_callable=AsyncMock):
         await svc._handle_datastore(route_put, pb.CloudQueuedPublish(payload=b"v1"))
         mock_cache.set.assert_called_once_with("k1", b"v1")
 
@@ -1493,7 +1493,7 @@ async def test_runtime_shell_properties_content_type(test_config: RuntimeConfig,
     async def _mock_enq(_msg: Any, **_kwargs: Any) -> bool:
         return True
 
-    with patch.object(svc, "_run_process", side_effect=_mock_run_p) as mock_rp:
+    with patch.object(svc, "run_process", side_effect=_mock_run_p) as mock_rp:
         with patch.object(svc, "enqueue_cloud", side_effect=_mock_enq) as mock_eq:
             await svc._handle_shell_run_async(0, inbound)
             assert mock_rp.called
@@ -1520,7 +1520,7 @@ async def test_runtime_run_process_with_task_group(test_config: RuntimeConfig, m
             mock_p = MagicMock()
             mock_p.pid = 456
             mock_exec.return_value = mock_p
-            pid = await svc._run_process("echo tg")
+            pid = await svc.run_process("echo tg")
             assert pid == 456
             assert mock_tg.create_task.called
     svc._tg = None

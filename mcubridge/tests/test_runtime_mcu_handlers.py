@@ -555,7 +555,7 @@ async def test_on_mcu_process_run_async_allowed(
     service, _state, serial = svc
     serial.send.return_value = True
     p = pb.ProcessRunAsync(command="echo hello")
-    with patch.object(service, "_run_process", new=AsyncMock(return_value=1234)):
+    with patch.object(service, "run_process", new=AsyncMock(return_value=1234)):
         result = await service._on_mcu_process_run_async(1, p)
     assert result is True
     args = serial.send.call_args[0]
@@ -569,7 +569,7 @@ async def test_on_mcu_process_run_async_pid_zero(
     service, _state, serial = svc
     serial.send.return_value = True
     p = pb.ProcessRunAsync(command="echo hello")
-    with patch.object(service, "_run_process", new=AsyncMock(return_value=0)):
+    with patch.object(service, "run_process", new=AsyncMock(return_value=0)):
         result = await service._on_mcu_process_run_async(1, p)
     assert result is False
 
@@ -598,6 +598,6 @@ async def test_on_mcu_process_poll_with_result(
     serial.send.return_value = True
     mock_batch = pb.ProcessPollResponse(finished=True, exit_code=0)
     p = pb.ProcessPoll(pid=42)
-    with patch.object(service, "_poll_process", new=AsyncMock(return_value=mock_batch)):
+    with patch.object(service, "poll_process", new=AsyncMock(return_value=mock_batch)):
         result = await service._on_mcu_process_poll(1, p)
     assert result is True

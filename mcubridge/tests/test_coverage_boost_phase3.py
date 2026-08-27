@@ -953,12 +953,12 @@ async def test_runtime_shell_dispatch_handlers(tmp_path: Path) -> None:
         raw="test/br/shell/run_async", prefix=config.topic_prefix, topic=Topic.SHELL, segments=("run_async",)
     )
     inbound_run = pb.CloudQueuedPublish(topic_name="test/br/shell/run_async", payload=b"echo hello")
-    with patch.object(service, "_run_process", new_callable=AsyncMock, return_value=123) as mock_run:
+    with patch.object(service, "run_process", new_callable=AsyncMock, return_value=123) as mock_run:
         await service._handle_shell(route_run, inbound_run)
         assert mock_run.called
 
     # 2. Shell run async with error
-    with patch.object(service, "_run_process", side_effect=OSError("spawn error")) as mock_err_run:
+    with patch.object(service, "run_process", side_effect=OSError("spawn error")) as mock_err_run:
         await service._handle_shell(route_run, inbound_run)
         assert mock_err_run.called
 
@@ -971,7 +971,7 @@ async def test_runtime_shell_dispatch_handlers(tmp_path: Path) -> None:
         raw="test/br/shell/poll/123", prefix=config.topic_prefix, topic=Topic.SHELL, segments=("poll", "123")
     )
     inbound_poll = pb.CloudQueuedPublish(topic_name="test/br/shell/poll/123", payload=b"")
-    with patch.object(service, "_poll_process", new_callable=AsyncMock) as mock_poll:
+    with patch.object(service, "poll_process", new_callable=AsyncMock) as mock_poll:
         mock_poll.return_value = pb.ProcessPollResponse(status=Status.OK.value, exit_code=0, finished=True)
         await service._handle_shell(route_poll, inbound_poll)
         assert mock_poll.called

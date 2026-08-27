@@ -142,7 +142,7 @@ async def test_handle_datastore_actions(test_config: RuntimeConfig, mock_bridge_
     cache.get.return_value = b"cached-value"
     cache.set.return_value = None
     mock_bridge_state.datastore_cache = cache
-    svc._publish_datastore_value = AsyncMock()  # type: ignore[method-assign]
+    svc.publish_datastore_value = AsyncMock()  # type: ignore[method-assign]
 
     prefix = mock_bridge_state.cloud_topic_prefix
     put_topic = f"{prefix}/datastore/put/temp"
@@ -160,7 +160,7 @@ async def test_handle_datastore_actions(test_config: RuntimeConfig, mock_bridge_
     assert route_get is not None
     msg_get = pb.CloudQueuedPublish(topic_name=get_topic, payload=b"")
     await svc._handle_datastore(route_get, msg_get)
-    svc._publish_datastore_value.assert_awaited_with("temp", b"cached-value", reply_context=msg_get)
+    svc.publish_datastore_value.assert_awaited_with("temp", b"cached-value", reply_context=msg_get)
 
 
 @pytest.mark.asyncio
@@ -278,7 +278,7 @@ async def test_process_poll_and_terminate(test_config: RuntimeConfig, mock_bridg
     svc = BridgeService(test_config, mock_bridge_state, mock_serial)
 
     # Missing PID poll
-    resp = await svc._poll_process(99999)
+    resp = await svc.poll_process(99999)
     assert resp.status == Status.ERROR.value
     assert resp.finished is True
 

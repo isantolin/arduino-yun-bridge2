@@ -204,7 +204,7 @@ async def test_mcu_process_run_asserts_exec(
     payload = pb.ProcessRunAsync(command="echo hello").SerializeToString()
 
     with patch("mcubridge.services.runtime.is_command_allowed", return_value=True):
-        with patch.object(service, "_run_process", new=AsyncMock(return_value=1234)) as mock_run:
+        with patch.object(service, "run_process", new=AsyncMock(return_value=1234)) as mock_run:
             await service.handle_mcu_frame(Command.CMD_PROCESS_RUN_ASYNC.value, 1, payload)
 
             mock_run.assert_called_once_with("echo hello")
@@ -320,7 +320,7 @@ async def test_cloud_shell_poll_asserts_cloud(
             stdout_truncated=False,
             stderr_truncated=False,
         )
-        with patch("mcubridge.services.runtime.BridgeService._poll_process", return_value=mock_batch):
+        with patch("mcubridge.services.runtime.BridgeService.poll_process", return_value=mock_batch):
             await service.handle_request(msg)
 
     service.enqueue_cloud.assert_called_once()
@@ -372,7 +372,7 @@ async def test_cloud_shell_run_asserts_exec(
     )
 
     with patch("mcubridge.services.runtime.is_command_allowed", return_value=True):
-        with patch.object(service, "_run_process", new=AsyncMock(return_value=999)) as mock_run:
+        with patch.object(service, "run_process", new=AsyncMock(return_value=999)) as mock_run:
             await service.handle_request(msg)
 
             mock_run.assert_called_once_with("ls -la")

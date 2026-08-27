@@ -397,18 +397,15 @@ async def test_runtime_handle_file_unhandled_action_and_failed_writes(
 
     # 4. Local write fails quota
     with patch.object(svc, "_write_with_quota", return_value=False):
-        await svc._handle_file_local_write(tmp_path / "f.txt", "f.txt", pb.CloudQueuedPublish(payload=b"data"))
+        await svc._handle_file_local_write("f.txt", pb.CloudQueuedPublish(payload=b"data"))
 
     # 5. Local read when path is not a file
-    non_file = tmp_path / "not_a_file"
-    await svc._handle_file_local_read(non_file, "not_a_file", pb.CloudQueuedPublish(topic_name="bridge/file/read"))
+    await svc._handle_file_local_read("not_a_file", pb.CloudQueuedPublish(topic_name="bridge/file/read"))
 
     # 6. Local read with response topic (skips re-publishing)
     real_file = tmp_path / "real.txt"
     real_file.write_text("hello")
-    await svc._handle_file_local_read(
-        real_file, "real.txt", pb.CloudQueuedPublish(topic_name="bridge/file/read/response")
-    )
+    await svc._handle_file_local_read("real.txt", pb.CloudQueuedPublish(topic_name="bridge/file/read/response"))
     assert real_file.exists()
 
 

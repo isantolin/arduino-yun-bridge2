@@ -44,12 +44,7 @@ def read_uci_general() -> dict[str, str]:
         logger.warning("UCI config read failed", error=str(exc))
         return {}
 
-    clean: dict[str, str] = {}
-    for key, value in config.items():
-        if key.startswith((".", "_")):
-            continue
-        clean[key] = value
-    return clean
+    return {k: v for k, v in config.items() if not k.startswith((".", "_"))}
 
 
 def dump_client_env(logger: Any | None = None) -> None:

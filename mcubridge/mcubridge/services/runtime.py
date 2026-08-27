@@ -612,8 +612,7 @@ class BridgeService:
         serial = self.serial
         if not serial:
             return False
-        path = self._get_safe_path(p.path)
-        if path and await self._write_with_quota(path, p.data):
+        if await self._safe_file_write(p.path, p.data):
             res = await serial.send(Status.OK.value, b"")
             return bool(res)
         res = await serial.send(Status.ERROR.value, pb.GenericResponse(message="Write failed"))
@@ -623,24 +622,21 @@ class BridgeService:
         serial = self.serial
         if not serial:
             return
-        path = self._get_safe_path(p.path)
-        if path and await asyncio.to_thread(path.is_file):
-            data = await asyncio.to_thread(path.read_bytes)
-            if not data:
-                await serial.send(Command.CMD_FILE_READ_RESP.value, pb.FileReadResponse(content=b""))
-            else:
-                for chunk in iter_chunks(data, protocol.MAX_PAYLOAD_SIZE - 3):
-                    await serial.send(Command.CMD_FILE_READ_RESP.value, pb.FileReadResponse(content=chunk))
+        data = await self._safe_file_read(p.path)
+        if data is None:
+            await serial.send(Status.ERROR.value, pb.GenericResponse(message="Read failed"))
             return
-        await serial.send(Status.ERROR.value, pb.GenericResponse(message="Read failed"))
+        if not data:
+            await serial.send(Command.CMD_FILE_READ_RESP.value, pb.FileReadResponse(content=b""))
+        else:
+            for chunk in iter_chunks(data, protocol.MAX_PAYLOAD_SIZE - 3):
+                await serial.send(Command.CMD_FILE_READ_RESP.value, pb.FileReadResponse(content=chunk))
 
     async def _on_mcu_file_remove(self, _seq: int, p: pb.FileRemove) -> bool:
         serial = self.serial
         if not serial:
             return False
-        path = self._get_safe_path(p.path)
-        if path and await asyncio.to_thread(path.exists):
-            await asyncio.to_thread(path.unlink)
+        if await self._safe_file_remove(p.path):
             res = await serial.send(Status.OK.value, b"")
             return bool(res)
         res = await serial.send(Status.ERROR.value, pb.GenericResponse(message="Remove failed"))
@@ -819,11 +815,11 @@ class BridgeService:
                 await handler()
             return
 
-        if path := self._get_safe_path(target):
+        if self._get_safe_path(target):
             local_dispatch: dict[Any, Callable[[], Coroutine[Any, Any, None]]] = {
-                FileAction.READ: lambda: self._handle_file_local_read(path, target, inbound),
-                FileAction.WRITE: lambda: self._handle_file_local_write(path, target, inbound),
-                FileAction.REMOVE: lambda: self._handle_file_local_remove(path, target, inbound),
+                FileAction.READ: lambda: self._handle_file_local_read(target, inbound),
+                FileAction.WRITE: lambda: self._handle_file_local_write(target, inbound),
+                FileAction.REMOVE: lambda: self._handle_file_local_remove(target, inbound),
             }
             if handler := local_dispatch.get(act):
                 await handler()
@@ -847,8 +843,8 @@ class BridgeService:
         if serial:
             await serial.send(Command.CMD_FILE_REMOVE.value, pb.FileRemove(path=target[len(MCU_FS_PREFIX) :]))
 
-    async def _handle_file_local_write(self, path: Path, target: str, inbound: pb.CloudQueuedPublish) -> None:
-        if await self._write_with_quota(path, inbound.payload):
+    async def _handle_file_local_write(self, target: str, inbound: pb.CloudQueuedPublish) -> None:
+        if await self._safe_file_write(target, inbound.payload):
             await self.enqueue_cloud(
                 create_queued_publish(
                     topic_path(self.state.cloud_topic_prefix, Topic.FILE, FileAction.READ, target),
@@ -857,8 +853,9 @@ class BridgeService:
                 reply_context=inbound,
             )
 
-    async def _handle_file_local_read(self, path: Path, target: str, inbound: pb.CloudQueuedPublish) -> None:
-        if await asyncio.to_thread(path.is_file):
+    async def _handle_file_local_read(self, target: str, inbound: pb.CloudQueuedPublish) -> None:
+        data = await self._safe_file_read(target)
+        if data is not None:
             inbound_topic = inbound.topic_name if inbound.topic_name else getattr(inbound, "topic", "")
             if not inbound_topic.endswith(protocol.CLOUD_SUFFIX_RESPONSE):
                 await self.enqueue_cloud(
@@ -870,14 +867,13 @@ class BridgeService:
                             protocol.CLOUD_SUFFIX_RESPONSE,
                             target,
                         ),
-                        await asyncio.to_thread(path.read_bytes),
+                        data,
                     ),
                     reply_context=inbound,
                 )
 
-    async def _handle_file_local_remove(self, path: Path, _target: str, _inbound: pb.CloudQueuedPublish) -> None:
-        if await asyncio.to_thread(path.exists):
-            await asyncio.to_thread(path.unlink)
+    async def _handle_file_local_remove(self, target: str, _inbound: pb.CloudQueuedPublish) -> None:
+        await self._safe_file_remove(target)
 
     async def _handle_file_mcu_read(self, ctx: pb.CloudQueuedPublish, target: str) -> None:
         serial = self.serial
@@ -1182,6 +1178,12 @@ class BridgeService:
             self._process_slots.release()
             return 0
 
+    def _release_process(self, pid: int) -> ProcessContext | None:
+        ctx = self.state.running_processes.pop(pid, None)
+        if ctx is not None:
+            self._process_slots.release()
+        return ctx
+
     async def _monitor_process(self, pid: int) -> None:
         try:
             async with self.state.process_lock:
@@ -1196,8 +1198,7 @@ class BridgeService:
                     )
                 await asyncio.sleep(60.0)
         finally:
-            if self.state.running_processes.pop(pid, None):
-                self._process_slots.release()
+            self._release_process(pid)
 
     async def _poll_process(self, pid: int) -> pb.ProcessPollResponse:
         async with self.state.process_lock:
@@ -1232,8 +1233,7 @@ class BridgeService:
                     and (ctx.handle.stdout is None or ctx.handle.stdout.at_eof())
                     and (ctx.handle.stderr is None or ctx.handle.stderr.at_eof())
                 ):
-                    if self.state.running_processes.pop(pid, None):
-                        self._process_slots.release()
+                    self._release_process(pid)
                 return pb.ProcessPollResponse(
                     status=Status.OK.value,
                     exit_code=ctx.exit_code,
@@ -1272,19 +1272,34 @@ class BridgeService:
             return False, "PID not found"
         try:
             ctx.exit_code = await self._terminate_process(pid, ctx, grace_period=PROCESS_TERM_GRACE_PERIOD_SECONDS)
-            if self.state.running_processes.pop(pid, None):
-                self._process_slots.release()
             return True, None
         except (OSError, ProcessLookupError) as exc:
             logger.error("Process termination failed", pid=pid, error=str(exc))
-            if self.state.running_processes.pop(pid, None):
-                self._process_slots.release()
             return False, str(exc)
+        finally:
+            self._release_process(pid)
 
     def _get_safe_path(self, p_str: str) -> Path | None:
         root = Path(self.config.file_system_root).resolve()
         p = root.joinpath(p_str.lstrip("/")).resolve()
         return p if p.is_relative_to(root) else None
+
+    async def _safe_file_write(self, p_str: str, data: bytes) -> bool:
+        path = self._get_safe_path(p_str)
+        return bool(path and await self._write_with_quota(path, data))
+
+    async def _safe_file_read(self, p_str: str) -> bytes | None:
+        path = self._get_safe_path(p_str)
+        if path and await asyncio.to_thread(path.is_file):
+            return await asyncio.to_thread(path.read_bytes)
+        return None
+
+    async def _safe_file_remove(self, p_str: str) -> bool:
+        path = self._get_safe_path(p_str)
+        if path and await asyncio.to_thread(path.exists):
+            await asyncio.to_thread(path.unlink)
+            return True
+        return False
 
     async def _write_with_quota(self, path: Path, data: bytes) -> bool:
         async with self._storage_lock:

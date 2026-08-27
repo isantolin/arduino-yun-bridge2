@@ -93,6 +93,7 @@ def check_rules_parity() -> list[str]:
         ROOT / "AGENTS.md",
         ROOT / ".copilot-instructions",
         ROOT / ".github" / "copilot-instructions",
+        ROOT / ".github" / "copilot-instructions.md",
         ROOT / ".agent" / "rules" / "openwrt-architect-arduino.agent.md",
         ROOT / ".github" / "agents" / "openwrt-architect-arduino.agent.md",
     ]

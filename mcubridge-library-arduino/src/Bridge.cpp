@@ -46,7 +46,7 @@ void BridgeClass::_initObservers() {
 }
 
 BridgeClass::BridgeClass(Stream& stream)
-    : _stream(stream),
+    : _stream(&stream),
       _packet_serial(etl::span<uint8_t>(_rx_buffer.data(), _rx_buffer.size()),
                      etl::span<uint8_t>(_rx_buffer.data(), _rx_buffer.size())),
       _tx_envelope(rpc_pb_RpcEnvelope_init_zero) {
@@ -463,6 +463,25 @@ void BridgeClass::_dispatchCommand(const rpc_pb_RpcEnvelope& envelope) {
   }
 }
 
+void BridgeClass::setStream(Stream& stream) {
+  _stream = &stream;
+  if constexpr (bridge::hal::CurrentArchTraits::id ==
+                bridge::hal::ArchId::ARCH_AVR) {
+    if (_stream == &Serial
+#if defined(HAVE_HWSERIAL1) || defined(ARDUINO_AVR_MEGA2560) || \
+    defined(ARDUINO_AVR_MEGA) || defined(ARDUINO_AVR_YUN)
+        || _stream == &Serial1
+#endif
+    ) {
+      _hardware_serial = static_cast<HardwareSerial*>(_stream);
+    } else {
+      _hardware_serial = nullptr;
+    }
+  } else {
+    _hardware_serial = nullptr;
+  }
+}
+
 void BridgeClass::_initializeRuntime() {
   _initObservers();
   _timer_last_tick_ms = 0;
@@ -471,11 +490,9 @@ void BridgeClass::_initializeRuntime() {
   // Shared buffer initialized by PacketSerial
 
   _rx_buffer.fill(0);
-  if constexpr (bridge::hal::CurrentArchTraits::id ==
-                bridge::hal::ArchId::ARCH_AVR)
-    _hardware_serial = static_cast<HardwareSerial*>(&_stream);
-  else
-    _hardware_serial = nullptr;
+  if (_stream) {
+    setStream(*_stream);
+  }
 }
 
 void BridgeClass::begin(uint32_t baudrate, const char* secret) {
@@ -542,8 +559,9 @@ void BridgeClass::process() {
 void BridgeClass::_watchdogTask() { bridge::hal::watchdog_kick(); }
 
 void BridgeClass::_serialTask() {
-  _packet_serial.update(_stream);
-  const int avail = _stream.available();
+  if (!_stream) return;
+  _packet_serial.update(*_stream);
+  const int avail = _stream->available();
   if (!_state_flags.test(FLAG_SERIAL_XOFF) &&
       avail > bridge::config::FLOW_CONTROL_XOFF_THRESHOLD) {
     signalXoff();
@@ -581,9 +599,10 @@ void BridgeClass::enterSafeState() {
 }
 
 void BridgeClass::_serialize_and_send(const rpc_pb_RpcEnvelope& env) {
+  if (!_stream) return;
   const size_t len = rpc::serialize_frame(env, _tx_frame_buffer);
   if (len > 0)
-    _packet_serial.send(_stream,
+    _packet_serial.send(*_stream,
                         etl::span<const uint8_t>(_tx_frame_buffer.data(), len));
 }
 

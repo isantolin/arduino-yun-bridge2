@@ -16,16 +16,35 @@
 #elif __has_include(<WiFiNINA.h>)
 #include <WiFiNINA.h>
 #else
-// Fallback definitions for host static analysis & IDE indexers
+// Transparent UART Coprocessor Stream for AVR architectures / hardware
+// emulation
+#if defined(HAVE_HWSERIAL1) || defined(ARDUINO_AVR_MEGA2560) || \
+    defined(ARDUINO_AVR_MEGA) || defined(ARDUINO_AVR_YUN) ||    \
+    defined(ARDUINO_ARCH_SAMD) || defined(ARDUINO_ARCH_SAM)
+#define WIFI_UART_STREAM Serial1
+#else
+#define WIFI_UART_STREAM Serial
+#endif
+
 class WiFiClient : public Stream {
  public:
-  int connect(const char*, uint16_t) { return 1; }
-  uint8_t connected() { return 1; }
-  int available() override { return 0; }
-  int read() override { return -1; }
-  int peek() override { return -1; }
-  void flush() override {}
-  size_t write(uint8_t) override { return 1; }
+  int connect(const char*, uint16_t) {
+    WIFI_UART_STREAM.begin(115200);
+    _connected = 1;
+    return 1;
+  }
+  uint8_t connected() { return _connected; }
+  int available() override { return WIFI_UART_STREAM.available(); }
+  int read() override { return WIFI_UART_STREAM.read(); }
+  int peek() override { return WIFI_UART_STREAM.peek(); }
+  void flush() override { WIFI_UART_STREAM.flush(); }
+  size_t write(uint8_t b) override { return WIFI_UART_STREAM.write(b); }
+  size_t write(const uint8_t* buffer, size_t size) override {
+    return WIFI_UART_STREAM.write(buffer, size);
+  }
+
+ private:
+  uint8_t _connected{0};
 };
 enum wl_status_t { WL_CONNECTED = 3 };
 enum WiFiMode { WIFI_STA = 1 };
@@ -50,8 +69,12 @@ constexpr const char* WIFI_PASS = "BridgeSafePass";
 constexpr const char* BRIDGE_HOST = "192.168.1.1";
 constexpr uint16_t BRIDGE_PORT = 9000;
 
+#ifndef BRIDGE_SERIAL_SHARED_SECRET
+#define BRIDGE_SERIAL_SHARED_SECRET \
+  "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe"
+#endif
+
 WiFiClient client;
-BridgeClass BridgeWiFiInstance(client);
 unsigned long last_reconnect_attempt = 0;
 constexpr unsigned long RECONNECT_INTERVAL_MS = 3000;
 
@@ -66,16 +89,30 @@ void setup() {
     delay(250);
   }
 
-  // Connect to Python MPU Bridge daemon over TCP
+  // Connect to Python MPU Bridge daemon over TCP with authentication
   if (client.connect(BRIDGE_HOST, BRIDGE_PORT)) {
-    BridgeWiFiInstance.begin();
+    Bridge.setStream(client);
+    Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, BRIDGE_SERIAL_SHARED_SECRET);
+
+    // [SIL-2] Bounded synchronization: wait for daemon handshake
+    {
+      const uint32_t sync_deadline = millis() + bridge::config::SYNC_TIMEOUT_MS;
+      while (!Bridge.isSynchronized()) {
+        if (static_cast<int32_t>(millis() - sync_deadline) > 0) {
+          Bridge.enterSafeState();
+          break;
+        }
+        Bridge.process();
+      }
+    }
+
     digitalWrite(LED_BUILTIN, HIGH);
   }
 }
 
 void loop() {
   if (client.connected()) {
-    BridgeWiFiInstance.process();
+    Bridge.process();
   } else {
     digitalWrite(LED_BUILTIN, LOW);
     unsigned long now = millis();
@@ -83,7 +120,8 @@ void loop() {
       last_reconnect_attempt = now;
       if (WiFi.status() == WL_CONNECTED &&
           client.connect(BRIDGE_HOST, BRIDGE_PORT)) {
-        BridgeWiFiInstance.begin();
+        Bridge.setStream(client);
+        Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, BRIDGE_SERIAL_SHARED_SECRET);
         digitalWrite(LED_BUILTIN, HIGH);
       }
     }

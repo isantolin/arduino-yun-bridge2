@@ -122,6 +122,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
  public:
   explicit BridgeClass(Stream& stream);
 
+  void setStream(Stream& stream);
   void begin(uint32_t baudrate = 0, const char* secret = nullptr);
   void process();
   bool isSynchronized() const;
@@ -325,7 +326,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   void _initObservers();
 
   // STRICT ORDER FOR CONSTRUCTOR
-  Stream& _stream;
+  Stream* _stream = nullptr;
   HardwareSerial* _hardware_serial = nullptr;
   CommandHandler _command_handler;
   StatusHandler _status_handler;

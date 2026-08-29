@@ -162,6 +162,7 @@ def run_simavr_emulation(
     frequency: int,
     test_scripts: list[Path],
     timeout_seconds: float = 60.0,
+    uart_id: str | None = None,
 ) -> bool:
     """Run full E2E tests against an AVR ELF running in simavr."""
     if not firmware_path.exists():
@@ -177,6 +178,8 @@ def run_simavr_emulation(
 
     if harness_bin and harness_bin.exists():
         simavr_cmd = [str(harness_bin), str(firmware_path), mcu, str(frequency)]
+        if uart_id:
+            simavr_cmd.append(uart_id)
         logger.info("Spawning simavr_harness", cmd=simavr_cmd)
         simavr_proc = subprocess.Popen(
             simavr_cmd,
@@ -192,7 +195,7 @@ def run_simavr_emulation(
             line = simavr_proc.stdout.readline()
             if line:
                 state.on_line(line, "simavr-stdout")
-                if "[SIMAVR] UART PTY ready on:" in line:
+                if "[SIMAVR] UART" in line and "PTY ready on:" in line:
                     slave_name = line.split(":", 1)[1].strip()
                     break
             time.sleep(0.05)
@@ -465,9 +468,28 @@ def main(
             help="Timeout per client script in seconds",
         ),
     ] = 60.0,
+    uart: Annotated[
+        str | None,
+        typer.Option(
+            "--uart",
+            "-u",
+            help="UART peripheral ID (e.g. 0, 1, or auto)",
+        ),
+    ] = None,
 ) -> None:
     """Entrypoint for the simavr hardware emulation runner."""
     mcu = BOARD_TO_MCU.get(board.lower(), board.lower())
+
+    # Auto-detect UART ID based on firmware name if not explicitly specified
+    effective_uart = uart
+    if not effective_uart:
+        fw_str = str(firmware).lower()
+        if ("bluetooth" in fw_str or "wifi" in fw_str) and mcu == "atmega2560":
+            effective_uart = "1"
+        elif mcu == "atmega32u4":
+            effective_uart = "1"
+        else:
+            effective_uart = "0"
 
     if scripts:
         test_paths = [Path(s) for s in scripts]
@@ -485,6 +507,7 @@ def main(
         mcu=mcu,
         frequency=frequency,
         firmware=str(firmware),
+        uart=effective_uart,
     )
 
     success = run_simavr_emulation(
@@ -493,6 +516,7 @@ def main(
         frequency=frequency,
         test_scripts=test_paths,
         timeout_seconds=timeout,
+        uart_id=effective_uart,
     )
 
     if not success:

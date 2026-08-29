@@ -39,7 +39,11 @@ for i in "${!BOARDS[@]}"; do
             
             # 2. Emulate
             echo "[simavr-matrix] Running cycle-accurate simavr emulation for $BOARD..."
-            if python3 "${ROOT_DIR}/tools/simavr_runner.py" --firmware "${OUT_DIR}/firmware.elf" --board "$BOARD"; then
+            EXTRA_ARGS=()
+            if [[ "$SKETCH_PATH" =~ (BridgeBluetooth|BridgeWiFi) ]] && [ "$BOARD" = "arduino:avr:mega" ]; then
+                EXTRA_ARGS+=(--uart "1")
+            fi
+            if python3 "${ROOT_DIR}/tools/simavr_runner.py" --firmware "${OUT_DIR}/firmware.elf" --board "$BOARD" ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}; then
                 echo "[simavr-matrix] ✅ Emulation PASSED for $BOARD"
                 EMULATION_STATUS+=("✅ Passed (100% E2E)")
             else

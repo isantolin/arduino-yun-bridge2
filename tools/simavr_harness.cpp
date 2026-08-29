@@ -89,7 +89,7 @@ public:
     SimavrHardwareBridge(const SimavrHardwareBridge &) = delete;
     SimavrHardwareBridge &operator=(const SimavrHardwareBridge &) = delete;
 
-    bool initialize(etl::string_view firmware_path, etl::string_view mcu_name, uint32_t frequency) noexcept {
+    bool initialize(etl::string_view firmware_path, etl::string_view mcu_name, uint32_t frequency, char uart_id = '\0') noexcept {
         elf_firmware_t firmware{};
         if (elf_read_firmware(firmware_path.data(), &firmware) != 0) {
             fprintf(stderr, "[ERROR] Failed to read ELF firmware: %s\n", firmware_path.data());
@@ -112,7 +112,11 @@ public:
             avr_->frequency = frequency;
         }
 
-        uart_id_ = (mcu_name == "atmega32u4") ? '1' : '0';
+        if (uart_id >= '0' && uart_id <= '3') {
+            uart_id_ = uart_id;
+        } else {
+            uart_id_ = (mcu_name == "atmega32u4") ? '1' : '0';
+        }
 
         if (openpty(&master_fd_, &slave_fd_, slave_name_.data(), nullptr, nullptr) < 0) {
             perror("[ERROR] openpty failed");
@@ -138,7 +142,7 @@ public:
     }
 
     void run_simulation() noexcept {
-        printf("[SIMAVR] UART PTY ready on: %s\n", slave_name_.data());
+        printf("[SIMAVR] UART%c PTY ready on: %s\n", uart_id_, slave_name_.data());
         fflush(stdout);
 
     simulation_step:
@@ -216,19 +220,20 @@ private:
 
 int main(int argc, char *argv[]) {
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s <firmware.elf> [mcu] [frequency_hz]\n", argv[0]);
+        fprintf(stderr, "Usage: %s <firmware.elf> [mcu] [frequency_hz] [uart_id]\n", argv[0]);
         return 1;
     }
 
     const etl::string_view firmware_file = argv[1];
     const etl::string_view mcu_name = (argc > 2) ? argv[2] : "atmega2560";
     const uint32_t frequency = (argc > 3) ? static_cast<uint32_t>(strtoul(argv[3], nullptr, 10)) : DEFAULT_AVR_FREQUENCY;
+    const char uart_id = (argc > 4) ? argv[4][0] : '\0';
 
     signal(SIGINT, sig_handler);
     signal(SIGTERM, sig_handler);
 
     SimavrHardwareBridge bridge;
-    if (!bridge.initialize(firmware_file, mcu_name, frequency)) {
+    if (!bridge.initialize(firmware_file, mcu_name, frequency, uart_id)) {
         return 1;
     }
 

@@ -25,7 +25,10 @@ BluetoothSerial SerialBT;
 #include <wolfssl.h>
 #include <wolfssl/wolfcrypt/settings.h>
 
-BridgeClass BridgeBT(BT_STREAM);
+#ifndef BRIDGE_SERIAL_SHARED_SECRET
+#define BRIDGE_SERIAL_SHARED_SECRET \
+  "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe"
+#endif
 
 void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
@@ -41,9 +44,23 @@ void setup() {
   Serial.begin(115200);
 #endif
 
-  // Initialize bridge directly on the Bluetooth Stream
-  BridgeBT.begin();
+  // Initialize bridge directly on the Bluetooth Stream with authentication
+  Bridge.setStream(BT_STREAM);
+  Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, BRIDGE_SERIAL_SHARED_SECRET);
+
+  // [SIL-2] Bounded synchronization: wait for daemon handshake
+  {
+    const uint32_t sync_deadline = millis() + bridge::config::SYNC_TIMEOUT_MS;
+    while (!Bridge.isSynchronized()) {
+      if (static_cast<int32_t>(millis() - sync_deadline) > 0) {
+        Bridge.enterSafeState();
+        break;
+      }
+      Bridge.process();
+    }
+  }
+
   digitalWrite(LED_BUILTIN, HIGH);
 }
 
-void loop() { BridgeBT.process(); }
+void loop() { Bridge.process(); }

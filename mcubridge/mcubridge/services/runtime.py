@@ -516,26 +516,30 @@ class BridgeService:
             )
 
         topic_val = request.topic_name if request.topic_name else getattr(request, "topic", "")
-        if route := parse_topic(self.state.cloud_topic_prefix, topic_val):
-            if route.topic in (Topic.DIGITAL, Topic.ANALOG, Topic.CONSOLE, Topic.SPI):
-                try:
-                    async with asyncio.timeout(DEFAULT_SYNC_TIMEOUT_SECONDS):
-                        await self.state.link_sync_event.wait()
-                except asyncio.TimeoutError:
-                    logger.error("Timed out waiting for MCU link synchronization", topic=topic_val)
-            action = self.deduce_action(route)
-            topic_str = route.topic.value if isinstance(route.topic, Topic) else route.topic
-            if action and not (
-                allows_topic(self.state.topic_authorization, topic_str, action)
-                if self.state.topic_authorization
-                else False
-            ):
-                await self._reject_cloud(request, route.topic, action)
-                return
+        structlog.contextvars.bind_contextvars(topic=topic_val)
+        try:
+            if route := parse_topic(self.state.cloud_topic_prefix, topic_val):
+                if route.topic in (Topic.DIGITAL, Topic.ANALOG, Topic.CONSOLE, Topic.SPI):
+                    try:
+                        async with asyncio.timeout(DEFAULT_SYNC_TIMEOUT_SECONDS):
+                            await self.state.link_sync_event.wait()
+                    except asyncio.TimeoutError:
+                        logger.error("Timed out waiting for MCU link synchronization", topic=topic_val)
+                action = self.deduce_action(route)
+                topic_str = route.topic.value if isinstance(route.topic, Topic) else route.topic
+                if action and not (
+                    allows_topic(self.state.topic_authorization, topic_str, action)
+                    if self.state.topic_authorization
+                    else False
+                ):
+                    await self._reject_cloud(request, route.topic, action)
+                    return
 
-            # Unified Dispatch
-            if handler := self._topic_dispatch.get(route.topic):
-                await handler(route, request)
+                # Unified Dispatch
+                if handler := self._topic_dispatch.get(route.topic):
+                    await handler(route, request)
+        finally:
+            structlog.contextvars.unbind_contextvars("topic")
 
     # --- Business Logic Implementation ---
 

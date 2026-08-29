@@ -51,7 +51,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 			const statusDiv = document.getElementById('status');
 			statusDiv.innerText = `Sending command: ${state}...`;
 
-			fetch('/cgi-bin/luci/admin/services/mcubridge/api/pin/13', {
+			fetch('/cgi-bin/mcubridge-pin/pin/13', {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json'
@@ -66,7 +66,8 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 			})
 			.then(data => {
 				if (data.status === 'ok') {
-					statusDiv.innerText = `LED 13 State: ${data.state} (Success)`;
+					const resState = (data.data && data.data.state) ? data.data.state : (data.state || state);
+					statusDiv.innerText = `LED 13 State: ${resState} (Success)`;
 				} else {
 					statusDiv.innerText = `Error: ${data.message || 'Unknown error'}`;
 				}

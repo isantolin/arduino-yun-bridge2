@@ -15,9 +15,6 @@
     <kernel>/home/ignaciosantolin/arduino-yun-bridge2/bin/targets/malta/be/openwrt-malta-be-vmlinux.elf</kernel>
     <cmdline>root=/dev/sda console=ttyS0</cmdline>
   </os>
-  <cpu mode="custom" match="exact" check="none">
-    <model fallback="forbid">24Kf</model>
-  </cpu>
   <clock offset="utc"/>
   <on_poweroff>destroy</on_poweroff>
   <on_reboot>restart</on_reboot>
@@ -32,8 +29,8 @@
     <interface type="network">
       <mac address="52:54:00:12:34:56"/>
       <source network="default"/>
-      <model type="virtio"/>
-      <address type="pci" domain="0x0000" bus="0x00" slot="0x03" function="0x0"/>
+      <model type="pcnet"/>
+      <address type="pci" domain="0x0000" bus="0x00" slot="0x0b" function="0x0"/>
     </interface>
     <controller type="usb" model="qemu-xhci">
       <address type="pci" domain="0x0000" bus="0x00" slot="0x04" function="0x0"/>
@@ -46,7 +43,7 @@
     </console>
     <audio id="1" type="none"/>
     <hostdev mode="subsystem" type="usb" managed="yes">
-      <source>
+      <source startupPolicy="optional">
         <vendor id="0x2341"/>
         <product id="0x0043"/>
       </source>

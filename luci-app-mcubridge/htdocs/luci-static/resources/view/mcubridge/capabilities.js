@@ -5,7 +5,7 @@
 
 return view.extend({
 	load: function() {
-		return fs.readfile('/tmp/mcubridge_status.json').then(function(content) {
+		return fs.read('/tmp/mcubridge_status.json').then(function(content) {
 			if (!content || content.trim() === '') return null;
 			try {
 				var parsed = JSON.parse(content);
@@ -93,7 +93,7 @@ return view.extend({
 
 		var self = this;
 		poll.add(function() {
-			return fs.readfile('/tmp/mcubridge_status.json').then(function(content) {
+			return fs.read('/tmp/mcubridge_status.json').then(function(content) {
 				if (!content || content.trim() === '') {
 					self.renderContent(null, container);
 					return;

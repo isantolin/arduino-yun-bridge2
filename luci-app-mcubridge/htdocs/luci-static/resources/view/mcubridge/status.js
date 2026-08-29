@@ -5,7 +5,7 @@
 
 return view.extend({
 	load: function() {
-		return fs.readfile('/tmp/mcubridge_status.json').then(function(content) {
+		return fs.read('/tmp/mcubridge_status.json').then(function(content) {
 			if (!content || content.trim() === '') {
 				return null;
 			}
@@ -25,7 +25,7 @@ return view.extend({
 		]);
 
 		poll.add(function() {
-			return fs.readfile('/tmp/mcubridge_status.json').then(function(content) {
+			return fs.read('/tmp/mcubridge_status.json').then(function(content) {
 				if (!content || content.trim() === '') {
 					preEl.textContent = _('Status file not found or is empty. The daemon may be stopped, starting up, or the device may have rebooted (the status file lives on /tmp tmpfs).');
 					return;

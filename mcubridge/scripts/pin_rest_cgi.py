@@ -56,8 +56,9 @@ def application(environ: dict[str, Any], start_response: Any) -> list[bytes]:
         config = load_runtime_config()
         configure_logging(config)
 
-        path = environ.get("PATH_INFO", "")
-        if not (match := re.match(r"/pin/(\d+)", path)):
+        path = environ.get("PATH_INFO") or environ.get("REQUEST_URI") or ""
+        match = re.search(r"/(?:pin|digital)/(\d+)", path)
+        if not match:
             return json_res(
                 start_response,
                 "400 Bad Request",

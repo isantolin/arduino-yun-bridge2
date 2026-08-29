@@ -48,5 +48,14 @@
 			"type": "view",
 			"path": "mcubridge/webui"
 		}
+	},
+	"admin/services/mcubridge/api/pin": {
+		"cors": true,
+		"action": {
+			"type": "function",
+			"module": "luci.controller.admin.mcubridge",
+			"function": "action_pin"
+		},
+		"auth": {}
 	}
 }

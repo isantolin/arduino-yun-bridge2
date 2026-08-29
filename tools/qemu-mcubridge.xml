@@ -38,16 +38,14 @@
     <serial type="pty">
       <target port="0"/>
     </serial>
+    <serial type="dev">
+      <source path="/dev/ttyACM0"/>
+      <target port="1"/>
+    </serial>
     <console type="pty">
       <target type="serial" port="0"/>
     </console>
     <audio id="1" type="none"/>
-    <hostdev mode="subsystem" type="usb" managed="yes">
-      <source startupPolicy="optional">
-        <vendor id="0x2341"/>
-        <product id="0x0043"/>
-      </source>
-    </hostdev>
     <memballoon model="virtio">
       <address type="pci" domain="0x0000" bus="0x00" slot="0x02" function="0x0"/>
     </memballoon>

@@ -297,6 +297,7 @@ class RuntimeState:
         """Signal that serial connection is open but unsynchronized."""
         self.state = "connected"
         self.metrics.link_state.state("connected")
+        self.serial_tx_allowed.set()
 
     def mark_transport_disconnected(self) -> None:
         """Signal that serial connection is lost."""

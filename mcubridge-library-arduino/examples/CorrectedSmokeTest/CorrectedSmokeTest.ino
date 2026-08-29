@@ -30,17 +30,11 @@ void setup() {
 
   // CRITICAL: Wait for Bridge to be synchronized (Linux handshake complete)
   // This prevents "Rejecting MCU frame before link synchronisation" errors.
-  // [SIL-2] Bounded synchronization: abort to safe state if Linux unreachable.
   // Non-blocking LED blink continues while waiting for handshake.
   {
     long lastBlink = 0;
     bool ledState = false;
-    const uint32_t sync_deadline = millis() + bridge::config::SYNC_TIMEOUT_MS;
     while (!Bridge.isSynchronized()) {
-      if (static_cast<int32_t>(millis() - sync_deadline) > 0) {
-        Bridge.enterSafeState();
-        break;
-      }
       Bridge.process();
       if (millis() - lastBlink > 100) {
         lastBlink = millis();
@@ -50,8 +44,6 @@ void setup() {
     }
   }
 
-  // Removed Console.println to avoid mixing console data with protocol frames
-  // Console messages can interfere with COBS framing
   digitalWrite(13, HIGH);  // Indicate handshake complete
 }
 

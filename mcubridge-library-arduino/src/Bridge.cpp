@@ -947,6 +947,7 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx,
   }
   _fsm.receive(bridge::fsm::EvHandshakeStart());
   _fsm.receive(bridge::fsm::EvHandshakeComplete());
+  _state_flags.set(FLAG_TX_ENABLED, true);
   // [SIL-2/H-2] Handshake complete: cancel the watchdog timer so it does not
   // fire a spurious EvTimeout after a successful synchronisation.
   _timers.stop(bridge::scheduler::TIMER_HANDSHAKE_TIMEOUT);
@@ -963,6 +964,7 @@ void BridgeClass::_handleLinkReset(const bridge::router::CommandContext& ctx) {
       _applyTimingConfig(res_msg);
     }
   }
+  _state_flags.set(FLAG_TX_ENABLED, true);
   _fsm.receive(bridge::fsm::EvReset());
   // [SIL-2/H-2] Restart the handshake watchdog with the (possibly updated)
   // _response_timeout_ms. If the MPU does not complete CMD_LINK_SYNC within

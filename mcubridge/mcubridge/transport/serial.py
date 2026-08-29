@@ -233,7 +233,11 @@ class SerialTransport:
         connect_baud = self.config.serial_safe_baud or protocol.DEFAULT_SAFE_BAUDRATE
         try:
             async with serialx.AsyncSerial(
-                url=self.config.serial_port, baudrate=connect_baud, xonxoff=False
+                url=self.config.serial_port,
+                baudrate=connect_baud,
+                xonxoff=False,
+                exclusive=False,
+                low_latency=False,
             ) as self.serial:
                 self.state.serial_writer = self.serial.transport
                 await self._toggle_dtr()

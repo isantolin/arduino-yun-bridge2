@@ -37,6 +37,7 @@ define Package/$(PKG_NAME)/install
 	$(CP) ./htdocs/luci-static/resources/view/mcubridge/* $(1)/www/luci-static/resources/view/mcubridge/
 	$(CP) -r ./root/etc/config/mcubridge $(1)/etc/config/
 	[ -d ./root/www/mcubridge ] && $(CP) -r ./root/www/mcubridge $(1)/www/ || true
+	[ -d ./root/usr/share/ucode ] && $(INSTALL_DIR) $(1)/usr/share/ucode && $(CP) -r ./root/usr/share/ucode/* $(1)/usr/share/ucode/ || true
 endef
 
 $(eval $(call BuildPackage,$(PKG_NAME)))

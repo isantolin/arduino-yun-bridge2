@@ -123,7 +123,7 @@ rationale = "Shell environment detection runtime required by Typer"
 [[dependency]]
 name = "typer"
 openwrt = "python3-typer"
-pip = "typer==0.27.1"
+pip = "typer==0.27.2"
 gateway = true
 rationale = "Declarative CLI application builder for MPU diagnostic utilities and Gateway CLI"
 
@@ -142,7 +142,7 @@ rationale = "Zero-heap C protobuf generator and runtime library [BUILD-ONLY]"
 [[dependency]]
 name = "grpcio-tools"
 openwrt = "python3-grpcio-tools"
-pip = "grpcio-tools==1.83.0"
+pip = "grpcio-tools==1.83.1"
 rationale = "Protobuf and gRPC stubs compiler for code generation [BUILD-ONLY]"
 
 [[dependency]]
@@ -210,7 +210,7 @@ rationale = "Lightweight zero-heap C Protobuf serialization runtime for embedded
 
 [[dev_dependency]]
 name = "coverage"
-pip = "coverage==7.15.4"
+pip = "coverage==7.16.0"
 rationale = "Strict code coverage measurement and reporting tool"
 
 [[dev_dependency]]

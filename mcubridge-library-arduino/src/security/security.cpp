@@ -13,6 +13,7 @@
 #include <wolfssl/wolfcrypt/hash.h>
 #include <wolfssl/wolfcrypt/hmac.h>
 #include <wolfssl/wolfcrypt/kdf.h>
+#include <wolfssl/wolfcrypt/misc.h>
 
 #include "../config/bridge_config.h"  // IWYU pragma: keep
 #include "../protocol/rpc_structs.h"
@@ -20,14 +21,6 @@
 
 namespace rpc {
 namespace security {
-
-static bool constant_time_equal(const uint8_t* a, const uint8_t* b,
-                                size_t len) {
-  return etl::accumulate(a, a + len, uint8_t(0),
-                         [&b](uint8_t acc, uint8_t val) {
-                           return static_cast<uint8_t>(acc | (val ^ *b++));
-                         }) == 0;
-}
 
 // --- HKDF Implementation ---
 
@@ -64,8 +57,8 @@ bool handshake_authenticate(etl::span<const uint8_t> secret,
     if (received_tag.size() != rpc::RPC_HANDSHAKE_TAG_LENGTH) {
       tag_ok = false;
     } else {
-      tag_ok = constant_time_equal(out_tag.data(), received_tag.data(),
-                                   rpc::RPC_HANDSHAKE_TAG_LENGTH);
+      tag_ok = (ConstantCompare(out_tag.data(), received_tag.data(),
+                                rpc::RPC_HANDSHAKE_TAG_LENGTH) == 0);
     }
   }
   secure_zero(etl::span<uint8_t>(handshake_key.data(), handshake_key.size()));
@@ -222,7 +215,8 @@ bool run_cryptographic_self_tests() {
   etl::array<uint8_t, rpc::RPC_SHA256_DIGEST_SIZE> expected_buf;
   memcpy_P(expected_buf.data(), kat_sha256_expected.data(),
            rpc::RPC_SHA256_DIGEST_SIZE);
-  bool ok = etl::equal(actual.begin(), actual.end(), expected_buf.begin());
+  bool ok = (ConstantCompare(actual.data(), expected_buf.data(),
+                             rpc::RPC_SHA256_DIGEST_SIZE) == 0);
 
   // 2. HMAC-SHA256 KAT
   Hmac hmac;
@@ -239,7 +233,8 @@ bool run_cryptographic_self_tests() {
 
   memcpy_P(expected_buf.data(), kat_hmac_expected.data(),
            rpc::RPC_SHA256_DIGEST_SIZE);
-  bool hmac_ok = etl::equal(actual.begin(), actual.end(), expected_buf.begin());
+  bool hmac_ok = (ConstantCompare(actual.data(), expected_buf.data(),
+                                  rpc::RPC_SHA256_DIGEST_SIZE) == 0);
 
   // 3. ChaCha20-Poly1305 KAT (RFC 8439)
   static constexpr etl::array<uint8_t, 32> kat_aead_key = {
@@ -264,8 +259,8 @@ bool run_cryptographic_self_tests() {
       etl::span<uint8_t>(aead_out), etl::span<uint8_t>(aead_tag_actual));
 
   bool aead_res_ok = (encrypt_res == 0);
-  bool aead_tag_ok = etl::equal(aead_tag_actual.begin(), aead_tag_actual.end(),
-                                kat_aead_tag_expected.begin());
+  bool aead_tag_ok = (ConstantCompare(aead_tag_actual.data(),
+                                      kat_aead_tag_expected.data(), 16) == 0);
   const uint8_t val_ok = static_cast<uint8_t>(ok);
   const uint8_t val_hmac = static_cast<uint8_t>(hmac_ok);
   const uint8_t val_aead_res = static_cast<uint8_t>(aead_res_ok);

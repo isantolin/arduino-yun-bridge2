@@ -479,18 +479,22 @@ class BridgeService:
         if not (self.state.is_synchronized or command_id in _STATUS_VALUES or command_id in _PRE_SYNC_ALLOWED_COMMANDS):
             return
 
-        if handler := self.mcu_registry.get(command_id):
-            p = payload
-            if not isinstance(p, ProtobufMessage) and command_id in protocol.COMMAND_TO_PB:
-                msg_cls = protocol.COMMAND_TO_PB[command_id]
-                p = msg_cls()
-                p.ParseFromString(cast(bytes, payload))
+        structlog.contextvars.bind_contextvars(cmd_id=command_id, seq_id=sequence_id)
+        try:
+            if handler := self.mcu_registry.get(command_id):
+                p = payload
+                if not isinstance(p, ProtobufMessage) and command_id in protocol.COMMAND_TO_PB:
+                    msg_cls = protocol.COMMAND_TO_PB[command_id]
+                    p = msg_cls()
+                    p.ParseFromString(cast(bytes, payload))
 
-            if await handler(sequence_id, p) is not False and command_id not in _STATUS_VALUES:
-                await serial.acknowledge(command_id, sequence_id)
-        elif response_to_request(command_id) is None:
-            self.state.metrics.unknown_command_count.inc()
-            await serial.send(Status.NOT_IMPLEMENTED.value, b"")
+                if await handler(sequence_id, p) is not False and command_id not in _STATUS_VALUES:
+                    await serial.acknowledge(command_id, sequence_id)
+            elif response_to_request(command_id) is None:
+                self.state.metrics.unknown_command_count.inc()
+                await serial.send(Status.NOT_IMPLEMENTED.value, b"")
+        finally:
+            structlog.contextvars.unbind_contextvars("cmd_id", "seq_id")
 
     async def handle_request(self, inbound: Any) -> None:
         if isinstance(inbound, pb.CloudQueuedPublish):

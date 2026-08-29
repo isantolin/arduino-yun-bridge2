@@ -279,6 +279,7 @@ class SerialTransport:
                 await self.serial.set_modem_pins(dtr=False)
                 await asyncio.sleep(0.1)
                 await self.serial.set_modem_pins(dtr=True)
+                await asyncio.sleep(1.8)
         except (AttributeError, OSError, ValueError, serialx.SerialException, RuntimeError) as exc:
             logger.error("Unable to toggle DTR", port=self.config.serial_port, error=str(exc))
 

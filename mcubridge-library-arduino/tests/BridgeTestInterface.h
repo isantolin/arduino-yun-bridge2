@@ -23,7 +23,7 @@ class TestAccessor : public BridgeClass {
   void setSynchronized() {
     _fsm.receive(bridge::fsm::EvHandshakeStart());
     _fsm.receive(bridge::fsm::EvHandshakeComplete());
-    _tx_enabled = true;
+    _state_flags.set(FLAG_TX_ENABLED, true);
     etl::array<uint8_t, 32> dummy_key;
     dummy_key.fill(0xAA);
     setSessionKey(dummy_key);
@@ -51,7 +51,9 @@ class TestAccessor : public BridgeClass {
   void dispatch(const rpc_pb_RpcEnvelope& frame) { _dispatchCommand(frame); }
 
   bool isSharedSecretEmpty() const { return _shared_secret.empty(); }
-  void setTxEnabled(bool enabled) { _tx_enabled = enabled; }
+  void setTxEnabled(bool enabled) {
+    _state_flags.set(FLAG_TX_ENABLED, enabled);
+  }
   void setSharedSecret(etl::span<const uint8_t> secret) {
     _shared_secret.assign(secret.begin(), secret.end());
   }
@@ -95,7 +97,7 @@ class TestAccessor : public BridgeClass {
   void invokeWatchdog() { _watchdogTask(); }
   void invokeSerialTask() { _serialTask(); }
   void invokeTimerTask() { _timerTask(); }
-  bool isSerialXoffSent() const { return _serial_xoff_sent; }
+  bool isSerialXoffSent() const { return _state_flags.test(FLAG_SERIAL_XOFF); }
   void handleSpiTransfer(const bridge::router::CommandContext& ctx,
                          const rpc_pb_SpiTransfer& req) {
     _handleSpiTransfer(ctx, req);
@@ -107,7 +109,9 @@ class TestAccessor : public BridgeClass {
     _timers.start(bridge::scheduler::TIMER_RX_DEDUPE);
     _timers.start(bridge::scheduler::TIMER_BAUDRATE_CHANGE);
   }
-  void setSerialTaskXoffSent(bool value) { _serial_xoff_sent = value; }
+  void setSerialTaskXoffSent(bool value) {
+    _state_flags.set(FLAG_SERIAL_XOFF, value);
+  }
   void setSerialTaskBridgeNull() {}
   void setTimerTaskBridgeNull() {}
   void setTimerLastTick(uint32_t tick) { _timer_last_tick_ms = tick; }

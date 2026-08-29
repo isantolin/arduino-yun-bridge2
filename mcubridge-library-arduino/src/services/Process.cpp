@@ -69,7 +69,7 @@ void ProcessClass::runAsync(etl::string_view cmd,
     return;
   }
 
-  if (handler.is_valid()) Process._pending_run_async.push({handler});
+  if (handler.is_valid()) Process._pending_run_async.push(handler);
 }
 
 void ProcessClass::poll(int32_t pid,
@@ -92,7 +92,7 @@ void ProcessClass::poll(int32_t pid,
   }
 
   if (handler.is_valid()) {
-    _pending_polls.push({pid, handler});
+    _pending_polls.push(PendingPoll{pid, handler});
   }
 }
 
@@ -115,18 +115,17 @@ void ProcessClass::_onKillNotification(const rpc::payload::ProcessKill&) {
 void ProcessClass::_onRunAsyncResponse(
     const rpc::payload::ProcessRunAsyncResponse& msg) {
   if (_pending_run_async.empty()) return;
-  const typename ProcessClass::PendingRunAsync pending =
-      _pending_run_async.front();
+  const ProcessRunHandler handler = _pending_run_async.front();
   _pending_run_async.pop();
-  pending.handler(static_cast<int32_t>(msg.pid));
+  handler(static_cast<int32_t>(msg.pid));
 }
 
 void ProcessClass::_onPollResponse(
     const rpc::payload::ProcessPollResponse& msg) {
   if (_pending_polls.empty()) return;
-  const typename ProcessClass::PendingPoll pending = _pending_polls.front();
+  const PendingPoll pending = _pending_polls.front();
   _pending_polls.pop();
-  pending.handler(
+  pending.second(
       static_cast<rpc::StatusCode>(msg.status), msg.exit_code,
       etl::span<const uint8_t>(msg.stdout_data.bytes, msg.stdout_data.size),
       etl::span<const uint8_t>(msg.stderr_data.bytes, msg.stderr_data.size));

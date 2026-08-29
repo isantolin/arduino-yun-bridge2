@@ -466,7 +466,7 @@ void BridgeClass::_dispatchCommand(const rpc_pb_RpcEnvelope& envelope) {
 void BridgeClass::_initializeRuntime() {
   _initObservers();
   _timer_last_tick_ms = 0;
-  _serial_xoff_sent = false;
+  _state_flags.reset();
 
   // Shared buffer initialized by PacketSerial
 
@@ -494,8 +494,8 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
   if (!_fsm.is_started()) _fsm.start();
   _fsm.receive(bridge::fsm::EvReset());
 
-  _is_post_passed = bridge::hal::run_power_on_self_tests();
-  if (!_is_post_passed) {
+  _state_flags.set(FLAG_POST_PASSED, bridge::hal::run_power_on_self_tests());
+  if (!_state_flags.test(FLAG_POST_PASSED)) {
     enterSafeState();
     return;
   }
@@ -503,7 +503,7 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
   if constexpr (bridge::hal::CurrentArchTraits::id ==
                 bridge::hal::ArchId::ARCH_AVR)
     if (baudrate > 0 && _hardware_serial) _hardware_serial->begin(baudrate);
-  _tx_enabled = true;
+  _state_flags.set(FLAG_TX_ENABLED, true);
   _timers.clear();
   _timers.register_timer([]() { Bridge._onAckTimeout(); }, _ack_timeout_ms,
                          etl::timer::mode::REPEATING);
@@ -518,9 +518,13 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
                          etl::timer::mode::SINGLE_SHOT);
   // [SIL-2/H-2] Handshake response watchdog: fires EvTimeout if MPU does not
   // complete CMD_LINK_SYNC within _response_timeout_ms after a reset.
-  _timers.register_timer([]() { Bridge._onHandshakeTimeout(); },
-                         _response_timeout_ms, etl::timer::mode::SINGLE_SHOT);
-  _timers.start(bridge::scheduler::TIMER_HANDSHAKE_TIMEOUT);
+  // Period is refreshed dynamically on every CMD_LINK_RESET.
+  _timers.register_timer(
+      []() { Bridge._onHandshakeTimeout(); },
+      static_cast<uint16_t>(
+          etl::min(static_cast<uint32_t>(UINT16_MAX), _response_timeout_ms)),
+      etl::timer::mode::SINGLE_SHOT);
+
   _packet_serial.setPacketHandler(
       etl::delegate<void(etl::span<const uint8_t>)>::create<
           BridgeClass, &BridgeClass::_handleReceivedFrame>(*this));
@@ -531,7 +535,6 @@ void BridgeClass::process() {
   _watchdogTask();
   _serialTask();
   _timerTask();
-  if constexpr (bridge::config::ENABLE_MAILBOX) Mailbox.process();
   const uint32_t elapsed_us = ::micros() - start_us;
   _wcet_max_micros = etl::max(_wcet_max_micros, elapsed_us);
 }
@@ -541,14 +544,14 @@ void BridgeClass::_watchdogTask() { bridge::hal::watchdog_kick(); }
 void BridgeClass::_serialTask() {
   _packet_serial.update(_stream);
   const int avail = _stream.available();
-  if (!_serial_xoff_sent &&
+  if (!_state_flags.test(FLAG_SERIAL_XOFF) &&
       avail > bridge::config::FLOW_CONTROL_XOFF_THRESHOLD) {
     signalXoff();
-    _serial_xoff_sent = true;
-  } else if (_serial_xoff_sent &&
+    _state_flags.set(FLAG_SERIAL_XOFF, true);
+  } else if (_state_flags.test(FLAG_SERIAL_XOFF) &&
              avail < bridge::config::FLOW_CONTROL_XON_THRESHOLD) {
     signalXon();
-    _serial_xoff_sent = false;
+    _state_flags.set(FLAG_SERIAL_XOFF, false);
   }
 }
 
@@ -571,7 +574,7 @@ void BridgeClass::onUnknownCommand(const bridge::router::CommandContext& ctx) {
 
 void BridgeClass::enterSafeState() {
   bridge::hal::forceSafeState();
-  _tx_enabled = false;
+  _state_flags.set(FLAG_TX_ENABLED, false);
   _clearPendingTxQueue();
   _fsm.receive(bridge::fsm::EvReset());
   notify_observers(bridge::SystemEvent::SAFE_STATE_ENTERED);
@@ -586,7 +589,9 @@ void BridgeClass::_serialize_and_send(const rpc_pb_RpcEnvelope& env) {
 
 bool BridgeClass::_sendFrameRaw(const rpc_pb_RpcEnvelope& env,
                                 uint16_t command_id) {
-  if (!_tx_enabled && !rpc::is_system_command(command_id)) return false;
+  if (!_state_flags.test(FLAG_TX_ENABLED) &&
+      !rpc::is_system_command(command_id))
+    return false;
   _serialize_and_send(env);
   return true;
 }
@@ -638,7 +643,8 @@ void BridgeClass::_transmit(uint16_t command_id, uint16_t sequence_id,
 
 void BridgeClass::_flushPendingTxQueue() {
   BRIDGE_ATOMIC_BLOCK {
-    if (_pending_tx_queue.empty() || !_tx_enabled) return;
+    if (_pending_tx_queue.empty() || !_state_flags.test(FLAG_TX_ENABLED))
+      return;
     const auto& f = _pending_tx_queue.front();
     _last_command_id = f.command_id;
     _retry_count = 0;
@@ -664,7 +670,7 @@ void BridgeClass::_onAckTimeout() {
   if (++_retry_count >= _retry_limit) {
     _timers.stop(bridge::scheduler::TIMER_ACK_TIMEOUT);
     _fsm.receive(bridge::fsm::EvTimeout());
-    _tx_enabled = false;
+    _state_flags.set(FLAG_TX_ENABLED, false);
     _clearPendingTxQueue();
     return;
   }
@@ -703,7 +709,7 @@ void BridgeClass::_onRxDedupe() { _rx_history.clear(); }
 void BridgeClass::_onHandshakeTimeout() {
   if (_fsm.isSynchronized()) return;  // stale callback after a late sync
   _fsm.receive(bridge::fsm::EvTimeout());
-  _tx_enabled = false;
+  _state_flags.set(FLAG_TX_ENABLED, false);
 }
 void BridgeClass::_onBaudrateChange() {
   if (_pending_baudrate > 0) {
@@ -957,10 +963,10 @@ void BridgeClass::_handleGetCapabilities(
 }
 
 void BridgeClass::_handleXoff(const bridge::router::CommandContext&) {
-  _tx_enabled = false;
+  _state_flags.set(FLAG_TX_ENABLED, false);
 }
 void BridgeClass::_handleXon(const bridge::router::CommandContext&) {
-  _tx_enabled = true;
+  _state_flags.set(FLAG_TX_ENABLED, true);
 }
 
 void BridgeClass::_handleStatusAck(

@@ -26,6 +26,7 @@
 #include <wolfssl/wolfcrypt/settings.h>
 #include <etl/algorithm.h>
 #include <etl/array.h>
+#include <etl/bitset.h>
 #include <etl/callback_timer.h>
 #include <etl/delegate.h>
 #include <etl/deque.h>
@@ -124,7 +125,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   void begin(uint32_t baudrate = 0, const char* secret = nullptr);
   void process();
   bool isSynchronized() const;
-  bool isPostPassed() const { return _is_post_passed; }
+  bool isPostPassed() const { return _state_flags.test(FLAG_POST_PASSED); }
   uint32_t getWcetMaxMicros() const { return _wcet_max_micros; }
   void resetWcetStats() { _wcet_max_micros = 0; }
   static uint16_t getFreeStackMargin() {
@@ -163,7 +164,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
                   "Command must be enum or integral");
     const uint16_t cmd = static_cast<uint16_t>(command);
     const bool is_system = rpc::is_system_command(cmd);
-    if (!_tx_enabled && !is_system) return false;
+    if (!_state_flags.test(FLAG_TX_ENABLED) && !is_system) return false;
     if (is_reliable_cmd(cmd)) {
       BRIDGE_ATOMIC_BLOCK {
         if (_pending_tx_queue.full()) return false;
@@ -353,8 +354,15 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   void
   _onHandshakeTimeout();  // [SIL-2/H-2] Handshake response watchdog callback
 
+  enum StateFlags : uint8_t {
+    FLAG_POST_PASSED = 0,
+    FLAG_TX_ENABLED = 1,
+    FLAG_SERIAL_XOFF = 2,
+    FLAG_COUNT = 3
+  };
+
   uint32_t _timer_last_tick_ms = 0;
-  bool _serial_xoff_sent = false;
+  etl::bitset<FLAG_COUNT> _state_flags;
 
   etl::callback_timer<bridge::scheduler::NUMBER_OF_TIMERS> _timers;
   // Shared working buffer for transient operations (unencrypted encoding, SPI
@@ -364,8 +372,6 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   etl::array<uint8_t, rpc::MAX_FRAME_SIZE> _tx_frame_buffer;
   rpc_pb_RpcEnvelope _tx_envelope = rpc_pb_RpcEnvelope_init_zero;
 
-  bool _is_post_passed = false;
-  bool _tx_enabled = true;
   uint32_t _wcet_max_micros = 0;
 
   etl::pool<TxPayloadBuffer, bridge::config::MAX_PENDING_TX_FRAMES>

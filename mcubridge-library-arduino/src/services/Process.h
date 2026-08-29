@@ -7,6 +7,7 @@
 #include <etl/queue.h>
 #include <etl/span.h>
 #include <etl/string_view.h>
+#include <etl/utility.h>
 
 #include "Bridge.h"
 #include "protocol/rpc_protocol.h"
@@ -18,6 +19,7 @@ class ProcessClass : public bridge::BridgeObserver {
   using ProcessPollHandler =
       etl::delegate<void(rpc::StatusCode, uint16_t, etl::span<const uint8_t>,
                          etl::span<const uint8_t>)>;
+  using PendingPoll = etl::pair<int32_t, ProcessPollHandler>;
 
   ProcessClass();
   static void runAsync(etl::string_view cmd,
@@ -33,14 +35,7 @@ class ProcessClass : public bridge::BridgeObserver {
 
   void onLost() override { reset(); }
 
-  struct PendingRunAsync {
-    ProcessRunHandler handler;
-  };
-  struct PendingPoll {
-    int32_t pid{0};
-    ProcessPollHandler handler;
-  };
-  etl::queue<PendingRunAsync, bridge::config::MAX_PENDING_PROCESS_POLLS>
+  etl::queue<ProcessRunHandler, bridge::config::MAX_PENDING_PROCESS_POLLS>
       _pending_run_async;
   etl::queue<PendingPoll, bridge::config::MAX_PENDING_PROCESS_POLLS>
       _pending_polls;

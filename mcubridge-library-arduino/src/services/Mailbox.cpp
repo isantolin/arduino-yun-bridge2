@@ -23,7 +23,7 @@ typename MailboxClass::MessageCallback MailboxClass::_message_callback;
 
 typename MailboxClass::AvailableCallback MailboxClass::_available_callback;
 
-etl::queue<typename MailboxClass::MailboxMessage, 8> MailboxClass::_queue;
+etl::queue<typename MailboxClass::MailboxBuffer, 8> MailboxClass::_queue;
 
 void MailboxClass::requestRead() {
   (void)Bridge.sendFrame(rpc::CommandId::CMD_MAILBOX_READ);
@@ -45,9 +45,11 @@ void MailboxClass::signalProcessed(uint32_t message_id) {
 
 void MailboxClass::_onPush(const rpc::payload::MailboxPush& msg) {
   if (!_queue.full()) {
-    MailboxMessage m;
-    m.size = (uint8_t)etl::min((size_t)msg.data.size, sizeof(m.data));
-    etl::copy_n(msg.data.bytes, m.size, m.data.begin());
+    MailboxBuffer m;
+    const size_t sz =
+        etl::min(static_cast<size_t>(msg.data.size), m.capacity());
+    m.resize(sz);
+    etl::copy_n(msg.data.bytes, sz, m.begin());
     _queue.push(m);
   }
 }
@@ -55,9 +57,11 @@ void MailboxClass::_onPush(const rpc::payload::MailboxPush& msg) {
 void MailboxClass::_onReadResponse(
     const rpc::payload::MailboxReadResponse& msg) {
   if (!_queue.full()) {
-    MailboxMessage m;
-    m.size = (uint8_t)etl::min((size_t)msg.content.size, sizeof(m.data));
-    etl::copy_n(msg.content.bytes, m.size, m.data.begin());
+    MailboxBuffer m;
+    const size_t sz =
+        etl::min(static_cast<size_t>(msg.content.size), m.capacity());
+    m.resize(sz);
+    etl::copy_n(msg.content.bytes, sz, m.begin());
     _queue.push(m);
   }
 }
@@ -72,7 +76,7 @@ void MailboxClass::_onAvailableResponse(
 void MailboxClass::process() {
   if (!_queue.empty() && _message_callback) {
     const auto& m = _queue.front();
-    _message_callback(etl::span<const uint8_t>(m.data.data(), m.size));
+    _message_callback(etl::span<const uint8_t>(m.data(), m.size()));
     _queue.pop();
   }
 }

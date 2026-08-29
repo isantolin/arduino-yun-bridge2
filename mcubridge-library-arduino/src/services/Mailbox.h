@@ -3,10 +3,10 @@
 
 #undef min
 #undef max
-#include <etl/array.h>
 #include <etl/delegate.h>
 #include <etl/queue.h>
 #include <etl/span.h>
+#include <etl/vector.h>
 
 #include "Bridge.h"
 #include "protocol/rpc_structs.h"
@@ -15,6 +15,7 @@ class MailboxClass : public bridge::BridgeObserver {
  public:
   using MessageCallback = etl::delegate<void(etl::span<const uint8_t>)>;
   using AvailableCallback = etl::delegate<void(uint32_t)>;
+  using MailboxBuffer = etl::vector<uint8_t, 64>;
 
   MailboxClass();
   static void push(etl::span<const uint8_t> data);
@@ -38,13 +39,9 @@ class MailboxClass : public bridge::BridgeObserver {
   void onLost() override;
 
  private:
-  struct MailboxMessage {
-    etl::array<uint8_t, 64> data;
-    uint8_t size = 0;
-  };
   static MessageCallback _message_callback;
   static AvailableCallback _available_callback;
-  static etl::queue<MailboxMessage, 8> _queue;
+  static etl::queue<MailboxBuffer, 8> _queue;
 };
 
 using MailboxType = MailboxClass;

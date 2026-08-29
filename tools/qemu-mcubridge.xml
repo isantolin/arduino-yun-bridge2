@@ -1,4 +1,4 @@
-<domain type="kvm">
+<domain type="qemu">
   <!-- Configuración para emular OpenWrt -->
   <name>openwrt-mcubridge</name>
   <metadata>
@@ -14,12 +14,8 @@
     <kernel>bin/targets/malta/be/openwrt-malta-be-vmlinux.elf</kernel>
     <cmdline>root=/dev/vda console=ttyS0</cmdline>
   </os>
-  <features>
-    <acpi/>
-    <apic/>
-  </features>
   <cpu mode="custom" match="exact" check="none">
-    <model fallback="forbid">qpci</model>
+    <model fallback="forbid">24Kf</model>
   </cpu>
   <clock offset="utc"/>
   <on_poweroff>destroy</on_poweroff>

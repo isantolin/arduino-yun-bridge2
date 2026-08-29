@@ -1,6 +1,7 @@
 <domain type="qemu">
   <!-- Configuración para emular OpenWrt -->
   <name>openwrt-mcubridge</name>
+  <uuid>698c5dc0-401b-42a2-94f0-c07f347efb88</uuid>
   <metadata>
     <libosinfo:libosinfo xmlns:libosinfo="http://libosinfo.org/xmlns/libvirt/domain/1.0">
       <libosinfo:os id="http://libosinfo.org/linux/2024"/>
@@ -11,8 +12,8 @@
   <vcpu placement="static">1</vcpu>
   <os>
     <type arch="mips" machine="malta">hvm</type>
-    <kernel>bin/targets/malta/be/openwrt-malta-be-vmlinux.elf</kernel>
-    <cmdline>root=/dev/vda console=ttyS0</cmdline>
+    <kernel>/home/ignaciosantolin/arduino-yun-bridge2/bin/targets/malta/be/openwrt-malta-be-vmlinux.elf</kernel>
+    <cmdline>root=/dev/sda console=ttyS0</cmdline>
   </os>
   <cpu mode="custom" match="exact" check="none">
     <model fallback="forbid">24Kf</model>
@@ -25,9 +26,8 @@
     <emulator>/usr/bin/qemu-system-mips</emulator>
     <disk type="file" device="disk">
       <driver name="qemu" type="raw"/>
-      <source file="bin/targets/malta/be/openwrt-malta-be-root.ext4"/>
-      <target dev="vda" bus="virtio"/>
-      <address type="pci" domain="0x0000" bus="0x00" slot="0x01" function="0x0"/>
+      <source file="/home/ignaciosantolin/arduino-yun-bridge2/bin/targets/malta/be/openwrt-malta-be-root.ext4"/>
+      <target dev="sda" bus="ide"/>
     </disk>
     <interface type="network">
       <mac address="52:54:00:12:34:56"/>
@@ -35,10 +35,11 @@
       <model type="virtio"/>
       <address type="pci" domain="0x0000" bus="0x00" slot="0x03" function="0x0"/>
     </interface>
+    <controller type="usb" model="qemu-xhci">
+      <address type="pci" domain="0x0000" bus="0x00" slot="0x04" function="0x0"/>
+    </controller>
     <serial type="pty">
-      <target type="isa-serial" port="0">
-        <model name="isa-serial"/>
-      </target>
+      <target port="0"/>
     </serial>
     <console type="pty">
       <target type="serial" port="0"/>

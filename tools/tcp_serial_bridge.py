@@ -3,8 +3,6 @@
 
 import asyncio
 import os
-import signal
-import sys
 import termios
 
 HOST = "0.0.0.0"

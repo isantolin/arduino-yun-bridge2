@@ -9,7 +9,6 @@ from mcubridge.protocol.mcubridge_grpc import CloudBridgeStub, LocalBridgeBase
 import asyncio
 import collections
 import functools
-import json
 import logging
 import os
 import secrets
@@ -1423,9 +1422,8 @@ class BridgeService:
                     )
                     tg.create_task(self.supervise("prometheus-exporter", self.exporter.run))
 
-                # 5. Local IPC Server (UNIX Socket - gRPC) and HTTP REST Server (127.0.0.1:8088)
+                # 5. Local IPC Server (UNIX Socket - gRPC)
                 tg.create_task(self.supervise("ipc-server", self.run_ipc_server))
-                tg.create_task(self.supervise("rest-server", self.run_rest_server))
 
         except* asyncio.CancelledError:
             logger.info("Daemon shutdown initiated (Cancelled).")
@@ -1694,89 +1692,6 @@ class BridgeService:
             await server.wait_closed()
         finally:
             server.close()
-
-    async def run_rest_server(self) -> None:
-        """Run lightweight HTTP/REST server on 127.0.0.1:8088 for fast sub-millisecond WebUI & CGI access. [SIL-2]"""
-
-        async def _handle_http_client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-            try:
-                raw_bytes = await reader.read(4096)
-                if not raw_bytes:
-                    return
-
-                raw_text = raw_bytes.decode("utf-8").strip()
-                pin: int = 13
-                val: int = 1
-                state_str: str = "ON"
-
-                # Parse HTTP Request
-                json_part: str | None = None
-                if "\r\n\r\n" in raw_text:
-                    headers_part, json_part = raw_text.split("\r\n\r\n", 1)
-                elif "\n\n" in raw_text:
-                    headers_part, json_part = raw_text.split("\n\n", 1)
-                else:
-                    headers_part = raw_text
-                    json_part = None
-
-                # Extract pin from path if present (e.g. POST /pin/13 HTTP/1.1)
-                first_line = headers_part.splitlines()[0] if headers_part else ""
-                for token in first_line.split():
-                    if "/pin/" in token or "/digital/" in token:
-                        digits = "".join(c for c in token.split("/")[-1] if c.isdigit())
-                        if digits:
-                            pin = int(digits)
-                        break
-
-                if json_part:
-                    try:
-                        req_dict = json.loads(json_part.strip())
-                        if "pin" in req_dict:
-                            pin = int(req_dict["pin"])
-                        raw_state = str(req_dict.get("state", req_dict.get("value", "ON"))).upper()
-                        val = 1 if raw_state in ("ON", "HIGH", "1", "TRUE") else 0
-                        state_str = "ON" if val == 1 else "OFF"
-                    except (json.JSONDecodeError, ValueError, TypeError) as parse_err:
-                        logger.warning("Malformed REST JSON payload", error=str(parse_err))
-
-                serial = self.serial
-                status_ok = False
-                if serial:
-                    write_msg = pb.DigitalWrite(pin=pin, value=val)
-                    res = await serial.send(Command.CMD_DIGITAL_WRITE.value, write_msg)
-                    status_ok = bool(res)
-                    logger.info("REST DigitalWrite executed", pin=pin, val=val, status_ok=status_ok)
-                else:
-                    logger.error("REST DigitalWrite failed: self.serial is None")
-
-                resp_obj = {
-                    "status": "ok" if status_ok else "error",
-                    "state": state_str,
-                    "data": {"pin": pin, "state": state_str},
-                }
-                resp_json = json.dumps(resp_obj)
-                http_resp = (
-                    f"HTTP/1.1 200 OK\r\n"
-                    f"Content-Type: application/json; charset=UTF-8\r\n"
-                    f"Content-Length: {len(resp_json.encode('utf-8'))}\r\n"
-                    f"Connection: close\r\n\r\n"
-                    f"{resp_json}\n"
-                )
-                writer.write(http_resp.encode("utf-8"))
-                await writer.drain()
-            except (OSError, UnicodeDecodeError, ValueError) as client_err:
-                logger.error("Error processing REST HTTP client", error=str(client_err))
-            finally:
-                writer.close()
-                try:
-                    await writer.wait_closed()
-                except OSError:
-                    pass
-
-        server_tcp = await asyncio.start_server(_handle_http_client, host="127.0.0.1", port=8088)
-        logger.info("Local REST HTTP server listening on 127.0.0.1:8088")
-        async with server_tcp:
-            await server_tcp.serve_forever()
 
 
 _T_PB = TypeVar("_T_PB", bound=ProtobufMessage)

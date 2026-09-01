@@ -1744,7 +1744,7 @@ class BridgeService:
                 if serial:
                     write_msg = pb.DigitalWrite(pin=pin, value=val)
                     res = await serial.send(Command.CMD_DIGITAL_WRITE.value, write_msg)
-                    status_ok = res is not None
+                    status_ok = bool(res)
                     logger.info("REST DigitalWrite executed", pin=pin, val=val, status_ok=status_ok)
                 else:
                     logger.error("REST DigitalWrite failed: self.serial is None")

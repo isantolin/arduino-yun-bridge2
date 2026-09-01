@@ -199,7 +199,7 @@ app = typer.Typer(help="Hardware test target harness runner.", add_completion=Fa
 
 
 @app.command()
-def main(
+def list_targets(
     manifest_path: Annotated[Path, typer.Option("--manifest", help="Path to targets.toml manifest")] = EXAMPLE_MANIFEST,
 ) -> None:
     """Load and validate hardware harness manifest targets."""
@@ -210,6 +210,128 @@ def main(
     print(f"Loaded {len(targets)} hardware target(s) from {manifest_path.name}:")
     for t in targets:
         print(f"  - {t.name} (host={t.host}, local={t.local}, tags={t.tags})")
+
+
+@app.command()
+def run(
+    target: Annotated[str | None, typer.Option("--target", "-t", help="Target name from manifest")] = None,
+    host: Annotated[str | None, typer.Option("--host", "-H", help="Target host IP or hostname")] = None,
+    user: Annotated[str, typer.Option("--user", "-u", help="SSH user")] = "root",
+    local: Annotated[bool, typer.Option("--local", "-l", help="Run tests locally")] = False,
+    socket_path: Annotated[str, typer.Option("--socket-path", help="UNIX socket path")] = "/var/run/mcubridge.sock",
+    test_name: Annotated[
+        str | None, typer.Option("--test", help="Specific test name to run (e.g. led13_test.py)")
+    ] = None,
+    manifest_path: Annotated[Path, typer.Option("--manifest", help="Path to targets.toml manifest")] = EXAMPLE_MANIFEST,
+    timeout: Annotated[float, typer.Option("--timeout", help="Timeout per test in seconds")] = 60.0,
+) -> None:
+    """Execute the suite of _test.py client tests locally or on remote physical hardware."""
+    examples_dir = REPO_ROOT / "mcubridge-client-examples"
+    available_tests = sorted([p.name for p in examples_dir.glob("*_test.py") if not p.name.startswith((".", "_"))])
+
+    if test_name:
+        clean_name = test_name if test_name.endswith(".py") else f"{test_name}.py"
+        if clean_name not in available_tests:
+            print(f"Error: test '{test_name}' not found. Available tests: {available_tests}")
+            sys.exit(2)
+        tests_to_run = [clean_name]
+    else:
+        tests_to_run = available_tests
+
+    is_local = local or (host is None and target is None)
+    target_host = host
+    target_user = user
+    ssh_args: list[str] = ["-o", "StrictHostKeyChecking=no"]
+
+    if target and not local:
+        manifest_targets = load_manifest(manifest_path)
+        matched = [t for t in manifest_targets if t.name == target]
+        if not matched:
+            print(f"Error: target '{target}' not found in manifest {manifest_path}")
+            sys.exit(2)
+        tgt = matched[0]
+        is_local = tgt.local
+        target_host = tgt.host
+        target_user = tgt.user or user
+        ssh_args = tgt.ssh_args or ssh_args
+
+    print("========================================================")
+    print(" McuBridge Hardware Physical Test Suite Runner")
+    print("========================================================")
+    print(f"Mode: {'Local' if is_local else f'Remote SSH ({target_user}@{target_host})'}")
+    print(f"Socket: {socket_path}")
+    print(f"Executing {len(tests_to_run)} test script(s)...")
+    print("--------------------------------------------------------")
+
+    if not is_local and target_host:
+        import subprocess
+
+        print(f"[*] Synchronizing test scripts to {target_host}...")
+        subprocess.run(
+            ["ssh"] + ssh_args + [f"{target_user}@{target_host}", "mkdir -p /tmp/mcubridge-client-examples"],
+            check=True,
+            capture_output=True,
+        )
+        src_files = [str(p) for p in examples_dir.glob("*")]
+        dest_remote = f"{target_user}@{target_host}:/tmp/mcubridge-client-examples/"
+        subprocess.run(
+            ["scp", "-O"] + ssh_args + ["-r"] + src_files + [dest_remote],
+            check=True,
+            capture_output=True,
+        )
+
+    results: list[tuple[str, bool, float, str | None]] = []
+
+    async def _execute_all() -> None:
+        import time
+
+        for t_file in tests_to_run:
+            sys.stdout.write(f"[*] Running {t_file}... ")
+            sys.stdout.flush()
+            t0 = time.time()
+
+            if is_local:
+                cmd = [
+                    sys.executable,
+                    str(examples_dir / t_file),
+                    "--socket-path",
+                    socket_path,
+                ]
+                env = {
+                    "REPO_ROOT": str(REPO_ROOT),
+                    "PYTHONPATH": f"{examples_dir}:{REPO_ROOT}",
+                    "MCUBRIDGE_NON_INTERACTIVE": "1",
+                }
+                code, _stdout, stderr = await run_command(cmd, cwd=REPO_ROOT, env=env, timeout=timeout)
+            else:
+                remote_cmd = (
+                    f"MCUBRIDGE_NON_INTERACTIVE=1 PYTHONPATH=/tmp/mcubridge-client-examples "
+                    f"python3 /tmp/mcubridge-client-examples/{t_file} --socket-path '{socket_path}'"
+                )
+                cmd = ["ssh"] + ssh_args + [f"{target_user}@{target_host}", remote_cmd]
+                code, _stdout, stderr = await run_command(cmd, cwd=REPO_ROOT, timeout=timeout)
+
+            elapsed = time.time() - t0
+            passed = code == 0
+            status_label = "✅ [PASS]" if passed else "❌ [FAIL]"
+            print(f"{status_label} ({elapsed:.2f}s)")
+            results.append((t_file, passed, elapsed, stderr if not passed else None))
+
+    asyncio.run(_execute_all())
+
+    passed_count = sum(1 for _, p, _, _ in results if p)
+    failed_count = len(results) - passed_count
+    total_time = sum(el for _, _, el, _ in results)
+
+    print("========================================================")
+    print(f"SUMMARY: {passed_count} passed, {failed_count} failed in {total_time:.2f}s")
+    print("========================================================")
+
+    if failed_count > 0:
+        for name, p, _, err in results:
+            if not p:
+                print(f"  ❌ {name}: {err or 'Unknown failure'}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -113,6 +113,7 @@ def test_normalize_config_dict() -> None:
     norm, secret = settings._normalize_config_dict(
         {
             "serial_shared_secret": "my_secret",
+            "serial_port": "tcp://192.168.122.1:9000",
             "cloud_enabled": "1",
             "cloud_tls": "true",
             "watchdog_enabled": "0",
@@ -122,6 +123,7 @@ def test_normalize_config_dict() -> None:
         }
     )
     assert secret == b"my_secret"
+    assert norm["serial_port"] == "tcp://192.168.122.1:9000"
     assert norm["cloud_enabled"] is True
     assert norm["cloud_tls"] is True
     assert norm["watchdog_enabled"] is False
@@ -129,6 +131,12 @@ def test_normalize_config_dict() -> None:
     assert norm["allowed_commands"] == ["cat", "ls"]
     assert norm["topic_authorization"]["datastore_get"] is True
     assert norm["topic_authorization"]["datastore_put"] is True
+
+    # Test other network prefixes
+    norm_wifi, _ = settings._normalize_config_dict({"serial_port": "wifi://10.0.0.5:8080"})
+    assert norm_wifi["serial_port"] == "wifi://10.0.0.5:8080"
+    norm_socket, _ = settings._normalize_config_dict({"serial_port": "socket://127.0.0.1:4000"})
+    assert norm_socket["serial_port"] == "socket://127.0.0.1:4000"
 
 
 def test_load_runtime_config_uci_error_fallback() -> None:

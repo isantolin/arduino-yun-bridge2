@@ -115,10 +115,17 @@ def _normalize_config_dict(raw: dict[str, Any]) -> tuple[dict[str, Any], bytes |
                 norm[k] = v if isinstance(v, bool) else str(v).lower() in ("1", "true", "yes", "on")
             elif any(x in k for x in ("_dir", "_file", "_root", "serial_port", "cloud_ca", "cloud_cert", "cloud_key")):
                 s_val = str(v).strip()
+                is_url = s_val.startswith(("tcp://", "wifi://", "socket://")) or (
+                    ":" in s_val and not s_val.startswith(("/", "~", "."))
+                )
                 norm[k] = (
-                    str(Path(s_val).expanduser().resolve())
-                    if (("~" in s_val or "/" in s_val) and "\n" not in s_val)
-                    else s_val
+                    s_val
+                    if is_url
+                    else (
+                        str(Path(s_val).expanduser().resolve())
+                        if (("~" in s_val or "/" in s_val) and "\n" not in s_val)
+                        else s_val
+                    )
                 )
             elif field.type == FieldDescriptor.TYPE_STRING:
                 norm[k] = str(v).strip() if v is not None else ""

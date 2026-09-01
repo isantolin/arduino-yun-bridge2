@@ -1,12 +1,14 @@
 from __future__ import annotations
-from typing import Annotated
-import typer
 import asyncio
+import os
+import subprocess
 import sys
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, cast
+from typing import Annotated, Any, cast
+
+import typer
 
 REPO_ROOT = Path(__file__).parent.parent
 EXAMPLE_MANIFEST = REPO_ROOT / "hardware" / "targets.example.toml"
@@ -332,6 +334,100 @@ def run(
             if not p:
                 print(f"  ❌ {name}: {err or 'Unknown failure'}")
         sys.exit(1)
+
+
+@app.command()
+def rotate(
+    host: Annotated[str | None, typer.Option("--host", help="Target McuBridge host (IP or DNS)")] = None,
+    user: Annotated[str, typer.Option("--user", help="SSH username")] = "root",
+    local: Annotated[
+        Path | None,
+        typer.Option("--local", help="Rotate credentials inside local UCI config directory without SSH"),
+    ] = None,
+    emit_sketch_snippet: Annotated[
+        Path | None,
+        typer.Option("--emit-sketch-snippet", help="Write BRIDGE_SERIAL_SHARED_SECRET snippet to file"),
+    ] = None,
+    length: Annotated[int, typer.Option("--length", help="Length of the random secret in bytes")] = 32,
+    force: Annotated[bool, typer.Option("--force", "-f", help="Force rotation without confirmation")] = False,
+    no_restart: Annotated[bool, typer.Option("--no-restart", help="Skip service restart")] = False,
+    ssh_args: Annotated[list[str] | None, typer.Option("--ssh", help="Extra SSH options")] = None,
+) -> None:
+    """Rotate MCU Bridge shared credentials on remote hardware or local rootfs."""
+    import re
+
+    ssh_extra = ssh_args or [
+        "-o",
+        "StrictHostKeyChecking=no",
+        "-o",
+        "UserKnownHostsFile=/dev/null",
+        "-o",
+        "LogLevel=ERROR",
+    ]
+    rotate_script = REPO_ROOT / "mcubridge" / "scripts" / "mcubridge_rotate_credentials.py"
+
+    secret: str | None = None
+
+    if local:
+        if not local.is_dir():
+            print(f"Error: --local directory {local} does not exist", file=sys.stderr)
+            sys.exit(1)
+        cmd = [
+            sys.executable,
+            str(rotate_script),
+            "--length",
+            str(length),
+        ]
+        if force:
+            cmd.append("--force")
+        if no_restart:
+            cmd.append("--no-restart")
+
+        env = dict(os.environ)
+        env["UCI_CONFIG_DIR"] = str(local)
+        proc = subprocess.run(cmd, env=env, capture_output=True, text=True, check=False)
+        if proc.returncode != 0:
+            print(f"Error running local rotation: {proc.stderr}", file=sys.stderr)
+            sys.exit(proc.returncode)
+        output = proc.stdout
+    elif host:
+        remote_cmd = f"/usr/bin/mcubridge-rotate-credentials --length {length}"
+        if force:
+            remote_cmd += " --force"
+        if no_restart:
+            remote_cmd += " --no-restart"
+
+        cmd = ["ssh"] + ssh_extra + [f"{user}@{host}", remote_cmd]
+        proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        if proc.returncode != 0:
+            print(f"Error running remote rotation on {host}: {proc.stderr}", file=sys.stderr)
+            sys.exit(proc.returncode)
+        output = proc.stdout
+    else:
+        print("Error: Either --host or --local is required.", file=sys.stderr)
+        sys.exit(1)
+
+    match = re.search(r"SERIAL_SECRET=([a-fA-F0-9]+)", output)
+    if match:
+        secret = match.group(1)
+
+    if not secret:
+        print(f"Warning: Could not extract SERIAL_SECRET from output:\n{output}", file=sys.stderr)
+        return
+
+    snippet = (
+        f"#pragma once\n"
+        f"// Include this header before <Bridge.h> in your sketch sources.\n"
+        f'#define BRIDGE_SERIAL_SHARED_SECRET "{secret}"\n'
+        f"#define BRIDGE_SERIAL_SHARED_SECRET_LEN (sizeof(BRIDGE_SERIAL_SHARED_SECRET) - 1)\n"
+    )
+
+    if emit_sketch_snippet:
+        emit_sketch_snippet.parent.mkdir(parents=True, exist_ok=True)
+        emit_sketch_snippet.write_text(snippet, encoding="utf-8")
+        print(f"[INFO] Wrote sketch snippet to {emit_sketch_snippet}")
+
+    print("\n" + snippet)
 
 
 if __name__ == "__main__":

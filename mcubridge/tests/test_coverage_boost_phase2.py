@@ -727,41 +727,6 @@ class TestFilePush:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# mcubridge_led_control.py — set_led_state and main error paths
-# ══════════════════════════════════════════════════════════════════════════════
-
-
-class TestLedControl:
-    def test_set_led_state_error(self) -> None:
-        led_control = _load_script("mcubridge_led_control")
-        with (
-            patch("grpclib.client.Channel") as mock_chan_cls,
-            pytest.raises(SystemExit) as exc_info,
-        ):
-            mock_chan = MagicMock()
-            mock_chan_cls.return_value = mock_chan
-
-            mock_stub = MagicMock()
-            mock_stub.DigitalWrite = AsyncMock(side_effect=OSError("IPC failed"))
-
-            with patch.object(led_control, "LocalBridgeStub", return_value=mock_stub):
-                led_control.set_led_state(13, 1)
-        assert exc_info.value.code == 4
-
-    def test_main_invalid_state(self) -> None:
-        led_control = _load_script("mcubridge_led_control")
-        with pytest.raises(SystemExit) as exc_info:
-            led_control.main(state="blink", pin=13)
-        assert exc_info.value.code == 2
-
-    def test_main_success(self) -> None:
-        led_control = _load_script("mcubridge_led_control")
-        with patch.object(led_control, "set_led_state") as mock_set:
-            led_control.main(state="on", pin=13)
-            mock_set.assert_called_once_with(13, 1)
-
-
-# ══════════════════════════════════════════════════════════════════════════════
 # state/status.py — uncovered lines 33-34, 36
 # ══════════════════════════════════════════════════════════════════════════════
 

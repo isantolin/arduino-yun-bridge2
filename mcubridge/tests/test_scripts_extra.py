@@ -47,21 +47,6 @@ def test_file_push_script(runtime_config: Any) -> None:
         assert mock_stub.FileWrite.called
 
 
-def test_led_control_script(runtime_config: Any) -> None:
-    script = load_script("mcubridge-led-control")
-    with (
-        patch("mcubridge_led_control.Channel") as mock_channel_cls,
-        patch("mcubridge_led_control.LocalBridgeStub") as mock_stub_cls,
-        patch("sys.argv", ["mcubridge-led-control", "on"]),
-    ):
-        mock_stub = MagicMock()
-        mock_stub_cls.return_value = mock_stub
-        mock_stub.DigitalWrite = AsyncMock()
-        script.app(standalone_mode=False)
-        mock_channel_cls.assert_called_once_with(path="/var/run/mcubridge.sock")
-        assert mock_stub.DigitalWrite.called
-
-
 def test_rotate_credentials_script(runtime_config: Any) -> None:
     script = load_script("mcubridge-rotate-credentials")
     with (
@@ -83,15 +68,6 @@ def test_file_push_error_cases(runtime_config: Any) -> None:
     with (
         patch("sys.argv", ["mcubridge-file-push", "nonexistent.txt", "mcu/remote.txt"]),
         patch("pathlib.Path.exists", return_value=False),
-        pytest.raises(SystemExit),
-    ):
-        script.app(standalone_mode=False)
-
-
-def test_led_control_invalid_state(runtime_config: Any) -> None:
-    script = load_script("mcubridge-led-control")
-    with (
-        patch("sys.argv", ["mcubridge-led-control", "invalid"]),
         pytest.raises(SystemExit),
     ):
         script.app(standalone_mode=False)

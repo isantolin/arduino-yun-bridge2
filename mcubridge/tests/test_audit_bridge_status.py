@@ -71,20 +71,24 @@ def test_audit_status_dict_anomalies() -> None:
 
 
 def test_audit_cli_raw_json_clean() -> None:
-    raw = json.dumps({
-        "metrics": {"cloud_spool_dropped_limit": 0},
-        "bridge": {"serial_link": {"connected": True}, "handshake": {"failures": 0}},
-    })
+    raw = json.dumps(
+        {
+            "metrics": {"cloud_spool_dropped_limit": 0},
+            "bridge": {"serial_link": {"connected": True}, "handshake": {"failures": 0}},
+        }
+    )
     result = runner.invoke(cast(Any, app), ["--raw-json", raw])
     assert result.exit_code == 0
     assert "STATUS AUDIT PASS" in result.stdout
 
 
 def test_audit_cli_raw_json_with_errors() -> None:
-    raw = json.dumps({
-        "metrics": {"cloud_spool_dropped_limit": 12},
-        "bridge": {"handshake": {"last_error": "link_sync_timeout"}},
-    })
+    raw = json.dumps(
+        {
+            "metrics": {"cloud_spool_dropped_limit": 12},
+            "bridge": {"handshake": {"last_error": "link_sync_timeout"}},
+        }
+    )
     result = runner.invoke(cast(Any, app), ["--raw-json", raw])
     assert result.exit_code == 1
     assert "STATUS AUDIT FAIL" in result.stderr
@@ -94,10 +98,12 @@ def test_audit_cli_raw_json_with_errors() -> None:
 def test_audit_cli_file(tmp_path: Path) -> None:
     clean_file = tmp_path / "status.json"
     clean_file.write_text(
-        json.dumps({
-            "metrics": {},
-            "bridge": {"serial_link": {"connected": True}},
-        }),
+        json.dumps(
+            {
+                "metrics": {},
+                "bridge": {"serial_link": {"connected": True}},
+            }
+        ),
         encoding="utf-8",
     )
     result = runner.invoke(cast(Any, app), ["--status-path", str(clean_file)])

@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 
 import typer
 
@@ -20,38 +20,57 @@ def audit_status_dict(data: dict[str, Any]) -> list[str]:
     """Inspect status dictionary and return list of error descriptions."""
     errors: list[str] = []
 
-    metrics = data.get("metrics", {})
-    if not isinstance(metrics, dict):
+    metrics_raw = data.get("metrics", {})
+    if not isinstance(metrics_raw, dict):
         return ["Status 'metrics' field is not a dictionary"]
+    metrics = cast(dict[str, object], metrics_raw)
 
     # 1. Cloud spool drop / trim anomalies
-    if (dropped := metrics.get("cloud_spool_dropped_limit", 0)) > 0:
+    dropped_raw = metrics.get("cloud_spool_dropped_limit", 0)
+    dropped: int = int(cast(int, dropped_raw)) if isinstance(dropped_raw, (int, float)) else 0
+    if dropped > 0:
         errors.append(f"Cloud spool dropped messages limit exceeded (count={dropped})")
-    if (trimmed := metrics.get("cloud_spool_trim_events", 0)) > 0:
+
+    trimmed_raw = metrics.get("cloud_spool_trim_events", 0)
+    trimmed: int = int(cast(int, trimmed_raw)) if isinstance(trimmed_raw, (int, float)) else 0
+    if trimmed > 0:
         errors.append(f"Cloud spool trim events occurred (count={trimmed})")
 
-    bridge = data.get("bridge", {})
-    if not isinstance(bridge, dict):
+    bridge_raw = data.get("bridge", {})
+    if not isinstance(bridge_raw, dict):
         return ["Status 'bridge' field is not a dictionary"]
+    bridge = cast(dict[str, object], bridge_raw)
 
     # 2. Serial link state
-    serial_link = bridge.get("serial_link", {})
-    if isinstance(serial_link, dict) and serial_link:
-        if not serial_link.get("connected", False):
+    serial_link_raw = bridge.get("serial_link", {})
+    if isinstance(serial_link_raw, dict) and serial_link_raw:
+        serial_link = cast(dict[str, object], serial_link_raw)
+        if not bool(serial_link.get("connected", False)):
             errors.append("Serial link is reported as disconnected")
 
     # 3. Handshake failures and error streaks
-    handshake = bridge.get("handshake", {})
-    if isinstance(handshake, dict) and handshake:
-        if (last_error := handshake.get("last_error", "")) != "":
+    handshake_raw = bridge.get("handshake", {})
+    if isinstance(handshake_raw, dict) and handshake_raw:
+        handshake = cast(dict[str, object], handshake_raw)
+        last_error: str = str(handshake.get("last_error", ""))
+        if last_error:
             errors.append(f"Handshake reported error: {last_error}")
-        if (failures := handshake.get("failures", 0)) > 0:
+
+        failures_raw = handshake.get("failures", 0)
+        failures: int = int(cast(int, failures_raw)) if isinstance(failures_raw, (int, float)) else 0
+        if failures > 0:
             errors.append(f"Handshake reported {failures} failure(s)")
-        if (failure_streak := handshake.get("failure_streak", 0)) > 0:
+
+        streak_raw = handshake.get("failure_streak", 0)
+        failure_streak: int = int(cast(int, streak_raw)) if isinstance(streak_raw, (int, float)) else 0
+        if failure_streak > 0:
             errors.append(f"Handshake failure streak active (streak={failure_streak})")
-        if (fatal_count := handshake.get("fatal_count", 0)) > 0:
-            reason = handshake.get("fatal_reason", "unknown")
-            detail = handshake.get("fatal_detail", "")
+
+        fatal_raw = handshake.get("fatal_count", 0)
+        fatal_count: int = int(cast(int, fatal_raw)) if isinstance(fatal_raw, (int, float)) else 0
+        if fatal_count > 0:
+            reason: str = str(handshake.get("fatal_reason", "unknown"))
+            detail: str = str(handshake.get("fatal_detail", ""))
             errors.append(f"Fatal handshake count={fatal_count} (reason={reason}, detail={detail})")
 
     return errors

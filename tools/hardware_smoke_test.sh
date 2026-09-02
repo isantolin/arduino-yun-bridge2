@@ -97,7 +97,7 @@ if [[ $LOCAL -eq 1 ]]; then
     echo -n "[*] Running $(basename "$test_path")... "
     START_TEST=$(date +%s)
     
-    if PYTHONPATH="$EXAMPLES_DIR:$REPO_ROOT" python3 "$test_path" --socket-path "$SOCKET_PATH" >/dev/null 2>&1; then
+    if MCUBRIDGE_NON_INTERACTIVE=1 PYTHONPATH="$EXAMPLES_DIR:$REPO_ROOT/mcubridge" python3 "$test_path" --socket-path "$SOCKET_PATH" >/dev/null 2>&1; then
       END_TEST=$(date +%s)
       DIFF=$((END_TEST - START_TEST))
       echo "✅ [PASS] (${DIFF}s)"
@@ -117,6 +117,13 @@ if [[ $LOCAL -eq 1 ]]; then
   echo "RESULT: $PASSED passed, $FAILED failed in ${TOTAL_DIFF}s"
   echo "========================================================"
 
+  # [SIL-2] Status Snapshot Post-Run Integrity Gate
+  echo "[*] Auditing /tmp/mcubridge_status.json health..."
+  if ! python3 "$REPO_ROOT/tools/audit_bridge_status.py" --status-path /tmp/mcubridge_status.json; then
+    echo "❌ [FAIL] Status audit detected active anomalies in /tmp/mcubridge_status.json"
+    exit 1
+  fi
+
   if [[ $FAILED -gt 0 ]]; then
     exit 1
   fi
@@ -127,7 +134,7 @@ fi
 echo "Target: $USER@$HOST (Socket: $SOCKET_PATH)"
 echo "Synchronizing test scripts to remote target..."
 ssh "${SSH_EXTRA[@]}" "$USER@$HOST" "mkdir -p /tmp/mcubridge-client-examples"
-scp "${SSH_EXTRA[@]}" -r "$EXAMPLES_DIR"/* "$USER@$HOST:/tmp/mcubridge-client-examples/"
+scp -O "${SSH_EXTRA[@]}" -r "$EXAMPLES_DIR"/* "$USER@$HOST:/tmp/mcubridge-client-examples/"
 
 echo "Executing ${#TESTS_TO_RUN[@]} test(s) on remote hardware..."
 echo "--------------------------------------------------------"
@@ -161,6 +168,14 @@ TOTAL_DIFF=$((END_TOTAL - START_TOTAL))
 echo "========================================================"
 echo "RESULT: $PASSED passed, $FAILED failed in ${TOTAL_DIFF}s"
 echo "========================================================"
+
+# [SIL-2] Remote Status Snapshot Post-Run Integrity Gate
+echo "[*] Auditing remote /tmp/mcubridge_status.json health..."
+REMOTE_JSON=$(ssh "${SSH_EXTRA[@]}" "$USER@$HOST" "cat /tmp/mcubridge_status.json 2>/dev/null || echo ''")
+if ! python3 "$REPO_ROOT/tools/audit_bridge_status.py" --raw-json "$REMOTE_JSON"; then
+  echo "❌ [FAIL] Remote status audit detected active anomalies in /tmp/mcubridge_status.json"
+  exit 1
+fi
 
 if [[ $FAILED -gt 0 ]]; then
   exit 1

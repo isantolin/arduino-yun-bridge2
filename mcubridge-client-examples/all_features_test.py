@@ -21,53 +21,39 @@ async def run_test(socket_path: str | None, topic_prefix: str) -> None:
     async with bridge_session(socket_path, topic_prefix) as (_channel, stub):
         # 1. LED test
         logger.info("Testing LED (Digital Write)...")
-        topic_dw = Topic.build(Topic.DIGITAL, "13", prefix=topic_prefix)
-        r1 = await stub.Publish(pb.CloudQueuedPublish(topic_name=topic_dw, payload=b"1", qos=1))
-        assert r1 is not None
+        await stub.DigitalWrite(pb.DigitalWrite(pin=13, value=1))
         await asyncio.sleep(0.5)
-        r2 = await stub.Publish(pb.CloudQueuedPublish(topic_name=topic_dw, payload=b"0", qos=1))
-        assert r2 is not None
+        await stub.DigitalWrite(pb.DigitalWrite(pin=13, value=0))
         logger.info("LED test passed.")
 
-        # 2. Pin Read test
-        logger.info("Testing Digital Read...")
-        topic_dr = Topic.build(Topic.DIGITAL, "13", "read", prefix=topic_prefix)
-        r_dr = await stub.Publish(pb.CloudQueuedPublish(topic_name=topic_dr, payload=b"", qos=1))
-        assert r_dr is not None and r_dr.payload
-        logger.info("Digital read pin 13 result", result=r_dr.payload.decode())
-
-        # 2b. Analog test
+        # 2. Analog Write test
         logger.info("Testing Analog Operations...")
-        topic_ar = Topic.build(Topic.ANALOG, "0", "read", prefix=topic_prefix)
-        r_ar = await stub.Publish(pb.CloudQueuedPublish(topic_name=topic_ar, payload=b"", qos=1))
-        assert r_ar is not None and r_ar.payload
-        logger.info("Analog read pin 0 result", result=r_ar.payload.decode())
-        topic_aw = Topic.build(Topic.ANALOG, "9", prefix=topic_prefix)
-        r_aw = await stub.Publish(pb.CloudQueuedPublish(topic_name=topic_aw, payload=b"128", qos=1))
-        assert r_aw is not None
-        logger.info("Analog operations requested.")
+        await stub.AnalogWrite(pb.AnalogWrite(pin=9, value=128))
+        logger.info("Analog write completed.")
 
         # 3. DataStore test
         logger.info("Testing DataStore...")
         test_key = f"e2e_key_{uuid.uuid4().hex[:6]}"
-        topic_ds = Topic.build(Topic.DATASTORE, "put", test_key, prefix=topic_prefix)
-        r_ds = await stub.Publish(pb.CloudQueuedPublish(topic_name=topic_ds, payload=b"hello", qos=1))
-        assert r_ds is not None
-        logger.info("DataStore key put.")
+        await stub.DatastorePut(pb.DatastorePut(key=test_key, value=b"hello"))
+        ds_val = await stub.DatastoreGet(pb.DatastoreGet(key=test_key))
+        assert ds_val.value == b"hello"
+        logger.info("DataStore key verified.", key=test_key, value=ds_val.value.decode("utf-8"))
 
         # 4. Console test
         logger.info("Testing Console Write...")
         topic_cw = Topic.build(Topic.CONSOLE, "write", prefix=topic_prefix)
-        r_cw = await stub.Publish(pb.CloudQueuedPublish(topic_name=topic_cw, payload=b"ping", qos=1))
-        assert r_cw is not None
+        await stub.Publish(pb.CloudQueuedPublish(topic_name=topic_cw, payload=b"ping", qos=1))
         logger.info("Console ping written.")
 
         # 5. FileIO test
         logger.info("Testing FileIO...")
-        topic_fw = Topic.build(Topic.FILE, "write", "test_file.txt", prefix=topic_prefix)
-        r_fw = await stub.Publish(pb.CloudQueuedPublish(topic_name=topic_fw, payload=b"e2e-data", qos=1))
-        assert r_fw is not None
-        logger.info("File write requested.")
+        test_file = "test_file_all.txt"
+        test_data = b"e2e-data-all"
+        await stub.FileWrite(pb.FileWrite(path=test_file, data=test_data))
+        file_res = await stub.FileRead(pb.FileRead(path=test_file))
+        assert file_res.content == test_data
+        await stub.FileRemove(pb.FileRemove(path=test_file))
+        logger.info("FileIO verified.")
 
     logger.info("--- ALL-FEATURES TEST SUCCEEDED ---")
 

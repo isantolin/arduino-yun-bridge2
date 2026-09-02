@@ -458,6 +458,8 @@ class BridgeService:
         if self.state.is_synchronized:
             await self._request_mcu_version()
             await self._flush_console_queue()
+        else:
+            raise ConnectionError("MCU serial link handshake synchronization failed")
 
     async def on_serial_disconnected(self) -> None:
         self.state.mark_transport_disconnected()

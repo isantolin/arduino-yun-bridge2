@@ -7,8 +7,10 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated, Any, cast
+import json
 
 import typer
+from tools.audit_bridge_status import audit_status_dict
 
 REPO_ROOT = Path(__file__).parent.parent
 EXAMPLE_MANIFEST = REPO_ROOT / "hardware" / "targets.example.toml"
@@ -266,8 +268,6 @@ def run(
     print("--------------------------------------------------------")
 
     if not is_local and target_host:
-        import subprocess
-
         print(f"[*] Synchronizing test scripts to {target_host}...")
         subprocess.run(
             ["ssh"] + ssh_args + [f"{target_user}@{target_host}", "mkdir -p /tmp/mcubridge-client-examples"],
@@ -301,7 +301,7 @@ def run(
                 ]
                 env = {
                     "REPO_ROOT": str(REPO_ROOT),
-                    "PYTHONPATH": f"{examples_dir}:{REPO_ROOT}",
+                    "PYTHONPATH": f"{examples_dir}:{REPO_ROOT / 'mcubridge'}:{REPO_ROOT}",
                     "MCUBRIDGE_NON_INTERACTIVE": "1",
                 }
                 code, _stdout, stderr = await run_command(cmd, cwd=REPO_ROOT, env=env, timeout=timeout)
@@ -328,6 +328,36 @@ def run(
     print("========================================================")
     print(f"SUMMARY: {passed_count} passed, {failed_count} failed in {total_time:.2f}s")
     print("========================================================")
+
+    # [SIL-2] Status Snapshot Post-Run Integrity Gate
+    status_errors: list[str] = []
+    if is_local:
+        status_file = Path("/tmp/mcubridge_status.json")
+        if status_file.exists():
+            try:
+                status_errors = audit_status_dict(json.loads(status_file.read_text(encoding="utf-8")))
+            except Exception as e:
+                status_errors = [f"Failed to parse /tmp/mcubridge_status.json: {e}"]
+    else:
+        try:
+            remote_read_cmd = "cat /tmp/mcubridge_status.json 2>/dev/null || echo ''"
+            res = subprocess.run(
+                ["ssh"] + ssh_args + [f"{target_user}@{target_host}", remote_read_cmd],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+            if res.stdout.strip():
+                status_errors = audit_status_dict(json.loads(res.stdout))
+        except Exception as e:
+            status_errors = [f"Failed to retrieve remote /tmp/mcubridge_status.json: {e}"]
+
+    if status_errors:
+        print("❌ [STATUS AUDIT FAIL] Post-test status health check failed:")
+        for err in status_errors:
+            print(f"   • {err}")
+        sys.exit(1)
 
     if failed_count > 0:
         for name, p, _, err in results:

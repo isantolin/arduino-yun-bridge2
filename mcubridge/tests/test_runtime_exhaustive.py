@@ -38,7 +38,12 @@ async def test_on_serial_connected_and_disconnected(
 ) -> None:
     service, _state, _transport = runtime_setup
     handshake = AsyncMock()
-    handshake.synchronize = AsyncMock(return_value=None)
+
+    async def mock_sync() -> bool:
+        service.state.mark_synchronized()
+        return True
+
+    handshake.synchronize = AsyncMock(side_effect=mock_sync)
     handshake.clear_handshake_expectations = MagicMock()
     service.handshake = handshake
 
@@ -47,6 +52,12 @@ async def test_on_serial_connected_and_disconnected(
 
     await service.on_serial_disconnected()
     handshake.clear_handshake_expectations.assert_called_once()
+
+    # Test sync failure raises ConnectionError
+    handshake.synchronize = AsyncMock(return_value=False)
+    service.state.mark_transport_disconnected()
+    with pytest.raises(ConnectionError, match="MCU serial link handshake synchronization failed"):
+        await service.on_serial_connected()
 
 
 @pytest.mark.asyncio

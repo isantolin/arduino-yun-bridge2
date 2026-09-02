@@ -11,8 +11,9 @@ DataStoreClass::DataStoreClass() {}
 void DataStoreClass::set(etl::string_view key, etl::span<const uint8_t> value) {
   rpc::payload::DatastorePut p = {};
   bridge::utils::copy_to_buf(key, p.key);
-  p.value.size = static_cast<pb_size_t>(
-      bridge::utils::copy_bytes_to_buf(value, p.value.bytes));
+  const size_t bounded_size = etl::min(value.size(), sizeof(p.value.bytes));
+  p.value.size = static_cast<pb_size_t>(bridge::utils::copy_bytes_to_buf(
+      etl::span<const uint8_t>(value.data(), bounded_size), p.value.bytes));
 
   if (!Bridge.send(rpc::CommandId::CMD_DATASTORE_PUT, 0, p)) {
     Bridge.emitStatus(

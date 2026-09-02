@@ -1,6 +1,7 @@
 #include "services/FileSystem.h"
 
 #include <etl/algorithm.h>
+#include <etl/fixed_iterator.h>
 #include <etl/numeric.h>
 
 #include "Bridge.h"
@@ -17,8 +18,9 @@ void FileSystemClass::write(etl::string_view path,
                             etl::span<const uint8_t> data) {
   rpc::payload::FileWrite p = {};
   bridge::utils::copy_to_buf(path, p.path);
-  p.data.size = static_cast<pb_size_t>(
-      bridge::utils::copy_bytes_to_buf(data, p.data.bytes));
+  const size_t bounded_size = etl::min(data.size(), sizeof(p.data.bytes));
+  p.data.size = static_cast<pb_size_t>(bridge::utils::copy_bytes_to_buf(
+      etl::span<const uint8_t>(data.data(), bounded_size), p.data.bytes));
 
   if (!Bridge.send(rpc::CommandId::CMD_FILE_WRITE, 0, p)) {
     Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR,
@@ -62,41 +64,42 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
   const uint32_t start_ms = millis();
 
   bool finished = false;
-  etl::array<uint16_t, bridge::config::FILE_MAX_READ_CHUNKS> chunks;
-  etl::iota(chunks.begin(), chunks.end(), 0U);
+  uint8_t dummy = 0U;
+  etl::fixed_iterator<uint8_t*> fixed_it(&dummy);
 
-  etl::for_each(chunks.begin(), chunks.end(), [&](uint16_t chunk) {
-    (void)chunk;
-    if (finished) return;
-    if (millis() - start_ms >= bridge::config::SERIAL_TIMEOUT_MS) {
-      finished = true;
-      return;
-    }
-    etl::array<uint8_t, kReadChunkSize> buffer;
-    auto res = bridge::hal::readFileChunk(
-        path, offset, etl::span<uint8_t>(buffer.data(), buffer.size()));
-    if (!res) {
-      (void)Bridge.sendFrame(rpc::StatusCode::STATUS_ERROR);
-      finished = true;
-      return;
-    }
+  etl::for_each_n(
+      fixed_it, bridge::config::FILE_MAX_READ_CHUNKS, [&](uint8_t&) {
+        if (finished) return;
+        if (millis() - start_ms >= bridge::config::SERIAL_TIMEOUT_MS) {
+          finished = true;
+          return;
+        }
+        etl::array<uint8_t, kReadChunkSize> buffer;
+        auto res = bridge::hal::readFileChunk(
+            path, offset, etl::span<uint8_t>(buffer.data(), buffer.size()));
+        if (!res) {
+          (void)Bridge.sendFrame(rpc::StatusCode::STATUS_ERROR);
+          finished = true;
+          return;
+        }
 
-    rpc::payload::FileReadResponse p = {};
-    p.content.size = static_cast<pb_size_t>(bridge::utils::copy_bytes_to_buf(
-        etl::span<const uint8_t>(buffer.data(), res->bytes_read),
-        p.content.bytes));
-    (void)Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 0, p);
+        rpc::payload::FileReadResponse p = {};
+        p.content.size =
+            static_cast<pb_size_t>(bridge::utils::copy_bytes_to_buf(
+                etl::span<const uint8_t>(buffer.data(), res->bytes_read),
+                p.content.bytes));
+        (void)Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 0, p);
 
-    if (!res->has_more) {
-      rpc::payload::FileReadResponse empty_p = {};
-      empty_p.content.size = 0U;
-      (void)Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 0, empty_p);
-      finished = true;
-      return;
-    }
+        if (!res->has_more) {
+          rpc::payload::FileReadResponse empty_p = {};
+          empty_p.content.size = 0U;
+          (void)Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 0, empty_p);
+          finished = true;
+          return;
+        }
 
-    offset += res->bytes_read;
-  });
+        offset += res->bytes_read;
+      });
 }
 
 void FileSystemClass::_onRemove(const rpc::payload::FileRemove& msg) {

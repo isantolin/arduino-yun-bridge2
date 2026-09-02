@@ -90,8 +90,12 @@ class LmdbDeque:
             next_idx = (_U64.unpack(cur.key())[0] + 1) if cur.last() else 0
             txn.put(_U64.pack(next_idx), item, db=self.db)
             if self.maxlen is not None:
-                while txn.stat(self.db)["entries"] > self.maxlen and cur.first():
-                    cur.delete()
+                total_entries = txn.stat(self.db)["entries"]
+                if total_entries > self.maxlen and cur.first():
+                    for _ in range(total_entries - self.maxlen):
+                        cur.delete()
+                        if not cur.next():
+                            break
 
     async def popleft(self) -> bytes:
         if self.is_mem:

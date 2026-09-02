@@ -49,19 +49,19 @@ class CloudBridgeService(CloudBridgeBase):
                 logger.error("Failed to parse client certificate", error=str(e))
                 return
 
-        logger.info("Device connected", device_id=device_id)
+        structlog.contextvars.bind_contextvars(device_id=device_id)
+        logger.info("Device connected")
         self.gateway.connections[device_id] = stream
 
         try:
             async for envelope in stream:
                 if not envelope.IsInitialized() or envelope.protocol_version != 2:
-                    logger.warning("Invalid cloud envelope", device_id=device_id)
+                    logger.warning("Invalid cloud envelope")
                     continue
 
                 payload_type = envelope.WhichOneof("payload")
                 logger.debug(
                     "Received envelope",
-                    device_id=device_id,
                     seq=envelope.sequence_id,
                     payload_type=payload_type,
                 )
@@ -76,31 +76,30 @@ class CloudBridgeService(CloudBridgeBase):
                         )
                         await stream.send_message(pong)
                     case "telemetry":
-                        logger.info("Processed telemetry", device_id=device_id)
+                        logger.info("Processed telemetry")
                     case "event":
                         evt = envelope.event
                         logger.warning(
                             "Device event",
-                            device_id=device_id,
                             event_type=evt.event_type,
                             description=evt.description,
                         )
                     case "command_response":
                         logger.info(
                             "Received command response",
-                            device_id=device_id,
                             status_code=envelope.command_response.status_code,
                         )
                     case _:
                         logger.debug("Received unhandled or empty payload type", payload_type=payload_type)
         except asyncio.CancelledError:
-            logger.info("Session cancelled for device", device_id=device_id)
+            logger.info("Session cancelled for device")
             raise
         except OSError as exc:
-            logger.warning("Network OS error for device", device_id=device_id, error=str(exc))
+            logger.warning("Network OS error for device", error=str(exc))
         finally:
-            logger.info("Device disconnected", device_id=device_id)
+            logger.info("Device disconnected")
             self.gateway.connections.pop(device_id, None)
+            structlog.contextvars.unbind_contextvars("device_id")
 
 
 class ProtobufGateway:

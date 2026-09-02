@@ -767,7 +767,7 @@ void BridgeClass::_handleDigitalWrite(const rpc_pb_DigitalWrite& m) {
   digitalWrite(m.pin, (m.value == 0) ? LOW : HIGH);
 }
 void BridgeClass::_handleAnalogWrite(const rpc_pb_AnalogWrite& m) {
-  analogWrite(m.pin, static_cast<int>(m.value));  // [SIL-2/H-6] no C-cast
+  analogWrite(m.pin, static_cast<int>(etl::clamp(m.value, 0U, 255U)));
 }
 
 void BridgeClass::_handlePinReadCommon(

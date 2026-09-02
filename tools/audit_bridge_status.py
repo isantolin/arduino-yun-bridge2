@@ -6,9 +6,12 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from typing import Annotated, Any, cast
+from typing import Annotated, Any
 
+from google.protobuf.json_format import ParseDict
 import typer
+
+from mcubridge.protocol import mcubridge_pb2 as pb
 
 app = typer.Typer(
     help="Audit /tmp/mcubridge_status.json for errors, handshake failures, and metric anomalies.",
@@ -23,55 +26,48 @@ def audit_status_dict(data: dict[str, Any]) -> list[str]:
     metrics_raw = data.get("metrics", {})
     if not isinstance(metrics_raw, dict):
         return ["Status 'metrics' field is not a dictionary"]
-    metrics = cast(dict[str, object], metrics_raw)
-
-    # 1. Cloud spool drop / trim anomalies
-    dropped_raw = metrics.get("cloud_spool_dropped_limit", 0)
-    dropped: int = int(dropped_raw) if isinstance(dropped_raw, (int, float)) else 0
-    if dropped > 0:
-        errors.append(f"Cloud spool dropped messages limit exceeded (count={dropped})")
-
-    trimmed_raw = metrics.get("cloud_spool_trim_events", 0)
-    trimmed: int = int(trimmed_raw) if isinstance(trimmed_raw, (int, float)) else 0
-    if trimmed > 0:
-        errors.append(f"Cloud spool trim events occurred (count={trimmed})")
 
     bridge_raw = data.get("bridge", {})
     if not isinstance(bridge_raw, dict):
         return ["Status 'bridge' field is not a dictionary"]
-    bridge = cast(dict[str, object], bridge_raw)
+
+    # [SIL-2] Parse into strongly-typed Protobuf BridgeStatus message
+    status_pb = pb.BridgeStatus()
+    try:
+        ParseDict(data, status_pb, ignore_unknown_fields=True)
+    except Exception as exc:
+        return [f"Status Protobuf deserialization failed: {exc}"]
+
+    # 1. Cloud spool drop / trim anomalies
+    dropped = status_pb.metrics.cloud_spool_dropped_limit
+    if dropped > 0:
+        errors.append(f"Cloud spool dropped messages limit exceeded (count={dropped})")
+
+    trimmed = status_pb.metrics.cloud_spool_trim_events
+    if trimmed > 0:
+        errors.append(f"Cloud spool trim events occurred (count={trimmed})")
 
     # 2. Serial link state
-    serial_link_raw = bridge.get("serial_link", {})
-    if isinstance(serial_link_raw, dict) and serial_link_raw:
-        serial_link = cast(dict[str, object], serial_link_raw)
-        if not bool(serial_link.get("connected", False)):
+    if "serial_link" in bridge_raw:
+        if not status_pb.bridge.serial_link.connected:
             errors.append("Serial link is reported as disconnected")
 
     # 3. Handshake failures and error streaks
-    handshake_raw = bridge.get("handshake", {})
-    if isinstance(handshake_raw, dict) and handshake_raw:
-        handshake = cast(dict[str, object], handshake_raw)
-        last_error: str = str(handshake.get("last_error", ""))
-        if last_error:
-            errors.append(f"Handshake reported error: {last_error}")
+    if "handshake" in bridge_raw:
+        hs = status_pb.bridge.handshake
+        if hs.last_error:
+            errors.append(f"Handshake reported error: {hs.last_error}")
 
-        failures_raw = handshake.get("failures", 0)
-        failures: int = int(failures_raw) if isinstance(failures_raw, (int, float)) else 0
-        if failures > 0:
-            errors.append(f"Handshake reported {failures} failure(s)")
+        if hs.failures > 0:
+            errors.append(f"Handshake reported {hs.failures} failure(s)")
 
-        streak_raw = handshake.get("failure_streak", 0)
-        failure_streak: int = int(streak_raw) if isinstance(streak_raw, (int, float)) else 0
-        if failure_streak > 0:
-            errors.append(f"Handshake failure streak active (streak={failure_streak})")
+        if hs.failure_streak > 0:
+            errors.append(f"Handshake failure streak active (streak={hs.failure_streak})")
 
-        fatal_raw = handshake.get("fatal_count", 0)
-        fatal_count: int = int(fatal_raw) if isinstance(fatal_raw, (int, float)) else 0
-        if fatal_count > 0:
-            reason: str = str(handshake.get("fatal_reason", "unknown"))
-            detail: str = str(handshake.get("fatal_detail", ""))
-            errors.append(f"Fatal handshake count={fatal_count} (reason={reason}, detail={detail})")
+        if hs.fatal_count > 0:
+            reason = hs.fatal_reason or "unknown"
+            detail = hs.fatal_detail or ""
+            errors.append(f"Fatal handshake count={hs.fatal_count} (reason={reason}, detail={detail})")
 
     return errors
 

@@ -8,12 +8,12 @@ Arduino MCU Bridge 2 is a modern, high-performance communication system between 
 
 ### Key Technologies & Standards
 
-*   **Python:** Main daemon (3.13.9+), `asyncio` for high-concurrency with `uvloop` integration, Protobuf for all protocol-crossing structures, `cryptography` for AEAD, LMDB transactional storage with TLS 1.3 0-RTT session ticket persistence, and protobuf bindings for payload serialization.
+*   **Python:** Main daemon (3.13.9+), `asyncio` for high-concurrency with `uvloop` integration, Protobuf for all protocol-crossing structures, `cryptography` for AEAD, LMDB transactional storage with TLS 1.3 0-RTT session ticket persistence, `ubus` for native OpenWrt IPC, `psutil` for process lifecycle management and memory telemetry, and protobuf bindings for payload serialization.
 *   **C++:** Arduino library (C++17), **Zero-Heap** (no STL, no `malloc`), `etl::fsm` for deterministic states, `wolfSSL` for AEAD, and Nanopb (0.4.9.2) with `pb_decode_noinit` for zero-copy, de-bloated payload parsing (ChaCha20-Poly1305).
 *   **Safety (SIL-2):** Static allocation only, SRAM POST, stack sentinel monitoring, WCET runtime tracking, O(1) jump tables for dispatch, rigorous validation gates.
 *   **Cryptography (FIPS 140-3):** Mandatory boot-time Known-Answer Tests (KATs) for SHA-256, HMAC-SHA256, and ChaCha20-Poly1305 AEAD with non-weak linkage.
 *   **OpenWrt:** Target OS is **OpenWrt 25.12.5** (APK based).
-*   **Communication:** Custom binary RPC over serial UART and transparent wireless links (WiFi TCP + Bluetooth SPP) (COBS/R + CRC32) + AEAD encryption + Protobuf Cloud Gateway (gRPC over HTTP/3 (QUIC) with HTTP/2 fallback support and 0-RTT TLS 1.3 session resumption) for external cloud connectivity + Local IPC over UNIX Domain Sockets. Protocol validation uses O(1) `etl::find` logic.
+*   **Communication:** Custom binary RPC over serial UART and transparent wireless links (WiFi TCP + Bluetooth SPP) (COBS/R + CRC32) + AEAD encryption + Protobuf Cloud Gateway (gRPC over HTTP/3 (QUIC) with HTTP/2 fallback support and 0-RTT TLS 1.3 session resumption) for external cloud connectivity + Local IPC over native OpenWrt UBUS and UNIX Domain Sockets. Protocol validation uses O(1) `etl::find` logic.
 
 ## Core Rules & Priorities
 

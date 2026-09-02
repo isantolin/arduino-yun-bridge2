@@ -37,10 +37,6 @@ inline void copy_to_pb_string(PbStringArray& dest, etl::string_view src) {
 }
 }  // namespace rpc::payload
 
-/* Legacy convenience macros – map to Unity assertions. */
-#define TEST_ASSERT_EQ_UINT(actual, expected) \
-  TEST_ASSERT_EQUAL_UINT32((unsigned long)(expected), (unsigned long)(actual))
-
 template <size_t N>
 struct ByteBuffer {
   etl::array<uint8_t, N> data;

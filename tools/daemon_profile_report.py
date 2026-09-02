@@ -63,18 +63,15 @@ class BenchmarkResult:
 # ---------------------------------------------------------------------------
 
 
+import psutil
+
+
 def _get_rss_vms_kb() -> tuple[int, int]:
-    """Return (RSS, VMS) in KiB from /proc/self/status or resource module."""
+    """Return (RSS, VMS) in KiB using psutil."""
     try:
-        status = Path("/proc/self/status").read_text()
-        rss = vms = 0
-        for line in status.splitlines():
-            if line.startswith("VmRSS:"):
-                rss = int(line.split()[1])
-            elif line.startswith("VmSize:"):
-                vms = int(line.split()[1])
-        return rss, vms
-    except OSError:
+        mem = psutil.Process().memory_info()
+        return mem.rss // 1024, mem.vms // 1024
+    except (psutil.NoSuchProcess, OSError):
         ru = resource.getrusage(resource.RUSAGE_SELF)
         return ru.ru_maxrss, 0
 

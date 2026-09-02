@@ -35,8 +35,8 @@ CPP_BLOCK_END = "# --- [AUTO-GENERATED C++ DEPENDENCIES END] ---"
 
 # --- [FILTRADO INTELIGENTE DE DEPENDENCIAS] ---
 
-# uci: Solo en OpenWrt (Makefile), no en pip (runtime.txt) para evitar errores locales.
-SYSTEM_ONLY_PACKAGES = {"uci"}
+# uci / ubus: Solo en OpenWrt (Makefile), no en pip (runtime.txt) para evitar errores locales.
+SYSTEM_ONLY_PACKAGES = {"uci", "ubus"}
 
 # Dev/CI host build-only packages (excluded from OpenWrt MPU package dependencies).
 BUILD_ONLY_PACKAGES = {"jinja2", "nanopb", "grpcio-tools", "xxd", "black"}

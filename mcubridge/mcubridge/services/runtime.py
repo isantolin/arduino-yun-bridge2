@@ -31,7 +31,9 @@ from google.protobuf.message import (
     EncodeError as ProtobufSerializationError,
 )
 
+import psutil
 import tenacity
+from .ubus import UbusService
 
 
 from ..config.const import (
@@ -134,6 +136,7 @@ class BridgeService:
     _cloud_incoming_queue: asyncio.Queue[pb.CloudQueuedPublish]
     ipc_requests: dict[bytes, asyncio.Queue[pb.CloudQueuedPublish]]
     console_queues: list[asyncio.Queue[pb.CloudQueuedPublish]]
+    ubus_service: UbusService
     _tg: asyncio.TaskGroup | None
 
     def __init__(self, config: RuntimeConfig, state: RuntimeState, serial: SerialTransport) -> None:
@@ -144,6 +147,8 @@ class BridgeService:
         self._cloud_incoming_queue = asyncio.Queue()
         self.ipc_requests = {}
         self.console_queues = []
+        self.ubus_service = UbusService(self)
+        self.ubus_service.start()
         self._tg = None
 
         self.handshake = SerialHandshakeManager(
@@ -442,6 +447,9 @@ class BridgeService:
             socket_path.unlink(missing_ok=True)
         except OSError as exc:
             logger.debug("Could not remove UNIX socket during cleanup", path=socket_path, error=str(exc))
+
+        if hasattr(self, "ubus_service"):
+            self.ubus_service.stop()
 
         self.serial = None
         # [SIL-2] Async spool close is handled by run() finally block.
@@ -1248,9 +1256,18 @@ class BridgeService:
         if ctx.handle.returncode is not None:
             return ctx.handle.returncode
         try:
-            os.killpg(ctx.handle.pid, signal.SIGTERM)
-        except ProcessLookupError:
+            parent = psutil.Process(ctx.handle.pid)
+            children = parent.children(recursive=True)
+            for child in children:
+                child.terminate()
+            parent.terminate()
+        except (psutil.NoSuchProcess, ProcessLookupError):
             return ctx.handle.returncode or -1
+        except OSError:
+            try:
+                os.killpg(ctx.handle.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                return ctx.handle.returncode or -1
 
         try:
             async with asyncio.timeout(grace_period):
@@ -1258,7 +1275,17 @@ class BridgeService:
         except TimeoutError:
             logger.error("Process exceeded graceful shutdown window; escalating to SIGKILL", pid=pid)
 
-        os.killpg(ctx.handle.pid, signal.SIGKILL)
+        try:
+            parent = psutil.Process(ctx.handle.pid)
+            children = parent.children(recursive=True)
+            for child in children:
+                child.kill()
+            parent.kill()
+        except (psutil.NoSuchProcess, ProcessLookupError):
+            return ctx.handle.returncode or -1
+        except OSError:
+            os.killpg(ctx.handle.pid, signal.SIGKILL)
+
         try:
             async with asyncio.timeout(PROCESS_TERM_GRACE_PERIOD_SECONDS):
                 return await ctx.handle.wait()

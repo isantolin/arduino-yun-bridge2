@@ -12,7 +12,6 @@ import json
 import os
 import pty
 import shutil
-import signal
 import subprocess
 import sys
 import tempfile
@@ -30,6 +29,7 @@ if str(repo_root / "mcubridge-client-examples") not in sys.path:
 if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
 
+import psutil
 import structlog
 import typer
 from mcubridge.config.logging import configure_logging
@@ -397,20 +397,25 @@ def _teardown_simavr(
     fake_uci_dir: Path | str,
     storage_path: Path | str,
 ) -> None:
-    logger.info("Tearing down processes...")
-    if daemon_proc is not None:
-        daemon_proc.send_signal(signal.SIGTERM)
-        try:
-            daemon_proc.wait(timeout=5)
-        except (subprocess.TimeoutExpired, ProcessLookupError, OSError):
-            daemon_proc.kill()
+    for p_handle in (daemon_proc, simavr_proc):
+        if p_handle is not None and psutil.pid_exists(p_handle.pid):
+            try:
+                p = psutil.Process(p_handle.pid)
+                for child in p.children(recursive=True):
+                    child.terminate()
+                p.terminate()
+            except (psutil.NoSuchProcess, ProcessLookupError):
+                continue
 
-    if simavr_proc is not None:
-        simavr_proc.send_signal(signal.SIGTERM)
+    active_procs = [
+        psutil.Process(p.pid) for p in (daemon_proc, simavr_proc) if p is not None and psutil.pid_exists(p.pid)
+    ]
+    _, alive = psutil.wait_procs(active_procs, timeout=5.0)
+    for p in alive:
         try:
-            simavr_proc.wait(timeout=5)
-        except (subprocess.TimeoutExpired, ProcessLookupError, OSError):
-            simavr_proc.kill()
+            p.kill()
+        except (psutil.NoSuchProcess, ProcessLookupError):
+            continue
 
     if master_fd >= 0:
         try:

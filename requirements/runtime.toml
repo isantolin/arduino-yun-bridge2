@@ -68,6 +68,18 @@ openwrt = "python3-structlog"
 pip = "structlog==26.1.0"
 rationale = "Structured logging with JSON output for production syslog"
 
+[[dependency]]
+name = "psutil"
+openwrt = "python3-psutil"
+pip = "psutil==7.2.2"
+rationale = "Cross-platform process supervision and resource tracking [SIL-2 compliance]"
+
+[[dependency]]
+name = "ubus"
+openwrt = "python3-ubus"
+pip = ""
+rationale = "Native OpenWrt microbus RPC interface for LuCI and system integration"
+
 
 
 [[dependency]]

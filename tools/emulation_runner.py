@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import os
-import signal
 import subprocess
 import sys
 import tempfile
@@ -26,6 +25,7 @@ if str(repo_root / "mcubridge-client-examples") not in sys.path:
 if str(repo_root) not in sys.path:
     sys.path.insert(0, str(repo_root))
 
+import psutil
 import structlog
 import typer
 from mcubridge.config.logging import configure_logging
@@ -301,34 +301,25 @@ def run_emulation(
         logger.error("Emulation error", error=str(exc))
         all_success = False
     finally:
-        # Terminate daemon (same process group — plain kill only)
-        if daemon_proc is not None:
-            try:
-                os.kill(daemon_proc.pid, signal.SIGTERM)
-                daemon_proc.wait(timeout=2)
-            except (ProcessLookupError, OSError, subprocess.TimeoutExpired):
+        for p_handle in (daemon_proc, mcu_proc):
+            if p_handle is not None and psutil.pid_exists(p_handle.pid):
                 try:
-                    os.kill(daemon_proc.pid, signal.SIGKILL)
-                    daemon_proc.wait(timeout=1)
-                except (ProcessLookupError, OSError, subprocess.TimeoutExpired):
-                    pass
+                    p = psutil.Process(p_handle.pid)
+                    for child in p.children(recursive=True):
+                        child.terminate()
+                    p.terminate()
+                except (psutil.NoSuchProcess, ProcessLookupError):
+                    continue
 
-        # Terminate socat+MCU (separate session — use process group)
-        try:
+        active_procs = [
+            psutil.Process(p.pid) for p in (daemon_proc, mcu_proc) if p is not None and psutil.pid_exists(p.pid)
+        ]
+        _, alive = psutil.wait_procs(active_procs, timeout=2.0)
+        for p in alive:
             try:
-                os.killpg(os.getpgid(mcu_proc.pid), signal.SIGTERM)
-            except (ProcessLookupError, OSError):
-                os.kill(mcu_proc.pid, signal.SIGTERM)
-            mcu_proc.wait(timeout=2)
-        except (ProcessLookupError, OSError, subprocess.TimeoutExpired):
-            try:
-                try:
-                    os.killpg(os.getpgid(mcu_proc.pid), signal.SIGKILL)
-                except (ProcessLookupError, OSError):
-                    os.kill(mcu_proc.pid, signal.SIGKILL)
-                mcu_proc.wait(timeout=1)
-            except (ProcessLookupError, OSError, subprocess.TimeoutExpired):
-                pass
+                p.kill()
+            except (psutil.NoSuchProcess, ProcessLookupError):
+                continue
 
     if not all_success:
         logger.error("Emulation FAILED.")

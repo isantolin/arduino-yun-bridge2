@@ -549,10 +549,17 @@ async def test_runtime_terminate_process_escalation(test_config: RuntimeConfig, 
 
     ctx = ProcessContext(mock_handle)
 
-    with patch("os.killpg") as mock_killpg:
+    mock_proc = MagicMock()
+    mock_child = MagicMock()
+    mock_proc.children.return_value = [mock_child]
+
+    with patch("psutil.Process", return_value=mock_proc):
         code = await svc._terminate_process(12345, ctx, grace_period=0.01)
         assert code == -1
-        assert mock_killpg.call_count >= 2
+        assert mock_proc.terminate.called
+        assert mock_child.terminate.called
+        assert mock_proc.kill.called
+        assert mock_child.kill.called
 
 
 @pytest.mark.asyncio

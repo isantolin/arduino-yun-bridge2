@@ -322,7 +322,9 @@ def run(
                 status_errors = [f"Failed to parse /tmp/mcubridge_status.json: {e}"]
     else:
         try:
-            remote_read_cmd = "cat /tmp/mcubridge_status.json 2>/dev/null || echo ''"
+            remote_read_cmd = (
+                "ubus call mcubridge status 2>/dev/null || cat /tmp/mcubridge_status.json 2>/dev/null || echo ''"
+            )
             res = subprocess.run(
                 ["ssh"] + ssh_args + [f"{target_user}@{target_host}", remote_read_cmd],
                 capture_output=True,
@@ -333,7 +335,7 @@ def run(
             if res.stdout.strip():
                 status_errors = audit_status_dict(json.loads(res.stdout))
         except Exception as e:
-            status_errors = [f"Failed to retrieve remote /tmp/mcubridge_status.json: {e}"]
+            status_errors = [f"Failed to retrieve remote status via UBUS/file: {e}"]
 
     if status_errors:
         print("❌ [STATUS AUDIT FAIL] Post-test status health check failed:")

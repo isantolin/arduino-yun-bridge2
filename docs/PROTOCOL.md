@@ -851,19 +851,29 @@ Todos los fallbacks se exponen en `/tmp/mcubridge_status.json` y métricas Prome
     summary: "Comandos no reconocidos detectados (protocol drift)"
 ```
 
-t: McuBridgeConfigFallback
-  expr: mcubridge_config_source_info{source="defaults"} == 1
-  for: 1m
-  labels:
-    severity: critical
-  annotations:
-    summary: "Daemon usando configuración por defecto"
+## 10. Interfaz Nativa OpenWrt UBUS (IPC del Sistema)
 
-- alert: McuBridgeUnknownCommands
-  expr: rate(mcubridge_unknown_command_ids_total[5m]) > 0
-  for: 5m
-  labels:
-    severity: warning
-  annotations:
-    summary: "Comandos no reconocidos detectados (protocol drift)"
-```
+El daemon registra el objeto `mcubridge` en el bus de sistema `ubusd` de OpenWrt, exponiendo una API directa para LuCI, scripts de sistema y herramientas locales.
+
+### 10.1 Métodos Disponibles
+
+| Método UBUS | Argumentos (blobmsg) | Retorno (JSON) | Descripción |
+| :--- | :--- | :--- | :--- |
+| `status` | `{}` | `{"connected": bool, "synchronized": bool, "version": str, "capabilities": dict}` | Estado en vivo del bridge y mapa booleano de capacidades MCU. |
+| `digital_write` | `{"pin": int32, "value": int32}` | `{"status": "ok", "pin": int, "value": int}` | Escritura digital en pin GPIO del microcontrolador. |
+| `analog_write` | `{"pin": int32, "value": int32}` | `{"status": "ok", "pin": int, "value": int}` | Escritura analógica PWM/DAC en pin del microcontrolador. |
+| `mailbox_push` | `{"message": string}` | `{"status": "ok", "message_length": int}` | Envío de mensaje hacia el buzón del microcontrolador. |
+| `mailbox_read` | `{}` | `{"status": "ok", "message": string}` o `{"status": "empty"}` | Lectura de mensajes pendientes desde el buzón del MCU. |
+| `datastore_set` | `{"key": string, "value": string}` | `{"status": "ok", "key": string}` | Almacenamiento transaccional clave-valor en LMDB. |
+| `datastore_get` | `{"key": string}` | `{"status": "ok", "key": string, "value": string}` | Lectura de clave en el datastore transaccional LMDB. |
+| `file_write` | `{"path": string, "data": string}` | `{"status": "ok", "path": string, "bytes_written": int}` | Escritura de archivo hacia almacenamiento MCU o tmpfs. |
+| `process_run` | `{"command": string}` | `{"status": "ok", "pid": int}` | Ejecución de subproceso gestionado por `psutil`. |
+| `process_kill` | `{"pid": int32}` | `{"status": "ok", "pid": int, "error": string}` | Terminación en cascada de subproceso vía `psutil`. |
+| `process_poll` | `{"pid": int32}` | `{"status": "ok", "exit_code": int, "finished": bool, "stdout": str, "stderr": str}` | Monitoreo del estado y salida de subprocesos. |
+
+### 10.2 Notificaciones de Eventos del Sistema
+
+El daemon emite eventos broadcast a través de UBUS cuando ocurren transiciones de estado:
+- `mcubridge.sync`: Emitido cuando el enlace serie se sincroniza exitosamente (`{"synchronized": true}`).
+- `mcubridge.disconnect`: Emitido cuando el enlace serie se desconecta (`{"connected": false}`).
+

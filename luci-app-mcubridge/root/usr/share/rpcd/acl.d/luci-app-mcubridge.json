@@ -8,7 +8,7 @@
 			},
 			"ubus": {
 				"service": [ "list" ],
-				"mcubridge": [ "status", "process_poll" ]
+				"mcubridge": [ "status", "process_poll", "datastore_get", "mailbox_read" ]
 			}
 		},
 		"write": {
@@ -17,7 +17,7 @@
 				"/tmp/mcubridge-luci.*": [ "write" ]
 			},
 			"ubus": {
-				"mcubridge": [ "digital_write", "analog_write", "mailbox_push", "datastore_set", "process_run", "process_kill" ]
+				"mcubridge": [ "digital_write", "analog_write", "mailbox_push", "datastore_set", "file_write", "process_run", "process_kill" ]
 			},
 			"file-exec": {
 				"/usr/bin/mcubridge-rotate-credentials": [ "exec" ],

@@ -20,6 +20,12 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 - **MIL-SPEC Compliance (FIPS 140-3):** Implementación de **HKDF-SHA256** para derivación de claves y **Power-On Self-Tests (POST)** que validan el motor criptográfico en cada arranque.
 - **Protección de Flash:** Bloqueo de inicio si las rutas de escritura intensa (`file_system_root`, `cloud_spool_dir`) no están en `/tmp` (RAM).
 
+### Novedades (septiembre 2026)
+
+- **Integración Nativa de OpenWrt UBUS (v2.8.6)**: Integración completa de UBUS (`ubus call mcubridge ...`) a través del daemon, vistas LuCI JavaScript (`status.js`, `capabilities.js`, `webui.js`), scripts de sistema (`pin_rest_cgi.py`, `mcubridge_file_push.py`) y herramientas de diagnóstico (`audit_bridge_status.py --ubus`). Proporciona una interfaz local directa de ultra-baja latencia (< 2 ms) para control de pines GPIO, buzón, datastore transaccional LMDB, transferencia de archivos y ejecución/gestión de procesos.
+- **Gestión Unificada de Procesos con `psutil`**: Reemplazo de toda la gestión manual de `/proc/self/status`, señales y llamadas a `os.killpg` por `psutil`, garantizando la terminación determinista y en cascada de subprocesos y medición precisa de memoria RSS/VMS.
+- **Controlador Nativo Ucode en LuCI (`mcubridge.uc`)**: Eliminación de ejecuciones de shell `popen()`, despachando el control de hardware directamente mediante llamadas C a `ubus.connect().call('mcubridge', ...)`.
+
 ### Novedades (agosto 2026)
 
 - **Soporte Nativo Inalámbrico (WiFi TCP & Bluetooth SPP/BLE) (v2.8.5)**: Expansión del transporte a enlaces inalámbricos transparentes. Se implementa `AsyncTcpConnection` y detección automática de prefijos de red (`tcp://`, `wifi://`, `socket://`) en el Linux MPU daemon, junto con ejemplos de referencia en Arduino (`BridgeWiFi.ino` y `BridgeBluetooth.ino`). Mantiene idéntica máquina de estados, framing COBS/R, CRC32 y encriptación ChaCha20-Poly1305 sobre sockets de red.

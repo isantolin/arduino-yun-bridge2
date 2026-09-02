@@ -90,7 +90,10 @@ def test_ubus_service_start_with_mock_ubus_success(
     assert "digital_write" in methods
     assert "analog_write" in methods
     assert "mailbox_push" in methods
+    assert "mailbox_read" in methods
     assert "datastore_set" in methods
+    assert "datastore_get" in methods
+    assert "file_write" in methods
     assert "process_run" in methods
     assert "process_kill" in methods
     assert "process_poll" in methods
@@ -299,3 +302,89 @@ def test_ubus_notify_lifecycle(mock_runtime: MockRuntimeFacade, monkeypatch: pyt
     # Error handling
     mock_conn.send.side_effect = OSError("Send error")
     assert service.notify("sync", {"synchronized": True}) is False
+
+
+def test_ubus_handle_datastore_get(mock_runtime: MockRuntimeFacade) -> None:
+    mock_cache = AsyncMock()
+    mock_cache.get.return_value = b"test_value"
+    mock_runtime.state.datastore_cache = mock_cache
+
+    service = UbusService(mock_runtime)
+    res = service.ubus_handle_datastore_get(MagicMock(), {"key": "my_key"})
+
+    assert res == {"status": "ok", "key": "my_key", "value": "test_value"}
+    mock_cache.get.assert_awaited_with("my_key")
+
+
+def test_ubus_handle_datastore_get_binary_and_not_found(mock_runtime: MockRuntimeFacade) -> None:
+    mock_cache = AsyncMock()
+    mock_cache.get.return_value = b"\xff\xfe\x01"
+    mock_runtime.state.datastore_cache = mock_cache
+
+    service = UbusService(mock_runtime)
+    res = service.ubus_handle_datastore_get(MagicMock(), {"key": "binary_key"})
+    assert res == {"status": "ok", "key": "binary_key", "value": "<hex:fffe01>"}
+
+    # Not found
+    mock_cache.get.return_value = None
+    res_nf = service.ubus_handle_datastore_get(MagicMock(), {"key": "missing_key"})
+    assert res_nf == {"status": "not_found", "key": "missing_key"}
+
+
+def test_ubus_handle_mailbox_read(mock_runtime: MockRuntimeFacade) -> None:
+    mock_queue = AsyncMock()
+    mock_queue.popleft.return_value = b"hello from mcu"
+    mock_runtime.state.mailbox_incoming_queue = mock_queue
+
+    service = UbusService(mock_runtime)
+    res = service.ubus_handle_mailbox_read(MagicMock(), {})
+
+    assert res == {"status": "ok", "message": "hello from mcu"}
+    mock_queue.popleft.assert_awaited()
+
+
+def test_ubus_handle_mailbox_read_binary_and_empty(mock_runtime: MockRuntimeFacade) -> None:
+    mock_queue = AsyncMock()
+    mock_queue.popleft.return_value = b"\x80\x81\x82"
+    mock_runtime.state.mailbox_incoming_queue = mock_queue
+
+    service = UbusService(mock_runtime)
+    res = service.ubus_handle_mailbox_read(MagicMock(), {})
+    assert res == {"status": "ok", "message": "<hex:808182>"}
+
+    # Empty queue
+    mock_queue.popleft.side_effect = IndexError("popleft from empty deque")
+    res_empty = service.ubus_handle_mailbox_read(MagicMock(), {})
+    assert res_empty == {"status": "empty"}
+
+
+def test_ubus_handle_datastore_get_cache_none(mock_runtime: MockRuntimeFacade) -> None:
+    setattr(mock_runtime.state, "datastore_cache", None)
+    service = UbusService(mock_runtime)
+    res = service.ubus_handle_datastore_get(MagicMock(), {"key": "any"})
+    assert res == {"status": "error", "message": "Datastore cache unavailable"}
+
+
+@pytest.mark.asyncio
+async def test_ubus_run_sync_with_running_loop(mock_runtime: MockRuntimeFacade) -> None:
+    service = UbusService(mock_runtime)
+
+    async def sample_async() -> str:
+        await asyncio.sleep(0.001)
+        return "async_ok"
+
+    res = await asyncio.to_thread(service.run_sync, sample_async())
+    assert res == "async_ok"
+
+
+@pytest.mark.asyncio
+async def test_ubus_handle_file_write(mock_runtime: MockRuntimeFacade) -> None:
+    service = UbusService(mock_runtime)
+    res = service.ubus_handle_file_write(MagicMock(), {"path": "test.txt", "data": "file content"})
+
+    assert res == {"status": "ok", "path": "test.txt", "bytes_written": 12}
+    await asyncio.sleep(0.01)
+    assert mock_runtime.handle_request.called
+    inbound = mock_runtime.handle_request.call_args[0][0]
+    assert "file/write/test.txt" in inbound.topic_name
+    assert inbound.payload == b"file content"

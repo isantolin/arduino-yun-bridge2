@@ -38,6 +38,8 @@ class FrameDebugSnapshot:
         return (
             f"Command: {self.command_name} (0x{self.command_id:02X})\n"
             f"Payload Length: {self.payload_length} bytes\n"
+            f"Raw Length: {self.raw_length} bytes\n"
+            f"COBS Length: {self.cobs_length} bytes\n"
             f"CRC32: 0x{self.crc:08X}\n"
             f"Raw Frame (hex): {self.raw_frame_hex}\n"
             f"Encoded Frame (hex): {self.encoded_hex}\n"

@@ -71,4 +71,6 @@ def test_snapshot_render() -> None:
     rendered = snapshot.render()
     assert "CMD_GET_VERSION (0x40)" in rendered
     assert "Payload Length: 5 bytes" in rendered
+    assert "Raw Length: 10 bytes" in rendered
+    assert "COBS Length: 12 bytes" in rendered
     assert f"CRC32: 0x{TEST_BROKEN_CRC:08X}" in rendered

@@ -11,7 +11,7 @@ Measures:
 from __future__ import annotations
 
 import os
-import resource
+import psutil
 import sys
 import time
 import tracemalloc
@@ -250,7 +250,10 @@ def main(
     _current_mem, peak_mem = tracemalloc.get_traced_memory()
     tracemalloc.stop()
 
-    rss_kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    proc = psutil.Process()
+    mem_info = proc.memory_info()
+    rss_mb = mem_info.rss / (1024 * 1024)
+    vms_mb = mem_info.vms / (1024 * 1024)
 
     all_metrics = framing_metrics + rpc_metrics + crypto_metrics + proto_metrics + lmdb_metrics
 
@@ -258,7 +261,8 @@ def main(
         "## ⚡ MCU Bridge 2 Performance Benchmark & Memory Report",
         "",
         f"- **Peak Traced Memory:** `{peak_mem / 1024:.2f} KiB`",
-        f"- **Max Process RSS:** `{rss_kb / 1024:.2f} MiB`",
+        f"- **Process RSS Memory:** `{rss_mb:.2f} MiB`",
+        f"- **Process VMS Memory:** `{vms_mb:.2f} MiB`",
         "",
         "### 📊 Throughput & Latency Matrix",
         "",

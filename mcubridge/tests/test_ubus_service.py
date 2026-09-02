@@ -21,6 +21,17 @@ class MockRuntimeFacade:
         self.handle_request = AsyncMock()
         self.run_process = AsyncMock(return_value=123)
         self.kill_process = AsyncMock(return_value=(True, None))
+        self.poll_process = AsyncMock(
+            return_value=pb.ProcessPollResponse(
+                status=0,
+                exit_code=0,
+                finished=True,
+                stdout_data=b"hello stdout",
+                stderr_data=b"",
+                stdout_truncated=False,
+                stderr_truncated=False,
+            )
+        )
 
 
 @pytest.fixture
@@ -80,6 +91,9 @@ def test_ubus_service_start_with_mock_ubus_success(
     assert "analog_write" in methods
     assert "mailbox_push" in methods
     assert "datastore_set" in methods
+    assert "process_run" in methods
+    assert "process_kill" in methods
+    assert "process_poll" in methods
 
     service.stop()
     assert not service.is_active
@@ -134,14 +148,13 @@ def test_ubus_register_methods_noop_when_conn_none(mock_runtime: MockRuntimeFaca
 
 def test_ubus_schedule_async_without_running_loop(mock_runtime: MockRuntimeFacade) -> None:
     service = UbusService(mock_runtime)
-    ran = False
+    ran = [False]
 
     async def sample_coro() -> None:
-        nonlocal ran
-        ran = True
+        ran[0] = True
 
     service.schedule_async(sample_coro())
-    assert ran is True
+    assert ran[0] is True
 
 
 def test_ubus_stop_with_close_oserror(mock_runtime: MockRuntimeFacade, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -212,3 +225,77 @@ async def test_ubus_handle_datastore_set(mock_runtime: MockRuntimeFacade) -> Non
     inbound = mock_runtime.handle_request.call_args[0][0]
     assert "datastore/temperature/set" in inbound.topic_name
     assert inbound.payload == b"24.5"
+
+
+def test_ubus_handle_process_run_sync(mock_runtime: MockRuntimeFacade) -> None:
+    service = UbusService(mock_runtime)
+    res = service.ubus_handle_process_run(MagicMock(), {"command": "ls -l /tmp"})
+    assert res == {"status": "ok", "pid": 123}
+    assert mock_runtime.run_process.called
+
+
+def test_ubus_handle_process_kill_sync(mock_runtime: MockRuntimeFacade) -> None:
+    service = UbusService(mock_runtime)
+    res = service.ubus_handle_process_kill(MagicMock(), {"pid": 123})
+    assert res == {"status": "ok", "pid": 123, "error": ""}
+    assert mock_runtime.kill_process.called
+
+
+def test_ubus_handle_process_kill_failure(mock_runtime: MockRuntimeFacade) -> None:
+    mock_runtime.kill_process = AsyncMock(return_value=(False, "PID not found"))
+    service = UbusService(mock_runtime)
+    res = service.ubus_handle_process_kill(MagicMock(), {"pid": 999})
+    assert res == {"status": "error", "pid": 999, "error": "PID not found"}
+
+
+def test_ubus_handle_process_poll_sync(mock_runtime: MockRuntimeFacade) -> None:
+    service = UbusService(mock_runtime)
+    res = service.ubus_handle_process_poll(MagicMock(), {"pid": 123})
+    assert res["status"] == "ok"
+    assert res["exit_code"] == 0
+    assert res["finished"] is True
+    assert res["stdout"] == "hello stdout"
+    assert res["stderr"] == ""
+
+
+def test_ubus_handle_process_poll_binary_hex_fallback(mock_runtime: MockRuntimeFacade) -> None:
+    mock_runtime.poll_process = AsyncMock(
+        return_value=pb.ProcessPollResponse(
+            status=1,
+            exit_code=1,
+            finished=True,
+            stdout_data=b"\xff\xfe\xfd",
+            stderr_data=b"\x80\x81",
+            stdout_truncated=False,
+            stderr_truncated=False,
+        )
+    )
+    service = UbusService(mock_runtime)
+    res = service.ubus_handle_process_poll(MagicMock(), {"pid": 456})
+    assert res["status"] == "error"
+    assert res["stdout"] == "<hex:fffefd>"
+    assert res["stderr"] == "<hex:8081>"
+
+
+def test_ubus_notify_lifecycle(mock_runtime: MockRuntimeFacade, monkeypatch: pytest.MonkeyPatch) -> None:
+    import mcubridge.services.ubus as ubus_mod
+
+    mock_ubus: Any = MagicMock()
+    mock_conn: Any = MagicMock()
+    mock_ubus.connect.return_value = mock_conn
+
+    monkeypatch.setattr(ubus_mod, "ubus", mock_ubus)
+    service = UbusService(mock_runtime)
+
+    # Inactive service returns False
+    assert service.notify("sync", {"synchronized": True}) is False
+
+    # Active service sends event
+    service.start()
+    assert service.notify("sync", {"synchronized": True}) is True
+    assert mock_conn.send.called
+    assert mock_conn.send.call_args[0][0] == "mcubridge.sync"
+
+    # Error handling
+    mock_conn.send.side_effect = OSError("Send error")
+    assert service.notify("sync", {"synchronized": True}) is False

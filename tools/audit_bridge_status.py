@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
+import importlib
 import json
+import subprocess
 import sys
 from pathlib import Path
 from typing import Annotated, Any
@@ -12,6 +14,11 @@ from google.protobuf.json_format import ParseDict
 import typer
 
 from mcubridge.protocol import mcubridge_pb2 as pb
+
+try:
+    ubus: Any = importlib.import_module("ubus")
+except ImportError:
+    ubus = None
 
 app = typer.Typer(
     help="Audit /tmp/mcubridge_status.json for errors, handshake failures, and metric anomalies.",
@@ -22,6 +29,14 @@ app = typer.Typer(
 def audit_status_dict(data: dict[str, Any]) -> list[str]:
     """Inspect status dictionary and return list of error descriptions."""
     errors: list[str] = []
+
+    # 1. Simple UBUS status response
+    if "connected" in data and "capabilities" in data:
+        if not bool(data.get("connected", False)):
+            errors.append("McuBridge reports not connected on UBUS")
+        if not bool(data.get("synchronized", False)):
+            errors.append("McuBridge reports not synchronized on UBUS")
+        return errors
 
     metrics_raw = data.get("metrics", {})
     if not isinstance(metrics_raw, dict):
@@ -38,7 +53,7 @@ def audit_status_dict(data: dict[str, Any]) -> list[str]:
     except Exception as exc:
         return [f"Status Protobuf deserialization failed: {exc}"]
 
-    # 1. Cloud spool drop / trim anomalies
+    # 2. Cloud spool drop / trim anomalies
     dropped = status_pb.metrics.cloud_spool_dropped_limit
     if dropped > 0:
         errors.append(f"Cloud spool dropped messages limit exceeded (count={dropped})")
@@ -47,12 +62,12 @@ def audit_status_dict(data: dict[str, Any]) -> list[str]:
     if trimmed > 0:
         errors.append(f"Cloud spool trim events occurred (count={trimmed})")
 
-    # 2. Serial link state
+    # 3. Serial link state
     if "serial_link" in bridge_raw:
         if not status_pb.bridge.serial_link.connected:
             errors.append("Serial link is reported as disconnected")
 
-    # 3. Handshake failures and error streaks
+    # 4. Handshake failures and error streaks
     if "handshake" in bridge_raw:
         hs = status_pb.bridge.handshake
         if hs.last_error:
@@ -82,37 +97,59 @@ def audit(
         str | None,
         typer.Option("--raw-json", "-j", help="Raw JSON string to audit"),
     ] = None,
+    use_ubus: Annotated[
+        bool,
+        typer.Option("--ubus", "-u", help="Query status directly over OpenWrt UBUS"),
+    ] = False,
 ) -> None:
-    """Audit status file or raw JSON content."""
-    json_text: str = ""
+    """Audit status file, UBUS, or raw JSON content."""
+    data: dict[str, Any]
 
-    if raw_json:
-        json_text = raw_json
-    elif status_path:
-        p = Path(status_path)
-        if not p.exists():
-            print(f"❌ [STATUS AUDIT FAIL] Status file not found: {status_path}", file=sys.stderr)
-            sys.exit(1)
-        json_text = p.read_text(encoding="utf-8")
-    else:
-        # Default to reading /tmp/mcubridge_status.json or stdin
-        default_path = Path("/tmp/mcubridge_status.json")
-        if default_path.exists():
-            json_text = default_path.read_text(encoding="utf-8")
-        elif not sys.stdin.isatty():
-            json_text = sys.stdin.read()
+    if use_ubus:
+        if ubus is not None:
+            try:
+                conn: Any = ubus.connect()
+                data = conn.call("mcubridge", "status", {})
+            except (OSError, RuntimeError) as e:
+                print(f"❌ [STATUS AUDIT FAIL] Failed to query python-ubus: {e}", file=sys.stderr)
+                sys.exit(1)
         else:
-            print(
-                "❌ [STATUS AUDIT FAIL] No status file provided and /tmp/mcubridge_status.json does not exist",
-                file=sys.stderr,
-            )
-            sys.exit(1)
+            try:
+                proc = subprocess.run(
+                    ["ubus", "call", "mcubridge", "status"], capture_output=True, text=True, check=True
+                )
+                data = json.loads(proc.stdout)
+            except (subprocess.SubprocessError, OSError, json.JSONDecodeError) as e:
+                print(f"❌ [STATUS AUDIT FAIL] Failed to query UBUS CLI: {e}", file=sys.stderr)
+                sys.exit(1)
+    else:
+        json_text: str = ""
+        if raw_json:
+            json_text = raw_json
+        elif status_path:
+            p = Path(status_path)
+            if not p.exists():
+                print(f"❌ [STATUS AUDIT FAIL] Status file not found: {status_path}", file=sys.stderr)
+                sys.exit(1)
+            json_text = p.read_text(encoding="utf-8")
+        else:
+            default_path = Path("/tmp/mcubridge_status.json")
+            if default_path.exists():
+                json_text = default_path.read_text(encoding="utf-8")
+            elif not sys.stdin.isatty():
+                json_text = sys.stdin.read()
+            else:
+                print(
+                    "❌ [STATUS AUDIT FAIL] No status file provided and /tmp/mcubridge_status.json does not exist",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
 
-    try:
-        data = json.loads(json_text)
-    except Exception as e:
-        print(f"❌ [STATUS AUDIT FAIL] Failed to parse status JSON: {e}", file=sys.stderr)
-        sys.exit(1)
+        try:
+            data = json.loads(json_text)
+        except json.JSONDecodeError as e:
+            print(f"❌ [STATUS AUDIT FAIL] Failed to parse status JSON: {e}", file=sys.stderr)
+            sys.exit(1)
 
     errors = audit_status_dict(data)
     if errors:

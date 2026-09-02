@@ -1476,8 +1476,8 @@ async def test_connect_cloud_session_with_0rtt_session_ticket(
 
         def __aiter__(self) -> Any:
             async def _gen() -> Any:
-                if False:
-                    yield None
+                for _ in ():
+                    yield
 
             return _gen()
 

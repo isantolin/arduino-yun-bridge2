@@ -26,7 +26,6 @@ GATEWAY_MAKEFILE_PATH = ROOT / "mcubridge-gateway" / "Makefile"
 FEEDS_DIR = ROOT / "feeds"
 TOX_PATH = ROOT / "tox.ini"
 ARDUINO_INSTALL_SCRIPT_PATH = ROOT / "mcubridge-library-arduino" / "tools" / "install.sh"
-ARDUINO_LIBRARY_PROPERTIES_PATH = ROOT / "mcubridge-library-arduino" / "library.properties"
 
 BLOCK_START = "# AUTO-GENERATED RUNTIME DEPENDS BEGIN"
 BLOCK_END = "# AUTO-GENERATED RUNTIME DEPENDS END"

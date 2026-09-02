@@ -266,16 +266,16 @@ async def test_prometheus_exporter_run_shutdown_timeout_handled(
     mock_server.shutdown = stop_event.set
     mock_server.server_close = MagicMock()
 
-    from contextlib import asynccontextmanager
+    class _TimeoutContext:
+        async def __aenter__(self) -> None:
+            raise TimeoutError()
 
-    @asynccontextmanager
-    async def _timeout_err(_delay: float):
-        raise TimeoutError()
-        yield
+        async def __aexit__(self, *args: object) -> None:
+            pass
 
     with (
         patch("mcubridge.metrics.make_server", return_value=mock_server),
-        patch("asyncio.timeout", side_effect=_timeout_err),
+        patch("asyncio.timeout", side_effect=lambda _delay=0.0: _TimeoutContext()),
     ):
         exporter = PrometheusExporter(runtime_state, host="127.0.0.1", port=0)
         task = asyncio.create_task(exporter.run())

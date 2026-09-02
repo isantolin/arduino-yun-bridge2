@@ -32,6 +32,7 @@ class BridgeRuntimeFacade(Protocol):
     async def handle_request(self, inbound: Any) -> None: ...
     async def run_process(self, command: str) -> int: ...
     async def kill_process(self, pid: int) -> tuple[bool, str | None]: ...
+    async def poll_process(self, pid: int) -> pb.ProcessPollResponse: ...
 
 
 class UbusService:
@@ -107,6 +108,24 @@ class UbusService:
                     "value": ubus.STRING,
                 },
             },
+            "process_run": {
+                "call": self.ubus_handle_process_run,
+                "args": {
+                    "command": ubus.STRING,
+                },
+            },
+            "process_kill": {
+                "call": self.ubus_handle_process_kill,
+                "args": {
+                    "pid": ubus.INT32,
+                },
+            },
+            "process_poll": {
+                "call": self.ubus_handle_process_poll,
+                "args": {
+                    "pid": ubus.INT32,
+                },
+            },
         }
         self._conn.add("mcubridge", methods)
 
@@ -134,16 +153,16 @@ class UbusService:
         }
         if isinstance(caps, pb.Capabilities):
             caps_dict = {
-                "watchdog": bool(caps.watchdog),
-                "eeprom": bool(caps.eeprom),
-                "dac": bool(caps.dac),
-                "hw_serial1": bool(caps.hw_serial1),
-                "fpu": bool(caps.fpu),
-                "logic_3v3": bool(caps.logic_3v3),
-                "big_buffer": bool(caps.big_buffer),
-                "i2c": bool(caps.i2c),
-                "spi": bool(caps.spi),
-                "sd": bool(caps.sd),
+                "watchdog": caps.watchdog,
+                "eeprom": caps.eeprom,
+                "dac": caps.dac,
+                "hw_serial1": caps.hw_serial1,
+                "fpu": caps.fpu,
+                "logic_3v3": caps.logic_3v3,
+                "big_buffer": caps.big_buffer,
+                "i2c": caps.i2c,
+                "spi": caps.spi,
+                "sd": caps.sd,
             }
         elif isinstance(caps, dict):
             for k, v in caps.items():
@@ -202,6 +221,62 @@ class UbusService:
         )
         self.schedule_async(self.runtime.handle_request(publish))
         return {"status": "ok", "key": key}
+
+    def ubus_handle_process_run(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
+        """UBUS RPC handler for 'mcubridge.process_run'."""
+        command = str(msg.get("command", ""))
+        pid = int(self._run_sync(self.runtime.run_process(command)))
+        return {"status": "ok", "pid": pid}
+
+    def ubus_handle_process_kill(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
+        """UBUS RPC handler for 'mcubridge.process_kill'."""
+        pid = int(msg.get("pid", 0))
+        res: tuple[bool, str | None] = self._run_sync(self.runtime.kill_process(pid))
+        success, err = res
+        return {"status": "ok" if success else "error", "pid": pid, "error": err or ""}
+
+    def ubus_handle_process_poll(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
+        """UBUS RPC handler for 'mcubridge.process_poll'."""
+        pid = int(msg.get("pid", 0))
+        resp: pb.ProcessPollResponse = self._run_sync(self.runtime.poll_process(pid))
+
+        try:
+            out_str = resp.stdout_data.decode("utf-8")
+        except UnicodeDecodeError:
+            out_str = f"<hex:{resp.stdout_data.hex()}>"
+
+        try:
+            err_str = resp.stderr_data.decode("utf-8")
+        except UnicodeDecodeError:
+            err_str = f"<hex:{resp.stderr_data.hex()}>"
+
+        return {
+            "status": "ok" if resp.status == 0 else "error",
+            "exit_code": resp.exit_code,
+            "finished": resp.finished,
+            "stdout": out_str,
+            "stderr": err_str,
+        }
+
+    def _run_sync(self, coro: Any) -> Any:
+        """Execute a coroutine synchronously in a running or fresh event loop."""
+        try:
+            loop = asyncio.get_running_loop()
+            fut = asyncio.run_coroutine_threadsafe(coro, loop)
+            return fut.result(timeout=5.0)
+        except RuntimeError:
+            return asyncio.run(coro)
+
+    def notify(self, event_type: str, data: dict[str, Any]) -> bool:
+        """Broadcast a native UBUS event notification (e.g. 'mcubridge.sync')."""
+        if self._conn is None or not self._is_active:
+            return False
+        try:
+            self._conn.send(f"mcubridge.{event_type}", data)
+            return True
+        except (OSError, RuntimeError) as exc:
+            logger.debug("Failed to send UBUS notification", event_name=event_type, error=str(exc))
+            return False
 
     def schedule_async(self, coro: Any) -> None:
         """Schedule a coroutine on the active running asyncio loop."""

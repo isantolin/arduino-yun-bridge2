@@ -170,10 +170,10 @@ echo "RESULT: $PASSED passed, $FAILED failed in ${TOTAL_DIFF}s"
 echo "========================================================"
 
 # [SIL-2] Remote Status Snapshot Post-Run Integrity Gate
-echo "[*] Auditing remote /tmp/mcubridge_status.json health..."
-REMOTE_JSON=$(ssh "${SSH_EXTRA[@]}" "$USER@$HOST" "cat /tmp/mcubridge_status.json 2>/dev/null || echo ''")
+echo "[*] Auditing remote McuBridge status (UBUS / status.json) health..."
+REMOTE_JSON=$(ssh "${SSH_EXTRA[@]}" "$USER@$HOST" "ubus call mcubridge status 2>/dev/null || cat /tmp/mcubridge_status.json 2>/dev/null || echo ''")
 if ! python3 "$REPO_ROOT/tools/audit_bridge_status.py" --raw-json "$REMOTE_JSON"; then
-  echo "❌ [FAIL] Remote status audit detected active anomalies in /tmp/mcubridge_status.json"
+  echo "❌ [FAIL] Remote status audit detected active anomalies in McuBridge runtime state"
   exit 1
 fi
 

@@ -6,10 +6,6 @@ from mcubridge.protocol import mcubridge_pb2 as pb
 
 # Original constants needed by other tests
 TEST_CMD_ID = 0x42
-TEST_SEQ_ID = 0x1234
-TEST_PAYLOAD = b"Hello, Protobuf!"
-TEST_NONCE = b"A" * 12
-TEST_TAG = b"T" * 16
 TEST_BROKEN_CRC = 0xDEADBEEF
 TEST_RANDOM_SEED = 42
 

@@ -18,13 +18,27 @@ from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import load_runtime_config
 from mcubridge.protocol import mcubridge_pb2 as pb
 
+import importlib
+
+try:
+    ubus: Any = importlib.import_module("ubus")
+except ImportError:
+    ubus = None
+
 logger = structlog.get_logger("mcubridge.pin_rest")
 
 app = typer.Typer(help="Pin REST CGI and CLI interface for MCU Bridge.", add_completion=False)
 
 
 def set_pin_digital_sync(pin: int, value: int) -> None:
-    """Synchronous digital write to local UNIX domain socket IPC via typed gRPC."""
+    """Synchronous digital write via native OpenWrt UBUS (with local gRPC IPC fallback)."""
+    if ubus is not None:
+        try:
+            conn: Any = ubus.connect()
+            conn.call("mcubridge", "digital_write", {"pin": pin, "value": value})
+            return
+        except (OSError, RuntimeError) as exc:
+            logger.debug("UBUS call failed; falling back to local gRPC socket", error=str(exc))
 
     async def _run():
         async with Channel(path="/var/run/mcubridge.sock") as channel:
@@ -35,7 +49,7 @@ def set_pin_digital_sync(pin: int, value: int) -> None:
     try:
         asyncio.run(_run())
     except (OSError, RuntimeError, ValueError) as exc:
-        logger.error("Failed to write digital pin via local gRPC IPC", error=str(exc))
+        logger.error("Failed to write digital pin via local IPC", error=str(exc))
         raise
 
 

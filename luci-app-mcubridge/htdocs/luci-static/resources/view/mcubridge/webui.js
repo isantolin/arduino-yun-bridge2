@@ -1,6 +1,14 @@
 'use strict';
 'require view';
+'require rpc';
 'require dom';
+
+var callDigitalWrite = rpc.declare({
+	object: 'mcubridge',
+	method: 'digital_write',
+	params: [ 'pin', 'value' ],
+	expect: { status: 'ok' }
+});
 
 return view.extend({
 	render: function() {
@@ -11,35 +19,40 @@ return view.extend({
 		}, [ _('Status: Ready') ]);
 
 		function setPinState(state) {
+			var val = (state === 'ON') ? 1 : 0;
 			statusBox.className = 'alert-message notice';
 			statusBox.textContent = _('Sending command: ') + state + '...';
 
-			fetch('/cgi-bin/mcubridge-pin/pin/13', {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify({ state: state })
-			})
-			.then(function(response) {
-				if (!response.ok) {
-					throw new Error('HTTP error! status: ' + response.status);
-				}
-				return response.json();
-			})
-			.then(function(data) {
-				if (data.status === 'ok') {
-					var resState = (data.data && data.data.state) ? data.data.state : (data.state || state);
-					statusBox.className = 'alert-message success';
-					statusBox.textContent = 'LED 13 State: ' + resState + ' (Success)';
-				} else {
-					statusBox.className = 'alert-message warning';
-					statusBox.textContent = 'Error: ' + (data.message || 'Unknown error');
-				}
-			})
-			.catch(function(err) {
-				statusBox.className = 'alert-message danger';
-				statusBox.textContent = 'API Error: ' + err.message;
+			callDigitalWrite(13, val).then(function() {
+				statusBox.className = 'alert-message success';
+				statusBox.textContent = 'LED 13 State: ' + state + ' (Success via UBUS)';
+			}).catch(function(err) {
+				fetch('/cgi-bin/mcubridge-pin/pin/13', {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json'
+					},
+					body: JSON.stringify({ state: state })
+				})
+				.then(function(response) {
+					if (!response.ok) {
+						throw new Error('HTTP ' + response.status);
+					}
+					return response.json();
+				})
+				.then(function(data) {
+					if (data.status === 'ok') {
+						statusBox.className = 'alert-message success';
+						statusBox.textContent = 'LED 13 State: ' + state + ' (Success via CGI)';
+					} else {
+						statusBox.className = 'alert-message warning';
+						statusBox.textContent = 'Error: ' + (data.message || 'Unknown error');
+					}
+				})
+				.catch(function(cgiErr) {
+					statusBox.className = 'alert-message danger';
+					statusBox.textContent = 'Error: ' + (err.message || cgiErr.message);
+				});
 			});
 		}
 
@@ -58,7 +71,7 @@ return view.extend({
 		return E('div', { 'class': 'cbi-map' }, [
 			E('h2', {}, [ _('McuBridge Web UI - Pin Control') ]),
 			E('p', {}, [
-				E('em', {}, [ _('Control MCU hardware GPIO pins directly via UNIX domain socket gRPC REST API.') ])
+				E('em', {}, [ _('Control MCU hardware GPIO pins directly via native OpenWrt UBUS RPC or CGI.') ])
 			]),
 			E('div', { 'class': 'cbi-section' }, [
 				E('h3', {}, [ _('LED 13 (Digital Output)') ]),
@@ -79,4 +92,3 @@ return view.extend({
 	handleSave: null,
 	handleReset: null
 });
-

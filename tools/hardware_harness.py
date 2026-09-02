@@ -31,24 +31,6 @@ class Target:
     notes: str | None = None
 
 
-@dataclass
-class TestResult:
-    target: str
-    success: bool = False
-    error: str | None = None
-    duration: float = 0.0
-    skipped: bool = False
-
-    def status_str(self) -> str:
-        if self.skipped:
-            return "SKIPPED"
-        if self.success:
-            return "PASS"
-        if self.error == "timeout":
-            return "TIMEOUT"
-        return "FAIL"
-
-
 def _coerce_list(value: Any) -> list[str]:
     if value is None:
         return []

@@ -14,7 +14,6 @@ import os
 import secrets
 import shlex
 import shutil
-import signal
 import struct
 import time
 from collections.abc import Coroutine, Callable, Awaitable
@@ -1261,13 +1260,8 @@ class BridgeService:
             for child in children:
                 child.terminate()
             parent.terminate()
-        except (psutil.NoSuchProcess, ProcessLookupError):
+        except (psutil.NoSuchProcess, ProcessLookupError, psutil.AccessDenied):
             return ctx.handle.returncode or -1
-        except OSError:
-            try:
-                os.killpg(ctx.handle.pid, signal.SIGTERM)
-            except ProcessLookupError:
-                return ctx.handle.returncode or -1
 
         try:
             async with asyncio.timeout(grace_period):
@@ -1281,10 +1275,8 @@ class BridgeService:
             for child in children:
                 child.kill()
             parent.kill()
-        except (psutil.NoSuchProcess, ProcessLookupError):
+        except (psutil.NoSuchProcess, ProcessLookupError, psutil.AccessDenied):
             return ctx.handle.returncode or -1
-        except OSError:
-            os.killpg(ctx.handle.pid, signal.SIGKILL)
 
         try:
             async with asyncio.timeout(PROCESS_TERM_GRACE_PERIOD_SECONDS):

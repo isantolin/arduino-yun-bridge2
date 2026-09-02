@@ -27,12 +27,12 @@ def audit_status_dict(data: dict[str, Any]) -> list[str]:
 
     # 1. Cloud spool drop / trim anomalies
     dropped_raw = metrics.get("cloud_spool_dropped_limit", 0)
-    dropped: int = int(cast(int, dropped_raw)) if isinstance(dropped_raw, (int, float)) else 0
+    dropped: int = int(dropped_raw) if isinstance(dropped_raw, (int, float)) else 0
     if dropped > 0:
         errors.append(f"Cloud spool dropped messages limit exceeded (count={dropped})")
 
     trimmed_raw = metrics.get("cloud_spool_trim_events", 0)
-    trimmed: int = int(cast(int, trimmed_raw)) if isinstance(trimmed_raw, (int, float)) else 0
+    trimmed: int = int(trimmed_raw) if isinstance(trimmed_raw, (int, float)) else 0
     if trimmed > 0:
         errors.append(f"Cloud spool trim events occurred (count={trimmed})")
 
@@ -57,17 +57,17 @@ def audit_status_dict(data: dict[str, Any]) -> list[str]:
             errors.append(f"Handshake reported error: {last_error}")
 
         failures_raw = handshake.get("failures", 0)
-        failures: int = int(cast(int, failures_raw)) if isinstance(failures_raw, (int, float)) else 0
+        failures: int = int(failures_raw) if isinstance(failures_raw, (int, float)) else 0
         if failures > 0:
             errors.append(f"Handshake reported {failures} failure(s)")
 
         streak_raw = handshake.get("failure_streak", 0)
-        failure_streak: int = int(cast(int, streak_raw)) if isinstance(streak_raw, (int, float)) else 0
+        failure_streak: int = int(streak_raw) if isinstance(streak_raw, (int, float)) else 0
         if failure_streak > 0:
             errors.append(f"Handshake failure streak active (streak={failure_streak})")
 
         fatal_raw = handshake.get("fatal_count", 0)
-        fatal_count: int = int(cast(int, fatal_raw)) if isinstance(fatal_raw, (int, float)) else 0
+        fatal_count: int = int(fatal_raw) if isinstance(fatal_raw, (int, float)) else 0
         if fatal_count > 0:
             reason: str = str(handshake.get("fatal_reason", "unknown"))
             detail: str = str(handshake.get("fatal_detail", ""))

@@ -240,6 +240,11 @@ name = "mypy-protobuf"
 pip = "mypy-protobuf==5.1.0"
 rationale = "Protoc plugin for generating strict type stubs (.pyi) from Protobuf definitions"
 
+[[dev_dependency]]
+name = "pexpect"
+pip = "pexpect==4.9.0"
+rationale = "Terminal interaction library for QEMU automation tools"
+
 
 
 

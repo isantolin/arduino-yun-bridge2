@@ -70,10 +70,8 @@ strict = [
     "mcubridge/tests",
     "mcubridge-client-examples/mcubridge_client",
     "mcubridge-gateway",
+    "mcubridge/scripts",
     "tools"
-]
-executionEnvironments = [
-    { root = "mcubridge/scripts", reportUnknownMemberType = false }
 ]
 exclude = [
     "openwrt-sdk",
@@ -155,7 +153,6 @@ omit = [
 [tool.coverage.report]
 show_missing = true
 exclude_lines = [
-    "pragma: no cover",
     "def __repr__",
     "raise AssertionError",
     "raise NotImplementedError",

@@ -6,7 +6,7 @@ import asyncio
 import importlib
 import sys
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 
 import structlog
 import typer
@@ -32,9 +32,11 @@ def push_file_ubus(target_path: str, data: bytes) -> bool:
         except UnicodeDecodeError:
             data_str = data.hex()
         res: Any = conn.call("mcubridge", "file_write", {"path": target_path, "data": data_str})
-        if isinstance(res, dict) and res.get("status") == "ok":
-            logger.info("File push successful via UBUS", path=target_path, size=len(data))
-            return True
+        if isinstance(res, dict):
+            res_dict = cast(dict[str, Any], res)
+            if res_dict.get("status") == "ok":
+                logger.info("File push successful via UBUS", path=target_path, size=len(data))
+                return True
         return False
     except (ImportError, OSError, RuntimeError, AttributeError):
         return False

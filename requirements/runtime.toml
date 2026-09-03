@@ -232,7 +232,7 @@ rationale = "Strict static type checker enforcing zero-warning type safety acros
 
 [[dev_dependency]]
 name = "ruff"
-pip = "ruff==0.16.5"
+pip = "ruff==0.16.6"
 rationale = "Fast Python linter and code quality validator"
 
 [[dev_dependency]]

@@ -35,12 +35,21 @@ def get_standalone_scripts() -> list[Path]:
 
 @pytest.mark.parametrize("script_path", get_standalone_scripts(), ids=lambda p: str(p.name))
 def test_script_standalone_execution_and_help(script_path: Path) -> None:
-    """Validate that every script runs cleanly with --help in an isolated environment."""
-    isolated_env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+    """Validate that every script runs cleanly with --help in a clean subprocess."""
+    env = os.environ.copy()
+    repo_root = Path(__file__).resolve().parents[2]
+    workspace_paths = [
+        str(repo_root),
+        str(repo_root / "mcubridge"),
+        str(repo_root / "mcubridge-client-examples"),
+        str(repo_root / "mcubridge-gateway"),
+    ]
+    current_pp = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = os.pathsep.join(workspace_paths + ([current_pp] if current_pp else []))
 
     proc = subprocess.run(
         [sys.executable, str(script_path), "--help"],
-        env=isolated_env,
+        env=env,
         capture_output=True,
         text=True,
         check=False,

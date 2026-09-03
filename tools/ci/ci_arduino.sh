@@ -4,7 +4,7 @@
 set -o pipefail
 
 # Ensure we are in the repo root
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 
 echo "Initializing Arduino CI environment..."
 

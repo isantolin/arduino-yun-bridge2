@@ -447,7 +447,7 @@ app = typer.Typer(help="OpenWrt Smoke Test using QEMU (MIPS Malta).", add_comple
 def main(
     apk_directory: Annotated[Path, typer.Argument(help="Path to directory containing APK packages")],
 ) -> None:
-    repo_root = Path(__file__).resolve().parent.parent
+    repo_root = Path(__file__).resolve().parents[2]
 
     download_images()
     sys_apk_dir = repo_root / "dl_sys_apks"

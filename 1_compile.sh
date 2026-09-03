@@ -262,7 +262,7 @@ fi
 # --- PROTOCOL & DEPS SYNC ---
 PYTHON_BIN="${PYTHON_EXE:-python3}"
 echo "[INFO] Synchronizing runtime dependency manifests..."
-"$PYTHON_BIN" "$REPO_ROOT/tools/sync_runtime_deps.py" || exit 1
+"$PYTHON_BIN" "$REPO_ROOT/tools/audit/sync_runtime_deps.py" || exit 1
 
 echo "[INFO] Regenerating protocol files from spec..."
 "$PYTHON_BIN" "$REPO_ROOT/tools/protocol/generate.py" \
@@ -420,7 +420,7 @@ LOCAL_FEED_PATH="$REPO_ROOT/feeds"
 
 if [ -d "$LOCAL_FEED_PATH" ]; then
     # Sync overlay first
-    [ -x "$REPO_ROOT/tools/sync_feed_overlay.sh" ] && "$REPO_ROOT/tools/sync_feed_overlay.sh" --dest "$LOCAL_FEED_PATH"
+    [ -x "$REPO_ROOT/tools/ci/sync_feed_overlay.sh" ] && "$REPO_ROOT/tools/ci/sync_feed_overlay.sh" --dest "$LOCAL_FEED_PATH"
     
     FEEDS_CONF="$SDK_DIR/feeds.conf"
     [ ! -f "$FEEDS_CONF" ] && cp "$SDK_DIR/feeds.conf.default" "$FEEDS_CONF"
@@ -700,7 +700,7 @@ else
 fi
 
 # [FIX] Orden de compilación: Primero librerías críticas (extraídas dinámicamente)
-LIBS=$(python3 "$REPO_ROOT/tools/sync_runtime_deps.py" --print-openwrt | grep -vE "^(python3|python3-uci|mosquitto-client|xxd)$" | xargs)
+LIBS=$(python3 "$REPO_ROOT/tools/audit/sync_runtime_deps.py" --print-openwrt | grep -vE "^(python3|python3-uci|mosquitto-client|xxd)$" | xargs)
 echo "[BUILD] Building libraries: $LIBS..."
 
 # Build all libraries in parallel with as many jobs as cores.

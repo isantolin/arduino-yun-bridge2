@@ -10,9 +10,9 @@ from typing import Annotated, Any, cast
 import json
 
 import typer
-from tools.audit_bridge_status import audit_status_dict
+from tools.audit.audit_bridge_status import audit_status_dict
 
-REPO_ROOT = Path(__file__).parent.parent
+REPO_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLE_MANIFEST = REPO_ROOT / "hardware" / "targets.example.toml"
 
 

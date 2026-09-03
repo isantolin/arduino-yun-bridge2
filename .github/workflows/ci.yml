@@ -120,7 +120,7 @@ jobs:
         if: always()
         run: |
           mkdir -p arduino-logs
-          python tools/arduino_symbol_profiler.py arduino-build --output arduino-logs/symbol_profile.md
+          python tools/profiling/arduino_symbol_profiler.py arduino-build --output arduino-logs/symbol_profile.md
       - name: Upload Arduino Logs
         if: always()
         uses: actions/upload-artifact@v7
@@ -190,23 +190,23 @@ jobs:
           - name: Full Firmware
             firmware: mcubridge-library-arduino/tests/bridge_emulator
             scripts: >-
-              mcubridge-client-examples/client_tests/test_smoke_connection.py
-              mcubridge-client-examples/led13_test.py
-              mcubridge-client-examples/console_test.py
-              mcubridge-client-examples/datastore_test.py
-              mcubridge-client-examples/fileio_test.py
-              mcubridge-client-examples/process_test.py
-              mcubridge-client-examples/mailbox_read_test.py
-              mcubridge-client-examples/sensor_reader_test.py
-              mcubridge-client-examples/all_features_test.py
-              mcubridge-client-examples/spi_test.py
+              mcubridge-client-examples/tests/test_smoke_connection.py
+              mcubridge-client-examples/examples/led13_test.py
+              mcubridge-client-examples/examples/console_test.py
+              mcubridge-client-examples/examples/datastore_test.py
+              mcubridge-client-examples/examples/fileio_test.py
+              mcubridge-client-examples/examples/process_test.py
+              mcubridge-client-examples/examples/mailbox_read_test.py
+              mcubridge-client-examples/examples/sensor_reader_test.py
+              mcubridge-client-examples/examples/all_features_test.py
+              mcubridge-client-examples/examples/spi_test.py
           - name: Control Sketch
             firmware: mcubridge-library-arduino/tests/bridge_control_emulator
             scripts: >-
-              mcubridge-client-examples/client_tests/test_smoke_connection.py
-              mcubridge-client-examples/led13_test.py
-              mcubridge-client-examples/console_test.py
-              mcubridge-client-examples/mailbox_read_test.py
+              mcubridge-client-examples/tests/test_smoke_connection.py
+              mcubridge-client-examples/examples/led13_test.py
+              mcubridge-client-examples/examples/console_test.py
+              mcubridge-client-examples/examples/mailbox_read_test.py
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
@@ -234,10 +234,10 @@ jobs:
           ./mcubridge-library-arduino/tools/install.sh "$DUMMY_ARDUINO_LIBS"
       - name: Compile & Run Emulation
         run: |
-          ./tools/compile_emulator.sh
+          ./tools/ci/compile_emulator.sh
           PYTHONPATH=mcubridge:mcubridge-client-examples python mcubridge-gateway/gateway.py --no-tls --port 8443 &
           gateway_pid=$!
-          PYTHONPATH=mcubridge:mcubridge-client-examples python -u tools/emulation_runner.py \
+          PYTHONPATH=mcubridge:mcubridge-client-examples python -u tools/emulation/emulation_runner.py \
             --firmware ${{ matrix.firmware }} \
             ${{ matrix.scripts }}
           kill $gateway_pid
@@ -377,7 +377,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip setuptools
           pip install -r requirements/runtime.txt rich
-          python tools/coverage_report.py \
+          python tools/profiling/coverage_report.py \
             --output-markdown coverage/coverage-summary.md \
             --output-json coverage/coverage-summary.json \
             --github-step-summary "$GITHUB_STEP_SUMMARY"
@@ -385,7 +385,7 @@ jobs:
       - name: Generate Memory Summary
         run: |
           # 1. Total usage report
-          python tools/arduino_memory_report.py arduino-logs \
+          python tools/profiling/arduino_memory_report.py arduino-logs \
             --github-step-summary "$GITHUB_STEP_SUMMARY"
           
           # 2. Advanced Symbol Profiling (cat pre-generated report)
@@ -411,13 +411,13 @@ jobs:
             --py-client mcubridge-client-examples/mcubridge_client/protocol.py
           
           # 2. Standard performance profile
-          python tools/daemon_profile_report.py \
+          python tools/profiling/daemon_profile_report.py \
             --iterations 2000 \
             --json coverage/daemon-profile.json \
             --github-step-summary "$GITHUB_STEP_SUMMARY"
           
           # 3. Advanced Runtime Profiling (Architecture, Memory, Time & Size)
-          python tools/python_runtime_profiler.py \
+          python tools/profiling/python_runtime_profiler.py \
             --github-step-summary "$GITHUB_STEP_SUMMARY"
 
       - name: Upload Combined Coverage

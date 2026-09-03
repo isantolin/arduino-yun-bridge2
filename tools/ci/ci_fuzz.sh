@@ -2,14 +2,14 @@
 set -euo pipefail
 # [MIL-SPEC/SIL-2] McuBridge CI Fuzz Orchestrator
 
-# Ensure emulator is compiled
-./tools/compile_emulator.sh
-
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 export PYTHONPATH="${ROOT_DIR}:${ROOT_DIR}/mcubridge:${PYTHONPATH:-}"
 
+# Ensure emulator is compiled
+"$ROOT_DIR/tools/ci/compile_emulator.sh"
+
 FUZZ_PTY="/tmp/ttyBRIDGE_FUZZ"
-EMULATOR_BIN="mcubridge-library-arduino/tests/bridge_control_emulator"
+EMULATOR_BIN="${ROOT_DIR}/mcubridge-library-arduino/tests/bridge_control_emulator"
 
 # Cleanup previous runs
 rm -f "$FUZZ_PTY"
@@ -37,6 +37,6 @@ done
 echo "[fuzz] PTY ready at $FUZZ_PTY. Starting stress campaign..."
 
 # Run the fuzzer (1000 iterations for CI stability/time balance)
-python3 tools/protocol_fuzzer.py --port "$FUZZ_PTY" --count 1000
+python3 "$ROOT_DIR/tools/emulation/protocol_fuzzer.py" --port "$FUZZ_PTY" --count 1000
 
 echo "[SUCCESS] Protocol fuzzing campaign completed successfully."

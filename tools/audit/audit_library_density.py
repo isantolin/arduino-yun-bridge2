@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 import typer
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 
 app = typer.Typer(
     help="Audit library density and architectural invariants across Arduino C++ and Python codebase.",

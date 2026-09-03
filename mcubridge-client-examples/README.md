@@ -55,11 +55,11 @@ uci set mcubridge.general.debug='1'
 uci commit mcubridge && /etc/init.d/mcubridge restart
 ```
 
-### Ejemplos incluidos
+### Ejemplos incluidos (en `examples/`)
 
-- `process_test.py`: ilustra cómo lanzar y monitorizar subprocesos asíncronos en el MPU a través del socket.
-- `mailbox_read_test.py`: demuestra la lectura y escritura sobre el mailbox del microcontrolador.
-- `sensor_reader_test.py`: lectura periódica del pin digital `d13` o analógicos de la placa.
-- `led13_test.py`: control de encendido y apagado del LED integrado en la placa.
-- `spi_test.py`: lectura y escritura a través de buses periféricos SPI.
+- `examples/process_test.py`: ilustra cómo lanzar y monitorizar subprocesos asíncronos en el MPU a través del socket.
+- `examples/mailbox_read_test.py`: demuestra la lectura y escritura sobre el mailbox del microcontrolador.
+- `examples/sensor_reader_test.py`: lectura periódica del pin digital `d13` o analógicos de la placa.
+- `examples/led13_test.py`: control de encendido y apagado del LED integrado en la placa.
+- `examples/spi_test.py`: lectura y escritura a través de buses periféricos SPI.
 

@@ -8,7 +8,7 @@
 #
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SKETCH_PATH="${1:-${ROOT_DIR}/mcubridge-library-arduino/examples/BridgeControl/BridgeControl.ino}"
 BUILD_BASE_DIR="${ROOT_DIR}/build/simavr"
 SUMMARY_DIR="${SIMAVR_METRICS_DIR:-${BUILD_BASE_DIR}}"
@@ -33,7 +33,7 @@ for i in "${!BOARDS[@]}"; do
     echo "════════════════════════════════════════════════════════════════════════════════"
     
     # 1. Compile
-    if bash "${ROOT_DIR}/tools/compile_simavr_firmware.sh" "$SKETCH_PATH" "$BOARD" "$OUT_DIR"; then
+    if bash "${ROOT_DIR}/tools/ci/compile_simavr_firmware.sh" "$SKETCH_PATH" "$BOARD" "$OUT_DIR"; then
         if [ -f "${OUT_DIR}/firmware.elf" ]; then
             COMPILATION_STATUS+=("✅ Compiled")
             
@@ -43,7 +43,7 @@ for i in "${!BOARDS[@]}"; do
             if [[ "$SKETCH_PATH" =~ (BridgeBluetooth|BridgeWiFi) ]] && [ "$BOARD" = "arduino:avr:mega" ]; then
                 EXTRA_ARGS+=(--uart "1")
             fi
-            if python3 "${ROOT_DIR}/tools/simavr_runner.py" --firmware "${OUT_DIR}/firmware.elf" --board "$BOARD" ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}; then
+            if python3 "${ROOT_DIR}/tools/emulation/simavr_runner.py" --firmware "${OUT_DIR}/firmware.elf" --board "$BOARD" ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}; then
                 echo "[simavr-matrix] ✅ Emulation PASSED for $BOARD"
                 EMULATION_STATUS+=("✅ Passed (100% E2E)")
             else

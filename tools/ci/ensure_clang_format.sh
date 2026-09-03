@@ -34,7 +34,7 @@ fi
 echo "[ensure_clang_format] clang-format is ready."
 
 # Format C++ and Arduino files in the repository
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 echo "[ensure_clang_format] Formatting C++ files..."
 
 # Find and format all .cpp, .h, and .ino files, excluding Unity and Nanopb library files

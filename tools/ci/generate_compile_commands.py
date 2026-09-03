@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 import typer
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 app = typer.Typer(help="Generate compile_commands.json for Arduino MCU C++ tooling.", add_completion=False)
 
 cmd_str = (

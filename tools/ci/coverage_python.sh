@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 export PYTHONPATH="$ROOT_DIR/typings:$ROOT_DIR/typings/stubs:$ROOT_DIR:$ROOT_DIR/mcubridge:$ROOT_DIR/mcubridge-client-examples:$ROOT_DIR/mcubridge-gateway:${PYTHONPATH:-}"
 DEFAULT_COVERAGE_ROOT="$ROOT_DIR/coverage/python"
-DEFAULT_TARGETS=("mcubridge/tests" "mcubridge-client-examples/client_tests" "mcubridge-gateway/tests")
+DEFAULT_TARGETS=("mcubridge/tests" "mcubridge-client-examples/tests" "mcubridge-gateway/tests")
 
 usage() {
   cat <<'EOF'
-Usage: tools/coverage_python.sh [--output-root DIR] [--no-html] [--json] [--] [pytest args...]
+Usage: tools/ci/coverage_python.sh [--output-root DIR] [--no-html] [--json] [--] [pytest args...]
 
 Options:
   --output-root DIR  Output directory (default: coverage/python)
@@ -17,7 +17,7 @@ Options:
   -h, --help          Show this help
 
 Any remaining arguments are passed to pytest. If no pytest args are supplied,
-the default targets are mcubridge/tests and mcubridge-client-examples/client_tests.
+the default targets are mcubridge/tests and mcubridge-client-examples/tests.
 
 Environment:
 PYTHON_COVERAGE_MIN         Minimum total coverage percentage (default: 95)
@@ -31,8 +31,18 @@ ENABLE_JSON=0
 PYTHON_COVERAGE_MIN=${PYTHON_COVERAGE_MIN:-95}
 PYTHON_COVERAGE_MIN_BRANCH=${PYTHON_COVERAGE_MIN_BRANCH:-95}
 
-PYTHON_BIN="${PYTHON_EXE:-python}"
-echo "[coverage_python] Debug: Python path: $(which $PYTHON_BIN || echo 'not found') ($PYTHON_BIN)"
+if [ -n "${PYTHON_EXE:-}" ]; then
+  PYTHON_BIN="${PYTHON_EXE}"
+elif [ -n "${VIRTUAL_ENV:-}" ]; then
+  PYTHON_BIN=$(command -v python || command -v python3)
+elif [ -x "${ROOT_DIR}/.tox/coverage/bin/python" ]; then
+  PYTHON_BIN="${ROOT_DIR}/.tox/coverage/bin/python"
+elif [ -x "${ROOT_DIR}/.tox/py313/bin/python" ]; then
+  PYTHON_BIN="${ROOT_DIR}/.tox/py313/bin/python"
+else
+  PYTHON_BIN=$(command -v python3 || command -v python)
+fi
+echo "[coverage_python] Debug: Python path: $(which $PYTHON_BIN 2>/dev/null || echo "$PYTHON_BIN") ($PYTHON_BIN)"
 echo "[coverage_python] Debug: Python version: $($PYTHON_BIN --version)"
 
 while [[ $# -gt 0 ]]; do

@@ -16,7 +16,7 @@ from packaging.requirements import Requirement
 from packaging.version import InvalidVersion, Version
 import typer
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 MANIFEST_PATH = ROOT / "requirements" / "runtime.toml"
 REQUIREMENTS_PATH = ROOT / "requirements" / "runtime.txt"
 PYPROJECT_PATH = ROOT / "pyproject.toml"
@@ -141,7 +141,7 @@ def collect_openwrt_packages(deps: Sequence[_DepEntry]) -> list[str]:
 
 def write_requirements(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
     pip_specs = collect_pip_specs(deps)
-    content = ["# Generated via tools/sync_runtime_deps.py; do not edit."]
+    content = ["# Generated via tools/audit/sync_runtime_deps.py; do not edit."]
     content.extend(pip_specs)
     new_text = "\n".join(content) + "\n"
     if REQUIREMENTS_PATH.exists():
@@ -156,7 +156,7 @@ def write_requirements(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> b
 def write_gateway_requirements(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
     gateway_deps = [dep for dep in deps if dep.get("gateway")]
     pip_specs = collect_pip_specs(gateway_deps)
-    content = ["# Generated via tools/sync_runtime_deps.py; do not edit."]
+    content = ["# Generated via tools/audit/sync_runtime_deps.py; do not edit."]
     content.extend(pip_specs)
     new_text = "\n".join(content) + "\n"
     if GATEWAY_REQUIREMENTS_PATH.exists():

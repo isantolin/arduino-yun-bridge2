@@ -762,7 +762,7 @@ Además de los comandos anteriores, el daemon transmite eventos periódicos y le
 UCI_CONFIG_DIR=/etc/config mcubridge --debug-frames
 
 # Parse raw hex frame (offline tool)
-python3 tools/frame_debug.py 02001000044A1B2C3D4...
+python3 tools/emulation/frame_debug.py 02001000044A1B2C3D4...
 
 # Monitor serial link health
 watch -n1 'cat /tmp/mcubridge_status.json | jq .serial_flow_stats'

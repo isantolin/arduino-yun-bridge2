@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 from typer.testing import CliRunner
-from tools.audit_bridge_status import app, audit_status_dict
+from tools.audit.audit_bridge_status import app, audit_status_dict
 
 from typing import Any, cast
 
@@ -123,7 +123,7 @@ def test_audit_cli_file(tmp_path: Path) -> None:
 
 
 def test_audit_cli_ubus_success(monkeypatch: Any) -> None:
-    import tools.audit_bridge_status as audit_mod
+    import tools.audit.audit_bridge_status as audit_mod
     from unittest.mock import MagicMock
 
     mock_ubus: Any = MagicMock()
@@ -138,7 +138,7 @@ def test_audit_cli_ubus_success(monkeypatch: Any) -> None:
 
 
 def test_audit_cli_ubus_subprocess_fallback(monkeypatch: Any) -> None:
-    import tools.audit_bridge_status as audit_mod
+    import tools.audit.audit_bridge_status as audit_mod
     from unittest.mock import MagicMock
     import subprocess
 
@@ -153,7 +153,7 @@ def test_audit_cli_ubus_subprocess_fallback(monkeypatch: Any) -> None:
 
 
 def test_audit_cli_ubus_failure(monkeypatch: Any) -> None:
-    import tools.audit_bridge_status as audit_mod
+    import tools.audit.audit_bridge_status as audit_mod
     from unittest.mock import MagicMock
 
     mock_ubus: Any = MagicMock()

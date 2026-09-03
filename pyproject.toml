@@ -41,7 +41,7 @@ minversion = "7.0"
 addopts = "-ra -vv"
 log_cli = true
 log_cli_level = "INFO"
-testpaths = ["mcubridge/tests", "mcubridge-client-examples/client_tests", "mcubridge-gateway/tests"]
+testpaths = ["mcubridge/tests", "mcubridge-client-examples/tests", "mcubridge-gateway/tests"]
 pythonpath = [".", "mcubridge", "mcubridge-client-examples", "mcubridge-gateway"]
 norecursedirs = ["openwrt-sdk", "feeds", ".git", ".tox", ".venv*", ".dummy_libs", ".tmp_tests", ".*"]
 markers = [
@@ -151,7 +151,7 @@ source = [
 ]
 omit = [
     "mcubridge/tests/*",
-    "mcubridge-client-examples/client_tests/*",
+    "mcubridge-client-examples/tests/*",
     "**/*_pb2.py",
     "**/*_pb2.pyi",
     "**/*_grpc.py"

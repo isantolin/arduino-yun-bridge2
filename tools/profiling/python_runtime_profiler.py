@@ -12,7 +12,7 @@ from pathlib import Path
 import typer
 from typing import Annotated
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "mcubridge"))
 
 # Start tracing early to capture all allocations

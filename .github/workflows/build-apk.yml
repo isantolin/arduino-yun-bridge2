@@ -80,7 +80,7 @@ jobs:
 
       - name: Generate runtime dependency lockfiles
         run: |
-          python3 tools/sync_runtime_deps.py
+          python3 tools/audit/sync_runtime_deps.py
 
       - name: Pre-download Python feed dependencies to bypass PyPI mirror issues
         run: |
@@ -154,7 +154,7 @@ jobs:
           # Flatten APKs into a single directory for the test script
           mkdir -p apks-flat
           find bin-download/ -name "*.apk" -exec cp {} apks-flat/ \;
-          python3 tools/openwrt_smoke_test.py apks-flat/
+          python3 tools/emulation/openwrt_smoke_test.py apks-flat/
 
   publish-apk-feed-oci:
     name: Publish OpenWrt APK Feed to GHCR

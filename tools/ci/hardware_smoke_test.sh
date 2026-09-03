@@ -3,8 +3,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-EXAMPLES_DIR="$REPO_ROOT/mcubridge-client-examples"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+EXAMPLES_DIR="$REPO_ROOT/mcubridge-client-examples/examples"
 
 show_help() {
   cat <<'EOF'
@@ -119,7 +119,7 @@ if [[ $LOCAL -eq 1 ]]; then
 
   # [SIL-2] Status Snapshot Post-Run Integrity Gate
   echo "[*] Auditing /tmp/mcubridge_status.json health..."
-  if ! python3 "$REPO_ROOT/tools/audit_bridge_status.py" --status-path /tmp/mcubridge_status.json; then
+  if ! python3 "$REPO_ROOT/tools/audit/audit_bridge_status.py" --status-path /tmp/mcubridge_status.json; then
     echo "❌ [FAIL] Status audit detected active anomalies in /tmp/mcubridge_status.json"
     exit 1
   fi

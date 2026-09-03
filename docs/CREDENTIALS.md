@@ -37,7 +37,7 @@ flowchart TD
 
 ```sh
 # Rotate credentials on a remote MCU and print the sketch snippet.
-python3 tools/hardware_harness.py rotate --host <mcu-ip>
+python3 tools/emulation/hardware_harness.py rotate --host <mcu-ip>
 ```
 
 What happens:
@@ -58,7 +58,7 @@ What happens:
 You can run the same helper locally to update bootstrap images or CI artifacts by pointing `--local` to the UCI config directory inside your rootfs (for example, `build_dir/root-ath79/etc/config`):
 
 ```sh
-sudo python3 tools/hardware_harness.py rotate --local build/rootfs/etc/config \
+sudo python3 tools/emulation/hardware_harness.py rotate --local build/rootfs/etc/config \
   --emit-sketch-snippet my_project/BridgeSecret.inc
 ```
 
@@ -71,12 +71,12 @@ The **Services → McuBridge → Credentials & TLS** page now shows an "Arduino 
 ## Verifying the new material
 
 1. Rebuild or re-upload your Arduino sketch so it includes the updated `#define BRIDGE_SERIAL_SHARED_SECRET "..."` line (or the header where you stored that snippet).
-2. Run `tools/hardware_smoke_test.sh --host <mcu>` or use the LuCI "Run smoke test" button to confirm Linux ↔ MCU communication still succeeds.
+2. Run `tools/ci/hardware_smoke_test.sh --host <mcu>` or use the LuCI "Run smoke test" button to confirm Linux ↔ MCU communication still succeeds.
 3. Check daemon logs via `logread | grep mcubridge` or the LuCI status panel for `handshake` entries. Any `serial handshake rejected` messages typically mean the MCU firmware did not pick up the new header yet.
 
 ## Operational checklist
 
-- Track which devices have been rotated by tagging them in your asset inventory or by storing the `SERIAL_SECRET=...` line that `python3 tools/hardware_harness.py rotate` prints during automation runs.
+- Track which devices have been rotated by tagging them in your asset inventory or by storing the `SERIAL_SECRET=...` line that `python3 tools/emulation/hardware_harness.py rotate` prints during automation runs.
 - If you mirror secrets into another system (e.g., provisioning service), parse the `SERIAL_SECRET=...` line that the CLI prints or call the LuCI endpoint (`/admin/services/mcubridge/rotate_credentials`) and use the `serial_secret` field in its JSON response.
 - Keep any snippet/header file with `BRIDGE_SERIAL_SHARED_SECRET` out of version control (or encrypt it) so each device preserves its unique material.
 - Store TLS assets separately from the credential file. If you use mutual TLS (mTLS), manage client certificates explicitly and keep them out of version control.

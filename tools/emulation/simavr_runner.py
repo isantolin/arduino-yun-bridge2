@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated, Any
 
-repo_root = Path(__file__).resolve().parents[1]
+repo_root = Path(__file__).resolve().parents[2]
 if str(repo_root / "mcubridge") not in sys.path:
     sys.path.insert(0, str(repo_root / "mcubridge"))
 if str(repo_root / "mcubridge-client-examples") not in sys.path:
@@ -117,7 +117,7 @@ def _write_fake_uci_module(base_dir: Path, config: dict[str, str]) -> Path:
 
 
 def _build_simavr_harness() -> Path | None:
-    harness_src = repo_root / "tools" / "simavr_harness.cpp"
+    harness_src = repo_root / "tools" / "emulation" / "simavr_harness.cpp"
     harness_bin = repo_root / "build" / "simavr" / "simavr_harness"
     if not harness_src.exists():
         return None
@@ -500,10 +500,10 @@ def main(
         test_paths = [Path(s) for s in scripts]
     else:
         test_paths = [
-            repo_root / "mcubridge-client-examples" / "client_tests" / "test_smoke_connection.py",
-            repo_root / "mcubridge-client-examples" / "led13_test.py",
-            repo_root / "mcubridge-client-examples" / "console_test.py",
-            repo_root / "mcubridge-client-examples" / "mailbox_read_test.py",
+            repo_root / "mcubridge-client-examples" / "tests" / "test_smoke_connection.py",
+            repo_root / "mcubridge-client-examples" / "examples" / "led13_test.py",
+            repo_root / "mcubridge-client-examples" / "examples" / "console_test.py",
+            repo_root / "mcubridge-client-examples" / "examples" / "mailbox_read_test.py",
         ]
 
     logger.info(

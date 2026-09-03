@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
     cat <<'EOF'
-Usage: tools/sync_feed_overlay.sh [OPTIONS]
+Usage: tools/ci/sync_feed_overlay.sh [OPTIONS]
 
 Populate the destination feed directory with symlinks to the canonical
 package sources from the repository root so the OpenWrt SDK can consume them
@@ -17,7 +17,7 @@ EOF
 }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 DEST_DIR="$REPO_ROOT/feeds"
 CLEAN=0
 

@@ -27,7 +27,7 @@
 - **Transparent Wireless Transports**: Native WiFi TCP stream (`AsyncTcpConnection`, `WiFiClient`) and Bluetooth SPP/BLE UART (`BluetoothSerial`).
 - **Nanopb 0.4.9.2 Zero-Copy Deserialization**: Ecosystem upgrade with `pb_decode_noinit` eliminating redundant memory operations on static buffers.
 - **TLS 1.3 0-RTT Session Ticket Persistence**: LMDB transactional session caching for zero-roundtrip gRPC reconnection upon network recovery.
-- **Unified Benchmarking & Memory Profiling Suite**: Deterministic performance measurement tools (`tools/benchmark_performance.py`) validating framing throughput (> 460k ops/s), AEAD (> 155k ops/s), and sub-2MiB memory footprint.
+- **Unified Benchmarking & Memory Profiling Suite**: Deterministic performance measurement tools (`tools/profiling/benchmark_performance.py`) validating framing throughput (> 460k ops/s), AEAD (> 155k ops/s), and sub-2MiB memory footprint.
 - **Safe-Bootloader Handshake**: Protocol extension to trigger MCU bootloader mode via RPC.
 - **Auto-Baudrate Fallback**: Automated speed downgrade logic based on CRC error thresholds.
 - **SPI Service**: Full implementation of the SPI capability bit with a dedicated RPC service.

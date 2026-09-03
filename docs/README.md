@@ -31,7 +31,7 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 - **Soporte Nativo Inalámbrico (WiFi TCP & Bluetooth SPP/BLE) (v2.8.5)**: Expansión del transporte a enlaces inalámbricos transparentes. Se implementa `AsyncTcpConnection` y detección automática de prefijos de red (`tcp://`, `wifi://`, `socket://`) en el Linux MPU daemon, junto con ejemplos de referencia en Arduino (`BridgeWiFi.ino` y `BridgeBluetooth.ino`). Mantiene idéntica máquina de estados, framing COBS/R, CRC32 y encriptación ChaCha20-Poly1305 sobre sockets de red.
 - **Actualización Nanopb 0.4.9.2 & Deserialización Estática Zero-Copy (`pb_decode_noinit`)**: Migración de todo el ecosistema C++ y herramientas de generación a la versión oficial Nanopb 0.4.9.2, adoptando `pb_decode_noinit` para eliminar limpiezas `memset` redundantes en estructuras estáticas pre-inicializadas.
 - **Persistencia de Session Tickets TLS 1.3 para 0-RTT en LMDB**: Persistencia criptográfica y recuperación determinista de tickets de sesión TLS 1.3 en la caché transaccional LMDB (`RuntimeState.tls_session_cache`), permitiendo reconexiones 0-RTT ultrarrápidas del Cloud Gateway ante caídas de enlace.
-- **Suite Unificada de Benchmarks & Memory Profiling (`tools/benchmark_performance.py`)**: Herramienta de benchmarking integral para medir throughput y latencia de framing COBS/R (> 460k decodes/s, ~26.7 MB/s), criptografía AEAD (> 155k ops/s), serialización Protobuf (> 385k ops/s) y memoria máxima del proceso.
+- **Suite Unificada de Benchmarks & Memory Profiling (`tools/profiling/benchmark_performance.py`)**: Herramienta de benchmarking integral para medir throughput y latencia de framing COBS/R (> 460k decodes/s, ~26.7 MB/s), criptografía AEAD (> 155k ops/s), serialización Protobuf (> 385k ops/s) y memoria máxima del proceso.
 
 ### Novedades (julio 2026)
 
@@ -116,7 +116,7 @@ uci commit mcubridge
 | --- | --- | --- | --- |
 | Python (daemon en el MPU) | Base en Python 3.13.9-r2. | Mantener compatibilidad con futuras versiones. | `tox -e py313` |
 | Toolchain OpenWrt | SDK 25.12.5 (APK). | Compilación de paquetes APK. | `./1_compile.sh` |
-| MCU Firmware | C++17 / ETL (SIL-2). | Cobertura extrema sin STL. | `./tools/coverage_arduino.sh` |
+| MCU Firmware | C++17 / ETL (SIL-2). | Cobertura extrema sin STL. | `./tools/ci/coverage_arduino.sh` |
 
 - Para personalizar el SDK durante la compilación basta pasar la versión/target como argumentos:
 	```sh
@@ -132,8 +132,8 @@ uci commit mcubridge
 
 - **Rotación de secretos:** Ejecuta la pestaña *Credentials & TLS* en LuCI para invocar `/usr/bin/mcubridge-rotate-credentials`. Esto regenera `mcubridge.general.serial_shared_secret`, refresca la contraseña del cloud, reinicia el daemon y expone el snippet `#define BRIDGE_SERIAL_SHARED_SECRET "..."`.
 - **Smoke test de hardware:** Ejecuta `/usr/bin/mcubridge-hw-smoke` para validar el enlace local, credenciales y una ida y vuelta real de gRPC/IPC.
-- **Harness multi-dispositivo:** Ejecuta `../tools/hardware_harness.py` en paralelo para verificar toda la flota de MCUs de forma centralizada.
-- **Frame debug en Linux:** Para inspeccionar tráfico binario del enlace serie, detén `mcubridge` y ejecuta `python3 -m tools.frame_debug --port /dev/ttyATH0 --command CMD_LINK_RESET --read-response`.
+- **Harness multi-dispositivo:** Ejecuta `python3 tools/emulation/hardware_harness.py` en paralelo para verificar toda la flota de MCUs de forma centralizada.
+- **Frame debug en Linux:** Para inspeccionar tráfico binario del enlace serie, detén `mcubridge` y ejecuta `python3 tools/emulation/frame_debug.py --port /dev/ttyATH0 --command CMD_LINK_RESET --read-response`.
 
 ## Despliegue seguro
 

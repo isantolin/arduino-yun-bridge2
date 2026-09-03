@@ -10,7 +10,7 @@ import sys
 
 
 def validate_luci_app() -> int:
-    repo_root = Path(__file__).resolve().parent.parent
+    repo_root = Path(__file__).resolve().parents[2]
     luci_dir = repo_root / "luci-app-mcubridge"
 
     if not luci_dir.exists():

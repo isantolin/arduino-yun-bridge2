@@ -7,7 +7,7 @@ from pathlib import Path
 import re
 import typer
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def audit_python_files() -> list[str]:

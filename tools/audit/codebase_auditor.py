@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import re
+import sys
 import typer
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -55,21 +56,37 @@ def audit_cpp_files() -> list[str]:
     return findings
 
 
+def audit_config_suppressions() -> list[str]:
+    """Audit project configuration files for linter/typechecker suppressions."""
+    findings: list[str] = []
+    print("Auditing Configuration files...")
+    pyproject = ROOT / "pyproject.toml"
+    if pyproject.exists():
+        content = pyproject.read_text(encoding="utf-8")
+        if "per-file-ignores" in content:
+            findings.append("Suppression Violation: 'per-file-ignores' detected in pyproject.toml")
+    return findings
+
+
 app = typer.Typer(help="Audit codebase for SIL-2/MIL-SPEC violations and shims.", add_completion=False)
 
 
 @app.command()
 def main() -> None:
-    """Execute python and C++ compliance audits."""
+    """Execute python, C++, and config compliance audits."""
     py_findings = audit_python_files()
     cpp_findings = audit_cpp_files()
+    cfg_findings = audit_config_suppressions()
+
+    all_findings = py_findings + cpp_findings + cfg_findings
 
     print("\n--- RESULTS ---")
-    if not py_findings and not cpp_findings:
+    if not all_findings:
         print("No violations or shims found! The codebase is 100% clean and compliant.")
     else:
-        for f in py_findings + cpp_findings:
+        for f in all_findings:
             print(f)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

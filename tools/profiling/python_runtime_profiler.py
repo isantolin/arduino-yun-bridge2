@@ -4,16 +4,12 @@
 from __future__ import annotations
 
 import os
-import sys
 import time
 import tracemalloc
 from pathlib import Path
 
 import typer
 from typing import Annotated
-
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "mcubridge"))
 
 # Start tracing early to capture all allocations
 tracemalloc.start()

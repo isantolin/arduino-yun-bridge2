@@ -105,8 +105,8 @@ reportMissingTypeStubs = true
 reportMissingModuleSource = false
 
 [tool.black]
-target-version = ['py313']
 line-length = 120
+fast = true
 exclude = '''
 /(
     \.git
@@ -121,7 +121,6 @@ exclude = '''
 '''
 
 [tool.ruff]
-target-version = "py313"
 line-length = 120
 exclude = ["*_pb2.py", "*_pb2.pyi", "*_grpc.py", "typings", "tools/protocol/templates", ".tmp_tests"]
 
@@ -131,9 +130,6 @@ extend-select = ["E226"]
 preview = true
 explicit-preview-rules = true
 
-[tool.ruff.lint.per-file-ignores]
-"tools/*" = ["E402"]
-"mcubridge-gateway/*" = ["E402"]
 
 [tool.ruff.lint.mccabe]
 # [QUALITY] Reduced from 50 to 25 for SIL-2 compliance and maintainability

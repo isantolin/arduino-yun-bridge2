@@ -114,7 +114,7 @@ uci commit mcubridge
 
 | Capa | Estado actual | Próximo paso controlado | Cómo se valida |
 | --- | --- | --- | --- |
-| Python (daemon en el MPU) | Base en Python 3.13.9-r2. | Mantener compatibilidad con futuras versiones. | `tox -e py313` |
+| Python (daemon en el MPU) | Base en Python 3.13+ (última versión del sistema). | Mantener compatibilidad con futuras versiones. | `tox -e py` |
 | Toolchain OpenWrt | SDK 25.12.5 (APK). | Compilación de paquetes APK. | `./1_compile.sh` |
 | MCU Firmware | C++17 / ETL (SIL-2). | Cobertura extrema sin STL. | `./tools/ci/coverage_arduino.sh` |
 
@@ -122,10 +122,10 @@ uci commit mcubridge
 	```sh
 	./1_compile.sh 23.05.5 ath79/generic
 	```
-- Este repositorio incluye `tox.ini` con el entorno `py313`; los intérpretes que falten se omiten automáticamente (`skip_missing_interpreters=true`), de modo que se puede ejecutar en laptops con un solo Python instalado y en CI.
+- Este repositorio incluye `tox.ini` con el entorno `py` adaptado a la última versión de Python instalada en el sistema.
 - Cuando se ejecute una rama candidata, usa el siguiente comando para asegurar que los tests pasan:
 	```sh
-	tox -e py313 -- --maxfail=1 --durations=10
+	tox -e py -- --maxfail=1 --durations=10
 	```
 
 ### Automatización operativa

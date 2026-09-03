@@ -4,13 +4,20 @@
 from __future__ import annotations
 from typing import Annotated
 
+import importlib
 import secrets
 import subprocess
 import sys
-import uci
+from typing import Any
 import structlog
-
 import typer
+
+try:
+    uci: Any = importlib.import_module("uci")
+    UciException: type[BaseException] = getattr(uci, "UciException", RuntimeError)
+except ImportError:
+    uci = None
+    UciException = RuntimeError
 
 # [SIL-2] Structured logging towards syslog/stderr
 logger = structlog.get_logger("mcubridge.rotate-credentials")
@@ -19,13 +26,16 @@ app = typer.Typer(help="Rotate MCU Bridge shared secret.", add_completion=False)
 
 def update_uci_credentials(new_secret: str, new_cloud_password: str) -> None:
     """Update the rotated credentials in mcubridge.general."""
+    if uci is None:
+        logger.error("UCI module is not available on this system")
+        sys.exit(3)
     try:
         u = uci.Uci()
         u.set("mcubridge", "general", "serial_shared_secret", new_secret)
         u.set("mcubridge", "general", "cloud_pass", new_cloud_password)
         u.commit("mcubridge")
         logger.info("UCI configuration updated successfully")
-    except (uci.UciException, RuntimeError) as e:
+    except (UciException, RuntimeError) as e:
         logger.error("Failed to update UCI", error=str(e))
         sys.exit(3)
 

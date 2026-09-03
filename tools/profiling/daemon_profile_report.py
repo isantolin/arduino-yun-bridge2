@@ -11,23 +11,19 @@ Outputs a Markdown table suitable for ``$GITHUB_STEP_SUMMARY``.
 """
 
 from __future__ import annotations
-from mcubridge.protocol import mcubridge_pb2 as pb
-from typing import Annotated
+from typing import Annotated, Any
 import typer
 
 import importlib
+import psutil
 import resource
 import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
-ROOT = Path(__file__).resolve().parents[2]
-if str(ROOT / "mcubridge") not in sys.path:
-    sys.path.insert(0, str(ROOT / "mcubridge"))
-
+from mcubridge.protocol import mcubridge_pb2 as pb
 
 # ---------------------------------------------------------------------------
 # Data structures
@@ -61,9 +57,6 @@ class BenchmarkResult:
 # ---------------------------------------------------------------------------
 # Measurement helpers
 # ---------------------------------------------------------------------------
-
-
-import psutil
 
 
 def _get_rss_vms_kb() -> tuple[int, int]:

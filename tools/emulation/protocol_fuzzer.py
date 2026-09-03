@@ -13,6 +13,7 @@ import serialx
 import structlog
 import typer
 from typing import Annotated
+
 from mcubridge.protocol import protocol
 from mcubridge.protocol.frame import build_frame
 from mcubridge.protocol import mcubridge_pb2 as pb

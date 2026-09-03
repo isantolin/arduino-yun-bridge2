@@ -21,18 +21,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated, Any
 
-repo_root = Path(__file__).resolve().parents[2]
-if str(repo_root / "mcubridge") not in sys.path:
-    sys.path.insert(0, str(repo_root / "mcubridge"))
-if str(repo_root / "mcubridge-client-examples") not in sys.path:
-    sys.path.insert(0, str(repo_root / "mcubridge-client-examples"))
-if str(repo_root) not in sys.path:
-    sys.path.insert(0, str(repo_root))
-
 import psutil
 import structlog
 import typer
 from mcubridge.config.logging import configure_logging
+
+repo_root = Path(__file__).resolve().parents[2]
 
 configure_logging(console=True)
 logger = structlog.get_logger("simavr-runner")

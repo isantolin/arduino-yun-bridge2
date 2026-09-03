@@ -5,7 +5,11 @@ from __future__ import annotations
 
 import sys
 import time
+from typing import Annotated
 import pexpect
+import typer
+
+app = typer.Typer(help="Interactive/Automated deployer for McuBridge inside OpenWrt QEMU VM.", add_completion=False)
 
 PROMPT = r"root@[^:]+:[^#]*#"
 
@@ -48,9 +52,13 @@ def run_command_in_console(child: pexpect.spawn[bytes], cmd: str, timeout: int =
     return output
 
 
-def main() -> None:
-    print("Connecting to openwrt-mcubridge console...")
-    child: pexpect.spawn[bytes] = pexpect.spawn("virsh -c qemu:///system console --force openwrt-mcubridge", timeout=30)
+@app.command()
+def main(
+    domain: Annotated[str, typer.Option("--domain", help="Libvirt VM domain name")] = "openwrt-mcubridge",
+    timeout: Annotated[int, typer.Option("--timeout", help="Timeout in seconds for console connection")] = 30,
+) -> None:
+    print(f"Connecting to {domain} console...")
+    child: pexpect.spawn[bytes] = pexpect.spawn(f"virsh -c qemu:///system console --force {domain}", timeout=timeout)
     child.logfile_read = sys.stdout.buffer
 
     # Send enters to wake up console
@@ -121,4 +129,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    app()

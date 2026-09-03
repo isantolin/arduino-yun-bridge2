@@ -12,7 +12,6 @@ from .definitions import build_bridge_args
 from .env import dump_client_env
 from .mcubridge_grpc import LocalBridgeStub
 
-
 from mcubridge.config.logging import configure_logging as _central_configure_logging
 
 

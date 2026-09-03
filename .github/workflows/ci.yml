@@ -28,11 +28,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        env: [protocol, deps-sync, luci, cppcheck, typecheck, lint, py313, arduino]
+        env: [protocol, deps-sync, luci, cppcheck, typecheck, lint, py, arduino]
     steps:
       - uses: actions/checkout@v6
       - name: Install protoc
-        if: matrix.env == 'protocol' || matrix.env == 'typecheck' || matrix.env == 'lint' || matrix.env == 'py313' || matrix.env == 'arduino' || matrix.env == 'cppcheck'
+        if: matrix.env == 'protocol' || matrix.env == 'typecheck' || matrix.env == 'lint' || matrix.env == 'py' || matrix.env == 'arduino' || matrix.env == 'cppcheck'
         run: |
           PROTOC_VERSION=36.1
           PROTOC_ZIP=protoc-${PROTOC_VERSION}-linux-x86_64.zip

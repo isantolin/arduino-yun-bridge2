@@ -12,16 +12,11 @@ from __future__ import annotations
 
 import os
 import psutil
-import sys
 import time
 import tracemalloc
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
-
-ROOT = Path(__file__).resolve().parents[2]
-if str(ROOT / "mcubridge") not in sys.path:
-    sys.path.insert(0, str(ROOT / "mcubridge"))
 
 from cobs import cobsr
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305

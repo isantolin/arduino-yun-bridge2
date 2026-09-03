@@ -54,7 +54,7 @@ filterwarnings = [
 
 [tool.pyright]
 typeCheckingMode = "strict"
-pythonVersion = "3.13"
+pythonVersion = "3.14"
 stubPath = "typings"
 extraPaths = ["typings/stubs", "mcubridge", "mcubridge-client-examples", "mcubridge-gateway"]
 include = [

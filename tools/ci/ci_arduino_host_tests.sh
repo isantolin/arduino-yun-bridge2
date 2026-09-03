@@ -11,14 +11,8 @@ BUILD_DIR="${LIB_DIR}/build-host-local"
 OBJ_DIR="${BUILD_DIR}/objs"
 mkdir -p "${OBJ_DIR}"
 
-# Use the python from the current environment
-if [[ -n "${VIRTUAL_ENV:-}" ]]; then
-    PYTHON_CMD=$(command -v python || command -v python3)
-elif [[ -x "${ROOT_DIR}/.tox/py313/bin/python" ]]; then
-    PYTHON_CMD="${ROOT_DIR}/.tox/py313/bin/python"
-else
-    PYTHON_CMD=$(command -v python3 || command -v python)
-fi
+# Use system Python directly
+PYTHON_CMD=$(command -v python3 || command -v python)
 
 # [SIL-2] Ensure dependencies are present
 echo "[host-cpp] Generating protocol bindings..."

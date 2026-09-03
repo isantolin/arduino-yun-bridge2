@@ -4,25 +4,23 @@ set -euo pipefail
 # Check if clang-format is in PATH
 if ! command -v clang-format &> /dev/null; then
     echo "[ensure_clang_format] clang-format not found. Attempting to install..."
-    # 1. Try pip (since we are likely in a python virtualenv or python environment)
-    if command -v pip &> /dev/null; then
-        echo "[ensure_clang_format] Installing clang-format via pip..."
-        pip install clang-format || true
+    # Try system package managers or sudo pip
+    if command -v dnf &> /dev/null; then
+        echo "[ensure_clang_format] Installing clang-format via dnf (sudo)..."
+        sudo dnf install -y clang-format || true
+    elif command -v apt-get &> /dev/null; then
+        echo "[ensure_clang_format] Installing clang-format via apt-get (sudo)..."
+        sudo apt-get update && sudo apt-get install -y clang-format || true
+    elif command -v pip &> /dev/null; then
+        echo "[ensure_clang_format] Installing clang-format via pip (sudo)..."
+        sudo pip install --break-system-packages clang-format || true
     fi
 fi
 
 # Re-check if clang-format is in PATH
 if ! command -v clang-format &> /dev/null; then
-    # 2. Try system package managers
-    if command -v dnf &> /dev/null; then
-        echo "[ensure_clang_format] Installing clang-format via dnf..."
-        sudo dnf install -y clang-format || true
-    elif command -v apt-get &> /dev/null; then
-        echo "[ensure_clang_format] Installing clang-format via apt-get..."
-        sudo apt-get update && sudo apt-get install -y clang-format || true
-    else
-        echo "[ERROR] Could not install clang-format. Please install it manually." >&2
-        exit 1
+    echo "[ERROR] Could not install clang-format. Please install it with sudo." >&2
+    exit 1
     fi
 fi
 

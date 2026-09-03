@@ -31,17 +31,7 @@ ENABLE_JSON=0
 PYTHON_COVERAGE_MIN=${PYTHON_COVERAGE_MIN:-95}
 PYTHON_COVERAGE_MIN_BRANCH=${PYTHON_COVERAGE_MIN_BRANCH:-95}
 
-if [ -n "${PYTHON_EXE:-}" ]; then
-  PYTHON_BIN="${PYTHON_EXE}"
-elif [ -n "${VIRTUAL_ENV:-}" ]; then
-  PYTHON_BIN=$(command -v python || command -v python3)
-elif [ -x "${ROOT_DIR}/.tox/coverage/bin/python" ]; then
-  PYTHON_BIN="${ROOT_DIR}/.tox/coverage/bin/python"
-elif [ -x "${ROOT_DIR}/.tox/py313/bin/python" ]; then
-  PYTHON_BIN="${ROOT_DIR}/.tox/py313/bin/python"
-else
-  PYTHON_BIN=$(command -v python3 || command -v python)
-fi
+PYTHON_BIN="${PYTHON_EXE:-$(command -v python3 || command -v python)}"
 echo "[coverage_python] Debug: Python path: $(which $PYTHON_BIN 2>/dev/null || echo "$PYTHON_BIN") ($PYTHON_BIN)"
 echo "[coverage_python] Debug: Python version: $($PYTHON_BIN --version)"
 

@@ -26,8 +26,8 @@ ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library"
 WOLFSSL_PATH="$ARDUINO_LIBS/wolfSSL"
 PACKETSERIAL_PATH="$ARDUINO_LIBS/PacketSerial"
 
-# Use the python from the current environment (e.g. tox virtualenv)
-GEN_PYTHON=$(command -v python || command -v python3)
+# Use system Python
+GEN_PYTHON=$(command -v python3 || command -v python)
 
 echo "[emulator] Verifying library paths..."
 ls -la "${PACKETSERIAL_PATH}" || echo "PACKETSERIAL_PATH not found"

@@ -87,9 +87,8 @@ else
 fi
 
 $PYTHON_BIN -m pytest \
-  -q \
+  -vv \
   -p pytest_asyncio \
-  -o log_cli=false \
   --timeout=300 \
   --timeout-method=thread \
   --cov="$ROOT_DIR/mcubridge/mcubridge" \

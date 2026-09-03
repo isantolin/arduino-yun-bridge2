@@ -19,12 +19,6 @@ fi
 
 # Re-check if clang-format is in PATH
 if ! command -v clang-format &> /dev/null; then
-    echo "[ERROR] Could not install clang-format. Please install it with sudo." >&2
-    exit 1
-    fi
-fi
-
-if ! command -v clang-format &> /dev/null; then
     echo "[ERROR] clang-format still not found in PATH after installation attempts." >&2
     exit 1
 fi

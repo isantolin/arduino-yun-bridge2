@@ -229,9 +229,7 @@ jobs:
           sudo apt-get install -y g++ socat
       - name: Install Arduino Dependencies
         run: |
-          export DUMMY_ARDUINO_LIBS=$(mktemp -d)
-          echo "DUMMY_ARDUINO_LIBS=$DUMMY_ARDUINO_LIBS" >> $GITHUB_ENV
-          ./mcubridge-library-arduino/tools/install.sh "$DUMMY_ARDUINO_LIBS"
+          ./mcubridge-library-arduino/tools/install.sh
       - name: Compile & Run Emulation
         run: |
           ./tools/ci/compile_emulator.sh

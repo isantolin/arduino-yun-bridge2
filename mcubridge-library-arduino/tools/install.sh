@@ -148,53 +148,49 @@ NANOPB_VERSION="0.4.9.2"
 # --- [AUTO-GENERATED C++ DEPENDENCIES END] ---
 
 # 1. Official Dependencies (Library Manager)
-# We no longer vendor ETL or wolfSSL files into src/. 
-# Users should install these libraries via the Arduino Library Manager.
-if [ "${1:-}" == "" ]; then
-    echo "[INFO] 'Embedded Template Library' dependency should be installed via Arduino Library Manager."
-    echo "[INFO] 'wolfSSL' dependency should be installed via Arduino Library Manager."
-else
-    # In CI/CD or when a target directory is provided, we install them.
-    # ETL: We copy the whole repository to the library directory.
-    rm -rf "$LIB_DIR/Embedded_Template_Library_ETL"
-    install_dependency "Embedded_Template_Library" "https://codeload.github.com/ETLCPP/etl/zip/refs/tags/${ETL_VERSION}" "include/etl/algorithm.h" "$LIB_DIR"
-    if [ -d "$LIB_DIR/Embedded_Template_Library" ]; then
-        mkdir -p "$LIB_DIR/Embedded_Template_Library/src"
-        cp -ru "$LIB_DIR/Embedded_Template_Library/include/"* "$LIB_DIR/Embedded_Template_Library/src/" 2>/dev/null || true
-        cp -ru "$LIB_DIR/Embedded_Template_Library/include/"* "$LIB_DIR/Embedded_Template_Library/" 2>/dev/null || true
-        if [ -f "$LIB_DIR/Embedded_Template_Library/arduino/Embedded_Template_Library.h" ]; then
-            cp "$LIB_DIR/Embedded_Template_Library/arduino/Embedded_Template_Library.h" "$LIB_DIR/Embedded_Template_Library/src/Embedded_Template_Library.h"
-            cp "$LIB_DIR/Embedded_Template_Library/arduino/Embedded_Template_Library.h" "$LIB_DIR/Embedded_Template_Library/Embedded_Template_Library.h"
-        fi
-        if ! grep -q "includes=" "$LIB_DIR/Embedded_Template_Library/library.properties" 2>/dev/null; then
-            echo "includes=Embedded_Template_Library.h,etl/algorithm.h" >> "$LIB_DIR/Embedded_Template_Library/library.properties"
-        fi
+# Install and patch dependencies in LIB_DIR directly.
+rm -rf "$LIB_DIR/Embedded_Template_Library_ETL"
+install_dependency "Embedded_Template_Library" "https://codeload.github.com/ETLCPP/etl/zip/refs/tags/${ETL_VERSION}" "include/etl/algorithm.h" "$LIB_DIR"
+if [ -d "$LIB_DIR/Embedded_Template_Library" ]; then
+    mkdir -p "$LIB_DIR/Embedded_Template_Library/src"
+    cp -ru "$LIB_DIR/Embedded_Template_Library/include/"* "$LIB_DIR/Embedded_Template_Library/src/" 2>/dev/null || true
+    cp -ru "$LIB_DIR/Embedded_Template_Library/include/"* "$LIB_DIR/Embedded_Template_Library/" 2>/dev/null || true
+    if [ -f "$LIB_DIR/Embedded_Template_Library/arduino/Embedded_Template_Library.h" ]; then
+        cp "$LIB_DIR/Embedded_Template_Library/arduino/Embedded_Template_Library.h" "$LIB_DIR/Embedded_Template_Library/src/Embedded_Template_Library.h"
+        cp "$LIB_DIR/Embedded_Template_Library/arduino/Embedded_Template_Library.h" "$LIB_DIR/Embedded_Template_Library/Embedded_Template_Library.h"
     fi
-    # wolfSSL: Prefer official Arduino Library Manager package (wolfssl) if installed
-    if [ -d "$LIB_DIR/wolfssl" ] && [ -d "$LIB_DIR/wolfSSL" ]; then
-        rm -rf "$LIB_DIR/wolfSSL"
+    if ! grep -q "includes=" "$LIB_DIR/Embedded_Template_Library/library.properties" 2>/dev/null; then
+        echo "includes=Embedded_Template_Library.h,etl/algorithm.h" >> "$LIB_DIR/Embedded_Template_Library/library.properties"
     fi
-    if [ ! -d "$LIB_DIR/wolfssl" ] && [ ! -d "$LIB_DIR/wolfSSL" ]; then
-        install_dependency "wolfSSL" "https://codeload.github.com/wolfSSL/wolfssl/zip/refs/tags/${WOLFSSL_VERSION}" "wolfssl/wolfcrypt/settings.h" "$LIB_DIR"
-    fi
-    for wdir in "$LIB_DIR/wolfSSL" "$LIB_DIR/wolfssl"; do
-        if [ -d "$wdir" ]; then
-            mkdir -p "$wdir/src"
-            if [ -f "$wdir/IDE/ARDUINO/wolfssl.h" ]; then
-                cp "$wdir/IDE/ARDUINO/wolfssl.h" "$wdir/src/wolfssl.h"
-                cp "$wdir/IDE/ARDUINO/wolfssl.h" "$wdir/wolfssl.h"
-            fi
-            cp "$LIB_ROOT/src/user_settings.h" "$wdir/src/user_settings.h"
-            cp "$LIB_ROOT/src/user_settings.h" "$wdir/user_settings.h"
-            for wcf in "$wdir/src/wolfcrypt/src/wc_port.c" "$wdir/wolfcrypt/src/wc_port.c"; do
-                if [ -f "$wcf" ]; then
-                    sed -i 's/#if defined(WOLFSSL_GMTIME)/#if defined(WOLFSSL_GMTIME) \&\& !defined(HAVE_GMTIME_R)/' "$wcf" || true
-                fi
-            done
-        fi
-    done
-    install_dependency "PacketSerial" "https://codeload.github.com/isantolin/PacketSerial2/zip/refs/${PACKETSERIAL_REF}" "src/Codecs/COBSR.h" "$LIB_DIR"
 fi
+# wolfSSL: Prefer official Arduino Library Manager package (wolfssl) if installed
+if [ -d "$LIB_DIR/wolfssl" ] && [ -d "$LIB_DIR/wolfSSL" ]; then
+    rm -rf "$LIB_DIR/wolfSSL"
+fi
+if [ ! -d "$LIB_DIR/wolfssl" ] && [ ! -d "$LIB_DIR/wolfSSL" ]; then
+    install_dependency "wolfSSL" "https://codeload.github.com/wolfSSL/wolfssl/zip/refs/tags/${WOLFSSL_VERSION}" "wolfssl/wolfcrypt/settings.h" "$LIB_DIR"
+fi
+for wdir in "$LIB_DIR/wolfSSL" "$LIB_DIR/wolfssl"; do
+    if [ -d "$wdir" ]; then
+        mkdir -p "$wdir/src"
+        if [ -f "$wdir/IDE/ARDUINO/wolfssl.h" ]; then
+            cp "$wdir/IDE/ARDUINO/wolfssl.h" "$wdir/src/wolfssl.h"
+            cp "$wdir/IDE/ARDUINO/wolfssl.h" "$wdir/wolfssl.h"
+        fi
+        cp "$LIB_ROOT/src/user_settings.h" "$wdir/src/user_settings.h"
+        cp "$LIB_ROOT/src/user_settings.h" "$wdir/user_settings.h"
+        rm -f "$wdir/wolfssl.h" "$wdir/src"/*.c 2>/dev/null || true
+        if ! grep -q "includes=" "$wdir/library.properties" 2>/dev/null; then
+            echo "includes=wolfssl.h" >> "$wdir/library.properties"
+        fi
+        for wcf in "$wdir/src/wolfcrypt/src/wc_port.c" "$wdir/wolfcrypt/src/wc_port.c"; do
+            if [ -f "$wcf" ]; then
+                sed -i 's/#if defined(WOLFSSL_GMTIME)/#if defined(WOLFSSL_GMTIME) \&\& !defined(HAVE_GMTIME_R)/' "$wcf" || true
+            fi
+        done
+    fi
+done
+install_dependency "PacketSerial" "https://codeload.github.com/isantolin/PacketSerial2/zip/refs/${PACKETSERIAL_REF}" "src/Codecs/COBSR.h" "$LIB_DIR"
 
 # Unity test framework (host tests only)
 install_dependency "Unity" \

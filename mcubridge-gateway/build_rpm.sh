@@ -4,6 +4,7 @@ set -e
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 GATEWAY_DIR="$REPO_ROOT/mcubridge-gateway"
+GATEWAY_VERSION="$(tr -d '[:space:]' < "$REPO_ROOT/VERSION")"
 BUILD_DIR="$GATEWAY_DIR/rpmbuild"
 BIN_DIR="$REPO_ROOT/bin"
 
@@ -11,7 +12,7 @@ mkdir -p "$BIN_DIR"
 mkdir -p "$BUILD_DIR/SOURCES" "$BUILD_DIR/SPECS" "$BUILD_DIR/BUILD" "$BUILD_DIR/RPMS" "$BUILD_DIR/SRPMS"
 
 # Create source archive
-TEMP_SRC="$BUILD_DIR/SOURCES/mcubridge-gateway-2.8.5"
+TEMP_SRC="$BUILD_DIR/SOURCES/mcubridge-gateway-${GATEWAY_VERSION}"
 mkdir -p "$TEMP_SRC/mcubridge/protocol"
 
 cp "$GATEWAY_DIR/gateway.py" "$TEMP_SRC/"
@@ -23,19 +24,19 @@ touch "$TEMP_SRC/mcubridge/protocol/__init__.py"
 
 # Tar it up
 cd "$BUILD_DIR/SOURCES"
-tar -czf mcubridge-gateway-2.8.5.tar.gz mcubridge-gateway-2.8.5
-rm -rf mcubridge-gateway-2.8.5
+tar -czf "mcubridge-gateway-${GATEWAY_VERSION}.tar.gz" "mcubridge-gateway-${GATEWAY_VERSION}"
+rm -rf "mcubridge-gateway-${GATEWAY_VERSION}"
 cd "$REPO_ROOT"
 
 # Write spec file
-cat << 'EOF' > "$BUILD_DIR/SPECS/mcubridge-gateway.spec"
+cat << EOF > "$BUILD_DIR/SPECS/mcubridge-gateway.spec"
 Name:           mcubridge-gateway
-Version:        2.8.5
+Version:        ${GATEWAY_VERSION}
 Release:        1%{?dist}
 Summary:        Protobuf Cloud Gateway service (gRPC over HTTP/2) for MCU Bridge v2
 License:        GPLv3+
 URL:            https://github.com/ignaciosantolin/arduino-yun-bridge2
-Source0:        mcubridge-gateway-2.8.5.tar.gz
+Source0:        mcubridge-gateway-${GATEWAY_VERSION}.tar.gz
 BuildArch:      noarch
 BuildRequires:  python3-devel
 Requires:       python3

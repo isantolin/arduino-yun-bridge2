@@ -61,43 +61,7 @@ echo "Installing libraries..."
 # We pass USER_LIB_DIR to install.sh to ensure it installs there
 ./mcubridge-library-arduino/tools/install.sh "$USER_LIB_DIR"
 
-# [HOT-PATCH] Force official wolfSSL to use our settings by overwriting its user_settings.h
-rm -rf "$USER_LIB_DIR/Embedded_Template_Library_ETL"
-if [ -d "$USER_LIB_DIR/Embedded_Template_Library" ]; then
-    mkdir -p "$USER_LIB_DIR/Embedded_Template_Library/src"
-    cp -ru "$USER_LIB_DIR/Embedded_Template_Library/include/"* "$USER_LIB_DIR/Embedded_Template_Library/src/" 2>/dev/null || true
-    cp -ru "$USER_LIB_DIR/Embedded_Template_Library/include/"* "$USER_LIB_DIR/Embedded_Template_Library/" 2>/dev/null || true
-    if [ -f "$USER_LIB_DIR/Embedded_Template_Library/arduino/Embedded_Template_Library.h" ]; then
-        cp "$USER_LIB_DIR/Embedded_Template_Library/arduino/Embedded_Template_Library.h" "$USER_LIB_DIR/Embedded_Template_Library/src/Embedded_Template_Library.h"
-        cp "$USER_LIB_DIR/Embedded_Template_Library/arduino/Embedded_Template_Library.h" "$USER_LIB_DIR/Embedded_Template_Library/Embedded_Template_Library.h"
-    fi
-    if ! grep -q "includes=" "$USER_LIB_DIR/Embedded_Template_Library/library.properties" 2>/dev/null; then
-        echo "includes=Embedded_Template_Library.h,etl/algorithm.h" >> "$USER_LIB_DIR/Embedded_Template_Library/library.properties"
-    fi
-fi
 
-for wolf_dir in "$USER_LIB_DIR/wolfSSL" "$USER_LIB_DIR/wolfssl"; do
-    if [ -d "$wolf_dir" ]; then
-        echo "Patching official wolfSSL at $wolf_dir with our user_settings.h..."
-        mkdir -p "$wolf_dir/src"
-        cp "$PWD/mcubridge-library-arduino/src/user_settings.h" "$wolf_dir/src/user_settings.h"
-        cp "$PWD/mcubridge-library-arduino/src/user_settings.h" "$wolf_dir/user_settings.h"
-        
-        # Clean up any top-level duplicate sources so arduino-cli uses recursive src/ structure cleanly
-        rm -f "$wolf_dir/wolfssl.h" "$wolf_dir/src"/*.c 2>/dev/null || true
-        
-        if ! grep -q "includes=" "$wolf_dir/library.properties" 2>/dev/null; then
-            echo "includes=wolfssl.h" >> "$wolf_dir/library.properties"
-        fi
-        
-        # [HOT-PATCH] Fix gmtime_r conflict in wc_port.c
-        for wcf in "$wolf_dir/src/wolfcrypt/src/wc_port.c" "$wolf_dir/wolfcrypt/src/wc_port.c"; do
-            if [ -f "$wcf" ]; then
-                sed -i 's/#if defined(WOLFSSL_GMTIME)/#if defined(WOLFSSL_GMTIME) \&\& !defined(HAVE_GMTIME_R)/' "$wcf"
-            fi
-        done
-    fi
-done
 
 # Define library path (current repo's library folder)
 LIB_PATH="$PWD/mcubridge-library-arduino"

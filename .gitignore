@@ -53,7 +53,6 @@ pyenv/
 .venv_test/
 venv/
 .tox/
-.dummy_libs/
 .tmp_tests/
 sample-build/
 final-audit/
@@ -144,18 +143,15 @@ mcubridge-library-arduino/src/pb_decode.c
 mcubridge-library-arduino/src/pb_decode.h
 mcubridge-library-arduino/src/pb_encode.c
 mcubridge-library-arduino/src/pb_encode.h
-.mosquitto-tox.pid
 feeds/luci-app-mcubridge
 feeds/mcubridge
 tools/protocol/templates/protocol.py
 build_output/
 *.adb
 mock_path
-.venv
 compile_commands.json
 
 openwrt-sdk-25.12.5-malta-be_gcc-14.3.0_musl.Linux-x86_64/build_dir/target-mips_24kc_musl/*
 mcubridge-library-arduino/tests/.Unity.install.lock
 gh_logs/1_Compile APKs for OpenWrt 25.12.5.txt
 gh_logs/Compile APKs for OpenWrt 25.12.5/system.txt
-.gateway-tox.pid

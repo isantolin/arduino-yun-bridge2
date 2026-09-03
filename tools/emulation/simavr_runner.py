@@ -127,7 +127,6 @@ def _build_simavr_harness() -> Path | None:
 
     harness_bin.parent.mkdir(parents=True, exist_ok=True)
 
-    etl_include = repo_root / ".dummy_libs" / "Embedded_Template_Library" / "include"
     arduino_etl_include = Path.home() / "Arduino" / "libraries" / "Embedded_Template_Library" / "include"
 
     compile_cmd = [
@@ -135,8 +134,6 @@ def _build_simavr_harness() -> Path | None:
         "-std=c++17",
         "-O2",
         "-DETL_NO_STL",
-        "-I",
-        str(etl_include),
         "-I",
         str(arduino_etl_include),
         str(harness_src),

@@ -24,23 +24,21 @@ ${PYTHON_CMD} "${ROOT_DIR}/tools/protocol/generate.py" \
     --py-client "${ROOT_DIR}/mcubridge-client-examples/mcubridge_client/protocol.py"
 
 echo "[host-cpp] Installing library dependencies..."
-DUMMY_ARDUINO_LIBS="${ROOT_DIR}/.dummy_libs"
-mkdir -p "${DUMMY_ARDUINO_LIBS}"
-"${LIB_DIR}/tools/install.sh" "${DUMMY_ARDUINO_LIBS}"
-
-# Get standard library path
-if [ -d "${DUMMY_ARDUINO_LIBS}" ]; then
-    ARDUINO_LIBS="${DUMMY_ARDUINO_LIBS}"
-else
-    ARDUINO_LIBS="$HOME/Arduino/libraries"
-    if [ ! -d "$ARDUINO_LIBS" ]; then
-        ARDUINO_LIBS="$HOME/Documents/Arduino/libraries"
-    fi
-fi
+ARDUINO_LIBS="${ARDUINO_LIB_DIR:-$HOME/Arduino/libraries}"
+mkdir -p "${ARDUINO_LIBS}"
+"${LIB_DIR}/tools/install.sh" "${ARDUINO_LIBS}"
 
 # Define explicit include paths for official libraries
 ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library"
 WOLFSSL_PATH="$ARDUINO_LIBS/wolfSSL"
+if [ ! -d "$WOLFSSL_PATH" ]; then WOLFSSL_PATH="$ARDUINO_LIBS/wolfssl"; fi
+if [ -d "$WOLFSSL_PATH/src/wolfcrypt/src" ]; then
+    WOLFCRYPT_SRC="$WOLFSSL_PATH/src/wolfcrypt/src"
+    WOLFSSL_INC="$WOLFSSL_PATH/src"
+else
+    WOLFCRYPT_SRC="$WOLFSSL_PATH/wolfcrypt/src"
+    WOLFSSL_INC="$WOLFSSL_PATH"
+fi
 PACKETSERIAL_PATH="$ARDUINO_LIBS/PacketSerial"
 
 if [[ "${1:-}" == "--install-only" ]]; then
@@ -50,17 +48,17 @@ fi
 
 SOURCES=(
     "${SRC_DIR}/security/security.cpp"
-    "$WOLFSSL_PATH/wolfcrypt/src/sha256.c"
-    "$WOLFSSL_PATH/wolfcrypt/src/hmac.c"
-    "$WOLFSSL_PATH/wolfcrypt/src/hash.c"
-    "$WOLFSSL_PATH/wolfcrypt/src/kdf.c"
-    "$WOLFSSL_PATH/wolfcrypt/src/error.c"
-    "$WOLFSSL_PATH/wolfcrypt/src/logging.c"
-    "$WOLFSSL_PATH/wolfcrypt/src/wc_port.c"
-    "$WOLFSSL_PATH/wolfcrypt/src/memory.c"
-    "$WOLFSSL_PATH/wolfcrypt/src/chacha.c"
-    "$WOLFSSL_PATH/wolfcrypt/src/poly1305.c"
-    "$WOLFSSL_PATH/wolfcrypt/src/chacha20_poly1305.c"
+    "$WOLFCRYPT_SRC/sha256.c"
+    "$WOLFCRYPT_SRC/hmac.c"
+    "$WOLFCRYPT_SRC/hash.c"
+    "$WOLFCRYPT_SRC/kdf.c"
+    "$WOLFCRYPT_SRC/error.c"
+    "$WOLFCRYPT_SRC/logging.c"
+    "$WOLFCRYPT_SRC/wc_port.c"
+    "$WOLFCRYPT_SRC/memory.c"
+    "$WOLFCRYPT_SRC/chacha.c"
+    "$WOLFCRYPT_SRC/poly1305.c"
+    "$WOLFCRYPT_SRC/chacha20_poly1305.c"
     "${SRC_DIR}/pb_encode.c"
     "${SRC_DIR}/pb_decode.c"
     "${SRC_DIR}/pb_common.c"
@@ -114,6 +112,7 @@ BASE_FLAGS=(
     -I"$ETL_PATH/include" \
     -I"$ETL_PATH/arduino" \
     -I"$WOLFSSL_PATH" \
+    -I"$WOLFSSL_INC" \
     -I"$PACKETSERIAL_PATH" \
     -I"$PACKETSERIAL_PATH/src" \
 )

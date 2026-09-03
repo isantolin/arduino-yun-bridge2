@@ -27,7 +27,7 @@ echo "[simavr-build] Installing required library dependencies..."
 "${LIB_DIR}/tools/install.sh" "$USER_LIB_DIR"
 
 # Patch official wolfSSL with our user_settings.h
-for wolf_dir in "$USER_LIB_DIR/wolfSSL" "$USER_LIB_DIR/wolfssl" "${ROOT_DIR}/.dummy_libs/wolfSSL" "${ROOT_DIR}/.dummy_libs/wolfssl"; do
+for wolf_dir in "$USER_LIB_DIR/wolfSSL" "$USER_LIB_DIR/wolfssl"; do
     if [ -d "$wolf_dir" ]; then
         echo "[simavr-build] Patching wolfSSL at $wolf_dir with user_settings.h..."
         mkdir -p "$wolf_dir/src" "$wolf_dir/wolfssl"

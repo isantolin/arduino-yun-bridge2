@@ -63,8 +63,8 @@ if [ ! -f "src/protocol/rpc_protocol.h" ] || [ ! -f "src/protocol/mcubridge.pb.c
 fi
 
 # Detect Arduino libraries directory
-if [ -d "$REPO_ROOT/.dummy_libs" ]; then
-    ARDUINO_LIBS="$REPO_ROOT/.dummy_libs"
+if [ -n "${ARDUINO_LIB_DIR:-}" ] && [ -d "$ARDUINO_LIB_DIR" ]; then
+    ARDUINO_LIBS="$ARDUINO_LIB_DIR"
 elif [ -d "$HOME/Arduino/libraries" ]; then
     ARDUINO_LIBS="$HOME/Arduino/libraries"
 else

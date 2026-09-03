@@ -13,17 +13,22 @@ TEST_DIR="${LIB_DIR}/tests"
 STUB_DIR="${ROOT_DIR}/tools/arduino_stub/include"
 
 # Find library paths (local or system)
-if [ -z "${DUMMY_ARDUINO_LIBS:-}" ]; then
-    DUMMY_ARDUINO_LIBS="${ROOT_DIR}/.dummy_libs"
-    mkdir -p "${DUMMY_ARDUINO_LIBS}"
-fi
-ARDUINO_LIBS="${DUMMY_ARDUINO_LIBS}"
+ARDUINO_LIBS="${ARDUINO_LIB_DIR:-$HOME/Arduino/libraries}"
+mkdir -p "${ARDUINO_LIBS}"
 
 echo "[emulator] Installing library dependencies..."
-"${LIB_DIR}/tools/install.sh" "${DUMMY_ARDUINO_LIBS}"
+"${LIB_DIR}/tools/install.sh" "${ARDUINO_LIBS}"
 
 ETL_PATH="$ARDUINO_LIBS/Embedded_Template_Library"
 WOLFSSL_PATH="$ARDUINO_LIBS/wolfSSL"
+if [ ! -d "$WOLFSSL_PATH" ]; then WOLFSSL_PATH="$ARDUINO_LIBS/wolfssl"; fi
+if [ -d "$WOLFSSL_PATH/src/wolfcrypt/src" ]; then
+    WOLFCRYPT_SRC="$WOLFSSL_PATH/src/wolfcrypt/src"
+    WOLFSSL_INC="$WOLFSSL_PATH/src"
+else
+    WOLFCRYPT_SRC="$WOLFSSL_PATH/wolfcrypt/src"
+    WOLFSSL_INC="$WOLFSSL_PATH"
+fi
 PACKETSERIAL_PATH="$ARDUINO_LIBS/PacketSerial"
 
 # Use system Python
@@ -45,17 +50,17 @@ if ! "${GEN_PYTHON}" "${ROOT_DIR}/tools/protocol/generate.py" \
 fi
 
 WOLF_SOURCES=(
-    "$WOLFSSL_PATH/wolfcrypt/src/sha256.c"
-    "$WOLFSSL_PATH/wolfcrypt/src/hmac.c"
-    "$WOLFSSL_PATH/wolfcrypt/src/hash.c"
-    "$WOLFSSL_PATH/wolfcrypt/src/kdf.c"
-    "$WOLFSSL_PATH/wolfcrypt/src/error.c"
-    "$WOLFSSL_PATH/wolfcrypt/src/logging.c"
-    "$WOLFSSL_PATH/wolfcrypt/src/wc_port.c"
-    "$WOLFSSL_PATH/wolfcrypt/src/memory.c"
-    "$WOLFSSL_PATH/wolfcrypt/src/chacha.c"
-    "$WOLFSSL_PATH/wolfcrypt/src/poly1305.c"
-    "$WOLFSSL_PATH/wolfcrypt/src/chacha20_poly1305.c"
+    "$WOLFCRYPT_SRC/sha256.c"
+    "$WOLFCRYPT_SRC/hmac.c"
+    "$WOLFCRYPT_SRC/hash.c"
+    "$WOLFCRYPT_SRC/kdf.c"
+    "$WOLFCRYPT_SRC/error.c"
+    "$WOLFCRYPT_SRC/logging.c"
+    "$WOLFCRYPT_SRC/wc_port.c"
+    "$WOLFCRYPT_SRC/memory.c"
+    "$WOLFCRYPT_SRC/chacha.c"
+    "$WOLFCRYPT_SRC/poly1305.c"
+    "$WOLFCRYPT_SRC/chacha20_poly1305.c"
 )
 
 NANOPB_SOURCES=(
@@ -77,6 +82,7 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -I"${ETL_PATH}/include" \
     -I"${ETL_PATH}/arduino" \
     -I"${WOLFSSL_PATH}" \
+    -I"${WOLFSSL_INC}" \
     -I"${PACKETSERIAL_PATH}" \
     -I"${PACKETSERIAL_PATH}/src" \
     "${WOLF_SOURCES[@]}" \
@@ -111,6 +117,7 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -I"${ETL_PATH}/include" \
     -I"${ETL_PATH}/arduino" \
     -I"${WOLFSSL_PATH}" \
+    -I"${WOLFSSL_INC}" \
     -I"${PACKETSERIAL_PATH}" \
     -I"${PACKETSERIAL_PATH}/src" \
     "${WOLF_SOURCES[@]}" \

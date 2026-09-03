@@ -10,17 +10,18 @@ import typer
 ROOT = Path(__file__).resolve().parents[2]
 app = typer.Typer(help="Generate compile_commands.json for Arduino MCU C++ tooling.", add_completion=False)
 
+ARD_LIBS = Path.home() / "Arduino" / "libraries"
 cmd_str = (
     "/usr/bin/g++ -std=c++17 -O2 -g -Wall -Wextra -Werror "
     "-DBRIDGE_HOST_TEST=1 -DBRIDGE_ENABLE_TEST_INTERFACE=1 -DARDUINO=100 -DARDUINO_STUB_CUSTOM_MILLIS=1 "
     "-DARDUINO_STUB_CUSTOM_SERIAL=1 -DNUM_DIGITAL_PINS=20 -DNUM_ANALOG_INPUTS=6 "
     "-DWOLFSSL_USER_SETTINGS -DETL_NO_STL -DPB_PROTO_HEADER_VERSION=40 -Imcubridge-library-arduino/src "
     "-Imcubridge-library-arduino/src/config -Imcubridge-library-arduino/src/protocol -Itools/arduino_stub/include "
-    "-Imcubridge-library-arduino/tests -Imcubridge-library-arduino/tests/Unity/src -I.dummy_libs/Unity/src "
-    "-I.dummy_libs/Embedded_Template_Library "
-    "-I.dummy_libs/Embedded_Template_Library/include "
-    "-I.dummy_libs/Embedded_Template_Library/arduino -I.dummy_libs/wolfSSL "
-    "-I.dummy_libs/PacketSerial -I.dummy_libs/PacketSerial/src "
+    "-Imcubridge-library-arduino/tests -Imcubridge-library-arduino/tests/Unity/src "
+    f"-I{ARD_LIBS}/Embedded_Template_Library "
+    f"-I{ARD_LIBS}/Embedded_Template_Library/include "
+    f"-I{ARD_LIBS}/Embedded_Template_Library/arduino -I{ARD_LIBS}/wolfssl -I{ARD_LIBS}/wolfSSL "
+    f"-I{ARD_LIBS}/PacketSerial -I{ARD_LIBS}/PacketSerial/src "
     "-c mcubridge-library-arduino/src/Bridge.cpp -o /dev/null"
 )
 

@@ -10,12 +10,8 @@
   "C_Cpp.default.includePath": [
     "${workspaceFolder}/mcubridge-library-arduino/src",
     "${workspaceFolder}/mcubridge-library-arduino/tests",
+    "${workspaceFolder}/mcubridge-library-arduino/tests/Unity/src",
     "${workspaceFolder}/tools/arduino_stub/include",
-    "${workspaceFolder}/.dummy_libs/Embedded_Template_Library/include",
-    "${workspaceFolder}/.dummy_libs/Embedded_Template_Library/arduino",
-    "${workspaceFolder}/.dummy_libs/wolfSSL",
-    "${workspaceFolder}/.dummy_libs/PacketSerial/src",
-    "${workspaceFolder}/.dummy_libs/Unity/src",
     "~/Arduino/libraries/**"
   ],
   "C_Cpp.default.defines": [

@@ -19,14 +19,23 @@ rm -rf "${BUILD_DIR}"
 mkdir -p "${BUILD_DIR}/objs"
 mkdir -p "${OUTPUT_ROOT}"
 
-# Setup dependencies in .dummy_libs
+# Setup dependencies in Arduino libraries directory
 echo "[coverage_arduino] Installing library dependencies..."
-mkdir -p "${ROOT_DIR}/.dummy_libs"
-"${LIB_ROOT}/tools/install.sh" "${ROOT_DIR}/.dummy_libs"
+ARDUINO_LIBS="${ARDUINO_LIB_DIR:-$HOME/Arduino/libraries}"
+mkdir -p "${ARDUINO_LIBS}"
+"${LIB_ROOT}/tools/install.sh" "${ARDUINO_LIBS}"
 
-ETL_PATH="${ROOT_DIR}/.dummy_libs/Embedded_Template_Library"
-WOLFSSL_PATH="${ROOT_DIR}/.dummy_libs/wolfSSL"
-PACKETSERIAL_PATH="${ROOT_DIR}/.dummy_libs/PacketSerial"
+ETL_PATH="${ARDUINO_LIBS}/Embedded_Template_Library"
+WOLFSSL_PATH="${ARDUINO_LIBS}/wolfSSL"
+if [ ! -d "${WOLFSSL_PATH}" ]; then WOLFSSL_PATH="${ARDUINO_LIBS}/wolfssl"; fi
+if [ -d "${WOLFSSL_PATH}/src/wolfcrypt/src" ]; then
+    WOLFCRYPT_SRC="${WOLFSSL_PATH}/src/wolfcrypt/src"
+    WOLFSSL_INC="${WOLFSSL_PATH}/src"
+else
+    WOLFCRYPT_SRC="${WOLFSSL_PATH}/wolfcrypt/src"
+    WOLFSSL_INC="${WOLFSSL_PATH}"
+fi
+PACKETSERIAL_PATH="${ARDUINO_LIBS}/PacketSerial"
 
 # Clean old coverage data
 find "${BUILD_DIR}" -name "*.gcda" -delete
@@ -51,17 +60,17 @@ BRIDGE_SOURCES=(
 
 # Third-party sources compiled WITHOUT coverage instrumentation.
 THIRD_PARTY_SOURCES=(
-    "${WOLFSSL_PATH}/wolfcrypt/src/sha256.c"
-    "${WOLFSSL_PATH}/wolfcrypt/src/hmac.c"
-    "${WOLFSSL_PATH}/wolfcrypt/src/hash.c"
-    "${WOLFSSL_PATH}/wolfcrypt/src/kdf.c"
-    "${WOLFSSL_PATH}/wolfcrypt/src/error.c"
-    "${WOLFSSL_PATH}/wolfcrypt/src/logging.c"
-    "${WOLFSSL_PATH}/wolfcrypt/src/wc_port.c"
-    "${WOLFSSL_PATH}/wolfcrypt/src/memory.c"
-    "${WOLFSSL_PATH}/wolfcrypt/src/chacha.c"
-    "${WOLFSSL_PATH}/wolfcrypt/src/poly1305.c"
-    "${WOLFSSL_PATH}/wolfcrypt/src/chacha20_poly1305.c"
+    "${WOLFCRYPT_SRC}/sha256.c"
+    "${WOLFCRYPT_SRC}/hmac.c"
+    "${WOLFCRYPT_SRC}/hash.c"
+    "${WOLFCRYPT_SRC}/kdf.c"
+    "${WOLFCRYPT_SRC}/error.c"
+    "${WOLFCRYPT_SRC}/logging.c"
+    "${WOLFCRYPT_SRC}/wc_port.c"
+    "${WOLFCRYPT_SRC}/memory.c"
+    "${WOLFCRYPT_SRC}/chacha.c"
+    "${WOLFCRYPT_SRC}/poly1305.c"
+    "${WOLFCRYPT_SRC}/chacha20_poly1305.c"
     "${SRC_ROOT}/pb_encode.c"
     "${SRC_ROOT}/pb_decode.c"
     "${SRC_ROOT}/pb_common.c"
@@ -82,7 +91,7 @@ BASE_FLAGS=(
     "-I${SRC_ROOT}" "-I${SRC_ROOT}/config" "-I${SRC_ROOT}/protocol"
     "-I${STUB_INCLUDE}" "-I${TEST_ROOT}"
     "-I${ETL_PATH}" "-I${ETL_PATH}/include" "-I${ETL_PATH}/arduino"
-    "-I${WOLFSSL_PATH}"
+    "-I${WOLFSSL_PATH}" "-I${WOLFSSL_INC}"
     "-I${PACKETSERIAL_PATH}" "-I${PACKETSERIAL_PATH}/src"
     "-I${TEST_ROOT}/mocks" "-I${TEST_ROOT}/Unity/src"
 )
@@ -95,7 +104,7 @@ TP_FLAGS=(
     "-I${SRC_ROOT}" "-I${SRC_ROOT}/config" "-I${SRC_ROOT}/protocol"
     "-I${STUB_INCLUDE}" "-I${TEST_ROOT}"
     "-I${ETL_PATH}" "-I${ETL_PATH}/include" "-I${ETL_PATH}/arduino"
-    "-I${WOLFSSL_PATH}"
+    "-I${WOLFSSL_PATH}" "-I${WOLFSSL_INC}"
     "-I${PACKETSERIAL_PATH}" "-I${PACKETSERIAL_PATH}/src"
 )
 

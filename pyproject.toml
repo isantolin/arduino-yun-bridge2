@@ -43,7 +43,7 @@ log_cli = true
 log_cli_level = "INFO"
 testpaths = ["mcubridge/tests", "mcubridge-client-examples/tests", "mcubridge-gateway/tests"]
 pythonpath = [".", "mcubridge", "mcubridge-client-examples", "mcubridge-gateway"]
-norecursedirs = ["openwrt-sdk", "feeds", ".git", ".tox", ".venv*", ".dummy_libs", ".tmp_tests", ".*"]
+norecursedirs = ["openwrt-sdk", "feeds", ".git", ".tox", ".venv*", ".tmp_tests", ".*"]
 markers = [
     "fuzz: mark a test as a fuzz test",
     "timeout: timeout marker accepted during IDE discovery even when pytest-timeout is absent",
@@ -114,7 +114,6 @@ exclude = '''
   | \.venv
   | \.venv_debug
   | \.tmp_tests
-  | \.dummy_libs
   | typings
   | openwrt-sdk.*
   | tools/protocol/templates

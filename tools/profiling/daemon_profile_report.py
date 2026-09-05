@@ -16,7 +16,6 @@ import typer
 
 import importlib
 import psutil
-import resource
 import sys
 import time
 from collections.abc import Callable
@@ -61,12 +60,8 @@ class BenchmarkResult:
 
 def _get_rss_vms_kb() -> tuple[int, int]:
     """Return (RSS, VMS) in KiB using psutil."""
-    try:
-        mem = psutil.Process().memory_info()
-        return mem.rss // 1024, mem.vms // 1024
-    except (psutil.NoSuchProcess, OSError):
-        ru = resource.getrusage(resource.RUSAGE_SELF)
-        return ru.ru_maxrss, 0
+    mem = psutil.Process().memory_info()
+    return mem.rss // 1024, mem.vms // 1024
 
 
 def _count_source_bytes(pkg_dir: Path) -> tuple[int, int]:

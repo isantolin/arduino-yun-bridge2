@@ -21,10 +21,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated, Any
 
-import psutil
 import structlog
 import typer
 from mcubridge.config.logging import configure_logging
+from tools.emulation.process_utils import terminate_process_tree
 
 repo_root = Path(__file__).resolve().parents[2]
 
@@ -309,30 +309,13 @@ def run_simavr_emulation(
         logger.error("Daemon socket failed to appear", socket_path=str(socket_path))
         if daemon_proc.poll() is not None:
             logger.error("Daemon exited prematurely", returncode=daemon_proc.returncode)
-        simavr_proc.terminate()
-        daemon_proc.terminate()
-        if master_fd >= 0:
-            try:
-                os.close(master_fd)
-            except OSError:
-                pass
-        shutil.rmtree(fake_uci_dir, ignore_errors=True)
-        shutil.rmtree(storage_path, ignore_errors=True)
+        _teardown_simavr(daemon_proc, simavr_proc, master_fd, fake_uci_dir, storage_path)
         return False
 
     # Allow daemon and MCU to complete cryptographic handshake
     logger.info("Waiting for MCU/daemon link cryptographic synchronization...")
     if not state.sync_event.wait(timeout=60.0):
-        daemon_proc.terminate()
-        if simavr_proc:
-            simavr_proc.terminate()
-        if master_fd >= 0:
-            try:
-                os.close(master_fd)
-            except OSError:
-                pass
-        shutil.rmtree(fake_uci_dir, ignore_errors=True)
-        shutil.rmtree(storage_path, ignore_errors=True)
+        _teardown_simavr(daemon_proc, simavr_proc, master_fd, fake_uci_dir, storage_path)
         return False
 
     logger.info("MCU/daemon link synchronized successfully!")
@@ -388,25 +371,7 @@ def _teardown_simavr(
     fake_uci_dir: Path | str,
     storage_path: Path | str,
 ) -> None:
-    for p_handle in (daemon_proc, simavr_proc):
-        if p_handle is not None and psutil.pid_exists(p_handle.pid):
-            try:
-                p = psutil.Process(p_handle.pid)
-                for child in p.children(recursive=True):
-                    child.terminate()
-                p.terminate()
-            except (psutil.NoSuchProcess, ProcessLookupError):
-                continue
-
-    active_procs = [
-        psutil.Process(p.pid) for p in (daemon_proc, simavr_proc) if p is not None and psutil.pid_exists(p.pid)
-    ]
-    _, alive = psutil.wait_procs(active_procs, timeout=5.0)
-    for p in alive:
-        try:
-            p.kill()
-        except (psutil.NoSuchProcess, ProcessLookupError):
-            continue
+    terminate_process_tree((daemon_proc, simavr_proc), timeout=5.0)
 
     if master_fd >= 0:
         try:

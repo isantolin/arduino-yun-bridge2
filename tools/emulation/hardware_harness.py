@@ -11,6 +11,7 @@ import json
 
 import typer
 from tools.audit.audit_bridge_status import audit_status_dict
+from tools.emulation.process_utils import terminate_pid_tree
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLE_MANIFEST = REPO_ROOT / "hardware" / "targets.example.toml"
@@ -172,6 +173,7 @@ async def run_command(
 
         return (proc.returncode or 0, safe_decode(stdout_bytes), safe_decode(stderr_bytes))
     except (asyncio.TimeoutError, TimeoutError):
+        terminate_pid_tree(proc.pid, timeout=2.0)
         try:
             proc.kill()
         except OSError as kill_err:

@@ -17,10 +17,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated, Any
 
-import psutil
 import structlog
 import typer
 from mcubridge.config.logging import configure_logging
+from tools.emulation.process_utils import terminate_process_tree
 
 repo_root = Path(__file__).resolve().parents[2]
 
@@ -173,7 +173,7 @@ def run_emulation(
     while not os.path.exists(SOCAT_PORT0):
         if time.monotonic() - start > 10.0:
             logger.error("Timeout waiting for unified PTY", path=SOCAT_PORT0)
-            mcu_proc.terminate()
+            terminate_process_tree([mcu_proc], timeout=1.0)
             sys.exit(1)
         time.sleep(0.1)
 
@@ -295,25 +295,7 @@ def run_emulation(
         logger.error("Emulation error", error=str(exc))
         all_success = False
     finally:
-        for p_handle in (daemon_proc, mcu_proc):
-            if p_handle is not None and psutil.pid_exists(p_handle.pid):
-                try:
-                    p = psutil.Process(p_handle.pid)
-                    for child in p.children(recursive=True):
-                        child.terminate()
-                    p.terminate()
-                except (psutil.NoSuchProcess, ProcessLookupError):
-                    continue
-
-        active_procs = [
-            psutil.Process(p.pid) for p in (daemon_proc, mcu_proc) if p is not None and psutil.pid_exists(p.pid)
-        ]
-        _, alive = psutil.wait_procs(active_procs, timeout=2.0)
-        for p in alive:
-            try:
-                p.kill()
-            except (psutil.NoSuchProcess, ProcessLookupError):
-                continue
+        terminate_process_tree((daemon_proc, mcu_proc), timeout=2.0)
 
     if not all_success:
         logger.error("Emulation FAILED.")

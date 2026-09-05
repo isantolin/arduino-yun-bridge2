@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 from typing import Any, TypeVar, cast
 
+import psutil
 from google.protobuf.json_format import ParseDict
 from .storage import LmdbDeque, LmdbCache
 import structlog
@@ -450,9 +451,65 @@ class RuntimeState:
 
     def build_status_snapshot(self) -> pb.BridgeStatus:
         """Build a holistic snapshot of the bridge status. [SIL-2]"""
+        try:
+            sys_cpu = psutil.cpu_percent(interval=None)
+            vmem = psutil.virtual_memory()
+            total_mem = vmem.total
+            avail_mem = vmem.available
+            load1m = psutil.getloadavg()[0]
+            uptime = max(0.0, time.time() - psutil.boot_time())
+        except (OSError, RuntimeError, AttributeError, IndexError, ValueError):
+            sys_cpu = 0.0
+            total_mem = 0
+            avail_mem = 0
+            load1m = 0.0
+            uptime = 0.0
+
+        system_pb = pb.SystemStatus(
+            cpu_percent=sys_cpu,
+            memory_total_bytes=total_mem,
+            memory_available_bytes=avail_mem,
+            load_avg_1m=load1m,
+            uptime_seconds=uptime,
+        )
+
+        proc_stats: list[pb.ProcessStats] = []
+        try:
+            curr_p = psutil.Process()
+            curr_mem = curr_p.memory_info().rss
+            curr_cpu = curr_p.cpu_percent(interval=None)
+            proc_name = curr_p.name() or "mcubridge-daemon"
+            proc_stats.append(
+                pb.ProcessStats(
+                    name=proc_name,
+                    cpu_percent=curr_cpu,
+                    memory_rss_bytes=curr_mem,
+                )
+            )
+        except (psutil.NoSuchProcess, OSError, ProcessLookupError, AttributeError):
+            pass
+
+        for p_ctx in list(self.running_processes.values()):
+            if p_ctx and p_ctx.handle:
+                pid = getattr(p_ctx.handle, "pid", None)
+                if isinstance(pid, int) and psutil.pid_exists(pid):
+                    try:
+                        sub_p = psutil.Process(pid)
+                        proc_stats.append(
+                            pb.ProcessStats(
+                                name=f"subproc-{pid}",
+                                cpu_percent=sub_p.cpu_percent(interval=None),
+                                memory_rss_bytes=sub_p.memory_info().rss,
+                            )
+                        )
+                    except (psutil.NoSuchProcess, OSError, ProcessLookupError):
+                        continue
+
         return pb.BridgeStatus(
             metrics=self.build_metrics_snapshot(),
             bridge=self.build_bridge_snapshot(),
+            process_stats=proc_stats,
+            system=system_pb,
         )
 
     def build_handshake_snapshot(self) -> pb.HandshakeSnapshot:
@@ -530,6 +587,15 @@ class RuntimeState:
         if self.running_processes:
             for ctx in list(self.running_processes.values()):
                 if ctx and ctx.handle:
+                    pid = getattr(ctx.handle, "pid", None)
+                    if isinstance(pid, int) and psutil.pid_exists(pid):
+                        try:
+                            p = psutil.Process(pid)
+                            for child in p.children(recursive=True):
+                                child.terminate()
+                            p.terminate()
+                        except (psutil.NoSuchProcess, ProcessLookupError, psutil.AccessDenied):
+                            pass
                     try:
                         ctx.handle.terminate()
                     except (OSError, ProcessLookupError) as e:

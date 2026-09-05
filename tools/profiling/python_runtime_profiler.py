@@ -3,13 +3,13 @@
 
 from __future__ import annotations
 
-import os
 import time
 import tracemalloc
 from pathlib import Path
-
-import typer
 from typing import Annotated
+
+import psutil
+import typer
 
 # Start tracing early to capture all allocations
 tracemalloc.start()
@@ -35,17 +35,15 @@ def measure_imports() -> list[tuple[str, float]]:
         try:
             importlib.import_module(mod)
         except ImportError:
-            pass
+            continue
         end = time.perf_counter()
         results.append((mod, (end - start) * 1000))
     return results
 
 
 def measure_runtime_memory() -> int:
-    import resource
-
-    # On Linux ru_maxrss is in KiB
-    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024
+    """Return current process resident set size (RSS) in bytes using psutil."""
+    return psutil.Process().memory_info().rss
 
 
 def measure_object_symbols() -> list[tuple[str, int, int]]:
@@ -67,9 +65,9 @@ def get_module_size(mod_name: str) -> int:
 
         spec = importlib.util.find_spec(mod_name)
         if spec and spec.origin:
-            return os.path.getsize(spec.origin)
-    except OSError:
-        pass
+            return Path(spec.origin).stat().st_size
+    except (OSError, ValueError):
+        return 0
     return 0
 
 

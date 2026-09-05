@@ -27,6 +27,7 @@ from typing import Annotated, Any
 from google.protobuf.json_format import MessageToDict
 from jinja2 import Environment, FileSystemLoader
 from packaging.version import Version
+import tenacity
 import typer
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -784,11 +785,22 @@ def ensure_nanopb_core_files() -> None:
         if not target.exists():
             url = base_url + f
             sys.stderr.write(f"Downloading core Nanopb file: {f} from {url}...\n")
-            try:
+            retryer = tenacity.Retrying(
+                stop=tenacity.stop_after_attempt(3),
+                wait=tenacity.wait_exponential(multiplier=1.0, min=1.0, max=5.0),
+                retry=tenacity.retry_if_exception_type((urllib.error.URLError, OSError, TimeoutError)),
+                reraise=True,
+            )
+
+            def _fetch_nanopb_file() -> bytes:
                 with urllib.request.urlopen(url, timeout=20) as response:
-                    target.write_bytes(response.read())
-            except (urllib.error.URLError, OSError, TimeoutError, ValueError) as e:
-                sys.stderr.write(f"Error downloading {f}: {e}\n")
+                    return response.read()
+
+            try:
+                content = retryer(_fetch_nanopb_file)
+                target.write_bytes(content)
+            except (urllib.error.URLError, OSError, TimeoutError, ValueError, tenacity.RetryError) as e:
+                sys.stderr.write(f"Error downloading {f} after retries: {e}\n")
                 sys.exit(1)
 
 

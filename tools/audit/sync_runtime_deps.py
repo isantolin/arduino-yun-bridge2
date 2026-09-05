@@ -14,6 +14,7 @@ from typing import Annotated, Any, TypedDict, cast
 
 from packaging.requirements import Requirement
 from packaging.version import InvalidVersion, Version
+import tenacity
 import typer
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -367,28 +368,47 @@ def _parse_pip_spec(spec: str) -> tuple[str, str]:
         return name, version.strip()
 
 
+def fetch_url_with_retry(
+    req: urllib.request.Request,
+    timeout: float = 10.0,
+    attempts: int = 3,
+) -> bytes:
+    """Fetch URL contents with exponential backoff using tenacity."""
+    retryer = tenacity.Retrying(
+        stop=tenacity.stop_after_attempt(attempts),
+        wait=tenacity.wait_exponential(multiplier=0.5, min=0.5, max=4.0),
+        retry=tenacity.retry_if_exception_type((urllib.error.URLError, TimeoutError, OSError)),
+        reraise=True,
+    )
+
+    def _call() -> bytes:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.read()
+
+    return retryer(_call)
+
+
 def _fetch_latest_version(package_name: str, *, include_prerelease: bool = False) -> str | None:
     """Query PyPI JSON API for the latest release version using packaging.Version."""
     url = f"https://pypi.org/pypi/{package_name}/json"
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "McuBridge-DepsSync/2.8"})
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            if "releases" in data and data["releases"]:
-                parsed_versions: list[Version] = []
-                for v_str in data["releases"].keys():
-                    try:
-                        v = Version(v_str)
-                        if not include_prerelease and v.is_prerelease:
-                            continue
-                        parsed_versions.append(v)
-                    except Exception:
+        data = json.loads(fetch_url_with_retry(req, timeout=10.0).decode("utf-8"))
+        if "releases" in data and data["releases"]:
+            parsed_versions: list[Version] = []
+            for v_str in data["releases"].keys():
+                try:
+                    v = Version(v_str)
+                    if not include_prerelease and v.is_prerelease:
                         continue
-                if parsed_versions:
-                    parsed_versions.sort()
-                    return str(parsed_versions[-1])
-            return str(data["info"]["version"])
-    except (urllib.error.URLError, ValueError, KeyError, json.JSONDecodeError):
+                    parsed_versions.append(v)
+                except Exception:
+                    continue
+            if parsed_versions:
+                parsed_versions.sort()
+                return str(parsed_versions[-1])
+        return str(data["info"]["version"])
+    except (urllib.error.URLError, ValueError, KeyError, json.JSONDecodeError, tenacity.RetryError):
         return None
 
 
@@ -397,13 +417,12 @@ def _fetch_pypi_sdist_hash(package_name: str, version: str) -> str | None:
     url = f"https://pypi.org/pypi/{package_name}/{version}/json"
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "McuBridge-DepsSync/2.8"})
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            for file_info in data.get("urls", []):
-                if file_info.get("packagetype") == "sdist":
-                    return str(file_info.get("digests", {}).get("sha256") or "")
-            return None
-    except (urllib.error.URLError, ValueError, KeyError, json.JSONDecodeError):
+        data = json.loads(fetch_url_with_retry(req, timeout=10.0).decode("utf-8"))
+        for file_info in data.get("urls", []):
+            if file_info.get("packagetype") == "sdist":
+                return str(file_info.get("digests", {}).get("sha256") or "")
+        return None
+    except (urllib.error.URLError, ValueError, KeyError, json.JSONDecodeError, tenacity.RetryError):
         return None
 
 
@@ -415,11 +434,10 @@ def _fetch_github_latest_version(repo: str) -> str | None:
         headers={"User-Agent": "McuBridge-DepsSync/2.8", "Accept": "application/vnd.github.v3+json"},
     )
     try:
-        with urllib.request.urlopen(req, timeout=8) as resp:
-            data = cast(dict[str, Any], json.loads(resp.read().decode("utf-8")))
-            tag: Any = data.get("tag_name")
-            if tag is not None:
-                return str(tag)
+        data = cast(dict[str, Any], json.loads(fetch_url_with_retry(req, timeout=8.0).decode("utf-8")))
+        tag: Any = data.get("tag_name")
+        if tag is not None:
+            return str(tag)
     except Exception:
         tag_url = f"https://api.github.com/repos/{repo}/tags"
         tag_req = urllib.request.Request(
@@ -427,12 +445,14 @@ def _fetch_github_latest_version(repo: str) -> str | None:
             headers={"User-Agent": "McuBridge-DepsSync/2.8", "Accept": "application/vnd.github.v3+json"},
         )
         try:
-            with urllib.request.urlopen(tag_req, timeout=8) as resp:
-                tags_data = cast(list[dict[str, Any]], json.loads(resp.read().decode("utf-8")))
-                if tags_data:
-                    first = tags_data[0]
-                    if "name" in first:
-                        return str(first["name"])
+            tags_data = cast(
+                list[dict[str, Any]],
+                json.loads(fetch_url_with_retry(tag_req, timeout=8.0).decode("utf-8")),
+            )
+            if tags_data:
+                first = tags_data[0]
+                if "name" in first:
+                    return str(first["name"])
         except Exception:
             return None
     return None

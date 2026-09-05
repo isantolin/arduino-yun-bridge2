@@ -22,6 +22,7 @@ from typing import Annotated, Any
 import urllib.error
 import urllib.request
 
+import tenacity
 import typer
 
 
@@ -104,6 +105,17 @@ def download_images() -> None:
 # ---------------------------------------------------------------------------
 # System APK download
 # ---------------------------------------------------------------------------
+def _urlretrieve_with_retry(url: str, filename: Path | str, attempts: int = 3) -> None:
+    """Download a file via urllib.request with bounded exponential backoff using tenacity."""
+    retryer = tenacity.Retrying(
+        stop=tenacity.stop_after_attempt(attempts),
+        wait=tenacity.wait_exponential(multiplier=1.0, min=1.0, max=10.0),
+        retry=tenacity.retry_if_exception_type((urllib.error.URLError, TimeoutError, OSError)),
+        reraise=True,
+    )
+    retryer(urllib.request.urlretrieve, url, filename)
+
+
 def download_system_apks(dest_dir: Path) -> None:
     """Download the required OpenWrt system APKs to a host folder."""
     log_info(f"[INFO] Downloading system APKs to {dest_dir}...")
@@ -118,7 +130,7 @@ def download_system_apks(dest_dir: Path) -> None:
         url = f"{base_url}/{filename}"
         log_info(f"[INFO] Downloading {url} -> {file_path}")
         try:
-            urllib.request.urlretrieve(url, file_path)
+            _urlretrieve_with_retry(url, file_path)
         except urllib.error.HTTPError as e:
             if e.code == 404:
                 log_info(f"[WARN] {filename} returned 404, attempting dynamic resolution from {base_url}...")
@@ -128,12 +140,12 @@ def download_system_apks(dest_dir: Path) -> None:
                     resolved_url = f"{base_url}/{resolved_name}"
                     resolved_file_path = dest_dir / resolved_name
                     log_info(f"[INFO] Resolved to {resolved_url} -> {resolved_file_path}")
-                    urllib.request.urlretrieve(resolved_url, resolved_file_path)
+                    _urlretrieve_with_retry(resolved_url, resolved_file_path)
                     continue
             log_error(f"[ERROR] Failed to download {url}: {e}")
             raise
-        except urllib.error.URLError as e:
-            log_error(f"[ERROR] Failed to download {url}: {e}")
+        except (urllib.error.URLError, OSError, tenacity.RetryError) as e:
+            log_error(f"[ERROR] Failed to download {url} after retries: {e}")
             raise
 
 

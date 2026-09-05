@@ -20,7 +20,11 @@ from typing import Annotated, Any
 import structlog
 import typer
 from mcubridge.config.logging import configure_logging
-from tools.emulation.process_utils import terminate_process_tree
+from tools.emulation.process_utils import (
+    terminate_process_tree,
+    wait_for_path_ready,
+    wait_for_tcp_ready,
+)
 
 repo_root = Path(__file__).resolve().parents[2]
 
@@ -53,16 +57,7 @@ class CloudVerifier:
         self.port = port
 
     def wait_for_ready(self, timeout: float = 30.0) -> bool:
-        import socket
-
-        start = time.monotonic()
-        while time.monotonic() - start < timeout:
-            try:
-                with socket.create_connection((self.host, self.port), timeout=1):
-                    return True
-            except (OSError, ConnectionRefusedError):
-                time.sleep(0.5)
-        return False
+        return wait_for_tcp_ready(self.host, self.port, timeout=timeout)
 
 
 def _start_worker_thread(target: Any, name: str, *args: Any) -> threading.Thread:
@@ -169,13 +164,10 @@ def run_emulation(
     _start_worker_thread(_mcu_stderr_worker, "mcu-socat", mcu_proc, state)
 
     # Wait for PTY
-    start = time.monotonic()
-    while not os.path.exists(SOCAT_PORT0):
-        if time.monotonic() - start > 10.0:
-            logger.error("Timeout waiting for unified PTY", path=SOCAT_PORT0)
-            terminate_process_tree([mcu_proc], timeout=1.0)
-            sys.exit(1)
-        time.sleep(0.1)
+    if not wait_for_path_ready(SOCAT_PORT0, timeout=10.0, interval=0.1):
+        logger.error("Timeout waiting for unified PTY", path=SOCAT_PORT0)
+        terminate_process_tree([mcu_proc], timeout=1.0)
+        sys.exit(1)
 
     # 3. Start Daemon
     p_root = package_root.absolute()

@@ -4,9 +4,46 @@ from __future__ import annotations
 
 import subprocess
 from collections.abc import Sequence
+from pathlib import Path
+import socket
 from typing import Any
 
 import psutil
+import tenacity
+
+
+def wait_for_path_ready(path: Path | str, timeout: float = 10.0, interval: float = 0.1) -> bool:
+    """Wait for a filesystem path (socket, PTY, file) to become available using tenacity."""
+    target = Path(path)
+    retryer = tenacity.Retrying(
+        stop=tenacity.stop_after_delay(timeout),
+        wait=tenacity.wait_fixed(interval),
+        retry=tenacity.retry_if_result(lambda exists: not exists),
+        reraise=False,
+    )
+    try:
+        return retryer(target.exists)
+    except tenacity.RetryError:
+        return False
+
+
+def wait_for_tcp_ready(host: str, port: int, timeout: float = 30.0, interval: float = 0.5) -> bool:
+    """Wait for a TCP host:port endpoint to accept connections using tenacity."""
+
+    def _probe() -> bool:
+        with socket.create_connection((host, port), timeout=1.0):
+            return True
+
+    retryer = tenacity.Retrying(
+        stop=tenacity.stop_after_delay(timeout),
+        wait=tenacity.wait_fixed(interval),
+        retry=tenacity.retry_if_exception_type((OSError, ConnectionRefusedError)),
+        reraise=False,
+    )
+    try:
+        return retryer(_probe)
+    except (tenacity.RetryError, OSError):
+        return False
 
 
 def terminate_process_tree(

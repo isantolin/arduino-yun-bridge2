@@ -4,9 +4,9 @@
 from __future__ import annotations
 
 import sys
-import time
 from typing import Annotated
 import pexpect
+import tenacity
 import typer
 
 app = typer.Typer(help="Interactive/Automated deployer for McuBridge inside OpenWrt QEMU VM.", add_completion=False)
@@ -62,12 +62,20 @@ def main(
     child.logfile_read = sys.stdout.buffer
 
     # Send enters to wake up console
-    for _ in range(5):
+    def _wake_console() -> int:
         child.sendline("")
-        time.sleep(1)
-        index = child.expect([PROMPT, "Please press Enter to activate this console", pexpect.TIMEOUT], timeout=3)
-        if index in (0, 1):
-            break
+        return child.expect([PROMPT, "Please press Enter to activate this console", pexpect.TIMEOUT], timeout=3)
+
+    wake_retryer = tenacity.Retrying(
+        stop=tenacity.stop_after_attempt(5),
+        wait=tenacity.wait_fixed(1.0),
+        retry=tenacity.retry_if_result(lambda idx: idx not in (0, 1)),
+        reraise=False,
+    )
+    try:
+        wake_retryer(_wake_console)
+    except tenacity.RetryError:
+        pass
 
     child.sendline("")
     child.expect(PROMPT, timeout=15)

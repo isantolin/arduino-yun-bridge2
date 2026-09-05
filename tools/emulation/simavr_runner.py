@@ -22,9 +22,10 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import structlog
+import tenacity
 import typer
 from mcubridge.config.logging import configure_logging
-from tools.emulation.process_utils import terminate_process_tree
+from tools.emulation.process_utils import terminate_process_tree, wait_for_path_ready
 
 repo_root = Path(__file__).resolve().parents[2]
 
@@ -165,7 +166,7 @@ def run_simavr_emulation(
 
     master_fd = -1
     slave_name = ""
-    simavr_proc = None
+    simavr_proc: subprocess.Popen[str] | None = None
 
     if harness_bin and harness_bin.exists():
         simavr_cmd = [str(harness_bin), str(firmware_path), mcu, str(frequency)]
@@ -180,16 +181,31 @@ def run_simavr_emulation(
             encoding="utf-8",
             bufsize=1,
         )
+
         # Parse PTY path emitted by harness
-        deadline = time.monotonic() + 10.0
-        while time.monotonic() < deadline and simavr_proc.stdout:
-            line = simavr_proc.stdout.readline()
-            if line:
-                state.on_line(line, "simavr-stdout")
-                if "[SIMAVR] UART" in line and "PTY ready on:" in line:
-                    slave_name = line.split(":", 1)[1].strip()
-                    break
-            time.sleep(0.05)
+        proc_stdout = simavr_proc.stdout
+        if proc_stdout is not None:
+
+            def _read_pty_line() -> str | None:
+                line = proc_stdout.readline()
+                if line:
+                    state.on_line(line, "simavr-stdout")
+                    if "[SIMAVR] UART" in line and "PTY ready on:" in line:
+                        return line.split(":", 1)[1].strip()
+                return None
+
+            retryer = tenacity.Retrying(
+                stop=tenacity.stop_after_delay(10.0),
+                wait=tenacity.wait_fixed(0.05),
+                retry=tenacity.retry_if_result(lambda res: res is None),
+                reraise=False,
+            )
+            try:
+                detected_pty = retryer(_read_pty_line)
+                if isinstance(detected_pty, str):
+                    slave_name = detected_pty
+            except tenacity.RetryError:
+                pass
         _start_worker_thread(_stream_worker, "simavr-stdout", simavr_proc.stdout, state, "simavr-stdout")
         _start_worker_thread(_stream_worker, "simavr-stderr", simavr_proc.stderr, state, "simavr-stderr")
     else:
@@ -297,15 +313,7 @@ def run_simavr_emulation(
     _start_worker_thread(_stream_worker, "daemon-stderr", daemon_proc.stderr, state, "daemon-stderr")
 
     # Wait for daemon IPC socket to become ready
-    deadline = time.monotonic() + 15.0
-    socket_ready = False
-    while time.monotonic() < deadline:
-        if socket_path.exists():
-            socket_ready = True
-            break
-        time.sleep(0.2)
-
-    if not socket_ready:
+    if not wait_for_path_ready(socket_path, timeout=15.0, interval=0.2):
         logger.error("Daemon socket failed to appear", socket_path=str(socket_path))
         if daemon_proc.poll() is not None:
             logger.error("Daemon exited prematurely", returncode=daemon_proc.returncode)

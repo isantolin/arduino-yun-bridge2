@@ -10,6 +10,7 @@ import asyncio
 import importlib
 from typing import Any, Protocol
 import structlog
+import tenacity
 
 from ..config.settings import RuntimeConfig
 from ..protocol import mcubridge_pb2 as pb
@@ -53,20 +54,40 @@ class UbusService:
         """Return the underlying active UBUS connection if connected."""
         return self._conn
 
-    def start(self) -> bool:
-        """Connect to ubusd and register the 'mcubridge' object."""
+    def start(
+        self,
+        max_attempts: int = 5,
+        retry_wait: tenacity.wait.wait_base | None = None,
+    ) -> bool:
+        """Connect to ubusd and register the 'mcubridge' object with bounded backoff."""
         if ubus is None:
             logger.debug("python-ubus module not available in this environment; skipping UBUS registration")
             return False
 
+        def _connect() -> Any:
+            conn = ubus.connect()
+            if conn is None:
+                raise OSError("ubus.connect() returned None")
+            return conn
+
+        wait_strategy = (
+            retry_wait if retry_wait is not None else tenacity.wait_exponential(multiplier=0.05, min=0.05, max=0.5)
+        )
+        retryer = tenacity.Retrying(
+            stop=tenacity.stop_after_attempt(max_attempts),
+            wait=wait_strategy,
+            retry=tenacity.retry_if_exception_type((OSError, RuntimeError)),
+            reraise=True,
+        )
+
         try:
-            self._conn = ubus.connect()
+            self._conn = retryer(_connect)
             self.register_methods()
             self._is_active = True
             logger.info("McuBridge registered successfully on OpenWrt UBUS ('mcubridge')")
             return True
-        except (OSError, RuntimeError) as exc:
-            logger.warning("Failed to connect to ubusd", error=str(exc))
+        except (OSError, RuntimeError, tenacity.RetryError) as exc:
+            logger.warning("Failed to connect to ubusd after retries", error=str(exc))
             self._conn = None
             self._is_active = False
             return False

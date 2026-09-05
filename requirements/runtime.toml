@@ -41,7 +41,7 @@ rationale = "Expose runtime metrics via the Prometheus Python client"
 [[dependency]]
 name = "serialx"
 openwrt = "python3-serialx"
-pip = "serialx==1.9.0"
+pip = "serialx==1.10.0"
 rationale = "Native sync/async serial stack with modem-pin controls and typed transports"
 
 [[dependency]]

@@ -58,71 +58,32 @@ if TYPE_CHECKING:
 logger = structlog.get_logger("mcubridge.serial")
 
 
-class AsyncTcpConnection:
-    """Zero-overhead TCP connection adapter exposing AsyncSerial interface for WiFi/Ethernet. [SIL-2]"""
-
-    __slots__ = ("reader", "writer", "host", "port", "_is_open")
-
-    def __init__(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter, host: str, port: int) -> None:
-        self.reader = reader
-        self.writer = writer
-        self.host = host
-        self.port = port
-        self._is_open = True
-
-    @property
-    def transport(self) -> asyncio.BaseTransport:
-        return self.writer.transport
-
-    @property
-    def is_open(self) -> bool:
-        return self._is_open and not self.writer.is_closing()
-
-    async def write(self, data: bytes) -> None:
-        self.writer.write(data)
-
-    async def drain(self) -> None:
-        await self.writer.drain()
-
-    async def readuntil(self, separator: bytes = b"\x00") -> bytes:
-        return await self.reader.readuntil(separator)
-
-    async def read(self, n: int = -1) -> bytes:
-        return await self.reader.read(n)
-
-    async def set_modem_pins(self, dtr: bool = True, rts: bool = True) -> None:
-        """No-op for network streams."""
-        pass
-
-    async def close(self) -> None:
-        self._is_open = False
-        self.writer.close()
-        try:
-            await self.writer.wait_closed()
-        except (OSError, asyncio.CancelledError):
-            pass
-
-    async def __aenter__(self) -> "AsyncTcpConnection":
-        return self
-
-    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        await self.close()
+def resolve_serial_url(port_str: str) -> str:
+    """Resolve serial device or network endpoint string into a canonical serialx URL. [SIL-2]"""
+    if not port_str:
+        return ""
+    clean = port_str.strip()
+    if clean.startswith(("tcp://", "wifi://")):
+        host_port = clean.split("://", 1)[1]
+        host, _, port_s = host_port.partition(":")
+        port = int(port_s) if port_s.isdigit() else 9000
+        return f"socket://{host}:{port}"
+    if clean.startswith("socket://"):
+        return clean
+    if ":" in clean and not clean.startswith(("/", ".")):
+        host, _, port_s = clean.partition(":")
+        if port_s.isdigit():
+            return f"socket://{host}:{int(port_s)}"
+    return clean
 
 
 def is_network_transport(port_str: str) -> tuple[bool, str, int]:
     """Check if serial_port string specifies a network endpoint (TCP/WiFi/Socket). [SIL-2]"""
-    if not port_str:
-        return False, "", 0
-    clean = port_str.strip()
-    if clean.startswith(("tcp://", "wifi://", "socket://")):
-        stripped = clean.split("://", 1)[1]
-        host, _, port_s = stripped.partition(":")
-        port = int(port_s) if port_s.isdigit() else 9000
-        return True, host, port
-    if ":" in clean and not clean.startswith(("/", ".")):
-        host, _, port_s = clean.partition(":")
-        if port_s.isdigit():
-            return True, host, int(port_s)
+    resolved = resolve_serial_url(port_str)
+    if resolved.startswith("socket://"):
+        host_port = resolved.removeprefix("socket://")
+        host, _, port_s = host_port.partition(":")
+        return True, host, int(port_s)
     return False, "", 0
 
 
@@ -138,7 +99,7 @@ class SerialTransport:
         self.config = config
         self.state = state
         self.service = service
-        self.serial: serialx.AsyncSerial | AsyncTcpConnection | None = None
+        self.serial: serialx.AsyncSerial | None = None
 
         self._stop_event = asyncio.Event()
         self._negotiating = False
@@ -165,7 +126,7 @@ class SerialTransport:
 
     def _switch_local_baudrate(self, target_baud: int) -> None:
         try:
-            if self.serial and not isinstance(self.serial, AsyncTcpConnection):
+            if self.serial:
                 if hasattr(self.serial, "transport"):
                     cast(Any, self.serial.transport).serial.baudrate = target_baud
                 logger.info("Local UART switched baudrate", baud=target_baud)
@@ -179,14 +140,24 @@ class SerialTransport:
             self._current = None
 
     async def run(self) -> None:
+        """Main lifecycle loop of the serial transport."""
         retryer = tenacity.AsyncRetrying(
             wait=tenacity.wait_exponential(multiplier=1, min=1, max=10),
-            retry=tenacity.retry_if_not_exception_type((asyncio.CancelledError, SerialHandshakeFatal)),
+            retry=tenacity.retry_if_not_exception_type((asyncio.CancelledError, SystemExit, SerialHandshakeFatal)),
             before_sleep=tenacity.before_sleep_log(logger, logging.WARNING),
             reraise=True,
         )
         try:
             await retryer(self._connect_and_run)
+        except (asyncio.CancelledError, SystemExit):
+            pass
+        except SerialHandshakeFatal:
+            raise
+
+    async def connect(self) -> None:
+        """Single-shot connection method for compatibility."""
+        try:
+            await self._connect_and_run()
         except asyncio.CancelledError:
             logger.info("Serial transport cancelled")
         except SerialHandshakeFatal as exc:
@@ -194,59 +165,36 @@ class SerialTransport:
             raise
 
     async def _connect_and_run(self) -> None:
-        is_net, host, port = is_network_transport(self.config.serial_port)
-        if is_net:
-            logger.info("Connecting to MCU via Wireless TCP/WiFi", host=host, port=port)
-            reader, writer = await asyncio.open_connection(host, port)
-            conn = AsyncTcpConnection(reader, writer, host, port)
-            self.serial = conn
-            self.state.serial_writer = conn.transport
-            read_task = asyncio.get_running_loop().create_task(self._read_loop(conn))
-            try:
-                if self.service:
-                    await self.service.on_serial_connected()
-
-                # Wait for either stop event or read task failure
-                wait_stop = asyncio.create_task(self._stop_event.wait())
-                done, _ = await asyncio.wait([wait_stop, read_task], return_when=asyncio.FIRST_COMPLETED)
-                if not wait_stop.done():
-                    wait_stop.cancel()
-
-                if read_task in done:
-                    raise ConnectionError("Wireless network connection lost")
-            finally:
-                read_task.cancel()
-                try:
-                    await read_task
-                except (asyncio.IncompleteReadError, asyncio.CancelledError):
-                    logger.debug("Network read task cancelled or incomplete during cleanup")
-                if self.service:
-                    try:
-                        await self.service.on_serial_disconnected()
-                    except (OSError, RuntimeError, ValueError, TypeError) as e:
-                        logger.error("Error during network disconnect cleanup", error=str(e))
-                await conn.close()
-                self.serial = None
-            return
-
-        logger.info("Connecting to MCU", port=self.config.serial_port)
+        url = resolve_serial_url(self.config.serial_port)
+        is_socket = url.startswith("socket://")
         connect_baud = self.config.serial_safe_baud or protocol.DEFAULT_SAFE_BAUDRATE
+
+        if is_socket:
+            logger.info("Connecting to MCU via network socket", url=url)
+        else:
+            logger.info("Connecting to MCU via serial port", port=self.config.serial_port)
+
         try:
             async with serialx.AsyncSerial(
-                url=self.config.serial_port,
+                url=url,
                 baudrate=connect_baud,
                 xonxoff=False,
                 exclusive=False,
                 low_latency=False,
             ) as self.serial:
                 self.state.serial_writer = self.serial.transport
-                await self._toggle_dtr()
+                if not is_socket:
+                    await self._toggle_dtr()
+
                 read_task = asyncio.get_running_loop().create_task(self._read_loop(self.serial))
                 try:
-                    if self.config.serial_baud != connect_baud and not await self._negotiate_baudrate(
-                        self.config.serial_baud
+                    if (
+                        not is_socket
+                        and self.config.serial_baud != connect_baud
+                        and not await self._negotiate_baudrate(self.config.serial_baud)
                     ):
                         raise ConnectionError("Baudrate negotiation failed")
+
                     if self.service:
                         await self.service.on_serial_connected()
 
@@ -258,18 +206,20 @@ class SerialTransport:
 
                     # If read_task finished first, it means connection was lost
                     if read_task in done:
+                        if is_socket:
+                            raise ConnectionError("Wireless network connection lost")
                         raise ConnectionError("Serial connection lost")
                 finally:
                     read_task.cancel()
                     try:
                         await read_task
                     except (asyncio.IncompleteReadError, asyncio.CancelledError):
-                        logger.debug("Serial read task cancelled or incomplete during cleanup")
+                        logger.debug("Read task cancelled or incomplete during cleanup")
                     if self.service:
                         try:
                             await self.service.on_serial_disconnected()
                         except (OSError, RuntimeError, ValueError, TypeError) as e:
-                            logger.error("Error during serial disconnect cleanup", error=str(e))
+                            logger.error("Error during transport disconnect cleanup", error=str(e))
         finally:
             self.serial = None
 
@@ -288,7 +238,7 @@ class SerialTransport:
         if self.serial:
             await self.serial.close()
 
-    async def _read_loop(self, serial: serialx.AsyncSerial | AsyncTcpConnection) -> None:
+    async def _read_loop(self, serial: serialx.AsyncSerial) -> None:
         while not self._stop_event.is_set():
             try:
                 packet_with_sep = await serial.readuntil(protocol.FRAME_DELIMITER)

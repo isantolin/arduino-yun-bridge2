@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+import serialx
 from mcubridge.protocol.protocol import Command, Status, UINT8_MASK
 from tests.test_constants import TEST_BROKEN_CRC
 
@@ -74,3 +75,39 @@ def test_snapshot_render() -> None:
     assert "Raw Length: 10 bytes" in rendered
     assert "COBS Length: 12 bytes" in rendered
     assert f"CRC32: 0x{TEST_BROKEN_CRC:08X}" in rendered
+
+
+def test_frame_debug_list_ports_empty(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    empty_list: list[serialx.SerialPortInfo] = []
+    monkeypatch.setattr(frame_debug.serialx, "list_serial_ports", lambda: empty_list)
+    frame_debug.main(list_ports=True)
+    captured = capsys.readouterr()
+    assert "No serial ports detected." in captured.out
+
+
+def test_frame_debug_list_ports_found(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    from unittest.mock import MagicMock
+
+    mock_port = MagicMock()
+    mock_port.device = "/dev/ttyUSB0"
+    mock_port.description = "CP2102 USB to UART"
+    mock_port.vid = 0x10C4
+    mock_port.pid = 0xEA60
+    mock_port.serial_number = "0001"
+    found_list: list[MagicMock] = [mock_port]
+    monkeypatch.setattr(frame_debug.serialx, "list_serial_ports", lambda: found_list)
+    frame_debug.main(list_ports=True)
+    captured = capsys.readouterr()
+    assert "Found 1 serial port(s):" in captured.out
+    assert "/dev/ttyUSB0" in captured.out
+    assert "CP2102 USB to UART" in captured.out
+    assert "VID:PID=10C4:EA60" in captured.out
+    assert "SER=0001" in captured.out
+
+
+def test_frame_debug_main_missing_command(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exc:
+        frame_debug.main(command="")
+    assert exc.value.code == 1
+    captured = capsys.readouterr()
+    assert "Missing option '--command'" in captured.err

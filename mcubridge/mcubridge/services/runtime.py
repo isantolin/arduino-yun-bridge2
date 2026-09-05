@@ -461,15 +461,26 @@ class BridgeService:
 
     async def on_serial_connected(self) -> None:
         self.state.mark_transport_connected()
+        if hasattr(self, "ubus_service"):
+            self.ubus_service.notify("connection_state", {"connected": True})
         await self.handshake.synchronize()
         if self.state.is_synchronized:
             await self._request_mcu_version()
             await self._flush_console_queue()
+            if hasattr(self, "ubus_service"):
+                version_str = (
+                    f"{self.state.mcu_version[0]}.{self.state.mcu_version[1]}.{self.state.mcu_version[2]}"
+                    if self.state.mcu_version is not None
+                    else "unknown"
+                )
+                self.ubus_service.notify("sync", {"synchronized": True, "version": version_str})
         else:
             raise ConnectionError("MCU serial link handshake synchronization failed")
 
     async def on_serial_disconnected(self) -> None:
         self.state.mark_transport_disconnected()
+        if hasattr(self, "ubus_service"):
+            self.ubus_service.notify("connection_state", {"connected": False, "synchronized": False})
         for q in (self.state.pending_digital_reads, self.state.pending_analog_reads):
             q.clear()
         self.state.mcu_is_paused = False
@@ -478,6 +489,14 @@ class BridgeService:
         serial = self.serial
         if serial:
             await serial.reset()
+
+    async def reset_link(self) -> bool:
+        """Reset MCU serial link and clear pending expectations. [SIL-2]"""
+        if self.serial:
+            await self.serial.reset()
+            self.handshake.clear_handshake_expectations()
+            return True
+        return False
 
     # --- Dispatchers ---
 

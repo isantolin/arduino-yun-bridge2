@@ -220,20 +220,57 @@ cli = typer.Typer(help="MCU Bridge Frame Debugger", add_completion=False)
 
 @cli.command()
 def main(
-    command: Annotated[str, typer.Option("--command", help="Command ID (hex, int, or name)")],
-    port: Annotated[str | None, typer.Option("--port", help="Serial port device (e.g. /dev/ttyATH0)")] = None,
-    baudrate: Annotated[int, typer.Option("--baudrate", help="Baudrate")] = DEFAULT_BAUDRATE,
+    command: Annotated[str, typer.Option("--command", "-c", help="Command ID (hex, int, or name)")] = "",
+    port: Annotated[str | None, typer.Option("--port", "-p", help="Serial port device (e.g. /dev/ttyATH0)")] = None,
+    baudrate: Annotated[int, typer.Option("--baudrate", "-b", help="Baudrate")] = DEFAULT_BAUDRATE,
     payload: Annotated[str, typer.Option("--payload", help="Payload hex string")] = "",
     interval: Annotated[float, typer.Option("--interval", help="Interval between frames")] = 1.0,
     count: Annotated[int, typer.Option("--count", help="Number of frames (0 for infinite)")] = 1,
     generate: Annotated[bool, typer.Option("--generate", help="Only generate and print frame")] = False,
+    list_ports: Annotated[
+        bool,
+        typer.Option("--list-ports", "-l", help="List available serial ports and exit"),
+    ] = False,
 ) -> None:
+    if list_ports:
+        ports = serialx.list_serial_ports()
+        if not ports:
+            sys.stdout.write("No serial ports detected.\n")
+            return
+        sys.stdout.write(f"Found {len(ports)} serial port(s):\n")
+        for p in ports:
+            hw_info: list[str] = []
+            if p.vid is not None and p.pid is not None:
+                hw_info.append(f"VID:PID={p.vid:04X}:{p.pid:04X}")
+            if p.serial_number:
+                hw_info.append(f"SER={p.serial_number}")
+            hw_str = f" [{' '.join(hw_info)}]" if hw_info else ""
+            desc_str = f" - {p.description}" if p.description else ""
+            sys.stdout.write(f"  • {p.device}{desc_str}{hw_str}\n")
+        return
+
+    if not command:
+        sys.stderr.write("Error: Missing option '--command' / '-c'.\n")
+        sys.exit(1)
+
     if generate:
         asyncio.run(run_generate_only(command, payload))
-    elif port:
+    else:
+        target_port = port
+        if not target_port:
+            detected = serialx.list_serial_ports()
+            if len(detected) == 1:
+                target_port = detected[0].device
+                sys.stdout.write(f"[FrameDebug] Auto-detected serial port: {target_port}\n")
+            else:
+                sys.stderr.write(
+                    "Error: Must specify --generate or --port <device>. Use --list-ports to see devices.\n"
+                )
+                sys.exit(1)
+
         asyncio.run(
             run_debug_loop(
-                port,
+                target_port,
                 baudrate,
                 command,
                 payload,
@@ -241,9 +278,6 @@ def main(
                 count,
             )
         )
-    else:
-        sys.stderr.write("Error: Must specify --generate or --port <device>\n")
-        sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -21,6 +21,7 @@ class MockRuntimeFacade:
         self.handle_request = AsyncMock()
         self.run_process = AsyncMock(return_value=123)
         self.kill_process = AsyncMock(return_value=(True, None))
+        self.reset_link = AsyncMock(return_value=True)
         self.poll_process = AsyncMock(
             return_value=pb.ProcessPollResponse(
                 status=0,
@@ -97,6 +98,8 @@ def test_ubus_service_start_with_mock_ubus_success(
     assert "process_run" in methods
     assert "process_kill" in methods
     assert "process_poll" in methods
+    assert "link_reset" in methods
+    assert "ping" in methods
 
     service.stop()
     assert not service.is_active
@@ -130,6 +133,10 @@ def test_ubus_handle_status(mock_runtime: MockRuntimeFacade) -> None:
     assert status_resp["capabilities"]["spi"] is True
     assert status_resp["capabilities"]["sd"] is True
     assert status_resp["capabilities"]["i2c"] is False
+    assert "metrics" in status_resp
+    assert "bridge" in status_resp
+    assert "system" in status_resp
+    assert "process_stats" in status_resp
 
 
 def test_ubus_handle_status_with_dict_caps_and_no_version(mock_runtime: MockRuntimeFacade) -> None:
@@ -388,3 +395,30 @@ async def test_ubus_handle_file_write(mock_runtime: MockRuntimeFacade) -> None:
     inbound = mock_runtime.handle_request.call_args[0][0]
     assert "file/write/test.txt" in inbound.topic_name
     assert inbound.payload == b"file content"
+
+
+def test_ubus_handle_link_reset(mock_runtime: MockRuntimeFacade) -> None:
+    service = UbusService(mock_runtime)
+    res = service.ubus_handle_link_reset(MagicMock(), {})
+    assert res == {"status": "ok"}
+    mock_runtime.reset_link.assert_awaited_once()
+
+    # Link reset failure path
+    mock_runtime.reset_link = AsyncMock(return_value=False)
+    res_err = service.ubus_handle_link_reset(MagicMock(), {})
+    assert res_err == {"status": "error"}
+
+
+def test_ubus_handle_ping(mock_runtime: MockRuntimeFacade) -> None:
+    service = UbusService(mock_runtime)
+    res = service.ubus_handle_ping(MagicMock(), {})
+    assert res["status"] == "ok"
+    assert res["connected"] is True
+    assert res["synchronized"] is True
+
+    # Ping when not synchronized
+    mock_runtime.state.mark_transport_disconnected()
+    res_unsync = service.ubus_handle_ping(MagicMock(), {})
+    assert res_unsync["status"] == "not_synchronized"
+    assert res_unsync["connected"] is False
+    assert res_unsync["synchronized"] is False

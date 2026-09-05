@@ -12,6 +12,8 @@ from typing import Any, Protocol
 import structlog
 import tenacity
 
+from google.protobuf.json_format import MessageToDict
+
 from ..config.settings import RuntimeConfig
 from ..protocol import mcubridge_pb2 as pb
 from ..state.context import RuntimeState
@@ -34,6 +36,7 @@ class BridgeRuntimeFacade(Protocol):
     async def run_process(self, command: str) -> int: ...
     async def kill_process(self, pid: int) -> tuple[bool, str | None]: ...
     async def poll_process(self, pid: int) -> pb.ProcessPollResponse: ...
+    async def reset_link(self) -> bool: ...
 
 
 class UbusService:
@@ -164,53 +167,55 @@ class UbusService:
                     "pid": ubus.INT32,
                 },
             },
+            "link_reset": {
+                "call": self.ubus_handle_link_reset,
+                "args": {},
+            },
+            "ping": {
+                "call": self.ubus_handle_ping,
+                "args": {},
+            },
         }
         self._conn.add("mcubridge", methods)
 
     def ubus_handle_status(self, _req: Any, _msg: dict[str, Any]) -> dict[str, Any]:
-        """UBUS RPC handler for 'mcubridge.status'."""
+        """UBUS RPC handler for 'mcubridge.status' returning holistic SIL-2 snapshot."""
         state = self.runtime.state
-        caps = state.mcu_capabilities
+        snapshot = state.build_status_snapshot()
+        data = MessageToDict(snapshot, preserving_proto_field_name=True)
+
         version_str = (
             f"{state.mcu_version[0]}.{state.mcu_version[1]}.{state.mcu_version[2]}"
             if state.mcu_version is not None
             else "unknown"
         )
+        data["connected"] = state.state in ("connected", "synchronized")
+        data["synchronized"] = state.is_synchronized
+        data["version"] = version_str
 
-        caps_dict: dict[str, bool] = {
-            "watchdog": False,
-            "eeprom": False,
-            "dac": False,
-            "hw_serial1": False,
-            "fpu": False,
-            "logic_3v3": False,
-            "big_buffer": False,
-            "i2c": False,
-            "spi": False,
-            "sd": False,
-        }
+        # Ensure top-level capabilities dict exists for direct LuCI and tool consumers
+        caps_dict: dict[str, bool] = {}
+        caps = state.mcu_capabilities
         if isinstance(caps, pb.Capabilities):
-            caps_dict = {
-                "watchdog": caps.watchdog,
-                "eeprom": caps.eeprom,
-                "dac": caps.dac,
-                "hw_serial1": caps.hw_serial1,
-                "fpu": caps.fpu,
-                "logic_3v3": caps.logic_3v3,
-                "big_buffer": caps.big_buffer,
-                "i2c": caps.i2c,
-                "spi": caps.spi,
-                "sd": caps.sd,
-            }
+            caps_dict = MessageToDict(caps, always_print_fields_with_no_presence=True, preserving_proto_field_name=True)
         elif isinstance(caps, dict):
-            for k, v in caps.items():
-                caps_dict[k] = bool(v)
+            caps_dict = {str(k): bool(v) for k, v in caps.items()}
+        data["capabilities"] = caps_dict
 
+        return data
+
+    def ubus_handle_link_reset(self, _req: Any, _msg: dict[str, Any]) -> dict[str, Any]:
+        """UBUS RPC handler for 'mcubridge.link_reset'."""
+        ok = bool(self.run_sync(self.runtime.reset_link()))
+        return {"status": "ok" if ok else "error"}
+
+    def ubus_handle_ping(self, _req: Any, _msg: dict[str, Any]) -> dict[str, Any]:
+        """UBUS RPC handler for 'mcubridge.ping'."""
+        is_synced = self.runtime.state.is_synchronized
         return {
-            "connected": state.state in ("connected", "synchronized"),
-            "synchronized": state.is_synchronized,
-            "version": version_str,
-            "capabilities": caps_dict,
+            "status": "ok" if is_synced else "not_synchronized",
+            "connected": self.runtime.state.state in ("connected", "synchronized"),
+            "synchronized": is_synced,
         }
 
     def ubus_handle_digital_write(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:

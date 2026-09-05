@@ -34,7 +34,7 @@ jobs:
           sudo unzip -o ${PROTOC_ZIP} -d /usr/local
           rm -f ${PROTOC_ZIP}
           protoc --version
-          python -m pip install --upgrade pip build twine setuptools wheel protobuf nanopb jinja2 typer black mypy-protobuf grpclib packaging
+          python -m pip install --upgrade pip build twine setuptools wheel protobuf nanopb jinja2 typer black mypy-protobuf grpclib packaging tenacity
 
       - name: Generate Protocol Bindings
         run: |

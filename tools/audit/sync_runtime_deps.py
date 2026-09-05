@@ -636,14 +636,17 @@ def update_feeds(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
 
 def update_workflows(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
     workflows_dir = ROOT / ".github" / "workflows"
+    actions_dir = ROOT / ".github" / "actions"
     if not workflows_dir.exists():
         return False
 
     protoc_version = ""
+    protobuf_pip_version = ""
     for dep in deps:
         if dep.get("name") == "protobuf":
             _, p_ver = _parse_pip_spec(dep.get("pip", ""))
             if p_ver:
+                protobuf_pip_version = p_ver
                 parts = p_ver.split(".")
                 if len(parts) >= 3 and parts[0] in {"7", "6", "5", "4"}:
                     protoc_version = f"{parts[1]}.{parts[2]}"
@@ -654,19 +657,29 @@ def update_workflows(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> boo
     if not protoc_version:
         return False
 
+    target_files: list[Path] = sorted(workflows_dir.glob("*.yml"))
+    if actions_dir.exists():
+        target_files.extend(sorted(actions_dir.glob("**/*.yml")))
+
     any_updated = False
-    for wf in sorted(workflows_dir.glob("*.yml")):
+    for wf in target_files:
         content = wf.read_text(encoding="utf-8")
         new_content = re.sub(
             r"PROTOC_VERSION=[^\n]+",
             f"PROTOC_VERSION={protoc_version}",
             content,
         )
+        if protobuf_pip_version:
+            new_content = re.sub(
+                r"protobuf==\d+\.\d+(\.\d+)?",
+                f"protobuf=={protobuf_pip_version}",
+                new_content,
+            )
         if new_content != content:
             any_updated = True
             if not dry_run:
                 wf.write_text(new_content, encoding="utf-8")
-                sys.stderr.write(f"Updated {wf.name} PROTOC_VERSION to {protoc_version}\n")
+                sys.stderr.write(f"Updated {wf.name} (protoc={protoc_version}, protobuf={protobuf_pip_version})\n")
 
     return any_updated
 

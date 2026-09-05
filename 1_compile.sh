@@ -215,7 +215,7 @@ if [ "$INSTALL_HOST_DEPS" = "1" ]; then
                 echo "[INFO] Installing packages for Ubuntu/Debian..."
                 "${PKG_PREFIX[@]}" apt-get update
                 "${PKG_PREFIX[@]}" apt-get install -y \
-                    build-essential python3 python3-pip python3-setuptools python3-wheel python3-build python3-hatchling python3-black python3-packaging python3-typer \
+                    build-essential python3 python3-pip python3-setuptools python3-wheel python3-build python3-hatchling python3-black python3-packaging python3-typer python3-tenacity \
                     git unzip tar gzip bzip2 xz-utils coreutils libncurses5-dev libncursesw5-dev libreadline-dev \
                     zstd wget python3-docutils libelf-dev libpolkit-agent-1-dev libpolkit-gobject-1-dev \
                     libunwind-dev systemtap-sdt-dev libc6-dev libsysprof-capture-dev \
@@ -239,7 +239,7 @@ if [ "$INSTALL_HOST_DEPS" = "1" ]; then
                 echo "[INFO] Installing packages for Fedora..."
                 "${PKG_PREFIX[@]}" dnf install -y \
                     make automake gcc gcc-c++ kernel-devel \
-                    python3 python3-pip python3-setuptools python3-wheel python3-build python3-hatchling python3-black python3-packaging python3-typer \
+                    python3 python3-pip python3-setuptools python3-wheel python3-build python3-hatchling python3-black python3-packaging python3-typer python3-tenacity \
                     git unzip tar gzip bzip2 xz coreutils ncurses-devel readline-devel zstd wget \
                     python3-docutils elfutils-libelf-devel elfutils-devel polkit-devel \
                     libunwind-devel systemtap-sdt-devel glibc-devel sysprof-devel \
@@ -258,19 +258,6 @@ if [ "$INSTALL_HOST_DEPS" = "1" ]; then
 else
     echo "[INFO] Host dependency auto-install disabled. Ensure prerequisites are installed or rerun with --install-host-deps."
 fi
-
-# --- PROTOCOL & DEPS SYNC ---
-PYTHON_BIN="${PYTHON_EXE:-python3}"
-echo "[INFO] Synchronizing runtime dependency manifests..."
-"$PYTHON_BIN" "$REPO_ROOT/tools/audit/sync_runtime_deps.py" || exit 1
-
-echo "[INFO] Regenerating protocol files from spec..."
-"$PYTHON_BIN" "$REPO_ROOT/tools/protocol/generate.py" \
-    --spec "$REPO_ROOT/tools/protocol/mcubridge.proto" \
-    --py "$REPO_ROOT/mcubridge/mcubridge/protocol/protocol.py" \
-    --cpp "$REPO_ROOT/mcubridge-library-arduino/src/protocol/rpc_protocol.h" \
-    --cpp-structs "$REPO_ROOT/mcubridge-library-arduino/src/protocol/rpc_structs.h" \
-    --py-client "$REPO_ROOT/mcubridge-client-examples/mcubridge_client/protocol.py" || exit 1
 
 # --- BOOTSTRAP PYTHON CHECKS ---
 auto_install_python_module() {
@@ -301,7 +288,21 @@ check_python_module "setuptools"
 check_python_module "black"
 check_python_module "packaging"
 check_python_module "typer"
+check_python_module "tenacity"
 check_python_module "patch_ng" || python3 -m pip install "patch-ng" >/dev/null 2>&1 || true
+
+# --- PROTOCOL & DEPS SYNC ---
+PYTHON_BIN="${PYTHON_EXE:-python3}"
+echo "[INFO] Synchronizing runtime dependency manifests..."
+"$PYTHON_BIN" "$REPO_ROOT/tools/audit/sync_runtime_deps.py" || exit 1
+
+echo "[INFO] Regenerating protocol files from spec..."
+"$PYTHON_BIN" "$REPO_ROOT/tools/protocol/generate.py" \
+    --spec "$REPO_ROOT/tools/protocol/mcubridge.proto" \
+    --py "$REPO_ROOT/mcubridge/mcubridge/protocol/protocol.py" \
+    --cpp "$REPO_ROOT/mcubridge-library-arduino/src/protocol/rpc_protocol.h" \
+    --cpp-structs "$REPO_ROOT/mcubridge-library-arduino/src/protocol/rpc_structs.h" \
+    --py-client "$REPO_ROOT/mcubridge-client-examples/mcubridge_client/protocol.py" || exit 1
 
 # --- DOWNLOAD CACHE SYMLINK SETUP ---
 setup_dl_symlink() {

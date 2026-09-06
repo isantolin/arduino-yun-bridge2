@@ -1,24 +1,33 @@
-# pyright: reportPrivateUsage=false
 """Surgical tests for state/status.py, state/storage.py, and state/metrics.py. [SIL-2]"""
 
 from __future__ import annotations
+
 
 import asyncio
 import os
 import time
 from collections.abc import Iterator
+from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
+import lmdb
 import pytest
 
+import mcubridge.state.status as status_mod
+import mcubridge.state.storage as storage_mod
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.state.context import RuntimeState, create_runtime_state
-from mcubridge.state.status import _write_status_file, status_writer
+from mcubridge.state.status import status_writer
 from mcubridge.state.storage import LmdbCache, LmdbDeque
+
+_write_status_file: Any = getattr(status_mod, "_write_status_file")
+_vacuum_lmdb_env: Any = getattr(storage_mod, "_vacuum_lmdb_env")
 
 
 @pytest.fixture
-def state_setup(tmp_path: object) -> Iterator[tuple[RuntimeState, RuntimeConfig]]:
+def state_setup(tmp_path: Path) -> Iterator[tuple[RuntimeState, RuntimeConfig]]:
+
     fs_root = f".tmp_tests/st-fs-{os.getpid()}-{time.time_ns()}"
     spool = f".tmp_tests/st-spool-{os.getpid()}-{time.time_ns()}"
     os.makedirs(fs_root, exist_ok=True)
@@ -118,3 +127,89 @@ async def test_lmdb_cache_corruption_recovery(tmp_path: object) -> None:
     assert await kv.get("nonexistent", b"default") == b"default"
     await kv.clear()
     await kv.close()
+
+
+@pytest.mark.asyncio
+async def test_lmdb_deque_multi_overflow_trimming(tmp_path: object) -> None:
+    """Verify LmdbDeque correctly trims multiple overflowing elements without skipping."""
+    db_path = str(tmp_path) + "/overflow_deque.db"
+    deque = LmdbDeque(db_path, maxlen=2)
+
+    for i in range(5):
+        await deque.append(f"item_{i}".encode())
+
+    assert len(deque) == 2
+    # Items 0, 1, 2 should be dropped, leaving 3 and 4
+    assert await deque.popleft() == b"item_3"
+    assert await deque.popleft() == b"item_4"
+    assert len(deque) == 0
+    await deque.close()
+
+
+@pytest.mark.asyncio
+async def test_lmdb_cache_pop_delete_vacuum_lifecycle(tmp_path: object) -> None:
+    """Verify LmdbCache pop, delete, and vacuum operations on disk and memory."""
+    db_path = str(tmp_path) + "/kv_ops.db"
+    kv = LmdbCache(db_path)
+
+    await kv.set("alpha", b"111")
+    await kv.set("beta", b"222")
+
+    # pop existing and default
+    assert await kv.pop("alpha") == b"111"
+    assert await kv.pop("alpha", b"missing") == b"missing"
+    assert await kv.get("alpha") is None
+
+    # delete existing and missing
+    assert await kv.delete("beta") is True
+    assert await kv.delete("beta") is False
+
+    # vacuum
+    await kv.vacuum()
+    await kv.close()
+
+    # Memory mode coverage
+    mem_kv = LmdbCache(":memory:")
+    await mem_kv.set("m1", b"mem_val")
+    assert await mem_kv.get("m1") == b"mem_val"
+    assert await mem_kv.pop("m1") == b"mem_val"
+    assert await mem_kv.pop("m1", b"none") == b"none"
+    assert await mem_kv.delete("m1") is False
+    await mem_kv.clear()
+    await mem_kv.vacuum()
+    await mem_kv.close()
+
+
+@pytest.mark.asyncio
+async def test_lmdb_cache_and_vacuum_edge_branches(tmp_path: Path) -> None:
+    """Verify fallback and error paths for LmdbCache and _vacuum_lmdb_env."""
+    # 1. Vacuum with None env
+    _vacuum_lmdb_env(str(tmp_path), "test.db", None, lambda: None)
+
+
+    db_path = str(tmp_path) + "/edge_branches.db"
+    kv = LmdbCache(db_path)
+
+    # 2. None env fallback on pop and delete
+    saved_env = kv.env
+    kv.env = None
+    assert await kv.pop("k", b"def") == b"def"
+    assert await kv.delete("k") is False
+    kv.env = saved_env
+
+    # 3. LMDB Error on pop and delete
+    mock_env = MagicMock()
+    mock_env.begin.side_effect = lmdb.Error("Database locked")
+    kv.env = mock_env
+    assert await kv.pop("k", b"def") == b"def"
+    assert await kv.delete("k") is False
+    kv.env = saved_env
+    await kv.close()
+
+    # 4. Vacuum unlink OSError
+    faulty_env = MagicMock()
+    faulty_env.copy.side_effect = lmdb.Error("Copy fail")
+    with patch("pathlib.Path.unlink", side_effect=OSError("Permission denied")):
+        _vacuum_lmdb_env(str(tmp_path / "faulty"), "faulty.db", faulty_env, lambda: None)
+
+

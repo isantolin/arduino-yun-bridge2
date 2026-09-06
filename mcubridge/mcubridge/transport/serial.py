@@ -16,10 +16,11 @@ from mcubridge.protocol import mcubridge_pb2 as pb
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from cobs import cobsr
 import serialx
+from serialx.platforms.serial_socket import SocketSerial, SocketSerialTransport
 import structlog
 import tenacity
 from google.protobuf.message import Message as ProtobufMessage, DecodeError as ProtobufDecodeError
@@ -57,34 +58,28 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger("mcubridge.serial")
 
+serialx.register_uri_handler(
+    scheme="wifi://",
+    unique_scheme="wifi://",
+    sync_cls=SocketSerial,
+    async_transport_cls=SocketSerialTransport,
+    strip_uri_scheme=False,
+)
+
 
 def resolve_serial_url(port_str: str) -> str:
     """Resolve serial device or network endpoint string into a canonical serialx URL. [SIL-2]"""
     if not port_str:
         return ""
     clean = port_str.strip()
-    if clean.startswith(("tcp://", "wifi://")):
-        host_port = clean.split("://", 1)[1]
-        host, _, port_s = host_port.partition(":")
-        port = int(port_s) if port_s.isdigit() else 9000
-        return f"socket://{host}:{port}"
-    if clean.startswith("socket://"):
+    if clean.startswith(("tcp://", "wifi://", "socket://")):
+        scheme, _, host_port = clean.partition("://")
+        if ":" not in host_port:
+            return f"{scheme}://{host_port}:9000"
         return clean
     if ":" in clean and not clean.startswith(("/", ".")):
-        host, _, port_s = clean.partition(":")
-        if port_s.isdigit():
-            return f"socket://{host}:{int(port_s)}"
+        return f"socket://{clean}"
     return clean
-
-
-def is_network_transport(port_str: str) -> tuple[bool, str, int]:
-    """Check if serial_port string specifies a network endpoint (TCP/WiFi/Socket). [SIL-2]"""
-    resolved = resolve_serial_url(port_str)
-    if resolved.startswith("socket://"):
-        host_port = resolved.removeprefix("socket://")
-        host, _, port_s = host_port.partition(":")
-        return True, host, int(port_s)
-    return False, "", 0
 
 
 class SerialTransport:
@@ -126,9 +121,8 @@ class SerialTransport:
 
     def _switch_local_baudrate(self, target_baud: int) -> None:
         try:
-            if self.serial:
-                if hasattr(self.serial, "transport"):
-                    cast(Any, self.serial.transport).serial.baudrate = target_baud
+            if self.serial and hasattr(self.serial.transport, "serial") and self.serial.transport.serial:
+                self.serial.transport.serial.baudrate = target_baud
                 logger.info("Local UART switched baudrate", baud=target_baud)
         except (AttributeError, OSError, ValueError, serialx.SerialException) as e:
             raise RuntimeError(f"UART access failed: {e}") from e
@@ -166,10 +160,10 @@ class SerialTransport:
 
     async def _connect_and_run(self) -> None:
         url = resolve_serial_url(self.config.serial_port)
-        is_socket = url.startswith("socket://")
+        is_network = url.startswith(("socket://", "tcp://", "wifi://", "rfc2217://"))
         connect_baud = self.config.serial_safe_baud or protocol.DEFAULT_SAFE_BAUDRATE
 
-        if is_socket:
+        if is_network:
             logger.info("Connecting to MCU via network socket", url=url)
         else:
             logger.info("Connecting to MCU via serial port", port=self.config.serial_port)
@@ -183,13 +177,13 @@ class SerialTransport:
                 low_latency=False,
             ) as self.serial:
                 self.state.serial_writer = self.serial.transport
-                if not is_socket:
+                if not is_network:
                     await self._toggle_dtr()
 
                 read_task = asyncio.get_running_loop().create_task(self._read_loop(self.serial))
                 try:
                     if (
-                        not is_socket
+                        not is_network
                         and self.config.serial_baud != connect_baud
                         and not await self._negotiate_baudrate(self.config.serial_baud)
                     ):
@@ -206,7 +200,7 @@ class SerialTransport:
 
                     # If read_task finished first, it means connection was lost
                     if read_task in done:
-                        if is_socket:
+                        if is_network:
                             raise ConnectionError("Wireless network connection lost")
                         raise ConnectionError("Serial connection lost")
                 finally:
@@ -221,6 +215,7 @@ class SerialTransport:
                         except (OSError, RuntimeError, ValueError, TypeError) as e:
                             logger.error("Error during transport disconnect cleanup", error=str(e))
         finally:
+            self.state.serial_writer = None
             self.serial = None
 
     async def _toggle_dtr(self) -> None:

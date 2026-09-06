@@ -26,6 +26,14 @@ except ImportError:
     ubus = None
 
 
+def _format_ubus_bytes(data: bytes) -> str:
+    """Safely decode bytes to UTF-8 or return canonical hex string. [SIL-2]"""
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        return f"<hex:{data.hex()}>"
+
+
 class BridgeRuntimeFacade(Protocol):
     """Facade protocol decoupling UbusService from full BridgeService implementation."""
 
@@ -218,51 +226,40 @@ class UbusService:
             "synchronized": is_synced,
         }
 
+    def _publish_to_cloud(self, subpath: str, payload: bytes) -> None:
+        """Construct and schedule a CloudQueuedPublish request on the runtime facade."""
+        topic_name = f"{self.runtime.state.cloud_topic_prefix}/{subpath}"
+        publish = pb.CloudQueuedPublish(
+            topic_name=topic_name,
+            payload=payload,
+        )
+        self.schedule_async(self.runtime.handle_request(publish))
+
     def ubus_handle_digital_write(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.digital_write'."""
         pin = int(msg.get("pin", 0))
         val = int(msg.get("value", 0))
-        topic_name = f"{self.runtime.state.cloud_topic_prefix}/digital/{pin}/set"
-        publish = pb.CloudQueuedPublish(
-            topic_name=topic_name,
-            payload=str(val).encode(),
-        )
-        self.schedule_async(self.runtime.handle_request(publish))
+        self._publish_to_cloud(f"digital/{pin}/set", str(val).encode())
         return {"status": "ok", "pin": pin, "value": val}
 
     def ubus_handle_analog_write(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.analog_write'."""
         pin = int(msg.get("pin", 0))
         val = int(msg.get("value", 0))
-        topic_name = f"{self.runtime.state.cloud_topic_prefix}/analog/{pin}/set"
-        publish = pb.CloudQueuedPublish(
-            topic_name=topic_name,
-            payload=str(val).encode(),
-        )
-        self.schedule_async(self.runtime.handle_request(publish))
+        self._publish_to_cloud(f"analog/{pin}/set", str(val).encode())
         return {"status": "ok", "pin": pin, "value": val}
 
     def ubus_handle_mailbox_push(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.mailbox_push'."""
         message = str(msg.get("message", ""))
-        topic_name = f"{self.runtime.state.cloud_topic_prefix}/mailbox/push"
-        publish = pb.CloudQueuedPublish(
-            topic_name=topic_name,
-            payload=message.encode(),
-        )
-        self.schedule_async(self.runtime.handle_request(publish))
+        self._publish_to_cloud("mailbox/push", message.encode())
         return {"status": "ok", "message_length": len(message)}
 
     def ubus_handle_datastore_set(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.datastore_set'."""
         key = str(msg.get("key", ""))
         value = str(msg.get("value", ""))
-        topic_name = f"{self.runtime.state.cloud_topic_prefix}/datastore/{key}/set"
-        publish = pb.CloudQueuedPublish(
-            topic_name=topic_name,
-            payload=value.encode(),
-        )
-        self.schedule_async(self.runtime.handle_request(publish))
+        self._publish_to_cloud(f"datastore/{key}/set", value.encode())
         return {"status": "ok", "key": key}
 
     def ubus_handle_datastore_get(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
@@ -274,11 +271,7 @@ class UbusService:
         val: bytes | None = self.run_sync(cache.get(key))
         if val is None:
             return {"status": "not_found", "key": key}
-        try:
-            val_str = val.decode("utf-8")
-        except UnicodeDecodeError:
-            val_str = f"<hex:{val.hex()}>"
-        return {"status": "ok", "key": key, "value": val_str}
+        return {"status": "ok", "key": key, "value": _format_ubus_bytes(val)}
 
     def ubus_handle_mailbox_read(self, _req: Any, _msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.mailbox_read'."""
@@ -286,22 +279,13 @@ class UbusService:
             item: bytes = self.run_sync(self.runtime.state.mailbox_incoming_queue.popleft())
         except IndexError:
             return {"status": "empty"}
-        try:
-            msg_str = item.decode("utf-8")
-        except UnicodeDecodeError:
-            msg_str = f"<hex:{item.hex()}>"
-        return {"status": "ok", "message": msg_str}
+        return {"status": "ok", "message": _format_ubus_bytes(item)}
 
     def ubus_handle_file_write(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.file_write'."""
         target_path = str(msg.get("path", ""))
         data_str = str(msg.get("data", ""))
-        topic_name = f"{self.runtime.state.cloud_topic_prefix}/file/write/{target_path}"
-        publish = pb.CloudQueuedPublish(
-            topic_name=topic_name,
-            payload=data_str.encode(),
-        )
-        self.schedule_async(self.runtime.handle_request(publish))
+        self._publish_to_cloud(f"file/write/{target_path}", data_str.encode())
         return {"status": "ok", "path": target_path, "bytes_written": len(data_str)}
 
     def ubus_handle_process_run(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
@@ -321,24 +305,14 @@ class UbusService:
         """UBUS RPC handler for 'mcubridge.process_poll'."""
         pid = int(msg.get("pid", 0))
         resp: pb.ProcessPollResponse = self.run_sync(self.runtime.poll_process(pid))
-
-        try:
-            out_str = resp.stdout_data.decode("utf-8")
-        except UnicodeDecodeError:
-            out_str = f"<hex:{resp.stdout_data.hex()}>"
-
-        try:
-            err_str = resp.stderr_data.decode("utf-8")
-        except UnicodeDecodeError:
-            err_str = f"<hex:{resp.stderr_data.hex()}>"
-
         return {
             "status": "ok" if resp.status == 0 else "error",
             "exit_code": resp.exit_code,
             "finished": resp.finished,
-            "stdout": out_str,
-            "stderr": err_str,
+            "stdout": _format_ubus_bytes(resp.stdout_data),
+            "stderr": _format_ubus_bytes(resp.stderr_data),
         }
+
 
     def run_sync(self, coro: Any) -> Any:
         """Execute a coroutine synchronously in a running or fresh event loop."""

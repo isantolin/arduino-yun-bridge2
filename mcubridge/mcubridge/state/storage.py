@@ -54,6 +54,28 @@ def _open_lmdb_env(
     return None, None
 
 
+def _vacuum_lmdb_env(path: str, default_file: str, env: lmdb.Environment | None, reopen_cb: Any) -> None:
+    """Canonical resilient compaction for LMDB environments to reclaim disk space. [SIL-2]"""
+    if not env:
+        return
+    p = Path(path)
+    env_path = p / default_file if p.is_dir() else p
+    compact_path = Path(str(env_path) + ".compact")
+    try:
+        env.copy(str(compact_path), compact=True)
+        env.close()
+        compact_path.replace(env_path)
+        reopen_cb()
+    except (lmdb.Error, OSError) as exc:
+        logger.warning("LMDB vacuum failed, compaction skipped", error=str(exc))
+        try:
+            compact_path.unlink(missing_ok=True)
+        except OSError as unlink_err:
+            logger.warning(
+                "Failed to clean up compact database file", path=str(compact_path), error=str(unlink_err)
+            )
+
+
 class LmdbDeque:
     """SIL-2 persistent FIFO queue implementation backed by LMDB C transactions."""
 
@@ -94,8 +116,6 @@ class LmdbDeque:
                 if total_entries > self.maxlen and cur.first():
                     for _ in range(total_entries - self.maxlen):
                         cur.delete()
-                        if not cur.next():
-                            break
 
     async def popleft(self) -> bytes:
         if self.is_mem:
@@ -108,9 +128,10 @@ class LmdbDeque:
             cur = txn.cursor(self.db)
             if not cur.first():
                 raise IndexError("popleft from empty deque")
-            val = bytes(cur.value())
-            cur.delete()
-            return val
+            val = cur.pop(cur.key())
+            if val is None:
+                raise IndexError("popleft from empty deque")
+            return bytes(val)
 
     async def peek(self) -> bytes:
         if self.is_mem:
@@ -134,25 +155,8 @@ class LmdbDeque:
 
     async def vacuum(self) -> None:
         """[SIL-2] Compact LMDB storage to reclaim disk space after spool flush."""
-        if self.is_mem or not self.env:
-            return
-        p = Path(self.path)
-        env_path = p / "deque.db" if p.is_dir() else p
-        compact_path = Path(str(env_path) + ".compact")
-        try:
-            self.env.copy(str(compact_path), compact=True)
-            self.env.close()
-            self.env = None
-            compact_path.replace(env_path)
-            self._open_env()
-        except (lmdb.Error, OSError) as exc:
-            logger.warning("LMDB vacuum failed, compaction skipped", error=str(exc))
-            try:
-                compact_path.unlink(missing_ok=True)
-            except OSError as unlink_err:
-                logger.warning(
-                    "Failed to clean up compact database file", path=str(compact_path), error=str(unlink_err)
-                )
+        if not self.is_mem and self.env:
+            _vacuum_lmdb_env(self.path, "deque.db", self.env, self._open_env)
 
     async def close(self) -> None:
         if self.env:
@@ -183,7 +187,7 @@ class LmdbCache:
         if not self.env:
             return
         with self.env.begin(write=True, db=self.db) as txn:
-            txn.put(key.encode("utf-8"), value)
+            txn.put(key.encode("utf-8"), value, db=self.db)
 
     async def get(self, key: str, default: T | None = None) -> bytes | T | None:
         if self.is_mem:
@@ -192,11 +196,41 @@ class LmdbCache:
             return default
         try:
             with self.env.begin(db=self.db, buffers=True) as txn:
-                val = txn.get(key.encode("utf-8"))
-                return bytes(val) if val is not None else default
+                val = txn.get(key.encode("utf-8"), db=self.db)
+                if val is not None:
+                    return bytes(val)
+                return default
         except (lmdb.Error, OSError) as exc:
             logger.error("LmdbCache get failed", path=self.path, key=key, error=exc)
             return default
+
+    async def pop(self, key: str, default: T | None = None) -> bytes | T | None:
+        if self.is_mem:
+            return self._mem.pop(key, default)
+        if not self.env:
+            return default
+        try:
+            with self.env.begin(write=True, db=self.db, buffers=True) as txn:
+                val = txn.pop(key.encode("utf-8"), db=self.db)
+                if val is not None:
+                    return bytes(val)
+                return default
+        except (lmdb.Error, OSError) as exc:
+            logger.error("LmdbCache pop failed", path=self.path, key=key, error=exc)
+            return default
+
+
+    async def delete(self, key: str) -> bool:
+        if self.is_mem:
+            return self._mem.pop(key, None) is not None
+        if not self.env:
+            return False
+        try:
+            with self.env.begin(write=True, db=self.db) as txn:
+                return txn.delete(key.encode("utf-8"), db=self.db)
+        except (lmdb.Error, OSError) as exc:
+            logger.error("LmdbCache delete failed", path=self.path, key=key, error=exc)
+            return False
 
     async def clear(self) -> None:
         if self.is_mem:
@@ -205,7 +239,13 @@ class LmdbCache:
             with self.env.begin(write=True, db=self.db) as txn:
                 txn.drop(self.db, delete=False)
 
+    async def vacuum(self) -> None:
+        """[SIL-2] Compact LMDB cache storage to reclaim disk space."""
+        if not self.is_mem and self.env:
+            _vacuum_lmdb_env(self.path, "cache.db", self.env, self._open_env)
+
     async def close(self) -> None:
         if self.env:
             self.env.close()
             self.env = None
+

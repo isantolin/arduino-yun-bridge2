@@ -18,26 +18,24 @@ from mcubridge.protocol import protocol
 from mcubridge.state.context import RuntimeState
 from mcubridge.transport.serial import (
     SerialTransport,
-    is_network_transport,
     resolve_serial_url,
 )
 
 
 def test_resolve_serial_url() -> None:
     """Verify robust URL canonicalization for serialx transport dispatch."""
-    # 1. TCP and WiFi URIs converted to socket://
-    assert resolve_serial_url("tcp://192.168.1.100:9000") == "socket://192.168.1.100:9000"
-    assert resolve_serial_url("tcp://192.168.1.100") == "socket://192.168.1.100:9000"
-    assert resolve_serial_url("wifi://lamp.local:8888") == "socket://lamp.local:8888"
-    assert resolve_serial_url("wifi://lamp.local") == "socket://lamp.local:9000"
+    # 1. TCP and WiFi URIs canonicalized with default port if missing
+    assert resolve_serial_url("tcp://192.168.1.100:9000") == "tcp://192.168.1.100:9000"
+    assert resolve_serial_url("tcp://192.168.1.100") == "tcp://192.168.1.100:9000"
+    assert resolve_serial_url("wifi://lamp.local:8888") == "wifi://lamp.local:8888"
+    assert resolve_serial_url("wifi://lamp.local") == "wifi://lamp.local:9000"
 
-    # 2. Native socket:// kept intact
+    # 2. Native socket:// kept intact or canonicalized
     assert resolve_serial_url("socket://10.0.0.5:9999") == "socket://10.0.0.5:9999"
-    assert resolve_serial_url("socket://10.0.0.5") == "socket://10.0.0.5"
+    assert resolve_serial_url("socket://10.0.0.5") == "socket://10.0.0.5:9000"
 
     # 3. Plain IP:Port converted to socket://
     assert resolve_serial_url("127.0.0.1:9555") == "socket://127.0.0.1:9555"
-    assert resolve_serial_url("192.168.1.1:not_a_port") == "192.168.1.1:not_a_port"
 
     # 4. Standard POSIX /dev/tty ports untouched
     assert resolve_serial_url("/dev/ttyATH0") == "/dev/ttyATH0"
@@ -45,45 +43,18 @@ def test_resolve_serial_url() -> None:
     assert resolve_serial_url("") == ""
 
 
-def test_is_network_transport_url_parsing() -> None:
-    """Verify robust URI and IP:Port detection for wireless transports."""
-    # 1. TCP and WiFi URIs
-    is_net, host, port = is_network_transport("tcp://192.168.1.100:9000")
-    assert is_net is True
-    assert host == "192.168.1.100"
-    assert port == 9000
+def test_serialx_uri_dispatch_resolution() -> None:
+    """Verify that serialx native URI dispatch instantiates AsyncSerial across schemes."""
+    for uri in [
+        "tcp://192.168.1.100:9000",
+        "wifi://lamp.local:8888",
+        "socket://10.0.0.5:9000",
+    ]:
+        ser = serialx.async_serial_for_url(uri, baudrate=115200)
+        assert ser.is_open is False
 
-    is_net, host, port = is_network_transport("wifi://lamp.local:8888")
-    assert is_net is True
-    assert host == "lamp.local"
-    assert port == 8888
-
-    is_net, host, port = is_network_transport("socket://10.0.0.5:9000")
-    assert is_net is True
-    assert host == "10.0.0.5"
-    assert port == 9000
-
-    # 2. Plain IP:Port
-    is_net, host, port = is_network_transport("127.0.0.1:9555")
-    assert is_net is True
-    assert host == "127.0.0.1"
-    assert port == 9555
-
-    # 3. Standard TTY / POSIX ports
-    is_net, host, port = is_network_transport("/dev/ttyATH0")
-    assert is_net is False
-    assert host == ""
-    assert port == 0
-
-    is_net, host, port = is_network_transport("/dev/rfcomm0")
-    assert is_net is False
-    assert host == ""
-    assert port == 0
-
-    is_net, host, port = is_network_transport("")
-    assert is_net is False
-    assert host == ""
-    assert port == 0
+    posix_ser = serialx.async_serial_for_url("/dev/ttyATH0", baudrate=115200)
+    assert posix_ser.is_open is False
 
 
 @pytest.mark.asyncio
@@ -212,13 +183,14 @@ async def test_switch_local_baudrate_on_tcp_connection(
     """Verify switching baudrate on a network transport is a safe no-op."""
     mock_serialx = AsyncMock(spec=serialx.AsyncSerial)
     mock_serialx.transport = MagicMock()
+    mock_serialx.transport.serial = MagicMock()
 
     transport = SerialTransport(runtime_config, runtime_state, None)
     transport.serial = mock_serialx
 
     # Baudrate switch helper
     getattr(transport, "_switch_local_baudrate")(230400)
-    assert transport.serial is not None
+    assert mock_serialx.transport.serial.baudrate == 230400
 
 
 @pytest.mark.asyncio

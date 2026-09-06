@@ -143,8 +143,11 @@ source = [
     "mcubridge-gateway"
 ]
 omit = [
+    "*/tests/*",
+    "**/tests/*",
     "mcubridge/tests/*",
     "mcubridge-client-examples/tests/*",
+    "mcubridge-gateway/tests/*",
     "**/*_pb2.py",
     "**/*_pb2.pyi",
     "**/*_grpc.py"

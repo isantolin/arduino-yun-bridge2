@@ -124,6 +124,9 @@ def test_settings_normalize_config_dict() -> None:
     assert norm["topic_authorization"]["datastore_put"] is True
     assert norm["unknown_extra_key"] == "val"
 
+    _, secret_none = _normalize_config_dict({"serial_shared_secret": None})
+    assert secret_none is None
+
 
 def test_logging_discover_syslog_var_run_branch(test_config: RuntimeConfig) -> None:
     def _mock_exists(path_obj: Path) -> bool:
@@ -1126,6 +1129,10 @@ def test_settings_raw_config_edge_branches() -> None:
     cfg5 = load_runtime_config(overrides={"allowed_commands": None})
     assert list(cfg5.allowed_commands) == []
 
+    # 6. Overrides with serial_shared_secret None raises validation error
+    with pytest.raises(ValueError, match="serial_shared_secret"):
+        load_runtime_config(overrides={"serial_shared_secret": None})
+
 
 @pytest.mark.asyncio
 async def test_lmdb_deque_branch_coverage(tmp_path: Path) -> None:
@@ -1145,6 +1152,7 @@ async def test_lmdb_deque_branch_coverage(tmp_path: Path) -> None:
     # 2. Len when env is None
     deque.env = None
     assert len(deque) == 0
+    await deque.clear()
 
     # 3. Clear on disk backend
     deque_disk = LmdbDeque(str(tmp_path / "clear_deque"))
@@ -1172,7 +1180,9 @@ async def test_lmdb_cache_clear(tmp_path: Path) -> None:
     await cache_disk.clear()
     assert await cache_disk.get("k_disk") is None
 
-    # 3. None env get/set
+    # 3. None env get/set and close
+    await cache_disk.close()
+    await cache_disk.close()
     cache_disk.env = None
     assert await cache_disk.get("k_disk", default=b"def") == b"def"
     await cache_disk.set("k_none", b"val")
@@ -1208,6 +1218,14 @@ def test_protocol_frame_unrecognized_protobuf_descriptor() -> None:
         session_key=None,
     )
     assert len(frame_bytes) > 0
+
+
+def test_daemon_metrics_build_info_package_found() -> None:
+    from mcubridge.state.metrics import DaemonMetrics
+
+    with patch("importlib.metadata.version", return_value="2.0.0"):
+        dm = DaemonMetrics()
+        assert dm.build_info is not None
 
 
 # ==========================================

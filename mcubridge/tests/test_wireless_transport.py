@@ -37,6 +37,7 @@ def test_resolve_serial_url() -> None:
 
     # 3. Plain IP:Port converted to socket://
     assert resolve_serial_url("127.0.0.1:9555") == "socket://127.0.0.1:9555"
+    assert resolve_serial_url("192.168.1.1:not_a_port") == "192.168.1.1:not_a_port"
 
     # 4. Standard POSIX /dev/tty ports untouched
     assert resolve_serial_url("/dev/ttyATH0") == "/dev/ttyATH0"

@@ -149,6 +149,10 @@ def test_ubus_handle_status_with_dict_caps_and_no_version(mock_runtime: MockRunt
     assert status_resp["capabilities"]["i2c"] is True
     assert status_resp["capabilities"]["fpu"] is True
 
+    mock_runtime.state.mcu_capabilities = None
+    status_resp_none = service.ubus_handle_status(MagicMock(), {})
+    assert status_resp_none["capabilities"] == {}
+
 
 def test_ubus_register_methods_noop_when_conn_none(mock_runtime: MockRuntimeFacade) -> None:
     service = UbusService(mock_runtime)

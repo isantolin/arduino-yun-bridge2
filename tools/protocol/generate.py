@@ -35,16 +35,6 @@ import typer
 # ═════════════════════════════════════════════════════════════════════════════
 REQUIRED_DEPS = ["jinja2", "google.protobuf", "nanopb"]
 MISSING_DEPS: list[str] = []
-UNTYPED_LIBS = [
-    "cobs",
-    "prometheus_client",
-    "serialx",
-    "uci",
-    "uvloop",
-    "typer",
-    "lmdb",
-    "nanopb",
-]
 
 for dep in REQUIRED_DEPS:
     if importlib.util.find_spec(dep.split(".")[0]) is None:
@@ -790,16 +780,12 @@ def check_incremental_build(args: Any, version: str) -> tuple[bool, Path, str]:
             outputs_exist = False
             break
 
-    # Also check if mcubridge_pb2.py and untyped_libs type stubs exist in target locations
+    # Also check if mcubridge_pb2.py exists in target locations
     if outputs_exist:
         if args.py and not (args.py.parent / "mcubridge_pb2.py").exists():
             outputs_exist = False
         if args.py_client and not (args.py_client.parent / "mcubridge_pb2.py").exists():
             outputs_exist = False
-        for lib in UNTYPED_LIBS:
-            if not (REPO_ROOT / "typings" / lib).exists() and not (REPO_ROOT / "typings" / "stubs" / lib).exists():
-                outputs_exist = False
-                break
 
     up_to_date = bool(outputs_exist and hash_file.exists() and hash_file.read_text().strip() == current_hash)
     return up_to_date, hash_file, current_hash
@@ -937,81 +923,6 @@ def main(
         gen.generate_python_client(proto_spec, args.py_client)
         _format_python_file(args.py_client)
         sys.stderr.write(f"Generated {args.py_client}\n")
-
-    # [SIL-2] Generate type stubs for untyped libraries using pyright if stub
-    # directory is missing (auto-installs pyright if needed).
-    missing_stubs = [
-        lib
-        for lib in UNTYPED_LIBS
-        if not (REPO_ROOT / "typings" / lib).exists() and not (REPO_ROOT / "typings" / "stubs" / lib).exists()
-    ]
-    if missing_stubs:
-        has_pyright = shutil.which("pyright") is not None or importlib.util.find_spec("pyright") is not None
-        if not has_pyright:
-            sys.stderr.write("Installing pyright for stub generation...\n")
-            subprocess.run([sys.executable, "-m", "pip", "install", "pyright"], check=False, capture_output=True)
-            has_pyright = shutil.which("pyright") is not None or importlib.util.find_spec("pyright") is not None
-
-        if has_pyright:
-            sys.stderr.write(f"Generating type stubs for {', '.join(missing_stubs)}...\n")
-            for lib in missing_stubs:
-                try:
-                    res = subprocess.run(
-                        [sys.executable, "-m", "pyright", "--createstub", lib], check=False, capture_output=True
-                    )
-                    if res.returncode != 0:
-                        subprocess.run(["pyright", "--createstub", lib], check=False, capture_output=True)
-                except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
-                    sys.stderr.write(f"Warning: stub generation failed for {lib}: {exc}\n")
-
-                # [SIL-2] Fix generated prometheus_client core.pyi stub to export necessary types
-                if lib == "prometheus_client":
-                    core_stub = REPO_ROOT / "typings" / "prometheus_client" / "core.pyi"
-                    if core_stub.exists():
-                        core_content = (
-                            "from .metrics_core import (\n"
-                            "    Metric,\n"
-                            "    UnknownMetricFamily,\n"
-                            "    UntypedMetricFamily,\n"
-                            "    CounterMetricFamily,\n"
-                            "    GaugeMetricFamily,\n"
-                            "    SummaryMetricFamily,\n"
-                            "    HistogramMetricFamily,\n"
-                            "    GaugeHistogramMetricFamily,\n"
-                            "    InfoMetricFamily,\n"
-                            "    StateSetMetricFamily,\n"
-                            ")\n"
-                            "from .metrics import Counter, Enum, Gauge, Histogram, Info, Summary\n"
-                            "from .registry import CollectorRegistry, REGISTRY\n"
-                            "from .samples import Sample, Exemplar, NativeHistogram, Timestamp\n\n"
-                            "__all__ = ('BucketSpan', 'CollectorRegistry', 'Counter', "
-                            "'CounterMetricFamily', 'Enum', 'Exemplar', 'Gauge', 'GaugeHistogramMetricFamily', "
-                            "'GaugeMetricFamily', 'Histogram', 'HistogramMetricFamily', 'Info', 'InfoMetricFamily', "
-                            "'Metric', 'NativeHistogram', 'REGISTRY', 'Sample', 'StateSetMetricFamily', 'Summary', "
-                            "'SummaryMetricFamily', 'Timestamp', 'UnknownMetricFamily', 'UntypedMetricFamily')\n"
-                        )
-                        core_stub.write_text(core_content, encoding="utf-8")
-
-                # [SIL-2] Fix generated typer stubs: pyright's --createstub leaves
-                # click.ParamType (a Generic class) unparameterized, which makes
-                # every overload of typer.Option/Argument/OptionInfo/ArgumentInfo
-                # "partially unknown" under pyright strict (reportUnknownMemberType),
-                # even though the call site itself resolves cleanly. Parameterize
-                # every bare occurrence with `click.ParamType[Any]` / `click.types.ParamType[Any]`
-                # so the stub's declared type is fully known.
-                if lib == "typer":
-                    for stub_name in ("params.pyi", "models.pyi", "core.pyi", "main.pyi"):
-                        typer_stub = REPO_ROOT / "typings" / "typer" / stub_name
-                        if typer_stub.exists():
-                            typer_content = typer_stub.read_text(encoding="utf-8")
-                            typer_content = typer_content.replace(
-                                "click.ParamType | None", "click.ParamType[Any] | None"
-                            )
-                            typer_content = typer_content.replace(
-                                "click.types.ParamType | Any | None", "click.types.ParamType[Any] | None"
-                            )
-                            typer_content = typer_content.replace("-> click.ParamType:", "-> click.ParamType[Any]:")
-                            typer_stub.write_text(typer_content, encoding="utf-8")
 
     # Save hash for incremental compilation
     hash_file.write_text(current_hash, encoding="utf-8")

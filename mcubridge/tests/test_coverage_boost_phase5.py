@@ -507,14 +507,14 @@ async def test_runtime_write_with_quota(test_config: RuntimeConfig, mock_state: 
     target_file = tmp_path / "quota_test.bin"
 
     # Case 1: Disk full (free < len(data))
-    with patch("shutil.disk_usage") as mock_usage:
+    with patch("psutil.disk_usage") as mock_usage:
         mock_usage.return_value = MagicMock(free=5, used=100, total=105)
         res = await svc._write_with_quota(target_file, b"1234567890")
         assert res is False
         assert svc.state.file_storage_limit_rejections == 1
 
     # Case 2: Disk usage check raises OSError
-    with patch("shutil.disk_usage", side_effect=OSError("Stat failure")):
+    with patch("psutil.disk_usage", side_effect=OSError("Stat failure")):
         res = await svc._write_with_quota(target_file, b"data")
         assert res is True
         assert target_file.read_bytes() == b"data"

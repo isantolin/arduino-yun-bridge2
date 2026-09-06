@@ -207,7 +207,7 @@ class UbusService:
         if isinstance(caps, pb.Capabilities):
             caps_dict = MessageToDict(caps, always_print_fields_with_no_presence=True, preserving_proto_field_name=True)
         elif isinstance(caps, dict):
-            caps_dict = {str(k): bool(v) for k, v in caps.items()}
+            caps_dict = {k: bool(v) for k, v in caps.items()}
         data["capabilities"] = caps_dict
 
         return data

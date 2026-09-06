@@ -60,15 +60,11 @@ def resolve_protoc_bin() -> Path:
     which_p = shutil.which("protoc")
     if which_p:
         return Path(which_p)
-    try:
-        import nanopb
-
-        if hasattr(nanopb, "__file__") and nanopb.__file__:
-            nanopb_p = Path(nanopb.__file__).parent / "generator" / "protoc"
-            if nanopb_p.exists():
-                return nanopb_p
-    except (ImportError, AttributeError, TypeError):
-        pass
+    spec = importlib.util.find_spec("nanopb")
+    if spec and spec.origin:
+        nanopb_p = Path(spec.origin).parent / "generator" / "protoc"
+        if nanopb_p.exists():
+            return nanopb_p
     return Path("protoc")
 
 
@@ -152,6 +148,11 @@ class ProtocolSpec:
     pb_module: Any = None
 
 
+def _proto_to_dict(msg: Any) -> dict[str, Any]:
+    """Convert Protobuf message to dict with canonical preservation flags. [SIL-2]"""
+    return MessageToDict(msg, preserving_proto_field_name=True, always_print_fields_with_no_presence=True)
+
+
 def load_spec_from_proto(proto_path: Path) -> ProtocolSpec:
     proto_dir = str(proto_path.parent)
     if proto_dir not in sys.path:
@@ -174,47 +175,30 @@ def load_spec_from_proto(proto_path: Path) -> ProtocolSpec:
     architectures_opt = options.Extensions[mcubridge_pb2.architectures]
     capabilities_opt = options.Extensions[mcubridge_pb2.capabilities]
 
-    constants = MessageToDict(
-        constants_opt, preserving_proto_field_name=True, always_print_fields_with_no_presence=True
-    )
-    hardware = MessageToDict(hardware_opt, preserving_proto_field_name=True, always_print_fields_with_no_presence=True)
-    handshake = MessageToDict(
-        handshake_opt, preserving_proto_field_name=True, always_print_fields_with_no_presence=True
-    )
-    data_formats = MessageToDict(
-        data_formats_opt, preserving_proto_field_name=True, always_print_fields_with_no_presence=True
-    )
-    cloud_suffixes = MessageToDict(
-        cloud_suffixes_opt, preserving_proto_field_name=True, always_print_fields_with_no_presence=True
-    )
+    constants = _proto_to_dict(constants_opt)
+    hardware = _proto_to_dict(hardware_opt)
+    handshake = _proto_to_dict(handshake_opt)
+    data_formats = _proto_to_dict(data_formats_opt)
+    cloud_suffixes = _proto_to_dict(cloud_suffixes_opt)
     for field_desc in mcubridge_pb2.CloudSuffixes.DESCRIPTOR.fields:
         if not cloud_suffixes.get(field_desc.name):
             cloud_suffixes[field_desc.name] = field_desc.name
 
-    cloud_defaults = MessageToDict(
-        cloud_defaults_opt, preserving_proto_field_name=True, always_print_fields_with_no_presence=True
-    )
-    status_reasons = MessageToDict(
-        status_reasons_opt, preserving_proto_field_name=True, always_print_fields_with_no_presence=True
-    )
+    cloud_defaults = _proto_to_dict(cloud_defaults_opt)
+    status_reasons = _proto_to_dict(status_reasons_opt)
     for field_desc in mcubridge_pb2.StatusReasons.DESCRIPTOR.fields:
         if not status_reasons.get(field_desc.name):
             status_reasons[field_desc.name] = field_desc.name
 
     cloud_subscriptions: list[dict[str, Any]] = []
     for sub in cloud_subscriptions_opt:
-        sub_dict = MessageToDict(sub, preserving_proto_field_name=True, always_print_fields_with_no_presence=True)
+        sub_dict = _proto_to_dict(sub)
         if not sub_dict.get("qos"):
             sub_dict["qos"] = 1
         cloud_subscriptions.append(sub_dict)
-    topics = [
-        MessageToDict(t, preserving_proto_field_name=True, always_print_fields_with_no_presence=True)
-        for t in topics_opt
-    ]
-    actions = [
-        MessageToDict(a, preserving_proto_field_name=True, always_print_fields_with_no_presence=True)
-        for a in actions_opt
-    ]
+    topics = [_proto_to_dict(t) for t in topics_opt]
+    actions = [_proto_to_dict(a) for a in actions_opt]
+
 
     architectures: dict[str, int] = {}
     architecture_display_names: dict[str, str] = {}
@@ -300,6 +284,19 @@ TEMPLATE_DIR = Path(__file__).parent / "templates"
 VERSION_PATH = REPO_ROOT / "VERSION"
 
 
+def _extract_cpp_constants(pb_obj: Any, pb_module: Any) -> list[dict[str, Any]]:
+    """Extract C++ constant definitions from Protobuf descriptor options reflectively. [SIL-2]"""
+    constants: list[dict[str, Any]] = []
+    for field in pb_obj.DESCRIPTOR.fields:
+        opts = field.GetOptions()
+        cpp_name = opts.Extensions[pb_module.cpp_name]
+        cpp_type = opts.Extensions[pb_module.cpp_type]
+        if cpp_name:
+            val = getattr(pb_obj, field.name)
+            constants.append({"name": cpp_name, "type": cpp_type, "value": val})
+    return constants
+
+
 class JinjaGenerator:
     def __init__(self) -> None:
         self.env = Environment(
@@ -311,16 +308,11 @@ class JinjaGenerator:
 
     @staticmethod
     def _cpp_digit_separator(value: object) -> str:
-        """Format integers >= 10'000 with C++14 digit separators."""
+        """Format integers >= 10'000 with C++14 digit separators. [SIL-2]"""
         if not isinstance(value, int) or abs(value) < 10_000:
             return str(value)
-        s = str(abs(value))
-        parts: list[str] = []
-        while s:
-            parts.append(s[-3:])
-            s = s[:-3]
-        result = "'".join(reversed(parts))
-        return f"-{result}" if value < 0 else result
+        formatted = f"{abs(value):_}".replace("_", "'")
+        return f"-{formatted}" if value < 0 else formatted
 
     @staticmethod
     def _snake_case(s: str) -> str:
@@ -332,40 +324,15 @@ class JinjaGenerator:
         parsed_version = Version(version)
         v_major, v_minor, v_patch = parsed_version.major, parsed_version.minor, parsed_version.micro
 
-        constants: list[dict[str, Any]] = []
-        # Reflection from spec.constants_opt descriptor fields
-        for field in spec.constants_opt.DESCRIPTOR.fields:
-            opts = field.GetOptions()
-            cpp_name = opts.Extensions[spec.pb_module.cpp_name]
-            cpp_type = opts.Extensions[spec.pb_module.cpp_type]
-            if cpp_name:
-                val = getattr(spec.constants_opt, field.name)
-                constants.append({"name": cpp_name, "type": cpp_type, "value": val})
-
-        # Reflection from spec.hardware_opt descriptor fields
-        for field in spec.hardware_opt.DESCRIPTOR.fields:
-            opts = field.GetOptions()
-            cpp_name = opts.Extensions[spec.pb_module.cpp_name]
-            cpp_type = opts.Extensions[spec.pb_module.cpp_type]
-            if cpp_name:
-                val = getattr(spec.hardware_opt, field.name)
-                constants.append({"name": cpp_name, "type": cpp_type, "value": val})
-
-        # Append version constants
+        constants = _extract_cpp_constants(spec.constants_opt, spec.pb_module)
+        constants.extend(_extract_cpp_constants(spec.hardware_opt, spec.pb_module))
         constants.append({"name": "FIRMWARE_VERSION_MAJOR", "type": "uint8_t", "value": v_major})
         constants.append({"name": "FIRMWARE_VERSION_MINOR", "type": "uint8_t", "value": v_minor})
         constants.append({"name": "FIRMWARE_VERSION_PATCH", "type": "uint8_t", "value": v_patch})
 
         hs = spec.handshake
-        handshake_constants: list[dict[str, Any]] = []
-        # Reflection from spec.handshake_opt descriptor fields
-        for field in spec.handshake_opt.DESCRIPTOR.fields:
-            opts = field.GetOptions()
-            cpp_name = opts.Extensions[spec.pb_module.cpp_name]
-            cpp_type = opts.Extensions[spec.pb_module.cpp_type]
-            if cpp_name:
-                val = getattr(spec.handshake_opt, field.name)
-                handshake_constants.append({"name": cpp_name, "type": cpp_type, "value": val})
+        handshake_constants = _extract_cpp_constants(spec.handshake_opt, spec.pb_module)
+
 
         handshake_data = {
             "hkdf_salt": hs["hkdf_salt"],
@@ -624,14 +591,13 @@ class JinjaGenerator:
 
     @staticmethod
     def _build_resp_to_req_map(spec: ProtocolSpec) -> dict[str, str]:
-        reverse: dict[str, str] = {}
         cmd_names = {c.name for c in spec.commands}
-        for cmd in spec.commands:
-            if cmd.name.endswith("_RESP"):
-                req_name = cmd.name[:-5]
-                if req_name in cmd_names:
-                    reverse[cmd.name] = req_name
-        return reverse
+        return {
+            cmd.name: cmd.name[:-5]
+            for cmd in spec.commands
+            if cmd.name.endswith("_RESP") and cmd.name[:-5] in cmd_names
+        }
+
 
     def generate_nanopb(self, proto_path: Path) -> None:
         """Invoke nanopb_generator.py to create C++ headers/sources."""
@@ -874,6 +840,15 @@ def _copy_generated_python_files(proto_path: Path, args: Any) -> None:
         py_grpc.unlink(missing_ok=True)
 
 
+@dataclass
+class GenerationArgs:
+    spec: Path
+    cpp: Path | None
+    cpp_structs: Path | None
+    py: Path | None
+    py_client: Path | None
+
+
 cli = typer.Typer(help="Protocol binding generator for MCU Bridge v2.", add_completion=False)
 
 
@@ -887,15 +862,8 @@ def main(
 ) -> None:
     ensure_nanopb_core_files()
 
-    @dataclass
-    class Args:
-        spec: Path
-        cpp: Path | None
-        cpp_structs: Path | None
-        py: Path | None
-        py_client: Path | None
+    args = GenerationArgs(spec=spec_file, cpp=cpp, cpp_structs=cpp_structs, py=py, py_client=py_client)
 
-    args = Args(spec=spec_file, cpp=cpp, cpp_structs=cpp_structs, py=py, py_client=py_client)
     gen = JinjaGenerator()
     version = VERSION_PATH.read_text(encoding="utf-8").strip() if VERSION_PATH.exists() else "0.0.0"
     if version == "0.0.0":
@@ -993,8 +961,8 @@ def main(
                     )
                     if res.returncode != 0:
                         subprocess.run(["pyright", "--createstub", lib], check=False, capture_output=True)
-                except (OSError, RuntimeError, subprocess.SubprocessError):
-                    pass
+                except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+                    sys.stderr.write(f"Warning: stub generation failed for {lib}: {exc}\n")
 
                 # [SIL-2] Fix generated prometheus_client core.pyi stub to export necessary types
                 if lib == "prometheus_client":

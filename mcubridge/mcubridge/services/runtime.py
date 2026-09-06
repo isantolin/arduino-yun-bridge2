@@ -13,9 +13,9 @@ import logging
 import os
 import secrets
 import shlex
-import shutil
 import struct
 import time
+
 from collections.abc import Coroutine, Callable, Awaitable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -206,6 +206,21 @@ class BridgeService:
             SystemAction.VERSION: self._handle_system_version,
             SystemAction.BRIDGE: self._handle_system_bridge,
         }
+        self._file_mcu_dispatch: Final[
+            dict[FileAction | str, Callable[[str, pb.CloudQueuedPublish], Coroutine[Any, Any, None]]]
+        ] = {
+            FileAction.READ: lambda target, inbound: self._handle_file_mcu_read(inbound, target),
+            FileAction.WRITE: lambda target, inbound: self._handle_file_mcu_write(target, inbound),
+            FileAction.REMOVE: lambda target, inbound: self._handle_file_mcu_remove(target, inbound),
+        }
+        self._file_local_dispatch: Final[
+            dict[FileAction | str, Callable[[str, pb.CloudQueuedPublish], Coroutine[Any, Any, Any]]]
+        ] = {
+            FileAction.READ: self._handle_file_local_read,
+            FileAction.WRITE: self._handle_file_local_write,
+            FileAction.REMOVE: lambda target, _inb: self.safe_file_remove(target),
+        }
+
 
     async def send_mcu_ok(self, payload: bytes | ProtobufMessage = b"") -> bool:
         return bool(self.serial and await self.serial.send(Status.OK.value, payload))
@@ -840,23 +855,14 @@ class BridgeService:
         if not (act and target):
             return
         if target.startswith(MCU_FS_PREFIX):
-            mcu_dispatch: dict[Any, Callable[[], Coroutine[Any, Any, None]]] = {
-                FileAction.READ: lambda: self._handle_file_mcu_read(inbound, target),
-                FileAction.WRITE: lambda: self._handle_file_mcu_write(target, inbound),
-                FileAction.REMOVE: lambda: self._handle_file_mcu_remove(target, inbound),
-            }
-            if handler := mcu_dispatch.get(act):
-                await handler()
+            if handler := self._file_mcu_dispatch.get(act):
+                await handler(target, inbound)
             return
 
         if self._get_safe_path(target):
-            local_dispatch: dict[Any, Callable[[], Coroutine[Any, Any, Any]]] = {
-                FileAction.READ: lambda: self._handle_file_local_read(target, inbound),
-                FileAction.WRITE: lambda: self._handle_file_local_write(target, inbound),
-                FileAction.REMOVE: lambda: self.safe_file_remove(target),
-            }
-            if handler := local_dispatch.get(act):
-                await handler()
+            if handler := self._file_local_dispatch.get(act):
+                await handler(target, inbound)
+
 
     async def _handle_file_mcu_write(self, target: str, inbound: pb.CloudQueuedPublish) -> None:
         serial = self.serial
@@ -1342,8 +1348,9 @@ class BridgeService:
     async def _write_with_quota(self, path: Path, data: bytes) -> bool:
         async with self._storage_lock:
             try:
-                usage = await asyncio.to_thread(shutil.disk_usage, self.config.file_system_root)
+                usage = await asyncio.to_thread(psutil.disk_usage, self.config.file_system_root)
                 self.state.file_storage_bytes_used = usage.used
+
                 if usage.free < len(data):
                     self.state.file_storage_limit_rejections += 1
                     return False

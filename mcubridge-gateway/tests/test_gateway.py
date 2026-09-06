@@ -211,9 +211,14 @@ def test_cli_main_keyboard_interrupt() -> None:
             coro.close()
         raise KeyboardInterrupt
 
-    with patch("asyncio.run", side_effect=_mock_run_interrupt):
+    mock_logger_info = MagicMock()
+    with (
+        patch("asyncio.run", side_effect=_mock_run_interrupt),
+        patch("gateway.logger.info", mock_logger_info),
+    ):
         result = runner.invoke(cast(Any, app), ["--no-tls", "--http3"])
         assert result.exit_code == 0
+        mock_logger_info.assert_called_once_with("Gateway terminated by user.")
 
 
 @pytest.mark.asyncio

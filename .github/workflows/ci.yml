@@ -233,9 +233,9 @@ jobs:
       - name: Compile & Run Emulation
         run: |
           ./tools/ci/compile_emulator.sh
-          PYTHONPATH=mcubridge:mcubridge-client-examples python mcubridge-gateway/gateway.py --no-tls --port 8443 &
+          PYTHONPATH=.:mcubridge:mcubridge-client-examples:mcubridge-gateway python mcubridge-gateway/gateway.py --no-tls --port 8443 &
           gateway_pid=$!
-          PYTHONPATH=mcubridge:mcubridge-client-examples python -u tools/emulation/emulation_runner.py \
+          PYTHONPATH=.:mcubridge:mcubridge-client-examples:mcubridge-gateway python -u tools/emulation/emulation_runner.py \
             --firmware ${{ matrix.firmware }} \
             ${{ matrix.scripts }}
           kill $gateway_pid
@@ -398,7 +398,7 @@ jobs:
 
       - name: Generate Daemon Profile
         env:
-          PYTHONPATH: mcubridge:mcubridge-client-examples:typings
+          PYTHONPATH: .:mcubridge:mcubridge-client-examples:typings
         run: |
           # 1. Mandatory Protocol Generation (Required for imports)
           # Use tox to ensure we have all generator deps, but we need them in this env too

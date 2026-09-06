@@ -13,7 +13,6 @@ import logging
 import os
 import secrets
 import shlex
-import struct
 import time
 
 from collections.abc import Coroutine, Callable, Awaitable
@@ -107,6 +106,16 @@ _TELEMETRY_TOPIC_FIELD_MAP: Final[dict[str, str]] = {
     "summary": "bridge_snapshot_blob",
     "handshake": "handshake_snapshot_blob",
 }
+
+_QUERY_TOPIC_ACTIONS: Final = frozenset(
+    {
+        (Topic.DIGITAL, PinAction.READ),
+        (Topic.ANALOG, PinAction.READ),
+        (Topic.DATASTORE, DatastoreAction.GET),
+        (Topic.FILE, FileAction.READ),
+        (Topic.SPI, SpiAction.TRANSFER),
+    }
+)
 
 
 @dataclass
@@ -448,7 +457,7 @@ class BridgeService:
 
             self.state.metrics.cloud_messages_published.inc()
             return True
-        except (OSError, struct.error, ProtobufSerializationError) as exc:
+        except (OSError, ProtobufSerializationError) as exc:
             logger.error("Cloud publish failure", error=str(exc))
             return False
 
@@ -522,8 +531,7 @@ class BridgeService:
         if not (self.state.is_synchronized or command_id in _STATUS_VALUES or command_id in _PRE_SYNC_ALLOWED_COMMANDS):
             return
 
-        structlog.contextvars.bind_contextvars(cmd_id=command_id, seq_id=sequence_id)
-        try:
+        with structlog.contextvars.bound_contextvars(cmd_id=command_id, seq_id=sequence_id):
             if handler := self.mcu_registry.get(command_id):
                 p = payload
                 if not isinstance(p, ProtobufMessage) and command_id in protocol.COMMAND_TO_PB:
@@ -536,8 +544,6 @@ class BridgeService:
             elif response_to_request(command_id) is None:
                 self.state.metrics.unknown_command_count.inc()
                 await serial.send(Status.NOT_IMPLEMENTED.value, b"")
-        finally:
-            structlog.contextvars.unbind_contextvars("cmd_id", "seq_id")
 
     async def handle_request(self, inbound: Any) -> None:
         if isinstance(inbound, pb.CloudQueuedPublish):
@@ -559,8 +565,7 @@ class BridgeService:
             )
 
         topic_val = request.topic_name if request.topic_name else getattr(request, "topic", "")
-        structlog.contextvars.bind_contextvars(topic=topic_val)
-        try:
+        with structlog.contextvars.bound_contextvars(topic=topic_val):
             if route := parse_topic(self.state.cloud_topic_prefix, topic_val):
                 if route.topic in (Topic.DIGITAL, Topic.ANALOG, Topic.CONSOLE, Topic.SPI):
                     try:
@@ -581,8 +586,6 @@ class BridgeService:
                 # Unified Dispatch
                 if handler := self._topic_dispatch.get(route.topic):
                     await handler(route, request)
-        finally:
-            structlog.contextvars.unbind_contextvars("topic")
 
     # --- Business Logic Implementation ---
 
@@ -868,7 +871,7 @@ class BridgeService:
         serial = self.serial
         if serial and await serial.send(
             Command.CMD_FILE_WRITE.value,
-            pb.FileWrite(path=target[len(MCU_FS_PREFIX) :], data=inbound.payload),
+            pb.FileWrite(path=target.removeprefix(MCU_FS_PREFIX), data=inbound.payload),
         ):
             await self.enqueue_cloud(
                 create_queued_publish(
@@ -881,7 +884,7 @@ class BridgeService:
     async def _handle_file_mcu_remove(self, target: str, _inbound: pb.CloudQueuedPublish) -> None:
         serial = self.serial
         if serial:
-            await serial.send(Command.CMD_FILE_REMOVE.value, pb.FileRemove(path=target[len(MCU_FS_PREFIX) :]))
+            await serial.send(Command.CMD_FILE_REMOVE.value, pb.FileRemove(path=target.removeprefix(MCU_FS_PREFIX)))
 
     async def _handle_file_local_write(self, target: str, inbound: pb.CloudQueuedPublish) -> None:
         if await self.safe_file_write(target, inbound.payload):
@@ -927,7 +930,7 @@ class BridgeService:
             self._pending_mcu_read = _PendingMcuRead(asyncio.get_running_loop().create_future())
             if not await serial.send_raw(
                 Command.CMD_FILE_READ.value,
-                pb.FileRead(path=target[len(MCU_FS_PREFIX) :]),
+                pb.FileRead(path=target.removeprefix(MCU_FS_PREFIX)),
             ):
                 logger.error("MCU file read dispatch failed", target=target)
                 await self.enqueue_cloud(
@@ -1276,16 +1279,23 @@ class BridgeService:
                     stderr_truncated=te,
                 )
 
+    @staticmethod
+    def _signal_process_tree(pid: int, *, kill: bool = False) -> bool:
+        try:
+            parent = psutil.Process(pid)
+            children = parent.children(recursive=True)
+            for child in children:
+                child.kill() if kill else child.terminate()
+            parent.kill() if kill else parent.terminate()
+            return True
+        except (psutil.NoSuchProcess, ProcessLookupError, psutil.AccessDenied):
+            return False
+
     async def _terminate_process(self, pid: int, ctx: ProcessContext, *, grace_period: float) -> int:
         if ctx.handle.returncode is not None:
             return ctx.handle.returncode
-        try:
-            parent = psutil.Process(ctx.handle.pid)
-            children = parent.children(recursive=True)
-            for child in children:
-                child.terminate()
-            parent.terminate()
-        except (psutil.NoSuchProcess, ProcessLookupError, psutil.AccessDenied):
+
+        if not BridgeService._signal_process_tree(ctx.handle.pid, kill=False):
             return ctx.handle.returncode or -1
 
         try:
@@ -1294,13 +1304,7 @@ class BridgeService:
         except TimeoutError:
             logger.error("Process exceeded graceful shutdown window; escalating to SIGKILL", pid=pid)
 
-        try:
-            parent = psutil.Process(ctx.handle.pid)
-            children = parent.children(recursive=True)
-            for child in children:
-                child.kill()
-            parent.kill()
-        except (psutil.NoSuchProcess, ProcessLookupError, psutil.AccessDenied):
+        if not BridgeService._signal_process_tree(ctx.handle.pid, kill=True):
             return ctx.handle.returncode or -1
 
         try:
@@ -1333,17 +1337,21 @@ class BridgeService:
         return bool(path and await self._write_with_quota(path, data))
 
     async def safe_file_read(self, p_str: str) -> bytes | None:
-        path = self._get_safe_path(p_str)
-        if path and await asyncio.to_thread(path.is_file):
+        if not (path := self._get_safe_path(p_str)):
+            return None
+        try:
             return await asyncio.to_thread(path.read_bytes)
-        return None
+        except (FileNotFoundError, IsADirectoryError, PermissionError):
+            return None
 
     async def safe_file_remove(self, p_str: str) -> bool:
-        path = self._get_safe_path(p_str)
-        if path and await asyncio.to_thread(path.exists):
+        if not (path := self._get_safe_path(p_str)):
+            return False
+        try:
             await asyncio.to_thread(path.unlink)
             return True
-        return False
+        except (FileNotFoundError, IsADirectoryError, PermissionError):
+            return False
 
     async def _write_with_quota(self, path: Path, data: bytes) -> bool:
         async with self._storage_lock:
@@ -1361,8 +1369,8 @@ class BridgeService:
             return True
 
     def _parse_pin(self, s: str) -> int:
-        s = s.upper()
-        return int(s[1:]) if s.startswith("A") and s[1:].isdigit() else (int(s) if s.isdigit() else -1)
+        clean = s.upper().removeprefix("A")
+        return int(clean) if clean.isdigit() else -1
 
     def deduce_action(self, r: TopicRoute) -> str | None:
         if r.topic == Topic.SYSTEM:
@@ -1749,9 +1757,10 @@ def _parse_serial_response(res: Any, target_type: type[_T_PB], default: _T_PB) -
     if isinstance(res, target_type):
         return res
     if isinstance(res, (bytes, bytearray)):
-        resp = target_type()
-        resp.ParseFromString(bytes(res))
-        return resp
+        try:
+            return target_type.FromString(bytes(res))
+        except (ProtobufDecodeError, TypeError, ValueError):
+            return default
     return default
 
 
@@ -1846,7 +1855,7 @@ class LocalBridgeService(LocalBridgeBase):
                 bool(
                     await serial.send(
                         Command.CMD_FILE_WRITE.value,
-                        pb.FileWrite(path=request.path[len(MCU_FS_PREFIX) :], data=request.data),
+                        pb.FileWrite(path=request.path.removeprefix(MCU_FS_PREFIX), data=request.data),
                     )
                 )
                 if serial
@@ -1867,7 +1876,7 @@ class LocalBridgeService(LocalBridgeBase):
             res = (
                 await serial.send(
                     Command.CMD_FILE_READ.value,
-                    pb.FileRead(path=request.path[len(MCU_FS_PREFIX) :]),
+                    pb.FileRead(path=request.path.removeprefix(MCU_FS_PREFIX)),
                 )
                 if serial
                 else None
@@ -1886,7 +1895,7 @@ class LocalBridgeService(LocalBridgeBase):
                 bool(
                     await serial.send(
                         Command.CMD_FILE_REMOVE.value,
-                        pb.FileRemove(path=request.path[len(MCU_FS_PREFIX) :]),
+                        pb.FileRemove(path=request.path.removeprefix(MCU_FS_PREFIX)),
                     )
                 )
                 if serial
@@ -1975,14 +1984,11 @@ class LocalBridgeService(LocalBridgeBase):
         is_query = has_correlation or (
             route is not None
             and (
-                (route.topic in (Topic.DIGITAL, Topic.ANALOG) and action == PinAction.READ)
-                or (route.topic == Topic.DATASTORE and action == DatastoreAction.GET)
+                (route.topic, action) in _QUERY_TOPIC_ACTIONS
                 or (
                     route.topic == Topic.SYSTEM
                     and ("get" in route.segments or action in ("version", "freeram", "bridge"))
                 )
-                or (route.topic == Topic.FILE and action == FileAction.READ)
-                or (route.topic == Topic.SPI and action == SpiAction.TRANSFER)
             )
         )
 

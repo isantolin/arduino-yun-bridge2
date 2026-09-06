@@ -171,35 +171,27 @@ def load_spec_from_proto(proto_path: Path) -> ProtocolSpec:
     data_formats = _proto_to_dict(data_formats_opt)
     cloud_suffixes = _proto_to_dict(cloud_suffixes_opt)
     for field_desc in mcubridge_pb2.CloudSuffixes.DESCRIPTOR.fields:
-        if not cloud_suffixes.get(field_desc.name):
-            cloud_suffixes[field_desc.name] = field_desc.name
+        cloud_suffixes.setdefault(field_desc.name, field_desc.name)
 
     cloud_defaults = _proto_to_dict(cloud_defaults_opt)
     status_reasons = _proto_to_dict(status_reasons_opt)
     for field_desc in mcubridge_pb2.StatusReasons.DESCRIPTOR.fields:
-        if not status_reasons.get(field_desc.name):
-            status_reasons[field_desc.name] = field_desc.name
+        status_reasons.setdefault(field_desc.name, field_desc.name)
 
     cloud_subscriptions: list[dict[str, Any]] = []
     for sub in cloud_subscriptions_opt:
         sub_dict = _proto_to_dict(sub)
-        if not sub_dict.get("qos"):
-            sub_dict["qos"] = 1
+        sub_dict.setdefault("qos", 1)
         cloud_subscriptions.append(sub_dict)
     topics = [_proto_to_dict(t) for t in topics_opt]
     actions = [_proto_to_dict(a) for a in actions_opt]
 
+    architectures = {arch.name: arch.value for arch in architectures_opt}
+    architecture_display_names = {
+        arch.name: arch.display_name for arch in architectures_opt if arch.display_name
+    }
 
-    architectures: dict[str, int] = {}
-    architecture_display_names: dict[str, str] = {}
-    for arch in architectures_opt:
-        architectures[arch.name] = arch.value
-        if arch.display_name:
-            architecture_display_names[arch.name] = arch.display_name
-
-    capabilities: dict[str, int] = {}
-    for cap in capabilities_opt:
-        capabilities[cap.name] = cap.value
+    capabilities = {cap.name: cap.value for cap in capabilities_opt}
 
     # Load Command enum
     command_enum_desc = file_desc.enum_types_by_name["Command"]
@@ -221,28 +213,31 @@ def load_spec_from_proto(proto_path: Path) -> ProtocolSpec:
             )
         )
 
-    # Load Message CLOUD topics
-    message_topics: dict[str, str] = {}
-    for msg_name, msg_desc in file_desc.message_types_by_name.items():
-        opts = msg_desc.GetOptions()
-        if opts.HasExtension(mcubridge_pb2.msg_cloud_topic):
-            message_topics[msg_name] = opts.Extensions[mcubridge_pb2.msg_cloud_topic]
-
-    # Load Enum CLOUD topics (like Status)
-    for enum_name, enum_desc in file_desc.enum_types_by_name.items():
-        opts = enum_desc.GetOptions()
-        if opts.HasExtension(mcubridge_pb2.enum_cloud_topic):
-            # For enums, we treat it as a special mapping or just add to message_topics with a prefix
-            message_topics[f"{enum_name}_ENUM"] = opts.Extensions[mcubridge_pb2.enum_cloud_topic]
+    # Load Message & Enum CLOUD topics
+    message_topics = {
+        msg_name: opts.Extensions[mcubridge_pb2.msg_cloud_topic]
+        for msg_name, msg_desc in file_desc.message_types_by_name.items()
+        if (opts := msg_desc.GetOptions()).HasExtension(mcubridge_pb2.msg_cloud_topic)
+    }
+    message_topics.update(
+        {
+            f"{enum_name}_ENUM": opts.Extensions[mcubridge_pb2.enum_cloud_topic]
+            for enum_name, enum_desc in file_desc.enum_types_by_name.items()
+            if (opts := enum_desc.GetOptions()).HasExtension(mcubridge_pb2.enum_cloud_topic)
+        }
+    )
 
     # Load Status enum
     status_enum_desc = file_desc.enum_types_by_name["Status"]
-    statuses: list[StatusDef] = []
-    for val in status_enum_desc.values:
-        if val.name == "STATUS_UNSPECIFIED":
-            continue
-        opts = val.GetOptions().Extensions[mcubridge_pb2.status_opts]
-        statuses.append(StatusDef(name=val.name, value=val.number, description=opts.description))
+    statuses = [
+        StatusDef(
+            name=val.name,
+            value=val.number,
+            description=val.GetOptions().Extensions[mcubridge_pb2.status_opts].description,
+        )
+        for val in status_enum_desc.values
+        if val.name != "STATUS_UNSPECIFIED"
+    ]
 
     spec = ProtocolSpec(
         constants=constants,
@@ -284,6 +279,35 @@ def _extract_cpp_constants(pb_obj: Any, pb_module: Any) -> list[dict[str, Any]]:
         if cpp_name:
             val = getattr(pb_obj, field.name)
             constants.append({"name": cpp_name, "type": cpp_type, "value": val})
+    return constants
+
+
+def _extract_py_constants(
+    pb_obj: Any,
+    pb_module: Any,
+    *,
+    quote_strings: bool = False,
+    client_only: bool = False,
+) -> list[dict[str, Any]]:
+    """Extract Python constant definitions from Protobuf descriptor options reflectively. [SIL-2]"""
+    constants: list[dict[str, Any]] = []
+    for field in pb_obj.DESCRIPTOR.fields:
+        opts = field.GetOptions()
+        if client_only and not opts.Extensions[pb_module.client_constant]:
+            continue
+        py_name = opts.Extensions[pb_module.py_name]
+        py_type = opts.Extensions[pb_module.py_type]
+        if py_name:
+            val = getattr(pb_obj, field.name)
+            if py_name == "FRAME_DELIMITER":
+                formatted_val = f"bytes([ {val} ])"
+            elif py_type == "bytes":
+                formatted_val = f'b"{val}"'
+            elif py_type == "str" or (quote_strings and isinstance(val, str)):
+                formatted_val = f'"{val}"'
+            else:
+                formatted_val = val
+            constants.append({"name": py_name, "type": py_type, "value": formatted_val})
     return constants
 
 
@@ -381,38 +405,10 @@ class JinjaGenerator:
         out_path.write_text(render, encoding="utf-8")
 
     def _extract_python_constants(self, spec: ProtocolSpec) -> list[dict[str, Any]]:
-        constants: list[dict[str, Any]] = []
-        # Reflection from spec.constants_opt descriptor fields
-        for field in spec.constants_opt.DESCRIPTOR.fields:
-            opts = field.GetOptions()
-            py_name = opts.Extensions[spec.pb_module.py_name]
-            py_type = opts.Extensions[spec.pb_module.py_type]
-            if py_name:
-                val = getattr(spec.constants_opt, field.name)
-                if py_name == "FRAME_DELIMITER":
-                    constants.append({"name": py_name, "type": py_type, "value": f"bytes([ {val} ])"})
-                else:
-                    constants.append({"name": py_name, "type": py_type, "value": val})
+        constants = _extract_py_constants(spec.constants_opt, spec.pb_module)
+        constants.extend(_extract_py_constants(spec.hardware_opt, spec.pb_module))
+        constants.extend(_extract_py_constants(spec.data_formats_opt, spec.pb_module, quote_strings=True))
 
-        # Reflection from spec.hardware_opt descriptor fields
-        for field in spec.hardware_opt.DESCRIPTOR.fields:
-            opts = field.GetOptions()
-            py_name = opts.Extensions[spec.pb_module.py_name]
-            py_type = opts.Extensions[spec.pb_module.py_type]
-            if py_name:
-                val = getattr(spec.hardware_opt, field.name)
-                constants.append({"name": py_name, "type": py_type, "value": val})
-
-        # Reflection from spec.data_formats_opt descriptor fields
-        for field in spec.data_formats_opt.DESCRIPTOR.fields:
-            opts = field.GetOptions()
-            py_name = opts.Extensions[spec.pb_module.py_name]
-            py_type = opts.Extensions[spec.pb_module.py_type]
-            if py_name:
-                val = getattr(spec.data_formats_opt, field.name)
-                constants.append({"name": py_name, "type": py_type, "value": f'"{val}"'})
-
-        # Cloud suffixes
         for key, val in spec.cloud_suffixes.items():
             py_name = f"CLOUD_SUFFIX_{key.upper()}"
             constants.append({"name": py_name, "type": "str", "value": f'"{val}"'})
@@ -420,22 +416,7 @@ class JinjaGenerator:
         return constants
 
     def _extract_python_handshake_constants(self, spec: ProtocolSpec) -> list[dict[str, Any]]:
-        handshake_constants: list[dict[str, Any]] = []
-        # Reflection from spec.handshake_opt descriptor fields
-        for field in spec.handshake_opt.DESCRIPTOR.fields:
-            opts = field.GetOptions()
-            py_name = opts.Extensions[spec.pb_module.py_name]
-            py_type = opts.Extensions[spec.pb_module.py_type]
-            if py_name:
-                val = getattr(spec.handshake_opt, field.name)
-                if py_type == "str":
-                    formatted_val = f'"{val}"'
-                elif py_type == "bytes":
-                    formatted_val = f'b"{val}"'
-                else:
-                    formatted_val = val
-                handshake_constants.append({"name": py_name, "type": py_type, "value": formatted_val})
-        return handshake_constants
+        return _extract_py_constants(spec.handshake_opt, spec.pb_module)
 
     def _group_actions(self, spec: ProtocolSpec) -> list[dict[str, Any]]:
         grouped_actions: list[dict[str, Any]] = []
@@ -574,7 +555,7 @@ class JinjaGenerator:
         cmd_names = {c.name for c in spec.commands}
         for cmd in spec.commands:
             if cmd.name.endswith("_RESP"):
-                req_name = cmd.name[:-5]
+                req_name = cmd.name.removesuffix("_RESP")
                 if req_name in cmd_names:
                     pairs.setdefault(req_name, []).append(cmd.name)
         return pairs
@@ -583,9 +564,9 @@ class JinjaGenerator:
     def _build_resp_to_req_map(spec: ProtocolSpec) -> dict[str, str]:
         cmd_names = {c.name for c in spec.commands}
         return {
-            cmd.name: cmd.name[:-5]
+            cmd.name: cmd.name.removesuffix("_RESP")
             for cmd in spec.commands
-            if cmd.name.endswith("_RESP") and cmd.name[:-5] in cmd_names
+            if cmd.name.endswith("_RESP") and cmd.name.removesuffix("_RESP") in cmd_names
         }
 
 
@@ -661,13 +642,7 @@ class JinjaGenerator:
     def generate_python_client(self, spec: ProtocolSpec, out_path: Path) -> None:
         template = self.env.get_template("protocol_client.py.j2")
 
-        constants: list[dict[str, Any]] = []
-        for field in spec.constants_opt.DESCRIPTOR.fields:
-            opts = field.GetOptions()
-            if opts.Extensions[spec.pb_module.client_constant]:
-                py_name = opts.Extensions[spec.pb_module.py_name]
-                val = getattr(spec.constants_opt, field.name)
-                constants.append({"name": py_name, "type": "int", "value": val})
+        constants = _extract_py_constants(spec.constants_opt, spec.pb_module, client_only=True)
 
         render = template.render(
             constants=constants,
@@ -774,11 +749,8 @@ def check_incremental_build(args: Any, version: str) -> tuple[bool, Path, str]:
     hash_file = proto_path.parent / ".mcubridge.proto.hash"
 
     # Check if all output files exist
-    outputs_exist = True
-    for out in [args.cpp, args.cpp_structs, args.py, args.py_client]:
-        if out and not out.exists():
-            outputs_exist = False
-            break
+    outputs = [args.cpp, args.cpp_structs, args.py, args.py_client]
+    outputs_exist = all(out.exists() for out in outputs if out)
 
     # Also check if mcubridge_pb2.py exists in target locations
     if outputs_exist:

@@ -9,6 +9,7 @@ import re
 import sys
 import tomllib
 from pathlib import Path
+from typing import Annotated
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -119,6 +120,28 @@ def check_rules_parity() -> list[str]:
     return errors
 
 
+def sync_rules_to_agent_json() -> bool:
+    """Synchronize canonical GEMINI.md instructions into .agent/agents/openwrt-architect-arduino/agent.json."""
+    canonical_path = ROOT / "GEMINI.md"
+    if not canonical_path.exists():
+        print(f"Cannot sync: canonical rules file missing: {canonical_path}", file=sys.stderr)
+        return False
+    canonical = canonical_path.read_text(encoding="utf-8").strip()
+    agent_path = ROOT / ".agent" / "agents" / "openwrt-architect-arduino" / "agent.json"
+    if not agent_path.exists():
+        print(f"Cannot sync: agent target missing: {agent_path}", file=sys.stderr)
+        return False
+    try:
+        agent = json.loads(agent_path.read_text(encoding="utf-8"))
+        agent["instructions"] = canonical
+        agent_path.write_text(json.dumps(agent, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        print(f"Successfully synchronized {agent_path.relative_to(ROOT)} from GEMINI.md")
+        return True
+    except (json.JSONDecodeError, OSError) as exc:
+        print(f"Failed to sync {agent_path}: {exc}", file=sys.stderr)
+        return False
+
+
 app = typer.Typer(
     help="Validate parity between .agent/workflows/*.md, .github/commands/*.toml, and AI rules.",
     add_completion=False,
@@ -126,7 +149,11 @@ app = typer.Typer(
 
 
 @app.command()
-def main() -> None:
+def main(
+    fix: Annotated[bool, typer.Option("--fix", "-f", help="Automatically synchronize agent.json instructions from GEMINI.md")] = False,
+) -> None:
+    if fix:
+        sync_rules_to_agent_json()
     errors = check_model_parity() + check_prompt_parity() + check_rules_parity()
     if errors:
         print("PARITY FAILURES:", file=sys.stderr)

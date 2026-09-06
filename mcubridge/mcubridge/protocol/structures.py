@@ -22,6 +22,7 @@ from typing import (
 )
 
 from google.protobuf.message import Message as ProtobufMessage
+import structlog
 
 from . import mcubridge_pb2 as pb, protocol
 from mcubridge.config.const import (
@@ -29,6 +30,8 @@ from mcubridge.config.const import (
     CLOUD_TLS_MIN_VERSION,
     PROP_KEY_BRIDGE_REQUEST_TOPIC,
 )
+
+logger = structlog.get_logger(__name__)
 
 
 def iter_chunks(data: bytes, chunk_size: int) -> Iterable[bytes]:
@@ -40,6 +43,8 @@ PROTOBUF_CONTENT_TYPE: Final[str] = "application/x-protobuf"
 
 _TOKEN_SEP: Final = re.compile(r"[,\s]+")
 _VOLATILE_STORAGE_PREFIXES: Final[tuple[str, ...]] = ("/tmp", "/var/run", "/run", "/dev/shm")
+_FLAVOR_SEGMENTS: Final[frozenset[str]] = frozenset({"response", "value"})
+_TOPIC_AUTH_FIELDS: Final[tuple[str, ...]] = tuple(f.name for f in pb.TopicAuthorization.DESCRIPTOR.fields)
 
 
 @functools.lru_cache(maxsize=1)
@@ -67,14 +72,14 @@ class TopicRoute:
         """Infer the service action from the first segment if applicable.
         Ignore segments that indicate a response flavor.
         """
-        if not self.segments or "response" in self.segments or "value" in self.segments:
+        if not self.segments or not _FLAVOR_SEGMENTS.isdisjoint(self.segments):
             return None
         val = self.segments[0]
         return _get_action_lookup_map().get(val, val)
 
     @property
     def remainder(self) -> tuple[str, ...]:
-        return self.segments[1:] if len(self.segments) > 1 else ()
+        return self.segments[1:]
 
 
 # =============================================================================
@@ -84,7 +89,7 @@ class TopicRoute:
 
 def is_command_allowed(policy: pb.AllowedCommandPolicy, command: str) -> bool:
     """Check if a shell/process command is allowed by the policy. [SIL-2]"""
-    pieces = command.strip().split()
+    pieces = command.split()
     if not pieces:
         return False
     return ALLOWED_COMMAND_WILDCARD in policy.entries or any(
@@ -101,10 +106,10 @@ def create_allowed_policy(entries: Iterable[str]) -> pb.AllowedCommandPolicy:
 
 def allows_topic(auth: pb.TopicAuthorization, topic: str, action: str) -> bool:
     """Check if a specific topic/action combination is authorized. [SIL-2]"""
-    field_name = protocol.TOPIC_AUTH_MAP.get((topic.lower(), action.lower()))
-    if field_name is not None:
-        return bool(getattr(auth, field_name))
-    return False
+    return bool(
+        (field_name := protocol.TOPIC_AUTH_MAP.get((topic.lower(), action.lower())))
+        and getattr(auth, field_name, False)
+    )
 
 
 # =============================================================================
@@ -131,12 +136,12 @@ def validate_config(cfg: pb.RuntimeConfig) -> None:
     if cfg.watchdog_enabled and cfg.watchdog_interval < 0.5:
         raise ValueError("watchdog_interval: watchdog_interval must be >= 0.5s when enabled")
     if not cfg.allow_non_tmp_paths:
-        if not any(cfg.cloud_spool_dir.startswith(p) for p in _VOLATILE_STORAGE_PREFIXES):
+        if not cfg.cloud_spool_dir.startswith(_VOLATILE_STORAGE_PREFIXES):
             raise ValueError(
                 "cloud_spool_dir: cloud_spool_dir must be in volatile storage "
                 "(/tmp, /var/run, /run, /dev/shm) unless allow_non_tmp_paths is set"
             )
-        if not any(cfg.file_system_root.startswith(p) for p in _VOLATILE_STORAGE_PREFIXES):
+        if not cfg.file_system_root.startswith(_VOLATILE_STORAGE_PREFIXES):
             raise ValueError(
                 "file_system_root: file_system_root must be in volatile storage "
                 "(/tmp, /var/run, /run, /dev/shm) unless allow_non_tmp_paths is set"
@@ -154,9 +159,8 @@ def validate_config(cfg: pb.RuntimeConfig) -> None:
     del cfg.allowed_commands[:]
     cfg.allowed_commands.extend(cfg.allowed_policy.entries)
 
-    auth_fields = [f.name for f in cfg.topic_authorization.DESCRIPTOR.fields]
-    if not any(getattr(cfg.topic_authorization, name) for name in auth_fields):
-        for name in auth_fields:
+    if not any(getattr(cfg.topic_authorization, name) for name in _TOPIC_AUTH_FIELDS):
+        for name in _TOPIC_AUTH_FIELDS:
             setattr(cfg.topic_authorization, name, True)
 
 
@@ -208,8 +212,8 @@ def save_tls_session_ticket(cache: Any | None, host: str, port: int, ticket_byte
         try:
             with cache.env.begin(write=True, db=cache.db) as txn:
                 txn.put(key.encode("utf-8"), ticket_bytes)
-        except (OSError, RuntimeError):
-            pass
+        except (OSError, RuntimeError) as exc:
+            logger.warning("Failed to persist TLS session ticket", host=host, port=port, error=str(exc))
 
 
 def load_tls_session_ticket(cache: Any | None, host: str, port: int) -> bytes | None:
@@ -283,14 +287,13 @@ def resolve_cloud_context(message: pb.CloudQueuedPublish, context: Any | None) -
     newpb_obj = pb.CloudQueuedPublish()
     newpb_obj.CopyFrom(message)
 
-    rt = getattr(context, "response_topic", None)
-    if rt is None and (props := getattr(context, "properties", None)):
+    props = getattr(context, "properties", None)
+    if (rt := getattr(context, "response_topic", None)) is None and props:
         rt = getattr(props, "ResponseTopic", None)
     if rt is not None:
         newpb_obj.topic_name = str(rt)
 
-    cd = getattr(context, "correlation_data", None)
-    if cd is None and (props := getattr(context, "properties", None)):
+    if (cd := getattr(context, "correlation_data", None)) is None and props:
         cd = getattr(props, "CorrelationData", None)
     if cd is not None:
         newpb_obj.correlation_data = bytes(cd)
@@ -315,11 +318,10 @@ def create_queued_publish(
         payload=payload,
         content_type=content_type or "",
         qos=qos,
+        user_properties=[pb.UserProperty(key=k, value=v) for k, v in user_properties],
     )
     if message_expiry_interval is not None:
         msg.message_expiry_interval = message_expiry_interval
-    for k, v in user_properties:
-        msg.user_properties.add(key=k, value=v)
     return msg
 
 
@@ -331,7 +333,7 @@ class PendingCommand:
     """Book-keeping for a tracked command in flight. [SIL-2]"""
 
     command_id: int
-    expected_resp_ids: list[int] = field(default_factory=lambda: [])
+    expected_resp_ids: list[int] = field(default_factory=list[int])
     reply_topic: str | None = None
     correlation_data: bytes | None = None
     attempts: int = 0
@@ -344,12 +346,10 @@ class PendingCommand:
     def mark_success(self, payload: bytes | ProtobufMessage | None = None) -> None:
         self.response_payload = payload
         self.success = True
-        if not self.completion.is_set():
-            self.completion.set()
+        self.completion.set()
 
     def mark_failure(self, status: int | None) -> None:
         self.success = False
         if status is not None:
             self.failure_status = status
-        if not self.completion.is_set():
-            self.completion.set()
+        self.completion.set()

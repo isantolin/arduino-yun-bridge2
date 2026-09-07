@@ -239,7 +239,7 @@ async def test_connect_cloud_session_http3(test_config: RuntimeConfig, mock_stat
                 with patch.object(svc, "_cloud_incoming_worker", new_callable=AsyncMock):
                     await svc.connect_cloud_session(ssl.create_default_context())
                     assert svc.state.connected_via_http3 is True
-                    assert not svc._cloud_incoming_queue.empty()
+                    assert svc._cloud_incoming_receive_stream.statistics().current_buffer_used > 0
 
 
 @pytest.mark.asyncio
@@ -1218,14 +1218,14 @@ async def test_runtime_cloud_incoming_worker_error_logged(test_config: RuntimeCo
     svc = BridgeService(test_config, mock_state, serial)
 
     req = pb.CloudQueuedPublish(topic_name="bridge/invalid", payload=b"payload")
-    svc._cloud_incoming_queue.put_nowait(req)
+    svc._cloud_incoming_send_stream.send_nowait(req)
 
     with patch.object(svc, "handle_request", side_effect=ValueError("Test value error")):
         worker_task = asyncio.create_task(svc._cloud_incoming_worker())
         await asyncio.sleep(0.05)
         worker_task.cancel()
         await worker_task
-        assert svc._cloud_incoming_queue.empty()
+        assert svc._cloud_incoming_receive_stream.statistics().current_buffer_used == 0
 
 
 @pytest.mark.asyncio

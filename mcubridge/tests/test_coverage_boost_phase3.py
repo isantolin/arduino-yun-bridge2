@@ -1067,7 +1067,7 @@ async def test_runtime_cloud_session_stream_flow(tmp_path: Path) -> None:
 
         await service.connect_cloud_session(None)
         assert state.connected_via_http3
-        assert not service._cloud_incoming_queue.empty()
+        assert service._cloud_incoming_receive_stream.statistics().current_buffer_used > 0
 
     state.cleanup()
 

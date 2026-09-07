@@ -30,6 +30,7 @@ from google.protobuf.message import (
 )
 
 import anyio
+from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
 import anyio.to_thread
 import psutil
 import tenacity
@@ -144,7 +145,8 @@ class BridgeService:
     _cloud_publish_lock: asyncio.Lock
     _cloud_spool: LmdbDeque | None
     mcu_registry: dict[int, McuHandler]
-    _cloud_incoming_queue: asyncio.Queue[pb.CloudQueuedPublish]
+    _cloud_incoming_send_stream: MemoryObjectSendStream[pb.CloudQueuedPublish]
+    _cloud_incoming_receive_stream: MemoryObjectReceiveStream[pb.CloudQueuedPublish]
     ipc_requests: dict[bytes, asyncio.Queue[pb.CloudQueuedPublish]]
     console_queues: list[asyncio.Queue[pb.CloudQueuedPublish]]
     ubus_service: UbusService
@@ -155,7 +157,11 @@ class BridgeService:
         self._cloud_channel, self._cloud_stream = None, None
         self.watchdog: WatchdogKeepalive | None = None
         self.exporter: PrometheusExporter | None = None
-        self._cloud_incoming_queue = asyncio.Queue()
+        self._cloud_incoming_send_stream, self._cloud_incoming_receive_stream = (
+            anyio.create_memory_object_stream[pb.CloudQueuedPublish](
+                max_buffer_size=max(1, self.state.cloud_queue_limit)
+            )
+        )
         self.ipc_requests = {}
         self.console_queues = []
         self.ubus_service = UbusService(self)
@@ -480,10 +486,20 @@ class BridgeService:
         # [SIL-2] Async spool close is handled by run() finally block.
         # cleanup() only nullifies the reference to prevent double-close.
         self._cloud_spool = None
+        if hasattr(self, "_cloud_incoming_send_stream"):
+            self._cloud_incoming_send_stream.close()
+        if hasattr(self, "_cloud_incoming_receive_stream"):
+            self._cloud_incoming_receive_stream.close()
 
         state = getattr(self, "state", None)
         if state is not None:
             state.cleanup()
+
+    def __del__(self) -> None:
+        if hasattr(self, "_cloud_incoming_send_stream"):
+            self._cloud_incoming_send_stream.close()
+        if hasattr(self, "_cloud_incoming_receive_stream"):
+            self._cloud_incoming_receive_stream.close()
 
     async def on_serial_connected(self) -> None:
         self.state.connection_fsm.connect()
@@ -1622,7 +1638,10 @@ class BridgeService:
                                     correlation_data=envelope.sequence_id.to_bytes(8, "big"),
                                     response_topic="cloud",
                                 )
-                                self._cloud_incoming_queue.put_nowait(request)
+                                try:
+                                    self._cloud_incoming_send_stream.send_nowait(request)
+                                except anyio.WouldBlock:
+                                    logger.warning("Cloud incoming memory stream full, dropping request")
                     finally:
                         worker_task.cancel()
         finally:
@@ -1646,22 +1665,19 @@ class BridgeService:
             await self._cloud_stream.send_message(envelope)
 
     async def _cloud_incoming_worker(self) -> None:
-        while True:
-            try:
-                message = await self._cloud_incoming_queue.get()
+        try:
+            async for message in self._cloud_incoming_receive_stream:
                 try:
                     await self.handle_request(message)
-                except (ValueError, RuntimeError, asyncio.QueueFull) as e:
+                except (ValueError, RuntimeError, anyio.WouldBlock, asyncio.QueueFull) as e:
                     logger.error(
                         "Error processing CLOUD message",
                         topic=message.topic_name,
                         error=str(e),
                         payload_hex=(message.payload.hex() if message.payload else None),
                     )
-                finally:
-                    self._cloud_incoming_queue.task_done()
-            except asyncio.CancelledError:
-                break
+        except anyio.get_cancelled_exc_class():
+            pass
 
     async def supervise(
         self,

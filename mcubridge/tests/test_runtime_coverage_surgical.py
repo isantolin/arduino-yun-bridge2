@@ -225,7 +225,7 @@ async def test_cloud_events_and_incoming_worker(test_config: RuntimeConfig, mock
     mock_handle = AsyncMock()
     setattr(svc, "handle_request", mock_handle)
     msg = pb.CloudQueuedPublish(topic_name="mcu/datastore/get/temp", payload=b"")
-    svc._cloud_incoming_queue.put_nowait(msg)
+    svc._cloud_incoming_send_stream.send_nowait(msg)
 
     worker_task = asyncio.create_task(svc._cloud_incoming_worker())
     await asyncio.sleep(0.02)

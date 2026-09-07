@@ -526,7 +526,7 @@ async def test_runtime_cloud_session_non_command_envelope(test_config: RuntimeCo
             with patch.object(svc, "flush_cloud_spool", new_callable=AsyncMock):
                 with patch.object(svc, "_send_cloud_event", new_callable=AsyncMock):
                     await svc.connect_cloud_session(None)
-                    assert svc._cloud_incoming_queue.empty()
+                    assert svc._cloud_incoming_receive_stream.statistics().current_buffer_used == 0
 
 
 # ==========================================

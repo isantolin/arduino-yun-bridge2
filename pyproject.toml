@@ -58,11 +58,12 @@ filterwarnings = [
 typeCheckingMode = "strict"
 pythonVersion = "3.14"
 stubPath = "typings"
-extraPaths = ["typings/stubs", "mcubridge", "mcubridge-client-examples", "mcubridge-gateway"]
+extraPaths = ["typings/stubs", "mcubridge", "mcubridge-client-examples", "mcubridge-client-examples/tests", "mcubridge-gateway"]
 include = [
     "mcubridge/mcubridge",
     "mcubridge/tests",
     "mcubridge-client-examples",
+    "mcubridge-client-examples/tests",
     "mcubridge-gateway",
     "mcubridge/scripts",
     "tools"
@@ -71,6 +72,7 @@ strict = [
     "mcubridge/mcubridge",
     "mcubridge/tests",
     "mcubridge-client-examples",
+    "mcubridge-client-examples/tests",
     "mcubridge-gateway",
     "mcubridge/scripts",
     "tools"

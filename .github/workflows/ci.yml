@@ -48,7 +48,7 @@ jobs:
         if: matrix.env == 'cppcheck' || matrix.env == 'typecheck' || matrix.env == 'protocol' || matrix.env == 'lint' || matrix.env == 'py'
         run: |
           sudo apt-get update && sudo apt-get install -y cppcheck unzip
-          python -m pip install protobuf mypy-protobuf vulture
+          python -m pip install protobuf mypy-protobuf vulture pytest
       - name: Install Build Tools
         if: matrix.env == 'arduino'
         run: sudo apt-get update && sudo apt-get install -y g++ make

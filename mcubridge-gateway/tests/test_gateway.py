@@ -341,7 +341,10 @@ async def test_gateway_payload_dispatch_empty_or_unhandled(cloud_service: CloudB
     async def async_iter():
         yield empty_envelope
 
-    mock_stream.__aiter__ = lambda _: async_iter()
+    def _aiter(self: object) -> Any:
+        return async_iter()
+
+    mock_stream.__aiter__ = _aiter
 
     await cloud_service.Session(mock_stream)
     assert not mock_stream.send_message.called

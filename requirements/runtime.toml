@@ -258,6 +258,11 @@ name = "pexpect"
 pip = "pexpect==4.9.0"
 rationale = "Terminal interaction library for QEMU automation tools"
 
+[[dev_dependency]]
+name = "vulture"
+pip = "vulture==2.16"
+rationale = "Static dead code scanner detecting unused functions, classes, and properties"
+
 
 
 

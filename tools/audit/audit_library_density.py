@@ -108,7 +108,12 @@ def audit_cpp_library_density() -> list[str]:
 def audit_python_suppression_and_context() -> list[str]:
     """Audit Python production code for suppression violations."""
     errors: list[str] = []
-    py_dirs = [ROOT / "mcubridge" / "mcubridge", ROOT / "mcubridge-gateway", ROOT / "tools"]
+    py_dirs = [
+        ROOT / "mcubridge" / "mcubridge",
+        ROOT / "mcubridge-client-examples",
+        ROOT / "mcubridge-gateway",
+        ROOT / "tools",
+    ]
 
     suppression_patterns = [
         (re.compile(r"#\s*(type|pyright):\s*ignore"), "Static type suppression"),

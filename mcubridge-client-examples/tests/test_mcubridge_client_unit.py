@@ -18,7 +18,7 @@ from mcubridge_client import (
     pb,
 )
 from mcubridge_client.cli import bridge_session, configure_logging
-from mcubridge_client.env import _is_openwrt, read_uci_general
+from mcubridge_client.env import is_openwrt, read_uci_general
 
 # ==============================================================================
 # cli.py & env.py tests
@@ -50,21 +50,21 @@ async def test_cli_bridge_session() -> None:
 
 
 def test_env_is_openwrt() -> None:
-    """_is_openwrt checks environment variable and file presence."""
+    """is_openwrt checks environment variable and file presence."""
     with patch.dict("os.environ", {"MCUBRIDGE_FORCE_UCI": "1"}):
-        assert _is_openwrt() is True
+        assert is_openwrt() is True
 
     with patch.dict("os.environ", {}, clear=True):
         with patch("pathlib.Path.exists", return_value=True):
-            assert _is_openwrt() is True
+            assert is_openwrt() is True
 
 
 def test_env_read_uci_general() -> None:
     """read_uci_general returns UCI config dict or empty dict."""
-    with patch("mcubridge_client.env._is_openwrt", return_value=False):
+    with patch("mcubridge_client.env.is_openwrt", return_value=False):
         assert read_uci_general() == {}
 
-    with patch("mcubridge_client.env._is_openwrt", return_value=True):
+    with patch("mcubridge_client.env.is_openwrt", return_value=True):
         with patch("importlib.util.find_spec", return_value=MagicMock()):
             with patch("importlib.import_module") as mock_imp:
                 mock_mod = MagicMock()
@@ -113,7 +113,11 @@ async def test_spi_device_lifecycle_and_transfer() -> None:
     """SpiDevice context manager, properties, begin/end, and transfer."""
     mock_stub = MagicMock(spec=LocalBridgeStub)
     mock_stub.SpiConfigure = AsyncMock(return_value=pb.GenericResponse(status="ok"))
-    mock_stub.SpiTransfer = AsyncMock(side_effect=lambda req: pb.SpiTransferResponse(data=req.data))
+
+    def _mock_spi_transfer(req: pb.SpiTransfer) -> pb.SpiTransferResponse:
+        return pb.SpiTransferResponse(data=req.data)
+
+    mock_stub.SpiTransfer = AsyncMock(side_effect=_mock_spi_transfer)
 
     dev = SpiDevice(mock_stub, frequency=2000000, bit_order=SpiBitOrder.LSBFIRST, mode=SpiMode.MODE1)
 

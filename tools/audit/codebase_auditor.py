@@ -20,13 +20,23 @@ def audit_python_files() -> list[str]:
         r"def\s+(\w+)\(self,\s*\*args,\s*\*\*kwargs\):\s*return\s+self\.\w+\(\*args,\s*\*\*kwargs\)"
     )
 
-    for py_file in (ROOT / "mcubridge").rglob("*.py"):
-        content = py_file.read_text(encoding="utf-8")
-        for i, line in enumerate(content.splitlines(), 1):
-            if pokemon_pattern.search(line):
-                findings.append(f"Python Suppression: {py_file.name}:{i} - '{line.strip()}'")
-            if passthrough_pattern.search(line):
-                findings.append(f"Python Passthrough Shim: {py_file.name}:{i} - '{line.strip()}'")
+    py_dirs = [
+        ROOT / "mcubridge",
+        ROOT / "mcubridge-client-examples",
+        ROOT / "mcubridge-gateway",
+        ROOT / "tools",
+    ]
+
+    for base_dir in py_dirs:
+        for py_file in base_dir.rglob("*.py"):
+            if "_pb2" in py_file.name or py_file.name in {"audit_library_density.py", "codebase_auditor.py"}:
+                continue
+            content = py_file.read_text(encoding="utf-8")
+            for i, line in enumerate(content.splitlines(), 1):
+                if pokemon_pattern.search(line):
+                    findings.append(f"Python Suppression: {py_file.name}:{i} - '{line.strip()}'")
+                if passthrough_pattern.search(line):
+                    findings.append(f"Python Passthrough Shim: {py_file.name}:{i} - '{line.strip()}'")
     return findings
 
 

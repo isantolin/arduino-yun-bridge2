@@ -19,14 +19,14 @@ import structlog
 logger = structlog.get_logger(__name__)
 
 
-def _is_openwrt() -> bool:
+def is_openwrt() -> bool:
     if os.environ.get("MCUBRIDGE_FORCE_UCI") == "1":
         return True
     return Path("/etc/openwrt_release").exists() or Path("/etc/openwrt_version").exists()
 
 
 def read_uci_general() -> dict[str, str]:
-    if not _is_openwrt():
+    if not is_openwrt():
         return {}
 
     spec = importlib.util.find_spec("mcubridge.config.common")

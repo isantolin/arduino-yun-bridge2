@@ -32,7 +32,7 @@ from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.state.storage import LmdbDeque
 from mcubridge.transport.serial import SerialTransport
 from mcubridge_client.definitions import build_bridge_args
-from mcubridge_client.env import _is_openwrt, dump_client_env, read_uci_general
+from mcubridge_client.env import dump_client_env, is_openwrt, read_uci_general
 
 
 def _make_config() -> RuntimeConfig:
@@ -471,7 +471,7 @@ def test_client_definitions_empty_args() -> None:
 
 def test_client_env_is_openwrt_helper() -> None:
     with patch.dict(os.environ, {"MCUBRIDGE_FORCE_UCI": "1"}):
-        assert _is_openwrt() is True
+        assert is_openwrt() is True
     dump_client_env(logger=MagicMock())
 
 

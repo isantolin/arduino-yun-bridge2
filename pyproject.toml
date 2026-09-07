@@ -62,7 +62,7 @@ extraPaths = ["typings/stubs", "mcubridge", "mcubridge-client-examples", "mcubri
 include = [
     "mcubridge/mcubridge",
     "mcubridge/tests",
-    "mcubridge-client-examples/mcubridge_client",
+    "mcubridge-client-examples",
     "mcubridge-gateway",
     "mcubridge/scripts",
     "tools"
@@ -70,7 +70,7 @@ include = [
 strict = [
     "mcubridge/mcubridge",
     "mcubridge/tests",
-    "mcubridge-client-examples/mcubridge_client",
+    "mcubridge-client-examples",
     "mcubridge-gateway",
     "mcubridge/scripts",
     "tools"
@@ -162,4 +162,20 @@ exclude_lines = [
     "raise AssertionError",
     "raise NotImplementedError",
     "if TYPE_CHECKING:"
+]
+
+[tool.vulture]
+min_confidence = 80
+paths = [
+    "mcubridge/mcubridge",
+    "mcubridge-client-examples/mcubridge_client",
+    "mcubridge-gateway"
+]
+exclude = [
+    "*_pb2.py",
+    "*_pb2.pyi",
+    "*_grpc.py",
+    "openwrt-sdk",
+    ".tox",
+    ".tmp_tests"
 ]

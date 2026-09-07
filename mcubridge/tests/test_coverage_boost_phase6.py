@@ -1717,3 +1717,119 @@ def test_structures_replace_cloud_publish_variations() -> None:
     res2 = replace_cloud_publish(orig, user_properties=[], subscription_identifier=[])
     assert len(res2.user_properties) == 0
     assert len(res2.subscription_identifier) == 0
+
+
+@pytest.mark.asyncio
+async def test_runtime_reset_link_branches(test_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+    serial = AsyncMock(spec=SerialTransport)
+    service = BridgeService(test_config, mock_state, serial)
+
+    # 1. reset_link with active serial
+    res_true = await service.reset_link()
+    assert res_true is True
+    serial.reset.assert_awaited_once()
+
+    # 2. reset_link without serial
+    service.serial = None
+    res_false = await service.reset_link()
+    assert res_false is False
+    service.cleanup()
+
+
+def test_parse_serial_response_corrupt_bytes() -> None:
+    from mcubridge.services.runtime import _parse_serial_response
+
+    default_resp = pb.GenericResponse(message="fallback")
+    parsed = _parse_serial_response(b"\xff\xff\xff", pb.GenericResponse, default_resp)
+    assert parsed == default_resp
+    assert parsed.message == "fallback"
+
+
+@pytest.mark.asyncio
+async def test_on_mcu_file_read_resp_future_already_done(
+    test_config: RuntimeConfig, mock_state: RuntimeState
+) -> None:
+    from mcubridge.services.runtime import _PendingMcuRead
+
+    serial = AsyncMock(spec=SerialTransport)
+    service = BridgeService(test_config, mock_state, serial)
+
+    loop = asyncio.get_running_loop()
+    fut = loop.create_future()
+    fut.set_result(b"prior_result")
+    pending = _PendingMcuRead(fut)
+    pending.chunks = [b"prior_result"]
+    service._pending_mcu_read = pending
+
+    res = await service._on_mcu_file_read_resp(1, pb.FileReadResponse(content=b""))
+    assert res is True
+    assert fut.result() == b"prior_result"
+    service.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_handle_datastore_cache_none_and_exceptions(
+    test_config: RuntimeConfig, mock_state: RuntimeState
+) -> None:
+    from mcubridge.protocol.topics import parse_topic
+
+    serial = AsyncMock(spec=SerialTransport)
+    service = BridgeService(test_config, mock_state, serial)
+    service.publish_datastore_value = AsyncMock()
+
+    # 1. Datastore PUT with cache = None
+    service.state.datastore_cache = None
+    route = parse_topic("br", "br/datastore/put/settings/theme")
+    assert route is not None
+    inbound = pb.CloudQueuedPublish(payload=b"dark")
+    await service._handle_datastore(route, inbound)
+    service.publish_datastore_value.assert_awaited_once_with("settings/theme", b"dark", reply_context=inbound)
+
+    # 2. Datastore PUT instantiation error
+    with patch("mcubridge.protocol.mcubridge_pb2.DatastorePut", side_effect=TypeError("malformed")):
+        await service._handle_datastore(route, inbound)
+
+    service.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_send_cloud_event_branches(test_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+    serial = AsyncMock(spec=SerialTransport)
+    service = BridgeService(test_config, mock_state, serial)
+
+    # 1. Without cloud stream (no-op)
+    service._cloud_stream = None
+    await service._send_cloud_event("heartbeat", "info", "test_msg")
+
+    # 2. With active cloud stream
+    mock_stream = AsyncMock()
+    service._cloud_stream = mock_stream
+    await service._send_cloud_event("heartbeat", "info", "test_msg")
+    mock_stream.send_message.assert_awaited_once()
+    envelope = mock_stream.send_message.call_args[0][0]
+    assert envelope.event.event_type == "heartbeat"
+    assert envelope.event.description == "test_msg"
+
+    service.cleanup()
+
+
+def test_structures_tls_session_ticket_exceptions() -> None:
+    from mcubridge.protocol.structures import save_tls_session_ticket, load_tls_session_ticket
+
+    # 1. persist with txn.put raising OSError
+    mock_env = MagicMock()
+    mock_txn = MagicMock()
+    mock_txn.put.side_effect = OSError("disk full")
+    mock_env.begin.return_value.__enter__.return_value = mock_txn
+    cache = MagicMock()
+    cache.env = mock_env
+    cache.db = MagicMock()
+    save_tls_session_ticket(cache, "example.com", 443, b"ticket-data")
+    mock_txn.put.assert_called_once()
+
+    # 2. load with txn.get raising RuntimeError
+    del cache._mem
+    mock_txn.get.side_effect = RuntimeError("lmdb read failure")
+    res = load_tls_session_ticket(cache, "example.com", 443)
+    assert res is None
+

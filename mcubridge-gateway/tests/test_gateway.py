@@ -390,6 +390,17 @@ def test_extract_peer_identity() -> None:
     with pytest.raises(ValueError, match="Failed to parse client certificate"):
         extract_peer_identity(mock_peer)
 
+    # 5. peer with valid cert subject but missing commonName
+    mock_peer.cert.return_value = {
+        "subject": [
+            [("countryName", "US")],
+            [("organizationName", "Acme Inc")],
+        ]
+    }
+    device_id_no_cn, auth_no_cn = extract_peer_identity(mock_peer)
+    assert device_id_no_cn == "anonymous-192.168.1.50:44321"
+    assert auth_no_cn is False
+
 
 @pytest.mark.asyncio
 async def test_auth_interceptor_flow() -> None:

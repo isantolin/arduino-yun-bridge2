@@ -486,20 +486,13 @@ class BridgeService:
         # [SIL-2] Async spool close is handled by run() finally block.
         # cleanup() only nullifies the reference to prevent double-close.
         self._cloud_spool = None
-        if hasattr(self, "_cloud_incoming_send_stream"):
-            self._cloud_incoming_send_stream.close()
-        if hasattr(self, "_cloud_incoming_receive_stream"):
-            self._cloud_incoming_receive_stream.close()
-
-        state = getattr(self, "state", None)
-        if state is not None:
-            state.cleanup()
+        self._cloud_incoming_send_stream.close()
+        self._cloud_incoming_receive_stream.close()
+        self.state.cleanup()
 
     def __del__(self) -> None:
-        if hasattr(self, "_cloud_incoming_send_stream"):
-            self._cloud_incoming_send_stream.close()
-        if hasattr(self, "_cloud_incoming_receive_stream"):
-            self._cloud_incoming_receive_stream.close()
+        self._cloud_incoming_send_stream.close()
+        self._cloud_incoming_receive_stream.close()
 
     async def on_serial_connected(self) -> None:
         self.state.connection_fsm.connect()
@@ -1511,24 +1504,24 @@ class BridgeService:
                     except (lmdb.Error, OSError) as exc:
                         logger.debug("cloud_spool close failed during teardown", error=str(exc))
                     self._cloud_spool = None
-                if self.state and self.state.datastore_cache is not None:
+                if self.state.datastore_cache is not None:
                     try:
                         await self.state.datastore_cache.close()
                     except (lmdb.Error, OSError) as exc:
                         logger.debug("datastore_cache close failed during teardown", error=str(exc))
                     self.state.datastore_cache = None
 
-                if self.state and getattr(self.state, "mailbox_queue", None) is not None:
+                if getattr(self.state, "mailbox_queue", None) is not None:
                     try:
                         await self.state.mailbox_queue.close()
                     except (lmdb.Error, OSError) as exc:
                         logger.debug("mailbox_queue close failed during teardown", error=str(exc))
-                if self.state and getattr(self.state, "mailbox_incoming_queue", None) is not None:
+                if getattr(self.state, "mailbox_incoming_queue", None) is not None:
                     try:
                         await self.state.mailbox_incoming_queue.close()
                     except (lmdb.Error, OSError) as exc:
                         logger.debug("mailbox_incoming_queue close failed during teardown", error=str(exc))
-                if self.state and self.state.tls_session_cache is not None:
+                if self.state.tls_session_cache is not None:
                     try:
                         await self.state.tls_session_cache.close()
                     except (lmdb.Error, OSError) as exc:

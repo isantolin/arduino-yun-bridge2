@@ -84,7 +84,7 @@ from ..metrics import (
 )
 from ..state.status import STATUS_FILE, status_writer
 from ..watchdog import WatchdogKeepalive
-from ..state.context import ProcessContext, ProcessState, RuntimeState
+from ..state.context import ProcessContext, RuntimeState
 from .handshake import SerialHandshakeManager, SerialHandshakeFatal, derive_serial_timing
 
 if TYPE_CHECKING:
@@ -1221,20 +1221,21 @@ class BridgeService:
         return ctx
 
     async def _monitor_process(self, pid: int) -> None:
-        try:
-            async with self.state.process_lock:
-                ctx = self.state.running_processes.get(pid)
-            if ctx:
-                try:
-                    async with asyncio.timeout(float(self.state.process_timeout)):
-                        ctx.exit_code = await ctx.handle.wait()
-                except TimeoutError:
-                    ctx.exit_code = await self._terminate_process(
-                        pid, ctx, grace_period=PROCESS_TERM_GRACE_PERIOD_SECONDS
-                    )
-                await asyncio.sleep(60.0)
-        finally:
-            self.release_process(pid)
+        with structlog.contextvars.bound_contextvars(pid=pid):
+            try:
+                async with self.state.process_lock:
+                    ctx = self.state.running_processes.get(pid)
+                if ctx:
+                    try:
+                        async with asyncio.timeout(float(self.state.process_timeout)):
+                            ctx.exit_code = await ctx.handle.wait()
+                    except TimeoutError:
+                        ctx.exit_code = await self._terminate_process(
+                            pid, ctx, grace_period=PROCESS_TERM_GRACE_PERIOD_SECONDS
+                        )
+                    await asyncio.sleep(60.0)
+            finally:
+                self.release_process(pid)
 
     async def poll_process(self, pid: int) -> pb.ProcessPollResponse:
         async with self.state.process_lock:
@@ -1299,7 +1300,7 @@ class BridgeService:
             ctx.fsm.finish()
             return ctx.handle.returncode
 
-        if ctx.fsm.current_state_value != ProcessState.TERMINATING.value:
+        if not ctx.is_terminating:
             ctx.fsm.terminate()
 
         if not BridgeService._signal_process_tree(ctx.handle.pid, kill=False):

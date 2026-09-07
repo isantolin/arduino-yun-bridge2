@@ -323,3 +323,25 @@ def test_gateway_session_machine_lifecycle() -> None:
     fsm3 = GatewaySessionMachine()
     fsm3.close()
     assert fsm3.current_state_value == GatewaySessionState.CLOSED.value
+
+
+@pytest.mark.asyncio
+async def test_gateway_payload_dispatch_empty_or_unhandled(cloud_service: CloudBridgeService) -> None:
+    mock_stream: AsyncMock = AsyncMock()
+    mock_stream.peer = MagicMock()
+    mock_stream.peer.addr.return_value = ("127.0.0.1", 55555)
+    mock_stream.peer.cert.return_value = None
+
+    empty_envelope = pb.CloudEnvelope(
+        protocol_version=2,
+        device_id="DEV_EMPTY",
+        sequence_id=99,
+    )
+
+    async def async_iter():
+        yield empty_envelope
+
+    mock_stream.__aiter__ = lambda _: async_iter()
+
+    await cloud_service.Session(mock_stream)
+    assert not mock_stream.send_message.called

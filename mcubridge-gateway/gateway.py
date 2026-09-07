@@ -7,10 +7,11 @@ This server acts as the primary cloud endpoint for MPU Daemons, running as a gRP
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from enum import StrEnum
 import ssl
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Final
 
 from grpclib.server import Server, Stream
 from statemachine import State, StateMachine
@@ -47,6 +48,58 @@ class GatewaySessionMachine(StateMachine):
     authenticate = connected.to(authenticated)
     activate = authenticated.to(active) | connected.to(active)
     close = connected.to(closed) | authenticated.to(closed) | active.to(closed)
+
+
+async def _handle_ping(
+    stream: Stream[pb.CloudEnvelope, pb.CloudEnvelope],
+    envelope: pb.CloudEnvelope,
+) -> None:
+    pong = pb.CloudEnvelope(
+        protocol_version=2,
+        device_id="CLOUD_GW",
+        sequence_id=envelope.sequence_id,
+        pong=pb.KeepalivePong(roundtrip_ms=0),
+    )
+    await stream.send_message(pong)
+
+
+async def _handle_telemetry(
+    _: Stream[pb.CloudEnvelope, pb.CloudEnvelope],
+    __: pb.CloudEnvelope,
+) -> None:
+    logger.info("Processed telemetry")
+
+
+async def _handle_event(
+    _: Stream[pb.CloudEnvelope, pb.CloudEnvelope],
+    envelope: pb.CloudEnvelope,
+) -> None:
+    evt = envelope.event
+    logger.warning(
+        "Device event",
+        event_type=evt.event_type,
+        description=evt.description,
+    )
+
+
+async def _handle_command_response(
+    _: Stream[pb.CloudEnvelope, pb.CloudEnvelope],
+    envelope: pb.CloudEnvelope,
+) -> None:
+    logger.info(
+        "Received command response",
+        status_code=envelope.command_response.status_code,
+    )
+
+
+_PayloadHandler = Callable[[Stream[pb.CloudEnvelope, pb.CloudEnvelope], pb.CloudEnvelope], Awaitable[None]]
+
+_PAYLOAD_HANDLERS: Final[dict[str, _PayloadHandler]] = {
+    "ping": _handle_ping,
+    "telemetry": _handle_telemetry,
+    "event": _handle_event,
+    "command_response": _handle_command_response,
+}
 
 
 class CloudBridgeService(CloudBridgeBase):
@@ -95,31 +148,10 @@ class CloudBridgeService(CloudBridgeBase):
                         payload_type=payload_type,
                     )
 
-                    match payload_type:
-                        case "ping":
-                            pong = pb.CloudEnvelope(
-                                protocol_version=2,
-                                device_id="CLOUD_GW",
-                                sequence_id=envelope.sequence_id,
-                                pong=pb.KeepalivePong(roundtrip_ms=0),
-                            )
-                            await stream.send_message(pong)
-                        case "telemetry":
-                            logger.info("Processed telemetry")
-                        case "event":
-                            evt = envelope.event
-                            logger.warning(
-                                "Device event",
-                                event_type=evt.event_type,
-                                description=evt.description,
-                            )
-                        case "command_response":
-                            logger.info(
-                                "Received command response",
-                                status_code=envelope.command_response.status_code,
-                            )
-                        case _:
-                            logger.debug("Received unhandled or empty payload type", payload_type=payload_type)
+                    if handler := _PAYLOAD_HANDLERS.get(payload_type or ""):
+                        await handler(stream, envelope)
+                    else:
+                        logger.debug("Received unhandled or empty payload type", payload_type=payload_type)
             except asyncio.CancelledError:
                 logger.info("Session cancelled for device")
                 raise

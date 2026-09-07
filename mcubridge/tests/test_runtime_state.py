@@ -30,9 +30,11 @@ def test_configure_updates_derived_values(runtime_config: RuntimeConfig) -> None
 def test_connection_fsm_connect_updates_state(runtime_config: RuntimeConfig) -> None:
     state = create_runtime_state(runtime_config)
     try:
+        assert state.is_disconnected
         state.connection_fsm.connect()
         assert state.is_connected
         assert not state.is_synchronized
+        assert not state.is_disconnected
     finally:
         state.cleanup()
 
@@ -170,8 +172,17 @@ def test_process_machine_lifecycle() -> None:
     ctx = ProcessContext(mock_proc)
     assert ctx.status == ProcessState.RUNNING.value
     assert ctx.fsm.current_state_value == ProcessState.RUNNING.value
+    assert ctx.is_running
+    assert not ctx.is_terminating
+    assert not ctx.is_exited
     ctx.fsm.terminate()
     assert ctx.status == ProcessState.TERMINATING.value
+    assert ctx.is_terminating
+    assert not ctx.is_running
+    assert not ctx.is_exited
     ctx.fsm.finish()
     assert ctx.status == ProcessState.EXITED.value
+    assert ctx.is_exited
+    assert not ctx.is_running
+    assert not ctx.is_terminating
     assert ctx.fsm.is_terminated

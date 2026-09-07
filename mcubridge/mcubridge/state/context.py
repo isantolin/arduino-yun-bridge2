@@ -86,6 +86,18 @@ class ProcessContext:
         self.status = ProcessState.RUNNING.value
         self.fsm = ProcessMachine(model=self, state_field="status", start_value=self.status)
 
+    @property
+    def is_running(self) -> bool:
+        return self.fsm.running.is_active
+
+    @property
+    def is_terminating(self) -> bool:
+        return self.fsm.terminating.is_active
+
+    @property
+    def is_exited(self) -> bool:
+        return self.fsm.exited.is_active
+
 
 class LinkConnectionState(StrEnum):
     """[SIL-2] Discrete physical connection states between MPU and MCU."""
@@ -343,11 +355,15 @@ class RuntimeState:
 
     @property
     def is_connected(self) -> bool:
-        return self.state in {"connected", "synchronized"}
+        return self.connection_fsm.connected.is_active or self.connection_fsm.synchronized.is_active
 
     @property
     def is_synchronized(self) -> bool:
-        return self.state == "synchronized"
+        return self.connection_fsm.synchronized.is_active
+
+    @property
+    def is_disconnected(self) -> bool:
+        return self.connection_fsm.disconnected.is_active
 
     def on_enter_connected(self) -> None:
         """[SIL-2] Native hook executed on entering connected state."""

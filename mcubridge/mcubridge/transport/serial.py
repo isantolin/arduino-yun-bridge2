@@ -312,12 +312,13 @@ class SerialTransport:
             ack_target = pending.command_id
             if payload:
                 try:
-                    if isinstance(payload, pb.AckPacket):
-                        ack_target = payload.command_id
-                    elif isinstance(payload, ProtobufMessage):
-                        ack_target = getattr(payload, "command_id", ack_target)
-                    else:
-                        ack_target = pb.AckPacket.FromString(payload).command_id
+                    ack_target = (
+                        payload.command_id
+                        if isinstance(payload, pb.AckPacket)
+                        else getattr(payload, "command_id", ack_target)
+                        if isinstance(payload, ProtobufMessage)
+                        else pb.AckPacket.FromString(payload).command_id
+                    )
                 except (ProtobufDecodeError, TypeError, ValueError) as e:
                     logger.error("Failed to decode MCU ACK payload", error=str(e))
             logger.debug(

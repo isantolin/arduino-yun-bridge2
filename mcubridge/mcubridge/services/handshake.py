@@ -73,10 +73,11 @@ logger = structlog.get_logger("mcubridge.service.handshake")
 def derive_serial_timing(config: RuntimeConfig) -> pb.HandshakeConfig:
     """Derive timing windows from config with strict declarative validation."""
     ack_ms = round(config.serial_retry_timeout * 1000.0)
-    response_ms = round(config.serial_response_timeout * 1000.0)
-    retry_limit = config.serial_retry_attempts
-    response_ms = max(response_ms, ack_ms)
-    return pb.HandshakeConfig(ack_timeout_ms=ack_ms, response_timeout_ms=response_ms, ack_retry_limit=retry_limit)
+    return pb.HandshakeConfig(
+        ack_timeout_ms=ack_ms,
+        response_timeout_ms=max(round(config.serial_response_timeout * 1000.0), ack_ms),
+        ack_retry_limit=config.serial_retry_attempts,
+    )
 
 
 class SerialHandshakeFatal(RuntimeError):
@@ -384,12 +385,9 @@ class SerialHandshakeManager:
         return True
 
     def _parse_capabilities(self, payload: bytes | ProtobufMessage) -> None:
-        p = (
-            payload
-            if isinstance(payload, pb.Capabilities)
-            else (pb.Capabilities.FromString(payload) if isinstance(payload, bytes) else cast(pb.Capabilities, payload))
+        self._state.mcu_capabilities = (
+            payload if isinstance(payload, pb.Capabilities) else pb.Capabilities.FromString(cast(bytes, payload))
         )
-        self._state.mcu_capabilities = p
         self._logger.info("MCU capabilities received", capabilities=str(self._state.mcu_capabilities))
 
     async def handle_link_reset_resp(self, seq_id: int, payload: bytes | ProtobufMessage) -> bool:

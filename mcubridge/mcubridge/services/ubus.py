@@ -47,6 +47,23 @@ class BridgeRuntimeFacade(Protocol):
     async def reset_link(self) -> bool: ...
 
 
+_UBUS_METHOD_SIGS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
+    ("status", ()),
+    ("digital_write", (("pin", "INT32"), ("value", "INT32"))),
+    ("analog_write", (("pin", "INT32"), ("value", "INT32"))),
+    ("mailbox_push", (("message", "STRING"),)),
+    ("datastore_set", (("key", "STRING"), ("value", "STRING"))),
+    ("datastore_get", (("key", "STRING"),)),
+    ("mailbox_read", ()),
+    ("file_write", (("path", "STRING"), ("data", "STRING"))),
+    ("process_run", (("command", "STRING"),)),
+    ("process_kill", (("pid", "INT32"),)),
+    ("process_poll", (("pid", "INT32"),)),
+    ("link_reset", ()),
+    ("ping", ()),
+)
+
+
 class UbusService:
     """Manages the lifecycle of McuBridge UBUS object registration on OpenWrt."""
 
@@ -62,7 +79,7 @@ class UbusService:
 
     @property
     def connection(self) -> Any:
-        """Return the underlying active UBUS connection if connected."""
+        """Return raw UBUS connection handle."""
         return self._conn
 
     def start(
@@ -76,8 +93,7 @@ class UbusService:
             return False
 
         def _connect() -> Any:
-            conn = ubus.connect()
-            if conn is None:
+            if (conn := ubus.connect()) is None:
                 raise OSError("ubus.connect() returned None")
             return conn
 
@@ -109,80 +125,11 @@ class UbusService:
             return
 
         methods: dict[str, Any] = {
-            "status": {
-                "call": self.ubus_handle_status,
-                "args": {},
-            },
-            "digital_write": {
-                "call": self.ubus_handle_digital_write,
-                "args": {
-                    "pin": ubus.INT32,
-                    "value": ubus.INT32,
-                },
-            },
-            "analog_write": {
-                "call": self.ubus_handle_analog_write,
-                "args": {
-                    "pin": ubus.INT32,
-                    "value": ubus.INT32,
-                },
-            },
-            "mailbox_push": {
-                "call": self.ubus_handle_mailbox_push,
-                "args": {
-                    "message": ubus.STRING,
-                },
-            },
-            "datastore_set": {
-                "call": self.ubus_handle_datastore_set,
-                "args": {
-                    "key": ubus.STRING,
-                    "value": ubus.STRING,
-                },
-            },
-            "datastore_get": {
-                "call": self.ubus_handle_datastore_get,
-                "args": {
-                    "key": ubus.STRING,
-                },
-            },
-            "mailbox_read": {
-                "call": self.ubus_handle_mailbox_read,
-                "args": {},
-            },
-            "file_write": {
-                "call": self.ubus_handle_file_write,
-                "args": {
-                    "path": ubus.STRING,
-                    "data": ubus.STRING,
-                },
-            },
-            "process_run": {
-                "call": self.ubus_handle_process_run,
-                "args": {
-                    "command": ubus.STRING,
-                },
-            },
-            "process_kill": {
-                "call": self.ubus_handle_process_kill,
-                "args": {
-                    "pid": ubus.INT32,
-                },
-            },
-            "process_poll": {
-                "call": self.ubus_handle_process_poll,
-                "args": {
-                    "pid": ubus.INT32,
-                },
-            },
-            "link_reset": {
-                "call": self.ubus_handle_link_reset,
-                "args": {},
-            },
-            "ping": {
-                "call": self.ubus_handle_ping,
-                "args": {},
-            },
+            name: {
+                "call": getattr(self, f"ubus_handle_{name}"),
+                "args": {arg: getattr(ubus, typ) for arg, typ in args},
+            }
+            for name, args in _UBUS_METHOD_SIGS
         }
         self._conn.add("mcubridge", methods)
 
@@ -202,13 +149,14 @@ class UbusService:
         data["version"] = version_str
 
         # Ensure top-level capabilities dict exists for direct LuCI and tool consumers
-        caps_dict: dict[str, bool] = {}
         caps = state.mcu_capabilities
-        if isinstance(caps, pb.Capabilities):
-            caps_dict = MessageToDict(caps, always_print_fields_with_no_presence=True, preserving_proto_field_name=True)
-        elif isinstance(caps, dict):
-            caps_dict = {k: bool(v) for k, v in caps.items()}
-        data["capabilities"] = caps_dict
+        data["capabilities"] = (
+            MessageToDict(caps, always_print_fields_with_no_presence=True, preserving_proto_field_name=True)
+            if isinstance(caps, pb.Capabilities)
+            else {k: bool(v) for k, v in caps.items()}
+            if isinstance(caps, dict)
+            else {}
+        )
 
         return data
 

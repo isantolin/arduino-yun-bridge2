@@ -143,8 +143,8 @@ class SerialTransport:
         )
         try:
             await retryer(self._connect_and_run)
-        except (asyncio.CancelledError, SystemExit):
-            pass
+        except (asyncio.CancelledError, SystemExit) as exc:
+            logger.info("Serial transport lifecycle terminated", reason=type(exc).__name__)
         except SerialHandshakeFatal:
             raise
 

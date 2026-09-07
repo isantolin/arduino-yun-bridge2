@@ -336,10 +336,7 @@ class RuntimeState:
                 if hasattr(resource, "close"):
                     res = resource.close()
                     if asyncio.iscoroutine(res):
-                        try:
-                            res.send(None)
-                        except StopIteration:
-                            pass
+                        res.close()
             except (OSError, RuntimeError, AttributeError) as e:
                 logger.debug("Resource closure notice during reconfiguration", error=e)
 
@@ -486,8 +483,8 @@ class RuntimeState:
                     memory_rss_bytes=curr_mem,
                 )
             )
-        except (psutil.NoSuchProcess, OSError, ProcessLookupError, AttributeError):
-            pass
+        except (psutil.NoSuchProcess, OSError, ProcessLookupError, AttributeError) as exc:
+            logger.debug("Failed to sample daemon process metrics", error=str(exc))
 
         for p_ctx in list(self.running_processes.values()):
             if p_ctx and p_ctx.handle:
@@ -594,8 +591,8 @@ class RuntimeState:
                             for child in p.children(recursive=True):
                                 child.terminate()
                             p.terminate()
-                        except (psutil.NoSuchProcess, ProcessLookupError, psutil.AccessDenied):
-                            pass
+                        except (psutil.NoSuchProcess, ProcessLookupError, psutil.AccessDenied) as exc:
+                            logger.debug("Process tree termination cleanup notice", pid=pid, error=str(exc))
                     try:
                         ctx.handle.terminate()
                     except (OSError, ProcessLookupError) as e:

@@ -44,11 +44,10 @@ def _open_lmdb_env(
             if attempt == 0:
                 logger.warning("LMDB database corrupt or invalid, recreating", path=env_path, error=str(exc))
                 target = Path(env_path)
-                if target.exists():
-                    try:
-                        target.unlink()
-                    except OSError as e:
-                        logger.warning("Failed to unlink target path", path=str(target), error=str(e))
+                try:
+                    target.unlink(missing_ok=True)
+                except OSError as e:
+                    logger.warning("Failed to unlink target path", path=str(target), error=str(e))
             else:
                 logger.error("Failed to reinitialize LMDB environment", path=env_path, error=str(exc))
     return None, None

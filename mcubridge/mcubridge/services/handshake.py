@@ -227,7 +227,7 @@ class SerialHandshakeManager:
             return False
 
         # Transition to SYNCHRONIZED happens in handle_link_sync_resp (or implicitly confirmed here)
-        if current_state != HandshakeState.SYNCHRONIZED and current_state != HandshakeState.FAULT:
+        if current_state not in (HandshakeState.SYNCHRONIZED, HandshakeState.FAULT):
             self._set_fsm_state(HandshakeState.SYNCHRONIZED)
 
         return self.fsm_state == HandshakeState.SYNCHRONIZED
@@ -562,7 +562,7 @@ class SerialHandshakeManager:
 
         hkdf = HKDF(
             algorithm=hashes.SHA256(),
-            length=32,
+            length=protocol.AEAD_KEY_SIZE,
             salt=nonce,
             info=b"session-key",
         )

@@ -43,57 +43,56 @@ class CloudBridgeService(CloudBridgeBase):
                 logger.error("Failed to parse client certificate", error=str(e))
                 return
 
-        structlog.contextvars.bind_contextvars(device_id=device_id)
-        logger.info("Device connected")
-        self.gateway.connections[device_id] = stream
+        with structlog.contextvars.bound_contextvars(device_id=device_id):
+            logger.info("Device connected")
+            self.gateway.connections[device_id] = stream
 
-        try:
-            async for envelope in stream:
-                if not envelope.IsInitialized() or envelope.protocol_version != 2:
-                    logger.warning("Invalid cloud envelope")
-                    continue
+            try:
+                async for envelope in stream:
+                    if not envelope.IsInitialized() or envelope.protocol_version != 2:
+                        logger.warning("Invalid cloud envelope")
+                        continue
 
-                payload_type = envelope.WhichOneof("payload")
-                logger.debug(
-                    "Received envelope",
-                    seq=envelope.sequence_id,
-                    payload_type=payload_type,
-                )
+                    payload_type = envelope.WhichOneof("payload")
+                    logger.debug(
+                        "Received envelope",
+                        seq=envelope.sequence_id,
+                        payload_type=payload_type,
+                    )
 
-                match payload_type:
-                    case "ping":
-                        pong = pb.CloudEnvelope(
-                            protocol_version=2,
-                            device_id="CLOUD_GW",
-                            sequence_id=envelope.sequence_id,
-                            pong=pb.KeepalivePong(roundtrip_ms=0),
-                        )
-                        await stream.send_message(pong)
-                    case "telemetry":
-                        logger.info("Processed telemetry")
-                    case "event":
-                        evt = envelope.event
-                        logger.warning(
-                            "Device event",
-                            event_type=evt.event_type,
-                            description=evt.description,
-                        )
-                    case "command_response":
-                        logger.info(
-                            "Received command response",
-                            status_code=envelope.command_response.status_code,
-                        )
-                    case _:
-                        logger.debug("Received unhandled or empty payload type", payload_type=payload_type)
-        except asyncio.CancelledError:
-            logger.info("Session cancelled for device")
-            raise
-        except OSError as exc:
-            logger.warning("Network OS error for device", error=str(exc))
-        finally:
-            logger.info("Device disconnected")
-            self.gateway.connections.pop(device_id, None)
-            structlog.contextvars.unbind_contextvars("device_id")
+                    match payload_type:
+                        case "ping":
+                            pong = pb.CloudEnvelope(
+                                protocol_version=2,
+                                device_id="CLOUD_GW",
+                                sequence_id=envelope.sequence_id,
+                                pong=pb.KeepalivePong(roundtrip_ms=0),
+                            )
+                            await stream.send_message(pong)
+                        case "telemetry":
+                            logger.info("Processed telemetry")
+                        case "event":
+                            evt = envelope.event
+                            logger.warning(
+                                "Device event",
+                                event_type=evt.event_type,
+                                description=evt.description,
+                            )
+                        case "command_response":
+                            logger.info(
+                                "Received command response",
+                                status_code=envelope.command_response.status_code,
+                            )
+                        case _:
+                            logger.debug("Received unhandled or empty payload type", payload_type=payload_type)
+            except asyncio.CancelledError:
+                logger.info("Session cancelled for device")
+                raise
+            except OSError as exc:
+                logger.warning("Network OS error for device", error=str(exc))
+            finally:
+                logger.info("Device disconnected")
+                self.gateway.connections.pop(device_id, None)
 
 
 class ProtobufGateway:

@@ -193,7 +193,7 @@ class UbusService:
         data = MessageToDict(snapshot, preserving_proto_field_name=True)
 
         version_str = (
-            f"{state.mcu_version[0]}.{state.mcu_version[1]}.{state.mcu_version[2]}"
+            ".".join(map(str, state.mcu_version))
             if state.mcu_version is not None
             else "unknown"
         )

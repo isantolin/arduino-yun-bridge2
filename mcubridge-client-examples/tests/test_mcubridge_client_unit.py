@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 import structlog
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from grpclib.client import Channel
+from typer.testing import CliRunner
 
 from mcubridge_client import (
     LocalBridgeStub,
@@ -156,3 +159,32 @@ def test_topic_matches_wildcards() -> None:
     assert Topic.matches("br/#", "br/a/1")
     assert Topic.matches("br/a/1", "br/a/1")
     assert not Topic.matches("br/a/1", "br/a/2")
+
+
+@pytest.mark.asyncio
+async def test_smoke_connection_run_test() -> None:
+    """Verify test_smoke_connection.run_test calls bridge_session correctly."""
+    import test_smoke_connection
+
+    with patch("test_smoke_connection.bridge_session") as mock_sess:
+        mock_chan = MagicMock()
+        mock_stub = MagicMock()
+        mock_sess.return_value.__aenter__.return_value = (mock_chan, mock_stub)
+        await test_smoke_connection.run_test("/tmp/fake.sock", "br")
+        mock_sess.assert_called_once_with("/tmp/fake.sock", "br")
+
+
+def test_smoke_connection_cli_invocation() -> None:
+    """Verify test_smoke_connection CLI entry point invokes run_test via typer runner."""
+    import test_smoke_connection
+
+    with patch("test_smoke_connection.bridge_session") as mock_sess:
+        mock_chan = MagicMock()
+        mock_stub = MagicMock()
+        mock_sess.return_value.__aenter__.return_value = (mock_chan, mock_stub)
+        runner = CliRunner()
+        res = runner.invoke(
+            cast(Any, test_smoke_connection.cli), ["--socket-path", "/tmp/fake.sock", "--topic-prefix", "test"]
+        )
+        assert res.exit_code == 0
+        mock_sess.assert_called_once_with("/tmp/fake.sock", "test")

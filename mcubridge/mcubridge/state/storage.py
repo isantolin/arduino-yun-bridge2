@@ -243,6 +243,55 @@ class LmdbCache:
         if not self.is_mem and self.env:
             _vacuum_lmdb_env(self.path, "cache.db", self.env, self._open_env)
 
+    def __len__(self) -> int:
+        if self.is_mem:
+            return len(self._mem)
+        if not self.env:
+            return 0
+        try:
+            with self.env.begin(db=self.db) as txn:
+                return txn.stat(self.db)["entries"]
+        except (lmdb.Error, OSError) as exc:
+            logger.error("LmdbCache len failed", path=self.path, error=exc)
+            return 0
+
+    async def contains(self, key: str) -> bool:
+        if self.is_mem:
+            return key in self._mem
+        if not self.env:
+            return False
+        try:
+            with self.env.begin(db=self.db, buffers=True) as txn:
+                return txn.get(key.encode("utf-8"), db=self.db) is not None
+        except (lmdb.Error, OSError) as exc:
+            logger.error("LmdbCache contains failed", path=self.path, key=key, error=exc)
+            return False
+
+    def __contains__(self, key: str) -> bool:
+        if self.is_mem:
+            return key in self._mem
+        if not self.env:
+            return False
+        try:
+            with self.env.begin(db=self.db, buffers=True) as txn:
+                return txn.get(key.encode("utf-8"), db=self.db) is not None
+        except (lmdb.Error, OSError) as exc:
+            logger.error("LmdbCache __contains__ failed", path=self.path, key=key, error=exc)
+            return False
+
+    async def items(self) -> list[tuple[str, bytes]]:
+        if self.is_mem:
+            return list(self._mem.items())
+        if not self.env:
+            return []
+        try:
+            with self.env.begin(db=self.db, buffers=True) as txn:
+                cur = txn.cursor(self.db)
+                return [(bytes(k).decode("utf-8"), bytes(v)) for k, v in cur]
+        except (lmdb.Error, OSError, UnicodeDecodeError) as exc:
+            logger.error("LmdbCache items failed", path=self.path, error=exc)
+            return []
+
     async def close(self) -> None:
         if self.env:
             self.env.close()

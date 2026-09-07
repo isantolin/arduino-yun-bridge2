@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 from typing import Any, Protocol
+import anyio.from_thread
 import structlog
 import tenacity
 
@@ -263,13 +264,16 @@ class UbusService:
 
 
     def run_sync(self, coro: Any) -> Any:
-        """Execute a coroutine synchronously in a running or fresh event loop."""
+        """Execute a coroutine synchronously in a running or fresh event loop via anyio."""
         try:
-            loop = asyncio.get_running_loop()
-            fut = asyncio.run_coroutine_threadsafe(coro, loop)
-            return fut.result(timeout=5.0)
-        except RuntimeError:
-            return asyncio.run(coro)
+            return anyio.from_thread.run(lambda: coro)
+        except (anyio.NoEventLoopError, RuntimeError):
+            try:
+                loop = asyncio.get_running_loop()
+                fut = asyncio.run_coroutine_threadsafe(coro, loop)
+                return fut.result(timeout=5.0)
+            except RuntimeError:
+                return asyncio.run(coro)
 
     def notify(self, event_type: str, data: dict[str, Any]) -> bool:
         """Broadcast a native UBUS event notification (e.g. 'mcubridge.sync')."""

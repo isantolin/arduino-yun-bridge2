@@ -41,6 +41,7 @@ define Package/$(PKG_NAME)
 	DEPENDS+= \
 		python3 \
 		python3-protobuf \
+		python3-statemachine \
 		python3-hpack \
 		python3-hyperframe \
 		python3-h2 \

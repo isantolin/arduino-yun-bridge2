@@ -27,21 +27,21 @@ def test_configure_updates_derived_values(runtime_config: RuntimeConfig) -> None
         state.cleanup()
 
 
-def test_mark_transport_connected_updates_state(runtime_config: RuntimeConfig) -> None:
+def test_connection_fsm_connect_updates_state(runtime_config: RuntimeConfig) -> None:
     state = create_runtime_state(runtime_config)
     try:
-        state.mark_transport_connected()
+        state.connection_fsm.connect()
         assert state.is_connected
         assert not state.is_synchronized
     finally:
         state.cleanup()
 
 
-def test_mark_synchronized_sets_flag(runtime_config: RuntimeConfig) -> None:
+def test_connection_fsm_synchronize_sets_flag(runtime_config: RuntimeConfig) -> None:
     state = create_runtime_state(runtime_config)
     try:
-        state.mark_transport_connected()
-        state.mark_synchronized()
+        state.connection_fsm.connect()
+        state.connection_fsm.synchronize()
         assert state.is_synchronized
     finally:
         state.cleanup()
@@ -96,3 +96,83 @@ def test_build_metrics_snapshot_includes_spool_state(runtime_config: RuntimeConf
         assert snapshot.cloud_spool_pending_messages == 3
     finally:
         state.cleanup()
+
+
+def test_link_connection_machine_lifecycle(runtime_config: RuntimeConfig) -> None:
+    from mcubridge.state.context import LinkConnectionState
+
+    state = create_runtime_state(runtime_config)
+    try:
+        # Initial state is disconnected
+        assert state.state == LinkConnectionState.DISCONNECTED.value
+        assert state.connection_fsm.current_state_value == LinkConnectionState.DISCONNECTED.value
+        assert not state.is_connected
+        assert not state.is_synchronized
+
+        # Transition to connected
+        state.connection_fsm.connect()
+        assert state.state == LinkConnectionState.CONNECTED.value
+        assert state.is_connected
+        assert not state.is_synchronized
+        assert state.serial_tx_allowed.is_set()
+
+        # Idempotent connect
+        state.connection_fsm.connect()
+        assert state.state == LinkConnectionState.CONNECTED.value
+
+        # Transition to synchronized
+        state.connection_fsm.synchronize()
+        assert state.state == LinkConnectionState.SYNCHRONIZED.value
+        assert state.is_connected
+        assert state.is_synchronized
+        assert state.link_sync_event.is_set()
+
+        # Idempotent synchronize
+        state.connection_fsm.synchronize()
+        assert state.state == LinkConnectionState.SYNCHRONIZED.value
+
+        # Re-sync back to connected
+        state.connection_fsm.connect()
+        assert state.state == LinkConnectionState.CONNECTED.value
+        assert state.is_connected
+        assert not state.is_synchronized
+
+        # Disconnect
+        state.connection_fsm.disconnect()
+        assert state.state == LinkConnectionState.DISCONNECTED.value
+        assert not state.is_connected
+        assert not state.is_synchronized
+        assert not state.link_sync_event.is_set()
+
+        # Idempotent disconnect
+        state.connection_fsm.disconnect()
+        assert state.state == LinkConnectionState.DISCONNECTED.value
+    finally:
+        state.cleanup()
+
+
+def test_process_machine_lifecycle() -> None:
+    from unittest.mock import MagicMock
+    from mcubridge.state.context import ProcessContext, ProcessState, ProcessMachine
+
+    m = ProcessMachine()
+    assert m.current_state_value == ProcessState.SPAWNING.value
+    m.start()
+    assert m.current_state_value == ProcessState.RUNNING.value
+    m.terminate()
+    assert m.current_state_value == ProcessState.TERMINATING.value
+    m.finish()
+    assert m.current_state_value == ProcessState.EXITED.value
+    assert m.is_terminated
+
+    # Test via ProcessContext
+    mock_proc = MagicMock()
+    ctx = ProcessContext(mock_proc)
+    assert ctx.status == ProcessState.RUNNING.value
+    assert ctx.fsm.current_state_value == ProcessState.RUNNING.value
+    ctx.fsm.terminate()
+    assert ctx.status == ProcessState.TERMINATING.value
+    ctx.fsm.finish()
+    assert ctx.status == ProcessState.EXITED.value
+    assert ctx.fsm.is_terminated
+

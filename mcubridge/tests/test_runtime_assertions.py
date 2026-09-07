@@ -72,7 +72,7 @@ async def test_mcu_file_read_handler_asserts_state(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock],
 ) -> None:
     service, state, serial, _ = service_setup
-    state.mark_synchronized()
+    state.connection_fsm.synchronize()
 
     payload = pb.FileRead(path="test.txt").SerializeToString()
 
@@ -92,7 +92,7 @@ async def test_cloud_file_write_asserts_serial(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock],
 ) -> None:
     service, state, serial, _ = service_setup
-    state.mark_synchronized()
+    state.connection_fsm.synchronize()
 
     msg = Message(
         topic="br/file/write/mcu/out.txt",
@@ -118,7 +118,7 @@ async def test_cloud_datastore_put_asserts_cache(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock],
 ) -> None:
     service, state, _, _ = service_setup
-    state.mark_synchronized()
+    state.connection_fsm.synchronize()
 
     msg = Message(
         topic="br/datastore/put/my_key",
@@ -140,7 +140,7 @@ async def test_mcu_datastore_put_asserts_cloud(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock],
 ) -> None:
     service, state, _, _ = service_setup
-    state.mark_synchronized()
+    state.connection_fsm.synchronize()
     service.enqueue_cloud = AsyncMock()
 
     payload = pb.DatastorePut(key="mcu_key", value=b"mcu_val").SerializeToString()
@@ -157,7 +157,7 @@ async def test_mcu_mailbox_push_asserts_cloud(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock],
 ) -> None:
     service, state, _, _ = service_setup
-    state.mark_synchronized()
+    state.connection_fsm.synchronize()
     service.enqueue_cloud = AsyncMock()
 
     payload = pb.MailboxPush(data=b"mail_data").SerializeToString()
@@ -174,7 +174,7 @@ async def test_cloud_mailbox_write_asserts_serial(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock],
 ) -> None:
     service, state, serial, _ = service_setup
-    state.mark_synchronized()
+    state.connection_fsm.synchronize()
 
     msg = Message(
         topic="br/mailbox/write",
@@ -199,7 +199,7 @@ async def test_mcu_process_run_asserts_exec(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock],
 ) -> None:
     service, state, serial, _ = service_setup
-    state.mark_synchronized()
+    state.connection_fsm.synchronize()
 
     payload = pb.ProcessRunAsync(command="echo hello").SerializeToString()
 
@@ -220,7 +220,7 @@ async def test_cloud_spi_transfer_asserts_serial(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock],
 ) -> None:
     service, state, serial, _ = service_setup
-    state.mark_synchronized()
+    state.connection_fsm.synchronize()
 
     msg = Message(
         topic="br/spi/transfer",
@@ -245,7 +245,7 @@ async def test_cloud_file_host_write_asserts_cache(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock],
 ) -> None:
     service, state, _, _ = service_setup
-    state.mark_synchronized()
+    state.connection_fsm.synchronize()
     service.enqueue_cloud = AsyncMock()
 
     msg = Message(
@@ -271,7 +271,7 @@ async def test_cloud_file_host_read_asserts_read(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock],
 ) -> None:
     service, state, _, _ = service_setup
-    state.mark_synchronized()
+    state.connection_fsm.synchronize()
     service.enqueue_cloud = AsyncMock()
 
     msg = Message(
@@ -298,7 +298,7 @@ async def test_cloud_shell_poll_asserts_cloud(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock],
 ) -> None:
     service, state, _, _ = service_setup
-    state.mark_synchronized()
+    state.connection_fsm.synchronize()
     service.enqueue_cloud = AsyncMock()
 
     msg = Message(
@@ -333,7 +333,7 @@ async def test_cloud_shell_kill_asserts_cloud(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock],
 ) -> None:
     service, state, _, _ = service_setup
-    state.mark_synchronized()
+    state.connection_fsm.synchronize()
     from unittest.mock import MagicMock
 
     state.running_processes[123] = MagicMock()
@@ -359,7 +359,7 @@ async def test_cloud_shell_run_asserts_exec(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock],
 ) -> None:
     service, state, _, _ = service_setup
-    state.mark_synchronized()
+    state.connection_fsm.synchronize()
     service.enqueue_cloud = AsyncMock()
 
     msg = Message(

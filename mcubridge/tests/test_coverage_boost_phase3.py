@@ -595,8 +595,8 @@ def test_runtime_state_collector(tmp_path: Path) -> None:
     state = create_runtime_state(config)
     collector = RuntimeStateCollector(state)
 
-    state.mark_transport_connected()
-    state.mark_synchronized()
+    state.connection_fsm.connect()
+    state.connection_fsm.synchronize()
     state.file_storage_bytes_used = 1024
 
     metrics = list(collector.collect())
@@ -792,7 +792,7 @@ async def test_service_serial_lifecycle(tmp_path: Path) -> None:
 
     # 1. On serial connected (synchronized)
     async def mock_sync_impl() -> bool:
-        state.mark_synchronized()
+        state.connection_fsm.synchronize()
         return True
 
     with patch.object(service.handshake, "synchronize", side_effect=mock_sync_impl) as mock_sync:
@@ -819,7 +819,7 @@ async def test_service_handle_mcu_frame_dispatch(tmp_path: Path) -> None:
     config = _make_config(tmp_path)
     service, state, mock_serial = _make_service(config)
 
-    state.mark_synchronized()
+    state.connection_fsm.synchronize()
 
     # 1. Registered MCU command
     msg = pb.ConsoleWrite(data=b"hello mcu")
@@ -993,7 +993,7 @@ async def test_runtime_console_flush_and_queues(tmp_path: Path) -> None:
     config = _make_config(tmp_path)
     service, state, mock_serial = _make_service(config)
 
-    state.mark_synchronized()
+    state.connection_fsm.synchronize()
 
     # 1. Flush console queue
     state.console_to_mcu_queue.append(b"console_chunk")

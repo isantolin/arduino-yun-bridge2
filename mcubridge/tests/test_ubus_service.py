@@ -39,8 +39,8 @@ class MockRuntimeFacade:
 def mock_runtime() -> MockRuntimeFacade:
     config = RuntimeConfig()
     state = create_runtime_state(config)
-    state.mark_transport_connected()
-    state.mark_synchronized()
+    state.connection_fsm.connect()
+    state.connection_fsm.synchronize()
     state.mcu_version = (2, 8, 6)
     state.mcu_capabilities = pb.Capabilities(watchdog=True, spi=True, sd=True)
     return MockRuntimeFacade(config, state)
@@ -421,7 +421,7 @@ def test_ubus_handle_ping(mock_runtime: MockRuntimeFacade) -> None:
     assert res["synchronized"] is True
 
     # Ping when not synchronized
-    mock_runtime.state.mark_transport_disconnected()
+    mock_runtime.state.connection_fsm.disconnect()
     res_unsync = service.ubus_handle_ping(MagicMock(), {})
     assert res_unsync["status"] == "not_synchronized"
     assert res_unsync["connected"] is False

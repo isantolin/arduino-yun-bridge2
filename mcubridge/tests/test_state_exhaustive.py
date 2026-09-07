@@ -8,8 +8,8 @@ def test_state_metrics_exhaustive() -> None:
     config = RuntimeConfig(topic_prefix="br", serial_port="/dev/test")
     state = create_runtime_state(config)
 
-    state.mark_transport_connected()
-    state.mark_synchronized()
+    state.connection_fsm.connect()
+    state.connection_fsm.synchronize()
 
     state.handshake_attempts = 5
     state.handshake_successes = 2

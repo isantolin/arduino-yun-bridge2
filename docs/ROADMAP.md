@@ -1,8 +1,8 @@
 # Roadmap
 
-> **Current Release**: v2.8.5 (OpenWrt 25.12.5 final compatible)
+> **Current Release**: v2.8.7 (OpenWrt 25.12.5 final compatible)
 
-## Completed (Q1-Q2 2026)
+## Completed (Q1-Q3 2026)
 
 ### 1. Security & Architecture Overhaul (v2.8.5)
 - **ChaCha20-Poly1305 AEAD**: Full ecosystem migration to authenticated encryption with original header preservation (Zero-Copy AD).
@@ -31,6 +31,17 @@
 - **Safe-Bootloader Handshake**: Protocol extension to trigger MCU bootloader mode via RPC.
 - **Auto-Baudrate Fallback**: Automated speed downgrade logic based on CRC error thresholds.
 - **SPI Service**: Full implementation of the SPI capability bit with a dedicated RPC service.
+
+### 4. Deterministic FSM Ecosystem & Declarative Resilience (v2.8.7 - Q3 2026)
+- **Ecosystem-Wide `python-statemachine`**: Formal SIL-2 deterministic state machines across all critical lifecycle boundaries:
+  - `HandshakeMachine`: Eradicated manual state mapping and glue code; registered `SerialHandshakeManager` as listener with native hooks (`on_enter_synchronized`, `on_exit_synchronized`, `after_transition`).
+  - `LinkConnectionMachine`: Strongly-typed physical connection states (`disconnected`, `connected`, `synchronized`) with idempotent transitions.
+  - `ProcessMachine`: Deterministic subprocess lifecycle states (`spawning`, `running`, `terminating`, `exited`) with graceful termination escalation.
+  - `GatewaySessionMachine`: Formal session lifecycle tracking in Cloud Gateway (`connected`, `authenticated`, `active`, `closed`).
+- **Declarative Retries & Exponential Backoff (`tenacity`)**: Universal `AsyncRetrying` integration across serial transport, handshake protocol, cloud reconnection, UBUS reconnection, and supervised daemon tasks with jittered backoff.
+- **Atomic TOCTOU-Free Local Storage I/O**: Consolidated path creation and file writes in unified thread workers (`_sync_write_file`), cutting context switching overhead in half, alongside native dictionary-like primitives in `LmdbCache`.
+- **OpenWrt Native UBUS Integration (v2.8.6)**: Full UBUS RPC interface (`ubus call mcubridge ...`), native LuCI ucode dispatch, and direct hardware control (< 2 ms latency).
+- **Process Management with `psutil`**: Full replacement of `/proc` scraping and `killpg` with deterministic process tree signaling and memory telemetry.
 
 ## Future Strategic Goals (2026-2027)
 

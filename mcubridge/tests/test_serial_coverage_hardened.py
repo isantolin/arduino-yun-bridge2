@@ -118,7 +118,7 @@ async def test_serial_transport_baudrate_fallback(tmp_path: Path) -> None:
 async def test_serial_transport_process_packet_anti_replay(tmp_path: Path) -> None:
     transport, state, _ = _make_transport(tmp_path)
 
-    state.mark_synchronized()
+    state.connection_fsm.synchronize()
     state.link_last_nonce_counter = 100
 
     # Build valid frame with counter <= last_counter (replay attempt)

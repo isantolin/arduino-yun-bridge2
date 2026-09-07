@@ -148,10 +148,10 @@ def test_context_mark_states_without_link_sync_event(test_config: RuntimeConfig)
     state = create_runtime_state(test_config)
     setattr(state, "link_sync_event", None)
 
-    state.mark_transport_disconnected()
+    state.connection_fsm.disconnect()
     assert state.state == "disconnected"
 
-    state.mark_synchronized()
+    state.connection_fsm.synchronize()
     assert state.state == "synchronized"
 
 
@@ -301,7 +301,7 @@ async def test_runtime_handle_mcu_frame_branches(test_config: RuntimeConfig, moc
 
     # 2. unhandled command with known response_to_request mapping
     svc.serial = serial
-    mock_state.mark_synchronized()
+    mock_state.connection_fsm.synchronize()
     await svc.handle_mcu_frame(Command.CMD_GET_VERSION_RESP.value, 1, pb.VersionResponse().SerializeToString())
     assert not serial.send.called
 
@@ -838,7 +838,7 @@ async def test_handshake_wait_confirmation_already_synchronized(
         enqueue_cloud=AsyncMock(),
         acknowledge_frame=AsyncMock(),
     )
-    mock_state.mark_synchronized()
+    mock_state.connection_fsm.synchronize()
 
     confirmed = await hs._wait_for_link_sync_confirmation(b"nonce")
     assert confirmed is True

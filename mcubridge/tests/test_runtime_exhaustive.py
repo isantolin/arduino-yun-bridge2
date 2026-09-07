@@ -40,7 +40,7 @@ async def test_on_serial_connected_and_disconnected(
     handshake = AsyncMock()
 
     async def mock_sync() -> bool:
-        service.state.mark_synchronized()
+        service.state.connection_fsm.synchronize()
         return True
 
     handshake.synchronize = AsyncMock(side_effect=mock_sync)
@@ -55,7 +55,7 @@ async def test_on_serial_connected_and_disconnected(
 
     # Test sync failure raises ConnectionError
     handshake.synchronize = AsyncMock(return_value=False)
-    service.state.mark_transport_disconnected()
+    service.state.connection_fsm.disconnect()
     with pytest.raises(ConnectionError, match="MCU serial link handshake synchronization failed"):
         await service.on_serial_connected()
 
@@ -90,7 +90,7 @@ async def test_handle_mcu_frame_rpc_handlers(
 ) -> None:
     service, state, transport = runtime_setup
     state.link_session_key = b"0123456789abcdef0123456789abcdef"
-    state.mark_synchronized()
+    state.connection_fsm.synchronize()
 
     # 1. MCU Mailbox Push (triggers enqueue_cloud & acknowledge)
     with patch.object(service, "enqueue_cloud", new_callable=AsyncMock) as mock_enqueue:

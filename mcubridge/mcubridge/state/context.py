@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import collections
+from enum import StrEnum
 import socket
 import time
 from pathlib import Path
 from typing import Any, TypeVar, cast
 
+from statemachine import StateMachine, State
 import psutil
 from google.protobuf.json_format import ParseDict
 from .storage import LmdbDeque, LmdbCache
@@ -50,13 +52,67 @@ def _make_cloud_publish_queue(maxsize: int = 0) -> asyncio.Queue[pb.CloudQueuedP
     return asyncio.Queue[pb.CloudQueuedPublish](maxsize=normalized)
 
 
+class ProcessState(StrEnum):
+    """[SIL-2] Deterministic lifecycle states for spawned subprocesses."""
+
+    SPAWNING = "spawning"
+    RUNNING = "running"
+    TERMINATING = "terminating"
+    EXITED = "exited"
+
+
+class ProcessMachine(StateMachine):
+    """[SIL-2] Deterministic lifecycle state machine for asynchronous subprocesses."""
+
+    allow_event_without_transition = True
+
+    spawning = State(value="spawning", initial=True)
+    running = State(value="running")
+    terminating = State(value="terminating")
+    exited = State(value="exited", final=True)
+
+    start = spawning.to(running)
+    terminate = running.to(terminating) | terminating.to(terminating)
+    finish = running.to(exited) | terminating.to(exited) | spawning.to(exited)
+
+
 class ProcessContext:
-    __slots__ = ("handle", "io_lock", "exit_code")
+    __slots__ = ("handle", "io_lock", "exit_code", "status", "fsm")
 
     def __init__(self, handle: asyncio.subprocess.Process) -> None:
         self.handle = handle
         self.io_lock = asyncio.Lock()
         self.exit_code = 0
+        self.status = ProcessState.RUNNING.value
+        self.fsm = ProcessMachine(model=self, state_field="status", start_value=self.status)
+
+
+class LinkConnectionState(StrEnum):
+    """[SIL-2] Discrete physical connection states between MPU and MCU."""
+
+    DISCONNECTED = "disconnected"
+    CONNECTED = "connected"
+    SYNCHRONIZED = "synchronized"
+
+
+class LinkConnectionMachine(StateMachine):
+    """[SIL-2] Strongly-typed deterministic FSM for serial link connection."""
+
+    disconnected = State(value="disconnected", initial=True)
+    connected = State(value="connected")
+    synchronized = State(value="synchronized")
+
+    connect = disconnected.to(connected) | synchronized.to(connected) | connected.to(connected)
+    synchronize = (
+        disconnected.to(synchronized)
+        | connected.to(synchronized)
+        | synchronized.to(synchronized)
+    )
+    disconnect = (
+        connected.to(disconnected)
+        | synchronized.to(disconnected)
+        | disconnected.to(disconnected)
+    )
 
 
 class RuntimeState:
@@ -65,6 +121,7 @@ class RuntimeState:
     metrics: DaemonMetrics
     serial_writer: asyncio.BaseTransport | None
     state: str
+    connection_fsm: LinkConnectionMachine
     cloud_queue_limit: int
     cloud_publish_queue: asyncio.Queue[pb.CloudQueuedPublish]
     cloud_drop_counts: dict[str, int]
@@ -277,6 +334,12 @@ class RuntimeState:
         self.cloud_spool_degraded: bool = kwargs.get("cloud_spool_degraded", False)
         self.cloud_spool_failure_reason: str | None = kwargs.get("cloud_spool_failure_reason")
         self.cloud_spool_pending_messages: int = kwargs.get("cloud_spool_pending_messages", 0)
+        self.connection_fsm: LinkConnectionMachine = LinkConnectionMachine(
+            model=self,
+            state_field="state",
+            start_value=self.state,
+            listeners=[self],
+        )
 
     @property
     def device_id(self) -> str:
@@ -294,25 +357,24 @@ class RuntimeState:
     def is_synchronized(self) -> bool:
         return self.state == "synchronized"
 
-    def mark_transport_connected(self) -> None:
-        """Signal that serial connection is open but unsynchronized."""
-        self.state = "connected"
+    def on_enter_connected(self) -> None:
+        """[SIL-2] Native hook executed on entering connected state."""
         self.metrics.link_state.state("connected")
-        self.serial_tx_allowed.set()
+        if getattr(self, "serial_tx_allowed", None) is not None:
+            self.serial_tx_allowed.set()
 
-    def mark_transport_disconnected(self) -> None:
-        """Signal that serial connection is lost."""
-        self.state = "disconnected"
+    def on_enter_disconnected(self) -> None:
+        """[SIL-2] Native hook executed on entering disconnected state."""
         self.metrics.link_state.state("disconnected")
-        if self.link_sync_event:
+        if getattr(self, "link_sync_event", None) is not None:
             self.link_sync_event.clear()
 
-    def mark_synchronized(self) -> None:
-        """Signal that protocol handshake is successfully completed."""
-        self.state = "synchronized"
+    def on_enter_synchronized(self) -> None:
+        """[SIL-2] Native hook executed on entering synchronized state."""
         self.metrics.link_state.state("synchronized")
-        if self.link_sync_event:
+        if getattr(self, "link_sync_event", None) is not None:
             self.link_sync_event.set()
+
 
     @property
     def handshake_failures(self) -> int:

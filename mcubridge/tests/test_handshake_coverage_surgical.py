@@ -12,7 +12,14 @@ import pytest
 
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcubridge_pb2 as pb
-from mcubridge.services.handshake import HandshakeState, SerialHandshakeManager, derive_serial_timing
+from mcubridge.services.handshake import (
+    HandshakeEvent,
+    HandshakeMachine,
+    HandshakeState,
+    RateLimiter,
+    SerialHandshakeManager,
+    derive_serial_timing,
+)
 from mcubridge.state.context import RuntimeState, create_runtime_state
 
 
@@ -150,3 +157,102 @@ async def test_fetch_capabilities_failure_paths(
     with patch("tenacity.wait_exponential", return_value=_zero_wait):
         res = await mgr._fetch_capabilities()
         assert res is False
+
+
+def test_rate_limiter_calculations() -> None:
+    # Check rate limit allowed
+    allowed, rem = RateLimiter.check_rate_limit(10.0, 5.0)
+    assert allowed is True
+    assert rem == 0.0
+
+    # Check rate limit throttled
+    allowed, rem = RateLimiter.check_rate_limit(5.0, 10.0)
+    assert allowed is False
+    assert rem == 5.0
+
+    # Exponential backoff calculations
+    assert RateLimiter.compute_exponential_backoff(0, base=1.0, max_delay=10.0) == 1.0
+    assert RateLimiter.compute_exponential_backoff(1, base=1.0, max_delay=10.0) == 2.0
+    assert RateLimiter.compute_exponential_backoff(2, base=1.0, max_delay=10.0) == 4.0
+    assert RateLimiter.compute_exponential_backoff(3, base=1.0, max_delay=10.0) == 8.0
+    assert RateLimiter.compute_exponential_backoff(4, base=1.0, max_delay=10.0) == 10.0
+    assert RateLimiter.compute_exponential_backoff(-1, base=1.0, max_delay=10.0) == 1.0
+
+
+def test_handshake_machine_transitions() -> None:
+    m = HandshakeMachine()
+    assert m.current_state_value == HandshakeState.UNSYNCHRONIZED.value
+
+    # Test complete happy cycle
+    m.start_sync()
+    assert m.current_state_value == HandshakeState.RESETTING.value
+    m.reset_sent()
+    assert m.current_state_value == HandshakeState.SYNCING.value
+    m.sync_sent()
+    assert m.current_state_value == HandshakeState.CONFIRMING.value
+    m.sync_confirmed()
+    assert m.current_state_value == HandshakeState.SYNCHRONIZED.value
+
+    # Reset back to unsynchronized
+    m.reset()
+    assert m.current_state_value == HandshakeState.UNSYNCHRONIZED.value
+
+    # Direct fast-emulator transition: syncing -> synchronized
+    m.start_sync()
+    m.reset_sent()
+    m.sync_confirmed()
+    assert m.current_state_value == HandshakeState.SYNCHRONIZED.value
+
+    # Failure from synchronized
+    m.failure()
+    assert m.current_state_value == HandshakeState.FAULT.value
+
+    # Start sync from fault
+    m.start_sync()
+    assert m.current_state_value == HandshakeState.RESETTING.value
+    m.failure()
+    assert m.current_state_value == HandshakeState.FAULT.value
+
+
+def test_handshake_manager_transition_dispatch(
+    handshake_mgr: tuple[SerialHandshakeManager, RuntimeState, AsyncMock, AsyncMock],
+) -> None:
+    mgr, state, _send, _enqueue = handshake_mgr
+    assert mgr.fsm_state == HandshakeState.UNSYNCHRONIZED
+
+    # Valid progression
+    s1 = mgr.transition(HandshakeEvent.START_SYNC)
+    assert s1 == HandshakeState.RESETTING
+    assert mgr.fsm_state == HandshakeState.RESETTING
+
+    s2 = mgr.transition(HandshakeEvent.RESET_SENT)
+    assert s2 == HandshakeState.SYNCING
+
+    s3 = mgr.transition(HandshakeEvent.SYNC_SENT)
+    assert s3 == HandshakeState.CONFIRMING
+
+    s4 = mgr.transition(HandshakeEvent.SYNC_CONFIRMED)
+    assert s4 == HandshakeState.SYNCHRONIZED
+    assert state.is_synchronized
+
+    # Transitioning away from SYNCHRONIZED
+    s5 = mgr.transition(HandshakeEvent.RESET)
+    assert s5 == HandshakeState.UNSYNCHRONIZED
+    assert not state.is_synchronized
+
+    # Invalid transition (rejected and state unchanged)
+    s_invalid = mgr.transition(HandshakeEvent.SYNC_CONFIRMED)
+    assert s_invalid == HandshakeState.UNSYNCHRONIZED
+    assert mgr.fsm_state == HandshakeState.UNSYNCHRONIZED
+
+    # Failure transition
+    s_fail = mgr.transition(HandshakeEvent.FAILURE)
+    assert s_fail == HandshakeState.FAULT
+
+    # Explicit setter
+    mgr.fsm_state = HandshakeState.RESETTING
+    assert mgr.fsm_state == HandshakeState.RESETTING
+    # Idempotent setter
+    mgr.fsm_state = HandshakeState.RESETTING
+    assert mgr.fsm_state == HandshakeState.RESETTING
+

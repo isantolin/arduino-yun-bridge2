@@ -335,8 +335,8 @@ def runtime_config() -> RuntimeConfig:
 def runtime_state(runtime_config: RuntimeConfig) -> Iterator[RuntimeState]:
     """Provide a RuntimeState instance with proper cleanup."""
     state = create_runtime_state(runtime_config)
-    state.mark_transport_connected()
-    state.mark_synchronized()
+    state.connection_fsm.connect()
+    state.connection_fsm.synchronize()
     try:
         yield state
     finally:

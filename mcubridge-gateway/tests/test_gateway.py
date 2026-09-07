@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from typer.testing import CliRunner
 
-from gateway import CloudBridgeService, ProtobufGateway, app
+from gateway import CloudBridgeService, GatewaySessionMachine, GatewaySessionState, ProtobufGateway, app
 from mcubridge.protocol import mcubridge_pb2 as pb
 
 
@@ -288,3 +288,38 @@ def test_gateway_main_block_simulation() -> None:
     with patch.object(sys, "argv", ["gateway.py", "--help"]):
         with pytest.raises(SystemExit):
             runpy.run_path("mcubridge-gateway/gateway.py", run_name="__main__")
+
+
+def test_gateway_session_machine_lifecycle() -> None:
+    # 1. Full authenticated lifecycle: connected -> authenticated -> active -> closed
+    fsm = GatewaySessionMachine()
+    assert fsm.current_state_value == GatewaySessionState.CONNECTED.value
+    assert fsm.connected.is_active
+
+    fsm.authenticate()
+    assert fsm.current_state_value == GatewaySessionState.AUTHENTICATED.value
+    assert fsm.authenticated.is_active
+
+    fsm.activate()
+    assert fsm.current_state_value == GatewaySessionState.ACTIVE.value
+    assert fsm.active.is_active
+
+    fsm.close()
+    assert fsm.current_state_value == GatewaySessionState.CLOSED.value
+    assert fsm.closed.is_active
+
+    # Idempotent close does not raise
+    fsm.close()
+    assert fsm.current_state_value == GatewaySessionState.CLOSED.value
+
+    # 2. Direct activation lifecycle: connected -> active -> closed
+    fsm2 = GatewaySessionMachine()
+    fsm2.activate()
+    assert fsm2.current_state_value == GatewaySessionState.ACTIVE.value
+    fsm2.close()
+    assert fsm2.current_state_value == GatewaySessionState.CLOSED.value
+
+    # 3. Direct close: connected -> closed
+    fsm3 = GatewaySessionMachine()
+    fsm3.close()
+    assert fsm3.current_state_value == GatewaySessionState.CLOSED.value

@@ -22,6 +22,17 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 
 ### Novedades (septiembre 2026)
 
+- **Ecosistema Determinista de Máquinas de Estado (`python-statemachine`) (v2.8.7)**:
+  - **Handshake FSM**: Erradicación de código de pegamento y dispatch manual; `SerialHandshakeManager` actúa como listener nativo con hooks directos (`on_enter_synchronized`, `on_exit_synchronized`, `after_transition`).
+  - **Link Connection FSM (`LinkConnectionMachine`)**: Gestión fuertemente tipada de estados de conexión física (`disconnected`, `connected`, `synchronized`) con transiciones idempotentes que previenen desalineaciones en reconexiones serie.
+  - **Subprocess Lifecycle FSM (`ProcessMachine`)**: Supervisión formal del ciclo de vida de procesos asíncronos (`spawning` -> `running` -> `terminating` -> `exited`) con tolerancia a eventos concurrentes sin transición (`allow_event_without_transition`).
+  - **Cloud Gateway Session FSM (`GatewaySessionMachine`)**: Rastreo de sesiones gRPC (`connected` -> `authenticated` -> `active` -> `closed`) alcanzando 100% de cobertura y determinismo en mTLS.
+- **Resiliencia y Reintentos Declarativos Asíncronos (`tenacity`) (v2.8.7)**:
+  - Adopción universal de `AsyncRetrying` y `Retrying` en el transporte serie, handshake criptográfico, reconexiones UBUS, sesiones cloud y tareas supervisadas del daemon (`_run_supervised_task`) con backoff exponencial y jitter, erradicando bucles manuales de espera y timeouts ad-hoc.
+- **I/O Asíncrono de Ficheros con `anyio.Path` y Almacenamiento Libre de TOCTOU (v2.8.7)**:
+  - Migración integral de las operaciones de sistema de archivos a `anyio.Path` (`safe_file_read`, `safe_file_remove`, `_write_with_quota`), permitiendo escrituras asíncronas directas (`await path.write_bytes()`, `await path.parent.mkdir()`), eliminando condiciones de carrera TOCTOU y erradicando helpers de envoltura manuales.
+  - Ejecución asíncrona de comprobación de cuota de disco y persistencia periódica de estado (`status_writer`) vía `anyio.to_thread.run_sync`.
+  - Expansión de primitivas transaccionales y de diccionario en la caché transaccional `LmdbCache` (`get`, `setdefault`, `pop`, `clear`).
 - **Integración Nativa de OpenWrt UBUS (v2.8.6)**: Integración completa de UBUS (`ubus call mcubridge ...`) a través del daemon, vistas LuCI JavaScript (`status.js`, `capabilities.js`, `webui.js`), scripts de sistema (`pin_rest_cgi.py`, `mcubridge_file_push.py`) y herramientas de diagnóstico (`audit_bridge_status.py --ubus`). Proporciona una interfaz local directa de ultra-baja latencia (< 2 ms) para control de pines GPIO, buzón, datastore transaccional LMDB, transferencia de archivos y ejecución/gestión de procesos.
 - **Gestión Unificada de Procesos con `psutil`**: Reemplazo de toda la gestión manual de `/proc/self/status`, señales y llamadas a `os.killpg` por `psutil`, garantizando la terminación determinista y en cascada de subprocesos y medición precisa de memoria RSS/VMS.
 - **Controlador Nativo Ucode en LuCI (`mcubridge.uc`)**: Eliminación de ejecuciones de shell `popen()`, despachando el control de hardware directamente mediante llamadas C a `ubus.connect().call('mcubridge', ...)`.

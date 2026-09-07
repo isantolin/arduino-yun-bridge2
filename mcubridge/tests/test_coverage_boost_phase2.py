@@ -172,7 +172,7 @@ class TestSerialSendRaw:
     async def test_send_raw_synchronized_nonce(self) -> None:
         config = _make_config()
         state = _make_state(config)
-        state.mark_synchronized()
+        state.connection_fsm.synchronize()
         state.link_session_key = b"A" * 32
         state.link_nonce_counter = 1
         transport = SerialTransport(config, state, None)
@@ -230,7 +230,7 @@ class TestProcessPacketEdgePaths:
         key = b"K" * 32
         state.link_session_key = key
         state.link_last_nonce_counter = 999
-        state.mark_synchronized()
+        state.connection_fsm.synchronize()
         transport = SerialTransport(config, state, None)
 
         # Build a non-system command frame with session key

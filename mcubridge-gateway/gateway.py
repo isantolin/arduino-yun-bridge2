@@ -7,12 +7,13 @@ This server acts as the primary cloud endpoint for MPU Daemons, running as a gRP
 from __future__ import annotations
 
 import asyncio
+from enum import StrEnum
 import ssl
 from pathlib import Path
 from typing import Annotated
 
-
 from grpclib.server import Server, Stream
+from statemachine import State, StateMachine
 import structlog
 import typer
 
@@ -24,6 +25,30 @@ configure_logging()
 logger = structlog.get_logger("mcubridge.gateway")
 
 
+class GatewaySessionState(StrEnum):
+    """[SIL-2] Discrete session lifecycle states for cloud connections."""
+
+    CONNECTED = "connected"
+    AUTHENTICATED = "authenticated"
+    ACTIVE = "active"
+    CLOSED = "closed"
+
+
+class GatewaySessionMachine(StateMachine):
+    """[SIL-2] Deterministic state machine for cloud gateway sessions."""
+
+    allow_event_without_transition = True
+
+    connected = State(value="connected", initial=True)
+    authenticated = State(value="authenticated")
+    active = State(value="active")
+    closed = State(value="closed", final=True)
+
+    authenticate = connected.to(authenticated)
+    activate = authenticated.to(active) | connected.to(active)
+    close = connected.to(closed) | authenticated.to(closed) | active.to(closed)
+
+
 class CloudBridgeService(CloudBridgeBase):
     def __init__(self, gateway: ProtobufGateway) -> None:
         self.gateway = gateway
@@ -31,6 +56,7 @@ class CloudBridgeService(CloudBridgeBase):
     async def Session(self, stream: Stream[pb.CloudEnvelope, pb.CloudEnvelope]) -> None:
         peer = stream.peer.addr()
         device_id = f"anonymous-{peer[0]}:{peer[1]}" if peer else "anonymous-unknown"
+        is_authenticated = False
 
         cert = stream.peer.cert()
         if cert:
@@ -39,19 +65,28 @@ class CloudBridgeService(CloudBridgeBase):
                     for key, val in sub:
                         if key == "commonName":
                             device_id = val
+                            is_authenticated = True
             except (ssl.SSLError, AttributeError, KeyError, TypeError) as e:
                 logger.error("Failed to parse client certificate", error=str(e))
                 return
 
+        session_fsm = GatewaySessionMachine()
+        if is_authenticated:
+            session_fsm.authenticate()
+
         with structlog.contextvars.bound_contextvars(device_id=device_id):
-            logger.info("Device connected")
+            logger.info("Device connected", state=session_fsm.current_state_value)
             self.gateway.connections[device_id] = stream
+            self.gateway.sessions[device_id] = session_fsm
 
             try:
                 async for envelope in stream:
                     if not envelope.IsInitialized() or envelope.protocol_version != 2:
                         logger.warning("Invalid cloud envelope")
                         continue
+
+                    if not session_fsm.active.is_active:
+                        session_fsm.activate()
 
                     payload_type = envelope.WhichOneof("payload")
                     logger.debug(
@@ -91,7 +126,9 @@ class CloudBridgeService(CloudBridgeBase):
             except OSError as exc:
                 logger.warning("Network OS error for device", error=str(exc))
             finally:
-                logger.info("Device disconnected")
+                session_fsm.close()
+                logger.info("Device disconnected", state=session_fsm.current_state_value)
+                self.gateway.sessions.pop(device_id, None)
                 self.gateway.connections.pop(device_id, None)
 
 
@@ -119,6 +156,7 @@ class ProtobufGateway:
         self.http3_port = http3_port
         self.server: Server | None = None
         self.connections: dict[str, Stream[pb.CloudEnvelope, pb.CloudEnvelope]] = {}
+        self.sessions: dict[str, GatewaySessionMachine] = {}
 
     def get_ssl_context(self) -> ssl.SSLContext | None:
         if not self.use_tls:

@@ -134,20 +134,20 @@ El protocolo binario MCU Bridge 2 está diseñado para ser completamente agnóst
 
 ## Máquinas de Estados (FSM)
 
-El ecosistema implementa múltiples máquinas de estados deterministas para gestionar flujos críticos, garantizando previsibilidad y facilitando la recuperación ante errores.
+El ecosistema implementa máquinas de estados deterministas y fuertemente tipadas tanto en C++ (`etl::fsm`) como en Python (`python-statemachine`), garantizando previsibilidad, ausencia de deadlocks y recuperabilidad determinista bajo estándares SIL-2.
 
-### 1. Link Handshake FSM (Python Daemon)
+### 1. Link Handshake FSM (`HandshakeMachine` — Python Daemon)
 
-Gestiona el ciclo de vida del enlace serie seguro entre el daemon y el MCU.
+Gestiona la autenticación mutua y el ciclo de vida del enlace criptográfico serie entre el daemon y el MCU. Implementada con `python-statemachine`, utiliza el patrón de listener nativo (`SerialHandshakeManager(listeners=[self])`) para ejecutar hooks tipados automáticos (`on_enter_synchronized`, `on_exit_synchronized`, `after_transition`), erradicando código de pegamento y dispatch manual.
 
 #### Estados
 | Estado | Descripción |
 |--------|-------------|
-| `unsynchronized` | Estado inicial. Sin enlace establecido. |
+| `unsynchronized` | Estado inicial. Sin enlace establecido. Tráfico RPC bloqueado. |
 | `resetting` | Enviando `CMD_LINK_RESET` para inicializar parámetros de tiempo. |
 | `syncing` | Enviando `CMD_LINK_SYNC` con nonce de desafío. |
 | `confirming` | Esperando `CMD_LINK_SYNC_RESP` validado. |
-| `synchronized` | Enlace establecido y autenticado. Listo para RPC. |
+| `synchronized` | Enlace establecido y autenticado. Tráfico RPC habilitado. |
 | `fault` | Error crítico o de autenticación detectado. |
 
 #### Transiciones
@@ -160,47 +160,88 @@ Gestiona el ciclo de vida del enlace serie seguro entre el daemon y el MCU.
 
 ---
 
-### 2. Cloud Transport FSM (Python Daemon)
+### 2. Physical Link Connection FSM (`LinkConnectionMachine` — Python Daemon)
 
-Controla la conectividad de gRPC con el Cloud Gateway y el inicio del stream bidireccional.
-
-#### Estados
-| Estado | Descripción |
-|--------|-------------|
-| `disconnected` | Sin conexión al Cloud Gateway. |
-| `connecting` | Intentando abrir canal gRPC/HTTP/3 (QUIC) con TLS (con fallback a HTTP/2). |
-| `streaming` | Conexión activa y stream bidireccional establecido. Listo para procesar mensajes. |
-
-#### Transiciones
-- `connect`: `*` → `connecting` (Inicia canal gRPC)
-- `stream_opened`: `connecting` → `streaming` (Handshake HTTP/3 o HTTP/2 y stream establecido)
-- `disconnect`: `*` → `disconnected` (Error de red, timeout o parada controlada)
-
----
-
-### 3. Managed Process FSM (Python Daemon)
-
-Rastrea el ciclo de vida de cada subproceso asíncrono ejecutado en Linux a petición del MCU.
+Gobierna el estado de la conexión física en [RuntimeState](file:///home/ignaciosantolin/arduino-yun-bridge2/mcubridge/mcubridge/state/context.py#L112) de forma desacoplada pero sincronizada con el transporte serie y de red. Sus transiciones son formalmente idempotentes para tolerar reconexiones y re-sincronizaciones sin inconsistencias de estado.
 
 #### Estados
 | Estado | Descripción |
 |--------|-------------|
-| `STARTING` | Proceso en creación (fork/exec). |
-| `RUNNING` | Proceso en ejecución activa. |
-| `DRAINING` | Proceso finalizado, vaciando buffers de salida (stdout/stderr). |
-| `FINISHED` | Buffers vacíos. Esperando recolección de estado final. |
-| `ZOMBIE` | Ciclo de vida completado. Slot liberado. |
+| `disconnected` | Enlace físico o socket desconectado. Eventos de sincronización limpios. |
+| `connected` | Enlace físico o socket TCP/TTY abierto. Handshake pendiente. |
+| `synchronized` | Handshake completado exitosamente. Enlace listo para operaciones RPC. |
 
-#### Transiciones
-- `start`: `STARTING` → `RUNNING` (Handle de proceso obtenido)
-- `sigchld`: `RUNNING` → `DRAINING` (Proceso terminó su ejecución)
-- `io_complete`: `DRAINING` → `FINISHED` (Lectura de pipes completada)
-- `finalize`: `FINISHED` → `ZOMBIE` (Resultado enviado al MCU y slot liberado)
-- `force_kill`: `*` → `ZOMBIE` (Terminación forzada por timeout o `CMD_PROCESS_KILL`)
+#### Transiciones e Idempotencia
+- `connect`: `disconnected | synchronized | connected` → `connected`
+- `synchronize`: `disconnected | connected | synchronized` → `synchronized`
+- `disconnect`: `connected | synchronized | disconnected` → `disconnected`
+
+#### Hooks Nativos
+- `on_enter_connected()`: Notifica apertura de canal y registra evento de telemetría.
+- `on_enter_synchronized()`: Establece `link_sync_event` y habilita `serial_tx_allowed`.
+- `on_enter_disconnected()`: Limpia `link_sync_event` y bloquea `serial_tx_allowed`.
 
 ---
 
-### 4. ETL FSM (MCU Firmware) — IEC 61508 / SIL 2
+### 3. Managed Subprocess Lifecycle FSM (`ProcessMachine` — Python Daemon)
+
+Rastrea formalmente el ciclo de vida de cada subproceso asíncrono ejecutado en Linux bajo `ProcessContext`, garantizando la recolección determinista de recursos y previniendo procesos huérfanos (`zombies`) mediante `psutil`.
+
+#### Estados
+| Estado | Descripción |
+|--------|-------------|
+| `spawning` | Estado inicial. Subproceso en creación (fork/exec). |
+| `running` | Subproceso en ejecución activa y monitorizado. |
+| `terminating` | Señal de parada enviada (SIGTERM); ventana de gracia activa. |
+| `exited` | Estado final (`final=True`). Proceso finalizado y recursos liberados. |
+
+#### Transiciones
+- `start`: `spawning` → `running` (PID y handle de proceso obtenidos)
+- `terminate`: `running | terminating` → `terminating` (Escalada de apagado graceful)
+- `finish`: `spawning | running | terminating` → `exited` (Terminación normal o forzada)
+- **Tolerancia a Concurrencia**: Configurada con `allow_event_without_transition = True` para evitar excepciones si múltiples hilos/corutinas finalizan el proceso concurrentemente.
+
+---
+
+### 4. Cloud Gateway Session FSM (`GatewaySessionMachine` — Cloud Gateway)
+
+Rastrea el ciclo de vida de cada sesión gRPC bidireccional en el servidor `ProtobufGateway`, garantizando aislamiento de dispositivos y auditoría estricta de mTLS.
+
+#### Estados
+| Estado | Descripción |
+|--------|-------------|
+| `connected` | Stream gRPC TCP/HTTP3 aceptado. Certificado pendiente de validación. |
+| `authenticated` | Identidad mTLS (`commonName`) validada exitosamente. |
+| `active` | Primer frame/envelope válido recibido; sesión bidireccional en curso. |
+| `closed` | Estado final (`final=True`). Conexión cerrada y removida de `gateway.sessions`. |
+
+#### Transiciones
+- `authenticate`: `connected` → `authenticated`
+- `activate`: `authenticated | connected` → `active`
+- `close`: `*` → `closed` (Cierre controlado o error de red)
+
+---
+
+### 5. Motor Declarativo de Resiliencia y Reintentos (`tenacity`)
+
+El protocolo erradica bucles de reintento manuales mediante el uso exclusivo de `tenacity.AsyncRetrying` y `tenacity.Retrying`:
+- **Handshake serie**: `wait_exponential_jitter()` con umbral fatal de reintentos (`_fatal_threshold`) y transición inmediata a `SerialHandshakeFatal`.
+- **Transporte serie**: `wait_exponential(multiplier=1, min=1, max=10)` ante errores de E/S transitorios.
+- **Reconexión Cloud Gateway**: `wait_exponential(multiplier=reconnect_delay, max=60) + wait_random(0, 2)` para mitigar el efecto *thundering herd*.
+- **Supervisión de Tareas (`_run_supervised_task`)**: Reintentos automáticos con backoff exponencial y jitter determinista ante fallos no cancelados.
+
+---
+
+### 6. Asynchronous File I/O & Storage Subsystem (`anyio.Path`)
+
+Las transferencias de archivos y peticiones de almacenamiento entre MPU y MCU se ejecutan de forma completamente asíncrona mediante `anyio.Path`:
+- **Operaciones Asíncronas Nativas**: `read_bytes()`, `write_bytes()`, `unlink()` y creación recursiva de directorios `parent.mkdir()` se delegan a workers asíncronos nativos sin bloquear el bucle de eventos `asyncio`/`uvloop`.
+- **Protección contra TOCTOU**: Captura explícita de excepciones del kernel (`FileNotFoundError`, `IsADirectoryError`, `PermissionError`) en lugar de comprobaciones secuenciales `exists()` propensas a carreras.
+- **Cuota de Almacenamiento**: Consulta asíncrona de capacidad mediante `anyio.to_thread.run_sync(psutil.disk_usage, ...)`.
+
+---
+
+### 7. ETL FSM (MCU Firmware) — IEC 61508 / SIL 2
 
 Máquina de estados estática en el MCU (C++) para la gestión del enlace RPC.
 Implementada con `etl::fsm` y `enum class StateId : uint8_t` para cero conversiones narrowing.

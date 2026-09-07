@@ -84,7 +84,7 @@ async def test_handshake_rate_limiting(
     manager, state, _, config, _timing, _ack = handshake_setup
     config.serial_handshake_min_interval = 1.0
 
-    state.mark_synchronized()
+    state.connection_fsm.synchronize()
     state.link_handshake_nonce = b"pending"
     state.handshake_rate_until = time.monotonic() + 0.5
 

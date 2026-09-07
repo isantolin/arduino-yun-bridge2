@@ -29,6 +29,8 @@ from google.protobuf.message import (
     EncodeError as ProtobufSerializationError,
 )
 
+import anyio
+import anyio.to_thread
 import psutil
 import tenacity
 from .ubus import UbusService
@@ -82,7 +84,7 @@ from ..metrics import (
 )
 from ..state.status import STATUS_FILE, status_writer
 from ..watchdog import WatchdogKeepalive
-from ..state.context import ProcessContext, RuntimeState
+from ..state.context import ProcessContext, ProcessState, RuntimeState
 from .handshake import SerialHandshakeManager, SerialHandshakeFatal, derive_serial_timing
 
 if TYPE_CHECKING:
@@ -484,7 +486,7 @@ class BridgeService:
             state.cleanup()
 
     async def on_serial_connected(self) -> None:
-        self.state.mark_transport_connected()
+        self.state.connection_fsm.connect()
         if hasattr(self, "ubus_service"):
             self.ubus_service.notify("connection_state", {"connected": True})
         await self.handshake.synchronize()
@@ -502,7 +504,7 @@ class BridgeService:
             raise ConnectionError("MCU serial link handshake synchronization failed")
 
     async def on_serial_disconnected(self) -> None:
-        self.state.mark_transport_disconnected()
+        self.state.connection_fsm.disconnect()
         if hasattr(self, "ubus_service"):
             self.ubus_service.notify("connection_state", {"connected": False, "synchronized": False})
         for q in (self.state.pending_digital_reads, self.state.pending_analog_reads):
@@ -1216,6 +1218,7 @@ class BridgeService:
     def release_process(self, pid: int) -> ProcessContext | None:
         ctx = self.state.running_processes.pop(pid, None)
         if ctx is not None:
+            ctx.fsm.finish()
             self._process_slots.release()
         return ctx
 
@@ -1263,6 +1266,8 @@ class BridgeService:
                 o, to = await _rd(ctx.handle.stdout)
                 e, te = await _rd(ctx.handle.stderr)
                 fin = ctx.handle.returncode is not None
+                if fin:
+                    ctx.fsm.finish()
                 if (
                     fin
                     and (ctx.handle.stdout is None or ctx.handle.stdout.at_eof())
@@ -1293,23 +1298,33 @@ class BridgeService:
 
     async def _terminate_process(self, pid: int, ctx: ProcessContext, *, grace_period: float) -> int:
         if ctx.handle.returncode is not None:
+            ctx.fsm.finish()
             return ctx.handle.returncode
 
+        if ctx.fsm.current_state_value != ProcessState.TERMINATING.value:
+            ctx.fsm.terminate()
+
         if not BridgeService._signal_process_tree(ctx.handle.pid, kill=False):
+            ctx.fsm.finish()
             return ctx.handle.returncode or -1
 
         try:
             async with asyncio.timeout(grace_period):
-                return await ctx.handle.wait()
+                code = await ctx.handle.wait()
+                ctx.fsm.finish()
+                return code
         except TimeoutError:
             logger.error("Process exceeded graceful shutdown window; escalating to SIGKILL", pid=pid)
 
         if not BridgeService._signal_process_tree(ctx.handle.pid, kill=True):
+            ctx.fsm.finish()
             return ctx.handle.returncode or -1
 
         try:
             async with asyncio.timeout(PROCESS_TERM_GRACE_PERIOD_SECONDS):
-                return await ctx.handle.wait()
+                code = await ctx.handle.wait()
+                ctx.fsm.finish()
+                return code
         except TimeoutError:
             return -1
 
@@ -1327,10 +1342,10 @@ class BridgeService:
         finally:
             self.release_process(pid)
 
-    def _get_safe_path(self, p_str: str) -> Path | None:
+    def _get_safe_path(self, p_str: str) -> anyio.Path | None:
         root = Path(self.config.file_system_root).resolve()
         p = root.joinpath(p_str.lstrip("/")).resolve()
-        return p if p.is_relative_to(root) else None
+        return anyio.Path(p) if p.is_relative_to(root) else None
 
     async def safe_file_write(self, p_str: str, data: bytes) -> bool:
         path = self._get_safe_path(p_str)
@@ -1340,7 +1355,7 @@ class BridgeService:
         if not (path := self._get_safe_path(p_str)):
             return None
         try:
-            return await asyncio.to_thread(path.read_bytes)
+            return await path.read_bytes()
         except (FileNotFoundError, IsADirectoryError, PermissionError):
             return None
 
@@ -1348,15 +1363,15 @@ class BridgeService:
         if not (path := self._get_safe_path(p_str)):
             return False
         try:
-            await asyncio.to_thread(path.unlink)
+            await path.unlink()
             return True
         except (FileNotFoundError, IsADirectoryError, PermissionError):
             return False
 
-    async def _write_with_quota(self, path: Path, data: bytes) -> bool:
+    async def _write_with_quota(self, path: Path | anyio.Path, data: bytes) -> bool:
         async with self._storage_lock:
             try:
-                usage = await asyncio.to_thread(psutil.disk_usage, self.config.file_system_root)
+                usage = await anyio.to_thread.run_sync(psutil.disk_usage, self.config.file_system_root)
                 self.state.file_storage_bytes_used = usage.used
 
                 if usage.free < len(data):
@@ -1364,8 +1379,9 @@ class BridgeService:
                     return False
             except OSError as exc:
                 logger.error("Disk usage check failed", error=str(exc))
-            await asyncio.to_thread(path.parent.mkdir, parents=True, exist_ok=True)
-            await asyncio.to_thread(path.write_bytes, data)
+            p = anyio.Path(path)
+            await p.parent.mkdir(parents=True, exist_ok=True)
+            await p.write_bytes(data)
             return True
 
     def _parse_pin(self, s: str) -> int:
@@ -1495,38 +1511,39 @@ class BridgeService:
                 logger.critical("Fatal task error", error=str(e), exc_info=True)
             raise
         finally:
-            if self._cloud_spool is not None:
-                try:
-                    await self._cloud_spool.close()
-                except (lmdb.Error, OSError) as exc:
-                    logger.debug("cloud_spool close failed during teardown", error=str(exc))
-                self._cloud_spool = None
-            if self.state and self.state.datastore_cache is not None:
-                try:
-                    await self.state.datastore_cache.close()
-                except (lmdb.Error, OSError) as exc:
-                    logger.debug("datastore_cache close failed during teardown", error=str(exc))
-                self.state.datastore_cache = None
+            with anyio.CancelScope(shield=True):
+                if self._cloud_spool is not None:
+                    try:
+                        await self._cloud_spool.close()
+                    except (lmdb.Error, OSError) as exc:
+                        logger.debug("cloud_spool close failed during teardown", error=str(exc))
+                    self._cloud_spool = None
+                if self.state and self.state.datastore_cache is not None:
+                    try:
+                        await self.state.datastore_cache.close()
+                    except (lmdb.Error, OSError) as exc:
+                        logger.debug("datastore_cache close failed during teardown", error=str(exc))
+                    self.state.datastore_cache = None
 
-            if self.state and getattr(self.state, "mailbox_queue", None) is not None:
-                try:
-                    await self.state.mailbox_queue.close()
-                except (lmdb.Error, OSError) as exc:
-                    logger.debug("mailbox_queue close failed during teardown", error=str(exc))
-            if self.state and getattr(self.state, "mailbox_incoming_queue", None) is not None:
-                try:
-                    await self.state.mailbox_incoming_queue.close()
-                except (lmdb.Error, OSError) as exc:
-                    logger.debug("mailbox_incoming_queue close failed during teardown", error=str(exc))
-            if self.state and self.state.tls_session_cache is not None:
-                try:
-                    await self.state.tls_session_cache.close()
-                except (lmdb.Error, OSError) as exc:
-                    logger.debug("tls_session_cache close failed during teardown", error=str(exc))
-                self.state.tls_session_cache = None
-            self.cleanup()
-            STATUS_FILE.unlink(missing_ok=True)
-            logger.info("MCU Bridge daemon stopped.")
+                if self.state and getattr(self.state, "mailbox_queue", None) is not None:
+                    try:
+                        await self.state.mailbox_queue.close()
+                    except (lmdb.Error, OSError) as exc:
+                        logger.debug("mailbox_queue close failed during teardown", error=str(exc))
+                if self.state and getattr(self.state, "mailbox_incoming_queue", None) is not None:
+                    try:
+                        await self.state.mailbox_incoming_queue.close()
+                    except (lmdb.Error, OSError) as exc:
+                        logger.debug("mailbox_incoming_queue close failed during teardown", error=str(exc))
+                if self.state and self.state.tls_session_cache is not None:
+                    try:
+                        await self.state.tls_session_cache.close()
+                    except (lmdb.Error, OSError) as exc:
+                        logger.debug("tls_session_cache close failed during teardown", error=str(exc))
+                    self.state.tls_session_cache = None
+                self.cleanup()
+                STATUS_FILE.unlink(missing_ok=True)
+                logger.info("MCU Bridge daemon stopped.")
 
     async def run_cloud(self) -> None:
         if not self.config.cloud_enabled:

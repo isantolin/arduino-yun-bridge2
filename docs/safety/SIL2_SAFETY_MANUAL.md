@@ -74,6 +74,11 @@ At system startup (`Bridge.begin()`), the HAL executes `bridge::hal::run_power_o
 * **Sequential Nonce Counter Enforcement**: All encrypted frames crossing physical (UART) or wireless (WiFi TCP / Bluetooth SPP) transports are validated against monotonic 64-bit nonces (`validate_nonce_counter`), preventing replay attacks and out-of-order execution.
 * **Fail-Safe Disconnects**: Wireless dropouts trigger deterministic transitions to `UNSYNCHRONIZED`, wiping session keys and requiring complete re-authentication.
 
+### 2.9 Deterministic State Machines in Linux MPU (`python-statemachine`)
+* **Strict State Typing**: Handshake (`HandshakeMachine`), physical link (`LinkConnectionMachine`), subprocesses (`ProcessMachine`), and cloud sessions (`GatewaySessionMachine`) are governed by formal, discrete state machines matching the SIL-2 determinism of `etl::fsm` on the MCU.
+* **Native Listener Hook Dispatch**: State side effects (e.g. enabling `serial_tx_allowed`, setting/clearing `link_sync_event`, escalating process termination) are executed strictly via synchronous, typed listener callbacks (`on_enter_*`, `on_exit_*`), eradicating manual glue code and race-prone polling.
+* **Closed Transition Matrices & Concurrency Safety**: Illegal transitions are rejected deterministically; idempotent transitions and `allow_event_without_transition = True` prevent deadlock or unhandled exception propagation during asynchronous subprocess termination and reconnection events.
+
 ---
 
 ## 3. Safety Integrity Metrics

@@ -37,8 +37,8 @@ async def test_process_packet_crc_mismatch_reports_crc(
     config = _make_config()
     state = create_runtime_state(config)
     try:
-        state.mark_transport_connected()
-        state.mark_synchronized()
+        state.connection_fsm.connect()
+        state.connection_fsm.synchronize()
         service = BridgeService(config, state, AsyncMock(spec=SerialTransport))
         transport = SerialTransport(config, state, service)
 
@@ -196,8 +196,8 @@ async def test_process_packet_fallback_triggers_negotiation(
     config.serial_fallback_threshold = 2
     state = create_runtime_state(config)
     try:
-        state.mark_transport_connected()
-        state.mark_synchronized()
+        state.connection_fsm.connect()
+        state.connection_fsm.synchronize()
         service = BridgeService(config, state, AsyncMock(spec=SerialTransport))
 
         transport = SerialTransport(config, state, service)

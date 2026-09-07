@@ -76,11 +76,11 @@ async def test_lmdb_cache_basic_and_error_handling() -> None:
 @pytest.mark.asyncio
 async def test_bridge_state_status_pulse() -> None:
     state = RuntimeState()
-    state.mark_transport_connected()
+    state.connection_fsm.connect()
     assert state.state == "connected"
 
-    state.mark_synchronized()
+    state.connection_fsm.synchronize()
     assert state.is_synchronized is True
 
-    state.mark_transport_disconnected()
+    state.connection_fsm.disconnect()
     assert state.state == "disconnected"

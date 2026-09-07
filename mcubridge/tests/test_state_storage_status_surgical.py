@@ -213,3 +213,48 @@ async def test_lmdb_cache_and_vacuum_edge_branches(tmp_path: Path) -> None:
         _vacuum_lmdb_env(str(tmp_path / "faulty"), "faulty.db", faulty_env, lambda: None)
 
 
+@pytest.mark.asyncio
+async def test_lmdb_cache_len_contains_items(tmp_path: Path) -> None:
+    """Verify LmdbCache __len__, contains, __contains__, and items on disk and memory."""
+    db_path = str(tmp_path / "cache_ext.db")
+    kv = LmdbCache(db_path)
+
+    assert len(kv) == 0
+    assert not await kv.contains("key1")
+    assert "key1" not in kv
+    assert await kv.items() == []
+
+    await kv.set("key1", b"val1")
+    await kv.set("key2", b"val2")
+
+    assert len(kv) == 2
+    assert await kv.contains("key1")
+    assert "key1" in kv
+    assert "key3" not in kv
+    assert set(await kv.items()) == {("key1", b"val1"), ("key2", b"val2")}
+
+    # Error and fallback branches with env=None
+    saved_env = kv.env
+    kv.env = None
+    assert len(kv) == 0
+    assert not await kv.contains("key1")
+    assert "key1" not in kv
+    assert await kv.items() == []
+    kv.env = saved_env
+
+    # Memory mode verification
+    mem_kv = LmdbCache(":memory:")
+    assert len(mem_kv) == 0
+    assert not await mem_kv.contains("mkey")
+    assert "mkey" not in mem_kv
+    assert await mem_kv.items() == []
+
+    await mem_kv.set("mkey", b"mval")
+    assert len(mem_kv) == 1
+    assert await mem_kv.contains("mkey")
+    assert "mkey" in mem_kv
+    assert await mem_kv.items() == [("mkey", b"mval")]
+    await mem_kv.close()
+    await kv.close()
+
+

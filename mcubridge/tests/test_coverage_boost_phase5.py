@@ -552,7 +552,7 @@ async def test_runtime_terminate_process_escalation(test_config: RuntimeConfig, 
         code = await svc._terminate_process(12345, ctx, grace_period=0.5)
         mock_term.assert_called_once_with(12345, timeout=0.5)
         assert code == -1
-        assert ctx.fsm.current_state_value in {"terminating", "finished"}
+        assert ctx.fsm.current_state_value in {"terminating", "exited"}
 
 
 @pytest.mark.asyncio

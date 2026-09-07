@@ -187,9 +187,7 @@ def load_spec_from_proto(proto_path: Path) -> ProtocolSpec:
     actions = [_proto_to_dict(a) for a in actions_opt]
 
     architectures = {arch.name: arch.value for arch in architectures_opt}
-    architecture_display_names = {
-        arch.name: arch.display_name for arch in architectures_opt if arch.display_name
-    }
+    architecture_display_names = {arch.name: arch.display_name for arch in architectures_opt if arch.display_name}
 
     capabilities = {cap.name: cap.value for cap in capabilities_opt}
 
@@ -346,7 +344,6 @@ class JinjaGenerator:
 
         hs = spec.handshake
         handshake_constants = _extract_cpp_constants(spec.handshake_opt, spec.pb_module)
-
 
         handshake_data = {
             "hkdf_salt": hs["hkdf_salt"],
@@ -568,7 +565,6 @@ class JinjaGenerator:
             for cmd in spec.commands
             if cmd.name.endswith("_RESP") and cmd.name.removesuffix("_RESP") in cmd_names
         }
-
 
     def generate_nanopb(self, proto_path: Path) -> None:
         """Invoke nanopb_generator.py to create C++ headers/sources."""

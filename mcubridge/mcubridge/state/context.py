@@ -103,16 +103,8 @@ class LinkConnectionMachine(StateMachine):
     synchronized = State(value="synchronized")
 
     connect = disconnected.to(connected) | synchronized.to(connected) | connected.to(connected)
-    synchronize = (
-        disconnected.to(synchronized)
-        | connected.to(synchronized)
-        | synchronized.to(synchronized)
-    )
-    disconnect = (
-        connected.to(disconnected)
-        | synchronized.to(disconnected)
-        | disconnected.to(disconnected)
-    )
+    synchronize = disconnected.to(synchronized) | connected.to(synchronized) | synchronized.to(synchronized)
+    disconnect = connected.to(disconnected) | synchronized.to(disconnected) | disconnected.to(disconnected)
 
 
 class RuntimeState:
@@ -374,7 +366,6 @@ class RuntimeState:
         self.metrics.link_state.state("synchronized")
         if getattr(self, "link_sync_event", None) is not None:
             self.link_sync_event.set()
-
 
     @property
     def handshake_failures(self) -> int:

@@ -150,7 +150,9 @@ app = typer.Typer(
 
 @app.command()
 def main(
-    fix: Annotated[bool, typer.Option("--fix", "-f", help="Automatically synchronize agent.json instructions from GEMINI.md")] = False,
+    fix: Annotated[
+        bool, typer.Option("--fix", "-f", help="Automatically synchronize agent.json instructions from GEMINI.md")
+    ] = False,
 ) -> None:
     if fix:
         sync_rules_to_agent_json()

@@ -186,7 +186,6 @@ async def test_lmdb_cache_and_vacuum_edge_branches(tmp_path: Path) -> None:
     # 1. Vacuum with None env
     _vacuum_lmdb_env(str(tmp_path), "test.db", None, lambda: None)
 
-
     db_path = str(tmp_path) + "/edge_branches.db"
     kv = LmdbCache(db_path)
 
@@ -256,5 +255,3 @@ async def test_lmdb_cache_len_contains_items(tmp_path: Path) -> None:
     assert await mem_kv.items() == [("mkey", b"mval")]
     await mem_kv.close()
     await kv.close()
-
-

@@ -175,4 +175,3 @@ def test_process_machine_lifecycle() -> None:
     ctx.fsm.finish()
     assert ctx.status == ProcessState.EXITED.value
     assert ctx.fsm.is_terminated
-

@@ -221,8 +221,8 @@ class BridgeService:
             dict[FileAction | str, Callable[[str, pb.CloudQueuedPublish], Coroutine[Any, Any, None]]]
         ] = {
             FileAction.READ: lambda target, inbound: self._handle_file_mcu_read(inbound, target),
-            FileAction.WRITE: lambda target, inbound: self._handle_file_mcu_write(target, inbound),
-            FileAction.REMOVE: lambda target, inbound: self._handle_file_mcu_remove(target, inbound),
+            FileAction.WRITE: self._handle_file_mcu_write,
+            FileAction.REMOVE: self._handle_file_mcu_remove,
         }
         self._file_local_dispatch: Final[
             dict[FileAction | str, Callable[[str, pb.CloudQueuedPublish], Coroutine[Any, Any, Any]]]
@@ -231,7 +231,6 @@ class BridgeService:
             FileAction.WRITE: self._handle_file_local_write,
             FileAction.REMOVE: lambda target, _inb: self.safe_file_remove(target),
         }
-
 
     async def send_mcu_ok(self, payload: bytes | ProtobufMessage = b"") -> bool:
         return bool(self.serial and await self.serial.send(Status.OK.value, payload))
@@ -867,7 +866,6 @@ class BridgeService:
         if self._get_safe_path(target):
             if handler := self._file_local_dispatch.get(act):
                 await handler(target, inbound)
-
 
     async def _handle_file_mcu_write(self, target: str, inbound: pb.CloudQueuedPublish) -> None:
         serial = self.serial

@@ -255,4 +255,3 @@ def test_handshake_manager_transition_dispatch(
     # Idempotent setter
     mgr.fsm_state = HandshakeState.RESETTING
     assert mgr.fsm_state == HandshakeState.RESETTING
-

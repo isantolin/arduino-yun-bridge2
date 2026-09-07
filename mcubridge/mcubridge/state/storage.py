@@ -70,9 +70,7 @@ def _vacuum_lmdb_env(path: str, default_file: str, env: lmdb.Environment | None,
         try:
             compact_path.unlink(missing_ok=True)
         except OSError as unlink_err:
-            logger.warning(
-                "Failed to clean up compact database file", path=str(compact_path), error=str(unlink_err)
-            )
+            logger.warning("Failed to clean up compact database file", path=str(compact_path), error=str(unlink_err))
 
 
 class LmdbDeque:
@@ -218,7 +216,6 @@ class LmdbCache:
             logger.error("LmdbCache pop failed", path=self.path, key=key, error=exc)
             return default
 
-
     async def delete(self, key: str) -> bool:
         if self.is_mem:
             return self._mem.pop(key, None) is not None
@@ -296,4 +293,3 @@ class LmdbCache:
         if self.env:
             self.env.close()
             self.env = None
-

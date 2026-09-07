@@ -140,11 +140,7 @@ class UbusService:
         snapshot = state.build_status_snapshot()
         data = MessageToDict(snapshot, preserving_proto_field_name=True)
 
-        version_str = (
-            ".".join(map(str, state.mcu_version))
-            if state.mcu_version is not None
-            else "unknown"
-        )
+        version_str = ".".join(map(str, state.mcu_version)) if state.mcu_version is not None else "unknown"
         data["connected"] = state.state in ("connected", "synchronized")
         data["synchronized"] = state.is_synchronized
         data["version"] = version_str
@@ -154,9 +150,7 @@ class UbusService:
         data["capabilities"] = (
             MessageToDict(caps, always_print_fields_with_no_presence=True, preserving_proto_field_name=True)
             if isinstance(caps, pb.Capabilities)
-            else {k: bool(v) for k, v in caps.items()}
-            if isinstance(caps, dict)
-            else {}
+            else {k: bool(v) for k, v in caps.items()} if isinstance(caps, dict) else {}
         )
 
         return data
@@ -261,7 +255,6 @@ class UbusService:
             "stdout": _format_ubus_bytes(resp.stdout_data),
             "stderr": _format_ubus_bytes(resp.stderr_data),
         }
-
 
     def run_sync(self, coro: Any) -> Any:
         """Execute a coroutine synchronously in a running or fresh event loop via anyio."""

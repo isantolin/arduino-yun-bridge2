@@ -84,7 +84,7 @@ rationale = "Deterministic finite state machine (FSM) implementation matching SI
 [[dependency]]
 name = "anyio"
 openwrt = "python3-anyio"
-pip = "anyio==4.13.0"
+pip = "anyio==4.15.1"
 rationale = "Asynchronous file I/O (anyio.Path) and structured async thread execution (SIL-2)"
 
 [[dependency]]

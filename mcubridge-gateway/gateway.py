@@ -9,10 +9,12 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 from enum import StrEnum
-import ssl
 from pathlib import Path
-from typing import Annotated, Final
+import ssl
+from typing import Annotated, Any, Final
 
+import grpclib.events
+from grpclib.protocol import Peer
 from grpclib.server import Server, Stream
 from statemachine import State, StateMachine
 import structlog
@@ -102,26 +104,60 @@ _PAYLOAD_HANDLERS: Final[dict[str, _PayloadHandler]] = {
 }
 
 
+def extract_peer_identity(peer: Peer | None) -> tuple[str, bool]:
+    """[SIL-2] Extract device ID and authentication status from gRPC peer certificate."""
+    if not peer:
+        return "anonymous-unknown", False
+
+    addr = peer.addr()
+    device_id = f"anonymous-{addr[0]}:{addr[1]}" if addr else "anonymous-unknown"
+    is_authenticated = False
+
+    cert = peer.cert()
+    if cert:
+        try:
+            for sub in cert.get("subject", []):
+                for key, val in sub:
+                    if key == "commonName":
+                        return str(val), True
+        except (ssl.SSLError, AttributeError, KeyError, TypeError) as e:
+            logger.error("Failed to parse client certificate", error=str(e))
+            raise ValueError(f"Failed to parse client certificate: {e}") from e
+
+    return device_id, is_authenticated
+
+
+async def auth_interceptor(event: grpclib.events.RecvRequest) -> None:
+    """[SIL-2] Server-side interceptor validating peer identity and binding contextvars."""
+    try:
+        device_id, is_authenticated = extract_peer_identity(event.peer)
+    except ValueError:
+        logger.error("Rejecting request with invalid client certificate")
+        return
+
+    orig_func = event.method_func
+
+    async def _wrapped_handler(stream: Stream[Any, Any]) -> None:
+        with structlog.contextvars.bound_contextvars(device_id=device_id):
+            logger.debug(
+                "gRPC method invoked",
+                method=event.method_name,
+                authenticated=is_authenticated,
+            )
+            await orig_func(stream)
+
+    event.method_func = _wrapped_handler
+
+
 class CloudBridgeService(CloudBridgeBase):
     def __init__(self, gateway: ProtobufGateway) -> None:
         self.gateway = gateway
 
     async def Session(self, stream: Stream[pb.CloudEnvelope, pb.CloudEnvelope]) -> None:
-        peer = stream.peer.addr()
-        device_id = f"anonymous-{peer[0]}:{peer[1]}" if peer else "anonymous-unknown"
-        is_authenticated = False
-
-        cert = stream.peer.cert()
-        if cert:
-            try:
-                for sub in cert.get("subject", []):
-                    for key, val in sub:
-                        if key == "commonName":
-                            device_id = val
-                            is_authenticated = True
-            except (ssl.SSLError, AttributeError, KeyError, TypeError) as e:
-                logger.error("Failed to parse client certificate", error=str(e))
-                return
+        try:
+            device_id, is_authenticated = extract_peer_identity(stream.peer)
+        except ValueError:
+            return
 
         session_fsm = GatewaySessionMachine()
         if is_authenticated:
@@ -212,6 +248,7 @@ class ProtobufGateway:
     async def run(self) -> None:
         ssl_context = self.get_ssl_context()
         self.server = Server([CloudBridgeService(self)])
+        grpclib.events.listen(self.server, grpclib.events.RecvRequest, auth_interceptor)
         await self.server.start(self.host, self.port, ssl=ssl_context)
 
         scheme = "tcps" if ssl_context else "tcp"

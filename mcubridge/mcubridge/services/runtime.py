@@ -574,7 +574,7 @@ class BridgeService:
                         async with asyncio.timeout(DEFAULT_SYNC_TIMEOUT_SECONDS):
                             await self.state.link_sync_event.wait()
                     except asyncio.TimeoutError:
-                        logger.error("Timed out waiting for MCU link synchronization", topic=topic_val)
+                        logger.error("Timed out waiting for MCU link synchronization")
                 action = self.deduce_action(route)
                 topic_str = route.topic.value if isinstance(route.topic, Topic) else route.topic
                 if action and not (
@@ -859,14 +859,16 @@ class BridgeService:
         act, target = route.action, "/".join(route.remainder)
         if not (act and target):
             return
-        if target.startswith(MCU_FS_PREFIX):
-            if handler := self._file_mcu_dispatch.get(act):
-                await handler(target, inbound)
-            return
+        act_val = getattr(act, "value", str(act))
+        with structlog.contextvars.bound_contextvars(file_action=act_val, file_target=target):
+            if target.startswith(MCU_FS_PREFIX):
+                if handler := self._file_mcu_dispatch.get(act):
+                    await handler(target, inbound)
+                return
 
-        if self._get_safe_path(target):
-            if handler := self._file_local_dispatch.get(act):
-                await handler(target, inbound)
+            if self._get_safe_path(target):
+                if handler := self._file_local_dispatch.get(act):
+                    await handler(target, inbound)
 
     async def _handle_file_mcu_write(self, target: str, inbound: pb.CloudQueuedPublish) -> None:
         serial = self.serial
@@ -933,7 +935,7 @@ class BridgeService:
                 Command.CMD_FILE_READ.value,
                 pb.FileRead(path=target.removeprefix(MCU_FS_PREFIX)),
             ):
-                logger.error("MCU file read dispatch failed", target=target)
+                logger.error("MCU file read dispatch failed")
                 await self.enqueue_cloud(
                     create_queued_publish(
                         response_topic,
@@ -958,7 +960,7 @@ class BridgeService:
                     reply_context=ctx,
                 )
             except TimeoutError:
-                logger.error("Timed out waiting for MCU file read response", target=target)
+                logger.error("Timed out waiting for MCU file read response")
                 await self.enqueue_cloud(
                     create_queued_publish(
                         response_topic,
@@ -979,8 +981,9 @@ class BridgeService:
         except ValueError:
             return
         pid = int(route.segments[1]) if len(route.segments) == 2 and route.segments[1].isdigit() else 0
-        if handler := self._shell_dispatch.get(act):
-            await handler(pid, inbound)
+        with structlog.contextvars.bound_contextvars(shell_action=act.value, pid=pid):
+            if handler := self._shell_dispatch.get(act):
+                await handler(pid, inbound)
 
     async def _handle_shell_run_async(self, _pid: int, inbound: pb.CloudQueuedPublish) -> None:
         pl = inbound.payload
@@ -1193,26 +1196,27 @@ class BridgeService:
     async def run_process(self, command: str) -> int:
         if not is_command_allowed(self.state.allowed_policy, command):
             return 0
-        await self._process_slots.acquire()
-        try:
-            p = await asyncio.create_subprocess_exec(
-                *shlex.split(command),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                start_new_session=True,
-            )
-            pid = p.pid & protocol.UINT16_MAX
-            async with self.state.process_lock:
-                self.state.running_processes[pid] = ProcessContext(p)
-            tg = self._tg
-            if tg is not None:
-                tg.create_task(self._monitor_process(pid))
-            else:
-                asyncio.create_task(self._monitor_process(pid))
-            return pid
-        except OSError:
-            self._process_slots.release()
-            return 0
+        with structlog.contextvars.bound_contextvars(command=command):
+            await self._process_slots.acquire()
+            try:
+                p = await asyncio.create_subprocess_exec(
+                    *shlex.split(command),
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    start_new_session=True,
+                )
+                pid = p.pid & protocol.UINT16_MAX
+                async with self.state.process_lock:
+                    self.state.running_processes[pid] = ProcessContext(p)
+                tg = self._tg
+                if tg is not None:
+                    tg.create_task(self._monitor_process(pid))
+                else:
+                    asyncio.create_task(self._monitor_process(pid))
+                return pid
+            except OSError:
+                self._process_slots.release()
+                return 0
 
     def release_process(self, pid: int) -> ProcessContext | None:
         ctx = self.state.running_processes.pop(pid, None)
@@ -1301,18 +1305,19 @@ class BridgeService:
         return ctx.handle.returncode if ctx.handle.returncode is not None else -1
 
     async def kill_process(self, pid: int) -> tuple[bool, str | None]:
-        async with self.state.process_lock:
-            ctx = self.state.running_processes.get(pid)
-        if not ctx:
-            return False, "PID not found"
-        try:
-            ctx.exit_code = await self._terminate_process(pid, ctx, grace_period=PROCESS_TERM_GRACE_PERIOD_SECONDS)
-            return True, None
-        except (OSError, ProcessLookupError) as exc:
-            logger.error("Process termination failed", pid=pid, error=str(exc))
-            return False, str(exc)
-        finally:
-            self.release_process(pid)
+        with structlog.contextvars.bound_contextvars(pid=pid):
+            async with self.state.process_lock:
+                ctx = self.state.running_processes.get(pid)
+            if not ctx:
+                return False, "PID not found"
+            try:
+                ctx.exit_code = await self._terminate_process(pid, ctx, grace_period=PROCESS_TERM_GRACE_PERIOD_SECONDS)
+                return True, None
+            except (OSError, ProcessLookupError) as exc:
+                logger.error("Process termination failed", error=str(exc))
+                return False, str(exc)
+            finally:
+                self.release_process(pid)
 
     def _get_safe_path(self, p_str: str) -> anyio.Path | None:
         root = Path(self.config.file_system_root).resolve()
@@ -1983,40 +1988,40 @@ class LocalBridgeService(LocalBridgeBase):
 
         correlation = request.correlation_data if has_correlation else (secrets.token_bytes(12) if is_query else b"")
 
-        response_queue: asyncio.Queue[pb.CloudQueuedPublish] | None = None
-        if is_query and correlation:
-            response_queue = asyncio.Queue(maxsize=1)
-            self.runtime_service.ipc_requests[correlation] = response_queue
-            logger.debug(
-                "Registering IPC request correlation",
-                topic=request.topic_name,
-                correlation=correlation.hex(),
-            )
-
-        try:
-            req = pb.CloudQueuedPublish(
-                topic_name=request.topic_name,
-                payload=request.payload,
-                correlation_data=correlation,
-            )
-
-            await self.runtime_service.handle_request(req)
-
-            if is_query and response_queue is not None:
-                try:
-                    async with asyncio.timeout(15.0):
-                        response = await response_queue.get()
-                        await stream.send_message(response)
-                except TimeoutError:
-                    logger.warning("IPC request timed out", topic=request.topic_name)
-                    await stream.send_message(pb.CloudQueuedPublish())
-            else:
-                await stream.send_message(pb.CloudQueuedPublish())
-        except OSError as exc:
-            logger.debug("IPC connection closed during response write", error=str(exc))
-        finally:
+        with structlog.contextvars.bound_contextvars(
+            topic=request.topic_name,
+            correlation=correlation.hex() if correlation else "",
+        ):
+            response_queue: asyncio.Queue[pb.CloudQueuedPublish] | None = None
             if is_query and correlation:
-                self.runtime_service.ipc_requests.pop(correlation, None)
+                response_queue = asyncio.Queue(maxsize=1)
+                self.runtime_service.ipc_requests[correlation] = response_queue
+                logger.debug("Registering IPC request correlation")
+
+            try:
+                req = pb.CloudQueuedPublish(
+                    topic_name=request.topic_name,
+                    payload=request.payload,
+                    correlation_data=correlation,
+                )
+
+                await self.runtime_service.handle_request(req)
+
+                if is_query and response_queue is not None:
+                    try:
+                        async with asyncio.timeout(15.0):
+                            response = await response_queue.get()
+                            await stream.send_message(response)
+                    except TimeoutError:
+                        logger.warning("IPC request timed out")
+                        await stream.send_message(pb.CloudQueuedPublish())
+                else:
+                    await stream.send_message(pb.CloudQueuedPublish())
+            except OSError as exc:
+                logger.debug("IPC connection closed during response write", error=str(exc))
+            finally:
+                if is_query and correlation:
+                    self.runtime_service.ipc_requests.pop(correlation, None)
 
     async def SubscribeConsole(self, stream: Stream[pb.SubscribeRequest, pb.CloudQueuedPublish]) -> None:
         request = await stream.recv_message()

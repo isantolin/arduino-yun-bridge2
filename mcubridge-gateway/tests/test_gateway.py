@@ -10,7 +10,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from typer.testing import CliRunner
 
-from gateway import CloudBridgeService, GatewaySessionMachine, GatewaySessionState, ProtobufGateway, app
+from gateway import (
+    CloudBridgeService,
+    GatewaySessionMachine,
+    GatewaySessionState,
+    ProtobufGateway,
+    auth_interceptor,
+    app,
+    extract_peer_identity,
+)
 from mcubridge.protocol import mcubridge_pb2 as pb
 
 
@@ -185,6 +193,7 @@ async def test_protobuf_gateway_run() -> None:
     gw = ProtobufGateway(use_tls=False)
     with patch("gateway.Server") as mock_server_cls:
         mock_server = AsyncMock()
+        mock_server.__dispatch__ = MagicMock()
         mock_server_cls.return_value = mock_server
         await gw.run()
         assert mock_server.start.called
@@ -226,6 +235,7 @@ async def test_protobuf_gateway_http3_run() -> None:
     gw = ProtobufGateway(use_tls=False, http3_enabled=True, http3_port=9999)
     with patch("gateway.Server") as mock_server_cls:
         mock_server = AsyncMock()
+        mock_server.__dispatch__ = MagicMock()
         mock_server_cls.return_value = mock_server
         await gw.run()
         assert mock_server.start.called
@@ -348,3 +358,72 @@ async def test_gateway_payload_dispatch_empty_or_unhandled(cloud_service: CloudB
 
     await cloud_service.Session(mock_stream)
     assert not mock_stream.send_message.called
+
+
+def test_extract_peer_identity() -> None:
+    # 1. peer is None
+    device_id, auth = extract_peer_identity(None)
+    assert device_id == "anonymous-unknown"
+    assert auth is False
+
+    # 2. peer with address only
+    mock_peer = MagicMock()
+    mock_peer.addr.return_value = ("192.168.1.50", 44321)
+    mock_peer.cert.return_value = None
+    device_id, auth = extract_peer_identity(mock_peer)
+    assert device_id == "anonymous-192.168.1.50:44321"
+    assert auth is False
+
+    # 3. peer with CN certificate
+    mock_peer.cert.return_value = {
+        "subject": [
+            [("countryName", "US")],
+            [("commonName", "test-device-01")],
+        ]
+    }
+    device_id, auth = extract_peer_identity(mock_peer)
+    assert device_id == "test-device-01"
+    assert auth is True
+
+    # 4. peer with malformed cert subject
+    mock_peer.cert.return_value = {"subject": [None]}
+    with pytest.raises(ValueError, match="Failed to parse client certificate"):
+        extract_peer_identity(mock_peer)
+
+
+@pytest.mark.asyncio
+async def test_auth_interceptor_flow() -> None:
+    # Valid call flow through interceptor
+    called_with_stream = False
+
+    async def dummy_handler(stream: Any) -> None:
+        nonlocal called_with_stream
+        called_with_stream = True
+
+    mock_event = MagicMock()
+    mock_event.method_func = dummy_handler
+    mock_event.method_name = "Session"
+    mock_event.peer = MagicMock()
+    mock_event.peer.addr.return_value = ("10.0.0.5", 8080)
+    mock_event.peer.cert.return_value = {
+        "subject": [[("commonName", "auth-device-99")]]
+    }
+
+    await auth_interceptor(mock_event)
+    assert mock_event.method_func != dummy_handler
+
+    # Invoke the wrapped handler
+    mock_stream = AsyncMock()
+    await mock_event.method_func(mock_stream)
+    assert called_with_stream is True
+
+    # Error handling when cert is invalid
+    mock_event_bad = MagicMock()
+    mock_event_bad.method_func = dummy_handler
+    mock_event_bad.peer = MagicMock()
+    mock_event_bad.peer.addr.return_value = ("10.0.0.5", 8080)
+    mock_event_bad.peer.cert.return_value = {"subject": [None]}
+
+    await auth_interceptor(mock_event_bad)
+    # When cert is invalid, interceptor does not wrap and returns early
+    assert mock_event_bad.method_func == dummy_handler

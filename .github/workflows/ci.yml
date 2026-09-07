@@ -45,10 +45,10 @@ jobs:
           install-system-deps: 'true'
           cache-suffix: ${{ matrix.env }}
       - name: Install System Dependencies
-        if: matrix.env == 'cppcheck' || matrix.env == 'typecheck' || matrix.env == 'protocol' || matrix.env == 'lint'
+        if: matrix.env == 'cppcheck' || matrix.env == 'typecheck' || matrix.env == 'protocol' || matrix.env == 'lint' || matrix.env == 'py'
         run: |
           sudo apt-get update && sudo apt-get install -y cppcheck unzip
-          python -m pip install protobuf mypy-protobuf
+          python -m pip install protobuf mypy-protobuf vulture
       - name: Install Build Tools
         if: matrix.env == 'arduino'
         run: sudo apt-get update && sudo apt-get install -y g++ make

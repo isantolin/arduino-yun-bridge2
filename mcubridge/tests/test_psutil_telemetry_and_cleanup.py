@@ -75,27 +75,20 @@ def test_build_status_snapshot_exception_fallback(runtime_config: RuntimeConfig)
 
 
 def test_context_cleanup_recursive_child_termination(runtime_config: RuntimeConfig) -> None:
-    """Validate that state.cleanup() recursively terminates all child processes."""
+    """Validate that state.cleanup() terminates process trees via terminate_pid_tree."""
     state = create_runtime_state(runtime_config)
 
     mock_handle = MagicMock()
     mock_handle.pid = 12345
     mock_handle.terminate = MagicMock()
 
-    mock_parent = MagicMock()
-    mock_child1 = MagicMock()
-    mock_child2 = MagicMock()
-    mock_parent.children.return_value = [mock_child1, mock_child2]
-
     state.running_processes[12345] = ProcessContext(mock_handle)
 
-    with patch("psutil.pid_exists", return_value=True), patch("psutil.Process", return_value=mock_parent):
+    with patch("mcubridge.state.context.terminate_pid_tree") as mock_term:
         state.cleanup()
         assert len(state.running_processes) == 0
-        assert mock_child1.terminate.called
-        assert mock_child2.terminate.called
-        assert mock_parent.terminate.called
-        assert mock_handle.terminate.called
+        mock_term.assert_called_once_with(12345)
+        mock_handle.terminate.assert_called_once()
 
 
 def test_terminate_process_tree_graceful_and_escalation() -> None:

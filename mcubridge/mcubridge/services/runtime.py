@@ -86,6 +86,7 @@ from ..state.status import STATUS_FILE, status_writer
 from ..watchdog import WatchdogKeepalive
 from ..state.context import ProcessContext, RuntimeState
 from .handshake import SerialHandshakeManager, SerialHandshakeFatal, derive_serial_timing
+from tools.emulation.process_utils import terminate_pid_tree
 
 if TYPE_CHECKING:
     from ..transport.serial import SerialTransport
@@ -1283,18 +1284,6 @@ class BridgeService:
                     stderr_truncated=te,
                 )
 
-    @staticmethod
-    def _signal_process_tree(pid: int, *, kill: bool = False) -> bool:
-        try:
-            parent = psutil.Process(pid)
-            children = parent.children(recursive=True)
-            for child in children:
-                child.kill() if kill else child.terminate()
-            parent.kill() if kill else parent.terminate()
-            return True
-        except (psutil.NoSuchProcess, ProcessLookupError, psutil.AccessDenied):
-            return False
-
     async def _terminate_process(self, pid: int, ctx: ProcessContext, *, grace_period: float) -> int:
         if ctx.handle.returncode is not None:
             ctx.fsm.finish()
@@ -1303,29 +1292,13 @@ class BridgeService:
         if not ctx.is_terminating:
             ctx.fsm.terminate()
 
-        if not BridgeService._signal_process_tree(ctx.handle.pid, kill=False):
-            ctx.fsm.finish()
-            return ctx.handle.returncode or -1
+        await anyio.to_thread.run_sync(
+            lambda: terminate_pid_tree(ctx.handle.pid, timeout=grace_period),
+            abandon_on_cancel=True,
+        )
 
-        try:
-            async with asyncio.timeout(grace_period):
-                code = await ctx.handle.wait()
-                ctx.fsm.finish()
-                return code
-        except TimeoutError:
-            logger.error("Process exceeded graceful shutdown window; escalating to SIGKILL", pid=pid)
-
-        if not BridgeService._signal_process_tree(ctx.handle.pid, kill=True):
-            ctx.fsm.finish()
-            return ctx.handle.returncode or -1
-
-        try:
-            async with asyncio.timeout(PROCESS_TERM_GRACE_PERIOD_SECONDS):
-                code = await ctx.handle.wait()
-                ctx.fsm.finish()
-                return code
-        except TimeoutError:
-            return -1
+        ctx.fsm.finish()
+        return ctx.handle.returncode if ctx.handle.returncode is not None else -1
 
     async def kill_process(self, pid: int) -> tuple[bool, str | None]:
         async with self.state.process_lock:

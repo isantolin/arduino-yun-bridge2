@@ -545,21 +545,14 @@ async def test_runtime_terminate_process_escalation(test_config: RuntimeConfig, 
     mock_handle = AsyncMock()
     mock_handle.returncode = None
     mock_handle.pid = 12345
-    mock_handle.wait.side_effect = [TimeoutError(), TimeoutError()]
 
     ctx = ProcessContext(mock_handle)
 
-    mock_proc = MagicMock()
-    mock_child = MagicMock()
-    mock_proc.children.return_value = [mock_child]
-
-    with patch("psutil.Process", return_value=mock_proc):
-        code = await svc._terminate_process(12345, ctx, grace_period=0.01)
+    with patch("mcubridge.services.runtime.terminate_pid_tree") as mock_term:
+        code = await svc._terminate_process(12345, ctx, grace_period=0.5)
+        mock_term.assert_called_once_with(12345, timeout=0.5)
         assert code == -1
-        assert mock_proc.terminate.called
-        assert mock_child.terminate.called
-        assert mock_proc.kill.called
-        assert mock_child.kill.called
+        assert ctx.fsm.current_state_value in {"terminating", "finished"}
 
 
 @pytest.mark.asyncio

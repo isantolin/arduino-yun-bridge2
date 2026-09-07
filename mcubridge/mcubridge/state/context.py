@@ -41,6 +41,7 @@ from ..protocol.structures import (
 )
 from ..protocol import mcubridge_pb2 as pb
 from .metrics import DaemonMetrics
+from tools.emulation.process_utils import terminate_pid_tree
 
 T = TypeVar("T")
 
@@ -542,9 +543,10 @@ class RuntimeState:
         proc_stats: list[pb.ProcessStats] = []
         try:
             curr_p = psutil.Process()
-            curr_mem = curr_p.memory_info().rss
-            curr_cpu = curr_p.cpu_percent(interval=None)
-            proc_name = curr_p.name() or "mcubridge-daemon"
+            with curr_p.oneshot():
+                curr_mem = curr_p.memory_info().rss
+                curr_cpu = curr_p.cpu_percent(interval=None)
+                proc_name = curr_p.name() or "mcubridge-daemon"
             proc_stats.append(
                 pb.ProcessStats(
                     name=proc_name,
@@ -561,11 +563,14 @@ class RuntimeState:
                 if isinstance(pid, int) and psutil.pid_exists(pid):
                     try:
                         sub_p = psutil.Process(pid)
+                        with sub_p.oneshot():
+                            sub_cpu = sub_p.cpu_percent(interval=None)
+                            sub_mem = sub_p.memory_info().rss
                         proc_stats.append(
                             pb.ProcessStats(
                                 name=f"subproc-{pid}",
-                                cpu_percent=sub_p.cpu_percent(interval=None),
-                                memory_rss_bytes=sub_p.memory_info().rss,
+                                cpu_percent=sub_cpu,
+                                memory_rss_bytes=sub_mem,
                             )
                         )
                     except (psutil.NoSuchProcess, OSError, ProcessLookupError):
@@ -651,17 +656,15 @@ class RuntimeState:
         self.cloud_publish_queue = _make_cloud_publish_queue(self.cloud_queue_limit)
 
         if self.running_processes:
-            for ctx in list(self.running_processes.values()):
+            pids = [
+                ctx.handle.pid
+                for ctx in self.running_processes.values()
+                if ctx and ctx.handle and isinstance(getattr(ctx.handle, "pid", None), int)
+            ]
+            for pid in pids:
+                terminate_pid_tree(pid)
+            for ctx in self.running_processes.values():
                 if ctx and ctx.handle:
-                    pid = getattr(ctx.handle, "pid", None)
-                    if isinstance(pid, int) and psutil.pid_exists(pid):
-                        try:
-                            p = psutil.Process(pid)
-                            for child in p.children(recursive=True):
-                                child.terminate()
-                            p.terminate()
-                        except (psutil.NoSuchProcess, ProcessLookupError, psutil.AccessDenied) as exc:
-                            logger.debug("Process tree termination cleanup notice", pid=pid, error=str(exc))
                     try:
                         ctx.handle.terminate()
                     except (OSError, ProcessLookupError) as e:

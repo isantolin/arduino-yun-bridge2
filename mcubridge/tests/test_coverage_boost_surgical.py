@@ -227,15 +227,7 @@ async def test_process_terminate_sigkill_escalation() -> None:
     mock_ctx.handle.returncode = None
     mock_ctx.handle.pid = 999999
 
-    mock_proc = MagicMock()
-    mock_child = MagicMock()
-    mock_proc.children.return_value = [mock_child]
-
-    with patch("psutil.Process", return_value=mock_proc):
-        mock_ctx.handle.wait = AsyncMock(side_effect=TimeoutError("Grace period exceeded"))
-        code = await BridgeService._terminate_process(MagicMock(), 999999, mock_ctx, grace_period=0.01)
+    with patch("mcubridge.services.runtime.terminate_pid_tree") as mock_term:
+        code = await BridgeService._terminate_process(MagicMock(), 999999, mock_ctx, grace_period=0.5)
+        mock_term.assert_called_once_with(999999, timeout=0.5)
         assert code == -1
-        assert mock_proc.terminate.called
-        assert mock_child.terminate.called
-        assert mock_proc.kill.called
-        assert mock_child.kill.called

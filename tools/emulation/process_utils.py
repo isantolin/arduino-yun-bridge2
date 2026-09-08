@@ -11,6 +11,10 @@ from typing import Any
 import psutil
 import tenacity
 
+from mcubridge.state.context import terminate_pid_tree
+
+__all__ = ["terminate_process_tree", "terminate_pid_tree", "wait_for_path_ready", "wait_for_tcp_ready"]
+
 
 def wait_for_path_ready(path: Path | str, timeout: float = 10.0, interval: float = 0.1) -> bool:
     """Wait for a filesystem path (socket, PTY, file) to become available using tenacity."""
@@ -83,18 +87,3 @@ def terminate_process_tree(
             except (psutil.NoSuchProcess, ProcessLookupError, psutil.AccessDenied):
                 continue
 
-
-def terminate_pid_tree(pid: int, timeout: float = 3.0) -> None:
-    """Recursively terminate an arbitrary process tree by root PID."""
-    if pid <= 0 or not psutil.pid_exists(pid):
-        return
-    try:
-        p = psutil.Process(pid)
-        for child in p.children(recursive=True):
-            child.terminate()
-        p.terminate()
-        _, alive = psutil.wait_procs([p], timeout=timeout)
-        for lingering in alive:
-            lingering.kill()
-    except (psutil.NoSuchProcess, ProcessLookupError, psutil.AccessDenied):
-        return

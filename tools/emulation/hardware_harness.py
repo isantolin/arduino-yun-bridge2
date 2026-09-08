@@ -214,7 +214,8 @@ def run(
     timeout: Annotated[float, typer.Option("--timeout", help="Timeout per test in seconds")] = 60.0,
 ) -> None:
     """Execute the suite of _test.py client tests locally or on remote physical hardware."""
-    examples_dir = REPO_ROOT / "mcubridge-client-examples"
+    examples_parent = REPO_ROOT / "mcubridge-client-examples"
+    examples_dir = examples_parent / "examples"
     available_tests = sorted([p.name for p in examples_dir.glob("*_test.py") if not p.name.startswith((".", "_"))])
 
     if test_name:
@@ -252,18 +253,15 @@ def run(
     print("--------------------------------------------------------")
 
     if not is_local and target_host:
+        from tools.emulation.sync_to_vm import tar_push
+
         print(f"[*] Synchronizing test scripts to {target_host}...")
-        subprocess.run(
-            ["ssh"] + ssh_args + [f"{target_user}@{target_host}", "mkdir -p /tmp/mcubridge-client-examples"],
-            check=True,
-            capture_output=True,
-        )
-        src_files = [str(p) for p in examples_dir.glob("*")]
-        dest_remote = f"{target_user}@{target_host}:/tmp/mcubridge-client-examples/"
-        subprocess.run(
-            ["scp", "-O"] + ssh_args + ["-r"] + src_files + [dest_remote],
-            check=True,
-            capture_output=True,
+        tar_push(
+            src_dir=examples_parent,
+            remote_dest="/tmp/mcubridge-client-examples",
+            host=target_host,
+            user=target_user,
+            excludes=["__pycache__", "*.pyc", "*.pyo"],
         )
 
     results: list[tuple[str, bool, float, str | None]] = []
@@ -285,14 +283,14 @@ def run(
                 ]
                 env = {
                     "REPO_ROOT": str(REPO_ROOT),
-                    "PYTHONPATH": f"{examples_dir}:{REPO_ROOT / 'mcubridge'}:{REPO_ROOT}",
+                    "PYTHONPATH": f"{examples_parent}:{REPO_ROOT / 'mcubridge'}:{REPO_ROOT}",
                     "MCUBRIDGE_NON_INTERACTIVE": "1",
                 }
                 code, _stdout, stderr = await run_command(cmd, cwd=REPO_ROOT, env=env, timeout=timeout)
             else:
                 remote_cmd = (
                     f"MCUBRIDGE_NON_INTERACTIVE=1 PYTHONPATH=/tmp/mcubridge-client-examples "
-                    f"python3 /tmp/mcubridge-client-examples/{t_file} --socket-path '{socket_path}'"
+                    f"python3 /tmp/mcubridge-client-examples/examples/{t_file} --socket-path '{socket_path}'"
                 )
                 cmd = ["ssh"] + ssh_args + [f"{target_user}@{target_host}", remote_cmd]
                 code, _stdout, stderr = await run_command(cmd, cwd=REPO_ROOT, timeout=timeout)
@@ -301,6 +299,12 @@ def run(
             passed = code == 0
             status_label = "✅ [PASS]" if passed else "❌ [FAIL]"
             print(f"{status_label} ({elapsed:.2f}s)")
+            if _stdout and _stdout.strip():
+                for line in _stdout.strip().splitlines():
+                    print(f"      {line}")
+            if stderr and stderr.strip():
+                for line in stderr.strip().splitlines():
+                    print(f"      [stderr] {line}")
             results.append((t_file, passed, elapsed, stderr if not passed else None))
 
     asyncio.run(_execute_all())

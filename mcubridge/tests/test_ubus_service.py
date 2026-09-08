@@ -426,3 +426,54 @@ def test_ubus_handle_ping(mock_runtime: MockRuntimeFacade) -> None:
     assert res_unsync["status"] == "not_synchronized"
     assert res_unsync["connected"] is False
     assert res_unsync["synchronized"] is False
+
+
+@pytest.mark.asyncio
+async def test_ubus_service_run_loop(mock_runtime: MockRuntimeFacade, monkeypatch: pytest.MonkeyPatch) -> None:
+    import mcubridge.services.ubus as ubus_mod
+
+    mock_ubus: Any = MagicMock()
+    loop_called = 0
+
+    def fake_loop(timeout: int) -> None:
+        nonlocal loop_called
+        loop_called += 1
+
+    mock_ubus.loop = fake_loop
+    monkeypatch.setattr(ubus_mod, "ubus", mock_ubus)
+
+    service = UbusService(mock_runtime)
+    # When not active, run returns immediately
+    await service.run()
+    assert loop_called == 0
+
+    service._conn = MagicMock()
+    service._is_active = True
+
+    async def cancel_soon() -> None:
+        await asyncio.sleep(0.02)
+        service._is_active = False
+
+    async with asyncio.TaskGroup() as tg:
+        tg.create_task(service.run())
+        tg.create_task(cancel_soon())
+
+    assert loop_called > 0
+
+
+def test_get_ubus_type_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
+    from mcubridge.services.ubus import _get_ubus_type
+    import mcubridge.services.ubus as ubus_mod
+
+    # When ubus is None
+    monkeypatch.setattr(ubus_mod, "ubus", None)
+    assert _get_ubus_type("INT32") == 0
+
+    # When ubus has BLOBMSG_TYPE_*
+    mock_ubus: Any = MagicMock(spec=["BLOBMSG_TYPE_INT32", "STRING"])
+    mock_ubus.BLOBMSG_TYPE_INT32 = 5
+    mock_ubus.STRING = 3
+    monkeypatch.setattr(ubus_mod, "ubus", mock_ubus)
+    assert _get_ubus_type("INT32") == 5
+    assert _get_ubus_type("STRING") == 3
+

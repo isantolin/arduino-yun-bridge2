@@ -80,8 +80,11 @@ def configure_logging(
     )
 
     handler: logging.Handler
-    if syslog_address:
-        handler = SysLogHandler(address=syslog_address, facility=SysLogHandler.LOG_DAEMON)
+    if syslog_address and not force_stream:
+        try:
+            handler = SysLogHandler(address=syslog_address, facility=SysLogHandler.LOG_DAEMON)
+        except (OSError, RuntimeError):
+            handler = logging.StreamHandler()
     else:
         handler = logging.StreamHandler()
     handler.setFormatter(formatter)

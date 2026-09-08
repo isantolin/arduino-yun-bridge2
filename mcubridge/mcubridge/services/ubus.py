@@ -35,6 +35,13 @@ def _format_ubus_bytes(data: bytes) -> str:
         return f"<hex:{data.hex()}>"
 
 
+def _get_ubus_type(typ: str) -> Any:
+    """Resolve UBUS blobmsg type identifier safely."""
+    if ubus is None:
+        return 0
+    return getattr(ubus, f"BLOBMSG_TYPE_{typ}", getattr(ubus, typ, 0))
+
+
 class BridgeRuntimeFacade(Protocol):
     """Facade protocol decoupling UbusService from full BridgeService implementation."""
 
@@ -125,14 +132,39 @@ class UbusService:
         if self._conn is None or ubus is None:
             return
 
-        methods: dict[str, Any] = {
-            name: {
-                "call": getattr(self, f"ubus_handle_{name}"),
-                "args": {arg: getattr(ubus, typ) for arg, typ in args},
+        def _make_handler(handler: Any) -> Any:
+            def _cb(req: Any, msg: dict[str, Any]) -> None:
+                res = handler(req, msg)
+                if req and hasattr(req, "reply") and isinstance(res, dict):
+                    req.reply(res)
+            return _cb
+
+        methods: dict[str, Any] = {}
+        for name, args in _UBUS_METHOD_SIGS:
+            handler = getattr(self, f"ubus_handle_{name}")
+            sig = {arg: _get_ubus_type(typ) for arg, typ in args}
+            methods[name] = {
+                "method": _make_handler(handler),
+                "signature": sig,
             }
-            for name, args in _UBUS_METHOD_SIGS
-        }
-        self._conn.add("mcubridge", methods)
+
+        if hasattr(self._conn, "add") and callable(self._conn.add):
+            self._conn.add("mcubridge", methods)
+        elif hasattr(ubus, "add") and callable(ubus.add):
+            ubus.add("mcubridge", methods)
+
+    async def run(self) -> None:
+        """Background loop to process incoming OpenWrt UBUS events."""
+        if self._conn is None or ubus is None or not hasattr(ubus, "loop"):
+            return
+        logger.info("Starting OpenWrt UBUS event loop")
+        try:
+            while self._is_active:
+                await anyio.to_thread.run_sync(lambda: ubus.loop(50))
+                await asyncio.sleep(0.05)
+        except asyncio.CancelledError:
+            logger.info("OpenWrt UBUS event loop cancelled")
+            raise
 
     def ubus_handle_status(self, _req: Any, _msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.status' returning holistic SIL-2 snapshot."""

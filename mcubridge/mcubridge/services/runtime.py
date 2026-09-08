@@ -85,9 +85,8 @@ from ..metrics import (
 )
 from ..state.status import STATUS_FILE, status_writer
 from ..watchdog import WatchdogKeepalive
-from ..state.context import ProcessContext, RuntimeState
+from ..state.context import ProcessContext, RuntimeState, terminate_pid_tree
 from .handshake import SerialHandshakeManager, SerialHandshakeFatal, derive_serial_timing
-from tools.emulation.process_utils import terminate_pid_tree
 
 if TYPE_CHECKING:
     from ..transport.serial import SerialTransport
@@ -1434,6 +1433,14 @@ class BridgeService:
                         self.run_cloud,
                     )
                 )
+
+                if hasattr(self, "ubus_service") and self.ubus_service.is_active:
+                    tg.create_task(
+                        self.supervise(
+                            "ubus-loop",
+                            self.ubus_service.run,
+                        )
+                    )
 
                 # 3. Status & Metrics (Periodic)
                 tg.create_task(

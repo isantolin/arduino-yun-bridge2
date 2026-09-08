@@ -49,6 +49,8 @@ def _write_status_file(payload: ProtobufMessage) -> None:
         with NamedTemporaryFile("wb", dir=STATUS_FILE.parent, delete=False) as tf:
             tf.write(data)
             temp_name = tf.name
-        Path(temp_name).replace(STATUS_FILE)
+        temp_path = Path(temp_name)
+        temp_path.chmod(0o644)
+        temp_path.replace(STATUS_FILE)
     except (ValueError, OSError) as e:
         logger.error("Failed to write atomic status file", error=str(e))

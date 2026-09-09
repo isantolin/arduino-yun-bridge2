@@ -315,6 +315,26 @@ def test_ubus_notify_lifecycle(mock_runtime: MockRuntimeFacade, monkeypatch: pyt
     assert service.notify("sync", {"synchronized": True}) is False
 
 
+def test_ubus_notify_with_boolean_connection(mock_runtime: MockRuntimeFacade, monkeypatch: pytest.MonkeyPatch) -> None:
+    import mcubridge.services.ubus as ubus_mod
+
+    mock_ubus: Any = MagicMock()
+    mock_ubus.connect.return_value = True
+
+    monkeypatch.setattr(ubus_mod, "ubus", mock_ubus)
+    service = UbusService(mock_runtime)
+
+    service.start()
+    assert service.notify("sync", {"synchronized": True}) is True
+    assert mock_ubus.send.called
+    assert mock_ubus.send.call_args[0][0] == "mcubridge.sync"
+    assert mock_ubus.send.call_args[0][1] == {"synchronized": True}
+
+    service.stop()
+    assert mock_ubus.disconnect.called
+
+
+
 def test_ubus_handle_datastore_get(mock_runtime: MockRuntimeFacade) -> None:
     mock_cache = AsyncMock()
     mock_cache.get.return_value = b"test_value"
@@ -447,12 +467,12 @@ async def test_ubus_service_run_loop(mock_runtime: MockRuntimeFacade, monkeypatc
     await service.run()
     assert loop_called == 0
 
-    service._conn = MagicMock()
-    service._is_active = True
+    setattr(service, "_conn", MagicMock())
+    setattr(service, "_is_active", True)
 
     async def cancel_soon() -> None:
         await asyncio.sleep(0.02)
-        service._is_active = False
+        setattr(service, "_is_active", False)
 
     async with asyncio.TaskGroup() as tg:
         tg.create_task(service.run())
@@ -462,18 +482,18 @@ async def test_ubus_service_run_loop(mock_runtime: MockRuntimeFacade, monkeypatc
 
 
 def test_get_ubus_type_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
-    from mcubridge.services.ubus import _get_ubus_type
     import mcubridge.services.ubus as ubus_mod
+    get_ubus_type = getattr(ubus_mod, "_get_ubus_type")
 
     # When ubus is None
     monkeypatch.setattr(ubus_mod, "ubus", None)
-    assert _get_ubus_type("INT32") == 0
+    assert get_ubus_type("INT32") == 0
 
     # When ubus has BLOBMSG_TYPE_*
     mock_ubus: Any = MagicMock(spec=["BLOBMSG_TYPE_INT32", "STRING"])
     mock_ubus.BLOBMSG_TYPE_INT32 = 5
     mock_ubus.STRING = 3
     monkeypatch.setattr(ubus_mod, "ubus", mock_ubus)
-    assert _get_ubus_type("INT32") == 5
-    assert _get_ubus_type("STRING") == 3
+    assert get_ubus_type("INT32") == 5
+    assert get_ubus_type("STRING") == 3
 

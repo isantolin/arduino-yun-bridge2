@@ -20,7 +20,7 @@ cmd_str = (
     "-Imcubridge-library-arduino/tests -Imcubridge-library-arduino/tests/Unity/src "
     f"-I{ARD_LIBS}/Embedded_Template_Library "
     f"-I{ARD_LIBS}/Embedded_Template_Library/include "
-    f"-I{ARD_LIBS}/Embedded_Template_Library/arduino -I{ARD_LIBS}/wolfssl -I{ARD_LIBS}/wolfSSL "
+    f"-I{ARD_LIBS}/Embedded_Template_Library/arduino -I{ARD_LIBS}/wolfssl -I{ARD_LIBS}/wolfssl/src -I{ARD_LIBS}/wolfSSL "
     f"-I{ARD_LIBS}/PacketSerial -I{ARD_LIBS}/PacketSerial/src "
     "-c mcubridge-library-arduino/src/Bridge.cpp -o /dev/null"
 )
@@ -41,7 +41,7 @@ def main(
     commands = [
         {
             "directory": str(ROOT),
-            "command": cmd_str.replace("mcubridge-library-arduino/src/Bridge.cpp", str(p.relative_to(ROOT))),
+            "command": cmd_str.replace("mcubridge-library-arduino/src/Bridge.cpp", f"{'-x c++-header ' if p.suffix == '.h' else ''}{p.relative_to(ROOT)}"),
             "file": str(p),
         }
         for p in cpp_files

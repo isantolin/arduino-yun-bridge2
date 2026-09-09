@@ -10,6 +10,7 @@ import asyncio
 import importlib
 from typing import Any, Protocol
 import anyio.from_thread
+import anyio.to_thread
 import structlog
 import tenacity
 
@@ -305,7 +306,10 @@ class UbusService:
         if self._conn is None or not self._is_active:
             return False
         try:
-            self._conn.send(f"mcubridge.{event_type}", data)
+            if hasattr(self._conn, "send") and callable(self._conn.send):
+                self._conn.send(f"mcubridge.{event_type}", data)
+            elif ubus is not None and hasattr(ubus, "send") and callable(ubus.send):
+                ubus.send(f"mcubridge.{event_type}", data)
             return True
         except (OSError, RuntimeError) as exc:
             logger.debug("Failed to send UBUS notification", event_name=event_type, error=str(exc))
@@ -323,7 +327,12 @@ class UbusService:
         """Disconnect from ubusd."""
         if self._conn is not None:
             try:
-                self._conn.close()
+                if hasattr(self._conn, "close") and callable(self._conn.close):
+                    self._conn.close()
+                elif hasattr(self._conn, "disconnect") and callable(self._conn.disconnect):
+                    self._conn.disconnect()
+                elif ubus is not None and hasattr(ubus, "disconnect") and callable(ubus.disconnect):
+                    ubus.disconnect()
             except (OSError, RuntimeError) as exc:
                 logger.debug("Error during UBUS disconnect", error=str(exc))
             finally:

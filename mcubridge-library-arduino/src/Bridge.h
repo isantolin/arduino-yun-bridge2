@@ -412,7 +412,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   //                                    const MsgType&)
   template <typename MsgType, typename Handler>
   bool _dispatchCmd(const bridge::router::CommandContext& ctx, Handler handler,
-                    bool needs_ack = true, bool retransmit_on_dup = false) {
+                    bool needs_ack, bool retransmit_on_dup = false) {
     if (!_preDispatch(ctx, needs_ack, retransmit_on_dup)) {
       return false;
     }
@@ -440,6 +440,13 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
       handler(ctx);
     }
     return true;
+  }
+
+  template <typename MsgType, typename Handler>
+  bool _dispatchCmd(const bridge::router::CommandContext& ctx, Handler handler,
+                    bool retransmit_on_dup = false) {
+    return _dispatchCmd<MsgType, Handler>(
+        ctx, handler, rpc::requires_ack(ctx.raw_command), retransmit_on_dup);
   }
 
   void _applyTimingConfig(const rpc::payload::HandshakeConfig& msg);

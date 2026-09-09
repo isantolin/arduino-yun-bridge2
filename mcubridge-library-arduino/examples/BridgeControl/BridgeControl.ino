@@ -63,8 +63,10 @@ void setup() {
   }
 
   // Una vez sincronizado, Console es seguro porque viaja dentro de marcos RPC.
-  Console.begin();
-  Console.println(F("Bridge sincronizado y operando."));
+  if (Bridge.isSynchronized()) {
+    Console.begin();
+    Console.println(F("Bridge sincronizado y operando."));
+  }
 }
 
 void loop() {
@@ -74,7 +76,9 @@ void loop() {
   if (millis() - lastMailboxCheck > 500) {
     lastMailboxCheck = millis();
 #if BRIDGE_ENABLE_MAILBOX
-    Mailbox.requestRead();
+    if (Bridge.isSynchronized()) {
+      Mailbox.requestRead();
+    }
 #endif
   }
 }

@@ -16,6 +16,8 @@ from mcubridge.protocol import mcubridge_pb2 as pb
 
 import asyncio
 import logging
+import errno
+import sys
 from typing import TYPE_CHECKING, Any
 
 from cobs import cobsr
@@ -24,6 +26,41 @@ from serialx.platforms.serial_socket import SocketSerial, SocketSerialTransport
 import structlog
 import tenacity
 from google.protobuf.message import Message as ProtobufMessage, DecodeError as ProtobufDecodeError
+
+logger = structlog.get_logger("mcubridge.serial")
+
+if sys.platform == "linux":
+    try:
+        import termios
+        import serialx.platforms.serial_linux as _sl
+
+        _orig_after_configure = getattr(_sl.LinuxSerial, "_after_configure_port")
+
+        def _safe_after_configure(self: Any) -> None:
+            try:
+                _orig_after_configure(self)
+            except OSError as exc:
+                if exc.errno in (errno.EIO, errno.EINVAL, errno.ENOTTY, errno.EOPNOTSUPP):
+                    logger.debug(
+                        "Ignoring unsupported ioctl during serial configuration", errno=exc.errno
+                    )
+                else:
+                    raise
+
+            if self._fileno is not None:
+                try:
+                    attrs = termios.tcgetattr(self._fileno)
+                    attrs[6][termios.VMIN] = 1
+                    attrs[6][termios.VTIME] = 0
+                    termios.tcsetattr(self._fileno, termios.TCSANOW, attrs)
+                except (termios.error, OSError) as exc:
+                    logger.debug(
+                        "Unable to set VMIN=1 on serial descriptor", error=str(exc)
+                    )
+
+        setattr(_sl.LinuxSerial, "_after_configure_port", _safe_after_configure)
+    except (ImportError, AttributeError) as _exc:
+        logger.debug("LinuxSerial monkey-patch skipped", error=str(_exc))
 
 from mcubridge.config.const import (
     SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT,
@@ -55,8 +92,6 @@ if TYPE_CHECKING:
     from mcubridge.config.settings import RuntimeConfig
     from mcubridge.state.context import RuntimeState
     from mcubridge.services.runtime import BridgeService
-
-logger = structlog.get_logger("mcubridge.serial")
 
 serialx.register_uri_handler(
     scheme="wifi://",
@@ -251,12 +286,12 @@ class SerialTransport:
 
     async def _process_packet(self, encoded_packet: bytes | memoryview) -> None:
         """Processes a packet from the serial stream. [FLATTENED] [SIL-2]"""
+        raw_bytes = bytes(encoded_packet) if isinstance(encoded_packet, memoryview) else encoded_packet
         try:
-            raw_bytes = bytes(encoded_packet) if isinstance(encoded_packet, memoryview) else encoded_packet
             decoded = cobsr.decode(raw_bytes)
             decoded_frame = parse_frame(decoded, self.state.link_session_key if self.state.is_synchronized else None)
         except (cobsr.DecodeError, ValueError, TypeError, RuntimeError) as exc:
-            logger.error("Malformed frame received from MCU", error=str(exc))
+            logger.error("Malformed frame received from MCU", error=str(exc), raw_hex=raw_bytes.hex())
             self.state.serial_decode_errors += 1
             await self._check_baudrate_fallback()
             return

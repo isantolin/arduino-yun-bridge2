@@ -299,6 +299,9 @@ class BridgeService:
             for q in list(self.console_queues):
                 q.put_nowait(resolved_message)
 
+        if not self.config.cloud_enabled:
+            return
+
         self.state.cloud_publish_queue.put_nowait(resolved_message)
         try:
             async with self._cloud_publish_lock:

@@ -156,11 +156,9 @@ class BridgeService:
         self._cloud_channel, self._cloud_stream = None, None
         self.watchdog: WatchdogKeepalive | None = None
         self.exporter: PrometheusExporter | None = None
-        self._cloud_incoming_send_stream, self._cloud_incoming_receive_stream = (
-            anyio.create_memory_object_stream[pb.CloudQueuedPublish](
-                max_buffer_size=max(1, self.state.cloud_queue_limit)
-            )
-        )
+        self._cloud_incoming_send_stream, self._cloud_incoming_receive_stream = anyio.create_memory_object_stream[
+            pb.CloudQueuedPublish
+        ](max_buffer_size=max(1, self.state.cloud_queue_limit))
         self.ipc_requests = {}
         self.console_queues = []
         self.ubus_service = UbusService(self)
@@ -333,10 +331,12 @@ class BridgeService:
         try:
             if self.state.cloud_queue_limit > 0:
                 spool_len = len(spool)
+                trimmed_in_call = 0
                 while spool_len >= self.state.cloud_queue_limit:
                     try:
                         await spool.popleft()
                         self.state.cloud_spool_dropped_limit += 1
+                        trimmed_in_call += 1
                     except IndexError as exc:
                         logger.error("Spool popped while empty during limit check", error=str(exc))
                         break
@@ -345,7 +345,7 @@ class BridgeService:
                         break
                     spool_len = len(spool)
 
-                if self.state.cloud_spool_dropped_limit > 0:
+                if trimmed_in_call > 0:
                     self.state.cloud_spool_trim_events += 1
                     self.state.cloud_spool_last_trim_unix = time.time()
 

@@ -12,6 +12,31 @@ and StreamWriter. It delegates delimiter searching to Python's C core via
 """
 
 from __future__ import annotations
+from mcubridge.services.handshake import SerialHandshakeFatal
+from mcubridge.security.security import (
+    generate_nonce_with_counter,
+    validate_nonce_counter,
+)
+from mcubridge.protocol.structures import (
+    PendingCommand,
+)
+from mcubridge.protocol.frame import build_frame, parse_frame
+from mcubridge.protocol.protocol import (
+    ACK_ONLY_COMMANDS,
+    Status,
+    expected_responses,
+    response_to_request,
+)
+from mcubridge.protocol import protocol, is_system_command
+from mcubridge.config.const import (
+    SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT,
+    SERIAL_HANDSHAKE_BACKOFF_BASE,
+    SERIAL_HANDSHAKE_BACKOFF_MAX,
+    SERIAL_FAILURE_STATUS_CODES,
+    SERIAL_SUCCESS_STATUS_CODES,
+    SERIAL_MIN_ACK_TIMEOUT,
+    FLOW_CONTROL_WAIT_TIMEOUT_SECONDS,
+)
 from mcubridge.protocol import mcubridge_pb2 as pb
 
 import asyncio
@@ -41,9 +66,7 @@ if sys.platform == "linux":
                 _orig_after_configure(self)
             except OSError as exc:
                 if exc.errno in (errno.EIO, errno.EINVAL, errno.ENOTTY, errno.EOPNOTSUPP):
-                    logger.debug(
-                        "Ignoring unsupported ioctl during serial configuration", errno=exc.errno
-                    )
+                    logger.debug("Ignoring unsupported ioctl during serial configuration", errno=exc.errno)
                 else:
                     raise
 
@@ -54,39 +77,12 @@ if sys.platform == "linux":
                     attrs[6][termios.VTIME] = 0
                     termios.tcsetattr(self._fileno, termios.TCSANOW, attrs)
                 except (termios.error, OSError) as exc:
-                    logger.debug(
-                        "Unable to set VMIN=1 on serial descriptor", error=str(exc)
-                    )
+                    logger.debug("Unable to set VMIN=1 on serial descriptor", error=str(exc))
 
         setattr(_sl.LinuxSerial, "_after_configure_port", _safe_after_configure)
     except (ImportError, AttributeError) as _exc:
         logger.debug("LinuxSerial monkey-patch skipped", error=str(_exc))
 
-from mcubridge.config.const import (
-    SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT,
-    SERIAL_HANDSHAKE_BACKOFF_BASE,
-    SERIAL_HANDSHAKE_BACKOFF_MAX,
-    SERIAL_FAILURE_STATUS_CODES,
-    SERIAL_SUCCESS_STATUS_CODES,
-    SERIAL_MIN_ACK_TIMEOUT,
-    FLOW_CONTROL_WAIT_TIMEOUT_SECONDS,
-)
-from mcubridge.protocol import protocol, is_system_command
-from mcubridge.protocol.protocol import (
-    ACK_ONLY_COMMANDS,
-    Status,
-    expected_responses,
-    response_to_request,
-)
-from mcubridge.protocol.frame import build_frame, parse_frame
-from mcubridge.protocol.structures import (
-    PendingCommand,
-)
-from mcubridge.security.security import (
-    generate_nonce_with_counter,
-    validate_nonce_counter,
-)
-from mcubridge.services.handshake import SerialHandshakeFatal
 
 if TYPE_CHECKING:
     from mcubridge.config.settings import RuntimeConfig

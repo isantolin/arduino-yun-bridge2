@@ -606,6 +606,14 @@ async def test_runtime_cloud_spool_trimming_and_drop(test_config: RuntimeConfig,
     assert svc.state.cloud_spool_dropped_limit == 1
     assert svc.state.cloud_spool_trim_events == 1
 
+    # Second call where queue is below limit: trim_events must NOT increment even though dropped_limit > 0
+    mock_spool.__len__.side_effect = None
+    mock_spool.__len__.return_value = 1
+    res2 = await svc._spool_cloud_message_locked(msg)
+    assert res2 is True
+    assert svc.state.cloud_spool_dropped_limit == 1
+    assert svc.state.cloud_spool_trim_events == 1
+
 
 @pytest.mark.asyncio
 async def test_runtime_publish_cloud_message_with_correlation(

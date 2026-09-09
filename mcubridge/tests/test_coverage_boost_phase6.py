@@ -1746,9 +1746,7 @@ def test_parse_serial_response_corrupt_bytes() -> None:
 
 
 @pytest.mark.asyncio
-async def test_on_mcu_file_read_resp_future_already_done(
-    test_config: RuntimeConfig, mock_state: RuntimeState
-) -> None:
+async def test_on_mcu_file_read_resp_future_already_done(test_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     from mcubridge.services.runtime import _PendingMcuRead
 
     serial = AsyncMock(spec=SerialTransport)
@@ -1768,9 +1766,7 @@ async def test_on_mcu_file_read_resp_future_already_done(
 
 
 @pytest.mark.asyncio
-async def test_handle_datastore_cache_none_and_exceptions(
-    test_config: RuntimeConfig, mock_state: RuntimeState
-) -> None:
+async def test_handle_datastore_cache_none_and_exceptions(test_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     from mcubridge.protocol.topics import parse_topic
 
     serial = AsyncMock(spec=SerialTransport)
@@ -1832,4 +1828,3 @@ def test_structures_tls_session_ticket_exceptions() -> None:
     mock_txn.get.side_effect = RuntimeError("lmdb read failure")
     res = load_tls_session_ticket(cache, "example.com", 443)
     assert res is None
-

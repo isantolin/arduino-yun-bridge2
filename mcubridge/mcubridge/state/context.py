@@ -42,6 +42,7 @@ from ..protocol.structures import (
 from ..protocol import mcubridge_pb2 as pb
 from .metrics import DaemonMetrics
 
+
 def terminate_pid_tree(pid: int, timeout: float = 3.0) -> None:
     """Recursively terminate an arbitrary process tree by root PID. [SIL-2]"""
     if pid <= 0 or not psutil.pid_exists(pid):
@@ -56,6 +57,7 @@ def terminate_pid_tree(pid: int, timeout: float = 3.0) -> None:
             lingering.kill()
     except (psutil.NoSuchProcess, ProcessLookupError, psutil.AccessDenied):
         return
+
 
 T = TypeVar("T")
 

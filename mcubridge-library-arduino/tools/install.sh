@@ -140,7 +140,7 @@ install_dependency() {
 }
 
 # --- [AUTO-GENERATED C++ DEPENDENCIES BEGIN] ---
-ETL_VERSION="20.48.1"
+ETL_VERSION="20.49.0"
 WOLFSSL_VERSION="v5.9.2-stable"
 PACKETSERIAL_REF="heads/master"
 UNITY_VERSION="v2.7.0"

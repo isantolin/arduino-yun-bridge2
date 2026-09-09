@@ -138,6 +138,7 @@ class UbusService:
                 res = handler(req, msg)
                 if req and hasattr(req, "reply") and isinstance(res, dict):
                     req.reply(res)
+
             return _cb
 
         methods: dict[str, Any] = {}

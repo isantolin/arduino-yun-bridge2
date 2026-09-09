@@ -416,9 +416,7 @@ async def test_auth_interceptor_flow() -> None:
     mock_event.method_name = "Session"
     mock_event.peer = MagicMock()
     mock_event.peer.addr.return_value = ("10.0.0.5", 8080)
-    mock_event.peer.cert.return_value = {
-        "subject": [[("commonName", "auth-device-99")]]
-    }
+    mock_event.peer.cert.return_value = {"subject": [[("commonName", "auth-device-99")]]}
 
     await auth_interceptor(mock_event)
     assert mock_event.method_func != dummy_handler

@@ -334,7 +334,6 @@ def test_ubus_notify_with_boolean_connection(mock_runtime: MockRuntimeFacade, mo
     assert mock_ubus.disconnect.called
 
 
-
 def test_ubus_handle_datastore_get(mock_runtime: MockRuntimeFacade) -> None:
     mock_cache = AsyncMock()
     mock_cache.get.return_value = b"test_value"
@@ -483,6 +482,7 @@ async def test_ubus_service_run_loop(mock_runtime: MockRuntimeFacade, monkeypatc
 
 def test_get_ubus_type_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
     import mcubridge.services.ubus as ubus_mod
+
     get_ubus_type = getattr(ubus_mod, "_get_ubus_type")
 
     # When ubus is None
@@ -496,4 +496,3 @@ def test_get_ubus_type_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(ubus_mod, "ubus", mock_ubus)
     assert get_ubus_type("INT32") == 5
     assert get_ubus_type("STRING") == 3
-

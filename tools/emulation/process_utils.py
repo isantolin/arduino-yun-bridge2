@@ -86,4 +86,3 @@ def terminate_process_tree(
                 p.kill()
             except (psutil.NoSuchProcess, ProcessLookupError, psutil.AccessDenied):
                 continue
-

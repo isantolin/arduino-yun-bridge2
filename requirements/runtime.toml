@@ -191,7 +191,7 @@ rationale = "Standardized core utilities for Python package version parsing and 
 name = "Embedded_Template_Library"
 github = "ETLCPP/etl"
 ref_type = "tags"
-version = "20.48.1"
+version = "20.49.0"
 check_file = "include/etl/algorithm.h"
 rationale = "Zero-heap, STL-free deterministic C++ template library for SIL-2 MCU algorithms"
 

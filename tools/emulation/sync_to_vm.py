@@ -182,7 +182,8 @@ def sync(
             "StrictHostKeyChecking=no",
             f"{user}@{host}",
             "uci -q set mcubridge.general.serial_port='/dev/ttyS1' && "
-            "uci -q set mcubridge.general.serial_shared_secret='8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe' && "
+            "uci -q set mcubridge.general.serial_shared_secret="
+            "'8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe' && "
             "uci -q set mcubridge.general.cloud_enabled='0' && "
             "uci -q set mcubridge.general.debug='1' && "
             "uci -q commit mcubridge",

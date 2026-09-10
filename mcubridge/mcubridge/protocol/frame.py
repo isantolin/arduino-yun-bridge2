@@ -11,9 +11,12 @@ between the Linux daemon and the Arduino MCU.
 
 from __future__ import annotations
 
+import os
 from binascii import crc32
 from functools import lru_cache
 from typing import NamedTuple
+
+os.environ.setdefault("CRYPTOGRAPHY_OPENSSL_NO_LEGACY", "1")
 
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305

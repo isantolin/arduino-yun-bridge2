@@ -14,7 +14,11 @@ Reference standards:
 from __future__ import annotations
 
 import ctypes
+import os
 import secrets
+
+os.environ.setdefault("CRYPTOGRAPHY_OPENSSL_NO_LEGACY", "1")
+
 from cryptography.hazmat.primitives import hashes, hmac
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 

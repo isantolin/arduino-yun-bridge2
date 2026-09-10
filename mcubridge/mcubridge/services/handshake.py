@@ -19,9 +19,13 @@ from collections.abc import Awaitable, Callable
 from enum import StrEnum
 from typing import Any, Final, Protocol, cast
 
+import os
 from statemachine import StateMachine, State
 from statemachine.exceptions import TransitionNotAllowed
 import tenacity
+
+os.environ.setdefault("CRYPTOGRAPHY_OPENSSL_NO_LEGACY", "1")
+
 from cryptography.hazmat.primitives import hashes, hmac
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from cryptography.hazmat.primitives.constant_time import bytes_eq

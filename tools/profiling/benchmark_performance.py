@@ -19,6 +19,9 @@ from pathlib import Path
 from typing import Annotated
 
 from cobs import cobsr
+
+os.environ.setdefault("CRYPTOGRAPHY_OPENSSL_NO_LEGACY", "1")
+
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 import typer
 

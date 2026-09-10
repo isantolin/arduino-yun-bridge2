@@ -120,6 +120,11 @@ define Package/$(PKG_NAME)/install
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/98-mcubridge-default-serial $(1)/etc/uci-defaults/
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/99-mcubridge-disable-askconsole $(1)/etc/uci-defaults/
 	
+	# Global environment profile
+	$(INSTALL_DIR) $(1)/etc/profile.d
+	echo "export CRYPTOGRAPHY_OPENSSL_NO_LEGACY=1" > $(1)/etc/profile.d/99-mcubridge-crypto.sh
+	chmod 0755 $(1)/etc/profile.d/99-mcubridge-crypto.sh
+
 	# Core scripts (install stripping .py extension and ensuring hyphenated command names)
 	[ -d $(PKG_BUILD_DIR)/scripts ] && \
 		for f in $$(find $(PKG_BUILD_DIR)/scripts -type f -name '*.py'); do \
@@ -132,6 +137,9 @@ endef
 define Package/$(PKG_NAME)/postinst
 #!/bin/sh
 [ -n "$${IPKG_INSTROOT}" ] || {
+	mkdir -p /etc/profile.d
+	echo "export CRYPTOGRAPHY_OPENSSL_NO_LEGACY=1" > /etc/profile.d/99-mcubridge-crypto.sh
+	chmod 0755 /etc/profile.d/99-mcubridge-crypto.sh
 	[ -x /etc/uci-defaults/99-mcubridge-disable-askconsole ] && /etc/uci-defaults/99-mcubridge-disable-askconsole
 }
 exit 0

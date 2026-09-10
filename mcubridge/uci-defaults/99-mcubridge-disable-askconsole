@@ -28,5 +28,10 @@ if [ -n "$SERIAL_BASE" ]; then
     done
 fi
 
+# 4. Configure global environment to prevent OpenSSL 3 legacy provider warnings
+mkdir -p /etc/profile.d
+echo "export CRYPTOGRAPHY_OPENSSL_NO_LEGACY=1" > /etc/profile.d/99-mcubridge-crypto.sh
+chmod 0755 /etc/profile.d/99-mcubridge-crypto.sh
+
 exit 0
 

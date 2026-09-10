@@ -54,31 +54,39 @@ from google.protobuf.message import Message as ProtobufMessage, DecodeError as P
 
 logger = structlog.get_logger("mcubridge.serial")
 
+try:
+    import termios
+except ImportError:
+    termios = None
+
+_orig_after_configure: Any = None
+
+
+def _safe_after_configure(self: Any) -> None:
+    try:
+        if _orig_after_configure is not None:
+            _orig_after_configure(self)
+    except OSError as exc:
+        if exc.errno in (errno.EIO, errno.EINVAL, errno.ENOTTY, errno.EOPNOTSUPP):
+            logger.debug("Ignoring unsupported ioctl during serial configuration", errno=exc.errno)
+        else:
+            raise
+
+    if self._fileno is not None and termios is not None:
+        try:
+            attrs = termios.tcgetattr(self._fileno)
+            attrs[6][termios.VMIN] = 1
+            attrs[6][termios.VTIME] = 0
+            termios.tcsetattr(self._fileno, termios.TCSANOW, attrs)
+        except (termios.error, OSError) as exc:
+            logger.debug("Unable to set VMIN=1 on serial descriptor", error=str(exc))
+
+
 if sys.platform == "linux":
     try:
-        import termios
         import serialx.platforms.serial_linux as _sl
 
         _orig_after_configure = getattr(_sl.LinuxSerial, "_after_configure_port")
-
-        def _safe_after_configure(self: Any) -> None:
-            try:
-                _orig_after_configure(self)
-            except OSError as exc:
-                if exc.errno in (errno.EIO, errno.EINVAL, errno.ENOTTY, errno.EOPNOTSUPP):
-                    logger.debug("Ignoring unsupported ioctl during serial configuration", errno=exc.errno)
-                else:
-                    raise
-
-            if self._fileno is not None:
-                try:
-                    attrs = termios.tcgetattr(self._fileno)
-                    attrs[6][termios.VMIN] = 1
-                    attrs[6][termios.VTIME] = 0
-                    termios.tcsetattr(self._fileno, termios.TCSANOW, attrs)
-                except (termios.error, OSError) as exc:
-                    logger.debug("Unable to set VMIN=1 on serial descriptor", error=str(exc))
-
         setattr(_sl.LinuxSerial, "_after_configure_port", _safe_after_configure)
     except (ImportError, AttributeError) as _exc:
         logger.debug("LinuxSerial monkey-patch skipped", error=str(_exc))
@@ -326,10 +334,9 @@ class SerialTransport:
 
     def _correlate_frame(self, command_id: int, payload: bytes | ProtobufMessage) -> None:
         pending = self._current
-        if logger.is_enabled_for(logging.DEBUG):
-            logger.debug(
-                "_correlate_frame entry", command_id=command_id, pending_cmd=(pending.command_id if pending else None)
-            )
+        logger.debug(
+            "_correlate_frame entry", command_id=command_id, pending_cmd=(pending.command_id if pending else None)
+        )
         if pending is None:
             return
         if pending.success is not None:
@@ -503,9 +510,8 @@ class SerialTransport:
             self._negotiation_future = asyncio.get_running_loop().create_future()
             if not await self.send_raw(protocol.Command.CMD_SET_BAUDRATE.value, payload):
                 return False
-            if self._negotiation_future:
-                async with asyncio.timeout(SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT):
-                    await self._negotiation_future
+            async with asyncio.timeout(SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT):
+                await self._negotiation_future
             return True
         except (asyncio.TimeoutError, OSError, RuntimeError, ValueError, serialx.SerialException) as exc:
             logger.error("Baudrate negotiation failed", error=str(exc))

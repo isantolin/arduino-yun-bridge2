@@ -496,3 +496,81 @@ def test_get_ubus_type_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(ubus_mod, "ubus", mock_ubus)
     assert get_ubus_type("INT32") == 5
     assert get_ubus_type("STRING") == 3
+
+
+def test_ubus_service_rpc_callback_execution(mock_runtime: MockRuntimeFacade, monkeypatch: pytest.MonkeyPatch) -> None:
+    import mcubridge.services.ubus as ubus_mod
+
+    mock_ubus: Any = MagicMock()
+    mock_conn: Any = MagicMock()
+    mock_ubus.connect.return_value = mock_conn
+    monkeypatch.setattr(ubus_mod, "ubus", mock_ubus)
+
+    service = UbusService(mock_runtime)
+    assert service.start() is True
+
+    methods = mock_conn.add.call_args[0][1]
+    assert "ping" in methods
+    cb = methods["ping"]["method"]
+
+    # 1. Successful callback with reply
+    mock_req = MagicMock()
+    cb(mock_req, {})
+    mock_req.reply.assert_called_once_with({"status": "ok", "connected": True, "synchronized": True})
+
+    # 2. Callback when req is None or does not have reply
+    cb(None, {})
+
+    service.stop()
+
+
+def test_ubus_service_connect_returns_none(mock_runtime: MockRuntimeFacade, monkeypatch: pytest.MonkeyPatch) -> None:
+    import mcubridge.services.ubus as ubus_mod
+
+    mock_ubus: Any = MagicMock()
+    mock_ubus.connect.return_value = None
+    monkeypatch.setattr(ubus_mod, "ubus", mock_ubus)
+
+    service = UbusService(mock_runtime)
+    assert service.start(max_attempts=1) is False
+    assert not service.is_active
+
+
+def test_ubus_service_notify_branches(mock_runtime: MockRuntimeFacade) -> None:
+    service = UbusService(mock_runtime)
+    # When inactive
+    assert service.notify("test", {"a": 1}) is False
+
+    mock_conn = MagicMock()
+    setattr(service, "_conn", mock_conn)
+    setattr(service, "_is_active", True)
+
+    # Successful notification
+    assert service.notify("sync", {"status": "ok"}) is True
+    mock_conn.send.assert_called_once_with("mcubridge.sync", {"status": "ok"})
+
+    # Error during send
+    mock_conn.send.side_effect = OSError("ubusd buffer full")
+    assert service.notify("sync", {"status": "ok"}) is False
+
+
+def test_ubus_service_stop_branches(mock_runtime: MockRuntimeFacade) -> None:
+    service = UbusService(mock_runtime)
+
+    # 1. Conn with disconnect only (no close)
+    mock_conn1 = MagicMock(spec=["disconnect"])
+    setattr(service, "_conn", mock_conn1)
+    setattr(service, "_is_active", True)
+    service.stop()
+    assert not service.is_active
+    assert service.connection is None
+    assert mock_conn1.disconnect.called
+
+    # 2. Conn raising error during disconnect
+    mock_conn2 = MagicMock(spec=["close"])
+    mock_conn2.close.side_effect = RuntimeError("close failed")
+    setattr(service, "_conn", mock_conn2)
+    setattr(service, "_is_active", True)
+    service.stop()
+    assert not service.is_active
+    assert service.connection is None

@@ -481,8 +481,7 @@ class BridgeService:
         except OSError as exc:
             logger.debug("Could not remove UNIX socket during cleanup", path=socket_path, error=str(exc))
 
-        if hasattr(self, "ubus_service"):
-            self.ubus_service.stop()
+        self.ubus_service.stop()
 
         self.serial = None
         # [SIL-2] Async spool close is handled by run() finally block.
@@ -498,26 +497,23 @@ class BridgeService:
 
     async def on_serial_connected(self) -> None:
         self.state.connection_fsm.connect()
-        if hasattr(self, "ubus_service"):
-            self.ubus_service.notify("connection_state", {"connected": True})
+        self.ubus_service.notify("connection_state", {"connected": True})
         await self.handshake.synchronize()
         if self.state.is_synchronized:
             await self._request_mcu_version()
             await self._flush_console_queue()
-            if hasattr(self, "ubus_service"):
-                version_str = (
-                    f"{self.state.mcu_version[0]}.{self.state.mcu_version[1]}.{self.state.mcu_version[2]}"
-                    if self.state.mcu_version is not None
-                    else "unknown"
-                )
-                self.ubus_service.notify("sync", {"synchronized": True, "version": version_str})
+            version_str = (
+                f"{self.state.mcu_version[0]}.{self.state.mcu_version[1]}.{self.state.mcu_version[2]}"
+                if self.state.mcu_version is not None
+                else "unknown"
+            )
+            self.ubus_service.notify("sync", {"synchronized": True, "version": version_str})
         else:
             raise ConnectionError("MCU serial link handshake synchronization failed")
 
     async def on_serial_disconnected(self) -> None:
         self.state.connection_fsm.disconnect()
-        if hasattr(self, "ubus_service"):
-            self.ubus_service.notify("connection_state", {"connected": False, "synchronized": False})
+        self.ubus_service.notify("connection_state", {"connected": False, "synchronized": False})
         for q in (self.state.pending_digital_reads, self.state.pending_analog_reads):
             q.clear()
         self.state.mcu_is_paused = False
@@ -1000,10 +996,6 @@ class BridgeService:
         pl = inbound.payload
         try:
             content_type = getattr(inbound, "content_type", None)
-            if content_type is None:
-                properties = getattr(inbound, "properties", None)
-                if properties:
-                    content_type = getattr(properties, "ContentType", None)
             if content_type == PROTOBUF_CONTENT_TYPE or pl.startswith(b"\x0a"):
                 cmd = pb.ProcessRunAsync.FromString(pl).command
             else:
@@ -1437,7 +1429,7 @@ class BridgeService:
                     )
                 )
 
-                if hasattr(self, "ubus_service") and self.ubus_service.is_active:
+                if self.ubus_service.is_active:
                     tg.create_task(
                         self.supervise(
                             "ubus-loop",
@@ -1514,29 +1506,6 @@ class BridgeService:
                     except (lmdb.Error, OSError) as exc:
                         logger.debug("cloud_spool close failed during teardown", error=str(exc))
                     self._cloud_spool = None
-                if self.state.datastore_cache is not None:
-                    try:
-                        await self.state.datastore_cache.close()
-                    except (lmdb.Error, OSError) as exc:
-                        logger.debug("datastore_cache close failed during teardown", error=str(exc))
-                    self.state.datastore_cache = None
-
-                if getattr(self.state, "mailbox_queue", None) is not None:
-                    try:
-                        await self.state.mailbox_queue.close()
-                    except (lmdb.Error, OSError) as exc:
-                        logger.debug("mailbox_queue close failed during teardown", error=str(exc))
-                if getattr(self.state, "mailbox_incoming_queue", None) is not None:
-                    try:
-                        await self.state.mailbox_incoming_queue.close()
-                    except (lmdb.Error, OSError) as exc:
-                        logger.debug("mailbox_incoming_queue close failed during teardown", error=str(exc))
-                if self.state.tls_session_cache is not None:
-                    try:
-                        await self.state.tls_session_cache.close()
-                    except (lmdb.Error, OSError) as exc:
-                        logger.debug("tls_session_cache close failed during teardown", error=str(exc))
-                    self.state.tls_session_cache = None
                 self.cleanup()
                 STATUS_FILE.unlink(missing_ok=True)
                 logger.info("MCU Bridge daemon stopped.")

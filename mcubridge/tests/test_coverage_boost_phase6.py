@@ -1828,3 +1828,77 @@ def test_structures_tls_session_ticket_exceptions() -> None:
     mock_txn.get.side_effect = RuntimeError("lmdb read failure")
     res = load_tls_session_ticket(cache, "example.com", 443)
     assert res is None
+
+
+def test_serial_safe_after_configure_branches() -> None:
+    import errno
+    import termios
+    from mcubridge.transport.serial import _safe_after_configure
+
+    # 1. Handled errno (e.g. EINVAL) and _fileno is None
+    mock_self = MagicMock()
+    mock_self._fileno = None
+    with patch(
+        "mcubridge.transport.serial._orig_after_configure", side_effect=OSError(errno.EINVAL, "Invalid argument")
+    ):
+        _safe_after_configure(mock_self)
+
+    # 2. Unhandled errno (e.g. EACCES) -> must raise
+    with patch(
+        "mcubridge.transport.serial._orig_after_configure", side_effect=OSError(errno.EACCES, "Permission denied")
+    ):
+        with pytest.raises(OSError):
+            _safe_after_configure(mock_self)
+
+    # 3. Fileno is not None, but tcgetattr raises termios.error
+    mock_self._fileno = 42
+    with patch("mcubridge.transport.serial._orig_after_configure", return_value=None):
+        with patch("termios.tcgetattr", side_effect=termios.error("mock termios failure")):
+            _safe_after_configure(mock_self)
+    assert mock_self._fileno == 42
+
+
+@pytest.mark.asyncio
+async def test_runtime_shell_run_async_invalid_payload(test_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+    from mcubridge.services.runtime import BridgeService
+
+    serial = AsyncMock(spec=SerialTransport)
+    service = BridgeService(test_config, mock_state, serial)
+    service.enqueue_cloud = AsyncMock()
+
+    # Payload with protobuf marker but corrupted content
+    inbound = pb.CloudQueuedPublish(payload=b"\x0a\xff\xff\xff", content_type="application/x-protobuf")
+    await service._handle_shell_run_async(1, inbound)
+
+    service.enqueue_cloud.assert_awaited_once()
+    msg = service.enqueue_cloud.call_args[0][0]
+    resp = pb.ProcessRunAsyncResponse.FromString(msg.payload)
+    assert resp.pid == 0
+
+    service.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_serial_read_loop_branches(test_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+    from mcubridge.protocol.protocol import FRAME_DELIMITER
+
+    transport = SerialTransport(test_config, mock_state, AsyncMock())
+    mock_serial = AsyncMock()
+
+    # 1. Stop event set before loop starts -> immediately exits
+    transport._stop_event.set()
+    await transport._read_loop(mock_serial)
+    mock_serial.readuntil.assert_not_called()
+
+    # 2. Empty packet (delimiter only) -> packet_view is empty, does not call process_packet
+    transport._stop_event.clear()
+    mock_serial.readuntil.side_effect = [
+        FRAME_DELIMITER,  # Empty frame (len 1, view len 0)
+        asyncio.CancelledError(),
+    ]
+    transport._process_packet = AsyncMock()
+    with pytest.raises(asyncio.CancelledError):
+        await transport._read_loop(mock_serial)
+
+    transport._process_packet.assert_not_awaited()
+    assert transport._consecutive_crc_errors == 0

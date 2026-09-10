@@ -13,6 +13,7 @@
 #include <libgen.h>
 #include <pty.h>
 #include <signal.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <termios.h>
@@ -37,7 +38,7 @@ extern "C" {
 #else
 // Declarations for environments without libsimavr-dev headers installed
 enum { cpu_Done = 2, cpu_Crashed = 3 };
-enum { UART_IRQ_INPUT = 0, UART_IRQ_OUTPUT = 1 };
+enum { UART_IRQ_INPUT = 0, UART_IRQ_OUTPUT = 1, UART_IRQ_OUT_XON = 2, UART_IRQ_OUT_XOFF = 3 };
 #define AVR_IOCTL_UART_GETIRQ(name) (0x10000 | (name))
 
 typedef struct elf_firmware_t {
@@ -50,8 +51,11 @@ typedef void (*avr_irq_notify_t)(struct avr_irq_t *irq, uint32_t value, void *pa
 typedef struct avr_t {
     uint32_t frequency;
     int state;
+    int log;
 } avr_t;
 
+typedef void (*avr_logger_p)(struct avr_t *avr, const int level, const char *format, va_list ap);
+void avr_global_logger_set(avr_logger_p logger);
 int elf_read_firmware(const char *file, elf_firmware_t *firmware);
 avr_t *avr_make_mcu_by_name(const char *name);
 int avr_init(avr_t *avr);
@@ -62,6 +66,26 @@ void avr_raise_irq(avr_irq_t *irq, uint32_t value);
 int avr_run(avr_t *avr);
 void avr_terminate(avr_t *avr);
 #endif
+}
+
+extern "C" void safe_simavr_logger(struct avr_t *avr, const int level, const char *format, va_list ap) noexcept {
+    if (avr && level > avr->log) {
+        return;
+    }
+    char buffer[1024];
+    const int written = vsnprintf(buffer, sizeof(buffer), format, ap);
+    if (written <= 0) {
+        return;
+    }
+    const size_t len = (static_cast<size_t>(written) < sizeof(buffer)) ? static_cast<size_t>(written) : (sizeof(buffer) - 1);
+    etl::for_each(buffer, buffer + len, [](char &c) {
+        const unsigned char uc = static_cast<unsigned char>(c);
+        if (uc >= 0x80 || (uc < 0x20 && uc != '\n' && uc != '\r' && uc != '\t')) {
+            c = '?';
+        }
+    });
+    fputs(buffer, stderr);
+    fflush(stderr);
 }
 
 namespace {
@@ -90,6 +114,8 @@ public:
     SimavrHardwareBridge &operator=(const SimavrHardwareBridge &) = delete;
 
     bool initialize(etl::string_view firmware_path, etl::string_view mcu_name, uint32_t frequency, char uart_id = '\0') noexcept {
+        avr_global_logger_set(&safe_simavr_logger);
+
         elf_firmware_t firmware{};
         if (elf_read_firmware(firmware_path.data(), &firmware) != 0) {
             fprintf(stderr, "[ERROR] Failed to read ELF firmware: %s\n", firmware_path.data());

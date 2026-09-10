@@ -45,11 +45,17 @@ constexpr uint8_t ANALOG_PINS =
 namespace {
 template <size_t I>
 void _forceSinglePin() {
-  if constexpr (bridge::config::SAFE_START_PINS_ENABLED) {
-    ::pinMode(static_cast<uint8_t>(I), OUTPUT);
-    ::digitalWrite(static_cast<uint8_t>(I), LOW);
+  if constexpr (I < 2) {
+    // [SIL-2] Preserve primary UART communication pins (RX/TX) for supervisor
+    // link
+    return;
   } else {
-    ::pinMode(static_cast<uint8_t>(I), INPUT_PULLUP);
+    if constexpr (bridge::config::SAFE_START_PINS_ENABLED) {
+      ::pinMode(static_cast<uint8_t>(I), OUTPUT);
+      ::digitalWrite(static_cast<uint8_t>(I), LOW);
+    } else {
+      ::pinMode(static_cast<uint8_t>(I), INPUT_PULLUP);
+    }
   }
 }
 

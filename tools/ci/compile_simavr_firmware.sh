@@ -70,10 +70,13 @@ BUILD_FLAGS=(
 )
 
 mkdir -p "$OUTPUT_DIR"
+OUTPUT_DIR="$(cd "$OUTPUT_DIR" && pwd)"
 echo "[simavr-build] Compiling $SKETCH_PATH for $FQBN..."
-COMPILE_LOG="${OUTPUT_DIR}/compile.log"
+TMP_LOG="$(mktemp /tmp/simavr_compile_XXXXXX.log)"
+trap 'rm -f "$TMP_LOG"' EXIT
 
-if arduino-cli compile --clean "${BUILD_FLAGS[@]}" "$SKETCH_PATH" > "$COMPILE_LOG" 2>&1; then
+if arduino-cli compile --clean "${BUILD_FLAGS[@]}" "$SKETCH_PATH" > "$TMP_LOG" 2>&1; then
+    cp "$TMP_LOG" "${OUTPUT_DIR}/compile.log"
     SKETCH_NAME="$(basename "$(dirname "$SKETCH_PATH")")"
     ELF_FILE="${OUTPUT_DIR}/${SKETCH_NAME}.ino.elf"
 
@@ -91,9 +94,10 @@ if arduino-cli compile --clean "${BUILD_FLAGS[@]}" "$SKETCH_PATH" > "$COMPILE_LO
         fi
     fi
 else
+    cp "$TMP_LOG" "${OUTPUT_DIR}/compile.log"
     if [ "$FQBN" = "arduino:avr:mega" ]; then
         echo "ERROR: Critical failure compiling for $FQBN!" >&2
-        cat "$COMPILE_LOG" >&2
+        cat "$TMP_LOG" >&2
         exit 1
     else
         echo "[simavr-build] ⚠ $FQBN compilation skipped (non-critical, Flash/RAM limit exceeded on small AVR board)"

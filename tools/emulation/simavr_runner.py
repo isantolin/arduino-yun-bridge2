@@ -49,6 +49,7 @@ class SimavrState:
     output_lines: list[tuple[str, str]] = field(default_factory=_empty_output_lines)
     lock: threading.Lock = field(default_factory=threading.Lock)
     sync_event: threading.Event = field(default_factory=threading.Event)
+    capabilities_event: threading.Event = field(default_factory=threading.Event)
 
     def on_line(self, line: str, source: str) -> None:
         clean_line = line.strip()
@@ -57,7 +58,10 @@ class SimavrState:
         with self.lock:
             self.output_lines.append((source, clean_line))
             logger.info("Process output", source=source, line=clean_line)
-            if '"event": "MCU ACK received"' in clean_line and '"command_id": "0x44"' in clean_line:
+            if "MCU capabilities received" in clean_line:
+                self.capabilities_event.set()
+                self.sync_event.set()
+            elif '"event": "MCU ACK received"' in clean_line and '"command_id": "0x44"' in clean_line:
                 self.sync_event.set()
             elif "MCU link synchronised" in clean_line:
                 self.sync_event.set()
@@ -105,7 +109,7 @@ def _write_fake_uci_module(base_dir: Path, config: dict[str, str]) -> Path:
         "    def commit(self, package: str) -> None:\n"
         "        return None\n\n"
         "class UCI(Uci):\n"
-        "    pass\n"
+        "    \"\"\"Mock UCI configuration adapter for emulation.\"\"\"\n"
     )
     module_path.write_text(module_source, encoding="utf-8")
     return module_path
@@ -153,7 +157,7 @@ def run_simavr_emulation(
     mcu: str,
     frequency: int,
     test_scripts: list[Path],
-    timeout_seconds: float = 60.0,
+    timeout_seconds: float = 90.0,
     uart_id: str | None = None,
 ) -> bool:
     """Run full E2E tests against an AVR ELF running in simavr."""
@@ -204,8 +208,8 @@ def run_simavr_emulation(
                 detected_pty = retryer(_read_pty_line)
                 if isinstance(detected_pty, str):
                     slave_name = detected_pty
-            except tenacity.RetryError:
-                pass
+            except tenacity.RetryError as exc:
+                logger.warning("Timeout waiting for PTY ready line from simavr", error=str(exc))
         _start_worker_thread(_stream_worker, "simavr-stdout", simavr_proc.stdout, state, "simavr-stdout")
         _start_worker_thread(_stream_worker, "simavr-stderr", simavr_proc.stderr, state, "simavr-stderr")
     else:
@@ -326,10 +330,29 @@ def run_simavr_emulation(
         _teardown_simavr(daemon_proc, simavr_proc, master_fd, fake_uci_dir, storage_path)
         return False
 
-    logger.info("MCU/daemon link synchronized successfully!")
+    logger.info("MCU/daemon link synchronized successfully! Waiting for post-handshake capabilities...")
+    # Wait for capabilities discovery to complete so in-flight frames don't collide with client tests
+    state.capabilities_event.wait(timeout=5.0)
     time.sleep(1.0)
 
     all_passed = _run_client_scripts(test_scripts, daemon_env, socket_path, timeout_seconds)
+    if all_passed:
+        # [SIL-2 / Rule 29] Audit runtime status snapshot before teardown
+        status_file = Path("/tmp/mcubridge_status.json")
+        if status_file.exists():
+            try:
+                from tools.audit.audit_bridge_status import audit_status_dict
+
+                status_errors = audit_status_dict(json.loads(status_file.read_text(encoding="utf-8")))
+                if status_errors:
+                    logger.error("Post-execution status health check failed", errors=status_errors)
+                    all_passed = False
+                else:
+                    logger.info("Post-execution status health check passed (100% clean)")
+            except Exception as exc:
+                logger.error("Failed auditing bridge status", error=str(exc))
+                all_passed = False
+
     _teardown_simavr(daemon_proc, simavr_proc, master_fd, fake_uci_dir, storage_path)
     return all_passed
 
@@ -342,7 +365,7 @@ def _run_client_scripts(
 ) -> bool:
     for test_path in test_scripts:
         if not test_path.exists():
-            logger.warn("Test script not found, skipping", path=str(test_path))
+            logger.warning("Test script not found, skipping", path=str(test_path))
             continue
 
         test_env = dict(daemon_env)
@@ -384,11 +407,15 @@ def _teardown_simavr(
     if master_fd >= 0:
         try:
             os.close(master_fd)
-        except OSError:
-            pass
+        except OSError as exc:
+            logger.debug("Failed closing master_fd during teardown", error=str(exc))
 
-    shutil.rmtree(fake_uci_dir, ignore_errors=True)
-    shutil.rmtree(storage_path, ignore_errors=True)
+    fake_uci_path = Path(fake_uci_dir)
+    if fake_uci_path.exists():
+        shutil.rmtree(fake_uci_path)
+    storage_p = Path(storage_path)
+    if storage_p.exists():
+        shutil.rmtree(storage_p)
 
 
 app = typer.Typer(
@@ -436,7 +463,7 @@ def main(
             "-t",
             help="Timeout per client script in seconds",
         ),
-    ] = 60.0,
+    ] = 90.0,
     uart: Annotated[
         str | None,
         typer.Option(

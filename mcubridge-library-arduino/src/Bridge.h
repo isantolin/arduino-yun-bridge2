@@ -304,7 +304,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
                                   const bridge::router::CommandContext& ctx);
 #endif
 
-  static constexpr bool is_reliable_cmd(uint16_t id) {
+  static inline bool is_reliable_cmd(uint16_t id) {
     return rpc::requires_ack(id);
   }
 

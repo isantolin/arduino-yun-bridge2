@@ -1,28 +1,33 @@
 /*
- * simavr_harness.cpp - Cycle-Accurate AVR Hardware Simulation Harness (SIL-2 / ETL-compliant)
+ * simavr_harness.cpp - Cycle-Accurate AVR Hardware Simulation Harness (SIL-2 /
+ * ETL-compliant)
  *
- * Bridges simulated AVR microcontroller (ATmega32u4 / ATmega2560 / ATmega328P) UART
- * to a Linux Pseudo-Terminal (PTY) using zero-heap ETL data structures, STL-free algorithms,
- * cycle-accurate UART ISR pacing, and deterministic RAII lifecycle management.
+ * Bridges simulated AVR microcontroller (ATmega32u4 / ATmega2560 / ATmega328P)
+ * UART to a Linux Pseudo-Terminal (PTY) using zero-heap ETL data structures,
+ * STL-free algorithms, cycle-accurate UART ISR pacing, and deterministic RAII
+ * lifecycle management.
  */
 
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
+#include <errno.h>
+#include <etl/algorithm.h>
+#include <etl/array.h>
+#include <etl/queue.h>
+#include <etl/span.h>
+#include <etl/string_view.h>
 #include <fcntl.h>
 #include <libgen.h>
 #include <pty.h>
+#include <sched.h>
 #include <signal.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <termios.h>
+#include <time.h>
 #include <unistd.h>
-
-#include <etl/algorithm.h>
-#include <etl/array.h>
-#include <etl/span.h>
-#include <etl/string_view.h>
 
 extern "C" {
 #if __has_include(<simavr/avr_uart.h>)
@@ -38,54 +43,65 @@ extern "C" {
 #else
 // Declarations for environments without libsimavr-dev headers installed
 enum { cpu_Done = 2, cpu_Crashed = 3 };
-enum { UART_IRQ_INPUT = 0, UART_IRQ_OUTPUT = 1, UART_IRQ_OUT_XON = 2, UART_IRQ_OUT_XOFF = 3 };
+enum {
+  UART_IRQ_INPUT = 0,
+  UART_IRQ_OUTPUT = 1,
+  UART_IRQ_OUT_XON = 2,
+  UART_IRQ_OUT_XOFF = 3
+};
 #define AVR_IOCTL_UART_GETIRQ(name) (0x10000 | (name))
 
 typedef struct elf_firmware_t {
-    uint32_t frequency;
+  uint32_t frequency;
 } elf_firmware_t;
 
 typedef struct avr_irq_t avr_irq_t;
-typedef void (*avr_irq_notify_t)(struct avr_irq_t *irq, uint32_t value, void *param);
+typedef void (*avr_irq_notify_t)(struct avr_irq_t* irq, uint32_t value,
+                                 void* param);
 
 typedef struct avr_t {
-    uint32_t frequency;
-    int state;
-    int log;
+  uint32_t frequency;
+  int state;
+  int log;
 } avr_t;
 
-typedef void (*avr_logger_p)(struct avr_t *avr, const int level, const char *format, va_list ap);
+typedef void (*avr_logger_p)(struct avr_t* avr, const int level,
+                             const char* format, va_list ap);
 void avr_global_logger_set(avr_logger_p logger);
-int elf_read_firmware(const char *file, elf_firmware_t *firmware);
-avr_t *avr_make_mcu_by_name(const char *name);
-int avr_init(avr_t *avr);
-void avr_load_firmware(avr_t *avr, elf_firmware_t *firmware);
-avr_irq_t *avr_io_getirq(avr_t *avr, uint32_t ctl, int index);
-void avr_irq_register_notify(avr_irq_t *irq, avr_irq_notify_t notify, void *param);
-void avr_raise_irq(avr_irq_t *irq, uint32_t value);
-int avr_run(avr_t *avr);
-void avr_terminate(avr_t *avr);
+int elf_read_firmware(const char* file, elf_firmware_t* firmware);
+avr_t* avr_make_mcu_by_name(const char* name);
+int avr_init(avr_t* avr);
+void avr_load_firmware(avr_t* avr, elf_firmware_t* firmware);
+avr_irq_t* avr_io_getirq(avr_t* avr, uint32_t ctl, int index);
+void avr_irq_register_notify(avr_irq_t* irq, avr_irq_notify_t notify,
+                             void* param);
+void avr_raise_irq(avr_irq_t* irq, uint32_t value);
+int avr_run(avr_t* avr);
+void avr_terminate(avr_t* avr);
 #endif
 }
 
-extern "C" void safe_simavr_logger(struct avr_t *avr, const int level, const char *format, va_list ap) noexcept {
-    if (avr && level > avr->log) {
-        return;
+extern "C" void safe_simavr_logger(struct avr_t* avr, const int level,
+                                   const char* format, va_list ap) noexcept {
+  if (avr && level > avr->log) {
+    return;
+  }
+  char buffer[1024];
+  const int written = vsnprintf(buffer, sizeof(buffer), format, ap);
+  if (written <= 0) {
+    return;
+  }
+  const size_t len = (static_cast<size_t>(written) < sizeof(buffer))
+                         ? static_cast<size_t>(written)
+                         : (sizeof(buffer) - 1);
+  etl::for_each(buffer, buffer + len, [](char& c) {
+    const unsigned char uc = static_cast<unsigned char>(c);
+    if (uc >= 0x80 || (uc < 0x20 && uc != '\n' && uc != '\r' && uc != '\t')) {
+      c = '?';
     }
-    char buffer[1024];
-    const int written = vsnprintf(buffer, sizeof(buffer), format, ap);
-    if (written <= 0) {
-        return;
-    }
-    const size_t len = (static_cast<size_t>(written) < sizeof(buffer)) ? static_cast<size_t>(written) : (sizeof(buffer) - 1);
-    etl::for_each(buffer, buffer + len, [](char &c) {
-        const unsigned char uc = static_cast<unsigned char>(c);
-        if (uc >= 0x80 || (uc < 0x20 && uc != '\n' && uc != '\r' && uc != '\t')) {
-            c = '?';
-        }
-    });
-    fputs(buffer, stderr);
-    fflush(stderr);
+  });
+  fputs(buffer, stderr);
+  fflush(stderr);
 }
 
 namespace {
@@ -94,175 +110,276 @@ constexpr size_t RX_BUFFER_CAPACITY = 256;
 constexpr size_t PTY_NAME_CAPACITY = 128;
 constexpr uint32_t DEFAULT_AVR_FREQUENCY = 16000000UL;
 constexpr size_t BATCH_INSTRUCTION_CYCLES = 50000;
-constexpr size_t INTER_BYTE_ISR_CYCLES = 4000;
+constexpr size_t DRAIN_BATCH_CYCLES = 256;
+constexpr size_t HOST_FIFO_CAPACITY = 2048;
 
 volatile sig_atomic_t g_running = 1;
 
-void sig_handler(int /* sig */) noexcept {
-    g_running = 0;
-}
+void sig_handler(int /* sig */) noexcept { g_running = 0; }
 
 class SimavrHardwareBridge {
-public:
-    SimavrHardwareBridge() noexcept = default;
+ public:
+  SimavrHardwareBridge() noexcept = default;
 
-    ~SimavrHardwareBridge() noexcept {
-        release();
+  ~SimavrHardwareBridge() noexcept { release(); }
+
+  SimavrHardwareBridge(const SimavrHardwareBridge&) = delete;
+  SimavrHardwareBridge& operator=(const SimavrHardwareBridge&) = delete;
+
+  bool initialize(etl::string_view firmware_path, etl::string_view mcu_name,
+                  uint32_t frequency, char uart_id = '\0') noexcept {
+    avr_global_logger_set(&safe_simavr_logger);
+
+    elf_firmware_t firmware{};
+    if (elf_read_firmware(firmware_path.data(), &firmware) != 0) {
+      fprintf(stderr, "[ERROR] Failed to read ELF firmware: %s\n",
+              firmware_path.data());
+      return false;
     }
 
-    SimavrHardwareBridge(const SimavrHardwareBridge &) = delete;
-    SimavrHardwareBridge &operator=(const SimavrHardwareBridge &) = delete;
-
-    bool initialize(etl::string_view firmware_path, etl::string_view mcu_name, uint32_t frequency, char uart_id = '\0') noexcept {
-        avr_global_logger_set(&safe_simavr_logger);
-
-        elf_firmware_t firmware{};
-        if (elf_read_firmware(firmware_path.data(), &firmware) != 0) {
-            fprintf(stderr, "[ERROR] Failed to read ELF firmware: %s\n", firmware_path.data());
-            return false;
-        }
-
-        avr_ = avr_make_mcu_by_name(mcu_name.data());
-        if (!avr_) {
-            fprintf(stderr, "[ERROR] Unknown or unsupported AVR MCU: %s\n", mcu_name.data());
-            return false;
-        }
-
-        if (avr_init(avr_) != 0) {
-            fprintf(stderr, "[ERROR] Failed to initialize AVR MCU %s\n", mcu_name.data());
-            return false;
-        }
-
-        avr_load_firmware(avr_, &firmware);
-        if (frequency > 0) {
-            avr_->frequency = frequency;
-        }
-
-        if (uart_id >= '0' && uart_id <= '3') {
-            uart_id_ = uart_id;
-        } else {
-            uart_id_ = (mcu_name == "atmega32u4") ? '1' : '0';
-        }
-
-        if (openpty(&master_fd_, &slave_fd_, slave_name_.data(), nullptr, nullptr) < 0) {
-            perror("[ERROR] openpty failed");
-            return false;
-        }
-
-        struct termios tio{};
-        if (tcgetattr(master_fd_, &tio) == 0) {
-            cfmakeraw(&tio);
-            tcsetattr(master_fd_, TCSANOW, &tio);
-        }
-
-        const int flags = fcntl(master_fd_, F_GETFL, 0);
-        fcntl(master_fd_, F_SETFL, flags | O_NONBLOCK);
-
-        avr_irq_t *uart_out_irq = avr_io_getirq(avr_, AVR_IOCTL_UART_GETIRQ(uart_id_), UART_IRQ_OUTPUT);
-        if (uart_out_irq) {
-            avr_irq_register_notify(uart_out_irq, &SimavrHardwareBridge::uart_output_hook, this);
-        }
-
-        uart_in_irq_ = avr_io_getirq(avr_, AVR_IOCTL_UART_GETIRQ(uart_id_), UART_IRQ_INPUT);
-        return true;
+    avr_ = avr_make_mcu_by_name(mcu_name.data());
+    if (!avr_) {
+      fprintf(stderr, "[ERROR] Unknown or unsupported AVR MCU: %s\n",
+              mcu_name.data());
+      return false;
     }
 
-    void run_simulation() noexcept {
-        printf("[SIMAVR] UART%c PTY ready on: %s\n", uart_id_, slave_name_.data());
-        fflush(stdout);
-
-    simulation_step:
-        if (!is_active()) {
-            return;
-        }
-        execute_cycle_batch();
-        goto simulation_step;
+    if (avr_init(avr_) != 0) {
+      fprintf(stderr, "[ERROR] Failed to initialize AVR MCU %s\n",
+              mcu_name.data());
+      return false;
     }
 
-    [[nodiscard]] bool is_active() const noexcept {
-        return g_running != 0 && avr_ != nullptr && avr_->state != cpu_Done && avr_->state != cpu_Crashed;
+    avr_load_firmware(avr_, &firmware);
+    if (frequency > 0) {
+      avr_->frequency = frequency;
     }
 
-    void release() noexcept {
-        if (master_fd_ >= 0) {
-            close(master_fd_);
-            master_fd_ = -1;
-        }
-        if (slave_fd_ >= 0) {
-            close(slave_fd_);
-            slave_fd_ = -1;
-        }
-        if (avr_ != nullptr) {
-            avr_terminate(avr_);
-            avr_ = nullptr;
-        }
+    if (uart_id >= '0' && uart_id <= '3') {
+      uart_id_ = uart_id;
+    } else {
+      uart_id_ = (mcu_name == "atmega32u4") ? '1' : '0';
     }
 
-private:
-    static void uart_output_hook(struct avr_irq_t * /* irq */, uint32_t value, void *param) noexcept {
-        auto *self = static_cast<SimavrHardwareBridge *>(param);
-        if (self && self->master_fd_ >= 0) {
-            const uint8_t byte = static_cast<uint8_t>(value);
-            const ssize_t written = write(self->master_fd_, &byte, 1);
-            (void)written;
-        }
+    if (openpty(&master_fd_, &slave_fd_, slave_name_.data(), nullptr, nullptr) <
+        0) {
+      perror("[ERROR] openpty failed");
+      return false;
     }
 
-    void execute_cycle_batch() noexcept {
-        /* Read incoming bytes from PTY master */
-        const ssize_t bytes_read = read(master_fd_, rx_buf_.data(), rx_buf_.size());
-        if (bytes_read > 0 && uart_in_irq_ != nullptr) {
-            /* Paced UART delivery: step CPU between each byte so the AVR UART RX ISR executes without overrun */
-            etl::for_each(rx_buf_.begin(), rx_buf_.begin() + bytes_read, [this](uint8_t byte) {
-                avr_raise_irq(uart_in_irq_, byte);
-                etl::for_each(inter_byte_batch_.begin(), inter_byte_batch_.end(), [this](int & /* step */) {
-                    if (avr_ && avr_->state != cpu_Done && avr_->state != cpu_Crashed) {
-                        avr_run(avr_);
+    struct termios tio{};
+    if (tcgetattr(master_fd_, &tio) == 0) {
+      cfmakeraw(&tio);
+      tcsetattr(master_fd_, TCSANOW, &tio);
+    }
+
+    const int flags = fcntl(master_fd_, F_GETFL, 0);
+    fcntl(master_fd_, F_SETFL, flags | O_NONBLOCK);
+
+    avr_irq_t* uart_out_irq =
+        avr_io_getirq(avr_, AVR_IOCTL_UART_GETIRQ(uart_id_), UART_IRQ_OUTPUT);
+    if (uart_out_irq) {
+      avr_irq_register_notify(uart_out_irq,
+                              &SimavrHardwareBridge::uart_output_hook, this);
+    }
+
+    avr_irq_t* uart_xon_irq =
+        avr_io_getirq(avr_, AVR_IOCTL_UART_GETIRQ(uart_id_), UART_IRQ_OUT_XON);
+    if (uart_xon_irq) {
+      avr_irq_register_notify(uart_xon_irq,
+                              &SimavrHardwareBridge::uart_xon_hook, this);
+    }
+
+    avr_irq_t* uart_xoff_irq =
+        avr_io_getirq(avr_, AVR_IOCTL_UART_GETIRQ(uart_id_), UART_IRQ_OUT_XOFF);
+    if (uart_xoff_irq) {
+      avr_irq_register_notify(uart_xoff_irq,
+                              &SimavrHardwareBridge::uart_xoff_hook, this);
+    }
+
+    uart_in_irq_ =
+        avr_io_getirq(avr_, AVR_IOCTL_UART_GETIRQ(uart_id_), UART_IRQ_INPUT);
+    avr_uart_xon_ = true;
+    is_draining_ = false;
+    host_to_avr_fifo_.clear();
+    return true;
+  }
+
+  void run_simulation() noexcept {
+    printf("[SIMAVR] UART%c PTY ready on: %s\n", uart_id_, slave_name_.data());
+    fflush(stdout);
+
+  simulation_step:
+    if (!is_active()) {
+      return;
+    }
+    execute_cycle_batch();
+    goto simulation_step;
+  }
+
+  [[nodiscard]] bool is_active() const noexcept {
+    return g_running != 0 && avr_ != nullptr && avr_->state != cpu_Done &&
+           avr_->state != cpu_Crashed;
+  }
+
+  void release() noexcept {
+    if (master_fd_ >= 0) {
+      close(master_fd_);
+      master_fd_ = -1;
+    }
+    if (slave_fd_ >= 0) {
+      close(slave_fd_);
+      slave_fd_ = -1;
+    }
+    if (avr_ != nullptr) {
+      avr_terminate(avr_);
+      avr_ = nullptr;
+    }
+  }
+
+ private:
+  void drain_host_fifo_to_avr() noexcept {
+    if (!uart_in_irq_ || is_draining_) {
+      return;
+    }
+    is_draining_ = true;
+    etl::for_each(drain_batch_.begin(), drain_batch_.end(),
+                  [this](uint8_t& /* step */) {
+                    if (avr_uart_xon_ && !host_to_avr_fifo_.empty()) {
+                      const uint8_t byte = host_to_avr_fifo_.front();
+                      host_to_avr_fifo_.pop();
+                      avr_raise_irq(uart_in_irq_, byte);
                     }
-                });
-            });
-        }
+                  });
+    is_draining_ = false;
+  }
 
-        /* Execute standard instruction batch for main loop processing */
-        etl::for_each(step_batch_.begin(), step_batch_.end(), [this](int & /* step */) {
-            if (avr_ && avr_->state != cpu_Done && avr_->state != cpu_Crashed) {
-                avr_run(avr_);
-            }
+  static void uart_xon_hook(struct avr_irq_t* /* irq */, uint32_t value,
+                            void* param) noexcept {
+    auto* self = static_cast<SimavrHardwareBridge*>(param);
+    if (self) {
+      if (value != 0) {
+        self->avr_uart_xon_ = true;
+        self->drain_host_fifo_to_avr();
+      } else {
+        self->avr_uart_xon_ = false;
+      }
+    }
+  }
+
+  static void uart_xoff_hook(struct avr_irq_t* /* irq */, uint32_t value,
+                             void* param) noexcept {
+    auto* self = static_cast<SimavrHardwareBridge*>(param);
+    if (self) {
+      if (value != 0) {
+        self->avr_uart_xon_ = false;
+      } else {
+        self->avr_uart_xon_ = true;
+        self->drain_host_fifo_to_avr();
+      }
+    }
+  }
+
+  static void uart_output_hook(struct avr_irq_t* /* irq */, uint32_t value,
+                               void* param) noexcept {
+    auto* self = static_cast<SimavrHardwareBridge*>(param);
+    if (!self || self->master_fd_ < 0) {
+      return;
+    }
+    const uint8_t byte = static_cast<uint8_t>(value);
+    bool delivered = false;
+    etl::array<uint8_t, 200> retry_batch{};
+    etl::for_each(
+        retry_batch.begin(), retry_batch.end(), [&](uint8_t& /* retry */) {
+          if (delivered) {
+            return;
+          }
+          const ssize_t written = write(self->master_fd_, &byte, 1);
+          if (written == 1) {
+            delivered = true;
+            return;
+          }
+          if (written < 0 &&
+              (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)) {
+            struct timespec ts{};
+            ts.tv_nsec = 50000;  // 50 microseconds
+            nanosleep(&ts, nullptr);
+          }
         });
+    if (!delivered) {
+      fprintf(stderr, "[ERROR] simavr PTY write failed: byte 0x%02X lost\n",
+              byte);
+    }
+  }
+
+  void execute_cycle_batch() noexcept {
+    /* Read incoming bytes from PTY master into FIFO */
+    const ssize_t bytes_read = read(master_fd_, rx_buf_.data(), rx_buf_.size());
+    if (bytes_read > 0) {
+      etl::for_each(rx_buf_.begin(), rx_buf_.begin() + bytes_read,
+                    [this](uint8_t byte) {
+                      if (!host_to_avr_fifo_.full()) {
+                        host_to_avr_fifo_.push(byte);
+                      }
+                    });
+    } else if (bytes_read <= 0) {
+      sched_yield();
     }
 
-    int master_fd_{-1};
-    int slave_fd_{-1};
-    etl::array<char, PTY_NAME_CAPACITY> slave_name_{};
-    avr_t *avr_{nullptr};
-    char uart_id_{'0'};
-    avr_irq_t *uart_in_irq_{nullptr};
-    etl::array<uint8_t, RX_BUFFER_CAPACITY> rx_buf_{};
-    etl::array<int, BATCH_INSTRUCTION_CYCLES> step_batch_{};
-    etl::array<int, INTER_BYTE_ISR_CYCLES> inter_byte_batch_{};
+    /* Forward buffered bytes to simulated AVR UART while input FIFO has space
+     */
+    drain_host_fifo_to_avr();
+
+    /* Execute standard instruction batch for main loop processing */
+    etl::for_each(
+        step_batch_.begin(), step_batch_.end(), [this](uint8_t& /* step */) {
+          if (avr_ && avr_->state != cpu_Done && avr_->state != cpu_Crashed) {
+            avr_run(avr_);
+          }
+        });
+
+    /* Drain any remaining buffered bytes after AVR steps */
+    drain_host_fifo_to_avr();
+  }
+
+  int master_fd_{-1};
+  int slave_fd_{-1};
+  etl::array<char, PTY_NAME_CAPACITY> slave_name_{};
+  avr_t* avr_{nullptr};
+  char uart_id_{'0'};
+  avr_irq_t* uart_in_irq_{nullptr};
+  bool avr_uart_xon_{true};
+  bool is_draining_{false};
+  etl::array<uint8_t, RX_BUFFER_CAPACITY> rx_buf_{};
+  etl::queue<uint8_t, HOST_FIFO_CAPACITY> host_to_avr_fifo_{};
+  etl::array<uint8_t, DRAIN_BATCH_CYCLES> drain_batch_{};
+  etl::array<uint8_t, BATCH_INSTRUCTION_CYCLES> step_batch_{};
 };
 
 }  // namespace
 
-int main(int argc, char *argv[]) {
-    if (argc < 2) {
-        fprintf(stderr, "Usage: %s <firmware.elf> [mcu] [frequency_hz] [uart_id]\n", argv[0]);
-        return 1;
-    }
+int main(int argc, char* argv[]) {
+  if (argc < 2) {
+    fprintf(stderr, "Usage: %s <firmware.elf> [mcu] [frequency_hz] [uart_id]\n",
+            argv[0]);
+    return 1;
+  }
 
-    const etl::string_view firmware_file = argv[1];
-    const etl::string_view mcu_name = (argc > 2) ? argv[2] : "atmega2560";
-    const uint32_t frequency = (argc > 3) ? static_cast<uint32_t>(strtoul(argv[3], nullptr, 10)) : DEFAULT_AVR_FREQUENCY;
-    const char uart_id = (argc > 4) ? argv[4][0] : '\0';
+  const etl::string_view firmware_file = argv[1];
+  const etl::string_view mcu_name = (argc > 2) ? argv[2] : "atmega2560";
+  const uint32_t frequency =
+      (argc > 3) ? static_cast<uint32_t>(strtoul(argv[3], nullptr, 10))
+                 : DEFAULT_AVR_FREQUENCY;
+  const char uart_id = (argc > 4) ? argv[4][0] : '\0';
 
-    signal(SIGINT, sig_handler);
-    signal(SIGTERM, sig_handler);
+  signal(SIGINT, sig_handler);
+  signal(SIGTERM, sig_handler);
 
-    SimavrHardwareBridge bridge;
-    if (!bridge.initialize(firmware_file, mcu_name, frequency, uart_id)) {
-        return 1;
-    }
+  SimavrHardwareBridge bridge;
+  if (!bridge.initialize(firmware_file, mcu_name, frequency, uart_id)) {
+    return 1;
+  }
 
-    bridge.run_simulation();
-    return 0;
+  bridge.run_simulation();
+  return 0;
 }

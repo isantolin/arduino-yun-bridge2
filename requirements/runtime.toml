@@ -240,12 +240,12 @@ rationale = "Strict code coverage measurement and reporting tool"
 
 [[dev_dependency]]
 name = "pyright"
-pip = "pyright==1.1.413"
+pip = "pyright==1.1.414"
 rationale = "Strict static type checker enforcing zero-warning type safety across the Python stack"
 
 [[dev_dependency]]
 name = "ruff"
-pip = "ruff==0.16.6"
+pip = "ruff==0.16.7"
 rationale = "Fast Python linter and code quality validator"
 
 [[dev_dependency]]

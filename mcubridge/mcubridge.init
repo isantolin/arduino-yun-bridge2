@@ -57,6 +57,24 @@ start_service() {
     chmod 700 /tmp/run/mcubridge
     chmod 755 "$file_root"
 
+    # [EXCLUSIVE SERIAL ACCESS - CRITICAL]
+    # Evitar interferencia de consolas interactivas (askfirst / askconsole) en el puerto serie del MCU
+    local serial_dev
+    serial_dev="$(uci -q get mcubridge.general.serial_port || echo "/dev/ttyATH0")"
+    local serial_base="$(basename "$serial_dev")"
+    if [ -n "$serial_base" ] && [ -f /etc/inittab ]; then
+        if grep -q "^${serial_base}:" /etc/inittab 2>/dev/null || grep -q "::askconsole:" /etc/inittab 2>/dev/null; then
+            sed -i -e "/^${serial_base}:/d" -e "/::askconsole:/d" /etc/inittab
+            for pid in $(grep -l "${serial_base}" /proc/[0-9]*/fd/* 2>/dev/null | cut -d/ -f3 | sort -u); do
+                case "$(cat "/proc/$pid/cmdline" 2>/dev/null | tr '\0' ' ')" in
+                    *askfirst*|*login*|*getty*)
+                        kill -9 "$pid" 2>/dev/null || true
+                        ;;
+                esac
+            done
+        fi
+    fi
+
     procd_open_instance
 
     # [OPTIMIZATION] Direct Python Launch

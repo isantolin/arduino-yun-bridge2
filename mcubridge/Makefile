@@ -129,4 +129,12 @@ define Package/$(PKG_NAME)/install
 	[ -f $(PKG_BUILD_DIR)/scripts/pin_rest_cgi.py ] && $(INSTALL_BIN) $(PKG_BUILD_DIR)/scripts/pin_rest_cgi.py $(1)/www/cgi-bin/mcubridge-pin && ln -sf mcubridge-pin $(1)/www/cgi-bin/mcubridge || true
 endef
 
+define Package/$(PKG_NAME)/postinst
+#!/bin/sh
+[ -n "$${IPKG_INSTROOT}" ] || {
+	[ -x /etc/uci-defaults/99-mcubridge-disable-askconsole ] && /etc/uci-defaults/99-mcubridge-disable-askconsole
+}
+exit 0
+endef
+
 $(eval $(call BuildPackage,$(PKG_NAME)))

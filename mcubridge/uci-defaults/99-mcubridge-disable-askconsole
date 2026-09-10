@@ -1,11 +1,32 @@
 #!/bin/sh
-# Disable askconsole on ttyATH0 to allow Bridge full control
+# Disable askconsole / askfirst on the configured McuBridge serial port
+# to guarantee exclusive serial port access for the daemon.
 # This script runs once on first boot (uci-defaults).
 
-if grep -q "::askconsole:" /etc/inittab; then
+SERIAL_DEV="$(uci -q get mcubridge.general.serial_port || echo "/dev/ttyATH0")"
+SERIAL_BASE="$(basename "$SERIAL_DEV")"
+
+# 1. Clean up legacy askconsole entries (Arduino Yún ar71xx)
+if grep -q "::askconsole:" /etc/inittab 2>/dev/null; then
     sed -i -e '/::askconsole:/d' /etc/inittab
-    # We don't restart init here to avoid killing the boot process, 
-    # but the change will persist for the next reboot or init reload.
+fi
+
+# 2. Clean up modern askfirst/getty entries attached to the target serial port
+if [ -n "$SERIAL_BASE" ] && grep -q "^${SERIAL_BASE}:" /etc/inittab 2>/dev/null; then
+    sed -i -e "/^${SERIAL_BASE}:/d" /etc/inittab
+fi
+
+# 3. Terminate any lingering askfirst / login processes on this serial port
+if [ -n "$SERIAL_BASE" ]; then
+    for pid in $(grep -l "${SERIAL_BASE}" /proc/[0-9]*/fd/* 2>/dev/null | cut -d/ -f3 | sort -u); do
+        cmdline="$(cat "/proc/$pid/cmdline" 2>/dev/null | tr '\0' ' ')"
+        case "$cmdline" in
+            *askfirst*|*login*|*getty*)
+                kill -9 "$pid" 2>/dev/null || true
+                ;;
+        esac
+    done
 fi
 
 exit 0
+

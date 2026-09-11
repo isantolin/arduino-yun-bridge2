@@ -7,23 +7,37 @@
 var callMcuStatus = rpc.declare({
 	object: 'mcubridge',
 	method: 'status',
-	expect: {}
+	expect: { '': {} },
+	reject: true
 });
+
+function getFallbackStatus() {
+	return fs.read('/tmp/mcubridge_status.json').then(function(content) {
+		if (!content || content.trim() === '') return null;
+		try {
+			return JSON.parse(content);
+		} catch (e) {
+			return null;
+		}
+	}).catch(function() {
+		return null;
+	});
+}
+
+function fetchStatus() {
+	return callMcuStatus().then(function(res) {
+		if (!res || typeof res !== 'object' || Array.isArray(res) || Object.keys(res).length === 0) {
+			return getFallbackStatus();
+		}
+		return res;
+	}).catch(function() {
+		return getFallbackStatus();
+	});
+}
 
 return view.extend({
 	load: function() {
-		return callMcuStatus().catch(function() {
-			return fs.read('/tmp/mcubridge_status.json').then(function(content) {
-				if (!content || content.trim() === '') return null;
-				try {
-					return JSON.parse(content);
-				} catch (e) {
-					return null;
-				}
-			}).catch(function() {
-				return null;
-			});
-		});
+		return fetchStatus();
 	},
 
 	render: function(statusData) {
@@ -32,23 +46,8 @@ return view.extend({
 		]);
 
 		poll.add(function() {
-			return callMcuStatus().then(function(res) {
-				preEl.textContent = JSON.stringify(res, null, 2);
-			}).catch(function() {
-				return fs.read('/tmp/mcubridge_status.json').then(function(content) {
-					if (!content || content.trim() === '') {
-						preEl.textContent = _('Status not available. The daemon may be stopped, starting up, or the device may have rebooted.');
-						return;
-					}
-					try {
-						var parsed = JSON.parse(content);
-						preEl.textContent = JSON.stringify(parsed, null, 2);
-					} catch (e) {
-						preEl.textContent = 'Error parsing status JSON: ' + e;
-					}
-				}).catch(function() {
-					preEl.textContent = _('Status not available. The daemon may be stopped, starting up, or the device may have rebooted.');
-				});
+			return fetchStatus().then(function(res) {
+				preEl.textContent = res ? JSON.stringify(res, null, 2) : _('Status not available. The daemon may be stopped, starting up, or the device may have rebooted.');
 			});
 		}, 5);
 

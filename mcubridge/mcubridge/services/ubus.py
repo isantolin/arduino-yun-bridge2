@@ -135,9 +135,13 @@ class UbusService:
 
         def _make_handler(handler: Any) -> Any:
             def _cb(req: Any, msg: dict[str, Any]) -> None:
-                res = handler(req, msg)
-                if req and hasattr(req, "reply") and isinstance(res, dict):
-                    req.reply(res)
+                try:
+                    res = handler(req, msg)
+                    if req and hasattr(req, "reply") and isinstance(res, dict):
+                        req.reply(res)
+                except Exception as exc:
+                    logger.error("Exception in UBUS handler", handler=handler.__name__, error=str(exc))
+                    raise
 
             return _cb
 

@@ -7,26 +7,39 @@
 var callMcuStatus = rpc.declare({
 	object: 'mcubridge',
 	method: 'status',
-	expect: {}
+	expect: { '': {} },
+	reject: true
 });
+
+function getFallbackCaps() {
+	return fs.read('/tmp/mcubridge_status.json').then(function(content) {
+		if (!content || content.trim() === '') return null;
+		try {
+			var parsed = JSON.parse(content);
+			return (parsed && parsed.bridge && parsed.bridge.capabilities) || (parsed && parsed.capabilities) || null;
+		} catch (e) {
+			return null;
+		}
+	}).catch(function() {
+		return null;
+	});
+}
+
+function fetchCaps() {
+	return callMcuStatus().then(function(res) {
+		var caps = (res && typeof res === 'object' && !Array.isArray(res) && res.capabilities) || null;
+		if (!caps || Object.keys(caps).length === 0) {
+			return getFallbackCaps();
+		}
+		return caps;
+	}).catch(function() {
+		return getFallbackCaps();
+	});
+}
 
 return view.extend({
 	load: function() {
-		return callMcuStatus().then(function(res) {
-			return (res && res.capabilities) || null;
-		}).catch(function() {
-			return fs.read('/tmp/mcubridge_status.json').then(function(content) {
-				if (!content || content.trim() === '') return null;
-				try {
-					var parsed = JSON.parse(content);
-					return (parsed && parsed.bridge && parsed.bridge.capabilities) || (parsed && parsed.capabilities) || null;
-				} catch (e) {
-					return null;
-				}
-			}).catch(function() {
-				return null;
-			});
-		});
+		return fetchCaps();
 	},
 
 	renderBool: function(value) {
@@ -41,7 +54,7 @@ return view.extend({
 			container.removeChild(container.firstChild);
 		}
 
-		if (!caps) {
+		if (!caps || Object.keys(caps).length === 0) {
 			container.appendChild(E('div', { 'class': 'alert-message warning' }, [
 				_('Not available (Handshake pending or legacy firmware)')
 			]));
@@ -84,25 +97,8 @@ return view.extend({
 
 		var self = this;
 		poll.add(function() {
-			return callMcuStatus().then(function(res) {
-				var caps = (res && res.capabilities) || null;
+			return fetchCaps().then(function(caps) {
 				self.renderContent(caps, container);
-			}).catch(function() {
-				return fs.read('/tmp/mcubridge_status.json').then(function(content) {
-					if (!content || content.trim() === '') {
-						self.renderContent(null, container);
-						return;
-					}
-					try {
-						var parsed = JSON.parse(content);
-						var caps = (parsed && parsed.bridge && parsed.bridge.capabilities) || (parsed && parsed.capabilities) || null;
-						self.renderContent(caps, container);
-					} catch (e) {
-						self.renderContent(null, container);
-					}
-				}).catch(function() {
-					self.renderContent(null, container);
-				});
 			});
 		}, 5);
 

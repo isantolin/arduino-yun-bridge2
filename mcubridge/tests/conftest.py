@@ -23,17 +23,15 @@ from mcubridge.config.logging import configure_logging, reset_handlers
 from mcubridge.config import common, settings
 import mcubridge.config.common
 import mcubridge.config.const
-from mcubridge.config.const import (
-    DEFAULT_PROCESS_TIMEOUT,
-    DEFAULT_STATUS_INTERVAL,
-)
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import (
     DEFAULT_BAUDRATE,
     DEFAULT_CLOUD_PORT,
+    DEFAULT_PROCESS_TIMEOUT,
     DEFAULT_RECONNECT_DELAY,
     DEFAULT_SAFE_BAUDRATE,
+    DEFAULT_STATUS_INTERVAL,
 )
 import mcubridge.protocol.structures
 from mcubridge.services.runtime import BridgeService
@@ -104,8 +102,8 @@ class PatchedRuntimeConfig:
         for k, v in defaults.items():
             if k not in kwargs:
                 kwargs[k] = v
-        default_spool = mcubridge.config.const.DEFAULT_CLOUD_SPOOL_DIR
-        default_fs = mcubridge.config.const.DEFAULT_FILE_SYSTEM_ROOT
+        default_spool = protocol.DEFAULT_CLOUD_SPOOL_DIR
+        default_fs = protocol.DEFAULT_FILE_SYSTEM_ROOT
         if (
             "cloud_spool_dir" not in kwargs
             or kwargs["cloud_spool_dir"] == "/tmp/mcubridge/spool"
@@ -223,27 +221,30 @@ def isolate_test_paths() -> Iterator[None]:
     _test_paths["spool"] = None
     _test_paths["fs"] = None
 
-    original_fs = mcubridge.config.const.DEFAULT_FILE_SYSTEM_ROOT
-    original_spool = mcubridge.config.const.DEFAULT_CLOUD_SPOOL_DIR
+    original_fs = protocol.RUNTIME_CONFIG_DEFAULTS["file_system_root"]
+    original_spool = protocol.RUNTIME_CONFIG_DEFAULTS["cloud_spool_dir"]
 
-    mcubridge.config.const.DEFAULT_FILE_SYSTEM_ROOT = get_unique_test_fs()
-    mcubridge.config.const.DEFAULT_CLOUD_SPOOL_DIR = get_unique_test_spool()
+    unique_fs = get_unique_test_fs()
+    unique_spool = get_unique_test_spool()
 
-    os.makedirs(mcubridge.config.const.DEFAULT_FILE_SYSTEM_ROOT, exist_ok=True)
-    os.makedirs(mcubridge.config.const.DEFAULT_CLOUD_SPOOL_DIR, exist_ok=True)
+    protocol.RUNTIME_CONFIG_DEFAULTS["file_system_root"] = unique_fs
+    protocol.RUNTIME_CONFIG_DEFAULTS["cloud_spool_dir"] = unique_spool
+
+    os.makedirs(unique_fs, exist_ok=True)
+    os.makedirs(unique_spool, exist_ok=True)
 
     yield
 
     try:
-        if os.path.exists(mcubridge.config.const.DEFAULT_FILE_SYSTEM_ROOT):
-            shutil.rmtree(mcubridge.config.const.DEFAULT_FILE_SYSTEM_ROOT)
-        if os.path.exists(mcubridge.config.const.DEFAULT_CLOUD_SPOOL_DIR):
-            shutil.rmtree(mcubridge.config.const.DEFAULT_CLOUD_SPOOL_DIR)
+        if os.path.exists(unique_fs):
+            shutil.rmtree(unique_fs)
+        if os.path.exists(unique_spool):
+            shutil.rmtree(unique_spool)
     except OSError as e:
         structlog.get_logger("mcubridge.tests").warning("Teardown path cleanup notice", error=str(e))
 
-    mcubridge.config.const.DEFAULT_FILE_SYSTEM_ROOT = original_fs
-    mcubridge.config.const.DEFAULT_CLOUD_SPOOL_DIR = original_spool
+    protocol.RUNTIME_CONFIG_DEFAULTS["file_system_root"] = original_fs
+    protocol.RUNTIME_CONFIG_DEFAULTS["cloud_spool_dir"] = original_spool
 
 
 @pytest.fixture(autouse=True)
@@ -353,8 +354,8 @@ def real_config():
     raw["process_max_concurrent"] = 4
     raw["allow_non_tmp_paths"] = True
 
-    raw["cloud_spool_dir"] = mcubridge.config.const.DEFAULT_CLOUD_SPOOL_DIR
-    raw["file_system_root"] = mcubridge.config.const.DEFAULT_FILE_SYSTEM_ROOT
+    raw["cloud_spool_dir"] = protocol.DEFAULT_CLOUD_SPOOL_DIR
+    raw["file_system_root"] = protocol.DEFAULT_FILE_SYSTEM_ROOT
 
     config = load_runtime_config(raw)
     return config

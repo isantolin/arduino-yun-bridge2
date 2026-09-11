@@ -38,7 +38,6 @@ from .ubus import UbusService
 
 
 from ..config.const import (
-    DEFAULT_SYNC_TIMEOUT_SECONDS,
     MCU_FS_PREFIX,
     PROCESS_TERM_GRACE_PERIOD_SECONDS,
     PROP_KEY_BRIDGE_DATASTORE_KEY,
@@ -578,7 +577,7 @@ class BridgeService:
             if route := parse_topic(self.state.cloud_topic_prefix, topic_val):
                 if route.topic in (Topic.DIGITAL, Topic.ANALOG, Topic.CONSOLE, Topic.SPI):
                     try:
-                        async with asyncio.timeout(DEFAULT_SYNC_TIMEOUT_SECONDS):
+                        async with asyncio.timeout(float(protocol.SYNC_TIMEOUT_MS) / 1000.0):
                             await self.state.link_sync_event.wait()
                     except asyncio.TimeoutError:
                         logger.error("Timed out waiting for MCU link synchronization")

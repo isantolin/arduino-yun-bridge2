@@ -9,11 +9,14 @@ USE_PROCD=1
 DEPENDS="network"
 
 start_service() {
-    local spool_dir="/tmp/mcubridge/spool"
-    local file_root="/tmp/yun_files"
-    local watchdog_enabled="1"
-    local watchdog_interval="5"
-    local allow_non_tmp_paths="0"
+    # [SSOT] Load canonical defaults generated from mcubridge.proto
+    [ -f /usr/share/mcubridge/defaults.sh ] && . /usr/share/mcubridge/defaults.sh
+
+    local spool_dir="${MCUBRIDGE_DEFAULT_CLOUD_SPOOL_DIR:-/tmp/mcubridge/spool}"
+    local file_root="${MCUBRIDGE_DEFAULT_FILE_SYSTEM_ROOT:-/tmp/yun_files}"
+    local watchdog_enabled="${MCUBRIDGE_DEFAULT_WATCHDOG_ENABLED:-0}"
+    local watchdog_interval="${MCUBRIDGE_DEFAULT_WATCHDOG_INTERVAL:-5.0}"
+    local allow_non_tmp_paths="${MCUBRIDGE_DEFAULT_ALLOW_NON_TMP_PATHS:-0}"
     local respawn_threshold="3600"
     local respawn_timeout="5"
     local respawn_retry="0"
@@ -60,7 +63,7 @@ start_service() {
     # [EXCLUSIVE SERIAL ACCESS - CRITICAL]
     # Evitar interferencia de consolas interactivas (askfirst / askconsole) en el puerto serie del MCU
     local serial_dev
-    serial_dev="$(uci -q get mcubridge.general.serial_port || echo "/dev/ttyATH0")"
+    serial_dev="$(uci -q get mcubridge.general.serial_port || echo "${MCUBRIDGE_DEFAULT_SERIAL_PORT:-/dev/ttyATH0}")"
     local serial_base="$(basename "$serial_dev")"
     if [ -n "$serial_base" ] && [ -f /etc/inittab ]; then
         if grep -q "^${serial_base}:" /etc/inittab 2>/dev/null || grep -q "::askconsole:" /etc/inittab 2>/dev/null; then

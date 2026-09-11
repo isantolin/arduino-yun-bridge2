@@ -32,7 +32,7 @@ import tenacity
 import typer
 import uvloop
 
-from mcubridge.config.const import DEFAULT_SERIAL_SHARED_SECRET
+from mcubridge.protocol.protocol import DEFAULT_SERIAL_SHARED_SECRET
 from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import (
     get_config_source,

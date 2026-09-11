@@ -5,20 +5,20 @@ from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
-from mcubridge.config import common, const
+from mcubridge.config import common
 from mcubridge.protocol import protocol
 
 
 def test_get_default_config_matches_constants():
     config = common.get_default_config()
 
-    assert config["cloud_host"] == const.DEFAULT_CLOUD_HOST
-    assert config["cloud_port"] == const.DEFAULT_CLOUD_PORT
-    assert config["serial_port"] == const.DEFAULT_SERIAL_PORT
+    assert config["cloud_host"] == protocol.DEFAULT_CLOUD_HOST
+    assert config["cloud_port"] == protocol.DEFAULT_CLOUD_PORT
+    assert config["serial_port"] == protocol.DEFAULT_SERIAL_PORT
     assert config["serial_baud"] == protocol.DEFAULT_BAUDRATE
     assert config["serial_retry_attempts"] == protocol.DEFAULT_RETRY_LIMIT
-    assert config["serial_retry_timeout"] == const.DEFAULT_SERIAL_RETRY_TIMEOUT
-    assert config["serial_response_timeout"] == const.DEFAULT_SERIAL_RESPONSE_TIMEOUT
+    assert config["serial_retry_timeout"] == protocol.DEFAULT_SERIAL_RETRY_TIMEOUT
+    assert config["serial_response_timeout"] == protocol.DEFAULT_SERIAL_RESPONSE_TIMEOUT
 
 
 def test_get_uci_config_preserves_types(monkeypatch: pytest.MonkeyPatch):

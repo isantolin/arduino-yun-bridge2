@@ -136,16 +136,14 @@ def validate_config(cfg: pb.RuntimeConfig) -> None:
     if cfg.watchdog_enabled and cfg.watchdog_interval < 0.5:
         raise ValueError("watchdog_interval: watchdog_interval must be >= 0.5s when enabled")
     if not cfg.allow_non_tmp_paths:
-        if not cfg.cloud_spool_dir.startswith(_VOLATILE_STORAGE_PREFIXES):
-            raise ValueError(
-                "cloud_spool_dir: cloud_spool_dir must be in volatile storage "
-                "(/tmp, /var/run, /run, /dev/shm) unless allow_non_tmp_paths is set"
-            )
-        if not cfg.file_system_root.startswith(_VOLATILE_STORAGE_PREFIXES):
-            raise ValueError(
-                "file_system_root: file_system_root must be in volatile storage "
-                "(/tmp, /var/run, /run, /dev/shm) unless allow_non_tmp_paths is set"
-            )
+        for field_name, meta in protocol.RUNTIME_CONFIG_METADATA.items():
+            if meta.get("volatile"):
+                val = getattr(cfg, field_name, "")
+                if val and not str(val).startswith(_VOLATILE_STORAGE_PREFIXES):
+                    raise ValueError(
+                        f"{field_name}: {field_name} must be in volatile storage "
+                        "(/tmp, /var/run, /run, /dev/shm) unless allow_non_tmp_paths is set"
+                    )
     if bool(cfg.cloud_certfile) != bool(cfg.cloud_keyfile):
         raise ValueError("cloud_certfile: cloud_certfile and cloud_keyfile must both be set or both be empty")
     if not cfg.serial_shared_secret:

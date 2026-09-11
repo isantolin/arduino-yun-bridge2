@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Iterator
 import os
 from pathlib import Path
 import ssl
@@ -49,13 +50,21 @@ def _make_config() -> RuntimeConfig:
 
 
 @pytest.fixture
-def test_config() -> RuntimeConfig:
-    return _make_config()
+def test_config(tmp_path: Path) -> RuntimeConfig:
+    cfg = _make_config()
+    cfg.file_system_root = str(tmp_path)
+    return cfg
 
 
 @pytest.fixture
-def mock_state(test_config: RuntimeConfig) -> RuntimeState:
-    return create_runtime_state(test_config)
+def mock_state(test_config: RuntimeConfig) -> Iterator[RuntimeState]:
+    state = create_runtime_state(test_config)
+    yield state
+    for res in (state.datastore_cache, state.mailbox_queue, state.mailbox_incoming_queue, state.tls_session_cache):
+        env = getattr(res, "env", None)
+        if env is not None:
+            env.close()
+            setattr(res, "env", None)
 
 
 # ==========================================

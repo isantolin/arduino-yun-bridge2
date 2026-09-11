@@ -9,7 +9,7 @@ Copyright (C) 2025-2026 Ignacio Santolin and contributors
 """
 
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import hashlib
 import importlib
 import importlib.util
@@ -114,6 +114,19 @@ class StatusDef:
 
 
 @dataclass
+class ConfigFieldDef:
+    name: str
+    field_type: str
+    default_value: Any
+    raw_default: str
+    description: str
+    is_volatile: bool
+    min_val: float | None
+    max_val: float | None
+    uci_option: str | None
+
+
+@dataclass
 class ProtocolSpec:
     constants: dict[str, Any]
     hardware: dict[str, Any]
@@ -136,6 +149,7 @@ class ProtocolSpec:
     handshake_opt: Any = None
     data_formats_opt: Any = None
     pb_module: Any = None
+    runtime_config_fields: list[ConfigFieldDef] = field(default_factory=list)
 
 
 def _proto_to_dict(msg: Any) -> dict[str, Any]:
@@ -237,6 +251,54 @@ def load_spec_from_proto(proto_path: Path) -> ProtocolSpec:
         if val.name != "STATUS_UNSPECIFIED"
     ]
 
+    # Extract RuntimeConfig field definitions and SSOT options
+    runtime_config_desc = file_desc.message_types_by_name.get("RuntimeConfig")
+    runtime_config_fields: list[ConfigFieldDef] = []
+    if runtime_config_desc:
+        for field_desc in runtime_config_desc.fields:
+            opts = field_desc.GetOptions()
+            cfg_default = opts.Extensions[mcubridge_pb2.config_default] if opts.HasExtension(mcubridge_pb2.config_default) else None
+            cfg_desc = opts.Extensions[mcubridge_pb2.config_desc] if opts.HasExtension(mcubridge_pb2.config_desc) else ""
+            cfg_volatile = opts.Extensions[mcubridge_pb2.config_volatile] if opts.HasExtension(mcubridge_pb2.config_volatile) else False
+            cfg_min = opts.Extensions[mcubridge_pb2.config_min] if opts.HasExtension(mcubridge_pb2.config_min) else None
+            cfg_max = opts.Extensions[mcubridge_pb2.config_max] if opts.HasExtension(mcubridge_pb2.config_max) else None
+            uci_opt = opts.Extensions[mcubridge_pb2.uci_option] if opts.HasExtension(mcubridge_pb2.uci_option) else None
+
+            py_type = "str"
+            typed_val: Any = None
+            if field_desc.is_repeated:
+                py_type = "list"
+                typed_val = []
+            elif field_desc.type == field_desc.TYPE_STRING:
+                py_type = "str"
+                typed_val = str(cfg_default) if cfg_default is not None else ""
+            elif field_desc.type == field_desc.TYPE_BYTES:
+                py_type = "bytes"
+                typed_val = cfg_default.encode("utf-8") if cfg_default is not None else b""
+            elif field_desc.type == field_desc.TYPE_BOOL:
+                py_type = "bool"
+                typed_val = cfg_default.lower() in ("true", "1", "yes") if cfg_default is not None else False
+            elif field_desc.type in (field_desc.TYPE_FLOAT, field_desc.TYPE_DOUBLE):
+                py_type = "float"
+                typed_val = float(cfg_default) if cfg_default is not None else 0.0
+            elif field_desc.type in (field_desc.TYPE_INT32, field_desc.TYPE_INT64, field_desc.TYPE_UINT32, field_desc.TYPE_UINT64):
+                py_type = "int"
+                typed_val = int(cfg_default) if cfg_default is not None else 0
+
+            runtime_config_fields.append(
+                ConfigFieldDef(
+                    name=field_desc.name,
+                    field_type=py_type,
+                    default_value=typed_val,
+                    raw_default=cfg_default or "",
+                    description=cfg_desc,
+                    is_volatile=cfg_volatile,
+                    min_val=cfg_min,
+                    max_val=cfg_max,
+                    uci_option=uci_opt,
+                )
+            )
+
     spec = ProtocolSpec(
         constants=constants,
         hardware=hardware,
@@ -254,6 +316,7 @@ def load_spec_from_proto(proto_path: Path) -> ProtocolSpec:
         status_reasons=status_reasons,
         architecture_display_names=architecture_display_names,
         message_topics=message_topics,
+        runtime_config_fields=runtime_config_fields,
     )
     spec.constants_opt = constants_opt
     spec.hardware_opt = hardware_opt
@@ -468,11 +531,35 @@ class JinjaGenerator:
             )
         return subscriptions
 
+    @staticmethod
+    def _extract_runtime_config_constants(spec: ProtocolSpec, existing_constants: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        existing_names = {c["name"] for c in existing_constants}
+        result: list[dict[str, Any]] = []
+        for f in spec.runtime_config_fields:
+            if f.default_value is None or f.field_type == "list":
+                continue
+            const_name = f"DEFAULT_{f.name.upper()}"
+            if const_name in existing_names:
+                continue
+            if f.field_type == "bytes":
+                val_repr = f'b"{f.raw_default}"'
+            elif f.field_type == "str":
+                val_repr = f'"{f.default_value}"'
+            elif f.field_type == "bool":
+                val_repr = str(f.default_value)
+            elif f.field_type == "float":
+                val_repr = str(f.default_value)
+            else:
+                val_repr = str(f.default_value)
+            result.append({"name": const_name, "type": f.field_type, "value": val_repr})
+        return result
+
     def generate_python(self, spec: ProtocolSpec, out_path: Path) -> None:
         template = self.env.get_template("protocol.py.j2")
 
         constants = self._extract_python_constants(spec)
         handshake_constants = self._extract_python_handshake_constants(spec)
+        runtime_config_constants = self._extract_runtime_config_constants(spec, constants)
         grouped_actions = self._group_actions(spec)
         subscriptions = self._process_python_subscriptions(spec)
 
@@ -486,6 +573,8 @@ class JinjaGenerator:
         render = template.render(
             constants=constants,
             handshake_constants=handshake_constants,
+            runtime_config_constants=runtime_config_constants,
+            runtime_config_fields=spec.runtime_config_fields,
             capabilities=spec.capabilities,
             architectures=spec.architectures,
             architecture_display_names=spec.architecture_display_names,
@@ -508,6 +597,25 @@ class JinjaGenerator:
             topic_auth_map=self._extract_topic_auth_map(spec),
         )
         out_path.write_text(render, encoding="utf-8")
+
+    def generate_uci_config(self, spec: ProtocolSpec, out_path: Path) -> None:
+        template = self.env.get_template("mcubridge_uci.j2")
+        rendered = template.render(runtime_config_fields=spec.runtime_config_fields)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(rendered, encoding="utf-8")
+
+    def generate_defaults_sh(self, spec: ProtocolSpec, out_path: Path) -> None:
+        template = self.env.get_template("defaults_sh.j2")
+        rendered = template.render(runtime_config_fields=spec.runtime_config_fields)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(rendered, encoding="utf-8")
+        out_path.chmod(0o755)
+
+    def generate_config_schema_json(self, spec: ProtocolSpec, out_path: Path) -> None:
+        template = self.env.get_template("config_schema_json.j2")
+        rendered = template.render(runtime_config_fields=spec.runtime_config_fields)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(rendered, encoding="utf-8")
 
     @staticmethod
     def _extract_payload_fields(spec: ProtocolSpec) -> list[dict[str, str]]:
@@ -891,6 +999,22 @@ def main(
         gen.generate_python_client(proto_spec, args.py_client)
         _format_python_file(args.py_client)
         sys.stderr.write(f"Generated {args.py_client}\n")
+
+    # Generate unified system configuration artifacts from SSOT
+    uci_target = REPO_ROOT / "luci-app-mcubridge" / "root" / "etc" / "config" / "mcubridge"
+    if uci_target.parent.exists():
+        gen.generate_uci_config(proto_spec, uci_target)
+        sys.stderr.write(f"Generated {uci_target}\n")
+
+    defaults_sh_target = REPO_ROOT / "mcubridge" / "scripts" / "defaults.sh"
+    if defaults_sh_target.parent.exists():
+        gen.generate_defaults_sh(proto_spec, defaults_sh_target)
+        sys.stderr.write(f"Generated {defaults_sh_target}\n")
+
+    schema_json_target = REPO_ROOT / "luci-app-mcubridge" / "htdocs" / "luci-static" / "resources" / "view" / "mcubridge" / "config_schema.json"
+    if schema_json_target.parent.exists():
+        gen.generate_config_schema_json(proto_spec, schema_json_target)
+        sys.stderr.write(f"Generated {schema_json_target}\n")
 
     # Save hash for incremental compilation
     hash_file.write_text(current_hash, encoding="utf-8")

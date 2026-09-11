@@ -112,6 +112,8 @@ define Package/$(PKG_NAME)/install
 	
 	# Core config files
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/mcubridge.files $(1)/etc/mcubridge/
+	$(INSTALL_DIR) $(1)/usr/share/mcubridge
+	[ -f $(PKG_BUILD_DIR)/scripts/defaults.sh ] && $(INSTALL_DATA) $(PKG_BUILD_DIR)/scripts/defaults.sh $(1)/usr/share/mcubridge/defaults.sh || true
 	
 	# UCI defaults
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/95-mcubridge-silence-kernel-console $(1)/etc/uci-defaults/

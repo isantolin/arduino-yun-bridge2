@@ -10,10 +10,10 @@ from collections.abc import Callable
 import structlog
 
 from .config.const import (
-    DEFAULT_WATCHDOG_INTERVAL,
     WATCHDOG_MIN_INTERVAL,
     WATCHDOG_TRIGGER_TOKEN,
 )
+from .protocol import protocol
 from .state.context import RuntimeState
 
 WatchdogWrite = Callable[[bytes], None]
@@ -27,7 +27,7 @@ class WatchdogKeepalive:
     def __init__(
         self,
         *,
-        interval: float = DEFAULT_WATCHDOG_INTERVAL,
+        interval: float = protocol.DEFAULT_WATCHDOG_INTERVAL,
         state: RuntimeState | None = None,
         token: bytes = WATCHDOG_TRIGGER_TOKEN,
         write: WatchdogWrite | None = None,

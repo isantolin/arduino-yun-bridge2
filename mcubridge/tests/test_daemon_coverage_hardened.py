@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 import mcubridge.daemon as daemon
-from mcubridge.config.const import DEFAULT_SERIAL_SHARED_SECRET
+from mcubridge.protocol.protocol import DEFAULT_SERIAL_SHARED_SECRET
 from mcubridge.config.settings import RuntimeConfig
 
 

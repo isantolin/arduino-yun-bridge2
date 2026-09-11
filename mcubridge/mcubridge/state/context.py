@@ -16,24 +16,22 @@ from google.protobuf.json_format import ParseDict
 from .storage import LmdbDeque, LmdbCache
 import structlog
 
-from ..config.const import (
+from ..config.settings import RuntimeConfig
+from ..protocol import protocol
+from ..protocol.protocol import (
+    DEFAULT_CLOUD_QUEUE_LIMIT,
     DEFAULT_FILE_STORAGE_QUOTA_BYTES,
     DEFAULT_FILE_SYSTEM_ROOT,
     DEFAULT_FILE_WRITE_MAX_BYTES,
     DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT,
     DEFAULT_MAILBOX_QUEUE_LIMIT,
-    DEFAULT_CLOUD_QUEUE_LIMIT,
-    DEFAULT_PENDING_PIN_REQUESTS,
+    DEFAULT_PENDING_PIN_REQUEST_LIMIT,
     DEFAULT_PROCESS_MAX_CONCURRENT,
     DEFAULT_PROCESS_TIMEOUT,
+    DEFAULT_RETRY_LIMIT,
     DEFAULT_SERIAL_RESPONSE_TIMEOUT,
     DEFAULT_SERIAL_RETRY_TIMEOUT,
     DEFAULT_WATCHDOG_INTERVAL,
-)
-from ..config.settings import RuntimeConfig
-from ..protocol import protocol
-from ..protocol.protocol import (
-    DEFAULT_RETRY_LIMIT,
 )
 from ..protocol.structures import (
     PendingPinRequest,
@@ -291,7 +289,7 @@ class RuntimeState:
 
         self.mailbox_queue_limit: int = kwargs.get("mailbox_queue_limit", DEFAULT_MAILBOX_QUEUE_LIMIT)
         self.mailbox_queue_bytes_limit: int = kwargs.get("mailbox_queue_bytes_limit", DEFAULT_MAILBOX_QUEUE_BYTES_LIMIT)
-        self.pending_pin_request_limit: int = kwargs.get("pending_pin_request_limit", DEFAULT_PENDING_PIN_REQUESTS)
+        self.pending_pin_request_limit: int = kwargs.get("pending_pin_request_limit", DEFAULT_PENDING_PIN_REQUEST_LIMIT)
         self.mailbox_queue_bytes: int = kwargs.get("mailbox_queue_bytes", 0)
         self.mailbox_dropped_messages: int = kwargs.get("mailbox_dropped_messages", 0)
         self.mailbox_truncated_messages: int = kwargs.get("mailbox_truncated_messages", 0)

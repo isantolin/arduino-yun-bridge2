@@ -1,0 +1,11 @@
+# OpenWrt UCI Configuration for McuBridge (Auto-generated from mcubridge.proto)
+# Do not edit manually. Changes must be made in mcubridge.proto.
+
+config general 'general'
+	option enabled '1'
+{% for f in runtime_config_fields -%}
+{% if f.uci_option and f.raw_default != "" %}
+	# {{ f.description }}
+	option {{ f.uci_option }} '{% if f.field_type == "bool" %}{{ "1" if f.default_value else "0" }}{% else %}{{ f.raw_default }}{% endif %}'
+{% endif -%}
+{% endfor %}

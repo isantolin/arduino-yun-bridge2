@@ -7,11 +7,9 @@ from typing import Any
 
 import pytest
 from mcubridge.config import settings
-from mcubridge.config.const import (
-    DEFAULT_PROCESS_TIMEOUT,
-)
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
+from mcubridge.protocol.protocol import DEFAULT_PROCESS_TIMEOUT
 
 
 def _config_kwargs(**overrides: Any) -> dict[str, Any]:

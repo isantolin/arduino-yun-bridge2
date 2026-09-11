@@ -180,3 +180,30 @@ CLOUD_COMMAND_SUBSCRIPTIONS: Final[tuple[tuple[Topic, tuple[str, ...], int], ...
 
 
 CLOUD_DEFAULT_TOPIC_PREFIX: Final[str] = {{ cloud_defaults.default_topic_prefix|tojson }}
+
+# Runtime Configuration Defaults & Metadata (SSOT from mcubridge.proto)
+RUNTIME_CONFIG_DEFAULTS: Final[dict[str, Any]] = {
+{%- for f in runtime_config_fields %}
+{%- if f.default_value is not none %}
+    {{ f.name|tojson }}: {% if f.field_type == 'bytes' %}b{{ f.raw_default|tojson }}{% elif f.field_type == 'str' %}{{ f.default_value|tojson }}{% elif f.field_type == 'bool' %}{{ f.default_value }}{% elif f.field_type == 'float' %}{{ f.default_value }}{% elif f.field_type == 'int' %}{{ f.default_value }}{% elif f.field_type == 'list' %}[]{% endif %},
+{%- endif %}
+{%- endfor %}
+}
+
+RUNTIME_CONFIG_METADATA: Final[dict[str, dict[str, Any]]] = {
+{%- for f in runtime_config_fields %}
+    {{ f.name|tojson }}: {
+        "type": {{ f.field_type|tojson }},
+        "description": {{ f.description|tojson }},
+        "volatile": {{ f.is_volatile }},
+        "min": {{ f.min_val if f.min_val is not none else 'None' }},
+        "max": {{ f.max_val if f.max_val is not none else 'None' }},
+        "uci_option": {{ f.uci_option|tojson if f.uci_option else 'None' }},
+    },
+{%- endfor %}
+}
+
+# Canonical Configuration Defaults Constants [Rule 15]
+{%- for const in runtime_config_constants %}
+{{ const.name }}: Final[{{ const.type }}] = {{ const.value }}
+{%- endfor %}

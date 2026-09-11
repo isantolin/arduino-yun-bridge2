@@ -142,9 +142,8 @@ def test_load_runtime_config_falls_back_to_defaults(
     # We must ensure get_default_config returns a valid config or convert will fail
     # Default is valid by definition.
     config = settings.load_runtime_config()
-    from mcubridge.config import const
-
-    assert config.serial_port == const.DEFAULT_SERIAL_PORT
+    from mcubridge.protocol import protocol
+    assert config.serial_port == protocol.DEFAULT_SERIAL_PORT
 
 
 def test_get_uci_config_flattens_nested_structures(monkeypatch: pytest.MonkeyPatch):

@@ -260,6 +260,12 @@ extend google.protobuf.FieldOptions {
     string py_name = 1017;
     string py_type = 1018;
     bool client_constant = 1019;
+    string config_default = 1022;
+    string config_desc = 1023;
+    bool config_volatile = 1024;
+    double config_min = 1025;
+    double config_max = 1026;
+    string uci_option = 1027;
 }
 
 enum Status {
@@ -333,7 +339,7 @@ option (rpc.pb.constants) = {
     protocol_version: 2
     default_baudrate: 115200
     default_safe_baudrate: 115200
-    default_cloud_port: 8883
+    default_cloud_port: 8443
     max_payload_size: 64
     max_filepath_length: 64
     max_datastore_key_length: 32
@@ -929,56 +935,56 @@ message PinRead {
 }
 
 message RuntimeConfig {
-    string serial_port = 1;
-    uint32 serial_baud = 2;
-    uint32 serial_safe_baud = 3;
-    string cloud_host = 4;
-    uint32 cloud_port = 5;
-    optional string cloud_user = 6;
-    optional string cloud_pass = 7;
-    bool cloud_tls = 8;
-    optional string cloud_cafile = 9;
-    optional string cloud_certfile = 10;
-    optional string cloud_keyfile = 11;
-    string topic_prefix = 12;
-    repeated string allowed_commands = 13;
-    string file_system_root = 14;
-    uint32 process_timeout = 15;
-    bool cloud_tls_insecure = 16;
-    uint32 file_write_max_bytes = 17;
-    uint32 file_storage_quota_bytes = 18;
-    uint32 cloud_queue_limit = 19;
-    uint32 reconnect_delay = 20;
-    uint32 status_interval = 21;
-    bool debug = 22;
-    uint32 console_queue_limit_bytes = 23;
-    uint32 mailbox_queue_limit = 24;
-    uint32 mailbox_queue_bytes_limit = 25;
-    uint32 pending_pin_request_limit = 26;
-    float serial_retry_timeout = 27;
-    float serial_response_timeout = 28;
-    uint32 serial_retry_attempts = 29;
-    uint32 serial_fallback_threshold = 30;
-    float serial_handshake_min_interval = 31;
-    uint32 serial_handshake_fatal_failures = 32;
-    bool cloud_enabled = 33;
-    bool watchdog_enabled = 34;
-    float watchdog_interval = 35;
-    bytes serial_shared_secret = 36;
-    string cloud_spool_dir = 37;
-    uint32 process_max_output_bytes = 38;
-    uint32 process_max_concurrent = 39;
-    bool metrics_enabled = 40;
-    string metrics_host = 41;
-    uint32 metrics_port = 42;
-    float bridge_summary_interval = 43;
-    float bridge_handshake_interval = 44;
-    bool allow_non_tmp_paths = 45;
+    string serial_port = 1 [(config_default) = "/dev/ttyATH0", (config_desc) = "MCU physical serial device", (uci_option) = "serial_port"];
+    uint32 serial_baud = 2 [(config_default) = "115200", (config_desc) = "Operating serial baud rate", (uci_option) = "serial_baud"];
+    uint32 serial_safe_baud = 3 [(config_default) = "115200", (config_desc) = "Safe fallback serial baud rate", (uci_option) = "serial_safe_baud"];
+    string cloud_host = 4 [(config_default) = "127.0.0.1", (config_desc) = "Cloud Gateway host IP or domain", (uci_option) = "cloud_host"];
+    uint32 cloud_port = 5 [(config_default) = "8443", (config_min) = 1, (config_max) = 65535, (config_desc) = "Cloud Gateway port", (uci_option) = "cloud_port"];
+    optional string cloud_user = 6 [(config_desc) = "Cloud authentication username", (uci_option) = "cloud_user"];
+    optional string cloud_pass = 7 [(config_desc) = "Cloud authentication password", (uci_option) = "cloud_pass"];
+    bool cloud_tls = 8 [(config_default) = "true", (config_desc) = "Enable TLS encryption for Cloud connection", (uci_option) = "cloud_tls"];
+    optional string cloud_cafile = 9 [(config_default) = "/etc/ssl/certs/ca-certificates.crt", (config_desc) = "Path to CA certificates bundle", (uci_option) = "cloud_cafile"];
+    optional string cloud_certfile = 10 [(config_desc) = "Path to client certificate for mTLS", (uci_option) = "cloud_certfile"];
+    optional string cloud_keyfile = 11 [(config_desc) = "Path to client private key for mTLS", (uci_option) = "cloud_keyfile"];
+    string topic_prefix = 12 [(config_default) = "br", (config_desc) = "Topic prefix for cloud messages", (uci_option) = "topic_prefix"];
+    repeated string allowed_commands = 13 [(config_desc) = "List of permitted shell commands", (uci_option) = "allowed_commands"];
+    string file_system_root = 14 [(config_default) = "/tmp/yun_files", (config_volatile) = true, (config_desc) = "Base directory for MCU file operations (RAM)", (uci_option) = "file_system_root"];
+    uint32 process_timeout = 15 [(config_default) = "10", (config_min) = 1, (config_max) = 3600, (config_desc) = "Subprocess execution timeout in seconds", (uci_option) = "process_timeout"];
+    bool cloud_tls_insecure = 16 [(config_default) = "false", (config_desc) = "Disable TLS hostname verification", (uci_option) = "cloud_tls_insecure"];
+    uint32 file_write_max_bytes = 17 [(config_default) = "262144", (config_desc) = "Maximum bytes per file write transaction"];
+    uint32 file_storage_quota_bytes = 18 [(config_default) = "8388608", (config_desc) = "Maximum total file storage quota in bytes"];
+    uint32 cloud_queue_limit = 19 [(config_default) = "256", (config_desc) = "Maximum outbound cloud messages in queue"];
+    uint32 reconnect_delay = 20 [(config_default) = "5", (config_desc) = "Delay between cloud reconnect attempts in seconds"];
+    uint32 status_interval = 21 [(config_default) = "5", (config_min) = 1, (config_desc) = "Status snapshot update interval in seconds", (uci_option) = "status_interval"];
+    bool debug = 22 [(config_default) = "false", (config_desc) = "Enable verbose debug logging", (uci_option) = "debug"];
+    uint32 console_queue_limit_bytes = 23 [(config_default) = "16384", (config_desc) = "Maximum buffered console output bytes"];
+    uint32 mailbox_queue_limit = 24 [(config_default) = "64", (config_desc) = "Maximum messages in mailbox queue"];
+    uint32 mailbox_queue_bytes_limit = 25 [(config_default) = "65536", (config_desc) = "Maximum total bytes in mailbox queue"];
+    uint32 pending_pin_request_limit = 26 [(config_default) = "32", (config_desc) = "Maximum pending GPIO pin requests"];
+    float serial_retry_timeout = 27 [(config_default) = "10.0", (config_desc) = "General serial retry timeout in seconds"];
+    float serial_response_timeout = 28 [(config_default) = "20.0", (config_desc) = "General serial response timeout in seconds"];
+    uint32 serial_retry_attempts = 29 [(config_default) = "5", (config_desc) = "Maximum frame retry attempts"];
+    uint32 serial_fallback_threshold = 30 [(config_default) = "5", (config_desc) = "Failures before fallback to safe baudrate"];
+    float serial_handshake_min_interval = 31 [(config_default) = "0.0", (config_desc) = "Minimum interval between handshakes in seconds"];
+    uint32 serial_handshake_fatal_failures = 32 [(config_default) = "15", (config_desc) = "Handshake failures triggering daemon restart"];
+    bool cloud_enabled = 33 [(config_default) = "true", (config_desc) = "Enable Cloud Gateway connectivity", (uci_option) = "cloud_enabled"];
+    bool watchdog_enabled = 34 [(config_default) = "false", (config_desc) = "Enable hardware watchdog monitoring", (uci_option) = "watchdog_enabled"];
+    float watchdog_interval = 35 [(config_default) = "5.0", (config_min) = 0.5, (config_max) = 300.0, (config_desc) = "Watchdog strobe interval in seconds", (uci_option) = "watchdog_interval"];
+    bytes serial_shared_secret = 36 [(config_default) = "failsafe_secret_mode", (config_desc) = "ChaCha20-Poly1305 AEAD shared secret", (uci_option) = "serial_shared_secret"];
+    string cloud_spool_dir = 37 [(config_default) = "/tmp/mcubridge/spool", (config_volatile) = true, (config_desc) = "Volatile spool directory (RAM)", (uci_option) = "cloud_spool_dir"];
+    uint32 process_max_output_bytes = 38 [(config_default) = "65536", (config_desc) = "Maximum process output bytes", (uci_option) = "process_max_output_bytes"];
+    uint32 process_max_concurrent = 39 [(config_default) = "4", (config_desc) = "Maximum concurrent processes", (uci_option) = "process_max_concurrent"];
+    bool metrics_enabled = 40 [(config_default) = "false", (config_desc) = "Enable Prometheus metrics exporter", (uci_option) = "metrics_enabled"];
+    string metrics_host = 41 [(config_default) = "127.0.0.1", (config_desc) = "Prometheus metrics listen host", (uci_option) = "metrics_host"];
+    uint32 metrics_port = 42 [(config_default) = "9130", (config_min) = 1, (config_max) = 65535, (config_desc) = "Prometheus metrics port", (uci_option) = "metrics_port"];
+    float bridge_summary_interval = 43 [(config_default) = "60.0", (config_desc) = "Summary log interval in seconds"];
+    float bridge_handshake_interval = 44 [(config_default) = "300.0", (config_desc) = "Handshake refresh interval in seconds"];
+    bool allow_non_tmp_paths = 45 [(config_default) = "false", (config_desc) = "Allow paths outside /tmp (flash wear risk)", (uci_option) = "allow_non_tmp_paths"];
     AllowedCommandPolicy allowed_policy = 46;
     TopicAuthorization topic_authorization = 47;
-    bool cloud_http3_enabled = 48;
-    uint32 cloud_http3_port = 49;
-    string cloud_http3_congestion_control = 50;
+    bool cloud_http3_enabled = 48 [(config_default) = "false", (config_desc) = "Enable HTTP/3 QUIC cloud transport", (uci_option) = "cloud_http3_enabled"];
+    uint32 cloud_http3_port = 49 [(config_default) = "8443", (config_min) = 1, (config_max) = 65535, (config_desc) = "HTTP/3 UDP port", (uci_option) = "cloud_http3_port"];
+    string cloud_http3_congestion_control = 50 [(config_default) = "bbr", (config_desc) = "QUIC congestion control algorithm", (uci_option) = "cloud_http3_congestion_control"];
 }
 
 message DigitalReadResponse {

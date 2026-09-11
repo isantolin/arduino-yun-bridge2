@@ -1,0 +1,18 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "McuBridgeConfig",
+  "type": "object",
+  "properties": {
+{% for f in runtime_config_fields %}
+    "{{ f.name }}": {
+      "type": "{{ "boolean" if f.field_type == "bool" else ("number" if f.field_type in ("int", "float") else "string") }}",
+      "description": {{ f.description|tojson }},
+      "default": {% if f.field_type == 'bytes' %}{{ f.raw_default|tojson }}{% elif f.field_type == 'str' %}{{ f.default_value|tojson }}{% elif f.field_type == 'bool' %}{{ "true" if f.default_value else "false" }}{% elif f.field_type in ('int', 'float') %}{{ f.default_value }}{% elif f.field_type == 'list' %}[]{% else %}null{% endif %},
+      "volatile": {{ "true" if f.is_volatile else "false" }},
+      "uci_option": {{ f.uci_option|tojson if f.uci_option else "null" }}
+      {%- if f.min_val is not none %}, "minimum": {{ f.min_val }}{% endif %}
+      {%- if f.max_val is not none %}, "maximum": {{ f.max_val }}{% endif %}
+    }{% if not loop.last %},{% endif %}
+{% endfor %}
+  }
+}

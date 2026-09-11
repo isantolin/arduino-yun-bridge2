@@ -1,0 +1,7 @@
+#!/bin/sh
+# Auto-generated defaults from mcubridge.proto (SSOT). Do not edit manually.
+{% for f in runtime_config_fields -%}
+{% if f.default_value is not none and f.field_type != 'list' and f.raw_default != "" -%}
+MCUBRIDGE_DEFAULT_{{ f.name|upper }}="{% if f.field_type == 'bool' %}{{ '1' if f.default_value else '0' }}{% elif f.field_type == 'bytes' %}{{ f.raw_default }}{% else %}{{ f.default_value }}{% endif %}"
+{% endif -%}
+{% endfor %}

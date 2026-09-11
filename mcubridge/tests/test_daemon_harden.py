@@ -87,7 +87,7 @@ def test_main_crypto_post_failure() -> None:
 
 def test_main_insecure_secret_warning() -> None:
     """Verify CLOUD is disabled if default secret is used."""
-    from mcubridge.config.const import DEFAULT_SERIAL_SHARED_SECRET
+    from mcubridge.protocol.protocol import DEFAULT_SERIAL_SHARED_SECRET
 
     insecure_config = RuntimeConfig(serial_shared_secret=DEFAULT_SERIAL_SHARED_SECRET)
     with patch("mcubridge.daemon.verify_crypto_integrity", return_value=True):

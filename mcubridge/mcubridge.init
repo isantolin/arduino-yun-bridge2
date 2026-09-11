@@ -65,7 +65,7 @@ start_service() {
     if [ -n "$serial_base" ] && [ -f /etc/inittab ]; then
         if grep -q "^${serial_base}:" /etc/inittab 2>/dev/null || grep -q "::askconsole:" /etc/inittab 2>/dev/null; then
             sed -i -e "/^${serial_base}:/d" -e "/::askconsole:/d" /etc/inittab
-            for pid in $(grep -l "${serial_base}" /proc/[0-9]*/fd/* 2>/dev/null | cut -d/ -f3 | sort -u); do
+            for pid in $(ls -l /proc/[0-9]*/fd/* 2>/dev/null | grep "${serial_base}" | awk -F'/' '{print $3}' | sort -u); do
                 case "$(cat "/proc/$pid/cmdline" 2>/dev/null | tr '\0' ' ')" in
                     *askfirst*|*login*|*getty*)
                         kill -9 "$pid" 2>/dev/null || true

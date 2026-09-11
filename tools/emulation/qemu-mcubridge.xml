@@ -13,7 +13,7 @@
   <os>
     <type arch="mips" machine="malta">hvm</type>
     <kernel>/home/ignaciosantolin/arduino-yun-bridge2/bin/targets/malta/be/openwrt-malta-be-vmlinux.elf</kernel>
-    <cmdline>root=/dev/sda console=ttyS0</cmdline>
+    <cmdline>root=/dev/sda rw console=ttyS0</cmdline>
   </os>
   <clock offset="utc"/>
   <on_poweroff>destroy</on_poweroff>

@@ -764,6 +764,7 @@ void BridgeClass::_handleSetPinMode(const rpc_pb_PinMode& m) {
 }
 
 void BridgeClass::_handleDigitalWrite(const rpc_pb_DigitalWrite& m) {
+  pinMode(m.pin, OUTPUT);
   digitalWrite(m.pin, (m.value == 0) ? LOW : HIGH);
 }
 void BridgeClass::_handleAnalogWrite(const rpc_pb_AnalogWrite& m) {

@@ -7,7 +7,8 @@ var callDigitalWrite = rpc.declare({
 	object: 'mcubridge',
 	method: 'digital_write',
 	params: [ 'pin', 'value' ],
-	expect: { status: 'ok' }
+	expect: { '': {} },
+	reject: true
 });
 
 return view.extend({
@@ -23,9 +24,13 @@ return view.extend({
 			statusBox.className = 'alert-message notice';
 			statusBox.textContent = _('Sending command: ') + state + '...';
 
-			callDigitalWrite(13, val).then(function() {
-				statusBox.className = 'alert-message success';
-				statusBox.textContent = 'LED 13 State: ' + state + ' (Success via UBUS)';
+			callDigitalWrite(13, val).then(function(res) {
+				if (res && res.status === 'ok') {
+					statusBox.className = 'alert-message success';
+					statusBox.textContent = 'LED 13 State: ' + state + ' (Success via UBUS)';
+				} else {
+					throw new Error((res && res.error) ? res.error : 'UBUS non-ok status');
+				}
 			}).catch(function(err) {
 				fetch('/cgi-bin/mcubridge-pin/pin/13', {
 					method: 'POST',

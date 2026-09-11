@@ -34,13 +34,13 @@ def set_pin_digital_sync(pin: int, value: int) -> None:
     """Synchronous digital write via native OpenWrt UBUS (with local gRPC IPC fallback)."""
     if ubus is not None:
         try:
-            conn: Any = ubus.connect()
-            conn.call("mcubridge", "digital_write", {"pin": pin, "value": value})
+            ubus.connect()
+            ubus.call("mcubridge", "digital_write", {"pin": pin, "value": value})
             return
-        except (OSError, RuntimeError) as exc:
+        except (OSError, RuntimeError, AttributeError) as exc:
             logger.debug("UBUS call failed; falling back to local gRPC socket", error=str(exc))
 
-    async def _run():
+    async def _run() -> None:
         async with Channel(path="/var/run/mcubridge.sock") as channel:
             stub = LocalBridgeStub(channel)
             msg = pb.DigitalWrite(pin=pin, value=value)
@@ -59,6 +59,9 @@ def json_res(start_response: Any, status: str, response: pb.PinControlResponse) 
     headers = [
         ("Content-Type", "application/json"),
         ("Content-Length", str(len(body))),
+        ("Access-Control-Allow-Origin", "*"),
+        ("Access-Control-Allow-Methods", "GET, POST, OPTIONS"),
+        ("Access-Control-Allow-Headers", "Content-Type"),
     ]
     start_response(status, headers)
     return [body]
@@ -67,6 +70,17 @@ def json_res(start_response: Any, status: str, response: pb.PinControlResponse) 
 def application(environ: dict[str, Any], start_response: Any) -> list[bytes]:
     """WSGI application for pin control."""
     try:
+        if environ.get("REQUEST_METHOD") == "OPTIONS":
+            start_response(
+                "204 No Content",
+                [
+                    ("Access-Control-Allow-Origin", "*"),
+                    ("Access-Control-Allow-Methods", "GET, POST, OPTIONS"),
+                    ("Access-Control-Allow-Headers", "Content-Type"),
+                ],
+            )
+            return [b""]
+
         config = load_runtime_config()
         configure_logging(config)
 
@@ -124,7 +138,7 @@ def application(environ: dict[str, Any], start_response: Any) -> list[bytes]:
             ),
         )
 
-    except (ValueError, KeyError, TypeError, OSError, json_format.ParseError) as e:
+    except (ValueError, KeyError, TypeError, OSError, json_format.ParseError, AttributeError) as e:
         logger.exception("CGI Error")
         return json_res(
             start_response,

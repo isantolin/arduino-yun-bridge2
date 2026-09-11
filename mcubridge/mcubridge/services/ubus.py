@@ -54,6 +54,8 @@ class BridgeRuntimeFacade(Protocol):
     async def kill_process(self, pid: int) -> tuple[bool, str | None]: ...
     async def poll_process(self, pid: int) -> pb.ProcessPollResponse: ...
     async def reset_link(self) -> bool: ...
+    async def write_digital_pin(self, pin: int, value: int) -> bool: ...
+    async def write_analog_pin(self, pin: int, value: int) -> bool: ...
 
 
 _UBUS_METHOD_SIGS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
@@ -220,6 +222,7 @@ class UbusService:
         """UBUS RPC handler for 'mcubridge.digital_write'."""
         pin = int(msg.get("pin", 0))
         val = int(msg.get("value", 0))
+        self.schedule_async(self.runtime.write_digital_pin(pin, val))
         self._publish_to_cloud(f"digital/{pin}/set", str(val).encode())
         return {"status": "ok", "pin": pin, "value": val}
 
@@ -227,6 +230,7 @@ class UbusService:
         """UBUS RPC handler for 'mcubridge.analog_write'."""
         pin = int(msg.get("pin", 0))
         val = int(msg.get("value", 0))
+        self.schedule_async(self.runtime.write_analog_pin(pin, val))
         self._publish_to_cloud(f"analog/{pin}/set", str(val).encode())
         return {"status": "ok", "pin": pin, "value": val}
 

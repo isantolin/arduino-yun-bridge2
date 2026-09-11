@@ -530,6 +530,24 @@ class BridgeService:
             return True
         return False
 
+    async def write_digital_pin(self, pin: int, value: int) -> bool:
+        """Send CMD_DIGITAL_WRITE to MCU over serial transport. [SIL-2]"""
+        if not self.serial or not self.state.is_synchronized:
+            return False
+        res = await cast("SerialTransport", self.serial).send(
+            Command.CMD_DIGITAL_WRITE.value, pb.DigitalWrite(pin=pin, value=value)
+        )
+        return bool(res)
+
+    async def write_analog_pin(self, pin: int, value: int) -> bool:
+        """Send CMD_ANALOG_WRITE to MCU over serial transport. [SIL-2]"""
+        if not self.serial or not self.state.is_synchronized:
+            return False
+        res = await cast("SerialTransport", self.serial).send(
+            Command.CMD_ANALOG_WRITE.value, pb.AnalogWrite(pin=pin, value=value)
+        )
+        return bool(res)
+
     # --- Dispatchers ---
 
     async def handle_mcu_frame(self, command_id: int, sequence_id: int, payload: bytes | ProtobufMessage) -> None:

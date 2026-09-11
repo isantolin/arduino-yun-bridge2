@@ -1,6 +1,6 @@
-#include "SPI.h"
 #include "Arduino.h"
 #include "BridgeFaultInjection.h"  // IWYU pragma: keep
+#include "SPI.h"
 
 SPIClass SPI;
 HardwareSerial Serial __attribute__((weak));
@@ -10,24 +10,18 @@ Stream* g_arduino_stream_delegate __attribute__((weak)) = nullptr;
 
 #ifdef ARDUINO_STUB_CUSTOM_MILLIS
 unsigned long millis() __attribute__((weak));
-unsigned long millis() {
-    return bridge::test::fault::clock_ms();
-}
+unsigned long millis() { return bridge::test::fault::clock_ms(); }
 
 unsigned long micros() __attribute__((weak));
-unsigned long micros() {
-    return bridge::test::fault::clock_ms() * 1000UL;
-}
+unsigned long micros() { return bridge::test::fault::clock_ms() * 1000UL; }
 
 void delay(unsigned long ms) __attribute__((weak));
 void delay(unsigned long ms) {
-    bridge::test::fault::advance_clock_ms(static_cast<uint32_t>(ms));
+  bridge::test::fault::advance_clock_ms(static_cast<uint32_t>(ms));
 }
 #endif
 
 #include <etl/exception.h>
 namespace etl {
-void __attribute__((weak)) handle_error(const etl::exception& e) {
-  (void)e;
-}
-}
+void __attribute__((weak)) handle_error(const etl::exception& e) { (void)e; }
+}  // namespace etl

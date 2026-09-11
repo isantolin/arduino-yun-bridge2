@@ -28,6 +28,9 @@
 #endif
 
 void setup() {
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, LOW);
+
   // [SIL-2] PROHIBIDO usar Serial.print() si comparte puerto con el Bridge.
   // En emulación, Serial (UART0) es el canal del protocolo. Cualquier texto
   // enviado aquí corromperá el stream COBS y bloqueará la sincronización.

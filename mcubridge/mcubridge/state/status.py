@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import anyio.to_thread
 import structlog
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -22,17 +21,17 @@ STATUS_FILE = Path(STATUS_FILE_PATH)
 async def status_writer(state: RuntimeState, interval: int) -> None:
     """Persist lightweight status information periodically."""
 
-    async def _write_tick() -> None:
+    def _write_tick() -> None:
         try:
             # [SIL-2] Use BridgeStatus Protobuf for holistic snapshot
             status = state.build_status_snapshot()
-            await anyio.to_thread.run_sync(_write_status_file, status)
+            _write_status_file(status)
         except (OSError, RuntimeError, ValueError) as e:
             logger.error("Periodic status write failed", error=str(e))
 
     try:
         while True:
-            await _write_tick()
+            _write_tick()
             await asyncio.sleep(interval)
     except asyncio.CancelledError:
         logger.info("Status writer task cancelled.")

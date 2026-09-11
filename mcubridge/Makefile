@@ -133,7 +133,7 @@ define Package/$(PKG_NAME)/install
 			cmd=$$(basename $$f .py | tr '_' '-'); \
 			$(INSTALL_BIN) "$$f" "$(1)/usr/bin/$$cmd"; \
 		done || true
-	[ -f $(PKG_BUILD_DIR)/scripts/pin_rest_cgi.py ] && $(INSTALL_BIN) $(PKG_BUILD_DIR)/scripts/pin_rest_cgi.py $(1)/www/cgi-bin/mcubridge-pin && ln -sf mcubridge-pin $(1)/www/cgi-bin/mcubridge || true
+	[ -f $(PKG_BUILD_DIR)/scripts/pin_rest_cgi.sh ] && $(INSTALL_BIN) $(PKG_BUILD_DIR)/scripts/pin_rest_cgi.sh $(1)/www/cgi-bin/mcubridge-pin && ln -sf mcubridge-pin $(1)/www/cgi-bin/mcubridge || true
 endef
 
 define Package/$(PKG_NAME)/postinst

@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+import threading
 from typing import Any, Protocol
 import anyio.from_thread
-import anyio.to_thread
 import structlog
 import tenacity
 
@@ -82,6 +82,8 @@ class UbusService:
         self.runtime = runtime
         self._conn: Any = None
         self._is_active = False
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._thread: threading.Thread | None = None
 
     @property
     def is_active(self) -> bool:
@@ -162,16 +164,17 @@ class UbusService:
             ubus.add("mcubridge", methods)
 
     async def run(self) -> None:
-        """Background loop to process incoming OpenWrt UBUS events."""
+        """Background loop to process incoming OpenWrt UBUS events directly in asyncio."""
         if self._conn is None or ubus is None or not hasattr(ubus, "loop"):
             return
         logger.info("Starting OpenWrt UBUS event loop")
         try:
             while self._is_active:
-                await anyio.to_thread.run_sync(lambda: ubus.loop(50))
+                ubus.loop(0)
                 await asyncio.sleep(0.05)
         except asyncio.CancelledError:
             logger.info("OpenWrt UBUS event loop cancelled")
+            self.stop()
             raise
 
     def ubus_handle_status(self, _req: Any, _msg: dict[str, Any]) -> dict[str, Any]:
@@ -327,13 +330,18 @@ class UbusService:
     def schedule_async(self, coro: Any) -> None:
         """Schedule a coroutine on the active running asyncio loop."""
         try:
-            loop = asyncio.get_running_loop()
-            loop.create_task(coro)
+            current_loop = asyncio.get_running_loop()
+            current_loop.create_task(coro)
         except RuntimeError:
+            loop = self._loop
+            if loop is not None and loop.is_running():
+                asyncio.run_coroutine_threadsafe(coro, loop)
+                return
             asyncio.run(coro)
 
     def stop(self) -> None:
         """Disconnect from ubusd."""
+        self._is_active = False
         if self._conn is not None:
             try:
                 if hasattr(self._conn, "close") and callable(self._conn.close):
@@ -346,4 +354,3 @@ class UbusService:
                 logger.debug("Error during UBUS disconnect", error=str(exc))
             finally:
                 self._conn = None
-                self._is_active = False

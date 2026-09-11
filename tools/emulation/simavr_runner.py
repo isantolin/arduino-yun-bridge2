@@ -109,7 +109,7 @@ def _write_fake_uci_module(base_dir: Path, config: dict[str, str]) -> Path:
         "    def commit(self, package: str) -> None:\n"
         "        return None\n\n"
         "class UCI(Uci):\n"
-        "    \"\"\"Mock UCI configuration adapter for emulation.\"\"\"\n"
+        '    """Mock UCI configuration adapter for emulation."""\n'
     )
     module_path.write_text(module_source, encoding="utf-8")
     return module_path

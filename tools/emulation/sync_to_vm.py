@@ -56,7 +56,12 @@ def tar_push(src_dir: Path, remote_dest: str, host: str, user: str, excludes: li
 
 def resolve_vm_ip(preferred: str) -> str:
     """Resolve active VM IP: preferred if reachable, else auto-detect from virbr0."""
-    res = subprocess.run(["ping", "-c", "1", "-W", "1", preferred], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    res = subprocess.run(
+        ["ping", "-c", "1", "-W", "1", preferred],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
     if res.returncode == 0:
         return preferred
 
@@ -70,6 +75,7 @@ def resolve_vm_ip(preferred: str) -> str:
                     ["ping", "-c", "1", "-W", "1", candidate_ip],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
+                    check=False,
                 )
                 if check.returncode == 0:
                     sys.stdout.write(f"[*] Auto-detected active VM IP on virbr0: {candidate_ip}\n")
@@ -146,7 +152,9 @@ def sync(
     # 4. Sync helper scripts and default environment
     scripts_dir = REPO_ROOT / "mcubridge" / "scripts"
     print(f"\n[4/7] Syncing scripts from {scripts_dir}...")
-    push_file(scripts_dir / "mcubridge_file_push.py", "/usr/bin/mcubridge-file-push", host=target_host, user=user, mode="0755")
+    push_file(
+        scripts_dir / "mcubridge_file_push.py", "/usr/bin/mcubridge-file-push", host=target_host, user=user, mode="0755"
+    )
     push_file(
         scripts_dir / "mcubridge_rotate_credentials.py",
         "/usr/bin/mcubridge-rotate-credentials",
@@ -155,7 +163,7 @@ def sync(
         mode="0755",
     )
     push_file(scripts_dir / "pin_rest_cgi.py", "/usr/bin/pin-rest-cgi", host=target_host, user=user, mode="0755")
-    push_file(scripts_dir / "pin_rest_cgi.py", "/www/cgi-bin/mcubridge-pin", host=target_host, user=user, mode="0755")
+    push_file(scripts_dir / "pin_rest_cgi.sh", "/www/cgi-bin/mcubridge-pin", host=target_host, user=user, mode="0755")
     push_file(scripts_dir / "defaults.sh", "/usr/share/mcubridge/defaults.sh", host=target_host, user=user, mode="0644")
 
     # 5. Sync LuCI files

@@ -126,6 +126,10 @@ class ConfigFieldDef:
     uci_option: str | None
 
 
+def _default_config_fields() -> list[ConfigFieldDef]:
+    return []
+
+
 @dataclass
 class ProtocolSpec:
     constants: dict[str, Any]
@@ -149,7 +153,7 @@ class ProtocolSpec:
     handshake_opt: Any = None
     data_formats_opt: Any = None
     pb_module: Any = None
-    runtime_config_fields: list[ConfigFieldDef] = field(default_factory=list)
+    runtime_config_fields: list[ConfigFieldDef] = field(default_factory=_default_config_fields)
 
 
 def _proto_to_dict(msg: Any) -> dict[str, Any]:
@@ -257,9 +261,19 @@ def load_spec_from_proto(proto_path: Path) -> ProtocolSpec:
     if runtime_config_desc:
         for field_desc in runtime_config_desc.fields:
             opts = field_desc.GetOptions()
-            cfg_default = opts.Extensions[mcubridge_pb2.config_default] if opts.HasExtension(mcubridge_pb2.config_default) else None
-            cfg_desc = opts.Extensions[mcubridge_pb2.config_desc] if opts.HasExtension(mcubridge_pb2.config_desc) else ""
-            cfg_volatile = opts.Extensions[mcubridge_pb2.config_volatile] if opts.HasExtension(mcubridge_pb2.config_volatile) else False
+            cfg_default = (
+                opts.Extensions[mcubridge_pb2.config_default]
+                if opts.HasExtension(mcubridge_pb2.config_default)
+                else None
+            )
+            cfg_desc = (
+                opts.Extensions[mcubridge_pb2.config_desc] if opts.HasExtension(mcubridge_pb2.config_desc) else ""
+            )
+            cfg_volatile = (
+                opts.Extensions[mcubridge_pb2.config_volatile]
+                if opts.HasExtension(mcubridge_pb2.config_volatile)
+                else False
+            )
             cfg_min = opts.Extensions[mcubridge_pb2.config_min] if opts.HasExtension(mcubridge_pb2.config_min) else None
             cfg_max = opts.Extensions[mcubridge_pb2.config_max] if opts.HasExtension(mcubridge_pb2.config_max) else None
             uci_opt = opts.Extensions[mcubridge_pb2.uci_option] if opts.HasExtension(mcubridge_pb2.uci_option) else None
@@ -281,7 +295,12 @@ def load_spec_from_proto(proto_path: Path) -> ProtocolSpec:
             elif field_desc.type in (field_desc.TYPE_FLOAT, field_desc.TYPE_DOUBLE):
                 py_type = "float"
                 typed_val = float(cfg_default) if cfg_default is not None else 0.0
-            elif field_desc.type in (field_desc.TYPE_INT32, field_desc.TYPE_INT64, field_desc.TYPE_UINT32, field_desc.TYPE_UINT64):
+            elif field_desc.type in (
+                field_desc.TYPE_INT32,
+                field_desc.TYPE_INT64,
+                field_desc.TYPE_UINT32,
+                field_desc.TYPE_UINT64,
+            ):
                 py_type = "int"
                 typed_val = int(cfg_default) if cfg_default is not None else 0
 
@@ -333,12 +352,12 @@ VERSION_PATH = REPO_ROOT / "VERSION"
 def _extract_cpp_constants(pb_obj: Any, pb_module: Any) -> list[dict[str, Any]]:
     """Extract C++ constant definitions from Protobuf descriptor options reflectively. [SIL-2]"""
     constants: list[dict[str, Any]] = []
-    for field in pb_obj.DESCRIPTOR.fields:
-        opts = field.GetOptions()
+    for proto_field in pb_obj.DESCRIPTOR.fields:
+        opts = proto_field.GetOptions()
         cpp_name = opts.Extensions[pb_module.cpp_name]
         cpp_type = opts.Extensions[pb_module.cpp_type]
         if cpp_name:
-            val = getattr(pb_obj, field.name)
+            val = getattr(pb_obj, proto_field.name)
             constants.append({"name": cpp_name, "type": cpp_type, "value": val})
     return constants
 
@@ -352,14 +371,14 @@ def _extract_py_constants(
 ) -> list[dict[str, Any]]:
     """Extract Python constant definitions from Protobuf descriptor options reflectively. [SIL-2]"""
     constants: list[dict[str, Any]] = []
-    for field in pb_obj.DESCRIPTOR.fields:
-        opts = field.GetOptions()
+    for proto_field in pb_obj.DESCRIPTOR.fields:
+        opts = proto_field.GetOptions()
         if client_only and not opts.Extensions[pb_module.client_constant]:
             continue
         py_name = opts.Extensions[pb_module.py_name]
         py_type = opts.Extensions[pb_module.py_type]
         if py_name:
-            val = getattr(pb_obj, field.name)
+            val = getattr(pb_obj, proto_field.name)
             if py_name == "FRAME_DELIMITER":
                 formatted_val = f"bytes([ {val} ])"
             elif py_type == "bytes":
@@ -532,7 +551,9 @@ class JinjaGenerator:
         return subscriptions
 
     @staticmethod
-    def _extract_runtime_config_constants(spec: ProtocolSpec, existing_constants: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _extract_runtime_config_constants(
+        spec: ProtocolSpec, existing_constants: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
         existing_names = {c["name"] for c in existing_constants}
         result: list[dict[str, Any]] = []
         for f in spec.runtime_config_fields:
@@ -1011,7 +1032,16 @@ def main(
         gen.generate_defaults_sh(proto_spec, defaults_sh_target)
         sys.stderr.write(f"Generated {defaults_sh_target}\n")
 
-    schema_json_target = REPO_ROOT / "luci-app-mcubridge" / "htdocs" / "luci-static" / "resources" / "view" / "mcubridge" / "config_schema.json"
+    schema_json_target = (
+        REPO_ROOT
+        / "luci-app-mcubridge"
+        / "htdocs"
+        / "luci-static"
+        / "resources"
+        / "view"
+        / "mcubridge"
+        / "config_schema.json"
+    )
     if schema_json_target.parent.exists():
         gen.generate_config_schema_json(proto_spec, schema_json_target)
         sys.stderr.write(f"Generated {schema_json_target}\n")

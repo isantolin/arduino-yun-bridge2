@@ -29,6 +29,8 @@ class TypedRuntimeFacade:
         self.run_process = AsyncMock(return_value=123)
         self.kill_process = AsyncMock(return_value=(True, None))
         self.reset_link = AsyncMock(return_value=True)
+        self.write_digital_pin = AsyncMock(return_value=True)
+        self.write_analog_pin = AsyncMock(return_value=True)
         self.poll_process = AsyncMock(
             return_value=pb.ProcessPollResponse(
                 status=0,

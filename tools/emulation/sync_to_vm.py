@@ -54,9 +54,36 @@ def tar_push(src_dir: Path, remote_dest: str, host: str, user: str, excludes: li
         raise RuntimeError(f"tar extract on remote failed with code {ssh_extract.returncode}")
 
 
+def resolve_vm_ip(preferred: str) -> str:
+    """Resolve active VM IP: preferred if reachable, else auto-detect from virbr0."""
+    res = subprocess.run(["ping", "-c", "1", "-W", "1", preferred], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if res.returncode == 0:
+        return preferred
+
+    try:
+        neigh = subprocess.run(["ip", "neigh", "show", "dev", "virbr0"], capture_output=True, text=True, check=True)
+        for line in neigh.stdout.splitlines():
+            parts = line.split()
+            if len(parts) >= 1:
+                candidate_ip = parts[0]
+                check = subprocess.run(
+                    ["ping", "-c", "1", "-W", "1", candidate_ip],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                if check.returncode == 0:
+                    sys.stdout.write(f"[*] Auto-detected active VM IP on virbr0: {candidate_ip}\n")
+                    sys.stdout.flush()
+                    return candidate_ip
+    except (subprocess.SubprocessError, OSError) as exc:
+        sys.stderr.write(f"[*] Neighbor probe failed ({exc}), falling back to {preferred}\n")
+    return preferred
+
+
 def push_file(local_file: Path, remote_dest: str, host: str, user: str, mode: str | None = None) -> None:
     """Copy a single file to remote destination and optionally set permissions."""
-    ssh_cmd = f"cat > '{remote_dest}'"
+    parent_dir = str(Path(remote_dest).parent)
+    ssh_cmd = f"mkdir -p '{parent_dir}' && cat > '{remote_dest}'"
     if mode:
         ssh_cmd += f" && chmod {mode} '{remote_dest}'"
     sys.stdout.write(f"[*] Pushing: {local_file} -> {remote_dest}\n")
@@ -77,63 +104,76 @@ def sync(
     restart: Annotated[bool, typer.Option("--restart", "-r", help="Restart mcubridge service after sync")] = True,
 ) -> None:
     """Synchronize all canonical McuBridge code into the running VM."""
+    target_host = resolve_vm_ip(host)
     print("========================================================")
     print(" McuBridge VM Code Synchronizer")
-    print(f" Target: {user}@{host}")
+    print(f" Target: {user}@{target_host}")
     print("========================================================")
+
+    # 0. Ensure protocol definitions, defaults and schemas are generated
+    print("\n[0/7] Ensuring generated protocol definitions and schemas are up-to-date...")
+    run_cmd(
+        [
+            sys.executable,
+            str(REPO_ROOT / "tools" / "protocol" / "generate.py"),
+            "--spec",
+            str(REPO_ROOT / "tools" / "protocol" / "mcubridge.proto"),
+        ]
+    )
 
     # 1. Sync mcubridge python package
     pkg_src = REPO_ROOT / "mcubridge" / "mcubridge"
     pkg_dst = "/usr/lib/python3.13/site-packages/mcubridge"
-    print(f"\n[1/6] Syncing Python package: {pkg_src} -> {pkg_dst}")
+    print(f"\n[1/7] Syncing Python package: {pkg_src} -> {pkg_dst}")
     tar_push(
         src_dir=pkg_src,
         remote_dest=pkg_dst,
-        host=host,
+        host=target_host,
         user=user,
         excludes=["__pycache__", "*.pyc", "*.pyo"],
     )
 
     # 2. Sync init script
     init_src = REPO_ROOT / "mcubridge" / "mcubridge.init"
-    print(f"\n[2/6] Syncing init script: {init_src} -> /etc/init.d/mcubridge")
-    push_file(init_src, "/etc/init.d/mcubridge", host=host, user=user, mode="0755")
+    print(f"\n[2/7] Syncing init script: {init_src} -> /etc/init.d/mcubridge")
+    push_file(init_src, "/etc/init.d/mcubridge", host=target_host, user=user, mode="0755")
 
     # 3. Sync gateway binary
     gateway_src = REPO_ROOT / "mcubridge-gateway" / "gateway.py"
-    print(f"\n[3/6] Syncing Gateway: {gateway_src} -> /usr/bin/mcubridge-gateway")
-    push_file(gateway_src, "/usr/bin/mcubridge-gateway", host=host, user=user, mode="0755")
+    print(f"\n[3/7] Syncing Gateway: {gateway_src} -> /usr/bin/mcubridge-gateway")
+    push_file(gateway_src, "/usr/bin/mcubridge-gateway", host=target_host, user=user, mode="0755")
 
-    # 4. Sync helper scripts
+    # 4. Sync helper scripts and default environment
     scripts_dir = REPO_ROOT / "mcubridge" / "scripts"
-    print(f"\n[4/6] Syncing scripts from {scripts_dir}...")
-    push_file(scripts_dir / "mcubridge_file_push.py", "/usr/bin/mcubridge-file-push", host=host, user=user, mode="0755")
+    print(f"\n[4/7] Syncing scripts from {scripts_dir}...")
+    push_file(scripts_dir / "mcubridge_file_push.py", "/usr/bin/mcubridge-file-push", host=target_host, user=user, mode="0755")
     push_file(
         scripts_dir / "mcubridge_rotate_credentials.py",
         "/usr/bin/mcubridge-rotate-credentials",
-        host=host,
+        host=target_host,
         user=user,
         mode="0755",
     )
-    push_file(scripts_dir / "pin_rest_cgi.py", "/usr/bin/pin-rest-cgi", host=host, user=user, mode="0755")
-    push_file(scripts_dir / "pin_rest_cgi.py", "/www/cgi-bin/mcubridge-pin", host=host, user=user, mode="0755")
+    push_file(scripts_dir / "pin_rest_cgi.py", "/usr/bin/pin-rest-cgi", host=target_host, user=user, mode="0755")
+    push_file(scripts_dir / "pin_rest_cgi.py", "/www/cgi-bin/mcubridge-pin", host=target_host, user=user, mode="0755")
+    push_file(scripts_dir / "defaults.sh", "/usr/share/mcubridge/defaults.sh", host=target_host, user=user, mode="0644")
 
     # 5. Sync LuCI files
     luci_dir = REPO_ROOT / "luci-app-mcubridge"
-    print(f"\n[5/6] Syncing LuCI application files from {luci_dir}...")
+    print(f"\n[5/7] Syncing LuCI application files from {luci_dir}...")
     luci_root = luci_dir / "root"
     if luci_root.exists():
-        tar_push(src_dir=luci_root, remote_dest="/", host=host, user=user)
+        tar_push(src_dir=luci_root, remote_dest="/", host=target_host, user=user)
 
     luci_htdocs = luci_dir / "htdocs"
     if luci_htdocs.exists():
-        tar_push(src_dir=luci_htdocs, remote_dest="/www", host=host, user=user)
+        tar_push(src_dir=luci_htdocs, remote_dest="/www", host=target_host, user=user)
 
     # 6. Sync client test examples
     examples_dir = REPO_ROOT / "mcubridge-client-examples"
     examples_dst = "/tmp/mcubridge-client-examples"
     print(f"\n[6/7] Syncing client examples: {examples_dir} -> {examples_dst}")
-    tar_push(src_dir=examples_dir, remote_dest=examples_dst, host=host, user=user)
+    tar_push(src_dir=examples_dir, remote_dest=examples_dst, host=target_host, user=user)
 
     # 7. Sync pure Python runtime dependencies (statemachine, anyio, sniffio, idna)
     print("\n[7/7] Syncing pure Python runtime dependencies...")
@@ -151,24 +191,25 @@ def sync(
                     tar_push(
                         src_dir=src_path,
                         remote_dest=dst_path,
-                        host=host,
+                        host=target_host,
                         user=user,
                         excludes=["__pycache__", "*.pyc", "*.pyo"],
                     )
                 else:
-                    push_file(src_path, dst_path, host=host, user=user)
+                    push_file(src_path, dst_path, host=target_host, user=user)
         except (ImportError, OSError, RuntimeError) as exc:
             print(f"[!] Warning syncing dependency {mod_name}: {exc}")
 
-    # Clean old bytecode on remote
-    print("\n[*] Cleaning stale remote .pyc bytecode cache...")
+    # Clean old bytecode and LuCI caches on remote
+    print("\n[*] Cleaning stale remote .pyc bytecode and LuCI caches...")
     run_cmd(
         [
             "ssh",
             "-o",
             "StrictHostKeyChecking=no",
-            f"{user}@{host}",
-            "find /usr/lib/python3.13/site-packages -name '*.pyc' -delete 2>/dev/null || true",
+            f"{user}@{target_host}",
+            "find /usr/lib/python3.13/site-packages -name '*.pyc' -delete 2>/dev/null || true; "
+            "rm -rf /tmp/luci-* 2>/dev/null || true",
         ],
         check=True,
     )
@@ -180,7 +221,7 @@ def sync(
             "ssh",
             "-o",
             "StrictHostKeyChecking=no",
-            f"{user}@{host}",
+            f"{user}@{target_host}",
             "uci -q set mcubridge.general.serial_port='/dev/ttyS1' && "
             "uci -q set mcubridge.general.serial_shared_secret="
             "'8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe' && "
@@ -192,14 +233,17 @@ def sync(
     )
 
     if restart:
-        print("\n[*] Restarting mcubridge service...")
+        print("\n[*] Restarting mcubridge and web services...")
         run_cmd(
             [
                 "ssh",
                 "-o",
                 "StrictHostKeyChecking=no",
-                f"{user}@{host}",
-                "killall -9 python3 2>/dev/null || true; /etc/init.d/mcubridge restart",
+                f"{user}@{target_host}",
+                "killall -9 python3 2>/dev/null || true; "
+                "/etc/init.d/mcubridge restart; "
+                "/etc/init.d/rpcd restart; "
+                "/etc/init.d/uhttpd restart",
             ],
             check=True,
         )

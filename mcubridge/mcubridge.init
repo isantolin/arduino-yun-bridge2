@@ -84,7 +84,7 @@ start_service() {
     # Launch Python directly to save resources (avoiding intermediate shell process).
     # We set PYTHONPATH explicitly to include the package directory.
     procd_set_param command /usr/bin/python3 -O -m mcubridge.daemon
-    procd_set_param env MCUBRIDGE_LOG_STREAM=1 CRYPTOGRAPHY_OPENSSL_NO_LEGACY=1
+    procd_set_param env CRYPTOGRAPHY_OPENSSL_NO_LEGACY=1
     
     # [RESILIENCIA]
     # Reinicio infinito con backoff de 5s si falla

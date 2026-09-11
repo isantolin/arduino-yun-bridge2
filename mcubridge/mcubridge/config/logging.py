@@ -6,6 +6,7 @@ import logging
 from logging.handlers import SysLogHandler
 import os
 from pathlib import Path
+import sys
 from typing import Any, cast
 
 import structlog
@@ -83,10 +84,11 @@ def configure_logging(
     if syslog_address and not force_stream:
         try:
             handler = SysLogHandler(address=syslog_address, facility=SysLogHandler.LOG_DAEMON)
+            handler.ident = "mcubridge: "
         except (OSError, RuntimeError):
-            handler = logging.StreamHandler()
+            handler = logging.StreamHandler(sys.stdout)
     else:
-        handler = logging.StreamHandler()
+        handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(formatter)
 
     root_logger = logging.getLogger()

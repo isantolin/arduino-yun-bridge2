@@ -604,10 +604,10 @@ async def test_runtime_cloud_spool_trimming_and_drop(test_config: RuntimeConfig,
     mock_spool = MagicMock(spec=LmdbDeque)
     svc._cloud_spool = mock_spool
 
-    # Simulate spool length decreasing below limit to exit while loop
-    mock_spool.__len__.side_effect = [3, 1, 1]
+    # Simulate atomic spool append trimming on first call and no trim on second
+    mock_spool.__len__.return_value = 1
     mock_spool.popleft = AsyncMock(return_value=b"old")
-    mock_spool.append = AsyncMock(return_value=None)
+    mock_spool.append = AsyncMock(side_effect=[1, 0])
 
     msg = pb.CloudQueuedPublish(topic_name="br/test", payload=b"data")
     res = await svc._spool_cloud_message_locked(msg)

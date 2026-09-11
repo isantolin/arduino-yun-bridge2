@@ -8,7 +8,6 @@ from pathlib import Path
 import socket
 from typing import Any
 
-import psutil
 import tenacity
 
 from mcubridge.state.context import terminate_pid_tree
@@ -54,35 +53,8 @@ def terminate_process_tree(
     procs: Sequence[subprocess.Popen[Any] | None],
     timeout: float = 3.0,
 ) -> None:
-    """Recursively terminate and clean up process trees via psutil. [SIL-2 / Rule 19 / Rule 31]
-
-    Gracefully sends SIGTERM to all child processes and top-level processes, waits
-    for bounded duration *timeout*, and escalates lingering processes to SIGKILL.
-    """
+    """Recursively terminate and clean up process trees via psutil. [SIL-2 / Rule 19 / Rule 31]"""
     for p_handle in procs:
         pid = getattr(p_handle, "pid", None)
-        if isinstance(pid, int) and psutil.pid_exists(pid):
-            try:
-                p = psutil.Process(pid)
-                for child in p.children(recursive=True):
-                    child.terminate()
-                p.terminate()
-            except (psutil.NoSuchProcess, ProcessLookupError, psutil.AccessDenied):
-                continue
-
-    active_procs: list[psutil.Process] = []
-    for p in procs:
-        pid = getattr(p, "pid", None)
-        if isinstance(pid, int) and psutil.pid_exists(pid):
-            try:
-                active_procs.append(psutil.Process(pid))
-            except (psutil.NoSuchProcess, ProcessLookupError, psutil.AccessDenied):
-                continue
-
-    if active_procs:
-        _, alive = psutil.wait_procs(active_procs, timeout=timeout)
-        for p in alive:
-            try:
-                p.kill()
-            except (psutil.NoSuchProcess, ProcessLookupError, psutil.AccessDenied):
-                continue
+        if isinstance(pid, int):
+            terminate_pid_tree(pid, timeout=timeout)

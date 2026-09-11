@@ -98,21 +98,29 @@ class LmdbDeque:
         with self.env.begin(db=self.db) as txn:
             return txn.stat(self.db)["entries"]
 
-    async def append(self, item: bytes) -> None:
+    async def append(self, item: bytes) -> int:
         if self.is_mem:
+            trimmed = 0
+            if self.maxlen is not None and len(self._mem) >= self.maxlen:
+                trimmed = len(self._mem) - self.maxlen + 1
+                for _ in range(trimmed):
+                    self._mem.popleft()
             self._mem.append(item)
-            return
+            return trimmed
         if not self.env:
-            return
+            return 0
         with self.env.begin(write=True, db=self.db) as txn:
             cur = txn.cursor(self.db)
             next_idx = (_U64.unpack(cur.key())[0] + 1) if cur.last() else 0
             txn.put(_U64.pack(next_idx), item, db=self.db)
+            trimmed = 0
             if self.maxlen is not None:
                 total_entries = txn.stat(self.db)["entries"]
                 if total_entries > self.maxlen and cur.first():
-                    for _ in range(total_entries - self.maxlen):
+                    trimmed = total_entries - self.maxlen
+                    for _ in range(trimmed):
                         cur.delete()
+            return trimmed
 
     async def popleft(self) -> bytes:
         if self.is_mem:

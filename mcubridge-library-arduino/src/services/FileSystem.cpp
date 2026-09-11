@@ -17,10 +17,12 @@ FileSystemClass::FileSystemClass() {}
 void FileSystemClass::write(etl::string_view path,
                             etl::span<const uint8_t> data) {
   rpc::payload::FileWrite p = {};
-  bridge::utils::copy_to_buf(path, p.path);
+  p.path[path.copy(p.path, sizeof(p.path) - 1)] = '\0';
   const size_t bounded_size = etl::min(data.size(), sizeof(p.data.bytes));
-  p.data.size = static_cast<pb_size_t>(bridge::utils::copy_bytes_to_buf(
-      etl::span<const uint8_t>(data.data(), bounded_size), p.data.bytes));
+  if (bounded_size > 0U) {
+    etl::copy_n(data.data(), bounded_size, p.data.bytes);
+  }
+  p.data.size = static_cast<pb_size_t>(bounded_size);
 
   if (!Bridge.send(rpc::CommandId::CMD_FILE_WRITE, 0, p)) {
     Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR,
@@ -33,7 +35,7 @@ void FileSystemClass::read(
     typename FileSystemClass::FileSystemReadHandler handler) {
   _read_handler = handler;
   rpc::payload::FileRead p = {};
-  bridge::utils::copy_to_buf(path, p.path);
+  p.path[path.copy(p.path, sizeof(p.path) - 1)] = '\0';
 
   if (!Bridge.send(rpc::CommandId::CMD_FILE_READ, 0, p)) {
     Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR);
@@ -42,7 +44,7 @@ void FileSystemClass::read(
 
 void FileSystemClass::remove(etl::string_view path) {
   rpc::payload::FileRemove p = {};
-  bridge::utils::copy_to_buf(path, p.path);
+  p.path[path.copy(p.path, sizeof(p.path) - 1)] = '\0';
 
   if (!Bridge.send(rpc::CommandId::CMD_FILE_REMOVE, 0, p)) {
     Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR,
@@ -84,10 +86,12 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
         }
 
         rpc::payload::FileReadResponse p = {};
-        p.content.size =
-            static_cast<pb_size_t>(bridge::utils::copy_bytes_to_buf(
-                etl::span<const uint8_t>(buffer.data(), res->bytes_read),
-                p.content.bytes));
+        const size_t bounded_size = etl::min(
+            static_cast<size_t>(res->bytes_read), sizeof(p.content.bytes));
+        if (bounded_size > 0U) {
+          etl::copy_n(buffer.data(), bounded_size, p.content.bytes);
+        }
+        p.content.size = static_cast<pb_size_t>(bounded_size);
         (void)Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 0, p);
 
         if (!res->has_more) {

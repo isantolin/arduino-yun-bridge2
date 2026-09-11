@@ -47,10 +47,10 @@ def terminate_pid_tree(pid: int, timeout: float = 3.0) -> None:
         return
     try:
         p = psutil.Process(pid)
-        for child in p.children(recursive=True):
-            child.terminate()
-        p.terminate()
-        _, alive = psutil.wait_procs([p], timeout=timeout)
+        procs = p.children(recursive=True) + [p]
+        for proc in procs:
+            proc.terminate()
+        _, alive = psutil.wait_procs(procs, timeout=timeout)
         for lingering in alive:
             lingering.kill()
     except (psutil.NoSuchProcess, ProcessLookupError, psutil.AccessDenied):

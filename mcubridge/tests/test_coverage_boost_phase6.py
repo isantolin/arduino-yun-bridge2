@@ -1328,6 +1328,7 @@ async def test_runtime_spool_and_pin_edge_branches(test_config: RuntimeConfig, m
     mock_state.cloud_queue_limit = 0
     mock_spool = AsyncMock()
     mock_spool.len.return_value = 100
+    mock_spool.append.return_value = 0
     svc._cloud_spool = mock_spool
     await svc._spool_cloud_message_locked(pb.CloudQueuedPublish(topic_name="test", payload=b"p"))
 

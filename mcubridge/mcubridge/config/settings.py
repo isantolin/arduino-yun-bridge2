@@ -12,7 +12,7 @@ from google.protobuf import json_format
 from google.protobuf.descriptor import FieldDescriptor
 
 import structlog
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Final, cast
 from pathlib import Path
 
 
@@ -24,6 +24,42 @@ from mcubridge.protocol.structures import validate_config
 from mcubridge.protocol import mcubridge_pb2 as pb
 
 logger = structlog.get_logger(__name__)
+
+_PATH_FIELD_NAMES: Final[frozenset[str]] = frozenset(
+    f.name
+    for f in pb.RuntimeConfig.DESCRIPTOR.fields
+    if any(x in f.name for x in ("_dir", "_file", "_root", "serial_port", "cloud_ca", "cloud_cert", "cloud_key"))
+)
+
+_TOPIC_AUTH_FIELDS: Final[frozenset[str]] = frozenset(pb.TopicAuthorization.DESCRIPTOR.fields_by_name)
+
+
+def _coerce_bool(v: Any) -> bool:
+    """Coerce string, int, or boolean value to boolean. [SIL-2]"""
+    return v if isinstance(v, bool) else str(v).lower() in ("1", "true", "yes", "on")
+
+
+def _coerce_path(v: Any) -> str:
+    """Normalize file and socket paths, supporting URL schemas and user expansion. [SIL-2]"""
+    s_val = str(v).strip()
+    is_url = s_val.startswith(("tcp://", "wifi://", "socket://")) or (
+        ":" in s_val and not s_val.startswith(("/", "~", "."))
+    )
+    if is_url:
+        return s_val
+    if ("~" in s_val or "/" in s_val) and "\n" not in s_val:
+        return str(Path(s_val).expanduser().resolve())
+    return s_val
+
+
+def _coerce_commands(v: Any) -> list[str]:
+    """Coerce commands to a clean list of strings. [SIL-2]"""
+    if isinstance(v, (list, tuple)):
+        items = cast("list[Any] | tuple[Any, ...]", v)
+        return [str(x).strip() for x in items if str(x).strip()]
+    if isinstance(v, str):
+        return v.split()
+    return [] if v is None else [str(v)]
 
 
 def _runtime_config_factory(
@@ -90,8 +126,9 @@ def get_config_source() -> str:
 def _normalize_config_dict(raw: dict[str, Any]) -> tuple[dict[str, Any], bytes | None]:
     """Normalize raw dictionary keys and types for Protobuf ParseDict. [SIL-2]"""
     norm: dict[str, Any] = {}
-    auth: dict[str, Any] = {}
+    auth: dict[str, bool] = {}
     secret: bytes | None = None
+    fields = pb.RuntimeConfig.DESCRIPTOR.fields_by_name
 
     for k, v in raw.items():
         if k == "serial_shared_secret":
@@ -100,33 +137,14 @@ def _normalize_config_dict(raw: dict[str, Any]) -> tuple[dict[str, Any], bytes |
             continue
 
         if k == "allowed_commands":
-            if isinstance(v, (list, tuple)):
-                items = cast("list[Any] | tuple[Any, ...]", v)
-                norm[k] = [str(x).strip() for x in items if str(x).strip()]
-            elif isinstance(v, str):
-                norm[k] = v.split()
-            else:
-                norm[k] = [] if v is None else [str(v)]
+            norm[k] = _coerce_commands(v)
             continue
 
-        field = pb.RuntimeConfig.DESCRIPTOR.fields_by_name.get(k)
-        if field is not None:
+        if (field := fields.get(k)) is not None:
             if field.type == FieldDescriptor.TYPE_BOOL:
-                norm[k] = v if isinstance(v, bool) else str(v).lower() in ("1", "true", "yes", "on")
-            elif any(x in k for x in ("_dir", "_file", "_root", "serial_port", "cloud_ca", "cloud_cert", "cloud_key")):
-                s_val = str(v).strip()
-                is_url = s_val.startswith(("tcp://", "wifi://", "socket://")) or (
-                    ":" in s_val and not s_val.startswith(("/", "~", "."))
-                )
-                norm[k] = (
-                    s_val
-                    if is_url
-                    else (
-                        str(Path(s_val).expanduser().resolve())
-                        if (("~" in s_val or "/" in s_val) and "\n" not in s_val)
-                        else s_val
-                    )
-                )
+                norm[k] = _coerce_bool(v)
+            elif k in _PATH_FIELD_NAMES:
+                norm[k] = _coerce_path(v)
             elif field.type == FieldDescriptor.TYPE_STRING:
                 norm[k] = str(v).strip() if v is not None else ""
             else:
@@ -136,13 +154,13 @@ def _normalize_config_dict(raw: dict[str, Any]) -> tuple[dict[str, Any], bytes |
         if k.startswith(("cloud_allow_", "allow_")):
             prefix = "cloud_allow_" if k.startswith("cloud_allow_") else "allow_"
             auth_key = k.removeprefix(prefix)
-            auth_bool = v if isinstance(v, bool) else str(v).lower() in ("1", "true", "yes", "on")
-            if auth_key in pb.TopicAuthorization.DESCRIPTOR.fields_by_name:
+            auth_bool = _coerce_bool(v)
+            if auth_key in _TOPIC_AUTH_FIELDS:
                 auth[auth_key] = auth_bool
             else:
-                for auth_field in pb.TopicAuthorization.DESCRIPTOR.fields:
-                    if auth_field.name.startswith(f"{auth_key}_") or auth_field.name == auth_key:
-                        auth[auth_field.name] = auth_bool
+                for auth_field_name in _TOPIC_AUTH_FIELDS:
+                    if auth_field_name.startswith(f"{auth_key}_") or auth_field_name == auth_key:
+                        auth[auth_field_name] = auth_bool
             continue
 
         norm[k] = v
@@ -155,19 +173,14 @@ def _normalize_config_dict(raw: dict[str, Any]) -> tuple[dict[str, Any], bytes |
 def load_runtime_config(overrides: dict[str, Any] | None = None) -> RuntimeConfig:
     """Load, normalize, and validate the daemon configuration (SIL 2)."""
     raw_values, source = _load_raw_config()
-    from mcubridge.config.common import get_default_config
-
-    defaults = get_default_config()
-    for k, v in defaults.items():
-        if k not in raw_values:
-            raw_values[k] = v
+    merged_values = get_default_config() | raw_values
     if overrides:
-        raw_values.update(overrides)
+        merged_values |= overrides
         source = "cli"
     _config_source[0] = source
 
     msg = pb.RuntimeConfig()
-    norm_dict, secret = _normalize_config_dict(raw_values)
+    norm_dict, secret = _normalize_config_dict(merged_values)
     try:
         json_format.ParseDict(norm_dict, msg, ignore_unknown_fields=True)
         if secret is not None:

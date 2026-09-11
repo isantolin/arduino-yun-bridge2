@@ -71,16 +71,16 @@ async def test_spool_cloud_message_trim_limit(test_config: RuntimeConfig, mock_b
     svc = BridgeService(test_config, mock_bridge_state, MagicMock())
     mock_bridge_state.cloud_queue_limit = 5
     mock_spool = MagicMock()
-    mock_spool.__len__.side_effect = [5, 4, 4]  # Trim once, then length is 4
-    mock_spool.popleft = AsyncMock(return_value=None)
-    mock_spool.append = AsyncMock(return_value=None)
+    mock_spool.append = AsyncMock(return_value=1)
+    mock_spool.__len__.return_value = 5
     svc._cloud_spool = mock_spool
 
     msg = pb.CloudQueuedPublish(topic_name="mcu/test", payload=b"data")
     res = await svc._spool_cloud_message_locked(msg)
 
     assert res is True
-    mock_spool.popleft.assert_awaited_once()
+    assert mock_bridge_state.cloud_spool_dropped_limit == 1
+    assert mock_bridge_state.cloud_spool_trim_events == 1
 
 
 @pytest.mark.asyncio

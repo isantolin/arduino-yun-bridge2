@@ -24,6 +24,6 @@ case "$STATE" in
         ;;
 esac
 
-ubus call mcubridge digital_write "{\"pin\": $PIN, \"value\": $VAL}" >/dev/null 2>&1
+ubus call mcubridge digital_write "{\"pin\": $PIN, \"value\": $VAL, \"ubus_rpc_session\": \"\"}" >/dev/null 2>&1
 
 printf '{"status":"ok","data":{"pin":%d,"state":"%s"}}\n' "$PIN" "$NORM"

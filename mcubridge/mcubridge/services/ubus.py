@@ -153,6 +153,7 @@ class UbusService:
         for name, args in _UBUS_METHOD_SIGS:
             handler = getattr(self, f"ubus_handle_{name}")
             sig = {arg: _get_ubus_type(typ) for arg, typ in args}
+            sig["ubus_rpc_session"] = _get_ubus_type("STRING")
             methods[name] = {
                 "method": _make_handler(handler),
                 "signature": sig,

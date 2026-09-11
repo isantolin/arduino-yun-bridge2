@@ -62,7 +62,14 @@ def test_pin_rest_cgi_application() -> None:
     res_err = pin_rest_cgi.application(env_invalid, start_response_err)
     assert res_err
     start_response_err.assert_called_with(
-        "400 Bad Request", [("Content-Type", "application/json"), ("Content-Length", "52")]
+        "400 Bad Request",
+        [
+            ("Content-Type", "application/json"),
+            ("Content-Length", "52"),
+            ("Access-Control-Allow-Origin", "*"),
+            ("Access-Control-Allow-Methods", "GET, POST, OPTIONS"),
+            ("Access-Control-Allow-Headers", "Content-Type"),
+        ],
     )
 
 

@@ -329,7 +329,7 @@ class BridgeService:
             return False
         try:
             encoded = message.SerializeToString()
-            trimmed = await spool.append(encoded)
+            trimmed = (await spool.append(encoded)) or 0
             if trimmed > 0:
                 self.state.cloud_spool_dropped_limit += trimmed
                 self.state.cloud_spool_trim_events += 1

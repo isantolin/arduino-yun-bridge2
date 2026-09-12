@@ -229,11 +229,8 @@ async def test_cloud_events_and_incoming_worker(test_config: RuntimeConfig, mock
 
     worker_task = asyncio.create_task(svc._cloud_incoming_worker())
     await asyncio.sleep(0.02)
-    worker_task.cancel()
-    try:
-        await worker_task
-    except asyncio.CancelledError:
-        pass
+    await svc._cloud_incoming_send_stream.aclose()
+    await worker_task
 
     mock_handle.assert_awaited_with(msg)
 

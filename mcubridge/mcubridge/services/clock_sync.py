@@ -67,10 +67,20 @@ class ClockSyncService:
 
     def __init__(self, runtime: BridgeService, sync_interval_seconds: float = 30.0) -> None:
         self._runtime: BridgeService = runtime
-        self._interval = sync_interval_seconds
+        self._interval: float = sync_interval_seconds
         self._task: asyncio.Task[None] | None = None
-        self._is_running = False
+        self._is_running: bool = False
         self.fsm = ClockSyncMachine()
+
+    @property
+    def is_running(self) -> bool:
+        """Return whether periodic clock sync worker is running."""
+        return self._is_running
+
+    @property
+    def task(self) -> asyncio.Task[None] | None:
+        """Return reference to active background worker task, if any."""
+        return self._task
 
     async def start(self) -> None:
         """Start periodic clock synchronization background worker."""

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import time
 from unittest.mock import AsyncMock
@@ -234,4 +235,128 @@ async def test_clock_sync_fsm_lifecycle() -> None:
         assert clock.fsm.current_state_value == "idle"
     finally:
         service.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_clock_sync_raw_bytes_and_duplicate_drop() -> None:
+    config = _make_config()
+    state = create_runtime_state(config)
+    mock_serial = AsyncMock(spec=SerialTransport)
+    service = BridgeService(config, state, mock_serial)
+
+    try:
+        clock = service.clock_sync
+        state.connection_fsm.connect()
+        state.mcu_capabilities = {"clock_sync": True}
+
+        # 1. Return raw serialized bytes from mock_serial
+        t1 = time.time_ns() // 1000 - 500
+        resp_pb = pb.ClockSyncResponse(host_time_us=t1, mcu_time_us=123456)
+        mock_serial.send.return_value = resp_pb.SerializeToString()
+
+        res1 = await clock.sync_now()
+        assert res1["is_synchronized"] is True
+        assert res1["sync_count"] == 1
+        assert state.clock_last_host_time_us == t1
+
+        # 2. Duplicate incoming response with same host_time_us -> early return without increment
+        res2 = clock.record_sync(resp_pb)
+        assert res2["sync_count"] == 1
+        assert state.clock_sync_count == 1
+    finally:
+        service.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_clock_sync_initial_probe_failure() -> None:
+    config = _make_config()
+    state = create_runtime_state(config)
+    mock_serial = AsyncMock(spec=SerialTransport)
+    service = BridgeService(config, state, mock_serial)
+
+    try:
+        clock = service.clock_sync
+        state.connection_fsm.connect()
+        # No capabilities published yet, fsm in idle -> initial probe
+        assert clock.fsm.idle.is_active
+
+        mock_serial.send.return_value = None
+        res = await clock.sync_now()
+        assert clock.fsm.unsupported.is_active
+        assert res["state"] == "unsupported"
+        assert not res["is_synchronized"]
+    finally:
+        service.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_clock_sync_worker_start_stop_lifecycle() -> None:
+    config = _make_config()
+    state = create_runtime_state(config)
+    mock_serial = AsyncMock(spec=SerialTransport)
+    service = BridgeService(config, state, mock_serial)
+
+    try:
+        clock = service.clock_sync
+        assert not clock.is_running
+        assert clock.task is None
+
+        # Start worker
+        await clock.start()
+        assert clock.is_running
+        assert clock.task is not None
+
+        # Calling start again while running is a no-op
+        await clock.start()
+        assert clock.is_running
+
+        # Stop worker
+        await clock.stop()
+        assert not clock.is_running
+        assert clock.task is None
+        assert clock.fsm.current_state_value == "idle"
+
+        # Calling stop when already stopped is a clean no-op
+        await clock.stop()
+        assert not clock.is_running
+    finally:
+        service.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_clock_sync_loop_exception_handling() -> None:
+    config = _make_config()
+    state = create_runtime_state(config)
+    mock_serial = AsyncMock(spec=SerialTransport)
+    service = BridgeService(config, state, mock_serial)
+
+    try:
+        clock = service.clock_sync
+        state.connection_fsm.connect()
+        clock.fsm.start_probe()
+        clock.fsm.sync_success()
+        assert clock.fsm.synchronized.is_active
+
+        # Mock sync_now raising TimeoutError
+        sync_mock = AsyncMock(side_effect=TimeoutError("serial timeout"))
+        setattr(clock, "sync_now", sync_mock)
+
+        # Run loop iteration under exception via public lifecycle
+        await clock.start()
+        await asyncio.sleep(0.02)
+        await clock.stop()
+
+        assert clock.fsm.degraded.is_active
+
+        # Test disconnected branch in loop
+        state.connection_fsm.disconnect()
+        assert not state.is_connected
+        await clock.start()
+        await asyncio.sleep(0.02)
+        await clock.stop()
+
+        assert clock.fsm.idle.is_active
+    finally:
+        service.cleanup()
+
 

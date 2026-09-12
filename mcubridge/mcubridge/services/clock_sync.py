@@ -41,7 +41,7 @@ class ClockSyncService:
             try:
                 await self._task
             except asyncio.CancelledError:
-                pass
+                logger.debug("Clock sync background worker task cancelled")
             self._task = None
 
     async def sync_now(self) -> dict[str, Any]:

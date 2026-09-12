@@ -1,5 +1,6 @@
 #include "Bridge.h"
 
+#include <etl/absolute.h>
 #include <etl/algorithm.h>
 #include <etl/functional.h>
 #include <etl/iterator.h>
@@ -872,22 +873,17 @@ void BridgeClass::_handlePinSubscribe(const bridge::router::CommandContext& ctx,
     }
     ok = true;
   } else {
+    if (it == _pin_subscriptions.end() && !_pin_subscriptions.full()) {
+      _pin_subscriptions.push_back(
+          {static_cast<uint8_t>(m.pin), 0, 0, 0, 0, false});
+      it = _pin_subscriptions.end() - 1;
+    }
     if (it != _pin_subscriptions.end()) {
       it->mode = static_cast<uint8_t>(m.mode);
       it->interval_ms = static_cast<uint16_t>(m.interval_ms);
       it->hysteresis = static_cast<uint16_t>(m.hysteresis);
       it->active = true;
       it->last_report_ms = 0;
-      ok = true;
-    } else if (!_pin_subscriptions.full()) {
-      PinSubscription sub;
-      sub.pin = static_cast<uint8_t>(m.pin);
-      sub.mode = static_cast<uint8_t>(m.mode);
-      sub.interval_ms = static_cast<uint16_t>(m.interval_ms);
-      sub.hysteresis = static_cast<uint16_t>(m.hysteresis);
-      sub.active = true;
-      sub.last_report_ms = 0;
-      _pin_subscriptions.push_back(sub);
       ok = true;
     }
     if (m.mode == rpc_pb_PinModeType_PIN_INPUT_PULLUP) {
@@ -925,9 +921,9 @@ void BridgeClass::_subscriptionTask() {
                          sub.mode == rpc_pb_PinModeType_PIN_INPUT_PULLUP)
                             ? static_cast<uint16_t>(::digitalRead(sub.pin))
                             : static_cast<uint16_t>(::analogRead(sub.pin));
-                    int32_t diff = static_cast<int32_t>(val) -
-                                   static_cast<int32_t>(sub.last_value);
-                    if (diff < 0) diff = -diff;
+                    const uint16_t diff = static_cast<uint16_t>(
+                        etl::absolute(static_cast<int32_t>(val) -
+                                      static_cast<int32_t>(sub.last_value)));
                     if (diff >= sub.hysteresis || sub.last_report_ms == 0) {
                       sub.last_value = val;
                       sub.last_report_ms = now;

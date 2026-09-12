@@ -198,22 +198,14 @@ __attribute__((weak)) etl::expected<void, HalError> removeFile(
 }
 
 void applySafetyPin(uint8_t pin, SafetyPinState state) {
-  switch (state) {
-    case SafetyPinState::SAFE_PIN_LOW:
-      ::pinMode(pin, OUTPUT);
-      ::digitalWrite(pin, LOW);
-      break;
-    case SafetyPinState::SAFE_PIN_HIGH:
-      ::pinMode(pin, OUTPUT);
-      ::digitalWrite(pin, HIGH);
-      break;
-    case SafetyPinState::SAFE_PIN_INPUT_PULLUP:
-      ::pinMode(pin, INPUT_PULLUP);
-      break;
-    case SafetyPinState::SAFE_PIN_INPUT:
-    default:
-      ::pinMode(pin, INPUT);
-      break;
+  if (state == SafetyPinState::SAFE_PIN_LOW ||
+      state == SafetyPinState::SAFE_PIN_HIGH) {
+    ::pinMode(pin, OUTPUT);
+    ::digitalWrite(pin, state == SafetyPinState::SAFE_PIN_HIGH ? HIGH : LOW);
+  } else if (state == SafetyPinState::SAFE_PIN_INPUT_PULLUP) {
+    ::pinMode(pin, INPUT_PULLUP);
+  } else {
+    ::pinMode(pin, INPUT);
   }
 }
 

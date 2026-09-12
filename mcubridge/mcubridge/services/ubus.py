@@ -270,21 +270,21 @@ class UbusService:
         )
         self.schedule_async(self.runtime.handle_request(publish))
 
-    def ubus_handle_digital_write(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
-        """UBUS RPC handler for 'mcubridge.digital_write'."""
+    def _handle_pin_write(self, kind: str, msg: dict[str, Any]) -> dict[str, Any]:
         pin = int(msg.get("pin", 0))
         val = int(msg.get("value", 0))
-        self.schedule_async(self.runtime.write_digital_pin(pin, val))
-        self._publish_to_cloud(f"digital/{pin}/set", str(val).encode())
+        writer = self.runtime.write_digital_pin if kind == "digital" else self.runtime.write_analog_pin
+        self.schedule_async(writer(pin, val))
+        self._publish_to_cloud(f"{kind}/{pin}/set", str(val).encode())
         return {"status": "ok", "pin": pin, "value": val}
+
+    def ubus_handle_digital_write(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
+        """UBUS RPC handler for 'mcubridge.digital_write'."""
+        return self._handle_pin_write("digital", msg)
 
     def ubus_handle_analog_write(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.analog_write'."""
-        pin = int(msg.get("pin", 0))
-        val = int(msg.get("value", 0))
-        self.schedule_async(self.runtime.write_analog_pin(pin, val))
-        self._publish_to_cloud(f"analog/{pin}/set", str(val).encode())
-        return {"status": "ok", "pin": pin, "value": val}
+        return self._handle_pin_write("analog", msg)
 
     def ubus_handle_mailbox_push(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.mailbox_push'."""

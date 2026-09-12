@@ -16,12 +16,6 @@ if TYPE_CHECKING:
 
 logger = structlog.get_logger("mcubridge.gpio")
 
-PIN_MODE_MAP: dict[str, pb.PinModeType] = {
-    "INPUT": pb.PinModeType.PIN_INPUT,
-    "OUTPUT": pb.PinModeType.PIN_OUTPUT,
-    "INPUT_PULLUP": pb.PinModeType.PIN_INPUT_PULLUP,
-}
-
 
 class GpioService:
     """Manages reactive MCU pin subscriptions, edge/hysteresis change streams, and telemetry. [SIL-2]"""
@@ -42,7 +36,7 @@ class GpioService:
         if serial is None or not self._runtime.state.is_connected:
             return {"status": "error", "message": "Serial transport is not connected"}
 
-        pb_mode = PIN_MODE_MAP.get(mode.upper(), pb.PinModeType.PIN_INPUT)
+        pb_mode = getattr(pb.PinModeType, f"PIN_{mode.upper()}", pb.PinModeType.PIN_INPUT)
         req = pb.PinSubscribeRequest(
             pin=pin,
             mode=pb_mode,

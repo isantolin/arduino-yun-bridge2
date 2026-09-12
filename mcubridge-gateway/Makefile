@@ -75,15 +75,15 @@ endef
 
 define Package/$(PKG_NAME)/install
 	$(INSTALL_DIR) $(1)/usr/bin
-	$(INSTALL_DIR) $(1)/usr/lib/python3.13/site-packages/mcubridge/protocol
+	$(INSTALL_DIR) $(1)/usr/lib/python3.14/site-packages/mcubridge/protocol
 
 	# Install Gateway Executable
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/mcubridge-gateway $(1)/usr/bin/mcubridge-gateway
 
 	# Install Protocol Stubs for self-contained imports
-	$(CP) $(PKG_BUILD_DIR)/mcubridge/__init__.py $(1)/usr/lib/python3.13/site-packages/mcubridge/
-	$(CP) $(PKG_BUILD_DIR)/mcubridge/protocol/* $(1)/usr/lib/python3.13/site-packages/mcubridge/protocol/
-	python3 -m compileall -o 2 -q $(1)/usr/lib/python3.13/site-packages/mcubridge || true
+	$(CP) $(PKG_BUILD_DIR)/mcubridge/__init__.py $(1)/usr/lib/python3.14/site-packages/mcubridge/
+	$(CP) $(PKG_BUILD_DIR)/mcubridge/protocol/* $(1)/usr/lib/python3.14/site-packages/mcubridge/protocol/
+	python3 -m compileall -o 2 -q $(1)/usr/lib/python3.14/site-packages/mcubridge || true
 endef
 
 $(eval $(call BuildPackage,$(PKG_NAME)))

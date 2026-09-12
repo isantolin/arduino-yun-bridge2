@@ -28,10 +28,10 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v6
 
-      - name: Setup Python 3.13 with Pip Cache
+      - name: Setup Python 3.14 with Pip Cache
         uses: actions/setup-python@v7
         with:
-          python-version: '3.13'
+          python-version: '3.14'
           cache: 'pip'
 
       # Cache layer 1: Downloaded source tarballs (very stable, survives build script changes)
@@ -122,10 +122,10 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v6
 
-      - name: Setup Python 3.13 with Pip Cache
+      - name: Setup Python 3.14 with Pip Cache
         uses: actions/setup-python@v7
         with:
-          python-version: '3.13'
+          python-version: '3.14'
           cache: 'pip'
 
       - name: Cache OpenWrt QEMU Images

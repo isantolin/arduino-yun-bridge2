@@ -9,7 +9,7 @@ inputs:
   python-version:
     description: 'Python version to install'
     required: false
-    default: '3.13'
+    default: '3.14'
   install-system-deps:
     description: 'Install system dependencies (libreadline-dev)'
     required: false

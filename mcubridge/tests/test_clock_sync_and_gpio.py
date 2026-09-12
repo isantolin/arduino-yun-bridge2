@@ -343,16 +343,17 @@ async def test_clock_sync_loop_exception_handling() -> None:
 
         # Run loop iteration under exception via public lifecycle
         await clock.start()
-        await asyncio.sleep(0.02)
-        await clock.stop()
-
+        await asyncio.sleep(0.05)
         assert clock.fsm.degraded.is_active
+        await clock.stop()
+        assert clock.fsm.idle.is_active
 
         # Test disconnected branch in loop
         state.connection_fsm.disconnect()
         assert not state.is_connected
         await clock.start()
-        await asyncio.sleep(0.02)
+        await asyncio.sleep(0.05)
+        assert clock.fsm.idle.is_active
         await clock.stop()
 
         assert clock.fsm.idle.is_active

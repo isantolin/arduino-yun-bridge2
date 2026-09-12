@@ -28,7 +28,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        env: [protocol, deps-sync, luci, cppcheck, typecheck, lint, py, arduino]
+        env: [protocol, deps-sync, luci, cppcheck, typecheck, lint, codebase-auditor, py, arduino]
     steps:
       - uses: actions/checkout@v6
       - name: Install protoc
@@ -45,7 +45,7 @@ jobs:
           install-system-deps: 'true'
           cache-suffix: ${{ matrix.env }}
       - name: Install System Dependencies
-        if: matrix.env == 'cppcheck' || matrix.env == 'typecheck' || matrix.env == 'protocol' || matrix.env == 'lint' || matrix.env == 'py'
+        if: matrix.env == 'cppcheck' || matrix.env == 'typecheck' || matrix.env == 'protocol' || matrix.env == 'lint' || matrix.env == 'py' || matrix.env == 'codebase-auditor'
         run: |
           sudo apt-get update && sudo apt-get install -y cppcheck unzip
           python -m pip install protobuf mypy-protobuf vulture pytest
@@ -80,6 +80,12 @@ jobs:
             fi
           fi
           echo "✅ No hardcoded secrets"
+      - name: Run Codebase Auditor (SIL-2 / MIL-SPEC Integrity)
+        if: matrix.env == 'lint' || matrix.env == 'codebase-auditor'
+        run: |
+          echo "Executing Codebase Auditor (AST Pokemon Exception & Suppression Audit)..."
+          python tools/audit/codebase_auditor.py
+          python tools/audit/audit_library_density.py
       - name: Run Tox Environment
         run: tox -e ${{ matrix.env }}
 

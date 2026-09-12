@@ -408,7 +408,8 @@ def _fetch_latest_version(package_name: str, *, include_prerelease: bool = False
                 parsed_versions.sort()
                 return str(parsed_versions[-1])
         return str(data["info"]["version"])
-    except (urllib.error.URLError, ValueError, KeyError, json.JSONDecodeError, tenacity.RetryError):
+    except (urllib.error.URLError, ValueError, KeyError, json.JSONDecodeError, tenacity.RetryError) as exc:
+        sys.stderr.write(f"[WARN] Failed fetching latest version for {package_name}: {exc}\n")
         return None
 
 
@@ -422,7 +423,8 @@ def _fetch_pypi_sdist_hash(package_name: str, version: str) -> str | None:
             if file_info.get("packagetype") == "sdist":
                 return str(file_info.get("digests", {}).get("sha256") or "")
         return None
-    except (urllib.error.URLError, ValueError, KeyError, json.JSONDecodeError, tenacity.RetryError):
+    except (urllib.error.URLError, ValueError, KeyError, json.JSONDecodeError, tenacity.RetryError) as exc:
+        sys.stderr.write(f"[WARN] Failed fetching sdist hash for {package_name}=={version}: {exc}\n")
         return None
 
 
@@ -447,7 +449,8 @@ def _fetch_github_latest_version(repo: str) -> str | None:
         tenacity.RetryError,
         TimeoutError,
         OSError,
-    ):
+    ) as exc:
+        sys.stderr.write(f"[DEBUG] GitHub latest release failed for {repo} ({exc}), falling back to tags...\n")
         tag_url = f"https://api.github.com/repos/{repo}/tags"
         tag_req = urllib.request.Request(
             tag_url,
@@ -458,10 +461,8 @@ def _fetch_github_latest_version(repo: str) -> str | None:
                 list[dict[str, Any]],
                 json.loads(fetch_url_with_retry(tag_req, timeout=8.0).decode("utf-8")),
             )
-            if tags_data:
-                first = tags_data[0]
-                if "name" in first:
-                    return str(first["name"])
+            if tags_data and "name" in tags_data[0]:
+                return str(tags_data[0]["name"])
         except (
             urllib.error.URLError,
             json.JSONDecodeError,
@@ -471,7 +472,8 @@ def _fetch_github_latest_version(repo: str) -> str | None:
             tenacity.RetryError,
             TimeoutError,
             OSError,
-        ):
+        ) as tag_exc:
+            sys.stderr.write(f"[WARN] GitHub tags query failed for {repo}: {tag_exc}\n")
             return None
     return None
 
@@ -546,17 +548,19 @@ def check_latest_versions(
 
 def _to_apk_version(version: str) -> str:
     """Convert Python pre-release notation to APK (Alpine) version notation."""
+    is_prerelease = True
     try:
-        parsed = Version(version)
-        if not parsed.is_prerelease:
-            return version
+        is_prerelease = Version(version).is_prerelease
     except (InvalidVersion, TypeError):
-        pass
-    version = re.sub(r"(\d)a(\d+)$", r"\1_alpha\2", version)
-    version = re.sub(r"(\d)b(\d+)$", r"\1_beta\2", version)
-    version = re.sub(r"(\d)rc(\d+)$", r"\1_rc\2", version)
-    version = re.sub(r"\.dev(\d+)$", r"_pre\1", version)
-    return version
+        is_prerelease = True
+
+    if not is_prerelease:
+        return version
+
+    converted = re.sub(r"(\d)a(\d+)$", r"\1_alpha\2", version)
+    converted = re.sub(r"(\d)b(\d+)$", r"\1_beta\2", converted)
+    converted = re.sub(r"(\d)rc(\d+)$", r"\1_rc\2", converted)
+    return re.sub(r"\.dev(\d+)$", r"_pre\1", converted)
 
 
 def update_feeds(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:

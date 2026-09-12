@@ -9,6 +9,7 @@ Enforces SIL-2/MIL-SPEC compliance across:
 
 from __future__ import annotations
 
+import ast
 import re
 import sys
 from pathlib import Path
@@ -106,7 +107,7 @@ def audit_cpp_library_density() -> list[str]:
 
 
 def audit_python_suppression_and_context() -> list[str]:
-    """Audit Python production code for suppression violations."""
+    """Audit Python production code for suppression violations and Pokemon exceptions."""
     errors: list[str] = []
     py_dirs = [
         ROOT / "mcubridge" / "mcubridge",
@@ -121,7 +122,7 @@ def audit_python_suppression_and_context() -> list[str]:
         (re.compile(r"#\s*pragma:\s*no cover"), "Coverage suppression (pragma: no cover)"),
         (re.compile(r"errors\s*=\s*['\"](ignore|replace|backslashreplace)['\"]"), "String encoding suppression"),
         (re.compile(r"contextlib\.suppress"), "Exception suppression (contextlib.suppress)"),
-        (re.compile(r"except\s*:\s*pass"), "Catch-all silent pass (except: pass)"),
+        (re.compile(r"@(?:typing\.)?no_type_check"), "Typecheck suppression (@no_type_check)"),
     ]
 
     for base_dir in py_dirs:
@@ -136,9 +137,36 @@ def audit_python_suppression_and_context() -> list[str]:
             ):
                 continue
 
-            lines = py_file.read_text(encoding="utf-8").splitlines()
+            content = py_file.read_text(encoding="utf-8")
             rel_path = py_file.relative_to(ROOT)
 
+            # 1. AST Pokemon exception validation
+            try:
+                tree = ast.parse(content, filename=str(py_file))
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.ExceptHandler):
+                        if node.type is None:
+                            errors.append(
+                                f"[{rel_path}:{node.lineno}] Rule 4 Violation: "
+                                "Bare 'except:' (Pokemon exception) detected."
+                            )
+                        elif isinstance(node.type, ast.Name) and node.type.id in ("Exception", "BaseException"):
+                            errors.append(
+                                f"[{rel_path}:{node.lineno}] Rule 4 Violation: "
+                                f"Catch-all 'except {node.type.id}:' detected."
+                            )
+                        elif isinstance(node.type, ast.Tuple):
+                            for elt in node.type.elts:
+                                if isinstance(elt, ast.Name) and elt.id in ("Exception", "BaseException"):
+                                    errors.append(
+                                        f"[{rel_path}:{node.lineno}] Rule 4 Violation: "
+                                        f"Catch-all in tuple ({elt.id}) detected."
+                                    )
+            except SyntaxError as exc:
+                errors.append(f"[{rel_path}] Rule 4 Violation: Python SyntaxError: {exc}")
+
+            # 2. Line-by-line suppression pattern validation
+            lines = content.splitlines()
             for idx, line in enumerate(lines, start=1):
                 clean_line = line.strip()
                 for pattern, name in suppression_patterns:
@@ -161,6 +189,7 @@ def main() -> None:
         print("❌ ARCHITECTURAL & LIBRARY DENSITY AUDIT FAILURES:", file=sys.stderr)
         for err in all_errors:
             print(f"  - {err}", file=sys.stderr)
+            print(f"::error::{err}")
         sys.exit(1)
 
     print("✅ Library Density & Architectural Rule Audit PASSED (100% compliant).")

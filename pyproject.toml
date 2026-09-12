@@ -127,7 +127,7 @@ line-length = 120
 exclude = ["*_pb2.py", "*_pb2.pyi", "*_grpc.py", "typings", "tools/protocol/templates", ".tmp_tests"]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "C90", "A", "PLW"]
+select = ["E", "F", "W", "C90", "A", "PLW", "BLE"]
 extend-select = ["E226"]
 preview = true
 explicit-preview-rules = true

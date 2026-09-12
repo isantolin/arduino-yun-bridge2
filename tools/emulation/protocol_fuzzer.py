@@ -165,7 +165,7 @@ def main(
     try:
         asyncio.run(fuzzer.run(count))
     except KeyboardInterrupt:
-        pass
+        print("\n[INFO] Fuzzer interrupted by user.")
 
 
 if __name__ == "__main__":

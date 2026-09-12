@@ -1671,7 +1671,7 @@ class BridgeService:
                         payload_hex=(message.payload.hex() if message.payload else None),
                     )
         except anyio.get_cancelled_exc_class():
-            pass
+            logger.debug("Cloud incoming worker cancelled during shutdown")
 
     async def supervise(
         self,

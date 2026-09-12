@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 import re
 import sys
@@ -12,10 +13,19 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def audit_python_files() -> list[str]:
-    """Audit Python source files for Pokemon exceptions and passthrough shims."""
+    """Audit Python source files for Pokemon exceptions, suppressions, and passthrough shims."""
     findings: list[str] = []
     print("Auditing Python files...")
-    pokemon_pattern = re.compile(r"except\s*:\s*pass|except\s+Exception\s*:\s*pass|errors\s*=\s*['\"]ignore['\"]")
+
+    suppression_patterns = [
+        (re.compile(r"#\s*(type|pyright):\s*ignore"), "Static type suppression (# type: ignore)"),
+        (re.compile(r"#\s*noqa"), "Linter suppression (# noqa)"),
+        (re.compile(r"#\s*pragma:\s*no cover"), "Coverage suppression (pragma: no cover)"),
+        (re.compile(r"errors\s*=\s*['\"](ignore|replace|backslashreplace)['\"]"), "String encoding suppression"),
+        (re.compile(r"contextlib\.suppress"), "Exception suppression (contextlib.suppress)"),
+        (re.compile(r"@(?:typing\.)?no_type_check"), "Typecheck suppression (@no_type_check)"),
+    ]
+
     passthrough_pattern = re.compile(
         r"def\s+(\w+)\(self,\s*\*args,\s*\*\*kwargs\):\s*return\s+self\.\w+\(\*args,\s*\*\*kwargs\)"
     )
@@ -32,11 +42,36 @@ def audit_python_files() -> list[str]:
             if "_pb2" in py_file.name or py_file.name in {"audit_library_density.py", "codebase_auditor.py"}:
                 continue
             content = py_file.read_text(encoding="utf-8")
+
+            # 1. AST audit for Pokemon exceptions and silent handlers
+            try:
+                tree = ast.parse(content, filename=str(py_file))
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.ExceptHandler):
+                        if node.type is None:
+                            findings.append(f"Python Pokemon Exception: {py_file.name}:{node.lineno} - bare 'except:'")
+                        elif isinstance(node.type, ast.Name) and node.type.id in ("Exception", "BaseException"):
+                            findings.append(
+                                f"Python Pokemon Exception: {py_file.name}:{node.lineno} - 'except {node.type.id}:'"
+                            )
+                        elif isinstance(node.type, ast.Tuple):
+                            for elt in node.type.elts:
+                                if isinstance(elt, ast.Name) and elt.id in ("Exception", "BaseException"):
+                                    findings.append(
+                                        f"Python Pokemon Exception: {py_file.name}:{node.lineno} - "
+                                        f"'except (..., {elt.id}, ...):'"
+                                    )
+            except SyntaxError as exc:
+                findings.append(f"Python Syntax Error: {py_file.name} - {exc}")
+
+            # 2. Line-by-line audit for Rule 4 suppressions and shims
             for i, line in enumerate(content.splitlines(), 1):
-                if pokemon_pattern.search(line):
-                    findings.append(f"Python Suppression: {py_file.name}:{i} - '{line.strip()}'")
+                clean_line = line.strip()
+                for pattern, desc in suppression_patterns:
+                    if pattern.search(clean_line):
+                        findings.append(f"Python Suppression: {py_file.name}:{i} - {desc}: '{clean_line}'")
                 if passthrough_pattern.search(line):
-                    findings.append(f"Python Passthrough Shim: {py_file.name}:{i} - '{line.strip()}'")
+                    findings.append(f"Python Passthrough Shim: {py_file.name}:{i} - '{clean_line}'")
     return findings
 
 
@@ -96,6 +131,7 @@ def main() -> None:
     else:
         for f in all_findings:
             print(f)
+            print(f"::error::{f}")
         sys.exit(1)
 
 

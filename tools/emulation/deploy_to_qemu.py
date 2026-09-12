@@ -74,8 +74,8 @@ def main(
     )
     try:
         wake_retryer(_wake_console)
-    except tenacity.RetryError:
-        pass
+    except tenacity.RetryError as exc:
+        print(f"[WARN] Console wake retry exhausted: {exc}")
 
     child.sendline("")
     child.expect(PROMPT, timeout=15)

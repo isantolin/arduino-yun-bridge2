@@ -17,6 +17,7 @@ def mock_grpc() -> tuple[MagicMock, MagicMock]:
     mock_stub.DatastorePut = AsyncMock()
     mock_stub.FileWrite = AsyncMock()
     mock_stub.AnalogRead = AsyncMock()
+    mock_stub.PinSubscribe = AsyncMock()
     return mock_channel, mock_stub
 
 
@@ -93,3 +94,27 @@ async def test_client_analog_read_timeout(mock_grpc: tuple[MagicMock, MagicMock]
     msg = pb.PinRead(pin=0)
     with pytest.raises(TimeoutError):
         await mock_stub.AnalogRead(msg)
+
+
+@pytest.mark.asyncio
+async def test_client_pin_subscribe(mock_grpc: tuple[MagicMock, MagicMock]) -> None:
+    _, mock_stub = mock_grpc
+    mock_fn = cast(AsyncMock, mock_stub.PinSubscribe)
+    mock_fn.return_value = pb.PinSubscribeResponse(pin=13, success=True)
+    msg = pb.PinSubscribeRequest(
+        pin=13,
+        mode=pb.PinModeType.PIN_INPUT,
+        interval_ms=100,
+        hysteresis=1,
+        enabled=True,
+    )
+    res = cast(pb.PinSubscribeResponse, await mock_stub.PinSubscribe(msg))
+    mock_fn.assert_awaited_once_with(msg)
+    assert res.pin == 13
+    assert res.success is True
+    call_args = mock_fn.call_args
+    assert call_args is not None
+    sent = cast(pb.PinSubscribeRequest, call_args[0][0])
+    assert sent.pin == 13
+    assert sent.interval_ms == 100
+    assert sent.enabled is True

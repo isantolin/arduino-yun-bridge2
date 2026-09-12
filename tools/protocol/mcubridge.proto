@@ -1543,6 +1543,7 @@ service LocalBridge {
     rpc DigitalRead(rpc.pb.PinRead) returns (rpc.pb.DigitalReadResponse);
     rpc AnalogWrite(rpc.pb.AnalogWrite) returns (rpc.pb.GenericResponse);
     rpc AnalogRead(rpc.pb.PinRead) returns (rpc.pb.AnalogReadResponse);
+    rpc PinSubscribe(rpc.pb.PinSubscribeRequest) returns (rpc.pb.PinSubscribeResponse);
 
     // Datastore Key-Value Operations
     rpc DatastorePut(rpc.pb.DatastorePut) returns (rpc.pb.GenericResponse);

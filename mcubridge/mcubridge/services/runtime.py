@@ -1822,6 +1822,28 @@ class LocalBridgeService(LocalBridgeBase):
             stream, Command.CMD_ANALOG_READ, pb.AnalogReadResponse, pb.AnalogReadResponse()
         )
 
+    async def PinSubscribe(self, stream: Stream[pb.PinSubscribeRequest, pb.PinSubscribeResponse]) -> None:
+        request = await stream.recv_message()
+        if request is None:
+            return
+        try:
+            mode_str = pb.PinModeType.Name(request.mode).removeprefix("PIN_")
+        except (ValueError, KeyError):
+            mode_str = "INPUT"
+        res = await self.runtime_service.gpio.subscribe_pin(
+            pin=request.pin,
+            mode=mode_str,
+            interval_ms=request.interval_ms,
+            hysteresis=request.hysteresis,
+            enabled=request.enabled,
+        )
+        await stream.send_message(
+            pb.PinSubscribeResponse(
+                pin=request.pin,
+                success=bool(res.get("status") == "ok"),
+            )
+        )
+
     async def DatastorePut(self, stream: Stream[pb.DatastorePut, pb.GenericResponse]) -> None:
         if (request := await stream.recv_message()) is None:
             return

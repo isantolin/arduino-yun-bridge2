@@ -361,3 +361,43 @@ async def test_clock_sync_loop_exception_handling() -> None:
         service.cleanup()
 
 
+@pytest.mark.asyncio
+async def test_local_bridge_pin_subscribe() -> None:
+    from mcubridge.services.runtime import LocalBridgeService
+
+    config = _make_config()
+    state = create_runtime_state(config)
+    mock_serial = AsyncMock(spec=SerialTransport)
+    service = BridgeService(config, state, mock_serial)
+
+    try:
+        state.connection_fsm.connect()
+        mock_serial.send.return_value = pb.PinSubscribeResponse(pin=13, success=True)
+
+        local_svc = LocalBridgeService(service)
+        mock_stream = AsyncMock()
+        mock_stream.recv_message.return_value = pb.PinSubscribeRequest(
+            pin=13,
+            mode=pb.PinModeType.PIN_INPUT_PULLUP,
+            interval_ms=100,
+            hysteresis=2,
+            enabled=True,
+        )
+
+        await local_svc.PinSubscribe(mock_stream)
+        mock_stream.send_message.assert_awaited_once()
+        sent_resp = mock_stream.send_message.call_args[0][0]
+        assert sent_resp.pin == 13
+        assert sent_resp.success is True
+        assert 13 in state.pin_subscriptions
+
+        # Test request is None branch
+        mock_stream_none = AsyncMock()
+        mock_stream_none.recv_message.return_value = None
+        await local_svc.PinSubscribe(mock_stream_none)
+        mock_stream_none.send_message.assert_not_awaited()
+    finally:
+        service.cleanup()
+
+
+

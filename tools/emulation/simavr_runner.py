@@ -147,7 +147,7 @@ def _build_simavr_harness() -> Path | None:
             logger.info("Compiled ETL-compliant simavr_harness binary", binary=str(harness_bin))
             return harness_bin
         logger.warn("Failed to compile simavr_harness via g++", stderr=res.stderr)
-    except Exception as exc:
+    except (subprocess.SubprocessError, OSError) as exc:
         logger.warn("g++ not available to build simavr_harness", error=str(exc))
     return None
 
@@ -349,7 +349,7 @@ def run_simavr_emulation(
                     all_passed = False
                 else:
                     logger.info("Post-execution status health check passed (100% clean)")
-            except Exception as exc:
+            except (OSError, json.JSONDecodeError, ValueError, TypeError) as exc:
                 logger.error("Failed auditing bridge status", error=str(exc))
                 all_passed = False
 

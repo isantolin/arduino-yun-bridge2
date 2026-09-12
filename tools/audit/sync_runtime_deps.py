@@ -12,7 +12,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Annotated, Any, TypedDict, cast
 
-from packaging.requirements import Requirement
+from packaging.requirements import InvalidRequirement, Requirement
 from packaging.version import InvalidVersion, Version
 import tenacity
 import typer
@@ -360,7 +360,7 @@ def _parse_pip_spec(spec: str) -> tuple[str, str]:
                 pinned = specifier.version
                 break
         return name, pinned
-    except Exception:
+    except (InvalidRequirement, ValueError):
         if "==" not in spec:
             return spec, ""
         name_part, version = spec.split("==", 1)
@@ -402,7 +402,7 @@ def _fetch_latest_version(package_name: str, *, include_prerelease: bool = False
                     if not include_prerelease and v.is_prerelease:
                         continue
                     parsed_versions.append(v)
-                except Exception:
+                except (InvalidVersion, ValueError):
                     continue
             if parsed_versions:
                 parsed_versions.sort()
@@ -438,7 +438,16 @@ def _fetch_github_latest_version(repo: str) -> str | None:
         tag: Any = data.get("tag_name")
         if tag is not None:
             return str(tag)
-    except Exception:
+    except (
+        urllib.error.URLError,
+        json.JSONDecodeError,
+        KeyError,
+        IndexError,
+        UnicodeDecodeError,
+        tenacity.RetryError,
+        TimeoutError,
+        OSError,
+    ):
         tag_url = f"https://api.github.com/repos/{repo}/tags"
         tag_req = urllib.request.Request(
             tag_url,
@@ -453,7 +462,16 @@ def _fetch_github_latest_version(repo: str) -> str | None:
                 first = tags_data[0]
                 if "name" in first:
                     return str(first["name"])
-        except Exception:
+        except (
+            urllib.error.URLError,
+            json.JSONDecodeError,
+            KeyError,
+            IndexError,
+            UnicodeDecodeError,
+            tenacity.RetryError,
+            TimeoutError,
+            OSError,
+        ):
             return None
     return None
 
@@ -477,7 +495,7 @@ def check_latest_versions(
         try:
             pinned_ver = Version(pinned)
             is_prerelease = pinned_ver.is_prerelease
-        except Exception:
+        except (InvalidVersion, TypeError):
             is_prerelease = any(tag in pinned for tag in ("rc", "a", "b", "dev"))
             pinned_ver = None
 
@@ -489,7 +507,7 @@ def check_latest_versions(
                     outdated.append((name, pinned, latest_str))
                 elif not pinned_ver and latest_str != pinned:
                     outdated.append((name, pinned, latest_str))
-            except Exception:
+            except (InvalidVersion, TypeError):
                 if latest_str != pinned:
                     outdated.append((name, pinned, latest_str))
 
@@ -503,7 +521,7 @@ def check_latest_versions(
             try:
                 if Version(latest_str) > Version(pinned):
                     outdated.append((name, pinned, latest_str))
-            except Exception:
+            except (InvalidVersion, TypeError):
                 if latest_str != pinned:
                     outdated.append((name, pinned, latest_str))
 
@@ -519,7 +537,7 @@ def check_latest_versions(
             try:
                 if Version(clean_latest) > Version(clean_pinned):
                     outdated.append((cpp_dep["name"], pinned, gh_latest))
-            except Exception:
+            except (InvalidVersion, TypeError):
                 if gh_latest != pinned:
                     outdated.append((cpp_dep["name"], pinned, gh_latest))
 

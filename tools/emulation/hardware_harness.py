@@ -110,7 +110,7 @@ def load_manifest(path: Path) -> list[Target]:
                 )
             )
         manifest = Manifest(targets=targets_list, defaults=defaults)
-    except (OSError, Exception) as e:
+    except (OSError, tomllib.TOMLDecodeError, ValueError, TypeError) as e:
         print(f"Error parsing manifest {path}: {e}")
         return []
 
@@ -324,7 +324,7 @@ def run(
         if status_file.exists():
             try:
                 status_errors = audit_status_dict(json.loads(status_file.read_text(encoding="utf-8")))
-            except Exception as e:
+            except (OSError, json.JSONDecodeError, ValueError, TypeError) as e:
                 status_errors = [f"Failed to parse /tmp/mcubridge_status.json: {e}"]
     else:
         try:
@@ -340,7 +340,7 @@ def run(
             )
             if res.stdout.strip():
                 status_errors = audit_status_dict(json.loads(res.stdout))
-        except Exception as e:
+        except (subprocess.SubprocessError, OSError, json.JSONDecodeError, ValueError, TypeError) as e:
             status_errors = [f"Failed to retrieve remote status via UBUS/file: {e}"]
 
     if status_errors:

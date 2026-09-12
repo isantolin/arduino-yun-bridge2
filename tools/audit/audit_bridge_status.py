@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 from typing import Annotated, Any
 
-from google.protobuf.json_format import ParseDict
+from google.protobuf.json_format import ParseDict, ParseError
 import typer
 
 from mcubridge.protocol import mcubridge_pb2 as pb
@@ -50,7 +50,7 @@ def audit_status_dict(data: dict[str, Any]) -> list[str]:
     status_pb = pb.BridgeStatus()
     try:
         ParseDict(data, status_pb, ignore_unknown_fields=True)
-    except Exception as exc:
+    except (ParseError, ValueError, TypeError) as exc:
         return [f"Status Protobuf deserialization failed: {exc}"]
 
     # 2. Cloud spool drop / trim anomalies

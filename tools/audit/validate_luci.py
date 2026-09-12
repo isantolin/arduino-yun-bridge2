@@ -31,7 +31,7 @@ def validate_luci_app() -> int:
             with open(jf, "r", encoding="utf-8") as f:
                 data = json.load(f)
             sys.stdout.write(f"  ✔ {jf.relative_to(repo_root)} (valid JSON, {len(data)} entries)\n")
-        except Exception as e:
+        except (OSError, json.JSONDecodeError) as e:
             sys.stderr.write(f"  ✖ {jf.relative_to(repo_root)}: {e}\n")
             errors += 1
 

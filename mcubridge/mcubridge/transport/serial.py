@@ -171,6 +171,7 @@ class SerialTransport:
             if self._current:
                 self._current.mark_failure(Status.TIMEOUT.value)
             self._current = None
+            self.state.link_last_nonce_counter = 0
 
     async def run(self) -> None:
         """Main lifecycle loop of the serial transport."""

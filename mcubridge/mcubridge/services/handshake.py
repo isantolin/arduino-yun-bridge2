@@ -623,6 +623,7 @@ class SerialHandshakeManager:
         self._state.last_handshake_error = None
         self._state.last_handshake_unix = time.time()
         self._state.handshake_last_duration = self._state.handshake_duration_since_start()
+        self._state.link_last_nonce_counter = 0
         self._state.connection_fsm.synchronize()
         self._state.handshake_successes += 1
         self._state.metrics.handshake_successes.inc()

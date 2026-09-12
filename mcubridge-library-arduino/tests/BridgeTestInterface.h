@@ -138,6 +138,31 @@ class TestAccessor : public BridgeClass {
   }
   void setRxNonceCounter(uint64_t counter) { _rx_nonce_counter = counter; }
 
+  void fillPendingTxQueue() {
+    while (!_pending_tx_queue.full()) {
+      _pending_tx_queue.push_back({1, 1, nullptr, 0});
+    }
+  }
+  void setNullStream() { _stream = nullptr; }
+  void setLastRxMs(uint32_t ms) { _last_rx_ms = ms; }
+  void invokeSubscriptionTask() { _subscriptionTask(); }
+  void invokeInitializeRuntime() { _initializeRuntime(); }
+  void setSubscriptionLastValue(size_t idx, uint16_t val) {
+    if (idx < _pin_subscriptions.size()) {
+      _pin_subscriptions[idx].last_value = val;
+    }
+  }
+  void setSubscriptionLastReportMs(size_t idx, uint32_t ms) {
+    if (idx < _pin_subscriptions.size()) {
+      _pin_subscriptions[idx].last_report_ms = ms;
+    }
+  }
+  void setSubscriptionActive(size_t idx, bool active) {
+    if (idx < _pin_subscriptions.size()) {
+      _pin_subscriptions[idx].active = active;
+    }
+  }
+
   void setIdle() {
     if (!_fsm.is_started()) _fsm.start();
     _fsm.receive(bridge::fsm::EvReset());

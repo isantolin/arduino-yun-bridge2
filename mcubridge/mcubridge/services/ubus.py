@@ -57,6 +57,9 @@ class BridgeRuntimeFacade(Protocol):
     async def write_digital_pin(self, pin: int, value: int) -> bool: ...
     async def write_analog_pin(self, pin: int, value: int) -> bool: ...
 
+    clock_sync: Any
+    gpio: Any
+
 
 _UBUS_METHOD_SIGS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
     ("status", ()),
@@ -72,6 +75,18 @@ _UBUS_METHOD_SIGS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
     ("process_poll", (("pid", "INT32"),)),
     ("link_reset", ()),
     ("ping", ()),
+    ("clock_status", ()),
+    ("clock_sync", ()),
+    (
+        "pin_subscribe",
+        (
+            ("pin", "INT32"),
+            ("mode", "STRING"),
+            ("interval_ms", "INT32"),
+            ("hysteresis", "INT32"),
+            ("enabled", "INT32"),
+        ),
+    ),
 )
 
 
@@ -196,8 +211,41 @@ class UbusService:
             if isinstance(caps, pb.Capabilities)
             else {k: bool(v) for k, v in caps.items()} if isinstance(caps, dict) else {}
         )
+        data["clock_status"] = {
+            "offset_us": state.clock_offset_us,
+            "rtt_us": state.clock_rtt_us,
+            "sync_count": state.clock_sync_count,
+            "last_sync_unix": state.clock_last_sync_timestamp,
+        }
+        data["pin_subscriptions"] = state.pin_subscriptions
 
         return data
+
+    def ubus_handle_clock_status(self, _req: Any, _msg: dict[str, Any]) -> dict[str, Any]:
+        """UBUS RPC handler for 'mcubridge.clock_status'."""
+        clock_service = getattr(self.runtime, "clock_sync", None)
+        if clock_service:
+            return clock_service.get_status()
+        return {"status": "error", "message": "Clock service unavailable"}
+
+    def ubus_handle_clock_sync(self, _req: Any, _msg: dict[str, Any]) -> dict[str, Any]:
+        """UBUS RPC handler for 'mcubridge.clock_sync'."""
+        clock_service = getattr(self.runtime, "clock_sync", None)
+        if clock_service:
+            return self.run_sync(clock_service.sync_now())
+        return {"status": "error", "message": "Clock service unavailable"}
+
+    def ubus_handle_pin_subscribe(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
+        """UBUS RPC handler for 'mcubridge.pin_subscribe'."""
+        gpio_service = getattr(self.runtime, "gpio", None)
+        if not gpio_service:
+            return {"status": "error", "message": "GPIO service unavailable"}
+        pin = int(msg.get("pin", 0))
+        mode = str(msg.get("mode", "INPUT"))
+        interval_ms = int(msg.get("interval_ms", 50))
+        hysteresis = int(msg.get("hysteresis", 1))
+        enabled = bool(int(msg.get("enabled", 1)))
+        return self.run_sync(gpio_service.subscribe_pin(pin, mode, interval_ms, hysteresis, enabled))
 
     def ubus_handle_link_reset(self, _req: Any, _msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.link_reset'."""
@@ -303,16 +351,32 @@ class UbusService:
         }
 
     def run_sync(self, coro: Any) -> Any:
-        """Execute a coroutine synchronously in a running or fresh event loop via anyio."""
+        """Execute a coroutine synchronously in a running or fresh event loop. [SIL-2]"""
+        target_loop = self._loop
+        if target_loop is not None and target_loop.is_running():
+            try:
+                current_loop = asyncio.get_running_loop()
+            except RuntimeError:
+                current_loop = None
+
+            if current_loop is not target_loop:
+                fut = asyncio.run_coroutine_threadsafe(coro, target_loop)
+                return fut.result(timeout=5.0)
+
         try:
             return anyio.from_thread.run(lambda: coro)
         except (anyio.NoEventLoopError, RuntimeError):
             try:
                 loop = asyncio.get_running_loop()
-                fut = asyncio.run_coroutine_threadsafe(coro, loop)
-                return fut.result(timeout=5.0)
             except RuntimeError:
-                return asyncio.run(coro)
+                loop = None
+
+            if loop is not None and loop.is_running():
+                import concurrent.futures
+
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                    return pool.submit(asyncio.run, coro).result(timeout=5.0)
+            return asyncio.run(coro)
 
     def notify(self, event_type: str, data: dict[str, Any]) -> bool:
         """Broadcast a native UBUS event notification (e.g. 'mcubridge.sync')."""

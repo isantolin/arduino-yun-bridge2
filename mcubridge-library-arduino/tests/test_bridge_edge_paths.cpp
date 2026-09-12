@@ -649,6 +649,178 @@ void test_fault_injection_harness_paths() {
   }
 }
 
+void test_architectural_extensions_edge_paths() {
+  rpc_pb_Capabilities caps = rpc_pb_Capabilities_init_default;
+  bridge::hal::fillCapabilities(caps);
+  TEST_ASSERT_EQUAL_UINT32(rpc::PROTOCOL_VERSION, caps.ver);
+  TEST_ASSERT_TRUE(caps.board_name[0] != '\0');
+
+  // Exercise applySafetyPin all states and default
+  bridge::hal::applySafetyPin(10, bridge::hal::SafetyPinState::SAFE_PIN_LOW);
+  bridge::hal::applySafetyPin(10, bridge::hal::SafetyPinState::SAFE_PIN_HIGH);
+  bridge::hal::applySafetyPin(
+      10, bridge::hal::SafetyPinState::SAFE_PIN_INPUT_PULLUP);
+  bridge::hal::applySafetyPin(10, bridge::hal::SafetyPinState::SAFE_PIN_INPUT);
+  bridge::hal::applySafetyPin(10, static_cast<bridge::hal::SafetyPinState>(99));
+
+  // Safety pins registration and overflow
+  Bridge.clearSafetyPins();
+  for (uint8_t p = 1; p <= 10; ++p) {
+    Bridge.registerSafetyPin(p, BridgeClass::SafetyPinState::SAFE_PIN_LOW);
+  }
+  Bridge.registerSafetyPin(1, BridgeClass::SafetyPinState::SAFE_PIN_HIGH);
+  Bridge.enterSafeState();
+  Bridge.clearSafetyPins();
+
+  BiStream stream;
+  reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
+
+  // Watchdog timeout branches
+  Bridge.setWatchdogTimeout(100);
+  TEST_ASSERT_EQUAL_UINT32(100, Bridge.getWatchdogTimeout());
+  ba.setLastRxMs(bridge::test::fault::clock_ms());
+  ba.invokeWatchdog();  // (clock_ms() - last_rx_ms) <= 100 -> does NOT expire
+  bridge::test::fault::advance_clock_ms(200);
+  ba.invokeWatchdog();  // (clock_ms() - last_rx_ms) > 100 -> EXPIRES
+  Bridge.setWatchdogTimeout(0);
+  TEST_ASSERT_EQUAL_UINT32(0, Bridge.getWatchdogTimeout());
+
+  ba.setSynchronized();
+  rpc_pb_ClockSyncRequest sync_req = rpc_pb_ClockSyncRequest_init_default;
+  sync_req.host_time_us = 987654321ULL;
+  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buf;
+  auto sync_frame = make_payload_frame(
+      rpc::to_underlying(rpc::CommandId::CMD_CLOCK_SYNC), 301, sync_req, buf);
+  ba.dispatch(sync_frame);
+
+  // Disable non-existent pin
+  rpc_pb_PinSubscribeRequest sub_dis_unreg =
+      rpc_pb_PinSubscribeRequest_init_default;
+  sub_dis_unreg.pin = 99;
+  sub_dis_unreg.enabled = false;
+  auto sub_frame_dis =
+      make_payload_frame(rpc::to_underlying(rpc::CommandId::CMD_PIN_SUBSCRIBE),
+                         305, sub_dis_unreg, buf);
+  ba.dispatch(sub_frame_dis);
+
+  // Subscribe pin INPUT
+  rpc_pb_PinSubscribeRequest sub_req = rpc_pb_PinSubscribeRequest_init_default;
+  sub_req.pin = 2;
+  sub_req.mode = rpc_pb_PinModeType_PIN_INPUT;
+  sub_req.interval_ms = 10;
+  sub_req.hysteresis = 1;
+  sub_req.enabled = true;
+  auto sub_frame = make_payload_frame(
+      rpc::to_underlying(rpc::CommandId::CMD_PIN_SUBSCRIBE), 302, sub_req, buf);
+  ba.dispatch(sub_frame);
+
+  // Subscribe pin INPUT_PULLUP
+  rpc_pb_PinSubscribeRequest sub_pu = rpc_pb_PinSubscribeRequest_init_default;
+  sub_pu.pin = 3;
+  sub_pu.mode = rpc_pb_PinModeType_PIN_INPUT_PULLUP;
+  sub_pu.interval_ms = 10;
+  sub_pu.hysteresis = 2;
+  sub_pu.enabled = true;
+  auto sub_frame_pu = make_payload_frame(
+      rpc::to_underlying(rpc::CommandId::CMD_PIN_SUBSCRIBE), 306, sub_pu, buf);
+  ba.dispatch(sub_frame_pu);
+
+  // Subscribe pin OUTPUT
+  rpc_pb_PinSubscribeRequest sub_an = rpc_pb_PinSubscribeRequest_init_default;
+  sub_an.pin = 4;
+  sub_an.mode = rpc_pb_PinModeType_PIN_OUTPUT;
+  sub_an.interval_ms = 10;
+  sub_an.hysteresis = 5;
+  sub_an.enabled = true;
+  auto sub_frame_an = make_payload_frame(
+      rpc::to_underlying(rpc::CommandId::CMD_PIN_SUBSCRIBE), 307, sub_an, buf);
+  ba.dispatch(sub_frame_an);
+
+  // Update existing subscription
+  sub_req.interval_ms = 5;
+  auto sub_update = make_payload_frame(
+      rpc::to_underlying(rpc::CommandId::CMD_PIN_SUBSCRIBE), 303, sub_req, buf);
+  ba.dispatch(sub_update);
+
+  // Fill subscriptions to full capacity (8 max) then attempt 9th
+  for (uint8_t p = 10; p < 18; ++p) {
+    rpc_pb_PinSubscribeRequest s = rpc_pb_PinSubscribeRequest_init_default;
+    s.pin = p;
+    s.enabled = true;
+    auto f = make_payload_frame(
+        rpc::to_underlying(rpc::CommandId::CMD_PIN_SUBSCRIBE), 310 + p, s, buf);
+    ba.dispatch(f);
+  }
+  rpc_pb_PinSubscribeRequest sub_overflow =
+      rpc_pb_PinSubscribeRequest_init_default;
+  sub_overflow.pin = 50;
+  sub_overflow.enabled = true;
+  auto f_overflow =
+      make_payload_frame(rpc::to_underlying(rpc::CommandId::CMD_PIN_SUBSCRIBE),
+                         330, sub_overflow, buf);
+  ba.dispatch(f_overflow);
+
+  // Subscription task execution paths
+  ba.clearSynchronized();
+  ba.invokeSubscriptionTask();  // !isSynchronized()
+  ba.setSynchronized();
+
+  ba.setSubscriptionLastReportMs(0, bridge::test::fault::clock_ms());
+  ba.invokeSubscriptionTask();  // now - last_report_ms < interval_ms
+
+  bridge::test::fault::advance_clock_ms(50);
+  ba.setSubscriptionLastValue(0, 100);
+  ba.invokeSubscriptionTask();  // diff < 0
+
+  ba.setSubscriptionLastValue(0, 0);
+  ba.invokeSubscriptionTask();  // diff < hysteresis
+
+  ba.setSubscriptionActive(0, false);
+  ba.invokeSubscriptionTask();  // !sub.active
+
+  // Disable subscription
+  sub_req.enabled = false;
+  auto sub_disable = make_payload_frame(
+      rpc::to_underlying(rpc::CommandId::CMD_PIN_SUBSCRIBE), 304, sub_req, buf);
+  ba.dispatch(sub_disable);
+
+  // Pin read out of bounds
+  rpc_pb_PinRead bad_read = rpc_pb_PinRead_init_default;
+  bad_read.pin = 250;
+  auto f_bad_dig = make_payload_frame(
+      rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_READ), 340, bad_read, buf);
+  ba.dispatch(f_bad_dig);
+  auto f_bad_ana = make_payload_frame(
+      rpc::to_underlying(rpc::CommandId::CMD_ANALOG_READ), 341, bad_read, buf);
+  ba.dispatch(f_bad_ana);
+
+  // Queue full send failure
+  ba.fillPendingTxQueue();
+  rpc_pb_PinSubscribeRequest sub_dummy =
+      rpc_pb_PinSubscribeRequest_init_default;
+  TEST_ASSERT_FALSE(Bridge.send(rpc::CommandId::CMD_PIN_SUBSCRIBE, 1, sub_dummy,
+                                rpc_pb_ChannelId_CHANNEL_CONTROL,
+                                rpc_pb_QosProfile_QOS_RELIABLE));
+  ba.clearPendingTxQueue();
+
+  // Pool exhausted send failure
+  ba.exhaustTxPayloadPool();
+  TEST_ASSERT_FALSE(Bridge.send(rpc::CommandId::CMD_PIN_SUBSCRIBE, 2, sub_dummy,
+                                rpc_pb_ChannelId_CHANNEL_CONTROL,
+                                rpc_pb_QosProfile_QOS_RELIABLE));
+  reset_bridge_core(Bridge, stream);
+  ba.setSynchronized();
+
+  // Null stream paths
+  ba.setNullStream();
+  ba.invokeInitializeRuntime();
+  (void)Bridge.sendFrame(rpc::CommandId::CMD_GET_VERSION, 350);
+  reset_bridge_core(Bridge, stream);
+  ba.setSynchronized();
+}
+
 }  // namespace
 
 int main() {
@@ -665,5 +837,6 @@ int main() {
   RUN_TEST(test_filesystem_spi_fsm_edges);
   RUN_TEST(test_encrypted_rx_nonce_paths);
   RUN_TEST(test_fault_injection_harness_paths);
+  RUN_TEST(test_architectural_extensions_edge_paths);
   return UNITY_END();
 }

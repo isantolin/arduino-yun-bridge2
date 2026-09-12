@@ -205,6 +205,24 @@ void BridgeClass::_onCmd_PinRead(BridgeClass& self,
       false, true);
 }
 
+void BridgeClass::_onCmd_PinSubscribe(
+    BridgeClass& self, const bridge::router::CommandContext& ctx) {
+  self._dispatchCmd<rpc_pb_PinSubscribeRequest>(
+      ctx, [&self](const bridge::router::CommandContext& c,
+                   const rpc_pb_PinSubscribeRequest& m) {
+        self._handlePinSubscribe(c, m);
+      });
+}
+
+void BridgeClass::_onCmd_ClockSync(BridgeClass& self,
+                                   const bridge::router::CommandContext& ctx) {
+  self._dispatchCmd<rpc_pb_ClockSyncRequest>(
+      ctx, [&self](const bridge::router::CommandContext& c,
+                   const rpc_pb_ClockSyncRequest& m) {
+        self._handleClockSync(c, m);
+      });
+}
+
 #if BRIDGE_ENABLE_DATASTORE
 void BridgeClass::_onCmd_DatastoreGetResp(
     BridgeClass& self, const bridge::router::CommandContext& ctx) {
@@ -363,6 +381,7 @@ const BridgeClass::DispatchEntry BridgeClass::k_dispatch_table[] = {
     {rpc::to_underlying(rpc::CommandId::CMD_ANALOG_WRITE),       &BridgeClass::_onCmd_AnalogWrite},
     {rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_READ),       &BridgeClass::_onCmd_PinRead},
     {rpc::to_underlying(rpc::CommandId::CMD_ANALOG_READ),        &BridgeClass::_onCmd_PinRead},
+    {rpc::to_underlying(rpc::CommandId::CMD_PIN_SUBSCRIBE),      &BridgeClass::_onCmd_PinSubscribe},
     {rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE),      &BridgeClass::_onCmd_ConsoleWrite},
 #if BRIDGE_ENABLE_DATASTORE
     {rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_GET_RESP), &BridgeClass::_onCmd_DatastoreGetResp},
@@ -389,6 +408,7 @@ const BridgeClass::DispatchEntry BridgeClass::k_dispatch_table[] = {
     {rpc::to_underlying(rpc::CommandId::CMD_SPI_END),            &BridgeClass::_onCmd_SpiEnd},
     {rpc::to_underlying(rpc::CommandId::CMD_SPI_SET_CONFIG),     &BridgeClass::_onCmd_SpiSetConfig},
 #endif
+    {rpc::to_underlying(rpc::CommandId::CMD_CLOCK_SYNC),         &BridgeClass::_onCmd_ClockSync},
 };
 // clang-format on
 const size_t BridgeClass::k_dispatch_table_size =
@@ -396,6 +416,7 @@ const size_t BridgeClass::k_dispatch_table_size =
     sizeof(BridgeClass::k_dispatch_table[0]);
 
 void BridgeClass::_dispatchCommand(const rpc_pb_RpcEnvelope& envelope) {
+  _last_rx_ms = ::millis();
   const uint16_t cmd_id = envelope.command_id;
   auto it =
       etl::find(_rx_history.begin(), _rx_history.end(), envelope.sequence_id);
@@ -552,11 +573,19 @@ void BridgeClass::process() {
   _watchdogTask();
   _serialTask();
   _timerTask();
+  _subscriptionTask();
   const uint32_t elapsed_us = ::micros() - start_us;
   _wcet_max_micros = etl::max(_wcet_max_micros, elapsed_us);
 }
 
-void BridgeClass::_watchdogTask() { bridge::hal::watchdog_kick(); }
+void BridgeClass::_watchdogTask() {
+  bridge::hal::watchdog_kick();
+  if (_watchdog_timeout_ms > 0 && isSynchronized()) {
+    if (::millis() - _last_rx_ms > _watchdog_timeout_ms) {
+      enterSafeState();
+    }
+  }
+}
 
 void BridgeClass::_serialTask() {
   if (!_stream) return;
@@ -592,11 +621,28 @@ void BridgeClass::onUnknownCommand(const bridge::router::CommandContext& ctx) {
 
 void BridgeClass::enterSafeState() {
   bridge::hal::forceSafeState();
+  etl::for_each(_safety_pins.begin(), _safety_pins.end(),
+                [](const SafetyPinEntry& entry) {
+                  bridge::hal::applySafetyPin(entry.pin, entry.state);
+                });
   _state_flags.set(FLAG_TX_ENABLED, false);
   _clearPendingTxQueue();
   _fsm.receive(bridge::fsm::EvReset());
   notify_observers(bridge::SystemEvent::SAFE_STATE_ENTERED);
 }
+
+void BridgeClass::registerSafetyPin(uint8_t pin, SafetyPinState state) {
+  auto it =
+      etl::find_if(_safety_pins.begin(), _safety_pins.end(),
+                   [pin](const SafetyPinEntry& e) { return e.pin == pin; });
+  if (it != _safety_pins.end()) {
+    it->state = state;
+  } else if (!_safety_pins.full()) {
+    _safety_pins.push_back({pin, state});
+  }
+}
+
+void BridgeClass::clearSafetyPins() { _safety_pins.clear(); }
 
 void BridgeClass::_serialize_and_send(const rpc_pb_RpcEnvelope& env) {
   if (!_stream) return;
@@ -812,6 +858,90 @@ void BridgeClass::_handleAnalogRead(const bridge::router::CommandContext& ctx,
   static_cast<void>(m);
   emitStatus(rpc::StatusCode::STATUS_ERROR);
 #endif
+}
+
+void BridgeClass::_handlePinSubscribe(const bridge::router::CommandContext& ctx,
+                                      const rpc_pb_PinSubscribeRequest& m) {
+  bool ok = false;
+  auto it = etl::find_if(
+      _pin_subscriptions.begin(), _pin_subscriptions.end(),
+      [pin = m.pin](const PinSubscription& s) { return s.pin == pin; });
+  if (!m.enabled) {
+    if (it != _pin_subscriptions.end()) {
+      it->active = false;
+    }
+    ok = true;
+  } else {
+    if (it != _pin_subscriptions.end()) {
+      it->mode = static_cast<uint8_t>(m.mode);
+      it->interval_ms = static_cast<uint16_t>(m.interval_ms);
+      it->hysteresis = static_cast<uint16_t>(m.hysteresis);
+      it->active = true;
+      it->last_report_ms = 0;
+      ok = true;
+    } else if (!_pin_subscriptions.full()) {
+      PinSubscription sub;
+      sub.pin = static_cast<uint8_t>(m.pin);
+      sub.mode = static_cast<uint8_t>(m.mode);
+      sub.interval_ms = static_cast<uint16_t>(m.interval_ms);
+      sub.hysteresis = static_cast<uint16_t>(m.hysteresis);
+      sub.active = true;
+      sub.last_report_ms = 0;
+      _pin_subscriptions.push_back(sub);
+      ok = true;
+    }
+    if (m.mode == rpc_pb_PinModeType_PIN_INPUT_PULLUP) {
+      ::pinMode(static_cast<uint8_t>(m.pin), INPUT_PULLUP);
+    } else if (m.mode == rpc_pb_PinModeType_PIN_INPUT) {
+      ::pinMode(static_cast<uint8_t>(m.pin), INPUT);
+    }
+  }
+
+  rpc_pb_PinSubscribeResponse resp = rpc_pb_PinSubscribeResponse_init_default;
+  resp.pin = m.pin;
+  resp.success = ok;
+  (void)send(rpc::CommandId::CMD_PIN_SUBSCRIBE_RESP, ctx.sequence_id, resp,
+             rpc_pb_ChannelId_CHANNEL_CONTROL, rpc_pb_QosProfile_QOS_RELIABLE);
+}
+
+void BridgeClass::_handleClockSync(const bridge::router::CommandContext& ctx,
+                                   const rpc_pb_ClockSyncRequest& m) {
+  rpc_pb_ClockSyncResponse resp = rpc_pb_ClockSyncResponse_init_default;
+  resp.host_time_us = m.host_time_us;
+  resp.mcu_time_us = ::micros();
+  (void)send(rpc::CommandId::CMD_CLOCK_SYNC_RESP, ctx.sequence_id, resp,
+             rpc_pb_ChannelId_CHANNEL_CONTROL, rpc_pb_QosProfile_QOS_RELIABLE);
+}
+
+void BridgeClass::_subscriptionTask() {
+  if (!isSynchronized()) return;
+  const uint32_t now = ::millis();
+  etl::for_each(_pin_subscriptions.begin(), _pin_subscriptions.end(),
+                [this, now](PinSubscription& sub) {
+                  if (!sub.active) return;
+                  if (now - sub.last_report_ms >= sub.interval_ms) {
+                    const uint16_t val =
+                        (sub.mode == rpc_pb_PinModeType_PIN_INPUT ||
+                         sub.mode == rpc_pb_PinModeType_PIN_INPUT_PULLUP)
+                            ? static_cast<uint16_t>(::digitalRead(sub.pin))
+                            : static_cast<uint16_t>(::analogRead(sub.pin));
+                    int32_t diff = static_cast<int32_t>(val) -
+                                   static_cast<int32_t>(sub.last_value);
+                    if (diff < 0) diff = -diff;
+                    if (diff >= sub.hysteresis || sub.last_report_ms == 0) {
+                      sub.last_value = val;
+                      sub.last_report_ms = now;
+                      rpc_pb_PinUpdateEvent evt =
+                          rpc_pb_PinUpdateEvent_init_default;
+                      evt.pin = sub.pin;
+                      evt.value = val;
+                      evt.timestamp_micros = ::micros();
+                      (void)send(rpc::CommandId::CMD_PIN_UPDATE_EVENT, 0, evt,
+                                 rpc_pb_ChannelId_CHANNEL_TELEMETRY,
+                                 rpc_pb_QosProfile_QOS_BEST_EFFORT);
+                    }
+                  }
+                });
 }
 
 void BridgeClass::_handleConsoleWrite(const rpc_pb_ConsoleWrite& m) {
@@ -1094,8 +1224,9 @@ bool BridgeClass::_decodePayload(const bridge::router::CommandContext& ctx,
 
 bool BridgeClass::_sendEncryptedImpl(uint16_t raw_cmd, uint16_t seq,
                                      const pb_msgdesc_t* fields,
-                                     const void* src) {
-  if (is_reliable_cmd(raw_cmd)) {
+                                     const void* src, uint32_t /*channel_id*/,
+                                     uint32_t qos) {
+  if (qos == rpc_pb_QosProfile_QOS_RELIABLE && is_reliable_cmd(raw_cmd)) {
     BRIDGE_ATOMIC_BLOCK {
       if (_pending_tx_queue.full()) return false;
       auto* buf = _tx_payload_pool.allocate();

@@ -23,6 +23,7 @@ rpc.pb.SpiTransfer.data           max_size:64
 rpc.pb.SpiTransferResponse.data   max_size:64
 rpc.pb.GenericResponse.status      max_size:8
 rpc.pb.GenericResponse.message     max_size:48
+rpc.pb.Capabilities.board_name     max_size:16
 
 # Exclude Telemetry structures from MCU firmware compilation
 rpc.pb.StructuredEntry        skip_message:true

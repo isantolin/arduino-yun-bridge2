@@ -106,6 +106,18 @@ etl::expected<void, HalError> removeFile(etl::string_view path);
  */
 void fillCapabilities(rpc_pb_Capabilities& caps);
 
+enum class SafetyPinState : uint8_t {
+  SAFE_PIN_LOW = 0,
+  SAFE_PIN_HIGH = 1,
+  SAFE_PIN_INPUT = 2,
+  SAFE_PIN_INPUT_PULLUP = 3
+};
+
+/**
+ * @brief Apply designated safe state to a specific pin.
+ */
+void applySafetyPin(uint8_t pin, SafetyPinState state);
+
 /**
  * @brief Get the architecture specific ID.
  */

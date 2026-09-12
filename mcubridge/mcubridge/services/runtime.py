@@ -86,6 +86,8 @@ from ..state.status import STATUS_FILE, status_writer
 from ..watchdog import WatchdogKeepalive
 from ..state.context import ProcessContext, RuntimeState, terminate_pid_tree
 from .handshake import SerialHandshakeManager, SerialHandshakeFatal, derive_serial_timing
+from .clock_sync import ClockSyncService
+from .gpio import GpioService
 
 if TYPE_CHECKING:
     from ..transport.serial import SerialTransport
@@ -148,6 +150,8 @@ class BridgeService:
     ipc_requests: dict[bytes, asyncio.Queue[pb.CloudQueuedPublish]]
     console_queues: list[asyncio.Queue[pb.CloudQueuedPublish]]
     ubus_service: UbusService
+    clock_sync: ClockSyncService
+    gpio: GpioService
     _tg: asyncio.TaskGroup | None
 
     def __init__(self, config: RuntimeConfig, state: RuntimeState, serial: SerialTransport) -> None:
@@ -162,6 +166,8 @@ class BridgeService:
         self.console_queues = []
         self.ubus_service = UbusService(self)
         self.ubus_service.start()
+        self.clock_sync = ClockSyncService(self)
+        self.gpio = GpioService(self)
         self._tg = None
 
         self.handshake = SerialHandshakeManager(
@@ -772,6 +778,15 @@ class BridgeService:
 
     async def _on_mcu_process_kill(self, _seq: int, p: pb.ProcessKill) -> None:
         await self.kill_process(p.pid)
+
+    async def _on_mcu_clock_sync_resp(self, _seq: int, p: pb.ClockSyncResponse) -> None:
+        self.clock_sync.record_sync(p)
+
+    async def _on_mcu_pin_subscribe_resp(self, _seq: int, p: pb.PinSubscribeResponse) -> None:
+        logger.info("MCU confirmed pin subscription", pin=p.pin, success=p.success)
+
+    async def _on_mcu_pin_update_event(self, _seq: int, p: pb.PinUpdateEvent) -> None:
+        await self.gpio.handle_pin_update_event(p)
 
     async def _handle_mcu_status(self, status: Status, seq_id: int, payload: bytes | ProtobufMessage) -> None:
         text = ""
@@ -1435,6 +1450,14 @@ class BridgeService:
                             self.ubus_service.run,
                         )
                     )
+
+                # Clock synchronization (Periodic background sync)
+                tg.create_task(
+                    self.supervise(
+                        "clock-sync",
+                        self.clock_sync.start,
+                    )
+                )
 
                 # 3. Status & Metrics (Periodic)
                 tg.create_task(

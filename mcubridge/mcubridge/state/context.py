@@ -233,6 +233,12 @@ class RuntimeState:
     cloud_spool_degraded: bool
     cloud_spool_failure_reason: str | None
     cloud_spool_pending_messages: int
+    clock_offset_us: int
+    clock_rtt_us: int
+    clock_sync_count: int
+    clock_last_sync_timestamp: float
+    pin_subscriptions: dict[int, dict[str, Any]]
+    pin_events_count: int
 
     def __init__(self, **kwargs: Any) -> None:
         self.metrics: DaemonMetrics = kwargs.get("metrics") or DaemonMetrics()
@@ -353,6 +359,12 @@ class RuntimeState:
         self.cloud_spool_degraded: bool = kwargs.get("cloud_spool_degraded", False)
         self.cloud_spool_failure_reason: str | None = kwargs.get("cloud_spool_failure_reason")
         self.cloud_spool_pending_messages: int = kwargs.get("cloud_spool_pending_messages", 0)
+        self.clock_offset_us: int = kwargs.get("clock_offset_us", 0)
+        self.clock_rtt_us: int = kwargs.get("clock_rtt_us", 0)
+        self.clock_sync_count: int = kwargs.get("clock_sync_count", 0)
+        self.clock_last_sync_timestamp: float = kwargs.get("clock_last_sync_timestamp", 0.0)
+        self.pin_subscriptions: dict[int, dict[str, Any]] = kwargs.get("pin_subscriptions") or {}
+        self.pin_events_count: int = kwargs.get("pin_events_count", 0)
         self.connection_fsm: LinkConnectionMachine = LinkConnectionMachine(
             model=self,
             state_field="state",

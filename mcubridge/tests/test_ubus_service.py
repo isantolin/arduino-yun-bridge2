@@ -24,6 +24,8 @@ class MockRuntimeFacade:
         self.reset_link = AsyncMock(return_value=True)
         self.write_digital_pin = AsyncMock(return_value=True)
         self.write_analog_pin = AsyncMock(return_value=True)
+        self.clock_sync = MagicMock()
+        self.gpio = MagicMock()
         self.poll_process = AsyncMock(
             return_value=pb.ProcessPollResponse(
                 status=0,
@@ -576,3 +578,97 @@ def test_ubus_service_stop_branches(mock_runtime: MockRuntimeFacade) -> None:
     service.stop()
     assert not service.is_active
     assert service.connection is None
+
+
+def test_ubus_handle_clock_status_and_sync(mock_runtime: MockRuntimeFacade) -> None:
+    service = UbusService(mock_runtime)
+
+    # 1. With clock service available
+    mock_clock = MagicMock()
+    mock_clock.get_status.return_value = {"status": "ok", "offset_us": 120}
+    mock_clock.sync_now = AsyncMock(return_value={"status": "ok", "synced": True})
+    setattr(mock_runtime, "clock_sync", mock_clock)
+
+    res_status = service.ubus_handle_clock_status(MagicMock(), {})
+    assert res_status == {"status": "ok", "offset_us": 120}
+
+    res_sync = service.ubus_handle_clock_sync(MagicMock(), {})
+    assert res_sync == {"status": "ok", "synced": True}
+
+    # 2. Without clock service
+    setattr(mock_runtime, "clock_sync", None)
+    err_status = service.ubus_handle_clock_status(MagicMock(), {})
+    assert err_status["status"] == "error"
+    err_sync = service.ubus_handle_clock_sync(MagicMock(), {})
+    assert err_sync["status"] == "error"
+
+
+def test_ubus_handle_pin_subscribe(mock_runtime: MockRuntimeFacade) -> None:
+    service = UbusService(mock_runtime)
+
+    # 1. With GPIO service available
+    mock_gpio = MagicMock()
+    mock_gpio.subscribe_pin = AsyncMock(return_value={"status": "ok", "pin": 13})
+    setattr(mock_runtime, "gpio", mock_gpio)
+
+    res = service.ubus_handle_pin_subscribe(MagicMock(), {"pin": 13, "mode": "INPUT", "interval_ms": 100})
+    assert res == {"status": "ok", "pin": 13}
+    mock_gpio.subscribe_pin.assert_awaited_once_with(13, "INPUT", 100, 1, True)
+
+    # 2. Without GPIO service
+    setattr(mock_runtime, "gpio", None)
+    err = service.ubus_handle_pin_subscribe(MagicMock(), {"pin": 13})
+    assert err["status"] == "error"
+
+
+def test_ubus_handle_link_reset_failure(mock_runtime: MockRuntimeFacade) -> None:
+    mock_runtime.reset_link = AsyncMock(return_value=False)
+    service = UbusService(mock_runtime)
+    res = service.ubus_handle_link_reset(MagicMock(), {})
+    assert res == {"status": "error"}
+
+
+@pytest.mark.asyncio
+async def test_ubus_schedule_async_in_running_loop(mock_runtime: MockRuntimeFacade) -> None:
+    service = UbusService(mock_runtime)
+    executed = False
+
+    async def _sample_coro() -> None:
+        nonlocal executed
+        executed = True
+
+    service.schedule_async(_sample_coro())
+    await asyncio.sleep(0.01)
+    assert executed is True
+
+
+def test_ubus_schedule_async_with_target_loop(mock_runtime: MockRuntimeFacade, monkeypatch: pytest.MonkeyPatch) -> None:
+    service = UbusService(mock_runtime)
+    mock_loop = MagicMock()
+    mock_loop.is_running.return_value = True
+    setattr(service, "_loop", mock_loop)
+
+    mock_run_ts = MagicMock()
+    monkeypatch.setattr(asyncio, "run_coroutine_threadsafe", mock_run_ts)
+
+    async def _sample_coro() -> None:
+        pass
+
+    coro = _sample_coro()
+    try:
+        service.schedule_async(coro)
+        mock_run_ts.assert_called_once_with(coro, mock_loop)
+    finally:
+        coro.close()
+
+
+def test_ubus_schedule_async_no_loop(mock_runtime: MockRuntimeFacade) -> None:
+    service = UbusService(mock_runtime)
+    executed = False
+
+    async def _sample_coro() -> None:
+        nonlocal executed
+        executed = True
+
+    service.schedule_async(_sample_coro())
+    assert executed is True

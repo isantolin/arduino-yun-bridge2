@@ -197,8 +197,54 @@ __attribute__((weak)) etl::expected<void, HalError> removeFile(
   return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);
 }
 
+void applySafetyPin(uint8_t pin, SafetyPinState state) {
+  switch (state) {
+    case SafetyPinState::SAFE_PIN_LOW:
+      ::pinMode(pin, OUTPUT);
+      ::digitalWrite(pin, LOW);
+      break;
+    case SafetyPinState::SAFE_PIN_HIGH:
+      ::pinMode(pin, OUTPUT);
+      ::digitalWrite(pin, HIGH);
+      break;
+    case SafetyPinState::SAFE_PIN_INPUT_PULLUP:
+      ::pinMode(pin, INPUT_PULLUP);
+      break;
+    case SafetyPinState::SAFE_PIN_INPUT:
+    default:
+      ::pinMode(pin, INPUT);
+      break;
+  }
+}
+
 void fillCapabilities(rpc_pb_Capabilities& caps) {
+  caps.ver = rpc::PROTOCOL_VERSION;
+  caps.arch = getArchId();
+  uint8_t dig = 0;
+  uint8_t ana = 0;
+  getPinCounts(dig, ana);
+  caps.dig = dig;
+  caps.ana = ana;
   caps.watchdog = bridge::config::ENABLE_WATCHDOG;
+
+#if defined(ARDUINO_AVR_MEGA2560) || defined(ARDUINO_AVR_MEGA)
+  const etl::string_view name = "MEGA2560";
+#elif defined(ARDUINO_AVR_YUN)
+  const etl::string_view name = "YUN";
+#elif defined(ARDUINO_AVR_LEONARDO)
+  const etl::string_view name = "LEONARDO";
+#elif defined(ARDUINO_AVR_UNO)
+  const etl::string_view name = "UNO";
+#elif defined(ARDUINO_ARCH_SAMD)
+  const etl::string_view name = "SAMD21";
+#elif defined(ARDUINO_ARCH_ESP32)
+  const etl::string_view name = "ESP32";
+#else
+  const etl::string_view name = "GENERIC";
+#endif
+  const size_t copy_len = etl::min(name.size(), sizeof(caps.board_name) - 1);
+  etl::copy_n(name.begin(), copy_len, caps.board_name);
+  caps.board_name[copy_len] = '\0';
 
 #if defined(BRIDGE_ENABLE_DEBUG_FRAMES)
   caps.debug_frames = true;

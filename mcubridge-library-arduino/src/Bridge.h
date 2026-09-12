@@ -114,6 +114,18 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   // Explicit registration if needed, otherwise direct calls
   void enterSafeState();
 
+  using SafetyPinState = bridge::hal::SafetyPinState;
+  struct SafetyPinEntry {
+    uint8_t pin;
+    SafetyPinState state;
+  };
+  void registerSafetyPin(uint8_t pin, SafetyPinState state);
+  void clearSafetyPins();
+  void setWatchdogTimeout(uint32_t timeout_ms) {
+    _watchdog_timeout_ms = timeout_ms;
+  }
+  uint32_t getWatchdogTimeout() const { return _watchdog_timeout_ms; }
+
   template <typename T = etl::span<const uint8_t>>
   void emitStatus(rpc::StatusCode s,
                   const T& payload = etl::span<const uint8_t>()) {
@@ -161,12 +173,16 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   }
 
   template <typename T>
-  [[nodiscard]] bool sendSinglePass(uint16_t command_id, uint16_t sequence_id,
-                                    const T& packet) {
+  [[nodiscard]] bool sendSinglePass(
+      uint16_t command_id, uint16_t sequence_id, const T& packet,
+      uint32_t channel_id = rpc_pb_ChannelId_CHANNEL_CONTROL,
+      uint32_t qos = rpc_pb_QosProfile_QOS_RELIABLE) {
     rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
     env.version = rpc::PROTOCOL_VERSION;
     env.command_id = command_id;
     env.sequence_id = sequence_id;
+    env.channel_id = channel_id;
+    env.qos = qos;
     rpc::Payload::set<T>(env, packet);
     return _sendFrameRaw(env, command_id);
   }
@@ -177,16 +193,19 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   }
 
   template <typename T>
-  [[nodiscard]] bool send(rpc::CommandId c, uint16_t seq, const T& packet) {
+  [[nodiscard]] bool send(
+      rpc::CommandId c, uint16_t seq, const T& packet,
+      uint32_t channel_id = rpc_pb_ChannelId_CHANNEL_CONTROL,
+      uint32_t qos = rpc_pb_QosProfile_QOS_RELIABLE) {
     const uint16_t raw_cmd = rpc::to_underlying(c);
     const bool is_excluded = rpc::is_system_command(raw_cmd);
     const bool do_encrypt =
         isSynchronized() && !_shared_secret.empty() && !is_excluded;
 
     if (do_encrypt) {
-      return _sendEncryptedHelper<T>(raw_cmd, seq, packet);
+      return _sendEncryptedHelper<T>(raw_cmd, seq, packet, channel_id, qos);
     } else {
-      return sendSinglePass<T>(raw_cmd, seq, packet);
+      return sendSinglePass<T>(raw_cmd, seq, packet, channel_id, qos);
     }
   }
 
@@ -239,6 +258,10 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   // ctx.raw_command.
   static void _onCmd_PinRead(BridgeClass& self,
                              const bridge::router::CommandContext& ctx);
+  static void _onCmd_PinSubscribe(BridgeClass& self,
+                                  const bridge::router::CommandContext& ctx);
+  static void _onCmd_ClockSync(BridgeClass& self,
+                               const bridge::router::CommandContext& ctx);
   static void _onCmd_ConsoleWrite(BridgeClass& self,
                                   const bridge::router::CommandContext& ctx);
 #if BRIDGE_ENABLE_DATASTORE
@@ -327,7 +350,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   uint64_t _rx_nonce_counter = 0;
   bridge::fsm::BridgeFsm _fsm;
 
-  static __attribute__((noinline)) void _watchdogTask();
+  __attribute__((noinline)) void _watchdogTask();
   __attribute__((noinline)) void _serialTask();
   __attribute__((noinline)) void _timerTask();
   void
@@ -352,6 +375,21 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   rpc_pb_RpcEnvelope _tx_envelope = rpc_pb_RpcEnvelope_init_zero;
 
   uint32_t _wcet_max_micros = 0;
+
+  struct PinSubscription {
+    uint8_t pin{0};
+    uint8_t mode{0};
+    uint16_t interval_ms{0};
+    uint16_t hysteresis{0};
+    uint16_t last_value{0};
+    uint32_t last_report_ms{0};
+    bool active{false};
+  };
+  etl::vector<SafetyPinEntry, bridge::config::MAX_SAFETY_PINS> _safety_pins;
+  etl::vector<PinSubscription, bridge::config::MAX_PIN_SUBSCRIPTIONS>
+      _pin_subscriptions;
+  uint32_t _watchdog_timeout_ms{0};
+  uint32_t _last_rx_ms{0};
 
   etl::pool<TxPayloadBuffer, bridge::config::MAX_PENDING_TX_FRAMES>
       _tx_payload_pool;
@@ -466,6 +504,11 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
       const bridge::router::CommandContext& ctx, const rpc_pb_PinRead& m);
   __attribute__((noinline)) void _handleAnalogRead(
       const bridge::router::CommandContext& ctx, const rpc_pb_PinRead& m);
+  void _handlePinSubscribe(const bridge::router::CommandContext& ctx,
+                           const rpc_pb_PinSubscribeRequest& m);
+  void _handleClockSync(const bridge::router::CommandContext& ctx,
+                        const rpc_pb_ClockSyncRequest& m);
+  void _subscriptionTask();
   static void _handleConsoleWrite(const rpc_pb_ConsoleWrite& m);
   static void _handleDataStoreGetResponse(
       const bridge::router::CommandContext& ctx,
@@ -497,13 +540,18 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   void _serialize_and_send(const rpc_pb_RpcEnvelope& env);
   [[nodiscard]] bool _sendFrameRaw(const rpc_pb_RpcEnvelope& env,
                                    uint16_t command_id);
-  bool _sendEncryptedImpl(uint16_t raw_cmd, uint16_t seq,
-                          const pb_msgdesc_t* fields, const void* src);
+  bool _sendEncryptedImpl(
+      uint16_t raw_cmd, uint16_t seq, const pb_msgdesc_t* fields,
+      const void* src, uint32_t channel_id = rpc_pb_ChannelId_CHANNEL_CONTROL,
+      uint32_t qos = rpc_pb_QosProfile_QOS_RELIABLE);
 
   template <typename T>
-  bool _sendEncryptedHelper(uint16_t raw_cmd, uint16_t seq, const T& packet) {
+  bool _sendEncryptedHelper(
+      uint16_t raw_cmd, uint16_t seq, const T& packet,
+      uint32_t channel_id = rpc_pb_ChannelId_CHANNEL_CONTROL,
+      uint32_t qos = rpc_pb_QosProfile_QOS_RELIABLE) {
     return _sendEncryptedImpl(raw_cmd, seq, rpc::Payload::get_fields<T>(),
-                              &packet);
+                              &packet, channel_id, qos);
   }
 
   void _clearPendingTxQueue();

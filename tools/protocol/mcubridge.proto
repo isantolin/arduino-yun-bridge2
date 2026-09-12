@@ -71,7 +71,8 @@ message Constants {
     uint32 prometheus_port = 64 [(py_name) = "PROMETHEUS_PORT", (py_type) = "int"];
     uint32 sync_timeout_ms = 65 [(cpp_name) = "SYNC_TIMEOUT_MS", (cpp_type) = "uint32_t", (py_name) = "SYNC_TIMEOUT_MS", (py_type) = "int"];
     uint32 max_datastore_value_size = 66 [(cpp_name) = "RPC_MAX_DATASTORE_VALUE_SIZE", (cpp_type) = "size_t", (py_name) = "MAX_DATASTORE_VALUE_SIZE", (py_type) = "int", (client_constant) = true];
-
+    uint32 clock_command_min = 67 [(cpp_name) = "RPC_CLOCK_COMMAND_MIN", (cpp_type) = "uint16_t", (py_name) = "CLOCK_COMMAND_MIN", (py_type) = "int"];
+    uint32 clock_command_max = 68 [(cpp_name) = "RPC_CLOCK_COMMAND_MAX", (cpp_type) = "uint16_t", (py_name) = "CLOCK_COMMAND_MAX", (py_type) = "int"];
 }
 
 message Hardware {
@@ -306,6 +307,9 @@ enum Command {
     CMD_ANALOG_READ = 84 [(cmd_opts) = { category: "gpio", directions: ["linux_to_mcu"], expects_direct_response: true }];
     CMD_DIGITAL_READ_RESP = 85 [(cmd_opts) = { category: "gpio", directions: ["mcu_to_linux"] }];
     CMD_ANALOG_READ_RESP = 86 [(cmd_opts) = { category: "gpio", directions: ["mcu_to_linux"] }];
+    CMD_PIN_SUBSCRIBE = 87 [(cmd_opts) = { category: "gpio", directions: ["linux_to_mcu"], requires_ack: true }];
+    CMD_PIN_SUBSCRIBE_RESP = 88 [(cmd_opts) = { category: "gpio", directions: ["mcu_to_linux"] }];
+    CMD_PIN_UPDATE_EVENT = 89 [(cmd_opts) = { category: "gpio", directions: ["mcu_to_linux"], cloud_topic: "gpio/pin_update" }];
     CMD_CONSOLE_WRITE = 96 [(cmd_opts) = { category: "console", directions: ["linux_to_mcu", "mcu_to_linux"], requires_ack: true }];
     CMD_DATASTORE_PUT = 112 [(cmd_opts) = { category: "datastore", directions: ["mcu_to_linux"], requires_ack: true }];
     CMD_DATASTORE_GET = 113 [(cmd_opts) = { category: "datastore", directions: ["mcu_to_linux"] }];
@@ -330,6 +334,8 @@ enum Command {
     CMD_SPI_TRANSFER_RESP = 178 [(cmd_opts) = { category: "spi", directions: ["mcu_to_linux"] }];
     CMD_SPI_END = 179 [(cmd_opts) = { category: "spi", directions: ["linux_to_mcu"], requires_ack: true }];
     CMD_SPI_SET_CONFIG = 180 [(cmd_opts) = { category: "spi", directions: ["linux_to_mcu"], requires_ack: true }];
+    CMD_CLOCK_SYNC = 192 [(cmd_opts) = { category: "clock", directions: ["linux_to_mcu"], expects_direct_response: true }];
+    CMD_CLOCK_SYNC_RESP = 193 [(cmd_opts) = { category: "clock", directions: ["mcu_to_linux"] }];
 }
 
 option (rpc.pb.constants) = {
@@ -399,6 +405,8 @@ option (rpc.pb.constants) = {
     prometheus_port: 9130
     sync_timeout_ms: 30000
     max_datastore_value_size: 255
+    clock_command_min: 192
+    clock_command_max: 207
 
 };
 
@@ -663,6 +671,11 @@ option (rpc.pb.topics) = {
     value: "system"
     description: "System control and info"
 };
+option (rpc.pb.topics) = {
+    name: "CLOCK"
+    value: "clock"
+    description: "Clock synchronization"
+};
 
 option (rpc.pb.actions) = {
     name: "FILE_READ"
@@ -877,6 +890,25 @@ option (rpc.pb.architectures) = {
 };
 
 
+enum ChannelId {
+    CHANNEL_CONTROL = 0;
+    CHANNEL_CONSOLE = 1;
+    CHANNEL_TELEMETRY = 2;
+    CHANNEL_DATA = 3;
+}
+
+enum QosProfile {
+    QOS_RELIABLE = 0;
+    QOS_BEST_EFFORT = 1;
+}
+
+enum SafetyPinState {
+    SAFE_PIN_LOW = 0;
+    SAFE_PIN_HIGH = 1;
+    SAFE_PIN_INPUT = 2;
+    SAFE_PIN_INPUT_PULLUP = 3;
+}
+
 enum PinModeType {
     PIN_INPUT = 0;
     PIN_OUTPUT = 1;
@@ -913,6 +945,7 @@ message Capabilities {
     bool spi = 15;
     bool sd = 16;
     uint32 feat = 17;
+    string board_name = 18;
 }
 
 message PinMode {
@@ -932,6 +965,34 @@ message AnalogWrite {
 
 message PinRead {
     uint32 pin = 1;
+}
+
+message ClockSyncRequest {
+    uint64 host_time_us = 1;
+}
+
+message ClockSyncResponse {
+    uint64 host_time_us = 1;
+    uint32 mcu_time_us = 2;
+}
+
+message PinSubscribeRequest {
+    uint32 pin = 1;
+    PinModeType mode = 2;
+    uint32 interval_ms = 3;
+    uint32 hysteresis = 4;
+    bool enabled = 5;
+}
+
+message PinSubscribeResponse {
+    uint32 pin = 1;
+    bool success = 2;
+}
+
+message PinUpdateEvent {
+    uint32 pin = 1;
+    uint32 value = 2;
+    uint32 timestamp_micros = 3;
 }
 
 message RuntimeConfig {
@@ -1261,6 +1322,8 @@ message TopicAuthorization {
     bool spi_end = 21;
     bool spi_transfer = 22;
     bool spi_config = 23;
+    bool clock_sync = 24;
+    bool gpio_subscribe = 25;
 }
 
 
@@ -1348,6 +1411,8 @@ message RpcEnvelope {
     uint32 command_id = 2;
     uint32 sequence_id = 3;
     bytes nonce = 4;
+    uint32 channel_id = 5;
+    uint32 qos = 43;
     oneof payload_type {
         bytes encrypted_payload_with_tag = 6;
         VersionResponse version_response = 7;
@@ -1386,6 +1451,11 @@ message RpcEnvelope {
         SpiTransferResponse spi_transfer_response = 40;
         SpiConfig spi_config = 41;
         DaemonMetrics daemon_metrics = 42;
+        ClockSyncRequest clock_sync_request = 44;
+        ClockSyncResponse clock_sync_response = 45;
+        PinSubscribeRequest pin_subscribe_request = 46;
+        PinSubscribeResponse pin_subscribe_response = 47;
+        PinUpdateEvent pin_update_event = 48;
     }
 }
 

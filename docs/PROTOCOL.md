@@ -668,6 +668,9 @@ MCU detecta RX buffer < 25% → envía CMD_XON (0x4F)  → Linux reanuda TX
 - **`0x52` CMD_ANALOG_WRITE (Linux → MCU)**: `[pin: u8, value: u8]`.
 - **`0x53` CMD_DIGITAL_READ (Linux → MCU)**: `[pin: u8]`. Respuesta `0x55 CMD_DIGITAL_READ_RESP`: `[value: u8]`.
 - **`0x54` CMD_ANALOG_READ (Linux → MCU)**: `[pin: u8]`. Respuesta `0x56 CMD_ANALOG_READ_RESP`: `[value: u16]`.
+- **`0x57` (87) CMD_PIN_SUBSCRIBE (Linux → MCU)**: Payload `PinSubscribeRequest { pin, mode, interval_ms, hysteresis, enabled }`. Requiere confirmación `STATUS_ACK`.
+- **`0x58` (88) CMD_PIN_SUBSCRIBE_RESP (MCU → Linux)**: Payload `PinSubscribeResponse { pin, success }`.
+- **`0x59` (89) CMD_PIN_UPDATE_EVENT (MCU → Linux)**: Payload `PinUpdateEvent { pin, value, timestamp_micros }`. Evento de push asíncrono emitido por el MCU cuando el valor medido cambia según el intervalo e histéresis configurados. El daemon lo reenvía a la nube bajo el tópico `gpio/pin_update`.
 
 #### GPIO Frame Examples (Hex Dump)
 
@@ -753,6 +756,24 @@ Notas:
 - Todos los payloads de proceso usan mensajes protobuf definidos en `tools/protocol/mcubridge.proto`.
 - El daemon envía ACK primero (con `AckPacket`) y luego la respuesta de negocio en un frame separado.
 - `CMD_PROCESS_KILL` se confirma con `STATUS_ACK` conteniendo `AckPacket`.
+
+### 5.8 Periférico SPI (0xB0 – 0xB4 / 176 – 180)
+
+El MCU expone operaciones deterministas del bus SPI de hardware para control de periféricos:
+
+- **`0xB0` (176) CMD_SPI_BEGIN (Linux → MCU)**: Payload protobuf `SpiBegin { clock_divider, data_mode, bit_order }`. Inicializa el periférico SPI con la configuración solicitada. Requiere confirmación `STATUS_ACK`.
+- **`0xB1` (177) CMD_SPI_TRANSFER (Linux → MCU)**: Payload protobuf `SpiTransfer { data: bytes }`. Realiza una transferencia síncrona full-duplex de bytes sobre el bus SPI. Espera respuesta directa de negocio.
+- **`0xB2` (178) CMD_SPI_TRANSFER_RESP (MCU → Linux)**: Payload protobuf `SpiTransferResponse { data: bytes }`. Retorna los datos leídos del bus durante la transferencia.
+- **`0xB3` (179) CMD_SPI_END (Linux → MCU)**: Payload vacío o `SpiEnd {}`. Desactiva el bus SPI liberando los pines asociados. Requiere confirmación `STATUS_ACK`.
+- **`0xB4` (180) CMD_SPI_SET_CONFIG (Linux → MCU)**: Payload protobuf `SpiConfig { clock_divider, data_mode, bit_order }`. Ajusta la configuración de reloj y modo sin reiniciar el bus. Requiere `STATUS_ACK`.
+
+### 5.9 Sincronización de Reloj (Clock Sync: 0xC0 – 0xC1 / 192 – 193)
+
+Para correlación de eventos, telemetría y detección de derivas temporales entre el Linux MPU y el firmware del microcontrolador:
+
+- **`0xC0` (192) CMD_CLOCK_SYNC (Linux → MCU)**: Payload protobuf `ClockSyncRequest { host_time_us: uint64 }`. Envía la marca temporal actual del procesador host en microsegundos.
+- **`0xC1` (193) CMD_CLOCK_SYNC_RESP (MCU → Linux)**: Payload protobuf `ClockSyncResponse { host_time_us: uint64, mcu_time_us: uint32 }`. Devuelve la estampa recibida junto con el valor instantáneo de `micros()` del microcontrolador. Permite estimar el Round-Trip Time (RTT) y calcular el offset de tiempo absoluto entre ambos dominios de ejecución con precisión de microsegundos.
+
 
 ## 6. Consideraciones adicionales
 
@@ -917,4 +938,40 @@ El daemon registra el objeto `mcubridge` en el bus de sistema `ubusd` de OpenWrt
 El daemon emite eventos broadcast a través de UBUS cuando ocurren transiciones de estado:
 - `mcubridge.sync`: Emitido cuando el enlace serie se sincroniza exitosamente (`{"synchronized": true}`).
 - `mcubridge.disconnect`: Emitido cuando el enlace serie se desconecta (`{"connected": false}`).
+
+### 10.3 Compatibilidad LuCI / JSON-RPC y Parámetro `ubus_rpc_session`
+
+Cuando un cliente web invoca procedimientos UBUS a través de LuCI y `uhttpd-mod-ubus` (mediante peticiones HTTP POST a `/ubus`), el servidor web `uhttpd` inyecta automáticamente el token de autenticación de sesión en la tabla `blobmsg` bajo la clave `"ubus_rpc_session"`.
+
+Debido a que la biblioteca nativa en C `python-ubus` valida estrictamente la política de argumentos contra las firmas de método registradas (`test_policies` rechaza cualquier argumento no especificado con `UBUS_STATUS_INVALID_ARGUMENT = 2`), el daemon registra automáticamente en `UbusService.register_methods()` el parámetro:
+```python
+sig["ubus_rpc_session"] = _get_ubus_type("STRING")
+```
+Esto permite que llamadas directas desde interfaces LuCI JavaScript (`call('mcubridge', 'digital_write', { pin: 13, value: 1 })`) o proxies JSON-RPC se ejecuten con éxito sin requerir adaptadores de cliente ni filtros de parámetros manuales.
+
+### 10.4 Arquitectura del Event Loop de UBUS en Worker Thread Dedicado
+
+Para prevenir la saturación de CPU observada en bucles de polling cooperativo sobre procesadores embebidos mononúcleo (como MIPS 24Kc en QEMU y hardware router real), `UbusService` desacopla el despacho de eventos de UBUS en un hilo dedicado (`threading.Thread(name="ubus-worker", daemon=True)`).
+
+1. **Bucle de Bombeo Bloqueante en Kernel**: El worker thread invoca `ubus.loop(250)` en una llamada de sistema bloqueante a nivel de socket de kernel. Si no hay mensajes entrantes, el hilo duerme en el kernel con 0% de utilización de CPU.
+2. **Despacho Seguro a Event Loop Asíncrono**: Cuando se recibe una llamada UBUS que requiere comunicación con el MCU o lógica asíncrona, el callback síncrono delega la corutina al bucle principal de asyncio mediante `asyncio.run_coroutine_threadsafe(coro, self._loop)`, garantizando sincronización thread-safe y determinismo SIL-2 sin contención de hilos.
+
+### 10.5 Endpoint REST CGI de Alta Eficiencia (`/www/cgi-bin/mcubridge-pin`)
+
+Para aplicaciones web ligeras, paneles de control HTML directos (`/mcubridge/index.html`) y scripts de telemetría HTTP sin autenticación de sesión LuCI, el sistema provee un handler CGI POSIX escrito en shell (`mcubridge/scripts/pin_rest_cgi.sh`), instalado en `/www/cgi-bin/mcubridge-pin`:
+
+- **Rutas HTTP Soportadas**:
+  - `POST /cgi-bin/mcubridge-pin/pin/<pin>` con payload JSON `{"state": "ON"|"OFF"|1|0}`: Traduce la petición directamente a `ubus call mcubridge digital_write "{\"pin\": $PIN, \"value\": $VAL}"`.
+  - `GET /cgi-bin/mcubridge-pin/status`: Devuelve el snapshot de estado en `/tmp/mcubridge_status.json` de forma atómica.
+- **Rendimiento**: Al evitar la carga de un intérprete Python con módulos complejos (`typer`, `pydantic`, `grpclib`), el tiempo de respuesta total bajo emulación MIPS desciende de >30 segundos a <500 ms (<50 ms en hardware nativo), con un consumo de memoria inferior a 200 KB.
+
+### 10.6 Conducción Activa Hardware GPIO en Firmware MCU (`pinMode`)
+
+En el firmware de microcontrolador (`mcubridge-library-arduino/src/Bridge.cpp`), el manejador de comando `_handleDigitalWrite` fuerza de manera determinista la configuración del pin en modo de salida activa:
+```cpp
+pinMode(m.pin, OUTPUT);
+digitalWrite(m.pin, m.value ? HIGH : LOW);
+```
+Esto previene que pines no inicializados o en estado de alta impedancia (tri-state) activen accidentalmente resistencias internas de pull-up débiles al recibir comandos de escritura alta, asegurando una conducción firme a nivel lógico de 5V (o 3.3V según la arquitectura) hacia la carga o actuador.
+
 

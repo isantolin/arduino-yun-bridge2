@@ -380,7 +380,15 @@ class SerialTransport:
         )
         if response_to_request(command_id) == pending.command_id:
             logger.debug("Marking pending command success on response")
-            pending.mark_success(payload)
+            resp_payload = payload
+            if isinstance(payload, bytes) and command_id in protocol.COMMAND_TO_PB:
+                try:
+                    msg = protocol.COMMAND_TO_PB[command_id]()
+                    msg.ParseFromString(payload)
+                    resp_payload = msg
+                except ProtobufDecodeError as e:
+                    logger.debug("Response payload is not valid protobuf; retaining raw bytes", error=str(e))
+            pending.mark_success(resp_payload)
             return
         if command_id in SERIAL_FAILURE_STATUS_CODES:
             logger.debug("Marking pending command failure")

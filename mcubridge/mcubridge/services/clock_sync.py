@@ -6,6 +6,7 @@ import asyncio
 import time
 from typing import TYPE_CHECKING, Any
 
+from google.protobuf.message import DecodeError as ProtobufDecodeError
 from statemachine import State, StateMachine
 import structlog
 
@@ -122,6 +123,10 @@ class ClockSyncService:
         res = await serial.send(Command.CMD_CLOCK_SYNC.value, req, timeout=1.0)
         if isinstance(res, pb.ClockSyncResponse):
             return self.record_sync(res)
+        if isinstance(res, bytes) and res:
+            resp = pb.ClockSyncResponse()
+            resp.ParseFromString(res)
+            return self.record_sync(resp)
 
         if is_initial_probe:
             self.fsm.mark_unsupported()
@@ -135,14 +140,18 @@ class ClockSyncService:
         t1_host_us = resp.host_time_us
         t2_mcu_us = resp.mcu_time_us
 
+        state = self._runtime.state
+        if state.clock_last_host_time_us == t1_host_us and state.clock_last_host_time_us != 0:
+            return self.get_status()
+
         rtt_us = t4_host_us - t1_host_us
         offset_us = t2_mcu_us - (t1_host_us + (rtt_us // 2))
 
-        state = self._runtime.state
         state.clock_offset_us = offset_us
         state.clock_rtt_us = rtt_us
         state.clock_sync_count += 1
         state.clock_last_sync_timestamp = time.time()
+        state.clock_last_host_time_us = t1_host_us
 
         self.fsm.sync_success()
 
@@ -179,7 +188,7 @@ class ClockSyncService:
                     self.fsm.disconnect()
             except asyncio.CancelledError:
                 break
-            except Exception as e:
+            except (OSError, ConnectionError, TimeoutError, ProtobufDecodeError) as e:
                 logger.warning("Periodic clock sync failed", error=str(e))
                 if self.fsm.idle.is_active or self.fsm.probing.is_active:
                     self.fsm.mark_unsupported()

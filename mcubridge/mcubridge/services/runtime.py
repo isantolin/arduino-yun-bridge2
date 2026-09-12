@@ -776,8 +776,9 @@ class BridgeService:
     async def _on_mcu_process_kill(self, _seq: int, p: pb.ProcessKill) -> None:
         await self.kill_process(p.pid)
 
-    async def _on_mcu_clock_sync_resp(self, _seq: int, p: pb.ClockSyncResponse) -> None:
+    async def _on_mcu_clock_sync_resp(self, _seq: int, p: pb.ClockSyncResponse) -> bool:
         self.clock_sync.record_sync(p)
+        return False
 
     async def _on_mcu_pin_subscribe_resp(self, _seq: int, p: pb.PinSubscribeResponse) -> None:
         logger.info("MCU confirmed pin subscription", pin=p.pin, success=p.success)

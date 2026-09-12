@@ -237,6 +237,7 @@ class RuntimeState:
     clock_rtt_us: int
     clock_sync_count: int
     clock_last_sync_timestamp: float
+    clock_last_host_time_us: int
     pin_subscriptions: dict[int, dict[str, Any]]
     pin_events_count: int
 
@@ -363,6 +364,7 @@ class RuntimeState:
         self.clock_rtt_us: int = kwargs.get("clock_rtt_us", 0)
         self.clock_sync_count: int = kwargs.get("clock_sync_count", 0)
         self.clock_last_sync_timestamp: float = kwargs.get("clock_last_sync_timestamp", 0.0)
+        self.clock_last_host_time_us: int = kwargs.get("clock_last_host_time_us", 0)
         self.pin_subscriptions: dict[int, dict[str, Any]] = kwargs.get("pin_subscriptions") or {}
         self.pin_events_count: int = kwargs.get("pin_events_count", 0)
         self.connection_fsm: LinkConnectionMachine = LinkConnectionMachine(

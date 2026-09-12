@@ -398,7 +398,11 @@ class SerialTransport:
                 await self._negotiate_baudrate(self.config.serial_safe_baud)
 
     async def send(
-        self, command_id: int, payload: bytes | ProtobufMessage, seq_id: int | None = None
+        self,
+        command_id: int,
+        payload: bytes | ProtobufMessage,
+        seq_id: int | None = None,
+        timeout: float | None = None,
     ) -> bool | bytes | ProtobufMessage:
         """Unified send method with automatic tracking, retries, and optional response return. [FLATTENED]"""
         if not self.serial or not self.serial.is_open:
@@ -409,6 +413,8 @@ class SerialTransport:
 
         if not is_tracked:
             return await self.send_raw(command_id, payload, seq_id)
+
+        effective_timeout = timeout if timeout is not None else self._response_timeout
 
         async with self._flow_lock:
             pending = PendingCommand(command_id=command_id, expected_resp_ids=list(expected_responses(command_id)))
@@ -432,7 +438,7 @@ class SerialTransport:
                         raise self._FatalSerialError(None)
 
                     try:
-                        async with asyncio.timeout(self._response_timeout):
+                        async with asyncio.timeout(effective_timeout):
                             await pending.completion.wait()
                             if pending.success:
                                 return pending.response_payload if pending.response_payload is not None else True

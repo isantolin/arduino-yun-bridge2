@@ -269,6 +269,7 @@ void fillCapabilities(rpc_pb_Capabilities& caps) {
   caps.spi = (BRIDGE_ENABLE_SPI != 0);
 #endif
   caps.sd = !!hasSD();
+  caps.clock_sync = true;
 }
 
 void getPinCounts(uint8_t& digital, uint8_t& analog) {

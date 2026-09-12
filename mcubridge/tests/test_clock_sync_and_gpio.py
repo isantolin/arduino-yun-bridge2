@@ -138,3 +138,100 @@ async def test_ubus_clock_and_gpio_handlers() -> None:
         assert "pin_subscriptions" in status_reply
     finally:
         service.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_clock_sync_skipped_when_capability_missing() -> None:
+    config = _make_config()
+    state = create_runtime_state(config)
+    mock_serial = AsyncMock(spec=SerialTransport)
+    service = BridgeService(config, state, mock_serial)
+
+    try:
+        clock = service.clock_sync
+        state.connection_fsm.connect()
+
+        # 1. Capabilities dict with clock_sync explicitly False -> skipped without sending
+        state.mcu_capabilities = {"watchdog": True, "clock_sync": False}
+        status = await clock.sync_now()
+        assert status["sync_count"] == 0
+        assert mock_serial.send.call_count == 0
+        assert clock.fsm.current_state_value == "unsupported"
+
+        # 2. Capabilities dict with clock_sync enabled -> executes send with timeout=1.0
+        state.mcu_capabilities = {"watchdog": True, "clock_sync": True}
+        now_us = time.time_ns() // 1000
+        mock_serial.send.return_value = pb.ClockSyncResponse(
+            host_time_us=now_us - 500,
+            mcu_time_us=123456,
+        )
+        res = await clock.sync_now()
+        assert res["sync_count"] == 1
+        assert res["state"] == "synchronized"
+        assert res["is_synchronized"] is True
+        assert mock_serial.send.call_count == 1
+        call_kwargs = mock_serial.send.call_args.kwargs
+        assert call_kwargs.get("timeout") == 1.0
+
+        # 3. Subsequent probe failure while synchronized transitions to degraded
+        mock_serial.send.return_value = False
+        res_fail = await clock.sync_now()
+        assert res_fail["state"] == "degraded"
+        assert res_fail["is_synchronized"] is False
+
+        # 4. First-time probe failure on board without clock sync transitions to unsupported
+        clock.fsm.disconnect()
+        assert clock.fsm.current_state_value == "idle"
+        state.mcu_capabilities = pb.Capabilities(watchdog=True, spi=True)
+        mock_serial.send.return_value = None
+        res_probe_fail = await clock.sync_now()
+        assert res_probe_fail["state"] == "unsupported"
+        assert res_probe_fail["is_synchronized"] is False
+    finally:
+        service.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_clock_sync_fsm_lifecycle() -> None:
+    config = _make_config()
+    state = create_runtime_state(config)
+    mock_serial = AsyncMock(spec=SerialTransport)
+    service = BridgeService(config, state, mock_serial)
+
+    try:
+        clock = service.clock_sync
+        assert clock.fsm.current_state_value == "idle"
+
+        # Disconnected sync keeps idle
+        await clock.sync_now()
+        assert clock.fsm.current_state_value == "idle"
+
+        state.connection_fsm.connect()
+
+        # Capability missing -> unsupported
+        state.mcu_capabilities = {"clock_sync": False}
+        await clock.sync_now()
+        assert clock.fsm.current_state_value == "unsupported"
+
+        # Reconnect / recheck
+        clock.fsm.recheck_capability()
+        assert clock.fsm.current_state_value == "idle"
+
+        # Successful sync -> synchronized
+        state.mcu_capabilities = {"clock_sync": True}
+        now_us = time.time_ns() // 1000
+        mock_serial.send.return_value = pb.ClockSyncResponse(host_time_us=now_us - 100, mcu_time_us=1000)
+        await clock.sync_now()
+        assert clock.fsm.current_state_value == "synchronized"
+
+        # Failure while synchronized -> degraded
+        mock_serial.send.return_value = None
+        await clock.sync_now()
+        assert clock.fsm.current_state_value == "degraded"
+
+        # Disconnect -> idle
+        clock.fsm.disconnect()
+        assert clock.fsm.current_state_value == "idle"
+    finally:
+        service.cleanup()
+

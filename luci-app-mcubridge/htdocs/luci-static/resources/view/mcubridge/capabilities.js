@@ -71,7 +71,8 @@ return view.extend({
 			{ key: 'logic_3v3', label: _('3.3V Logic'), desc: _('IO Voltage Level') },
 			{ key: 'big_buffer', label: _('Large Serial Buffer'), desc: _('RX Buffer > 64 bytes') },
 			{ key: 'spi', label: _('SPI Bus'), desc: _('Hardware SPI peripheral') },
-			{ key: 'sd', label: _('SD Card'), desc: _('Storage peripheral support') }
+			{ key: 'sd', label: _('SD Card'), desc: _('Storage peripheral support') },
+			{ key: 'clock_sync', label: _('Clock Synchronization'), desc: _('Microsecond-precision MPU-MCU clock sync') }
 		];
 
 		var featRows = features.map(function(feat) {

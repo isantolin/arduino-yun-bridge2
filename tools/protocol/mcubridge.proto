@@ -946,6 +946,7 @@ message Capabilities {
     bool sd = 16;
     uint32 feat = 17;
     string board_name = 18;
+    bool clock_sync = 19;
 }
 
 message PinMode {

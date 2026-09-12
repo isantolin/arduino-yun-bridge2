@@ -30,7 +30,7 @@ jobs:
       matrix:
         env: [protocol, deps-sync, luci, cppcheck, typecheck, lint, codebase-auditor, py, arduino]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Install protoc
         if: matrix.env == 'protocol' || matrix.env == 'typecheck' || matrix.env == 'lint' || matrix.env == 'py' || matrix.env == 'arduino' || matrix.env == 'cppcheck'
         run: |
@@ -144,7 +144,7 @@ jobs:
     needs: [tox-checks]
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Install protoc
         run: |
           PROTOC_VERSION=36.1
@@ -215,7 +215,7 @@ jobs:
               mcubridge-client-examples/examples/mailbox_read_test.py
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Install protoc
         run: |
           PROTOC_VERSION=36.1
@@ -252,7 +252,7 @@ jobs:
     needs: [tox-checks]
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Install protoc
         run: |
           PROTOC_VERSION=36.1
@@ -279,7 +279,7 @@ jobs:
     env:
       SIMAVR_METRICS_DIR: simavr-logs
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Install protoc
         run: |
           PROTOC_VERSION=36.1
@@ -323,7 +323,7 @@ jobs:
     if: always()
     timeout-minutes: 3
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Install protoc
         run: |
           PROTOC_VERSION=36.1

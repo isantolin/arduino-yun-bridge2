@@ -235,7 +235,7 @@ rationale = "Lightweight zero-heap C Protobuf serialization runtime for embedded
 
 [[dev_dependency]]
 name = "coverage"
-pip = "coverage==7.16.0"
+pip = "coverage==7.16.1"
 rationale = "Strict code coverage measurement and reporting tool"
 
 [[dev_dependency]]

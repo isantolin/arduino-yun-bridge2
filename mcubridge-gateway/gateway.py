@@ -19,6 +19,7 @@ from grpclib.server import Server, Stream
 from statemachine import State, StateMachine
 import structlog
 import typer
+import uvloop
 
 from mcubridge.config.logging import configure_logging
 from mcubridge.protocol import mcubridge_pb2 as pb
@@ -285,7 +286,8 @@ def main(
     )
 
     try:
-        asyncio.run(gateway.run())
+        with asyncio.Runner(loop_factory=uvloop.new_event_loop) as runner:
+            runner.run(gateway.run())
     except KeyboardInterrupt:
         logger.info("Gateway terminated by user.")
 

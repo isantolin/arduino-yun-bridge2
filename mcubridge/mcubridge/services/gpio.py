@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-import asyncio
 import time
 from typing import TYPE_CHECKING, Any
 
 import structlog
 
 from ..protocol import mcubridge_pb2 as pb
-from ..protocol.protocol import Command
+from ..protocol.protocol import Command, CLOUD_EXPIRY_PIN, Topic
+from ..protocol.structures import create_queued_publish
+from ..protocol.topics import topic_path
 
 if TYPE_CHECKING:
     from .runtime import BridgeService
@@ -62,7 +63,11 @@ class GpioService:
         return {"status": "error", "message": "MCU rejected pin subscription"}
 
     async def handle_pin_update_event(self, event: pb.PinUpdateEvent) -> None:
-        """Handle streaming pin value change events from the MCU."""
+        """Handle streaming pin value change events from the MCU.
+
+        [SIL-2] Routes through enqueue_cloud() for proper LMDB spool persistence,
+        IPC correlation, console fanout, drop metrics, and topic_authorization.
+        """
         state = self._runtime.state
         state.pin_events_count += 1
 
@@ -73,16 +78,14 @@ class GpioService:
             timestamp_micros=event.timestamp_micros,
         )
 
-        # Forward to cloud gateway publish queue
-        cloud_msg = pb.CloudQueuedPublish(
-            topic_name=f"gpio/pin_{event.pin}/update",
-            payload=str(event.value).encode("utf-8"),
-            qos=0,
+        # [SIL-2] Use canonical topic_path and enqueue_cloud for full pipeline parity
+        await self._runtime.enqueue_cloud(
+            create_queued_publish(
+                topic_path(state.cloud_topic_prefix, Topic.DIGITAL, str(event.pin), "update"),
+                str(event.value).encode("utf-8"),
+                message_expiry_interval=CLOUD_EXPIRY_PIN,
+            )
         )
-        try:
-            state.cloud_publish_queue.put_nowait(cloud_msg)
-        except asyncio.QueueFull:
-            state.cloud_dropped_messages += 1
 
     def get_subscriptions(self) -> dict[int, dict[str, Any]]:
         """Retrieve list of currently active pin subscriptions."""

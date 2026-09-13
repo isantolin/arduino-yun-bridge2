@@ -96,12 +96,20 @@ async def test_gpio_service() -> None:
         # Receive streaming pin event via dispatch registry
         evt = pb.PinUpdateEvent(pin=13, value=1, timestamp_micros=999999)
         evt_handler = service.mcu_registry[pb.Command.CMD_PIN_UPDATE_EVENT]
+
+        # [SIL-2] Mock enqueue_cloud to verify canonical pipeline routing
+        mock_enqueue: AsyncMock = AsyncMock()
+        setattr(service, "enqueue_cloud", mock_enqueue)
+
         await evt_handler(0, evt)
         assert state.pin_events_count == 1
 
-        cloud_msg = state.cloud_publish_queue.get_nowait()
-        assert cloud_msg.topic_name == "gpio/pin_13/update"
+        # Verify enqueue_cloud was called with canonical topic path (br/d/13/update)
+        mock_enqueue.assert_awaited_once()
+        cloud_msg: pb.CloudQueuedPublish = mock_enqueue.call_args[0][0]
+        assert cloud_msg.topic_name == "br/d/13/update"
         assert cloud_msg.payload == b"1"
+        assert cloud_msg.message_expiry_interval == 5
 
         # Disable subscription
         res_dis = await gpio.subscribe_pin(13, enabled=False)

@@ -7,6 +7,7 @@ from collections.abc import Iterator
 from unittest.mock import AsyncMock
 
 import pytest
+import tenacity
 
 from mcubridge.services.handshake import SerialHandshakeManager
 from mcubridge.config.settings import RuntimeConfig
@@ -49,6 +50,7 @@ def handshake_setup(
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout(10)
 async def test_handshake_auth_mismatch(
     handshake_setup: tuple[
         SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, pb.HandshakeConfig, AsyncMock
@@ -57,8 +59,9 @@ async def test_handshake_auth_mismatch(
     """Verify rejection of invalid HMAC tags during sync."""
     manager, state, _, _config, _timing, _ack = handshake_setup
 
-    # Start sync to set expectations
-    asyncio.create_task(manager.synchronize())
+    # Start sync to set expectations — MUST be cancelled to avoid dangling
+    # tenacity retries (up to 3 × 5s timeout) that hang xdist workers.
+    sync_task = asyncio.create_task(manager.synchronize())
     await asyncio.sleep(0.2)  # Let it send RESET and SYNC
 
     nonce = state.link_handshake_nonce
@@ -72,6 +75,13 @@ async def test_handshake_auth_mismatch(
     assert not result
     assert state.handshake_failure_streak == 1
     assert state.last_handshake_error == "sync_auth_mismatch"
+
+    # [SIL-2] Deterministic teardown: cancel dangling synchronize() task
+    sync_task.cancel()
+    try:
+        await sync_task
+    except (asyncio.CancelledError, tenacity.RetryError):
+        pass
 
 
 @pytest.mark.asyncio
@@ -132,6 +142,7 @@ async def test_handshake_streak_fatal_threshold(
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout(10)
 async def test_handshake_capabilities_retry(
     handshake_setup: tuple[
         SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, pb.HandshakeConfig, AsyncMock
@@ -166,6 +177,7 @@ async def test_handshake_capabilities_retry(
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout(10)
 async def test_handshake_capabilities_corrupt_payload(
     handshake_setup: tuple[
         SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, pb.HandshakeConfig, AsyncMock
@@ -191,6 +203,7 @@ async def test_handshake_capabilities_corrupt_payload(
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout(10)
 async def test_handshake_malformed_sync_resp(
     handshake_setup: tuple[
         SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, pb.HandshakeConfig, AsyncMock

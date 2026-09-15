@@ -203,11 +203,17 @@ async def test_protobuf_gateway_run() -> None:
 def test_cli_main_invocation() -> None:
     runner = CliRunner()
 
+    mock_runner_instance = MagicMock()
+
     def _mock_run(coro: Any) -> None:
         if hasattr(coro, "close"):
             coro.close()
 
-    with patch("asyncio.run", side_effect=_mock_run):
+    mock_runner_instance.run = _mock_run
+    mock_runner_instance.__enter__ = MagicMock(return_value=mock_runner_instance)
+    mock_runner_instance.__exit__ = MagicMock(return_value=False)
+
+    with patch("asyncio.Runner", return_value=mock_runner_instance):
         result = runner.invoke(cast(Any, app), ["--no-tls", "--port", "9090"])
         assert result.exit_code == 0
 
@@ -215,14 +221,20 @@ def test_cli_main_invocation() -> None:
 def test_cli_main_keyboard_interrupt() -> None:
     runner = CliRunner()
 
+    mock_runner_instance = MagicMock()
+
     def _mock_run_interrupt(coro: Any) -> None:
         if hasattr(coro, "close"):
             coro.close()
         raise KeyboardInterrupt
 
+    mock_runner_instance.run = _mock_run_interrupt
+    mock_runner_instance.__enter__ = MagicMock(return_value=mock_runner_instance)
+    mock_runner_instance.__exit__ = MagicMock(return_value=False)
+
     mock_logger_info = MagicMock()
     with (
-        patch("asyncio.run", side_effect=_mock_run_interrupt),
+        patch("asyncio.Runner", return_value=mock_runner_instance),
         patch("gateway.logger.info", mock_logger_info),
     ):
         result = runner.invoke(cast(Any, app), ["--no-tls", "--http3"])

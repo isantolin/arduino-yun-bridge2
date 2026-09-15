@@ -167,7 +167,7 @@ rationale = "Zero-heap C protobuf generator and runtime library [BUILD-ONLY]"
 [[dependency]]
 name = "grpcio-tools"
 openwrt = "python3-grpcio-tools"
-pip = "grpcio-tools==1.83.1"
+pip = "grpcio-tools==1.84.0"
 rationale = "Protobuf and gRPC stubs compiler for code generation [BUILD-ONLY]"
 
 [[dependency]]

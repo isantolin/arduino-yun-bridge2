@@ -13,7 +13,7 @@ dependencies = [
     "black==26.5.1",
     "cobs==1.2.2",
     "cryptography==50.0.1",
-    "grpcio-tools==1.83.1",
+    "grpcio-tools==1.84.0",
     "grpclib==0.4.9",
     "h2==4.4.1",
     "hpack==4.2.0",

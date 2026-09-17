@@ -17,7 +17,7 @@ import structlog
 import time
 from collections.abc import Awaitable, Callable
 from enum import StrEnum
-from typing import Any, Final, Protocol, cast
+from typing import Any, Protocol, cast
 
 import os
 from statemachine import StateMachine, State
@@ -108,15 +108,6 @@ class HandshakeMachine(StateMachine):
         | fault.to(unsynchronized)
     )
 
-
-_TRANSITION_DISPATCH: Final[dict[HandshakeEvent, Callable[[HandshakeMachine], Any]]] = {
-    HandshakeEvent.START_SYNC: lambda fsm: fsm.start_sync(),
-    HandshakeEvent.RESET_SENT: lambda fsm: fsm.reset_sent(),
-    HandshakeEvent.SYNC_SENT: lambda fsm: fsm.sync_sent(),
-    HandshakeEvent.SYNC_CONFIRMED: lambda fsm: fsm.sync_confirmed(),
-    HandshakeEvent.FAILURE: lambda fsm: fsm.failure(),
-    HandshakeEvent.RESET: lambda fsm: fsm.reset(),
-}
 
 
 class RateLimiter:
@@ -234,16 +225,16 @@ class SerialHandshakeManager:
     def transition(self, event: HandshakeEvent) -> HandshakeState:
         """[SIL-2] Deterministic FSM transition gate via python-statemachine."""
         old_state = self.fsm_state
-        if (action := _TRANSITION_DISPATCH.get(event)) is not None:
-            try:
-                action(self.fsm)
-            except TransitionNotAllowed:
-                self._logger.warning(
-                    "Invalid FSM transition rejected",
-                    current_state=old_state,
-                    handshake_event=event.value,
-                )
-                return old_state
+        try:
+            send_event = cast(Callable[[str], Any], getattr(self.fsm, "send"))
+            send_event(event.value)
+        except TransitionNotAllowed:
+            self._logger.warning(
+                "Invalid FSM transition rejected",
+                current_state=old_state,
+                handshake_event=event.value,
+            )
+            return old_state
 
         return self.fsm_state
 

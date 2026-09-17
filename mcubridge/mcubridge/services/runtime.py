@@ -15,7 +15,7 @@ import secrets
 import shlex
 import time
 
-from collections.abc import Awaitable, Callable, Coroutine, Iterable
+from collections.abc import Awaitable, Callable, Coroutine, Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast, Final, TypeVar
@@ -219,11 +219,11 @@ class BridgeService:
             SpiAction.TRANSFER: self._handle_spi_transfer,
         }
         self._system_dispatch: Final[
-            dict[SystemAction | str, Callable[[TopicRoute, pb.CloudQueuedPublish], Coroutine[Any, Any, None]]]
+            dict[SystemAction | str, Callable[[TopicRoute, pb.CloudQueuedPublish], Coroutine[Any, Any, Any]]]
         ] = {
             SystemAction.BOOTLOADER: self._handle_system_bootloader,
             SystemAction.FREE_MEMORY: self._handle_system_free_memory,
-            SystemAction.VERSION: self._handle_system_version,
+            SystemAction.VERSION: lambda _r, inbound: self._request_mcu_version(inbound),
             SystemAction.BRIDGE: self._handle_system_bridge,
         }
         self._file_mcu_dispatch: Final[
@@ -1096,11 +1096,19 @@ class BridgeService:
                 reply_context=inbound,
             )
 
-    async def _handle_spi(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
+    async def _dispatch_topic_action(
+        self,
+        table: Mapping[Any, Callable[[TopicRoute, pb.CloudQueuedPublish], Coroutine[Any, Any, Any]]],
+        route: TopicRoute,
+        inbound: pb.CloudQueuedPublish,
+    ) -> None:
         if not self.serial:
             return
-        if handler := self._spi_dispatch.get(route.identifier):
+        if handler := table.get(route.identifier):
             await handler(route, inbound)
+
+    async def _handle_spi(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
+        await self._dispatch_topic_action(self._spi_dispatch, route, inbound)
 
     async def _handle_pin(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         serial = self.serial
@@ -1141,9 +1149,11 @@ class BridgeService:
                         reply_context=inbound,
                     )
         else:
-            cmd = Command.CMD_DIGITAL_WRITE if route.topic == Topic.DIGITAL else Command.CMD_ANALOG_WRITE
             val = int(payload) if payload.isdigit() else 0
-            await serial.send(cmd.value, pb.DigitalWrite(pin=pin, value=val))
+            if route.topic == Topic.DIGITAL:
+                await serial.send(Command.CMD_DIGITAL_WRITE.value, pb.DigitalWrite(pin=pin, value=val))
+            else:
+                await serial.send(Command.CMD_ANALOG_WRITE.value, pb.AnalogWrite(pin=pin, value=val))
 
     async def _handle_system_bootloader(self, _route: TopicRoute, _inbound: pb.CloudQueuedPublish) -> None:
         await cast("SerialTransport", self.serial).send(
@@ -1161,9 +1171,6 @@ class BridgeService:
                 reply_context=inbound,
             )
 
-    async def _handle_system_version(self, _route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
-        await self._request_mcu_version(inbound)
-
     async def _handle_system_bridge(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         flavor = route.segments[1] if len(route.segments) > 1 else "summary"
         snap = self.state.build_handshake_snapshot() if flavor == "handshake" else self.state.build_bridge_snapshot()
@@ -1175,10 +1182,7 @@ class BridgeService:
         )
 
     async def _handle_system(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
-        if not self.serial:
-            return
-        if handler := self._system_dispatch.get(route.identifier):
-            await handler(route, inbound)
+        await self._dispatch_topic_action(self._system_dispatch, route, inbound)
 
     # --- Low-level Helpers ---
 
@@ -1873,27 +1877,36 @@ class LocalBridgeService(LocalBridgeBase):
         val = await q.popleft() if len(q) > 0 else b""
         await stream.send_message(pb.MailboxReadResponse(content=val or b""))
 
+    async def _dispatch_file_mutation(
+        self,
+        stream: Stream[Any, pb.GenericResponse],
+        request: pb.FileWrite | pb.FileRemove,
+        cmd: Command,
+        mcu_msg: ProtobufMessage,
+        local_op: Callable[[], Coroutine[Any, Any, bool]],
+        error_msg: str,
+    ) -> None:
+        if request.path.startswith(MCU_FS_PREFIX):
+            serial = self.runtime_service.serial
+            ok = bool(await serial.send(cmd.value, mcu_msg)) if serial else False
+            await stream.send_message(pb.GenericResponse(status="ok" if ok else "error"))
+            return
+        if await local_op():
+            await stream.send_message(pb.GenericResponse(status="ok"))
+        else:
+            await stream.send_message(pb.GenericResponse(status="error", message=error_msg))
+
     async def FileWrite(self, stream: Stream[pb.FileWrite, pb.GenericResponse]) -> None:
         if (request := await stream.recv_message()) is None:
             return
-        if request.path.startswith(MCU_FS_PREFIX):
-            serial = self.runtime_service.serial
-            ok = (
-                bool(
-                    await serial.send(
-                        Command.CMD_FILE_WRITE.value,
-                        pb.FileWrite(path=request.path.removeprefix(MCU_FS_PREFIX), data=request.data),
-                    )
-                )
-                if serial
-                else False
-            )
-            await stream.send_message(pb.GenericResponse(status="ok" if ok else "error"))
-            return
-        if await self.runtime_service.safe_file_write(request.path, request.data):
-            await stream.send_message(pb.GenericResponse(status="ok"))
-        else:
-            await stream.send_message(pb.GenericResponse(status="error", message="Path not allowed or quota exceeded"))
+        await self._dispatch_file_mutation(
+            stream,
+            request,
+            Command.CMD_FILE_WRITE,
+            pb.FileWrite(path=request.path.removeprefix(MCU_FS_PREFIX), data=request.data),
+            lambda: self.runtime_service.safe_file_write(request.path, request.data),
+            "Path not allowed or quota exceeded",
+        )
 
     async def FileRead(self, stream: Stream[pb.FileRead, pb.FileReadResponse]) -> None:
         if (request := await stream.recv_message()) is None:
@@ -1916,24 +1929,14 @@ class LocalBridgeService(LocalBridgeBase):
     async def FileRemove(self, stream: Stream[pb.FileRemove, pb.GenericResponse]) -> None:
         if (request := await stream.recv_message()) is None:
             return
-        if request.path.startswith(MCU_FS_PREFIX):
-            serial = self.runtime_service.serial
-            ok = (
-                bool(
-                    await serial.send(
-                        Command.CMD_FILE_REMOVE.value,
-                        pb.FileRemove(path=request.path.removeprefix(MCU_FS_PREFIX)),
-                    )
-                )
-                if serial
-                else False
-            )
-            await stream.send_message(pb.GenericResponse(status="ok" if ok else "error"))
-            return
-        if await self.runtime_service.safe_file_remove(request.path):
-            await stream.send_message(pb.GenericResponse(status="ok"))
-        else:
-            await stream.send_message(pb.GenericResponse(status="error", message="Path not allowed or not found"))
+        await self._dispatch_file_mutation(
+            stream,
+            request,
+            Command.CMD_FILE_REMOVE,
+            pb.FileRemove(path=request.path.removeprefix(MCU_FS_PREFIX)),
+            lambda: self.runtime_service.safe_file_remove(request.path),
+            "Path not allowed or not found",
+        )
 
     async def ProcessRunAsync(self, stream: Stream[pb.ProcessRunAsync, pb.ProcessRunAsyncResponse]) -> None:
         if (request := await stream.recv_message()) is None:

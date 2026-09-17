@@ -239,7 +239,7 @@ async def test_runtime_pin_analog_and_invalid_digits(tmp_path: Path) -> None:
     )
     inbound_aw = pb.CloudQueuedPublish(topic_name="test/br/a/9", payload=b"128")
     await service._handle_pin(route_aw, inbound_aw)
-    mock_serial.send.assert_called_with(Command.CMD_ANALOG_WRITE.value, pb.DigitalWrite(pin=9, value=128))
+    mock_serial.send.assert_called_with(Command.CMD_ANALOG_WRITE.value, pb.AnalogWrite(pin=9, value=128))
 
     # 2. Digital Write with non-digit payload (defaults to 0)
     route_dw = TopicRoute(

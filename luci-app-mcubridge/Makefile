@@ -10,6 +10,10 @@ include $(INCLUDE_DIR)/package.mk
 
 PKG_BUILD_DIR := $(BUILD_DIR)/$(PKG_NAME)-$(PKG_VERSION)
 
+define Build/Prepare
+	mkdir -p $(PKG_BUILD_DIR)
+endef
+
 define Build/Compile
 endef
 

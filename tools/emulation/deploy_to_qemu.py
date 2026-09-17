@@ -27,14 +27,13 @@ APK_NAMES: list[str] = [
     "python3-hyperframe-6.1.0-r1.apk",
     "python3-lmdb-2.3.0-r1.apk",
     "python3-packaging-26.3-r1.apk",
-    "python3-packaging-src-25.0-r1.apk",
     "python3-prometheus-client-0.26.0-r1.apk",
-    "python3-protobuf-7.36.0-r1.apk",
-    "python3-serialx-1.9.0-r1.apk",
+    "python3-protobuf-7.36.2-r1.apk",
+    "python3-serialx-1.10.0-r1.apk",
     "python3-shellingham-1.5.4-r1.apk",
     "python3-structlog-26.1.0-r1.apk",
     "python3-tenacity-9.1.4-r1.apk",
-    "python3-typer-0.27.1-r1.apk",
+    "python3-typer-0.27.2-r1.apk",
     "python3-uvloop-0.22.1-r3.apk",
 ]
 

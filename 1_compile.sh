@@ -675,6 +675,10 @@ make defconfig
 # 3. Compilation
 echo "[CLEANUP] Removing old .apk files..."
 find "$BIN_DIR" -type f -name '*.apk' -delete
+if [ -d "$SDK_DIR/bin" ]; then
+    echo "[CLEANUP] Removing stale .apk files from SDK bin/..."
+    find "$SDK_DIR/bin" -type f -name '*.apk' -delete
+fi
 
 # [FIX] Asegurar que estamos en el SDK antes de compilar
 cd "$SDK_DIR" || { echo "[ERROR] Cannot enter SDK dir $SDK_DIR"; exit 1; }
@@ -728,6 +732,12 @@ done
 
 # Luego paquetes principales
 for pkg in luci-app-mcubridge mcubridge mcubridge-gateway; do
+    echo "[CLEAN] Purging build stamps and artifacts for $pkg..."
+    make "package/feeds/mcubridge/$pkg/clean" 2>/dev/null || true
+    rm -rf "$SDK_DIR"/build_dir/target-*/"$pkg"*
+    rm -f "$SDK_DIR"/staging_dir/target-*/root-*/stamp/."$pkg"*
+    rm -f "$SDK_DIR"/staging_dir/target-*/stamp/."$pkg"*
+
     echo "[BUILD] Building package $pkg (.apk)..."
     PKG_PATH="package/feeds/mcubridge/$pkg"
     if [ ! -d "$PKG_PATH" ] && [ -d "package/$pkg" ]; then
@@ -747,20 +757,23 @@ for pkg in luci-app-mcubridge mcubridge mcubridge-gateway; do
 done
 cd "$REPO_ROOT" || exit 1
 
-# [VALIDATION GATE] Validar que los paquetes esenciales del proyecto fueron generados
-echo "[VALIDATION] Verifying generated APKs in $BIN_DIR..."
+# [VALIDATION GATE] Validar que los paquetes esenciales del proyecto fueron generados con la versión exacta
+CURRENT_PROJECT_VERSION=$(cat "$REPO_ROOT/VERSION" | tr -d '[:space:]')
+echo "[VALIDATION] Verifying generated APKs (v$CURRENT_PROJECT_VERSION) in $BIN_DIR..."
 MISSING_REQUIRED_PKGS=0
 for req in mcubridge mcubridge-gateway luci-app-mcubridge; do
-    if ! ls "$BIN_DIR"/${req}*.apk >/dev/null 2>&1; then
-        echo "[ERROR] Mandatory package '${req}' (.apk) was not found in $BIN_DIR!" >&2
+    expected_pattern="${req}-${CURRENT_PROJECT_VERSION}"
+    if ! ls "$BIN_DIR"/${expected_pattern}*.apk >/dev/null 2>&1; then
+        echo "[ERROR] Mandatory package '${expected_pattern}*.apk' was not found in $BIN_DIR!" >&2
         MISSING_REQUIRED_PKGS=1
     else
-        echo "[OK] Found '${req}' package in $BIN_DIR."
+        found_pkg=$(ls "$BIN_DIR"/${expected_pattern}*.apk | head -n 1)
+        echo "[OK] Found '${req}' package in $BIN_DIR: $(basename "$found_pkg")."
     fi
 done
 
 if [ "$MISSING_REQUIRED_PKGS" -ne 0 ]; then
-    echo "[FATAL] Build failed: Core packages are missing from $BIN_DIR." >&2
+    echo "[FATAL] Build failed: Core packages matching version $CURRENT_PROJECT_VERSION are missing from $BIN_DIR." >&2
     exit 1
 fi
 

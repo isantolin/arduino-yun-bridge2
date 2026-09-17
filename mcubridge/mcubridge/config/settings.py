@@ -55,8 +55,8 @@ def _coerce_path(v: Any) -> str:
 def _coerce_commands(v: Any) -> list[str]:
     """Coerce commands to a clean list of strings. [SIL-2]"""
     if isinstance(v, (list, tuple)):
-        items = cast("list[Any] | tuple[Any, ...]", v)
-        return [str(x).strip() for x in items if str(x).strip()]
+        items = cast(list[object] | tuple[object, ...], v)
+        return [clean for x in items if (clean := str(x).strip())]
     if isinstance(v, str):
         return v.split()
     return [] if v is None else [str(v)]

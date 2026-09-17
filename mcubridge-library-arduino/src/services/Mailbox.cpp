@@ -10,11 +10,7 @@ MailboxClass::MailboxClass() {}
 
 void MailboxClass::push(etl::span<const uint8_t> data) {
   rpc::payload::MailboxPush p = {};
-  const size_t bounded_size = etl::min(data.size(), sizeof(p.data.bytes));
-  if (bounded_size > 0U) {
-    etl::copy_n(data.data(), bounded_size, p.data.bytes);
-  }
-  p.data.size = static_cast<pb_size_t>(bounded_size);
+  rpc::Payload::copy_to_pb_bytes(p.data, data);
   if (!Bridge.send(rpc::CommandId::CMD_MAILBOX_PUSH, 0, p)) {
     Bridge.emitStatus(
         rpc::StatusCode::STATUS_ERROR,
@@ -51,8 +47,7 @@ void MailboxClass::_onPush(const rpc::payload::MailboxPush& msg) {
     MailboxBuffer m;
     const size_t sz =
         etl::min(static_cast<size_t>(msg.data.size), m.capacity());
-    m.resize(sz);
-    etl::copy_n(msg.data.bytes, sz, m.begin());
+    m.assign(msg.data.bytes, msg.data.bytes + sz);
     _queue.push(m);
   }
 }
@@ -63,8 +58,7 @@ void MailboxClass::_onReadResponse(
     MailboxBuffer m;
     const size_t sz =
         etl::min(static_cast<size_t>(msg.content.size), m.capacity());
-    m.resize(sz);
-    etl::copy_n(msg.content.bytes, sz, m.begin());
+    m.assign(msg.content.bytes, msg.content.bytes + sz);
     _queue.push(m);
   }
 }

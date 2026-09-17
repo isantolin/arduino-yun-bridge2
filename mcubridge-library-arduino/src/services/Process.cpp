@@ -54,11 +54,9 @@ void ProcessClass::runAsync(etl::string_view cmd,
   }
 
   rpc::payload::ProcessRunAsync p = {};
-  const size_t c_copy = etl::min(static_cast<size_t>(command_buffer.size()),
-                                 sizeof(p.command) - 1U);
-  if (c_copy > 0U) {
-    etl::copy_n(command_buffer.begin(), c_copy, p.command);
-  }
+  rpc::Payload::copy_to_pb_string(
+      p.command,
+      etl::string_view(command_buffer.data(), command_buffer.size()));
 
   const bool send_ok = Bridge.send(rpc::CommandId::CMD_PROCESS_RUN_ASYNC, 0, p);
   if (!send_ok) {

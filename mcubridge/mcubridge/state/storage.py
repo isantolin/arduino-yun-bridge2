@@ -101,11 +101,7 @@ class LmdbDeque:
 
     async def append(self, item: bytes) -> int:
         if self.is_mem:
-            trimmed = 0
-            if self.maxlen is not None and len(self._mem) >= self.maxlen:
-                trimmed = len(self._mem) - self.maxlen + 1
-                for _ in range(trimmed):
-                    self._mem.popleft()
+            trimmed = 1 if (self.maxlen is not None and len(self._mem) >= self.maxlen) else 0
             self._mem.append(item)
             return trimmed
         if not self.env:

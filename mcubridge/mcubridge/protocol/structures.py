@@ -14,7 +14,6 @@ import re
 import ssl
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from itertools import batched
 from pathlib import Path
 from typing import (
     Any,
@@ -34,9 +33,11 @@ from mcubridge.config.const import (
 logger = structlog.get_logger(__name__)
 
 
-def iter_chunks(data: bytes, chunk_size: int) -> Iterable[bytes]:
-    """Chunk bytes into fixed-size pieces. [SIL-2] Delegates to itertools.batched."""
-    return (bytes(chunk) for chunk in batched(data, chunk_size))
+def iter_chunks(data: bytes | memoryview, chunk_size: int) -> Iterable[bytes]:
+    """Chunk bytes into fixed-size pieces using memoryview zero-copy slicing. [SIL-2]"""
+    mv = memoryview(data)
+    for i in range(0, len(mv), chunk_size):
+        yield bytes(mv[i : i + chunk_size])
 
 
 PROTOBUF_CONTENT_TYPE: Final[str] = "application/x-protobuf"

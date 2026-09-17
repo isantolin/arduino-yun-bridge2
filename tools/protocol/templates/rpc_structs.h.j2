@@ -116,6 +116,20 @@ inline etl::expected<T, bool> deserialize(etl::span<const uint8_t> buffer) {
     }
     return etl::unexpected<bool>(false);
 }
+
+template <typename TPbBytes, typename TSource>
+inline void copy_to_pb_bytes(TPbBytes& dest, const TSource& src) {
+    const size_t bounded_size = etl::min(src.size(), sizeof(dest.bytes));
+    if (bounded_size > 0U) {
+        etl::copy_n(src.data(), bounded_size, dest.bytes);
+    }
+    dest.size = static_cast<pb_size_t>(bounded_size);
+}
+
+template <size_t N>
+inline void copy_to_pb_string(char (&dest)[N], etl::string_view src) {
+    dest[src.copy(dest, N - 1)] = '\0';
+}
 } // namespace rpc::Payload
 
 #endif

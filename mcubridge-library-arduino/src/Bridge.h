@@ -209,6 +209,23 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
     }
   }
 
+  template <typename T>
+  bool sendOrEmitStatus(
+      rpc::CommandId c, uint16_t seq, const T& packet,
+      etl::string_view error_reason = etl::string_view(),
+      uint32_t channel_id = rpc_pb_ChannelId_CHANNEL_CONTROL,
+      uint32_t qos = rpc_pb_QosProfile_QOS_RELIABLE) {
+    if (!send(c, seq, packet, channel_id, qos)) {
+      if (error_reason.empty()) {
+        emitStatus(rpc::StatusCode::STATUS_ERROR);
+      } else {
+        emitStatus(rpc::StatusCode::STATUS_ERROR, error_reason);
+      }
+      return false;
+    }
+    return true;
+  }
+
   using CommandHandler = etl::delegate<void(const rpc_pb_RpcEnvelope&)>;
   using StatusHandler =
       etl::delegate<void(rpc::StatusCode, etl::span<const uint8_t>)>;
@@ -224,86 +241,6 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   void _retransmitLastFrame();
   bool _isSecurityCheckPassed(uint16_t command_id) const;
 
-  // [ETL] Per-command dispatch handlers — declared static so their addresses
-  // can be stored in a constexpr-compatible function pointer (not a member fn
-  // pointer). Each accesses BridgeClass state via the explicit `self`
-  // reference.
-  static void _onCmd_StatusAck(BridgeClass& self,
-                               const bridge::router::CommandContext& ctx);
-  static void _onCmd_GetVersion(BridgeClass& self,
-                                const bridge::router::CommandContext& ctx);
-  static void _onCmd_GetFreeMemory(BridgeClass& self,
-                                   const bridge::router::CommandContext& ctx);
-  static void _onCmd_LinkSync(BridgeClass& self,
-                              const bridge::router::CommandContext& ctx);
-  static void _onCmd_LinkReset(BridgeClass& self,
-                               const bridge::router::CommandContext& ctx);
-  static void _onCmd_GetCapabilities(BridgeClass& self,
-                                     const bridge::router::CommandContext& ctx);
-  static void _onCmd_SetBaudrate(BridgeClass& self,
-                                 const bridge::router::CommandContext& ctx);
-  static void _onCmd_EnterBootloader(BridgeClass& self,
-                                     const bridge::router::CommandContext& ctx);
-  static void _onCmd_Xoff(BridgeClass& self,
-                          const bridge::router::CommandContext& ctx);
-  static void _onCmd_Xon(BridgeClass& self,
-                         const bridge::router::CommandContext& ctx);
-  static void _onCmd_SetPinMode(BridgeClass& self,
-                                const bridge::router::CommandContext& ctx);
-  static void _onCmd_DigitalWrite(BridgeClass& self,
-                                  const bridge::router::CommandContext& ctx);
-  static void _onCmd_AnalogWrite(BridgeClass& self,
-                                 const bridge::router::CommandContext& ctx);
-  // Two table entries point to this handler; internal branch on
-  // ctx.raw_command.
-  static void _onCmd_PinRead(BridgeClass& self,
-                             const bridge::router::CommandContext& ctx);
-  static void _onCmd_PinSubscribe(BridgeClass& self,
-                                  const bridge::router::CommandContext& ctx);
-  static void _onCmd_ClockSync(BridgeClass& self,
-                               const bridge::router::CommandContext& ctx);
-  static void _onCmd_ConsoleWrite(BridgeClass& self,
-                                  const bridge::router::CommandContext& ctx);
-#if BRIDGE_ENABLE_DATASTORE
-  static void _onCmd_DatastoreGetResp(
-      BridgeClass& self, const bridge::router::CommandContext& ctx);
-#endif
-#if BRIDGE_ENABLE_MAILBOX
-  static void _onCmd_MailboxPush(BridgeClass& self,
-                                 const bridge::router::CommandContext& ctx);
-  static void _onCmd_MailboxReadResp(BridgeClass& self,
-                                     const bridge::router::CommandContext& ctx);
-  static void _onCmd_MailboxAvailableResp(
-      BridgeClass& self, const bridge::router::CommandContext& ctx);
-#endif
-#if BRIDGE_ENABLE_FILESYSTEM
-  static void _onCmd_FileWrite(BridgeClass& self,
-                               const bridge::router::CommandContext& ctx);
-  static void _onCmd_FileRead(BridgeClass& self,
-                              const bridge::router::CommandContext& ctx);
-  static void _onCmd_FileRemove(BridgeClass& self,
-                                const bridge::router::CommandContext& ctx);
-  static void _onCmd_FileReadResp(BridgeClass& self,
-                                  const bridge::router::CommandContext& ctx);
-#endif
-#if BRIDGE_ENABLE_PROCESS
-  static void _onCmd_ProcessKill(BridgeClass& self,
-                                 const bridge::router::CommandContext& ctx);
-  static void _onCmd_ProcessRunAsyncResp(
-      BridgeClass& self, const bridge::router::CommandContext& ctx);
-  static void _onCmd_ProcessPollResp(BridgeClass& self,
-                                     const bridge::router::CommandContext& ctx);
-#endif
-#if BRIDGE_ENABLE_SPI
-  static void _onCmd_SpiBegin(BridgeClass& self,
-                              const bridge::router::CommandContext& ctx);
-  static void _onCmd_SpiTransfer(BridgeClass& self,
-                                 const bridge::router::CommandContext& ctx);
-  static void _onCmd_SpiEnd(BridgeClass& self,
-                            const bridge::router::CommandContext& ctx);
-  static void _onCmd_SpiSetConfig(BridgeClass& self,
-                                  const bridge::router::CommandContext& ctx);
-#endif
 
   static inline bool is_reliable_cmd(uint16_t id) {
     return rpc::requires_ack(id);
@@ -399,7 +336,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   etl::circular_buffer<uint16_t, bridge::config::RX_HISTORY_SIZE> _rx_history;
 
   bool _preDispatch(const bridge::router::CommandContext& ctx, bool needs_ack,
-                    bool retransmit_on_dup);
+                    bool retransmit_on_dup, bool check_dup = true);
 
   // [SIL-2] Tag type: marks payload-free dispatch cases (no Protobuf decode).
   struct _NoPayload {};
@@ -428,8 +365,9 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   //                                    const MsgType&)
   template <typename MsgType, typename Handler>
   bool _dispatchCmd(const bridge::router::CommandContext& ctx, Handler handler,
-                    bool needs_ack, bool retransmit_on_dup = false) {
-    if (!_preDispatch(ctx, needs_ack, retransmit_on_dup)) {
+                    bool needs_ack, bool retransmit_on_dup = false,
+                    bool check_dup = true) {
+    if (!_preDispatch(ctx, needs_ack, retransmit_on_dup, check_dup)) {
       return false;
     }
     if constexpr (!etl::is_same_v<MsgType, _NoPayload>) {
@@ -463,6 +401,68 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
                     bool retransmit_on_dup = false) {
     return _dispatchCmd<MsgType, Handler>(
         ctx, handler, rpc::requires_ack(ctx.raw_command), retransmit_on_dup);
+  }
+
+  // [SIL-2] Reusable template command dispatchers — eliminating repetitive
+  // per-command wrapper methods. Zero-heap, zero-copy, compile-time bound.
+  template <auto MemberFn, bool NeedsAck = true, bool RetransmitOnDup = false,
+            bool CheckDup = true>
+  static void _dispatchMemberNoPayload(
+      BridgeClass& self, const bridge::router::CommandContext& ctx) {
+    self._dispatchCmd<_NoPayload>(
+        ctx,
+        [&self](const bridge::router::CommandContext& c) {
+          (self.*MemberFn)(c);
+        },
+        NeedsAck, RetransmitOnDup, CheckDup);
+  }
+
+  template <auto MemberFn, typename MsgType, bool NeedsAck = true,
+            bool RetransmitOnDup = false, bool CheckDup = true>
+  static void _dispatchMemberWithCtxMsg(
+      BridgeClass& self, const bridge::router::CommandContext& ctx) {
+    self._dispatchCmd<MsgType>(
+        ctx,
+        [&self](const bridge::router::CommandContext& c, const MsgType& m) {
+          (self.*MemberFn)(c, m);
+        },
+        NeedsAck, RetransmitOnDup, CheckDup);
+  }
+
+  template <auto MemberFn, typename MsgType, bool NeedsAck = true,
+            bool RetransmitOnDup = false, bool CheckDup = true>
+  static void _dispatchMemberWithMsg(
+      BridgeClass& self, const bridge::router::CommandContext& ctx) {
+    self._dispatchCmd<MsgType>(
+        ctx,
+        [&self](const bridge::router::CommandContext&, const MsgType& m) {
+          (self.*MemberFn)(m);
+        },
+        NeedsAck, RetransmitOnDup, CheckDup);
+  }
+
+  template <auto StaticFn, typename MsgType, bool NeedsAck = true,
+            bool RetransmitOnDup = false, bool CheckDup = true>
+  static void _dispatchStaticWithCtxMsg(
+      BridgeClass& self, const bridge::router::CommandContext& ctx) {
+    self._dispatchCmd<MsgType>(
+        ctx,
+        [](const bridge::router::CommandContext& c, const MsgType& m) {
+          StaticFn(c, m);
+        },
+        NeedsAck, RetransmitOnDup, CheckDup);
+  }
+
+  template <auto StaticFn, typename MsgType, bool NeedsAck = true,
+            bool RetransmitOnDup = false, bool CheckDup = true>
+  static void _dispatchStaticWithMsg(
+      BridgeClass& self, const bridge::router::CommandContext& ctx) {
+    self._dispatchCmd<MsgType>(
+        ctx,
+        [](const bridge::router::CommandContext&, const MsgType& m) {
+          StaticFn(m);
+        },
+        NeedsAck, RetransmitOnDup, CheckDup);
   }
 
   void _applyTimingConfig(const rpc::payload::HandshakeConfig& msg);
@@ -504,6 +504,8 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
       const bridge::router::CommandContext& ctx, const rpc_pb_PinRead& m);
   __attribute__((noinline)) void _handleAnalogRead(
       const bridge::router::CommandContext& ctx, const rpc_pb_PinRead& m);
+  void _handlePinRead(const bridge::router::CommandContext& ctx,
+                      const rpc_pb_PinRead& m);
   void _handlePinSubscribe(const bridge::router::CommandContext& ctx,
                            const rpc_pb_PinSubscribeRequest& m);
   void _handleClockSync(const bridge::router::CommandContext& ctx,

@@ -11,11 +11,9 @@ MailboxClass::MailboxClass() {}
 void MailboxClass::push(etl::span<const uint8_t> data) {
   rpc::payload::MailboxPush p = {};
   rpc::Payload::copy_to_pb_bytes(p.data, data);
-  if (!Bridge.send(rpc::CommandId::CMD_MAILBOX_PUSH, 0, p)) {
-    Bridge.emitStatus(
-        rpc::StatusCode::STATUS_ERROR,
-        etl::string_view(rpc::status_reason::MAILBOX_PUSH_FAILED));
-  }
+  Bridge.sendOrEmitStatus(
+      rpc::CommandId::CMD_MAILBOX_PUSH, 0, p,
+      etl::string_view(rpc::status_reason::MAILBOX_PUSH_FAILED));
 }
 
 typename MailboxClass::MessageCallback MailboxClass::_message_callback;
@@ -35,11 +33,9 @@ void MailboxClass::requestAvailable() {
 void MailboxClass::signalProcessed(uint32_t message_id) {
   rpc::payload::MailboxProcessed p = {};
   p.message_id = message_id;
-  if (!Bridge.send(rpc::CommandId::CMD_MAILBOX_PROCESSED, 0, p)) {
-    Bridge.emitStatus(
-        rpc::StatusCode::STATUS_ERROR,
-        etl::string_view(rpc::status_reason::MAILBOX_PROCESSED_FAILED));
-  }
+  Bridge.sendOrEmitStatus(
+      rpc::CommandId::CMD_MAILBOX_PROCESSED, 0, p,
+      etl::string_view(rpc::status_reason::MAILBOX_PROCESSED_FAILED));
 }
 
 void MailboxClass::_onPush(const rpc::payload::MailboxPush& msg) {

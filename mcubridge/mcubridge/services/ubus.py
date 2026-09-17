@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib
+from collections.abc import Callable
 from typing import Any, Protocol
 import anyio.from_thread
 import structlog
@@ -219,31 +220,45 @@ class UbusService:
 
         return data
 
+    def _call_subsystem(
+        self,
+        service_attr: str,
+        action: Callable[[Any], dict[str, Any]],
+        error_message: str,
+    ) -> dict[str, Any]:
+        service = getattr(self.runtime, service_attr, None)
+        if service:
+            return action(service)
+        return {"status": "error", "message": error_message}
+
     def ubus_handle_clock_status(self, _req: Any, _msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.clock_status'."""
-        clock_service = getattr(self.runtime, "clock_sync", None)
-        if clock_service:
-            return clock_service.get_status()
-        return {"status": "error", "message": "Clock service unavailable"}
+        return self._call_subsystem(
+            "clock_sync",
+            lambda s: s.get_status(),
+            "Clock service unavailable",
+        )
 
     def ubus_handle_clock_sync(self, _req: Any, _msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.clock_sync'."""
-        clock_service = getattr(self.runtime, "clock_sync", None)
-        if clock_service:
-            return self.run_sync(clock_service.sync_now())
-        return {"status": "error", "message": "Clock service unavailable"}
+        return self._call_subsystem(
+            "clock_sync",
+            lambda s: self.run_sync(s.sync_now()),
+            "Clock service unavailable",
+        )
 
     def ubus_handle_pin_subscribe(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.pin_subscribe'."""
-        gpio_service = getattr(self.runtime, "gpio", None)
-        if not gpio_service:
-            return {"status": "error", "message": "GPIO service unavailable"}
         pin = int(msg.get("pin", 0))
         mode = str(msg.get("mode", "INPUT"))
         interval_ms = int(msg.get("interval_ms", 50))
         hysteresis = int(msg.get("hysteresis", 1))
         enabled = bool(int(msg.get("enabled", 1)))
-        return self.run_sync(gpio_service.subscribe_pin(pin, mode, interval_ms, hysteresis, enabled))
+        return self._call_subsystem(
+            "gpio",
+            lambda s: self.run_sync(s.subscribe_pin(pin, mode, interval_ms, hysteresis, enabled)),
+            "GPIO service unavailable",
+        )
 
     def ubus_handle_link_reset(self, _req: Any, _msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.link_reset'."""

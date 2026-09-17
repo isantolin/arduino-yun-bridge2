@@ -122,12 +122,16 @@ def allows_topic(auth: pb.TopicAuthorization, topic: str, action: str) -> bool:
 RuntimeConfig = pb.RuntimeConfig
 
 
+def _validate_port_range(name: str, port: int) -> None:
+    if not (1 <= port <= 65535):
+        raise ValueError(f"{name}: must be between 1 and 65535 (got {port})")
+
+
 def validate_config(cfg: pb.RuntimeConfig) -> None:
     """Validate and normalize a RuntimeConfig in-place natively. [SIL-2]"""
     if not cfg.serial_port:
         raise ValueError("serial_port: value length must be at least 1")
-    if not (1 <= cfg.cloud_port <= 65535):
-        raise ValueError(f"cloud_port: must be between 1 and 65535 (got {cfg.cloud_port})")
+    _validate_port_range("cloud_port", cfg.cloud_port)
     if not cfg.topic_prefix:
         raise ValueError("topic_prefix: value length must be at least 1")
     if not re.search(r"[^/]", cfg.topic_prefix):
@@ -149,10 +153,10 @@ def validate_config(cfg: pb.RuntimeConfig) -> None:
         raise ValueError("cloud_certfile: cloud_certfile and cloud_keyfile must both be set or both be empty")
     if not cfg.serial_shared_secret:
         raise ValueError("serial_shared_secret: value length must be at least 1")
-    if cfg.metrics_port and not (1 <= cfg.metrics_port <= 65535):
-        raise ValueError(f"metrics_port: must be between 1 and 65535 (got {cfg.metrics_port})")
-    if cfg.cloud_http3_port and not (1 <= cfg.cloud_http3_port <= 65535):
-        raise ValueError(f"cloud_http3_port: must be between 1 and 65535 (got {cfg.cloud_http3_port})")
+    if cfg.metrics_port:
+        _validate_port_range("metrics_port", cfg.metrics_port)
+    if cfg.cloud_http3_port:
+        _validate_port_range("cloud_http3_port", cfg.cloud_http3_port)
 
     cfg.allowed_policy.CopyFrom(create_allowed_policy(cfg.allowed_commands))
     del cfg.allowed_commands[:]

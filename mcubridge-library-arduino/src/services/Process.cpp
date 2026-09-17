@@ -58,11 +58,9 @@ void ProcessClass::runAsync(etl::string_view cmd,
       p.command,
       etl::string_view(command_buffer.data(), command_buffer.size()));
 
-  const bool send_ok = Bridge.send(rpc::CommandId::CMD_PROCESS_RUN_ASYNC, 0, p);
-  if (!send_ok) {
-    Bridge.emitStatus(
-        rpc::StatusCode::STATUS_ERROR,
-        etl::string_view(rpc::status_reason::PROCESS_RUN_ASYNC_FAILED));
+  if (!Bridge.sendOrEmitStatus(
+          rpc::CommandId::CMD_PROCESS_RUN_ASYNC, 0, p,
+          etl::string_view(rpc::status_reason::PROCESS_RUN_ASYNC_FAILED))) {
     if (handler.is_valid()) handler(kProcessInvalidPid);
     return;
   }
@@ -82,10 +80,9 @@ void ProcessClass::poll(int32_t pid,
   rpc::payload::ProcessPoll p = {};
   p.pid = static_cast<uint32_t>(pid);
 
-  if (!Bridge.send(rpc::CommandId::CMD_PROCESS_POLL, 0, p)) {
-    Bridge.emitStatus(
-        rpc::StatusCode::STATUS_ERROR,
-        etl::string_view(rpc::status_reason::PROCESS_RUN_INTERNAL_ERROR));
+  if (!Bridge.sendOrEmitStatus(
+          rpc::CommandId::CMD_PROCESS_POLL, 0, p,
+          etl::string_view(rpc::status_reason::PROCESS_RUN_INTERNAL_ERROR))) {
     return;
   }
 
@@ -97,11 +94,9 @@ void ProcessClass::poll(int32_t pid,
 void ProcessClass::kill(int32_t pid) {
   rpc::payload::ProcessKill p = {};
   p.pid = static_cast<uint32_t>(pid);
-  if (!Bridge.send(rpc::CommandId::CMD_PROCESS_KILL, 0, p)) {
-    Bridge.emitStatus(
-        rpc::StatusCode::STATUS_ERROR,
-        etl::string_view(rpc::status_reason::PROCESS_KILL_FAILED));
-  }
+  Bridge.sendOrEmitStatus(
+      rpc::CommandId::CMD_PROCESS_KILL, 0, p,
+      etl::string_view(rpc::status_reason::PROCESS_KILL_FAILED));
 }
 
 void ProcessClass::_onKillNotification(const rpc::payload::ProcessKill&) {

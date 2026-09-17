@@ -13,11 +13,11 @@ app = typer.Typer(help="Interactive/Automated deployer for McuBridge inside Open
 
 PROMPT = r"root@[^:]+:[^#]*#"
 
-RELEASE_BASE = "https://github.com/isantolin/arduino-yun-bridge2/releases/download/v2.8.6"
+RELEASE_BASE = "https://github.com/isantolin/arduino-yun-bridge2/releases/download/v2.8.7"
 APK_NAMES: list[str] = [
-    "luci-app-mcubridge-2.8.6-r1.apk",
-    "mcubridge-2.8.6-r1.apk",
-    "mcubridge-gateway-2.8.6-r1.apk",
+    "luci-app-mcubridge-2.8.7-r1.apk",
+    "mcubridge-2.8.7-r1.apk",
+    "mcubridge-gateway-2.8.7-r1.apk",
     "python3-annotated-doc-0.0.5-r1.apk",
     "python3-cobs-1.2.2-r1.apk",
     "python3-cryptography-50.0.1-r1.apk",
@@ -109,7 +109,7 @@ def main(
     run_command_in_console(child, "mkdir -p /root/deploy/bin", timeout=10)
     run_command_in_console(child, "cd /root/deploy", timeout=10)
 
-    # 5. Download 3_install.sh and APKs from GitHub Release v2.8.6
+    # 5. Download 3_install.sh and APKs from GitHub Release v2.8.7
     install_script_url = "https://raw.githubusercontent.com/isantolin/arduino-yun-bridge2/main/3_install.sh"
     run_command_in_console(
         child,
@@ -118,7 +118,7 @@ def main(
     )
     run_command_in_console(child, "chmod +x /root/deploy/3_install.sh", timeout=10)
 
-    print("\n[INFO] Downloading APK packages from GitHub Release v2.8.6...")
+    print("\n[INFO] Downloading APK packages from GitHub Release v2.8.7...")
     for apk in APK_NAMES:
         dl_cmd = f"wget -c {RELEASE_BASE}/{apk} -O /root/deploy/bin/{apk}"
         run_command_in_console(child, dl_cmd, timeout=60)

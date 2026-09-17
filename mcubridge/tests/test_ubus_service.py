@@ -45,7 +45,7 @@ def mock_runtime() -> MockRuntimeFacade:
     state = create_runtime_state(config)
     state.connection_fsm.connect()
     state.connection_fsm.synchronize()
-    state.mcu_version = (2, 8, 6)
+    state.mcu_version = (2, 8, 7)
     state.mcu_capabilities = pb.Capabilities(watchdog=True, spi=True, sd=True)
     return MockRuntimeFacade(config, state)
 
@@ -132,7 +132,7 @@ def test_ubus_handle_status(mock_runtime: MockRuntimeFacade) -> None:
 
     assert status_resp["connected"] is True
     assert status_resp["synchronized"] is True
-    assert status_resp["version"] == "2.8.6"
+    assert status_resp["version"] == "2.8.7"
     assert status_resp["capabilities"]["watchdog"] is True
     assert status_resp["capabilities"]["spi"] is True
     assert status_resp["capabilities"]["sd"] is True
@@ -631,15 +631,14 @@ def test_ubus_handle_link_reset_failure(mock_runtime: MockRuntimeFacade) -> None
 @pytest.mark.asyncio
 async def test_ubus_schedule_async_in_running_loop(mock_runtime: MockRuntimeFacade) -> None:
     service = UbusService(mock_runtime)
-    executed = False
+    executed: list[bool] = []
 
     async def _sample_coro() -> None:
-        nonlocal executed
-        executed = True
+        executed.append(True)
 
     service.schedule_async(_sample_coro())
     await asyncio.sleep(0.01)
-    assert executed is True
+    assert executed == [True]
 
 
 def test_ubus_schedule_async_with_target_loop(mock_runtime: MockRuntimeFacade, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -664,11 +663,10 @@ def test_ubus_schedule_async_with_target_loop(mock_runtime: MockRuntimeFacade, m
 
 def test_ubus_schedule_async_no_loop(mock_runtime: MockRuntimeFacade) -> None:
     service = UbusService(mock_runtime)
-    executed = False
+    executed: list[bool] = []
 
     async def _sample_coro() -> None:
-        nonlocal executed
-        executed = True
+        executed.append(True)
 
     service.schedule_async(_sample_coro())
-    assert executed is True
+    assert executed == [True]

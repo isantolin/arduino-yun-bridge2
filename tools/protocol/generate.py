@@ -782,7 +782,15 @@ class JinjaGenerator:
 def update_metadata(version: str) -> None:
     targets = [
         (REPO_ROOT / "pyproject.toml", r'version\s*=\s*"[^"]+"', f'version = "{version}"', 1),
+        (
+            REPO_ROOT / "mcubridge" / "mcubridge" / "__init__.py",
+            r'__version__\s*=\s*"[^"]+"',
+            f'__version__ = "{version}"',
+            1,
+        ),
         (REPO_ROOT / "mcubridge" / "Makefile", r"PKG_VERSION:=[^\n]+", f"PKG_VERSION:={version}", 0),
+        (REPO_ROOT / "mcubridge-gateway" / "Makefile", r"PKG_VERSION:=[^\n]+", f"PKG_VERSION:={version}", 0),
+        (REPO_ROOT / "luci-app-mcubridge" / "Makefile", r"PKG_VERSION:=[^\n]+", f"PKG_VERSION:={version}", 0),
         (REPO_ROOT / "mcubridge-library-arduino" / "library.properties", r"version=[^\n]+", f"version={version}", 0),
     ]
     for target_path, pattern, repl, count in targets:

@@ -32,7 +32,7 @@
 - **Auto-Baudrate Fallback**: Automated speed downgrade logic based on CRC error thresholds.
 - **SPI Service**: Full implementation of the SPI capability bit with a dedicated RPC service.
 
-### 4. Deterministic FSM Ecosystem & Declarative Resilience (v2.8.7 - Q3 2026)
+### 4. Deterministic FSM Ecosystem & Declarative Resilience (v2.8.7 - Q3 2026 - RELEASED)
 - **Ecosystem-Wide `python-statemachine`**: Formal SIL-2 deterministic state machines across all critical lifecycle boundaries:
   - `HandshakeMachine`: Eradicated manual state mapping and glue code; registered `SerialHandshakeManager` as listener with native hooks (`on_enter_synchronized`, `on_exit_synchronized`, `after_transition`).
   - `LinkConnectionMachine`: Strongly-typed physical connection states (`disconnected`, `connected`, `synchronized`) with idempotent transitions.

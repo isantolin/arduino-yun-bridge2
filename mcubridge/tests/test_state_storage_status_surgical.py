@@ -4,6 +4,7 @@ from __future__ import annotations
 
 
 import asyncio
+import anyio.to_thread
 import os
 import time
 from collections.abc import Iterator
@@ -184,7 +185,7 @@ async def test_lmdb_cache_pop_delete_vacuum_lifecycle(tmp_path: object) -> None:
 async def test_lmdb_cache_and_vacuum_edge_branches(tmp_path: Path) -> None:
     """Verify fallback and error paths for LmdbCache and _vacuum_lmdb_env."""
     # 1. Vacuum with None env
-    _vacuum_lmdb_env(str(tmp_path), "test.db", None, lambda: None)
+    await anyio.to_thread.run_sync(_vacuum_lmdb_env, str(tmp_path), "test.db", None, lambda: None)
 
     db_path = str(tmp_path) + "/edge_branches.db"
     kv = LmdbCache(db_path)
@@ -209,7 +210,9 @@ async def test_lmdb_cache_and_vacuum_edge_branches(tmp_path: Path) -> None:
     faulty_env = MagicMock()
     faulty_env.copy.side_effect = lmdb.Error("Copy fail")
     with patch("pathlib.Path.unlink", side_effect=OSError("Permission denied")):
-        _vacuum_lmdb_env(str(tmp_path / "faulty"), "faulty.db", faulty_env, lambda: None)
+        await anyio.to_thread.run_sync(
+            _vacuum_lmdb_env, str(tmp_path / "faulty"), "faulty.db", faulty_env, lambda: None
+        )
 
 
 @pytest.mark.asyncio

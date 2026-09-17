@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import importlib
-import threading
 from typing import Any, Protocol
 import anyio.from_thread
 import structlog
@@ -98,7 +97,6 @@ class UbusService:
         self._conn: Any = None
         self._is_active = False
         self._loop: asyncio.AbstractEventLoop | None = None
-        self._thread: threading.Thread | None = None
 
     @property
     def is_active(self) -> bool:

@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import math
-import threading
 import weakref
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 from typing import Any
 
 from wsgiref.simple_server import make_server
+import anyio.to_thread
 import prometheus_client
 from prometheus_client import ProcessCollector
 from prometheus_client.core import GaugeMetricFamily, Metric
@@ -314,9 +314,11 @@ class PrometheusExporter:
 
             # Shutdown stops the serve_forever loop without blocking event loop or executor
             if self._server:
-                shutdown_thread = threading.Thread(target=self._server.shutdown, daemon=True)
-                shutdown_thread.start()
-                shutdown_thread.join(timeout=1.5)
+                try:
+                    async with asyncio.timeout(1.5):
+                        await anyio.to_thread.run_sync(self._server.shutdown)
+                except TimeoutError:
+                    log.warning("Prometheus exporter shutdown timed out")
                 # server_close releases the socket (avoids ResourceWarning)
                 self._server.server_close()
 

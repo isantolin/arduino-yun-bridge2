@@ -12,6 +12,76 @@ import typer
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def _audit_ast_exceptions(node: ast.AST, py_file_name: str) -> list[str]:
+    """Audit AST for bare and broad Pokemon exceptions."""
+    findings: list[str] = []
+    if isinstance(node, ast.ExceptHandler):
+        if node.type is None:
+            findings.append(f"Python Pokemon Exception: {py_file_name}:{node.lineno} - bare 'except:'")
+        elif isinstance(node.type, ast.Name) and node.type.id in ("Exception", "BaseException"):
+            findings.append(f"Python Pokemon Exception: {py_file_name}:{node.lineno} - 'except {node.type.id}:'")
+        elif isinstance(node.type, ast.Tuple):
+            for elt in node.type.elts:
+                if isinstance(elt, ast.Name) and elt.id in ("Exception", "BaseException"):
+                    findings.append(
+                        f"Python Pokemon Exception: {py_file_name}:{node.lineno} - "
+                        f"'except (..., {elt.id}, ...):'"
+                    )
+    return findings
+
+
+def _audit_ast_async_blocking(node: ast.AST, py_file_name: str) -> list[str]:
+    """Audit async functions for blocking synchronous primitives and un-offloaded I/O."""
+    findings: list[str] = []
+    if isinstance(node, ast.AsyncFunctionDef):
+        for subnode in ast.walk(node):
+            if isinstance(subnode, ast.Call):
+                # Detect time.sleep() inside async function
+                if (
+                    isinstance(subnode.func, ast.Attribute)
+                    and isinstance(subnode.func.value, ast.Name)
+                    and subnode.func.value.id == "time"
+                    and subnode.func.attr == "sleep"
+                ):
+                    findings.append(
+                        f"Blocking Call in Async: {py_file_name}:{subnode.lineno} - "
+                        f"'time.sleep()' inside async def {node.name}"
+                    )
+                # Detect threading.Thread() inside async function
+                elif (
+                    isinstance(subnode.func, ast.Attribute)
+                    and isinstance(subnode.func.value, ast.Name)
+                    and subnode.func.value.id == "threading"
+                    and subnode.func.attr == "Thread"
+                ):
+                    findings.append(
+                        f"Blocking Thread in Async: {py_file_name}:{subnode.lineno} - "
+                        f"'threading.Thread()' inside async def {node.name}"
+                    )
+                # Detect thread.join() inside async function
+                elif (
+                    isinstance(subnode.func, ast.Attribute)
+                    and subnode.func.attr == "join"
+                    and isinstance(subnode.func.value, ast.Name)
+                    and "thread" in subnode.func.value.id.lower()
+                ):
+                    findings.append(
+                        f"Blocking Thread Join in Async: {py_file_name}:{subnode.lineno} - "
+                        f"'{subnode.func.value.id}.join()' inside async def {node.name}"
+                    )
+                # Detect direct call to _vacuum_lmdb_env() without anyio.to_thread.run_sync
+                elif (
+                    isinstance(subnode.func, ast.Name)
+                    and subnode.func.id == "_vacuum_lmdb_env"
+                ):
+                    findings.append(
+                        f"Blocking Compaction in Async: {py_file_name}:{subnode.lineno} - "
+                        f"direct call to '_vacuum_lmdb_env()' inside async def {node.name}; "
+                        f"must be offloaded via anyio.to_thread.run_sync"
+                    )
+    return findings
+
+
 def audit_python_files() -> list[str]:
     """Audit Python source files for Pokemon exceptions, suppressions, and passthrough shims."""
     findings: list[str] = []
@@ -43,24 +113,12 @@ def audit_python_files() -> list[str]:
                 continue
             content = py_file.read_text(encoding="utf-8")
 
-            # 1. AST audit for Pokemon exceptions and silent handlers
+            # 1. AST audit for Pokemon exceptions, silent handlers, and blocking async calls
             try:
                 tree = ast.parse(content, filename=str(py_file))
                 for node in ast.walk(tree):
-                    if isinstance(node, ast.ExceptHandler):
-                        if node.type is None:
-                            findings.append(f"Python Pokemon Exception: {py_file.name}:{node.lineno} - bare 'except:'")
-                        elif isinstance(node.type, ast.Name) and node.type.id in ("Exception", "BaseException"):
-                            findings.append(
-                                f"Python Pokemon Exception: {py_file.name}:{node.lineno} - 'except {node.type.id}:'"
-                            )
-                        elif isinstance(node.type, ast.Tuple):
-                            for elt in node.type.elts:
-                                if isinstance(elt, ast.Name) and elt.id in ("Exception", "BaseException"):
-                                    findings.append(
-                                        f"Python Pokemon Exception: {py_file.name}:{node.lineno} - "
-                                        f"'except (..., {elt.id}, ...):'"
-                                    )
+                    findings.extend(_audit_ast_exceptions(node, py_file.name))
+                    findings.extend(_audit_ast_async_blocking(node, py_file.name))
             except SyntaxError as exc:
                 findings.append(f"Python Syntax Error: {py_file.name} - {exc}")
 

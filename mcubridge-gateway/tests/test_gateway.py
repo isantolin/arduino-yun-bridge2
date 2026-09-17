@@ -417,11 +417,10 @@ def test_extract_peer_identity() -> None:
 @pytest.mark.asyncio
 async def test_auth_interceptor_flow() -> None:
     # Valid call flow through interceptor
-    called_with_stream = False
+    invocations: list[Any] = []
 
     async def dummy_handler(stream: Any) -> None:
-        nonlocal called_with_stream
-        called_with_stream = True
+        invocations.append(stream)
 
     mock_event = MagicMock()
     mock_event.method_func = dummy_handler
@@ -436,7 +435,7 @@ async def test_auth_interceptor_flow() -> None:
     # Invoke the wrapped handler
     mock_stream = AsyncMock()
     await mock_event.method_func(mock_stream)
-    assert called_with_stream is True
+    assert invocations == [mock_stream]
 
     # Error handling when cert is invalid
     mock_event_bad = MagicMock()

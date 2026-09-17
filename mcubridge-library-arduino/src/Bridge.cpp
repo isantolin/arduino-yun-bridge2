@@ -536,6 +536,7 @@ void BridgeClass::_onBaudrateChange() {
   if (_pending_baudrate > 0) {
     if (_hardware_serial) _hardware_serial->begin(_pending_baudrate);
     _pending_baudrate = 0;
+    _fsm.receive(bridge::fsm::EvBaudrateApplied());
   }
 }
 void BridgeClass::_onBootloaderDelay() { bridge::hal::enterBootloader(); }
@@ -543,12 +544,15 @@ void BridgeClass::_onBootloaderDelay() { bridge::hal::enterBootloader(); }
 void BridgeClass::_handleSetBaudrate(const rpc_pb_SetBaudratePacket& msg) {
   if (msg.baudrate == 0 || msg.baudrate == _pending_baudrate) return;
   _pending_baudrate = msg.baudrate;
+  _fsm.receive(bridge::fsm::EvBaudrateChange());
   _timers.start(bridge::scheduler::TIMER_BAUDRATE_CHANGE);
 }
 
 void BridgeClass::_handleEnterBootloader(const rpc_pb_EnterBootloader& msg) {
-  if (msg.magic == rpc::RPC_BOOTLOADER_MAGIC)
+  if (msg.magic == rpc::RPC_BOOTLOADER_MAGIC) {
+    _fsm.receive(bridge::fsm::EvEnterBootloader());
     _timers.start(bridge::scheduler::TIMER_BOOTLOADER_DELAY);
+  }
 }
 
 void BridgeClass::_handleSetPinMode(const rpc_pb_PinMode& m) {
@@ -858,8 +862,7 @@ bool BridgeClass::_sendEncryptedImpl(uint16_t raw_cmd, uint16_t seq,
                                      uint32_t qos) {
   if (qos == rpc_pb_QosProfile_QOS_RELIABLE && is_reliable_cmd(raw_cmd)) {
     return _enqueuePendingTx(
-        raw_cmd, seq,
-        [fields, src](uint8_t* dst, size_t cap, size_t& written) {
+        raw_cmd, seq, [fields, src](uint8_t* dst, size_t cap, size_t& written) {
           pb_ostream_t out_stream = pb_ostream_from_buffer(dst, cap);
           if (!pb_encode(&out_stream, fields, src)) return false;
           written = out_stream.bytes_written;

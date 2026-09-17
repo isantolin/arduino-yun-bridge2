@@ -134,6 +134,100 @@ class LinkConnectionMachine(StateMachine):
     disconnect = connected.to(disconnected) | synchronized.to(disconnected) | disconnected.to(disconnected)
 
 
+class CloudLinkState(StrEnum):
+    """[SIL-2] Discrete states for client Cloud Gateway link."""
+
+    DISABLED = "disabled"
+    CONNECTING = "connecting"
+    CONNECTED_HTTP3 = "connected_http3"
+    CONNECTED_HTTP2 = "connected_http2"
+    SPOOLING_DEGRADED = "spooling_degraded"
+    RECONNECTING = "reconnecting"
+
+
+class CloudLinkMachine(StateMachine):
+    """[SIL-2] Strongly-typed deterministic FSM for client Cloud Gateway link."""
+
+    allow_event_without_transition = True
+
+    disabled = State(value="disabled", initial=True)
+    connecting = State(value="connecting")
+    connected_http3 = State(value="connected_http3")
+    connected_http2 = State(value="connected_http2")
+    spooling_degraded = State(value="spooling_degraded")
+    reconnecting = State(value="reconnecting")
+
+    start_connecting = (
+        disabled.to(connecting)
+        | reconnecting.to(connecting)
+        | spooling_degraded.to(connecting)
+        | connecting.to(connecting)
+    )
+    connect_http3 = (
+        connecting.to(connected_http3)
+        | reconnecting.to(connected_http3)
+        | spooling_degraded.to(connected_http3)
+        | connected_http3.to(connected_http3)
+    )
+    connect_http2 = (
+        connecting.to(connected_http2)
+        | reconnecting.to(connected_http2)
+        | spooling_degraded.to(connected_http2)
+        | connected_http2.to(connected_http2)
+    )
+    degrade = (
+        connected_http3.to(spooling_degraded)
+        | connected_http2.to(spooling_degraded)
+        | connecting.to(spooling_degraded)
+        | reconnecting.to(spooling_degraded)
+        | spooling_degraded.to(spooling_degraded)
+    )
+    start_reconnect = spooling_degraded.to(reconnecting) | connecting.to(reconnecting) | reconnecting.to(reconnecting)
+    disable = (
+        connecting.to(disabled)
+        | connected_http3.to(disabled)
+        | connected_http2.to(disabled)
+        | spooling_degraded.to(disabled)
+        | reconnecting.to(disabled)
+        | disabled.to(disabled)
+    )
+
+
+class FileTransferState(StrEnum):
+    """[SIL-2] Discrete states for file chunk streaming."""
+
+    IDLE = "idle"
+    TRANSFERRING = "transferring"
+    COMPLETED = "completed"
+    TIMED_OUT = "timed_out"
+    ABORTED = "aborted"
+
+
+class FileTransferMachine(StateMachine):
+    """[SIL-2] Strongly-typed deterministic FSM for file streaming transfer."""
+
+    allow_event_without_transition = True
+
+    idle = State(value="idle", initial=True)
+    transferring = State(value="transferring")
+    completed = State(value="completed")
+    timed_out = State(value="timed_out")
+    aborted = State(value="aborted")
+
+    start_transfer = (
+        idle.to(transferring)
+        | completed.to(transferring)
+        | timed_out.to(transferring)
+        | aborted.to(transferring)
+        | transferring.to(transferring)
+    )
+    receive_chunk = transferring.to(transferring)
+    complete = transferring.to(completed) | completed.to(completed)
+    timeout = transferring.to(timed_out) | timed_out.to(timed_out)
+    abort = transferring.to(aborted) | idle.to(aborted) | aborted.to(aborted)
+    reset = completed.to(idle) | timed_out.to(idle) | aborted.to(idle) | idle.to(idle)
+
+
 class RuntimeState:
     """Aggregated mutable state shared across the daemon layers. [SIL-2]"""
 
@@ -141,6 +235,8 @@ class RuntimeState:
     serial_writer: asyncio.BaseTransport | None
     state: str
     connection_fsm: LinkConnectionMachine
+    cloud_link_state: str
+    cloud_fsm: CloudLinkMachine
     cloud_queue_limit: int
     cloud_publish_queue: asyncio.Queue[pb.CloudQueuedPublish]
     cloud_drop_counts: dict[str, int]
@@ -373,6 +469,13 @@ class RuntimeState:
             start_value=self.state,
             listeners=[self],
         )
+        self.cloud_link_state: str = kwargs.get("cloud_link_state", CloudLinkState.DISABLED.value)
+        self.cloud_fsm: CloudLinkMachine = CloudLinkMachine(
+            model=self,
+            state_field="cloud_link_state",
+            start_value=self.cloud_link_state,
+            listeners=[self],
+        )
 
     @property
     def device_id(self) -> str:
@@ -394,6 +497,10 @@ class RuntimeState:
     def is_disconnected(self) -> bool:
         return self.connection_fsm.disconnected.is_active
 
+    @property
+    def is_cloud_connected(self) -> bool:
+        return self.cloud_fsm.connected_http3.is_active or self.cloud_fsm.connected_http2.is_active
+
     def on_enter_connected(self) -> None:
         """[SIL-2] Native hook executed on entering connected state."""
         self.metrics.link_state.state("connected")
@@ -411,6 +518,21 @@ class RuntimeState:
         self.metrics.link_state.state("synchronized")
         if getattr(self, "link_sync_event", None) is not None:
             self.link_sync_event.set()
+
+    def on_enter_connected_http3(self) -> None:
+        """[SIL-2] Native hook executed on entering connected_http3 state."""
+        self.connected_via_http3 = True
+
+    def on_enter_connected_http2(self) -> None:
+        """[SIL-2] Native hook executed on entering connected_http2 state."""
+        self.connected_via_http3 = False
+
+    def on_enter_spooling_degraded(self) -> None:
+        """[SIL-2] Native hook executed on entering spooling_degraded state."""
+
+    def on_enter_disabled(self) -> None:
+        """[SIL-2] Native hook executed on entering disabled state."""
+        self.connected_via_http3 = False
 
     @property
     def handshake_failures(self) -> int:

@@ -157,13 +157,13 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
     const bool is_system = rpc::is_system_command(cmd);
     if (!_state_flags.test(FLAG_TX_ENABLED) && !is_system) return false;
     if (is_reliable_cmd(cmd)) {
-      return _enqueuePendingTx(
-          cmd, seq, [p](uint8_t* dst, size_t cap, size_t& written) {
-            const size_t pl_size = etl::min(p.size(), cap);
-            etl::copy_n(p.data(), pl_size, dst);
-            written = pl_size;
-            return true;
-          });
+      return _enqueuePendingTx(cmd, seq,
+                               [p](uint8_t* dst, size_t cap, size_t& written) {
+                                 const size_t pl_size = etl::min(p.size(), cap);
+                                 etl::copy_n(p.data(), pl_size, dst);
+                                 written = pl_size;
+                                 return true;
+                               });
     }
     _transmit(cmd, seq, p);
     return true;
@@ -207,11 +207,10 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   }
 
   template <typename T>
-  [[nodiscard]] bool sendOrEmitStatus(
-      rpc::CommandId c, uint16_t seq, const T& packet,
-      etl::string_view error_reason = etl::string_view(),
-      uint32_t channel_id = rpc_pb_ChannelId_CHANNEL_CONTROL,
-      uint32_t qos = rpc_pb_QosProfile_QOS_RELIABLE) {
+  bool sendOrEmitStatus(rpc::CommandId c, uint16_t seq, const T& packet,
+                        etl::string_view error_reason = etl::string_view(),
+                        uint32_t channel_id = rpc_pb_ChannelId_CHANNEL_CONTROL,
+                        uint32_t qos = rpc_pb_QosProfile_QOS_RELIABLE) {
     if (!send(c, seq, packet, channel_id, qos)) {
       if (error_reason.empty()) {
         emitStatus(rpc::StatusCode::STATUS_ERROR);
@@ -237,7 +236,6 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   void _onBaudrateChange();
   void _retransmitLastFrame();
   bool _isSecurityCheckPassed(uint16_t command_id) const;
-
 
   static inline bool is_reliable_cmd(uint16_t id) {
     return rpc::requires_ack(id);
@@ -494,8 +492,8 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
 
   template <auto& TargetInstance, auto ActionFn, bool NeedsAck = true,
             bool RetransmitOnDup = false, bool CheckDup = true>
-  static void _dispatchTargetAction(
-      BridgeClass& self, const bridge::router::CommandContext& ctx) {
+  static void _dispatchTargetAction(BridgeClass& self,
+                                    const bridge::router::CommandContext& ctx) {
     self._dispatchCmd<_NoPayload>(
         ctx,
         [](const bridge::router::CommandContext&) {

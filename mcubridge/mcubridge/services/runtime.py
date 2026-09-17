@@ -84,7 +84,12 @@ from ..metrics import (
 )
 from ..state.status import STATUS_FILE, status_writer
 from ..watchdog import WatchdogKeepalive
-from ..state.context import ProcessContext, RuntimeState, terminate_pid_tree
+from ..state.context import (
+    FileTransferMachine,
+    ProcessContext,
+    RuntimeState,
+    terminate_pid_tree,
+)
 from .handshake import SerialHandshakeManager, SerialHandshakeFatal, derive_serial_timing
 from .clock_sync import ClockSyncService
 from .gpio import GpioService
@@ -126,6 +131,7 @@ _QUERY_TOPIC_ACTIONS: Final = frozenset(
 class _PendingMcuRead:
     future: asyncio.Future[bytes]
     chunks: list[bytes] = field(default_factory=list[bytes])
+    fsm: FileTransferMachine = field(default_factory=FileTransferMachine)
 
 
 class BridgeService:
@@ -749,8 +755,10 @@ class BridgeService:
         if not self._pending_mcu_read:
             return False
         if p.content:
+            self._pending_mcu_read.fsm.receive_chunk()
             self._pending_mcu_read.chunks.append(p.content)
         elif not self._pending_mcu_read.future.done():
+            self._pending_mcu_read.fsm.complete()
             self._pending_mcu_read.future.set_result(b"".join(self._pending_mcu_read.chunks))
         return True
 
@@ -971,11 +979,14 @@ class BridgeService:
             return
         response_topic = self._file_response_topic(target)
         async with self._mcu_read_lock:
-            self._pending_mcu_read = _PendingMcuRead(asyncio.get_running_loop().create_future())
+            pending = _PendingMcuRead(asyncio.get_running_loop().create_future())
+            pending.fsm.start_transfer()
+            self._pending_mcu_read = pending
             if not await serial.send_raw(
                 Command.CMD_FILE_READ.value,
                 pb.FileRead(path=target.removeprefix(MCU_FS_PREFIX)),
             ):
+                pending.fsm.abort()
                 logger.error("MCU file read dispatch failed")
                 await self.enqueue_cloud_publish(
                     response_topic,
@@ -990,13 +1001,14 @@ class BridgeService:
             try:
                 timeout_seconds = max(0.1, self.state.serial_response_timeout_ms / 1000.0)
                 async with asyncio.timeout(timeout_seconds):
-                    res = await self._pending_mcu_read.future
+                    res = await pending.future
                 await self.enqueue_cloud_publish(
                     response_topic,
                     res,
                     reply_context=ctx,
                 )
             except TimeoutError:
+                pending.fsm.timeout()
                 logger.error("Timed out waiting for MCU file read response")
                 await self.enqueue_cloud_publish(
                     response_topic,
@@ -1538,10 +1550,19 @@ class BridgeService:
     async def run_cloud(self) -> None:
         if not self.config.cloud_enabled:
             logger.info("Cloud transport is DISABLED in configuration.")
+            self.state.cloud_fsm.disable()
             return
 
         tls_context = get_ssl_context(self.config)
         reconnect_delay = max(1, self.config.reconnect_delay)
+
+        def _before_sleep(rs: tenacity.RetryCallState) -> None:
+            self.state.cloud_fsm.start_reconnect()
+            logger.error(
+                "Cloud connection retry",
+                attempt=rs.attempt_number,
+                wait=getattr(rs.next_action, "sleep", 0),
+            )
 
         retryer = tenacity.AsyncRetrying(
             wait=tenacity.wait_exponential(multiplier=reconnect_delay, max=60) + tenacity.wait_random(0, 2),
@@ -1551,11 +1572,7 @@ class BridgeService:
                     asyncio.TimeoutError,
                 )
             ),
-            before_sleep=lambda rs: logger.error(
-                "Cloud connection retry",
-                attempt=rs.attempt_number,
-                wait=getattr(rs.next_action, "sleep", 0),
-            ),
+            before_sleep=_before_sleep,
             after=lambda rs: self.state.metrics.retries.labels(component="cloud_connect").inc(),
             reraise=True,
         )
@@ -1563,23 +1580,26 @@ class BridgeService:
         try:
             await retryer(functools.partial(self.connect_cloud_session, tls_context))
         except asyncio.CancelledError:
+            self.state.cloud_fsm.disable()
             logger.info("Cloud transport stopping.")
             raise
         except (TimeoutError, ConnectionError, OSError) as exc:
+            self.state.cloud_fsm.degrade()
             logger.critical("Cloud transport fatal error", error=str(exc))
             raise
 
     async def connect_cloud_session(self, tls_context: Any) -> None:
+        self.state.cloud_fsm.start_connecting()
         logger.info("Connecting to Cloud Gateway", host=self.config.cloud_host, port=self.config.cloud_port)
         if self.config.cloud_http3_enabled:
             logger.info(
                 "Attempting primary connection via gRPC over HTTP/3 (QUIC)",
                 port=self.config.cloud_http3_port,
             )
-            self.state.connected_via_http3 = True
+            self.state.cloud_fsm.connect_http3()
             logger.info("Connected to Cloud Gateway via gRPC over HTTP/3 (QUIC).")
         else:
-            self.state.connected_via_http3 = False
+            self.state.cloud_fsm.connect_http2()
 
         if self.state and getattr(self.state, "tls_session_cache", None) is not None and tls_context:
             cached_ticket = load_tls_session_ticket(
@@ -1642,6 +1662,7 @@ class BridgeService:
                     finally:
                         worker_task.cancel()
         finally:
+            self.state.cloud_fsm.degrade()
             self._cloud_stream = None
             self._cloud_channel = None
             channel.close()

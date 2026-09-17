@@ -20,9 +20,8 @@ void FileSystemClass::write(etl::string_view path,
   rpc::Payload::copy_to_pb_string(p.path, path);
   rpc::Payload::copy_to_pb_bytes(p.data, data);
 
-  (void)Bridge.sendOrEmitStatus(
-      rpc::CommandId::CMD_FILE_WRITE, 0, p,
-      etl::string_view(rpc::status_reason::WRITE_FAILED));
+  Bridge.sendOrEmitStatus(rpc::CommandId::CMD_FILE_WRITE, 0, p,
+                          etl::string_view(rpc::status_reason::WRITE_FAILED));
 }
 
 void FileSystemClass::read(
@@ -32,16 +31,15 @@ void FileSystemClass::read(
   rpc::payload::FileRead p = {};
   rpc::Payload::copy_to_pb_string(p.path, path);
 
-  (void)Bridge.sendOrEmitStatus(rpc::CommandId::CMD_FILE_READ, 0, p);
+  Bridge.sendOrEmitStatus(rpc::CommandId::CMD_FILE_READ, 0, p);
 }
 
 void FileSystemClass::remove(etl::string_view path) {
   rpc::payload::FileRemove p = {};
   rpc::Payload::copy_to_pb_string(p.path, path);
 
-  (void)Bridge.sendOrEmitStatus(
-      rpc::CommandId::CMD_FILE_REMOVE, 0, p,
-      etl::string_view(rpc::status_reason::REMOVE_FAILED));
+  Bridge.sendOrEmitStatus(rpc::CommandId::CMD_FILE_REMOVE, 0, p,
+                          etl::string_view(rpc::status_reason::REMOVE_FAILED));
 }
 
 void FileSystemClass::_onWrite(const rpc::payload::FileWrite& msg) {
@@ -79,7 +77,8 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
 
         rpc::payload::FileReadResponse p = {};
         rpc::Payload::copy_to_pb_bytes(
-            p.content, etl::span<const uint8_t>(buffer.data(), res->bytes_read));
+            p.content,
+            etl::span<const uint8_t>(buffer.data(), res->bytes_read));
         (void)Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 0, p);
 
         if (!res->has_more) {
@@ -102,8 +101,11 @@ void FileSystemClass::_onRemove(const rpc::payload::FileRemove& msg) {
 
 void FileSystemClass::_onResponse(const rpc::payload::FileReadResponse& msg) {
   if (_read_handler.is_valid()) {
-    _read_handler(
-        etl::span<const uint8_t>(msg.content.bytes, msg.content.size));
+    auto handler = _read_handler;
+    if (msg.content.size == 0U) {
+      _read_handler = FileSystemReadHandler{};
+    }
+    handler(etl::span<const uint8_t>(msg.content.bytes, msg.content.size));
   }
 }
 

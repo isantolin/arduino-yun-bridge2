@@ -77,7 +77,7 @@ class TestAccessor : public BridgeClass {
     _handleGetVersion(ctx);
   }
   void handleDigitalWrite(const rpc_pb_DigitalWrite& m) {
-    _handleDigitalWrite(m);
+    _handlePinWrite<rpc_pb_DigitalWrite, false>(m);
   }
   void invokePacketReceived(etl::span<const uint8_t> p) {
     _handleReceivedFrame(p);

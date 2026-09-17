@@ -98,9 +98,9 @@ const BridgeClass::DispatchEntry BridgeClass::k_dispatch_table[] = {
     {rpc::to_underlying(rpc::CommandId::CMD_ENTER_BOOTLOADER),
      &BridgeClass::_dispatchMemberWithMsg<&BridgeClass::_handleEnterBootloader, rpc_pb_EnterBootloader, true, false>},
     {rpc::to_underlying(rpc::CommandId::CMD_XOFF),
-     &BridgeClass::_dispatchMemberNoPayload<&BridgeClass::_handleXoff, true, false>},
+     &BridgeClass::_dispatchMemberNoPayload<&BridgeClass::_handleFlowControl<false>, true, false>},
     {rpc::to_underlying(rpc::CommandId::CMD_XON),
-     &BridgeClass::_dispatchMemberNoPayload<&BridgeClass::_handleXon, true, false>},
+     &BridgeClass::_dispatchMemberNoPayload<&BridgeClass::_handleFlowControl<true>, true, false>},
     {rpc::to_underlying(rpc::CommandId::CMD_SET_PIN_MODE),
      &BridgeClass::_dispatchStaticWithMsg<&BridgeClass::_handleSetPinMode, rpc_pb_PinMode, true, false>},
     {rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE),
@@ -750,13 +750,6 @@ void BridgeClass::_handleGetCapabilities(
   rpc_pb_Capabilities resp = rpc_pb_Capabilities_init_default;
   bridge::hal::fillCapabilities(resp);
   (void)send(rpc::CommandId::CMD_GET_CAPABILITIES_RESP, ctx.sequence_id, resp);
-}
-
-void BridgeClass::_handleXoff(const bridge::router::CommandContext&) {
-  _state_flags.set(FLAG_TX_ENABLED, false);
-}
-void BridgeClass::_handleXon(const bridge::router::CommandContext&) {
-  _state_flags.set(FLAG_TX_ENABLED, true);
 }
 
 void BridgeClass::_handleStatusAck(

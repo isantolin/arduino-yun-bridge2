@@ -39,6 +39,7 @@ class MailboxClass : public bridge::BridgeObserver {
   void onLost() override;
 
  private:
+  static void _enqueue(etl::span<const uint8_t> data);
   static MessageCallback _message_callback;
   static AvailableCallback _available_callback;
   static etl::queue<MailboxBuffer, 8> _queue;

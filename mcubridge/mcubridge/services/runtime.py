@@ -719,12 +719,13 @@ class BridgeService:
             content_type=PROTOBUF_CONTENT_TYPE,
         )
 
+    async def _respond_mcu_op(self, success: bool, fail_msg: str) -> bool:
+        return await (self.send_mcu_ok() if success else self.send_mcu_error(fail_msg))
+
     async def _on_mcu_file_write(self, _seq: int, p: pb.FileWrite) -> bool:
         if not self.serial:
             return False
-        if await self.safe_file_write(p.path, p.data):
-            return await self.send_mcu_ok()
-        return await self.send_mcu_error("Write failed")
+        return await self._respond_mcu_op(await self.safe_file_write(p.path, p.data), "Write failed")
 
     async def _on_mcu_file_read(self, _seq: int, p: pb.FileRead) -> None:
         if not self.serial:
@@ -742,9 +743,7 @@ class BridgeService:
     async def _on_mcu_file_remove(self, _seq: int, p: pb.FileRemove) -> bool:
         if not self.serial:
             return False
-        if await self.safe_file_remove(p.path):
-            return await self.send_mcu_ok()
-        return await self.send_mcu_error("Remove failed")
+        return await self._respond_mcu_op(await self.safe_file_remove(p.path), "Remove failed")
 
     async def _on_mcu_file_read_resp(self, _seq: int, p: pb.FileReadResponse) -> bool:
         if not self._pending_mcu_read:
@@ -922,17 +921,29 @@ class BridgeService:
                 if handler := self._file_local_dispatch.get(act):
                     await handler(target, inbound)
 
+    def _file_response_topic(self, target: str) -> str:
+        return topic_path(
+            self.state.cloud_topic_prefix,
+            Topic.FILE,
+            FileAction.READ,
+            protocol.CLOUD_SUFFIX_RESPONSE,
+            target,
+        )
+
+    async def _publish_file_write_ack(self, target: str, inbound: pb.CloudQueuedPublish) -> None:
+        await self.enqueue_cloud_publish(
+            topic_path(self.state.cloud_topic_prefix, Topic.FILE, FileAction.READ, target),
+            inbound.payload,
+            reply_context=inbound,
+        )
+
     async def _handle_file_mcu_write(self, target: str, inbound: pb.CloudQueuedPublish) -> None:
         serial = self.serial
         if serial and await serial.send(
             Command.CMD_FILE_WRITE.value,
             pb.FileWrite(path=target.removeprefix(MCU_FS_PREFIX), data=inbound.payload),
         ):
-            await self.enqueue_cloud_publish(
-                topic_path(self.state.cloud_topic_prefix, Topic.FILE, FileAction.READ, target),
-                inbound.payload,
-                reply_context=inbound,
-            )
+            await self._publish_file_write_ack(target, inbound)
 
     async def _handle_file_mcu_remove(self, target: str, _inbound: pb.CloudQueuedPublish) -> None:
         serial = self.serial
@@ -941,11 +952,7 @@ class BridgeService:
 
     async def _handle_file_local_write(self, target: str, inbound: pb.CloudQueuedPublish) -> None:
         if await self.safe_file_write(target, inbound.payload):
-            await self.enqueue_cloud_publish(
-                topic_path(self.state.cloud_topic_prefix, Topic.FILE, FileAction.READ, target),
-                inbound.payload,
-                reply_context=inbound,
-            )
+            await self._publish_file_write_ack(target, inbound)
 
     async def _handle_file_local_read(self, target: str, inbound: pb.CloudQueuedPublish) -> None:
         data = await self.safe_file_read(target)
@@ -953,13 +960,7 @@ class BridgeService:
             inbound_topic = inbound.topic_name if inbound.topic_name else getattr(inbound, "topic", "")
             if not inbound_topic.endswith(protocol.CLOUD_SUFFIX_RESPONSE):
                 await self.enqueue_cloud_publish(
-                    topic_path(
-                        self.state.cloud_topic_prefix,
-                        Topic.FILE,
-                        FileAction.READ,
-                        protocol.CLOUD_SUFFIX_RESPONSE,
-                        target,
-                    ),
+                    self._file_response_topic(target),
                     data,
                     reply_context=inbound,
                 )
@@ -968,13 +969,7 @@ class BridgeService:
         serial = self.serial
         if not serial:
             return
-        response_topic = topic_path(
-            self.state.cloud_topic_prefix,
-            Topic.FILE,
-            FileAction.READ,
-            protocol.CLOUD_SUFFIX_RESPONSE,
-            target,
-        )
+        response_topic = self._file_response_topic(target)
         async with self._mcu_read_lock:
             self._pending_mcu_read = _PendingMcuRead(asyncio.get_running_loop().create_future())
             if not await serial.send_raw(

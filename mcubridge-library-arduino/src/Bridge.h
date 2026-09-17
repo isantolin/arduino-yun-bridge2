@@ -515,8 +515,10 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
       const bridge::router::CommandContext& ctx, const rpc_pb_LinkSync& m);
   void _handleLinkReset(const bridge::router::CommandContext& ctx);
   void _handleGetCapabilities(const bridge::router::CommandContext& ctx);
-  void _handleXoff(const bridge::router::CommandContext& ctx);
-  void _handleXon(const bridge::router::CommandContext& ctx);
+  template <bool EnableTx>
+  void _handleFlowControl(const bridge::router::CommandContext&) {
+    _state_flags.set(FLAG_TX_ENABLED, EnableTx);
+  }
   void _handleSetBaudrate(const rpc::payload::SetBaudratePacket& msg);
   void _handleEnterBootloader(const rpc::payload::EnterBootloader& msg);
   __attribute__((noinline)) void _handleSpiTransfer(

@@ -38,25 +38,22 @@ void MailboxClass::signalProcessed(uint32_t message_id) {
       etl::string_view(rpc::status_reason::MAILBOX_PROCESSED_FAILED));
 }
 
-void MailboxClass::_onPush(const rpc::payload::MailboxPush& msg) {
+void MailboxClass::_enqueue(etl::span<const uint8_t> data) {
   if (!_queue.full()) {
     MailboxBuffer m;
-    const size_t sz =
-        etl::min(static_cast<size_t>(msg.data.size), m.capacity());
-    m.assign(msg.data.bytes, msg.data.bytes + sz);
+    const size_t sz = etl::min(data.size(), m.capacity());
+    m.assign(data.data(), data.data() + sz);
     _queue.push(m);
   }
 }
 
+void MailboxClass::_onPush(const rpc::payload::MailboxPush& msg) {
+  _enqueue(etl::span<const uint8_t>(msg.data.bytes, msg.data.size));
+}
+
 void MailboxClass::_onReadResponse(
     const rpc::payload::MailboxReadResponse& msg) {
-  if (!_queue.full()) {
-    MailboxBuffer m;
-    const size_t sz =
-        etl::min(static_cast<size_t>(msg.content.size), m.capacity());
-    m.assign(msg.content.bytes, msg.content.bytes + sz);
-    _queue.push(m);
-  }
+  _enqueue(etl::span<const uint8_t>(msg.content.bytes, msg.content.size));
 }
 
 void MailboxClass::_onAvailableResponse(

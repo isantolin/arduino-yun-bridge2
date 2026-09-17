@@ -94,7 +94,7 @@ void ProcessClass::poll(int32_t pid,
 void ProcessClass::kill(int32_t pid) {
   rpc::payload::ProcessKill p = {};
   p.pid = static_cast<uint32_t>(pid);
-  Bridge.sendOrEmitStatus(
+  (void)Bridge.sendOrEmitStatus(
       rpc::CommandId::CMD_PROCESS_KILL, 0, p,
       etl::string_view(rpc::status_reason::PROCESS_KILL_FAILED));
 }

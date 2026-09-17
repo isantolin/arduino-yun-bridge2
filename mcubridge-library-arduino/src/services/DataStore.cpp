@@ -13,7 +13,7 @@ void DataStoreClass::set(etl::string_view key, etl::span<const uint8_t> value) {
   rpc::Payload::copy_to_pb_string(p.key, key);
   rpc::Payload::copy_to_pb_bytes(p.value, value);
 
-  Bridge.sendOrEmitStatus(
+  (void)Bridge.sendOrEmitStatus(
       rpc::CommandId::CMD_DATASTORE_PUT, 0, p,
       etl::string_view(rpc::status_reason::DATASTORE_PUT_FAILED));
 }

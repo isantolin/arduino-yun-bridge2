@@ -210,7 +210,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   }
 
   template <typename T>
-  bool sendOrEmitStatus(
+  [[nodiscard]] bool sendOrEmitStatus(
       rpc::CommandId c, uint16_t seq, const T& packet,
       etl::string_view error_reason = etl::string_view(),
       uint32_t channel_id = rpc_pb_ChannelId_CHANNEL_CONTROL,

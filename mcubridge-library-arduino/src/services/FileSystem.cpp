@@ -20,7 +20,7 @@ void FileSystemClass::write(etl::string_view path,
   rpc::Payload::copy_to_pb_string(p.path, path);
   rpc::Payload::copy_to_pb_bytes(p.data, data);
 
-  Bridge.sendOrEmitStatus(
+  (void)Bridge.sendOrEmitStatus(
       rpc::CommandId::CMD_FILE_WRITE, 0, p,
       etl::string_view(rpc::status_reason::WRITE_FAILED));
 }
@@ -32,14 +32,14 @@ void FileSystemClass::read(
   rpc::payload::FileRead p = {};
   rpc::Payload::copy_to_pb_string(p.path, path);
 
-  Bridge.sendOrEmitStatus(rpc::CommandId::CMD_FILE_READ, 0, p);
+  (void)Bridge.sendOrEmitStatus(rpc::CommandId::CMD_FILE_READ, 0, p);
 }
 
 void FileSystemClass::remove(etl::string_view path) {
   rpc::payload::FileRemove p = {};
   rpc::Payload::copy_to_pb_string(p.path, path);
 
-  Bridge.sendOrEmitStatus(
+  (void)Bridge.sendOrEmitStatus(
       rpc::CommandId::CMD_FILE_REMOVE, 0, p,
       etl::string_view(rpc::status_reason::REMOVE_FAILED));
 }

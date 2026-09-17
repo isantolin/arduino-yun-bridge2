@@ -1795,7 +1795,7 @@ class LocalBridgeService(LocalBridgeBase):
         stream: Stream[Any, Any],
         cmd: Command,
         resp_cls: type[ProtobufMessage],
-        default_resp: ProtobufMessage,
+        default_resp: ProtobufMessage | None = None,
         *,
         payload: Any = None,
     ) -> None:
@@ -1805,7 +1805,8 @@ class LocalBridgeService(LocalBridgeBase):
         serial = self.runtime_service.serial
         send_payload = request if payload is None else payload
         res = (await serial.send(cmd.value, send_payload)) if serial else None
-        await stream.send_message(_parse_serial_response(res, resp_cls, default_resp))
+        def_val = default_resp if default_resp is not None else resp_cls()
+        await stream.send_message(_parse_serial_response(res, resp_cls, def_val))
 
     async def SetPinMode(self, stream: Stream[pb.PinMode, pb.GenericResponse]) -> None:
         await self._dispatch_serial_generic(stream, Command.CMD_SET_PIN_MODE)
@@ -1814,17 +1815,13 @@ class LocalBridgeService(LocalBridgeBase):
         await self._dispatch_serial_generic(stream, Command.CMD_DIGITAL_WRITE)
 
     async def DigitalRead(self, stream: Stream[pb.PinRead, pb.DigitalReadResponse]) -> None:
-        await self._dispatch_serial_typed(
-            stream, Command.CMD_DIGITAL_READ, pb.DigitalReadResponse, pb.DigitalReadResponse()
-        )
+        await self._dispatch_serial_typed(stream, Command.CMD_DIGITAL_READ, pb.DigitalReadResponse)
 
     async def AnalogWrite(self, stream: Stream[pb.AnalogWrite, pb.GenericResponse]) -> None:
         await self._dispatch_serial_generic(stream, Command.CMD_ANALOG_WRITE)
 
     async def AnalogRead(self, stream: Stream[pb.PinRead, pb.AnalogReadResponse]) -> None:
-        await self._dispatch_serial_typed(
-            stream, Command.CMD_ANALOG_READ, pb.AnalogReadResponse, pb.AnalogReadResponse()
-        )
+        await self._dispatch_serial_typed(stream, Command.CMD_ANALOG_READ, pb.AnalogReadResponse)
 
     async def PinSubscribe(self, stream: Stream[pb.PinSubscribeRequest, pb.PinSubscribeResponse]) -> None:
         request = await stream.recv_message()
@@ -1963,9 +1960,7 @@ class LocalBridgeService(LocalBridgeBase):
             await stream.send_message(pb.GenericResponse(status="error", message=err or "PID not found"))
 
     async def SpiTransfer(self, stream: Stream[pb.SpiTransfer, pb.SpiTransferResponse]) -> None:
-        await self._dispatch_serial_typed(
-            stream, Command.CMD_SPI_TRANSFER, pb.SpiTransferResponse, pb.SpiTransferResponse()
-        )
+        await self._dispatch_serial_typed(stream, Command.CMD_SPI_TRANSFER, pb.SpiTransferResponse)
 
     async def SpiConfigure(self, stream: Stream[pb.SpiConfig, pb.GenericResponse]) -> None:
         if (request := await stream.recv_message()) is None:
@@ -1978,22 +1973,10 @@ class LocalBridgeService(LocalBridgeBase):
         await stream.send_message(pb.GenericResponse(status="ok" if ok else "error"))
 
     async def GetVersion(self, stream: Stream[pb.SubscribeRequest, pb.VersionResponse]) -> None:
-        await self._dispatch_serial_typed(
-            stream,
-            Command.CMD_GET_VERSION,
-            pb.VersionResponse,
-            pb.VersionResponse(major=0, minor=0, patch=0),
-            payload=b"",
-        )
+        await self._dispatch_serial_typed(stream, Command.CMD_GET_VERSION, pb.VersionResponse, payload=b"")
 
     async def GetFreeMemory(self, stream: Stream[pb.SubscribeRequest, pb.FreeMemoryResponse]) -> None:
-        await self._dispatch_serial_typed(
-            stream,
-            Command.CMD_GET_FREE_MEMORY,
-            pb.FreeMemoryResponse,
-            pb.FreeMemoryResponse(value=0),
-            payload=b"",
-        )
+        await self._dispatch_serial_typed(stream, Command.CMD_GET_FREE_MEMORY, pb.FreeMemoryResponse, payload=b"")
 
     async def GetStatus(self, stream: Stream[pb.SubscribeRequest, pb.BridgeStatus]) -> None:
         request = await stream.recv_message()

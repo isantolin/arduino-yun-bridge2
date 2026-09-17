@@ -69,16 +69,6 @@ bool BridgeClass::_preDispatch(const bridge::router::CommandContext& ctx,
   return true;
 }
 
-void BridgeClass::_handlePinRead(const bridge::router::CommandContext& ctx,
-                                 const rpc_pb_PinRead& m) {
-  if (ctx.raw_command ==
-      rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_READ)) {
-    _handleDigitalRead(ctx, m);
-  } else {
-    _handleAnalogRead(ctx, m);
-  }
-}
-
 // =============================================================================
 // [ETL] Static dispatch table — sorted by command_id for O(log N) lower_bound.
 // Defined as a translation-unit static (not a class member): zero RAM cost on
@@ -118,52 +108,60 @@ const BridgeClass::DispatchEntry BridgeClass::k_dispatch_table[] = {
     {rpc::to_underlying(rpc::CommandId::CMD_ANALOG_WRITE),
      &BridgeClass::_dispatchStaticWithMsg<&BridgeClass::_handleAnalogWrite, rpc_pb_AnalogWrite, true, false>},
     {rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_READ),
-     &BridgeClass::_dispatchMemberWithCtxMsg<&BridgeClass::_handlePinRead, rpc_pb_PinRead, false, true>},
+     &BridgeClass::_dispatchMemberWithCtxMsg<
+         &BridgeClass::_handlePinRead<
+             rpc_pb_DigitalReadResponse, rpc::CommandId::CMD_DIGITAL_READ_RESP,
+             bridge::config::DIGITAL_PINS, ::digitalRead>,
+         rpc_pb_PinRead, false, true>},
     {rpc::to_underlying(rpc::CommandId::CMD_ANALOG_READ),
-     &BridgeClass::_dispatchMemberWithCtxMsg<&BridgeClass::_handlePinRead, rpc_pb_PinRead, false, true>},
+     &BridgeClass::_dispatchMemberWithCtxMsg<
+         &BridgeClass::_handlePinRead<
+             rpc_pb_AnalogReadResponse, rpc::CommandId::CMD_ANALOG_READ_RESP,
+             bridge::config::ANALOG_PINS, ::analogRead>,
+         rpc_pb_PinRead, false, true>},
     {rpc::to_underlying(rpc::CommandId::CMD_PIN_SUBSCRIBE),
      &BridgeClass::_dispatchMemberWithCtxMsg<&BridgeClass::_handlePinSubscribe, rpc_pb_PinSubscribeRequest, true, false>},
     {rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE),
-     &BridgeClass::_dispatchStaticWithMsg<&BridgeClass::_handleConsoleWrite, rpc_pb_ConsoleWrite, true, false>},
+     &BridgeClass::_dispatchTargetWithMsg<Console, &ConsoleClass::_push, rpc_pb_ConsoleWrite, true, false>},
 #if BRIDGE_ENABLE_DATASTORE
     {rpc::to_underlying(rpc::CommandId::CMD_DATASTORE_GET_RESP),
-     &BridgeClass::_dispatchStaticWithCtxMsg<&BridgeClass::_handleDataStoreGetResponse, rpc_pb_DatastoreGetResponse, true, false>},
+     &BridgeClass::_dispatchTargetWithMsg<DataStore, &DataStoreClass::_onResponse, rpc_pb_DatastoreGetResponse, true, false>},
 #endif
 #if BRIDGE_ENABLE_MAILBOX
     {rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH),
-     &BridgeClass::_dispatchStaticWithCtxMsg<&BridgeClass::_handleMailboxPush, rpc_pb_MailboxPush, true, false>},
+     &BridgeClass::_dispatchStaticWithMsg<&MailboxClass::_onPush, rpc_pb_MailboxPush, true, false>},
     {rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_READ_RESP),
-     &BridgeClass::_dispatchStaticWithMsg<&BridgeClass::_handleMailboxReadResponse, rpc_pb_MailboxReadResponse, false, false, false>},
+     &BridgeClass::_dispatchStaticWithMsg<&MailboxClass::_onReadResponse, rpc_pb_MailboxReadResponse, false, false, false>},
     {rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP),
-     &BridgeClass::_dispatchStaticWithMsg<&BridgeClass::_handleMailboxAvailableResponse, rpc_pb_MailboxAvailableResponse, false, false, false>},
+     &BridgeClass::_dispatchStaticWithMsg<&MailboxClass::_onAvailableResponse, rpc_pb_MailboxAvailableResponse, false, false, false>},
 #endif
 #if BRIDGE_ENABLE_FILESYSTEM
     {rpc::to_underlying(rpc::CommandId::CMD_FILE_WRITE),
-     &BridgeClass::_dispatchStaticWithCtxMsg<&BridgeClass::_handleFileWrite, rpc_pb_FileWrite, true, false>},
+     &BridgeClass::_dispatchStaticWithMsg<&FileSystemClass::_onWrite, rpc_pb_FileWrite, true, false>},
     {rpc::to_underlying(rpc::CommandId::CMD_FILE_READ),
-     &BridgeClass::_dispatchStaticWithCtxMsg<&BridgeClass::_handleFileRead, rpc_pb_FileRead, true, false>},
+     &BridgeClass::_dispatchStaticWithMsg<&FileSystemClass::_onRead, rpc_pb_FileRead, true, false>},
     {rpc::to_underlying(rpc::CommandId::CMD_FILE_REMOVE),
-     &BridgeClass::_dispatchStaticWithCtxMsg<&BridgeClass::_handleFileRemove, rpc_pb_FileRemove, true, false>},
+     &BridgeClass::_dispatchStaticWithMsg<&FileSystemClass::_onRemove, rpc_pb_FileRemove, true, false>},
     {rpc::to_underlying(rpc::CommandId::CMD_FILE_READ_RESP),
-     &BridgeClass::_dispatchStaticWithCtxMsg<&BridgeClass::_handleFileReadResponse, rpc_pb_FileReadResponse, true, false>},
+     &BridgeClass::_dispatchTargetWithMsg<FileSystem, &FileSystemClass::_onResponse, rpc_pb_FileReadResponse, true, false>},
 #endif
 #if BRIDGE_ENABLE_PROCESS
     {rpc::to_underlying(rpc::CommandId::CMD_PROCESS_KILL),
-     &BridgeClass::_dispatchStaticWithCtxMsg<&BridgeClass::_handleProcessKill, rpc_pb_ProcessKill, true, false>},
+     &BridgeClass::_dispatchTargetWithMsg<Process, &ProcessClass::_onKillNotification, rpc_pb_ProcessKill, true, false>},
     {rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP),
-     &BridgeClass::_dispatchStaticWithCtxMsg<&BridgeClass::_handleProcessRunAsyncResponse, rpc_pb_ProcessRunAsyncResponse, true, false>},
+     &BridgeClass::_dispatchTargetWithMsg<Process, &ProcessClass::_onRunAsyncResponse, rpc_pb_ProcessRunAsyncResponse, true, false>},
     {rpc::to_underlying(rpc::CommandId::CMD_PROCESS_POLL_RESP),
-     &BridgeClass::_dispatchStaticWithCtxMsg<&BridgeClass::_handleProcessPollResponse, rpc_pb_ProcessPollResponse, true, false>},
+     &BridgeClass::_dispatchTargetWithMsg<Process, &ProcessClass::_onPollResponse, rpc_pb_ProcessPollResponse, true, false>},
 #endif
 #if BRIDGE_ENABLE_SPI
     {rpc::to_underlying(rpc::CommandId::CMD_SPI_BEGIN),
-     &BridgeClass::_dispatchMemberNoPayload<&BridgeClass::_handleSpiBegin, true, false>},
+     &BridgeClass::_dispatchTargetAction<SPIService, &SPIServiceClass::begin, true, false>},
     {rpc::to_underlying(rpc::CommandId::CMD_SPI_TRANSFER),
      &BridgeClass::_dispatchMemberWithCtxMsg<&BridgeClass::_handleSpiTransfer, rpc_pb_SpiTransfer, false, true>},
     {rpc::to_underlying(rpc::CommandId::CMD_SPI_END),
-     &BridgeClass::_dispatchMemberNoPayload<&BridgeClass::_handleSpiEnd, true, false>},
+     &BridgeClass::_dispatchTargetAction<SPIService, &SPIServiceClass::end, true, false>},
     {rpc::to_underlying(rpc::CommandId::CMD_SPI_SET_CONFIG),
-     &BridgeClass::_dispatchStaticWithMsg<&BridgeClass::_handleSpiSetConfig, rpc_pb_SpiConfig, true, false>},
+     &BridgeClass::_dispatchTargetWithMsg<SPIService, &SPIServiceClass::setConfig, rpc_pb_SpiConfig, true, false>},
 #endif
     {rpc::to_underlying(rpc::CommandId::CMD_CLOCK_SYNC),
      &BridgeClass::_dispatchMemberWithCtxMsg<&BridgeClass::_handleClockSync, rpc_pb_ClockSyncRequest, true, false>},
@@ -576,48 +574,6 @@ void BridgeClass::_handleAnalogWrite(const rpc_pb_AnalogWrite& m) {
               static_cast<int>(etl::clamp<uint32_t>(m.value, 0UL, 255UL)));
 }
 
-void BridgeClass::_handlePinReadCommon(
-    const bridge::router::CommandContext& ctx, uint8_t pin, uint8_t max_pins,
-    rpc::CommandId cmd_id, int (*read_fn)(uint8_t)) {
-  if (pin < max_pins) {
-    bool ok = false;
-    const uint32_t val = static_cast<uint32_t>(read_fn(pin));
-    if (cmd_id == rpc::CommandId::CMD_DIGITAL_READ_RESP) {
-      rpc_pb_DigitalReadResponse resp = rpc_pb_DigitalReadResponse_init_default;
-      resp.value = val;
-      ok = send(cmd_id, ctx.sequence_id, resp);
-    } else {
-      rpc_pb_AnalogReadResponse resp = rpc_pb_AnalogReadResponse_init_default;
-      resp.value = val;
-      ok = send(cmd_id, ctx.sequence_id, resp);
-    }
-    if (!ok) {
-      emitStatus(rpc::StatusCode::STATUS_ERROR);
-    }
-  } else {
-    emitStatus(rpc::StatusCode::STATUS_ERROR);
-  }
-}
-
-void BridgeClass::_handleDigitalRead(const bridge::router::CommandContext& ctx,
-                                     const rpc_pb_PinRead& m) {
-  _handlePinReadCommon(ctx, m.pin, bridge::config::DIGITAL_PINS,
-                       rpc::CommandId::CMD_DIGITAL_READ_RESP, ::digitalRead);
-}
-
-void BridgeClass::_handleAnalogRead(const bridge::router::CommandContext& ctx,
-                                    const rpc_pb_PinRead& m) {
-#if defined(ARDUINO_ARCH_AVR) || defined(ARDUINO_ARCH_SAMD) || \
-    defined(BRIDGE_HOST_TEST)
-  _handlePinReadCommon(ctx, m.pin, bridge::config::ANALOG_PINS,
-                       rpc::CommandId::CMD_ANALOG_READ_RESP, ::analogRead);
-#else
-  static_cast<void>(ctx);
-  static_cast<void>(m);
-  emitStatus(rpc::StatusCode::STATUS_ERROR);
-#endif
-}
-
 void BridgeClass::_handlePinSubscribe(const bridge::router::CommandContext& ctx,
                                       const rpc_pb_PinSubscribeRequest& m) {
   bool ok = false;
@@ -697,79 +653,7 @@ void BridgeClass::_subscriptionTask() {
                 });
 }
 
-void BridgeClass::_handleConsoleWrite(const rpc_pb_ConsoleWrite& m) {
-  Console._push(m);
-}
-
-#if BRIDGE_ENABLE_DATASTORE
-void BridgeClass::_handleDataStoreGetResponse(
-    const bridge::router::CommandContext&,
-    const rpc_pb_DatastoreGetResponse& m) {
-  DataStore._onResponse(m);
-}
-#endif
-
-#if BRIDGE_ENABLE_MAILBOX
-void BridgeClass::_handleMailboxPush(const bridge::router::CommandContext&,
-                                     const rpc_pb_MailboxPush& m) {
-  MailboxClass::_onPush(m);
-}
-void BridgeClass::_handleMailboxReadResponse(
-    const rpc_pb_MailboxReadResponse& m) {
-  MailboxClass::_onReadResponse(m);
-}
-void BridgeClass::_handleMailboxAvailableResponse(
-    const rpc_pb_MailboxAvailableResponse& m) {
-  MailboxClass::_onAvailableResponse(m);
-}
-#endif
-
-#if BRIDGE_ENABLE_FILESYSTEM
-void BridgeClass::_handleFileWrite(const bridge::router::CommandContext&,
-                                   const rpc_pb_FileWrite& m) {
-  FileSystem._onWrite(m);
-}
-void BridgeClass::_handleFileRead(const bridge::router::CommandContext&,
-                                  const rpc_pb_FileRead& m) {
-  FileSystem._onRead(m);
-}
-void BridgeClass::_handleFileRemove(const bridge::router::CommandContext&,
-                                    const rpc_pb_FileRemove& m) {
-  FileSystem._onRemove(m);
-}
-void BridgeClass::_handleFileReadResponse(const bridge::router::CommandContext&,
-                                          const rpc_pb_FileReadResponse& m) {
-  FileSystem._onResponse(m);
-}
-#endif
-#if BRIDGE_ENABLE_PROCESS
-void BridgeClass::_handleProcessKill(const bridge::router::CommandContext&,
-                                     const rpc_pb_ProcessKill& m) {
-  Process._onKillNotification(m);
-}
-void BridgeClass::_handleProcessRunAsyncResponse(
-    const bridge::router::CommandContext&,
-    const rpc_pb_ProcessRunAsyncResponse& m) {
-  Process._onRunAsyncResponse(m);
-}
-void BridgeClass::_handleProcessPollResponse(
-    const bridge::router::CommandContext&,
-    const rpc_pb_ProcessPollResponse& m) {
-  Process._onPollResponse(m);
-}
-#endif
 #if BRIDGE_ENABLE_SPI
-void BridgeClass::_handleSpiSetConfig(const rpc_pb_SpiConfig& m) {
-  SPIService.setConfig(m);
-}
-void BridgeClass::_handleSpiBegin(const bridge::router::CommandContext& ctx) {
-  SPIService.begin();
-  _processAck(ctx.raw_command, ctx.sequence_id);
-}
-void BridgeClass::_handleSpiEnd(const bridge::router::CommandContext& ctx) {
-  SPIService.end();
-  _processAck(ctx.raw_command, ctx.sequence_id);
-}
 void BridgeClass::_handleSpiTransfer(const bridge::router::CommandContext& ctx,
                                      const rpc_pb_SpiTransfer& m) {
   // [SIL-2/H-5] Use the shared _working_buffer instead of _rx_buffer.
@@ -980,22 +864,14 @@ bool BridgeClass::_sendEncryptedImpl(uint16_t raw_cmd, uint16_t seq,
                                      const void* src, uint32_t /*channel_id*/,
                                      uint32_t qos) {
   if (qos == rpc_pb_QosProfile_QOS_RELIABLE && is_reliable_cmd(raw_cmd)) {
-    BRIDGE_ATOMIC_BLOCK {
-      if (_pending_tx_queue.full()) return false;
-      auto* buf = _tx_payload_pool.allocate();
-      if (!buf) return false;
-      pb_ostream_t out_stream =
-          pb_ostream_from_buffer(buf->data.data(), buf->data.size());
-      if (pb_encode(&out_stream, fields, src)) {
-        _pending_tx_queue.push_back(
-            {raw_cmd, seq, buf,
-             static_cast<uint16_t>(out_stream.bytes_written)});
-        if (!_fsm.isAwaitingAck()) _flushPendingTxQueue();
-        return true;
-      }
-      _tx_payload_pool.release(buf);
-      return false;
-    }
+    return _enqueuePendingTx(
+        raw_cmd, seq,
+        [fields, src](uint8_t* dst, size_t cap, size_t& written) {
+          pb_ostream_t out_stream = pb_ostream_from_buffer(dst, cap);
+          if (!pb_encode(&out_stream, fields, src)) return false;
+          written = out_stream.bytes_written;
+          return true;
+        });
   } else {
     pb_ostream_t out_stream =
         pb_ostream_from_buffer(_working_buffer.data(), rpc::MAX_PAYLOAD_SIZE);

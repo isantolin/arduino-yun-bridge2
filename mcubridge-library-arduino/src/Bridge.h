@@ -157,16 +157,13 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
     const bool is_system = rpc::is_system_command(cmd);
     if (!_state_flags.test(FLAG_TX_ENABLED) && !is_system) return false;
     if (is_reliable_cmd(cmd)) {
-      BRIDGE_ATOMIC_BLOCK {
-        if (_pending_tx_queue.full()) return false;
-        auto* buf = _tx_payload_pool.allocate();
-        if (!buf) return false;
-        const size_t pl_size = etl::min(p.size(), buf->data.size());
-        etl::copy_n(p.data(), pl_size, buf->data.data());
-        _pending_tx_queue.push_back({cmd, seq, buf, pl_size});
-        if (!_fsm.isAwaitingAck()) _flushPendingTxQueue();
-      }
-      return true;
+      return _enqueuePendingTx(
+          cmd, seq, [p](uint8_t* dst, size_t cap, size_t& written) {
+            const size_t pl_size = etl::min(p.size(), cap);
+            etl::copy_n(p.data(), pl_size, dst);
+            written = pl_size;
+            return true;
+          });
     }
     _transmit(cmd, seq, p);
     return true;
@@ -256,6 +253,23 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
     TxPayloadBuffer* buffer;
     size_t length;
   };
+
+  template <typename FillFn>
+  bool _enqueuePendingTx(uint16_t cmd, uint16_t seq, FillFn fill_fn) {
+    BRIDGE_ATOMIC_BLOCK {
+      if (_pending_tx_queue.full()) return false;
+      auto* buf = _tx_payload_pool.allocate();
+      if (!buf) return false;
+      size_t written = 0;
+      if (!fill_fn(buf->data.data(), buf->data.size(), written)) {
+        _tx_payload_pool.release(buf);
+        return false;
+      }
+      _pending_tx_queue.push_back({cmd, seq, buf, written});
+      if (!_fsm.isAwaitingAck()) _flushPendingTxQueue();
+      return true;
+    }
+  }
 
   __attribute__((noinline)) void _transmit(uint16_t command_id,
                                            uint16_t sequence_id,
@@ -465,6 +479,31 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
         NeedsAck, RetransmitOnDup, CheckDup);
   }
 
+  template <auto& TargetInstance, auto MemberFn, typename MsgType,
+            bool NeedsAck = true, bool RetransmitOnDup = false,
+            bool CheckDup = true>
+  static void _dispatchTargetWithMsg(
+      BridgeClass& self, const bridge::router::CommandContext& ctx) {
+    self._dispatchCmd<MsgType>(
+        ctx,
+        [](const bridge::router::CommandContext&, const MsgType& m) {
+          (TargetInstance.*MemberFn)(m);
+        },
+        NeedsAck, RetransmitOnDup, CheckDup);
+  }
+
+  template <auto& TargetInstance, auto ActionFn, bool NeedsAck = true,
+            bool RetransmitOnDup = false, bool CheckDup = true>
+  static void _dispatchTargetAction(
+      BridgeClass& self, const bridge::router::CommandContext& ctx) {
+    self._dispatchCmd<_NoPayload>(
+        ctx,
+        [](const bridge::router::CommandContext&) {
+          (TargetInstance.*ActionFn)();
+        },
+        NeedsAck, RetransmitOnDup, CheckDup);
+  }
+
   void _applyTimingConfig(const rpc::payload::HandshakeConfig& msg);
 
   void _handleStatusMalformed(const bridge::router::CommandContext& ctx);
@@ -480,8 +519,6 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   void _handleXon(const bridge::router::CommandContext& ctx);
   void _handleSetBaudrate(const rpc::payload::SetBaudratePacket& msg);
   void _handleEnterBootloader(const rpc::payload::EnterBootloader& msg);
-  void _handleSpiBegin(const bridge::router::CommandContext& ctx);
-  void _handleSpiEnd(const bridge::router::CommandContext& ctx);
   __attribute__((noinline)) void _handleSpiTransfer(
       const bridge::router::CommandContext& ctx, const rpc_pb_SpiTransfer& m);
   __attribute__((noinline)) void _handleReceivedFrame(
@@ -497,48 +534,34 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   static void _handleSetPinMode(const rpc_pb_PinMode& m);
   static void _handleDigitalWrite(const rpc_pb_DigitalWrite& m);
   static void _handleAnalogWrite(const rpc_pb_AnalogWrite& m);
-  void _handlePinReadCommon(const bridge::router::CommandContext& ctx,
-                            uint8_t pin, uint8_t max_pins,
-                            rpc::CommandId cmd_id, int (*read_fn)(uint8_t));
-  __attribute__((noinline)) void _handleDigitalRead(
-      const bridge::router::CommandContext& ctx, const rpc_pb_PinRead& m);
-  __attribute__((noinline)) void _handleAnalogRead(
-      const bridge::router::CommandContext& ctx, const rpc_pb_PinRead& m);
+  template <typename RespType, rpc::CommandId RespCmd, uint8_t MaxPins,
+            auto ReadFn>
   void _handlePinRead(const bridge::router::CommandContext& ctx,
-                      const rpc_pb_PinRead& m);
+                      const rpc_pb_PinRead& m) {
+#if !defined(ARDUINO_ARCH_AVR) && !defined(ARDUINO_ARCH_SAMD) && \
+    !defined(BRIDGE_HOST_TEST)
+    if constexpr (RespCmd == rpc::CommandId::CMD_ANALOG_READ_RESP) {
+      static_cast<void>(ctx);
+      static_cast<void>(m);
+      emitStatus(rpc::StatusCode::STATUS_ERROR);
+      return;
+    }
+#endif
+    if (m.pin < MaxPins) {
+      RespType resp = {};
+      resp.value = static_cast<uint32_t>(ReadFn(m.pin));
+      if (!send(RespCmd, ctx.sequence_id, resp)) {
+        emitStatus(rpc::StatusCode::STATUS_ERROR);
+      }
+    } else {
+      emitStatus(rpc::StatusCode::STATUS_ERROR);
+    }
+  }
   void _handlePinSubscribe(const bridge::router::CommandContext& ctx,
                            const rpc_pb_PinSubscribeRequest& m);
   void _handleClockSync(const bridge::router::CommandContext& ctx,
                         const rpc_pb_ClockSyncRequest& m);
   void _subscriptionTask();
-  static void _handleConsoleWrite(const rpc_pb_ConsoleWrite& m);
-  static void _handleDataStoreGetResponse(
-      const bridge::router::CommandContext& ctx,
-      const rpc_pb_DatastoreGetResponse& m);
-  static void _handleFileWrite(const bridge::router::CommandContext& ctx,
-                               const rpc_pb_FileWrite& m);
-  static void _handleFileRead(const bridge::router::CommandContext& ctx,
-                              const rpc_pb_FileRead& m);
-  static void _handleFileRemove(const bridge::router::CommandContext& ctx,
-                                const rpc_pb_FileRemove& m);
-  static void _handleFileReadResponse(const bridge::router::CommandContext& ctx,
-                                      const rpc_pb_FileReadResponse& m);
-  static void _handleProcessKill(const bridge::router::CommandContext& ctx,
-                                 const rpc_pb_ProcessKill& m);
-  static void _handleProcessRunAsyncResponse(
-      const bridge::router::CommandContext& ctx,
-      const rpc_pb_ProcessRunAsyncResponse& m);
-  static void _handleProcessPollResponse(
-      const bridge::router::CommandContext& ctx,
-      const rpc_pb_ProcessPollResponse& m);
-  static void _handleSpiSetConfig(const rpc_pb_SpiConfig& m);
-#if BRIDGE_ENABLE_MAILBOX
-  static void _handleMailboxPush(const bridge::router::CommandContext& ctx,
-                                 const rpc_pb_MailboxPush& m);
-  static void _handleMailboxReadResponse(const rpc_pb_MailboxReadResponse& m);
-  static void _handleMailboxAvailableResponse(
-      const rpc_pb_MailboxAvailableResponse& m);
-#endif
   void _serialize_and_send(const rpc_pb_RpcEnvelope& env);
   [[nodiscard]] bool _sendFrameRaw(const rpc_pb_RpcEnvelope& env,
                                    uint16_t command_id);

@@ -104,13 +104,9 @@ const BridgeClass::DispatchEntry BridgeClass::k_dispatch_table[] = {
     {rpc::to_underlying(rpc::CommandId::CMD_SET_PIN_MODE),
      &BridgeClass::_dispatchStaticWithMsg<&BridgeClass::_handleSetPinMode, rpc_pb_PinMode, true, false>},
     {rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE),
-     &BridgeClass::_dispatchStaticWithMsg<
-         &BridgeClass::_handlePinWrite<rpc_pb_DigitalWrite, false>,
-         rpc_pb_DigitalWrite, true, false>},
+     &BridgeClass::_dispatchStaticWithMsg<&BridgeClass::_handlePinWrite<rpc_pb_DigitalWrite, false>, rpc_pb_DigitalWrite, true, false>},
     {rpc::to_underlying(rpc::CommandId::CMD_ANALOG_WRITE),
-     &BridgeClass::_dispatchStaticWithMsg<
-         &BridgeClass::_handlePinWrite<rpc_pb_AnalogWrite, true>,
-         rpc_pb_AnalogWrite, true, false>},
+     &BridgeClass::_dispatchStaticWithMsg<&BridgeClass::_handlePinWrite<rpc_pb_AnalogWrite, true>, rpc_pb_AnalogWrite, true, false>},
     {rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_READ),
      &BridgeClass::_dispatchMemberWithCtxMsg<
          &BridgeClass::_handlePinRead<
@@ -571,6 +567,16 @@ void BridgeClass::_handleSetPinMode(const rpc_pb_PinMode& m) {
                          });
   const uint8_t m_val = (it != kPinModeMap.end()) ? it->second : INPUT;
   pinMode(m.pin, m_val);
+}
+
+template <typename MsgType, bool IsAnalog>
+void BridgeClass::_handlePinWrite(const MsgType& m) {
+  if constexpr (IsAnalog) {
+    analogWrite(m.pin, static_cast<int>(etl::clamp<uint32_t>(m.value, 0UL, 255UL)));
+  } else {
+    pinMode(m.pin, OUTPUT);
+    digitalWrite(m.pin, (m.value == 0) ? LOW : HIGH);
+  }
 }
 
 void BridgeClass::_handlePinSubscribe(const bridge::router::CommandContext& ctx,

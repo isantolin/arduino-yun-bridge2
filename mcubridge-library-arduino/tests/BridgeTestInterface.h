@@ -76,9 +76,6 @@ class TestAccessor : public BridgeClass {
   void handleGetVersion(const bridge::router::CommandContext& ctx) {
     _handleGetVersion(ctx);
   }
-  void handleDigitalWrite(const rpc_pb_DigitalWrite& m) {
-    _handlePinWrite<rpc_pb_DigitalWrite, false>(m);
-  }
   void invokePacketReceived(etl::span<const uint8_t> p) {
     _handleReceivedFrame(p);
   }

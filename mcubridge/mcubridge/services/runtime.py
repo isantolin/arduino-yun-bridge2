@@ -14,7 +14,7 @@ import os
 import shlex
 import time
 
-from collections.abc import Awaitable, Callable, Coroutine, Iterable, Mapping
+from collections.abc import Awaitable, Callable, Coroutine, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast, Final
@@ -1107,19 +1107,9 @@ class BridgeService:
                 reply_context=inbound,
             )
 
-    async def _dispatch_topic_action(
-        self,
-        table: Mapping[Any, Callable[[TopicRoute, pb.CloudQueuedPublish], Coroutine[Any, Any, Any]]],
-        route: TopicRoute,
-        inbound: pb.CloudQueuedPublish,
-    ) -> None:
-        if not self.serial:
-            return
-        if handler := table.get(route.identifier):
-            await handler(route, inbound)
-
     async def _handle_spi(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
-        await self._dispatch_topic_action(self._spi_dispatch, route, inbound)
+        if self.serial and (handler := self._spi_dispatch.get(route.identifier)):
+            await handler(route, inbound)
 
     async def _handle_pin(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         serial = self.serial
@@ -1161,10 +1151,10 @@ class BridgeService:
                     )
         else:
             val = int(payload) if payload.isdigit() else 0
-            if route.topic == Topic.DIGITAL:
-                await serial.send(Command.CMD_DIGITAL_WRITE.value, pb.DigitalWrite(pin=pin, value=val))
-            else:
-                await serial.send(Command.CMD_ANALOG_WRITE.value, pb.AnalogWrite(pin=pin, value=val))
+            is_dig = route.topic == Topic.DIGITAL
+            cmd = Command.CMD_DIGITAL_WRITE if is_dig else Command.CMD_ANALOG_WRITE
+            msg = pb.DigitalWrite(pin=pin, value=val) if is_dig else pb.AnalogWrite(pin=pin, value=val)
+            await serial.send(cmd.value, msg)
 
     async def _handle_system_bootloader(self, _route: TopicRoute, _inbound: pb.CloudQueuedPublish) -> None:
         await cast("SerialTransport", self.serial).send(
@@ -1193,7 +1183,8 @@ class BridgeService:
         )
 
     async def _handle_system(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
-        await self._dispatch_topic_action(self._system_dispatch, route, inbound)
+        if self.serial and (handler := self._system_dispatch.get(route.identifier)):
+            await handler(route, inbound)
 
     # --- Low-level Helpers ---
 
@@ -1248,10 +1239,7 @@ class BridgeService:
                 async with self.state.process_lock:
                     self.state.running_processes[pid] = ProcessContext(p)
                 tg = self._tg
-                if tg is not None:
-                    tg.create_task(self._monitor_process(pid))
-                else:
-                    asyncio.create_task(self._monitor_process(pid))
+                (tg.create_task if tg else asyncio.create_task)(self._monitor_process(pid))
                 return pid
             except OSError:
                 self._process_slots.release()

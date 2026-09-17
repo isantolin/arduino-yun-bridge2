@@ -533,15 +533,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
 
   static void _handleSetPinMode(const rpc_pb_PinMode& m);
   template <typename MsgType, bool IsAnalog>
-  static void _handlePinWrite(const MsgType& m) {
-    if constexpr (IsAnalog) {
-      analogWrite(m.pin,
-                  static_cast<int>(etl::clamp<uint32_t>(m.value, 0UL, 255UL)));
-    } else {
-      pinMode(m.pin, OUTPUT);
-      digitalWrite(m.pin, (m.value == 0) ? LOW : HIGH);
-    }
-  }
+  static void _handlePinWrite(const MsgType& m);
   template <typename RespType, rpc::CommandId RespCmd, uint8_t MaxPins,
             auto ReadFn>
   void _handlePinRead(const bridge::router::CommandContext& ctx,

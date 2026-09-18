@@ -417,7 +417,7 @@ class SerialHandshakeManager:
             )
             self.clear_handshake_expectations()
             await self.handle_handshake_failure(
-                "sync_auth_mismatch",
+                protocol.STATUS_REASON_SYNC_AUTH_MISMATCH,
                 detail="nonce_or_tag_mismatch",
             )
             return False

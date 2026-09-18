@@ -20,11 +20,12 @@ from gateway import (
     extract_peer_identity,
 )
 from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.protocol.protocol import DEFAULT_CLOUD_PORT
 
 
 @pytest.fixture
 def mock_gateway() -> ProtobufGateway:
-    return ProtobufGateway(host="127.0.0.1", port=8443, use_tls=False)
+    return ProtobufGateway(host="127.0.0.1", port=DEFAULT_CLOUD_PORT, use_tls=False)
 
 
 @pytest.fixture

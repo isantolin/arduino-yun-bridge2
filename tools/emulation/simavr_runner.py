@@ -25,6 +25,7 @@ import structlog
 import tenacity
 import typer
 from mcubridge.config.logging import configure_logging
+from mcubridge.protocol import protocol
 from tools.emulation.process_utils import terminate_process_tree, wait_for_path_ready
 
 repo_root = Path(__file__).resolve().parents[2]
@@ -258,8 +259,8 @@ def run_simavr_emulation(
 
     uci_config = {
         "serial_port": slave_name,
-        "serial_baud": "115200",
-        "serial_safe_baud": "115200",
+        "serial_baud": str(protocol.DEFAULT_BAUDRATE),
+        "serial_safe_baud": str(protocol.DEFAULT_SAFE_BAUDRATE),
         "cloud_enabled": "0",
         "metrics_enabled": "0",
         "watchdog_enabled": "0",
@@ -285,8 +286,8 @@ def run_simavr_emulation(
     daemon_env["MCUBRIDGE_LOG_STREAM"] = "1"
     daemon_env["MCUBRIDGE_SOCKET_PATH"] = str(socket_path)
     daemon_env["MCUBRIDGE_SERIAL_PORT"] = slave_name
-    daemon_env["MCUBRIDGE_SERIAL_SAFE_BAUD"] = "115200"
-    daemon_env["MCUBRIDGE_SERIAL_BAUD"] = "115200"
+    daemon_env["MCUBRIDGE_SERIAL_SAFE_BAUD"] = str(protocol.DEFAULT_SAFE_BAUDRATE)
+    daemon_env["MCUBRIDGE_SERIAL_BAUD"] = str(protocol.DEFAULT_BAUDRATE)
     daemon_env["MCUBRIDGE_SERIAL_SHARED_SECRET"] = "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe"
     daemon_env["MCUBRIDGE_DISABLE_METRICS"] = "1"
     daemon_env["MCUBRIDGE_STORAGE_PATH"] = str(storage_path)

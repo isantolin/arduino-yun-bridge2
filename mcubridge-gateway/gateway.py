@@ -24,6 +24,7 @@ import uvloop
 from mcubridge.config.logging import configure_logging
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol.mcubridge_grpc import CloudBridgeBase
+from mcubridge.protocol.protocol import DEFAULT_CLOUD_PORT
 
 configure_logging()
 logger = structlog.get_logger("mcubridge.gateway")
@@ -207,7 +208,7 @@ class ProtobufGateway:
     def __init__(
         self,
         host: str = "0.0.0.0",
-        port: int = 8443,
+        port: int = DEFAULT_CLOUD_PORT,
         use_tls: bool = True,
         cert_file: str | None = None,
         key_file: str | None = None,
@@ -265,7 +266,7 @@ app = typer.Typer(help="MCU Bridge Protobuf Gateway", add_completion=False)
 @app.command()
 def main(
     host: Annotated[str, typer.Option(help="Host to bind to")] = "127.0.0.1",
-    port: Annotated[int, typer.Option(help="Port to listen on")] = 8443,
+    port: Annotated[int, typer.Option(help="Port to listen on")] = DEFAULT_CLOUD_PORT,
     no_tls: Annotated[bool, typer.Option("--no-tls", help="Disable TLS (insecure mode)")] = False,
     cert: Annotated[Path | None, typer.Option(help="Path to server SSL certificate file")] = None,
     key: Annotated[Path | None, typer.Option(help="Path to server SSL private key file")] = None,

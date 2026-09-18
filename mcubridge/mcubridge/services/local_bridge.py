@@ -14,7 +14,7 @@ import structlog
 from ..config.const import MCU_FS_PREFIX
 from ..protocol import mcubridge_pb2 as pb
 from ..protocol.mcubridge_grpc import LocalBridgeBase
-from ..protocol.protocol import Command, DatastoreAction, FileAction, PinAction, SpiAction, Topic
+from ..protocol.protocol import AEAD_NONCE_SIZE, Command, DatastoreAction, FileAction, PinAction, SpiAction, Topic
 from ..protocol.structures import is_command_allowed
 from ..protocol.topics import parse_topic
 
@@ -250,7 +250,9 @@ class LocalBridgeService(LocalBridgeBase):
                 )
             )
         )
-        correlation = req.correlation_data if has_correlation else (secrets.token_bytes(12) if is_query else b"")
+        correlation = (
+            req.correlation_data if has_correlation else (secrets.token_bytes(AEAD_NONCE_SIZE) if is_query else b"")
+        )
 
         with structlog.contextvars.bound_contextvars(
             topic=req.topic_name, correlation=correlation.hex() if correlation else ""

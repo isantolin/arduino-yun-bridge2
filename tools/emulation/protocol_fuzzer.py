@@ -44,7 +44,7 @@ class ProtocolFuzzer:
                 encrypted_payload_with_tag=payload,
             )
             body = envelope.SerializeToString()
-            raw_frame = body + (override_crc & protocol.CRC32_MASK).to_bytes(4, "little")
+            raw_frame = body + (override_crc & protocol.CRC32_MASK).to_bytes(protocol.CRC_SIZE, "little")
         return cobs.encode(raw_frame) + protocol.FRAME_DELIMITER
 
     async def send_raw(self, data: bytes) -> None:
@@ -53,7 +53,7 @@ class ProtocolFuzzer:
             await self.writer.drain()
 
     async def fuzz_iteration(self) -> None:
-        self.seq_id = (self.seq_id + 1) & 0xFFFF
+        self.seq_id = (self.seq_id + 1) & protocol.UINT16_MAX
 
         mode = random.choice(
             [
@@ -74,19 +74,19 @@ class ProtocolFuzzer:
             await self.send_raw(frame)
 
         elif mode == "invalid_crc":
-            frame = self._build_raw_frame(0x0001, self.seq_id, b"bad_crc", override_crc=0xDEADBEEF)
+            frame = self._build_raw_frame(0x0001, self.seq_id, b"bad_crc", override_crc=protocol.BOOTLOADER_MAGIC)
             await self.send_raw(frame)
 
         elif mode == "invalid_version":
             envelope = pb.RpcEnvelope(
-                version=0xFF,
+                version=protocol.UINT8_MASK,
                 command_id=0x0001,
                 sequence_id=self.seq_id,
                 encrypted_payload_with_tag=b"VER",
             )
             body = envelope.SerializeToString()
             crc = crc32(body) & protocol.CRC32_MASK
-            frame = cobs.encode(body + crc.to_bytes(4, "little")) + protocol.FRAME_DELIMITER
+            frame = cobs.encode(body + crc.to_bytes(protocol.CRC_SIZE, "little")) + protocol.FRAME_DELIMITER
             await self.send_raw(frame)
 
         elif mode == "malformed_cobs":
@@ -102,7 +102,7 @@ class ProtocolFuzzer:
             )
             body = envelope.SerializeToString()
             crc = crc32(body) & protocol.CRC32_MASK
-            frame = cobs.encode(body + crc.to_bytes(4, "little")) + protocol.FRAME_DELIMITER
+            frame = cobs.encode(body + crc.to_bytes(protocol.CRC_SIZE, "little")) + protocol.FRAME_DELIMITER
             await self.send_raw(frame)
 
         elif mode == "random_garbage":
@@ -121,7 +121,7 @@ class ProtocolFuzzer:
 
         for i in range(iterations):
             if i % 10 == 0:
-                self.seq_id = (self.seq_id + 1) & 0xFFFF
+                self.seq_id = (self.seq_id + 1) & protocol.UINT16_MAX
                 ping_frame = self._build_raw_frame(0x0001, self.seq_id, b"PROBE")
 
                 start_time = asyncio.get_event_loop().time()

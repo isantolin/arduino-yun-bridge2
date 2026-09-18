@@ -20,6 +20,7 @@ from typing import Annotated, Any
 import structlog
 import typer
 from mcubridge.config.logging import configure_logging
+from mcubridge.protocol import protocol
 from tools.emulation.process_utils import (
     terminate_process_tree,
     wait_for_path_ready,
@@ -31,7 +32,7 @@ repo_root = Path(__file__).resolve().parents[2]
 # --- Constants ---
 SOCAT_PORT0 = "/tmp/ttyBRIDGE0"
 CLOUD_HOST = "127.0.0.1"
-CLOUD_PORT = 8443
+CLOUD_PORT = protocol.DEFAULT_CLOUD_PORT
 
 configure_logging(console=True)
 logger = structlog.get_logger("emulation-runner")
@@ -189,8 +190,8 @@ def run_emulation(
     daemon_env["MCUBRIDGE_LOG_STREAM"] = "1"
     daemon_env["MCUBRIDGE_SOCKET_PATH"] = socket_path
     daemon_env["MCUBRIDGE_SERIAL_PORT"] = SOCAT_PORT0
-    daemon_env["MCUBRIDGE_SERIAL_SAFE_BAUD"] = "115200"
-    daemon_env["MCUBRIDGE_SERIAL_BAUD"] = "115200"
+    daemon_env["MCUBRIDGE_SERIAL_SAFE_BAUD"] = str(protocol.DEFAULT_SAFE_BAUDRATE)
+    daemon_env["MCUBRIDGE_SERIAL_BAUD"] = str(protocol.DEFAULT_BAUDRATE)
     daemon_env["MCUBRIDGE_DISABLE_METRICS"] = "1"
     daemon_env["MCUBRIDGE_CLOUD_ENABLED"] = "1"
     daemon_env["MCUBRIDGE_CLOUD_HOST"] = CLOUD_HOST
@@ -199,8 +200,8 @@ def run_emulation(
 
     uci_config = {
         "serial_port": SOCAT_PORT0,
-        "serial_baud": "115200",
-        "serial_safe_baud": "115200",
+        "serial_baud": str(protocol.DEFAULT_BAUDRATE),
+        "serial_safe_baud": str(protocol.DEFAULT_SAFE_BAUDRATE),
         "cloud_enabled": "1",
         "cloud_host": CLOUD_HOST,
         "cloud_port": str(CLOUD_PORT),

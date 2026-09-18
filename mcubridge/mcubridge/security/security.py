@@ -43,8 +43,8 @@ def generate_nonce_with_counter(counter: int) -> tuple[bytes, int]:
     if counter >= protocol.NONCE_COUNTER_MASK or counter < 0:
         raise ValueError("Nonce counter overflow")
     new_counter = counter + 1
-    random_bytes = protocol.AEAD_NONCE_SIZE - 8
-    nonce = secrets.token_bytes(random_bytes) + new_counter.to_bytes(8, "big")
+    random_bytes = protocol.AEAD_NONCE_SIZE - protocol.HANDSHAKE_NONCE_COUNTER_BYTES
+    nonce = secrets.token_bytes(random_bytes) + new_counter.to_bytes(protocol.HANDSHAKE_NONCE_COUNTER_BYTES, "big")
     return nonce, new_counter
 
 
@@ -52,7 +52,7 @@ def extract_nonce_counter(nonce: bytes) -> int:
     """Extract the counter from a 12-byte nonce."""
     if len(nonce) != protocol.AEAD_NONCE_SIZE:
         raise ValueError(f"Nonce must be {protocol.AEAD_NONCE_SIZE} bytes, got {len(nonce)}")
-    return int.from_bytes(nonce[protocol.AEAD_NONCE_SIZE - 8 :], "big")
+    return int.from_bytes(nonce[protocol.AEAD_NONCE_SIZE - protocol.HANDSHAKE_NONCE_COUNTER_BYTES :], "big")
 
 
 def validate_nonce_counter(nonce: bytes, last_counter: int) -> tuple[bool, int]:
@@ -89,7 +89,7 @@ def verify_crypto_integrity() -> bool:
         ad = b"\x50\x51\x52\x53\xc0\xc1\xc2\xc3\xc4\xc5\xc6\xc7"
         aead = ChaCha20Poly1305(key)
         ct = aead.encrypt(nonce, b"test", ad)
-        if len(ct) != 20 or ct[-16:].hex() != "7dca8479787a5c190f58eedae6a06bcf":
+        if len(ct) != 20 or ct[-protocol.AEAD_TAG_SIZE :].hex() != "7dca8479787a5c190f58eedae6a06bcf":
             return False
     except (ValueError, TypeError):
         return False

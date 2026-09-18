@@ -98,7 +98,7 @@ def test_parse_frame_protobuf_decode_error() -> None:
     corrupt_body = b"\xff\xff\xff\xff"
     from binascii import crc32
 
-    crc_bytes = (crc32(corrupt_body) & protocol.CRC32_MASK).to_bytes(4, "little")
+    crc_bytes = (crc32(corrupt_body) & protocol.CRC32_MASK).to_bytes(protocol.CRC_SIZE, "little")
     raw = corrupt_body + crc_bytes
     with pytest.raises(ValueError, match="Failed to parse Protobuf envelope"):
         frame.parse_frame(raw)
@@ -109,15 +109,15 @@ def test_parse_frame_invalid_version() -> None:
     body = env.SerializeToString()
     from binascii import crc32
 
-    crc_bytes = (crc32(body) & protocol.CRC32_MASK).to_bytes(4, "little")
+    crc_bytes = (crc32(body) & protocol.CRC32_MASK).to_bytes(protocol.CRC_SIZE, "little")
     raw = body + crc_bytes
     with pytest.raises(ValueError, match="Unsupported protocol version"):
         frame.parse_frame(raw)
 
 
 def test_parse_frame_aead_decryption_failed() -> None:
-    key = b"\x05" * 32
-    wrong_key = b"\x06" * 32
+    key = b"\x05" * protocol.AEAD_KEY_SIZE
+    wrong_key = b"\x06" * protocol.AEAD_KEY_SIZE
     raw = frame.build_frame(command_id=0x10, sequence_id=1, payload=b"secret", session_key=key)
     with pytest.raises(ValueError, match="AEAD decryption failed"):
         frame.parse_frame(raw, session_key=wrong_key)
@@ -128,7 +128,7 @@ def test_parse_frame_empty_oneof_payload() -> None:
     body = env.SerializeToString()
     from binascii import crc32
 
-    crc_bytes = (crc32(body) & protocol.CRC32_MASK).to_bytes(4, "little")
+    crc_bytes = (crc32(body) & protocol.CRC32_MASK).to_bytes(protocol.CRC_SIZE, "little")
     raw = body + crc_bytes
     decoded = frame.parse_frame(raw)
     assert decoded.payload == b""

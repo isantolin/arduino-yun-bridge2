@@ -1131,7 +1131,7 @@ class BridgeService:
                             topic=str(route.topic.value),
                             pin=pin,
                             action=str(PinAction.READ),
-                            reason="pending-pin-overflow",
+                            reason=protocol.STATUS_REASON_PENDING_PIN_OVERFLOW,
                         ),
                         user_properties=(
                             (PROP_KEY_BRIDGE_ERROR, protocol.STATUS_REASON_PENDING_PIN_OVERFLOW),

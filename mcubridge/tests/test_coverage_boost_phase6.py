@@ -34,8 +34,8 @@ from mcubridge.protocol.structures import (
     PendingCommand,
     TopicRoute,
 )
-from mcubridge.services.runtime import BridgeService, ProcessContext
-from mcubridge.state.context import RuntimeState, create_runtime_state
+from mcubridge.services.runtime import BridgeService
+from mcubridge.state.context import ProcessContext, RuntimeState, create_runtime_state
 from mcubridge.transport.serial import SerialTransport
 from mcubridge_client.definitions import build_bridge_args
 from mcubridge_client.spi import SpiDevice
@@ -1738,10 +1738,10 @@ async def test_runtime_reset_link_branches(test_config: RuntimeConfig, mock_stat
 
 
 def test_parse_serial_response_corrupt_bytes() -> None:
-    from mcubridge.services.runtime import _parse_serial_response
+    from mcubridge.services.local_bridge import parse_serial_response
 
     default_resp = pb.GenericResponse(message="fallback")
-    parsed = _parse_serial_response(b"\xff\xff\xff", pb.GenericResponse, default_resp)
+    parsed = parse_serial_response(b"\xff\xff\xff", pb.GenericResponse, default_resp)
     assert parsed == default_resp
     assert parsed.message == "fallback"
 

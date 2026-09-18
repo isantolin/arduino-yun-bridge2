@@ -18,6 +18,7 @@ from google.protobuf.json_format import MessageToDict
 
 from ..config.settings import RuntimeConfig
 from ..protocol import mcubridge_pb2 as pb
+from ..protocol.topics import topic_path
 from ..state.context import RuntimeState
 
 logger = structlog.get_logger("mcubridge.service.ubus")
@@ -163,15 +164,14 @@ class UbusService:
 
             return _cb
 
-        methods: dict[str, Any] = {}
-        for name, args in _UBUS_METHOD_SIGS:
-            handler = getattr(self, f"ubus_handle_{name}")
-            sig = {arg: _get_ubus_type(typ) for arg, typ in args}
-            sig["ubus_rpc_session"] = _get_ubus_type("STRING")
-            methods[name] = {
-                "method": _make_handler(handler),
-                "signature": sig,
+        methods = {
+            name: {
+                "method": _make_handler(getattr(self, f"ubus_handle_{name}")),
+                "signature": {arg: _get_ubus_type(typ) for arg, typ in args}
+                | {"ubus_rpc_session": _get_ubus_type("STRING")},
             }
+            for name, args in _UBUS_METHOD_SIGS
+        }
 
         if hasattr(self._conn, "add") and callable(self._conn.add):
             self._conn.add("mcubridge", methods)
@@ -276,7 +276,7 @@ class UbusService:
 
     def _publish_to_cloud(self, subpath: str, payload: bytes) -> None:
         """Construct and schedule a CloudQueuedPublish request on the runtime facade."""
-        topic_name = f"{self.runtime.state.cloud_topic_prefix}/{subpath}"
+        topic_name = topic_path(self.runtime.state.cloud_topic_prefix, subpath)
         publish = pb.CloudQueuedPublish(
             topic_name=topic_name,
             payload=payload,

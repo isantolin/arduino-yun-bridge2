@@ -25,8 +25,6 @@ __all__ = [
     "LocalBridgeService",
     "QUERY_TOPIC_ACTIONS",
     "parse_serial_response",
-    "_QUERY_TOPIC_ACTIONS",
-    "_parse_serial_response",
 ]
 
 logger = structlog.get_logger("mcubridge.service.local_bridge")
@@ -40,7 +38,6 @@ QUERY_TOPIC_ACTIONS: Final = frozenset(
         (Topic.SPI, SpiAction.TRANSFER),
     }
 )
-_QUERY_TOPIC_ACTIONS: Final = QUERY_TOPIC_ACTIONS
 
 _T_PB = TypeVar("_T_PB", bound=ProtobufMessage)
 
@@ -55,9 +52,6 @@ def parse_serial_response(res: Any, target_type: type[_T_PB], default: _T_PB) ->
         except (ProtobufDecodeError, TypeError, ValueError):
             return default
     return default
-
-
-_parse_serial_response = parse_serial_response
 
 
 class LocalBridgeService(LocalBridgeBase):

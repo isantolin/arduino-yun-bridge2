@@ -28,8 +28,8 @@ from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.protocol.topics import get_topic_for_message, parse_topic
 from mcubridge.services.handshake import SerialHandshakeManager, derive_serial_timing
-from mcubridge.services.runtime import BridgeService, LocalBridgeService, ProcessContext
-from mcubridge.state.context import RuntimeState, create_runtime_state
+from mcubridge.services.runtime import BridgeService, LocalBridgeService
+from mcubridge.state.context import ProcessContext, RuntimeState, create_runtime_state
 from mcubridge.state.storage import LmdbDeque
 from mcubridge.transport.serial import SerialTransport
 from mcubridge_client.definitions import build_bridge_args
@@ -694,7 +694,7 @@ async def test_runtime_handle_process_kill_paths(test_config: RuntimeConfig, moc
     mock_handle = AsyncMock()
     mock_handle.pid = 88888
     mock_handle.returncode = None
-    from mcubridge.services.runtime import ProcessContext
+    from mcubridge.state.context import ProcessContext
 
     svc.state.running_processes[88888] = ProcessContext(mock_handle)
 
@@ -999,7 +999,7 @@ async def test_runtime_monitor_process_timeout_escalation(test_config: RuntimeCo
     mock_handle.pid = 4444
     mock_handle.wait.side_effect = TimeoutError("Wait timeout")
 
-    from mcubridge.services.runtime import ProcessContext
+    from mcubridge.state.context import ProcessContext
 
     ctx = ProcessContext(mock_handle)
     svc.state.running_processes[4444] = ctx
@@ -1038,7 +1038,7 @@ async def test_runtime_poll_process_stream_timeout_and_eof(
     mock_handle.stdout = mock_stdout
     mock_handle.stderr = mock_stderr
 
-    from mcubridge.services.runtime import ProcessContext
+    from mcubridge.state.context import ProcessContext
 
     ctx = ProcessContext(mock_handle)
     ctx.exit_code = 0

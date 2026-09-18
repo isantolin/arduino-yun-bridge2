@@ -32,7 +32,6 @@ from cryptography.hazmat.primitives.constant_time import bytes_eq
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from google.protobuf.message import (
     DecodeError as ProtobufDecodeError,
-    Message,
     Message as ProtobufMessage,
 )
 
@@ -130,7 +129,7 @@ class RateLimiter:
 
 
 class SendFrameCallable(Protocol):
-    async def __call__(self, command_id: int, payload: bytes | Message, seq_id: int | None = None) -> bool: ...
+    async def __call__(self, command_id: int, payload: bytes | ProtobufMessage, seq_id: int | None = None) -> bool: ...
 
 
 EnqueueMessageCallable = Callable[[pb.CloudQueuedPublish], Awaitable[None]]

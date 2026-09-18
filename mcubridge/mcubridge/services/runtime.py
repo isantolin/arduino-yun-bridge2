@@ -92,20 +92,12 @@ from ..state.context import (
 from .handshake import SerialHandshakeManager, SerialHandshakeFatal, derive_serial_timing
 from .clock_sync import ClockSyncService
 from .gpio import GpioService
-from .local_bridge import LocalBridgeService, QUERY_TOPIC_ACTIONS, parse_serial_response
-
-_QUERY_TOPIC_ACTIONS: Final = QUERY_TOPIC_ACTIONS
-_parse_serial_response = parse_serial_response
+from .local_bridge import LocalBridgeService
 
 __all__ = [
     "BridgeService",
     "LocalBridgeService",
-    "ProcessContext",
-    "QUERY_TOPIC_ACTIONS",
     "_PendingMcuRead",
-    "_QUERY_TOPIC_ACTIONS",
-    "_parse_serial_response",
-    "parse_serial_response",
 ]
 
 if TYPE_CHECKING:

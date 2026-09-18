@@ -550,6 +550,17 @@ class RuntimeState:
     def mailbox_incoming_queue_depth(self) -> int:
         return len(self.mailbox_incoming_queue)
 
+    def _get_storage_subdir(self, subdir: str) -> Path | None:
+        """Resolve, validate, and create a managed storage directory under file_system_root. [SIL-2]"""
+        if (self.allow_non_tmp_paths or self.file_system_root.startswith("/tmp/")) and self.file_system_root:
+            directory = Path(self.file_system_root) / subdir
+            try:
+                directory.mkdir(parents=True, exist_ok=True)
+                return directory
+            except (OSError, RuntimeError) as exc:
+                logger.warning("Storage directory creation failed", subdir=subdir, error=str(exc))
+        return None
+
     def configure(self) -> None:
         def _safe_close(resource: Any) -> None:
             try:
@@ -576,46 +587,28 @@ class RuntimeState:
         self.cloud_publish_queue = _make_cloud_publish_queue(self.cloud_queue_limit)
         self.console_to_mcu_queue = collections.deque[bytes](maxlen=self.mailbox_queue_limit)
 
-        def _create_spool(
-            subdir: str,
-        ) -> Any:
-            directory = None
-            if self.allow_non_tmp_paths or self.file_system_root.startswith("/tmp/"):
-                directory = Path(self.file_system_root) / subdir
-
-            if directory and self.file_system_root:
+        def _create_spool(subdir: str) -> Any:
+            if directory := self._get_storage_subdir(subdir):
                 try:
-                    directory.mkdir(parents=True, exist_ok=True)
                     return LmdbDeque(path=str(directory / "spool_lmdb"), maxlen=self.mailbox_queue_limit)
                 except (OSError, RuntimeError) as exc:
                     logger.warning("Spool falling back to RAM", spool=subdir, error=str(exc))
-
             return LmdbDeque(path=":memory:", maxlen=self.mailbox_queue_limit)
 
         self.mailbox_queue = _create_spool("mailbox_out")
         self.mailbox_incoming_queue = _create_spool("mailbox_in")
 
         # [SIL-2] Initialize datastore with LMDB for ACID persistence
-        ds_dir = None
-        if self.allow_non_tmp_paths or self.file_system_root.startswith("/tmp/"):
-            ds_dir = Path(self.file_system_root) / "datastore"
-
-        if ds_dir and self.file_system_root:
+        if ds_dir := self._get_storage_subdir("datastore"):
             try:
-                ds_dir.mkdir(parents=True, exist_ok=True)
                 self.datastore_cache = LmdbCache(str(ds_dir / "data_lmdb"))
             except (OSError, RuntimeError):
                 logger.warning("Datastore falling back to RAM cache")
                 self.datastore_cache = None
 
         # [SIL-2] Initialize TLS 1.3 / QUIC 0-RTT session ticket cache with LMDB
-        tls_dir = None
-        if self.allow_non_tmp_paths or self.file_system_root.startswith("/tmp/"):
-            tls_dir = Path(self.file_system_root) / "tls_sessions"
-
-        if tls_dir and self.file_system_root:
+        if tls_dir := self._get_storage_subdir("tls_sessions"):
             try:
-                tls_dir.mkdir(parents=True, exist_ok=True)
                 self.tls_session_cache = LmdbCache(str(tls_dir / "tls_lmdb"))
             except (OSError, RuntimeError):
                 logger.warning("TLS session cache falling back to RAM cache")

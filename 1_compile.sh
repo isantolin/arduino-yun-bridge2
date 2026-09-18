@@ -503,7 +503,7 @@ echo "[INFO] Re-installing essential feeds..."
 echo "[FIX] Removing duplicate upstream packages (etc)..."
 rm -rf feeds/packages/lang/python/python-cryptography
 
-./scripts/feeds install mcubridge luci-app-mcubridge mcubridge-gateway
+./scripts/feeds install -p mcubridge -a
 
 
 
@@ -672,6 +672,13 @@ sed -i 's/CONFIG_ALL_KMODS=y/# CONFIG_ALL_KMODS is not set/g' .config 2>/dev/nul
 
 make defconfig
 
+# Re-ensure core packages stay enabled in .config after defconfig
+for pkg in $REQUIRED_PKGS; do
+    if ! grep -q "CONFIG_PACKAGE_${pkg}=y" .config; then
+        echo "CONFIG_PACKAGE_${pkg}=y" >> .config
+    fi
+done
+
 # 3. Compilation
 echo "[CLEANUP] Removing old .apk files..."
 find "$BIN_DIR" -type f -name '*.apk' -delete
@@ -734,7 +741,7 @@ done
 for pkg in luci-app-mcubridge mcubridge mcubridge-gateway; do
     echo "[CLEAN] Purging build stamps and artifacts for $pkg..."
     make "package/feeds/mcubridge/$pkg/clean" 2>/dev/null || true
-    rm -rf "$SDK_DIR"/build_dir/target-*/"$pkg"*
+    rm -rf "$SDK_DIR"/build_dir/target-*/"$pkg"-[0-9]* "$SDK_DIR"/build_dir/target-*/"$pkg"
     rm -f "$SDK_DIR"/staging_dir/target-*/root-*/stamp/."$pkg"*
     rm -f "$SDK_DIR"/staging_dir/target-*/stamp/."$pkg"*
 

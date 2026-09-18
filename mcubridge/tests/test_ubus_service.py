@@ -45,7 +45,7 @@ def mock_runtime() -> MockRuntimeFacade:
     state = create_runtime_state(config)
     state.connection_fsm.connect()
     state.connection_fsm.synchronize()
-    state.mcu_version = (2, 8, 7)
+    state.mcu_version = (2, 8, 8)
     state.mcu_capabilities = pb.Capabilities(watchdog=True, spi=True, sd=True)
     return MockRuntimeFacade(config, state)
 
@@ -132,7 +132,7 @@ def test_ubus_handle_status(mock_runtime: MockRuntimeFacade) -> None:
 
     assert status_resp["connected"] is True
     assert status_resp["synchronized"] is True
-    assert status_resp["version"] == "2.8.7"
+    assert status_resp["version"] == "2.8.8"
     assert status_resp["capabilities"]["watchdog"] is True
     assert status_resp["capabilities"]["spi"] is True
     assert status_resp["capabilities"]["sd"] is True

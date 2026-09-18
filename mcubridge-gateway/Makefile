@@ -22,7 +22,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=mcubridge-gateway
-PKG_VERSION:=2.8.7
+PKG_VERSION:=2.8.8
 PKG_RELEASE:=1
 PKG_LICENSE:=GPL-3.0-or-later
 PKG_LICENSE_FILES:=LICENSE
@@ -73,17 +73,19 @@ define Build/Compile
 	find $(PKG_BUILD_DIR) -name '__pycache__' -type d -print0 | xargs -0 -r rm -rf || true
 endef
 
+PYTHON3_SITE_DIR:=/usr/lib/python$(if $(wildcard $(STAGING_DIR_HOSTPKG)/lib/python3.14*),3.14,3.13)/site-packages
+
 define Package/$(PKG_NAME)/install
 	$(INSTALL_DIR) $(1)/usr/bin
-	$(INSTALL_DIR) $(1)/usr/lib/python3.14/site-packages/mcubridge/protocol
+	$(INSTALL_DIR) $(1)$(PYTHON3_SITE_DIR)/mcubridge/protocol
 
 	# Install Gateway Executable
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/mcubridge-gateway $(1)/usr/bin/mcubridge-gateway
 
 	# Install Protocol Stubs for self-contained imports
-	$(CP) $(PKG_BUILD_DIR)/mcubridge/__init__.py $(1)/usr/lib/python3.14/site-packages/mcubridge/
-	$(CP) $(PKG_BUILD_DIR)/mcubridge/protocol/* $(1)/usr/lib/python3.14/site-packages/mcubridge/protocol/
-	python3 -m compileall -o 2 -q $(1)/usr/lib/python3.14/site-packages/mcubridge || true
+	$(CP) $(PKG_BUILD_DIR)/mcubridge/__init__.py $(1)$(PYTHON3_SITE_DIR)/mcubridge/
+	$(CP) $(PKG_BUILD_DIR)/mcubridge/protocol/* $(1)$(PYTHON3_SITE_DIR)/mcubridge/protocol/
+	python3 -m compileall -o 2 -q $(1)$(PYTHON3_SITE_DIR)/mcubridge || true
 endef
 
 $(eval $(call BuildPackage,$(PKG_NAME)))

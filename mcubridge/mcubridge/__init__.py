@@ -8,4 +8,4 @@ import os
 # on systems (such as OpenWrt / embedded targets) where it is not compiled or available.
 os.environ.setdefault("CRYPTOGRAPHY_OPENSSL_NO_LEGACY", "1")
 
-__version__ = "2.8.7"
+__version__ = "2.8.8"

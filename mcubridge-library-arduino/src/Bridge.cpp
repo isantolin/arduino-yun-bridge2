@@ -572,7 +572,8 @@ void BridgeClass::_handleSetPinMode(const rpc_pb_PinMode& m) {
 template <typename MsgType, bool IsAnalog>
 void BridgeClass::_handlePinWrite(const MsgType& m) {
   if constexpr (IsAnalog) {
-    analogWrite(m.pin, static_cast<int>(etl::clamp<uint32_t>(m.value, 0UL, 255UL)));
+    analogWrite(m.pin,
+                static_cast<int>(etl::clamp<uint32_t>(m.value, 0UL, 255UL)));
   } else {
     pinMode(m.pin, OUTPUT);
     digitalWrite(m.pin, (m.value == 0) ? LOW : HIGH);

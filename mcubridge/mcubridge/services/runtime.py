@@ -995,9 +995,7 @@ class BridgeService:
                 await self.enqueue_cloud_publish(
                     response_topic,
                     f"error:{protocol.STATUS_REASON_MCU_FILE_READ_DISPATCH_FAILED}".encode(),
-                    user_properties=(
-                        (PROP_KEY_BRIDGE_ERROR, protocol.STATUS_REASON_MCU_FILE_READ_DISPATCH_FAILED),
-                    ),
+                    user_properties=((PROP_KEY_BRIDGE_ERROR, protocol.STATUS_REASON_MCU_FILE_READ_DISPATCH_FAILED),),
                     reply_context=ctx,
                 )
                 self._pending_mcu_read = None

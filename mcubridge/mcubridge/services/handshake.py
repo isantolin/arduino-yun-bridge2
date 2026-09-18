@@ -109,7 +109,6 @@ class HandshakeMachine(StateMachine):
     )
 
 
-
 class RateLimiter:
     """[SIL-2] Deterministic rate limiting and exponential backoff calculator."""
 

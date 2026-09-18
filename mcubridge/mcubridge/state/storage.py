@@ -158,9 +158,7 @@ class LmdbDeque:
     async def vacuum(self) -> None:
         """[SIL-2] Compact LMDB storage to reclaim disk space after spool flush."""
         if not self.is_mem and self.env:
-            await anyio.to_thread.run_sync(
-                _vacuum_lmdb_env, self.path, "deque.db", self.env, self._open_env
-            )
+            await anyio.to_thread.run_sync(_vacuum_lmdb_env, self.path, "deque.db", self.env, self._open_env)
 
     async def close(self) -> None:
         if self.env:
@@ -245,9 +243,7 @@ class LmdbCache:
     async def vacuum(self) -> None:
         """[SIL-2] Compact LMDB cache storage to reclaim disk space."""
         if not self.is_mem and self.env:
-            await anyio.to_thread.run_sync(
-                _vacuum_lmdb_env, self.path, "cache.db", self.env, self._open_env
-            )
+            await anyio.to_thread.run_sync(_vacuum_lmdb_env, self.path, "cache.db", self.env, self._open_env)
 
     def __len__(self) -> int:
         if self.is_mem:

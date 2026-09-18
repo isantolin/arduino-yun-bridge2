@@ -3,7 +3,10 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+import re
 import sys
+import tomllib
 from typing import Annotated
 import pexpect
 import tenacity
@@ -13,29 +16,43 @@ app = typer.Typer(help="Interactive/Automated deployer for McuBridge inside Open
 
 PROMPT = r"root@[^:]+:[^#]*#"
 
-RELEASE_BASE = "https://github.com/isantolin/arduino-yun-bridge2/releases/download/v2.8.7"
-APK_NAMES: list[str] = [
-    "luci-app-mcubridge-2.8.7-r1.apk",
-    "mcubridge-2.8.7-r1.apk",
-    "mcubridge-gateway-2.8.7-r1.apk",
-    "python3-annotated-doc-0.0.5-r1.apk",
-    "python3-cobs-1.2.2-r1.apk",
-    "python3-cryptography-50.0.1-r1.apk",
-    "python3-grpclib-0.4.9-r1.apk",
-    "python3-h2-4.4.1-r1.apk",
-    "python3-hpack-4.2.0-r1.apk",
-    "python3-hyperframe-6.1.0-r1.apk",
-    "python3-lmdb-2.3.0-r1.apk",
-    "python3-packaging-26.3-r1.apk",
-    "python3-prometheus-client-0.26.0-r1.apk",
-    "python3-protobuf-7.36.2-r1.apk",
-    "python3-serialx-1.10.0-r1.apk",
-    "python3-shellingham-1.5.4-r1.apk",
-    "python3-structlog-26.1.0-r1.apk",
-    "python3-tenacity-9.1.4-r1.apk",
-    "python3-typer-0.27.2-r1.apk",
-    "python3-uvloop-0.22.1-r3.apk",
-]
+REPO_ROOT = Path(__file__).resolve().parents[2]
+VERSION = (REPO_ROOT / "VERSION").read_text(encoding="utf-8").strip()
+RELEASE_BASE = f"https://github.com/isantolin/arduino-yun-bridge2/releases/download/v{VERSION}"
+
+
+def get_pkg_release(pkg_name: str) -> str:
+    makefile = REPO_ROOT / "feeds" / pkg_name / "Makefile"
+    if not makefile.exists():
+        makefile = REPO_ROOT / pkg_name / "Makefile"
+    if makefile.exists():
+        m = re.search(r"PKG_RELEASE:=(\d+)", makefile.read_text(encoding="utf-8"))
+        if m:
+            return f"r{m.group(1)}"
+    return "r1"
+
+
+def get_release_apk_names() -> list[str]:
+    apks = [
+        f"luci-app-mcubridge-{VERSION}-{get_pkg_release('luci-app-mcubridge')}.apk",
+        f"mcubridge-{VERSION}-{get_pkg_release('mcubridge')}.apk",
+        f"mcubridge-gateway-{VERSION}-{get_pkg_release('mcubridge-gateway')}.apk",
+    ]
+    manifest_path = REPO_ROOT / "requirements" / "runtime.toml"
+    if manifest_path.exists():
+        data = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
+        for dep in data.get("dependency", []):
+            openwrt_pkg = dep.get("openwrt", "")
+            pip_spec = dep.get("pip", "")
+            pkg_dir = REPO_ROOT / "feeds" / openwrt_pkg
+            if openwrt_pkg.startswith("python3-") and "==" in pip_spec and pkg_dir.exists():
+                _, ver = pip_spec.split("==", 1)
+                rel = get_pkg_release(openwrt_pkg)
+                apks.append(f"{openwrt_pkg}-{ver}-{rel}.apk")
+    return sorted(apks)
+
+
+APK_NAMES: list[str] = get_release_apk_names()
 
 
 def run_command_in_console(child: pexpect.spawn[bytes], cmd: str, timeout: int = 60) -> str:
@@ -108,7 +125,7 @@ def main(
     run_command_in_console(child, "mkdir -p /root/deploy/bin", timeout=10)
     run_command_in_console(child, "cd /root/deploy", timeout=10)
 
-    # 5. Download 3_install.sh and APKs from GitHub Release v2.8.7
+    # 5. Download 3_install.sh and APKs from GitHub Release v{VERSION}
     install_script_url = "https://raw.githubusercontent.com/isantolin/arduino-yun-bridge2/main/3_install.sh"
     run_command_in_console(
         child,
@@ -117,7 +134,7 @@ def main(
     )
     run_command_in_console(child, "chmod +x /root/deploy/3_install.sh", timeout=10)
 
-    print("\n[INFO] Downloading APK packages from GitHub Release v2.8.7...")
+    print(f"\n[INFO] Downloading APK packages from GitHub Release v{VERSION}...")
     for apk in APK_NAMES:
         dl_cmd = f"wget -c {RELEASE_BASE}/{apk} -O /root/deploy/bin/{apk}"
         run_command_in_console(child, dl_cmd, timeout=60)

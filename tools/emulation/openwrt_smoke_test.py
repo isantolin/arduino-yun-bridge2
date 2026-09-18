@@ -408,13 +408,21 @@ def phase_verify(child: Any) -> None:
         raise ValueError("Verification failed: mcubridge service not enabled in /etc/rc.d/.")
     wait_for_prompt(child, timeout=10)
 
-    # 6. Core mcubridge packages installed in APK database
-    child.sendline(
-        "apk info -e mcubridge && apk info -e mcubridge-gateway && echo 'VERIFY_APK_OK' || echo 'VERIFY_APK_FAIL'"
+    # 6. Core mcubridge packages installed in APK database and version verified
+    version = (Path(__file__).resolve().parents[2] / "VERSION").read_text(encoding="utf-8").strip()
+    check_cmd = (
+        "apk info -e mcubridge && "
+        "apk info -e mcubridge-gateway && "
+        "apk info -e luci-app-mcubridge && "
+        f"apk info -v mcubridge | grep -q '{version}' && "
+        "echo 'VERIFY_APK_OK' || echo 'VERIFY_APK_FAIL'"
     )
+    child.sendline(check_cmd)
     child.expect(r"VERIFY_APK_(OK|FAIL)", timeout=10)
     if "VERIFY_APK_FAIL" in child.after:
-        raise ValueError("Verification failed: core mcubridge packages not installed in apk database.")
+        raise ValueError(
+            f"Verification failed: core mcubridge packages (v{version}) not properly installed in apk database."
+        )
     wait_for_prompt(child, timeout=10)
 
     log_info("[SUCCESS] Full pipeline smoke test passed!")

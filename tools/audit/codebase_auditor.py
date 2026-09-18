@@ -24,8 +24,7 @@ def _audit_ast_exceptions(node: ast.AST, py_file_name: str) -> list[str]:
             for elt in node.type.elts:
                 if isinstance(elt, ast.Name) and elt.id in ("Exception", "BaseException"):
                     findings.append(
-                        f"Python Pokemon Exception: {py_file_name}:{node.lineno} - "
-                        f"'except (..., {elt.id}, ...):'"
+                        f"Python Pokemon Exception: {py_file_name}:{node.lineno} - " f"'except (..., {elt.id}, ...):'"
                     )
     return findings
 
@@ -70,10 +69,7 @@ def _audit_ast_async_blocking(node: ast.AST, py_file_name: str) -> list[str]:
                         f"'{subnode.func.value.id}.join()' inside async def {node.name}"
                     )
                 # Detect direct call to _vacuum_lmdb_env() without anyio.to_thread.run_sync
-                elif (
-                    isinstance(subnode.func, ast.Name)
-                    and subnode.func.id == "_vacuum_lmdb_env"
-                ):
+                elif isinstance(subnode.func, ast.Name) and subnode.func.id == "_vacuum_lmdb_env":
                     findings.append(
                         f"Blocking Compaction in Async: {py_file_name}:{subnode.lineno} - "
                         f"direct call to '_vacuum_lmdb_env()' inside async def {node.name}; "

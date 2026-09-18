@@ -406,6 +406,3 @@ async def test_local_bridge_pin_subscribe() -> None:
         mock_stream_none.send_message.assert_not_awaited()
     finally:
         service.cleanup()
-
-
-

@@ -77,3 +77,22 @@ def test_parse_validates_version_and_length() -> None:
     raw[0] ^= 1
     with pytest.raises(ValueError):
         parse_frame(bytes(raw))
+
+
+def test_parse_frame_memoryview_and_bytearray() -> None:
+    payload = b"zero-copy-test"
+    raw = build_frame(command_id=TEST_CMD_ID, sequence_id=42, payload=payload)
+
+    # Test with memoryview (zero-copy buffer protocol)
+    mv = memoryview(raw)
+    decoded_mv = parse_frame(mv)
+    assert decoded_mv.envelope.command_id == TEST_CMD_ID
+    assert decoded_mv.envelope.sequence_id == 42
+    assert decoded_mv.payload == payload
+
+    # Test with bytearray (mutable buffer protocol)
+    ba = bytearray(raw)
+    decoded_ba = parse_frame(ba)
+    assert decoded_ba.envelope.command_id == TEST_CMD_ID
+    assert decoded_ba.envelope.sequence_id == 42
+    assert decoded_ba.payload == payload

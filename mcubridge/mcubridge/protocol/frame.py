@@ -53,7 +53,6 @@ def build_frame(
     sequence_id: int,
     payload: bytes | ProtobufMessage = b"",
     nonce: bytes | None = None,
-    tag: bytes | None = None,
     session_key: bytes | None = None,
 ) -> bytes:
     """Builds a binary frame using a Protobuf envelope directly with high-performance AEAD. [SIL-2]
@@ -104,7 +103,7 @@ def build_frame(
 
     body = envelope.SerializeToString()
     crc = crc32(body) & protocol.CRC32_MASK
-    return body + crc.to_bytes(4, "little")
+    return body + crc.to_bytes(protocol.CRC_SIZE, "little")
 
 
 def parse_frame(raw_frame_buffer: bytes | bytearray | memoryview, session_key: bytes | None = None) -> DecodedFrame:

@@ -616,3 +616,174 @@ async def test_protobuf_gateway_metrics_port_run() -> None:
         mock_server_cls.return_value = mock_server
         await gw.run()
         assert mock_metrics_server.called
+
+
+def test_tsdb_sink_post_line_edge_paths() -> None:
+    import urllib.error
+
+    # 1. Empty endpoint returns early
+    sink_empty = TSDBSink(endpoint_url=None)
+    post_empty = getattr(sink_empty, "_post_line")
+    post_empty("mcu,device=dev1 value=1")
+
+    sink = TSDBSink(endpoint_url="http://localhost:8428/write")
+    post_fn = getattr(sink, "_post_line")
+
+    # 2. Status >= 400
+    mock_resp = MagicMock()
+    mock_resp.status = 500
+    mock_resp.__enter__.return_value = mock_resp
+    with patch("urllib.request.urlopen", return_value=mock_resp):
+        post_fn("mcu,device=dev1 value=1")
+
+    # 3. URLError network failure
+    with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("Refused")):
+        post_fn("mcu,device=dev1 value=1")
+
+
+@pytest.mark.asyncio
+async def test_tsdb_sink_ingest_telemetry_edge_paths() -> None:
+    # 1. Disabled sink returns early
+    sink_disabled = TSDBSink(endpoint_url=None)
+    envelope = pb.CloudEnvelope(telemetry=pb.TelemetryReport(daemon_metrics_blob=b"data"))
+    await sink_disabled.ingest_telemetry("dev1", envelope)
+
+    # 2. Corrupted metrics blob caught and logged
+    sink = TSDBSink(endpoint_url="http://localhost:8428/write")
+    envelope_corrupt = pb.CloudEnvelope(telemetry=pb.TelemetryReport(daemon_metrics_blob=b"\xff\xff\xff"))
+    await sink.ingest_telemetry("dev1", envelope_corrupt)
+
+
+@pytest.mark.asyncio
+async def test_handle_telemetry_edge_paths(mock_gateway: ProtobufGateway) -> None:
+    import gateway
+
+    handle_telemetry = getattr(gateway, "_handle_telemetry")
+    mock_gateway.tsdb_sink = TSDBSink(endpoint_url="http://localhost:8428/write")
+    svc = CloudBridgeService(mock_gateway)
+    mock_stream = AsyncMock()
+
+    # 1. Empty metrics blob
+    envelope_empty = pb.CloudEnvelope(
+        protocol_version=2,
+        device_id="edge-1",
+        telemetry=pb.TelemetryReport(daemon_metrics_blob=b""),
+    )
+    await handle_telemetry(svc, "edge-1", mock_stream, envelope_empty)
+
+    # 2. Corrupted metrics blob
+    envelope_corrupt = pb.CloudEnvelope(
+        protocol_version=2,
+        device_id="edge-1",
+        telemetry=pb.TelemetryReport(daemon_metrics_blob=b"\xff\xff\xff"),
+    )
+    with patch("urllib.request.urlopen"):
+        await handle_telemetry(svc, "edge-1", mock_stream, envelope_corrupt)
+
+
+@pytest.mark.asyncio
+async def test_handle_command_response_edge_paths(mock_gateway: ProtobufGateway) -> None:
+    # 1. Key not in pending commands (ignored safely)
+    resp = pb.CommandResponse(status_code=0, payload=b"ok")
+    mock_gateway.handle_command_response("dev-none", 999, resp)
+
+    # 2. Future already done (does not raise InvalidStateError)
+    loop = asyncio.get_running_loop()
+    fut = loop.create_future()
+    fut.set_result(pb.CommandResponse(status_code=1, payload=b"already_done"))
+    mock_gateway.pending_commands[("dev-done", 1)] = fut
+    mock_gateway.handle_command_response("dev-done", 1, resp)
+    assert fut.result().payload == b"already_done"
+
+
+@pytest.mark.asyncio
+async def test_session_disconnect_aborts_pending_commands_with_edge_branches(mock_gateway: ProtobufGateway) -> None:
+    svc = CloudBridgeService(mock_gateway)
+    loop = asyncio.get_running_loop()
+
+    # Create mixed futures in pending_commands
+    fut_target = loop.create_future()
+    fut_done = loop.create_future()
+    fut_done.set_result(pb.CommandResponse(status_code=0, payload=b"done"))
+    fut_other = loop.create_future()
+
+    mock_gateway.pending_commands[("disc-dev", 1)] = fut_target
+    mock_gateway.pending_commands[("disc-dev", 2)] = fut_done
+    mock_gateway.pending_commands[("other-dev", 3)] = fut_other
+
+    # Mock stream raising CancelledError immediately
+    mock_stream = AsyncMock()
+    mock_stream.__aiter__.side_effect = asyncio.CancelledError()
+
+    with patch("gateway.extract_peer_identity", return_value=("disc-dev", True)):
+        with pytest.raises(asyncio.CancelledError):
+            await svc.Session(mock_stream)
+
+    assert fut_target.done()
+    assert isinstance(fut_target.exception(), ConnectionResetError)
+    assert not fut_other.done()
+
+
+@pytest.mark.asyncio
+async def test_handle_telemetry_full_metrics_dimensions(mock_gateway: ProtobufGateway) -> None:
+    import gateway
+
+    handle_telemetry = getattr(gateway, "_handle_telemetry")
+    svc = CloudBridgeService(mock_gateway)
+    mock_stream = AsyncMock()
+
+    metrics = pb.DaemonMetrics(
+        cloud_queue_depth=5,
+        cloud_dropped_messages=2,
+        cloud_spool_pending_messages=3,
+        link_synchronised=True,
+        watchdog_enabled=True,
+        serial_bytes_sent=1024,
+        serial_bytes_received=2048,
+        serial_frames_sent=10,
+        serial_frames_received=20,
+        serial_crc_errors=1,
+        serial_decode_errors=0,
+        handshake_attempts=3,
+        handshake_successes=2,
+        watchdog_beats=50,
+        uptime_seconds=120.5,
+        cloud_messages_published=8,
+        serial_latency_ms=12.5,
+        rpc_latency_ms=25.0,
+        retries=[pb.ComponentRetry(component="cloud_connect", count=4)],
+    )
+
+    envelope = pb.CloudEnvelope(
+        protocol_version=2,
+        device_id="edge-full",
+        telemetry=pb.TelemetryReport(daemon_metrics_blob=metrics.SerializeToString()),
+    )
+
+    await handle_telemetry(svc, "edge-full", mock_stream, envelope)
+
+    # Verify all prometheus dimensions are populated in FleetMetrics
+    gw_metrics = mock_gateway.metrics
+    assert gw_metrics.device_link_synchronized.labels(device_id="edge-full")._value.get() == 1.0
+    assert gw_metrics.device_serial_bytes_sent.labels(device_id="edge-full")._value.get() == 1024.0
+    assert gw_metrics.device_serial_bytes_received.labels(device_id="edge-full")._value.get() == 2048.0
+    assert gw_metrics.device_serial_frames_sent.labels(device_id="edge-full")._value.get() == 10.0
+    assert gw_metrics.device_serial_frames_received.labels(device_id="edge-full")._value.get() == 20.0
+    assert gw_metrics.device_serial_crc_errors.labels(device_id="edge-full")._value.get() == 1.0
+    assert gw_metrics.device_handshake_attempts.labels(device_id="edge-full")._value.get() == 3.0
+    assert gw_metrics.device_handshake_successes.labels(device_id="edge-full")._value.get() == 2.0
+    assert gw_metrics.device_watchdog_beats.labels(device_id="edge-full")._value.get() == 50.0
+    assert gw_metrics.device_uptime_seconds.labels(device_id="edge-full")._value.get() == 120.5
+    assert gw_metrics.device_cloud_messages_published.labels(device_id="edge-full")._value.get() == 8.0
+    assert gw_metrics.device_latency_ms.labels(device_id="edge-full", type="serial")._value.get() == 12.5
+    assert gw_metrics.device_latency_ms.labels(device_id="edge-full", type="rpc")._value.get() == 25.0
+    assert gw_metrics.device_retries.labels(device_id="edge-full", component="cloud_connect")._value.get() == 4.0
+
+    # Verify line protocol format contains all dimensions
+    line = TSDBSink.format_line_protocol("edge-full", metrics, timestamp_ns=1700000000000)
+    assert "serial_bytes_sent=1024i" in line
+    assert "serial_bytes_received=2048i" in line
+    assert "serial_crc_errors=1i" in line
+    assert "watchdog_beats=50i" in line
+    assert "published_messages=8i" in line
+

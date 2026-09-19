@@ -19,8 +19,6 @@ from grpclib.server import Stream
 import mcubridge.protocol.mcubridge_pb2 as pb
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.metrics import (
-    PrometheusExporter,
-    RuntimeStateCollector,
     _build_metrics_message,
     _emit_bridge_snapshot,
     publish_bridge_snapshots,
@@ -586,28 +584,8 @@ async def test_handshake_handle_link_reset_resp(tmp_path: Path) -> None:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 3. Metrics Collector & Prometheus Exporter
+# 3. Metrics Collector & Telemetry Push
 # ══════════════════════════════════════════════════════════════════════════════
-
-
-def test_runtime_state_collector(tmp_path: Path) -> None:
-    config = _make_config(tmp_path)
-    state = create_runtime_state(config)
-    collector = RuntimeStateCollector(state)
-
-    state.connection_fsm.connect()
-    state.connection_fsm.synchronize()
-    state.file_storage_bytes_used = 1024
-
-    metrics = list(collector.collect())
-    assert len(metrics) > 0
-
-    metric_names: list[str] = [str(getattr(m, "name", getattr(m, "_name", ""))) for m in metrics]
-    assert "mcubridge_queue_depth" in metric_names
-    assert "mcubridge_file_storage_bytes_used" in metric_names
-    assert "mcubridge_link_synchronized" in metric_names
-
-    state.cleanup()
 
 
 def test_build_metrics_message_with_extra_props(tmp_path: Path) -> None:
@@ -754,30 +732,6 @@ async def test_lmdb_deque_operations(tmp_path: Path) -> None:
     assert len(deque) == 0
 
     await deque.close()
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# 5. Prometheus Exporter Lifecycle
-# ══════════════════════════════════════════════════════════════════════════════
-
-
-@pytest.mark.asyncio
-async def test_prometheus_exporter_lifecycle(tmp_path: Path) -> None:
-    config = _make_config(tmp_path)
-    state = create_runtime_state(config)
-
-    exporter = PrometheusExporter(state, host="127.0.0.1", port=0)
-    assert exporter.port > 0
-
-    task = asyncio.create_task(exporter.run())
-    await asyncio.sleep(0.05)
-    task.cancel()
-    try:
-        await task
-    except asyncio.CancelledError:
-        pass
-
-    state.cleanup()
 
 
 # ══════════════════════════════════════════════════════════════════════════════

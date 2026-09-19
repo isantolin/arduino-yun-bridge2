@@ -37,7 +37,8 @@ name = "prometheus-client"
 openwrt = "python3-prometheus-client"
 pip = "prometheus-client==0.26.0"
 gateway = true
-rationale = "Expose runtime metrics via the Prometheus Python client"
+edge = false
+rationale = "Expose fleet-wide runtime metrics via the Prometheus Python client on mcubridge-gateway"
 
 [[dependency]]
 name = "serialx"

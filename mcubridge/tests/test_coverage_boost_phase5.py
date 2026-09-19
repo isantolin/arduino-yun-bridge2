@@ -18,8 +18,6 @@ from gateway import CloudBridgeService, ProtobufGateway
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.daemon import app as daemon_app, run_daemon
 from mcubridge.metrics import (
-    PrometheusExporter,
-    RuntimeStateCollector,
     _emit_bridge_snapshot,
     publish_bridge_snapshots,
     publish_metrics,
@@ -312,32 +310,6 @@ async def test_publish_bridge_snapshots_both_disabled(mock_state: RuntimeState) 
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
-
-
-def test_runtime_state_collector_dead_ref() -> None:
-    collector = RuntimeStateCollector(MagicMock())
-    object.__setattr__(collector, "_state_ref", lambda: None)
-    assert list(collector.collect()) == []
-
-
-def test_prometheus_exporter_port_unbound(mock_state: RuntimeState) -> None:
-    with patch("mcubridge.metrics.make_server", return_value=None):
-        exporter = PrometheusExporter(mock_state, host="127.0.0.1", port=9999)
-        assert exporter.port == 9999
-
-
-@pytest.mark.asyncio
-async def test_prometheus_exporter_unregister_keyerror(mock_state: RuntimeState) -> None:
-    mock_srv = MagicMock()
-    with patch("mcubridge.metrics.make_server", return_value=mock_srv):
-        exporter = PrometheusExporter(mock_state, host="127.0.0.1", port=0)
-        exporter._registry = MagicMock()
-        exporter._registry.unregister.side_effect = KeyError("Not registered")
-
-        with patch("asyncio.to_thread", side_effect=asyncio.CancelledError()):
-            with pytest.raises(asyncio.CancelledError):
-                await exporter.run()
-        assert mock_srv.server_close.called
 
 
 # ==========================================

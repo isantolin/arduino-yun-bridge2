@@ -631,6 +631,18 @@ class RuntimeState:
         cloud_drop_counts = [
             pb.CloudDropCount(topic=topic, count=count) for topic, count in self.cloud_drop_counts.items()
         ]
+        retries = [
+            pb.ComponentRetry(component=component, count=count)
+            for component, count in self.metrics.retries.items()
+        ]
+        mcu_status_counts = [
+            pb.McuStatusCount(status=status, count=count)
+            for status, count in self.metrics.mcu_status_counts.items()
+        ]
+        try:
+            uptime = max(0.0, time.time() - psutil.boot_time())
+        except (AttributeError, OSError):
+            uptime = self.metrics.uptime_seconds.value
 
         return pb.DaemonMetrics(
             cloud_queue_depth=self.cloud_publish_queue.qsize(),
@@ -657,6 +669,25 @@ class RuntimeState:
             heartbeat_unix=time.time(),
             watchdog_enabled=self.watchdog_enabled,
             watchdog_interval=self.watchdog_interval,
+            serial_bytes_sent=self.metrics.serial_bytes_sent.value,
+            serial_bytes_received=self.metrics.serial_bytes_received.value,
+            serial_frames_sent=self.metrics.serial_frames_sent.value,
+            serial_frames_received=self.metrics.serial_frames_received.value,
+            serial_retries=self.metrics.serial_retries.value,
+            serial_failures=self.metrics.serial_failures.value,
+            serial_crc_errors=self.metrics.serial_crc_errors.value,
+            serial_decode_errors=self.metrics.serial_decode_errors.value,
+            serial_latency_ms=self.metrics.serial_latency_ms.value,
+            rpc_latency_ms=self.metrics.rpc_latency_ms.value,
+            handshake_attempts=self.metrics.handshake_attempts.value,
+            handshake_successes=self.metrics.handshake_successes.value,
+            handshake_state=self.metrics.handshake_state.value,
+            link_state=self.metrics.link_state.value,
+            watchdog_beats=self.metrics.watchdog_beats.value,
+            uptime_seconds=uptime,
+            cloud_messages_published=self.metrics.cloud_messages_published.value,
+            retries=retries,
+            mcu_status_counts=mcu_status_counts,
         )
 
     def build_status_snapshot(self) -> pb.BridgeStatus:

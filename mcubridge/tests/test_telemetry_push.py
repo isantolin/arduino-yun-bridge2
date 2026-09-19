@@ -1,44 +1,57 @@
-from typing import Any
-import asyncio
+# pyright: reportPrivateUsage=false
+"""Unit tests verifying Pure Telemetry Push mode without local HTTP WSGI server (SIL-2)."""
 
+from __future__ import annotations
+
+from unittest.mock import AsyncMock, MagicMock
 import pytest
-from mcubridge.metrics import PrometheusExporter
-from mcubridge.protocol import mcubridge_pb2 as pb
+
+from mcubridge.config.settings import RuntimeConfig
+import mcubridge.protocol.mcubridge_pb2 as pb
+from mcubridge.services.runtime import BridgeService
+from mcubridge.state.context import RuntimeState, create_runtime_state
+
+
+def _make_config() -> RuntimeConfig:
+    return RuntimeConfig(
+        allowed_commands=("echo", "ls"),
+        serial_shared_secret=b"testsharedsecret",
+        allow_non_tmp_paths=True,
+    )
+
+
+@pytest.fixture
+def test_config() -> RuntimeConfig:
+    return _make_config()
+
+
+@pytest.fixture
+def mock_bridge_state(test_config: RuntimeConfig) -> RuntimeState:
+    return create_runtime_state(test_config)
 
 
 @pytest.mark.asyncio
-async def test_prometheus_exporter_serves_metrics(runtime_state: Any):
-    runtime_state.file_storage_quota_bytes = 4096
-    runtime_state.file_storage_bytes_used = 1024
-    runtime_state.supervisor_stats = {
-        "worker": pb.SupervisorSnapshot(restarts=2),
-    }
+async def test_pure_telemetry_push_mode(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
+    """Validate that BridgeService operates in Pure Telemetry Push mode without local HTTP exporter."""
+    svc = BridgeService(test_config, mock_bridge_state, MagicMock())
 
-    exporter = PrometheusExporter(runtime_state, "127.0.0.1", 0)
-    # Start server in background
-    task = asyncio.create_task(exporter.run())
-    await asyncio.sleep(0.5)  # Increase sleep to ensure server is ready
+    # Verify daemon does not maintain a local HTTP exporter
+    assert not hasattr(svc, "exporter")
 
-    try:
-        reader, writer = await asyncio.open_connection("127.0.0.1", exporter.port)
-        writer.write(b"GET /metrics HTTP/1.1\r\nHost: localhost\r\n\r\n")
-        await writer.drain()
-        payload = await reader.read()
-        writer.close()
-        await writer.wait_closed()
-    finally:
-        task.cancel()
-        del exporter
+    # Verify telemetry publication works directly via cloud stream
+    stream_mock = AsyncMock()
+    svc._cloud_stream = stream_mock
 
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
+    metrics = pb.DaemonMetrics(cloud_queue_depth=0, cloud_dropped_messages=10)
+    msg = pb.CloudQueuedPublish(
+        topic_name="br/system/metrics",
+        payload=metrics.SerializeToString(),
+    )
 
-    assert b'mcubridge_queue_depth{queue="cloud_publish"}' in payload
-    assert b"mcubridge_file_storage_bytes_used" in payload
-    assert b'mcubridge_supervisor_worker_restarts{worker="worker"} 2.0' in payload
-    assert b"mcubridge_build_info" in payload
-    # Accept both legacy 0.0.4 and newer OpenMetrics formats
-    assert b"text/plain" in payload
-    assert b"charset=utf-8" in payload
+    published = await svc._publish_cloud_message(msg)
+    assert published is True
+
+    stream_mock.send_message.assert_awaited_once()
+    envelope: pb.CloudEnvelope = stream_mock.send_message.await_args[0][0]
+    assert envelope.WhichOneof("payload") == "telemetry"
+    assert envelope.telemetry.daemon_metrics_blob == metrics.SerializeToString()

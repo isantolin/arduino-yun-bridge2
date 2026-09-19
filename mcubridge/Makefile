@@ -47,7 +47,6 @@ define Package/$(PKG_NAME)
 		python3 \
 		python3-cobs \
 		python3-protobuf \
-		python3-prometheus-client \
 		python3-serialx \
 		python3-tenacity \
 		python3-uvloop \

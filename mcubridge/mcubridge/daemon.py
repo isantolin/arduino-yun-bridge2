@@ -21,7 +21,6 @@ Architecture:
         ├── metrics-publisher (publish_metrics)
         ├── bridge-snapshots (optional)
         ├── watchdog (optional)
-        ├── prometheus-exporter (optional)
 """
 
 import asyncio

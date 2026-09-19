@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from mcubridge.metrics import (
-    PrometheusExporter,
     publish_bridge_snapshots,
     publish_metrics,
 )
@@ -228,61 +227,70 @@ async def test_publish_bridge_snapshots_noop_when_disabled(
 
 
 @pytest.mark.asyncio
-async def test_prometheus_exporter_run_cancellation_and_cleanup(
-    runtime_state: RuntimeState,
-) -> None:
-    import threading
+async def test_emit_bridge_snapshot_error_paths(runtime_state: RuntimeState) -> None:
+    import mcubridge.metrics
 
-    stop_event = threading.Event()
-    mock_server = MagicMock()
-    mock_server.server_address = ("127.0.0.1", 9999)
-    mock_server.serve_forever = stop_event.wait
-    mock_server.shutdown = stop_event.set
-    mock_server.server_close = MagicMock()
+    emit_fn = getattr(mcubridge.metrics, "_emit_bridge_snapshot")
 
-    with patch("mcubridge.metrics.make_server", return_value=mock_server):
-        exporter = PrometheusExporter(runtime_state, host="127.0.0.1", port=0)
-        assert exporter.port == 9999
+    async def _failing_enqueue(_: pb.CloudQueuedPublish) -> None:
+        raise OSError("Disk full")
 
-        task = asyncio.create_task(exporter.run())
-        await asyncio.sleep(0.02)
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
+    # OSError in enqueue is caught and logged
+    await emit_fn(runtime_state, _failing_enqueue, flavor="summary")
 
-    mock_server.server_close.assert_called_once()
+    # AttributeError in builder is caught and logged
+    with patch("mcubridge.metrics._build_bridge_snapshot_message", side_effect=AttributeError("Corrupted snapshot")):
+        await emit_fn(runtime_state, _failing_enqueue, flavor="summary")
 
 
 @pytest.mark.asyncio
-async def test_prometheus_exporter_run_shutdown_timeout_handled(
-    runtime_state: RuntimeState,
-) -> None:
-    import threading
+async def test_publish_metrics_oserror_recovery(runtime_state: RuntimeState) -> None:
+    calls = 0
 
-    stop_event = threading.Event()
-    mock_server = MagicMock()
-    mock_server.server_address = ("127.0.0.1", 9999)
-    mock_server.serve_forever = stop_event.wait
-    mock_server.shutdown = stop_event.set
-    mock_server.server_close = MagicMock()
+    async def _failing_enqueue(_: pb.CloudQueuedPublish) -> None:
+        nonlocal calls
+        calls += 1
+        raise OSError("Transient IO failure")
 
-    class _TimeoutContext:
-        async def __aenter__(self) -> None:
-            raise TimeoutError()
+    task = asyncio.create_task(
+        publish_metrics(
+            runtime_state,
+            _failing_enqueue,
+            interval=0.01,
+            min_interval=0.01,
+        )
+    )
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert calls >= 1
 
-        async def __aexit__(self, *args: object) -> None:
-            pass
 
-    with (
-        patch("mcubridge.metrics.make_server", return_value=mock_server),
-        patch("asyncio.timeout", side_effect=lambda _delay=0.0: _TimeoutContext()),
-    ):
-        exporter = PrometheusExporter(runtime_state, host="127.0.0.1", port=0)
-        task = asyncio.create_task(exporter.run())
-        await asyncio.sleep(0.02)
+@pytest.mark.asyncio
+async def test_publish_bridge_snapshots_loop_error_recovery(runtime_state: RuntimeState) -> None:
+    calls = 0
+
+    async def _failing_enqueue(_: pb.CloudQueuedPublish) -> None:
+        pass
+
+    async def _failing_emit(*_: object, **__: object) -> None:
+        nonlocal calls
+        calls += 1
+        raise OSError("Loop IO failure")
+
+    with patch("mcubridge.metrics._emit_bridge_snapshot", side_effect=_failing_emit):
+        task = asyncio.create_task(
+            publish_bridge_snapshots(
+                runtime_state,
+                _failing_enqueue,
+                summary_interval=0.01,
+                handshake_interval=0.01,
+                min_interval=0.01,
+            )
+        )
+        await asyncio.sleep(0.05)
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
-
-    stop_event.set()
-    mock_server.server_close.assert_called_once()
+        assert calls >= 1

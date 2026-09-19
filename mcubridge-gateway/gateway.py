@@ -131,6 +131,84 @@ class FleetMetrics:
             labelnames=["device_id"],
             registry=self.registry,
         )
+        self.device_serial_bytes_sent = prometheus_client.Gauge(
+            "mcubridge_device_serial_bytes_sent",
+            "Total bytes sent over serial link by device",
+            labelnames=["device_id"],
+            registry=self.registry,
+        )
+        self.device_serial_bytes_received = prometheus_client.Gauge(
+            "mcubridge_device_serial_bytes_received",
+            "Total bytes received over serial link by device",
+            labelnames=["device_id"],
+            registry=self.registry,
+        )
+        self.device_serial_frames_sent = prometheus_client.Gauge(
+            "mcubridge_device_serial_frames_sent",
+            "Total frames sent over serial link by device",
+            labelnames=["device_id"],
+            registry=self.registry,
+        )
+        self.device_serial_frames_received = prometheus_client.Gauge(
+            "mcubridge_device_serial_frames_received",
+            "Total frames received over serial link by device",
+            labelnames=["device_id"],
+            registry=self.registry,
+        )
+        self.device_serial_crc_errors = prometheus_client.Gauge(
+            "mcubridge_device_serial_crc_errors",
+            "Total CRC errors encountered on serial link by device",
+            labelnames=["device_id"],
+            registry=self.registry,
+        )
+        self.device_serial_decode_errors = prometheus_client.Gauge(
+            "mcubridge_device_serial_decode_errors",
+            "Total decode errors encountered on serial link by device",
+            labelnames=["device_id"],
+            registry=self.registry,
+        )
+        self.device_handshake_attempts = prometheus_client.Gauge(
+            "mcubridge_device_handshake_attempts",
+            "Total serial handshake attempts by device",
+            labelnames=["device_id"],
+            registry=self.registry,
+        )
+        self.device_handshake_successes = prometheus_client.Gauge(
+            "mcubridge_device_handshake_successes",
+            "Total serial handshake successes by device",
+            labelnames=["device_id"],
+            registry=self.registry,
+        )
+        self.device_watchdog_beats = prometheus_client.Gauge(
+            "mcubridge_device_watchdog_beats",
+            "Total watchdog pulses emitted by device",
+            labelnames=["device_id"],
+            registry=self.registry,
+        )
+        self.device_uptime_seconds = prometheus_client.Gauge(
+            "mcubridge_device_uptime_seconds",
+            "Current daemon uptime in seconds",
+            labelnames=["device_id"],
+            registry=self.registry,
+        )
+        self.device_cloud_messages_published = prometheus_client.Gauge(
+            "mcubridge_device_cloud_messages_published",
+            "Total messages published to cloud by device",
+            labelnames=["device_id"],
+            registry=self.registry,
+        )
+        self.device_retries = prometheus_client.Gauge(
+            "mcubridge_device_retries",
+            "Total retries by device and component",
+            labelnames=["device_id", "component"],
+            registry=self.registry,
+        )
+        self.device_latency_ms = prometheus_client.Gauge(
+            "mcubridge_device_latency_ms",
+            "Round-trip latency in milliseconds",
+            labelnames=["device_id", "type"],
+            registry=self.registry,
+        )
 
 
 class TSDBSink:
@@ -158,7 +236,15 @@ class TSDBSink:
             f"spool_pending={metrics.cloud_spool_pending_messages}i,"
             f"spool_degraded={spool_degraded}i,"
             f"link_synchronized={sync_val}i,"
-            f"watchdog_enabled={watchdog_on}i "
+            f"watchdog_enabled={watchdog_on}i,"
+            f"serial_bytes_sent={metrics.serial_bytes_sent}i,"
+            f"serial_bytes_received={metrics.serial_bytes_received}i,"
+            f"serial_frames_sent={metrics.serial_frames_sent}i,"
+            f"serial_frames_received={metrics.serial_frames_received}i,"
+            f"serial_crc_errors={metrics.serial_crc_errors}i,"
+            f"serial_decode_errors={metrics.serial_decode_errors}i,"
+            f"watchdog_beats={metrics.watchdog_beats}i,"
+            f"published_messages={metrics.cloud_messages_published}i "
             f"{ts}"
         )
 
@@ -232,6 +318,49 @@ async def _handle_telemetry(
             service.gateway.metrics.device_watchdog_enabled.labels(device_id=device_id).set(
                 1.0 if metrics.watchdog_enabled else 0.0
             )
+            service.gateway.metrics.device_serial_bytes_sent.labels(device_id=device_id).set(
+                float(metrics.serial_bytes_sent)
+            )
+            service.gateway.metrics.device_serial_bytes_received.labels(device_id=device_id).set(
+                float(metrics.serial_bytes_received)
+            )
+            service.gateway.metrics.device_serial_frames_sent.labels(device_id=device_id).set(
+                float(metrics.serial_frames_sent)
+            )
+            service.gateway.metrics.device_serial_frames_received.labels(device_id=device_id).set(
+                float(metrics.serial_frames_received)
+            )
+            service.gateway.metrics.device_serial_crc_errors.labels(device_id=device_id).set(
+                float(metrics.serial_crc_errors)
+            )
+            service.gateway.metrics.device_serial_decode_errors.labels(device_id=device_id).set(
+                float(metrics.serial_decode_errors)
+            )
+            service.gateway.metrics.device_handshake_attempts.labels(device_id=device_id).set(
+                float(metrics.handshake_attempts)
+            )
+            service.gateway.metrics.device_handshake_successes.labels(device_id=device_id).set(
+                float(metrics.handshake_successes)
+            )
+            service.gateway.metrics.device_watchdog_beats.labels(device_id=device_id).set(
+                float(metrics.watchdog_beats)
+            )
+            service.gateway.metrics.device_uptime_seconds.labels(device_id=device_id).set(
+                float(metrics.uptime_seconds)
+            )
+            service.gateway.metrics.device_cloud_messages_published.labels(device_id=device_id).set(
+                float(metrics.cloud_messages_published)
+            )
+            service.gateway.metrics.device_latency_ms.labels(device_id=device_id, type="serial").set(
+                float(metrics.serial_latency_ms)
+            )
+            service.gateway.metrics.device_latency_ms.labels(device_id=device_id, type="rpc").set(
+                float(metrics.rpc_latency_ms)
+            )
+            for ret in metrics.retries:
+                service.gateway.metrics.device_retries.labels(device_id=device_id, component=ret.component).set(
+                    float(ret.count)
+                )
         except (DecodeError, ValueError) as exc:
             logger.warning("Failed to decode daemon metrics blob in telemetry", error=str(exc))
 

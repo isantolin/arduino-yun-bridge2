@@ -1,165 +1,141 @@
-"""Formal metrics container for McuBridge using prometheus_client primitives."""
+"""Formal native metrics container for McuBridge edge daemon (SIL-2)."""
 
+from __future__ import annotations
+
+from dataclasses import dataclass
 import importlib.metadata
+from typing import Any
 
-from prometheus_client import (
-    CollectorRegistry,
-    Counter,
-    Enum,
-    Histogram,
-    Info,
-)
+
+class _ValueGetter:
+    """Helper for backward-compatibility with tests inspecting ._value.get()."""
+
+    def __init__(self, val: int | float) -> None:
+        self._val = val
+
+    def get(self) -> int | float:
+        return self._val
+
+
+@dataclass
+class CounterMetric:
+    """Lightweight deterministic counter primitive."""
+
+    _count: int = 0
+
+    def inc(self, amount: int = 1) -> None:
+        self._count += amount
+
+    @property
+    def value(self) -> int:
+        return self._count
+
+    @property
+    def _value(self) -> _ValueGetter:
+        return _ValueGetter(self._count)
+
+
+@dataclass
+class FloatGaugeMetric:
+    """Lightweight latency / gauge primitive."""
+
+    _val: float = 0.0
+
+    def set(self, val: float) -> None:
+        self._val = val
+
+    def observe(self, val: float) -> None:
+        self._val = val
+
+    @property
+    def value(self) -> float:
+        return self._val
+
+
+@dataclass
+class StateMetric:
+    """Lightweight discrete state tracking primitive."""
+
+    _state: str = "disconnected"
+
+    def state(self, val: str | Any) -> None:
+        self._state = str(getattr(val, "value", val))
+
+    @property
+    def value(self) -> str:
+        return self._state
+
+
+class LabeledCounter:
+    """Lightweight labeled counter collection."""
+
+    def __init__(self) -> None:
+        self._counters: dict[str, CounterMetric] = {}
+
+    def labels(self, **kwargs: str) -> CounterMetric:
+        key = next(iter(kwargs.values()), "") if len(kwargs) == 1 else ":".join(
+            f"{k}={v}" for k, v in sorted(kwargs.items())
+        )
+        if key not in self._counters:
+            self._counters[key] = CounterMetric()
+        return self._counters[key]
+
+    def items(self) -> list[tuple[str, int]]:
+        return [(k, c.value) for k, c in self._counters.items()]
+
+
+class InfoMetric:
+    """Lightweight build info metadata container."""
+
+    def __init__(self) -> None:
+        self.data: dict[str, str] = {}
+
+    def info(self, data: dict[str, str]) -> None:
+        self.data.update(data)
 
 
 class DaemonMetrics:
-    """Formal metrics container using prometheus_client primitives."""
+    """Formal native metrics container for McuBridge edge daemon without external dependencies."""
 
-    def __init__(self, registry: CollectorRegistry | None = None) -> None:
-        self.registry = registry or CollectorRegistry()
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        del args, kwargs
 
         # Supervisor Metrics
-        self.supervisor_failures = Counter(
-            "mcubridge_supervisor_failures_total",
-            "Total task failures managed by the orchestrator",
-            ["task"],
-            registry=self.registry,
-        )
+        self.supervisor_failures = LabeledCounter()
 
         # CLOUD Metrics
-        self.cloud_messages_published = Counter(
-            "mcubridge_cloud_messages_published_total",
-            "Total CLOUD messages published",
-            registry=self.registry,
-        )
-        self.cloud_messages_dropped = Counter(
-            "mcubridge_cloud_messages_dropped_total",
-            "Total CLOUD messages dropped due to queue overflow",
-            registry=self.registry,
-        )
+        self.cloud_messages_published = CounterMetric()
+        self.cloud_messages_dropped = CounterMetric()
 
         # Serial Metrics
-        self.serial_bytes_sent = Counter(
-            "mcubridge_serial_bytes_sent_total",
-            "Total bytes sent over serial link",
-            registry=self.registry,
-        )
-        self.serial_bytes_received = Counter(
-            "mcubridge_serial_bytes_received_total",
-            "Total bytes received from serial link",
-            registry=self.registry,
-        )
-        self.serial_frames_sent = Counter(
-            "mcubridge_serial_frames_sent_total",
-            "Total frames sent over serial link",
-            registry=self.registry,
-        )
-        self.serial_frames_received = Counter(
-            "mcubridge_serial_frames_received_total",
-            "Total frames received from serial link",
-            registry=self.registry,
-        )
-        self.serial_retries = Counter(
-            "mcubridge_serial_retries_total",
-            "Total RPC frame retransmissions",
-            registry=self.registry,
-        )
-        self.serial_failures = Counter(
-            "mcubridge_serial_failures_total",
-            "Total RPC frame failures after retries",
-            registry=self.registry,
-        )
-        self.serial_crc_errors = Counter(
-            "mcubridge_serial_crc_errors_total",
-            "Total frames rejected due to CRC mismatch",
-            registry=self.registry,
-        )
-        self.serial_decode_errors = Counter(
-            "mcubridge_serial_decode_errors_total",
-            "Total frame decoding failures (COBS/Length)",
-            registry=self.registry,
-        )
-        # [SIL-2] Use Histogram for latency to get accurate percentiles
-        self.serial_latency_ms = Histogram(
-            "mcubridge_serial_latency_ms",
-            "RPC command round-trip latency in milliseconds",
-            buckets=(5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000),
-            registry=self.registry,
-        )
-        self.rpc_latency_ms = Histogram(
-            "mcubridge_rpc_latency_ms",
-            "CLOUD -> MCU command round-trip latency in milliseconds",
-            buckets=(50, 100, 250, 500, 1000, 2500, 5000),
-            registry=self.registry,
-        )
+        self.serial_bytes_sent = CounterMetric()
+        self.serial_bytes_received = CounterMetric()
+        self.serial_frames_sent = CounterMetric()
+        self.serial_frames_received = CounterMetric()
+        self.serial_retries = CounterMetric()
+        self.serial_failures = CounterMetric()
+        self.serial_crc_errors = CounterMetric()
+        self.serial_decode_errors = CounterMetric()
+        self.serial_latency_ms = FloatGaugeMetric()
+        self.rpc_latency_ms = FloatGaugeMetric()
 
         # System Metrics
-        self.unknown_command_count = Counter(
-            "mcubridge_unknown_commands_total",
-            "Total unknown commands received from MCU",
-            registry=self.registry,
-        )
-        self.mcu_status_counts = Counter(
-            "mcubridge_mcu_status_total",
-            "Total status responses from MCU by status name",
-            labelnames=["status"],
-            registry=self.registry,
-        )
-        self.handshake_attempts = Counter(
-            "mcubridge_handshake_attempts_total",
-            "Total serial handshake attempts",
-            registry=self.registry,
-        )
-        self.handshake_successes = Counter(
-            "mcubridge_handshake_success_total",
-            "Total successful serial handshakes",
-            registry=self.registry,
-        )
-        self.watchdog_beats = Counter(
-            "mcubridge_watchdog_beats_total",
-            "Total watchdog keepalive pulses emitted",
-            registry=self.registry,
-        )
-        self.uptime_seconds = Counter(
-            "mcubridge_uptime_seconds_total",
-            "Total daemon uptime in seconds",
-            registry=self.registry,
-        )
+        self.unknown_command_count = CounterMetric()
+        self.mcu_status_counts = LabeledCounter()
+        self.handshake_attempts = CounterMetric()
+        self.handshake_successes = CounterMetric()
+        self.watchdog_beats = CounterMetric()
+        self.uptime_seconds = FloatGaugeMetric()
 
         # Info Metric (build metadata — set once at startup)
-        self.build_info = Info(
-            "mcubridge_build",
-            "Build and version information",
-            registry=self.registry,
-        )
+        self.build_info = InfoMetric()
 
-        # FSM State Metrics (Enum — one gauge per state, only active state = 1.0)
-        self.link_state = Enum(
-            "mcubridge_link_state",
-            "Serial link lifecycle state",
-            states=["disconnected", "connected", "synchronized"],
-            registry=self.registry,
-        )
-        self.handshake_state = Enum(
-            "mcubridge_handshake_state",
-            "Serial handshake FSM state",
-            states=[
-                "unsynchronized",
-                "resetting",
-                "syncing",
-                "confirming",
-                "synchronized",
-                "fault",
-            ],
-            registry=self.registry,
-        )
+        # FSM State Metrics
+        self.link_state = StateMetric("disconnected")
+        self.handshake_state = StateMetric("unsynchronized")
 
-        # Connection/Operation Retry Metrics (labeled counter for all retry-equipped components)
-        self.retries = Counter(
-            "mcubridge_retries_total",
-            "Total retry attempts by component",
-            labelnames=["component"],
-            registry=self.registry,
-        )
+        # Connection/Operation Retry Metrics
+        self.retries = LabeledCounter()
 
         self._set_build_info()
 

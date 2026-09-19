@@ -1,19 +1,12 @@
-"""Periodic metrics publisher and Prometheus exporter for MCU Bridge."""
+"""Periodic metrics publisher for MCU Bridge (Pure Telemetry Push, SIL-2)."""
 
 from __future__ import annotations
 
 import asyncio
 import math
-import weakref
-from collections.abc import Awaitable, Callable, Iterable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from typing import Any
 
-from wsgiref.simple_server import make_server
-import anyio.to_thread
-import prometheus_client
-from prometheus_client import ProcessCollector
-from prometheus_client.core import GaugeMetricFamily, Metric
-from prometheus_client.registry import Collector
 import structlog
 
 from .protocol import mcubridge_pb2 as pb
@@ -196,137 +189,6 @@ async def publish_bridge_snapshots(
                     await asyncio.sleep(handshake_seconds)
 
             tg.create_task(_handshake_loop())
-
-
-class RuntimeStateCollector(Collector):
-    """[SIL-2] Dynamic collector for Prometheus dimensional metrics.
-
-    Provides on-demand mapping of RuntimeState attributes to Prometheus Gauge
-    and Info families, using labels for grouping related metrics.
-    """
-
-    def __init__(self, state: RuntimeState) -> None:
-        self._state_ref = weakref.ref(state)
-
-    def collect(self) -> Iterable[Metric]:
-        """Collect dimensional metrics from the current daemon state."""
-        state = self._state_ref()
-        if state is None:
-            return
-
-        # 1. Queue Depths (Dimensional)
-        q_depths = GaugeMetricFamily(
-            "mcubridge_queue_depth",
-            "Current number of items in internal asynchronous queues",
-            labels=["queue"],
-        )
-        q_depths.add_metric(["cloud_publish"], float(state.cloud_publish_queue.qsize()))
-        q_depths.add_metric(["console_tx"], float(len(state.console_to_mcu_queue)))
-
-        q_depths.add_metric(["mailbox_tx"], float(state.mailbox_queue_depth()))
-        q_depths.add_metric(["mailbox_rx"], float(state.mailbox_incoming_queue_depth()))
-
-        q_depths.add_metric(["pending_digital_read"], float(len(state.pending_digital_reads)))
-        q_depths.add_metric(["pending_analog_read"], float(len(state.pending_analog_reads)))
-        q_depths.add_metric(["running_process"], float(len(state.running_processes)))
-        yield q_depths
-
-        # 2. System Status (Gauges)
-        fs_usage = GaugeMetricFamily(
-            "mcubridge_file_storage_bytes_used",
-            "Current filesystem usage in bytes (volatile storage)",
-        )
-        fs_usage.add_metric([], float(state.file_storage_bytes_used))
-        yield fs_usage
-
-        link_sync = GaugeMetricFamily(
-            "mcubridge_link_synchronized",
-            "Binary status of serial link synchronization (1=sync, 0=unsync)",
-        )
-        link_sync.add_metric([], 1.0 if state.is_synchronized else 0.0)
-        yield link_sync
-
-        # 4. Supervisor Health (Dimensional)
-        super_health = GaugeMetricFamily(
-            "mcubridge_supervisor_worker_restarts",
-            "Total restarts per internal worker task",
-            labels=["worker"],
-        )
-        # [SIL-2] Iterative reduction
-        [super_health.add_metric([k], float(v.restarts)) for k, v in state.supervisor_stats.items()]
-        yield super_health
-
-
-class PrometheusExporter:
-    """Expose RuntimeState snapshots via the official Prometheus HTTP server."""
-
-    def __init__(self, state: RuntimeState, host: str, port: int) -> None:
-        pc: Any = prometheus_client
-        make_wsgi_app: Any = pc.make_wsgi_app
-
-        self._state: RuntimeState | None = state
-        self._host = host if host else "0.0.0.0"
-        self._port = port
-        self._registry = state.metrics.registry
-        self._server: Any = None
-        self._collector: RuntimeStateCollector | None = RuntimeStateCollector(state)
-
-        # [SIL-2 / Library-First] Use native ProcessCollector to get CPU/RAM/FDs for free
-        ProcessCollector(registry=self._registry)
-
-        # Register the dynamic state collector
-        self._registry.register(self._collector)
-
-        # [Library-First] Use official prometheus_client WSGI app factory.
-        # Provides content negotiation, gzip, OPTIONS/405 handling, and name[] filtering.
-        self._server = make_server(
-            self._host,
-            self._port,
-            make_wsgi_app(registry=self._registry),
-        )
-
-    @property
-    def port(self) -> int:
-        """Return the actually bound port (useful for port 0)."""
-        if self._server:
-            return int(self._server.server_address[1])
-        return self._port
-
-    async def run(self) -> None:
-        """Start the Prometheus HTTP server and keep it running."""
-        log = logger.bind(host=self._host, port=self.port)
-        log.info("Prometheus exporter starting (official make_server)")
-
-        try:
-            # Run the blocking serve_forever() in a background thread
-            # while maintaining the asyncio task alive for signal handling.
-            await asyncio.to_thread(self._server.serve_forever)
-        except asyncio.CancelledError:
-            log.info("Prometheus exporter shutdown requested.")
-            raise
-        finally:
-            # Unregister the collector to break circular reference
-            if self._server and self._collector:
-                try:
-                    self._registry.unregister(self._collector)
-                except KeyError:
-                    logger.debug("Collector already unregistered from registry")
-
-            # Shutdown stops the serve_forever loop without blocking event loop or executor
-            if self._server:
-                try:
-                    async with asyncio.timeout(1.5):
-                        await anyio.to_thread.run_sync(self._server.shutdown)
-                except TimeoutError:
-                    log.warning("Prometheus exporter shutdown timed out")
-                # server_close releases the socket (avoids ResourceWarning)
-                self._server.server_close()
-
-            # Help GC by clearing references
-            self._state = None
-            self._collector = None
-            self._server = None
-            log.info("Prometheus exporter stopped")
 
 
 def _build_bridge_snapshot_message(

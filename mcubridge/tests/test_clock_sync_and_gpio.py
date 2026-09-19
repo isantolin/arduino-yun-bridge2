@@ -115,6 +115,21 @@ async def test_gpio_service() -> None:
         res_dis = await gpio.subscribe_pin(13, enabled=False)
         assert res_dis["status"] == "ok"
         assert 13 not in state.pin_subscriptions
+
+        # Test get_subscriptions
+        assert gpio.get_subscriptions() == state.pin_subscriptions
+
+        # Test rejection by MCU
+        mock_serial.send.return_value = pb.PinSubscribeResponse(pin=13, success=False)
+        res_rej = await gpio.subscribe_pin(13, enabled=True)
+        assert res_rej["status"] == "error"
+        assert res_rej["message"] == "MCU rejected pin subscription"
+
+        # Test disconnected error
+        state.connection_fsm.disconnect()
+        res_disc = await gpio.subscribe_pin(13)
+        assert res_disc["status"] == "error"
+        assert res_disc["message"] == "Serial transport is not connected"
     finally:
         service.cleanup()
 

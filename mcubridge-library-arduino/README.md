@@ -19,6 +19,7 @@ This library provides the MCU-side runtime for the Arduino MCU Bridge v2 project
     - `BridgeControl`: Standard UART/TTY wired bridge setup with GPIO, mailbox and process control.
     - `BridgeWiFi`: Wireless WiFi TCP stream bridge (`WiFiClient`) with automatic reconnection and keepalive.
     - `BridgeBluetooth`: Wireless Bluetooth SPP / BLE UART bridge (`BluetoothSerial`) with zero-wire setup.
+    - `BridgeCloud`: Cloud-integrated bridge streaming live pin telemetry (`Bridge.sendPinEvent`) to `mcubridge-gateway`.
 - `docs/`
   - Additional documentation and diagrams describing the protocol and library design (`../docs/PROTOCOL.md`).
 - `tools/`

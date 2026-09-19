@@ -1050,16 +1050,6 @@ async def test_runtime_poll_process_eof_and_xoff(test_config: RuntimeConfig, moc
     assert await svc._on_mcu_datastore_get(1, pb.DatastoreGet(key="k")) is False
 
 
-def test_metrics_prometheus_exporter_teardown_server_none(mock_state: RuntimeState) -> None:
-    from mcubridge.metrics import PrometheusExporter
-
-    with patch("mcubridge.metrics.make_server", return_value=MagicMock()):
-        exp = PrometheusExporter(mock_state, host="127.0.0.1", port=9999)
-        exp._server = None
-        exp._collector = None
-        assert exp._server is None
-
-
 # # ==========================================
 # 9. Daemon, Logging, Settings, Security & Frame
 # ==========================================
@@ -1556,25 +1546,6 @@ async def test_runtime_run_cloud_cancelled(test_config: RuntimeConfig, mock_stat
     with patch.object(svc, "connect_cloud_session", side_effect=_mock_cloud_cancel):
         with pytest.raises(asyncio.CancelledError):
             await svc.run_cloud()
-
-
-@pytest.mark.asyncio
-async def test_metrics_prometheus_exporter_finally_branches(mock_state: RuntimeState) -> None:
-    from mcubridge.metrics import PrometheusExporter
-
-    mock_server = MagicMock()
-    mock_server.server_address = ("127.0.0.1", 9130)
-    with patch("mcubridge.metrics.make_server", return_value=mock_server):
-        exp = PrometheusExporter(mock_state, host="127.0.0.1", port=9130)
-        mock_collector = MagicMock()
-        exp._collector = mock_collector
-        mock_reg = MagicMock()
-        mock_reg.unregister.side_effect = KeyError("not found")
-        exp._registry = mock_reg
-
-        with patch("asyncio.to_thread", side_effect=asyncio.CancelledError()):
-            with pytest.raises(asyncio.CancelledError):
-                await exp.run()
 
 
 def test_protocol_frame_validation_error_paths() -> None:

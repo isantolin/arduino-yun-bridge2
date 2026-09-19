@@ -111,7 +111,7 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 - **Persistencia vs Flash-wear:** Las colas de desbordamiento temporales apuntan a `/tmp` (`cloud_spool_dir=/tmp/mcubridge/spool`), mientras que las de almacenamiento estático pueden configurarse en directorios persistentes seguros (`file_system_root=/tmp/yun_files`).
 - **Autodiagnóstico del Spool:** Si el spool en disco sufre de problemas de espacio o corrupción, el daemon degrada su estado a *best effort* de forma automática, registrando el incidente en la telemetría sin bloquear el sistema.
 - **Falla en Seguro con TLS:** Si `cloud_tls=1` y el archivo `cloud_cafile` no existe en la ruta configurada, el daemon abortará el arranque inmediatamente.
-- **Prometheus Integrado:** El exportador HTTP integrado expone métricas en el puerto 9130 para auditoría activa.
+- **Arquitectura "Pure Telemetry Push" & Fleet Metrics:** El daemon de borde opera sin servidor HTTP local (eliminando puertos de escucha abiertos y superficie de ataque en el MPU). Toda la telemetría y métricas se transmiten en tiempo real vía streaming gRPC al `mcubridge-gateway` central, que consolida la observabilidad de la flota (`FleetMetrics`) en `/metrics` (puerto 9100) y bases de datos temporales (TSDB).
 
 ## Guía rápida de UCI
 ```sh
@@ -212,4 +212,4 @@ EOF
 - **Tipado estático:** Ejecuta `pyright` en la raíz del repositorio.
 - **Guardia del protocolo:** Corre `tox -e protocol` para asegurar consistencia del contrato binario.
 - **Cobertura Python & C++:** Lanza `tox -e coverage` para obtener reportes de cobertura consolidados.
-- **Métricas:** Comprueba el endpoint `/metrics` en el puerto 9130 para telemetría Prometheus.
+- **Métricas:** Consulta `/tmp/mcubridge_status.json` localmente en el dispositivo o el endpoint consolidado `/metrics` (puerto 9100) en el servidor central `mcubridge-gateway`.

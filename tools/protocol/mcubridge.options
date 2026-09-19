@@ -37,6 +37,8 @@ rpc.pb.SerialPipelineSnapshot skip_message:true
 rpc.pb.SerialFlowSnapshot     skip_message:true
 rpc.pb.BridgeSnapshot         skip_message:true
 rpc.pb.DaemonMetrics          skip_message:true
+rpc.pb.ComponentRetry          skip_message:true
+rpc.pb.McuStatusCount          skip_message:true
 rpc.pb.BridgeStatus           skip_message:true
 rpc.pb.StatusReport           skip_message:true
 rpc.pb.QueueDepths           skip_message:true

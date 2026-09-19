@@ -77,7 +77,6 @@ from ..protocol.structures import (
 )
 from ..protocol.topics import Topic, get_topic_for_message, parse_topic, topic_path
 from ..metrics import (
-    PrometheusExporter,
     publish_bridge_snapshots,
     publish_metrics,
 )
@@ -160,7 +159,6 @@ class BridgeService:
         self.config, self.state, self.serial = config, state, serial
         self._cloud_channel, self._cloud_stream = None, None
         self.watchdog: WatchdogKeepalive | None = None
-        self.exporter: PrometheusExporter | None = None
         self._cloud_incoming_send_stream, self._cloud_incoming_receive_stream = anyio.create_memory_object_stream[
             pb.CloudQueuedPublish
         ](max_buffer_size=max(1, self.state.cloud_queue_limit))
@@ -1516,14 +1514,6 @@ class BridgeService:
                 if self.config.watchdog_enabled:
                     self.watchdog = WatchdogKeepalive(interval=self.config.watchdog_interval, state=self.state)
                     tg.create_task(self.supervise("watchdog", self.watchdog.run))
-
-                if self.config.metrics_enabled:
-                    self.exporter = PrometheusExporter(
-                        self.state,
-                        self.config.metrics_host,
-                        self.config.metrics_port,
-                    )
-                    tg.create_task(self.supervise("prometheus-exporter", self.exporter.run))
 
                 # 5. Local IPC Server (UNIX Socket - gRPC)
                 tg.create_task(self.supervise("ipc-server", self.run_ipc_server))

@@ -1371,6 +1371,16 @@ message SupervisorEntry {
     SupervisorSnapshot stats = 2;
 }
 
+message ComponentRetry {
+    string component = 1;
+    uint32 count = 2;
+}
+
+message McuStatusCount {
+    string status = 1;
+    uint32 count = 2;
+}
+
 message DaemonMetrics {
     uint32 cloud_queue_depth = 1;
     uint32 cloud_dropped_messages = 2;
@@ -1390,6 +1400,25 @@ message DaemonMetrics {
     double heartbeat_unix = 16;
     bool watchdog_enabled = 17;
     double watchdog_interval = 18;
+    uint64 serial_bytes_sent = 19;
+    uint64 serial_bytes_received = 20;
+    uint64 serial_frames_sent = 21;
+    uint64 serial_frames_received = 22;
+    uint32 serial_retries = 23;
+    uint32 serial_failures = 24;
+    uint32 serial_crc_errors = 25;
+    uint32 serial_decode_errors = 26;
+    double serial_latency_ms = 27;
+    double rpc_latency_ms = 28;
+    uint32 handshake_attempts = 29;
+    uint32 handshake_successes = 30;
+    string handshake_state = 31;
+    string link_state = 32;
+    uint64 watchdog_beats = 33;
+    double uptime_seconds = 34;
+    uint64 cloud_messages_published = 35;
+    repeated ComponentRetry retries = 36;
+    repeated McuStatusCount mcu_status_counts = 37;
 }
 
 message PinControlRequest {

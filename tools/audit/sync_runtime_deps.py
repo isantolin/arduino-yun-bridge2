@@ -52,6 +52,7 @@ class _DepEntry(TypedDict):
     pip: str
     check_latest: bool
     gateway: bool
+    edge: bool
 
 
 class _CppDepEntry(TypedDict):
@@ -97,6 +98,7 @@ def load_manifest() -> ManifestData:
                 pip=pip_spec,
                 check_latest=bool(entry.get("check_latest", True)),
                 gateway=bool(entry.get("gateway", False)),
+                edge=bool(entry.get("edge", True)),
             )
         )
 
@@ -134,10 +136,14 @@ def collect_pip_specs(deps: Sequence[_DepEntry]) -> list[str]:
     return sorted(filtered)
 
 
-def collect_openwrt_packages(deps: Sequence[_DepEntry]) -> list[str]:
+def collect_openwrt_packages(deps: Sequence[_DepEntry], *, edge_only: bool = False) -> list[str]:
     # Mantiene todo EXCEPTO los paquetes exclusivos de construcción (jinja2, etc)
     # Esto asegura que el APK sea ultra-lean.
-    return [dep["openwrt"] for dep in deps if dep.get("openwrt") and dep["name"] not in BUILD_ONLY_PACKAGES]
+    return [
+        dep["openwrt"]
+        for dep in deps
+        if dep.get("openwrt") and dep["name"] not in BUILD_ONLY_PACKAGES and (not edge_only or dep.get("edge", True))
+    ]
 
 
 def write_requirements(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
@@ -229,7 +235,7 @@ def update_makefile(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool
     makefile_text = MAKEFILE_PATH.read_text(encoding="utf-8")
     if BLOCK_START not in makefile_text or BLOCK_END not in makefile_text:
         raise ManifestError("Makefile is missing dependency markers; cannot inject dependencies")
-    tokens = [f"{pkg}" for pkg in collect_openwrt_packages(deps)]
+    tokens = [f"{pkg}" for pkg in collect_openwrt_packages(deps, edge_only=True)]
     if tokens:
         block_lines = ["\tDEPENDS+= \\"]
         block_lines.extend(format_openwrt_lines(tokens))

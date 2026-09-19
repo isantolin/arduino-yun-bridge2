@@ -5,33 +5,42 @@ Este documento unifica y reemplaza documentación histórica y dispersa.
 ## Mini-diagrama (flujos y direccionalidad)
 
 ```
-                 ┌──────────────────────────────────────────────┐
-                 │          gRPC Cloud Gateway (WAN)            │
-                 └──────────────────────────────────────────────┘
-                               ▲                     │
-                               │ bidirectional       │ bidirectional
-                               │ gRPC stream         │ gRPC stream
-                               │                     ▼
-                      ┌────────────────────────────────────┐
-                      │   McuBridge daemon (Linux / MPU)   │
-                      │  - Policy (allow/deny)             │
-                      │  - Dispatcher (MCU + Cloud routes) │
-                      │  - RuntimeState snapshots          │
-                      └────────────────────────────────────┘
+                 ┌─────────────────────────────────────────────────────────────┐
+                 │       Protobuf Cloud Gateway (Dedicated Central Server)     │
+                 │  - Hub-and-Spoke (N:1) multiplexing                         │
+                 │  - Central Prometheus /metrics (port 9100, FleetMetrics)    │
+                 │  - TSDB Sink (InfluxDB / VictoriaMetrics Line Protocol)     │
+                 │  - Northbound Command Orchestration (send_command)          │
+                 │  - mTLS mutual authentication (extract_peer_identity)       │
+                 └─────────────────────────────────────────────────────────────┘
+                               ▲                                │
+              Device Telemetry │                                │ Correlated Commands
+              (CloudEnvelope)  │ bidirectional gRPC stream      │ (PinControlRequest,
+              Pure Push        │ (HTTP/3 QUIC / HTTP/2)         │  RpcEnvelope, etc.)
+                               │                                ▼
+                      ┌────────────────────────────────────────────────────────┐
+                      │             McuBridge daemon (Linux / MPU)             │
+                      │  - Pure Telemetry Push (Zero local HTTP attack surface) │
+                      │  - Policy (allow/deny) & Declarative Dispatcher        │
+                      │  - RuntimeState snapshots & Local IPC (UNIX Domain)    │
+                      └────────────────────────────────────────────────────────┘
                                ▲
-                               │ Serial RPC frames (COBS + CRC)
-                               │
+                               │ Serial RPC frames (COBS + CRC32, Channel Multiplexing)
+                               │ (CHANNEL_RPC, CHANNEL_TELEMETRY, CHANNEL_DATASTORE...)
                                ▼
-                      ┌────────────────────────────────────┐
-                      │        MCU firmware (Arduino)      │
-                      │  - Handshake HMAC-auth             │
-                      │  - RPC command handlers            │
-                      └────────────────────────────────────┘
+                      ┌────────────────────────────────────────────────────────┐
+                      │                 MCU firmware (Arduino)                 │
+                      │  - SIL-2 Zero-Heap, static Nanopb (pb_decode_noinit)   │
+                      │  - Zero-heap Telemetry Push (Bridge.sendPinEvent)      │
+                      │  - Handshake HMAC-auth & Deterministic etl::fsm        │
+                      └────────────────────────────────────────────────────────┘
 
 Notas:
-- Serial RPC: típicamente Linux→MCU requests y MCU→Linux responses, con comandos bidireccionales/push simétrico donde aplica.
+- Central Server Gateway: opera como punto único de observabilidad y orquestación para toda la flota de dispositivos de borde.
+- Edge Node (McuBridge): nodo liviano en modo "Pure Telemetry Push"; no expone puertos HTTP locales, reduciendo consumo de RAM y vectores de ataque en OpenWrt.
+- Serial RPC: típicamente Linux→MCU requests y MCU→Linux responses, con streaming de eventos simétrico en tiempo real (p.ej. `Bridge.sendPinEvent` sobre `CHANNEL_TELEMETRY`).
 - Local IPC: comunicación entre clientes locales (como CLI y CGI) y el daemon a través de UNIX Domain Sockets (`/var/run/mcubridge.sock`) utilizando tramas binarias Protobuf prefijadas por longitud.
-- gRPC: comunicación bidireccional asíncrona (streaming) entre el daemon y la nube (gRPC Cloud Gateway) para telemetría, métricas y comandos remotos.
+- gRPC: comunicación bidireccional asíncrona (streaming) entre el daemon y el Gateway central (`mcubridge-gateway`) para telemetría, métricas y comandos remotos.
 ```
 
 ## Fuente de verdad
@@ -108,11 +117,11 @@ El protocolo binario MCU Bridge 2 está diseñado para ser completamente agnóst
 
 - **BridgeService (Python 3.13.9+)**: orquesta la comunicación MCU↔Linux, aplica políticas de rutas y delega en componentes operativos (`FileComponent`, `ProcessComponent`, `DatastoreComponent`, etc.).
 - **ProcessComponent**: gestiona de forma unificada la ejecución de subprocesos asíncronos y los comandos de shell/consola, aplicando la política de seguridad y controlando la concurrencia.
-- **RuntimeState**: mantiene el estado mutable (colas de red, handshake, spool, métricas, caché de session tickets TLS 1.3) y expone snapshots consistentes para status, gRPC y Prometheus.
+- **RuntimeState**: mantiene el estado mutable (colas de red, handshake, spool, métricas, caché de session tickets TLS 1.3) y expone snapshots consistentes para status local (JSON/UBUS) y telemetría gRPC Cloud.
 - **High-Performance Unified Transport**: El daemon utiliza `SerialTransport` con soporte polimórfico transparente para `serialx.AsyncSerial` (UART POSIX) y `AsyncTcpConnection` (WiFi TCP / sockets de red).
 - **gRPC Bidirectional Stream (HTTP/3 QUIC + TLS 1.3 0-RTT)**: gestiona la comunicación asíncrona tipada y de baja latencia con el Cloud Gateway, soportando reanudación de sesión 0-RTT mediante tickets de sesión persistidos en LMDB.
 - **MCU Firmware (mcubridge-library-arduino)**: implementa el protocolo binario bajo normativa SIL-2 (C++17, Zero-Heap, Nanopb 0.4.9.2 con `pb_decode_noinit`).
-- **Instrumentación**: el daemon escribe `/tmp/mcubridge_status.json` (snapshot en tmpfs; se pierde al reboot), publica métricas en `br/system/metrics` (protobuf) y expone Prometheus por HTTP en el puerto 9130.
+- **Instrumentación**: el daemon escribe `/tmp/mcubridge_status.json` (snapshot en tmpfs para LuCI/UBUS; se pierde al reboot) y transmite periódicamente telemetría consolidada en `br/system/metrics` hacia el Cloud Gateway mediante streaming gRPC.
 
 ## Seguridad
 
@@ -128,8 +137,9 @@ El protocolo binario MCU Bridge 2 está diseñado para ser completamente agnóst
 
 - **Logging estructurado**: logs JSON (`ts`, `level`, `logger`, `message`, `extra`) enviados a syslog.
 - **Destino de logs**: Por defecto OpenWrt usa `logread` (ring buffer en RAM), NO escribe a `/var/log/` en flash.
-- **Métricas locales**: snapshots periódicos escritos en `/tmp/mcubridge_status.json`.
-- **Exportador Prometheus**: opcional (por defecto `127.0.0.1:9130`). Campos no numéricos se exponen como `*_info{...} 1`.
+- **Métricas locales**: snapshots periódicos escritos en `/tmp/mcubridge_status.json` para LuCI y UBUS.
+- **Pure Telemetry Push**: el daemon de borde opera sin servidor HTTP local (eliminando puertos de escucha y superficie de ataque en el MPU). Toda la telemetría y métricas se envían vía streaming gRPC al `mcubridge-gateway`.
+- **Fleet-Wide Prometheus & TSDB**: el servidor central `mcubridge-gateway` consolida las métricas de todos los dispositivos en `/metrics` (puerto 9100) y las ingiere hacia bases de datos industriales (InfluxDB/VictoriaMetrics).
 - **Status Writer**: `/tmp/mcubridge_status.json` como snapshot local (JSON para compatibilidad LuCI).
 
 ## Máquinas de Estados (FSM)
@@ -342,15 +352,13 @@ Cloud spool retry: base=5s, max=60s
 
 El estado de salud del enlace se expone en:
 - `/tmp/mcubridge_status.json` → campo `is_synchronized`
-- Prometheus metric `mcubridge_serial_link_synchronized` (si habilitado)
+- Métricas gRPC transmitidas al Gateway → Prometheus gauge `mcubridge_device_link_synchronized` en el Gateway central.
 
 ## Configuración relevante
 
 | Clave | Descripción | Valor por defecto |
 | --- | --- | --- |
-| `metrics_enabled` | Activa exportador Prometheus. | `0` |
-| `metrics_host` | Dirección de enlace para exportador. | `127.0.0.1` |
-| `metrics_port` | Puerto TCP del exportador. | `9130` |
+| `status_interval` | Intervalo de emisión periódica de telemetría y snapshots. | `1.0` |
 | `debug_logging` | Fuerza logs `DEBUG`. | `0` |
 | `allowed_commands` | Lista blanca de comandos shell. | `""` |
 | `file_write_max_bytes` | Máximo por write (gRPC/IPC y/o `CMD_FILE_WRITE`). | `262144` |
@@ -359,7 +367,7 @@ El estado de salud del enlace se expone en:
 ## Flujo de inicio (resumen)
 
 1. `main()` carga config, inicializa logging, crea `RuntimeState`.
-2. Se arranca un `TaskGroup` con lector serie, gRPC/IPC publisher, status writer, watchdog opcional, Prometheus opcional.
+2. Se arranca un `TaskGroup` con lector serie, streaming gRPC hacia `mcubridge-gateway`, servidor local IPC (UNIX Domain Socket), status writer, watchdog opcional y publicador de telemetría/snapshots.
 3. Fallas críticas se elevan como `CRITICAL` para reinicios supervisados (`procd`).
 
 ---
@@ -670,7 +678,14 @@ MCU detecta RX buffer < 25% → envía CMD_XON (0x4F)  → Linux reanuda TX
 - **`0x54` CMD_ANALOG_READ (Linux → MCU)**: `[pin: u8]`. Respuesta `0x56 CMD_ANALOG_READ_RESP`: `[value: u16]`.
 - **`0x57` (87) CMD_PIN_SUBSCRIBE (Linux → MCU)**: Payload `PinSubscribeRequest { pin, mode, interval_ms, hysteresis, enabled }`. Requiere confirmación `STATUS_ACK`.
 - **`0x58` (88) CMD_PIN_SUBSCRIBE_RESP (MCU → Linux)**: Payload `PinSubscribeResponse { pin, success }`.
-- **`0x59` (89) CMD_PIN_UPDATE_EVENT (MCU → Linux)**: Payload `PinUpdateEvent { pin, value, timestamp_micros }`. Evento de push asíncrono emitido por el MCU cuando el valor medido cambia según el intervalo e histéresis configurados. El daemon lo reenvía a la nube bajo el tópico `gpio/pin_update`.
+- **`0x59` (89) CMD_PIN_UPDATE_EVENT (MCU → Linux)**: Payload `PinUpdateEvent { pin, value, timestamp_micros }`. Evento de push asíncrono emitido por el MCU cuando el valor medido cambia según el intervalo e histéresis configurados o mediante llamada directa a `Bridge.sendPinEvent(pin, val)` (Zero-Heap Nanopb sobre `CHANNEL_TELEMETRY`). El daemon lo reenvía a la nube bajo el tópico `gpio/pin_update`.
+
+#### Control Bidireccional de GPIO desde Cloud Gateway
+
+El Gateway central puede orquestar actuadores y pines en dispositivos de borde mediante `send_command`:
+- **Comando Cloud**: Tópico `br/gpio/pin/<pin>/set` con payload Protobuf `PinControlRequest { state = "1" | "0" | "HIGH" | "LOW" }` o cambio de modo `br/gpio/pin/<pin>/mode` (`INPUT`, `OUTPUT`, `INPUT_PULLUP`).
+- **Ejecución en Daemon**: El daemon valida la autorización (`cloud_allow_digital_write`), despacha `CMD_DIGITAL_WRITE` al MCU, y emite de vuelta `PinControlResponse { status: "ok", data: { pin: N, state: "1" } }`.
+- **Correlación Asíncrona**: Cada request/response se correlaciona con `sequence_id` garantizando entrega determinista fin a fin.
 
 #### GPIO Frame Examples (Hex Dump)
 
@@ -851,7 +866,7 @@ El sistema implementa múltiples estrategias de fallback para mantener operació
 
 ### 9.2 Observabilidad de Fallbacks
 
-Todos los fallbacks se exponen en `/tmp/mcubridge_status.json` y métricas Prometheus:
+Todos los fallbacks se exponen localmente en `/tmp/mcubridge_status.json` y se transmiten vía telemetría gRPC hacia el Gateway central (disponibles en Prometheus `FleetMetrics`):
 
 ```json
 {

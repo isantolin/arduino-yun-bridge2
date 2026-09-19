@@ -69,8 +69,8 @@ define Build/Prepare
 endef
 
 define Build/Compile
-	python3 -O -m compileall -j 0 -b -f -q $(PKG_BUILD_DIR)/mcubridge
-	find $(PKG_BUILD_DIR) -name '__pycache__' -type d -print0 | xargs -0 -r rm -rf || true
+	[ -d $(PKG_BUILD_DIR)/mcubridge ] && python3 -O -m compileall -j 0 -b -f -q $(PKG_BUILD_DIR)/mcubridge || true
+	[ -d $(PKG_BUILD_DIR) ] && find $(PKG_BUILD_DIR) -name '__pycache__' -type d -print0 | xargs -0 -r rm -rf || true
 endef
 
 PYTHON3_SITE_DIR:=/usr/lib/python$(if $(wildcard $(STAGING_DIR_HOSTPKG)/lib/python3.14*),3.14,3.13)/site-packages

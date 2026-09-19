@@ -34,6 +34,12 @@ dependencies = [
     "uvloop==0.22.1",
 ]
 
+[tool.pyrefly.errors]
+missing-import = "error"
+untyped-import = "error"
+missing-source-for-stubs = "ignore"
+missing-source = "ignore"
+
 [tool.setuptools.packages.find]
 where = ["mcubridge"]
 include = ["mcubridge*"]
@@ -181,3 +187,42 @@ exclude = [
     ".tox",
     ".tmp_tests"
 ]
+
+[tool.pyrefly]
+project-includes = [
+    "mcubridge/mcubridge",
+    "mcubridge/tests",
+    "mcubridge-client-examples",
+    "mcubridge-client-examples/tests",
+    "mcubridge-gateway",
+    "mcubridge/scripts",
+    "tools",
+]
+project-excludes = [
+    "openwrt-sdk",
+    "tools/protocol/templates",
+    ".tox",
+    ".venv",
+    ".venv_debug",
+    "**/__pycache__",
+    "**/node_modules",
+    "**/*_pb2.py",
+    "**/*_pb2.pyi",
+    "**/*_grpc.py",
+    "**/_pyrefly_virtual__/**/*",
+    "**/__pyrefly_virtual__/**/*",
+    "**/inmemory/**/*",
+    "*_pyrefly_virtual_*",
+    "*__pyrefly_virtual_*",
+    "**/.*",
+]
+search-path = [
+    "typings/stubs",
+    "mcubridge",
+    "mcubridge-client-examples",
+    "mcubridge-client-examples/tests",
+    "mcubridge-gateway",
+]
+python-version = "3.14.0"
+site-package-path = ["typings"]
+infer-with-first-use = false

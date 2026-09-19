@@ -645,11 +645,12 @@ fi
 # Enable Packages
 REQUIRED_PKGS="mcubridge luci-app-mcubridge mcubridge-gateway"
 # [FIX] Dependencias explícitas para asegurar selección en .config.
-REQUIRED_DEPS="python3-tenacity luaposix"
+REQUIRED_DEPS="python3-tenacity python3-statemachine python3-anyio luaposix"
 
 # [FIX] Forzar limpieza total de metadatos de configuración para evitar errores de recursión
 # heredados de escaneos previos del SDK.
 rm -rf tmp/ .config*
+touch .config
 
 for pkg in $REQUIRED_PKGS $REQUIRED_DEPS; do
     if ! grep -q "CONFIG_PACKAGE_${pkg}=y" ".config"; then

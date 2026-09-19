@@ -263,6 +263,27 @@ name = "vulture"
 pip = "vulture==2.16"
 rationale = "Static dead code scanner detecting unused functions, classes, and properties"
 
+[[dev_dependency]]
+name = "pyrefly"
+pip = "pyrefly==1.3.1"
+rationale = "Fast Python type checker and LSP language server for strict type safety"
+
+[[dev_dependency]]
+name = "types-protobuf"
+pip = "types-protobuf==7.35.1.20260906"
+rationale = "Type stubs for google.protobuf required by pyrefly"
+
+[[dev_dependency]]
+name = "types-psutil"
+pip = "types-psutil==7.2.2.20260906"
+rationale = "Type stubs for psutil required by pyrefly"
+
+[[dev_dependency]]
+name = "types-pexpect"
+pip = "types-pexpect==4.9.0.20260518"
+rationale = "Type stubs for pexpect required by pyrefly"
+
+
 
 
 

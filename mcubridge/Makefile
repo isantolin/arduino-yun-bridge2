@@ -77,9 +77,9 @@ define Package/$(PKG_NAME)/config
 endef
 
 define Build/Compile
-	python3 -O -m compileall -j 0 -b -f -q $(PKG_BUILD_DIR)/mcubridge
+	[ -d $(PKG_BUILD_DIR)/mcubridge ] && python3 -O -m compileall -j 0 -b -f -q $(PKG_BUILD_DIR)/mcubridge || true
 	[ ! -d $(PKG_BUILD_DIR)/scripts ] || python3 -m compileall -j 0 -q -b $(PKG_BUILD_DIR)/scripts
-	find $(PKG_BUILD_DIR) -name '__pycache__' -type d -print0 | xargs -0 -r rm -rf || true
+	[ -d $(PKG_BUILD_DIR) ] && find $(PKG_BUILD_DIR) -name '__pycache__' -type d -print0 | xargs -0 -r rm -rf || true
 endef
 
 define Build/Prepare

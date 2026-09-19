@@ -16,6 +16,7 @@ TEMP_SRC="$BUILD_DIR/SOURCES/mcubridge-gateway-${GATEWAY_VERSION}"
 mkdir -p "$TEMP_SRC/mcubridge/protocol"
 
 cp "$GATEWAY_DIR/gateway.py" "$TEMP_SRC/"
+cp "$GATEWAY_DIR/mcubridge-gateway.service" "$TEMP_SRC/"
 cp "$REPO_ROOT/mcubridge/mcubridge/protocol/mcubridge_pb2.py" "$TEMP_SRC/mcubridge/protocol/"
 cp "$REPO_ROOT/mcubridge/mcubridge/protocol/mcubridge_pb2.pyi" "$TEMP_SRC/mcubridge/protocol/"
 cp "$REPO_ROOT/mcubridge/mcubridge/protocol/mcubridge_grpc.py" "$TEMP_SRC/mcubridge/protocol/"
@@ -43,6 +44,7 @@ Requires:       python3
 Requires:       python3-protobuf
 Requires:       python3-cryptography
 Requires:       python3-grpclib
+Requires:       python3-prometheus-client
 
 %description
 Protobuf Cloud Gateway service (gRPC over HTTP/2) for MCU Bridge v2.
@@ -56,10 +58,12 @@ Protobuf Cloud Gateway service (gRPC over HTTP/2) for MCU Bridge v2.
 
 %install
 mkdir -p %{buildroot}%{_bindir}
+mkdir -p %{buildroot}%{_unitdir}
 mkdir -p %{buildroot}%{python3_sitelib}/mcubridge/protocol
 
-# Install executable
+# Install executable & service
 install -p -m 755 gateway.py %{buildroot}%{_bindir}/mcubridge-gateway
+install -p -m 644 mcubridge-gateway.service %{buildroot}%{_unitdir}/mcubridge-gateway.service
 
 # Install python modules
 cp -p mcubridge/__init__.py %{buildroot}%{python3_sitelib}/mcubridge/
@@ -67,6 +71,7 @@ cp -rp mcubridge/protocol/* %{buildroot}%{python3_sitelib}/mcubridge/protocol/
 
 %files
 %{_bindir}/mcubridge-gateway
+%{_unitdir}/mcubridge-gateway.service
 %{python3_sitelib}/mcubridge/
 
 %changelog

@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Protobuf Cloud Gateway for MCU Bridge v2.
 
-This server acts as the primary cloud endpoint for MPU Daemons, running as a gRPC server.
+High-performance industrial IoT server acting as the central cloud hub for N MPU Daemons.
+Provides bidirectional gRPC streaming (HTTP/2 and HTTP/3 QUIC), fleet-wide Prometheus
+observability, TSDB time-series ingestion, and northbound command orchestration.
 """
 
 from __future__ import annotations
@@ -11,11 +13,16 @@ from collections.abc import Awaitable, Callable
 from enum import StrEnum
 from pathlib import Path
 import ssl
+import time
 from typing import Annotated, Any, Final
+import urllib.error
+import urllib.request
 
+from google.protobuf.message import DecodeError
 import grpclib.events
 from grpclib.protocol import Peer
 from grpclib.server import Server, Stream
+import prometheus_client
 from statemachine import State, StateMachine
 import structlog
 import typer
@@ -54,7 +61,140 @@ class GatewaySessionMachine(StateMachine):
     close = connected.to(closed) | authenticated.to(closed) | active.to(closed)
 
 
+class FleetMetrics:
+    """[SIL-2] Fleet-wide Prometheus observability metrics container."""
+
+    def __init__(self, registry: prometheus_client.CollectorRegistry | None = None) -> None:
+        self.registry = registry if registry is not None else prometheus_client.CollectorRegistry(auto_describe=True)
+        self.devices_connected = prometheus_client.Gauge(
+            "mcubridge_gateway_connected_devices",
+            "Total number of currently connected edge devices",
+            registry=self.registry,
+        )
+        self.device_connection_state = prometheus_client.Gauge(
+            "mcubridge_device_connected",
+            "Connection status of the device (1 = connected, 0 = disconnected)",
+            labelnames=["device_id"],
+            registry=self.registry,
+        )
+        self.telemetry_messages = prometheus_client.Counter(
+            "mcubridge_device_telemetry_total",
+            "Total telemetry reports received per device",
+            labelnames=["device_id"],
+            registry=self.registry,
+        )
+        self.device_events = prometheus_client.Counter(
+            "mcubridge_device_events_total",
+            "Total events received per device",
+            labelnames=["device_id", "severity"],
+            registry=self.registry,
+        )
+        self.command_requests = prometheus_client.Counter(
+            "mcubridge_device_command_requests_total",
+            "Total command requests dispatched to device",
+            labelnames=["device_id"],
+            registry=self.registry,
+        )
+        self.command_responses = prometheus_client.Counter(
+            "mcubridge_device_command_responses_total",
+            "Total command responses received from device",
+            labelnames=["device_id", "status_code"],
+            registry=self.registry,
+        )
+        self.device_link_synchronized = prometheus_client.Gauge(
+            "mcubridge_device_link_synchronized",
+            "Hardware serial link synchronization status (1 = sync, 0 = unsync)",
+            labelnames=["device_id"],
+            registry=self.registry,
+        )
+        self.device_cloud_queue_depth = prometheus_client.Gauge(
+            "mcubridge_device_cloud_queue_depth",
+            "Current cloud queue depth on device",
+            labelnames=["device_id"],
+            registry=self.registry,
+        )
+        self.device_cloud_dropped = prometheus_client.Counter(
+            "mcubridge_device_cloud_dropped_messages_total",
+            "Total dropped cloud messages on device",
+            labelnames=["device_id"],
+            registry=self.registry,
+        )
+        self.device_spool_pending = prometheus_client.Gauge(
+            "mcubridge_device_spool_pending_messages",
+            "Current pending offline spool messages on device",
+            labelnames=["device_id"],
+            registry=self.registry,
+        )
+        self.device_watchdog_enabled = prometheus_client.Gauge(
+            "mcubridge_device_watchdog_enabled",
+            "Watchdog supervisor enabled status (1 = enabled, 0 = disabled)",
+            labelnames=["device_id"],
+            registry=self.registry,
+        )
+
+
+class TSDBSink:
+    """[SIL-2] Time-Series Database ingestion adapter supporting Line Protocol."""
+
+    def __init__(self, endpoint_url: str | None = None) -> None:
+        self.endpoint_url = endpoint_url
+        self.enabled = bool(endpoint_url)
+
+    @staticmethod
+    def format_line_protocol(
+        device_id: str,
+        metrics: pb.DaemonMetrics,
+        timestamp_ns: int | None = None,
+    ) -> str:
+        """Format metrics into standard Influx/VictoriaMetrics Line Protocol."""
+        ts = timestamp_ns if timestamp_ns is not None else time.time_ns()
+        sync_val = 1 if metrics.link_synchronised else 0
+        spool_degraded = 1 if metrics.cloud_spool_degraded else 0
+        watchdog_on = 1 if metrics.watchdog_enabled else 0
+        return (
+            f"mcubridge_telemetry,device_id={device_id} "
+            f"queue_depth={metrics.cloud_queue_depth}i,"
+            f"dropped_messages={metrics.cloud_dropped_messages}i,"
+            f"spool_pending={metrics.cloud_spool_pending_messages}i,"
+            f"spool_degraded={spool_degraded}i,"
+            f"link_synchronized={sync_val}i,"
+            f"watchdog_enabled={watchdog_on}i "
+            f"{ts}"
+        )
+
+    async def ingest_telemetry(self, device_id: str, envelope: pb.CloudEnvelope) -> None:
+        """Asynchronously post telemetry report to external TSDB endpoint."""
+        if not self.enabled or not self.endpoint_url or not envelope.telemetry.daemon_metrics_blob:
+            return
+        try:
+            metrics = pb.DaemonMetrics()
+            metrics.ParseFromString(envelope.telemetry.daemon_metrics_blob)
+            line = self.format_line_protocol(device_id, metrics)
+            await asyncio.to_thread(self._post_line, line)
+        except (DecodeError, OSError, ValueError) as exc:
+            logger.warning("TSDB telemetry ingestion error", device_id=device_id, error=str(exc))
+
+    def _post_line(self, line: str) -> None:
+        """Execute blocking HTTP POST within dedicated thread."""
+        if not self.endpoint_url:
+            return
+        req = urllib.request.Request(
+            self.endpoint_url,
+            data=line.encode("utf-8"),
+            headers={"Content-Type": "text/plain; charset=utf-8"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=5.0) as resp:
+                if resp.status >= 400:
+                    logger.warning("TSDB server responded with status error", status=resp.status)
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            logger.warning("TSDB network write failed", error=str(e))
+
+
 async def _handle_ping(
+    _: CloudBridgeService,
+    __: str,
     stream: Stream[pb.CloudEnvelope, pb.CloudEnvelope],
     envelope: pb.CloudEnvelope,
 ) -> None:
@@ -68,35 +208,73 @@ async def _handle_ping(
 
 
 async def _handle_telemetry(
+    service: CloudBridgeService,
+    device_id: str,
     _: Stream[pb.CloudEnvelope, pb.CloudEnvelope],
-    __: pb.CloudEnvelope,
+    envelope: pb.CloudEnvelope,
 ) -> None:
-    logger.info("Processed telemetry")
+    logger.info("Processed telemetry", device_id=device_id)
+    service.gateway.metrics.telemetry_messages.labels(device_id=device_id).inc()
+
+    if envelope.telemetry.daemon_metrics_blob:
+        try:
+            metrics = pb.DaemonMetrics()
+            metrics.ParseFromString(envelope.telemetry.daemon_metrics_blob)
+            service.gateway.metrics.device_link_synchronized.labels(device_id=device_id).set(
+                1.0 if metrics.link_synchronised else 0.0
+            )
+            service.gateway.metrics.device_cloud_queue_depth.labels(device_id=device_id).set(
+                float(metrics.cloud_queue_depth)
+            )
+            service.gateway.metrics.device_spool_pending.labels(device_id=device_id).set(
+                float(metrics.cloud_spool_pending_messages)
+            )
+            service.gateway.metrics.device_watchdog_enabled.labels(device_id=device_id).set(
+                1.0 if metrics.watchdog_enabled else 0.0
+            )
+        except (DecodeError, ValueError) as exc:
+            logger.warning("Failed to decode daemon metrics blob in telemetry", error=str(exc))
+
+    if service.gateway.tsdb_sink.enabled:
+        await service.gateway.tsdb_sink.ingest_telemetry(device_id, envelope)
 
 
 async def _handle_event(
+    service: CloudBridgeService,
+    device_id: str,
     _: Stream[pb.CloudEnvelope, pb.CloudEnvelope],
     envelope: pb.CloudEnvelope,
 ) -> None:
     evt = envelope.event
     logger.warning(
         "Device event",
+        device_id=device_id,
         event_type=evt.event_type,
         description=evt.description,
     )
+    service.gateway.metrics.device_events.labels(
+        device_id=device_id,
+        severity=evt.severity or "info",
+    ).inc()
 
 
 async def _handle_command_response(
+    service: CloudBridgeService,
+    device_id: str,
     _: Stream[pb.CloudEnvelope, pb.CloudEnvelope],
     envelope: pb.CloudEnvelope,
 ) -> None:
-    logger.info(
-        "Received command response",
-        status_code=envelope.command_response.status_code,
+    service.gateway.handle_command_response(
+        device_id,
+        envelope.sequence_id,
+        envelope.command_response,
     )
 
 
-_PayloadHandler = Callable[[Stream[pb.CloudEnvelope, pb.CloudEnvelope], pb.CloudEnvelope], Awaitable[None]]
+_PayloadHandler = Callable[
+    ["CloudBridgeService", str, Stream[pb.CloudEnvelope, pb.CloudEnvelope], pb.CloudEnvelope],
+    Awaitable[None],
+]
 
 _PAYLOAD_HANDLERS: Final[dict[str, _PayloadHandler]] = {
     "ping": _handle_ping,
@@ -169,6 +347,8 @@ class CloudBridgeService(CloudBridgeBase):
             logger.info("Device connected", state=session_fsm.current_state_value)
             self.gateway.connections[device_id] = stream
             self.gateway.sessions[device_id] = session_fsm
+            self.gateway.metrics.devices_connected.inc()
+            self.gateway.metrics.device_connection_state.labels(device_id=device_id).set(1.0)
 
             try:
                 async for envelope in stream:
@@ -187,7 +367,7 @@ class CloudBridgeService(CloudBridgeBase):
                     )
 
                     if handler := _PAYLOAD_HANDLERS.get(payload_type or ""):
-                        await handler(stream, envelope)
+                        await handler(self, device_id, stream, envelope)
                     else:
                         logger.debug("Received unhandled or empty payload type", payload_type=payload_type)
             except asyncio.CancelledError:
@@ -200,10 +380,17 @@ class CloudBridgeService(CloudBridgeBase):
                 logger.info("Device disconnected", state=session_fsm.current_state_value)
                 self.gateway.sessions.pop(device_id, None)
                 self.gateway.connections.pop(device_id, None)
+                self.gateway.metrics.devices_connected.dec()
+                self.gateway.metrics.device_connection_state.labels(device_id=device_id).set(0.0)
+
+                # Abort pending command futures for this disconnected device
+                for (target_id, _), fut in list(self.gateway.pending_commands.items()):
+                    if target_id == device_id and not fut.done():
+                        fut.set_exception(ConnectionResetError(f"Device {device_id} disconnected during execution"))
 
 
 class ProtobufGateway:
-    """High-performance gRPC Gateway with HTTP/2 and HTTP/3 QUIC support."""
+    """High-performance industrial gRPC Gateway with fleet observability and command routing."""
 
     def __init__(
         self,
@@ -215,6 +402,9 @@ class ProtobufGateway:
         ca_file: str | None = None,
         http3_enabled: bool = False,
         http3_port: int = 8843,
+        metrics_port: int | None = None,
+        tsdb_url: str | None = None,
+        metrics_registry: prometheus_client.CollectorRegistry | None = None,
     ) -> None:
         self.host = host
         self.port = port
@@ -224,9 +414,14 @@ class ProtobufGateway:
         self.ca_file = ca_file
         self.http3_enabled = http3_enabled
         self.http3_port = http3_port
+        self.metrics_port = metrics_port
         self.server: Server | None = None
         self.connections: dict[str, Stream[pb.CloudEnvelope, pb.CloudEnvelope]] = {}
         self.sessions: dict[str, GatewaySessionMachine] = {}
+        self.pending_commands: dict[tuple[str, int], asyncio.Future[pb.CommandResponse]] = {}
+        self._sequence_id: int = 0
+        self.metrics: FleetMetrics = FleetMetrics(registry=metrics_registry)
+        self.tsdb_sink: TSDBSink = TSDBSink(endpoint_url=tsdb_url)
 
     def get_ssl_context(self) -> ssl.SSLContext | None:
         if not self.use_tls:
@@ -247,7 +442,73 @@ class ProtobufGateway:
             logger.info("TLS enabled (server-only authentication).")
         return context
 
+    async def send_command(
+        self,
+        device_id: str,
+        command_path: str,
+        payload: bytes = b"",
+        timeout_seconds: float = 10.0,
+    ) -> pb.CommandResponse:
+        """[SIL-2] Asynchronously dispatch a command to an active edge device and await response."""
+        stream = self.connections.get(device_id)
+        if not stream:
+            raise KeyError(f"Device {device_id} is not connected to gateway")
+
+        self._sequence_id = (self._sequence_id + 1) & 0x7FFFFFFF
+        seq = self._sequence_id
+
+        req_envelope = pb.CloudEnvelope(
+            protocol_version=2,
+            device_id="CLOUD_GW",
+            sequence_id=seq,
+            timestamp_utc=int(time.time()),
+            command_request=pb.CommandRequest(
+                command_path=command_path,
+                payload=payload,
+            ),
+        )
+
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[pb.CommandResponse] = loop.create_future()
+        key = (device_id, seq)
+        self.pending_commands[key] = future
+
+        self.metrics.command_requests.labels(device_id=device_id).inc()
+
+        try:
+            await stream.send_message(req_envelope)
+            return await asyncio.wait_for(future, timeout=timeout_seconds)
+        finally:
+            self.pending_commands.pop(key, None)
+
+    def handle_command_response(
+        self,
+        device_id: str,
+        sequence_id: int,
+        response: pb.CommandResponse,
+    ) -> None:
+        """[SIL-2] Handle incoming command response from edge device and resolve pending future."""
+        logger.info(
+            "Received command response",
+            device_id=device_id,
+            seq=sequence_id,
+            status_code=response.status_code,
+        )
+        self.metrics.command_responses.labels(
+            device_id=device_id,
+            status_code=str(response.status_code),
+        ).inc()
+
+        key = (device_id, sequence_id)
+        if future := self.pending_commands.get(key):
+            if not future.done():
+                future.set_result(response)
+
     async def run(self) -> None:
+        if self.metrics_port:
+            prometheus_client.start_http_server(self.metrics_port, registry=self.metrics.registry)
+            logger.info("Fleet Prometheus Exporter running", port=self.metrics_port)
+
         ssl_context = self.get_ssl_context()
         self.server = Server([CloudBridgeService(self)])
         grpclib.events.listen(self.server, grpclib.events.RecvRequest, auth_interceptor)
@@ -273,6 +534,8 @@ def main(
     ca: Annotated[Path | None, typer.Option(help="Path to CA file for client certificate verification")] = None,
     http3: Annotated[bool, typer.Option("--http3", help="Enable HTTP/3 (QUIC) capability")] = False,
     http3_port: Annotated[int, typer.Option(help="UDP Port for HTTP/3 QUIC listener")] = 8843,
+    metrics_port: Annotated[int | None, typer.Option(help="Port for fleet Prometheus /metrics endpoint")] = None,
+    tsdb_url: Annotated[str | None, typer.Option(help="HTTP endpoint URL for TSDB Line Protocol ingestion")] = None,
 ) -> None:
     """MCU Bridge Protobuf Gateway."""
     gateway = ProtobufGateway(
@@ -284,6 +547,8 @@ def main(
         ca_file=str(ca) if ca else None,
         http3_enabled=http3,
         http3_port=http3_port,
+        metrics_port=metrics_port,
+        tsdb_url=tsdb_url,
     )
 
     try:

@@ -1,0 +1,25 @@
+services:
+  mcubridge-gateway:
+    build:
+      context: ..
+      dockerfile: mcubridge-gateway/Dockerfile
+    container_name: mcubridge-gateway
+    restart: unless-stopped
+    ports:
+      - "8443:8443"
+      - "9100:9100"
+    volumes:
+      - ./certs:/etc/mcubridge:ro
+    command:
+      - "--host"
+      - "0.0.0.0"
+      - "--port"
+      - "8443"
+      - "--metrics-port"
+      - "9100"
+      - "--cert"
+      - "/etc/mcubridge/gateway.crt"
+      - "--key"
+      - "/etc/mcubridge/gateway.key"
+      - "--ca"
+      - "/etc/mcubridge/ca.crt"

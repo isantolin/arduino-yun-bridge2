@@ -1,0 +1,19 @@
+[Unit]
+Description=MCU Bridge Protobuf Cloud Gateway (gRPC / HTTP/3)
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mcubridge
+Group=mcubridge
+WorkingDirectory=/usr/share/mcubridge-gateway
+ExecStart=/usr/bin/mcubridge-gateway --host 0.0.0.0 --port 8443 --metrics-port 9100 --cert /etc/mcubridge/gateway.crt --key /etc/mcubridge/gateway.key --ca /etc/mcubridge/ca.crt
+Restart=always
+RestartSec=5s
+LimitNOFILE=65535
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

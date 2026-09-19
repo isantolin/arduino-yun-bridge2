@@ -12,9 +12,11 @@ from typer.testing import CliRunner
 
 from gateway import (
     CloudBridgeService,
+    FleetMetrics,
     GatewaySessionMachine,
     GatewaySessionState,
     ProtobufGateway,
+    TSDBSink,
     auth_interceptor,
     app,
     extract_peer_identity,
@@ -448,3 +450,169 @@ async def test_auth_interceptor_flow() -> None:
     await auth_interceptor(mock_event_bad)
     # When cert is invalid, interceptor does not wrap and returns early
     assert mock_event_bad.method_func == dummy_handler
+
+
+@pytest.mark.asyncio
+async def test_fleet_metrics_and_telemetry_flow(cloud_service: CloudBridgeService) -> None:
+    mock_stream: AsyncMock = AsyncMock()
+    mock_stream.peer = MagicMock()
+    mock_stream.peer.addr.return_value = ("10.0.0.2", 12345)
+    mock_stream.peer.cert.return_value = {"subject": [[("commonName", "test-yun-01")]]}
+
+    metrics = pb.DaemonMetrics(
+        cloud_queue_depth=4,
+        link_synchronised=True,
+        cloud_spool_pending_messages=2,
+        watchdog_enabled=True,
+    )
+    telemetry_envelope = pb.CloudEnvelope(
+        protocol_version=2,
+        device_id="test-yun-01",
+        sequence_id=1,
+        telemetry=pb.TelemetryReport(daemon_metrics_blob=metrics.SerializeToString()),
+    )
+    event_envelope = pb.CloudEnvelope(
+        protocol_version=2,
+        device_id="test-yun-01",
+        sequence_id=2,
+        event=pb.EventNotification(event_type="alarm", severity="warning", description="temp high"),
+    )
+
+    async def async_iter():
+        yield telemetry_envelope
+        yield event_envelope
+
+    def _aiter(self: object):
+        return async_iter()
+
+    mock_stream.__aiter__ = _aiter
+
+    await cloud_service.Session(mock_stream)
+
+    gw = cloud_service.gateway
+    assert isinstance(gw.metrics, FleetMetrics)
+    assert gw.metrics.registry.get_sample_value("mcubridge_device_connected", {"device_id": "test-yun-01"}) == 0.0
+    assert gw.metrics.registry.get_sample_value("mcubridge_device_telemetry_total", {"device_id": "test-yun-01"}) == 1.0
+    assert (
+        gw.metrics.registry.get_sample_value(
+            "mcubridge_device_events_total", {"device_id": "test-yun-01", "severity": "warning"}
+        )
+        == 1.0
+    )
+    assert (
+        gw.metrics.registry.get_sample_value("mcubridge_device_link_synchronized", {"device_id": "test-yun-01"}) == 1.0
+    )
+    assert (
+        gw.metrics.registry.get_sample_value("mcubridge_device_cloud_queue_depth", {"device_id": "test-yun-01"}) == 4.0
+    )
+    assert (
+        gw.metrics.registry.get_sample_value("mcubridge_device_spool_pending_messages", {"device_id": "test-yun-01"})
+        == 2.0
+    )
+    assert (
+        gw.metrics.registry.get_sample_value("mcubridge_device_watchdog_enabled", {"device_id": "test-yun-01"}) == 1.0
+    )
+
+
+def test_tsdb_sink_formatting_and_ingestion() -> None:
+    sink = TSDBSink(endpoint_url="http://localhost:8428/write")
+    assert sink.enabled is True
+
+    metrics = pb.DaemonMetrics(
+        cloud_queue_depth=5,
+        cloud_dropped_messages=1,
+        cloud_spool_pending_messages=3,
+        cloud_spool_degraded=False,
+        link_synchronised=True,
+        watchdog_enabled=True,
+    )
+    line = sink.format_line_protocol("yun-node-1", metrics, timestamp_ns=1700000000000000000)
+    assert "mcubridge_telemetry,device_id=yun-node-1" in line
+    assert "queue_depth=5i" in line
+    assert "link_synchronized=1i" in line
+    assert "watchdog_enabled=1i" in line
+    assert line.endswith("1700000000000000000")
+
+
+@pytest.mark.asyncio
+async def test_tsdb_sink_async_post_mocked() -> None:
+    sink = TSDBSink(endpoint_url="http://localhost:8428/write")
+    metrics = pb.DaemonMetrics(cloud_queue_depth=1)
+    envelope = pb.CloudEnvelope(
+        protocol_version=2,
+        telemetry=pb.TelemetryReport(daemon_metrics_blob=metrics.SerializeToString()),
+    )
+
+    with patch("urllib.request.urlopen") as mock_urlopen:
+        mock_resp = MagicMock()
+        mock_resp.status = 204
+        mock_resp.__enter__.return_value = mock_resp
+        mock_resp.__exit__.return_value = False
+        mock_urlopen.return_value = mock_resp
+
+        await sink.ingest_telemetry("yun-node-1", envelope)
+        assert mock_urlopen.called
+
+
+@pytest.mark.asyncio
+async def test_send_command_success_and_correlation(mock_gateway: ProtobufGateway) -> None:
+    mock_stream = AsyncMock()
+    mock_gateway.connections["device-test"] = mock_stream
+
+    async def _send_and_respond():
+        await asyncio.sleep(0.01)
+        assert len(mock_gateway.pending_commands) == 1
+        key = list(mock_gateway.pending_commands.keys())[0]
+        seq = key[1]
+        resp_envelope = pb.CloudEnvelope(
+            protocol_version=2,
+            device_id="device-test",
+            sequence_id=seq,
+            command_response=pb.CommandResponse(status_code=200, payload=b"OK"),
+        )
+        mock_gateway.handle_command_response("device-test", seq, resp_envelope.command_response)
+
+    task = asyncio.create_task(_send_and_respond())
+    resp = await mock_gateway.send_command("device-test", "/gpio/write", payload=b"\x01")
+    await task
+
+    assert resp.status_code == 200
+    assert resp.payload == b"OK"
+    assert len(mock_gateway.pending_commands) == 0
+
+
+@pytest.mark.asyncio
+async def test_send_command_device_not_connected(mock_gateway: ProtobufGateway) -> None:
+    with pytest.raises(KeyError, match="Device non-existent is not connected"):
+        await mock_gateway.send_command("non-existent", "/status")
+
+
+@pytest.mark.asyncio
+async def test_send_command_device_disconnected_during_execution(mock_gateway: ProtobufGateway) -> None:
+    mock_stream = AsyncMock()
+    mock_gateway.connections["device-abort"] = mock_stream
+
+    async def _disconnect_device():
+        await asyncio.sleep(0.01)
+        for (d_id, _), fut in list(mock_gateway.pending_commands.items()):
+            if d_id == "device-abort":
+                fut.set_exception(ConnectionResetError("Device disconnected"))
+
+    task = asyncio.create_task(_disconnect_device())
+    with pytest.raises(ConnectionResetError, match="Device disconnected"):
+        await mock_gateway.send_command("device-abort", "/ping")
+    await task
+
+
+@pytest.mark.asyncio
+async def test_protobuf_gateway_metrics_port_run() -> None:
+    gw = ProtobufGateway(use_tls=False, metrics_port=9100)
+    with (
+        patch("prometheus_client.start_http_server") as mock_metrics_server,
+        patch("gateway.Server") as mock_server_cls,
+    ):
+        mock_server = AsyncMock()
+        mock_server.__dispatch__ = MagicMock()
+        mock_server_cls.return_value = mock_server
+        await gw.run()
+        assert mock_metrics_server.called

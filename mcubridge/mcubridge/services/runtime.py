@@ -1112,7 +1112,21 @@ class BridgeService:
         if len(route.segments) == 2:
             if route.segments[1] == PinAction.MODE:
                 val = int(payload) if payload.isdigit() else 0
-                await serial.send(Command.CMD_SET_PIN_MODE.value, pb.PinMode(pin=pin, mode=cast(Any, val)))
+                success = bool(
+                    await serial.send(Command.CMD_SET_PIN_MODE.value, pb.PinMode(pin=pin, mode=cast(Any, val)))
+                )
+                if inbound.correlation_data or inbound.response_topic:
+                    await self.enqueue_cloud_publish(
+                        topic_path(
+                            self.state.cloud_topic_prefix,
+                            route.topic,
+                            str(pin),
+                            PinAction.MODE,
+                            protocol.CLOUD_SUFFIX_RESPONSE,
+                        ),
+                        b"OK" if success else b"ERROR",
+                        reply_context=inbound,
+                    )
 
             elif route.segments[1] == PinAction.READ:
                 cmd = Command.CMD_DIGITAL_READ if route.topic == Topic.DIGITAL else Command.CMD_ANALOG_READ
@@ -1144,7 +1158,18 @@ class BridgeService:
             is_dig = route.topic == Topic.DIGITAL
             cmd = Command.CMD_DIGITAL_WRITE if is_dig else Command.CMD_ANALOG_WRITE
             msg = pb.DigitalWrite(pin=pin, value=val) if is_dig else pb.AnalogWrite(pin=pin, value=val)
-            await serial.send(cmd.value, msg)
+            success = bool(await serial.send(cmd.value, msg))
+            if inbound.correlation_data or inbound.response_topic:
+                await self.enqueue_cloud_publish(
+                    topic_path(
+                        self.state.cloud_topic_prefix,
+                        route.topic,
+                        str(pin),
+                        protocol.CLOUD_SUFFIX_RESPONSE,
+                    ),
+                    b"OK" if success else b"ERROR",
+                    reply_context=inbound,
+                )
 
     async def _handle_system_bootloader(self, _route: TopicRoute, _inbound: pb.CloudQueuedPublish) -> None:
         await cast("SerialTransport", self.serial).send(

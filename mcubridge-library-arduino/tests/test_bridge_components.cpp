@@ -169,6 +169,21 @@ void test_mailbox_api() {
 #endif
 }
 
+void test_send_pin_event_api() {
+  BiStream stream;
+  reset_bridge_comp(stream);
+
+  const size_t initial_bytes = stream.tx_buf.len;
+  const bool result = Bridge.sendPinEvent(13, 1023);
+  TEST_ASSERT_TRUE(result);
+  TEST_ASSERT_GREATER_THAN(initial_bytes, stream.tx_buf.len);
+
+  Bridge.~BridgeClass();
+  new (&Bridge) bridge::test::TestAccessor(stream);
+  const bool unsync_result = Bridge.sendPinEvent(13, 1023);
+  TEST_ASSERT_FALSE(unsync_result);
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_all_handlers_coverage);
@@ -176,5 +191,6 @@ int main() {
   RUN_TEST(test_console_api);
   RUN_TEST(test_datastore_api);
   RUN_TEST(test_mailbox_api);
+  RUN_TEST(test_send_pin_event_api);
   return UNITY_END();
 }

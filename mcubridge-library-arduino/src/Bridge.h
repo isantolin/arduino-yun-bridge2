@@ -148,6 +148,8 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   void signalXoff();
   void signalXon();
 
+  [[nodiscard]] bool sendPinEvent(uint8_t pin, uint16_t value);
+
   template <typename T>
   [[nodiscard]] bool sendFrame(T command, uint16_t seq = 0,
                                etl::span<const uint8_t> p = {}) {

@@ -659,6 +659,17 @@ void BridgeClass::_subscriptionTask() {
                 });
 }
 
+bool BridgeClass::sendPinEvent(uint8_t pin, uint16_t value) {
+  if (!isSynchronized()) return false;
+  rpc_pb_PinUpdateEvent evt = rpc_pb_PinUpdateEvent_init_default;
+  evt.pin = pin;
+  evt.value = value;
+  evt.timestamp_micros = ::micros();
+  return send(rpc::CommandId::CMD_PIN_UPDATE_EVENT, 0, evt,
+              rpc_pb_ChannelId_CHANNEL_TELEMETRY,
+              rpc_pb_QosProfile_QOS_BEST_EFFORT);
+}
+
 #if BRIDGE_ENABLE_SPI
 void BridgeClass::_handleSpiTransfer(const bridge::router::CommandContext& ctx,
                                      const rpc_pb_SpiTransfer& m) {

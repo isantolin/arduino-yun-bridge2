@@ -16,6 +16,7 @@ BridgeFsm::BridgeFsm()
 }
 
 bool BridgeFsm::isSynchronized() const {
+  if (!is_started()) return false;
   const auto sid = get_state_id();
   return sid == static_cast<etl::fsm_state_id_t>(StateId::SYNCHRONIZED) ||
          sid == static_cast<etl::fsm_state_id_t>(StateId::AWAITING_ACK) ||
@@ -23,6 +24,7 @@ bool BridgeFsm::isSynchronized() const {
 }
 
 bool BridgeFsm::isAwaitingAck() const {
+  if (!is_started()) return false;
   return get_state_id() ==
          static_cast<etl::fsm_state_id_t>(StateId::AWAITING_ACK);
 }

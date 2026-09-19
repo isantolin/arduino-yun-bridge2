@@ -20,6 +20,12 @@ The sketches under `mcubridge-library-arduino/examples/` act as smoke tests for 
 - Provides a wireless bridge interface for cable-free deployment (e.g. ESP32 `BluetoothSerial`).
 - Connects transparently to the daemon running on `/dev/rfcomm0` or a virtual serial port.
 
+## BridgeCloud
+
+- Reference implementation for connecting to the centralized `mcubridge-gateway` cloud hub.
+- Demonstrates real-time sensor/pin telemetry streaming via `Bridge.sendPinEvent()` over the `CHANNEL_TELEMETRY` channel.
+- Handles remote actuator and control RPCs issued by northbound cloud clients and correlated via `sequence_id`.
+
 ## Quick build and upload
 
 Compile and upload any example via `arduino-cli`:

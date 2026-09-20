@@ -321,7 +321,7 @@ def run_emulation(
         logger.error("Emulation error", error=str(exc))
         all_success = False
     finally:
-        procs_to_terminate = [p for p in (gateway_proc, daemon_proc, mcu_proc) if p is not None]
+        procs_to_terminate = [p for p in (daemon_proc, mcu_proc, gateway_proc) if p is not None]
         terminate_process_tree(procs_to_terminate, timeout=2.0)
 
     if not all_success:

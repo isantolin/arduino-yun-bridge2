@@ -3,6 +3,7 @@
 from __future__ import annotations
 from mcubridge.protocol import mcubridge_pb2 as pb
 from grpclib.client import Channel
+from grpclib.exceptions import GRPCError, ProtocolError, StreamTerminatedError
 from grpclib.server import Server
 from mcubridge.protocol.mcubridge_grpc import CloudBridgeStub
 
@@ -1573,7 +1574,7 @@ class BridgeService:
 
         def _before_sleep(rs: tenacity.RetryCallState) -> None:
             self.state.cloud_fsm.start_reconnect()
-            logger.error(
+            logger.info(
                 "Cloud connection retry",
                 attempt=rs.attempt_number,
                 wait=getattr(rs.next_action, "sleep", 0),
@@ -1583,6 +1584,7 @@ class BridgeService:
             wait=tenacity.wait_exponential(multiplier=reconnect_delay, max=60) + tenacity.wait_random(0, 2),
             retry=tenacity.retry_if_exception_type(
                 (
+                    ConnectionError,
                     OSError,
                     asyncio.TimeoutError,
                 )
@@ -1652,36 +1654,54 @@ class BridgeService:
                 await self._send_cloud_event("status_online", "info", "Device online")
                 await self.flush_cloud_spool()
 
-                async with asyncio.TaskGroup() as tg:
-                    worker_task = tg.create_task(self._cloud_incoming_worker())
-                    try:
-                        # Read loop
-                        async for envelope in stream:
-                            payload_type = envelope.WhichOneof("payload")
-                            if logger.is_enabled_for(logging.DEBUG):
-                                logger.debug(
-                                    "[GATEWAY -> MPU] [TYPE:%s] [SEQ:%d]",
-                                    payload_type,
-                                    envelope.sequence_id,
-                                )
-                            if payload_type == "pong":
-                                logger.debug("Received keepalive pong from cloud.")
-                                continue
+                try:
+                    async with asyncio.TaskGroup() as tg:
+                        worker_task = tg.create_task(self._cloud_incoming_worker())
+                        try:
+                            # Read loop
+                            async for envelope in stream:
+                                payload_type = envelope.WhichOneof("payload")
+                                if logger.is_enabled_for(logging.DEBUG):
+                                    logger.debug(
+                                        "[GATEWAY -> MPU] [TYPE:%s] [SEQ:%d]",
+                                        payload_type,
+                                        envelope.sequence_id,
+                                    )
+                                if payload_type == "pong":
+                                    logger.debug("Received keepalive pong from cloud.")
+                                    continue
 
-                            if payload_type == "command_request":
-                                cmd = envelope.command_request
-                                request = pb.CloudQueuedPublish(
-                                    topic_name=topic_path(self.state.topic_prefix, cmd.command_path),
-                                    payload=cmd.payload,
-                                    correlation_data=envelope.sequence_id.to_bytes(8, "big"),
-                                    response_topic="cloud",
-                                )
-                                try:
-                                    self._cloud_incoming_send_stream.send_nowait(request)
-                                except anyio.WouldBlock:
-                                    logger.warning("Cloud incoming memory stream full, dropping request")
-                    finally:
-                        worker_task.cancel()
+                                if payload_type == "command_request":
+                                    cmd = envelope.command_request
+                                    request = pb.CloudQueuedPublish(
+                                        topic_name=topic_path(self.state.topic_prefix, cmd.command_path),
+                                        payload=cmd.payload,
+                                        correlation_data=envelope.sequence_id.to_bytes(8, "big"),
+                                        response_topic="cloud",
+                                    )
+                                    try:
+                                        self._cloud_incoming_send_stream.send_nowait(request)
+                                    except anyio.WouldBlock:
+                                        logger.warning("Cloud incoming memory stream full, dropping request")
+                        finally:
+                            worker_task.cancel()
+                except* (
+                    GRPCError,
+                    ProtocolError,
+                    StreamTerminatedError,
+                    ConnectionError,
+                    OSError,
+                    EOFError,
+                ) as eg:
+                    cur_task = asyncio.current_task()
+                    if cur_task and cur_task.cancelling():
+                        logger.debug(
+                            "Cloud session TaskGroup terminated during cancellation",
+                            errors=[str(e) for e in eg.exceptions],
+                        )
+                        raise asyncio.CancelledError() from None
+                    logger.warning("Cloud session stream disconnected", errors=[str(e) for e in eg.exceptions])
+                    raise ConnectionError(f"Cloud session stream disconnected: {eg.exceptions[0]}") from eg
         finally:
             self.state.cloud_fsm.degrade()
             self._cloud_stream = None

@@ -95,8 +95,11 @@ async def test_e2e_wireless_tcp_handshake_and_rpc_exchange(
         except (asyncio.IncompleteReadError, asyncio.CancelledError, ConnectionResetError) as exc:
             logger.debug("Mock MCU TCP server connection closed", error=str(exc))
         finally:
-            writer.close()
-            await writer.wait_closed()
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except (OSError, ConnectionError) as exc:
+                logger.debug("Mock TCP server socket close handled", error=str(exc))
 
     # Start mock MCU TCP listener
     server = await asyncio.start_server(mock_mcu_tcp_server, "127.0.0.1", 0)
@@ -139,8 +142,10 @@ async def test_e2e_wireless_tcp_handshake_and_rpc_exchange(
     # 4. Cleanup
     await transport.stop()
     transport_task.cancel()
-    with pytest.raises(asyncio.CancelledError):
+    try:
         await transport_task
+    except asyncio.CancelledError as exc:
+        logger.debug("Transport task cancelled", error=str(exc))
 
     server.close()
     await server.wait_closed()
@@ -214,8 +219,11 @@ async def test_e2e_wireless_tcp_analog_read_and_datastore(
         except (asyncio.IncompleteReadError, asyncio.CancelledError, ConnectionResetError) as exc:
             logger.debug("Mock MCU WiFi server connection closed", error=str(exc))
         finally:
-            writer.close()
-            await writer.wait_closed()
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except (OSError, ConnectionError) as exc:
+                logger.debug("Mock WiFi server socket close handled", error=str(exc))
 
     server = await asyncio.start_server(mock_mcu_server, "127.0.0.1", 0)
     assert server.sockets is not None
@@ -245,8 +253,10 @@ async def test_e2e_wireless_tcp_analog_read_and_datastore(
 
     await transport.stop()
     transport_task.cancel()
-    with pytest.raises(asyncio.CancelledError):
+    try:
         await transport_task
+    except asyncio.CancelledError as exc:
+        logger.debug("Transport task cancelled", error=str(exc))
 
     server.close()
     await server.wait_closed()

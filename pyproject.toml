@@ -46,7 +46,7 @@ include = ["mcubridge*"]
 
 [tool.pytest.ini_options]
 minversion = "7.0"
-addopts = "-ra -vv"
+addopts = "-ra -vv -n 5"
 log_cli = true
 log_cli_level = "INFO"
 testpaths = ["mcubridge/tests", "mcubridge-client-examples/tests", "mcubridge-gateway/tests"]

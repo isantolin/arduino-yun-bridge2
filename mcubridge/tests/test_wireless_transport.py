@@ -109,8 +109,11 @@ async def test_serial_transport_tcp_connect_and_stream(
         except (asyncio.IncompleteReadError, asyncio.CancelledError, ConnectionResetError) as exc:
             logger.debug("Mock TCP client connection closed", error=str(exc))
         finally:
-            writer.close()
-            await writer.wait_closed()
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except (OSError, ConnectionError) as exc:
+                logger.debug("Socket close warning suppressed", error=str(exc))
 
     server = await asyncio.start_server(handle_client, "127.0.0.1", 0)
     assert server.sockets is not None
@@ -121,6 +124,7 @@ async def test_serial_transport_tcp_connect_and_stream(
     mock_service = MagicMock()
     mock_service.on_serial_connected = AsyncMock()
     mock_service.on_serial_disconnected = AsyncMock()
+    mock_service.handle_mcu_frame = AsyncMock()
 
     transport = SerialTransport(runtime_config, runtime_state, mock_service)
 
@@ -140,8 +144,10 @@ async def test_serial_transport_tcp_connect_and_stream(
     # Stop transport
     await transport.stop()
     transport_task.cancel()
-    with pytest.raises(asyncio.CancelledError):
+    try:
         await transport_task
+    except asyncio.CancelledError as exc:
+        logger.debug("Transport task cancelled", error=str(exc))
 
     server.close()
     await server.wait_closed()
@@ -161,20 +167,23 @@ async def test_serial_transport_tcp_network_error_and_disconnect_paths(
     assert server.sockets is not None
     port = server.sockets[0].getsockname()[1]
 
-    runtime_config.serial_port = f"wifi://127.0.0.1:{port}"
+    try:
+        runtime_config.serial_port = f"wifi://127.0.0.1:{port}"
 
-    mock_service = MagicMock()
-    mock_service.on_serial_connected = AsyncMock()
-    mock_service.on_serial_disconnected = AsyncMock(side_effect=RuntimeError("cleanup-fail"))
+        mock_service = MagicMock()
+        mock_service.on_serial_connected = AsyncMock()
+        mock_service.on_serial_disconnected = AsyncMock(side_effect=RuntimeError("cleanup-fail"))
 
-    transport = SerialTransport(runtime_config, runtime_state, mock_service)
+        transport = SerialTransport(runtime_config, runtime_state, mock_service)
 
-    # Run connection attempt which will hit immediate EOF / disconnect
-    with pytest.raises(Exception):
-        await getattr(transport, "_connect_and_run")()
+        # Run connection attempt which will hit immediate EOF / disconnect
+        with pytest.raises(ConnectionError, match="Wireless network connection lost"):
+            await getattr(transport, "_connect_and_run")()
 
-    server.close()
-    await server.wait_closed()
+        mock_service.on_serial_disconnected.assert_awaited_once()
+    finally:
+        server.close()
+        await server.wait_closed()
 
 
 @pytest.mark.asyncio

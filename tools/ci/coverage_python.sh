@@ -86,8 +86,16 @@ else
   PYTEST_ARGS=("${DEFAULT_TARGETS[@]}")
 fi
 
+XDIST_ARGS=()
+if $PYTHON_BIN -c "import xdist" >/dev/null 2>&1; then
+  if [[ ! " ${PYTEST_ARGS[*]:-} " =~ " -n " ]]; then
+    XDIST_ARGS=("-n" "5")
+  fi
+fi
+
 $PYTHON_BIN -m pytest \
   -vv \
+  "${XDIST_ARGS[@]}" \
   -p pytest_asyncio \
   --timeout=300 \
   --timeout-method=thread \

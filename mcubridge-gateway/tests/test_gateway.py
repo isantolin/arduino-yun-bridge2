@@ -906,3 +906,134 @@ async def test_gateway_local_bridge_service_dispatch(mock_gateway: ProtobufGatew
     with pytest.raises(GRPCError) as sub_unavail:
         await local_svc.SubscribeConsole(stream_sub_unknown)
     assert sub_unavail.value.status == Status.UNAVAILABLE
+
+    # 5. Metadata resolution edge cases
+    stream_empty_meta = AsyncMock()
+    stream_empty_meta.metadata = None
+    assert local_svc._resolve_device_id(stream_empty_meta) is None
+
+    stream_empty_list = AsyncMock()
+    stream_empty_list.metadata = {"x-device-id": []}
+    assert local_svc._resolve_device_id(stream_empty_list) is None
+
+    stream_bytes_meta = AsyncMock()
+    stream_bytes_meta.metadata = {"device-id": b"dev-bytes"}
+    assert local_svc._resolve_device_id(stream_bytes_meta) == "dev-bytes"
+
+    stream_str_meta = AsyncMock()
+    stream_str_meta.metadata = {"device_id": "dev-str"}
+    assert local_svc._resolve_device_id(stream_str_meta) == "dev-str"
+
+    stream_list_bytes = AsyncMock()
+    stream_list_bytes.metadata = {"x-device-id": [b"dev-first"]}
+    assert local_svc._resolve_device_id(stream_list_bytes) == "dev-first"
+
+    # 6. Stream returns None (client disconnect before sending request)
+    stream_none = AsyncMock()
+    stream_none.metadata = {"x-device-id": "dev-1"}
+    stream_none.recv_message = AsyncMock(return_value=None)
+    await local_svc.DigitalWrite(stream_none)
+    stream_none.send_message.assert_not_called()
+
+    # 7. Error forwarding branches (non-200 status code and TimeoutError)
+    stream_err = AsyncMock()
+    stream_err.metadata = {"x-device-id": "dev-1"}
+    stream_err.recv_message = AsyncMock(return_value=pb.DigitalWrite(pin=13, value=1))
+    mock_send_err = AsyncMock(return_value=pb.CommandResponse(status_code=500, error_message="fail"))
+    setattr(mock_gateway, "send_command", mock_send_err)
+    await local_svc.DigitalWrite(stream_err)
+    assert stream_err.send_message.call_args[0][0].status == "error"
+
+    mock_send_timeout = AsyncMock(side_effect=TimeoutError("timed out"))
+    setattr(mock_gateway, "send_command", mock_send_timeout)
+    await local_svc.DigitalWrite(stream_err)
+    assert stream_err.send_message.call_args[0][0].status == "error"
+
+    # 8. Exhaustive invocation of all LocalBridge RPC methods on connected device
+    rpc_cases = [
+        (local_svc.SetPinMode, pb.PinMode(pin=1, mode=pb.PinModeType.PIN_OUTPUT), pb.GenericResponse(status="ok")),
+        (local_svc.DigitalRead, pb.PinRead(pin=13), pb.DigitalReadResponse(value=1)),
+        (local_svc.AnalogWrite, pb.AnalogWrite(pin=9, value=128), pb.GenericResponse(status="ok")),
+        (local_svc.AnalogRead, pb.PinRead(pin=0), pb.AnalogReadResponse(value=512)),
+        (
+            local_svc.PinSubscribe,
+            pb.PinSubscribeRequest(pin=2, enabled=True),
+            pb.PinSubscribeResponse(pin=2, success=True),
+        ),
+        (local_svc.DatastorePut, pb.DatastorePut(key="k", value=b"v"), pb.GenericResponse(status="ok")),
+        (local_svc.DatastoreGet, pb.DatastoreGet(key="k"), pb.DatastoreGetResponse(value=b"v")),
+        (local_svc.MailboxPush, pb.MailboxPush(data=b"m"), pb.GenericResponse(status="ok")),
+        (local_svc.MailboxRead, pb.SubscribeRequest(), pb.MailboxReadResponse(content=b"m")),
+        (local_svc.FileWrite, pb.FileWrite(path="f", data=b"d"), pb.GenericResponse(status="ok")),
+        (local_svc.FileRead, pb.FileRead(path="f"), pb.FileReadResponse(content=b"d")),
+        (local_svc.FileRemove, pb.FileRemove(path="f"), pb.GenericResponse(status="ok")),
+        (local_svc.ProcessRunAsync, pb.ProcessRunAsync(command="echo"), pb.ProcessRunAsyncResponse(pid=123)),
+        (local_svc.ProcessPoll, pb.ProcessPoll(pid=123), pb.ProcessPollResponse(status=0, finished=True)),
+        (local_svc.ProcessKill, pb.ProcessKill(pid=123), pb.GenericResponse(status="ok")),
+        (local_svc.SpiTransfer, pb.SpiTransfer(data=b"x"), pb.SpiTransferResponse(data=b"x")),
+        (local_svc.SpiConfigure, pb.SpiConfig(frequency=1000000), pb.GenericResponse(status="ok")),
+        (local_svc.GetVersion, pb.SubscribeRequest(), pb.VersionResponse(major=2, minor=0, patch=0)),
+        (local_svc.GetFreeMemory, pb.SubscribeRequest(), pb.FreeMemoryResponse(value=1024)),
+        (local_svc.GetStatus, pb.SubscribeRequest(), pb.BridgeStatus()),
+    ]
+    for rpc_fn, req_msg, resp_msg in rpc_cases:
+        st = AsyncMock()
+        st.metadata = {"x-device-id": "dev-1"}
+        st.recv_message = AsyncMock(return_value=req_msg)
+        setattr(
+            mock_gateway,
+            "send_command",
+            AsyncMock(return_value=pb.CommandResponse(status_code=200, payload=resp_msg.SerializeToString())),
+        )
+        await rpc_fn(st)
+        st.send_message.assert_called_once()
+
+    # 9. Publish RPC (console routing and missing device_id)
+    stream_pub_no_dev = AsyncMock()
+    stream_pub_no_dev.metadata = {}
+    stream_pub_no_dev.recv_message = AsyncMock(return_value=pb.CloudQueuedPublish(topic_name="br/test"))
+    await local_svc.Publish(stream_pub_no_dev)
+    stream_pub_no_dev.send_message.assert_called_once()
+
+    stream_pub_none = AsyncMock()
+    stream_pub_none.metadata = {"x-device-id": "dev-1"}
+    stream_pub_none.recv_message = AsyncMock(return_value=None)
+    await local_svc.Publish(stream_pub_none)
+
+    # Console queue subscription and publishing flow
+    console_q: asyncio.Queue[pb.CloudQueuedPublish] = asyncio.Queue()
+    mock_gateway.console_queues["dev-1"] = [console_q]
+    stream_pub_console = AsyncMock()
+    stream_pub_console.metadata = {"x-device-id": "dev-1"}
+    pub_console_msg = pb.CloudQueuedPublish(topic_name="br/console/write", payload=b"ping")
+    stream_pub_console.recv_message = AsyncMock(return_value=pub_console_msg)
+    setattr(
+        mock_gateway,
+        "send_command",
+        AsyncMock(return_value=pb.CommandResponse(status_code=200, payload=pub_console_msg.SerializeToString())),
+    )
+    await local_svc.Publish(stream_pub_console)
+    assert not console_q.empty()
+    queued_item = console_q.get_nowait()
+    assert queued_item.topic_name == "br/console/write"
+
+    # 10. SubscribeConsole active delivery and termination
+    stream_sub_active = AsyncMock()
+    stream_sub_active.metadata = {"x-device-id": "dev-1"}
+    stream_sub_active.recv_message = AsyncMock(return_value=pb.SubscribeRequest())
+    stream_sub_active.send_message = AsyncMock(side_effect=RuntimeError("stream disconnect"))
+
+    async def _feed_console() -> None:
+        await asyncio.sleep(0.01)
+        for q in mock_gateway.console_queues.get("dev-1", []):
+            q.put_nowait(pb.CloudQueuedPublish(topic_name="br/console/out", payload=b"hello"))
+
+    asyncio.create_task(_feed_console())
+    await local_svc.SubscribeConsole(stream_sub_active)
+    stream_sub_active.send_message.assert_awaited_once()
+
+    # SubscribeConsole when recv_message returns None
+    stream_sub_none = AsyncMock()
+    stream_sub_none.metadata = {"x-device-id": "dev-1"}
+    stream_sub_none.recv_message = AsyncMock(return_value=None)
+    await local_svc.SubscribeConsole(stream_sub_none)

@@ -68,7 +68,6 @@ message Constants {
     uint32 cloud_expiry_default = 61 [(py_name) = "CLOUD_EXPIRY_DEFAULT", (py_type) = "int"];
     uint32 default_process_max_output_bytes = 62 [(py_name) = "DEFAULT_PROCESS_MAX_OUTPUT_BYTES", (py_type) = "int"];
     uint32 default_console_queue_limit_bytes = 63 [(py_name) = "DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES", (py_type) = "int"];
-    uint32 prometheus_port = 64 [(py_name) = "PROMETHEUS_PORT", (py_type) = "int"];
     uint32 sync_timeout_ms = 65 [(cpp_name) = "SYNC_TIMEOUT_MS", (cpp_type) = "uint32_t", (py_name) = "SYNC_TIMEOUT_MS", (py_type) = "int"];
     uint32 max_datastore_value_size = 66 [(cpp_name) = "RPC_MAX_DATASTORE_VALUE_SIZE", (cpp_type) = "size_t", (py_name) = "MAX_DATASTORE_VALUE_SIZE", (py_type) = "int", (client_constant) = true];
     uint32 clock_command_min = 67 [(cpp_name) = "RPC_CLOCK_COMMAND_MIN", (cpp_type) = "uint16_t", (py_name) = "CLOCK_COMMAND_MIN", (py_type) = "int"];
@@ -402,7 +401,6 @@ option (rpc.pb.constants) = {
     cloud_expiry_default: 10
     default_process_max_output_bytes: 65536
     default_console_queue_limit_bytes: 16384
-    prometheus_port: 9130
     sync_timeout_ms: 30000
     max_datastore_value_size: 255
     clock_command_min: 192
@@ -1036,9 +1034,6 @@ message RuntimeConfig {
     string cloud_spool_dir = 37 [(config_default) = "/tmp/mcubridge/spool", (config_volatile) = true, (config_desc) = "Volatile spool directory (RAM)", (uci_option) = "cloud_spool_dir"];
     uint32 process_max_output_bytes = 38 [(config_default) = "65536", (config_desc) = "Maximum process output bytes", (uci_option) = "process_max_output_bytes"];
     uint32 process_max_concurrent = 39 [(config_default) = "4", (config_desc) = "Maximum concurrent processes", (uci_option) = "process_max_concurrent"];
-    bool metrics_enabled = 40 [(config_default) = "false", (config_desc) = "Enable Prometheus metrics exporter", (uci_option) = "metrics_enabled"];
-    string metrics_host = 41 [(config_default) = "127.0.0.1", (config_desc) = "Prometheus metrics listen host", (uci_option) = "metrics_host"];
-    uint32 metrics_port = 42 [(config_default) = "9130", (config_min) = 1, (config_max) = 65535, (config_desc) = "Prometheus metrics port", (uci_option) = "metrics_port"];
     float bridge_summary_interval = 43 [(config_default) = "60.0", (config_desc) = "Summary log interval in seconds"];
     float bridge_handshake_interval = 44 [(config_default) = "300.0", (config_desc) = "Handshake refresh interval in seconds"];
     bool allow_non_tmp_paths = 45 [(config_default) = "false", (config_desc) = "Allow paths outside /tmp (flash wear risk)", (uci_option) = "allow_non_tmp_paths"];
@@ -1559,8 +1554,16 @@ message CloudEnvelope {
     }
 }
 
+message CommandDispatch {
+    string target_device_id = 1;
+    string command_path = 2;
+    bytes payload = 3;
+    uint32 timeout_seconds = 4;
+}
+
 service CloudBridge {
     rpc Session(stream CloudEnvelope) returns (stream CloudEnvelope);
+    rpc DispatchCommand(CommandDispatch) returns (CommandResponse);
 }
 
 message SubscribeRequest {}

@@ -153,8 +153,6 @@ def validate_config(cfg: pb.RuntimeConfig) -> None:
         raise ValueError("cloud_certfile: cloud_certfile and cloud_keyfile must both be set or both be empty")
     if not cfg.serial_shared_secret:
         raise ValueError("serial_shared_secret: value length must be at least 1")
-    if cfg.metrics_port:
-        _validate_port_range("metrics_port", cfg.metrics_port)
     if cfg.cloud_http3_port:
         _validate_port_range("cloud_http3_port", cfg.cloud_http3_port)
 

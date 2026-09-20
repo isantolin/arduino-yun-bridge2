@@ -56,7 +56,6 @@ async def test_runtime_service_run_and_teardown_exceptions(tmp_path: Path) -> No
     config = _make_config(tmp_path)
     config.cloud_enabled = False
     config.watchdog_enabled = True
-    config.metrics_enabled = True
     service, state, _ = _make_service(config)
 
     # Attach mock caches with close exceptions to exercise teardown error handling

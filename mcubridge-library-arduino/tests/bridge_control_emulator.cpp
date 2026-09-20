@@ -9,17 +9,8 @@
 #define BRIDGE_HOST_TEST 1
 #define ARDUINO_STUB_CUSTOM_MILLIS 1
 
-// Match BridgeControl.ino service configuration (must precede Bridge.h).
-#define BRIDGE_ENABLE_DATASTORE 0
-#define BRIDGE_ENABLE_FILESYSTEM 1
-#define BRIDGE_ENABLE_PROCESS 0
-
-#include "Bridge.h"
+#include <Arduino.h>
 #include "host_serial_stream.h"
-#include "protocol/rpc_frame.h"
-#include "protocol/rpc_protocol.h"
-
-using namespace rpc;
 
 static volatile sig_atomic_t g_running = 1;
 
@@ -30,7 +21,7 @@ void signal_handler(int signum) {
 
 // Global instances for the Bridge
 Stream* g_arduino_stream_delegate = nullptr;
-HostSerialStream<false> HostSerial;
+HostSerialStream<true> HostSerial;
 HardwareSerial Serial;
 HardwareSerial Serial1;
 

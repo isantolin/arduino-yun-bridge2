@@ -305,6 +305,14 @@ class SerialTransport:
         payload = decoded_frame.payload
         cmd_id, seq_id = envelope.command_id, envelope.sequence_id
 
+        if logger.is_enabled_for(logging.DEBUG):
+            logger.debug(
+                "[MCU -> SERIAL] [CMD:0x%02X] [RAW]: [%s%s]",
+                cmd_id,
+                raw_bytes.hex().upper(),
+                protocol.FRAME_DELIMITER.hex().upper(),
+            )
+
         if self._negotiating and self._negotiation_future and not self._negotiation_future.done():
             if cmd_id == protocol.Command.CMD_SET_BAUDRATE_RESP.value:
                 self._switch_local_baudrate(self.config.serial_baud)

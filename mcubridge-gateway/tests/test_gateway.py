@@ -789,3 +789,54 @@ async def test_handle_telemetry_full_metrics_dimensions(mock_gateway: ProtobufGa
     assert "watchdog_beats=50i" in line
     assert "published_messages=8i" in line
 
+
+@pytest.mark.asyncio
+async def test_dispatch_command_branches(mock_gateway: ProtobufGateway) -> None:
+    svc = CloudBridgeService(mock_gateway)
+
+    # 1. request is None -> returns early
+    stream_none = AsyncMock()
+    stream_none.recv_message = AsyncMock(return_value=None)
+    await svc.DispatchCommand(stream_none)
+    stream_none.send_message.assert_not_called()
+
+    # 2. no target_id and no connections -> status 503
+    mock_gateway.connections.clear()
+    stream_no_conn = AsyncMock()
+    stream_no_conn.recv_message = AsyncMock(
+        return_value=pb.CommandDispatch(target_device_id="", command_path="digital/13")
+    )
+    await svc.DispatchCommand(stream_no_conn)
+    stream_no_conn.send_message.assert_called_once()
+    resp_503 = stream_no_conn.send_message.call_args[0][0]
+    assert resp_503.status_code == 503
+    assert b"No devices connected" in resp_503.payload
+
+    # 3. no target_id with connections -> uses next(iter(connections)) and sends command
+    dummy_conn = AsyncMock()
+    mock_gateway.connections["dev-1"] = dummy_conn
+    stream_auto_target = AsyncMock()
+    stream_auto_target.recv_message = AsyncMock(
+        return_value=pb.CommandDispatch(target_device_id="", command_path="digital/13", payload=b"1")
+    )
+    mock_send = AsyncMock(return_value=pb.CommandResponse(status_code=200, payload=b"OK"))
+    setattr(mock_gateway, "send_command", mock_send)
+    await svc.DispatchCommand(stream_auto_target)
+    mock_send.assert_awaited_once_with("dev-1", "digital/13", payload=b"1", timeout_seconds=10.0)
+    resp_200 = stream_auto_target.send_message.call_args[0][0]
+    assert resp_200.status_code == 200
+    assert resp_200.payload == b"OK"
+
+    # 4. send_command raises KeyError / TimeoutError / OSError -> status 504
+    stream_err = AsyncMock()
+    stream_err.recv_message = AsyncMock(
+        return_value=pb.CommandDispatch(target_device_id="dev-1", command_path="digital/13", timeout_seconds=2)
+    )
+    mock_send_err = AsyncMock(side_effect=TimeoutError("Device response timeout"))
+    setattr(mock_gateway, "send_command", mock_send_err)
+    await svc.DispatchCommand(stream_err)
+    resp_504 = stream_err.send_message.call_args[0][0]
+    assert resp_504.status_code == 504
+    assert b"Device response timeout" in resp_504.payload
+
+

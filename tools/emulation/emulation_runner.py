@@ -79,6 +79,14 @@ def _mcu_stderr_worker(mcu_proc: subprocess.Popen[bytes], state: EmulationState)
             state.on_line(decoded, "mcu")
 
 
+def _gateway_worker(gateway_proc: subprocess.Popen[str], state: EmulationState) -> None:
+    if gateway_proc.stdout:
+        for line in iter(gateway_proc.stdout.readline, ""):
+            if not line:
+                break
+            state.on_line(line, "gateway")
+
+
 def _daemon_worker(daemon_proc: subprocess.Popen[str], state: EmulationState) -> None:
     if daemon_proc.stdout:
         for line in iter(daemon_proc.stdout.readline, ""):
@@ -125,8 +133,33 @@ def run_emulation(
     state = EmulationState()
     cloud_verify = CloudVerifier(CLOUD_HOST, CLOUD_PORT)
 
+    gateway_proc: subprocess.Popen[str] | None = None
+    if not cloud_verify.wait_for_ready(timeout=1.0):
+        logger.info("Starting Managed Cloud Gateway...")
+        gateway_env = dict(os.environ)
+        gateway_env["PYTHONUNBUFFERED"] = "1"
+        gateway_cmd = [
+            sys.executable,
+            "-u",
+            str(repo_root / "mcubridge-gateway" / "gateway.py"),
+            "--no-tls",
+            "--port",
+            str(CLOUD_PORT),
+        ]
+        gateway_proc = subprocess.Popen(
+            gateway_cmd,
+            env=gateway_env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+        _start_worker_thread(_gateway_worker, "gateway", gateway_proc, state)
+
     if not cloud_verify.wait_for_ready():
         logger.error("Cloud Gateway not available")
+        if gateway_proc:
+            terminate_process_tree([gateway_proc], timeout=1.0)
         sys.exit(1)
 
     # 1. Start Unified socat linking PTY to MCU EXEC
@@ -288,7 +321,8 @@ def run_emulation(
         logger.error("Emulation error", error=str(exc))
         all_success = False
     finally:
-        terminate_process_tree((daemon_proc, mcu_proc), timeout=2.0)
+        procs_to_terminate = [p for p in (gateway_proc, daemon_proc, mcu_proc) if p is not None]
+        terminate_process_tree(procs_to_terminate, timeout=2.0)
 
     if not all_success:
         logger.error("Emulation FAILED.")

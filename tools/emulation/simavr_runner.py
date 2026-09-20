@@ -262,7 +262,6 @@ def run_simavr_emulation(
         "serial_baud": str(protocol.DEFAULT_BAUDRATE),
         "serial_safe_baud": str(protocol.DEFAULT_SAFE_BAUDRATE),
         "cloud_enabled": "0",
-        "metrics_enabled": "0",
         "watchdog_enabled": "0",
         "serial_shared_secret": "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe",
         "allowed_commands": "*",

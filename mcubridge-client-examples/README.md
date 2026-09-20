@@ -24,14 +24,13 @@ Toda la comunicación en el socket UNIX se realiza mediante tramas binarias pref
 
 ## Dependencias
 
-Los scripts y herramientas CLI utilizan únicamente `protobuf`, `cobs`, y `prometheus-client`. Ya no se requiere configurar ni instalar brokers locales de CLOUD ni TLS en las dependencias del cliente.
+Los scripts y herramientas CLI utilizan únicamente `protobuf` y `cobs`. Ya no se requiere configurar ni instalar brokers locales de CLOUD ni TLS en las dependencias del cliente.
 
 Si ejecutas los ejemplos directamente desde el repositorio, instala las dependencias:
 
 ```sh
 pip install \
 	"protobuf==7.36.0" \
-	"prometheus-client>=0.20,<1" \
 	"tenacity>=9.0,<10" \
 	"cobs>=1.2,<2"
 ```

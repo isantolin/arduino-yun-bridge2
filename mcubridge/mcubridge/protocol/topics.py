@@ -10,8 +10,16 @@ from .protocol import COMMAND_TO_TOPIC, MESSAGE_TO_TOPIC, Topic
 from .structures import TopicRoute
 from google.protobuf.message import Message as ProtobufMessage
 
-import posixpath
+from typing import Final
 import functools
+import posixpath
+
+
+_TOPIC_ALIASES: Final[dict[str, Topic]] = {
+    "digital": Topic.DIGITAL,
+    "analog": Topic.ANALOG,
+    "shell": Topic.SHELL,
+}
 
 
 def topic_path(prefix: str, topic: str | Topic, *segments: str | int) -> str:
@@ -58,14 +66,17 @@ def parse_topic(prefix: str, topic_name: str) -> TopicRoute | None:
     if len(topic_segs) <= len(prefix_segs) or topic_segs[: len(prefix_segs)] != prefix_segs:
         return None
 
-    try:
-        # Identify service topic and extract remainder segments
-        topic_enum = Topic(topic_segs[len(prefix_segs)])
-        return TopicRoute(
-            raw=topic_name,
-            prefix="/".join(prefix_segs),
-            topic=topic_enum,
-            segments=topic_segs[len(prefix_segs) + 1 :],
-        )
-    except ValueError:
-        return None
+    seg = topic_segs[len(prefix_segs)].lower()
+    topic_enum = _TOPIC_ALIASES.get(seg)
+    if topic_enum is None:
+        try:
+            topic_enum = Topic(seg)
+        except ValueError:
+            return None
+
+    return TopicRoute(
+        raw=topic_name,
+        prefix="/".join(prefix_segs),
+        topic=topic_enum,
+        segments=topic_segs[len(prefix_segs) + 1 :],
+    )

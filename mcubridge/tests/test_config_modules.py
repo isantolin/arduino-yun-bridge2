@@ -75,20 +75,14 @@ def test_load_runtime_config_applies_env_and_defaults(
     assert config.watchdog_interval == 0.5
 
 
-def test_load_runtime_config_metrics(monkeypatch: pytest.MonkeyPatch):
+def test_load_runtime_config_intervals(monkeypatch: pytest.MonkeyPatch):
     raw_config = {
-        "metrics_enabled": True,
-        "metrics_host": "0.0.0.0",
-        "metrics_port": 9999,
         "bridge_summary_interval": 10.5,
         "bridge_handshake_interval": 20.0,
     }
     monkeypatch.setattr(settings, "_load_raw_config", lambda: (raw_config, "test"))
 
     config = settings.load_runtime_config()
-    assert config.metrics_enabled
-    assert config.metrics_host == "0.0.0.0"
-    assert config.metrics_port == 9999
     assert config.bridge_summary_interval == 10.5
     assert config.bridge_handshake_interval == 20.0
 

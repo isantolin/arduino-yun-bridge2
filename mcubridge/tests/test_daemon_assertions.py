@@ -21,7 +21,6 @@ def runtime_config(tmp_path: Path) -> RuntimeConfig:
     return RuntimeConfig(
         serial_port="/dev/ttyDummy",
         cloud_enabled=True,
-        metrics_enabled=False,
         watchdog_enabled=False,
         bridge_summary_interval=0.0,
         file_system_root=str(tmp_path),

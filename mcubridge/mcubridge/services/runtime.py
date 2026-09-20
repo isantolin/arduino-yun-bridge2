@@ -484,6 +484,14 @@ class BridgeService:
                     telemetry=report,
                 )
 
+            if logger.is_enabled_for(logging.DEBUG):
+                logger.debug(
+                    "[MPU -> GATEWAY] [TOPIC:%s] [PAYLOAD:%s] [BYTES:%d]",
+                    message.topic_name,
+                    envelope.WhichOneof("payload"),
+                    len(message.payload),
+                )
+
             # Send CloudEnvelope via gRPC
             await self._cloud_stream.send_message(envelope)
 
@@ -1640,6 +1648,12 @@ class BridgeService:
                         # Read loop
                         async for envelope in stream:
                             payload_type = envelope.WhichOneof("payload")
+                            if logger.is_enabled_for(logging.DEBUG):
+                                logger.debug(
+                                    "[GATEWAY -> MPU] [TYPE:%s] [SEQ:%d]",
+                                    payload_type,
+                                    envelope.sequence_id,
+                                )
                             if payload_type == "pong":
                                 logger.debug("Received keepalive pong from cloud.")
                                 continue
@@ -1677,6 +1691,13 @@ class BridgeService:
             ),
         )
         if self._cloud_stream:
+            if logger.is_enabled_for(logging.DEBUG):
+                logger.debug(
+                    "[MPU -> GATEWAY] [EVENT:%s] [SEVERITY:%s] %s",
+                    event_type,
+                    severity,
+                    description,
+                )
             await self._cloud_stream.send_message(envelope)
 
     async def _cloud_incoming_worker(self) -> None:

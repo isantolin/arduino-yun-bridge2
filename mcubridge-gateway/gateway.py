@@ -488,11 +488,15 @@ class CloudBridgeService(CloudBridgeBase):
                     if not session_fsm.active.is_active:
                         session_fsm.activate()
 
+                    if envelope.device_id and envelope.device_id != device_id:
+                        self.gateway.connections[envelope.device_id] = stream
+
                     payload_type = envelope.WhichOneof("payload")
                     logger.debug(
-                        "Received envelope",
-                        seq=envelope.sequence_id,
-                        payload_type=payload_type,
+                        "[DEVICE -> GATEWAY] [DEVICE:%s] [TYPE:%s] [SEQ:%d]",
+                        device_id,
+                        payload_type,
+                        envelope.sequence_id,
                     )
 
                     if handler := _PAYLOAD_HANDLERS.get(payload_type or ""):
@@ -516,6 +520,35 @@ class CloudBridgeService(CloudBridgeBase):
                 for (target_id, _), fut in list(self.gateway.pending_commands.items()):
                     if target_id == device_id and not fut.done():
                         fut.set_exception(ConnectionResetError(f"Device {device_id} disconnected during execution"))
+
+    async def DispatchCommand(self, stream: Stream[pb.CommandDispatch, pb.CommandResponse]) -> None:
+        """[SIL-2] Northbound gRPC endpoint dispatching a command to an active edge device."""
+        request = await stream.recv_message()
+        if request is None:
+            return
+
+        target_id = request.target_device_id
+        if not target_id:
+            if not self.gateway.connections:
+                await stream.send_message(
+                    pb.CommandResponse(status_code=503, payload=b"No devices connected to gateway")
+                )
+                return
+            target_id = next(iter(self.gateway.connections))
+
+        timeout = request.timeout_seconds if request.timeout_seconds > 0 else 10.0
+        try:
+            response = await self.gateway.send_command(
+                target_id,
+                request.command_path,
+                payload=request.payload,
+                timeout_seconds=float(timeout),
+            )
+            await stream.send_message(response)
+        except (KeyError, TimeoutError, OSError) as exc:
+            await stream.send_message(
+                pb.CommandResponse(status_code=504, payload=str(exc).encode("utf-8"))
+            )
 
 
 class ProtobufGateway:
@@ -603,6 +636,12 @@ class ProtobufGateway:
         self.pending_commands[key] = future
 
         self.metrics.command_requests.labels(device_id=device_id).inc()
+        logger.debug(
+            "[GATEWAY -> DEVICE] [DEVICE:%s] [CMD:%s] [SEQ:%d]",
+            device_id,
+            command_path,
+            seq,
+        )
 
         try:
             await stream.send_message(req_envelope)
@@ -617,6 +656,12 @@ class ProtobufGateway:
         response: pb.CommandResponse,
     ) -> None:
         """[SIL-2] Handle incoming command response from edge device and resolve pending future."""
+        logger.debug(
+            "[DEVICE -> GATEWAY] [DEVICE:%s] [CMD_RESP] [SEQ:%d] [STATUS:%d]",
+            device_id,
+            sequence_id,
+            response.status_code,
+        )
         logger.info(
             "Received command response",
             device_id=device_id,

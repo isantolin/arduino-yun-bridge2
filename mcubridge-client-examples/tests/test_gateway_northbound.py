@@ -1,0 +1,68 @@
+#!/usr/bin/env python3
+"""[SIL-2] End-to-end test verifying northbound command orchestration through ProtobufGateway.
+
+Flow:
+Northbound Client -> CloudBridge.DispatchCommand -> ProtobufGateway.send_command
+-> CloudEnvelope(command_request) -> McuBridge Daemon -> Serial CMD_DIGITAL_WRITE
+-> MCU Emulator -> Serial ACK -> McuBridge Daemon -> CloudEnvelope(command_response)
+-> ProtobufGateway -> Northbound Client.
+"""
+
+from __future__ import annotations
+
+import asyncio
+from typing import Annotated
+
+from grpclib.client import Channel
+import structlog
+import typer
+
+from mcubridge.protocol import mcubridge_grpc, mcubridge_pb2 as pb
+from mcubridge_client.cli import configure_logging
+
+configure_logging()
+logger = structlog.get_logger("test-gateway-northbound")
+
+
+async def run_test(host: str, port: int) -> None:
+    logger.info("Connecting to Cloud Gateway northbound endpoint", host=host, port=port)
+    channel = Channel(host, port)
+    stub = mcubridge_grpc.CloudBridgeStub(channel)
+    try:
+        dispatch = pb.CommandDispatch(
+            target_device_id="",
+            command_path="digital/13",
+            payload=b"1",
+            timeout_seconds=5,
+        )
+        logger.info("Dispatching command to gateway", command=dispatch.command_path)
+        response = await stub.DispatchCommand(dispatch)
+
+        logger.info(
+            "Received northbound command response",
+            status_code=response.status_code,
+            payload=response.payload,
+        )
+        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.payload!r}"
+        assert response.payload == b"OK", f"Expected b'OK', got {response.payload!r}"
+        logger.info("Northbound roundtrip test PASSED")
+    finally:
+        channel.close()
+
+
+cli = typer.Typer(
+    help="Northbound Cloud Gateway E2E Command Orchestration Test",
+    add_completion=False,
+)
+
+
+@cli.command()
+def main(
+    host: Annotated[str, typer.Option("--host", help="Gateway Host")] = "127.0.0.1",
+    port: Annotated[int, typer.Option("--port", help="Gateway Port")] = 8443,
+) -> None:
+    asyncio.run(run_test(host, port))
+
+
+if __name__ == "__main__":
+    cli()

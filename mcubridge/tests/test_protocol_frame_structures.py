@@ -193,7 +193,6 @@ def _valid_runtime_config(**overrides: Any) -> pb.RuntimeConfig:
         watchdog_enabled=True,
         watchdog_interval=1.0,
         serial_shared_secret=b"secret",
-        metrics_port=9130,
         cloud_http3_port=443,
         allow_non_tmp_paths=False,
         cloud_spool_dir="/tmp/spool",
@@ -237,9 +236,6 @@ def test_validate_config_invalid() -> None:
 
     with pytest.raises(ValueError, match="serial_shared_secret"):
         structures.validate_config(_valid_runtime_config(serial_shared_secret=b""))
-
-    with pytest.raises(ValueError, match="metrics_port"):
-        structures.validate_config(_valid_runtime_config(metrics_port=70000))
 
     with pytest.raises(ValueError, match="cloud_http3_port"):
         structures.validate_config(_valid_runtime_config(cloud_http3_port=70000))

@@ -53,7 +53,6 @@ def test_config() -> RuntimeConfig:
         status_interval=1,
         bridge_summary_interval=0.0,
         bridge_handshake_interval=0.0,
-        metrics_enabled=False,
         watchdog_enabled=False,
     )
 

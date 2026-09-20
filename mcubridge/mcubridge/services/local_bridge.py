@@ -49,7 +49,12 @@ def parse_serial_response(res: Any, target_type: type[_T_PB], default: _T_PB) ->
     if isinstance(res, (bytes, bytearray)):
         try:
             return target_type.FromString(bytes(res))
-        except (ProtobufDecodeError, TypeError, ValueError):
+        except (ProtobufDecodeError, TypeError, ValueError) as exc:
+            logger.warning(
+                "Failed to decode serial response into protobuf",
+                target=target_type.__name__,
+                error=str(exc),
+            )
             return default
     return default
 
@@ -104,7 +109,8 @@ class LocalBridgeService(LocalBridgeBase):
         if (req := await stream.recv_message()) is not None:
             try:
                 mode_str = pb.PinModeType.Name(req.mode).removeprefix("PIN_")
-            except (ValueError, KeyError):
+            except (ValueError, KeyError) as exc:
+                logger.warning("Unrecognized pin mode enum, defaulting to INPUT", mode=req.mode, error=str(exc))
                 mode_str = "INPUT"
             res = await self.runtime_service.gpio.subscribe_pin(
                 pin=req.pin, mode=mode_str, interval_ms=req.interval_ms, hysteresis=req.hysteresis, enabled=req.enabled

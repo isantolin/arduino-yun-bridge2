@@ -61,7 +61,8 @@ def resolve_protoc_bin() -> Path:
 def _check_has_protoc(bin_path: Path) -> bool:
     try:
         return subprocess.run([str(bin_path), "--version"], capture_output=True, check=False).returncode == 0
-    except FileNotFoundError:
+    except FileNotFoundError as exc:
+        sys.stderr.write(f"[DEBUG] Protoc executable not found at {bin_path}: {exc}\n")
         return False
 
 

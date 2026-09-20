@@ -657,10 +657,8 @@ async def test_publish_metrics_error_handling(tmp_path: Path) -> None:
     task = asyncio.create_task(publish_metrics(state, failing_enqueue, interval=0.01, min_interval=0.01))
     await asyncio.sleep(0.05)
     task.cancel()
-    try:
+    with pytest.raises(asyncio.CancelledError):
         await task
-    except asyncio.CancelledError:
-        pass
 
     assert call_count > 0
     state.cleanup()
@@ -691,10 +689,8 @@ async def test_publish_bridge_snapshots_error_handling(tmp_path: Path) -> None:
     )
     await asyncio.sleep(0.05)
     task.cancel()
-    try:
+    with pytest.raises(asyncio.CancelledError):
         await task
-    except asyncio.CancelledError:
-        pass
 
     assert call_count > 0
     state.cleanup()

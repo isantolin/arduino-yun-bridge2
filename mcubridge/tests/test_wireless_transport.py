@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 import serialx
+import structlog
 
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
@@ -20,6 +21,8 @@ from mcubridge.transport.serial import (
     SerialTransport,
     resolve_serial_url,
 )
+
+logger = structlog.get_logger(__name__)
 
 
 def test_resolve_serial_url() -> None:
@@ -66,8 +69,8 @@ async def test_serialx_socket_transport_lifecycle() -> None:
             line = await reader.readuntil(b"\x00")
             writer.write(line)
             await writer.drain()
-        except (asyncio.IncompleteReadError, asyncio.CancelledError):
-            pass
+        except (asyncio.IncompleteReadError, asyncio.CancelledError) as exc:
+            logger.debug("Mock TCP ping connection closed", error=str(exc))
         finally:
             writer.close()
             await writer.wait_closed()
@@ -103,8 +106,8 @@ async def test_serial_transport_tcp_connect_and_stream(
                 # Echo back
                 writer.write(data)
                 await writer.drain()
-        except (asyncio.IncompleteReadError, asyncio.CancelledError, ConnectionResetError):
-            pass
+        except (asyncio.IncompleteReadError, asyncio.CancelledError, ConnectionResetError) as exc:
+            logger.debug("Mock TCP client connection closed", error=str(exc))
         finally:
             writer.close()
             await writer.wait_closed()
@@ -137,10 +140,8 @@ async def test_serial_transport_tcp_connect_and_stream(
     # Stop transport
     await transport.stop()
     transport_task.cancel()
-    try:
+    with pytest.raises(asyncio.CancelledError):
         await transport_task
-    except asyncio.CancelledError:
-        pass
 
     server.close()
     await server.wait_closed()
@@ -202,8 +203,8 @@ async def test_serial_transport_tcp_stop_event_branch(
     async def handle_idle(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
             await asyncio.sleep(1.0)
-        except asyncio.CancelledError:
-            pass
+        except asyncio.CancelledError as exc:
+            logger.debug("Mock TCP idle connection cancelled", error=str(exc))
         finally:
             writer.close()
             await writer.wait_closed()

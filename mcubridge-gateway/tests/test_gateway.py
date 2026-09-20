@@ -779,7 +779,8 @@ async def test_handle_telemetry_full_metrics_dimensions(mock_gateway: ProtobufGa
     assert reg.get_sample_value("mcubridge_device_cloud_messages_published", lbl) == 8.0
     assert reg.get_sample_value("mcubridge_device_latency_ms", {"device_id": "edge-full", "type": "serial"}) == 12.5
     assert reg.get_sample_value("mcubridge_device_latency_ms", {"device_id": "edge-full", "type": "rpc"}) == 25.0
-    assert reg.get_sample_value("mcubridge_device_retries", {"device_id": "edge-full", "component": "cloud_connect"}) == 4.0
+    retries_lbl = {"device_id": "edge-full", "component": "cloud_connect"}
+    assert reg.get_sample_value("mcubridge_device_retries", retries_lbl) == 4.0
 
     # Verify line protocol format contains all dimensions
     line = TSDBSink.format_line_protocol("edge-full", metrics, timestamp_ns=1700000000000)

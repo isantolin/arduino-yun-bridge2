@@ -229,7 +229,8 @@ def load_tls_session_ticket(cache: Any | None, host: str, port: int) -> bytes | 
             with cache.env.begin(db=cache.db, buffers=True) as txn:
                 val = txn.get(key.encode("utf-8"))
                 return bytes(val) if val is not None else None
-        except (OSError, RuntimeError):
+        except (OSError, RuntimeError) as exc:
+            logger.debug("Storage cache read failure", key=key, error=str(exc))
             return None
     if hasattr(cache, "_mem"):
         return cache._mem.get(key)

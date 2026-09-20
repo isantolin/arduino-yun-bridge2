@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import socket
 import subprocess
+import sys
 from collections.abc import Sequence
 from pathlib import Path
-import socket
 from typing import Any
 
 import tenacity
@@ -26,7 +27,8 @@ def wait_for_path_ready(path: Path | str, timeout: float = 10.0, interval: float
     )
     try:
         return retryer(target.exists)
-    except tenacity.RetryError:
+    except tenacity.RetryError as exc:
+        sys.stderr.write(f"[DEBUG] Path {path} did not become ready within {timeout}s: {exc}\n")
         return False
 
 
@@ -45,7 +47,8 @@ def wait_for_tcp_ready(host: str, port: int, timeout: float = 30.0, interval: fl
     )
     try:
         return retryer(_probe)
-    except (tenacity.RetryError, OSError):
+    except (tenacity.RetryError, OSError) as exc:
+        sys.stderr.write(f"[DEBUG] TCP {host}:{port} did not become ready within {timeout}s: {exc}\n")
         return False
 
 

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import sys
 import time
 import tracemalloc
 from pathlib import Path
@@ -34,7 +35,8 @@ def measure_imports() -> list[tuple[str, float]]:
         start = time.perf_counter()
         try:
             importlib.import_module(mod)
-        except ImportError:
+        except ImportError as exc:
+            sys.stderr.write(f"[DEBUG] Profiler skipping unavailable module {mod}: {exc}\n")
             continue
         end = time.perf_counter()
         results.append((mod, (end - start) * 1000))
@@ -66,7 +68,8 @@ def get_module_size(mod_name: str) -> int:
         spec = importlib.util.find_spec(mod_name)
         if spec and spec.origin:
             return Path(spec.origin).stat().st_size
-    except (OSError, ValueError):
+    except (OSError, ValueError) as exc:
+        sys.stderr.write(f"[DEBUG] Failed to resolve module disk size for {mod_name}: {exc}\n")
         return 0
     return 0
 

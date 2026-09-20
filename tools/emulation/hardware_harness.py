@@ -325,6 +325,7 @@ def run(
             try:
                 status_errors = audit_status_dict(json.loads(status_file.read_text(encoding="utf-8")))
             except (OSError, json.JSONDecodeError, ValueError, TypeError) as e:
+                sys.stderr.write(f"[WARN] Failed to parse /tmp/mcubridge_status.json: {e}\n")
                 status_errors = [f"Failed to parse /tmp/mcubridge_status.json: {e}"]
     else:
         try:
@@ -341,6 +342,7 @@ def run(
             if res.stdout.strip():
                 status_errors = audit_status_dict(json.loads(res.stdout))
         except (subprocess.SubprocessError, OSError, json.JSONDecodeError, ValueError, TypeError) as e:
+            sys.stderr.write(f"[WARN] Failed to retrieve remote status via UBUS/file: {e}\n")
             status_errors = [f"Failed to retrieve remote status via UBUS/file: {e}"]
 
     if status_errors:

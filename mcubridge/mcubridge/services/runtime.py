@@ -648,6 +648,8 @@ class BridgeService:
                 # Unified Dispatch
                 if handler := self._topic_dispatch.get(route.topic):
                     await handler(route, request)
+            else:
+                logger.warning("Unroutable cloud topic received", topic=topic_val)
 
     # --- Business Logic Implementation ---
 
@@ -874,11 +876,13 @@ class BridgeService:
         key = "/".join(key_parts)
         pl = inbound.payload
         if not key:
+            logger.warning("Datastore operation rejected: empty key", topic=route.raw)
             return
         if route.identifier == DatastoreAction.PUT:
             try:
                 ds_put = pb.DatastorePut(key=key, value=pl)
-            except (ValueError, TypeError):
+            except (ValueError, TypeError) as exc:
+                logger.warning("Failed to construct DatastorePut message", key=key, error=str(exc))
                 return
             if len(ds_put.key.encode()) <= protocol.MAX_DATASTORE_KEY_LENGTH and len(ds_put.value) <= 512:
                 if self.state.datastore_cache is not None:
@@ -904,6 +908,7 @@ class BridgeService:
             try:
                 data = await self.state.mailbox_incoming_queue.popleft()
             except IndexError:
+                logger.debug("Mailbox incoming queue empty during cloud read")
                 data = b""
             await self.enqueue_cloud_publish(
                 topic_path(
@@ -1022,10 +1027,12 @@ class BridgeService:
     async def _handle_shell(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         raw_act = route.segments[0] if route.segments else None
         if not raw_act:
+            logger.warning("Shell operation rejected: missing action segment", topic=route.raw)
             return
         try:
             act = ShellAction(raw_act)
-        except ValueError:
+        except ValueError as exc:
+            logger.warning("Unrecognized shell action segment", action=raw_act, error=str(exc))
             return
         pid = int(route.segments[1]) if len(route.segments) == 2 and route.segments[1].isdigit() else 0
         with structlog.contextvars.bound_contextvars(shell_action=act.value, pid=pid):
@@ -1312,7 +1319,8 @@ class BridgeService:
                         async with asyncio.timeout(STREAM_POLL_TIMEOUT_SECONDS):
                             data = await s.read(protocol.MAX_PAYLOAD_SIZE - 32)
                         return data, not s.at_eof()
-                    except TimeoutError:
+                    except TimeoutError as exc:
+                        logger.debug("Stream poll read timed out; process stream still pending", error=str(exc))
                         return b"", True
 
                 o, to = await _rd(ctx.handle.stdout)
@@ -1381,7 +1389,8 @@ class BridgeService:
             return None
         try:
             return await path.read_bytes()
-        except (FileNotFoundError, IsADirectoryError, PermissionError):
+        except (FileNotFoundError, IsADirectoryError, PermissionError) as exc:
+            logger.debug("Safe file read failed", path=str(path), error=str(exc))
             return None
 
     async def safe_file_remove(self, p_str: str) -> bool:
@@ -1390,7 +1399,8 @@ class BridgeService:
         try:
             await path.unlink()
             return True
-        except (FileNotFoundError, IsADirectoryError, PermissionError):
+        except (FileNotFoundError, IsADirectoryError, PermissionError) as exc:
+            logger.debug("Safe file remove failed", path=str(path), error=str(exc))
             return False
 
     async def _write_with_quota(self, path: Path | anyio.Path, data: bytes) -> bool:

@@ -60,7 +60,8 @@ async def run_test(
                             qos=1,
                         )
                     )
-                except EOFError:
+                except EOFError as exc:
+                    logger.info("Console input stream terminated by EOF", error=str(exc))
                     break
 
         listener_task.cancel()

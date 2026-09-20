@@ -49,10 +49,8 @@ class FrameDebugSnapshot:
 
 def name_for_command(command_id: int) -> str:
     for enum_cls in (protocol.Command, protocol.Status):
-        try:
+        if command_id in enum_cls:
             return enum_cls(command_id).name
-        except ValueError:
-            continue
     return f"UNKNOWN(0x{command_id:02X})"
 
 

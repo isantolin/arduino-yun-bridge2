@@ -25,7 +25,8 @@ logger = structlog.get_logger("mcubridge.service.ubus")
 
 try:
     ubus: Any = importlib.import_module("ubus")
-except ImportError:
+except ImportError as exc:
+    logger.debug("Native ubus module unavailable; fallback mode active", error=str(exc))
     ubus = None
 
 
@@ -328,6 +329,7 @@ class UbusService:
         try:
             item: bytes = self.run_sync(self.runtime.state.mailbox_incoming_queue.popleft())
         except IndexError:
+            logger.debug("UBUS mailbox read called on empty queue")
             return {"status": "empty"}
         return {"status": "ok", "message": _format_ubus_bytes(item)}
 
@@ -369,7 +371,8 @@ class UbusService:
         if target_loop is not None and target_loop.is_running():
             try:
                 current_loop = asyncio.get_running_loop()
-            except RuntimeError:
+            except RuntimeError as exc:
+                logger.debug("No active running loop in current thread", error=str(exc))
                 current_loop = None
 
             if current_loop is not target_loop:
@@ -378,10 +381,12 @@ class UbusService:
 
         try:
             return anyio.from_thread.run(lambda: coro)
-        except (anyio.NoEventLoopError, RuntimeError):
+        except (anyio.NoEventLoopError, RuntimeError) as exc:
+            logger.debug("anyio from_thread run failed; falling back to thread pool or loop", error=str(exc))
             try:
                 loop = asyncio.get_running_loop()
-            except RuntimeError:
+            except RuntimeError as loop_exc:
+                logger.debug("No active running loop in thread fallback", error=str(loop_exc))
                 loop = None
 
             if loop is not None and loop.is_running():

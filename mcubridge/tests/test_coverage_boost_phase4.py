@@ -25,6 +25,9 @@ from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
 from mcubridge.state.storage import LmdbDeque
 from mcubridge.transport.serial import SerialTransport
+import structlog
+
+logger = structlog.get_logger(__name__)
 
 
 def _make_config(tmp_path: Path | None = None) -> RuntimeConfig:
@@ -81,8 +84,8 @@ async def test_runtime_service_run_and_teardown_exceptions(tmp_path: Path) -> No
     task.cancel()
     try:
         await task
-    except asyncio.CancelledError:
-        pass
+    except asyncio.CancelledError as exc:
+        logger.debug("Service run task cancelled as expected", error=str(exc))
 
     assert service._cloud_spool is None
     state.cleanup()

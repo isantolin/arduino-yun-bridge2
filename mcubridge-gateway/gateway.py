@@ -465,7 +465,8 @@ class CloudBridgeService(CloudBridgeBase):
     async def Session(self, stream: Stream[pb.CloudEnvelope, pb.CloudEnvelope]) -> None:
         try:
             device_id, is_authenticated = extract_peer_identity(stream.peer)
-        except ValueError:
+        except ValueError as exc:
+            logger.warning("Session connection rejected: invalid peer identity", error=str(exc))
             return
 
         session_fsm = GatewaySessionMachine()

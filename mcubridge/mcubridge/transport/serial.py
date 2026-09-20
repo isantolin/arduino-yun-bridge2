@@ -56,7 +56,8 @@ logger = structlog.get_logger("mcubridge.serial")
 
 try:
     import termios
-except ImportError:
+except ImportError as exc:
+    logger.debug("termios module not available on this platform", error=str(exc))
     termios = None
 
 _orig_after_configure: Any = None
@@ -283,7 +284,8 @@ class SerialTransport:
             except asyncio.LimitOverrunError:
                 self.state.serial_decode_errors += 1
                 await serial.read(protocol.MAX_SERIAL_FRAME_BYTES)
-            except asyncio.IncompleteReadError:
+            except asyncio.IncompleteReadError as exc:
+                logger.info("Serial stream closed or EOF reached", error=str(exc))
                 break
             except (OSError, RuntimeError, ValueError, TypeError, serialx.SerialException) as exc:
                 logger.error("Error in serial read loop", error=str(exc))

@@ -408,7 +408,8 @@ def _fetch_latest_version(package_name: str, *, include_prerelease: bool = False
                     if not include_prerelease and v.is_prerelease:
                         continue
                     parsed_versions.append(v)
-                except (InvalidVersion, ValueError):
+                except (InvalidVersion, ValueError) as exc:
+                    sys.stderr.write(f"[DEBUG] Skipping unparseable version string '{v_str}': {exc}\n")
                     continue
             if parsed_versions:
                 parsed_versions.sort()
@@ -557,7 +558,8 @@ def _to_apk_version(version: str) -> str:
     is_prerelease = True
     try:
         is_prerelease = Version(version).is_prerelease
-    except (InvalidVersion, TypeError):
+    except (InvalidVersion, TypeError) as exc:
+        sys.stderr.write(f"[DEBUG] Failed to parse version string '{version}': {exc}\n")
         is_prerelease = True
 
     if not is_prerelease:

@@ -29,7 +29,8 @@ def push_file_ubus(target_path: str, data: bytes) -> bool:
             return False
         try:
             data_str = data.decode("utf-8")
-        except UnicodeDecodeError:
+        except UnicodeDecodeError as exc:
+            logger.debug("Payload is binary; hex encoding for UBUS transmission", error=str(exc))
             data_str = data.hex()
         res: Any = conn.call("mcubridge", "file_write", {"path": target_path, "data": data_str})
         if isinstance(res, dict):
@@ -38,7 +39,8 @@ def push_file_ubus(target_path: str, data: bytes) -> bool:
                 logger.info("File push successful via UBUS", path=target_path, size=len(data))
                 return True
         return False
-    except (ImportError, OSError, RuntimeError, AttributeError):
+    except (ImportError, OSError, RuntimeError, AttributeError) as exc:
+        logger.debug("UBUS file push unavailable or failed; falling back to gRPC", path=target_path, error=str(exc))
         return False
 
 

@@ -24,7 +24,8 @@ def _assert_only_expected_exception(
     try:
         operation()
         return True
-    except expected:
+    except expected as exc:
+        assert isinstance(exc, expected)
         return True
 
 

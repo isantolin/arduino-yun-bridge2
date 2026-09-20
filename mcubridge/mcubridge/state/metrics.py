@@ -5,6 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 import importlib.metadata
 from typing import Any
+import structlog
+
+logger = structlog.get_logger("mcubridge.state.metrics")
 
 
 class _ValueGetter:
@@ -143,6 +146,7 @@ class DaemonMetrics:
         """Populate build info from package metadata."""
         try:
             version = importlib.metadata.version("mcubridge")
-        except importlib.metadata.PackageNotFoundError:
+        except importlib.metadata.PackageNotFoundError as exc:
+            logger.debug("Package metadata not found; using development version string", error=str(exc))
             version = "dev"
         self.build_info.info({"version": version, "python": "3.13"})

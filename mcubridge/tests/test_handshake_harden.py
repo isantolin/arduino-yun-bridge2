@@ -76,12 +76,9 @@ async def test_handshake_auth_mismatch(
     assert state.handshake_failure_streak == 1
     assert state.last_handshake_error == "sync_auth_mismatch"
 
-    # [SIL-2] Deterministic teardown: cancel dangling synchronize() task
     sync_task.cancel()
-    try:
+    with pytest.raises((asyncio.CancelledError, tenacity.RetryError)):
         await sync_task
-    except (asyncio.CancelledError, tenacity.RetryError):
-        pass
 
 
 @pytest.mark.asyncio

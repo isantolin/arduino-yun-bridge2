@@ -13,6 +13,9 @@ from google.protobuf.message import Message as ProtobufMessage
 from typing import Final
 import functools
 import posixpath
+import structlog
+
+logger = structlog.get_logger(__name__)
 
 
 _TOPIC_ALIASES: Final[dict[str, Topic]] = {
@@ -71,7 +74,8 @@ def parse_topic(prefix: str, topic_name: str) -> TopicRoute | None:
     if topic_enum is None:
         try:
             topic_enum = Topic(seg)
-        except ValueError:
+        except ValueError as exc:
+            logger.warning("Unrecognized cloud topic service segment", segment=seg, topic=topic_name, error=str(exc))
             return None
 
     return TopicRoute(

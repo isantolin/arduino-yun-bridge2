@@ -181,6 +181,7 @@ class ClockSyncService:
                 else:
                     self.fsm.disconnect()
             except asyncio.CancelledError:
+                logger.debug("Periodic clock sync task cancelled")
                 break
             except (OSError, ConnectionError, TimeoutError, ProtobufDecodeError) as e:
                 logger.warning("Periodic clock sync failed", error=str(e))

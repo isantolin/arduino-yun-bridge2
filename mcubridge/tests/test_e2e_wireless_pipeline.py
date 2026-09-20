@@ -11,6 +11,7 @@ import asyncio
 
 import pytest
 from cobs import cobsr
+import structlog
 
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcubridge_pb2 as pb, protocol
@@ -19,6 +20,8 @@ from mcubridge.security.security import generate_nonce_with_counter
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState
 from mcubridge.transport.serial import SerialTransport
+
+logger = structlog.get_logger(__name__)
 
 
 @pytest.mark.asyncio
@@ -89,8 +92,8 @@ async def test_e2e_wireless_tcp_handshake_and_rpc_exchange(
                     writer.write(cobsr.encode(resp_frame) + protocol.FRAME_DELIMITER)
                     await writer.drain()
 
-        except (asyncio.IncompleteReadError, asyncio.CancelledError, ConnectionResetError):
-            pass
+        except (asyncio.IncompleteReadError, asyncio.CancelledError, ConnectionResetError) as exc:
+            logger.debug("Mock MCU TCP server connection closed", error=str(exc))
         finally:
             writer.close()
             await writer.wait_closed()
@@ -136,10 +139,8 @@ async def test_e2e_wireless_tcp_handshake_and_rpc_exchange(
     # 4. Cleanup
     await transport.stop()
     transport_task.cancel()
-    try:
+    with pytest.raises(asyncio.CancelledError):
         await transport_task
-    except asyncio.CancelledError:
-        pass
 
     server.close()
     await server.wait_closed()
@@ -210,8 +211,8 @@ async def test_e2e_wireless_tcp_analog_read_and_datastore(
                     writer.write(cobsr.encode(resp_frame) + protocol.FRAME_DELIMITER)
                     await writer.drain()
 
-        except (asyncio.IncompleteReadError, asyncio.CancelledError, ConnectionResetError):
-            pass
+        except (asyncio.IncompleteReadError, asyncio.CancelledError, ConnectionResetError) as exc:
+            logger.debug("Mock MCU WiFi server connection closed", error=str(exc))
         finally:
             writer.close()
             await writer.wait_closed()
@@ -244,10 +245,8 @@ async def test_e2e_wireless_tcp_analog_read_and_datastore(
 
     await transport.stop()
     transport_task.cancel()
-    try:
+    with pytest.raises(asyncio.CancelledError):
         await transport_task
-    except asyncio.CancelledError:
-        pass
 
     server.close()
     await server.wait_closed()

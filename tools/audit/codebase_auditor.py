@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def _audit_ast_exceptions(node: ast.AST, py_file_name: str) -> list[str]:
-    """Audit AST for bare and broad Pokemon exceptions."""
+    """Audit AST for bare and broad Pokemon exceptions, and silent exception swallowers."""
     findings: list[str] = []
     if isinstance(node, ast.ExceptHandler):
         if node.type is None:
@@ -26,6 +26,15 @@ def _audit_ast_exceptions(node: ast.AST, py_file_name: str) -> list[str]:
                     findings.append(
                         f"Python Pokemon Exception: {py_file_name}:{node.lineno} - " f"'except (..., {elt.id}, ...):'"
                     )
+        # Check for silent exception swallowing (no logging, assertion, or propagation in handler)
+        has_call = any(isinstance(n, ast.Call) for n in ast.walk(node))
+        has_raise = any(isinstance(n, ast.Raise) for n in ast.walk(node))
+        has_assert = any(isinstance(n, ast.Assert) for n in ast.walk(node))
+        if not (has_call or has_raise or has_assert):
+            findings.append(
+                f"Python Silent Exception: {py_file_name}:{node.lineno} - "
+                f"exception handler silently swallows without diagnostic logging, assertion, or propagation"
+            )
     return findings
 
 

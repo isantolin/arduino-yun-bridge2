@@ -260,9 +260,7 @@ def _remove_persistent_test_path(path: Path) -> None:
         return
 
     try:
-        path.unlink()
-    except FileNotFoundError:
-        return
+        path.unlink(missing_ok=True)
     except IsADirectoryError:
         shutil.rmtree(path)
 

@@ -480,7 +480,8 @@ class SerialHandshakeManager:
 
         try:
             return await retryer(_attempt)
-        except tenacity.RetryError:
+        except tenacity.RetryError as exc:
+            self._logger.error("Capabilities exchange retries exhausted", error=str(exc))
             return False
 
     async def handle_capabilities_resp(self, seq_id: int, payload: bytes | ProtobufMessage) -> bool:
@@ -561,7 +562,8 @@ class SerialHandshakeManager:
                 if not self._state.is_synchronized:
                     await self._state.link_sync_event.wait()
                 return self._state.is_synchronized
-        except TimeoutError:
+        except TimeoutError as exc:
+            self._logger.warning("Timed out waiting for MCU link sync confirmation", error=str(exc))
             return False
 
     def clear_handshake_expectations(self) -> None:

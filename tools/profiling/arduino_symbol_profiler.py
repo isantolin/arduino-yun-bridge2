@@ -31,7 +31,8 @@ def detect_board_label(build_dir: Path, elf_path: Path) -> str:
     """Extract board label from the build path."""
     try:
         rel_parts = elf_path.relative_to(build_dir).parts
-    except ValueError:
+    except ValueError as exc:
+        sys.stderr.write(f"[DEBUG] Path {elf_path} not relative to {build_dir}: {exc}\n")
         rel_parts = elf_path.parts
 
     for part in rel_parts:
@@ -50,6 +51,7 @@ def profile_elf(build_dir: Path, elf_path: Path, nm_bin: str) -> str:
         cmd = [nm_bin, "--size-sort", "--print-size", "-C", str(elf_path)]
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
     except (subprocess.CalledProcessError, OSError) as err:
+        sys.stderr.write(f"[WARN] Error profiling {elf_path}: {err}\n")
         return f"⚠️ Error profiling {elf_path}: {err}\n"
 
     lines = [line for line in result.stdout.strip().splitlines() if line]
@@ -69,7 +71,8 @@ def profile_elf(build_dir: Path, elf_path: Path, nm_bin: str) -> str:
             continue
         try:
             size_dec = int(parts[1], 16)
-        except ValueError:
+        except ValueError as exc:
+            sys.stderr.write(f"[DEBUG] Skipping unparseable symbol size '{parts[1]}': {exc}\n")
             continue
         sym_type = parts[2]
         sym_name = " ".join(parts[3:])

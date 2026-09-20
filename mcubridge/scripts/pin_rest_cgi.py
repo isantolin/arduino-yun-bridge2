@@ -20,12 +20,13 @@ from mcubridge.protocol import mcubridge_pb2 as pb
 
 import importlib
 
+logger = structlog.get_logger("mcubridge.pin_rest")
+
 try:
     ubus: Any = importlib.import_module("ubus")
-except ImportError:
+except ImportError as exc:
+    logger.debug("UBUS module not available; falling back to local gRPC", error=str(exc))
     ubus = None
-
-logger = structlog.get_logger("mcubridge.pin_rest")
 
 app = typer.Typer(help="Pin REST CGI and CLI interface for MCU Bridge.", add_completion=False)
 

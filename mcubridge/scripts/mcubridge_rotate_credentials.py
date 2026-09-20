@@ -12,15 +12,17 @@ from typing import Any
 import structlog
 import typer
 
+# [SIL-2] Structured logging towards syslog/stderr
+logger = structlog.get_logger("mcubridge.rotate-credentials")
+
 try:
     uci: Any = importlib.import_module("uci")
     UciException: type[BaseException] = getattr(uci, "UciException", RuntimeError)
-except ImportError:
+except ImportError as exc:
+    logger.debug("UCI module not available; CLI fallback will be used", error=str(exc))
     uci = None
     UciException = RuntimeError
 
-# [SIL-2] Structured logging towards syslog/stderr
-logger = structlog.get_logger("mcubridge.rotate-credentials")
 app = typer.Typer(help="Rotate MCU Bridge shared secret.", add_completion=False)
 
 

@@ -40,6 +40,8 @@ from ..protocol.structures import (
 from ..protocol import mcubridge_pb2 as pb
 from .metrics import DaemonMetrics
 
+logger = structlog.get_logger("mcubridge.state")
+
 
 def terminate_pid_tree(pid: int, timeout: float = 3.0) -> None:
     """Recursively terminate an arbitrary process tree by root PID. [SIL-2]"""
@@ -53,13 +55,12 @@ def terminate_pid_tree(pid: int, timeout: float = 3.0) -> None:
         _, alive = psutil.wait_procs(procs, timeout=timeout)
         for lingering in alive:
             lingering.kill()
-    except (psutil.NoSuchProcess, ProcessLookupError, psutil.AccessDenied):
+    except (psutil.NoSuchProcess, ProcessLookupError, psutil.AccessDenied) as exc:
+        logger.debug("Process termination skipped; process already dead or inaccessible", pid=pid, error=str(exc))
         return
 
 
 T = TypeVar("T")
-
-logger = structlog.get_logger("mcubridge.state")
 
 
 def _make_cloud_publish_queue(maxsize: int = 0) -> asyncio.Queue[pb.CloudQueuedPublish]:
@@ -641,7 +642,8 @@ class RuntimeState:
         ]
         try:
             uptime = max(0.0, time.time() - psutil.boot_time())
-        except (AttributeError, OSError):
+        except (AttributeError, OSError) as exc:
+            logger.debug("Failed to read system boot time for uptime metric", error=str(exc))
             uptime = self.metrics.uptime_seconds.value
 
         return pb.DaemonMetrics(
@@ -699,7 +701,8 @@ class RuntimeState:
             avail_mem = vmem.available
             load1m = psutil.getloadavg()[0]
             uptime = max(0.0, time.time() - psutil.boot_time())
-        except (OSError, RuntimeError, AttributeError, IndexError, ValueError):
+        except (OSError, RuntimeError, AttributeError, IndexError, ValueError) as exc:
+            logger.debug("Failed to sample system telemetry metrics", error=str(exc))
             sys_cpu = 0.0
             total_mem = 0
             avail_mem = 0
@@ -747,7 +750,8 @@ class RuntimeState:
                                 memory_rss_bytes=sub_mem,
                             )
                         )
-                    except (psutil.NoSuchProcess, OSError, ProcessLookupError):
+                    except (psutil.NoSuchProcess, OSError, ProcessLookupError) as exc:
+                        logger.debug("Subprocess disappeared during telemetry collection", pid=pid, error=str(exc))
                         continue
 
         return pb.BridgeStatus(
@@ -826,6 +830,7 @@ class RuntimeState:
             try:
                 self.cloud_publish_queue.get_nowait()
             except asyncio.QueueEmpty:
+                logger.debug("Cloud publish queue drained during cleanup")
                 break
         self.cloud_publish_queue = _make_cloud_publish_queue(self.cloud_queue_limit)
 

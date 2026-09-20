@@ -58,7 +58,8 @@ def _read_python_metrics(path: Path) -> CoverageMetrics | None:
             return 0
         try:
             return int(float(raw))
-        except ValueError:
+        except ValueError as exc:
+            sys.stderr.write(f"[DEBUG] Failed to parse integer attribute {name}='{raw}': {exc}\n")
             return 0
 
     lines_total = _get("lines-valid")

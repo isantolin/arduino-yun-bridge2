@@ -46,10 +46,8 @@ async def test_serial_transport_loops_final_v3(transport_setup: Any) -> None:
 
     mock_serial.readuntil.side_effect = readuntil_mock_impl
 
-    try:
+    with pytest.raises((TimeoutError, asyncio.TimeoutError)):
         await asyncio.wait_for(getattr(transport, "_read_loop")(mock_serial), 0.1)
-    except TimeoutError:
-        pass
 
     setattr(transport, "_tx_sequence_id", 0xFFFE)
     await transport.send_raw(0x01, b"")

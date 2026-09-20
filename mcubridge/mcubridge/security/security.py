@@ -21,8 +21,11 @@ os.environ.setdefault("CRYPTOGRAPHY_OPENSSL_NO_LEGACY", "1")
 
 from cryptography.hazmat.primitives import hashes, hmac
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
+import structlog
 
 from ..protocol import protocol
+
+logger = structlog.get_logger("mcubridge.security")
 
 
 def secure_zero(data: bytearray | memoryview) -> None:
@@ -59,7 +62,8 @@ def validate_nonce_counter(nonce: bytes, last_counter: int) -> tuple[bool, int]:
     """Validate nonce counter is strictly greater than last seen."""
     try:
         current = extract_nonce_counter(nonce)
-    except ValueError:
+    except ValueError as exc:
+        logger.warning("Failed to extract nonce counter", error=str(exc))
         return False, last_counter
 
     if current <= last_counter or current > protocol.NONCE_COUNTER_MASK:
@@ -91,7 +95,8 @@ def verify_crypto_integrity() -> bool:
         ct = aead.encrypt(nonce, b"test", ad)
         if len(ct) != 20 or ct[-protocol.AEAD_TAG_SIZE :].hex() != "7dca8479787a5c190f58eedae6a06bcf":
             return False
-    except (ValueError, TypeError):
+    except (ValueError, TypeError) as exc:
+        logger.error("Cryptographic Known Answer Test (KAT) failed", error=str(exc))
         return False
 
     return True

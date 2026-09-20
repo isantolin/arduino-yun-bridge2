@@ -17,7 +17,8 @@ from mcubridge.protocol import mcubridge_pb2 as pb
 
 try:
     ubus: Any = importlib.import_module("ubus")
-except ImportError:
+except ImportError as exc:
+    sys.stderr.write(f"[DEBUG] Native ubus module not found: {exc}\n")
     ubus = None
 
 app = typer.Typer(
@@ -51,6 +52,7 @@ def audit_status_dict(data: dict[str, Any]) -> list[str]:
     try:
         ParseDict(data, status_pb, ignore_unknown_fields=True)
     except (ParseError, ValueError, TypeError) as exc:
+        sys.stderr.write(f"[ERROR] Status Protobuf deserialization failed: {exc}\n")
         return [f"Status Protobuf deserialization failed: {exc}"]
 
     # 2. Cloud spool drop / trim anomalies

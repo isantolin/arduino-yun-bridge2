@@ -444,9 +444,11 @@ def test_client_env_not_callable() -> None:
 
 
 def test_client_definitions_empty_args() -> None:
-    with patch.dict(os.environ, {"MCUBRIDGE_SOCKET_PATH": ""}):
-        args = build_bridge_args(socket_path="", topic_prefix="")
-        assert "socket_path" in args  # Falls back to default socket path
+    with patch.dict(os.environ, {"MCUBRIDGE_DEVICE_ID": "dev-phase5"}):
+        args = build_bridge_args(device_id="dev-phase5", topic_prefix="")
+        assert "host" in args
+        assert "port" in args
+        assert args["device_id"] == "dev-phase5"
         assert "topic_prefix" not in args
 
 

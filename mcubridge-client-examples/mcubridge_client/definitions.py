@@ -29,9 +29,9 @@ def build_bridge_args(
     port: int | None = None,
     device_id: str | None = None,
     topic_prefix: str = "br",
-) -> dict[str, object]:
+) -> dict[str, str | int]:
     """Build Bridge constructor keyword arguments from CLI/env parameters targeting Gateway."""
-    args: dict[str, object] = {}
+    args: dict[str, str | int] = {}
     effective_host = (
         host
         or os.environ.get("MCUBRIDGE_GATEWAY_HOST")

@@ -11,7 +11,7 @@ import structlog
 
 from mcubridge.config.logging import configure_logging as _central_configure_logging
 
-from .definitions import DEFAULT_GATEWAY_HOST, DEFAULT_GATEWAY_PORT, build_bridge_args
+from .definitions import build_bridge_args
 from .env import dump_client_env
 from .mcubridge_grpc import LocalBridgeStub
 
@@ -31,8 +31,8 @@ async def bridge_session(
     """Connect Channel + LocalBridgeStub directly to Cloud Gateway and guarantee close on exit."""
     dump_client_env(structlog.get_logger(__name__))
     bridge_args = build_bridge_args(host=host, port=port, device_id=device_id, topic_prefix=topic_prefix)
-    effective_host = str(bridge_args.get("host") or DEFAULT_GATEWAY_HOST)
-    effective_port = int(bridge_args.get("port") or DEFAULT_GATEWAY_PORT)
+    effective_host = str(bridge_args["host"])
+    effective_port = int(str(bridge_args["port"]))
     effective_device = str(bridge_args["device_id"])
 
     channel = Channel(host=effective_host, port=effective_port)

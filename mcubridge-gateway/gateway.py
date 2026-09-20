@@ -567,14 +567,18 @@ class GatewayLocalBridgeService(LocalBridgeBase):
 
     def _resolve_device_id(self, stream: Stream[Any, Any]) -> str | None:
         """Extract explicit target device ID from request metadata."""
-        metadata = stream.metadata or {}
+        metadata = stream.metadata
+        if not metadata:
+            return None
         for key in ("x-device-id", "device-id", "device_id"):
             if key in metadata:
-                val = metadata[key]
-                if isinstance(val, (list, tuple)) and val:
-                    return str(val[0])
-                if isinstance(val, str) and val:
-                    return val
+                val: object = metadata[key]
+                if isinstance(val, (list, tuple)):
+                    if not val:
+                        continue
+                    first_item: object = val[0]
+                    return first_item.decode("utf-8") if isinstance(first_item, bytes) else str(first_item)
+                return val.decode("utf-8") if isinstance(val, bytes) else str(val)
         return None
 
     async def _forward_rpc(
@@ -671,7 +675,7 @@ class GatewayLocalBridgeService(LocalBridgeBase):
         )
 
     async def ProcessPoll(self, stream: Stream[pb.ProcessPoll, pb.ProcessPollResponse]) -> None:
-        await self._forward_rpc(stream, "ProcessPoll", pb.ProcessPollResponse, pb.ProcessPollResponse(running=False))
+        await self._forward_rpc(stream, "ProcessPoll", pb.ProcessPollResponse, pb.ProcessPollResponse(finished=True))
 
     async def ProcessKill(self, stream: Stream[pb.ProcessKill, pb.GenericResponse]) -> None:
         await self._forward_rpc(stream, "ProcessKill", pb.GenericResponse, pb.GenericResponse(status="error"))

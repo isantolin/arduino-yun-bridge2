@@ -171,7 +171,7 @@ async def run_debug_loop(
         sys.exit(1)
 
     snapshot = build_snapshot(command_id, payload)
-    sys.stdout.write(f"[FrameDebug] Initialized transport on {port} ({baudrate} bps)\n" f"{snapshot.render()}\n\n")
+    sys.stdout.write(f"[FrameDebug] Initialized transport on {port} ({baudrate} bps)\n{snapshot.render()}\n\n")
 
     try:
         reader, writer = await serialx.open_serial_connection(url=port, baudrate=baudrate)

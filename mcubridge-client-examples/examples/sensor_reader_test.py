@@ -16,13 +16,15 @@ logger = structlog.get_logger(__name__)
 
 
 async def run_test(
-    socket_path: str | None,
-    topic_prefix: str,
-    pin: str,
-    interval: float,
+    pin: str = "A0",
+    interval: float = 1.0,
+    host: str | None = None,
+    port: int | None = None,
+    device_id: str | None = None,
+    topic_prefix: str = "br",
 ) -> None:
 
-    async with bridge_session(socket_path, topic_prefix) as (_channel, stub):
+    async with bridge_session(host=host, port=port, device_id=device_id, topic_prefix=topic_prefix) as (_channel, stub):
         logger.info(
             "Requesting a reading from pin %s every %.1f seconds.",
             pin,
@@ -57,25 +59,31 @@ async def run_test(
 
 
 def main(
-    socket_path: str | None = None,
-    topic_prefix: str = "br",
     pin: str = "A0",
     interval: float = 1.0,
+    host: str | None = None,
+    port: int | None = None,
+    device_id: str | None = None,
+    topic_prefix: str = "br",
 ) -> None:
-    asyncio.run(run_test(socket_path, topic_prefix, pin, interval))
+    asyncio.run(run_test(pin, interval, host, port, device_id, topic_prefix))
 
 
-cli = typer.Typer(help="Poll sensor values via direct LocalBridgeStub.", add_completion=False)
+cli = typer.Typer(help="Poll sensor values via direct LocalBridgeStub through Gateway.", add_completion=False)
 
 
 @cli.command()
 def cli_main(
-    socket_path: Annotated[str | None, typer.Option("--socket-path", help="UNIX Domain Socket Path")] = None,
-    topic_prefix: Annotated[str, typer.Option("--topic-prefix", help="Topic prefix")] = "br",
     pin: Annotated[str, typer.Option("--pin", help="Pin to read (e.g. A0, A1, D13, 13)")] = "A0",
     interval: Annotated[float, typer.Option("--interval", help="Poll interval in seconds")] = 1.0,
+    host: Annotated[str | None, typer.Option("--host", help="Cloud Gateway host")] = None,
+    port: Annotated[int | None, typer.Option("--port", help="Cloud Gateway port")] = None,
+    device_id: Annotated[
+        str | None, typer.Option("--device-id", help="Explicit target device ID", envvar="MCUBRIDGE_DEVICE_ID")
+    ] = None,
+    topic_prefix: Annotated[str, typer.Option("--topic-prefix", help="Topic prefix")] = "br",
 ) -> None:
-    main(socket_path, topic_prefix, pin, interval)
+    main(pin, interval, host, port, device_id, topic_prefix)
 
 
 if __name__ == "__main__":

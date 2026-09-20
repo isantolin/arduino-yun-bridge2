@@ -535,9 +535,10 @@ async def test_runtime_cloud_session_non_command_envelope(test_config: RuntimeCo
 
 def test_definitions_build_bridge_args_empty() -> None:
     with patch.dict("os.environ", {}, clear=True):
-        with patch("mcubridge_client.definitions.DEFAULT_SOCKET_PATH", ""):
-            args = build_bridge_args(socket_path="", topic_prefix="")
-            assert args == {}
+        args = build_bridge_args(host="127.0.0.1", port=8443, device_id="test-dev", topic_prefix="")
+        assert args == {"host": "127.0.0.1", "port": 8443, "device_id": "test-dev"}
+        with pytest.raises(ValueError, match="Explicit target device_id is required"):
+            build_bridge_args(host="127.0.0.1", port=8443)
 
 
 @pytest.mark.asyncio

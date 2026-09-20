@@ -16,6 +16,8 @@ from typing import Any, cast
 
 import structlog
 
+from .definitions import DEFAULT_GATEWAY_HOST, DEFAULT_GATEWAY_PORT
+
 logger = structlog.get_logger(__name__)
 
 
@@ -48,7 +50,7 @@ def read_uci_general() -> dict[str, str]:
 
 
 def dump_client_env(logger: Any | None = None) -> None:
-    """Log the IPC socket settings for quick diagnostics."""
+    """Log the Gateway client target settings for quick diagnostics."""
 
     def _emit(message: str) -> None:
         if logger is not None:
@@ -59,9 +61,19 @@ def dump_client_env(logger: Any | None = None) -> None:
 
     _emit("MCU Bridge client configuration snapshot (UCI):")
     cfg = read_uci_general()
-    socket_path = (
-        os.environ.get("MCUBRIDGE_SOCKET_PATH")
-        or (cfg.get("socket_path") if cfg else None)
-        or "/var/run/mcubridge.sock"
+    host = (
+        os.environ.get("MCUBRIDGE_GATEWAY_HOST")
+        or os.environ.get("MCUBRIDGE_CLOUD_HOST")
+        or (cfg.get("cloud_host") if cfg else None)
+        or DEFAULT_GATEWAY_HOST
     )
-    _emit(f"  socket_path='{socket_path}'")
+    port = (
+        os.environ.get("MCUBRIDGE_GATEWAY_PORT")
+        or os.environ.get("MCUBRIDGE_CLOUD_PORT")
+        or (cfg.get("cloud_port") if cfg else None)
+        or DEFAULT_GATEWAY_PORT
+    )
+    device_id = os.environ.get("MCUBRIDGE_DEVICE_ID") or (cfg.get("device_id") if cfg else None) or "<unspecified>"
+    _emit(f"  gateway_host='{host}'")
+    _emit(f"  gateway_port='{port}'")
+    _emit(f"  target_device_id='{device_id}'")

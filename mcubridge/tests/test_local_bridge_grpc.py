@@ -457,3 +457,36 @@ async def test_local_bridge_publish_and_console(tmp_path: Path) -> None:
     asyncio.create_task(_push_console())
     with pytest.raises(OSError):
         await local_svc.SubscribeConsole(stream)
+
+
+@pytest.mark.asyncio
+async def test_local_bridge_execute_rpc(tmp_path: Path) -> None:
+    service, local_svc, mock_serial = _make_service(_make_config(tmp_path))
+
+    # 1. DigitalWrite
+    mock_serial.send.return_value = True
+    req_dw = pb.DigitalWrite(pin=13, value=1)
+    res_dw_bytes = await local_svc.execute_rpc("DigitalWrite", req_dw.SerializeToString())
+    res_dw = pb.GenericResponse.FromString(res_dw_bytes)
+    assert res_dw.status == "ok"
+
+    # 2. DigitalRead
+    mock_serial.send.return_value = pb.DigitalReadResponse(value=1)
+    req_dr = pb.PinRead(pin=13)
+    res_dr_bytes = await local_svc.execute_rpc("DigitalRead", req_dr.SerializeToString())
+    res_dr = pb.DigitalReadResponse.FromString(res_dr_bytes)
+    assert res_dr.value == 1
+
+    # 3. Datastore Put & Get
+    req_ds_put = pb.DatastorePut(key="k1", value=b"v1")
+    res_put_bytes = await local_svc.execute_rpc("DatastorePut", req_ds_put.SerializeToString())
+    assert pb.GenericResponse.FromString(res_put_bytes).status == "ok"
+
+    req_ds_get = pb.DatastoreGet(key="k1")
+    res_get_bytes = await local_svc.execute_rpc("DatastoreGet", req_ds_get.SerializeToString())
+    assert pb.DatastoreGetResponse.FromString(res_get_bytes).value == b"v1"
+
+    # 4. Unknown method raises ValueError
+    with pytest.raises(ValueError, match="Unknown RPC method"):
+        await local_svc.execute_rpc("NonExistent", b"")
+

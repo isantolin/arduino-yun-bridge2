@@ -7,12 +7,15 @@ from pathlib import Path
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from grpclib.const import Status
+from grpclib.exceptions import GRPCError
 import pytest
 from typer.testing import CliRunner
 
 from gateway import (
     CloudBridgeService,
     FleetMetrics,
+    GatewayLocalBridgeService,
     GatewaySessionMachine,
     GatewaySessionState,
     ProtobufGateway,
@@ -801,30 +804,40 @@ async def test_dispatch_command_branches(mock_gateway: ProtobufGateway) -> None:
     await svc.DispatchCommand(stream_none)
     stream_none.send_message.assert_not_called()
 
-    # 2. no target_id and no connections -> status 503
+    # 2. missing target_id -> status 400
     mock_gateway.connections.clear()
-    stream_no_conn = AsyncMock()
-    stream_no_conn.recv_message = AsyncMock(
+    stream_no_id = AsyncMock()
+    stream_no_id.recv_message = AsyncMock(
         return_value=pb.CommandDispatch(target_device_id="", command_path="digital/13")
     )
-    await svc.DispatchCommand(stream_no_conn)
-    stream_no_conn.send_message.assert_called_once()
-    resp_503 = stream_no_conn.send_message.call_args[0][0]
-    assert resp_503.status_code == 503
-    assert b"No devices connected" in resp_503.payload
+    await svc.DispatchCommand(stream_no_id)
+    stream_no_id.send_message.assert_called_once()
+    resp_400 = stream_no_id.send_message.call_args[0][0]
+    assert resp_400.status_code == 400
+    assert b"Explicit target_device_id is required" in resp_400.payload
 
-    # 3. no target_id with connections -> uses next(iter(connections)) and sends command
+    # 2b. target_id not connected -> status 503
+    stream_not_conn = AsyncMock()
+    stream_not_conn.recv_message = AsyncMock(
+        return_value=pb.CommandDispatch(target_device_id="dev-unknown", command_path="digital/13")
+    )
+    await svc.DispatchCommand(stream_not_conn)
+    resp_503 = stream_not_conn.send_message.call_args[0][0]
+    assert resp_503.status_code == 503
+    assert b"is not connected" in resp_503.payload
+
+    # 3. explicit target_id with connections -> sends command
     dummy_conn = AsyncMock()
     mock_gateway.connections["dev-1"] = dummy_conn
-    stream_auto_target = AsyncMock()
-    stream_auto_target.recv_message = AsyncMock(
-        return_value=pb.CommandDispatch(target_device_id="", command_path="digital/13", payload=b"1")
+    stream_target = AsyncMock()
+    stream_target.recv_message = AsyncMock(
+        return_value=pb.CommandDispatch(target_device_id="dev-1", command_path="digital/13", payload=b"1")
     )
     mock_send = AsyncMock(return_value=pb.CommandResponse(status_code=200, payload=b"OK"))
     setattr(mock_gateway, "send_command", mock_send)
-    await svc.DispatchCommand(stream_auto_target)
+    await svc.DispatchCommand(stream_target)
     mock_send.assert_awaited_once_with("dev-1", "digital/13", payload=b"1", timeout_seconds=10.0)
-    resp_200 = stream_auto_target.send_message.call_args[0][0]
+    resp_200 = stream_target.send_message.call_args[0][0]
     assert resp_200.status_code == 200
     assert resp_200.payload == b"OK"
 
@@ -841,3 +854,55 @@ async def test_dispatch_command_branches(mock_gateway: ProtobufGateway) -> None:
     assert b"Device response timeout" in resp_504.payload
 
 
+@pytest.mark.asyncio
+async def test_gateway_local_bridge_service_dispatch(mock_gateway: ProtobufGateway) -> None:
+    local_svc = GatewayLocalBridgeService(mock_gateway)
+
+    # 1. Missing explicit device_id -> raises GRPCError INVALID_ARGUMENT
+    stream_no_dev = AsyncMock()
+    stream_no_dev.metadata = {}
+    stream_no_dev.recv_message = AsyncMock(return_value=pb.DigitalWrite(pin=13, value=1))
+    with pytest.raises(GRPCError) as exc_info:
+        await local_svc.DigitalWrite(stream_no_dev)
+    assert exc_info.value.status == Status.INVALID_ARGUMENT
+    assert "Explicit device resolution required" in str(exc_info.value.message)
+
+    # 2. Device not connected -> raises GRPCError UNAVAILABLE
+    stream_unknown_dev = AsyncMock()
+    stream_unknown_dev.metadata = {"x-device-id": "dev-missing"}
+    stream_unknown_dev.recv_message = AsyncMock(return_value=pb.DigitalWrite(pin=13, value=1))
+    with pytest.raises(GRPCError) as exc_info_unavail:
+        await local_svc.DigitalWrite(stream_unknown_dev)
+    assert exc_info_unavail.value.status == Status.UNAVAILABLE
+    assert "Explicit target device 'dev-missing' is not connected" in str(exc_info_unavail.value.message)
+
+    # 3. Connected device -> forwards command and returns response
+    mock_gateway.connections["dev-1"] = AsyncMock()
+    mock_send = AsyncMock(
+        return_value=pb.CommandResponse(
+            status_code=200,
+            payload=pb.GenericResponse(status="ok").SerializeToString(),
+        )
+    )
+    setattr(mock_gateway, "send_command", mock_send)
+    stream_valid = AsyncMock()
+    stream_valid.metadata = {"x-device-id": "dev-1"}
+    stream_valid.recv_message = AsyncMock(return_value=pb.DigitalWrite(pin=13, value=1))
+    await local_svc.DigitalWrite(stream_valid)
+    mock_send.assert_awaited_once()
+    assert stream_valid.send_message.call_args[0][0].status == "ok"
+
+    # 4. SubscribeConsole explicit device resolution
+    stream_sub_no_dev = AsyncMock()
+    stream_sub_no_dev.metadata = {}
+    stream_sub_no_dev.recv_message = AsyncMock(return_value=pb.SubscribeRequest())
+    with pytest.raises(GRPCError) as sub_exc_info:
+        await local_svc.SubscribeConsole(stream_sub_no_dev)
+    assert sub_exc_info.value.status == Status.INVALID_ARGUMENT
+
+    stream_sub_unknown = AsyncMock()
+    stream_sub_unknown.metadata = {"x-device-id": "dev-missing"}
+    stream_sub_unknown.recv_message = AsyncMock(return_value=pb.SubscribeRequest())
+    with pytest.raises(GRPCError) as sub_unavail:
+        await local_svc.SubscribeConsole(stream_sub_unknown)
+    assert sub_unavail.value.status == Status.UNAVAILABLE

@@ -24,7 +24,7 @@ def _audit_ast_exceptions(node: ast.AST, py_file_name: str) -> list[str]:
             for elt in node.type.elts:
                 if isinstance(elt, ast.Name) and elt.id in ("Exception", "BaseException"):
                     findings.append(
-                        f"Python Pokemon Exception: {py_file_name}:{node.lineno} - " f"'except (..., {elt.id}, ...):'"
+                        f"Python Pokemon Exception: {py_file_name}:{node.lineno} - 'except (..., {elt.id}, ...):'"
                     )
         # Check for silent exception swallowing (no logging, assertion, or propagation in handler)
         has_call = any(isinstance(n, ast.Call) for n in ast.walk(node))

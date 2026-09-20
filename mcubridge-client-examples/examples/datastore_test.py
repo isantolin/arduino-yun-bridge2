@@ -16,11 +16,13 @@ logger = structlog.get_logger(__name__)
 
 
 async def run_test(
-    socket_path: str | None,
-    topic_prefix: str,
+    host: str | None = None,
+    port: int | None = None,
+    device_id: str | None = None,
+    topic_prefix: str = "br",
 ) -> None:
 
-    async with bridge_session(socket_path, topic_prefix) as (_channel, stub):
+    async with bridge_session(host=host, port=port, device_id=device_id, topic_prefix=topic_prefix) as (_channel, stub):
         logger.info("--- Starting DataStore Bridge Client Test ---")
 
         # --- Test 1: Put a new key-value pair ---
@@ -40,21 +42,29 @@ async def run_test(
 
 
 def main(
-    socket_path: str | None = None,
+    host: str | None = None,
+    port: int | None = None,
+    device_id: str | None = None,
     topic_prefix: str = "br",
 ) -> None:
-    asyncio.run(run_test(socket_path, topic_prefix))
+    asyncio.run(run_test(host, port, device_id, topic_prefix))
 
 
-cli = typer.Typer(help="Exercise datastore interactions using direct LocalBridgeStub.", add_completion=False)
+cli = typer.Typer(
+    help="Exercise datastore interactions using direct LocalBridgeStub through Gateway.", add_completion=False
+)
 
 
 @cli.command()
 def cli_main(
-    socket_path: Annotated[str | None, typer.Option("--socket-path", help="UNIX Domain Socket Path")] = None,
+    host: Annotated[str | None, typer.Option("--host", help="Cloud Gateway host")] = None,
+    port: Annotated[int | None, typer.Option("--port", help="Cloud Gateway port")] = None,
+    device_id: Annotated[
+        str | None, typer.Option("--device-id", help="Explicit target device ID", envvar="MCUBRIDGE_DEVICE_ID")
+    ] = None,
     topic_prefix: Annotated[str, typer.Option("--topic-prefix", help="Topic prefix")] = "br",
 ) -> None:
-    main(socket_path, topic_prefix)
+    main(host, port, device_id, topic_prefix)
 
 
 if __name__ == "__main__":

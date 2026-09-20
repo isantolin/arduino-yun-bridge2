@@ -76,8 +76,10 @@ class LabeledCounter:
         self._counters: dict[str, CounterMetric] = {}
 
     def labels(self, **kwargs: str) -> CounterMetric:
-        key = next(iter(kwargs.values()), "") if len(kwargs) == 1 else ":".join(
-            f"{k}={v}" for k, v in sorted(kwargs.items())
+        key = (
+            next(iter(kwargs.values()), "")
+            if len(kwargs) == 1
+            else ":".join(f"{k}={v}" for k, v in sorted(kwargs.items()))
         )
         if key not in self._counters:
             self._counters[key] = CounterMetric()

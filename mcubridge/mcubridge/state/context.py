@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import collections
 from enum import StrEnum
+import os
 import socket
 import time
 from pathlib import Path
@@ -480,7 +481,7 @@ class RuntimeState:
 
     @property
     def device_id(self) -> str:
-        return socket.gethostname()
+        return os.environ.get("MCUBRIDGE_DEVICE_ID") or socket.gethostname()
 
     @property
     def topic_prefix(self) -> str:
@@ -633,12 +634,10 @@ class RuntimeState:
             pb.CloudDropCount(topic=topic, count=count) for topic, count in self.cloud_drop_counts.items()
         ]
         retries = [
-            pb.ComponentRetry(component=component, count=count)
-            for component, count in self.metrics.retries.items()
+            pb.ComponentRetry(component=component, count=count) for component, count in self.metrics.retries.items()
         ]
         mcu_status_counts = [
-            pb.McuStatusCount(status=status, count=count)
-            for status, count in self.metrics.mcu_status_counts.items()
+            pb.McuStatusCount(status=status, count=count) for status, count in self.metrics.mcu_status_counts.items()
         ]
         try:
             uptime = max(0.0, time.time() - psutil.boot_time())

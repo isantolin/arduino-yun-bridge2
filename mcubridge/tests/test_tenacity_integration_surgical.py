@@ -92,6 +92,7 @@ def test_wait_for_tcp_ready_success() -> None:
             conn.close()
         except OSError as exc:
             import sys
+
             sys.stderr.write(f"[DEBUG] Mock server socket closed: {exc}\n")
 
     t = threading.Thread(target=_accept)

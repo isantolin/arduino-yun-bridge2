@@ -55,7 +55,6 @@ async def test_publish_metrics_publishes_snapshot(
         side_effect=mock_build_metrics,
         autospec=True,
     ):
-
         task = asyncio.create_task(
             publish_metrics(
                 runtime_state,

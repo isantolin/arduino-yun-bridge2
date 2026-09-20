@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unified e2e feature test for mcubridge using direct LocalBridgeStub."""
+"""Unified e2e feature test for mcubridge using direct LocalBridgeStub through Gateway."""
 
 from __future__ import annotations
 
@@ -16,9 +16,14 @@ configure_logging()
 logger = structlog.get_logger("all-features-test")
 
 
-async def run_test(socket_path: str | None, topic_prefix: str) -> None:
+async def run_test(
+    host: str | None = None,
+    port: int | None = None,
+    device_id: str | None = None,
+    topic_prefix: str = "br",
+) -> None:
     logger.info("--- Starting UNIFIED ALL-FEATURES E2E Test ---")
-    async with bridge_session(socket_path, topic_prefix) as (_channel, stub):
+    async with bridge_session(host=host, port=port, device_id=device_id, topic_prefix=topic_prefix) as (_channel, stub):
         # 1. LED test
         logger.info("Testing LED (Digital Write)...")
         await stub.DigitalWrite(pb.DigitalWrite(pin=13, value=1))
@@ -58,19 +63,26 @@ async def run_test(socket_path: str | None, topic_prefix: str) -> None:
     logger.info("--- ALL-FEATURES TEST SUCCEEDED ---")
 
 
-def main(socket_path: str | None = None, topic_prefix: str = "br") -> None:
-    asyncio.run(run_test(socket_path, topic_prefix))
+def main(
+    host: str | None = None,
+    port: int | None = None,
+    device_id: str | None = None,
+    topic_prefix: str = "br",
+) -> None:
+    asyncio.run(run_test(host, port, device_id, topic_prefix))
 
 
-cli = typer.Typer(help="Unified e2e feature test using direct LocalBridgeStub.", add_completion=False)
+cli = typer.Typer(help="Unified e2e feature test using direct LocalBridgeStub through Gateway.", add_completion=False)
 
 
 @cli.command()
 def cli_main(
-    socket_path: Annotated[str | None, typer.Option("--socket-path", help="UNIX Domain Socket Path")] = None,
+    host: Annotated[str | None, typer.Option("--host", help="Cloud Gateway host")] = None,
+    port: Annotated[int | None, typer.Option("--port", help="Cloud Gateway port")] = None,
+    device_id: Annotated[str | None, typer.Option("--device-id", help="Target device ID")] = None,
     topic_prefix: Annotated[str, typer.Option("--topic-prefix", help="Topic prefix")] = "br",
 ) -> None:
-    main(socket_path, topic_prefix)
+    main(host, port, device_id, topic_prefix)
 
 
 if __name__ == "__main__":

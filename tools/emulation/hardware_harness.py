@@ -206,7 +206,9 @@ def run(
     host: Annotated[str | None, typer.Option("--host", "-H", help="Target host IP or hostname")] = None,
     user: Annotated[str, typer.Option("--user", "-u", help="SSH user")] = "root",
     local: Annotated[bool, typer.Option("--local", "-l", help="Run tests locally")] = False,
-    socket_path: Annotated[str, typer.Option("--socket-path", help="UNIX socket path")] = "/var/run/mcubridge.sock",
+    gateway_host: Annotated[str, typer.Option("--gateway-host", help="Gateway host")] = "127.0.0.1",
+    gateway_port: Annotated[int, typer.Option("--gateway-port", help="Gateway port")] = 8443,
+    device_id: Annotated[str, typer.Option("--device-id", help="Explicit target device ID")] = "yun-01",
     test_name: Annotated[
         str | None, typer.Option("--test", help="Specific test name to run (e.g. led13_test.py)")
     ] = None,
@@ -248,7 +250,7 @@ def run(
     print(" McuBridge Hardware Physical Test Suite Runner")
     print("========================================================")
     print(f"Mode: {'Local' if is_local else f'Remote SSH ({target_user}@{target_host})'}")
-    print(f"Socket: {socket_path}")
+    print(f"Gateway: {gateway_host}:{gateway_port} (Device: {device_id})")
     print(f"Executing {len(tests_to_run)} test script(s)...")
     print("--------------------------------------------------------")
 
@@ -278,19 +280,27 @@ def run(
                 cmd = [
                     sys.executable,
                     str(examples_dir / t_file),
-                    "--socket-path",
-                    socket_path,
+                    "--host",
+                    gateway_host,
+                    "--port",
+                    str(gateway_port),
+                    "--device-id",
+                    device_id,
                 ]
                 env = {
                     "REPO_ROOT": str(REPO_ROOT),
                     "PYTHONPATH": f"{examples_parent}:{REPO_ROOT / 'mcubridge'}:{REPO_ROOT}",
                     "MCUBRIDGE_NON_INTERACTIVE": "1",
+                    "MCUBRIDGE_GATEWAY_HOST": gateway_host,
+                    "MCUBRIDGE_GATEWAY_PORT": str(gateway_port),
+                    "MCUBRIDGE_DEVICE_ID": device_id,
                 }
                 code, _stdout, stderr = await run_command(cmd, cwd=REPO_ROOT, env=env, timeout=timeout)
             else:
                 remote_cmd = (
                     f"MCUBRIDGE_NON_INTERACTIVE=1 PYTHONPATH=/tmp/mcubridge-client-examples "
-                    f"python3 /tmp/mcubridge-client-examples/examples/{t_file} --socket-path '{socket_path}'"
+                    f"python3 /tmp/mcubridge-client-examples/examples/{t_file} "
+                    f"--host '{gateway_host}' --port {gateway_port} --device-id '{device_id}'"
                 )
                 cmd = ["ssh"] + ssh_args + [f"{target_user}@{target_host}", remote_cmd]
                 code, _stdout, stderr = await run_command(cmd, cwd=REPO_ROOT, timeout=timeout)

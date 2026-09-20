@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 from enum import IntEnum
-
-
 import os
 
-DEFAULT_SOCKET_PATH: str = "/var/run/mcubridge.sock"
+DEFAULT_GATEWAY_HOST: str = "127.0.0.1"
+DEFAULT_GATEWAY_PORT: int = 8443
 DEFAULT_TOPIC_PREFIX: str = "br"
 
 
@@ -26,14 +25,36 @@ class SpiMode(IntEnum):
 
 
 def build_bridge_args(
-    socket_path: str | None = None,
+    host: str | None = None,
+    port: int | None = None,
+    device_id: str | None = None,
     topic_prefix: str = "br",
 ) -> dict[str, object]:
-    """Build Bridge constructor keyword arguments from CLI/env parameters."""
+    """Build Bridge constructor keyword arguments from CLI/env parameters targeting Gateway."""
     args: dict[str, object] = {}
-    effective_socket = socket_path or os.environ.get("MCUBRIDGE_SOCKET_PATH") or DEFAULT_SOCKET_PATH
-    if effective_socket:
-        args["socket_path"] = effective_socket
+    effective_host = (
+        host
+        or os.environ.get("MCUBRIDGE_GATEWAY_HOST")
+        or os.environ.get("MCUBRIDGE_CLOUD_HOST")
+        or DEFAULT_GATEWAY_HOST
+    )
+    raw_port = (
+        port
+        or os.environ.get("MCUBRIDGE_GATEWAY_PORT")
+        or os.environ.get("MCUBRIDGE_CLOUD_PORT")
+        or DEFAULT_GATEWAY_PORT
+    )
+    effective_port = int(raw_port)
+    effective_device = device_id or os.environ.get("MCUBRIDGE_DEVICE_ID")
+    if not effective_device:
+        raise ValueError(
+            "Explicit target device_id is required (pass device_id or set MCUBRIDGE_DEVICE_ID). "
+            "Implicit fallback is prohibited."
+        )
+
+    args["host"] = effective_host
+    args["port"] = effective_port
+    args["device_id"] = effective_device
     if topic_prefix:
         args["topic_prefix"] = topic_prefix
     return args

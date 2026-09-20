@@ -229,6 +229,9 @@ def run_emulation(
     daemon_env["MCUBRIDGE_CLOUD_ENABLED"] = "1"
     daemon_env["MCUBRIDGE_CLOUD_HOST"] = CLOUD_HOST
     daemon_env["MCUBRIDGE_CLOUD_PORT"] = str(CLOUD_PORT)
+    daemon_env["MCUBRIDGE_GATEWAY_HOST"] = CLOUD_HOST
+    daemon_env["MCUBRIDGE_GATEWAY_PORT"] = str(CLOUD_PORT)
+    daemon_env["MCUBRIDGE_DEVICE_ID"] = "yun-01"
     daemon_env["MCUBRIDGE_STORAGE_PATH"] = tempfile.mkdtemp(prefix="mcubridge_db_")
 
     uci_config = {
@@ -286,7 +289,9 @@ def run_emulation(
 
                 try:
                     # Run with captured output but echoing to parent stdout/stderr
-                    subprocess.run([sys.executable, script], env=daemon_env, check=True, timeout=60)
+                    subprocess.run(
+                        [sys.executable, script, "--device-id", "yun-01"], env=daemon_env, check=True, timeout=60
+                    )
                     logger.info("Script execution passed", script=script)
                 except (
                     subprocess.CalledProcessError,

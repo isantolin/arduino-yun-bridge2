@@ -8,7 +8,6 @@ import structlog
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from grpclib.client import Channel
 from typer.testing import CliRunner
 
 from mcubridge_client import (
@@ -40,12 +39,16 @@ async def test_cli_bridge_session() -> None:
     """bridge_session context manager yields Channel and LocalBridgeStub."""
     with patch("mcubridge_client.cli.Channel") as mock_chan_cls:
         with patch("mcubridge_client.cli.LocalBridgeStub") as mock_stub_cls:
-            mock_chan = MagicMock(spec=Channel)
-            mock_stub = MagicMock(spec=LocalBridgeStub)
+            mock_chan = MagicMock()
+            mock_chan.__dispatch__ = MagicMock()
+            mock_stub = MagicMock()
             mock_chan_cls.return_value = mock_chan
             mock_stub_cls.return_value = mock_stub
 
-            async with bridge_session("/tmp/test.sock", "br") as (chan, stub):
+            async with bridge_session(host="127.0.0.1", port=8443, device_id="yun-01", topic_prefix="br") as (
+                chan,
+                stub,
+            ):
                 assert chan is mock_chan
                 assert stub is mock_stub
 
@@ -71,10 +74,10 @@ def test_env_read_uci_general() -> None:
         with patch("importlib.util.find_spec", return_value=MagicMock()):
             with patch("importlib.import_module") as mock_imp:
                 mock_mod = MagicMock()
-                mock_mod.get_uci_config = MagicMock(return_value={"socket_path": "/var/run/test.sock", "_private": "x"})
+                mock_mod.get_uci_config = MagicMock(return_value={"cloud_host": "127.0.0.1", "_private": "x"})
                 mock_imp.return_value = mock_mod
                 res = read_uci_general()
-                assert res == {"socket_path": "/var/run/test.sock"}
+                assert res == {"cloud_host": "127.0.0.1"}
 
                 # Exception path in get_uci_config
                 mock_mod.get_uci_config.side_effect = RuntimeError("UCI error")
@@ -91,7 +94,8 @@ def test_env_dump_client_env(capsys: pytest.CaptureFixture[str]) -> None:
     # 2. Stdout fallback
     dump_client_env(None)
     captured = capsys.readouterr()
-    assert "socket_path=" in captured.out
+    assert "gateway_host=" in captured.out
+    assert "target_device_id=" in captured.out
 
 
 # ==============================================================================
@@ -100,15 +104,18 @@ def test_env_dump_client_env(capsys: pytest.CaptureFixture[str]) -> None:
 
 
 def test_definitions_build_bridge_args() -> None:
-    """build_bridge_args builds dictionary from parameters."""
-    assert build_bridge_args() == {
-        "socket_path": "/var/run/mcubridge.sock",
-        "topic_prefix": "br",
-    }
-    assert build_bridge_args("/tmp/sock", "test_prefix") == {
-        "socket_path": "/tmp/sock",
-        "topic_prefix": "test_prefix",
-    }
+    """build_bridge_args builds dictionary targeting Gateway with explicit device_id."""
+    with patch.dict("os.environ", {}, clear=True):
+        args = build_bridge_args(host="127.0.0.1", port=8443, device_id="yun-01", topic_prefix="br")
+        assert args == {
+            "host": "127.0.0.1",
+            "port": 8443,
+            "device_id": "yun-01",
+            "topic_prefix": "br",
+        }
+        # Explicit device_id is required: missing device_id raises ValueError
+        with pytest.raises(ValueError, match="Explicit target device_id is required"):
+            build_bridge_args(host="127.0.0.1", port=8443)
 
 
 @pytest.mark.asyncio
@@ -170,21 +177,19 @@ async def test_smoke_connection_run_test() -> None:
         mock_chan = MagicMock()
         mock_stub = MagicMock()
         mock_sess.return_value.__aenter__.return_value = (mock_chan, mock_stub)
-        await test_smoke_connection.run_test("/tmp/fake.sock", "br")
-        mock_sess.assert_called_once_with("/tmp/fake.sock", "br")
+        await test_smoke_connection.run_test(host="127.0.0.1", port=8443, device_id="yun-01", topic_prefix="br")
+        mock_sess.assert_called_once_with(host="127.0.0.1", port=8443, device_id="yun-01", topic_prefix="br")
 
 
 def test_smoke_connection_cli_invocation() -> None:
     """Verify test_smoke_connection CLI entry point invokes run_test via typer runner."""
     import test_smoke_connection
 
-    with patch("test_smoke_connection.bridge_session") as mock_sess:
-        mock_chan = MagicMock()
-        mock_stub = MagicMock()
-        mock_sess.return_value.__aenter__.return_value = (mock_chan, mock_stub)
+    with patch("test_smoke_connection.run_test") as mock_run:
         runner = CliRunner()
         res = runner.invoke(
-            cast(Any, test_smoke_connection.cli), ["--socket-path", "/tmp/fake.sock", "--topic-prefix", "test"]
+            cast(Any, test_smoke_connection.cli),
+            ["--host", "127.0.0.1", "--port", "8443", "--device-id", "yun-01", "--topic-prefix", "test"],
         )
         assert res.exit_code == 0
-        mock_sess.assert_called_once_with("/tmp/fake.sock", "test")
+        mock_run.assert_called_once_with("127.0.0.1", 8443, "yun-01", "test")

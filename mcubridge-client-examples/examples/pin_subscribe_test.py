@@ -22,13 +22,15 @@ async def run_test(
     interval_ms: int,
     hysteresis: int,
     duration: float,
-    socket_path: str | None,
-    topic_prefix: str,
+    host: str | None = None,
+    port: int | None = None,
+    device_id: str | None = None,
+    topic_prefix: str = "br",
 ) -> None:
     """Execute autonomous pin subscription test lifecycle."""
     logger.info("--- Starting Pin Subscription Test ---")
 
-    async with bridge_session(socket_path, topic_prefix) as (_channel, stub):
+    async with bridge_session(host=host, port=port, device_id=device_id, topic_prefix=topic_prefix) as (_channel, stub):
         mode_upper = mode.upper()
         pb_mode = getattr(pb.PinModeType, f"PIN_{mode_upper}", pb.PinModeType.PIN_INPUT)
 
@@ -87,7 +89,9 @@ def main(
     interval_ms: int = 100,
     hysteresis: int = 1,
     duration: float = 2.0,
-    socket_path: str | None = None,
+    host: str | None = None,
+    port: int | None = None,
+    device_id: str | None = None,
     topic_prefix: str = "br",
 ) -> None:
     """CLI runner entry point."""
@@ -98,14 +102,16 @@ def main(
             interval_ms=interval_ms,
             hysteresis=hysteresis,
             duration=duration,
-            socket_path=socket_path,
+            host=host,
+            port=port,
+            device_id=device_id,
             topic_prefix=topic_prefix,
         )
     )
 
 
 cli = typer.Typer(
-    help="Autonomous hardware pin subscription test via LocalBridgeStub.",
+    help="Autonomous hardware pin subscription test via LocalBridgeStub through Gateway.",
     add_completion=False,
 )
 
@@ -117,7 +123,11 @@ def cli_main(
     interval_ms: Annotated[int, typer.Option("--interval-ms", help="Sampling interval in ms")] = 100,
     hysteresis: Annotated[int, typer.Option("--hysteresis", help="Threshold hysteresis for reporting")] = 1,
     duration: Annotated[float, typer.Option("--duration", help="Observation duration in seconds")] = 2.0,
-    socket_path: Annotated[str | None, typer.Option("--socket-path", help="UNIX Domain Socket Path")] = None,
+    host: Annotated[str | None, typer.Option("--host", help="Cloud Gateway host")] = None,
+    port: Annotated[int | None, typer.Option("--port", help="Cloud Gateway port")] = None,
+    device_id: Annotated[
+        str | None, typer.Option("--device-id", help="Explicit target device ID", envvar="MCUBRIDGE_DEVICE_ID")
+    ] = None,
     topic_prefix: Annotated[str, typer.Option("--topic-prefix", help="Topic prefix")] = "br",
 ) -> None:
     """Execute pin subscription test."""
@@ -127,7 +137,9 @@ def cli_main(
         interval_ms=interval_ms,
         hysteresis=hysteresis,
         duration=duration,
-        socket_path=socket_path,
+        host=host,
+        port=port,
+        device_id=device_id,
         topic_prefix=topic_prefix,
     )
 

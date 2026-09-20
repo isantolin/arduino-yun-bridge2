@@ -40,7 +40,7 @@ def check_model_parity() -> list[str]:
     agent = json.loads(agent_path.read_text())
     actual = agent.get("model", "")
     if actual != canonical:
-        return [f"agent.json model '{actual}' != canonical '{canonical}' " f"(source: tools/gemini_model)"]
+        return [f"agent.json model '{actual}' != canonical '{canonical}' (source: tools/gemini_model)"]
     return []
 
 
@@ -65,9 +65,7 @@ def check_prompt_parity() -> list[str]:
 
         if md_desc != toml_desc:
             errors.append(
-                f"{name}: description mismatch\n"
-                f"  .md  description: '{md_desc}'\n"
-                f"  .toml description: '{toml_desc}'"
+                f"{name}: description mismatch\n  .md  description: '{md_desc}'\n  .toml description: '{toml_desc}'"
             )
 
         if md_prompt != toml_prompt:
@@ -76,7 +74,7 @@ def check_prompt_parity() -> list[str]:
             detail = f"line counts differ: md={len(md_lines)}, toml={len(toml_lines)}"
             for i, (l1, l2) in enumerate(zip(md_lines, toml_lines)):
                 if l1 != l2:
-                    detail = f"first diff at line {i + 1}:\n" f"  .md  : {l1[:120]!r}\n" f"  .toml: {l2[:120]!r}"
+                    detail = f"first diff at line {i + 1}:\n  .md  : {l1[:120]!r}\n  .toml: {l2[:120]!r}"
                     break
             errors.append(f"{name}: prompt mismatch ({detail})")
 

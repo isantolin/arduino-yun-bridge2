@@ -154,6 +154,7 @@ class BridgeService:
     ubus_service: UbusService
     clock_sync: ClockSyncService
     gpio: GpioService
+    local_bridge_service: LocalBridgeService
     _tg: asyncio.TaskGroup | None
 
     def __init__(self, config: RuntimeConfig, state: RuntimeState, serial: SerialTransport) -> None:
@@ -165,6 +166,7 @@ class BridgeService:
         ](max_buffer_size=max(1, self.state.cloud_queue_limit))
         self.ipc_requests = {}
         self.console_queues = []
+        self.local_bridge_service = LocalBridgeService(self)
         self.ubus_service = UbusService(self)
         self.ubus_service.start()
         self.clock_sync = ClockSyncService(self)
@@ -1673,6 +1675,38 @@ class BridgeService:
 
                                 if payload_type == "command_request":
                                     cmd = envelope.command_request
+                                    if cmd.command_path.startswith("rpc/"):
+                                        method_name = cmd.command_path.removeprefix("rpc/")
+                                        try:
+                                            resp_payload = await self.local_bridge_service.execute_rpc(
+                                                method_name, cmd.payload
+                                            )
+                                            status_code = 200
+                                            err_msg = ""
+                                        except ValueError as exc:
+                                            logger.warning("Unknown or invalid RPC method from cloud", error=str(exc))
+                                            resp_payload = b""
+                                            status_code = 404
+                                            err_msg = str(exc)
+                                        except (OSError, RuntimeError, TimeoutError) as exc:
+                                            logger.error("RPC execution error on device", error=str(exc))
+                                            resp_payload = b""
+                                            status_code = 500
+                                            err_msg = str(exc)
+
+                                        resp_env = pb.CloudEnvelope(
+                                            protocol_version=2,
+                                            device_id=self.state.device_id,
+                                            sequence_id=envelope.sequence_id,
+                                            command_response=pb.CommandResponse(
+                                                status_code=status_code,
+                                                error_message=err_msg,
+                                                payload=resp_payload,
+                                            ),
+                                        )
+                                        await stream.send_message(resp_env)
+                                        continue
+
                                     request = pb.CloudQueuedPublish(
                                         topic_name=topic_path(self.state.topic_prefix, cmd.command_path),
                                         payload=cmd.payload,
@@ -1809,7 +1843,7 @@ class BridgeService:
         # Create parent directory if it doesn't exist
         socket_path.parent.mkdir(parents=True, exist_ok=True)
 
-        local_handler = LocalBridgeService(self)
+        local_handler = self.local_bridge_service
         server = Server([local_handler])
 
         try:

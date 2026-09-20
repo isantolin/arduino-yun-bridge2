@@ -16,12 +16,14 @@ logger = structlog.get_logger(__name__)
 
 
 async def run_test(
-    socket_path: str | None,
-    topic_prefix: str,
-    max_polls: int,
+    host: str | None = None,
+    port: int | None = None,
+    device_id: str | None = None,
+    topic_prefix: str = "br",
+    max_polls: int = 1,
 ) -> None:
 
-    async with bridge_session(socket_path, topic_prefix) as (_channel, stub):
+    async with bridge_session(host=host, port=port, device_id=device_id, topic_prefix=topic_prefix) as (_channel, stub):
         logger.info("--- Starting Mailbox Read Test ---")
 
         # --- Send phase ---
@@ -57,26 +59,32 @@ async def run_test(
 
 
 def main(
-    socket_path: str | None = None,
+    host: str | None = None,
+    port: int | None = None,
+    device_id: str | None = None,
     topic_prefix: str = "br",
     max_polls: int = 1,
 ) -> None:
-    asyncio.run(run_test(socket_path, topic_prefix, max_polls))
+    asyncio.run(run_test(host, port, device_id, topic_prefix, max_polls))
 
 
 cli = typer.Typer(
-    help="Send a mailbox message and read back responses using direct LocalBridgeStub.",
+    help="Send a mailbox message and read back responses using direct LocalBridgeStub through Gateway.",
     add_completion=False,
 )
 
 
 @cli.command()
 def cli_main(
-    socket_path: Annotated[str | None, typer.Option("--socket-path", help="UNIX Domain Socket Path")] = None,
+    host: Annotated[str | None, typer.Option("--host", help="Cloud Gateway host")] = None,
+    port: Annotated[int | None, typer.Option("--port", help="Cloud Gateway port")] = None,
+    device_id: Annotated[
+        str | None, typer.Option("--device-id", help="Explicit target device ID", envvar="MCUBRIDGE_DEVICE_ID")
+    ] = None,
     topic_prefix: Annotated[str, typer.Option("--topic-prefix", help="Topic prefix")] = "br",
     max_polls: Annotated[int, typer.Option("--max-polls", help="Max read attempts (0=infinite)")] = 1,
 ) -> None:
-    main(socket_path, topic_prefix, max_polls)
+    main(host, port, device_id, topic_prefix, max_polls)
 
 
 if __name__ == "__main__":

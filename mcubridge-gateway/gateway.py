@@ -19,7 +19,9 @@ import urllib.error
 import urllib.request
 
 from google.protobuf.message import DecodeError
+from grpclib.const import Status
 import grpclib.events
+from grpclib.exceptions import GRPCError
 from grpclib.protocol import Peer
 from grpclib.server import Server, Stream
 import prometheus_client
@@ -28,9 +30,10 @@ import structlog
 import typer
 import uvloop
 
+from google.protobuf.message import Message as ProtobufMessage
 from mcubridge.config.logging import configure_logging
 from mcubridge.protocol import mcubridge_pb2 as pb
-from mcubridge.protocol.mcubridge_grpc import CloudBridgeBase
+from mcubridge.protocol.mcubridge_grpc import CloudBridgeBase, LocalBridgeBase
 from mcubridge.protocol.protocol import DEFAULT_CLOUD_PORT
 
 configure_logging()
@@ -342,12 +345,8 @@ async def _handle_telemetry(
             service.gateway.metrics.device_handshake_successes.labels(device_id=device_id).set(
                 float(metrics.handshake_successes)
             )
-            service.gateway.metrics.device_watchdog_beats.labels(device_id=device_id).set(
-                float(metrics.watchdog_beats)
-            )
-            service.gateway.metrics.device_uptime_seconds.labels(device_id=device_id).set(
-                float(metrics.uptime_seconds)
-            )
+            service.gateway.metrics.device_watchdog_beats.labels(device_id=device_id).set(float(metrics.watchdog_beats))
+            service.gateway.metrics.device_uptime_seconds.labels(device_id=device_id).set(float(metrics.uptime_seconds))
             service.gateway.metrics.device_cloud_messages_published.labels(device_id=device_id).set(
                 float(metrics.cloud_messages_published)
             )
@@ -530,12 +529,19 @@ class CloudBridgeService(CloudBridgeBase):
 
         target_id = request.target_device_id
         if not target_id:
-            if not self.gateway.connections:
-                await stream.send_message(
-                    pb.CommandResponse(status_code=503, payload=b"No devices connected to gateway")
+            await stream.send_message(
+                pb.CommandResponse(status_code=400, payload=b"Explicit target_device_id is required")
+            )
+            return
+
+        if target_id not in self.gateway.connections:
+            await stream.send_message(
+                pb.CommandResponse(
+                    status_code=503,
+                    payload=f"Device '{target_id}' is not connected to gateway".encode("utf-8"),
                 )
-                return
-            target_id = next(iter(self.gateway.connections))
+            )
+            return
 
         timeout = request.timeout_seconds if request.timeout_seconds > 0 else 10.0
         try:
@@ -547,9 +553,186 @@ class CloudBridgeService(CloudBridgeBase):
             )
             await stream.send_message(response)
         except (KeyError, TimeoutError, OSError) as exc:
-            await stream.send_message(
-                pb.CommandResponse(status_code=504, payload=str(exc).encode("utf-8"))
+            await stream.send_message(pb.CommandResponse(status_code=504, payload=str(exc).encode("utf-8")))
+
+
+class GatewayLocalBridgeService(LocalBridgeBase):
+    """[SIL-2] Northbound LocalBridge gRPC service hosted on the Gateway for clients.
+
+    Routes all typed LocalBridge RPCs to the explicitly specified edge device.
+    """
+
+    def __init__(self, gateway: ProtobufGateway) -> None:
+        self.gateway = gateway
+
+    def _resolve_device_id(self, stream: Stream[Any, Any]) -> str | None:
+        """Extract explicit target device ID from request metadata."""
+        metadata = stream.metadata or {}
+        for key in ("x-device-id", "device-id", "device_id"):
+            if key in metadata:
+                val = metadata[key]
+                if isinstance(val, (list, tuple)) and val:
+                    return str(val[0])
+                if isinstance(val, str) and val:
+                    return val
+        return None
+
+    async def _forward_rpc(
+        self,
+        stream: Stream[Any, Any],
+        method_name: str,
+        resp_cls: type[ProtobufMessage],
+        default_resp: ProtobufMessage,
+        *,
+        pre_read_req: Any = None,
+    ) -> None:
+        req = pre_read_req if pre_read_req is not None else (await stream.recv_message())
+        if req is None:
+            return
+
+        device_id = self._resolve_device_id(stream)
+        if not device_id:
+            logger.warning("LocalBridge call rejected: missing explicit device_id", method=method_name)
+            raise GRPCError(
+                Status.INVALID_ARGUMENT,
+                "Explicit device resolution required: missing 'x-device-id' metadata header",
             )
+
+        if device_id not in self.gateway.connections:
+            logger.warning(
+                "LocalBridge call rejected: target device not connected",
+                method=method_name,
+                device_id=device_id,
+            )
+            raise GRPCError(
+                Status.UNAVAILABLE,
+                f"Explicit target device '{device_id}' is not connected to gateway",
+            )
+
+        try:
+            cmd_resp = await self.gateway.send_command(
+                device_id,
+                f"rpc/{method_name}",
+                payload=req.SerializeToString(),
+                timeout_seconds=15.0,
+            )
+            if cmd_resp.status_code == 200 and cmd_resp.payload:
+                resp = resp_cls()
+                resp.ParseFromString(cmd_resp.payload)
+                await stream.send_message(resp)
+            else:
+                await stream.send_message(default_resp)
+        except (KeyError, TimeoutError, OSError) as exc:
+            logger.error("Error forwarding RPC to device", method=method_name, device_id=device_id, error=str(exc))
+            await stream.send_message(default_resp)
+
+    async def SetPinMode(self, stream: Stream[pb.PinMode, pb.GenericResponse]) -> None:
+        await self._forward_rpc(stream, "SetPinMode", pb.GenericResponse, pb.GenericResponse(status="error"))
+
+    async def DigitalWrite(self, stream: Stream[pb.DigitalWrite, pb.GenericResponse]) -> None:
+        await self._forward_rpc(stream, "DigitalWrite", pb.GenericResponse, pb.GenericResponse(status="error"))
+
+    async def DigitalRead(self, stream: Stream[pb.PinRead, pb.DigitalReadResponse]) -> None:
+        await self._forward_rpc(stream, "DigitalRead", pb.DigitalReadResponse, pb.DigitalReadResponse())
+
+    async def AnalogWrite(self, stream: Stream[pb.AnalogWrite, pb.GenericResponse]) -> None:
+        await self._forward_rpc(stream, "AnalogWrite", pb.GenericResponse, pb.GenericResponse(status="error"))
+
+    async def AnalogRead(self, stream: Stream[pb.PinRead, pb.AnalogReadResponse]) -> None:
+        await self._forward_rpc(stream, "AnalogRead", pb.AnalogReadResponse, pb.AnalogReadResponse())
+
+    async def PinSubscribe(self, stream: Stream[pb.PinSubscribeRequest, pb.PinSubscribeResponse]) -> None:
+        await self._forward_rpc(stream, "PinSubscribe", pb.PinSubscribeResponse, pb.PinSubscribeResponse(success=False))
+
+    async def DatastorePut(self, stream: Stream[pb.DatastorePut, pb.GenericResponse]) -> None:
+        await self._forward_rpc(stream, "DatastorePut", pb.GenericResponse, pb.GenericResponse(status="error"))
+
+    async def DatastoreGet(self, stream: Stream[pb.DatastoreGet, pb.DatastoreGetResponse]) -> None:
+        await self._forward_rpc(stream, "DatastoreGet", pb.DatastoreGetResponse, pb.DatastoreGetResponse())
+
+    async def MailboxPush(self, stream: Stream[pb.MailboxPush, pb.GenericResponse]) -> None:
+        await self._forward_rpc(stream, "MailboxPush", pb.GenericResponse, pb.GenericResponse(status="error"))
+
+    async def MailboxRead(self, stream: Stream[pb.SubscribeRequest, pb.MailboxReadResponse]) -> None:
+        await self._forward_rpc(stream, "MailboxRead", pb.MailboxReadResponse, pb.MailboxReadResponse())
+
+    async def FileWrite(self, stream: Stream[pb.FileWrite, pb.GenericResponse]) -> None:
+        await self._forward_rpc(stream, "FileWrite", pb.GenericResponse, pb.GenericResponse(status="error"))
+
+    async def FileRead(self, stream: Stream[pb.FileRead, pb.FileReadResponse]) -> None:
+        await self._forward_rpc(stream, "FileRead", pb.FileReadResponse, pb.FileReadResponse())
+
+    async def FileRemove(self, stream: Stream[pb.FileRemove, pb.GenericResponse]) -> None:
+        await self._forward_rpc(stream, "FileRemove", pb.GenericResponse, pb.GenericResponse(status="error"))
+
+    async def ProcessRunAsync(self, stream: Stream[pb.ProcessRunAsync, pb.ProcessRunAsyncResponse]) -> None:
+        await self._forward_rpc(
+            stream, "ProcessRunAsync", pb.ProcessRunAsyncResponse, pb.ProcessRunAsyncResponse(pid=0)
+        )
+
+    async def ProcessPoll(self, stream: Stream[pb.ProcessPoll, pb.ProcessPollResponse]) -> None:
+        await self._forward_rpc(stream, "ProcessPoll", pb.ProcessPollResponse, pb.ProcessPollResponse(running=False))
+
+    async def ProcessKill(self, stream: Stream[pb.ProcessKill, pb.GenericResponse]) -> None:
+        await self._forward_rpc(stream, "ProcessKill", pb.GenericResponse, pb.GenericResponse(status="error"))
+
+    async def SpiTransfer(self, stream: Stream[pb.SpiTransfer, pb.SpiTransferResponse]) -> None:
+        await self._forward_rpc(stream, "SpiTransfer", pb.SpiTransferResponse, pb.SpiTransferResponse())
+
+    async def SpiConfigure(self, stream: Stream[pb.SpiConfig, pb.GenericResponse]) -> None:
+        await self._forward_rpc(stream, "SpiConfigure", pb.GenericResponse, pb.GenericResponse(status="error"))
+
+    async def GetVersion(self, stream: Stream[pb.SubscribeRequest, pb.VersionResponse]) -> None:
+        await self._forward_rpc(stream, "GetVersion", pb.VersionResponse, pb.VersionResponse())
+
+    async def GetFreeMemory(self, stream: Stream[pb.SubscribeRequest, pb.FreeMemoryResponse]) -> None:
+        await self._forward_rpc(stream, "GetFreeMemory", pb.FreeMemoryResponse, pb.FreeMemoryResponse())
+
+    async def GetStatus(self, stream: Stream[pb.SubscribeRequest, pb.BridgeStatus]) -> None:
+        await self._forward_rpc(stream, "GetStatus", pb.BridgeStatus, pb.BridgeStatus())
+
+    async def Publish(self, stream: Stream[pb.CloudQueuedPublish, pb.CloudQueuedPublish]) -> None:
+        req = await stream.recv_message()
+        if req is None:
+            return
+        device_id = self._resolve_device_id(stream)
+        if not device_id:
+            logger.warning("Publish rejected: missing explicit device_id")
+            await stream.send_message(pb.CloudQueuedPublish())
+            return
+        if "console" in req.topic_name:
+            for q in self.gateway.console_queues.get(device_id, []):
+                q.put_nowait(req)
+        await self._forward_rpc(stream, "Publish", pb.CloudQueuedPublish, pb.CloudQueuedPublish(), pre_read_req=req)
+
+    async def SubscribeConsole(self, stream: Stream[pb.SubscribeRequest, pb.CloudQueuedPublish]) -> None:
+        req = await stream.recv_message()
+        if req is None:
+            return
+        device_id = self._resolve_device_id(stream)
+        if not device_id:
+            logger.warning("SubscribeConsole rejected: missing explicit device_id")
+            raise GRPCError(
+                Status.INVALID_ARGUMENT,
+                "Explicit device resolution required: missing 'x-device-id' metadata header",
+            )
+        if device_id not in self.gateway.connections:
+            logger.warning("SubscribeConsole rejected: device not connected", device_id=device_id)
+            raise GRPCError(
+                Status.UNAVAILABLE,
+                f"Explicit target device '{device_id}' is not connected to gateway",
+            )
+
+        queue: asyncio.Queue[pb.CloudQueuedPublish] = asyncio.Queue()
+        self.gateway.console_queues.setdefault(device_id, []).append(queue)
+        try:
+            while True:
+                await stream.send_message(await queue.get())
+        except (OSError, RuntimeError) as e:
+            logger.debug("Console subscriber stream closed", device_id=device_id, error=str(e))
+        finally:
+            if device_id in self.gateway.console_queues and queue in self.gateway.console_queues[device_id]:
+                self.gateway.console_queues[device_id].remove(queue)
 
 
 class ProtobufGateway:
@@ -585,6 +768,7 @@ class ProtobufGateway:
         self._sequence_id: int = 0
         self.metrics: FleetMetrics = FleetMetrics(registry=metrics_registry)
         self.tsdb_sink: TSDBSink = TSDBSink(endpoint_url=tsdb_url)
+        self.console_queues: dict[str, list[asyncio.Queue[pb.CloudQueuedPublish]]] = {}
 
     def get_ssl_context(self) -> ssl.SSLContext | None:
         if not self.use_tls:
@@ -685,7 +869,7 @@ class ProtobufGateway:
             logger.info("Fleet Prometheus Exporter running", port=self.metrics_port)
 
         ssl_context = self.get_ssl_context()
-        self.server = Server([CloudBridgeService(self)])
+        self.server = Server([CloudBridgeService(self), GatewayLocalBridgeService(self)])
         grpclib.events.listen(self.server, grpclib.events.RecvRequest, auth_interceptor)
         await self.server.start(self.host, self.port, ssl=ssl_context)
 

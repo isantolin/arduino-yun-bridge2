@@ -764,20 +764,22 @@ async def test_handle_telemetry_full_metrics_dimensions(mock_gateway: ProtobufGa
 
     # Verify all prometheus dimensions are populated in FleetMetrics
     gw_metrics = mock_gateway.metrics
-    assert gw_metrics.device_link_synchronized.labels(device_id="edge-full")._value.get() == 1.0
-    assert gw_metrics.device_serial_bytes_sent.labels(device_id="edge-full")._value.get() == 1024.0
-    assert gw_metrics.device_serial_bytes_received.labels(device_id="edge-full")._value.get() == 2048.0
-    assert gw_metrics.device_serial_frames_sent.labels(device_id="edge-full")._value.get() == 10.0
-    assert gw_metrics.device_serial_frames_received.labels(device_id="edge-full")._value.get() == 20.0
-    assert gw_metrics.device_serial_crc_errors.labels(device_id="edge-full")._value.get() == 1.0
-    assert gw_metrics.device_handshake_attempts.labels(device_id="edge-full")._value.get() == 3.0
-    assert gw_metrics.device_handshake_successes.labels(device_id="edge-full")._value.get() == 2.0
-    assert gw_metrics.device_watchdog_beats.labels(device_id="edge-full")._value.get() == 50.0
-    assert gw_metrics.device_uptime_seconds.labels(device_id="edge-full")._value.get() == 120.5
-    assert gw_metrics.device_cloud_messages_published.labels(device_id="edge-full")._value.get() == 8.0
-    assert gw_metrics.device_latency_ms.labels(device_id="edge-full", type="serial")._value.get() == 12.5
-    assert gw_metrics.device_latency_ms.labels(device_id="edge-full", type="rpc")._value.get() == 25.0
-    assert gw_metrics.device_retries.labels(device_id="edge-full", component="cloud_connect")._value.get() == 4.0
+    reg = gw_metrics.registry
+    lbl = {"device_id": "edge-full"}
+    assert reg.get_sample_value("mcubridge_device_link_synchronized", lbl) == 1.0
+    assert reg.get_sample_value("mcubridge_device_serial_bytes_sent", lbl) == 1024.0
+    assert reg.get_sample_value("mcubridge_device_serial_bytes_received", lbl) == 2048.0
+    assert reg.get_sample_value("mcubridge_device_serial_frames_sent", lbl) == 10.0
+    assert reg.get_sample_value("mcubridge_device_serial_frames_received", lbl) == 20.0
+    assert reg.get_sample_value("mcubridge_device_serial_crc_errors", lbl) == 1.0
+    assert reg.get_sample_value("mcubridge_device_handshake_attempts", lbl) == 3.0
+    assert reg.get_sample_value("mcubridge_device_handshake_successes", lbl) == 2.0
+    assert reg.get_sample_value("mcubridge_device_watchdog_beats", lbl) == 50.0
+    assert reg.get_sample_value("mcubridge_device_uptime_seconds", lbl) == 120.5
+    assert reg.get_sample_value("mcubridge_device_cloud_messages_published", lbl) == 8.0
+    assert reg.get_sample_value("mcubridge_device_latency_ms", {"device_id": "edge-full", "type": "serial"}) == 12.5
+    assert reg.get_sample_value("mcubridge_device_latency_ms", {"device_id": "edge-full", "type": "rpc"}) == 25.0
+    assert reg.get_sample_value("mcubridge_device_retries", {"device_id": "edge-full", "component": "cloud_connect"}) == 4.0
 
     # Verify line protocol format contains all dimensions
     line = TSDBSink.format_line_protocol("edge-full", metrics, timestamp_ns=1700000000000)

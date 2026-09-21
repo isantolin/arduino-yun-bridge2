@@ -515,9 +515,8 @@ class CloudBridgeService(CloudBridgeBase):
                     if envelope.device_id and envelope.device_id != device_id:
                         old_device_id = device_id
                         device_id = envelope.device_id
-                        if not is_authenticated:
-                            self.gateway.connections.pop(old_device_id, None)
-                            self.gateway.sessions.pop(old_device_id, None)
+                        self.gateway.connections.pop(old_device_id, None)
+                        self.gateway.sessions.pop(old_device_id, None)
                         self.gateway.connections[device_id] = stream
                         self.gateway.sessions[device_id] = session_fsm
 

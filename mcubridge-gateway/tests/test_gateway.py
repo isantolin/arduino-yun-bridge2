@@ -419,6 +419,11 @@ def test_extract_peer_identity() -> None:
     assert device_id_no_cn == "anonymous-192.168.1.50:44321"
     assert auth_no_cn is False
 
+    # 6. metadata with x-device-id
+    device_id_meta, auth_meta = extract_peer_identity(mock_peer, {"x-device-id": "yun-meta-01"})
+    assert device_id_meta == "yun-meta-01"
+    assert auth_meta is False
+
 
 @pytest.mark.asyncio
 async def test_auth_interceptor_flow() -> None:

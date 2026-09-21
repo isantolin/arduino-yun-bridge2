@@ -28,7 +28,6 @@ from google.protobuf.message import (
 )
 
 import anyio
-from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
 import anyio.to_thread
 import psutil
 import tenacity
@@ -145,8 +144,6 @@ class BridgeService:
     _cloud_publish_lock: asyncio.Lock
     _cloud_spool: LmdbDeque | None
     mcu_registry: dict[int, McuHandler]
-    _cloud_incoming_send_stream: MemoryObjectSendStream[pb.CloudQueuedPublish]
-    _cloud_incoming_receive_stream: MemoryObjectReceiveStream[pb.CloudQueuedPublish]
     ipc_requests: dict[bytes, asyncio.Queue[pb.CloudQueuedPublish]]
     console_queues: list[asyncio.Queue[pb.CloudQueuedPublish]]
     ubus_service: UbusService
@@ -159,9 +156,6 @@ class BridgeService:
         self.config, self.state, self.serial = config, state, serial
         self._cloud_channel, self._cloud_stream = None, None
         self.watchdog: WatchdogKeepalive | None = None
-        self._cloud_incoming_send_stream, self._cloud_incoming_receive_stream = anyio.create_memory_object_stream[
-            pb.CloudQueuedPublish
-        ](max_buffer_size=max(1, self.state.cloud_queue_limit))
         self.ipc_requests = {}
         self.console_queues = []
         self.local_bridge_service = LocalBridgeService(self)
@@ -511,13 +505,7 @@ class BridgeService:
         # [SIL-2] Async spool close is handled by run() finally block.
         # cleanup() only nullifies the reference to prevent double-close.
         self._cloud_spool = None
-        self._cloud_incoming_send_stream.close()
-        self._cloud_incoming_receive_stream.close()
         self.state.cleanup()
-
-    def __del__(self) -> None:
-        self._cloud_incoming_send_stream.close()
-        self._cloud_incoming_receive_stream.close()
 
     async def on_serial_connected(self) -> None:
         self.state.connection_fsm.connect()
@@ -1645,85 +1633,68 @@ class BridgeService:
                 await self.flush_cloud_spool()
 
                 try:
-                    async with asyncio.TaskGroup() as tg:
-                        worker_task = tg.create_task(self._cloud_incoming_worker())
-                        try:
-                            # Read loop
-                            async for envelope in stream:
-                                payload_type = envelope.WhichOneof("payload")
-                                if logger.is_enabled_for(logging.DEBUG):
-                                    logger.debug(
-                                        "[GATEWAY -> MPU] [TYPE:%s] [SEQ:%d]",
-                                        payload_type,
-                                        envelope.sequence_id,
-                                    )
-                                if payload_type == "pong":
-                                    logger.debug("Received keepalive pong from cloud.")
-                                    continue
+                    # Read loop - [SIL-2] Direct Protobuf RPC dispatch
+                    async for envelope in stream:
+                        payload_type = envelope.WhichOneof("payload")
+                        if logger.is_enabled_for(logging.DEBUG):
+                            logger.debug(
+                                "[GATEWAY -> MPU] [TYPE:%s] [SEQ:%d]",
+                                payload_type,
+                                envelope.sequence_id,
+                            )
+                        if payload_type == "pong":
+                            logger.debug("Received keepalive pong from cloud.")
+                            continue
 
-                                if payload_type == "command_request":
-                                    cmd = envelope.command_request
-                                    if cmd.command_path.startswith("rpc/"):
-                                        method_name = cmd.command_path.removeprefix("rpc/")
-                                        try:
-                                            resp_payload = await self.local_bridge_service.execute_rpc(
-                                                method_name, cmd.payload
-                                            )
-                                            status_code = 200
-                                            err_msg = ""
-                                        except ValueError as exc:
-                                            logger.warning("Unknown or invalid RPC method from cloud", error=str(exc))
-                                            resp_payload = b""
-                                            status_code = 404
-                                            err_msg = str(exc)
-                                        except (OSError, RuntimeError, TimeoutError) as exc:
-                                            logger.error("RPC execution error on device", error=str(exc))
-                                            resp_payload = b""
-                                            status_code = 500
-                                            err_msg = str(exc)
+                        if payload_type == "command_request":
+                            cmd = envelope.command_request
+                            method_name = (
+                                cmd.command_path.removeprefix("rpc/")
+                                if cmd.command_path.startswith("rpc/")
+                                else cmd.command_path
+                            )
+                            try:
+                                resp_payload = await self.local_bridge_service.execute_rpc(
+                                    method_name, cmd.payload
+                                )
+                                status_code = 200
+                                err_msg = ""
+                            except (ValueError, ProtobufDecodeError) as exc:
+                                logger.warning("Unknown or invalid RPC method from cloud", error=str(exc))
+                                resp_payload = b""
+                                status_code = 404
+                                err_msg = str(exc)
+                            except (OSError, RuntimeError, TimeoutError) as exc:
+                                logger.error("RPC execution error on device", error=str(exc))
+                                resp_payload = b""
+                                status_code = 500
+                                err_msg = str(exc)
 
-                                        resp_env = pb.CloudEnvelope(
-                                            protocol_version=2,
-                                            device_id=self.state.device_id,
-                                            sequence_id=envelope.sequence_id,
-                                            command_response=pb.CommandResponse(
-                                                status_code=status_code,
-                                                error_message=err_msg,
-                                                payload=resp_payload,
-                                            ),
-                                        )
-                                        await stream.send_message(resp_env)
-                                        continue
-
-                                    request = pb.CloudQueuedPublish(
-                                        topic_name=topic_path(self.state.topic_prefix, cmd.command_path),
-                                        payload=cmd.payload,
-                                        correlation_data=envelope.sequence_id.to_bytes(8, "big"),
-                                        response_topic="cloud",
-                                    )
-                                    try:
-                                        self._cloud_incoming_send_stream.send_nowait(request)
-                                    except anyio.WouldBlock:
-                                        logger.warning("Cloud incoming memory stream full, dropping request")
-                        finally:
-                            worker_task.cancel()
-                except* (
+                            resp_env = pb.CloudEnvelope(
+                                protocol_version=2,
+                                device_id=self.state.device_id,
+                                sequence_id=envelope.sequence_id,
+                                command_response=pb.CommandResponse(
+                                    status_code=status_code,
+                                    error_message=err_msg,
+                                    payload=resp_payload,
+                                ),
+                            )
+                            await stream.send_message(resp_env)
+                except (
                     GRPCError,
                     ProtocolError,
                     StreamTerminatedError,
                     ConnectionError,
                     OSError,
                     EOFError,
-                ) as eg:
+                ) as exc:
                     cur_task = asyncio.current_task()
                     if cur_task and cur_task.cancelling():
-                        logger.debug(
-                            "Cloud session TaskGroup terminated during cancellation",
-                            errors=[str(e) for e in eg.exceptions],
-                        )
+                        logger.debug("Cloud session terminated during cancellation")
                         raise asyncio.CancelledError() from None
-                    logger.warning("Cloud session stream disconnected", errors=[str(e) for e in eg.exceptions])
-                    raise ConnectionError(f"Cloud session stream disconnected: {eg.exceptions[0]}") from eg
+                    logger.warning("Cloud session stream disconnected", error=str(exc))
+                    raise ConnectionError(f"Cloud session stream disconnected: {exc}") from exc
         finally:
             self.state.cloud_fsm.degrade()
             self._cloud_stream = None
@@ -1751,21 +1722,6 @@ class BridgeService:
                     description,
                 )
             await self._cloud_stream.send_message(envelope)
-
-    async def _cloud_incoming_worker(self) -> None:
-        try:
-            async for message in self._cloud_incoming_receive_stream:
-                try:
-                    await self.handle_request(message)
-                except (ValueError, RuntimeError, anyio.WouldBlock, asyncio.QueueFull) as e:
-                    logger.error(
-                        "Error processing CLOUD message",
-                        topic=message.topic_name,
-                        error=str(e),
-                        payload_hex=(message.payload.hex() if message.payload else None),
-                    )
-        except anyio.get_cancelled_exc_class():
-            logger.debug("Cloud incoming worker cancelled during shutdown")
 
     async def supervise(
         self,

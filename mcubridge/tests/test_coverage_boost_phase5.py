@@ -205,6 +205,7 @@ async def test_flush_cloud_spool_corrupt_and_index_error(test_config: RuntimeCon
 class _MockCloudStream:
     def __init__(self, items: list[pb.CloudEnvelope]) -> None:
         self._items = items
+        self.sent_messages: list[pb.CloudEnvelope] = []
 
     async def __aenter__(self) -> _MockCloudStream:
         return self
@@ -223,7 +224,7 @@ class _MockCloudStream:
             raise StopAsyncIteration
 
     async def send_message(self, msg: Any) -> None:
-        pass
+        self.sent_messages.append(msg)
 
 
 @pytest.mark.asyncio
@@ -235,18 +236,23 @@ async def test_connect_cloud_session_http3(test_config: RuntimeConfig, mock_stat
     envelope_cmd = pb.CloudEnvelope(
         protocol_version=2,
         sequence_id=42,
-        command_request=pb.CommandRequest(command_path="system/version/read", payload=b""),
+        command_request=pb.CommandRequest(
+            command_path="rpc/SetPinMode",
+            payload=pb.PinMode(pin=13, mode=pb.PIN_OUTPUT).SerializeToString(),
+        ),
     )
 
     svc.config.cloud_http3_enabled = True
+    mock_stream = _MockCloudStream([envelope_pong, envelope_cmd])
     with patch("mcubridge.services.runtime.Channel"), patch("mcubridge.services.runtime.CloudBridgeStub") as mock_stub:
-        mock_stub.return_value.Session.open.return_value = _MockCloudStream([envelope_pong, envelope_cmd])
+        mock_stub.return_value.Session.open.return_value = mock_stream
         with patch.object(svc, "_send_cloud_event", new_callable=AsyncMock):
             with patch.object(svc, "flush_cloud_spool", new_callable=AsyncMock):
-                with patch.object(svc, "_cloud_incoming_worker", new_callable=AsyncMock):
-                    await svc.connect_cloud_session(ssl.create_default_context())
-                    assert svc.state.connected_via_http3 is True
-                    assert svc._cloud_incoming_receive_stream.statistics().current_buffer_used > 0
+                await svc.connect_cloud_session(ssl.create_default_context())
+                assert svc.state.connected_via_http3 is True
+                assert len(mock_stream.sent_messages) == 1
+                assert mock_stream.sent_messages[0].sequence_id == 42
+                assert mock_stream.sent_messages[0].command_response.status_code == 200
 
 
 @pytest.mark.asyncio
@@ -259,9 +265,8 @@ async def test_connect_cloud_session_http2_fallback(test_config: RuntimeConfig, 
         mock_stub.return_value.Session.open.return_value = _MockCloudStream([])
         with patch.object(svc, "_send_cloud_event", new_callable=AsyncMock):
             with patch.object(svc, "flush_cloud_spool", new_callable=AsyncMock):
-                with patch.object(svc, "_cloud_incoming_worker", new_callable=AsyncMock):
-                    await svc.connect_cloud_session(ssl.create_default_context())
-                    assert svc.state.connected_via_http3 is False
+                await svc.connect_cloud_session(ssl.create_default_context())
+                assert svc.state.connected_via_http3 is False
 
 
 @pytest.mark.asyncio
@@ -1195,19 +1200,33 @@ async def test_runtime_publish_cloud_message_flavors(test_config: RuntimeConfig,
 
 
 @pytest.mark.asyncio
-async def test_runtime_cloud_incoming_worker_error_logged(test_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+async def test_runtime_cloud_session_rpc_error_handling(test_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     serial = AsyncMock(spec=SerialTransport)
     svc = BridgeService(test_config, mock_state, serial)
 
-    req = pb.CloudQueuedPublish(topic_name="bridge/invalid", payload=b"payload")
-    svc._cloud_incoming_send_stream.send_nowait(req)
+    envelope_err404 = pb.CloudEnvelope(
+        protocol_version=2,
+        sequence_id=101,
+        command_request=pb.CommandRequest(command_path="rpc/NonExistentMethod", payload=b""),
+    )
+    envelope_err500 = pb.CloudEnvelope(
+        protocol_version=2,
+        sequence_id=102,
+        command_request=pb.CommandRequest(command_path="rpc/DigitalWrite", payload=b"\xff\xff"),
+    )
 
-    with patch.object(svc, "handle_request", side_effect=ValueError("Test value error")):
-        worker_task = asyncio.create_task(svc._cloud_incoming_worker())
-        await asyncio.sleep(0.05)
-        worker_task.cancel()
-        await worker_task
-        assert svc._cloud_incoming_receive_stream.statistics().current_buffer_used == 0
+    mock_stream = _MockCloudStream([envelope_err404, envelope_err500])
+    with patch("mcubridge.services.runtime.Channel"), patch("mcubridge.services.runtime.CloudBridgeStub") as mock_stub:
+        mock_stub.return_value.Session.open.return_value = mock_stream
+        with patch.object(svc, "_send_cloud_event", new_callable=AsyncMock):
+            with patch.object(svc, "flush_cloud_spool", new_callable=AsyncMock):
+                await svc.connect_cloud_session(ssl.create_default_context())
+
+    assert len(mock_stream.sent_messages) == 2
+    assert mock_stream.sent_messages[0].sequence_id == 101
+    assert mock_stream.sent_messages[0].command_response.status_code == 404
+    assert mock_stream.sent_messages[1].sequence_id == 102
+    assert mock_stream.sent_messages[1].command_response.status_code in (404, 500)
 
 
 @pytest.mark.asyncio

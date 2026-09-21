@@ -24,6 +24,10 @@ class MockRuntimeFacade:
         self.reset_link = AsyncMock(return_value=True)
         self.write_digital_pin = AsyncMock(return_value=True)
         self.write_analog_pin = AsyncMock(return_value=True)
+        self.local_bridge_service = MagicMock()
+        self.local_bridge_service.execute_mailbox_push = AsyncMock(return_value=pb.GenericResponse(status="ok"))
+        self.local_bridge_service.execute_datastore_put = AsyncMock(return_value=pb.GenericResponse(status="ok"))
+        self.local_bridge_service.execute_file_write = AsyncMock(return_value=pb.GenericResponse(status="ok"))
         self.clock_sync = MagicMock()
         self.gpio = MagicMock()
         self.poll_process = AsyncMock(
@@ -200,10 +204,7 @@ async def test_ubus_handle_digital_write(mock_runtime: MockRuntimeFacade) -> Non
 
     assert res == {"status": "ok", "pin": 13, "value": 1}
     await asyncio.sleep(0.01)
-    assert mock_runtime.handle_request.called
-    inbound = mock_runtime.handle_request.call_args[0][0]
-    assert "digital/13/set" in inbound.topic_name
-    assert inbound.payload == b"1"
+    mock_runtime.write_digital_pin.assert_awaited_once_with(13, 1)
 
 
 @pytest.mark.asyncio
@@ -213,10 +214,7 @@ async def test_ubus_handle_analog_write(mock_runtime: MockRuntimeFacade) -> None
 
     assert res == {"status": "ok", "pin": 9, "value": 128}
     await asyncio.sleep(0.01)
-    assert mock_runtime.handle_request.called
-    inbound = mock_runtime.handle_request.call_args[0][0]
-    assert "analog/9/set" in inbound.topic_name
-    assert inbound.payload == b"128"
+    mock_runtime.write_analog_pin.assert_awaited_once_with(9, 128)
 
 
 @pytest.mark.asyncio
@@ -226,10 +224,9 @@ async def test_ubus_handle_mailbox_push(mock_runtime: MockRuntimeFacade) -> None
 
     assert res == {"status": "ok", "message_length": 9}
     await asyncio.sleep(0.01)
-    assert mock_runtime.handle_request.called
-    inbound = mock_runtime.handle_request.call_args[0][0]
-    assert "mailbox/push" in inbound.topic_name
-    assert inbound.payload == b"hello_mcu"
+    mock_runtime.local_bridge_service.execute_mailbox_push.assert_awaited_once()
+    req = mock_runtime.local_bridge_service.execute_mailbox_push.call_args[0][0]
+    assert req.data == b"hello_mcu"
 
 
 @pytest.mark.asyncio
@@ -239,10 +236,10 @@ async def test_ubus_handle_datastore_set(mock_runtime: MockRuntimeFacade) -> Non
 
     assert res == {"status": "ok", "key": "temperature"}
     await asyncio.sleep(0.01)
-    assert mock_runtime.handle_request.called
-    inbound = mock_runtime.handle_request.call_args[0][0]
-    assert "datastore/temperature/set" in inbound.topic_name
-    assert inbound.payload == b"24.5"
+    mock_runtime.local_bridge_service.execute_datastore_put.assert_awaited_once()
+    req = mock_runtime.local_bridge_service.execute_datastore_put.call_args[0][0]
+    assert req.key == "temperature"
+    assert req.value == b"24.5"
 
 
 def test_ubus_handle_process_run_sync(mock_runtime: MockRuntimeFacade) -> None:
@@ -418,10 +415,10 @@ async def test_ubus_handle_file_write(mock_runtime: MockRuntimeFacade) -> None:
 
     assert res == {"status": "ok", "path": "test.txt", "bytes_written": 12}
     await asyncio.sleep(0.01)
-    assert mock_runtime.handle_request.called
-    inbound = mock_runtime.handle_request.call_args[0][0]
-    assert "file/write/test.txt" in inbound.topic_name
-    assert inbound.payload == b"file content"
+    mock_runtime.local_bridge_service.execute_file_write.assert_awaited_once()
+    req = mock_runtime.local_bridge_service.execute_file_write.call_args[0][0]
+    assert req.path == "test.txt"
+    assert req.data == b"file content"
 
 
 def test_ubus_handle_link_reset(mock_runtime: MockRuntimeFacade) -> None:

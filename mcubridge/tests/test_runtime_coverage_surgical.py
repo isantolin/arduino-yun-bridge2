@@ -4,7 +4,8 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -212,7 +213,9 @@ async def test_handle_file_mcu_read_success_and_timeout(
 
 
 @pytest.mark.asyncio
-async def test_cloud_events_and_incoming_worker(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
+async def test_cloud_events_and_direct_rpc_dispatch(
+    test_config: RuntimeConfig, mock_bridge_state: RuntimeState
+) -> None:
     svc = BridgeService(test_config, mock_bridge_state, MagicMock())
     mock_stream = AsyncMock()
     svc._cloud_stream = mock_stream
@@ -221,18 +224,54 @@ async def test_cloud_events_and_incoming_worker(test_config: RuntimeConfig, mock
     await svc._send_cloud_event("test_event", "info", "Description")
     mock_stream.send_message.assert_awaited_once()
 
-    # _cloud_incoming_worker test
-    mock_handle = AsyncMock()
-    setattr(svc, "handle_request", mock_handle)
-    msg = pb.CloudQueuedPublish(topic_name="mcu/datastore/get/temp", payload=b"")
-    svc._cloud_incoming_send_stream.send_nowait(msg)
+    # Direct Protobuf RPC dispatch validation
+    mock_exec_rpc = AsyncMock(return_value=pb.GenericResponse(status="ok").SerializeToString())
+    setattr(svc.local_bridge_service, "execute_rpc", mock_exec_rpc)
 
-    worker_task = asyncio.create_task(svc._cloud_incoming_worker())
-    await asyncio.sleep(0.02)
-    await svc._cloud_incoming_send_stream.aclose()
-    await worker_task
+    env = pb.CloudEnvelope(
+        protocol_version=2,
+        sequence_id=88,
+        command_request=pb.CommandRequest(
+            command_path="rpc/DigitalWrite",
+            payload=pb.DigitalWrite(pin=13, value=1).SerializeToString(),
+        ),
+    )
 
-    mock_handle.assert_awaited_with(msg)
+    class MockStream:
+        def __init__(self, items: list[pb.CloudEnvelope]) -> None:
+            self._items = items
+            self.sent_messages: list[pb.CloudEnvelope] = []
+
+        async def __aenter__(self) -> MockStream:
+            return self
+
+        async def __aexit__(self, *args: Any) -> None:
+            pass
+
+        def __aiter__(self) -> MockStream:
+            self._iter = iter(self._items)
+            return self
+
+        async def __anext__(self) -> pb.CloudEnvelope:
+            try:
+                return next(self._iter)
+            except StopIteration:
+                raise StopAsyncIteration
+
+        async def send_message(self, msg: Any) -> None:
+            self.sent_messages.append(msg)
+
+    session_stream = MockStream([env])
+    with patch("mcubridge.services.runtime.Channel"), patch("mcubridge.services.runtime.CloudBridgeStub") as mock_stub:
+        mock_stub.return_value.Session.open.return_value = session_stream
+        with patch.object(svc, "_send_cloud_event", new_callable=AsyncMock):
+            with patch.object(svc, "flush_cloud_spool", new_callable=AsyncMock):
+                await svc.connect_cloud_session(None)
+
+    mock_exec_rpc.assert_awaited_once_with("DigitalWrite", env.command_request.payload)
+    assert len(session_stream.sent_messages) == 1
+    assert session_stream.sent_messages[0].sequence_id == 88
+    assert session_stream.sent_messages[0].command_response.status_code == 200
 
 
 @pytest.mark.asyncio

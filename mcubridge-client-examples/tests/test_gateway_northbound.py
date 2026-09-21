@@ -31,8 +31,8 @@ async def run_test(host: str, port: int, device_id: str) -> None:
     try:
         dispatch = pb.CommandDispatch(
             target_device_id=device_id,
-            command_path="digital/13",
-            payload=b"1",
+            command_path="rpc/DigitalWrite",
+            payload=pb.DigitalWrite(pin=13, value=1).SerializeToString(),
             timeout_seconds=5,
         )
         logger.info("Dispatching command to gateway", command=dispatch.command_path, target_device_id=device_id)
@@ -44,7 +44,12 @@ async def run_test(host: str, port: int, device_id: str) -> None:
             payload=response.payload,
         )
         assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.payload!r}"
-        assert response.payload == b"OK", f"Expected b'OK', got {response.payload!r}"
+        if response.payload == b"OK":
+            pass
+        else:
+            gen_resp = pb.GenericResponse()
+            gen_resp.ParseFromString(response.payload)
+            assert gen_resp.status == "ok", f"Expected ok status, got {gen_resp.status}"
         logger.info("Northbound roundtrip test PASSED")
     finally:
         channel.close()

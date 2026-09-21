@@ -210,11 +210,14 @@ async def test_connect_cloud_session(runtime_config: RuntimeConfig, runtime_stat
 
     envelope_cmd = MagicMock()
     envelope_cmd.WhichOneof.return_value = "command_request"
-    envelope_cmd.command_request.command_path = "system/version/get"
+    envelope_cmd.command_request.command_path = "rpc/GetVersion"
     envelope_cmd.command_request.payload = b""
     envelope_cmd.sequence_id = 1234
 
     class AsyncStreamMock:
+        def __init__(self) -> None:
+            self.send_message = AsyncMock()
+
         def __aiter__(self):
             async def _gen():
                 yield envelope_pong
@@ -240,6 +243,10 @@ async def test_connect_cloud_session(runtime_config: RuntimeConfig, runtime_stat
 
         await svc.connect_cloud_session(None)
         assert runtime_state.connected_via_http3 is True
+        mock_stream.send_message.assert_awaited_once()
+        resp = mock_stream.send_message.call_args[0][0]
+        assert resp.sequence_id == 1234
+        assert resp.command_response.status_code == 200
 
 
 @pytest.mark.asyncio

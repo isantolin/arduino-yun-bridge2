@@ -18,8 +18,8 @@ from google.protobuf.json_format import MessageToDict
 
 from ..config.settings import RuntimeConfig
 from ..protocol import mcubridge_pb2 as pb
-from ..protocol.topics import topic_path
 from ..state.context import RuntimeState
+
 
 logger = structlog.get_logger("mcubridge.service.ubus")
 
@@ -50,6 +50,7 @@ class BridgeRuntimeFacade(Protocol):
 
     config: RuntimeConfig
     state: RuntimeState
+    local_bridge_service: Any
 
     async def handle_request(self, inbound: Any) -> None: ...
     async def run_process(self, command: str) -> int: ...
@@ -277,21 +278,11 @@ class UbusService:
             "synchronized": is_synced,
         }
 
-    def _publish_to_cloud(self, subpath: str, payload: bytes) -> None:
-        """Construct and schedule a CloudQueuedPublish request on the runtime facade."""
-        topic_name = topic_path(self.runtime.state.cloud_topic_prefix, subpath)
-        publish = pb.CloudQueuedPublish(
-            topic_name=topic_name,
-            payload=payload,
-        )
-        self.schedule_async(self.runtime.handle_request(publish))
-
     def _handle_pin_write(self, kind: str, msg: dict[str, Any]) -> dict[str, Any]:
         pin = int(msg.get("pin", 0))
         val = int(msg.get("value", 0))
         writer = self.runtime.write_digital_pin if kind == "digital" else self.runtime.write_analog_pin
         self.schedule_async(writer(pin, val))
-        self._publish_to_cloud(f"{kind}/{pin}/set", str(val).encode())
         return {"status": "ok", "pin": pin, "value": val}
 
     def ubus_handle_digital_write(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
@@ -305,14 +296,20 @@ class UbusService:
     def ubus_handle_mailbox_push(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.mailbox_push'."""
         message = str(msg.get("message", ""))
-        self._publish_to_cloud("mailbox/push", message.encode())
+        self.schedule_async(
+            self.runtime.local_bridge_service.execute_mailbox_push(pb.MailboxPush(data=message.encode("utf-8")))
+        )
         return {"status": "ok", "message_length": len(message)}
 
     def ubus_handle_datastore_set(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.datastore_set'."""
         key = str(msg.get("key", ""))
         value = str(msg.get("value", ""))
-        self._publish_to_cloud(f"datastore/{key}/set", value.encode())
+        self.schedule_async(
+            self.runtime.local_bridge_service.execute_datastore_put(
+                pb.DatastorePut(key=key, value=value.encode("utf-8"))
+            )
+        )
         return {"status": "ok", "key": key}
 
     def ubus_handle_datastore_get(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
@@ -339,7 +336,11 @@ class UbusService:
         """UBUS RPC handler for 'mcubridge.file_write'."""
         target_path = str(msg.get("path", ""))
         data_str = str(msg.get("data", ""))
-        self._publish_to_cloud(f"file/write/{target_path}", data_str.encode())
+        self.schedule_async(
+            self.runtime.local_bridge_service.execute_file_write(
+                pb.FileWrite(path=target_path, data=data_str.encode("utf-8"))
+            )
+        )
         return {"status": "ok", "path": target_path, "bytes_written": len(data_str)}
 
     def ubus_handle_process_run(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:

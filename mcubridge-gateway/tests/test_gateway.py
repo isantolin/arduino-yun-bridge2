@@ -831,25 +831,46 @@ async def test_dispatch_command_branches(mock_gateway: ProtobufGateway) -> None:
     assert resp_503.status_code == 503
     assert b"is not connected" in resp_503.payload
 
-    # 3. explicit target_id with connections -> sends command
+    # 3. explicit target_id with connections -> sends command (normalized to canonical Protobuf RPC)
     dummy_conn = AsyncMock()
     mock_gateway.connections["dev-1"] = dummy_conn
     stream_target = AsyncMock()
     stream_target.recv_message = AsyncMock(
         return_value=pb.CommandDispatch(target_device_id="dev-1", command_path="digital/13", payload=b"1")
     )
-    mock_send = AsyncMock(return_value=pb.CommandResponse(status_code=200, payload=b"OK"))
+    expected_payload = pb.DigitalWrite(pin=13, value=1).SerializeToString()
+    mock_send = AsyncMock(
+        return_value=pb.CommandResponse(
+            status_code=200,
+            payload=pb.GenericResponse(status="ok").SerializeToString(),
+        )
+    )
     setattr(mock_gateway, "send_command", mock_send)
     await svc.DispatchCommand(stream_target)
-    mock_send.assert_awaited_once_with("dev-1", "digital/13", payload=b"1", timeout_seconds=10.0)
+    mock_send.assert_awaited_once_with("dev-1", "rpc/DigitalWrite", payload=expected_payload, timeout_seconds=10.0)
     resp_200 = stream_target.send_message.call_args[0][0]
     assert resp_200.status_code == 200
     assert resp_200.payload == b"OK"
 
+    # 3b. direct rpc/ path -> sent directly without transformation
+    stream_rpc = AsyncMock()
+    rpc_payload = pb.AnalogWrite(pin=5, value=128).SerializeToString()
+    stream_rpc.recv_message = AsyncMock(
+        return_value=pb.CommandDispatch(target_device_id="dev-1", command_path="rpc/AnalogWrite", payload=rpc_payload)
+    )
+    mock_send_rpc = AsyncMock(
+        return_value=pb.CommandResponse(status_code=200, payload=pb.GenericResponse(status="ok").SerializeToString())
+    )
+    setattr(mock_gateway, "send_command", mock_send_rpc)
+    await svc.DispatchCommand(stream_rpc)
+    mock_send_rpc.assert_awaited_once_with("dev-1", "rpc/AnalogWrite", payload=rpc_payload, timeout_seconds=10.0)
+    resp_rpc = stream_rpc.send_message.call_args[0][0]
+    assert resp_rpc.status_code == 200
+
     # 4. send_command raises KeyError / TimeoutError / OSError -> status 504
     stream_err = AsyncMock()
     stream_err.recv_message = AsyncMock(
-        return_value=pb.CommandDispatch(target_device_id="dev-1", command_path="digital/13", timeout_seconds=2)
+        return_value=pb.CommandDispatch(target_device_id="dev-1", command_path="rpc/DigitalWrite", timeout_seconds=2)
     )
     mock_send_err = AsyncMock(side_effect=TimeoutError("Device response timeout"))
     setattr(mock_gateway, "send_command", mock_send_err)

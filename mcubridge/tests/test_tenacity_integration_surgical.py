@@ -33,6 +33,7 @@ class TypedRuntimeFacade:
         self.write_analog_pin = AsyncMock(return_value=True)
         self.clock_sync = MagicMock()
         self.gpio = MagicMock()
+        self.local_bridge_service = MagicMock()
         self.poll_process = AsyncMock(
             return_value=pb.ProcessPollResponse(
                 status=0,

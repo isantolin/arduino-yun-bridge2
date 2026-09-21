@@ -978,8 +978,13 @@ async def test_runtime_cloud_session_stream_flow(tmp_path: Path) -> None:
         protocol_version=2,
         device_id=state.device_id,
         sequence_id=2,
-        command_request=pb.CommandRequest(command_path="d/13/mode", payload=b"1"),
+        command_request=pb.CommandRequest(
+            command_path="rpc/SetPinMode",
+            payload=pb.PinMode(pin=13, mode=pb.PIN_OUTPUT).SerializeToString(),
+        ),
     )
+
+    mock_stream = None
 
     class MockAsyncStream:
         def __init__(self) -> None:
@@ -996,7 +1001,9 @@ async def test_runtime_cloud_session_stream_flow(tmp_path: Path) -> None:
 
     class MockSessionContext:
         async def __aenter__(self) -> MockAsyncStream:
-            return MockAsyncStream()
+            nonlocal mock_stream
+            mock_stream = MockAsyncStream()
+            return mock_stream
 
         async def __aexit__(self, *args: Any) -> None:
             pass
@@ -1015,7 +1022,11 @@ async def test_runtime_cloud_session_stream_flow(tmp_path: Path) -> None:
 
         await service.connect_cloud_session(None)
         assert state.connected_via_http3
-        assert service._cloud_incoming_receive_stream.statistics().current_buffer_used > 0
+        assert mock_stream is not None
+        assert mock_stream.send_message.await_count == 2
+        resp_env = mock_stream.send_message.call_args_list[1][0][0]
+        assert resp_env.sequence_id == 2
+        assert resp_env.command_response.status_code == 200
 
     service.cleanup()
 

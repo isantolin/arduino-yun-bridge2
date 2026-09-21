@@ -8,11 +8,8 @@ import re
 from typing import Annotated, Any, cast
 from wsgiref.handlers import CGIHandler
 
-import asyncio
 import structlog
 import typer
-from grpclib.client import Channel
-from mcubridge.protocol.mcubridge_grpc import LocalBridgeStub
 from google.protobuf import json_format
 from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import load_runtime_config
@@ -25,32 +22,22 @@ logger = structlog.get_logger("mcubridge.pin_rest")
 try:
     ubus: Any = importlib.import_module("ubus")
 except ImportError as exc:
-    logger.debug("UBUS module not available; falling back to local gRPC", error=str(exc))
+    logger.debug("Native OpenWrt UBUS module unavailable", error=str(exc))
     ubus = None
 
 app = typer.Typer(help="Pin REST CGI and CLI interface for MCU Bridge.", add_completion=False)
 
 
 def set_pin_digital_sync(pin: int, value: int) -> None:
-    """Synchronous digital write via native OpenWrt UBUS (with local gRPC IPC fallback)."""
-    if ubus is not None:
-        try:
-            ubus.connect()
-            ubus.call("mcubridge", "digital_write", {"pin": pin, "value": value})
-            return
-        except (OSError, RuntimeError, AttributeError) as exc:
-            logger.debug("UBUS call failed; falling back to local gRPC socket", error=str(exc))
-
-    async def _run() -> None:
-        async with Channel(path="/var/run/mcubridge.sock") as channel:
-            stub = LocalBridgeStub(channel)
-            msg = pb.DigitalWrite(pin=pin, value=value)
-            await stub.DigitalWrite(msg)
-
+    """Synchronous digital write via native OpenWrt UBUS. [SIL-2]"""
+    if ubus is None:
+        logger.error("Native OpenWrt UBUS module unavailable")
+        raise RuntimeError("Native OpenWrt UBUS module unavailable")
     try:
-        asyncio.run(_run())
-    except (OSError, RuntimeError, ValueError) as exc:
-        logger.error("Failed to write digital pin via local IPC", error=str(exc))
+        ubus.connect()
+        ubus.call("mcubridge", "digital_write", {"pin": pin, "value": value})
+    except (OSError, RuntimeError, AttributeError) as exc:
+        logger.error("Failed to write digital pin via UBUS", pin=pin, value=value, error=str(exc))
         raise
 
 

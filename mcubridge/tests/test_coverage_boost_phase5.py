@@ -624,24 +624,15 @@ async def test_runtime_publish_cloud_message_with_correlation(
 
 
 @pytest.mark.asyncio
-async def test_runtime_ipc_server_lifecycle(
+async def test_runtime_cleanup_and_lifecycle(
     test_config: RuntimeConfig, mock_state: RuntimeState, tmp_path: Path
 ) -> None:
     serial = AsyncMock(spec=SerialTransport)
     svc = BridgeService(test_config, mock_state, serial)
-
-    mock_srv = MagicMock()
-    mock_srv.start = AsyncMock()
-    mock_srv.wait_closed = AsyncMock()
-    mock_srv.close = MagicMock()
-
-    sock_file = tmp_path / "test_ipc.sock"
-    with patch.dict(os.environ, {"MCUBRIDGE_SOCKET_PATH": str(sock_file)}):
-        with patch("mcubridge.services.runtime.Server", return_value=mock_srv):
-            with patch("pathlib.Path.unlink", side_effect=[OSError("Cannot unlink"), None]):
-                with patch("os.chmod", side_effect=OSError("Chmod error")):
-                    await svc.run_ipc_server()
-                    assert mock_srv.start.called
+    svc.ubus_service = MagicMock()
+    svc.cleanup()
+    assert svc.serial is None
+    assert svc.ubus_service.stop.called
 
 
 # ==========================================

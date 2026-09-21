@@ -701,7 +701,7 @@ class TestFilePush:
     def test_push_file_ipc_error(self) -> None:
         file_push = _load_script("mcubridge_file_push")
         with (
-            patch("grpclib.client.Channel", side_effect=OSError("IPC failed")),
+            patch.object(file_push, "push_file_ubus", return_value=False),
             pytest.raises(SystemExit) as exc_info,
         ):
             file_push.push_file("test.bin", b"data")

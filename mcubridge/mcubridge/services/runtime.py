@@ -4,14 +4,12 @@ from __future__ import annotations
 from mcubridge.protocol import mcubridge_pb2 as pb
 from grpclib.client import Channel
 from grpclib.exceptions import GRPCError, ProtocolError, StreamTerminatedError
-from grpclib.server import Server
 from mcubridge.protocol.mcubridge_grpc import CloudBridgeStub
 
 import asyncio
 import collections
 import functools
 import logging
-import os
 import shlex
 import time
 
@@ -507,13 +505,6 @@ class BridgeService:
     # --- Lifecycle ---
 
     def cleanup(self) -> None:
-        """Explicitly cleanup and close the spool cache database connection (SIL 2)."""
-        socket_path = Path(os.environ.get("MCUBRIDGE_SOCKET_PATH", "/var/run/mcubridge.sock"))
-        try:
-            socket_path.unlink(missing_ok=True)
-        except OSError as exc:
-            logger.debug("Could not remove UNIX socket during cleanup", path=socket_path, error=str(exc))
-
         self.ubus_service.stop()
 
         self.serial = None
@@ -1536,9 +1527,6 @@ class BridgeService:
                     self.watchdog = WatchdogKeepalive(interval=self.config.watchdog_interval, state=self.state)
                     tg.create_task(self.supervise("watchdog", self.watchdog.run))
 
-                # 5. Local IPC Server (UNIX Socket - gRPC)
-                tg.create_task(self.supervise("ipc-server", self.run_ipc_server))
-
         except* asyncio.CancelledError:
             logger.info("Daemon shutdown initiated (Cancelled).")
         except* (
@@ -1831,29 +1819,3 @@ class BridgeService:
         except (RuntimeError, ValueError, OSError, tenacity.RetryError) as exc:
             log.critical("Supervisor task failed unexpectedly", error=str(exc))
             raise
-
-    async def run_ipc_server(self) -> None:
-        """Run the gRPC UNIX socket IPC server for local clients."""
-        socket_path = Path(os.environ.get("MCUBRIDGE_SOCKET_PATH", "/var/run/mcubridge.sock"))
-        try:
-            socket_path.unlink(missing_ok=True)
-        except OSError as exc:
-            logger.warning("Could not remove existing Unix socket", path=str(socket_path), error=str(exc))
-
-        # Create parent directory if it doesn't exist
-        socket_path.parent.mkdir(parents=True, exist_ok=True)
-
-        local_handler = self.local_bridge_service
-        server = Server([local_handler])
-
-        try:
-            await server.start(path=str(socket_path))
-            try:
-                os.chmod(socket_path, 0o660)
-            except OSError as e:
-                logger.warning("Failed to set permissions on UNIX socket", error=str(e))
-
-            logger.info("Local gRPC IPC server listening", path=str(socket_path))
-            await server.wait_closed()
-        finally:
-            server.close()

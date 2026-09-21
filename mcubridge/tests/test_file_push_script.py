@@ -4,7 +4,7 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 from typing import Any, Callable, cast
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -85,7 +85,7 @@ def test_push_file_ubus_failure_returns_false(monkeypatch: pytest.MonkeyPatch) -
     assert push_file_ubus("test.txt", b"data") is False
 
 
-def test_push_file_dispatches_ubus_or_grpc(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_push_file_direct_ubus(monkeypatch: pytest.MonkeyPatch) -> None:
     def mock_push_success(_p: str, _d: bytes) -> bool:
         return True
 
@@ -96,23 +96,11 @@ def test_push_file_dispatches_ubus_or_grpc(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setattr(_file_push, "push_file_ubus", mock_push_success)
     push_file("test.txt", b"data")
 
-    # 2. When UBUS fails, fall back to gRPC
+    # 2. When UBUS fails, exit(1) is called
     monkeypatch.setattr(_file_push, "push_file_ubus", mock_push_fail)
-
-    mock_stub = MagicMock()
-    mock_stub.FileWrite = AsyncMock()
-
-    mock_channel_cls = MagicMock()
-    mock_channel_cls.return_value.__aenter__.return_value = MagicMock()
-
-    def mock_stub_factory(_c: Any) -> Any:
-        return mock_stub
-
-    monkeypatch.setattr(_file_push, "Channel", mock_channel_cls)
-    monkeypatch.setattr(_file_push, "LocalBridgeStub", mock_stub_factory)
-
-    push_file("test.txt", b"data")
-    assert mock_stub.FileWrite.called
+    with pytest.raises(SystemExit) as exc_info:
+        push_file("test.txt", b"data")
+    assert exc_info.value.code == 1
 
 
 def test_main_cli_validation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

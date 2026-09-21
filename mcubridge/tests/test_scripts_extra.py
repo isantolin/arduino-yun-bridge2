@@ -1,11 +1,10 @@
 import pytest
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import MagicMock, patch
 from typing import Any
 from collections.abc import Coroutine
 import importlib.util
 from pathlib import Path
 import sys
-import io
 
 
 def load_script(name: str) -> Any:
@@ -33,34 +32,28 @@ def mock_asyncio_run(coro: Coroutine[Any, Any, Any]) -> None:
 def test_file_push_script(runtime_config: Any) -> None:
     script = load_script("mcubridge-file-push")
     with (
-        patch("mcubridge_file_push.Channel") as mock_channel_cls,
-        patch("mcubridge_file_push.LocalBridgeStub") as mock_stub_cls,
+        patch("mcubridge_file_push.push_file_ubus", return_value=True) as mock_push_ubus,
         patch("sys.argv", ["mcubridge-file-push", "local.txt", "mcu/remote.txt"]),
         patch("pathlib.Path.read_bytes", return_value=b"data"),
         patch("pathlib.Path.exists", return_value=True),
     ):
-        mock_stub = MagicMock()
-        mock_stub_cls.return_value = mock_stub
-        mock_stub.FileWrite = AsyncMock()
         script.app(standalone_mode=False)
-        mock_channel_cls.assert_called_once_with(path="/var/run/mcubridge.sock")
-        assert mock_stub.FileWrite.called
+        mock_push_ubus.assert_called_once_with("mcu/remote.txt", b"data")
 
 
-def test_rotate_credentials_script(runtime_config: Any) -> None:
+def test_rotate_credentials_script(runtime_config: Any, capsys: pytest.CaptureFixture[str]) -> None:
     script = load_script("mcubridge-rotate-credentials")
     with (
         patch("sys.argv", ["mcubridge-rotate-credentials", "--force", "--no-restart"]),
         patch("subprocess.run"),
         patch("uci.Uci"),
         patch("mcubridge_rotate_credentials.update_uci_credentials") as mock_update,
-        patch("sys.stdout", new_callable=io.StringIO) as stdout,
     ):
         script.app(standalone_mode=False)
         assert mock_update.called
-        output = stdout.getvalue()
-        assert "SERIAL_SECRET=" in output
-        assert "CLOUD_PASSWORD=" in output
+        captured = capsys.readouterr()
+        assert "SERIAL_SECRET=" in captured.out
+        assert "CLOUD_PASSWORD=" in captured.out
 
 
 def test_file_push_error_cases(runtime_config: Any) -> None:

@@ -17,8 +17,11 @@ logger = structlog.get_logger("mcubridge.rotate-credentials")
 
 try:
     uci: Any = importlib.import_module("uci")
-    UciException: type[BaseException] = getattr(uci, "UciException", RuntimeError)
-except ImportError as exc:
+    raw_exc = getattr(uci, "UciException", RuntimeError)
+    UciException: type[BaseException] = (
+        raw_exc if isinstance(raw_exc, type) and issubclass(raw_exc, BaseException) else RuntimeError
+    )
+except (ImportError, TypeError) as exc:
     logger.debug("UCI module not available; CLI fallback will be used", error=str(exc))
     uci = None
     UciException = RuntimeError

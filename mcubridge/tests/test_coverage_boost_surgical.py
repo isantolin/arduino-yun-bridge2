@@ -34,9 +34,23 @@ else:
 
 
 def test_pin_rest_cgi_set_pin_digital_sync_error() -> None:
-    with patch("grpclib.client.Channel", side_effect=OSError("IPC Connection Failed")):
-        with pytest.raises(OSError):
+    with patch.object(pin_rest_cgi, "ubus", None):
+        with pytest.raises(RuntimeError, match="Native OpenWrt UBUS module unavailable"):
             pin_rest_cgi.set_pin_digital_sync(13, 1)
+
+    mock_ubus = MagicMock()
+    mock_ubus.call.side_effect = OSError("UBUS failure")
+    with patch.object(pin_rest_cgi, "ubus", mock_ubus):
+        with pytest.raises(OSError, match="UBUS failure"):
+            pin_rest_cgi.set_pin_digital_sync(13, 1)
+        assert mock_ubus.connect.called
+        mock_ubus.call.assert_called_once_with("mcubridge", "digital_write", {"pin": 13, "value": 1})
+
+    mock_ubus_ok = MagicMock()
+    with patch.object(pin_rest_cgi, "ubus", mock_ubus_ok):
+        pin_rest_cgi.set_pin_digital_sync(13, 1)
+        assert mock_ubus_ok.connect.called
+        mock_ubus_ok.call.assert_called_once_with("mcubridge", "digital_write", {"pin": 13, "value": 1})
 
 
 def test_pin_rest_cgi_application() -> None:

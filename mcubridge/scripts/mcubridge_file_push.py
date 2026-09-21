@@ -2,7 +2,6 @@
 """Modernized File Push utility for MCU Bridge (SIL-2)."""
 
 from __future__ import annotations
-import asyncio
 import importlib
 import sys
 from pathlib import Path
@@ -10,10 +9,6 @@ from typing import Annotated, Any, cast
 
 import structlog
 import typer
-from grpclib.client import Channel
-
-from mcubridge.protocol import mcubridge_pb2 as pb
-from mcubridge.protocol.mcubridge_grpc import LocalBridgeStub
 
 # [SIL-2] Structured logging towards syslog/stderr
 logger = structlog.get_logger("mcubridge.file-push")
@@ -21,7 +16,7 @@ app = typer.Typer(help="Push files to MCU or Linux storage.", add_completion=Fal
 
 
 def push_file_ubus(target_path: str, data: bytes) -> bool:
-    """Attempt fast-path file write via OpenWrt UBUS."""
+    """Attempt file write via OpenWrt UBUS."""
     try:
         ubus_mod = importlib.import_module("ubus")
         conn = ubus_mod.connect()
@@ -40,30 +35,15 @@ def push_file_ubus(target_path: str, data: bytes) -> bool:
                 return True
         return False
     except (ImportError, OSError, RuntimeError, AttributeError) as exc:
-        logger.debug("UBUS file push unavailable or failed; falling back to gRPC", path=target_path, error=str(exc))
+        logger.error("UBUS file push unavailable or failed", path=target_path, error=str(exc))
         return False
 
 
 def push_file(target_path: str, data: bytes) -> None:
-    """Write file data using UBUS fast-path with local gRPC UNIX socket fallback."""
-    if push_file_ubus(target_path, data):
-        return
-
-    async def _run() -> None:
-        try:
-            async with Channel(path="/var/run/mcubridge.sock") as channel:
-                stub = LocalBridgeStub(channel)
-                msg = pb.FileWrite(
-                    path=target_path,
-                    data=data,
-                )
-                await stub.FileWrite(msg)
-                logger.info("File push successful via gRPC", path=target_path, size=len(data))
-        except (OSError, RuntimeError, ValueError) as e:
-            logger.error("File push failed", error=str(e), path=target_path)
-            sys.exit(1)
-
-    asyncio.run(_run())
+    """Write file data using native OpenWrt UBUS. [SIL-2]"""
+    if not push_file_ubus(target_path, data):
+        logger.error("File push failed", path=target_path)
+        sys.exit(1)
 
 
 @app.command()

@@ -102,7 +102,7 @@ def run_daemon() -> None:
                 RuntimeError,
                 ValueError,
                 TypeError,
-                asyncio.TimeoutError,
+                TimeoutError,
                 SerialHandshakeFatal,
                 tenacity.RetryError,
             )

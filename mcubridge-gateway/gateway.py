@@ -567,7 +567,7 @@ class CloudBridgeService(CloudBridgeBase):
             await stream.send_message(
                 pb.CommandResponse(
                     status_code=503,
-                    payload=f"Device '{target_id}' is not connected to gateway".encode("utf-8"),
+                    payload=f"Device '{target_id}' is not connected to gateway".encode(),
                 )
             )
             return
@@ -881,9 +881,8 @@ class ProtobufGateway:
         ).inc()
 
         key = (device_id, sequence_id)
-        if future := self.pending_commands.get(key):
-            if not future.done():
-                future.set_result(response)
+        if (future := self.pending_commands.get(key)) and not future.done():
+            future.set_result(response)
 
     async def run(self) -> None:
         if self.metrics_port:

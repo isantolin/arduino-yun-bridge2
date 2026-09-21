@@ -298,7 +298,7 @@ class BridgeService:
                 topic=resolved_message.topic_name,
                 correlation=correlation.hex() if correlation else None,
                 in_ipc_requests=(correlation in self.ipc_requests if correlation else False),
-                registered_keys=[k.hex() for k in self.ipc_requests.keys()],
+                registered_keys=[k.hex() for k in self.ipc_requests],
             )
         if correlation and correlation in self.ipc_requests:
             self.ipc_requests[correlation].put_nowait(resolved_message)
@@ -626,7 +626,7 @@ class BridgeService:
                     try:
                         async with asyncio.timeout(float(protocol.SYNC_TIMEOUT_MS) / 1000.0):
                             await self.state.link_sync_event.wait()
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         logger.error("Timed out waiting for MCU link synchronization")
                 action = self.deduce_action(route)
                 topic_str = route.topic.value if isinstance(route.topic, Topic) else route.topic
@@ -925,9 +925,8 @@ class BridgeService:
                     await handler(target, inbound)
                 return
 
-            if self._get_safe_path(target):
-                if handler := self._file_local_dispatch.get(act):
-                    await handler(target, inbound)
+            if self._get_safe_path(target) and (handler := self._file_local_dispatch.get(act)):
+                await handler(target, inbound)
 
     def _file_response_topic(self, target: str) -> str:
         return topic_path(
@@ -1565,7 +1564,7 @@ class BridgeService:
                 (
                     ConnectionError,
                     OSError,
-                    asyncio.TimeoutError,
+                    TimeoutError,
                 )
             ),
             before_sleep=_before_sleep,

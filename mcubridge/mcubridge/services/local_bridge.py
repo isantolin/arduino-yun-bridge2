@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import secrets
 from collections.abc import Callable, Coroutine
-from typing import TYPE_CHECKING, Any, Final, TypeVar
+from typing import TYPE_CHECKING, Any, Final
 
 from google.protobuf.message import DecodeError as ProtobufDecodeError, Message as ProtobufMessage
 from grpclib.server import Stream
@@ -39,10 +39,8 @@ QUERY_TOPIC_ACTIONS: Final = frozenset(
     }
 )
 
-_T_PB = TypeVar("_T_PB", bound=ProtobufMessage)
 
-
-def parse_serial_response(res: Any, target_type: type[_T_PB], default: _T_PB) -> _T_PB:
+def parse_serial_response[T: ProtobufMessage](res: Any, target_type: type[T], default: T) -> T:
     """Safely decode serial response payload to target Protobuf message type. [SIL-2]"""
     if isinstance(res, target_type):
         return res

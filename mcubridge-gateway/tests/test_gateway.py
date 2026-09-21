@@ -315,9 +315,8 @@ def test_gateway_main_block_simulation() -> None:
     from pathlib import Path
 
     gateway_path = str(Path(__file__).resolve().parent.parent / "gateway.py")
-    with patch.object(sys, "argv", ["gateway.py", "--help"]):
-        with pytest.raises(SystemExit):
-            runpy.run_path(gateway_path, run_name="__main__")
+    with patch.object(sys, "argv", ["gateway.py", "--help"]), pytest.raises(SystemExit):
+        runpy.run_path(gateway_path, run_name="__main__")
 
 
 def test_gateway_session_machine_lifecycle() -> None:
@@ -725,9 +724,8 @@ async def test_session_disconnect_aborts_pending_commands_with_edge_branches(moc
     mock_stream = AsyncMock()
     mock_stream.__aiter__.side_effect = asyncio.CancelledError()
 
-    with patch("gateway.extract_peer_identity", return_value=("disc-dev", True)):
-        with pytest.raises(asyncio.CancelledError):
-            await svc.Session(mock_stream)
+    with patch("gateway.extract_peer_identity", return_value=("disc-dev", True)), pytest.raises(asyncio.CancelledError):
+        await svc.Session(mock_stream)
 
     assert fut_target.done()
     assert isinstance(fut_target.exception(), ConnectionResetError)

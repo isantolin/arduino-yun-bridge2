@@ -172,7 +172,7 @@ async def run_command(
                 return f"<hex:{b.hex()}>"
 
         return (proc.returncode or 0, safe_decode(stdout_bytes), safe_decode(stderr_bytes))
-    except (asyncio.TimeoutError, TimeoutError):
+    except TimeoutError:
         terminate_pid_tree(proc.pid, timeout=2.0)
         try:
             proc.kill()

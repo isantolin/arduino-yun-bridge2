@@ -97,12 +97,11 @@ class WatchdogKeepalive:
         """Check if supervisor state allows watchdog keepalive pulse emission."""
         if self.fsm.critical_inhibit.is_active or self.fsm.shutdown.is_active:
             return False
-        if self._state is not None:
+        if self._state is not None and getattr(self._state, "fatal_count", 0) > 0:
             # If the link has fatal failures recorded, trip inhibit immediately
-            if getattr(self._state, "fatal_count", 0) > 0:
-                if not self.fsm.critical_inhibit.is_active:
-                    self.trip_inhibit("MCU link fatal reset detected")
-                return False
+            if not self.fsm.critical_inhibit.is_active:
+                self.trip_inhibit("MCU link fatal reset detected")
+            return False
         return True
 
     def trip_inhibit(self, reason: str = "") -> None:

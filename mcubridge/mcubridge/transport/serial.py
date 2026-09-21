@@ -315,11 +315,15 @@ class SerialTransport:
                 protocol.FRAME_DELIMITER.hex().upper(),
             )
 
-        if self._negotiating and self._negotiation_future and not self._negotiation_future.done():
-            if cmd_id == protocol.Command.CMD_SET_BAUDRATE_RESP.value:
-                self._switch_local_baudrate(self.config.serial_baud)
-                self._negotiation_future.set_result(True)
-                return
+        if (
+            self._negotiating
+            and self._negotiation_future
+            and not self._negotiation_future.done()
+            and cmd_id == protocol.Command.CMD_SET_BAUDRATE_RESP.value
+        ):
+            self._switch_local_baudrate(self.config.serial_baud)
+            self._negotiation_future.set_result(True)
+            return
 
         # Anti-replay validation
         if self.state.is_synchronized and not is_system_command(cmd_id):
@@ -538,7 +542,7 @@ class SerialTransport:
             async with asyncio.timeout(SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT):
                 await self._negotiation_future
             return True
-        except (asyncio.TimeoutError, OSError, RuntimeError, ValueError, serialx.SerialException) as exc:
+        except (TimeoutError, OSError, RuntimeError, ValueError, serialx.SerialException) as exc:
             logger.error("Baudrate negotiation failed", error=str(exc))
             return False
         finally:

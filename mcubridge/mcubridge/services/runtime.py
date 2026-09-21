@@ -195,7 +195,7 @@ class BridgeService:
         self._topic_dispatch: Final[
             dict[Topic, Callable[[TopicRoute, pb.CloudQueuedPublish], Coroutine[Any, Any, None]]]
         ] = {
-            Topic.CONSOLE: lambda _r, req: self._handle_console(req),
+            Topic.CONSOLE: self._handle_console,
             Topic.DATASTORE: self._handle_datastore,
             Topic.MAILBOX: self._handle_mailbox,
             Topic.FILE: self._handle_file,
@@ -206,17 +206,28 @@ class BridgeService:
             Topic.SYSTEM: self._handle_system,
         }
         self._spi_dispatch: Final[
-            dict[SpiAction | str, Callable[[TopicRoute, pb.CloudQueuedPublish], Coroutine[Any, Any, None]]]
+            dict[SpiAction | str, Callable[[TopicRoute, pb.CloudQueuedPublish], Coroutine[Any, Any, Any]]]
         ] = {
-            SpiAction.BEGIN: lambda _r, _i: self._send_spi_cmd(Command.CMD_SPI_BEGIN),
-            SpiAction.END: lambda _r, _i: self._send_spi_cmd(Command.CMD_SPI_END),
+            SpiAction.BEGIN: lambda _r, _i: (
+                self.serial.send(Command.CMD_SPI_BEGIN.value, b"") if self.serial else asyncio.sleep(0)
+            ),
+            SpiAction.END: lambda _r, _i: (
+                self.serial.send(Command.CMD_SPI_END.value, b"") if self.serial else asyncio.sleep(0)
+            ),
             SpiAction.CONFIG: self._handle_spi_config,
             SpiAction.TRANSFER: self._handle_spi_transfer,
         }
         self._system_dispatch: Final[
             dict[SystemAction | str, Callable[[TopicRoute, pb.CloudQueuedPublish], Coroutine[Any, Any, Any]]]
         ] = {
-            SystemAction.BOOTLOADER: self._handle_system_bootloader,
+            SystemAction.BOOTLOADER: lambda _r, _i: (
+                self.serial.send(
+                    Command.CMD_ENTER_BOOTLOADER.value,
+                    pb.EnterBootloader(magic=protocol.BOOTLOADER_MAGIC),
+                )
+                if self.serial
+                else asyncio.sleep(0)
+            ),
             SystemAction.FREE_MEMORY: self._handle_system_free_memory,
             SystemAction.VERSION: lambda _r, inbound: self._request_mcu_version(inbound),
             SystemAction.BRIDGE: self._handle_system_bridge,
@@ -224,7 +235,7 @@ class BridgeService:
         self._file_mcu_dispatch: Final[
             dict[FileAction | str, Callable[[str, pb.CloudQueuedPublish], Coroutine[Any, Any, None]]]
         ] = {
-            FileAction.READ: lambda target, inbound: self._handle_file_mcu_read(inbound, target),
+            FileAction.READ: self._handle_file_mcu_read,
             FileAction.WRITE: self._handle_file_mcu_write,
             FileAction.REMOVE: self._handle_file_mcu_remove,
         }
@@ -848,7 +859,7 @@ class BridgeService:
 
     # --- Direct Service Request Handlers (Cleaned) ---
 
-    async def _handle_console(self, inbound: pb.CloudQueuedPublish) -> None:
+    async def _handle_console(self, _route: TopicRoute | None, inbound: pb.CloudQueuedPublish) -> None:
         if pl := inbound.payload:
             self.state.console_to_mcu_queue.append(pl)
             await self._flush_console_queue()
@@ -962,7 +973,7 @@ class BridgeService:
                     reply_context=inbound,
                 )
 
-    async def _handle_file_mcu_read(self, ctx: pb.CloudQueuedPublish, target: str) -> None:
+    async def _handle_file_mcu_read(self, target: str, ctx: pb.CloudQueuedPublish) -> None:
         serial = self.serial
         if not serial:
             return
@@ -1061,10 +1072,6 @@ class BridgeService:
             content_type=PROTOBUF_CONTENT_TYPE,
             reply_context=inbound,
         )
-
-    async def _send_spi_cmd(self, command: Command) -> None:
-        if self.serial:
-            await self.serial.send(command.value, b"")
 
     async def _handle_spi_config(self, _route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         try:
@@ -1165,12 +1172,6 @@ class BridgeService:
                     b"OK" if success else b"ERROR",
                     reply_context=inbound,
                 )
-
-    async def _handle_system_bootloader(self, _route: TopicRoute, _inbound: pb.CloudQueuedPublish) -> None:
-        await cast("SerialTransport", self.serial).send(
-            Command.CMD_ENTER_BOOTLOADER.value,
-            pb.EnterBootloader(magic=protocol.BOOTLOADER_MAGIC),
-        )
 
     async def _handle_system_free_memory(self, _route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         pl = await cast("SerialTransport", self.serial).send(Command.CMD_GET_FREE_MEMORY.value, b"")

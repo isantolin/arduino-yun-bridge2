@@ -199,7 +199,7 @@ async def test_handle_file_mcu_read_success_and_timeout(
 
     # Success Path: MCU sends chunks then empty chunk
     inbound = pb.CloudQueuedPublish(topic_name="mcu/file/read/mcu/etc/config", payload=b"")
-    read_task = asyncio.create_task(svc._handle_file_mcu_read(inbound, "/mcu/etc/config"))
+    read_task = asyncio.create_task(svc._handle_file_mcu_read("/mcu/etc/config", inbound))
     await asyncio.sleep(0.01)
 
     assert svc._pending_mcu_read is not None

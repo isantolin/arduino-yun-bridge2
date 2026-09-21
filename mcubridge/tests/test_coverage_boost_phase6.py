@@ -338,7 +338,7 @@ async def test_runtime_handle_request_route_none_and_inbound_props(
 async def test_runtime_handle_console_empty_payload(test_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     serial = AsyncMock(spec=SerialTransport)
     svc = BridgeService(test_config, mock_state, serial)
-    await svc._handle_console(pb.CloudQueuedPublish(topic_name="bridge/console", payload=b""))
+    await svc._handle_console(None, pb.CloudQueuedPublish(topic_name="bridge/console", payload=b""))
     assert not serial.send.called
 
 

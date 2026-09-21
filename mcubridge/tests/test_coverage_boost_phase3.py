@@ -879,13 +879,13 @@ async def test_runtime_mcu_file_read_and_timeouts(tmp_path: Path) -> None:
 
     # 1. Send failure
     mock_serial.send_raw.return_value = False
-    await service._handle_file_mcu_read(inbound, "mcu:test.txt")
+    await service._handle_file_mcu_read("mcu:test.txt", inbound)
     assert mock_serial.send_raw.called
 
     # 2. Timeout waiting for response
     mock_serial.send_raw.return_value = True
     state.serial_response_timeout_ms = 10
-    await service._handle_file_mcu_read(inbound, "mcu:test.txt")
+    await service._handle_file_mcu_read("mcu:test.txt", inbound)
     assert service._pending_mcu_read is None
 
     service.cleanup()

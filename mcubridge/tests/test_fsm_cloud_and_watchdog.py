@@ -241,7 +241,7 @@ async def test_runtime_mcu_file_read_fsm_success(
     handle_fn: Any = getattr(service, "_handle_file_mcu_read")
     async with asyncio.TaskGroup() as tg:
         tg.create_task(_simulate_mcu_responses())
-        tg.create_task(handle_fn(ctx, "/mcu/test.bin"))
+        tg.create_task(handle_fn("/mcu/test.bin", ctx))
 
     assert getattr(service, "_pending_mcu_read") is None
 
@@ -259,7 +259,7 @@ async def test_runtime_mcu_file_read_fsm_dispatch_fail(
 
     ctx = pb.CloudQueuedPublish(topic_name="mcu/fs/read", payload=b"")
     handle_fn: Any = getattr(service, "_handle_file_mcu_read")
-    await handle_fn(ctx, "/mcu/missing.bin")
+    await handle_fn("/mcu/missing.bin", ctx)
 
     assert getattr(service, "_pending_mcu_read") is None
 
@@ -278,6 +278,6 @@ async def test_runtime_mcu_file_read_fsm_timeout(
 
     ctx = pb.CloudQueuedPublish(topic_name="mcu/fs/read", payload=b"")
     handle_fn: Any = getattr(service, "_handle_file_mcu_read")
-    await handle_fn(ctx, "/mcu/unresponsive.bin")
+    await handle_fn("/mcu/unresponsive.bin", ctx)
 
     assert getattr(service, "_pending_mcu_read") is None

@@ -312,10 +312,12 @@ async def test_session_invalid_envelope_validation(cloud_service: CloudBridgeSer
 def test_gateway_main_block_simulation() -> None:
     import runpy
     import sys
+    from pathlib import Path
 
+    gateway_path = str(Path(__file__).resolve().parent.parent / "gateway.py")
     with patch.object(sys, "argv", ["gateway.py", "--help"]):
         with pytest.raises(SystemExit):
-            runpy.run_path("mcubridge-gateway/gateway.py", run_name="__main__")
+            runpy.run_path(gateway_path, run_name="__main__")
 
 
 def test_gateway_session_machine_lifecycle() -> None:
@@ -813,7 +815,7 @@ async def test_dispatch_command_branches(mock_gateway: ProtobufGateway) -> None:
     mock_gateway.connections.clear()
     stream_no_id = AsyncMock()
     stream_no_id.recv_message = AsyncMock(
-        return_value=pb.CommandDispatch(target_device_id="", command_path="digital/13")
+        return_value=pb.CommandDispatch(target_device_id="", command_path="rpc/DigitalWrite")
     )
     await svc.DispatchCommand(stream_no_id)
     stream_no_id.send_message.assert_called_once()
@@ -824,35 +826,34 @@ async def test_dispatch_command_branches(mock_gateway: ProtobufGateway) -> None:
     # 2b. target_id not connected -> status 503
     stream_not_conn = AsyncMock()
     stream_not_conn.recv_message = AsyncMock(
-        return_value=pb.CommandDispatch(target_device_id="dev-unknown", command_path="digital/13")
+        return_value=pb.CommandDispatch(target_device_id="dev-unknown", command_path="rpc/DigitalWrite")
     )
     await svc.DispatchCommand(stream_not_conn)
     resp_503 = stream_not_conn.send_message.call_args[0][0]
     assert resp_503.status_code == 503
     assert b"is not connected" in resp_503.payload
 
-    # 3. explicit target_id with connections -> sends command (normalized to canonical Protobuf RPC)
+    # 3. canonical rpc/ path -> forwards command and response directly
     dummy_conn = AsyncMock()
     mock_gateway.connections["dev-1"] = dummy_conn
     stream_target = AsyncMock()
+    rpc_payload_dw = pb.DigitalWrite(pin=13, value=1).SerializeToString()
     stream_target.recv_message = AsyncMock(
-        return_value=pb.CommandDispatch(target_device_id="dev-1", command_path="digital/13", payload=b"1")
+        return_value=pb.CommandDispatch(target_device_id="dev-1", command_path="rpc/DigitalWrite", payload=rpc_payload_dw)
     )
-    expected_payload = pb.DigitalWrite(pin=13, value=1).SerializeToString()
-    mock_send = AsyncMock(
-        return_value=pb.CommandResponse(
-            status_code=200,
-            payload=pb.GenericResponse(status="ok").SerializeToString(),
-        )
+    expected_response = pb.CommandResponse(
+        status_code=200,
+        payload=pb.GenericResponse(status="ok").SerializeToString(),
     )
+    mock_send = AsyncMock(return_value=expected_response)
     setattr(mock_gateway, "send_command", mock_send)
     await svc.DispatchCommand(stream_target)
-    mock_send.assert_awaited_once_with("dev-1", "rpc/DigitalWrite", payload=expected_payload, timeout_seconds=10.0)
+    mock_send.assert_awaited_once_with("dev-1", "rpc/DigitalWrite", payload=rpc_payload_dw, timeout_seconds=10.0)
     resp_200 = stream_target.send_message.call_args[0][0]
     assert resp_200.status_code == 200
-    assert resp_200.payload == b"OK"
+    assert resp_200.payload == expected_response.payload
 
-    # 3b. direct rpc/ path -> sent directly without transformation
+    # 3b. canonical rpc/AnalogWrite path -> forwards directly
     stream_rpc = AsyncMock()
     rpc_payload = pb.AnalogWrite(pin=5, value=128).SerializeToString()
     stream_rpc.recv_message = AsyncMock(

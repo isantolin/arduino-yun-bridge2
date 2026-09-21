@@ -573,57 +573,15 @@ class CloudBridgeService(CloudBridgeBase):
             return
 
         timeout = request.timeout_seconds if request.timeout_seconds > 0 else 10.0
-        cmd_path = request.command_path
-        cmd_payload = request.payload
-
-        # [SIL-2] Normalize legacy string routes to canonical Protobuf RPC at Gateway ingress
-        is_legacy_digital = cmd_path.startswith("digital/")
-        is_legacy_analog = cmd_path.startswith("analog/")
-
-        if is_legacy_digital:
-            try:
-                pin = int(cmd_path.split("/")[1])
-                raw_val = cmd_payload.decode("utf-8").strip() if cmd_payload else "0"
-                val = int(raw_val) if raw_val.isdigit() else (1 if raw_val.lower() in ("true", "high") else 0)
-                cmd_path = "rpc/DigitalWrite"
-                cmd_payload = pb.DigitalWrite(pin=pin, value=val).SerializeToString()
-            except (IndexError, ValueError) as exc:
-                logger.warning("Failed to normalize legacy digital command path or payload", error=str(exc))
-        elif is_legacy_analog:
-            try:
-                pin = int(cmd_path.split("/")[1])
-                raw_val = cmd_payload.decode("utf-8").strip() if cmd_payload else "0"
-                val = int(raw_val) if raw_val.isdigit() else 0
-                cmd_path = "rpc/AnalogWrite"
-                cmd_payload = pb.AnalogWrite(pin=pin, value=val).SerializeToString()
-            except (IndexError, ValueError) as exc:
-                logger.warning("Failed to normalize legacy analog command path or payload", error=str(exc))
 
         try:
             response = await self.gateway.send_command(
                 target_id,
-                cmd_path,
-                payload=cmd_payload,
+                request.command_path,
+                payload=request.payload,
                 timeout_seconds=float(timeout),
             )
-            # Map GenericResponse payload to b"OK" for legacy callers
-            if (is_legacy_digital or is_legacy_analog) and response.status_code == 200:
-                generic_resp = pb.GenericResponse()
-                try:
-                    generic_resp.ParseFromString(response.payload)
-                    resp_payload = b"OK" if generic_resp.status == "ok" else generic_resp.message.encode("utf-8")
-                except DecodeError as exc:
-                    logger.debug("Response payload is not GenericResponse, passing through raw", error=str(exc))
-                    resp_payload = response.payload
-                await stream.send_message(
-                    pb.CommandResponse(
-                        status_code=response.status_code,
-                        error_message=response.error_message,
-                        payload=resp_payload,
-                    )
-                )
-            else:
-                await stream.send_message(response)
+            await stream.send_message(response)
         except (KeyError, TimeoutError, OSError) as exc:
             await stream.send_message(pb.CommandResponse(status_code=504, payload=str(exc).encode("utf-8")))
 

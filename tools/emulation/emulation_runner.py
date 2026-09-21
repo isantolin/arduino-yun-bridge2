@@ -206,7 +206,6 @@ def run_emulation(
     # 3. Start Daemon
     p_root = package_root.absolute()
     fake_uci_dir = Path(tempfile.mkdtemp(prefix="mcubridge_fake_uci_"))
-    socket_path = str(fake_uci_dir / "mcubridge.sock")
 
     daemon_env = dict(os.environ)
     extra_paths = [
@@ -221,7 +220,6 @@ def run_emulation(
     daemon_env["MCUBRIDGE_FORCE_UCI"] = "1"
     daemon_env["MCUBRIDGE_NON_INTERACTIVE"] = "1"
     daemon_env["MCUBRIDGE_LOG_STREAM"] = "1"
-    daemon_env["MCUBRIDGE_SOCKET_PATH"] = socket_path
     daemon_env["MCUBRIDGE_SERIAL_PORT"] = SOCAT_PORT0
     daemon_env["MCUBRIDGE_SERIAL_SAFE_BAUD"] = str(protocol.DEFAULT_SAFE_BAUDRATE)
     daemon_env["MCUBRIDGE_SERIAL_BAUD"] = str(protocol.DEFAULT_BAUDRATE)
@@ -249,7 +247,6 @@ def run_emulation(
         "disable_metrics": "1",
         "file_system_root": str(emulator_fs_root),
         "storage_path": daemon_env["MCUBRIDGE_STORAGE_PATH"],
-        "socket_path": socket_path,
     }
     _write_fake_uci_module(fake_uci_dir, uci_config)
 

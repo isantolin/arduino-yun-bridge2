@@ -9,12 +9,12 @@ observability, TSDB time-series ingestion, and northbound command orchestration.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from enum import StrEnum
 from pathlib import Path
 import ssl
 import time
-from typing import Annotated, Any, Final
+from typing import Annotated, Any, Final, cast
 import urllib.error
 import urllib.request
 
@@ -392,8 +392,9 @@ async def _handle_command_response(
     _: Stream[pb.CloudEnvelope, pb.CloudEnvelope],
     envelope: pb.CloudEnvelope,
 ) -> None:
+    resp_device_id = envelope.device_id or device_id
     service.gateway.handle_command_response(
-        device_id,
+        resp_device_id,
         envelope.sequence_id,
         envelope.command_response,
     )
@@ -412,8 +413,31 @@ _PAYLOAD_HANDLERS: Final[dict[str, _PayloadHandler]] = {
 }
 
 
-def extract_peer_identity(peer: Peer | None) -> tuple[str, bool]:
-    """[SIL-2] Extract device ID and authentication status from gRPC peer certificate."""
+def extract_device_id_from_metadata(metadata: Mapping[str, Any] | None) -> str | None:
+    """Extract explicit target device ID from gRPC request/stream metadata."""
+    if not metadata:
+        return None
+    for key in ("x-device-id", "device-id", "device_id"):
+        if key in metadata:
+            raw_val = metadata[key]
+            if isinstance(raw_val, (list, tuple)):
+                if not raw_val:
+                    continue
+                item: object = cast(object, raw_val[0])
+                return item.decode("utf-8") if isinstance(item, bytes) else str(item)
+            val: object = cast(object, raw_val)
+            return val.decode("utf-8") if isinstance(val, bytes) else str(val)
+    return None
+
+
+def extract_peer_identity(
+    peer: Peer | None,
+    metadata: Mapping[str, Any] | None = None,
+) -> tuple[str, bool]:
+    """[SIL-2] Extract device ID and authentication status from gRPC peer certificate or stream metadata."""
+    if meta_dev := extract_device_id_from_metadata(metadata):
+        return meta_dev, False
+
     if not peer:
         return "anonymous-unknown", False
 
@@ -463,7 +487,7 @@ class CloudBridgeService(CloudBridgeBase):
 
     async def Session(self, stream: Stream[pb.CloudEnvelope, pb.CloudEnvelope]) -> None:
         try:
-            device_id, is_authenticated = extract_peer_identity(stream.peer)
+            device_id, is_authenticated = extract_peer_identity(stream.peer, stream.metadata)
         except ValueError as exc:
             logger.warning("Session connection rejected: invalid peer identity", error=str(exc))
             return
@@ -489,7 +513,13 @@ class CloudBridgeService(CloudBridgeBase):
                         session_fsm.activate()
 
                     if envelope.device_id and envelope.device_id != device_id:
-                        self.gateway.connections[envelope.device_id] = stream
+                        old_device_id = device_id
+                        device_id = envelope.device_id
+                        if not is_authenticated:
+                            self.gateway.connections.pop(old_device_id, None)
+                            self.gateway.sessions.pop(old_device_id, None)
+                        self.gateway.connections[device_id] = stream
+                        self.gateway.sessions[device_id] = session_fsm
 
                     payload_type = envelope.WhichOneof("payload")
                     logger.debug(
@@ -565,21 +595,9 @@ class GatewayLocalBridgeService(LocalBridgeBase):
     def __init__(self, gateway: ProtobufGateway) -> None:
         self.gateway = gateway
 
-    def _resolve_device_id(self, stream: Stream[Any, Any]) -> str | None:
+    def resolve_device_id(self, stream: Stream[Any, Any]) -> str | None:
         """Extract explicit target device ID from request metadata."""
-        metadata = stream.metadata
-        if not metadata:
-            return None
-        for key in ("x-device-id", "device-id", "device_id"):
-            if key in metadata:
-                val: object = metadata[key]
-                if isinstance(val, (list, tuple)):
-                    if not val:
-                        continue
-                    first_item: object = val[0]
-                    return first_item.decode("utf-8") if isinstance(first_item, bytes) else str(first_item)
-                return val.decode("utf-8") if isinstance(val, bytes) else str(val)
-        return None
+        return extract_device_id_from_metadata(stream.metadata)
 
     async def _forward_rpc(
         self,
@@ -594,7 +612,7 @@ class GatewayLocalBridgeService(LocalBridgeBase):
         if req is None:
             return
 
-        device_id = self._resolve_device_id(stream)
+        device_id = self.resolve_device_id(stream)
         if not device_id:
             logger.warning("LocalBridge call rejected: missing explicit device_id", method=method_name)
             raise GRPCError(
@@ -699,7 +717,7 @@ class GatewayLocalBridgeService(LocalBridgeBase):
         req = await stream.recv_message()
         if req is None:
             return
-        device_id = self._resolve_device_id(stream)
+        device_id = self.resolve_device_id(stream)
         if not device_id:
             logger.warning("Publish rejected: missing explicit device_id")
             await stream.send_message(pb.CloudQueuedPublish())
@@ -713,7 +731,7 @@ class GatewayLocalBridgeService(LocalBridgeBase):
         req = await stream.recv_message()
         if req is None:
             return
-        device_id = self._resolve_device_id(stream)
+        device_id = self.resolve_device_id(stream)
         if not device_id:
             logger.warning("SubscribeConsole rejected: missing explicit device_id")
             raise GRPCError(

@@ -910,23 +910,23 @@ async def test_gateway_local_bridge_service_dispatch(mock_gateway: ProtobufGatew
     # 5. Metadata resolution edge cases
     stream_empty_meta = AsyncMock()
     stream_empty_meta.metadata = None
-    assert local_svc._resolve_device_id(stream_empty_meta) is None
+    assert local_svc.resolve_device_id(stream_empty_meta) is None
 
     stream_empty_list = AsyncMock()
     stream_empty_list.metadata = {"x-device-id": []}
-    assert local_svc._resolve_device_id(stream_empty_list) is None
+    assert local_svc.resolve_device_id(stream_empty_list) is None
 
     stream_bytes_meta = AsyncMock()
     stream_bytes_meta.metadata = {"device-id": b"dev-bytes"}
-    assert local_svc._resolve_device_id(stream_bytes_meta) == "dev-bytes"
+    assert local_svc.resolve_device_id(stream_bytes_meta) == "dev-bytes"
 
     stream_str_meta = AsyncMock()
     stream_str_meta.metadata = {"device_id": "dev-str"}
-    assert local_svc._resolve_device_id(stream_str_meta) == "dev-str"
+    assert local_svc.resolve_device_id(stream_str_meta) == "dev-str"
 
     stream_list_bytes = AsyncMock()
     stream_list_bytes.metadata = {"x-device-id": [b"dev-first"]}
-    assert local_svc._resolve_device_id(stream_list_bytes) == "dev-first"
+    assert local_svc.resolve_device_id(stream_list_bytes) == "dev-first"
 
     # 6. Stream returns None (client disconnect before sending request)
     stream_none = AsyncMock()
@@ -1037,3 +1037,34 @@ async def test_gateway_local_bridge_service_dispatch(mock_gateway: ProtobufGatew
     stream_sub_none.metadata = {"x-device-id": "dev-1"}
     stream_sub_none.recv_message = AsyncMock(return_value=None)
     await local_svc.SubscribeConsole(stream_sub_none)
+
+    # 11. Publish with non-console topic (covers branch 707->710)
+    stream_pub_non_console = AsyncMock()
+    stream_pub_non_console.metadata = {"x-device-id": "dev-1"}
+    pub_data_msg = pb.CloudQueuedPublish(topic_name="br/telemetry/data", payload=b"123")
+    stream_pub_non_console.recv_message = AsyncMock(return_value=pub_data_msg)
+    setattr(
+        mock_gateway,
+        "send_command",
+        AsyncMock(return_value=pb.CommandResponse(status_code=200, payload=pub_data_msg.SerializeToString())),
+    )
+    await local_svc.Publish(stream_pub_non_console)
+
+    # 12. SubscribeConsole when device_id removed from console_queues before exit (covers branch 738)
+    stream_sub_cleanup = AsyncMock()
+    stream_sub_cleanup.metadata = {"x-device-id": "dev-1"}
+    stream_sub_cleanup.recv_message = AsyncMock(return_value=pb.SubscribeRequest())
+
+    async def _fail_and_clear_queues(_msg: Any) -> None:
+        mock_gateway.console_queues.pop("dev-1", None)
+        raise RuntimeError("stream aborted")
+
+    stream_sub_cleanup.send_message = AsyncMock(side_effect=_fail_and_clear_queues)
+
+    async def _feed_console_cleanup() -> None:
+        await asyncio.sleep(0.01)
+        for q in mock_gateway.console_queues.get("dev-1", []):
+            q.put_nowait(pb.CloudQueuedPublish(topic_name="br/console/out", payload=b"bye"))
+
+    asyncio.create_task(_feed_console_cleanup())
+    await local_svc.SubscribeConsole(stream_sub_cleanup)

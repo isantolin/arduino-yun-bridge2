@@ -51,6 +51,12 @@ async def test_cli_bridge_session() -> None:
             ):
                 assert chan is mock_chan
                 assert stub is mock_stub
+                mock_chan.__dispatch__.add_listener.assert_called_once()
+                callback = mock_chan.__dispatch__.add_listener.call_args[0][1]
+                event = MagicMock()
+                event.metadata = {}
+                await callback(event)
+                assert event.metadata["x-device-id"] == "yun-01"
 
             mock_chan.close.assert_called_once()
 

@@ -130,7 +130,7 @@ async def test_runtime_file_dispatch_handlers(tmp_path: Path) -> None:
     mock_serial.send_raw.return_value = False
     await service._handle_file(route_mcu_read, inbound)
 
-    state.cleanup()
+    service.cleanup()
 
 
 @pytest.mark.asyncio
@@ -169,13 +169,13 @@ async def test_runtime_pin_handlers(tmp_path: Path) -> None:
     inbound_ana_read = pb.CloudQueuedPublish(topic_name="test/br/a/1/read", payload=b"")
     await service._handle_pin(route_ana_read, inbound_ana_read)
 
-    state.cleanup()
+    service.cleanup()
 
 
 @pytest.mark.asyncio
 async def test_runtime_spi_handlers(tmp_path: Path) -> None:
     config = _make_config(tmp_path)
-    service, state, mock_serial = _make_service(config)
+    service, _state, mock_serial = _make_service(config)
 
     # 1. SPI Begin
     route_begin = TopicRoute(raw="test/br/spi/begin", prefix=config.topic_prefix, topic=Topic.SPI, segments=("begin",))
@@ -203,13 +203,13 @@ async def test_runtime_spi_handlers(tmp_path: Path) -> None:
     inbound_xfer = pb.CloudQueuedPublish(topic_name="test/br/spi/transfer", payload=b"ping")
     await service._handle_spi(route_xfer, inbound_xfer)
 
-    state.cleanup()
+    service.cleanup()
 
 
 @pytest.mark.asyncio
 async def test_runtime_system_handlers(tmp_path: Path) -> None:
     config = _make_config(tmp_path)
-    service, state, mock_serial = _make_service(config)
+    service, _state, mock_serial = _make_service(config)
 
     # 1. System Bootloader
     route_boot = TopicRoute(
@@ -247,7 +247,7 @@ async def test_runtime_system_handlers(tmp_path: Path) -> None:
     )
     await service._handle_system(route_hs, inbound)
 
-    state.cleanup()
+    service.cleanup()
 
 
 @pytest.mark.asyncio
@@ -284,13 +284,13 @@ async def test_runtime_cloud_spool_operations(tmp_path: Path) -> None:
 
     if service._cloud_spool:
         await service._cloud_spool.close()
-    state.cleanup()
+    service.cleanup()
 
 
 @pytest.mark.asyncio
 async def test_runtime_supervisor_lifecycle(tmp_path: Path) -> None:
     config = _make_config(tmp_path)
-    service, state, _ = _make_service(config)
+    service, _state, _ = _make_service(config)
 
     # 1. Normal execution
     executed = False
@@ -331,13 +331,13 @@ async def test_runtime_supervisor_lifecycle(tmp_path: Path) -> None:
     with pytest.raises(asyncio.CancelledError):
         await task_coro
 
-    state.cleanup()
+    service.cleanup()
 
 
 @pytest.mark.asyncio
 async def test_local_bridge_grpc_service(tmp_path: Path) -> None:
     config = _make_config(tmp_path)
-    service, state, _ = _make_service(config)
+    service, _state, _ = _make_service(config)
     local_service = LocalBridgeService(service)
 
     # 1. Publish with response
@@ -397,13 +397,13 @@ async def test_local_bridge_grpc_service(tmp_path: Path) -> None:
     await local_service.Publish(mock_stream)
     assert not mock_stream.send_message.called
 
-    state.cleanup()
+    service.cleanup()
 
 
 @pytest.mark.asyncio
 async def test_runtime_unsupported_mcu_request(tmp_path: Path) -> None:
     config = _make_config(tmp_path)
-    service, state, mock_serial = _make_service(config)
+    service, _state, mock_serial = _make_service(config)
 
     res = await service._unsupported_mcu_request(1, None, "unsupported_test")
     assert res is True
@@ -417,7 +417,7 @@ async def test_runtime_unsupported_mcu_request(tmp_path: Path) -> None:
     res = await service._unsupported_mcu_request(1, None, "unsupported_test")
     assert res is False
 
-    state.cleanup()
+    service.cleanup()
 
 
 @pytest.mark.asyncio
@@ -433,7 +433,7 @@ async def test_runtime_on_mcu_analog_read_resp(tmp_path: Path) -> None:
 
     assert len(state.pending_analog_reads) == 0
 
-    state.cleanup()
+    service.cleanup()
 
 
 @pytest.mark.asyncio
@@ -456,13 +456,13 @@ async def test_runtime_on_mcu_process_kill(tmp_path: Path) -> None:
 
     assert 1 not in state.running_processes
 
-    state.cleanup()
+    service.cleanup()
 
 
 @pytest.mark.asyncio
 async def test_runtime_handle_mcu_status_payloads(tmp_path: Path) -> None:
     config = _make_config(tmp_path)
-    service, state, _ = _make_service(config)
+    service, _state, _ = _make_service(config)
 
     with patch.object(service, "enqueue_cloud", new_callable=AsyncMock) as mock_enqueue:
         # 1. ProtobufMessage payload
@@ -479,7 +479,7 @@ async def test_runtime_handle_mcu_status_payloads(tmp_path: Path) -> None:
         await service._handle_mcu_status(Status.MALFORMED, 3, b"\xff\xff\xff")
         assert mock_enqueue.call_count == 3
 
-    state.cleanup()
+    service.cleanup()
 
 
 @pytest.mark.asyncio
@@ -494,13 +494,13 @@ async def test_runtime_enqueue_cloud_drop(tmp_path: Path) -> None:
 
     assert state.cloud_dropped_messages > 0
 
-    state.cleanup()
+    service.cleanup()
 
 
 @pytest.mark.asyncio
 async def test_runtime_console_queues_distribution(tmp_path: Path) -> None:
     config = _make_config(tmp_path)
-    service, state, _ = _make_service(config)
+    service, _state, _ = _make_service(config)
 
     q1: asyncio.Queue[pb.CloudQueuedPublish] = asyncio.Queue()
     service.console_queues.append(q1)
@@ -513,7 +513,7 @@ async def test_runtime_console_queues_distribution(tmp_path: Path) -> None:
     assert received.payload == b"console_output"
 
     service.console_queues.remove(q1)
-    state.cleanup()
+    service.cleanup()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -543,7 +543,7 @@ async def test_handshake_handle_capabilities_resp(tmp_path: Path) -> None:
     assert fut.done()
     assert fut.result() == cap_proto
 
-    state.cleanup()
+    service.cleanup()
 
 
 @pytest.mark.asyncio
@@ -568,19 +568,19 @@ async def test_handshake_handle_link_sync_resp(tmp_path: Path) -> None:
     await handshake.handle_link_sync_resp(1, good_sync)
     assert state.is_synchronized
 
-    state.cleanup()
+    service.cleanup()
 
 
 @pytest.mark.asyncio
 async def test_handshake_handle_link_reset_resp(tmp_path: Path) -> None:
     config = _make_config(tmp_path)
-    service, state, _ = _make_service(config)
+    service, _state, _ = _make_service(config)
     handshake = service.handshake
 
     res = await handshake.handle_link_reset_resp(1, pb.GenericResponse(message="reset_ok"))
     assert res is True
 
-    state.cleanup()
+    service.cleanup()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -761,8 +761,6 @@ async def test_service_serial_lifecycle(tmp_path: Path) -> None:
     with patch("pathlib.Path.unlink", side_effect=OSError("unlink error")):
         service.cleanup()
 
-    state.cleanup()
-
 
 @pytest.mark.asyncio
 async def test_service_handle_mcu_frame_dispatch(tmp_path: Path) -> None:
@@ -800,13 +798,13 @@ async def test_service_handle_mcu_frame_dispatch(tmp_path: Path) -> None:
     await service._on_mcu_datastore_get(7, pb.DatastoreGet(key="k1"))
     assert mock_serial.send.called
 
-    state.cleanup()
+    service.cleanup()
 
 
 @pytest.mark.asyncio
 async def test_service_publish_cloud_message_flavors(tmp_path: Path) -> None:
     config = _make_config(tmp_path)
-    service, state, _ = _make_service(config)
+    service, _state, _ = _make_service(config)
 
     mock_stream = AsyncMock()
     service._cloud_stream = mock_stream
@@ -836,7 +834,7 @@ async def test_service_publish_cloud_message_flavors(tmp_path: Path) -> None:
     res_err = await service._publish_cloud_message(m_msg)
     assert res_err is False
 
-    state.cleanup()
+    service.cleanup()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -869,7 +867,7 @@ async def test_runtime_mailbox_handlers(tmp_path: Path) -> None:
     await state.mailbox_incoming_queue.append(b"incoming_data")
     await service._handle_mailbox(route_r, inbound_r)
 
-    state.cleanup()
+    service.cleanup()
 
 
 @pytest.mark.asyncio
@@ -890,7 +888,7 @@ async def test_runtime_mcu_file_read_and_timeouts(tmp_path: Path) -> None:
     await service._handle_file_mcu_read(inbound, "mcu:test.txt")
     assert service._pending_mcu_read is None
 
-    state.cleanup()
+    service.cleanup()
 
 
 @pytest.mark.asyncio
@@ -935,7 +933,7 @@ async def test_runtime_shell_dispatch_handlers(tmp_path: Path) -> None:
         await service._handle_shell(route_kill, inbound_kill)
         assert mock_term.called
 
-    state.cleanup()
+    service.cleanup()
 
 
 @pytest.mark.asyncio
@@ -956,7 +954,7 @@ async def test_runtime_console_flush_and_queues(tmp_path: Path) -> None:
     await service._flush_console_queue()
     assert len(state.console_to_mcu_queue) > 0
 
-    state.cleanup()
+    service.cleanup()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1019,7 +1017,7 @@ async def test_runtime_cloud_session_stream_flow(tmp_path: Path) -> None:
         assert state.connected_via_http3
         assert service._cloud_incoming_receive_stream.statistics().current_buffer_used > 0
 
-    state.cleanup()
+    service.cleanup()
 
 
 @pytest.mark.asyncio
@@ -1040,4 +1038,4 @@ async def test_runtime_flush_cloud_spool_corrupt_and_errors(tmp_path: Path) -> N
     await service._flush_cloud_spool_locked()
     assert state.cloud_spool_corrupt_dropped > 0
 
-    state.cleanup()
+    service.cleanup()

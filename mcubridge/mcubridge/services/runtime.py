@@ -1639,7 +1639,7 @@ class BridgeService:
         self._cloud_channel = channel
         stub = CloudBridgeStub(channel)
         try:
-            async with stub.Session.open() as stream:
+            async with stub.Session.open(metadata={"x-device-id": self.state.device_id}) as stream:
                 self._cloud_stream = stream
                 logger.info("Connected to Cloud Gateway via gRPC.")
 

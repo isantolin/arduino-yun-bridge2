@@ -13,7 +13,7 @@ Arduino MCU Bridge 2 is a modern, high-performance communication system between 
 *   **Safety (SIL-2):** Static allocation only, SRAM POST, stack sentinel monitoring, WCET runtime tracking, O(1) jump tables for dispatch, rigorous validation gates.
 *   **Cryptography (FIPS 140-3):** Mandatory boot-time Known-Answer Tests (KATs) for SHA-256, HMAC-SHA256, and ChaCha20-Poly1305 AEAD with non-weak linkage.
 *   **OpenWrt:** Target OS is **OpenWrt 25.12.5** (APK based).
-*   **Communication:** Custom binary RPC over serial UART and transparent wireless links (WiFi TCP + Bluetooth SPP) (COBS/R + CRC32) + AEAD encryption + Protobuf Cloud Gateway (gRPC over HTTP/3 (QUIC) with HTTP/2 fallback support and 0-RTT TLS 1.3 session resumption) for external cloud connectivity + Local IPC over native OpenWrt UBUS and UNIX Domain Sockets. Protocol validation uses O(1) `etl::find` logic.
+*   **Communication:** Custom binary RPC over serial UART and transparent wireless links (WiFi TCP + Bluetooth SPP) (COBS/R + CRC32) + AEAD encryption + Protobuf Cloud Gateway (gRPC over HTTP/3 (QUIC) with HTTP/2 fallback support and 0-RTT TLS 1.3 session resumption) for external cloud connectivity + Local IPC over native OpenWrt UBUS and Northbound Gateway gRPC for distributed clients. Protocol validation uses O(1) `etl::find` logic.
 
 ## Core Rules & Priorities
 

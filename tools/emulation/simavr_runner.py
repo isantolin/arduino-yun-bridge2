@@ -26,9 +26,16 @@ import tenacity
 import typer
 from mcubridge.config.logging import configure_logging
 from mcubridge.protocol import protocol
-from tools.emulation.process_utils import terminate_process_tree, wait_for_path_ready
+from tools.emulation.process_utils import (
+    terminate_process_tree,
+    wait_for_path_ready,
+    wait_for_tcp_ready,
+)
 
 repo_root = Path(__file__).resolve().parents[2]
+
+CLOUD_HOST = "127.0.0.1"
+CLOUD_PORT = protocol.DEFAULT_CLOUD_PORT
 
 configure_logging(console=True)
 logger = structlog.get_logger("simavr-runner")
@@ -253,6 +260,36 @@ def run_simavr_emulation(
             simavr_proc.terminate()
         return False
 
+    # Start Managed Cloud Gateway if not already available
+    gateway_proc: subprocess.Popen[str] | None = None
+    if not wait_for_tcp_ready(CLOUD_HOST, CLOUD_PORT, timeout=1.0):
+        logger.info("Starting Managed Cloud Gateway for simavr...")
+        gateway_env = dict(os.environ)
+        gateway_env["PYTHONUNBUFFERED"] = "1"
+        gateway_cmd = [
+            sys.executable,
+            "-u",
+            str(repo_root / "mcubridge-gateway" / "gateway.py"),
+            "--no-tls",
+            "--port",
+            str(CLOUD_PORT),
+        ]
+        gateway_proc = subprocess.Popen(
+            gateway_cmd,
+            env=gateway_env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+        _start_worker_thread(_stream_worker, "gateway", gateway_proc.stdout, state, "gateway")
+
+    if not wait_for_tcp_ready(CLOUD_HOST, CLOUD_PORT, timeout=30.0):
+        logger.error("Cloud Gateway not available for simavr")
+        if gateway_proc:
+            terminate_process_tree([gateway_proc], timeout=1.0)
+        return False
+
     fake_uci_dir = Path(tempfile.mkdtemp(prefix="mcubridge_simavr_uci_"))
     socket_path = fake_uci_dir / "mcubridge.sock"
     storage_path = Path(tempfile.mkdtemp(prefix="mcubridge_simavr_db_"))
@@ -261,7 +298,11 @@ def run_simavr_emulation(
         "serial_port": slave_name,
         "serial_baud": str(protocol.DEFAULT_BAUDRATE),
         "serial_safe_baud": str(protocol.DEFAULT_SAFE_BAUDRATE),
-        "cloud_enabled": "0",
+        "cloud_enabled": "1",
+        "cloud_host": CLOUD_HOST,
+        "cloud_port": str(CLOUD_PORT),
+        "cloud_tls": "0",
+        "cloud_tls_insecure": "1",
         "watchdog_enabled": "0",
         "serial_shared_secret": "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe",
         "allowed_commands": "*",
@@ -290,16 +331,18 @@ def run_simavr_emulation(
     daemon_env["MCUBRIDGE_SERIAL_SHARED_SECRET"] = "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe"
     daemon_env["MCUBRIDGE_DISABLE_METRICS"] = "1"
     daemon_env["MCUBRIDGE_STORAGE_PATH"] = str(storage_path)
+    daemon_env["MCUBRIDGE_CLOUD_ENABLED"] = "1"
+    daemon_env["MCUBRIDGE_CLOUD_HOST"] = CLOUD_HOST
+    daemon_env["MCUBRIDGE_CLOUD_PORT"] = str(CLOUD_PORT)
+    daemon_env["MCUBRIDGE_GATEWAY_HOST"] = CLOUD_HOST
+    daemon_env["MCUBRIDGE_GATEWAY_PORT"] = str(CLOUD_PORT)
+    daemon_env["MCUBRIDGE_DEVICE_ID"] = "yun-01"
 
     daemon_cmd = [
         sys.executable,
+        "-u",
         "-m",
         "mcubridge.daemon",
-        "--port",
-        slave_name,
-        "--socket-path",
-        str(socket_path),
-        "--log-stream",
     ]
 
     logger.info("Spawning mcubridge daemon", cmd=daemon_cmd)
@@ -321,13 +364,13 @@ def run_simavr_emulation(
         logger.error("Daemon socket failed to appear", socket_path=str(socket_path))
         if daemon_proc.poll() is not None:
             logger.error("Daemon exited prematurely", returncode=daemon_proc.returncode)
-        _teardown_simavr(daemon_proc, simavr_proc, master_fd, fake_uci_dir, storage_path)
+        _teardown_simavr(daemon_proc, simavr_proc, gateway_proc, master_fd, fake_uci_dir, storage_path)
         return False
 
     # Allow daemon and MCU to complete cryptographic handshake
     logger.info("Waiting for MCU/daemon link cryptographic synchronization...")
     if not state.sync_event.wait(timeout=60.0):
-        _teardown_simavr(daemon_proc, simavr_proc, master_fd, fake_uci_dir, storage_path)
+        _teardown_simavr(daemon_proc, simavr_proc, gateway_proc, master_fd, fake_uci_dir, storage_path)
         return False
 
     logger.info("MCU/daemon link synchronized successfully! Waiting for post-handshake capabilities...")
@@ -353,7 +396,7 @@ def run_simavr_emulation(
                 logger.error("Failed auditing bridge status", error=str(exc))
                 all_passed = False
 
-    _teardown_simavr(daemon_proc, simavr_proc, master_fd, fake_uci_dir, storage_path)
+    _teardown_simavr(daemon_proc, simavr_proc, gateway_proc, master_fd, fake_uci_dir, storage_path)
     return all_passed
 
 
@@ -370,10 +413,13 @@ def _run_client_scripts(
 
         test_env = dict(daemon_env)
         test_env["MCUBRIDGE_SOCKET_PATH"] = str(socket_path)
+        test_env["MCUBRIDGE_GATEWAY_HOST"] = CLOUD_HOST
+        test_env["MCUBRIDGE_GATEWAY_PORT"] = str(CLOUD_PORT)
+        test_env["MCUBRIDGE_DEVICE_ID"] = "yun-01"
 
         logger.info("Running client test", script=test_path.name)
         test_res = subprocess.run(
-            [sys.executable, str(test_path)],
+            [sys.executable, str(test_path), "--device-id", "yun-01"],
             env=test_env,
             capture_output=True,
             text=True,
@@ -398,11 +444,13 @@ def _run_client_scripts(
 def _teardown_simavr(
     daemon_proc: subprocess.Popen[Any] | None,
     simavr_proc: subprocess.Popen[Any] | None,
+    gateway_proc: subprocess.Popen[Any] | None,
     master_fd: int,
     fake_uci_dir: Path | str,
     storage_path: Path | str,
 ) -> None:
-    terminate_process_tree((daemon_proc, simavr_proc), timeout=5.0)
+    procs = [p for p in (daemon_proc, simavr_proc, gateway_proc) if p is not None]
+    terminate_process_tree(procs, timeout=5.0)
 
     if master_fd >= 0:
         try:

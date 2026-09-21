@@ -24,18 +24,18 @@ configure_logging()
 logger = structlog.get_logger("test-gateway-northbound")
 
 
-async def run_test(host: str, port: int) -> None:
-    logger.info("Connecting to Cloud Gateway northbound endpoint", host=host, port=port)
+async def run_test(host: str, port: int, device_id: str) -> None:
+    logger.info("Connecting to Cloud Gateway northbound endpoint", host=host, port=port, device_id=device_id)
     channel = Channel(host, port)
     stub = mcubridge_grpc.CloudBridgeStub(channel)
     try:
         dispatch = pb.CommandDispatch(
-            target_device_id="",
+            target_device_id=device_id,
             command_path="digital/13",
             payload=b"1",
             timeout_seconds=5,
         )
-        logger.info("Dispatching command to gateway", command=dispatch.command_path)
+        logger.info("Dispatching command to gateway", command=dispatch.command_path, target_device_id=device_id)
         response = await stub.DispatchCommand(dispatch)
 
         logger.info(
@@ -60,8 +60,13 @@ cli = typer.Typer(
 def main(
     host: Annotated[str, typer.Option("--host", help="Gateway Host")] = "127.0.0.1",
     port: Annotated[int, typer.Option("--port", help="Gateway Port")] = 8443,
+    device_id: Annotated[
+        str | None, typer.Option("--device-id", help="Explicit target device ID", envvar="MCUBRIDGE_DEVICE_ID")
+    ] = None,
 ) -> None:
-    asyncio.run(run_test(host, port))
+    if not device_id:
+        raise ValueError("Explicit target device_id is required. Implicit fallback is prohibited.")
+    asyncio.run(run_test(host, port, device_id))
 
 
 if __name__ == "__main__":

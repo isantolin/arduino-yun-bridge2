@@ -10,19 +10,29 @@ Este documento unifica y reemplaza documentación histórica y dispersa.
                  │  - Hub-and-Spoke (N:1) multiplexing                         │
                  │  - Central Prometheus /metrics (port 9100, FleetMetrics)    │
                  │  - TSDB Sink (InfluxDB / VictoriaMetrics Line Protocol)     │
+                 │  - Northbound LocalBridge RPC (GatewayLocalBridgeService)   │
+                 │  - Strictly explicit device routing via x-device-id         │
                  │  - Northbound Command Orchestration (send_command)          │
                  │  - mTLS mutual authentication (extract_peer_identity)       │
                  └─────────────────────────────────────────────────────────────┘
-                               ▲                                │
-              Device Telemetry │                                │ Correlated Commands
-              (CloudEnvelope)  │ bidirectional gRPC stream      │ (PinControlRequest,
-              Pure Push        │ (HTTP/3 QUIC / HTTP/2)         │  RpcEnvelope, etc.)
-                               │                                ▼
+                               ▲            ▲                    │
+              Device Telemetry │            │ Client gRPC        │ Correlated Commands
+              (CloudEnvelope)  │            │ (LocalBridge RPC,  │ (CommandRequest:
+              Pure Push        │            │  SubscribeConsole, │  rpc/*, pin, etc.)
+                               │            │  x-device-id)      ▼
+                               │            │       ┌──────────────────────────────────────┐
+                               │            │       │ Client Apps / CLI / Automations      │
+                               │            └───────│ (mcubridge-client-examples)          │
+                               │                    └──────────────────────────────────────┘
+                               │ bidirectional gRPC stream
+                               │ (HTTP/3 QUIC / HTTP/2)
+                               ▼
                       ┌────────────────────────────────────────────────────────┐
                       │             McuBridge daemon (Linux / MPU)             │
-                      │  - Pure Telemetry Push (Zero local HTTP attack surface) │
+                      │  - Pure Telemetry Push (Zero local HTTP attack surface)│
                       │  - Policy (allow/deny) & Declarative Dispatcher        │
-                      │  - RuntimeState snapshots & Local IPC (UNIX Domain)    │
+                      │  - RuntimeState snapshots & Local IPC (OpenWrt UBUS)   │
+                      │  - Delegated RPC execution (local_bridge_service)      │
                       └────────────────────────────────────────────────────────┘
                                ▲
                                │ Serial RPC frames (COBS + CRC32, Channel Multiplexing)
@@ -36,11 +46,11 @@ Este documento unifica y reemplaza documentación histórica y dispersa.
                       └────────────────────────────────────────────────────────┘
 
 Notas:
-- Central Server Gateway: opera como punto único de observabilidad y orquestación para toda la flota de dispositivos de borde.
-- Edge Node (McuBridge): nodo liviano en modo "Pure Telemetry Push"; no expone puertos HTTP locales, reduciendo consumo de RAM y vectores de ataque en OpenWrt.
+- Central Server Gateway: opera como punto único de observabilidad, ingesta de telemetría y plano de control RPC northbound para toda la flota de dispositivos de borde. Aloja `GatewayLocalBridgeService` (los 22 métodos tipados de `LocalBridge` + `SubscribeConsole`), enrutando llamadas a cada edge daemon mediante metadatos obligatorios `x-device-id`.
+- Edge Node (McuBridge): nodo liviano en modo "Pure Telemetry Push"; no expone puertos HTTP locales ni sockets abiertos sin autenticación. Mantiene un stream gRPC bidireccional saliente hacia el Gateway y ejecuta RPCs delegados (`CommandRequest(command_path="rpc/<method>")`).
+- Local IPC en OpenWrt: comunicación local en el MPU a través de OpenWrt UBUS nativo (`ubus call mcubridge ...`) consumido por scripts del sistema, interfaces CGI y LuCI Web UI.
 - Serial RPC: típicamente Linux→MCU requests y MCU→Linux responses, con streaming de eventos simétrico en tiempo real (p.ej. `Bridge.sendPinEvent` sobre `CHANNEL_TELEMETRY`).
-- Local IPC: comunicación entre clientes locales (como CLI y CGI) y el daemon a través de UNIX Domain Sockets (`/var/run/mcubridge.sock`) utilizando tramas binarias Protobuf prefijadas por longitud.
-- gRPC: comunicación bidireccional asíncrona (streaming) entre el daemon y el Gateway central (`mcubridge-gateway`) para telemetría, métricas y comandos remotos.
+- gRPC: comunicación bidireccional asíncrona (streaming) entre los daemons de borde y el Gateway central (`mcubridge-gateway`) para telemetría, métricas y despacho de comandos remotos, así como entre clientes externos y el Gateway.
 ```
 
 ## Fuente de verdad
@@ -367,7 +377,7 @@ El estado de salud del enlace se expone en:
 ## Flujo de inicio (resumen)
 
 1. `main()` carga config, inicializa logging, crea `RuntimeState`.
-2. Se arranca un `TaskGroup` con lector serie, streaming gRPC hacia `mcubridge-gateway`, servidor local IPC (UNIX Domain Socket), status writer, watchdog opcional y publicador de telemetría/snapshots.
+2. Se arranca un `TaskGroup` con lector serie, streaming gRPC hacia `mcubridge-gateway` (con despachador de RPCs delegados), status writer, watchdog opcional y publicador de telemetría/snapshots.
 3. Fallas críticas se elevan como `CRITICAL` para reinicios supervisados (`procd`).
 
 ---
@@ -794,10 +804,61 @@ Para correlación de eventos, telemetría y detección de derivas temporales ent
 
 - **Truncado**: si una respuesta supera `MAX_PAYLOAD_SIZE`, los datos se truncan.
 - **Cloud Gateway**: además del RPC serie, el daemon se comunica con el Cloud Gateway mediante un stream bidireccional gRPC.
-  - Dirección: Cloud Gateway → daemon (comandos remotos en `CloudEnvelope.command_request`), daemon → Cloud Gateway (respuestas/telemetría y eventos de estado en `CloudEnvelope`).
+  - Dirección: Cloud Gateway → daemon (comandos remotos y RPCs delegados en `CloudEnvelope.command_request`), daemon → Cloud Gateway (respuestas/telemetría y eventos de estado en `CloudEnvelope`).
 
 ---
 
+### gRPC Northbound: Servicio GatewayLocalBridgeService y Resolución Explícita de Dispositivos
+
+El Cloud Gateway centralizado (`mcubridge-gateway`) expone el servicio `LocalBridge` para clientes externos y scripts de automatización (`mcubridge-client-examples`), consolidando un único punto de acceso tipado a nivel de flota:
+
+```
+[Cliente Externo / CLI]
+       │
+       │ gRPC unario / streaming (con metadata "x-device-id: <id>")
+       ▼
+[GatewayLocalBridgeService en mcubridge-gateway]
+       │
+       │ 1. Validación de x-device-id (Status.INVALID_ARGUMENT si falta)
+       │ 2. Resolución de sesión activa (Status.UNAVAILABLE si no está conectado)
+       │ 3. Empaquetado: CommandRequest(command_path="rpc/<method>", payload=...)
+       ▼
+[Stream de Sesión gRPC Bidireccional (Session)]
+       ▼
+[McuBridge Daemon en Linux MPU]
+       │
+       │ 4. Intercepción de comando: command_path.startswith("rpc/")
+       │ 5. Despacho delegado: self.local_bridge_service.execute_rpc(method, payload)
+       │ 6. Ejecución hardware/serie/sistema y retorno de CommandResponse
+       ▼
+[GatewayLocalBridgeService]
+       │
+       │ 7. Desempaquetado tipado y retorno de respuesta gRPC al cliente
+       ▼
+[Cliente Externo / CLI]
+```
+
+#### Métodos Soportados en `GatewayLocalBridgeService`
+
+El servicio implementa 22 operaciones unarias y 1 endpoint de streaming:
+1. **Control de Pines (GPIO):** `SetPinMode`, `DigitalWrite`, `DigitalRead`, `AnalogWrite`, `AnalogRead`, `PinSubscribe`.
+2. **Datastore en Memoria:** `DatastorePut`, `DatastoreGet`.
+3. **Mailbox FIFO:** `MailboxPush`, `MailboxRead`.
+4. **Sistema de Archivos:** `FileWrite`, `FileRead`, `FileRemove`.
+5. **Gestión de Procesos:** `ProcessRunAsync`, `ProcessPoll`, `ProcessKill`.
+6. **Bus SPI:** `SpiTransfer`, `SpiConfigure`.
+7. **Introspección y Telemetría:** `GetVersion`, `GetFreeMemory`, `GetStatus`.
+8. **Publicación Genérica:** `Publish`.
+9. **Streaming de Consola en Tiempo Real:** `SubscribeConsole` (multiplexa chunks de consola recibidos en telemetría hacia los clientes suscriptos).
+
+#### Invariante de Resolución Explícita de Dispositivo
+
+- **Obligatoriedad de `x-device-id`:** Todo cliente debe especificar explícitamente el dispositivo de destino.
+- **Ausencia de Metadato:** Genera `GRPCError(Status.INVALID_ARGUMENT, "Missing x-device-id in request metadata")`.
+- **Dispositivo Desconectado:** Genera `GRPCError(Status.UNAVAILABLE, "Device '<id>' is not connected to gateway")`.
+- **Cero Código Legacy:** Se erradican totalmente los sockets UNIX locales para clientes, evitando fallbacks ambiguos o asunciones implícitas de dispositivo local.
+
+---
 
 ### gRPC: snapshots del bridge y eventos de estado
 

@@ -199,3 +199,48 @@ def test_smoke_connection_cli_invocation() -> None:
         )
         assert res.exit_code == 0
         mock_run.assert_called_once_with("127.0.0.1", 8443, "yun-01", "test")
+
+
+@pytest.mark.asyncio
+async def test_gateway_northbound_run_test() -> None:
+    """Verify test_gateway_northbound.run_test calls DispatchCommand correctly."""
+    import test_gateway_northbound
+
+    with patch("test_gateway_northbound.Channel") as mock_chan_cls, \
+         patch("test_gateway_northbound.mcubridge_grpc.CloudBridgeStub") as mock_stub_cls:
+        mock_chan = MagicMock()
+        mock_chan_cls.return_value = mock_chan
+        mock_stub = MagicMock()
+        mock_stub_cls.return_value = mock_stub
+        mock_stub.DispatchCommand = AsyncMock(return_value=MagicMock(status_code=200, payload=b"OK"))
+
+        await test_gateway_northbound.run_test(host="127.0.0.1", port=8443, device_id="yun-01")
+        mock_stub.DispatchCommand.assert_awaited_once()
+
+
+def test_gateway_northbound_cli_invocation() -> None:
+    """Verify test_gateway_northbound CLI entry point invokes run_test via typer runner."""
+    import test_gateway_northbound
+
+    with patch("test_gateway_northbound.run_test") as mock_run:
+        runner = CliRunner()
+        res = runner.invoke(
+            cast(Any, test_gateway_northbound.cli),
+            ["--host", "127.0.0.1", "--port", "8443", "--device-id", "yun-01"],
+        )
+        assert res.exit_code == 0
+        mock_run.assert_called_once_with("127.0.0.1", 8443, "yun-01")
+
+
+def test_gateway_northbound_cli_missing_device() -> None:
+    """Verify test_gateway_northbound CLI raises error when device_id is omitted."""
+    import test_gateway_northbound
+
+    runner = CliRunner()
+    res = runner.invoke(
+        cast(Any, test_gateway_northbound.cli),
+        ["--host", "127.0.0.1", "--port", "8443"],
+        env={"MCUBRIDGE_DEVICE_ID": ""},
+    )
+    assert res.exit_code != 0
+

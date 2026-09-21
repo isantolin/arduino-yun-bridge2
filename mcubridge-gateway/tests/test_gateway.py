@@ -837,7 +837,9 @@ async def test_dispatch_command_branches(mock_gateway: ProtobufGateway) -> None:
     stream_target = AsyncMock()
     rpc_payload_dw = pb.DigitalWrite(pin=13, value=1).SerializeToString()
     stream_target.recv_message = AsyncMock(
-        return_value=pb.CommandDispatch(target_device_id="dev-1", command_path="rpc/DigitalWrite", payload=rpc_payload_dw)
+        return_value=pb.CommandDispatch(target_device_id="dev-1",
+                                        command_path="rpc/DigitalWrite",
+                                        payload=rpc_payload_dw)
     )
     expected_response = pb.CommandResponse(
         status_code=200,

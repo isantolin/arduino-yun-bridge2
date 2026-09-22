@@ -17,24 +17,24 @@ namespace config {
  */
 
 #if defined(ARDUINO_ARCH_AVR)
-static constexpr bool IS_AVR = true;
-static constexpr uint8_t DIGITAL_PINS = AVR_DIGITAL_PINS;
-static constexpr uint8_t ANALOG_PINS = AVR_ANALOG_PINS;
+inline constexpr bool IS_AVR = true;
+inline constexpr uint8_t DIGITAL_PINS = AVR_DIGITAL_PINS;
+inline constexpr uint8_t ANALOG_PINS = AVR_ANALOG_PINS;
 #elif defined(ARDUINO_ARCH_SAMD)
-static constexpr bool IS_AVR = false;
-static constexpr uint8_t DIGITAL_PINS = SAMD_DIGITAL_PINS;
-static constexpr uint8_t ANALOG_PINS = SAMD_ANALOG_PINS;
+inline constexpr bool IS_AVR = false;
+inline constexpr uint8_t DIGITAL_PINS = SAMD_DIGITAL_PINS;
+inline constexpr uint8_t ANALOG_PINS = SAMD_ANALOG_PINS;
 #else
-static constexpr bool IS_AVR = false;
-static constexpr uint8_t DIGITAL_PINS = FALLBACK_MAX_PIN;
-static constexpr uint8_t ANALOG_PINS = AVR_ANALOG_PINS;
+inline constexpr bool IS_AVR = false;
+inline constexpr uint8_t DIGITAL_PINS = FALLBACK_MAX_PIN;
+inline constexpr uint8_t ANALOG_PINS = AVR_ANALOG_PINS;
 #endif
 
-static constexpr bool SAFE_START_PINS_ENABLED = true;
-static constexpr bool ENABLE_WATCHDOG = true;
+inline constexpr bool SAFE_START_PINS_ENABLED = true;
+inline constexpr bool ENABLE_WATCHDOG = true;
 
 // [SIL-2] Maximum time to wait for Linux handshake before entering safe state.
-static constexpr uint32_t SYNC_TIMEOUT_MS = rpc::SYNC_TIMEOUT_MS;
+inline constexpr uint32_t SYNC_TIMEOUT_MS = rpc::SYNC_TIMEOUT_MS;
 
 // --- Feature Flags (Manual overrides via build system) ---
 #ifndef BRIDGE_ENABLE_DATASTORE
@@ -53,11 +53,11 @@ static constexpr uint32_t SYNC_TIMEOUT_MS = rpc::SYNC_TIMEOUT_MS;
 #define BRIDGE_ENABLE_SPI 1
 #endif
 
-static constexpr bool ENABLE_DATASTORE = BRIDGE_ENABLE_DATASTORE;
-static constexpr bool ENABLE_MAILBOX = BRIDGE_ENABLE_MAILBOX;
-static constexpr bool ENABLE_FILESYSTEM = BRIDGE_ENABLE_FILESYSTEM;
-static constexpr bool ENABLE_PROCESS = BRIDGE_ENABLE_PROCESS;
-static constexpr bool ENABLE_SPI = BRIDGE_ENABLE_SPI;
+inline constexpr bool ENABLE_DATASTORE = BRIDGE_ENABLE_DATASTORE;
+inline constexpr bool ENABLE_MAILBOX = BRIDGE_ENABLE_MAILBOX;
+inline constexpr bool ENABLE_FILESYSTEM = BRIDGE_ENABLE_FILESYSTEM;
+inline constexpr bool ENABLE_PROCESS = BRIDGE_ENABLE_PROCESS;
+inline constexpr bool ENABLE_SPI = BRIDGE_ENABLE_SPI;
 
 // [SIL-2/AVR] Cryptographic Power-On Self-Tests (KAT for SHA256, HMAC, AEAD).
 // Enabled by default. Set to 0 for flash-constrained targets (e.g. ATmega328P).
@@ -66,8 +66,8 @@ static constexpr bool ENABLE_SPI = BRIDGE_ENABLE_SPI;
 #endif
 
 // [SIL-2] Static bounds for safety pins and pin subscriptions
-static constexpr size_t MAX_SAFETY_PINS = 8;
-static constexpr size_t MAX_PIN_SUBSCRIPTIONS = 8;
+inline constexpr size_t MAX_SAFETY_PINS = 8;
+inline constexpr size_t MAX_PIN_SUBSCRIPTIONS = 8;
 
 }  // namespace config
 

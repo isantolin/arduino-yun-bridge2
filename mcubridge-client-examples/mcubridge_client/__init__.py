@@ -20,3 +20,17 @@ from .protocol import (
 from .spi import SpiDevice as SpiDevice
 
 pb = mcubridge_pb2
+
+__all__ = [
+    "Channel",
+    "CloudQueuedPublish",
+    "Command",
+    "LocalBridgeStub",
+    "SpiBitOrder",
+    "SpiDevice",
+    "SpiMode",
+    "Topic",
+    "build_bridge_args",
+    "dump_client_env",
+    "pb",
+]

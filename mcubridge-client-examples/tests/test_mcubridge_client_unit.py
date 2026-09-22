@@ -243,4 +243,3 @@ def test_gateway_northbound_cli_missing_device() -> None:
         env={"MCUBRIDGE_DEVICE_ID": ""},
     )
     assert res.exit_code != 0
-

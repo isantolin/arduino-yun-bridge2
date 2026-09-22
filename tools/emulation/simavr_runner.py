@@ -209,6 +209,7 @@ def _setup_fake_uci(slave_name: str) -> tuple[Path, Path, dict[str, str]]:
 
     return fake_uci_dir, storage_path, daemon_env
 
+
 BOARD_TO_MCU: dict[str, str] = {
     "arduino:avr:yun": "atmega32u4",
     "arduino:avr:uno": "atmega328p",

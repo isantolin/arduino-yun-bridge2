@@ -10,6 +10,7 @@
 #define ARDUINO_STUB_CUSTOM_MILLIS 1
 
 #include <Arduino.h>
+
 #include "host_serial_stream.h"
 
 static volatile sig_atomic_t g_running = 1;

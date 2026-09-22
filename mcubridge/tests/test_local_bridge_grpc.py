@@ -489,4 +489,3 @@ async def test_local_bridge_execute_rpc(tmp_path: Path) -> None:
     # 4. Unknown method raises ValueError
     with pytest.raises(ValueError, match="Unknown RPC method"):
         await local_svc.execute_rpc("NonExistent", b"")
-

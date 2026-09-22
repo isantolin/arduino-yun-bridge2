@@ -97,7 +97,7 @@ def build_snapshot(command_id: int, payload: bytes | ProtobufMessage) -> FrameDe
     # Use sequence_id=0 for debug snapshots
     raw_frame = build_frame(command_id=command_id, sequence_id=0, payload=payload)
     # CRC is at the end of the frame (little-endian)
-    crc = int.from_bytes(raw_frame[-protocol.CRC_SIZE :], "little")
+    crc = int.from_bytes(raw_frame[-protocol.CRC_SIZE:], "little")
     encoded_body = cobs.encode(raw_frame)
     encoded_packet = encoded_body + FRAME_DELIMITER
 

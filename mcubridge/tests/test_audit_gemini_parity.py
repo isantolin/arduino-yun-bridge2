@@ -5,8 +5,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any, cast
-from unittest.mock import patch
 
+import pytest
+from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
 from tools.audit.check_gemini_parity import (
@@ -35,7 +36,7 @@ def test_check_rules_parity_success() -> None:
     assert errors == []
 
 
-def test_sync_rules_to_agent_json_success(tmp_path: Path) -> None:
+def test_sync_rules_to_agent_json_success(mocker: MockerFixture, tmp_path: Path) -> None:
     mock_gemini = tmp_path / "GEMINI.md"
     mock_gemini.write_text("Canonical Rules Content\n", encoding="utf-8")
 
@@ -44,20 +45,20 @@ def test_sync_rules_to_agent_json_success(tmp_path: Path) -> None:
     agent_json = agent_dir / "agent.json"
     agent_json.write_text(json.dumps({"name": "test", "instructions": "old"}), encoding="utf-8")
 
-    with patch("tools.audit.check_gemini_parity.ROOT", tmp_path):
-        res = sync_rules_to_agent_json()
-        assert res is True
-        data = json.loads(agent_json.read_text(encoding="utf-8"))
-        assert data["instructions"] == "Canonical Rules Content"
+    mocker.patch("tools.audit.check_gemini_parity.ROOT", tmp_path)
+    res = sync_rules_to_agent_json()
+    assert res is True
+    data = json.loads(agent_json.read_text(encoding="utf-8"))
+    assert data["instructions"] == "Canonical Rules Content"
 
 
-def test_sync_rules_to_agent_json_missing_files(tmp_path: Path) -> None:
-    with patch("tools.audit.check_gemini_parity.ROOT", tmp_path):
-        assert sync_rules_to_agent_json() is False
+def test_sync_rules_to_agent_json_missing_files(mocker: MockerFixture, tmp_path: Path) -> None:
+    mocker.patch("tools.audit.check_gemini_parity.ROOT", tmp_path)
+    assert sync_rules_to_agent_json() is False
 
-        mock_gemini = tmp_path / "GEMINI.md"
-        mock_gemini.write_text("Rules", encoding="utf-8")
-        assert sync_rules_to_agent_json() is False
+    mock_gemini = tmp_path / "GEMINI.md"
+    mock_gemini.write_text("Rules", encoding="utf-8")
+    assert sync_rules_to_agent_json() is False
 
 
 def test_cli_main_and_fix() -> None:

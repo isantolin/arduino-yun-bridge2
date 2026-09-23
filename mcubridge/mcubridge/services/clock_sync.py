@@ -1,4 +1,4 @@
-"""Clock synchronization service for Linux MPU and Arduino MCU. [SIL-2]"""
+"""SIL-2 High-Precision Clock Synchronization Service for Arduino MCU Bridge."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from statemachine import State, StateMachine
 import structlog
 
 from ..protocol import mcubridge_pb2 as pb
-from ..protocol.commands import Command
+from ..protocol.protocol import Command
 
 if TYPE_CHECKING:
     from .runtime import BridgeService
@@ -69,12 +69,13 @@ class ClockSyncService:
         self._runtime: BridgeService = runtime
         self._interval: float = sync_interval_seconds
         self._task: asyncio.Task[None] | None = None
+        self._is_running: bool = False
         self.fsm = ClockSyncMachine()
 
     @property
     def is_running(self) -> bool:
         """Return whether periodic clock sync worker is running."""
-        return self._task is not None and not self._task.done()
+        return self._is_running
 
     @property
     def task(self) -> asyncio.Task[None] | None:
@@ -83,19 +84,20 @@ class ClockSyncService:
 
     async def start(self) -> None:
         """Start periodic clock synchronization background worker."""
-        if self.is_running:
+        if self._is_running:
             return
+        self._is_running = True
         self._task = asyncio.create_task(self._sync_loop(), name="clock-sync-worker")
 
     async def stop(self) -> None:
         """Stop periodic clock synchronization background worker."""
-        if self._task is not None:
-            if not self._task.done():
-                self._task.cancel()
-                try:
-                    await self._task
-                except asyncio.CancelledError as exc:
-                    logger.debug("Clock sync background worker task cancelled", error=str(exc))
+        self._is_running = False
+        if self._task and not self._task.done():
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError as exc:
+                logger.debug("Clock sync background worker task cancelled", error=str(exc))
             self._task = None
         self.fsm.disconnect()
 
@@ -167,6 +169,7 @@ class ClockSyncService:
             "Clock synchronization updated",
             rtt_us=rtt_us,
             offset_us=offset_us,
+            mcu_time_us=t2_mcu_us,
             sync_count=state.clock_sync_count,
             fsm_state=self.fsm.current_state_value,
         )
@@ -187,7 +190,7 @@ class ClockSyncService:
 
     async def _sync_loop(self) -> None:
         """Periodic synchronization loop."""
-        while True:
+        while self._is_running:
             try:
                 if self._runtime.state.is_connected:
                     if not self.fsm.unsupported.is_active:

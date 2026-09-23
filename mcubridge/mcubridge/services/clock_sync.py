@@ -35,7 +35,11 @@ class ClockSyncMachine(StateMachine):
         | synchronized.to(unsupported)
         | unsupported.to(unsupported)
     )
-    start_probe = idle.to(probing) | unsupported.to(probing) | probing.to(probing)
+    start_probe = (
+        idle.to(probing)
+        | unsupported.to(probing)
+        | probing.to(probing)
+    )
     sync_success = (
         probing.to(synchronized)
         | idle.to(synchronized)
@@ -43,8 +47,18 @@ class ClockSyncMachine(StateMachine):
         | synchronized.to(synchronized)
         | unsupported.to(synchronized)
     )
-    mark_degraded = probing.to(degraded) | synchronized.to(degraded) | degraded.to(degraded)
-    disconnect = probing.to(idle) | synchronized.to(idle) | degraded.to(idle) | unsupported.to(idle) | idle.to(idle)
+    mark_degraded = (
+        probing.to(degraded)
+        | synchronized.to(degraded)
+        | degraded.to(degraded)
+    )
+    disconnect = (
+        probing.to(idle)
+        | synchronized.to(idle)
+        | degraded.to(idle)
+        | unsupported.to(idle)
+        | idle.to(idle)
+    )
     recheck_capability = unsupported.to(idle)
 
 
@@ -82,8 +96,8 @@ class ClockSyncService:
             self._task.cancel()
             try:
                 await self._task
-            except asyncio.CancelledError:
-                logger.debug("Clock sync background worker task cancelled")
+            except asyncio.CancelledError as exc:
+                logger.debug("Clock sync background worker task cancelled", error=str(exc))
             self._task = None
         self.fsm.disconnect()
 
@@ -106,7 +120,9 @@ class ClockSyncService:
                 self.fsm.mark_unsupported()
                 return self.get_status()
 
-        is_initial_probe = self.fsm.idle.is_active or self.fsm.probing.is_active or self.fsm.unsupported.is_active
+        is_initial_probe = (
+            self.fsm.idle.is_active or self.fsm.probing.is_active or self.fsm.unsupported.is_active
+        )
         if is_initial_probe:
             self.fsm.start_probe()
 
@@ -129,7 +145,7 @@ class ClockSyncService:
         return self.get_status()
 
     def record_sync(self, resp: pb.ClockSyncResponse) -> dict[str, Any]:
-        """Process incoming ClockSyncResponse from MCU and update telemetry."""
+        """Record clock synchronization telemetry from valid MCU response. [SIL-2]"""
         t4_host_us = time.time_ns() // 1000
         t1_host_us = resp.host_time_us
         t2_mcu_us = resp.mcu_time_us
@@ -155,11 +171,12 @@ class ClockSyncService:
             offset_us=offset_us,
             mcu_time_us=t2_mcu_us,
             sync_count=state.clock_sync_count,
+            fsm_state=self.fsm.current_state_value,
         )
         return self.get_status()
 
     def get_status(self) -> dict[str, Any]:
-        """Retrieve current clock synchronization metrics."""
+        """Return structured clock synchronization telemetry snapshot."""
         state = self._runtime.state
         is_conn = self._runtime.serial is not None and state.is_connected
         return {
@@ -180,8 +197,8 @@ class ClockSyncService:
                         await self.sync_now()
                 else:
                     self.fsm.disconnect()
-            except asyncio.CancelledError:
-                logger.debug("Periodic clock sync task cancelled")
+            except asyncio.CancelledError as exc:
+                logger.debug("Periodic clock sync task cancelled", error=str(exc))
                 break
             except (OSError, ConnectionError, TimeoutError, ProtobufDecodeError) as e:
                 logger.warning("Periodic clock sync failed", error=str(e))

@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import asyncio
-import anyio.to_thread
-import structlog
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
+import anyio.to_thread
+import structlog
 from google.protobuf.json_format import MessageToJson
 from google.protobuf.message import Message as ProtobufMessage
 
@@ -15,27 +15,22 @@ from ..config.const import STATUS_FILE_PATH
 from .context import RuntimeState
 
 logger = structlog.get_logger("mcubridge.status")
-
 STATUS_FILE = Path(STATUS_FILE_PATH)
 
 
 async def status_writer(state: RuntimeState, interval: int) -> None:
     """Persist lightweight status information periodically."""
-
-    async def _write_tick() -> None:
-        try:
-            # [SIL-2] Use BridgeStatus Protobuf for holistic snapshot
-            status = state.build_status_snapshot()
-            await anyio.to_thread.run_sync(_write_status_file, status)
-        except (OSError, RuntimeError, ValueError) as e:
-            logger.error("Periodic status write failed", error=str(e))
-
     try:
         while True:
-            await _write_tick()
+            try:
+                # [SIL-2] Use BridgeStatus Protobuf for holistic snapshot
+                status = state.build_status_snapshot()
+                await anyio.to_thread.run_sync(_write_status_file, status)
+            except (OSError, RuntimeError, ValueError) as exc:
+                logger.error("Periodic status write failed", error=str(exc))
             await asyncio.sleep(interval)
-    except asyncio.CancelledError:
-        logger.info("Status writer task cancelled.")
+    except asyncio.CancelledError as exc:
+        logger.info("Status writer task cancelled", error=str(exc))
         raise
 
 
@@ -52,5 +47,5 @@ def _write_status_file(payload: ProtobufMessage) -> None:
         temp_path = Path(temp_name)
         temp_path.chmod(0o644)
         temp_path.replace(STATUS_FILE)
-    except (ValueError, OSError) as e:
-        logger.error("Failed to write atomic status file", error=str(e))
+    except (ValueError, OSError) as exc:
+        logger.error("Failed to write atomic status file", error=str(exc))

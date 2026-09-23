@@ -124,3 +124,22 @@ def test_main_value_error(mocker: MockerFixture) -> None:
     with pytest.raises(SystemExit) as exc:
         app([])
     assert exc.value.code == 1
+
+
+def test_main_exception_group_handled(mocker: MockerFixture) -> None:
+    """Verify app handles ExceptionGroup and exits with 1 if exceptions are handled."""
+    mocker.patch("mcubridge.daemon.verify_crypto_integrity", return_value=True)
+    exc_group = ExceptionGroup("group", [ValueError("nested value error")])
+    mocker.patch("mcubridge.daemon.load_runtime_config", side_effect=exc_group)
+    with pytest.raises(SystemExit) as exc:
+        app([])
+    assert exc.value.code == 1
+
+
+def test_main_exception_group_unhandled(mocker: MockerFixture) -> None:
+    """Verify app raises unhandled exception groups."""
+    mocker.patch("mcubridge.daemon.verify_crypto_integrity", return_value=True)
+    exc_group = ExceptionGroup("group", [KeyError("unhandled")])
+    mocker.patch("mcubridge.daemon.load_runtime_config", side_effect=exc_group)
+    with pytest.raises(ExceptionGroup):
+        app([])

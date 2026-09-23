@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 from typing import Any, cast
 
-import pytest
 from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 

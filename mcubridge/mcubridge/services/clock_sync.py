@@ -1,4 +1,4 @@
-"""SIL-2 High-Precision Clock Synchronization Service for Arduino MCU Bridge."""
+"""Clock synchronization service for Linux MPU and Arduino MCU. [SIL-2]"""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from statemachine import State, StateMachine
 import structlog
 
 from ..protocol import mcubridge_pb2 as pb
-from ..protocol.protocol import Command
+from ..protocol.commands import Command
 
 if TYPE_CHECKING:
     from .runtime import BridgeService
@@ -35,7 +35,11 @@ class ClockSyncMachine(StateMachine):
         | synchronized.to(unsupported)
         | unsupported.to(unsupported)
     )
-    start_probe = idle.to(probing) | unsupported.to(probing) | probing.to(probing)
+    start_probe = (
+        idle.to(probing)
+        | unsupported.to(probing)
+        | probing.to(probing)
+    )
     sync_success = (
         probing.to(synchronized)
         | idle.to(synchronized)
@@ -43,8 +47,18 @@ class ClockSyncMachine(StateMachine):
         | synchronized.to(synchronized)
         | unsupported.to(synchronized)
     )
-    mark_degraded = probing.to(degraded) | synchronized.to(degraded) | degraded.to(degraded)
-    disconnect = probing.to(idle) | synchronized.to(idle) | degraded.to(idle) | unsupported.to(idle) | idle.to(idle)
+    mark_degraded = (
+        probing.to(degraded)
+        | synchronized.to(degraded)
+        | degraded.to(degraded)
+    )
+    disconnect = (
+        probing.to(idle)
+        | synchronized.to(idle)
+        | degraded.to(idle)
+        | unsupported.to(idle)
+        | idle.to(idle)
+    )
     recheck_capability = unsupported.to(idle)
 
 
@@ -55,13 +69,12 @@ class ClockSyncService:
         self._runtime: BridgeService = runtime
         self._interval: float = sync_interval_seconds
         self._task: asyncio.Task[None] | None = None
-        self._is_running: bool = False
         self.fsm = ClockSyncMachine()
 
     @property
     def is_running(self) -> bool:
         """Return whether periodic clock sync worker is running."""
-        return self._is_running
+        return self._task is not None and not self._task.done()
 
     @property
     def task(self) -> asyncio.Task[None] | None:
@@ -70,20 +83,19 @@ class ClockSyncService:
 
     async def start(self) -> None:
         """Start periodic clock synchronization background worker."""
-        if self._is_running:
+        if self.is_running:
             return
-        self._is_running = True
         self._task = asyncio.create_task(self._sync_loop(), name="clock-sync-worker")
 
     async def stop(self) -> None:
         """Stop periodic clock synchronization background worker."""
-        self._is_running = False
-        if self._task and not self._task.done():
-            self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                logger.debug("Clock sync background worker task cancelled")
+        if self._task is not None:
+            if not self._task.done():
+                self._task.cancel()
+                try:
+                    await self._task
+                except asyncio.CancelledError as exc:
+                    logger.debug("Clock sync background worker task cancelled", error=str(exc))
             self._task = None
         self.fsm.disconnect()
 
@@ -106,7 +118,9 @@ class ClockSyncService:
                 self.fsm.mark_unsupported()
                 return self.get_status()
 
-        is_initial_probe = self.fsm.idle.is_active or self.fsm.probing.is_active or self.fsm.unsupported.is_active
+        is_initial_probe = (
+            self.fsm.idle.is_active or self.fsm.probing.is_active or self.fsm.unsupported.is_active
+        )
         if is_initial_probe:
             self.fsm.start_probe()
 
@@ -129,7 +143,7 @@ class ClockSyncService:
         return self.get_status()
 
     def record_sync(self, resp: pb.ClockSyncResponse) -> dict[str, Any]:
-        """Process incoming ClockSyncResponse from MCU and update telemetry."""
+        """Record clock synchronization telemetry from valid MCU response. [SIL-2]"""
         t4_host_us = time.time_ns() // 1000
         t1_host_us = resp.host_time_us
         t2_mcu_us = resp.mcu_time_us
@@ -153,13 +167,13 @@ class ClockSyncService:
             "Clock synchronization updated",
             rtt_us=rtt_us,
             offset_us=offset_us,
-            mcu_time_us=t2_mcu_us,
             sync_count=state.clock_sync_count,
+            fsm_state=self.fsm.current_state_value,
         )
         return self.get_status()
 
     def get_status(self) -> dict[str, Any]:
-        """Retrieve current clock synchronization metrics."""
+        """Return structured clock synchronization telemetry snapshot."""
         state = self._runtime.state
         is_conn = self._runtime.serial is not None and state.is_connected
         return {
@@ -173,15 +187,15 @@ class ClockSyncService:
 
     async def _sync_loop(self) -> None:
         """Periodic synchronization loop."""
-        while self._is_running:
+        while True:
             try:
                 if self._runtime.state.is_connected:
                     if not self.fsm.unsupported.is_active:
                         await self.sync_now()
                 else:
                     self.fsm.disconnect()
-            except asyncio.CancelledError:
-                logger.debug("Periodic clock sync task cancelled")
+            except asyncio.CancelledError as exc:
+                logger.debug("Periodic clock sync task cancelled", error=str(exc))
                 break
             except (OSError, ConnectionError, TimeoutError, ProtobufDecodeError) as e:
                 logger.warning("Periodic clock sync failed", error=str(e))

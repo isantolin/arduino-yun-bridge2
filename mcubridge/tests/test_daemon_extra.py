@@ -41,6 +41,11 @@ async def test_daemon_supervise_restarts(
     # Should restart and eventually return
     await service.supervise("test-restart", failing_task)
 
+    assert call_state["call_count"] == 3
+    assert (
+        "test-restart" not in service.state.supervisor_stats or not service.state.supervisor_stats["test-restart"].fatal
+    )
+
 
 @pytest.mark.asyncio
 async def test_daemon_supervise_cancelled(service_stack: tuple[BridgeService, Any, Any]) -> None:

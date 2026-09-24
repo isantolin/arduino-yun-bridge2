@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
 
 import lmdb
 import pytest
+from pytest_mock import MockerFixture
 
 from mcubridge.state.context import RuntimeState
 from mcubridge.state.storage import LmdbCache, LmdbDeque
@@ -52,12 +52,12 @@ async def test_lmdb_deque_no_env_safety() -> None:
 
 
 @pytest.mark.asyncio
-async def test_lmdb_deque_corrupt_recovery() -> None:
+async def test_lmdb_deque_corrupt_recovery(mocker: MockerFixture) -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         db_path = str(Path(tmpdir) / "corrupt_deque.db")
-        with patch("lmdb.open", side_effect=lmdb.Error("Database corrupt")):
-            deque = LmdbDeque(db_path)
-            assert deque.env is None
+        mocker.patch("lmdb.open", side_effect=lmdb.Error("Database corrupt"))
+        deque = LmdbDeque(db_path)
+        assert deque.env is None
 
 
 @pytest.mark.asyncio

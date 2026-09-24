@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Any, cast
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from pytest_mock import MockerFixture
@@ -63,12 +63,12 @@ async def test_cli_bridge_session(mocker: MockerFixture) -> None:
 
 def test_env_is_openwrt(mocker: MockerFixture) -> None:
     """is_openwrt checks environment variable and file presence."""
-    mocker.patch.dict("os.environ", {"MCUBRIDGE_FORCE_UCI": "1"})
-    assert is_openwrt() is True
+    with mocker.patch.dict("os.environ", {"MCUBRIDGE_FORCE_UCI": "1"}):
+        assert is_openwrt() is True
 
-    mocker.patch.dict("os.environ", {}, clear=True)
-    mocker.patch("pathlib.Path.exists", return_value=True)
-    assert is_openwrt() is True
+    with mocker.patch.dict("os.environ", {}, clear=True):
+        mocker.patch("pathlib.Path.exists", return_value=True)
+        assert is_openwrt() is True
 
 
 def test_env_read_uci_general(mocker: MockerFixture) -> None:
@@ -115,17 +115,17 @@ def test_env_dump_client_env(capsys: pytest.CaptureFixture[str]) -> None:
 
 def test_definitions_build_bridge_args(mocker: MockerFixture) -> None:
     """build_bridge_args builds dictionary targeting Gateway with explicit device_id."""
-    mocker.patch.dict("os.environ", {}, clear=True)
-    args = build_bridge_args(host="127.0.0.1", port=8443, device_id="yun-01", topic_prefix="br")
-    assert args == {
-        "host": "127.0.0.1",
-        "port": 8443,
-        "device_id": "yun-01",
-        "topic_prefix": "br",
-    }
-    # Explicit device_id is required: missing device_id raises ValueError
-    with pytest.raises(ValueError, match="Explicit target device_id is required"):
-        build_bridge_args(host="127.0.0.1", port=8443)
+    with mocker.patch.dict("os.environ", {}, clear=True):
+        args = build_bridge_args(host="127.0.0.1", port=8443, device_id="yun-01", topic_prefix="br")
+        assert args == {
+            "host": "127.0.0.1",
+            "port": 8443,
+            "device_id": "yun-01",
+            "topic_prefix": "br",
+        }
+        # Explicit device_id is required: missing device_id raises ValueError
+        with pytest.raises(ValueError, match="Explicit target device_id is required"):
+            build_bridge_args(host="127.0.0.1", port=8443)
 
 
 @pytest.mark.asyncio
@@ -191,18 +191,18 @@ async def test_smoke_connection_run_test(mocker: MockerFixture) -> None:
     mock_sess.assert_called_once_with(host="127.0.0.1", port=8443, device_id="yun-01", topic_prefix="br")
 
 
-def test_smoke_connection_cli_invocation(mocker: MockerFixture) -> None:
+def test_smoke_connection_cli_invocation() -> None:
     """Verify test_smoke_connection CLI entry point invokes run_test via typer runner."""
     import test_smoke_connection
 
-    mock_run = mocker.patch("test_smoke_connection.run_test", new_callable=AsyncMock)
-    runner = CliRunner()
-    res = runner.invoke(
-        cast(Any, test_smoke_connection.cli),
-        ["--host", "127.0.0.1", "--port", "8443", "--device-id", "yun-01", "--topic-prefix", "test"],
-    )
-    assert res.exit_code == 0
-    mock_run.assert_called_once_with("127.0.0.1", 8443, "yun-01", "test")
+    with patch("test_smoke_connection.run_test") as mock_run:
+        runner = CliRunner()
+        res = runner.invoke(
+            cast(Any, test_smoke_connection.cli),
+            ["--host", "127.0.0.1", "--port", "8443", "--device-id", "yun-01", "--topic-prefix", "test"],
+        )
+        assert res.exit_code == 0
+        mock_run.assert_called_once_with("127.0.0.1", 8443, "yun-01", "test")
 
 
 @pytest.mark.asyncio
@@ -222,18 +222,18 @@ async def test_gateway_northbound_run_test(mocker: MockerFixture) -> None:
     mock_stub.DispatchCommand.assert_awaited_once()
 
 
-def test_gateway_northbound_cli_invocation(mocker: MockerFixture) -> None:
+def test_gateway_northbound_cli_invocation() -> None:
     """Verify test_gateway_northbound CLI entry point invokes run_test via typer runner."""
     import test_gateway_northbound
 
-    mock_run = mocker.patch("test_gateway_northbound.run_test", new_callable=AsyncMock)
-    runner = CliRunner()
-    res = runner.invoke(
-        cast(Any, test_gateway_northbound.cli),
-        ["--host", "127.0.0.1", "--port", "8443", "--device-id", "yun-01"],
-    )
-    assert res.exit_code == 0
-    mock_run.assert_called_once_with("127.0.0.1", 8443, "yun-01")
+    with patch("test_gateway_northbound.run_test") as mock_run:
+        runner = CliRunner()
+        res = runner.invoke(
+            cast(Any, test_gateway_northbound.cli),
+            ["--host", "127.0.0.1", "--port", "8443", "--device-id", "yun-01"],
+        )
+        assert res.exit_code == 0
+        mock_run.assert_called_once_with("127.0.0.1", 8443, "yun-01")
 
 
 def test_gateway_northbound_cli_missing_device() -> None:

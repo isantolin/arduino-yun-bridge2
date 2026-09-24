@@ -16,6 +16,7 @@ from unittest.mock import AsyncMock
 
 import lmdb
 import pytest
+from hypothesis import given, settings, strategies as st
 from pytest_mock import MockerFixture
 import structlog
 
@@ -105,46 +106,54 @@ async def test_runtime_run_cloud_disabled(tmp_path: Path, mocker: MockerFixture)
 
 
 @pytest.mark.asyncio
-async def test_runtime_handle_datastore_flavors(tmp_path: Path, mocker: MockerFixture) -> None:
-    config = _make_config(tmp_path)
+@settings(max_examples=25, derandomize=True, deadline=None)
+@given(
+    key=st.text(alphabet="abcdefghijklmnopqrstuvwxyz0123456789_", min_size=1, max_size=24),
+    value=st.binary(min_size=1, max_size=128),
+)
+async def test_runtime_handle_datastore_flavors(
+    tmp_path_factory: pytest.TempPathFactory, key: str, value: bytes
+) -> None:
+    config = _make_config(Path(tmp_path_factory.mktemp("datastore_flavors")))
     service, state, _ = _make_service(config)
 
     # 1. Datastore PUT
     route_put = TopicRoute(
-        raw="test/br/datastore/put/my_key",
+        raw=f"{config.topic_prefix}/datastore/put/{key}",
         prefix=config.topic_prefix,
         topic=Topic.DATASTORE,
-        segments=("put", "my_key"),
+        segments=("put", key),
     )
     handle_datastore: Callable[[TopicRoute, pb.CloudQueuedPublish], Awaitable[None]] = getattr(
         service, "_handle_datastore"
     )
-    inbound_put = pb.CloudQueuedPublish(topic_name="test/br/datastore/put/my_key", payload=b"my_val")
+    inbound_put = pb.CloudQueuedPublish(topic_name=f"{config.topic_prefix}/datastore/put/{key}", payload=value)
     await handle_datastore(route_put, inbound_put)
-    assert await state.datastore_cache.get("my_key") == b"my_val"
+    assert await state.datastore_cache.get(key) == value
 
     # 2. Datastore GET (cache hit)
     route_get_hit = TopicRoute(
-        raw="test/br/datastore/get/my_key",
+        raw=f"{config.topic_prefix}/datastore/get/{key}",
         prefix=config.topic_prefix,
         topic=Topic.DATASTORE,
-        segments=("get", "my_key"),
+        segments=("get", key),
     )
-    inbound_get = pb.CloudQueuedPublish(topic_name="test/br/datastore/get/my_key", payload=b"")
-    mock_enqueue = mocker.patch.object(service, "enqueue_cloud", new_callable=AsyncMock)
+    inbound_get = pb.CloudQueuedPublish(topic_name=f"{config.topic_prefix}/datastore/get/{key}", payload=b"")
+    mock_enqueue = AsyncMock()
+    service.enqueue_cloud = mock_enqueue
     await handle_datastore(route_get_hit, inbound_get)
-    assert mock_enqueue.called
+    assert mock_enqueue.await_count == 1
 
     # 3. Datastore GET (cache miss with request suffix)
     route_get_miss = TopicRoute(
-        raw="test/br/datastore/get/non_existing/request",
+        raw=f"{config.topic_prefix}/datastore/get/non_existing_{key}/request",
         prefix=config.topic_prefix,
         topic=Topic.DATASTORE,
-        segments=("get", "non_existing", "request"),
+        segments=("get", f"non_existing_{key}", "request"),
     )
     mock_enqueue.reset_mock()
     await handle_datastore(route_get_miss, inbound_get)
-    assert mock_enqueue.called
+    assert mock_enqueue.await_count == 1
 
     state.cleanup()
 
@@ -235,33 +244,41 @@ async def test_runtime_request_mcu_version_and_system_version(tmp_path: Path) ->
 
 
 @pytest.mark.asyncio
-async def test_runtime_pin_analog_and_invalid_digits(tmp_path: Path) -> None:
-    config = _make_config(tmp_path)
+@settings(max_examples=25, derandomize=True, deadline=None)
+@given(
+    pin=st.integers(0, 32),
+    analog_val=st.integers(0, 255),
+    non_digit=st.text(alphabet="abcdefghijklmnopqrstuvwxyz!@#$", min_size=1, max_size=12),
+)
+async def test_runtime_pin_analog_and_invalid_digits(
+    tmp_path_factory: pytest.TempPathFactory, pin: int, analog_val: int, non_digit: str
+) -> None:
+    config = _make_config(Path(tmp_path_factory.mktemp("pin_analog")))
     service, state, mock_serial = _make_service(config)
 
     handle_pin: Callable[[TopicRoute, pb.CloudQueuedPublish], Awaitable[None]] = getattr(service, "_handle_pin")
 
     # 1. Analog Write
     route_aw = TopicRoute(
-        raw="test/br/a/9",
+        raw=f"{config.topic_prefix}/a/{pin}",
         prefix=config.topic_prefix,
         topic=Topic.ANALOG,
-        segments=("9",),
+        segments=(str(pin),),
     )
-    inbound_aw = pb.CloudQueuedPublish(topic_name="test/br/a/9", payload=b"128")
+    inbound_aw = pb.CloudQueuedPublish(topic_name=f"{config.topic_prefix}/a/{pin}", payload=str(analog_val).encode())
     await handle_pin(route_aw, inbound_aw)
-    mock_serial.send.assert_called_with(Command.CMD_ANALOG_WRITE.value, pb.AnalogWrite(pin=9, value=128))
+    mock_serial.send.assert_called_with(Command.CMD_ANALOG_WRITE.value, pb.AnalogWrite(pin=pin, value=analog_val))
 
     # 2. Digital Write with non-digit payload (defaults to 0)
     route_dw = TopicRoute(
-        raw="test/br/d/13",
+        raw=f"{config.topic_prefix}/d/{pin}",
         prefix=config.topic_prefix,
         topic=Topic.DIGITAL,
-        segments=("13",),
+        segments=(str(pin),),
     )
-    inbound_dw = pb.CloudQueuedPublish(topic_name="test/br/d/13", payload=b"non_digit")
+    inbound_dw = pb.CloudQueuedPublish(topic_name=f"{config.topic_prefix}/d/{pin}", payload=non_digit.encode())
     await handle_pin(route_dw, inbound_dw)
-    mock_serial.send.assert_called_with(Command.CMD_DIGITAL_WRITE.value, pb.DigitalWrite(pin=13, value=0))
+    mock_serial.send.assert_called_with(Command.CMD_DIGITAL_WRITE.value, pb.DigitalWrite(pin=pin, value=0))
 
     state.cleanup()
 

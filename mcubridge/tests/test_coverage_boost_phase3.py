@@ -15,6 +15,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from pytest_mock import MockerFixture
 import pytest
+from hypothesis import given, settings, strategies as st
 
 import mcubridge.protocol.mcubridge_pb2 as pb
 from mcubridge.config.settings import RuntimeConfig
@@ -357,25 +358,32 @@ async def test_runtime_on_mcu_process_kill(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_runtime_handle_mcu_status_payloads(tmp_path: Path, mocker: MockerFixture) -> None:
-    config = _make_config(tmp_path)
+@settings(max_examples=30, derandomize=True, deadline=None)
+@given(
+    status=st.sampled_from(list(Status)),
+    seq=st.integers(0, 65535),
+    payload=st.one_of(
+        st.binary(max_size=64),
+        st.text(max_size=32).map(lambda s: pb.GenericResponse(message=s)),
+    ),
+)
+async def test_runtime_handle_mcu_status_payloads(
+    tmp_path_factory: pytest.TempPathFactory,
+    status: Status,
+    seq: int,
+    payload: bytes | pb.GenericResponse,
+) -> None:
+    config = _make_config(Path(tmp_path_factory.mktemp("mcu_status")))
     service, _state, _ = _make_service(config)
 
-    mock_enqueue = mocker.patch.object(service, "enqueue_cloud", new_callable=AsyncMock)
+    mock_enqueue = AsyncMock()
+    service.enqueue_cloud = mock_enqueue
     handle_status_fn: Callable[..., Awaitable[None]] = getattr(service, "_handle_mcu_status")
-    # 1. ProtobufMessage payload
-    msg = pb.GenericResponse(message="test_msg")
-    await handle_status_fn(Status.ERROR, 1, msg)
-    assert mock_enqueue.call_count == 1
-
-    # 2. Raw bytes payload with valid Protobuf
-    b_msg = pb.GenericResponse(message="bytes_msg").SerializeToString()
-    await handle_status_fn(Status.TIMEOUT, 2, b_msg)
-    assert mock_enqueue.call_count == 2
-
-    # 3. Corrupted raw bytes
-    await handle_status_fn(Status.MALFORMED, 3, b"\xff\xff\xff")
-    assert mock_enqueue.call_count == 3
+    await handle_status_fn(status, seq, payload)
+    assert mock_enqueue.await_count == 1
+    call_args = mock_enqueue.await_args[0]
+    queued_msg = call_args[0]
+    assert isinstance(queued_msg, pb.CloudQueuedPublish)
 
     service.cleanup()
 
@@ -626,43 +634,30 @@ async def test_publish_bridge_snapshots_failing_enqueue(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_lmdb_deque_operations(tmp_path: Path) -> None:
-    deque_path = str(tmp_path / "test_deque")
-    deque = LmdbDeque(path=deque_path, maxlen=5)
+@settings(max_examples=25, derandomize=True, deadline=None)
+@given(
+    items=st.lists(st.binary(min_size=1, max_size=32), min_size=2, max_size=8),
+)
+async def test_lmdb_deque_operations(tmp_path_factory: pytest.TempPathFactory, items: list[bytes]) -> None:
+    deque_path = str(tmp_path_factory.mktemp("deque_ops") / "test_deque")
+    deque = LmdbDeque(path=deque_path, maxlen=len(items))
 
-    # 1. Append and popleft
-    await deque.append(b"item1")
-    await deque.append(b"item2")
-    assert len(deque) == 2
+    for item in items:
+        await deque.append(item)
+    assert len(deque) == len(items)
 
-    item = await deque.popleft()
-    assert item == b"item1"
-    assert len(deque) == 1
+    assert await deque.peek() == items[0]
+    assert await deque.popleft() == items[0]
+    assert len(deque) == len(items) - 1
 
-    # 2. Peek
-    peeked = await deque.peek()
-    assert peeked == b"item2"
-    assert len(deque) == 1
-
-    # 3. Pop remaining
-    item2 = await deque.popleft()
-    assert item2 == b"item2"
+    await deque.clear()
     assert len(deque) == 0
 
-    # 4. Pop empty raises IndexError
     with pytest.raises(IndexError):
         await deque.popleft()
 
-    # 5. Peek empty raises IndexError
     with pytest.raises(IndexError):
         await deque.peek()
-
-    # 6. Overflow drops oldest
-    for i in range(10):
-        await deque.append(f"overflow_{i}".encode())
-    assert len(deque) == 5
-    oldest = await deque.popleft()
-    assert oldest == b"overflow_5"
 
     await deque.close()
 

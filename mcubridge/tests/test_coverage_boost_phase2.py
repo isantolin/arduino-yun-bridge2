@@ -12,8 +12,9 @@ import types
 from io import BytesIO
 from pathlib import Path
 from typing import Any, cast
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
+from hypothesis import given, settings, strategies as st
 from pytest_mock import MockerFixture
 import pytest
 from cobs import cobsr
@@ -438,17 +439,23 @@ class TestLmdbCache:
         assert result == b"default"
 
     @pytest.mark.asyncio
-    async def test_cache_disk_operations(self) -> None:
+    @settings(max_examples=25, derandomize=True, deadline=None)
+    @given(
+        key=st.text(alphabet="abcdefghijklmnopqrstuvwxyz0123456789_", min_size=1, max_size=32),
+        value=st.binary(min_size=0, max_size=128),
+        fallback=st.binary(min_size=0, max_size=32),
+    )
+    async def test_cache_disk_operations(self, key: str, value: bytes, fallback: bytes) -> None:
         test_dir = f".tmp_tests/cache-{os.getpid()}-{time.time_ns()}"
         Path(test_dir).mkdir(parents=True, exist_ok=True)
         try:
             cache = LmdbCache(path=test_dir)
-            await cache.set("k1", b"v1")
-            result = await cache.get("k1")
-            assert result == b"v1"
+            await cache.set(key, value)
+            result = await cache.get(key)
+            assert result == value
 
-            result_miss = await cache.get("missing", b"fallback")
-            assert result_miss == b"fallback"
+            result_miss = await cache.get(f"missing_{key}", fallback)
+            assert result_miss == fallback
 
             await cache.clear()
             await cache.close()
@@ -571,22 +578,34 @@ class TestPinRestCgiCli:
         pin_rest_cgi.run_cgi()
         mock_handler.run.assert_called_once()
 
-    def test_application_pin_data_validation_error(self, mocker: MockerFixture) -> None:
+    @settings(max_examples=10, derandomize=True, deadline=None)
+    @given(
+        invalid_body=st.sampled_from(
+            [
+                b'{"state": "INVALID_UNKNOWN_STATE"}',
+                b'{"state": 9999}',
+                b'{"value": "not_an_int"}',
+                b'{"unknown_field": "val"}',
+                b"not_json_at_all",
+            ]
+        )
+    )
+    def test_application_pin_data_validation_error(self, invalid_body: bytes) -> None:
         start_response = MagicMock()
-        body = b'{"state": "INVALID_UNKNOWN_STATE"}'
         env = {
             "PATH_INFO": "/pin/13",
             "REQUEST_METHOD": "POST",
-            "CONTENT_LENGTH": str(len(body)),
-            "wsgi.input": BytesIO(body),
+            "CONTENT_LENGTH": str(len(invalid_body)),
+            "wsgi.input": BytesIO(invalid_body),
         }
 
-        mocker.patch.object(pin_rest_cgi, "load_runtime_config", return_value=_make_config())
-        mocker.patch.object(pin_rest_cgi, "configure_logging")
-        result = pin_rest_cgi.application(env, start_response)
-        assert result
-        # Should return 400 for invalid pin_data
-        start_response.assert_called()
+        with (
+            patch.object(pin_rest_cgi, "load_runtime_config", return_value=_make_config()),
+            patch.object(pin_rest_cgi, "configure_logging"),
+        ):
+            result = pin_rest_cgi.application(env, start_response)
+            assert result
+            start_response.assert_called()
 
     def test_application_method_not_allowed(self, mocker: MockerFixture) -> None:
         start_response = MagicMock()

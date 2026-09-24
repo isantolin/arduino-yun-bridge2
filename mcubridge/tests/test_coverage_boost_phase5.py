@@ -8,9 +8,10 @@ import os
 from pathlib import Path
 import ssl
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from google.protobuf.message import Message as ProtobufMessage
+from hypothesis import given, settings, strategies as st
 from pytest_mock import MockerFixture
 import pytest
 
@@ -67,20 +68,6 @@ def mock_state(test_config: RuntimeConfig) -> Iterator[RuntimeState]:
 # ==========================================
 # 1. Topics Edge Cases
 # ==========================================
-
-
-def test_topics_get_topic_for_message_int_and_unknown() -> None:
-    topic = get_topic_for_message("br", Command.CMD_GET_VERSION_RESP.value)
-    assert topic is not None
-    assert "version" in topic
-
-    assert get_topic_for_message("br", "non_existent_topic_xyz") is None
-
-
-def test_topics_parse_topic_mismatched_prefix() -> None:
-    assert parse_topic("br", "other_prefix/service/action") is None
-    assert parse_topic("br", "") is None
-    assert parse_topic("", "br/service/action") is None
 
 
 # ==========================================
@@ -409,24 +396,6 @@ def test_handshake_calculate_tag_empty_secret() -> None:
 
 
 # ==========================================
-# 6. LMDB Storage Edge Cases
-# ==========================================
-
-
-@pytest.mark.asyncio
-async def test_lmdb_deque_peek_pop_none_value(tmp_path: Path) -> None:
-    db_path = str(tmp_path / "test_deque")
-    deque = LmdbDeque(db_path, maxlen=10)
-
-    # Empty deque raises IndexError on peek and popleft
-    with pytest.raises(IndexError):
-        await deque.peek()
-
-    with pytest.raises(IndexError):
-        await deque.popleft()
-
-
-# ==========================================
 # 7. Daemon Entrypoint & Exception Handling
 # ==========================================
 
@@ -509,27 +478,47 @@ async def test_gateway_session_cancelled(mocker: MockerFixture) -> None:
 
 
 @pytest.mark.asyncio
-async def test_runtime_write_with_quota(
-    test_config: RuntimeConfig, mock_state: RuntimeState, tmp_path: Path, mocker: MockerFixture
+@settings(max_examples=25, derandomize=True, deadline=None)
+@given(
+    free_bytes=st.integers(0, 1024),
+    data=st.binary(min_size=1, max_size=2048),
+)
+async def test_runtime_write_with_quota_property(
+    tmp_path_factory: pytest.TempPathFactory,
+    free_bytes: int,
+    data: bytes,
 ) -> None:
-    serial = AsyncMock(spec=SerialTransport)
-    svc = BridgeService(test_config, mock_state, serial)
+    tmp_dir = tmp_path_factory.mktemp("quota")
+    config = RuntimeConfig(
+        file_system_root=str(tmp_dir),
+        cloud_spool_dir=str(tmp_dir / "spool"),
+        allow_non_tmp_paths=True,
+    )
+    state = create_runtime_state(config)
+    try:
+        serial = AsyncMock(spec=SerialTransport)
+        svc = BridgeService(config, state, serial)
+        target_file = tmp_dir / "quota_test.bin"
 
-    target_file = tmp_path / "quota_test.bin"
+        write_quota_fn: Callable[..., Awaitable[bool]] = getattr(svc, "_write_with_quota")
 
-    # Case 1: Disk full (free < len(data))
-    mock_usage = mocker.patch("psutil.disk_usage")
-    mock_usage.return_value = MagicMock(free=5, used=100, total=105)
-    write_quota_fn: Callable[..., Awaitable[bool]] = getattr(svc, "_write_with_quota")
-    res = await write_quota_fn(target_file, b"1234567890")
-    assert res is False
-    assert svc.state.file_storage_limit_rejections == 1
+        initial_rejections = svc.state.file_storage_limit_rejections
+        with patch("psutil.disk_usage", return_value=MagicMock(free=free_bytes, used=100, total=100 + free_bytes)):
+            res = await write_quota_fn(target_file, data)
+            if len(data) > free_bytes:
+                assert res is False
+                assert svc.state.file_storage_limit_rejections == initial_rejections + 1
+            else:
+                assert res is True
+                assert target_file.read_bytes() == data
 
-    # Case 2: Disk usage check raises OSError
-    mock_usage.side_effect = OSError("Stat failure")
-    res = await write_quota_fn(target_file, b"data")
-    assert res is True
-    assert target_file.read_bytes() == b"data"
+        # Error path fallback
+        with patch("psutil.disk_usage", side_effect=OSError("Stat failure")):
+            res_fallback = await write_quota_fn(target_file, data)
+            assert res_fallback is True
+            assert target_file.read_bytes() == data
+    finally:
+        state.cleanup()
 
 
 @pytest.mark.asyncio

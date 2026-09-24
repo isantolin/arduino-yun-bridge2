@@ -335,6 +335,12 @@ def test_replace_cloud_publish() -> None:
     assert replaced.user_properties[0].key == "key1"
     assert list(replaced.subscription_identifier) == [100]
 
+    # None and empty variations
+    res_none = structures.replace_cloud_publish(original, subscription_identifier=None)
+    assert len(res_none.subscription_identifier) == 0
+    res_empty = structures.replace_cloud_publish(original, user_properties=[], subscription_identifier=[])
+    assert len(res_empty.user_properties) == 0
+
 
 def test_resolve_cloud_context() -> None:
     msg = pb.CloudQueuedPublish(topic_name="initial", payload=b"p")
@@ -356,6 +362,12 @@ def test_resolve_cloud_context() -> None:
     assert resolved.correlation_data == b"\x01\x02"
     assert any(p.key == "bridge-request-topic" and p.value == "req/topic" for p in resolved.user_properties)
 
+    # context without properties
+    class ContextNoProps:
+        pass
+
+    assert structures.resolve_cloud_context(msg, ContextNoProps()).topic_name == "initial"
+
 
 def test_pending_command_methods() -> None:
     cmd = structures.PendingCommand(command_id=1)
@@ -365,6 +377,10 @@ def test_pending_command_methods() -> None:
     assert cmd.success is True
     assert cmd.response_payload == b"response"
     assert cmd.completion.is_set() is True
+
+    # Calling mark_success when completion is already set
+    cmd.mark_success(b"repeat")
+    assert cmd.success is True
 
     cmd2 = structures.PendingCommand(command_id=2)
     cmd2.mark_failure(status=404)

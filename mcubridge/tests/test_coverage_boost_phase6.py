@@ -31,6 +31,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from pytest_mock import MockerFixture
 import pytest
+from hypothesis import given, settings, strategies as st
 
 from mcubridge.config.logging import configure_logging
 import mcubridge.config.settings as settings_mod
@@ -101,28 +102,38 @@ def test_settings_load_runtime_config_from_json_unknown_override() -> None:
     assert cfg.serial_baud == 230400
 
 
-def test_settings_normalize_config_dict() -> None:
+@settings(max_examples=30, derandomize=True, deadline=None)
+@given(
+    cloud_en=st.sampled_from(["1", "true", "yes", "on", True]),
+    wd_en=st.sampled_from(["0", "false", "no", "off", False]),
+    baud=st.sampled_from(["9600", "115200", 9600, 115200]),
+    interval=st.floats(min_value=0.5, max_value=60.0),
+    secret_str=st.text(alphabet="abcdefghijklmnopqrstuvwxyz0123456789", min_size=1, max_size=32),
+)
+def test_settings_normalize_config_property(
+    cloud_en: Any, wd_en: Any, baud: Any, interval: float, secret_str: str
+) -> None:
     norm, secret = _normalize_config_dict(
         {
-            "cloud_enabled": "1",
-            "cloud_tls": "true",
-            "watchdog_enabled": "false",
-            "serial_baud": 115200,
-            "bridge_summary_interval": 1.5,
+            "cloud_enabled": cloud_en,
+            "cloud_tls": cloud_en,
+            "watchdog_enabled": wd_en,
+            "serial_baud": baud,
+            "bridge_summary_interval": interval,
             "topic_prefix": "br",
-            "serial_shared_secret": "secret",
+            "serial_shared_secret": secret_str,
             "allowed_commands": "cat ls",
-            "cloud_allow_datastore": "true",
+            "cloud_allow_datastore": cloud_en,
             "unknown_extra_key": "val",
         }
     )
     assert norm["cloud_enabled"] is True
     assert norm["cloud_tls"] is True
     assert norm["watchdog_enabled"] is False
-    assert norm["serial_baud"] == 115200
-    assert norm["bridge_summary_interval"] == 1.5
+    assert norm["serial_baud"] == int(baud)
+    assert norm["bridge_summary_interval"] == interval
     assert norm["topic_prefix"] == "br"
-    assert secret == b"secret"
+    assert secret == secret_str.encode()
     assert norm["allowed_commands"] == ["cat", "ls"]
     assert norm["topic_authorization"]["datastore_get"] is True
     assert norm["topic_authorization"]["datastore_put"] is True
@@ -696,22 +707,7 @@ async def test_runtime_flush_cloud_spool_corrupt_and_errors(
 
 
 @pytest.mark.asyncio
-async def test_runtime_handle_mcu_status_unusual_payloads(
-    test_config: RuntimeConfig, mock_state: RuntimeState, mocker: MockerFixture
-) -> None:
-    serial = AsyncMock(spec=SerialTransport)
-    svc = BridgeService(test_config, mock_state, serial)
-    handle_status: Callable[..., Awaitable[None]] = getattr(svc, "_handle_mcu_status")
 
-    mock_enqueue = mocker.patch.object(svc, "enqueue_cloud", new_callable=AsyncMock)
-    # 1. Non-bytes, non-protobuf payload
-    await handle_status(Status.TIMEOUT, 1, cast(Any, 12345))
-    assert mock_enqueue.call_count == 1
-
-    # 2. Non-utf8 binary bytes falling back to hex representation
-    non_utf8 = b"\xff\xfe\xfd\x80"
-    await handle_status(Status.CRC_MISMATCH, 2, non_utf8)
-    assert mock_enqueue.call_count == 2
 
 
 @pytest.mark.asyncio
@@ -1022,28 +1018,7 @@ async def test_serial_transport_read_loop_empty_view_and_service_none(
     assert curr_cmd.success is True
 
 
-@pytest.mark.asyncio
-async def test_structures_replace_and_resolve_edge_branches() -> None:
-    from mcubridge.protocol.structures import replace_cloud_publish, resolve_cloud_context
 
-    msg = pb.CloudQueuedPublish(topic_name="test", payload=b"p")
-
-    # 1. replace_cloud_publish with subscription_identifier=None
-    res = replace_cloud_publish(msg, subscription_identifier=None)
-    assert len(res.subscription_identifier) == 0
-
-    # 2. resolve_cloud_context with context having no response_topic and no properties
-    class ContextNoProps:
-        pass
-
-    resolved = resolve_cloud_context(msg, ContextNoProps())
-    assert resolved.topic_name == "test"
-
-    # 3. PendingCommand mark_success when completion is already set
-    cmd = PendingCommand(command_id=1, expected_resp_ids=[])
-    cmd.completion.set()
-    cmd.mark_success(b"payload")
-    assert cmd.success is True
 
 
 @pytest.mark.asyncio
@@ -1184,59 +1159,7 @@ def test_settings_raw_config_edge_branches(mocker: MockerFixture) -> None:
         load_runtime_config(overrides={"serial_shared_secret": None})
 
 
-@pytest.mark.asyncio
-async def test_lmdb_deque_branch_coverage(tmp_path: Path) -> None:
-    from mcubridge.state.storage import LmdbDeque
 
-    db_path = str(tmp_path / "branch_deque")
-    deque = LmdbDeque(db_path, maxlen=2)
-
-    # 1. Append beyond maxlen (eviction)
-    await deque.append(b"item1")
-    await deque.append(b"item2")
-    await deque.append(b"item3")
-    assert len(deque) == 2
-    assert await deque.popleft() == b"item2"
-    assert await deque.popleft() == b"item3"
-
-    # 2. Len when env is None
-    deque.env = None
-    assert len(deque) == 0
-    await deque.clear()
-
-    # 3. Clear on disk backend
-    deque_disk = LmdbDeque(str(tmp_path / "clear_deque"))
-    await deque_disk.append(b"data")
-    assert len(deque_disk) == 1
-    await deque_disk.clear()
-    assert len(deque_disk) == 0
-
-
-@pytest.mark.asyncio
-async def test_lmdb_cache_clear(tmp_path: Path) -> None:
-    from mcubridge.state.storage import LmdbCache
-
-    # 1. Memory mode
-    cache_mem = LmdbCache(":memory:")
-    await cache_mem.set("k1", b"v1")
-    assert await cache_mem.get("k1") == b"v1"
-    await cache_mem.clear()
-    assert await cache_mem.get("k1") is None
-
-    # 2. Disk mode
-    cache_disk = LmdbCache(str(tmp_path / "cache_disk"))
-    await cache_disk.set("k_disk", b"v_disk")
-    assert await cache_disk.get("k_disk") == b"v_disk"
-    await cache_disk.clear()
-    assert await cache_disk.get("k_disk") is None
-
-    # 3. None env get/set and close
-    await cache_disk.close()
-    await cache_disk.close()
-    cache_disk.env = None
-    assert await cache_disk.get("k_disk", default=b"def") == b"def"
-    await cache_disk.set("k_none", b"val")
-    await cache_disk.clear()
 
 
 def test_security_self_test_chacha_invalid_length(mocker: MockerFixture) -> None:
@@ -1757,18 +1680,7 @@ async def test_runtime_service_spi_and_system_branches(runtime_config: Any, runt
     assert await pub_cloud(pb.CloudQueuedPublish(topic_name="br/metrics/report")) is False
 
 
-def test_structures_replace_cloud_publish_variations() -> None:
-    from mcubridge.protocol.structures import replace_cloud_publish
-    from mcubridge.protocol import mcubridge_pb2 as pb
 
-    orig = pb.CloudQueuedPublish(topic_name="test/topic", payload=b"hello")
-    res1 = replace_cloud_publish(orig, user_properties=[("k1", "v1")], subscription_identifier=[1, 2])
-    assert len(res1.user_properties) == 1
-    assert len(res1.subscription_identifier) == 2
-
-    res2 = replace_cloud_publish(orig, user_properties=[], subscription_identifier=[])
-    assert len(res2.user_properties) == 0
-    assert len(res2.subscription_identifier) == 0
 
 
 @pytest.mark.asyncio

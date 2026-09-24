@@ -6,16 +6,17 @@ from typing import Any
 
 import os
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from pytest_mock import MockerFixture
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
 from mcubridge.transport.serial import SerialTransport
 
 
 @pytest.mark.asyncio
-async def test_serial_reader_task_reconnects():
+async def test_serial_reader_task_reconnects(mocker: MockerFixture) -> None:
     """Test that reader task re-establishes connection on failure."""
     config = RuntimeConfig(
         serial_port="/dev/test0",
@@ -68,19 +69,18 @@ async def test_serial_reader_task_reconnects():
 
     mock_sleep = AsyncMock(side_effect=mock_sleep_fn)
 
-    with (
-        patch(
-            "mcubridge.transport.serial.serialx.AsyncSerial",
-            mock_async_serial_cls,
-        ),
-        patch("asyncio.sleep", mock_sleep),
-        patch.object(SerialTransport, "_toggle_dtr", AsyncMock()),
-    ):
-        transport = SerialTransport(config, state, service)
-        try:
-            await transport.run()
-        except RuntimeError as e:
-            assert str(e) == "Break Loop"
+    mocker.patch(
+        "mcubridge.transport.serial.serialx.AsyncSerial",
+        mock_async_serial_cls,
+    )
+    mocker.patch("asyncio.sleep", mock_sleep)
+    mocker.patch.object(SerialTransport, "_toggle_dtr", AsyncMock())
+
+    transport = SerialTransport(config, state, service)
+    try:
+        await transport.run()
+    except RuntimeError as e:
+        assert str(e) == "Break Loop"
 
     # Verify behavior
     # Connect should be called at least twice (initial + retry)

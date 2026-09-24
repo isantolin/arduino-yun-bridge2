@@ -10,10 +10,11 @@ import time
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import lmdb
 import pytest
+from pytest_mock import MockerFixture
 
 import mcubridge.state.status as status_mod
 import mcubridge.state.storage as storage_mod
@@ -65,22 +66,23 @@ async def test_status_writer_periodic_ticks(
 @pytest.mark.asyncio
 async def test_status_writer_handles_exception(
     state_setup: tuple[RuntimeState, RuntimeConfig],
+    mocker: MockerFixture,
 ) -> None:
     state, _config = state_setup
-    with patch("mcubridge.state.status._write_status_file", side_effect=OSError("Disk full")):
-        task = asyncio.create_task(status_writer(state, interval=1))
-        await asyncio.sleep(0.05)
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
+    mocker.patch("mcubridge.state.status._write_status_file", side_effect=OSError("Disk full"))
+    task = asyncio.create_task(status_writer(state, interval=1))
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
 
 
-def test_write_status_file_handles_oserror() -> None:
+def test_write_status_file_handles_oserror(mocker: MockerFixture) -> None:
     status_msg = MagicMock()
-    with patch("mcubridge.state.status.STATUS_FILE") as mock_file:
-        mock_file.parent.mkdir.side_effect = OSError("Access denied")
-        _write_status_file(status_msg)
-        assert mock_file.parent.mkdir.called
+    mock_file = mocker.patch("mcubridge.state.status.STATUS_FILE")
+    mock_file.parent.mkdir.side_effect = OSError("Access denied")
+    _write_status_file(status_msg)
+    assert mock_file.parent.mkdir.called
 
 
 # ---------------------------------------------------------------------------
@@ -92,7 +94,7 @@ def test_write_status_file_handles_oserror() -> None:
 async def test_lmdb_deque_db_recreation_on_corruption(tmp_path: object) -> None:
     db_path = str(tmp_path) + "/corrupt_deque.db"
     # Write garbage to simulate corrupted database
-    with open(db_path, "wb") as f:
+    with open(db_path, \"wb\") as f:
         f.write(b"NOT A VALID LMDB FILE")
 
     deque = LmdbDeque(db_path, maxlen=10)
@@ -119,7 +121,7 @@ async def test_lmdb_deque_popleft_empty_raises(tmp_path: object) -> None:
 @pytest.mark.asyncio
 async def test_lmdb_cache_corruption_recovery(tmp_path: object) -> None:
     db_path = str(tmp_path) + "/corrupt_kv.db"
-    with open(db_path, "wb") as f:
+    with open(db_path, \"wb\") as f:
         f.write(b"GARBAGE")
 
     kv = LmdbCache(db_path)
@@ -182,7 +184,7 @@ async def test_lmdb_cache_pop_delete_vacuum_lifecycle(tmp_path: object) -> None:
 
 
 @pytest.mark.asyncio
-async def test_lmdb_cache_and_vacuum_edge_branches(tmp_path: Path) -> None:
+async def test_lmdb_cache_and_vacuum_edge_branches(tmp_path: Path, mocker: MockerFixture) -> None:
     """Verify fallback and error paths for LmdbCache and _vacuum_lmdb_env."""
     # 1. Vacuum with None env
     await anyio.to_thread.run_sync(_vacuum_lmdb_env, str(tmp_path), "test.db", None, lambda: None)
@@ -209,10 +211,10 @@ async def test_lmdb_cache_and_vacuum_edge_branches(tmp_path: Path) -> None:
     # 4. Vacuum unlink OSError
     faulty_env = MagicMock()
     faulty_env.copy.side_effect = lmdb.Error("Copy fail")
-    with patch("pathlib.Path.unlink", side_effect=OSError("Permission denied")):
-        await anyio.to_thread.run_sync(
-            _vacuum_lmdb_env, str(tmp_path / "faulty"), "faulty.db", faulty_env, lambda: None
-        )
+    mocker.patch("pathlib.Path.unlink", side_effect=OSError("Permission denied"))
+    await anyio.to_thread.run_sync(
+        _vacuum_lmdb_env, str(tmp_path / "faulty"), "faulty.db", faulty_env, lambda: None
+    )
 
 
 @pytest.mark.asyncio

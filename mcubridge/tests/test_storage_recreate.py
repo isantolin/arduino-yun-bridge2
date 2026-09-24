@@ -1,12 +1,13 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 import pytest
 import lmdb
+from pytest_mock import MockerFixture
 
 from mcubridge.state.storage import LmdbCache, LmdbDeque
 
 
 @pytest.mark.asyncio
-async def test_sqlite_deque_recreate_on_corrupt(tmp_path: object) -> None:
+async def test_sqlite_deque_recreate_on_corrupt(tmp_path: object, mocker: MockerFixture) -> None:
     db_path = str(tmp_path) + "/deque_test"
     db_error = lmdb.Error("Corrupt DB")
 
@@ -17,83 +18,79 @@ async def test_sqlite_deque_recreate_on_corrupt(tmp_path: object) -> None:
     mock_txn.cursor.return_value = MagicMock(first=MagicMock(return_value=False), last=MagicMock(return_value=False))
     mock_env.begin.return_value.__enter__.return_value = mock_txn
 
-    with (
-        patch("lmdb.open", side_effect=[db_error, mock_env]) as mock_open,
-        patch("mcubridge.state.storage.logger") as mock_logger,
-    ):
-        dq = LmdbDeque(db_path)
-        await dq.append(b"item")
+    mock_open = mocker.patch("lmdb.open", side_effect=[db_error, mock_env])
+    mock_logger = mocker.patch("mcubridge.state.storage.logger")
 
-        assert mock_open.call_count == 2
-        mock_logger.warning.assert_any_call(
-            "LMDB database corrupt or invalid, recreating",
-            path=db_path,
-            error=str(db_error),
-        )
+    dq = LmdbDeque(db_path)
+    await dq.append(b"item")
+
+    assert mock_open.call_count == 2
+    mock_logger.warning.assert_any_call(
+        "LMDB database corrupt or invalid, recreating",
+        path=db_path,
+        error=str(db_error),
+    )
 
 
 @pytest.mark.asyncio
-async def test_lmdb_deque_unlink_os_error(tmp_path: object) -> None:
+async def test_lmdb_deque_unlink_os_error(tmp_path: object, mocker: MockerFixture) -> None:
     db_path = str(tmp_path) + "/deque_unlink_test"
     db_error = lmdb.Error("Corrupt DB")
 
     mock_env = MagicMock()
     mock_env.open_db.return_value = MagicMock()
 
-    with (
-        patch("lmdb.open", side_effect=[db_error, mock_env]),
-        patch("mcubridge.state.storage.Path.exists", return_value=True),
-        patch("mcubridge.state.storage.Path.unlink", side_effect=OSError("Permission denied")),
-        patch("mcubridge.state.storage.logger") as mock_logger,
-    ):
-        LmdbDeque(db_path)
+    mocker.patch("lmdb.open", side_effect=[db_error, mock_env])
+    mocker.patch("mcubridge.state.storage.Path.exists", return_value=True)
+    mocker.patch("mcubridge.state.storage.Path.unlink", side_effect=OSError("Permission denied"))
+    mock_logger = mocker.patch("mcubridge.state.storage.logger")
 
-        unlink_call = next(
-            c for c in mock_logger.warning.call_args_list if c.args and c.args[0] == "Failed to unlink target path"
-        )
-        assert unlink_call.kwargs["path"] == db_path
+    LmdbDeque(db_path)
+
+    unlink_call = next(
+        c for c in mock_logger.warning.call_args_list if c.args and c.args[0] == "Failed to unlink target path"
+    )
+    assert unlink_call.kwargs["path"] == db_path
 
 
 @pytest.mark.asyncio
-async def test_lmdb_cache_recreate_on_corrupt(tmp_path: object) -> None:
+async def test_lmdb_cache_recreate_on_corrupt(tmp_path: object, mocker: MockerFixture) -> None:
     db_path = str(tmp_path) + "/cache_test"
     db_error = lmdb.Error("Corrupt DB")
 
     mock_env = MagicMock()
     mock_env.open_db.return_value = MagicMock()
 
-    with (
-        patch("lmdb.open", side_effect=[db_error, mock_env]) as mock_open,
-        patch("mcubridge.state.storage.logger") as mock_logger,
-    ):
-        cache = LmdbCache(db_path)
-        await cache.get("test_key")
+    mock_open = mocker.patch("lmdb.open", side_effect=[db_error, mock_env])
+    mock_logger = mocker.patch("mcubridge.state.storage.logger")
 
-        assert mock_open.call_count == 2
-        mock_logger.warning.assert_any_call(
-            "LMDB database corrupt or invalid, recreating",
-            path=db_path,
-            error=str(db_error),
-        )
+    cache = LmdbCache(db_path)
+    await cache.get("test_key")
+
+    assert mock_open.call_count == 2
+    mock_logger.warning.assert_any_call(
+        "LMDB database corrupt or invalid, recreating",
+        path=db_path,
+        error=str(db_error),
+    )
 
 
 @pytest.mark.asyncio
-async def test_lmdb_cache_unlink_os_error(tmp_path: object) -> None:
+async def test_lmdb_cache_unlink_os_error(tmp_path: object, mocker: MockerFixture) -> None:
     db_path = str(tmp_path) + "/cache_unlink_test"
     db_error = lmdb.Error("Corrupt DB")
 
     mock_env = MagicMock()
     mock_env.open_db.return_value = MagicMock()
 
-    with (
-        patch("lmdb.open", side_effect=[db_error, mock_env]),
-        patch("mcubridge.state.storage.Path.exists", return_value=True),
-        patch("mcubridge.state.storage.Path.unlink", side_effect=OSError("Permission denied")),
-        patch("mcubridge.state.storage.logger") as mock_logger,
-    ):
-        LmdbCache(db_path)
+    mocker.patch("lmdb.open", side_effect=[db_error, mock_env])
+    mocker.patch("mcubridge.state.storage.Path.exists", return_value=True)
+    mocker.patch("mcubridge.state.storage.Path.unlink", side_effect=OSError("Permission denied"))
+    mock_logger = mocker.patch("mcubridge.state.storage.logger")
 
-        unlink_call = next(
-            c for c in mock_logger.warning.call_args_list if c.args and c.args[0] == "Failed to unlink target path"
-        )
-        assert unlink_call.kwargs["path"] == db_path
+    LmdbCache(db_path)
+
+    unlink_call = next(
+        c for c in mock_logger.warning.call_args_list if c.args and c.args[0] == "Failed to unlink target path"
+    )
+    assert unlink_call.kwargs["path"] == db_path

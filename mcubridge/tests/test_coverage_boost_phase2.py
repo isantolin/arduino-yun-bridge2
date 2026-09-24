@@ -1,4 +1,3 @@
-# pyright: reportPrivateUsage=false
 """Phase 2 surgical coverage tests targeting the largest coverage gaps across the codebase."""
 
 from __future__ import annotations
@@ -35,8 +34,8 @@ from mcubridge.transport.serial import SerialTransport
 # ──────────────────────────────────────────────────────────────────────────────
 if "uci" not in sys.modules:
     _uci_mock = types.ModuleType("uci")
-    _uci_mock.Uci = MagicMock  # type: ignore[attr-defined]
-    _uci_mock.UciException = RuntimeError  # type: ignore[attr-defined]
+    setattr(_uci_mock, "Uci", MagicMock)
+    setattr(_uci_mock, "UciException", RuntimeError)
     sys.modules["uci"] = _uci_mock
 
 
@@ -56,17 +55,18 @@ def _load_script(name: str) -> types.ModuleType:
 pin_rest_cgi = _load_script("pin_rest_cgi")
 
 
-def _make_config(**overrides: object) -> RuntimeConfig:
-    defaults: dict[str, object] = {
-        "serial_port": "/dev/ttyMCU",
-        "serial_baud": 115200,
-        "serial_safe_baud": 9600,
-        "serial_shared_secret": b"testsharedsecret",
-        "allow_non_tmp_paths": True,
-        "allowed_commands": ("echo", "ls"),
-    }
-    defaults.update(overrides)
-    return RuntimeConfig(**defaults)  # type: ignore[arg-type]
+def _make_config(**overrides: Any) -> RuntimeConfig:
+    cfg = RuntimeConfig(
+        serial_port="/dev/ttyMCU",
+        serial_baud=115200,
+        serial_safe_baud=9600,
+        serial_shared_secret=b"testsharedsecret",
+        allow_non_tmp_paths=True,
+        allowed_commands=["echo", "ls"],
+    )
+    for k, v in overrides.items():
+        setattr(cfg, k, v)
+    return cfg
 
 
 def _make_state(config: RuntimeConfig | None = None) -> RuntimeState:

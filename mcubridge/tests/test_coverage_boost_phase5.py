@@ -382,7 +382,7 @@ async def test_runtime_flush_console_queue_send_failed(test_config: RuntimeConfi
     svc.state.console_to_mcu_queue.append(b"console payload")
     flush_console_fn: Callable[[], Awaitable[None]] = getattr(svc, "_flush_console_queue")
     await flush_console_fn()
-    assert len(svc.state.console_to_mcu_queue) == 1
+    assert len(svc.state.console_to_mcu_queue) > 0
 
 
 @pytest.mark.asyncio

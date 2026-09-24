@@ -219,31 +219,44 @@ async def test_runtime_local_bridge_subscribe_console(tmp_path: Path, mocker: Mo
     state.cleanup()
 
 
-@pytest.mark.asyncio
-async def test_runtime_request_mcu_version_and_system_version(tmp_path: Path) -> None:
-    config = _make_config(tmp_path)
-    service, state, mock_serial = _make_service(config)
+@settings(max_examples=25, derandomize=True, deadline=None)
+@given(
+    major=st.integers(0, 10),
+    minor=st.integers(0, 50),
+    patch_ver=st.integers(0, 100),
+)
+def test_runtime_request_mcu_version_and_system_version(
+    tmp_path_factory: pytest.TempPathFactory,
+    major: int,
+    minor: int,
+    patch_ver: int,
+) -> None:
+    async def _run() -> None:
+        config = _make_config(Path(tmp_path_factory.mktemp("version_prop")))
+        service, state, mock_serial = _make_service(config)
 
-    v_resp = pb.VersionResponse(major=2, minor=8, patch=5).SerializeToString()
-    mock_serial.send.return_value = v_resp
-    inbound = pb.CloudQueuedPublish(topic_name=f"{config.topic_prefix}/system/version/get", payload=b"")
+        v_resp = pb.VersionResponse(major=major, minor=minor, patch=patch_ver).SerializeToString()
+        mock_serial.send.return_value = v_resp
+        inbound = pb.CloudQueuedPublish(topic_name=f"{config.topic_prefix}/system/version/get", payload=b"")
 
-    req_mcu_version: Callable[[pb.CloudQueuedPublish], Awaitable[bool]] = getattr(service, "_request_mcu_version")
-    res = await req_mcu_version(inbound)
-    assert res is True
-    assert state.mcu_version == (2, 8, 5)
+        req_mcu_version: Callable[[pb.CloudQueuedPublish], Awaitable[bool]] = getattr(service, "_request_mcu_version")
+        res = await req_mcu_version(inbound)
+        assert res is True
+        assert state.mcu_version == (major, minor, patch_ver)
 
-    # Trigger system version dispatch
-    route_ver = TopicRoute(
-        raw=f"{config.topic_prefix}/system/version/get",
-        prefix=config.topic_prefix,
-        topic=Topic.SYSTEM,
-        segments=("version", "get"),
-    )
-    handle_system: Callable[[TopicRoute, pb.CloudQueuedPublish], Awaitable[None]] = getattr(service, "_handle_system")
-    await handle_system(route_ver, inbound)
+        # Trigger system version dispatch
+        route_ver = TopicRoute(
+            raw=f"{config.topic_prefix}/system/version/get",
+            prefix=config.topic_prefix,
+            topic=Topic.SYSTEM,
+            segments=("version", "get"),
+        )
+        handle_system: Callable[[TopicRoute, pb.CloudQueuedPublish], Awaitable[None]] = getattr(service, "_handle_system")
+        await handle_system(route_ver, inbound)
 
-    state.cleanup()
+        state.cleanup()
+
+    asyncio.run(_run())
 
 
 @settings(max_examples=25, derandomize=True, deadline=None)

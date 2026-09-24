@@ -341,18 +341,25 @@ class TestSerialRun:
 
 
 class TestSerialAcknowledge:
-    @pytest.mark.asyncio
-    async def test_acknowledge_sends_ack_frame(self, mocker: MockerFixture) -> None:
-        config = _make_config()
-        state = _make_state(config)
-        transport = SerialTransport(config, state, None)
+    @settings(max_examples=25, derandomize=True, deadline=None)
+    @given(
+        cmd=st.sampled_from([Command.CMD_GET_VERSION.value, Command.CMD_DIGITAL_WRITE.value, Command.CMD_ANALOG_WRITE.value]),
+        seq=st.integers(0, 65535),
+    )
+    def test_acknowledge_sends_ack_frame(self, mocker: MockerFixture, cmd: int, seq: int) -> None:
+        async def _run() -> None:
+            config = _make_config()
+            state = _make_state(config)
+            transport = SerialTransport(config, state, None)
 
-        mock_raw = mocker.patch.object(transport, "send_raw", new_callable=AsyncMock, return_value=True)
-        await transport.acknowledge(Command.CMD_GET_VERSION.value, 42)
-        mock_raw.assert_awaited_once()
-        call_args = mock_raw.call_args
-        assert call_args[0][0] == Status.ACK.value
-        assert call_args[0][2] == 42
+            mock_raw = mocker.patch.object(transport, "send_raw", new_callable=AsyncMock, return_value=True)
+            await transport.acknowledge(cmd, seq)
+            mock_raw.assert_awaited_once()
+            call_args = mock_raw.call_args
+            assert call_args[0][0] == Status.ACK.value
+            assert call_args[0][2] == seq
+
+        asyncio.run(_run())
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -585,12 +592,18 @@ class TestRuntimeStateContext:
 
 
 class TestPinRestCgiCli:
-    def test_control_cli_invocation(self, mocker: MockerFixture) -> None:
+    @settings(max_examples=25, derandomize=True, deadline=None)
+    @given(
+        pin=st.integers(0, 32),
+        state_str=st.sampled_from(["ON", "OFF"]),
+    )
+    def test_control_cli_invocation(self, mocker: MockerFixture, pin: int, state_str: str) -> None:
         mocker.patch.object(pin_rest_cgi, "load_runtime_config", return_value=_make_config())
         mocker.patch.object(pin_rest_cgi, "configure_logging")
         mock_set_pin = mocker.patch.object(pin_rest_cgi, "set_pin_digital_sync")
-        pin_rest_cgi.control(pin=13, state="ON")
-        mock_set_pin.assert_called_once_with(13, 1)
+        pin_rest_cgi.control(pin=pin, state=state_str)
+        expected_val = 1 if state_str == "ON" else 0
+        mock_set_pin.assert_called_once_with(pin, expected_val)
 
     def test_run_cgi_no_gateway(self, mocker: MockerFixture) -> None:
         env_clean = {k: v for k, v in os.environ.items() if k not in ("GATEWAY_INTERFACE", "REQUEST_METHOD")}
@@ -745,12 +758,16 @@ class TestFilePush:
             file_push.main(source=Path("/nonexistent/file.bin"), target="/test.bin")
         assert exc_info.value.code == 2
 
-    def test_main_success(self, mocker: MockerFixture) -> None:
+    @settings(max_examples=25, derandomize=True, deadline=None)
+    @given(
+        payload=st.binary(min_size=1, max_size=256),
+    )
+    def test_main_success(self, mocker: MockerFixture, payload: bytes) -> None:
         file_push = _load_script("mcubridge_file_push")
         test_file = Path(f".tmp_tests/push-{os.getpid()}-{time.time_ns()}.bin")
         test_file.parent.mkdir(parents=True, exist_ok=True)
         try:
-            test_file.write_bytes(b"A" * 100)
+            test_file.write_bytes(payload)
             mock_push = mocker.patch.object(file_push, "push_file")
             file_push.main(source=test_file, target="/upload/test.bin")
             mock_push.assert_called_once()

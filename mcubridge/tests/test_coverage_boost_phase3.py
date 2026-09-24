@@ -32,6 +32,7 @@ from mcubridge.protocol.protocol import (
     Topic,
 )
 from mcubridge.protocol.structures import PendingPinRequest, TopicRoute
+from mcubridge.services.handshake import SerialHandshakeManager
 from mcubridge.services.runtime import BridgeService, LocalBridgeService, ProcessContext
 from mcubridge.state.context import create_runtime_state
 from mcubridge.state.storage import LmdbDeque
@@ -459,6 +460,19 @@ async def test_handshake_handle_capabilities_resp(tmp_path: Path) -> None:
     assert fut.result() == cap_proto
 
     service.cleanup()
+
+
+@settings(max_examples=25, derandomize=True, deadline=None)
+@given(
+    secret=st.binary(min_size=1, max_size=32),
+    nonce=st.binary(min_size=8, max_size=16),
+)
+def test_handshake_calculate_tag_deterministic_property(secret: bytes, nonce: bytes) -> None:
+    tag1 = SerialHandshakeManager.calculate_handshake_tag(secret, nonce)
+    tag2 = SerialHandshakeManager.calculate_handshake_tag(secret, nonce)
+    assert tag1 == tag2
+    assert isinstance(tag1, bytes)
+    assert len(tag1) > 0
 
 
 @pytest.mark.asyncio

@@ -253,8 +253,13 @@ async def test_handshake_publish_event_empty_topic(
     assert not mock_enqueue.called
 
 
-def test_handshake_calculate_tag_empty_secret() -> None:
-    assert SerialHandshakeManager.calculate_handshake_tag(b"", b"12345678") == b""
+@settings(max_examples=25, derandomize=True, deadline=None)
+@given(
+    nonce=st.binary(min_size=1, max_size=32),
+)
+def test_handshake_calculate_tag_empty_secret(nonce: bytes) -> None:
+    assert SerialHandshakeManager.calculate_handshake_tag(None, nonce) == b""
+    assert SerialHandshakeManager.calculate_handshake_tag(b"", nonce) == b""
 
 
 # ==========================================
@@ -382,25 +387,32 @@ async def test_runtime_flush_console_queue_send_failed(test_config: RuntimeConfi
     svc.state.console_to_mcu_queue.append(b"console payload")
     flush_console_fn: Callable[[], Awaitable[None]] = getattr(svc, "_flush_console_queue")
     await flush_console_fn()
-    assert len(svc.state.console_to_mcu_queue) > 0
+    assert len(svc.state.console_to_mcu_queue) == 1
 
 
-@pytest.mark.asyncio
-async def test_runtime_reject_cloud_topic_variants(
-    test_config: RuntimeConfig, mock_state: RuntimeState, mocker: MockerFixture
+@settings(max_examples=25, derandomize=True, deadline=None)
+@given(
+    action=st.sampled_from(["read", "write", "mode", "toggle"]),
+    topic_str=st.text(alphabet="abcdefghijklmnopqrstuvwxyz0123456789_", min_size=1, max_size=20),
+)
+def test_runtime_reject_cloud_topic_variants(
+    test_config: RuntimeConfig, mock_state: RuntimeState, mocker: MockerFixture, action: str, topic_str: str
 ) -> None:
-    serial = AsyncMock(spec=SerialTransport)
-    svc = BridgeService(test_config, mock_state, serial)
-    mock_enqueue = mocker.patch.object(svc, "enqueue_cloud", new_callable=AsyncMock)
-    from mcubridge.protocol.protocol import Topic
+    async def _run() -> None:
+        serial = AsyncMock(spec=SerialTransport)
+        svc = BridgeService(test_config, mock_state, serial)
+        mock_enqueue = mocker.patch.object(svc, "enqueue_cloud", new_callable=AsyncMock)
+        from mcubridge.protocol.protocol import Topic
 
-    reject_cloud_fn: Callable[..., Awaitable[None]] = getattr(svc, "_reject_cloud")
-    await reject_cloud_fn(pb.CloudQueuedPublish(), Topic.DIGITAL, "write")
-    assert mock_enqueue.called
+        reject_cloud_fn: Callable[..., Awaitable[None]] = getattr(svc, "_reject_cloud")
+        await reject_cloud_fn(pb.CloudQueuedPublish(), Topic.DIGITAL, action)
+        assert mock_enqueue.called
 
-    mock_enqueue.reset_mock()
-    await reject_cloud_fn(pb.CloudQueuedPublish(), "custom_topic", "read")
-    assert mock_enqueue.called
+        mock_enqueue.reset_mock()
+        await reject_cloud_fn(pb.CloudQueuedPublish(), topic_str, action)
+        assert mock_enqueue.called
+
+    asyncio.run(_run())
 
 
 @pytest.mark.asyncio

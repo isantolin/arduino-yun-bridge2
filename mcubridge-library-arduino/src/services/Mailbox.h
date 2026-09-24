@@ -3,8 +3,8 @@
 
 #undef min
 #undef max
+#include <etl/circular_buffer.h>
 #include <etl/delegate.h>
-#include <etl/queue.h>
 #include <etl/span.h>
 #include <etl/vector.h>
 
@@ -30,6 +30,12 @@ class MailboxClass : public bridge::BridgeObserver {
     _available_callback = cb;
   }
 
+  template <typename MsgType, auto FieldPtr>
+  static void _onEnqueuePayload(const MsgType& msg) {
+    const auto& field = msg.*FieldPtr;
+    _enqueue(etl::span<const uint8_t>(field.bytes, field.size));
+  }
+
   static void _onPush(const rpc::payload::MailboxPush& msg);
   static void _onReadResponse(const rpc::payload::MailboxReadResponse& msg);
   static void _onAvailableResponse(
@@ -42,7 +48,7 @@ class MailboxClass : public bridge::BridgeObserver {
   static void _enqueue(etl::span<const uint8_t> data);
   static MessageCallback _message_callback;
   static AvailableCallback _available_callback;
-  static etl::queue<MailboxBuffer, 8> _queue;
+  static etl::circular_buffer<MailboxBuffer, 8> _queue;
 };
 
 using MailboxType = MailboxClass;

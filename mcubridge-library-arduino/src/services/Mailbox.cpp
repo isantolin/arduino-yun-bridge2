@@ -20,7 +20,8 @@ typename MailboxClass::MessageCallback MailboxClass::_message_callback;
 
 typename MailboxClass::AvailableCallback MailboxClass::_available_callback;
 
-etl::queue<typename MailboxClass::MailboxBuffer, 8> MailboxClass::_queue;
+etl::circular_buffer<typename MailboxClass::MailboxBuffer, 8>
+    MailboxClass::_queue;
 
 void MailboxClass::requestRead() {
   (void)Bridge.sendFrame(rpc::CommandId::CMD_MAILBOX_READ);
@@ -48,12 +49,14 @@ void MailboxClass::_enqueue(etl::span<const uint8_t> data) {
 }
 
 void MailboxClass::_onPush(const rpc::payload::MailboxPush& msg) {
-  _enqueue(etl::span<const uint8_t>(msg.data.bytes, msg.data.size));
+  _onEnqueuePayload<rpc::payload::MailboxPush,
+                    &rpc::payload::MailboxPush::data>(msg);
 }
 
 void MailboxClass::_onReadResponse(
     const rpc::payload::MailboxReadResponse& msg) {
-  _enqueue(etl::span<const uint8_t>(msg.content.bytes, msg.content.size));
+  _onEnqueuePayload<rpc::payload::MailboxReadResponse,
+                    &rpc::payload::MailboxReadResponse::content>(msg);
 }
 
 void MailboxClass::_onAvailableResponse(

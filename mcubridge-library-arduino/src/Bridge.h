@@ -509,12 +509,41 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   void _handleStatusMalformed(const bridge::router::CommandContext& ctx);
   void _handleStatusAck(const bridge::router::CommandContext& ctx,
                         const rpc_pb_AckPacket& m);
-  void _handleGetVersion(const bridge::router::CommandContext& ctx);
-  void _handleGetFreeMemory(const bridge::router::CommandContext& ctx);
+  template <typename RespType, rpc::CommandId RespCmd, auto FillFn>
+  void _handleSimpleQuery(const bridge::router::CommandContext& ctx) {
+    RespType resp = {};
+    FillFn(resp);
+    (void)send(RespCmd, ctx.sequence_id, resp);
+  }
+
+  static inline void _fillVersion(rpc_pb_VersionResponse& resp) {
+    resp.major = rpc::FIRMWARE_VERSION_MAJOR;
+    resp.minor = rpc::FIRMWARE_VERSION_MINOR;
+    resp.patch = static_cast<uint32_t>(rpc::FIRMWARE_VERSION_PATCH);
+  }
+
+  static inline void _fillFreeMemory(rpc_pb_FreeMemoryResponse& resp) {
+    resp.value = static_cast<uint32_t>(bridge::hal::getFreeMemory());
+  }
+
+  inline void _handleGetVersion(const bridge::router::CommandContext& ctx) {
+    _handleSimpleQuery<rpc_pb_VersionResponse,
+                       rpc::CommandId::CMD_GET_VERSION_RESP, _fillVersion>(ctx);
+  }
+  inline void _handleGetFreeMemory(const bridge::router::CommandContext& ctx) {
+    _handleSimpleQuery<rpc_pb_FreeMemoryResponse,
+                       rpc::CommandId::CMD_GET_FREE_MEMORY_RESP,
+                       _fillFreeMemory>(ctx);
+  }
+  inline void _handleGetCapabilities(
+      const bridge::router::CommandContext& ctx) {
+    _handleSimpleQuery<rpc_pb_Capabilities,
+                       rpc::CommandId::CMD_GET_CAPABILITIES_RESP,
+                       bridge::hal::fillCapabilities>(ctx);
+  }
   __attribute__((noinline)) void _handleLinkSync(
       const bridge::router::CommandContext& ctx, const rpc_pb_LinkSync& m);
   void _handleLinkReset(const bridge::router::CommandContext& ctx);
-  void _handleGetCapabilities(const bridge::router::CommandContext& ctx);
   template <bool EnableTx>
   void _handleFlowControl(const bridge::router::CommandContext&) {
     _state_flags.set(FLAG_TX_ENABLED, EnableTx);

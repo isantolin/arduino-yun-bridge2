@@ -2,6 +2,7 @@
 
 #include <etl/absolute.h>
 #include <etl/algorithm.h>
+#include <etl/byte_stream.h>
 #include <etl/functional.h>
 #include <etl/iterator.h>
 #include <etl/utility.h>
@@ -84,15 +85,27 @@ const BridgeClass::DispatchEntry BridgeClass::k_dispatch_table[] = {
     {rpc::to_underlying(rpc::StatusCode::STATUS_ACK),
      &BridgeClass::_dispatchMemberWithCtxMsg<&BridgeClass::_handleStatusAck, rpc_pb_AckPacket, false, false>},
     {rpc::to_underlying(rpc::CommandId::CMD_GET_VERSION),
-     &BridgeClass::_dispatchMemberNoPayload<&BridgeClass::_handleGetVersion, false, true>},
+     &BridgeClass::_dispatchMemberNoPayload<
+         &BridgeClass::_handleSimpleQuery<
+             rpc_pb_VersionResponse, rpc::CommandId::CMD_GET_VERSION_RESP,
+             BridgeClass::_fillVersion>,
+         false, true>},
     {rpc::to_underlying(rpc::CommandId::CMD_GET_FREE_MEMORY),
-     &BridgeClass::_dispatchMemberNoPayload<&BridgeClass::_handleGetFreeMemory, false, true>},
+     &BridgeClass::_dispatchMemberNoPayload<
+         &BridgeClass::_handleSimpleQuery<
+             rpc_pb_FreeMemoryResponse, rpc::CommandId::CMD_GET_FREE_MEMORY_RESP,
+             BridgeClass::_fillFreeMemory>,
+         false, true>},
     {rpc::to_underlying(rpc::CommandId::CMD_LINK_SYNC),
      &BridgeClass::_dispatchMemberWithCtxMsg<&BridgeClass::_handleLinkSync, rpc_pb_LinkSync, true, false>},
     {rpc::to_underlying(rpc::CommandId::CMD_LINK_RESET),
      &BridgeClass::_dispatchMemberNoPayload<&BridgeClass::_handleLinkReset, true, false>},
     {rpc::to_underlying(rpc::CommandId::CMD_GET_CAPABILITIES),
-     &BridgeClass::_dispatchMemberNoPayload<&BridgeClass::_handleGetCapabilities, false, true>},
+     &BridgeClass::_dispatchMemberNoPayload<
+         &BridgeClass::_handleSimpleQuery<
+             rpc_pb_Capabilities, rpc::CommandId::CMD_GET_CAPABILITIES_RESP,
+             bridge::hal::fillCapabilities>,
+         false, true>},
     {rpc::to_underlying(rpc::CommandId::CMD_SET_BAUDRATE),
      &BridgeClass::_dispatchMemberWithMsg<&BridgeClass::_handleSetBaudrate, rpc_pb_SetBaudratePacket, true, false>},
     {rpc::to_underlying(rpc::CommandId::CMD_ENTER_BOOTLOADER),
@@ -147,7 +160,7 @@ const BridgeClass::DispatchEntry BridgeClass::k_dispatch_table[] = {
 #endif
 #if BRIDGE_ENABLE_PROCESS
     {rpc::to_underlying(rpc::CommandId::CMD_PROCESS_KILL),
-     &BridgeClass::_dispatchTargetWithMsg<Process, &ProcessClass::_onKillNotification, rpc_pb_ProcessKill, true, false>},
+     &BridgeClass::_dispatchTargetAction<Process, &ProcessClass::reset, true, false>},
     {rpc::to_underlying(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP),
      &BridgeClass::_dispatchTargetWithMsg<Process, &ProcessClass::_onRunAsyncResponse, rpc_pb_ProcessRunAsyncResponse, true, false>},
     {rpc::to_underlying(rpc::CommandId::CMD_PROCESS_POLL_RESP),
@@ -445,20 +458,16 @@ void BridgeClass::_transmit(uint16_t command_id, uint16_t sequence_id,
                                   static_cast<size_t>(rpc::MAX_PAYLOAD_SIZE));
   _tx_envelope.which_payload_type =
       rpc_pb_RpcEnvelope_encrypted_payload_with_tag_tag;
+  etl::byte_stream_writer writer(
+      _tx_envelope.payload_type.encrypted_payload_with_tag.bytes,
+      sizeof(_tx_envelope.payload_type.encrypted_payload_with_tag.bytes),
+      etl::endian::little);
+  writer.write_unchecked(final_payload.data(), pl_size);
   if (do_encrypt) {
-    etl::copy_n(final_payload.begin(), pl_size,
-                _tx_envelope.payload_type.encrypted_payload_with_tag.bytes);
-    etl::copy_n(
-        tag.begin(), rpc::RPC_AEAD_TAG_SIZE,
-        _tx_envelope.payload_type.encrypted_payload_with_tag.bytes + pl_size);
-    _tx_envelope.payload_type.encrypted_payload_with_tag.size =
-        static_cast<pb_size_t>(pl_size + rpc::RPC_AEAD_TAG_SIZE);
-  } else {
-    etl::copy_n(final_payload.begin(), pl_size,
-                _tx_envelope.payload_type.encrypted_payload_with_tag.bytes);
-    _tx_envelope.payload_type.encrypted_payload_with_tag.size =
-        static_cast<pb_size_t>(pl_size);
+    writer.write_unchecked(tag.data(), rpc::RPC_AEAD_TAG_SIZE);
   }
+  _tx_envelope.payload_type.encrypted_payload_with_tag.size =
+      static_cast<pb_size_t>(writer.size_bytes());
   _serialize_and_send(_tx_envelope);
 }
 
@@ -762,31 +771,9 @@ void BridgeClass::_handleLinkReset(const bridge::router::CommandContext& ctx) {
   (void)sendFrame(rpc::CommandId::CMD_LINK_RESET_RESP, ctx.sequence_id);
 }
 
-void BridgeClass::_handleGetCapabilities(
-    const bridge::router::CommandContext& ctx) {
-  rpc_pb_Capabilities resp = rpc_pb_Capabilities_init_default;
-  bridge::hal::fillCapabilities(resp);
-  (void)send(rpc::CommandId::CMD_GET_CAPABILITIES_RESP, ctx.sequence_id, resp);
-}
-
 void BridgeClass::_handleStatusAck(
     const bridge::router::CommandContext& /*ctx*/, const rpc_pb_AckPacket& m) {
   _handleAck(m.command_id);
-}
-
-void BridgeClass::_handleGetVersion(const bridge::router::CommandContext& ctx) {
-  rpc_pb_VersionResponse resp = {};
-  resp.major = rpc::FIRMWARE_VERSION_MAJOR;
-  resp.minor = rpc::FIRMWARE_VERSION_MINOR;
-  resp.patch = static_cast<uint32_t>(rpc::FIRMWARE_VERSION_PATCH);
-  (void)send(rpc::CommandId::CMD_GET_VERSION_RESP, ctx.sequence_id, resp);
-}
-
-void BridgeClass::_handleGetFreeMemory(
-    const bridge::router::CommandContext& ctx) {
-  rpc_pb_FreeMemoryResponse resp = {};
-  resp.value = static_cast<uint32_t>(bridge::hal::getFreeMemory());
-  (void)send(rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, ctx.sequence_id, resp);
 }
 
 void BridgeClass::_applyTimingConfig(const rpc_pb_HandshakeConfig& msg) {
@@ -816,17 +803,13 @@ void BridgeClass::_handleReceivedFrame(etl::span<const uint8_t> p) {
     const size_t ct_size =
         envelope.payload_type.encrypted_payload_with_tag.size - 16;
     etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> dec_pl;
+    const auto payload_span = etl::span<const uint8_t>(
+        envelope.payload_type.encrypted_payload_with_tag.bytes,
+        envelope.payload_type.encrypted_payload_with_tag.size);
     if (!rpc::security::aead_decrypt_frame(
-            raw_cmd, envelope.sequence_id,
-            etl::span<const uint8_t>(
-                envelope.payload_type.encrypted_payload_with_tag.bytes,
-                ct_size),
+            raw_cmd, envelope.sequence_id, payload_span.first(ct_size),
             _session_key, etl::span<const uint8_t>(envelope.nonce.bytes, 12),
-            etl::span<const uint8_t>(
-                envelope.payload_type.encrypted_payload_with_tag.bytes +
-                    ct_size,
-                16),
-            dec_pl) ||
+            payload_span.last(16), dec_pl) ||
         !rpc::security::validate_frame_nonce(
             etl::span<const uint8_t>(envelope.nonce.bytes, 12),
             &_rx_nonce_counter)) {

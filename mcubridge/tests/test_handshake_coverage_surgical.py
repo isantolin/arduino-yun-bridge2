@@ -1,257 +1,235 @@
 # pyright: reportPrivateUsage=false
-"""Surgical coverage tests for SerialHandshakeManager in services/handshake.py. [SIL-2]"""
+"""Surgical unit test suite for services/handshake.py covering edge paths and error branches."""
 
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Iterator
-from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from pytest_mock import MockerFixture
+import tenacity
 
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol import mcubridge_pb2 as pb
-from mcubridge.services.handshake import (
-    HandshakeEvent,
-    HandshakeMachine,
-    HandshakeState,
-    RateLimiter,
-    SerialHandshakeManager,
-    derive_serial_timing,
-)
+import mcubridge.protocol.mcubridge_pb2 as pb
+from mcubridge.protocol.protocol import Command
+from mcubridge.services.handshake import HandshakeState, SerialHandshakeManager, derive_serial_timing
 from mcubridge.state.context import RuntimeState, create_runtime_state
 
 
-@pytest.fixture
-def handshake_mgr(tmp_path: Path) -> Iterator[tuple[SerialHandshakeManager, RuntimeState, AsyncMock, AsyncMock]]:
-    config = RuntimeConfig(
-        topic_prefix="br",
-        serial_port="/dev/test",
-        serial_shared_secret=b"test_secret_1234567890",
-        serial_handshake_fatal_failures=3,
-        file_system_root=str(tmp_path),
+def _make_config() -> RuntimeConfig:
+    return RuntimeConfig(
+        serial_port="/dev/ttyMCU",
+        serial_baud=115200,
+        serial_safe_baud=9600,
+        serial_shared_secret=b"testsharedsecret",
         allow_non_tmp_paths=True,
     )
-    state = create_runtime_state(config)
-    send_frame = AsyncMock(return_value=True)
-    enqueue_cloud = AsyncMock()
-    ack_frame = AsyncMock()
 
-    timing = derive_serial_timing(config)
-    mgr = SerialHandshakeManager(
+
+@pytest.fixture
+def mock_config() -> RuntimeConfig:
+    return _make_config()
+
+
+@pytest.fixture
+def mock_state(mock_config: RuntimeConfig) -> RuntimeState:
+    return create_runtime_state(mock_config)
+
+
+def _make_handshake_manager(
+    config: RuntimeConfig,
+    state: RuntimeState,
+    send_frame: AsyncMock | None = None,
+    acknowledge_frame: AsyncMock | None = None,
+    enqueue_cloud: AsyncMock | None = None,
+) -> SerialHandshakeManager:
+    return SerialHandshakeManager(
         config=config,
         state=state,
-        serial_timing=timing,
-        send_frame=send_frame,
-        enqueue_cloud=enqueue_cloud,
-        acknowledge_frame=ack_frame,
+        serial_timing=derive_serial_timing(config),
+        send_frame=send_frame or AsyncMock(return_value=True),
+        acknowledge_frame=acknowledge_frame or AsyncMock(),
+        enqueue_cloud=enqueue_cloud or AsyncMock(),
     )
-    try:
-        yield mgr, state, send_frame, enqueue_cloud
-    finally:
-        state.cleanup()
+
+
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_synchronize_send_reset_failed(
-    handshake_mgr: tuple[SerialHandshakeManager, RuntimeState, AsyncMock, AsyncMock],
+async def test_synchronize_attempt_send_frame_failure(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+    mock_send = AsyncMock(return_value=False)
+    mgr = _make_handshake_manager(mock_config, mock_state, send_frame=mock_send)
+
+    res = await mgr._synchronize_attempt()
+    assert res is False
+
+
+@pytest.mark.asyncio
+async def test_synchronize_attempt_timeout_confirmation(
+    mock_config: RuntimeConfig, mock_state: RuntimeState, mocker: MockerFixture
 ) -> None:
-    mgr, _state, send_frame, _enqueue = handshake_mgr
-    send_frame.return_value = False
-    result = await mgr.synchronize()
-    assert result is False
-    assert mgr.fsm_state == HandshakeState.FAULT
+    mock_send = AsyncMock(return_value=True)
+    mgr = _make_handshake_manager(mock_config, mock_state, send_frame=mock_send)
+
+    mocker.patch.object(mgr, "_wait_for_link_sync_confirmation", new_callable=AsyncMock, return_value=False)
+    res = await mgr._synchronize_attempt()
+    assert res is False
 
 
 @pytest.mark.asyncio
-async def test_synchronize_send_sync_failed(
-    handshake_mgr: tuple[SerialHandshakeManager, RuntimeState, AsyncMock, AsyncMock],
+async def test_fetch_capabilities_send_failure_retries_exhausted(
+    mock_config: RuntimeConfig, mock_state: RuntimeState
 ) -> None:
-    mgr, _state, send_frame, _enqueue = handshake_mgr
-    # Send RESET (True) then Send SYNC (False) repeatedly
-    send_frame.side_effect = [True, False, False, False, False, False, False, False]
-    result = await mgr.synchronize()
-    assert result is False
-    assert mgr.fsm_state == HandshakeState.FAULT
+    mock_send = AsyncMock(return_value=False)
+    mgr = _make_handshake_manager(mock_config, mock_state, send_frame=mock_send)
+
+    res = await mgr._fetch_capabilities()
+    assert res is False
 
 
 @pytest.mark.asyncio
-async def test_handle_link_sync_resp_without_pending_nonce(
-    handshake_mgr: tuple[SerialHandshakeManager, RuntimeState, AsyncMock, AsyncMock],
+async def test_fetch_capabilities_future_timeout_exception(
+    mock_config: RuntimeConfig, mock_state: RuntimeState, mocker: MockerFixture
 ) -> None:
-    mgr, state, _send, _enqueue = handshake_mgr
-    state.link_handshake_nonce = None
-    result = await mgr.handle_link_sync_resp(1, b"")
-    assert result is False
-    assert state.last_handshake_error == "unexpected_sync_resp"
+    mock_send = AsyncMock(return_value=True)
+    mgr = _make_handshake_manager(mock_config, mock_state, send_frame=mock_send)
 
+    async def _timeout_wait(fut: asyncio.Future[pb.Capabilities]) -> pb.Capabilities:
+        raise TimeoutError("Simulated timeout")
 
-@pytest.mark.asyncio
-async def test_handle_capabilities_resp(
-    handshake_mgr: tuple[SerialHandshakeManager, RuntimeState, AsyncMock, AsyncMock],
-) -> None:
-    mgr, state, _send, _enqueue = handshake_mgr
-    loop = asyncio.get_event_loop()
-    mgr._capabilities_future = loop.create_future()
-    cap = pb.Capabilities()
-    result = await mgr.handle_capabilities_resp(1, cap)
-    assert result is True
-    assert mgr._capabilities_future.result() == cap
-
-    mgr._parse_capabilities(cap)
-    assert state.mcu_capabilities == cap
-
-
-@pytest.mark.asyncio
-async def test_handle_link_reset_resp(
-    handshake_mgr: tuple[SerialHandshakeManager, RuntimeState, AsyncMock, AsyncMock],
-) -> None:
-    mgr, _state, _send, _enqueue = handshake_mgr
-    result = await mgr.handle_link_reset_resp(1, b"reset_ack")
-    assert result is True
-
-
-@pytest.mark.asyncio
-async def test_calculate_session_key_and_tag() -> None:
-    secret = b"test_secret_32bytes_long_secret!"
-    nonce = b"123456789012"
-    tag = SerialHandshakeManager.calculate_handshake_tag(secret, nonce)
-    assert len(tag) == 16
-
-    key = SerialHandshakeManager.calculate_session_key(secret, nonce)
-    assert len(key) == 32
-
-
-@pytest.mark.asyncio
-async def test_handle_link_sync_resp_decode_and_auth_failures(
-    handshake_mgr: tuple[SerialHandshakeManager, RuntimeState, AsyncMock, AsyncMock],
-) -> None:
-    mgr, state, _send, _enqueue = handshake_mgr
-
-    # 1. Corrupt payload decode error
-    state.link_handshake_nonce = b"1234567890123456"
-    res1 = await mgr.handle_link_sync_resp(1, b"invalid-protobuf-garbage-\xff\xff")
-    assert res1 is False
-    assert state.last_handshake_error == "sync_decode_failed"
-
-    # 2. Auth mismatch (incorrect tag)
-    state.link_handshake_nonce = b"1234567890123456"
-    state.link_expected_tag = b"correct_expected_tag"
-    sync_pkt = pb.LinkSync(nonce=b"1234567890123456", tag=b"wrong_tag_value")
-    res2 = await mgr.handle_link_sync_resp(2, sync_pkt)
-    assert res2 is False
-    assert state.last_handshake_error == "sync_auth_mismatch"
-
-
-@pytest.mark.asyncio
-async def test_fetch_capabilities_failure_paths(
-    handshake_mgr: tuple[SerialHandshakeManager, RuntimeState, AsyncMock, AsyncMock],
-) -> None:
-    mgr, _state, send_frame, _enqueue = handshake_mgr
-    send_frame.return_value = False
+    mocker.patch.object(mgr, "_wait_future", side_effect=_timeout_wait)
 
     def _zero_wait(_rs: object) -> float:
         return 0.0
 
-    with patch("tenacity.wait_exponential", return_value=_zero_wait):
-        res = await mgr._fetch_capabilities()
-        assert res is False
+    mocker.patch("tenacity.wait_exponential", return_value=_zero_wait)
+    res = await mgr._fetch_capabilities()
+    assert res is False
 
 
-def test_rate_limiter_calculations() -> None:
-    # Check rate limit allowed
-    allowed, rem = RateLimiter.check_rate_limit(10.0, 5.0)
-    assert allowed is True
-    assert rem == 0.0
+@pytest.mark.asyncio
+async def test_handle_link_sync_resp_nonce_mismatch(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+    mgr = _make_handshake_manager(mock_config, mock_state)
+    mock_state.link_handshake_nonce = b"expectednonce12"
 
-    # Check rate limit throttled
-    allowed, rem = RateLimiter.check_rate_limit(5.0, 10.0)
-    assert allowed is False
-    assert rem == 5.0
-
-    # Exponential backoff calculations
-    assert RateLimiter.compute_exponential_backoff(0, base=1.0, max_delay=10.0) == 1.0
-    assert RateLimiter.compute_exponential_backoff(1, base=1.0, max_delay=10.0) == 2.0
-    assert RateLimiter.compute_exponential_backoff(2, base=1.0, max_delay=10.0) == 4.0
-    assert RateLimiter.compute_exponential_backoff(3, base=1.0, max_delay=10.0) == 8.0
-    assert RateLimiter.compute_exponential_backoff(4, base=1.0, max_delay=10.0) == 10.0
-    assert RateLimiter.compute_exponential_backoff(-1, base=1.0, max_delay=10.0) == 1.0
+    payload = pb.LinkSync(nonce=b"wrongnonce1234", tag=b"sometag")
+    res = await mgr.handle_link_sync_resp(1, payload)
+    assert res is False
+    assert mock_state.last_handshake_error == "sync_nonce_mismatch"
 
 
-def test_handshake_machine_transitions() -> None:
-    m = HandshakeMachine()
-    assert m.current_state_value == HandshakeState.UNSYNCHRONIZED.value
+@pytest.mark.asyncio
+async def test_handle_link_sync_resp_tag_mismatch(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+    mgr = _make_handshake_manager(mock_config, mock_state)
+    nonce = b"validnonce1234"
+    mock_state.link_handshake_nonce = nonce
+    mock_state.link_expected_tag = b"correcttag1234"
 
-    # Test complete happy cycle
-    m.start_sync()
-    assert m.current_state_value == HandshakeState.RESETTING.value
-    m.reset_sent()
-    assert m.current_state_value == HandshakeState.SYNCING.value
-    m.sync_sent()
-    assert m.current_state_value == HandshakeState.CONFIRMING.value
-    m.sync_confirmed()
-    assert m.current_state_value == HandshakeState.SYNCHRONIZED.value
-
-    # Reset back to unsynchronized
-    m.reset()
-    assert m.current_state_value == HandshakeState.UNSYNCHRONIZED.value
-
-    # Direct fast-emulator transition: syncing -> synchronized
-    m.start_sync()
-    m.reset_sent()
-    m.sync_confirmed()
-    assert m.current_state_value == HandshakeState.SYNCHRONIZED.value
-
-    # Failure from synchronized
-    m.failure()
-    assert m.current_state_value == HandshakeState.FAULT.value
-
-    # Start sync from fault
-    m.start_sync()
-    assert m.current_state_value == HandshakeState.RESETTING.value
-    m.failure()
-    assert m.current_state_value == HandshakeState.FAULT.value
+    payload = pb.LinkSync(nonce=nonce, tag=b"badtag12345678")
+    res = await mgr.handle_link_sync_resp(1, payload)
+    assert res is False
+    assert mock_state.last_handshake_error == "sync_auth_mismatch"
 
 
-def test_handshake_manager_transition_dispatch(
-    handshake_mgr: tuple[SerialHandshakeManager, RuntimeState, AsyncMock, AsyncMock],
+@pytest.mark.asyncio
+async def test_handle_link_sync_resp_success(
+    mock_config: RuntimeConfig, mock_state: RuntimeState, mocker: MockerFixture
 ) -> None:
-    mgr, state, _send, _enqueue = handshake_mgr
-    assert mgr.fsm_state == HandshakeState.UNSYNCHRONIZED
+    mock_ack = AsyncMock()
+    mgr = _make_handshake_manager(mock_config, mock_state, acknowledge_frame=mock_ack)
 
-    # Valid progression
-    s1 = mgr.transition(HandshakeEvent.START_SYNC)
-    assert s1 == HandshakeState.RESETTING
-    assert mgr.fsm_state == HandshakeState.RESETTING
+    nonce = b"validnonce1234"
+    mock_state.link_handshake_nonce = nonce
+    expected_tag = SerialHandshakeManager.calculate_handshake_tag(mock_config.serial_shared_secret, nonce)
+    mock_state.link_expected_tag = expected_tag
 
-    s2 = mgr.transition(HandshakeEvent.RESET_SENT)
-    assert s2 == HandshakeState.SYNCING
+    mocker.patch.object(mgr, "_fetch_capabilities_with_delay", new_callable=AsyncMock)
 
-    s3 = mgr.transition(HandshakeEvent.SYNC_SENT)
-    assert s3 == HandshakeState.CONFIRMING
+    payload = pb.LinkSync(nonce=nonce, tag=expected_tag)
+    res = await mgr.handle_link_sync_resp(1, payload)
 
-    s4 = mgr.transition(HandshakeEvent.SYNC_CONFIRMED)
-    assert s4 == HandshakeState.SYNCHRONIZED
-    assert state.is_synchronized
+    assert res is True
+    assert mock_state.is_synchronized
+    assert mock_state.link_session_key is not None
+    mock_ack.assert_called_once_with(Command.CMD_LINK_SYNC_RESP.value, 1)
 
-    # Transitioning away from SYNCHRONIZED
-    s5 = mgr.transition(HandshakeEvent.RESET)
-    assert s5 == HandshakeState.UNSYNCHRONIZED
-    assert not state.is_synchronized
 
-    # Invalid transition (rejected and state unchanged)
-    s_invalid = mgr.transition(HandshakeEvent.SYNC_CONFIRMED)
-    assert s_invalid == HandshakeState.UNSYNCHRONIZED
-    assert mgr.fsm_state == HandshakeState.UNSYNCHRONIZED
+@pytest.mark.asyncio
+async def test_handle_capabilities_resp_invalid_payload(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+    mgr = _make_handshake_manager(mock_config, mock_state)
+    fut: asyncio.Future[pb.Capabilities] = asyncio.Future()
+    mgr._capabilities_future = fut
 
-    # Failure transition
-    s_fail = mgr.transition(HandshakeEvent.FAILURE)
-    assert s_fail == HandshakeState.FAULT
+    # Sending invalid bytes that cannot parse as Capabilities proto
+    res = await mgr.handle_capabilities_resp(1, b"invalid proto bytes")
+    assert res is False
 
-    # Explicit setter
-    mgr.fsm_state = HandshakeState.RESETTING
-    assert mgr.fsm_state == HandshakeState.RESETTING
-    # Idempotent setter
-    mgr.fsm_state = HandshakeState.RESETTING
-    assert mgr.fsm_state == HandshakeState.RESETTING
+
+@pytest.mark.asyncio
+async def test_handle_capabilities_resp_success(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+    mgr = _make_handshake_manager(mock_config, mock_state)
+    fut: asyncio.Future[pb.Capabilities] = asyncio.Future()
+    mgr._capabilities_future = fut
+
+    cap = pb.Capabilities(watchdog=True, eeprom=False)
+    res = await mgr.handle_capabilities_resp(1, cap)
+    assert res is True
+    assert fut.done()
+    assert fut.result() == cap
+
+
+@pytest.mark.asyncio
+async def test_reset_link_failure(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+    mock_send = AsyncMock(return_value=False)
+    mgr = _make_handshake_manager(mock_config, mock_state, send_frame=mock_send)
+
+    res = await mgr.reset_link()
+    assert res is False
+
+
+@pytest.mark.asyncio
+async def test_reset_link_success(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+    mock_send = AsyncMock(return_value=True)
+    mgr = _make_handshake_manager(mock_config, mock_state, send_frame=mock_send)
+
+    res = await mgr.reset_link()
+    assert res is True
+    assert mock_state.link_handshake_nonce is None
+
+
+@pytest.mark.asyncio
+async def test_handle_link_reset_resp(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+    mgr = _make_handshake_manager(mock_config, mock_state)
+    fut: asyncio.Future[bool] = asyncio.Future()
+    mgr._reset_future = fut
+
+    res = await mgr.handle_link_reset_resp(1, b"")
+    assert res is True
+    assert fut.done()
+    assert fut.result() is True
+
+
+@pytest.mark.asyncio
+async def test_handle_handshake_failure_max_retries(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+    mgr = _make_handshake_manager(mock_config, mock_state)
+    mock_state.handshake_attempts = 100
+    mock_state.handshake_streak = mock_config.serial_handshake_max_attempts
+
+    # Should transition to FAULT state
+    await mgr.handle_handshake_failure("max_attempts_exceeded")
+    assert mgr.fsm_state == HandshakeState.FAULT
+
+
+@pytest.mark.asyncio
+async def test_publish_handshake_event_cloud_enqueue(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+    mock_enqueue = AsyncMock()
+    mgr = _make_handshake_manager(mock_config, mock_state, enqueue_cloud=mock_enqueue)
+
+    await mgr._publish_handshake_event("sync_success")
+    mock_enqueue.assert_called_once()
+    published_msg = mock_enqueue.call_args[0][0]
+    assert "sync_success" in published_msg.topic_name

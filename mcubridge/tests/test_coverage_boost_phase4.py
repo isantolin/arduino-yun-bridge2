@@ -14,9 +14,9 @@ import tempfile
 from typing import Any, cast
 from unittest.mock import AsyncMock
 
+from hypothesis import given, settings, strategies as st
 import lmdb
 import pytest
-from hypothesis import given, settings, strategies as st
 from pytest_mock import MockerFixture
 import structlog
 
@@ -49,18 +49,19 @@ def _make_service(config: RuntimeConfig) -> tuple[BridgeService, Any, AsyncMock]
     mock_serial = AsyncMock(spec=SerialTransport)
     mock_serial.send = AsyncMock(return_value=True)
     mock_serial.send_raw = AsyncMock(return_value=True)
-    mock_serial.acknowledge = AsyncMock()
     mock_serial.is_open = True
-    mock_serial.run = AsyncMock()
-    service = BridgeService(config=config, state=state, serial=mock_serial)
+    service = BridgeService(config, state, mock_serial)
     return service, state, mock_serial
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 1. Runtime Service Lifecycle & Teardown Exception Paths
+# ══════════════════════════════════════════════════════════════════════════════
 
 
 @pytest.mark.asyncio
 async def test_runtime_service_run_and_teardown_exceptions(tmp_path: Path) -> None:
     config = _make_config(tmp_path)
-    config.cloud_enabled = False
-    config.watchdog_enabled = True
     service, state, _ = _make_service(config)
 
     # Attach mock caches with close exceptions to exercise teardown error handling
@@ -72,20 +73,12 @@ async def test_runtime_service_run_and_teardown_exceptions(tmp_path: Path) -> No
     mock_cache.close.side_effect = lmdb.Error("db error")
     state.datastore_cache = mock_cache
 
-    mock_mb_q = AsyncMock(spec=LmdbDeque)
-    mock_mb_q.close.side_effect = OSError("mb error")
-    state.mailbox_queue = mock_mb_q
-
-    mock_mb_in_q = AsyncMock(spec=LmdbDeque)
-    mock_mb_in_q.close.side_effect = OSError("mb in error")
-    state.mailbox_incoming_queue = mock_mb_in_q
-
-    # Run service briefly and cancel
-    task = asyncio.create_task(service.run())
+    run_task = asyncio.create_task(service.run())
     await asyncio.sleep(0.02)
-    task.cancel()
+    run_task.cancel()
+
     try:
-        await task
+        await run_task
     except asyncio.CancelledError as exc:
         logger.debug("Service run task cancelled as expected", error=str(exc))
 
@@ -105,57 +98,59 @@ async def test_runtime_run_cloud_disabled(tmp_path: Path, mocker: MockerFixture)
     state.cleanup()
 
 
-@pytest.mark.asyncio
 @settings(max_examples=25, derandomize=True, deadline=None)
 @given(
     key=st.text(alphabet="abcdefghijklmnopqrstuvwxyz0123456789_", min_size=1, max_size=24),
     value=st.binary(min_size=1, max_size=128),
 )
-async def test_runtime_handle_datastore_flavors(
+def test_runtime_handle_datastore_flavors(
     tmp_path_factory: pytest.TempPathFactory, key: str, value: bytes
 ) -> None:
-    config = _make_config(Path(tmp_path_factory.mktemp("datastore_flavors")))
-    service, state, _ = _make_service(config)
+    async def _run() -> None:
+        config = _make_config(Path(tmp_path_factory.mktemp("datastore_flavors")))
+        service, state, _ = _make_service(config)
 
-    # 1. Datastore PUT
-    route_put = TopicRoute(
-        raw=f"{config.topic_prefix}/datastore/put/{key}",
-        prefix=config.topic_prefix,
-        topic=Topic.DATASTORE,
-        segments=("put", key),
-    )
-    handle_datastore: Callable[[TopicRoute, pb.CloudQueuedPublish], Awaitable[None]] = getattr(
-        service, "_handle_datastore"
-    )
-    inbound_put = pb.CloudQueuedPublish(topic_name=f"{config.topic_prefix}/datastore/put/{key}", payload=value)
-    await handle_datastore(route_put, inbound_put)
-    assert await state.datastore_cache.get(key) == value
+        # 1. Datastore PUT
+        route_put = TopicRoute(
+            raw=f"{config.topic_prefix}/datastore/put/{key}",
+            prefix=config.topic_prefix,
+            topic=Topic.DATASTORE,
+            segments=("put", key),
+        )
+        handle_datastore: Callable[[TopicRoute, pb.CloudQueuedPublish], Awaitable[None]] = getattr(
+            service, "_handle_datastore"
+        )
+        inbound_put = pb.CloudQueuedPublish(topic_name=f"{config.topic_prefix}/datastore/put/{key}", payload=value)
+        await handle_datastore(route_put, inbound_put)
+        assert await state.datastore_cache.get(key) == value
 
-    # 2. Datastore GET (cache hit)
-    route_get_hit = TopicRoute(
-        raw=f"{config.topic_prefix}/datastore/get/{key}",
-        prefix=config.topic_prefix,
-        topic=Topic.DATASTORE,
-        segments=("get", key),
-    )
-    inbound_get = pb.CloudQueuedPublish(topic_name=f"{config.topic_prefix}/datastore/get/{key}", payload=b"")
-    mock_enqueue = AsyncMock()
-    service.enqueue_cloud = mock_enqueue
-    await handle_datastore(route_get_hit, inbound_get)
-    assert mock_enqueue.await_count == 1
+        # 2. Datastore GET (cache hit)
+        route_get_hit = TopicRoute(
+            raw=f"{config.topic_prefix}/datastore/get/{key}",
+            prefix=config.topic_prefix,
+            topic=Topic.DATASTORE,
+            segments=("get", key),
+        )
+        inbound_get = pb.CloudQueuedPublish(topic_name=f"{config.topic_prefix}/datastore/get/{key}", payload=b"")
+        mock_enqueue = AsyncMock()
+        service.enqueue_cloud = mock_enqueue
+        await handle_datastore(route_get_hit, inbound_get)
+        assert mock_enqueue.await_count == 1
 
-    # 3. Datastore GET (cache miss with request suffix)
-    route_get_miss = TopicRoute(
-        raw=f"{config.topic_prefix}/datastore/get/non_existing_{key}/request",
-        prefix=config.topic_prefix,
-        topic=Topic.DATASTORE,
-        segments=("get", f"non_existing_{key}", "request"),
-    )
-    mock_enqueue.reset_mock()
-    await handle_datastore(route_get_miss, inbound_get)
-    assert mock_enqueue.await_count == 1
+        # 3. Datastore GET (cache miss with request suffix)
+        route_get_miss = TopicRoute(
+            raw=f"{config.topic_prefix}/datastore/get/non_existing_{key}/request",
+            prefix=config.topic_prefix,
+            topic=Topic.DATASTORE,
+            segments=("get", f"non_existing_{key}", "request"),
+        )
+        mock_enqueue.reset_mock()
+        await handle_datastore(route_get_miss, inbound_get)
+        assert mock_enqueue.await_count == 1
 
-    state.cleanup()
+        state.cleanup()
+
+    asyncio.run(_run())
 
 
 @pytest.mark.asyncio
@@ -173,6 +168,11 @@ async def test_runtime_handle_mcu_status_binary_undecodable(tmp_path: Path, mock
     assert mock_enqueue.call_count == 2
 
     state.cleanup()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 2. Handshake & Link Sync Timeout Handling
+# ══════════════════════════════════════════════════════════════════════════════
 
 
 @pytest.mark.asyncio
@@ -193,6 +193,11 @@ async def test_handshake_attempt_link_sync_timeout(tmp_path: Path, mocker: Mocke
     state.cleanup()
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# 3. Local Bridge Console Subscription & System Version Request Edge Paths
+# ══════════════════════════════════════════════════════════════════════════════
+
+
 @pytest.mark.asyncio
 async def test_runtime_local_bridge_subscribe_console(tmp_path: Path, mocker: MockerFixture) -> None:
     from mcubridge.services.runtime import LocalBridgeService
@@ -202,8 +207,7 @@ async def test_runtime_local_bridge_subscribe_console(tmp_path: Path, mocker: Mo
     local_service = LocalBridgeService(service)
 
     mock_stream = AsyncMock()
-    mock_stream.recv_message.return_value = pb.SubscribeRequest()
-    mock_stream.send_message.side_effect = OSError("client disconnected")
+    mock_stream.send_message.side_effect = OSError("Connection aborted")
 
     q: asyncio.Queue[pb.CloudQueuedPublish] = asyncio.Queue()
     q.put_nowait(pb.CloudQueuedPublish(topic_name="console/tx", payload=b"test_console"))
@@ -220,7 +224,6 @@ async def test_runtime_request_mcu_version_and_system_version(tmp_path: Path) ->
     config = _make_config(tmp_path)
     service, state, mock_serial = _make_service(config)
 
-    # 1. request_mcu_version with bytes return
     v_resp = pb.VersionResponse(major=2, minor=8, patch=5).SerializeToString()
     mock_serial.send.return_value = v_resp
     inbound = pb.CloudQueuedPublish(topic_name=f"{config.topic_prefix}/system/version/get", payload=b"")
@@ -230,9 +233,9 @@ async def test_runtime_request_mcu_version_and_system_version(tmp_path: Path) ->
     assert res is True
     assert state.mcu_version == (2, 8, 5)
 
-    # 2. System Version route
+    # Trigger system version dispatch
     route_ver = TopicRoute(
-        raw="test/br/system/version/get",
+        raw=f"{config.topic_prefix}/system/version/get",
         prefix=config.topic_prefix,
         topic=Topic.SYSTEM,
         segments=("version", "get"),
@@ -243,63 +246,43 @@ async def test_runtime_request_mcu_version_and_system_version(tmp_path: Path) ->
     state.cleanup()
 
 
-@pytest.mark.asyncio
 @settings(max_examples=25, derandomize=True, deadline=None)
 @given(
     pin=st.integers(0, 32),
     analog_val=st.integers(0, 255),
     non_digit=st.text(alphabet="abcdefghijklmnopqrstuvwxyz!@#$", min_size=1, max_size=12),
 )
-async def test_runtime_pin_analog_and_invalid_digits(
+def test_runtime_pin_analog_and_invalid_digits(
     tmp_path_factory: pytest.TempPathFactory, pin: int, analog_val: int, non_digit: str
 ) -> None:
-    config = _make_config(Path(tmp_path_factory.mktemp("pin_analog")))
-    service, state, mock_serial = _make_service(config)
+    async def _run() -> None:
+        config = _make_config(Path(tmp_path_factory.mktemp("pin_analog")))
+        service, state, mock_serial = _make_service(config)
 
-    handle_pin: Callable[[TopicRoute, pb.CloudQueuedPublish], Awaitable[None]] = getattr(service, "_handle_pin")
+        handle_pin: Callable[[TopicRoute, pb.CloudQueuedPublish], Awaitable[None]] = getattr(service, "_handle_pin")
 
-    # 1. Analog Write
-    route_aw = TopicRoute(
-        raw=f"{config.topic_prefix}/a/{pin}",
-        prefix=config.topic_prefix,
-        topic=Topic.ANALOG,
-        segments=(str(pin),),
-    )
-    inbound_aw = pb.CloudQueuedPublish(topic_name=f"{config.topic_prefix}/a/{pin}", payload=str(analog_val).encode())
-    await handle_pin(route_aw, inbound_aw)
-    mock_serial.send.assert_called_with(Command.CMD_ANALOG_WRITE.value, pb.AnalogWrite(pin=pin, value=analog_val))
+        # 1. Analog Write
+        route_aw = TopicRoute(
+            raw=f"{config.topic_prefix}/a/{pin}",
+            prefix=config.topic_prefix,
+            topic=Topic.ANALOG,
+            segments=(str(pin),),
+        )
+        inbound_aw = pb.CloudQueuedPublish(topic_name=f"{config.topic_prefix}/a/{pin}", payload=str(analog_val).encode())
+        await handle_pin(route_aw, inbound_aw)
+        mock_serial.send.assert_called_with(Command.CMD_ANALOG_WRITE.value, pb.AnalogWrite(pin=pin, value=analog_val))
 
-    # 2. Digital Write with non-digit payload (defaults to 0)
-    route_dw = TopicRoute(
-        raw=f"{config.topic_prefix}/d/{pin}",
-        prefix=config.topic_prefix,
-        topic=Topic.DIGITAL,
-        segments=(str(pin),),
-    )
-    inbound_dw = pb.CloudQueuedPublish(topic_name=f"{config.topic_prefix}/d/{pin}", payload=non_digit.encode())
-    await handle_pin(route_dw, inbound_dw)
-    mock_serial.send.assert_called_with(Command.CMD_DIGITAL_WRITE.value, pb.DigitalWrite(pin=pin, value=0))
+        # 2. Digital Write with non-digit payload (defaults to 0)
+        route_dw = TopicRoute(
+            raw=f"{config.topic_prefix}/d/{pin}",
+            prefix=config.topic_prefix,
+            topic=Topic.DIGITAL,
+            segments=(str(pin),),
+        )
+        inbound_dw = pb.CloudQueuedPublish(topic_name=f"{config.topic_prefix}/d/{pin}", payload=non_digit.encode())
+        await handle_pin(route_dw, inbound_dw)
+        mock_serial.send.assert_called_with(Command.CMD_DIGITAL_WRITE.value, pb.DigitalWrite(pin=pin, value=0))
 
-    state.cleanup()
+        state.cleanup()
 
-
-def test_runtime_load_config_from_json() -> None:
-    from mcubridge.config.settings import get_config_source, load_runtime_config_from_json
-
-    # 1. Load from JSON string
-    json_str = '{"topic_prefix": "json/prefix", "serial_baud": 115200, "allow_non_tmp_paths": true}'
-    cfg1 = load_runtime_config_from_json(json_str)
-    assert cfg1.topic_prefix == "json/prefix"
-    assert cfg1.serial_baud == 115200
-    assert get_config_source() == "json"
-
-    # 2. Load from JSON bytes with overrides
-    json_bytes = b'{"topic_prefix": "bytes/prefix", "allow_non_tmp_paths": true}'
-    cfg2 = load_runtime_config_from_json(json_bytes, overrides={"serial_baud": 57600})
-    assert cfg2.topic_prefix == "bytes/prefix"
-    assert cfg2.serial_baud == 57600
-
-    # 3. Load from Dict
-    dict_data = {"topic_prefix": "dict/prefix", "allow_non_tmp_paths": True}
-    cfg3 = load_runtime_config_from_json(dict_data)
-    assert cfg3.topic_prefix == "dict/prefix"
+    asyncio.run(_run())

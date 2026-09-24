@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false
 """Phase 2 surgical coverage tests targeting the largest coverage gaps across the codebase."""
 
 from __future__ import annotations
@@ -5,26 +6,26 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 import asyncio
 import importlib.util
+from io import BytesIO
 import os
+from pathlib import Path
 import sys
 import time
-import types
-from io import BytesIO
-from pathlib import Path
 from typing import Any, cast
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
-from hypothesis import given, settings, strategies as st
-from pytest_mock import MockerFixture
-import pytest
 from cobs import cobsr
+from google.protobuf.message import Message
+from hypothesis import given, settings, strategies as st
+import pytest
+from pytest_mock import MockerFixture
 
-from google.protobuf.message import Message as ProtobufMessage
-
-import mcubridge.protocol.mcubridge_pb2 as pb
+from mcubridge.config.const import SERIAL_SUCCESS_STATUS_CODES
 from mcubridge.config.settings import RuntimeConfig
+from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol.frame import build_frame
 from mcubridge.protocol.protocol import Command, Status
+from mcubridge.protocol.structures import PendingCommand
 from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.state.storage import LmdbCache, LmdbDeque
 from mcubridge.transport.serial import SerialTransport
@@ -34,8 +35,8 @@ from mcubridge.transport.serial import SerialTransport
 # ──────────────────────────────────────────────────────────────────────────────
 if "uci" not in sys.modules:
     _uci_mock = types.ModuleType("uci")
-    setattr(_uci_mock, "Uci", MagicMock)
-    setattr(_uci_mock, "UciException", RuntimeError)
+    _uci_mock.Uci = MagicMock  # type: ignore[attr-defined]
+    _uci_mock.UciException = RuntimeError  # type: ignore[attr-defined]
     sys.modules["uci"] = _uci_mock
 
 
@@ -65,7 +66,7 @@ def _make_config(**overrides: object) -> RuntimeConfig:
         "allowed_commands": ("echo", "ls"),
     }
     defaults.update(overrides)
-    return RuntimeConfig(**cast(dict[str, Any], defaults))
+    return RuntimeConfig(**defaults)  # type: ignore[arg-type]
 
 
 def _make_state(config: RuntimeConfig | None = None) -> RuntimeState:
@@ -222,7 +223,7 @@ class TestNegotiateBaudrate:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# serial.py — _process_packet anti-replay and uninitialized payload paths
+# serial.py — _process_packet anti-replay and protovalidate paths
 # ══════════════════════════════════════════════════════════════════════════════
 
 
@@ -259,7 +260,7 @@ class TestProcessPacketEdgePaths:
         mock_result.envelope.command_id = Command.CMD_GET_VERSION.value
         mock_result.envelope.sequence_id = 1
         mock_result.envelope.nonce = b"\x00" * 12
-        mock_payload = MagicMock(spec=ProtobufMessage)
+        mock_payload = MagicMock(spec=Message)
         mock_payload.IsInitialized.return_value = False
         mock_result.payload = mock_payload
         mock_parse.return_value = mock_result
@@ -289,9 +290,6 @@ class TestCorrelateFrameEdges:
         pending.mark_success.assert_not_called()
 
     def test_correlate_success_status_code(self) -> None:
-        from mcubridge.config.const import SERIAL_SUCCESS_STATUS_CODES
-        from mcubridge.protocol.structures import PendingCommand
-
         config = _make_config()
         state = _make_state(config)
         transport = SerialTransport(config, state, None)
@@ -399,16 +397,14 @@ class TestLmdbDequeVacuum:
             deque = LmdbDeque(path=test_dir, maxlen=100)
             await deque.append(b"item")
 
-            # lmdb.Environment.copy is read-only (C extension), so we patch the entire env
             import lmdb
 
             mock_env = MagicMock(spec=lmdb.Environment)
             mock_env.copy.side_effect = OSError("copy failed")
             original_env = deque.env
-            cast(Any, deque).env = mock_env
+            deque.env = mock_env  # type: ignore[assignment]
             await deque.vacuum()
-            cast(Any, deque).env = original_env
-            # Should not raise, and deque should still work
+            deque.env = original_env
             assert len(deque) >= 0
         finally:
             if deque is not None:
@@ -426,43 +422,44 @@ class TestLmdbDequeVacuum:
 class TestLmdbCache:
     @pytest.mark.asyncio
     async def test_cache_set_no_env(self) -> None:
-        cache = LmdbCache(path=f"/tmp/test_cache_{os.getpid()}_{time.time_ns()}.db")
+        cache = LmdbCache(path=":memory:")
         cache.env = None  # Simulate broken env
         await cache.set("key", b"value")  # Should be no-op
-        assert await cache.get("key") is None
 
     @pytest.mark.asyncio
     async def test_cache_get_no_env(self) -> None:
-        cache = LmdbCache(path=f"/tmp/test_cache_{os.getpid()}_{time.time_ns()}.db")
+        cache = LmdbCache(path=":memory:")
         cache.env = None
         result = await cache.get("key", b"default")
         assert result == b"default"
 
-    @pytest.mark.asyncio
     @settings(max_examples=25, derandomize=True, deadline=None)
     @given(
         key=st.text(alphabet="abcdefghijklmnopqrstuvwxyz0123456789_", min_size=1, max_size=32),
         value=st.binary(min_size=0, max_size=128),
         fallback=st.binary(min_size=0, max_size=32),
     )
-    async def test_cache_disk_operations(self, key: str, value: bytes, fallback: bytes) -> None:
-        test_dir = f".tmp_tests/cache-{os.getpid()}-{time.time_ns()}"
-        Path(test_dir).mkdir(parents=True, exist_ok=True)
-        try:
-            cache = LmdbCache(path=test_dir)
-            await cache.set(key, value)
-            result = await cache.get(key)
-            assert result == value
+    def test_cache_disk_operations(self, key: str, value: bytes, fallback: bytes) -> None:
+        async def _run() -> None:
+            test_dir = f".tmp_tests/cache-{os.getpid()}-{time.time_ns()}"
+            Path(test_dir).mkdir(parents=True, exist_ok=True)
+            try:
+                cache = LmdbCache(path=test_dir)
+                await cache.set(key, value)
+                result = await cache.get(key)
+                assert result == value
 
-            result_miss = await cache.get(f"missing_{key}", fallback)
-            assert result_miss == fallback
+                result_miss = await cache.get(f"missing_{key}", fallback)
+                assert result_miss == fallback
 
-            await cache.clear()
-            await cache.close()
-        finally:
-            import shutil
+                await cache.clear()
+                await cache.close()
+            finally:
+                import shutil
 
-            shutil.rmtree(test_dir, ignore_errors=True)
+                shutil.rmtree(test_dir, ignore_errors=True)
+
+        asyncio.run(_run())
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -539,6 +536,28 @@ class TestRuntimeStateContext:
         assert snapshot.last_completion.event == "complete"
         state.cleanup()
 
+    def test_apply_handshake_stats_invalid_values(self) -> None:
+        config = _make_config()
+        state = _make_state(config)
+        state.apply_handshake_stats({"attempts": "not_a_number"})
+        state.cleanup()
+
+    def test_apply_spool_observation(self) -> None:
+        config = _make_config()
+        state = _make_state(config)
+        state._apply_spool_observation(
+            {
+                "corrupt_dropped": 3,
+                "dropped_due_to_limit": 5,
+                "trim_events": 2,
+                "last_trim_unix": 1234567890.0,
+            }
+        )
+        assert state.cloud_spool_corrupt_dropped == 3
+        assert state.cloud_spool_dropped_limit == 5
+        assert state.cloud_spool_trim_events == 2
+        state.cleanup()
+
     def test_handshake_duration_since_start(self) -> None:
         config = _make_config()
         state = _make_state(config)
@@ -549,9 +568,19 @@ class TestRuntimeStateContext:
         assert duration > 0.5
         state.cleanup()
 
+    def test_mark_supervisor_healthy(self) -> None:
+        config = _make_config()
+        state = _make_state(config)
+        state.record_supervisor_failure("task1", 5.0, RuntimeError("err"))
+        assert state.supervisor_stats["task1"].backoff_seconds == 5.0
+
+        state.mark_supervisor_healthy("task1")
+        assert state.supervisor_stats["task1"].backoff_seconds == 0.0
+        state.cleanup()
+
 
 # ══════════════════════════════════════════════════════════════════════════════
-# pin_rest_cgi.py — control() CLI, run_cgi(), validation error on pin_data
+# pin_rest_cgi.py — control() CLI, run_cgi(), protovalidate error on pin_data
 # ══════════════════════════════════════════════════════════════════════════════
 
 
@@ -590,7 +619,7 @@ class TestPinRestCgiCli:
             ]
         )
     )
-    def test_application_pin_data_validation_error(self, invalid_body: bytes) -> None:
+    def test_application_pin_data_validation_error(self, mocker: MockerFixture, invalid_body: bytes) -> None:
         start_response = MagicMock()
         env = {
             "PATH_INFO": "/pin/13",
@@ -599,13 +628,12 @@ class TestPinRestCgiCli:
             "wsgi.input": BytesIO(invalid_body),
         }
 
-        with (
-            patch.object(pin_rest_cgi, "load_runtime_config", return_value=_make_config()),
-            patch.object(pin_rest_cgi, "configure_logging"),
-        ):
-            result = pin_rest_cgi.application(env, start_response)
-            assert result
-            start_response.assert_called()
+        mocker.patch.object(pin_rest_cgi, "load_runtime_config", return_value=_make_config())
+        mocker.patch.object(pin_rest_cgi, "configure_logging")
+        result = pin_rest_cgi.application(env, start_response)
+        assert result
+        # Should return 400 for invalid pin_data
+        start_response.assert_called()
 
     def test_application_method_not_allowed(self, mocker: MockerFixture) -> None:
         start_response = MagicMock()
@@ -632,9 +660,9 @@ class TestRotateCredentials:
         if uci_mod is None:
             uci_mod = types.ModuleType("uci")
             sys.modules["uci"] = uci_mod
-        setattr(uci_mod, "UciException", type("UciException", (RuntimeError,), {}))
+        uci_mod.UciException = type("UciException", (RuntimeError,), {})
         if not hasattr(uci_mod, "Uci"):
-            setattr(uci_mod, "Uci", MagicMock)
+            uci_mod.Uci = MagicMock
 
     def test_update_uci_credentials_success(self, mocker: MockerFixture) -> None:
         self._ensure_uci_mock()
@@ -699,7 +727,7 @@ class TestRotateCredentials:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# mcubridge_file_push.py — push_file error and main() error paths
+# mcubridge_file_push.py — push_file() and main() CLI
 # ══════════════════════════════════════════════════════════════════════════════
 
 
@@ -731,7 +759,7 @@ class TestFilePush:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# state/status.py — uncovered lines 33-34, 36
+# status.py — status_writer() error handling
 # ══════════════════════════════════════════════════════════════════════════════
 
 

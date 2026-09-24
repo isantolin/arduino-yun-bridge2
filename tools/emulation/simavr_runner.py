@@ -42,6 +42,7 @@ logger = structlog.get_logger("simavr_runner")
 
 def _read_pty_from_stream(proc_stdout: Any, state: SimavrState) -> str:
     """Read PTY line emitted by simavr harness with tenacity retry."""
+
     def _read_line() -> str | None:
         line = proc_stdout.readline()
         if line:
@@ -195,9 +196,7 @@ def _setup_fake_uci(slave_name: str) -> tuple[Path, Path, dict[str, str]]:
     daemon_env["MCUBRIDGE_SERIAL_PORT"] = slave_name
     daemon_env["MCUBRIDGE_SERIAL_SAFE_BAUD"] = str(protocol.DEFAULT_SAFE_BAUDRATE)
     daemon_env["MCUBRIDGE_SERIAL_BAUD"] = str(protocol.DEFAULT_BAUDRATE)
-    daemon_env["MCUBRIDGE_SERIAL_SHARED_SECRET"] = (
-        "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe"
-    )
+    daemon_env["MCUBRIDGE_SERIAL_SHARED_SECRET"] = "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe"
     daemon_env["MCUBRIDGE_DISABLE_METRICS"] = "1"
     daemon_env["MCUBRIDGE_STORAGE_PATH"] = str(storage_path)
     daemon_env["MCUBRIDGE_CLOUD_ENABLED"] = "1"

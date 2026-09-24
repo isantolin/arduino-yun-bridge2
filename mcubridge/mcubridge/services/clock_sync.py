@@ -35,11 +35,7 @@ class ClockSyncMachine(StateMachine):
         | synchronized.to(unsupported)
         | unsupported.to(unsupported)
     )
-    start_probe = (
-        idle.to(probing)
-        | unsupported.to(probing)
-        | probing.to(probing)
-    )
+    start_probe = idle.to(probing) | unsupported.to(probing) | probing.to(probing)
     sync_success = (
         probing.to(synchronized)
         | idle.to(synchronized)
@@ -47,18 +43,8 @@ class ClockSyncMachine(StateMachine):
         | synchronized.to(synchronized)
         | unsupported.to(synchronized)
     )
-    mark_degraded = (
-        probing.to(degraded)
-        | synchronized.to(degraded)
-        | degraded.to(degraded)
-    )
-    disconnect = (
-        probing.to(idle)
-        | synchronized.to(idle)
-        | degraded.to(idle)
-        | unsupported.to(idle)
-        | idle.to(idle)
-    )
+    mark_degraded = probing.to(degraded) | synchronized.to(degraded) | degraded.to(degraded)
+    disconnect = probing.to(idle) | synchronized.to(idle) | degraded.to(idle) | unsupported.to(idle) | idle.to(idle)
     recheck_capability = unsupported.to(idle)
 
 
@@ -120,9 +106,7 @@ class ClockSyncService:
                 self.fsm.mark_unsupported()
                 return self.get_status()
 
-        is_initial_probe = (
-            self.fsm.idle.is_active or self.fsm.probing.is_active or self.fsm.unsupported.is_active
-        )
+        is_initial_probe = self.fsm.idle.is_active or self.fsm.probing.is_active or self.fsm.unsupported.is_active
         if is_initial_probe:
             self.fsm.start_probe()
 

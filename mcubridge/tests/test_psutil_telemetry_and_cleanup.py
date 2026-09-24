@@ -39,9 +39,7 @@ def test_build_status_snapshot_populates_psutil_telemetry(runtime_config: Runtim
         state.cleanup()
 
 
-def test_build_status_snapshot_with_running_subprocess(
-    runtime_config: RuntimeConfig, mocker: MockerFixture
-) -> None:
+def test_build_status_snapshot_with_running_subprocess(runtime_config: RuntimeConfig, mocker: MockerFixture) -> None:
     """Validate that active running_processes are reflected in status.process_stats."""
     state = create_runtime_state(runtime_config)
     try:
@@ -67,9 +65,7 @@ def test_build_status_snapshot_with_running_subprocess(
         state.cleanup()
 
 
-def test_build_status_snapshot_exception_fallback(
-    runtime_config: RuntimeConfig, mocker: MockerFixture
-) -> None:
+def test_build_status_snapshot_exception_fallback(runtime_config: RuntimeConfig, mocker: MockerFixture) -> None:
     """Validate safe state defaults when psutil metrics query encounters OSError."""
     state = create_runtime_state(runtime_config)
     try:
@@ -82,9 +78,7 @@ def test_build_status_snapshot_exception_fallback(
         state.cleanup()
 
 
-def test_context_cleanup_recursive_child_termination(
-    runtime_config: RuntimeConfig, mocker: MockerFixture
-) -> None:
+def test_context_cleanup_recursive_child_termination(runtime_config: RuntimeConfig, mocker: MockerFixture) -> None:
     """Validate that state.cleanup() terminates process trees via terminate_pid_tree."""
     state = create_runtime_state(runtime_config)
 

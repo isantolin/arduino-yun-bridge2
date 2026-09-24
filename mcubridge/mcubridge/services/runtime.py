@@ -1654,9 +1654,7 @@ class BridgeService:
                                 else cmd.command_path
                             )
                             try:
-                                resp_payload = await self.local_bridge_service.execute_rpc(
-                                    method_name, cmd.payload
-                                )
+                                resp_payload = await self.local_bridge_service.execute_rpc(method_name, cmd.payload)
                                 status_code = 200
                                 err_msg = ""
                             except (ValueError, ProtobufDecodeError) as exc:

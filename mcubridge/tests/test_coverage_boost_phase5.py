@@ -1343,9 +1343,7 @@ async def test_metrics_publish_bridge_snapshots_error_recovery_and_shutdown(
 
 
 @pytest.mark.asyncio
-async def test_status_writer_tick_cancellation_and_shield(
-    mock_state: RuntimeState, mocker: MockerFixture
-) -> None:
+async def test_status_writer_tick_cancellation_and_shield(mock_state: RuntimeState, mocker: MockerFixture) -> None:
     from mcubridge.state.status import status_writer
 
     def _dummy_write(_p: ProtobufMessage) -> None:
@@ -1561,8 +1559,6 @@ async def test_connect_cloud_session_with_0rtt_session_ticket(
     mocker.patch("mcubridge.services.runtime.CloudBridgeStub", return_value=mock_stub)
     await svc.connect_cloud_session(tls_context=MagicMock())
     # Assert ticket was retained and updated
-    saved_ticket = load_tls_session_ticket(
-        mock_state.tls_session_cache, test_config.cloud_host, test_config.cloud_port
-    )
+    saved_ticket = load_tls_session_ticket(mock_state.tls_session_cache, test_config.cloud_host, test_config.cloud_port)
     assert saved_ticket is not None
     assert len(saved_ticket) > 0

@@ -20,7 +20,6 @@ from ..config.settings import RuntimeConfig
 from ..protocol import mcubridge_pb2 as pb
 from ..state.context import RuntimeState
 
-
 logger = structlog.get_logger("mcubridge.service.ubus")
 
 try:
@@ -210,9 +209,7 @@ class UbusService:
         data["capabilities"] = (
             MessageToDict(caps, always_print_fields_with_no_presence=True, preserving_proto_field_name=True)
             if isinstance(caps, pb.Capabilities)
-            else {k: bool(v) for k, v in caps.items()}
-            if isinstance(caps, dict)
-            else {}
+            else {k: bool(v) for k, v in caps.items()} if isinstance(caps, dict) else {}
         )
         data["clock_status"] = {
             "offset_us": state.clock_offset_us,

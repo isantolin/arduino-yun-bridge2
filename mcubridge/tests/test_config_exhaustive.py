@@ -19,7 +19,6 @@ from mcubridge.config.settings import (
 )
 from mcubridge.protocol import mcubridge_pb2 as pb
 
-
 # =============================================================================
 # 1. Tests for mcubridge.config.logging
 # =============================================================================

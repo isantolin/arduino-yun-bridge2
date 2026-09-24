@@ -160,6 +160,7 @@ async def test_handle_cloud_pin_overflow_reports_error(mocker: MockerFixture) ->
     state = create_runtime_state(config)
     try:
         from mcubridge.protocol.structures import PendingPinRequest
+
         mock_serial = AsyncMock(spec=SerialTransport)
         service = BridgeService(config, state, mock_serial)
         state.state = "synchronized"

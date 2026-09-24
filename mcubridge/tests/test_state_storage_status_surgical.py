@@ -212,9 +212,7 @@ async def test_lmdb_cache_and_vacuum_edge_branches(tmp_path: Path, mocker: Mocke
     faulty_env = MagicMock()
     faulty_env.copy.side_effect = lmdb.Error("Copy fail")
     mocker.patch("pathlib.Path.unlink", side_effect=OSError("Permission denied"))
-    await anyio.to_thread.run_sync(
-        _vacuum_lmdb_env, str(tmp_path / "faulty"), "faulty.db", faulty_env, lambda: None
-    )
+    await anyio.to_thread.run_sync(_vacuum_lmdb_env, str(tmp_path / "faulty"), "faulty.db", faulty_env, lambda: None)
 
 
 @pytest.mark.asyncio

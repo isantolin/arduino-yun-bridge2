@@ -25,9 +25,7 @@ async def test_daemon_supervise_fatal_exception(service_stack: tuple[BridgeServi
 
 
 @pytest.mark.asyncio
-async def test_daemon_supervise_restarts(
-    service_stack: tuple[BridgeService, Any, Any], mocker: MockerFixture
-) -> None:
+async def test_daemon_supervise_restarts(service_stack: tuple[BridgeService, Any, Any], mocker: MockerFixture) -> None:
     service, _, _ = service_stack
     call_state = {"call_count": 0}
 

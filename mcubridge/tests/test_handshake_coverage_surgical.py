@@ -223,4 +223,3 @@ async def test_publish_handshake_event_cloud_enqueue(mock_config: RuntimeConfig,
     assert published_msg.topic_name == "br/system/bridge/handshake/value"
     snapshot = pb.HandshakeSnapshot.FromString(published_msg.payload)
     assert snapshot.event == "sync_success"
-

@@ -19,9 +19,7 @@ from mcubridge.state.context import RuntimeState
 
 
 @pytest.mark.asyncio
-async def test_publish_metrics_publishes_snapshot(
-    runtime_state: RuntimeState, mocker: MockerFixture
-) -> None:
+async def test_publish_metrics_publishes_snapshot(runtime_state: RuntimeState, mocker: MockerFixture) -> None:
     """Verify that publish_metrics enqueues payload with telemetry metadata."""
     event = asyncio.Event()
     captured: dict[str, pb.CloudQueuedPublish] = {}
@@ -86,9 +84,7 @@ async def test_publish_metrics_publishes_snapshot(
 
 
 @pytest.mark.asyncio
-async def test_publish_metrics_marks_unknown_spool_reason(
-    runtime_state: RuntimeState, mocker: MockerFixture
-) -> None:
+async def test_publish_metrics_marks_unknown_spool_reason(runtime_state: RuntimeState, mocker: MockerFixture) -> None:
     """Ensure bridge-spool user property defaults to 'unknown'."""
     event = asyncio.Event()
     captured: dict[str, pb.CloudQueuedPublish] = {}
@@ -221,9 +217,7 @@ async def test_publish_bridge_snapshots_noop_when_disabled(
 
 
 @pytest.mark.asyncio
-async def test_emit_bridge_snapshot_error_paths(
-    runtime_state: RuntimeState, mocker: MockerFixture
-) -> None:
+async def test_emit_bridge_snapshot_error_paths(runtime_state: RuntimeState, mocker: MockerFixture) -> None:
     import mcubridge.metrics
 
     emit_fn = getattr(mcubridge.metrics, "_emit_bridge_snapshot")
@@ -267,9 +261,7 @@ async def test_publish_metrics_oserror_recovery(runtime_state: RuntimeState) -> 
 
 
 @pytest.mark.asyncio
-async def test_publish_bridge_snapshots_loop_error_recovery(
-    runtime_state: RuntimeState, mocker: MockerFixture
-) -> None:
+async def test_publish_bridge_snapshots_loop_error_recovery(runtime_state: RuntimeState, mocker: MockerFixture) -> None:
     calls = 0
 
     async def _failing_enqueue(_: pb.CloudQueuedPublish) -> None:

@@ -26,6 +26,7 @@ async def test_abrupt_disconnect():
     mock_serial.readuntil.side_effect = OSError("boom")
 
     from collections.abc import Awaitable, Callable
+
     read_loop: Callable[[object], Awaitable[None]] = getattr(transport, "_read_loop")
     await read_loop(mock_serial)
 

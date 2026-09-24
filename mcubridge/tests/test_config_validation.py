@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from pytest_mock import MockerFixture
 import pytest
 from mcubridge.config import settings
 from mcubridge.config.settings import RuntimeConfig
@@ -36,7 +37,7 @@ def _config_kwargs(**overrides: Any) -> dict[str, Any]:
 
 
 def test_runtime_config_topic_and_paths(
-    monkeypatch: pytest.MonkeyPatch,
+    mocker: MockerFixture,
 ) -> None:
     spool_absolute = "/tmp/relative/spool"
     os.path.abspath(spool_absolute)
@@ -47,7 +48,7 @@ def test_runtime_config_topic_and_paths(
         topic_prefix="/demo//prefix/",
         file_system_root=root_input,
     )
-    monkeypatch.setattr(settings, "_load_raw_config", lambda: (raw, "test"))
+    mocker.patch.object(settings, "_load_raw_config", return_value=(raw, "test"))
 
     config = settings.load_runtime_config()
 
@@ -55,10 +56,10 @@ def test_runtime_config_topic_and_paths(
     assert config.file_system_root == "/tmp/tests/bridge"
 
 
-def test_runtime_config_rejects_empty_topic(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_runtime_config_rejects_empty_topic(mocker: MockerFixture) -> None:
     # Use load_runtime_config to trigger boundary normalization and segment check
     raw = _config_kwargs(topic_prefix="//")
-    monkeypatch.setattr(settings, "_load_raw_config", lambda: (raw, "test"))
+    mocker.patch.object(settings, "_load_raw_config", return_value=(raw, "test"))
 
     # settings.py now raises ValueError during test source for invalid topic
 

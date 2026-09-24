@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Callable, cast
 from unittest.mock import MagicMock
 
+from pytest_mock import MockerFixture
 import pytest
 
 # Dynamically load the standalone script
@@ -21,7 +22,7 @@ push_file_ubus = cast(Callable[[str, bytes], bool], getattr(_file_push, "push_fi
 cli_main = cast(Callable[..., None], getattr(_file_push, "main"))
 
 
-def test_push_file_ubus_success(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_push_file_ubus_success(mocker: MockerFixture) -> None:
     mock_ubus: Any = MagicMock()
     mock_conn: Any = MagicMock()
     mock_conn.call.return_value = {"status": "ok", "path": "test.txt", "bytes_written": 5}
@@ -32,7 +33,7 @@ def test_push_file_ubus_success(monkeypatch: pytest.MonkeyPatch) -> None:
             return mock_ubus
         return None
 
-    monkeypatch.setattr(_file_push.importlib, "import_module", mock_import)
+    mocker.patch.object(_file_push.importlib, "import_module", side_effect=mock_import)
 
     res = push_file_ubus("test.txt", b"hello")
     assert res is True
@@ -43,7 +44,7 @@ def test_push_file_ubus_success(monkeypatch: pytest.MonkeyPatch) -> None:
     assert call_args[2] == {"path": "test.txt", "data": "hello"}
 
 
-def test_push_file_ubus_binary_hex_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_push_file_ubus_binary_hex_fallback(mocker: MockerFixture) -> None:
     mock_ubus: Any = MagicMock()
     mock_conn: Any = MagicMock()
     mock_conn.call.return_value = {"status": "ok", "path": "bin.dat", "bytes_written": 3}
@@ -54,7 +55,7 @@ def test_push_file_ubus_binary_hex_fallback(monkeypatch: pytest.MonkeyPatch) -> 
             return mock_ubus
         return None
 
-    monkeypatch.setattr(_file_push.importlib, "import_module", mock_import)
+    mocker.patch.object(_file_push.importlib, "import_module", side_effect=mock_import)
 
     res = push_file_ubus("bin.dat", b"\xff\xfe\x00")
     assert res is True
@@ -62,7 +63,7 @@ def test_push_file_ubus_binary_hex_fallback(monkeypatch: pytest.MonkeyPatch) -> 
     assert call_args[2]["data"] == "fffe00"
 
 
-def test_push_file_ubus_failure_returns_false(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_push_file_ubus_failure_returns_false(mocker: MockerFixture) -> None:
     mock_ubus: Any = MagicMock()
     mock_conn: Any = MagicMock()
     mock_conn.call.return_value = {"status": "error"}
@@ -73,7 +74,7 @@ def test_push_file_ubus_failure_returns_false(monkeypatch: pytest.MonkeyPatch) -
             return mock_ubus
         return None
 
-    monkeypatch.setattr(_file_push.importlib, "import_module", mock_import)
+    mocker.patch.object(_file_push.importlib, "import_module", side_effect=mock_import)
     assert push_file_ubus("test.txt", b"data") is False
 
     # Connection failure
@@ -85,25 +86,19 @@ def test_push_file_ubus_failure_returns_false(monkeypatch: pytest.MonkeyPatch) -
     assert push_file_ubus("test.txt", b"data") is False
 
 
-def test_push_file_direct_ubus(monkeypatch: pytest.MonkeyPatch) -> None:
-    def mock_push_success(_p: str, _d: bytes) -> bool:
-        return True
-
-    def mock_push_fail(_p: str, _d: bytes) -> bool:
-        return False
-
+def test_push_file_direct_ubus(mocker: MockerFixture) -> None:
     # 1. When UBUS succeeds
-    monkeypatch.setattr(_file_push, "push_file_ubus", mock_push_success)
+    mocker.patch.object(_file_push, "push_file_ubus", return_value=True)
     push_file("test.txt", b"data")
 
     # 2. When UBUS fails, exit(1) is called
-    monkeypatch.setattr(_file_push, "push_file_ubus", mock_push_fail)
+    mocker.patch.object(_file_push, "push_file_ubus", return_value=False)
     with pytest.raises(SystemExit) as exc_info:
         push_file("test.txt", b"data")
     assert exc_info.value.code == 1
 
 
-def test_main_cli_validation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_main_cli_validation(tmp_path: Path, mocker: MockerFixture) -> None:
     test_file = tmp_path / "sample.txt"
     test_file.write_bytes(b"content to push")
 
@@ -112,7 +107,7 @@ def test_main_cli_validation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     def mock_push(target: str, data: bytes) -> None:
         pushed_args.append((target, data))
 
-    monkeypatch.setattr(_file_push, "push_file", mock_push)
+    mocker.patch.object(_file_push, "push_file", side_effect=mock_push)
 
     # Push to Linux path
     cli_main(test_file, "/tmp/sample.txt", mcu=False)

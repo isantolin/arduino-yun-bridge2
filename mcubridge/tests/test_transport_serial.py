@@ -1,6 +1,7 @@
 from unittest.mock import AsyncMock, MagicMock
 from typing import Any
 
+from pytest_mock import MockerFixture
 import asyncio
 import pytest
 from cobs import cobsr
@@ -32,7 +33,7 @@ def _make_config() -> RuntimeConfig:
 
 @pytest.mark.asyncio
 async def test_process_packet_crc_mismatch_reports_crc(
-    monkeypatch: pytest.MonkeyPatch,
+    mocker: MockerFixture,
 ) -> None:
     config = _make_config()
     state = create_runtime_state(config)
@@ -48,7 +49,7 @@ async def test_process_packet_crc_mismatch_reports_crc(
         def mock_decode(data: Any) -> bytes:
             return raw
 
-        monkeypatch.setattr(cobsr, "decode", mock_decode)
+        mocker.patch.object(cobsr, "decode", side_effect=mock_decode)
 
         # Manual call to async method
         await getattr(transport, "_process_packet")(b"\x02encoded")
@@ -117,7 +118,7 @@ async def test_process_packet_negotiation_ack_switches_local_baudrate() -> None:
 
 @pytest.mark.asyncio
 async def test_write_frame_debug_logs_unknown_command(
-    monkeypatch: pytest.MonkeyPatch,
+    mocker: MockerFixture,
 ) -> None:
     config = _make_config()
     state = create_runtime_state(config)
@@ -130,32 +131,29 @@ async def test_write_frame_debug_logs_unknown_command(
         mock_serial.is_open = True
         transport.serial = mock_serial
 
-        def mock_is_enabled(_lvl: int) -> bool:
-            return True
-
-        monkeypatch.setattr(
+        mocker.patch.object(
             mcubridge.transport.serial.logger,
             "is_enabled_for",
-            mock_is_enabled,
+            return_value=True,
         )
         seen: dict[str, str] = {}
 
         def mock_debug(msg: str, *args: Any) -> Any:
             return seen.setdefault("msg", msg % args)
 
-        monkeypatch.setattr(
+        mocker.patch.object(
             mcubridge.transport.serial.logger,
             "debug",
-            mock_debug,
+            side_effect=mock_debug,
         )
 
         def mock_log(_lvl: int, msg: str, *args: Any) -> Any:
             return seen.setdefault("msg", msg % args)
 
-        monkeypatch.setattr(
+        mocker.patch.object(
             mcubridge.transport.serial.logger,
             "log",
-            mock_log,
+            side_effect=mock_log,
         )
 
         ok = await transport.send(0xFE, b"payload")
@@ -188,7 +186,7 @@ async def test_write_frame_returns_false_on_write_error() -> None:
 
 @pytest.mark.asyncio
 async def test_process_packet_fallback_triggers_negotiation(
-    monkeypatch: pytest.MonkeyPatch,
+    mocker: MockerFixture,
 ) -> None:
     config = _make_config()
     config.serial_baud = protocol.DEFAULT_BAUDRATE
@@ -211,7 +209,7 @@ async def test_process_packet_fallback_triggers_negotiation(
         def mock_decode_fallback(data: Any) -> bytes:
             return raw
 
-        monkeypatch.setattr(cobsr, "decode", mock_decode_fallback)
+        mocker.patch.object(cobsr, "decode", side_effect=mock_decode_fallback)
 
         await getattr(transport, "_process_packet")(b"\x02encoded")
         assert getattr(transport, "_consecutive_crc_errors") == 1

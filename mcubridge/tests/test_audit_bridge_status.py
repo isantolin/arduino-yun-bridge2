@@ -4,6 +4,7 @@ from typer.testing import CliRunner
 from tools.audit.audit_bridge_status import app, audit_status_dict
 
 from typing import Any, cast
+from pytest_mock import MockerFixture
 
 runner = CliRunner()
 
@@ -122,7 +123,7 @@ def test_audit_cli_file(tmp_path: Path) -> None:
     assert "Failed to parse" in corrupt_res.stderr
 
 
-def test_audit_cli_ubus_success(monkeypatch: Any) -> None:
+def test_audit_cli_ubus_success(mocker: MockerFixture) -> None:
     import tools.audit.audit_bridge_status as audit_mod
     from unittest.mock import MagicMock
 
@@ -131,28 +132,28 @@ def test_audit_cli_ubus_success(monkeypatch: Any) -> None:
     mock_conn.call.return_value = {"connected": True, "synchronized": True, "capabilities": {}}
     mock_ubus.connect.return_value = mock_conn
 
-    monkeypatch.setattr(audit_mod, "ubus", mock_ubus)
+    mocker.patch.object(audit_mod, "ubus", mock_ubus)
     result = runner.invoke(cast(Any, app), ["--ubus"])
     assert result.exit_code == 0
     assert "STATUS AUDIT PASS" in result.stdout
 
 
-def test_audit_cli_ubus_subprocess_fallback(monkeypatch: Any) -> None:
+def test_audit_cli_ubus_subprocess_fallback(mocker: MockerFixture) -> None:
     import tools.audit.audit_bridge_status as audit_mod
     from unittest.mock import MagicMock
     import subprocess
 
-    monkeypatch.setattr(audit_mod, "ubus", None)
+    mocker.patch.object(audit_mod, "ubus", None)
     mock_proc = MagicMock()
     mock_proc.stdout = json.dumps({"connected": True, "synchronized": True, "capabilities": {}})
-    monkeypatch.setattr(subprocess, "run", MagicMock(return_value=mock_proc))
+    mocker.patch.object(subprocess, "run", return_value=mock_proc)
 
     result = runner.invoke(cast(Any, app), ["--ubus"])
     assert result.exit_code == 0
     assert "STATUS AUDIT PASS" in result.stdout
 
 
-def test_audit_cli_ubus_failure(monkeypatch: Any) -> None:
+def test_audit_cli_ubus_failure(mocker: MockerFixture) -> None:
     import tools.audit.audit_bridge_status as audit_mod
     from unittest.mock import MagicMock
 
@@ -161,7 +162,7 @@ def test_audit_cli_ubus_failure(monkeypatch: Any) -> None:
     mock_conn.call.side_effect = OSError("UBUS failure")
     mock_ubus.connect.return_value = mock_conn
 
-    monkeypatch.setattr(audit_mod, "ubus", mock_ubus)
+    mocker.patch.object(audit_mod, "ubus", mock_ubus)
     result = runner.invoke(cast(Any, app), ["--ubus"])
     assert result.exit_code == 1
     assert "STATUS AUDIT FAIL" in result.stderr

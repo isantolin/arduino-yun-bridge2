@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
+from pytest_mock import MockerFixture
 import pytest
 import tenacity
 
@@ -109,7 +110,7 @@ def test_wait_for_tcp_ready_timeout() -> None:
     assert wait_for_tcp_ready("127.0.0.1", 59999, timeout=0.15, interval=0.03) is False
 
 
-def test_ubus_service_start_retries_and_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ubus_service_start_retries_and_succeeds(mocker: MockerFixture) -> None:
     import mcubridge.services.ubus as ubus_mod
 
     mock_ubus: Any = MagicMock()
@@ -127,7 +128,7 @@ def test_ubus_service_start_retries_and_succeeds(monkeypatch: pytest.MonkeyPatch
     mock_ubus.INT32 = 1
     mock_ubus.STRING = 2
 
-    monkeypatch.setattr(ubus_mod, "ubus", mock_ubus)
+    mocker.patch.object(ubus_mod, "ubus", mock_ubus)
     service = UbusService(_make_runtime())
 
     res = service.start(max_attempts=4, retry_wait=tenacity.wait_none())
@@ -137,13 +138,13 @@ def test_ubus_service_start_retries_and_succeeds(monkeypatch: pytest.MonkeyPatch
     assert attempts == 3
 
 
-def test_ubus_service_start_retry_exhaustion(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ubus_service_start_retry_exhaustion(mocker: MockerFixture) -> None:
     import mcubridge.services.ubus as ubus_mod
 
     mock_ubus: Any = MagicMock()
     mock_ubus.connect.side_effect = OSError("Connection refused")
 
-    monkeypatch.setattr(ubus_mod, "ubus", mock_ubus)
+    mocker.patch.object(ubus_mod, "ubus", mock_ubus)
     service = UbusService(_make_runtime())
 
     res = service.start(max_attempts=3, retry_wait=tenacity.wait_none())
@@ -152,7 +153,7 @@ def test_ubus_service_start_retry_exhaustion(monkeypatch: pytest.MonkeyPatch) ->
     assert mock_ubus.connect.call_count == 3
 
 
-def test_fetch_url_with_retry_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_fetch_url_with_retry_succeeds(mocker: MockerFixture) -> None:
     attempts = 0
 
     def _mock_urlopen(req: Any, timeout: float = 10.0) -> Any:
@@ -166,18 +167,18 @@ def test_fetch_url_with_retry_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
         resp.__exit__.return_value = False
         return resp
 
-    monkeypatch.setattr(urllib.request, "urlopen", _mock_urlopen)
+    mocker.patch.object(urllib.request, "urlopen", side_effect=_mock_urlopen)
     req = urllib.request.Request("http://test.local/pkg")
     content = fetch_url_with_retry(req, attempts=3)
     assert content == b"OK"
     assert attempts == 2
 
 
-def test_fetch_url_with_retry_exhaustion(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
+def test_fetch_url_with_retry_exhaustion(mocker: MockerFixture) -> None:
+    mocker.patch.object(
         urllib.request,
         "urlopen",
-        MagicMock(side_effect=urllib.error.URLError("Fatal host unreachable")),
+        side_effect=urllib.error.URLError("Fatal host unreachable"),
     )
     req = urllib.request.Request("http://test.local/pkg")
     with pytest.raises(urllib.error.URLError):

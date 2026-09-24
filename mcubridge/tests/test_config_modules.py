@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from typing import Any
 
+from pytest_mock import MockerFixture
 import pytest
 from mcubridge.config import common, settings
 from mcubridge.protocol import protocol
 
 
 def test_load_runtime_config_applies_env_and_defaults(
-    monkeypatch: pytest.MonkeyPatch,
+    mocker: MockerFixture,
 ):
     raw_config = {
         "serial_port": "/dev/custom",
@@ -43,7 +44,7 @@ def test_load_runtime_config_applies_env_and_defaults(
         "watchdog_interval": 0.5,
     }
 
-    monkeypatch.setattr(settings, "_load_raw_config", lambda: (raw_config, "test"))
+    mocker.patch.object(settings, "_load_raw_config", return_value=(raw_config, "test"))
 
     config = settings.load_runtime_config()
 
@@ -75,12 +76,12 @@ def test_load_runtime_config_applies_env_and_defaults(
     assert config.watchdog_interval == 0.5
 
 
-def test_load_runtime_config_intervals(monkeypatch: pytest.MonkeyPatch):
+def test_load_runtime_config_intervals(mocker: MockerFixture):
     raw_config = {
         "bridge_summary_interval": 10.5,
         "bridge_handshake_interval": 20.0,
     }
-    monkeypatch.setattr(settings, "_load_raw_config", lambda: (raw_config, "test"))
+    mocker.patch.object(settings, "_load_raw_config", return_value=(raw_config, "test"))
 
     config = settings.load_runtime_config()
     assert config.bridge_summary_interval == 10.5
@@ -88,14 +89,14 @@ def test_load_runtime_config_intervals(monkeypatch: pytest.MonkeyPatch):
 
 
 def test_load_runtime_config_rejects_non_tmp_paths_when_disabled(
-    monkeypatch: pytest.MonkeyPatch,
+    mocker: MockerFixture,
 ):
     raw_config = {
         "cloud_spool_dir": "/var/spool/mcu",
         "file_system_root": "/var/lib/mcu",
         "allow_non_tmp_paths": False,
     }
-    monkeypatch.setattr(settings, "_load_raw_config", lambda: (raw_config, "test"))
+    mocker.patch.object(settings, "_load_raw_config", return_value=(raw_config, "test"))
 
     # Strict validation should now raise ValueError during load_runtime_config in test mode
 
@@ -104,34 +105,34 @@ def test_load_runtime_config_rejects_non_tmp_paths_when_disabled(
 
 
 def test_load_runtime_config_allows_empty_cloud_user_value(
-    monkeypatch: pytest.MonkeyPatch,
+    mocker: MockerFixture,
 ):
     raw_config = {
         "cloud_user": "",
         "cloud_pass": " ",
     }
-    monkeypatch.setattr(settings, "_load_raw_config", lambda: (raw_config, "test"))
+    mocker.patch.object(settings, "_load_raw_config", return_value=(raw_config, "test"))
 
     config = settings.load_runtime_config()
     assert config.cloud_user == ""
     assert config.cloud_pass == ""
 
 
-def test_load_runtime_config_prefers_uci_config(monkeypatch: pytest.MonkeyPatch):
+def test_load_runtime_config_prefers_uci_config(mocker: MockerFixture):
     raw_config = {"serial_port": "/dev/uci"}
-    monkeypatch.setattr(settings, "_load_raw_config", lambda: (raw_config, "uci"))
+    mocker.patch.object(settings, "_load_raw_config", return_value=(raw_config, "uci"))
 
     config = settings.load_runtime_config()
     assert config.serial_port == "/dev/uci"
 
 
 def test_load_runtime_config_falls_back_to_defaults(
-    monkeypatch: pytest.MonkeyPatch,
+    mocker: MockerFixture,
 ):
     def _uci_failure() -> dict[str, Any]:
         raise OSError("uci unavailable")
 
-    monkeypatch.setattr(settings, "get_uci_config", _uci_failure)
+    mocker.patch.object(settings, "get_uci_config", side_effect=_uci_failure)
 
     # We must ensure get_default_config returns a valid config or convert will fail
     # Default is valid by definition.
@@ -141,11 +142,11 @@ def test_load_runtime_config_falls_back_to_defaults(
     assert config.serial_port == protocol.DEFAULT_SERIAL_PORT
 
 
-def test_get_uci_config_flattens_nested_structures(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(
+def test_get_uci_config_flattens_nested_structures(mocker: MockerFixture):
+    mocker.patch.object(
         settings,
         "get_uci_config",
-        lambda: {
+        return_value={
             "allowed_commands": ["ls", "uptime"],
             "topic_prefix": "br",
         },
@@ -154,14 +155,14 @@ def test_get_uci_config_flattens_nested_structures(monkeypatch: pytest.MonkeyPat
     assert raw["allowed_commands"] == ["ls", "uptime"]
 
 
-def test_get_uci_config_handles_value_wrappers(monkeypatch: pytest.MonkeyPatch):
+def test_get_uci_config_handles_value_wrappers(mocker: MockerFixture):
     # Mocking UCI internal list handling
-    monkeypatch.setattr(settings, "get_uci_config", lambda: {"debug": True})
+    mocker.patch.object(settings, "get_uci_config", return_value={"debug": True})
     config = settings.load_runtime_config()
     assert config.debug
 
 
-def test_load_runtime_config_parses_watchdog(monkeypatch: pytest.MonkeyPatch):
+def test_load_runtime_config_parses_watchdog(mocker: MockerFixture):
     raw_config = common.get_default_config()
     raw_config.update(
         {
@@ -182,20 +183,20 @@ def test_load_runtime_config_parses_watchdog(monkeypatch: pytest.MonkeyPatch):
         }
     )
 
-    monkeypatch.setattr(settings, "_load_raw_config", lambda: (raw_config, "test"))
+    mocker.patch.object(settings, "_load_raw_config", return_value=(raw_config, "test"))
 
     config = settings.load_runtime_config()
     assert config.watchdog_enabled
     assert config.watchdog_interval == 0.5
 
 
-def test_load_runtime_config_http3(monkeypatch: pytest.MonkeyPatch):
+def test_load_runtime_config_http3(mocker: MockerFixture):
     raw_config = {
         "cloud_http3_enabled": True,
         "cloud_http3_port": 8843,
         "cloud_http3_congestion_control": "cubic",
     }
-    monkeypatch.setattr(settings, "_load_raw_config", lambda: (raw_config, "test"))
+    mocker.patch.object(settings, "_load_raw_config", return_value=(raw_config, "test"))
 
     config = settings.load_runtime_config()
     assert config.cloud_http3_enabled is True

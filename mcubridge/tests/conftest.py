@@ -17,6 +17,7 @@ from mcubridge.config.settings import load_runtime_config
 from typing import Any, cast
 
 import pytest
+from pytest_mock import MockerFixture
 import structlog
 from mcubridge.config.logging import configure_logging, reset_handlers
 
@@ -50,7 +51,7 @@ if _package_root not in sys.path:
 # ==============================================================================
 # GLOBAL TEST PATH ISOLATION PATCHING
 # ==============================================================================
-# This monkeypatches the default directories for both direct RuntimeConfig(...)
+# This patches the default directories for both direct RuntimeConfig(...)
 # calls and settings load functions (get_default_config) to ensure that each
 # test case runs in its own unique, isolated /tmp directory.
 # A cache is used to ensure stability (same paths) within a single test case,
@@ -256,13 +257,17 @@ def reset_logging_handlers():
 
 def _remove_persistent_test_path(path: Path) -> None:
     if path.is_dir():
-        shutil.rmtree(path)
+        shutil.rmtree(path, ignore_errors=True)
         return
 
     try:
-        path.unlink(missing_ok=True)
+        os.unlink(path)
+    except FileNotFoundError:
+        structlog.get_logger("mcubridge.tests").debug("File not found during cleanup", path=str(path))
     except IsADirectoryError:
-        shutil.rmtree(path)
+        shutil.rmtree(path, ignore_errors=True)
+    except OSError as e:
+        structlog.get_logger("mcubridge.tests").warning("Persistent path cleanup notice", path=str(path), error=str(e))
 
 
 @pytest.fixture(autouse=True)
@@ -284,12 +289,12 @@ def isolate_persistent_runtime_paths() -> Iterator[None]:
 
 
 @pytest.fixture(autouse=True)
-def default_serial_secret(monkeypatch: pytest.MonkeyPatch) -> None:
+def default_serial_secret(mocker: MockerFixture) -> None:
     """Ensure load_runtime_config() sees a secure serial secret by default."""
-    monkeypatch.setattr(
+    mocker.patch.object(
         settings,
         "get_uci_config",
-        lambda: {
+        return_value={
             **common.get_default_config(),
             "serial_shared_secret": "s_e_c_r_e_t_mock",
         },

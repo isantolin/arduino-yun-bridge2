@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pytest_mock import MockerFixture
 import pytest
 import serialx
 from mcubridge.protocol.protocol import Command, Status, UINT8_MASK
@@ -77,15 +78,15 @@ def test_snapshot_render() -> None:
     assert f"CRC32: 0x{TEST_BROKEN_CRC:08X}" in rendered
 
 
-def test_frame_debug_list_ports_empty(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+def test_frame_debug_list_ports_empty(mocker: MockerFixture, capsys: pytest.CaptureFixture[str]) -> None:
     empty_list: list[serialx.SerialPortInfo] = []
-    monkeypatch.setattr(frame_debug.serialx, "list_serial_ports", lambda: empty_list)
+    mocker.patch.object(frame_debug.serialx, "list_serial_ports", return_value=empty_list)
     frame_debug.main(list_ports=True)
     captured = capsys.readouterr()
     assert "No serial ports detected." in captured.out
 
 
-def test_frame_debug_list_ports_found(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+def test_frame_debug_list_ports_found(mocker: MockerFixture, capsys: pytest.CaptureFixture[str]) -> None:
     from unittest.mock import MagicMock
 
     mock_port = MagicMock()
@@ -95,7 +96,7 @@ def test_frame_debug_list_ports_found(monkeypatch: pytest.MonkeyPatch, capsys: p
     mock_port.pid = 0xEA60
     mock_port.serial_number = "0001"
     found_list: list[MagicMock] = [mock_port]
-    monkeypatch.setattr(frame_debug.serialx, "list_serial_ports", lambda: found_list)
+    mocker.patch.object(frame_debug.serialx, "list_serial_ports", return_value=found_list)
     frame_debug.main(list_ports=True)
     captured = capsys.readouterr()
     assert "Found 1 serial port(s):" in captured.out

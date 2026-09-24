@@ -4,7 +4,7 @@ import types
 from typing import Any
 from unittest.mock import MagicMock
 
-import pytest
+from pytest_mock import MockerFixture
 from mcubridge.config import common
 from mcubridge.protocol import protocol
 
@@ -21,7 +21,7 @@ def test_get_default_config_matches_constants():
     assert config["serial_response_timeout"] == protocol.DEFAULT_SERIAL_RESPONSE_TIMEOUT
 
 
-def test_get_uci_config_preserves_types(monkeypatch: pytest.MonkeyPatch):
+def test_get_uci_config_preserves_types(mocker: MockerFixture):
     payload = {
         ".name": "general",
         ".type": "mcubridge",
@@ -41,7 +41,7 @@ def test_get_uci_config_preserves_types(monkeypatch: pytest.MonkeyPatch):
         UciException=RuntimeError,
     )
 
-    monkeypatch.setitem(sys.modules, "uci", module)
+    mocker.patch.dict(sys.modules, {"uci": module})
     importlib.reload(common)
 
     config = common.get_uci_config()
@@ -52,7 +52,7 @@ def test_get_uci_config_preserves_types(monkeypatch: pytest.MonkeyPatch):
     assert config["cloud_queue_limit"] == 42
 
 
-def test_get_uci_config_falls_back_on_errors(monkeypatch: pytest.MonkeyPatch):
+def test_get_uci_config_falls_back_on_errors(mocker: MockerFixture):
     mock_cursor = MagicMock()
     mock_cursor.__enter__.return_value = mock_cursor
     mock_cursor.get_all.side_effect = OSError("boom")
@@ -61,7 +61,7 @@ def test_get_uci_config_falls_back_on_errors(monkeypatch: pytest.MonkeyPatch):
         UCI=MagicMock(return_value=mock_cursor),
         UciException=OSError,
     )
-    monkeypatch.setitem(sys.modules, "uci", module)
+    mocker.patch.dict(sys.modules, {"uci": module})
     importlib.reload(common)
 
     fallback_called = False
@@ -81,7 +81,7 @@ def test_get_uci_config_falls_back_on_errors(monkeypatch: pytest.MonkeyPatch):
             "debug": False,
         }
 
-    monkeypatch.setattr(common, "get_default_config", fake_default)
+    mocker.patch.object(common, "get_default_config", side_effect=fake_default)
 
     config = common.get_uci_config()
 

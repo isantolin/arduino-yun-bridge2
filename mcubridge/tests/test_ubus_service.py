@@ -6,6 +6,7 @@ import asyncio
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
+from pytest_mock import MockerFixture
 import pytest
 
 from mcubridge.config.settings import RuntimeConfig
@@ -61,21 +62,17 @@ def test_ubus_service_init_and_properties(mock_runtime: MockRuntimeFacade) -> No
     assert service.runtime == mock_runtime
 
 
-def test_ubus_service_start_without_ubus_module(
-    mock_runtime: MockRuntimeFacade, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_ubus_service_start_without_ubus_module(mock_runtime: MockRuntimeFacade, mocker: MockerFixture) -> None:
     import mcubridge.services.ubus as ubus_mod
 
-    monkeypatch.setattr(ubus_mod, "ubus", None)
+    mocker.patch.object(ubus_mod, "ubus", None)
     service = UbusService(mock_runtime)
     res = service.start()
     assert res is False
     assert not service.is_active
 
 
-def test_ubus_service_start_with_mock_ubus_success(
-    mock_runtime: MockRuntimeFacade, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_ubus_service_start_with_mock_ubus_success(mock_runtime: MockRuntimeFacade, mocker: MockerFixture) -> None:
     import mcubridge.services.ubus as ubus_mod
 
     mock_ubus: Any = MagicMock()
@@ -84,7 +81,7 @@ def test_ubus_service_start_with_mock_ubus_success(
     mock_ubus.INT32 = 1
     mock_ubus.STRING = 2
 
-    monkeypatch.setattr(ubus_mod, "ubus", mock_ubus)
+    mocker.patch.object(ubus_mod, "ubus", mock_ubus)
     service = UbusService(mock_runtime)
     res = service.start()
 
@@ -114,15 +111,13 @@ def test_ubus_service_start_with_mock_ubus_success(
     assert mock_conn.close.called
 
 
-def test_ubus_service_start_with_connection_error(
-    mock_runtime: MockRuntimeFacade, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_ubus_service_start_with_connection_error(mock_runtime: MockRuntimeFacade, mocker: MockerFixture) -> None:
     import mcubridge.services.ubus as ubus_mod
 
     mock_ubus: Any = MagicMock()
     mock_ubus.connect.side_effect = OSError("Connection refused")
 
-    monkeypatch.setattr(ubus_mod, "ubus", mock_ubus)
+    mocker.patch.object(ubus_mod, "ubus", mock_ubus)
     service = UbusService(mock_runtime)
     res = service.start()
 
@@ -179,7 +174,7 @@ def test_ubus_schedule_async_without_running_loop(mock_runtime: MockRuntimeFacad
     assert ran[0] is True
 
 
-def test_ubus_stop_with_close_oserror(mock_runtime: MockRuntimeFacade, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ubus_stop_with_close_oserror(mock_runtime: MockRuntimeFacade, mocker: MockerFixture) -> None:
     import mcubridge.services.ubus as ubus_mod
 
     mock_ubus: Any = MagicMock()
@@ -187,7 +182,7 @@ def test_ubus_stop_with_close_oserror(mock_runtime: MockRuntimeFacade, monkeypat
     mock_ubus.connect.return_value = mock_conn
     mock_conn.close.side_effect = OSError("Socket already closed")
 
-    monkeypatch.setattr(ubus_mod, "ubus", mock_ubus)
+    mocker.patch.object(ubus_mod, "ubus", mock_ubus)
     service = UbusService(mock_runtime)
     service.start()
     assert service.is_active
@@ -292,14 +287,14 @@ def test_ubus_handle_process_poll_binary_hex_fallback(mock_runtime: MockRuntimeF
     assert res["stderr"] == "<hex:8081>"
 
 
-def test_ubus_notify_lifecycle(mock_runtime: MockRuntimeFacade, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ubus_notify_lifecycle(mock_runtime: MockRuntimeFacade, mocker: MockerFixture) -> None:
     import mcubridge.services.ubus as ubus_mod
 
     mock_ubus: Any = MagicMock()
     mock_conn: Any = MagicMock()
     mock_ubus.connect.return_value = mock_conn
 
-    monkeypatch.setattr(ubus_mod, "ubus", mock_ubus)
+    mocker.patch.object(ubus_mod, "ubus", mock_ubus)
     service = UbusService(mock_runtime)
 
     # Inactive service returns False
@@ -316,13 +311,13 @@ def test_ubus_notify_lifecycle(mock_runtime: MockRuntimeFacade, monkeypatch: pyt
     assert service.notify("sync", {"synchronized": True}) is False
 
 
-def test_ubus_notify_with_boolean_connection(mock_runtime: MockRuntimeFacade, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ubus_notify_with_boolean_connection(mock_runtime: MockRuntimeFacade, mocker: MockerFixture) -> None:
     import mcubridge.services.ubus as ubus_mod
 
     mock_ubus: Any = MagicMock()
     mock_ubus.connect.return_value = True
 
-    monkeypatch.setattr(ubus_mod, "ubus", mock_ubus)
+    mocker.patch.object(ubus_mod, "ubus", mock_ubus)
     service = UbusService(mock_runtime)
 
     service.start()
@@ -449,7 +444,7 @@ def test_ubus_handle_ping(mock_runtime: MockRuntimeFacade) -> None:
 
 
 @pytest.mark.asyncio
-async def test_ubus_service_run_loop(mock_runtime: MockRuntimeFacade, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_ubus_service_run_loop(mock_runtime: MockRuntimeFacade, mocker: MockerFixture) -> None:
     import mcubridge.services.ubus as ubus_mod
 
     mock_ubus: Any = MagicMock()
@@ -460,7 +455,7 @@ async def test_ubus_service_run_loop(mock_runtime: MockRuntimeFacade, monkeypatc
         loop_called += 1
 
     mock_ubus.loop = fake_loop
-    monkeypatch.setattr(ubus_mod, "ubus", mock_ubus)
+    mocker.patch.object(ubus_mod, "ubus", mock_ubus)
 
     service = UbusService(mock_runtime)
     # When not active, run returns immediately
@@ -481,31 +476,31 @@ async def test_ubus_service_run_loop(mock_runtime: MockRuntimeFacade, monkeypatc
     assert loop_called > 0
 
 
-def test_get_ubus_type_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_get_ubus_type_resolution(mocker: MockerFixture) -> None:
     import mcubridge.services.ubus as ubus_mod
 
     get_ubus_type = getattr(ubus_mod, "_get_ubus_type")
 
     # When ubus is None
-    monkeypatch.setattr(ubus_mod, "ubus", None)
+    mocker.patch.object(ubus_mod, "ubus", None)
     assert get_ubus_type("INT32") == 0
 
     # When ubus has BLOBMSG_TYPE_*
     mock_ubus: Any = MagicMock(spec=["BLOBMSG_TYPE_INT32", "STRING"])
     mock_ubus.BLOBMSG_TYPE_INT32 = 5
     mock_ubus.STRING = 3
-    monkeypatch.setattr(ubus_mod, "ubus", mock_ubus)
+    mocker.patch.object(ubus_mod, "ubus", mock_ubus)
     assert get_ubus_type("INT32") == 5
     assert get_ubus_type("STRING") == 3
 
 
-def test_ubus_service_rpc_callback_execution(mock_runtime: MockRuntimeFacade, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ubus_service_rpc_callback_execution(mock_runtime: MockRuntimeFacade, mocker: MockerFixture) -> None:
     import mcubridge.services.ubus as ubus_mod
 
     mock_ubus: Any = MagicMock()
     mock_conn: Any = MagicMock()
     mock_ubus.connect.return_value = mock_conn
-    monkeypatch.setattr(ubus_mod, "ubus", mock_ubus)
+    mocker.patch.object(ubus_mod, "ubus", mock_ubus)
 
     service = UbusService(mock_runtime)
     assert service.start() is True
@@ -525,12 +520,12 @@ def test_ubus_service_rpc_callback_execution(mock_runtime: MockRuntimeFacade, mo
     service.stop()
 
 
-def test_ubus_service_connect_returns_none(mock_runtime: MockRuntimeFacade, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ubus_service_connect_returns_none(mock_runtime: MockRuntimeFacade, mocker: MockerFixture) -> None:
     import mcubridge.services.ubus as ubus_mod
 
     mock_ubus: Any = MagicMock()
     mock_ubus.connect.return_value = None
-    monkeypatch.setattr(ubus_mod, "ubus", mock_ubus)
+    mocker.patch.object(ubus_mod, "ubus", mock_ubus)
 
     service = UbusService(mock_runtime)
     assert service.start(max_attempts=1) is False
@@ -638,14 +633,14 @@ async def test_ubus_schedule_async_in_running_loop(mock_runtime: MockRuntimeFaca
     assert executed == [True]
 
 
-def test_ubus_schedule_async_with_target_loop(mock_runtime: MockRuntimeFacade, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ubus_schedule_async_with_target_loop(mock_runtime: MockRuntimeFacade, mocker: MockerFixture) -> None:
     service = UbusService(mock_runtime)
     mock_loop = MagicMock()
     mock_loop.is_running.return_value = True
     setattr(service, "_loop", mock_loop)
 
     mock_run_ts = MagicMock()
-    monkeypatch.setattr(asyncio, "run_coroutine_threadsafe", mock_run_ts)
+    mocker.patch.object(asyncio, "run_coroutine_threadsafe", mock_run_ts)
 
     async def _sample_coro() -> None:
         pass

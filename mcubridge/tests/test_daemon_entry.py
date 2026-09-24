@@ -1,12 +1,10 @@
-from typing import Any
 import importlib
-from unittest.mock import MagicMock
+from pytest_mock import MockerFixture
 
 
-def test_daemon_app_invokes_entrypoint(monkeypatch: Any):
+def test_daemon_app_invokes_entrypoint(mocker: MockerFixture) -> None:
     module = importlib.import_module("mcubridge.daemon")
-    called = MagicMock()
-    monkeypatch.setattr(module, "app", called)
+    called = mocker.patch.object(module, "app")
 
     module.app()
 

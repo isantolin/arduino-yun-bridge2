@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from pytest_mock import MockerFixture
 from grpclib.server import Stream
 
 from mcubridge.config.settings import RuntimeConfig
@@ -284,7 +285,7 @@ async def test_local_bridge_telemetry(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_local_bridge_edge_branches(tmp_path: Path) -> None:
+async def test_local_bridge_edge_branches(tmp_path: Path, mocker: MockerFixture) -> None:
     service, local_svc, mock_serial = _make_service(_make_config(tmp_path))
 
     # None requests on all remaining RPCs
@@ -400,11 +401,10 @@ async def test_local_bridge_edge_branches(tmp_path: Path) -> None:
     service.state.running_processes[8888] = ProcessContext(
         handle=MagicMock(),
     )
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(service, "_terminate_process", AsyncMock(side_effect=OSError("Kill failed")))
-        stream = _make_mock_stream(pb.ProcessKill(pid=8888))
-        await local_svc.ProcessKill(stream)
-        assert stream.send_message.call_args[0][0].status == "error"
+    mocker.patch.object(service, "_terminate_process", AsyncMock(side_effect=OSError("Kill failed")))
+    stream = _make_mock_stream(pb.ProcessKill(pid=8888))
+    await local_svc.ProcessKill(stream)
+    assert stream.send_message.call_args[0][0].status == "error"
 
 
 @pytest.mark.asyncio

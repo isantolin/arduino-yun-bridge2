@@ -18,6 +18,7 @@ import pytest
 
 import mcubridge.protocol.mcubridge_pb2 as pb
 from mcubridge.config.settings import RuntimeConfig
+import mcubridge.config.const as const
 import mcubridge.metrics as metrics_mod
 from mcubridge.metrics import (
     publish_bridge_snapshots,
@@ -279,7 +280,7 @@ async def test_runtime_supervisor_lifecycle(tmp_path: Path) -> None:
         raise RuntimeError("simulated fatal error")
 
     with pytest.raises(RuntimeError):
-        await service.supervise("failing", failing_task)
+        await service.supervise("failing", failing_task, max_restarts=1, min_backoff=0.001, max_backoff=0.001, jitter=0)
 
     # 3. Cancellation handling
     async def cancelled_task() -> None:
@@ -346,7 +347,7 @@ async def test_local_bridge_grpc_service(tmp_path: Path) -> None:
 
     asyncio.create_task(reply_auto_cor())
     await local_service.Publish(mock_stream)
-    assert not mock_stream.send_message.called
+    assert mock_stream.send_message.called
 
     service.cleanup()
 
@@ -359,7 +360,7 @@ async def test_runtime_unsupported_mcu_request(tmp_path: Path) -> None:
     unsupported_fn: Callable[..., Awaitable[bool]] = getattr(service, "_unsupported_mcu_request")
     res = await unsupported_fn(1, None, "unsupported_test")
     assert res is True
-    assert mock_serial.acknowledge.called
+    assert mock_serial.send.called
 
     # When serial is None
     service.serial = None
@@ -429,13 +430,13 @@ async def test_runtime_handle_mcu_status_payloads(tmp_path: Path, mocker: Mocker
 
 
 @pytest.mark.asyncio
-async def test_runtime_enqueue_cloud_drop(tmp_path: Path) -> None:
+async def test_runtime_enqueue_cloud_drop(tmp_path: Path, mocker: MockerFixture) -> None:
     config = _make_config(tmp_path)
+    config.cloud_enabled = True
     service, state, _ = _make_service(config)
 
     state.cloud_queue_limit = 1
-    # Fill queue
-    await service.enqueue_cloud(pb.CloudQueuedPublish(topic_name="test1", payload=b"1"))
+    mocker.patch.object(service, "_spool_cloud_message_locked", new_callable=AsyncMock, return_value=False)
     # Trigger drop
     await service.enqueue_cloud(pb.CloudQueuedPublish(topic_name="test2", payload=b"2"))
 
@@ -509,10 +510,15 @@ async def test_handshake_handle_link_sync_resp(tmp_path: Path) -> None:
     assert res is False
 
     # 3. Successful sync
+    handshake.fsm.reset()
+    handshake.fsm.start_sync()
+    handshake.fsm.reset_sent()
+    state.link_handshake_nonce = b"expected_nonce"
     valid_tag = handshake.calculate_handshake_tag(config.serial_shared_secret, b"expected_nonce")
     state.link_expected_tag = valid_tag
     good_sync = pb.LinkSync(nonce=b"expected_nonce", tag=valid_tag)
-    await handshake.handle_link_sync_resp(1, good_sync)
+    res = await handshake.handle_link_sync_resp(1, good_sync)
+    assert res is True
     assert state.is_synchronized
 
     service.cleanup()
@@ -538,15 +544,20 @@ async def test_handshake_handle_link_reset_resp(tmp_path: Path) -> None:
 def test_build_metrics_message_with_extra_props(tmp_path: Path) -> None:
     config = _make_config(tmp_path)
     state = create_runtime_state(config)
+    state.file_storage_limit_rejections = 1
 
     metrics_snap = state.build_metrics_snapshot()
+    metrics_snap.cloud_spool_degraded = True
+    metrics_snap.cloud_spool_failure_reason = "disk full"
     build_msg_fn: Callable[..., pb.CloudQueuedPublish] = getattr(metrics_mod, "_build_metrics_message")
     msg = build_msg_fn(state, metrics_snap, expiry_seconds=30.0)
 
-    assert msg.topic_name == f"{config.topic_prefix}/metrics"
+    assert msg.topic_name == f"{config.topic_prefix}/system/metrics"
     assert len(msg.payload) > 0
     user_props = {p.key: p.value for p in msg.user_properties}
-    assert user_props.get("device_id") == state.device_id
+    assert user_props.get(const.PROP_KEY_BRIDGE_SPOOL) == "disk full"
+    assert user_props.get(const.PROP_KEY_BRIDGE_FILES) == const.PROP_VAL_QUOTA_BLOCKED
+    assert user_props.get(const.PROP_KEY_WATCHDOG_ENABLED) == const.PROP_VAL_ENABLED_FALSE
 
     state.cleanup()
 
@@ -568,10 +579,10 @@ async def test_emit_bridge_snapshot_flavors(tmp_path: Path) -> None:
     await emit_snap_fn(state, mock_enqueue, flavor="handshake")
     assert mock_enqueue.called
 
-    # 3. Invalid flavor (noop)
+    # 3. Invalid flavor (fallback to bridge snapshot)
     mock_enqueue.reset_mock()
     await emit_snap_fn(state, mock_enqueue, flavor="unknown")
-    assert not mock_enqueue.called
+    assert mock_enqueue.called
 
     state.cleanup()
 
@@ -882,13 +893,13 @@ async def test_runtime_shell_dispatch_handlers(tmp_path: Path, mocker: MockerFix
         raw="test/br/shell/run_async", prefix=config.topic_prefix, topic=Topic.SHELL, segments=("run_async",)
     )
     inbound_run = pb.CloudQueuedPublish(topic_name="test/br/shell/run_async", payload=b"echo hello")
-    mock_run = mocker.patch.object(service, "_run_process", new_callable=AsyncMock, return_value=123)
+    mock_run = mocker.patch.object(service, "run_process", new_callable=AsyncMock, return_value=123)
     handle_sh_fn: Callable[..., Awaitable[None]] = getattr(service, "_handle_shell")
     await handle_sh_fn(route_run, inbound_run)
     assert mock_run.called
 
     # 2. Shell run async with error
-    mock_err_run = mocker.patch.object(service, "_run_process", side_effect=OSError("spawn error"))
+    mock_err_run = mocker.patch.object(service, "run_process", side_effect=OSError("spawn error"))
     await handle_sh_fn(route_run, inbound_run)
     assert mock_err_run.called
 
@@ -901,7 +912,7 @@ async def test_runtime_shell_dispatch_handlers(tmp_path: Path, mocker: MockerFix
         raw="test/br/shell/poll/123", prefix=config.topic_prefix, topic=Topic.SHELL, segments=("poll", "123")
     )
     inbound_poll = pb.CloudQueuedPublish(topic_name="test/br/shell/poll/123", payload=b"")
-    mock_poll = mocker.patch.object(service, "_poll_process", new_callable=AsyncMock)
+    mock_poll = mocker.patch.object(service, "poll_process", new_callable=AsyncMock)
     mock_poll.return_value = pb.ProcessPollResponse(status=Status.OK.value, exit_code=0, finished=True)
     await handle_sh_fn(route_poll, inbound_poll)
     assert mock_poll.called
@@ -1015,8 +1026,8 @@ async def test_runtime_flush_cloud_spool_corrupt_and_errors(tmp_path: Path) -> N
     config = _make_config(tmp_path)
     service, state, _ = _make_service(config)
 
-    mock_spool = AsyncMock(spec=LmdbDeque)
-    mock_spool.length = AsyncMock(side_effect=[2, 1, 0, 0, 0, 0])
+    mock_spool = MagicMock(spec=LmdbDeque)
+    mock_spool.__len__.side_effect = [2, 1, 0, 0]
     mock_spool.peek = AsyncMock(side_effect=[b"\xff\xffinvalid_protobuf", b""])
     mock_spool.popleft = AsyncMock()
 

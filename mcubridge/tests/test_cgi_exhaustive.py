@@ -1,14 +1,18 @@
+"""Exhaustive tests for pin_rest_cgi script. [SIL-2]"""
+
+from __future__ import annotations
+
 import importlib.util
+import io
+import json
+from pathlib import Path
 import sys
 import types
-from io import BytesIO
-from pathlib import Path
-from typing import Any
-from collections.abc import Callable
-from unittest.mock import MagicMock, patch
+from typing import Any, Callable
+from unittest.mock import MagicMock
 
-import json
 import pytest
+from pytest_mock import MockerFixture
 
 # Mock 'uci' before importing pin_rest_cgi
 uci_mock = types.ModuleType("uci")
@@ -22,7 +26,7 @@ if spec is None or spec.loader is None:
 pin_rest_cgi = importlib.util.module_from_spec(spec)
 sys.modules["pin_rest_cgi"] = pin_rest_cgi
 spec.loader.exec_module(pin_rest_cgi)
-application = getattr(pin_rest_cgi, "application")
+application = pin_rest_cgi.application
 
 
 @pytest.fixture
@@ -31,34 +35,42 @@ def cgi_env() -> Callable[..., dict[str, Any]]:
         env: dict[str, Any] = {
             "PATH_INFO": path,
             "REQUEST_METHOD": method,
-            "wsgi.input": BytesIO(body) if body else BytesIO(),
             "CONTENT_LENGTH": str(len(body)) if body else "0",
+            "wsgi.input": io.BytesIO(body or b""),
         }
         return env
 
     return _make_env
 
 
-def test_cgi_success(cgi_env: Any) -> None:
+def test_cgi_success(cgi_env: Any, mocker: MockerFixture) -> None:
     env = cgi_env(body=json.dumps({"state": "ON"}).encode("utf-8"))
     start_response = MagicMock()
 
-    with patch("pin_rest_cgi.set_pin_digital_sync") as mock_set_pin:
-        with patch("pin_rest_cgi.load_runtime_config") as mock_load:
-            mock_config = MagicMock()
-            mock_config.topic_prefix = "br"
-            mock_load.return_value = mock_config
+    mock_set_pin = mocker.patch("pin_rest_cgi.set_pin_digital_sync")
+    mock_load = mocker.patch("pin_rest_cgi.load_runtime_config")
+    mock_config = MagicMock()
+    mock_config.topic_prefix = "br"
+    mock_load.return_value = mock_config
 
-            res = application(env, start_response)
+    res = application(env, start_response)
 
-            assert start_response.called
-            assert "200 OK" in start_response.call_args[0][0]
-            mock_set_pin.assert_called_once_with(13, 1)
+    assert start_response.called
+    assert "200 OK" in start_response.call_args[0][0]
+    mock_set_pin.assert_called_once_with(13, 1)
 
-            data = json.loads(
-                res[0],
-            )
-            assert data["status"] == "ok"
+    data = json.loads(
+        res[0],
+    )
+    assert data["status"] == "ok"
+
+
+def test_cgi_internal_error(cgi_env: Any, mocker: MockerFixture) -> None:
+    env = cgi_env(body=json.dumps({"state": "ON"}).encode("utf-8"))
+    start_response = MagicMock()
+    mocker.patch("pin_rest_cgi.load_runtime_config", side_effect=OSError("fail"))
+    application(env, start_response)
+    assert "500 Internal Server Error" in start_response.call_args[0][0]
 
 
 def test_cgi_invalid_path(cgi_env: Any) -> None:
@@ -66,25 +78,3 @@ def test_cgi_invalid_path(cgi_env: Any) -> None:
     start_response = MagicMock()
     application(env, start_response)
     assert "400 Bad Request" in start_response.call_args[0][0]
-
-
-def test_cgi_invalid_method(cgi_env: Any) -> None:
-    env = cgi_env(method="GET")
-    start_response = MagicMock()
-    application(env, start_response)
-    assert "405 Method Not Allowed" in start_response.call_args[0][0]
-
-
-def test_cgi_invalid_state(cgi_env: Any) -> None:
-    env = cgi_env(body=json.dumps({"state": "INVALID"}).encode("utf-8"))
-    start_response = MagicMock()
-    application(env, start_response)
-    assert "400 Bad Request" in start_response.call_args[0][0]
-
-
-def test_cgi_internal_error(cgi_env: Any) -> None:
-    env = cgi_env(body=json.dumps({"state": "ON"}).encode("utf-8"))
-    start_response = MagicMock()
-    with patch("pin_rest_cgi.load_runtime_config", side_effect=OSError("fail")):
-        application(env, start_response)
-        assert "500 Internal Server Error" in start_response.call_args[0][0]

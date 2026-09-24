@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
-
 import pytest
+from pytest_mock import MockerFixture
+
 from mcubridge.protocol import protocol
 from mcubridge.security.security import (
     extract_nonce_counter,
@@ -68,30 +68,30 @@ def test_validate_nonce_counter_replay() -> None:
     assert last == 6
 
 
-def test_validate_nonce_counter_overflow_mask() -> None:
-    with patch("mcubridge.security.security.extract_nonce_counter", return_value=protocol.NONCE_COUNTER_MASK + 1):
-        valid, last = validate_nonce_counter(b"\x00" * 12, 10)
-        assert valid is False
-        assert last == 10
+def test_validate_nonce_counter_overflow_mask(mocker: MockerFixture) -> None:
+    mocker.patch("mcubridge.security.security.extract_nonce_counter", return_value=protocol.NONCE_COUNTER_MASK + 1)
+    valid, last = validate_nonce_counter(b"\x00" * 12, 10)
+    assert valid is False
+    assert last == 10
 
 
 def test_verify_crypto_integrity_success() -> None:
     assert verify_crypto_integrity() is True
 
 
-def test_verify_crypto_integrity_sha256_failure() -> None:
-    with patch("cryptography.hazmat.primitives.hashes.Hash.finalize", return_value=b"wrong_hash"):
-        assert verify_crypto_integrity() is False
+def test_verify_crypto_integrity_sha256_failure(mocker: MockerFixture) -> None:
+    mocker.patch("cryptography.hazmat.primitives.hashes.Hash.finalize", return_value=b"wrong_hash")
+    assert verify_crypto_integrity() is False
 
 
-def test_verify_crypto_integrity_hmac_failure() -> None:
-    with patch("cryptography.hazmat.primitives.hmac.HMAC.finalize", return_value=b"wrong_hmac"):
-        assert verify_crypto_integrity() is False
+def test_verify_crypto_integrity_hmac_failure(mocker: MockerFixture) -> None:
+    mocker.patch("cryptography.hazmat.primitives.hmac.HMAC.finalize", return_value=b"wrong_hmac")
+    assert verify_crypto_integrity() is False
 
 
-def test_verify_crypto_integrity_chacha_failure() -> None:
-    with patch(
+def test_verify_crypto_integrity_chacha_failure(mocker: MockerFixture) -> None:
+    mocker.patch(
         "cryptography.hazmat.primitives.ciphers.aead.ChaCha20Poly1305.encrypt",
         side_effect=ValueError("ChaCha error"),
-    ):
-        assert verify_crypto_integrity() is False
+    )
+    assert verify_crypto_integrity() is False

@@ -89,6 +89,10 @@ def test_env_read_uci_general() -> None:
                 mock_mod.get_uci_config.side_effect = RuntimeError("UCI error")
                 assert read_uci_general() == {}
 
+                # Exception path in import_module
+                mock_imp.side_effect = ImportError("No module")
+                assert read_uci_general() == {}
+
 
 def test_env_dump_client_env(capsys: pytest.CaptureFixture[str]) -> None:
     """dump_client_env outputs snapshot to logger or stdout."""

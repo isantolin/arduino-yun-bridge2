@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from grpclib.const import Status
 from grpclib.exceptions import GRPCError
+from hypothesis import given, settings, strategies as st
 from pytest_mock import MockerFixture
 import pytest
 from typer.testing import CliRunner
@@ -801,6 +802,54 @@ async def test_handle_telemetry_full_metrics_dimensions(mock_gateway: ProtobufGa
     assert "published_messages=8i" in line
 
 
+@settings(max_examples=30, derandomize=True, deadline=None)
+@given(
+    device_id=st.text(alphabet="abcdefghijklmnopqrstuvwxyz0123456789_-", min_size=1, max_size=32),
+    serial_sent=st.integers(0, 10_000_000),
+    serial_recv=st.integers(0, 10_000_000),
+    crc_errors=st.integers(0, 100_000),
+    beats=st.integers(0, 100_000),
+    published=st.integers(0, 100_000),
+    sync=st.booleans(),
+    spool_deg=st.booleans(),
+    watchdog=st.booleans(),
+    ts=st.integers(1_000_000_000, 2_000_000_000_000),
+)
+def test_tsdb_sink_format_line_protocol_property(
+    device_id: str,
+    serial_sent: int,
+    serial_recv: int,
+    crc_errors: int,
+    beats: int,
+    published: int,
+    sync: bool,
+    spool_deg: bool,
+    watchdog: bool,
+    ts: int,
+) -> None:
+    metrics = pb.DaemonMetrics(
+        serial_bytes_sent=serial_sent,
+        serial_bytes_received=serial_recv,
+        serial_crc_errors=crc_errors,
+        watchdog_beats=beats,
+        cloud_messages_published=published,
+        link_synchronised=sync,
+        cloud_spool_degraded=spool_deg,
+        watchdog_enabled=watchdog,
+    )
+    line = TSDBSink.format_line_protocol(device_id, metrics, timestamp_ns=ts)
+    assert line.startswith(f"mcubridge_telemetry,device_id={device_id} ")
+    assert line.endswith(f" {ts}")
+    assert f"serial_bytes_sent={serial_sent}i" in line
+    assert f"serial_bytes_received={serial_recv}i" in line
+    assert f"serial_crc_errors={crc_errors}i" in line
+    assert f"watchdog_beats={beats}i" in line
+    assert f"published_messages={published}i" in line
+    assert f"link_synchronized={1 if sync else 0}i" in line
+    assert f"spool_degraded={1 if spool_deg else 0}i" in line
+    assert f"watchdog_enabled={1 if watchdog else 0}i" in line
+
+
 @pytest.mark.asyncio
 async def test_dispatch_command_branches(mock_gateway: ProtobufGateway) -> None:
     svc = CloudBridgeService(mock_gateway)
@@ -1006,16 +1055,16 @@ async def test_gateway_local_bridge_service_dispatch(mock_gateway: ProtobufGatew
         (local_svc.GetStatus, pb.SubscribeRequest(), pb.BridgeStatus()),
     ]
     for rpc_fn, req_msg, resp_msg in rpc_cases:
-        st = AsyncMock()
-        st.metadata = {"x-device-id": "dev-1"}
-        st.recv_message = AsyncMock(return_value=req_msg)
+        rpc_stream = AsyncMock()
+        rpc_stream.metadata = {"x-device-id": "dev-1"}
+        rpc_stream.recv_message = AsyncMock(return_value=req_msg)
         setattr(
             mock_gateway,
             "send_command",
             AsyncMock(return_value=pb.CommandResponse(status_code=200, payload=resp_msg.SerializeToString())),
         )
-        await rpc_fn(st)
-        st.send_message.assert_called_once()
+        await rpc_fn(rpc_stream)
+        rpc_stream.send_message.assert_called_once()
 
     # 9. Publish RPC (console routing and missing device_id)
     stream_pub_no_dev = AsyncMock()

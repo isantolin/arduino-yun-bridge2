@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from hypothesis import given, settings, strategies as st
 import pytest
+
 from mcubridge.protocol import frame, mcubridge_pb2 as pb, protocol, structures
-from typing import Any
 
 # =============================================================================
 # 1. Tests for mcubridge.protocol.frame
@@ -19,12 +20,18 @@ def test_build_frame_invalid_command_id() -> None:
         frame.build_frame(0x10000, 1)
 
 
-def test_build_frame_unencrypted_bytes() -> None:
-    raw = frame.build_frame(command_id=0x01, sequence_id=10, payload=b"hello_world")
+@settings(max_examples=30, derandomize=True, deadline=None)
+@given(
+    cmd_id=st.integers(0, 0xFF),
+    seq_id=st.integers(0, protocol.UINT16_MAX),
+    payload=st.binary(min_size=0, max_size=protocol.MAX_PAYLOAD_SIZE),
+)
+def test_build_parse_frame_isomorphism_unencrypted_property(cmd_id: int, seq_id: int, payload: bytes) -> None:
+    raw = frame.build_frame(command_id=cmd_id, sequence_id=seq_id, payload=payload)
     decoded = frame.parse_frame(raw)
-    assert decoded.envelope.command_id == 0x01
-    assert decoded.envelope.sequence_id == 10
-    assert decoded.payload == b"hello_world"
+    assert decoded.envelope.command_id == cmd_id
+    assert decoded.envelope.sequence_id == seq_id
+    assert decoded.payload == payload
 
 
 def test_build_frame_unencrypted_protobuf_message() -> None:
@@ -37,38 +44,45 @@ def test_build_frame_unencrypted_protobuf_message() -> None:
     assert decoded.payload.data == b"hello"
 
 
-def test_build_frame_unencrypted_bytes_exceeds_max_payload() -> None:
-    too_large = b"X" * (protocol.MAX_PAYLOAD_SIZE + 1)
+@settings(max_examples=25, derandomize=True, deadline=None)
+@given(
+    overflow_len=st.integers(protocol.MAX_PAYLOAD_SIZE + 1, protocol.MAX_PAYLOAD_SIZE + 64),
+    encrypted=st.booleans(),
+)
+def test_build_frame_payload_overflow_property(overflow_len: int, encrypted: bool) -> None:
+    key = b"\x00" * protocol.AEAD_KEY_SIZE if encrypted else None
+    too_large = b"X" * overflow_len
     with pytest.raises(ValueError, match="exceeds maximum"):
-        frame.build_frame(command_id=0x01, sequence_id=1, payload=too_large)
+        frame.build_frame(command_id=0x01, sequence_id=1, payload=too_large, session_key=key)
 
 
-def test_build_frame_encrypted_protobuf_message_exceeds_max_payload() -> None:
-    key = b"\x00" * 32
-    too_large = b"Y" * (protocol.MAX_PAYLOAD_SIZE + 1)
-    with pytest.raises(ValueError, match="exceeds maximum"):
-        frame.build_frame(command_id=0x10, sequence_id=1, payload=too_large, session_key=key)
-
-
-def test_build_frame_encrypted_success() -> None:
-    key = b"\x01" * 32
-    nonce = b"\x02" * 12
+@settings(max_examples=30, derandomize=True, deadline=None)
+@given(
+    cmd_id=st.integers(0, 0xFF),
+    seq_id=st.integers(0, protocol.UINT16_MAX),
+    payload=st.binary(min_size=0, max_size=protocol.MAX_PAYLOAD_SIZE),
+    key=st.binary(min_size=protocol.AEAD_KEY_SIZE, max_size=protocol.AEAD_KEY_SIZE),
+    nonce=st.binary(min_size=protocol.AEAD_NONCE_SIZE, max_size=protocol.AEAD_NONCE_SIZE),
+)
+def test_build_parse_frame_isomorphism_encrypted_property(
+    cmd_id: int, seq_id: int, payload: bytes, key: bytes, nonce: bytes
+) -> None:
     raw = frame.build_frame(
-        command_id=0x10,
-        sequence_id=20,
-        payload=b"secret_data",
+        command_id=cmd_id,
+        sequence_id=seq_id,
+        payload=payload,
         nonce=nonce,
         session_key=key,
     )
     decoded = frame.parse_frame(raw, session_key=key)
-    assert decoded.envelope.command_id == 0x10
-    assert decoded.envelope.sequence_id == 20
-    assert decoded.payload == b"secret_data"
+    assert decoded.envelope.command_id == cmd_id
+    assert decoded.envelope.sequence_id == seq_id
+    assert decoded.payload == payload
 
 
 def test_build_frame_encrypted_with_protobuf_payload() -> None:
-    key = b"\x03" * 32
-    nonce = b"\x04" * 12
+    key = b"\x03" * protocol.AEAD_KEY_SIZE
+    nonce = b"\x04" * protocol.AEAD_NONCE_SIZE
     req = pb.PinControlRequest(state="OFF")
     raw = frame.build_frame(
         command_id=0x10,
@@ -159,14 +173,20 @@ def test_topic_route_properties() -> None:
     assert route_resp.action is None
 
 
-def test_is_command_allowed() -> None:
-    policy = pb.AllowedCommandPolicy(entries=["reboot", "ls", "*"])
-    assert structures.is_command_allowed(policy, "reboot now") is True
+@settings(max_examples=25, derandomize=True, deadline=None)
+@given(
+    cmd=st.text(alphabet="abcdefghijklmnopqrstuvwxyz0123456789_-", min_size=1, max_size=16),
+    arg=st.text(alphabet="abcdefghijklmnopqrstuvwxyz0123456789_-", min_size=0, max_size=16),
+)
+def test_is_command_allowed_property(cmd: str, arg: str) -> None:
+    policy = pb.AllowedCommandPolicy(entries=[cmd, "*"])
+    full_cmd = f"{cmd} {arg}".strip()
+    assert structures.is_command_allowed(policy, full_cmd) is True
     assert structures.is_command_allowed(policy, "") is False
 
-    specific_policy = pb.AllowedCommandPolicy(entries=["cat", "ls"])
-    assert structures.is_command_allowed(specific_policy, "ls -la") is True
-    assert structures.is_command_allowed(specific_policy, "rm -rf /") is False
+    strict_policy = pb.AllowedCommandPolicy(entries=[cmd])
+    assert structures.is_command_allowed(strict_policy, full_cmd) is True
+    assert structures.is_command_allowed(strict_policy, f"disallowed_{cmd}") is False
 
 
 def test_create_allowed_policy() -> None:
@@ -184,61 +204,98 @@ def test_allows_topic() -> None:
     assert structures.allows_topic(auth, "unknown", "action") is False
 
 
-def _valid_runtime_config(**overrides: Any) -> pb.RuntimeConfig:
-    """Build a RuntimeConfig satisfying all validation rules, with overrides for testing."""
-    base: dict[str, Any] = dict(
-        serial_port="/dev/ttyATH0",
-        cloud_port=8883,
-        topic_prefix="bridge",
-        watchdog_enabled=True,
-        watchdog_interval=1.0,
-        serial_shared_secret=b"secret",
-        cloud_http3_port=443,
-        allow_non_tmp_paths=False,
-        cloud_spool_dir="/tmp/spool",
-        file_system_root="/tmp",
-        status_interval=60,
-    )
-    base.update(overrides)
-    return pb.RuntimeConfig(**base)
+def _valid_runtime_config() -> pb.RuntimeConfig:
+    """Build a RuntimeConfig satisfying all validation rules."""
+    cfg = pb.RuntimeConfig()
+    cfg.serial_port = "/dev/ttyATH0"
+    cfg.cloud_port = 8883
+    cfg.topic_prefix = "bridge"
+    cfg.watchdog_enabled = True
+    cfg.watchdog_interval = 1.0
+    cfg.serial_shared_secret = b"secret"
+    cfg.cloud_http3_port = 443
+    cfg.allow_non_tmp_paths = False
+    cfg.cloud_spool_dir = "/tmp/spool"
+    cfg.file_system_root = "/tmp"
+    cfg.status_interval = 60
+    return cfg
 
 
-def test_validate_config_invalid() -> None:
+def test_validate_config_discrete_boundaries() -> None:
+    cfg = _valid_runtime_config()
+    cfg.serial_port = ""
     with pytest.raises(ValueError, match="serial_port"):
-        structures.validate_config(_valid_runtime_config(serial_port=""))
+        structures.validate_config(cfg)
 
+    cfg = _valid_runtime_config()
+    cfg.cloud_port = 0
     with pytest.raises(ValueError, match="cloud_port"):
-        structures.validate_config(_valid_runtime_config(cloud_port=0))
+        structures.validate_config(cfg)
 
-    with pytest.raises(ValueError, match="cloud_port"):
-        structures.validate_config(_valid_runtime_config(cloud_port=70000))
-
+    cfg = _valid_runtime_config()
+    cfg.topic_prefix = ""
     with pytest.raises(ValueError, match="topic_prefix"):
-        structures.validate_config(_valid_runtime_config(topic_prefix=""))
+        structures.validate_config(cfg)
 
+    cfg = _valid_runtime_config()
+    cfg.status_interval = 0
     with pytest.raises(ValueError, match="status_interval"):
-        structures.validate_config(_valid_runtime_config(status_interval=0))
-
-    with pytest.raises(ValueError, match="watchdog_interval must be >= 0.5s"):
-        structures.validate_config(_valid_runtime_config(watchdog_interval=0.1))
+        structures.validate_config(cfg)
 
     # Disabling the watchdog lifts the constraint on watchdog_interval.
-    structures.validate_config(_valid_runtime_config(watchdog_enabled=False, watchdog_interval=0.1))
+    cfg = _valid_runtime_config()
+    cfg.watchdog_enabled = False
+    cfg.watchdog_interval = 0.1
+    structures.validate_config(cfg)
 
+    cfg = _valid_runtime_config()
+    cfg.cloud_spool_dir = "/invalid/flash/path"
     with pytest.raises(ValueError, match="cloud_spool_dir"):
-        structures.validate_config(_valid_runtime_config(cloud_spool_dir="/invalid/flash/path"))
+        structures.validate_config(cfg)
 
+    cfg = _valid_runtime_config()
+    cfg.file_system_root = "/invalid/root"
     with pytest.raises(ValueError, match="file_system_root"):
-        structures.validate_config(_valid_runtime_config(file_system_root="/invalid/root"))
+        structures.validate_config(cfg)
 
+    cfg = _valid_runtime_config()
+    cfg.cloud_certfile = "/path/to/cert"
+    cfg.cloud_keyfile = ""
     with pytest.raises(ValueError, match="cloud_certfile"):
-        structures.validate_config(_valid_runtime_config(cloud_certfile="/path/to/cert", cloud_keyfile=""))
+        structures.validate_config(cfg)
 
+    cfg = _valid_runtime_config()
+    cfg.serial_shared_secret = b""
     with pytest.raises(ValueError, match="serial_shared_secret"):
-        structures.validate_config(_valid_runtime_config(serial_shared_secret=b""))
+        structures.validate_config(cfg)
 
+
+@settings(max_examples=20, derandomize=True, deadline=None)
+@given(invalid_port=st.integers(65536, 100000))
+def test_validate_config_invalid_cloud_port_property(invalid_port: int) -> None:
+    cfg = _valid_runtime_config()
+    cfg.cloud_port = invalid_port
+    with pytest.raises(ValueError, match="cloud_port"):
+        structures.validate_config(cfg)
+
+
+@settings(max_examples=20, derandomize=True, deadline=None)
+@given(invalid_http3_port=st.integers(65536, 100000))
+def test_validate_config_invalid_http3_port_property(invalid_http3_port: int) -> None:
+    cfg = _valid_runtime_config()
+    cfg.cloud_http3_port = invalid_http3_port
     with pytest.raises(ValueError, match="cloud_http3_port"):
-        structures.validate_config(_valid_runtime_config(cloud_http3_port=70000))
+        structures.validate_config(cfg)
+
+
+@settings(max_examples=20, derandomize=True, deadline=None)
+@given(interval=st.floats(min_value=0.01, max_value=0.49))
+def test_validate_config_invalid_watchdog_interval_property(interval: float) -> None:
+    cfg = _valid_runtime_config()
+    cfg.watchdog_enabled = True
+    cfg.watchdog_interval = interval
+    with pytest.raises(ValueError, match="watchdog_interval must be >= 0.5s"):
+        structures.validate_config(cfg)
 
 
 def test_get_ssl_context() -> None:

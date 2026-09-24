@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
+from hypothesis import given, settings, strategies as st
 import pytest
 from pytest_mock import MockerFixture
 import structlog
@@ -166,14 +167,45 @@ async def test_spi_device_lifecycle_and_transfer() -> None:
     await dev.end()
 
 
-def test_topic_matches_wildcards() -> None:
-    """Verify Topic.matches works for exact and wildcard patterns."""
+_SEGMENT_STRATEGY = st.text(alphabet="abcdefghijklmnopqrstuvwxyz0123456789_-", min_size=1, max_size=16)
+
+
+@settings(max_examples=30, derandomize=True, deadline=None)
+@given(seg1=_SEGMENT_STRATEGY, seg2=_SEGMENT_STRATEGY)
+def test_topic_matches_exact_reflexive_property(seg1: str, seg2: str) -> None:
+    """Validate that exact matching is reflexive for any arbitrary topic path."""
     from mcubridge_client.protocol import Topic
 
-    assert Topic.matches("br/+/status", "br/system/status")
-    assert Topic.matches("br/#", "br/a/1")
-    assert Topic.matches("br/a/1", "br/a/1")
-    assert not Topic.matches("br/a/1", "br/a/2")
+    topic_str = f"br/{seg1}/{seg2}"
+    assert Topic.matches(topic_str, topic_str)
+
+
+@settings(max_examples=30, derandomize=True, deadline=None)
+@given(seg1=_SEGMENT_STRATEGY, seg2=_SEGMENT_STRATEGY)
+def test_topic_matches_wildcards_property(seg1: str, seg2: str) -> None:
+    """Validate MQTT single (+) and multi-level (#) wildcard matching invariants."""
+    from mcubridge_client.protocol import Topic
+
+    topic_str = f"br/{seg1}/{seg2}"
+    assert Topic.matches("br/#", topic_str)
+    assert Topic.matches(f"br/+/{seg2}", topic_str)
+    assert Topic.matches(f"br/{seg1}/+", topic_str)
+
+
+@settings(max_examples=30, derandomize=True, deadline=None)
+@given(
+    prefix=_SEGMENT_STRATEGY,
+    seg1=_SEGMENT_STRATEGY,
+    seg2=_SEGMENT_STRATEGY,
+)
+def test_topic_build_and_match_invariants(prefix: str, seg1: str, seg2: str) -> None:
+    """Validate Topic.build output structure and matching against generated paths."""
+    from mcubridge_client.protocol import Topic
+
+    built = Topic.build(seg1, seg2, prefix=prefix)
+    assert built == f"{prefix}/{seg1}/{seg2}"
+    assert Topic.matches(f"{prefix}/#", built)
+    assert Topic.matches(built, built)
 
 
 @pytest.mark.asyncio

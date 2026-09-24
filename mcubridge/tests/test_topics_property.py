@@ -11,7 +11,6 @@ from mcubridge.protocol.topics import (
     topic_path,
 )
 
-
 _SAFE_TEXT = st.text(
     alphabet="abcdefghijklmnopqrstuvwxyz0123456789_-",
     min_size=1,

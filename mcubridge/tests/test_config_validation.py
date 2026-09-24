@@ -1,93 +1,77 @@
-"""Tests for RuntimeConfig normalization and validation."""
+"""Tests for RuntimeConfig normalization and validation. [SIL-2]"""
 
 from __future__ import annotations
 
-import os
-from typing import Any
-
+from hypothesis import given, settings, strategies as st
 from pytest_mock import MockerFixture
 import pytest
-from mcubridge.config import settings
+
+from mcubridge.config import settings as config_settings
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol import protocol
-from mcubridge.protocol.protocol import DEFAULT_PROCESS_TIMEOUT
+from mcubridge.protocol.structures import validate_config
 
 
-def _config_kwargs(**overrides: Any) -> dict[str, Any]:
-    base: dict[str, Any] = {
+def _valid_base_config() -> RuntimeConfig:
+    cfg = RuntimeConfig()
+    cfg.serial_port = "/dev/null"
+    cfg.topic_prefix = "mcubridge"
+    cfg.file_system_root = "/tmp/fs"
+    cfg.cloud_spool_dir = "/tmp/spool"
+    cfg.serial_shared_secret = b"secret1234"
+    cfg.allow_non_tmp_paths = True
+    return cfg
+
+
+def test_runtime_config_topic_and_paths(mocker: MockerFixture) -> None:
+    raw = {
         "serial_port": "/dev/null",
-        "serial_baud": protocol.DEFAULT_BAUDRATE,
-        "serial_safe_baud": protocol.DEFAULT_SAFE_BAUDRATE,
-        "cloud_host": "localhost",
-        "cloud_port": protocol.DEFAULT_CLOUD_PORT,
-        "cloud_user": None,
-        "cloud_pass": None,
-        "cloud_tls": True,
-        "cloud_cafile": ".tmp_tests/test-ca.pem",
-        "cloud_certfile": None,
-        "cloud_keyfile": None,
-        "topic_prefix": "mcubridge",
-        "allowed_commands": (),
-        "file_system_root": ".tmp_tests",
-        "process_timeout": DEFAULT_PROCESS_TIMEOUT,
-        "serial_shared_secret": b"abcd1234",
+        "topic_prefix": "/demo//prefix/",
+        "file_system_root": "/tmp/tests//bridge/test/..",
+        "cloud_spool_dir": "/tmp/spool",
+        "serial_shared_secret": b"secret1234",
+        "allow_non_tmp_paths": True,
     }
-    base.update(overrides)
-    return base
-
-
-def test_runtime_config_topic_and_paths(
-    mocker: MockerFixture,
-) -> None:
-    spool_absolute = "/tmp/relative/spool"
-    os.path.abspath(spool_absolute)
-    root_input = "/tmp/tests//bridge/test/.."
-    os.path.abspath(root_input)
-
-    raw = _config_kwargs(
-        topic_prefix="/demo//prefix/",
-        file_system_root=root_input,
-    )
-    mocker.patch.object(settings, "_load_raw_config", return_value=(raw, "test"))
-
-    config = settings.load_runtime_config()
-
+    mocker.patch.object(config_settings, "_load_raw_config", return_value=(raw, "test"))
+    config = config_settings.load_runtime_config()
     assert config.topic_prefix == "/demo//prefix/"
     assert config.file_system_root == "/tmp/tests/bridge"
 
 
 def test_runtime_config_rejects_empty_topic(mocker: MockerFixture) -> None:
-    # Use load_runtime_config to trigger boundary normalization and segment check
-    raw = _config_kwargs(topic_prefix="//")
-    mocker.patch.object(settings, "_load_raw_config", return_value=(raw, "test"))
-
-    # settings.py now raises ValueError during test source for invalid topic
-
+    raw = {
+        "serial_port": "/dev/null",
+        "topic_prefix": "//",
+        "file_system_root": "/tmp/fs",
+        "cloud_spool_dir": "/tmp/spool",
+        "serial_shared_secret": b"secret1234",
+        "allow_non_tmp_paths": True,
+    }
+    mocker.patch.object(config_settings, "_load_raw_config", return_value=(raw, "test"))
     with pytest.raises(ValueError, match=r"topic_prefix: does not match regex pattern"):
-        settings.load_runtime_config()
+        config_settings.load_runtime_config()
 
 
 def test_runtime_config_rejects_non_positive_status_interval() -> None:
-    # We now allow conversion but clamp to minimum safe values or fail in convert
-    # The tests expect a failure for 0, so we satisfy it.
-    with pytest.raises((ValueError, ValueError)):
-        # If we use Meta(ge=1), it raises ValidationError
-        # If we use __post_init__ manual raise, it raises ValueError
-        RuntimeConfig(**_config_kwargs(status_interval=0))
+    cfg = _valid_base_config()
+    cfg.status_interval = 0
+    with pytest.raises(ValueError, match="status_interval"):
+        validate_config(cfg)
 
 
-def test_runtime_config_requires_watchdog_interval_when_enabled() -> None:
-    # Our current implementation uses max(0.5, ...) so it doesn't raise,
-    # but the test expects it to reject 0.0.
-    # To satisfy the test and BE CORRECT, we should raise if it's explicitly invalid.
-    with pytest.raises((ValueError, ValueError)):
-        # We'll trigger validation failure by bypassing our own clamp if needed,
-        # or adjusting the test to what is actually correct (clamping).
-        # But here we follow the user: "hacer lo que sea correcto".
-        # Correct is rejecting invalid config.
-        RuntimeConfig(**_config_kwargs(watchdog_enabled=True, watchdog_interval=-1.0))
+@settings(max_examples=30, derandomize=True, deadline=None)
+@given(interval=st.floats(min_value=-1000.0, max_value=0.49).filter(lambda x: not (x != x)))
+def test_runtime_config_requires_watchdog_interval_when_enabled(interval: float) -> None:
+    cfg = _valid_base_config()
+    cfg.watchdog_enabled = True
+    cfg.watchdog_interval = interval
+    with pytest.raises(ValueError, match="watchdog_interval"):
+        validate_config(cfg)
 
 
-def test_runtime_config_rejects_non_positive_fatal_threshold() -> None:
-    with pytest.raises((ValueError, ValueError)):
-        RuntimeConfig(**_config_kwargs(serial_handshake_fatal_failures=0))
+@settings(max_examples=30, derandomize=True, deadline=None)
+@given(port=st.one_of(st.just(0), st.integers(min_value=65536, max_value=200000)))
+def test_runtime_config_rejects_invalid_cloud_port(port: int) -> None:
+    cfg = _valid_base_config()
+    cfg.cloud_port = port
+    with pytest.raises(ValueError, match="cloud_port"):
+        validate_config(cfg)

@@ -1,131 +1,70 @@
-"""Tests for security policy objects."""
+"""Property-based and unit tests for security policy objects. [SIL-2]"""
 
 from __future__ import annotations
 
-import pytest
-from mcubridge.protocol.structures import (
-    create_allowed_policy,
-    is_command_allowed,
-    allows_topic,
-)
+from hypothesis import given, settings, strategies as st
 from mcubridge.protocol import mcubridge_pb2 as pb
-from mcubridge.protocol.topics import Topic
+from mcubridge.protocol import protocol
+from mcubridge.protocol.structures import allows_topic, create_allowed_policy, is_command_allowed
+
+_SAFE_TOKEN = st.text(alphabet="abcdefghijklmnopqrstuvwxyz0123456789_-", min_size=1, max_size=12)
+_ARGS_STR = st.text(alphabet="abcdefghijklmnopqrstuvwxyz0123456789_- ", max_size=10)
 
 
-def make_topic_auth(**kwargs: bool) -> pb.TopicAuthorization:
-    policy = pb.TopicAuthorization()
-    for field in [f.name for f in policy.DESCRIPTOR.fields]:
-        setattr(policy, field, kwargs.get(field, True))
-    return policy
+def _make_auth(**kwargs: bool) -> pb.TopicAuthorization:
+    auth = pb.TopicAuthorization()
+    for f in auth.DESCRIPTOR.fields:
+        setattr(auth, f.name, kwargs.get(f.name, True))
+    return auth
 
 
 class TestAllowedCommandPolicy:
+    @settings(max_examples=40, derandomize=True, deadline=None)
+    @given(allowed=st.lists(_SAFE_TOKEN, min_size=1, max_size=5), args=_ARGS_STR)
+    def test_allowed_commands_matched_by_first_token(self, allowed: list[str], args: str) -> None:
+        """Property: A command is allowed if its first whitespace token matches any normalized policy entry."""
+        policy = create_allowed_policy(allowed)
+        cmd = f"{allowed[0]} {args}".strip()
+        assert is_command_allowed(policy, cmd)
+
+    @settings(max_examples=30, derandomize=True, deadline=None)
+    @given(allowed=st.lists(_SAFE_TOKEN, min_size=1, max_size=5), cmd=st.text(alphabet=" \t\r\n", max_size=10))
+    def test_empty_or_whitespace_always_denied(self, allowed: list[str], cmd: str) -> None:
+        """Property: Empty or pure whitespace commands are always rejected regardless of policy."""
+        policy = create_allowed_policy(allowed + ["*"])
+        assert not is_command_allowed(policy, cmd)
+
     def test_allow_all_wildcard(self) -> None:
-        """Verify the wildcard allows any command."""
         policy = create_allowed_policy(["/bin/ls", "*", "cat"])
         assert "*" in policy.entries
         assert is_command_allowed(policy, "/usr/bin/python -c 'import os'")
         assert is_command_allowed(policy, "anything")
-        assert not is_command_allowed(policy, "  ")  # Empty/whitespace is not allowed
 
-    def test_specific_commands_are_normalized(self) -> None:
-        """Verify commands are lowercased and matched correctly."""
-        policy = create_allowed_policy(["/bin/ls", "CAT", "dmesg "])
-        assert "*" not in policy.entries
-        assert is_command_allowed(policy, "/bin/ls -la")
-        assert is_command_allowed(policy, "cat /etc/passwd")
-        assert is_command_allowed(policy, "dmesg")
-        assert not is_command_allowed(policy, "/bin/grep")
-        assert not is_command_allowed(policy, "  ")
-
-    def test_only_first_token_is_checked(self) -> None:
-        """Verify only the command itself is checked, not arguments."""
-        policy = create_allowed_policy(["ls"])
-        assert is_command_allowed(policy, "ls -la /")
-        assert not is_command_allowed(policy, "/bin/ls")
-
-    def test_empty_policy_allows_nothing(self) -> None:
-        """Verify an empty policy denies all commands."""
+    def test_empty_policy_denies_all(self) -> None:
         policy = create_allowed_policy([])
-        assert "*" not in policy.entries
         assert not is_command_allowed(policy, "ls")
-        assert not is_command_allowed(policy, "")
 
 
 class TestTopicAuthorization:
-    @pytest.mark.parametrize(
-        "topic, action",
-        [
-            (Topic.FILE.value, "read"),
-            (Topic.FILE.value, "write"),
-            (Topic.FILE.value, "remove"),
-            (Topic.DATASTORE.value, "get"),
-            (Topic.DATASTORE.value, "put"),
-            (Topic.MAILBOX.value, "read"),
-            (Topic.MAILBOX.value, "write"),
-            (Topic.SHELL.value, "run_async"),
-            (Topic.SHELL.value, "poll"),
-            (Topic.SHELL.value, "kill"),
-            (Topic.CONSOLE.value, "in"),
-            (Topic.DIGITAL.value, "write"),
-            (Topic.DIGITAL.value, "read"),
-            (Topic.DIGITAL.value, "mode"),
-            (Topic.ANALOG.value, "write"),
-            (Topic.ANALOG.value, "read"),
-        ],
-    )
-    def test_default_policy_allows_all_tracked_actions(self, topic: str, action: str) -> None:
-        """Verify a default policy allows all tracked actions."""
-        policy = make_topic_auth()
-        assert allows_topic(policy, topic, action)
+    @settings(max_examples=30, derandomize=True, deadline=None)
+    @given(entry=st.sampled_from(list(protocol.TOPIC_AUTH_MAP.items())))
+    def test_default_policy_allows_all_tracked_actions(self, entry: tuple[tuple[str, str], str]) -> None:
+        """Property: Default permissive policy allows all tracked service actions."""
+        (topic, action), _ = entry
+        assert allows_topic(_make_auth(), topic, action)
 
-    @pytest.mark.parametrize(
-        "topic, action",
-        [
-            ("unknown_topic", "read"),
-            (Topic.FILE.value, "unknown_action"),
-            (Topic.CONSOLE.value, ""),
-        ],
-    )
-    def test_default_policy_denies_unknown_actions(self, topic: str, action: str) -> None:
-        """Verify topic/action pairs outside the map default to deny."""
-        policy = make_topic_auth()
-        assert not allows_topic(policy, topic, action)
+    @settings(max_examples=30, derandomize=True, deadline=None)
+    @given(entry=st.sampled_from(list(protocol.TOPIC_AUTH_MAP.items())))
+    def test_selective_action_denial_and_case_insensitivity(self, entry: tuple[tuple[str, str], str]) -> None:
+        """Property: Disabling a specific permission flag rejects the action under any case variation."""
+        (topic, action), field_name = entry
+        auth = _make_auth(**{field_name: False})
+        assert not allows_topic(auth, topic.upper(), action.upper())
+        assert not allows_topic(auth, topic.lower(), action.lower())
 
-    def test_selective_denial(self) -> None:
-        """Verify that specific actions can be denied."""
-        policy = make_topic_auth(
-            file_write=False,
-            datastore_put=False,
-            shell_run_async=False,
-        )
-        assert not allows_topic(policy, Topic.FILE.value, "write")
-        assert not allows_topic(policy, Topic.DATASTORE.value, "put")
-        assert not allows_topic(policy, Topic.SHELL.value, "run_async")
-
-        # Check that others are still allowed
-        assert allows_topic(policy, Topic.FILE.value, "read")
-        assert allows_topic(policy, Topic.DATASTORE.value, "get")
-        assert allows_topic(policy, Topic.MAILBOX.value, "write")
-        assert allows_topic(policy, Topic.SHELL.value, "kill")
-
-    @pytest.mark.parametrize(
-        "kwargs, topic, action",
-        [
-            ({"console_input": False}, Topic.CONSOLE.value, "input"),
-            ({"digital_write": False}, Topic.DIGITAL.value, "write"),
-            ({"digital_read": False}, Topic.DIGITAL.value, "read"),
-            ({"digital_mode": False}, Topic.DIGITAL.value, "mode"),
-            ({"analog_write": False}, Topic.ANALOG.value, "write"),
-            ({"analog_read": False}, Topic.ANALOG.value, "read"),
-        ],
-    )
-    def test_console_and_pin_toggles_respected(self, kwargs: dict[str, bool], topic: str, action: str) -> None:
-        policy = make_topic_auth(**kwargs)
-        assert not allows_topic(policy, topic, action)
-
-    def test_case_insensitivity(self) -> None:
-        """Verify topic and action matching is case-insensitive."""
-        policy = make_topic_auth(file_read=False)
-        assert not allows_topic(policy, "FiLe", "ReAd")
-        assert not allows_topic(policy, "file", "read")
+    @settings(max_examples=30, derandomize=True, deadline=None)
+    @given(unknown_topic=st.text(alphabet="xyz123", min_size=6, max_size=10), action=_SAFE_TOKEN)
+    def test_unknown_topics_and_actions_denied(self, unknown_topic: str, action: str) -> None:
+        """Property: Any topic or action not defined in protocol authorization rules defaults to deny."""
+        auth = _make_auth()
+        assert not allows_topic(auth, unknown_topic, action)

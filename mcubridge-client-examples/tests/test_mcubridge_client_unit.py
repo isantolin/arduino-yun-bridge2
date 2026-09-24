@@ -61,12 +61,12 @@ async def test_cli_bridge_session(mocker: MockerFixture) -> None:
     mock_chan.close.assert_called_once()
 
 
-def test_env_is_openwrt(mocker: MockerFixture, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_env_is_openwrt(mocker: MockerFixture) -> None:
     """is_openwrt checks environment variable and file presence."""
-    monkeypatch.setenv("MCUBRIDGE_FORCE_UCI", "1")
+    mocker.patch.dict("os.environ", {"MCUBRIDGE_FORCE_UCI": "1"})
     assert is_openwrt() is True
 
-    monkeypatch.delenv("MCUBRIDGE_FORCE_UCI", raising=False)
+    mocker.patch.dict("os.environ", {}, clear=True)
     mocker.patch("pathlib.Path.exists", return_value=True)
     assert is_openwrt() is True
 
@@ -113,14 +113,9 @@ def test_env_dump_client_env(capsys: pytest.CaptureFixture[str]) -> None:
 # ==============================================================================
 
 
-def test_definitions_build_bridge_args(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_definitions_build_bridge_args(mocker: MockerFixture) -> None:
     """build_bridge_args builds dictionary targeting Gateway with explicit device_id."""
-    monkeypatch.delenv("MCUBRIDGE_GATEWAY_HOST", raising=False)
-    monkeypatch.delenv("MCUBRIDGE_GATEWAY_PORT", raising=False)
-    monkeypatch.delenv("MCUBRIDGE_CLOUD_HOST", raising=False)
-    monkeypatch.delenv("MCUBRIDGE_CLOUD_PORT", raising=False)
-    monkeypatch.delenv("MCUBRIDGE_DEVICE_ID", raising=False)
-
+    mocker.patch.dict("os.environ", {}, clear=True)
     args = build_bridge_args(host="127.0.0.1", port=8443, device_id="yun-01", topic_prefix="br")
     assert args == {
         "host": "127.0.0.1",
@@ -200,7 +195,7 @@ def test_smoke_connection_cli_invocation(mocker: MockerFixture) -> None:
     """Verify test_smoke_connection CLI entry point invokes run_test via typer runner."""
     import test_smoke_connection
 
-    mock_run = mocker.patch("test_smoke_connection.run_test")
+    mock_run = mocker.patch("test_smoke_connection.run_test", new_callable=AsyncMock)
     runner = CliRunner()
     res = runner.invoke(
         cast(Any, test_smoke_connection.cli),
@@ -231,7 +226,7 @@ def test_gateway_northbound_cli_invocation(mocker: MockerFixture) -> None:
     """Verify test_gateway_northbound CLI entry point invokes run_test via typer runner."""
     import test_gateway_northbound
 
-    mock_run = mocker.patch("test_gateway_northbound.run_test")
+    mock_run = mocker.patch("test_gateway_northbound.run_test", new_callable=AsyncMock)
     runner = CliRunner()
     res = runner.invoke(
         cast(Any, test_gateway_northbound.cli),

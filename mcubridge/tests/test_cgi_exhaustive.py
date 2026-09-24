@@ -65,16 +65,30 @@ def test_cgi_success(cgi_env: Any, mocker: MockerFixture) -> None:
     assert data["status"] == "ok"
 
 
+def test_cgi_invalid_path(cgi_env: Any) -> None:
+    env = cgi_env(path="/invalid")
+    start_response = MagicMock()
+    application(env, start_response)
+    assert "400 Bad Request" in start_response.call_args[0][0]
+
+
+def test_cgi_invalid_method(cgi_env: Any) -> None:
+    env = cgi_env(method="GET")
+    start_response = MagicMock()
+    application(env, start_response)
+    assert "405 Method Not Allowed" in start_response.call_args[0][0]
+
+
+def test_cgi_invalid_state(cgi_env: Any) -> None:
+    env = cgi_env(body=json.dumps({"state": "INVALID"}).encode("utf-8"))
+    start_response = MagicMock()
+    application(env, start_response)
+    assert "400 Bad Request" in start_response.call_args[0][0]
+
+
 def test_cgi_internal_error(cgi_env: Any, mocker: MockerFixture) -> None:
     env = cgi_env(body=json.dumps({"state": "ON"}).encode("utf-8"))
     start_response = MagicMock()
     mocker.patch("pin_rest_cgi.load_runtime_config", side_effect=OSError("fail"))
     application(env, start_response)
     assert "500 Internal Server Error" in start_response.call_args[0][0]
-
-
-def test_cgi_invalid_path(cgi_env: Any) -> None:
-    env = cgi_env(path="/invalid")
-    start_response = MagicMock()
-    application(env, start_response)
-    assert "400 Bad Request" in start_response.call_args[0][0]

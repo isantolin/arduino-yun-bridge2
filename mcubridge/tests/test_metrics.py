@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
-from unittest.mock import patch
 
 import pytest
+from pytest_mock import MockerFixture
+
 from mcubridge.metrics import (
     publish_bridge_snapshots,
     publish_metrics,
@@ -19,10 +20,9 @@ from mcubridge.state.context import RuntimeState
 
 @pytest.mark.asyncio
 async def test_publish_metrics_publishes_snapshot(
-    runtime_state: RuntimeState,
+    runtime_state: RuntimeState, mocker: MockerFixture
 ) -> None:
     """Verify that publish_metrics enqueues payload with telemetry metadata."""
-
     event = asyncio.Event()
     captured: dict[str, pb.CloudQueuedPublish] = {}
 
@@ -49,25 +49,25 @@ async def test_publish_metrics_publishes_snapshot(
     def mock_build_metrics(self: Any) -> Any:
         return fake_snapshot
 
-    with patch.object(
+    mocker.patch.object(
         RuntimeState,
         "build_metrics_snapshot",
         side_effect=mock_build_metrics,
         autospec=True,
-    ):
-        task = asyncio.create_task(
-            publish_metrics(
-                runtime_state,
-                fake_enqueue,
-                interval=0.01,
-                min_interval=0.01,
-            )
+    )
+    task = asyncio.create_task(
+        publish_metrics(
+            runtime_state,
+            fake_enqueue,
+            interval=0.01,
+            min_interval=0.01,
         )
-        async with asyncio.timeout(0.5):
-            await event.wait()
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
+    )
+    async with asyncio.timeout(0.5):
+        await event.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
 
     message = captured["message"]
     expected_topic = "test/prefix/system/metrics"
@@ -87,10 +87,9 @@ async def test_publish_metrics_publishes_snapshot(
 
 @pytest.mark.asyncio
 async def test_publish_metrics_marks_unknown_spool_reason(
-    runtime_state: RuntimeState,
+    runtime_state: RuntimeState, mocker: MockerFixture
 ) -> None:
     """Ensure bridge-spool user property defaults to 'unknown'."""
-
     event = asyncio.Event()
     captured: dict[str, pb.CloudQueuedPublish] = {}
 
@@ -103,29 +102,29 @@ async def test_publish_metrics_marks_unknown_spool_reason(
             cloud_spool_degraded=True,
         )
 
-    with patch.object(
+    mocker.patch.object(
         RuntimeState,
         "build_metrics_snapshot",
         side_effect=mock_build_metrics_degraded,
         autospec=True,
-    ):
-        runtime_state.cloud_spool_degraded = True
-        runtime_state.cloud_spool_failure_reason = None
-        runtime_state.watchdog_enabled = False
+    )
+    runtime_state.cloud_spool_degraded = True
+    runtime_state.cloud_spool_failure_reason = None
+    runtime_state.watchdog_enabled = False
 
-        task = asyncio.create_task(
-            publish_metrics(
-                runtime_state,
-                fake_enqueue,
-                interval=0.01,
-                min_interval=0.01,
-            )
+    task = asyncio.create_task(
+        publish_metrics(
+            runtime_state,
+            fake_enqueue,
+            interval=0.01,
+            min_interval=0.01,
         )
-        async with asyncio.timeout(0.5):
-            await event.wait()
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
+    )
+    async with asyncio.timeout(0.5):
+        await event.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
 
     message = captured["message"]
     props = [(p.key, p.value) for p in message.user_properties]
@@ -135,7 +134,7 @@ async def test_publish_metrics_marks_unknown_spool_reason(
 
 @pytest.mark.asyncio
 async def test_publish_bridge_snapshots_emits_summary_and_handshake(
-    runtime_state: RuntimeState,
+    runtime_state: RuntimeState, mocker: MockerFixture
 ) -> None:
     event = asyncio.Event()
     messages: list[pb.CloudQueuedPublish] = []
@@ -144,8 +143,6 @@ async def test_publish_bridge_snapshots_emits_summary_and_handshake(
         messages.append(message)
         if len(messages) >= 2:
             event.set()
-
-    from mcubridge.protocol import mcubridge_pb2 as pb
 
     def mock_build_bridge_snap(self: Any) -> Any:
         return pb.BridgeSnapshot(
@@ -164,34 +161,32 @@ async def test_publish_bridge_snapshots_emits_summary_and_handshake(
     def mock_build_handshake_snap(self: Any) -> Any:
         return pb.HandshakeSnapshot()
 
-    with (
-        patch.object(
-            RuntimeState,
-            "build_bridge_snapshot",
-            side_effect=mock_build_bridge_snap,
-            autospec=True,
-        ),
-        patch.object(
-            RuntimeState,
-            "build_handshake_snapshot",
-            side_effect=mock_build_handshake_snap,
-            autospec=True,
-        ),
-    ):
-        task = asyncio.create_task(
-            publish_bridge_snapshots(
-                runtime_state,
-                fake_enqueue,
-                summary_interval=0.01,
-                handshake_interval=0.01,
-                min_interval=0.01,
-            )
+    mocker.patch.object(
+        RuntimeState,
+        "build_bridge_snapshot",
+        side_effect=mock_build_bridge_snap,
+        autospec=True,
+    )
+    mocker.patch.object(
+        RuntimeState,
+        "build_handshake_snapshot",
+        side_effect=mock_build_handshake_snap,
+        autospec=True,
+    )
+    task = asyncio.create_task(
+        publish_bridge_snapshots(
+            runtime_state,
+            fake_enqueue,
+            summary_interval=0.01,
+            handshake_interval=0.01,
+            min_interval=0.01,
         )
-        async with asyncio.timeout(0.5):
-            await event.wait()
-        task.cancel()
-        with pytest.raises((asyncio.CancelledError, BaseExceptionGroup)):
-            await task
+    )
+    async with asyncio.timeout(0.5):
+        await event.wait()
+    task.cancel()
+    with pytest.raises((asyncio.CancelledError, BaseExceptionGroup)):
+        await task
 
     topics = {message.topic_name for message in messages}
     assert f"{protocol.CLOUD_DEFAULT_TOPIC_PREFIX}/system/bridge/summary/value" in topics
@@ -226,7 +221,9 @@ async def test_publish_bridge_snapshots_noop_when_disabled(
 
 
 @pytest.mark.asyncio
-async def test_emit_bridge_snapshot_error_paths(runtime_state: RuntimeState) -> None:
+async def test_emit_bridge_snapshot_error_paths(
+    runtime_state: RuntimeState, mocker: MockerFixture
+) -> None:
     import mcubridge.metrics
 
     emit_fn = getattr(mcubridge.metrics, "_emit_bridge_snapshot")
@@ -238,8 +235,11 @@ async def test_emit_bridge_snapshot_error_paths(runtime_state: RuntimeState) -> 
     await emit_fn(runtime_state, _failing_enqueue, flavor="summary")
 
     # AttributeError in builder is caught and logged
-    with patch("mcubridge.metrics._build_bridge_snapshot_message", side_effect=AttributeError("Corrupted snapshot")):
-        await emit_fn(runtime_state, _failing_enqueue, flavor="summary")
+    mocker.patch(
+        "mcubridge.metrics._build_bridge_snapshot_message",
+        side_effect=AttributeError("Corrupted snapshot"),
+    )
+    await emit_fn(runtime_state, _failing_enqueue, flavor="summary")
 
 
 @pytest.mark.asyncio
@@ -267,7 +267,9 @@ async def test_publish_metrics_oserror_recovery(runtime_state: RuntimeState) -> 
 
 
 @pytest.mark.asyncio
-async def test_publish_bridge_snapshots_loop_error_recovery(runtime_state: RuntimeState) -> None:
+async def test_publish_bridge_snapshots_loop_error_recovery(
+    runtime_state: RuntimeState, mocker: MockerFixture
+) -> None:
     calls = 0
 
     async def _failing_enqueue(_: pb.CloudQueuedPublish) -> None:
@@ -278,18 +280,18 @@ async def test_publish_bridge_snapshots_loop_error_recovery(runtime_state: Runti
         calls += 1
         raise OSError("Loop IO failure")
 
-    with patch("mcubridge.metrics._emit_bridge_snapshot", side_effect=_failing_emit):
-        task = asyncio.create_task(
-            publish_bridge_snapshots(
-                runtime_state,
-                _failing_enqueue,
-                summary_interval=0.01,
-                handshake_interval=0.01,
-                min_interval=0.01,
-            )
+    mocker.patch("mcubridge.metrics._emit_bridge_snapshot", side_effect=_failing_emit)
+    task = asyncio.create_task(
+        publish_bridge_snapshots(
+            runtime_state,
+            _failing_enqueue,
+            summary_interval=0.01,
+            handshake_interval=0.01,
+            min_interval=0.01,
         )
-        await asyncio.sleep(0.05)
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
-        assert calls >= 1
+    )
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert calls >= 1

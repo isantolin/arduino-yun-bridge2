@@ -12,8 +12,9 @@ import types
 from io import BytesIO
 from pathlib import Path
 from typing import Any, cast
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
+from pytest_mock import MockerFixture
 import pytest
 from cobs import cobsr
 
@@ -89,7 +90,7 @@ class TestSerialSendTracked:
         assert result is False
 
     @pytest.mark.asyncio
-    async def test_send_untracked_delegates_to_send_raw(self) -> None:
+    async def test_send_untracked_delegates_to_send_raw(self, mocker: MockerFixture) -> None:
         config = _make_config()
         state = _make_state(config)
         transport = SerialTransport(config, state, None)
@@ -98,13 +99,13 @@ class TestSerialSendTracked:
         mock_serial.is_open = True
         transport.serial = mock_serial
 
-        with patch.object(transport, "send_raw", new_callable=AsyncMock, return_value=True) as mock_raw:
-            result = await transport.send(Command.CMD_LINK_SYNC.value, b"hello")
-            assert result is True
-            mock_raw.assert_awaited_once()
+        mock_raw = mocker.patch.object(transport, "send_raw", new_callable=AsyncMock, return_value=True)
+        result = await transport.send(Command.CMD_LINK_SYNC.value, b"hello")
+        assert result is True
+        mock_raw.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_send_tracked_timeout_retry_exhaustion(self) -> None:
+    async def test_send_tracked_timeout_retry_exhaustion(self, mocker: MockerFixture) -> None:
         config = _make_config(serial_retry_attempts=2, serial_retry_timeout=0.05, serial_response_timeout=0.05)
         state = _make_state(config)
         transport = SerialTransport(config, state, None)
@@ -113,12 +114,12 @@ class TestSerialSendTracked:
         mock_serial.is_open = True
         transport.serial = mock_serial
 
-        with patch.object(transport, "send_raw", new_callable=AsyncMock, return_value=True):
-            result = await transport.send(Command.CMD_GET_VERSION.value, b"")
-            assert result is False
+        mocker.patch.object(transport, "send_raw", new_callable=AsyncMock, return_value=True)
+        result = await transport.send(Command.CMD_GET_VERSION.value, b"")
+        assert result is False
 
     @pytest.mark.asyncio
-    async def test_send_tracked_fatal_error(self) -> None:
+    async def test_send_tracked_fatal_error(self, mocker: MockerFixture) -> None:
         config = _make_config(serial_retry_attempts=1, serial_retry_timeout=0.05, serial_response_timeout=0.1)
         state = _make_state(config)
         transport = SerialTransport(config, state, None)
@@ -128,9 +129,9 @@ class TestSerialSendTracked:
         transport.serial = mock_serial
 
         # send_raw returns False -> triggers FatalSerialError
-        with patch.object(transport, "send_raw", new_callable=AsyncMock, return_value=False):
-            result = await transport.send(Command.CMD_GET_VERSION.value, b"")
-            assert result is False
+        mocker.patch.object(transport, "send_raw", new_callable=AsyncMock, return_value=False)
+        result = await transport.send(Command.CMD_GET_VERSION.value, b"")
+        assert result is False
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -140,7 +141,7 @@ class TestSerialSendTracked:
 
 class TestSerialSendRaw:
     @pytest.mark.asyncio
-    async def test_send_raw_flow_control_timeout(self) -> None:
+    async def test_send_raw_flow_control_timeout(self, mocker: MockerFixture) -> None:
         config = _make_config()
         state = _make_state(config)
         transport = SerialTransport(config, state, None)
@@ -150,9 +151,9 @@ class TestSerialSendRaw:
         state.serial_tx_allowed.clear()
 
         # Will timeout waiting for flow control, but should proceed
-        with patch("mcubridge.transport.serial.FLOW_CONTROL_WAIT_TIMEOUT_SECONDS", 0.01):
-            result = await transport.send_raw(Command.CMD_GET_VERSION.value, b"")
-            assert result is True
+        mocker.patch("mcubridge.transport.serial.FLOW_CONTROL_WAIT_TIMEOUT_SECONDS", 0.01)
+        result = await transport.send_raw(Command.CMD_GET_VERSION.value, b"")
+        assert result is True
 
     @pytest.mark.asyncio
     async def test_send_raw_write_exception(self) -> None:
@@ -195,26 +196,26 @@ class TestSerialSendRaw:
 
 class TestNegotiateBaudrate:
     @pytest.mark.asyncio
-    async def test_negotiate_send_raw_failure(self) -> None:
+    async def test_negotiate_send_raw_failure(self, mocker: MockerFixture) -> None:
         config = _make_config()
         state = _make_state(config)
         transport = SerialTransport(config, state, None)
 
-        with patch.object(transport, "send_raw", new_callable=AsyncMock, return_value=False):
-            result = await transport._negotiate_baudrate(115200)
-            assert result is False
+        mocker.patch.object(transport, "send_raw", new_callable=AsyncMock, return_value=False)
+        result = await transport._negotiate_baudrate(115200)
+        assert result is False
 
     @pytest.mark.asyncio
-    async def test_negotiate_timeout(self) -> None:
+    async def test_negotiate_timeout(self, mocker: MockerFixture) -> None:
         config = _make_config()
         state = _make_state(config)
         transport = SerialTransport(config, state, None)
 
-        with patch.object(transport, "send_raw", new_callable=AsyncMock, return_value=True):
-            with patch("mcubridge.transport.serial.SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT", 0.01):
-                result = await transport._negotiate_baudrate(115200)
-                assert result is False
-                assert transport._negotiating is False
+        mocker.patch.object(transport, "send_raw", new_callable=AsyncMock, return_value=True)
+        mocker.patch("mcubridge.transport.serial.SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT", 0.01)
+        result = await transport._negotiate_baudrate(115200)
+        assert result is False
+        assert transport._negotiating is False
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -224,7 +225,7 @@ class TestNegotiateBaudrate:
 
 class TestProcessPacketEdgePaths:
     @pytest.mark.asyncio
-    async def test_process_packet_anti_replay_failure(self) -> None:
+    async def test_process_packet_anti_replay_failure(self, mocker: MockerFixture) -> None:
         config = _make_config()
         state = _make_state(config)
         key = b"K" * 32
@@ -236,31 +237,31 @@ class TestProcessPacketEdgePaths:
         # Build a non-system command frame with session key
         raw = cobsr.encode(build_frame(Command.CMD_DIGITAL_WRITE.value, 1, session_key=key))
 
-        with patch("mcubridge.transport.serial.validate_nonce_counter", return_value=(False, 999)):
-            with patch("mcubridge.transport.serial.logger.error") as mock_err:
-                await transport._process_packet(raw)
-                assert mock_err.called
+        mocker.patch("mcubridge.transport.serial.validate_nonce_counter", return_value=(False, 999))
+        mock_err = mocker.patch("mcubridge.transport.serial.logger.error")
+        await transport._process_packet(raw)
+        assert mock_err.called
 
     @pytest.mark.asyncio
-    async def test_process_packet_uninitialized_payload_rejection(self) -> None:
+    async def test_process_packet_uninitialized_payload_rejection(self, mocker: MockerFixture) -> None:
         config = _make_config()
         state = _make_state(config)
         transport = SerialTransport(config, state, None)
 
         raw = cobsr.encode(build_frame(Command.CMD_GET_VERSION.value, 1))
 
-        with patch("mcubridge.transport.serial.parse_frame") as mock_parse:
-            mock_result = MagicMock()
-            mock_result.envelope.command_id = Command.CMD_GET_VERSION.value
-            mock_result.envelope.sequence_id = 1
-            mock_result.envelope.nonce = b"\x00" * 12
-            mock_payload = MagicMock(spec=ProtobufMessage)
-            mock_payload.IsInitialized.return_value = False
-            mock_result.payload = mock_payload
-            mock_parse.return_value = mock_result
+        mock_parse = mocker.patch("mcubridge.transport.serial.parse_frame")
+        mock_result = MagicMock()
+        mock_result.envelope.command_id = Command.CMD_GET_VERSION.value
+        mock_result.envelope.sequence_id = 1
+        mock_result.envelope.nonce = b"\x00" * 12
+        mock_payload = MagicMock(spec=ProtobufMessage)
+        mock_payload.IsInitialized.return_value = False
+        mock_result.payload = mock_payload
+        mock_parse.return_value = mock_result
 
-            await transport._process_packet(raw)
-            assert state.serial_decode_errors >= 1
+        await transport._process_packet(raw)
+        assert state.serial_decode_errors >= 1
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -305,28 +306,28 @@ class TestCorrelateFrameEdges:
 
 class TestSerialRun:
     @pytest.mark.asyncio
-    async def test_run_cancelled(self) -> None:
+    async def test_run_cancelled(self, mocker: MockerFixture) -> None:
         config = _make_config()
         state = _make_state(config)
         transport = SerialTransport(config, state, None)
 
-        with patch.object(transport, "_connect_and_run", new_callable=AsyncMock, side_effect=asyncio.CancelledError):
-            await transport.run()
-            assert transport.serial is None
+        mocker.patch.object(transport, "_connect_and_run", new_callable=AsyncMock, side_effect=asyncio.CancelledError)
+        await transport.run()
+        assert transport.serial is None
 
     @pytest.mark.asyncio
-    async def test_run_fatal_handshake(self) -> None:
+    async def test_run_fatal_handshake(self, mocker: MockerFixture) -> None:
         from mcubridge.services.handshake import SerialHandshakeFatal
 
         config = _make_config()
         state = _make_state(config)
         transport = SerialTransport(config, state, None)
 
-        with patch.object(
+        mocker.patch.object(
             transport, "_connect_and_run", new_callable=AsyncMock, side_effect=SerialHandshakeFatal("fatal")
-        ):
-            with pytest.raises(SerialHandshakeFatal):
-                await transport.run()
+        )
+        with pytest.raises(SerialHandshakeFatal):
+            await transport.run()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -336,17 +337,17 @@ class TestSerialRun:
 
 class TestSerialAcknowledge:
     @pytest.mark.asyncio
-    async def test_acknowledge_sends_ack_frame(self) -> None:
+    async def test_acknowledge_sends_ack_frame(self, mocker: MockerFixture) -> None:
         config = _make_config()
         state = _make_state(config)
         transport = SerialTransport(config, state, None)
 
-        with patch.object(transport, "send_raw", new_callable=AsyncMock, return_value=True) as mock_raw:
-            await transport.acknowledge(Command.CMD_GET_VERSION.value, 42)
-            mock_raw.assert_awaited_once()
-            call_args = mock_raw.call_args
-            assert call_args[0][0] == Status.ACK.value
-            assert call_args[0][2] == 42
+        mock_raw = mocker.patch.object(transport, "send_raw", new_callable=AsyncMock, return_value=True)
+        await transport.acknowledge(Command.CMD_GET_VERSION.value, 42)
+        mock_raw.assert_awaited_once()
+        call_args = mock_raw.call_args
+        assert call_args[0][0] == Status.ACK.value
+        assert call_args[0][2] == 42
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -542,37 +543,29 @@ class TestRuntimeStateContext:
 
 
 class TestPinRestCgiCli:
-    def test_control_cli_invocation(self) -> None:
-        with (
-            patch.object(pin_rest_cgi, "load_runtime_config", return_value=_make_config()),
-            patch.object(pin_rest_cgi, "configure_logging"),
-            patch.object(pin_rest_cgi, "set_pin_digital_sync") as mock_set_pin,
-        ):
-            pin_rest_cgi.control(pin=13, state="ON")
-            mock_set_pin.assert_called_once_with(13, 1)
+    def test_control_cli_invocation(self, mocker: MockerFixture) -> None:
+        mocker.patch.object(pin_rest_cgi, "load_runtime_config", return_value=_make_config())
+        mocker.patch.object(pin_rest_cgi, "configure_logging")
+        mock_set_pin = mocker.patch.object(pin_rest_cgi, "set_pin_digital_sync")
+        pin_rest_cgi.control(pin=13, state="ON")
+        mock_set_pin.assert_called_once_with(13, 1)
 
-    def test_run_cgi_no_gateway(self) -> None:
-        with (
-            patch.dict(os.environ, {}, clear=True),
-            patch.object(pin_rest_cgi, "app") as mock_app,
-        ):
-            # Remove GATEWAY_INTERFACE and REQUEST_METHOD
-            env_clean = {k: v for k, v in os.environ.items() if k not in ("GATEWAY_INTERFACE", "REQUEST_METHOD")}
-            with patch.dict(os.environ, env_clean, clear=True):
-                pin_rest_cgi.run_cgi()
-                mock_app.assert_called_once()
+    def test_run_cgi_no_gateway(self, mocker: MockerFixture) -> None:
+        env_clean = {k: v for k, v in os.environ.items() if k not in ("GATEWAY_INTERFACE", "REQUEST_METHOD")}
+        mocker.patch.dict(os.environ, env_clean, clear=True)
+        mock_app = mocker.patch.object(pin_rest_cgi, "app")
+        pin_rest_cgi.run_cgi()
+        mock_app.assert_called_once()
 
-    def test_run_cgi_with_gateway(self) -> None:
-        with (
-            patch.dict(os.environ, {"GATEWAY_INTERFACE": "CGI/1.1", "REQUEST_METHOD": "GET"}),
-            patch.object(pin_rest_cgi, "CGIHandler") as mock_handler_cls,
-        ):
-            mock_handler = MagicMock()
-            mock_handler_cls.return_value = mock_handler
-            pin_rest_cgi.run_cgi()
-            mock_handler.run.assert_called_once()
+    def test_run_cgi_with_gateway(self, mocker: MockerFixture) -> None:
+        mocker.patch.dict(os.environ, {"GATEWAY_INTERFACE": "CGI/1.1", "REQUEST_METHOD": "GET"})
+        mock_handler_cls = mocker.patch.object(pin_rest_cgi, "CGIHandler")
+        mock_handler = MagicMock()
+        mock_handler_cls.return_value = mock_handler
+        pin_rest_cgi.run_cgi()
+        mock_handler.run.assert_called_once()
 
-    def test_application_pin_data_validation_error(self) -> None:
+    def test_application_pin_data_validation_error(self, mocker: MockerFixture) -> None:
         start_response = MagicMock()
         body = b'{"state": "INVALID_UNKNOWN_STATE"}'
         env = {
@@ -582,28 +575,24 @@ class TestPinRestCgiCli:
             "wsgi.input": BytesIO(body),
         }
 
-        with (
-            patch.object(pin_rest_cgi, "load_runtime_config", return_value=_make_config()),
-            patch.object(pin_rest_cgi, "configure_logging"),
-        ):
-            result = pin_rest_cgi.application(env, start_response)
-            assert result
-            # Should return 400 for invalid pin_data
-            start_response.assert_called()
+        mocker.patch.object(pin_rest_cgi, "load_runtime_config", return_value=_make_config())
+        mocker.patch.object(pin_rest_cgi, "configure_logging")
+        result = pin_rest_cgi.application(env, start_response)
+        assert result
+        # Should return 400 for invalid pin_data
+        start_response.assert_called()
 
-    def test_application_method_not_allowed(self) -> None:
+    def test_application_method_not_allowed(self, mocker: MockerFixture) -> None:
         start_response = MagicMock()
         env = {"PATH_INFO": "/pin/13", "REQUEST_METHOD": "DELETE"}
 
-        with (
-            patch.object(pin_rest_cgi, "load_runtime_config", return_value=_make_config()),
-            patch.object(pin_rest_cgi, "configure_logging"),
-        ):
-            result = pin_rest_cgi.application(env, start_response)
-            assert result
-            start_response.assert_called_once()
-            call_args = start_response.call_args[0]
-            assert "405" in call_args[0]
+        mocker.patch.object(pin_rest_cgi, "load_runtime_config", return_value=_make_config())
+        mocker.patch.object(pin_rest_cgi, "configure_logging")
+        result = pin_rest_cgi.application(env, start_response)
+        assert result
+        start_response.assert_called_once()
+        call_args = start_response.call_args[0]
+        assert "405" in call_args[0]
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -622,72 +611,64 @@ class TestRotateCredentials:
         if not hasattr(uci_mod, "Uci"):
             setattr(uci_mod, "Uci", MagicMock)
 
-    def test_update_uci_credentials_success(self) -> None:
+    def test_update_uci_credentials_success(self, mocker: MockerFixture) -> None:
         self._ensure_uci_mock()
         rotate_creds = _load_script("mcubridge_rotate_credentials")
         mock_uci = MagicMock()
-        with patch.object(rotate_creds.uci, "Uci", return_value=mock_uci):
-            rotate_creds.update_uci_credentials("newsecret", "newpass")
-            assert mock_uci.set.call_count == 2
-            mock_uci.commit.assert_called_once_with("mcubridge")
+        mocker.patch.object(rotate_creds.uci, "Uci", return_value=mock_uci)
+        rotate_creds.update_uci_credentials("newsecret", "newpass")
+        assert mock_uci.set.call_count == 2
+        mock_uci.commit.assert_called_once_with("mcubridge")
 
-    def test_update_uci_credentials_failure(self) -> None:
+    def test_update_uci_credentials_failure(self, mocker: MockerFixture) -> None:
         self._ensure_uci_mock()
         rotate_creds = _load_script("mcubridge_rotate_credentials")
         mock_uci = MagicMock()
         mock_uci.set.side_effect = RuntimeError("UCI write failed")
-        with (
-            patch.object(rotate_creds.uci, "Uci", return_value=mock_uci),
-            pytest.raises(SystemExit) as exc_info,
-        ):
+        mocker.patch.object(rotate_creds.uci, "Uci", return_value=mock_uci)
+        with pytest.raises(SystemExit) as exc_info:
             rotate_creds.update_uci_credentials("newsecret", "newpass")
         assert exc_info.value.code == 3
 
-    def test_restart_service_success(self) -> None:
+    def test_restart_service_success(self, mocker: MockerFixture) -> None:
         rotate_creds = _load_script("mcubridge_rotate_credentials")
-        with patch.object(rotate_creds.subprocess, "run") as mock_run:
-            rotate_creds.restart_service()
-            mock_run.assert_called_once()
+        mock_run = mocker.patch.object(rotate_creds.subprocess, "run")
+        rotate_creds.restart_service()
+        mock_run.assert_called_once()
 
-    def test_restart_service_failure(self) -> None:
+    def test_restart_service_failure(self, mocker: MockerFixture) -> None:
         import subprocess
 
         rotate_creds = _load_script("mcubridge_rotate_credentials")
-        with patch.object(
+        mock_run = mocker.patch.object(
             rotate_creds.subprocess,
             "run",
             side_effect=subprocess.CalledProcessError(1, "restart", stderr=b"failed"),
-        ) as mock_run:
-            rotate_creds.restart_service()
-            mock_run.assert_called_once()
+        )
+        rotate_creds.restart_service()
+        mock_run.assert_called_once()
 
-    def test_main_forced_rotation(self) -> None:
+    def test_main_forced_rotation(self, mocker: MockerFixture) -> None:
         rotate_creds = _load_script("mcubridge_rotate_credentials")
-        with (
-            patch.object(rotate_creds, "update_uci_credentials") as mock_update,
-            patch.object(rotate_creds, "restart_service") as mock_restart,
-        ):
-            rotate_creds.main(length=16, force=True, no_restart=False)
-            mock_update.assert_called_once()
-            mock_restart.assert_called_once()
+        mock_update = mocker.patch.object(rotate_creds, "update_uci_credentials")
+        mock_restart = mocker.patch.object(rotate_creds, "restart_service")
+        rotate_creds.main(length=16, force=True, no_restart=False)
+        mock_update.assert_called_once()
+        mock_restart.assert_called_once()
 
-    def test_main_no_restart(self) -> None:
+    def test_main_no_restart(self, mocker: MockerFixture) -> None:
         rotate_creds = _load_script("mcubridge_rotate_credentials")
-        with (
-            patch.object(rotate_creds, "update_uci_credentials"),
-            patch.object(rotate_creds, "restart_service") as mock_restart,
-        ):
-            rotate_creds.main(length=16, force=True, no_restart=True)
-            mock_restart.assert_not_called()
+        mocker.patch.object(rotate_creds, "update_uci_credentials")
+        mock_restart = mocker.patch.object(rotate_creds, "restart_service")
+        rotate_creds.main(length=16, force=True, no_restart=True)
+        mock_restart.assert_not_called()
 
-    def test_main_user_aborts(self) -> None:
+    def test_main_user_aborts(self, mocker: MockerFixture) -> None:
         rotate_creds = _load_script("mcubridge_rotate_credentials")
-        with (
-            patch.object(rotate_creds.sys, "stdin") as mock_stdin,
-            patch.object(rotate_creds.sys, "stdout"),
-            pytest.raises(SystemExit) as exc_info,
-        ):
-            mock_stdin.readline.return_value = "n\n"
+        mock_stdin = mocker.patch.object(rotate_creds.sys, "stdin")
+        mocker.patch.object(rotate_creds.sys, "stdout")
+        mock_stdin.readline.return_value = "n\n"
+        with pytest.raises(SystemExit) as exc_info:
             rotate_creds.main(length=16, force=False, no_restart=False)
         assert exc_info.value.code == 0
 
@@ -698,12 +679,10 @@ class TestRotateCredentials:
 
 
 class TestFilePush:
-    def test_push_file_ipc_error(self) -> None:
+    def test_push_file_ipc_error(self, mocker: MockerFixture) -> None:
         file_push = _load_script("mcubridge_file_push")
-        with (
-            patch.object(file_push, "push_file_ubus", return_value=False),
-            pytest.raises(SystemExit) as exc_info,
-        ):
+        mocker.patch.object(file_push, "push_file_ubus", return_value=False)
+        with pytest.raises(SystemExit) as exc_info:
             file_push.push_file("test.bin", b"data")
         assert exc_info.value.code == 1
 
@@ -713,15 +692,15 @@ class TestFilePush:
             file_push.main(source=Path("/nonexistent/file.bin"), target="/test.bin")
         assert exc_info.value.code == 2
 
-    def test_main_success(self) -> None:
+    def test_main_success(self, mocker: MockerFixture) -> None:
         file_push = _load_script("mcubridge_file_push")
         test_file = Path(f".tmp_tests/push-{os.getpid()}-{time.time_ns()}.bin")
         test_file.parent.mkdir(parents=True, exist_ok=True)
         try:
             test_file.write_bytes(b"A" * 100)
-            with patch.object(file_push, "push_file") as mock_push:
-                file_push.main(source=test_file, target="/upload/test.bin")
-                mock_push.assert_called_once()
+            mock_push = mocker.patch.object(file_push, "push_file")
+            file_push.main(source=test_file, target="/upload/test.bin")
+            mock_push.assert_called_once()
         finally:
             test_file.unlink(missing_ok=True)
 
@@ -733,16 +712,16 @@ class TestFilePush:
 
 class TestStateStatus:
     @pytest.mark.asyncio
-    async def test_status_writer_error_handling(self) -> None:
+    async def test_status_writer_error_handling(self, mocker: MockerFixture) -> None:
         config = _make_config()
         state = _make_state(config)
         try:
             from mcubridge.state.status import _write_status_file
 
             snapshot = state.build_status_snapshot()
-            with patch("mcubridge.state.status.STATUS_FILE") as mock_file:
-                mock_file.parent.mkdir = MagicMock(side_effect=OSError("Permission denied"))
-                _write_status_file(snapshot)  # Should not raise
-                assert mock_file.parent.mkdir.called
+            mock_file = mocker.patch("mcubridge.state.status.STATUS_FILE")
+            mock_file.parent.mkdir = MagicMock(side_effect=OSError("Permission denied"))
+            _write_status_file(snapshot)  # Should not raise
+            assert mock_file.parent.mkdir.called
         finally:
             state.cleanup()

@@ -6,8 +6,9 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 from typing import Any, cast
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
+from pytest_mock import MockerFixture
 import pytest
 
 from mcubridge.config.logging import configure_logging
@@ -67,24 +68,24 @@ def mock_state(test_config: RuntimeConfig) -> RuntimeState:
 # ==========================================
 
 
-def test_settings_factory_bypass_defaults() -> None:
-    with patch("mcubridge.config.settings.validate_config"):
-        cfg = _runtime_config_factory(
-            bypass_defaults=True,
-            serial_shared_secret="secretstring",
-            serial_port="/dev/ttyS0",
-            serial_baud=115200,
-            serial_safe_baud=115200,
-        )
-        assert cfg.serial_port == "/dev/ttyS0"
-        assert isinstance(cfg.serial_shared_secret, bytes)
+def test_settings_factory_bypass_defaults(mocker: MockerFixture) -> None:
+    mocker.patch("mcubridge.config.settings.validate_config")
+    cfg = _runtime_config_factory(
+        bypass_defaults=True,
+        serial_shared_secret="secretstring",
+        serial_port="/dev/ttyS0",
+        serial_baud=115200,
+        serial_safe_baud=115200,
+    )
+    assert cfg.serial_port == "/dev/ttyS0"
+    assert isinstance(cfg.serial_shared_secret, bytes)
 
 
-def test_settings_load_raw_config_empty_uci() -> None:
-    with patch("mcubridge.config.settings.get_uci_config", return_value={}):
-        cfg_dict, source = _load_raw_config()
-        assert source == "defaults"
-        assert "serial_port" in cfg_dict
+def test_settings_load_raw_config_empty_uci(mocker: MockerFixture) -> None:
+    mocker.patch("mcubridge.config.settings.get_uci_config", return_value={})
+    cfg_dict, source = _load_raw_config()
+    assert source == "defaults"
+    assert "serial_port" in cfg_dict
 
 
 def test_settings_load_runtime_config_from_json_unknown_override() -> None:
@@ -127,15 +128,15 @@ def test_settings_normalize_config_dict() -> None:
     assert secret_none is None
 
 
-def test_logging_discover_syslog_var_run_branch(test_config: RuntimeConfig) -> None:
+def test_logging_discover_syslog_var_run_branch(test_config: RuntimeConfig, mocker: MockerFixture) -> None:
     def _mock_exists(path_obj: Path) -> bool:
         return str(path_obj) == "/var/run/log"
 
-    with patch.dict("os.environ", {}, clear=True):
-        with patch.object(Path, "exists", _mock_exists):
-            with patch("mcubridge.config.logging.SysLogHandler") as mock_syslog:
-                configure_logging(test_config)
-                assert mock_syslog.called
+    mocker.patch.dict("os.environ", {}, clear=True)
+    mocker.patch.object(Path, "exists", _mock_exists)
+    mock_syslog = mocker.patch("mcubridge.config.logging.SysLogHandler")
+    configure_logging(test_config)
+    assert mock_syslog.called
 
 
 # ==========================================
@@ -378,7 +379,7 @@ async def test_runtime_handle_mailbox_unknown_identifier(test_config: RuntimeCon
 
 @pytest.mark.asyncio
 async def test_runtime_handle_file_unhandled_action_and_failed_writes(
-    test_config: RuntimeConfig, mock_state: RuntimeState, tmp_path: Path
+    test_config: RuntimeConfig, mock_state: RuntimeState, tmp_path: Path, mocker: MockerFixture
 ) -> None:
     serial = AsyncMock(spec=SerialTransport)
     svc = BridgeService(test_config, mock_state, serial)
@@ -398,8 +399,8 @@ async def test_runtime_handle_file_unhandled_action_and_failed_writes(
     svc.serial = serial
 
     # 4. Local write fails quota
-    with patch.object(svc, "_write_with_quota", return_value=False):
-        await svc._handle_file_local_write("f.txt", pb.CloudQueuedPublish(payload=b"data"))
+    mocker.patch.object(svc, "_write_with_quota", return_value=False)
+    await svc._handle_file_local_write("f.txt", pb.CloudQueuedPublish(payload=b"data"))
 
     # 5. Local read when path is not a file
     await svc._handle_file_local_read("not_a_file", pb.CloudQueuedPublish(topic_name="bridge/file/read"))
@@ -412,7 +413,9 @@ async def test_runtime_handle_file_unhandled_action_and_failed_writes(
 
 
 @pytest.mark.asyncio
-async def test_runtime_handle_shell_branches(test_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+async def test_runtime_handle_shell_branches(
+    test_config: RuntimeConfig, mock_state: RuntimeState, mocker: MockerFixture
+) -> None:
     serial = AsyncMock(spec=SerialTransport)
     svc = BridgeService(test_config, mock_state, serial)
 
@@ -424,9 +427,9 @@ async def test_runtime_handle_shell_branches(test_config: RuntimeConfig, mock_st
     # 2. run_async with protobuf payload bytes starting with \x0a
     proto_cmd = pb.ProcessRunAsync(command="echo hello").SerializeToString()
     route_run = TopicRoute(raw="", prefix="bridge", topic=Topic.SHELL, segments=(ShellAction.RUN_ASYNC.value,))
-    with patch.object(svc, "run_process", new_callable=AsyncMock, return_value=123) as mock_run:
-        await svc._handle_shell(route_run, pb.CloudQueuedPublish(payload=proto_cmd))
-        assert mock_run.called
+    mock_run = mocker.patch.object(svc, "run_process", new_callable=AsyncMock, return_value=123)
+    await svc._handle_shell(route_run, pb.CloudQueuedPublish(payload=proto_cmd))
+    assert mock_run.called
 
     # 3. kill with unknown pid
     await svc.kill_process(99999)
@@ -463,15 +466,17 @@ async def test_runtime_handle_system_free_memory_non_bytes(
 
 
 @pytest.mark.asyncio
-async def test_runtime_request_mcu_version_empty_topic(test_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+async def test_runtime_request_mcu_version_empty_topic(
+    test_config: RuntimeConfig, mock_state: RuntimeState, mocker: MockerFixture
+) -> None:
     serial = AsyncMock(spec=SerialTransport)
     v_resp = pb.VersionResponse(major=2, minor=8, patch=5).SerializeToString()
     serial.send = AsyncMock(return_value=v_resp)
     svc = BridgeService(test_config, mock_state, serial)
 
-    with patch("mcubridge.services.runtime.get_topic_for_message", return_value=""):
-        ok = await svc._request_mcu_version()
-        assert ok is True
+    mocker.patch("mcubridge.services.runtime.get_topic_for_message", return_value="")
+    ok = await svc._request_mcu_version()
+    assert ok is True
 
 
 @pytest.mark.asyncio
@@ -484,7 +489,9 @@ async def test_runtime_monitor_process_none_ctx(test_config: RuntimeConfig, mock
 
 
 @pytest.mark.asyncio
-async def test_runtime_cloud_session_non_command_envelope(test_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+async def test_runtime_cloud_session_non_command_envelope(
+    test_config: RuntimeConfig, mock_state: RuntimeState, mocker: MockerFixture
+) -> None:
     serial = AsyncMock(spec=SerialTransport)
     svc = BridgeService(test_config, mock_state, serial)
 
@@ -520,13 +527,13 @@ async def test_runtime_cloud_session_non_command_envelope(test_config: RuntimeCo
     mock_stub = MagicMock()
     mock_stub.Session.open.return_value = MockStream([event_env])
 
-    with patch("mcubridge.services.runtime.Channel"):
-        with patch("mcubridge.services.runtime.CloudBridgeStub", return_value=mock_stub):
-            with patch.object(svc, "flush_cloud_spool", new_callable=AsyncMock):
-                with patch.object(svc, "_send_cloud_event", new_callable=AsyncMock):
-                    await svc.connect_cloud_session(None)
-                    assert svc._cloud_stream is None
-                    assert svc.state.cloud_fsm.spooling_degraded.is_active
+    mocker.patch("mcubridge.services.runtime.Channel")
+    mocker.patch("mcubridge.services.runtime.CloudBridgeStub", return_value=mock_stub)
+    mocker.patch.object(svc, "flush_cloud_spool", new_callable=AsyncMock)
+    mocker.patch.object(svc, "_send_cloud_event", new_callable=AsyncMock)
+    await svc.connect_cloud_session(None)
+    assert svc._cloud_stream is None
+    assert svc.state.cloud_fsm.spooling_degraded.is_active
 
 
 # ==========================================
@@ -534,12 +541,12 @@ async def test_runtime_cloud_session_non_command_envelope(test_config: RuntimeCo
 # ==========================================
 
 
-def test_definitions_build_bridge_args_empty() -> None:
-    with patch.dict("os.environ", {}, clear=True):
-        args = build_bridge_args(host="127.0.0.1", port=8443, device_id="test-dev", topic_prefix="")
-        assert args == {"host": "127.0.0.1", "port": 8443, "device_id": "test-dev"}
-        with pytest.raises(ValueError, match="Explicit target device_id is required"):
-            build_bridge_args(host="127.0.0.1", port=8443)
+def test_definitions_build_bridge_args_empty(mocker: MockerFixture) -> None:
+    mocker.patch.dict("os.environ", {}, clear=True)
+    args = build_bridge_args(host="127.0.0.1", port=8443, device_id="test-dev", topic_prefix="")
+    assert args == {"host": "127.0.0.1", "port": 8443, "device_id": "test-dev"}
+    with pytest.raises(ValueError, match="Explicit target device_id is required"):
+        build_bridge_args(host="127.0.0.1", port=8443)
 
 
 @pytest.mark.asyncio
@@ -594,7 +601,7 @@ async def test_runtime_cloud_spool_locked_limit_errors(test_config: RuntimeConfi
 
 @pytest.mark.asyncio
 async def test_runtime_flush_cloud_spool_corrupt_and_errors(
-    test_config: RuntimeConfig, mock_state: RuntimeState
+    test_config: RuntimeConfig, mock_state: RuntimeState, mocker: MockerFixture
 ) -> None:
     serial = AsyncMock(spec=SerialTransport)
     svc = BridgeService(test_config, mock_state, serial)
@@ -635,8 +642,8 @@ async def test_runtime_flush_cloud_spool_corrupt_and_errors(
     mock_spool.popleft = AsyncMock(side_effect=OSError("DB lock error"))
     mock_spool.vacuum = AsyncMock()
     svc._cloud_spool = mock_spool
-    with patch.object(svc, "_publish_cloud_message", new_callable=AsyncMock, return_value=True):
-        await svc._flush_cloud_spool_locked()
+    mocker.patch.object(svc, "_publish_cloud_message", new_callable=AsyncMock, return_value=True)
+    await svc._flush_cloud_spool_locked()
 
     # Case 5: Valid item with normal completion
     mock_spool = MagicMock()
@@ -645,8 +652,8 @@ async def test_runtime_flush_cloud_spool_corrupt_and_errors(
     mock_spool.popleft = AsyncMock(return_value=None)
     mock_spool.vacuum = AsyncMock()
     svc._cloud_spool = mock_spool
-    with patch.object(svc, "_publish_cloud_message", new_callable=AsyncMock, return_value=True):
-        await svc._flush_cloud_spool_locked()
+    mocker.patch.object(svc, "_publish_cloud_message", new_callable=AsyncMock, return_value=True)
+    await svc._flush_cloud_spool_locked()
 
     # Case 6: Vacuum raising OSError
     mock_spool = MagicMock()
@@ -658,24 +665,26 @@ async def test_runtime_flush_cloud_spool_corrupt_and_errors(
 
 
 @pytest.mark.asyncio
-async def test_runtime_handle_mcu_status_unusual_payloads(test_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+async def test_runtime_handle_mcu_status_unusual_payloads(
+    test_config: RuntimeConfig, mock_state: RuntimeState, mocker: MockerFixture
+) -> None:
     serial = AsyncMock(spec=SerialTransport)
     svc = BridgeService(test_config, mock_state, serial)
 
-    with patch.object(svc, "enqueue_cloud", new_callable=AsyncMock) as mock_enqueue:
-        # 1. Non-bytes, non-protobuf payload
-        await svc._handle_mcu_status(Status.TIMEOUT, 1, cast(Any, 12345))
-        assert mock_enqueue.call_count == 1
+    mock_enqueue = mocker.patch.object(svc, "enqueue_cloud", new_callable=AsyncMock)
+    # 1. Non-bytes, non-protobuf payload
+    await svc._handle_mcu_status(Status.TIMEOUT, 1, cast(Any, 12345))
+    assert mock_enqueue.call_count == 1
 
-        # 2. Non-utf8 binary bytes falling back to hex representation
-        non_utf8 = b"\xff\xfe\xfd\x80"
-        await svc._handle_mcu_status(Status.CRC_MISMATCH, 2, non_utf8)
-        assert mock_enqueue.call_count == 2
+    # 2. Non-utf8 binary bytes falling back to hex representation
+    non_utf8 = b"\xff\xfe\xfd\x80"
+    await svc._handle_mcu_status(Status.CRC_MISMATCH, 2, non_utf8)
+    assert mock_enqueue.call_count == 2
 
 
 @pytest.mark.asyncio
 async def test_runtime_handle_datastore_empty_key_and_request_miss(
-    test_config: RuntimeConfig, mock_state: RuntimeState
+    test_config: RuntimeConfig, mock_state: RuntimeState, mocker: MockerFixture
 ) -> None:
     serial = AsyncMock(spec=SerialTransport)
     svc = BridgeService(test_config, mock_state, serial)
@@ -688,11 +697,11 @@ async def test_runtime_handle_datastore_empty_key_and_request_miss(
     route_req = TopicRoute(
         raw="", prefix="bridge", topic=Topic.DATASTORE, segments=(DatastoreAction.GET.value, "key1", "request")
     )
-    with patch.object(svc, "publish_datastore_value", new_callable=AsyncMock) as mock_pub:
-        await svc._handle_datastore(route_req, pb.CloudQueuedPublish(payload=b""))
-        assert mock_pub.call_count == 1
-        assert mock_pub.call_args[0][0] == "key1/request"
-        assert mock_pub.call_args[1]["error"] == "datastore-miss"
+    mock_pub = mocker.patch.object(svc, "publish_datastore_value", new_callable=AsyncMock)
+    await svc._handle_datastore(route_req, pb.CloudQueuedPublish(payload=b""))
+    assert mock_pub.call_count == 1
+    assert mock_pub.call_args[0][0] == "key1/request"
+    assert mock_pub.call_args[1]["error"] == "datastore-miss"
 
 
 @pytest.mark.asyncio
@@ -716,7 +725,7 @@ async def test_runtime_handle_mailbox_edge_branches(test_config: RuntimeConfig, 
 
 @pytest.mark.asyncio
 async def test_runtime_handle_file_and_shell_edge_branches(
-    test_config: RuntimeConfig, mock_state: RuntimeState
+    test_config: RuntimeConfig, mock_state: RuntimeState, mocker: MockerFixture
 ) -> None:
     serial = AsyncMock(spec=SerialTransport)
     svc = BridgeService(test_config, mock_state, serial)
@@ -735,9 +744,9 @@ async def test_runtime_handle_file_and_shell_edge_branches(
 
     # File safe path returning None for unsafe target
     route_unsafe = TopicRoute(raw="", prefix="bridge", topic=Topic.FILE, segments=("read", "../../../etc/shadow"))
-    with patch.object(svc, "_get_safe_path", return_value=None):
-        await svc._handle_file(route_unsafe, pb.CloudQueuedPublish(payload=b""))
-        assert not serial.send.called
+    mocker.patch.object(svc, "_get_safe_path", return_value=None)
+    await svc._handle_file(route_unsafe, pb.CloudQueuedPublish(payload=b""))
+    assert not serial.send.called
 
     # Shell with empty segments
     route_shell_empty = TopicRoute(raw="", prefix="bridge", topic=Topic.SHELL, segments=())
@@ -752,16 +761,16 @@ async def test_runtime_handle_file_and_shell_edge_branches(
         payload = pb.ProcessRunAsync(command="echo prop").SerializeToString()
         properties = Props()
 
-    with patch.object(svc, "run_process", new_callable=AsyncMock, return_value=123) as mock_rp:
-        await svc._handle_shell_run_async(0, cast(Any, InboundWithProps()))
-        assert mock_rp.called
+    mock_rp = mocker.patch.object(svc, "run_process", new_callable=AsyncMock, return_value=123)
+    await svc._handle_shell_run_async(0, cast(Any, InboundWithProps()))
+    assert mock_rp.called
 
     # Shell kill raising ProcessLookupError
     mock_ctx = ProcessContext(AsyncMock())
     mock_state.running_processes[777] = mock_ctx
-    with patch.object(svc, "_terminate_process", side_effect=ProcessLookupError("No such process")):
-        await svc.kill_process(777)
-        assert 777 not in mock_state.running_processes
+    mocker.patch.object(svc, "_terminate_process", side_effect=ProcessLookupError("No such process"))
+    await svc.kill_process(777)
+    assert 777 not in mock_state.running_processes
 
 
 @pytest.mark.asyncio

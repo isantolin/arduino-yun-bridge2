@@ -5,10 +5,11 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 from typing import Any, cast
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 from grpclib.const import Status
 from grpclib.exceptions import GRPCError
+from pytest_mock import MockerFixture
 import pytest
 from typer.testing import CliRunner
 
@@ -131,19 +132,19 @@ def test_protobuf_gateway_ssl_context_missing_files() -> None:
     assert gw.get_ssl_context() is None
 
 
-def test_protobuf_gateway_ssl_context_valid(tmp_path: Path) -> None:
+def test_protobuf_gateway_ssl_context_valid(tmp_path: Path, mocker: MockerFixture) -> None:
     cert_file = tmp_path / "server.crt"
     key_file = tmp_path / "server.key"
     cert_file.write_text("dummy cert")
     key_file.write_text("dummy key")
 
     gw = ProtobufGateway(use_tls=True, cert_file=str(cert_file), key_file=str(key_file))
-    with patch("ssl.create_default_context") as mock_ssl_ctx:
-        mock_ctx = MagicMock()
-        mock_ssl_ctx.return_value = mock_ctx
-        ctx = gw.get_ssl_context()
-        assert ctx is mock_ctx
-        assert mock_ctx.load_cert_chain.called
+    mock_ssl_ctx = mocker.patch("ssl.create_default_context")
+    mock_ctx = MagicMock()
+    mock_ssl_ctx.return_value = mock_ctx
+    ctx = gw.get_ssl_context()
+    assert ctx is mock_ctx
+    assert mock_ctx.load_cert_chain.called
 
 
 def test_cli_help() -> None:
@@ -172,7 +173,7 @@ async def test_session_unhandled_and_oserror(cloud_service: CloudBridgeService) 
     assert len(cloud_service.gateway.connections) == 0
 
 
-def test_protobuf_gateway_mtls(tmp_path: Path) -> None:
+def test_protobuf_gateway_mtls(tmp_path: Path, mocker: MockerFixture) -> None:
     cert_file = tmp_path / "server.crt"
     key_file = tmp_path / "server.key"
     ca_file = tmp_path / "ca.crt"
@@ -186,27 +187,27 @@ def test_protobuf_gateway_mtls(tmp_path: Path) -> None:
         key_file=str(key_file),
         ca_file=str(ca_file),
     )
-    with patch("ssl.create_default_context") as mock_ssl_ctx:
-        mock_ctx = MagicMock()
-        mock_ssl_ctx.return_value = mock_ctx
-        ctx = gw.get_ssl_context()
-        assert ctx is mock_ctx
-        assert mock_ctx.load_verify_locations.called
+    mock_ssl_ctx = mocker.patch("ssl.create_default_context")
+    mock_ctx = MagicMock()
+    mock_ssl_ctx.return_value = mock_ctx
+    ctx = gw.get_ssl_context()
+    assert ctx is mock_ctx
+    assert mock_ctx.load_verify_locations.called
 
 
 @pytest.mark.asyncio
-async def test_protobuf_gateway_run() -> None:
+async def test_protobuf_gateway_run(mocker: MockerFixture) -> None:
     gw = ProtobufGateway(use_tls=False)
-    with patch("gateway.Server") as mock_server_cls:
-        mock_server = AsyncMock()
-        mock_server.__dispatch__ = MagicMock()
-        mock_server_cls.return_value = mock_server
-        await gw.run()
-        assert mock_server.start.called
-        assert mock_server.wait_closed.called
+    mock_server_cls = mocker.patch("gateway.Server")
+    mock_server = AsyncMock()
+    mock_server.__dispatch__ = MagicMock()
+    mock_server_cls.return_value = mock_server
+    await gw.run()
+    assert mock_server.start.called
+    assert mock_server.wait_closed.called
 
 
-def test_cli_main_invocation() -> None:
+def test_cli_main_invocation(mocker: MockerFixture) -> None:
     runner = CliRunner()
 
     mock_runner_instance = MagicMock()
@@ -219,12 +220,12 @@ def test_cli_main_invocation() -> None:
     mock_runner_instance.__enter__ = MagicMock(return_value=mock_runner_instance)
     mock_runner_instance.__exit__ = MagicMock(return_value=False)
 
-    with patch("asyncio.Runner", return_value=mock_runner_instance):
-        result = runner.invoke(cast(Any, app), ["--no-tls", "--port", "9090"])
-        assert result.exit_code == 0
+    mocker.patch("asyncio.Runner", return_value=mock_runner_instance)
+    result = runner.invoke(cast(Any, app), ["--no-tls", "--port", "9090"])
+    assert result.exit_code == 0
 
 
-def test_cli_main_keyboard_interrupt() -> None:
+def test_cli_main_keyboard_interrupt(mocker: MockerFixture) -> None:
     runner = CliRunner()
 
     mock_runner_instance = MagicMock()
@@ -239,24 +240,22 @@ def test_cli_main_keyboard_interrupt() -> None:
     mock_runner_instance.__exit__ = MagicMock(return_value=False)
 
     mock_logger_info = MagicMock()
-    with (
-        patch("asyncio.Runner", return_value=mock_runner_instance),
-        patch("gateway.logger.info", mock_logger_info),
-    ):
-        result = runner.invoke(cast(Any, app), ["--no-tls", "--http3"])
-        assert result.exit_code == 0
-        mock_logger_info.assert_called_once_with("Gateway terminated by user.")
+    mocker.patch("asyncio.Runner", return_value=mock_runner_instance)
+    mocker.patch("gateway.logger.info", mock_logger_info)
+    result = runner.invoke(cast(Any, app), ["--no-tls", "--http3"])
+    assert result.exit_code == 0
+    mock_logger_info.assert_called_once_with("Gateway terminated by user.")
 
 
 @pytest.mark.asyncio
-async def test_protobuf_gateway_http3_run() -> None:
+async def test_protobuf_gateway_http3_run(mocker: MockerFixture) -> None:
     gw = ProtobufGateway(use_tls=False, http3_enabled=True, http3_port=9999)
-    with patch("gateway.Server") as mock_server_cls:
-        mock_server = AsyncMock()
-        mock_server.__dispatch__ = MagicMock()
-        mock_server_cls.return_value = mock_server
-        await gw.run()
-        assert mock_server.start.called
+    mock_server_cls = mocker.patch("gateway.Server")
+    mock_server = AsyncMock()
+    mock_server.__dispatch__ = MagicMock()
+    mock_server_cls.return_value = mock_server
+    await gw.run()
+    assert mock_server.start.called
 
 
 @pytest.mark.asyncio
@@ -309,13 +308,14 @@ async def test_session_invalid_envelope_validation(cloud_service: CloudBridgeSer
     assert not mock_stream.send_message.called
 
 
-def test_gateway_main_block_simulation() -> None:
+def test_gateway_main_block_simulation(mocker: MockerFixture) -> None:
     import runpy
     import sys
     from pathlib import Path
 
     gateway_path = str(Path(__file__).resolve().parent.parent / "gateway.py")
-    with patch.object(sys, "argv", ["gateway.py", "--help"]), pytest.raises(SystemExit):
+    mocker.patch.object(sys, "argv", ["gateway.py", "--help"])
+    with pytest.raises(SystemExit):
         runpy.run_path(gateway_path, run_name="__main__")
 
 
@@ -544,7 +544,8 @@ def test_tsdb_sink_formatting_and_ingestion() -> None:
 
 
 @pytest.mark.asyncio
-async def test_tsdb_sink_async_post_mocked() -> None:
+@pytest.mark.asyncio
+async def test_tsdb_sink_async_post_mocked(mocker: MockerFixture) -> None:
     sink = TSDBSink(endpoint_url="http://localhost:8428/write")
     metrics = pb.DaemonMetrics(cloud_queue_depth=1)
     envelope = pb.CloudEnvelope(
@@ -552,15 +553,15 @@ async def test_tsdb_sink_async_post_mocked() -> None:
         telemetry=pb.TelemetryReport(daemon_metrics_blob=metrics.SerializeToString()),
     )
 
-    with patch("urllib.request.urlopen") as mock_urlopen:
-        mock_resp = MagicMock()
-        mock_resp.status = 204
-        mock_resp.__enter__.return_value = mock_resp
-        mock_resp.__exit__.return_value = False
-        mock_urlopen.return_value = mock_resp
+    mock_urlopen = mocker.patch("urllib.request.urlopen")
+    mock_resp = MagicMock()
+    mock_resp.status = 204
+    mock_resp.__enter__.return_value = mock_resp
+    mock_resp.__exit__.return_value = False
+    mock_urlopen.return_value = mock_resp
 
-        await sink.ingest_telemetry("yun-node-1", envelope)
-        assert mock_urlopen.called
+    await sink.ingest_telemetry("yun-node-1", envelope)
+    assert mock_urlopen.called
 
 
 @pytest.mark.asyncio
@@ -614,20 +615,18 @@ async def test_send_command_device_disconnected_during_execution(mock_gateway: P
 
 
 @pytest.mark.asyncio
-async def test_protobuf_gateway_metrics_port_run() -> None:
+async def test_protobuf_gateway_metrics_port_run(mocker: MockerFixture) -> None:
     gw = ProtobufGateway(use_tls=False, metrics_port=9100)
-    with (
-        patch("prometheus_client.start_http_server") as mock_metrics_server,
-        patch("gateway.Server") as mock_server_cls,
-    ):
-        mock_server = AsyncMock()
-        mock_server.__dispatch__ = MagicMock()
-        mock_server_cls.return_value = mock_server
-        await gw.run()
-        assert mock_metrics_server.called
+    mock_metrics_server = mocker.patch("prometheus_client.start_http_server")
+    mock_server_cls = mocker.patch("gateway.Server")
+    mock_server = AsyncMock()
+    mock_server.__dispatch__ = MagicMock()
+    mock_server_cls.return_value = mock_server
+    await gw.run()
+    assert mock_metrics_server.called
 
 
-def test_tsdb_sink_post_line_edge_paths() -> None:
+def test_tsdb_sink_post_line_edge_paths(mocker: MockerFixture) -> None:
     import urllib.error
 
     # 1. Empty endpoint returns early
@@ -642,12 +641,12 @@ def test_tsdb_sink_post_line_edge_paths() -> None:
     mock_resp = MagicMock()
     mock_resp.status = 500
     mock_resp.__enter__.return_value = mock_resp
-    with patch("urllib.request.urlopen", return_value=mock_resp):
-        post_fn("mcu,device=dev1 value=1")
+    mock_urlopen = mocker.patch("urllib.request.urlopen", return_value=mock_resp)
+    post_fn("mcu,device=dev1 value=1")
 
     # 3. URLError network failure
-    with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("Refused")):
-        post_fn("mcu,device=dev1 value=1")
+    mock_urlopen.side_effect = urllib.error.URLError("Refused")
+    post_fn("mcu,device=dev1 value=1")
 
 
 @pytest.mark.asyncio
@@ -664,7 +663,7 @@ async def test_tsdb_sink_ingest_telemetry_edge_paths() -> None:
 
 
 @pytest.mark.asyncio
-async def test_handle_telemetry_edge_paths(mock_gateway: ProtobufGateway) -> None:
+async def test_handle_telemetry_edge_paths(mock_gateway: ProtobufGateway, mocker: MockerFixture) -> None:
     import gateway
 
     handle_telemetry = getattr(gateway, "_handle_telemetry")
@@ -686,8 +685,8 @@ async def test_handle_telemetry_edge_paths(mock_gateway: ProtobufGateway) -> Non
         device_id="edge-1",
         telemetry=pb.TelemetryReport(daemon_metrics_blob=b"\xff\xff\xff"),
     )
-    with patch("urllib.request.urlopen"):
-        await handle_telemetry(svc, "edge-1", mock_stream, envelope_corrupt)
+    mocker.patch("urllib.request.urlopen")
+    await handle_telemetry(svc, "edge-1", mock_stream, envelope_corrupt)
 
 
 @pytest.mark.asyncio
@@ -706,7 +705,9 @@ async def test_handle_command_response_edge_paths(mock_gateway: ProtobufGateway)
 
 
 @pytest.mark.asyncio
-async def test_session_disconnect_aborts_pending_commands_with_edge_branches(mock_gateway: ProtobufGateway) -> None:
+async def test_session_disconnect_aborts_pending_commands_with_edge_branches(
+    mock_gateway: ProtobufGateway, mocker: MockerFixture
+) -> None:
     svc = CloudBridgeService(mock_gateway)
     loop = asyncio.get_running_loop()
 
@@ -724,7 +725,8 @@ async def test_session_disconnect_aborts_pending_commands_with_edge_branches(moc
     mock_stream = AsyncMock()
     mock_stream.__aiter__.side_effect = asyncio.CancelledError()
 
-    with patch("gateway.extract_peer_identity", return_value=("disc-dev", True)), pytest.raises(asyncio.CancelledError):
+    mocker.patch("gateway.extract_peer_identity", return_value=("disc-dev", True))
+    with pytest.raises(asyncio.CancelledError):
         await svc.Session(mock_stream)
 
     assert fut_target.done()

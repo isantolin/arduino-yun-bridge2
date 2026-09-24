@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import Any, cast
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from pytest_mock import MockerFixture
@@ -61,14 +61,16 @@ async def test_cli_bridge_session(mocker: MockerFixture) -> None:
     mock_chan.close.assert_called_once()
 
 
-def test_env_is_openwrt(mocker: MockerFixture) -> None:
+def test_env_is_openwrt_force_uci(mocker: MockerFixture) -> None:
     """is_openwrt checks environment variable and file presence."""
-    with patch.dict("os.environ", {"MCUBRIDGE_FORCE_UCI": "1"}):
-        assert is_openwrt() is True
+    mocker.patch.dict("os.environ", {"MCUBRIDGE_FORCE_UCI": "1"})
+    assert is_openwrt() is True
 
-    with patch.dict("os.environ", {}, clear=True):
-        mocker.patch("pathlib.Path.exists", return_value=True)
-        assert is_openwrt() is True
+
+def test_env_is_openwrt_file_exists(mocker: MockerFixture) -> None:
+    mocker.patch.dict("os.environ", {}, clear=True)
+    mocker.patch("pathlib.Path.exists", return_value=True)
+    assert is_openwrt() is True
 
 
 def test_env_read_uci_general(mocker: MockerFixture) -> None:
@@ -109,19 +111,19 @@ def test_env_dump_client_env(capsys: pytest.CaptureFixture[str]) -> None:
 # ==============================================================================
 
 
-def test_definitions_build_bridge_args() -> None:
+def test_definitions_build_bridge_args(mocker: MockerFixture) -> None:
     """build_bridge_args builds dictionary targeting Gateway with explicit device_id."""
-    with patch.dict("os.environ", {}, clear=True):
-        args = build_bridge_args(host="127.0.0.1", port=8443, device_id="yun-01", topic_prefix="br")
-        assert args == {
-            "host": "127.0.0.1",
-            "port": 8443,
-            "device_id": "yun-01",
-            "topic_prefix": "br",
-        }
-        # Explicit device_id is required: missing device_id raises ValueError
-        with pytest.raises(ValueError, match="Explicit target device_id is required"):
-            build_bridge_args(host="127.0.0.1", port=8443)
+    mocker.patch.dict("os.environ", {}, clear=True)
+    args = build_bridge_args(host="127.0.0.1", port=8443, device_id="yun-01", topic_prefix="br")
+    assert args == {
+        "host": "127.0.0.1",
+        "port": 8443,
+        "device_id": "yun-01",
+        "topic_prefix": "br",
+    }
+    # Explicit device_id is required: missing device_id raises ValueError
+    with pytest.raises(ValueError, match="Explicit target device_id is required"):
+        build_bridge_args(host="127.0.0.1", port=8443)
 
 
 @pytest.mark.asyncio

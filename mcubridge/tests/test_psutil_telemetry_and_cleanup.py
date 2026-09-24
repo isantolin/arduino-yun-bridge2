@@ -5,7 +5,6 @@ from __future__ import annotations
 import subprocess
 from unittest.mock import MagicMock
 
-import pytest
 from pytest_mock import MockerFixture
 
 from mcubridge.config.settings import RuntimeConfig

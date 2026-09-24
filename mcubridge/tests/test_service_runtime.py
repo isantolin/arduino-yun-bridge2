@@ -1,26 +1,28 @@
-"""Focused unit tests for BridgeService (runtime)."""
+"""Tests for runtime service lifecycle and basic transport integration."""
 
 from __future__ import annotations
+
 from mcubridge.transport.serial import SerialTransport
 
 import time
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from pytest_mock import MockerFixture
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
-from mcubridge.protocol.structures import create_queued_publish
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
 
 
 def _make_config() -> RuntimeConfig:
-    import os
-
-    fs_root = f".tmp_tests/mcubridge-test-fs-{os.getpid()}-{time.time_ns()}"
-    spool_dir = f".tmp_tests/mcubridge-test-spool-{os.getpid()}-{time.time_ns()}"
+    fs_root = f".tmp_tests/fs-{time.time_ns()}"
+    spool_dir = f".tmp_tests/spool-{time.time_ns()}"
     return RuntimeConfig(
+        serial_port="/dev/test0",
+        serial_baud=protocol.DEFAULT_BAUDRATE,
+        serial_safe_baud=protocol.DEFAULT_SAFE_BAUDRATE,
         allowed_commands=("echo", "ls"),
         serial_shared_secret=b"testshared",
         file_system_root=fs_root,
@@ -57,10 +59,10 @@ async def test_handle_mcu_frame_pre_sync_denied() -> None:
     state = create_runtime_state(config)
     try:
         mock_serial = AsyncMock(spec=SerialTransport)
+        mock_serial.acknowledge.return_value = True
         service = BridgeService(config, state, mock_serial)
-        state.state = "unsynchronized"
 
-        # CMD_GET_VERSION is not in pre-sync allowed list (64 is MIN_SYS but not sync/reset)
+        # Before sync, MCU frames other than handshake are ignored/denied
         await service.handle_mcu_frame(protocol.Command.CMD_GET_VERSION.value, 1, b"")
         mock_serial.acknowledge.assert_not_called()
     finally:
@@ -76,11 +78,8 @@ async def test_handle_mcu_xon_xoff() -> None:
     config = _make_config()
     state = create_runtime_state(config)
     try:
-        service = BridgeService(
-            config,
-            state,
-            AsyncMock(spec=SerialTransport),
-        )
+        mock_serial = AsyncMock(spec=SerialTransport)
+        service = BridgeService(config, state, mock_serial)
         state.state = "synchronized"
 
         await service.handle_mcu_frame(protocol.Command.CMD_XOFF.value, 1, b"")
@@ -134,7 +133,7 @@ async def test_enqueue_cloud_spools_until_client_recovers() -> None:
     state = create_runtime_state(config)
     try:
         service = BridgeService(config, state, AsyncMock(spec=SerialTransport))
-        message = create_queued_publish("br/system/status", b"payload")
+        message = pb.CloudQueuedPublish(topic_name="br/system/status", payload=b"payload")
 
         await service.enqueue_cloud(message)
 
@@ -155,14 +154,12 @@ async def test_enqueue_cloud_spools_until_client_recovers() -> None:
 
 
 @pytest.mark.asyncio
-async def test_handle_cloud_pin_overflow_reports_error() -> None:
+async def test_handle_cloud_pin_overflow_reports_error(mocker: MockerFixture) -> None:
     service = None
     config = _make_config()
     state = create_runtime_state(config)
     try:
-        from unittest.mock import patch
         from mcubridge.protocol.structures import PendingPinRequest
-
         mock_serial = AsyncMock(spec=SerialTransport)
         service = BridgeService(config, state, mock_serial)
         state.state = "synchronized"
@@ -176,21 +173,22 @@ async def test_handle_cloud_pin_overflow_reports_error() -> None:
             del reply_context
             captured.append(message)
 
-        with patch.object(service, "enqueue_cloud", side_effect=capture_enqueue):
+        mocker.patch.object(service, "enqueue_cloud", side_effect=capture_enqueue)
 
-            class PublishPacket:
-                def __init__(self, topic: str, payload: bytes) -> None:
-                    self.topic = topic
-                    self.payload = payload
-                    self.properties = None
+        class PublishPacket:
+            def __init__(self, topic: str, payload: bytes) -> None:
+                self.topic = topic
+                self.payload = payload
+                self.properties = None
 
-            message = PublishPacket("br/d/13/read", b"")
+        message = PublishPacket("br/d/13/read", b"")
 
-            await service.handle_request(message)
+        await service.handle_request(message)
 
         assert captured
         assert any(
-            prop.key == "bridge-error" and prop.value == "pending-pin-overflow" for prop in captured[0].user_properties
+            isinstance(prop, pb.Property) and prop.key == "bridge-error" and prop.value == "pending-pin-overflow"
+            for prop in captured[0].user_properties
         )
         mock_serial.send.assert_not_called()
     finally:

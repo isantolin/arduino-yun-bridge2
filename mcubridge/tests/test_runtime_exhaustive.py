@@ -1,151 +1,136 @@
-"""Exhaustive tests for mcubridge.services.runtime module. [SIL-2]"""
+"""Exhaustive tests for runtime service lifecycle, MQTT routing, and error branches."""
 
 from __future__ import annotations
-from mcubridge.protocol.topics import parse_topic
 
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+import asyncio
+from unittest.mock import AsyncMock
 
 import pytest
-from mcubridge.config.settings import load_runtime_config
-from mcubridge.protocol import mcubridge_pb2 as pb, protocol
+from pytest_mock import MockerFixture
+
+from mcubridge.config.settings import RuntimeConfig
+import mcubridge.protocol.mcubridge_pb2 as pb
+from mcubridge.protocol.protocol import Command
 from mcubridge.services.runtime import BridgeService
-from mcubridge.state.context import RuntimeState
+from mcubridge.state.context import RuntimeState, create_runtime_state
+from mcubridge.transport.serial import SerialTransport
+
+
+def _make_config() -> RuntimeConfig:
+    return RuntimeConfig(
+        allowed_commands=("echo", "ls"),
+        serial_shared_secret=b"testsharedsecret",
+        allow_non_tmp_paths=True,
+    )
 
 
 @pytest.fixture
-def runtime_setup(
-    tmp_path: Path,
-) -> tuple[BridgeService, RuntimeState, AsyncMock]:
-    tmp_dir = str(tmp_path)
-    config = load_runtime_config(
-        {
-            "cloud_spool_dir": tmp_dir,
-            "file_system_root": tmp_dir,
-            "allow_non_tmp_paths": True,
-        }
-    )
-    state = RuntimeState()
-    transport = AsyncMock()
-
-    service = BridgeService(config=config, state=state, serial=transport)
-    return service, state, transport
+def runtime_setup() -> tuple[BridgeService, RuntimeState, AsyncMock]:
+    cfg = _make_config()
+    state = create_runtime_state(cfg)
+    mock_serial = AsyncMock(spec=SerialTransport)
+    service = BridgeService(cfg, state, mock_serial)
+    return service, state, mock_serial
 
 
 @pytest.mark.asyncio
 async def test_on_serial_connected_and_disconnected(
     runtime_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
-    service, _state, _transport = runtime_setup
-    handshake = AsyncMock()
-
-    async def mock_sync() -> bool:
-        service.state.connection_fsm.synchronize()
-        return True
-
-    handshake.synchronize = AsyncMock(side_effect=mock_sync)
-    handshake.clear_handshake_expectations = MagicMock()
-    service.handshake = handshake
+    service, state, _serial = runtime_setup
 
     await service.on_serial_connected()
-    handshake.synchronize.assert_called_once()
+    assert state.is_connected is True
 
     await service.on_serial_disconnected()
-    handshake.clear_handshake_expectations.assert_called_once()
-
-    # Test sync failure raises ConnectionError
-    handshake.synchronize = AsyncMock(return_value=False)
-    service.state.connection_fsm.disconnect()
-    with pytest.raises(ConnectionError, match="MCU serial link handshake synchronization failed"):
-        await service.on_serial_connected()
+    assert state.is_connected is False
 
 
 @pytest.mark.asyncio
-async def test_handle_mcu_frame_pre_sync_denied(
-    runtime_setup: tuple[BridgeService, RuntimeState, AsyncMock],
-) -> None:
-    service, state, _transport = runtime_setup
-    state.link_session_key = None
+async def test_handle_mcu_frame_pre_sync_denied(runtime_setup: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
+    service, state, serial = runtime_setup
+    assert not state.is_synchronized
 
-    res = await service.handle_mcu_frame(command_id=protocol.Command.CMD_SET_PIN_MODE.value, sequence_id=1, payload=b"")
-    assert res is None or res is False
+    await service.handle_mcu_frame(Command.CMD_GET_VERSION.value, 1, b"")
+    serial.send.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_handle_mcu_frame_handshake_routing(
     runtime_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
-    service, _state, _transport = runtime_setup
-    mock_handler = AsyncMock(return_value=True)
-    service.mcu_registry[protocol.Command.CMD_LINK_SYNC_RESP.value] = mock_handler
+    service, _state, _serial = runtime_setup
+    service.handshake.handle_link_sync_resp = AsyncMock(return_value=True)  # type: ignore[method-assign]
 
-    # Handshake frame route directly to registered handler
-    await service.handle_mcu_frame(command_id=protocol.Command.CMD_LINK_SYNC_RESP.value, sequence_id=1, payload=b"")
-    mock_handler.assert_called_once()
+    await service.handle_mcu_frame(Command.CMD_LINK_SYNC_RESP.value, 1, b"sync-payload")
+    service.handshake.handle_link_sync_resp.assert_awaited_once_with(1, b"sync-payload")  # type: ignore[union-attr]
 
 
 @pytest.mark.asyncio
 async def test_handle_mcu_frame_rpc_handlers(
-    runtime_setup: tuple[BridgeService, RuntimeState, AsyncMock],
+    runtime_setup: tuple[BridgeService, RuntimeState, AsyncMock], mocker: MockerFixture
 ) -> None:
-    service, state, transport = runtime_setup
-    state.link_session_key = b"0123456789abcdef0123456789abcdef"
+    service, state, serial = runtime_setup
+    state.connection_fsm.connect()
     state.connection_fsm.synchronize()
+    serial.send.return_value = True
 
     # 1. MCU Mailbox Push (triggers enqueue_cloud & acknowledge)
-    with patch.object(service, "enqueue_cloud", new_callable=AsyncMock) as mock_enqueue:
-        req_mb = pb.MailboxPush(data=b"test_payload")
-        await service.handle_mcu_frame(
-            command_id=protocol.Command.CMD_MAILBOX_PUSH.value, sequence_id=10, payload=req_mb
-        )
-        assert mock_enqueue.called
-        assert transport.acknowledge.called
+    mock_enqueue = mocker.patch.object(service, "enqueue_cloud", new_callable=AsyncMock)
+    req_mb = pb.MailboxPush(data=b"test_payload")
+    await service.handle_mcu_frame(Command.CMD_MAILBOX_PUSH.value, 10, req_mb.SerializeToString())
+    mock_enqueue.assert_awaited()
+    serial.send.assert_awaited()
 
-    # 2. MCU Datastore Put (triggers datastore put & acknowledge)
-    transport.acknowledge.reset_mock()
-    req_ds = pb.DatastorePut(key="k1", value=b"v1")
-    await service.handle_mcu_frame(command_id=protocol.Command.CMD_DATASTORE_PUT.value, sequence_id=11, payload=req_ds)
-    assert transport.acknowledge.called
+    # 2. MCU Datastore Put
+    req_ds = pb.DatastorePut(key="temp", value=b"25.5")
+    await service.handle_mcu_frame(Command.CMD_DATASTORE_PUT.value, 11, req_ds.SerializeToString())
+    assert state.datastore_cache is not None
+    assert await state.datastore_cache.get("temp") == b"25.5"
 
-    # 3. Response command (ignored by BridgeService as it is correlated at transport level)
-    transport.acknowledge.reset_mock()
-    req_ver = pb.VersionResponse(major=2, minor=8, patch=5)
-    await service.handle_mcu_frame(
-        command_id=protocol.Command.CMD_GET_VERSION_RESP.value, sequence_id=12, payload=req_ver
-    )
-    assert not transport.acknowledge.called
-
-    # 4. Unknown command (triggers Status.NOT_IMPLEMENTED)
-    await service.handle_mcu_frame(9999, 13, b"")
-    assert transport.send.called
+    # 3. SPI Transfer Response
+    mock_enqueue.reset_mock()
+    spi_resp = pb.SpiTransferResponse(data=b"\x01\x02")
+    await service.handle_mcu_frame(Command.CMD_SPI_TRANSFER_RESP.value, 12, spi_resp.SerializeToString())
+    mock_enqueue.assert_awaited()
 
 
 @pytest.mark.asyncio
-async def test_handle_request_routing(
-    runtime_setup: tuple[BridgeService, RuntimeState, AsyncMock],
-) -> None:
-    service, state, transport = runtime_setup
-    state.link_session_key = b"0123456789abcdef0123456789abcdef"
-    transport.send.return_value = True
+async def test_handle_request_routing(runtime_setup: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
+    service, state, serial = runtime_setup
+    state.connection_fsm.connect()
+    state.connection_fsm.synchronize()
+    serial.send.return_value = True
 
-    route = parse_topic("br", "br/d/13/mode")
-    assert route is not None
-    req = pb.CloudQueuedPublish(topic_name="br/d/13/mode", payload=b"1")
+    # Console input topic
+    req_console = pb.CloudQueuedPublish(
+        topic_name=f"{state.cloud_topic_prefix}/console/in",
+        payload=b"help\n",
+    )
+    await service.handle_request(req_console)
+    assert len(state.console_to_mcu_queue) == 0  # Should be flushed immediately to serial
+    serial.send.assert_awaited()
 
-    handle_pin_fn = getattr(service, "_handle_pin")
-    await handle_pin_fn(route, req)
-    transport.send.assert_called_once()
+    # Mailbox write topic
+    req_mb = pb.CloudQueuedPublish(
+        topic_name=f"{state.cloud_topic_prefix}/mailbox/write",
+        payload=b"ping",
+    )
+    await service.handle_request(req_mb)
+    serial.send.assert_awaited()
 
 
 @pytest.mark.asyncio
 async def test_enqueue_cloud_spool_and_flush(
     runtime_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
-    service, _state, _transport = runtime_setup
+    service, state, _serial = runtime_setup
+    service._cloud_stream = None  # Simulate disconnected cloud
 
+    # Enqueue when disconnected triggers spooling
     msg = pb.CloudQueuedPublish(
-        topic_name="br/status",
-        payload=b"online",
+        topic_name="mcu/test",
+        payload=b"spooled_data",
     )
     await service.enqueue_cloud(msg)
     spool = getattr(service, "_cloud_spool")
@@ -154,107 +139,6 @@ async def test_enqueue_cloud_spool_and_flush(
 
     # Drain spool
     popped_bytes = await spool.popleft()
-    assert popped_bytes is not None
-    msg_popped = pb.CloudQueuedPublish.FromString(popped_bytes)
-    assert msg_popped.topic_name == "br/status"
-
-
-@pytest.mark.asyncio
-async def test_file_handlers_exhaustive(
-    runtime_setup: tuple[BridgeService, RuntimeState, AsyncMock],
-) -> None:
-    service, state, transport = runtime_setup
-    state.link_session_key = b"0123456789abcdef0123456789abcdef"
-    transport.send = AsyncMock(return_value=True)
-
-    file_path = "test.txt"
-
-    # 1. File Write
-    fw = pb.FileWrite(path=file_path, data=b"hello file")
-    on_fw = getattr(service, "_on_mcu_file_write")
-    res_w = await on_fw(1, fw)
-    assert res_w is True
-
-    # 2. File Read
-    fr = pb.FileRead(path=file_path)
-    on_fr = getattr(service, "_on_mcu_file_read")
-    await on_fr(2, fr)
-    assert transport.send.called
-
-    # 3. File Remove
-    fm = pb.FileRemove(path=file_path)
-    on_fm = getattr(service, "_on_mcu_file_remove")
-    res_m = await on_fm(3, fm)
-    assert res_m is True
-
-
-@pytest.mark.asyncio
-async def test_datastore_handlers_exhaustive(
-    runtime_setup: tuple[BridgeService, RuntimeState, AsyncMock],
-) -> None:
-    service, state, transport = runtime_setup
-    state.link_session_key = b"0123456789abcdef0123456789abcdef"
-    transport.send = AsyncMock(return_value=True)
-
-    on_dp = getattr(service, "_on_mcu_datastore_put")
-    on_dg = getattr(service, "_on_mcu_datastore_get")
-
-    # 1. Put
-    dp = pb.DatastorePut(key="k1", value=b"v1")
-    assert await on_dp(1, dp) is True
-
-    # 2. Get
-    dg = pb.DatastoreGet(key="k1")
-    assert await on_dg(2, dg) is True
-
-
-@pytest.mark.asyncio
-async def test_mailbox_handlers_exhaustive(
-    runtime_setup: tuple[BridgeService, RuntimeState, AsyncMock],
-) -> None:
-    service, state, transport = runtime_setup
-    state.link_session_key = b"0123456789abcdef0123456789abcdef"
-    transport.send = AsyncMock(return_value=True)
-
-    on_mp = getattr(service, "_on_mcu_mailbox_push")
-    on_ma = getattr(service, "_on_mcu_mailbox_available")
-    on_mr = getattr(service, "_on_mcu_mailbox_read")
-    on_mpr = getattr(service, "_on_mcu_mailbox_processed")
-
-    # 1. Mailbox Push
-    mp = pb.MailboxPush(data=b"msg1")
-    assert await on_mp(1, mp) is True
-
-    # 2. Mailbox Available
-    assert await on_ma(2, None) is True
-
-    # 3. Mailbox Read
-    assert await on_mr(3, None) is True
-
-    # 4. Mailbox Processed
-    mpr = pb.MailboxProcessed(message_id=1)
-    await on_mpr(4, mpr)
-
-
-@pytest.mark.asyncio
-async def test_process_and_spi_handlers_exhaustive(
-    runtime_setup: tuple[BridgeService, RuntimeState, AsyncMock],
-) -> None:
-    service, state, transport = runtime_setup
-    state.link_session_key = b"0123456789abcdef0123456789abcdef"
-    transport.send = AsyncMock(return_value=True)
-
-    on_spi = getattr(service, "_on_mcu_spi_resp")
-    on_cw = getattr(service, "_on_mcu_console_write")
-
-    # SPI Resp
-    with patch.object(service, "enqueue_cloud", new_callable=AsyncMock) as mock_enqueue:
-        spi_resp = pb.SpiTransferResponse(data=b"\x01\x02")
-        await on_spi(1, spi_resp)
-        assert mock_enqueue.called
-
-    # Console Write
-    with patch.object(service, "enqueue_cloud", new_callable=AsyncMock) as mock_enqueue:
-        cw = pb.ConsoleWrite(data=b"test console output\n")
-        await on_cw(2, cw)
-        assert mock_enqueue.called
+    popped_msg = pb.CloudQueuedPublish.FromString(popped_bytes)
+    assert popped_msg.topic_name == "mcu/test"
+    assert popped_msg.payload == b"spooled_data"

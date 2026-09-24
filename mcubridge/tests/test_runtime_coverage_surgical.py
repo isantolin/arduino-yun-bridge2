@@ -5,9 +5,10 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from pytest_mock import MockerFixture
 
 from mcubridge.config.settings import RuntimeConfig
 import mcubridge.protocol.mcubridge_pb2 as pb
@@ -184,8 +185,6 @@ async def test_handle_mailbox_read_write(test_config: RuntimeConfig, mock_bridge
     await svc._handle_mailbox(route_write, msg_write)
     mock_serial.send.assert_awaited_once()
 
-    # READ Action
-
 
 @pytest.mark.asyncio
 async def test_handle_file_mcu_read_success_and_timeout(
@@ -214,7 +213,7 @@ async def test_handle_file_mcu_read_success_and_timeout(
 
 @pytest.mark.asyncio
 async def test_cloud_events_and_direct_rpc_dispatch(
-    test_config: RuntimeConfig, mock_bridge_state: RuntimeState
+    test_config: RuntimeConfig, mock_bridge_state: RuntimeState, mocker: MockerFixture
 ) -> None:
     svc = BridgeService(test_config, mock_bridge_state, MagicMock())
     mock_stream = AsyncMock()
@@ -262,11 +261,13 @@ async def test_cloud_events_and_direct_rpc_dispatch(
             self.sent_messages.append(msg)
 
     session_stream = MockStream([env])
-    with patch("mcubridge.services.runtime.Channel"), patch("mcubridge.services.runtime.CloudBridgeStub") as mock_stub:
-        mock_stub.return_value.Session.open.return_value = session_stream
-        with patch.object(svc, "_send_cloud_event", new_callable=AsyncMock):
-            with patch.object(svc, "flush_cloud_spool", new_callable=AsyncMock):
-                await svc.connect_cloud_session(None)
+    mocker.patch("mcubridge.services.runtime.Channel")
+    mock_stub = mocker.patch("mcubridge.services.runtime.CloudBridgeStub")
+    mock_stub.return_value.Session.open.return_value = session_stream
+    mocker.patch.object(svc, "_send_cloud_event", new_callable=AsyncMock)
+    mocker.patch.object(svc, "flush_cloud_spool", new_callable=AsyncMock)
+
+    await svc.connect_cloud_session(None)
 
     mock_exec_rpc.assert_awaited_once_with("DigitalWrite", env.command_request.payload)
     assert len(session_stream.sent_messages) == 1

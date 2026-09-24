@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable, Iterator
-import os
 from pathlib import Path
 import ssl
 from typing import Any

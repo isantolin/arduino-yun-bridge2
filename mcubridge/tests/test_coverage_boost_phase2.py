@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 import sys
 import time
-from typing import Any, cast
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 from cobs import cobsr
@@ -21,12 +21,11 @@ from pytest_mock import MockerFixture
 
 from mcubridge.config.const import SERIAL_SUCCESS_STATUS_CODES
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol.frame import build_frame
-from mcubridge.protocol.protocol import Command, Status
+from mcubridge.protocol.protocol import Command
 from mcubridge.protocol.structures import PendingCommand
 from mcubridge.state.context import RuntimeState, create_runtime_state
-from mcubridge.state.storage import LmdbCache, LmdbDeque
+from mcubridge.state.storage import LmdbCache
 from mcubridge.transport.serial import SerialTransport
 
 # ──────────────────────────────────────────────────────────────────────────────

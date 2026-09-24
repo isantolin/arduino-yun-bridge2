@@ -1298,9 +1298,11 @@ class BridgeService:
                     if not s or s.at_eof():
                         return b"", False
                     try:
-                        async with asyncio.timeout(STREAM_POLL_TIMEOUT_SECONDS):
+                        with anyio.move_on_after(STREAM_POLL_TIMEOUT_SECONDS):
                             data = await s.read(protocol.MAX_PAYLOAD_SIZE - 32)
-                        return data, not s.at_eof()
+                            return data, not s.at_eof()
+                        logger.debug("Stream poll read timed out; process stream still pending")
+                        return b"", True
                     except TimeoutError as exc:
                         logger.debug("Stream poll read timed out; process stream still pending", error=str(exc))
                         return b"", True

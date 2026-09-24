@@ -14,7 +14,7 @@ import anyio.from_thread
 import structlog
 import tenacity
 
-from google.protobuf.json_format import MessageToDict
+from google.protobuf.json_format import MessageToDict, ParseDict
 
 from ..config.settings import RuntimeConfig
 from ..protocol import mcubridge_pb2 as pb
@@ -250,11 +250,16 @@ class UbusService:
 
     def ubus_handle_pin_subscribe(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.pin_subscribe'."""
-        pin = int(msg.get("pin", 0))
-        mode = str(msg.get("mode", "INPUT"))
-        interval_ms = int(msg.get("interval_ms", 50))
-        hysteresis = int(msg.get("hysteresis", 1))
-        enabled = bool(int(msg.get("enabled", 1)))
+        norm_msg = dict(msg)
+        if "enabled" in norm_msg:
+            norm_msg["enabled"] = bool(norm_msg["enabled"])
+        proto = pb.PinSubscribeRequest()
+        ParseDict(norm_msg, proto, ignore_unknown_fields=True)
+        pin = proto.pin
+        mode = proto.mode or str(msg.get("mode", "INPUT"))
+        interval_ms = proto.interval_ms or int(msg.get("interval_ms", 50))
+        hysteresis = proto.hysteresis or int(msg.get("hysteresis", 1))
+        enabled = proto.enabled if "enabled" in msg else True
         return self._call_subsystem(
             "gpio",
             lambda s: self.run_sync(s.subscribe_pin(pin, mode, interval_ms, hysteresis, enabled)),
@@ -276,8 +281,9 @@ class UbusService:
         }
 
     def _handle_pin_write(self, kind: str, msg: dict[str, Any]) -> dict[str, Any]:
-        pin = int(msg.get("pin", 0))
-        val = int(msg.get("value", 0))
+        proto = pb.DigitalWrite()
+        ParseDict(msg, proto, ignore_unknown_fields=True)
+        pin, val = proto.pin, proto.value
         writer = self.runtime.write_digital_pin if kind == "digital" else self.runtime.write_analog_pin
         self.schedule_async(writer(pin, val))
         return {"status": "ok", "pin": pin, "value": val}
@@ -311,7 +317,9 @@ class UbusService:
 
     def ubus_handle_datastore_get(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.datastore_get'."""
-        key = str(msg.get("key", ""))
+        proto = pb.DatastoreGet()
+        ParseDict(msg, proto, ignore_unknown_fields=True)
+        key = proto.key
         cache = self.runtime.state.datastore_cache
         if cache is None:
             return {"status": "error", "message": "Datastore cache unavailable"}
@@ -342,28 +350,33 @@ class UbusService:
 
     def ubus_handle_process_run(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.process_run'."""
-        command = str(msg.get("command", ""))
-        pid = int(self.run_sync(self.runtime.run_process(command)))
+        proto = pb.ProcessRunAsync()
+        ParseDict(msg, proto, ignore_unknown_fields=True)
+        pid = int(self.run_sync(self.runtime.run_process(proto.command)))
         return {"status": "ok", "pid": pid}
 
     def ubus_handle_process_kill(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.process_kill'."""
-        pid = int(msg.get("pid", 0))
+        proto = pb.ProcessKill()
+        ParseDict(msg, proto, ignore_unknown_fields=True)
+        pid = proto.pid
         res: tuple[bool, str | None] = self.run_sync(self.runtime.kill_process(pid))
         success, err = res
         return {"status": "ok" if success else "error", "pid": pid, "error": err or ""}
 
     def ubus_handle_process_poll(self, _req: Any, msg: dict[str, Any]) -> dict[str, Any]:
         """UBUS RPC handler for 'mcubridge.process_poll'."""
-        pid = int(msg.get("pid", 0))
+        proto = pb.ProcessPoll()
+        ParseDict(msg, proto, ignore_unknown_fields=True)
+        pid = proto.pid
         resp: pb.ProcessPollResponse = self.run_sync(self.runtime.poll_process(pid))
-        return {
-            "status": "ok" if resp.status == 0 else "error",
-            "exit_code": resp.exit_code,
-            "finished": resp.finished,
-            "stdout": _format_ubus_bytes(resp.stdout_data),
-            "stderr": _format_ubus_bytes(resp.stderr_data),
-        }
+        data = MessageToDict(resp, always_print_fields_with_no_presence=True, preserving_proto_field_name=True)
+        data["status"] = "ok" if resp.status == 0 else "error"
+        data["stdout"] = _format_ubus_bytes(resp.stdout_data)
+        data["stderr"] = _format_ubus_bytes(resp.stderr_data)
+        data.pop("stdout_data", None)
+        data.pop("stderr_data", None)
+        return data
 
     def run_sync(self, coro: Any) -> Any:
         """Execute a coroutine synchronously in a running or fresh event loop. [SIL-2]"""

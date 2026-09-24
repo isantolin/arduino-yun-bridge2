@@ -27,6 +27,7 @@ from grpclib.server import Server, Stream
 import prometheus_client
 from statemachine import State, StateMachine
 import structlog
+import tenacity
 import typer
 import uvloop
 
@@ -263,8 +264,14 @@ class TSDBSink:
         except (DecodeError, OSError, ValueError) as exc:
             logger.warning("TSDB telemetry ingestion error", device_id=device_id, error=str(exc))
 
+    @tenacity.retry(
+        stop=tenacity.stop_after_attempt(2),
+        wait=tenacity.wait_none(),
+        retry=tenacity.retry_if_exception_type((urllib.error.URLError, TimeoutError, OSError)),
+        retry_error_callback=lambda _rs: None,
+    )
     def _post_line(self, line: str) -> None:
-        """Execute blocking HTTP POST within dedicated thread."""
+        """Execute blocking HTTP POST within dedicated thread with tenacity retries."""
         if not self.endpoint_url:
             return
         req = urllib.request.Request(
@@ -279,6 +286,7 @@ class TSDBSink:
                     logger.warning("TSDB server responded with status error", status=resp.status)
         except (urllib.error.URLError, TimeoutError, OSError) as e:
             logger.warning("TSDB network write failed", error=str(e))
+            raise
 
 
 async def _handle_ping(
@@ -312,44 +320,25 @@ async def _handle_telemetry(
             service.gateway.metrics.device_link_synchronized.labels(device_id=device_id).set(
                 1.0 if metrics.link_synchronised else 0.0
             )
-            service.gateway.metrics.device_cloud_queue_depth.labels(device_id=device_id).set(
-                float(metrics.cloud_queue_depth)
+            simple_metrics: tuple[tuple[str, float], ...] = (
+                ("device_watchdog_enabled", 1.0 if metrics.watchdog_enabled else 0.0),
+                ("device_cloud_queue_depth", float(metrics.cloud_queue_depth)),
+                ("device_spool_pending", float(metrics.cloud_spool_pending_messages)),
+                ("device_serial_bytes_sent", float(metrics.serial_bytes_sent)),
+                ("device_serial_bytes_received", float(metrics.serial_bytes_received)),
+                ("device_serial_frames_sent", float(metrics.serial_frames_sent)),
+                ("device_serial_frames_received", float(metrics.serial_frames_received)),
+                ("device_serial_crc_errors", float(metrics.serial_crc_errors)),
+                ("device_serial_decode_errors", float(metrics.serial_decode_errors)),
+                ("device_handshake_attempts", float(metrics.handshake_attempts)),
+                ("device_handshake_successes", float(metrics.handshake_successes)),
+                ("device_watchdog_beats", float(metrics.watchdog_beats)),
+                ("device_uptime_seconds", float(metrics.uptime_seconds)),
+                ("device_cloud_messages_published", float(metrics.cloud_messages_published)),
             )
-            service.gateway.metrics.device_spool_pending.labels(device_id=device_id).set(
-                float(metrics.cloud_spool_pending_messages)
-            )
-            service.gateway.metrics.device_watchdog_enabled.labels(device_id=device_id).set(
-                1.0 if metrics.watchdog_enabled else 0.0
-            )
-            service.gateway.metrics.device_serial_bytes_sent.labels(device_id=device_id).set(
-                float(metrics.serial_bytes_sent)
-            )
-            service.gateway.metrics.device_serial_bytes_received.labels(device_id=device_id).set(
-                float(metrics.serial_bytes_received)
-            )
-            service.gateway.metrics.device_serial_frames_sent.labels(device_id=device_id).set(
-                float(metrics.serial_frames_sent)
-            )
-            service.gateway.metrics.device_serial_frames_received.labels(device_id=device_id).set(
-                float(metrics.serial_frames_received)
-            )
-            service.gateway.metrics.device_serial_crc_errors.labels(device_id=device_id).set(
-                float(metrics.serial_crc_errors)
-            )
-            service.gateway.metrics.device_serial_decode_errors.labels(device_id=device_id).set(
-                float(metrics.serial_decode_errors)
-            )
-            service.gateway.metrics.device_handshake_attempts.labels(device_id=device_id).set(
-                float(metrics.handshake_attempts)
-            )
-            service.gateway.metrics.device_handshake_successes.labels(device_id=device_id).set(
-                float(metrics.handshake_successes)
-            )
-            service.gateway.metrics.device_watchdog_beats.labels(device_id=device_id).set(float(metrics.watchdog_beats))
-            service.gateway.metrics.device_uptime_seconds.labels(device_id=device_id).set(float(metrics.uptime_seconds))
-            service.gateway.metrics.device_cloud_messages_published.labels(device_id=device_id).set(
-                float(metrics.cloud_messages_published)
-            )
+            for metric_attr, val in simple_metrics:
+                getattr(service.gateway.metrics, metric_attr).labels(device_id=device_id).set(val)
+
             service.gateway.metrics.device_latency_ms.labels(device_id=device_id, type="serial").set(
                 float(metrics.serial_latency_ms)
             )

@@ -60,12 +60,12 @@ async def test_cli_bridge_session(mocker: MockerFixture) -> None:
     mock_chan.close.assert_called_once()
 
 
-def test_env_is_openwrt(mocker: MockerFixture) -> None:
+def test_env_is_openwrt(mocker: MockerFixture, monkeypatch: pytest.MonkeyPatch) -> None:
     """is_openwrt checks environment variable and file presence."""
-    mocker.patch.dict("os.environ", {"MCUBRIDGE_FORCE_UCI": "1"})
+    monkeypatch.setenv("MCUBRIDGE_FORCE_UCI", "1")
     assert is_openwrt() is True
 
-    mocker.patch.dict("os.environ", {}, clear=True)
+    monkeypatch.delenv("MCUBRIDGE_FORCE_UCI", raising=False)
     mocker.patch("pathlib.Path.exists", return_value=True)
     assert is_openwrt() is True
 
@@ -103,9 +103,16 @@ def test_env_dump_client_env(capsys: pytest.CaptureFixture[str]) -> None:
 # ==============================================================================
 
 
-def test_definitions_build_bridge_args(mocker: MockerFixture) -> None:
+def test_definitions_build_bridge_args(monkeypatch: pytest.MonkeyPatch) -> None:
     """build_bridge_args builds dictionary targeting Gateway with explicit device_id."""
-    mocker.patch.dict("os.environ", {}, clear=True)
+    for k in (
+        "MCUBRIDGE_GATEWAY_HOST",
+        "MCUBRIDGE_GATEWAY_PORT",
+        "MCUBRIDGE_DEVICE_ID",
+        "MCUBRIDGE_TOPIC_PREFIX",
+    ):
+        monkeypatch.delenv(k, raising=False)
+
     args = build_bridge_args(host="127.0.0.1", port=8443, device_id="yun-01", topic_prefix="br")
     assert args == {
         "host": "127.0.0.1",
@@ -114,15 +121,10 @@ def test_definitions_build_bridge_args(mocker: MockerFixture) -> None:
         "topic_prefix": "br",
     }
 
-    mocker.patch.dict(
-        "os.environ",
-        {
-            "MCUBRIDGE_GATEWAY_HOST": "10.0.0.2",
-            "MCUBRIDGE_GATEWAY_PORT": "9000",
-            "MCUBRIDGE_DEVICE_ID": "yun-env",
-            "MCUBRIDGE_TOPIC_PREFIX": "env_prefix",
-        },
-    )
+    monkeypatch.setenv("MCUBRIDGE_GATEWAY_HOST", "10.0.0.2")
+    monkeypatch.setenv("MCUBRIDGE_GATEWAY_PORT", "9000")
+    monkeypatch.setenv("MCUBRIDGE_DEVICE_ID", "yun-env")
+    monkeypatch.setenv("MCUBRIDGE_TOPIC_PREFIX", "env_prefix")
     args_env = build_bridge_args()
     assert args_env == {
         "host": "10.0.0.2",

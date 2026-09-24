@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import sys
 import types
-from typing import Any
+from typing import Any, cast
 from collections.abc import Callable
 from unittest.mock import MagicMock
 
@@ -23,7 +23,7 @@ if spec is None or spec.loader is None:
 pin_rest_cgi = importlib.util.module_from_spec(spec)
 sys.modules["pin_rest_cgi"] = pin_rest_cgi
 spec.loader.exec_module(pin_rest_cgi)
-application = getattr(pin_rest_cgi, "application")
+application = cast(Callable[[dict[str, Any], Any], list[bytes]], getattr(pin_rest_cgi, "application"))
 
 
 @pytest.fixture

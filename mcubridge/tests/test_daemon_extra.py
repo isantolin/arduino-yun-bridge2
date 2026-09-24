@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
 import pytest
@@ -17,7 +16,7 @@ async def test_daemon_supervise_fatal_exception(service_stack: tuple[BridgeServi
     service, _, _ = service_stack
 
     # Task that raises fatal exception
-    async def fatal_task():
+    async def fatal_task() -> None:
         raise SerialHandshakeFatal("fatal")
 
     with pytest.raises(SerialHandshakeFatal):
@@ -31,7 +30,7 @@ async def test_daemon_supervise_restarts(
     service, _, _ = service_stack
     call_state = {"call_count": 0}
 
-    async def failing_task():
+    async def failing_task() -> None:
         call_state["call_count"] += 1
         if call_state["call_count"] <= 2:
             raise ValueError("fail")

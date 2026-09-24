@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from typing import cast
+from unittest.mock import AsyncMock
 
 import pytest
 from pytest_mock import MockerFixture
@@ -12,7 +12,7 @@ from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.services.runtime import BridgeService
-from mcubridge.state.context import RuntimeState
+from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.transport.serial import SerialTransport
 
 
@@ -48,6 +48,7 @@ class PublishPacket:
 @pytest.fixture
 def service_setup(tmp_path: object) -> tuple[BridgeService, RuntimeState, AsyncMock]:
     cfg = RuntimeConfig(
+        topic_prefix="br",
         serial_port="/dev/null",
         serial_baud=115200,
         serial_safe_baud=9600,
@@ -55,7 +56,7 @@ def service_setup(tmp_path: object) -> tuple[BridgeService, RuntimeState, AsyncM
         file_system_root=str(tmp_path),
         allow_non_tmp_paths=True,
     )
-    state = RuntimeState()
+    state = create_runtime_state(cfg)
     state.file_system_root = str(tmp_path)
     state.allow_non_tmp_paths = True
     state.connection_fsm.connect()
@@ -63,7 +64,7 @@ def service_setup(tmp_path: object) -> tuple[BridgeService, RuntimeState, AsyncM
 
     mock_serial = AsyncMock(spec=SerialTransport)
     service = BridgeService(cfg, state, mock_serial)
-    service.enqueue_cloud = AsyncMock()  # type: ignore[method-assign]
+    setattr(service, "enqueue_cloud", AsyncMock())
     return service, state, mock_serial
 
 
@@ -71,15 +72,15 @@ def service_setup(tmp_path: object) -> tuple[BridgeService, RuntimeState, AsyncM
 async def test_mcu_file_read_handler_asserts_state(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock], mocker: MockerFixture
 ) -> None:
-    service, _state, _serial = service_setup
+    service, _state, mock_serial = service_setup
     payload = pb.FileRead(path="test.txt").SerializeToString()
 
     mocker.patch("pathlib.Path.read_bytes", return_value=b"file_data")
     mocker.patch("pathlib.Path.is_file", return_value=True)
 
     await service.handle_mcu_frame(Command.CMD_FILE_READ.value, 1, payload)
-    service.serial.send.assert_awaited()  # type: ignore[union-attr]
-    args = service.serial.send.call_args[0]  # type: ignore[union-attr]
+    mock_serial.send.assert_awaited()
+    args = mock_serial.send.call_args[0]
     assert args[0] == Command.CMD_FILE_READ_RESP.value
     assert isinstance(args[1], pb.FileReadResponse)
     assert args[1].content == b"file_data"
@@ -89,9 +90,10 @@ async def test_mcu_file_read_handler_asserts_state(
 async def test_cloud_file_write_asserts_serial(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
-    service, _state, serial = service_setup
+    service, state, serial = service_setup
+    serial.send.return_value = True
     msg = pb.CloudQueuedPublish(
-        topic_name="mcu/fs/write/test.txt",
+        topic_name=f"{state.cloud_topic_prefix}/file/write/mcu/test.txt",
         payload=b"new_data",
     )
 
@@ -108,10 +110,9 @@ async def test_cloud_datastore_put_asserts_cache(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, state, _serial = service_setup
-    ds_put = pb.DatastorePut(key="my_key", value=b"my_value")
     msg = pb.CloudQueuedPublish(
-        topic_name="mcu/ds/put",
-        payload=ds_put.SerializeToString(),
+        topic_name=f"{state.cloud_topic_prefix}/datastore/put/my_key",
+        payload=b"my_value",
     )
 
     await service.handle_request(msg)
@@ -132,9 +133,10 @@ async def test_mcu_datastore_put_asserts_cloud(
     assert state.datastore_cache is not None
     assert await state.datastore_cache.get("mcu_key") == b"mcu_val"
 
-    service.enqueue_cloud.assert_called_once()
-    queued_pub = service.enqueue_cloud.call_args[0][0]
-    assert queued_pub.topic_name == "mcu/datastore/mcu_key"
+    mock_enqueue: AsyncMock = getattr(service, "enqueue_cloud")
+    mock_enqueue.assert_called_once()
+    queued_pub = cast(pb.CloudQueuedPublish, mock_enqueue.call_args[0][0])
+    assert queued_pub.topic_name == f"{state.cloud_topic_prefix}/datastore/get/mcu_key"
     assert queued_pub.payload == b"mcu_val"
 
 
@@ -142,14 +144,15 @@ async def test_mcu_datastore_put_asserts_cloud(
 async def test_mcu_mailbox_push_asserts_cloud(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
-    service, _state, _serial = service_setup
+    service, state, _serial = service_setup
     payload = pb.MailboxPush(data=b"pushed_msg").SerializeToString()
 
     await service.handle_mcu_frame(Command.CMD_MAILBOX_PUSH.value, 1, payload)
 
-    service.enqueue_cloud.assert_called_once()
-    queued_pub = service.enqueue_cloud.call_args[0][0]
-    assert queued_pub.topic_name == "mcu/mailbox"
+    mock_enqueue: AsyncMock = getattr(service, "enqueue_cloud")
+    mock_enqueue.assert_called_once()
+    queued_pub = cast(pb.CloudQueuedPublish, mock_enqueue.call_args[0][0])
+    assert queued_pub.topic_name == f"{state.cloud_topic_prefix}/mailbox/incoming"
     assert queued_pub.payload == b"pushed_msg"
 
 
@@ -157,9 +160,10 @@ async def test_mcu_mailbox_push_asserts_cloud(
 async def test_cloud_mailbox_write_asserts_serial(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
-    service, _state, serial = service_setup
+    service, state, serial = service_setup
+    serial.send.return_value = True
     msg = pb.CloudQueuedPublish(
-        topic_name="mcu/mailbox/write",
+        topic_name=f"{state.cloud_topic_prefix}/mailbox/write",
         payload=b"outbound_box",
     )
 
@@ -196,11 +200,11 @@ async def test_mcu_process_run_asserts_exec(
 async def test_cloud_spi_transfer_asserts_serial(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
-    service, _state, serial = service_setup
-    spi_req = pb.SpiTransfer(data=b"\x01\x02\x03")
+    service, state, serial = service_setup
+    serial.send.return_value = True
     msg = pb.CloudQueuedPublish(
-        topic_name="mcu/spi/transfer",
-        payload=spi_req.SerializeToString(),
+        topic_name=f"{state.cloud_topic_prefix}/spi/transfer",
+        payload=b"\x01\x02\x03",
     )
 
     await service.handle_request(msg)
@@ -215,18 +219,19 @@ async def test_cloud_spi_transfer_asserts_serial(
 async def test_cloud_file_host_write_asserts_cache(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock], mocker: MockerFixture
 ) -> None:
-    service, _state, _serial = service_setup
+    service, state, _serial = service_setup
     msg = pb.CloudQueuedPublish(
-        topic_name="bridge/file/write/test.txt",
+        topic_name=f"{state.cloud_topic_prefix}/file/write/test.txt",
         payload=b"host_file_payload",
     )
 
     mocker.patch("mcubridge.services.runtime.BridgeService.safe_file_write", return_value=True)
     await service.handle_request(msg)
 
-    service.enqueue_cloud.assert_called_once()
-    queued_pub = service.enqueue_cloud.call_args[0][0]
-    assert queued_pub.topic_name == "mcu/file/read/test.txt"
+    mock_enqueue: AsyncMock = getattr(service, "enqueue_cloud")
+    mock_enqueue.assert_called_once()
+    queued_pub = cast(pb.CloudQueuedPublish, mock_enqueue.call_args[0][0])
+    assert queued_pub.topic_name == f"{state.cloud_topic_prefix}/file/read/test.txt"
     assert queued_pub.payload == b"host_file_payload"
 
 
@@ -234,20 +239,21 @@ async def test_cloud_file_host_write_asserts_cache(
 async def test_cloud_file_host_read_asserts_read(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock], mocker: MockerFixture
 ) -> None:
-    service, _state, _serial = service_setup
+    service, state, _serial = service_setup
     msg = pb.CloudQueuedPublish(
-        topic_name="bridge/file/read/test.txt",
+        topic_name=f"{state.cloud_topic_prefix}/file/read/test.txt",
         payload=b"",
     )
 
     mocker.patch("pathlib.Path.is_file", return_value=True)
-    mocker.patch("pathlib.Path.read_bytes", return_value=b"disk_data")
+    mocker.patch("mcubridge.services.runtime.BridgeService.safe_file_read", return_value=b"disk_data")
 
     await service.handle_request(msg)
 
-    service.enqueue_cloud.assert_called_once()
-    queued_pub = service.enqueue_cloud.call_args[0][0]
-    assert queued_pub.topic_name == "mcu/file/read/test.txt/response"
+    mock_enqueue: AsyncMock = getattr(service, "enqueue_cloud")
+    mock_enqueue.assert_called_once()
+    queued_pub = cast(pb.CloudQueuedPublish, mock_enqueue.call_args[0][0])
+    assert queued_pub.topic_name == f"{state.cloud_topic_prefix}/file/read/response/test.txt"
     assert queued_pub.payload == b"disk_data"
 
 
@@ -255,9 +261,9 @@ async def test_cloud_file_host_read_asserts_read(
 async def test_cloud_shell_poll_asserts_cloud(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock], mocker: MockerFixture
 ) -> None:
-    service, _state, _serial = service_setup
+    service, state, _serial = service_setup
     msg = pb.CloudQueuedPublish(
-        topic_name="bridge/shell/poll/123",
+        topic_name=f"{state.cloud_topic_prefix}/shell/poll/123",
         payload=b"",
     )
 
@@ -265,34 +271,35 @@ async def test_cloud_shell_poll_asserts_cloud(
         status=Status.OK.value,
         exit_code=0,
         finished=True,
-        stdout=b"out",
-        stderr=b"err",
+        stdout_data=b"out",
+        stderr_data=b"err",
         stdout_truncated=False,
         stderr_truncated=False,
     )
     mocker.patch("mcubridge.services.runtime.BridgeService.poll_process", return_value=mock_batch)
     await service.handle_request(msg)
 
-    service.enqueue_cloud.assert_called_once()
-    queued_pub = service.enqueue_cloud.call_args[0][0]
-    assert queued_pub.topic_name == "mcu/shell/poll/123/response"
+    mock_enqueue: AsyncMock = getattr(service, "enqueue_cloud")
+    mock_enqueue.assert_called_once()
+    queued_pub = cast(pb.CloudQueuedPublish, mock_enqueue.call_args[0][0])
+    assert queued_pub.topic_name == f"{state.cloud_topic_prefix}/sh/poll/123/response"
     resp = pb.ProcessPollResponse.FromString(queued_pub.payload)
     assert resp.exit_code == 0
-    assert resp.stdout == b"out"
+    assert resp.stdout_data == b"out"
 
 
 @pytest.mark.asyncio
 async def test_cloud_shell_kill_asserts_cloud(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock], mocker: MockerFixture
 ) -> None:
-    service, _state, _serial = service_setup
+    service, state, _serial = service_setup
     msg = pb.CloudQueuedPublish(
-        topic_name="bridge/shell/kill/123",
+        topic_name=f"{state.cloud_topic_prefix}/shell/kill/123",
         payload=b"",
     )
 
     mocker.patch("mcubridge.services.runtime.is_command_allowed", return_value=True)
-    mock_stop = mocker.patch("mcubridge.services.runtime.BridgeService.kill_process", return_value=(True, None))
+    mock_stop = mocker.patch.object(service, "kill_process", new=AsyncMock(return_value=(True, None)))
     await service.handle_request(msg)
 
     mock_stop.assert_called_once_with(123)
@@ -302,9 +309,9 @@ async def test_cloud_shell_kill_asserts_cloud(
 async def test_cloud_shell_run_asserts_exec(
     service_setup: tuple[BridgeService, RuntimeState, AsyncMock], mocker: MockerFixture
 ) -> None:
-    service, _state, _serial = service_setup
+    service, state, _serial = service_setup
     msg = pb.CloudQueuedPublish(
-        topic_name="bridge/shell/run_async",
+        topic_name=f"{state.cloud_topic_prefix}/shell/run_async",
         payload=b"ls -la",
     )
 

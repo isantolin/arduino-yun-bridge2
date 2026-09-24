@@ -187,7 +187,7 @@ async def test_handle_cloud_pin_overflow_reports_error(mocker: MockerFixture) ->
 
         assert captured
         assert any(
-            isinstance(prop, pb.Property) and prop.key == "bridge-error" and prop.value == "pending-pin-overflow"
+            isinstance(prop, pb.UserProperty) and prop.key == "bridge-error" and prop.value == "pending-pin-overflow"
             for prop in captured[0].user_properties
         )
         mock_serial.send.assert_not_called()

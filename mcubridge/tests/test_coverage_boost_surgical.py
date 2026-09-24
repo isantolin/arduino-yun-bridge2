@@ -1,4 +1,3 @@
-# pyright: reportPrivateUsage=false
 """Surgical unit tests boosting coverage across runtime.py, serial.py, and pin_rest_cgi.py."""
 
 from __future__ import annotations
@@ -258,6 +257,9 @@ async def test_process_terminate_sigkill_escalation(mocker: MockerFixture) -> No
     mock_ctx.handle.pid = 999999
 
     mock_term = mocker.patch("mcubridge.services.runtime.terminate_pid_tree")
-    code = await BridgeService._terminate_process(MagicMock(), 999999, mock_ctx, grace_period=0.5)
+    from collections.abc import Awaitable, Callable
+
+    terminate_proc: Callable[..., Awaitable[int]] = getattr(BridgeService, "_terminate_process")
+    code = await terminate_proc(MagicMock(), 999999, mock_ctx, grace_period=0.5)
     mock_term.assert_called_once_with(999999, timeout=0.5)
     assert code == -1

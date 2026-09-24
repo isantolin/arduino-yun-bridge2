@@ -1,4 +1,3 @@
-# pyright: reportPrivateUsage=false
 """Phase 4 SIL-2 Coverage Hardening Test Suite.
 
 Targets 95%+ total project coverage by exercising runtime service lifecycle,
@@ -8,11 +7,12 @@ and status report generation.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 import asyncio
 from pathlib import Path
 import tempfile
 from typing import Any, cast
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import lmdb
 import pytest
@@ -65,7 +65,7 @@ async def test_runtime_service_run_and_teardown_exceptions(tmp_path: Path) -> No
     # Attach mock caches with close exceptions to exercise teardown error handling
     mock_spool = AsyncMock(spec=LmdbDeque)
     mock_spool.close.side_effect = OSError("spool close error")
-    service._cloud_spool = mock_spool
+    setattr(service, "_cloud_spool", mock_spool)
 
     mock_cache = AsyncMock()
     mock_cache.close.side_effect = lmdb.Error("db error")
@@ -88,7 +88,7 @@ async def test_runtime_service_run_and_teardown_exceptions(tmp_path: Path) -> No
     except asyncio.CancelledError as exc:
         logger.debug("Service run task cancelled as expected", error=str(exc))
 
-    assert service._cloud_spool is None
+    assert getattr(service, "_cloud_spool") is None
     state.cleanup()
 
 
@@ -116,8 +116,11 @@ async def test_runtime_handle_datastore_flavors(tmp_path: Path, mocker: MockerFi
         topic=Topic.DATASTORE,
         segments=("put", "my_key"),
     )
+    handle_datastore: Callable[[TopicRoute, pb.CloudQueuedPublish], Awaitable[None]] = getattr(
+        service, "_handle_datastore"
+    )
     inbound_put = pb.CloudQueuedPublish(topic_name="test/br/datastore/put/my_key", payload=b"my_val")
-    await service._handle_datastore(route_put, inbound_put)
+    await handle_datastore(route_put, inbound_put)
     assert await state.datastore_cache.get("my_key") == b"my_val"
 
     # 2. Datastore GET (cache hit)
@@ -129,7 +132,7 @@ async def test_runtime_handle_datastore_flavors(tmp_path: Path, mocker: MockerFi
     )
     inbound_get = pb.CloudQueuedPublish(topic_name="test/br/datastore/get/my_key", payload=b"")
     mock_enqueue = mocker.patch.object(service, "enqueue_cloud", new_callable=AsyncMock)
-    await service._handle_datastore(route_get_hit, inbound_get)
+    await handle_datastore(route_get_hit, inbound_get)
     assert mock_enqueue.called
 
     # 3. Datastore GET (cache miss with request suffix)
@@ -140,7 +143,7 @@ async def test_runtime_handle_datastore_flavors(tmp_path: Path, mocker: MockerFi
         segments=("get", "non_existing", "request"),
     )
     mock_enqueue.reset_mock()
-    await service._handle_datastore(route_get_miss, inbound_get)
+    await handle_datastore(route_get_miss, inbound_get)
     assert mock_enqueue.called
 
     state.cleanup()
@@ -152,11 +155,12 @@ async def test_runtime_handle_mcu_status_binary_undecodable(tmp_path: Path, mock
     service, state, _ = _make_service(config)
 
     mock_enqueue = mocker.patch.object(service, "enqueue_cloud", new_callable=AsyncMock)
+    handle_mcu_status: Callable[..., Awaitable[None]] = getattr(service, "_handle_mcu_status")
     # Status with invalid UTF-8 and non-protobuf bytes
-    await service._handle_mcu_status(Status.TIMEOUT, 1, b"\xff\xfe\xfd\x80")
+    await handle_mcu_status(Status.TIMEOUT, 1, b"\xff\xfe\xfd\x80")
     assert mock_enqueue.call_count == 1
     # Status with generic object
-    await service._handle_mcu_status(Status.ERROR, 2, cast(Any, 12345))
+    await handle_mcu_status(Status.ERROR, 2, cast(Any, 12345))
     assert mock_enqueue.call_count == 2
 
     state.cleanup()
@@ -172,7 +176,8 @@ async def test_handshake_attempt_link_sync_timeout(tmp_path: Path, mocker: Mocke
     mocker.patch.object(handshake, "_wait_for_link_sync_confirmation", new_callable=AsyncMock, return_value=False)
     mock_fail = mocker.patch.object(handshake, "handle_handshake_failure", new_callable=AsyncMock)
 
-    res = await handshake._synchronize_attempt()
+    sync_attempt: Callable[[], Awaitable[bool]] = getattr(handshake, "_synchronize_attempt")
+    res = await sync_attempt()
     assert res is False
     assert mock_fail.called
 
@@ -211,7 +216,8 @@ async def test_runtime_request_mcu_version_and_system_version(tmp_path: Path) ->
     mock_serial.send.return_value = v_resp
     inbound = pb.CloudQueuedPublish(topic_name=f"{config.topic_prefix}/system/version/get", payload=b"")
 
-    res = await service._request_mcu_version(inbound)
+    req_mcu_version: Callable[[pb.CloudQueuedPublish], Awaitable[bool]] = getattr(service, "_request_mcu_version")
+    res = await req_mcu_version(inbound)
     assert res is True
     assert state.mcu_version == (2, 8, 5)
 
@@ -222,7 +228,8 @@ async def test_runtime_request_mcu_version_and_system_version(tmp_path: Path) ->
         topic=Topic.SYSTEM,
         segments=("version", "get"),
     )
-    await service._handle_system(route_ver, inbound)
+    handle_system: Callable[[TopicRoute, pb.CloudQueuedPublish], Awaitable[None]] = getattr(service, "_handle_system")
+    await handle_system(route_ver, inbound)
 
     state.cleanup()
 
@@ -232,6 +239,8 @@ async def test_runtime_pin_analog_and_invalid_digits(tmp_path: Path) -> None:
     config = _make_config(tmp_path)
     service, state, mock_serial = _make_service(config)
 
+    handle_pin: Callable[[TopicRoute, pb.CloudQueuedPublish], Awaitable[None]] = getattr(service, "_handle_pin")
+
     # 1. Analog Write
     route_aw = TopicRoute(
         raw="test/br/a/9",
@@ -240,7 +249,7 @@ async def test_runtime_pin_analog_and_invalid_digits(tmp_path: Path) -> None:
         segments=("9",),
     )
     inbound_aw = pb.CloudQueuedPublish(topic_name="test/br/a/9", payload=b"128")
-    await service._handle_pin(route_aw, inbound_aw)
+    await handle_pin(route_aw, inbound_aw)
     mock_serial.send.assert_called_with(Command.CMD_ANALOG_WRITE.value, pb.DigitalWrite(pin=9, value=128))
 
     # 2. Digital Write with non-digit payload (defaults to 0)
@@ -251,7 +260,7 @@ async def test_runtime_pin_analog_and_invalid_digits(tmp_path: Path) -> None:
         segments=("13",),
     )
     inbound_dw = pb.CloudQueuedPublish(topic_name="test/br/d/13", payload=b"non_digit")
-    await service._handle_pin(route_dw, inbound_dw)
+    await handle_pin(route_dw, inbound_dw)
     mock_serial.send.assert_called_with(Command.CMD_DIGITAL_WRITE.value, pb.DigitalWrite(pin=13, value=0))
 
     state.cleanup()

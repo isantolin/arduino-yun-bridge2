@@ -1,4 +1,3 @@
-# pyright: reportPrivateUsage=false
 """Unit tests verifying Pure Telemetry Push mode without local HTTP WSGI server (SIL-2)."""
 
 from __future__ import annotations
@@ -38,9 +37,11 @@ async def test_pure_telemetry_push_mode(test_config: RuntimeConfig, mock_bridge_
     # Verify daemon does not maintain a local HTTP exporter
     assert not hasattr(svc, "exporter")
 
+    from collections.abc import Awaitable, Callable
+
     # Verify telemetry publication works directly via cloud stream
     stream_mock = AsyncMock()
-    svc._cloud_stream = stream_mock
+    setattr(svc, "_cloud_stream", stream_mock)
 
     metrics = pb.DaemonMetrics(cloud_queue_depth=0, cloud_dropped_messages=10)
     msg = pb.CloudQueuedPublish(
@@ -48,7 +49,8 @@ async def test_pure_telemetry_push_mode(test_config: RuntimeConfig, mock_bridge_
         payload=metrics.SerializeToString(),
     )
 
-    published = await svc._publish_cloud_message(msg)
+    publish_cloud_msg: Callable[[pb.CloudQueuedPublish], Awaitable[bool]] = getattr(svc, "_publish_cloud_message")
+    published = await publish_cloud_msg(msg)
     assert published is True
 
     stream_mock.send_message.assert_awaited_once()

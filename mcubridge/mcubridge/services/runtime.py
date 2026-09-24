@@ -794,7 +794,7 @@ class BridgeService:
             reply_context=req.reply_context if req else None,
         )
 
-    async def _on_mcu_spi_resp(self, _seq: int, p: pb.SpiTransferResponse) -> None:
+    async def _on_mcu_spi_transfer_resp(self, _seq: int, p: pb.SpiTransferResponse) -> None:
         await self.enqueue_cloud_publish(
             get_topic_for_message(self.state.cloud_topic_prefix, p) or "",
             p.data,

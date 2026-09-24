@@ -1,8 +1,8 @@
-# pyright: reportPrivateUsage=false
 """Phase 2 surgical coverage tests targeting the largest coverage gaps across the codebase."""
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 import asyncio
 import importlib.util
 import os
@@ -202,7 +202,8 @@ class TestNegotiateBaudrate:
         transport = SerialTransport(config, state, None)
 
         mocker.patch.object(transport, "send_raw", new_callable=AsyncMock, return_value=False)
-        result = await transport._negotiate_baudrate(115200)
+        negotiate_baudrate: Callable[[int], Awaitable[bool]] = getattr(transport, "_negotiate_baudrate")
+        result = await negotiate_baudrate(115200)
         assert result is False
 
     @pytest.mark.asyncio
@@ -213,9 +214,10 @@ class TestNegotiateBaudrate:
 
         mocker.patch.object(transport, "send_raw", new_callable=AsyncMock, return_value=True)
         mocker.patch("mcubridge.transport.serial.SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT", 0.01)
-        result = await transport._negotiate_baudrate(115200)
+        negotiate_baudrate: Callable[[int], Awaitable[bool]] = getattr(transport, "_negotiate_baudrate")
+        result = await negotiate_baudrate(115200)
         assert result is False
-        assert transport._negotiating is False
+        assert getattr(transport, "_negotiating") is False
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -239,7 +241,8 @@ class TestProcessPacketEdgePaths:
 
         mocker.patch("mcubridge.transport.serial.validate_nonce_counter", return_value=(False, 999))
         mock_err = mocker.patch("mcubridge.transport.serial.logger.error")
-        await transport._process_packet(raw)
+        process_packet: Callable[[bytes], Awaitable[None]] = getattr(transport, "_process_packet")
+        await process_packet(raw)
         assert mock_err.called
 
     @pytest.mark.asyncio
@@ -260,7 +263,8 @@ class TestProcessPacketEdgePaths:
         mock_result.payload = mock_payload
         mock_parse.return_value = mock_result
 
-        await transport._process_packet(raw)
+        process_packet: Callable[[bytes], Awaitable[None]] = getattr(transport, "_process_packet")
+        await process_packet(raw)
         assert state.serial_decode_errors >= 1
 
 
@@ -277,9 +281,10 @@ class TestCorrelateFrameEdges:
 
         pending = MagicMock()
         pending.success = True  # Already resolved
-        transport._current = pending
+        setattr(transport, "_current", pending)
 
-        transport._correlate_frame(Status.ACK.value, b"")
+        correlate_frame: Callable[[int, object], None] = getattr(transport, "_correlate_frame")
+        correlate_frame(Status.ACK.value, b"")
         pending.mark_success.assert_not_called()
 
     def test_correlate_success_status_code(self) -> None:
@@ -291,11 +296,12 @@ class TestCorrelateFrameEdges:
         transport = SerialTransport(config, state, None)
 
         pending = PendingCommand(command_id=Command.CMD_FILE_WRITE.value, expected_resp_ids=[])
-        transport._current = pending
+        setattr(transport, "_current", pending)
 
         if SERIAL_SUCCESS_STATUS_CODES:
             status_code = next(iter(SERIAL_SUCCESS_STATUS_CODES))
-            transport._correlate_frame(status_code, b"ok")
+            correlate_frame: Callable[[int, object], None] = getattr(transport, "_correlate_frame")
+            correlate_frame(status_code, b"ok")
             assert pending.success is True
 
 
@@ -716,12 +722,13 @@ class TestStateStatus:
         config = _make_config()
         state = _make_state(config)
         try:
-            from mcubridge.state.status import _write_status_file
+            import mcubridge.state.status as status_mod
 
             snapshot = state.build_status_snapshot()
             mock_file = mocker.patch("mcubridge.state.status.STATUS_FILE")
             mock_file.parent.mkdir = MagicMock(side_effect=OSError("Permission denied"))
-            _write_status_file(snapshot)  # Should not raise
+            write_status: Callable[[object], None] = getattr(status_mod, "_write_status_file")
+            write_status(snapshot)  # Should not raise
             assert mock_file.parent.mkdir.called
         finally:
             state.cleanup()

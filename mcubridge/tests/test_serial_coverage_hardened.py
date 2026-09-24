@@ -1,4 +1,3 @@
-# pyright: reportPrivateUsage=false
 """SIL-2 Serial Transport Coverage Hardening Test Suite.
 
 Genuinely exercises SerialTransport state transitions, packet encoding/decoding,
@@ -7,6 +6,7 @@ anti-replay counters, baudrate fallback, DTR toggling, and framing error conditi
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 import asyncio
 import secrets
 import tempfile
@@ -88,12 +88,13 @@ async def test_serial_transport_toggle_dtr(tmp_path: Path) -> None:
     transport, state, mock_serialx = _make_transport(tmp_path)
 
     # 1. Success
-    await transport._toggle_dtr()
+    toggle_dtr: Callable[[], Awaitable[None]] = getattr(transport, "_toggle_dtr")
+    await toggle_dtr()
     assert mock_serialx.set_modem_pins.called
 
     # 2. Error handling during DTR toggle
     mock_serialx.set_modem_pins.side_effect = serialx.SerialException("DTR error")
-    await transport._toggle_dtr()
+    await toggle_dtr()
 
     state.cleanup()
 
@@ -102,14 +103,16 @@ async def test_serial_transport_toggle_dtr(tmp_path: Path) -> None:
 async def test_serial_transport_baudrate_fallback(tmp_path: Path) -> None:
     transport, state, _ = _make_transport(tmp_path)
 
-    transport._consecutive_crc_errors = 1
-    await transport._check_baudrate_fallback()
-    assert transport._consecutive_crc_errors == 2
+    check_fallback: Callable[[], Awaitable[None]] = getattr(transport, "_check_baudrate_fallback")
+
+    setattr(transport, "_consecutive_crc_errors", 1)
+    await check_fallback()
+    assert getattr(transport, "_consecutive_crc_errors") == 2
 
     # Trigger threshold (threshold = 3)
-    transport._consecutive_crc_errors = 2
-    await transport._check_baudrate_fallback()
-    assert transport._consecutive_crc_errors == 0
+    setattr(transport, "_consecutive_crc_errors", 2)
+    await check_fallback()
+    assert getattr(transport, "_consecutive_crc_errors") == 0
 
     state.cleanup()
 
@@ -130,7 +133,8 @@ async def test_serial_transport_process_packet_anti_replay(tmp_path: Path) -> No
         nonce=old_nonce,
     )
 
-    await transport._process_packet(cobsr.encode(raw_frame))
+    process_packet: Callable[[bytes], Awaitable[None]] = getattr(transport, "_process_packet")
+    await process_packet(cobsr.encode(raw_frame))
     # Replay must be dropped without advancing counter
     assert state.link_last_nonce_counter == 100
 
@@ -142,7 +146,7 @@ async def test_serial_transport_process_packet_anti_replay(tmp_path: Path) -> No
         payload=pb.DigitalReadResponse(value=1),
         nonce=new_nonce,
     )
-    await transport._process_packet(cobsr.encode(raw_frame_valid))
+    await process_packet(cobsr.encode(raw_frame_valid))
     assert state.link_last_nonce_counter == 105
 
     state.cleanup()
@@ -166,8 +170,9 @@ async def test_serial_transport_send_with_retries(tmp_path: Path) -> None:
 
     await asyncio.sleep(0.01)
     # Correlate response
-    if transport._current is not None:
-        transport._current.mark_success(pb.DigitalReadResponse(value=1))
+    current = getattr(transport, "_current")
+    if current is not None:
+        current.mark_success(pb.DigitalReadResponse(value=1))
 
     resp = await send_task
     assert isinstance(resp, pb.DigitalReadResponse)

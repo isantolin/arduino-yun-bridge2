@@ -111,6 +111,7 @@ ignore = [
 reportMissingImports = true
 reportMissingTypeStubs = true
 reportMissingModuleSource = false
+reportPrivateUsage = true
 
 [tool.black]
 line-length = 120

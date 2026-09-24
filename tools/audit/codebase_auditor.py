@@ -93,7 +93,10 @@ def audit_python_files() -> list[str]:
     print("Auditing Python files...")
 
     suppression_patterns = [
-        (re.compile(r"#\s*(type|pyright):\s*ignore"), "Static type suppression (# type: ignore)"),
+        (
+            re.compile(r"#\s*(type|pyright|mypy|pylint|flake8|ruff):"),
+            "Static type / linter suppression comment (# type: / # pyright: / # mypy: / # pylint:)",
+        ),
         (re.compile(r"#\s*noqa"), "Linter suppression (# noqa)"),
         (re.compile(r"#\s*pragma:\s*no cover"), "Coverage suppression (pragma: no cover)"),
         (re.compile(r"errors\s*=\s*['\"](ignore|replace|backslashreplace)['\"]"), "String encoding suppression"),
@@ -139,11 +142,12 @@ def audit_python_files() -> list[str]:
 
 
 def audit_cpp_files() -> list[str]:
-    """Audit C++ source files for manual loops and non-template wrappers."""
+    """Audit C++ source files for manual loops, non-template wrappers, and suppressions."""
     findings: list[str] = []
     print("Auditing C++ files...")
     loop_pattern = re.compile(r"\b(for|while)\s*\(.*?\)")
     non_template_wrapper_pattern = re.compile(r"class\s+\w+Wrapper\b(?!.*template)")
+    cpp_suppression_pattern = re.compile(r"//\s*(NOLINT|cppcheck-suppress|clang-diagnostic)")
 
     cpp_dir = ROOT / "mcubridge-library-arduino" / "src"
     for cpp_file in cpp_dir.rglob("*"):
@@ -156,6 +160,8 @@ def audit_cpp_files() -> list[str]:
         for i, line in enumerate(content.splitlines(), 1):
             stripped = line.strip()
             if stripped.startswith(("//", "/*", "*")):
+                if cpp_suppression_pattern.search(stripped):
+                    findings.append(f"C++ Suppression Found: {cpp_file.name}:{i} - '{stripped}'")
                 continue
             if loop_pattern.search(line):
                 findings.append(f"C++ Loop Found: {cpp_file.name}:{i} - '{stripped}'")
@@ -173,6 +179,14 @@ def audit_config_suppressions() -> list[str]:
         content = pyproject.read_text(encoding="utf-8")
         if "per-file-ignores" in content:
             findings.append("Suppression Violation: 'per-file-ignores' detected in pyproject.toml")
+        if re.search(r"reportPrivateUsage\s*=\s*(?:false|['\"]none['\"])", content):
+            findings.append(
+                "Suppression Violation: 'reportPrivateUsage = false/none' suppression detected in pyproject.toml"
+            )
+        if re.search(r"executionEnvironments\s*=", content) and "reportPrivateUsage" in content:
+            findings.append(
+                "Suppression Violation: 'executionEnvironments' with reportPrivateUsage suppression in pyproject.toml"
+            )
     return findings
 
 

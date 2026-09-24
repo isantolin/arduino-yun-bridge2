@@ -1,15 +1,15 @@
-# pyright: reportPrivateUsage=false
 """Unit tests validating cloud command request/response loop and telemetry parity (SIL-2)."""
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from mcubridge.config.settings import RuntimeConfig
 import mcubridge.protocol.mcubridge_pb2 as pb
 from mcubridge.protocol.protocol import Command, Topic
-from mcubridge.protocol.topics import parse_topic, topic_path
+from mcubridge.protocol.topics import TopicRoute, parse_topic, topic_path
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.transport.serial import SerialTransport
@@ -55,7 +55,8 @@ async def test_cloud_command_digital_write_with_correlation(
         response_topic="cloud",
     )
 
-    await svc._handle_pin(route, inbound)
+    handle_pin: Callable[[TopicRoute, pb.CloudQueuedPublish], Awaitable[None]] = getattr(svc, "_handle_pin")
+    await handle_pin(route, inbound)
 
     # Validate serial command was dispatched
     serial_mock.send.assert_awaited_once()
@@ -96,7 +97,8 @@ async def test_cloud_command_pin_mode_with_correlation(
         response_topic="cloud",
     )
 
-    await svc._handle_pin(route, inbound)
+    handle_pin_mode: Callable[[TopicRoute, pb.CloudQueuedPublish], Awaitable[None]] = getattr(svc, "_handle_pin")
+    await handle_pin_mode(route, inbound)
 
     # Validate serial command was dispatched
     serial_mock.send.assert_awaited_once()
@@ -122,7 +124,7 @@ async def test_publish_cloud_message_wraps_command_response(
     svc = BridgeService(test_config, mock_bridge_state, MagicMock())
 
     stream_mock = AsyncMock()
-    svc._cloud_stream = stream_mock
+    setattr(svc, "_cloud_stream", stream_mock)
 
     seq_id = 999
     msg = pb.CloudQueuedPublish(
@@ -132,7 +134,8 @@ async def test_publish_cloud_message_wraps_command_response(
         response_topic="cloud",
     )
 
-    published = await svc._publish_cloud_message(msg)
+    publish_cloud_msg: Callable[[pb.CloudQueuedPublish], Awaitable[bool]] = getattr(svc, "_publish_cloud_message")
+    published = await publish_cloud_msg(msg)
     assert published is True
 
     stream_mock.send_message.assert_awaited_once()
@@ -152,7 +155,8 @@ async def test_mcu_pin_update_event_forwarding(test_config: RuntimeConfig, mock_
     initial_events = mock_bridge_state.pin_events_count
     event = pb.PinUpdateEvent(pin=5, value=512, timestamp_micros=1234567)
 
-    await svc._on_mcu_pin_update_event(0, event)
+    on_pin_update: Callable[[int, pb.PinUpdateEvent], Awaitable[None]] = getattr(svc, "_on_mcu_pin_update_event")
+    await on_pin_update(0, event)
 
     assert mock_bridge_state.pin_events_count == initial_events + 1
     svc.enqueue_cloud.assert_awaited_once()

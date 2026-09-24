@@ -1,4 +1,3 @@
-# pyright: reportPrivateUsage=false
 """Phase 3 SIL-2 Coverage Hardening Test Suite.
 
 Targets comprehensive coverage across BridgeService runtime orchestration,
@@ -25,11 +24,7 @@ from mcubridge.metrics import (
     publish_metrics,
 )
 from mcubridge.protocol.protocol import (
-    Command,
-    DatastoreAction,
-    FileAction,
     PinAction,
-    ShellAction,
     Status,
     Topic,
 )
@@ -641,7 +636,9 @@ async def test_publish_bridge_snapshots_failing_enqueue(tmp_path: Path) -> None:
         raise RuntimeError("enqueue failed")
 
     task = asyncio.create_task(
-        publish_bridge_snapshots(state, failing_enqueue, summary_interval=0.01, handshake_interval=0.01, min_interval=0.01)
+        publish_bridge_snapshots(
+            state, failing_enqueue, summary_interval=0.01, handshake_interval=0.01, min_interval=0.01
+        )
     )
     await asyncio.sleep(0.05)
     task.cancel()

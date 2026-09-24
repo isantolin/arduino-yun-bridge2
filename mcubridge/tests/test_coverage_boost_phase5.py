@@ -1,10 +1,9 @@
-# pyright: reportPrivateUsage=false
 """Comprehensive unit test suite targeting uncovered branches across McuBridge components."""
 
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Iterator
+from collections.abc import Awaitable, Callable, Iterator
 import os
 from pathlib import Path
 import ssl
@@ -19,7 +18,6 @@ from gateway import CloudBridgeService, ProtobufGateway
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.daemon import app as daemon_app, run_daemon
 from mcubridge.metrics import (
-    _emit_bridge_snapshot,
     publish_bridge_snapshots,
     publish_metrics,
 )
@@ -174,10 +172,11 @@ async def test_flush_cloud_spool_corrupt_and_index_error(
 ) -> None:
     serial = AsyncMock(spec=SerialTransport)
     svc = BridgeService(test_config, mock_state, serial)
-    svc._cloud_stream = AsyncMock()
+    setattr(svc, "_cloud_stream", AsyncMock())
 
     mock_spool = MagicMock(spec=LmdbDeque)
-    svc._cloud_spool = mock_spool
+    setattr(svc, "_cloud_spool", mock_spool)
+    flush_spool: Callable[[], Awaitable[None]] = getattr(svc, "_flush_cloud_spool_locked")
 
     # Case 2: spool.peek raises IndexError
     svc.state.cloud_spool_degraded = False
@@ -185,14 +184,14 @@ async def test_flush_cloud_spool_corrupt_and_index_error(
     mock_spool.peek = AsyncMock(side_effect=IndexError("empty"))
     mock_spool.popleft = AsyncMock()
     mock_spool.vacuum = AsyncMock()
-    await svc._flush_cloud_spool_locked()
+    await flush_spool()
     assert mock_spool.peek.called
 
     # Case 3: spool.peek returns corrupt data and popleft raises OSError
     mock_spool.__len__.side_effect = [1, 1, 0, 0]
     mock_spool.peek = AsyncMock(return_value=b"not-a-valid-protobuf")
     mock_spool.popleft = AsyncMock(side_effect=OSError("Disk failure"))
-    await svc._flush_cloud_spool_locked()
+    await flush_spool()
     assert mock_spool.popleft.called
 
     # Case 4: spool.popleft raises IndexError after publish
@@ -201,7 +200,7 @@ async def test_flush_cloud_spool_corrupt_and_index_error(
     mock_spool.peek = AsyncMock(return_value=valid_msg.SerializeToString())
     mock_spool.popleft = AsyncMock(side_effect=IndexError("popped early"))
     mocker.patch.object(svc, "_publish_cloud_message", new_callable=AsyncMock, return_value=True)
-    await svc._flush_cloud_spool_locked()
+    await flush_spool()
     assert mock_spool.peek.called
 
 
@@ -300,7 +299,10 @@ async def test_run_cloud_retryer_fatal_exception(
 async def test_emit_bridge_snapshot_attribute_error(mock_state: RuntimeState, mocker: MockerFixture) -> None:
     enqueue = AsyncMock()
     mocker.patch.object(mock_state, "build_bridge_snapshot", side_effect=AttributeError("Missing attr"))
-    await _emit_bridge_snapshot(mock_state, enqueue, flavor="summary")
+    import mcubridge.metrics as metrics_mod
+
+    emit_snapshot: Callable[..., Awaitable[None]] = getattr(metrics_mod, "_emit_bridge_snapshot")
+    await emit_snapshot(mock_state, enqueue, flavor="summary")
     assert enqueue.call_count == 0
 
 
@@ -339,7 +341,8 @@ async def test_serial_transport_toggle_dtr_error(test_config: RuntimeConfig, moc
     mock_serial = AsyncMock()
     mock_serial.set_modem_pins.side_effect = OSError("I/O error")
     transport.serial = mock_serial
-    await transport._toggle_dtr()
+    toggle_dtr_fn: Callable[[], Awaitable[None]] = getattr(transport, "_toggle_dtr")
+    await toggle_dtr_fn()
     assert mock_serial.set_modem_pins.called
 
 
@@ -350,8 +353,9 @@ def test_serial_transport_switch_local_baudrate_error(test_config: RuntimeConfig
         fget=lambda self: 115200,
         fset=MagicMock(side_effect=ValueError("Invalid baud")),
     )
+    switch_baud: Callable[[int], None] = getattr(transport, "_switch_local_baudrate")
     with pytest.raises(RuntimeError):
-        transport._switch_local_baudrate(99999999)
+        switch_baud(99999999)
 
 
 @pytest.mark.asyncio
@@ -369,7 +373,8 @@ async def test_serial_transport_send_failure_status_code(
     )
     await asyncio.sleep(0.01)
     # Correlate failure
-    transport._correlate_frame(Status.ERROR.value, b"")
+    correlate_fn: Callable[[int, bytes], None] = getattr(transport, "_correlate_frame")
+    correlate_fn(Status.ERROR.value, b"")
     res = await send_task
     assert res is False
 
@@ -393,7 +398,8 @@ async def test_handshake_publish_event_empty_topic(
     )
 
     mocker.patch("mcubridge.services.handshake.get_topic_for_message", return_value=None)
-    await hm._publish_handshake_event("sync_failed")
+    pub_event_fn: Callable[[str], Awaitable[None]] = getattr(hm, "_publish_handshake_event")
+    await pub_event_fn("sync_failed")
     assert not mock_enqueue.called
 
 
@@ -514,13 +520,14 @@ async def test_runtime_write_with_quota(
     # Case 1: Disk full (free < len(data))
     mock_usage = mocker.patch("psutil.disk_usage")
     mock_usage.return_value = MagicMock(free=5, used=100, total=105)
-    res = await svc._write_with_quota(target_file, b"1234567890")
+    write_quota_fn: Callable[..., Awaitable[bool]] = getattr(svc, "_write_with_quota")
+    res = await write_quota_fn(target_file, b"1234567890")
     assert res is False
     assert svc.state.file_storage_limit_rejections == 1
 
     # Case 2: Disk usage check raises OSError
     mock_usage.side_effect = OSError("Stat failure")
-    res = await svc._write_with_quota(target_file, b"data")
+    res = await write_quota_fn(target_file, b"data")
     assert res is True
     assert target_file.read_bytes() == b"data"
 
@@ -556,7 +563,8 @@ async def test_runtime_terminate_process_escalation(
     ctx = ProcessContext(mock_handle)
 
     mock_term = mocker.patch("mcubridge.services.runtime.terminate_pid_tree")
-    code = await svc._terminate_process(12345, ctx, grace_period=0.5)
+    term_proc_fn: Callable[..., Awaitable[int]] = getattr(svc, "_terminate_process")
+    code = await term_proc_fn(12345, ctx, grace_period=0.5)
     mock_term.assert_called_once_with(12345, timeout=0.5)
     assert code == -1
     assert ctx.fsm.current_state_value in {"terminating", "exited"}
@@ -569,7 +577,8 @@ async def test_runtime_flush_console_queue_send_failed(test_config: RuntimeConfi
     svc = BridgeService(test_config, mock_state, serial)
 
     svc.state.console_to_mcu_queue.append(b"console payload")
-    await svc._flush_console_queue()
+    flush_console_fn: Callable[[], Awaitable[None]] = getattr(svc, "_flush_console_queue")
+    await flush_console_fn()
     assert len(svc.state.console_to_mcu_queue) == 1
 
 
@@ -582,11 +591,12 @@ async def test_runtime_reject_cloud_topic_variants(
     mock_enqueue = mocker.patch.object(svc, "enqueue_cloud", new_callable=AsyncMock)
     from mcubridge.protocol.protocol import Topic
 
-    await svc._reject_cloud(pb.CloudQueuedPublish(), Topic.DIGITAL, "write")
+    reject_cloud_fn: Callable[..., Awaitable[None]] = getattr(svc, "_reject_cloud")
+    await reject_cloud_fn(pb.CloudQueuedPublish(), Topic.DIGITAL, "write")
     assert mock_enqueue.called
 
     mock_enqueue.reset_mock()
-    await svc._reject_cloud(pb.CloudQueuedPublish(), "custom_topic", "read")
+    await reject_cloud_fn(pb.CloudQueuedPublish(), "custom_topic", "read")
     assert mock_enqueue.called
 
 
@@ -602,7 +612,8 @@ async def test_runtime_cloud_spool_trimming_and_drop(test_config: RuntimeConfig,
 
     svc.state.cloud_queue_limit = 2
     mock_spool = MagicMock(spec=LmdbDeque)
-    svc._cloud_spool = mock_spool
+    setattr(svc, "_cloud_spool", mock_spool)
+    spool_msg_fn: Callable[..., Awaitable[bool]] = getattr(svc, "_spool_cloud_message_locked")
 
     # Simulate atomic spool append trimming on first call and no trim on second
     mock_spool.__len__.return_value = 1
@@ -610,7 +621,7 @@ async def test_runtime_cloud_spool_trimming_and_drop(test_config: RuntimeConfig,
     mock_spool.append = AsyncMock(side_effect=[1, 0])
 
     msg = pb.CloudQueuedPublish(topic_name="br/test", payload=b"data")
-    res = await svc._spool_cloud_message_locked(msg)
+    res = await spool_msg_fn(msg)
     assert res is True
     assert svc.state.cloud_spool_dropped_limit == 1
     assert svc.state.cloud_spool_trim_events == 1
@@ -618,7 +629,7 @@ async def test_runtime_cloud_spool_trimming_and_drop(test_config: RuntimeConfig,
     # Second call where queue is below limit: trim_events must NOT increment even though dropped_limit > 0
     mock_spool.__len__.side_effect = None
     mock_spool.__len__.return_value = 1
-    res2 = await svc._spool_cloud_message_locked(msg)
+    res2 = await spool_msg_fn(msg)
     assert res2 is True
     assert svc.state.cloud_spool_dropped_limit == 1
     assert svc.state.cloud_spool_trim_events == 1
@@ -631,7 +642,8 @@ async def test_runtime_publish_cloud_message_with_correlation(
     serial = AsyncMock(spec=SerialTransport)
     svc = BridgeService(test_config, mock_state, serial)
     mock_stream = AsyncMock()
-    svc._cloud_stream = mock_stream
+    setattr(svc, "_cloud_stream", mock_stream)
+    pub_cloud_fn: Callable[..., Awaitable[bool]] = getattr(svc, "_publish_cloud_message")
 
     # Message with correlation_data (simulating RPC command response)
     msg = pb.CloudQueuedPublish(
@@ -639,7 +651,7 @@ async def test_runtime_publish_cloud_message_with_correlation(
         payload=b"response_payload",
         correlation_data=(12345).to_bytes(8, "big"),
     )
-    res = await svc._publish_cloud_message(msg)
+    res = await pub_cloud_fn(msg)
     assert res is True
     assert mock_stream.send_message.called
 
@@ -697,7 +709,8 @@ async def test_runtime_handle_process_kill_paths(
 
     # Case 3: _on_mcu_process_kill
     svc.state.running_processes[88888] = ProcessContext(mock_handle)
-    await svc._on_mcu_process_kill(10, pb.ProcessKill(pid=88888))
+    on_proc_kill_fn: Callable[..., Awaitable[None]] = getattr(svc, "_on_mcu_process_kill")
+    await on_proc_kill_fn(10, pb.ProcessKill(pid=88888))
     assert 88888 not in svc.state.running_processes
 
 
@@ -715,23 +728,28 @@ async def test_runtime_on_mcu_file_and_datastore_handlers(
     test_file = tmp_path / "read_target.txt"
     test_file.write_bytes(b"hello world")
     read_req = pb.FileRead(path="read_target.txt")
-    await svc._on_mcu_file_read(1, read_req)
+    on_file_read_fn: Callable[..., Awaitable[None]] = getattr(svc, "_on_mcu_file_read")
+    await on_file_read_fn(1, read_req)
     assert serial.send.called
 
     # File Write with quota failure
     write_req = pb.FileWrite(path="write_target.txt", data=b"data")
     mocker.patch.object(svc, "_write_with_quota", new_callable=AsyncMock, return_value=False)
-    await svc._on_mcu_file_write(2, write_req)
+    on_file_write_fn: Callable[..., Awaitable[bool]] = getattr(svc, "_on_mcu_file_write")
+    await on_file_write_fn(2, write_req)
 
     # File Remove
-    await svc._on_mcu_file_remove(3, pb.FileRemove(path="read_target.txt"))
+    on_file_remove_fn: Callable[..., Awaitable[bool]] = getattr(svc, "_on_mcu_file_remove")
+    await on_file_remove_fn(3, pb.FileRemove(path="read_target.txt"))
     assert not test_file.exists()
 
     # Datastore Get / Put
-    await svc._on_mcu_datastore_put(4, pb.DatastorePut(key="mykey", value=b"myval"))
+    on_ds_put_fn: Callable[..., Awaitable[bool]] = getattr(svc, "_on_mcu_datastore_put")
+    await on_ds_put_fn(4, pb.DatastorePut(key="mykey", value=b"myval"))
     assert mock_state.datastore_cache is not None
     assert await mock_state.datastore_cache.get("mykey") == b"myval"
-    await svc._on_mcu_datastore_get(5, pb.DatastoreGet(key="mykey"))
+    on_ds_get_fn: Callable[..., Awaitable[bool]] = getattr(svc, "_on_mcu_datastore_get")
+    await on_ds_get_fn(5, pb.DatastoreGet(key="mykey"))
 
 
 # ==========================================
@@ -749,7 +767,8 @@ async def test_serial_transport_read_loop_limit_overrun(test_config: RuntimeConf
     ]
     mock_serial.read.return_value = b""
 
-    await transport._read_loop(mock_serial)
+    read_loop_fn: Callable[..., Awaitable[None]] = getattr(transport, "_read_loop")
+    await read_loop_fn(mock_serial)
     assert transport.state.serial_decode_errors == 1
 
 
@@ -762,7 +781,8 @@ async def test_serial_transport_disconnect_handler_exception(
     mock_service.on_serial_disconnected.side_effect = OSError("Teardown error")
 
     transport = SerialTransport(test_config, mock_state, mock_service)
-    transport._stop_event.set()
+    stop_event: asyncio.Event = getattr(transport, "_stop_event")
+    stop_event.set()
 
     mock_async_serial = AsyncMock()
     mock_async_serial.transport = MagicMock()
@@ -777,8 +797,9 @@ async def test_serial_transport_disconnect_handler_exception(
     mocker.patch("serialx.AsyncSerial", return_value=_MockAsyncSerialContext())
     mocker.patch.object(transport, "_toggle_dtr", new_callable=AsyncMock)
     mocker.patch.object(transport, "_read_loop", new_callable=AsyncMock)
+    connect_run_fn: Callable[[], Awaitable[None]] = getattr(transport, "_connect_and_run")
     with pytest.raises(ConnectionError):
-        await transport._connect_and_run()
+        await connect_run_fn()
 
 
 # ==========================================
@@ -806,14 +827,16 @@ async def test_handshake_fault_and_sync_transitions(
 
     from mcubridge.services.handshake import HandshakeState
 
+    sync_attempt_fn: Callable[[], Awaitable[bool]] = getattr(hm, "_synchronize_attempt")
+
     # Case 1: send_frame returns False on LINK_RESET
     mock_send.return_value = False
-    res = await hm._synchronize_attempt()
+    res = await sync_attempt_fn()
     assert res is False
 
     # Case 2: send_frame returns False on LINK_SYNC
     mock_send.side_effect = [True, False]
-    res = await hm._synchronize_attempt()
+    res = await sync_attempt_fn()
     assert res is False
 
     # Case 3: Race condition to FAULT state
@@ -821,7 +844,7 @@ async def test_handshake_fault_and_sync_transitions(
     mock_send.return_value = True
     hm.fsm_state = HandshakeState.FAULT
     mocker.patch.object(hm, "_wait_for_link_sync_confirmation", return_value=False)
-    res = await hm._synchronize_attempt()
+    res = await sync_attempt_fn()
     assert res is False
 
 
@@ -952,15 +975,16 @@ def test_structures_resolve_cloud_context_with_properties() -> None:
 
 
 def test_settings_factory_and_json_loading(mocker: MockerFixture) -> None:
+    import mcubridge.config.settings as settings_mod
     from mcubridge.config.settings import (
-        _runtime_config_factory,
         load_runtime_config,
         load_runtime_config_from_json,
     )
 
     # Factory with pre-built message
+    cfg_factory: Callable[..., Any] = getattr(settings_mod, "_runtime_config_factory")
     existing_msg = pb.RuntimeConfig(serial_port="/dev/ttyS0")
-    assert _runtime_config_factory(pb_msg=existing_msg) is existing_msg
+    assert cfg_factory(pb_msg=existing_msg) is existing_msg
 
     # Loading from JSON with overrides
     json_data = '{"serial_port": "/dev/ttyACM0", "cloud_enabled": false}'
@@ -1003,7 +1027,8 @@ async def test_runtime_monitor_process_timeout_escalation(
 
     mocker.patch.object(svc, "_terminate_process", new_callable=AsyncMock, return_value=-9)
     mocker.patch("asyncio.sleep", new_callable=AsyncMock)
-    await svc._monitor_process(4444)
+    monitor_fn: Callable[[int], Awaitable[None]] = getattr(svc, "_monitor_process")
+    await monitor_fn(4444)
     assert ctx.exit_code == -9
 
 
@@ -1079,28 +1104,33 @@ async def test_runtime_handle_spi_and_pin_edge_cases(test_config: RuntimeConfig,
     from mcubridge.protocol.topics import TopicRoute, parse_topic
 
     # SPI Begin, End, Config (invalid payload)
+    handle_spi_fn: Callable[..., Awaitable[None]] = getattr(svc, "_handle_spi")
+    handle_pin_fn: Callable[..., Awaitable[None]] = getattr(svc, "_handle_pin")
+    flush_console_fn: Callable[[], Awaitable[None]] = getattr(svc, "_flush_console_queue")
+    req_ver_fn: Callable[[], Awaitable[bool]] = getattr(svc, "_request_mcu_version")
+
     route_begin = parse_topic("br", "br/spi/begin")
     assert route_begin is not None
-    await svc._handle_spi(route_begin, pb.CloudQueuedPublish())
+    await handle_spi_fn(route_begin, pb.CloudQueuedPublish())
 
     route_end = parse_topic("br", "br/spi/end")
     assert route_end is not None
-    await svc._handle_spi(route_end, pb.CloudQueuedPublish())
+    await handle_spi_fn(route_end, pb.CloudQueuedPublish())
 
     route_cfg = parse_topic("br", "br/spi/config")
     assert route_cfg is not None
-    await svc._handle_spi(route_cfg, pb.CloudQueuedPublish(payload=b"invalid-proto"))
+    await handle_spi_fn(route_cfg, pb.CloudQueuedPublish(payload=b"invalid-proto"))
 
     # Pin handling with invalid pin number (<0)
     route_invalid_pin = TopicRoute(raw="br/digital/-1/mode", prefix="br", topic=Topic.DIGITAL, segments=("-1", "mode"))
-    await svc._handle_pin(route_invalid_pin, pb.CloudQueuedPublish(payload=b"1"))
+    await handle_pin_fn(route_invalid_pin, pb.CloudQueuedPublish(payload=b"1"))
 
     # Serial is None branches
     svc.serial = None
-    await svc._handle_spi(route_begin, pb.CloudQueuedPublish())
-    await svc._handle_pin(route_begin, pb.CloudQueuedPublish())
-    await svc._flush_console_queue()
-    assert await svc._request_mcu_version() is False
+    await handle_spi_fn(route_begin, pb.CloudQueuedPublish())
+    await handle_pin_fn(route_begin, pb.CloudQueuedPublish())
+    await flush_console_fn()
+    assert await req_ver_fn() is False
 
 
 # ==========================================
@@ -1130,23 +1160,25 @@ async def test_handshake_synchronize_fault_race_and_rate_limit(
     )
 
     # 1. Simulate fault state right after sending sync
-    assert await fsm._synchronize_attempt() is False
+    sync_attempt_fn: Callable[[], Awaitable[bool]] = getattr(fsm, "_synchronize_attempt")
+    assert await sync_attempt_fn() is False
 
     # 2. handle_link_sync_resp rate limit branch
-    fsm._state.link_handshake_nonce = b"1234567812345678"
-    fsm._config.serial_handshake_min_interval = 100.0
-    fsm._state.handshake_rate_until = time.monotonic() + 50.0
+    mock_state.link_handshake_nonce = b"1234567812345678"
+    test_config.serial_handshake_min_interval = 100.0
+    mock_state.handshake_rate_until = time.monotonic() + 50.0
 
     resp_payload = pb.LinkSync(nonce=b"1234567812345678", tag=b"1234567812345678").SerializeToString()
     assert await fsm.handle_link_sync_resp(1, resp_payload) is False
 
     # 3. handle_capabilities_resp with active future
     loop = asyncio.get_running_loop()
-    fsm._capabilities_future = loop.create_future()
+    cap_fut: asyncio.Future[pb.Capabilities] = loop.create_future()
+    setattr(fsm, "_capabilities_future", cap_fut)
     cap_msg = pb.Capabilities(ver=2, arch=1, dig=14, ana=6)
     assert await fsm.handle_capabilities_resp(1, cap_msg) is True
-    assert fsm._capabilities_future.done()
-    assert fsm._capabilities_future.result() == cap_msg
+    assert cap_fut.done()
+    assert cap_fut.result() == cap_msg
 
 
 def test_logging_var_run_log_fallback(test_config: RuntimeConfig, mocker: MockerFixture) -> None:
@@ -1191,14 +1223,15 @@ async def test_runtime_cloud_spool_locked_lmdb_errors(test_config: RuntimeConfig
     serial = AsyncMock(spec=SerialTransport)
     svc = BridgeService(test_config, mock_state, serial)
     mock_stream = AsyncMock()
-    svc._cloud_stream = mock_stream
+    setattr(svc, "_cloud_stream", mock_stream)
 
     mock_spool = MagicMock()
     mock_spool.__len__.return_value = 1
     mock_spool.peek = AsyncMock(side_effect=lmdb.Error("Disk I/O error"))
-    svc._cloud_spool = mock_spool
+    setattr(svc, "_cloud_spool", mock_spool)
+    flush_spool_fn: Callable[[], Awaitable[None]] = getattr(svc, "_flush_cloud_spool_locked")
 
-    await svc._flush_cloud_spool_locked()
+    await flush_spool_fn()
     assert mock_state.cloud_spool_degraded is True
 
 
@@ -1207,23 +1240,24 @@ async def test_runtime_publish_cloud_message_flavors(test_config: RuntimeConfig,
     serial = AsyncMock(spec=SerialTransport)
     svc = BridgeService(test_config, mock_state, serial)
     mock_stream = AsyncMock()
-    svc._cloud_stream = mock_stream
+    setattr(svc, "_cloud_stream", mock_stream)
+    pub_cloud_fn: Callable[..., Awaitable[bool]] = getattr(svc, "_publish_cloud_message")
 
     # 1. Telemetry report with "metrics" topic
     msg_metrics = pb.CloudQueuedPublish(topic_name="bridge/metrics", payload=b"metrics_data")
-    assert await svc._publish_cloud_message(msg_metrics) is True
+    assert await pub_cloud_fn(msg_metrics) is True
 
     # 2. Telemetry report with "summary" topic
     msg_summary = pb.CloudQueuedPublish(topic_name="bridge/summary", payload=b"summary_data")
-    assert await svc._publish_cloud_message(msg_summary) is True
+    assert await pub_cloud_fn(msg_summary) is True
 
     # 3. Telemetry report with "handshake" topic
     msg_handshake = pb.CloudQueuedPublish(topic_name="bridge/handshake", payload=b"handshake_data")
-    assert await svc._publish_cloud_message(msg_handshake) is True
+    assert await pub_cloud_fn(msg_handshake) is True
 
     # 4. Stream send raising OSError
     mock_stream.send_message.side_effect = OSError("Socket write failed")
-    assert await svc._publish_cloud_message(msg_summary) is False
+    assert await pub_cloud_fn(msg_summary) is False
 
 
 @pytest.mark.asyncio
@@ -1277,9 +1311,11 @@ async def test_serial_transport_connect_and_run_edge_paths(
     mocker.patch.object(transport, "_toggle_dtr", new_callable=AsyncMock)
     mocker.patch.object(transport, "_read_loop", new_callable=AsyncMock)
     mocker.patch.object(transport, "_negotiate_baudrate", new_callable=AsyncMock, return_value=False)
-    transport._stop_event.set()
+    stop_event: asyncio.Event = getattr(transport, "_stop_event")
+    stop_event.set()
+    conn_run_fn: Callable[[], Awaitable[None]] = getattr(transport, "_connect_and_run")
     with pytest.raises(ConnectionError) as exc_info:
-        await transport._connect_and_run()
+        await conn_run_fn()
     assert "Baudrate negotiation failed" in str(exc_info.value)
 
 
@@ -1353,38 +1389,46 @@ def test_serial_correlate_frame_debug_and_corrupt_ack_payload(
 
     transport = SerialTransport(test_config, mock_state, None)
 
+    correlate_fn: Callable[[int, bytes], None] = getattr(transport, "_correlate_frame")
+
     # 1. Pending is None
-    transport._correlate_frame(Status.ACK.value, b"")
-    assert transport._current is None
+    correlate_fn(Status.ACK.value, b"")
+    assert getattr(transport, "_current") is None
 
     # 2. Pending already resolved
-    transport._current = PendingCommand(
+    resolved_cmd = PendingCommand(
         command_id=Command.CMD_DIGITAL_WRITE.value,
         expected_resp_ids=[],
         success=True,
     )
-    transport._correlate_frame(Status.ACK.value, b"")
-    assert transport._current.success is True
+    setattr(transport, "_current", resolved_cmd)
+    correlate_fn(Status.ACK.value, b"")
+    curr1: PendingCommand | None = getattr(transport, "_current")
+    assert curr1 is not None and curr1.success is True
 
     # 3. Pending with corrupted Protobuf ACK payload
-    transport._current = PendingCommand(
+    corrupt_cmd = PendingCommand(
         command_id=Command.CMD_DIGITAL_WRITE.value,
         expected_resp_ids=[],
     )
-    transport._correlate_frame(Status.ACK.value, b"\xff\xff\xff\xff")
-    assert transport._current.success is True
+    setattr(transport, "_current", corrupt_cmd)
+    correlate_fn(Status.ACK.value, b"\xff\xff\xff\xff")
+    curr2: PendingCommand | None = getattr(transport, "_current")
+    assert curr2 is not None and curr2.success is True
 
 
 def test_structures_build_ssl_context_with_real_ca_and_resolve_properties(
     tmp_path: Path, mocker: MockerFixture
 ) -> None:
-    from mcubridge.protocol.structures import _build_cached_ssl_context, resolve_cloud_context
+    import mcubridge.protocol.structures as structures_mod
+    from mcubridge.protocol.structures import resolve_cloud_context
 
     ca_file = tmp_path / "ca.crt"
     ca_file.write_text("dummy-ca-data")
 
     mocker.patch("ssl.create_default_context")
-    ctx = _build_cached_ssl_context(
+    build_ssl_fn: Callable[..., Any] = getattr(structures_mod, "_build_cached_ssl_context")
+    ctx = build_ssl_fn(
         cloud_cafile=str(ca_file),
         cloud_certfile="",
         cloud_keyfile="",
@@ -1440,7 +1484,8 @@ async def test_handshake_state_transition_from_sync_to_unsync_and_retry_stats(
 
     # 1. Transition from SYNCHRONIZED to UNSYNCHRONIZED
     fsm.fsm_state = HandshakeState.SYNCHRONIZED
-    fsm._set_fsm_state(HandshakeState.UNSYNCHRONIZED)
+    set_fsm_fn: Callable[[HandshakeState], None] = getattr(fsm, "_set_fsm_state")
+    set_fsm_fn(HandshakeState.UNSYNCHRONIZED)
     assert fsm.fsm_state == HandshakeState.UNSYNCHRONIZED
 
     # 2. Synchronize success debugging stats

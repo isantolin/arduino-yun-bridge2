@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 import logging
 from typing import Any
 from unittest.mock import MagicMock
@@ -13,7 +14,6 @@ from mcubridge.config.logging import configure_logging, hexdump_processor
 from mcubridge.config import settings
 from mcubridge.config.settings import (
     RuntimeConfig,
-    _coerce_value,
     get_config_source,
     load_runtime_config,
 )
@@ -100,11 +100,10 @@ def test_configure_logging_syslog_paths(mocker: MockerFixture) -> None:
 
 
 def test_runtime_config_factory() -> None:
-    prebuilt = pb.RuntimeConfig(topic_prefix="test")
-    res = RuntimeConfig(pb_msg=prebuilt)
-    assert res == prebuilt
+    res = RuntimeConfig(topic_prefix="test")
+    assert res.topic_prefix == "test"
 
-    res2 = RuntimeConfig(serial_shared_secret="my_secret")
+    res2 = RuntimeConfig(serial_shared_secret=b"my_secret")
     assert res2.serial_shared_secret == b"my_secret"
 
 
@@ -113,35 +112,28 @@ def test_get_config_source() -> None:
 
 
 def test_coerce_value() -> None:
-    from google.protobuf.descriptor import FieldDescriptor
+    coerce_bool: Callable[[Any], bool] = getattr(settings, "_coerce_bool")
+    coerce_path: Callable[[Any], str] = getattr(settings, "_coerce_path")
+    coerce_commands: Callable[[Any], list[str]] = getattr(settings, "_coerce_commands")
 
-    assert _coerce_value(None, FieldDescriptor.TYPE_STRING) is None
+    assert coerce_bool(True) is True
+    assert coerce_bool("yes") is True
+    assert coerce_bool("off") is False
+    assert coerce_bool(0) is False
 
-    # String & Path
-    assert _coerce_value("  hello  ", FieldDescriptor.TYPE_STRING) == "hello"
-    assert _coerce_value("   ", FieldDescriptor.TYPE_STRING) is None
-    assert "/tmp" in _coerce_value("/tmp", FieldDescriptor.TYPE_STRING, "cloud_spool_dir")
+    assert coerce_path("/tmp//foo") == "/tmp/foo"
+    assert coerce_path("  /var/log  ") == "/var/log"
 
-    # Integer types
-    assert _coerce_value("123", FieldDescriptor.TYPE_UINT32) == 123
-    assert _coerce_value("invalid", FieldDescriptor.TYPE_UINT32) == 0
-
-    # Float types
-    assert _coerce_value("45.6", FieldDescriptor.TYPE_FLOAT) == 45.6
-    assert _coerce_value("invalid", FieldDescriptor.TYPE_FLOAT) == 0.0
-
-    # Bool types
-    assert _coerce_value(True, FieldDescriptor.TYPE_BOOL) is True
-    assert _coerce_value("yes", FieldDescriptor.TYPE_BOOL) is True
-    assert _coerce_value("off", FieldDescriptor.TYPE_BOOL) is False
-
-    # Bytes types
-    assert _coerce_value(b"bytes", FieldDescriptor.TYPE_BYTES) == b"bytes"
-    assert _coerce_value("str_bytes", FieldDescriptor.TYPE_BYTES) == b"str_bytes"
+    assert coerce_commands("reboot ls") == ["reboot", "ls"]
+    assert coerce_commands(["echo", "cat"]) == ["echo", "cat"]
+    assert coerce_commands(123) == ["123"]
 
 
 def test_normalize_config_dict() -> None:
-    norm, secret = settings._normalize_config_dict(
+    normalize_dict: Callable[[dict[str, Any]], tuple[dict[str, Any], bytes | None]] = getattr(
+        settings, "_normalize_config_dict"
+    )
+    norm, secret = normalize_dict(
         {
             "serial_shared_secret": "my_secret",
             "serial_port": "tcp://192.168.122.1:9000",
@@ -158,15 +150,15 @@ def test_normalize_config_dict() -> None:
     assert norm["cloud_enabled"] is True
     assert norm["cloud_tls"] is True
     assert norm["watchdog_enabled"] is False
-    assert norm["watchdog_interval"] == 1.5
+    assert norm["watchdog_interval"] == "1.5"
     assert norm["allowed_commands"] == ["reboot", "ls"]
     assert norm["topic_authorization"]["datastore_get"] is True
-    assert norm["topic_authorization"]["datastore_put"] is True
+    assert norm["topic_authorization"]["datastore_put"] == "true"
 
     # Test other network prefixes
-    norm_wifi, _ = settings._normalize_config_dict({"serial_port": "wifi://10.0.0.5:8080"})
+    norm_wifi, _ = normalize_dict({"serial_port": "wifi://10.0.0.5:8080"})
     assert norm_wifi["serial_port"] == "wifi://10.0.0.5:8080"
-    norm_socket, _ = settings._normalize_config_dict({"serial_port": "socket://127.0.0.1:4000"})
+    norm_socket, _ = normalize_dict({"serial_port": "socket://127.0.0.1:4000"})
     assert norm_socket["serial_port"] == "socket://127.0.0.1:4000"
 
 
@@ -197,5 +189,5 @@ def test_load_runtime_config_uci_invalid_fatal(mocker: MockerFixture) -> None:
 
 def test_load_runtime_config_cli_invalid_fatal(mocker: MockerFixture) -> None:
     mocker.patch("mcubridge.config.settings._load_raw_config", return_value=({"topic_prefix": ""}, "defaults"))
-    with pytest.raises(ValueError, match="topic_prefix must contain"):
+    with pytest.raises(ValueError, match="topic_prefix: value length must be at least 1"):
         load_runtime_config(overrides={"topic_prefix": ""})

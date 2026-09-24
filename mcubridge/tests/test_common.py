@@ -6,22 +6,21 @@ import importlib
 import types
 from unittest.mock import MagicMock
 
-import pytest
 from pytest_mock import MockerFixture
 
 from mcubridge.config import common
 from mcubridge.protocol import protocol
-from mcubridge.protocol.structures import AllowedCommandPolicy
+from mcubridge.protocol.structures import create_allowed_policy
 
 
 def test_normalise_commands() -> None:
     cmds = ["cmd1 ", "CMD2", "cmd1", "*"]
-    policy = AllowedCommandPolicy.from_iterable(cmds)
-    assert policy.as_tuple() == ("*",)
+    policy = create_allowed_policy(cmds)
+    assert tuple(policy.entries) == ("*",)
 
     cmds = ["cmd1", "CMD2"]
-    policy = AllowedCommandPolicy.from_iterable(cmds)
-    assert policy.as_tuple() == ("cmd1", "cmd2")
+    policy = create_allowed_policy(cmds)
+    assert tuple(policy.entries) == ("cmd1", "cmd2")
 
 
 def test_get_uci_config_success(mocker: MockerFixture) -> None:

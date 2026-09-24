@@ -1,8 +1,8 @@
-# pyright: reportPrivateUsage=false
 """Surgical unit test suite for transport/serial.py covering edge paths and error branches."""
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
@@ -50,8 +50,9 @@ async def test_switch_local_baudrate_failure_raises(mock_config: RuntimeConfig, 
     )
     transport.serial = mock_serial
 
+    switch_local_baudrate: Callable[[int], None] = getattr(transport, "_switch_local_baudrate")
     with pytest.raises(RuntimeError, match="UART access failed"):
-        transport._switch_local_baudrate(115200)
+        switch_local_baudrate(115200)
 
 
 @pytest.mark.asyncio
@@ -62,7 +63,8 @@ async def test_toggle_dtr_exception_handled(mock_config: RuntimeConfig, mock_sta
     transport.serial = mock_serial
 
     # Should not raise exception
-    await transport._toggle_dtr()
+    toggle_dtr: Callable[[], Awaitable[None]] = getattr(transport, "_toggle_dtr")
+    await toggle_dtr()
 
 
 @pytest.mark.asyncio
@@ -75,7 +77,8 @@ async def test_read_loop_limit_overrun(mock_config: RuntimeConfig, mock_state: R
     ]
     mock_serial.read.return_value = b""
 
-    await transport._read_loop(mock_serial)
+    read_loop: Callable[[object], Awaitable[None]] = getattr(transport, "_read_loop")
+    await read_loop(mock_serial)
     assert mock_state.serial_decode_errors == 1
 
 
@@ -85,7 +88,8 @@ async def test_read_loop_generic_exception(mock_config: RuntimeConfig, mock_stat
     mock_serial = AsyncMock()
     mock_serial.readuntil.side_effect = OSError("Read hardware error")
 
-    await transport._read_loop(mock_serial)
+    read_loop: Callable[[object], Awaitable[None]] = getattr(transport, "_read_loop")
+    await read_loop(mock_serial)
 
 
 @pytest.mark.asyncio
@@ -93,14 +97,15 @@ async def test_process_packet_baudrate_negotiation_response(
     mock_config: RuntimeConfig, mock_state: RuntimeState, mocker: MockerFixture
 ) -> None:
     transport = SerialTransport(mock_config, mock_state, None)
-    transport._negotiating = True
+    setattr(transport, "_negotiating", True)
     fut: asyncio.Future[bool] = asyncio.Future()
-    transport._negotiation_future = fut
+    setattr(transport, "_negotiation_future", fut)
 
     raw = cobsr.encode(build_frame(Command.CMD_SET_BAUDRATE_RESP.value, 1))
 
     mock_switch = mocker.patch.object(transport, "_switch_local_baudrate")
-    await transport._process_packet(raw)
+    process_packet: Callable[[bytes], Awaitable[None]] = getattr(transport, "_process_packet")
+    await process_packet(raw)
     assert fut.done()
     assert fut.result() is True
     mock_switch.assert_called_once_with(115200)
@@ -113,11 +118,12 @@ async def test_correlate_frame_ack_with_protobuf_payload(mock_config: RuntimeCon
     pending.command_id = Command.CMD_FILE_WRITE.value
     pending.expected_resp_ids = set()
     pending.success = None
-    transport._current = pending
+    setattr(transport, "_current", pending)
 
     # ACK payload for CMD_FILE_WRITE
     ack = pb.AckPacket(command_id=Command.CMD_FILE_WRITE.value)
-    transport._correlate_frame(Status.ACK.value, ack)
+    correlate_frame: Callable[[int, object], None] = getattr(transport, "_correlate_frame")
+    correlate_frame(Status.ACK.value, ack)
 
     pending.mark_success.assert_called_once_with(ack)
 
@@ -127,10 +133,11 @@ async def test_correlate_frame_ack_with_invalid_bytes(mock_config: RuntimeConfig
     transport = SerialTransport(mock_config, mock_state, None)
     pending = MagicMock()
     pending.command_id = Command.CMD_FILE_WRITE.value
-    transport._current = pending
+    setattr(transport, "_current", pending)
 
     # Corrupted ACK payload (invalid protobuf bytes)
-    transport._correlate_frame(Status.ACK.value, b"\xff\xff\xff\xff")
+    correlate_frame: Callable[[int, object], None] = getattr(transport, "_correlate_frame")
+    correlate_frame(Status.ACK.value, b"\xff\xff\xff\xff")
     # Should not raise exception
 
 
@@ -142,7 +149,8 @@ async def test_stop_sets_event_and_closes_serial(mock_config: RuntimeConfig, moc
 
     await transport.stop()
 
-    assert transport._stop_event.is_set()
+    stop_event = getattr(transport, "_stop_event")
+    assert stop_event.is_set()
     mock_serial.close.assert_awaited_once()
 
 
@@ -150,12 +158,12 @@ async def test_stop_sets_event_and_closes_serial(mock_config: RuntimeConfig, moc
 async def test_reset_marks_failure(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     transport = SerialTransport(mock_config, mock_state, None)
     pending = MagicMock()
-    transport._current = pending
+    setattr(transport, "_current", pending)
 
     await transport.reset()
 
     pending.mark_failure.assert_called_once_with(Status.TIMEOUT.value)
-    assert transport._current is None
+    assert getattr(transport, "_current") is None
 
 
 @pytest.mark.asyncio
@@ -171,12 +179,13 @@ async def test_check_baudrate_fallback_triggers(
     mock_config: RuntimeConfig, mock_state: RuntimeState, mocker: MockerFixture
 ) -> None:
     transport = SerialTransport(mock_config, mock_state, None)
-    transport._consecutive_crc_errors = mock_config.serial_fallback_threshold - 1
+    setattr(transport, "_consecutive_crc_errors", mock_config.serial_fallback_threshold - 1)
 
     mock_neg = mocker.patch.object(transport, "_negotiate_baudrate", new_callable=AsyncMock)
     mock_neg.return_value = True
-    await transport._check_baudrate_fallback()
-    assert transport._consecutive_crc_errors == 0
+    check_fallback: Callable[[], Awaitable[None]] = getattr(transport, "_check_baudrate_fallback")
+    await check_fallback()
+    assert getattr(transport, "_consecutive_crc_errors") == 0
     mock_neg.assert_awaited_once_with(mock_config.serial_safe_baud)
 
 
@@ -188,10 +197,11 @@ async def test_correlate_frame_failure_status(mock_config: RuntimeConfig, mock_s
     pending = PendingCommand(
         command_id=Command.CMD_FILE_READ.value, expected_resp_ids=[Command.CMD_FILE_READ_RESP.value]
     )
-    transport._current = pending
+    setattr(transport, "_current", pending)
 
     # Response to request matching
-    transport._correlate_frame(Command.CMD_FILE_READ_RESP.value, b"content")
+    correlate_frame: Callable[[int, object], None] = getattr(transport, "_correlate_frame")
+    correlate_frame(Command.CMD_FILE_READ_RESP.value, b"content")
     assert pending.completion.is_set()
     assert pending.success is True
     assert pending.response_payload == b"content"

@@ -1,6 +1,11 @@
+"""Tests for LMDB database recreation on corruption and error handling."""
+
+from __future__ import annotations
+
 from unittest.mock import MagicMock
-import pytest
+
 import lmdb
+import pytest
 from pytest_mock import MockerFixture
 
 from mcubridge.state.storage import LmdbCache, LmdbDeque

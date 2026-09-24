@@ -94,7 +94,7 @@ def test_write_status_file_handles_oserror(mocker: MockerFixture) -> None:
 async def test_lmdb_deque_db_recreation_on_corruption(tmp_path: object) -> None:
     db_path = str(tmp_path) + "/corrupt_deque.db"
     # Write garbage to simulate corrupted database
-    with open(db_path, \"wb\") as f:
+    with open(db_path, "wb") as f:
         f.write(b"NOT A VALID LMDB FILE")
 
     deque = LmdbDeque(db_path, maxlen=10)
@@ -121,7 +121,7 @@ async def test_lmdb_deque_popleft_empty_raises(tmp_path: object) -> None:
 @pytest.mark.asyncio
 async def test_lmdb_cache_corruption_recovery(tmp_path: object) -> None:
     db_path = str(tmp_path) + "/corrupt_kv.db"
-    with open(db_path, \"wb\") as f:
+    with open(db_path, "wb") as f:
         f.write(b"GARBAGE")
 
     kv = LmdbCache(db_path)

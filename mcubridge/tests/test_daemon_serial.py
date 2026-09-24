@@ -1,9 +1,8 @@
 """Tests for serial transport resiliency."""
 
-from mcubridge.services.runtime import BridgeService
-from mcubridge.state.context import RuntimeState
-from typing import Any
+from __future__ import annotations
 
+from typing import Any
 import os
 import asyncio
 from unittest.mock import AsyncMock, MagicMock
@@ -12,6 +11,8 @@ import pytest
 from pytest_mock import MockerFixture
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
+from mcubridge.services.runtime import BridgeService
+from mcubridge.state.context import RuntimeState
 from mcubridge.transport.serial import SerialTransport
 
 

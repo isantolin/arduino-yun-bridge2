@@ -54,6 +54,7 @@ pyenv/
 venv/
 .tox/
 .tmp_tests/
+.hypothesis/
 sample-build/
 final-audit/
 arduino-build/

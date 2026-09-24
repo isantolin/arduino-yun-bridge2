@@ -12,6 +12,8 @@ from cobs import cobs
 import serialx
 import structlog
 import typer
+from collections.abc import Callable
+import secrets
 from typing import Annotated
 
 from mcubridge.protocol import protocol
@@ -33,18 +35,26 @@ class ProtocolFuzzer:
         self.reader, self.writer = await serialx.open_serial_connection(url=self.port, baudrate=self.baudrate)
         logger.info("connected", port=self.port, baudrate=self.baudrate)
 
-    def _build_raw_frame(self, cmd: int, seq: int, payload: bytes, override_crc: int | None = None) -> bytes:
-        if override_crc is None:
-            raw_frame = build_frame(command_id=cmd, sequence_id=seq, payload=payload)
-        else:
-            envelope = pb.RpcEnvelope(
-                version=protocol.PROTOCOL_VERSION,
-                command_id=cmd,
-                sequence_id=seq,
-                encrypted_payload_with_tag=payload,
-            )
-            body = envelope.SerializeToString()
-            raw_frame = body + (override_crc & protocol.CRC32_MASK).to_bytes(protocol.CRC_SIZE, "little")
+    def _build_raw_frame(self, cmd: int, seq: int, payload: bytes) -> bytes:
+        return cobs.encode(build_frame(command_id=cmd, sequence_id=seq, payload=payload)) + protocol.FRAME_DELIMITER
+
+    def _build_envelope_frame(
+        self,
+        command_id: int,
+        payload: bytes,
+        *,
+        version: int = protocol.PROTOCOL_VERSION,
+        override_crc: int | None = None,
+    ) -> bytes:
+        envelope = pb.RpcEnvelope(
+            version=version,
+            command_id=command_id,
+            sequence_id=self.seq_id,
+            encrypted_payload_with_tag=payload,
+        )
+        body = envelope.SerializeToString()
+        crc_val = override_crc if override_crc is not None else (crc32(body) & protocol.CRC32_MASK)
+        raw_frame = body + (crc_val & protocol.CRC32_MASK).to_bytes(protocol.CRC_SIZE, "little")
         return cobs.encode(raw_frame) + protocol.FRAME_DELIMITER
 
     async def send_raw(self, data: bytes) -> None:
@@ -52,66 +62,25 @@ class ProtocolFuzzer:
             self.writer.write(data)
             await self.writer.drain()
 
+    def _get_fuzz_generators(self) -> dict[str, Callable[[], bytes]]:
+        return {
+            "valid_ping": lambda: self._build_raw_frame(0x0001, self.seq_id, b"\x01\x02\x03"),
+            "invalid_crc": lambda: self._build_envelope_frame(
+                0x0001, b"bad_crc", override_crc=protocol.BOOTLOADER_MAGIC
+            ),
+            "invalid_version": lambda: self._build_envelope_frame(0x0001, b"VER", version=protocol.UINT8_MASK),
+            "malformed_cobs": lambda: b"\x03\x01\x00\x02" + protocol.FRAME_DELIMITER,
+            "oversized_payload": lambda: self._build_envelope_frame(0x0001, b"A" * 300),
+            "random_garbage": lambda: secrets.token_bytes(random.randint(1, 32)) + protocol.FRAME_DELIMITER,
+            "unknown_command": lambda: self._build_raw_frame(0x7FFF, self.seq_id, b"WHOAMI"),
+        }
+
     async def fuzz_iteration(self) -> None:
         self.seq_id = (self.seq_id + 1) & protocol.UINT16_MAX
-
-        mode = random.choice(
-            [
-                "valid_ping",
-                "invalid_crc",
-                "invalid_version",
-                "malformed_cobs",
-                "oversized_payload",
-                "random_garbage",
-                "unknown_command",
-            ]
-        )
-
+        generators = self._get_fuzz_generators()
+        mode = random.choice(list(generators))
         logger.info("fuzz_step", mode=mode, seq=self.seq_id)
-
-        if mode == "valid_ping":
-            frame = self._build_raw_frame(0x0001, self.seq_id, b"\x01\x02\x03")
-            await self.send_raw(frame)
-
-        elif mode == "invalid_crc":
-            frame = self._build_raw_frame(0x0001, self.seq_id, b"bad_crc", override_crc=protocol.BOOTLOADER_MAGIC)
-            await self.send_raw(frame)
-
-        elif mode == "invalid_version":
-            envelope = pb.RpcEnvelope(
-                version=protocol.UINT8_MASK,
-                command_id=0x0001,
-                sequence_id=self.seq_id,
-                encrypted_payload_with_tag=b"VER",
-            )
-            body = envelope.SerializeToString()
-            crc = crc32(body) & protocol.CRC32_MASK
-            frame = cobs.encode(body + crc.to_bytes(protocol.CRC_SIZE, "little")) + protocol.FRAME_DELIMITER
-            await self.send_raw(frame)
-
-        elif mode == "malformed_cobs":
-            bad_data = b"\x03\x01\x00\x02"
-            await self.send_raw(bad_data + protocol.FRAME_DELIMITER)
-
-        elif mode == "oversized_payload":
-            envelope = pb.RpcEnvelope(
-                version=protocol.PROTOCOL_VERSION,
-                command_id=0x0001,
-                sequence_id=self.seq_id,
-                encrypted_payload_with_tag=b"A" * 300,
-            )
-            body = envelope.SerializeToString()
-            crc = crc32(body) & protocol.CRC32_MASK
-            frame = cobs.encode(body + crc.to_bytes(protocol.CRC_SIZE, "little")) + protocol.FRAME_DELIMITER
-            await self.send_raw(frame)
-
-        elif mode == "random_garbage":
-            garbage = bytes([random.getrandbits(8) for _ in range(random.randint(1, 32))])
-            await self.send_raw(garbage + protocol.FRAME_DELIMITER)
-
-        elif mode == "unknown_command":
-            frame = self._build_raw_frame(0x7FFF, self.seq_id, b"WHOAMI")
-            await self.send_raw(frame)
+        await self.send_raw(generators[mode]())
 
     async def run(self, iterations: int = 100) -> None:
         await self.connect()

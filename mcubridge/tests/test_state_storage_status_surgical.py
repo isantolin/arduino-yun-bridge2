@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
+from hypothesis import given, settings, strategies as st
 import lmdb
 import pytest
 from pytest_mock import MockerFixture
@@ -133,18 +134,27 @@ async def test_lmdb_cache_corruption_recovery(tmp_path: object) -> None:
 
 
 @pytest.mark.asyncio
-async def test_lmdb_deque_multi_overflow_trimming(tmp_path: object) -> None:
-    """Verify LmdbDeque correctly trims multiple overflowing elements without skipping."""
-    db_path = str(tmp_path) + "/overflow_deque.db"
-    deque = LmdbDeque(db_path, maxlen=2)
+@settings(max_examples=30, derandomize=True, deadline=None)
+@given(
+    maxlen=st.integers(min_value=1, max_value=8),
+    items=st.lists(st.binary(min_size=1, max_size=32), min_size=1, max_size=20),
+)
+async def test_lmdb_deque_multi_overflow_trimming(
+    tmp_path_factory: pytest.TempPathFactory, maxlen: int, items: list[bytes]
+) -> None:
+    """Property: LmdbDeque always retains exactly min(N, maxlen) tail elements in FIFO order."""
+    db_path = str(tmp_path_factory.mktemp("deque_overflow")) + "/overflow.db"
+    deque = LmdbDeque(db_path, maxlen=maxlen)
 
-    for i in range(5):
-        await deque.append(f"item_{i}".encode())
+    for item in items:
+        await deque.append(item)
 
-    assert len(deque) == 2
-    # Items 0, 1, 2 should be dropped, leaving 3 and 4
-    assert await deque.popleft() == b"item_3"
-    assert await deque.popleft() == b"item_4"
+    expected_len = min(len(items), maxlen)
+    assert len(deque) == expected_len
+
+    expected_tail = items[-expected_len:]
+    popped = [await deque.popleft() for _ in range(expected_len)]
+    assert popped == expected_tail
     assert len(deque) == 0
     await deque.close()
 

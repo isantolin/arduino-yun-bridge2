@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from hypothesis import given, settings, strategies as st
 from pytest_mock import MockerFixture
 
 from mcubridge.protocol import protocol
@@ -28,44 +29,50 @@ def test_secure_zero_memoryview() -> None:
     assert raw == bytearray(len(raw))
 
 
-def test_generate_nonce_with_counter_success() -> None:
-    nonce, new_counter = generate_nonce_with_counter(0)
-    assert len(nonce) == 12
-    assert new_counter == 1
-    assert extract_nonce_counter(nonce) == 1
-
-
-def test_generate_nonce_with_counter_overflow() -> None:
-    with pytest.raises(ValueError, match="Nonce counter overflow"):
-        generate_nonce_with_counter(protocol.NONCE_COUNTER_MASK)
-
-    with pytest.raises(ValueError, match="Nonce counter overflow"):
-        generate_nonce_with_counter(-1)
-
-
-def test_extract_nonce_counter_invalid_length() -> None:
-    with pytest.raises(ValueError, match="Nonce must be 12 bytes"):
-        extract_nonce_counter(b"short")
-
-
-def test_validate_nonce_counter_valid() -> None:
-    nonce, _ = generate_nonce_with_counter(10)
-    valid, new_last = validate_nonce_counter(nonce, 10)
+@settings(max_examples=50, derandomize=True, deadline=None)
+@given(counter=st.integers(min_value=0, max_value=protocol.NONCE_COUNTER_MASK - 1))
+def test_nonce_generation_and_validation_monotonic(counter: int) -> None:
+    nonce, new_counter = generate_nonce_with_counter(counter)
+    assert len(nonce) == protocol.AEAD_NONCE_SIZE
+    assert new_counter == counter + 1
+    assert extract_nonce_counter(nonce) == new_counter
+    valid, validated_counter = validate_nonce_counter(nonce, counter)
     assert valid is True
-    assert new_last == 11
+    assert validated_counter == new_counter
 
 
-def test_validate_nonce_counter_invalid_length() -> None:
-    valid, last = validate_nonce_counter(b"invalid_len", 5)
+@settings(max_examples=50, derandomize=True, deadline=None)
+@given(
+    counter=st.integers(min_value=0, max_value=protocol.NONCE_COUNTER_MASK - 1),
+    seen_offset=st.integers(min_value=0, max_value=1000),
+)
+def test_nonce_replay_protection(counter: int, seen_offset: int) -> None:
+    nonce, new_counter = generate_nonce_with_counter(counter)
+    valid, last = validate_nonce_counter(nonce, new_counter + seen_offset)
     assert valid is False
-    assert last == 5
+    assert last == new_counter + seen_offset
 
 
-def test_validate_nonce_counter_replay() -> None:
-    nonce, _ = generate_nonce_with_counter(5)  # counter = 6
-    valid, last = validate_nonce_counter(nonce, 6)  # current == last -> invalid
+@settings(max_examples=50, derandomize=True, deadline=None)
+@given(
+    counter=st.one_of(
+        st.integers(max_value=-1),
+        st.integers(min_value=protocol.NONCE_COUNTER_MASK, max_value=2**64),
+    )
+)
+def test_generate_nonce_overflow_rejection(counter: int) -> None:
+    with pytest.raises(ValueError, match="Nonce counter overflow"):
+        generate_nonce_with_counter(counter)
+
+
+@settings(max_examples=50, derandomize=True, deadline=None)
+@given(raw=st.binary().filter(lambda b: len(b) != protocol.AEAD_NONCE_SIZE))
+def test_extract_and_validate_nonce_invalid_length(raw: bytes) -> None:
+    with pytest.raises(ValueError, match=f"Nonce must be {protocol.AEAD_NONCE_SIZE} bytes"):
+        extract_nonce_counter(raw)
+    valid, last = validate_nonce_counter(raw, 0)
     assert valid is False
-    assert last == 6
+    assert last == 0
 
 
 def test_validate_nonce_counter_overflow_mask(mocker: MockerFixture) -> None:

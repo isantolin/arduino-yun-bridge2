@@ -1,86 +1,55 @@
-import random
-from collections.abc import Callable
+"""Property-based fuzzing tests for RPC protocol framing and COBS/R encoding. [SIL-2]"""
 
 import pytest
 from cobs import cobsr
-from google.protobuf.message import DecodeError
-from mcubridge.protocol.frame import parse_frame
+from hypothesis import given, settings, strategies as st
+from mcubridge.protocol.frame import DecodedFrame, parse_frame
 from mcubridge.protocol.protocol import CRC_COVERED_HEADER_SIZE
-from tests.test_constants import TEST_RANDOM_SEED
 
-# Deterministic seed for reproducibility
-FUZZ_ITERATIONS = 5000
-EXPECTED_PARSE_ERRORS = (
-    ValueError,
-    DecodeError,
-)
 EXPECTED_COBS_ERRORS = (cobsr.DecodeError, ValueError)
 
 
-def _assert_only_expected_exception(
-    operation: Callable[[], object],
-    expected: tuple[type[Exception], ...],
-) -> bool:
+@pytest.mark.fuzz
+@settings(max_examples=200, derandomize=True, deadline=None)
+@given(raw_data=st.binary(max_size=256))
+def test_frame_parsing_resilience_to_fuzzing(raw_data: bytes) -> None:
+    """Fuzzing property: parse_frame must either decode safely or reject with ValueError."""
     try:
-        operation()
-        return True
-    except expected as exc:
-        assert isinstance(exc, expected)
-        return True
+        decoded = parse_frame(raw_data)
+        assert isinstance(decoded, DecodedFrame)
+    except ValueError as exc:
+        assert isinstance(exc, ValueError)
 
 
 @pytest.mark.fuzz
-def test_frame_parsing_resilience_to_fuzzing():
-    """Fuzzing test to ensure parse_frame never crashes with unhandled exceptions."""
-    random.seed(TEST_RANDOM_SEED)
-    tested_count = 0
-
-    for _ in range(FUZZ_ITERATIONS):
-        # Generate random length between 0 and 200 bytes
-        length = random.randint(0, 200)
-        # Generate random bytes
-        raw_data = random.randbytes(length)
-
-        if _assert_only_expected_exception(
-            lambda: parse_frame(raw_data),
-            EXPECTED_PARSE_ERRORS,
-        ):
-            tested_count += 1
-    assert tested_count == FUZZ_ITERATIONS
+@settings(max_examples=200, derandomize=True, deadline=None)
+@given(raw_data=st.binary(max_size=256))
+def test_cobs_decoding_resilience(raw_data: bytes) -> None:
+    """Fuzzing property: COBS decoder must never crash with unhandled exceptions."""
+    try:
+        res = cobsr.decode(raw_data)
+        assert isinstance(res, bytes)
+    except EXPECTED_COBS_ERRORS as exc:
+        assert isinstance(exc, EXPECTED_COBS_ERRORS)
 
 
 @pytest.mark.fuzz
-def test_cobs_decoding_resilience():
-    """Fuzzing test for COBS decoding wrapper."""
-    random.seed(TEST_RANDOM_SEED)
-    tested_count = 0
-
-    for _ in range(FUZZ_ITERATIONS):
-        length = random.randint(0, 200)
-        raw_data = random.randbytes(length)
-
-        if _assert_only_expected_exception(
-            lambda: cobsr.decode(raw_data),
-            EXPECTED_COBS_ERRORS,
-        ):
-            tested_count += 1
-    assert tested_count == FUZZ_ITERATIONS
+@settings(max_examples=200, derandomize=True, deadline=None)
+@given(raw_data=st.binary(max_size=CRC_COVERED_HEADER_SIZE + 5))
+def test_frame_header_parsing_resilience(raw_data: bytes) -> None:
+    """Targeted property: header-sized byte slices must deterministically validate or fail."""
+    try:
+        decoded = parse_frame(raw_data)
+        assert isinstance(decoded, DecodedFrame)
+    except ValueError as exc:
+        assert isinstance(exc, ValueError)
 
 
 @pytest.mark.fuzz
-def test_frame_header_parsing_resilience():
-    """Specifically target the header parsing logic."""
-    random.seed(TEST_RANDOM_SEED)
-    tested_count = 0
-
-    for _ in range(FUZZ_ITERATIONS):
-        # Header is usually small, let's fuzz around that size
-        length = random.randint(0, CRC_COVERED_HEADER_SIZE + 5)
-        raw_data = random.randbytes(length)
-
-        if _assert_only_expected_exception(
-            lambda: parse_frame(raw_data),
-            (ValueError, DecodeError),
-        ):
-            tested_count += 1
-    assert tested_count == FUZZ_ITERATIONS
+@settings(max_examples=200, derandomize=True, deadline=None)
+@given(data=st.binary(max_size=512))
+def test_cobs_roundtrip_isomorphism(data: bytes) -> None:
+    """Algebraic invariant: COBS/R encode then decode is an exact roundtrip isomorphism."""
+    encoded = cobsr.encode(data)
+    assert b"\x00" not in encoded
+    assert cobsr.decode(encoded) == data

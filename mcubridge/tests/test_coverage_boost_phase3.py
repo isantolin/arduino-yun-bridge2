@@ -121,36 +121,20 @@ async def test_runtime_pin_handlers(tmp_path: Path) -> None:
     service, _state, _mock_serial = _make_service(config)
     handle_pin_fn: Callable[..., Awaitable[None]] = getattr(service, "_handle_pin")
 
-    # 1. Digital Mode
-    route_mode = TopicRoute(
-        raw="test/br/d/13/mode", prefix=config.topic_prefix, topic=Topic.DIGITAL, segments=("13", PinAction.MODE.value)
+    pin_cases: tuple[tuple[Topic, tuple[str, ...], bytes], ...] = (
+        (Topic.DIGITAL, ("13", PinAction.MODE.value), b"OUTPUT"),
+        (Topic.DIGITAL, ("13",), b"1"),
+        (Topic.DIGITAL, ("13", PinAction.READ.value), b""),
+        (Topic.ANALOG, ("3",), b"128"),
+        (Topic.ANALOG, ("1", PinAction.READ.value), b""),
     )
-    inbound_mode = pb.CloudQueuedPublish(topic_name="test/br/d/13/mode", payload=b"OUTPUT")
-    await handle_pin_fn(route_mode, inbound_mode)
-
-    # 2. Digital Write
-    route_write = TopicRoute(raw="test/br/d/13", prefix=config.topic_prefix, topic=Topic.DIGITAL, segments=("13",))
-    inbound_write = pb.CloudQueuedPublish(topic_name="test/br/d/13", payload=b"1")
-    await handle_pin_fn(route_write, inbound_write)
-
-    # 3. Digital Read
-    route_read = TopicRoute(
-        raw="test/br/d/13/read", prefix=config.topic_prefix, topic=Topic.DIGITAL, segments=("13", PinAction.READ.value)
-    )
-    inbound_read = pb.CloudQueuedPublish(topic_name="test/br/d/13/read", payload=b"")
-    await handle_pin_fn(route_read, inbound_read)
-
-    # 4. Analog Write
-    route_ana_write = TopicRoute(raw="test/br/a/3", prefix=config.topic_prefix, topic=Topic.ANALOG, segments=("3",))
-    inbound_ana_write = pb.CloudQueuedPublish(topic_name="test/br/a/3", payload=b"128")
-    await handle_pin_fn(route_ana_write, inbound_ana_write)
-
-    # 5. Analog Read
-    route_ana_read = TopicRoute(
-        raw="test/br/a/1/read", prefix=config.topic_prefix, topic=Topic.ANALOG, segments=("1", PinAction.READ.value)
-    )
-    inbound_ana_read = pb.CloudQueuedPublish(topic_name="test/br/a/1/read", payload=b"")
-    await handle_pin_fn(route_ana_read, inbound_ana_read)
+    for topic, segments, payload in pin_cases:
+        path = "/".join(segments)
+        topic_str = "d" if topic == Topic.DIGITAL else "a"
+        raw_topic = f"test/br/{topic_str}/{path}"
+        route = TopicRoute(raw=raw_topic, prefix=config.topic_prefix, topic=topic, segments=segments)
+        inbound = pb.CloudQueuedPublish(topic_name=raw_topic, payload=payload)
+        await handle_pin_fn(route, inbound)
 
     service.cleanup()
 
@@ -161,27 +145,18 @@ async def test_runtime_spi_handlers(tmp_path: Path) -> None:
     service, _state, _mock_serial = _make_service(config)
     handle_spi_fn: Callable[..., Awaitable[None]] = getattr(service, "_handle_spi")
 
-    # 1. SPI Begin
-    route_begin = TopicRoute(raw="test/br/spi/begin", prefix=config.topic_prefix, topic=Topic.SPI, segments=("begin",))
-    inbound_empty = pb.CloudQueuedPublish(topic_name="test/br/spi/begin", payload=b"")
-    await handle_spi_fn(route_begin, inbound_empty)
-
-    # 2. SPI End
-    route_end = TopicRoute(raw="test/br/spi/end", prefix=config.topic_prefix, topic=Topic.SPI, segments=("end",))
-    await handle_spi_fn(route_end, inbound_empty)
-
-    # 3. SPI Config
-    route_cfg = TopicRoute(raw="test/br/spi/config", prefix=config.topic_prefix, topic=Topic.SPI, segments=("config",))
-    cfg_proto = pb.SpiConfig(frequency=1000000, bit_order=1, data_mode=0)
-    inbound_cfg = pb.CloudQueuedPublish(topic_name="test/br/spi/config", payload=cfg_proto.SerializeToString())
-    await handle_spi_fn(route_cfg, inbound_cfg)
-
-    # 4. SPI Transfer
-    route_xfer = TopicRoute(
-        raw="test/br/spi/transfer", prefix=config.topic_prefix, topic=Topic.SPI, segments=("transfer",)
+    cfg_bytes = pb.SpiConfig(frequency=1000000, bit_order=1, data_mode=0).SerializeToString()
+    spi_cases: tuple[tuple[str, bytes], ...] = (
+        ("begin", b""),
+        ("end", b""),
+        ("config", cfg_bytes),
+        ("transfer", b"ping"),
     )
-    inbound_xfer = pb.CloudQueuedPublish(topic_name="test/br/spi/transfer", payload=b"ping")
-    await handle_spi_fn(route_xfer, inbound_xfer)
+    for action, payload in spi_cases:
+        raw_topic = f"test/br/spi/{action}"
+        route = TopicRoute(raw=raw_topic, prefix=config.topic_prefix, topic=Topic.SPI, segments=(action,))
+        inbound = pb.CloudQueuedPublish(topic_name=raw_topic, payload=payload)
+        await handle_spi_fn(route, inbound)
 
     service.cleanup()
 
@@ -192,36 +167,12 @@ async def test_runtime_system_handlers(tmp_path: Path) -> None:
     service, _state, _mock_serial = _make_service(config)
     handle_system_fn: Callable[..., Awaitable[None]] = getattr(service, "_handle_system")
 
-    # 1. System Bootloader
-    route_boot = TopicRoute(
-        raw="test/br/system/bootloader", prefix=config.topic_prefix, topic=Topic.SYSTEM, segments=("bootloader",)
-    )
-    inbound = pb.CloudQueuedPublish(topic_name="test/br/system/bootloader", payload=b"")
-    await handle_system_fn(route_boot, inbound)
-
-    # 2. System Reset
-    route_rst = TopicRoute(
-        raw="test/br/system/reset", prefix=config.topic_prefix, topic=Topic.SYSTEM, segments=("reset",)
-    )
-    await handle_system_fn(route_rst, inbound)
-
-    # 3. System Ping
-    route_ping = TopicRoute(
-        raw="test/br/system/ping", prefix=config.topic_prefix, topic=Topic.SYSTEM, segments=("ping",)
-    )
-    await handle_system_fn(route_ping, inbound)
-
-    # 4. System Sync
-    route_sync = TopicRoute(
-        raw="test/br/system/sync", prefix=config.topic_prefix, topic=Topic.SYSTEM, segments=("sync",)
-    )
-    await handle_system_fn(route_sync, inbound)
-
-    # 5. System Handshake
-    route_hs = TopicRoute(
-        raw="test/br/system/handshake", prefix=config.topic_prefix, topic=Topic.SYSTEM, segments=("handshake",)
-    )
-    await handle_system_fn(route_hs, inbound)
+    actions = ("bootloader", "reset", "ping", "sync", "handshake")
+    for action in actions:
+        raw_topic = f"test/br/system/{action}"
+        route = TopicRoute(raw=raw_topic, prefix=config.topic_prefix, topic=Topic.SYSTEM, segments=(action,))
+        inbound = pb.CloudQueuedPublish(topic_name=raw_topic, payload=b"")
+        await handle_system_fn(route, inbound)
 
     service.cleanup()
 
@@ -266,14 +217,14 @@ async def test_runtime_supervisor_lifecycle(tmp_path: Path) -> None:
     service, _state, _ = _make_service(config)
 
     # 1. Normal execution
-    executed = False
+    execution_count = 0
 
     async def normal_task() -> None:
-        nonlocal executed
-        executed = True
+        nonlocal execution_count
+        execution_count += 1
 
     await service.supervise("normal", normal_task)
-    assert executed is True
+    assert execution_count == 1
 
     # 2. Fatal / Retry exhaustion error handling
     async def failing_task() -> None:

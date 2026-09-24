@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import subprocess
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
+
+import pytest
+from pytest_mock import MockerFixture
 
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcubridge_pb2 as pb
@@ -37,7 +40,9 @@ def test_build_status_snapshot_populates_psutil_telemetry(runtime_config: Runtim
         state.cleanup()
 
 
-def test_build_status_snapshot_with_running_subprocess(runtime_config: RuntimeConfig) -> None:
+def test_build_status_snapshot_with_running_subprocess(
+    runtime_config: RuntimeConfig, mocker: MockerFixture
+) -> None:
     """Validate that active running_processes are reflected in status.process_stats."""
     state = create_runtime_state(runtime_config)
     try:
@@ -51,30 +56,36 @@ def test_build_status_snapshot_with_running_subprocess(runtime_config: RuntimeCo
 
         state.running_processes[998877] = ProcessContext(mock_handle)
 
-        with patch("psutil.pid_exists", return_value=True), patch("psutil.Process", return_value=mock_psutil_proc):
-            status = state.build_status_snapshot()
-            assert any(p.name == "subproc-998877" for p in status.process_stats)
-            subproc = next(p for p in status.process_stats if p.name == "subproc-998877")
-            assert subproc.cpu_percent == 12.5
-            assert subproc.memory_rss_bytes == 1048576
+        mocker.patch("psutil.pid_exists", return_value=True)
+        mocker.patch("psutil.Process", return_value=mock_psutil_proc)
+
+        status = state.build_status_snapshot()
+        assert any(p.name == "subproc-998877" for p in status.process_stats)
+        subproc = next(p for p in status.process_stats if p.name == "subproc-998877")
+        assert subproc.cpu_percent == 12.5
+        assert subproc.memory_rss_bytes == 1048576
     finally:
         state.cleanup()
 
 
-def test_build_status_snapshot_exception_fallback(runtime_config: RuntimeConfig) -> None:
+def test_build_status_snapshot_exception_fallback(
+    runtime_config: RuntimeConfig, mocker: MockerFixture
+) -> None:
     """Validate safe state defaults when psutil metrics query encounters OSError."""
     state = create_runtime_state(runtime_config)
     try:
-        with patch("psutil.virtual_memory", side_effect=OSError("Access error")):
-            status = state.build_status_snapshot()
-            assert status.HasField("system")
-            assert status.system.memory_total_bytes == 0
-            assert status.system.memory_available_bytes == 0
+        mocker.patch("psutil.virtual_memory", side_effect=OSError("Access error"))
+        status = state.build_status_snapshot()
+        assert status.HasField("system")
+        assert status.system.memory_total_bytes == 0
+        assert status.system.memory_available_bytes == 0
     finally:
         state.cleanup()
 
 
-def test_context_cleanup_recursive_child_termination(runtime_config: RuntimeConfig) -> None:
+def test_context_cleanup_recursive_child_termination(
+    runtime_config: RuntimeConfig, mocker: MockerFixture
+) -> None:
     """Validate that state.cleanup() terminates process trees via terminate_pid_tree."""
     state = create_runtime_state(runtime_config)
 
@@ -84,14 +95,14 @@ def test_context_cleanup_recursive_child_termination(runtime_config: RuntimeConf
 
     state.running_processes[12345] = ProcessContext(mock_handle)
 
-    with patch("mcubridge.state.context.terminate_pid_tree") as mock_term:
-        state.cleanup()
-        assert len(state.running_processes) == 0
-        mock_term.assert_called_once_with(12345)
-        mock_handle.terminate.assert_called_once()
+    mock_term = mocker.patch("mcubridge.state.context.terminate_pid_tree")
+    state.cleanup()
+    assert len(state.running_processes) == 0
+    mock_term.assert_called_once_with(12345)
+    mock_handle.terminate.assert_called_once()
 
 
-def test_terminate_process_tree_graceful_and_escalation() -> None:
+def test_terminate_process_tree_graceful_and_escalation(mocker: MockerFixture) -> None:
     """Validate terminate_process_tree terminating hierarchy and escalating surviving procs."""
     mock_popen1 = MagicMock(spec=subprocess.Popen)
     mock_popen1.pid = 11111
@@ -109,30 +120,28 @@ def test_terminate_process_tree_graceful_and_escalation() -> None:
             return mock_proc1
         return mock_proc2
 
-    with (
-        patch("psutil.pid_exists", return_value=True),
-        patch("psutil.Process", side_effect=fake_process),
-        patch("psutil.wait_procs", return_value=([mock_proc1], [mock_proc2])),
-    ):
-        terminate_process_tree([mock_popen1, mock_popen2], timeout=1.0)
-        assert mock_child.terminate.called
-        assert mock_proc1.terminate.called
-        assert mock_proc2.terminate.called
-        # Proc2 survived timeout -> escalated to kill()
-        assert mock_proc2.kill.called
+    mocker.patch("psutil.pid_exists", return_value=True)
+    mocker.patch("psutil.Process", side_effect=fake_process)
+    mocker.patch("psutil.wait_procs", return_value=([mock_proc1], [mock_proc2]))
+
+    terminate_process_tree([mock_popen1, mock_popen2], timeout=1.0)
+    assert mock_child.terminate.called
+    assert mock_proc1.terminate.called
+    assert mock_proc2.terminate.called
+    # Proc2 survived timeout -> escalated to kill()
+    assert mock_proc2.kill.called
 
 
-def test_terminate_pid_tree() -> None:
+def test_terminate_pid_tree(mocker: MockerFixture) -> None:
     """Validate terminate_pid_tree by root PID."""
     mock_proc = MagicMock()
     mock_child = MagicMock()
     mock_proc.children.return_value = [mock_child]
 
-    with (
-        patch("psutil.pid_exists", return_value=True),
-        patch("psutil.Process", return_value=mock_proc),
-        patch("psutil.wait_procs", return_value=([mock_proc], [])),
-    ):
-        terminate_pid_tree(55555, timeout=1.0)
-        assert mock_child.terminate.called
-        assert mock_proc.terminate.called
+    mocker.patch("psutil.pid_exists", return_value=True)
+    mocker.patch("psutil.Process", return_value=mock_proc)
+    mocker.patch("psutil.wait_procs", return_value=([mock_proc], []))
+
+    terminate_pid_tree(55555, timeout=1.0)
+    assert mock_child.terminate.called
+    assert mock_proc.terminate.called

@@ -1,11 +1,14 @@
+"""Exhaustive tests for pin_rest_cgi script. [SIL-2]"""
+
+from __future__ import annotations
+
 import importlib.util
-from io import BytesIO
+import io
 import json
 from pathlib import Path
 import sys
 import types
-from typing import Any, cast
-from collections.abc import Callable
+from typing import Any, Callable
 from unittest.mock import MagicMock
 
 import pytest
@@ -23,7 +26,7 @@ if spec is None or spec.loader is None:
 pin_rest_cgi = importlib.util.module_from_spec(spec)
 sys.modules["pin_rest_cgi"] = pin_rest_cgi
 spec.loader.exec_module(pin_rest_cgi)
-application = cast(Callable[[dict[str, Any], Any], list[bytes]], getattr(pin_rest_cgi, "application"))
+application = pin_rest_cgi.application
 
 
 @pytest.fixture
@@ -32,8 +35,8 @@ def cgi_env() -> Callable[..., dict[str, Any]]:
         env: dict[str, Any] = {
             "PATH_INFO": path,
             "REQUEST_METHOD": method,
-            "wsgi.input": BytesIO(body) if body else BytesIO(),
             "CONTENT_LENGTH": str(len(body)) if body else "0",
+            "wsgi.input": io.BytesIO(body or b""),
         }
         return env
 

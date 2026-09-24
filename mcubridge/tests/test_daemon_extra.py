@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import pytest
@@ -39,3 +40,17 @@ async def test_daemon_supervise_restarts(
     mocker.patch("asyncio.sleep", return_value=None)
     # Should restart and eventually return
     await service.supervise("test-restart", failing_task)
+
+
+@pytest.mark.asyncio
+async def test_daemon_supervise_cancelled(service_stack: tuple[BridgeService, Any, Any]) -> None:
+    service, _, _ = service_stack
+
+    async def hanging_task() -> None:
+        await asyncio.Event().wait()
+
+    task = asyncio.create_task(service.supervise("cancel", hanging_task))
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task

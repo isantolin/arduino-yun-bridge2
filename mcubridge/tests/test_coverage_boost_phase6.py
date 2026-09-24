@@ -1,6 +1,27 @@
 """Targeted branch coverage tests to push pure branch coverage above 95%."""
 
 from __future__ import annotations
+from mcubridge_client.spi import SpiDevice
+from mcubridge_client.definitions import build_bridge_args
+from mcubridge.transport.serial import SerialTransport
+from mcubridge.state.context import ProcessContext, RuntimeState, create_runtime_state
+from mcubridge.services.runtime import BridgeService
+from mcubridge.protocol.structures import (
+    PROTOBUF_CONTENT_TYPE,
+    PendingCommand,
+    TopicRoute,
+)
+from mcubridge.protocol.protocol import (
+    Command,
+    DatastoreAction,
+    ShellAction,
+    SpiAction,
+    Status,
+    SystemAction,
+    Topic,
+)
+from mcubridge.protocol.frame import build_frame
+from mcubridge.protocol import mcubridge_pb2 as pb
 
 import asyncio
 from collections.abc import Awaitable, Callable
@@ -23,27 +44,6 @@ _normalize_config_dict: Callable[[dict[str, Any]], tuple[dict[str, Any], bytes |
     settings_mod, "_normalize_config_dict"
 )
 _runtime_config_factory: Callable[..., RuntimeConfig] = getattr(settings_mod, "_runtime_config_factory")
-from mcubridge.protocol import mcubridge_pb2 as pb
-from mcubridge.protocol.frame import build_frame
-from mcubridge.protocol.protocol import (
-    Command,
-    DatastoreAction,
-    ShellAction,
-    SpiAction,
-    Status,
-    SystemAction,
-    Topic,
-)
-from mcubridge.protocol.structures import (
-    PROTOBUF_CONTENT_TYPE,
-    PendingCommand,
-    TopicRoute,
-)
-from mcubridge.services.runtime import BridgeService
-from mcubridge.state.context import ProcessContext, RuntimeState, create_runtime_state
-from mcubridge.transport.serial import SerialTransport
-from mcubridge_client.definitions import build_bridge_args
-from mcubridge_client.spi import SpiDevice
 
 
 @pytest.fixture
@@ -1746,15 +1746,10 @@ async def test_runtime_service_spi_and_system_branches(runtime_config: Any, runt
     mock_stream_pub = AsyncMock()
     setattr(service, "_cloud_stream", mock_stream_pub)
     for topic_sample in ["br/metrics/report", "br/summary/report", "br/handshake/report", "br/status/report"]:
-        assert (
-            await pub_cloud(pb.CloudQueuedPublish(topic_name=topic_sample, payload=b"test"))
-            is True
-        )
+        assert await pub_cloud(pb.CloudQueuedPublish(topic_name=topic_sample, payload=b"test")) is True
 
     assert (
-        await pub_cloud(
-            pb.CloudQueuedPublish(correlation_data=b"\x00\x00\x00\x00\x00\x00\x00\x01", payload=b"ok")
-        )
+        await pub_cloud(pb.CloudQueuedPublish(correlation_data=b"\x00\x00\x00\x00\x00\x00\x00\x01", payload=b"ok"))
         is True
     )
 
@@ -1969,3 +1964,151 @@ async def test_serial_read_loop_branches(test_config: RuntimeConfig, mock_state:
 
     mock_proc.assert_not_awaited()
     assert getattr(transport, "_consecutive_crc_errors") == 0
+
+
+# ==========================================
+# 11. Pure Branch Coverage Hardening (>= 95%)
+# ==========================================
+
+
+@pytest.mark.asyncio
+async def test_watchdog_uncovered_branch_hardening(mock_state: RuntimeState, mocker: MockerFixture) -> None:
+    from mcubridge.watchdog import WatchdogKeepalive
+
+    # 1. is_healthy() when fatal_count > 0 and not critical_inhibit (lines 102-104)
+    wd = WatchdogKeepalive(interval=10.0, state=mock_state)
+    setattr(mock_state, "fatal_count", 1)
+    assert wd.is_healthy() is False
+    assert wd.fsm.critical_inhibit.is_active is True
+
+    # 2. trip_inhibit() when already in critical_inhibit (line 109->exit)
+    wd.trip_inhibit("second attempt")
+    assert wd.fsm.critical_inhibit.is_active is True
+
+    # 3. degrade() when in critical_inhibit (line 115->exit)
+    wd.degrade("attempt while inhibited")
+    assert wd.fsm.critical_inhibit.is_active is True
+
+    # 4. recover() when in critical_inhibit (line 121->exit)
+    wd.recover()
+    assert wd.fsm.critical_inhibit.is_active is True
+
+    # 5. kick() when supervisor recovers from degraded (line 140->141)
+    setattr(mock_state, "fatal_count", 0)
+    wd2 = WatchdogKeepalive(interval=10.0, state=mock_state)
+    wd2.fsm.start_healthy()
+    wd2.fsm.degrade()
+    assert wd2.fsm.degraded.is_active is True
+    setattr(wd2, "_token", b"W")
+    mocker.patch.object(wd2, "_write")
+    wd2.kick()
+    assert wd2.fsm.healthy.is_active is True
+
+    # 6. run() when shutdown is already active (line 153->exit)
+    wd3 = WatchdogKeepalive(interval=10.0, state=mock_state)
+    wd3.fsm.stop()
+    assert wd3.fsm.shutdown.is_active is True
+    await wd3.run()
+
+
+def test_structures_uncovered_branch_hardening(test_config: RuntimeConfig) -> None:
+    from mcubridge.protocol.structures import (
+        load_tls_session_ticket,
+        save_tls_session_ticket,
+        validate_config,
+    )
+
+    # 1. validate_config when cloud_http3_port is 0 (line 156->159)
+    cfg = pb.RuntimeConfig()
+    cfg.CopyFrom(test_config)
+    cfg.cloud_http3_port = 0
+    validate_config(cfg)
+    assert cfg.cloud_http3_port == 0
+
+    # 2. save_tls_session_ticket when cache has no _mem (line 210->212)
+    mock_cache = MagicMock(spec=["env", "db"])
+    mock_txn = MagicMock()
+    mock_cache.env.begin.return_value.__enter__.return_value = mock_txn
+    save_tls_session_ticket(mock_cache, "example.com", 443, b"ticket_data")
+    mock_txn.put.assert_called_once()
+
+    # 3. load_tls_session_ticket when env is None and _mem present (lines 227->235, 236)
+    cache_mem_only = MagicMock(spec=["env", "_mem", "is_mem"])
+    cache_mem_only.env = None
+    cache_mem_only.is_mem = False
+    cache_mem_only._mem = {"tls_ticket:example.com:443": b"cached_ticket"}
+    res1 = load_tls_session_ticket(cache_mem_only, "example.com", 443)
+    assert res1 == b"cached_ticket"
+
+    # 4. load_tls_session_ticket when neither env nor _mem present (lines 235->237)
+    cache_empty = MagicMock(spec=[])
+    res2 = load_tls_session_ticket(cache_empty, "example.com", 443)
+    assert res2 is None
+
+
+@pytest.mark.asyncio
+async def test_metrics_uncovered_branch_hardening(mock_state: RuntimeState) -> None:
+    from mcubridge.config import const
+    import mcubridge.metrics as metrics_mod
+    from mcubridge.metrics import publish_bridge_snapshots
+
+    _build_metrics_message: Callable[..., pb.CloudQueuedPublish] = getattr(metrics_mod, "_build_metrics_message")
+
+    # 1. _build_metrics_message when storage_rejections==0 and write_rejections>0 (line 53)
+    mock_state.file_storage_limit_rejections = 0
+    mock_state.file_write_limit_rejections = 3
+    snap = mock_state.build_metrics_snapshot()
+    msg = _build_metrics_message(mock_state, snap, expiry_seconds=10.0)
+    assert any(
+        prop.key == const.PROP_KEY_BRIDGE_FILES and prop.value == const.PROP_VAL_WRITE_LIMIT
+        for prop in msg.user_properties
+    )
+
+    # 2. publish_bridge_snapshots when summary_interval > 0 and handshake_interval == 0 (line 179->exit)
+    mock_enq1 = AsyncMock()
+    t1 = asyncio.create_task(
+        publish_bridge_snapshots(mock_state, mock_enq1, summary_interval=0.1, handshake_interval=0.0, min_interval=0.1)
+    )
+    await asyncio.sleep(0.02)
+    t1.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await t1
+
+    # 3. publish_bridge_snapshots when summary_interval == 0 and handshake_interval > 0 (line 165->179)
+    mock_enq2 = AsyncMock()
+    t2 = asyncio.create_task(
+        publish_bridge_snapshots(mock_state, mock_enq2, summary_interval=0.0, handshake_interval=0.1, min_interval=0.1)
+    )
+    await asyncio.sleep(0.02)
+    t2.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await t2
+
+
+def test_state_context_uncovered_branch_hardening(test_config: RuntimeConfig) -> None:
+    # 1. on_enter_connected when serial_tx_allowed is None (line 509->exit)
+    st = create_runtime_state(test_config)
+    setattr(st, "serial_tx_allowed", None)
+    st.connection_fsm.connect()
+    assert st.is_connected
+
+    # 2. configure when resource has no close() method (line 569->exit)
+    st2 = create_runtime_state(test_config)
+    st2.mailbox_queue = cast(Any, object())
+    st2.configure()
+    assert st2.mailbox_queue is not None
+
+    # 3. build_status_snapshot process branches (lines 737->736, 739->736)
+    st3 = create_runtime_state(test_config)
+    mock_proc1 = MagicMock(spec=asyncio.subprocess.Process)
+    ctx1 = ProcessContext(mock_proc1)
+    setattr(ctx1, "handle", None)
+    st3.running_processes[1] = ctx1
+
+    mock_proc2 = MagicMock(spec=asyncio.subprocess.Process)
+    mock_proc2.pid = 99999999
+    ctx2 = ProcessContext(mock_proc2)
+    st3.running_processes[2] = ctx2
+
+    snap3 = st3.build_status_snapshot()
+    assert len(snap3.process_stats) >= 1

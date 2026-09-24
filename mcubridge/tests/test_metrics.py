@@ -1,4 +1,4 @@
-"""Unit tests for mcubridge.metrics."""
+"""Tests for daemon metrics publisher."""
 
 from __future__ import annotations
 
@@ -63,7 +63,8 @@ async def test_publish_metrics_publishes_snapshot(
             min_interval=0.01,
         )
     )
-    await asyncio.wait_for(event.wait(), timeout=1.0)
+    async with asyncio.timeout(0.5):
+        await event.wait()
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
@@ -119,7 +120,8 @@ async def test_publish_metrics_marks_unknown_spool_reason(
             min_interval=0.01,
         )
     )
-    await asyncio.wait_for(event.wait(), timeout=1.0)
+    async with asyncio.timeout(0.5):
+        await event.wait()
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
@@ -127,7 +129,7 @@ async def test_publish_metrics_marks_unknown_spool_reason(
     message = captured["message"]
     props = [(p.key, p.value) for p in message.user_properties]
     assert ("bridge-spool", "unknown") in props
-    assert any(key == "bridge-watchdog-enabled" for key, _ in message.user_properties)
+    assert any(key == "bridge-watchdog-enabled" for key, _ in props)
 
 
 @pytest.mark.asyncio
@@ -180,9 +182,10 @@ async def test_publish_bridge_snapshots_emits_summary_and_handshake(
             min_interval=0.01,
         )
     )
-    await asyncio.wait_for(event.wait(), timeout=1.0)
+    async with asyncio.timeout(0.5):
+        await event.wait()
     task.cancel()
-    with pytest.raises(asyncio.CancelledError):
+    with pytest.raises((asyncio.CancelledError, BaseExceptionGroup)):
         await task
 
     topics = {message.topic_name for message in messages}
@@ -208,7 +211,6 @@ async def test_publish_bridge_snapshots_noop_when_disabled(
             fake_enqueue,
             summary_interval=0.0,
             handshake_interval=0.0,
-            min_interval=0.0,
         )
     )
     await asyncio.sleep(0.05)

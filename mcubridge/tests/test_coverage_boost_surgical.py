@@ -2,6 +2,7 @@
 """Surgical unit tests boosting coverage across runtime.py, serial.py, and pin_rest_cgi.py."""
 
 from __future__ import annotations
+
 from mcubridge.transport.serial import SerialTransport
 from mcubridge.services.runtime import BridgeService, LocalBridgeService
 from mcubridge.protocol import mcubridge_pb2 as pb
@@ -9,16 +10,18 @@ from mcubridge.config.settings import RuntimeConfig
 from mcubridge.state.context import RuntimeState
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from pytest_mock import MockerFixture
 
 import importlib.util
 import sys
 import types
 from pathlib import Path
+from io import BytesIO
 
-# Ensure 'uci' mock exists before importing pin_rest_cgi
+# Ensure "uci" mock exists before importing pin_rest_cgi
 if "uci" not in sys.modules:
     sys.modules["uci"] = types.ModuleType("uci")
 
@@ -33,29 +36,27 @@ else:
     spec.loader.exec_module(pin_rest_cgi)
 
 
-def test_pin_rest_cgi_set_pin_digital_sync_error() -> None:
-    with patch.object(pin_rest_cgi, "ubus", None):
-        with pytest.raises(RuntimeError, match="Native OpenWrt UBUS module unavailable"):
-            pin_rest_cgi.set_pin_digital_sync(13, 1)
+def test_pin_rest_cgi_set_pin_digital_sync_error(mocker: MockerFixture) -> None:
+    mocker.patch.object(pin_rest_cgi, "ubus", None)
+    with pytest.raises(RuntimeError, match="Native OpenWrt UBUS module unavailable"):
+        pin_rest_cgi.set_pin_digital_sync(13, 1)
 
     mock_ubus = MagicMock()
     mock_ubus.call.side_effect = OSError("UBUS failure")
-    with patch.object(pin_rest_cgi, "ubus", mock_ubus):
-        with pytest.raises(OSError, match="UBUS failure"):
-            pin_rest_cgi.set_pin_digital_sync(13, 1)
-        assert mock_ubus.connect.called
-        mock_ubus.call.assert_called_once_with("mcubridge", "digital_write", {"pin": 13, "value": 1})
+    mocker.patch.object(pin_rest_cgi, "ubus", mock_ubus)
+    with pytest.raises(OSError, match="UBUS failure"):
+        pin_rest_cgi.set_pin_digital_sync(13, 1)
+    assert mock_ubus.connect.called
+    mock_ubus.call.assert_called_once_with("mcubridge", "digital_write", {"pin": 13, "value": 1})
 
     mock_ubus_ok = MagicMock()
-    with patch.object(pin_rest_cgi, "ubus", mock_ubus_ok):
-        pin_rest_cgi.set_pin_digital_sync(13, 1)
-        assert mock_ubus_ok.connect.called
-        mock_ubus_ok.call.assert_called_once_with("mcubridge", "digital_write", {"pin": 13, "value": 1})
+    mocker.patch.object(pin_rest_cgi, "ubus", mock_ubus_ok)
+    pin_rest_cgi.set_pin_digital_sync(13, 1)
+    assert mock_ubus_ok.connect.called
+    mock_ubus_ok.call.assert_called_once_with("mcubridge", "digital_write", {"pin": 13, "value": 1})
 
 
-def test_pin_rest_cgi_application() -> None:
-    from io import BytesIO
-
+def test_pin_rest_cgi_application(mocker: MockerFixture) -> None:
     start_response = MagicMock()
     body = b'{"state": "ON"}'
     env = {
@@ -65,11 +66,11 @@ def test_pin_rest_cgi_application() -> None:
         "wsgi.input": BytesIO(body),
     }
 
-    with patch.object(pin_rest_cgi, "set_pin_digital_sync") as mock_set_pin:
-        res = pin_rest_cgi.application(env, start_response)
-        assert res
-        start_response.assert_called_once()
-        mock_set_pin.assert_called_once_with(13, 1)
+    mock_set_pin = mocker.patch.object(pin_rest_cgi, "set_pin_digital_sync")
+    res = pin_rest_cgi.application(env, start_response)
+    assert res
+    start_response.assert_called_once()
+    mock_set_pin.assert_called_once_with(13, 1)
 
     start_response_err = MagicMock()
     env_invalid = {"PATH_INFO": "/invalid", "REQUEST_METHOD": "GET"}
@@ -200,7 +201,9 @@ async def test_process_poll_stream_timeout(runtime_config: RuntimeConfig, runtim
 
 
 @pytest.mark.asyncio
-async def test_connect_cloud_session(runtime_config: RuntimeConfig, runtime_state: RuntimeState) -> None:
+async def test_connect_cloud_session(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState, mocker: MockerFixture
+) -> None:
     mock_serial = AsyncMock(spec=SerialTransport)
     runtime_config.cloud_http3_enabled = True
     svc = BridgeService(runtime_config, runtime_state, mock_serial)
@@ -231,31 +234,30 @@ async def test_connect_cloud_session(runtime_config: RuntimeConfig, runtime_stat
     mock_open_ctx.__aenter__.return_value = mock_stream
     mock_open_ctx.__aexit__.return_value = None
 
-    with (
-        patch("mcubridge.services.runtime.Channel"),
-        patch("mcubridge.services.runtime.CloudBridgeStub") as mock_stub_cls,
-        patch.object(svc, "_send_cloud_event", new_callable=AsyncMock),
-        patch.object(svc, "flush_cloud_spool", new_callable=AsyncMock),
-    ):
-        mock_stub = MagicMock()
-        mock_stub.Session.open.return_value = mock_open_ctx
-        mock_stub_cls.return_value = mock_stub
+    mocker.patch("mcubridge.services.runtime.Channel")
+    mock_stub_cls = mocker.patch("mcubridge.services.runtime.CloudBridgeStub")
+    mocker.patch.object(svc, "_send_cloud_event", new_callable=AsyncMock)
+    mocker.patch.object(svc, "flush_cloud_spool", new_callable=AsyncMock)
 
-        await svc.connect_cloud_session(None)
-        assert runtime_state.connected_via_http3 is True
-        mock_stream.send_message.assert_awaited_once()
-        resp = mock_stream.send_message.call_args[0][0]
-        assert resp.sequence_id == 1234
-        assert resp.command_response.status_code == 200
+    mock_stub = MagicMock()
+    mock_stub.Session.open.return_value = mock_open_ctx
+    mock_stub_cls.return_value = mock_stub
+
+    await svc.connect_cloud_session(None)
+    assert runtime_state.connected_via_http3 is True
+    mock_stream.send_message.assert_awaited_once()
+    resp = mock_stream.send_message.call_args[0][0]
+    assert resp.sequence_id == 1234
+    assert resp.command_response.status_code == 200
 
 
 @pytest.mark.asyncio
-async def test_process_terminate_sigkill_escalation() -> None:
+async def test_process_terminate_sigkill_escalation(mocker: MockerFixture) -> None:
     mock_ctx = MagicMock()
     mock_ctx.handle.returncode = None
     mock_ctx.handle.pid = 999999
 
-    with patch("mcubridge.services.runtime.terminate_pid_tree") as mock_term:
-        code = await BridgeService._terminate_process(MagicMock(), 999999, mock_ctx, grace_period=0.5)
-        mock_term.assert_called_once_with(999999, timeout=0.5)
-        assert code == -1
+    mock_term = mocker.patch("mcubridge.services.runtime.terminate_pid_tree")
+    code = await BridgeService._terminate_process(MagicMock(), 999999, mock_ctx, grace_period=0.5)
+    mock_term.assert_called_once_with(999999, timeout=0.5)
+    assert code == -1

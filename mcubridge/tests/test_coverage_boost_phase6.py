@@ -2171,6 +2171,7 @@ async def test_handshake_sync_send_frame_failure(test_config: RuntimeConfig, moc
 def test_serial_safe_after_configure_exceptions() -> None:
     import errno
     import mcubridge.transport.serial as serial_mod
+
     safe_fn: Callable[[Any], None] = getattr(serial_mod, "_safe_after_configure")
 
     # 1. OSError with EINVAL ignored
@@ -2190,6 +2191,7 @@ def test_serial_safe_after_configure_exceptions() -> None:
         setattr(serial_mod, "_orig_after_configure", None)
         mock_obj._fileno = 99
         import termios
+
         orig_tcgetattr = termios.tcgetattr
         orig_tcsetattr = termios.tcsetattr
         try:

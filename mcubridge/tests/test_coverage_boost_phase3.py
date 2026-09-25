@@ -74,9 +74,7 @@ async def test_runtime_file_dispatch_handlers(tmp_path: Path) -> None:
     handle_file: Callable[[TopicRoute, pb.CloudQueuedPublish], Awaitable[None]] = getattr(service, "_handle_file")
 
     # Local read/write/remove
-    route_read = TopicRoute(
-        raw="test/br/file/read", prefix=config.topic_prefix, topic=Topic.FILE, segments=("read",)
-    )
+    route_read = TopicRoute(raw="test/br/file/read", prefix=config.topic_prefix, topic=Topic.FILE, segments=("read",))
     await handle_file(route_read, inbound)
 
     route_write = TopicRoute(
@@ -540,6 +538,7 @@ async def test_emit_bridge_snapshot_flavors(tmp_path: Path) -> None:
 
     mock_enqueue = AsyncMock()
     import mcubridge.metrics as metrics_mod
+
     emit_snap_fn: Callable[..., Awaitable[None]] = getattr(metrics_mod, "_emit_bridge_snapshot")
 
     # 1. Summary

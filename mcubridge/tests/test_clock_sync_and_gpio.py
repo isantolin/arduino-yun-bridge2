@@ -5,14 +5,17 @@ from __future__ import annotations
 import asyncio
 import os
 import time
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
+from hypothesis import given, settings, strategies as st
 import pytest
 
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.services.clock_sync import ClockSyncService
+from mcubridge.services.gpio import GpioService
 from mcubridge.services.runtime import BridgeService
-from mcubridge.state.context import create_runtime_state
+from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.transport.serial import SerialTransport
 
 
@@ -71,6 +74,61 @@ async def test_clock_sync_service() -> None:
         assert state.clock_sync_count == 2
     finally:
         service.cleanup()
+
+
+@settings(max_examples=40, derandomize=True, deadline=None)
+@given(
+    delay_us=st.integers(min_value=10, max_value=5_000_000),
+    mcu_time_us=st.integers(min_value=0, max_value=2**32 - 1),
+)
+def test_clock_sync_record_sync_arithmetic_property(delay_us: int, mcu_time_us: int) -> None:
+    """Property: Clock sync RTT is strictly non-negative and offset correctly balances host & MCU times."""
+    state = RuntimeState()
+    state.connection_fsm.connect()
+    mock_runtime = MagicMock()
+    mock_runtime.state = state
+    mock_runtime.serial = MagicMock()
+    clock = ClockSyncService(mock_runtime)
+
+    now_us = time.time_ns() // 1000
+    t1_host_us = now_us - delay_us
+
+    resp = pb.ClockSyncResponse(host_time_us=t1_host_us, mcu_time_us=mcu_time_us)
+    res = clock.record_sync(resp)
+
+    assert res["sync_count"] == 1
+    assert res["rtt_us"] >= delay_us
+    assert res["is_synchronized"] is True
+    assert state.clock_offset_us == mcu_time_us - (t1_host_us + (state.clock_rtt_us // 2))
+
+
+@settings(max_examples=40, derandomize=True, deadline=None)
+@given(
+    pin=st.integers(min_value=0, max_value=255),
+    value=st.integers(min_value=0, max_value=1023),
+    ts_us=st.integers(min_value=0, max_value=2**32 - 1),
+)
+def test_gpio_pin_event_canonical_topic_property(pin: int, value: int, ts_us: int) -> None:
+    """Property: PinUpdateEvent dispatch formats canonical MQTT/Protobuf topic path and payload."""
+
+    async def _run() -> None:
+        state = RuntimeState(cloud_topic_prefix="br")
+        mock_runtime = MagicMock()
+        mock_runtime.state = state
+        mock_enqueue = AsyncMock()
+        mock_runtime.enqueue_cloud = mock_enqueue
+
+        gpio = GpioService(mock_runtime)
+        evt = pb.PinUpdateEvent(pin=pin, value=value, timestamp_micros=ts_us)
+        await gpio.handle_pin_update_event(evt)
+
+        assert state.pin_events_count == 1
+        mock_enqueue.assert_awaited_once()
+        cloud_msg: pb.CloudQueuedPublish = mock_enqueue.call_args[0][0]
+        assert cloud_msg.topic_name == f"br/d/{pin}/update"
+        assert cloud_msg.payload == str(value).encode("utf-8")
+
+    asyncio.run(_run())
 
 
 @pytest.mark.asyncio

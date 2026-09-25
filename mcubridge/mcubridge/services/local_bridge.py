@@ -24,6 +24,7 @@ if TYPE_CHECKING:
 __all__ = [
     "LocalBridgeService",
     "QUERY_TOPIC_ACTIONS",
+    "RPC_DISPATCH_TABLE",
     "parse_serial_response",
 ]
 
@@ -254,7 +255,7 @@ class LocalBridgeService(LocalBridgeBase):
 
     async def execute_rpc(self, method_name: str, payload_bytes: bytes) -> bytes:
         """[SIL-2] Dispatch and execute an RPC by name, returning serialized response."""
-        handler_entry = _RPC_DISPATCH_TABLE.get(method_name)
+        handler_entry = RPC_DISPATCH_TABLE.get(method_name)
         if not handler_entry:
             raise ValueError(f"Unknown RPC method: {method_name}")
         req_cls, handler = handler_entry
@@ -374,7 +375,7 @@ class LocalBridgeService(LocalBridgeBase):
                 self.runtime_service.console_queues.remove(queue)
 
 
-_RPC_DISPATCH_TABLE: Final[
+RPC_DISPATCH_TABLE: Final[
     dict[
         str,
         tuple[

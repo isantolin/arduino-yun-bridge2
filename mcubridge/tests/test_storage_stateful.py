@@ -80,7 +80,7 @@ class LmdbDequeDiskStateMachine(RuleBasedStateMachine):
         assert len(self.deque) == len(self.model)
 
     @invariant()
-    def invariants(self) -> None:
+    def verify_queue_invariants(self) -> None:
         assert len(self.deque) == len(self.model)
         assert len(self.deque) <= 15
 
@@ -135,7 +135,7 @@ class LmdbDequeMemoryStateMachine(RuleBasedStateMachine):
         assert len(self.deque) == 0
 
     @invariant()
-    def invariants(self) -> None:
+    def verify_queue_invariants(self) -> None:
         assert len(self.deque) == len(self.model)
         assert len(self.deque) <= 15
 

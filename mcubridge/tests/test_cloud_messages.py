@@ -7,7 +7,7 @@ from mcubridge.protocol import mcubridge_pb2 as pb
 
 @given(message=st_cloud_queued_publish())
 @example(message=pb.CloudQueuedPublish(topic_name="br/test", payload=b""))
-@example(message=pb.CloudQueuedPublish(topic_name="br/telemetry", payload=b"\x00\xFF" * 128, qos=2, retain=True))
+@example(message=pb.CloudQueuedPublish(topic_name="br/telemetry", payload=b"\x00\xff" * 128, qos=2, retain=True))
 def test_queued_publish_protobuf_roundtrip(message: pb.CloudQueuedPublish) -> None:
     """Verify that CloudQueuedPublish correctly roundtrips via protobuf serialization for any valid inputs."""
     encoded = message.SerializeToString()

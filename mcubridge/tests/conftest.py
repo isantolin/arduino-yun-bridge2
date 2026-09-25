@@ -443,4 +443,3 @@ def st_runtime_config(draw: DrawFn) -> RuntimeConfig:
         serial_shared_secret=secret,
         allow_non_tmp_paths=True,
     )
-

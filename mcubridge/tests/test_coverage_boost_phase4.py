@@ -22,7 +22,7 @@ import structlog
 
 from mcubridge.config.settings import RuntimeConfig
 import mcubridge.protocol.mcubridge_pb2 as pb
-from mcubridge.protocol.protocol import Status, Topic
+from mcubridge.protocol.protocol import Command, Status, Topic
 from mcubridge.protocol.structures import TopicRoute
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
@@ -283,7 +283,7 @@ def test_runtime_pin_analog_and_invalid_digits(
         )
         inbound_aw = pb.CloudQueuedPublish(topic_name=f"{config.topic_prefix}/a/{pin}", payload=str(analog_val).encode())
         await handle_pin(route_aw, inbound_aw)
-        mock_serial.send.assert_called_with(16, pb.AnalogWrite(pin=pin, value=analog_val))
+        mock_serial.send.assert_called_with(Command.CMD_ANALOG_WRITE.value, pb.AnalogWrite(pin=pin, value=analog_val))
 
         # 2. Digital Write with non-digit payload (defaults to 0)
         route_dw = TopicRoute(
@@ -294,7 +294,7 @@ def test_runtime_pin_analog_and_invalid_digits(
         )
         inbound_dw = pb.CloudQueuedPublish(topic_name=f"{config.topic_prefix}/d/{pin}", payload=non_digit.encode())
         await handle_pin(route_dw, inbound_dw)
-        mock_serial.send.assert_called_with(14, pb.DigitalWrite(pin=pin, value=0))
+        mock_serial.send.assert_called_with(Command.CMD_DIGITAL_WRITE.value, pb.DigitalWrite(pin=pin, value=0))
 
         state.cleanup()
 

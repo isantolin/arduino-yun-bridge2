@@ -24,6 +24,7 @@ if TYPE_CHECKING:
 __all__ = [
     "LocalBridgeService",
     "QUERY_TOPIC_ACTIONS",
+    "RPC_DISPATCH_TABLE",
     "parse_serial_response",
 ]
 

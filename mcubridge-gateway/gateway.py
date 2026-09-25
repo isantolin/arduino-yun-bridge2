@@ -54,10 +54,12 @@ class GatewaySessionState(StrEnum):
 class GatewaySessionMachine(StateMachine):
     """[SIL-2] Deterministic state machine for cloud gateway sessions."""
 
-    connected = State(GatewaySessionState.CONNECTED, initial=True)
-    authenticated = State(GatewaySessionState.AUTHENTICATED)
-    active = State(GatewaySessionState.ACTIVE)
-    closed = State(GatewaySessionState.CLOSED, final=True)
+    allow_event_without_transition = True
+
+    connected = State(value="connected", initial=True)
+    authenticated = State(value="authenticated")
+    active = State(value="active")
+    closed = State(value="closed", final=True)
 
     authenticate = connected.to(authenticated)
     activate = authenticated.to(active) | connected.to(active)
@@ -458,7 +460,10 @@ async def auth_interceptor(event: grpclib.events.RecvRequest) -> None:
     orig_func = event.method_func
 
     async def _wrapped_handler(stream: Stream[Any, Any]) -> None:
-        with structlog.contextvars.bound_contextvars(device_id=device_id):
+        with structlog.contextvars.bound_contextvars(
+            device_id=device_id,
+            rpc_method=event.method_name,
+        ):
             logger.debug(
                 "gRPC method invoked",
                 method=event.method_name,
@@ -507,6 +512,7 @@ class CloudBridgeService(CloudBridgeBase):
                         self.gateway.sessions.pop(old_device_id, None)
                         self.gateway.connections[device_id] = stream
                         self.gateway.sessions[device_id] = session_fsm
+                        structlog.contextvars.bind_contextvars(device_id=device_id)
 
                     payload_type = envelope.WhichOneof("payload")
                     logger.debug(
@@ -520,8 +526,11 @@ class CloudBridgeService(CloudBridgeBase):
                         await handler(self, device_id, stream, envelope)
                     else:
                         logger.debug("Received unhandled or empty payload type", payload_type=payload_type)
-            except (asyncio.CancelledError, OSError) as exc:
-                logger.info("Device session stream closed", error=str(exc))
+            except asyncio.CancelledError:
+                logger.info("Session cancelled for device")
+                raise
+            except OSError as exc:
+                logger.warning("Network OS error for device", error=str(exc))
             finally:
                 session_fsm.close()
                 logger.info("Device disconnected", state=session_fsm.current_state_value)
@@ -630,9 +639,10 @@ class GatewayLocalBridgeService(LocalBridgeBase):
                     payload=req.SerializeToString(),
                     timeout_seconds=15.0,
                 )
-                if cmd_resp.status_code == 200 and cmd_resp.payload:
+                if cmd_resp.status_code == 200:
                     resp = resp_cls()
-                    resp.ParseFromString(cmd_resp.payload)
+                    if cmd_resp.payload:
+                        resp.ParseFromString(cmd_resp.payload)
                     await stream.send_message(resp)
                 else:
                     await stream.send_message(default_resp)
@@ -726,7 +736,9 @@ class GatewayLocalBridgeService(LocalBridgeBase):
             if "console" in req.topic_name:
                 for q in self.gateway.console_queues.get(device_id, []):
                     q.put_nowait(req)
-            await self._forward_rpc(stream, "Publish", pb.CloudQueuedPublish, pb.CloudQueuedPublish(), pre_read_req=req)
+            await self._forward_rpc(
+                stream, "Publish", pb.CloudQueuedPublish, pb.CloudQueuedPublish(), pre_read_req=req
+            )
 
     async def SubscribeConsole(self, stream: Stream[pb.SubscribeRequest, pb.CloudQueuedPublish]) -> None:
         req = await stream.recv_message()
@@ -746,17 +758,17 @@ class GatewayLocalBridgeService(LocalBridgeBase):
                 f"Explicit target device '{device_id}' is not connected to gateway",
             )
 
-        queue: asyncio.Queue[pb.CloudQueuedPublish] = asyncio.Queue()
-        self.gateway.console_queues.setdefault(device_id, []).append(queue)
         with structlog.contextvars.bound_contextvars(
             target_device_id=device_id,
             rpc_method="SubscribeConsole",
         ):
+            queue: asyncio.Queue[pb.CloudQueuedPublish] = asyncio.Queue()
+            self.gateway.console_queues.setdefault(device_id, []).append(queue)
             try:
                 while True:
                     await stream.send_message(await queue.get())
             except (OSError, RuntimeError) as e:
-                logger.debug("Console subscriber stream closed", error=str(e))
+                logger.debug("Console subscriber stream closed", device_id=device_id, error=str(e))
             finally:
                 if device_id in self.gateway.console_queues and queue in self.gateway.console_queues[device_id]:
                     self.gateway.console_queues[device_id].remove(queue)
@@ -799,20 +811,18 @@ class ProtobufGateway:
 
     def get_ssl_context(self) -> ssl.SSLContext | None:
         if not self.use_tls:
-            logger.warning("TLS disabled! Running in insecure mode.")
             return None
 
         if not self.cert_file or not self.key_file:
-            raise ValueError("Cert and Key files are required for TLS")
+            logger.warning("TLS enabled but certificate/key files not provided. Running without TLS.")
+            return None
 
-        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        context.minimum_version = ssl.TLSVersion.TLSv1_3
+        context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
         context.load_cert_chain(certfile=self.cert_file, keyfile=self.key_file)
-
         if self.ca_file:
-            context.verify_mode = ssl.CERT_REQUIRED
             context.load_verify_locations(cafile=self.ca_file)
-            logger.info("mTLS enabled. Client certificates will be strictly verified.")
+            context.verify_mode = ssl.CERT_REQUIRED
+            logger.info("Mutual TLS (mTLS) client verification enabled.")
         else:
             context.verify_mode = ssl.CERT_NONE
             logger.info("TLS enabled (server-only authentication).")

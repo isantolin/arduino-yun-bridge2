@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, Final
 from google.protobuf.message import DecodeError as ProtobufDecodeError, Message as ProtobufMessage
 from grpclib.server import Stream
 import structlog
+import structlog.contextvars
 
 from ..config.const import MCU_FS_PREFIX
 from ..protocol import mcubridge_pb2 as pb
@@ -64,63 +65,85 @@ class LocalBridgeService(LocalBridgeBase):
     def __init__(self, runtime_service: BridgeService) -> None:
         self.runtime_service = runtime_service
 
+    # --- Generic Unary Dispatcher (Zero-Boilerplate & Contextvars Propagation) ---
+
+    async def _handle_unary(
+        self,
+        stream: Stream[Any, Any],
+        handler: Callable[[LocalBridgeService, Any], Coroutine[Any, Any, Any]],
+        rpc_name: str,
+    ) -> None:
+        if (req := await stream.recv_message()) is not None:
+            with structlog.contextvars.bound_contextvars(rpc=rpc_name):
+                await stream.send_message(await handler(self, req))
+
     # --- Core Business Logic Execution (Zero-Duplication) ---
 
     async def execute_set_pin_mode(self, req: pb.PinMode) -> pb.GenericResponse:
-        serial = self.runtime_service.serial
-        res = (await serial.send(Command.CMD_SET_PIN_MODE.value, req)) if serial else None
-        return pb.GenericResponse(status="ok" if res is not None else "error")
+        with structlog.contextvars.bound_contextvars(pin=req.pin, mode=req.mode):
+            serial = self.runtime_service.serial
+            res = (await serial.send(Command.CMD_SET_PIN_MODE.value, req)) if serial else None
+            return pb.GenericResponse(status="ok" if res is not None else "error")
 
     async def execute_digital_write(self, req: pb.DigitalWrite) -> pb.GenericResponse:
-        serial = self.runtime_service.serial
-        res = (await serial.send(Command.CMD_DIGITAL_WRITE.value, req)) if serial else None
-        return pb.GenericResponse(status="ok" if res is not None else "error")
+        with structlog.contextvars.bound_contextvars(pin=req.pin, value=req.value):
+            serial = self.runtime_service.serial
+            res = (await serial.send(Command.CMD_DIGITAL_WRITE.value, req)) if serial else None
+            return pb.GenericResponse(status="ok" if res is not None else "error")
 
     async def execute_digital_read(self, req: pb.PinRead) -> pb.DigitalReadResponse:
-        serial = self.runtime_service.serial
-        res = (await serial.send(Command.CMD_DIGITAL_READ.value, req)) if serial else None
-        return parse_serial_response(res, pb.DigitalReadResponse, pb.DigitalReadResponse())
+        with structlog.contextvars.bound_contextvars(pin=req.pin):
+            serial = self.runtime_service.serial
+            res = (await serial.send(Command.CMD_DIGITAL_READ.value, req)) if serial else None
+            return parse_serial_response(res, pb.DigitalReadResponse, pb.DigitalReadResponse())
 
     async def execute_analog_write(self, req: pb.AnalogWrite) -> pb.GenericResponse:
-        serial = self.runtime_service.serial
-        res = (await serial.send(Command.CMD_ANALOG_WRITE.value, req)) if serial else None
-        return pb.GenericResponse(status="ok" if res is not None else "error")
+        with structlog.contextvars.bound_contextvars(pin=req.pin, value=req.value):
+            serial = self.runtime_service.serial
+            res = (await serial.send(Command.CMD_ANALOG_WRITE.value, req)) if serial else None
+            return pb.GenericResponse(status="ok" if res is not None else "error")
 
     async def execute_analog_read(self, req: pb.PinRead) -> pb.AnalogReadResponse:
-        serial = self.runtime_service.serial
-        res = (await serial.send(Command.CMD_ANALOG_READ.value, req)) if serial else None
-        return parse_serial_response(res, pb.AnalogReadResponse, pb.AnalogReadResponse())
+        with structlog.contextvars.bound_contextvars(pin=req.pin):
+            serial = self.runtime_service.serial
+            res = (await serial.send(Command.CMD_ANALOG_READ.value, req)) if serial else None
+            return parse_serial_response(res, pb.AnalogReadResponse, pb.AnalogReadResponse())
 
     async def execute_pin_subscribe(self, req: pb.PinSubscribeRequest) -> pb.PinSubscribeResponse:
-        try:
-            mode_str = pb.PinModeType.Name(req.mode).removeprefix("PIN_")
-        except (ValueError, KeyError) as exc:
-            logger.warning("Unrecognized pin mode enum, defaulting to INPUT", mode=req.mode, error=str(exc))
-            mode_str = "INPUT"
-        res = await self.runtime_service.gpio.subscribe_pin(
-            pin=req.pin, mode=mode_str, interval_ms=req.interval_ms, hysteresis=req.hysteresis, enabled=req.enabled
-        )
-        return pb.PinSubscribeResponse(pin=req.pin, success=bool(res.get("status") == "ok"))
+        with structlog.contextvars.bound_contextvars(pin=req.pin, enabled=req.enabled):
+            try:
+                mode_str = pb.PinModeType.Name(req.mode).removeprefix("PIN_")
+            except (ValueError, KeyError) as exc:
+                logger.warning("Unrecognized pin mode enum, defaulting to INPUT", mode=req.mode, error=str(exc))
+                mode_str = "INPUT"
+            res = await self.runtime_service.gpio.subscribe_pin(
+                pin=req.pin, mode=mode_str, interval_ms=req.interval_ms, hysteresis=req.hysteresis, enabled=req.enabled
+            )
+            return pb.PinSubscribeResponse(pin=req.pin, success=bool(res.get("status") == "ok"))
 
     async def execute_datastore_put(self, req: pb.DatastorePut) -> pb.GenericResponse:
-        if self.runtime_service.state.datastore_cache is not None:
-            await self.runtime_service.state.datastore_cache.set(req.key, req.value)
-        await self.runtime_service.publish_datastore_value(req.key, req.value)
-        return pb.GenericResponse(status="ok")
+        with structlog.contextvars.bound_contextvars(key=req.key):
+            if self.runtime_service.state.datastore_cache is not None:
+                await self.runtime_service.state.datastore_cache.set(req.key, req.value)
+            await self.runtime_service.publish_datastore_value(req.key, req.value)
+            return pb.GenericResponse(status="ok")
 
     async def execute_datastore_get(self, req: pb.DatastoreGet) -> pb.DatastoreGetResponse:
-        c = self.runtime_service.state.datastore_cache
-        val = (await c.get(req.key, b"")) if c else b""
-        return pb.DatastoreGetResponse(value=val or b"")
+        with structlog.contextvars.bound_contextvars(key=req.key):
+            c = self.runtime_service.state.datastore_cache
+            val = (await c.get(req.key, b"")) if c else b""
+            return pb.DatastoreGetResponse(value=val or b"")
 
     async def execute_mailbox_push(self, req: pb.MailboxPush) -> pb.GenericResponse:
-        await self.runtime_service.state.mailbox_queue.append(req.data)
-        return pb.GenericResponse(status="ok")
+        with structlog.contextvars.bound_contextvars(mailbox_op="push"):
+            await self.runtime_service.state.mailbox_queue.append(req.data)
+            return pb.GenericResponse(status="ok")
 
     async def execute_mailbox_read(self, _req: pb.SubscribeRequest) -> pb.MailboxReadResponse:
-        q = self.runtime_service.state.mailbox_incoming_queue
-        val = await q.popleft() if len(q) > 0 else b""
-        return pb.MailboxReadResponse(content=val or b"")
+        with structlog.contextvars.bound_contextvars(mailbox_op="read"):
+            q = self.runtime_service.state.mailbox_incoming_queue
+            val = await q.popleft() if len(q) > 0 else b""
+            return pb.MailboxReadResponse(content=val or b"")
 
     async def _execute_file_mutation(
         self,
@@ -130,13 +153,14 @@ class LocalBridgeService(LocalBridgeBase):
         local_op: Callable[[], Coroutine[Any, Any, bool]],
         error_msg: str,
     ) -> pb.GenericResponse:
-        if request.path.startswith(MCU_FS_PREFIX):
-            serial = self.runtime_service.serial
-            ok = bool(await serial.send(cmd.value, mcu_msg)) if serial else False
-            return pb.GenericResponse(status="ok" if ok else "error")
-        if await local_op():
-            return pb.GenericResponse(status="ok")
-        return pb.GenericResponse(status="error", message=error_msg)
+        with structlog.contextvars.bound_contextvars(file_cmd=cmd.name, path=request.path):
+            if request.path.startswith(MCU_FS_PREFIX):
+                serial = self.runtime_service.serial
+                ok = bool(await serial.send(cmd.value, mcu_msg)) if serial else False
+                return pb.GenericResponse(status="ok" if ok else "error")
+            if await local_op():
+                return pb.GenericResponse(status="ok")
+            return pb.GenericResponse(status="error", message=error_msg)
 
     async def execute_file_write(self, req: pb.FileWrite) -> pb.GenericResponse:
         return await self._execute_file_mutation(
@@ -148,16 +172,14 @@ class LocalBridgeService(LocalBridgeBase):
         )
 
     async def execute_file_read(self, req: pb.FileRead) -> pb.FileReadResponse:
-        if req.path.startswith(MCU_FS_PREFIX):
-            serial = self.runtime_service.serial
-            res = (
-                await serial.send(Command.CMD_FILE_READ.value, pb.FileRead(path=req.path.removeprefix(MCU_FS_PREFIX)))
-                if serial
-                else None
-            )
-            return parse_serial_response(res, pb.FileReadResponse, pb.FileReadResponse())
-        content = await self.runtime_service.safe_file_read(req.path)
-        return pb.FileReadResponse(content=content or b"")
+        with structlog.contextvars.bound_contextvars(path=req.path):
+            if req.path.startswith(MCU_FS_PREFIX):
+                serial = self.runtime_service.serial
+                clean_path = req.path.removeprefix(MCU_FS_PREFIX)
+                res = (await serial.send(Command.CMD_FILE_READ.value, pb.FileRead(path=clean_path))) if serial else None
+                return parse_serial_response(res, pb.FileReadResponse, pb.FileReadResponse())
+            content = await self.runtime_service.safe_file_read(req.path)
+            return pb.FileReadResponse(content=content or b"")
 
     async def execute_file_remove(self, req: pb.FileRemove) -> pb.GenericResponse:
         return await self._execute_file_mutation(
@@ -169,20 +191,23 @@ class LocalBridgeService(LocalBridgeBase):
         )
 
     async def execute_process_run_async(self, req: pb.ProcessRunAsync) -> pb.ProcessRunAsyncResponse:
-        allowed = is_command_allowed(self.runtime_service.state.allowed_policy, req.command)
-        pid = (await self.runtime_service.run_process(req.command)) if (req.command and allowed) else 0
-        return pb.ProcessRunAsyncResponse(pid=pid or 0)
+        with structlog.contextvars.bound_contextvars(command=req.command):
+            allowed = is_command_allowed(self.runtime_service.state.allowed_policy, req.command)
+            pid = (await self.runtime_service.run_process(req.command)) if (req.command and allowed) else 0
+            return pb.ProcessRunAsyncResponse(pid=pid or 0)
 
     async def execute_process_poll(self, req: pb.ProcessPoll) -> pb.ProcessPollResponse:
-        return await self.runtime_service.poll_process(req.pid)
+        with structlog.contextvars.bound_contextvars(pid=req.pid):
+            return await self.runtime_service.poll_process(req.pid)
 
     async def execute_process_kill(self, req: pb.ProcessKill) -> pb.GenericResponse:
-        ok, err = await self.runtime_service.kill_process(req.pid)
-        return (
-            pb.GenericResponse(status="ok")
-            if ok
-            else pb.GenericResponse(status="error", message=err or "PID not found")
-        )
+        with structlog.contextvars.bound_contextvars(pid=req.pid):
+            ok, err = await self.runtime_service.kill_process(req.pid)
+            return (
+                pb.GenericResponse(status="ok")
+                if ok
+                else pb.GenericResponse(status="error", message=err or "PID not found")
+            )
 
     async def execute_spi_transfer(self, req: pb.SpiTransfer) -> pb.SpiTransferResponse:
         serial = self.runtime_service.serial
@@ -215,6 +240,7 @@ class LocalBridgeService(LocalBridgeBase):
         has_correlation = req.HasField("correlation_data")
         route = parse_topic(self.runtime_service.state.cloud_topic_prefix, req.topic_name)
         action = self.runtime_service.deduce_action(route) if route else None
+
         is_query = has_correlation or (
             route is not None
             and (
@@ -225,6 +251,7 @@ class LocalBridgeService(LocalBridgeBase):
                 )
             )
         )
+
         correlation = (
             req.correlation_data if has_correlation else (secrets.token_bytes(AEAD_NONCE_SIZE) if is_query else b"")
         )
@@ -241,6 +268,7 @@ class LocalBridgeService(LocalBridgeBase):
                 await self.runtime_service.handle_request(
                     pb.CloudQueuedPublish(topic_name=req.topic_name, payload=req.payload, correlation_data=correlation)
                 )
+
                 if is_query and response_queue is not None:
                     try:
                         async with asyncio.timeout(15.0):
@@ -262,94 +290,74 @@ class LocalBridgeService(LocalBridgeBase):
         req = req_cls()
         if payload_bytes:
             req.ParseFromString(payload_bytes)
-        resp = await handler(self, req)
-        return resp.SerializeToString()
+        with structlog.contextvars.bound_contextvars(rpc_method=method_name):
+            resp = await handler(self, req)
+            return resp.SerializeToString()
 
-    # --- LocalBridgeBase Stream Handlers (Delegating to canonical execute_* methods) ---
+    # --- LocalBridgeBase Stream Handlers (Delegating via _handle_unary) ---
 
     async def SetPinMode(self, stream: Stream[pb.PinMode, pb.GenericResponse]) -> None:
-        if (req := await stream.recv_message()) is not None:
-            await stream.send_message(await self.execute_set_pin_mode(req))
+        await self._handle_unary(stream, LocalBridgeService.execute_set_pin_mode, "SetPinMode")
 
     async def DigitalWrite(self, stream: Stream[pb.DigitalWrite, pb.GenericResponse]) -> None:
-        if (req := await stream.recv_message()) is not None:
-            await stream.send_message(await self.execute_digital_write(req))
+        await self._handle_unary(stream, LocalBridgeService.execute_digital_write, "DigitalWrite")
 
     async def DigitalRead(self, stream: Stream[pb.PinRead, pb.DigitalReadResponse]) -> None:
-        if (req := await stream.recv_message()) is not None:
-            await stream.send_message(await self.execute_digital_read(req))
+        await self._handle_unary(stream, LocalBridgeService.execute_digital_read, "DigitalRead")
 
     async def AnalogWrite(self, stream: Stream[pb.AnalogWrite, pb.GenericResponse]) -> None:
-        if (req := await stream.recv_message()) is not None:
-            await stream.send_message(await self.execute_analog_write(req))
+        await self._handle_unary(stream, LocalBridgeService.execute_analog_write, "AnalogWrite")
 
     async def AnalogRead(self, stream: Stream[pb.PinRead, pb.AnalogReadResponse]) -> None:
-        if (req := await stream.recv_message()) is not None:
-            await stream.send_message(await self.execute_analog_read(req))
+        await self._handle_unary(stream, LocalBridgeService.execute_analog_read, "AnalogRead")
 
     async def PinSubscribe(self, stream: Stream[pb.PinSubscribeRequest, pb.PinSubscribeResponse]) -> None:
-        if (req := await stream.recv_message()) is not None:
-            await stream.send_message(await self.execute_pin_subscribe(req))
+        await self._handle_unary(stream, LocalBridgeService.execute_pin_subscribe, "PinSubscribe")
 
     async def DatastorePut(self, stream: Stream[pb.DatastorePut, pb.GenericResponse]) -> None:
-        if (req := await stream.recv_message()) is not None:
-            await stream.send_message(await self.execute_datastore_put(req))
+        await self._handle_unary(stream, LocalBridgeService.execute_datastore_put, "DatastorePut")
 
     async def DatastoreGet(self, stream: Stream[pb.DatastoreGet, pb.DatastoreGetResponse]) -> None:
-        if (req := await stream.recv_message()) is not None:
-            await stream.send_message(await self.execute_datastore_get(req))
+        await self._handle_unary(stream, LocalBridgeService.execute_datastore_get, "DatastoreGet")
 
     async def MailboxPush(self, stream: Stream[pb.MailboxPush, pb.GenericResponse]) -> None:
-        if (req := await stream.recv_message()) is not None:
-            await stream.send_message(await self.execute_mailbox_push(req))
+        await self._handle_unary(stream, LocalBridgeService.execute_mailbox_push, "MailboxPush")
 
     async def MailboxRead(self, stream: Stream[pb.SubscribeRequest, pb.MailboxReadResponse]) -> None:
-        if (req := await stream.recv_message()) is not None:
-            await stream.send_message(await self.execute_mailbox_read(req))
+        await self._handle_unary(stream, LocalBridgeService.execute_mailbox_read, "MailboxRead")
 
     async def FileWrite(self, stream: Stream[pb.FileWrite, pb.GenericResponse]) -> None:
-        if (req := await stream.recv_message()) is not None:
-            await stream.send_message(await self.execute_file_write(req))
+        await self._handle_unary(stream, LocalBridgeService.execute_file_write, "FileWrite")
 
     async def FileRead(self, stream: Stream[pb.FileRead, pb.FileReadResponse]) -> None:
-        if (req := await stream.recv_message()) is not None:
-            await stream.send_message(await self.execute_file_read(req))
+        await self._handle_unary(stream, LocalBridgeService.execute_file_read, "FileRead")
 
     async def FileRemove(self, stream: Stream[pb.FileRemove, pb.GenericResponse]) -> None:
-        if (req := await stream.recv_message()) is not None:
-            await stream.send_message(await self.execute_file_remove(req))
+        await self._handle_unary(stream, LocalBridgeService.execute_file_remove, "FileRemove")
 
     async def ProcessRunAsync(self, stream: Stream[pb.ProcessRunAsync, pb.ProcessRunAsyncResponse]) -> None:
-        if (req := await stream.recv_message()) is not None:
-            await stream.send_message(await self.execute_process_run_async(req))
+        await self._handle_unary(stream, LocalBridgeService.execute_process_run_async, "ProcessRunAsync")
 
     async def ProcessPoll(self, stream: Stream[pb.ProcessPoll, pb.ProcessPollResponse]) -> None:
-        if (req := await stream.recv_message()) is not None:
-            await stream.send_message(await self.execute_process_poll(req))
+        await self._handle_unary(stream, LocalBridgeService.execute_process_poll, "ProcessPoll")
 
     async def ProcessKill(self, stream: Stream[pb.ProcessKill, pb.GenericResponse]) -> None:
-        if (req := await stream.recv_message()) is not None:
-            await stream.send_message(await self.execute_process_kill(req))
+        await self._handle_unary(stream, LocalBridgeService.execute_process_kill, "ProcessKill")
 
     async def SpiTransfer(self, stream: Stream[pb.SpiTransfer, pb.SpiTransferResponse]) -> None:
-        if (req := await stream.recv_message()) is not None:
-            await stream.send_message(await self.execute_spi_transfer(req))
+        await self._handle_unary(stream, LocalBridgeService.execute_spi_transfer, "SpiTransfer")
 
     async def SpiConfigure(self, stream: Stream[pb.SpiConfig, pb.GenericResponse]) -> None:
-        if (req := await stream.recv_message()) is not None:
-            await stream.send_message(await self.execute_spi_configure(req))
+        await self._handle_unary(stream, LocalBridgeService.execute_spi_configure, "SpiConfigure")
 
     async def GetVersion(self, stream: Stream[pb.SubscribeRequest, pb.VersionResponse]) -> None:
-        if (req := await stream.recv_message()) is not None:
-            await stream.send_message(await self.execute_get_version(req))
+        await self._handle_unary(stream, LocalBridgeService.execute_get_version, "GetVersion")
 
     async def GetFreeMemory(self, stream: Stream[pb.SubscribeRequest, pb.FreeMemoryResponse]) -> None:
-        if (req := await stream.recv_message()) is not None:
-            await stream.send_message(await self.execute_get_free_memory(req))
+        await self._handle_unary(stream, LocalBridgeService.execute_get_free_memory, "GetFreeMemory")
 
     async def GetStatus(self, stream: Stream[pb.SubscribeRequest, pb.BridgeStatus]) -> None:
-        if (req := await stream.recv_message()) is not None:
-            await stream.send_message(await self.execute_get_status(req))
+        await self._handle_unary(stream, LocalBridgeService.execute_get_status, "GetStatus")
 
     async def Publish(self, stream: Stream[pb.CloudQueuedPublish, pb.CloudQueuedPublish]) -> None:
         if (req := await stream.recv_message()) is not None:

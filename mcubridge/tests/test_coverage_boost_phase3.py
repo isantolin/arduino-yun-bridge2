@@ -123,7 +123,7 @@ async def test_runtime_file_dispatch_handlers(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_runtime_pin_handlers(tmp_path: Path) -> None:
     config = _make_config(tmp_path)
-    service, state, _mock_serial = _make_service(config)
+    service, _state, _mock_serial = _make_service(config)
     handle_pin_fn: Callable[..., Awaitable[None]] = getattr(service, "_handle_pin")
 
     pin_cases: tuple[tuple[Topic, tuple[str, ...], bytes], ...] = (
@@ -190,7 +190,7 @@ async def test_runtime_system_handlers(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_runtime_cloud_spool_operations(tmp_path: Path) -> None:
     config = _make_config(tmp_path)
-    service, state, _ = _make_service(config)
+    service, _state, _ = _make_service(config)
 
     # Initialize spool
     spool_dir = tmp_path / "spool"
@@ -345,7 +345,9 @@ async def test_runtime_on_mcu_analog_read_resp(tmp_path: Path) -> None:
 
     state.pending_analog_reads.append(PendingPinRequest(pin=0, reply_context=None))
     resp = pb.AnalogReadResponse(value=512)
-    on_analog_resp: Callable[[int, pb.AnalogReadResponse], Awaitable[None]] = getattr(service, "_on_mcu_analog_read_resp")
+    on_analog_resp: Callable[[int, pb.AnalogReadResponse], Awaitable[None]] = getattr(
+        service, "_on_mcu_analog_read_resp"
+    )
     await on_analog_resp(1, resp)
 
     assert len(state.pending_analog_reads) == 0
@@ -396,6 +398,7 @@ def test_runtime_handle_mcu_status_payloads(
         handle_status_fn: Callable[..., Awaitable[None]] = getattr(service, "_handle_mcu_status")
         await handle_status_fn(status, seq, payload)
         assert mock_enqueue.await_count == 1
+        assert mock_enqueue.await_args is not None
         call_args = mock_enqueue.await_args[0]
         queued_msg = call_args[0]
         assert isinstance(queued_msg, pb.CloudQueuedPublish)
@@ -425,7 +428,7 @@ async def test_runtime_enqueue_cloud_drop(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_runtime_console_queues_distribution(tmp_path: Path) -> None:
     config = _make_config(tmp_path)
-    service, state, _ = _make_service(config)
+    service, _state, _ = _make_service(config)
 
     q1: asyncio.Queue[pb.CloudQueuedPublish] = asyncio.Queue()
     service.console_queues.append(q1)
@@ -516,7 +519,7 @@ async def test_handshake_handle_link_sync_resp(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_handshake_handle_link_reset_resp(tmp_path: Path) -> None:
     config = _make_config(tmp_path)
-    service, state, _ = _make_service(config)
+    service, _state, _ = _make_service(config)
     handshake = service.handshake
 
     res = await handshake.handle_link_reset_resp(1, b"")
@@ -561,7 +564,11 @@ async def test_publish_bridge_snapshots_loop_error_recovery(tmp_path: Path) -> N
     config = _make_config(tmp_path)
     state = create_runtime_state(config)
 
+    call_count = 0
+
     async def failing_enqueue(msg: pb.CloudQueuedPublish) -> None:
+        nonlocal call_count
+        call_count += 1
         raise RuntimeError("enqueue failed")
 
     task = asyncio.create_task(
@@ -574,6 +581,7 @@ async def test_publish_bridge_snapshots_loop_error_recovery(tmp_path: Path) -> N
     with pytest.raises(asyncio.CancelledError):
         await task
 
+    assert call_count > 0
     state.cleanup()
 
 

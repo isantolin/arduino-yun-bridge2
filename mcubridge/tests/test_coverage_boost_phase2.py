@@ -330,15 +330,15 @@ class TestLmdbDequeVacuum:
 class TestLmdbCache:
     @pytest.mark.asyncio
     async def test_cache_set_no_env(self) -> None:
-        cache = LmdbCache(path=":memory:")
-        setattr(cache, "env", None)
+        cache = LmdbCache(path="/tmp/test_cache_no_env.db")
+        cache.env = None
         await cache.set("key", b"value")
         assert await cache.get("key", b"default") == b"default"
 
     @pytest.mark.asyncio
     async def test_cache_get_no_env(self) -> None:
-        cache = LmdbCache(path=":memory:")
-        setattr(cache, "env", None)
+        cache = LmdbCache(path="/tmp/test_cache_no_env.db")
+        cache.env = None
         result = await cache.get("key", b"default")
         assert result == b"default"
 
@@ -468,13 +468,22 @@ class TestPinRestCgiCli:
         pin=st.integers(0, 32),
         state_str=st.sampled_from(["ON", "OFF"]),
     )
-    def test_control_cli_invocation(self, mocker: MockerFixture, pin: int, state_str: str) -> None:
-        mocker.patch.object(pin_rest_cgi, "load_runtime_config", return_value=_make_config())
-        mocker.patch.object(pin_rest_cgi, "configure_logging")
-        mock_set_pin = mocker.patch.object(pin_rest_cgi, "set_pin_digital_sync")
-        pin_rest_cgi.control(pin=pin, state=state_str)
-        expected_val = 1 if state_str == "ON" else 0
-        mock_set_pin.assert_called_once_with(pin, expected_val)
+    def test_control_cli_invocation(self, pin: int, state_str: str) -> None:
+        orig_load = getattr(pin_rest_cgi, "load_runtime_config")
+        orig_log = getattr(pin_rest_cgi, "configure_logging")
+        orig_set = getattr(pin_rest_cgi, "set_pin_digital_sync")
+        mock_set_pin = MagicMock()
+        setattr(pin_rest_cgi, "load_runtime_config", MagicMock(return_value=_make_config()))
+        setattr(pin_rest_cgi, "configure_logging", MagicMock())
+        setattr(pin_rest_cgi, "set_pin_digital_sync", mock_set_pin)
+        try:
+            pin_rest_cgi.control(pin=pin, state=state_str)
+            expected_val = 1 if state_str == "ON" else 0
+            mock_set_pin.assert_called_once_with(pin, expected_val)
+        finally:
+            setattr(pin_rest_cgi, "load_runtime_config", orig_load)
+            setattr(pin_rest_cgi, "configure_logging", orig_log)
+            setattr(pin_rest_cgi, "set_pin_digital_sync", orig_set)
 
     def test_run_cgi_no_gateway(self, mocker: MockerFixture) -> None:
         env_clean = {k: v for k, v in os.environ.items() if k not in ("GATEWAY_INTERFACE", "REQUEST_METHOD")}
@@ -503,7 +512,7 @@ class TestPinRestCgiCli:
             ]
         )
     )
-    def test_application_pin_data_validation_error(self, mocker: MockerFixture, invalid_body: bytes) -> None:
+    def test_application_pin_data_validation_error(self, invalid_body: bytes) -> None:
         start_response = MagicMock()
         env = {
             "PATH_INFO": "/pin/13",
@@ -512,12 +521,18 @@ class TestPinRestCgiCli:
             "wsgi.input": BytesIO(invalid_body),
         }
 
-        mocker.patch.object(pin_rest_cgi, "load_runtime_config", return_value=_make_config())
-        mocker.patch.object(pin_rest_cgi, "configure_logging")
-        result = pin_rest_cgi.application(env, start_response)
-        assert result
-        # Should return 400 for invalid pin_data
-        start_response.assert_called()
+        orig_load = getattr(pin_rest_cgi, "load_runtime_config")
+        orig_log = getattr(pin_rest_cgi, "configure_logging")
+        setattr(pin_rest_cgi, "load_runtime_config", MagicMock(return_value=_make_config()))
+        setattr(pin_rest_cgi, "configure_logging", MagicMock())
+        try:
+            result = pin_rest_cgi.application(env, start_response)
+            assert result
+            # Should return 400 for invalid pin_data
+            start_response.assert_called()
+        finally:
+            setattr(pin_rest_cgi, "load_runtime_config", orig_load)
+            setattr(pin_rest_cgi, "configure_logging", orig_log)
 
     def test_application_method_not_allowed(self, mocker: MockerFixture) -> None:
         start_response = MagicMock()
@@ -544,7 +559,7 @@ class TestRotateCredentials:
         if uci_mod is None:
             uci_mod = types.ModuleType("uci")
             sys.modules["uci"] = uci_mod
-        uci_mod.UciException = type("UciException", (RuntimeError,), {})
+        setattr(uci_mod, "UciException", type("UciException", (RuntimeError,), {}))
         if not hasattr(uci_mod, "Uci"):
             setattr(uci_mod, "Uci", MagicMock)
 
@@ -633,16 +648,20 @@ class TestFilePush:
     @given(
         payload=st.binary(min_size=1, max_size=256),
     )
-    def test_main_success(self, mocker: MockerFixture, payload: bytes) -> None:
+    def test_main_success(self, payload: bytes) -> None:
         file_push = _load_script("mcubridge_file_push")
         test_file = Path(f".tmp_tests/push-{os.getpid()}-{time.time_ns()}.bin")
         test_file.parent.mkdir(parents=True, exist_ok=True)
+        orig_push = getattr(file_push, "push_file", None)
+        mock_push = MagicMock()
+        setattr(file_push, "push_file", mock_push)
         try:
             test_file.write_bytes(payload)
-            mock_push = mocker.patch.object(file_push, "push_file")
             file_push.main(source=test_file, target="/upload/test.bin")
             mock_push.assert_called_once()
         finally:
+            if orig_push is not None:
+                setattr(file_push, "push_file", orig_push)
             test_file.unlink(missing_ok=True)
 
 

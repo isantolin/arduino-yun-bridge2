@@ -153,6 +153,8 @@ async def test_mcu_pin_update_event_forwarding(
     assert state.pin_events_count == initial_events + 1
     mock_cloud.assert_awaited_once()
     assert mock_cloud.await_args is not None
-    queued_msg = cast(pb.CloudQueuedPublish, mock_cloud.await_args.args[0])
+    call_args = mock_cloud.await_args.args
+    assert len(call_args) > 0
+    queued_msg: pb.CloudQueuedPublish = call_args[0]
     assert f"{Topic.DIGITAL.value}/{pin}/update" in queued_msg.topic_name
     assert queued_msg.payload == str(value).encode()

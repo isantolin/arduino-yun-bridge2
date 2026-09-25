@@ -130,7 +130,7 @@ def test_settings_normalize_config_property(
     assert norm["cloud_enabled"] is True
     assert norm["cloud_tls"] is True
     assert norm["watchdog_enabled"] is False
-    assert norm["serial_baud"] == int(baud)
+    assert norm["serial_baud"] == baud
     assert norm["bridge_summary_interval"] == interval
     assert norm["topic_prefix"] == "br"
     assert secret == secret_str.encode()
@@ -707,10 +707,6 @@ async def test_runtime_flush_cloud_spool_corrupt_and_errors(
 
 
 @pytest.mark.asyncio
-
-
-
-@pytest.mark.asyncio
 async def test_runtime_handle_datastore_empty_key_and_request_miss(
     test_config: RuntimeConfig, mock_state: RuntimeState, mocker: MockerFixture
 ) -> None:
@@ -1015,10 +1011,7 @@ async def test_serial_transport_read_loop_empty_view_and_service_none(
     correlate_fn: Callable[[int, bytes], None] = getattr(transport, "_correlate_frame")
     correlate_fn(Status.ACK.value, b"")
     assert curr_cmd.ack_received is True
-    assert curr_cmd.success is True
-
-
-
+    assert curr_cmd.success
 
 
 @pytest.mark.asyncio
@@ -1157,9 +1150,6 @@ def test_settings_raw_config_edge_branches(mocker: MockerFixture) -> None:
     # 6. Overrides with serial_shared_secret None raises validation error
     with pytest.raises(ValueError, match="serial_shared_secret"):
         load_runtime_config(overrides={"serial_shared_secret": None})
-
-
-
 
 
 def test_security_self_test_chacha_invalid_length(mocker: MockerFixture) -> None:
@@ -1680,9 +1670,6 @@ async def test_runtime_service_spi_and_system_branches(runtime_config: Any, runt
     assert await pub_cloud(pb.CloudQueuedPublish(topic_name="br/metrics/report")) is False
 
 
-
-
-
 @pytest.mark.asyncio
 async def test_runtime_reset_link_branches(test_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     serial = AsyncMock(spec=SerialTransport)
@@ -1891,35 +1878,35 @@ async def test_watchdog_uncovered_branch_hardening(mock_state: RuntimeState, moc
     wd = WatchdogKeepalive(interval=10.0, state=mock_state)
     setattr(mock_state, "fatal_count", 1)
     assert wd.is_healthy() is False
-    assert wd.fsm.critical_inhibit.is_active is True
+    assert wd.fsm.critical_inhibit.is_active
 
     # 2. trip_inhibit() when already in critical_inhibit (line 109->exit)
     wd.trip_inhibit("second attempt")
-    assert wd.fsm.critical_inhibit.is_active is True
+    assert wd.fsm.critical_inhibit.is_active
 
     # 3. degrade() when in critical_inhibit (line 115->exit)
     wd.degrade("attempt while inhibited")
-    assert wd.fsm.critical_inhibit.is_active is True
+    assert wd.fsm.critical_inhibit.is_active
 
     # 4. recover() when in critical_inhibit (line 121->exit)
     wd.recover()
-    assert wd.fsm.critical_inhibit.is_active is True
+    assert wd.fsm.critical_inhibit.is_active
 
     # 5. kick() when supervisor recovers from degraded (line 140->141)
     setattr(mock_state, "fatal_count", 0)
     wd2 = WatchdogKeepalive(interval=10.0, state=mock_state)
     wd2.fsm.start_healthy()
     wd2.fsm.degrade()
-    assert wd2.fsm.degraded.is_active is True
+    assert wd2.fsm.degraded.is_active
     setattr(wd2, "_token", b"W")
     mocker.patch.object(wd2, "_write")
     wd2.kick()
-    assert wd2.fsm.healthy.is_active is True
+    assert wd2.fsm.healthy.is_active
 
     # 6. run() when shutdown is already active (line 153->exit)
     wd3 = WatchdogKeepalive(interval=10.0, state=mock_state)
     wd3.fsm.stop()
-    assert wd3.fsm.shutdown.is_active is True
+    assert wd3.fsm.shutdown.is_active
     await wd3.run()
 
 
@@ -2024,3 +2011,271 @@ def test_state_context_uncovered_branch_hardening(test_config: RuntimeConfig) ->
 
     snap3 = st3.build_status_snapshot()
     assert len(snap3.process_stats) >= 1
+
+
+@pytest.mark.asyncio
+async def test_lmdb_cache_uncovered_branches() -> None:
+    from mcubridge.state.storage import LmdbCache
+    import lmdb
+
+    cache = LmdbCache(path="/tmp/test_cache_branches.db")
+    cache.env = None
+    assert len(cache) == 0
+    assert await cache.contains("k") is False
+    assert ("k" in cache) is False
+    assert await cache.items() == []
+
+    # Exception branches
+    cache.env = MagicMock()
+    cache.env.begin.side_effect = lmdb.Error("forced")
+    assert len(cache) == 0
+    assert await cache.contains("k") is False
+    assert ("k" in cache) is False
+    assert await cache.items() == []
+    assert await cache.get("k", b"def") == b"def"
+    assert await cache.pop("k", b"def") == b"def"
+
+
+def test_tls_session_ticket_uncovered_branches() -> None:
+    import ssl
+    from mcubridge.protocol.structures import (
+        get_ssl_context,
+        load_tls_session_ticket,
+        save_tls_session_ticket,
+    )
+
+    # 1. SSL context insecure (lines 183-184)
+    cfg_insecure = pb.RuntimeConfig(cloud_tls=True, cloud_tls_insecure=True)
+    ctx = get_ssl_context(cfg_insecure)
+    assert ctx is not None
+    assert ctx.check_hostname is False
+    assert ctx.verify_mode == ssl.CERT_NONE
+
+    # 2. cache is None or empty ticket
+    save_tls_session_ticket(None, "host", 443, b"ticket")
+    save_tls_session_ticket(object(), "host", 443, b"")
+    assert load_tls_session_ticket(None, "host", 443) is None
+
+    # 3. is_mem branch
+    mem_cache = MagicMock()
+    mem_cache.is_mem = True
+    mem_cache._mem = {}
+    save_tls_session_ticket(mem_cache, "host", 443, b"ticket")
+    assert load_tls_session_ticket(mem_cache, "host", 443) == b"ticket"
+
+    # 4. disk_cache exception branches (lines 216-217, 232-234)
+    disk_cache = MagicMock()
+    disk_cache.is_mem = False
+    disk_cache.env = MagicMock()
+    disk_cache.db = MagicMock()
+    disk_cache.env.begin.side_effect = OSError("write error")
+    save_tls_session_ticket(disk_cache, "host", 443, b"ticket")
+    assert load_tls_session_ticket(disk_cache, "host", 443) is None
+
+
+def test_daemon_uncovered_branches(mocker: MockerFixture) -> None:
+    from mcubridge.daemon import run_daemon
+
+    # 1. unhandled in ExceptionGroup
+    mocker.patch("mcubridge.daemon.load_runtime_config")
+    mocker.patch("mcubridge.daemon.configure_logging")
+    mocker.patch("mcubridge.daemon.verify_crypto_integrity", return_value=True)
+    mocker.patch(
+        "mcubridge.daemon.create_runtime_state",
+        side_effect=ExceptionGroup("eg", [ZeroDivisionError("unhandled")]),
+    )
+    with pytest.raises(ExceptionGroup):
+        run_daemon()
+
+    # 2. SerialTransport creation failure triggers state.cleanup() without service (lines 120-121)
+    mocker.patch("mcubridge.daemon.SerialTransport", side_effect=RuntimeError("transport init error"))
+    mocker.patch("mcubridge.daemon.create_runtime_state")
+    with pytest.raises(SystemExit) as exc_info:
+        run_daemon()
+    assert exc_info.value.code == 1
+
+
+@pytest.mark.asyncio
+async def test_handshake_uncovered_sync_branches(
+    test_config: RuntimeConfig, mock_state: RuntimeState, mocker: MockerFixture
+) -> None:
+    serial = AsyncMock(spec=SerialTransport)
+    service = BridgeService(test_config, mock_state, serial)
+    mgr = service.handshake
+
+    # 1. handle_link_sync_resp when link_handshake_nonce is None (line 342)
+    mock_state.link_handshake_nonce = None
+    res = await mgr.handle_link_sync_resp(1, b"nonce")
+    assert res is False
+
+    # 2. _publish_handshake_event when topic_name is empty (lines 603-607)
+    mocker.patch("mcubridge.services.handshake.get_topic_for_message", return_value="")
+    mock_enqueue = AsyncMock()
+    setattr(mgr, "_enqueue_cloud", mock_enqueue)
+    pub_event_fn: Callable[..., Awaitable[None]] = getattr(mgr, "_publish_handshake_event")
+    await pub_event_fn("custom_event")
+    assert not mock_enqueue.called
+    service.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_runtime_flush_cloud_spool_uncovered_branches(
+    test_config: RuntimeConfig, mock_state: RuntimeState
+) -> None:
+    from mcubridge.state.storage import LmdbDeque
+    import lmdb
+
+    serial = AsyncMock(spec=SerialTransport)
+    svc = BridgeService(test_config, mock_state, serial)
+    setattr(svc, "_cloud_stream", MagicMock())
+
+    # 1. _publish_cloud_message returns False (line 435)
+    mock_spool = MagicMock(spec=LmdbDeque)
+    setattr(svc, "_cloud_spool", mock_spool)
+    mock_spool.__len__.return_value = 1
+    mock_spool.peek = AsyncMock(return_value=pb.CloudQueuedPublish(topic_name="t").SerializeToString())
+    setattr(svc, "_publish_cloud_message", AsyncMock(return_value=False))
+    flush_fn: Callable[[], Awaitable[None]] = getattr(svc, "_flush_cloud_spool_locked")
+    await flush_fn()
+
+    # 2. spool.popleft raises IndexError (lines 439-441)
+    setattr(svc, "_publish_cloud_message", AsyncMock(return_value=True))
+    mock_spool.popleft = AsyncMock(side_effect=IndexError("empty"))
+    await flush_fn()
+
+    # 3. spool.popleft raises lmdb.Error (lines 442-445)
+    mock_spool.popleft = AsyncMock(side_effect=lmdb.Error("db error"))
+    await flush_fn()
+    assert mock_state.cloud_spool_degraded is True
+    svc.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_handshake_sync_send_frame_failure(test_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+    serial = AsyncMock(spec=SerialTransport)
+    service = BridgeService(test_config, mock_state, serial)
+    mgr = service.handshake
+
+    async def _mock_send(cmd: int, payload: Any) -> bool:
+        if cmd == Command.CMD_LINK_RESET.value:
+            return True
+        return False
+
+    setattr(mgr, "_send_frame", _mock_send)
+    synchronize_attempt_fn: Callable[[], Awaitable[bool]] = getattr(mgr, "_synchronize_attempt")
+    res = await synchronize_attempt_fn()
+    assert res is False
+    service.cleanup()
+
+
+def test_serial_safe_after_configure_exceptions() -> None:
+    import errno
+    import mcubridge.transport.serial as serial_mod
+    safe_fn: Callable[[Any], None] = getattr(serial_mod, "_safe_after_configure")
+
+    # 1. OSError with EINVAL ignored
+    mock_obj = MagicMock()
+    mock_obj._fileno = None
+    orig_fn = getattr(serial_mod, "_orig_after_configure")
+    try:
+        setattr(serial_mod, "_orig_after_configure", MagicMock(side_effect=OSError(errno.EINVAL, "Invalid")))
+        safe_fn(mock_obj)
+
+        # 2. OSError with unhandled errno raised
+        setattr(serial_mod, "_orig_after_configure", MagicMock(side_effect=OSError(errno.EACCES, "Denied")))
+        with pytest.raises(OSError):
+            safe_fn(mock_obj)
+
+        # 3. termios.tcgetattr raises termios.error
+        setattr(serial_mod, "_orig_after_configure", None)
+        mock_obj._fileno = 99
+        import termios
+        orig_tcgetattr = termios.tcgetattr
+        orig_tcsetattr = termios.tcsetattr
+        try:
+            termios.tcgetattr = MagicMock(side_effect=termios.error("ioctl error"))
+            safe_fn(mock_obj)
+
+            # 4. termios success path (lines 79-81)
+            attrs = [[], [], [], [], [], [], [0] * 32]
+            termios.tcgetattr = MagicMock(return_value=attrs)
+            mock_tcsetattr = MagicMock()
+            termios.tcsetattr = mock_tcsetattr
+            safe_fn(mock_obj)
+            mock_tcsetattr.assert_called_once()
+        finally:
+            termios.tcgetattr = orig_tcgetattr
+            termios.tcsetattr = orig_tcsetattr
+    finally:
+        setattr(serial_mod, "_orig_after_configure", orig_fn)
+
+
+@pytest.mark.asyncio
+async def test_handshake_synchronize_retry_error(
+    test_config: RuntimeConfig, mock_state: RuntimeState, mocker: MockerFixture
+) -> None:
+    import tenacity
+    from mcubridge.services.handshake import HandshakeState
+
+    serial = AsyncMock(spec=SerialTransport)
+    service = BridgeService(test_config, mock_state, serial)
+    mgr = service.handshake
+
+    fake_retryer = AsyncMock()
+    fake_retryer.side_effect = tenacity.RetryError(MagicMock())
+    mocker.patch("tenacity.AsyncRetrying", return_value=fake_retryer)
+
+    res = await mgr.synchronize()
+    assert res is False
+    assert mgr.fsm_state == HandshakeState.FAULT
+    service.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_handshake_sync_fault_race_and_nonce_mismatch(
+    test_config: RuntimeConfig, mock_state: RuntimeState
+) -> None:
+    from mcubridge.services.handshake import HandshakeEvent
+
+    serial = AsyncMock(spec=SerialTransport)
+    service = BridgeService(test_config, mock_state, serial)
+    mgr = service.handshake
+
+    # 1. Race condition guard: fsm_state == FAULT right after sending LINK_SYNC (lines 311-312)
+    async def _send_and_fault(cmd: int, payload: Any) -> bool:
+        if cmd == Command.CMD_LINK_SYNC.value:
+            mgr.transition(HandshakeEvent.FAILURE)
+        return True
+
+    setattr(mgr, "_send_frame", _send_and_fault)
+    synchronize_attempt_fn: Callable[[], Awaitable[bool]] = getattr(mgr, "_synchronize_attempt")
+    res1 = await synchronize_attempt_fn()
+    assert res1 is False
+
+    # 2. Confirmed is False and current_state == FAULT (lines 324-325)
+    mgr.transition(HandshakeEvent.RESET)
+
+    async def _send_ok(cmd: int, payload: Any) -> bool:
+        return True
+
+    async def _wait_fault(nonce: bytes) -> bool:
+        mgr.transition(HandshakeEvent.FAILURE)
+        return False
+
+    setattr(mgr, "_send_frame", _send_ok)
+    setattr(mgr, "_wait_for_link_sync_confirmation", _wait_fault)
+    res2 = await synchronize_attempt_fn()
+    assert res2 is False
+
+    # 3. Confirmed is False, pending_nonce != nonce (line 329->exit)
+    mgr.transition(HandshakeEvent.RESET)
+
+    async def _wait_mismatch(nonce: bytes) -> bool:
+        mock_state.link_handshake_nonce = b"different_nonce_to_trigger_exit"
+        return False
+
+    setattr(mgr, "_wait_for_link_sync_confirmation", _wait_mismatch)
+    res3 = await synchronize_attempt_fn()
+    assert res3 is False
+
+    service.cleanup()

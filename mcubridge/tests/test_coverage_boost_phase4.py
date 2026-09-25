@@ -82,6 +82,7 @@ async def test_runtime_service_run_and_teardown_exceptions(tmp_path: Path) -> No
     except asyncio.CancelledError as exc:
         logger.debug("Service run task cancelled as expected", error=str(exc))
 
+    assert run_task.done()
     assert getattr(service, "_cloud_spool") is None
     state.cleanup()
 
@@ -251,7 +252,9 @@ def test_runtime_request_mcu_version_and_system_version(
             topic=Topic.SYSTEM,
             segments=("version", "get"),
         )
-        handle_system: Callable[[TopicRoute, pb.CloudQueuedPublish], Awaitable[None]] = getattr(service, "_handle_system")
+        handle_system: Callable[[TopicRoute, pb.CloudQueuedPublish], Awaitable[None]] = getattr(
+            service, "_handle_system"
+        )
         await handle_system(route_ver, inbound)
 
         state.cleanup()
@@ -281,7 +284,9 @@ def test_runtime_pin_analog_and_invalid_digits(
             topic=Topic.ANALOG,
             segments=(str(pin),),
         )
-        inbound_aw = pb.CloudQueuedPublish(topic_name=f"{config.topic_prefix}/a/{pin}", payload=str(analog_val).encode())
+        inbound_aw = pb.CloudQueuedPublish(
+            topic_name=f"{config.topic_prefix}/a/{pin}", payload=str(analog_val).encode()
+        )
         await handle_pin(route_aw, inbound_aw)
         mock_serial.send.assert_called_with(Command.CMD_ANALOG_WRITE.value, pb.AnalogWrite(pin=pin, value=analog_val))
 

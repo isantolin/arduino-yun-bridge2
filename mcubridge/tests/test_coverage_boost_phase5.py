@@ -2,21 +2,19 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable, Iterator
 from pathlib import Path
-import ssl
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
-from google.protobuf.message import Message as ProtobufMessage
 from hypothesis import given, settings, strategies as st
 from pytest_mock import MockerFixture
 import pytest
 
 from gateway import CloudBridgeService, ProtobufGateway
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.daemon import app as daemon_app
-from mcubridge.metrics import publish_metrics
+from mcubridge.daemon import app as daemon_app, cli as daemon_cli
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.services.handshake import SerialHandshakeManager
@@ -189,10 +187,12 @@ async def test_serial_transport_toggle_dtr_error(test_config: RuntimeConfig, moc
 def test_serial_transport_switch_local_baudrate_error(test_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     transport = SerialTransport(test_config, mock_state, None)
     mock_serial = MagicMock()
-    type(mock_serial).baudrate = property(
+    mock_inner_serial = MagicMock()
+    type(mock_inner_serial).baudrate = property(
         fget=lambda self: 115200,
         fset=MagicMock(side_effect=ValueError("Invalid baud")),
     )
+    mock_serial.transport.serial = mock_inner_serial
     transport.serial = mock_serial
     switch_baud: Callable[[int], None] = getattr(transport, "_switch_local_baudrate")
     with pytest.raises(RuntimeError):
@@ -234,10 +234,15 @@ def test_handshake_calculate_tag_empty_secret(nonce: bytes) -> None:
 
 def test_daemon_app_version() -> None:
     from typer.testing import CliRunner
+
     runner = CliRunner()
-    res = runner.invoke(daemon_app, ["--version"])
+    res = runner.invoke(daemon_cli, ["--help"])
     assert res.exit_code == 0
-    assert "McuBridge" in res.output or "mcubridge" in res.output
+    assert "Arduino MCU Bridge" in res.output or "daemon" in res.output.lower()
+
+    with pytest.raises(SystemExit) as exc_info:
+        daemon_app(["--help"])
+    assert exc_info.value.code == 0
 
 
 # ==========================================
@@ -265,12 +270,13 @@ async def test_gateway_session_cancelled(mocker: MockerFixture) -> None:
     data=st.binary(min_size=1, max_size=2048),
 )
 def test_runtime_write_with_quota_property(
-    mocker: MockerFixture,
     tmp_path_factory: pytest.TempPathFactory,
     free_bytes: int,
     data: bytes,
 ) -> None:
     async def _run() -> None:
+        import psutil
+
         tmp_dir = tmp_path_factory.mktemp("quota")
         config = RuntimeConfig(
             file_system_root=str(tmp_dir),
@@ -278,6 +284,7 @@ def test_runtime_write_with_quota_property(
             allow_non_tmp_paths=True,
         )
         state = create_runtime_state(config)
+        orig_usage = psutil.disk_usage
         try:
             serial = AsyncMock(spec=SerialTransport)
             svc = BridgeService(config, state, serial)
@@ -286,9 +293,10 @@ def test_runtime_write_with_quota_property(
             write_quota_fn: Callable[..., Awaitable[bool]] = getattr(svc, "_write_with_quota")
 
             initial_rejections = svc.state.file_storage_limit_rejections
-            mock_usage = mocker.patch("psutil.disk_usage")
+            mock_usage = MagicMock()
             mock_usage.side_effect = None
             mock_usage.return_value = MagicMock(free=free_bytes, used=100, total=100 + free_bytes)
+            psutil.disk_usage = mock_usage
 
             res = await write_quota_fn(target_file, data)
             if len(data) > free_bytes:
@@ -305,6 +313,7 @@ def test_runtime_write_with_quota_property(
             assert res_fallback is True
             assert target_file.read_bytes() == data
         finally:
+            psutil.disk_usage = orig_usage
             state.cleanup()
 
     asyncio.run(_run())
@@ -349,21 +358,32 @@ async def test_runtime_flush_console_queue_send_failed(test_config: RuntimeConfi
     topic_str=st.text(alphabet="abcdefghijklmnopqrstuvwxyz0123456789_", min_size=1, max_size=20),
 )
 def test_runtime_reject_cloud_topic_variants(
-    test_config: RuntimeConfig, mock_state: RuntimeState, mocker: MockerFixture, action: str, topic_str: str
+    tmp_path_factory: pytest.TempPathFactory, action: str, topic_str: str
 ) -> None:
     async def _run() -> None:
-        serial = AsyncMock(spec=SerialTransport)
-        svc = BridgeService(test_config, mock_state, serial)
-        mock_enqueue = mocker.patch.object(svc, "enqueue_cloud", new_callable=AsyncMock)
-        from mcubridge.protocol.protocol import Topic
+        tmp_dir = tmp_path_factory.mktemp("reject_cloud")
+        config = RuntimeConfig(
+            file_system_root=str(tmp_dir),
+            cloud_spool_dir=str(tmp_dir / "spool"),
+            allow_non_tmp_paths=True,
+        )
+        state = create_runtime_state(config)
+        try:
+            serial = AsyncMock(spec=SerialTransport)
+            svc = BridgeService(config, state, serial)
+            mock_enqueue = AsyncMock()
+            svc.enqueue_cloud = mock_enqueue
+            from mcubridge.protocol.protocol import Topic
 
-        reject_cloud_fn: Callable[..., Awaitable[None]] = getattr(svc, "_reject_cloud")
-        await reject_cloud_fn(pb.CloudQueuedPublish(), Topic.DIGITAL, action)
-        assert mock_enqueue.called
+            reject_cloud_fn: Callable[..., Awaitable[None]] = getattr(svc, "_reject_cloud")
+            await reject_cloud_fn(pb.CloudQueuedPublish(), Topic.DIGITAL, action)
+            assert mock_enqueue.called
 
-        mock_enqueue.reset_mock()
-        await reject_cloud_fn(pb.CloudQueuedPublish(), topic_str, action)
-        assert mock_enqueue.called
+            mock_enqueue.reset_mock()
+            await reject_cloud_fn(pb.CloudQueuedPublish(), topic_str, action)
+            assert mock_enqueue.called
+        finally:
+            state.cleanup()
 
     asyncio.run(_run())
 

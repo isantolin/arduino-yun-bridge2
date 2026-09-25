@@ -104,9 +104,7 @@ async def test_runtime_run_cloud_disabled(tmp_path: Path, mocker: MockerFixture)
     key=st.text(alphabet="abcdefghijklmnopqrstuvwxyz0123456789_", min_size=1, max_size=24),
     value=st.binary(min_size=1, max_size=128),
 )
-def test_runtime_handle_datastore_flavors(
-    tmp_path_factory: pytest.TempPathFactory, key: str, value: bytes
-) -> None:
+def test_runtime_handle_datastore_flavors(tmp_path_factory: pytest.TempPathFactory, key: str, value: bytes) -> None:
     async def _run() -> None:
         config = _make_config(Path(tmp_path_factory.mktemp("datastore_flavors")))
         service, state, _ = _make_service(config)

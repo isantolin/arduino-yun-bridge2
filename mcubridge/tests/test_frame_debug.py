@@ -2,20 +2,25 @@
 
 from __future__ import annotations
 
+from hypothesis import given, settings, strategies as st
 from pytest_mock import MockerFixture
 import pytest
 import serialx
+from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Command, Status, UINT8_MASK
 from tests.test_constants import TEST_BROKEN_CRC
 
 from tools.emulation import frame_debug
 
+_VALID_CMD_NAMES = frozenset([entry.name.upper() for enum_cls in (Command, Status) for entry in enum_cls])
 
-def test_resolve_command_hex() -> None:
-    assert frame_debug.resolve_command(f"0x{Command.CMD_LINK_RESET.value:02X}") == Command.CMD_LINK_RESET.value
-    # Use lowercase 0x to match frame_debug.py startswith if upper() was missing
-    assert frame_debug.resolve_command(f"0x{UINT8_MASK:02X}") == UINT8_MASK
-    assert frame_debug.resolve_command("10") == 10  # Just an integer
+
+@settings(max_examples=40, derandomize=True, deadline=None)
+@given(val=st.integers(min_value=0, max_value=protocol.UINT16_MAX))
+def test_resolve_command_numeric_property(val: int) -> None:
+    assert frame_debug.resolve_command(f"0x{val:X}") == val
+    assert frame_debug.resolve_command(f"0x{val:x}") == val
+    assert frame_debug.resolve_command(str(val)) == val
 
 
 def test_resolve_command_name() -> None:
@@ -33,12 +38,31 @@ def test_resolve_command_invalid() -> None:
         frame_debug.resolve_command("INVALID_CMD")
 
 
-def test_parse_payload() -> None:
+@settings(max_examples=30, derandomize=True, deadline=None)
+@given(
+    invalid_name=st.text(alphabet=st.characters(blacklist_categories=("Cs",)), min_size=1, max_size=30).filter(
+        lambda s: s.upper() not in _VALID_CMD_NAMES
+        and not s.strip().startswith(("0x", "0X"))
+        and not s.strip().isdigit()
+        and bool(s.strip())
+    )
+)
+def test_resolve_command_invalid_property(invalid_name: str) -> None:
+    with pytest.raises(ValueError, match="Unknown command"):
+        frame_debug.resolve_command(invalid_name)
+
+
+@settings(max_examples=40, derandomize=True, deadline=None)
+@given(data=st.binary(min_size=0, max_size=512))
+def test_parse_payload_hex_property(data: bytes) -> None:
+    assert frame_debug.parse_payload(data.hex()) == data
+    assert frame_debug.parse_payload(data.hex(" ")) == data
+    assert frame_debug.parse_payload(f"0x{data.hex()}") == data
+
+
+def test_parse_payload_edge_cases() -> None:
     assert frame_debug.parse_payload(None) == b""
     assert frame_debug.parse_payload("") == b""
-    assert frame_debug.parse_payload("010203") == bytes([1, 2, 3])
-    assert frame_debug.parse_payload(f"0x{1:02X}{2:02X}") == bytes([1, 2])
-    assert frame_debug.parse_payload("01 02 03") == bytes([1, 2, 3])
 
 
 def test_parse_payload_invalid() -> None:

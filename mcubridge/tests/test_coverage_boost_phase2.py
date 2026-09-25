@@ -400,6 +400,7 @@ class TestRuntimeStateContext:
 
     def test_build_bridge_snapshot_with_mcu_version(self) -> None:
         from mcubridge.protocol import mcubridge_pb2 as pb
+
         config = _make_config()
         state = _make_state(config)
         state.mcu_version = (2, 8, 5)

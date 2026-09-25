@@ -97,16 +97,54 @@ async def test_local_bridge_service_publish_timeout_and_oserror(
     assert b"corr-timeout-1" not in svc.ipc_requests
 
 
-@pytest.mark.asyncio
-async def test_local_bridge_service_execute_rpc_unknown_method(
-    test_config: RuntimeConfig, mock_state: RuntimeState
-) -> None:
-    serial = AsyncMock(spec=SerialTransport)
-    svc = BridgeService(test_config, mock_state, serial)
-    local_svc = LocalBridgeService(svc)
+_KNOWN_RPC_METHODS = frozenset(
+    {
+        "SetPinMode",
+        "DigitalWrite",
+        "DigitalRead",
+        "AnalogWrite",
+        "AnalogRead",
+        "PinSubscribe",
+        "DatastorePut",
+        "DatastoreGet",
+        "MailboxPush",
+        "MailboxRead",
+        "FileWrite",
+        "FileRead",
+        "FileRemove",
+        "ProcessRunAsync",
+        "ProcessPoll",
+        "ProcessKill",
+        "SpiTransfer",
+        "SpiConfigure",
+        "GetVersion",
+        "GetFreeMemory",
+        "GetStatus",
+        "Publish",
+    }
+)
 
-    with pytest.raises(ValueError, match="Unknown RPC method"):
-        await local_svc.execute_rpc("NonExistentMethod", b"")
+
+@settings(max_examples=25, derandomize=True, deadline=None)
+@given(
+    invalid_method=st.text(min_size=1, max_size=50).filter(lambda s: s not in _KNOWN_RPC_METHODS),
+    payload=st.binary(max_size=256),
+)
+def test_local_bridge_service_execute_rpc_unknown_method(invalid_method: str, payload: bytes) -> None:
+    async def _run() -> None:
+        cfg = _make_config()
+        state = create_runtime_state(cfg)
+        try:
+            serial = AsyncMock(spec=SerialTransport)
+            svc = BridgeService(cfg, state, serial)
+            local_svc = LocalBridgeService(svc)
+
+            with pytest.raises(ValueError, match="Unknown RPC method"):
+                await local_svc.execute_rpc(invalid_method, payload)
+        finally:
+            state.cleanup()
+
+    asyncio.run(_run())
 
 
 # ==========================================
@@ -200,17 +238,13 @@ def test_serial_transport_switch_local_baudrate_error(test_config: RuntimeConfig
 
 
 @pytest.mark.asyncio
-async def test_serial_transport_send_failure_status_code(
-    test_config: RuntimeConfig, mock_state: RuntimeState
-) -> None:
+async def test_serial_transport_send_failure_status_code(test_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     transport = SerialTransport(test_config, mock_state, None)
     mock_serial = AsyncMock()
     mock_serial.is_open = True
     transport.serial = mock_serial
 
-    send_task = asyncio.create_task(
-        transport.send(Command.CMD_GET_VERSION.value, b"")
-    )
+    send_task = asyncio.create_task(transport.send(Command.CMD_GET_VERSION.value, b""))
     await asyncio.sleep(0.01)
     correlate_fn: Callable[[int, bytes], None] = getattr(transport, "_correlate_frame")
     correlate_fn(Status.ERROR.value, b"")

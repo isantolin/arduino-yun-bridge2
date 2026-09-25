@@ -6,7 +6,6 @@
 #include <etl/delegate.h>
 #include <etl/span.h>
 #include <etl/string_view.h>
-#include <etl/utility.h>
 #include "Bridge.h"
 #include "protocol/rpc_structs.h"
 
@@ -19,14 +18,6 @@ class FileSystemClass : public bridge::BridgeObserver {
   void write(etl::string_view path, etl::span<const uint8_t> data);
   void read(etl::string_view path, FileSystemReadHandler handler);
   static void remove(etl::string_view path);
-
-  template <auto HalFn, typename... Args>
-  static inline void _executeHalAction(const char* reason, Args&&... args) {
-    if (!HalFn(etl::forward<Args>(args)...)) {
-      Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR,
-                        etl::string_view(reason));
-    }
-  }
 
   static void _onWrite(const rpc::payload::FileWrite& msg);
   static void _onRead(const rpc::payload::FileRead& msg);

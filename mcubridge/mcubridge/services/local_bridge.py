@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, Final
 from google.protobuf.message import DecodeError as ProtobufDecodeError, Message as ProtobufMessage
 from grpclib.server import Stream
 import structlog
+import structlog.contextvars
 
 from ..config.const import MCU_FS_PREFIX
 from ..protocol import mcubridge_pb2 as pb
@@ -150,11 +151,8 @@ class LocalBridgeService(LocalBridgeBase):
     async def execute_file_read(self, req: pb.FileRead) -> pb.FileReadResponse:
         if req.path.startswith(MCU_FS_PREFIX):
             serial = self.runtime_service.serial
-            res = (
-                await serial.send(Command.CMD_FILE_READ.value, pb.FileRead(path=req.path.removeprefix(MCU_FS_PREFIX)))
-                if serial
-                else None
-            )
+            clean_path = req.path.removeprefix(MCU_FS_PREFIX)
+            res = (await serial.send(Command.CMD_FILE_READ.value, pb.FileRead(path=clean_path))) if serial else None
             return parse_serial_response(res, pb.FileReadResponse, pb.FileReadResponse())
         content = await self.runtime_service.safe_file_read(req.path)
         return pb.FileReadResponse(content=content or b"")
@@ -215,6 +213,7 @@ class LocalBridgeService(LocalBridgeBase):
         has_correlation = req.HasField("correlation_data")
         route = parse_topic(self.runtime_service.state.cloud_topic_prefix, req.topic_name)
         action = self.runtime_service.deduce_action(route) if route else None
+
         is_query = has_correlation or (
             route is not None
             and (
@@ -225,6 +224,7 @@ class LocalBridgeService(LocalBridgeBase):
                 )
             )
         )
+
         correlation = (
             req.correlation_data if has_correlation else (secrets.token_bytes(AEAD_NONCE_SIZE) if is_query else b"")
         )
@@ -241,6 +241,7 @@ class LocalBridgeService(LocalBridgeBase):
                 await self.runtime_service.handle_request(
                     pb.CloudQueuedPublish(topic_name=req.topic_name, payload=req.payload, correlation_data=correlation)
                 )
+
                 if is_query and response_queue is not None:
                     try:
                         async with asyncio.timeout(15.0):
@@ -262,94 +263,116 @@ class LocalBridgeService(LocalBridgeBase):
         req = req_cls()
         if payload_bytes:
             req.ParseFromString(payload_bytes)
-        resp = await handler(self, req)
-        return resp.SerializeToString()
+        with structlog.contextvars.bound_contextvars(rpc_method=method_name):
+            resp = await handler(self, req)
+            return resp.SerializeToString()
 
-    # --- LocalBridgeBase Stream Handlers (Delegating to canonical execute_* methods) ---
+    # --- LocalBridgeBase Stream Handlers (with structlog contextvars propagation) ---
 
     async def SetPinMode(self, stream: Stream[pb.PinMode, pb.GenericResponse]) -> None:
         if (req := await stream.recv_message()) is not None:
-            await stream.send_message(await self.execute_set_pin_mode(req))
+            with structlog.contextvars.bound_contextvars(rpc="SetPinMode"):
+                await stream.send_message(await self.execute_set_pin_mode(req))
 
     async def DigitalWrite(self, stream: Stream[pb.DigitalWrite, pb.GenericResponse]) -> None:
         if (req := await stream.recv_message()) is not None:
-            await stream.send_message(await self.execute_digital_write(req))
+            with structlog.contextvars.bound_contextvars(rpc="DigitalWrite"):
+                await stream.send_message(await self.execute_digital_write(req))
 
     async def DigitalRead(self, stream: Stream[pb.PinRead, pb.DigitalReadResponse]) -> None:
         if (req := await stream.recv_message()) is not None:
-            await stream.send_message(await self.execute_digital_read(req))
+            with structlog.contextvars.bound_contextvars(rpc="DigitalRead"):
+                await stream.send_message(await self.execute_digital_read(req))
 
     async def AnalogWrite(self, stream: Stream[pb.AnalogWrite, pb.GenericResponse]) -> None:
         if (req := await stream.recv_message()) is not None:
-            await stream.send_message(await self.execute_analog_write(req))
+            with structlog.contextvars.bound_contextvars(rpc="AnalogWrite"):
+                await stream.send_message(await self.execute_analog_write(req))
 
     async def AnalogRead(self, stream: Stream[pb.PinRead, pb.AnalogReadResponse]) -> None:
         if (req := await stream.recv_message()) is not None:
-            await stream.send_message(await self.execute_analog_read(req))
+            with structlog.contextvars.bound_contextvars(rpc="AnalogRead"):
+                await stream.send_message(await self.execute_analog_read(req))
 
     async def PinSubscribe(self, stream: Stream[pb.PinSubscribeRequest, pb.PinSubscribeResponse]) -> None:
         if (req := await stream.recv_message()) is not None:
-            await stream.send_message(await self.execute_pin_subscribe(req))
+            with structlog.contextvars.bound_contextvars(rpc="PinSubscribe"):
+                await stream.send_message(await self.execute_pin_subscribe(req))
 
     async def DatastorePut(self, stream: Stream[pb.DatastorePut, pb.GenericResponse]) -> None:
         if (req := await stream.recv_message()) is not None:
-            await stream.send_message(await self.execute_datastore_put(req))
+            with structlog.contextvars.bound_contextvars(rpc="DatastorePut"):
+                await stream.send_message(await self.execute_datastore_put(req))
 
     async def DatastoreGet(self, stream: Stream[pb.DatastoreGet, pb.DatastoreGetResponse]) -> None:
         if (req := await stream.recv_message()) is not None:
-            await stream.send_message(await self.execute_datastore_get(req))
+            with structlog.contextvars.bound_contextvars(rpc="DatastoreGet"):
+                await stream.send_message(await self.execute_datastore_get(req))
 
     async def MailboxPush(self, stream: Stream[pb.MailboxPush, pb.GenericResponse]) -> None:
         if (req := await stream.recv_message()) is not None:
-            await stream.send_message(await self.execute_mailbox_push(req))
+            with structlog.contextvars.bound_contextvars(rpc="MailboxPush"):
+                await stream.send_message(await self.execute_mailbox_push(req))
 
     async def MailboxRead(self, stream: Stream[pb.SubscribeRequest, pb.MailboxReadResponse]) -> None:
         if (req := await stream.recv_message()) is not None:
-            await stream.send_message(await self.execute_mailbox_read(req))
+            with structlog.contextvars.bound_contextvars(rpc="MailboxRead"):
+                await stream.send_message(await self.execute_mailbox_read(req))
 
     async def FileWrite(self, stream: Stream[pb.FileWrite, pb.GenericResponse]) -> None:
         if (req := await stream.recv_message()) is not None:
-            await stream.send_message(await self.execute_file_write(req))
+            with structlog.contextvars.bound_contextvars(rpc="FileWrite"):
+                await stream.send_message(await self.execute_file_write(req))
 
     async def FileRead(self, stream: Stream[pb.FileRead, pb.FileReadResponse]) -> None:
         if (req := await stream.recv_message()) is not None:
-            await stream.send_message(await self.execute_file_read(req))
+            with structlog.contextvars.bound_contextvars(rpc="FileRead"):
+                await stream.send_message(await self.execute_file_read(req))
 
     async def FileRemove(self, stream: Stream[pb.FileRemove, pb.GenericResponse]) -> None:
         if (req := await stream.recv_message()) is not None:
-            await stream.send_message(await self.execute_file_remove(req))
+            with structlog.contextvars.bound_contextvars(rpc="FileRemove"):
+                await stream.send_message(await self.execute_file_remove(req))
 
     async def ProcessRunAsync(self, stream: Stream[pb.ProcessRunAsync, pb.ProcessRunAsyncResponse]) -> None:
         if (req := await stream.recv_message()) is not None:
-            await stream.send_message(await self.execute_process_run_async(req))
+            with structlog.contextvars.bound_contextvars(rpc="ProcessRunAsync"):
+                await stream.send_message(await self.execute_process_run_async(req))
 
     async def ProcessPoll(self, stream: Stream[pb.ProcessPoll, pb.ProcessPollResponse]) -> None:
         if (req := await stream.recv_message()) is not None:
-            await stream.send_message(await self.execute_process_poll(req))
+            with structlog.contextvars.bound_contextvars(rpc="ProcessPoll"):
+                await stream.send_message(await self.execute_process_poll(req))
 
     async def ProcessKill(self, stream: Stream[pb.ProcessKill, pb.GenericResponse]) -> None:
         if (req := await stream.recv_message()) is not None:
-            await stream.send_message(await self.execute_process_kill(req))
+            with structlog.contextvars.bound_contextvars(rpc="ProcessKill"):
+                await stream.send_message(await self.execute_process_kill(req))
 
     async def SpiTransfer(self, stream: Stream[pb.SpiTransfer, pb.SpiTransferResponse]) -> None:
         if (req := await stream.recv_message()) is not None:
-            await stream.send_message(await self.execute_spi_transfer(req))
+            with structlog.contextvars.bound_contextvars(rpc="SpiTransfer"):
+                await stream.send_message(await self.execute_spi_transfer(req))
 
     async def SpiConfigure(self, stream: Stream[pb.SpiConfig, pb.GenericResponse]) -> None:
         if (req := await stream.recv_message()) is not None:
-            await stream.send_message(await self.execute_spi_configure(req))
+            with structlog.contextvars.bound_contextvars(rpc="SpiConfigure"):
+                await stream.send_message(await self.execute_spi_configure(req))
 
     async def GetVersion(self, stream: Stream[pb.SubscribeRequest, pb.VersionResponse]) -> None:
         if (req := await stream.recv_message()) is not None:
-            await stream.send_message(await self.execute_get_version(req))
+            with structlog.contextvars.bound_contextvars(rpc="GetVersion"):
+                await stream.send_message(await self.execute_get_version(req))
 
     async def GetFreeMemory(self, stream: Stream[pb.SubscribeRequest, pb.FreeMemoryResponse]) -> None:
         if (req := await stream.recv_message()) is not None:
-            await stream.send_message(await self.execute_get_free_memory(req))
+            with structlog.contextvars.bound_contextvars(rpc="GetFreeMemory"):
+                await stream.send_message(await self.execute_get_free_memory(req))
 
     async def GetStatus(self, stream: Stream[pb.SubscribeRequest, pb.BridgeStatus]) -> None:
         if (req := await stream.recv_message()) is not None:
-            await stream.send_message(await self.execute_get_status(req))
+            with structlog.contextvars.bound_contextvars(rpc="GetStatus"):
+                await stream.send_message(await self.execute_get_status(req))
 
     async def Publish(self, stream: Stream[pb.CloudQueuedPublish, pb.CloudQueuedPublish]) -> None:
         if (req := await stream.recv_message()) is not None:

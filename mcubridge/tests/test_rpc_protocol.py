@@ -5,7 +5,7 @@ from __future__ import annotations
 from hypothesis import given, settings, strategies as st
 
 from mcubridge.protocol.frame import build_frame, parse_frame
-from mcubridge.protocol import protocol
+from mcubridge.protocol import is_system_command, protocol
 
 
 def test_crc_is_32bit() -> None:
@@ -32,7 +32,7 @@ def test_frame_build_and_parse_roundtrip_property(command_id: int, sequence_id: 
 
 @settings(max_examples=30, derandomize=True, deadline=None)
 @given(
-    command_id=st.integers(min_value=0x20, max_value=protocol.UINT16_MAX),
+    command_id=st.integers(min_value=0, max_value=protocol.UINT16_MAX).filter(lambda cid: not is_system_command(cid)),
     sequence_id=st.integers(min_value=0, max_value=protocol.UINT16_MAX),
     payload=st.binary(min_size=1, max_size=1024),
     session_key=st.binary(min_size=32, max_size=32),
@@ -50,6 +50,31 @@ def test_frame_build_and_parse_encrypted_roundtrip_property(
         nonce=nonce,
     )
     decoded = parse_frame(raw, session_key=session_key)
+    assert decoded.envelope.command_id == command_id
+    assert decoded.envelope.sequence_id == sequence_id
+    assert decoded.payload == payload
+
+
+@settings(max_examples=20, derandomize=True, deadline=None)
+@given(
+    command_id=st.integers(min_value=protocol.STATUS_CODE_MIN, max_value=protocol.SYSTEM_COMMAND_MAX),
+    sequence_id=st.integers(min_value=0, max_value=protocol.UINT16_MAX),
+    payload=st.binary(min_size=1, max_size=256),
+    session_key=st.binary(min_size=32, max_size=32),
+    nonce=st.binary(min_size=12, max_size=12),
+)
+def test_frame_system_command_skips_encryption_property(
+    command_id: int, sequence_id: int, payload: bytes, session_key: bytes, nonce: bytes
+) -> None:
+    """Property: System and status commands are exempt from AEAD encryption even when session_key is provided."""
+    raw = build_frame(
+        command_id=command_id,
+        sequence_id=sequence_id,
+        payload=payload,
+        session_key=session_key,
+        nonce=nonce,
+    )
+    decoded = parse_frame(raw, session_key=None)
     assert decoded.envelope.command_id == command_id
     assert decoded.envelope.sequence_id == sequence_id
     assert decoded.payload == payload

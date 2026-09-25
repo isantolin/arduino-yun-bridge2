@@ -18,6 +18,7 @@ from mcubridge.daemon import app as daemon_app, cli as daemon_cli
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.services.handshake import SerialHandshakeManager
+from mcubridge.services.local_bridge import RPC_DISPATCH_TABLE
 from mcubridge.services.runtime import BridgeService, LocalBridgeService, ProcessContext
 from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.state.storage import LmdbDeque
@@ -97,37 +98,9 @@ async def test_local_bridge_service_publish_timeout_and_oserror(
     assert b"corr-timeout-1" not in svc.ipc_requests
 
 
-_KNOWN_RPC_METHODS = frozenset(
-    {
-        "SetPinMode",
-        "DigitalWrite",
-        "DigitalRead",
-        "AnalogWrite",
-        "AnalogRead",
-        "PinSubscribe",
-        "DatastorePut",
-        "DatastoreGet",
-        "MailboxPush",
-        "MailboxRead",
-        "FileWrite",
-        "FileRead",
-        "FileRemove",
-        "ProcessRunAsync",
-        "ProcessPoll",
-        "ProcessKill",
-        "SpiTransfer",
-        "SpiConfigure",
-        "GetVersion",
-        "GetFreeMemory",
-        "GetStatus",
-        "Publish",
-    }
-)
-
-
 @settings(max_examples=25, derandomize=True, deadline=None)
 @given(
-    invalid_method=st.text(min_size=1, max_size=50).filter(lambda s: s not in _KNOWN_RPC_METHODS),
+    invalid_method=st.text(min_size=1, max_size=50).filter(lambda s: s not in RPC_DISPATCH_TABLE),
     payload=st.binary(max_size=256),
 )
 def test_local_bridge_service_execute_rpc_unknown_method(invalid_method: str, payload: bytes) -> None:

@@ -454,12 +454,10 @@ def rotate(
         f"#define BRIDGE_SERIAL_SHARED_SECRET_LEN (sizeof(BRIDGE_SERIAL_SHARED_SECRET) - 1)\n"
     )
 
-    if emit_sketch_snippet:
-        emit_sketch_snippet.parent.mkdir(parents=True, exist_ok=True)
-        emit_sketch_snippet.write_text(snippet, encoding="utf-8")
-        print(f"[INFO] Wrote sketch snippet to {emit_sketch_snippet}")
-
-    print("\n" + snippet)
+    target_path = emit_sketch_snippet or Path("bridge_secret.h")
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    target_path.write_text(snippet, encoding="utf-8")
+    print(f"[INFO] Wrote sketch snippet to {target_path}")
 
 
 if __name__ == "__main__":

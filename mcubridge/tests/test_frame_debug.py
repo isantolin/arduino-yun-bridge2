@@ -41,7 +41,7 @@ def test_resolve_command_invalid() -> None:
 @settings(max_examples=30, derandomize=True, deadline=None)
 @given(
     invalid_name=st.text(alphabet=st.characters(blacklist_categories=("Cs",)), min_size=1, max_size=30).filter(
-        lambda s: s.upper() not in _VALID_CMD_NAMES
+        lambda s: s.strip().upper() not in _VALID_CMD_NAMES
         and not s.strip().startswith(("0x", "0X"))
         and not s.strip().isdigit()
         and bool(s.strip())

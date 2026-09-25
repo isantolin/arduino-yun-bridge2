@@ -374,16 +374,16 @@ def test_pending_command_methods() -> None:
     assert cmd.completion.is_set() is False
 
     cmd.mark_success(b"response")
-    assert cmd.success is True
+    assert cmd.success
     assert cmd.response_payload == b"response"
-    assert cmd.completion.is_set() is True
+    assert cmd.completion.is_set()
 
     # Calling mark_success when completion is already set
     cmd.mark_success(b"repeat")
-    assert cmd.success is True
+    assert cmd.success
 
     cmd2 = structures.PendingCommand(command_id=2)
     cmd2.mark_failure(status=404)
-    assert cmd2.success is False
+    assert not cmd2.success
     assert cmd2.failure_status == 404
-    assert cmd2.completion.is_set() is True
+    assert cmd2.completion.is_set()

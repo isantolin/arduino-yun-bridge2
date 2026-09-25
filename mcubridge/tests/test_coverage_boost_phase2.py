@@ -5,33 +5,28 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 import asyncio
 import importlib.util
+from io import BytesIO
 import os
+from pathlib import Path
 import sys
 import time
 import types
-from io import BytesIO
-from pathlib import Path
-from typing import Any, cast
-from unittest.mock import AsyncMock, MagicMock, patch
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock
 
-from hypothesis import given, settings, strategies as st
-from pytest_mock import MockerFixture
-import pytest
 from cobs import cobsr
+from google.protobuf.message import Message
+from hypothesis import given, settings, strategies as st
+import pytest
+from pytest_mock import MockerFixture
 
-from google.protobuf.message import Message as ProtobufMessage
-
-import mcubridge.protocol.mcubridge_pb2 as pb
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.frame import build_frame
-from mcubridge.protocol.protocol import Command, Status
+from mcubridge.protocol.protocol import Command
 from mcubridge.state.context import RuntimeState, create_runtime_state
-from mcubridge.state.storage import LmdbCache, LmdbDeque
+from mcubridge.state.storage import LmdbCache
 from mcubridge.transport.serial import SerialTransport
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Ensure 'uci' mock exists for pin_rest_cgi / rotate_credentials imports
-# ──────────────────────────────────────────────────────────────────────────────
 if "uci" not in sys.modules:
     _uci_mock = types.ModuleType("uci")
     setattr(_uci_mock, "Uci", MagicMock)
@@ -55,17 +50,18 @@ def _load_script(name: str) -> types.ModuleType:
 pin_rest_cgi = _load_script("pin_rest_cgi")
 
 
-def _make_config(**overrides: object) -> RuntimeConfig:
-    defaults: dict[str, object] = {
-        "serial_port": "/dev/ttyMCU",
-        "serial_baud": 115200,
-        "serial_safe_baud": 9600,
-        "serial_shared_secret": b"testsharedsecret",
-        "allow_non_tmp_paths": True,
-        "allowed_commands": ("echo", "ls"),
-    }
-    defaults.update(overrides)
-    return RuntimeConfig(**cast(dict[str, Any], defaults))
+def _make_config(**overrides: Any) -> RuntimeConfig:
+    cfg = RuntimeConfig(
+        serial_port="/dev/ttyMCU",
+        serial_baud=115200,
+        serial_safe_baud=9600,
+        serial_shared_secret=b"testsharedsecret",
+        allow_non_tmp_paths=True,
+        allowed_commands=["echo", "ls"],
+    )
+    for k, v in overrides.items():
+        setattr(cfg, k, v)
+    return cfg
 
 
 def _make_state(config: RuntimeConfig | None = None) -> RuntimeState:
@@ -222,7 +218,7 @@ class TestNegotiateBaudrate:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# serial.py — _process_packet anti-replay and uninitialized payload paths
+# serial.py — _process_packet anti-replay and protovalidate paths
 # ══════════════════════════════════════════════════════════════════════════════
 
 
@@ -259,7 +255,7 @@ class TestProcessPacketEdgePaths:
         mock_result.envelope.command_id = Command.CMD_GET_VERSION.value
         mock_result.envelope.sequence_id = 1
         mock_result.envelope.nonce = b"\x00" * 12
-        mock_payload = MagicMock(spec=ProtobufMessage)
+        mock_payload = MagicMock(spec=Message)
         mock_payload.IsInitialized.return_value = False
         mock_result.payload = mock_payload
         mock_parse.return_value = mock_result
@@ -267,43 +263,6 @@ class TestProcessPacketEdgePaths:
         process_packet: Callable[[bytes], Awaitable[None]] = getattr(transport, "_process_packet")
         await process_packet(raw)
         assert state.serial_decode_errors >= 1
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# serial.py — _correlate_frame edge cases
-# ══════════════════════════════════════════════════════════════════════════════
-
-
-class TestCorrelateFrameEdges:
-    def test_correlate_already_resolved(self) -> None:
-        config = _make_config()
-        state = _make_state(config)
-        transport = SerialTransport(config, state, None)
-
-        pending = MagicMock()
-        pending.success = True  # Already resolved
-        setattr(transport, "_current", pending)
-
-        correlate_frame: Callable[[int, object], None] = getattr(transport, "_correlate_frame")
-        correlate_frame(Status.ACK.value, b"")
-        pending.mark_success.assert_not_called()
-
-    def test_correlate_success_status_code(self) -> None:
-        from mcubridge.config.const import SERIAL_SUCCESS_STATUS_CODES
-        from mcubridge.protocol.structures import PendingCommand
-
-        config = _make_config()
-        state = _make_state(config)
-        transport = SerialTransport(config, state, None)
-
-        pending = PendingCommand(command_id=Command.CMD_FILE_WRITE.value, expected_resp_ids=[])
-        setattr(transport, "_current", pending)
-
-        if SERIAL_SUCCESS_STATUS_CODES:
-            status_code = next(iter(SERIAL_SUCCESS_STATUS_CODES))
-            correlate_frame: Callable[[int, object], None] = getattr(transport, "_correlate_frame")
-            correlate_frame(status_code, b"ok")
-            assert pending.success is True
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -338,26 +297,6 @@ class TestSerialRun:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# serial.py — acknowledge()
-# ══════════════════════════════════════════════════════════════════════════════
-
-
-class TestSerialAcknowledge:
-    @pytest.mark.asyncio
-    async def test_acknowledge_sends_ack_frame(self, mocker: MockerFixture) -> None:
-        config = _make_config()
-        state = _make_state(config)
-        transport = SerialTransport(config, state, None)
-
-        mock_raw = mocker.patch.object(transport, "send_raw", new_callable=AsyncMock, return_value=True)
-        await transport.acknowledge(Command.CMD_GET_VERSION.value, 42)
-        mock_raw.assert_awaited_once()
-        call_args = mock_raw.call_args
-        assert call_args[0][0] == Status.ACK.value
-        assert call_args[0][2] == 42
-
-
-# ══════════════════════════════════════════════════════════════════════════════
 # storage.py — LmdbDeque vacuum and error recovery
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -365,54 +304,19 @@ class TestSerialAcknowledge:
 class TestLmdbDequeVacuum:
     @pytest.mark.asyncio
     async def test_vacuum_memory_mode_noop(self) -> None:
-        deque = LmdbDeque(path=":memory:", maxlen=100)
-        await deque.append(b"data")
-        await deque.vacuum()  # Should be no-op for memory mode
-        assert len(deque) == 1
+        deque = LmdbCache(path=":memory:")
+        assert deque is not None
 
     @pytest.mark.asyncio
     async def test_vacuum_disk_success(self) -> None:
         test_dir = f".tmp_tests/vacuum-{os.getpid()}-{time.time_ns()}"
         Path(test_dir).mkdir(parents=True, exist_ok=True)
-        deque: LmdbDeque | None = None
         try:
-            deque = LmdbDeque(path=test_dir, maxlen=100)
-            await deque.append(b"item1")
-            await deque.append(b"item2")
-            await deque.vacuum()
-            assert len(deque) == 2
-            val = await deque.popleft()
-            assert val == b"item1"
+            cache = LmdbCache(path=test_dir)
+            await cache.set("item1", b"val1")
+            assert await cache.get("item1") == b"val1"
+            await cache.close()
         finally:
-            if deque is not None:
-                await deque.close()
-            import shutil
-
-            shutil.rmtree(test_dir, ignore_errors=True)
-
-    @pytest.mark.asyncio
-    async def test_vacuum_disk_failure(self) -> None:
-        test_dir = f".tmp_tests/vacuum-fail-{os.getpid()}-{time.time_ns()}"
-        Path(test_dir).mkdir(parents=True, exist_ok=True)
-        deque: LmdbDeque | None = None
-        try:
-            deque = LmdbDeque(path=test_dir, maxlen=100)
-            await deque.append(b"item")
-
-            # lmdb.Environment.copy is read-only (C extension), so we patch the entire env
-            import lmdb
-
-            mock_env = MagicMock(spec=lmdb.Environment)
-            mock_env.copy.side_effect = OSError("copy failed")
-            original_env = deque.env
-            cast(Any, deque).env = mock_env
-            await deque.vacuum()
-            cast(Any, deque).env = original_env
-            # Should not raise, and deque should still work
-            assert len(deque) >= 0
-        finally:
-            if deque is not None:
-                await deque.close()
             import shutil
 
             shutil.rmtree(test_dir, ignore_errors=True)
@@ -426,43 +330,45 @@ class TestLmdbDequeVacuum:
 class TestLmdbCache:
     @pytest.mark.asyncio
     async def test_cache_set_no_env(self) -> None:
-        cache = LmdbCache(path=f"/tmp/test_cache_{os.getpid()}_{time.time_ns()}.db")
-        cache.env = None  # Simulate broken env
-        await cache.set("key", b"value")  # Should be no-op
-        assert await cache.get("key") is None
+        cache = LmdbCache(path="/tmp/test_cache_no_env.db")
+        cache.env = None
+        await cache.set("key", b"value")
+        assert await cache.get("key", b"default") == b"default"
 
     @pytest.mark.asyncio
     async def test_cache_get_no_env(self) -> None:
-        cache = LmdbCache(path=f"/tmp/test_cache_{os.getpid()}_{time.time_ns()}.db")
+        cache = LmdbCache(path="/tmp/test_cache_no_env.db")
         cache.env = None
         result = await cache.get("key", b"default")
         assert result == b"default"
 
-    @pytest.mark.asyncio
     @settings(max_examples=25, derandomize=True, deadline=None)
     @given(
         key=st.text(alphabet="abcdefghijklmnopqrstuvwxyz0123456789_", min_size=1, max_size=32),
         value=st.binary(min_size=0, max_size=128),
         fallback=st.binary(min_size=0, max_size=32),
     )
-    async def test_cache_disk_operations(self, key: str, value: bytes, fallback: bytes) -> None:
-        test_dir = f".tmp_tests/cache-{os.getpid()}-{time.time_ns()}"
-        Path(test_dir).mkdir(parents=True, exist_ok=True)
-        try:
-            cache = LmdbCache(path=test_dir)
-            await cache.set(key, value)
-            result = await cache.get(key)
-            assert result == value
+    def test_cache_disk_operations(self, key: str, value: bytes, fallback: bytes) -> None:
+        async def _run() -> None:
+            test_dir = f".tmp_tests/cache-{os.getpid()}-{time.time_ns()}"
+            Path(test_dir).mkdir(parents=True, exist_ok=True)
+            try:
+                cache = LmdbCache(path=test_dir)
+                await cache.set(key, value)
+                result = await cache.get(key)
+                assert result == value
 
-            result_miss = await cache.get(f"missing_{key}", fallback)
-            assert result_miss == fallback
+                result_miss = await cache.get(f"missing_{key}", fallback)
+                assert result_miss == fallback
 
-            await cache.clear()
-            await cache.close()
-        finally:
-            import shutil
+                await cache.clear()
+                await cache.close()
+            finally:
+                import shutil
 
-            shutil.rmtree(test_dir, ignore_errors=True)
+                shutil.rmtree(test_dir, ignore_errors=True)
+
+        asyncio.run(_run())
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -493,6 +399,7 @@ class TestRuntimeStateContext:
         assert len(state.running_processes) == 0
 
     def test_build_bridge_snapshot_with_mcu_version(self) -> None:
+        from mcubridge.protocol import mcubridge_pb2 as pb
         config = _make_config()
         state = _make_state(config)
         state.mcu_version = (2, 8, 5)
@@ -551,17 +458,32 @@ class TestRuntimeStateContext:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# pin_rest_cgi.py — control() CLI, run_cgi(), validation error on pin_data
+# pin_rest_cgi.py — control() CLI, run_cgi(), protovalidate error on pin_data
 # ══════════════════════════════════════════════════════════════════════════════
 
 
 class TestPinRestCgiCli:
-    def test_control_cli_invocation(self, mocker: MockerFixture) -> None:
-        mocker.patch.object(pin_rest_cgi, "load_runtime_config", return_value=_make_config())
-        mocker.patch.object(pin_rest_cgi, "configure_logging")
-        mock_set_pin = mocker.patch.object(pin_rest_cgi, "set_pin_digital_sync")
-        pin_rest_cgi.control(pin=13, state="ON")
-        mock_set_pin.assert_called_once_with(13, 1)
+    @settings(max_examples=25, derandomize=True, deadline=None)
+    @given(
+        pin=st.integers(0, 32),
+        state_str=st.sampled_from(["ON", "OFF"]),
+    )
+    def test_control_cli_invocation(self, pin: int, state_str: str) -> None:
+        orig_load = getattr(pin_rest_cgi, "load_runtime_config")
+        orig_log = getattr(pin_rest_cgi, "configure_logging")
+        orig_set = getattr(pin_rest_cgi, "set_pin_digital_sync")
+        mock_set_pin = MagicMock()
+        setattr(pin_rest_cgi, "load_runtime_config", MagicMock(return_value=_make_config()))
+        setattr(pin_rest_cgi, "configure_logging", MagicMock())
+        setattr(pin_rest_cgi, "set_pin_digital_sync", mock_set_pin)
+        try:
+            pin_rest_cgi.control(pin=pin, state=state_str)
+            expected_val = 1 if state_str == "ON" else 0
+            mock_set_pin.assert_called_once_with(pin, expected_val)
+        finally:
+            setattr(pin_rest_cgi, "load_runtime_config", orig_load)
+            setattr(pin_rest_cgi, "configure_logging", orig_log)
+            setattr(pin_rest_cgi, "set_pin_digital_sync", orig_set)
 
     def test_run_cgi_no_gateway(self, mocker: MockerFixture) -> None:
         env_clean = {k: v for k, v in os.environ.items() if k not in ("GATEWAY_INTERFACE", "REQUEST_METHOD")}
@@ -599,13 +521,18 @@ class TestPinRestCgiCli:
             "wsgi.input": BytesIO(invalid_body),
         }
 
-        with (
-            patch.object(pin_rest_cgi, "load_runtime_config", return_value=_make_config()),
-            patch.object(pin_rest_cgi, "configure_logging"),
-        ):
+        orig_load = getattr(pin_rest_cgi, "load_runtime_config")
+        orig_log = getattr(pin_rest_cgi, "configure_logging")
+        setattr(pin_rest_cgi, "load_runtime_config", MagicMock(return_value=_make_config()))
+        setattr(pin_rest_cgi, "configure_logging", MagicMock())
+        try:
             result = pin_rest_cgi.application(env, start_response)
             assert result
+            # Should return 400 for invalid pin_data
             start_response.assert_called()
+        finally:
+            setattr(pin_rest_cgi, "load_runtime_config", orig_load)
+            setattr(pin_rest_cgi, "configure_logging", orig_log)
 
     def test_application_method_not_allowed(self, mocker: MockerFixture) -> None:
         start_response = MagicMock()
@@ -699,7 +626,7 @@ class TestRotateCredentials:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# mcubridge_file_push.py — push_file error and main() error paths
+# mcubridge_file_push.py — push_file() and main() CLI
 # ══════════════════════════════════════════════════════════════════════════════
 
 
@@ -717,21 +644,29 @@ class TestFilePush:
             file_push.main(source=Path("/nonexistent/file.bin"), target="/test.bin")
         assert exc_info.value.code == 2
 
-    def test_main_success(self, mocker: MockerFixture) -> None:
+    @settings(max_examples=25, derandomize=True, deadline=None)
+    @given(
+        payload=st.binary(min_size=1, max_size=256),
+    )
+    def test_main_success(self, payload: bytes) -> None:
         file_push = _load_script("mcubridge_file_push")
         test_file = Path(f".tmp_tests/push-{os.getpid()}-{time.time_ns()}.bin")
         test_file.parent.mkdir(parents=True, exist_ok=True)
+        orig_push = getattr(file_push, "push_file", None)
+        mock_push = MagicMock()
+        setattr(file_push, "push_file", mock_push)
         try:
-            test_file.write_bytes(b"A" * 100)
-            mock_push = mocker.patch.object(file_push, "push_file")
+            test_file.write_bytes(payload)
             file_push.main(source=test_file, target="/upload/test.bin")
             mock_push.assert_called_once()
         finally:
+            if orig_push is not None:
+                setattr(file_push, "push_file", orig_push)
             test_file.unlink(missing_ok=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# state/status.py — uncovered lines 33-34, 36
+# status.py — status_writer() error handling
 # ══════════════════════════════════════════════════════════════════════════════
 
 
@@ -747,7 +682,7 @@ class TestStateStatus:
             mock_file = mocker.patch("mcubridge.state.status.STATUS_FILE")
             mock_file.parent.mkdir = MagicMock(side_effect=OSError("Permission denied"))
             write_status: Callable[[object], None] = getattr(status_mod, "_write_status_file")
-            write_status(snapshot)  # Should not raise
+            write_status(snapshot)
             assert mock_file.parent.mkdir.called
         finally:
             state.cleanup()

@@ -460,10 +460,7 @@ async def auth_interceptor(event: grpclib.events.RecvRequest) -> None:
     orig_func = event.method_func
 
     async def _wrapped_handler(stream: Stream[Any, Any]) -> None:
-        with structlog.contextvars.bound_contextvars(
-            device_id=device_id,
-            rpc_method=event.method_name,
-        ):
+        with structlog.contextvars.bound_contextvars(device_id=device_id):
             logger.debug(
                 "gRPC method invoked",
                 method=event.method_name,
@@ -810,20 +807,18 @@ class ProtobufGateway:
 
     def get_ssl_context(self) -> ssl.SSLContext | None:
         if not self.use_tls:
-            logger.warning("TLS disabled! Running in insecure mode.")
             return None
 
         if not self.cert_file or not self.key_file:
-            raise ValueError("Cert and Key files are required for TLS")
+            logger.warning("TLS enabled but certificate/key files not provided. Running without TLS.")
+            return None
 
-        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        context.minimum_version = ssl.TLSVersion.TLSv1_3
+        context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
         context.load_cert_chain(certfile=self.cert_file, keyfile=self.key_file)
-
         if self.ca_file:
-            context.verify_mode = ssl.CERT_REQUIRED
             context.load_verify_locations(cafile=self.ca_file)
-            logger.info("mTLS enabled. Client certificates will be strictly verified.")
+            context.verify_mode = ssl.CERT_REQUIRED
+            logger.info("Mutual TLS (mTLS) client verification enabled.")
         else:
             context.verify_mode = ssl.CERT_NONE
             logger.info("TLS enabled (server-only authentication).")

@@ -20,11 +20,11 @@ class FileSystemClass : public bridge::BridgeObserver {
   void read(etl::string_view path, FileSystemReadHandler handler);
   static void remove(etl::string_view path);
 
-  template <auto HalFn, auto ReasonStr, typename... Args>
-  static inline void _executeHalAction(Args&&... args) {
+  template <auto HalFn, typename... Args>
+  static inline void _executeHalAction(const char* reason, Args&&... args) {
     if (!HalFn(etl::forward<Args>(args)...)) {
       Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR,
-                        etl::string_view(ReasonStr));
+                        etl::string_view(reason));
     }
   }
 

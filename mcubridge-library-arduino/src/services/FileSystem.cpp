@@ -2,8 +2,12 @@
 
 #if BRIDGE_ENABLE_FILESYSTEM
 
+#include <etl/algorithm.h>
+#include <etl/numeric.h>
+
 namespace {
 constexpr size_t kReadChunkSize = 64U;
+constexpr size_t kMaxReadIterations = 256U;
 }  // namespace
 
 FileSystemClass::FileSystemClass() {}
@@ -37,23 +41,32 @@ void FileSystemClass::remove(etl::string_view path) {
 }
 
 void FileSystemClass::_onWrite(const rpc::payload::FileWrite& msg) {
-  _executeHalAction<bridge::hal::writeFile, rpc::status_reason::WRITE_FAILED>(
-      etl::string_view(msg.path),
+  _executeHalAction<bridge::hal::writeFile>(
+      rpc::status_reason::WRITE_FAILED, etl::string_view(msg.path),
       etl::span<const uint8_t>(msg.data.bytes, msg.data.size));
 }
 
 void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
   etl::array<uint8_t, kReadChunkSize> buffer;
   size_t offset = 0;
+  bool finished = false;
 
-  while (true) {
+  etl::array<size_t, kMaxReadIterations> steps;
+  etl::iota(steps.begin(), steps.end(), 0U);
+
+  etl::for_each(steps.begin(), steps.end(), [&](size_t) {
+    if (finished) {
+      return;
+    }
+
     auto res = bridge::hal::readFile(
         etl::string_view(msg.path), offset,
         etl::span<uint8_t>(buffer.data(), buffer.size()));
     if (!res) {
       Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR,
                         etl::string_view(rpc::status_reason::READ_FAILED));
-      break;
+      finished = true;
+      return;
     }
 
     rpc::payload::FileReadResponse p = {};
@@ -63,15 +76,16 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
     (void)Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 0, p);
 
     if (!res->has_more) {
-      break;
+      finished = true;
+      return;
     }
     offset += res->bytes_read;
-  }
+  });
 }
 
 void FileSystemClass::_onRemove(const rpc::payload::FileRemove& msg) {
-  _executeHalAction<bridge::hal::removeFile, rpc::status_reason::REMOVE_FAILED>(
-      etl::string_view(msg.path));
+  _executeHalAction<bridge::hal::removeFile>(
+      rpc::status_reason::REMOVE_FAILED, etl::string_view(msg.path));
 }
 
 void FileSystemClass::_onResponse(const rpc::payload::FileReadResponse& msg) {

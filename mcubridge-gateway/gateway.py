@@ -27,6 +27,7 @@ from grpclib.server import Server, Stream
 import prometheus_client
 from statemachine import State, StateMachine
 import structlog
+import structlog.contextvars
 import tenacity
 import typer
 import uvloop
@@ -459,7 +460,10 @@ async def auth_interceptor(event: grpclib.events.RecvRequest) -> None:
     orig_func = event.method_func
 
     async def _wrapped_handler(stream: Stream[Any, Any]) -> None:
-        with structlog.contextvars.bound_contextvars(device_id=device_id):
+        with structlog.contextvars.bound_contextvars(
+            device_id=device_id,
+            rpc_method=event.method_name,
+        ):
             logger.debug(
                 "gRPC method invoked",
                 method=event.method_name,
@@ -508,6 +512,7 @@ class CloudBridgeService(CloudBridgeBase):
                         self.gateway.sessions.pop(old_device_id, None)
                         self.gateway.connections[device_id] = stream
                         self.gateway.sessions[device_id] = session_fsm
+                        structlog.contextvars.bind_contextvars(device_id=device_id)
 
                     payload_type = envelope.WhichOneof("payload")
                     logger.debug(
@@ -562,17 +567,20 @@ class CloudBridgeService(CloudBridgeBase):
             return
 
         timeout = request.timeout_seconds if request.timeout_seconds > 0 else 10.0
-
-        try:
-            response = await self.gateway.send_command(
-                target_id,
-                request.command_path,
-                payload=request.payload,
-                timeout_seconds=float(timeout),
-            )
-            await stream.send_message(response)
-        except (KeyError, TimeoutError, OSError) as exc:
-            await stream.send_message(pb.CommandResponse(status_code=504, payload=str(exc).encode("utf-8")))
+        with structlog.contextvars.bound_contextvars(
+            target_device_id=target_id,
+            command_path=request.command_path,
+        ):
+            try:
+                response = await self.gateway.send_command(
+                    target_id,
+                    request.command_path,
+                    payload=request.payload,
+                    timeout_seconds=float(timeout),
+                )
+                await stream.send_message(response)
+            except (KeyError, TimeoutError, OSError) as exc:
+                await stream.send_message(pb.CommandResponse(status_code=504, payload=str(exc).encode("utf-8")))
 
 
 class GatewayLocalBridgeService(LocalBridgeBase):
@@ -620,22 +628,31 @@ class GatewayLocalBridgeService(LocalBridgeBase):
                 f"Explicit target device '{device_id}' is not connected to gateway",
             )
 
-        try:
-            cmd_resp = await self.gateway.send_command(
-                device_id,
-                f"rpc/{method_name}",
-                payload=req.SerializeToString(),
-                timeout_seconds=15.0,
-            )
-            if cmd_resp.status_code == 200 and cmd_resp.payload:
-                resp = resp_cls()
-                resp.ParseFromString(cmd_resp.payload)
-                await stream.send_message(resp)
-            else:
+        with structlog.contextvars.bound_contextvars(
+            target_device_id=device_id,
+            rpc_method=method_name,
+        ):
+            try:
+                cmd_resp = await self.gateway.send_command(
+                    device_id,
+                    f"rpc/{method_name}",
+                    payload=req.SerializeToString(),
+                    timeout_seconds=15.0,
+                )
+                if cmd_resp.status_code == 200 and cmd_resp.payload:
+                    resp = resp_cls()
+                    resp.ParseFromString(cmd_resp.payload)
+                    await stream.send_message(resp)
+                else:
+                    await stream.send_message(default_resp)
+            except (DecodeError, KeyError, TimeoutError, OSError) as exc:
+                logger.error(
+                    "Error forwarding RPC to device",
+                    method=method_name,
+                    device_id=device_id,
+                    error=str(exc),
+                )
                 await stream.send_message(default_resp)
-        except (KeyError, TimeoutError, OSError) as exc:
-            logger.error("Error forwarding RPC to device", method=method_name, device_id=device_id, error=str(exc))
-            await stream.send_message(default_resp)
 
     async def SetPinMode(self, stream: Stream[pb.PinMode, pb.GenericResponse]) -> None:
         await self._forward_rpc(stream, "SetPinMode", pb.GenericResponse, pb.GenericResponse(status="error"))
@@ -711,10 +728,16 @@ class GatewayLocalBridgeService(LocalBridgeBase):
             logger.warning("Publish rejected: missing explicit device_id")
             await stream.send_message(pb.CloudQueuedPublish())
             return
-        if "console" in req.topic_name:
-            for q in self.gateway.console_queues.get(device_id, []):
-                q.put_nowait(req)
-        await self._forward_rpc(stream, "Publish", pb.CloudQueuedPublish, pb.CloudQueuedPublish(), pre_read_req=req)
+        with structlog.contextvars.bound_contextvars(
+            target_device_id=device_id,
+            topic=req.topic_name,
+        ):
+            if "console" in req.topic_name:
+                for q in self.gateway.console_queues.get(device_id, []):
+                    q.put_nowait(req)
+            await self._forward_rpc(
+                stream, "Publish", pb.CloudQueuedPublish, pb.CloudQueuedPublish(), pre_read_req=req
+            )
 
     async def SubscribeConsole(self, stream: Stream[pb.SubscribeRequest, pb.CloudQueuedPublish]) -> None:
         req = await stream.recv_message()
@@ -734,16 +757,20 @@ class GatewayLocalBridgeService(LocalBridgeBase):
                 f"Explicit target device '{device_id}' is not connected to gateway",
             )
 
-        queue: asyncio.Queue[pb.CloudQueuedPublish] = asyncio.Queue()
-        self.gateway.console_queues.setdefault(device_id, []).append(queue)
-        try:
-            while True:
-                await stream.send_message(await queue.get())
-        except (OSError, RuntimeError) as e:
-            logger.debug("Console subscriber stream closed", device_id=device_id, error=str(e))
-        finally:
-            if device_id in self.gateway.console_queues and queue in self.gateway.console_queues[device_id]:
-                self.gateway.console_queues[device_id].remove(queue)
+        with structlog.contextvars.bound_contextvars(
+            target_device_id=device_id,
+            rpc_method="SubscribeConsole",
+        ):
+            queue: asyncio.Queue[pb.CloudQueuedPublish] = asyncio.Queue()
+            self.gateway.console_queues.setdefault(device_id, []).append(queue)
+            try:
+                while True:
+                    await stream.send_message(await queue.get())
+            except (OSError, RuntimeError) as e:
+                logger.debug("Console subscriber stream closed", device_id=device_id, error=str(e))
+            finally:
+                if device_id in self.gateway.console_queues and queue in self.gateway.console_queues[device_id]:
+                    self.gateway.console_queues[device_id].remove(queue)
 
 
 class ProtobufGateway:
@@ -783,18 +810,20 @@ class ProtobufGateway:
 
     def get_ssl_context(self) -> ssl.SSLContext | None:
         if not self.use_tls:
+            logger.warning("TLS disabled! Running in insecure mode.")
             return None
 
         if not self.cert_file or not self.key_file:
-            logger.warning("TLS enabled but certificate/key files not provided. Running without TLS.")
-            return None
+            raise ValueError("Cert and Key files are required for TLS")
 
-        context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.minimum_version = ssl.TLSVersion.TLSv1_3
         context.load_cert_chain(certfile=self.cert_file, keyfile=self.key_file)
+
         if self.ca_file:
-            context.load_verify_locations(cafile=self.ca_file)
             context.verify_mode = ssl.CERT_REQUIRED
-            logger.info("Mutual TLS (mTLS) client verification enabled.")
+            context.load_verify_locations(cafile=self.ca_file)
+            logger.info("mTLS enabled. Client certificates will be strictly verified.")
         else:
             context.verify_mode = ssl.CERT_NONE
             logger.info("TLS enabled (server-only authentication).")

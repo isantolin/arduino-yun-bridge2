@@ -1,9 +1,12 @@
 #include "services/FileSystem.h"
 
-#if BRIDGE_ENABLE_FILESYSTEM
-
 #include <etl/algorithm.h>
-#include <etl/iterator.h>
+#include <etl/fixed_iterator.h>
+#include <etl/numeric.h>
+
+#include "Bridge.h"
+
+#if BRIDGE_ENABLE_FILESYSTEM
 
 namespace {
 constexpr size_t kReadChunkSize = 64U;
@@ -43,18 +46,16 @@ void FileSystemClass::_onWrite(const rpc::payload::FileWrite& msg) {
   auto res = bridge::hal::writeFile(
       etl::string_view(msg.path),
       etl::span<const uint8_t>(msg.data.bytes, msg.data.size));
-  if (!res) {
-    Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR,
-                      etl::string_view(rpc::status_reason::WRITE_FAILED));
-  }
+  (void)Bridge.sendFrame(res ? rpc::StatusCode::STATUS_OK
+                             : rpc::StatusCode::STATUS_ERROR);
 }
 
 void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
-  uint32_t start_ms = millis();
-  bool finished = false;
-  size_t offset = 0;
-  etl::array<uint8_t, kReadChunkSize> buffer;
+  const etl::string_view path(msg.path);
+  size_t offset = 0U;
+  const uint32_t start_ms = millis();
 
+  bool finished = false;
   uint8_t dummy = 0U;
   etl::fixed_iterator<uint8_t*> fixed_it(&dummy);
 
@@ -63,17 +64,13 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
         if (finished) return;
         if (millis() - start_ms >= bridge::config::SERIAL_TIMEOUT_MS) {
           finished = true;
-          Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR,
-                            etl::string_view(rpc::status_reason::READ_FAILED));
           return;
         }
-
-        auto res = bridge::hal::readFile(
-            etl::string_view(msg.path), offset,
-            etl::span<uint8_t>(buffer.data(), buffer.size()));
+        etl::array<uint8_t, kReadChunkSize> buffer;
+        auto res = bridge::hal::readFileChunk(
+            path, offset, etl::span<uint8_t>(buffer.data(), buffer.size()));
         if (!res) {
-          Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR,
-                            etl::string_view(rpc::status_reason::READ_FAILED));
+          (void)Bridge.sendFrame(rpc::StatusCode::STATUS_ERROR);
           finished = true;
           return;
         }
@@ -85,19 +82,21 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
         (void)Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 0, p);
 
         if (!res->has_more) {
+          rpc::payload::FileReadResponse empty_p = {};
+          empty_p.content.size = 0U;
+          (void)Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 0, empty_p);
           finished = true;
           return;
         }
+
         offset += res->bytes_read;
       });
 }
 
 void FileSystemClass::_onRemove(const rpc::payload::FileRemove& msg) {
   auto res = bridge::hal::removeFile(etl::string_view(msg.path));
-  if (!res) {
-    Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR,
-                      etl::string_view(rpc::status_reason::REMOVE_FAILED));
-  }
+  (void)Bridge.sendFrame(res ? rpc::StatusCode::STATUS_OK
+                             : rpc::StatusCode::STATUS_ERROR);
 }
 
 void FileSystemClass::_onResponse(const rpc::payload::FileReadResponse& msg) {
@@ -110,4 +109,6 @@ void FileSystemClass::_onResponse(const rpc::payload::FileReadResponse& msg) {
   }
 }
 
-#endif  // BRIDGE_ENABLE_FILESYSTEM
+FileSystemType FileSystem;
+
+#endif

@@ -6,6 +6,7 @@
 #include <etl/delegate.h>
 #include <etl/span.h>
 #include <etl/string_view.h>
+
 #include "Bridge.h"
 #include "protocol/rpc_structs.h"
 
@@ -14,8 +15,7 @@ class FileSystemClass : public bridge::BridgeObserver {
   using FileSystemReadHandler = etl::delegate<void(etl::span<const uint8_t>)>;
 
   FileSystemClass();
-
-  void write(etl::string_view path, etl::span<const uint8_t> data);
+  static void write(etl::string_view path, etl::span<const uint8_t> data);
   void read(etl::string_view path, FileSystemReadHandler handler);
   static void remove(etl::string_view path);
 

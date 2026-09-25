@@ -460,7 +460,10 @@ async def auth_interceptor(event: grpclib.events.RecvRequest) -> None:
     orig_func = event.method_func
 
     async def _wrapped_handler(stream: Stream[Any, Any]) -> None:
-        with structlog.contextvars.bound_contextvars(device_id=device_id):
+        with structlog.contextvars.bound_contextvars(
+            device_id=device_id,
+            rpc_method=event.method_name,
+        ):
             logger.debug(
                 "gRPC method invoked",
                 method=event.method_name,
@@ -636,9 +639,10 @@ class GatewayLocalBridgeService(LocalBridgeBase):
                     payload=req.SerializeToString(),
                     timeout_seconds=15.0,
                 )
-                if cmd_resp.status_code == 200 and cmd_resp.payload:
+                if cmd_resp.status_code == 200:
                     resp = resp_cls()
-                    resp.ParseFromString(cmd_resp.payload)
+                    if cmd_resp.payload:
+                        resp.ParseFromString(cmd_resp.payload)
                     await stream.send_message(resp)
                 else:
                     await stream.send_message(default_resp)

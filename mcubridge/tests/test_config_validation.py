@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from hypothesis import given, settings, strategies as st
+from hypothesis import given, strategies as st
 from pytest_mock import MockerFixture
 import pytest
 
@@ -58,7 +58,6 @@ def test_runtime_config_rejects_non_positive_status_interval() -> None:
         validate_config(cfg)
 
 
-@settings(max_examples=30, derandomize=True, deadline=None)
 @given(interval=st.floats(min_value=-1000.0, max_value=0.49).filter(lambda x: not (x != x)))
 def test_runtime_config_requires_watchdog_interval_when_enabled(interval: float) -> None:
     cfg = _valid_base_config()
@@ -68,7 +67,6 @@ def test_runtime_config_requires_watchdog_interval_when_enabled(interval: float)
         validate_config(cfg)
 
 
-@settings(max_examples=30, derandomize=True, deadline=None)
 @given(port=st.one_of(st.just(0), st.integers(min_value=65536, max_value=200000)))
 def test_runtime_config_rejects_invalid_cloud_port(port: int) -> None:
     cfg = _valid_base_config()

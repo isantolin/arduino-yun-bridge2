@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from hypothesis import given, settings, strategies as st
+from hypothesis import assume, given, strategies as st
 
 from mcubridge.protocol.protocol import COMMAND_TO_TOPIC, Topic
 from mcubridge.protocol.topics import (
@@ -18,7 +18,6 @@ _SAFE_TEXT = st.text(
 )
 
 
-@settings(max_examples=50, derandomize=True, deadline=None)
 @given(
     prefix=_SAFE_TEXT,
     topic=st.sampled_from(list(Topic)),
@@ -35,7 +34,6 @@ def test_topic_path_parse_topic_isomorphism(prefix: str, topic: Topic, segments:
     assert route.segments == tuple(segments)
 
 
-@settings(max_examples=40, derandomize=True, deadline=None)
 @given(
     prefix_a=_SAFE_TEXT,
     prefix_b=_SAFE_TEXT,
@@ -46,13 +44,11 @@ def test_parse_topic_mismatched_prefix_rejected(
     prefix_a: str, prefix_b: str, topic: Topic, segments: list[str]
 ) -> None:
     """Property: A topic constructed with prefix_b is deterministically rejected when parsed with distinct prefix_a."""
-    if prefix_a == prefix_b:
-        return
+    assume(prefix_a != prefix_b)
     raw = topic_path(prefix_b, topic.value, *segments)
     assert parse_topic(prefix_a, raw) is None
 
 
-@settings(max_examples=40, derandomize=True, deadline=None)
 @given(
     prefix=_SAFE_TEXT,
     invalid_service=st.text(alphabet="abcdefghijklmnopqrstuvwxyz", min_size=8, max_size=16).filter(
@@ -66,7 +62,6 @@ def test_parse_topic_unrecognized_service_rejected(prefix: str, invalid_service:
     assert parse_topic(prefix, raw) is None
 
 
-@settings(max_examples=30, derandomize=True, deadline=None)
 @given(s=_SAFE_TEXT)
 def test_parse_topic_empty_inputs_rejected(s: str) -> None:
     """Property: Empty prefix or empty topic string always returns None."""
@@ -75,7 +70,6 @@ def test_parse_topic_empty_inputs_rejected(s: str) -> None:
     assert parse_topic("", "") is None
 
 
-@settings(max_examples=30, derandomize=True, deadline=None)
 @given(
     prefix=_SAFE_TEXT,
     command_id=st.sampled_from(list(COMMAND_TO_TOPIC.keys())),
@@ -88,13 +82,11 @@ def test_get_topic_for_message_command_id_known(prefix: str, command_id: int) ->
     assert COMMAND_TO_TOPIC[command_id] in res
 
 
-@settings(max_examples=30, derandomize=True, deadline=None)
 @given(
     prefix=_SAFE_TEXT,
     unknown_id=st.integers(min_value=60000, max_value=65535),
 )
 def test_get_topic_for_message_unknown_id(prefix: str, unknown_id: int) -> None:
     """Property: get_topic_for_message returns None for any unregistered command ID."""
-    if unknown_id in COMMAND_TO_TOPIC:
-        return
+    assume(unknown_id not in COMMAND_TO_TOPIC)
     assert get_topic_for_message(prefix, unknown_id) is None

@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from cobs import cobsr
 from google.protobuf.message import Message
-from hypothesis import given, settings, strategies as st
+from hypothesis import given, strategies as st
 import pytest
 from pytest_mock import MockerFixture
 
@@ -342,7 +342,6 @@ class TestLmdbCache:
         result = await cache.get("key", b"default")
         assert result == b"default"
 
-    @settings(max_examples=25, derandomize=True, deadline=None)
     @given(
         key=st.text(alphabet="abcdefghijklmnopqrstuvwxyz0123456789_", min_size=1, max_size=32),
         value=st.binary(min_size=0, max_size=128),
@@ -464,7 +463,6 @@ class TestRuntimeStateContext:
 
 
 class TestPinRestCgiCli:
-    @settings(max_examples=25, derandomize=True, deadline=None)
     @given(
         pin=st.integers(0, 32),
         state_str=st.sampled_from(["ON", "OFF"]),
@@ -501,7 +499,6 @@ class TestPinRestCgiCli:
         pin_rest_cgi.run_cgi()
         mock_handler.run.assert_called_once()
 
-    @settings(max_examples=10, derandomize=True, deadline=None)
     @given(
         invalid_body=st.sampled_from(
             [
@@ -645,7 +642,6 @@ class TestFilePush:
             file_push.main(source=Path("/nonexistent/file.bin"), target="/test.bin")
         assert exc_info.value.code == 2
 
-    @settings(max_examples=25, derandomize=True, deadline=None)
     @given(
         payload=st.binary(min_size=1, max_size=256),
     )

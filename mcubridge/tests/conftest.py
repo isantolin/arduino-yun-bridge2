@@ -16,10 +16,13 @@ import time
 from mcubridge.config.settings import load_runtime_config
 from typing import Any, cast
 
+from hypothesis import Phase, settings as hyp_settings, strategies as st
+from hypothesis.strategies import DrawFn
 import pytest
 from pytest_mock import MockerFixture
 import structlog
 from mcubridge.config.logging import configure_logging, reset_handlers
+from mcubridge.protocol import mcubridge_pb2 as pb
 
 from mcubridge.config import common, settings
 import mcubridge.config.common
@@ -38,6 +41,30 @@ import mcubridge.protocol.structures
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.transport.serial import SerialTransport
+
+# Hypothesis profile registration for deterministic SIL-2 test runs
+hyp_settings.register_profile(
+    "dev",
+    max_examples=30,
+    derandomize=True,
+    deadline=None,
+    phases=(Phase.explicit, Phase.reuse, Phase.generate, Phase.shrink),
+)
+hyp_settings.register_profile(
+    "ci",
+    max_examples=50,
+    derandomize=True,
+    deadline=None,
+    phases=(Phase.explicit, Phase.reuse, Phase.generate, Phase.shrink),
+)
+hyp_settings.register_profile(
+    "fuzz",
+    max_examples=200,
+    derandomize=True,
+    deadline=None,
+    phases=(Phase.explicit, Phase.reuse, Phase.generate, Phase.shrink),
+)
+hyp_settings.load_profile(os.getenv("HYPOTHESIS_PROFILE", "dev"))
 
 # Setup paths for local imports and stubs (placed after all imports to satisfy E402)
 _stubs_path = str(Path(__file__).parent.parent / "stubs")
@@ -376,3 +403,43 @@ def service_stack(runtime_config: RuntimeConfig):
     finally:
         service.cleanup()
         state.cleanup()
+
+
+@st.composite
+def st_cloud_queued_publish(
+    draw: DrawFn,
+    min_payload_size: int = 0,
+    max_payload_size: int = 1024,
+) -> pb.CloudQueuedPublish:
+    """Canonical Hypothesis strategy for generating valid Protobuf CloudQueuedPublish instances."""
+    topic = draw(st.text(min_size=1, max_size=64))
+    payload = draw(st.binary(min_size=min_payload_size, max_size=max_payload_size))
+    qos = draw(st.integers(min_value=0, max_value=2))
+    retain = draw(st.booleans())
+    corr = draw(st.binary(max_size=32))
+    reply = draw(st.text(max_size=64))
+    return pb.CloudQueuedPublish(
+        topic_name=topic,
+        payload=payload,
+        qos=qos,
+        retain=retain,
+        correlation_data=corr,
+        response_topic=reply,
+    )
+
+
+@st.composite
+def st_runtime_config(draw: DrawFn) -> RuntimeConfig:
+    """Canonical Hypothesis strategy for generating valid RuntimeConfig instances."""
+    baud = draw(st.sampled_from([9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600]))
+    port = draw(st.integers(min_value=1024, max_value=65535))
+    prefix = draw(st.from_regex(r"^[a-z0-9_-]{1,16}$", fullmatch=True))
+    secret = draw(st.binary(min_size=16, max_size=32))
+    return RuntimeConfig(
+        topic_prefix=prefix,
+        serial_port="/dev/test",
+        serial_baud=baud,
+        cloud_port=port,
+        serial_shared_secret=secret,
+        allow_non_tmp_paths=True,
+    )

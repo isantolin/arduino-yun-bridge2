@@ -6,7 +6,7 @@ from collections.abc import Awaitable, Callable
 from typing import cast
 from unittest.mock import AsyncMock
 
-from hypothesis import given, settings, strategies as st
+from hypothesis import given, strategies as st
 import pytest
 
 from mcubridge.config.settings import RuntimeConfig
@@ -40,7 +40,6 @@ def _make_service() -> tuple[BridgeService, RuntimeState, AsyncMock, AsyncMock, 
 
 
 @pytest.mark.asyncio
-@settings(max_examples=25, derandomize=True, deadline=None)
 @given(
     pin=st.integers(0, 64),
     val=st.integers(0, 2),
@@ -95,7 +94,6 @@ async def test_cloud_command_pin_dispatch_property(
 
 
 @pytest.mark.asyncio
-@settings(max_examples=25, derandomize=True, deadline=None)
 @given(
     seq_id=st.integers(1, 2**63 - 1),
     payload=st.binary(min_size=1, max_size=64),
@@ -130,7 +128,6 @@ async def test_publish_cloud_message_wraps_command_response(
 
 
 @pytest.mark.asyncio
-@settings(max_examples=25, derandomize=True, deadline=None)
 @given(
     pin=st.integers(0, 64),
     value=st.integers(0, 1023),

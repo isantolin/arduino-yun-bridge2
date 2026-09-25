@@ -7,7 +7,7 @@ import os
 import time
 from unittest.mock import AsyncMock, MagicMock
 
-from hypothesis import given, settings, strategies as st
+from hypothesis import given, strategies as st
 import pytest
 
 from mcubridge.config.settings import RuntimeConfig
@@ -76,7 +76,6 @@ async def test_clock_sync_service() -> None:
         service.cleanup()
 
 
-@settings(max_examples=40, derandomize=True, deadline=None)
 @given(
     delay_us=st.integers(min_value=10, max_value=5_000_000),
     mcu_time_us=st.integers(min_value=0, max_value=2**32 - 1),
@@ -102,7 +101,6 @@ def test_clock_sync_record_sync_arithmetic_property(delay_us: int, mcu_time_us: 
     assert state.clock_offset_us == mcu_time_us - (t1_host_us + (state.clock_rtt_us // 2))
 
 
-@settings(max_examples=40, derandomize=True, deadline=None)
 @given(
     pin=st.integers(min_value=0, max_value=255),
     value=st.integers(min_value=0, max_value=1023),

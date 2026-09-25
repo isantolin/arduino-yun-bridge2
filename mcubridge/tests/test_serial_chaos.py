@@ -8,7 +8,7 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 from cobs import cobsr
-from hypothesis import given, settings, strategies as st
+from hypothesis import given, strategies as st
 import pytest
 
 from mcubridge.config.settings import RuntimeConfig
@@ -54,7 +54,6 @@ async def test_negotiation_failure_and_disconnect() -> None:
 
 
 @pytest.mark.asyncio
-@settings(max_examples=25, derandomize=True, deadline=None)
 @given(corrupt_payload=st.binary(min_size=1, max_size=32).filter(lambda b: b"\x00" not in b))
 async def test_read_loop_corrupted_frame_resilience(corrupt_payload: bytes) -> None:
     transport, _state = _make_transport()
@@ -85,7 +84,6 @@ async def test_read_loop_corrupted_frame_resilience(corrupt_payload: bytes) -> N
 
 
 @pytest.mark.asyncio
-@settings(max_examples=30, derandomize=True, deadline=None)
 @given(init_seq=st.integers(0, protocol.UINT16_MAX))
 async def test_tx_sequence_wrapping_isomorphism(init_seq: int) -> None:
     transport, state = _make_transport()

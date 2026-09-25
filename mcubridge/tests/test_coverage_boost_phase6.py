@@ -31,7 +31,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from pytest_mock import MockerFixture
 import pytest
-from hypothesis import given, settings, strategies as st
+from hypothesis import given, strategies as st
 
 from mcubridge.config.logging import configure_logging
 import mcubridge.config.settings as settings_mod
@@ -102,7 +102,6 @@ def test_settings_load_runtime_config_from_json_unknown_override() -> None:
     assert cfg.serial_baud == 230400
 
 
-@settings(max_examples=30, derandomize=True, deadline=None)
 @given(
     cloud_en=st.sampled_from(["1", "true", "yes", "on", True]),
     wd_en=st.sampled_from(["0", "false", "no", "off", False]),

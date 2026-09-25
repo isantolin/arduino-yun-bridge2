@@ -14,7 +14,7 @@ import tempfile
 from typing import Any, cast
 from unittest.mock import AsyncMock
 
-from hypothesis import given, settings, strategies as st
+from hypothesis import given, strategies as st
 import lmdb
 import pytest
 from pytest_mock import MockerFixture
@@ -99,7 +99,6 @@ async def test_runtime_run_cloud_disabled(tmp_path: Path, mocker: MockerFixture)
     state.cleanup()
 
 
-@settings(max_examples=25, derandomize=True, deadline=None)
 @given(
     key=st.text(alphabet="abcdefghijklmnopqrstuvwxyz0123456789_", min_size=1, max_size=24),
     value=st.binary(min_size=1, max_size=128),
@@ -218,7 +217,6 @@ async def test_runtime_local_bridge_subscribe_console(tmp_path: Path, mocker: Mo
     state.cleanup()
 
 
-@settings(max_examples=25, derandomize=True, deadline=None)
 @given(
     major=st.integers(0, 10),
     minor=st.integers(0, 50),
@@ -260,7 +258,6 @@ def test_runtime_request_mcu_version_and_system_version(
     asyncio.run(_run())
 
 
-@settings(max_examples=25, derandomize=True, deadline=None)
 @given(
     pin=st.integers(0, 32),
     analog_val=st.integers(0, 255),

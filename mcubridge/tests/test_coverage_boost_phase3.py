@@ -13,7 +13,7 @@ import tempfile
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
-from hypothesis import given, settings, strategies as st
+from hypothesis import given, strategies as st
 import pytest
 
 from mcubridge.config.settings import RuntimeConfig
@@ -372,7 +372,6 @@ async def test_runtime_on_mcu_process_kill(tmp_path: Path) -> None:
     service.cleanup()
 
 
-@settings(max_examples=30, derandomize=True, deadline=None)
 @given(
     status=st.sampled_from(list(Status)),
     seq=st.integers(0, 65535),
@@ -469,7 +468,6 @@ async def test_handshake_handle_capabilities_resp(tmp_path: Path) -> None:
     service.cleanup()
 
 
-@settings(max_examples=25, derandomize=True, deadline=None)
 @given(
     secret=st.binary(min_size=1, max_size=32),
     nonce=st.binary(min_size=8, max_size=16),
@@ -584,7 +582,6 @@ async def test_publish_bridge_snapshots_loop_error_recovery(tmp_path: Path) -> N
     state.cleanup()
 
 
-@settings(max_examples=25, derandomize=True, deadline=None)
 @given(
     items=st.lists(st.binary(min_size=1, max_size=32), min_size=2, max_size=8),
 )

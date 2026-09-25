@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
-from hypothesis import given, settings, strategies as st
+from hypothesis import given, strategies as st
 from pytest_mock import MockerFixture
 import pytest
 
@@ -98,7 +98,6 @@ async def test_local_bridge_service_publish_timeout_and_oserror(
     assert b"corr-timeout-1" not in svc.ipc_requests
 
 
-@settings(max_examples=25, derandomize=True, deadline=None)
 @given(
     invalid_method=st.text(min_size=1, max_size=50).filter(lambda s: s not in RPC_DISPATCH_TABLE),
     payload=st.binary(max_size=256),
@@ -225,7 +224,6 @@ async def test_serial_transport_send_failure_status_code(test_config: RuntimeCon
     assert res is False
 
 
-@settings(max_examples=25, derandomize=True, deadline=None)
 @given(
     nonce=st.binary(min_size=1, max_size=32),
 )
@@ -271,7 +269,6 @@ async def test_gateway_session_cancelled(mocker: MockerFixture) -> None:
         await svc.Session(mock_stream)
 
 
-@settings(max_examples=25, derandomize=True, deadline=None)
 @given(
     free_bytes=st.integers(0, 1024),
     data=st.binary(min_size=1, max_size=2048),
@@ -359,7 +356,6 @@ async def test_runtime_flush_console_queue_send_failed(test_config: RuntimeConfi
     assert len(svc.state.console_to_mcu_queue) == 1
 
 
-@settings(max_examples=25, derandomize=True, deadline=None)
 @given(
     action=st.sampled_from(["read", "write", "mode", "toggle"]),
     topic_str=st.text(alphabet="abcdefghijklmnopqrstuvwxyz0123456789_", min_size=1, max_size=20),

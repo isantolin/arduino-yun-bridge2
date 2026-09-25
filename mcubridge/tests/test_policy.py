@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from hypothesis import given, settings, strategies as st
+from hypothesis import given, strategies as st
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol import protocol
 from mcubridge.protocol.structures import allows_topic, create_allowed_policy, is_command_allowed
@@ -19,7 +19,6 @@ def _make_auth(**kwargs: bool) -> pb.TopicAuthorization:
 
 
 class TestAllowedCommandPolicy:
-    @settings(max_examples=40, derandomize=True, deadline=None)
     @given(allowed=st.lists(_SAFE_TOKEN, min_size=1, max_size=5), args=_ARGS_STR)
     def test_allowed_commands_matched_by_first_token(self, allowed: list[str], args: str) -> None:
         """Property: A command is allowed if its first whitespace token matches any normalized policy entry."""
@@ -27,7 +26,6 @@ class TestAllowedCommandPolicy:
         cmd = f"{allowed[0]} {args}".strip()
         assert is_command_allowed(policy, cmd)
 
-    @settings(max_examples=30, derandomize=True, deadline=None)
     @given(allowed=st.lists(_SAFE_TOKEN, min_size=1, max_size=5), cmd=st.text(alphabet=" \t\r\n", max_size=10))
     def test_empty_or_whitespace_always_denied(self, allowed: list[str], cmd: str) -> None:
         """Property: Empty or pure whitespace commands are always rejected regardless of policy."""
@@ -46,14 +44,12 @@ class TestAllowedCommandPolicy:
 
 
 class TestTopicAuthorization:
-    @settings(max_examples=30, derandomize=True, deadline=None)
     @given(entry=st.sampled_from(list(protocol.TOPIC_AUTH_MAP.items())))
     def test_default_policy_allows_all_tracked_actions(self, entry: tuple[tuple[str, str], str]) -> None:
         """Property: Default permissive policy allows all tracked service actions."""
         (topic, action), _ = entry
         assert allows_topic(_make_auth(), topic, action)
 
-    @settings(max_examples=30, derandomize=True, deadline=None)
     @given(entry=st.sampled_from(list(protocol.TOPIC_AUTH_MAP.items())))
     def test_selective_action_denial_and_case_insensitivity(self, entry: tuple[tuple[str, str], str]) -> None:
         """Property: Disabling a specific permission flag rejects the action under any case variation."""
@@ -62,7 +58,6 @@ class TestTopicAuthorization:
         assert not allows_topic(auth, topic.upper(), action.upper())
         assert not allows_topic(auth, topic.lower(), action.lower())
 
-    @settings(max_examples=30, derandomize=True, deadline=None)
     @given(unknown_topic=st.text(alphabet="xyz123", min_size=6, max_size=10), action=_SAFE_TOKEN)
     def test_unknown_topics_and_actions_denied(self, unknown_topic: str, action: str) -> None:
         """Property: Any topic or action not defined in protocol authorization rules defaults to deny."""

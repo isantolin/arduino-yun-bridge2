@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
-from hypothesis import given, settings, strategies as st
+from hypothesis import given, strategies as st
 import lmdb
 import pytest
 from pytest_mock import MockerFixture
@@ -134,7 +134,6 @@ async def test_lmdb_cache_corruption_recovery(tmp_path: object) -> None:
 
 
 @pytest.mark.asyncio
-@settings(max_examples=30, derandomize=True, deadline=None)
 @given(
     maxlen=st.integers(min_value=1, max_value=8),
     items=st.lists(st.binary(min_size=1, max_size=32), min_size=1, max_size=20),

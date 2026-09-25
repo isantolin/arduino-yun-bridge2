@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from hypothesis import given, settings, strategies as st
+from hypothesis import example, given, strategies as st
 from pytest_mock import MockerFixture
 import pytest
 import serialx
@@ -15,8 +15,9 @@ from tools.emulation import frame_debug
 _VALID_CMD_NAMES = frozenset([entry.name.upper() for enum_cls in (Command, Status) for entry in enum_cls])
 
 
-@settings(max_examples=40, derandomize=True, deadline=None)
 @given(val=st.integers(min_value=0, max_value=protocol.UINT16_MAX))
+@example(val=0)
+@example(val=protocol.UINT16_MAX)
 def test_resolve_command_numeric_property(val: int) -> None:
     assert frame_debug.resolve_command(f"0x{val:X}") == val
     assert frame_debug.resolve_command(f"0x{val:x}") == val
@@ -30,15 +31,11 @@ def test_resolve_command_name() -> None:
     assert frame_debug.resolve_command("cmd_get_version") == Command.CMD_GET_VERSION.value
 
 
-def test_resolve_command_invalid() -> None:
+def test_resolve_command_empty() -> None:
     with pytest.raises(ValueError, match="command may not be empty"):
         frame_debug.resolve_command("")
 
-    with pytest.raises(ValueError, match="Unknown command"):
-        frame_debug.resolve_command("INVALID_CMD")
 
-
-@settings(max_examples=30, derandomize=True, deadline=None)
 @given(
     invalid_name=st.text(alphabet=st.characters(blacklist_categories=("Cs",)), min_size=1, max_size=30).filter(
         lambda s: s.strip().upper() not in _VALID_CMD_NAMES
@@ -47,13 +44,14 @@ def test_resolve_command_invalid() -> None:
         and bool(s.strip())
     )
 )
+@example(invalid_name="INVALID_CMD")
 def test_resolve_command_invalid_property(invalid_name: str) -> None:
     with pytest.raises(ValueError, match="Unknown command"):
         frame_debug.resolve_command(invalid_name)
 
 
-@settings(max_examples=40, derandomize=True, deadline=None)
 @given(data=st.binary(min_size=0, max_size=512))
+@example(data=b"")
 def test_parse_payload_hex_property(data: bytes) -> None:
     assert frame_debug.parse_payload(data.hex()) == data
     assert frame_debug.parse_payload(data.hex(" ")) == data
@@ -62,7 +60,6 @@ def test_parse_payload_hex_property(data: bytes) -> None:
 
 def test_parse_payload_edge_cases() -> None:
     assert frame_debug.parse_payload(None) == b""
-    assert frame_debug.parse_payload("") == b""
 
 
 def test_parse_payload_invalid() -> None:

@@ -9,11 +9,13 @@ from __future__ import annotations
 
 import asyncio
 from binascii import crc32
-from typing import Annotated
+from collections.abc import Callable
+from typing import Annotated, cast
 
 from cobs import cobs
 from hypothesis import HealthCheck, event, settings, strategies as st
-from hypothesis.stateful import RuleBasedStateMachine, invariant, rule, run_state_machine_as_test
+import hypothesis.stateful as h_stateful
+from hypothesis.stateful import RuleBasedStateMachine, invariant, rule
 import serialx
 import structlog
 import typer
@@ -24,6 +26,11 @@ from mcubridge.protocol.frame import build_frame
 
 app = typer.Typer(help="[MIL-SPEC/SIL-2] McuBridge Protocol Stateful Fuzzer")
 logger = structlog.get_logger("protocol_fuzzer")
+
+_RUN_STATE_MACHINE: Callable[[type[RuleBasedStateMachine]], None] = cast(
+    Callable[[type[RuleBasedStateMachine]], None],
+    getattr(h_stateful, "run_state_machine_as_test"),
+)
 
 
 class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
@@ -193,9 +200,6 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
         assert self.writer is not None, "Serial writer disconnected unexpectedly"
 
 
-ProtocolFuzzerTestCase = ProtocolFuzzerStateMachine.TestCase
-
-
 @app.command()
 def main(
     port: Annotated[str, typer.Option("--port", help="Serial port URL or device node")] = "/dev/ttyUSB0",
@@ -220,11 +224,17 @@ def main(
         suppress_health_check=[HealthCheck.too_slow, HealthCheck.filter_too_much],
     )
 
-    runner = state_settings(run_state_machine_as_test)
+    runner: Callable[[type[RuleBasedStateMachine]], None] = cast(
+        Callable[[type[RuleBasedStateMachine]], None],
+        state_settings(_RUN_STATE_MACHINE),
+    )
     if seed is not None:
         from hypothesis import seed as hyp_seed
 
-        runner = hyp_seed(seed)(runner)
+        runner = cast(
+            Callable[[type[RuleBasedStateMachine]], None],
+            hyp_seed(seed)(runner),
+        )
 
     try:
         runner(ConfiguredFuzzerMachine)

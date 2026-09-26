@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 from binascii import crc32
-from collections.abc import Callable
 from typing import Annotated
 
 from cobs import cobs
@@ -43,8 +42,8 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
         self.frames_sent: int = 0
         self.probe_responses_received: int = 0
         self.loop = asyncio.new_event_loop()
-        self.reader: serialx.SerialReader | None = None
-        self.writer: serialx.SerialWriter | None = None
+        self.reader: asyncio.StreamReader | None = None
+        self.writer: asyncio.StreamWriter | None = None
         self.loop.run_until_complete(self._connect())
 
     async def _connect(self) -> None:

@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import asyncio
 from binascii import crc32
-from typing import Annotated, Protocol, cast
+from collections.abc import Callable
+from typing import Annotated, cast
 
 from cobs import cobsr
 from hypothesis import HealthCheck, event, seed as hyp_seed, settings as hyp_settings, strategies as st
@@ -25,21 +26,11 @@ from mcubridge.protocol import protocol
 from mcubridge.protocol.frame import build_frame
 from mcubridge.protocol.protocol import Command
 
-app = typer.Typer(help="[MIL-SPEC/SIL-2] McuBridge Protocol Stateful Fuzzer")
+cli = typer.Typer(help="[MIL-SPEC/SIL-2] McuBridge Protocol Stateful Fuzzer", add_completion=False)
 logger = structlog.get_logger("protocol_fuzzer")
 
-
-class _StateMachineRunner(Protocol):
-    def __call__(
-        self,
-        state_machine_factory: type[RuleBasedStateMachine],
-        *,
-        settings: hyp_settings | None = ...,
-    ) -> None: ...
-
-
-_RUN_STATE_MACHINE: _StateMachineRunner = cast(
-    _StateMachineRunner,
+_RUN_STATE_MACHINE: Callable[[type[RuleBasedStateMachine]], None] = cast(
+    Callable[[type[RuleBasedStateMachine]], None],
     getattr(h_stateful, "run_state_machine_as_test"),
 )
 
@@ -59,7 +50,7 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
         self.seq_id: int = 0
         self.frames_sent: int = 0
         self.probe_responses_received: int = 0
-        self.loop: asyncio.AbstractEventLoop = asyncio.new_event_loop()
+        self.loop = asyncio.new_event_loop()
         self.reader: asyncio.StreamReader | None = None
         self.writer: asyncio.StreamWriter | None = None
         self.loop.run_until_complete(self._connect())
@@ -214,11 +205,7 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
         assert self.writer is not None, "Serial writer disconnected unexpectedly"
 
 
-class ConfiguredFuzzerMachine(ProtocolFuzzerStateMachine):
-    """Configured state machine target for CLI execution."""
-
-
-@app.command()
+@cli.command()
 def main(
     port: Annotated[str, typer.Option("--port", help="Serial port URL or device node")] = "/dev/ttyUSB0",
     baud: Annotated[int, typer.Option("--baud", help="Serial baudrate")] = protocol.DEFAULT_BAUDRATE,
@@ -231,8 +218,8 @@ def main(
 
     logger.info("starting_fuzzer_state_machine", port=port, baudrate=baud, steps=count, seed=seed)
 
-    ConfiguredFuzzerMachine.port = port
-    ConfiguredFuzzerMachine.baudrate = baud
+    ProtocolFuzzerStateMachine.port = port
+    ProtocolFuzzerStateMachine.baudrate = baud
 
     steps_per_example = min(count, 50)
     max_examples = max(1, count // steps_per_example)
@@ -244,17 +231,20 @@ def main(
         deadline=None,
         suppress_health_check=[HealthCheck.too_slow, HealthCheck.filter_too_much],
     )
+    setattr(ProtocolFuzzerStateMachine.TestCase, "settings", state_settings)
 
-    runner: _StateMachineRunner = _RUN_STATE_MACHINE
-    if seed is not None:
-        runner = cast(_StateMachineRunner, hyp_seed(seed)(runner))
+    runner: Callable[[type[RuleBasedStateMachine]], None] = (
+        cast(Callable[[type[RuleBasedStateMachine]], None], hyp_seed(seed)(_RUN_STATE_MACHINE))
+        if seed is not None
+        else _RUN_STATE_MACHINE
+    )
 
     try:
-        runner(ConfiguredFuzzerMachine, settings=state_settings)
+        runner(ProtocolFuzzerStateMachine)
         logger.info("fuzzing_complete", steps=count)
     except KeyboardInterrupt:
         logger.info("fuzzing_interrupted_by_user")
 
 
 if __name__ == "__main__":
-    app()
+    cli()

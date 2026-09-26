@@ -4,7 +4,7 @@
 Enforces Rule 11, Rule 17, and Rule 18 compliance:
 1. 100% of Python test functions must assert concrete state or emitted frames.
 2. 100% of Unity C++ test cases must call TEST_ASSERT* macros.
-Anti-tautologies and discarded calls are enforced via Semgrep (.semgrep.yml).
+Tautology and discarded call checks are delegated to Semgrep (.semgrep.yml) and Ruff (B018, PT).
 """
 
 from __future__ import annotations
@@ -42,14 +42,8 @@ MOCK_ASSERT_NAMES = {
 def _is_fixture(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     """Check if function is decorated with @pytest.fixture."""
     for dec in node.decorator_list:
-        if isinstance(dec, ast.Attribute) and dec.attr == "fixture":
-            return True
-        if isinstance(dec, ast.Call):
-            if isinstance(dec.func, ast.Attribute) and dec.func.attr == "fixture":
-                return True
-            if isinstance(dec.func, ast.Name) and dec.func.id == "fixture":
-                return True
-        if isinstance(dec, ast.Name) and dec.id == "fixture":
+        target = dec.func if isinstance(dec, ast.Call) else dec
+        if getattr(target, "id", None) == "fixture" or getattr(target, "attr", None) == "fixture":
             return True
     return False
 
@@ -57,55 +51,25 @@ def _is_fixture(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
 def _is_state_machine_runner(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     """Check if function is a Hypothesis RuleBasedStateMachine runner wrapper."""
     dump = ast.dump(node)
-    return "StateMachine" in dump and (
-        "default_runner" in dump or "_RUN_STATE_MACHINE" in dump or "run_state_machine_as_test" in dump
+    return "StateMachine" in dump and any(
+        k in dump for k in ("default_runner", "_RUN_STATE_MACHINE", "run_state_machine_as_test")
     )
 
 
 def _inspect_node_assertions(node: ast.FunctionDef | ast.AsyncFunctionDef) -> int:
     """Count number of substantive assertions in a test function."""
-    assert_count = 0
-    for subnode in ast.walk(node):
-        if isinstance(subnode, ast.Assert):
-            assert_count += 1
-        elif isinstance(subnode, ast.With):
-            for item in subnode.items:
-                if isinstance(item.context_expr, ast.Call):
-                    fn = item.context_expr.func
-                    if (isinstance(fn, ast.Attribute) and fn.attr == "raises") or (
-                        isinstance(fn, ast.Name) and fn.id == "raises"
-                    ):
-                        assert_count += 1
-        elif isinstance(subnode, ast.Call):
-            if isinstance(subnode.func, ast.Attribute) and subnode.func.attr in MOCK_ASSERT_NAMES:
-                assert_count += 1
-    return assert_count
-
-
-def audit_python_test_file(py_path: Path) -> list[str]:
-    """Audit a single Python test file for test functions with zero assertions."""
-    findings: list[str] = []
-    rel_path = py_path.relative_to(ROOT)
-
-    try:
-        content = py_path.read_text(encoding="utf-8")
-        tree = ast.parse(content, filename=str(py_path))
-    except (SyntaxError, UnicodeDecodeError) as exc:
-        sys.stderr.write(f"[{rel_path}] Parse Error: {exc}\n")
-        return [f"[{rel_path}] Parse Error: {exc}"]
-
-    for node in ast.walk(tree):
-        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            continue
-        if not node.name.startswith("test_") or _is_fixture(node) or _is_state_machine_runner(node):
-            continue
-
-        if _inspect_node_assertions(node) == 0:
-            findings.append(
-                f"[{rel_path}:{node.lineno}] Rule 17/18 Violation: Function '{node.name}' has ZERO assertions "
-                f"(superficial line-hitting / fire-and-forget)."
-            )
-    return findings
+    count = 0
+    for sub in ast.walk(node):
+        if isinstance(sub, ast.Assert):
+            count += 1
+        elif isinstance(sub, ast.With):
+            for item in sub.items:
+                fn = item.context_expr.func if isinstance(item.context_expr, ast.Call) else None
+                if getattr(fn, "attr", None) == "raises" or getattr(fn, "id", None) == "raises":
+                    count += 1
+        elif isinstance(sub, ast.Call) and getattr(sub.func, "attr", None) in MOCK_ASSERT_NAMES:
+            count += 1
+    return count
 
 
 def audit_python_tests() -> list[str]:
@@ -121,41 +85,21 @@ def audit_python_tests() -> list[str]:
         if not d.exists():
             continue
         for py_path in sorted(d.glob("**/test_*.py")):
-            findings.extend(audit_python_test_file(py_path))
-    return findings
-
-
-def audit_cpp_test_file(cpp_path: Path) -> list[str]:
-    """Audit a single C++ test file for Unity TEST_ASSERT calls."""
-    findings: list[str] = []
-    rel_path = cpp_path.relative_to(ROOT)
-    lines = cpp_path.read_text(encoding="utf-8").splitlines()
-
-    current_func: tuple[str, int] | None = None
-    brace_depth = 0
-    func_lines: list[str] = []
-
-    for i, line in enumerate(lines, 1):
-        stripped = line.strip()
-        if stripped.startswith("void test_") and "(" in stripped:
-            func_name = stripped.split("(")[0].replace("void ", "").strip()
-            current_func = (func_name, i)
-            brace_depth = 0
-            func_lines = []
-
-        if current_func:
-            func_lines.append(line)
-            brace_depth += line.count("{") - line.count("}")
-            if brace_depth == 0 and "{" in "".join(func_lines):
-                body = "\n".join(func_lines)
-                fname, lineno = current_func
-                if "TEST_ASSERT" not in body and "assert(" not in body:
+            try:
+                tree = ast.parse(py_path.read_text(encoding="utf-8"), filename=str(py_path))
+            except (SyntaxError, UnicodeDecodeError) as exc:
+                findings.append(f"[{py_path.relative_to(ROOT)}] Parse Error: {exc}")
+                continue
+            for node in ast.walk(tree):
+                if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                if not node.name.startswith("test_") or _is_fixture(node) or _is_state_machine_runner(node):
+                    continue
+                if _inspect_node_assertions(node) == 0:
                     findings.append(
-                        f"[{rel_path}:{lineno}] Rule 17/18 Violation: C++ function '{fname}' has ZERO assertions "
-                        f"(no TEST_ASSERT* called)."
+                        f"[{py_path.relative_to(ROOT)}:{node.lineno}] Rule 17/18 Violation: "
+                        f"Function '{node.name}' has ZERO assertions."
                     )
-                current_func = None
-                func_lines = []
     return findings
 
 
@@ -166,11 +110,25 @@ def audit_cpp_tests() -> list[str]:
     test_dir = ROOT / "mcubridge-library-arduino" / "tests"
     if not test_dir.exists():
         return findings
-
+    ignored = {"bridge_emulator.cpp", "bridge_control_emulator.cpp", "bridge_test_global.cpp"}
     for cpp_path in sorted(test_dir.glob("*.cpp")):
-        if cpp_path.name in {"bridge_emulator.cpp", "bridge_control_emulator.cpp", "bridge_test_global.cpp"}:
+        if cpp_path.name in ignored:
             continue
-        findings.extend(audit_cpp_test_file(cpp_path))
+        lines = cpp_path.read_text(encoding="utf-8").splitlines()
+        current_func, brace_depth, func_lines = None, 0, []
+        for i, line in enumerate(lines, 1):
+            if line.strip().startswith("void test_") and "(" in line:
+                current_func, brace_depth, func_lines = line.strip().split("(")[0].replace("void ", "").strip(), 0, []
+            if current_func:
+                func_lines.append(line)
+                brace_depth += line.count("{") - line.count("}")
+                if brace_depth == 0 and "{" in "".join(func_lines):
+                    if not any(k in "".join(func_lines) for k in ("TEST_ASSERT", "assert(")):
+                        findings.append(
+                            f"[{cpp_path.relative_to(ROOT)}:{i}] Rule 17/18 Violation: "
+                            f"C++ '{current_func}' has ZERO assertions."
+                        )
+                    current_func = None
     return findings
 
 
@@ -181,20 +139,15 @@ def main(
     ] = True,
 ) -> None:
     """Execute automated test integrity audit across Python and C++ test suites."""
-    py_findings = audit_python_tests()
-    cpp_findings = audit_cpp_tests()
-    all_findings = py_findings + cpp_findings
-
+    all_findings = audit_python_tests() + audit_cpp_tests()
     print("\n--- TEST INTEGRITY AUDIT RESULTS ---")
     if not all_findings:
         print("✅ 100% of test functions have substantive assertions and pass Rule 17/18 integrity gates.")
-        sys.exit(0)
+        return
 
     print(f"❌ Found {len(all_findings)} test integrity violation(s):")
     for f in all_findings:
-        print(f"  {f}")
-        print(f"::error::{f}")
-
+        print(f"  {f}\n::error::{f}")
     if strict:
         sys.exit(1)
 

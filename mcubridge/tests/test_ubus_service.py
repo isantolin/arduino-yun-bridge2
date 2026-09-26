@@ -726,9 +726,9 @@ async def test_ubus_run_coro_sync_same_loop(mock_runtime: MockRuntimeFacade, moc
         coro.close()
 
 
-def test_ubus_register_objects_no_add(mock_runtime: MockRuntimeFacade, mocker: MockerFixture) -> None:
+def test_ubus_register_methods_no_add(mock_runtime: MockRuntimeFacade, mocker: MockerFixture) -> None:
     service = UbusService(mock_runtime)
     setattr(service, "_conn", object())
-    mocker.patch("mcubridge.services.ubus.ubus", None)
-    getattr(service, "_register_objects")()
+    mocker.patch("mcubridge.services.ubus.ubus", object())
+    service.register_methods()
     assert service.connection is not None

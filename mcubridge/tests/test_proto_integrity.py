@@ -163,6 +163,6 @@ def test_mcubridge_options_cleanliness() -> None:
 def test_codebase_auditor_cli_success() -> None:
     """MIL-SPEC: Verify codebase auditor CLI command runs and passes 100% cleanly."""
     result = runner.invoke(app, [])
-    assert result.exit_code == 0
+    assert result.exit_code == 0, f"Codebase auditor failed: stdout={result.stdout}\nexception={result.exception}"
     assert "Auditing Protobuf definitions..." in result.stdout
     assert "No violations or shims found!" in result.stdout

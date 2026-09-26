@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import ast
+import importlib.util
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -271,27 +273,53 @@ def audit_linters() -> list[str]:
     print("Auditing linters (flake8 & ruff)...")
 
     # 1. Flake8
-    res_flake = subprocess.run([sys.executable, "-m", "flake8"], cwd=ROOT, capture_output=True, text=True, check=False)
-    if res_flake.returncode != 0:
-        for line in res_flake.stdout.splitlines():
-            line_str = line.strip()
-            if line_str:
-                findings.append(f"Flake8 Violation: {line_str}")
+    flake8_cmd: list[str] | None = None
+    if importlib.util.find_spec("flake8") is not None:
+        flake8_cmd = [sys.executable, "-m", "flake8"]
+    else:
+        flake8_path = shutil.which("flake8")
+        if flake8_path is not None:
+            flake8_cmd = [flake8_path]
+
+    if flake8_cmd is not None:
+        res_flake = subprocess.run(flake8_cmd, cwd=ROOT, capture_output=True, text=True, check=False)
+        if res_flake.returncode != 0:
+            for line in res_flake.stdout.splitlines():
+                line_str = line.strip()
+                if line_str:
+                    findings.append(f"Flake8 Violation: {line_str}")
 
     # 2. Ruff
-    res_ruff = subprocess.run(
-        [sys.executable, "-m", "ruff", "check", "mcubridge", "mcubridge-client-examples", "mcubridge-gateway", "tools"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    ruff_cmd: list[str] | None = None
+    if importlib.util.find_spec("ruff") is not None:
+        ruff_cmd = [sys.executable, "-m", "ruff"]
+    else:
+        ruff_path = shutil.which("ruff")
+        if ruff_path is not None:
+            ruff_cmd = [ruff_path]
 
-    if res_ruff.returncode != 0:
-        for line in res_ruff.stdout.splitlines():
-            line_str = line.strip()
-            if line_str and not line_str.startswith("Found "):
-                findings.append(f"Ruff Violation: {line_str}")
+    if ruff_cmd is not None:
+        cmd_args: list[str] = [
+            *ruff_cmd,
+            "check",
+            "mcubridge",
+            "mcubridge-client-examples",
+            "mcubridge-gateway",
+            "tools",
+        ]
+        res_ruff = subprocess.run(
+            cmd_args,
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        if res_ruff.returncode != 0:
+            for line in res_ruff.stdout.splitlines():
+                line_str = line.strip()
+                if line_str and not line_str.startswith("Found "):
+                    findings.append(f"Ruff Violation: {line_str}")
 
     return findings
 

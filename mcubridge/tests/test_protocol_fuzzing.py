@@ -1,6 +1,11 @@
-import pytest
+"""Property-based fuzzing tests for RPC protocol framing and COBS/R encoding. [SIL-2]"""
+
+from __future__ import annotations
+
 from cobs import cobsr
 from hypothesis import event, given, note, settings, strategies as st, target
+import pytest
+
 from mcubridge.protocol.frame import DecodedFrame, build_frame, parse_frame
 from mcubridge.protocol.protocol import CRC_COVERED_HEADER_SIZE
 
@@ -90,7 +95,7 @@ def test_streaming_chunking_fragmentation_invariant(
     size_iter = iter(chunk_sizes)
     while idx < len(wire_stream):
         size = next(size_iter, 7)
-        chunks.append(wire_stream[idx : idx + size])
+        chunks.append(wire_stream[idx:idx + size])
         idx += size
 
     event(f"stream_chunks_{min(len(chunks), 20)}")

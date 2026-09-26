@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 from mcubridge.metrics import (
@@ -291,3 +292,15 @@ async def test_publish_bridge_snapshots_loop_error_recovery(runtime_state: Runti
     with pytest.raises(asyncio.CancelledError):
         await task
     assert calls >= 1
+
+
+@pytest.mark.asyncio
+async def test_emit_bridge_snapshot_attribute_error(runtime_state: RuntimeState, mocker: MockerFixture) -> None:
+    from collections.abc import Awaitable, Callable
+    import mcubridge.metrics as metrics_mod
+
+    enqueue = AsyncMock()
+    mocker.patch.object(runtime_state, "build_bridge_snapshot", side_effect=AttributeError("Missing attr"))
+    emit_snapshot: Callable[..., Awaitable[None]] = getattr(metrics_mod, "_emit_bridge_snapshot")
+    await emit_snapshot(runtime_state, enqueue, flavor="summary")
+    assert enqueue.call_count == 0

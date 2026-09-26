@@ -239,3 +239,56 @@ def test_pending_command_methods() -> None:
     assert not cmd2.success
     assert cmd2.failure_status == 404
     assert cmd2.completion.is_set()
+
+
+def test_tls_session_ticket_uncovered_branches() -> None:
+    import ssl
+    from unittest.mock import MagicMock
+
+    cfg_insecure = pb.RuntimeConfig(cloud_tls=True, cloud_tls_insecure=True)
+    ctx = structures.get_ssl_context(cfg_insecure)
+    assert ctx is not None
+    assert ctx.check_hostname is False
+    assert ctx.verify_mode == ssl.CERT_NONE
+
+    structures.save_tls_session_ticket(None, "host", 443, b"ticket")
+    structures.save_tls_session_ticket(object(), "host", 443, b"")
+    assert structures.load_tls_session_ticket(None, "host", 443) is None
+
+    mem_cache = MagicMock()
+    mem_cache.is_mem = True
+    mem_cache._mem = {}
+    structures.save_tls_session_ticket(mem_cache, "host", 443, b"ticket")
+    assert structures.load_tls_session_ticket(mem_cache, "host", 443) == b"ticket"
+
+    disk_cache = MagicMock()
+    disk_cache.is_mem = False
+    disk_cache.env = MagicMock()
+    disk_cache.db = MagicMock()
+    disk_cache.env.begin.side_effect = OSError("write error")
+    structures.save_tls_session_ticket(disk_cache, "host", 443, b"ticket")
+    assert structures.load_tls_session_ticket(disk_cache, "host", 443) is None
+
+
+def test_protocol_frame_validation_error_paths() -> None:
+    import struct
+    from binascii import crc32
+    from mcubridge.protocol import frame, protocol
+
+    with pytest.raises(ValueError, match="Invalid command ID"):
+        frame.build_frame(-1, 1)
+
+    with pytest.raises(ValueError, match="Invalid command ID"):
+        frame.build_frame(protocol.UINT16_MAX + 1, 1)
+
+    with pytest.raises(ValueError, match="Invalid sequence ID"):
+        frame.build_frame(1, -1)
+
+    with pytest.raises(ValueError, match="Invalid sequence ID"):
+        frame.build_frame(1, protocol.UINT16_MAX + 1)
+
+    env = pb.RpcEnvelope(version=99, command_id=1, sequence_id=1)
+    body = env.SerializeToString()
+    bad_ver_frame = body + struct.pack("<I", crc32(body) & protocol.CRC32_MASK)
+    with pytest.raises(ValueError, match="Unsupported protocol version"):
+        frame.parse_frame(bad_ver_frame)

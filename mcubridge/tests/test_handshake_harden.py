@@ -2,16 +2,24 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Iterator
+from collections.abc import Awaitable, Callable, Iterator
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
 import tenacity
+from hypothesis import given
+from hypothesis import strategies as st
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol.protocol import Command, Status
-from mcubridge.services.handshake import SerialHandshakeManager
+from mcubridge.services.handshake import (
+    HandshakeEvent,
+    HandshakeState,
+    SerialHandshakeManager,
+    derive_serial_timing,
+)
 from mcubridge.state.context import RuntimeState, create_runtime_state
 
 
@@ -32,9 +40,6 @@ def handshake_setup(
     send_frame = AsyncMock(return_value=True)
     enqueue_cloud = AsyncMock()
     acknowledge_frame = AsyncMock()
-
-    from mcubridge.services.handshake import derive_serial_timing
-
     timing = derive_serial_timing(config)
 
     manager = SerialHandshakeManager(
@@ -152,8 +157,6 @@ async def test_handshake_capabilities_retry(
 
     attempts = 0
 
-    from typing import Any
-
     async def mock_send_frame(cmd: int, *args: Any, **kwargs: Any) -> bool:
         nonlocal attempts
         attempts += 1
@@ -184,8 +187,6 @@ async def test_handshake_capabilities_corrupt_payload(
     manager, _state, send_frame, _config, timing, _ack = handshake_setup
 
     timing.response_timeout_ms = 200
-
-    from typing import Any
 
     async def mock_send_frame_corrupt(cmd: int, *args: Any, **kwargs: Any) -> bool:
         fut: Any = getattr(manager, "_capabilities_future", None)
@@ -223,8 +224,6 @@ async def test_wait_for_link_sync_confirmation_timeout(
     ],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from collections.abc import Awaitable, Callable
-
     manager, state, _, _config, _timing, _ack = handshake_setup
     _timing.response_timeout_ms = 10
     state.connection_fsm.disconnect()
@@ -237,3 +236,178 @@ async def test_wait_for_link_sync_confirmation_timeout(
     wait_sync: Callable[[bytes], Awaitable[bool]] = getattr(manager, "_wait_for_link_sync_confirmation")
     res = await wait_sync(b"test_nonce")
     assert res is False
+
+
+@pytest.mark.asyncio
+async def test_handshake_attempt_link_sync_timeout(
+    handshake_setup: tuple[
+        SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, pb.HandshakeConfig, AsyncMock
+    ],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    manager, state, _, _config, _timing, _ack = handshake_setup
+    monkeypatch.setattr(manager, "_wait_for_link_sync_confirmation", AsyncMock(return_value=False))
+    mock_fail = AsyncMock()
+    monkeypatch.setattr(manager, "handle_handshake_failure", mock_fail)
+
+    sync_attempt: Callable[[], Awaitable[bool]] = getattr(manager, "_synchronize_attempt")
+    res = await sync_attempt()
+    assert res is False
+    assert mock_fail.called
+
+
+def test_handshake_calculate_tag_empty_secret() -> None:
+    assert SerialHandshakeManager.calculate_handshake_tag(None, b"test_nonce") == b""
+    assert SerialHandshakeManager.calculate_handshake_tag(b"", b"test_nonce") == b""
+
+
+@given(secret=st.binary(min_size=16, max_size=32), nonce=st.binary(min_size=12, max_size=12))
+def test_handshake_calculate_tag_deterministic_property(secret: bytes, nonce: bytes) -> None:
+    tag1 = SerialHandshakeManager.calculate_handshake_tag(secret, nonce)
+    tag2 = SerialHandshakeManager.calculate_handshake_tag(secret, nonce)
+    assert tag1 == tag2
+    assert len(tag1) == 16
+
+
+@pytest.mark.asyncio
+async def test_handshake_wait_confirmation_already_synchronized(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState
+) -> None:
+    hs = SerialHandshakeManager(
+        config=runtime_config,
+        state=runtime_state,
+        serial_timing=pb.HandshakeConfig(),
+        send_frame=AsyncMock(return_value=True),
+        enqueue_cloud=AsyncMock(),
+        acknowledge_frame=AsyncMock(),
+    )
+    runtime_state.connection_fsm.synchronize()
+
+    wait_sync: Callable[[bytes], Awaitable[bool]] = getattr(hs, "_wait_for_link_sync_confirmation")
+    confirmed = await wait_sync(b"nonce")
+    assert confirmed is True
+
+
+@pytest.mark.asyncio
+async def test_handshake_sync_state_permutations(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime_state.connection_fsm.disconnect()
+    mock_send = AsyncMock(return_value=True)
+    hs = SerialHandshakeManager(
+        config=runtime_config,
+        state=runtime_state,
+        serial_timing=pb.HandshakeConfig(),
+        send_frame=mock_send,
+        enqueue_cloud=AsyncMock(),
+        acknowledge_frame=AsyncMock(),
+    )
+    sync_attempt: Callable[[], Awaitable[bool]] = getattr(hs, "_synchronize_attempt")
+
+    async def _send_and_fault(cmd: int, payload: Any) -> bool:
+        if cmd == Command.CMD_LINK_SYNC.value:
+            hs.fsm_state = HandshakeState.FAULT
+        return True
+
+    monkeypatch.setattr(hs, "_send_frame", _send_and_fault)
+    assert await sync_attempt() is False
+
+    hs.fsm_state = HandshakeState.SYNCING
+
+    async def _mock_wait_fault(nonce: bytes) -> bool:
+        hs.fsm_state = HandshakeState.FAULT
+        return False
+
+    setattr(hs, "_wait_for_link_sync_confirmation", _mock_wait_fault)
+    assert await sync_attempt() is False
+
+    monkeypatch.setattr(hs, "_wait_for_link_sync_confirmation", AsyncMock(return_value=False))
+    hs.fsm_state = HandshakeState.SYNCING
+    runtime_state.link_handshake_nonce = b"different_nonce"
+    assert await sync_attempt() is False
+
+    hs.transition(HandshakeEvent.RESET)
+    monkeypatch.setattr(hs, "_send_frame", AsyncMock(return_value=True))
+    monkeypatch.setattr(hs, "_wait_for_link_sync_confirmation", AsyncMock(return_value=True))
+    assert await sync_attempt() is True
+
+
+@pytest.mark.asyncio
+async def test_handshake_resp_rate_limit_and_secret_none(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runtime_config.serial_handshake_min_interval = 5.0
+    hs = SerialHandshakeManager(
+        config=runtime_config,
+        state=runtime_state,
+        serial_timing=pb.HandshakeConfig(),
+        send_frame=AsyncMock(return_value=True),
+        enqueue_cloud=AsyncMock(),
+        acknowledge_frame=AsyncMock(),
+    )
+
+    runtime_state.link_handshake_nonce = b"expected_nonce_12b"
+    runtime_state.handshake_rate_until = time.monotonic() + 10.0
+    pkt = pb.LinkSync(nonce=b"expected_nonce_12b", tag=b"tag")
+    assert await hs.handle_link_sync_resp(1, pkt) is False
+
+    runtime_config.serial_handshake_min_interval = 0.0
+    runtime_config.serial_shared_secret = b""
+    runtime_state.handshake_rate_until = 0.0
+    nonce = b"expected_12b_nonce"
+    runtime_state.link_handshake_nonce = nonce
+    tag = hs.calculate_handshake_tag(b"", nonce)
+    runtime_state.link_expected_tag = tag
+    pkt_matching = pb.LinkSync(nonce=nonce, tag=tag)
+    monkeypatch.setattr(hs, "_handle_handshake_success", AsyncMock())
+    monkeypatch.setattr(hs, "_fetch_capabilities_with_delay", AsyncMock())
+    assert await hs.handle_link_sync_resp(2, pkt_matching) is True
+    assert runtime_state.link_session_key is None
+
+
+@pytest.mark.asyncio
+async def test_handshake_capabilities_resp_future_none(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState
+) -> None:
+    hs = SerialHandshakeManager(
+        config=runtime_config,
+        state=runtime_state,
+        serial_timing=pb.HandshakeConfig(),
+        send_frame=AsyncMock(return_value=True),
+        enqueue_cloud=AsyncMock(),
+        acknowledge_frame=AsyncMock(),
+    )
+    setattr(hs, "_capabilities_future", None)
+    assert await hs.handle_capabilities_resp(1, b"") is True
+
+
+@pytest.mark.asyncio
+async def test_handshake_fsm_state_override_and_unexpected_resp(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    hs = SerialHandshakeManager(
+        config=runtime_config,
+        state=runtime_state,
+        serial_timing=pb.HandshakeConfig(),
+        send_frame=AsyncMock(return_value=True),
+        enqueue_cloud=AsyncMock(),
+        acknowledge_frame=AsyncMock(),
+    )
+
+    set_fsm_state: Callable[[HandshakeState], None] = getattr(hs, "_set_fsm_state")
+    set_fsm_state(HandshakeState.SYNCHRONIZED)
+    assert hs.fsm_state == HandshakeState.SYNCHRONIZED
+    set_fsm_state(HandshakeState.SYNCHRONIZED)  # no-op same state
+    set_fsm_state(HandshakeState.UNSYNCHRONIZED)
+    assert hs.fsm_state == HandshakeState.UNSYNCHRONIZED
+
+    runtime_state.link_handshake_nonce = None
+    mock_fail = AsyncMock()
+    monkeypatch.setattr(hs, "handle_handshake_failure", mock_fail)
+    res = await hs.handle_link_sync_resp(1, pb.LinkSync(nonce=b"none", tag=b"tag"))
+    assert res is False
+    assert mock_fail.called
+
+    publish_event: Callable[..., Awaitable[None]] = getattr(hs, "_publish_handshake_event")
+    monkeypatch.setattr("mcubridge.services.handshake.get_topic_for_message", lambda *a, **k: "")
+    await publish_event("test_event", reason="test_err")

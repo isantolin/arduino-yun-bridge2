@@ -561,9 +561,7 @@ def test_ubus_service_notify_branches(mock_runtime: MockRuntimeFacade, mocker: M
     assert service.notify("sync", {"status": "ok"}) is True
 
 
-def test_ubus_service_register_methods_fallback(
-    mock_runtime: MockRuntimeFacade, mocker: MockerFixture
-) -> None:
+def test_ubus_service_register_methods_fallback(mock_runtime: MockRuntimeFacade, mocker: MockerFixture) -> None:
     mock_ubus = MagicMock(spec=["add"])
     mocker.patch("mcubridge.services.ubus.ubus", mock_ubus)
     service = UbusService(mock_runtime)

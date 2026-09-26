@@ -92,3 +92,55 @@ def test_cgi_internal_error(cgi_env: Any, mocker: MockerFixture) -> None:
     mocker.patch("pin_rest_cgi.load_runtime_config", side_effect=OSError("fail"))
     application(env, start_response)
     assert "500 Internal Server Error" in start_response.call_args[0][0]
+
+
+def test_pin_rest_cgi_set_pin_digital_sync_error(mocker: MockerFixture) -> None:
+    mocker.patch.object(pin_rest_cgi, "ubus", None)
+    with pytest.raises(RuntimeError, match="Native OpenWrt UBUS module unavailable"):
+        pin_rest_cgi.set_pin_digital_sync(13, 1)
+
+    mock_ubus = MagicMock()
+    mock_ubus.call.side_effect = OSError("UBUS failure")
+    mocker.patch.object(pin_rest_cgi, "ubus", mock_ubus)
+    with pytest.raises(OSError, match="UBUS failure"):
+        pin_rest_cgi.set_pin_digital_sync(13, 1)
+    assert mock_ubus.connect.called
+    mock_ubus.call.assert_called_once_with("mcubridge", "digital_write", {"pin": 13, "value": 1})
+
+    mock_ubus_ok = MagicMock()
+    mocker.patch.object(pin_rest_cgi, "ubus", mock_ubus_ok)
+    pin_rest_cgi.set_pin_digital_sync(13, 1)
+    assert mock_ubus_ok.connect.called
+    mock_ubus_ok.call.assert_called_once_with("mcubridge", "digital_write", {"pin": 13, "value": 1})
+
+
+def test_pin_rest_cgi_application_branches(mocker: MockerFixture) -> None:
+    start_response = MagicMock()
+    body = b'{"state": "ON"}'
+    env = {
+        "PATH_INFO": "/pin/13",
+        "REQUEST_METHOD": "POST",
+        "CONTENT_LENGTH": str(len(body)),
+        "wsgi.input": io.BytesIO(body),
+    }
+
+    mock_set_pin = mocker.patch.object(pin_rest_cgi, "set_pin_digital_sync")
+    res = pin_rest_cgi.application(env, start_response)
+    assert res
+    start_response.assert_called_once()
+    mock_set_pin.assert_called_once_with(13, 1)
+
+    start_response_err = MagicMock()
+    env_invalid = {"PATH_INFO": "/invalid", "REQUEST_METHOD": "GET"}
+    res_err = pin_rest_cgi.application(env_invalid, start_response_err)
+    assert res_err
+    start_response_err.assert_called_with(
+        "400 Bad Request",
+        [
+            ("Content-Type", "application/json"),
+            ("Content-Length", "52"),
+            ("Access-Control-Allow-Origin", "*"),
+            ("Access-Control-Allow-Methods", "GET, POST, OPTIONS"),
+            ("Access-Control-Allow-Headers", "Content-Type"),
+        ],
+    )

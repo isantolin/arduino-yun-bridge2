@@ -83,7 +83,6 @@ def _audit_ast_async_blocking(node: ast.AST, py_file_name: str) -> list[str]:
                 # Detect direct call to _vacuum_lmdb_env() without anyio.to_thread.run_sync
                 elif isinstance(subnode.func, ast.Name) and subnode.func.id == "_vacuum_lmdb_env":
                     findings.append(
-
                         f"Blocking Compaction in Async: {py_file_name}:{subnode.lineno} - "
                         f"direct call to '_vacuum_lmdb_env()' inside async def {node.name}; "
                         f"must be offloaded via anyio.to_thread.run_sync"
@@ -131,12 +130,29 @@ def audit_python_files() -> list[str]:
                 for node in ast.walk(tree):
                     findings.extend(_audit_ast_exceptions(node, py_file.name))
                     findings.extend(_audit_ast_async_blocking(node, py_file.name))
+                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                        if node.body and node.body[0].lineno == node.lineno:
+                            findings.append(
+                                f"Python E704 Def Statement on Same Line: {py_file.name}:{node.lineno} - "
+                                f"def '{node.name}' has body on definition line"
+                            )
             except SyntaxError as exc:
                 findings.append(f"Python Syntax Error: {py_file.name} - {exc}")
 
-            # 2. Line-by-line audit for Rule 4 suppressions and shims
+            # 2. Line-by-line audit for Rule 4 suppressions, blank lines (E303), and shims
+            consecutive_blanks = 0
             for i, line in enumerate(content.splitlines(), 1):
                 clean_line = line.strip()
+                if not clean_line:
+                    consecutive_blanks += 1
+                    if consecutive_blanks > 2:
+                        findings.append(
+                            f"Python E303 Too Many Blank Lines: {py_file.name}:{i} - "
+                            f"{consecutive_blanks} consecutive blank lines"
+                        )
+                else:
+                    consecutive_blanks = 0
+
                 for pattern, desc in suppression_patterns:
                     if pattern.search(clean_line):
                         findings.append(f"Python Suppression: {py_file.name}:{i} - {desc}: '{clean_line}'")
@@ -144,11 +160,13 @@ def audit_python_files() -> list[str]:
                     findings.append(f"Python Passthrough Shim: {py_file.name}:{i} - '{clean_line}'")
                 if len(line) > 120:
                     findings.append(f"Python E501 Line Too Long: {py_file.name}:{i} - {len(line)} > 120 chars")
+
+            if content.endswith("\n\n"):
+                findings.append(f"Python W391 Trailing Blank Lines at EOF: {py_file.name}")
     return findings
 
 
 def audit_cpp_files() -> list[str]:
-
     """Audit C++ source files for manual loops, non-template wrappers, and suppressions."""
     findings: list[str] = []
     print("Auditing C++ files...")

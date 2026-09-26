@@ -489,3 +489,95 @@ async def test_local_bridge_execute_rpc(tmp_path: Path) -> None:
     # 4. Unknown method raises ValueError
     with pytest.raises(ValueError, match="Unknown RPC method"):
         await local_svc.execute_rpc("NonExistent", b"")
+
+
+@pytest.mark.asyncio
+async def test_local_bridge_service_ipc(tmp_path: Path) -> None:
+    svc, local_svc, _ = _make_service(_make_config(tmp_path))
+
+    # Test Publish with no stream message
+    mock_stream = AsyncMock()
+    mock_stream.recv_message.return_value = None
+    await local_svc.Publish(mock_stream)
+    mock_stream.send_message.assert_not_called()
+
+    # Test Publish with message & correlation
+    req_msg = pb.CloudQueuedPublish(topic_name="br/d/13/read", correlation_data=b"123456789012")
+    mock_stream.recv_message.return_value = req_msg
+    setattr(svc, "handle_request", AsyncMock())
+
+    async def _respond() -> None:
+        await asyncio.sleep(0.01)
+        if b"123456789012" in svc.ipc_requests:
+            q = svc.ipc_requests[b"123456789012"]
+            await q.put(pb.CloudQueuedPublish(topic_name="br/d/13/read/res", payload=b"1"))
+
+    asyncio.create_task(_respond())
+    await local_svc.Publish(mock_stream)
+    mock_stream.send_message.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_local_bridge_service_subscribe_console(tmp_path: Path) -> None:
+    svc, local_svc, _ = _make_service(_make_config(tmp_path))
+
+    mock_stream = AsyncMock()
+    mock_stream.recv_message.return_value = pb.SubscribeRequest()
+    mock_stream.send_message.side_effect = OSError("Connection reset")
+
+    q_msg = pb.CloudQueuedPublish(topic_name="br/console/out", payload=b"hello console")
+
+    async def _push() -> None:
+        await asyncio.sleep(0.01)
+        if svc.console_queues:
+            await svc.console_queues[0].put(q_msg)
+
+    asyncio.create_task(_push())
+    with pytest.raises(OSError):
+        await local_svc.SubscribeConsole(mock_stream)
+
+
+@pytest.mark.asyncio
+async def test_local_bridge_service_publish_timeout_and_oserror(tmp_path: Path, mocker: MockerFixture) -> None:
+    svc, local_svc, _ = _make_service(_make_config(tmp_path))
+
+    req_msg = pb.CloudQueuedPublish(
+        topic_name="br/file/read",
+        payload=b"test",
+        correlation_data=b"corr-timeout-1",
+    )
+    mock_stream = AsyncMock()
+    mock_stream.recv_message.return_value = req_msg
+
+    mocker.patch.object(svc, "handle_request", new_callable=AsyncMock)
+    _orig_timeout = asyncio.timeout
+
+    def _quick_timeout(t: float) -> object:
+        del t
+        return _orig_timeout(0.001)
+
+    mocker.patch("mcubridge.services.runtime.asyncio.timeout", side_effect=_quick_timeout)
+    await local_svc.Publish(mock_stream)
+    assert mock_stream.send_message.called
+
+    # 2. Simulate OSError during response write
+    mock_stream.reset_mock()
+    mock_stream.recv_message.return_value = req_msg
+    mock_stream.send_message.side_effect = OSError("Socket broken")
+
+    async def _handle_and_reply(req: pb.CloudQueuedPublish) -> None:
+        if req.correlation_data in svc.ipc_requests:
+            await svc.ipc_requests[req.correlation_data].put(pb.CloudQueuedPublish(topic_name="br/reply"))
+
+    mocker.patch.object(svc, "handle_request", side_effect=_handle_and_reply)
+    await local_svc.Publish(mock_stream)
+    assert b"corr-timeout-1" not in svc.ipc_requests
+
+
+def test_parse_serial_response_corrupt_bytes() -> None:
+    from mcubridge.services.local_bridge import parse_serial_response
+
+    default_resp = pb.GenericResponse(message="fallback")
+    parsed = parse_serial_response(b"\xff\xff\xff", pb.GenericResponse, default_resp)
+    assert parsed == default_resp
+    assert parsed.message == "fallback"

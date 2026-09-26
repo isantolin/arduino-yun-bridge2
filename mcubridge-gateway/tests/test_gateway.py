@@ -1206,3 +1206,17 @@ async def test_protobuf_gateway_reflection_services() -> None:
     assert len(extended) == 4
     service_names = [type(s).__name__ for s in extended]
     assert "ServerReflection" in service_names
+
+
+@pytest.mark.asyncio
+async def test_gateway_session_cancelled(mocker: MockerFixture) -> None:
+    gw = ProtobufGateway(use_tls=False)
+    svc = CloudBridgeService(gw)
+
+    mock_stream = AsyncMock()
+    mock_stream.__aiter__.side_effect = asyncio.CancelledError()
+
+    mocker.patch("gateway.extract_peer_identity", return_value=("test-dev", True))
+
+    with pytest.raises(asyncio.CancelledError):
+        await svc.Session(mock_stream)

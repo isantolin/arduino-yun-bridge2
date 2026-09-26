@@ -131,8 +131,7 @@ class RateLimiter:
 
 
 class SendFrameCallable(Protocol):
-    async def __call__(self, command_id: int, payload: bytes | ProtobufMessage, seq_id: int | None = None) -> bool:
-        ...
+    async def __call__(self, command_id: int, payload: bytes | ProtobufMessage, seq_id: int | None = None) -> bool: ...
 
 
 EnqueueMessageCallable = Callable[[pb.CloudQueuedPublish], Awaitable[None]]

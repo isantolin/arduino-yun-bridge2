@@ -47,8 +47,9 @@ jobs:
       - name: Install System Dependencies
         if: matrix.env == 'cppcheck' || matrix.env == 'typecheck' || matrix.env == 'protocol' || matrix.env == 'lint' || matrix.env == 'py' || matrix.env == 'codebase-auditor'
         run: |
-          sudo apt-get update && sudo apt-get install -y cppcheck unzip
-          python -m pip install protobuf mypy-protobuf vulture pytest pyrefly types-protobuf types-psutil types-pexpect flake8 ruff
+          sudo apt-get update && sudo apt-get install -y cppcheck unzip clang-tidy bloaty
+          sudo npm install -g @bufbuild/buf
+          python -m pip install protobuf mypy-protobuf vulture pytest pyrefly types-protobuf types-psutil types-pexpect flake8 ruff semgrep mutmut
       - name: Install Build Tools
         if: matrix.env == 'arduino'
         run: sudo apt-get update && sudo apt-get install -y g++ make
@@ -130,6 +131,7 @@ jobs:
       - name: Profile Memory Usage
         if: always()
         run: |
+          sudo apt-get update && sudo apt-get install -y bloaty
           mkdir -p arduino-logs
           python tools/profiling/arduino_symbol_profiler.py arduino-build --output arduino-logs/symbol_profile.md
       - name: Upload Arduino Logs

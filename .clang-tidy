@@ -1,0 +1,17 @@
+---
+Checks: >
+  -*,
+  cppcoreguidelines-no-malloc,
+  bugprone-use-after-move,
+  bugprone-dangling-handle,
+  bugprone-unhandled-self-assignment,
+  modernize-use-nullptr,
+  modernize-use-override,
+  readability-redundant-control-flow
+
+WarningsAsErrors: >
+  cppcoreguidelines-no-malloc
+
+HeaderFilterRegex: 'mcubridge-library-arduino/src/(Bridge|core/|services/|protocol/rpc_).*'
+FormatStyle: file
+...

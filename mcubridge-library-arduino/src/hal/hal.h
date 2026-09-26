@@ -14,8 +14,7 @@
 #include <etl/string_view.h>
 #include <stdint.h>
 
-struct _rpc_pb_Capabilities;
-typedef struct _rpc_pb_Capabilities rpc_pb_Capabilities;
+#include "protocol/mcubridge.pb.h"
 
 namespace bridge::hal {
 

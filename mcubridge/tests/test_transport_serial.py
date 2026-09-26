@@ -374,7 +374,7 @@ def test_serial_safe_after_configure_branches(mocker: MockerFixture) -> None:
     _safe_after_configure(mock_self)
 
     mock_orig.side_effect = OSError(errno.EACCES, "Permission denied")
-    with pytest.raises(OSError):
+    with pytest.raises(OSError, match="Permission denied"):
         _safe_after_configure(mock_self)
 
     mock_orig.side_effect = None

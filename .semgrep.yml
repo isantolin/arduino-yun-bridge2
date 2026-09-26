@@ -1,0 +1,98 @@
+rules:
+  # ==============================================================================
+  # RULE 4: UNIVERSAL ABSOLUTE SUPPRESSION BAN (PYTHON)
+  # ==============================================================================
+  - id: sil2-ban-contextlib-suppress
+    languages: [python]
+    severity: ERROR
+    message: "SIL-2 Rule 4 Violation: contextlib.suppress is strictly prohibited. Handle concrete exceptions explicitly."
+    pattern: contextlib.suppress(...)
+
+  - id: sil2-ban-no-type-check
+    languages: [python]
+    severity: ERROR
+    message: "SIL-2 Rule 4 Violation: @no_type_check is strictly prohibited across the codebase."
+    patterns:
+      - pattern-either:
+          - pattern: |
+              @no_type_check
+              def $FUNC(...):
+                  ...
+          - pattern: |
+              @typing.no_type_check
+              def $FUNC(...):
+                  ...
+
+  - id: sil2-ban-encoding-suppressions
+    languages: [python]
+    severity: ERROR
+    message: "SIL-2 Rule 4 Violation: String encoding suppressions (errors='ignore'/'replace') are strictly prohibited. Strict UTF-8 is mandatory."
+    patterns:
+      - pattern-either:
+          - pattern: $X.decode(..., errors="ignore", ...)
+          - pattern: $X.decode(..., errors="replace", ...)
+          - pattern: $X.decode(..., errors="backslashreplace", ...)
+          - pattern: $X.encode(..., errors="ignore", ...)
+          - pattern: $X.encode(..., errors="replace", ...)
+          - pattern: $X.encode(..., errors="backslashreplace", ...)
+
+  # ==============================================================================
+  # RULE 11 & 17: TEST INTEGRITY & ANTI-TAUTOLOGY GATES (PYTHON)
+  # ==============================================================================
+  - id: milspec-ban-assert-tautology
+    languages: [python]
+    severity: ERROR
+    message: "MIL-SPEC Rule 11/17 Violation: Tautological or dummy assertions are strictly forbidden."
+    patterns:
+      - pattern-either:
+          - pattern: assert True
+          - pattern: assert 1 == 1
+          - pattern: assert 0 == 0
+          - pattern: assert $X == $X
+    paths:
+      include:
+        - "**/tests/**"
+
+  # ==============================================================================
+  # RULE 3 & 27: ZERO-HEAP ARDUINO FIRMWARE (C++)
+  # ==============================================================================
+  - id: sil2-ban-cpp-dynamic-allocation
+    languages: [cpp]
+    severity: ERROR
+    message: "SIL-2 Rule 3 Violation: Dynamic memory allocation (malloc, free, realloc, calloc) is strictly prohibited in firmware sources."
+    patterns:
+      - pattern-either:
+          - pattern: malloc(...)
+          - pattern: free(...)
+          - pattern: calloc(...)
+          - pattern: realloc(...)
+    paths:
+      include:
+        - "/mcubridge-library-arduino/src/Bridge.*"
+        - "/mcubridge-library-arduino/src/core/**"
+        - "/mcubridge-library-arduino/src/protocol/**"
+      exclude:
+        - "**/pb_*.c"
+        - "**/pb_*.h"
+
+  # ==============================================================================
+  # RULE 8: ZERO-LOOP IMPERATIVE BAN IN FIRMWARE (C++)
+  # ==============================================================================
+  - id: sil2-ban-cpp-imperative-loops
+    languages: [cpp]
+    severity: ERROR
+    message: "SIL-2 Rule 8 Violation: Imperative loops ('for'/'while') are strictly prohibited in firmware sources. Use STL-free etl:: algorithms."
+    patterns:
+      - pattern-either:
+          - pattern: for ($INIT; $COND; $POST) { ... }
+          - pattern: while ($COND) { ... }
+    paths:
+      include:
+        - "/mcubridge-library-arduino/src/Bridge.*"
+        - "/mcubridge-library-arduino/src/core/**"
+        - "/mcubridge-library-arduino/src/protocol/**"
+      exclude:
+        - "**/pb_*.c"
+        - "**/pb_*.h"
+        - "**/*.pb.c"
+        - "**/*.pb.h"

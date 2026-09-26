@@ -78,10 +78,8 @@ async def test_serial_reader_task_reconnects(mocker: MockerFixture) -> None:
     mocker.patch.object(SerialTransport, "_toggle_dtr", AsyncMock())
 
     transport = SerialTransport(config, state, service)
-    try:
+    with pytest.raises(RuntimeError, match="Break Loop"):
         await transport.run()
-    except RuntimeError as e:
-        assert str(e) == "Break Loop"
 
     # Verify behavior
     # Connect should be called at least twice (initial + retry)

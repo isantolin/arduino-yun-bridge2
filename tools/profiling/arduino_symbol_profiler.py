@@ -44,9 +44,27 @@ def detect_board_label(build_dir: Path, elf_path: Path) -> str:
     return "unknown-board"
 
 
-def profile_elf(build_dir: Path, elf_path: Path, nm_bin: str) -> str:
-    """Run nm on the ELF file to extract symbol sizes."""
+def profile_with_bloaty(elf_path: Path, board_label: str, bloaty_bin: str) -> str | None:
+    """Run bloaty on the ELF file to extract symbol sizes."""
+    try:
+        cmd = [bloaty_bin, "-d", "symbols", "-n", "20", str(elf_path)]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        return (
+            f"#### 🔍 Bloaty Symbol Profiling: {elf_path.name} ({board_label})\n\n```\n{result.stdout.strip()}\n```\n"
+        )
+    except (subprocess.CalledProcessError, OSError) as err:
+        sys.stderr.write(f"[WARN] Bloaty error profiling {elf_path}: {err}\n")
+        return None
+
+
+def profile_elf(build_dir: Path, elf_path: Path, nm_bin: str, bloaty_bin: str | None = None) -> str:
+    """Run bloaty or nm on the ELF file to extract symbol sizes."""
     board_label = detect_board_label(build_dir, elf_path)
+    if bloaty_bin is not None:
+        bloaty_report = profile_with_bloaty(elf_path, board_label, bloaty_bin)
+        if bloaty_report is not None:
+            return bloaty_report
+
     try:
         cmd = [nm_bin, "--size-sort", "--print-size", "-C", str(elf_path)]
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
@@ -101,6 +119,7 @@ def main(
         return
 
     nm_bin = resolve_nm_binary()
+    bloaty_bin = shutil.which("bloaty")
     reports: list[str] = []
     seen_paths: set[Path] = set()
     seen_sections: set[tuple[str, str]] = set()
@@ -117,7 +136,7 @@ def main(
             continue
         seen_sections.add(section_key)
 
-        reports.append(profile_elf(build_dir, elf_file, nm_bin))
+        reports.append(profile_elf(build_dir, elf_file, nm_bin, bloaty_bin))
 
     if not reports:
         print("No ELF files found for profiling.", file=sys.stderr)

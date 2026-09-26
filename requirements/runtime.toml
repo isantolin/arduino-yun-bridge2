@@ -290,6 +290,16 @@ name = "flake8"
 pip = "flake8==7.4.1"
 rationale = "Style guide enforcement and PEP 8 linter"
 
+[[dev_dependency]]
+name = "semgrep"
+pip = "semgrep==1.178.0"
+rationale = "Static AST analysis engine enforcing SIL-2 zero-suppression and deterministic coding rules"
+
+[[dev_dependency]]
+name = "mutmut"
+pip = "mutmut==3.8.0"
+rationale = "Mutation testing framework for SIL-2 test suite hardening and anti-cheating validation"
+
 
 
 

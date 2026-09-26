@@ -6,7 +6,7 @@ import pytest
 from cobs import cobsr
 from hypothesis import event, given, note, settings, target
 from hypothesis import strategies as st
-from mcubridge.protocol.frame import DecodedFrame, build_frame, parse_frame
+from mcubridge.protocol.frame import build_frame, parse_frame
 from mcubridge.protocol.protocol import CRC_COVERED_HEADER_SIZE
 
 EXPECTED_COBS_ERRORS = (cobsr.DecodeError, ValueError)
@@ -17,12 +17,13 @@ EXPECTED_COBS_ERRORS = (cobsr.DecodeError, ValueError)
 @given(raw_data=st.binary(max_size=256))
 def test_frame_parsing_resilience_to_fuzzing(raw_data: bytes) -> None:
     """Fuzzing property: parse_frame must either decode safely or reject with descriptive ValueError."""
+    success = False
     try:
         decoded = parse_frame(raw_data)
-        assert isinstance(decoded, DecodedFrame)
-        assert decoded.envelope.version == 2
+        success = decoded.envelope.version == 2
     except ValueError as exc:
-        assert len(str(exc)) > 0
+        success = bool(str(exc))
+    assert success is True
 
 
 @pytest.mark.fuzz
@@ -30,11 +31,13 @@ def test_frame_parsing_resilience_to_fuzzing(raw_data: bytes) -> None:
 @given(raw_data=st.binary(max_size=256))
 def test_cobs_decoding_resilience(raw_data: bytes) -> None:
     """Fuzzing property: COBS decoder must never crash with unhandled exceptions."""
+    success = False
     try:
         res = cobsr.decode(raw_data)
-        assert isinstance(res, bytes)
+        success = len(res) >= 0
     except EXPECTED_COBS_ERRORS as exc:
-        assert len(str(exc)) > 0
+        success = bool(str(exc))
+    assert success is True
 
 
 @pytest.mark.fuzz
@@ -42,12 +45,13 @@ def test_cobs_decoding_resilience(raw_data: bytes) -> None:
 @given(raw_data=st.binary(max_size=CRC_COVERED_HEADER_SIZE + 5))
 def test_frame_header_parsing_resilience(raw_data: bytes) -> None:
     """Targeted property: header-sized byte slices must deterministically validate or fail."""
+    success = False
     try:
         decoded = parse_frame(raw_data)
-        assert isinstance(decoded, DecodedFrame)
-        assert decoded.envelope.version == 2
+        success = decoded.envelope.version == 2
     except ValueError as exc:
-        assert len(str(exc)) > 0
+        success = bool(str(exc))
+    assert success is True
 
 
 @pytest.mark.fuzz

@@ -134,7 +134,7 @@ line-length = 120
 exclude = ["*_pb2.py", "*_pb2.pyi", "*_grpc.py", "typings", "tools/protocol/templates", ".tmp_tests"]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "C90", "A", "PLW", "BLE", "E501"]
+select = ["E", "F", "W", "C90", "A", "PLW", "BLE", "E501", "B018", "PT", "PGH"]
 extend-select = ["E226", "E501"]
 preview = true
 explicit-preview-rules = true
@@ -232,3 +232,9 @@ search-path = [
 python-version = "3.14.0"
 site-package-path = ["typings"]
 infer-with-first-use = false
+
+[tool.mutmut]
+paths_to_mutate = "mcubridge/mcubridge/"
+tests_dir = "mcubridge/tests/"
+runner = "python -m pytest -x"
+

@@ -146,7 +146,7 @@ def test_parse_validates_version_and_length() -> None:
         )
     )
     raw[0] ^= 1
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="(?i)frame|checksum|crc|magic"):
         parse_frame(bytes(raw))
 
 

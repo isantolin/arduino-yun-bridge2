@@ -130,7 +130,7 @@ async def test_serial_transport_tcp_connect_and_stream(
     transport_task = asyncio.create_task(transport.run())
     await asyncio.sleep(0.1)
 
-    assert mock_service.on_serial_connected.awaited
+    mock_service.on_serial_connected.assert_awaited()
     assert transport.serial is not None
     assert transport.serial.is_open is True
 

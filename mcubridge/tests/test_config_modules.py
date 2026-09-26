@@ -102,7 +102,7 @@ def test_load_runtime_config_rejects_non_tmp_paths_when_disabled(
 
     # Strict validation should now raise ValueError during load_runtime_config in test mode
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="must be in volatile storage"):
         settings.load_runtime_config()
 
 

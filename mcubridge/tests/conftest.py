@@ -325,7 +325,7 @@ def default_serial_secret(mocker: MockerFixture) -> None:
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def runtime_config() -> RuntimeConfig:
     return RuntimeConfig(
         serial_port="/dev/null",
@@ -359,7 +359,7 @@ def runtime_config() -> RuntimeConfig:
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def runtime_state(runtime_config: RuntimeConfig) -> Iterator[RuntimeState]:
     """Provide a RuntimeState instance with proper cleanup."""
     state = create_runtime_state(runtime_config)

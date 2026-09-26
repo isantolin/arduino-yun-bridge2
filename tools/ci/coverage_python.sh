@@ -63,7 +63,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if ! $PYTHON_BIN -m pytest --version >/dev/null 2>&1; then
+if ! $PYTHON_BIN -m pytest -p no:platformdirs --version >/dev/null 2>&1; then
   # Avoid relying on a globally-installed `pytest` entrypoint.
   if ! $PYTHON_BIN -c "import pytest" >/dev/null 2>&1; then
     echo "[coverage_python] pytest no está instalado en el entorno actual." >&2
@@ -97,6 +97,7 @@ $PYTHON_BIN -m pytest \
   -vv \
   "${XDIST_ARGS[@]}" \
   -p pytest_asyncio \
+  -p no:platformdirs \
   --timeout=300 \
   --timeout-method=thread \
   --cov="$ROOT_DIR/mcubridge/mcubridge" \

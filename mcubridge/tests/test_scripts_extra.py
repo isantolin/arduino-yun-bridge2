@@ -35,12 +35,12 @@ def mock_asyncio_run(coro: Coroutine[Any, Any, Any]) -> None:
     coro.close()
 
 
-def test_file_push_script(runtime_config: Any, mocker: MockerFixture) -> None:
+def test_file_push_script(runtime_config: Any, mocker: MockerFixture, tmp_path: Path) -> None:
     script = load_script("mcubridge-file-push")
+    local_file = tmp_path / "local.txt"
+    local_file.write_bytes(b"data")
     mock_push_ubus = mocker.patch("mcubridge_file_push.push_file_ubus", return_value=True)
-    mocker.patch("sys.argv", ["mcubridge-file-push", "local.txt", "mcu/remote.txt"])
-    mocker.patch("pathlib.Path.read_bytes", return_value=b"data")
-    mocker.patch("pathlib.Path.exists", return_value=True)
+    mocker.patch("sys.argv", ["mcubridge-file-push", str(local_file), "mcu/remote.txt"])
     script.app(standalone_mode=False)
     mock_push_ubus.assert_called_once_with("mcu/remote.txt", b"data")
 

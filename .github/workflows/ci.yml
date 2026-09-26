@@ -101,7 +101,7 @@ jobs:
     name: Arduino Examples Compilation
     runs-on: ubuntu-26.04
     needs: [tox-checks]
-    timeout-minutes: 10
+    timeout-minutes: 15
     env:
       ARDUINO_METRICS_DIR: arduino-logs
     steps:
@@ -130,14 +130,23 @@ jobs:
         run: |
           mkdir -p arduino-build
           tox -e arduino-examples -- arduino-build
+      - name: Cache Bloaty binary
+        id: cache-bloaty
+        uses: actions/cache@v4
+        with:
+          path: /usr/local/bin/bloaty
+          key: bloaty-bin-v1.1
       - name: Install Bloaty McBloatface
+        if: steps.cache-bloaty.outputs.cache-hit != 'true'
         run: |
-          git clone --depth=1 --recurse-submodules https://github.com/google/bloaty.git /tmp/bloaty
-          cmake -B /tmp/bloaty/build -S /tmp/bloaty -DCMAKE_BUILD_TYPE=Release
+          sudo apt-get update && sudo apt-get install -y libprotobuf-dev protobuf-compiler libre2-dev libcapstone-dev
+          git clone --depth=1 https://github.com/google/bloaty.git /tmp/bloaty
+          cmake -B /tmp/bloaty/build -S /tmp/bloaty -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF
           cmake --build /tmp/bloaty/build --target bloaty -j$(nproc)
           sudo cp /tmp/bloaty/build/bloaty /usr/local/bin/
           rm -rf /tmp/bloaty
-          bloaty --version
+      - name: Verify Bloaty
+        run: bloaty --version
       - name: Profile Memory Usage
         if: always()
         run: |

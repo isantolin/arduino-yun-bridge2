@@ -74,8 +74,7 @@ async def test_mcu_file_read_handler_asserts_state(
     service, _state, mock_serial = service_setup
     payload = pb.FileRead(path="test.txt").SerializeToString()
 
-    mocker.patch("pathlib.Path.read_bytes", return_value=b"file_data")
-    mocker.patch("pathlib.Path.is_file", return_value=True)
+    mocker.patch.object(service, "safe_file_read", new=AsyncMock(return_value=b"file_data"))
 
     await service.handle_mcu_frame(Command.CMD_FILE_READ.value, 1, payload)
     mock_serial.send.assert_awaited()
@@ -244,8 +243,7 @@ async def test_cloud_file_host_read_asserts_read(
         payload=b"",
     )
 
-    mocker.patch("pathlib.Path.is_file", return_value=True)
-    mocker.patch("mcubridge.services.runtime.BridgeService.safe_file_read", return_value=b"disk_data")
+    mocker.patch.object(service, "safe_file_read", new=AsyncMock(return_value=b"disk_data"))
 
     await service.handle_request(msg)
 

@@ -1264,4 +1264,3 @@ async def test_runtime_cloud_session_rpc_commands_and_errors(
     assert sent_envelopes[2].command_response.status_code == 500
     assert "Hardware IO error" in sent_envelopes[2].command_response.error_message
     assert svc.state.cloud_fsm.spooling_degraded.is_active
-

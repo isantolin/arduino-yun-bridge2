@@ -12,6 +12,7 @@ from mcubridge.protocol.frame import build_frame
 from mcubridge.protocol.protocol import Command
 from mcubridge.protocol.structures import PendingCommand
 from mcubridge.services.runtime import BridgeService
+from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.transport.serial import SerialHandshakeFatal, SerialTransport
 from pytest_mock import MockerFixture
 

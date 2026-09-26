@@ -3,12 +3,14 @@
 import asyncio
 import time
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any, cast
 from unittest.mock import MagicMock
 
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcubridge_pb2 as pb
-from mcubridge.state.context import create_runtime_state
+from mcubridge.state.context import ProcessContext, RuntimeState, create_runtime_state
+from mcubridge.watchdog import WatchdogKeepalive
 from pytest_mock import MockerFixture
 
 
@@ -54,8 +56,6 @@ def test_connection_fsm_synchronize_sets_flag(runtime_config: RuntimeConfig) -> 
 
 
 def test_record_watchdog_beat_updates_counters(runtime_config: RuntimeConfig) -> None:
-    from mcubridge.watchdog import WatchdogKeepalive
-
     state = create_runtime_state(runtime_config)
     try:
         initial_beats = state.watchdog_beats
@@ -208,8 +208,6 @@ def test_context_configure_safe_close_sync_resource(runtime_config: RuntimeConfi
 
 
 def test_context_cleanup_none_handle_process(runtime_config: RuntimeConfig) -> None:
-    from mcubridge.state.context import ProcessContext
-
     state = create_runtime_state(runtime_config)
     ctx = ProcessContext(cast(Any, None))
     state.running_processes[12345] = ctx
@@ -218,8 +216,6 @@ def test_context_cleanup_none_handle_process(runtime_config: RuntimeConfig) -> N
 
 
 def test_state_context_uncovered_branch_hardening(runtime_config: RuntimeConfig) -> None:
-    from mcubridge.state.context import ProcessContext
-
     st = create_runtime_state(runtime_config)
     setattr(st, "serial_tx_allowed", None)
     st.connection_fsm.connect()
@@ -243,3 +239,52 @@ def test_state_context_uncovered_branch_hardening(runtime_config: RuntimeConfig)
 
     snap3 = st3.build_status_snapshot()
     assert len(snap3.process_stats) >= 1
+
+
+def test_context_storage_subdir_creation_error(runtime_state: RuntimeState, mocker: MockerFixture) -> None:
+    mocker.patch.object(Path, "mkdir", side_effect=OSError("Permission denied"))
+    res = getattr(runtime_state, "_get_storage_subdir")("test_dir")
+    assert res is None
+
+
+def test_context_configure_safe_close_error(runtime_state: RuntimeState) -> None:
+    mock_res = MagicMock()
+    mock_res.close.side_effect = OSError("close error")
+    runtime_state.datastore_cache = mock_res
+    runtime_state.configure()
+    mock_res.close.assert_called_once()
+    assert runtime_state.datastore_cache is not None
+
+
+def test_context_create_spool_fallback(runtime_state: RuntimeState, mocker: MockerFixture) -> None:
+    def mock_deque(*args: Any, **kwargs: Any) -> Any:
+        if kwargs.get("path") != ":memory:":
+            raise OSError("Disk failure")
+        return MagicMock()
+
+    mocker.patch("mcubridge.state.context.LmdbDeque", side_effect=mock_deque)
+    runtime_state.configure()
+    assert runtime_state.mailbox_queue is not None
+    assert runtime_state.mailbox_incoming_queue is not None
+
+
+def test_context_metrics_boot_time_error(runtime_state: RuntimeState, mocker: MockerFixture) -> None:
+    mocker.patch("psutil.boot_time", side_effect=OSError("Cannot read uptime"))
+    metrics = runtime_state.build_metrics_snapshot()
+    assert metrics.uptime_seconds >= 0.0
+
+
+def test_context_clean_queue_empty_and_proc_lookup_error(runtime_state: RuntimeState) -> None:
+    mock_queue = MagicMock()
+    mock_queue.empty.side_effect = [False, True]
+    mock_queue.get_nowait.side_effect = asyncio.QueueEmpty()
+    runtime_state.cloud_publish_queue = mock_queue
+
+    mock_proc = MagicMock()
+    mock_proc.pid = 99999
+    mock_proc.terminate.side_effect = ProcessLookupError("No such process")
+    ctx = ProcessContext(mock_proc)
+    runtime_state.running_processes[99999] = ctx
+
+    runtime_state.cleanup()
+    assert len(runtime_state.running_processes) == 0

@@ -132,10 +132,17 @@ def audit_python_files() -> list[str]:
                     findings.extend(_audit_ast_async_blocking(node, py_file.name))
                     if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                         if node.body and node.body[0].lineno == node.lineno:
-                            findings.append(
-                                f"Python E704 Def Statement on Same Line: {py_file.name}:{node.lineno} - "
-                                f"def '{node.name}' has body on definition line"
+                            is_ellipsis = (
+                                len(node.body) == 1
+                                and isinstance(node.body[0], ast.Expr)
+                                and isinstance(node.body[0].value, ast.Constant)
+                                and node.body[0].value.value is Ellipsis
                             )
+                            if not is_ellipsis:
+                                findings.append(
+                                    f"Python E704 Def Statement on Same Line: {py_file.name}:{node.lineno} - "
+                                    f"def '{node.name}' has body on definition line"
+                                )
             except SyntaxError as exc:
                 findings.append(f"Python Syntax Error: {py_file.name} - {exc}")
 

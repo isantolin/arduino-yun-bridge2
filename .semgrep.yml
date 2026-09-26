@@ -96,3 +96,67 @@ rules:
         - "**/pb_*.h"
         - "**/*.pb.c"
         - "**/*.pb.h"
+
+  # ==============================================================================
+  # RULE 25: CANONICAL SINGLETON IN ARDUINO SKETCHES (C++)
+  # ==============================================================================
+  - id: sil2-ban-non-canonical-bridge
+    languages: [cpp]
+    severity: ERROR
+    message: "SIL-2 Rule 25 Violation: Declared non-canonical BridgeClass instance. Must use canonical singleton 'Bridge'."
+    patterns:
+      - pattern: BridgeClass $VAR(...);
+      - pattern-not: BridgeClass Bridge(...);
+    paths:
+      include:
+        - "**/examples/**"
+
+  # ==============================================================================
+  # RULE 26: MANDATORY SHARED SECRET IN ARDUINO SKETCHES (C++)
+  # ==============================================================================
+  - id: sil2-ban-unauthenticated-bridge-begin
+    languages: [cpp]
+    severity: ERROR
+    message: "SIL-2 Rule 26 Violation: Bridge.begin() called without BRIDGE_SERIAL_SHARED_SECRET."
+    patterns:
+      - pattern: Bridge.begin(...)
+      - pattern-not: Bridge.begin($STREAM, BRIDGE_SERIAL_SHARED_SECRET)
+    paths:
+      include:
+        - "**/examples/**"
+
+  # ==============================================================================
+  # RULE 11: DISCARDED SUT CALLS IN C++ TESTS (C++)
+  # ==============================================================================
+  - id: sil2-ban-discarded-sut-call
+    languages: [cpp]
+    severity: ERROR
+    message: "SIL-2 Rule 11 Violation: Discarding SUT return value with (void) is prohibited."
+    patterns:
+      - pattern-either:
+          - pattern: (void)Bridge.$METHOD(...)
+          - pattern: (void)ba.$METHOD(...)
+          - pattern: (void)TestAccessor::$METHOD(...)
+    paths:
+      include:
+        - "**/tests/**"
+
+  # ==============================================================================
+  # RULE 27: MANUAL STREAM SHIFTING BAN (C++)
+  # ==============================================================================
+  - id: sil2-ban-manual-stream-shift
+    languages: [cpp]
+    severity: ERROR
+    message: "SIL-2 Rule 27 Violation: Manual 32-bit byte shifting detected. Must use etl::byte_stream_reader / etl::byte_stream_writer."
+    patterns:
+      - pattern-either:
+          - pattern: $X << 24
+          - pattern: $X >> 24
+    paths:
+      include:
+        - "/mcubridge-library-arduino/src/**"
+      exclude:
+        - "**/pb_*.c"
+        - "**/pb_*.h"
+        - "**/*.pb.c"
+        - "**/*.pb.h"

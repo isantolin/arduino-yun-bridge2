@@ -1,18 +1,15 @@
 #!/usr/bin/env python3
-"""Automated Test Integrity & Anti-Cheating Auditor (SIL-2 / MIL-SPEC).
+"""Automated Test Integrity Auditor (SIL-2 / MIL-SPEC).
 
-Enforces Rule 11, Rule 17, and Rule 18 compliance across all test suites:
-1. Genuine Test Integrity: Prohibit dummy assertions, tautological assertions in except
-   blocks, self-mutation tests, and discarded calls.
-2. Deterministic Post-Conditions: 100% of test functions must assert concrete state,
-   return values, or emitted frames (zero fire-and-forget).
-3. C++ Host Integrity: 100% of Unity test cases must call TEST_ASSERT* macros.
+Enforces Rule 11, Rule 17, and Rule 18 compliance:
+1. 100% of Python test functions must assert concrete state or emitted frames.
+2. 100% of Unity C++ test cases must call TEST_ASSERT* macros.
+Anti-tautologies and discarded calls are enforced via Semgrep (.semgrep.yml).
 """
 
 from __future__ import annotations
 
 import ast
-import re
 import sys
 from pathlib import Path
 from typing import Annotated
@@ -22,7 +19,7 @@ import typer
 ROOT = Path(__file__).resolve().parents[2]
 
 app = typer.Typer(
-    help="Audit Python and C++ test suites for Rule 11/17/18 integrity violations.",
+    help="Audit Python and C++ test suites for Rule 17/18 zero-assertion violations.",
     add_completion=False,
 )
 
@@ -65,65 +62,12 @@ def _is_state_machine_runner(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bo
     )
 
 
-def _get_handler_exception_names(handler: ast.ExceptHandler) -> set[str]:
-    """Extract names of exception types caught by an except handler."""
-    names: set[str] = set()
-    if handler.type is None:
-        return names
-    if isinstance(handler.type, ast.Name):
-        names.add(handler.type.id)
-    elif isinstance(handler.type, ast.Attribute):
-        names.add(handler.type.attr)
-    elif isinstance(handler.type, ast.Tuple):
-        for elt in handler.type.elts:
-            if isinstance(elt, ast.Name):
-                names.add(elt.id)
-            elif isinstance(elt, ast.Attribute):
-                names.add(elt.attr)
-    return names
-
-
-def _is_tautological_isinstance(inner: ast.Assert, caught_names: set[str], handler_var: str) -> bool:
-    """Detect 'assert isinstance(exc, CaughtType)' inside an except block."""
-    if not (
-        isinstance(inner.test, ast.Call)
-        and isinstance(inner.test.func, ast.Name)
-        and inner.test.func.id == "isinstance"
-        and len(inner.test.args) >= 2
-    ):
-        return False
-
-    first_arg = inner.test.args[0]
-    second_arg = inner.test.args[1]
-    if not (isinstance(first_arg, ast.Name) and first_arg.id == handler_var):
-        return False
-
-    second_names: set[str] = set()
-    if isinstance(second_arg, ast.Name):
-        second_names.add(second_arg.id)
-    elif isinstance(second_arg, ast.Attribute):
-        second_names.add(second_arg.attr)
-    elif isinstance(second_arg, ast.Tuple):
-        for elt in second_arg.elts:
-            if isinstance(elt, ast.Name):
-                second_names.add(elt.id)
-            elif isinstance(elt, ast.Attribute):
-                second_names.add(elt.attr)
-
-    return bool(caught_names & second_names)
-
-
-def _inspect_node_assertions(node: ast.FunctionDef | ast.AsyncFunctionDef) -> tuple[int, bool, bool]:
-    """Return (assert_count, has_dummy_assert_true, has_tautology_in_except)."""
+def _inspect_node_assertions(node: ast.FunctionDef | ast.AsyncFunctionDef) -> int:
+    """Count number of substantive assertions in a test function."""
     assert_count = 0
-    has_dummy_assert_true = False
-    has_tautology_in_except = False
-
     for subnode in ast.walk(node):
         if isinstance(subnode, ast.Assert):
             assert_count += 1
-            if isinstance(subnode.test, ast.Constant) and subnode.test.value is True:
-                has_dummy_assert_true = True
         elif isinstance(subnode, ast.With):
             for item in subnode.items:
                 if isinstance(item.context_expr, ast.Call):
@@ -135,18 +79,11 @@ def _inspect_node_assertions(node: ast.FunctionDef | ast.AsyncFunctionDef) -> tu
         elif isinstance(subnode, ast.Call):
             if isinstance(subnode.func, ast.Attribute) and subnode.func.attr in MOCK_ASSERT_NAMES:
                 assert_count += 1
-        elif isinstance(subnode, ast.ExceptHandler):
-            caught = _get_handler_exception_names(subnode)
-            if subnode.name and caught:
-                for inner in ast.walk(subnode):
-                    if isinstance(inner, ast.Assert) and _is_tautological_isinstance(inner, caught, subnode.name):
-                        has_tautology_in_except = True
-
-    return assert_count, has_dummy_assert_true, has_tautology_in_except
+    return assert_count
 
 
 def audit_python_test_file(py_path: Path) -> list[str]:
-    """Audit a single Python test file for AST assertions, tautologies, and self-mutations."""
+    """Audit a single Python test file for test functions with zero assertions."""
     findings: list[str] = []
     rel_path = py_path.relative_to(ROOT)
 
@@ -163,26 +100,11 @@ def audit_python_test_file(py_path: Path) -> list[str]:
         if not node.name.startswith("test_") or _is_fixture(node) or _is_state_machine_runner(node):
             continue
 
-        assert_count, has_dummy_assert_true, has_tautology = _inspect_node_assertions(node)
-
-        if assert_count == 0:
+        if _inspect_node_assertions(node) == 0:
             findings.append(
                 f"[{rel_path}:{node.lineno}] Rule 17/18 Violation: Function '{node.name}' has ZERO assertions "
                 f"(superficial line-hitting / fire-and-forget)."
             )
-
-        if has_dummy_assert_true:
-            findings.append(
-                f"[{rel_path}:{node.lineno}] Rule 11 Violation: Function '{node.name}' contains literal 'assert True'."
-            )
-
-        if has_tautology:
-            findings.append(
-                f"[{rel_path}:{node.lineno}] Rule 11 Violation: Function '{node.name}' contains tautological "
-                f"'assert isinstance(exc, ...)' inside except block; must assert concrete error message via "
-                f"pytest.raises(..., match=...) instead."
-            )
-
     return findings
 
 
@@ -204,7 +126,7 @@ def audit_python_tests() -> list[str]:
 
 
 def audit_cpp_test_file(cpp_path: Path) -> list[str]:
-    """Audit a single C++ test file for Unity TEST_ASSERT calls and discarded SUT calls."""
+    """Audit a single C++ test file for Unity TEST_ASSERT calls."""
     findings: list[str] = []
     rel_path = cpp_path.relative_to(ROOT)
     lines = cpp_path.read_text(encoding="utf-8").splitlines()
@@ -227,22 +149,13 @@ def audit_cpp_test_file(cpp_path: Path) -> list[str]:
             if brace_depth == 0 and "{" in "".join(func_lines):
                 body = "\n".join(func_lines)
                 fname, lineno = current_func
-
                 if "TEST_ASSERT" not in body and "assert(" not in body:
                     findings.append(
                         f"[{rel_path}:{lineno}] Rule 17/18 Violation: C++ function '{fname}' has ZERO assertions "
                         f"(no TEST_ASSERT* called)."
                     )
-
-                if re.search(r"\(\s*void\s*\)\s*(?:Bridge\.|TestAccessor|ba\.)", body):
-                    findings.append(
-                        f"[{rel_path}:{lineno}] Rule 11 Violation: C++ function '{fname}' explicitly discards "
-                        f"SUT return value with '(void)'."
-                    )
-
                 current_func = None
                 func_lines = []
-
     return findings
 
 
@@ -274,7 +187,7 @@ def main(
 
     print("\n--- TEST INTEGRITY AUDIT RESULTS ---")
     if not all_findings:
-        print("✅ 100% of test functions have substantive assertions and pass Rule 11/17/18 integrity gates.")
+        print("✅ 100% of test functions have substantive assertions and pass Rule 17/18 integrity gates.")
         sys.exit(0)
 
     print(f"❌ Found {len(all_findings)} test integrity violation(s):")

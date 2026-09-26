@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deep profiling of Arduino ELF files to identify largest symbols (functions/tables)."""
+"""Deep profiling of Arduino ELF files to identify largest symbols using Bloaty."""
 
 from __future__ import annotations
 
@@ -12,91 +12,39 @@ from typing import Annotated
 import typer
 
 
-def resolve_nm_binary() -> str:
-    """Resolve AVR nm binary with deterministic fallback order."""
-    avr_nm = shutil.which("avr-nm")
-    if avr_nm:
-        return avr_nm
-
-    arduino_packages = Path.home() / ".arduino15" / "packages"
-    if arduino_packages.exists():
-        found_nms = sorted(arduino_packages.rglob("avr-nm"))
-        if found_nms:
-            return str(found_nms[0])
-
-    return shutil.which("nm") or "nm"
-
-
 def detect_board_label(build_dir: Path, elf_path: Path) -> str:
     """Extract board label from the build path."""
     try:
-        rel_parts = elf_path.relative_to(build_dir).parts
-    except ValueError as exc:
-        sys.stderr.write(f"[DEBUG] Path {elf_path} not relative to {build_dir}: {exc}\n")
-        rel_parts = elf_path.parts
+        parts = elf_path.relative_to(build_dir).parts
+    except ValueError:
+        parts = elf_path.parts
 
-    for part in rel_parts:
+    for part in parts:
         if part.startswith("arduino-"):
             return part.replace("-", ":", 2)
-
-    if len(rel_parts) > 1:
-        return rel_parts[0]
-    return "unknown-board"
+    return parts[0] if len(parts) > 1 else "unknown-board"
 
 
-def profile_with_bloaty(elf_path: Path, board_label: str, bloaty_bin: str) -> str | None:
-    """Run bloaty on the ELF file to extract symbol sizes."""
-    try:
-        cmd = [bloaty_bin, "-d", "symbols", "-n", "20", str(elf_path)]
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        return (
-            f"#### 🔍 Bloaty Symbol Profiling: {elf_path.name} ({board_label})\n\n```\n{result.stdout.strip()}\n```\n"
-        )
-    except (subprocess.CalledProcessError, OSError) as err:
-        sys.stderr.write(f"[WARN] Bloaty error profiling {elf_path}: {err}\n")
-        return None
+def profile_elf(build_dir: Path, elf_path: Path, bloaty_bin: str | None = None) -> str:
+    """Run Bloaty (or nm fallback) on the ELF file to extract symbol sizes."""
+    board = detect_board_label(build_dir, elf_path)
+    if bloaty_bin:
+        try:
+            cmd = [bloaty_bin, "-d", "symbols", "-n", "20", str(elf_path)]
+            out = subprocess.run(cmd, capture_output=True, text=True, check=True).stdout.strip()
+            return f"#### 🔍 Bloaty Symbol Profiling: {elf_path.name} ({board})\n\n```\n{out}\n```\n"
+        except (subprocess.CalledProcessError, OSError) as err:
+            sys.stderr.write(f"[WARN] Bloaty error profiling {elf_path}: {err}\n")
 
-
-def profile_elf(build_dir: Path, elf_path: Path, nm_bin: str, bloaty_bin: str | None = None) -> str:
-    """Run bloaty or nm on the ELF file to extract symbol sizes."""
-    board_label = detect_board_label(build_dir, elf_path)
-    if bloaty_bin is not None:
-        bloaty_report = profile_with_bloaty(elf_path, board_label, bloaty_bin)
-        if bloaty_report is not None:
-            return bloaty_report
-
+    nm_bin = shutil.which("avr-nm") or shutil.which("nm") or "nm"
     try:
         cmd = [nm_bin, "--size-sort", "--print-size", "-C", str(elf_path)]
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        lines = subprocess.run(cmd, capture_output=True, text=True, check=True).stdout.strip().splitlines()
+        top_20 = lines[-20:][::-1]
+        formatted = "\n".join(f"- `{line.strip()}`" for line in top_20)
+        return f"#### 🔍 Symbol Profiling: {elf_path.name} ({board})\n\n{formatted}\n"
     except (subprocess.CalledProcessError, OSError) as err:
-        sys.stderr.write(f"[WARN] Error profiling {elf_path}: {err}\n")
         return f"⚠️ Error profiling {elf_path}: {err}\n"
-
-    lines = [line for line in result.stdout.strip().splitlines() if line]
-    lines.reverse()
-    top_20 = lines[:20]
-
-    md_lines = [
-        f"#### 🔍 Symbol Profiling: {elf_path.name} ({board_label})",
-        "",
-        "| Size (Bytes) | Type | Symbol Name |",
-        "| :--- | :---: | :--- |",
-    ]
-
-    for line in top_20:
-        parts = line.split()
-        if len(parts) < 4:
-            continue
-        try:
-            size_dec = int(parts[1], 16)
-        except ValueError as exc:
-            sys.stderr.write(f"[DEBUG] Skipping unparseable symbol size '{parts[1]}': {exc}\n")
-            continue
-        sym_type = parts[2]
-        sym_name = " ".join(parts[3:])
-        md_lines.append(f"| {size_dec:,} | `{sym_type}` | `{sym_name}` |")
-
-    return "\n".join(md_lines) + "\n"
 
 
 cli = typer.Typer(help="Profile Arduino ELF symbols.", add_completion=False)
@@ -115,31 +63,13 @@ def main(
     ] = None,
 ) -> None:
     if not build_dir.exists():
-        print(f"Error: {build_dir} not found.", file=sys.stderr)
+        sys.stderr.write(f"Error: {build_dir} not found.\n")
         return
 
-    nm_bin = resolve_nm_binary()
     bloaty_bin = shutil.which("bloaty")
-    reports: list[str] = []
-    seen_paths: set[Path] = set()
-    seen_sections: set[tuple[str, str]] = set()
-
-    for elf_file in sorted(build_dir.rglob("*.elf")):
-        resolved = elf_file.resolve()
-        if resolved in seen_paths:
-            continue
-        seen_paths.add(resolved)
-
-        board_label = detect_board_label(build_dir, elf_file)
-        section_key = (board_label, elf_file.name)
-        if section_key in seen_sections:
-            continue
-        seen_sections.add(section_key)
-
-        reports.append(profile_elf(build_dir, elf_file, nm_bin, bloaty_bin))
-
+    reports = [profile_elf(build_dir, elf, bloaty_bin) for elf in sorted(build_dir.rglob("*.elf"))]
     if not reports:
-        print("No ELF files found for profiling.", file=sys.stderr)
+        sys.stderr.write("No ELF files found for profiling.\n")
         return
 
     full_report = "### 🛠️ C++ Advanced Profiling (Top Symbols)\n\n" + "\n".join(reports)

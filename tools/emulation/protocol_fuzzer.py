@@ -24,13 +24,12 @@ import typer
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol import protocol
 from mcubridge.protocol.frame import build_frame
-from mcubridge.protocol.protocol import Command
 
 cli = typer.Typer(help="[MIL-SPEC/SIL-2] McuBridge Protocol Stateful Fuzzer", add_completion=False)
 logger = structlog.get_logger("protocol_fuzzer")
 
-_RUN_STATE_MACHINE: Callable[[type[RuleBasedStateMachine]], None] = cast(
-    Callable[[type[RuleBasedStateMachine]], None],
+_RUN_STATE_MACHINE: Callable[..., None] = cast(
+    Callable[..., None],
     getattr(h_stateful, "run_state_machine_as_test"),
 )
 
@@ -56,7 +55,9 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
         self.loop.run_until_complete(self._connect())
 
     async def _connect(self) -> None:
-        self.reader, self.writer = await serialx.open_serial_connection(url=self.port, baudrate=self.baudrate)
+        reader, writer = await serialx.open_serial_connection(url=self.port, baudrate=self.baudrate)
+        self.reader = cast(asyncio.StreamReader, reader)
+        self.writer = cast(asyncio.StreamWriter, writer)
         logger.info("connected", port=self.port, baudrate=self.baudrate)
 
     async def _send_raw(self, data: bytes) -> None:
@@ -94,7 +95,6 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
         self,
         command_id: int,
         payload: bytes,
-        *,
         version: int = protocol.PROTOCOL_VERSION,
         override_crc: int | None = None,
     ) -> bytes:
@@ -114,7 +114,7 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
     def fuzz_valid_ping(self, payload: bytes) -> None:
         """Generate valid version probe frames with arbitrary valid payloads."""
         seq = self._next_seq_id()
-        frame = self._build_raw_frame(Command.CMD_GET_VERSION.value, seq, payload)
+        frame = self._build_raw_frame(protocol.Command.CMD_GET_VERSION.value, seq, payload)
         self.loop.run_until_complete(self._send_raw(frame))
         event("rule_valid_ping")
 
@@ -131,9 +131,8 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
 
     @rule(
         cmd=st.integers(min_value=1, max_value=0x7FFF),
-        bad_version=st.one_of(
-            st.integers(min_value=0, max_value=protocol.PROTOCOL_VERSION - 1),
-            st.integers(min_value=protocol.PROTOCOL_VERSION + 1, max_value=protocol.UINT8_MASK),
+        bad_version=st.integers(min_value=0, max_value=protocol.UINT8_MASK).filter(
+            lambda v: v != protocol.PROTOCOL_VERSION
         ),
         payload=st.binary(min_size=0, max_size=64),
     )
@@ -190,7 +189,7 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
     def verify_endpoint_responsiveness(self) -> None:
         """Send a valid probe frame to verify MCU endpoint remains responsive."""
         seq = self._next_seq_id()
-        probe = self._build_raw_frame(Command.CMD_GET_VERSION.value, seq, b"PROBE")
+        probe = self._build_raw_frame(protocol.Command.CMD_GET_VERSION.value, seq, b"PROBE")
         self.loop.run_until_complete(self._send_raw(probe))
         resp = self.loop.run_until_complete(self._read_probe())
         if resp is not None:
@@ -214,7 +213,7 @@ def main(
 ) -> None:
     """Run Hypothesis-driven stateful protocol fuzzing against a target serial endpoint."""
     if count <= 0:
-        raise typer.BadParameter("Count must be greater than 0")
+        raise typer.BadParameter("count must be greater than 0")
 
     logger.info("starting_fuzzer_state_machine", port=port, baudrate=baud, steps=count, seed=seed)
 
@@ -228,19 +227,23 @@ def main(
         max_examples=max_examples,
         stateful_step_count=steps_per_example,
         derandomize=(seed is None),
+        database=None,
         deadline=None,
         suppress_health_check=[HealthCheck.too_slow, HealthCheck.filter_too_much],
     )
-    setattr(ProtocolFuzzerStateMachine.TestCase, "settings", state_settings)
 
-    runner: Callable[[type[RuleBasedStateMachine]], None] = (
-        cast(Callable[[type[RuleBasedStateMachine]], None], hyp_seed(seed)(_RUN_STATE_MACHINE))
+    test_case_cls = getattr(ProtocolFuzzerStateMachine, "TestCase", None)
+    if test_case_cls is not None:
+        setattr(test_case_cls, "settings", state_settings)
+
+    runner: Callable[..., None] = (
+        cast(Callable[..., None], hyp_seed(seed)(_RUN_STATE_MACHINE))
         if seed is not None
         else _RUN_STATE_MACHINE
     )
 
     try:
-        runner(ProtocolFuzzerStateMachine)
+        runner(ProtocolFuzzerStateMachine, settings=state_settings)
         logger.info("fuzzing_complete", steps=count)
     except KeyboardInterrupt:
         logger.info("fuzzing_interrupted_by_user")

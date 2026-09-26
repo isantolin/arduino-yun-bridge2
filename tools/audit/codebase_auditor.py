@@ -122,7 +122,12 @@ def audit_python_files() -> list[str]:
 
     for base_dir in py_dirs:
         for py_file in base_dir.rglob("*.py"):
-            if "_pb2" in py_file.name or py_file.name in {"audit_library_density.py", "codebase_auditor.py"}:
+            if (
+                "_pb2" in py_file.name
+                or py_file.name == "mcubridge_grpc.py"
+                or py_file.name.endswith("_pb2_grpc.py")
+                or py_file.name in {"audit_library_density.py", "codebase_auditor.py"}
+            ):
                 continue
             content = py_file.read_text(encoding="utf-8")
 

@@ -6,11 +6,10 @@ import importlib
 import types
 from unittest.mock import MagicMock
 
-from pytest_mock import MockerFixture
-
 from mcubridge.config import common
 from mcubridge.protocol import protocol
 from mcubridge.protocol.structures import create_allowed_policy
+from pytest_mock import MockerFixture
 
 
 def test_normalise_commands() -> None:

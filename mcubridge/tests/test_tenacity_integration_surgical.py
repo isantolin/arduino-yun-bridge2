@@ -10,14 +10,14 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
-from pytest_mock import MockerFixture
 import pytest
 import tenacity
-
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.services.ubus import UbusService
 from mcubridge.state.context import RuntimeState, create_runtime_state
+from pytest_mock import MockerFixture
+
 from tools.audit.sync_runtime_deps import fetch_url_with_retry
 from tools.emulation.process_utils import wait_for_path_ready, wait_for_tcp_ready
 

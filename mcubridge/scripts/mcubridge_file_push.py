@@ -2,6 +2,7 @@
 """Modernized File Push utility for MCU Bridge (SIL-2)."""
 
 from __future__ import annotations
+
 import importlib
 import sys
 from pathlib import Path

@@ -7,15 +7,14 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 from unittest.mock import AsyncMock
 
-import pytest
-from pytest_mock import MockerFixture
-
-from mcubridge.config.settings import RuntimeConfig
 import mcubridge.protocol.mcubridge_pb2 as pb
+import pytest
+from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.services.runtime import BridgeService, _PendingMcuRead
 from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.transport.serial import SerialTransport
+from pytest_mock import MockerFixture
 
 
 def _make_config() -> RuntimeConfig:
@@ -183,11 +182,13 @@ async def test_on_mcu_file_write_success(svc: tuple[BridgeService, RuntimeState,
 
 @pytest.mark.asyncio
 async def test_on_mcu_file_read_no_serial(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
-    service, _state, _ = svc
+    service, _state, serial = svc
     service.serial = None
     p = pb.FileRead(path="missing.txt")
     on_read_fn: Callable[..., Awaitable[None]] = getattr(service, "_on_mcu_file_read")
     await on_read_fn(1, p)
+    assert service.serial is None
+    serial.send.assert_not_called()
 
 
 @pytest.mark.asyncio

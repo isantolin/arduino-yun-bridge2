@@ -7,7 +7,11 @@ from grpclib.client import Channel as Channel
 from . import mcubridge_pb2
 from .definitions import (
     SpiBitOrder as SpiBitOrder,
+)
+from .definitions import (
     SpiMode as SpiMode,
+)
+from .definitions import (
     build_bridge_args as build_bridge_args,
 )
 from .env import dump_client_env as dump_client_env
@@ -15,6 +19,8 @@ from .mcubridge_grpc import LocalBridgeStub as LocalBridgeStub
 from .mcubridge_pb2 import CloudQueuedPublish as CloudQueuedPublish
 from .protocol import (
     Command as Command,
+)
+from .protocol import (
     Topic as Topic,
 )
 from .spi import SpiDevice as SpiDevice

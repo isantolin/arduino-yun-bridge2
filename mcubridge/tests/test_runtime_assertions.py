@@ -6,14 +6,13 @@ from typing import cast
 from unittest.mock import AsyncMock
 
 import pytest
-from pytest_mock import MockerFixture
-
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.transport.serial import SerialTransport
+from pytest_mock import MockerFixture
 
 
 class QoS:

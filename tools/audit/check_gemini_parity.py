@@ -2,14 +2,14 @@
 """Validate parity between .agent/workflows/*.md and .github/commands/*.toml,
 and verify agent.json model matches the canonical tools/gemini_model file."""
 
-import typer
-
 import json
 import re
 import sys
 import tomllib
 from pathlib import Path
 from typing import Annotated
+
+import typer
 
 ROOT = Path(__file__).resolve().parents[2]
 

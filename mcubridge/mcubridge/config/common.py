@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from typing import Any, Final
+
 import structlog
+
 from mcubridge.protocol import protocol
 
 logger = structlog.get_logger(__name__)

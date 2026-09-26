@@ -193,6 +193,9 @@ void test_bridge_brute_force_commands() {
     return p;
   }());
   hit(rpc::CommandId::CMD_GET_CAPABILITIES, rpc::payload::Capabilities{});
+  Bridge.process();
+  TEST_ASSERT_TRUE(Bridge.isSynchronized());
+  TEST_ASSERT_FALSE(ba.isAwaitingAck());
 }
 
 void test_bridge_send_exhaustive() {
@@ -203,59 +206,59 @@ void test_bridge_send_exhaustive() {
 
   uint8_t data[] = "d";
 
-  (void)Bridge.send(rpc::CommandId::CMD_GET_VERSION_RESP, 1, []() {
+  TEST_ASSERT_TRUE(Bridge.send(rpc::CommandId::CMD_GET_VERSION_RESP, 1, []() {
     rpc::payload::VersionResponse p;
     p.major = 1;
     p.minor = 2;
     p.patch = 3;
     return p;
-  }());
-  (void)Bridge.send(rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, 1, []() {
+  }()));
+  TEST_ASSERT_TRUE(Bridge.send(rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, 1, []() {
     rpc::payload::FreeMemoryResponse p;
     p.value = 1024;
     return p;
-  }());
-  (void)Bridge.send(rpc::CommandId::CMD_GET_CAPABILITIES_RESP, 1,
-                    rpc::payload::Capabilities{});
-  (void)Bridge.send(rpc::CommandId::CMD_DIGITAL_READ_RESP, 1, []() {
+  }()));
+  TEST_ASSERT_TRUE(Bridge.send(rpc::CommandId::CMD_GET_CAPABILITIES_RESP, 1,
+                               rpc::payload::Capabilities{}));
+  TEST_ASSERT_TRUE(Bridge.send(rpc::CommandId::CMD_DIGITAL_READ_RESP, 1, []() {
     rpc::payload::DigitalReadResponse p;
     p.value = 1;
     return p;
-  }());
-  (void)Bridge.send(rpc::CommandId::CMD_ANALOG_READ_RESP, 1, []() {
+  }()));
+  TEST_ASSERT_TRUE(Bridge.send(rpc::CommandId::CMD_ANALOG_READ_RESP, 1, []() {
     rpc::payload::AnalogReadResponse p;
     p.value = 512;
     return p;
-  }());
+  }()));
 
   rpc::payload::DatastoreGetResponse dgr;
   rpc::payload::copy_to_pb_bytes(dgr.value, data, 1);
-  (void)Bridge.send(rpc::CommandId::CMD_DATASTORE_GET_RESP, 1, dgr);
+  TEST_ASSERT_TRUE(Bridge.send(rpc::CommandId::CMD_DATASTORE_GET_RESP, 1, dgr));
 
   rpc::payload::FileReadResponse frr;
   rpc::payload::copy_to_pb_bytes(frr.content, data, 1);
-  (void)Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 1, frr);
+  TEST_ASSERT_TRUE(Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 1, frr));
 
-  (void)Bridge.send(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP, 1, []() {
+  TEST_ASSERT_TRUE(Bridge.send(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP, 1, []() {
     rpc::payload::ProcessRunAsyncResponse p;
     p.pid = 123;
     return p;
-  }());
+  }()));
 
   rpc::payload::ProcessPollResponse ppr;
   rpc::payload::copy_to_pb_bytes(ppr.stdout_data, data, 1);
   rpc::payload::copy_to_pb_bytes(ppr.stderr_data, data, 1);
-  (void)Bridge.send(rpc::CommandId::CMD_PROCESS_POLL_RESP, 1, ppr);
+  TEST_ASSERT_TRUE(Bridge.send(rpc::CommandId::CMD_PROCESS_POLL_RESP, 1, ppr));
 
   rpc::payload::SpiTransferResponse strr;
   rpc::payload::copy_to_pb_bytes(strr.data, data, 1);
-  (void)Bridge.send(rpc::CommandId::CMD_SPI_TRANSFER_RESP, 1, strr);
+  TEST_ASSERT_TRUE(Bridge.send(rpc::CommandId::CMD_SPI_TRANSFER_RESP, 1, strr));
 
   // 1. Hit Queue Full
   etl::array<uint16_t, bridge::config::MAX_PENDING_TX_FRAMES> seq_ids{};
   etl::iota(seq_ids.begin(), seq_ids.end(), 100);
   etl::for_each(seq_ids.begin(), seq_ids.end(), [](uint16_t seq) {
-    (void)Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, seq);
+    TEST_ASSERT_TRUE(Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, seq));
   });
   TEST_ASSERT(ba.isAwaitingAck());
   bool ok = Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, 105);
@@ -269,13 +272,14 @@ void test_console_and_misc() {
   ba.setSynchronized();
 
   Console.begin();
-  Console.write('X');
+  TEST_ASSERT_EQUAL(1, Console.write('X'));
   uint8_t d[] = "abc";
-  Console.write(d, 3);
+  TEST_ASSERT_EQUAL(3, Console.write(d, 3));
   Console.process();
 
   Bridge.signalXoff();
   Bridge.signalXon();
+  TEST_ASSERT_TRUE(Bridge.isSynchronized());
 
   rpc_pb_RpcEnvelope f = {};
   f.command_id = (uint16_t)rpc::StatusCode::STATUS_OK;

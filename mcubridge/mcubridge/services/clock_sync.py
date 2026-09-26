@@ -6,9 +6,9 @@ import asyncio
 import time
 from typing import TYPE_CHECKING, Any
 
+import structlog
 from google.protobuf.message import DecodeError as ProtobufDecodeError
 from statemachine import State, StateMachine
-import structlog
 
 from ..protocol import mcubridge_pb2 as pb
 from ..protocol.protocol import Command

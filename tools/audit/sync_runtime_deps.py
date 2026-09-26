@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Generate derived dependency files from the runtime manifest."""
 
-from dataclasses import dataclass
 import json
 import re
 import sys
@@ -9,13 +8,14 @@ import tomllib
 import urllib.error
 import urllib.request
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Any, TypedDict, cast
 
-from packaging.requirements import InvalidRequirement, Requirement
-from packaging.version import InvalidVersion, Version
 import tenacity
 import typer
+from packaging.requirements import InvalidRequirement, Requirement
+from packaging.version import InvalidVersion, Version
 
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST_PATH = ROOT / "requirements" / "runtime.toml"

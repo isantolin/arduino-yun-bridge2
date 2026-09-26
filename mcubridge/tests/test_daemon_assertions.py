@@ -8,12 +8,11 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
-from pytest_mock import MockerFixture
-
-from mcubridge.daemon import app
 from mcubridge.config.settings import RuntimeConfig
+from mcubridge.daemon import app
 from mcubridge.services.handshake import SerialHandshakeFatal
 from mcubridge.services.runtime import BridgeService
+from pytest_mock import MockerFixture
 
 
 @pytest.fixture

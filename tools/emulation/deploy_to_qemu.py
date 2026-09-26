@@ -3,11 +3,12 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import re
 import sys
 import tomllib
+from pathlib import Path
 from typing import Annotated
+
 import pexpect
 import tenacity
 import typer

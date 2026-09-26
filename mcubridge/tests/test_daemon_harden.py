@@ -5,14 +5,14 @@ from __future__ import annotations
 import asyncio
 from typing import Any, cast
 from unittest.mock import AsyncMock
-import pytest
-from pytest_mock import MockerFixture
 
-from mcubridge.daemon import app
+import pytest
 from mcubridge.config.settings import RuntimeConfig
+from mcubridge.daemon import app
 from mcubridge.protocol.protocol import DEFAULT_SERIAL_SHARED_SECRET
-from mcubridge.services.runtime import BridgeService
 from mcubridge.services.handshake import SerialHandshakeFatal
+from mcubridge.services.runtime import BridgeService
+from pytest_mock import MockerFixture
 
 
 @pytest.fixture

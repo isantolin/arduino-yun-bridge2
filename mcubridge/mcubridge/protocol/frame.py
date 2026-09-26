@@ -20,10 +20,11 @@ os.environ.setdefault("CRYPTOGRAPHY_OPENSSL_NO_LEGACY", "1")
 
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
-
-from google.protobuf.message import DecodeError, Message as ProtobufMessage
+from google.protobuf.message import DecodeError
+from google.protobuf.message import Message as ProtobufMessage
 
 from mcubridge.protocol import mcubridge_pb2 as pb
+
 from . import is_system_command, protocol
 
 

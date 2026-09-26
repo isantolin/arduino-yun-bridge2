@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-from hypothesis import example, given, strategies as st
-from pytest_mock import MockerFixture
 import pytest
 import serialx
+from hypothesis import example, given
+from hypothesis import strategies as st
 from mcubridge.protocol import protocol
-from mcubridge.protocol.protocol import Command, Status, UINT8_MASK
-from tests.test_constants import TEST_BROKEN_CRC
+from mcubridge.protocol.protocol import UINT8_MASK, Command, Status
+from pytest_mock import MockerFixture
 
+from tests.test_constants import TEST_BROKEN_CRC
 from tools.emulation import frame_debug
 
 _VALID_CMD_NAMES = frozenset([entry.name.upper() for enum_cls in (Command, Status) for entry in enum_cls])
@@ -38,10 +39,12 @@ def test_resolve_command_empty() -> None:
 
 @given(
     invalid_name=st.text(alphabet=st.characters(blacklist_categories=("Cs",)), min_size=1, max_size=30).filter(
-        lambda s: s.strip().upper() not in _VALID_CMD_NAMES
-        and not s.strip().startswith(("0x", "0X"))
-        and not s.strip().isdigit()
-        and bool(s.strip())
+        lambda s: (
+            s.strip().upper() not in _VALID_CMD_NAMES
+            and not s.strip().startswith(("0x", "0X"))
+            and not s.strip().isdigit()
+            and bool(s.strip())
+        )
     )
 )
 @example(invalid_name="INVALID_CMD")

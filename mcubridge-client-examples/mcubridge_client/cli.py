@@ -6,9 +6,8 @@ import contextlib
 from collections.abc import AsyncGenerator
 
 import grpclib.events
-from grpclib.client import Channel
 import structlog
-
+from grpclib.client import Channel
 from mcubridge.config.logging import configure_logging as _central_configure_logging
 
 from .definitions import build_bridge_args

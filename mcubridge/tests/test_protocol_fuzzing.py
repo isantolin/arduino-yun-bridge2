@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from cobs import cobsr
-from hypothesis import event, given, note, settings, strategies as st, target
 import pytest
-
+from cobs import cobsr
+from hypothesis import event, given, note, settings, target
+from hypothesis import strategies as st
 from mcubridge.protocol.frame import DecodedFrame, build_frame, parse_frame
 from mcubridge.protocol.protocol import CRC_COVERED_HEADER_SIZE
 
@@ -16,12 +16,13 @@ EXPECTED_COBS_ERRORS = (cobsr.DecodeError, ValueError)
 @settings(max_examples=200, derandomize=True, deadline=None)
 @given(raw_data=st.binary(max_size=256))
 def test_frame_parsing_resilience_to_fuzzing(raw_data: bytes) -> None:
-    """Fuzzing property: parse_frame must either decode safely or reject with ValueError."""
+    """Fuzzing property: parse_frame must either decode safely or reject with descriptive ValueError."""
     try:
         decoded = parse_frame(raw_data)
         assert isinstance(decoded, DecodedFrame)
+        assert decoded.envelope.version == 2
     except ValueError as exc:
-        assert isinstance(exc, ValueError)
+        assert len(str(exc)) > 0
 
 
 @pytest.mark.fuzz
@@ -33,7 +34,7 @@ def test_cobs_decoding_resilience(raw_data: bytes) -> None:
         res = cobsr.decode(raw_data)
         assert isinstance(res, bytes)
     except EXPECTED_COBS_ERRORS as exc:
-        assert isinstance(exc, EXPECTED_COBS_ERRORS)
+        assert len(str(exc)) > 0
 
 
 @pytest.mark.fuzz
@@ -44,8 +45,9 @@ def test_frame_header_parsing_resilience(raw_data: bytes) -> None:
     try:
         decoded = parse_frame(raw_data)
         assert isinstance(decoded, DecodedFrame)
+        assert decoded.envelope.version == 2
     except ValueError as exc:
-        assert isinstance(exc, ValueError)
+        assert len(str(exc)) > 0
 
 
 @pytest.mark.fuzz
@@ -95,8 +97,9 @@ def test_streaming_chunking_fragmentation_invariant(
     size_iter = iter(chunk_sizes)
     while idx < len(wire_stream):
         size = next(size_iter, 7)
-        chunks.append(wire_stream[idx:idx + size])
-        idx += size
+        end = idx + size
+        chunks.append(wire_stream[idx:end])
+        idx = end
 
     event(f"stream_chunks_{min(len(chunks), 20)}")
 

@@ -10,10 +10,10 @@ import asyncio
 import importlib
 from collections.abc import Callable
 from typing import Any, Protocol
+
 import anyio.from_thread
 import structlog
 import tenacity
-
 from google.protobuf.json_format import MessageToDict, ParseDict
 
 from ..config.settings import RuntimeConfig
@@ -209,7 +209,9 @@ class UbusService:
         data["capabilities"] = (
             MessageToDict(caps, always_print_fields_with_no_presence=True, preserving_proto_field_name=True)
             if isinstance(caps, pb.Capabilities)
-            else {k: bool(v) for k, v in caps.items()} if isinstance(caps, dict) else {}
+            else {k: bool(v) for k, v in caps.items()}
+            if isinstance(caps, dict)
+            else {}
         )
         data["clock_status"] = {
             "offset_us": state.clock_offset_us,

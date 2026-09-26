@@ -8,20 +8,21 @@ not used.
 """
 
 from __future__ import annotations
+
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Final, cast
+
+import structlog
 from google.protobuf import json_format
 from google.protobuf.descriptor import FieldDescriptor
 
-import structlog
-from typing import TYPE_CHECKING, Any, Final, cast
-from pathlib import Path
-
+from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.protocol.structures import validate_config
 
 from ..config.common import (
     get_default_config,
     get_uci_config,
 )
-from mcubridge.protocol.structures import validate_config
-from mcubridge.protocol import mcubridge_pb2 as pb
 
 logger = structlog.get_logger(__name__)
 

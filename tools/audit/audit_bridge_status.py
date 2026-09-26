@@ -10,9 +10,8 @@ import sys
 from pathlib import Path
 from typing import Annotated, Any
 
-from google.protobuf.json_format import ParseDict, ParseError
 import typer
-
+from google.protobuf.json_format import ParseDict, ParseError
 from mcubridge.protocol import mcubridge_pb2 as pb
 
 try:

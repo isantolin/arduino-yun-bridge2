@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import logging
-from logging.handlers import SysLogHandler
 import os
-from pathlib import Path
 import sys
+from logging.handlers import SysLogHandler
+from pathlib import Path
 from typing import Any, cast
 
 import structlog

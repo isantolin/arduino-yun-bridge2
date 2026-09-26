@@ -5,12 +5,10 @@ from __future__ import annotations
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
-from hypothesis import given, settings, strategies as st
 import pytest
-from pytest_mock import MockerFixture
 import structlog
-from typer.testing import CliRunner
-
+from hypothesis import given, settings
+from hypothesis import strategies as st
 from mcubridge_client import (
     LocalBridgeStub,
     SpiBitOrder,
@@ -22,6 +20,8 @@ from mcubridge_client import (
 )
 from mcubridge_client.cli import bridge_session, configure_logging
 from mcubridge_client.env import is_openwrt, read_uci_general
+from pytest_mock import MockerFixture
+from typer.testing import CliRunner
 
 # ==============================================================================
 # cli.py & env.py tests

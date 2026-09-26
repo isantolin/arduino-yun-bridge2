@@ -10,11 +10,11 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-from cobs import cobsr
 import structlog
-
+from cobs import cobsr
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol import mcubridge_pb2 as pb, protocol
+from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.protocol import protocol
 from mcubridge.protocol.frame import build_frame, parse_frame
 from mcubridge.security.security import generate_nonce_with_counter
 from mcubridge.services.runtime import BridgeService

@@ -5,10 +5,10 @@ from __future__ import annotations
 
 import asyncio
 import shlex
-import structlog
-import typer
 from typing import Annotated
 
+import structlog
+import typer
 from mcubridge_client import pb
 from mcubridge_client.cli import bridge_session, configure_logging
 

@@ -17,7 +17,7 @@ void tearDown(void) {}
 namespace {
 using bridge::test::TestAccessor;
 
-void test_fs_read_callback(etl::span<const uint8_t>) {}
+void fs_read_callback_handler(etl::span<const uint8_t>) {}
 
 void test_hal_roundtrip() {
   etl::array<uint8_t, 8> payload = {'m', 'c', 'u', '-', 'd', 'a', 't', 'a'};
@@ -35,7 +35,7 @@ void test_hal_roundtrip() {
   TEST_ASSERT_EQUAL(payload.size(), res_r->bytes_read);
   TEST_ASSERT(etl::equal(payload.begin(), payload.end(), read_buffer.begin()));
 
-  (void)bridge::hal::removeFile(path);
+  TEST_ASSERT_TRUE(bridge::hal::removeFile(path).has_value());
 }
 
 void test_hal_chunked_read_roundtrip() {
@@ -71,29 +71,41 @@ void test_hal_chunked_read_roundtrip() {
   TEST_ASSERT(etl::equal(read_payload.begin() + 62, read_payload.end(),
                          second_chunk.begin()));
 
-  (void)bridge::hal::removeFile(path);
+  TEST_ASSERT_TRUE(bridge::hal::removeFile(path).has_value());
 }
 
 void test_filesystem_api_write() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
   etl::array<uint8_t, 3> data = {1, 2, 3};
   FileSystem.write("api_write.bin",
                    etl::span<const uint8_t>(data.data(), data.size()));
+  TEST_ASSERT_TRUE(Bridge.isSynchronized());
+  TEST_ASSERT_TRUE(ba.isAwaitingAck());
 }
 
 void test_filesystem_api_read() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
   FileSystem.read(
       "api_read.bin",
-      FileSystemType::FileSystemReadHandler::create<test_fs_read_callback>());
+      FileSystemType::FileSystemReadHandler::create<fs_read_callback_handler>());
+  TEST_ASSERT_TRUE(Bridge.isSynchronized());
+  TEST_ASSERT_FALSE(ba.isAwaitingAck());
 }
 
 void test_filesystem_api_remove() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
   FileSystem.remove("api_rem.bin");
+  TEST_ASSERT_TRUE(Bridge.isSynchronized());
+  TEST_ASSERT_FALSE(ba.isAwaitingAck());
 }
 
 void test_filesystem_on_write() {
@@ -104,6 +116,7 @@ void test_filesystem_on_write() {
   strncpy(msg.path, "on_write.bin", sizeof(msg.path));
   rpc::payload::copy_to_pb_bytes(msg.data, resp_data.data(), resp_data.size());
   FileSystem._onWrite(msg);
+  TEST_ASSERT_TRUE(bridge::hal::removeFile("on_write.bin").has_value());
 }
 
 void test_filesystem_on_read() {
@@ -111,26 +124,32 @@ void test_filesystem_on_read() {
   reset_bridge_core(Bridge, stream);
   const etl::string_view path = "on_read.bin";
   etl::array<uint8_t, 1> data = {0xAA};
-  (void)bridge::hal::writeFile(
-      path, etl::span<const uint8_t>(data.data(), data.size()));
+  TEST_ASSERT_TRUE(bridge::hal::writeFile(
+      path, etl::span<const uint8_t>(data.data(), data.size())).has_value());
 
   rpc::payload::FileRead msg;
   strncpy(msg.path, path.data(), sizeof(msg.path));
   FileSystem._onRead(msg);
-  (void)bridge::hal::removeFile(path);
+  TEST_ASSERT_TRUE(bridge::hal::removeFile(path).has_value());
 }
 
 void test_filesystem_on_remove() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
+  etl::array<uint8_t, 2> dummy = {1, 2};
+  TEST_ASSERT_TRUE(bridge::hal::writeFile(
+      "on_rem.bin", etl::span<const uint8_t>(dummy.data(), dummy.size())).has_value());
   rpc::payload::FileRemove msg;
   strncpy(msg.path, "on_rem.bin", sizeof(msg.path));
   FileSystem._onRemove(msg);
+  TEST_ASSERT_FALSE(bridge::hal::removeFile("on_rem.bin").has_value());
 }
 
 void test_filesystem_api_empty_and_error_paths() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
 
   // Empty write
   FileSystem.write("", etl::span<const uint8_t>());
@@ -138,10 +157,11 @@ void test_filesystem_api_empty_and_error_paths() {
   // Empty read
   FileSystem.read(
       "",
-      FileSystemType::FileSystemReadHandler::create<test_fs_read_callback>());
+      FileSystemType::FileSystemReadHandler::create<fs_read_callback_handler>());
 
   // Empty remove
   FileSystem.remove("");
+  TEST_ASSERT_TRUE(Bridge.isSynchronized());
 }
 
 }  // namespace

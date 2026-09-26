@@ -9,11 +9,10 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import cast
 
-from hypothesis import strategies as st
 import hypothesis.stateful as h_stateful
-from hypothesis.stateful import Bundle, RuleBasedStateMachine, invariant, rule
 import pytest
-
+from hypothesis import strategies as st
+from hypothesis.stateful import Bundle, RuleBasedStateMachine, invariant, rule
 from mcubridge.state.storage import LmdbDeque
 
 _RUN_STATE_MACHINE: Callable[[type[RuleBasedStateMachine]], None] = cast(

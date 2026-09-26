@@ -1,10 +1,11 @@
 import json
 from pathlib import Path
-from typer.testing import CliRunner
-from tools.audit.audit_bridge_status import app, audit_status_dict
-
 from typing import Any, cast
+
 from pytest_mock import MockerFixture
+from typer.testing import CliRunner
+
+from tools.audit.audit_bridge_status import app, audit_status_dict
 
 runner = CliRunner()
 
@@ -124,8 +125,9 @@ def test_audit_cli_file(tmp_path: Path) -> None:
 
 
 def test_audit_cli_ubus_success(mocker: MockerFixture) -> None:
-    import tools.audit.audit_bridge_status as audit_mod
     from unittest.mock import MagicMock
+
+    import tools.audit.audit_bridge_status as audit_mod
 
     mock_ubus: Any = MagicMock()
     mock_conn: Any = MagicMock()
@@ -139,9 +141,10 @@ def test_audit_cli_ubus_success(mocker: MockerFixture) -> None:
 
 
 def test_audit_cli_ubus_subprocess_fallback(mocker: MockerFixture) -> None:
-    import tools.audit.audit_bridge_status as audit_mod
-    from unittest.mock import MagicMock
     import subprocess
+    from unittest.mock import MagicMock
+
+    import tools.audit.audit_bridge_status as audit_mod
 
     mocker.patch.object(audit_mod, "ubus", None)
     mock_proc = MagicMock()
@@ -154,8 +157,9 @@ def test_audit_cli_ubus_subprocess_fallback(mocker: MockerFixture) -> None:
 
 
 def test_audit_cli_ubus_failure(mocker: MockerFixture) -> None:
-    import tools.audit.audit_bridge_status as audit_mod
     from unittest.mock import MagicMock
+
+    import tools.audit.audit_bridge_status as audit_mod
 
     mock_ubus: Any = MagicMock()
     mock_conn: Any = MagicMock()

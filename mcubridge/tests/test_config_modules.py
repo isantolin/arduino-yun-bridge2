@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from pytest_mock import MockerFixture
 import pytest
 from mcubridge.config import common, settings
 from mcubridge.protocol import protocol
+from pytest_mock import MockerFixture
 
 
 def test_load_runtime_config_applies_env_and_defaults(

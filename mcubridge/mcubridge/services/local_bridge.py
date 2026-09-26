@@ -7,10 +7,11 @@ import secrets
 from collections.abc import Callable, Coroutine
 from typing import TYPE_CHECKING, Any, Final
 
-from google.protobuf.message import DecodeError as ProtobufDecodeError, Message as ProtobufMessage
-from grpclib.server import Stream
 import structlog
 import structlog.contextvars
+from google.protobuf.message import DecodeError as ProtobufDecodeError
+from google.protobuf.message import Message as ProtobufMessage
+from grpclib.server import Stream
 
 from ..config.const import MCU_FS_PREFIX
 from ..protocol import mcubridge_pb2 as pb

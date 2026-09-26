@@ -6,13 +6,12 @@ import asyncio
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
-from pytest_mock import MockerFixture
 import pytest
-
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.services.ubus import UbusService
 from mcubridge.state.context import RuntimeState, create_runtime_state
+from pytest_mock import MockerFixture
 
 
 class MockRuntimeFacade:

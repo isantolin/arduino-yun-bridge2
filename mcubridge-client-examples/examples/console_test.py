@@ -6,10 +6,10 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
-import structlog
-import typer
 from typing import Annotated
 
+import structlog
+import typer
 from mcubridge_client import Topic, pb
 from mcubridge_client.cli import bridge_session, configure_logging
 

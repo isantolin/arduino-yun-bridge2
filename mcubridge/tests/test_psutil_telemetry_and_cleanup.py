@@ -5,11 +5,11 @@ from __future__ import annotations
 import subprocess
 from unittest.mock import MagicMock
 
-from pytest_mock import MockerFixture
-
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.state.context import ProcessContext, create_runtime_state
+from pytest_mock import MockerFixture
+
 from tools.emulation.process_utils import terminate_pid_tree, terminate_process_tree
 
 

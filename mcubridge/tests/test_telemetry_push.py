@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock
-import pytest
 
-from mcubridge.config.settings import RuntimeConfig
 import mcubridge.protocol.mcubridge_pb2 as pb
+import pytest
+from mcubridge.config.settings import RuntimeConfig
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState, create_runtime_state
 

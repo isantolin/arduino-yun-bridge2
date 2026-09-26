@@ -2,23 +2,21 @@
 
 from __future__ import annotations
 
-from mcubridge.transport.serial import SerialTransport
-from mcubridge.services.runtime import BridgeService, LocalBridgeService
-from mcubridge.protocol import mcubridge_pb2 as pb
-from mcubridge.config.settings import RuntimeConfig
-from mcubridge.state.context import RuntimeState
-
 import asyncio
-from unittest.mock import AsyncMock, MagicMock
-
-import pytest
-from pytest_mock import MockerFixture
-
 import importlib.util
 import sys
 import types
-from pathlib import Path
 from io import BytesIO
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+from mcubridge.config.settings import RuntimeConfig
+from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.services.runtime import BridgeService, LocalBridgeService
+from mcubridge.state.context import RuntimeState
+from mcubridge.transport.serial import SerialTransport
+from pytest_mock import MockerFixture
 
 # Ensure "uci" mock exists before importing pin_rest_cgi
 if "uci" not in sys.modules:
@@ -89,9 +87,10 @@ def test_pin_rest_cgi_application(mocker: MockerFixture) -> None:
 
 @pytest.mark.asyncio
 async def test_local_bridge_service_ipc() -> None:
-    from mcubridge.state.context import create_runtime_state
-    import time
     import os
+    import time
+
+    from mcubridge.state.context import create_runtime_state
 
     fs_root = f".tmp_tests/mcubridge-test-fs-{os.getpid()}-{time.time_ns()}"
     spool_dir = f".tmp_tests/mcubridge-test-spool-{os.getpid()}-{time.time_ns()}"
@@ -135,9 +134,10 @@ async def test_local_bridge_service_ipc() -> None:
 
 @pytest.mark.asyncio
 async def test_local_bridge_service_subscribe_console() -> None:
-    from mcubridge.state.context import create_runtime_state
-    import time
     import os
+    import time
+
+    from mcubridge.state.context import create_runtime_state
 
     fs_root = f".tmp_tests/mcubridge-test-fs-{os.getpid()}-{time.time_ns()}"
     spool_dir = f".tmp_tests/mcubridge-test-spool-{os.getpid()}-{time.time_ns()}"

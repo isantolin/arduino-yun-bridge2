@@ -11,17 +11,17 @@ Outputs a Markdown table suitable for ``$GITHUB_STEP_SUMMARY``.
 """
 
 from __future__ import annotations
-from typing import Annotated, Any
-import typer
 
 import importlib
-import psutil
 import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Annotated, Any
 
+import psutil
+import typer
 from mcubridge.protocol import mcubridge_pb2 as pb
 
 # ---------------------------------------------------------------------------

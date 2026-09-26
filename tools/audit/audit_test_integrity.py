@@ -12,9 +12,9 @@ Enforces Rule 11, Rule 17, and Rule 18 compliance across all test suites:
 from __future__ import annotations
 
 import ast
-from pathlib import Path
 import re
 import sys
+from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -60,7 +60,9 @@ def _is_fixture(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
 def _is_state_machine_runner(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     """Check if function is a Hypothesis RuleBasedStateMachine runner wrapper."""
     dump = ast.dump(node)
-    return "StateMachine" in dump and "default_runner" in dump
+    return "StateMachine" in dump and (
+        "default_runner" in dump or "_RUN_STATE_MACHINE" in dump or "run_state_machine_as_test" in dump
+    )
 
 
 def _get_handler_exception_names(handler: ast.ExceptHandler) -> set[str]:
@@ -152,6 +154,7 @@ def audit_python_test_file(py_path: Path) -> list[str]:
         content = py_path.read_text(encoding="utf-8")
         tree = ast.parse(content, filename=str(py_path))
     except (SyntaxError, UnicodeDecodeError) as exc:
+        sys.stderr.write(f"[{rel_path}] Parse Error: {exc}\n")
         return [f"[{rel_path}] Parse Error: {exc}"]
 
     for node in ast.walk(tree):

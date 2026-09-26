@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import pytest
-from pytest_mock import MockerFixture
-
 from mcubridge.config import common
 from mcubridge.config.settings import load_runtime_config
+from pytest_mock import MockerFixture
 
 
 def test_file_system_root_must_be_volatile(mocker: MockerFixture) -> None:

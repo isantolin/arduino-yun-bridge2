@@ -47,6 +47,9 @@ void test_all_handlers_coverage() {
   frame.command_id = rpc::to_underlying(rpc::CommandId::CMD_GET_CAPABILITIES);
   TestAccessor::create(Bridge).dispatch(frame);
   Mailbox.process();
+
+  TEST_ASSERT_TRUE(Bridge.isSynchronized());
+  TEST_ASSERT_FALSE(TestAccessor::create(Bridge).isAwaitingAck());
 }
 
 void test_process_api() {
@@ -55,22 +58,28 @@ void test_process_api() {
 
 #if BRIDGE_ENABLE_PROCESS
   Process.reset();
+  TEST_ASSERT_TRUE(Process._pending_run_async.empty());
+  TEST_ASSERT_TRUE(Process._pending_polls.empty());
 #endif
+  TEST_ASSERT_TRUE(Bridge.isSynchronized());
 }
 
 void test_console_api() {
   BiStream stream;
   reset_bridge_comp(stream);
   Console.begin();
-  Console.write('A');
+  TEST_ASSERT_EQUAL(1, Console.write('A'));
+  TEST_ASSERT_TRUE(Bridge.isSynchronized());
 }
 
 void test_datastore_api() {
   BiStream stream;
   reset_bridge_comp(stream);
 #if BRIDGE_ENABLE_DATASTORE
-// No begin needed
+  uint8_t dummy_val[] = {1, 2, 3};
+  DataStore.set("test_k", etl::span<const uint8_t>(dummy_val, 3));
 #endif
+  TEST_ASSERT_TRUE(Bridge.isSynchronized());
 }
 
 static bool message_callback_called = false;

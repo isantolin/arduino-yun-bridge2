@@ -6,10 +6,9 @@ import asyncio
 from typing import Any
 
 import pytest
-from pytest_mock import MockerFixture
-
-from mcubridge.services.runtime import BridgeService
 from mcubridge.services.handshake import SerialHandshakeFatal
+from mcubridge.services.runtime import BridgeService
+from pytest_mock import MockerFixture
 
 
 @pytest.mark.asyncio

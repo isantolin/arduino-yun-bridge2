@@ -12,14 +12,32 @@ and StreamWriter. It delegates delimiter searching to Python's C core via
 """
 
 from __future__ import annotations
-from mcubridge.services.handshake import SerialHandshakeFatal
-from mcubridge.security.security import (
-    generate_nonce_with_counter,
-    validate_nonce_counter,
+
+import asyncio
+import errno
+import logging
+import sys
+from typing import TYPE_CHECKING, Any
+
+import serialx
+import structlog
+import tenacity
+from cobs import cobsr
+from google.protobuf.message import DecodeError as ProtobufDecodeError
+from google.protobuf.message import Message as ProtobufMessage
+from serialx.platforms.serial_socket import SocketSerial, SocketSerialTransport
+
+from mcubridge.config.const import (
+    FLOW_CONTROL_WAIT_TIMEOUT_SECONDS,
+    SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT,
+    SERIAL_FAILURE_STATUS_CODES,
+    SERIAL_HANDSHAKE_BACKOFF_BASE,
+    SERIAL_HANDSHAKE_BACKOFF_MAX,
+    SERIAL_MIN_ACK_TIMEOUT,
+    SERIAL_SUCCESS_STATUS_CODES,
 )
-from mcubridge.protocol.structures import (
-    PendingCommand,
-)
+from mcubridge.protocol import is_system_command, protocol
+from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol.frame import build_frame, parse_frame
 from mcubridge.protocol.protocol import (
     ACK_ONLY_COMMANDS,
@@ -27,30 +45,14 @@ from mcubridge.protocol.protocol import (
     expected_responses,
     response_to_request,
 )
-from mcubridge.protocol import protocol, is_system_command
-from mcubridge.config.const import (
-    SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT,
-    SERIAL_HANDSHAKE_BACKOFF_BASE,
-    SERIAL_HANDSHAKE_BACKOFF_MAX,
-    SERIAL_FAILURE_STATUS_CODES,
-    SERIAL_SUCCESS_STATUS_CODES,
-    SERIAL_MIN_ACK_TIMEOUT,
-    FLOW_CONTROL_WAIT_TIMEOUT_SECONDS,
+from mcubridge.protocol.structures import (
+    PendingCommand,
 )
-from mcubridge.protocol import mcubridge_pb2 as pb
-
-import asyncio
-import logging
-import errno
-import sys
-from typing import TYPE_CHECKING, Any
-
-from cobs import cobsr
-import serialx
-from serialx.platforms.serial_socket import SocketSerial, SocketSerialTransport
-import structlog
-import tenacity
-from google.protobuf.message import Message as ProtobufMessage, DecodeError as ProtobufDecodeError
+from mcubridge.security.security import (
+    generate_nonce_with_counter,
+    validate_nonce_counter,
+)
+from mcubridge.services.handshake import SerialHandshakeFatal
 
 logger = structlog.get_logger("mcubridge.serial")
 
@@ -95,8 +97,8 @@ if sys.platform == "linux":
 
 if TYPE_CHECKING:
     from mcubridge.config.settings import RuntimeConfig
-    from mcubridge.state.context import RuntimeState
     from mcubridge.services.runtime import BridgeService
+    from mcubridge.state.context import RuntimeState
 
 serialx.register_uri_handler(
     scheme="wifi://",

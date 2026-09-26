@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 from binascii import crc32
-from hypothesis import example, given, strategies as st
+
 import pytest
-
 from google.protobuf.message import Message as ProtobufMessage
-
+from hypothesis import example, given
+from hypothesis import strategies as st
+from mcubridge.protocol import is_system_command, protocol
+from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol.frame import build_frame, parse_frame
-from mcubridge.protocol import is_system_command, mcubridge_pb2 as pb, protocol
-from tests.test_constants import TEST_CMD_ID
+
 from tests.conftest import (
     st_analog_write,
     st_datastore_put,
@@ -20,6 +21,7 @@ from tests.conftest import (
     st_pin_mode,
     st_spi_transfer,
 )
+from tests.test_constants import TEST_CMD_ID
 
 
 def test_crc_is_32bit() -> None:

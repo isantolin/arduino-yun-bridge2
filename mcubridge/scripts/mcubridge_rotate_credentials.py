@@ -2,13 +2,13 @@
 """Modernized Credential Rotation utility for MCU Bridge (SIL-2)."""
 
 from __future__ import annotations
-from typing import Annotated
 
 import importlib
 import secrets
 import subprocess
 import sys
-from typing import Any
+from typing import Annotated, Any
+
 import structlog
 import typer
 

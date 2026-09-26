@@ -1,16 +1,24 @@
 """Targeted branch coverage tests to push pure branch coverage above 95%."""
 
 from __future__ import annotations
-from mcubridge_client.spi import SpiDevice
-from mcubridge_client.definitions import build_bridge_args
-from mcubridge.transport.serial import SerialTransport
-from mcubridge.state.context import ProcessContext, RuntimeState, create_runtime_state
-from mcubridge.services.runtime import BridgeService
-from mcubridge.protocol.structures import (
-    PROTOBUF_CONTENT_TYPE,
-    PendingCommand,
-    TopicRoute,
+
+import asyncio
+from collections.abc import Awaitable, Callable
+from pathlib import Path
+from typing import Any, cast
+from unittest.mock import AsyncMock, MagicMock
+
+import mcubridge.config.settings as settings_mod
+import pytest
+from hypothesis import given
+from hypothesis import strategies as st
+from mcubridge.config.logging import configure_logging
+from mcubridge.config.settings import (
+    RuntimeConfig,
+    load_runtime_config_from_json,
 )
+from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.protocol.frame import build_frame
 from mcubridge.protocol.protocol import (
     Command,
     DatastoreAction,
@@ -20,25 +28,17 @@ from mcubridge.protocol.protocol import (
     SystemAction,
     Topic,
 )
-from mcubridge.protocol.frame import build_frame
-from mcubridge.protocol import mcubridge_pb2 as pb
-
-import asyncio
-from collections.abc import Awaitable, Callable
-from pathlib import Path
-from typing import Any, cast
-from unittest.mock import AsyncMock, MagicMock
-
-from pytest_mock import MockerFixture
-import pytest
-from hypothesis import given, strategies as st
-
-from mcubridge.config.logging import configure_logging
-import mcubridge.config.settings as settings_mod
-from mcubridge.config.settings import (
-    RuntimeConfig,
-    load_runtime_config_from_json,
+from mcubridge.protocol.structures import (
+    PROTOBUF_CONTENT_TYPE,
+    PendingCommand,
+    TopicRoute,
 )
+from mcubridge.services.runtime import BridgeService
+from mcubridge.state.context import ProcessContext, RuntimeState, create_runtime_state
+from mcubridge.transport.serial import SerialTransport
+from mcubridge_client.definitions import build_bridge_args
+from mcubridge_client.spi import SpiDevice
+from pytest_mock import MockerFixture
 
 _load_raw_config: Callable[[], tuple[dict[str, Any], str]] = getattr(settings_mod, "_load_raw_config")
 _normalize_config_dict: Callable[[dict[str, Any]], tuple[dict[str, Any], bytes | None]] = getattr(
@@ -935,6 +935,7 @@ async def test_handshake_resp_rate_limit_and_secret_none(
     test_config: RuntimeConfig, mock_state: RuntimeState, mocker: MockerFixture
 ) -> None:
     import time
+
     from mcubridge.services.handshake import SerialHandshakeManager
 
     test_config.serial_handshake_min_interval = 5.0
@@ -1111,6 +1112,7 @@ def test_daemon_shared_secret_none_and_app_main(mocker: MockerFixture) -> None:
 
 def test_logging_no_syslog_available(test_config: RuntimeConfig, mocker: MockerFixture) -> None:
     import logging
+
     from mcubridge.config.logging import configure_logging
 
     mocker.patch.dict("os.environ", {}, clear=True)
@@ -1559,9 +1561,10 @@ def test_protocol_frame_validation_error_paths() -> None:
     # Tamper with version field
     bytearray(valid_frame)
     # Repack with invalid version
-    from mcubridge.protocol import mcubridge_pb2 as pb
-    from binascii import crc32
     import struct
+    from binascii import crc32
+
+    from mcubridge.protocol import mcubridge_pb2 as pb
 
     env = pb.RpcEnvelope(version=99, command_id=1, sequence_id=1)
     body = env.SerializeToString()
@@ -1572,10 +1575,11 @@ def test_protocol_frame_validation_error_paths() -> None:
 
 @pytest.mark.asyncio
 async def test_runtime_service_spi_and_system_branches(runtime_config: Any, runtime_state: Any) -> None:
-    from mcubridge.protocol.topics import parse_topic
-    from mcubridge.protocol import mcubridge_pb2 as pb
-    from mcubridge.services.runtime import BridgeService
     from unittest.mock import AsyncMock
+
+    from mcubridge.protocol import mcubridge_pb2 as pb
+    from mcubridge.protocol.topics import parse_topic
+    from mcubridge.services.runtime import BridgeService
 
     serial = AsyncMock()
     service = BridgeService(runtime_config, runtime_state, serial)
@@ -1765,7 +1769,7 @@ async def test_send_cloud_event_branches(test_config: RuntimeConfig, mock_state:
 
 
 def test_structures_tls_session_ticket_exceptions() -> None:
-    from mcubridge.protocol.structures import save_tls_session_ticket, load_tls_session_ticket
+    from mcubridge.protocol.structures import load_tls_session_ticket, save_tls_session_ticket
 
     # 1. persist with txn.put raising OSError
     mock_env = MagicMock()
@@ -1788,6 +1792,7 @@ def test_structures_tls_session_ticket_exceptions() -> None:
 def test_serial_safe_after_configure_branches(mocker: MockerFixture) -> None:
     import errno
     import termios
+
     import mcubridge.transport.serial as serial_mod
 
     _safe_after_configure: Callable[[Any], None] = getattr(serial_mod, "_safe_after_configure")
@@ -1946,8 +1951,8 @@ def test_structures_uncovered_branch_hardening(test_config: RuntimeConfig) -> No
 
 @pytest.mark.asyncio
 async def test_metrics_uncovered_branch_hardening(mock_state: RuntimeState) -> None:
-    from mcubridge.config import const
     import mcubridge.metrics as metrics_mod
+    from mcubridge.config import const
     from mcubridge.metrics import publish_bridge_snapshots
 
     _build_metrics_message: Callable[..., pb.CloudQueuedPublish] = getattr(metrics_mod, "_build_metrics_message")
@@ -2014,8 +2019,8 @@ def test_state_context_uncovered_branch_hardening(test_config: RuntimeConfig) ->
 
 @pytest.mark.asyncio
 async def test_lmdb_cache_uncovered_branches() -> None:
-    from mcubridge.state.storage import LmdbCache
     import lmdb
+    from mcubridge.state.storage import LmdbCache
 
     cache = LmdbCache(path="/tmp/test_cache_branches.db")
     cache.env = None
@@ -2037,6 +2042,7 @@ async def test_lmdb_cache_uncovered_branches() -> None:
 
 def test_tls_session_ticket_uncovered_branches() -> None:
     import ssl
+
     from mcubridge.protocol.structures import (
         get_ssl_context,
         load_tls_session_ticket,
@@ -2121,8 +2127,8 @@ async def test_handshake_uncovered_sync_branches(
 async def test_runtime_flush_cloud_spool_uncovered_branches(
     test_config: RuntimeConfig, mock_state: RuntimeState
 ) -> None:
-    from mcubridge.state.storage import LmdbDeque
     import lmdb
+    from mcubridge.state.storage import LmdbDeque
 
     serial = AsyncMock(spec=SerialTransport)
     svc = BridgeService(test_config, mock_state, serial)
@@ -2169,6 +2175,7 @@ async def test_handshake_sync_send_frame_failure(test_config: RuntimeConfig, moc
 
 def test_serial_safe_after_configure_exceptions() -> None:
     import errno
+
     import mcubridge.transport.serial as serial_mod
 
     safe_fn: Callable[[Any], None] = getattr(serial_mod, "_safe_after_configure")

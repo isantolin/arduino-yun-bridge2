@@ -8,13 +8,13 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
-from hypothesis import given, strategies as st
-from pytest_mock import MockerFixture
 import pytest
-
 from gateway import CloudBridgeService, ProtobufGateway
+from hypothesis import given
+from hypothesis import strategies as st
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.daemon import app as daemon_app, cli as daemon_cli
+from mcubridge.daemon import app as daemon_app
+from mcubridge.daemon import cli as daemon_cli
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.services.handshake import SerialHandshakeManager
@@ -23,6 +23,7 @@ from mcubridge.services.runtime import BridgeService, LocalBridgeService, Proces
 from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.state.storage import LmdbDeque
 from mcubridge.transport.serial import SerialTransport
+from pytest_mock import MockerFixture
 
 
 def _make_config() -> RuntimeConfig:

@@ -9,12 +9,11 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock
 
-import pytest
-from pytest_mock import MockerFixture
-
 import mcubridge.daemon as daemon
-from mcubridge.protocol.protocol import DEFAULT_SERIAL_SHARED_SECRET
+import pytest
 from mcubridge.config.settings import RuntimeConfig
+from mcubridge.protocol.protocol import DEFAULT_SERIAL_SHARED_SECRET
+from pytest_mock import MockerFixture
 
 
 def test_daemon_crypto_verification_failure(mocker: MockerFixture) -> None:

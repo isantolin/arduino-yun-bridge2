@@ -4,20 +4,20 @@ from __future__ import annotations
 
 import asyncio
 import collections
-from enum import StrEnum
 import os
 import socket
 import time
+from enum import StrEnum
 from pathlib import Path
 from typing import Any, TypeVar, cast
 
-from statemachine import StateMachine, State
 import psutil
-from google.protobuf.json_format import ParseDict
-from .storage import LmdbDeque, LmdbCache
 import structlog
+from google.protobuf.json_format import ParseDict
+from statemachine import State, StateMachine
 
 from ..config.settings import RuntimeConfig
+from ..protocol import mcubridge_pb2 as pb
 from ..protocol import protocol
 from ..protocol.protocol import (
     DEFAULT_CLOUD_QUEUE_LIMIT,
@@ -38,8 +38,8 @@ from ..protocol.structures import (
     PendingPinRequest,
     create_allowed_policy,
 )
-from ..protocol import mcubridge_pb2 as pb
 from .metrics import DaemonMetrics
+from .storage import LmdbCache, LmdbDeque
 
 logger = structlog.get_logger("mcubridge.state")
 

@@ -1,18 +1,18 @@
 from __future__ import annotations
-from pathlib import Path
-from mcubridge.protocol import mcubridge_pb2 as pb
+
 import asyncio
 import time
 from collections.abc import Iterator
+from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
 import tenacity
-
-from mcubridge.services.handshake import SerialHandshakeManager
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.state.context import create_runtime_state, RuntimeState
+from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol.protocol import Command, Status
+from mcubridge.services.handshake import SerialHandshakeManager
+from mcubridge.state.context import RuntimeState, create_runtime_state
 
 
 @pytest.fixture

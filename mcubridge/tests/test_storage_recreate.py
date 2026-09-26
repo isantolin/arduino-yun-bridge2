@@ -6,9 +6,8 @@ from unittest.mock import MagicMock
 
 import lmdb
 import pytest
-from pytest_mock import MockerFixture
-
 from mcubridge.state.storage import LmdbCache, LmdbDeque
+from pytest_mock import MockerFixture
 
 
 @pytest.mark.asyncio

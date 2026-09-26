@@ -6,7 +6,6 @@ import asyncio
 from typing import TYPE_CHECKING
 
 import pytest
-
 from mcubridge.watchdog import WatchdogKeepalive
 
 if TYPE_CHECKING:

@@ -6,7 +6,6 @@
 #include <unity.h>
 
 #include "Bridge.h"
-#include "BridgeFaultInjection.h"
 #include "BridgeTestInterface.h"
 #include "services/Console.h"
 #include "test_support.h"  // IWYU pragma: keep
@@ -155,7 +154,7 @@ void test_bridge_status_ack() {
   ba.setSynchronized();
 
   // 1. Trigger a command that requires ACK
-  (void)Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, 77);
+  TEST_ASSERT_TRUE(Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, 77));
   TEST_ASSERT_TRUE(ba.isAwaitingAck());
 
   // 2. Build STATUS_ACK frame targeting sequence ID 77

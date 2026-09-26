@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Any
 
 import tenacity
-
 from mcubridge.state.context import terminate_pid_tree
 
 __all__ = ["terminate_process_tree", "terminate_pid_tree", "wait_for_path_ready", "wait_for_tcp_ready"]

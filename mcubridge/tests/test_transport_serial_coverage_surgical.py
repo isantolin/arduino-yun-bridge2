@@ -2,22 +2,21 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
 import asyncio
+from collections.abc import Awaitable, Callable
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-from pytest_mock import MockerFixture
-import serialx
-
-from mcubridge.config.settings import RuntimeConfig
-from cobs import cobsr
-
 import mcubridge.protocol.mcubridge_pb2 as pb
+import pytest
+import serialx
+from cobs import cobsr
+from mcubridge.config.settings import RuntimeConfig
+from mcubridge.protocol import protocol
 from mcubridge.protocol.frame import build_frame
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.transport.serial import SerialTransport
+from pytest_mock import MockerFixture
 
 
 def _make_config() -> RuntimeConfig:
@@ -62,9 +61,9 @@ async def test_toggle_dtr_exception_handled(mock_config: RuntimeConfig, mock_sta
     mock_serial.set_modem_pins.side_effect = serialx.SerialException("DTR failed")
     transport.serial = mock_serial
 
-    # Should not raise exception
     toggle_dtr: Callable[[], Awaitable[None]] = getattr(transport, "_toggle_dtr")
     await toggle_dtr()
+    mock_serial.set_modem_pins.assert_awaited_once_with(dtr=False)
 
 
 @pytest.mark.asyncio
@@ -90,6 +89,7 @@ async def test_read_loop_generic_exception(mock_config: RuntimeConfig, mock_stat
 
     read_loop: Callable[[object], Awaitable[None]] = getattr(transport, "_read_loop")
     await read_loop(mock_serial)
+    mock_serial.readuntil.assert_awaited_once_with(protocol.FRAME_DELIMITER)
 
 
 @pytest.mark.asyncio
@@ -133,12 +133,15 @@ async def test_correlate_frame_ack_with_invalid_bytes(mock_config: RuntimeConfig
     transport = SerialTransport(mock_config, mock_state, None)
     pending = MagicMock()
     pending.command_id = Command.CMD_FILE_WRITE.value
+    pending.expected_resp_ids = set()
+    pending.success = None
     setattr(transport, "_current", pending)
 
     # Corrupted ACK payload (invalid protobuf bytes)
     correlate_frame: Callable[[int, object], None] = getattr(transport, "_correlate_frame")
     correlate_frame(Status.ACK.value, b"\xff\xff\xff\xff")
-    # Should not raise exception
+    assert pending.ack_received is True
+    pending.mark_success.assert_called_once_with(b"\xff\xff\xff\xff")
 
 
 @pytest.mark.asyncio

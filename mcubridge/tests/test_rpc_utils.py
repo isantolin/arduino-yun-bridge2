@@ -4,9 +4,9 @@ import types
 from typing import Any
 from unittest.mock import MagicMock
 
-from pytest_mock import MockerFixture
 from mcubridge.config import common
 from mcubridge.protocol import protocol
+from pytest_mock import MockerFixture
 
 
 def test_get_default_config_matches_constants():

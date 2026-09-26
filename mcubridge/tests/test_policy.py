@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from hypothesis import given, strategies as st
+from hypothesis import given
+from hypothesis import strategies as st
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol import protocol
 from mcubridge.protocol.structures import allows_topic, create_allowed_policy, is_command_allowed

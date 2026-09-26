@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
 from collections.abc import Coroutine
 from pathlib import Path
-import sys
 from typing import Any
 from unittest.mock import MagicMock
 

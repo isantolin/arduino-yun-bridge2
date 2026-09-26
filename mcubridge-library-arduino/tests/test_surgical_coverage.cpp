@@ -65,6 +65,8 @@ void test_surgical_bridge_errors() {
   // 4. Bad version
   f_unk.version = 0;
   ba.dispatch(f_unk);
+  TEST_ASSERT_TRUE(Bridge.isSynchronized());
+  TEST_ASSERT_FALSE(ba.isAwaitingAck());
 }
 
 void test_surgical_fsm_resets() {
@@ -78,6 +80,8 @@ void test_surgical_fsm_resets() {
   ba.trigger(bridge::fsm::EvReset());
   ba.setSynchronized();
   ba.trigger(bridge::fsm::EvReset());
+  TEST_ASSERT_FALSE(Bridge.isSynchronized());
+  TEST_ASSERT_FALSE(ba.isAwaitingAck());
 }
 
 void test_surgical_security_failures() {
@@ -138,9 +142,9 @@ void test_surgical_security_failures() {
 
   // 8. aead_decrypt_frame call
   etl::array<uint8_t, 4> dec_out = {0};
-  (void)rpc::security::aead_decrypt_frame(1, 1, in, key, valid_nonce, out_tag,
-                                          dec_out);
-  TEST_ASSERT_FALSE(old_ok);
+  bool dec_ok = rpc::security::aead_decrypt_frame(1, 1, in, key, valid_nonce, out_tag,
+                                                  dec_out);
+  TEST_ASSERT_FALSE(dec_ok);
 }
 
 void test_surgical_tasks_flow() {
@@ -170,6 +174,8 @@ void test_surgical_tasks_flow() {
   ba.setTimerLastTick(1);
   bridge::test::fault::advance_clock_ms(2000);
   ba.invokeTimerTask();
+  TEST_ASSERT_FALSE(Bridge.isSynchronized());
+  TEST_ASSERT_FALSE(ba.isAwaitingAck());
 }
 
 void test_surgical_send_fail_branches() {
@@ -276,9 +282,12 @@ void test_surgical_send_fail_branches() {
   }
 
   // 7. Payload pool exhaustion send fail in _sendEncryptedHelper
+  static const uint8_t secret_bytes[] = "top-secret";
+  ba.setSharedSecret(secret_bytes);
+  ba.setSynchronized();
   ba.exhaustTxPayloadPool();
   rpc_pb_DatastorePut put_msg = rpc_pb_DatastorePut_init_default;
-  (void)Bridge.send(rpc::CommandId::CMD_DATASTORE_PUT, 100, put_msg);
+  TEST_ASSERT_FALSE(Bridge.send(rpc::CommandId::CMD_DATASTORE_PUT, 100, put_msg));
 }
 
 static void test_surgical_extra_branches() {

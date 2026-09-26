@@ -6,14 +6,13 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from unittest.mock import AsyncMock
 
-from google.protobuf.message import Message as ProtobufMessage
-import pytest
-from pytest_mock import MockerFixture
-
-from mcubridge.config.settings import RuntimeConfig
 import mcubridge.protocol.mcubridge_pb2 as pb
+import pytest
+from google.protobuf.message import Message as ProtobufMessage
+from mcubridge.config.settings import RuntimeConfig
 from mcubridge.services.handshake import HandshakeState, SerialHandshakeManager, derive_serial_timing
 from mcubridge.state.context import RuntimeState, create_runtime_state
+from pytest_mock import MockerFixture
 
 
 def _make_config() -> RuntimeConfig:

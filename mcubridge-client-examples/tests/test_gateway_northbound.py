@@ -13,11 +13,11 @@ from __future__ import annotations
 import asyncio
 from typing import Annotated
 
-from grpclib.client import Channel
 import structlog
 import typer
-
-from mcubridge.protocol import mcubridge_grpc, mcubridge_pb2 as pb
+from grpclib.client import Channel
+from mcubridge.protocol import mcubridge_grpc
+from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge_client.cli import configure_logging
 
 configure_logging()

@@ -2,22 +2,21 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 import logging
+from collections.abc import Callable
 from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
-from pytest_mock import MockerFixture
-
-from mcubridge.config.logging import configure_logging, hexdump_processor
 from mcubridge.config import settings
+from mcubridge.config.logging import configure_logging, hexdump_processor
 from mcubridge.config.settings import (
     RuntimeConfig,
     get_config_source,
     load_runtime_config,
 )
 from mcubridge.protocol import mcubridge_pb2 as pb
+from pytest_mock import MockerFixture
 
 # =============================================================================
 # 1. Tests for mcubridge.config.logging

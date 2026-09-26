@@ -7,9 +7,9 @@ import os
 import time
 from unittest.mock import AsyncMock, MagicMock
 
-from hypothesis import given, strategies as st
 import pytest
-
+from hypothesis import given
+from hypothesis import strategies as st
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.services.clock_sync import ClockSyncService

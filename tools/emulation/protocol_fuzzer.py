@@ -6,19 +6,18 @@ Mission: Stress test the MCU state machine by injecting protocol-level entropy.
 
 import asyncio
 import random
+import secrets
 from binascii import crc32
+from collections.abc import Callable
+from typing import Annotated
 
-from cobs import cobs
 import serialx
 import structlog
 import typer
-from collections.abc import Callable
-import secrets
-from typing import Annotated
-
+from cobs import cobs
+from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol import protocol
 from mcubridge.protocol.frame import build_frame
-from mcubridge.protocol import mcubridge_pb2 as pb
 
 logger = structlog.get_logger("fuzzer")
 

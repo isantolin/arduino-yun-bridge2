@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 from grpclib.client import Channel
-from mcubridge_client import LocalBridgeStub
 from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge_client import LocalBridgeStub
 
 
 @pytest.fixture

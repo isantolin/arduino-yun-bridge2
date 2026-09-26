@@ -6,11 +6,10 @@ import asyncio
 import os
 import time
 from collections.abc import Callable
-
 from enum import StrEnum
 
-from statemachine import State, StateMachine
 import structlog
+from statemachine import State, StateMachine
 
 from .config.const import (
     WATCHDOG_MIN_INTERVAL,

@@ -6,19 +6,18 @@ anti-replay counters, baudrate fallback, DTR toggling, and framing error conditi
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
 import asyncio
 import secrets
 import tempfile
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock
 
+import mcubridge.protocol.mcubridge_pb2 as pb
 import pytest
 import serialx
 from cobs import cobsr
-
-import mcubridge.protocol.mcubridge_pb2 as pb
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.frame import build_frame
 from mcubridge.protocol.protocol import Command, Status

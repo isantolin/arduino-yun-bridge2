@@ -13,7 +13,6 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 import serialx
 import structlog
-
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
 from mcubridge.state.context import RuntimeState

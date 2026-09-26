@@ -7,10 +7,9 @@ from pathlib import Path
 
 import lmdb
 import pytest
-from pytest_mock import MockerFixture
-
 from mcubridge.state.context import RuntimeState
 from mcubridge.state.storage import LmdbCache, LmdbDeque
+from pytest_mock import MockerFixture
 
 
 @pytest.mark.asyncio

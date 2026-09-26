@@ -8,7 +8,6 @@ from typing import Annotated
 
 import structlog
 import typer
-
 from mcubridge_client import dump_client_env
 from mcubridge_client.cli import bridge_session, configure_logging
 

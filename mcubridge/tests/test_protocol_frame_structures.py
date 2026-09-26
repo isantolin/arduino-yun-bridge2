@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from hypothesis import given, strategies as st
 import pytest
-
-from mcubridge.protocol import mcubridge_pb2 as pb, structures
+from hypothesis import given
+from hypothesis import strategies as st
+from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.protocol import structures
 
 
 def test_topic_route_properties() -> None:

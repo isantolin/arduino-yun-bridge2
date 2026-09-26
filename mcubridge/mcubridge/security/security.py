@@ -19,9 +19,9 @@ import secrets
 
 os.environ.setdefault("CRYPTOGRAPHY_OPENSSL_NO_LEGACY", "1")
 
+import structlog
 from cryptography.hazmat.primitives import hashes, hmac
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
-import structlog
 
 from ..protocol import protocol
 

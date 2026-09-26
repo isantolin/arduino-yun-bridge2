@@ -7,16 +7,15 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
-from pytest_mock import MockerFixture
-
-from mcubridge.config.settings import RuntimeConfig
 import mcubridge.protocol.mcubridge_pb2 as pb
+import pytest
+from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.protocol import Status
 from mcubridge.protocol.topics import parse_topic
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.transport.serial import SerialTransport
+from pytest_mock import MockerFixture
 
 
 def _make_config() -> RuntimeConfig:
@@ -291,8 +290,8 @@ async def test_cloud_events_and_direct_rpc_dispatch(
 @pytest.mark.asyncio
 async def test_handle_system_and_mcu_version(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
     from mcubridge.protocol import protocol
+    from mcubridge.protocol.protocol import SystemAction, Topic
     from mcubridge.protocol.topics import parse_topic, topic_path
-    from mcubridge.protocol.protocol import Topic, SystemAction
 
     mock_serial = AsyncMock(spec=SerialTransport)
     mock_serial.send.return_value = pb.VersionResponse(major=2, minor=8, patch=5).SerializeToString()

@@ -20,15 +20,17 @@ from typing import (
     Final,
 )
 
-from google.protobuf.message import Message as ProtobufMessage
 import structlog
+from google.protobuf.message import Message as ProtobufMessage
 
-from . import mcubridge_pb2 as pb, protocol
 from mcubridge.config.const import (
     ALLOWED_COMMAND_WILDCARD,
     CLOUD_TLS_MIN_VERSION,
     PROP_KEY_BRIDGE_REQUEST_TOPIC,
 )
+
+from . import mcubridge_pb2 as pb
+from . import protocol
 
 logger = structlog.get_logger(__name__)
 

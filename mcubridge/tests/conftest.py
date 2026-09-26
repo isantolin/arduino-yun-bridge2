@@ -3,31 +3,31 @@
 from __future__ import annotations
 
 import asyncio
-from asyncio import events as asyncio_events
-from collections.abc import Iterator
 import gc
 import importlib.util
 import inspect
 import os
-from pathlib import Path
 import shutil
 import sys
 import time
-from mcubridge.config.settings import load_runtime_config
+from asyncio import events as asyncio_events
+from collections.abc import Iterator
+from pathlib import Path
 from typing import Any, cast
 
-from hypothesis import Phase, settings as hyp_settings, strategies as st
-from hypothesis.strategies import DrawFn
-import pytest
-from pytest_mock import MockerFixture
-import structlog
-from mcubridge.config.logging import configure_logging, reset_handlers
-from mcubridge.protocol import mcubridge_pb2 as pb
-
-from mcubridge.config import common, settings
 import mcubridge.config.common
 import mcubridge.config.const
-from mcubridge.config.settings import RuntimeConfig
+import mcubridge.protocol.structures
+import pytest
+import structlog
+from hypothesis import Phase
+from hypothesis import settings as hyp_settings
+from hypothesis import strategies as st
+from hypothesis.strategies import DrawFn
+from mcubridge.config import common, settings
+from mcubridge.config.logging import configure_logging, reset_handlers
+from mcubridge.config.settings import RuntimeConfig, load_runtime_config
+from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import (
     DEFAULT_BAUDRATE,
@@ -37,10 +37,10 @@ from mcubridge.protocol.protocol import (
     DEFAULT_SAFE_BAUDRATE,
     DEFAULT_STATUS_INTERVAL,
 )
-import mcubridge.protocol.structures
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.transport.serial import SerialTransport
+from pytest_mock import MockerFixture
 
 # Hypothesis profile registration for deterministic SIL-2 test runs
 hyp_settings.register_profile(

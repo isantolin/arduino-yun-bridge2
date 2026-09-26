@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import importlib.metadata
+from dataclasses import dataclass
 from typing import Any
+
 import structlog
 
 logger = structlog.get_logger("mcubridge.state.metrics")

@@ -7,9 +7,9 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Annotated
 
 import typer
-from typing import Annotated
 
 
 def resolve_nm_binary() -> str:

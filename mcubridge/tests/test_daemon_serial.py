@@ -2,18 +2,18 @@
 
 from __future__ import annotations
 
-from typing import Any
-import os
 import asyncio
+import os
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from pytest_mock import MockerFixture
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState
 from mcubridge.transport.serial import SerialTransport
+from pytest_mock import MockerFixture
 
 
 @pytest.mark.asyncio

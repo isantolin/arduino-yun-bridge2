@@ -4,11 +4,11 @@
 from __future__ import annotations
 
 import asyncio
-import structlog
 import uuid
-import typer
 from typing import Annotated
 
+import structlog
+import typer
 from mcubridge_client import Topic, pb
 from mcubridge_client.cli import bridge_session, configure_logging
 

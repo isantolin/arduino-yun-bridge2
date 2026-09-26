@@ -6,17 +6,16 @@ import binascii
 import sys
 from collections.abc import Iterable
 from dataclasses import dataclass
-
-import typer
 from typing import Annotated
 
 import serialx
-from google.protobuf.message import Message as ProtobufMessage
+import typer
 
 # [SIL-2] Use direct library functions for framing
 from cobs import cobs
+from google.protobuf.message import Message as ProtobufMessage
 from mcubridge.protocol import protocol
-from mcubridge.protocol.frame import build_frame, parse_frame, DecodedFrame
+from mcubridge.protocol.frame import DecodedFrame, build_frame, parse_frame
 from mcubridge.protocol.protocol import DEFAULT_BAUDRATE, FRAME_DELIMITER
 
 

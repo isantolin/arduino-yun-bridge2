@@ -26,6 +26,7 @@ import tenacity
 import typer
 from mcubridge.config.logging import configure_logging
 from mcubridge.protocol import protocol
+
 from tools.emulation.process_utils import (
     terminate_process_tree,
     wait_for_tcp_ready,

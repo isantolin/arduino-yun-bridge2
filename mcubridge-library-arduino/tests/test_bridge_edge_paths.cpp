@@ -57,8 +57,7 @@ rpc_pb_RpcEnvelope make_empty_frame(uint16_t cmd, uint16_t seq) {
 template <typename T>
 rpc_pb_RpcEnvelope make_payload_frame(
     uint16_t cmd, uint16_t seq, const T& payload,
-    etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE>& storage) {
-  (void)storage;
+    etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE>& /*storage*/) {
   rpc_pb_RpcEnvelope frame;
   frame.version = rpc::PROTOCOL_VERSION;
   frame.command_id = cmd;
@@ -246,6 +245,9 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
       make_payload_frame(rpc::to_underlying(rpc::CommandId::CMD_SPI_TRANSFER),
                          seq++, rpc::payload::SpiTransfer{}, buf);
   ba.dispatch(transfer);
+  Bridge.process();
+  TEST_ASSERT_TRUE(Bridge.isSynchronized());
+  TEST_ASSERT_FALSE(ba.isAwaitingAck());
 }
 
 void test_dispatch_malformed_payload_paths() {
@@ -279,6 +281,9 @@ void test_dispatch_malformed_payload_paths() {
     auto malformed = make_malformed_payload_frame(cmd, seq++);
     ba.dispatch(malformed);
   });
+  Bridge.process();
+  TEST_ASSERT_TRUE(Bridge.isSynchronized());
+  TEST_ASSERT_FALSE(ba.isAwaitingAck());
 }
 
 void test_packet_received_security_paths() {
@@ -301,6 +306,8 @@ void test_packet_received_security_paths() {
   etl::array<uint8_t, rpc::MAX_FRAME_SIZE> wire;
   size_t wire_len = rpc::serialize_frame(secure, wire);
   ba.invokePacketReceived(etl::span<const uint8_t>(wire.data(), wire_len));
+  TEST_ASSERT_TRUE(Bridge.isSynchronized());
+  TEST_ASSERT_FALSE(ba.isAwaitingAck());
 }
 
 void test_console_and_policy_edges() {
@@ -313,7 +320,7 @@ void test_console_and_policy_edges() {
   etl::array<char, bridge::config::CONSOLE_TX_BUFFER_SIZE> fill_chars{};
   etl::fill(fill_chars.begin(), fill_chars.end(), 'x');
   etl::for_each(fill_chars.begin(), fill_chars.end(),
-                [](char c) { (void)Console.write(c); });
+                [](char c) { Console.write(c); });
 
   Bridge.enterSafeState();
   TEST_ASSERT_EQUAL_UINT32(0, static_cast<uint32_t>(Console.write('z')));
@@ -377,6 +384,7 @@ void test_observer_and_task_runtime_edges() {
   ba_flow.invokeSerialTask();
   flow.avail = bridge::config::FLOW_CONTROL_XON_THRESHOLD - 1;
   ba_flow.invokeSerialTask();
+  TEST_ASSERT_FALSE(Bridge.isSynchronized());
 }
 
 void test_timer_link_and_bootloader_edges() {
@@ -434,6 +442,7 @@ void test_timer_link_and_bootloader_edges() {
       }(),
       buf);
   ba.dispatch(boot_ok);
+  TEST_ASSERT_FALSE(ba.isAwaitingAck());
 }
 
 void test_service_capacity_and_send_fail_edges() {
@@ -469,6 +478,7 @@ void test_service_capacity_and_send_fail_edges() {
       etl::delegate<void(etl::string_view, etl::span<const uint8_t>)>::create<
           on_datastore_get>());
   Process.poll(123, ProcessType::ProcessPollHandler::create<on_process_poll>());
+  TEST_ASSERT_FALSE(Bridge.isSynchronized());
 }
 
 void test_filesystem_spi_fsm_edges() {
@@ -501,6 +511,8 @@ void test_filesystem_spi_fsm_edges() {
   bridge::fsm::BridgeFsm fsm;
   fsm.start();
   fsm.receive(bridge::fsm::EvReset());
+  TEST_ASSERT_TRUE(Bridge.isSynchronized());
+  TEST_ASSERT_FALSE(ba.isAwaitingAck());
 }
 
 void test_encrypted_rx_nonce_paths() {
@@ -816,7 +828,7 @@ void test_architectural_extensions_edge_paths() {
   // Null stream paths
   ba.setNullStream();
   ba.invokeInitializeRuntime();
-  (void)Bridge.sendFrame(rpc::CommandId::CMD_GET_VERSION, 350);
+  TEST_ASSERT_TRUE(Bridge.sendFrame(rpc::CommandId::CMD_GET_VERSION, 350));
   reset_bridge_core(Bridge, stream);
   ba.setSynchronized();
 }

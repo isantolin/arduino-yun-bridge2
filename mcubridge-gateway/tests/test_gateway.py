@@ -7,13 +7,7 @@ from pathlib import Path
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
-from grpclib.const import Status
-from grpclib.exceptions import GRPCError
-from hypothesis import given, settings, strategies as st
-from pytest_mock import MockerFixture
 import pytest
-from typer.testing import CliRunner
-
 from gateway import (
     CloudBridgeService,
     FleetMetrics,
@@ -22,12 +16,18 @@ from gateway import (
     GatewaySessionState,
     ProtobufGateway,
     TSDBSink,
-    auth_interceptor,
     app,
+    auth_interceptor,
     extract_peer_identity,
 )
+from grpclib.const import Status
+from grpclib.exceptions import GRPCError
+from hypothesis import given, settings
+from hypothesis import strategies as st
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol.protocol import DEFAULT_CLOUD_PORT
+from pytest_mock import MockerFixture
+from typer.testing import CliRunner
 
 
 @pytest.fixture
@@ -632,10 +632,12 @@ def test_tsdb_sink_post_line_edge_paths(mocker: MockerFixture) -> None:
 
     # 1. Empty endpoint returns early
     sink_empty = TSDBSink(endpoint_url=None)
+    assert not sink_empty.enabled
     post_empty = getattr(sink_empty, "_post_line")
     post_empty("mcu,device=dev1 value=1")
 
     sink = TSDBSink(endpoint_url="http://localhost:8428/write")
+    assert sink.enabled
     post_fn = getattr(sink, "_post_line")
 
     # 2. Status >= 400
@@ -644,23 +646,29 @@ def test_tsdb_sink_post_line_edge_paths(mocker: MockerFixture) -> None:
     mock_resp.__enter__.return_value = mock_resp
     mock_urlopen = mocker.patch("urllib.request.urlopen", return_value=mock_resp)
     post_fn("mcu,device=dev1 value=1")
+    assert mock_urlopen.call_count == 1
 
-    # 3. URLError network failure
+    # 3. URLError network failure (tenacity retries 2 attempts total)
     mock_urlopen.side_effect = urllib.error.URLError("Refused")
     post_fn("mcu,device=dev1 value=1")
+    assert mock_urlopen.call_count == 3
 
 
 @pytest.mark.asyncio
-async def test_tsdb_sink_ingest_telemetry_edge_paths() -> None:
+async def test_tsdb_sink_ingest_telemetry_edge_paths(mocker: MockerFixture) -> None:
     # 1. Disabled sink returns early
     sink_disabled = TSDBSink(endpoint_url=None)
+    assert not sink_disabled.enabled
     envelope = pb.CloudEnvelope(telemetry=pb.TelemetryReport(daemon_metrics_blob=b"data"))
     await sink_disabled.ingest_telemetry("dev1", envelope)
 
     # 2. Corrupted metrics blob caught and logged
     sink = TSDBSink(endpoint_url="http://localhost:8428/write")
+    assert sink.enabled
+    mock_post = mocker.patch.object(sink, "_post_line")
     envelope_corrupt = pb.CloudEnvelope(telemetry=pb.TelemetryReport(daemon_metrics_blob=b"\xff\xff\xff"))
     await sink.ingest_telemetry("dev1", envelope_corrupt)
+    mock_post.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -673,12 +681,20 @@ async def test_handle_telemetry_edge_paths(mock_gateway: ProtobufGateway, mocker
     mock_stream = AsyncMock()
 
     # 1. Empty metrics blob
+    init_val = (
+        mock_gateway.metrics.registry.get_sample_value("mcubridge_device_telemetry_total", {"device_id": "edge-1"})
+        or 0.0
+    )
     envelope_empty = pb.CloudEnvelope(
         protocol_version=2,
         device_id="edge-1",
         telemetry=pb.TelemetryReport(daemon_metrics_blob=b""),
     )
     await handle_telemetry(svc, "edge-1", mock_stream, envelope_empty)
+    assert (
+        mock_gateway.metrics.registry.get_sample_value("mcubridge_device_telemetry_total", {"device_id": "edge-1"})
+        == init_val + 1.0
+    )
 
     # 2. Corrupted metrics blob
     envelope_corrupt = pb.CloudEnvelope(
@@ -688,6 +704,10 @@ async def test_handle_telemetry_edge_paths(mock_gateway: ProtobufGateway, mocker
     )
     mocker.patch("urllib.request.urlopen")
     await handle_telemetry(svc, "edge-1", mock_stream, envelope_corrupt)
+    assert (
+        mock_gateway.metrics.registry.get_sample_value("mcubridge_device_telemetry_total", {"device_id": "edge-1"})
+        == init_val + 2.0
+    )
 
 
 @pytest.mark.asyncio

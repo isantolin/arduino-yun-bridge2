@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from enum import IntEnum
 import os
+from enum import IntEnum
 
 DEFAULT_GATEWAY_HOST: str = "127.0.0.1"
 DEFAULT_GATEWAY_PORT: int = 8443

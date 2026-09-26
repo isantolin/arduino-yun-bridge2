@@ -31,12 +31,12 @@ import tenacity
 import typer
 import uvloop
 
-from mcubridge.protocol.protocol import DEFAULT_SERIAL_SHARED_SECRET
 from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import (
     get_config_source,
     load_runtime_config,
 )
+from mcubridge.protocol.protocol import DEFAULT_SERIAL_SHARED_SECRET
 from mcubridge.security.security import verify_crypto_integrity
 from mcubridge.services.handshake import SerialHandshakeFatal
 from mcubridge.services.runtime import BridgeService

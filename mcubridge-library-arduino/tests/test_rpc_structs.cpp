@@ -13,28 +13,31 @@ void setUp(void) {}
 void tearDown(void) {}
 
 template <typename T>
-void test_roundtrip(const T& p) {
+bool roundtrip_verify(const T& p) {
   uint8_t buffer[rpc::MAX_PAYLOAD_SIZE];
   pb_ostream_t ostream = pb_ostream_from_buffer(buffer, rpc::MAX_PAYLOAD_SIZE);
-  TEST_ASSERT(pb_encode(&ostream, rpc::Payload::get_fields<T>(), &p));
+  if (!pb_encode(&ostream, rpc::Payload::get_fields<T>(), &p)) return false;
   size_t used = ostream.bytes_written;
 
   T p2 = {};
   pb_istream_t istream = pb_istream_from_buffer(buffer, used);
-  TEST_ASSERT(pb_decode_noinit(&istream, rpc::Payload::get_fields<T>(), &p2));
+  return pb_decode_noinit(&istream, rpc::Payload::get_fields<T>(), &p2);
 }
 
 template <typename T>
-void test_chaos_decode() {
+bool chaos_decode_verify() {
   uint8_t buffer[2] = {0x91, 0xFF};  // Junk
   T p = {};
   pb_istream_t istream = pb_istream_from_buffer(buffer, 2);
-  (void)pb_decode_noinit(&istream,
-                         rpc::Payload::get_fields<rpc_pb_DigitalWrite>(),
-                         &p);  // Should fail gracefully
+  return !pb_decode_noinit(&istream, rpc::Payload::get_fields<T>(), &p);
 }
 
 void test_all_structs_roundtrip() {
+  size_t count = 0;
+  auto test_roundtrip = [&](const auto& p) {
+    TEST_ASSERT_TRUE(roundtrip_verify(p));
+    count++;
+  };
   test_roundtrip([]() {
     rpc::payload::VersionResponse p;
     p.major = 1;
@@ -217,15 +220,16 @@ void test_all_structs_roundtrip() {
     p.data_mode = 3;
     return p;
   }());
+  TEST_ASSERT_TRUE(count > 0);
 }
 
 void test_all_structs_chaos() {
-  test_chaos_decode<rpc::payload::VersionResponse>();
-  test_chaos_decode<rpc::payload::Capabilities>();
-  test_chaos_decode<rpc::payload::ConsoleWrite>();
-  test_chaos_decode<rpc::payload::DatastorePut>();
-  test_chaos_decode<rpc::payload::FileWrite>();
-  test_chaos_decode<rpc::payload::ProcessPollResponse>();
+  TEST_ASSERT_TRUE(chaos_decode_verify<rpc::payload::VersionResponse>());
+  TEST_ASSERT_TRUE(chaos_decode_verify<rpc::payload::Capabilities>());
+  TEST_ASSERT_TRUE(chaos_decode_verify<rpc::payload::ConsoleWrite>());
+  TEST_ASSERT_TRUE(chaos_decode_verify<rpc::payload::DatastorePut>());
+  TEST_ASSERT_TRUE(chaos_decode_verify<rpc::payload::FileWrite>());
+  TEST_ASSERT_TRUE(chaos_decode_verify<rpc::payload::ProcessPollResponse>());
 }
 
 int main() {

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import importlib
 import os
 import re
 from typing import Annotated, Any, cast
@@ -14,8 +15,6 @@ from google.protobuf import json_format
 from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import load_runtime_config
 from mcubridge.protocol import mcubridge_pb2 as pb
-
-import importlib
 
 logger = structlog.get_logger("mcubridge.pin_rest")
 

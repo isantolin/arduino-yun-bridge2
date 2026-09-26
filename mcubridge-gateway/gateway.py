@@ -9,34 +9,33 @@ observability, TSDB time-series ingestion, and northbound command orchestration.
 from __future__ import annotations
 
 import asyncio
+import ssl
+import time
+import urllib.error
+import urllib.request
 from collections.abc import Awaitable, Callable, Mapping
 from enum import StrEnum
 from pathlib import Path
-import ssl
-import time
 from typing import Annotated, Any, Final, cast
-import urllib.error
-import urllib.request
 
-from google.protobuf.message import DecodeError
-from grpclib.const import Status
 import grpclib.events
-from grpclib.exceptions import GRPCError
-from grpclib.protocol import Peer
-from grpclib.server import Server, Stream
 import prometheus_client
-from statemachine import State, StateMachine
 import structlog
 import structlog.contextvars
 import tenacity
 import typer
 import uvloop
-
+from google.protobuf.message import DecodeError
 from google.protobuf.message import Message as ProtobufMessage
+from grpclib.const import Status
+from grpclib.exceptions import GRPCError
+from grpclib.protocol import Peer
+from grpclib.server import Server, Stream
 from mcubridge.config.logging import configure_logging
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol.mcubridge_grpc import CloudBridgeBase, LocalBridgeBase
 from mcubridge.protocol.protocol import DEFAULT_CLOUD_PORT
+from statemachine import State, StateMachine
 
 configure_logging()
 logger = structlog.get_logger("mcubridge.gateway")

@@ -13,14 +13,14 @@ Requires: qemu-system-mips, python3-pexpect, wget, e2fsprogs
 
 from __future__ import annotations
 
-from pathlib import Path
 import re
 import shutil
 import subprocess
 import sys
-from typing import Annotated, Any
 import urllib.error
 import urllib.request
+from pathlib import Path
+from typing import Annotated, Any
 
 import tenacity
 import typer

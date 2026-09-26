@@ -7,10 +7,10 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 from unittest.mock import AsyncMock
 
-from cobs import cobsr
-from hypothesis import given, strategies as st
 import pytest
-
+from cobs import cobsr
+from hypothesis import given
+from hypothesis import strategies as st
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
 from mcubridge.protocol.frame import build_frame

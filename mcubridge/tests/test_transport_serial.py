@@ -1,17 +1,17 @@
-from unittest.mock import AsyncMock, MagicMock
-from typing import Any
-
-from pytest_mock import MockerFixture
 import asyncio
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 from cobs import cobsr
-from mcubridge.protocol import protocol
 from mcubridge.config.settings import RuntimeConfig
+from mcubridge.protocol import protocol
 from mcubridge.protocol.frame import build_frame
 from mcubridge.protocol.protocol import Command
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
 from mcubridge.transport.serial import SerialTransport
+from pytest_mock import MockerFixture
 
 
 def _make_config() -> RuntimeConfig:

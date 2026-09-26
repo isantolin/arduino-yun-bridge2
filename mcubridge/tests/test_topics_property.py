@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from hypothesis import assume, given, strategies as st
-
+from hypothesis import assume, given
+from hypothesis import strategies as st
 from mcubridge.protocol.protocol import COMMAND_TO_TOPIC, Topic
 from mcubridge.protocol.topics import (
     get_topic_for_message,

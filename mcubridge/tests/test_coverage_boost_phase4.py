@@ -7,27 +7,27 @@ and status report generation.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
 import asyncio
-from pathlib import Path
 import tempfile
+from collections.abc import Awaitable, Callable
+from pathlib import Path
 from typing import Any, cast
 from unittest.mock import AsyncMock
 
-from hypothesis import given, strategies as st
 import lmdb
-import pytest
-from pytest_mock import MockerFixture
-import structlog
-
-from mcubridge.config.settings import RuntimeConfig
 import mcubridge.protocol.mcubridge_pb2 as pb
+import pytest
+import structlog
+from hypothesis import given
+from hypothesis import strategies as st
+from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.protocol import Command, Status, Topic
 from mcubridge.protocol.structures import TopicRoute
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
 from mcubridge.state.storage import LmdbDeque
 from mcubridge.transport.serial import SerialTransport
+from pytest_mock import MockerFixture
 
 logger = structlog.get_logger(__name__)
 

@@ -11,21 +11,21 @@ Measures:
 from __future__ import annotations
 
 import os
-import psutil
 import time
 import tracemalloc
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
 
+import psutil
 from cobs import cobsr
 
 os.environ.setdefault("CRYPTOGRAPHY_OPENSSL_NO_LEGACY", "1")
 
-from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 import typer
-
-from mcubridge.protocol import mcubridge_pb2 as pb, protocol
+from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
+from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.protocol import protocol
 from mcubridge.protocol.frame import build_frame, parse_frame
 from mcubridge.state.storage import LmdbCache
 

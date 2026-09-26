@@ -9,11 +9,11 @@ from typing import Any
 
 import structlog
 
+from .config import const
 from .protocol import mcubridge_pb2 as pb
 from .protocol.structures import PROTOBUF_CONTENT_TYPE, create_queued_publish
 from .protocol.topics import Topic, topic_path
 from .state.context import RuntimeState
-from .config import const
 
 logger = structlog.get_logger("mcubridge.metrics")
 

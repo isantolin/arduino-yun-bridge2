@@ -6,11 +6,11 @@ from collections.abc import Awaitable, Callable
 from typing import cast
 from unittest.mock import AsyncMock
 
-from hypothesis import given, strategies as st
-import pytest
-
-from mcubridge.config.settings import RuntimeConfig
 import mcubridge.protocol.mcubridge_pb2 as pb
+import pytest
+from hypothesis import given
+from hypothesis import strategies as st
+from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.protocol import Command, Topic
 from mcubridge.protocol.topics import TopicRoute, parse_topic, topic_path
 from mcubridge.services.runtime import BridgeService

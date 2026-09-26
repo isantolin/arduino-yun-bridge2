@@ -17,7 +17,6 @@ from unittest.mock import MagicMock
 import hypothesis.stateful as h_stateful
 from hypothesis import strategies as st
 from hypothesis.stateful import Bundle, RuleBasedStateMachine, invariant, rule
-
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.state.context import (
     CloudLinkMachine,

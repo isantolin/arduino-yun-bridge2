@@ -1,8 +1,8 @@
+from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol import protocol
-from mcubridge.protocol.topics import parse_topic, topic_path
 from mcubridge.protocol.protocol import Topic
 from mcubridge.protocol.structures import create_queued_publish
-from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.protocol.topics import parse_topic, topic_path
 
 # Original constants needed by other tests
 TEST_CMD_ID = 0x42

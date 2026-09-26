@@ -9,7 +9,7 @@ Copyright (C) 2025-2026 Ignacio Santolin and contributors
 """
 
 from __future__ import annotations
-from dataclasses import dataclass, field
+
 import hashlib
 import importlib
 import importlib.util
@@ -21,14 +21,15 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated, Any
 
+import tenacity
+import typer
 from google.protobuf.json_format import MessageToDict
 from jinja2 import Environment, FileSystemLoader
 from packaging.version import Version
-import tenacity
-import typer
 
 # ═════════════════════════════════════════════════════════════════════════════
 # DEPENDENCY VALIDATION (CRITICAL)

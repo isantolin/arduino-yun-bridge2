@@ -2,30 +2,30 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
 import asyncio
 import importlib.util
-from io import BytesIO
 import os
-from pathlib import Path
 import sys
 import time
 import types
+from collections.abc import Awaitable, Callable
+from io import BytesIO
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 from cobs import cobsr
 from google.protobuf.message import Message
-from hypothesis import given, strategies as st
-import pytest
-from pytest_mock import MockerFixture
-
+from hypothesis import given
+from hypothesis import strategies as st
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.frame import build_frame
 from mcubridge.protocol.protocol import Command
 from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.state.storage import LmdbCache
 from mcubridge.transport.serial import SerialTransport
+from pytest_mock import MockerFixture
 
 if "uci" not in sys.modules:
     _uci_mock = types.ModuleType("uci")

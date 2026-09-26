@@ -1,7 +1,7 @@
 import time
 
-from mcubridge.state.context import create_runtime_state
 from mcubridge.config.settings import RuntimeConfig
+from mcubridge.state.context import create_runtime_state
 
 
 def test_state_metrics_exhaustive() -> None:

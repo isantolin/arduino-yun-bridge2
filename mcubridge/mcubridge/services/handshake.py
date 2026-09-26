@@ -8,21 +8,22 @@ This module implements secure handshake with:
 """
 
 from __future__ import annotations
-from mcubridge.protocol import mcubridge_pb2 as pb
 
 import asyncio
 import logging
+import os
 import secrets
-import structlog
 import time
 from collections.abc import Awaitable, Callable
 from enum import StrEnum
 from typing import Any, Protocol, cast
 
-import os
-from statemachine import StateMachine, State
-from statemachine.exceptions import TransitionNotAllowed
+import structlog
 import tenacity
+from statemachine import State, StateMachine
+from statemachine.exceptions import TransitionNotAllowed
+
+from mcubridge.protocol import mcubridge_pb2 as pb
 
 os.environ.setdefault("CRYPTOGRAPHY_OPENSSL_NO_LEGACY", "1")
 
@@ -32,6 +33,8 @@ from cryptography.hazmat.primitives.constant_time import bytes_eq
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from google.protobuf.message import (
     DecodeError as ProtobufDecodeError,
+)
+from google.protobuf.message import (
     Message as ProtobufMessage,
 )
 

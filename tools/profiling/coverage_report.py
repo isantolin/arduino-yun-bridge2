@@ -8,12 +8,11 @@ import sys
 import xml.etree.ElementTree
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import Annotated, Any, cast
 
 import rich.console
 import typer
 from rich.table import Table
-from typing import Annotated
 
 
 @dataclass

@@ -6,16 +6,15 @@ import asyncio
 from typing import Any
 
 import pytest
-from pytest_mock import MockerFixture
-
 from mcubridge.metrics import (
     publish_bridge_snapshots,
     publish_metrics,
 )
-from mcubridge.protocol.structures import PROTOBUF_CONTENT_TYPE
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol import protocol
+from mcubridge.protocol.structures import PROTOBUF_CONTENT_TYPE
 from mcubridge.state.context import RuntimeState
+from pytest_mock import MockerFixture
 
 
 @pytest.mark.asyncio
@@ -221,19 +220,24 @@ async def test_emit_bridge_snapshot_error_paths(runtime_state: RuntimeState, moc
     import mcubridge.metrics
 
     emit_fn = getattr(mcubridge.metrics, "_emit_bridge_snapshot")
+    mock_log = mocker.patch("mcubridge.metrics.logger.error")
+    mock_critical = mocker.patch("mcubridge.metrics.logger.critical")
 
     async def _failing_enqueue(_: pb.CloudQueuedPublish) -> None:
         raise OSError("Disk full")
 
-    # OSError in enqueue is caught and logged
+    # OSError in enqueue is caught and logged as error
     await emit_fn(runtime_state, _failing_enqueue, flavor="summary")
+    assert mock_log.call_count == 1
 
-    # AttributeError in builder is caught and logged
+    # AttributeError in builder is caught and logged as critical
     mocker.patch(
         "mcubridge.metrics._build_bridge_snapshot_message",
         side_effect=AttributeError("Corrupted snapshot"),
     )
     await emit_fn(runtime_state, _failing_enqueue, flavor="summary")
+    assert mock_log.call_count == 1
+    assert mock_critical.call_count == 1
 
 
 @pytest.mark.asyncio

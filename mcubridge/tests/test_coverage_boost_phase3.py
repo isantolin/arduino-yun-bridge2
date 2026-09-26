@@ -7,20 +7,20 @@ local file system transactions, MCU multiplexing, and serial communication.
 from __future__ import annotations
 
 import asyncio
+import tempfile
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-import tempfile
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
-from hypothesis import given, strategies as st
+import mcubridge.protocol.mcubridge_pb2 as pb
 import pytest
-
+from hypothesis import given
+from hypothesis import strategies as st
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.metrics import (
     publish_bridge_snapshots,
 )
-import mcubridge.protocol.mcubridge_pb2 as pb
 from mcubridge.protocol.protocol import (
     PinAction,
     Status,
@@ -41,6 +41,7 @@ def _make_config(tmp_path: Path | None = None) -> RuntimeConfig:
         serial_port="/dev/null",
         serial_baud=115200,
         cloud_spool_dir=d,
+        file_system_root=d,
         cloud_queue_limit=10,
         allow_non_tmp_paths=True,
     )
@@ -69,47 +70,66 @@ async def test_runtime_file_dispatch_handlers(tmp_path: Path) -> None:
     test_file = tmp_path / "hello.txt"
     test_file.write_bytes(b"world")
 
-    inbound = pb.CloudQueuedPublish(topic_name="test/br/file/read", payload=b"hello.txt")
+    inbound = pb.CloudQueuedPublish(topic_name="test/br/file/read/hello.txt", payload=b"hello.txt")
 
     handle_file: Callable[[TopicRoute, pb.CloudQueuedPublish], Awaitable[None]] = getattr(service, "_handle_file")
 
     # Local read/write/remove
-    route_read = TopicRoute(raw="test/br/file/read", prefix=config.topic_prefix, topic=Topic.FILE, segments=("read",))
+    route_read = TopicRoute(
+        raw="test/br/file/read/hello.txt", prefix=config.topic_prefix, topic=Topic.FILE, segments=("read", "hello.txt")
+    )
     await handle_file(route_read, inbound)
 
     route_write = TopicRoute(
-        raw="test/br/file/write", prefix=config.topic_prefix, topic=Topic.FILE, segments=("write",)
+        raw="test/br/file/write/hello.txt",
+        prefix=config.topic_prefix,
+        topic=Topic.FILE,
+        segments=("write", "hello.txt"),
     )
-    inbound_w = pb.CloudQueuedPublish(topic_name="test/br/file/write", payload=b"world")
+    inbound_w = pb.CloudQueuedPublish(topic_name="test/br/file/write/hello.txt", payload=b"world")
     await handle_file(route_write, inbound_w)
 
     route_remove = TopicRoute(
-        raw="test/br/file/remove", prefix=config.topic_prefix, topic=Topic.FILE, segments=("remove",)
+        raw="test/br/file/remove/hello.txt",
+        prefix=config.topic_prefix,
+        topic=Topic.FILE,
+        segments=("remove", "hello.txt"),
     )
     await handle_file(route_remove, inbound)
 
     # MCU file write/remove
     route_mcu_write = TopicRoute(
-        raw="test/br/file/write", prefix=config.topic_prefix, topic=Topic.FILE, segments=("write",)
+        raw="test/br/file/write/mcu/test.txt",
+        prefix=config.topic_prefix,
+        topic=Topic.FILE,
+        segments=("write", "mcu", "test.txt"),
     )
-    inbound_mcu_w = pb.CloudQueuedPublish(topic_name="test/br/file/write", payload=b"mcu:test.txt")
+    inbound_mcu_w = pb.CloudQueuedPublish(topic_name="test/br/file/write/mcu/test.txt", payload=b"data")
     await handle_file(route_mcu_write, inbound_mcu_w)
 
     route_mcu_remove = TopicRoute(
-        raw="test/br/file/remove", prefix=config.topic_prefix, topic=Topic.FILE, segments=("remove",)
+        raw="test/br/file/remove/mcu/test.txt",
+        prefix=config.topic_prefix,
+        topic=Topic.FILE,
+        segments=("remove", "mcu", "test.txt"),
     )
-    inbound_mcu_rm = pb.CloudQueuedPublish(topic_name="test/br/file/remove", payload=b"mcu:test.txt")
+    inbound_mcu_rm = pb.CloudQueuedPublish(topic_name="test/br/file/remove/mcu/test.txt", payload=b"")
     await handle_file(route_mcu_remove, inbound_mcu_rm)
 
     # MCU file read edge cases
     route_mcu_read = TopicRoute(
-        raw="test/br/file/read", prefix=config.topic_prefix, topic=Topic.FILE, segments=("read",)
+        raw="test/br/file/read/mcu/test.txt",
+        prefix=config.topic_prefix,
+        topic=Topic.FILE,
+        segments=("read", "mcu", "test.txt"),
     )
     await handle_file(route_mcu_read, inbound_mcu_rm)
 
     mock_serial.send_raw.return_value = False
     await handle_file(route_mcu_read, inbound)
 
+    assert not test_file.exists()
+    assert mock_serial.send.call_count >= 1
     service.cleanup()
 
 
@@ -121,7 +141,7 @@ async def test_runtime_file_dispatch_handlers(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_runtime_pin_handlers(tmp_path: Path) -> None:
     config = _make_config(tmp_path)
-    service, _state, _mock_serial = _make_service(config)
+    service, state, mock_serial = _make_service(config)
     handle_pin_fn: Callable[..., Awaitable[None]] = getattr(service, "_handle_pin")
 
     pin_cases: tuple[tuple[Topic, tuple[str, ...], bytes], ...] = (
@@ -139,13 +159,16 @@ async def test_runtime_pin_handlers(tmp_path: Path) -> None:
         inbound = pb.CloudQueuedPublish(topic_name=raw_topic, payload=payload)
         await handle_pin_fn(route, inbound)
 
+    assert mock_serial.send.call_count == 5
+    assert len(state.pending_digital_reads) == 1
+    assert len(state.pending_analog_reads) == 1
     service.cleanup()
 
 
 @pytest.mark.asyncio
 async def test_runtime_spi_handlers(tmp_path: Path) -> None:
     config = _make_config(tmp_path)
-    service, _state, _mock_serial = _make_service(config)
+    service, _state, mock_serial = _make_service(config)
     handle_spi_fn: Callable[..., Awaitable[None]] = getattr(service, "_handle_spi")
 
     cfg_bytes = pb.SpiConfig(frequency=1000000, bit_order=1, data_mode=0).SerializeToString()
@@ -161,13 +184,14 @@ async def test_runtime_spi_handlers(tmp_path: Path) -> None:
         inbound = pb.CloudQueuedPublish(topic_name=raw_topic, payload=payload)
         await handle_spi_fn(route, inbound)
 
+    assert mock_serial.send.call_count == 4
     service.cleanup()
 
 
 @pytest.mark.asyncio
 async def test_runtime_system_handlers(tmp_path: Path) -> None:
     config = _make_config(tmp_path)
-    service, _state, _mock_serial = _make_service(config)
+    service, _state, mock_serial = _make_service(config)
     handle_system_fn: Callable[..., Awaitable[None]] = getattr(service, "_handle_system")
 
     actions = ("bootloader", "reset", "ping", "sync", "handshake")
@@ -177,6 +201,7 @@ async def test_runtime_system_handlers(tmp_path: Path) -> None:
         inbound = pb.CloudQueuedPublish(topic_name=raw_topic, payload=b"")
         await handle_system_fn(route, inbound)
 
+    assert mock_serial.send.call_count == 1
     service.cleanup()
 
 

@@ -2,18 +2,17 @@
 
 from __future__ import annotations
 
-from mcubridge.transport.serial import SerialTransport
-
 import time
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from pytest_mock import MockerFixture
 from mcubridge.config.settings import RuntimeConfig
-from mcubridge.protocol import protocol
 from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.protocol import protocol
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import create_runtime_state
+from mcubridge.transport.serial import SerialTransport
+from pytest_mock import MockerFixture
 
 
 def _make_config() -> RuntimeConfig:

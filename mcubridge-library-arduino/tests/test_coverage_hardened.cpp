@@ -34,11 +34,8 @@ void poll_handler(rpc::StatusCode, uint16_t, etl::span<const uint8_t>,
 void async_handler(int32_t) {}
 int32_t captured_pid = 0;
 void capture_async_handler(int32_t pid) { captured_pid = pid; }
-void capture_poll_handler(rpc::StatusCode status, uint16_t exit_code,
-                          etl::span<const uint8_t>, etl::span<const uint8_t>) {
-  (void)status;
-  (void)exit_code;
-}
+void capture_poll_handler(rpc::StatusCode /*status*/, uint16_t /*exit_code*/,
+                          etl::span<const uint8_t>, etl::span<const uint8_t>) {}
 void datastore_get_handler(etl::string_view, etl::span<const uint8_t>) {}
 void dummy_cmd_handler(const rpc_pb_RpcEnvelope&) {}
 void dummy_status_handler(rpc::StatusCode, etl::span<const uint8_t>) {}
@@ -57,6 +54,7 @@ void test_bridge_emit_status_variants() {
   Bridge.emitStatus(rpc::StatusCode::STATUS_OK, etl::string_view(""));
   Bridge.emitStatus(rpc::StatusCode::STATUS_OK,
                     (const __FlashStringHelper*)nullptr);
+  TEST_ASSERT_FALSE(Bridge.isSynchronized());
 }
 
 void test_bridge_queue_full_and_retransmit() {
@@ -69,7 +67,7 @@ void test_bridge_queue_full_and_retransmit() {
   etl::array<uint16_t, bridge::config::MAX_PENDING_TX_FRAMES> tx_indices{};
   etl::iota(tx_indices.begin(), tx_indices.end(), 100);
   etl::for_each(tx_indices.begin(), tx_indices.end(), [&](uint16_t seq) {
-    (void)ba.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, seq, {});
+    TEST_ASSERT_TRUE(ba.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, seq, {}));
   });
 
   // Next one should return false (queue full)
@@ -119,6 +117,7 @@ void test_filesystem_read_edge_cases() {
 
   // Coverage for observer notification
   FileSystem.onLost();
+  TEST_ASSERT_TRUE(Bridge.isSynchronized());
 }
 
 void test_spi_timeout_and_error_paths() {
@@ -166,6 +165,8 @@ void test_process_poll_and_kill() {
 
   // Coverage for observer notification
   Process.onLost();
+  TEST_ASSERT_TRUE(Process._pending_run_async.empty());
+  TEST_ASSERT_TRUE(Process._pending_polls.empty());
 }
 
 void test_process_branch_error_paths() {
@@ -386,7 +387,9 @@ void test_checksum_direct_library_path() {
       etl::span<const uint8_t>(f.payload_type.encrypted_payload_with_tag.bytes,
                                f.payload_type.encrypted_payload_with_tag
                                    .size));  // Adjusted for new checksum logic
-  (void)crc;
+  TEST_ASSERT_EQUAL_HEX32(0, crc);
+  uint8_t sample[] = {0x01, 0x02, 0x03};
+  TEST_ASSERT_NOT_EQUAL(0, rpc::checksum::compute(etl::span<const uint8_t>(sample, 3)));
 }
 
 void test_bridge_timer_callbacks() {
@@ -398,6 +401,7 @@ void test_bridge_timer_callbacks() {
   Bridge._onAckTimeout();
   Bridge._onRxDedupe();
   Bridge._onBaudrateChange();
+  TEST_ASSERT_FALSE(Bridge.isSynchronized());
 }
 
 void test_bridge_packet_errors() {
@@ -407,23 +411,27 @@ void test_bridge_packet_errors() {
 
   // Test malformed packet (length 0)
   ba.invokePacketReceived(etl::span<const uint8_t>());
+  TEST_ASSERT_FALSE(Bridge.isSynchronized());
 }
 
 void test_bridge_template_coverage() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
 
   // Explicitly trigger template instantiations that might be missed
-  (void)Bridge.send(rpc::CommandId::CMD_SET_PIN_MODE, 1, []() {
+  TEST_ASSERT_TRUE(Bridge.send(rpc::CommandId::CMD_SET_PIN_MODE, 1, []() {
     rpc::payload::PinMode p;
     p.pin = 13;
     p.mode = rpc_pb_PinModeType_PIN_OUTPUT;
     return p;
-  }());
+  }()));
 
   // Mock handlers
   Bridge.onCommand(BridgeClass::CommandHandler::create<dummy_cmd_handler>());
   Bridge.onStatus(BridgeClass::StatusHandler::create<dummy_status_handler>());
+  TEST_ASSERT_TRUE(Bridge.isSynchronized());
 }
 
 void test_bridge_duplicate_packet() {
@@ -440,6 +448,7 @@ void test_bridge_duplicate_packet() {
 
   bridge::router::CommandContext ctx(&f, f.command_id, 10, true, true);
   ba.dispatch(f);
+  TEST_ASSERT_TRUE(Bridge.isSynchronized());
 }
 
 void test_bridge_exhaustive_command_handlers() {
@@ -495,6 +504,9 @@ void test_bridge_exhaustive_command_handlers() {
     p.pin = 0;
     return p;
   }());
+  Bridge.process();
+  TEST_ASSERT_TRUE(Bridge.isSynchronized());
+  TEST_ASSERT_FALSE(ba.isAwaitingAck());
 }
 
 void test_bridge_additional_coverage() {
@@ -672,6 +684,9 @@ void test_bridge_additional_coverage() {
     ba.dispatch(env);
   }
 #endif
+  Bridge.process();
+  TEST_ASSERT_TRUE(Bridge.isSynchronized());
+  TEST_ASSERT_FALSE(ba.isAwaitingAck());
 }
 
 void test_uncovered_branch_and_coverage_boost() {

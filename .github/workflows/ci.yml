@@ -45,7 +45,7 @@ jobs:
           install-system-deps: 'true'
           cache-suffix: ${{ matrix.env }}
       - name: Install System Dependencies
-        if: matrix.env == 'cppcheck' || matrix.env == 'typecheck' || matrix.env == 'protocol' || matrix.env == 'lint' || matrix.env == 'py' || matrix.env == 'codebase-auditor'
+        if: matrix.env == 'cppcheck' || matrix.env == 'typecheck' || matrix.env == 'protocol' || matrix.env == 'lint' || matrix.env == 'py' || matrix.env == 'codebase-auditor' || matrix.env == 'arduino'
         run: |
           sudo apt-get update && sudo apt-get install -y cppcheck unzip clang-tidy
           sudo npm install -g @bufbuild/buf

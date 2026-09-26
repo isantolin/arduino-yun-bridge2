@@ -14,8 +14,8 @@ if [ ! -d "$ARDUINO_LIBS/Embedded_Template_Library" ]; then
 fi
 
 ETL_INC="$ARDUINO_LIBS/Embedded_Template_Library/src"
-WOLFSSL_INC="$ARDUINO_LIBS/wolfssl/src"
-if [ ! -d "$WOLFSSL_INC" ]; then WOLFSSL_INC="$ARDUINO_LIBS/wolfSSL/src"; fi
+WOLFSSL_DIR="$ARDUINO_LIBS/wolfSSL"
+if [ ! -d "$WOLFSSL_DIR" ]; then WOLFSSL_DIR="$ARDUINO_LIBS/wolfssl"; fi
 PACKETSERIAL_INC="$ARDUINO_LIBS/PacketSerial/src"
 
 INCLUDES=(
@@ -24,7 +24,8 @@ INCLUDES=(
     "-I${SRC_DIR}/protocol"
     "-I${STUB_DIR}"
     "-I${ETL_INC}"
-    "-I${WOLFSSL_INC}"
+    "-I${WOLFSSL_DIR}"
+    "-I${WOLFSSL_DIR}/src"
     "-I${PACKETSERIAL_INC}"
 )
 

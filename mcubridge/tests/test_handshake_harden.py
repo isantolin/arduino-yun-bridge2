@@ -441,15 +441,24 @@ async def test_handshake_rate_limit_and_sync_fault_branches(
     assert remaining == 0.0
 
     # 2. _synchronize_attempt() when confirmed is False and current_state == HandshakeState.FAULT (line 328)
-    monkeypatch.setattr(hs, "_wait_for_link_sync_confirmation", AsyncMock(return_value=False))
     set_fsm_state: Callable[[HandshakeState], None] = getattr(hs, "_set_fsm_state")
-    set_fsm_state(HandshakeState.FAULT)
     sync_fn: Callable[[], Awaitable[bool]] = getattr(hs, "_synchronize_attempt")
+
+    async def _mock_wait_fault(_nonce: bytes) -> bool:
+        hs.transition(HandshakeEvent.FAILURE)
+        return False
+
+    monkeypatch.setattr(hs, "_wait_for_link_sync_confirmation", _mock_wait_fault)
+    set_fsm_state(HandshakeState.UNSYNCHRONIZED)
     res_fault = await sync_fn()
     assert res_fault is False
 
     # 3. _synchronize_attempt() when pending_nonce != nonce (line 332->334)
+    async def _mock_wait_mismatch(_nonce: bytes) -> bool:
+        runtime_state.link_handshake_nonce = None
+        return False
+
+    monkeypatch.setattr(hs, "_wait_for_link_sync_confirmation", _mock_wait_mismatch)
     set_fsm_state(HandshakeState.UNSYNCHRONIZED)
-    runtime_state.link_handshake_nonce = b"different_nonce_1234"
     res_mismatch = await sync_fn()
     assert res_mismatch is False

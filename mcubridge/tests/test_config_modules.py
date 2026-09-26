@@ -342,3 +342,13 @@ def test_config_settings_and_logging_branches(runtime_config: settings.RuntimeCo
     mocker.patch.object(Path, "exists", return_value=True)
     mocker.patch("mcubridge.config.logging.SysLogHandler", side_effect=OSError("syslog unavailable"))
     configure_logging(runtime_config, console=False)
+
+
+def test_load_runtime_config_without_secret_fails_validation(mocker: MockerFixture) -> None:
+    mocker.patch.object(
+        settings,
+        "_load_raw_config",
+        return_value=({"serial_port": "/dev/ttyS0", "serial_shared_secret": None}, "test"),
+    )
+    with pytest.raises(ValueError, match="serial_shared_secret"):
+        settings.load_runtime_config()

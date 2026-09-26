@@ -496,3 +496,21 @@ async def test_serial_transport_edge_branches(
     mocker.patch.object(transport, "send_raw", side_effect=_mock_send_raw_and_resolve)
     res_neg_ok = await negotiate(115200)
     assert res_neg_ok is True
+
+    # 5. send() attempt when completion event fired with success=False, failure_status=None (line 475)
+    mock_serial2 = AsyncMock()
+    mock_serial2.is_open = True
+    transport.serial = mock_serial2
+    setattr(transport, "_max_attempts", 1)
+
+    async def _resolve_pending_without_status(*_a: Any, **_k: Any) -> bool:
+        curr = getattr(transport, "_current")
+        if curr:
+            curr.success = False
+            curr.failure_status = None
+            curr.completion.set()
+        return True
+
+    mocker.patch.object(transport, "send_raw", side_effect=_resolve_pending_without_status)
+    res_fail_status = await transport.send(Command.CMD_DIGITAL_WRITE.value, b"test")
+    assert res_fail_status is False

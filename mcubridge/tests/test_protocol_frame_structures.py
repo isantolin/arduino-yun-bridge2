@@ -326,7 +326,7 @@ def test_protocol_frame_and_structures_edge_branches(tmp_path: Path) -> None:
         )
 
     # 2. frame.build_frame with unencrypted protobuf message not in PAYLOAD_FIELD_MAP (line 98->105)
-    unmapped_msg = pb.DatastorePut(key="mykey", value=b"myval")
+    unmapped_msg = pb.RuntimeConfig(serial_port="/dev/dummy")
     raw_frame = frame.build_frame(command_id=1, sequence_id=1, payload=unmapped_msg)
     assert len(raw_frame) > 0
 
@@ -346,3 +346,26 @@ def test_protocol_frame_and_structures_edge_branches(tmp_path: Path) -> None:
 
     # 5. structures.load_tls_session_ticket on cache without _mem or env (line 240)
     assert structures.load_tls_session_ticket(object(), "host2", 443) is None
+
+    # 6. structures.validate_config with cloud_http3_port=0 and >0 (line 159->162)
+    cfg_http3_zero = pb.RuntimeConfig(
+        serial_port="/dev/ttyATH0",
+        cloud_port=8443,
+        topic_prefix="mcu",
+        status_interval=1,
+        serial_shared_secret=b"dummy_secret_123",
+        cloud_http3_port=0,
+    )
+    structures.validate_config(cfg_http3_zero)
+    assert cfg_http3_zero.cloud_http3_port == 0
+
+    cfg_http3_active = pb.RuntimeConfig(
+        serial_port="/dev/ttyATH0",
+        cloud_port=8443,
+        topic_prefix="mcu",
+        status_interval=1,
+        serial_shared_secret=b"dummy_secret_123",
+        cloud_http3_port=8443,
+    )
+    structures.validate_config(cfg_http3_active)
+    assert cfg_http3_active.cloud_http3_port == 8443

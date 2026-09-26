@@ -306,6 +306,9 @@ async def test_process_terminate_sigkill_escalation(mocker: MockerFixture) -> No
 async def test_runtime_service_run_and_teardown_exceptions(mock_bridge_service: BridgeService) -> None:
     service = mock_bridge_service
     state = service.state
+    service.config.bridge_summary_interval = 1.0
+    service.config.watchdog_enabled = True
+    service.config.watchdog_interval = 1.0
 
     mock_spool = AsyncMock(spec=LmdbDeque)
     mock_spool.close.side_effect = OSError("spool close error")
@@ -316,7 +319,7 @@ async def test_runtime_service_run_and_teardown_exceptions(mock_bridge_service: 
     state.datastore_cache = mock_cache
 
     run_task = asyncio.create_task(service.run())
-    await asyncio.sleep(0.02)
+    await asyncio.sleep(0.05)
     run_task.cancel()
 
     await run_task
@@ -327,6 +330,7 @@ async def test_runtime_service_run_and_teardown_exceptions(mock_bridge_service: 
 @pytest.mark.asyncio
 async def test_runtime_run_cloud_disabled(mock_bridge_service: BridgeService, mocker: MockerFixture) -> None:
     service = mock_bridge_service
+
     service.config.cloud_enabled = False
 
     mock_info = mocker.patch("mcubridge.services.runtime.logger.info")
@@ -1285,9 +1289,7 @@ async def test_runtime_service_edge_branches(
         topic=Topic.DATASTORE,
         segments=("put", "k"),
     )
-    handle_datastore: Callable[[TopicRoute, pb.CloudQueuedPublish], Awaitable[None]] = getattr(
-        svc, "_handle_datastore"
-    )
+    handle_datastore: Callable[[TopicRoute, pb.CloudQueuedPublish], Awaitable[None]] = getattr(svc, "_handle_datastore")
     mocker.patch("mcubridge.services.runtime.pb.DatastorePut", side_effect=ValueError("bad put"))
     inbound_bad = pb.CloudQueuedPublish(topic_name="br/datastore/put/k", payload=b"val")
     await handle_datastore(route_put, inbound_bad)
@@ -1319,10 +1321,7 @@ async def test_runtime_service_edge_branches(
     mock_spool = AsyncMock()
     mock_spool.close.side_effect = OSError("spool close failure")
     setattr(svc, "_cloud_spool", mock_spool)
-    if getattr(svc, "_cloud_spool") is not None:
-        try:
-            await mock_spool.close()
-        except OSError:
-            pass
-        setattr(svc, "_cloud_spool", None)
+    with pytest.raises(OSError, match="spool close failure"):
+        await mock_spool.close()
+    setattr(svc, "_cloud_spool", None)
     assert getattr(svc, "_cloud_spool") is None

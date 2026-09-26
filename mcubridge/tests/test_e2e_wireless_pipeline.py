@@ -30,10 +30,8 @@ async def test_e2e_wireless_tcp_handshake_and_rpc_exchange(
 ) -> None:
     """Verify complete E2E synchronization and RPC command exchange over Wireless TCP."""
     frames_received_by_mcu: list[tuple[int, bytes, int]] = []
-    seq_counter = 1
 
     async def mock_mcu_tcp_server(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        nonlocal seq_counter
         try:
             while True:
                 delimited = await reader.readuntil(protocol.FRAME_DELIMITER)

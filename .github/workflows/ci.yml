@@ -48,7 +48,7 @@ jobs:
         if: matrix.env == 'cppcheck' || matrix.env == 'typecheck' || matrix.env == 'protocol' || matrix.env == 'lint' || matrix.env == 'py' || matrix.env == 'codebase-auditor'
         run: |
           sudo apt-get update && sudo apt-get install -y cppcheck unzip
-          python -m pip install protobuf mypy-protobuf vulture pytest pyrefly types-protobuf types-psutil types-pexpect
+          python -m pip install protobuf mypy-protobuf vulture pytest pyrefly types-protobuf types-psutil types-pexpect flake8
       - name: Install Build Tools
         if: matrix.env == 'arduino'
         run: sudo apt-get update && sudo apt-get install -y g++ make
@@ -86,6 +86,11 @@ jobs:
           echo "Executing Codebase Auditor (AST Pokemon Exception & Suppression Audit)..."
           python tools/audit/codebase_auditor.py
           python tools/audit/audit_library_density.py
+      - name: Run Flake8 (PEP 8 Style Guide Enforcement)
+        if: matrix.env == 'lint'
+        run: |
+          echo "Executing Flake8 Style Guide Audit..."
+          flake8
       - name: Run Tox Environment
         run: tox -e ${{ matrix.env }}
 

@@ -16,8 +16,6 @@ from binascii import crc32
 from functools import lru_cache
 from typing import NamedTuple
 
-os.environ.setdefault("CRYPTOGRAPHY_OPENSSL_NO_LEGACY", "1")
-
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from google.protobuf.message import DecodeError
@@ -26,6 +24,8 @@ from google.protobuf.message import Message as ProtobufMessage
 from mcubridge.protocol import mcubridge_pb2 as pb
 
 from . import is_system_command, protocol
+
+os.environ.setdefault("CRYPTOGRAPHY_OPENSSL_NO_LEGACY", "1")
 
 
 @lru_cache(maxsize=16)
@@ -119,8 +119,9 @@ def parse_frame(raw_frame_buffer: bytes | bytearray | memoryview, session_key: b
     if buf_len < protocol.CRC_SIZE:
         raise ValueError("Incomplete frame: too short")
 
-    body = raw_frame_buffer[: -protocol.CRC_SIZE]
-    crc_bytes = raw_frame_buffer[-protocol.CRC_SIZE :]
+    crc_size = protocol.CRC_SIZE
+    body = raw_frame_buffer[:-crc_size]
+    crc_bytes = raw_frame_buffer[-crc_size:]
     expected_crc = int.from_bytes(crc_bytes, "little")
     actual_crc = crc32(body) & protocol.CRC32_MASK
     if actual_crc != expected_crc:

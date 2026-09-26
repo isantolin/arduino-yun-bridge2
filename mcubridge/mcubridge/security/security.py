@@ -17,13 +17,13 @@ import ctypes
 import os
 import secrets
 
-os.environ.setdefault("CRYPTOGRAPHY_OPENSSL_NO_LEGACY", "1")
-
 import structlog
 from cryptography.hazmat.primitives import hashes, hmac
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 
 from ..protocol import protocol
+
+os.environ.setdefault("CRYPTOGRAPHY_OPENSSL_NO_LEGACY", "1")
 
 logger = structlog.get_logger("mcubridge.security")
 
@@ -55,7 +55,8 @@ def extract_nonce_counter(nonce: bytes) -> int:
     """Extract the counter from a 12-byte nonce."""
     if len(nonce) != protocol.AEAD_NONCE_SIZE:
         raise ValueError(f"Nonce must be {protocol.AEAD_NONCE_SIZE} bytes, got {len(nonce)}")
-    return int.from_bytes(nonce[protocol.AEAD_NONCE_SIZE - protocol.HANDSHAKE_NONCE_COUNTER_BYTES :], "big")
+    counter_offset = protocol.AEAD_NONCE_SIZE - protocol.HANDSHAKE_NONCE_COUNTER_BYTES
+    return int.from_bytes(nonce[counter_offset:], "big")
 
 
 def validate_nonce_counter(nonce: bytes, last_counter: int) -> tuple[bool, int]:
@@ -93,7 +94,8 @@ def verify_crypto_integrity() -> bool:
         ad = b"\x50\x51\x52\x53\xc0\xc1\xc2\xc3\xc4\xc5\xc6\xc7"
         aead = ChaCha20Poly1305(key)
         ct = aead.encrypt(nonce, b"test", ad)
-        if len(ct) != 20 or ct[-protocol.AEAD_TAG_SIZE :].hex() != "7dca8479787a5c190f58eedae6a06bcf":
+        tag_size = protocol.AEAD_TAG_SIZE
+        if len(ct) != 20 or ct[-tag_size:].hex() != "7dca8479787a5c190f58eedae6a06bcf":
             return False
     except (ValueError, TypeError) as exc:
         logger.error("Cryptographic Known Answer Test (KAT) failed", error=str(exc))

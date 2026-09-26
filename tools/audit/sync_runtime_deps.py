@@ -485,15 +485,8 @@ def _fetch_github_latest_version(repo: str) -> str | None:
     return None
 
 
-def check_latest_versions(
-    deps: Sequence[_DepEntry],
-    cpp_deps: Sequence[_CppDepEntry] = (),
-    dev_deps: Sequence[_DevDepEntry] = (),
-) -> list[tuple[str, str, str]]:
-    """Return list of (package, pinned, latest) for outdated packages using packaging.Version & GitHub API."""
+def _check_runtime_outdated(deps: Sequence[_DepEntry]) -> list[tuple[str, str, str]]:
     outdated: list[tuple[str, str, str]] = []
-
-    # 1. Python runtime dependencies (PyPI)
     pip_specs = [(dep["pip"], dep["check_latest"]) for dep in deps if dep.get("pip")]
     for spec, should_check_latest in pip_specs:
         if not should_check_latest:
@@ -519,8 +512,11 @@ def check_latest_versions(
             except (InvalidVersion, TypeError):
                 if latest_str != pinned:
                     outdated.append((name, pinned, latest_str))
+    return outdated
 
-    # 2. Development & Quality tools (PyPI)
+
+def _check_dev_outdated(dev_deps: Sequence[_DevDepEntry]) -> list[tuple[str, str, str]]:
+    outdated: list[tuple[str, str, str]] = []
     for dev_dep in dev_deps:
         name, pinned = _parse_pip_spec(dev_dep["pip"])
         if not pinned:
@@ -533,8 +529,11 @@ def check_latest_versions(
             except (InvalidVersion, TypeError):
                 if latest_str != pinned:
                     outdated.append((name, pinned, latest_str))
+    return outdated
 
-    # 3. C++ / MCU Arduino libraries (GitHub Releases / Tags)
+
+def _check_cpp_outdated(cpp_deps: Sequence[_CppDepEntry]) -> list[tuple[str, str, str]]:
+    outdated: list[tuple[str, str, str]] = []
     for cpp_dep in cpp_deps:
         if cpp_dep["ref_type"] == "heads":
             continue
@@ -549,7 +548,18 @@ def check_latest_versions(
             except (InvalidVersion, TypeError):
                 if gh_latest != pinned:
                     outdated.append((cpp_dep["name"], pinned, gh_latest))
+    return outdated
 
+
+def check_latest_versions(
+    deps: Sequence[_DepEntry],
+    cpp_deps: Sequence[_CppDepEntry] = (),
+    dev_deps: Sequence[_DevDepEntry] = (),
+) -> list[tuple[str, str, str]]:
+    """Return list of (package, pinned, latest) for outdated packages using packaging.Version & GitHub API."""
+    outdated = _check_runtime_outdated(deps)
+    outdated.extend(_check_dev_outdated(dev_deps))
+    outdated.extend(_check_cpp_outdated(cpp_deps))
     return outdated
 
 

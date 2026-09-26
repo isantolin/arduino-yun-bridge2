@@ -5,6 +5,7 @@ max-complexity = 25
 exclude =
     *_pb2.py,
     *_pb2.pyi,
+    *_grpc.py,
     typings,
     .tox,
     build,

@@ -669,7 +669,8 @@ class JinjaGenerator:
                 continue
             for long_name, short_val in topic_prefix_map.items():
                 if name.startswith(long_name + "_"):
-                    auth_map[(short_val, name[len(long_name) + 1 :])] = name
+                    prefix_len = len(long_name) + 1
+                    auth_map[(short_val, name[prefix_len:])] = name
                     break
             else:
                 parts = name.split("_", 1)

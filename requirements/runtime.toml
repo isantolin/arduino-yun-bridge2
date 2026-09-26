@@ -285,6 +285,11 @@ name = "types-pexpect"
 pip = "types-pexpect==4.9.0.20260518"
 rationale = "Type stubs for pexpect required by pyrefly"
 
+[[dev_dependency]]
+name = "flake8"
+pip = "flake8==7.4.1"
+rationale = "Style guide enforcement and PEP 8 linter"
+
 
 
 

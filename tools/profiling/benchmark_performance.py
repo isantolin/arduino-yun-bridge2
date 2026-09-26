@@ -18,16 +18,15 @@ from pathlib import Path
 from typing import Annotated
 
 import psutil
-from cobs import cobsr
-
-os.environ.setdefault("CRYPTOGRAPHY_OPENSSL_NO_LEGACY", "1")
-
 import typer
+from cobs import cobsr
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol import protocol
 from mcubridge.protocol.frame import build_frame, parse_frame
 from mcubridge.state.storage import LmdbCache
+
+os.environ.setdefault("CRYPTOGRAPHY_OPENSSL_NO_LEGACY", "1")
 
 app = typer.Typer(add_completion=False)
 

@@ -24,9 +24,6 @@ from statemachine import State, StateMachine
 from statemachine.exceptions import TransitionNotAllowed
 
 from mcubridge.protocol import mcubridge_pb2 as pb
-
-os.environ.setdefault("CRYPTOGRAPHY_OPENSSL_NO_LEGACY", "1")
-
 from cryptography.hazmat.primitives import hashes, hmac
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
 from cryptography.hazmat.primitives.constant_time import bytes_eq
@@ -55,6 +52,8 @@ from ..security.security import (
     secure_zero,
 )
 from ..state.context import RuntimeState
+
+os.environ.setdefault("CRYPTOGRAPHY_OPENSSL_NO_LEGACY", "1")
 
 
 class HandshakeState(StrEnum):

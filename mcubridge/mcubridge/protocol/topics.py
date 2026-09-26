@@ -79,9 +79,10 @@ def parse_topic(prefix: str, topic_name: str) -> TopicRoute | None:
             logger.warning("Unrecognized cloud topic service segment", segment=seg, topic=topic_name, error=str(exc))
             return None
 
+    seg_start = len(prefix_segs) + 1
     return TopicRoute(
         raw=topic_name,
         prefix="/".join(prefix_segs),
         topic=topic_enum,
-        segments=topic_segs[len(prefix_segs) + 1 :],
+        segments=topic_segs[seg_start:],
     )

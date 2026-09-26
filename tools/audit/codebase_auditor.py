@@ -271,7 +271,7 @@ def audit_linters() -> list[str]:
     print("Auditing linters (flake8 & ruff)...")
 
     # 1. Flake8
-    res_flake = subprocess.run(["flake8"], cwd=ROOT, capture_output=True, text=True, check=False)
+    res_flake = subprocess.run([sys.executable, "-m", "flake8"], cwd=ROOT, capture_output=True, text=True, check=False)
     if res_flake.returncode != 0:
         for line in res_flake.stdout.splitlines():
             line_str = line.strip()
@@ -280,7 +280,7 @@ def audit_linters() -> list[str]:
 
     # 2. Ruff
     res_ruff = subprocess.run(
-        ["ruff", "check", "mcubridge", "mcubridge-client-examples", "mcubridge-gateway", "tools"],
+        [sys.executable, "-m", "ruff", "check", "mcubridge", "mcubridge-client-examples", "mcubridge-gateway", "tools"],
         cwd=ROOT,
         capture_output=True,
         text=True,

@@ -47,9 +47,11 @@ jobs:
       - name: Install System Dependencies
         if: matrix.env == 'cppcheck' || matrix.env == 'typecheck' || matrix.env == 'protocol' || matrix.env == 'lint' || matrix.env == 'py' || matrix.env == 'codebase-auditor'
         run: |
-          sudo apt-get update && sudo apt-get install -y cppcheck unzip clang-tidy bloaty
+          sudo apt-get update && sudo apt-get install -y cppcheck unzip clang-tidy
           sudo npm install -g @bufbuild/buf
-          python -m pip install protobuf mypy-protobuf vulture pytest pyrefly types-protobuf types-psutil types-pexpect flake8 ruff semgrep mutmut
+          uv tool install semgrep
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          python -m pip install protobuf mypy-protobuf vulture pytest pyrefly types-protobuf types-psutil types-pexpect flake8 ruff mutmut
       - name: Install Build Tools
         if: matrix.env == 'arduino'
         run: sudo apt-get update && sudo apt-get install -y g++ make
@@ -128,10 +130,17 @@ jobs:
         run: |
           mkdir -p arduino-build
           tox -e arduino-examples -- arduino-build
+      - name: Install Bloaty McBloatface
+        run: |
+          git clone --depth=1 --recurse-submodules https://github.com/google/bloaty.git /tmp/bloaty
+          cmake -B /tmp/bloaty/build -S /tmp/bloaty -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/bloaty/build --target bloaty -j$(nproc)
+          sudo cp /tmp/bloaty/build/bloaty /usr/local/bin/
+          rm -rf /tmp/bloaty
+          bloaty --version
       - name: Profile Memory Usage
         if: always()
         run: |
-          sudo apt-get update && sudo apt-get install -y bloaty
           mkdir -p arduino-logs
           python tools/profiling/arduino_symbol_profiler.py arduino-build --output arduino-logs/symbol_profile.md
       - name: Upload Arduino Logs

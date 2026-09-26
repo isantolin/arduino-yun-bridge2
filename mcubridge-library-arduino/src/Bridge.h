@@ -394,8 +394,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
       } else if (ctx.envelope->which_payload_type ==
                  rpc_pb_RpcEnvelope_encrypted_payload_with_tag_tag) {
         MsgType m = {};
-        if (!_decodePayload(ctx, rpc::Payload::get_fields<MsgType>(), &m,
-                            expected_tag, sizeof(MsgType))) {
+        if (!_decodePayload(ctx, rpc::Payload::get_fields<MsgType>(), &m)) {
           emitStatus(rpc::StatusCode::STATUS_MALFORMED);
           return false;
         }
@@ -560,7 +559,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
 
   static __attribute__((noinline)) bool _decodePayload(
       const bridge::router::CommandContext& ctx, const pb_msgdesc_t* fields,
-      void* dest, pb_size_t expected_tag, size_t struct_size);
+      void* dest);
 
   static void _handleSetPinMode(const rpc_pb_PinMode& m);
   template <typename MsgType, bool IsAnalog>

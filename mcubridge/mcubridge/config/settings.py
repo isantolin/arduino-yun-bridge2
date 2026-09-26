@@ -216,9 +216,10 @@ def load_runtime_config_from_json(
             msg.serial_shared_secret = secret
 
     if overrides:
-        for k, v in overrides.items():
-            if hasattr(msg, k):
-                setattr(msg, k, v)
+        norm_overrides, ov_secret = _normalize_config_dict(overrides)
+        json_format.ParseDict(norm_overrides, msg, ignore_unknown_fields=True)
+        if ov_secret is not None:
+            msg.serial_shared_secret = ov_secret
 
     validate_config(msg)
     _config_source[0] = "json"

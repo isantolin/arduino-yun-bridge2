@@ -10,7 +10,6 @@
 #include <wolfssl/wolfcrypt/types.h>
 
 #include "hal/ArchTraits.h"
-#include "pb_common.h"
 #include "security/security.h"
 #include "services/Console.h"
 #include "services/DataStore.h"
@@ -753,9 +752,7 @@ void BridgeClass::_handleLinkReset(const bridge::router::CommandContext& ctx) {
   if (ctx.envelope->which_payload_type != 0) {
     rpc_pb_HandshakeConfig res_msg = rpc_pb_HandshakeConfig_init_default;
     if (_decodePayload(ctx, rpc::Payload::get_fields<rpc_pb_HandshakeConfig>(),
-                       &res_msg,
-                       rpc::Payload::get_tag<rpc_pb_HandshakeConfig>(),
-                       sizeof(rpc_pb_HandshakeConfig))) {
+                       &res_msg)) {
       _applyTimingConfig(res_msg);
     }
   }
@@ -834,13 +831,8 @@ void BridgeClass::signalXoff() { (void)sendFrame(rpc::CommandId::CMD_XOFF); }
 void BridgeClass::signalXon() { (void)sendFrame(rpc::CommandId::CMD_XON); }
 
 bool BridgeClass::_decodePayload(const bridge::router::CommandContext& ctx,
-                                 const pb_msgdesc_t* fields, void* dest,
-                                 pb_size_t expected_tag, size_t struct_size) {
-  (void)expected_tag;
-  (void)struct_size;
+                                 const pb_msgdesc_t* fields, void* dest) {
   if (!fields || !dest) return false;
-  pb_field_iter_t iter;
-  if (!pb_field_iter_begin(&iter, fields, dest)) return false;
   if (ctx.envelope->which_payload_type ==
       rpc_pb_RpcEnvelope_encrypted_payload_with_tag_tag) {
     const uint8_t* src =

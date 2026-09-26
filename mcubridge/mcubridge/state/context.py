@@ -645,7 +645,7 @@ class RuntimeState:
             logger.debug("Failed to read system boot time for uptime metric", error=str(exc))
             uptime = self.metrics.uptime_seconds.value
 
-        return pb.DaemonMetrics(
+        snapshot = pb.DaemonMetrics(
             cloud_queue_depth=self.cloud_publish_queue.qsize(),
             cloud_dropped_messages=self.cloud_dropped_messages,
             cloud_drop_counts=cloud_drop_counts,
@@ -670,26 +670,16 @@ class RuntimeState:
             heartbeat_unix=time.time(),
             watchdog_enabled=self.watchdog_enabled,
             watchdog_interval=self.watchdog_interval,
-            serial_bytes_sent=self.metrics.serial_bytes_sent.value,
-            serial_bytes_received=self.metrics.serial_bytes_received.value,
-            serial_frames_sent=self.metrics.serial_frames_sent.value,
-            serial_frames_received=self.metrics.serial_frames_received.value,
-            serial_retries=self.metrics.serial_retries.value,
-            serial_failures=self.metrics.serial_failures.value,
-            serial_crc_errors=self.metrics.serial_crc_errors.value,
-            serial_decode_errors=self.metrics.serial_decode_errors.value,
-            serial_latency_ms=self.metrics.serial_latency_ms.value,
-            rpc_latency_ms=self.metrics.rpc_latency_ms.value,
-            handshake_attempts=self.metrics.handshake_attempts.value,
-            handshake_successes=self.metrics.handshake_successes.value,
-            handshake_state=self.metrics.handshake_state.value,
-            link_state=self.metrics.link_state.value,
-            watchdog_beats=self.metrics.watchdog_beats.value,
             uptime_seconds=uptime,
-            cloud_messages_published=self.metrics.cloud_messages_published.value,
             retries=retries,
             mcu_status_counts=mcu_status_counts,
         )
+        for field in pb.DaemonMetrics.DESCRIPTOR.fields:
+            if field.name not in ("uptime_seconds", "unknown_command_count") and hasattr(self.metrics, field.name):
+                metric = getattr(self.metrics, field.name)
+                if hasattr(metric, "value"):
+                    setattr(snapshot, field.name, metric.value)
+        return snapshot
 
     def build_status_snapshot(self) -> pb.BridgeStatus:
         """Build a holistic snapshot of the bridge status. [SIL-2]"""

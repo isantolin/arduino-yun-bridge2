@@ -96,7 +96,7 @@ inline bool _encode_impl(const pb_msgdesc_t* fields, const void* src, etl::span<
 
 inline bool _decode_impl(const pb_msgdesc_t* fields, void* dest, etl::span<const uint8_t> buffer) {
     pb_istream_t stream = pb_istream_from_buffer(buffer.data(), buffer.size());
-    return pb_decode(&stream, fields, dest);
+    return pb_decode_noinit(&stream, fields, dest);
 }
 
 template <typename T>

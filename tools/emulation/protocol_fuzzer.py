@@ -12,7 +12,7 @@ from binascii import crc32
 from collections.abc import Callable
 from typing import Annotated, cast
 
-from cobs import cobs
+from cobs import cobsr
 from hypothesis import HealthCheck, event, settings, strategies as st
 import hypothesis.stateful as h_stateful
 from hypothesis.stateful import RuleBasedStateMachine, invariant, rule
@@ -48,26 +48,30 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
         self.seq_id: int = 0
         self.frames_sent: int = 0
         self.probe_responses_received: int = 0
-        self.loop = asyncio.new_event_loop()
+        self.loop: asyncio.AbstractEventLoop = asyncio.new_event_loop()
         self.reader: asyncio.StreamReader | None = None
         self.writer: asyncio.StreamWriter | None = None
         self.loop.run_until_complete(self._connect())
 
     async def _connect(self) -> None:
-        self.reader, self.writer = await serialx.open_serial_connection(url=self.port, baudrate=self.baudrate)
+        reader_obj, writer_obj = await serialx.open_serial_connection(url=self.port, baudrate=self.baudrate)
+        self.reader = cast(asyncio.StreamReader, reader_obj)
+        self.writer = cast(asyncio.StreamWriter, writer_obj)
         logger.info("connected", port=self.port, baudrate=self.baudrate)
 
     async def _send_raw(self, data: bytes) -> None:
-        if self.writer is not None:
-            self.writer.write(data)
-            await self.writer.drain()
+        writer = self.writer
+        if writer is not None:
+            writer.write(data)
+            await writer.drain()
             self.frames_sent += 1
 
     async def _close(self) -> None:
-        if self.writer is not None:
-            self.writer.close()
+        writer = self.writer
+        if writer is not None:
+            writer.close()
             try:
-                await self.writer.wait_closed()
+                await writer.wait_closed()
             except (OSError, TimeoutError) as exc:
                 logger.warning("writer_close_warning", error=str(exc))
             self.writer = None
@@ -84,7 +88,7 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
         return self.seq_id
 
     def _build_raw_frame(self, cmd: int, seq: int, payload: bytes) -> bytes:
-        return cobs.encode(build_frame(command_id=cmd, sequence_id=seq, payload=payload)) + protocol.FRAME_DELIMITER
+        return cobsr.encode(build_frame(command_id=cmd, sequence_id=seq, payload=payload)) + protocol.FRAME_DELIMITER
 
     def _build_envelope_frame(
         self,
@@ -104,20 +108,20 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
         body = envelope.SerializeToString()
         crc_val = override_crc if override_crc is not None else (crc32(body) & protocol.CRC32_MASK)
         raw_frame = body + (crc_val & protocol.CRC32_MASK).to_bytes(protocol.CRC_SIZE, "little")
-        return cobs.encode(raw_frame) + protocol.FRAME_DELIMITER
+        return cobsr.encode(raw_frame) + protocol.FRAME_DELIMITER
 
     @rule(payload=st.binary(min_size=0, max_size=128))
     def fuzz_valid_ping(self, payload: bytes) -> None:
-        """Generate valid ping frames with arbitrary valid payloads."""
+        """Generate valid version probe frames with arbitrary valid payloads."""
         seq = self._next_seq_id()
-        frame = self._build_raw_frame(0x0001, seq, payload)
+        frame = self._build_raw_frame(protocol.Command.CMD_GET_VERSION.value, seq, payload)
         self.loop.run_until_complete(self._send_raw(frame))
         event("rule_valid_ping")
 
     @rule(
         cmd=st.integers(min_value=1, max_value=0x7FFF),
         payload=st.binary(min_size=1, max_size=128),
-        bad_crc=st.integers(min_value=0, max_value=protocol.UINT32_MAX),
+        bad_crc=st.integers(min_value=0, max_value=protocol.CRC32_MASK),
     )
     def fuzz_invalid_crc(self, cmd: int, payload: bytes, bad_crc: int) -> None:
         """Inject frames with corrupt CRC32 checksums."""
@@ -175,19 +179,21 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
     @rule()
     def verify_endpoint_responsiveness(self) -> None:
         """Send a valid probe frame to verify MCU endpoint remains responsive."""
+        reader = self.reader
+        if reader is None:
+            return
+
         seq = self._next_seq_id()
-        probe = self._build_raw_frame(0x0001, seq, b"PROBE")
+        probe = self._build_raw_frame(protocol.Command.CMD_GET_VERSION.value, seq, b"PROBE")
         self.loop.run_until_complete(self._send_raw(probe))
 
-        async def _read_probe_response() -> bytes | None:
-            if self.reader is None:
-                return None
+        async def _read_probe_response(r: asyncio.StreamReader) -> bytes | None:
             try:
-                return await asyncio.wait_for(self.reader.readuntil(protocol.FRAME_DELIMITER), timeout=0.1)
-            except (TimeoutError, OSError):
+                return await asyncio.wait_for(r.readuntil(protocol.FRAME_DELIMITER), timeout=0.1)
+            except (TimeoutError, asyncio.IncompleteReadError, OSError):
                 return None
 
-        resp = self.loop.run_until_complete(_read_probe_response())
+        resp = self.loop.run_until_complete(_read_probe_response(reader))
         if resp is not None:
             self.probe_responses_received += 1
         event("rule_probe_verify")
@@ -208,6 +214,9 @@ def main(
     seed: Annotated[int | None, typer.Option("--seed", help="Deterministic RNG seed for Hypothesis")] = None,
 ) -> None:
     """Run Hypothesis-driven stateful protocol fuzzing against a target serial endpoint."""
+    if count <= 0:
+        raise typer.BadParameter("Count must be greater than 0")
+
     logger.info("starting_fuzzer_state_machine", port=port, baudrate=baud, steps=count, seed=seed)
 
     class ConfiguredFuzzerMachine(ProtocolFuzzerStateMachine):
@@ -216,28 +225,29 @@ def main(
     ConfiguredFuzzerMachine.port = port
     ConfiguredFuzzerMachine.baudrate = baud
 
+    steps_per_example = min(count, 50)
+    max_examples = max(1, count // steps_per_example)
+
     state_settings = settings(
-        max_examples=max(1, count // 50),
-        stateful_step_count=min(count, 50),
+        max_examples=max_examples,
+        stateful_step_count=steps_per_example,
         derandomize=(seed is None),
         deadline=None,
         suppress_health_check=[HealthCheck.too_slow, HealthCheck.filter_too_much],
     )
 
-    runner: Callable[[type[RuleBasedStateMachine]], None] = cast(
-        Callable[[type[RuleBasedStateMachine]], None],
-        state_settings(_RUN_STATE_MACHINE),
-    )
+    runner: Callable[[type[RuleBasedStateMachine]], None] = _RUN_STATE_MACHINE
     if seed is not None:
         from hypothesis import seed as hyp_seed
 
         runner = cast(
             Callable[[type[RuleBasedStateMachine]], None],
-            hyp_seed(seed)(runner),
+            hyp_seed(seed)(_RUN_STATE_MACHINE),
         )
 
     try:
-        runner(ConfiguredFuzzerMachine)
+        with state_settings:
+            runner(ConfiguredFuzzerMachine)
         logger.info("fuzzing_complete", steps=count)
     except KeyboardInterrupt:
         logger.info("fuzzing_interrupted_by_user")

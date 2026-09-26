@@ -89,7 +89,7 @@ def audit_config_suppressions() -> list[str]:
 
 
 def audit_proto_integrity(proto_path: Path | None = None) -> list[str]:
-    """Audit mcubridge.proto to ensure all dead or abandoned definitions are purged."""
+    """Audit Protobuf definitions with Buf (lint and breaking change checks) [SIL-2]."""
     findings: list[str] = []
     print("Auditing Protobuf definitions...")
     target_path = proto_path if proto_path is not None else ROOT / "tools" / "protocol" / "mcubridge.proto"
@@ -97,49 +97,52 @@ def audit_proto_integrity(proto_path: Path | None = None) -> list[str]:
         findings.append(f"Protobuf File Missing: {target_path} not found")
         return findings
 
-    content = target_path.read_text(encoding="utf-8")
-
-    # 1. Obsolete options / messages
-    if "data_formats" in content:
-        findings.append("Protobuf Dead Block: 'data_formats' is obsolete and must be removed")
-    if "DataFormats" in content:
-        findings.append("Protobuf Dead Message: 'DataFormats' is obsolete and must be removed")
-
-    # 2. Dead string options in Handshake
-    dead_handshake_fields = [
-        "tag_algorithm",
-        "tag_description",
-        "hkdf_algorithm",
-        "nonce_format_description",
-        "aead_algorithm",
-        "aead_description",
-    ]
-    for field in dead_handshake_fields:
-        if re.search(rf"\b{field}\s*:", content):
-            findings.append(f"Protobuf Dead Field: handshake.{field} is purely decorative and must be removed")
-
-    # 3. Dead constants in Constants
-    dead_constants = [
-        "default_serial_fallback_threshold",
-        "cloud_expiry_shell",
-        "cloud_expiry_default",
-    ]
-    for const in dead_constants:
-        if re.search(rf"\b{const}\s*:", content):
-            findings.append(f"Protobuf Dead Constant: constants.{const} has zero usages and must be removed")
-
-    # 4. Buf Linting
     buf_bin = shutil.which("buf")
-    if buf_bin and (target_path.parent / "buf.yaml").exists():
-        buf_res = subprocess.run(
-            [buf_bin, "lint", str(target_path.parent)],
-            cwd=str(ROOT),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if buf_res.returncode != 0:
-            findings.append(f"Buf Lint Violation:\n{buf_res.stdout.strip()}")
+    module_dir = target_path.parent
+    if buf_bin:
+        buf_yaml = module_dir / "buf.yaml"
+        created_buf_yaml = False
+        if not buf_yaml.exists():
+            default_config = (
+                "version: v2\n"
+                "modules:\n"
+                "  - path: .\n"
+                "lint:\n"
+                "  use:\n"
+                "    - BASIC\n"
+                "  except:\n"
+                "    - PACKAGE_DIRECTORY_MATCH\n"
+            )
+            buf_yaml.write_text(default_config, encoding="utf-8")
+            created_buf_yaml = True
+        try:
+            buf_lint = subprocess.run(
+                [buf_bin, "lint", str(module_dir)],
+                cwd=str(ROOT),
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if buf_lint.returncode != 0:
+                findings.append(f"Buf Lint Violation:\n{buf_lint.stdout.strip() or buf_lint.stderr.strip()}")
+
+            if (ROOT / ".git").exists() and target_path == ROOT / "tools" / "protocol" / "mcubridge.proto":
+                buf_breaking = subprocess.run(
+                    [buf_bin, "breaking", str(module_dir), "--against", ".git#subdir=tools/protocol"],
+                    cwd=str(ROOT),
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if buf_breaking.returncode != 0:
+                    findings.append(
+                        f"Buf Breaking Change Violation:\n{buf_breaking.stdout.strip() or buf_breaking.stderr.strip()}"
+                    )
+        finally:
+            if created_buf_yaml and buf_yaml.exists():
+                buf_yaml.unlink()
+    else:
+        findings.append("Buf Executable Missing: 'buf' binary not found in PATH")
 
     return findings
 

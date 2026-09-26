@@ -16,67 +16,24 @@ def test_audit_proto_integrity_clean() -> None:
     assert findings == []
 
 
-def test_audit_proto_integrity_catches_all_dead_definitions(tmp_path: Path) -> None:
-    """SIL-2: Verify auditor deterministically catches all prohibited dead blocks, fields, and constants."""
-    mock_proto = tmp_path / "mcubridge.proto"
-    content = """
-    syntax = "proto3";
-    package rpc.pb;
+def test_audit_proto_integrity_catches_buf_violations(tmp_path: Path) -> None:
+    """SIL-2: Verify auditor deterministically catches Protobuf violations using Buf."""
+    mock_proto = tmp_path / "invalid.proto"
+    content = """syntax = "proto3";
 
-    message DataFormats {
-        string uint8_format = 1;
-    }
+package rpc.pb;
 
-    message Handshake {
-        string tag_algorithm = 1;
-        string tag_description = 2;
-        string hkdf_algorithm = 3;
-        string nonce_format_description = 4;
-        string aead_algorithm = 5;
-        string aead_description = 6;
-    }
-
-    message Constants {
-        uint32 default_serial_fallback_threshold = 1;
-        uint32 cloud_expiry_shell = 2;
-        uint32 cloud_expiry_default = 3;
-    }
-
-    extend google.protobuf.FileOptions {
-        DataFormats data_formats = 1004;
-    }
-
-    option (rpc.pb.data_formats) = {};
-    option (rpc.pb.handshake) = {
-        tag_algorithm: "HMAC"
-        tag_description: "desc"
-        hkdf_algorithm: "HKDF"
-        nonce_format_description: "nonce"
-        aead_algorithm: "AEAD"
-        aead_description: "desc"
-    };
-    option (rpc.pb.constants) = {
-        default_serial_fallback_threshold: 5
-        cloud_expiry_shell: 30
-        cloud_expiry_default: 10
-    };
-    """
+message InvalidCasing {
+  string BadCamelCaseField = 1;
+}
+"""
     mock_proto.write_text(content, encoding="utf-8")
 
     findings = audit_proto_integrity(mock_proto)
 
-    assert any("data_formats" in f for f in findings)
-    assert any("DataFormats" in f for f in findings)
-    assert any("tag_algorithm" in f for f in findings)
-    assert any("tag_description" in f for f in findings)
-    assert any("hkdf_algorithm" in f for f in findings)
-    assert any("nonce_format_description" in f for f in findings)
-    assert any("aead_algorithm" in f for f in findings)
-    assert any("aead_description" in f for f in findings)
-    assert any("default_serial_fallback_threshold" in f for f in findings)
-    assert any("cloud_expiry_shell" in f for f in findings)
-    assert any("cloud_expiry_default" in f for f in findings)
-    assert len(findings) == 11
+    assert len(findings) >= 1
+    assert "Buf Lint Violation" in findings[0]
+    assert "lower_snake_case" in findings[0]
 
 
 def test_audit_proto_integrity_missing_file(tmp_path: Path) -> None:

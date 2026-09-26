@@ -59,16 +59,18 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
         logger.info("connected", port=self.port, baudrate=self.baudrate)
 
     async def _send_raw(self, data: bytes) -> None:
-        if self.writer is not None:
-            self.writer.write(data)
-            await self.writer.drain()
+        writer = self.writer
+        if writer is not None:
+            writer.write(data)
+            await writer.drain()
             self.frames_sent += 1
 
     async def _close(self) -> None:
-        if self.writer is not None:
-            self.writer.close()
+        writer = self.writer
+        if writer is not None:
+            writer.close()
             try:
-                await self.writer.wait_closed()
+                await writer.wait_closed()
             except (OSError, TimeoutError) as exc:
                 logger.warning("writer_close_warning", error=str(exc))
             self.writer = None
@@ -177,19 +179,21 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
     @rule()
     def verify_endpoint_responsiveness(self) -> None:
         """Send a valid probe frame to verify MCU endpoint remains responsive."""
+        reader = self.reader
+        if reader is None:
+            return
+
         seq = self._next_seq_id()
         probe = self._build_raw_frame(Command.CMD_GET_VERSION.value, seq, b"PROBE")
         self.loop.run_until_complete(self._send_raw(probe))
 
-        async def _read_probe() -> bytes | None:
-            if self.reader is None:
-                return None
+        async def _read_probe(r: asyncio.StreamReader) -> bytes | None:
             try:
-                return await asyncio.wait_for(self.reader.readuntil(protocol.FRAME_DELIMITER), timeout=0.1)
+                return await asyncio.wait_for(r.readuntil(protocol.FRAME_DELIMITER), timeout=0.1)
             except (TimeoutError, asyncio.IncompleteReadError, OSError):
                 return None
 
-        resp = self.loop.run_until_complete(_read_probe())
+        resp = self.loop.run_until_complete(_read_probe(reader))
         if resp is not None:
             self.probe_responses_received += 1
         event("rule_probe_verify")
@@ -233,18 +237,15 @@ def main(
         suppress_health_check=[HealthCheck.too_slow, HealthCheck.filter_too_much],
     )
 
-    runner: Callable[[type[RuleBasedStateMachine]], None] = cast(
-        Callable[[type[RuleBasedStateMachine]], None],
-        state_settings(_RUN_STATE_MACHINE),
-    )
+    def _execute_fuzzing() -> None:
+        _RUN_STATE_MACHINE(ConfiguredFuzzerMachine)
+
+    fuzz_test: Callable[[], None] = cast(Callable[[], None], state_settings(_execute_fuzzing))
     if seed is not None:
-        runner = cast(
-            Callable[[type[RuleBasedStateMachine]], None],
-            hyp_seed(seed)(runner),
-        )
+        fuzz_test = cast(Callable[[], None], hyp_seed(seed)(fuzz_test))
 
     try:
-        runner(ConfiguredFuzzerMachine)
+        fuzz_test()
         logger.info("fuzzing_complete", steps=count)
     except KeyboardInterrupt:
         logger.info("fuzzing_interrupted_by_user")

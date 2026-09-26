@@ -11,7 +11,7 @@ import types
 from collections.abc import Awaitable, Callable
 from io import BytesIO
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -50,6 +50,13 @@ def _load_script(name: str) -> types.ModuleType:
 pin_rest_cgi = _load_script("pin_rest_cgi")
 
 
+@pytest.fixture
+def transport(runtime_config: RuntimeConfig, runtime_state: RuntimeState, mock_serial: AsyncMock) -> SerialTransport:
+    t = SerialTransport(runtime_config, runtime_state, None)
+    t.serial = mock_serial
+    return t
+
+
 def _make_config(**overrides: Any) -> RuntimeConfig:
     cfg = RuntimeConfig(
         serial_port="/dev/ttyMCU",
@@ -77,55 +84,36 @@ class TestSerialSendTracked:
     """Tests for the send() method with tracked commands (ACK/response flow)."""
 
     @pytest.mark.asyncio
-    async def test_send_returns_false_when_serial_closed(self) -> None:
-        config = _make_config()
-        state = _make_state(config)
-        transport = SerialTransport(config, state, None)
+    async def test_send_returns_false_when_serial_closed(self, transport: SerialTransport) -> None:
         transport.serial = None
-
         result = await transport.send(Command.CMD_GET_VERSION.value, b"")
         assert result is False
 
     @pytest.mark.asyncio
-    async def test_send_untracked_delegates_to_send_raw(self, mocker: MockerFixture) -> None:
-        config = _make_config()
-        state = _make_state(config)
-        transport = SerialTransport(config, state, None)
-
-        mock_serial = AsyncMock()
-        mock_serial.is_open = True
-        transport.serial = mock_serial
-
+    async def test_send_untracked_delegates_to_send_raw(
+        self, transport: SerialTransport, mocker: MockerFixture
+    ) -> None:
         mock_raw = mocker.patch.object(transport, "send_raw", new_callable=AsyncMock, return_value=True)
         result = await transport.send(Command.CMD_LINK_SYNC.value, b"hello")
         assert result is True
         mock_raw.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_send_tracked_timeout_retry_exhaustion(self, mocker: MockerFixture) -> None:
-        config = _make_config(serial_retry_attempts=2, serial_retry_timeout=0.05, serial_response_timeout=0.05)
-        state = _make_state(config)
-        transport = SerialTransport(config, state, None)
-
-        mock_serial = AsyncMock()
-        mock_serial.is_open = True
-        transport.serial = mock_serial
-
+    async def test_send_tracked_timeout_retry_exhaustion(
+        self, transport: SerialTransport, mocker: MockerFixture
+    ) -> None:
+        transport.config.serial_retry_attempts = 2
+        transport.config.serial_retry_timeout = 0.05
+        transport.config.serial_response_timeout = 0.05
         mocker.patch.object(transport, "send_raw", new_callable=AsyncMock, return_value=True)
         result = await transport.send(Command.CMD_GET_VERSION.value, b"")
         assert result is False
 
     @pytest.mark.asyncio
-    async def test_send_tracked_fatal_error(self, mocker: MockerFixture) -> None:
-        config = _make_config(serial_retry_attempts=1, serial_retry_timeout=0.05, serial_response_timeout=0.1)
-        state = _make_state(config)
-        transport = SerialTransport(config, state, None)
-
-        mock_serial = AsyncMock()
-        mock_serial.is_open = True
-        transport.serial = mock_serial
-
-        # send_raw returns False -> triggers FatalSerialError
+    async def test_send_tracked_fatal_error(self, transport: SerialTransport, mocker: MockerFixture) -> None:
+        transport.config.serial_retry_attempts = 1
+        transport.config.serial_retry_timeout = 0.05
+        transport.config.serial_response_timeout = 0.1
         mocker.patch.object(transport, "send_raw", new_callable=AsyncMock, return_value=False)
         result = await transport.send(Command.CMD_GET_VERSION.value, b"")
         assert result is False
@@ -138,52 +126,31 @@ class TestSerialSendTracked:
 
 class TestSerialSendRaw:
     @pytest.mark.asyncio
-    async def test_send_raw_flow_control_timeout(self, mocker: MockerFixture) -> None:
-        config = _make_config()
-        state = _make_state(config)
-        transport = SerialTransport(config, state, None)
-
-        mock_serial = AsyncMock()
-        transport.serial = mock_serial
-        state.serial_tx_allowed.clear()
-
-        # Will timeout waiting for flow control, but should proceed
+    async def test_send_raw_flow_control_timeout(self, transport: SerialTransport, mocker: MockerFixture) -> None:
+        transport.state.serial_tx_allowed.clear()
         mocker.patch("mcubridge.transport.serial.FLOW_CONTROL_WAIT_TIMEOUT_SECONDS", 0.01)
         result = await transport.send_raw(Command.CMD_GET_VERSION.value, b"")
         assert result is True
 
     @pytest.mark.asyncio
-    async def test_send_raw_write_exception(self) -> None:
-        config = _make_config()
-        state = _make_state(config)
-        transport = SerialTransport(config, state, None)
-
-        mock_serial = AsyncMock()
-        mock_serial.write.side_effect = OSError("Write failed")
-        transport.serial = mock_serial
-        state.serial_tx_allowed.set()
-
+    async def test_send_raw_write_exception(self, transport: SerialTransport) -> None:
+        cast(AsyncMock, transport.serial).write.side_effect = OSError("Write failed")
+        transport.state.serial_tx_allowed.set()
         result = await transport.send_raw(Command.CMD_GET_VERSION.value, b"")
         assert result is False
 
     @pytest.mark.asyncio
-    async def test_send_raw_synchronized_nonce(self) -> None:
-        config = _make_config()
-        state = _make_state(config)
-        state.connection_fsm.synchronize()
-        state.link_session_key = b"A" * 32
-        state.link_nonce_counter = 1
-        transport = SerialTransport(config, state, None)
-
-        mock_serial = AsyncMock()
-        mock_serial.write = AsyncMock()
-        mock_serial.drain = AsyncMock()
-        transport.serial = mock_serial
-        state.serial_tx_allowed.set()
+    async def test_send_raw_synchronized_nonce(self, transport: SerialTransport) -> None:
+        transport.state.connection_fsm.synchronize()
+        transport.state.link_session_key = b"A" * 32
+        transport.state.link_nonce_counter = 1
+        cast(AsyncMock, transport.serial).write = AsyncMock()
+        cast(AsyncMock, transport.serial).drain = AsyncMock()
+        transport.state.serial_tx_allowed.set()
 
         result = await transport.send_raw(Command.CMD_FILE_WRITE.value, b"payload")
         assert result is True
-        assert state.link_nonce_counter > 1
+        assert transport.state.link_nonce_counter > 1
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -193,22 +160,14 @@ class TestSerialSendRaw:
 
 class TestNegotiateBaudrate:
     @pytest.mark.asyncio
-    async def test_negotiate_send_raw_failure(self, mocker: MockerFixture) -> None:
-        config = _make_config()
-        state = _make_state(config)
-        transport = SerialTransport(config, state, None)
-
+    async def test_negotiate_send_raw_failure(self, transport: SerialTransport, mocker: MockerFixture) -> None:
         mocker.patch.object(transport, "send_raw", new_callable=AsyncMock, return_value=False)
         negotiate_baudrate: Callable[[int], Awaitable[bool]] = getattr(transport, "_negotiate_baudrate")
         result = await negotiate_baudrate(115200)
         assert result is False
 
     @pytest.mark.asyncio
-    async def test_negotiate_timeout(self, mocker: MockerFixture) -> None:
-        config = _make_config()
-        state = _make_state(config)
-        transport = SerialTransport(config, state, None)
-
+    async def test_negotiate_timeout(self, transport: SerialTransport, mocker: MockerFixture) -> None:
         mocker.patch.object(transport, "send_raw", new_callable=AsyncMock, return_value=True)
         mocker.patch("mcubridge.transport.serial.SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT", 0.01)
         negotiate_baudrate: Callable[[int], Awaitable[bool]] = getattr(transport, "_negotiate_baudrate")
@@ -224,14 +183,11 @@ class TestNegotiateBaudrate:
 
 class TestProcessPacketEdgePaths:
     @pytest.mark.asyncio
-    async def test_process_packet_anti_replay_failure(self, mocker: MockerFixture) -> None:
-        config = _make_config()
-        state = _make_state(config)
+    async def test_process_packet_anti_replay_failure(self, transport: SerialTransport, mocker: MockerFixture) -> None:
         key = b"K" * 32
-        state.link_session_key = key
-        state.link_last_nonce_counter = 999
-        state.connection_fsm.synchronize()
-        transport = SerialTransport(config, state, None)
+        transport.state.link_session_key = key
+        transport.state.link_last_nonce_counter = 999
+        transport.state.connection_fsm.synchronize()
 
         # Build a non-system command frame with session key
         raw = cobsr.encode(build_frame(Command.CMD_DIGITAL_WRITE.value, 1, session_key=key))
@@ -243,11 +199,9 @@ class TestProcessPacketEdgePaths:
         assert mock_err.called
 
     @pytest.mark.asyncio
-    async def test_process_packet_uninitialized_payload_rejection(self, mocker: MockerFixture) -> None:
-        config = _make_config()
-        state = _make_state(config)
-        transport = SerialTransport(config, state, None)
-
+    async def test_process_packet_uninitialized_payload_rejection(
+        self, transport: SerialTransport, mocker: MockerFixture
+    ) -> None:
         raw = cobsr.encode(build_frame(Command.CMD_GET_VERSION.value, 1))
 
         mock_parse = mocker.patch("mcubridge.transport.serial.parse_frame")
@@ -262,7 +216,7 @@ class TestProcessPacketEdgePaths:
 
         process_packet: Callable[[bytes], Awaitable[None]] = getattr(transport, "_process_packet")
         await process_packet(raw)
-        assert state.serial_decode_errors >= 1
+        assert transport.state.serial_decode_errors >= 1
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -272,22 +226,15 @@ class TestProcessPacketEdgePaths:
 
 class TestSerialRun:
     @pytest.mark.asyncio
-    async def test_run_cancelled(self, mocker: MockerFixture) -> None:
-        config = _make_config()
-        state = _make_state(config)
-        transport = SerialTransport(config, state, None)
-
+    async def test_run_cancelled(self, transport: SerialTransport, mocker: MockerFixture) -> None:
+        transport.serial = None
         mocker.patch.object(transport, "_connect_and_run", new_callable=AsyncMock, side_effect=asyncio.CancelledError)
         await transport.run()
         assert transport.serial is None
 
     @pytest.mark.asyncio
-    async def test_run_fatal_handshake(self, mocker: MockerFixture) -> None:
+    async def test_run_fatal_handshake(self, transport: SerialTransport, mocker: MockerFixture) -> None:
         from mcubridge.services.handshake import SerialHandshakeFatal
-
-        config = _make_config()
-        state = _make_state(config)
-        transport = SerialTransport(config, state, None)
 
         mocker.patch.object(
             transport, "_connect_and_run", new_callable=AsyncMock, side_effect=SerialHandshakeFatal("fatal")

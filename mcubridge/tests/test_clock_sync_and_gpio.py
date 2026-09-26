@@ -477,3 +477,91 @@ async def test_local_bridge_pin_subscribe() -> None:
         mock_stream_none.send_message.assert_not_awaited()
     finally:
         service.cleanup()
+
+
+@pytest.mark.asyncio
+async def test_clock_sync_loop_unsupported_branch(mock_bridge_service: BridgeService) -> None:
+    from mcubridge.services.clock_sync import ClockSyncService
+
+    svc = mock_bridge_service
+    clock = ClockSyncService(svc, sync_interval_seconds=0.01)
+    clock.fsm.mark_unsupported()
+    assert clock.fsm.unsupported.is_active
+
+    await clock.start()
+    await asyncio.sleep(0.03)
+    assert clock.fsm.unsupported.is_active
+    await clock.stop()
+
+
+@pytest.mark.asyncio
+async def test_clock_sync_loop_degraded_branch(
+    mock_bridge_service: BridgeService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from mcubridge.services.clock_sync import ClockSyncService
+
+    svc = mock_bridge_service
+    clock = ClockSyncService(svc, sync_interval_seconds=0.01)
+    clock.fsm.sync_success()
+    assert clock.fsm.synchronized.is_active
+
+    monkeypatch.setattr(clock, "sync_now", AsyncMock(side_effect=TimeoutError("Sync timed out")))
+    await clock.start()
+    await asyncio.sleep(0.03)
+    assert clock.fsm.degraded.is_active
+    await clock.stop()
+
+
+@pytest.mark.asyncio
+async def test_clock_sync_loop_idle_exception_marks_unsupported(
+    mock_bridge_service: BridgeService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from mcubridge.services.clock_sync import ClockSyncService
+
+    svc = mock_bridge_service
+    svc.state.connection_fsm.connect()
+    clock = ClockSyncService(svc, sync_interval_seconds=0.01)
+    assert clock.fsm.idle.is_active
+
+    monkeypatch.setattr(clock, "sync_now", AsyncMock(side_effect=TimeoutError("Sync timed out")))
+    await clock.start()
+    await asyncio.sleep(0.03)
+    assert clock.fsm.unsupported.is_active
+    await clock.stop()
+
+
+@pytest.mark.asyncio
+async def test_clock_sync_loop_disconnected_branch(mock_bridge_service: BridgeService) -> None:
+    from mcubridge.services.clock_sync import ClockSyncService
+
+    svc = mock_bridge_service
+    svc.state.connection_fsm.disconnect()
+    clock = ClockSyncService(svc, sync_interval_seconds=0.01)
+    clock.fsm.sync_success()
+    assert clock.fsm.synchronized.is_active
+
+    await clock.start()
+    await asyncio.sleep(0.03)
+    assert clock.fsm.idle.is_active
+    await clock.stop()
+
+
+@pytest.mark.asyncio
+async def test_clock_sync_loop_normal_exit_branch(mock_bridge_service: BridgeService) -> None:
+    from collections.abc import Awaitable, Callable
+    from mcubridge.services.clock_sync import ClockSyncService
+
+    svc = mock_bridge_service
+    clock = ClockSyncService(svc, sync_interval_seconds=0.001)
+    setattr(clock, "_is_running", True)
+
+    async def _stop_loop() -> dict[str, object]:
+        setattr(clock, "_is_running", False)
+        return {"status": "ok"}
+
+    svc.state.connection_fsm.connect()
+
+    setattr(clock, "sync_now", _stop_loop)
+    sync_loop_fn: Callable[[], Awaitable[None]] = getattr(clock, "_sync_loop")
+    await sync_loop_fn()
+    assert getattr(clock, "_is_running") is False

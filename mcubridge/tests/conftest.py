@@ -14,6 +14,7 @@ from asyncio import events as asyncio_events
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, cast
+from unittest.mock import AsyncMock, MagicMock
 
 import mcubridge.config.common
 import mcubridge.config.const
@@ -132,18 +133,14 @@ class PatchedRuntimeConfig:
                 kwargs[k] = v
         default_spool = protocol.DEFAULT_CLOUD_SPOOL_DIR
         default_fs = protocol.DEFAULT_FILE_SYSTEM_ROOT
-        if (
-            "cloud_spool_dir" not in kwargs
-            or kwargs["cloud_spool_dir"] == "/tmp/mcubridge/spool"
-            or kwargs["cloud_spool_dir"] == default_spool
-        ):
+        spool_dir = kwargs.get("cloud_spool_dir")
+        if spool_dir is None or spool_dir in ("/tmp/mcubridge/spool", default_spool):
             kwargs["cloud_spool_dir"] = get_unique_test_spool()
-        if (
-            "file_system_root" not in kwargs
-            or kwargs["file_system_root"] == "/tmp/mcubridge"
-            or kwargs["file_system_root"] == default_fs
-        ):
+
+        fs_root = kwargs.get("file_system_root")
+        if fs_root is None or fs_root in ("/tmp/mcubridge", default_fs):
             kwargs["file_system_root"] = get_unique_test_fs()
+
         if isinstance(kwargs.get("serial_shared_secret"), str):
             kwargs["serial_shared_secret"] = kwargs["serial_shared_secret"].encode()
         return OriginalRuntimeConfig(*args, **kwargs)
@@ -403,6 +400,45 @@ def service_stack(runtime_config: RuntimeConfig):
     finally:
         service.cleanup()
         state.cleanup()
+
+
+@pytest.fixture
+def mock_serial() -> AsyncMock:
+    """Provide an AsyncMock for serial transport/device in unit tests."""
+    mock = AsyncMock()
+    mock.send = AsyncMock(return_value=True)
+    mock.send_raw = AsyncMock(return_value=True)
+    mock.write = AsyncMock()
+    mock.drain = AsyncMock()
+    mock.close = AsyncMock()
+    mock.is_open = True
+    return mock
+
+
+@pytest.fixture
+def mock_bridge_service(
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState, mock_serial: AsyncMock
+) -> BridgeService:
+    """Provide an isolated BridgeService instance with mocked serial transport."""
+    return BridgeService(runtime_config, runtime_state, mock_serial)
+
+
+@pytest.fixture
+def mock_daemon_env(mocker: MockerFixture, runtime_config: RuntimeConfig) -> dict[str, Any]:
+    """Reusable fixture for daemon bootstrap isolation."""
+    mock_load = mocker.patch("mcubridge.daemon.load_runtime_config", return_value=runtime_config)
+    mock_verify = mocker.patch("mcubridge.daemon.verify_crypto_integrity")
+    mock_logging = mocker.patch("mcubridge.daemon.configure_logging")
+    mock_runner_instance = MagicMock()
+    mock_runner_instance.__enter__.return_value = mock_runner_instance
+    mock_runner = mocker.patch("mcubridge.daemon.asyncio.Runner", return_value=mock_runner_instance)
+    return {
+        "load_config": mock_load,
+        "verify_crypto": mock_verify,
+        "configure_logging": mock_logging,
+        "runner": mock_runner,
+        "runner_instance": mock_runner_instance,
+    }
 
 
 @st.composite

@@ -60,9 +60,9 @@ def _make_service(config: RuntimeConfig) -> tuple[BridgeService, Any, AsyncMock]
 
 
 @pytest.mark.asyncio
-async def test_runtime_service_run_and_teardown_exceptions(tmp_path: Path) -> None:
-    config = _make_config(tmp_path)
-    service, state, _ = _make_service(config)
+async def test_runtime_service_run_and_teardown_exceptions(mock_bridge_service: BridgeService) -> None:
+    service = mock_bridge_service
+    state = service.state
 
     # Attach mock caches with close exceptions to exercise teardown error handling
     mock_spool = AsyncMock(spec=LmdbDeque)
@@ -84,19 +84,16 @@ async def test_runtime_service_run_and_teardown_exceptions(tmp_path: Path) -> No
 
     assert run_task.done()
     assert getattr(service, "_cloud_spool") is None
-    state.cleanup()
 
 
 @pytest.mark.asyncio
-async def test_runtime_run_cloud_disabled(tmp_path: Path, mocker: MockerFixture) -> None:
-    config = _make_config(tmp_path)
-    config.cloud_enabled = False
-    service, state, _ = _make_service(config)
+async def test_runtime_run_cloud_disabled(mock_bridge_service: BridgeService, mocker: MockerFixture) -> None:
+    service = mock_bridge_service
+    service.config.cloud_enabled = False
 
     mock_info = mocker.patch("mcubridge.services.runtime.logger.info")
     await service.run_cloud()
     assert mock_info.called
-    state.cleanup()
 
 
 @given(
@@ -152,9 +149,10 @@ def test_runtime_handle_datastore_flavors(tmp_path_factory: pytest.TempPathFacto
 
 
 @pytest.mark.asyncio
-async def test_runtime_handle_mcu_status_binary_undecodable(tmp_path: Path, mocker: MockerFixture) -> None:
-    config = _make_config(tmp_path)
-    service, state, _ = _make_service(config)
+async def test_runtime_handle_mcu_status_binary_undecodable(
+    mock_bridge_service: BridgeService, mocker: MockerFixture
+) -> None:
+    service = mock_bridge_service
 
     mock_enqueue = mocker.patch.object(service, "enqueue_cloud", new_callable=AsyncMock)
     handle_mcu_status: Callable[..., Awaitable[None]] = getattr(service, "_handle_mcu_status")
@@ -165,8 +163,6 @@ async def test_runtime_handle_mcu_status_binary_undecodable(tmp_path: Path, mock
     await handle_mcu_status(Status.ERROR, 2, cast(Any, 12345))
     assert mock_enqueue.call_count == 2
 
-    state.cleanup()
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 2. Handshake & Link Sync Timeout Handling
@@ -174,9 +170,8 @@ async def test_runtime_handle_mcu_status_binary_undecodable(tmp_path: Path, mock
 
 
 @pytest.mark.asyncio
-async def test_handshake_attempt_link_sync_timeout(tmp_path: Path, mocker: MockerFixture) -> None:
-    config = _make_config(tmp_path)
-    service, state, _ = _make_service(config)
+async def test_handshake_attempt_link_sync_timeout(mock_bridge_service: BridgeService, mocker: MockerFixture) -> None:
+    service = mock_bridge_service
     handshake = service.handshake
 
     # Force wait for link sync confirmation to return False
@@ -188,8 +183,6 @@ async def test_handshake_attempt_link_sync_timeout(tmp_path: Path, mocker: Mocke
     assert res is False
     assert mock_fail.called
 
-    state.cleanup()
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 3. Local Bridge Console Subscription & System Version Request Edge Paths
@@ -197,11 +190,12 @@ async def test_handshake_attempt_link_sync_timeout(tmp_path: Path, mocker: Mocke
 
 
 @pytest.mark.asyncio
-async def test_runtime_local_bridge_subscribe_console(tmp_path: Path, mocker: MockerFixture) -> None:
+async def test_runtime_local_bridge_subscribe_console(
+    mock_bridge_service: BridgeService, mocker: MockerFixture
+) -> None:
     from mcubridge.services.runtime import LocalBridgeService
 
-    config = _make_config(tmp_path)
-    service, state, _ = _make_service(config)
+    service = mock_bridge_service
     local_service = LocalBridgeService(service)
 
     mock_stream = AsyncMock()
@@ -213,8 +207,6 @@ async def test_runtime_local_bridge_subscribe_console(tmp_path: Path, mocker: Mo
     mocker.patch("asyncio.Queue", return_value=q)
     with pytest.raises(OSError):
         await local_service.SubscribeConsole(mock_stream)
-
-    state.cleanup()
 
 
 @given(

@@ -7,7 +7,6 @@ strict mode default secret behavior, signal/exception handling, and CLI entry po
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import MagicMock
 
 import mcubridge.daemon as daemon
 import pytest
@@ -30,7 +29,7 @@ def test_daemon_crypto_verification_failure(mocker: MockerFixture) -> None:
     assert exc_info.value.code == 1
 
 
-def test_daemon_strict_mode_and_keyboard_interrupt(mocker: MockerFixture) -> None:
+def test_daemon_strict_mode_and_keyboard_interrupt(mock_daemon_env: dict[str, Any]) -> None:
     config = RuntimeConfig(
         topic_prefix="test/br",
         serial_port="/dev/null",
@@ -43,21 +42,14 @@ def test_daemon_strict_mode_and_keyboard_interrupt(mocker: MockerFixture) -> Non
         coro.close()
         raise KeyboardInterrupt
 
-    mocker.patch("mcubridge.daemon.load_runtime_config", return_value=config)
-    mocker.patch("mcubridge.daemon.configure_logging")
-    mocker.patch("mcubridge.daemon.verify_crypto_integrity", return_value=True)
-    mock_runner = mocker.patch("mcubridge.daemon.asyncio.Runner")
-
-    mock_instance = MagicMock()
-    mock_instance.__enter__.return_value = mock_instance
-    mock_instance.run.side_effect = run_side_effect
-    mock_runner.return_value = mock_instance
+    mock_daemon_env["load_config"].return_value = config
+    mock_daemon_env["runner_instance"].run.side_effect = run_side_effect
 
     daemon.run_daemon()
     assert not config.cloud_enabled
 
 
-def test_daemon_fatal_exception_exit(mocker: MockerFixture) -> None:
+def test_daemon_fatal_exception_exit(mock_daemon_env: dict[str, Any]) -> None:
     config = RuntimeConfig(
         topic_prefix="test/br",
         serial_port="/dev/null",
@@ -69,22 +61,15 @@ def test_daemon_fatal_exception_exit(mocker: MockerFixture) -> None:
         coro.close()
         raise OSError("Serial port vanished")
 
-    mocker.patch("mcubridge.daemon.load_runtime_config", return_value=config)
-    mocker.patch("mcubridge.daemon.configure_logging")
-    mocker.patch("mcubridge.daemon.verify_crypto_integrity", return_value=True)
-    mock_runner = mocker.patch("mcubridge.daemon.asyncio.Runner")
-
-    mock_instance = MagicMock()
-    mock_instance.__enter__.return_value = mock_instance
-    mock_instance.run.side_effect = run_side_effect
-    mock_runner.return_value = mock_instance
+    mock_daemon_env["load_config"].return_value = config
+    mock_daemon_env["runner_instance"].run.side_effect = run_side_effect
 
     with pytest.raises(SystemExit) as exc_info:
         daemon.run_daemon()
     assert exc_info.value.code == 1
 
 
-def test_daemon_exception_group_exit(mocker: MockerFixture) -> None:
+def test_daemon_exception_group_exit(mock_daemon_env: dict[str, Any]) -> None:
     config = RuntimeConfig(
         topic_prefix="test/br",
         serial_port="/dev/null",
@@ -99,15 +84,8 @@ def test_daemon_exception_group_exit(mocker: MockerFixture) -> None:
             [OSError("Serial write failure"), RuntimeError("Buffer overflow")],
         )
 
-    mocker.patch("mcubridge.daemon.load_runtime_config", return_value=config)
-    mocker.patch("mcubridge.daemon.configure_logging")
-    mocker.patch("mcubridge.daemon.verify_crypto_integrity", return_value=True)
-    mock_runner = mocker.patch("mcubridge.daemon.asyncio.Runner")
-
-    mock_instance = MagicMock()
-    mock_instance.__enter__.return_value = mock_instance
-    mock_instance.run.side_effect = run_side_effect
-    mock_runner.return_value = mock_instance
+    mock_daemon_env["load_config"].return_value = config
+    mock_daemon_env["runner_instance"].run.side_effect = run_side_effect
 
     with pytest.raises(SystemExit) as exc_info:
         daemon.run_daemon()

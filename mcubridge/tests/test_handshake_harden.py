@@ -214,3 +214,26 @@ async def test_handshake_malformed_sync_resp(
     assert not result
     assert state.last_handshake_error == "sync_decode_failed"
     handshake_setup[-1].assert_called_with(Command.CMD_LINK_SYNC_RESP.value, 1, status=Status.MALFORMED)
+
+
+@pytest.mark.asyncio
+async def test_wait_for_link_sync_confirmation_timeout(
+    handshake_setup: tuple[
+        SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, pb.HandshakeConfig, AsyncMock
+    ],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from collections.abc import Awaitable, Callable
+
+    manager, state, _, _config, _timing, _ack = handshake_setup
+    _timing.response_timeout_ms = 10
+    state.connection_fsm.disconnect()
+    real_timeout = asyncio.timeout
+
+    def _mock_timeout(_delay: float | None) -> asyncio.Timeout:
+        return real_timeout(0.001)
+
+    monkeypatch.setattr("asyncio.timeout", _mock_timeout)
+    wait_sync: Callable[[bytes], Awaitable[bool]] = getattr(manager, "_wait_for_link_sync_confirmation")
+    res = await wait_sync(b"test_nonce")
+    assert res is False

@@ -22,6 +22,7 @@ from mcubridge.metrics import (
     publish_bridge_snapshots,
 )
 from mcubridge.protocol.protocol import (
+    Command,
     PinAction,
     Status,
     Topic,
@@ -138,71 +139,94 @@ async def test_runtime_file_dispatch_handlers(tmp_path: Path) -> None:
 # ══════════════════════════════════════════════════════════════════════════════
 
 
+@pytest.mark.parametrize(
+    "topic,segments,payload,expected_cmd",
+    [
+        (Topic.DIGITAL, ("13", PinAction.MODE.value), b"OUTPUT", Command.CMD_SET_PIN_MODE.value),
+        (Topic.DIGITAL, ("13",), b"1", Command.CMD_DIGITAL_WRITE.value),
+        (Topic.DIGITAL, ("13", PinAction.READ.value), b"", Command.CMD_DIGITAL_READ.value),
+        (Topic.ANALOG, ("3",), b"128", Command.CMD_ANALOG_WRITE.value),
+        (Topic.ANALOG, ("1", PinAction.READ.value), b"", Command.CMD_ANALOG_READ.value),
+    ],
+)
 @pytest.mark.asyncio
-async def test_runtime_pin_handlers(tmp_path: Path) -> None:
-    config = _make_config(tmp_path)
-    service, state, mock_serial = _make_service(config)
+async def test_runtime_pin_handlers(
+    mock_bridge_service: BridgeService,
+    mock_serial: AsyncMock,
+    topic: Topic,
+    segments: tuple[str, ...],
+    payload: bytes,
+    expected_cmd: int,
+) -> None:
+    service = mock_bridge_service
     handle_pin_fn: Callable[..., Awaitable[None]] = getattr(service, "_handle_pin")
+    path = "/".join(segments)
+    topic_str = "d" if topic == Topic.DIGITAL else "a"
+    raw_topic = f"{service.config.topic_prefix}/{topic_str}/{path}"
+    route = TopicRoute(raw=raw_topic, prefix=service.config.topic_prefix, topic=topic, segments=segments)
+    inbound = pb.CloudQueuedPublish(topic_name=raw_topic, payload=payload)
+    await handle_pin_fn(route, inbound)
 
-    pin_cases: tuple[tuple[Topic, tuple[str, ...], bytes], ...] = (
-        (Topic.DIGITAL, ("13", PinAction.MODE.value), b"OUTPUT"),
-        (Topic.DIGITAL, ("13",), b"1"),
-        (Topic.DIGITAL, ("13", PinAction.READ.value), b""),
-        (Topic.ANALOG, ("3",), b"128"),
-        (Topic.ANALOG, ("1", PinAction.READ.value), b""),
-    )
-    for topic, segments, payload in pin_cases:
-        path = "/".join(segments)
-        topic_str = "d" if topic == Topic.DIGITAL else "a"
-        raw_topic = f"test/br/{topic_str}/{path}"
-        route = TopicRoute(raw=raw_topic, prefix=config.topic_prefix, topic=topic, segments=segments)
-        inbound = pb.CloudQueuedPublish(topic_name=raw_topic, payload=payload)
-        await handle_pin_fn(route, inbound)
-
-    assert mock_serial.send.call_count == 5
-    assert len(state.pending_digital_reads) == 1
-    assert len(state.pending_analog_reads) == 1
-    service.cleanup()
+    assert mock_serial.send.called
+    assert mock_serial.send.call_args[0][0] == expected_cmd
+    if PinAction.READ.value in segments:
+        if topic == Topic.DIGITAL:
+            assert len(service.state.pending_digital_reads) == 1
+        else:
+            assert len(service.state.pending_analog_reads) == 1
 
 
+@pytest.mark.parametrize(
+    "action,payload,expected_cmd",
+    [
+        ("begin", b"", Command.CMD_SPI_BEGIN.value),
+        ("end", b"", Command.CMD_SPI_END.value),
+        (
+            "config",
+            pb.SpiConfig(frequency=1000000, bit_order=1, data_mode=0).SerializeToString(),
+            Command.CMD_SPI_SET_CONFIG.value,
+        ),
+        ("transfer", b"ping", Command.CMD_SPI_TRANSFER.value),
+    ],
+)
 @pytest.mark.asyncio
-async def test_runtime_spi_handlers(tmp_path: Path) -> None:
-    config = _make_config(tmp_path)
-    service, _state, mock_serial = _make_service(config)
+async def test_runtime_spi_handlers(
+    mock_bridge_service: BridgeService,
+    mock_serial: AsyncMock,
+    action: str,
+    payload: bytes,
+    expected_cmd: int,
+) -> None:
+    service = mock_bridge_service
     handle_spi_fn: Callable[..., Awaitable[None]] = getattr(service, "_handle_spi")
+    raw_topic = f"{service.config.topic_prefix}/spi/{action}"
+    route = TopicRoute(raw=raw_topic, prefix=service.config.topic_prefix, topic=Topic.SPI, segments=(action,))
+    inbound = pb.CloudQueuedPublish(topic_name=raw_topic, payload=payload)
+    await handle_spi_fn(route, inbound)
 
-    cfg_bytes = pb.SpiConfig(frequency=1000000, bit_order=1, data_mode=0).SerializeToString()
-    spi_cases: tuple[tuple[str, bytes], ...] = (
-        ("begin", b""),
-        ("end", b""),
-        ("config", cfg_bytes),
-        ("transfer", b"ping"),
-    )
-    for action, payload in spi_cases:
-        raw_topic = f"test/br/spi/{action}"
-        route = TopicRoute(raw=raw_topic, prefix=config.topic_prefix, topic=Topic.SPI, segments=(action,))
-        inbound = pb.CloudQueuedPublish(topic_name=raw_topic, payload=payload)
-        await handle_spi_fn(route, inbound)
-
-    assert mock_serial.send.call_count == 4
-    service.cleanup()
+    assert mock_serial.send.called
+    assert mock_serial.send.call_args[0][0] == expected_cmd
 
 
+@pytest.mark.parametrize("action", ["bootloader", "reset", "ping", "sync", "handshake"])
 @pytest.mark.asyncio
-async def test_runtime_system_handlers(tmp_path: Path) -> None:
-    config = _make_config(tmp_path)
-    service, _state, mock_serial = _make_service(config)
+async def test_runtime_system_handlers(
+    mock_bridge_service: BridgeService,
+    mock_serial: AsyncMock,
+    action: str,
+) -> None:
+    service = mock_bridge_service
     handle_system_fn: Callable[..., Awaitable[None]] = getattr(service, "_handle_system")
+    raw_topic = f"{service.config.topic_prefix}/system/{action}"
+    route = TopicRoute(raw=raw_topic, prefix=service.config.topic_prefix, topic=Topic.SYSTEM, segments=(action,))
+    inbound = pb.CloudQueuedPublish(topic_name=raw_topic, payload=b"")
+    await handle_system_fn(route, inbound)
 
-    actions = ("bootloader", "reset", "ping", "sync", "handshake")
-    for action in actions:
-        raw_topic = f"test/br/system/{action}"
-        route = TopicRoute(raw=raw_topic, prefix=config.topic_prefix, topic=Topic.SYSTEM, segments=(action,))
-        inbound = pb.CloudQueuedPublish(topic_name=raw_topic, payload=b"")
-        await handle_system_fn(route, inbound)
-
-    assert mock_serial.send.call_count == 1
-    service.cleanup()
+    if action == "bootloader":
+        assert mock_serial.send.called
+        assert mock_serial.send.call_args[0][0] == Command.CMD_ENTER_BOOTLOADER.value
+    else:
+        assert not mock_serial.send.called
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -211,9 +235,8 @@ async def test_runtime_system_handlers(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_runtime_cloud_spool_operations(tmp_path: Path) -> None:
-    config = _make_config(tmp_path)
-    service, _state, _ = _make_service(config)
+async def test_runtime_cloud_spool_operations(mock_bridge_service: BridgeService, tmp_path: Path) -> None:
+    service = mock_bridge_service
 
     # Initialize spool
     spool_dir = tmp_path / "spool"
@@ -243,7 +266,6 @@ async def test_runtime_cloud_spool_operations(tmp_path: Path) -> None:
     spool_to_close = getattr(service, "_cloud_spool")
     if spool_to_close:
         await spool_to_close.close()
-    service.cleanup()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -252,9 +274,8 @@ async def test_runtime_cloud_spool_operations(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_runtime_supervisor_lifecycle(tmp_path: Path) -> None:
-    config = _make_config(tmp_path)
-    service, _state, _ = _make_service(config)
+async def test_runtime_supervisor_lifecycle(mock_bridge_service: BridgeService) -> None:
+    service = mock_bridge_service
 
     # 1. Normal execution
     execution_count = 0
@@ -283,13 +304,10 @@ async def test_runtime_supervisor_lifecycle(tmp_path: Path) -> None:
     with pytest.raises(asyncio.CancelledError):
         await task_coro
 
-    service.cleanup()
-
 
 @pytest.mark.asyncio
-async def test_local_bridge_grpc_service(tmp_path: Path) -> None:
-    config = _make_config(tmp_path)
-    service, _state, _ = _make_service(config)
+async def test_local_bridge_grpc_service(mock_bridge_service: BridgeService) -> None:
+    service = mock_bridge_service
     local_service = LocalBridgeService(service)
 
     # 1. Publish with response
@@ -339,13 +357,10 @@ async def test_local_bridge_grpc_service(tmp_path: Path) -> None:
     await local_service.Publish(mock_stream)
     assert mock_stream.send_message.called
 
-    service.cleanup()
-
 
 @pytest.mark.asyncio
-async def test_runtime_unsupported_mcu_request(tmp_path: Path) -> None:
-    config = _make_config(tmp_path)
-    service, _state, mock_serial = _make_service(config)
+async def test_runtime_unsupported_mcu_request(mock_bridge_service: BridgeService, mock_serial: AsyncMock) -> None:
+    service = mock_bridge_service
 
     unsupported_fn: Callable[..., Awaitable[bool]] = getattr(service, "_unsupported_mcu_request")
     res = await unsupported_fn(1, None, "unsupported_test")
@@ -358,13 +373,11 @@ async def test_runtime_unsupported_mcu_request(tmp_path: Path) -> None:
     res = await unsupported_fn(1, None, "unsupported_test")
     assert res is False
 
-    service.cleanup()
-
 
 @pytest.mark.asyncio
-async def test_runtime_on_mcu_analog_read_resp(tmp_path: Path) -> None:
-    config = _make_config(tmp_path)
-    service, state, _ = _make_service(config)
+async def test_runtime_on_mcu_analog_read_resp(mock_bridge_service: BridgeService) -> None:
+    service = mock_bridge_service
+    state = service.state
 
     state.pending_analog_reads.append(PendingPinRequest(pin=0, reply_context=None))
     resp = pb.AnalogReadResponse(value=512)
@@ -375,13 +388,11 @@ async def test_runtime_on_mcu_analog_read_resp(tmp_path: Path) -> None:
 
     assert len(state.pending_analog_reads) == 0
 
-    service.cleanup()
-
 
 @pytest.mark.asyncio
-async def test_runtime_on_mcu_process_kill(tmp_path: Path) -> None:
-    config = _make_config(tmp_path)
-    service, state, _ = _make_service(config)
+async def test_runtime_on_mcu_process_kill(mock_bridge_service: BridgeService) -> None:
+    service = mock_bridge_service
+    state = service.state
 
     mock_proc = MagicMock()
     mock_proc.pid = 1234
@@ -393,8 +404,6 @@ async def test_runtime_on_mcu_process_kill(tmp_path: Path) -> None:
     await on_proc_kill(1, kill_req)
 
     assert 1 not in state.running_processes
-
-    service.cleanup()
 
 
 @given(
@@ -431,10 +440,10 @@ def test_runtime_handle_mcu_status_payloads(
 
 
 @pytest.mark.asyncio
-async def test_runtime_enqueue_cloud_drop(tmp_path: Path) -> None:
-    config = _make_config(tmp_path)
-    config.cloud_enabled = True
-    service, state, _ = _make_service(config)
+async def test_runtime_enqueue_cloud_drop(mock_bridge_service: BridgeService) -> None:
+    service = mock_bridge_service
+    state = service.state
+    service.config.cloud_enabled = True
 
     state.cloud_queue_limit = 1
     mock_spool_locked = AsyncMock(return_value=False)
@@ -444,13 +453,10 @@ async def test_runtime_enqueue_cloud_drop(tmp_path: Path) -> None:
 
     assert state.cloud_dropped_messages > 0
 
-    service.cleanup()
-
 
 @pytest.mark.asyncio
-async def test_runtime_console_queues_distribution(tmp_path: Path) -> None:
-    config = _make_config(tmp_path)
-    service, _state, _ = _make_service(config)
+async def test_runtime_console_queues_distribution(mock_bridge_service: BridgeService) -> None:
+    service = mock_bridge_service
 
     q1: asyncio.Queue[pb.CloudQueuedPublish] = asyncio.Queue()
     service.console_queues.append(q1)
@@ -463,8 +469,6 @@ async def test_runtime_console_queues_distribution(tmp_path: Path) -> None:
     received = await q1.get()
     assert received.payload == b"console_output"
 
-    service.cleanup()
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 5. Handshake Protocol & Link Synchronization
@@ -472,9 +476,9 @@ async def test_runtime_console_queues_distribution(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_handshake_handle_capabilities_resp(tmp_path: Path) -> None:
-    config = _make_config(tmp_path)
-    service, state, _ = _make_service(config)
+async def test_handshake_handle_capabilities_resp(mock_bridge_service: BridgeService) -> None:
+    service = mock_bridge_service
+    state = service.state
     handshake = service.handshake
 
     cap_proto = pb.Capabilities(
@@ -490,8 +494,6 @@ async def test_handshake_handle_capabilities_resp(tmp_path: Path) -> None:
     assert fut.done()
     assert fut.result() == cap_proto
 
-    service.cleanup()
-
 
 @given(
     secret=st.binary(min_size=1, max_size=32),
@@ -506,9 +508,9 @@ def test_handshake_calculate_tag_deterministic_property(secret: bytes, nonce: by
 
 
 @pytest.mark.asyncio
-async def test_handshake_handle_link_sync_resp(tmp_path: Path) -> None:
-    config = _make_config(tmp_path)
-    service, state, _ = _make_service(config)
+async def test_handshake_handle_link_sync_resp(mock_bridge_service: BridgeService) -> None:
+    service = mock_bridge_service
+    state = service.state
     handshake = service.handshake
 
     # 1. Nonce mismatch
@@ -527,26 +529,21 @@ async def test_handshake_handle_link_sync_resp(tmp_path: Path) -> None:
     handshake.fsm.start_sync()
     handshake.fsm.reset_sent()
     state.link_handshake_nonce = b"expected_nonce"
-    valid_tag = handshake.calculate_handshake_tag(config.serial_shared_secret, b"expected_nonce")
+    valid_tag = handshake.calculate_handshake_tag(service.config.serial_shared_secret, b"expected_nonce")
     state.link_expected_tag = valid_tag
     good_sync = pb.LinkSync(nonce=b"expected_nonce", tag=valid_tag)
     res = await handshake.handle_link_sync_resp(1, good_sync)
     assert res is True
     assert state.is_synchronized
 
-    service.cleanup()
-
 
 @pytest.mark.asyncio
-async def test_handshake_handle_link_reset_resp(tmp_path: Path) -> None:
-    config = _make_config(tmp_path)
-    service, _state, _ = _make_service(config)
+async def test_handshake_handle_link_reset_resp(mock_bridge_service: BridgeService) -> None:
+    service = mock_bridge_service
     handshake = service.handshake
 
     res = await handshake.handle_link_reset_resp(1, b"")
     assert res is True
-
-    service.cleanup()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -643,13 +640,13 @@ def test_lmdb_deque_operations(tmp_path_factory: pytest.TempPathFactory, items: 
 
 
 @pytest.mark.asyncio
-async def test_runtime_mailbox_handlers(tmp_path: Path) -> None:
-    config = _make_config(tmp_path)
-    service, state, mock_serial = _make_service(config)
+async def test_runtime_mailbox_handlers(mock_bridge_service: BridgeService, mock_serial: AsyncMock) -> None:
+    service = mock_bridge_service
+    state = service.state
 
     # 1. Mailbox Write
     route_w = TopicRoute(
-        raw="test/br/mailbox/write", prefix=config.topic_prefix, topic=Topic.MAILBOX, segments=("write",)
+        raw="test/br/mailbox/write", prefix=service.config.topic_prefix, topic=Topic.MAILBOX, segments=("write",)
     )
     inbound_w = pb.CloudQueuedPublish(topic_name="test/br/mailbox/write", payload=b"msg1")
     handle_mb: Callable[[TopicRoute, pb.CloudQueuedPublish], Awaitable[None]] = getattr(service, "_handle_mailbox")
@@ -659,7 +656,7 @@ async def test_runtime_mailbox_handlers(tmp_path: Path) -> None:
 
     # 2. Mailbox Read (Empty)
     route_r = TopicRoute(
-        raw="test/br/mailbox/read", prefix=config.topic_prefix, topic=Topic.MAILBOX, segments=("read",)
+        raw="test/br/mailbox/read", prefix=service.config.topic_prefix, topic=Topic.MAILBOX, segments=("read",)
     )
     inbound_r = pb.CloudQueuedPublish(topic_name="test/br/mailbox/read", payload=b"")
     await handle_mb(route_r, inbound_r)
@@ -668,13 +665,11 @@ async def test_runtime_mailbox_handlers(tmp_path: Path) -> None:
     await state.mailbox_incoming_queue.append(b"incoming_data")
     await handle_mb(route_r, inbound_r)
 
-    state.cleanup()
-
 
 @pytest.mark.asyncio
-async def test_runtime_mcu_file_read_and_timeouts(tmp_path: Path) -> None:
-    config = _make_config(tmp_path)
-    service, state, mock_serial = _make_service(config)
+async def test_runtime_mcu_file_read_and_timeouts(mock_bridge_service: BridgeService, mock_serial: AsyncMock) -> None:
+    service = mock_bridge_service
+    state = service.state
 
     inbound = pb.CloudQueuedPublish(topic_name="test/br/file/read", payload=b"mcu:test.txt")
 
@@ -690,17 +685,15 @@ async def test_runtime_mcu_file_read_and_timeouts(tmp_path: Path) -> None:
     await handle_mcu_read("mcu:test.txt", inbound)
     assert getattr(service, "_pending_mcu_read") is None
 
-    state.cleanup()
-
 
 @pytest.mark.asyncio
-async def test_runtime_shell_dispatch_handlers(tmp_path: Path) -> None:
-    config = _make_config(tmp_path)
-    service, state, _ = _make_service(config)
+async def test_runtime_shell_dispatch_handlers(mock_bridge_service: BridgeService) -> None:
+    service = mock_bridge_service
+    state = service.state
 
     # 1. Shell run async
     route_run = TopicRoute(
-        raw="test/br/shell/run_async", prefix=config.topic_prefix, topic=Topic.SHELL, segments=("run_async",)
+        raw="test/br/shell/run_async", prefix=service.config.topic_prefix, topic=Topic.SHELL, segments=("run_async",)
     )
     inbound_run = pb.CloudQueuedPublish(topic_name="test/br/shell/run_async", payload=b"echo hello")
     mock_run = AsyncMock(return_value=123)
@@ -721,7 +714,7 @@ async def test_runtime_shell_dispatch_handlers(tmp_path: Path) -> None:
     state.running_processes[123] = ctx
 
     route_poll = TopicRoute(
-        raw="test/br/shell/poll/123", prefix=config.topic_prefix, topic=Topic.SHELL, segments=("poll", "123")
+        raw="test/br/shell/poll/123", prefix=service.config.topic_prefix, topic=Topic.SHELL, segments=("poll", "123")
     )
     inbound_poll = pb.CloudQueuedPublish(topic_name="test/br/shell/poll/123", payload=b"")
     mock_poll = AsyncMock(return_value=pb.ProcessPollResponse(status=Status.OK.value, exit_code=0, finished=True))
@@ -731,7 +724,7 @@ async def test_runtime_shell_dispatch_handlers(tmp_path: Path) -> None:
 
     # 4. Shell kill
     route_kill = TopicRoute(
-        raw="test/br/shell/kill/123", prefix=config.topic_prefix, topic=Topic.SHELL, segments=("kill", "123")
+        raw="test/br/shell/kill/123", prefix=service.config.topic_prefix, topic=Topic.SHELL, segments=("kill", "123")
     )
     inbound_kill = pb.CloudQueuedPublish(topic_name="test/br/shell/kill/123", payload=b"")
     mock_term = AsyncMock(return_value=0)
@@ -739,13 +732,11 @@ async def test_runtime_shell_dispatch_handlers(tmp_path: Path) -> None:
     await handle_sh_fn(route_kill, inbound_kill)
     assert mock_term.called
 
-    state.cleanup()
-
 
 @pytest.mark.asyncio
-async def test_runtime_console_flush_and_queues(tmp_path: Path) -> None:
-    config = _make_config(tmp_path)
-    service, state, mock_serial = _make_service(config)
+async def test_runtime_console_flush_and_queues(mock_bridge_service: BridgeService, mock_serial: AsyncMock) -> None:
+    service = mock_bridge_service
+    state = service.state
 
     state.connection_fsm.synchronize()
 
@@ -761,8 +752,6 @@ async def test_runtime_console_flush_and_queues(tmp_path: Path) -> None:
     await flush_console()
     assert len(state.console_to_mcu_queue) > 0
 
-    state.cleanup()
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 8. Cloud Stream Session & Corrupt Spool Flush Hardening
@@ -770,9 +759,9 @@ async def test_runtime_console_flush_and_queues(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_runtime_flush_cloud_spool_corrupt_and_errors(tmp_path: Path) -> None:
-    config = _make_config(tmp_path)
-    service, state, _ = _make_service(config)
+async def test_runtime_flush_cloud_spool_corrupt_and_errors(mock_bridge_service: BridgeService) -> None:
+    service = mock_bridge_service
+    state = service.state
 
     mock_spool = MagicMock(spec=LmdbDeque)
     mock_spool.__len__.side_effect = [2, 1, 0, 0]
@@ -785,5 +774,3 @@ async def test_runtime_flush_cloud_spool_corrupt_and_errors(tmp_path: Path) -> N
     flush_spool: Callable[[], Awaitable[None]] = getattr(service, "_flush_cloud_spool_locked")
     await flush_spool()
     assert state.cloud_spool_corrupt_dropped > 0
-
-    service.cleanup()

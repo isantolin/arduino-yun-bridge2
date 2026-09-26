@@ -7,7 +7,6 @@ from typer.testing import CliRunner
 from mcubridge.protocol import mcubridge_pb2 as pb
 from tools.audit.codebase_auditor import app, audit_proto_integrity
 
-
 runner = CliRunner()
 
 

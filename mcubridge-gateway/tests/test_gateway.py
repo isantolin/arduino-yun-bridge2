@@ -20,15 +20,23 @@ from gateway import (
     auth_interceptor,
     extract_peer_identity,
 )
+from collections.abc import Callable
 from grpclib.const import Status
 from grpclib.exceptions import GRPCError
 from grpclib.reflection.service import ServerReflection
 from hypothesis import given, settings
 from hypothesis import strategies as st
+import hypothesis.stateful as h_stateful
+from hypothesis.stateful import RuleBasedStateMachine, invariant, rule
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol.protocol import DEFAULT_CLOUD_PORT
 from pytest_mock import MockerFixture
 from typer.testing import CliRunner
+
+_RUN_STATE_MACHINE: Callable[[type[RuleBasedStateMachine]], None] = cast(
+    Callable[[type[RuleBasedStateMachine]], None],
+    getattr(h_stateful, "run_state_machine_as_test"),
+)
 
 
 @pytest.fixture
@@ -321,39 +329,52 @@ def test_gateway_main_block_simulation(mocker: MockerFixture) -> None:
         runpy.run_path(gateway_path, run_name="__main__")
 
 
+class GatewaySessionStateMachine(RuleBasedStateMachine):
+    """Formal SIL-2 property verification for GatewaySessionMachine invariants."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.fsm = GatewaySessionMachine()
+
+    @rule()
+    def authenticate(self) -> None:
+        prev = self.fsm.current_state_value
+        self.fsm.authenticate()
+        if prev == GatewaySessionState.CONNECTED.value:
+            assert self.fsm.authenticated.is_active
+            assert self.fsm.current_state_value == GatewaySessionState.AUTHENTICATED.value
+        else:
+            assert self.fsm.current_state_value == prev
+
+    @rule()
+    def activate(self) -> None:
+        prev = self.fsm.current_state_value
+        self.fsm.activate()
+        if prev in (GatewaySessionState.CONNECTED.value, GatewaySessionState.AUTHENTICATED.value):
+            assert self.fsm.active.is_active
+            assert self.fsm.current_state_value == GatewaySessionState.ACTIVE.value
+        else:
+            assert self.fsm.current_state_value == prev
+
+    @rule()
+    def close(self) -> None:
+        self.fsm.close()
+        assert self.fsm.closed.is_active
+        assert self.fsm.current_state_value == GatewaySessionState.CLOSED.value
+
+    @invariant()
+    def valid_state(self) -> None:
+        assert self.fsm.current_state_value in (
+            GatewaySessionState.CONNECTED.value,
+            GatewaySessionState.AUTHENTICATED.value,
+            GatewaySessionState.ACTIVE.value,
+            GatewaySessionState.CLOSED.value,
+        )
+
+
 def test_gateway_session_machine_lifecycle() -> None:
-    # 1. Full authenticated lifecycle: connected -> authenticated -> active -> closed
-    fsm = GatewaySessionMachine()
-    assert fsm.current_state_value == GatewaySessionState.CONNECTED.value
-    assert fsm.connected.is_active
-
-    fsm.authenticate()
-    assert fsm.current_state_value == GatewaySessionState.AUTHENTICATED.value
-    assert fsm.authenticated.is_active
-
-    fsm.activate()
-    assert fsm.current_state_value == GatewaySessionState.ACTIVE.value
-    assert fsm.active.is_active
-
-    fsm.close()
-    assert fsm.current_state_value == GatewaySessionState.CLOSED.value
-    assert fsm.closed.is_active
-
-    # Idempotent close does not raise
-    fsm.close()
-    assert fsm.current_state_value == GatewaySessionState.CLOSED.value
-
-    # 2. Direct activation lifecycle: connected -> active -> closed
-    fsm2 = GatewaySessionMachine()
-    fsm2.activate()
-    assert fsm2.current_state_value == GatewaySessionState.ACTIVE.value
-    fsm2.close()
-    assert fsm2.current_state_value == GatewaySessionState.CLOSED.value
-
-    # 3. Direct close: connected -> closed
-    fsm3 = GatewaySessionMachine()
-    fsm3.close()
-    assert fsm3.current_state_value == GatewaySessionState.CLOSED.value
+    """Execute Hypothesis RuleBasedStateMachine on GatewaySessionMachine."""
+    _RUN_STATE_MACHINE(GatewaySessionStateMachine)
 
 
 @pytest.mark.asyncio
@@ -504,28 +525,27 @@ async def test_fleet_metrics_and_telemetry_flow(cloud_service: CloudBridgeServic
     assert isinstance(gw.metrics, FleetMetrics)
     assert gw.metrics.registry.get_sample_value("mcubridge_device_connected", {"device_id": "test-yun-01"}) == 0.0
     assert gw.metrics.registry.get_sample_value("mcubridge_device_telemetry_total", {"device_id": "test-yun-01"}) == 1.0
-    assert (
-        gw.metrics.registry.get_sample_value(
-            "mcubridge_device_events_total", {"device_id": "test-yun-01", "severity": "warning"}
-        )
-        == 1.0
+    events_val = gw.metrics.registry.get_sample_value(
+        "mcubridge_device_events_total", {"device_id": "test-yun-01", "severity": "warning"}
     )
+    assert events_val == 1.0
     assert (
         gw.metrics.registry.get_sample_value("mcubridge_device_link_synchronized", {"device_id": "test-yun-01"}) == 1.0
     )
     assert (
         gw.metrics.registry.get_sample_value("mcubridge_device_cloud_queue_depth", {"device_id": "test-yun-01"}) == 4.0
     )
-    assert (
-        gw.metrics.registry.get_sample_value("mcubridge_device_spool_pending_messages", {"device_id": "test-yun-01"})
-        == 2.0
+    spool_val = gw.metrics.registry.get_sample_value(
+        "mcubridge_device_spool_pending_messages", {"device_id": "test-yun-01"}
     )
+    assert spool_val == 2.0
     assert (
         gw.metrics.registry.get_sample_value("mcubridge_device_watchdog_enabled", {"device_id": "test-yun-01"}) == 1.0
     )
 
 
 def test_tsdb_sink_formatting_and_ingestion() -> None:
+
     sink = TSDBSink(endpoint_url="http://localhost:8428/write")
     assert sink.enabled is True
 
@@ -546,7 +566,6 @@ def test_tsdb_sink_formatting_and_ingestion() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.asyncio
 async def test_tsdb_sink_async_post_mocked(mocker: MockerFixture) -> None:
     sink = TSDBSink(endpoint_url="http://localhost:8428/write")
     metrics = pb.DaemonMetrics(cloud_queue_depth=1)
@@ -562,8 +581,10 @@ async def test_tsdb_sink_async_post_mocked(mocker: MockerFixture) -> None:
     mock_resp.__exit__.return_value = False
     mock_open.return_value = mock_resp
 
+    spy_format = mocker.spy(sink, "format_line_protocol")
     await sink.ingest_telemetry("yun-node-1", envelope)
     assert mock_open.called
+    assert spy_format.call_count == 1
 
 
 @pytest.mark.asyncio
@@ -682,20 +703,20 @@ async def test_handle_telemetry_edge_paths(mock_gateway: ProtobufGateway, mocker
     mock_stream = AsyncMock()
 
     # 1. Empty metrics blob
-    init_val = (
-        mock_gateway.metrics.registry.get_sample_value("mcubridge_device_telemetry_total", {"device_id": "edge-1"})
-        or 0.0
+    raw_metric = mock_gateway.metrics.registry.get_sample_value(
+        "mcubridge_device_telemetry_total", {"device_id": "edge-1"}
     )
+    init_val = raw_metric or 0.0
     envelope_empty = pb.CloudEnvelope(
         protocol_version=2,
         device_id="edge-1",
         telemetry=pb.TelemetryReport(daemon_metrics_blob=b""),
     )
     await handle_telemetry(svc, "edge-1", mock_stream, envelope_empty)
-    assert (
-        mock_gateway.metrics.registry.get_sample_value("mcubridge_device_telemetry_total", {"device_id": "edge-1"})
-        == init_val + 1.0
+    telemetry_val1 = mock_gateway.metrics.registry.get_sample_value(
+        "mcubridge_device_telemetry_total", {"device_id": "edge-1"}
     )
+    assert telemetry_val1 == init_val + 1.0
 
     # 2. Corrupted metrics blob
     envelope_corrupt = pb.CloudEnvelope(
@@ -705,14 +726,15 @@ async def test_handle_telemetry_edge_paths(mock_gateway: ProtobufGateway, mocker
     )
     mocker.patch("urllib.request.OpenerDirector.open")
     await handle_telemetry(svc, "edge-1", mock_stream, envelope_corrupt)
-    assert (
-        mock_gateway.metrics.registry.get_sample_value("mcubridge_device_telemetry_total", {"device_id": "edge-1"})
-        == init_val + 2.0
+    telemetry_val2 = mock_gateway.metrics.registry.get_sample_value(
+        "mcubridge_device_telemetry_total", {"device_id": "edge-1"}
     )
+    assert telemetry_val2 == init_val + 2.0
 
 
 @pytest.mark.asyncio
 async def test_handle_command_response_edge_paths(mock_gateway: ProtobufGateway) -> None:
+
     # 1. Key not in pending commands (ignored safely)
     resp = pb.CommandResponse(status_code=0, payload=b"ok")
     mock_gateway.handle_command_response("dev-none", 999, resp)
@@ -871,86 +893,86 @@ def test_tsdb_sink_format_line_protocol_property(
     assert f"watchdog_enabled={1 if watchdog else 0}i" in line
 
 
+@pytest.mark.parametrize(
+    ("dispatch_msg", "connected_devs", "send_result", "expected_code", "expected_payload_substr"),
+    [
+        (None, set[str](), None, None, None),
+        (
+            pb.CommandDispatch(target_device_id="", command_path="rpc/DigitalWrite"),
+            set[str](),
+            None,
+            400,
+            b"Explicit target_device_id is required",
+        ),
+        (
+            pb.CommandDispatch(target_device_id="dev-unknown", command_path="rpc/DigitalWrite"),
+            set[str](),
+            None,
+            503,
+            b"is not connected",
+        ),
+        (
+            pb.CommandDispatch(
+                target_device_id="dev-1",
+                command_path="rpc/DigitalWrite",
+                payload=pb.DigitalWrite(pin=13, value=1).SerializeToString(),
+            ),
+            {"dev-1"},
+            pb.CommandResponse(status_code=200, payload=pb.GenericResponse(status="ok").SerializeToString()),
+            200,
+            None,
+        ),
+        (
+            pb.CommandDispatch(
+                target_device_id="dev-1",
+                command_path="rpc/AnalogWrite",
+                payload=pb.AnalogWrite(pin=5, value=128).SerializeToString(),
+            ),
+            {"dev-1"},
+            pb.CommandResponse(status_code=200, payload=pb.GenericResponse(status="ok").SerializeToString()),
+            200,
+            None,
+        ),
+        (
+            pb.CommandDispatch(target_device_id="dev-1", command_path="rpc/DigitalWrite", timeout_seconds=2),
+            {"dev-1"},
+            TimeoutError("Device response timeout"),
+            504,
+            b"Device response timeout",
+        ),
+    ],
+)
 @pytest.mark.asyncio
-async def test_dispatch_command_branches(mock_gateway: ProtobufGateway) -> None:
+async def test_dispatch_command_branches(
+    mock_gateway: ProtobufGateway,
+    dispatch_msg: pb.CommandDispatch | None,
+    connected_devs: set[str],
+    send_result: pb.CommandResponse | Exception | None,
+    expected_code: int | None,
+    expected_payload_substr: bytes | None,
+) -> None:
     svc = CloudBridgeService(mock_gateway)
-
-    # 1. request is None -> returns early
-    stream_none = AsyncMock()
-    stream_none.recv_message = AsyncMock(return_value=None)
-    await svc.DispatchCommand(stream_none)
-    stream_none.send_message.assert_not_called()
-
-    # 2. missing target_id -> status 400
     mock_gateway.connections.clear()
-    stream_no_id = AsyncMock()
-    stream_no_id.recv_message = AsyncMock(
-        return_value=pb.CommandDispatch(target_device_id="", command_path="rpc/DigitalWrite")
-    )
-    await svc.DispatchCommand(stream_no_id)
-    stream_no_id.send_message.assert_called_once()
-    resp_400 = stream_no_id.send_message.call_args[0][0]
-    assert resp_400.status_code == 400
-    assert b"Explicit target_device_id is required" in resp_400.payload
+    for dev in connected_devs:
+        mock_gateway.connections[dev] = AsyncMock()
 
-    # 2b. target_id not connected -> status 503
-    stream_not_conn = AsyncMock()
-    stream_not_conn.recv_message = AsyncMock(
-        return_value=pb.CommandDispatch(target_device_id="dev-unknown", command_path="rpc/DigitalWrite")
-    )
-    await svc.DispatchCommand(stream_not_conn)
-    resp_503 = stream_not_conn.send_message.call_args[0][0]
-    assert resp_503.status_code == 503
-    assert b"is not connected" in resp_503.payload
+    if isinstance(send_result, Exception):
+        setattr(mock_gateway, "send_command", AsyncMock(side_effect=send_result))
+    elif send_result is not None:
+        setattr(mock_gateway, "send_command", AsyncMock(return_value=send_result))
 
-    # 3. canonical rpc/ path -> forwards command and response directly
-    dummy_conn = AsyncMock()
-    mock_gateway.connections["dev-1"] = dummy_conn
-    stream_target = AsyncMock()
-    rpc_payload_dw = pb.DigitalWrite(pin=13, value=1).SerializeToString()
-    stream_target.recv_message = AsyncMock(
-        return_value=pb.CommandDispatch(
-            target_device_id="dev-1", command_path="rpc/DigitalWrite", payload=rpc_payload_dw
-        )
-    )
-    expected_response = pb.CommandResponse(
-        status_code=200,
-        payload=pb.GenericResponse(status="ok").SerializeToString(),
-    )
-    mock_send = AsyncMock(return_value=expected_response)
-    setattr(mock_gateway, "send_command", mock_send)
-    await svc.DispatchCommand(stream_target)
-    mock_send.assert_awaited_once_with("dev-1", "rpc/DigitalWrite", payload=rpc_payload_dw, timeout_seconds=10.0)
-    resp_200 = stream_target.send_message.call_args[0][0]
-    assert resp_200.status_code == 200
-    assert resp_200.payload == expected_response.payload
+    stream = AsyncMock()
+    stream.recv_message = AsyncMock(return_value=dispatch_msg)
+    await svc.DispatchCommand(stream)
 
-    # 3b. canonical rpc/AnalogWrite path -> forwards directly
-    stream_rpc = AsyncMock()
-    rpc_payload = pb.AnalogWrite(pin=5, value=128).SerializeToString()
-    stream_rpc.recv_message = AsyncMock(
-        return_value=pb.CommandDispatch(target_device_id="dev-1", command_path="rpc/AnalogWrite", payload=rpc_payload)
-    )
-    mock_send_rpc = AsyncMock(
-        return_value=pb.CommandResponse(status_code=200, payload=pb.GenericResponse(status="ok").SerializeToString())
-    )
-    setattr(mock_gateway, "send_command", mock_send_rpc)
-    await svc.DispatchCommand(stream_rpc)
-    mock_send_rpc.assert_awaited_once_with("dev-1", "rpc/AnalogWrite", payload=rpc_payload, timeout_seconds=10.0)
-    resp_rpc = stream_rpc.send_message.call_args[0][0]
-    assert resp_rpc.status_code == 200
-
-    # 4. send_command raises KeyError / TimeoutError / OSError -> status 504
-    stream_err = AsyncMock()
-    stream_err.recv_message = AsyncMock(
-        return_value=pb.CommandDispatch(target_device_id="dev-1", command_path="rpc/DigitalWrite", timeout_seconds=2)
-    )
-    mock_send_err = AsyncMock(side_effect=TimeoutError("Device response timeout"))
-    setattr(mock_gateway, "send_command", mock_send_err)
-    await svc.DispatchCommand(stream_err)
-    resp_504 = stream_err.send_message.call_args[0][0]
-    assert resp_504.status_code == 504
-    assert b"Device response timeout" in resp_504.payload
+    if expected_code is None:
+        stream.send_message.assert_not_called()
+    else:
+        stream.send_message.assert_called_once()
+        resp = stream.send_message.call_args[0][0]
+        assert resp.status_code == expected_code
+        if expected_payload_substr is not None:
+            assert expected_payload_substr in resp.payload
 
 
 @pytest.mark.asyncio

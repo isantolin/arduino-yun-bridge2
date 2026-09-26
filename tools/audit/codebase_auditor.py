@@ -5,8 +5,10 @@ from __future__ import annotations
 
 import ast
 import re
+import subprocess
 import sys
 from pathlib import Path
+
 
 import typer
 
@@ -39,48 +41,49 @@ def _audit_ast_exceptions(node: ast.AST, py_file_name: str) -> list[str]:
     return findings
 
 
+def _is_time_sleep(func: ast.AST) -> bool:
+    return isinstance(func, ast.Attribute) and getattr(func.value, "id", None) == "time" and func.attr == "sleep"
+
+
+def _is_threading_thread(func: ast.AST) -> bool:
+    return isinstance(func, ast.Attribute) and getattr(func.value, "id", None) == "threading" and func.attr == "Thread"
+
+
+def _is_thread_join(func: ast.AST) -> bool:
+    val_id = str(getattr(getattr(func, "value", None), "id", ""))
+    return isinstance(func, ast.Attribute) and func.attr == "join" and "thread" in val_id.lower()
+
+
 def _audit_ast_async_blocking(node: ast.AST, py_file_name: str) -> list[str]:
     """Audit async functions for blocking synchronous primitives and un-offloaded I/O."""
     findings: list[str] = []
     if isinstance(node, ast.AsyncFunctionDef):
         for subnode in ast.walk(node):
             if isinstance(subnode, ast.Call):
+                func = subnode.func
                 # Detect time.sleep() inside async function
-                if (
-                    isinstance(subnode.func, ast.Attribute)
-                    and isinstance(subnode.func.value, ast.Name)
-                    and subnode.func.value.id == "time"
-                    and subnode.func.attr == "sleep"
-                ):
+                if _is_time_sleep(func):
                     findings.append(
                         f"Blocking Call in Async: {py_file_name}:{subnode.lineno} - "
                         f"'time.sleep()' inside async def {node.name}"
                     )
                 # Detect threading.Thread() inside async function
-                elif (
-                    isinstance(subnode.func, ast.Attribute)
-                    and isinstance(subnode.func.value, ast.Name)
-                    and subnode.func.value.id == "threading"
-                    and subnode.func.attr == "Thread"
-                ):
+                elif _is_threading_thread(func):
                     findings.append(
                         f"Blocking Thread in Async: {py_file_name}:{subnode.lineno} - "
                         f"'threading.Thread()' inside async def {node.name}"
                     )
                 # Detect thread.join() inside async function
-                elif (
-                    isinstance(subnode.func, ast.Attribute)
-                    and subnode.func.attr == "join"
-                    and isinstance(subnode.func.value, ast.Name)
-                    and "thread" in subnode.func.value.id.lower()
-                ):
+                elif _is_thread_join(func):
+                    val_id = getattr(getattr(func, "value", None), "id", "thread")
                     findings.append(
                         f"Blocking Thread Join in Async: {py_file_name}:{subnode.lineno} - "
-                        f"'{subnode.func.value.id}.join()' inside async def {node.name}"
+                        f"'{val_id}.join()' inside async def {node.name}"
                     )
                 # Detect direct call to _vacuum_lmdb_env() without anyio.to_thread.run_sync
                 elif isinstance(subnode.func, ast.Name) and subnode.func.id == "_vacuum_lmdb_env":
                     findings.append(
+
                         f"Blocking Compaction in Async: {py_file_name}:{subnode.lineno} - "
                         f"direct call to '_vacuum_lmdb_env()' inside async def {node.name}; "
                         f"must be offloaded via anyio.to_thread.run_sync"
@@ -139,10 +142,13 @@ def audit_python_files() -> list[str]:
                         findings.append(f"Python Suppression: {py_file.name}:{i} - {desc}: '{clean_line}'")
                 if passthrough_pattern.search(line):
                     findings.append(f"Python Passthrough Shim: {py_file.name}:{i} - '{clean_line}'")
+                if len(line) > 120:
+                    findings.append(f"Python E501 Line Too Long: {py_file.name}:{i} - {len(line)} > 120 chars")
     return findings
 
 
 def audit_cpp_files() -> list[str]:
+
     """Audit C++ source files for manual loops, non-template wrappers, and suppressions."""
     findings: list[str] = []
     print("Auditing C++ files...")
@@ -234,6 +240,37 @@ def audit_proto_integrity(proto_path: Path | None = None) -> list[str]:
     return findings
 
 
+def audit_linters() -> list[str]:
+    """Audit codebase with flake8 and ruff to detect any linter or E501 errors."""
+    findings: list[str] = []
+    print("Auditing linters (flake8 & ruff)...")
+
+    # 1. Flake8
+    res_flake = subprocess.run(["flake8"], cwd=ROOT, capture_output=True, text=True, check=False)
+    if res_flake.returncode != 0:
+        for line in res_flake.stdout.splitlines():
+            line_str = line.strip()
+            if line_str:
+                findings.append(f"Flake8 Violation: {line_str}")
+
+    # 2. Ruff
+    res_ruff = subprocess.run(
+        ["ruff", "check", "mcubridge", "mcubridge-client-examples", "mcubridge-gateway", "tools"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    if res_ruff.returncode != 0:
+        for line in res_ruff.stdout.splitlines():
+            line_str = line.strip()
+            if line_str and not line_str.startswith("Found "):
+                findings.append(f"Ruff Violation: {line_str}")
+
+    return findings
+
+
 app = typer.Typer(help="Audit codebase for SIL-2/MIL-SPEC violations and shims.", add_completion=False)
 
 
@@ -244,10 +281,12 @@ def main() -> None:
     cpp_findings = audit_cpp_files()
     cfg_findings = audit_config_suppressions()
     proto_findings = audit_proto_integrity()
+    linter_findings = audit_linters()
 
-    all_findings = py_findings + cpp_findings + cfg_findings + proto_findings
+    all_findings = py_findings + cpp_findings + cfg_findings + proto_findings + linter_findings
 
     print("\n--- RESULTS ---")
+
     if not all_findings:
         print("No violations or shims found! The codebase is 100% clean and compliant.")
     else:

@@ -51,15 +51,29 @@ class BridgeRuntimeFacade(Protocol):
     state: RuntimeState
     local_bridge_service: Any
 
-    async def handle_request(self, inbound: Any) -> None: ...
-    async def run_process(self, command: str) -> int: ...
-    async def kill_process(self, pid: int) -> tuple[bool, str | None]: ...
-    async def poll_process(self, pid: int) -> pb.ProcessPollResponse: ...
-    async def reset_link(self) -> bool: ...
-    async def write_digital_pin(self, pin: int, value: int) -> bool: ...
-    async def write_analog_pin(self, pin: int, value: int) -> bool: ...
+    async def handle_request(self, inbound: Any) -> None:
+        ...
+
+    async def run_process(self, command: str) -> int:
+        ...
+
+    async def kill_process(self, pid: int) -> tuple[bool, str | None]:
+        ...
+
+    async def poll_process(self, pid: int) -> pb.ProcessPollResponse:
+        ...
+
+    async def reset_link(self) -> bool:
+        ...
+
+    async def write_digital_pin(self, pin: int, value: int) -> bool:
+        ...
+
+    async def write_analog_pin(self, pin: int, value: int) -> bool:
+        ...
 
     clock_sync: Any
+
     gpio: Any
 
 
@@ -168,9 +182,12 @@ class UbusService:
         methods = {
             name: {
                 "method": _make_handler(getattr(self, f"ubus_handle_{name}")),
-                "signature": {arg: _get_ubus_type(typ) for arg, typ in args}
-                | {"ubus_rpc_session": _get_ubus_type("STRING")},
+                "signature": {
+                    **{arg: _get_ubus_type(typ) for arg, typ in args},
+                    "ubus_rpc_session": _get_ubus_type("STRING"),
+                },
             }
+
             for name, args in _UBUS_METHOD_SIGS
         }
 
@@ -209,9 +226,7 @@ class UbusService:
         data["capabilities"] = (
             MessageToDict(caps, always_print_fields_with_no_presence=True, preserving_proto_field_name=True)
             if isinstance(caps, pb.Capabilities)
-            else {k: bool(v) for k, v in caps.items()}
-            if isinstance(caps, dict)
-            else {}
+            else {k: bool(v) for k, v in caps.items()} if isinstance(caps, dict) else {}
         )
         data["clock_status"] = {
             "offset_us": state.clock_offset_us,

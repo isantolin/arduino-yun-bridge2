@@ -11,11 +11,8 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.services.runtime import BridgeService, LocalBridgeService
-from mcubridge.state.context import RuntimeState
-from mcubridge.transport.serial import SerialTransport
 from pytest_mock import MockerFixture
 
 # Ensure "uci" mock exists before importing pin_rest_cgi
@@ -86,97 +83,56 @@ def test_pin_rest_cgi_application(mocker: MockerFixture) -> None:
 
 
 @pytest.mark.asyncio
-async def test_local_bridge_service_ipc() -> None:
-    import os
-    import time
+async def test_local_bridge_service_ipc(mock_bridge_service: BridgeService) -> None:
+    svc = mock_bridge_service
+    local_svc = LocalBridgeService(svc)
 
-    from mcubridge.state.context import create_runtime_state
+    # Test Publish with no stream message
+    mock_stream = AsyncMock()
+    mock_stream.recv_message.return_value = None
+    await local_svc.Publish(mock_stream)
+    mock_stream.send_message.assert_not_called()
 
-    fs_root = f".tmp_tests/mcubridge-test-fs-{os.getpid()}-{time.time_ns()}"
-    spool_dir = f".tmp_tests/mcubridge-test-spool-{os.getpid()}-{time.time_ns()}"
-    config = RuntimeConfig(
-        allowed_commands=("echo", "ls"),
-        serial_shared_secret=b"testshared",
-        file_system_root=fs_root,
-        cloud_spool_dir=spool_dir,
-        allow_non_tmp_paths=True,
-    )
-    state = create_runtime_state(config)
-    try:
-        mock_serial = AsyncMock(spec=SerialTransport)
-        svc = BridgeService(config, state, mock_serial)
-        local_svc = LocalBridgeService(svc)
+    # Test Publish with message & correlation
+    req_msg = pb.CloudQueuedPublish(topic_name="br/d/13/read", correlation_data=b"123456789012")
+    mock_stream.recv_message.return_value = req_msg
+    setattr(svc, "handle_request", AsyncMock())
 
-        # Test Publish with no stream message
-        mock_stream = AsyncMock()
-        mock_stream.recv_message.return_value = None
-        await local_svc.Publish(mock_stream)
-        mock_stream.send_message.assert_not_called()
+    async def _respond() -> None:
+        await asyncio.sleep(0.01)
+        if b"123456789012" in svc.ipc_requests:
+            q = svc.ipc_requests[b"123456789012"]
+            await q.put(pb.CloudQueuedPublish(topic_name="br/d/13/read/res", payload=b"1"))
 
-        # Test Publish with message & correlation
-        req_msg = pb.CloudQueuedPublish(topic_name="br/d/13/read", correlation_data=b"123456789012")
-        mock_stream.recv_message.return_value = req_msg
-
-        setattr(svc, "handle_request", AsyncMock())
-
-        async def _respond():
-            await asyncio.sleep(0.01)
-            if b"123456789012" in svc.ipc_requests:
-                q = svc.ipc_requests[b"123456789012"]
-                await q.put(pb.CloudQueuedPublish(topic_name="br/d/13/read/res", payload=b"1"))
-
-        asyncio.create_task(_respond())
-        await local_svc.Publish(mock_stream)
-        mock_stream.send_message.assert_awaited()
-    finally:
-        state.cleanup()
+    asyncio.create_task(_respond())
+    await local_svc.Publish(mock_stream)
+    mock_stream.send_message.assert_awaited()
 
 
 @pytest.mark.asyncio
-async def test_local_bridge_service_subscribe_console() -> None:
-    import os
-    import time
+async def test_local_bridge_service_subscribe_console(mock_bridge_service: BridgeService) -> None:
+    svc = mock_bridge_service
+    local_svc = LocalBridgeService(svc)
 
-    from mcubridge.state.context import create_runtime_state
+    mock_stream = AsyncMock()
+    mock_stream.recv_message.return_value = pb.SubscribeRequest()
+    mock_stream.send_message.side_effect = OSError("Connection reset")
 
-    fs_root = f".tmp_tests/mcubridge-test-fs-{os.getpid()}-{time.time_ns()}"
-    spool_dir = f".tmp_tests/mcubridge-test-spool-{os.getpid()}-{time.time_ns()}"
-    config = RuntimeConfig(
-        allowed_commands=("echo", "ls"),
-        serial_shared_secret=b"testshared",
-        file_system_root=fs_root,
-        cloud_spool_dir=spool_dir,
-        allow_non_tmp_paths=True,
-    )
-    state = create_runtime_state(config)
-    try:
-        mock_serial = AsyncMock(spec=SerialTransport)
-        svc = BridgeService(config, state, mock_serial)
-        local_svc = LocalBridgeService(svc)
+    q_msg = pb.CloudQueuedPublish(topic_name="br/console/out", payload=b"hello console")
 
-        mock_stream = AsyncMock()
-        mock_stream.recv_message.return_value = pb.SubscribeRequest()
-        mock_stream.send_message.side_effect = OSError("Connection reset")
+    async def _push() -> None:
+        await asyncio.sleep(0.01)
+        if svc.console_queues:
+            await svc.console_queues[0].put(q_msg)
 
-        q_msg = pb.CloudQueuedPublish(topic_name="br/console/out", payload=b"hello console")
-
-        async def _push():
-            await asyncio.sleep(0.01)
-            if svc.console_queues:
-                await svc.console_queues[0].put(q_msg)
-
-        asyncio.create_task(_push())
-        with pytest.raises(OSError):
-            await local_svc.SubscribeConsole(mock_stream)
-    finally:
-        state.cleanup()
+    asyncio.create_task(_push())
+    with pytest.raises(OSError):
+        await local_svc.SubscribeConsole(mock_stream)
 
 
 @pytest.mark.asyncio
-async def test_process_poll_stream_timeout(runtime_config: RuntimeConfig, runtime_state: RuntimeState) -> None:
-    mock_serial = AsyncMock(spec=SerialTransport)
-    svc = BridgeService(runtime_config, runtime_state, mock_serial)
-
+async def test_process_poll_stream_timeout(mock_bridge_service: BridgeService) -> None:
+    svc = mock_bridge_service
     mock_proc = MagicMock()
     mock_proc.pid = 8888
     mock_proc.returncode = None
@@ -192,7 +148,7 @@ async def test_process_poll_stream_timeout(runtime_config: RuntimeConfig, runtim
     ctx.exit_code = 0
     ctx.io_lock = asyncio.Lock()
 
-    runtime_state.running_processes[8888] = ctx
+    svc.state.running_processes[8888] = ctx
 
     res = await svc.poll_process(8888)
     assert res.finished is False
@@ -200,12 +156,9 @@ async def test_process_poll_stream_timeout(runtime_config: RuntimeConfig, runtim
 
 
 @pytest.mark.asyncio
-async def test_connect_cloud_session(
-    runtime_config: RuntimeConfig, runtime_state: RuntimeState, mocker: MockerFixture
-) -> None:
-    mock_serial = AsyncMock(spec=SerialTransport)
-    runtime_config.cloud_http3_enabled = True
-    svc = BridgeService(runtime_config, runtime_state, mock_serial)
+async def test_connect_cloud_session(mock_bridge_service: BridgeService, mocker: MockerFixture) -> None:
+    svc = mock_bridge_service
+    svc.config.cloud_http3_enabled = True
 
     envelope_pong = MagicMock()
     envelope_pong.WhichOneof.return_value = "pong"
@@ -243,7 +196,7 @@ async def test_connect_cloud_session(
     mock_stub_cls.return_value = mock_stub
 
     await svc.connect_cloud_session(None)
-    assert runtime_state.connected_via_http3 is True
+    assert svc.state.connected_via_http3 is True
     mock_stream.send_message.assert_awaited_once()
     resp = mock_stream.send_message.call_args[0][0]
     assert resp.sequence_id == 1234

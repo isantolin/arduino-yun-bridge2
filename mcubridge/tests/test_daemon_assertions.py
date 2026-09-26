@@ -70,7 +70,9 @@ async def test_daemon_run_orchestrates_tasks(service_stack: tuple[BridgeService,
     assert service.run_cloud.called
 
 
-def test_main_strict_mode_when_default_secret(tmp_path: Path, mocker: MockerFixture) -> None:
+def test_main_strict_mode_when_default_secret(
+    tmp_path: Path, mocker: MockerFixture, mock_daemon_env: dict[str, Any]
+) -> None:
     # Test that the daemon disables MQTT when the default secret is used
     mock_config = RuntimeConfig(
         serial_shared_secret=b"failsafe_secret_mode",
@@ -79,10 +81,8 @@ def test_main_strict_mode_when_default_secret(tmp_path: Path, mocker: MockerFixt
         allow_non_tmp_paths=True,
     )
 
-    mocker.patch("mcubridge.daemon.load_runtime_config", return_value=mock_config)
-    mocker.patch("mcubridge.daemon.verify_crypto_integrity", return_value=True)
+    mock_daemon_env["load_config"].return_value = mock_config
     mock_service_class = mocker.patch("mcubridge.daemon.BridgeService")
-    mocker.patch("asyncio.Runner")
 
     app([])
 
@@ -91,14 +91,13 @@ def test_main_strict_mode_when_default_secret(tmp_path: Path, mocker: MockerFixt
     assert used_config.cloud_enabled is False
 
 
-def test_main_aborts_on_crypto_failure(tmp_path: Path, mocker: MockerFixture) -> None:
+def test_main_aborts_on_crypto_failure(tmp_path: Path, mock_daemon_env: dict[str, Any]) -> None:
     mock_config = RuntimeConfig(
         file_system_root=str(tmp_path),
         allow_non_tmp_paths=True,
     )
-    mocker.patch("mcubridge.daemon.load_runtime_config", return_value=mock_config)
-    mocker.patch("mcubridge.daemon.verify_crypto_integrity", return_value=False)
-    mocker.patch("asyncio.Runner")
+    mock_daemon_env["load_config"].return_value = mock_config
+    mock_daemon_env["verify_crypto"].return_value = False
 
     with pytest.raises(SystemExit) as exc:
         app([])

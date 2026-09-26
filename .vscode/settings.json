@@ -7,6 +7,14 @@
   "python.testing.pytestArgs": [
     "."
   ],
+  "flake8.args": [
+    "--max-line-length=120",
+    "--extend-select=E501"
+  ],
+  "ruff.lint.args": [
+    "--extend-select=E501"
+  ],
+
   "C_Cpp.default.includePath": [
     "${workspaceFolder}/mcubridge-library-arduino/src",
     "${workspaceFolder}/mcubridge-library-arduino/tests",

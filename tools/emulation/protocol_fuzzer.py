@@ -28,8 +28,8 @@ from mcubridge.protocol.frame import build_frame
 cli = typer.Typer(help="[MIL-SPEC/SIL-2] McuBridge Protocol Stateful Fuzzer", add_completion=False)
 logger = structlog.get_logger("protocol_fuzzer")
 
-_RUN_STATE_MACHINE: Callable[..., None] = cast(
-    Callable[..., None],
+_RUN_STATE_MACHINE: Callable[[type[RuleBasedStateMachine]], None] = cast(
+    Callable[[type[RuleBasedStateMachine]], None],
     getattr(h_stateful, "run_state_machine_as_test"),
 )
 
@@ -49,7 +49,7 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
         self.seq_id: int = 0
         self.frames_sent: int = 0
         self.probe_responses_received: int = 0
-        self.loop = asyncio.new_event_loop()
+        self.loop: asyncio.AbstractEventLoop = asyncio.new_event_loop()
         self.reader: asyncio.StreamReader | None = None
         self.writer: asyncio.StreamWriter | None = None
         self.loop.run_until_complete(self._connect())
@@ -95,6 +95,7 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
         self,
         command_id: int,
         payload: bytes,
+        *,
         version: int = protocol.PROTOCOL_VERSION,
         override_crc: int | None = None,
     ) -> bytes:
@@ -131,8 +132,9 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
 
     @rule(
         cmd=st.integers(min_value=1, max_value=0x7FFF),
-        bad_version=st.integers(min_value=0, max_value=protocol.UINT8_MASK).filter(
-            lambda v: v != protocol.PROTOCOL_VERSION
+        bad_version=st.one_of(
+            st.integers(min_value=0, max_value=protocol.PROTOCOL_VERSION - 1),
+            st.integers(min_value=protocol.PROTOCOL_VERSION + 1, max_value=protocol.UINT8_MASK),
         ),
         payload=st.binary(min_size=0, max_size=64),
     )
@@ -232,18 +234,15 @@ def main(
         suppress_health_check=[HealthCheck.too_slow, HealthCheck.filter_too_much],
     )
 
-    test_case_cls = getattr(ProtocolFuzzerStateMachine, "TestCase", None)
-    if test_case_cls is not None:
-        setattr(test_case_cls, "settings", state_settings)
+    def _execute() -> None:
+        _RUN_STATE_MACHINE(ProtocolFuzzerStateMachine)
 
-    runner: Callable[..., None] = (
-        cast(Callable[..., None], hyp_seed(seed)(_RUN_STATE_MACHINE))
-        if seed is not None
-        else _RUN_STATE_MACHINE
-    )
+    test_fn: Callable[[], None] = state_settings(_execute)
+    if seed is not None:
+        test_fn = hyp_seed(seed)(test_fn)
 
     try:
-        runner(ProtocolFuzzerStateMachine, settings=state_settings)
+        test_fn()
         logger.info("fuzzing_complete", steps=count)
     except KeyboardInterrupt:
         logger.info("fuzzing_interrupted_by_user")

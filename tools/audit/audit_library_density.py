@@ -6,6 +6,7 @@ sketch synchronization loops. [SIL-2 / MIL-SPEC]
 """
 
 from __future__ import annotations
+from tools.audit.codebase_auditor import audit_semgrep
 
 import re
 import sys
@@ -17,10 +18,6 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-try:
-    from tools.audit.codebase_auditor import audit_semgrep
-except ImportError:
-    from codebase_auditor import audit_semgrep
 
 app = typer.Typer(
     help="Audit library density and architectural invariants across Arduino C++ and Python codebase.",

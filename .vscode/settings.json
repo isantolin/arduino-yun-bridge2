@@ -111,12 +111,18 @@
   },
   "yaml.schemas": {
     "https://json.schemastore.org/github-action.json": [
-      "action.yml",
-      "action.yaml",
+      "/.github/actions/**/action.yml",
+      "/.github/actions/**/action.yaml",
+      ".github/actions/**/action.yml",
+      ".github/actions/**/action.yaml",
       "**/.github/actions/**/action.yml",
-      "**/.github/actions/**/action.yaml"
+      "**/.github/actions/**/action.yaml",
+      "action.yml",
+      "action.yaml"
     ],
     "https://json.schemastore.org/github-workflow.json": [
+      "/.github/workflows/*.yml",
+      "/.github/workflows/*.yaml",
       "**/.github/workflows/*.yml",
       "**/.github/workflows/*.yaml"
     ]

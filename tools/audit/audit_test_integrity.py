@@ -114,11 +114,15 @@ def audit_cpp_tests() -> list[str]:
     for cpp_path in sorted(test_dir.glob("*.cpp")):
         if cpp_path.name in ignored:
             continue
-        lines = cpp_path.read_text(encoding="utf-8").splitlines()
-        current_func, brace_depth, func_lines = None, 0, []
+        lines: list[str] = cpp_path.read_text(encoding="utf-8").splitlines()
+        current_func: str | None = None
+        brace_depth: int = 0
+        func_lines: list[str] = []
         for i, line in enumerate(lines, 1):
             if line.strip().startswith("void test_") and "(" in line:
-                current_func, brace_depth, func_lines = line.strip().split("(")[0].replace("void ", "").strip(), 0, []
+                current_func = line.strip().split("(")[0].replace("void ", "").strip()
+                brace_depth = 0
+                func_lines = []
             if current_func:
                 func_lines.append(line)
                 brace_depth += line.count("{") - line.count("}")

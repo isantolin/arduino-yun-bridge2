@@ -13,7 +13,7 @@ from collections.abc import Callable
 from typing import Annotated, cast
 
 from cobs import cobsr
-from hypothesis import HealthCheck, event, settings, strategies as st
+from hypothesis import HealthCheck, event, seed as hyp_seed, settings, strategies as st
 import hypothesis.stateful as h_stateful
 from hypothesis.stateful import RuleBasedStateMachine, invariant, rule
 import serialx
@@ -23,6 +23,7 @@ import typer
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol import protocol
 from mcubridge.protocol.frame import build_frame
+from mcubridge.protocol.protocol import Command
 
 app = typer.Typer(help="[MIL-SPEC/SIL-2] McuBridge Protocol Stateful Fuzzer")
 logger = structlog.get_logger("protocol_fuzzer")
@@ -48,32 +49,26 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
         self.seq_id: int = 0
         self.frames_sent: int = 0
         self.probe_responses_received: int = 0
-        self.loop: asyncio.AbstractEventLoop = asyncio.new_event_loop()
+        self.loop = asyncio.new_event_loop()
         self.reader: asyncio.StreamReader | None = None
         self.writer: asyncio.StreamWriter | None = None
         self.loop.run_until_complete(self._connect())
 
     async def _connect(self) -> None:
-        reader_obj, writer_obj = await serialx.open_serial_connection(url=self.port, baudrate=self.baudrate)
-        assert isinstance(reader_obj, asyncio.StreamReader)
-        assert isinstance(writer_obj, asyncio.StreamWriter)
-        self.reader = reader_obj
-        self.writer = writer_obj
+        self.reader, self.writer = await serialx.open_serial_connection(url=self.port, baudrate=self.baudrate)
         logger.info("connected", port=self.port, baudrate=self.baudrate)
 
     async def _send_raw(self, data: bytes) -> None:
-        writer = self.writer
-        if writer is not None:
-            writer.write(data)
-            await writer.drain()
+        if self.writer is not None:
+            self.writer.write(data)
+            await self.writer.drain()
             self.frames_sent += 1
 
     async def _close(self) -> None:
-        writer = self.writer
-        if writer is not None:
-            writer.close()
+        if self.writer is not None:
+            self.writer.close()
             try:
-                await writer.wait_closed()
+                await self.writer.wait_closed()
             except (OSError, TimeoutError) as exc:
                 logger.warning("writer_close_warning", error=str(exc))
             self.writer = None
@@ -116,7 +111,7 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
     def fuzz_valid_ping(self, payload: bytes) -> None:
         """Generate valid version probe frames with arbitrary valid payloads."""
         seq = self._next_seq_id()
-        frame = self._build_raw_frame(protocol.Command.CMD_GET_VERSION.value, seq, payload)
+        frame = self._build_raw_frame(Command.CMD_GET_VERSION.value, seq, payload)
         self.loop.run_until_complete(self._send_raw(frame))
         event("rule_valid_ping")
 
@@ -133,8 +128,9 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
 
     @rule(
         cmd=st.integers(min_value=1, max_value=0x7FFF),
-        bad_version=st.integers(min_value=0, max_value=protocol.UINT8_MASK).filter(
-            lambda v: v != protocol.PROTOCOL_VERSION
+        bad_version=st.one_of(
+            st.integers(min_value=0, max_value=protocol.PROTOCOL_VERSION - 1),
+            st.integers(min_value=protocol.PROTOCOL_VERSION + 1, max_value=protocol.UINT8_MASK),
         ),
         payload=st.binary(min_size=0, max_size=64),
     )
@@ -181,21 +177,19 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
     @rule()
     def verify_endpoint_responsiveness(self) -> None:
         """Send a valid probe frame to verify MCU endpoint remains responsive."""
-        reader = self.reader
-        if reader is None:
-            return
-
         seq = self._next_seq_id()
-        probe = self._build_raw_frame(protocol.Command.CMD_GET_VERSION.value, seq, b"PROBE")
+        probe = self._build_raw_frame(Command.CMD_GET_VERSION.value, seq, b"PROBE")
         self.loop.run_until_complete(self._send_raw(probe))
 
-        async def _read_probe_response(r: asyncio.StreamReader) -> bytes | None:
+        async def _read_probe() -> bytes | None:
+            if self.reader is None:
+                return None
             try:
-                return await asyncio.wait_for(r.readuntil(protocol.FRAME_DELIMITER), timeout=0.1)
+                return await asyncio.wait_for(self.reader.readuntil(protocol.FRAME_DELIMITER), timeout=0.1)
             except (TimeoutError, asyncio.IncompleteReadError, OSError):
                 return None
 
-        resp = self.loop.run_until_complete(_read_probe_response(reader))
+        resp = self.loop.run_until_complete(_read_probe())
         if resp is not None:
             self.probe_responses_received += 1
         event("rule_probe_verify")
@@ -206,6 +200,10 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
         assert 0 <= self.seq_id <= protocol.UINT16_MAX
         assert self.frames_sent >= 0
         assert self.writer is not None, "Serial writer disconnected unexpectedly"
+
+
+class ConfiguredFuzzerMachine(ProtocolFuzzerStateMachine):
+    """Configured state machine target for CLI execution."""
 
 
 @app.command()
@@ -220,9 +218,6 @@ def main(
         raise typer.BadParameter("Count must be greater than 0")
 
     logger.info("starting_fuzzer_state_machine", port=port, baudrate=baud, steps=count, seed=seed)
-
-    class ConfiguredFuzzerMachine(ProtocolFuzzerStateMachine):
-        pass
 
     ConfiguredFuzzerMachine.port = port
     ConfiguredFuzzerMachine.baudrate = baud
@@ -243,8 +238,6 @@ def main(
         state_settings(_RUN_STATE_MACHINE),
     )
     if seed is not None:
-        from hypothesis import seed as hyp_seed
-
         runner = cast(
             Callable[[type[RuleBasedStateMachine]], None],
             hyp_seed(seed)(runner),

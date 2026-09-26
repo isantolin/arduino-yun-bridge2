@@ -55,8 +55,10 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
 
     async def _connect(self) -> None:
         reader_obj, writer_obj = await serialx.open_serial_connection(url=self.port, baudrate=self.baudrate)
-        self.reader = cast(asyncio.StreamReader, reader_obj)
-        self.writer = cast(asyncio.StreamWriter, writer_obj)
+        assert isinstance(reader_obj, asyncio.StreamReader)
+        assert isinstance(writer_obj, asyncio.StreamWriter)
+        self.reader = reader_obj
+        self.writer = writer_obj
         logger.info("connected", port=self.port, baudrate=self.baudrate)
 
     async def _send_raw(self, data: bytes) -> None:
@@ -236,18 +238,20 @@ def main(
         suppress_health_check=[HealthCheck.too_slow, HealthCheck.filter_too_much],
     )
 
-    runner: Callable[[type[RuleBasedStateMachine]], None] = _RUN_STATE_MACHINE
+    runner: Callable[[type[RuleBasedStateMachine]], None] = cast(
+        Callable[[type[RuleBasedStateMachine]], None],
+        state_settings(_RUN_STATE_MACHINE),
+    )
     if seed is not None:
         from hypothesis import seed as hyp_seed
 
         runner = cast(
             Callable[[type[RuleBasedStateMachine]], None],
-            hyp_seed(seed)(_RUN_STATE_MACHINE),
+            hyp_seed(seed)(runner),
         )
 
     try:
-        with state_settings:
-            runner(ConfiguredFuzzerMachine)
+        runner(ConfiguredFuzzerMachine)
         logger.info("fuzzing_complete", steps=count)
     except KeyboardInterrupt:
         logger.info("fuzzing_interrupted_by_user")

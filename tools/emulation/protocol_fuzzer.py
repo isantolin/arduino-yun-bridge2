@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """[MIL-SPEC/SIL-2] McuBridge Protocol Stateful Fuzzer.
 
 Executes deterministic, property-based stateful fuzzing of serial framing, COBS/R encoding,
@@ -28,8 +29,8 @@ from mcubridge.protocol.protocol import Command
 app = typer.Typer(help="[MIL-SPEC/SIL-2] McuBridge Protocol Stateful Fuzzer")
 logger = structlog.get_logger("protocol_fuzzer")
 
-_RUN_STATE_MACHINE: Callable[[type[RuleBasedStateMachine]], None] = cast(
-    Callable[[type[RuleBasedStateMachine]], None],
+_RUN_STATE_MACHINE: Callable[..., None] = cast(
+    Callable[..., None],
     getattr(h_stateful, "run_state_machine_as_test"),
 )
 
@@ -237,15 +238,12 @@ def main(
         suppress_health_check=[HealthCheck.too_slow, HealthCheck.filter_too_much],
     )
 
-    def _execute_fuzzing() -> None:
-        _RUN_STATE_MACHINE(ConfiguredFuzzerMachine)
-
-    fuzz_test: Callable[[], None] = cast(Callable[[], None], state_settings(_execute_fuzzing))
+    runner: Callable[..., None] = _RUN_STATE_MACHINE
     if seed is not None:
-        fuzz_test = cast(Callable[[], None], hyp_seed(seed)(fuzz_test))
+        runner = cast(Callable[..., None], hyp_seed(seed)(runner))
 
     try:
-        fuzz_test()
+        runner(ConfiguredFuzzerMachine, settings=state_settings)
         logger.info("fuzzing_complete", steps=count)
     except KeyboardInterrupt:
         logger.info("fuzzing_interrupted_by_user")

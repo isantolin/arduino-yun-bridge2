@@ -245,7 +245,7 @@ async def test_handshake_attempt_link_sync_timeout(
     ],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    manager, state, _, _config, _timing, _ack = handshake_setup
+    manager, _state, _, _config, _timing, _ack = handshake_setup
     monkeypatch.setattr(manager, "_wait_for_link_sync_confirmation", AsyncMock(return_value=False))
     mock_fail = AsyncMock()
     monkeypatch.setattr(manager, "handle_handshake_failure", mock_fail)
@@ -409,5 +409,47 @@ async def test_handshake_fsm_state_override_and_unexpected_resp(
     assert mock_fail.called
 
     publish_event: Callable[..., Awaitable[None]] = getattr(hs, "_publish_handshake_event")
-    monkeypatch.setattr("mcubridge.services.handshake.get_topic_for_message", lambda *a, **k: "")
+
+    def mock_get_topic(*_a: Any, **_k: Any) -> str:
+        return ""
+
+    monkeypatch.setattr("mcubridge.services.handshake.get_topic_for_message", mock_get_topic)
     await publish_event("test_event", reason="test_err")
+    assert getattr(hs, "_enqueue_cloud").await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_handshake_rate_limit_and_sync_fault_branches(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from mcubridge.services.handshake import RateLimiter
+
+    hs = SerialHandshakeManager(
+        config=runtime_config,
+        state=runtime_state,
+        serial_timing=pb.HandshakeConfig(),
+        send_frame=AsyncMock(return_value=True),
+        enqueue_cloud=AsyncMock(),
+        acknowledge_frame=AsyncMock(),
+    )
+
+    # 1. check_rate_limit when now >= limit_until (line 121)
+    allowed, remaining = RateLimiter.check_rate_limit(10.0, 5.0)
+    assert allowed is True
+    assert remaining == 0.0
+
+    # 2. _synchronize_attempt() when confirmed is False and current_state == HandshakeState.FAULT (line 328)
+    monkeypatch.setattr(hs, "_wait_for_link_sync_confirmation", AsyncMock(return_value=False))
+    set_fsm_state: Callable[[HandshakeState], None] = getattr(hs, "_set_fsm_state")
+    set_fsm_state(HandshakeState.FAULT)
+    sync_fn: Callable[[], Awaitable[bool]] = getattr(hs, "_synchronize_attempt")
+    res_fault = await sync_fn()
+    assert res_fault is False
+
+    # 3. _synchronize_attempt() when pending_nonce != nonce (line 332->334)
+    set_fsm_state(HandshakeState.UNSYNCHRONIZED)
+    runtime_state.link_handshake_nonce = b"different_nonce_1234"
+    res_mismatch = await sync_fn()
+    assert res_mismatch is False

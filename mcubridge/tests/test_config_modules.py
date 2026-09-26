@@ -312,3 +312,33 @@ def test_uci_edge_branches(mocker: MockerFixture) -> None:
     mocker.patch("builtins.__import__", side_effect=mock_import)
     result = common.get_uci_config()
     assert result == common.get_default_config()
+
+
+def test_config_settings_and_logging_branches(runtime_config: settings.RuntimeConfig, mocker: MockerFixture) -> None:
+    from pathlib import Path
+    from mcubridge.config.logging import configure_logging
+    from mcubridge.protocol import mcubridge_pb2 as pb
+
+    # 1. _runtime_config_factory with pb_msg
+    existing_msg = pb.RuntimeConfig(serial_port="/dev/test_factory")
+    factory_fn = getattr(settings, "_runtime_config_factory")
+    res_factory = factory_fn(pb_msg=existing_msg)
+    assert res_factory.serial_port == "/dev/test_factory"
+
+    # 2. load_runtime_config_from_json with dict and serial_shared_secret
+    cfg_json = settings.load_runtime_config_from_json(
+        {"serial_port": "/dev/ttyS0", "serial_shared_secret": b"secret_bytes_123"}
+    )
+    assert cfg_json.serial_shared_secret == b"secret_bytes_123"
+
+    # 3. load_runtime_config_from_json with overrides containing secret
+    cfg_overrides = settings.load_runtime_config_from_json(
+        {"serial_port": "/dev/ttyS0"},
+        overrides={"serial_shared_secret": b"overridden_secret"},
+    )
+    assert cfg_overrides.serial_shared_secret == b"overridden_secret"
+
+    # 4. configure_logging when SysLogHandler fails with OSError triggers fallback StreamHandler (lines 88-89)
+    mocker.patch.object(Path, "exists", return_value=True)
+    mocker.patch("mcubridge.config.logging.SysLogHandler", side_effect=OSError("syslog unavailable"))
+    configure_logging(runtime_config, console=False)

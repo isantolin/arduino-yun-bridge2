@@ -304,6 +304,30 @@ async def test_on_mcu_file_read_resp_completes_future(svc: tuple[BridgeService, 
 
 
 @pytest.mark.asyncio
+async def test_on_mcu_file_read_resp_future_already_done(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
+    service, _state, _ = svc
+    fut: asyncio.Future[bytes] = asyncio.Future()
+    fut.set_result(b"prior")
+    pending = _PendingMcuRead(future=fut, chunks=[b"chunk1"])
+    setattr(service, "_pending_mcu_read", pending)
+    p = pb.FileReadResponse(content=b"")  # EOF
+    on_read_resp: Callable[..., Awaitable[bool]] = getattr(service, "_on_mcu_file_read_resp")
+    res = await on_read_resp(1, p)
+    assert res is True
+    assert fut.result() == b"prior"
+
+
+@pytest.mark.asyncio
+async def test_on_mcu_datastore_put_cache_none(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
+    service, state, _ = svc
+    state.datastore_cache = None
+    on_put: Callable[..., Awaitable[bool]] = getattr(service, "_on_mcu_datastore_put")
+    p = pb.DatastorePut(key="mode", value=b"auto")
+    res = await on_put(1, p)
+    assert res is True
+
+
+@pytest.mark.asyncio
 async def test_on_mcu_ack_valid(svc: tuple[BridgeService, RuntimeState, AsyncMock], mocker: MockerFixture) -> None:
     service, _state, _serial = svc
     p = pb.AckPacket(command_id=0x01)

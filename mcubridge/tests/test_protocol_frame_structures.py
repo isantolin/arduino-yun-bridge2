@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import ssl
+from pathlib import Path
+from unittest.mock import MagicMock
+
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
@@ -10,6 +14,7 @@ from mcubridge.protocol import structures
 
 
 def test_topic_route_properties() -> None:
+
     route = structures.TopicRoute(
         raw="prefix/file/read",
         prefix="prefix",
@@ -269,6 +274,20 @@ def test_tls_session_ticket_uncovered_branches() -> None:
     structures.save_tls_session_ticket(disk_cache, "host", 443, b"ticket")
     assert structures.load_tls_session_ticket(disk_cache, "host", 443) is None
 
+    valid_disk_cache = MagicMock()
+    valid_disk_cache.is_mem = False
+    valid_disk_cache.env = MagicMock()
+    valid_disk_cache.db = MagicMock()
+    mock_txn = MagicMock()
+    mock_txn.get.return_value = b"ticket-from-disk"
+    valid_disk_cache.env.begin.return_value.__enter__.return_value = mock_txn
+    structures.save_tls_session_ticket(valid_disk_cache, "host", 443, b"ticket-from-disk")
+    mock_txn.put.assert_called_once_with(b"tls_ticket:host:443", b"ticket-from-disk")
+    assert structures.load_tls_session_ticket(valid_disk_cache, "host", 443) == b"ticket-from-disk"
+
+    mock_txn.get.return_value = None
+    assert structures.load_tls_session_ticket(valid_disk_cache, "host", 443) is None
+
 
 def test_protocol_frame_validation_error_paths() -> None:
     import struct
@@ -292,3 +311,38 @@ def test_protocol_frame_validation_error_paths() -> None:
     bad_ver_frame = body + struct.pack("<I", crc32(body) & protocol.CRC32_MASK)
     with pytest.raises(ValueError, match="Unsupported protocol version"):
         frame.parse_frame(bad_ver_frame)
+
+
+def test_protocol_frame_and_structures_edge_branches(tmp_path: Path) -> None:
+    from mcubridge.protocol import frame, protocol
+
+    # 1. frame.build_frame with encrypted payload exceeding MAX_PAYLOAD_SIZE (line 87)
+    with pytest.raises(ValueError, match="exceeds maximum"):
+        frame.build_frame(
+            command_id=1,
+            sequence_id=1,
+            payload=b"X" * (protocol.MAX_PAYLOAD_SIZE + 1),
+            session_key=b"k" * 32,
+        )
+
+    # 2. frame.build_frame with unencrypted protobuf message not in PAYLOAD_FIELD_MAP (line 98->105)
+    unmapped_msg = pb.DatastorePut(key="mykey", value=b"myval")
+    raw_frame = frame.build_frame(command_id=1, sequence_id=1, payload=unmapped_msg)
+    assert len(raw_frame) > 0
+
+    # 3. structures._build_cached_ssl_context with valid cafile (line 179)
+    ca_file = tmp_path / "test_ca.crt"
+    ca_file.write_text("dummy ca content")
+    build_ctx = getattr(structures, "_build_cached_ssl_context")
+    with pytest.raises(ssl.SSLError):
+        # ssl.create_default_context with dummy ca will raise SSLError but covers line 179
+        build_ctx(str(ca_file), "", "", False)
+
+    # 4. structures.save_tls_session_ticket on cache without _mem (line 213->215)
+    mock_env_cache = MagicMock()
+    delattr(mock_env_cache, "_mem")
+    structures.save_tls_session_ticket(mock_env_cache, "host1", 443, b"ticket")
+    assert mock_env_cache.env.begin.called
+
+    # 5. structures.load_tls_session_ticket on cache without _mem or env (line 240)
+    assert structures.load_tls_session_ticket(object(), "host2", 443) is None

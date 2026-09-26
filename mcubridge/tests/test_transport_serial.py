@@ -9,8 +9,9 @@ from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol import protocol
 from mcubridge.protocol.frame import build_frame
-from mcubridge.protocol.protocol import Command
+from mcubridge.protocol.protocol import Command, Status
 from mcubridge.protocol.structures import PendingCommand
+
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.transport.serial import SerialHandshakeFatal, SerialTransport
@@ -383,6 +384,16 @@ def test_serial_safe_after_configure_branches(mocker: MockerFixture) -> None:
     _safe_after_configure(mock_self)
     assert mock_self._fileno == 42
 
+    mocker.patch("mcubridge.transport.serial._orig_after_configure", None)
+    mock_tcset = mocker.patch("termios.tcsetattr")
+    cc_list: list[int] = [0] * 32
+    attrs: list[Any] = [0, 0, 0, 0, 0, 0, cc_list]
+    mocker.patch("termios.tcgetattr", return_value=attrs)
+    _safe_after_configure(mock_self)
+    mock_tcset.assert_called_once()
+    assert cc_list[termios.VMIN] == 1
+    assert cc_list[termios.VTIME] == 0
+
 
 @pytest.mark.asyncio
 async def test_serial_read_loop_branches(runtime_config: RuntimeConfig, runtime_state: RuntimeState) -> None:
@@ -429,9 +440,59 @@ async def test_serial_correlate_frame_already_resolved(
 ) -> None:
     transport = SerialTransport(runtime_config, runtime_state, AsyncMock())
     cmd = PendingCommand(command_id=Command.CMD_DIGITAL_WRITE.value)
-    cmd.success = True
+    cmd.mark_success(b"original")
     setattr(transport, "_current", cmd)
 
     correlate: Callable[[int, bytes], None] = getattr(transport, "_correlate_frame")
-    correlate(protocol.Status.ACK.value, b"")
-    assert cmd.success is True
+    correlate(protocol.Status.ACK.value, b"new_data")
+    assert cmd.response_payload == b"original"
+
+
+@pytest.mark.asyncio
+async def test_serial_transport_edge_branches(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+    mocker: MockerFixture,
+) -> None:
+    transport = SerialTransport(runtime_config, runtime_state, AsyncMock())
+
+    # 1. _correlate_frame with empty ACK payload (line 368->381)
+    pending = PendingCommand(
+        command_id=Command.CMD_DIGITAL_WRITE.value,
+        expected_resp_ids=[Status.ACK.value],
+    )
+    setattr(transport, "_current", pending)
+    correlate: Callable[[int, bytes], None] = getattr(transport, "_correlate_frame")
+    correlate(Status.ACK.value, b"")
+    assert pending.ack_received is True
+
+    # 2. send() when serial is None (line 434)
+    transport.serial = None
+    res = await transport.send(Command.CMD_DIGITAL_WRITE.value, b"payload")
+    assert res is False
+
+    # 3. send_raw when serial_tx_allowed is clear and wait times out (lines 493-497)
+    mock_serial = AsyncMock()
+    mock_serial.is_open = True
+    transport.serial = mock_serial
+    runtime_state.serial_tx_allowed.clear()
+    mocker.patch("mcubridge.transport.serial.FLOW_CONTROL_WAIT_TIMEOUT_SECONDS", 0.01)
+    res_raw = await transport.send_raw(Command.CMD_DIGITAL_WRITE.value, b"raw_test")
+    assert res_raw is True
+    runtime_state.serial_tx_allowed.set()
+
+    # 4. _negotiate_baudrate when send_raw fails vs succeeds (lines 543 & 546)
+    negotiate: Callable[[int], Awaitable[bool]] = getattr(transport, "_negotiate_baudrate")
+    mocker.patch.object(transport, "send_raw", AsyncMock(return_value=False))
+    res_neg_fail = await negotiate(115200)
+    assert res_neg_fail is False
+
+    async def _mock_send_raw_and_resolve(*_a: Any, **_k: Any) -> bool:
+        fut = getattr(transport, "_negotiation_future")
+        if fut and not fut.done():
+            fut.set_result(True)
+        return True
+
+    mocker.patch.object(transport, "send_raw", side_effect=_mock_send_raw_and_resolve)
+    res_neg_ok = await negotiate(115200)
+    assert res_neg_ok is True

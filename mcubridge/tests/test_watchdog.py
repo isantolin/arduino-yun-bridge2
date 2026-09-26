@@ -96,3 +96,44 @@ def test_watchdog_uncovered_branch_hardening(runtime_state: RuntimeState) -> Non
 
     wd2 = WatchdogKeepalive(interval=10.0, state=None)
     wd2.kick()
+
+
+def test_watchdog_state_transitions_and_edge_branches(runtime_state: RuntimeState) -> None:
+    wd = WatchdogKeepalive(interval=1.0, state=runtime_state)
+    # 1. recover when not degraded (line 119 -> exit)
+    assert wd.fsm.initializing.is_active
+    wd.recover()
+    assert not wd.fsm.degraded.is_active
+
+    # 2. degrade from initializing to degraded
+    wd.degrade("reason 1")
+    assert wd.fsm.degraded.is_active
+    # degrade when already degraded (line 113 -> exit)
+    wd.degrade("reason 2")
+    assert wd.fsm.degraded.is_active
+
+    # 3. recover from degraded back to healthy
+    wd.recover()
+    assert wd.fsm.healthy.is_active
+
+    # 4. trip_inhibit
+    wd.trip_inhibit("critical fault")
+    assert wd.fsm.critical_inhibit.is_active
+    # trip_inhibit when already in critical_inhibit (line 107 -> exit)
+    wd.trip_inhibit("second fault")
+    assert wd.fsm.critical_inhibit.is_active
+
+    # 5. kick when not healthy (line 125 -> exit)
+    assert not wd.is_healthy()
+    beats_before = runtime_state.watchdog_beats
+    wd.kick()
+    assert runtime_state.watchdog_beats == beats_before
+
+    # 6. run when already in shutdown state (line 151 -> exit)
+    wd.fsm.stop()
+    assert wd.fsm.shutdown.is_active
+
+    async def _run_shutdown() -> None:
+        await wd.run()
+
+    asyncio.run(_run_shutdown())

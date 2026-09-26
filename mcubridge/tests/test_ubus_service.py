@@ -694,7 +694,7 @@ def test_ubus_run_coro_sync_threadsafe(mock_runtime: MockRuntimeFacade, mocker: 
 
     mock_fut = MagicMock()
     mock_fut.result.return_value = {"status": "ok"}
-    mocker.patch.object(asyncio, "run_coroutine_threadsafe", return_value=mock_fut)
+    mock_run_ts = mocker.patch.object(asyncio, "run_coroutine_threadsafe", return_value=mock_fut)
 
     async def _sample() -> dict[str, str]:
         return {"status": "ok"}
@@ -703,6 +703,6 @@ def test_ubus_run_coro_sync_threadsafe(mock_runtime: MockRuntimeFacade, mocker: 
     try:
         res = service.run_sync(coro)
         assert res == {"status": "ok"}
-        asyncio.run_coroutine_threadsafe.assert_called_once_with(coro, mock_loop)
+        mock_run_ts.assert_called_once_with(coro, mock_loop)
     finally:
         coro.close()

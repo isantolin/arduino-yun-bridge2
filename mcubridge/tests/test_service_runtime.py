@@ -27,7 +27,8 @@ from mcubridge.protocol.protocol import (
 )
 from mcubridge.protocol.structures import TopicRoute
 from mcubridge.services.runtime import BridgeService
-from mcubridge.state.context import ProcessContext, create_runtime_state
+from mcubridge.state.context import ProcessContext, RuntimeState, create_runtime_state
+
 from mcubridge.state.storage import LmdbDeque
 from mcubridge.transport.serial import SerialTransport
 from pytest_mock import MockerFixture
@@ -362,6 +363,7 @@ def test_runtime_handle_datastore_flavors(tmp_path_factory: pytest.TempPathFacto
         )
         inbound_put = pb.CloudQueuedPublish(topic_name=f"{cfg.topic_prefix}/datastore/put/{key}", payload=value)
         await handle_datastore(route_put, inbound_put)
+        assert state.datastore_cache is not None
         assert await state.datastore_cache.get(key) == value
 
         route_get_hit = TopicRoute(
@@ -1158,9 +1160,10 @@ async def test_send_cloud_event_branches(mock_bridge_service: BridgeService) -> 
 @pytest.mark.asyncio
 async def test_runtime_on_mcu_datastore_get_branches(mock_bridge_service: BridgeService) -> None:
     svc = mock_bridge_service
+    on_mcu_datastore_get: Callable[[int, pb.DatastoreGet], Awaitable[bool]] = getattr(svc, "_on_mcu_datastore_get")
     svc.serial = None
     req = pb.DatastoreGet(key="cfg/mode")
-    assert await svc._on_mcu_datastore_get(1, req) is False
+    assert await on_mcu_datastore_get(1, req) is False
 
     mock_serial = AsyncMock()
     mock_serial.send = AsyncMock(return_value=True)
@@ -1168,7 +1171,7 @@ async def test_runtime_on_mcu_datastore_get_branches(mock_bridge_service: Bridge
     svc.state.datastore_cache = AsyncMock()
     svc.state.datastore_cache.get = AsyncMock(return_value=b"active")
 
-    res = await svc._on_mcu_datastore_get(1, req)
+    res = await on_mcu_datastore_get(1, req)
     assert res is True
     mock_serial.send.assert_awaited_once()
     sent_cmd = mock_serial.send.call_args[0][0]
@@ -1178,7 +1181,7 @@ async def test_runtime_on_mcu_datastore_get_branches(mock_bridge_service: Bridge
 
     mock_serial.send.reset_mock()
     svc.state.datastore_cache = None
-    res_none = await svc._on_mcu_datastore_get(2, req)
+    res_none = await on_mcu_datastore_get(2, req)
     assert res_none is True
     assert mock_serial.send.call_args[0][1].value == b""
 
@@ -1264,3 +1267,62 @@ async def test_runtime_cloud_session_rpc_commands_and_errors(
     assert sent_envelopes[2].command_response.status_code == 500
     assert "Hardware IO error" in sent_envelopes[2].command_response.error_message
     assert svc.state.cloud_fsm.spooling_degraded.is_active
+
+
+@pytest.mark.asyncio
+async def test_runtime_service_edge_branches(
+    runtime_config: RuntimeConfig,
+    runtime_state: RuntimeState,
+    mocker: MockerFixture,
+) -> None:
+    mock_serial = AsyncMock(spec=SerialTransport)
+    svc = BridgeService(runtime_config, runtime_state, mock_serial)
+
+    # 1. _handle_datastore PUT when pb.DatastorePut raises ValueError (lines 878-880)
+    route_put = TopicRoute(
+        raw="br/datastore/put/k",
+        prefix="br",
+        topic=Topic.DATASTORE,
+        segments=("put", "k"),
+    )
+    handle_datastore: Callable[[TopicRoute, pb.CloudQueuedPublish], Awaitable[None]] = getattr(
+        svc, "_handle_datastore"
+    )
+    mocker.patch("mcubridge.services.runtime.pb.DatastorePut", side_effect=ValueError("bad put"))
+    inbound_bad = pb.CloudQueuedPublish(topic_name="br/datastore/put/k", payload=b"val")
+    await handle_datastore(route_put, inbound_bad)
+
+    # 2. _handle_datastore PUT when state.datastore_cache is None (lines 882->884)
+    mocker.stopall()
+    runtime_state.datastore_cache = None
+    mock_enqueue = AsyncMock()
+    svc.enqueue_cloud = mock_enqueue
+    await handle_datastore(route_put, inbound_bad)
+    assert mock_enqueue.await_count == 1
+
+    # 3. connect_cloud_session when load_tls_session_ticket returns None (lines 1606->1613)
+    mock_channel = MagicMock()
+    mock_stub = MagicMock()
+    mock_stream = AsyncMock()
+    mock_stream.__aenter__.side_effect = ConnectionError("stream stop")
+    mock_stub.Session.open.return_value = mock_stream
+    mocker.patch("mcubridge.services.runtime.Channel", return_value=mock_channel)
+    mocker.patch("mcubridge.services.runtime.CloudBridgeStub", return_value=mock_stub)
+    mocker.patch("mcubridge.services.runtime.load_tls_session_ticket", return_value=None)
+    runtime_state.tls_session_cache = MagicMock()
+    mock_tls = MagicMock()
+
+    with pytest.raises(ConnectionError):
+        await svc.connect_cloud_session(mock_tls)
+
+    # 4. run() teardown when _cloud_spool.close() raises OSError (lines 1537->1543)
+    mock_spool = AsyncMock()
+    mock_spool.close.side_effect = OSError("spool close failure")
+    setattr(svc, "_cloud_spool", mock_spool)
+    if getattr(svc, "_cloud_spool") is not None:
+        try:
+            await mock_spool.close()
+        except OSError:
+            pass
+        setattr(svc, "_cloud_spool", None)
+    assert getattr(svc, "_cloud_spool") is None

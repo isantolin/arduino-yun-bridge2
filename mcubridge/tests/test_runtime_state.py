@@ -288,3 +288,49 @@ def test_context_clean_queue_empty_and_proc_lookup_error(runtime_state: RuntimeS
 
     runtime_state.cleanup()
     assert len(runtime_state.running_processes) == 0
+
+
+def test_context_edge_branches_and_properties(runtime_state: RuntimeState, mocker: MockerFixture) -> None:
+    import psutil
+    from mcubridge.state.context import terminate_pid_tree
+
+    # 1. terminate_pid_tree with process disappearing (lines 59-61)
+    mocker.patch("psutil.pid_exists", return_value=True)
+    mocker.patch("psutil.Process", side_effect=psutil.NoSuchProcess(pid=99999999))
+    terminate_pid_tree(99999999)
+
+    # 2. properties: allowed_commands, mailbox_queue_depth, mailbox_incoming_queue_depth (lines 547, 550, 553)
+
+    assert isinstance(runtime_state.allowed_commands, tuple)
+    assert runtime_state.mailbox_queue_depth() >= 0
+    assert runtime_state.mailbox_incoming_queue_depth() >= 0
+
+    # 3. _get_storage_subdir when non_tmp path not allowed (line 557->564)
+    runtime_state.allow_non_tmp_paths = False
+    runtime_state.file_system_root = "/non_tmp_custom_root"
+    assert getattr(runtime_state, "_get_storage_subdir")("datastore") is None
+
+    # 4. configure with non_tmp path not allowed covers (lines 593->598, 604->612, 618-619)
+    runtime_state.configure()
+    assert runtime_state.datastore_cache is None
+    assert runtime_state.tls_session_cache is not None
+
+    # 5. configure when LmdbCache raises OSError on datastore and tls_sessions (lines 607-609, 615-617)
+    runtime_state.allow_non_tmp_paths = True
+    runtime_state.file_system_root = "/tmp/mcubridge_test_fs"
+
+    def mock_cache_factory(path: str, *args: Any, **kwargs: Any) -> Any:
+        if path != ":memory:":
+            raise OSError("LMDB init failed")
+        return MagicMock()
+
+    mocker.patch("mcubridge.state.context.LmdbCache", side_effect=mock_cache_factory)
+    runtime_state.configure()
+    assert runtime_state.datastore_cache is None
+    assert runtime_state.tls_session_cache is not None
+
+    # 6. build_status_snapshot when daemon telemetry raises NoSuchProcess (lines 723-724)
+
+    mocker.patch("psutil.Process", side_effect=psutil.NoSuchProcess(pid=1234))
+    snap = runtime_state.build_status_snapshot()
+    assert snap.system is not None

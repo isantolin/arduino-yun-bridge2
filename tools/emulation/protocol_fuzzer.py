@@ -10,8 +10,7 @@ from __future__ import annotations
 
 import asyncio
 from binascii import crc32
-from collections.abc import Callable
-from typing import Annotated, cast
+from typing import Annotated, Protocol, cast
 
 from cobs import cobsr
 from hypothesis import HealthCheck, event, seed as hyp_seed, settings, strategies as st
@@ -29,8 +28,18 @@ from mcubridge.protocol.protocol import Command
 app = typer.Typer(help="[MIL-SPEC/SIL-2] McuBridge Protocol Stateful Fuzzer")
 logger = structlog.get_logger("protocol_fuzzer")
 
-_RUN_STATE_MACHINE: Callable[..., None] = cast(
-    Callable[..., None],
+
+class _StateMachineRunner(Protocol):
+    def __call__(
+        self,
+        state_machine_factory: type[RuleBasedStateMachine],
+        *,
+        settings: settings | None = None,
+    ) -> None: ...
+
+
+_RUN_STATE_MACHINE: _StateMachineRunner = cast(
+    _StateMachineRunner,
     getattr(h_stateful, "run_state_machine_as_test"),
 )
 
@@ -50,7 +59,7 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
         self.seq_id: int = 0
         self.frames_sent: int = 0
         self.probe_responses_received: int = 0
-        self.loop = asyncio.new_event_loop()
+        self.loop: asyncio.AbstractEventLoop = asyncio.new_event_loop()
         self.reader: asyncio.StreamReader | None = None
         self.writer: asyncio.StreamWriter | None = None
         self.loop.run_until_complete(self._connect())
@@ -177,24 +186,22 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
         self.loop.run_until_complete(self._send_raw(frame))
         event("rule_unknown_command")
 
+    async def _read_probe(self) -> bytes | None:
+        reader = self.reader
+        if reader is None:
+            return None
+        try:
+            return await asyncio.wait_for(reader.readuntil(protocol.FRAME_DELIMITER), timeout=0.1)
+        except (TimeoutError, asyncio.IncompleteReadError, OSError):
+            return None
+
     @rule()
     def verify_endpoint_responsiveness(self) -> None:
         """Send a valid probe frame to verify MCU endpoint remains responsive."""
-        reader = self.reader
-        if reader is None:
-            return
-
         seq = self._next_seq_id()
         probe = self._build_raw_frame(Command.CMD_GET_VERSION.value, seq, b"PROBE")
         self.loop.run_until_complete(self._send_raw(probe))
-
-        async def _read_probe(r: asyncio.StreamReader) -> bytes | None:
-            try:
-                return await asyncio.wait_for(r.readuntil(protocol.FRAME_DELIMITER), timeout=0.1)
-            except (TimeoutError, asyncio.IncompleteReadError, OSError):
-                return None
-
-        resp = self.loop.run_until_complete(_read_probe(reader))
+        resp = self.loop.run_until_complete(self._read_probe())
         if resp is not None:
             self.probe_responses_received += 1
         event("rule_probe_verify")
@@ -238,9 +245,9 @@ def main(
         suppress_health_check=[HealthCheck.too_slow, HealthCheck.filter_too_much],
     )
 
-    runner: Callable[..., None] = _RUN_STATE_MACHINE
+    runner: _StateMachineRunner = _RUN_STATE_MACHINE
     if seed is not None:
-        runner = cast(Callable[..., None], hyp_seed(seed)(runner))
+        runner = cast(_StateMachineRunner, hyp_seed(seed)(runner))
 
     try:
         runner(ConfiguredFuzzerMachine, settings=state_settings)

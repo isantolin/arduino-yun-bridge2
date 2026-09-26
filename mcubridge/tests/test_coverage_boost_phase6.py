@@ -2287,3 +2287,102 @@ async def test_handshake_sync_fault_race_and_nonce_mismatch(
     assert res3 is False
 
     service.cleanup()
+
+
+# 12. Targeted Pure Branch Coverage Hardening (>= 95%)
+
+
+def test_pure_branch_coverage_settings_factory_and_overrides() -> None:
+    """Test pb_msg passthrough and secret override branch in settings."""
+    import mcubridge.config.settings as settings
+
+    # 1. pb_msg branch (line 74)
+    msg = pb.RuntimeConfig(cloud_host="explicit_msg")
+    factory: Any = getattr(settings, "_runtime_config_factory")
+    res = factory(pb_msg=msg)
+    assert res is msg
+    assert res.cloud_host == "explicit_msg"
+
+    # 2. overrides secret branch (line 223)
+    loaded = settings.load_runtime_config_from_json(
+        data={"cloud_host": "loaded_host"},
+        overrides={"serial_shared_secret": "my-secret-key"},
+    )
+    assert loaded.serial_shared_secret == b"my-secret-key"
+    assert loaded.cloud_host == "loaded_host"
+
+
+def test_pure_branch_coverage_frame_encrypted_overflow() -> None:
+    """Test payload length validation in build_frame when encryption is enabled."""
+    from mcubridge.protocol import protocol
+    from mcubridge.protocol.frame import build_frame
+
+    oversized = b"X" * (protocol.MAX_PAYLOAD_SIZE + 1)
+    with pytest.raises(ValueError, match="exceeds maximum"):
+        build_frame(
+            command_id=1,
+            sequence_id=1,
+            payload=oversized,
+            session_key=b"k" * 32,
+        )
+
+
+def test_pure_branch_coverage_env_uci_branches(mocker: MockerFixture) -> None:
+    """Test read_uci_general branches when module or get_uci_config is missing."""
+    import mcubridge_client.env as env_mod
+
+    mocker.patch.object(env_mod, "is_openwrt", return_value=True)
+
+    # Branch 1: spec is None (line 36)
+    mocker.patch("importlib.util.find_spec", return_value=None)
+    assert env_mod.read_uci_general() == {}
+
+    # Branch 2: get_uci_config is not callable (line 41)
+    mock_mod = MagicMock()
+    mock_mod.get_uci_config = None
+    mocker.patch("importlib.util.find_spec", return_value=MagicMock())
+    mocker.patch("importlib.import_module", return_value=mock_mod)
+    assert env_mod.read_uci_general() == {}
+
+
+def test_pure_branch_coverage_structures_save_tls_ticket_no_env() -> None:
+    """Test save_tls_session_ticket when cache has neither _mem nor env/db."""
+    from mcubridge.protocol.structures import load_tls_session_ticket, save_tls_session_ticket
+
+    dummy_cache = object()
+    save_tls_session_ticket(dummy_cache, "example.com", 443, b"ticket_data")
+    assert load_tls_session_ticket(dummy_cache, "example.com", 443) is None
+
+
+def test_pure_branch_coverage_common_uci_import_error(mocker: MockerFixture) -> None:
+    """Test get_uci_config fallback when uci cannot be imported."""
+    import builtins
+    from mcubridge.config.common import get_default_config, get_uci_config
+
+    orig_import = builtins.__import__
+
+    def mock_import(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name == "uci":
+            raise ImportError("Mocked missing uci")
+        return orig_import(name, *args, **kwargs)
+
+    mocker.patch("builtins.__import__", side_effect=mock_import)
+    result = get_uci_config()
+    assert result == get_default_config()
+
+
+def test_pure_branch_coverage_daemon_app_args(mocker: MockerFixture) -> None:
+    """Test daemon app function branches with and without arguments."""
+    from mcubridge import daemon
+
+    mock_cli = mocker.patch.object(daemon, "cli")
+    mock_run = mocker.patch.object(daemon, "run_daemon")
+
+    daemon.app(["--help"])
+    mock_cli.assert_called_once_with(["--help"])
+    mock_run.assert_not_called()
+
+    mock_cli.reset_mock()
+    daemon.app(None)
+    mock_run.assert_called_once()
+    mock_cli.assert_not_called()

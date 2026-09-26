@@ -98,8 +98,7 @@ class WatchdogKeepalive:
             return False
         if self._state is not None and getattr(self._state, "fatal_count", 0) > 0:
             # If the link has fatal failures recorded, trip inhibit immediately
-            if not self.fsm.critical_inhibit.is_active:
-                self.trip_inhibit("MCU link fatal reset detected")
+            self.trip_inhibit("MCU link fatal reset detected")
             return False
         return True
 

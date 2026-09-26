@@ -13,7 +13,7 @@ from binascii import crc32
 from typing import Annotated, Protocol, cast
 
 from cobs import cobsr
-from hypothesis import HealthCheck, event, seed as hyp_seed, settings, strategies as st
+from hypothesis import HealthCheck, event, seed as hyp_seed, settings as hyp_settings, strategies as st
 import hypothesis.stateful as h_stateful
 from hypothesis.stateful import RuleBasedStateMachine, invariant, rule
 import serialx
@@ -34,7 +34,7 @@ class _StateMachineRunner(Protocol):
         self,
         state_machine_factory: type[RuleBasedStateMachine],
         *,
-        settings: settings | None = None,
+        settings: hyp_settings | None = ...,
     ) -> None: ...
 
 
@@ -237,7 +237,7 @@ def main(
     steps_per_example = min(count, 50)
     max_examples = max(1, count // steps_per_example)
 
-    state_settings = settings(
+    state_settings = hyp_settings(
         max_examples=max_examples,
         stateful_step_count=steps_per_example,
         derandomize=(seed is None),

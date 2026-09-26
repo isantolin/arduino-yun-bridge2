@@ -1249,9 +1249,8 @@ async def test_runtime_cloud_session_rpc_commands_and_errors(
     mocker.patch.object(svc, "flush_cloud_spool", new_callable=AsyncMock)
     mocker.patch.object(svc, "_send_cloud_event", new_callable=AsyncMock)
 
-    mock_tls_cache = AsyncMock()
-    mock_tls_cache.get = AsyncMock(return_value=b"cached_ticket")
-    mock_tls_cache.set = AsyncMock()
+    mock_tls_cache = MagicMock(spec=["_mem"])
+    mock_tls_cache._mem = {f"tls_ticket:{svc.config.cloud_host}:{svc.config.cloud_port}": b"cached_ticket"}
     svc.state.tls_session_cache = mock_tls_cache
 
     with pytest.raises(ConnectionError, match="Cloud session stream disconnected"):

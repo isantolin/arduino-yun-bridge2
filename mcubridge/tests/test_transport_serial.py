@@ -427,9 +427,9 @@ async def test_serial_correlate_frame_already_resolved(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
     transport = SerialTransport(runtime_config, runtime_state, AsyncMock())
-    cmd = PendingCommand(command_id=Command.CMD_DIGITAL_WRITE.value, sequence_id=1, created_at=0.0)
+    cmd = PendingCommand(command_id=Command.CMD_DIGITAL_WRITE.value)
     cmd.success = True
-    transport.pending_commands[1] = cmd
+    setattr(transport, "_current", cmd)
 
     correlate: Callable[[int, bytes], None] = getattr(transport, "_correlate_frame")
     correlate(protocol.Status.ACK.value, b"")

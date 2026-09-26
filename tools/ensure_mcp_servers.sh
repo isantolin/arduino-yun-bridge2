@@ -27,8 +27,9 @@ for arg in "$@"; do
     esac
 done
 
-# Ensure user binaries are on PATH
+# Ensure user binaries are on PATH and repo is in PYTHONPATH
 export PATH="${HOME}/.local/bin:${HOME}/.cargo/bin:${HOME}/.local/go/bin:${PATH}"
+export PYTHONPATH="${REPO_ROOT}:${REPO_ROOT}/mcubridge:${REPO_ROOT}/mcubridge-gateway:${PYTHONPATH:-}"
 mkdir -p "${HOME}/.local/bin" "${HOME}/.local/src"
 
 echo "================================================================="

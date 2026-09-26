@@ -12,6 +12,7 @@ import asyncio
 import ssl
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Awaitable, Callable, Mapping
 from enum import StrEnum
@@ -30,6 +31,7 @@ from google.protobuf.message import Message as ProtobufMessage
 from grpclib.const import Status
 from grpclib.exceptions import GRPCError
 from grpclib.protocol import Peer
+from grpclib.reflection.service import ServerReflection
 from grpclib.server import Server, Stream
 from mcubridge.config.logging import configure_logging
 from mcubridge.protocol import mcubridge_pb2 as pb
@@ -219,8 +221,16 @@ class TSDBSink:
     """[SIL-2] Time-Series Database ingestion adapter supporting Line Protocol."""
 
     def __init__(self, endpoint_url: str | None = None) -> None:
+        if endpoint_url:
+            parsed = urllib.parse.urlsplit(endpoint_url)
+            if parsed.scheme not in ("http", "https"):
+                raise ValueError(f"Invalid TSDB scheme '{parsed.scheme}'; must be 'http' or 'https'")
         self.endpoint_url = endpoint_url
         self.enabled = bool(endpoint_url)
+        self.opener = urllib.request.build_opener(
+            urllib.request.HTTPHandler(),
+            urllib.request.HTTPSHandler(),
+        )
 
     @staticmethod
     def format_line_protocol(
@@ -281,7 +291,7 @@ class TSDBSink:
             method="POST",
         )
         try:
-            with urllib.request.urlopen(req, timeout=5.0) as resp:
+            with self.opener.open(req, timeout=5.0) as resp:
                 if resp.status >= 400:
                     logger.warning("TSDB server responded with status error", status=resp.status)
         except (urllib.error.URLError, TimeoutError, OSError) as e:
@@ -904,7 +914,8 @@ class ProtobufGateway:
             logger.info("Fleet Prometheus Exporter running", port=self.metrics_port)
 
         ssl_context = self.get_ssl_context()
-        self.server = Server([CloudBridgeService(self), GatewayLocalBridgeService(self)])
+        services = [CloudBridgeService(self), GatewayLocalBridgeService(self)]
+        self.server = Server(ServerReflection.extend(services))
         grpclib.events.listen(self.server, grpclib.events.RecvRequest, auth_interceptor)
         await self.server.start(self.host, self.port, ssl=ssl_context)
 

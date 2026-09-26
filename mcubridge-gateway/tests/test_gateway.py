@@ -22,6 +22,7 @@ from gateway import (
 )
 from grpclib.const import Status
 from grpclib.exceptions import GRPCError
+from grpclib.reflection.service import ServerReflection
 from hypothesis import given, settings
 from hypothesis import strategies as st
 from mcubridge.protocol import mcubridge_pb2 as pb
@@ -554,15 +555,15 @@ async def test_tsdb_sink_async_post_mocked(mocker: MockerFixture) -> None:
         telemetry=pb.TelemetryReport(daemon_metrics_blob=metrics.SerializeToString()),
     )
 
-    mock_urlopen = mocker.patch("urllib.request.urlopen")
+    mock_open = mocker.patch("urllib.request.OpenerDirector.open")
     mock_resp = MagicMock()
     mock_resp.status = 204
     mock_resp.__enter__.return_value = mock_resp
     mock_resp.__exit__.return_value = False
-    mock_urlopen.return_value = mock_resp
+    mock_open.return_value = mock_resp
 
     await sink.ingest_telemetry("yun-node-1", envelope)
-    assert mock_urlopen.called
+    assert mock_open.called
 
 
 @pytest.mark.asyncio
@@ -644,14 +645,14 @@ def test_tsdb_sink_post_line_edge_paths(mocker: MockerFixture) -> None:
     mock_resp = MagicMock()
     mock_resp.status = 500
     mock_resp.__enter__.return_value = mock_resp
-    mock_urlopen = mocker.patch("urllib.request.urlopen", return_value=mock_resp)
+    mock_open = mocker.patch("urllib.request.OpenerDirector.open", return_value=mock_resp)
     post_fn("mcu,device=dev1 value=1")
-    assert mock_urlopen.call_count == 1
+    assert mock_open.call_count == 1
 
     # 3. URLError network failure (tenacity retries 2 attempts total)
-    mock_urlopen.side_effect = urllib.error.URLError("Refused")
+    mock_open.side_effect = urllib.error.URLError("Refused")
     post_fn("mcu,device=dev1 value=1")
-    assert mock_urlopen.call_count == 3
+    assert mock_open.call_count == 3
 
 
 @pytest.mark.asyncio
@@ -702,7 +703,7 @@ async def test_handle_telemetry_edge_paths(mock_gateway: ProtobufGateway, mocker
         device_id="edge-1",
         telemetry=pb.TelemetryReport(daemon_metrics_blob=b"\xff\xff\xff"),
     )
-    mocker.patch("urllib.request.urlopen")
+    mocker.patch("urllib.request.OpenerDirector.open")
     await handle_telemetry(svc, "edge-1", mock_stream, envelope_corrupt)
     assert (
         mock_gateway.metrics.registry.get_sample_value("mcubridge_device_telemetry_total", {"device_id": "edge-1"})
@@ -1166,3 +1167,20 @@ async def test_gateway_local_bridge_service_dispatch(mock_gateway: ProtobufGatew
 
     asyncio.create_task(_feed_console_cleanup())
     await local_svc.SubscribeConsole(stream_sub_cleanup)
+
+
+def test_tsdb_sink_invalid_scheme() -> None:
+    with pytest.raises(ValueError, match="Invalid TSDB scheme 'file'"):
+        TSDBSink(endpoint_url="file:///etc/passwd")
+    with pytest.raises(ValueError, match="Invalid TSDB scheme 'ftp'"):
+        TSDBSink(endpoint_url="ftp://evil.com/write")
+
+
+@pytest.mark.asyncio
+async def test_protobuf_gateway_reflection_services() -> None:
+    gw = ProtobufGateway(use_tls=False)
+    services = [CloudBridgeService(gw), GatewayLocalBridgeService(gw)]
+    extended = ServerReflection.extend(services)
+    assert len(extended) == 4
+    service_names = [type(s).__name__ for s in extended]
+    assert "ServerReflection" in service_names

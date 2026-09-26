@@ -213,11 +213,12 @@ void test_bridge_send_exhaustive() {
     p.patch = 3;
     return p;
   }()));
-  TEST_ASSERT_TRUE(Bridge.send(rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, 1, []() {
-    rpc::payload::FreeMemoryResponse p;
-    p.value = 1024;
-    return p;
-  }()));
+  TEST_ASSERT_TRUE(
+      Bridge.send(rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, 1, []() {
+        rpc::payload::FreeMemoryResponse p;
+        p.value = 1024;
+        return p;
+      }()));
   TEST_ASSERT_TRUE(Bridge.send(rpc::CommandId::CMD_GET_CAPABILITIES_RESP, 1,
                                rpc::payload::Capabilities{}));
   TEST_ASSERT_TRUE(Bridge.send(rpc::CommandId::CMD_DIGITAL_READ_RESP, 1, []() {
@@ -239,11 +240,12 @@ void test_bridge_send_exhaustive() {
   rpc::payload::copy_to_pb_bytes(frr.content, data, 1);
   TEST_ASSERT_TRUE(Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 1, frr));
 
-  TEST_ASSERT_TRUE(Bridge.send(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP, 1, []() {
-    rpc::payload::ProcessRunAsyncResponse p;
-    p.pid = 123;
-    return p;
-  }()));
+  TEST_ASSERT_TRUE(
+      Bridge.send(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP, 1, []() {
+        rpc::payload::ProcessRunAsyncResponse p;
+        p.pid = 123;
+        return p;
+      }()));
 
   rpc::payload::ProcessPollResponse ppr;
   rpc::payload::copy_to_pb_bytes(ppr.stdout_data, data, 1);

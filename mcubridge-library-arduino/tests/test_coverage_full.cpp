@@ -22,7 +22,8 @@ void tearDown(void) {}
 namespace {
 using bridge::test::TestAccessor;
 
-void dummy_datastore_get(etl::string_view /*k*/, etl::span<const uint8_t> /*v*/) {}
+void dummy_datastore_get(etl::string_view /*k*/,
+                         etl::span<const uint8_t> /*v*/) {}
 void dummy_fs_read(etl::span<const uint8_t> /*v*/) {}
 void dummy_process_run(int32_t /*p*/) {}
 void dummy_process_poll(rpc::StatusCode /*s*/, uint16_t /*n*/,
@@ -313,12 +314,8 @@ void test_bridge_coverage() {
     int available() override { return avail; }
     int read() override { return -1; }
     int peek() override { return -1; }
-    size_t write(uint8_t /*b*/) override {
-      return 1;
-    }
-    size_t write(const uint8_t* /*b*/, size_t s) override {
-      return s;
-    }
+    size_t write(uint8_t /*b*/) override { return 1; }
+    size_t write(const uint8_t* /*b*/, size_t s) override { return s; }
     void flush() override {}
   };
   FlowStream fs;

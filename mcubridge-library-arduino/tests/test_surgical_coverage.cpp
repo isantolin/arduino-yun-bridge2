@@ -142,8 +142,8 @@ void test_surgical_security_failures() {
 
   // 8. aead_decrypt_frame call
   etl::array<uint8_t, 4> dec_out = {0};
-  bool dec_ok = rpc::security::aead_decrypt_frame(1, 1, in, key, valid_nonce, out_tag,
-                                                  dec_out);
+  bool dec_ok = rpc::security::aead_decrypt_frame(1, 1, in, key, valid_nonce,
+                                                  out_tag, dec_out);
   TEST_ASSERT_FALSE(dec_ok);
 }
 
@@ -287,7 +287,8 @@ void test_surgical_send_fail_branches() {
   ba.setSynchronized();
   ba.exhaustTxPayloadPool();
   rpc_pb_DatastorePut put_msg = rpc_pb_DatastorePut_init_default;
-  TEST_ASSERT_FALSE(Bridge.send(rpc::CommandId::CMD_DATASTORE_PUT, 100, put_msg));
+  TEST_ASSERT_FALSE(
+      Bridge.send(rpc::CommandId::CMD_DATASTORE_PUT, 100, put_msg));
 }
 
 static void test_surgical_extra_branches() {

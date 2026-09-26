@@ -209,10 +209,11 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   }
 
   template <typename T>
-  bool sendOrEmitStatus(rpc::CommandId c, uint16_t seq, const T& packet,
-                        etl::string_view error_reason = etl::string_view(),
-                        rpc_pb_ChannelId channel_id = rpc_pb_ChannelId_CHANNEL_CONTROL,
-                        rpc_pb_QosProfile qos = rpc_pb_QosProfile_QOS_RELIABLE) {
+  bool sendOrEmitStatus(
+      rpc::CommandId c, uint16_t seq, const T& packet,
+      etl::string_view error_reason = etl::string_view(),
+      rpc_pb_ChannelId channel_id = rpc_pb_ChannelId_CHANNEL_CONTROL,
+      rpc_pb_QosProfile qos = rpc_pb_QosProfile_QOS_RELIABLE) {
     if (!send(c, seq, packet, channel_id, qos)) {
       if (error_reason.empty()) {
         emitStatus(rpc::StatusCode::STATUS_ERROR);
@@ -597,7 +598,8 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
                                    uint16_t command_id);
   bool _sendEncryptedImpl(
       uint16_t raw_cmd, uint16_t seq, const pb_msgdesc_t* fields,
-      const void* src, rpc_pb_ChannelId channel_id = rpc_pb_ChannelId_CHANNEL_CONTROL,
+      const void* src,
+      rpc_pb_ChannelId channel_id = rpc_pb_ChannelId_CHANNEL_CONTROL,
       rpc_pb_QosProfile qos = rpc_pb_QosProfile_QOS_RELIABLE);
 
   template <typename T>

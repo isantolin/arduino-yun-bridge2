@@ -91,9 +91,8 @@ void test_filesystem_api_read() {
   reset_bridge_core(Bridge, stream);
   auto& ba = TestAccessor::create(Bridge);
   ba.setSynchronized();
-  FileSystem.read(
-      "api_read.bin",
-      FileSystemType::FileSystemReadHandler::create<fs_read_callback_handler>());
+  FileSystem.read("api_read.bin", FileSystemType::FileSystemReadHandler::create<
+                                      fs_read_callback_handler>());
   TEST_ASSERT_TRUE(Bridge.isSynchronized());
   TEST_ASSERT_FALSE(ba.isAwaitingAck());
 }
@@ -125,7 +124,8 @@ void test_filesystem_on_read() {
   const etl::string_view path = "on_read.bin";
   etl::array<uint8_t, 1> data = {0xAA};
   TEST_ASSERT_TRUE(bridge::hal::writeFile(
-      path, etl::span<const uint8_t>(data.data(), data.size())).has_value());
+                       path, etl::span<const uint8_t>(data.data(), data.size()))
+                       .has_value());
 
   rpc::payload::FileRead msg;
   strncpy(msg.path, path.data(), sizeof(msg.path));
@@ -137,8 +137,10 @@ void test_filesystem_on_remove() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
   etl::array<uint8_t, 2> dummy = {1, 2};
-  TEST_ASSERT_TRUE(bridge::hal::writeFile(
-      "on_rem.bin", etl::span<const uint8_t>(dummy.data(), dummy.size())).has_value());
+  TEST_ASSERT_TRUE(
+      bridge::hal::writeFile(
+          "on_rem.bin", etl::span<const uint8_t>(dummy.data(), dummy.size()))
+          .has_value());
   rpc::payload::FileRemove msg;
   strncpy(msg.path, "on_rem.bin", sizeof(msg.path));
   FileSystem._onRemove(msg);
@@ -155,9 +157,8 @@ void test_filesystem_api_empty_and_error_paths() {
   FileSystem.write("", etl::span<const uint8_t>());
 
   // Empty read
-  FileSystem.read(
-      "",
-      FileSystemType::FileSystemReadHandler::create<fs_read_callback_handler>());
+  FileSystem.read("", FileSystemType::FileSystemReadHandler::create<
+                          fs_read_callback_handler>());
 
   // Empty remove
   FileSystem.remove("");

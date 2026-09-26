@@ -389,7 +389,8 @@ void test_checksum_direct_library_path() {
                                    .size));  // Adjusted for new checksum logic
   TEST_ASSERT_EQUAL_HEX32(0, crc);
   uint8_t sample[] = {0x01, 0x02, 0x03};
-  TEST_ASSERT_NOT_EQUAL(0, rpc::checksum::compute(etl::span<const uint8_t>(sample, 3)));
+  TEST_ASSERT_NOT_EQUAL(
+      0, rpc::checksum::compute(etl::span<const uint8_t>(sample, 3)));
 }
 
 void test_bridge_timer_callbacks() {

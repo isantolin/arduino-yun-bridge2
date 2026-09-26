@@ -6,7 +6,6 @@ sketch synchronization loops. [SIL-2 / MIL-SPEC]
 """
 
 from __future__ import annotations
-from tools.audit.codebase_auditor import audit_semgrep
 
 import re
 import sys
@@ -17,7 +16,6 @@ import typer
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-
 
 app = typer.Typer(
     help="Audit library density and architectural invariants across Arduino C++ and Python codebase.",
@@ -39,6 +37,8 @@ def audit_arduino_sketches() -> list[str]:
 @app.command()
 def main() -> None:
     """Execute all automated library density and architectural rule checks."""
+    from tools.audit.codebase_auditor import audit_semgrep
+
     all_errors = audit_semgrep() + audit_arduino_sketches()
     if all_errors:
         print("❌ ARCHITECTURAL & LIBRARY DENSITY AUDIT FAILURES:", file=sys.stderr)

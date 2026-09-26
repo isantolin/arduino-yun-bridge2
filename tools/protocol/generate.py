@@ -144,7 +144,6 @@ class ProtocolSpec:
     topics: list[dict[str, Any]]
     capabilities: dict[str, int]
     architectures: dict[str, int]
-    data_formats: dict[str, str]
     cloud_suffixes: dict[str, str]
     cloud_defaults: dict[str, str]
     status_reasons: dict[str, str]
@@ -153,7 +152,6 @@ class ProtocolSpec:
     constants_opt: Any = None
     hardware_opt: Any = None
     handshake_opt: Any = None
-    data_formats_opt: Any = None
     pb_module: Any = None
     runtime_config_fields: list[ConfigFieldDef] = field(default_factory=_default_config_fields)
 
@@ -175,7 +173,6 @@ def load_spec_from_proto(proto_path: Path) -> ProtocolSpec:
     constants_opt = options.Extensions[mcubridge_pb2.constants]
     hardware_opt = options.Extensions[mcubridge_pb2.hardware]
     handshake_opt = options.Extensions[mcubridge_pb2.handshake]
-    data_formats_opt = options.Extensions[mcubridge_pb2.data_formats]
     cloud_suffixes_opt = options.Extensions[mcubridge_pb2.cloud_suffixes]
     cloud_defaults_opt = options.Extensions[mcubridge_pb2.cloud_defaults]
     status_reasons_opt = options.Extensions[mcubridge_pb2.status_reasons]
@@ -188,7 +185,6 @@ def load_spec_from_proto(proto_path: Path) -> ProtocolSpec:
     constants = _proto_to_dict(constants_opt)
     hardware = _proto_to_dict(hardware_opt)
     handshake = _proto_to_dict(handshake_opt)
-    data_formats = _proto_to_dict(data_formats_opt)
     cloud_suffixes = _proto_to_dict(cloud_suffixes_opt)
     for field_desc in mcubridge_pb2.CloudSuffixes.DESCRIPTOR.fields:
         cloud_suffixes.setdefault(field_desc.name, field_desc.name)
@@ -331,7 +327,6 @@ def load_spec_from_proto(proto_path: Path) -> ProtocolSpec:
         topics=topics,
         capabilities=capabilities,
         architectures=architectures,
-        data_formats=data_formats,
         cloud_suffixes=cloud_suffixes,
         cloud_defaults=cloud_defaults,
         status_reasons=status_reasons,
@@ -342,7 +337,6 @@ def load_spec_from_proto(proto_path: Path) -> ProtocolSpec:
     spec.constants_opt = constants_opt
     spec.hardware_opt = hardware_opt
     spec.handshake_opt = handshake_opt
-    spec.data_formats_opt = data_formats_opt
     spec.pb_module = mcubridge_pb2
     return spec
 
@@ -488,7 +482,6 @@ class JinjaGenerator:
     def _extract_python_constants(self, spec: ProtocolSpec) -> list[dict[str, Any]]:
         constants = _extract_py_constants(spec.constants_opt, spec.pb_module)
         constants.extend(_extract_py_constants(spec.hardware_opt, spec.pb_module))
-        constants.extend(_extract_py_constants(spec.data_formats_opt, spec.pb_module, quote_strings=True))
 
         for key, val in spec.cloud_suffixes.items():
             py_name = f"CLOUD_SUFFIX_{key.upper()}"
@@ -601,7 +594,6 @@ class JinjaGenerator:
             capabilities=spec.capabilities,
             architectures=spec.architectures,
             architecture_display_names=spec.architecture_display_names,
-            data_formats=spec.data_formats,
             cloud_suffixes=spec.cloud_suffixes,
             cloud_defaults=spec.cloud_defaults,
             status_reasons=spec.status_reasons,

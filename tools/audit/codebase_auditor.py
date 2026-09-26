@@ -191,17 +191,61 @@ def audit_config_suppressions() -> list[str]:
     return findings
 
 
+def audit_proto_integrity(proto_path: Path | None = None) -> list[str]:
+    """Audit tools/protocol/mcubridge.proto for dead, abandoned, or redundant definitions (Rule 35)."""
+    findings: list[str] = []
+    print("Auditing Protobuf definitions...")
+    target_path = proto_path if proto_path is not None else ROOT / "tools" / "protocol" / "mcubridge.proto"
+    if not target_path.exists():
+        findings.append(f"Protobuf File Missing: {target_path} not found")
+        return findings
+
+    content = target_path.read_text(encoding="utf-8")
+
+    # 1. Obsolete options / messages
+    if "data_formats" in content:
+        findings.append("Protobuf Dead Block: 'data_formats' is obsolete and must be removed")
+    if "DataFormats" in content:
+        findings.append("Protobuf Dead Message: 'DataFormats' is obsolete and must be removed")
+
+    # 2. Dead string options in Handshake
+    dead_handshake_fields = [
+        "tag_algorithm",
+        "tag_description",
+        "hkdf_algorithm",
+        "nonce_format_description",
+        "aead_algorithm",
+        "aead_description",
+    ]
+    for field in dead_handshake_fields:
+        if re.search(rf"\b{field}\s*:", content):
+            findings.append(f"Protobuf Dead Field: handshake.{field} is purely decorative and must be removed")
+
+    # 3. Dead constants in Constants
+    dead_constants = [
+        "default_serial_fallback_threshold",
+        "cloud_expiry_shell",
+        "cloud_expiry_default",
+    ]
+    for const in dead_constants:
+        if re.search(rf"\b{const}\s*:", content):
+            findings.append(f"Protobuf Dead Constant: constants.{const} has zero usages and must be removed")
+
+    return findings
+
+
 app = typer.Typer(help="Audit codebase for SIL-2/MIL-SPEC violations and shims.", add_completion=False)
 
 
 @app.command()
 def main() -> None:
-    """Execute python, C++, and config compliance audits."""
+    """Execute python, C++, config, and protobuf compliance audits."""
     py_findings = audit_python_files()
     cpp_findings = audit_cpp_files()
     cfg_findings = audit_config_suppressions()
+    proto_findings = audit_proto_integrity()
 
-    all_findings = py_findings + cpp_findings + cfg_findings
+    all_findings = py_findings + cpp_findings + cfg_findings + proto_findings
 
     print("\n--- RESULTS ---")
     if not all_findings:

@@ -174,8 +174,8 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   template <typename T>
   [[nodiscard]] bool sendSinglePass(
       uint16_t command_id, uint16_t sequence_id, const T& packet,
-      uint32_t channel_id = rpc_pb_ChannelId_CHANNEL_CONTROL,
-      uint32_t qos = rpc_pb_QosProfile_QOS_RELIABLE) {
+      rpc_pb_ChannelId channel_id = rpc_pb_ChannelId_CHANNEL_CONTROL,
+      rpc_pb_QosProfile qos = rpc_pb_QosProfile_QOS_RELIABLE) {
     rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
     env.version = rpc::PROTOCOL_VERSION;
     env.command_id = command_id;
@@ -194,8 +194,8 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   template <typename T>
   [[nodiscard]] bool send(
       rpc::CommandId c, uint16_t seq, const T& packet,
-      uint32_t channel_id = rpc_pb_ChannelId_CHANNEL_CONTROL,
-      uint32_t qos = rpc_pb_QosProfile_QOS_RELIABLE) {
+      rpc_pb_ChannelId channel_id = rpc_pb_ChannelId_CHANNEL_CONTROL,
+      rpc_pb_QosProfile qos = rpc_pb_QosProfile_QOS_RELIABLE) {
     const uint16_t raw_cmd = rpc::to_underlying(c);
     const bool is_excluded = rpc::is_system_command(raw_cmd);
     const bool do_encrypt =
@@ -211,8 +211,8 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   template <typename T>
   bool sendOrEmitStatus(rpc::CommandId c, uint16_t seq, const T& packet,
                         etl::string_view error_reason = etl::string_view(),
-                        uint32_t channel_id = rpc_pb_ChannelId_CHANNEL_CONTROL,
-                        uint32_t qos = rpc_pb_QosProfile_QOS_RELIABLE) {
+                        rpc_pb_ChannelId channel_id = rpc_pb_ChannelId_CHANNEL_CONTROL,
+                        rpc_pb_QosProfile qos = rpc_pb_QosProfile_QOS_RELIABLE) {
     if (!send(c, seq, packet, channel_id, qos)) {
       if (error_reason.empty()) {
         emitStatus(rpc::StatusCode::STATUS_ERROR);
@@ -597,14 +597,14 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
                                    uint16_t command_id);
   bool _sendEncryptedImpl(
       uint16_t raw_cmd, uint16_t seq, const pb_msgdesc_t* fields,
-      const void* src, uint32_t channel_id = rpc_pb_ChannelId_CHANNEL_CONTROL,
-      uint32_t qos = rpc_pb_QosProfile_QOS_RELIABLE);
+      const void* src, rpc_pb_ChannelId channel_id = rpc_pb_ChannelId_CHANNEL_CONTROL,
+      rpc_pb_QosProfile qos = rpc_pb_QosProfile_QOS_RELIABLE);
 
   template <typename T>
   bool _sendEncryptedHelper(
       uint16_t raw_cmd, uint16_t seq, const T& packet,
-      uint32_t channel_id = rpc_pb_ChannelId_CHANNEL_CONTROL,
-      uint32_t qos = rpc_pb_QosProfile_QOS_RELIABLE) {
+      rpc_pb_ChannelId channel_id = rpc_pb_ChannelId_CHANNEL_CONTROL,
+      rpc_pb_QosProfile qos = rpc_pb_QosProfile_QOS_RELIABLE) {
     return _sendEncryptedImpl(raw_cmd, seq, rpc::Payload::get_fields<T>(),
                               &packet, channel_id, qos);
   }

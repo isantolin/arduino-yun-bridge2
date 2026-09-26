@@ -60,12 +60,9 @@ message Constants {
     uint32 default_reconnect_delay = 53 [(py_name) = "DEFAULT_RECONNECT_DELAY", (py_type) = "int"];
     uint32 max_serial_frame_bytes = 54 [(py_name) = "MAX_SERIAL_FRAME_BYTES", (py_type) = "int"];
     uint32 default_serial_handshake_fatal_failures = 55 [(py_name) = "DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES", (py_type) = "int"];
-    uint32 default_serial_fallback_threshold = 56 [(py_name) = "DEFAULT_SERIAL_FALLBACK_THRESHOLD", (py_type) = "int"];
     uint32 cloud_expiry_pin = 57 [(py_name) = "CLOUD_EXPIRY_PIN", (py_type) = "int"];
     uint32 cloud_expiry_console = 58 [(py_name) = "CLOUD_EXPIRY_CONSOLE", (py_type) = "int"];
     uint32 cloud_expiry_datastore = 59 [(py_name) = "CLOUD_EXPIRY_DATASTORE", (py_type) = "int"];
-    uint32 cloud_expiry_shell = 60 [(py_name) = "CLOUD_EXPIRY_SHELL", (py_type) = "int"];
-    uint32 cloud_expiry_default = 61 [(py_name) = "CLOUD_EXPIRY_DEFAULT", (py_type) = "int"];
     uint32 default_process_max_output_bytes = 62 [(py_name) = "DEFAULT_PROCESS_MAX_OUTPUT_BYTES", (py_type) = "int"];
     uint32 default_console_queue_limit_bytes = 63 [(py_name) = "DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES", (py_type) = "int"];
     uint32 sync_timeout_ms = 65 [(cpp_name) = "SYNC_TIMEOUT_MS", (cpp_type) = "uint32_t", (py_name) = "SYNC_TIMEOUT_MS", (py_type) = "int"];
@@ -121,30 +118,18 @@ message Hardware {
 message Handshake {
     uint32 nonce_length = 1 [(cpp_name) = "RPC_HANDSHAKE_NONCE_LENGTH", (cpp_type) = "unsigned int", (py_name) = "HANDSHAKE_NONCE_LENGTH", (py_type) = "int"];
     uint32 tag_length = 2 [(cpp_name) = "RPC_HANDSHAKE_TAG_LENGTH", (cpp_type) = "unsigned int", (py_name) = "HANDSHAKE_TAG_LENGTH", (py_type) = "int"];
-    string tag_algorithm = 3 [(py_name) = "HANDSHAKE_TAG_ALGORITHM", (py_type) = "str"];
-    string tag_description = 4 [(py_name) = "HANDSHAKE_TAG_DESCRIPTION", (py_type) = "str"];
     uint32 ack_timeout_min_ms = 5 [(cpp_name) = "RPC_HANDSHAKE_ACK_TIMEOUT_MIN_MS", (cpp_type) = "uint32_t", (py_name) = "HANDSHAKE_ACK_TIMEOUT_MIN_MS", (py_type) = "int"];
     uint32 ack_timeout_max_ms = 6 [(cpp_name) = "RPC_HANDSHAKE_ACK_TIMEOUT_MAX_MS", (cpp_type) = "uint32_t", (py_name) = "HANDSHAKE_ACK_TIMEOUT_MAX_MS", (py_type) = "int"];
     uint32 response_timeout_min_ms = 7 [(cpp_name) = "RPC_HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS", (cpp_type) = "uint32_t", (py_name) = "HANDSHAKE_RESPONSE_TIMEOUT_MIN_MS", (py_type) = "int"];
     uint32 response_timeout_max_ms = 8 [(cpp_name) = "RPC_HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS", (cpp_type) = "uint32_t", (py_name) = "HANDSHAKE_RESPONSE_TIMEOUT_MAX_MS", (py_type) = "int"];
     uint32 retry_limit_min = 9 [(cpp_name) = "RPC_HANDSHAKE_RETRY_LIMIT_MIN", (cpp_type) = "uint8_t", (py_name) = "HANDSHAKE_RETRY_LIMIT_MIN", (py_type) = "int"];
     uint32 retry_limit_max = 10 [(cpp_name) = "RPC_HANDSHAKE_RETRY_LIMIT_MAX", (cpp_type) = "uint8_t", (py_name) = "HANDSHAKE_RETRY_LIMIT_MAX", (py_type) = "int"];
-    string hkdf_algorithm = 11 [(py_name) = "HANDSHAKE_HKDF_ALGORITHM", (py_type) = "str"];
     string hkdf_salt = 12 [(py_name) = "HANDSHAKE_HKDF_SALT", (py_type) = "bytes"];
     string hkdf_info_auth = 13 [(py_name) = "HANDSHAKE_HKDF_INFO_AUTH", (py_type) = "bytes"];
     string hkdf_info_session = 14;
     uint32 hkdf_output_length = 15 [(cpp_name) = "RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH", (cpp_type) = "unsigned int", (py_name) = "HANDSHAKE_HKDF_OUTPUT_LENGTH", (py_type) = "int"];
     uint32 nonce_random_bytes = 16 [(cpp_name) = "RPC_HANDSHAKE_NONCE_RANDOM_BYTES", (cpp_type) = "unsigned int", (py_name) = "HANDSHAKE_NONCE_RANDOM_BYTES", (py_type) = "int"];
     uint32 nonce_counter_bytes = 17 [(cpp_name) = "RPC_HANDSHAKE_NONCE_COUNTER_BYTES", (cpp_type) = "unsigned int", (py_name) = "HANDSHAKE_NONCE_COUNTER_BYTES", (py_type) = "int"];
-    string nonce_format_description = 18 [(py_name) = "HANDSHAKE_NONCE_FORMAT_DESCRIPTION", (py_type) = "str"];
-    string aead_algorithm = 19;
-    string aead_description = 20;
-}
-
-message DataFormats {
-    string uint8_format = 3;
-    string uint16_format = 4;
-    string uint32_format = 5;
 }
 
 message CloudSuffixes {
@@ -238,7 +223,6 @@ extend google.protobuf.FileOptions {
     Constants constants = 1001;
     Hardware hardware = 1002;
     Handshake handshake = 1003;
-    DataFormats data_formats = 1004;
     CloudSuffixes cloud_suffixes = 1005;
     CloudDefaults cloud_defaults = 1006;
     StatusReasons status_reasons = 1007;
@@ -393,12 +377,9 @@ option (rpc.pb.constants) = {
     default_reconnect_delay: 5
     max_serial_frame_bytes: 1024
     default_serial_handshake_fatal_failures: 15
-    default_serial_fallback_threshold: 5
     cloud_expiry_pin: 5
     cloud_expiry_console: 5
     cloud_expiry_datastore: 60
-    cloud_expiry_shell: 30
-    cloud_expiry_default: 10
     default_process_max_output_bytes: 65536
     default_console_queue_limit_bytes: 16384
     sync_timeout_ms: 30000
@@ -455,30 +436,18 @@ option (rpc.pb.hardware) = {
 option (rpc.pb.handshake) = {
     nonce_length: 16
     tag_length: 16
-    tag_algorithm: "HMAC-SHA256"
-    tag_description: "HMAC-SHA256(secret, nonce) truncated to 16 bytes"
     ack_timeout_min_ms: 25
     ack_timeout_max_ms: 60000
     response_timeout_min_ms: 100
     response_timeout_max_ms: 180000
     retry_limit_min: 1
     retry_limit_max: 8
-    hkdf_algorithm: "HKDF-SHA256"
     hkdf_salt: "mcubridge-v2"
     hkdf_info_auth: "handshake-auth"
     hkdf_info_session: "session-key"
     hkdf_output_length: 32
     nonce_random_bytes: 8
     nonce_counter_bytes: 8
-    nonce_format_description: "random[8] || counter[8] (uint64 BE) for anti-replay"
-    aead_algorithm: "ChaCha20-Poly1305"
-    aead_description: "Authenticated Encryption with Associated Data (RFC 8439)"
-};
-
-option (rpc.pb.data_formats) = {
-    uint8_format: "<B"
-    uint16_format: "<H"
-    uint32_format: "<I"
 };
 
 option (rpc.pb.cloud_suffixes) = {
@@ -1436,8 +1405,8 @@ message RpcEnvelope {
     uint32 command_id = 2;
     uint32 sequence_id = 3;
     bytes nonce = 4;
-    uint32 channel_id = 5;
-    uint32 qos = 43;
+    ChannelId channel_id = 5;
+    QosProfile qos = 43;
     oneof payload_type {
         bytes encrypted_payload_with_tag = 6;
         VersionResponse version_response = 7;

@@ -706,3 +706,29 @@ def test_ubus_run_coro_sync_threadsafe(mock_runtime: MockRuntimeFacade, mocker: 
         mock_run_ts.assert_called_once_with(coro, mock_loop)
     finally:
         coro.close()
+
+
+@pytest.mark.asyncio
+async def test_ubus_run_coro_sync_same_loop(mock_runtime: MockRuntimeFacade, mocker: MockerFixture) -> None:
+    service = UbusService(mock_runtime)
+    current_loop = asyncio.get_running_loop()
+    setattr(service, "_loop", current_loop)
+    mocker.patch("anyio.from_thread.run", return_value={"status": "same_loop"})
+
+    async def _sample() -> dict[str, str]:
+        return {"status": "same_loop"}
+
+    coro = _sample()
+    try:
+        res = service.run_sync(coro)
+        assert res == {"status": "same_loop"}
+    finally:
+        coro.close()
+
+
+def test_ubus_register_objects_no_add(mock_runtime: MockRuntimeFacade, mocker: MockerFixture) -> None:
+    service = UbusService(mock_runtime)
+    setattr(service, "_conn", object())
+    mocker.patch("mcubridge.services.ubus.ubus", None)
+    getattr(service, "_register_objects")()
+    assert service.connection is not None

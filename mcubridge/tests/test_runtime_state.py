@@ -11,6 +11,7 @@ from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.state.context import ProcessContext, RuntimeState, create_runtime_state
 from mcubridge.watchdog import WatchdogKeepalive
+import pytest
 from pytest_mock import MockerFixture
 
 
@@ -334,3 +335,22 @@ def test_context_edge_branches_and_properties(runtime_state: RuntimeState, mocke
     mocker.patch("psutil.Process", side_effect=psutil.NoSuchProcess(pid=1234))
     snap = runtime_state.build_status_snapshot()
     assert snap.system is not None
+
+
+@pytest.mark.asyncio
+async def test_storage_clear_uncovered_branches() -> None:
+    from mcubridge.state.storage import LmdbCache, LmdbDeque
+
+    deque = LmdbDeque(":memory:")
+    setattr(deque, "is_mem", False)
+    setattr(deque, "env", None)
+    await deque.clear()
+    assert deque.env is None
+    assert not deque.is_mem
+
+    cache = LmdbCache(":memory:")
+    setattr(cache, "is_mem", False)
+    setattr(cache, "env", None)
+    await cache.clear()
+    assert cache.env is None
+    assert not cache.is_mem

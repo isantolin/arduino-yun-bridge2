@@ -10,6 +10,20 @@
         "GITHUB_PERSONAL_ACCESS_TOKEN",
         "ghcr.io/github/github-mcp-server"
       ]
+    },
+    "semgrep": {
+      "command": "/home/ignaciosantolin/.local/bin/semgrep",
+      "args": ["mcp"]
+    },
+    "grpcurl-mcp": {
+      "command": "/home/ignaciosantolin/.local/bin/grpcurl-mcp",
+      "env": {
+        "ADDRESS": "127.0.0.1:8443"
+      }
+    },
+    "serial-mcp-server": {
+      "command": "/home/ignaciosantolin/.local/bin/serial-mcp-server",
+      "args": ["serve"]
     }
   }
 }

@@ -8,11 +8,12 @@ cd "$(dirname "$0")/../.."
 
 echo "Initializing Arduino CI environment..."
 
-# Check for arduino-cli
+# Check for arduino-cli (auto-install locally if missing)
 if ! command -v arduino-cli &> /dev/null; then
-    echo "Error: arduino-cli is not installed."
-    echo "Please install it from: https://arduino.github.io/arduino-cli/latest/installation/"
-    exit 1
+    echo "[ci_arduino] arduino-cli not found. Installing into ~/.local/bin..."
+    mkdir -p "${HOME}/.local/bin"
+    curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | BINDIR="${HOME}/.local/bin" sh
+    export PATH="${HOME}/.local/bin:${PATH}"
 fi
 
 # Get standard library path

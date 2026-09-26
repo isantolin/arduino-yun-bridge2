@@ -75,8 +75,8 @@ mkdir -p "$COVERAGE_ROOT"
 export COVERAGE_FILE="$COVERAGE_ROOT/.coverage"
 
 if ! $PYTHON_BIN -c "import pytest_cov" >/dev/null 2>&1; then
-  echo "[coverage_python] Instala pytest-cov (pip install pytest-cov) antes de ejecutar este script." >&2
-  exit 1
+  echo "[coverage_python] pytest-cov no encontrado. Instalando..."
+  $PYTHON_BIN -m pip install --break-system-packages pytest-cov
 fi
 
 PYTEST_ARGS=()

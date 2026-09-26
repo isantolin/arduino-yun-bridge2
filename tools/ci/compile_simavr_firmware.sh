@@ -16,8 +16,10 @@ FQBN="${2:-arduino:avr:mega}"
 OUTPUT_DIR="${3:-${ROOT_DIR}/build/simavr/${FQBN//:/-}}"
 
 if ! command -v arduino-cli >/dev/null 2>&1; then
-    echo "ERROR: arduino-cli is not installed or not in PATH." >&2
-    exit 1
+    echo "[compile_simavr] arduino-cli not found. Installing into ~/.local/bin..."
+    mkdir -p "${HOME}/.local/bin"
+    curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | BINDIR="${HOME}/.local/bin" sh
+    export PATH="${HOME}/.local/bin:${PATH}"
 fi
 
 USER_LIB_DIR="${HOME}/Arduino/libraries"

@@ -54,7 +54,7 @@ async def test_negotiation_failure_and_disconnect() -> None:
 
 
 @pytest.mark.asyncio
-@given(corrupt_payload=st.binary(min_size=1, max_size=32).filter(lambda b: b"\x00" not in b))
+@given(corrupt_payload=st.binary(min_size=1, max_size=32).map(lambda b: b.replace(b"\x00", b"\x01")))
 async def test_read_loop_corrupted_frame_resilience(corrupt_payload: bytes) -> None:
     transport, _state = _make_transport()
     mock_serial = AsyncMock()

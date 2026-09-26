@@ -6,9 +6,20 @@ from binascii import crc32
 from hypothesis import example, given, strategies as st
 import pytest
 
+from google.protobuf.message import Message as ProtobufMessage
+
 from mcubridge.protocol.frame import build_frame, parse_frame
 from mcubridge.protocol import is_system_command, mcubridge_pb2 as pb, protocol
 from tests.test_constants import TEST_CMD_ID
+from tests.conftest import (
+    st_analog_write,
+    st_datastore_put,
+    st_digital_write,
+    st_file_write,
+    st_mailbox_push,
+    st_pin_mode,
+    st_spi_transfer,
+)
 
 
 def test_crc_is_32bit() -> None:
@@ -184,3 +195,60 @@ def test_parse_frame_empty_oneof_payload() -> None:
     raw = body + crc_bytes
     decoded = parse_frame(raw)
     assert decoded.payload == b""
+
+
+@given(
+    command_id=st.integers(min_value=0, max_value=protocol.UINT16_MAX),
+    sequence_id=st.integers(min_value=0, max_value=protocol.UINT16_MAX),
+    pb_msg=st.one_of(
+        st_pin_mode(),
+        st_digital_write(),
+        st_analog_write(),
+        st_datastore_put(),
+        st_mailbox_push(),
+        st_file_write(),
+        st_spi_transfer(),
+    ),
+)
+def test_protobuf_message_payload_roundtrip_property(
+    command_id: int, sequence_id: int, pb_msg: ProtobufMessage
+) -> None:
+    """SIL-2 Property: Any Protobuf message payload embedded in an RpcEnvelope roundtrips losslessly."""
+    raw = build_frame(command_id=command_id, sequence_id=sequence_id, payload=pb_msg)
+    decoded = parse_frame(raw)
+    assert decoded.envelope.command_id == command_id
+    assert decoded.envelope.sequence_id == sequence_id
+    assert decoded.envelope.version == protocol.PROTOCOL_VERSION
+    assert decoded.payload == pb_msg
+
+
+@given(
+    command_id=st.integers(min_value=0, max_value=protocol.UINT16_MAX).filter(lambda cid: not is_system_command(cid)),
+    sequence_id=st.integers(min_value=0, max_value=protocol.UINT16_MAX),
+    pb_msg=st.one_of(
+        st_pin_mode(),
+        st_digital_write(),
+        st_analog_write(),
+        st_datastore_put(),
+        st_mailbox_push(),
+        st_file_write(),
+        st_spi_transfer(),
+    ),
+    session_key=st.binary(min_size=32, max_size=32),
+    nonce=st.binary(min_size=12, max_size=12),
+)
+def test_protobuf_message_encrypted_roundtrip_property(
+    command_id: int, sequence_id: int, pb_msg: ProtobufMessage, session_key: bytes, nonce: bytes
+) -> None:
+    """SIL-2 Property: Protobuf message encrypted under AEAD roundtrips losslessly to raw bytes."""
+    raw = build_frame(
+        command_id=command_id,
+        sequence_id=sequence_id,
+        payload=pb_msg,
+        session_key=session_key,
+        nonce=nonce,
+    )
+    decoded = parse_frame(raw, session_key=session_key)
+    assert decoded.envelope.command_id == command_id
+    assert decoded.envelope.sequence_id == sequence_id
+    assert decoded.payload == pb_msg.SerializeToString()

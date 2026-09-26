@@ -443,3 +443,78 @@ def st_runtime_config(draw: DrawFn) -> RuntimeConfig:
         serial_shared_secret=secret,
         allow_non_tmp_paths=True,
     )
+
+
+@st.composite
+def st_pin_mode(draw: DrawFn) -> pb.PinMode:
+    """Canonical Hypothesis strategy for generating PinMode messages."""
+    pin = draw(st.integers(min_value=0, max_value=64))
+    mode = draw(st.sampled_from([pb.PIN_INPUT, pb.PIN_OUTPUT, pb.PIN_INPUT_PULLUP]))
+    return pb.PinMode(pin=pin, mode=mode)
+
+
+@st.composite
+def st_digital_write(draw: DrawFn) -> pb.DigitalWrite:
+    """Canonical Hypothesis strategy for generating DigitalWrite messages."""
+    pin = draw(st.integers(min_value=0, max_value=64))
+    value = draw(st.sampled_from([0, 1]))
+    return pb.DigitalWrite(pin=pin, value=value)
+
+
+@st.composite
+def st_analog_write(draw: DrawFn) -> pb.AnalogWrite:
+    """Canonical Hypothesis strategy for generating AnalogWrite messages."""
+    pin = draw(st.integers(min_value=0, max_value=64))
+    value = draw(st.integers(min_value=0, max_value=255))
+    return pb.AnalogWrite(pin=pin, value=value)
+
+
+@st.composite
+def st_pin_read(draw: DrawFn) -> pb.PinRead:
+    """Canonical Hypothesis strategy for generating PinRead messages."""
+    pin = draw(st.integers(min_value=0, max_value=64))
+    return pb.PinRead(pin=pin)
+
+
+@st.composite
+def st_datastore_put(draw: DrawFn) -> pb.DatastorePut:
+    """Canonical Hypothesis strategy for generating DatastorePut messages."""
+    key = draw(st.from_regex(r"^[a-zA-Z0-9_\-\.]{1,32}$", fullmatch=True))
+    value = draw(st.binary(min_size=0, max_size=256))
+    return pb.DatastorePut(key=key, value=value)
+
+
+@st.composite
+def st_datastore_get(draw: DrawFn) -> pb.DatastoreGet:
+    """Canonical Hypothesis strategy for generating DatastoreGet messages."""
+    key = draw(st.from_regex(r"^[a-zA-Z0-9_\-\.]{1,32}$", fullmatch=True))
+    return pb.DatastoreGet(key=key)
+
+
+@st.composite
+def st_mailbox_push(draw: DrawFn) -> pb.MailboxPush:
+    """Canonical Hypothesis strategy for generating MailboxPush messages."""
+    data = draw(st.binary(min_size=0, max_size=256))
+    return pb.MailboxPush(data=data)
+
+
+@st.composite
+def st_file_write(draw: DrawFn) -> pb.FileWrite:
+    """Canonical Hypothesis strategy for generating FileWrite messages."""
+    name = draw(st.from_regex(r"^[a-zA-Z0-9_\-\.]{1,16}$", fullmatch=True))
+    data = draw(st.binary(min_size=0, max_size=512))
+    return pb.FileWrite(path=f"/tmp/{name}", data=data)
+
+
+@st.composite
+def st_file_read(draw: DrawFn) -> pb.FileRead:
+    """Canonical Hypothesis strategy for generating FileRead messages."""
+    name = draw(st.from_regex(r"^[a-zA-Z0-9_\-\.]{1,16}$", fullmatch=True))
+    return pb.FileRead(path=f"/tmp/{name}")
+
+
+@st.composite
+def st_spi_transfer(draw: DrawFn) -> pb.SpiTransfer:
+    """Canonical Hypothesis strategy for generating SpiTransfer messages."""
+    data = draw(st.binary(min_size=1, max_size=64))
+    return pb.SpiTransfer(data=data)

@@ -736,9 +736,7 @@ class GatewayLocalBridgeService(LocalBridgeBase):
             if "console" in req.topic_name:
                 for q in self.gateway.console_queues.get(device_id, []):
                     q.put_nowait(req)
-            await self._forward_rpc(
-                stream, "Publish", pb.CloudQueuedPublish, pb.CloudQueuedPublish(), pre_read_req=req
-            )
+            await self._forward_rpc(stream, "Publish", pb.CloudQueuedPublish, pb.CloudQueuedPublish(), pre_read_req=req)
 
     async def SubscribeConsole(self, stream: Stream[pb.SubscribeRequest, pb.CloudQueuedPublish]) -> None:
         req = await stream.recv_message()

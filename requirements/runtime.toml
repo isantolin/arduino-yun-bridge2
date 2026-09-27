@@ -201,7 +201,7 @@ rationale = "Zero-heap, STL-free deterministic C++ template library for SIL-2 MC
 name = "wolfSSL"
 github = "wolfSSL/wolfssl"
 ref_type = "tags"
-version = "v5.9.2-stable"
+version = "v5.9.4-stable"
 check_file = "wolfssl/wolfcrypt/settings.h"
 rationale = "FIPS 140-3 / SIL-2 compliant cryptography engine (ChaCha20-Poly1305, HKDF, SHA-256)"
 

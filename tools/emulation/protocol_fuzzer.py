@@ -10,10 +10,11 @@ from __future__ import annotations
 
 import asyncio
 from binascii import crc32
-from typing import Annotated, ClassVar, Protocol, cast
+from collections.abc import Callable
+from typing import Annotated, ClassVar, cast
 
 from cobs import cobsr
-from hypothesis import settings as hyp_settings, strategies as st
+from hypothesis import strategies as st
 import hypothesis.stateful as h_stateful
 from hypothesis.stateful import RuleBasedStateMachine, invariant, rule
 import serialx
@@ -27,18 +28,8 @@ from mcubridge.protocol.frame import build_frame
 cli = typer.Typer(help="[MIL-SPEC/SIL-2] McuBridge Protocol Stateful Fuzzer", add_completion=False)
 logger = structlog.get_logger("protocol_fuzzer")
 
-
-class _StateMachineRunner(Protocol):
-    def __call__(
-        self,
-        state_machine_factory: type[RuleBasedStateMachine],
-        *,
-        settings: hyp_settings | None = None,
-    ) -> None: ...
-
-
-_RUN_STATE_MACHINE: _StateMachineRunner = cast(
-    _StateMachineRunner,
+_RUN_STATE_MACHINE: Callable[[type[RuleBasedStateMachine]], None] = cast(
+    Callable[[type[RuleBasedStateMachine]], None],
     getattr(h_stateful, "run_state_machine_as_test"),
 )
 
@@ -210,28 +201,18 @@ def main(
     port: Annotated[str, typer.Option("--port", help="Serial port URL or device node")] = "/dev/ttyUSB0",
     baud: Annotated[int, typer.Option("--baud", help="Serial baudrate")] = protocol.DEFAULT_BAUDRATE,
     count: Annotated[int, typer.Option("--count", help="Number of stateful steps to execute")] = 1000,
-    seed: Annotated[int | None, typer.Option("--seed", help="Deterministic RNG seed for Hypothesis")] = None,
 ) -> None:
     """Run Hypothesis-driven stateful protocol fuzzing against a target serial endpoint."""
     if count <= 0:
         raise ValueError("count must be greater than 0")
 
-    logger.info("starting_fuzzer_state_machine", port=port, baudrate=baud, steps=count, seed=seed)
+    logger.info("starting_fuzzer_state_machine", port=port, baudrate=baud, steps=count)
 
     ProtocolFuzzerStateMachine.port = port
     ProtocolFuzzerStateMachine.baudrate = baud
 
-    steps_per_example: int = min(count, 50)
-    max_examples: int = max(1, count // steps_per_example)
-
-    state_settings: hyp_settings = hyp_settings(
-        max_examples=max_examples,
-        stateful_step_count=steps_per_example,
-        deadline=None,
-    )
-
     try:
-        _RUN_STATE_MACHINE(ProtocolFuzzerStateMachine, settings=state_settings)
+        _RUN_STATE_MACHINE(ProtocolFuzzerStateMachine)
         logger.info("fuzzing_complete", steps=count)
     except KeyboardInterrupt:
         logger.info("fuzzing_interrupted_by_user")

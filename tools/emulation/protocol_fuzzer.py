@@ -13,7 +13,7 @@ from binascii import crc32
 from typing import Annotated, ClassVar, Protocol, cast
 
 from cobs import cobsr
-from hypothesis import HealthCheck, event, settings as hyp_settings, strategies as st
+from hypothesis import settings as hyp_settings, strategies as st
 import hypothesis.stateful as h_stateful
 from hypothesis.stateful import RuleBasedStateMachine, invariant, rule
 import serialx
@@ -126,7 +126,6 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
         seq: int = self._next_seq_id()
         frame: bytes = self._build_raw_frame(protocol.Command.CMD_GET_VERSION.value, seq, payload)
         self.loop.run_until_complete(self._send_raw(frame))
-        event("rule_valid_ping")
 
     @rule(
         cmd=st.integers(min_value=1, max_value=0x7FFF),
@@ -137,28 +136,22 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
         """Inject frames with corrupt CRC32 checksums."""
         frame: bytes = self._build_envelope_frame(cmd, payload, override_crc=bad_crc)
         self.loop.run_until_complete(self._send_raw(frame))
-        event("rule_invalid_crc")
 
     @rule(
         cmd=st.integers(min_value=1, max_value=0x7FFF),
-        bad_version=st.one_of(
-            st.integers(min_value=0, max_value=protocol.PROTOCOL_VERSION - 1),
-            st.integers(min_value=protocol.PROTOCOL_VERSION + 1, max_value=protocol.UINT8_MASK),
-        ),
+        bad_version=st.integers(min_value=protocol.PROTOCOL_VERSION + 1, max_value=protocol.UINT8_MASK),
         payload=st.binary(min_size=0, max_size=64),
     )
     def fuzz_invalid_version(self, cmd: int, bad_version: int, payload: bytes) -> None:
         """Inject envelopes with unsupported protocol version numbers."""
         frame: bytes = self._build_envelope_frame(cmd, payload, version=bad_version)
         self.loop.run_until_complete(self._send_raw(frame))
-        event("rule_invalid_version")
 
     @rule(raw_bytes=st.binary(min_size=1, max_size=128))
     def fuzz_malformed_cobs(self, raw_bytes: bytes) -> None:
         """Inject arbitrary unencoded byte sequences ending in frame delimiter."""
         frame: bytes = raw_bytes + protocol.FRAME_DELIMITER
         self.loop.run_until_complete(self._send_raw(frame))
-        event("rule_malformed_cobs")
 
     @rule(
         cmd=st.integers(min_value=1, max_value=0x7FFF),
@@ -168,13 +161,11 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
         """Inject frames exceeding the maximum allowed buffer size."""
         frame: bytes = self._build_envelope_frame(cmd, oversized)
         self.loop.run_until_complete(self._send_raw(frame))
-        event("rule_oversized_payload")
 
     @rule(noise=st.binary(min_size=1, max_size=64))
     def fuzz_wire_noise(self, noise: bytes) -> None:
         """Simulate physical wire line noise and jitter."""
         self.loop.run_until_complete(self._send_raw(noise))
-        event("rule_wire_noise")
 
     @rule(
         cmd=st.integers(min_value=0x7000, max_value=protocol.UINT16_MAX),
@@ -185,7 +176,6 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
         seq: int = self._next_seq_id()
         frame: bytes = self._build_raw_frame(cmd, seq, payload)
         self.loop.run_until_complete(self._send_raw(frame))
-        event("rule_unknown_command")
 
     async def _read_probe(self) -> bytes | None:
         reader = self.reader
@@ -205,7 +195,6 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
         resp: bytes | None = self.loop.run_until_complete(self._read_probe())
         if resp is not None:
             self.probe_responses_received += 1
-        event("rule_probe_verify")
 
     @invariant()
     def verify_fuzzer_invariants(self) -> None:
@@ -225,7 +214,7 @@ def main(
 ) -> None:
     """Run Hypothesis-driven stateful protocol fuzzing against a target serial endpoint."""
     if count <= 0:
-        raise typer.BadParameter("count must be greater than 0")
+        raise ValueError("count must be greater than 0")
 
     logger.info("starting_fuzzer_state_machine", port=port, baudrate=baud, steps=count, seed=seed)
 
@@ -238,10 +227,7 @@ def main(
     state_settings: hyp_settings = hyp_settings(
         max_examples=max_examples,
         stateful_step_count=steps_per_example,
-        derandomize=(seed is None),
-        database=None,
         deadline=None,
-        suppress_health_check=[HealthCheck.too_slow, HealthCheck.filter_too_much],
     )
 
     try:

@@ -10,11 +10,10 @@ from __future__ import annotations
 
 import asyncio
 from binascii import crc32
-from collections.abc import Callable
-from typing import Annotated, ClassVar, cast
+from typing import Annotated, ClassVar, Protocol, cast
 
 from cobs import cobsr
-from hypothesis import HealthCheck, event, seed as hyp_seed, settings as hyp_settings, strategies as st
+from hypothesis import HealthCheck, event, settings as hyp_settings, strategies as st
 import hypothesis.stateful as h_stateful
 from hypothesis.stateful import RuleBasedStateMachine, invariant, rule
 import serialx
@@ -28,8 +27,18 @@ from mcubridge.protocol.frame import build_frame
 cli = typer.Typer(help="[MIL-SPEC/SIL-2] McuBridge Protocol Stateful Fuzzer", add_completion=False)
 logger = structlog.get_logger("protocol_fuzzer")
 
-_RUN_STATE_MACHINE: Callable[[type[RuleBasedStateMachine]], None] = cast(
-    Callable[[type[RuleBasedStateMachine]], None],
+
+class _StateMachineRunner(Protocol):
+    def __call__(
+        self,
+        state_machine_factory: type[RuleBasedStateMachine],
+        *,
+        settings: hyp_settings | None = None,
+    ) -> None: ...
+
+
+_RUN_STATE_MACHINE: _StateMachineRunner = cast(
+    _StateMachineRunner,
     getattr(h_stateful, "run_state_machine_as_test"),
 )
 
@@ -55,7 +64,9 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
         self.loop.run_until_complete(self._connect())
 
     async def _connect(self) -> None:
-        self.reader, self.writer = await serialx.open_serial_connection(url=self.port, baudrate=self.baudrate)
+        reader, writer = await serialx.open_serial_connection(url=self.port, baudrate=self.baudrate)
+        self.reader = cast(asyncio.StreamReader, reader)
+        self.writer = cast(asyncio.StreamWriter, writer)
         logger.info("connected", port=self.port, baudrate=self.baudrate)
 
     async def _send_raw(self, data: bytes) -> None:
@@ -232,17 +243,9 @@ def main(
         deadline=None,
         suppress_health_check=[HealthCheck.too_slow, HealthCheck.filter_too_much],
     )
-    hyp_settings.register_profile("protocol_fuzzer", state_settings)
-    hyp_settings.load_profile("protocol_fuzzer")
-
-    runner: Callable[[type[RuleBasedStateMachine]], None] = (
-        cast(Callable[[type[RuleBasedStateMachine]], None], hyp_seed(seed)(_RUN_STATE_MACHINE))
-        if seed is not None
-        else _RUN_STATE_MACHINE
-    )
 
     try:
-        runner(ProtocolFuzzerStateMachine)
+        _RUN_STATE_MACHINE(ProtocolFuzzerStateMachine, settings=state_settings)
         logger.info("fuzzing_complete", steps=count)
     except KeyboardInterrupt:
         logger.info("fuzzing_interrupted_by_user")

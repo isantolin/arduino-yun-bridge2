@@ -56,8 +56,8 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
 
     async def _connect(self) -> None:
         reader, writer = await serialx.open_serial_connection(url=self.port, baudrate=self.baudrate)
-        self.reader = cast(asyncio.StreamReader, reader)
-        self.writer = cast(asyncio.StreamWriter, writer)
+        self.reader = asyncio.StreamReader
+        self.writer = asyncio.StreamWriter
         logger.info("connected", port=self.port, baudrate=self.baudrate)
 
     async def _send_raw(self, data: bytes) -> None:

@@ -408,24 +408,28 @@ jobs:
       - name: Generate Coverage Summary
         run: |
           python -m pip install --upgrade pip setuptools
-          pip install -r requirements/runtime.txt rich
-          python tools/profiling/coverage_report.py \
-            --output-markdown coverage/coverage-summary.md \
-            --output-json coverage/coverage-summary.json \
-            --github-step-summary "$GITHUB_STEP_SUMMARY"
+          pip install coverage
+          echo "## 📊 Test & Coverage Summary" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f coverage/python/.coverage ]; then
+            echo "### 🐍 Python Coverage (coverage.py native)" >> "$GITHUB_STEP_SUMMARY"
+            coverage report --data-file=coverage/python/.coverage --format=markdown >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f coverage/arduino/summary.txt ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "### ⚡ Arduino MCU C++ Coverage (gcovr)" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            cat coverage/arduino/summary.txt >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Generate Memory Summary
         run: |
-          # 1. Total usage report
-          python tools/profiling/arduino_memory_report.py arduino-logs \
-            --github-step-summary "$GITHUB_STEP_SUMMARY"
-          
-          # 2. Advanced Symbol Profiling (cat pre-generated report)
+          # 1. Advanced Symbol Profiling (cat pre-generated report from Bloaty)
           if [ -f arduino-logs/symbol_profile.md ]; then
             cat arduino-logs/symbol_profile.md >> "$GITHUB_STEP_SUMMARY"
           fi
 
-          # 3. simavr Hardware Emulation Summary
+          # 2. simavr Hardware Emulation Summary
           if [ -f simavr-logs/simavr_summary.md ]; then
             cat simavr-logs/simavr_summary.md >> "$GITHUB_STEP_SUMMARY"
           fi
@@ -435,22 +439,24 @@ jobs:
           PYTHONPATH: .:mcubridge:mcubridge-client-examples:typings
         run: |
           # 1. Mandatory Protocol Generation (Required for imports)
-          # Use tox to ensure we have all generator deps, but we need them in this env too
           pip install jinja2 nanopb
           python tools/protocol/generate.py \
             --spec tools/protocol/mcubridge.proto \
             --py mcubridge/mcubridge/protocol/protocol.py \
             --py-client mcubridge-client-examples/mcubridge_client/protocol.py
-          
-          # 2. Standard performance profile
-          python tools/profiling/daemon_profile_report.py \
-            --iterations 2000 \
-            --json coverage/daemon-profile.json \
-            --github-step-summary "$GITHUB_STEP_SUMMARY"
-          
-          # 3. Advanced Runtime Profiling (Architecture, Memory, Time & Size)
-          python tools/profiling/python_runtime_profiler.py \
-            --github-step-summary "$GITHUB_STEP_SUMMARY"
+
+          # 2. Performance benchmark
+          python tools/profiling/benchmark_performance.py \
+            --iterations 5000 \
+            --json coverage/protocol-benchmark.json \
+            --py-proto mcubridge/mcubridge/protocol/protocol.py \
+            --py-client mcubridge-client-examples/mcubridge_client/protocol.py
+
+          # 3. Native Python import time profiling
+          echo "### ⏱️ Python Import Time Profile" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          python -X importtime -c "import mcubridge" 2>&1 | tail -n 25 >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload Combined Coverage
         uses: actions/upload-artifact@v7

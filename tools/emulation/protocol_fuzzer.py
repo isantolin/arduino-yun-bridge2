@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import asyncio
 from binascii import crc32
-from typing import Annotated, Protocol, cast
+from collections.abc import Callable
+from typing import Annotated, cast
 
 from cobs import cobsr
 from hypothesis import HealthCheck, event, seed as hyp_seed, settings as hyp_settings, strategies as st
@@ -27,18 +28,8 @@ from mcubridge.protocol.frame import build_frame
 cli = typer.Typer(help="[MIL-SPEC/SIL-2] McuBridge Protocol Stateful Fuzzer", add_completion=False)
 logger = structlog.get_logger("protocol_fuzzer")
 
-
-class _StateMachineRunner(Protocol):
-    def __call__(
-        self,
-        state_machine_factory: type[RuleBasedStateMachine],
-        *,
-        settings: hyp_settings | None = None,
-    ) -> None: ...
-
-
-_RUN_STATE_MACHINE: _StateMachineRunner = cast(
-    _StateMachineRunner,
+_RUN_STATE_MACHINE: Callable[[type[RuleBasedStateMachine]], None] = cast(
+    Callable[[type[RuleBasedStateMachine]], None],
     getattr(h_stateful, "run_state_machine_as_test"),
 )
 
@@ -108,23 +99,23 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
         version: int = protocol.PROTOCOL_VERSION,
         override_crc: int | None = None,
     ) -> bytes:
-        seq = self._next_seq_id()
+        seq: int = self._next_seq_id()
         envelope = pb.RpcEnvelope(
             version=version,
             command_id=command_id,
             sequence_id=seq,
             encrypted_payload_with_tag=payload,
         )
-        body = envelope.SerializeToString()
-        crc_val = override_crc if override_crc is not None else (crc32(body) & protocol.CRC32_MASK)
-        raw_frame = body + (crc_val & protocol.CRC32_MASK).to_bytes(protocol.CRC_SIZE, "little")
+        body: bytes = envelope.SerializeToString()
+        crc_val: int = override_crc if override_crc is not None else (crc32(body) & protocol.CRC32_MASK)
+        raw_frame: bytes = body + (crc_val & protocol.CRC32_MASK).to_bytes(protocol.CRC_SIZE, "little")
         return cobsr.encode(raw_frame) + protocol.FRAME_DELIMITER
 
     @rule(payload=st.binary(min_size=0, max_size=128))
     def fuzz_valid_ping(self, payload: bytes) -> None:
         """Generate valid version probe frames with arbitrary valid payloads."""
-        seq = self._next_seq_id()
-        frame = self._build_raw_frame(protocol.Command.CMD_GET_VERSION.value, seq, payload)
+        seq: int = self._next_seq_id()
+        frame: bytes = self._build_raw_frame(protocol.Command.CMD_GET_VERSION.value, seq, payload)
         self.loop.run_until_complete(self._send_raw(frame))
         event("rule_valid_ping")
 
@@ -135,7 +126,7 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
     )
     def fuzz_invalid_crc(self, cmd: int, payload: bytes, bad_crc: int) -> None:
         """Inject frames with corrupt CRC32 checksums."""
-        frame = self._build_envelope_frame(cmd, payload, override_crc=bad_crc)
+        frame: bytes = self._build_envelope_frame(cmd, payload, override_crc=bad_crc)
         self.loop.run_until_complete(self._send_raw(frame))
         event("rule_invalid_crc")
 
@@ -149,14 +140,14 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
     )
     def fuzz_invalid_version(self, cmd: int, bad_version: int, payload: bytes) -> None:
         """Inject envelopes with unsupported protocol version numbers."""
-        frame = self._build_envelope_frame(cmd, payload, version=bad_version)
+        frame: bytes = self._build_envelope_frame(cmd, payload, version=bad_version)
         self.loop.run_until_complete(self._send_raw(frame))
         event("rule_invalid_version")
 
     @rule(raw_bytes=st.binary(min_size=1, max_size=128))
     def fuzz_malformed_cobs(self, raw_bytes: bytes) -> None:
         """Inject arbitrary unencoded byte sequences ending in frame delimiter."""
-        frame = raw_bytes + protocol.FRAME_DELIMITER
+        frame: bytes = raw_bytes + protocol.FRAME_DELIMITER
         self.loop.run_until_complete(self._send_raw(frame))
         event("rule_malformed_cobs")
 
@@ -166,7 +157,7 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
     )
     def fuzz_oversized_payload(self, cmd: int, oversized: bytes) -> None:
         """Inject frames exceeding the maximum allowed buffer size."""
-        frame = self._build_envelope_frame(cmd, oversized)
+        frame: bytes = self._build_envelope_frame(cmd, oversized)
         self.loop.run_until_complete(self._send_raw(frame))
         event("rule_oversized_payload")
 
@@ -182,8 +173,8 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
     )
     def fuzz_unknown_command(self, cmd: int, payload: bytes) -> None:
         """Inject unregistered command IDs to verify graceful rejection."""
-        seq = self._next_seq_id()
-        frame = self._build_raw_frame(cmd, seq, payload)
+        seq: int = self._next_seq_id()
+        frame: bytes = self._build_raw_frame(cmd, seq, payload)
         self.loop.run_until_complete(self._send_raw(frame))
         event("rule_unknown_command")
 
@@ -199,10 +190,10 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
     @rule()
     def verify_endpoint_responsiveness(self) -> None:
         """Send a valid probe frame to verify MCU endpoint remains responsive."""
-        seq = self._next_seq_id()
-        probe = self._build_raw_frame(protocol.Command.CMD_GET_VERSION.value, seq, b"PROBE")
+        seq: int = self._next_seq_id()
+        probe: bytes = self._build_raw_frame(protocol.Command.CMD_GET_VERSION.value, seq, b"PROBE")
         self.loop.run_until_complete(self._send_raw(probe))
-        resp = self.loop.run_until_complete(self._read_probe())
+        resp: bytes | None = self.loop.run_until_complete(self._read_probe())
         if resp is not None:
             self.probe_responses_received += 1
         event("rule_probe_verify")
@@ -231,8 +222,8 @@ def main(
     ProtocolFuzzerStateMachine.port = port
     ProtocolFuzzerStateMachine.baudrate = baud
 
-    steps_per_example = min(count, 50)
-    max_examples = max(1, count // steps_per_example)
+    steps_per_example: int = min(count, 50)
+    max_examples: int = max(1, count // steps_per_example)
 
     state_settings = hyp_settings(
         max_examples=max_examples,
@@ -242,13 +233,17 @@ def main(
         deadline=None,
         suppress_health_check=[HealthCheck.too_slow, HealthCheck.filter_too_much],
     )
+    hyp_settings.register_profile("protocol_fuzzer", state_settings)
+    hyp_settings.load_profile("protocol_fuzzer")
 
-    runner: _StateMachineRunner = _RUN_STATE_MACHINE
-    if seed is not None:
-        runner = cast(_StateMachineRunner, hyp_seed(seed)(runner))
+    runner: Callable[[type[RuleBasedStateMachine]], None] = (
+        cast(Callable[[type[RuleBasedStateMachine]], None], hyp_seed(seed)(_RUN_STATE_MACHINE))
+        if seed is not None
+        else _RUN_STATE_MACHINE
+    )
 
     try:
-        runner(ProtocolFuzzerStateMachine, settings=state_settings)
+        runner(ProtocolFuzzerStateMachine)
         logger.info("fuzzing_complete", steps=count)
     except KeyboardInterrupt:
         logger.info("fuzzing_interrupted_by_user")

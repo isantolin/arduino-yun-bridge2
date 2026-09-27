@@ -6,10 +6,13 @@ Measures:
 - AEAD Cryptographic performance (ChaCha20-Poly1305)
 - Protobuf wire serialization latency
 - Memory usage (RSS, peak allocations, LMDB footprint)
+- Architecture profile, module audit, and top RAM symbols
 """
 
 from __future__ import annotations
 
+import importlib
+import importlib.util
 import json
 import os
 import time
@@ -18,7 +21,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
 
-import psutil
 import typer
 from cobs import cobsr
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
@@ -231,6 +233,49 @@ def benchmark_rpc_frames(iterations: int = 20_000) -> list[BenchmarkMetric]:
     return [build_metric, parse_metric]
 
 
+def measure_module_audit() -> list[tuple[str, float, float, str]]:
+    """Audit core python modules for import latency and disk footprint."""
+    core_modules = [
+        "mcubridge.protocol.frame",
+        "mcubridge.protocol.structures",
+        "mcubridge.protocol.protocol",
+        "mcubridge.services.runtime",
+        "mcubridge.services.handshake",
+        "mcubridge.transport.serial",
+        "mcubridge.state.storage",
+    ]
+    results: list[tuple[str, float, float, str]] = []
+    for mod in core_modules:
+        start = time.perf_counter()
+        try:
+            importlib.import_module(mod)
+        except (ImportError, AttributeError, ValueError, OSError):
+            continue
+        dur_ms = (time.perf_counter() - start) * 1000
+        size_kb = 0.0
+        try:
+            spec = importlib.util.find_spec(mod)
+            if spec and spec.origin:
+                size_kb = Path(spec.origin).stat().st_size / 1024
+        except (OSError, ValueError):
+            pass
+        status = "🟢 Optimized" if dur_ms < 50 else "🟡 Heavy"
+        results.append((mod, dur_ms, size_kb, status))
+    return results
+
+
+def measure_top_symbols() -> list[tuple[str, float, int]]:
+    """Capture top memory-allocated symbols and traceback locations."""
+    snapshot = tracemalloc.take_snapshot()
+    top_stats = snapshot.statistics("traceback")
+    results: list[tuple[str, float, int]] = []
+    for stat in top_stats[:10]:
+        frame = stat.traceback[0]
+        loc = f"{Path(frame.filename).name}:{frame.lineno}"
+        results.append((loc, stat.size / 1024, stat.count))
+    return results
+
+
 @app.command()
 def main(
     output_file: Annotated[Path | None, typer.Option("--output", "-o", help="Write report to markdown file")] = None,
@@ -238,6 +283,9 @@ def main(
     json_path: Annotated[Path | None, typer.Option("--json", help="Path to write JSON benchmark metrics")] = None,
     py_proto: Annotated[Path | None, typer.Option("--py-proto", help="Path to generated protocol.py")] = None,
     py_client: Annotated[Path | None, typer.Option("--py-client", help="Path to client protocol.py")] = None,
+    github_step_summary: Annotated[
+        Path | None, typer.Option("--github-step-summary", help="Path to GitHub step summary markdown")
+    ] = None,
 ) -> None:
     """Run full benchmark suite and report memory metrics."""
     tracemalloc.start()
@@ -249,28 +297,74 @@ def main(
     proto_metrics = benchmark_protobuf_serialization(iterations=iterations)
     lmdb_metrics = benchmark_lmdb_storage(iterations=min(iterations, 10_000))
 
+    module_stats = measure_module_audit()
+    top_symbols = measure_top_symbols()
+
     _current_mem, peak_mem = tracemalloc.get_traced_memory()
     tracemalloc.stop()
 
-    proc = psutil.Process()
-    mem_info = proc.memory_info()
-    rss_mb = mem_info.rss / (1024 * 1024)
-    vms_mb = mem_info.vms / (1024 * 1024)
+    rss_mb = 0.0
+    vms_mb = 0.0
+    try:
+        import psutil
+
+        proc = psutil.Process()
+        mem_info = proc.memory_info()
+        rss_mb = mem_info.rss / (1024 * 1024)
+        vms_mb = mem_info.vms / (1024 * 1024)
+    except (ImportError, AttributeError, OSError):
+        pass
 
     all_metrics = framing_metrics + rpc_metrics + crypto_metrics + proto_metrics + lmdb_metrics
 
     md_lines: list[str] = [
-        "## ⚡ MCU Bridge 2 Performance Benchmark & Memory Report",
+        "### 🖥️ Daemon Resource Profile",
         "",
-        f"- **Peak Traced Memory:** `{peak_mem / 1024:.2f} KiB`",
-        f"- **Process RSS Memory:** `{rss_mb:.2f} MiB`",
-        f"- **Process VMS Memory:** `{vms_mb:.2f} MiB`",
+        "| Metric | Value |",
+        "| :--- | ---: |",
+        f"| Total Runtime RAM (RSS) | `{rss_mb:.2f} MiB` |",
+        f"| Process Virtual Memory (VMS) | `{vms_mb:.2f} MiB` |",
+        f"| Peak Traced Allocations | `{peak_mem / 1024:.2f} KiB` |",
         "",
-        "### 📊 Throughput & Latency Matrix",
+        "### 🐍 Python Architecture Profiling",
         "",
-        "| Operation / Subsystem | Iterations | Total Time (s) | Ops/Sec | Throughput (MB/s) | Latency (µs/op) |",
-        "| :--- | :---: | :---: | :---: | :---: | :---: |",
     ]
+
+    if module_stats:
+        md_lines.extend(
+            [
+                "#### 🔍 Module Audit (Time & Size)",
+                "| Module | Import Time (ms) | Disk Size (KB) | Status |",
+                "| :--- | :---: | :---: | :--- |",
+            ]
+        )
+        total_time = sum(m[1] for m in module_stats)
+        total_size = sum(m[2] for m in module_stats)
+        for mod, dur, sz, st in module_stats:
+            md_lines.append(f"| `{mod}` | {dur:.2f} | {sz:.1f} | {st} |")
+        md_lines.append(f"| **TOTAL** | **{total_time:.2f}** | **{total_size:.1f}** | |")
+        md_lines.append("")
+
+    if top_symbols:
+        md_lines.extend(
+            [
+                "#### 🧠 RAM Symbols (Top Allocations)",
+                "| Source (File:Line) | Allocation (KB) | Obj Count |",
+                "| :--- | :---: | :---: |",
+            ]
+        )
+        for sym, sz, cnt in top_symbols:
+            md_lines.append(f"| `{sym}` | {sz:.1f} | {cnt} |")
+        md_lines.append("")
+
+    md_lines.extend(
+        [
+            "### ⚡ Performance Benchmark Matrix",
+            "",
+            "| Operation / Subsystem | Iterations | Total Time (s) | Ops/Sec | Throughput (MB/s) | Latency (µs/op) |",
+            "| :--- | :---: | :---: | :---: | :---: | :---: |",
+        ]
+    )
 
     for m in all_metrics:
         md_lines.append(
@@ -285,6 +379,12 @@ def main(
         output_file.parent.mkdir(parents=True, exist_ok=True)
         output_file.write_text(report_text, encoding="utf-8")
         print(f"✅ Report saved to {output_file}")
+
+    if github_step_summary:
+        github_step_summary.parent.mkdir(parents=True, exist_ok=True)
+        with github_step_summary.open("a", encoding="utf-8") as f:
+            f.write("\n" + report_text + "\n")
+        print(f"✅ Step summary saved to {github_step_summary}")
 
     if json_path:
         json_path.parent.mkdir(parents=True, exist_ok=True)

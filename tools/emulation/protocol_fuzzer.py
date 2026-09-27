@@ -10,8 +10,7 @@ from __future__ import annotations
 
 import asyncio
 from binascii import crc32
-from collections.abc import Callable
-from typing import Annotated, cast
+from typing import Annotated, Protocol, cast
 
 from cobs import cobsr
 from hypothesis import HealthCheck, event, seed as hyp_seed, settings as hyp_settings, strategies as st
@@ -28,8 +27,18 @@ from mcubridge.protocol.frame import build_frame
 cli = typer.Typer(help="[MIL-SPEC/SIL-2] McuBridge Protocol Stateful Fuzzer", add_completion=False)
 logger = structlog.get_logger("protocol_fuzzer")
 
-_RUN_STATE_MACHINE: Callable[[type[RuleBasedStateMachine]], None] = cast(
-    Callable[[type[RuleBasedStateMachine]], None],
+
+class _StateMachineRunner(Protocol):
+    def __call__(
+        self,
+        state_machine_factory: type[RuleBasedStateMachine],
+        *,
+        settings: hyp_settings | None = None,
+    ) -> None: ...
+
+
+_RUN_STATE_MACHINE: _StateMachineRunner = cast(
+    _StateMachineRunner,
     getattr(h_stateful, "run_state_machine_as_test"),
 )
 
@@ -234,15 +243,12 @@ def main(
         suppress_health_check=[HealthCheck.too_slow, HealthCheck.filter_too_much],
     )
 
-    def _execute() -> None:
-        _RUN_STATE_MACHINE(ProtocolFuzzerStateMachine)
-
-    test_fn: Callable[[], None] = state_settings(_execute)
+    runner: _StateMachineRunner = _RUN_STATE_MACHINE
     if seed is not None:
-        test_fn = hyp_seed(seed)(test_fn)
+        runner = cast(_StateMachineRunner, hyp_seed(seed)(runner))
 
     try:
-        test_fn()
+        runner(ProtocolFuzzerStateMachine, settings=state_settings)
         logger.info("fuzzing_complete", steps=count)
     except KeyboardInterrupt:
         logger.info("fuzzing_interrupted_by_user")

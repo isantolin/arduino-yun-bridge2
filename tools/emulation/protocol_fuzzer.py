@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 from binascii import crc32
 from collections.abc import Callable
-from typing import Annotated, cast
+from typing import Annotated, ClassVar, cast
 
 from cobs import cobsr
 from hypothesis import HealthCheck, event, seed as hyp_seed, settings as hyp_settings, strategies as st
@@ -41,8 +41,8 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
     automatic counterexample shrinking, and deterministic state invariant verification.
     """
 
-    port: str = "/dev/ttyUSB0"
-    baudrate: int = protocol.DEFAULT_BAUDRATE
+    port: ClassVar[str] = "/dev/ttyUSB0"
+    baudrate: ClassVar[int] = protocol.DEFAULT_BAUDRATE
 
     def __init__(self) -> None:
         super().__init__()
@@ -55,9 +55,7 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
         self.loop.run_until_complete(self._connect())
 
     async def _connect(self) -> None:
-        reader, writer = await serialx.open_serial_connection(url=self.port, baudrate=self.baudrate)
-        self.reader = cast(asyncio.StreamReader, reader)
-        self.writer = cast(asyncio.StreamWriter, writer)
+        self.reader, self.writer = await serialx.open_serial_connection(url=self.port, baudrate=self.baudrate)
         logger.info("connected", port=self.port, baudrate=self.baudrate)
 
     async def _send_raw(self, data: bytes) -> None:
@@ -203,6 +201,7 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
         """[SIL-2] Ensure sequence counter and connection state invariants hold."""
         assert 0 <= self.seq_id <= protocol.UINT16_MAX
         assert self.frames_sent >= 0
+        assert self.probe_responses_received >= 0
         assert self.writer is not None, "Serial writer disconnected unexpectedly"
 
 
@@ -225,7 +224,7 @@ def main(
     steps_per_example: int = min(count, 50)
     max_examples: int = max(1, count // steps_per_example)
 
-    state_settings = hyp_settings(
+    state_settings: hyp_settings = hyp_settings(
         max_examples=max_examples,
         stateful_step_count=steps_per_example,
         derandomize=(seed is None),

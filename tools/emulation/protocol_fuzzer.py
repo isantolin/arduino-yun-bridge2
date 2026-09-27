@@ -111,7 +111,7 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
         raw_frame: bytes = body + (crc_val & protocol.CRC32_MASK).to_bytes(protocol.CRC_SIZE, "little")
         return cobsr.encode(raw_frame) + protocol.FRAME_DELIMITER
 
-    @rule(payload=st.binary(min_size=0, max_size=128))
+    @rule(payload=st.binary(min_size=0, max_size=protocol.MAX_PAYLOAD_SIZE))
     def fuzz_valid_ping(self, payload: bytes) -> None:
         """Generate valid version probe frames with arbitrary valid payloads."""
         seq: int = self._next_seq_id()
@@ -120,18 +120,29 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
 
     @rule(
         cmd=st.integers(min_value=1, max_value=0x7FFF),
-        payload=st.binary(min_size=1, max_size=128),
-        bad_crc=st.integers(min_value=0, max_value=protocol.CRC32_MASK),
+        payload=st.binary(min_size=1, max_size=protocol.MAX_PAYLOAD_SIZE),
+        crc_xor=st.integers(min_value=1, max_value=protocol.CRC32_MASK),
     )
-    def fuzz_invalid_crc(self, cmd: int, payload: bytes, bad_crc: int) -> None:
-        """Inject frames with corrupt CRC32 checksums."""
-        frame: bytes = self._build_envelope_frame(cmd, payload, override_crc=bad_crc)
+    def fuzz_invalid_crc(self, cmd: int, payload: bytes, crc_xor: int) -> None:
+        """Inject frames with corrupt CRC32 checksums guaranteed to differ from valid CRC."""
+        seq: int = self._next_seq_id()
+        envelope = pb.RpcEnvelope(
+            version=protocol.PROTOCOL_VERSION,
+            command_id=cmd,
+            sequence_id=seq,
+            encrypted_payload_with_tag=payload,
+        )
+        body: bytes = envelope.SerializeToString()
+        valid_crc: int = crc32(body) & protocol.CRC32_MASK
+        bad_crc: int = (valid_crc ^ crc_xor) & protocol.CRC32_MASK
+        raw_frame: bytes = body + bad_crc.to_bytes(protocol.CRC_SIZE, "little")
+        frame: bytes = cobsr.encode(raw_frame) + protocol.FRAME_DELIMITER
         self.loop.run_until_complete(self._send_raw(frame))
 
     @rule(
         cmd=st.integers(min_value=1, max_value=0x7FFF),
         bad_version=st.integers(min_value=protocol.PROTOCOL_VERSION + 1, max_value=protocol.UINT8_MASK),
-        payload=st.binary(min_size=0, max_size=64),
+        payload=st.binary(min_size=0, max_size=protocol.MAX_PAYLOAD_SIZE),
     )
     def fuzz_invalid_version(self, cmd: int, bad_version: int, payload: bytes) -> None:
         """Inject envelopes with unsupported protocol version numbers."""
@@ -160,7 +171,7 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
 
     @rule(
         cmd=st.integers(min_value=0x7000, max_value=protocol.UINT16_MAX),
-        payload=st.binary(min_size=0, max_size=64),
+        payload=st.binary(min_size=0, max_size=protocol.MAX_PAYLOAD_SIZE),
     )
     def fuzz_unknown_command(self, cmd: int, payload: bytes) -> None:
         """Inject unregistered command IDs to verify graceful rejection."""

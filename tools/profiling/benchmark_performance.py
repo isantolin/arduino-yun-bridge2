@@ -380,11 +380,15 @@ def main(
         output_file.write_text(report_text, encoding="utf-8")
         print(f"✅ Report saved to {output_file}")
 
-    if github_step_summary:
-        github_step_summary.parent.mkdir(parents=True, exist_ok=True)
-        with github_step_summary.open("a", encoding="utf-8") as f:
-            f.write("\n" + report_text + "\n")
-        print(f"✅ Step summary saved to {github_step_summary}")
+    summary_dest = github_step_summary
+    if summary_dest is None and "GITHUB_STEP_SUMMARY" in os.environ:
+        summary_dest = Path(os.environ["GITHUB_STEP_SUMMARY"])
+
+    if summary_dest:
+        summary_dest.parent.mkdir(parents=True, exist_ok=True)
+        with summary_dest.open("a", encoding="utf-8") as f:
+            f.write(report_text + chr(10))
+        print(f"✅ Step summary saved to {summary_dest}")
 
     if json_path:
         json_path.parent.mkdir(parents=True, exist_ok=True)

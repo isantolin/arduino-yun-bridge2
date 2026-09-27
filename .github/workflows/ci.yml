@@ -447,10 +447,8 @@ jobs:
 
           # 2. Performance benchmark
           python tools/profiling/benchmark_performance.py \
-            --iterations 5000 \
-            --json coverage/protocol-benchmark.json \
-            --py-proto mcubridge/mcubridge/protocol/protocol.py \
-            --py-client mcubridge-client-examples/mcubridge_client/protocol.py
+           --iterations 2000 \
+           --json coverage/protocol-benchmark.json
 
           # 3. Native Python import time profiling
           echo "### ⏱️ Python Import Time Profile" >> "$GITHUB_STEP_SUMMARY"

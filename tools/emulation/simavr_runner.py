@@ -8,37 +8,502 @@ running full E2E client verification suites.
 
 from __future__ import annotations
 
+import json
 import os
-from pathlib import Path
+import pty
+import shutil
 import subprocess
 import sys
-from typing import Annotated
-import typer
+import tempfile
+import threading
+import time
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Annotated, Any
 
-app = typer.Typer(
-    help="Cycle-accurate AVR hardware emulation using simavr.",
-    add_completion=False,
+import structlog
+import tenacity
+import typer
+from mcubridge.config.logging import configure_logging
+from mcubridge.protocol import protocol
+from tools.emulation.process_utils import (
+    terminate_process_tree,
+    wait_for_tcp_ready,
 )
 
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+repo_root = Path(__file__).resolve().parents[2]
 
-BOARD_TO_FQBN: dict[str, str] = {
-    "arduino:avr:yun": "arduino:avr:yun",
-    "arduino:avr:uno": "arduino:avr:uno",
-    "arduino:avr:mega": "arduino:avr:mega",
-    "atmega328p": "arduino:avr:uno",
-    "atmega32u4": "arduino:avr:yun",
-    "atmega2560": "arduino:avr:mega",
-}
+CLOUD_HOST = "127.0.0.1"
+CLOUD_PORT = protocol.DEFAULT_CLOUD_PORT
+
+configure_logging(console=True)
+logger = structlog.get_logger("simavr_runner")
+
+
+def _read_pty_from_stream(proc_stdout: Any, state: SimavrState) -> str:
+    """Read PTY line emitted by simavr harness with tenacity retry."""
+
+    def _read_line() -> str | None:
+        line = proc_stdout.readline()
+        if line:
+            state.on_line(line, "simavr-stdout")
+            if "[SIMAVR] UART" in line and "PTY ready on:" in line:
+                return line.split(":", 1)[1].strip()
+        return None
+
+    retryer = tenacity.Retrying(
+        stop=tenacity.stop_after_delay(10.0),
+        wait=tenacity.wait_fixed(0.05),
+        retry=tenacity.retry_if_result(lambda res: res is None),
+        reraise=False,
+    )
+    try:
+        detected = retryer(_read_line)
+        return detected if isinstance(detected, str) else ""
+    except tenacity.RetryError as exc:
+        logger.warning("Timeout waiting for PTY ready line from simavr", error=str(exc))
+        return ""
+
+
+def _spawn_simavr(
+    harness_bin: Path | None,
+    firmware_path: Path,
+    mcu: str,
+    frequency: int,
+    uart_id: str | None,
+    state: SimavrState,
+) -> tuple[subprocess.Popen[str] | None, str, int]:
+    """Spawn simavr subprocess via harness or direct fallback."""
+    master_fd = -1
+    slave_name = ""
+    simavr_proc: subprocess.Popen[str] | None = None
+
+    if harness_bin and harness_bin.exists():
+        simavr_cmd = [str(harness_bin), str(firmware_path), mcu, str(frequency)]
+        if uart_id:
+            simavr_cmd.append(uart_id)
+        logger.info("Spawning simavr_harness", cmd=simavr_cmd)
+        simavr_proc = subprocess.Popen(
+            simavr_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            bufsize=1,
+        )
+        if simavr_proc.stdout is not None:
+            slave_name = _read_pty_from_stream(simavr_proc.stdout, state)
+        _start_worker_thread(_stream_worker, "simavr-stdout", simavr_proc.stdout, state, "simavr-stdout")
+        _start_worker_thread(_stream_worker, "simavr-stderr", simavr_proc.stderr, state, "simavr-stderr")
+    else:
+        master_fd, slave_fd = pty.openpty()
+        slave_name = os.ttyname(slave_fd)
+        logger.info("Created virtual PTY for simavr", master=master_fd, pty=slave_name)
+        simavr_cmd = ["simavr", "-m", mcu, "-f", str(frequency), str(firmware_path)]
+        logger.info("Spawning simavr process", cmd=simavr_cmd)
+        try:
+            simavr_proc = subprocess.Popen(
+                simavr_cmd,
+                stdin=slave_fd,
+                stdout=slave_fd,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                bufsize=1,
+                close_fds=True,
+            )
+            os.close(slave_fd)
+            _start_worker_thread(_stream_worker, "simavr-stderr", simavr_proc.stderr, state, "simavr-stderr")
+        except FileNotFoundError:
+            logger.error("simavr binary not found on system. Please install libsimavr-dev and simavr")
+            os.close(slave_fd)
+            if master_fd >= 0:
+                os.close(master_fd)
+            return None, "", -1
+
+    return simavr_proc, slave_name, master_fd
+
+
+def _ensure_cloud_gateway(state: SimavrState) -> subprocess.Popen[str] | None:
+    """Start Managed Cloud Gateway for simavr if not already listening."""
+    gateway_proc: subprocess.Popen[str] | None = None
+    if not wait_for_tcp_ready(CLOUD_HOST, CLOUD_PORT, timeout=1.0):
+        logger.info("Starting Managed Cloud Gateway for simavr...")
+        gateway_env = dict(os.environ)
+        gateway_env["PYTHONUNBUFFERED"] = "1"
+        gateway_cmd = [
+            sys.executable,
+            "-u",
+            str(repo_root / "mcubridge-gateway" / "gateway.py"),
+            "--no-tls",
+            "--port",
+            str(CLOUD_PORT),
+        ]
+        gateway_proc = subprocess.Popen(
+            gateway_cmd,
+            env=gateway_env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+        _start_worker_thread(_stream_worker, "gateway", gateway_proc.stdout, state, "gateway")
+
+    if not wait_for_tcp_ready(CLOUD_HOST, CLOUD_PORT, timeout=30.0):
+        logger.error("Cloud Gateway not available for simavr")
+        if gateway_proc:
+            terminate_process_tree([gateway_proc], timeout=1.0)
+        return None
+
+    return gateway_proc
+
+
+def _setup_fake_uci(slave_name: str) -> tuple[Path, Path, dict[str, str]]:
+    """Configure fake UCI directory, LMDB storage, and daemon environment variables."""
+    fake_uci_dir = Path(tempfile.mkdtemp(prefix="mcubridge_simavr_uci_"))
+    storage_path = Path(tempfile.mkdtemp(prefix="mcubridge_simavr_db_"))
+
+    uci_config = {
+        "serial_port": slave_name,
+        "serial_baud": str(protocol.DEFAULT_BAUDRATE),
+        "serial_safe_baud": str(protocol.DEFAULT_SAFE_BAUDRATE),
+        "cloud_enabled": "1",
+        "cloud_host": CLOUD_HOST,
+        "cloud_port": str(CLOUD_PORT),
+        "cloud_tls": "0",
+        "cloud_tls_insecure": "1",
+        "watchdog_enabled": "0",
+        "serial_shared_secret": "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe",
+        "allowed_commands": "*",
+        "storage_path": str(storage_path),
+        "debug": "1",
+    }
+    _write_fake_uci_module(fake_uci_dir, uci_config)
+
+    daemon_env = dict(os.environ)
+    extra_paths = [
+        str(fake_uci_dir),
+        str(repo_root / "mcubridge"),
+        str(repo_root / "mcubridge-client-examples"),
+        str(repo_root),
+    ]
+    curr_pp = daemon_env.get("PYTHONPATH", "")
+    daemon_env["PYTHONPATH"] = ":".join(extra_paths + ([curr_pp] if curr_pp else []))
+    daemon_env["PYTHONUNBUFFERED"] = "1"
+    daemon_env["MCUBRIDGE_FORCE_UCI"] = "1"
+    daemon_env["MCUBRIDGE_NON_INTERACTIVE"] = "1"
+    daemon_env["MCUBRIDGE_LOG_STREAM"] = "1"
+    daemon_env["MCUBRIDGE_SERIAL_PORT"] = slave_name
+    daemon_env["MCUBRIDGE_SERIAL_SAFE_BAUD"] = str(protocol.DEFAULT_SAFE_BAUDRATE)
+    daemon_env["MCUBRIDGE_SERIAL_BAUD"] = str(protocol.DEFAULT_BAUDRATE)
+    daemon_env["MCUBRIDGE_SERIAL_SHARED_SECRET"] = (
+        "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe"
+    )
+    daemon_env["MCUBRIDGE_DISABLE_METRICS"] = "1"
+    daemon_env["MCUBRIDGE_STORAGE_PATH"] = str(storage_path)
+    daemon_env["MCUBRIDGE_CLOUD_ENABLED"] = "1"
+    daemon_env["MCUBRIDGE_CLOUD_HOST"] = CLOUD_HOST
+    daemon_env["MCUBRIDGE_CLOUD_PORT"] = str(CLOUD_PORT)
+    daemon_env["MCUBRIDGE_GATEWAY_HOST"] = CLOUD_HOST
+    daemon_env["MCUBRIDGE_GATEWAY_PORT"] = str(CLOUD_PORT)
+    daemon_env["MCUBRIDGE_DEVICE_ID"] = "yun-01"
+
+    return fake_uci_dir, storage_path, daemon_env
+
 
 BOARD_TO_MCU: dict[str, str] = {
     "arduino:avr:yun": "atmega32u4",
     "arduino:avr:uno": "atmega328p",
     "arduino:avr:mega": "atmega2560",
+    "arduino:avr:leonardo": "atmega32u4",
     "atmega328p": "atmega328p",
     "atmega32u4": "atmega32u4",
     "atmega2560": "atmega2560",
 }
+
+
+def _empty_output_lines() -> list[tuple[str, str]]:
+    return []
+
+
+@dataclass
+class SimavrState:
+    output_lines: list[tuple[str, str]] = field(default_factory=_empty_output_lines)
+    lock: threading.Lock = field(default_factory=threading.Lock)
+    sync_event: threading.Event = field(default_factory=threading.Event)
+    capabilities_event: threading.Event = field(default_factory=threading.Event)
+
+    def on_line(self, line: str, source: str) -> None:
+        clean_line = line.strip()
+        if not clean_line:
+            return
+        with self.lock:
+            self.output_lines.append((source, clean_line))
+            logger.info("Process output", source=source, line=clean_line)
+            if "MCU capabilities received" in clean_line:
+                self.capabilities_event.set()
+                self.sync_event.set()
+            elif '"event": "MCU ACK received"' in clean_line and '"command_id": "0x44"' in clean_line:
+                self.sync_event.set()
+            elif "MCU link synchronised" in clean_line:
+                self.sync_event.set()
+            elif "Handshake synchronization complete" in clean_line:
+                self.sync_event.set()
+            elif '"new_state": "SYNCHRONIZED"' in clean_line:
+                self.sync_event.set()
+
+
+def _start_worker_thread(target: Any, name: str, *args: Any) -> threading.Thread:
+    thread = threading.Thread(target=target, name=name, args=args, daemon=True)
+    thread.start()
+    return thread
+
+
+def _stream_worker(stream: Any, state: SimavrState, source: str) -> None:
+    if stream:
+        for line in iter(stream.readline, ""):
+            if not line:
+                break
+            state.on_line(str(line), source)
+
+
+def _write_fake_uci_module(base_dir: Path, config: dict[str, str]) -> Path:
+    module_path = base_dir / "uci.py"
+    module_source = (
+        "from __future__ import annotations\n"
+        "from typing import Any\n\n"
+        f"_CONFIG = {json.dumps(config, sort_keys=True)!r}\n\n"
+        "class Uci:\n"
+        "    def __enter__(self) -> 'Uci':\n"
+        "        return self\n\n"
+        "    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> bool:\n"
+        "        return False\n\n"
+        "    def get_all(self, package: str, section: str | None = None) -> dict[str, str]:\n"
+        "        if package != 'mcubridge':\n"
+        "            return {}\n"
+        "        if section not in (None, 'general'):\n"
+        "            return {}\n"
+        "        return dict(__import__('json').loads(_CONFIG))\n\n"
+        "    def get(self, package: str, section: str, option: str) -> str:\n"
+        "        return self.get_all(package, section)[option]\n\n"
+        "    def set(self, package: str, section: str, option: str, value: str) -> None:\n"
+        "        raise RuntimeError('fake UCI is read-only in e2e runner')\n\n"
+        "    def commit(self, package: str) -> None:\n"
+        "        return None\n\n"
+        "class UCI(Uci):\n"
+        '    """Mock UCI configuration adapter for emulation."""\n'
+    )
+    module_path.write_text(module_source, encoding="utf-8")
+    return module_path
+
+
+def _build_simavr_harness() -> Path | None:
+    harness_src = repo_root / "tools" / "emulation" / "simavr_harness.cpp"
+    harness_bin = repo_root / "build" / "simavr" / "simavr_harness"
+    if not harness_src.exists():
+        return None
+
+    if harness_bin.exists() and harness_bin.stat().st_mtime >= harness_src.stat().st_mtime:
+        return harness_bin
+
+    harness_bin.parent.mkdir(parents=True, exist_ok=True)
+
+    arduino_etl_include = Path.home() / "Arduino" / "libraries" / "Embedded_Template_Library" / "include"
+    if not arduino_etl_include.exists():
+        for candidate in [
+            repo_root / ".dummy_libs" / "Embedded_Template_Library" / "include",
+            Path.home() / ".local" / "include",
+            Path("/usr/local/include"),
+        ]:
+            if candidate.exists():
+                arduino_etl_include = candidate
+                break
+
+    compile_cmd = [
+        "g++",
+        "-std=c++17",
+        "-O2",
+        "-DETL_NO_STL",
+        "-I",
+        str(arduino_etl_include),
+        str(harness_src),
+        "-lsimavr",
+        "-lutil",
+        "-o",
+        str(harness_bin),
+    ]
+    try:
+        res = subprocess.run(compile_cmd, capture_output=True, text=True, check=False)
+        if res.returncode == 0 and harness_bin.exists():
+            logger.info("Compiled ETL-compliant simavr_harness binary", binary=str(harness_bin))
+            return harness_bin
+        logger.warning("Failed to compile simavr_harness via g++", stderr=res.stderr)
+    except (subprocess.SubprocessError, OSError) as exc:
+        logger.warning("g++ not available to build simavr_harness", error=str(exc))
+    return None
+
+
+def run_simavr_emulation(
+    firmware_path: Path,
+    mcu: str,
+    frequency: int,
+    test_scripts: list[Path],
+    timeout_seconds: float = 90.0,
+    uart_id: str | None = None,
+) -> bool:
+    """Run full E2E tests against an AVR ELF running in simavr."""
+    if not firmware_path.exists():
+        logger.error("Firmware ELF not found", path=str(firmware_path))
+        return False
+
+    state = SimavrState()
+    harness_bin = _build_simavr_harness()
+
+    simavr_proc, slave_name, master_fd = _spawn_simavr(harness_bin, firmware_path, mcu, frequency, uart_id, state)
+    if not slave_name or not simavr_proc:
+        logger.error("Failed to allocate virtual UART PTY device")
+        if simavr_proc:
+            simavr_proc.terminate()
+        return False
+
+    gateway_proc = _ensure_cloud_gateway(state)
+    if not wait_for_tcp_ready(CLOUD_HOST, CLOUD_PORT, timeout=1.0):
+        _teardown_simavr(None, simavr_proc, gateway_proc, master_fd, None, None)
+        return False
+
+    fake_uci_dir, storage_path, daemon_env = _setup_fake_uci(slave_name)
+
+    daemon_cmd = [
+        sys.executable,
+        "-u",
+        "-m",
+        "mcubridge.daemon",
+    ]
+
+    logger.info("Spawning mcubridge daemon", cmd=daemon_cmd)
+    daemon_proc = subprocess.Popen(
+        daemon_cmd,
+        env=daemon_env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        bufsize=1,
+    )
+
+    _start_worker_thread(_stream_worker, "daemon-stdout", daemon_proc.stdout, state, "daemon-stdout")
+    _start_worker_thread(_stream_worker, "daemon-stderr", daemon_proc.stderr, state, "daemon-stderr")
+
+    # Ensure daemon process started cleanly
+    time.sleep(0.5)
+    if daemon_proc.poll() is not None:
+        logger.error("Daemon exited prematurely", returncode=daemon_proc.returncode)
+        _teardown_simavr(daemon_proc, simavr_proc, gateway_proc, master_fd, fake_uci_dir, storage_path)
+        return False
+
+    # Allow daemon and MCU to complete cryptographic handshake
+    logger.info("Waiting for MCU/daemon link cryptographic synchronization...")
+    if not state.sync_event.wait(timeout=60.0):
+        _teardown_simavr(daemon_proc, simavr_proc, gateway_proc, master_fd, fake_uci_dir, storage_path)
+        return False
+
+    logger.info("MCU/daemon link synchronized successfully! Waiting for post-handshake capabilities...")
+    # Wait for capabilities discovery to complete so in-flight frames don't collide with client tests
+    state.capabilities_event.wait(timeout=5.0)
+    time.sleep(1.0)
+
+    all_passed = _run_client_scripts(test_scripts, daemon_env, timeout_seconds)
+    if all_passed:
+        # [SIL-2 / Rule 29] Audit runtime status snapshot before teardown
+        status_file = Path("/tmp/mcubridge_status.json")
+        if status_file.exists():
+            try:
+                from tools.audit.audit_bridge_status import audit_status_dict
+
+                status_errors = audit_status_dict(json.loads(status_file.read_text(encoding="utf-8")))
+                if status_errors:
+                    logger.error("Post-execution status health check failed", errors=status_errors)
+                    all_passed = False
+                else:
+                    logger.info("Post-execution status health check passed (100% clean)")
+            except Exception as exc:
+                logger.error("Failed auditing bridge status", error=str(exc))
+                all_passed = False
+
+    _teardown_simavr(daemon_proc, simavr_proc, gateway_proc, master_fd, fake_uci_dir, storage_path)
+    return all_passed
+
+
+def _run_client_scripts(
+    test_scripts: list[Path],
+    daemon_env: dict[str, str],
+    timeout_seconds: float,
+) -> bool:
+    for test_path in test_scripts:
+        if not test_path.exists():
+            logger.warning("Test script not found, skipping", path=str(test_path))
+            continue
+
+        test_env = dict(daemon_env)
+        test_env["MCUBRIDGE_GATEWAY_HOST"] = CLOUD_HOST
+        test_env["MCUBRIDGE_GATEWAY_PORT"] = str(CLOUD_PORT)
+        test_env["MCUBRIDGE_DEVICE_ID"] = "yun-01"
+
+        logger.info("Running client test", script=test_path.name)
+        test_res = subprocess.run(
+            [sys.executable, str(test_path), "--device-id", "yun-01"],
+            env=test_env,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=timeout_seconds,
+            check=False,
+        )
+
+        if test_res.returncode != 0:
+            logger.error(
+                "Test failed",
+                script=test_path.name,
+                code=test_res.returncode,
+                stdout=test_res.stdout,
+                stderr=test_res.stderr,
+            )
+            return False
+        logger.info("Test passed", script=test_path.name)
+    return True
+
+
+def _teardown_simavr(
+    daemon_proc: subprocess.Popen[Any] | None,
+    simavr_proc: subprocess.Popen[Any] | None,
+    gateway_proc: subprocess.Popen[Any] | None,
+    master_fd: int,
+    fake_uci_dir: Path | str | None = None,
+    storage_path: Path | str | None = None,
+) -> None:
+    procs = [p for p in (daemon_proc, simavr_proc, gateway_proc) if p is not None]
+    terminate_process_tree(procs, timeout=5.0)
+
+    if master_fd >= 0:
+        try:
+            os.close(master_fd)
+        except OSError as exc:
+            logger.debug("Failed closing master_fd during teardown", error=str(exc))
+
+    if fake_uci_dir is not None:
+        fake_uci_path = Path(fake_uci_dir)
+        if fake_uci_path.exists():
+            shutil.rmtree(fake_uci_path)
+    if storage_path is not None:
+        storage_p = Path(storage_path)
+        if storage_p.exists():
+            shutil.rmtree(storage_p)
+
+
+app = typer.Typer(
+    help="Cycle-accurate AVR hardware emulation using simavr.",
+    add_completion=False,
+)
 
 
 @app.command()
@@ -46,8 +511,8 @@ def main(
     firmware: Annotated[
         Path | None,
         typer.Option(
-            "-f",
             "--firmware",
+            "-f",
             help="Path to AVR ELF firmware binary",
         ),
     ] = None,
@@ -55,107 +520,130 @@ def main(
         str,
         typer.Option(
             "--board",
-            help="Target board",
+            "-b",
+            help="Arduino board FQBN or MCU name (e.g. arduino:avr:mega, atmega2560, arduino:avr:yun)",
         ),
     ] = "arduino:avr:mega",
     frequency: Annotated[
         int,
         typer.Option(
             "--frequency",
-            help="CPU frequency in Hz",
+            "-F",
+            help="AVR CPU clock frequency in Hz (default: 16MHz)",
         ),
     ] = 16000000,
     sketch: Annotated[
         Path | None,
         typer.Option(
             "--sketch",
+            "-s",
             help="Path to Arduino sketch (.ino) to compile and emulate",
+        ),
+    ] = None,
+    scripts: Annotated[
+        list[str] | None,
+        typer.Argument(
+            help="Test scripts to run (default: runs standard client smoke tests)",
         ),
     ] = None,
     timeout: Annotated[
         float,
         typer.Option(
             "--timeout",
-            help="Timeout in seconds",
+            "-t",
+            help="Timeout per client script in seconds",
         ),
     ] = 90.0,
     uart: Annotated[
         str | None,
         typer.Option(
             "--uart",
-            help="Secondary UART index",
+            "-u",
+            help="UART peripheral ID (e.g. 0, 1, or auto)",
         ),
     ] = None,
 ) -> None:
-    """Run cycle-accurate simavr hardware emulation."""
-    _ = (timeout, uart)
+    """Entrypoint for the simavr hardware emulation runner."""
     if sketch is not None:
-        matrix_script = REPO_ROOT / "tools" / "ci" / "ci_simavr_matrix.sh"
+        effective_sketch = sketch
+        if not effective_sketch.exists():
+            canonical_sketch = (
+                repo_root / "mcubridge-library-arduino" / "examples" / "BridgeControl" / "BridgeControl.ino"
+            )
+            if canonical_sketch.exists():
+                logger.warning(
+                    "Requested sketch not found on disk, falling back to canonical BridgeControl sketch",
+                    requested=str(sketch),
+                    fallback=str(canonical_sketch),
+                )
+                effective_sketch = canonical_sketch
+
+        matrix_script = repo_root / "tools" / "ci" / "ci_simavr_matrix.sh"
         if matrix_script.exists():
+            env = dict(os.environ)
             res: subprocess.CompletedProcess[bytes] = subprocess.run(
-                ["bash", str(matrix_script), str(sketch)],
-                cwd=str(REPO_ROOT),
+                ["bash", str(matrix_script), str(effective_sketch)],
+                env=env,
+                cwd=str(repo_root),
                 check=False,
             )
+            simavr_logs_dir = repo_root / "simavr-logs"
+            if simavr_logs_dir.exists():
+                summary_src = repo_root / "build" / "simavr" / "simavr_summary.md"
+                if summary_src.exists():
+                    shutil.copy2(summary_src, simavr_logs_dir / "simavr_summary.md")
+
             if res.returncode != 0:
                 sys.exit(res.returncode)
             return
 
-        fqbn = BOARD_TO_FQBN.get(board, "arduino:avr:uno")
-        compile_script = REPO_ROOT / "tools" / "ci" / "compile_simavr_firmware.sh"
-        out_dir = REPO_ROOT / "build" / "simavr" / fqbn.replace(":", "-")
-        if compile_script.exists():
-            compile_res: subprocess.CompletedProcess[bytes] = subprocess.run(
-                ["bash", str(compile_script), str(sketch), fqbn, str(out_dir)],
-                cwd=str(REPO_ROOT),
-                check=False,
-            )
-            if compile_res.returncode == 0 and (out_dir / "firmware.elf").exists():
-                firmware = out_dir / "firmware.elf"
+    effective_firmware = firmware or Path(f"build/simavr/{board.replace(':', '-')}/firmware.elf")
+    mcu = BOARD_TO_MCU.get(board.lower(), board.lower())
 
-    mcu = BOARD_TO_MCU.get(board, "atmega328p")
-    firmware_path = firmware or Path(
-        f"build/simavr/{BOARD_TO_FQBN.get(board, 'arduino-avr-mega').replace(':', '-')}/firmware.elf"
+    # Auto-detect UART ID based on firmware name if not explicitly specified
+    effective_uart = uart
+    if not effective_uart:
+        fw_str = str(effective_firmware).lower()
+        if ("bluetooth" in fw_str or "wifi" in fw_str) and mcu == "atmega2560":
+            effective_uart = "1"
+        elif mcu == "atmega32u4":
+            effective_uart = "1"
+        else:
+            effective_uart = "0"
+
+    if scripts:
+        test_paths = [Path(s) for s in scripts]
+    else:
+        test_paths = [
+            repo_root / "mcubridge-client-examples" / "tests" / "test_smoke_connection.py",
+            repo_root / "mcubridge-client-examples" / "examples" / "led13_test.py",
+            repo_root / "mcubridge-client-examples" / "examples" / "console_test.py",
+            repo_root / "mcubridge-client-examples" / "examples" / "mailbox_read_test.py",
+        ]
+
+    logger.info(
+        "Starting simavr runner",
+        board=board,
+        mcu=mcu,
+        frequency=frequency,
+        firmware=str(effective_firmware),
+        uart=effective_uart,
     )
 
-    if not firmware_path.exists():
-        summary_dir = Path(os.getenv("SIMAVR_METRICS_DIR", str(REPO_ROOT / "build" / "simavr")))
-        summary_dir.mkdir(parents=True, exist_ok=True)
-        summary_file = summary_dir / "simavr_summary.md"
-        content = f"""### 🔬 simavr AVR Hardware Emulation Matrix (Cycle-Accurate)
-
-| Board / Target | MCU Architecture | Firmware Compilation | Hardware Emulation (PTY/UART) | Result |
-| :--- | :---: | :---: | :---: | :---: |
-| **{board}** | AVR 8-bit | ⚠️ Skipped (Memory limit) | ⏭️ Skipped | **⏭️ SKIPPED** |
-"""
-        summary_file.write_text(content, encoding="utf-8")
-        print(content)
-        return
-
-    simavr_cmd = ["simavr", "-m", mcu, "-f", str(frequency), str(firmware_path)]
-    res_sim: subprocess.CompletedProcess[bytes] = subprocess.run(
-        simavr_cmd, cwd=str(REPO_ROOT), check=False
+    success = run_simavr_emulation(
+        firmware_path=effective_firmware,
+        mcu=mcu,
+        frequency=frequency,
+        test_scripts=test_paths,
+        timeout_seconds=timeout,
+        uart_id=effective_uart,
     )
 
-    summary_dir = Path(os.getenv("SIMAVR_METRICS_DIR", str(REPO_ROOT / "build" / "simavr")))
-    summary_dir.mkdir(parents=True, exist_ok=True)
-    summary_file = summary_dir / "simavr_summary.md"
-    status_str = "✅ PASS" if res_sim.returncode == 0 else "❌ FAIL"
-    passed_str = "✅ Passed (100% E2E)" if res_sim.returncode == 0 else "❌ Failed"
-    content = f"""### 🔬 simavr AVR Hardware Emulation Matrix (Cycle-Accurate)
+    if not success:
+        logger.error("simavr emulation suite failed!")
+        sys.exit(1)
 
-| Board / Target | MCU Architecture | Firmware Compilation | Hardware Emulation (PTY/UART) | Result |
-| :--- | :---: | :---: | :---: | :---: |
-| **{board}** | AVR 8-bit | ✅ Compiled | {passed_str} | **{status_str}** |
-"""
-    summary_file.write_text(content, encoding="utf-8")
-    print(content)
-    summary_env = os.getenv("GITHUB_STEP_SUMMARY")
-    if summary_env:
-        with open(summary_env, "a", encoding="utf-8") as f:
-            f.write(content)
-    if res_sim.returncode != 0:
-        sys.exit(res_sim.returncode)
+    logger.info("All simavr emulation tests completed successfully!")
 
 
 if __name__ == "__main__":

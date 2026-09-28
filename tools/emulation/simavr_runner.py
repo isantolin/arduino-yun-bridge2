@@ -88,10 +88,15 @@ def main(
     ] = None,
 ) -> None:
     """Run cycle-accurate simavr hardware emulation."""
+    _ = (timeout, uart)
     if sketch is not None:
         matrix_script = REPO_ROOT / "tools" / "ci" / "ci_simavr_matrix.sh"
         if matrix_script.exists():
-            res = subprocess.run(["bash", str(matrix_script), str(sketch)], cwd=str(REPO_ROOT), check=False)
+            res: subprocess.CompletedProcess[bytes] = subprocess.run(
+                ["bash", str(matrix_script), str(sketch)],
+                cwd=str(REPO_ROOT),
+                check=False,
+            )
             if res.returncode != 0:
                 sys.exit(res.returncode)
             return
@@ -100,12 +105,12 @@ def main(
         compile_script = REPO_ROOT / "tools" / "ci" / "compile_simavr_firmware.sh"
         out_dir = REPO_ROOT / "build" / "simavr" / fqbn.replace(":", "-")
         if compile_script.exists():
-            res = subprocess.run(
+            compile_res: subprocess.CompletedProcess[bytes] = subprocess.run(
                 ["bash", str(compile_script), str(sketch), fqbn, str(out_dir)],
                 cwd=str(REPO_ROOT),
                 check=False,
             )
-            if res.returncode == 0 and (out_dir / "firmware.elf").exists():
+            if compile_res.returncode == 0 and (out_dir / "firmware.elf").exists():
                 firmware = out_dir / "firmware.elf"
 
     mcu = BOARD_TO_MCU.get(board, "atmega328p")
@@ -128,25 +133,29 @@ def main(
         return
 
     simavr_cmd = ["simavr", "-m", mcu, "-f", str(frequency), str(firmware_path)]
-    res = subprocess.run(simavr_cmd, cwd=str(REPO_ROOT), check=False)
+    res_sim: subprocess.CompletedProcess[bytes] = subprocess.run(
+        simavr_cmd, cwd=str(REPO_ROOT), check=False
+    )
 
     summary_dir = Path(os.getenv("SIMAVR_METRICS_DIR", str(REPO_ROOT / "build" / "simavr")))
     summary_dir.mkdir(parents=True, exist_ok=True)
     summary_file = summary_dir / "simavr_summary.md"
-    status_str = "✅ PASS" if res.returncode == 0 else "❌ FAIL"
+    status_str = "✅ PASS" if res_sim.returncode == 0 else "❌ FAIL"
+    passed_str = "✅ Passed (100% E2E)" if res_sim.returncode == 0 else "❌ Failed"
     content = f"""### 🔬 simavr AVR Hardware Emulation Matrix (Cycle-Accurate)
 
 | Board / Target | MCU Architecture | Firmware Compilation | Hardware Emulation (PTY/UART) | Result |
 | :--- | :---: | :---: | :---: | :---: |
-| **{board}** | AVR 8-bit | ✅ Compiled | {'✅ Passed (100% E2E)' if res.returncode == 0 else '❌ Failed'} | **{status_str}** |
+| **{board}** | AVR 8-bit | ✅ Compiled | {passed_str} | **{status_str}** |
 """
     summary_file.write_text(content, encoding="utf-8")
     print(content)
-    if os.getenv("GITHUB_STEP_SUMMARY"):
-        with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
+    summary_env = os.getenv("GITHUB_STEP_SUMMARY")
+    if summary_env:
+        with open(summary_env, "a", encoding="utf-8") as f:
             f.write(content)
-    if res.returncode != 0:
-        sys.exit(res.returncode)
+    if res_sim.returncode != 0:
+        sys.exit(res_sim.returncode)
 
 
 if __name__ == "__main__":

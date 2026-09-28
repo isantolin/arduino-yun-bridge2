@@ -11,7 +11,10 @@ import time
 from typing import Annotated
 import typer
 
-cli = typer.Typer(help="[MIL-SPEC/SIL-2] McuBridge Emulation & Fuzzing Runner", add_completion=False)
+cli = typer.Typer(
+    help="[MIL-SPEC/SIL-2] McuBridge Emulation & Fuzzing Runner",
+    add_completion=False,
+)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -24,13 +27,16 @@ def main(
 ) -> None:
     """Run MCU bridge emulation or protocol fuzzing suite."""
     if fuzz:
+        _ = fqbn
         fuzz_script = REPO_ROOT / "tools" / "ci" / "ci_fuzz.sh"
         if fuzz_script.exists():
-            env = dict(os.environ)
+            env: dict[str, str] = dict(os.environ)
             env["PYTHONPATH"] = f"{REPO_ROOT}:{REPO_ROOT / 'mcubridge'}:{env.get('PYTHONPATH', '')}"
-            res = subprocess.run(["bash", str(fuzz_script)], env=env, cwd=str(REPO_ROOT), check=False)
-            if res.returncode != 0:
-                sys.exit(res.returncode)
+            res_sh: subprocess.CompletedProcess[bytes] = subprocess.run(
+                ["bash", str(fuzz_script)], env=env, cwd=str(REPO_ROOT), check=False
+            )
+            if res_sh.returncode != 0:
+                sys.exit(res_sh.returncode)
             return
 
         compile_script = REPO_ROOT / "tools" / "ci" / "compile_emulator.sh"
@@ -42,8 +48,8 @@ def main(
         if os.path.exists(fuzz_pty):
             try:
                 os.unlink(fuzz_pty)
-            except OSError:
-                pass
+            except OSError as exc:
+                sys.stderr.write(f"Warning unlinking {fuzz_pty}: {exc}\n")
 
         socat_cmd = [
             "socat",
@@ -52,7 +58,12 @@ def main(
             f"PTY,link={fuzz_pty},raw,echo=0",
             f'EXEC:"{emulator_bin}",pty,raw,echo=0',
         ]
-        proc = subprocess.Popen(socat_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=str(REPO_ROOT))
+        proc: subprocess.Popen[bytes] = subprocess.Popen(
+            socat_cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            cwd=str(REPO_ROOT),
+        )
         try:
             for _ in range(20):
                 if os.path.exists(fuzz_pty):
@@ -71,9 +82,11 @@ def main(
                 "--count",
                 str(fuzz_iterations),
             ]
-            res = subprocess.run(fuzzer_cmd, env=env, cwd=str(REPO_ROOT), check=False)
-            if res.returncode != 0:
-                sys.exit(res.returncode)
+            res_fuzz: subprocess.CompletedProcess[bytes] = subprocess.run(
+                fuzzer_cmd, env=env, cwd=str(REPO_ROOT), check=False
+            )
+            if res_fuzz.returncode != 0:
+                sys.exit(res_fuzz.returncode)
         finally:
             proc.terminate()
             try:
@@ -83,8 +96,18 @@ def main(
             if os.path.exists(fuzz_pty):
                 try:
                     os.unlink(fuzz_pty)
-                except OSError:
-                    pass
+                except OSError as exc:
+                    sys.stderr.write(f"Warning unlinking {fuzz_pty}: {exc}\n")
+        return
+
+    simavr_script = REPO_ROOT / "tools" / "emulation" / "simavr_runner.py"
+    res_mcu: subprocess.CompletedProcess[bytes] = subprocess.run(
+        [sys.executable, str(simavr_script), "--board", fqbn],
+        cwd=str(REPO_ROOT),
+        check=False,
+    )
+    if res_mcu.returncode != 0:
+        sys.exit(res_mcu.returncode)
 
 
 if __name__ == "__main__":

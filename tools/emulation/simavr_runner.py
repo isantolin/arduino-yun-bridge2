@@ -426,7 +426,7 @@ def run_simavr_emulation(
                     all_passed = False
                 else:
                     logger.info("Post-execution status health check passed (100% clean)")
-            except Exception as exc:
+            except (OSError, json.JSONDecodeError, ValueError, TypeError) as exc:
                 logger.error("Failed auditing bridge status", error=str(exc))
                 all_passed = False
 

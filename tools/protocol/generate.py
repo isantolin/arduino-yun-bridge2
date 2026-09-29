@@ -101,7 +101,6 @@ def run_buf_generate(proto_dir: Path) -> None:
         sys.exit(1)
 
 
-
 def cmd_name_to_pb_class(cmd_name: str) -> str:
     """Convert CMD_X_Y style command name to CamelCase class name."""
     clean_name = cmd_name.removeprefix("CMD_")

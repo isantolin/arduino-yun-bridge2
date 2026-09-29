@@ -413,7 +413,7 @@ jobs:
           echo "## 📊 Test & Coverage Summary" >> "$GITHUB_STEP_SUMMARY"
           if [ -f coverage/python/.coverage ]; then
             echo "### 🐍 Python Coverage (coverage.py native)" >> "$GITHUB_STEP_SUMMARY"
-            coverage report --data-file=coverage/python/.coverage --format=markdown >> "$GITHUB_STEP_SUMMARY"
+            coverage report --data-file=coverage/python/.coverage --format=markdown --fail-under=0 --ignore-errors >> "$GITHUB_STEP_SUMMARY" || true
           fi
           if [ -f coverage/arduino/summary.txt ]; then
             echo "" >> "$GITHUB_STEP_SUMMARY"

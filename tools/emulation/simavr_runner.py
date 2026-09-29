@@ -26,7 +26,6 @@ import tenacity
 import typer
 from mcubridge.config.logging import configure_logging
 from mcubridge.protocol import protocol
-
 from tools.emulation.process_utils import (
     terminate_process_tree,
     wait_for_tcp_ready,
@@ -197,7 +196,9 @@ def _setup_fake_uci(slave_name: str) -> tuple[Path, Path, dict[str, str]]:
     daemon_env["MCUBRIDGE_SERIAL_PORT"] = slave_name
     daemon_env["MCUBRIDGE_SERIAL_SAFE_BAUD"] = str(protocol.DEFAULT_SAFE_BAUDRATE)
     daemon_env["MCUBRIDGE_SERIAL_BAUD"] = str(protocol.DEFAULT_BAUDRATE)
-    daemon_env["MCUBRIDGE_SERIAL_SHARED_SECRET"] = "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe"
+    daemon_env["MCUBRIDGE_SERIAL_SHARED_SECRET"] = (
+        "8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe"
+    )
     daemon_env["MCUBRIDGE_DISABLE_METRICS"] = "1"
     daemon_env["MCUBRIDGE_STORAGE_PATH"] = str(storage_path)
     daemon_env["MCUBRIDGE_CLOUD_ENABLED"] = "1"
@@ -215,6 +216,9 @@ BOARD_TO_MCU: dict[str, str] = {
     "arduino:avr:uno": "atmega328p",
     "arduino:avr:mega": "atmega2560",
     "arduino:avr:leonardo": "atmega32u4",
+    "atmega328p": "atmega328p",
+    "atmega32u4": "atmega32u4",
+    "atmega2560": "atmega2560",
 }
 
 
@@ -305,6 +309,15 @@ def _build_simavr_harness() -> Path | None:
     harness_bin.parent.mkdir(parents=True, exist_ok=True)
 
     arduino_etl_include = Path.home() / "Arduino" / "libraries" / "Embedded_Template_Library" / "include"
+    if not arduino_etl_include.exists():
+        for candidate in [
+            repo_root / ".dummy_libs" / "Embedded_Template_Library" / "include",
+            Path.home() / ".local" / "include",
+            Path("/usr/local/include"),
+        ]:
+            if candidate.exists():
+                arduino_etl_include = candidate
+                break
 
     compile_cmd = [
         "g++",
@@ -324,9 +337,9 @@ def _build_simavr_harness() -> Path | None:
         if res.returncode == 0 and harness_bin.exists():
             logger.info("Compiled ETL-compliant simavr_harness binary", binary=str(harness_bin))
             return harness_bin
-        logger.warn("Failed to compile simavr_harness via g++", stderr=res.stderr)
+        logger.warning("Failed to compile simavr_harness via g++", stderr=res.stderr)
     except (subprocess.SubprocessError, OSError) as exc:
-        logger.warn("g++ not available to build simavr_harness", error=str(exc))
+        logger.warning("g++ not available to build simavr_harness", error=str(exc))
     return None
 
 
@@ -496,13 +509,13 @@ app = typer.Typer(
 @app.command()
 def main(
     firmware: Annotated[
-        Path,
+        Path | None,
         typer.Option(
             "--firmware",
             "-f",
             help="Path to AVR ELF firmware binary",
         ),
-    ] = Path("build/simavr/arduino-avr-mega/firmware.elf"),
+    ] = None,
     board: Annotated[
         str,
         typer.Option(
@@ -519,6 +532,14 @@ def main(
             help="AVR CPU clock frequency in Hz (default: 16MHz)",
         ),
     ] = 16000000,
+    sketch: Annotated[
+        Path | None,
+        typer.Option(
+            "--sketch",
+            "-s",
+            help="Path to Arduino sketch (.ino) to compile and emulate",
+        ),
+    ] = None,
     scripts: Annotated[
         list[str] | None,
         typer.Argument(
@@ -543,12 +564,46 @@ def main(
     ] = None,
 ) -> None:
     """Entrypoint for the simavr hardware emulation runner."""
+    if sketch is not None:
+        effective_sketch = sketch
+        if not effective_sketch.exists():
+            canonical_sketch = (
+                repo_root / "mcubridge-library-arduino" / "examples" / "BridgeControl" / "BridgeControl.ino"
+            )
+            if canonical_sketch.exists():
+                logger.warning(
+                    "Requested sketch not found on disk, falling back to canonical BridgeControl sketch",
+                    requested=str(sketch),
+                    fallback=str(canonical_sketch),
+                )
+                effective_sketch = canonical_sketch
+
+        matrix_script = repo_root / "tools" / "ci" / "ci_simavr_matrix.sh"
+        if matrix_script.exists():
+            env = dict(os.environ)
+            res: subprocess.CompletedProcess[bytes] = subprocess.run(
+                ["bash", str(matrix_script), str(effective_sketch)],
+                env=env,
+                cwd=str(repo_root),
+                check=False,
+            )
+            simavr_logs_dir = repo_root / "simavr-logs"
+            if simavr_logs_dir.exists():
+                summary_src = repo_root / "build" / "simavr" / "simavr_summary.md"
+                if summary_src.exists():
+                    shutil.copy2(summary_src, simavr_logs_dir / "simavr_summary.md")
+
+            if res.returncode != 0:
+                sys.exit(res.returncode)
+            return
+
+    effective_firmware = firmware or Path(f"build/simavr/{board.replace(':', '-')}/firmware.elf")
     mcu = BOARD_TO_MCU.get(board.lower(), board.lower())
 
     # Auto-detect UART ID based on firmware name if not explicitly specified
     effective_uart = uart
     if not effective_uart:
-        fw_str = str(firmware).lower()
+        fw_str = str(effective_firmware).lower()
         if ("bluetooth" in fw_str or "wifi" in fw_str) and mcu == "atmega2560":
             effective_uart = "1"
         elif mcu == "atmega32u4":
@@ -571,12 +626,12 @@ def main(
         board=board,
         mcu=mcu,
         frequency=frequency,
-        firmware=str(firmware),
+        firmware=str(effective_firmware),
         uart=effective_uart,
     )
 
     success = run_simavr_emulation(
-        firmware_path=firmware,
+        firmware_path=effective_firmware,
         mcu=mcu,
         frequency=frequency,
         test_scripts=test_paths,

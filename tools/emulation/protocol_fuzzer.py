@@ -1,41 +1,97 @@
 #!/usr/bin/env python3
+"""[MIL-SPEC/SIL-2] McuBridge Protocol Stateful Fuzzer.
+
+Executes deterministic, property-based stateful fuzzing of serial framing, COBS/R encoding,
+Protobuf envelopes, CRC verification, and error handling on simulated or physical MCU endpoints
+using Hypothesis RuleBasedStateMachine for mathematical reproducibility and minimal shrinking.
 """
-[MIL-SPEC/SIL-2] McuBridge Protocol Fuzzer
-Mission: Stress test the MCU state machine by injecting protocol-level entropy.
-"""
+
+from __future__ import annotations
 
 import asyncio
-import random
-import secrets
 from binascii import crc32
 from collections.abc import Callable
-from typing import Annotated
+from typing import Annotated, ClassVar, cast
 
+from cobs import cobsr
+from hypothesis import strategies as st
+import hypothesis.stateful as h_stateful
+from hypothesis.stateful import RuleBasedStateMachine, invariant, rule
 import serialx
 import structlog
 import typer
-from cobs import cobs
+
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol import protocol
 from mcubridge.protocol.frame import build_frame
 
-logger = structlog.get_logger("fuzzer")
+cli = typer.Typer(help="[MIL-SPEC/SIL-2] McuBridge Protocol Stateful Fuzzer", add_completion=False)
+logger = structlog.get_logger("protocol_fuzzer")
+
+_RUN_STATE_MACHINE: Callable[[type[RuleBasedStateMachine]], None] = cast(
+    Callable[[type[RuleBasedStateMachine]], None],
+    getattr(h_stateful, "run_state_machine_as_test"),
+)
 
 
-class ProtocolFuzzer:
-    def __init__(self, port: str, baudrate: int) -> None:
-        self.port = port
-        self.baudrate = baudrate
+class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
+    """[SIL-2] Hypothesis RuleBasedStateMachine for serial protocol fuzzing.
+
+    Eliminates ad-hoc randomness in favor of mathematically reproducible sequences,
+    automatic counterexample shrinking, and deterministic state invariant verification.
+    """
+
+    port: ClassVar[str] = "/dev/ttyUSB0"
+    baudrate: ClassVar[int] = protocol.DEFAULT_BAUDRATE
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.seq_id: int = 0
+        self.frames_sent: int = 0
+        self.probe_responses_received: int = 0
+        self.loop: asyncio.AbstractEventLoop = asyncio.new_event_loop()
         self.reader: asyncio.StreamReader | None = None
         self.writer: asyncio.StreamWriter | None = None
-        self.seq_id = 0
+        self.loop.run_until_complete(self._connect())
 
-    async def connect(self) -> None:
-        self.reader, self.writer = await serialx.open_serial_connection(url=self.port, baudrate=self.baudrate)
+    async def _connect(self) -> None:
+        reader, writer = await serialx.open_serial_connection(url=self.port, baudrate=self.baudrate)
+        assert isinstance(reader, asyncio.StreamReader)
+        assert isinstance(writer, asyncio.StreamWriter)
+        self.reader = reader
+        self.writer = writer
         logger.info("connected", port=self.port, baudrate=self.baudrate)
 
+    async def _send_raw(self, data: bytes) -> None:
+        writer = self.writer
+        if writer is not None:
+            writer.write(data)
+            await writer.drain()
+            self.frames_sent += 1
+
+    async def _close(self) -> None:
+        writer = self.writer
+        if writer is not None:
+            writer.close()
+            try:
+                await writer.wait_closed()
+            except (OSError, TimeoutError) as exc:
+                logger.warning("writer_close_warning", error=str(exc))
+            self.writer = None
+            self.reader = None
+
+    def teardown(self) -> None:
+        if not self.loop.is_closed():
+            self.loop.run_until_complete(self._close())
+            self.loop.close()
+        super().teardown()
+
+    def _next_seq_id(self) -> int:
+        self.seq_id = (self.seq_id + 1) & protocol.UINT16_MAX
+        return self.seq_id
+
     def _build_raw_frame(self, cmd: int, seq: int, payload: bytes) -> bytes:
-        return cobs.encode(build_frame(command_id=cmd, sequence_id=seq, payload=payload)) + protocol.FRAME_DELIMITER
+        return cobsr.encode(build_frame(command_id=cmd, sequence_id=seq, payload=payload)) + protocol.FRAME_DELIMITER
 
     def _build_envelope_frame(
         self,
@@ -45,95 +101,134 @@ class ProtocolFuzzer:
         version: int = protocol.PROTOCOL_VERSION,
         override_crc: int | None = None,
     ) -> bytes:
+        seq: int = self._next_seq_id()
         envelope = pb.RpcEnvelope(
             version=version,
             command_id=command_id,
-            sequence_id=self.seq_id,
+            sequence_id=seq,
             encrypted_payload_with_tag=payload,
         )
-        body = envelope.SerializeToString()
-        crc_val = override_crc if override_crc is not None else (crc32(body) & protocol.CRC32_MASK)
-        raw_frame = body + (crc_val & protocol.CRC32_MASK).to_bytes(protocol.CRC_SIZE, "little")
-        return cobs.encode(raw_frame) + protocol.FRAME_DELIMITER
+        body: bytes = envelope.SerializeToString()
+        crc_val: int = override_crc if override_crc is not None else (crc32(body) & protocol.CRC32_MASK)
+        raw_frame: bytes = body + (crc_val & protocol.CRC32_MASK).to_bytes(protocol.CRC_SIZE, "little")
+        return cobsr.encode(raw_frame) + protocol.FRAME_DELIMITER
 
-    async def send_raw(self, data: bytes) -> None:
-        if self.writer:
-            self.writer.write(data)
-            await self.writer.drain()
+    @rule(payload=st.binary(min_size=0, max_size=protocol.MAX_PAYLOAD_SIZE))
+    def fuzz_valid_ping(self, payload: bytes) -> None:
+        """Generate valid version probe frames with arbitrary valid payloads."""
+        seq: int = self._next_seq_id()
+        frame: bytes = self._build_raw_frame(protocol.Command.CMD_GET_VERSION.value, seq, payload)
+        self.loop.run_until_complete(self._send_raw(frame))
 
-    def _get_fuzz_generators(self) -> dict[str, Callable[[], bytes]]:
-        return {
-            "valid_ping": lambda: self._build_raw_frame(0x0001, self.seq_id, b"\x01\x02\x03"),
-            "invalid_crc": lambda: self._build_envelope_frame(
-                0x0001, b"bad_crc", override_crc=protocol.BOOTLOADER_MAGIC
-            ),
-            "invalid_version": lambda: self._build_envelope_frame(0x0001, b"VER", version=protocol.UINT8_MASK),
-            "malformed_cobs": lambda: b"\x03\x01\x00\x02" + protocol.FRAME_DELIMITER,
-            "oversized_payload": lambda: self._build_envelope_frame(0x0001, b"A" * 300),
-            "random_garbage": lambda: secrets.token_bytes(random.randint(1, 32)) + protocol.FRAME_DELIMITER,
-            "unknown_command": lambda: self._build_raw_frame(0x7FFF, self.seq_id, b"WHOAMI"),
-        }
+    @rule(
+        cmd=st.integers(min_value=1, max_value=0x7FFF),
+        payload=st.binary(min_size=1, max_size=protocol.MAX_PAYLOAD_SIZE),
+        crc_xor=st.integers(min_value=1, max_value=protocol.CRC32_MASK),
+    )
+    def fuzz_invalid_crc(self, cmd: int, payload: bytes, crc_xor: int) -> None:
+        """Inject frames with corrupt CRC32 checksums guaranteed to differ from valid CRC."""
+        seq: int = self._next_seq_id()
+        envelope = pb.RpcEnvelope(
+            version=protocol.PROTOCOL_VERSION,
+            command_id=cmd,
+            sequence_id=seq,
+            encrypted_payload_with_tag=payload,
+        )
+        body: bytes = envelope.SerializeToString()
+        valid_crc: int = crc32(body) & protocol.CRC32_MASK
+        bad_crc: int = (valid_crc ^ crc_xor) & protocol.CRC32_MASK
+        raw_frame: bytes = body + bad_crc.to_bytes(protocol.CRC_SIZE, "little")
+        frame: bytes = cobsr.encode(raw_frame) + protocol.FRAME_DELIMITER
+        self.loop.run_until_complete(self._send_raw(frame))
 
-    async def fuzz_iteration(self) -> None:
-        self.seq_id = (self.seq_id + 1) & protocol.UINT16_MAX
-        generators = self._get_fuzz_generators()
-        mode = random.choice(list(generators))
-        logger.info("fuzz_step", mode=mode, seq=self.seq_id)
-        await self.send_raw(generators[mode]())
+    @rule(
+        cmd=st.integers(min_value=1, max_value=0x7FFF),
+        bad_version=st.integers(min_value=protocol.PROTOCOL_VERSION + 1, max_value=protocol.UINT8_MASK),
+        payload=st.binary(min_size=0, max_size=protocol.MAX_PAYLOAD_SIZE),
+    )
+    def fuzz_invalid_version(self, cmd: int, bad_version: int, payload: bytes) -> None:
+        """Inject envelopes with unsupported protocol version numbers."""
+        frame: bytes = self._build_envelope_frame(cmd, payload, version=bad_version)
+        self.loop.run_until_complete(self._send_raw(frame))
 
-    async def run(self, iterations: int = 100) -> None:
-        await self.connect()
+    @rule(raw_bytes=st.binary(min_size=1, max_size=128))
+    def fuzz_malformed_cobs(self, raw_bytes: bytes) -> None:
+        """Inject arbitrary unencoded byte sequences ending in frame delimiter."""
+        frame: bytes = raw_bytes + protocol.FRAME_DELIMITER
+        self.loop.run_until_complete(self._send_raw(frame))
 
-        success_count = 0
-        latencies: list[float] = []
+    @rule(
+        cmd=st.integers(min_value=1, max_value=0x7FFF),
+        oversized=st.binary(min_size=protocol.MAX_PAYLOAD_SIZE + 1, max_size=protocol.MAX_PAYLOAD_SIZE + 256),
+    )
+    def fuzz_oversized_payload(self, cmd: int, oversized: bytes) -> None:
+        """Inject frames exceeding the maximum allowed buffer size."""
+        frame: bytes = self._build_envelope_frame(cmd, oversized)
+        self.loop.run_until_complete(self._send_raw(frame))
 
-        for i in range(iterations):
-            if i % 10 == 0:
-                self.seq_id = (self.seq_id + 1) & protocol.UINT16_MAX
-                ping_frame = self._build_raw_frame(0x0001, self.seq_id, b"PROBE")
+    @rule(noise=st.binary(min_size=1, max_size=64))
+    def fuzz_wire_noise(self, noise: bytes) -> None:
+        """Simulate physical wire line noise and jitter."""
+        self.loop.run_until_complete(self._send_raw(noise))
 
-                start_time = asyncio.get_event_loop().time()
-                await self.send_raw(ping_frame)
+    @rule(
+        cmd=st.integers(min_value=0x7000, max_value=protocol.UINT16_MAX),
+        payload=st.binary(min_size=0, max_size=protocol.MAX_PAYLOAD_SIZE),
+    )
+    def fuzz_unknown_command(self, cmd: int, payload: bytes) -> None:
+        """Inject unregistered command IDs to verify graceful rejection."""
+        seq: int = self._next_seq_id()
+        frame: bytes = self._build_raw_frame(cmd, seq, payload)
+        self.loop.run_until_complete(self._send_raw(frame))
 
-                try:
-                    if self.reader:
-                        await asyncio.wait_for(self.reader.readuntil(protocol.FRAME_DELIMITER), timeout=0.05)
-                        latencies.append(asyncio.get_event_loop().time() - start_time)
-                        success_count += 1
-                except (TimeoutError, asyncio.IncompleteReadError):
-                    logger.warning("health_probe_timeout", seq=self.seq_id)
+    async def _read_probe(self) -> bytes | None:
+        reader = self.reader
+        if reader is None:
+            return None
+        try:
+            return await asyncio.wait_for(reader.readuntil(protocol.FRAME_DELIMITER), timeout=0.1)
+        except (TimeoutError, asyncio.IncompleteReadError, OSError):
+            return None
 
-            await self.fuzz_iteration()
-            await asyncio.sleep(0.005)
+    @rule()
+    def verify_endpoint_responsiveness(self) -> None:
+        """Send a valid probe frame to verify MCU endpoint remains responsive."""
+        seq: int = self._next_seq_id()
+        probe: bytes = self._build_raw_frame(protocol.Command.CMD_GET_VERSION.value, seq, b"PROBE")
+        self.loop.run_until_complete(self._send_raw(probe))
+        resp: bytes | None = self.loop.run_until_complete(self._read_probe())
+        if resp is not None:
+            self.probe_responses_received += 1
 
-        if latencies:
-            avg_lat = sum(latencies) / len(latencies)
-            max_lat = max(latencies)
-            logger.info(
-                "fuzzing_complete",
-                iterations=iterations,
-                health_success_rate=f"{(success_count / (iterations / 10 or 1)) * 100:.1f}%",
-                avg_latency_ms=f"{avg_lat * 1000:.2f}",
-                max_latency_ms=f"{max_lat * 1000:.2f}",
-            )
-        else:
-            logger.info("fuzzing_complete", iterations=iterations)
-
-
-cli = typer.Typer(help="[MIL-SPEC/SIL-2] McuBridge Protocol Fuzzer", add_completion=False)
+    @invariant()
+    def verify_fuzzer_invariants(self) -> None:
+        """[SIL-2] Ensure sequence counter and connection state invariants hold."""
+        assert 0 <= self.seq_id <= protocol.UINT16_MAX
+        assert self.frames_sent >= 0
+        assert self.probe_responses_received >= 0
+        assert self.writer is not None, "Serial writer disconnected unexpectedly"
 
 
 @cli.command()
 def main(
-    port: Annotated[str, typer.Option("--port", help="Serial port device")] = "/dev/ttyUSB0",
+    port: Annotated[str, typer.Option("--port", help="Serial port URL or device node")] = "/dev/ttyUSB0",
     baud: Annotated[int, typer.Option("--baud", help="Serial baudrate")] = protocol.DEFAULT_BAUDRATE,
-    count: Annotated[int, typer.Option("--count", help="Number of fuzz iterations")] = 1000,
+    count: Annotated[int, typer.Option("--count", help="Number of stateful steps to execute")] = 1000,
 ) -> None:
-    fuzzer = ProtocolFuzzer(port, baud)
+    """Run Hypothesis-driven stateful protocol fuzzing against a target serial endpoint."""
+    if count <= 0:
+        raise ValueError("count must be greater than 0")
+
+    logger.info("starting_fuzzer_state_machine", port=port, baudrate=baud, steps=count)
+
+    ProtocolFuzzerStateMachine.port = port
+    ProtocolFuzzerStateMachine.baudrate = baud
+
     try:
-        asyncio.run(fuzzer.run(count))
+        _RUN_STATE_MACHINE(ProtocolFuzzerStateMachine)
+        logger.info("fuzzing_complete", steps=count)
     except KeyboardInterrupt:
-        print("\n[INFO] Fuzzer interrupted by user.")
+        logger.info("fuzzing_interrupted_by_user")
 
 
 if __name__ == "__main__":

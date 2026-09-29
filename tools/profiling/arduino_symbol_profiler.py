@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import sys
@@ -10,6 +11,45 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
+
+
+def parse_memory_logs(log_dir: Path) -> str | None:
+    """Parse Arduino compilation logs and extract Flash and RAM usage table."""
+    if not log_dir.exists() or not log_dir.is_dir():
+        return None
+    logs = sorted(log_dir.glob("*.log"))
+    if not logs:
+        return None
+    mapping = {
+        "arduino-avr-yun": "Arduino Yún",
+        "arduino-avr-uno": "Arduino Uno",
+        "arduino-avr-mega": "Arduino Mega",
+    }
+    rows: list[str] = []
+    for p in logs:
+        try:
+            txt = p.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        fm = re.search(r"Sketch uses (\d+) bytes \(([^)]+)\).*Maximum is (\d+) bytes", txt)
+        rm = re.search(r"Global variables use (\d+) bytes \(([^)]+)\).*Maximum is (\d+) bytes", txt)
+        if fm and rm:
+            parts = p.stem.split("_", 1)
+            bname = mapping.get(parts[0], parts[0])
+            sketch = parts[1] if len(parts) > 1 else parts[0]
+            rows.append(
+                f"| {bname} | `{sketch}` | {int(fm.group(1)):,} / {int(fm.group(3)):,} B | {fm.group(2)} | "
+                f"{int(rm.group(1)):,} / {int(rm.group(3)):,} B | {rm.group(2)} |"
+            )
+    if not rows:
+        return None
+    header = [
+        "### 📊 Arduino Memory Usage",
+        "",
+        "| Board | Sketch | Flash (Used / Max) | Flash % | RAM (Used / Max) | RAM % |",
+        "| :--- | :--- | :---: | :---: | :---: | :---: |",
+    ]
+    return "\n".join(header + rows) + "\n\n"
 
 
 def detect_board_label(build_dir: Path, elf_path: Path) -> str:
@@ -22,6 +62,7 @@ def detect_board_label(build_dir: Path, elf_path: Path) -> str:
     for part in parts:
         if part.startswith("arduino-"):
             return part.replace("-", ":", 2)
+
     return parts[0] if len(parts) > 1 else "unknown-board"
 
 
@@ -52,35 +93,34 @@ cli = typer.Typer(help="Profile Arduino ELF symbols.", add_completion=False)
 
 @cli.command()
 def main(
-    build_dir: Annotated[Path, typer.Argument(help="Directory containing .elf files.")],
-    github_step_summary: Annotated[
-        Path | None,
-        typer.Option("--github-step-summary", help="Path to GitHub step summary markdown output"),
-    ] = None,
+    build_dir: Annotated[Path, typer.Argument(help="Build output directory")],
     output: Annotated[
         Path | None,
-        typer.Option("--output", help="Save report to a file."),
+        typer.Option("--output", "-o", help="Write profile to markdown file"),
     ] = None,
 ) -> None:
+    """Generate symbol profiling report for all ELF files in build directory."""
     if not build_dir.exists():
         sys.stderr.write(f"Error: {build_dir} not found.\n")
         return
 
     bloaty_bin = shutil.which("bloaty")
     reports = [profile_elf(build_dir, elf, bloaty_bin) for elf in sorted(build_dir.rglob("*.elf"))]
-    if not reports:
-        sys.stderr.write("No ELF files found for profiling.\n")
+    mem_report = parse_memory_logs(Path("arduino-logs")) or ""
+
+    if not reports and not mem_report:
+        sys.stderr.write("No ELF files or memory logs found for profiling.\n")
         return
 
-    full_report = "### 🛠️ C++ Advanced Profiling (Top Symbols)\n\n" + "\n".join(reports)
-    print(full_report)
-
-    if github_step_summary:
-        with github_step_summary.open("a", encoding="utf-8") as f:
-            f.write("\n---\n" + full_report + "\n")
+    symbol_section = ("### 🛠️ C++ Advanced Profiling (Top Symbols)\n\n" + "\n".join(reports)) if reports else ""
+    full_report = mem_report + symbol_section
 
     if output:
+        output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(full_report, encoding="utf-8")
+        print(f"✅ Symbol profile saved to {output}")
+    else:
+        print(full_report)
 
 
 if __name__ == "__main__":

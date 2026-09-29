@@ -267,7 +267,7 @@ rationale = "Static dead code scanner detecting unused functions, classes, and p
 
 [[dev_dependency]]
 name = "pyrefly"
-pip = "pyrefly==1.3.1"
+pip = "pyrefly==1.3.2"
 rationale = "Fast Python type checker and LSP language server for strict type safety"
 
 [[dev_dependency]]

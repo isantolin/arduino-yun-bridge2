@@ -13,10 +13,8 @@ from __future__ import annotations
 import hashlib
 import importlib
 import importlib.util
-import os
 import re
 import shutil
-import site
 import subprocess
 import sys
 import urllib.error
@@ -41,53 +39,67 @@ for dep in REQUIRED_DEPS:
     if importlib.util.find_spec(dep.split(".")[0]) is None:
         MISSING_DEPS.append(dep)
 
+HAS_BUF: bool = shutil.which("buf") is not None
+
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
-
-def resolve_protoc_bin() -> Path:
-    p_bin = (REPO_ROOT / "bin" / "protoc").resolve()
-    if p_bin.exists():
-        return p_bin
-    which_p = shutil.which("protoc")
-    if which_p:
-        return Path(which_p)
-    spec = importlib.util.find_spec("nanopb")
-    if spec and spec.origin:
-        nanopb_p = Path(spec.origin).parent / "generator" / "protoc"
-        if nanopb_p.exists():
-            return nanopb_p
-    return Path("protoc")
-
-
-def _check_has_protoc(bin_path: Path) -> bool:
-    try:
-        return subprocess.run([str(bin_path), "--version"], capture_output=True, check=False).returncode == 0
-    except FileNotFoundError as exc:
-        sys.stderr.write(f"[DEBUG] Protoc executable not found at {bin_path}: {exc}\n")
-        return False
-
-
-protoc_bin: Path = resolve_protoc_bin()
-HAS_PROTOC: bool = _check_has_protoc(protoc_bin)
-
-if MISSING_DEPS or not HAS_PROTOC:
+if MISSING_DEPS or not HAS_BUF:
     sys.stderr.write("\n" + "!" * 80 + "\n")
     sys.stderr.write("ERROR: Missing dependencies required for protocol generation:\n")
     for dep in MISSING_DEPS:
         sys.stderr.write(f"  - {dep} (Python)\n")
-    if not HAS_PROTOC:
-        sys.stderr.write("  - protoc (System binary or local ./bin/protoc missing)\n")
+    if not HAS_BUF:
+        sys.stderr.write("  - buf (Buf CLI not found in PATH)\n")
     sys.stderr.write("\nTo fix this, run:\n")
     if MISSING_DEPS:
         sys.stderr.write(f"  pip install {' '.join(MISSING_DEPS)}\n")
-    if not HAS_PROTOC:
-        sys.stderr.write("  Check README for local protoc installation instructions.\n")
+    if not HAS_BUF:
+        sys.stderr.write("  npm install -g @bufbuild/buf\n")
     sys.stderr.write("!" * 80 + "\n\n")
     sys.exit(1)
 # ═════════════════════════════════════════════════════════════════════════════
 
 
 # Mappings and helper functions for reflective protocol constant generation.
+
+
+def _resolve_nanopb_protoc_dir() -> Path | None:
+    """Locate the directory containing nanopb's bundled protoc binary."""
+    spec = importlib.util.find_spec("nanopb")
+    if spec and spec.origin:
+        candidate = Path(spec.origin).parent / "generator"
+        if (candidate / "protoc").exists():
+            return candidate
+    return None
+
+
+def run_buf_generate(proto_dir: Path) -> None:
+    """Run ``buf generate`` declaratively (replaces manual protoc/nanopb subprocess calls).
+
+    Buf orchestrates all protoc plugins defined in ``buf.gen.yaml``:
+    python pb2, mypy stubs, grpclib, and nanopb C.
+    """
+    import os
+
+    env = os.environ.copy()
+    # Ensure nanopb's bundled protoc is reachable for buf's protoc_builtin plugins
+    nanopb_dir = _resolve_nanopb_protoc_dir()
+    if nanopb_dir:
+        env["PATH"] = f"{nanopb_dir}:{env.get('PATH', '')}"
+
+    try:
+        subprocess.run(
+            ["buf", "generate"],
+            check=True,
+            capture_output=True,
+            text=True,
+            cwd=str(proto_dir),
+            env=env,
+        )
+    except subprocess.CalledProcessError as e:
+        sys.stderr.write(f"Error: buf generate failed:\n{e.stderr}\n")
+        sys.exit(1)
+
 
 
 def cmd_name_to_pb_class(cmd_name: str) -> str:
@@ -690,75 +702,6 @@ class JinjaGenerator:
             if cmd.name.endswith("_RESP") and cmd.name.removesuffix("_RESP") in cmd_names
         }
 
-    def generate_nanopb(self, proto_path: Path) -> None:
-        """Invoke nanopb_generator.py to create C++ headers/sources."""
-        nanopb = importlib.import_module("nanopb")
-        nanopb_file = nanopb.__file__
-        assert nanopb_file is not None
-        nanopb_include_path = Path(nanopb_file).parent / "generator" / "proto"
-
-        cmd = [
-            sys.executable,
-            "-m",
-            "nanopb.generator.nanopb_generator",
-            "-v",
-            "-I",
-            str(proto_path.parent),
-            "-I",
-            str(nanopb_include_path),
-            "-I",
-            "/usr/local/include",
-            "-I",
-            "/usr/include",
-            proto_path.name,
-        ]
-        try:
-            subprocess.run(cmd, check=True, capture_output=True, text=True, cwd=str(proto_path.parent))
-        except subprocess.CalledProcessError as e:
-            sys.stderr.write(f"Error: nanopb_generator failed: {e.stderr}\n")
-            sys.exit(1)
-
-    def generate_python_pb2(self, proto_path: Path, out_dir: Path) -> None:
-        """Invoke protoc to generate Python pb2 module and typing stub."""
-        # Create a temporary wrapper script for protoc-gen-pyi
-        wrapper_path = REPO_ROOT / ".tmp_protoc_plugin.sh"
-
-        wrapper_path.write_text(
-            f'#!/bin/bash\n{sys.executable} -c "from mypy_protobuf.main import main; main()" "$@"\n'
-        )
-        wrapper_path.chmod(0o755)
-
-        nanopb = importlib.import_module("nanopb")
-        nanopb_file = nanopb.__file__
-        assert nanopb_file is not None
-        nanopb_include_path = Path(nanopb_file).parent / "generator" / "proto"
-
-        env = os.environ.copy()
-        # Ensure the user's local site-packages are in the path for the wrapper
-        user_site = site.getusersitepackages()
-        env["PYTHONPATH"] = f"{user_site}:{env.get('PYTHONPATH', '')}"
-
-        cmd = [
-            str(protoc_bin),
-            f"--python_out={out_dir}",
-            f"--pyi_out={out_dir}",
-            f"--grpclib_python_out={out_dir}",
-            f"--plugin=protoc-gen-pyi={wrapper_path}",
-            f"--proto_path={proto_path.parent}",
-            f"--proto_path={nanopb_include_path}",
-            "--proto_path=/usr/local/include",
-            "--proto_path=/usr/include",
-            str(proto_path),
-        ]
-        try:
-            subprocess.run(cmd, check=True, capture_output=True, text=True, env=env)
-        except subprocess.CalledProcessError as e:
-            sys.stderr.write(f"Error: protoc failed: {e.stderr}\n")
-            sys.exit(1)
-        finally:
-            if wrapper_path.exists():
-                wrapper_path.unlink()
-
     def generate_python_client(self, spec: ProtocolSpec, out_path: Path) -> None:
         template = self.env.get_template("protocol_client.py.j2")
 
@@ -962,17 +905,14 @@ def main(
 
     update_metadata(version)
 
-    # Compile the protobuf first to generate mcubridge_pb2.py
+    # Compile the protobuf via buf generate (declarative, replaces manual protoc/nanopb subprocess calls)
     proto_path = args.spec.resolve()
     if proto_path.suffix == ".toml":
         proto_path = (proto_path.parent / "mcubridge.proto").resolve()
 
     if proto_path.exists():
-        sys.stderr.write(f"Compiling {proto_path}...\n")
-        # Python PB2
-        gen.generate_python_pb2(proto_path, proto_path.parent)
-        # Nanopb C++
-        gen.generate_nanopb(proto_path)
+        sys.stderr.write(f"Compiling {proto_path} via buf generate...\n")
+        run_buf_generate(proto_path.parent)
 
     # Now load the compiled descriptor
     proto_spec = load_spec_from_proto(proto_path)

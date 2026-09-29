@@ -1,0 +1,22 @@
+# buf.gen.yaml — Declarative protoc orchestration for MCU Bridge v2.
+# Replaces manual subprocess.run calls to protoc and nanopb_generator.
+# Run: buf generate (from tools/protocol/)
+version: v2
+inputs:
+  - directory: .
+plugins:
+  # 1. Python pb2 runtime bindings (mcubridge_pb2.py)
+  - protoc_builtin: python
+    out: .
+
+  # 2. Python type stubs (mcubridge_pb2.pyi) via mypy-protobuf
+  - local: protoc-gen-mypy
+    out: .
+
+  # 3. gRPC service stubs (mcubridge_grpc.py) via grpclib
+  - local: protoc-gen-grpclib_python
+    out: .
+
+  # 4. Nanopb C headers/sources (mcubridge.pb.h, mcubridge.pb.c) for Zero-Heap MCU
+  - local: protoc-gen-nanopb
+    out: .

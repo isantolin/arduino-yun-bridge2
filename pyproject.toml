@@ -232,9 +232,3 @@ search-path = [
 python-version = "3.14.0"
 site-package-path = ["typings"]
 infer-with-first-use = false
-
-[tool.mutmut]
-paths_to_mutate = "mcubridge/mcubridge/"
-tests_dir = "mcubridge/tests/"
-runner = "python -m pytest -x"
-

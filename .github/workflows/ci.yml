@@ -31,15 +31,7 @@ jobs:
         env: [protocol, deps-sync, luci, cppcheck, typecheck, lint, codebase-auditor, py, arduino]
     steps:
       - uses: actions/checkout@v7
-      - name: Install protoc
-        if: matrix.env == 'protocol' || matrix.env == 'typecheck' || matrix.env == 'lint' || matrix.env == 'py' || matrix.env == 'arduino' || matrix.env == 'cppcheck'
-        run: |
-          PROTOC_VERSION=36.2
-          PROTOC_ZIP=protoc-${PROTOC_VERSION}-linux-x86_64.zip
-          curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${PROTOC_ZIP}
-          sudo unzip -o ${PROTOC_ZIP} -d /usr/local
-          rm -f ${PROTOC_ZIP}
-          protoc --version
+      - uses: ./.github/actions/setup-protoc
       - uses: ./.github/actions/setup-python-tox
         with:
           install-system-deps: 'true'
@@ -51,7 +43,7 @@ jobs:
           sudo npm install -g @bufbuild/buf
           uv tool install semgrep
           echo "$HOME/.local/bin" >> $GITHUB_PATH
-          python -m pip install protobuf mypy-protobuf vulture pytest pyrefly types-protobuf types-psutil types-pexpect flake8 ruff mutmut
+          python -m pip install protobuf mypy-protobuf vulture pytest pyrefly types-protobuf types-psutil types-pexpect flake8 ruff
       - name: Install Build Tools
         if: matrix.env == 'arduino'
         run: sudo apt-get update && sudo apt-get install -y g++ make
@@ -106,14 +98,7 @@ jobs:
       ARDUINO_METRICS_DIR: arduino-logs
     steps:
       - uses: actions/checkout@v7
-      - name: Install protoc
-        run: |
-          PROTOC_VERSION=36.2
-          PROTOC_ZIP=protoc-${PROTOC_VERSION}-linux-x86_64.zip
-          curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${PROTOC_ZIP}
-          sudo unzip -o ${PROTOC_ZIP} -d /usr/local
-          rm -f ${PROTOC_ZIP}
-          protoc --version
+      - uses: ./.github/actions/setup-protoc
       - name: Setup Arduino CLI
         run: |
           curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
@@ -174,14 +159,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
-      - name: Install protoc
-        run: |
-          PROTOC_VERSION=36.2
-          PROTOC_ZIP=protoc-${PROTOC_VERSION}-linux-x86_64.zip
-          curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${PROTOC_ZIP}
-          sudo unzip -o ${PROTOC_ZIP} -d /usr/local
-          rm -f ${PROTOC_ZIP}
-          protoc --version
+      - uses: ./.github/actions/setup-protoc
       - uses: ./.github/actions/setup-python-tox
         with:
           cache-suffix: coverage
@@ -248,14 +226,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
-      - name: Install protoc
-        run: |
-          PROTOC_VERSION=36.2
-          PROTOC_ZIP=protoc-${PROTOC_VERSION}-linux-x86_64.zip
-          curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${PROTOC_ZIP}
-          sudo unzip -o ${PROTOC_ZIP} -d /usr/local
-          rm -f ${PROTOC_ZIP}
-          protoc --version
+      - uses: ./.github/actions/setup-protoc
       - uses: ./.github/actions/setup-python-tox
         with:
           cache-suffix: emulation
@@ -282,14 +253,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
-      - name: Install protoc
-        run: |
-          PROTOC_VERSION=36.2
-          PROTOC_ZIP=protoc-${PROTOC_VERSION}-linux-x86_64.zip
-          curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${PROTOC_ZIP}
-          sudo unzip -o ${PROTOC_ZIP} -d /usr/local
-          rm -f ${PROTOC_ZIP}
-          protoc --version
+      - uses: ./.github/actions/setup-protoc
       - uses: ./.github/actions/setup-python-tox
         with:
           cache-suffix: fuzz
@@ -309,14 +273,7 @@ jobs:
       SIMAVR_METRICS_DIR: simavr-logs
     steps:
       - uses: actions/checkout@v7
-      - name: Install protoc
-        run: |
-          PROTOC_VERSION=36.2
-          PROTOC_ZIP=protoc-${PROTOC_VERSION}-linux-x86_64.zip
-          curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${PROTOC_ZIP}
-          sudo unzip -o ${PROTOC_ZIP} -d /usr/local
-          rm -f ${PROTOC_ZIP}
-          protoc --version
+      - uses: ./.github/actions/setup-protoc
       - uses: ./.github/actions/setup-python-tox
         with:
           cache-suffix: simavr
@@ -353,14 +310,7 @@ jobs:
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@v7
-      - name: Install protoc
-        run: |
-          PROTOC_VERSION=36.2
-          PROTOC_ZIP=protoc-${PROTOC_VERSION}-linux-x86_64.zip
-          curl -OL https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${PROTOC_ZIP}
-          sudo unzip -o ${PROTOC_ZIP} -d /usr/local
-          rm -f ${PROTOC_ZIP}
-          protoc --version
+      - uses: ./.github/actions/setup-protoc
       - uses: ./.github/actions/setup-python-tox
         with:
           cache-suffix: summary

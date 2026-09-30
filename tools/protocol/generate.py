@@ -104,7 +104,10 @@ def run_buf_generate(proto_dir: Path) -> None:
 def cmd_name_to_pb_class(cmd_name: str) -> str:
     """Convert CMD_X_Y style command name to CamelCase class name."""
     clean_name = cmd_name.removeprefix("CMD_")
-    return "".join("Response" if seg == "RESP" else seg.capitalize() for seg in clean_name.split("_"))
+    return "".join(
+        "Response" if seg == "RESP" else seg.capitalize()
+        for seg in clean_name.split("_")
+    )
 
 
 @dataclass
@@ -164,12 +167,16 @@ class ProtocolSpec:
     hardware_opt: Any = None
     handshake_opt: Any = None
     pb_module: Any = None
-    runtime_config_fields: list[ConfigFieldDef] = field(default_factory=_default_config_fields)
+    runtime_config_fields: list[ConfigFieldDef] = field(
+        default_factory=_default_config_fields
+    )
 
 
 def _proto_to_dict(msg: Any) -> dict[str, Any]:
     """Convert Protobuf message to dict with canonical preservation flags. [SIL-2]"""
-    return MessageToDict(msg, preserving_proto_field_name=True, always_print_fields_with_no_presence=True)
+    return MessageToDict(
+        msg, preserving_proto_field_name=True, always_print_fields_with_no_presence=True
+    )
 
 
 def _load_runtime_config_fields(file_desc: Any, pb_module: Any) -> list[ConfigFieldDef]:
@@ -185,15 +192,31 @@ def _load_runtime_config_fields(file_desc: Any, pb_module: Any) -> list[ConfigFi
             if opts.HasExtension(pb_module.config_default)
             else None
         )
-        cfg_desc = opts.Extensions[pb_module.config_desc] if opts.HasExtension(pb_module.config_desc) else ""
+        cfg_desc = (
+            opts.Extensions[pb_module.config_desc]
+            if opts.HasExtension(pb_module.config_desc)
+            else ""
+        )
         cfg_volatile = (
             opts.Extensions[pb_module.config_volatile]
             if opts.HasExtension(pb_module.config_volatile)
             else False
         )
-        cfg_min = opts.Extensions[pb_module.config_min] if opts.HasExtension(pb_module.config_min) else None
-        cfg_max = opts.Extensions[pb_module.config_max] if opts.HasExtension(pb_module.config_max) else None
-        uci_opt = opts.Extensions[pb_module.uci_option] if opts.HasExtension(pb_module.uci_option) else None
+        cfg_min = (
+            opts.Extensions[pb_module.config_min]
+            if opts.HasExtension(pb_module.config_min)
+            else None
+        )
+        cfg_max = (
+            opts.Extensions[pb_module.config_max]
+            if opts.HasExtension(pb_module.config_max)
+            else None
+        )
+        uci_opt = (
+            opts.Extensions[pb_module.uci_option]
+            if opts.HasExtension(pb_module.uci_option)
+            else None
+        )
 
         py_type = "str"
         typed_val: Any = None
@@ -208,7 +231,11 @@ def _load_runtime_config_fields(file_desc: Any, pb_module: Any) -> list[ConfigFi
             typed_val = cfg_default.encode("utf-8") if cfg_default is not None else b""
         elif field_desc.type == field_desc.TYPE_BOOL:
             py_type = "bool"
-            typed_val = cfg_default.lower() in ("true", "1", "yes") if cfg_default is not None else False
+            typed_val = (
+                cfg_default.lower() in ("true", "1", "yes")
+                if cfg_default is not None
+                else False
+            )
         elif field_desc.type in (field_desc.TYPE_FLOAT, field_desc.TYPE_DOUBLE):
             py_type = "float"
             typed_val = float(cfg_default) if cfg_default is not None else 0.0
@@ -279,7 +306,9 @@ def load_spec_from_proto(proto_path: Path) -> ProtocolSpec:
     actions = [_proto_to_dict(a) for a in actions_opt]
 
     architectures = {arch.name: arch.value for arch in architectures_opt}
-    architecture_display_names = {arch.name: arch.display_name for arch in architectures_opt if arch.display_name}
+    architecture_display_names = {
+        arch.name: arch.display_name for arch in architectures_opt if arch.display_name
+    }
 
     capabilities = {cap.name: cap.value for cap in capabilities_opt}
 
@@ -313,7 +342,9 @@ def load_spec_from_proto(proto_path: Path) -> ProtocolSpec:
         {
             f"{enum_name}_ENUM": opts.Extensions[mcubridge_pb2.enum_cloud_topic]
             for enum_name, enum_desc in file_desc.enum_types_by_name.items()
-            if (opts := enum_desc.GetOptions()).HasExtension(mcubridge_pb2.enum_cloud_topic)
+            if (opts := enum_desc.GetOptions()).HasExtension(
+                mcubridge_pb2.enum_cloud_topic
+            )
         }
     )
 
@@ -323,7 +354,9 @@ def load_spec_from_proto(proto_path: Path) -> ProtocolSpec:
         StatusDef(
             name=val.name,
             value=val.number,
-            description=val.GetOptions().Extensions[mcubridge_pb2.status_opts].description,
+            description=val.GetOptions()
+            .Extensions[mcubridge_pb2.status_opts]
+            .description,
         )
         for val in status_enum_desc.values
         if val.name != "STATUS_UNSPECIFIED"
@@ -362,7 +395,11 @@ VERSION_PATH = REPO_ROOT / "VERSION"
 
 def _build_constant_context(spec: ProtocolSpec, version: str) -> dict[str, Any]:
     parsed_version = Version(version)
-    v_major, v_minor, v_patch = parsed_version.major, parsed_version.minor, parsed_version.micro
+    v_major, v_minor, v_patch = (
+        parsed_version.major,
+        parsed_version.minor,
+        parsed_version.micro,
+    )
     cpp_constants: list[dict[str, Any]] = []
     python_constants: list[dict[str, Any]] = []
     client_constants: list[dict[str, Any]] = []
@@ -375,7 +412,11 @@ def _build_constant_context(spec: ProtocolSpec, version: str) -> dict[str, Any]:
             cpp_name = opts.Extensions[pb_module.cpp_name]
             if cpp_name:
                 cpp_constants.append(
-                    {"name": cpp_name, "type": opts.Extensions[pb_module.cpp_type], "value": val}
+                    {
+                        "name": cpp_name,
+                        "type": opts.Extensions[pb_module.cpp_type],
+                        "value": val,
+                    }
                 )
 
             py_name = opts.Extensions[pb_module.py_name]
@@ -391,7 +432,10 @@ def _build_constant_context(spec: ProtocolSpec, version: str) -> dict[str, Any]:
                     formatted_val = val
                 constant = {"name": py_name, "type": py_type, "value": formatted_val}
                 python_constants.append(constant)
-                if pb_obj is spec.constants_opt and opts.Extensions[pb_module.client_constant]:
+                if (
+                    pb_obj is spec.constants_opt
+                    and opts.Extensions[pb_module.client_constant]
+                ):
                     client_constants.append(constant)
     cpp_constants.extend(
         [
@@ -414,7 +458,9 @@ def _build_constant_context(spec: ProtocolSpec, version: str) -> dict[str, Any]:
     }
 
 
-def _build_runtime_config_constants(spec: ProtocolSpec, python_constants: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _build_runtime_config_constants(
+    spec: ProtocolSpec, python_constants: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
     existing_constant_names = {constant["name"] for constant in python_constants}
     runtime_config_constants: list[dict[str, Any]] = []
     for config_field in spec.runtime_config_fields:
@@ -466,10 +512,14 @@ def _build_handshake_context(spec: ProtocolSpec, pb_module: Any) -> dict[str, An
             )
     handshake = {
         "hkdf_salt": spec.handshake["hkdf_salt"],
-        "hkdf_salt_bytes": ", ".join(f"0x{ord(char):02X}" for char in spec.handshake["hkdf_salt"]),
+        "hkdf_salt_bytes": ", ".join(
+            f"0x{ord(char):02X}" for char in spec.handshake["hkdf_salt"]
+        ),
         "hkdf_salt_len": len(spec.handshake["hkdf_salt"]),
         "hkdf_info_auth": spec.handshake["hkdf_info_auth"],
-        "hkdf_info_auth_bytes": ", ".join(f"0x{ord(char):02X}" for char in spec.handshake["hkdf_info_auth"]),
+        "hkdf_info_auth_bytes": ", ".join(
+            f"0x{ord(char):02X}" for char in spec.handshake["hkdf_info_auth"]
+        ),
         "hkdf_info_auth_len": len(spec.handshake["hkdf_info_auth"]),
         "hkdf_info_session": spec.handshake["hkdf_info_session"],
         "hkdf_info_session_bytes": ", ".join(
@@ -490,11 +540,17 @@ def _build_action_context(spec: ProtocolSpec) -> dict[str, Any]:
         if "_" in action["name"]:
             prefix, suffix = action["name"].split("_", 1)
             grouped_action_items.setdefault(prefix, []).append(
-                {"name": suffix, "value": action["value"], "description": action["description"]}
+                {
+                    "name": suffix,
+                    "value": action["value"],
+                    "description": action["description"],
+                }
             )
     grouped_actions = [
         {
-            "class_name": "DatastoreAction" if prefix == "DATASTORE" else f"{prefix.lower().title()}Action",
+            "class_name": "DatastoreAction"
+            if prefix == "DATASTORE"
+            else f"{prefix.lower().title()}Action",
             "action_items": items,
         }
         for prefix, items in grouped_action_items.items()
@@ -527,7 +583,9 @@ def _build_action_context(spec: ProtocolSpec) -> dict[str, Any]:
                         if topic_name == "DATASTORE"
                         else f"{topic_name.lower().title()}Action"
                     )
-                    segments.append(f"{action_class}.{matched_action['name'].split('_', 1)[1]}.value")
+                    segments.append(
+                        f"{action_class}.{matched_action['name'].split('_', 1)[1]}.value"
+                    )
                 else:
                     segments.append(f'"{segment}"')
         subscriptions.append(
@@ -571,9 +629,13 @@ def _build_descriptor_context(spec: ProtocolSpec, pb_module: Any) -> dict[str, A
     all_message_names = list(file_desc.message_types_by_name)
     options_path = (REPO_ROOT / "tools" / "protocol" / "mcubridge.options").resolve()
     options_content = options_path.read_text(encoding="utf-8")
-    skipped_messages = set(re.findall(r"rpc\.pb\.(\w+)\s+skip_message:true", options_content))
+    skipped_messages = set(
+        re.findall(r"rpc\.pb\.(\w+)\s+skip_message:true", options_content)
+    )
     all_structs = [
-        {"name": name} for name in all_message_names if name not in skipped_messages and name != "RpcContainer"
+        {"name": name}
+        for name in all_message_names
+        if name not in skipped_messages and name != "RpcContainer"
     ]
     envelope_desc = file_desc.message_types_by_name.get("RpcEnvelope")
     payload_fields: list[dict[str, str]] = []
@@ -581,7 +643,10 @@ def _build_descriptor_context(spec: ProtocolSpec, pb_module: Any) -> dict[str, A
     if envelope_desc and "payload_type" in envelope_desc.oneofs_by_name:
         for field_desc in envelope_desc.oneofs_by_name["payload_type"].fields:
             if field_desc.message_type:
-                payload = {"name": field_desc.message_type.name, "field": field_desc.name}
+                payload = {
+                    "name": field_desc.message_type.name,
+                    "field": field_desc.name,
+                }
                 payload_fields.append(payload)
                 if field_desc.message_type.name not in skipped_messages:
                     payload_structs.append(payload)
@@ -704,25 +769,56 @@ class JinjaGenerator:
         self.render_template("mcubridge_uci.j2", context, out_path, create_parent=True)
 
     def generate_defaults_sh(self, context: dict[str, Any], out_path: Path) -> None:
-        self.render_template("defaults_sh.j2", context, out_path, create_parent=True, executable=True)
+        self.render_template(
+            "defaults_sh.j2", context, out_path, create_parent=True, executable=True
+        )
 
-    def generate_config_schema_json(self, context: dict[str, Any], out_path: Path) -> None:
-        self.render_template("config_schema_json.j2", context, out_path, create_parent=True)
+    def generate_config_schema_json(
+        self, context: dict[str, Any], out_path: Path
+    ) -> None:
+        self.render_template(
+            "config_schema_json.j2", context, out_path, create_parent=True
+        )
 
 
 def update_metadata(version: str) -> None:
     targets = [
-        (REPO_ROOT / "pyproject.toml", r'version\s*=\s*"[^"]+"', f'version = "{version}"', 1),
+        (
+            REPO_ROOT / "pyproject.toml",
+            r'version\s*=\s*"[^"]+"',
+            f'version = "{version}"',
+            1,
+        ),
         (
             REPO_ROOT / "mcubridge" / "mcubridge" / "__init__.py",
             r'__version__\s*=\s*"[^"]+"',
             f'__version__ = "{version}"',
             1,
         ),
-        (REPO_ROOT / "mcubridge" / "Makefile", r"PKG_VERSION:=[^\n]+", f"PKG_VERSION:={version}", 0),
-        (REPO_ROOT / "mcubridge-gateway" / "Makefile", r"PKG_VERSION:=[^\n]+", f"PKG_VERSION:={version}", 0),
-        (REPO_ROOT / "luci-app-mcubridge" / "Makefile", r"PKG_VERSION:=[^\n]+", f"PKG_VERSION:={version}", 0),
-        (REPO_ROOT / "mcubridge-library-arduino" / "library.properties", r"version=[^\n]+", f"version={version}", 0),
+        (
+            REPO_ROOT / "mcubridge" / "Makefile",
+            r"PKG_VERSION:=[^\n]+",
+            f"PKG_VERSION:={version}",
+            0,
+        ),
+        (
+            REPO_ROOT / "mcubridge-gateway" / "Makefile",
+            r"PKG_VERSION:=[^\n]+",
+            f"PKG_VERSION:={version}",
+            0,
+        ),
+        (
+            REPO_ROOT / "luci-app-mcubridge" / "Makefile",
+            r"PKG_VERSION:=[^\n]+",
+            f"PKG_VERSION:={version}",
+            0,
+        ),
+        (
+            REPO_ROOT / "mcubridge-library-arduino" / "library.properties",
+            r"version=[^\n]+",
+            f"version={version}",
+            0,
+        ),
     ]
     for target_path, pattern, repl, count in targets:
         if target_path.exists():
@@ -783,7 +879,9 @@ def ensure_nanopb_core_files() -> None:
             retryer = tenacity.Retrying(
                 stop=tenacity.stop_after_attempt(3),
                 wait=tenacity.wait_exponential(multiplier=1.0, min=1.0, max=5.0),
-                retry=tenacity.retry_if_exception_type((urllib.error.URLError, OSError, TimeoutError)),
+                retry=tenacity.retry_if_exception_type(
+                    (urllib.error.URLError, OSError, TimeoutError)
+                ),
                 reraise=True,
             )
 
@@ -794,7 +892,13 @@ def ensure_nanopb_core_files() -> None:
             try:
                 content = retryer(_fetch_nanopb_file)
                 target.write_bytes(content)
-            except (urllib.error.URLError, OSError, TimeoutError, ValueError, tenacity.RetryError) as e:
+            except (
+                urllib.error.URLError,
+                OSError,
+                TimeoutError,
+                ValueError,
+                tenacity.RetryError,
+            ) as e:
                 sys.stderr.write(f"Error downloading {f} after retries: {e}\n")
                 sys.exit(1)
 
@@ -823,7 +927,11 @@ def check_incremental_build(args: Any, version: str) -> tuple[bool, Path, str]:
         if args.py_client and not (args.py_client.parent / "mcubridge_pb2.py").exists():
             outputs_exist = False
 
-    up_to_date = bool(outputs_exist and hash_file.exists() and hash_file.read_text().strip() == current_hash)
+    up_to_date = bool(
+        outputs_exist
+        and hash_file.exists()
+        and hash_file.read_text().strip() == current_hash
+    )
     return up_to_date, hash_file, current_hash
 
 
@@ -853,7 +961,9 @@ def _copy_generated_python_files(proto_path: Path, args: Any) -> None:
     py_grpc = proto_path.parent / "mcubridge_grpc.py"
     if py_grpc.exists():
         grpc_text = py_grpc.read_text()
-        grpc_text = grpc_text.replace("import mcubridge_pb2", "from . import mcubridge_pb2")
+        grpc_text = grpc_text.replace(
+            "import mcubridge_pb2", "from . import mcubridge_pb2"
+        )
         grpc_data = grpc_text.encode()
         if args.py:
             (args.py.parent / "mcubridge_grpc.py").write_bytes(grpc_data)
@@ -871,25 +981,41 @@ class GenerationArgs:
     py_client: Path | None
 
 
-cli = typer.Typer(help="Protocol binding generator for MCU Bridge v2.", add_completion=False)
+cli = typer.Typer(
+    help="Protocol binding generator for MCU Bridge v2.", add_completion=False
+)
 
 
 @cli.command()
 def main(
-    spec_file: Annotated[Path, typer.Option("--spec", help="Protocol specification file (.proto)")],
+    spec_file: Annotated[
+        Path, typer.Option("--spec", help="Protocol specification file (.proto)")
+    ],
     cpp: Annotated[Path | None, typer.Option("--cpp", help="C++ header output")] = None,
-    cpp_structs: Annotated[Path | None, typer.Option("--cpp-structs", help="C++ structs output")] = None,
+    cpp_structs: Annotated[
+        Path | None, typer.Option("--cpp-structs", help="C++ structs output")
+    ] = None,
     py: Annotated[Path | None, typer.Option("--py", help="Python output")] = None,
-    py_client: Annotated[Path | None, typer.Option("--py-client", help="Python client output")] = None,
+    py_client: Annotated[
+        Path | None, typer.Option("--py-client", help="Python client output")
+    ] = None,
 ) -> None:
     ensure_nanopb_core_files()
 
-    args = GenerationArgs(spec=spec_file, cpp=cpp, cpp_structs=cpp_structs, py=py, py_client=py_client)
+    args = GenerationArgs(
+        spec=spec_file, cpp=cpp, cpp_structs=cpp_structs, py=py, py_client=py_client
+    )
 
     gen = JinjaGenerator()
-    version = VERSION_PATH.read_text(encoding="utf-8").strip() if VERSION_PATH.exists() else "0.0.0"
+    version = (
+        VERSION_PATH.read_text(encoding="utf-8").strip()
+        if VERSION_PATH.exists()
+        else "0.0.0"
+    )
     if version == "0.0.0":
-        sys.stderr.write(f"Warning: VERSION file not found at {VERSION_PATH}, using fallback.\n")
+        sys.stderr.write(
+            f"Warning: VERSION file not found at {VERSION_PATH}, using fallback.\n"
+        )
 
     up_to_date, hash_file, current_hash = check_incremental_build(args, version)
     if up_to_date:
@@ -922,7 +1048,9 @@ def main(
             if cpp_pb_h.exists():
                 target_h.write_bytes(cpp_pb_h.read_bytes())
                 # Fix pb.h include for relative path in Arduino library structure
-                h_text = target_h.read_text().replace("#include <pb.h>", '#include "../pb.h"')
+                h_text = target_h.read_text().replace(
+                    "#include <pb.h>", '#include "../pb.h"'
+                )
                 target_h.write_text(h_text)
                 cpp_pb_h.unlink(missing_ok=True)
             if cpp_pb_c.exists():
@@ -959,7 +1087,9 @@ def main(
         sys.stderr.write(f"Generated {args.py_client}\n")
 
     # Generate unified system configuration artifacts from SSOT
-    uci_target = REPO_ROOT / "luci-app-mcubridge" / "root" / "etc" / "config" / "mcubridge"
+    uci_target = (
+        REPO_ROOT / "luci-app-mcubridge" / "root" / "etc" / "config" / "mcubridge"
+    )
     if uci_target.parent.exists():
         gen.generate_uci_config(context, uci_target)
         sys.stderr.write(f"Generated {uci_target}\n")

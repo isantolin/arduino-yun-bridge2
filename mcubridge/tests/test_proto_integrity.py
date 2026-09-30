@@ -1,10 +1,13 @@
 """Test suite for Protobuf SSOT integrity, dead definition audits, and strong typing. [SIL-2]"""
 
 from pathlib import Path
+
+import pytest
 from google.protobuf.descriptor import FieldDescriptor
 from typer.testing import CliRunner
 
 from mcubridge.protocol import mcubridge_pb2 as pb
+from tools.audit import codebase_auditor
 from tools.audit.codebase_auditor import app, audit_proto_integrity
 
 runner = CliRunner()
@@ -43,6 +46,29 @@ def test_audit_proto_integrity_missing_file(tmp_path: Path) -> None:
     assert len(findings) == 1
     assert "Protobuf File Missing" in findings[0]
     assert str(missing) in findings[0]
+
+
+def test_audit_semgrep_reports_missing_executable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    (tmp_path / ".semgrep.yml").write_text("rules: []\n", encoding="utf-8")
+    monkeypatch.setattr(codebase_auditor, "ROOT", tmp_path)
+    monkeypatch.setattr(codebase_auditor.shutil, "which", lambda _: None)
+
+    assert codebase_auditor.audit_semgrep() == ["Semgrep Executable Missing: 'semgrep' binary not found in PATH"]
+
+
+def test_audit_config_suppressions_reports_matches_and_skips_ignored_directories(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    (tmp_path / "workflow.yml").write_text("continue_on_error: yes\n", encoding="utf-8")
+    ignored_dir = tmp_path / ".tox"
+    ignored_dir.mkdir()
+    (ignored_dir / "workflow.yml").write_text("continue_on_error: yes\n", encoding="utf-8")
+    monkeypatch.setattr(codebase_auditor, "ROOT", tmp_path)
+
+    assert codebase_auditor.audit_config_suppressions() == [
+        "Config Suppression: workflow.yml:1 - 'continue_on_error: yes'"
+    ]
 
 
 def test_protobuf_descriptor_purged_elements() -> None:

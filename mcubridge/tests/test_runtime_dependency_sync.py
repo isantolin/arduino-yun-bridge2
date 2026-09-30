@@ -45,19 +45,27 @@ def test_cli_exposes_dry_run_option() -> None:
     assert "--check-latest" in result.stdout
 
 
+def _mock_sync_true(*_args: object, **_kwargs: object) -> bool:
+    return True
+
+
+def _mock_sync_false(*_args: object, **_kwargs: object) -> bool:
+    return False
+
+
 def test_main_dry_run_reports_preview_when_changes_detected(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(sync_runtime_deps, "load_manifest", lambda: sync_runtime_deps.ManifestData([], [], []))
-    monkeypatch.setattr(sync_runtime_deps, "write_requirements", lambda deps, *, dry_run=False: True)
-    monkeypatch.setattr(sync_runtime_deps, "update_makefile", lambda deps, *, dry_run=False: False)
-    monkeypatch.setattr(sync_runtime_deps, "update_pyproject", lambda deps, *, dry_run=False: False)
-    monkeypatch.setattr(sync_runtime_deps, "update_feeds", lambda deps, *, dry_run=False: False)
-    monkeypatch.setattr(sync_runtime_deps, "write_gateway_requirements", lambda deps, *, dry_run=False: False)
-    monkeypatch.setattr(sync_runtime_deps, "update_gateway_makefile", lambda deps, *, dry_run=False: False)
-    monkeypatch.setattr(sync_runtime_deps, "update_cpp_install_script", lambda deps, *, dry_run=False: False)
-    monkeypatch.setattr(sync_runtime_deps, "update_tox_dev_deps", lambda deps, *, dry_run=False: False)
-    monkeypatch.setattr(sync_runtime_deps, "update_workflows", lambda deps, *, dry_run=False: False)
+    monkeypatch.setattr(sync_runtime_deps, "write_requirements", _mock_sync_true)
+    monkeypatch.setattr(sync_runtime_deps, "update_makefile", _mock_sync_false)
+    monkeypatch.setattr(sync_runtime_deps, "update_pyproject", _mock_sync_false)
+    monkeypatch.setattr(sync_runtime_deps, "update_feeds", _mock_sync_false)
+    monkeypatch.setattr(sync_runtime_deps, "write_gateway_requirements", _mock_sync_false)
+    monkeypatch.setattr(sync_runtime_deps, "update_gateway_makefile", _mock_sync_false)
+    monkeypatch.setattr(sync_runtime_deps, "update_cpp_install_script", _mock_sync_false)
+    monkeypatch.setattr(sync_runtime_deps, "update_tox_dev_deps", _mock_sync_false)
+    monkeypatch.setattr(sync_runtime_deps, "update_workflows", _mock_sync_false)
 
     result = CliRunner().invoke(sync_runtime_deps.cli, ["--dry-run"])
 
@@ -70,15 +78,15 @@ def test_main_dry_run_reports_up_to_date_when_no_changes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(sync_runtime_deps, "load_manifest", lambda: sync_runtime_deps.ManifestData([], [], []))
-    monkeypatch.setattr(sync_runtime_deps, "write_requirements", lambda deps, *, dry_run=False: False)
-    monkeypatch.setattr(sync_runtime_deps, "update_makefile", lambda deps, *, dry_run=False: False)
-    monkeypatch.setattr(sync_runtime_deps, "update_pyproject", lambda deps, *, dry_run=False: False)
-    monkeypatch.setattr(sync_runtime_deps, "update_feeds", lambda deps, *, dry_run=False: False)
-    monkeypatch.setattr(sync_runtime_deps, "write_gateway_requirements", lambda deps, *, dry_run=False: False)
-    monkeypatch.setattr(sync_runtime_deps, "update_gateway_makefile", lambda deps, *, dry_run=False: False)
-    monkeypatch.setattr(sync_runtime_deps, "update_cpp_install_script", lambda deps, *, dry_run=False: False)
-    monkeypatch.setattr(sync_runtime_deps, "update_tox_dev_deps", lambda deps, *, dry_run=False: False)
-    monkeypatch.setattr(sync_runtime_deps, "update_workflows", lambda deps, *, dry_run=False: False)
+    monkeypatch.setattr(sync_runtime_deps, "write_requirements", _mock_sync_false)
+    monkeypatch.setattr(sync_runtime_deps, "update_makefile", _mock_sync_false)
+    monkeypatch.setattr(sync_runtime_deps, "update_pyproject", _mock_sync_false)
+    monkeypatch.setattr(sync_runtime_deps, "update_feeds", _mock_sync_false)
+    monkeypatch.setattr(sync_runtime_deps, "write_gateway_requirements", _mock_sync_false)
+    monkeypatch.setattr(sync_runtime_deps, "update_gateway_makefile", _mock_sync_false)
+    monkeypatch.setattr(sync_runtime_deps, "update_cpp_install_script", _mock_sync_false)
+    monkeypatch.setattr(sync_runtime_deps, "update_tox_dev_deps", _mock_sync_false)
+    monkeypatch.setattr(sync_runtime_deps, "update_workflows", _mock_sync_false)
 
     result = CliRunner().invoke(sync_runtime_deps.cli, ["--dry-run"])
 

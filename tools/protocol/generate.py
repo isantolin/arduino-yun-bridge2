@@ -172,6 +172,71 @@ def _proto_to_dict(msg: Any) -> dict[str, Any]:
     return MessageToDict(msg, preserving_proto_field_name=True, always_print_fields_with_no_presence=True)
 
 
+def _load_runtime_config_fields(file_desc: Any, pb_module: Any) -> list[ConfigFieldDef]:
+    runtime_config_desc = file_desc.message_types_by_name.get("RuntimeConfig")
+    runtime_config_fields: list[ConfigFieldDef] = []
+    if not runtime_config_desc:
+        return runtime_config_fields
+
+    for field_desc in runtime_config_desc.fields:
+        opts = field_desc.GetOptions()
+        cfg_default = (
+            opts.Extensions[pb_module.config_default]
+            if opts.HasExtension(pb_module.config_default)
+            else None
+        )
+        cfg_desc = opts.Extensions[pb_module.config_desc] if opts.HasExtension(pb_module.config_desc) else ""
+        cfg_volatile = (
+            opts.Extensions[pb_module.config_volatile]
+            if opts.HasExtension(pb_module.config_volatile)
+            else False
+        )
+        cfg_min = opts.Extensions[pb_module.config_min] if opts.HasExtension(pb_module.config_min) else None
+        cfg_max = opts.Extensions[pb_module.config_max] if opts.HasExtension(pb_module.config_max) else None
+        uci_opt = opts.Extensions[pb_module.uci_option] if opts.HasExtension(pb_module.uci_option) else None
+
+        py_type = "str"
+        typed_val: Any = None
+        if field_desc.is_repeated:
+            py_type = "list"
+            typed_val = []
+        elif field_desc.type == field_desc.TYPE_STRING:
+            py_type = "str"
+            typed_val = str(cfg_default) if cfg_default is not None else ""
+        elif field_desc.type == field_desc.TYPE_BYTES:
+            py_type = "bytes"
+            typed_val = cfg_default.encode("utf-8") if cfg_default is not None else b""
+        elif field_desc.type == field_desc.TYPE_BOOL:
+            py_type = "bool"
+            typed_val = cfg_default.lower() in ("true", "1", "yes") if cfg_default is not None else False
+        elif field_desc.type in (field_desc.TYPE_FLOAT, field_desc.TYPE_DOUBLE):
+            py_type = "float"
+            typed_val = float(cfg_default) if cfg_default is not None else 0.0
+        elif field_desc.type in (
+            field_desc.TYPE_INT32,
+            field_desc.TYPE_INT64,
+            field_desc.TYPE_UINT32,
+            field_desc.TYPE_UINT64,
+        ):
+            py_type = "int"
+            typed_val = int(cfg_default) if cfg_default is not None else 0
+
+        runtime_config_fields.append(
+            ConfigFieldDef(
+                name=field_desc.name,
+                field_type=py_type,
+                default_value=typed_val,
+                raw_default=cfg_default or "",
+                description=cfg_desc,
+                is_volatile=cfg_volatile,
+                min_val=cfg_min,
+                max_val=cfg_max,
+                uci_option=uci_opt,
+            )
+        )
+    return runtime_config_fields
+
+
 def load_spec_from_proto(proto_path: Path) -> ProtocolSpec:
     proto_dir = str(proto_path.parent)
     if proto_dir not in sys.path:
@@ -264,68 +329,7 @@ def load_spec_from_proto(proto_path: Path) -> ProtocolSpec:
         if val.name != "STATUS_UNSPECIFIED"
     ]
 
-    # Extract RuntimeConfig field definitions and SSOT options
-    runtime_config_desc = file_desc.message_types_by_name.get("RuntimeConfig")
-    runtime_config_fields: list[ConfigFieldDef] = []
-    if runtime_config_desc:
-        for field_desc in runtime_config_desc.fields:
-            opts = field_desc.GetOptions()
-            cfg_default = (
-                opts.Extensions[mcubridge_pb2.config_default]
-                if opts.HasExtension(mcubridge_pb2.config_default)
-                else None
-            )
-            cfg_desc = (
-                opts.Extensions[mcubridge_pb2.config_desc] if opts.HasExtension(mcubridge_pb2.config_desc) else ""
-            )
-            cfg_volatile = (
-                opts.Extensions[mcubridge_pb2.config_volatile]
-                if opts.HasExtension(mcubridge_pb2.config_volatile)
-                else False
-            )
-            cfg_min = opts.Extensions[mcubridge_pb2.config_min] if opts.HasExtension(mcubridge_pb2.config_min) else None
-            cfg_max = opts.Extensions[mcubridge_pb2.config_max] if opts.HasExtension(mcubridge_pb2.config_max) else None
-            uci_opt = opts.Extensions[mcubridge_pb2.uci_option] if opts.HasExtension(mcubridge_pb2.uci_option) else None
-
-            py_type = "str"
-            typed_val: Any = None
-            if field_desc.is_repeated:
-                py_type = "list"
-                typed_val = []
-            elif field_desc.type == field_desc.TYPE_STRING:
-                py_type = "str"
-                typed_val = str(cfg_default) if cfg_default is not None else ""
-            elif field_desc.type == field_desc.TYPE_BYTES:
-                py_type = "bytes"
-                typed_val = cfg_default.encode("utf-8") if cfg_default is not None else b""
-            elif field_desc.type == field_desc.TYPE_BOOL:
-                py_type = "bool"
-                typed_val = cfg_default.lower() in ("true", "1", "yes") if cfg_default is not None else False
-            elif field_desc.type in (field_desc.TYPE_FLOAT, field_desc.TYPE_DOUBLE):
-                py_type = "float"
-                typed_val = float(cfg_default) if cfg_default is not None else 0.0
-            elif field_desc.type in (
-                field_desc.TYPE_INT32,
-                field_desc.TYPE_INT64,
-                field_desc.TYPE_UINT32,
-                field_desc.TYPE_UINT64,
-            ):
-                py_type = "int"
-                typed_val = int(cfg_default) if cfg_default is not None else 0
-
-            runtime_config_fields.append(
-                ConfigFieldDef(
-                    name=field_desc.name,
-                    field_type=py_type,
-                    default_value=typed_val,
-                    raw_default=cfg_default or "",
-                    description=cfg_desc,
-                    is_volatile=cfg_volatile,
-                    min_val=cfg_min,
-                    max_val=cfg_max,
-                    uci_option=uci_opt,
-                )
-            )
+    runtime_config_fields = _load_runtime_config_fields(file_desc, mcubridge_pb2)
 
     spec = ProtocolSpec(
         constants=constants,
@@ -356,46 +360,287 @@ TEMPLATE_DIR = Path(__file__).parent / "templates"
 VERSION_PATH = REPO_ROOT / "VERSION"
 
 
-def _extract_cpp_constants(pb_obj: Any, pb_module: Any) -> list[dict[str, Any]]:
-    """Extract C++ constant definitions from Protobuf descriptor options reflectively. [SIL-2]"""
-    constants: list[dict[str, Any]] = []
-    for proto_field in pb_obj.DESCRIPTOR.fields:
-        opts = proto_field.GetOptions()
-        cpp_name = opts.Extensions[pb_module.cpp_name]
-        cpp_type = opts.Extensions[pb_module.cpp_type]
-        if cpp_name:
+def _build_constant_context(spec: ProtocolSpec, version: str) -> dict[str, Any]:
+    parsed_version = Version(version)
+    v_major, v_minor, v_patch = parsed_version.major, parsed_version.minor, parsed_version.micro
+    cpp_constants: list[dict[str, Any]] = []
+    python_constants: list[dict[str, Any]] = []
+    client_constants: list[dict[str, Any]] = []
+    pb_module = spec.pb_module
+
+    for pb_obj in (spec.constants_opt, spec.hardware_opt):
+        for proto_field in pb_obj.DESCRIPTOR.fields:
+            opts = proto_field.GetOptions()
             val = getattr(pb_obj, proto_field.name)
-            constants.append({"name": cpp_name, "type": cpp_type, "value": val})
-    return constants
+            cpp_name = opts.Extensions[pb_module.cpp_name]
+            if cpp_name:
+                cpp_constants.append(
+                    {"name": cpp_name, "type": opts.Extensions[pb_module.cpp_type], "value": val}
+                )
+
+            py_name = opts.Extensions[pb_module.py_name]
+            py_type = opts.Extensions[pb_module.py_type]
+            if py_name:
+                if py_name == "FRAME_DELIMITER":
+                    formatted_val: Any = f"bytes([ {val} ])"
+                elif py_type == "bytes":
+                    formatted_val = f'b"{val}"'
+                elif py_type == "str":
+                    formatted_val = f'"{val}"'
+                else:
+                    formatted_val = val
+                constant = {"name": py_name, "type": py_type, "value": formatted_val}
+                python_constants.append(constant)
+                if pb_obj is spec.constants_opt and opts.Extensions[pb_module.client_constant]:
+                    client_constants.append(constant)
+    cpp_constants.extend(
+        [
+            {"name": "FIRMWARE_VERSION_MAJOR", "type": "uint8_t", "value": v_major},
+            {"name": "FIRMWARE_VERSION_MINOR", "type": "uint8_t", "value": v_minor},
+            {"name": "FIRMWARE_VERSION_PATCH", "type": "uint8_t", "value": v_patch},
+        ]
+    )
+    python_constants.extend(
+        {"name": f"CLOUD_SUFFIX_{key.upper()}", "type": "str", "value": f'"{value}"'}
+        for key, value in spec.cloud_suffixes.items()
+    )
+    return {
+        "constants": cpp_constants,
+        "python_constants": python_constants,
+        "client_constants": client_constants,
+        "v_major": v_major,
+        "v_minor": v_minor,
+        "v_patch": v_patch,
+    }
 
 
-def _extract_py_constants(
-    pb_obj: Any,
-    pb_module: Any,
-    *,
-    quote_strings: bool = False,
-    client_only: bool = False,
-) -> list[dict[str, Any]]:
-    """Extract Python constant definitions from Protobuf descriptor options reflectively. [SIL-2]"""
-    constants: list[dict[str, Any]] = []
-    for proto_field in pb_obj.DESCRIPTOR.fields:
-        opts = proto_field.GetOptions()
-        if client_only and not opts.Extensions[pb_module.client_constant]:
+def _build_runtime_config_constants(spec: ProtocolSpec, python_constants: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    existing_constant_names = {constant["name"] for constant in python_constants}
+    runtime_config_constants: list[dict[str, Any]] = []
+    for config_field in spec.runtime_config_fields:
+        if config_field.default_value is None or config_field.field_type == "list":
             continue
+        const_name = f"DEFAULT_{config_field.name.upper()}"
+        if const_name in existing_constant_names:
+            continue
+        if config_field.field_type == "bytes":
+            value = f'b"{config_field.raw_default}"'
+        elif config_field.field_type == "str":
+            value = f'"{config_field.default_value}"'
+        else:
+            value = str(config_field.default_value)
+        runtime_config_constants.append(
+            {"name": const_name, "type": config_field.field_type, "value": value}
+        )
+    return runtime_config_constants
+
+
+def _build_handshake_context(spec: ProtocolSpec, pb_module: Any) -> dict[str, Any]:
+    handshake_constants: list[dict[str, Any]] = []
+    python_handshake_constants: list[dict[str, Any]] = []
+    for proto_field in spec.handshake_opt.DESCRIPTOR.fields:
+        opts = proto_field.GetOptions()
+        name = opts.Extensions[pb_module.cpp_name]
+        if name:
+            handshake_constants.append(
+                {
+                    "name": name,
+                    "type": opts.Extensions[pb_module.cpp_type],
+                    "value": getattr(spec.handshake_opt, proto_field.name),
+                }
+            )
         py_name = opts.Extensions[pb_module.py_name]
-        py_type = opts.Extensions[pb_module.py_type]
         if py_name:
-            val = getattr(pb_obj, proto_field.name)
+            value = getattr(spec.handshake_opt, proto_field.name)
+            py_type = opts.Extensions[pb_module.py_type]
             if py_name == "FRAME_DELIMITER":
-                formatted_val = f"bytes([ {val} ])"
+                formatted_value: Any = f"bytes([ {value} ])"
             elif py_type == "bytes":
-                formatted_val = f'b"{val}"'
-            elif py_type == "str" or (quote_strings and isinstance(val, str)):
-                formatted_val = f'"{val}"'
+                formatted_value: Any = f'b"{value}"'
+            elif py_type == "str":
+                formatted_value = f'"{value}"'
             else:
-                formatted_val = val
-            constants.append({"name": py_name, "type": py_type, "value": formatted_val})
-    return constants
+                formatted_value = value
+            python_handshake_constants.append(
+                {"name": py_name, "type": py_type, "value": formatted_value}
+            )
+    handshake = {
+        "hkdf_salt": spec.handshake["hkdf_salt"],
+        "hkdf_salt_bytes": ", ".join(f"0x{ord(char):02X}" for char in spec.handshake["hkdf_salt"]),
+        "hkdf_salt_len": len(spec.handshake["hkdf_salt"]),
+        "hkdf_info_auth": spec.handshake["hkdf_info_auth"],
+        "hkdf_info_auth_bytes": ", ".join(f"0x{ord(char):02X}" for char in spec.handshake["hkdf_info_auth"]),
+        "hkdf_info_auth_len": len(spec.handshake["hkdf_info_auth"]),
+        "hkdf_info_session": spec.handshake["hkdf_info_session"],
+        "hkdf_info_session_bytes": ", ".join(
+            f"0x{ord(char):02X}" for char in spec.handshake["hkdf_info_session"]
+        ),
+        "hkdf_info_session_len": len(spec.handshake["hkdf_info_session"]),
+    }
+    return {
+        "handshake_constants": handshake_constants,
+        "python_handshake_constants": python_handshake_constants,
+        "handshake": handshake,
+    }
+
+
+def _build_action_context(spec: ProtocolSpec) -> dict[str, Any]:
+    grouped_action_items: dict[str, list[dict[str, Any]]] = {}
+    for action in spec.actions:
+        if "_" in action["name"]:
+            prefix, suffix = action["name"].split("_", 1)
+            grouped_action_items.setdefault(prefix, []).append(
+                {"name": suffix, "value": action["value"], "description": action["description"]}
+            )
+    grouped_actions = [
+        {
+            "class_name": "DatastoreAction" if prefix == "DATASTORE" else f"{prefix.lower().title()}Action",
+            "action_items": items,
+        }
+        for prefix, items in grouped_action_items.items()
+    ]
+
+    valid_topic_names = {topic["name"] for topic in spec.topics}
+    subscriptions: list[dict[str, Any]] = []
+    for subscription in spec.cloud_subscriptions:
+        segments: list[str] = []
+        topic_name = subscription["topic"]
+        for segment in subscription.get("segments", []):
+            if segment == "+":
+                segments.append("CLOUD_WILDCARD_SINGLE")
+            elif segment == "#":
+                segments.append("CLOUD_WILDCARD_MULTI")
+            else:
+                matched_action = next(
+                    (
+                        action
+                        for action in spec.actions
+                        if topic_name in valid_topic_names
+                        and action["name"].startswith(f"{topic_name}_")
+                        and action["value"] == segment
+                    ),
+                    None,
+                )
+                if matched_action:
+                    action_class = (
+                        "DatastoreAction"
+                        if topic_name == "DATASTORE"
+                        else f"{topic_name.lower().title()}Action"
+                    )
+                    segments.append(f"{action_class}.{matched_action['name'].split('_', 1)[1]}.value")
+                else:
+                    segments.append(f'"{segment}"')
+        subscriptions.append(
+            {
+                "topic": topic_name,
+                "qos": subscription["qos"],
+                "segments_tuple": f"({', '.join(segments)},)" if segments else "()",
+            }
+        )
+    return {"grouped_actions": grouped_actions, "subscriptions": subscriptions}
+
+
+def _build_command_context(spec: ProtocolSpec, pb_module: Any) -> dict[str, Any]:
+    commands_by_name = {command.name for command in spec.commands}
+    request_response_pairs: dict[str, list[str]] = {}
+    response_to_req_map: dict[str, str] = {}
+    for command in spec.commands:
+        if command.name.endswith("_RESP"):
+            request_name = command.name.removesuffix("_RESP")
+            if request_name in commands_by_name:
+                request_response_pairs.setdefault(request_name, []).append(command.name)
+                response_to_req_map[command.name] = request_name
+    command_to_pb = [
+        (command.name, class_name)
+        for command in spec.commands
+        if hasattr(pb_module, (class_name := cmd_name_to_pb_class(command.name)))
+    ]
+    return {
+        "request_response_pairs": request_response_pairs,
+        "response_to_req_map": response_to_req_map,
+        "command_to_pb": command_to_pb,
+        "ack_commands": [command for command in spec.commands if command.requires_ack],
+        "response_only_commands": [
+            command for command in spec.commands if command.expects_direct_response
+        ],
+    }
+
+
+def _build_descriptor_context(spec: ProtocolSpec, pb_module: Any) -> dict[str, Any]:
+    file_desc = pb_module.DESCRIPTOR
+    all_message_names = list(file_desc.message_types_by_name)
+    options_path = (REPO_ROOT / "tools" / "protocol" / "mcubridge.options").resolve()
+    options_content = options_path.read_text(encoding="utf-8")
+    skipped_messages = set(re.findall(r"rpc\.pb\.(\w+)\s+skip_message:true", options_content))
+    all_structs = [
+        {"name": name} for name in all_message_names if name not in skipped_messages and name != "RpcContainer"
+    ]
+    envelope_desc = file_desc.message_types_by_name.get("RpcEnvelope")
+    payload_fields: list[dict[str, str]] = []
+    payload_structs: list[dict[str, str]] = []
+    if envelope_desc and "payload_type" in envelope_desc.oneofs_by_name:
+        for field_desc in envelope_desc.oneofs_by_name["payload_type"].fields:
+            if field_desc.message_type:
+                payload = {"name": field_desc.message_type.name, "field": field_desc.name}
+                payload_fields.append(payload)
+                if field_desc.message_type.name not in skipped_messages:
+                    payload_structs.append(payload)
+
+    topic_auth_map: dict[tuple[str, str], str] = {}
+    auth_message = getattr(pb_module, "TopicAuthorization", None)
+    if auth_message:
+        topic_prefixes = {"analog": "a", "digital": "d", "shell": "sh"}
+        for auth_field in auth_message.DESCRIPTOR.fields:
+            name = auth_field.name
+            if name == "console_input":
+                topic_auth_map[("console", "in")] = name
+                continue
+            for prefix, abbreviation in topic_prefixes.items():
+                if name.startswith(f"{prefix}_"):
+                    topic_auth_map[(abbreviation, name[len(prefix) + 1 :])] = name
+                    break
+            else:
+                parts = name.split("_", 1)
+                if len(parts) == 2:
+                    topic_auth_map[(parts[0], parts[1])] = name
+    return {
+        "all_structs": all_structs,
+        "payload_fields": payload_fields,
+        "payload_structs": payload_structs,
+        "payload_names": [payload["name"] for payload in payload_structs],
+        "topic_auth_map": topic_auth_map,
+    }
+
+
+def build_protocol_context(spec: ProtocolSpec, version: str) -> dict[str, Any]:
+    """Build all template data from the protocol model and its descriptors."""
+    constant_context = _build_constant_context(spec, version)
+    handshake_context = _build_handshake_context(spec, spec.pb_module)
+    action_context = _build_action_context(spec)
+    command_context = _build_command_context(spec, spec.pb_module)
+    descriptor_context = _build_descriptor_context(spec, spec.pb_module)
+    return {
+        **constant_context,
+        **handshake_context,
+        **action_context,
+        **command_context,
+        **descriptor_context,
+        "runtime_config_constants": _build_runtime_config_constants(
+            spec, constant_context["python_constants"]
+        ),
+        "runtime_config_fields": spec.runtime_config_fields,
+        "capabilities": spec.capabilities,
+        "architectures": spec.architectures,
+        "architecture_display_names": spec.architecture_display_names,
+        "cloud_suffixes": spec.cloud_suffixes,
+        "cloud_defaults": spec.cloud_defaults,
+        "status_reasons": spec.status_reasons,
+        "statuses": spec.statuses,
+        "commands": spec.commands,
+        "topics": spec.topics,
+        "message_topics": spec.message_topics,
+        "hardware": spec.hardware,
+    }
 
 
 class JinjaGenerator:
@@ -419,301 +664,50 @@ class JinjaGenerator:
     def _snake_case(s: str) -> str:
         return re.sub(r"(?<!^)(?=[A-Z])", "_", s).lower()
 
-    def generate_cpp_header(self, spec: ProtocolSpec, out_path: Path, version: str) -> None:
-        template = self.env.get_template("rpc_protocol.h.j2")
-
-        parsed_version = Version(version)
-        v_major, v_minor, v_patch = parsed_version.major, parsed_version.minor, parsed_version.micro
-
-        constants = _extract_cpp_constants(spec.constants_opt, spec.pb_module)
-        constants.extend(_extract_cpp_constants(spec.hardware_opt, spec.pb_module))
-        constants.append({"name": "FIRMWARE_VERSION_MAJOR", "type": "uint8_t", "value": v_major})
-        constants.append({"name": "FIRMWARE_VERSION_MINOR", "type": "uint8_t", "value": v_minor})
-        constants.append({"name": "FIRMWARE_VERSION_PATCH", "type": "uint8_t", "value": v_patch})
-
-        hs = spec.handshake
-        handshake_constants = _extract_cpp_constants(spec.handshake_opt, spec.pb_module)
-
-        handshake_data = {
-            "hkdf_salt": hs["hkdf_salt"],
-            "hkdf_salt_bytes": ", ".join(f"0x{ord(c):02X}" for c in hs["hkdf_salt"]),
-            "hkdf_salt_len": len(hs["hkdf_salt"]),
-            "hkdf_info_auth": hs["hkdf_info_auth"],
-            "hkdf_info_auth_bytes": ", ".join(f"0x{ord(c):02X}" for c in hs["hkdf_info_auth"]),
-            "hkdf_info_auth_len": len(hs["hkdf_info_auth"]),
-            "hkdf_info_session": hs["hkdf_info_session"],
-            "hkdf_info_session_bytes": ", ".join(f"0x{ord(c):02X}" for c in hs["hkdf_info_session"]),
-            "hkdf_info_session_len": len(hs["hkdf_info_session"]),
-        }
-
-        render = template.render(
-            constants=constants,
-            handshake_constants=handshake_constants,
-            handshake=handshake_data,
-            capabilities=spec.capabilities,
-            architectures=spec.architectures,
-            statuses=spec.statuses,
-            commands=spec.commands,
-            ack_commands=[c for c in spec.commands if c.requires_ack],
-            status_reasons=spec.status_reasons,
-        )
-        out_path.write_text(render, encoding="utf-8")
-
-    def generate_cpp_structs(self, spec: ProtocolSpec, out_path: Path) -> None:
-        template = self.env.get_template("rpc_structs.h.j2")
-        options_path = (REPO_ROOT / "tools" / "protocol" / "mcubridge.options").resolve()
-        options_content = options_path.read_text(encoding="utf-8")
-        skipped_messages = set(re.findall(r"rpc\.pb\.(\w+)\s+skip_message:true", options_content))
-
-        # 1. Extract ALL message names via Protobuf Descriptor reflection
-        file_desc = spec.pb_module.DESCRIPTOR
-        all_msg_names = list(file_desc.message_types_by_name.keys())
-        all_structs = [
-            {"name": name} for name in all_msg_names if name not in skipped_messages and name != "RpcContainer"
-        ]
-
-        # 2. Extract messages inside RpcEnvelope oneof via Descriptor oneof reflection
-        envelope_desc = file_desc.message_types_by_name.get("RpcEnvelope")
-        payload_structs: list[dict[str, str]] = []
-        if envelope_desc and "payload_type" in envelope_desc.oneofs_by_name:
-            oneof_desc = envelope_desc.oneofs_by_name["payload_type"]
-            for field_desc in oneof_desc.fields:
-                if field_desc.message_type and field_desc.message_type.name not in skipped_messages:
-                    payload_structs.append({"name": field_desc.message_type.name, "field": field_desc.name})
-
-        payload_names = [s["name"] for s in payload_structs]
-        render = template.render(all_structs=all_structs, payload_structs=payload_structs, payload_names=payload_names)
-        out_path.write_text(render, encoding="utf-8")
-
-    def generate_cpp_hw_config(self, spec: ProtocolSpec, out_path: Path) -> None:
-        template = self.env.get_template("rpc_hw_config.h.j2")
-        render = template.render(hardware=spec.hardware)
-        out_path.write_text(render, encoding="utf-8")
-
-    def _extract_python_constants(self, spec: ProtocolSpec) -> list[dict[str, Any]]:
-        constants = _extract_py_constants(spec.constants_opt, spec.pb_module)
-        constants.extend(_extract_py_constants(spec.hardware_opt, spec.pb_module))
-
-        for key, val in spec.cloud_suffixes.items():
-            py_name = f"CLOUD_SUFFIX_{key.upper()}"
-            constants.append({"name": py_name, "type": "str", "value": f'"{val}"'})
-
-        return constants
-
-    def _extract_python_handshake_constants(self, spec: ProtocolSpec) -> list[dict[str, Any]]:
-        return _extract_py_constants(spec.handshake_opt, spec.pb_module)
-
-    def _group_actions(self, spec: ProtocolSpec) -> list[dict[str, Any]]:
-        grouped_actions: list[dict[str, Any]] = []
-        action_map: dict[str, list[dict[str, Any]]] = {}
-        for act in spec.actions:
-            if "_" not in act["name"]:
-                continue
-            prefix, suffix = act["name"].split("_", 1)
-            action_map.setdefault(prefix, []).append(
-                {
-                    "name": suffix,
-                    "value": act["value"],
-                    "description": act["description"],
-                }
-            )
-
-        for prefix, items in action_map.items():
-            cls_name = "DatastoreAction" if prefix == "DATASTORE" else f"{prefix.lower().title()}Action"
-            grouped_actions.append({"class_name": cls_name, "action_items": items})
-        return grouped_actions
-
-    def _process_python_subscriptions(self, spec: ProtocolSpec) -> list[dict[str, Any]]:
-        valid_topic_names = {t["name"] for t in spec.topics}
-        subscriptions: list[dict[str, Any]] = []
-        for sub in spec.cloud_subscriptions:
-            segments: list[str] = []
-            topic_str = sub["topic"]
-            for s in sub.get("segments", []):
-                if s == "+":
-                    segments.append("CLOUD_WILDCARD_SINGLE")
-                elif s == "#":
-                    segments.append("CLOUD_WILDCARD_MULTI")
-                else:
-                    mapped = False
-                    if topic_str in valid_topic_names:
-                        c_name = "DatastoreAction" if topic_str == "DATASTORE" else f"{topic_str.lower().title()}Action"
-                        for act in spec.actions:
-                            if act["name"].startswith(f"{topic_str}_") and act["value"] == s:
-                                sfx = act["name"].split("_", 1)[1]
-                                segments.append(f"{c_name}.{sfx}.value")
-                                mapped = True
-                                break
-                    if not mapped:
-                        segments.append(f'"{s}"')
-
-            subscriptions.append(
-                {
-                    "topic": topic_str,
-                    "qos": sub["qos"],
-                    "segments_tuple": f"({', '.join(segments)},)" if segments else "()",
-                }
-            )
-        return subscriptions
-
-    @staticmethod
-    def _extract_runtime_config_constants(
-        spec: ProtocolSpec, existing_constants: list[dict[str, Any]]
-    ) -> list[dict[str, Any]]:
-        existing_names = {c["name"] for c in existing_constants}
-        result: list[dict[str, Any]] = []
-        for f in spec.runtime_config_fields:
-            if f.default_value is None or f.field_type == "list":
-                continue
-            const_name = f"DEFAULT_{f.name.upper()}"
-            if const_name in existing_names:
-                continue
-            if f.field_type == "bytes":
-                val_repr = f'b"{f.raw_default}"'
-            elif f.field_type == "str":
-                val_repr = f'"{f.default_value}"'
-            elif f.field_type == "bool":
-                val_repr = str(f.default_value)
-            elif f.field_type == "float":
-                val_repr = str(f.default_value)
-            else:
-                val_repr = str(f.default_value)
-            result.append({"name": const_name, "type": f.field_type, "value": val_repr})
-        return result
-
-    def generate_python(self, spec: ProtocolSpec, out_path: Path) -> None:
-        template = self.env.get_template("protocol.py.j2")
-
-        constants = self._extract_python_constants(spec)
-        handshake_constants = self._extract_python_handshake_constants(spec)
-        runtime_config_constants = self._extract_runtime_config_constants(spec, constants)
-        grouped_actions = self._group_actions(spec)
-        subscriptions = self._process_python_subscriptions(spec)
-
-        # Build command_to_pb mapping reflexively
-        command_to_pb: list[tuple[str, str]] = []
-        for cmd in spec.commands:
-            class_name = cmd_name_to_pb_class(cmd.name)
-            if hasattr(spec.pb_module, class_name):
-                command_to_pb.append((cmd.name, class_name))
-
-        render = template.render(
-            constants=constants,
-            handshake_constants=handshake_constants,
-            runtime_config_constants=runtime_config_constants,
-            runtime_config_fields=spec.runtime_config_fields,
-            capabilities=spec.capabilities,
-            architectures=spec.architectures,
-            architecture_display_names=spec.architecture_display_names,
-            cloud_suffixes=spec.cloud_suffixes,
-            cloud_defaults=spec.cloud_defaults,
-            status_reasons=spec.status_reasons,
-            statuses=spec.statuses,
-            commands=spec.commands,
-            ack_commands=[c for c in spec.commands if c.requires_ack],
-            response_only_commands=[c for c in spec.commands if c.expects_direct_response],
-            topics=spec.topics,
-            grouped_actions=grouped_actions,
-            subscriptions=subscriptions,
-            request_response_pairs=self._build_req_resp_map(spec),
-            response_to_req_map=self._build_resp_to_req_map(spec),
-            command_to_pb=command_to_pb,
-            message_topics=spec.message_topics,
-            payload_fields=self._extract_payload_fields(spec),
-            topic_auth_map=self._extract_topic_auth_map(spec),
-        )
-        out_path.write_text(render, encoding="utf-8")
-
-    def generate_uci_config(self, spec: ProtocolSpec, out_path: Path) -> None:
-        template = self.env.get_template("mcubridge_uci.j2")
-        rendered = template.render(runtime_config_fields=spec.runtime_config_fields)
-        out_path.parent.mkdir(parents=True, exist_ok=True)
+    def render_template(
+        self,
+        template_name: str,
+        context: dict[str, Any],
+        out_path: Path,
+        *,
+        create_parent: bool = False,
+        executable: bool = False,
+    ) -> None:
+        if create_parent:
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+        rendered = self.env.get_template(template_name).render(**context)
         out_path.write_text(rendered, encoding="utf-8")
+        if executable:
+            out_path.chmod(0o755)
 
-    def generate_defaults_sh(self, spec: ProtocolSpec, out_path: Path) -> None:
-        template = self.env.get_template("defaults_sh.j2")
-        rendered = template.render(runtime_config_fields=spec.runtime_config_fields)
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_text(rendered, encoding="utf-8")
-        out_path.chmod(0o755)
+    def generate_cpp_header(self, context: dict[str, Any], out_path: Path) -> None:
+        self.render_template("rpc_protocol.h.j2", context, out_path)
 
-    def generate_config_schema_json(self, spec: ProtocolSpec, out_path: Path) -> None:
-        template = self.env.get_template("config_schema_json.j2")
-        rendered = template.render(runtime_config_fields=spec.runtime_config_fields)
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_text(rendered, encoding="utf-8")
+    def generate_cpp_structs(self, context: dict[str, Any], out_path: Path) -> None:
+        self.render_template("rpc_structs.h.j2", context, out_path)
 
-    @staticmethod
-    def _extract_payload_fields(spec: ProtocolSpec) -> list[dict[str, str]]:
-        envelope_desc = spec.pb_module.DESCRIPTOR.message_types_by_name.get("RpcEnvelope")
-        payload_fields: list[dict[str, str]] = []
-        if envelope_desc and "payload_type" in envelope_desc.oneofs_by_name:
-            oneof_desc = envelope_desc.oneofs_by_name["payload_type"]
-            for field_desc in oneof_desc.fields:
-                if field_desc.message_type:
-                    payload_fields.append({"name": field_desc.message_type.name, "field": field_desc.name})
-        return payload_fields
+    def generate_cpp_hw_config(self, context: dict[str, Any], out_path: Path) -> None:
+        self.render_template("rpc_hw_config.h.j2", context, out_path)
 
-    @staticmethod
-    def _extract_topic_auth_map(spec: ProtocolSpec) -> dict[tuple[str, str], str]:
-        topic_prefix_map = {
-            "analog": "a",
-            "digital": "d",
-            "shell": "sh",
+    def generate_python(self, context: dict[str, Any], out_path: Path) -> None:
+        template_context = context | {
+            "constants": context["python_constants"],
+            "handshake_constants": context["python_handshake_constants"],
         }
-        auth_desc = getattr(spec.pb_module, "TopicAuthorization", None)
-        if not auth_desc:
-            return {}
-        auth_map: dict[tuple[str, str], str] = {}
-        for f in auth_desc.DESCRIPTOR.fields:
-            name = f.name
-            if name == "console_input":
-                auth_map[("console", "in")] = name
-                continue
-            for long_name, short_val in topic_prefix_map.items():
-                if name.startswith(long_name + "_"):
-                    prefix_len = len(long_name) + 1
-                    auth_map[(short_val, name[prefix_len:])] = name
-                    break
-            else:
-                parts = name.split("_", 1)
-                if len(parts) == 2:
-                    auth_map[(parts[0], parts[1])] = name
-        return auth_map
+        self.render_template("protocol.py.j2", template_context, out_path)
 
-    @staticmethod
-    def _build_req_resp_map(spec: ProtocolSpec) -> dict[str, list[str]]:
-        pairs: dict[str, list[str]] = {}
-        cmd_names = {c.name for c in spec.commands}
-        for cmd in spec.commands:
-            if cmd.name.endswith("_RESP"):
-                req_name = cmd.name.removesuffix("_RESP")
-                if req_name in cmd_names:
-                    pairs.setdefault(req_name, []).append(cmd.name)
-        return pairs
+    def generate_python_client(self, context: dict[str, Any], out_path: Path) -> None:
+        template_context = context | {"constants": context["client_constants"]}
+        self.render_template("protocol_client.py.j2", template_context, out_path)
 
-    @staticmethod
-    def _build_resp_to_req_map(spec: ProtocolSpec) -> dict[str, str]:
-        cmd_names = {c.name for c in spec.commands}
-        return {
-            cmd.name: cmd.name.removesuffix("_RESP")
-            for cmd in spec.commands
-            if cmd.name.endswith("_RESP") and cmd.name.removesuffix("_RESP") in cmd_names
-        }
+    def generate_uci_config(self, context: dict[str, Any], out_path: Path) -> None:
+        self.render_template("mcubridge_uci.j2", context, out_path, create_parent=True)
 
-    def generate_python_client(self, spec: ProtocolSpec, out_path: Path) -> None:
-        template = self.env.get_template("protocol_client.py.j2")
+    def generate_defaults_sh(self, context: dict[str, Any], out_path: Path) -> None:
+        self.render_template("defaults_sh.j2", context, out_path, create_parent=True, executable=True)
 
-        constants = _extract_py_constants(spec.constants_opt, spec.pb_module, client_only=True)
-
-        render = template.render(
-            constants=constants,
-            capabilities=spec.capabilities,
-            statuses=spec.statuses,
-            commands=spec.commands,
-            topics=spec.topics,
-        )
-        out_path.write_text(render, encoding="utf-8")
+    def generate_config_schema_json(self, context: dict[str, Any], out_path: Path) -> None:
+        self.render_template("config_schema_json.j2", context, out_path, create_parent=True)
 
 
 def update_metadata(version: str) -> None:
@@ -915,6 +909,7 @@ def main(
 
     # Now load the compiled descriptor
     proto_spec = load_spec_from_proto(proto_path)
+    context = build_protocol_context(proto_spec, version)
 
     # Move generated files to target locations
     if proto_path.exists():
@@ -938,40 +933,40 @@ def main(
 
     if args.cpp:
         args.cpp.parent.mkdir(parents=True, exist_ok=True)
-        gen.generate_cpp_header(proto_spec, args.cpp, version)
+        gen.generate_cpp_header(context, args.cpp)
         sys.stderr.write(f"Generated {args.cpp}\n")
 
         # Generate hardware config next to the main header
         hw_config_path = args.cpp.parent / "rpc_hw_config.h"
-        gen.generate_cpp_hw_config(proto_spec, hw_config_path)
+        gen.generate_cpp_hw_config(context, hw_config_path)
         sys.stderr.write(f"Generated {hw_config_path}\n")
 
     if args.cpp_structs:
         args.cpp_structs.parent.mkdir(parents=True, exist_ok=True)
-        gen.generate_cpp_structs(proto_spec, args.cpp_structs)
+        gen.generate_cpp_structs(context, args.cpp_structs)
         sys.stderr.write(f"Generated {args.cpp_structs}\n")
 
     if args.py:
         args.py.parent.mkdir(parents=True, exist_ok=True)
-        gen.generate_python(proto_spec, args.py)
+        gen.generate_python(context, args.py)
         _format_python_file(args.py)
         sys.stderr.write(f"Generated {args.py}\n")
 
     if args.py_client:
         args.py_client.parent.mkdir(parents=True, exist_ok=True)
-        gen.generate_python_client(proto_spec, args.py_client)
+        gen.generate_python_client(context, args.py_client)
         _format_python_file(args.py_client)
         sys.stderr.write(f"Generated {args.py_client}\n")
 
     # Generate unified system configuration artifacts from SSOT
     uci_target = REPO_ROOT / "luci-app-mcubridge" / "root" / "etc" / "config" / "mcubridge"
     if uci_target.parent.exists():
-        gen.generate_uci_config(proto_spec, uci_target)
+        gen.generate_uci_config(context, uci_target)
         sys.stderr.write(f"Generated {uci_target}\n")
 
     defaults_sh_target = REPO_ROOT / "mcubridge" / "scripts" / "defaults.sh"
     if defaults_sh_target.parent.exists():
-        gen.generate_defaults_sh(proto_spec, defaults_sh_target)
+        gen.generate_defaults_sh(context, defaults_sh_target)
         sys.stderr.write(f"Generated {defaults_sh_target}\n")
 
     schema_json_target = (
@@ -985,7 +980,7 @@ def main(
         / "config_schema.json"
     )
     if schema_json_target.parent.exists():
-        gen.generate_config_schema_json(proto_spec, schema_json_target)
+        gen.generate_config_schema_json(context, schema_json_target)
         sys.stderr.write(f"Generated {schema_json_target}\n")
 
     # Save hash for incremental compilation

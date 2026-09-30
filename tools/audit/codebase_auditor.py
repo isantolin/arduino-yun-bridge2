@@ -59,6 +59,8 @@ def audit_semgrep() -> list[str]:
     results = data.get("results") if isinstance(data, dict) else None
     if not isinstance(results, list):
         return ["Semgrep JSON Parse Error: results must be a list"]
+    if res.returncode not in (0, 1):
+        return [f"Semgrep Execution Error: {res.stderr.strip() or f'exit status {res.returncode}'}"]
     return [
         f"Semgrep Violation [{r.get('check_id', 'rule')}]: "
         f"{r.get('path', '')}:{r.get('start', {}).get('line', 0)} - {r.get('extra', {}).get('message', '')}"

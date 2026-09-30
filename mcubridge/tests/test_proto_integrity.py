@@ -1,5 +1,6 @@
 """Test suite for Protobuf SSOT integrity, dead definition audits, and strong typing. [SIL-2]"""
 
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -54,6 +55,26 @@ def test_audit_semgrep_reports_missing_executable(tmp_path: Path, monkeypatch: p
     monkeypatch.setattr(codebase_auditor.shutil, "which", lambda _: None)
 
     assert codebase_auditor.audit_semgrep() == ["Semgrep Executable Missing: 'semgrep' binary not found in PATH"]
+
+
+def test_audit_semgrep_reports_execution_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    (tmp_path / ".semgrep.yml").write_text("rules: []\n", encoding="utf-8")
+    monkeypatch.setattr(codebase_auditor, "ROOT", tmp_path)
+    monkeypatch.setattr(codebase_auditor.shutil, "which", lambda _: "semgrep")
+
+    def failed_semgrep(
+        command: list[str],
+        *,
+        cwd: Path,
+        capture_output: bool,
+        text: bool,
+        check: bool,
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(command, 2, stdout='{"results":[]}', stderr="invalid rules")
+
+    monkeypatch.setattr(codebase_auditor.subprocess, "run", failed_semgrep)
+
+    assert codebase_auditor.audit_semgrep() == ["Semgrep Execution Error: invalid rules"]
 
 
 def test_audit_config_suppressions_reports_matches_and_skips_ignored_directories(

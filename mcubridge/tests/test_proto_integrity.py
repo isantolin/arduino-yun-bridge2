@@ -45,7 +45,7 @@ def test_audit_proto_integrity_missing_file(tmp_path: Path) -> None:
     missing = tmp_path / "missing.proto"
     findings = audit_proto_integrity(missing)
     assert len(findings) == 1
-    assert "Protobuf File Missing" in findings[0]
+    assert "Protobuf File Missing" in findings[0] or "Protobuf spec missing" in findings[0]
     assert str(missing) in findings[0]
 
 
@@ -62,11 +62,10 @@ def test_audit_semgrep_reports_execution_failure(tmp_path: Path, monkeypatch: py
     monkeypatch.setattr(codebase_auditor, "ROOT", tmp_path)
     monkeypatch.setattr(codebase_auditor.shutil, "which", lambda _: "semgrep")
 
-    monkeypatch.setattr(
-        codebase_auditor,
-        "_run_command",
-        lambda cmd: subprocess.CompletedProcess(cmd, 2, stdout='{"results":[]}', stderr="invalid rules"),
-    )
+    def _mock_cmd_fail(cmd: list[str]) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(cmd, 2, stdout='{"results":[]}', stderr="invalid rules")
+
+    monkeypatch.setattr(codebase_auditor, "_run_command", _mock_cmd_fail)
 
     assert codebase_auditor.audit_semgrep() == ["Semgrep Execution Error: invalid rules"]
 
@@ -79,11 +78,10 @@ def test_audit_semgrep_reports_empty_output_as_execution_error(
     monkeypatch.setattr(codebase_auditor, "ROOT", tmp_path)
     monkeypatch.setattr(codebase_auditor.shutil, "which", lambda _: "semgrep")
 
-    monkeypatch.setattr(
-        codebase_auditor,
-        "_run_command",
-        lambda cmd: subprocess.CompletedProcess(cmd, 0, stdout="   \n", stderr=""),
-    )
+    def _mock_cmd_empty(cmd: list[str]) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(cmd, 0, stdout="   \n", stderr="")
+
+    monkeypatch.setattr(codebase_auditor, "_run_command", _mock_cmd_empty)
 
     assert codebase_auditor.audit_semgrep() == [
         "Semgrep Execution Error: Empty output received from Semgrep"

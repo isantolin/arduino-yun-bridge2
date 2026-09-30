@@ -14,6 +14,14 @@ from tools.audit.codebase_auditor import app, audit_proto_integrity
 runner = CliRunner()
 
 
+def _mock_which_none(_name: str) -> None:
+    return None
+
+
+def _mock_which_semgrep(_name: str) -> str:
+    return "semgrep"
+
+
 def test_audit_proto_integrity_clean() -> None:
     """SIL-2: Verify canonical mcubridge.proto contains zero dead or abandoned definitions."""
     findings = audit_proto_integrity()
@@ -52,7 +60,7 @@ def test_audit_proto_integrity_missing_file(tmp_path: Path) -> None:
 def test_audit_semgrep_reports_missing_executable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     (tmp_path / ".semgrep.yml").write_text("rules: []\n", encoding="utf-8")
     monkeypatch.setattr(codebase_auditor, "ROOT", tmp_path)
-    monkeypatch.setattr(codebase_auditor.shutil, "which", lambda _: None)
+    monkeypatch.setattr(codebase_auditor.shutil, "which", _mock_which_none)
 
     assert codebase_auditor.audit_semgrep() == ["Semgrep Executable Missing: 'semgrep' binary not found in PATH"]
 
@@ -60,7 +68,7 @@ def test_audit_semgrep_reports_missing_executable(tmp_path: Path, monkeypatch: p
 def test_audit_semgrep_reports_execution_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     (tmp_path / ".semgrep.yml").write_text("rules: []\n", encoding="utf-8")
     monkeypatch.setattr(codebase_auditor, "ROOT", tmp_path)
-    monkeypatch.setattr(codebase_auditor.shutil, "which", lambda _: "semgrep")
+    monkeypatch.setattr(codebase_auditor.shutil, "which", _mock_which_semgrep)
 
     def _mock_cmd_fail(cmd: list[str]) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(cmd, 2, stdout='{"results":[]}', stderr="invalid rules")
@@ -76,7 +84,7 @@ def test_audit_semgrep_reports_empty_output_as_execution_error(
     """SIL-2: Verify empty Semgrep stdout is never treated as a clean audit, even on exit code 0."""
     (tmp_path / ".semgrep.yml").write_text("rules: []\n", encoding="utf-8")
     monkeypatch.setattr(codebase_auditor, "ROOT", tmp_path)
-    monkeypatch.setattr(codebase_auditor.shutil, "which", lambda _: "semgrep")
+    monkeypatch.setattr(codebase_auditor.shutil, "which", _mock_which_semgrep)
 
     def _mock_cmd_empty(cmd: list[str]) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(cmd, 0, stdout="   \n", stderr="")

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Codebase Auditor for SIL-2 / MIL-SPEC Integrity.
 
 Enforces Rule 3, Rule 4, Rule 8, and Rule 27 compliance across the codebase
@@ -8,15 +7,15 @@ utilizing industry-standard static analysis engines (Semgrep, Buf, Ruff).
 from __future__ import annotations
 
 import json
+from pathlib import Path
 import re
 import shutil
 import subprocess
 import sys
-from pathlib import Path
 
 import typer
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parent.parent.parent
 IGNORED_CONFIG_DIRS = {".tox", ".git", "openwrt-sdk", "typings", ".tmp_tests"}
 SUPPRESSION = re.compile(
     r"(ignore_errors|suppress|disable_warnings|continue_on_error|skip_validation)\s*[:=]\s*(true|1|yes)",
@@ -24,7 +23,7 @@ SUPPRESSION = re.compile(
 )
 
 
-def _run_command(command: list[str]) -> subprocess.CompletedProcess[str] | OSError:
+def run_command(command: list[str]) -> subprocess.CompletedProcess[str] | OSError:
     try:
         return subprocess.run(
             command,
@@ -37,6 +36,16 @@ def _run_command(command: list[str]) -> subprocess.CompletedProcess[str] | OSErr
         return exc
 
 
+def _buf_check(buf_bin: str, label: str, *arguments: str) -> str | None:
+    result = run_command([buf_bin, *arguments])
+    if isinstance(result, OSError):
+        return f"{label} Execution Error: {result}"
+    if result.returncode == 0:
+        return None
+    output = result.stdout.strip() or result.stderr.strip()
+    return f"{label}:\n{output or 'command failed without output'}"
+
+
 def audit_semgrep() -> list[str]:
     """Audit Python and C++ source files using declarative Semgrep rules."""
     semgrep_bin = shutil.which("semgrep")
@@ -46,7 +55,7 @@ def audit_semgrep() -> list[str]:
     if not semgrep_bin:
         return ["Semgrep Executable Missing: 'semgrep' binary not found in PATH"]
 
-    res = _run_command([semgrep_bin, "--config", str(config_path), "--json"])
+    res = run_command([semgrep_bin, "--config", str(config_path), "--json"])
     if isinstance(res, OSError):
         return [f"Semgrep Execution Error: {res}"]
     if not res.stdout or not res.stdout.strip():
@@ -73,29 +82,15 @@ def audit_config_suppressions() -> list[str]:
     findings: list[str] = []
     for ext in ("*.yml", "*.yaml", "*.toml", "*.json"):
         for cfg in ROOT.rglob(ext):
-            if any(part in cfg.parts for part in IGNORED_CONFIG_DIRS) or cfg.name in (".semgrep.yml", ".semgrepignore"):
+            if any(part in cfg.parts for part in IGNORED_CONFIG_DIRS) or cfg.name in (
+                ".semgrep.yml",
+                ".semgrepignore",
+            ):
                 continue
-            try:
-                lines = cfg.read_text(encoding="utf-8").splitlines()
-            except OSError as exc:
-                findings.append(f"Config Read Error: {cfg.relative_to(ROOT)}: {exc}")
-                continue
-            findings.extend(
-                f"Config Suppression: {cfg.relative_to(ROOT)}:{line_number} - '{line.strip()}'"
-                for line_number, line in enumerate(lines, 1)
-                if SUPPRESSION.search(line)
-            )
+            for i, line in enumerate(cfg.read_text(encoding="utf-8").splitlines(), 1):
+                if SUPPRESSION.search(line):
+                    findings.append(f"Config Suppression: {cfg.relative_to(ROOT)}:{i} - '{line.strip()}'")
     return findings
-
-
-def _buf_check(buf_bin: str, label: str, *arguments: str) -> str | None:
-    result = _run_command([buf_bin, *arguments])
-    if isinstance(result, OSError):
-        return f"{label} Execution Error: {result}"
-    if result.returncode == 0:
-        return None
-    output = result.stdout.strip() or result.stderr.strip()
-    return f"{label}:\n{output or 'command failed without output'}"
 
 
 def audit_proto_integrity(proto_path: Path | None = None) -> list[str]:
@@ -128,16 +123,20 @@ def audit_proto_integrity(proto_path: Path | None = None) -> list[str]:
         created_buf_yaml = True
 
     try:
-        checks: list[tuple[str, tuple[str, ...]]] = [("Buf Lint Violation", ("lint", str(module_dir)))]
+        checks: list[tuple[str, tuple[str, ...]]] = [
+            ("Buf Lint Violation", ("lint", str(module_dir))),
+        ]
         if (ROOT / ".git").exists() and target == (ROOT / "tools" / "protocol" / "mcubridge.proto"):
-            checks.append(
-                (
-                    "Buf Breaking Change Violation",
-                    ("breaking", str(module_dir), "--against", ".git#subdir=tools/protocol"),
-                )
-            )
+            checks.append((
+                "Buf Breaking Change Violation",
+                ("breaking", str(module_dir), "--against", ".git#subdir=tools/protocol"),
+            ))
 
-        return [finding for label, arguments in checks if (finding := _buf_check(buf_bin, label, *arguments))]
+        return [
+            finding
+            for label, arguments in checks
+            if (finding := _buf_check(buf_bin, label, *arguments))
+        ]
     finally:
         if created_buf_yaml and buf_yaml.exists():
             buf_yaml.unlink()

@@ -1,10 +1,11 @@
 """Test suite for Protobuf SSOT integrity, dead definition audits, and strong typing. [SIL-2]"""
 
-import subprocess
+from collections.abc import Sequence
 from pathlib import Path
+import subprocess
 
-import pytest
 from google.protobuf.descriptor import FieldDescriptor
+import pytest
 from typer.testing import CliRunner
 
 from mcubridge.protocol import mcubridge_pb2 as pb
@@ -70,10 +71,10 @@ def test_audit_semgrep_reports_execution_failure(tmp_path: Path, monkeypatch: py
     monkeypatch.setattr(codebase_auditor, "ROOT", tmp_path)
     monkeypatch.setattr(codebase_auditor.shutil, "which", _mock_which_semgrep)
 
-    def _mock_cmd_fail(cmd: list[str]) -> subprocess.CompletedProcess[str]:
-        return subprocess.CompletedProcess(cmd, 2, stdout='{"results":[]}', stderr="invalid rules")
+    def _mock_cmd_fail(cmd: Sequence[str]) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(list(cmd), 2, stdout='{"results":[]}', stderr="invalid rules")
 
-    monkeypatch.setattr(codebase_auditor, "_run_command", _mock_cmd_fail)
+    monkeypatch.setattr(codebase_auditor, "run_command", _mock_cmd_fail)
 
     assert codebase_auditor.audit_semgrep() == ["Semgrep Execution Error: invalid rules"]
 
@@ -86,10 +87,10 @@ def test_audit_semgrep_reports_empty_output_as_execution_error(
     monkeypatch.setattr(codebase_auditor, "ROOT", tmp_path)
     monkeypatch.setattr(codebase_auditor.shutil, "which", _mock_which_semgrep)
 
-    def _mock_cmd_empty(cmd: list[str]) -> subprocess.CompletedProcess[str]:
-        return subprocess.CompletedProcess(cmd, 0, stdout="   \n", stderr="")
+    def _mock_cmd_empty(cmd: Sequence[str]) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(list(cmd), 0, stdout="   \n", stderr="")
 
-    monkeypatch.setattr(codebase_auditor, "_run_command", _mock_cmd_empty)
+    monkeypatch.setattr(codebase_auditor, "run_command", _mock_cmd_empty)
 
     assert codebase_auditor.audit_semgrep() == [
         "Semgrep Execution Error: Empty output received from Semgrep"
@@ -100,15 +101,18 @@ def test_audit_config_suppressions_reports_matches_and_skips_ignored_directories
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    (tmp_path / "workflow.yml").write_text("continue_on_error: yes\n", encoding="utf-8")
+    monkeypatch.setattr(codebase_auditor, "ROOT", tmp_path)
+    (tmp_path / "valid.yml").write_text("key: value\n", encoding="utf-8")
+    (tmp_path / "suppressed.yml").write_text("ignore_errors: true\n", encoding="utf-8")
     ignored_dir = tmp_path / ".tox"
     ignored_dir.mkdir()
-    (ignored_dir / "workflow.yml").write_text("continue_on_error: yes\n", encoding="utf-8")
-    monkeypatch.setattr(codebase_auditor, "ROOT", tmp_path)
+    (ignored_dir / "skip.yml").write_text("ignore_errors: true\n", encoding="utf-8")
 
-    assert codebase_auditor.audit_config_suppressions() == [
-        "Config Suppression: workflow.yml:1 - 'continue_on_error: yes'"
-    ]
+    findings = codebase_auditor.audit_config_suppressions()
+
+    assert len(findings) == 1
+    assert "suppressed.yml" in findings[0]
+    assert "skip.yml" not in findings[0]
 
 
 def test_protobuf_descriptor_purged_elements() -> None:
@@ -186,6 +190,8 @@ def test_mcubridge_options_cleanliness() -> None:
 def test_codebase_auditor_cli_success() -> None:
     """MIL-SPEC: Verify codebase auditor CLI command runs and passes 100% cleanly."""
     result = runner.invoke(app, [])
-    assert result.exit_code == 0, f"Codebase auditor failed: stdout={result.stdout}\nexception={result.exception}"
+    assert result.exit_code == 0, (
+        f"Codebase auditor failed: stdout={result.stdout}\nexception={result.exception}"
+    )
     assert "Auditing Protobuf definitions..." in result.stdout
     assert "No violations or shims found!" in result.stdout

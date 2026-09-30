@@ -3,7 +3,6 @@
 import subprocess
 from pathlib import Path
 
-from typing import Any
 import pytest
 from google.protobuf.descriptor import FieldDescriptor
 from typer.testing import CliRunner

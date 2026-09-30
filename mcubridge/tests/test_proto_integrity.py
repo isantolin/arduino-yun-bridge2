@@ -71,7 +71,7 @@ def test_audit_semgrep_reports_execution_failure(tmp_path: Path, monkeypatch: py
     monkeypatch.setattr(codebase_auditor, "ROOT", tmp_path)
     monkeypatch.setattr(codebase_auditor.shutil, "which", _mock_which_semgrep)
 
-    def _mock_cmd_fail(cmd: Sequence[str]) -> subprocess.CompletedProcess[str]:
+    def _mock_cmd_fail(cmd: Sequence[str], *, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(list(cmd), 2, stdout='{"results":[]}', stderr="invalid rules")
 
     monkeypatch.setattr(codebase_auditor, "run_command", _mock_cmd_fail)
@@ -87,7 +87,7 @@ def test_audit_semgrep_reports_empty_output_as_execution_error(
     monkeypatch.setattr(codebase_auditor, "ROOT", tmp_path)
     monkeypatch.setattr(codebase_auditor.shutil, "which", _mock_which_semgrep)
 
-    def _mock_cmd_empty(cmd: Sequence[str]) -> subprocess.CompletedProcess[str]:
+    def _mock_cmd_empty(cmd: Sequence[str], *, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(list(cmd), 0, stdout="   \n", stderr="")
 
     monkeypatch.setattr(codebase_auditor, "run_command", _mock_cmd_empty)

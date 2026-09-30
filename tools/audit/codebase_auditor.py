@@ -23,11 +23,15 @@ SUPPRESSION = re.compile(
 )
 
 
-def run_command(command: list[str]) -> subprocess.CompletedProcess[str] | OSError:
+def run_command(
+    command: list[str],
+    *,
+    cwd: Path | None = None,
+) -> subprocess.CompletedProcess[str] | OSError:
     try:
         return subprocess.run(
             command,
-            cwd=ROOT,
+            cwd=cwd or ROOT,
             capture_output=True,
             text=True,
             check=False,
@@ -36,8 +40,8 @@ def run_command(command: list[str]) -> subprocess.CompletedProcess[str] | OSErro
         return exc
 
 
-def _buf_check(buf_bin: str, label: str, *arguments: str) -> str | None:
-    result = run_command([buf_bin, *arguments])
+def _buf_check(buf_bin: str, label: str, cwd: Path, *arguments: str) -> str | None:
+    result = run_command([buf_bin, *arguments], cwd=cwd)
     if isinstance(result, OSError):
         return f"{label} Execution Error: {result}"
     if result.returncode == 0:
@@ -123,19 +127,20 @@ def audit_proto_integrity(proto_path: Path | None = None) -> list[str]:
         created_buf_yaml = True
 
     try:
-        checks: list[tuple[str, tuple[str, ...]]] = [
-            ("Buf Lint Violation", ("lint", str(module_dir))),
+        checks: list[tuple[str, Path, tuple[str, ...]]] = [
+            ("Buf Lint Violation", module_dir, ("lint", str(module_dir))),
         ]
         if (ROOT / ".git").exists() and target == (ROOT / "tools" / "protocol" / "mcubridge.proto"):
             checks.append((
                 "Buf Breaking Change Violation",
+                ROOT,
                 ("breaking", str(module_dir), "--against", ".git#subdir=tools/protocol"),
             ))
 
         return [
             finding
-            for label, arguments in checks
-            if (finding := _buf_check(buf_bin, label, *arguments))
+            for label, check_cwd, arguments in checks
+            if (finding := _buf_check(buf_bin, label, check_cwd, *arguments))
         ]
     finally:
         if created_buf_yaml and buf_yaml.exists():

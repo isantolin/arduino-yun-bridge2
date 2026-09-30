@@ -705,7 +705,7 @@ def update_workflows(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> boo
     for wf in target_files:
         content = wf.read_text(encoding="utf-8")
         new_content = re.sub(
-            r"PROTOC_VERSION=[^\n]+",
+            r"PROTOC_VERSION=(?![\"']?\$\{\{)[^\n]+",
             f"PROTOC_VERSION={protoc_version}",
             content,
         )

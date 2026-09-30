@@ -13,9 +13,7 @@ def test_build_protocol_context_contains_template_data(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setitem(sys.modules, "mcubridge_pb2", mcubridge_pb2)
-    spec = generate.load_spec_from_proto(
-        generate.REPO_ROOT / "tools" / "protocol" / "mcubridge.proto"
-    )
+    spec = generate.load_spec_from_proto(generate.REPO_ROOT / "tools" / "protocol" / "mcubridge.proto")
     version = Version(generate.VERSION_PATH.read_text(encoding="utf-8").strip())
 
     context = generate.build_protocol_context(spec, str(version))

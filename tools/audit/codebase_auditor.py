@@ -119,7 +119,7 @@ def audit_proto_integrity(proto_path: Path | None = None) -> list[str]:
             "  - path: .\n"
             "lint:\n"
             "  use:\n"
-            "    - BASIC\n"
+            "    - DEFAULT\n"
             "    - FIELD_LOWER_SNAKE_CASE\n"
             "  except:\n"
             "    - PACKAGE_DIRECTORY_MATCH\n"

@@ -41,9 +41,7 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y cppcheck unzip clang-tidy
           sudo npm install -g @bufbuild/buf
-          uv tool install semgrep
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-          python -m pip install protobuf mypy-protobuf vulture pytest pyrefly types-protobuf types-psutil types-pexpect flake8 ruff
+          python -m pip install semgrep protobuf mypy-protobuf vulture pytest pyrefly types-protobuf types-psutil types-pexpect flake8 ruff
       - name: Install Build Tools
         if: matrix.env == 'arduino'
         run: sudo apt-get update && sudo apt-get install -y g++ make

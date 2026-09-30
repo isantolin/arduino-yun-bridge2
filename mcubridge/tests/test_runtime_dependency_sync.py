@@ -53,10 +53,14 @@ def _mock_sync_false(*_args: object, **_kwargs: object) -> bool:
     return False
 
 
+def _mock_empty_manifest() -> sync_runtime_deps.ManifestData:
+    return sync_runtime_deps.ManifestData([], [], [])
+
+
 def test_main_dry_run_reports_preview_when_changes_detected(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(sync_runtime_deps, "load_manifest", lambda: sync_runtime_deps.ManifestData([], [], []))
+    monkeypatch.setattr(sync_runtime_deps, "load_manifest", _mock_empty_manifest)
     monkeypatch.setattr(sync_runtime_deps, "write_requirements", _mock_sync_true)
     monkeypatch.setattr(sync_runtime_deps, "update_makefile", _mock_sync_false)
     monkeypatch.setattr(sync_runtime_deps, "update_pyproject", _mock_sync_false)
@@ -77,7 +81,7 @@ def test_main_dry_run_reports_preview_when_changes_detected(
 def test_main_dry_run_reports_up_to_date_when_no_changes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(sync_runtime_deps, "load_manifest", lambda: sync_runtime_deps.ManifestData([], [], []))
+    monkeypatch.setattr(sync_runtime_deps, "load_manifest", _mock_empty_manifest)
     monkeypatch.setattr(sync_runtime_deps, "write_requirements", _mock_sync_false)
     monkeypatch.setattr(sync_runtime_deps, "update_makefile", _mock_sync_false)
     monkeypatch.setattr(sync_runtime_deps, "update_pyproject", _mock_sync_false)

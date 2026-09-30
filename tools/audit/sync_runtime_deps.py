@@ -749,19 +749,32 @@ def main(
     updated_tox = update_tox_dev_deps(dev_deps, dry_run=no_write)
     updated_workflows = update_workflows(deps, dry_run=no_write)
 
-    fail = False
-    if check and (
-        updated_requirements
-        or updated_makefile
-        or updated_pyproject
-        or updated_feeds
-        or updated_gw_req
-        or updated_gw_makefile
-        or updated_cpp
-        or updated_tox
-        or updated_workflows
+    changed_paths: list[str] = []
+    for updated, path in (
+        (updated_requirements, REQUIREMENTS_PATH),
+        (updated_makefile, MAKEFILE_PATH),
+        (updated_pyproject, PYPROJECT_PATH),
+        (updated_feeds, FEEDS_DIR),
+        (updated_gw_req, GATEWAY_REQUIREMENTS_PATH),
+        (updated_gw_makefile, GATEWAY_MAKEFILE_PATH),
+        (updated_cpp, ARDUINO_INSTALL_SCRIPT_PATH),
+        (updated_tox, TOX_PATH),
+        (updated_workflows, ROOT / ".github" / "workflows"),
     ):
+        if updated:
+            changed_paths.append(str(path.relative_to(ROOT)))
+
+    fail = False
+    if check and changed_paths:
         fail = True
+
+    if dry_run:
+        if changed_paths:
+            print("[dry-run] The following files/manifests would be modified:")
+            for path in changed_paths:
+                print(f"  {path}")
+        else:
+            print("[dry-run] All dependency manifests are up to date.")
 
     if check_latest:
         outdated = check_latest_versions(deps, cpp_deps, dev_deps)

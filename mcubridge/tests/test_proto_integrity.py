@@ -77,6 +77,30 @@ def test_audit_semgrep_reports_execution_failure(tmp_path: Path, monkeypatch: py
     assert codebase_auditor.audit_semgrep() == ["Semgrep Execution Error: invalid rules"]
 
 
+def test_audit_semgrep_reports_empty_output_as_execution_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SIL-2: Verify empty Semgrep stdout is never treated as a clean audit, even on exit code 0."""
+    (tmp_path / ".semgrep.yml").write_text("rules: []\n", encoding="utf-8")
+    monkeypatch.setattr(codebase_auditor, "ROOT", tmp_path)
+    monkeypatch.setattr(codebase_auditor.shutil, "which", lambda _: "semgrep")
+
+    def empty_output_semgrep(
+        command: list[str],
+        *,
+        cwd: Path,
+        capture_output: bool,
+        text: bool,
+        check: bool,
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(command, 0, stdout="   \n", stderr="")
+
+    monkeypatch.setattr(codebase_auditor.subprocess, "run", empty_output_semgrep)
+
+    assert codebase_auditor.audit_semgrep() == ["Semgrep Execution Error: Empty output received from Semgrep"]
+
+
 def test_audit_config_suppressions_reports_matches_and_skips_ignored_directories(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

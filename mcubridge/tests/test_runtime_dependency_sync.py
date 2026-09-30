@@ -45,6 +45,47 @@ def test_cli_exposes_dry_run_option() -> None:
     assert "--check-latest" in result.stdout
 
 
+def test_main_dry_run_reports_preview_when_changes_detected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(sync_runtime_deps, "load_manifest", lambda: sync_runtime_deps.ManifestData([], [], []))
+    monkeypatch.setattr(sync_runtime_deps, "write_requirements", lambda deps, *, dry_run=False: True)
+    monkeypatch.setattr(sync_runtime_deps, "update_makefile", lambda deps, *, dry_run=False: False)
+    monkeypatch.setattr(sync_runtime_deps, "update_pyproject", lambda deps, *, dry_run=False: False)
+    monkeypatch.setattr(sync_runtime_deps, "update_feeds", lambda deps, *, dry_run=False: False)
+    monkeypatch.setattr(sync_runtime_deps, "write_gateway_requirements", lambda deps, *, dry_run=False: False)
+    monkeypatch.setattr(sync_runtime_deps, "update_gateway_makefile", lambda deps, *, dry_run=False: False)
+    monkeypatch.setattr(sync_runtime_deps, "update_cpp_install_script", lambda deps, *, dry_run=False: False)
+    monkeypatch.setattr(sync_runtime_deps, "update_tox_dev_deps", lambda deps, *, dry_run=False: False)
+    monkeypatch.setattr(sync_runtime_deps, "update_workflows", lambda deps, *, dry_run=False: False)
+
+    result = CliRunner().invoke(sync_runtime_deps.cli, ["--dry-run"])
+
+    assert result.exit_code == 0
+    assert "[dry-run] The following files/manifests would be modified:" in result.stdout
+    assert str(sync_runtime_deps.REQUIREMENTS_PATH.relative_to(sync_runtime_deps.ROOT)) in result.stdout
+
+
+def test_main_dry_run_reports_up_to_date_when_no_changes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(sync_runtime_deps, "load_manifest", lambda: sync_runtime_deps.ManifestData([], [], []))
+    monkeypatch.setattr(sync_runtime_deps, "write_requirements", lambda deps, *, dry_run=False: False)
+    monkeypatch.setattr(sync_runtime_deps, "update_makefile", lambda deps, *, dry_run=False: False)
+    monkeypatch.setattr(sync_runtime_deps, "update_pyproject", lambda deps, *, dry_run=False: False)
+    monkeypatch.setattr(sync_runtime_deps, "update_feeds", lambda deps, *, dry_run=False: False)
+    monkeypatch.setattr(sync_runtime_deps, "write_gateway_requirements", lambda deps, *, dry_run=False: False)
+    monkeypatch.setattr(sync_runtime_deps, "update_gateway_makefile", lambda deps, *, dry_run=False: False)
+    monkeypatch.setattr(sync_runtime_deps, "update_cpp_install_script", lambda deps, *, dry_run=False: False)
+    monkeypatch.setattr(sync_runtime_deps, "update_tox_dev_deps", lambda deps, *, dry_run=False: False)
+    monkeypatch.setattr(sync_runtime_deps, "update_workflows", lambda deps, *, dry_run=False: False)
+
+    result = CliRunner().invoke(sync_runtime_deps.cli, ["--dry-run"])
+
+    assert result.exit_code == 0
+    assert "[dry-run] All dependency manifests are up to date." in result.stdout
+
+
 def test_update_workflows_preserves_action_inputs_and_updates_literal_pins(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

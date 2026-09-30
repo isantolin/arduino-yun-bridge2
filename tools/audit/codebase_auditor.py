@@ -114,7 +114,15 @@ def audit_proto_integrity(proto_path: Path | None = None) -> list[str]:
     created_buf_yaml = False
     if not buf_yaml.exists():
         default_config = (
-            "version: v2\nmodules:\n  - path: .\nlint:\n  use:\n    - BASIC\n    except:\n    - PACKAGE_DIRECTORY_MATCH\n"
+            "version: v2\n"
+            "modules:\n"
+            "  - path: .\n"
+            "lint:\n"
+            "  use:\n"
+            "    - BASIC\n"
+            "    - FIELD_LOWER_SNAKE_CASE\n"
+            "  except:\n"
+            "    - PACKAGE_DIRECTORY_MATCH\n"
         )
         buf_yaml.write_text(default_config, encoding="utf-8")
         created_buf_yaml = True

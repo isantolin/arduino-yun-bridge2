@@ -75,6 +75,7 @@ def test_audit_semgrep_reports_execution_failure(tmp_path: Path, monkeypatch: py
 def test_audit_semgrep_reports_empty_output_as_execution_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """SIL-2: Verify empty Semgrep stdout is never treated as a clean audit, even on exit code 0."""
     (tmp_path / ".semgrep.yml").write_text("rules: []\n", encoding="utf-8")
     monkeypatch.setattr(codebase_auditor, "ROOT", tmp_path)
     monkeypatch.setattr(codebase_auditor.shutil, "which", lambda _: "semgrep")

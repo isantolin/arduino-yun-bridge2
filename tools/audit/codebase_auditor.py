@@ -17,52 +17,85 @@ from pathlib import Path
 import typer
 
 ROOT = Path(__file__).resolve().parents[2]
+IGNORED_CONFIG_DIRS = {".tox", ".git", "openwrt-sdk", "typings", ".tmp_tests"}
+SUPPRESSION = re.compile(
+    r"(ignore_errors|suppress|disable_warnings|continue_on_error|skip_validation)\s*[:=]\s*(true|1|yes)",
+    re.IGNORECASE,
+)
+
+
+def _run_command(command: list[str]) -> subprocess.CompletedProcess[str] | OSError:
+    try:
+        return subprocess.run(
+            command,
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as exc:
+        return exc
 
 
 def audit_semgrep() -> list[str]:
     """Audit Python and C++ source files using declarative Semgrep rules."""
     semgrep_bin = shutil.which("semgrep")
     config_path = ROOT / ".semgrep.yml"
-    if not semgrep_bin or not config_path.exists():
-        return [f"Semgrep Config Missing: {config_path} not found"] if not config_path.exists() else []
+    if not config_path.exists():
+        return [f"Semgrep Config Missing: {config_path} not found"]
+    if not semgrep_bin:
+        return ["Semgrep Executable Missing: 'semgrep' binary not found in PATH"]
 
-    res = subprocess.run(
-        [semgrep_bin, "--config", str(config_path), "--json"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    res = _run_command([semgrep_bin, "--config", str(config_path), "--json"])
+    if isinstance(res, OSError):
+        return [f"Semgrep Execution Error: {res}"]
     if not res.stdout:
-        return []
+        return [] if res.returncode == 0 else [f"Semgrep Execution Error: {res.stderr.strip()}"]
     try:
         data = json.loads(res.stdout)
     except json.JSONDecodeError as exc:
         return [f"Semgrep JSON Parse Error: {exc}"]
 
+    results = data.get("results") if isinstance(data, dict) else None
+    if not isinstance(results, list):
+        return ["Semgrep JSON Parse Error: results must be a list"]
+    if res.returncode not in (0, 1):
+        return [f"Semgrep Execution Error: {res.stderr.strip() or f'exit status {res.returncode}'}"]
     return [
         f"Semgrep Violation [{r.get('check_id', 'rule')}]: "
         f"{r.get('path', '')}:{r.get('start', {}).get('line', 0)} - {r.get('extra', {}).get('message', '')}"
-        for r in data.get("results", [])
+        for r in results
     ]
 
 
 def audit_config_suppressions() -> list[str]:
     """Audit configuration files for suppression directives."""
-    suppression = re.compile(
-        r"(ignore_errors|suppress|disable_warnings|continue_on_error|skip_validation)\s*[:=]\s*(true|1|yes)",
-        re.IGNORECASE,
-    )
-    ignored = {".tox", ".git", "openwrt-sdk", "typings", ".tmp_tests"}
     findings: list[str] = []
     for ext in ("*.yml", "*.yaml", "*.toml", "*.json"):
         for cfg in ROOT.rglob(ext):
-            if any(part in cfg.parts for part in ignored) or cfg.name in (".semgrep.yml", ".semgrepignore"):
+            if any(part in cfg.parts for part in IGNORED_CONFIG_DIRS) or cfg.name in (".semgrep.yml", ".semgrepignore"):
                 continue
-            for i, line in enumerate(cfg.read_text(encoding="utf-8").splitlines(), 1):
-                if suppression.search(line):
-                    findings.append(f"Config Suppression: {cfg.relative_to(ROOT)}:{i} - '{line.strip()}'")
+            try:
+                lines = cfg.read_text(encoding="utf-8").splitlines()
+            except OSError as exc:
+                findings.append(f"Config Read Error: {cfg.relative_to(ROOT)}: {exc}")
+                continue
+            findings.extend(
+                f"Config Suppression: {cfg.relative_to(ROOT)}:{line_number} - '{line.strip()}'"
+                for line_number, line in enumerate(lines, 1)
+                if SUPPRESSION.search(line)
+            )
     return findings
+
+
+def _buf_check(buf_bin: str, label: str, *arguments: str) -> str | None:
+    result = _run_command([buf_bin, *arguments])
+    if isinstance(result, OSError):
+        return f"{label} Execution Error: {result}"
+    if result.returncode == 0:
+        return None
+    output = result.stdout.strip() or result.stderr.strip()
+    return f"{label}:\n{output or 'command failed without output'}"
 
 
 def audit_proto_integrity(proto_path: Path | None = None) -> list[str]:
@@ -76,31 +109,17 @@ def audit_proto_integrity(proto_path: Path | None = None) -> list[str]:
     if not buf_bin:
         return ["Buf Executable Missing: 'buf' binary not found in PATH"]
 
-    findings: list[str] = []
     module_dir = target.parent
-    buf_lint = subprocess.run(
-        [buf_bin, "lint", str(module_dir)],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if buf_lint.returncode != 0:
-        findings.append(f"Buf Lint Violation:\n{buf_lint.stdout.strip() or buf_lint.stderr.strip()}")
-
+    checks: list[tuple[str, tuple[str, ...]]] = [("Buf Lint Violation", ("lint", str(module_dir)))]
     if (ROOT / ".git").exists() and target == ROOT / "tools" / "protocol" / "mcubridge.proto":
-        buf_breaking = subprocess.run(
-            [buf_bin, "breaking", str(module_dir), "--against", ".git#subdir=tools/protocol"],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-            check=False,
+        checks.append(
+            (
+                "Buf Breaking Change Violation",
+                ("breaking", str(module_dir), "--against", ".git#subdir=tools/protocol"),
+            )
         )
-        if buf_breaking.returncode != 0:
-            err = buf_breaking.stdout.strip() or buf_breaking.stderr.strip()
-            findings.append(f"Buf Breaking Change Violation:\n{err}")
 
-    return findings
+    return [finding for label, arguments in checks if (finding := _buf_check(buf_bin, label, *arguments))]
 
 
 app = typer.Typer(help="Audit codebase for SIL-2/MIL-SPEC violations and shims.", add_completion=False)

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Generate derived dependency files from the runtime manifest."""
 
+from __future__ import annotations
+
 import json
 import re
 import sys
@@ -82,7 +84,11 @@ def load_manifest() -> ManifestData:
     if not MANIFEST_PATH.exists():
         raise ManifestError(f"Missing manifest: {MANIFEST_PATH}")
 
-    data = tomllib.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+    try:
+        with MANIFEST_PATH.open("rb") as manifest_file:
+            data = tomllib.load(manifest_file)
+    except tomllib.TOMLDecodeError as exc:
+        raise ManifestError(f"Malformed manifest: {MANIFEST_PATH}: {exc}") from exc
     entries = data.get("dependency")
     if not entries:
         raise ManifestError("Manifest must declare at least one dependency")
@@ -146,18 +152,19 @@ def collect_openwrt_packages(deps: Sequence[_DepEntry], *, edge_only: bool = Fal
     ]
 
 
+def _write_if_changed(path: Path, content: str, *, dry_run: bool = False) -> bool:
+    if path.exists() and path.read_text(encoding="utf-8") == content:
+        return False
+    if not dry_run:
+        path.write_text(content, encoding="utf-8")
+    return True
+
+
 def write_requirements(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
     pip_specs = collect_pip_specs(deps)
     content = ["# Generated via tools/audit/sync_runtime_deps.py; do not edit."]
     content.extend(pip_specs)
-    new_text = "\n".join(content) + "\n"
-    if REQUIREMENTS_PATH.exists():
-        existing = REQUIREMENTS_PATH.read_text(encoding="utf-8")
-        if existing == new_text:
-            return False
-    if not dry_run:
-        REQUIREMENTS_PATH.write_text(new_text, encoding="utf-8")
-    return True
+    return _write_if_changed(REQUIREMENTS_PATH, "\n".join(content) + "\n", dry_run=dry_run)
 
 
 def write_gateway_requirements(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
@@ -165,14 +172,7 @@ def write_gateway_requirements(deps: Sequence[_DepEntry], *, dry_run: bool = Fal
     pip_specs = collect_pip_specs(gateway_deps)
     content = ["# Generated via tools/audit/sync_runtime_deps.py; do not edit."]
     content.extend(pip_specs)
-    new_text = "\n".join(content) + "\n"
-    if GATEWAY_REQUIREMENTS_PATH.exists():
-        existing = GATEWAY_REQUIREMENTS_PATH.read_text(encoding="utf-8")
-        if existing == new_text:
-            return False
-    if not dry_run:
-        GATEWAY_REQUIREMENTS_PATH.write_text(new_text, encoding="utf-8")
-    return True
+    return _write_if_changed(GATEWAY_REQUIREMENTS_PATH, "\n".join(content) + "\n", dry_run=dry_run)
 
 
 def update_pyproject(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
@@ -215,12 +215,7 @@ def update_pyproject(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> boo
 
     new_content = "\n".join(new_lines) + "\n"
 
-    if new_content == content:
-        return False
-
-    if not dry_run:
-        PYPROJECT_PATH.write_text(new_content, encoding="utf-8")
-    return True
+    return _write_if_changed(PYPROJECT_PATH, new_content, dry_run=dry_run)
 
 
 def format_openwrt_lines(tokens: Sequence[str]) -> list[str]:
@@ -231,73 +226,54 @@ def format_openwrt_lines(tokens: Sequence[str]) -> list[str]:
     return lines
 
 
-def update_makefile(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
-    makefile_text = MAKEFILE_PATH.read_text(encoding="utf-8")
+def _update_makefile(
+    path: Path,
+    deps: Sequence[_DepEntry],
+    *,
+    edge_only: bool = False,
+    dry_run: bool = False,
+    label: str = "Makefile",
+) -> bool:
+    makefile_text = path.read_text(encoding="utf-8")
     if BLOCK_START not in makefile_text or BLOCK_END not in makefile_text:
-        raise ManifestError("Makefile is missing dependency markers; cannot inject dependencies")
-    tokens = [f"{pkg}" for pkg in collect_openwrt_packages(deps, edge_only=True)]
+        raise ManifestError(f"{label} is missing dependency markers; cannot inject dependencies")
+    tokens = collect_openwrt_packages(deps, edge_only=edge_only)
     if tokens:
         block_lines = ["\tDEPENDS+= \\"]
         block_lines.extend(format_openwrt_lines(tokens))
     else:
         block_lines = ["\tDEPENDS+="]
     rendered_block = "\n".join(block_lines)
-    new_text: list[str] = []
+    new_lines: list[str] = []
     in_block = False
     for line in makefile_text.splitlines():
         if BLOCK_START in line:
             in_block = True
-            new_text.append(line)
-            new_text.append(rendered_block)
+            new_lines.extend((line, rendered_block))
             continue
         if BLOCK_END in line:
             in_block = False
-            new_text.append(line)
+            new_lines.append(line)
             continue
         if not in_block:
-            new_text.append(line)
-    updated = "\n".join(new_text) + "\n"
-    if updated == makefile_text:
-        return False
-    if not dry_run:
-        MAKEFILE_PATH.write_text(updated, encoding="utf-8")
-    return True
+            new_lines.append(line)
+    return _write_if_changed(path, "\n".join(new_lines) + "\n", dry_run=dry_run)
+
+
+def update_makefile(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
+    return _update_makefile(MAKEFILE_PATH, deps, edge_only=True, dry_run=dry_run)
 
 
 def update_gateway_makefile(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
     if not GATEWAY_MAKEFILE_PATH.exists():
         return False
-    makefile_text = GATEWAY_MAKEFILE_PATH.read_text(encoding="utf-8")
-    if BLOCK_START not in makefile_text or BLOCK_END not in makefile_text:
-        raise ManifestError("Gateway Makefile is missing dependency markers")
     gateway_deps = [dep for dep in deps if dep.get("gateway")]
-    tokens = [f"{pkg}" for pkg in collect_openwrt_packages(gateway_deps)]
-    if tokens:
-        block_lines = ["\tDEPENDS+= \\"]
-        block_lines.extend(format_openwrt_lines(tokens))
-    else:
-        block_lines = ["\tDEPENDS+="]
-    rendered_block = "\n".join(block_lines)
-    new_text: list[str] = []
-    in_block = False
-    for line in makefile_text.splitlines():
-        if BLOCK_START in line:
-            in_block = True
-            new_text.append(line)
-            new_text.append(rendered_block)
-            continue
-        if BLOCK_END in line:
-            in_block = False
-            new_text.append(line)
-            continue
-        if not in_block:
-            new_text.append(line)
-    updated = "\n".join(new_text) + "\n"
-    if updated == makefile_text:
-        return False
-    if not dry_run:
-        GATEWAY_MAKEFILE_PATH.write_text(updated, encoding="utf-8")
-    return True
+    return _update_makefile(
+        GATEWAY_MAKEFILE_PATH,
+        gateway_deps,
+        dry_run=dry_run,
+        label="Gateway Makefile",
+    )
 
 
 def update_cpp_install_script(cpp_deps: Sequence[_CppDepEntry], *, dry_run: bool = False) -> bool:
@@ -733,6 +709,10 @@ def main(
         bool,
         typer.Option("--check", help="Exit with status 1 if running would change any files"),
     ] = False,
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Show whether files would change without writing them"),
+    ] = False,
     check_latest: Annotated[
         bool,
         typer.Option("--check-latest", help="Query PyPI and GitHub to check for outdated pinned versions"),
@@ -758,15 +738,16 @@ def main(
         sys.stdout.write("\n".join(collect_pip_specs(deps)) + "\n")
         raise SystemExit(0)
 
-    updated_requirements = write_requirements(deps, dry_run=check)
-    updated_makefile = update_makefile(deps, dry_run=check)
-    updated_pyproject = update_pyproject(deps, dry_run=check)
-    updated_feeds = update_feeds(deps, dry_run=check)
-    updated_gw_req = write_gateway_requirements(deps, dry_run=check)
-    updated_gw_makefile = update_gateway_makefile(deps, dry_run=check)
-    updated_cpp = update_cpp_install_script(cpp_deps, dry_run=check)
-    updated_tox = update_tox_dev_deps(dev_deps, dry_run=check)
-    updated_workflows = update_workflows(deps, dry_run=check)
+    no_write = check or dry_run
+    updated_requirements = write_requirements(deps, dry_run=no_write)
+    updated_makefile = update_makefile(deps, dry_run=no_write)
+    updated_pyproject = update_pyproject(deps, dry_run=no_write)
+    updated_feeds = update_feeds(deps, dry_run=no_write)
+    updated_gw_req = write_gateway_requirements(deps, dry_run=no_write)
+    updated_gw_makefile = update_gateway_makefile(deps, dry_run=no_write)
+    updated_cpp = update_cpp_install_script(cpp_deps, dry_run=no_write)
+    updated_tox = update_tox_dev_deps(dev_deps, dry_run=no_write)
+    updated_workflows = update_workflows(deps, dry_run=no_write)
 
     fail = False
     if check and (

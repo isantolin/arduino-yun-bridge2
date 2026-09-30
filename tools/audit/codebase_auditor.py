@@ -103,23 +103,36 @@ def audit_proto_integrity(proto_path: Path | None = None) -> list[str]:
     print("Auditing Protobuf definitions...")
     target = proto_path or (ROOT / "tools" / "protocol" / "mcubridge.proto")
     if not target.exists():
-        return [f"Protobuf File Missing: {target} not found"]
+        return [f"Protobuf spec missing: {target}"]
 
     buf_bin = shutil.which("buf")
     if not buf_bin:
         return ["Buf Executable Missing: 'buf' binary not found in PATH"]
 
     module_dir = target.parent
-    checks: list[tuple[str, tuple[str, ...]]] = [("Buf Lint Violation", ("lint", str(module_dir)))]
-    if (ROOT / ".git").exists() and target == ROOT / "tools" / "protocol" / "mcubridge.proto":
-        checks.append(
-            (
-                "Buf Breaking Change Violation",
-                ("breaking", str(module_dir), "--against", ".git#subdir=tools/protocol"),
-            )
+    buf_yaml = module_dir / "buf.yaml"
+    created_buf_yaml = False
+    if not buf_yaml.exists():
+        default_config = (
+            "version: v2\nmodules:\n  - path: .\nlint:\n  use:\n    - BASIC\n    except:\n    - PACKAGE_DIRECTORY_MATCH\n"
         )
+        buf_yaml.write_text(default_config, encoding="utf-8")
+        created_buf_yaml = True
 
-    return [finding for label, arguments in checks if (finding := _buf_check(buf_bin, label, *arguments))]
+    try:
+        checks: list[tuple[str, tuple[str, ...]]] = [("Buf Lint Violation", ("lint", str(module_dir)))]
+        if (ROOT / ".git").exists() and target == (ROOT / "tools" / "protocol" / "mcubridge.proto"):
+            checks.append(
+                (
+                    "Buf Breaking Change Violation",
+                    ("breaking", str(module_dir), "--against", ".git#subdir=tools/protocol"),
+                )
+            )
+
+        return [finding for label, arguments in checks if (finding := _buf_check(buf_bin, label, *arguments))]
+    finally:
+        if created_buf_yaml and buf_yaml.exists():
+            buf_yaml.unlink()
 
 
 app = typer.Typer(help="Audit codebase for SIL-2/MIL-SPEC violations and shims.", add_completion=False)

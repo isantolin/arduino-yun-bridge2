@@ -95,8 +95,9 @@ class ProcessMachine(StateMachine):
 
 class ProcessContext:
     __slots__ = ("handle", "io_lock", "exit_code", "status", "fsm")
+    handle: asyncio.subprocess.Process | None
 
-    def __init__(self, handle: asyncio.subprocess.Process) -> None:
+    def __init__(self, handle: asyncio.subprocess.Process | None) -> None:
         self.handle = handle
         self.io_lock = asyncio.Lock()
         self.exit_code = 0

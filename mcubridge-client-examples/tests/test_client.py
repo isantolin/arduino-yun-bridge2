@@ -181,8 +181,8 @@ async def test_spi_device_transfer() -> None:
     mock_channel = MagicMock(spec=Channel)
 
     mock_stub = MagicMock(spec=LocalBridgeStub(mock_channel))
-    setattr(mock_stub, "SpiConfigure", AsyncMock())
-    setattr(mock_stub, "SpiTransfer", AsyncMock(return_value=pb.SpiTransfer(data=b"\xaa\xbb")))
+    mock_stub.SpiConfigure = AsyncMock()
+    mock_stub.SpiTransfer = AsyncMock(return_value=pb.SpiTransfer(data=b"\xaa\xbb"))
 
     dev = SpiDevice(mock_stub)
 

@@ -959,9 +959,9 @@ async def test_dispatch_command_branches(
         mock_gateway.connections[dev] = AsyncMock()
 
     if isinstance(send_result, Exception):
-        setattr(mock_gateway, "send_command", AsyncMock(side_effect=send_result))
+        mock_gateway.send_command = AsyncMock(side_effect=send_result)
     elif send_result is not None:
-        setattr(mock_gateway, "send_command", AsyncMock(return_value=send_result))
+        mock_gateway.send_command = AsyncMock(return_value=send_result)
 
     stream = AsyncMock()
     stream.recv_message = AsyncMock(return_value=dispatch_msg)
@@ -1007,7 +1007,7 @@ async def test_gateway_local_bridge_service_dispatch(mock_gateway: ProtobufGatew
             payload=pb.GenericResponse(status="ok").SerializeToString(),
         )
     )
-    setattr(mock_gateway, "send_command", mock_send)
+    mock_gateway.send_command = mock_send
     stream_valid = AsyncMock()
     stream_valid.metadata = {"x-device-id": "dev-1"}
     stream_valid.recv_message = AsyncMock(return_value=pb.DigitalWrite(pin=13, value=1))
@@ -1063,12 +1063,12 @@ async def test_gateway_local_bridge_service_dispatch(mock_gateway: ProtobufGatew
     stream_err.metadata = {"x-device-id": "dev-1"}
     stream_err.recv_message = AsyncMock(return_value=pb.DigitalWrite(pin=13, value=1))
     mock_send_err = AsyncMock(return_value=pb.CommandResponse(status_code=500, error_message="fail"))
-    setattr(mock_gateway, "send_command", mock_send_err)
+    mock_gateway.send_command = mock_send_err
     await local_svc.DigitalWrite(stream_err)
     assert stream_err.send_message.call_args[0][0].status == "error"
 
     mock_send_timeout = AsyncMock(side_effect=TimeoutError("timed out"))
-    setattr(mock_gateway, "send_command", mock_send_timeout)
+    mock_gateway.send_command = mock_send_timeout
     await local_svc.DigitalWrite(stream_err)
     assert stream_err.send_message.call_args[0][0].status == "error"
 
@@ -1103,10 +1103,8 @@ async def test_gateway_local_bridge_service_dispatch(mock_gateway: ProtobufGatew
         rpc_stream = AsyncMock()
         rpc_stream.metadata = {"x-device-id": "dev-1"}
         rpc_stream.recv_message = AsyncMock(return_value=req_msg)
-        setattr(
-            mock_gateway,
-            "send_command",
-            AsyncMock(return_value=pb.CommandResponse(status_code=200, payload=resp_msg.SerializeToString())),
+        mock_gateway.send_command = AsyncMock(
+            return_value=pb.CommandResponse(status_code=200, payload=resp_msg.SerializeToString())
         )
         await rpc_fn(rpc_stream)
         rpc_stream.send_message.assert_called_once()
@@ -1130,10 +1128,8 @@ async def test_gateway_local_bridge_service_dispatch(mock_gateway: ProtobufGatew
     stream_pub_console.metadata = {"x-device-id": "dev-1"}
     pub_console_msg = pb.CloudQueuedPublish(topic_name="br/console/write", payload=b"ping")
     stream_pub_console.recv_message = AsyncMock(return_value=pub_console_msg)
-    setattr(
-        mock_gateway,
-        "send_command",
-        AsyncMock(return_value=pb.CommandResponse(status_code=200, payload=pub_console_msg.SerializeToString())),
+    mock_gateway.send_command = AsyncMock(
+        return_value=pb.CommandResponse(status_code=200, payload=pub_console_msg.SerializeToString())
     )
     await local_svc.Publish(stream_pub_console)
     assert not console_q.empty()
@@ -1166,10 +1162,8 @@ async def test_gateway_local_bridge_service_dispatch(mock_gateway: ProtobufGatew
     stream_pub_non_console.metadata = {"x-device-id": "dev-1"}
     pub_data_msg = pb.CloudQueuedPublish(topic_name="br/telemetry/data", payload=b"123")
     stream_pub_non_console.recv_message = AsyncMock(return_value=pub_data_msg)
-    setattr(
-        mock_gateway,
-        "send_command",
-        AsyncMock(return_value=pb.CommandResponse(status_code=200, payload=pub_data_msg.SerializeToString())),
+    mock_gateway.send_command = AsyncMock(
+        return_value=pb.CommandResponse(status_code=200, payload=pub_data_msg.SerializeToString())
     )
     await local_svc.Publish(stream_pub_non_console)
 

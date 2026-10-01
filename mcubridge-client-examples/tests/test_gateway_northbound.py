@@ -62,7 +62,7 @@ async def run_test(
         channel.close()
 
 
-test_runner: Callable[..., Any] = run_test
+executor_fn: Callable[..., Any] = run_test
 
 cli = typer.Typer(
     help="Northbound Cloud Gateway E2E Command Orchestration Test",
@@ -80,7 +80,7 @@ def main(
 ) -> None:
     if not device_id:
         raise ValueError("Explicit target device_id is required. Implicit fallback is prohibited.")
-    asyncio.run(test_runner(host, port, device_id))
+    asyncio.run(executor_fn(host, port, device_id))
 
 
 if __name__ == "__main__":

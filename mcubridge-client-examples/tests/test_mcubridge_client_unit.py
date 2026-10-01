@@ -222,15 +222,15 @@ def test_smoke_connection_cli_invocation(monkeypatch: pytest.MonkeyPatch) -> Non
     """Verify test_smoke_connection CLI entry point invokes run_test via typer runner."""
     import test_smoke_connection
 
-    mock_run = MagicMock()
-    monkeypatch.setattr(test_smoke_connection, "test_runner", mock_run)
+    mock_run = AsyncMock()
+    monkeypatch.setattr(test_smoke_connection, "executor_fn", mock_run)
     runner = CliRunner()
     res = runner.invoke(
         cast(Any, test_smoke_connection.cli),
         ["--host", "127.0.0.1", "--port", "8443", "--device-id", "yun-01", "--topic-prefix", "test"],
     )
     assert res.exit_code == 0
-    mock_run.assert_called_once_with("127.0.0.1", 8443, "yun-01", "test")
+    mock_run.assert_awaited_once_with("127.0.0.1", 8443, "yun-01", "test")
 
 
 @pytest.mark.asyncio
@@ -256,15 +256,15 @@ def test_gateway_northbound_cli_invocation(monkeypatch: pytest.MonkeyPatch) -> N
     """Verify test_gateway_northbound CLI entry point invokes run_test via typer runner."""
     import test_gateway_northbound
 
-    mock_run = MagicMock()
-    monkeypatch.setattr(test_gateway_northbound, "test_runner", mock_run)
+    mock_run = AsyncMock()
+    monkeypatch.setattr(test_gateway_northbound, "executor_fn", mock_run)
     runner = CliRunner()
     res = runner.invoke(
         cast(Any, test_gateway_northbound.cli),
         ["--host", "127.0.0.1", "--port", "8443", "--device-id", "yun-01"],
     )
     assert res.exit_code == 0
-    mock_run.assert_called_once_with("127.0.0.1", 8443, "yun-01")
+    mock_run.assert_awaited_once_with("127.0.0.1", 8443, "yun-01")
 
 
 def test_gateway_northbound_cli_missing_device() -> None:

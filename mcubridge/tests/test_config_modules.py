@@ -46,9 +46,7 @@ def test_load_runtime_config_applies_env_and_defaults(
         "watchdog_interval": 0.5,
     }
 
-    mocker.patch.object(settings, "_load_raw_config", return_value=(raw_config, "test"))
-
-    config = settings.load_runtime_config()
+    config = settings.load_runtime_config(raw_loader=lambda: (raw_config, "test"))
 
     assert config.serial_port == "/dev/custom"
     assert config.serial_baud == 57600
@@ -78,53 +76,39 @@ def test_load_runtime_config_applies_env_and_defaults(
     assert config.watchdog_interval == 0.5
 
 
-def test_load_runtime_config_intervals(mocker: MockerFixture):
+def test_load_runtime_config_intervals() -> None:
     raw_config = {
         "bridge_summary_interval": 10.5,
         "bridge_handshake_interval": 20.0,
     }
-    mocker.patch.object(settings, "_load_raw_config", return_value=(raw_config, "test"))
-
-    config = settings.load_runtime_config()
+    config = settings.load_runtime_config(raw_loader=lambda: (raw_config, "test"))
     assert config.bridge_summary_interval == 10.5
     assert config.bridge_handshake_interval == 20.0
 
 
-def test_load_runtime_config_rejects_non_tmp_paths_when_disabled(
-    mocker: MockerFixture,
-):
+def test_load_runtime_config_rejects_non_tmp_paths_when_disabled() -> None:
     raw_config = {
         "cloud_spool_dir": "/var/spool/mcu",
         "file_system_root": "/var/lib/mcu",
         "allow_non_tmp_paths": False,
     }
-    mocker.patch.object(settings, "_load_raw_config", return_value=(raw_config, "test"))
-
-    # Strict validation should now raise ValueError during load_runtime_config in test mode
-
     with pytest.raises(ValueError, match="must be in volatile storage"):
-        settings.load_runtime_config()
+        settings.load_runtime_config(raw_loader=lambda: (raw_config, "test"))
 
 
-def test_load_runtime_config_allows_empty_cloud_user_value(
-    mocker: MockerFixture,
-):
+def test_load_runtime_config_allows_empty_cloud_user_value() -> None:
     raw_config = {
         "cloud_user": "",
         "cloud_pass": " ",
     }
-    mocker.patch.object(settings, "_load_raw_config", return_value=(raw_config, "test"))
-
-    config = settings.load_runtime_config()
+    config = settings.load_runtime_config(raw_loader=lambda: (raw_config, "test"))
     assert config.cloud_user == ""
     assert config.cloud_pass == ""
 
 
-def test_load_runtime_config_prefers_uci_config(mocker: MockerFixture):
+def test_load_runtime_config_prefers_uci_config() -> None:
     raw_config = {"serial_port": "/dev/uci"}
-    mocker.patch.object(settings, "_load_raw_config", return_value=(raw_config, "uci"))
-
-    config = settings.load_runtime_config()
+    config = settings.load_runtime_config(raw_loader=lambda: (raw_config, "uci"))
     assert config.serial_port == "/dev/uci"
 
 
@@ -185,32 +169,28 @@ def test_load_runtime_config_parses_watchdog(mocker: MockerFixture):
         }
     )
 
-    mocker.patch.object(settings, "_load_raw_config", return_value=(raw_config, "test"))
-
-    config = settings.load_runtime_config()
+    config = settings.load_runtime_config(raw_loader=lambda: (raw_config, "test"))
     assert config.watchdog_enabled
     assert config.watchdog_interval == 0.5
 
 
-def test_load_runtime_config_http3(mocker: MockerFixture):
+def test_load_runtime_config_http3() -> None:
     raw_config = {
         "cloud_http3_enabled": True,
         "cloud_http3_port": 8843,
         "cloud_http3_congestion_control": "cubic",
     }
-    mocker.patch.object(settings, "_load_raw_config", return_value=(raw_config, "test"))
-
-    config = settings.load_runtime_config()
+    config = settings.load_runtime_config(raw_loader=lambda: (raw_config, "test"))
     assert config.cloud_http3_enabled is True
     assert config.cloud_http3_port == 8843
     assert config.cloud_http3_congestion_control == "cubic"
 
 
-def test_settings_factory_bypass_defaults(mocker: MockerFixture) -> None:
-    mocker.patch("mcubridge.config.settings.validate_config")
+def test_settings_factory_bypass_defaults() -> None:
     factory_fn = getattr(settings, "_runtime_config_factory")
     cfg = factory_fn(
         bypass_defaults=True,
+        validate=False,
         serial_shared_secret="secretstring",
         serial_port="/dev/ttyS0",
         serial_baud=115200,
@@ -220,10 +200,9 @@ def test_settings_factory_bypass_defaults(mocker: MockerFixture) -> None:
     assert isinstance(cfg.serial_shared_secret, bytes)
 
 
-def test_settings_load_raw_config_empty_uci(mocker: MockerFixture) -> None:
-    mocker.patch("mcubridge.config.settings.get_uci_config", return_value={})
+def test_settings_load_raw_config_empty_uci() -> None:
     load_raw_fn = getattr(settings, "_load_raw_config")
-    cfg_dict, source = load_raw_fn()
+    cfg_dict, source = load_raw_fn(uci_getter=lambda: {})
     assert source == "defaults"
     assert "serial_port" in cfg_dict
 
@@ -344,11 +323,8 @@ def test_config_settings_and_logging_branches(runtime_config: settings.RuntimeCo
     configure_logging(runtime_config, console=False)
 
 
-def test_load_runtime_config_without_secret_fails_validation(mocker: MockerFixture) -> None:
-    mocker.patch.object(
-        settings,
-        "_load_raw_config",
-        return_value=({"serial_port": "/dev/ttyS0", "serial_shared_secret": None}, "test"),
-    )
+def test_load_runtime_config_without_secret_fails_validation() -> None:
     with pytest.raises(ValueError, match="serial_shared_secret"):
-        settings.load_runtime_config()
+        settings.load_runtime_config(
+            raw_loader=lambda: ({"serial_port": "/dev/ttyS0", "serial_shared_secret": None}, "test")
+        )

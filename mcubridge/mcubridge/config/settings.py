@@ -9,6 +9,7 @@ not used.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final, cast
 
@@ -67,6 +68,7 @@ def _runtime_config_factory(
     pb_msg: pb.RuntimeConfig | None = None,
     *,
     bypass_defaults: bool = False,
+    validate: bool = True,
     **kwargs: Any,
 ) -> pb.RuntimeConfig:
     """Factory: create a validated pb.RuntimeConfig from kwargs or a pre-built message."""
@@ -80,7 +82,8 @@ def _runtime_config_factory(
     if isinstance(kwargs.get("serial_shared_secret"), str):
         kwargs["serial_shared_secret"] = kwargs["serial_shared_secret"].encode("utf-8")
     cfg = pb.RuntimeConfig(**kwargs)
-    validate_config(cfg)
+    if validate:
+        validate_config(cfg)
     return cfg
 
 
@@ -93,7 +96,7 @@ else:
     RuntimeConfig = _runtime_config_factory
 
 
-def _load_raw_config() -> tuple[dict[str, Any], str]:
+def _load_raw_config(uci_getter: Callable[[], dict[str, Any]] | None = None) -> tuple[dict[str, Any], str]:
     """Load configuration from defaults and UCI (SIL 2).
 
     Precedence (highest first): UCI -> Defaults.
@@ -104,7 +107,8 @@ def _load_raw_config() -> tuple[dict[str, Any], str]:
 
     try:
         # [SIL-2] Resilient load: fail-safe to defaults on any system error
-        uci_values = get_uci_config()
+        getter = uci_getter if uci_getter is not None else get_uci_config
+        uci_values = getter()
         if uci_values:
             config.update(uci_values)
             source = "uci"
@@ -171,9 +175,12 @@ def _normalize_config_dict(raw: dict[str, Any]) -> tuple[dict[str, Any], bytes |
     return norm, secret
 
 
-def load_runtime_config(overrides: dict[str, Any] | None = None) -> RuntimeConfig:
+def load_runtime_config(
+    overrides: dict[str, Any] | None = None,
+    raw_loader: Callable[[], tuple[dict[str, Any], str]] | None = None,
+) -> RuntimeConfig:
     """Load, normalize, and validate the daemon configuration (SIL 2)."""
-    raw_values, source = _load_raw_config()
+    raw_values, source = raw_loader() if raw_loader is not None else _load_raw_config()
     merged_values = get_default_config() | raw_values
     if overrides:
         merged_values |= overrides

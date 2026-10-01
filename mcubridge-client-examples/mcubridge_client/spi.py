@@ -64,10 +64,7 @@ class SpiDevice:
         if not self._active:
             await self.begin()
 
-        if isinstance(data, (bytes, bytearray)):
-            payload = cast(bytes, data)
-        else:
-            payload = bytes(data)
+        payload = cast(bytes, data) if isinstance(data, (bytes, bytearray)) else bytes(data)
 
         resp = await self._stub.SpiTransfer(pb.SpiTransfer(data=payload))
         return resp.data if resp.data else payload

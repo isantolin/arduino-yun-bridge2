@@ -241,13 +241,12 @@ class SimavrState:
             if "MCU capabilities received" in clean_line:
                 self.capabilities_event.set()
                 self.sync_event.set()
-            elif '"event": "MCU ACK received"' in clean_line and '"command_id": "0x44"' in clean_line:
-                self.sync_event.set()
-            elif "MCU link synchronised" in clean_line:
-                self.sync_event.set()
-            elif "Handshake synchronization complete" in clean_line:
-                self.sync_event.set()
-            elif '"new_state": "SYNCHRONIZED"' in clean_line:
+            elif (
+                ('"event": "MCU ACK received"' in clean_line and '"command_id": "0x44"' in clean_line)
+                or "MCU link synchronised" in clean_line
+                or "Handshake synchronization complete" in clean_line
+                or '"new_state": "SYNCHRONIZED"' in clean_line
+            ):
                 self.sync_event.set()
 
 
@@ -602,9 +601,7 @@ def main(
     effective_uart = uart
     if not effective_uart:
         fw_str = str(effective_firmware).lower()
-        if ("bluetooth" in fw_str or "wifi" in fw_str) and mcu == "atmega2560":
-            effective_uart = "1"
-        elif mcu == "atmega32u4":
+        if ("bluetooth" in fw_str or "wifi" in fw_str) and mcu == "atmega2560" or mcu == "atmega32u4":
             effective_uart = "1"
         else:
             effective_uart = "0"

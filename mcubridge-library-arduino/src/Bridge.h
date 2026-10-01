@@ -203,9 +203,8 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
 
     if (do_encrypt) {
       return _sendEncryptedHelper<T>(raw_cmd, seq, packet, channel_id, qos);
-    } else {
-      return sendSinglePass<T>(raw_cmd, seq, packet, channel_id, qos);
     }
+    return sendSinglePass<T>(raw_cmd, seq, packet, channel_id, qos);
   }
 
   template <typename T>
@@ -256,7 +255,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   };
 
   template <typename FillFn>
-  bool _enqueuePendingTx(uint16_t cmd, uint16_t seq, FillFn fill_fn) {
+  bool _enqueuePendingTx(uint16_t cmd, uint16_t seq, const FillFn& fill_fn) {
     BRIDGE_ATOMIC_BLOCK {
       if (_pending_tx_queue.full()) return false;
       auto* buf = _tx_payload_pool.allocate();

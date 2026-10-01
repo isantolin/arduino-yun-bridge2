@@ -1128,16 +1128,18 @@ class BridgeService:
         )
 
     async def _handle_spi_config(self, _route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
+        if not self.serial:
+            return
         try:
             p = pb.SpiConfig.FromString(inbound.payload)
-            await cast("SerialTransport", self.serial).send(Command.CMD_SPI_SET_CONFIG.value, p)
+            await self.serial.send(Command.CMD_SPI_SET_CONFIG.value, p)
         except (ProtobufDecodeError, TypeError, ValueError) as exc:
             logger.error("SPI config error", error=str(exc))
 
     async def _handle_spi_transfer(self, _route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
-        if not inbound.payload:
+        if not inbound.payload or not self.serial:
             return
-        res = await cast("SerialTransport", self.serial).send(
+        res = await self.serial.send(
             Command.CMD_SPI_TRANSFER.value,
             pb.SpiTransfer(data=inbound.payload),
         )
@@ -1228,7 +1230,9 @@ class BridgeService:
                 )
 
     async def _handle_system_free_memory(self, _route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
-        pl = await cast("SerialTransport", self.serial).send(Command.CMD_GET_FREE_MEMORY.value, b"")
+        if not self.serial:
+            return
+        pl = await self.serial.send(Command.CMD_GET_FREE_MEMORY.value, b"")
         if isinstance(pl, bytes):
             tp = get_topic_for_message(self.state.cloud_topic_prefix, pb.FreeMemoryResponse) or ""
             await self.enqueue_cloud_publish(

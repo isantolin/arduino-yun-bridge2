@@ -28,7 +28,7 @@ def validate_luci_app() -> int:
 
     for jf in json_files:
         try:
-            with open(jf, "r", encoding="utf-8") as f:
+            with open(jf, encoding="utf-8") as f:
                 data = json.load(f)
             sys.stdout.write(f"  ✔ {jf.relative_to(repo_root)} (valid JSON, {len(data)} entries)\n")
         except (OSError, json.JSONDecodeError) as e:
@@ -53,7 +53,7 @@ def validate_luci_app() -> int:
     # 3. Check route correspondence between menu and views
     menu_file = luci_dir / "root/usr/share/luci/menu.d/luci-app-mcubridge.json"
     if menu_file.exists():
-        with open(menu_file, "r", encoding="utf-8") as f:
+        with open(menu_file, encoding="utf-8") as f:
             menu_data = json.load(f)
         for route, node in menu_data.items():
             action = node.get("action", {})

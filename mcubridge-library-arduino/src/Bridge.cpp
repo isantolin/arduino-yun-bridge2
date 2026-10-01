@@ -857,15 +857,14 @@ bool BridgeClass::_sendEncryptedImpl(uint16_t raw_cmd, uint16_t seq,
           written = out_stream.bytes_written;
           return true;
         });
-  } else {
-    pb_ostream_t out_stream =
-        pb_ostream_from_buffer(_working_buffer.data(), rpc::MAX_PAYLOAD_SIZE);
-    if (pb_encode(&out_stream, fields, src)) {
-      _transmit(raw_cmd, seq,
-                etl::span<const uint8_t>(_working_buffer.data(),
-                                         out_stream.bytes_written));
-      return true;
-    }
+  }
+  pb_ostream_t out_stream =
+      pb_ostream_from_buffer(_working_buffer.data(), rpc::MAX_PAYLOAD_SIZE);
+  if (!pb_encode(&out_stream, fields, src)) {
     return false;
   }
+  _transmit(raw_cmd, seq,
+            etl::span<const uint8_t>(_working_buffer.data(),
+                                     out_stream.bytes_written));
+  return true;
 }

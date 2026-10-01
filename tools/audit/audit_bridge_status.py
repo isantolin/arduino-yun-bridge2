@@ -64,9 +64,8 @@ def audit_status_dict(data: dict[str, Any]) -> list[str]:
         errors.append(f"Cloud spool trim events occurred (count={trimmed})")
 
     # 3. Serial link state
-    if "serial_link" in bridge_raw:
-        if not status_pb.bridge.serial_link.connected:
-            errors.append("Serial link is reported as disconnected")
+    if "serial_link" in bridge_raw and not status_pb.bridge.serial_link.connected:
+        errors.append("Serial link is reported as disconnected")
 
     # 4. Handshake failures and error streaks
     if "handshake" in bridge_raw:

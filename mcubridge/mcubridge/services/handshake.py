@@ -715,8 +715,7 @@ class SerialHandshakeManager:
 
         h = hmac.HMAC(auth_key, hashes.SHA256())
         h.update(nonce)
-        tag = h.finalize()[: protocol.AEAD_TAG_SIZE]
-        return tag
+        return h.finalize()[: protocol.AEAD_TAG_SIZE]
 
     @staticmethod
     def calculate_session_key(secret: bytes, nonce: bytes) -> bytes:

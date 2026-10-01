@@ -6,7 +6,8 @@ import importlib.util
 import io
 import json
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
+from collections.abc import Callable
 from unittest.mock import MagicMock
 
 import pytest

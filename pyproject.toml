@@ -134,7 +134,7 @@ line-length = 120
 exclude = ["*_pb2.py", "*_pb2.pyi", "*_grpc.py", "typings", "tools/protocol/templates", ".tmp_tests"]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "C90", "A", "PLW", "BLE", "E501", "B018", "PT", "PGH"]
+select = ["E", "F", "W", "C90", "A", "PLW", "BLE", "E501", "B018", "PT", "PGH", "UP", "C4", "PIE", "RET", "SIM"]
 extend-select = ["E226", "E501"]
 preview = true
 explicit-preview-rules = true
@@ -183,7 +183,8 @@ min_confidence = 80
 paths = [
     "mcubridge/mcubridge",
     "mcubridge-client-examples/mcubridge_client",
-    "mcubridge-gateway"
+    "mcubridge-gateway",
+    "tools"
 ]
 exclude = [
     "*_pb2.py",

@@ -55,7 +55,7 @@ def test_runtime_config_rejects_non_positive_status_interval() -> None:
         validate_config(cfg)
 
 
-@given(interval=st.floats(min_value=-1000.0, max_value=0.49).filter(lambda x: not (x != x)))
+@given(interval=st.floats(min_value=-1000.0, max_value=0.49).filter(lambda x: x == x))
 def test_runtime_config_requires_watchdog_interval_when_enabled(interval: float) -> None:
     cfg = _valid_base_config()
     cfg.watchdog_enabled = True

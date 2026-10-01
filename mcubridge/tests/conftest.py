@@ -387,8 +387,7 @@ def real_config():
     raw["cloud_spool_dir"] = protocol.DEFAULT_CLOUD_SPOOL_DIR
     raw["file_system_root"] = protocol.DEFAULT_FILE_SYSTEM_ROOT
 
-    config = load_runtime_config(raw)
-    return config
+    return load_runtime_config(raw)
 
 
 @pytest.fixture

@@ -219,9 +219,7 @@ async def test_publish_handshake_event_cloud_enqueue(mock_config: RuntimeConfig,
 @pytest.mark.asyncio
 async def test_synchronize_attempt_sync_send_failure(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     async def _send_reset_ok_sync_fail(command_id: int, payload: object, seq_id: int | None = None) -> bool:
-        if command_id == Command.CMD_LINK_SYNC.value:
-            return False
-        return True
+        return command_id != Command.CMD_LINK_SYNC.value
 
     mock_send = AsyncMock(side_effect=_send_reset_ok_sync_fail)
     mgr = _make_handshake_manager(mock_config, mock_state, send_frame=mock_send)

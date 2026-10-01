@@ -281,8 +281,6 @@ def main(
     output_file: Annotated[Path | None, typer.Option("--output", "-o", help="Write report to markdown file")] = None,
     iterations: Annotated[int, typer.Option("--iterations", "-n", help="Benchmark iterations")] = 5000,
     json_path: Annotated[Path | None, typer.Option("--json", help="Path to write JSON benchmark metrics")] = None,
-    py_proto: Annotated[Path | None, typer.Option("--py-proto", help="Path to generated protocol.py")] = None,
-    py_client: Annotated[Path | None, typer.Option("--py-client", help="Path to client protocol.py")] = None,
     github_step_summary: Annotated[
         Path | None, typer.Option("--github-step-summary", help="Path to GitHub step summary markdown")
     ] = None,

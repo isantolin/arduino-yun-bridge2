@@ -151,8 +151,7 @@ def _iter_counts(count: int) -> Iterable[int]:
             yield iteration
             iteration += 1
     else:
-        for i in range(count):
-            yield i
+        yield from range(count)
 
 
 async def run_debug_loop(

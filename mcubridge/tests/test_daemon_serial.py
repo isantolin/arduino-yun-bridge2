@@ -66,7 +66,7 @@ async def test_serial_reader_task_reconnects(mocker: MockerFixture) -> None:
         sleep_count += 1
         if sleep_count > 100:
             raise RuntimeError("Break Loop")
-        return None
+        return
 
     mock_sleep = AsyncMock(side_effect=mock_sleep_fn)
 

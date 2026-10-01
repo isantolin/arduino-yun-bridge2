@@ -7,11 +7,20 @@ Checks: >
   bugprone-unhandled-self-assignment,
   modernize-use-nullptr,
   modernize-use-override,
-  readability-redundant-control-flow
+  modernize-return-braced-init-list,
+  readability-redundant-control-flow,
+  readability-simplify-boolean-expr,
+  readability-redundant-declaration,
+  readability-else-after-return,
+  performance-unnecessary-copy-initialization,
+  performance-unnecessary-value-param,
+  performance-move-const-arg
 
 WarningsAsErrors: >
   cppcoreguidelines-no-malloc
 
 HeaderFilterRegex: 'mcubridge-library-arduino/src/(Bridge|core/|services/|protocol/rpc_).*'
 FormatStyle: file
+CheckOptions:
+  performance-unnecessary-value-param.AllowedTypes: '^(etl::|std::)?(span|string_view|basic_string_view)$'
 ...

@@ -378,7 +378,7 @@ def _fetch_latest_version(package_name: str, *, include_prerelease: bool = False
         data = json.loads(fetch_url_with_retry(req, timeout=10.0).decode("utf-8"))
         if "releases" in data and data["releases"]:
             parsed_versions: list[Version] = []
-            for v_str in data["releases"].keys():
+            for v_str in data["releases"]:
                 try:
                     v = Version(v_str)
                     if not include_prerelease and v.is_prerelease:
@@ -481,9 +481,7 @@ def _check_runtime_outdated(deps: Sequence[DepEntry]) -> list[tuple[str, str, st
         if latest_str:
             try:
                 latest_ver = Version(latest_str)
-                if pinned_ver and latest_ver > pinned_ver:
-                    outdated.append((name, pinned, latest_str))
-                elif not pinned_ver and latest_str != pinned:
+                if pinned_ver and latest_ver > pinned_ver or not pinned_ver and latest_str != pinned:
                     outdated.append((name, pinned, latest_str))
             except (InvalidVersion, TypeError):
                 if latest_str != pinned:

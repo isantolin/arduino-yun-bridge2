@@ -39,9 +39,13 @@ configure_logging(console=True)
 logger = structlog.get_logger("emulation-runner")
 
 
+def _default_output_lines() -> list[tuple[str, str]]:
+    return []
+
+
 @dataclass
 class EmulationState:
-    output_lines: list[tuple[str, str]] = field(default_factory=lambda: [])
+    output_lines: list[tuple[str, str]] = field(default_factory=_default_output_lines)
     lock: threading.Lock = field(default_factory=threading.Lock)
 
     def on_line(self, line: str, source: str) -> None:

@@ -154,6 +154,8 @@ async def test_handshake_capabilities_retry(
     """Verify capabilities discovery retries on timeout then succeeds with valid payload."""
     manager, _state, send_frame, _config, timing, _ack = handshake_setup
 
+    manager.retry_backoff_base = 0.001
+    manager.retry_backoff_max = 0.005
     timing.response_timeout_ms = 10
 
     attempts = 0

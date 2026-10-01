@@ -154,8 +154,8 @@ def patched_get_default_config() -> dict[str, Any]:
     return cfg
 
 
-setattr(mcubridge.protocol.structures, "RuntimeConfig", PatchedRuntimeConfig)
-setattr(mcubridge.config.common, "get_default_config", patched_get_default_config)
+mcubridge.protocol.structures.RuntimeConfig = PatchedRuntimeConfig
+mcubridge.config.common.get_default_config = patched_get_default_config
 # ==============================================================================
 
 
@@ -197,7 +197,7 @@ def pytest_pyfunc_call(pyfuncitem: pytest.Function) -> bool | None:
 
     policy = pyfuncitem.funcargs.get("event_loop_policy")
     if policy is not None:
-        getattr(asyncio, "set_event_loop_policy")(cast(asyncio.AbstractEventLoopPolicy, policy))
+        asyncio.set_event_loop_policy(cast(asyncio.AbstractEventLoopPolicy, policy))
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)

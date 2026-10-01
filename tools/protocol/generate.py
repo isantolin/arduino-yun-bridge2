@@ -21,7 +21,7 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 
 import tenacity
 import typer
@@ -645,8 +645,8 @@ class JinjaGenerator:
             loader=FileSystemLoader(str(TEMPLATE_DIR)),
             keep_trailing_newline=True,
         )
-        self.env.filters["cpp_digits"] = self._cpp_digit_separator
-        self.env.filters["snakecase"] = self._snake_case
+        cast(dict[str, Any], self.env.filters)["cpp_digits"] = self._cpp_digit_separator
+        cast(dict[str, Any], self.env.filters)["snakecase"] = self._snake_case
 
     @staticmethod
     def _cpp_digit_separator(value: object) -> str:

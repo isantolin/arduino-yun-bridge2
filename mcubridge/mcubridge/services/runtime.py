@@ -216,6 +216,13 @@ class BridgeService:
             Topic.ANALOG: self._handle_pin,
             Topic.SYSTEM: self._handle_system,
         }
+        self._pin_dispatch: Final[
+            dict[PinAction | None, Callable[[TopicRoute, int, pb.CloudQueuedPublish], Coroutine[Any, Any, None]]]
+        ] = {
+            PinAction.MODE: self._handle_pin_mode,
+            PinAction.READ: self._handle_pin_read,
+            None: self._handle_pin_write,
+        }
         self._spi_dispatch: Final[
             dict[SpiAction | str, Callable[[TopicRoute, pb.CloudQueuedPublish], Coroutine[Any, Any, Any]]]
         ] = {
@@ -1159,75 +1166,65 @@ class BridgeService:
         if self.serial and (handler := self._spi_dispatch.get(route.identifier)):
             await handler(route, inbound)
 
+    async def _reply_cloud_ok(self, *segments: Any, success: bool, inbound: pb.CloudQueuedPublish) -> None:
+        if inbound.correlation_data or inbound.response_topic:
+            await self.enqueue_cloud_publish(
+                topic_path(self.state.cloud_topic_prefix, *segments, protocol.CLOUD_SUFFIX_RESPONSE),
+                b"OK" if success else b"ERROR",
+                reply_context=inbound,
+            )
+
+    async def _handle_pin_mode(self, route: TopicRoute, pin: int, inbound: pb.CloudQueuedPublish) -> None:
+        if not self.serial:
+            return
+        val = int(inbound.payload) if inbound.payload.isdigit() else 0
+        success = bool(await self.serial.send(Command.CMD_SET_PIN_MODE.value, pb.PinMode(pin=pin, mode=cast(Any, val))))
+        await self._reply_cloud_ok(route.topic, str(pin), PinAction.MODE, success=success, inbound=inbound)
+
+    async def _handle_pin_read(self, route: TopicRoute, pin: int, inbound: pb.CloudQueuedPublish) -> None:
+        if not self.serial:
+            return
+        cmd = Command.CMD_DIGITAL_READ if route.topic == Topic.DIGITAL else Command.CMD_ANALOG_READ
+        q = self.state.pending_digital_reads if cmd == Command.CMD_DIGITAL_READ else self.state.pending_analog_reads
+        if len(q) < self.state.pending_pin_request_limit:
+            q.append(structures.PendingPinRequest(pin=pin, reply_context=inbound))
+            await self.serial.send(cmd.value, pb.PinRead(pin=pin))
+        else:
+            await self.enqueue_cloud_status_report(
+                pb.StatusReport(
+                    status=int(Status.ERROR),
+                    topic=str(route.topic.value),
+                    pin=pin,
+                    action=str(PinAction.READ),
+                    reason=protocol.STATUS_REASON_PENDING_PIN_OVERFLOW,
+                ),
+                user_properties=(
+                    (PROP_KEY_BRIDGE_ERROR, protocol.STATUS_REASON_PENDING_PIN_OVERFLOW),
+                    (PROP_KEY_BRIDGE_PIN, str(pin)),
+                ),
+                reply_context=inbound,
+            )
+
+    async def _handle_pin_write(self, route: TopicRoute, pin: int, inbound: pb.CloudQueuedPublish) -> None:
+        if not self.serial:
+            return
+        val = int(inbound.payload) if inbound.payload.isdigit() else 0
+        is_dig = route.topic == Topic.DIGITAL
+        cmd = Command.CMD_DIGITAL_WRITE if is_dig else Command.CMD_ANALOG_WRITE
+        msg = pb.DigitalWrite(pin=pin, value=val) if is_dig else pb.AnalogWrite(pin=pin, value=val)
+        success = bool(await self.serial.send(cmd.value, msg))
+        await self._reply_cloud_ok(route.topic, str(pin), success=success, inbound=inbound)
+
     async def _handle_pin(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
-        serial = self.serial
-        if not serial:
+        if not self.serial:
             return
         pin = self._parse_pin(route.segments[0])
         if pin < 0:
             return
-        payload = inbound.payload
-        if len(route.segments) == 2:
-            if route.segments[1] == PinAction.MODE:
-                val = int(payload) if payload.isdigit() else 0
-                success = bool(
-                    await serial.send(Command.CMD_SET_PIN_MODE.value, pb.PinMode(pin=pin, mode=cast(Any, val)))
-                )
-                if inbound.correlation_data or inbound.response_topic:
-                    await self.enqueue_cloud_publish(
-                        topic_path(
-                            self.state.cloud_topic_prefix,
-                            route.topic,
-                            str(pin),
-                            PinAction.MODE,
-                            protocol.CLOUD_SUFFIX_RESPONSE,
-                        ),
-                        b"OK" if success else b"ERROR",
-                        reply_context=inbound,
-                    )
-
-            elif route.segments[1] == PinAction.READ:
-                cmd = Command.CMD_DIGITAL_READ if route.topic == Topic.DIGITAL else Command.CMD_ANALOG_READ
-                q = (
-                    self.state.pending_digital_reads
-                    if cmd == Command.CMD_DIGITAL_READ
-                    else self.state.pending_analog_reads
-                )
-                if len(q) < self.state.pending_pin_request_limit:
-                    q.append(structures.PendingPinRequest(pin=pin, reply_context=inbound))
-                    await serial.send(cmd.value, pb.PinRead(pin=pin))
-                else:
-                    await self.enqueue_cloud_status_report(
-                        pb.StatusReport(
-                            status=int(Status.ERROR),
-                            topic=str(route.topic.value),
-                            pin=pin,
-                            action=str(PinAction.READ),
-                            reason=protocol.STATUS_REASON_PENDING_PIN_OVERFLOW,
-                        ),
-                        user_properties=(
-                            (PROP_KEY_BRIDGE_ERROR, protocol.STATUS_REASON_PENDING_PIN_OVERFLOW),
-                            (PROP_KEY_BRIDGE_PIN, str(pin)),
-                        ),
-                        reply_context=inbound,
-                    )
-        else:
-            val = int(payload) if payload.isdigit() else 0
-            is_dig = route.topic == Topic.DIGITAL
-            cmd = Command.CMD_DIGITAL_WRITE if is_dig else Command.CMD_ANALOG_WRITE
-            msg = pb.DigitalWrite(pin=pin, value=val) if is_dig else pb.AnalogWrite(pin=pin, value=val)
-            success = bool(await serial.send(cmd.value, msg))
-            if inbound.correlation_data or inbound.response_topic:
-                await self.enqueue_cloud_publish(
-                    topic_path(
-                        self.state.cloud_topic_prefix,
-                        route.topic,
-                        str(pin),
-                        protocol.CLOUD_SUFFIX_RESPONSE,
-                    ),
-                    b"OK" if success else b"ERROR",
-                    reply_context=inbound,
-                )
+        action = route.segments[1] if len(route.segments) == 2 else None
+        handler = self._pin_dispatch.get(action)
+        if handler:
+            await handler(route, pin, inbound)
 
     async def _handle_system_free_memory(self, _route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         if not self.serial:

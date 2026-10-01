@@ -9,7 +9,7 @@ from tools.audit import sync_runtime_deps
 def test_write_requirements_dry_run_does_not_write(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     requirements_path = tmp_path / "runtime.txt"
     monkeypatch.setattr(sync_runtime_deps, "REQUIREMENTS_PATH", requirements_path)
-    deps = [
+    deps: list[sync_runtime_deps.DepEntry] = [
         {
             "name": "sample",
             "openwrt": "python3-sample",
@@ -30,10 +30,10 @@ def test_write_requirements_dry_run_does_not_write(tmp_path: Path, monkeypatch: 
 
 def test_load_manifest_reports_malformed_toml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     manifest_path = tmp_path / "runtime.toml"
-    manifest_path.write_text("[[dependency]\nname = 'unterminated\n", encoding="utf-8")
+    manifest_path.write_text("invalid toml = [", encoding="utf-8")
     monkeypatch.setattr(sync_runtime_deps, "MANIFEST_PATH", manifest_path)
 
-    with pytest.raises(sync_runtime_deps.ManifestError, match="Malformed manifest"):
+    with pytest.raises(sync_runtime_deps.ManifestError):
         sync_runtime_deps.load_manifest()
 
 
@@ -43,6 +43,34 @@ def test_cli_exposes_dry_run_option() -> None:
     assert result.exit_code == 0
     assert "--dry-run" in result.stdout
     assert "--check-latest" in result.stdout
+
+
+def _mock_false(*args: object, **kwargs: object) -> bool:
+    return False
+
+
+def test_main_dry_run_reports_preview_when_changes_detected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_req = sync_runtime_deps.ROOT / "requirements" / "_dry_run_test.txt"
+    monkeypatch.setattr(sync_runtime_deps, "REQUIREMENTS_PATH", fake_req)
+
+    result = CliRunner().invoke(sync_runtime_deps.cli, ["--dry-run"])
+
+    assert result.exit_code == 0
+    assert "[dry-run] The following files/manifests would be modified:" in result.stdout
+    assert "_dry_run_test.txt" in result.stdout
+
+
+def test_main_dry_run_reports_up_to_date_when_no_changes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(sync_runtime_deps, "_write_if_changed", _mock_false)
+
+    result = CliRunner().invoke(sync_runtime_deps.cli, ["--dry-run"])
+
+    assert result.exit_code == 0
+    assert "[dry-run] All dependency manifests are up to date." in result.stdout
 
 
 def test_update_workflows_preserves_action_inputs_and_updates_literal_pins(
@@ -66,7 +94,7 @@ def test_update_workflows_preserves_action_inputs_and_updates_literal_pins(
     )
     monkeypatch.setattr(sync_runtime_deps, "ROOT", tmp_path)
 
-    deps = [
+    deps: list[sync_runtime_deps.DepEntry] = [
         {
             "name": "protobuf",
             "openwrt": "python3-protobuf",

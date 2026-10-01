@@ -23,10 +23,6 @@ def load_script(name: str) -> Any:
     module = importlib.util.module_from_spec(spec)
     sys.modules[name.replace("-", "_")] = module
 
-    from unittest.mock import MagicMock
-
-    sys.modules["uci"] = MagicMock()
-
     spec.loader.exec_module(module)
     return module
 
@@ -51,8 +47,7 @@ def test_rotate_credentials_script(
     script = load_script("mcubridge-rotate-credentials")
     mocker.patch("sys.argv", ["mcubridge-rotate-credentials", "--force", "--no-restart"])
     mocker.patch("subprocess.run")
-    mocker.patch("uci.Uci")
-    mock_update = mocker.patch("mcubridge_rotate_credentials.update_uci_credentials")
+    mock_update = mocker.patch.object(script, "update_uci_credentials")
     script.app(standalone_mode=False)
     assert mock_update.called
     captured = capsys.readouterr()
@@ -77,10 +72,12 @@ def test_rotate_credentials_abort(runtime_config: Any, mocker: MockerFixture) ->
     assert exc.value.code == 0
 
 
-def test_rotate_credentials_updates_expected_uci_keys(mocker: MockerFixture) -> None:
+def test_rotate_credentials_updates_expected_uci_keys() -> None:
     script = load_script("mcubridge-rotate-credentials")
     mock_cursor = MagicMock()
-    mocker.patch("uci.Uci", return_value=mock_cursor)
+    mock_uci = MagicMock()
+    mock_uci.Uci.return_value = mock_cursor
+    script.uci = mock_uci
     script.update_uci_credentials("serial-secret", "cloud-password")
     assert mock_cursor.set.call_args_list[0].args == ("mcubridge", "general", "serial_shared_secret", "serial-secret")
     assert mock_cursor.set.call_args_list[1].args == ("mcubridge", "general", "cloud_pass", "cloud-password")

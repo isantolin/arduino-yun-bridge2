@@ -152,9 +152,19 @@ class BridgeService:
     gpio: GpioService
     local_bridge_service: LocalBridgeService
     _tg: asyncio.TaskGroup | None
+    _cloud_publisher: Callable[[pb.CloudQueuedPublish], Awaitable[None]] | None
 
-    def __init__(self, config: RuntimeConfig, state: RuntimeState, serial: SerialTransport) -> None:
+    def __init__(
+        self,
+        config: RuntimeConfig,
+        state: RuntimeState,
+        serial: SerialTransport,
+        *,
+        cloud_publisher: Callable[[pb.CloudQueuedPublish], Awaitable[None]] | None = None,
+        handshake: SerialHandshakeManager | None = None,
+    ) -> None:
         self.config, self.state, self.serial = config, state, serial
+        self._cloud_publisher = cloud_publisher
         self._cloud_channel, self._cloud_stream = None, None
         self.watchdog: WatchdogKeepalive | None = None
         self.ipc_requests = {}
@@ -166,7 +176,7 @@ class BridgeService:
         self.gpio = GpioService(self)
         self._tg = None
 
-        self.handshake = SerialHandshakeManager(
+        self.handshake = handshake or SerialHandshakeManager(
             config=config,
             state=state,
             serial_timing=derive_serial_timing(config),
@@ -248,6 +258,46 @@ class BridgeService:
             FileAction.REMOVE: lambda target, _inb: self.safe_file_remove(target),
         }
 
+    @property
+    def cloud_stream(self) -> Any | None:
+        """Return the active gRPC cloud stream handle."""
+        return self._cloud_stream
+
+    @cloud_stream.setter
+    def cloud_stream(self, stream: Any | None) -> None:
+        """Set or update the active gRPC cloud stream handle."""
+        self._cloud_stream = stream
+
+    @property
+    def cloud_spool(self) -> Any | None:
+        """Return the active cloud spool storage."""
+        return self._cloud_spool
+
+    @cloud_spool.setter
+    def cloud_spool(self, spool: Any | None) -> None:
+        """Set the active cloud spool storage."""
+        self._cloud_spool = spool
+
+    @property
+    def pending_mcu_read(self) -> Any | None:
+        """Return the pending MCU read operation."""
+        return self._pending_mcu_read
+
+    @pending_mcu_read.setter
+    def pending_mcu_read(self, val: Any | None) -> None:
+        """Set the pending MCU read operation."""
+        self._pending_mcu_read = val
+
+    @property
+    def cloud_publisher(self) -> Callable[[pb.CloudQueuedPublish], Awaitable[None]] | None:
+        """Return the injected cloud publisher callback."""
+        return self._cloud_publisher
+
+    @cloud_publisher.setter
+    def cloud_publisher(self, publisher: Callable[[pb.CloudQueuedPublish], Awaitable[None]] | None) -> None:
+        """Set the injected cloud publisher callback."""
+        self._cloud_publisher = publisher
+
     async def send_mcu_ok(self, payload: bytes | ProtobufMessage = b"") -> bool:
         return bool(self.serial and await self.serial.send(Status.OK.value, payload))
 
@@ -308,6 +358,10 @@ class BridgeService:
         if Topic.CONSOLE in resolved_message.topic_name:
             for q in list(self.console_queues):
                 q.put_nowait(resolved_message)
+
+        if self._cloud_publisher is not None:
+            await self._cloud_publisher(resolved_message)
+            return
 
         if not self.config.cloud_enabled:
             return

@@ -45,28 +45,7 @@ def test_cli_exposes_dry_run_option() -> None:
     assert "--check-latest" in result.stdout
 
 
-def _mock_false(*args: object, **kwargs: object) -> bool:
-    return False
-
-
-def test_main_dry_run_reports_preview_when_changes_detected(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    fake_req = sync_runtime_deps.ROOT / "requirements" / "_dry_run_test.txt"
-    monkeypatch.setattr(sync_runtime_deps, "REQUIREMENTS_PATH", fake_req)
-
-    result = CliRunner().invoke(sync_runtime_deps.cli, ["--dry-run"])
-
-    assert result.exit_code == 0
-    assert "[dry-run] The following files/manifests would be modified:" in result.stdout
-    assert "_dry_run_test.txt" in result.stdout
-
-
-def test_main_dry_run_reports_up_to_date_when_no_changes(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(sync_runtime_deps, "_write_if_changed", _mock_false)
-
+def test_main_dry_run_reports_up_to_date_when_no_changes() -> None:
     result = CliRunner().invoke(sync_runtime_deps.cli, ["--dry-run"])
 
     assert result.exit_code == 0

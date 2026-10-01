@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import mcubridge.protocol.mcubridge_pb2 as pb
@@ -11,7 +12,6 @@ from mcubridge.protocol.protocol import Command
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.transport.serial import SerialTransport
-from pytest_mock import MockerFixture
 
 
 def _make_config() -> RuntimeConfig:
@@ -33,19 +33,24 @@ def runtime_setup() -> tuple[BridgeService, RuntimeState, AsyncMock]:
 
 @pytest.mark.asyncio
 async def test_on_serial_connected_and_disconnected(
-    runtime_setup: tuple[BridgeService, RuntimeState, AsyncMock], mocker: MockerFixture
+    runtime_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
-    service, state, _serial = runtime_setup
+    service, state, serial = runtime_setup
+    serial.send.return_value = pb.VersionResponse(major=1, minor=0, patch=0)
 
-    async def _mock_sync() -> None:
-        state.connection_fsm.synchronize()
+    class FakeHandshake:
+        async def synchronize(self) -> None:
+            state.connection_fsm.synchronize()
 
-    mocker.patch.object(service.handshake, "synchronize", side_effect=_mock_sync)
-    mocker.patch.object(service, "_request_mcu_version", new_callable=AsyncMock)
-    mocker.patch.object(service, "_flush_console_queue", new_callable=AsyncMock)
+        def clear_handshake_expectations(self) -> None:
+            pass
+
+    service.handshake = cast(Any, FakeHandshake())
 
     await service.on_serial_connected()
     assert state.is_connected is True
+    assert state.is_synchronized is True
+    assert state.mcu_version == (1, 0, 0)
 
     await service.on_serial_disconnected()
     assert state.is_disconnected is True
@@ -67,7 +72,6 @@ async def test_handle_mcu_frame_handshake_routing(
     service, _state, _serial = runtime_setup
     mock_sync_resp = AsyncMock(return_value=True)
     service.mcu_registry[Command.CMD_LINK_SYNC_RESP.value] = mock_sync_resp
-    setattr(service.handshake, "handle_link_sync_resp", mock_sync_resp)
 
     sync_pb = pb.LinkSync(nonce=b"123456789012", tag=b"tag")
     await service.handle_mcu_frame(Command.CMD_LINK_SYNC_RESP.value, 1, sync_pb.SerializeToString())
@@ -76,7 +80,7 @@ async def test_handle_mcu_frame_handshake_routing(
 
 @pytest.mark.asyncio
 async def test_handle_mcu_frame_rpc_handlers(
-    runtime_setup: tuple[BridgeService, RuntimeState, AsyncMock], mocker: MockerFixture
+    runtime_setup: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, state, serial = runtime_setup
     state.connection_fsm.connect()
@@ -84,12 +88,13 @@ async def test_handle_mcu_frame_rpc_handlers(
     serial.send.return_value = True
 
     # 1. MCU Mailbox Push (triggers enqueue_cloud_publish & acknowledge)
-    mock_enqueue = mocker.patch.object(service, "enqueue_cloud_publish", new_callable=AsyncMock)
+    mock_pub = AsyncMock()
+    service.cloud_publisher = mock_pub
     mock_incoming = AsyncMock()
     state.mailbox_incoming_queue = mock_incoming
     req_mb = pb.MailboxPush(data=b"test_payload")
     await service.handle_mcu_frame(Command.CMD_MAILBOX_PUSH.value, 10, req_mb.SerializeToString())
-    mock_enqueue.assert_awaited()
+    mock_pub.assert_awaited()
     serial.acknowledge.assert_awaited_once_with(Command.CMD_MAILBOX_PUSH.value, 10)
     mock_incoming.append.assert_awaited_once_with(b"test_payload")
 
@@ -104,10 +109,10 @@ async def test_handle_mcu_frame_rpc_handlers(
     mock_cache.set.assert_awaited_once_with("temp", b"25.5")
 
     # 3. SPI Transfer Response
-    mock_enqueue.reset_mock()
+    mock_pub.reset_mock()
     spi_resp = pb.SpiTransferResponse(data=b"\x01\x02")
     await service.handle_mcu_frame(Command.CMD_SPI_TRANSFER_RESP.value, 12, spi_resp.SerializeToString())
-    mock_enqueue.assert_awaited()
+    mock_pub.assert_awaited()
 
 
 @pytest.mark.asyncio

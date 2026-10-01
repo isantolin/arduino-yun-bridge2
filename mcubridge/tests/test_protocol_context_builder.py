@@ -1,19 +1,16 @@
 from __future__ import annotations
 
-import sys
-
-import pytest
 from packaging.version import Version
 
 from mcubridge.protocol import mcubridge_pb2
 from tools.protocol import generate
 
 
-def test_build_protocol_context_contains_template_data(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setitem(sys.modules, "mcubridge_pb2", mcubridge_pb2)
-    spec = generate.load_spec_from_proto(generate.REPO_ROOT / "tools" / "protocol" / "mcubridge.proto")
+def test_build_protocol_context_contains_template_data() -> None:
+    spec = generate.load_spec_from_proto(
+        generate.REPO_ROOT / "tools" / "protocol" / "mcubridge.proto",
+        pb_module=mcubridge_pb2,
+    )
     version = Version(generate.VERSION_PATH.read_text(encoding="utf-8").strip())
 
     context = generate.build_protocol_context(spec, str(version))

@@ -231,12 +231,14 @@ def _load_runtime_config_fields(file_desc: Any, pb_module: Any) -> list[ConfigFi
     return runtime_config_fields
 
 
-def load_spec_from_proto(proto_path: Path) -> ProtocolSpec:
-    proto_dir = str(proto_path.parent)
-    if proto_dir not in sys.path:
-        sys.path.insert(0, proto_dir)
-
-    mcubridge_pb2 = importlib.import_module("mcubridge_pb2")
+def load_spec_from_proto(proto_path: Path, pb_module: Any = None) -> ProtocolSpec:
+    if pb_module is not None:
+        mcubridge_pb2 = pb_module
+    else:
+        proto_dir = str(proto_path.parent)
+        if proto_dir not in sys.path:
+            sys.path.insert(0, proto_dir)
+        mcubridge_pb2 = importlib.import_module("mcubridge_pb2")
     file_desc = mcubridge_pb2.DESCRIPTOR
     options = file_desc.GetOptions()
 

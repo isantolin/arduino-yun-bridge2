@@ -41,7 +41,7 @@ async def test_pure_telemetry_push_mode(test_config: RuntimeConfig, mock_bridge_
 
     # Verify telemetry publication works directly via cloud stream
     stream_mock = AsyncMock()
-    setattr(svc, "_cloud_stream", stream_mock)
+    svc.cloud_stream = stream_mock
 
     metrics = pb.DaemonMetrics(cloud_queue_depth=0, cloud_dropped_messages=10)
     msg = pb.CloudQueuedPublish(

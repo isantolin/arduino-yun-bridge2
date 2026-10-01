@@ -105,7 +105,7 @@ async def test_publish_cloud_message_wraps_command_response(
     """Validate that _publish_cloud_message builds pb.CommandResponse envelope when correlation_data is present."""
     svc, _state, _, _, _ = _make_service()
     stream_mock = AsyncMock()
-    setattr(svc, "_cloud_stream", stream_mock)
+    svc.cloud_stream = stream_mock
 
     msg = pb.CloudQueuedPublish(
         topic_name=f"br/{Topic.DIGITAL.value}/13/response",

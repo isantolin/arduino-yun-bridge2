@@ -454,19 +454,16 @@ async def test_ubus_service_run_loop(mock_runtime: MockRuntimeFacade, mocker: Mo
         loop_called += 1
 
     mock_ubus.loop = fake_loop
-    mocker.patch.object(ubus_mod, "ubus", mock_ubus)
-
-    service = UbusService(mock_runtime)
+    service = UbusService(mock_runtime, ubus_module=mock_ubus)
     # When not active, run returns immediately
     await service.run()
     assert loop_called == 0
 
-    setattr(service, "_conn", MagicMock())
-    setattr(service, "_is_active", True)
+    service.connection = MagicMock()
 
     async def cancel_soon() -> None:
         await asyncio.sleep(0.02)
-        setattr(service, "_is_active", False)
+        service.is_active = False
 
     async with asyncio.TaskGroup() as tg:
         tg.create_task(service.run())
@@ -537,8 +534,7 @@ def test_ubus_service_notify_branches(mock_runtime: MockRuntimeFacade, mocker: M
     assert service.notify("test", {"a": 1}) is False
 
     mock_conn = MagicMock()
-    setattr(service, "_conn", mock_conn)
-    setattr(service, "_is_active", True)
+    service.connection = mock_conn
 
     # Successful notification
     assert service.notify("sync", {"status": "ok"}) is True
@@ -550,34 +546,31 @@ def test_ubus_service_notify_branches(mock_runtime: MockRuntimeFacade, mocker: M
 
     # Fallback to ubus.send when _conn has no send
     mock_ubus = MagicMock(spec=["send"])
-    mocker.patch("mcubridge.services.ubus.ubus", mock_ubus)
-    setattr(service, "_conn", object())
-    assert service.notify("sync", {"status": "ok"}) is True
+    service_fb = UbusService(mock_runtime, ubus_module=mock_ubus)
+    service_fb.connection = object()
+    assert service_fb.notify("sync", {"status": "ok"}) is True
     mock_ubus.send.assert_called_once_with("mcubridge.sync", {"status": "ok"})
 
     # Fallback when neither _conn nor ubus has send method
-    mocker.patch("mcubridge.services.ubus.ubus", MagicMock(spec=[]))
-    setattr(service, "_conn", object())
-    assert service.notify("sync", {"status": "ok"}) is True
+    service_no_send = UbusService(mock_runtime, ubus_module=MagicMock(spec=[]))
+    service_no_send.connection = object()
+    assert service_no_send.notify("sync", {"status": "ok"}) is True
 
 
-def test_ubus_service_register_methods_fallback(mock_runtime: MockRuntimeFacade, mocker: MockerFixture) -> None:
+def test_ubus_service_register_methods_fallback(mock_runtime: MockRuntimeFacade) -> None:
     mock_ubus = MagicMock(spec=["add"])
-    mocker.patch("mcubridge.services.ubus.ubus", mock_ubus)
-    service = UbusService(mock_runtime)
-    setattr(service, "_conn", object())
-    setattr(service, "_is_active", True)
+    service = UbusService(mock_runtime, ubus_module=mock_ubus)
+    service.connection = object()
     service.register_methods()
     assert mock_ubus.add.called
 
 
-def test_ubus_service_stop_branches(mock_runtime: MockRuntimeFacade, mocker: MockerFixture) -> None:
+def test_ubus_service_stop_branches(mock_runtime: MockRuntimeFacade) -> None:
     service = UbusService(mock_runtime)
 
     # 1. Conn with disconnect only (no close)
     mock_conn1 = MagicMock(spec=["disconnect"])
-    setattr(service, "_conn", mock_conn1)
-    setattr(service, "_is_active", True)
+    service.connection = mock_conn1
     service.stop()
     assert not service.is_active
     assert service.connection is None
@@ -586,29 +579,26 @@ def test_ubus_service_stop_branches(mock_runtime: MockRuntimeFacade, mocker: Moc
     # 2. Conn raising error during disconnect
     mock_conn2 = MagicMock(spec=["close"])
     mock_conn2.close.side_effect = RuntimeError("close failed")
-    setattr(service, "_conn", mock_conn2)
-    setattr(service, "_is_active", True)
+    service.connection = mock_conn2
     service.stop()
     assert not service.is_active
     assert service.connection is None
 
     # 3. Conn without close/disconnect falls back to ubus.disconnect
     mock_ubus_disc = MagicMock(spec=["disconnect"])
-    mocker.patch("mcubridge.services.ubus.ubus", mock_ubus_disc)
-    setattr(service, "_conn", object())
-    setattr(service, "_is_active", True)
-    service.stop()
-    assert not service.is_active
-    assert service.connection is None
+    service_disc = UbusService(mock_runtime, ubus_module=mock_ubus_disc)
+    service_disc.connection = object()
+    service_disc.stop()
+    assert not service_disc.is_active
+    assert service_disc.connection is None
     assert mock_ubus_disc.disconnect.called
 
     # 4. Conn without close/disconnect and ubus without disconnect
-    mocker.patch("mcubridge.services.ubus.ubus", MagicMock(spec=[]))
-    setattr(service, "_conn", object())
-    setattr(service, "_is_active", True)
-    service.stop()
-    assert not service.is_active
-    assert service.connection is None
+    service_empty = UbusService(mock_runtime, ubus_module=MagicMock(spec=[]))
+    service_empty.connection = object()
+    service_empty.stop()
+    assert not service_empty.is_active
+    assert service_empty.connection is None
 
 
 def test_ubus_handle_clock_status_and_sync(mock_runtime: MockRuntimeFacade) -> None:
@@ -726,9 +716,8 @@ async def test_ubus_run_coro_sync_same_loop(mock_runtime: MockRuntimeFacade, moc
         coro.close()
 
 
-def test_ubus_register_methods_no_add(mock_runtime: MockRuntimeFacade, mocker: MockerFixture) -> None:
-    service = UbusService(mock_runtime)
-    setattr(service, "_conn", object())
-    mocker.patch("mcubridge.services.ubus.ubus", object())
+def test_ubus_register_methods_no_add(mock_runtime: MockRuntimeFacade) -> None:
+    service = UbusService(mock_runtime, ubus_module=object())
+    service.connection = object()
     service.register_methods()
     assert service.connection is not None

@@ -1,12 +1,9 @@
-import importlib
-import sys
 import types
 from typing import Any
 from unittest.mock import MagicMock
 
 from mcubridge.config import common
 from mcubridge.protocol import protocol
-from pytest_mock import MockerFixture
 
 
 def test_get_default_config_matches_constants():
@@ -21,7 +18,7 @@ def test_get_default_config_matches_constants():
     assert config["serial_response_timeout"] == protocol.DEFAULT_SERIAL_RESPONSE_TIMEOUT
 
 
-def test_get_uci_config_preserves_types(mocker: MockerFixture):
+def test_get_uci_config_preserves_types():
     payload = {
         ".name": "general",
         ".type": "mcubridge",
@@ -41,10 +38,7 @@ def test_get_uci_config_preserves_types(mocker: MockerFixture):
         UciException=RuntimeError,
     )
 
-    mocker.patch.dict(sys.modules, {"uci": module})
-    importlib.reload(common)
-
-    config = common.get_uci_config()
+    config = common.get_uci_config(uci_module=module)
 
     assert config["serial_port"] == "uci-port"
     # Raw tuple preserved in raw reader
@@ -52,7 +46,7 @@ def test_get_uci_config_preserves_types(mocker: MockerFixture):
     assert config["cloud_queue_limit"] == 42
 
 
-def test_get_uci_config_falls_back_on_errors(mocker: MockerFixture):
+def test_get_uci_config_falls_back_on_errors():
     mock_cursor = MagicMock()
     mock_cursor.__enter__.return_value = mock_cursor
     mock_cursor.get_all.side_effect = OSError("boom")
@@ -61,30 +55,6 @@ def test_get_uci_config_falls_back_on_errors(mocker: MockerFixture):
         UCI=MagicMock(return_value=mock_cursor),
         UciException=OSError,
     )
-    mocker.patch.dict(sys.modules, {"uci": module})
-    importlib.reload(common)
 
-    fallback_called = False
-
-    def fake_default() -> dict[str, Any]:
-        nonlocal fallback_called
-        fallback_called = True
-        return {
-            "serial_port": "default",
-            "serial_baud": protocol.DEFAULT_BAUDRATE,
-            "serial_safe_baud": protocol.DEFAULT_SAFE_BAUDRATE,
-            "serial_retry_attempts": 5,
-            "serial_retry_timeout": 10.0,
-            "serial_response_timeout": 20.0,
-            "cloud_host": "127.0.0.1",
-            "cloud_port": 1883,
-            "debug": False,
-        }
-
-    mocker.patch.object(common, "get_default_config", side_effect=fake_default)
-
-    config = common.get_uci_config()
-
-    assert fallback_called
-    assert config["serial_port"] == "default"
-    assert config["serial_baud"] == protocol.DEFAULT_BAUDRATE
+    config = common.get_uci_config(uci_module=module)
+    assert config == common.get_default_config()

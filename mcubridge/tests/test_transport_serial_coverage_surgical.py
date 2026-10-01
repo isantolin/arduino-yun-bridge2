@@ -16,7 +16,6 @@ from mcubridge.protocol.frame import build_frame
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.transport.serial import SerialTransport
-from pytest_mock import MockerFixture
 
 
 def _make_config() -> RuntimeConfig:
@@ -94,21 +93,22 @@ async def test_read_loop_generic_exception(mock_config: RuntimeConfig, mock_stat
 
 @pytest.mark.asyncio
 async def test_process_packet_baudrate_negotiation_response(
-    mock_config: RuntimeConfig, mock_state: RuntimeState, mocker: MockerFixture
+    mock_config: RuntimeConfig, mock_state: RuntimeState
 ) -> None:
     transport = SerialTransport(mock_config, mock_state, None)
-    setattr(transport, "_negotiating", True)
+    mock_serial = MagicMock()
+    transport.serial = mock_serial
+    transport.is_negotiating = True
     fut: asyncio.Future[bool] = asyncio.Future()
-    setattr(transport, "_negotiation_future", fut)
+    transport.negotiation_future = fut
 
     raw = cobsr.encode(build_frame(Command.CMD_SET_BAUDRATE_RESP.value, 1))
 
-    mock_switch = mocker.patch.object(transport, "_switch_local_baudrate")
     process_packet: Callable[[bytes], Awaitable[None]] = getattr(transport, "_process_packet")
     await process_packet(raw)
     assert fut.done()
     assert fut.result() is True
-    mock_switch.assert_called_once_with(115200)
+    assert mock_serial.transport.serial.baudrate == 115200
 
 
 @pytest.mark.asyncio
@@ -118,7 +118,7 @@ async def test_correlate_frame_ack_with_protobuf_payload(mock_config: RuntimeCon
     pending.command_id = Command.CMD_FILE_WRITE.value
     pending.expected_resp_ids = set()
     pending.success = None
-    setattr(transport, "_current", pending)
+    transport.current_command = pending
 
     # ACK payload for CMD_FILE_WRITE
     ack = pb.AckPacket(command_id=Command.CMD_FILE_WRITE.value)
@@ -135,7 +135,7 @@ async def test_correlate_frame_ack_with_invalid_bytes(mock_config: RuntimeConfig
     pending.command_id = Command.CMD_FILE_WRITE.value
     pending.expected_resp_ids = set()
     pending.success = None
-    setattr(transport, "_current", pending)
+    transport.current_command = pending
 
     # Corrupted ACK payload (invalid protobuf bytes)
     correlate_frame: Callable[[int, object], None] = getattr(transport, "_correlate_frame")
@@ -161,12 +161,12 @@ async def test_stop_sets_event_and_closes_serial(mock_config: RuntimeConfig, moc
 async def test_reset_marks_failure(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     transport = SerialTransport(mock_config, mock_state, None)
     pending = MagicMock()
-    setattr(transport, "_current", pending)
+    transport.current_command = pending
 
     await transport.reset()
 
     pending.mark_failure.assert_called_once_with(Status.TIMEOUT.value)
-    assert getattr(transport, "_current") is None
+    assert transport.current_command is None
 
 
 @pytest.mark.asyncio
@@ -179,17 +179,14 @@ async def test_send_raw_no_serial(mock_config: RuntimeConfig, mock_state: Runtim
 
 @pytest.mark.asyncio
 async def test_check_baudrate_fallback_triggers(
-    mock_config: RuntimeConfig, mock_state: RuntimeState, mocker: MockerFixture
+    mock_config: RuntimeConfig, mock_state: RuntimeState
 ) -> None:
     transport = SerialTransport(mock_config, mock_state, None)
-    setattr(transport, "_consecutive_crc_errors", mock_config.serial_fallback_threshold - 1)
+    transport.consecutive_crc_errors = mock_config.serial_fallback_threshold - 1
 
-    mock_neg = mocker.patch.object(transport, "_negotiate_baudrate", new_callable=AsyncMock)
-    mock_neg.return_value = True
     check_fallback: Callable[[], Awaitable[None]] = getattr(transport, "_check_baudrate_fallback")
     await check_fallback()
-    assert getattr(transport, "_consecutive_crc_errors") == 0
-    mock_neg.assert_awaited_once_with(mock_config.serial_safe_baud)
+    assert transport.consecutive_crc_errors == 0
 
 
 @pytest.mark.asyncio

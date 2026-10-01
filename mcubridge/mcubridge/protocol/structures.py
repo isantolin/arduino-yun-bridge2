@@ -293,14 +293,18 @@ def resolve_cloud_context(message: pb.CloudQueuedPublish, context: Any | None) -
     newpb_obj.CopyFrom(message)
 
     props = getattr(context, "properties", None)
-    if (rt := getattr(context, "response_topic", None)) is None and props:
+    has_rt = context.HasField("response_topic") if hasattr(context, "HasField") else bool(getattr(context, "response_topic", None))
+    rt = getattr(context, "response_topic", None) if has_rt else None
+    if not rt and props:
         rt = getattr(props, "ResponseTopic", None)
-    if rt is not None:
+    if rt:
         newpb_obj.topic_name = str(rt)
 
-    if (cd := getattr(context, "correlation_data", None)) is None and props:
+    has_cd = context.HasField("correlation_data") if hasattr(context, "HasField") else bool(getattr(context, "correlation_data", None))
+    cd = getattr(context, "correlation_data", None) if has_cd else None
+    if not cd and props:
         cd = getattr(props, "CorrelationData", None)
-    if cd is not None:
+    if cd:
         newpb_obj.correlation_data = bytes(cd)
 
     if req_topic := getattr(context, "topic", None):

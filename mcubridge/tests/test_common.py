@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import importlib
 import types
 from unittest.mock import MagicMock
 
 from mcubridge.config import common
 from mcubridge.protocol import protocol
 from mcubridge.protocol.structures import create_allowed_policy
-from pytest_mock import MockerFixture
 
 
 def test_normalise_commands() -> None:
@@ -22,7 +20,7 @@ def test_normalise_commands() -> None:
     assert tuple(policy.entries) == ("cmd1", "cmd2")
 
 
-def test_get_uci_config_success(mocker: MockerFixture) -> None:
+def test_get_uci_config_success() -> None:
     """Test successful UCI read."""
     mock_module = MagicMock()
     mock_module.UciException = Exception
@@ -39,16 +37,14 @@ def test_get_uci_config_success(mocker: MockerFixture) -> None:
         "cloud_port": "1883",
     }
 
-    mocker.patch.dict("sys.modules", {"uci": mock_module})
-    importlib.reload(common)
-    config = common.get_uci_config()
+    config = common.get_uci_config(uci_module=mock_module)
     assert config["cloud_host"] == "127.0.0.1"
     assert config["debug"] == "1"
     # Ensure other defaults are present
     assert "serial_port" in config
 
 
-def test_get_uci_config_missing_section_returns_defaults(mocker: MockerFixture) -> None:
+def test_get_uci_config_missing_section_returns_defaults() -> None:
     mock_module = MagicMock()
     mock_module.UciException = Exception
     mock_module.UCI = mock_module.Uci
@@ -57,21 +53,17 @@ def test_get_uci_config_missing_section_returns_defaults(mocker: MockerFixture) 
 
     mock_cursor.get_all.return_value = {}
 
-    mocker.patch.dict("sys.modules", {"uci": mock_module})
-    importlib.reload(common)
-    config = common.get_uci_config()
+    config = common.get_uci_config(uci_module=mock_module)
     assert config == common.get_default_config()
 
 
-def test_get_uci_config_without_uci_class_returns_defaults(mocker: MockerFixture) -> None:
+def test_get_uci_config_without_uci_class_returns_defaults() -> None:
     fake_module = types.ModuleType("uci")
-    mocker.patch.dict("sys.modules", {"uci": fake_module})
-    importlib.reload(common)
-    config = common.get_uci_config()
+    config = common.get_uci_config(uci_module=fake_module)
     assert config == common.get_default_config()
 
 
-def test_get_uci_config_without_get_all_returns_defaults(mocker: MockerFixture) -> None:
+def test_get_uci_config_without_get_all_returns_defaults() -> None:
     mock_uci_context = MagicMock()
     mock_cursor = MagicMock(spec=[])  # Has no get_all
     mock_uci_context.__enter__.return_value = mock_cursor
@@ -82,13 +74,11 @@ def test_get_uci_config_without_get_all_returns_defaults(mocker: MockerFixture) 
     fake_module = types.ModuleType("uci")
     setattr(fake_module, "Uci", mock_uci_class)
 
-    mocker.patch.dict("sys.modules", {"uci": fake_module})
-    importlib.reload(common)
-    config = common.get_uci_config()
+    config = common.get_uci_config(uci_module=fake_module)
     assert config == common.get_default_config()
 
 
-def test_get_uci_config_skips_internal_keys(mocker: MockerFixture) -> None:
+def test_get_uci_config_skips_internal_keys() -> None:
     mock_module = MagicMock()
     mock_module.UciException = Exception
     mock_module.UCI = mock_module.Uci
@@ -103,9 +93,7 @@ def test_get_uci_config_skips_internal_keys(mocker: MockerFixture) -> None:
         "serial_port": "/dev/ttyATH0",
         "cloud_port": "1883",
     }
-    mocker.patch.dict("sys.modules", {"uci": mock_module})
-    importlib.reload(common)
-    config = common.get_uci_config()
+    config = common.get_uci_config(uci_module=mock_module)
     # Raw list preserved in the raw reader; flattening happens in settings.load_runtime_config
     assert config["cloud_host"] == ["example.com", 1883]
     assert config["cloud_tls"] == 0

@@ -151,6 +151,56 @@ class SerialTransport:
         self._response_timeout = max(self.config.serial_response_timeout or 0, self._ack_timeout)
         self._max_attempts = max(1, self.config.serial_retry_attempts or 1)
 
+    @property
+    def tx_sequence_id(self) -> int:
+        """Return the current outbound serial sequence ID."""
+        return self._tx_sequence_id
+
+    @tx_sequence_id.setter
+    def tx_sequence_id(self, val: int) -> None:
+        """Set outbound serial sequence ID."""
+        self._tx_sequence_id = val & protocol.UINT16_MAX
+
+    @property
+    def is_negotiating(self) -> bool:
+        """Return whether baudrate negotiation is actively in progress."""
+        return self._negotiating
+
+    @is_negotiating.setter
+    def is_negotiating(self, val: bool) -> None:
+        """Set whether baudrate negotiation is actively in progress."""
+        self._negotiating = bool(val)
+
+    @property
+    def negotiation_future(self) -> asyncio.Future[bool] | None:
+        """Return the active baudrate negotiation future."""
+        return self._negotiation_future
+
+    @negotiation_future.setter
+    def negotiation_future(self, fut: asyncio.Future[bool] | None) -> None:
+        """Set the active baudrate negotiation future."""
+        self._negotiation_future = fut
+
+    @property
+    def current_command(self) -> Any | None:
+        """Return the active pending serial command."""
+        return self._current
+
+    @current_command.setter
+    def current_command(self, cmd: Any | None) -> None:
+        """Set the active pending serial command."""
+        self._current = cmd
+
+    @property
+    def consecutive_crc_errors(self) -> int:
+        """Return the consecutive CRC errors count."""
+        return self._consecutive_crc_errors
+
+    @consecutive_crc_errors.setter
+    def consecutive_crc_errors(self, count: int) -> None:
+        """Set the consecutive CRC errors count."""
+        self._consecutive_crc_errors = max(0, int(count))
+
     class _RetryableSerialError(Exception):
         """Marker exception to request another send attempt."""
 

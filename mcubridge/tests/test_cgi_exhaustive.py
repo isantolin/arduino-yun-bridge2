@@ -14,9 +14,6 @@ from unittest.mock import MagicMock
 import pytest
 from pytest_mock import MockerFixture
 
-# Mock 'uci' before importing pin_rest_cgi
-uci_mock = types.ModuleType("uci")
-sys.modules["uci"] = uci_mock
 
 # Dynamically import pin_rest_cgi
 script_path = Path(__file__).parent.parent / "scripts" / "pin_rest_cgi.py"

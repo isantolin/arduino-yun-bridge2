@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
@@ -235,7 +236,7 @@ def test_cli_main_invocation(mocker: MockerFixture) -> None:
     assert result.exit_code == 0
 
 
-def test_cli_main_keyboard_interrupt(mocker: MockerFixture) -> None:
+def test_cli_main_keyboard_interrupt(mocker: MockerFixture, caplog: pytest.LogCaptureFixture) -> None:
     runner = CliRunner()
 
     mock_runner_instance = MagicMock()
@@ -249,12 +250,11 @@ def test_cli_main_keyboard_interrupt(mocker: MockerFixture) -> None:
     mock_runner_instance.__enter__ = MagicMock(return_value=mock_runner_instance)
     mock_runner_instance.__exit__ = MagicMock(return_value=False)
 
-    mock_logger_info = MagicMock()
+    caplog.set_level(logging.INFO)
     mocker.patch("asyncio.Runner", return_value=mock_runner_instance)
-    mocker.patch("gateway.logger.info", mock_logger_info)
     result = runner.invoke(cast(Any, app), ["--no-tls", "--http3"])
     assert result.exit_code == 0
-    mock_logger_info.assert_called_once_with("Gateway terminated by user.")
+    assert "Gateway terminated by user." in caplog.text
 
 
 @pytest.mark.asyncio
@@ -677,7 +677,7 @@ def test_tsdb_sink_post_line_edge_paths(mocker: MockerFixture) -> None:
 
 
 @pytest.mark.asyncio
-async def test_tsdb_sink_ingest_telemetry_edge_paths(mocker: MockerFixture) -> None:
+async def test_tsdb_sink_ingest_telemetry_edge_paths() -> None:
     # 1. Disabled sink returns early
     sink_disabled = TSDBSink(endpoint_url=None)
     assert not sink_disabled.enabled
@@ -687,10 +687,11 @@ async def test_tsdb_sink_ingest_telemetry_edge_paths(mocker: MockerFixture) -> N
     # 2. Corrupted metrics blob caught and logged
     sink = TSDBSink(endpoint_url="http://localhost:8428/write")
     assert sink.enabled
-    mock_post = mocker.patch.object(sink, "_post_line")
+    mock_opener = MagicMock()
+    sink.opener = mock_opener
     envelope_corrupt = pb.CloudEnvelope(telemetry=pb.TelemetryReport(daemon_metrics_blob=b"\xff\xff\xff"))
     await sink.ingest_telemetry("dev1", envelope_corrupt)
-    mock_post.assert_not_called()
+    mock_opener.open.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -768,8 +769,11 @@ async def test_session_disconnect_aborts_pending_commands_with_edge_branches(
     # Mock stream raising CancelledError immediately
     mock_stream = AsyncMock()
     mock_stream.__aiter__.side_effect = asyncio.CancelledError()
+    mock_peer = MagicMock()
+    mock_peer.cert.return_value = {"subject": [[("commonName", "disc-dev")]]}
+    mock_stream.peer = mock_peer
+    mock_stream.metadata = {}
 
-    mocker.patch("gateway.extract_peer_identity", return_value=("disc-dev", True))
     with pytest.raises(asyncio.CancelledError):
         await svc.Session(mock_stream)
 
@@ -1209,14 +1213,16 @@ async def test_protobuf_gateway_reflection_services() -> None:
 
 
 @pytest.mark.asyncio
-async def test_gateway_session_cancelled(mocker: MockerFixture) -> None:
+async def test_gateway_session_cancelled() -> None:
     gw = ProtobufGateway(use_tls=False)
     svc = CloudBridgeService(gw)
 
     mock_stream = AsyncMock()
     mock_stream.__aiter__.side_effect = asyncio.CancelledError()
-
-    mocker.patch("gateway.extract_peer_identity", return_value=("test-dev", True))
+    mock_peer = MagicMock()
+    mock_peer.cert.return_value = {"subject": [[("commonName", "test-dev")]]}
+    mock_stream.peer = mock_peer
+    mock_stream.metadata = {}
 
     with pytest.raises(asyncio.CancelledError):
         await svc.Session(mock_stream)

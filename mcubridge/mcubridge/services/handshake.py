@@ -187,8 +187,21 @@ class SerialHandshakeManager:
         self._fatal_threshold = max(1, config.serial_handshake_fatal_failures)
         # [SIL-2] Serialize handshake timing as protobuf.
         self._reset_payload = self._timing
+        self.capabilities_delay: float = 2.0
+        self.retry_backoff_base: float = SERIAL_HANDSHAKE_BACKOFF_BASE
+        self.retry_backoff_max: float = SERIAL_HANDSHAKE_BACKOFF_MAX
         self._capabilities_future: asyncio.Future[bytes | ProtobufMessage] | None = None
         self.fsm = HandshakeMachine(listeners=[self])
+
+    @property
+    def capabilities_future(self) -> asyncio.Future[bytes | ProtobufMessage] | None:
+        """Return the active capabilities future."""
+        return self._capabilities_future
+
+    @capabilities_future.setter
+    def capabilities_future(self, fut: asyncio.Future[bytes | ProtobufMessage] | None) -> None:
+        """Set the active capabilities future."""
+        self._capabilities_future = fut
 
     @property
     def fsm_state(self) -> HandshakeState:
@@ -441,7 +454,8 @@ class SerialHandshakeManager:
         return True
 
     async def _fetch_capabilities_with_delay(self) -> None:
-        await asyncio.sleep(2.0)
+        if self.capabilities_delay > 0:
+            await asyncio.sleep(self.capabilities_delay)
         await self._fetch_capabilities()
 
     async def _fetch_capabilities(self) -> bool:
@@ -452,8 +466,8 @@ class SerialHandshakeManager:
         retryer = tenacity.AsyncRetrying(
             stop=tenacity.stop_after_attempt(5),
             wait=tenacity.wait_exponential(
-                multiplier=SERIAL_HANDSHAKE_BACKOFF_BASE,
-                max=SERIAL_HANDSHAKE_BACKOFF_MAX,
+                multiplier=self.retry_backoff_base,
+                max=self.retry_backoff_max,
             ),
             retry=tenacity.retry_if_exception_type(TimeoutError),
             before_sleep=tenacity.before_sleep_log(self._logger, logging.DEBUG),
@@ -468,7 +482,7 @@ class SerialHandshakeManager:
                 raise TimeoutError("Send failed")
 
             try:
-                timeout = max(5.0, (self._timing.response_timeout_ms / 1000.0))
+                timeout = (self._timing.response_timeout_ms / 1000.0) if self._timing.response_timeout_ms > 0 else 5.0
                 async with asyncio.timeout(timeout):
                     payload = await self._capabilities_future
                 self._parse_capabilities(payload)
@@ -559,7 +573,7 @@ class SerialHandshakeManager:
         )
 
     async def _wait_for_link_sync_confirmation(self, nonce: bytes) -> bool:
-        timeout = max(5.0, (self._timing.response_timeout_ms / 1000.0) * 2)
+        timeout = (self._timing.response_timeout_ms / 1000.0) * 2 if self._timing.response_timeout_ms > 0 else 5.0
         try:
             async with asyncio.timeout(timeout):
                 if not self._state.is_synchronized:

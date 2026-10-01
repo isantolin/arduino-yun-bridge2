@@ -548,20 +548,14 @@ async def test_clock_sync_loop_disconnected_branch(mock_bridge_service: BridgeSe
 
 @pytest.mark.asyncio
 async def test_clock_sync_loop_normal_exit_branch(mock_bridge_service: BridgeService) -> None:
-    from collections.abc import Awaitable, Callable
     from mcubridge.services.clock_sync import ClockSyncService
 
     svc = mock_bridge_service
     clock = ClockSyncService(svc, sync_interval_seconds=0.001)
-    setattr(clock, "_is_running", True)
-
-    async def _stop_loop() -> dict[str, object]:
-        setattr(clock, "_is_running", False)
-        return {"status": "ok"}
-
     svc.state.connection_fsm.connect()
 
-    setattr(clock, "sync_now", _stop_loop)
-    sync_loop_fn: Callable[[], Awaitable[None]] = getattr(clock, "_sync_loop")
-    await sync_loop_fn()
-    assert getattr(clock, "_is_running") is False
+    await clock.start()
+    assert clock.is_running is True
+    await asyncio.sleep(0.01)
+    await clock.stop()
+    assert clock.is_running is False

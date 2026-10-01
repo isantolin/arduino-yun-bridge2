@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 from unittest.mock import AsyncMock
@@ -14,7 +15,6 @@ from mcubridge.protocol.protocol import Command, Status
 from mcubridge.services.runtime import BridgeService, _PendingMcuRead
 from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.transport.serial import SerialTransport
-from pytest_mock import MockerFixture
 
 
 def _make_config() -> RuntimeConfig:
@@ -125,19 +125,19 @@ async def test_on_mcu_mailbox_read_with_content(svc: tuple[BridgeService, Runtim
 
 
 @pytest.mark.asyncio
+@pytest.mark.asyncio
 async def test_on_mcu_mailbox_processed(
-    svc: tuple[BridgeService, RuntimeState, AsyncMock], mocker: MockerFixture
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, state, serial = svc
     serial.send.return_value = True
     p = pb.MailboxProcessed(message_id=1)
     captured: list[pb.CloudQueuedPublish] = []
 
-    async def _cap(msg: pb.CloudQueuedPublish, *args: Any, **kwargs: Any) -> bool:
+    async def _cap(msg: pb.CloudQueuedPublish, *args: Any, **kwargs: Any) -> None:
         captured.append(msg)
-        return True
 
-    mocker.patch.object(service, "enqueue_cloud", side_effect=_cap)
+    service.cloud_publisher = _cap
     on_proc_fn: Callable[..., Awaitable[bool]] = getattr(service, "_on_mcu_mailbox_processed")
     await on_proc_fn(1, p)
     assert len(captured) == 1
@@ -280,7 +280,7 @@ async def test_on_mcu_file_read_resp_accumulates_chunks(svc: tuple[BridgeService
     service, _state, _ = svc
     fut: asyncio.Future[bytes] = asyncio.Future()
     pending = _PendingMcuRead(future=fut, chunks=[])
-    setattr(service, "_pending_mcu_read", pending)
+    service.pending_mcu_read = pending
     p = pb.FileReadResponse(content=b"chunk1")
     on_read_resp: Callable[..., Awaitable[bool]] = getattr(service, "_on_mcu_file_read_resp")
     res = await on_read_resp(1, p)
@@ -294,7 +294,7 @@ async def test_on_mcu_file_read_resp_completes_future(svc: tuple[BridgeService, 
     service, _state, _ = svc
     fut: asyncio.Future[bytes] = asyncio.Future()
     pending = _PendingMcuRead(future=fut, chunks=[b"chunk1"])
-    setattr(service, "_pending_mcu_read", pending)
+    service.pending_mcu_read = pending
     p = pb.FileReadResponse(content=b"")  # EOF
     on_read_resp: Callable[..., Awaitable[bool]] = getattr(service, "_on_mcu_file_read_resp")
     res = await on_read_resp(1, p)
@@ -309,7 +309,7 @@ async def test_on_mcu_file_read_resp_future_already_done(svc: tuple[BridgeServic
     fut: asyncio.Future[bytes] = asyncio.Future()
     fut.set_result(b"prior")
     pending = _PendingMcuRead(future=fut, chunks=[b"chunk1"])
-    setattr(service, "_pending_mcu_read", pending)
+    service.pending_mcu_read = pending
     p = pb.FileReadResponse(content=b"")  # EOF
     on_read_resp: Callable[..., Awaitable[bool]] = getattr(service, "_on_mcu_file_read_resp")
     res = await on_read_resp(1, p)
@@ -328,48 +328,51 @@ async def test_on_mcu_datastore_put_cache_none(svc: tuple[BridgeService, Runtime
 
 
 @pytest.mark.asyncio
-async def test_on_mcu_ack_valid(svc: tuple[BridgeService, RuntimeState, AsyncMock], mocker: MockerFixture) -> None:
+async def test_on_mcu_ack_valid(
+    svc: tuple[BridgeService, RuntimeState, AsyncMock], caplog: pytest.LogCaptureFixture
+) -> None:
     service, _state, _serial = svc
     p = pb.AckPacket(command_id=0x01)
-    mock_debug = mocker.patch("mcubridge.services.runtime.logger.debug")
+    caplog.set_level(logging.DEBUG)
     on_ack: Callable[..., Awaitable[None]] = getattr(service, "_on_mcu_ack")
     await on_ack(1, p)
-    assert mock_debug.called
+    assert "MCU ACK received" in caplog.text
 
 
 @pytest.mark.asyncio
-async def test_on_mcu_ack_raw_bytes(svc: tuple[BridgeService, RuntimeState, AsyncMock], mocker: MockerFixture) -> None:
+async def test_on_mcu_ack_raw_bytes(
+    svc: tuple[BridgeService, RuntimeState, AsyncMock], caplog: pytest.LogCaptureFixture
+) -> None:
     service, _state, _serial = svc
     valid_bytes = pb.AckPacket(command_id=0x02).SerializeToString()
-    mock_debug = mocker.patch("mcubridge.services.runtime.logger.debug")
+    caplog.set_level(logging.DEBUG)
     on_ack: Callable[..., Awaitable[None]] = getattr(service, "_on_mcu_ack")
     await on_ack(1, valid_bytes)
-    assert mock_debug.called
+    assert "MCU ACK received" in caplog.text
 
 
 @pytest.mark.asyncio
 async def test_on_mcu_ack_corrupt_bytes(
-    svc: tuple[BridgeService, RuntimeState, AsyncMock], mocker: MockerFixture
+    svc: tuple[BridgeService, RuntimeState, AsyncMock], caplog: pytest.LogCaptureFixture
 ) -> None:
     service, _state, _serial = svc
-    mock_err = mocker.patch("mcubridge.services.runtime.logger.error")
+    caplog.set_level(logging.ERROR)
     on_ack: Callable[..., Awaitable[None]] = getattr(service, "_on_mcu_ack")
     await on_ack(1, b"\xff\xff\xff")
-    assert mock_err.called
+    assert "Failed to decode MCU ACK packet" in caplog.text
 
 
 @pytest.mark.asyncio
 async def test_handle_mcu_status_ok_no_payload(
-    svc: tuple[BridgeService, RuntimeState, AsyncMock], mocker: MockerFixture
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, state, _serial = svc
     captured: list[pb.CloudQueuedPublish] = []
 
-    async def _cap(msg: pb.CloudQueuedPublish, *args: Any, **kwargs: Any) -> bool:
+    async def _cap(msg: pb.CloudQueuedPublish, *args: Any, **kwargs: Any) -> None:
         captured.append(msg)
-        return True
 
-    mocker.patch.object(service, "enqueue_cloud", side_effect=_cap)
+    service.cloud_publisher = _cap
     handle_status: Callable[..., Awaitable[bool]] = getattr(service, "_handle_mcu_status")
     await handle_status(Status.OK, 1, b"")
     assert len(captured) == 1
@@ -380,16 +383,15 @@ async def test_handle_mcu_status_ok_no_payload(
 
 @pytest.mark.asyncio
 async def test_handle_mcu_status_error_with_generic_response(
-    svc: tuple[BridgeService, RuntimeState, AsyncMock], mocker: MockerFixture
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, state, _serial = svc
     captured: list[pb.CloudQueuedPublish] = []
 
-    async def _cap(msg: pb.CloudQueuedPublish, *args: Any, **kwargs: Any) -> bool:
+    async def _cap(msg: pb.CloudQueuedPublish, *args: Any, **kwargs: Any) -> None:
         captured.append(msg)
-        return True
 
-    mocker.patch.object(service, "enqueue_cloud", side_effect=_cap)
+    service.cloud_publisher = _cap
     p = pb.GenericResponse(status="error", message="hardware fault")
     handle_status: Callable[..., Awaitable[bool]] = getattr(service, "_handle_mcu_status")
     await handle_status(Status.ERROR, 1, p)
@@ -401,16 +403,15 @@ async def test_handle_mcu_status_error_with_generic_response(
 
 @pytest.mark.asyncio
 async def test_handle_mcu_status_error_with_protobuf_message(
-    svc: tuple[BridgeService, RuntimeState, AsyncMock], mocker: MockerFixture
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, state, _serial = svc
     captured: list[pb.CloudQueuedPublish] = []
 
-    async def _cap(msg: pb.CloudQueuedPublish, *args: Any, **kwargs: Any) -> bool:
+    async def _cap(msg: pb.CloudQueuedPublish, *args: Any, **kwargs: Any) -> None:
         captured.append(msg)
-        return True
 
-    mocker.patch.object(service, "enqueue_cloud", side_effect=_cap)
+    service.cloud_publisher = _cap
     p = pb.AckPacket(command_id=0x05)
     handle_status: Callable[..., Awaitable[bool]] = getattr(service, "_handle_mcu_status")
     await handle_status(Status.OK, 1, p)
@@ -422,16 +423,15 @@ async def test_handle_mcu_status_error_with_protobuf_message(
 
 @pytest.mark.asyncio
 async def test_handle_mcu_status_with_hex_payload(
-    svc: tuple[BridgeService, RuntimeState, AsyncMock], mocker: MockerFixture
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, state, _serial = svc
     captured: list[pb.CloudQueuedPublish] = []
 
-    async def _cap(msg: pb.CloudQueuedPublish, *args: Any, **kwargs: Any) -> bool:
+    async def _cap(msg: pb.CloudQueuedPublish, *args: Any, **kwargs: Any) -> None:
         captured.append(msg)
-        return True
 
-    mocker.patch.object(service, "enqueue_cloud", side_effect=_cap)
+    service.cloud_publisher = _cap
     raw = b"\xca\xfe\xba\xbe"
     handle_status: Callable[..., Awaitable[bool]] = getattr(service, "_handle_mcu_status")
     await handle_status(Status.OK, 1, raw)
@@ -443,16 +443,15 @@ async def test_handle_mcu_status_with_hex_payload(
 
 @pytest.mark.asyncio
 async def test_on_mcu_digital_read_resp(
-    svc: tuple[BridgeService, RuntimeState, AsyncMock], mocker: MockerFixture
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, state, _serial = svc
     captured: list[pb.CloudQueuedPublish] = []
 
-    async def _cap(msg: pb.CloudQueuedPublish, *args: Any, **kwargs: Any) -> bool:
+    async def _cap(msg: pb.CloudQueuedPublish, *args: Any, **kwargs: Any) -> None:
         captured.append(msg)
-        return True
 
-    mocker.patch.object(service, "enqueue_cloud", side_effect=_cap)
+    service.cloud_publisher = _cap
     from mcubridge.protocol.structures import PendingPinRequest
 
     req = PendingPinRequest(pin=13, reply_context=None)
@@ -468,16 +467,15 @@ async def test_on_mcu_digital_read_resp(
 
 @pytest.mark.asyncio
 async def test_on_mcu_analog_read_resp(
-    svc: tuple[BridgeService, RuntimeState, AsyncMock], mocker: MockerFixture
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, state, _serial = svc
     captured: list[pb.CloudQueuedPublish] = []
 
-    async def _cap(msg: pb.CloudQueuedPublish, *args: Any, **kwargs: Any) -> bool:
+    async def _cap(msg: pb.CloudQueuedPublish, *args: Any, **kwargs: Any) -> None:
         captured.append(msg)
-        return True
 
-    mocker.patch.object(service, "enqueue_cloud", side_effect=_cap)
+    service.cloud_publisher = _cap
     from mcubridge.protocol.structures import PendingPinRequest
 
     req = PendingPinRequest(pin=2, reply_context=None)
@@ -492,15 +490,14 @@ async def test_on_mcu_analog_read_resp(
 
 
 @pytest.mark.asyncio
-async def test_on_mcu_spi_resp(svc: tuple[BridgeService, RuntimeState, AsyncMock], mocker: MockerFixture) -> None:
+async def test_on_mcu_spi_resp(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
     service, state, _serial = svc
     captured: list[pb.CloudQueuedPublish] = []
 
-    async def _cap(msg: pb.CloudQueuedPublish, *args: Any, **kwargs: Any) -> bool:
+    async def _cap(msg: pb.CloudQueuedPublish, *args: Any, **kwargs: Any) -> None:
         captured.append(msg)
-        return True
 
-    mocker.patch.object(service, "enqueue_cloud", side_effect=_cap)
+    service.cloud_publisher = _cap
     p = pb.SpiTransferResponse(data=b"\xde\xad")
     on_spi_resp: Callable[..., Awaitable[None]] = getattr(service, "_on_mcu_spi_transfer_resp")
     await on_spi_resp(1, p)
@@ -533,29 +530,29 @@ async def test_on_mcu_process_run_async_disallowed(svc: tuple[BridgeService, Run
 
 @pytest.mark.asyncio
 async def test_on_mcu_process_run_async_allowed(
-    svc: tuple[BridgeService, RuntimeState, AsyncMock], mocker: MockerFixture
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, serial = svc
     serial.send.return_value = True
     p = pb.ProcessRunAsync(command="echo hello")
-    mocker.patch.object(service, "run_process", new=AsyncMock(return_value=1234))
     on_run_async: Callable[..., Awaitable[bool]] = getattr(service, "_on_mcu_process_run_async")
     result = await on_run_async(1, p)
     assert result is True
     args = serial.send.call_args[0]
     assert args[0] == Command.CMD_PROCESS_RUN_ASYNC_RESP.value
     assert isinstance(args[1], pb.ProcessRunAsyncResponse)
-    assert args[1].pid == 1234
+    pid = args[1].pid
+    assert pid > 0
+    await service.kill_process(pid)
 
 
 @pytest.mark.asyncio
 async def test_on_mcu_process_run_async_pid_zero(
-    svc: tuple[BridgeService, RuntimeState, AsyncMock], mocker: MockerFixture
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, serial = svc
     serial.send.return_value = True
-    p = pb.ProcessRunAsync(command="echo hello")
-    mocker.patch.object(service, "run_process", new=AsyncMock(return_value=0))
+    p = pb.ProcessRunAsync(command="disallowed_command_xyz_12345")
     on_run_async: Callable[..., Awaitable[bool]] = getattr(service, "_on_mcu_process_run_async")
     result = await on_run_async(1, p)
     assert result is False
@@ -573,13 +570,17 @@ async def test_on_mcu_process_poll_no_serial(svc: tuple[BridgeService, RuntimeSt
 
 @pytest.mark.asyncio
 async def test_on_mcu_process_poll_with_result(
-    svc: tuple[BridgeService, RuntimeState, AsyncMock], mocker: MockerFixture
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
 ) -> None:
     service, _state, serial = svc
     serial.send.return_value = True
-    mock_batch = pb.ProcessPollResponse(finished=True, exit_code=0)
-    p = pb.ProcessPoll(pid=42)
-    mocker.patch.object(service, "poll_process", new=AsyncMock(return_value=mock_batch))
+    pid = await service.run_process("echo hello")
+    assert pid > 0
+    p = pb.ProcessPoll(pid=pid)
     on_poll: Callable[..., Awaitable[bool]] = getattr(service, "_on_mcu_process_poll")
     result = await on_poll(1, p)
     assert result is True
+    args = serial.send.call_args[0]
+    assert args[0] == Command.CMD_PROCESS_POLL_RESP.value
+    assert isinstance(args[1], pb.ProcessPollResponse)
+    await service.kill_process(pid)

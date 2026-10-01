@@ -91,9 +91,9 @@ async def test_tx_sequence_wrapping_isomorphism(init_seq: int) -> None:
     mock_serial.is_open = True
     transport.serial = mock_serial
     state.serial_tx_allowed.set()
-    setattr(transport, "_tx_sequence_id", init_seq)
+    transport.tx_sequence_id = init_seq
     result = await transport.send_raw(0x01, b"")
     assert result is True
     expected_seq = (init_seq + 1) & protocol.UINT16_MAX
-    assert getattr(transport, "_tx_sequence_id") == expected_seq
+    assert transport.tx_sequence_id == expected_seq
     assert mock_serial.write.call_count == 1

@@ -14,14 +14,17 @@ _UCI_PACKAGE: Final[str] = "mcubridge"
 _UCI_SECTION: Final[str] = "general"
 
 
-def get_uci_config() -> dict[str, Any]:
+def get_uci_config(uci_module: Any = None) -> dict[str, Any]:
     """Fetch configuration from OpenWrt UCI system with safe fallbacks.
 
     [SIL-2] Tipado estricto de excepciones y aislamiento de fallos para garantizar
     la integridad del sistema de configuración.
     """
     try:
-        import uci
+        if uci_module is not None:
+            uci = uci_module
+        else:
+            import uci
 
         # [SIL-2] Dynamic class detection to handle library variations
         UciClass = getattr(uci, "Uci", None) or getattr(uci, "UCI", None)

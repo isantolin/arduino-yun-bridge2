@@ -12,7 +12,6 @@ from google.protobuf.message import Message as ProtobufMessage
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.services.handshake import HandshakeState, SerialHandshakeManager, derive_serial_timing
 from mcubridge.state.context import RuntimeState, create_runtime_state
-from pytest_mock import MockerFixture
 
 
 def _make_config() -> RuntimeConfig:
@@ -69,12 +68,12 @@ async def test_synchronize_attempt_send_frame_failure(mock_config: RuntimeConfig
 
 @pytest.mark.asyncio
 async def test_synchronize_attempt_timeout_confirmation(
-    mock_config: RuntimeConfig, mock_state: RuntimeState, mocker: MockerFixture
+    mock_config: RuntimeConfig, mock_state: RuntimeState
 ) -> None:
     mock_send = AsyncMock(return_value=True)
     mgr = _make_handshake_manager(mock_config, mock_state, send_frame=mock_send)
+    mgr._timing.response_timeout_ms = 10
 
-    mocker.patch.object(mgr, "_wait_for_link_sync_confirmation", new_callable=AsyncMock, return_value=False)
     sync_attempt: Callable[[], Awaitable[bool]] = getattr(mgr, "_synchronize_attempt")
     res = await sync_attempt()
     assert res is False
@@ -94,17 +93,14 @@ async def test_fetch_capabilities_send_failure_retries_exhausted(
 
 @pytest.mark.asyncio
 async def test_fetch_capabilities_future_timeout_exception(
-    mock_config: RuntimeConfig, mock_state: RuntimeState, mocker: MockerFixture
+    mock_config: RuntimeConfig, mock_state: RuntimeState
 ) -> None:
     mock_send = AsyncMock(return_value=True)
     mgr = _make_handshake_manager(mock_config, mock_state, send_frame=mock_send)
+    mgr._timing.response_timeout_ms = 1
+    mgr.retry_backoff_base = 0.0
+    mgr.retry_backoff_max = 0.0
 
-    mocker.patch("asyncio.timeout", side_effect=TimeoutError("Simulated timeout"))
-
-    def _zero_wait(_rs: object) -> float:
-        return 0.0
-
-    mocker.patch("tenacity.wait_exponential", return_value=_zero_wait)
     fetch_caps: Callable[[], Awaitable[bool]] = getattr(mgr, "_fetch_capabilities")
     res = await fetch_caps()
     assert res is False
@@ -135,17 +131,16 @@ async def test_handle_link_sync_resp_tag_mismatch(mock_config: RuntimeConfig, mo
 
 @pytest.mark.asyncio
 async def test_handle_link_sync_resp_success(
-    mock_config: RuntimeConfig, mock_state: RuntimeState, mocker: MockerFixture
+    mock_config: RuntimeConfig, mock_state: RuntimeState
 ) -> None:
     mock_ack = AsyncMock()
     mgr = _make_handshake_manager(mock_config, mock_state, acknowledge_frame=mock_ack)
+    mgr.capabilities_delay = 60.0
 
     nonce = b"validnonce1234"
     mock_state.link_handshake_nonce = nonce
     expected_tag = SerialHandshakeManager.calculate_handshake_tag(mock_config.serial_shared_secret, nonce)
     mock_state.link_expected_tag = expected_tag
-
-    mocker.patch.object(mgr, "_fetch_capabilities_with_delay", new_callable=AsyncMock)
 
     payload = pb.LinkSync(nonce=nonce, tag=expected_tag)
     res = await mgr.handle_link_sync_resp(1, payload)
@@ -159,7 +154,7 @@ async def test_handle_link_sync_resp_success(
 async def test_handle_capabilities_resp_invalid_payload(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     mgr = _make_handshake_manager(mock_config, mock_state)
     fut: asyncio.Future[bytes | ProtobufMessage] = asyncio.Future()
-    setattr(mgr, "_capabilities_future", fut)
+    mgr.capabilities_future = fut
 
     res = await mgr.handle_capabilities_resp(1, b"invalid proto bytes")
     assert res is True
@@ -171,7 +166,7 @@ async def test_handle_capabilities_resp_invalid_payload(mock_config: RuntimeConf
 async def test_handle_capabilities_resp_success(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     mgr = _make_handshake_manager(mock_config, mock_state)
     fut: asyncio.Future[bytes | ProtobufMessage] = asyncio.Future()
-    setattr(mgr, "_capabilities_future", fut)
+    mgr.capabilities_future = fut
 
     cap = pb.Capabilities(watchdog=True, eeprom=False)
     res = await mgr.handle_capabilities_resp(1, cap)

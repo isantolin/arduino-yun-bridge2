@@ -8,7 +8,6 @@ from hypothesis import strategies as st
 from mcubridge.config import settings as config_settings
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.structures import validate_config
-from pytest_mock import MockerFixture
 
 
 def _valid_base_config() -> RuntimeConfig:
@@ -22,7 +21,7 @@ def _valid_base_config() -> RuntimeConfig:
     return cfg
 
 
-def test_runtime_config_topic_and_paths(mocker: MockerFixture) -> None:
+def test_runtime_config_topic_and_paths() -> None:
     raw = {
         "serial_port": "/dev/null",
         "topic_prefix": "/demo//prefix/",
@@ -31,13 +30,12 @@ def test_runtime_config_topic_and_paths(mocker: MockerFixture) -> None:
         "serial_shared_secret": b"secret1234",
         "allow_non_tmp_paths": True,
     }
-    mocker.patch.object(config_settings, "_load_raw_config", return_value=(raw, "test"))
-    config = config_settings.load_runtime_config()
+    config = config_settings.load_runtime_config_from_json(raw)
     assert config.topic_prefix == "/demo//prefix/"
     assert config.file_system_root == "/tmp/tests/bridge"
 
 
-def test_runtime_config_rejects_empty_topic(mocker: MockerFixture) -> None:
+def test_runtime_config_rejects_empty_topic() -> None:
     raw = {
         "serial_port": "/dev/null",
         "topic_prefix": "//",
@@ -46,9 +44,8 @@ def test_runtime_config_rejects_empty_topic(mocker: MockerFixture) -> None:
         "serial_shared_secret": b"secret1234",
         "allow_non_tmp_paths": True,
     }
-    mocker.patch.object(config_settings, "_load_raw_config", return_value=(raw, "test"))
     with pytest.raises(ValueError, match=r"topic_prefix: does not match regex pattern"):
-        config_settings.load_runtime_config()
+        config_settings.load_runtime_config_from_json(raw)
 
 
 def test_runtime_config_rejects_non_positive_status_interval() -> None:

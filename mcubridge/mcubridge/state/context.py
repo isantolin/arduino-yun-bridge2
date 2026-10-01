@@ -542,6 +542,15 @@ class RuntimeState:
         return max(0, self.handshake_attempts - self.handshake_successes)
 
     @property
+    def fatal_count(self) -> int:
+        """Total fatal handshake / link reset failures."""
+        return self.handshake_fatal_count
+
+    @fatal_count.setter
+    def fatal_count(self, value: int) -> None:
+        self.handshake_fatal_count = value
+
+    @property
     def allowed_commands(self) -> tuple[str, ...]:
         """Return the current allowed command list from policy."""
         return tuple(self.allowed_policy.entries)

@@ -13,10 +13,8 @@ _ARGS_STR = st.text(alphabet="abcdefghijklmnopqrstuvwxyz0123456789_- ", max_size
 
 
 def _make_auth(**kwargs: bool) -> pb.TopicAuthorization:
-    auth = pb.TopicAuthorization()
-    for f in auth.DESCRIPTOR.fields:
-        setattr(auth, f.name, kwargs.get(f.name, True))
-    return auth
+    fields = {f.name: kwargs.get(f.name, True) for f in pb.TopicAuthorization.DESCRIPTOR.fields}
+    return pb.TopicAuthorization(**fields)
 
 
 class TestAllowedCommandPolicy:

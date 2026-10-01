@@ -112,39 +112,28 @@ def test_load_runtime_config_prefers_uci_config() -> None:
     assert config.serial_port == "/dev/uci"
 
 
-def test_load_runtime_config_falls_back_to_defaults(
-    mocker: MockerFixture,
-):
+def test_load_runtime_config_falls_back_to_defaults() -> None:
     def _uci_failure() -> dict[str, Any]:
         raise OSError("uci unavailable")
 
-    mocker.patch.object(settings, "get_uci_config", side_effect=_uci_failure)
-
-    # We must ensure get_default_config returns a valid config or convert will fail
-    # Default is valid by definition.
-    config = settings.load_runtime_config()
+    config = settings.load_runtime_config(uci_getter=_uci_failure)
     from mcubridge.protocol import protocol
 
     assert config.serial_port == protocol.DEFAULT_SERIAL_PORT
 
 
-def test_get_uci_config_flattens_nested_structures(mocker: MockerFixture):
-    mocker.patch.object(
-        settings,
-        "get_uci_config",
-        return_value={
+def test_get_uci_config_flattens_nested_structures() -> None:
+    raw, _ = getattr(settings, "_load_raw_config")(
+        uci_getter=lambda: {
             "allowed_commands": ["ls", "uptime"],
             "topic_prefix": "br",
-        },
+        }
     )
-    raw, _ = getattr(settings, "_load_raw_config")()
     assert raw["allowed_commands"] == ["ls", "uptime"]
 
 
-def test_get_uci_config_handles_value_wrappers(mocker: MockerFixture):
-    # Mocking UCI internal list handling
-    mocker.patch.object(settings, "get_uci_config", return_value={"debug": True})
-    config = settings.load_runtime_config()
+def test_get_uci_config_handles_value_wrappers() -> None:
+    config = settings.load_runtime_config(uci_getter=lambda: {"debug": True})
     assert config.debug
 
 

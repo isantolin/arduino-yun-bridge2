@@ -47,9 +47,12 @@ def test_rotate_credentials_script(
     script = load_script("mcubridge-rotate-credentials")
     mocker.patch("sys.argv", ["mcubridge-rotate-credentials", "--force", "--no-restart"])
     mocker.patch("subprocess.run")
-    mock_update = mocker.patch.object(script, "update_uci_credentials")
+    mock_cursor = MagicMock()
+    mock_uci = MagicMock()
+    mock_uci.Uci.return_value = mock_cursor
+    script.uci = mock_uci
     script.app(standalone_mode=False)
-    assert mock_update.called
+    assert mock_cursor.commit.called
     captured = capsys.readouterr()
     assert "SERIAL_SECRET=" in captured.out
     assert "CLOUD_PASSWORD=" in captured.out

@@ -278,9 +278,7 @@ async def test_handshake_wait_confirmation_already_synchronized(
 
 
 @pytest.mark.asyncio
-async def test_handshake_sync_state_permutations(
-    runtime_config: RuntimeConfig, runtime_state: RuntimeState
-) -> None:
+async def test_handshake_sync_state_permutations(runtime_config: RuntimeConfig, runtime_state: RuntimeState) -> None:
     runtime_state.connection_fsm.disconnect()
     mock_send = AsyncMock(return_value=True)
     hs = SerialHandshakeManager(

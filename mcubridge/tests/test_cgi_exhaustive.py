@@ -120,11 +120,12 @@ def test_pin_rest_cgi_application_branches(mocker: MockerFixture) -> None:
         "wsgi.input": io.BytesIO(body),
     }
 
-    mock_set_pin = mocker.patch.object(pin_rest_cgi, "set_pin_digital_sync")
+    mock_ubus = MagicMock()
+    pin_rest_cgi.ubus = mock_ubus
     res = pin_rest_cgi.application(env, start_response)
     assert res
     start_response.assert_called_once()
-    mock_set_pin.assert_called_once_with(13, 1)
+    mock_ubus.call.assert_called_once_with("mcubridge", "digital_write", {"pin": 13, "value": 1})
 
     start_response_err = MagicMock()
     env_invalid = {"PATH_INFO": "/invalid", "REQUEST_METHOD": "GET"}

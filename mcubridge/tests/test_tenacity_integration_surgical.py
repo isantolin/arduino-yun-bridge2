@@ -128,8 +128,7 @@ def test_ubus_service_start_retries_and_succeeds(mocker: MockerFixture) -> None:
     mock_ubus.INT32 = 1
     mock_ubus.STRING = 2
 
-    mocker.patch.object(ubus_mod, "ubus", mock_ubus)
-    service = UbusService(_make_runtime())
+    service = UbusService(_make_runtime(), ubus_module=mock_ubus)
 
     res = service.start(max_attempts=4, retry_wait=tenacity.wait_none())
     assert res is True
@@ -138,14 +137,11 @@ def test_ubus_service_start_retries_and_succeeds(mocker: MockerFixture) -> None:
     assert attempts == 3
 
 
-def test_ubus_service_start_retry_exhaustion(mocker: MockerFixture) -> None:
-    import mcubridge.services.ubus as ubus_mod
-
+def test_ubus_service_start_retry_exhaustion() -> None:
     mock_ubus: Any = MagicMock()
     mock_ubus.connect.side_effect = OSError("Connection refused")
 
-    mocker.patch.object(ubus_mod, "ubus", mock_ubus)
-    service = UbusService(_make_runtime())
+    service = UbusService(_make_runtime(), ubus_module=mock_ubus)
 
     res = service.start(max_attempts=3, retry_wait=tenacity.wait_none())
     assert res is False

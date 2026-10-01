@@ -96,15 +96,15 @@ async def test_runtime_mcu_file_read_fsm_success(
 
     serial_mock = AsyncMock()
     serial_mock.send_raw.return_value = True
-    setattr(service, "serial", serial_mock)
+    service.serial = serial_mock
 
     ctx = pb.CloudQueuedPublish(topic_name="mcu/fs/read", payload=b"")
 
     async def _simulate_mcu_responses() -> None:
-        while getattr(service, "_pending_mcu_read") is None:
+        while service.pending_mcu_read is None:
             await asyncio.sleep(0.01)
 
-        pending: Any = getattr(service, "_pending_mcu_read")
+        pending = service.pending_mcu_read
         assert pending is not None
         assert pending.fsm.transferring.is_active
 
@@ -126,7 +126,7 @@ async def test_runtime_mcu_file_read_fsm_success(
         tg.create_task(_simulate_mcu_responses())
         tg.create_task(handle_fn("/mcu/test.bin", ctx))
 
-    assert getattr(service, "_pending_mcu_read") is None
+    assert service.pending_mcu_read is None
 
 
 @pytest.mark.asyncio
@@ -138,13 +138,13 @@ async def test_runtime_mcu_file_read_fsm_dispatch_fail(
 
     serial_mock = AsyncMock()
     serial_mock.send_raw.return_value = False
-    setattr(service, "serial", serial_mock)
+    service.serial = serial_mock
 
     ctx = pb.CloudQueuedPublish(topic_name="mcu/fs/read", payload=b"")
     handle_fn: Any = getattr(service, "_handle_file_mcu_read")
     await handle_fn("/mcu/missing.bin", ctx)
 
-    assert getattr(service, "_pending_mcu_read") is None
+    assert service.pending_mcu_read is None
 
 
 @pytest.mark.asyncio
@@ -157,10 +157,10 @@ async def test_runtime_mcu_file_read_fsm_timeout(
 
     serial_mock = AsyncMock()
     serial_mock.send_raw.return_value = True
-    setattr(service, "serial", serial_mock)
+    service.serial = serial_mock
 
     ctx = pb.CloudQueuedPublish(topic_name="mcu/fs/read", payload=b"")
     handle_fn: Any = getattr(service, "_handle_file_mcu_read")
     await handle_fn("/mcu/unresponsive.bin", ctx)
 
-    assert getattr(service, "_pending_mcu_read") is None
+    assert service.pending_mcu_read is None

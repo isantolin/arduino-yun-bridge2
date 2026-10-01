@@ -384,7 +384,7 @@ def test_ubus_handle_mailbox_read_binary_and_empty(mock_runtime: MockRuntimeFaca
 
 
 def test_ubus_handle_datastore_get_cache_none(mock_runtime: MockRuntimeFacade) -> None:
-    setattr(mock_runtime.state, "datastore_cache", None)
+    mock_runtime.state.datastore_cache = None
     service = UbusService(mock_runtime)
     res = service.ubus_handle_datastore_get(MagicMock(), {"key": "any"})
     assert res == {"status": "error", "message": "Datastore cache unavailable"}
@@ -609,7 +609,7 @@ def test_ubus_handle_clock_status_and_sync(mock_runtime: MockRuntimeFacade) -> N
     mock_clock = MagicMock()
     mock_clock.get_status.return_value = {"status": "ok", "offset_us": 120}
     mock_clock.sync_now = AsyncMock(return_value={"status": "ok", "synced": True})
-    setattr(mock_runtime, "clock_sync", mock_clock)
+    mock_runtime.clock_sync = mock_clock
 
     res_status = service.ubus_handle_clock_status(MagicMock(), {})
     assert res_status == {"status": "ok", "offset_us": 120}
@@ -618,7 +618,7 @@ def test_ubus_handle_clock_status_and_sync(mock_runtime: MockRuntimeFacade) -> N
     assert res_sync == {"status": "ok", "synced": True}
 
     # 2. Without clock service
-    setattr(mock_runtime, "clock_sync", None)
+    mock_runtime.clock_sync = None
     err_status = service.ubus_handle_clock_status(MagicMock(), {})
     assert err_status["status"] == "error"
     err_sync = service.ubus_handle_clock_sync(MagicMock(), {})
@@ -631,14 +631,14 @@ def test_ubus_handle_pin_subscribe(mock_runtime: MockRuntimeFacade) -> None:
     # 1. With GPIO service available
     mock_gpio = MagicMock()
     mock_gpio.subscribe_pin = AsyncMock(return_value={"status": "ok", "pin": 13})
-    setattr(mock_runtime, "gpio", mock_gpio)
+    mock_runtime.gpio = mock_gpio
 
     res = service.ubus_handle_pin_subscribe(MagicMock(), {"pin": 13, "mode": "INPUT", "interval_ms": 100})
     assert res == {"status": "ok", "pin": 13}
     mock_gpio.subscribe_pin.assert_awaited_once_with(13, "INPUT", 100, 1, True)
 
     # 2. Without GPIO service
-    setattr(mock_runtime, "gpio", None)
+    mock_runtime.gpio = None
     err = service.ubus_handle_pin_subscribe(MagicMock(), {"pin": 13})
     assert err["status"] == "error"
 
@@ -660,7 +660,7 @@ def test_ubus_schedule_async_with_target_loop(mock_runtime: MockRuntimeFacade, m
     service = UbusService(mock_runtime)
     mock_loop = MagicMock()
     mock_loop.is_running.return_value = True
-    setattr(service, "_loop", mock_loop)
+    service.loop = mock_loop
 
     mock_run_ts = MagicMock()
     mocker.patch.object(asyncio, "run_coroutine_threadsafe", mock_run_ts)
@@ -680,7 +680,7 @@ def test_ubus_run_coro_sync_threadsafe(mock_runtime: MockRuntimeFacade, mocker: 
     service = UbusService(mock_runtime)
     mock_loop = MagicMock()
     mock_loop.is_running.return_value = True
-    setattr(service, "_loop", mock_loop)
+    service.loop = mock_loop
 
     mock_fut = MagicMock()
     mock_fut.result.return_value = {"status": "ok"}
@@ -702,7 +702,7 @@ def test_ubus_run_coro_sync_threadsafe(mock_runtime: MockRuntimeFacade, mocker: 
 async def test_ubus_run_coro_sync_same_loop(mock_runtime: MockRuntimeFacade, mocker: MockerFixture) -> None:
     service = UbusService(mock_runtime)
     current_loop = asyncio.get_running_loop()
-    setattr(service, "_loop", current_loop)
+    service.loop = current_loop
     mocker.patch("anyio.from_thread.run", return_value={"status": "same_loop"})
 
     async def _sample() -> dict[str, str]:

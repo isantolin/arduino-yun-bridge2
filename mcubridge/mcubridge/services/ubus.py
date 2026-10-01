@@ -103,12 +103,27 @@ _UBUS_METHOD_SIGS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
 class UbusService:
     """Manages the lifecycle of McuBridge UBUS object registration on OpenWrt."""
 
-    def __init__(self, runtime: BridgeRuntimeFacade, ubus_module: Any = None) -> None:
+    def __init__(
+        self,
+        runtime: BridgeRuntimeFacade,
+        ubus_module: Any = None,
+        loop: asyncio.AbstractEventLoop | None = None,
+    ) -> None:
         self.runtime = runtime
         self._ubus: Any = ubus_module if ubus_module is not None else ubus
         self._conn: Any = None
         self._is_active = False
-        self._loop: asyncio.AbstractEventLoop | None = None
+        self._loop: asyncio.AbstractEventLoop | None = loop
+
+    @property
+    def loop(self) -> asyncio.AbstractEventLoop | None:
+        """Return the target event loop for coroutine execution."""
+        return self._loop
+
+    @loop.setter
+    def loop(self, loop: asyncio.AbstractEventLoop | None) -> None:
+        """Set the target event loop for coroutine execution."""
+        self._loop = loop
 
     @property
     def is_active(self) -> bool:

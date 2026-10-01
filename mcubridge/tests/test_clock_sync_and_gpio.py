@@ -153,9 +153,8 @@ async def test_gpio_service() -> None:
         evt = pb.PinUpdateEvent(pin=13, value=1, timestamp_micros=999999)
         evt_handler = service.mcu_registry[pb.Command.CMD_PIN_UPDATE_EVENT]
 
-        # [SIL-2] Mock enqueue_cloud to verify canonical pipeline routing
         mock_enqueue: AsyncMock = AsyncMock()
-        setattr(service, "enqueue_cloud", mock_enqueue)
+        service.cloud_publisher = mock_enqueue
 
         await evt_handler(0, evt)
         assert state.pin_events_count == 1
@@ -416,9 +415,8 @@ async def test_clock_sync_loop_exception_handling() -> None:
         clock.fsm.sync_success()
         assert clock.fsm.synchronized.is_active
 
-        # Mock sync_now raising TimeoutError
-        sync_mock = AsyncMock(side_effect=TimeoutError("serial timeout"))
-        setattr(clock, "sync_now", sync_mock)
+        # Boundary mock_serial raises TimeoutError
+        mock_serial.send = AsyncMock(side_effect=TimeoutError("serial timeout"))
 
         # Run loop iteration under exception via public lifecycle
         await clock.start()

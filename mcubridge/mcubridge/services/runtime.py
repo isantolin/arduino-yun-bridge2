@@ -1756,7 +1756,7 @@ class BridgeService:
             self._cloud_channel = None
             channel.close()
 
-    async def _send_cloud_event(self, event_type: str, severity: str, description: str) -> None:
+    async def send_cloud_event(self, event_type: str, severity: str, description: str) -> None:
         envelope = pb.CloudEnvelope(
             protocol_version=2,
             device_id=self.state.device_id,
@@ -1777,6 +1777,8 @@ class BridgeService:
                     description,
                 )
             await self._cloud_stream.send_message(envelope)
+
+    _send_cloud_event = send_cloud_event
 
     async def supervise(
         self,

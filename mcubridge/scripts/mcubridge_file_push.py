@@ -16,10 +16,10 @@ logger = structlog.get_logger("mcubridge.file-push")
 app = typer.Typer(help="Push files to MCU or Linux storage.", add_completion=False)
 
 
-def push_file_ubus(target_path: str, data: bytes) -> bool:
+def push_file_ubus(target_path: str, data: bytes, *, ubus_module: Any = None) -> bool:
     """Attempt file write via OpenWrt UBUS."""
     try:
-        ubus_mod = importlib.import_module("ubus")
+        ubus_mod = ubus_module if ubus_module is not None else importlib.import_module("ubus")
         conn = ubus_mod.connect()
         if not conn:
             return False
@@ -40,9 +40,9 @@ def push_file_ubus(target_path: str, data: bytes) -> bool:
         return False
 
 
-def push_file(target_path: str, data: bytes) -> None:
+def push_file(target_path: str, data: bytes, *, ubus_module: Any = None) -> None:
     """Write file data using native OpenWrt UBUS. [SIL-2]"""
-    if not push_file_ubus(target_path, data):
+    if not push_file_ubus(target_path, data, ubus_module=ubus_module):
         logger.error("File push failed", path=target_path)
         sys.exit(1)
 
@@ -52,6 +52,8 @@ def main(
     source: Annotated[Path, typer.Argument(help="Source file to push")],
     target: Annotated[str, typer.Argument(help="Target path on the bridge")],
     mcu: Annotated[bool, typer.Option(help="Target MCU storage")] = False,
+    *,
+    pusher: Any = push_file,
 ) -> None:
     """Push file data to the bridge via UBUS or local gRPC IPC."""
     if not source.exists() or source.is_dir():
@@ -75,7 +77,7 @@ def main(
         payload_hex=hexdump,
     )
 
-    push_file(target_path, data)
+    pusher(target_path, data)
 
 
 if __name__ == "__main__":

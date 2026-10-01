@@ -504,19 +504,17 @@ async def test_local_bridge_service_ipc(tmp_path: Path) -> None:
     mock_stream.send_message.assert_not_called()
 
     # Test Publish with message & correlation
-    req_msg = pb.CloudQueuedPublish(topic_name="br/d/13/read", correlation_data=b"123456789012")
+    req_msg = pb.CloudQueuedPublish(
+        topic_name="br/datastore/put/test_key",
+        payload=b"val",
+        correlation_data=b"123456789012",
+    )
     mock_stream.recv_message.return_value = req_msg
-    setattr(svc, "handle_request", AsyncMock())
-
-    async def _respond() -> None:
-        await asyncio.sleep(0.01)
-        if b"123456789012" in svc.ipc_requests:
-            q = svc.ipc_requests[b"123456789012"]
-            await q.put(pb.CloudQueuedPublish(topic_name="br/d/13/read/res", payload=b"1"))
-
-    asyncio.create_task(_respond())
     await local_svc.Publish(mock_stream)
-    mock_stream.send_message.assert_awaited()
+    mock_stream.send_message.assert_awaited_once()
+    sent_msg = mock_stream.send_message.await_args.args[0]
+    assert isinstance(sent_msg, pb.CloudQueuedPublish)
+    assert sent_msg.correlation_data == b"123456789012"
 
 
 @pytest.mark.asyncio
@@ -551,27 +549,26 @@ async def test_local_bridge_service_publish_timeout_and_oserror(tmp_path: Path, 
     mock_stream = AsyncMock()
     mock_stream.recv_message.return_value = req_msg
 
-    mocker.patch.object(svc, "handle_request", new_callable=AsyncMock)
     _orig_timeout = asyncio.timeout
 
     def _quick_timeout(t: float) -> object:
         del t
         return _orig_timeout(0.001)
 
-    mocker.patch("mcubridge.services.runtime.asyncio.timeout", side_effect=_quick_timeout)
+    mocker.patch("mcubridge.services.local_bridge.asyncio.timeout", side_effect=_quick_timeout)
     await local_svc.Publish(mock_stream)
     assert mock_stream.send_message.called
 
     # 2. Simulate OSError during response write
+    req_put = pb.CloudQueuedPublish(
+        topic_name="br/datastore/put/test_key",
+        payload=b"val",
+        correlation_data=b"corr-timeout-1",
+    )
     mock_stream.reset_mock()
-    mock_stream.recv_message.return_value = req_msg
+    mock_stream.recv_message.return_value = req_put
     mock_stream.send_message.side_effect = OSError("Socket broken")
 
-    async def _handle_and_reply(req: pb.CloudQueuedPublish) -> None:
-        if req.correlation_data in svc.ipc_requests:
-            await svc.ipc_requests[req.correlation_data].put(pb.CloudQueuedPublish(topic_name="br/reply"))
-
-    mocker.patch.object(svc, "handle_request", side_effect=_handle_and_reply)
     await local_svc.Publish(mock_stream)
     assert b"corr-timeout-1" not in svc.ipc_requests
 

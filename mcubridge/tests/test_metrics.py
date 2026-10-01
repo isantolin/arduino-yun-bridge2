@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from mcubridge.metrics import (
@@ -35,24 +35,8 @@ async def test_publish_metrics_publishes_snapshot(runtime_state: RuntimeState, m
     runtime_state.watchdog_interval = 7.5
     runtime_state.file_storage_limit_rejections = 1
 
-    fake_snapshot = pb.DaemonMetrics(
-        cloud_spool_degraded=True,
-        cloud_spool_failure_reason="disk-full",
-        watchdog_enabled=True,
-        watchdog_interval=7.5,
-    )
-
     runtime_state.cloud_topic_prefix = "test/prefix"
 
-    def mock_build_metrics(self: Any) -> Any:
-        return fake_snapshot
-
-    mocker.patch.object(
-        RuntimeState,
-        "build_metrics_snapshot",
-        side_effect=mock_build_metrics,
-        autospec=True,
-    )
     task = asyncio.create_task(
         publish_metrics(
             runtime_state,
@@ -93,17 +77,6 @@ async def test_publish_metrics_marks_unknown_spool_reason(runtime_state: Runtime
         captured["message"] = message
         event.set()
 
-    def mock_build_metrics_degraded(self: Any) -> Any:
-        return pb.DaemonMetrics(
-            cloud_spool_degraded=True,
-        )
-
-    mocker.patch.object(
-        RuntimeState,
-        "build_metrics_snapshot",
-        side_effect=mock_build_metrics_degraded,
-        autospec=True,
-    )
     runtime_state.cloud_spool_degraded = True
     runtime_state.cloud_spool_failure_reason = None
     runtime_state.watchdog_enabled = False
@@ -140,35 +113,6 @@ async def test_publish_bridge_snapshots_emits_summary_and_handshake(
         if len(messages) >= 2:
             event.set()
 
-    def mock_build_bridge_snap(self: Any) -> Any:
-        return pb.BridgeSnapshot(
-            serial_link=pb.SerialLinkSnapshot(),
-            handshake=pb.HandshakeSnapshot(),
-            serial_pipeline=pb.SerialPipelineSnapshot(),
-            serial_flow=pb.SerialFlowSnapshot(
-                commands_sent=0,
-                commands_acked=0,
-                retries=0,
-                failures=0,
-                last_event_unix=0.0,
-            ),
-        )
-
-    def mock_build_handshake_snap(self: Any) -> Any:
-        return pb.HandshakeSnapshot()
-
-    mocker.patch.object(
-        RuntimeState,
-        "build_bridge_snapshot",
-        side_effect=mock_build_bridge_snap,
-        autospec=True,
-    )
-    mocker.patch.object(
-        RuntimeState,
-        "build_handshake_snapshot",
-        side_effect=mock_build_handshake_snap,
-        autospec=True,
-    )
     task = asyncio.create_task(
         publish_bridge_snapshots(
             runtime_state,
@@ -300,7 +244,8 @@ async def test_emit_bridge_snapshot_attribute_error(runtime_state: RuntimeState,
     import mcubridge.metrics as metrics_mod
 
     enqueue = AsyncMock()
-    mocker.patch.object(runtime_state, "build_bridge_snapshot", side_effect=AttributeError("Missing attr"))
+    bad_state = MagicMock(spec=RuntimeState)
+    bad_state.build_bridge_snapshot.side_effect = AttributeError("Missing attr")
     emit_snapshot: Callable[..., Awaitable[None]] = getattr(metrics_mod, "_emit_bridge_snapshot")
-    await emit_snapshot(runtime_state, enqueue, flavor="summary")
+    await emit_snapshot(bad_state, enqueue, flavor="summary")
     assert enqueue.call_count == 0

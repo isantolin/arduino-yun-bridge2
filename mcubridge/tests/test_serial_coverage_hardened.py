@@ -104,14 +104,14 @@ async def test_serial_transport_baudrate_fallback(tmp_path: Path) -> None:
 
     check_fallback: Callable[[], Awaitable[None]] = getattr(transport, "_check_baudrate_fallback")
 
-    setattr(transport, "_consecutive_crc_errors", 1)
+    transport.consecutive_crc_errors = 1
     await check_fallback()
-    assert getattr(transport, "_consecutive_crc_errors") == 2
+    assert transport.consecutive_crc_errors == 2
 
     # Trigger threshold (threshold = 3)
-    setattr(transport, "_consecutive_crc_errors", 2)
+    transport.consecutive_crc_errors = 2
     await check_fallback()
-    assert getattr(transport, "_consecutive_crc_errors") == 0
+    assert transport.consecutive_crc_errors == 0
 
     state.cleanup()
 

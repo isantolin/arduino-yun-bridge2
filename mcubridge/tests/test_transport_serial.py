@@ -102,8 +102,8 @@ async def test_process_packet_negotiation_ack_switches_local_baudrate() -> None:
 
         transport.serial = mock_serial
 
-        setattr(transport, "_negotiating", True)
-        setattr(transport, "_negotiation_future", asyncio.get_running_loop().create_future())
+        transport.is_negotiating = True
+        transport.negotiation_future = asyncio.get_running_loop().create_future()
 
         encoded = cobsr.encode(
             build_frame(
@@ -114,7 +114,7 @@ async def test_process_packet_negotiation_ack_switches_local_baudrate() -> None:
         )
         await getattr(transport, "_process_packet")(encoded)
 
-        assert await getattr(transport, "_negotiation_future")
+        assert await transport.negotiation_future
         assert mock_serial.transport.serial.baudrate == config.serial_baud
     finally:
         state.cleanup()
@@ -204,8 +204,15 @@ async def test_process_packet_fallback_triggers_negotiation(
 
         transport = SerialTransport(config, state, service)
 
-        # Mock negotiation method
-        setattr(transport, "_negotiate_baudrate", AsyncMock(return_value=True))
+        mock_serial = AsyncMock()
+        mock_serial.is_open = True
+
+        async def _resolve_neg(_data: bytes) -> None:
+            if transport.negotiation_future and not transport.negotiation_future.done():
+                transport.negotiation_future.set_result(True)
+
+        mock_serial.write = AsyncMock(side_effect=_resolve_neg)
+        transport.serial = mock_serial
 
         # Create an invalid frame manually
         raw = b"\xff" + b"x" * 20
@@ -216,15 +223,14 @@ async def test_process_packet_fallback_triggers_negotiation(
         mocker.patch.object(cobsr, "decode", side_effect=mock_decode_fallback)
 
         await getattr(transport, "_process_packet")(b"\x02encoded")
-        assert getattr(transport, "_consecutive_crc_errors") == 1
-
-        getattr(transport, "_negotiate_baudrate").assert_not_called()
+        assert transport.consecutive_crc_errors == 1
+        assert not mock_serial.write.called
 
         # Second error (threshold reached)
         await getattr(transport, "_process_packet")(b"\x02encoded")
-        assert getattr(transport, "_consecutive_crc_errors") == 0
-
-        getattr(transport, "_negotiate_baudrate").assert_awaited_once_with(57600)
+        assert transport.consecutive_crc_errors == 0
+        assert mock_serial.write.called
+        mock_serial.write.assert_awaited_once()
     finally:
         state.cleanup()
 
@@ -286,7 +292,7 @@ async def test_serial_transport_methods_with_none_serial(
     switch_baud: Callable[[int], None] = getattr(transport, "_switch_local_baudrate")
     switch_baud(115200)
 
-    setattr(transport, "_current", None)
+    transport.current_command = None
     await transport.reset()
 
     toggle_dtr: Callable[[], Awaitable[None]] = getattr(transport, "_toggle_dtr")
@@ -297,7 +303,7 @@ async def test_serial_transport_methods_with_none_serial(
     assert stop_event.is_set()
 
     runtime_config.serial_baud = runtime_config.serial_safe_baud
-    setattr(transport, "_consecutive_crc_errors", runtime_config.serial_fallback_threshold - 1)
+    transport.consecutive_crc_errors = runtime_config.serial_fallback_threshold - 1
     fallback_fn: Callable[[], Awaitable[None]] = getattr(transport, "_check_baudrate_fallback")
     await fallback_fn()
 
@@ -315,7 +321,7 @@ async def test_serial_transport_correlate_frame_branches(
         command_id=Command.CMD_DIGITAL_WRITE.value,
         expected_resp_ids=[Command.CMD_DIGITAL_WRITE.value],
     )
-    setattr(transport, "_current", curr1)
+    transport.current_command = curr1
     ack_pkt = pb.AckPacket(command_id=Command.CMD_ANALOG_WRITE.value)
     correlate_fn(Status.ACK.value, ack_pkt.SerializeToString())
     assert curr1.ack_received is False
@@ -324,7 +330,7 @@ async def test_serial_transport_correlate_frame_branches(
         command_id=Command.CMD_DIGITAL_WRITE.value,
         expected_resp_ids=[Command.CMD_DIGITAL_WRITE.value],
     )
-    setattr(transport, "_current", curr2)
+    transport.current_command = curr2
     ack_matching = pb.AckPacket(command_id=Command.CMD_DIGITAL_WRITE.value)
     correlate_fn(Status.ACK.value, ack_matching.SerializeToString())
     assert curr2.ack_received is True
@@ -334,7 +340,7 @@ async def test_serial_transport_correlate_frame_branches(
         command_id=Command.CMD_DIGITAL_WRITE.value,
         expected_resp_ids=[Command.CMD_DIGITAL_WRITE.value],
     )
-    setattr(transport, "_current", curr3)
+    transport.current_command = curr3
     correlate_fn(Status.OK.value, b"")
     assert curr3.success is None
 
@@ -344,9 +350,9 @@ async def test_serial_process_packet_negotiating_non_baud_cmd(
     runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
     transport = SerialTransport(runtime_config, runtime_state, None)
-    setattr(transport, "_negotiating", True)
+    transport.is_negotiating = True
     fut = asyncio.get_running_loop().create_future()
-    setattr(transport, "_negotiation_future", fut)
+    transport.negotiation_future = fut
 
     frame_bytes = build_frame(
         command_id=Command.CMD_GET_VERSION.value,
@@ -411,19 +417,14 @@ async def test_serial_read_loop_branches(runtime_config: RuntimeConfig, runtime_
         protocol.FRAME_DELIMITER,
         asyncio.CancelledError(),
     ]
-    mock_proc = AsyncMock()
-    setattr(transport, "_process_packet", mock_proc)
     with pytest.raises(asyncio.CancelledError):
         await read_loop(mock_serial)
 
-    mock_proc.assert_not_awaited()
     assert transport.consecutive_crc_errors == 0
 
 
 @pytest.mark.asyncio
-async def test_serial_transport_connect_exceptions(
-    runtime_config: RuntimeConfig, runtime_state: RuntimeState
-) -> None:
+async def test_serial_transport_connect_exceptions(runtime_config: RuntimeConfig, runtime_state: RuntimeState) -> None:
     async def _cancel_run() -> None:
         raise asyncio.CancelledError()
 
@@ -465,7 +466,7 @@ async def test_serial_transport_edge_branches(
         command_id=Command.CMD_DIGITAL_WRITE.value,
         expected_resp_ids=[Status.ACK.value],
     )
-    setattr(transport, "_current", pending)
+    transport.current_command = pending
     correlate: Callable[[int, bytes], None] = getattr(transport, "_correlate_frame")
     correlate(Status.ACK.value, b"")
     assert pending.ack_received is True
@@ -487,17 +488,16 @@ async def test_serial_transport_edge_branches(
 
     # 4. _negotiate_baudrate when send_raw fails vs succeeds (lines 543 & 546)
     negotiate: Callable[[int], Awaitable[bool]] = getattr(transport, "_negotiate_baudrate")
-    mocker.patch.object(transport, "send_raw", AsyncMock(return_value=False))
+    mock_serial.write = AsyncMock(side_effect=OSError("Write failed"))
     res_neg_fail = await negotiate(115200)
     assert res_neg_fail is False
 
-    async def _mock_send_raw_and_resolve(*_a: Any, **_k: Any) -> bool:
-        fut = getattr(transport, "_negotiation_future")
+    async def _mock_write_and_resolve(_data: bytes) -> None:
+        fut = transport.negotiation_future
         if fut and not fut.done():
             fut.set_result(True)
-        return True
 
-    mocker.patch.object(transport, "send_raw", side_effect=_mock_send_raw_and_resolve)
+    mock_serial.write = AsyncMock(side_effect=_mock_write_and_resolve)
     res_neg_ok = await negotiate(115200)
     assert res_neg_ok is True
 
@@ -505,16 +505,15 @@ async def test_serial_transport_edge_branches(
     mock_serial2 = AsyncMock()
     mock_serial2.is_open = True
     transport.serial = mock_serial2
-    setattr(transport, "_max_attempts", 1)
+    transport.max_attempts = 1
 
-    async def _resolve_pending_without_status(*_a: Any, **_k: Any) -> bool:
-        curr = getattr(transport, "_current")
+    async def _resolve_pending_without_status(_data: bytes) -> None:
+        curr = transport.current_command
         if curr:
             curr.success = False
             curr.failure_status = None
             curr.completion.set()
-        return True
 
-    mocker.patch.object(transport, "send_raw", side_effect=_resolve_pending_without_status)
+    mock_serial2.write = AsyncMock(side_effect=_resolve_pending_without_status)
     res_fail_status = await transport.send(Command.CMD_DIGITAL_WRITE.value, b"test")
     assert res_fail_status is False

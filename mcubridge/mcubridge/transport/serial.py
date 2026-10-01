@@ -195,6 +195,16 @@ class SerialTransport:
         self._current = cmd
 
     @property
+    def max_attempts(self) -> int:
+        """Return the maximum retry attempts for serial commands."""
+        return self._max_attempts
+
+    @max_attempts.setter
+    def max_attempts(self, attempts: int) -> None:
+        """Set the maximum retry attempts for serial commands."""
+        self._max_attempts = max(1, attempts)
+
+    @property
     def consecutive_crc_errors(self) -> int:
         """Return the consecutive CRC errors count."""
         return self._consecutive_crc_errors

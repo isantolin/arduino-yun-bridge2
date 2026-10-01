@@ -178,9 +178,15 @@ def _normalize_config_dict(raw: dict[str, Any]) -> tuple[dict[str, Any], bytes |
 def load_runtime_config(
     overrides: dict[str, Any] | None = None,
     raw_loader: Callable[[], tuple[dict[str, Any], str]] | None = None,
+    uci_getter: Callable[[], dict[str, Any]] | None = None,
 ) -> RuntimeConfig:
     """Load, normalize, and validate the daemon configuration (SIL 2)."""
-    raw_values, source = raw_loader() if raw_loader is not None else _load_raw_config()
+    if raw_loader is not None:
+        raw_values, source = raw_loader()
+    elif uci_getter is not None:
+        raw_values, source = _load_raw_config(uci_getter=uci_getter)
+    else:
+        raw_values, source = _load_raw_config()
     merged_values = get_default_config() | raw_values
     if overrides:
         merged_values |= overrides

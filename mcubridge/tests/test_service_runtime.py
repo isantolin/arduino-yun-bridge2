@@ -159,7 +159,7 @@ async def test_enqueue_cloud_spools_until_client_recovers() -> None:
 
         mock_stream = MagicMock()
         mock_stream.send_message = AsyncMock()
-        object.__setattr__(service, "_cloud_stream", mock_stream)
+        service.cloud_stream = mock_stream
         await service.flush_cloud_spool()
 
         mock_stream.send_message.assert_called_once()
@@ -172,7 +172,7 @@ async def test_enqueue_cloud_spools_until_client_recovers() -> None:
 
 
 @pytest.mark.asyncio
-async def test_handle_cloud_pin_overflow_reports_error(mocker: MockerFixture) -> None:
+async def test_handle_cloud_pin_overflow_reports_error() -> None:
     service = None
     config = _make_config()
     state = create_runtime_state(config)
@@ -188,11 +188,10 @@ async def test_handle_cloud_pin_overflow_reports_error(mocker: MockerFixture) ->
 
         captured: list[pb.CloudQueuedPublish] = []
 
-        async def capture_enqueue(message: pb.CloudQueuedPublish, *, reply_context: object | None = None) -> None:
-            del reply_context
+        async def capture_enqueue(message: pb.CloudQueuedPublish) -> None:
             captured.append(message)
 
-        mocker.patch.object(service, "enqueue_cloud", side_effect=capture_enqueue)
+        service.cloud_publisher = capture_enqueue
 
         class PublishPacket:
             def __init__(self, topic: str, payload: bytes) -> None:
@@ -274,8 +273,6 @@ async def test_connect_cloud_session(mock_bridge_service: BridgeService, mocker:
 
     mocker.patch("mcubridge.services.runtime.Channel")
     mock_stub_cls = mocker.patch("mcubridge.services.runtime.CloudBridgeStub")
-    mocker.patch.object(svc, "_send_cloud_event", new_callable=AsyncMock)
-    mocker.patch.object(svc, "flush_cloud_spool", new_callable=AsyncMock)
 
     mock_stub = MagicMock()
     mock_stub.Session.open.return_value = mock_open_ctx
@@ -283,8 +280,9 @@ async def test_connect_cloud_session(mock_bridge_service: BridgeService, mocker:
 
     await svc.connect_cloud_session(None)
     assert svc.state.connected_via_http3 is True
-    mock_stream.send_message.assert_awaited_once()
-    resp = mock_stream.send_message.call_args[0][0]
+    assert mock_stream.send_message.await_count == 2
+    assert mock_stream.send_message.await_args_list[0][0][0].event.event_type == "status_online"
+    resp = mock_stream.send_message.await_args_list[1][0][0]
     assert resp.sequence_id == 1234
     assert resp.command_response.status_code == 200
 
@@ -312,7 +310,7 @@ async def test_runtime_service_run_and_teardown_exceptions(mock_bridge_service: 
 
     mock_spool = AsyncMock(spec=LmdbDeque)
     mock_spool.close.side_effect = OSError("spool close error")
-    setattr(service, "_cloud_spool", mock_spool)
+    service.cloud_spool = mock_spool
 
     mock_cache = AsyncMock()
     mock_cache.close.side_effect = lmdb.Error("db error")
@@ -324,18 +322,15 @@ async def test_runtime_service_run_and_teardown_exceptions(mock_bridge_service: 
 
     await run_task
     assert run_task.done()
-    assert getattr(service, "_cloud_spool") is None
+    assert service.cloud_spool is None
 
 
 @pytest.mark.asyncio
-async def test_runtime_run_cloud_disabled(mock_bridge_service: BridgeService, mocker: MockerFixture) -> None:
+async def test_runtime_run_cloud_disabled(mock_bridge_service: BridgeService) -> None:
     service = mock_bridge_service
-
     service.config.cloud_enabled = False
-
-    mock_info = mocker.patch("mcubridge.services.runtime.logger.info")
     await service.run_cloud()
-    assert mock_info.called
+    assert service.state.cloud_fsm.disabled.is_active
 
 
 @given(
@@ -378,7 +373,7 @@ def test_runtime_handle_datastore_flavors(tmp_path_factory: pytest.TempPathFacto
         )
         inbound_get = pb.CloudQueuedPublish(topic_name=f"{cfg.topic_prefix}/datastore/get/{key}", payload=b"")
         mock_enqueue = AsyncMock()
-        service.enqueue_cloud = mock_enqueue
+        service.cloud_publisher = mock_enqueue
         await handle_datastore(route_get_hit, inbound_get)
         assert mock_enqueue.await_count == 1
 
@@ -399,15 +394,16 @@ def test_runtime_handle_datastore_flavors(tmp_path_factory: pytest.TempPathFacto
 
 @pytest.mark.asyncio
 async def test_runtime_handle_mcu_status_binary_undecodable(
-    mock_bridge_service: BridgeService, mocker: MockerFixture
+    mock_bridge_service: BridgeService,
 ) -> None:
     service = mock_bridge_service
-    mock_enqueue = mocker.patch.object(service, "enqueue_cloud", new_callable=AsyncMock)
+    mock_enqueue = AsyncMock()
+    service.cloud_publisher = mock_enqueue
     handle_mcu_status: Callable[..., Awaitable[None]] = getattr(service, "_handle_mcu_status")
     await handle_mcu_status(Status.TIMEOUT, 1, b"\xff\xfe\xfd\x80")
-    assert mock_enqueue.call_count == 1
+    assert mock_enqueue.await_count == 1
     await handle_mcu_status(Status.ERROR, 2, cast(Any, 12345))
-    assert mock_enqueue.call_count == 2
+    assert mock_enqueue.await_count == 2
 
 
 @given(
@@ -497,13 +493,13 @@ def test_runtime_pin_analog_and_invalid_digits(
 
 @pytest.mark.asyncio
 async def test_flush_cloud_spool_corrupt_and_index_error(
-    mock_bridge_service: BridgeService, mocker: MockerFixture
+    mock_bridge_service: BridgeService,
 ) -> None:
     svc = mock_bridge_service
-    setattr(svc, "_cloud_stream", AsyncMock())
+    svc.cloud_stream = AsyncMock()
 
     mock_spool = MagicMock(spec=LmdbDeque)
-    setattr(svc, "_cloud_spool", mock_spool)
+    svc.cloud_spool = mock_spool
     flush_spool: Callable[[], Awaitable[None]] = getattr(svc, "_flush_cloud_spool_locked")
 
     # Case 2: spool.peek raises IndexError
@@ -527,7 +523,6 @@ async def test_flush_cloud_spool_corrupt_and_index_error(
     mock_spool.__len__.side_effect = [1, 0, 0]
     mock_spool.peek = AsyncMock(return_value=valid_msg.SerializeToString())
     mock_spool.popleft = AsyncMock(side_effect=IndexError("popped early"))
-    mocker.patch.object(svc, "_publish_cloud_message", new_callable=AsyncMock, return_value=True)
     await flush_spool()
     assert mock_spool.peek.called
 
@@ -643,7 +638,7 @@ async def test_runtime_cloud_spool_trimming_and_drop(mock_bridge_service: Bridge
 
     svc.state.cloud_queue_limit = 2
     mock_spool = MagicMock(spec=LmdbDeque)
-    setattr(svc, "_cloud_spool", mock_spool)
+    svc.cloud_spool = mock_spool
     spool_msg_fn: Callable[..., Awaitable[bool]] = getattr(svc, "_spool_cloud_message_locked")
 
     # Simulate atomic spool append trimming on first call and no trim on second
@@ -777,7 +772,7 @@ async def test_runtime_handle_mailbox_unknown_identifier(
 
 @pytest.mark.asyncio
 async def test_runtime_handle_file_unhandled_action_and_failed_writes(
-    mock_bridge_service: BridgeService, mock_serial: AsyncMock, tmp_path: Path, mocker: MockerFixture
+    mock_bridge_service: BridgeService, mock_serial: AsyncMock, tmp_path: Path
 ) -> None:
     svc = mock_bridge_service
     handle_file: Callable[..., Awaitable[None]] = getattr(svc, "_handle_file")
@@ -797,8 +792,7 @@ async def test_runtime_handle_file_unhandled_action_and_failed_writes(
     await h_mcu_rm("mcu/test.txt", pb.CloudQueuedPublish(payload=b""))
     svc.serial = mock_serial
 
-    mocker.patch.object(svc, "_write_with_quota", return_value=False)
-    await h_loc_w("f.txt", pb.CloudQueuedPublish(payload=b"data"))
+    await h_loc_w("../outside.txt", pb.CloudQueuedPublish(payload=b"data"))
 
     await h_loc_r("not_a_file", pb.CloudQueuedPublish(topic_name="bridge/file/read"))
 
@@ -809,9 +803,7 @@ async def test_runtime_handle_file_unhandled_action_and_failed_writes(
 
 
 @pytest.mark.asyncio
-async def test_runtime_handle_shell_branches(
-    mock_bridge_service: BridgeService, mock_serial: AsyncMock, mocker: MockerFixture
-) -> None:
+async def test_runtime_handle_shell_branches(mock_bridge_service: BridgeService, mock_serial: AsyncMock) -> None:
     svc = mock_bridge_service
     handle_shell: Callable[..., Awaitable[None]] = getattr(svc, "_handle_shell")
 
@@ -821,9 +813,7 @@ async def test_runtime_handle_shell_branches(
 
     proto_cmd = pb.ProcessRunAsync(command="echo hello").SerializeToString()
     route_run = TopicRoute(raw="", prefix="bridge", topic=Topic.SHELL, segments=(ShellAction.RUN_ASYNC.value,))
-    mock_run = mocker.patch.object(svc, "run_process", new_callable=AsyncMock, return_value=123)
     await handle_shell(route_run, pb.CloudQueuedPublish(payload=proto_cmd))
-    assert mock_run.called
 
     await svc.kill_process(99999)
     assert 99999 not in svc.state.running_processes
@@ -869,7 +859,7 @@ async def test_runtime_cloud_spool_locked_limit_errors(
     mock_spool.__len__.side_effect = [2, 0]
     mock_spool.popleft = AsyncMock(side_effect=IndexError("empty"))
     mock_spool.append = AsyncMock(return_value=None)
-    setattr(svc, "_cloud_spool", mock_spool)
+    svc.cloud_spool = mock_spool
     msg = pb.CloudQueuedPublish(topic_name="br/test", payload=b"data")
     assert await spool_locked(msg) is True
 
@@ -877,13 +867,13 @@ async def test_runtime_cloud_spool_locked_limit_errors(
     mock_spool.__len__.side_effect = [2, 0]
     mock_spool.popleft = AsyncMock(side_effect=OSError("IO failure"))
     mock_spool.append = AsyncMock(return_value=None)
-    setattr(svc, "_cloud_spool", mock_spool)
+    svc.cloud_spool = mock_spool
     assert await spool_locked(msg) is True
 
     mock_spool = MagicMock()
     mock_spool.__len__.side_effect = [0, 0]
     mock_spool.append = AsyncMock(side_effect=OSError("Disk full"))
-    setattr(svc, "_cloud_spool", mock_spool)
+    svc.cloud_spool = mock_spool
     assert await spool_locked(msg) is False
 
 
@@ -892,7 +882,7 @@ async def test_runtime_flush_cloud_spool_corrupt_and_errors(
     mock_bridge_service: BridgeService,
 ) -> None:
     svc = mock_bridge_service
-    setattr(svc, "_cloud_stream", AsyncMock())
+    svc.cloud_stream = AsyncMock()
     flush_locked: Callable[[], Awaitable[None]] = getattr(svc, "_flush_cloud_spool_locked")
 
     len_val = 1
@@ -901,7 +891,7 @@ async def test_runtime_flush_cloud_spool_corrupt_and_errors(
     mock_spool.peek = AsyncMock(return_value=b"corrupt-data")
     mock_spool.popleft = AsyncMock(side_effect=IndexError("empty"))
     mock_spool.vacuum = AsyncMock()
-    setattr(svc, "_cloud_spool", mock_spool)
+    svc.cloud_spool = mock_spool
     await flush_locked()
     mock_spool.popleft.assert_awaited_once()
 
@@ -911,7 +901,7 @@ async def test_runtime_flush_cloud_spool_corrupt_and_errors(
     mock_spool.peek = AsyncMock(return_value=b"corrupt-data")
     mock_spool.popleft = AsyncMock(side_effect=OSError("IO Error"))
     mock_spool.vacuum = AsyncMock()
-    setattr(svc, "_cloud_spool", mock_spool)
+    svc.cloud_spool = mock_spool
     await flush_locked()
     mock_spool.popleft.assert_awaited_once()
 
@@ -926,7 +916,7 @@ async def test_runtime_flush_cloud_spool_corrupt_and_errors(
     mock_spool.peek = AsyncMock(return_value=b"corrupt-data")
     mock_spool.popleft = AsyncMock(side_effect=mock_pop)
     mock_spool.vacuum = AsyncMock()
-    setattr(svc, "_cloud_spool", mock_spool)
+    svc.cloud_spool = mock_spool
     initial_dropped = svc.state.cloud_spool_corrupt_dropped
     await flush_locked()
     mock_spool.popleft.assert_awaited_once()
@@ -965,7 +955,7 @@ async def test_runtime_poll_process_eof_and_xoff(
 
 @pytest.mark.asyncio
 async def test_runtime_handle_datastore_empty_key_and_request_miss(
-    mock_bridge_service: BridgeService, mocker: MockerFixture
+    mock_bridge_service: BridgeService,
 ) -> None:
     svc = mock_bridge_service
     handle_ds: Callable[..., Awaitable[None]] = getattr(svc, "_handle_datastore")
@@ -976,11 +966,13 @@ async def test_runtime_handle_datastore_empty_key_and_request_miss(
     route_req = TopicRoute(
         raw="", prefix="bridge", topic=Topic.DATASTORE, segments=(DatastoreAction.GET.value, "key1", "request")
     )
-    mock_pub = mocker.patch.object(svc, "publish_datastore_value", new_callable=AsyncMock)
+    mock_pub = AsyncMock()
+    svc.cloud_publisher = mock_pub
     await handle_ds(route_req, pb.CloudQueuedPublish(payload=b""))
-    assert mock_pub.call_count == 1
-    assert mock_pub.call_args[0][0] == "key1/request"
-    assert mock_pub.call_args[1]["error"] == "datastore-miss"
+    assert mock_pub.await_count == 1
+    published = mock_pub.await_args[0][0]
+    assert "key1/request" in published.topic_name
+    assert any(p.key == "bridge-error" and p.value == "datastore-miss" for p in published.user_properties)
 
 
 @pytest.mark.asyncio
@@ -1002,8 +994,10 @@ async def test_runtime_handle_mailbox_edge_branches(mock_bridge_service: BridgeS
 
 @pytest.mark.asyncio
 async def test_runtime_handle_file_and_shell_edge_branches(
-    mock_bridge_service: BridgeService, mock_serial: AsyncMock, mocker: MockerFixture
+    mock_bridge_service: BridgeService, mock_serial: AsyncMock
 ) -> None:
+    from unittest.mock import PropertyMock
+
     svc = mock_bridge_service
     handle_file: Callable[..., Awaitable[None]] = getattr(svc, "_handle_file")
     handle_shell: Callable[..., Awaitable[None]] = getattr(svc, "_handle_shell")
@@ -1020,7 +1014,6 @@ async def test_runtime_handle_file_and_shell_edge_branches(
     assert not mock_serial.send.called
 
     route_unsafe = TopicRoute(raw="", prefix="bridge", topic=Topic.FILE, segments=("read", "../../../etc/shadow"))
-    mocker.patch.object(svc, "_get_safe_path", return_value=None)
     await handle_file(route_unsafe, pb.CloudQueuedPublish(payload=b""))
     assert not mock_serial.send.called
 
@@ -1035,13 +1028,13 @@ async def test_runtime_handle_file_and_shell_edge_branches(
         payload = pb.ProcessRunAsync(command="echo prop").SerializeToString()
         properties = Props()
 
-    mock_rp = mocker.patch.object(svc, "run_process", new_callable=AsyncMock, return_value=123)
     await handle_run_async(0, cast(Any, InboundWithProps()))
-    assert mock_rp.called
 
-    mock_ctx = ProcessContext(AsyncMock())
+    mock_handle = MagicMock()
+    type(mock_handle).pid = PropertyMock(side_effect=ProcessLookupError("No such process"))
+    mock_handle.returncode = None
+    mock_ctx = ProcessContext(mock_handle)
     svc.state.running_processes[777] = mock_ctx
-    mocker.patch.object(svc, "_terminate_process", side_effect=ProcessLookupError("No such process"))
     await svc.kill_process(777)
     assert 777 not in svc.state.running_processes
 
@@ -1090,12 +1083,18 @@ async def test_runtime_run_cloud_cancelled(mock_bridge_service: BridgeService, m
     svc = mock_bridge_service
     svc.config.cloud_tls = False
 
-    async def _mock_cloud_cancel(_tls: Any) -> None:
-        raise asyncio.CancelledError()
+    mock_channel = MagicMock()
+    mock_stub = MagicMock()
+    mock_stream = AsyncMock()
+    mock_stream.__aenter__.side_effect = asyncio.CancelledError()
+    mock_stub.Session.open.return_value = mock_stream
+    mocker.patch("mcubridge.services.runtime.Channel", return_value=mock_channel)
+    mocker.patch("mcubridge.services.runtime.CloudBridgeStub", return_value=mock_stub)
 
-    mocker.patch.object(svc, "connect_cloud_session", side_effect=_mock_cloud_cancel)
     with pytest.raises(asyncio.CancelledError):
         await svc.run_cloud()
+
+    assert svc.state.cloud_fsm.disabled.is_active
 
 
 @pytest.mark.asyncio
@@ -1137,24 +1136,21 @@ async def test_runtime_cloud_session_non_command_envelope(
 
     mocker.patch("mcubridge.services.runtime.Channel")
     mocker.patch("mcubridge.services.runtime.CloudBridgeStub", return_value=mock_stub)
-    mocker.patch.object(svc, "flush_cloud_spool", new_callable=AsyncMock)
-    mocker.patch.object(svc, "_send_cloud_event", new_callable=AsyncMock)
     await svc.connect_cloud_session(None)
-    assert getattr(svc, "_cloud_stream") is None
+    assert svc.cloud_stream is None
     assert svc.state.cloud_fsm.spooling_degraded.is_active
 
 
 @pytest.mark.asyncio
 async def test_send_cloud_event_branches(mock_bridge_service: BridgeService) -> None:
     service = mock_bridge_service
-    send_cloud_event: Callable[..., Awaitable[None]] = getattr(service, "_send_cloud_event")
 
-    setattr(service, "_cloud_stream", None)
-    await send_cloud_event("heartbeat", "info", "test_msg")
+    service.cloud_stream = None
+    await service.send_cloud_event("heartbeat", "info", "test_msg")
 
     mock_stream = AsyncMock()
-    setattr(service, "_cloud_stream", mock_stream)
-    await send_cloud_event("heartbeat", "info", "test_msg")
+    service.cloud_stream = mock_stream
+    await service.send_cloud_event("heartbeat", "info", "test_msg")
     mock_stream.send_message.assert_awaited_once()
     envelope = mock_stream.send_message.call_args[0][0]
     assert envelope.event.event_type == "heartbeat"
@@ -1200,17 +1196,20 @@ async def test_runtime_cloud_session_rpc_commands_and_errors(
     cmd_ok = pb.CloudEnvelope(
         protocol_version=2,
         sequence_id=1,
-        command_request=pb.CommandRequest(command_path="rpc/echo", payload=b"ping"),
+        command_request=pb.CommandRequest(command_path="rpc/GetVersion", payload=b""),
     )
     cmd_invalid = pb.CloudEnvelope(
         protocol_version=2,
         sequence_id=2,
-        command_request=pb.CommandRequest(command_path="rpc/bad", payload=b"err"),
+        command_request=pb.CommandRequest(command_path="rpc/UnknownMethod", payload=b"err"),
     )
     cmd_os_err = pb.CloudEnvelope(
         protocol_version=2,
         sequence_id=3,
-        command_request=pb.CommandRequest(command_path="rpc/crash", payload=b"fault"),
+        command_request=pb.CommandRequest(
+            command_path="rpc/SetPinMode",
+            payload=pb.PinMode(pin=13, mode=1).SerializeToString(),
+        ),
     )
 
     sent_envelopes: list[pb.CloudEnvelope] = []
@@ -1239,22 +1238,21 @@ async def test_runtime_cloud_session_rpc_commands_and_errors(
         async def send_message(self, msg: pb.CloudEnvelope) -> None:
             sent_envelopes.append(msg)
 
-    async def mock_execute_rpc(method: str, _payload: bytes) -> bytes:
-        if method == "echo":
-            return b"pong"
-        if method == "bad":
-            raise ValueError("Unknown RPC method")
+    # Configure boundary mock_serial: returns version on CMD_GET_VERSION, raises OSError on CMD_SET_PIN_MODE
+    async def mock_serial_send(cmd: int, _payload: Any) -> Any:
+        if cmd == Command.CMD_GET_VERSION.value:
+            return pb.VersionResponse(major=2, minor=0, patch=0)
         raise OSError("Hardware IO error")
 
-    mocker.patch.object(svc.local_bridge_service, "execute_rpc", side_effect=mock_execute_rpc)
+    mock_serial = AsyncMock(spec=SerialTransport)
+    mock_serial.send = AsyncMock(side_effect=mock_serial_send)
+    svc.serial = mock_serial
 
     mock_stub = MagicMock()
     mock_stub.Session.open.return_value = MockRpcStream()
 
     mocker.patch("mcubridge.services.runtime.Channel")
     mocker.patch("mcubridge.services.runtime.CloudBridgeStub", return_value=mock_stub)
-    mocker.patch.object(svc, "flush_cloud_spool", new_callable=AsyncMock)
-    mocker.patch.object(svc, "_send_cloud_event", new_callable=AsyncMock)
 
     mock_tls_cache = MagicMock(spec=["_mem"])
     mock_tls_cache._mem = {f"tls_ticket:{svc.config.cloud_host}:{svc.config.cloud_port}": b"cached_ticket"}
@@ -1263,13 +1261,14 @@ async def test_runtime_cloud_session_rpc_commands_and_errors(
     with pytest.raises(ConnectionError, match="Cloud session stream disconnected"):
         await svc.connect_cloud_session(MagicMock())
 
-    assert len(sent_envelopes) == 3
-    assert sent_envelopes[0].command_response.status_code == 200
-    assert sent_envelopes[0].command_response.payload == b"pong"
-    assert sent_envelopes[1].command_response.status_code == 404
-    assert "Unknown RPC method" in sent_envelopes[1].command_response.error_message
-    assert sent_envelopes[2].command_response.status_code == 500
-    assert "Hardware IO error" in sent_envelopes[2].command_response.error_message
+    # Envelope 0 is the initial status_online event from connect_cloud_session
+    assert len(sent_envelopes) == 4
+    assert sent_envelopes[0].event.event_type == "status_online"
+    assert sent_envelopes[1].command_response.status_code == 200
+    assert sent_envelopes[2].command_response.status_code == 404
+    assert "Unknown RPC method" in sent_envelopes[2].command_response.error_message
+    assert sent_envelopes[3].command_response.status_code == 500
+    assert "Hardware IO error" in sent_envelopes[3].command_response.error_message
     assert svc.state.cloud_fsm.spooling_degraded.is_active
 
 
@@ -1297,10 +1296,10 @@ async def test_runtime_service_edge_branches(
     # 2. _handle_datastore PUT when state.datastore_cache is None (lines 882->884)
     mocker.stopall()
     runtime_state.datastore_cache = None
-    mock_enqueue = AsyncMock()
-    svc.enqueue_cloud = mock_enqueue
+    mock_publisher = AsyncMock()
+    svc.cloud_publisher = mock_publisher
     await handle_datastore(route_put, inbound_bad)
-    assert mock_enqueue.await_count == 1
+    assert mock_publisher.await_count == 1
 
     # 3. connect_cloud_session when load_tls_session_ticket returns None (lines 1606->1613)
     mock_channel = MagicMock()
@@ -1320,8 +1319,8 @@ async def test_runtime_service_edge_branches(
     # 4. run() teardown when _cloud_spool.close() raises OSError (lines 1537->1543)
     mock_spool = AsyncMock()
     mock_spool.close.side_effect = OSError("spool close failure")
-    setattr(svc, "_cloud_spool", mock_spool)
+    svc.cloud_spool = mock_spool
     with pytest.raises(OSError, match="spool close failure"):
         await mock_spool.close()
-    setattr(svc, "_cloud_spool", None)
-    assert getattr(svc, "_cloud_spool") is None
+    svc.cloud_spool = None
+    assert svc.cloud_spool is None

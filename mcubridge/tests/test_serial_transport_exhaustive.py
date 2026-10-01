@@ -48,9 +48,9 @@ def test_switch_local_baudrate_failure(mock_serial_setup: tuple[SerialTransport,
 async def test_reset(mock_serial_setup: tuple[SerialTransport, RuntimeState, MagicMock]) -> None:
     transport, _state, _ = mock_serial_setup
     cmd = MagicMock()
-    setattr(transport, "_current", cmd)
+    transport.current_command = cmd
     await transport.reset()
-    assert getattr(transport, "_current") is None
+    assert transport.current_command is None
     cmd.mark_failure.assert_called_once()
 
 

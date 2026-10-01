@@ -90,7 +90,7 @@ def test_watchdog_run_logs_cancellation(runtime_state: RuntimeState) -> None:
 
 def test_watchdog_uncovered_branch_hardening(runtime_state: RuntimeState) -> None:
     wd = WatchdogKeepalive(interval=10.0, state=runtime_state)
-    setattr(runtime_state, "fatal_count", 1)
+    runtime_state.fatal_count = 1
     assert wd.is_healthy() is False
     assert wd.fsm.critical_inhibit.is_active
 

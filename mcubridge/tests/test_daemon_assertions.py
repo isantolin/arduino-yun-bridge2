@@ -12,6 +12,7 @@ from mcubridge.config.settings import RuntimeConfig
 from mcubridge.daemon import app
 from mcubridge.services.handshake import SerialHandshakeFatal
 from mcubridge.services.runtime import BridgeService
+from mcubridge.state.context import create_runtime_state
 from pytest_mock import MockerFixture
 
 
@@ -36,38 +37,41 @@ async def test_daemon_supervise_retries_on_failure(service_stack: tuple[BridgeSe
 
 
 @pytest.mark.asyncio
-async def test_daemon_mqtt_run_disabled(service_stack: tuple[BridgeService, Any, Any], mocker: MockerFixture) -> None:
-    service, _, _ = service_stack
-    new_cfg = RuntimeConfig(
-        serial_port=service.config.serial_port,
+async def test_daemon_mqtt_run_disabled(runtime_config: RuntimeConfig, mock_serial: AsyncMock) -> None:
+    cfg = RuntimeConfig(
+        serial_port=runtime_config.serial_port,
         cloud_enabled=False,
-        file_system_root=service.config.file_system_root,
+        file_system_root=runtime_config.file_system_root,
         allow_non_tmp_paths=True,
     )
-    object.__setattr__(service, "config", new_cfg)
-    mock_connect = mocker.patch("mcubridge.services.runtime.BridgeService.connect_cloud_session")
+    state = create_runtime_state(cfg)
+    service = BridgeService(cfg, state, mock_serial)
     await service.run_cloud()
-    mock_connect.assert_not_called()
+    assert state.cloud_fsm.disabled.is_active
 
 
 @pytest.mark.asyncio
-async def test_daemon_run_orchestrates_tasks(service_stack: tuple[BridgeService, Any, Any]) -> None:
-    service, _, serial = service_stack
-
-    serial.run = AsyncMock()
-    service.run_cloud = AsyncMock()
+async def test_daemon_run_orchestrates_tasks(runtime_config: RuntimeConfig, mock_serial: AsyncMock) -> None:
+    cfg = RuntimeConfig(
+        serial_port=runtime_config.serial_port,
+        cloud_enabled=False,
+        file_system_root=runtime_config.file_system_root,
+        allow_non_tmp_paths=True,
+    )
+    state = create_runtime_state(cfg)
+    service = BridgeService(cfg, state, mock_serial)
 
     async def fail_soon() -> None:
         await asyncio.sleep(0.05)
         raise SerialHandshakeFatal("test fatal")
 
-    serial.run.side_effect = fail_soon
+    mock_serial.run = AsyncMock(side_effect=fail_soon)
 
     with pytest.raises(ExceptionGroup):
         await service.run()
 
-    assert serial.run.called
-    assert service.run_cloud.called
+    assert mock_serial.run.called
+    assert state.cloud_fsm.disabled.is_active
 
 
 def test_main_strict_mode_when_default_secret(

@@ -54,6 +54,47 @@ rules:
         - "**/tests/**"
 
   # ==============================================================================
+  # RULE 11 & DIRECTIVA DE TESTING: PROHIBICIÓN DE MONKEYPATCHING INTERNO (PYTHON)
+  # ==============================================================================
+  - id: milspec-ban-private-monkeypatch
+    languages: [python]
+    severity: ERROR
+    message: "MIL-SPEC Directive Violation: Patching or mutating internal/private attributes ('_...') on objects or modules is strictly prohibited. Use Boundaries-Only Test Doubles or public API."
+    patterns:
+      - pattern-either:
+          - pattern: $MOCKER.patch.object($OBJ, $ATTR, ...)
+          - pattern: patch.object($OBJ, $ATTR, ...)
+          - pattern: $MONKEYPATCH.setattr($OBJ, $ATTR, ...)
+          - pattern: setattr($OBJ, $ATTR, ...)
+      - metavariable-regex:
+          metavariable: $ATTR
+          regex: "^[\"']_.*[\"']$"
+    paths:
+      include:
+        - "**/tests/**"
+
+  # ==============================================================================
+  # RULE 11 & DIRECTIVA DE TESTING: PROHIBICIÓN DE MUTACIÓN DE SYS.MODULES (PYTHON)
+  # ==============================================================================
+  - id: milspec-ban-sys-modules-mock
+    languages: [python]
+    severity: ERROR
+    message: "MIL-SPEC Directive Violation: Mutating 'sys.modules' dictionary to fake system dependencies is strictly prohibited. Inject callables or dependency modules via constructor/function arguments (DI)."
+    patterns:
+      - pattern-either:
+          - pattern: $MOCKER.patch.dict("sys.modules", ...)
+          - pattern: $MOCKER.patch.dict(sys.modules, ...)
+          - pattern: patch.dict("sys.modules", ...)
+          - pattern: patch.dict(sys.modules, ...)
+          - pattern: $MONKEYPATCH.setitem(sys.modules, ...)
+          - pattern: "sys.modules[...] = ..."
+          - pattern: "sys.modules.pop(...)"
+          - pattern: "del sys.modules[...]"
+    paths:
+      include:
+        - "**/tests/**"
+
+  # ==============================================================================
   # RULE 3 & 27: ZERO-HEAP ARDUINO FIRMWARE (C++)
   # ==============================================================================
   - id: sil2-ban-cpp-dynamic-allocation

@@ -33,10 +33,11 @@ def test_file_push_script(runtime_config: Any, mocker: MockerFixture, tmp_path: 
     script = load_script("mcubridge-file-push")
     local_file = tmp_path / "local.txt"
     local_file.write_bytes(b"data")
-    mock_push_ubus = mocker.patch("mcubridge_file_push.push_file_ubus", return_value=True)
+    mock_push = MagicMock()
+    script.push_file_handler = mock_push
     mocker.patch("sys.argv", ["mcubridge-file-push", str(local_file), "mcu/remote.txt"])
     script.app(standalone_mode=False)
-    mock_push_ubus.assert_called_once_with("mcu/remote.txt", b"data")
+    mock_push.assert_called_once_with("mcu/remote.txt", b"data")
 
 
 def test_rotate_credentials_script(
@@ -56,10 +57,10 @@ def test_rotate_credentials_script(
     assert "CLOUD_PASSWORD=" in captured.out
 
 
-def test_file_push_error_cases(runtime_config: Any, mocker: MockerFixture) -> None:
+def test_file_push_error_cases(runtime_config: Any, mocker: MockerFixture, tmp_path: Path) -> None:
     script = load_script("mcubridge-file-push")
-    mocker.patch("sys.argv", ["mcubridge-file-push", "nonexistent.txt", "mcu/remote.txt"])
-    mocker.patch("pathlib.Path.exists", return_value=False)
+    nonexistent = tmp_path / "nonexistent.txt"
+    mocker.patch("sys.argv", ["mcubridge-file-push", str(nonexistent), "mcu/remote.txt"])
     with pytest.raises(SystemExit):
         script.app(standalone_mode=False)
 

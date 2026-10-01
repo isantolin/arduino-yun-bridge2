@@ -40,56 +40,68 @@ def test_hexdump_processor_bytes() -> None:
 
 
 def test_configure_logging_debug_and_console() -> None:
-    configure_logging(debug=True, console=True)
-    assert logging.getLogger().level == logging.DEBUG
-    configure_logging(debug=False, console=False)
-    assert logging.getLogger().level == logging.INFO
+    try:
+        configure_logging(debug=True, console=True)
+        assert logging.getLogger().level == logging.DEBUG
+        configure_logging(debug=False, console=False)
+        assert logging.getLogger().level == logging.INFO
+    finally:
+        configure_logging(debug=True, console=True)
 
 
 def test_configure_logging_env_debug(mocker: MockerFixture) -> None:
-    mocker.patch.dict("os.environ", {"MCUBRIDGE_DEBUG": "1"})
-    configure_logging()
-    assert logging.getLogger().level == logging.DEBUG
-    mocker.patch.dict("os.environ", {"MCUBRIDGE_DEBUG": "0"})
-    configure_logging()
-    assert logging.getLogger().level == logging.INFO
+    try:
+        mocker.patch.dict("os.environ", {"MCUBRIDGE_DEBUG": "1"})
+        configure_logging()
+        assert logging.getLogger().level == logging.DEBUG
+        mocker.patch.dict("os.environ", {"MCUBRIDGE_DEBUG": "0"})
+        configure_logging()
+        assert logging.getLogger().level == logging.INFO
+    finally:
+        configure_logging(debug=True, console=True)
 
 
 def test_configure_logging_stream_override(mocker: MockerFixture) -> None:
-    cfg = pb.RuntimeConfig(debug=True)
-    mocker.patch.dict("os.environ", {"MCUBRIDGE_LOG_STREAM": "1"})
-    configure_logging(cfg)
-    assert logging.getLogger().level == logging.DEBUG
+    try:
+        cfg = pb.RuntimeConfig(debug=True)
+        mocker.patch.dict("os.environ", {"MCUBRIDGE_LOG_STREAM": "1"})
+        configure_logging(cfg)
+        assert logging.getLogger().level == logging.DEBUG
+    finally:
+        configure_logging(debug=True, console=True)
 
 
 def test_configure_logging_syslog_paths(mocker: MockerFixture) -> None:
-    cfg = pb.RuntimeConfig(debug=False)
-    # /dev/log
-    mocker.patch.dict("os.environ", {}, clear=True)
-    mocker.patch("pathlib.Path.exists", side_effect=lambda: True)
-    mock_handler = MagicMock()
-    mock_handler.level = 0
-    mock_syslog = mocker.patch("mcubridge.config.logging.SysLogHandler", return_value=mock_handler)
-    configure_logging(cfg)
-    assert mock_syslog.called
+    try:
+        cfg = pb.RuntimeConfig(debug=False)
+        # /dev/log
+        mocker.patch.dict("os.environ", {}, clear=True)
+        mocker.patch("pathlib.Path.exists", side_effect=lambda: True)
+        mock_handler = MagicMock()
+        mock_handler.level = 0
+        mock_syslog = mocker.patch("mcubridge.config.logging.SysLogHandler", return_value=mock_handler)
+        configure_logging(cfg)
+        assert mock_syslog.called
 
-    # /var/run/log
-    def exists_var_run(self_path: Any) -> bool:
-        return str(self_path) == "/var/run/log"
+        # /var/run/log
+        def exists_var_run(self_path: Any) -> bool:
+            return str(self_path) == "/var/run/log"
 
-    mocker.patch.dict("os.environ", {}, clear=True)
-    mocker.patch("pathlib.Path.exists", exists_var_run)
-    mock_handler2 = MagicMock()
-    mock_handler2.level = 0
-    mock_syslog2 = mocker.patch("mcubridge.config.logging.SysLogHandler", return_value=mock_handler2)
-    configure_logging()
-    assert mock_syslog2.called
+        mocker.patch.dict("os.environ", {}, clear=True)
+        mocker.patch("pathlib.Path.exists", exists_var_run)
+        mock_handler2 = MagicMock()
+        mock_handler2.level = 0
+        mock_syslog2 = mocker.patch("mcubridge.config.logging.SysLogHandler", return_value=mock_handler2)
+        configure_logging()
+        assert mock_syslog2.called
 
-    # No syslog
-    mocker.patch.dict("os.environ", {}, clear=True)
-    mocker.patch("pathlib.Path.exists", return_value=False)
-    configure_logging()
-    assert any(isinstance(h, logging.StreamHandler) for h in logging.getLogger().handlers)
+        # No syslog
+        mocker.patch.dict("os.environ", {}, clear=True)
+        mocker.patch("pathlib.Path.exists", return_value=False)
+        configure_logging()
+        assert any(isinstance(h, logging.StreamHandler) for h in logging.getLogger().handlers)
+    finally:
+        configure_logging(debug=True, console=True)
 
 
 # =============================================================================

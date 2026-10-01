@@ -38,26 +38,23 @@ def cgi_env() -> Callable[..., dict[str, Any]]:
     return _make_env
 
 
-def test_cgi_success(cgi_env: Any, mocker: MockerFixture) -> None:
+def test_cgi_success(cgi_env: Any) -> None:
     env = cgi_env(body=json.dumps({"state": "ON"}).encode("utf-8"))
     start_response = MagicMock()
 
-    mock_set_pin = mocker.patch("pin_rest_cgi.set_pin_digital_sync")
-    mock_load = mocker.patch("pin_rest_cgi.load_runtime_config")
-    mock_config = MagicMock()
-    mock_config.topic_prefix = "br"
-    mock_load.return_value = mock_config
+    mock_ubus = MagicMock()
+    orig_ubus = pin_rest_cgi.ubus
+    pin_rest_cgi.ubus = mock_ubus
+    try:
+        res = application(env, start_response)
+        assert start_response.called
+        assert "200 OK" in start_response.call_args[0][0]
+        mock_ubus.call.assert_called_once_with("mcubridge", "digital_write", {"pin": 13, "value": 1})
 
-    res = application(env, start_response)
-
-    assert start_response.called
-    assert "200 OK" in start_response.call_args[0][0]
-    mock_set_pin.assert_called_once_with(13, 1)
-
-    data = json.loads(
-        res[0],
-    )
-    assert data["status"] == "ok"
+        data = json.loads(res[0])
+        assert data["status"] == "ok"
+    finally:
+        pin_rest_cgi.ubus = orig_ubus
 
 
 def test_cgi_invalid_path(cgi_env: Any) -> None:
@@ -81,32 +78,42 @@ def test_cgi_invalid_state(cgi_env: Any) -> None:
     assert "400 Bad Request" in start_response.call_args[0][0]
 
 
-def test_cgi_internal_error(cgi_env: Any, mocker: MockerFixture) -> None:
+def test_cgi_internal_error(cgi_env: Any) -> None:
     env = cgi_env(body=json.dumps({"state": "ON"}).encode("utf-8"))
     start_response = MagicMock()
-    mocker.patch("pin_rest_cgi.load_runtime_config", side_effect=OSError("fail"))
-    application(env, start_response)
-    assert "500 Internal Server Error" in start_response.call_args[0][0]
-
-
-def test_pin_rest_cgi_set_pin_digital_sync_error(mocker: MockerFixture) -> None:
-    mocker.patch.object(pin_rest_cgi, "ubus", None)
-    with pytest.raises(RuntimeError, match="Native OpenWrt UBUS module unavailable"):
-        pin_rest_cgi.set_pin_digital_sync(13, 1)
-
     mock_ubus = MagicMock()
-    mock_ubus.call.side_effect = OSError("UBUS failure")
-    mocker.patch.object(pin_rest_cgi, "ubus", mock_ubus)
-    with pytest.raises(OSError, match="UBUS failure"):
-        pin_rest_cgi.set_pin_digital_sync(13, 1)
-    assert mock_ubus.connect.called
-    mock_ubus.call.assert_called_once_with("mcubridge", "digital_write", {"pin": 13, "value": 1})
+    mock_ubus.call.side_effect = OSError("fail")
+    orig_ubus = pin_rest_cgi.ubus
+    pin_rest_cgi.ubus = mock_ubus
+    try:
+        application(env, start_response)
+        assert "500 Internal Server Error" in start_response.call_args[0][0]
+    finally:
+        pin_rest_cgi.ubus = orig_ubus
 
-    mock_ubus_ok = MagicMock()
-    mocker.patch.object(pin_rest_cgi, "ubus", mock_ubus_ok)
-    pin_rest_cgi.set_pin_digital_sync(13, 1)
-    assert mock_ubus_ok.connect.called
-    mock_ubus_ok.call.assert_called_once_with("mcubridge", "digital_write", {"pin": 13, "value": 1})
+
+def test_pin_rest_cgi_set_pin_digital_sync_error() -> None:
+    orig_ubus = pin_rest_cgi.ubus
+    try:
+        pin_rest_cgi.ubus = None
+        with pytest.raises(RuntimeError, match="Native OpenWrt UBUS module unavailable"):
+            pin_rest_cgi.set_pin_digital_sync(13, 1)
+
+        mock_ubus = MagicMock()
+        mock_ubus.call.side_effect = OSError("UBUS failure")
+        pin_rest_cgi.ubus = mock_ubus
+        with pytest.raises(OSError, match="UBUS failure"):
+            pin_rest_cgi.set_pin_digital_sync(13, 1)
+        assert mock_ubus.connect.called
+        mock_ubus.call.assert_called_once_with("mcubridge", "digital_write", {"pin": 13, "value": 1})
+
+        mock_ubus_ok = MagicMock()
+        pin_rest_cgi.ubus = mock_ubus_ok
+        pin_rest_cgi.set_pin_digital_sync(13, 1)
+        assert mock_ubus_ok.connect.called
+        mock_ubus_ok.call.assert_called_once_with("mcubridge", "digital_write", {"pin": 13, "value": 1})
+    finally:
+        pin_rest_cgi.ubus = orig_ubus
 
 
 def test_pin_rest_cgi_application_branches(mocker: MockerFixture) -> None:

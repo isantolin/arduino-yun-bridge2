@@ -131,11 +131,13 @@ def audit_proto_integrity(proto_path: Path | None = None) -> list[str]:
             ("Buf Lint Violation", module_dir, ("lint",)),
         ]
         if (ROOT / ".git").exists() and target == (ROOT / "tools" / "protocol" / "mcubridge.proto"):
-            checks.append((
-                "Buf Breaking Change Violation",
-                ROOT,
-                ("breaking", str(module_dir), "--against", ".git#subdir=tools/protocol"),
-            ))
+            checks.append(
+                (
+                    "Buf Breaking Change Violation",
+                    ROOT,
+                    ("breaking", str(module_dir), "--against", ".git#subdir=tools/protocol"),
+                )
+            )
 
         return [
             finding

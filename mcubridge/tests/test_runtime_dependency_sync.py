@@ -6,9 +6,7 @@ from typer.testing import CliRunner
 from tools.audit import sync_runtime_deps
 
 
-def test_write_requirements_dry_run_does_not_write(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_write_requirements_dry_run_does_not_write(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     requirements_path = tmp_path / "runtime.txt"
     monkeypatch.setattr(sync_runtime_deps, "REQUIREMENTS_PATH", requirements_path)
     deps = [
@@ -30,9 +28,7 @@ def test_write_requirements_dry_run_does_not_write(
     )
 
 
-def test_load_manifest_reports_malformed_toml(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_load_manifest_reports_malformed_toml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     manifest_path = tmp_path / "runtime.toml"
     manifest_path.write_text("invalid toml = [", encoding="utf-8")
     monkeypatch.setattr(sync_runtime_deps, "MANIFEST_PATH", manifest_path)

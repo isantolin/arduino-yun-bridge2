@@ -257,14 +257,17 @@ def test_logging_discover_syslog_and_none(runtime_config: settings.RuntimeConfig
     def _mock_exists(path_obj: Path) -> bool:
         return str(path_obj) == "/var/run/log"
 
-    mocker.patch.dict("os.environ", {}, clear=True)
-    mocker.patch.object(Path, "exists", _mock_exists)
-    mock_syslog = mocker.patch("mcubridge.config.logging.SysLogHandler")
-    configure_logging(runtime_config)
-    assert mock_syslog.called
+    try:
+        mocker.patch.dict("os.environ", {}, clear=True)
+        mocker.patch.object(Path, "exists", _mock_exists)
+        mock_syslog = mocker.patch("mcubridge.config.logging.SysLogHandler")
+        configure_logging(runtime_config)
+        assert mock_syslog.called
 
-    mocker.patch.object(Path, "exists", return_value=False)
-    configure_logging(runtime_config)
+        mocker.patch.object(Path, "exists", return_value=False)
+        configure_logging(runtime_config)
+    finally:
+        configure_logging(debug=True, console=True)
 
 
 def test_uci_edge_branches(mocker: MockerFixture) -> None:
@@ -306,10 +309,12 @@ def test_config_settings_and_logging_branches(runtime_config: settings.RuntimeCo
     )
     assert cfg_overrides.serial_shared_secret == b"overridden_secret"
 
-    # 4. configure_logging when SysLogHandler fails with OSError triggers fallback StreamHandler (lines 88-89)
-    mocker.patch.object(Path, "exists", return_value=True)
-    mocker.patch("mcubridge.config.logging.SysLogHandler", side_effect=OSError("syslog unavailable"))
-    configure_logging(runtime_config, console=False)
+    try:
+        mocker.patch.object(Path, "exists", return_value=True)
+        mocker.patch("mcubridge.config.logging.SysLogHandler", side_effect=OSError("syslog unavailable"))
+        configure_logging(runtime_config, console=False)
+    finally:
+        configure_logging(debug=True, console=True)
 
 
 def test_load_runtime_config_without_secret_fails_validation() -> None:

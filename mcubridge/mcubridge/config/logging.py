@@ -92,9 +92,11 @@ def configure_logging(
     handler.setFormatter(formatter)
 
     root_logger = logging.getLogger()
-    for old_handler in root_logger.handlers:
+    for old_handler in root_logger.handlers[:]:
+        if "LogCapture" in type(old_handler).__name__:
+            continue
         old_handler.close()
-    root_logger.handlers.clear()
+        root_logger.removeHandler(old_handler)
     root_logger.addHandler(handler)
     root_logger.setLevel(level)
 
@@ -103,5 +105,7 @@ def reset_handlers() -> None:
     """Close and clear all handlers on the root logger."""
     root_logger = logging.getLogger()
     for handler in root_logger.handlers[:]:
+        if "LogCapture" in type(handler).__name__:
+            continue
         handler.close()
         root_logger.removeHandler(handler)

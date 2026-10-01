@@ -39,7 +39,6 @@ from mcubridge.protocol.mcubridge_grpc import CloudBridgeBase, LocalBridgeBase
 from mcubridge.protocol.protocol import DEFAULT_CLOUD_PORT
 from statemachine import State, StateMachine
 
-configure_logging()
 logger = structlog.get_logger("mcubridge.gateway")
 
 
@@ -943,6 +942,7 @@ def main(
     tsdb_url: Annotated[str | None, typer.Option(help="HTTP endpoint URL for TSDB Line Protocol ingestion")] = None,
 ) -> None:
     """MCU Bridge Protobuf Gateway."""
+    configure_logging()
     gateway = ProtobufGateway(
         host=host,
         port=port,

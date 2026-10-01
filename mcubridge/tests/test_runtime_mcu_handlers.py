@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock
 
 import mcubridge.protocol.mcubridge_pb2 as pb
 import pytest
+from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.services.runtime import BridgeService, _PendingMcuRead
@@ -332,6 +333,7 @@ async def test_on_mcu_ack_valid(
     svc: tuple[BridgeService, RuntimeState, AsyncMock], caplog: pytest.LogCaptureFixture
 ) -> None:
     service, _state, _serial = svc
+    configure_logging(debug=True, console=True)
     p = pb.AckPacket(command_id=0x01)
     caplog.set_level(logging.DEBUG)
     on_ack: Callable[..., Awaitable[None]] = getattr(service, "_on_mcu_ack")
@@ -344,6 +346,7 @@ async def test_on_mcu_ack_raw_bytes(
     svc: tuple[BridgeService, RuntimeState, AsyncMock], caplog: pytest.LogCaptureFixture
 ) -> None:
     service, _state, _serial = svc
+    configure_logging(debug=True, console=True)
     valid_bytes = pb.AckPacket(command_id=0x02).SerializeToString()
     caplog.set_level(logging.DEBUG)
     on_ack: Callable[..., Awaitable[None]] = getattr(service, "_on_mcu_ack")

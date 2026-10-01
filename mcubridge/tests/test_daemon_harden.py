@@ -96,6 +96,7 @@ def test_main_insecure_secret_warning(mocker: MockerFixture) -> None:
     insecure_config = RuntimeConfig(serial_shared_secret=DEFAULT_SERIAL_SHARED_SECRET)
     mocker.patch("mcubridge.daemon.verify_crypto_integrity", return_value=True)
     mocker.patch("mcubridge.daemon.load_runtime_config", return_value=insecure_config)
+    mocker.patch("mcubridge.daemon.configure_logging")
     mock_service_cls = mocker.patch("mcubridge.daemon.BridgeService")
     mocker.patch("asyncio.Runner")
 

@@ -21,7 +21,6 @@ from mcubridge.protocol import mcubridge_grpc
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge_client.cli import configure_logging
 
-configure_logging()
 logger = structlog.get_logger("test-gateway-northbound")
 
 
@@ -80,6 +79,7 @@ def main(
 ) -> None:
     if not device_id:
         raise ValueError("Explicit target device_id is required. Implicit fallback is prohibited.")
+    configure_logging()
     asyncio.run(executor_fn(host, port, device_id))
 
 

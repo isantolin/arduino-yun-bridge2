@@ -6,6 +6,7 @@ import asyncio
 import gc
 import importlib.util
 import inspect
+import logging
 import os
 import shutil
 import sys
@@ -217,6 +218,8 @@ def pytest_pyfunc_call(pyfuncitem: pytest.Function) -> bool | None:
 def force_gc_cleanup():
     """Ensure all resources are released after each test to reach zero warnings."""
     yield
+    if logging.getLogger().level != logging.DEBUG:
+        configure_logging(debug=True, console=True)
     # Close any stale event loop left by asyncio.run() or explicit set_event_loop
     policy = _get_event_loop_policy()
     loop = getattr(getattr(policy, "_local", None), "_loop", None)

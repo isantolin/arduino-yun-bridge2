@@ -12,7 +12,6 @@ import typer
 from mcubridge_client import dump_client_env
 from mcubridge_client.cli import bridge_session, configure_logging
 
-configure_logging()
 logger = structlog.get_logger(__name__)
 
 
@@ -49,6 +48,7 @@ def main(
     ] = None,
     topic_prefix: Annotated[str, typer.Option("--topic-prefix", help="Topic prefix")] = "br",
 ) -> None:
+    configure_logging()
     asyncio.run(executor_fn(host, port, device_id, topic_prefix))
 
 

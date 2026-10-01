@@ -134,3 +134,19 @@ Arduino MCU Bridge 2 is a modern, high-performance communication system between 
 
 **Current Version:** v2.8.8 - **Flight-Ready**
 The ecosystem is fully refactored and modernized. Primary service components utilize `AsyncMock` for testing, ensuring high interface fidelity. The C++ library follows strict SIL-2 guidelines with O(1) dispatching and strong typing. End-to-end testing verifies the complete integration between the Python daemon and the C++ logic across both wired UART and wireless TCP/WiFi streams.
+
+### DIRECTIVA DE TESTING Y DOBLES DE PRUEBA (MIL-SPEC / ZERO-CHEAT):
+
+1. PROHIBICIÓN DE MONKEYPATCHING INTERNO:
+   - Queda estrictamente prohibido el uso de `monkeypatch.setattr`, `unittest.mock.patch` o mutación de atributos
+     sobre funciones privadas (prefijo `_`), métodos auxiliares internos, variables de módulo o lógica de negocio
+     del módulo bajo prueba.
+   - Prohibido alterar estructuras de control internas o saltarse validaciones de negocio únicamente para alcanzar
+     cobertura artificial de ramas (`coverage gaming`).
+   - El test debe ejercitar el componente exclusivamente a través de su API pública/contrato externo.
+
+2. DOBLES DE PRUEBA PERMITIDOS (BOUNDARIES ONLY):
+   - Solo se permiten dobles en las fronteras de entrada/salida (I/O) externas al proceso:
+     * Transports / Serial: Utilizar puertos serie virtuales reales (`pty.openpty()`) o pipes UNIX; prohibido mockear métodos de lectura/escritura en memoria.
+     * Sockets / IPC: Inyectar adaptadores abstractos definidos mediante `typing.Protocol` o ABC a través del constructor (Dependency Injection).
+     * Sistema Operativo / Binarios CLI: Las dependencias de subprocesos (`uci`, `ubus`, `buf`, `semgrep`) deben recibirse como ejecutores/callables inyectables en la firma de la función/clase. Queda prohibido alterar `sys.modules`, `builtins.__import__` o patchear funciones internas para simular la ausencia de herramientas externas.

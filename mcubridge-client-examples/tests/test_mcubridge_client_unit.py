@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
@@ -20,7 +21,6 @@ from mcubridge_client import (
 )
 from mcubridge_client.cli import bridge_session, configure_logging
 from mcubridge_client.env import is_openwrt, read_uci_general
-from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
 # ==============================================================================
@@ -36,22 +36,20 @@ def test_cli_configure_logging() -> None:
 
 
 @pytest.mark.asyncio
-async def test_cli_bridge_session(mocker: MockerFixture) -> None:
+async def test_cli_bridge_session() -> None:
     """bridge_session context manager yields Channel and LocalBridgeStub."""
-    mock_chan_cls = mocker.patch("mcubridge_client.cli.Channel")
-    mock_stub_cls = mocker.patch("mcubridge_client.cli.LocalBridgeStub")
     mock_chan = MagicMock()
     mock_chan.__dispatch__ = MagicMock()
-    mock_stub = MagicMock()
-    mock_chan_cls.return_value = mock_chan
-    mock_stub_cls.return_value = mock_stub
 
-    async with bridge_session(host="127.0.0.1", port=8443, device_id="yun-01", topic_prefix="br") as (
-        chan,
-        stub,
-    ):
+    async with bridge_session(
+        host="127.0.0.1",
+        port=8443,
+        device_id="yun-01",
+        topic_prefix="br",
+        channel_factory=lambda _h, _p: mock_chan,
+    ) as (chan, stub):
         assert chan is mock_chan
-        assert stub is mock_stub
+        assert isinstance(stub, LocalBridgeStub)
         mock_chan.__dispatch__.add_listener.assert_called_once()
         callback = mock_chan.__dispatch__.add_listener.call_args[0][1]
         event = MagicMock()
@@ -62,35 +60,32 @@ async def test_cli_bridge_session(mocker: MockerFixture) -> None:
     mock_chan.close.assert_called_once()
 
 
-def test_env_is_openwrt_force_uci(mocker: MockerFixture) -> None:
+def test_env_is_openwrt_force_uci(monkeypatch: pytest.MonkeyPatch) -> None:
     """is_openwrt checks environment variable and file presence."""
-    mocker.patch.dict("os.environ", {"MCUBRIDGE_FORCE_UCI": "1"})
+    monkeypatch.setenv("MCUBRIDGE_FORCE_UCI", "1")
     assert is_openwrt() is True
 
 
-def test_env_is_openwrt_file_exists(mocker: MockerFixture) -> None:
-    mocker.patch.dict("os.environ", {}, clear=True)
-    mocker.patch("pathlib.Path.exists", return_value=True)
-    assert is_openwrt() is True
+def test_env_is_openwrt_file_exists(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.delenv("MCUBRIDGE_FORCE_UCI", raising=False)
+    fake_release = tmp_path / "openwrt_release"
+    fake_release.touch()
+    assert is_openwrt(release_file=fake_release) is True
 
 
-def test_env_read_uci_general(mocker: MockerFixture) -> None:
+def test_env_read_uci_general(monkeypatch: pytest.MonkeyPatch) -> None:
     """read_uci_general returns UCI config dict or empty dict."""
-    mocker.patch("mcubridge_client.env.is_openwrt", return_value=False)
+    monkeypatch.delenv("MCUBRIDGE_FORCE_UCI", raising=False)
     assert read_uci_general() == {}
 
-    mocker.patch("mcubridge_client.env.is_openwrt", return_value=True)
-    mocker.patch("importlib.util.find_spec", return_value=MagicMock())
-    mock_imp = mocker.patch("importlib.import_module")
-    mock_mod = MagicMock()
-    mock_mod.get_uci_config = MagicMock(return_value={"cloud_host": "127.0.0.1", "_private": "x"})
-    mock_imp.return_value = mock_mod
-    res = read_uci_general()
+    res = read_uci_general(config_getter=lambda: {"cloud_host": "127.0.0.1", "_private": "x"})
     assert res == {"cloud_host": "127.0.0.1"}
 
     # Exception path in get_uci_config
-    mock_mod.get_uci_config.side_effect = RuntimeError("UCI error")
-    assert read_uci_general() == {}
+    def _raise_error() -> dict[str, Any]:
+        raise RuntimeError("UCI error")
+
+    assert read_uci_general(config_getter=_raise_error) == {}
 
 
 def test_env_dump_client_env(capsys: pytest.CaptureFixture[str]) -> None:
@@ -112,9 +107,9 @@ def test_env_dump_client_env(capsys: pytest.CaptureFixture[str]) -> None:
 # ==============================================================================
 
 
-def test_definitions_build_bridge_args(mocker: MockerFixture) -> None:
+def test_definitions_build_bridge_args(monkeypatch: pytest.MonkeyPatch) -> None:
     """build_bridge_args builds dictionary targeting Gateway with explicit device_id."""
-    mocker.patch.dict("os.environ", {}, clear=True)
+    monkeypatch.delenv("MCUBRIDGE_DEVICE_ID", raising=False)
     args = build_bridge_args(host="127.0.0.1", port=8443, device_id="yun-01", topic_prefix="br")
     assert args == {
         "host": "127.0.0.1",
@@ -209,23 +204,26 @@ def test_topic_build_and_match_invariants(prefix: str, seg1: str, seg2: str) -> 
 
 
 @pytest.mark.asyncio
-async def test_smoke_connection_run_test(mocker: MockerFixture) -> None:
+async def test_smoke_connection_run_test() -> None:
     """Verify test_smoke_connection.run_test calls bridge_session correctly."""
     import test_smoke_connection
 
-    mock_sess = mocker.patch("test_smoke_connection.bridge_session")
+    mock_sess = MagicMock()
     mock_chan = MagicMock()
     mock_stub = MagicMock()
     mock_sess.return_value.__aenter__.return_value = (mock_chan, mock_stub)
-    await test_smoke_connection.run_test(host="127.0.0.1", port=8443, device_id="yun-01", topic_prefix="br")
+    await test_smoke_connection.run_test(
+        host="127.0.0.1", port=8443, device_id="yun-01", topic_prefix="br", session_factory=mock_sess
+    )
     mock_sess.assert_called_once_with(host="127.0.0.1", port=8443, device_id="yun-01", topic_prefix="br")
 
 
-def test_smoke_connection_cli_invocation(mocker: MockerFixture) -> None:
+def test_smoke_connection_cli_invocation(monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify test_smoke_connection CLI entry point invokes run_test via typer runner."""
     import test_smoke_connection
 
-    mock_run = mocker.patch("test_smoke_connection.run_test")
+    mock_run = MagicMock()
+    monkeypatch.setattr(test_smoke_connection, "test_runner", mock_run)
     runner = CliRunner()
     res = runner.invoke(
         cast(Any, test_smoke_connection.cli),
@@ -236,27 +234,30 @@ def test_smoke_connection_cli_invocation(mocker: MockerFixture) -> None:
 
 
 @pytest.mark.asyncio
-async def test_gateway_northbound_run_test(mocker: MockerFixture) -> None:
+async def test_gateway_northbound_run_test() -> None:
     """Verify test_gateway_northbound.run_test calls DispatchCommand correctly."""
     import test_gateway_northbound
 
-    mock_chan_cls = mocker.patch("test_gateway_northbound.Channel")
-    mock_stub_cls = mocker.patch("test_gateway_northbound.mcubridge_grpc.CloudBridgeStub")
     mock_chan = MagicMock()
-    mock_chan_cls.return_value = mock_chan
     mock_stub = MagicMock()
-    mock_stub_cls.return_value = mock_stub
     mock_stub.DispatchCommand = AsyncMock(return_value=MagicMock(status_code=200, payload=b"OK"))
 
-    await test_gateway_northbound.run_test(host="127.0.0.1", port=8443, device_id="yun-01")
+    await test_gateway_northbound.run_test(
+        host="127.0.0.1",
+        port=8443,
+        device_id="yun-01",
+        channel_factory=lambda _h, _p: mock_chan,
+        stub_factory=lambda _c: mock_stub,
+    )
     mock_stub.DispatchCommand.assert_awaited_once()
 
 
-def test_gateway_northbound_cli_invocation(mocker: MockerFixture) -> None:
+def test_gateway_northbound_cli_invocation(monkeypatch: pytest.MonkeyPatch) -> None:
     """Verify test_gateway_northbound CLI entry point invokes run_test via typer runner."""
     import test_gateway_northbound
 
-    mock_run = mocker.patch("test_gateway_northbound.run_test")
+    mock_run = MagicMock()
+    monkeypatch.setattr(test_gateway_northbound, "test_runner", mock_run)
     runner = CliRunner()
     res = runner.invoke(
         cast(Any, test_gateway_northbound.cli),

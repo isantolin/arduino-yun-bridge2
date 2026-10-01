@@ -1,6 +1,5 @@
-from __future__ import annotations
-
-from typing import cast
+from pathlib import Path
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -10,7 +9,6 @@ from mcubridge_client import LocalBridgeStub
 from mcubridge_client.definitions import build_bridge_args
 from mcubridge_client.env import dump_client_env, is_openwrt, read_uci_general
 from mcubridge_client.spi import SpiDevice
-from pytest_mock import MockerFixture
 
 
 @pytest.fixture
@@ -138,31 +136,31 @@ def test_definitions_build_bridge_args() -> None:
     assert args2["device_id"] == "dev1"
 
 
-def test_env_functions(monkeypatch: pytest.MonkeyPatch, mocker: MockerFixture) -> None:
-    import importlib.util
-
-    # 1. is_openwrt with forced env
+def test_env_functions(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    # 1. is_openwrt with forced env and real file
     monkeypatch.setenv("MCUBRIDGE_FORCE_UCI", "1")
     assert is_openwrt() is True
 
-    # 2. read_uci_general when find_spec is None
-    mocker.patch.object(importlib.util, "find_spec", return_value=None)
+    monkeypatch.delenv("MCUBRIDGE_FORCE_UCI", raising=False)
+    fake_release = tmp_path / "openwrt_release"
+    fake_release.touch()
+    assert is_openwrt(release_file=fake_release) is True
+    assert is_openwrt(release_file=tmp_path / "nonexistent", version_file=tmp_path / "nonexistent2") is False
+
+    # 2. read_uci_general when not openwrt
     assert read_uci_general() == {}
 
     # 3. read_uci_general when get_uci_config is not callable
-    fake_mod = MagicMock()
-    fake_mod.get_uci_config = "not_callable"
-    mocker.patch.object(importlib.util, "find_spec", return_value=MagicMock())
-    mocker.patch("importlib.import_module", return_value=fake_mod)
-    assert read_uci_general() == {}
+    assert read_uci_general(config_getter=cast(Any, "not_callable")) == {}
 
     # 4. read_uci_general when get_uci_config raises OSError
-    fake_mod.get_uci_config = MagicMock(side_effect=OSError("disk error"))
-    assert read_uci_general() == {}
+    def _raise_oserror() -> dict[str, Any]:
+        raise OSError("disk error")
+
+    assert read_uci_general(config_getter=_raise_oserror) == {}
 
     # 5. read_uci_general with valid config filtering internal keys
-    fake_mod.get_uci_config = MagicMock(return_value={"port": "50051", ".hidden": "x", "_priv": "y"})
-    res = read_uci_general()
+    res = read_uci_general(config_getter=lambda: {"port": "50051", ".hidden": "x", "_priv": "y"})
     assert res == {"port": "50051"}
 
     # 6. dump_client_env
@@ -189,9 +187,9 @@ async def test_spi_device_transfer() -> None:
     dev = SpiDevice(mock_stub)
 
     # Transfer with bytes while inactive (should call begin() automatically)
-    assert not getattr(dev, "_active")
+    assert not dev.is_active
     res1 = await dev.transfer(b"\x01\x02")
-    assert getattr(dev, "_active") is True
+    assert dev.is_active is True
     assert res1 == b"\xaa\xbb"
     cast(AsyncMock, mock_stub.SpiConfigure).assert_awaited_once()
 
@@ -201,4 +199,4 @@ async def test_spi_device_transfer() -> None:
 
     # End
     await dev.end()
-    assert not getattr(dev, "_active")
+    assert not dev.is_active

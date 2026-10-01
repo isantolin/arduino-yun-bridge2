@@ -83,3 +83,7 @@ class SpiDevice:
     @property
     def mode(self) -> SpiMode:
         return self._mode
+
+    @property
+    def is_active(self) -> bool:
+        return self._active

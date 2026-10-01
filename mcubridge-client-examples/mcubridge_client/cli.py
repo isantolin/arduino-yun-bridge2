@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import contextlib
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 
 import grpclib.events
 import structlog
@@ -26,6 +26,7 @@ async def bridge_session(
     port: int | None = None,
     device_id: str | None = None,
     topic_prefix: str = "br",
+    channel_factory: Callable[[str, int], Channel] | None = None,
 ) -> AsyncGenerator[tuple[Channel, LocalBridgeStub]]:
     """Connect Channel + LocalBridgeStub directly to Cloud Gateway and guarantee close on exit."""
     dump_client_env(structlog.get_logger(__name__))
@@ -34,7 +35,11 @@ async def bridge_session(
     effective_port = int(str(bridge_args["port"]))
     effective_device = str(bridge_args["device_id"])
 
-    channel = Channel(host=effective_host, port=effective_port)
+    channel = (
+        channel_factory(effective_host, effective_port)
+        if channel_factory is not None
+        else Channel(host=effective_host, port=effective_port)
+    )
 
     async def _inject_device_metadata(event: grpclib.events.SendRequest) -> None:
         event.metadata["x-device-id"] = effective_device

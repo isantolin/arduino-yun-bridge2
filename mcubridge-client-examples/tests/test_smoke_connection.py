@@ -4,7 +4,8 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Annotated
+from collections.abc import Callable
+from typing import Annotated, Any
 
 import structlog
 import typer
@@ -20,15 +21,18 @@ async def run_test(
     port: int | None = None,
     device_id: str | None = None,
     topic_prefix: str = "br",
+    session_factory: Any = bridge_session,
 ) -> None:
     dump_client_env(logger)
 
-    async with bridge_session(host=host, port=port, device_id=device_id, topic_prefix=topic_prefix) as (
+    async with session_factory(host=host, port=port, device_id=device_id, topic_prefix=topic_prefix) as (
         _channel,
         _stub,
     ):
         logger.info("Bridge channel initialized via bridge_session")
 
+
+executor_fn: Callable[..., Any] = run_test
 
 cli = typer.Typer(
     help="Minimal connectivity smoke test for LocalBridgeStub and Channel through Gateway.",
@@ -45,7 +49,7 @@ def main(
     ] = None,
     topic_prefix: Annotated[str, typer.Option("--topic-prefix", help="Topic prefix")] = "br",
 ) -> None:
-    asyncio.run(run_test(host, port, device_id, topic_prefix))
+    asyncio.run(executor_fn(host, port, device_id, topic_prefix))
 
 
 if __name__ == "__main__":

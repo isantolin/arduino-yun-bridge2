@@ -178,9 +178,7 @@ async def test_send_raw_no_serial(mock_config: RuntimeConfig, mock_state: Runtim
 
 
 @pytest.mark.asyncio
-async def test_check_baudrate_fallback_triggers(
-    mock_config: RuntimeConfig, mock_state: RuntimeState
-) -> None:
+async def test_check_baudrate_fallback_triggers(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     transport = SerialTransport(mock_config, mock_state, None)
     transport.consecutive_crc_errors = mock_config.serial_fallback_threshold - 1
 

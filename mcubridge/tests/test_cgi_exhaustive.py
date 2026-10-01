@@ -14,7 +14,6 @@ from unittest.mock import MagicMock
 import pytest
 from pytest_mock import MockerFixture
 
-
 # Dynamically import pin_rest_cgi
 script_path = Path(__file__).parent.parent / "scripts" / "pin_rest_cgi.py"
 spec = importlib.util.spec_from_file_location("pin_rest_cgi", str(script_path))

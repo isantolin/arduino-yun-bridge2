@@ -11,7 +11,8 @@ Northbound Client -> CloudBridge.DispatchCommand -> ProtobufGateway.send_command
 from __future__ import annotations
 
 import asyncio
-from typing import Annotated
+from collections.abc import Callable
+from typing import Annotated, Any
 
 import structlog
 import typer
@@ -24,10 +25,16 @@ configure_logging()
 logger = structlog.get_logger("test-gateway-northbound")
 
 
-async def run_test(host: str, port: int, device_id: str) -> None:
+async def run_test(
+    host: str,
+    port: int,
+    device_id: str,
+    channel_factory: Callable[[str, int], Channel] | None = None,
+    stub_factory: Callable[[Channel], mcubridge_grpc.CloudBridgeStub] | None = None,
+) -> None:
     logger.info("Connecting to Cloud Gateway northbound endpoint", host=host, port=port, device_id=device_id)
-    channel = Channel(host, port)
-    stub = mcubridge_grpc.CloudBridgeStub(channel)
+    channel = channel_factory(host, port) if channel_factory is not None else Channel(host, port)
+    stub = stub_factory(channel) if stub_factory is not None else mcubridge_grpc.CloudBridgeStub(channel)
     try:
         dispatch = pb.CommandDispatch(
             target_device_id=device_id,
@@ -55,6 +62,8 @@ async def run_test(host: str, port: int, device_id: str) -> None:
         channel.close()
 
 
+test_runner: Callable[..., Any] = run_test
+
 cli = typer.Typer(
     help="Northbound Cloud Gateway E2E Command Orchestration Test",
     add_completion=False,
@@ -71,7 +80,7 @@ def main(
 ) -> None:
     if not device_id:
         raise ValueError("Explicit target device_id is required. Implicit fallback is prohibited.")
-    asyncio.run(run_test(host, port, device_id))
+    asyncio.run(test_runner(host, port, device_id))
 
 
 if __name__ == "__main__":

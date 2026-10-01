@@ -67,9 +67,7 @@ async def test_synchronize_attempt_send_frame_failure(mock_config: RuntimeConfig
 
 
 @pytest.mark.asyncio
-async def test_synchronize_attempt_timeout_confirmation(
-    mock_config: RuntimeConfig, mock_state: RuntimeState
-) -> None:
+async def test_synchronize_attempt_timeout_confirmation(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     mock_send = AsyncMock(return_value=True)
     mgr = _make_handshake_manager(mock_config, mock_state, send_frame=mock_send)
     mgr._timing.response_timeout_ms = 10
@@ -130,9 +128,7 @@ async def test_handle_link_sync_resp_tag_mismatch(mock_config: RuntimeConfig, mo
 
 
 @pytest.mark.asyncio
-async def test_handle_link_sync_resp_success(
-    mock_config: RuntimeConfig, mock_state: RuntimeState
-) -> None:
+async def test_handle_link_sync_resp_success(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     mock_ack = AsyncMock()
     mgr = _make_handshake_manager(mock_config, mock_state, acknowledge_frame=mock_ack)
     mgr.capabilities_delay = 60.0

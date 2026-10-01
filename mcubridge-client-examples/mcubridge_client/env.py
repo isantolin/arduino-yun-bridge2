@@ -21,27 +21,34 @@ from .definitions import DEFAULT_GATEWAY_HOST, DEFAULT_GATEWAY_PORT
 logger = structlog.get_logger(__name__)
 
 
-def is_openwrt() -> bool:
+def is_openwrt(
+    release_file: Path = Path("/etc/openwrt_release"),
+    version_file: Path = Path("/etc/openwrt_version"),
+) -> bool:
     if os.environ.get("MCUBRIDGE_FORCE_UCI") == "1":
         return True
-    return Path("/etc/openwrt_release").exists() or Path("/etc/openwrt_version").exists()
+    return release_file.exists() or version_file.exists()
 
 
-def read_uci_general() -> dict[str, str]:
-    if not is_openwrt():
-        return {}
+def read_uci_general(config_getter: Callable[[], dict[str, Any]] | None = None) -> dict[str, str]:
+    getter = config_getter
+    if getter is None:
+        if not is_openwrt():
+            return {}
 
-    spec = importlib.util.find_spec("mcubridge.config.common")
-    if spec is None:
-        return {}
+        spec = importlib.util.find_spec("mcubridge.config.common")
+        if spec is None:
+            return {}
 
-    module = importlib.import_module("mcubridge.config.common")
-    get_uci_config = cast(Callable[[], dict[str, Any]] | None, getattr(module, "get_uci_config", None))
-    if not callable(get_uci_config):
+        module = importlib.import_module("mcubridge.config.common")
+        candidate = cast(Callable[[], dict[str, Any]] | None, getattr(module, "get_uci_config", None))
+        getter = candidate
+
+    if not callable(getter):
         return {}
 
     try:
-        config = get_uci_config()
+        config = getter()
     except (KeyError, ValueError, OSError, RuntimeError) as exc:
         logger.warning("UCI config read failed", error=str(exc))
         return {}

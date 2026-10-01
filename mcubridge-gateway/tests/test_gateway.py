@@ -20,6 +20,7 @@ from gateway import (
     app,
     auth_interceptor,
     extract_peer_identity,
+    main,
 )
 from collections.abc import Callable
 from grpclib.const import Status
@@ -237,8 +238,6 @@ def test_cli_main_invocation(mocker: MockerFixture) -> None:
 
 
 def test_cli_main_keyboard_interrupt(mocker: MockerFixture, caplog: pytest.LogCaptureFixture) -> None:
-    runner = CliRunner()
-
     mock_runner_instance = MagicMock()
 
     def _mock_run_interrupt(coro: Any) -> None:
@@ -252,8 +251,7 @@ def test_cli_main_keyboard_interrupt(mocker: MockerFixture, caplog: pytest.LogCa
 
     caplog.set_level(logging.INFO)
     mocker.patch("asyncio.Runner", return_value=mock_runner_instance)
-    result = runner.invoke(cast(Any, app), ["--no-tls", "--http3"])
-    assert result.exit_code == 0
+    main(no_tls=True, http3=True)
     assert "Gateway terminated by user." in caplog.text
 
 

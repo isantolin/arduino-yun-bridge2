@@ -71,16 +71,32 @@ def audit_semgrep() -> list[str]:
     except json.JSONDecodeError as exc:
         return [f"Semgrep JSON Parse Error: {exc}"]
 
-    results = data.get("results") if isinstance(data, dict) else None
-    if not isinstance(results, list):
+    raw_results: object = data.get("results") if isinstance(data, dict) else None
+    if not isinstance(raw_results, list):
         return ["Semgrep JSON Parse Error: results must be a list"]
     if res.returncode not in (0, 1):
         return [f"Semgrep Execution Error: {res.stderr.strip() or f'exit status {res.returncode}'}"]
-    return [
-        f"Semgrep Violation [{r.get('check_id', 'rule')}]: "
-        f"{r.get('path', '')}:{r.get('start', {}).get('line', 0)} - {r.get('extra', {}).get('message', '')}"
-        for r in results
-    ]
+
+    findings: list[str] = []
+    for raw_r in raw_results:
+        if isinstance(raw_r, dict):
+            r: dict[str, object] = raw_r
+            check_id = str(r.get("check_id") or "rule")
+            path_str = str(r.get("path") or "")
+            start_obj = r.get("start")
+            line = 0
+            if isinstance(start_obj, dict):
+                start_dict: dict[str, object] = start_obj
+                line_val = start_dict.get("line")
+                if isinstance(line_val, int):
+                    line = line_val
+            extra_obj = r.get("extra")
+            msg = ""
+            if isinstance(extra_obj, dict):
+                extra_dict: dict[str, object] = extra_obj
+                msg = str(extra_dict.get("message") or "")
+            findings.append(f"Semgrep Violation [{check_id}]: {path_str}:{line} - {msg}")
+    return findings
 
 
 def audit_config_suppressions() -> list[str]:

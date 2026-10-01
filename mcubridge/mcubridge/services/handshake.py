@@ -175,6 +175,8 @@ class SerialHandshakeManager:
         send_frame: SendFrameCallable,
         enqueue_cloud: EnqueueMessageCallable,
         acknowledge_frame: AcknowledgeFrameCallable,
+        sync_waiter: Callable[[bytes], Awaitable[bool]] | None = None,
+        topic_resolver: Callable[[str, Any], str | None] | None = None,
         logger_: Any | None = None,
     ) -> None:
         self._config = config
@@ -183,6 +185,12 @@ class SerialHandshakeManager:
         self._send_frame = send_frame
         self._enqueue_cloud = enqueue_cloud
         self._acknowledge_frame = acknowledge_frame
+        self._sync_waiter: Callable[[bytes], Awaitable[bool]] = (
+            sync_waiter if sync_waiter is not None else self._wait_for_link_sync_confirmation
+        )
+        self._topic_resolver: Callable[[str, Any], str | None] = (
+            topic_resolver if topic_resolver is not None else get_topic_for_message
+        )
         self._logger = logger_ or logger
         self._fatal_threshold = max(1, config.serial_handshake_fatal_failures)
         # [SIL-2] Serialize handshake timing as protobuf.
@@ -192,6 +200,36 @@ class SerialHandshakeManager:
         self.retry_backoff_max: float = SERIAL_HANDSHAKE_BACKOFF_MAX
         self._capabilities_future: asyncio.Future[bytes | ProtobufMessage] | None = None
         self.fsm = HandshakeMachine(listeners=[self])
+
+    @property
+    def send_frame(self) -> SendFrameCallable:
+        """Return the active frame transmission callable."""
+        return self._send_frame
+
+    @send_frame.setter
+    def send_frame(self, fn: SendFrameCallable) -> None:
+        """Set the active frame transmission callable."""
+        self._send_frame = fn
+
+    @property
+    def sync_waiter(self) -> Callable[[bytes], Awaitable[bool]]:
+        """Return the active sync confirmation waiter callable."""
+        return self._sync_waiter
+
+    @sync_waiter.setter
+    def sync_waiter(self, waiter: Callable[[bytes], Awaitable[bool]]) -> None:
+        """Set the active sync confirmation waiter callable."""
+        self._sync_waiter = waiter
+
+    @property
+    def topic_resolver(self) -> Callable[[str, Any], str | None]:
+        """Return the active topic resolver callable."""
+        return self._topic_resolver
+
+    @topic_resolver.setter
+    def topic_resolver(self, resolver: Callable[[str, Any], str | None]) -> None:
+        """Set the active topic resolver callable."""
+        self._topic_resolver = resolver
 
     @property
     def capabilities_future(self) -> asyncio.Future[bytes | ProtobufMessage] | None:
@@ -332,7 +370,7 @@ class SerialHandshakeManager:
         if self.fsm_state == HandshakeState.SYNCING:
             self.transition(HandshakeEvent.SYNC_SENT)
 
-        confirmed = await self._wait_for_link_sync_confirmation(nonce)
+        confirmed = await self._sync_waiter(nonce)
         current_state = cast(HandshakeState, self.fsm_state)
 
         if not confirmed:
@@ -611,7 +649,7 @@ class SerialHandshakeManager:
         snapshot.fsm_state = self.fsm_state
 
         message = create_queued_publish(
-            topic_name=get_topic_for_message(self._state.cloud_topic_prefix, snapshot) or "",
+            topic_name=self._topic_resolver(self._state.cloud_topic_prefix, snapshot) or "",
             payload=snapshot.SerializeToString(),
             content_type=PROTOBUF_CONTENT_TYPE,
             user_properties=((PROP_KEY_BRIDGE_EVENT, "handshake"),),

@@ -195,7 +195,7 @@ async def test_correlate_frame_failure_status(mock_config: RuntimeConfig, mock_s
     pending = PendingCommand(
         command_id=Command.CMD_FILE_READ.value, expected_resp_ids=[Command.CMD_FILE_READ_RESP.value]
     )
-    setattr(transport, "_current", pending)
+    transport.current_command = pending
 
     # Response to request matching
     correlate_frame: Callable[[int, object], None] = getattr(transport, "_correlate_frame")

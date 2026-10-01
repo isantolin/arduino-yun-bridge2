@@ -222,17 +222,10 @@ async def test_wait_for_link_sync_confirmation_timeout(
     handshake_setup: tuple[
         SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, pb.HandshakeConfig, AsyncMock
     ],
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     manager, state, _, _config, _timing, _ack = handshake_setup
-    _timing.response_timeout_ms = 10
+    _timing.response_timeout_ms = 1
     state.connection_fsm.disconnect()
-    real_timeout = asyncio.timeout
-
-    def _mock_timeout(_delay: float | None) -> asyncio.Timeout:
-        return real_timeout(0.001)
-
-    monkeypatch.setattr("asyncio.timeout", _mock_timeout)
     wait_sync: Callable[[bytes], Awaitable[bool]] = getattr(manager, "_wait_for_link_sync_confirmation")
     res = await wait_sync(b"test_nonce")
     assert res is False
@@ -243,17 +236,13 @@ async def test_handshake_attempt_link_sync_timeout(
     handshake_setup: tuple[
         SerialHandshakeManager, RuntimeState, AsyncMock, RuntimeConfig, pb.HandshakeConfig, AsyncMock
     ],
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     manager, _state, _, _config, _timing, _ack = handshake_setup
-    monkeypatch.setattr(manager, "_wait_for_link_sync_confirmation", AsyncMock(return_value=False))
-    mock_fail = AsyncMock()
-    monkeypatch.setattr(manager, "handle_handshake_failure", mock_fail)
-
+    manager.sync_waiter = AsyncMock(return_value=False)
     sync_attempt: Callable[[], Awaitable[bool]] = getattr(manager, "_synchronize_attempt")
     res = await sync_attempt()
     assert res is False
-    assert mock_fail.called
+    assert _state.last_handshake_error == "link_sync_timeout"
 
 
 def test_handshake_calculate_tag_empty_secret() -> None:
@@ -290,7 +279,7 @@ async def test_handshake_wait_confirmation_already_synchronized(
 
 @pytest.mark.asyncio
 async def test_handshake_sync_state_permutations(
-    runtime_config: RuntimeConfig, runtime_state: RuntimeState, monkeypatch: pytest.MonkeyPatch
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
     runtime_state.connection_fsm.disconnect()
     mock_send = AsyncMock(return_value=True)
@@ -309,7 +298,7 @@ async def test_handshake_sync_state_permutations(
             hs.fsm_state = HandshakeState.FAULT
         return True
 
-    monkeypatch.setattr(hs, "_send_frame", _send_and_fault)
+    hs.send_frame = _send_and_fault
     assert await sync_attempt() is False
 
     hs.fsm_state = HandshakeState.SYNCING
@@ -318,23 +307,23 @@ async def test_handshake_sync_state_permutations(
         hs.fsm_state = HandshakeState.FAULT
         return False
 
-    setattr(hs, "_wait_for_link_sync_confirmation", _mock_wait_fault)
+    hs.sync_waiter = _mock_wait_fault
     assert await sync_attempt() is False
 
-    monkeypatch.setattr(hs, "_wait_for_link_sync_confirmation", AsyncMock(return_value=False))
+    hs.sync_waiter = AsyncMock(return_value=False)
     hs.fsm_state = HandshakeState.SYNCING
     runtime_state.link_handshake_nonce = b"different_nonce"
     assert await sync_attempt() is False
 
     hs.transition(HandshakeEvent.RESET)
-    monkeypatch.setattr(hs, "_send_frame", AsyncMock(return_value=True))
-    monkeypatch.setattr(hs, "_wait_for_link_sync_confirmation", AsyncMock(return_value=True))
+    hs.send_frame = AsyncMock(return_value=True)
+    hs.sync_waiter = AsyncMock(return_value=True)
     assert await sync_attempt() is True
 
 
 @pytest.mark.asyncio
 async def test_handshake_resp_rate_limit_and_secret_none(
-    runtime_config: RuntimeConfig, runtime_state: RuntimeState, monkeypatch: pytest.MonkeyPatch
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
     runtime_config.serial_handshake_min_interval = 5.0
     hs = SerialHandshakeManager(
@@ -359,9 +348,9 @@ async def test_handshake_resp_rate_limit_and_secret_none(
     tag = hs.calculate_handshake_tag(b"", nonce)
     runtime_state.link_expected_tag = tag
     pkt_matching = pb.LinkSync(nonce=nonce, tag=tag)
-    monkeypatch.setattr(hs, "_handle_handshake_success", AsyncMock())
-    monkeypatch.setattr(hs, "_fetch_capabilities_with_delay", AsyncMock())
+    hs.capabilities_delay = 100.0
     assert await hs.handle_link_sync_resp(2, pkt_matching) is True
+    assert runtime_state.is_synchronized is True
     assert runtime_state.link_session_key is None
 
 
@@ -377,20 +366,21 @@ async def test_handshake_capabilities_resp_future_none(
         enqueue_cloud=AsyncMock(),
         acknowledge_frame=AsyncMock(),
     )
-    setattr(hs, "_capabilities_future", None)
+    hs.capabilities_future = None
     assert await hs.handle_capabilities_resp(1, b"") is True
 
 
 @pytest.mark.asyncio
 async def test_handshake_fsm_state_override_and_unexpected_resp(
-    runtime_config: RuntimeConfig, runtime_state: RuntimeState, monkeypatch: pytest.MonkeyPatch
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
+    mock_cloud = AsyncMock()
     hs = SerialHandshakeManager(
         config=runtime_config,
         state=runtime_state,
         serial_timing=pb.HandshakeConfig(),
         send_frame=AsyncMock(return_value=True),
-        enqueue_cloud=AsyncMock(),
+        enqueue_cloud=mock_cloud,
         acknowledge_frame=AsyncMock(),
     )
 
@@ -402,27 +392,21 @@ async def test_handshake_fsm_state_override_and_unexpected_resp(
     assert hs.fsm_state == HandshakeState.UNSYNCHRONIZED
 
     runtime_state.link_handshake_nonce = None
-    mock_fail = AsyncMock()
-    monkeypatch.setattr(hs, "handle_handshake_failure", mock_fail)
     res = await hs.handle_link_sync_resp(1, pb.LinkSync(nonce=b"none", tag=b"tag"))
     assert res is False
-    assert mock_fail.called
+    assert runtime_state.last_handshake_error == "unexpected_sync_resp"
 
+    mock_cloud.reset_mock()
     publish_event: Callable[..., Awaitable[None]] = getattr(hs, "_publish_handshake_event")
-
-    def mock_get_topic(*_a: Any, **_k: Any) -> str:
-        return ""
-
-    monkeypatch.setattr("mcubridge.services.handshake.get_topic_for_message", mock_get_topic)
+    hs.topic_resolver = lambda *_a, **_k: ""
     await publish_event("test_event", reason="test_err")
-    assert getattr(hs, "_enqueue_cloud").await_count == 0
+    assert mock_cloud.await_count == 0
 
 
 @pytest.mark.asyncio
 async def test_handshake_rate_limit_and_sync_fault_branches(
     runtime_config: RuntimeConfig,
     runtime_state: RuntimeState,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from mcubridge.services.handshake import RateLimiter
 
@@ -448,7 +432,7 @@ async def test_handshake_rate_limit_and_sync_fault_branches(
         hs.transition(HandshakeEvent.FAILURE)
         return False
 
-    monkeypatch.setattr(hs, "_wait_for_link_sync_confirmation", _mock_wait_fault)
+    hs.sync_waiter = _mock_wait_fault
     set_fsm_state(HandshakeState.UNSYNCHRONIZED)
     res_fault = await sync_fn()
     assert res_fault is False
@@ -458,7 +442,7 @@ async def test_handshake_rate_limit_and_sync_fault_branches(
         runtime_state.link_handshake_nonce = None
         return False
 
-    monkeypatch.setattr(hs, "_wait_for_link_sync_confirmation", _mock_wait_mismatch)
+    hs.sync_waiter = _mock_wait_mismatch
     set_fsm_state(HandshakeState.UNSYNCHRONIZED)
     res_mismatch = await sync_fn()
     assert res_mismatch is False

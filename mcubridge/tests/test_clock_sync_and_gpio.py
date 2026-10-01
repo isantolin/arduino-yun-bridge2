@@ -505,7 +505,7 @@ async def test_clock_sync_loop_degraded_branch(
     clock.fsm.sync_success()
     assert clock.fsm.synchronized.is_active
 
-    monkeypatch.setattr(clock, "sync_now", AsyncMock(side_effect=TimeoutError("Sync timed out")))
+    svc.serial.send = AsyncMock(side_effect=TimeoutError("Sync timed out"))
     await clock.start()
     await asyncio.sleep(0.03)
     assert clock.fsm.degraded.is_active
@@ -514,7 +514,7 @@ async def test_clock_sync_loop_degraded_branch(
 
 @pytest.mark.asyncio
 async def test_clock_sync_loop_idle_exception_marks_unsupported(
-    mock_bridge_service: BridgeService, monkeypatch: pytest.MonkeyPatch
+    mock_bridge_service: BridgeService,
 ) -> None:
     from mcubridge.services.clock_sync import ClockSyncService
 
@@ -523,7 +523,7 @@ async def test_clock_sync_loop_idle_exception_marks_unsupported(
     clock = ClockSyncService(svc, sync_interval_seconds=0.01)
     assert clock.fsm.idle.is_active
 
-    monkeypatch.setattr(clock, "sync_now", AsyncMock(side_effect=TimeoutError("Sync timed out")))
+    svc.serial.send = AsyncMock(side_effect=TimeoutError("Sync timed out"))
     await clock.start()
     await asyncio.sleep(0.03)
     assert clock.fsm.unsupported.is_active

@@ -398,10 +398,12 @@ async def test_local_bridge_edge_branches(tmp_path: Path, mocker: MockerFixture)
     assert stream.send_message.call_args[0][0].pid == 0
 
     # ProcessKill exception branch
+    mock_handle = MagicMock()
+    mock_handle.returncode = None
+    type(mock_handle).pid = property(fget=MagicMock(side_effect=OSError("Kill failed")))
     service.state.running_processes[8888] = ProcessContext(
-        handle=MagicMock(),
+        handle=mock_handle,
     )
-    mocker.patch.object(service, "_terminate_process", AsyncMock(side_effect=OSError("Kill failed")))
     stream = _make_mock_stream(pb.ProcessKill(pid=8888))
     await local_svc.ProcessKill(stream)
     assert stream.send_message.call_args[0][0].status == "error"

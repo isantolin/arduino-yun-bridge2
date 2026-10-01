@@ -10,8 +10,9 @@ from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import UINT8_MASK, Command, Status
 from pytest_mock import MockerFixture
 
-from tests.test_constants import TEST_BROKEN_CRC
 from tools.emulation import frame_debug
+
+TEST_BROKEN_CRC = 0xDEADBEEF
 
 _VALID_CMD_NAMES = frozenset([entry.name.upper() for enum_cls in (Command, Status) for entry in enum_cls])
 

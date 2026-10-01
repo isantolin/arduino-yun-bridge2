@@ -107,3 +107,24 @@ def test_main_cli_validation(tmp_path: Path) -> None:
         assert pushed_args[1][0] == "mcu/sketch.bin"
     finally:
         _file_push.push_file_handler = orig_handler
+
+
+def test_file_push_cli_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    local_file = tmp_path / "local.txt"
+    local_file.write_bytes(b"data")
+    mock_push = MagicMock()
+    orig = _file_push.push_file_handler
+    _file_push.push_file_handler = mock_push
+    try:
+        monkeypatch.setattr("sys.argv", ["mcubridge-file-push", str(local_file), "mcu/remote.txt"])
+        _file_push.app(standalone_mode=False)
+        mock_push.assert_called_once_with("mcu/remote.txt", b"data")
+    finally:
+        _file_push.push_file_handler = orig
+
+
+def test_file_push_cli_error_cases(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    nonexistent = tmp_path / "nonexistent.txt"
+    monkeypatch.setattr("sys.argv", ["mcubridge-file-push", str(nonexistent), "mcu/remote.txt"])
+    with pytest.raises(SystemExit):
+        _file_push.app(standalone_mode=False)

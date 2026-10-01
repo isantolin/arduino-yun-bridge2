@@ -21,7 +21,8 @@ from tests.conftest import (
     st_pin_mode,
     st_spi_transfer,
 )
-from tests.test_constants import TEST_CMD_ID
+
+TEST_CMD_ID = 0x42
 
 
 def test_crc_is_32bit() -> None:

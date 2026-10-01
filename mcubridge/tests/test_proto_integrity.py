@@ -9,6 +9,7 @@ import pytest
 from typer.testing import CliRunner
 
 from mcubridge.protocol import mcubridge_pb2 as pb
+from mcubridge.protocol import protocol
 from tools.audit import codebase_auditor
 from tools.audit.codebase_auditor import app, audit_proto_integrity
 
@@ -199,3 +200,7 @@ def test_codebase_auditor_cli_success(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result.exit_code == 0, error_msg
     assert "Auditing Protobuf definitions..." in result.stdout
     assert "No violations or shims found!" in result.stdout
+
+
+def test_constants_completeness() -> None:
+    assert protocol.PROTOCOL_VERSION == 2

@@ -26,6 +26,7 @@ from mcubridge.protocol.protocol import (
     Topic,
 )
 from mcubridge.protocol.structures import TopicRoute
+from mcubridge.services.handshake import SerialHandshakeFatal
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import ProcessContext, RuntimeState, create_runtime_state
 
@@ -1325,3 +1326,86 @@ async def test_runtime_service_edge_branches(
         await mock_spool.close()
     svc.cloud_spool = None
     assert svc.cloud_spool is None
+
+
+# --- BridgeService Supervisor and Orchestration Lifecycle Tests ---
+
+
+@pytest.mark.asyncio
+async def test_service_supervise_retries_on_failure(service_stack: tuple[BridgeService, Any, Any]) -> None:
+    service, _, _ = service_stack
+    mock_factory = AsyncMock(side_effect=[ValueError("fail"), None])
+    await service.supervise("test-task", mock_factory, min_backoff=0.01, max_backoff=0.01)
+    assert mock_factory.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_service_supervise_fatal_exception(service_stack: tuple[BridgeService, Any, Any]) -> None:
+    service, _, _ = service_stack
+
+    async def fatal_task() -> None:
+        raise SerialHandshakeFatal("fatal")
+
+    with pytest.raises(SerialHandshakeFatal):
+        await service.supervise("test-fatal", fatal_task, fatal_exceptions=(SerialHandshakeFatal,))
+
+
+@pytest.mark.asyncio
+async def test_service_supervise_restarts_and_recovers(
+    service_stack: tuple[BridgeService, Any, Any], mocker: MockerFixture
+) -> None:
+    service, _, _ = service_stack
+    call_state = {"call_count": 0}
+
+    async def failing_task() -> None:
+        call_state["call_count"] += 1
+        if call_state["call_count"] <= 2:
+            raise ValueError("fail")
+        return
+
+    mocker.patch("asyncio.sleep", return_value=None)
+    await service.supervise("test-restart", failing_task)
+
+    assert call_state["call_count"] == 3
+    assert (
+        "test-restart" not in service.state.supervisor_stats or not service.state.supervisor_stats["test-restart"].fatal
+    )
+
+
+@pytest.mark.asyncio
+async def test_service_supervise_cancelled(service_stack: tuple[BridgeService, Any, Any]) -> None:
+    service, _, _ = service_stack
+
+    async def hanging_task() -> None:
+        await asyncio.Event().wait()
+
+    task = asyncio.create_task(service.supervise("cancel", hanging_task))
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+
+@pytest.mark.asyncio
+async def test_service_supervisor_circuit_breaker(service_stack: tuple[BridgeService, Any, Any]) -> None:
+    service, _, _ = service_stack
+    call_count = 0
+
+    async def failing_factory() -> None:
+        nonlocal call_count
+        call_count += 1
+        raise RuntimeError(f"Persistent failure {call_count}")
+
+    with pytest.raises(RuntimeError, match="Persistent failure"):
+        await service.supervise(
+            "test-task",
+            failing_factory,
+            min_backoff=0.01,
+            max_backoff=0.01,
+            max_restarts=15,
+            jitter=0,
+        )
+
+    assert call_count == 15
+
+    assert call_count == 15

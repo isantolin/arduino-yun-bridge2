@@ -354,3 +354,21 @@ async def test_storage_clear_uncovered_branches() -> None:
     await cache.clear()
     assert cache.env is None
     assert not cache.is_mem
+
+
+def test_state_metrics_state_and_counters(runtime_config: RuntimeConfig) -> None:
+    state = create_runtime_state(runtime_config)
+    try:
+        state.connection_fsm.connect()
+        state.connection_fsm.synchronize()
+        state.handshake_attempts = 5
+        state.handshake_successes = 2
+        assert state.handshake_attempts == 5
+        assert state.handshake_successes == 2
+        assert state.is_synchronized is True
+        assert state.state == "synchronized"
+        assert isinstance(state.mcu_status_counts, dict)
+        state.connection_fsm.disconnect()
+        assert state.state == "disconnected"
+    finally:
+        state.cleanup()

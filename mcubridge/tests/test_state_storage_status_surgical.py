@@ -300,3 +300,18 @@ async def test_lmdb_deque_popleft_none_val(tmp_path: Path) -> None:
             await q.popleft()
     finally:
         await q.close()
+
+
+@pytest.mark.asyncio
+async def test_lmdb_deque_no_env_safety() -> None:
+    deque = LmdbDeque(":memory:")
+    deque.is_mem = False
+    deque.env = None
+
+    await deque.append(b"test")
+    with pytest.raises(IndexError):
+        await deque.popleft()
+    with pytest.raises(IndexError):
+        await deque.peek()
+    await deque.vacuum()
+    await deque.close()

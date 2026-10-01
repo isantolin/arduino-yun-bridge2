@@ -90,3 +90,24 @@ def test_get_topic_for_message_unknown_id(prefix: str, unknown_id: int) -> None:
     """Property: get_topic_for_message returns None for any unregistered command ID."""
     assume(unknown_id not in COMMAND_TO_TOPIC)
     assert get_topic_for_message(prefix, unknown_id) is None
+
+
+def test_topics_canonical_service_paths() -> None:
+    """Validate canonical service topic paths."""
+    assert topic_path("prefix", Topic.SYSTEM, "handshake") == "prefix/system/handshake"
+    assert topic_path("p", Topic.DIGITAL, "13", "read") == "p/d/13/read"
+    assert topic_path("p", Topic.SPI, "transfer") == "p/spi/transfer"
+    assert topic_path("p", Topic.DATASTORE, "key", "get") == "p/datastore/key/get"
+    assert topic_path("p", Topic.FILE, "path/to/file", "read") == "p/file/path/to/file/read"
+    assert topic_path("p", Topic.SHELL, "123", "kill") == "p/sh/123/kill"
+    assert topic_path("p", Topic.CONSOLE, "write") == "p/console/write"
+    assert topic_path("p", Topic.MAILBOX, "push") == "p/mailbox/push"
+
+
+def test_topics_edge_cases() -> None:
+    """Validate topic parsing and formatting edge cases."""
+    assert parse_topic("br", "br/invalid_topic/foo") is None
+    assert parse_topic("", "foo") is None
+    assert parse_topic("br", "") is None
+    assert topic_path("", Topic.SYSTEM) == "system"
+    assert topic_path("", Topic.SYSTEM, "") == "system"

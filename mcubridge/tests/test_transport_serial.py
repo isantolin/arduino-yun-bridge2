@@ -518,3 +518,65 @@ async def test_serial_transport_edge_branches(
     mock_serial2.write = AsyncMock(side_effect=_resolve_pending_without_status)
     res_fail_status = await transport.send(Command.CMD_DIGITAL_WRITE.value, b"test")
     assert res_fail_status is False
+
+
+@pytest.mark.asyncio
+async def test_serial_reader_task_reconnects(mocker: MockerFixture) -> None:
+    """Test that reader task re-establishes connection on failure."""
+    config = RuntimeConfig(
+        serial_port="/dev/test0",
+        serial_baud=protocol.DEFAULT_BAUDRATE,
+        serial_safe_baud=protocol.DEFAULT_SAFE_BAUDRATE,
+        cloud_host="localhost",
+        cloud_port=1883,
+        cloud_user=None,
+        cloud_pass=None,
+        cloud_tls=False,
+        cloud_cafile=None,
+        cloud_certfile=None,
+        cloud_keyfile=None,
+        topic_prefix="br",
+        allowed_commands=(),
+        file_system_root=".tmp_tests/reconnect_fs",
+        process_timeout=5,
+        reconnect_delay=1,
+        serial_shared_secret=b"s_e_c_r_e_t_mock",
+        allow_non_tmp_paths=True,
+    )
+    state = AsyncMock(spec=RuntimeState)
+    service = AsyncMock(spec=BridgeService)
+    service.on_serial_connected = AsyncMock()
+    service.on_serial_disconnected = AsyncMock()
+    service.register_serial_sender = MagicMock()
+
+    mock_serial = AsyncMock()
+    mock_serial.__aenter__.return_value = mock_serial
+    mock_serial.__aexit__.return_value = None
+    mock_serial.transport = AsyncMock()
+    mock_serial.readuntil.side_effect = [
+        asyncio.IncompleteReadError(b"", None),
+        asyncio.IncompleteReadError(b"", None),
+        asyncio.IncompleteReadError(b"", None),
+    ]
+
+    mock_async_serial_cls = MagicMock(return_value=mock_serial)
+    sleep_count = 0
+
+    async def mock_sleep_fn(duration: Any) -> None:
+        nonlocal sleep_count
+        sleep_count += 1
+        if sleep_count > 100:
+            raise RuntimeError("Break Loop")
+
+    mock_sleep = AsyncMock(side_effect=mock_sleep_fn)
+
+    mocker.patch("mcubridge.transport.serial.serialx.AsyncSerial", mock_async_serial_cls)
+    mocker.patch("asyncio.sleep", mock_sleep)
+    transport = SerialTransport(config, state, service)
+    with pytest.raises(RuntimeError, match="Break Loop"):
+        await transport.run()
+
+    assert mock_async_serial_cls.call_count >= 2
+    assert mock_serial.set_modem_pins.call_count >= 2
+    assert service.on_serial_connected.called
+    assert service.on_serial_disconnected.called

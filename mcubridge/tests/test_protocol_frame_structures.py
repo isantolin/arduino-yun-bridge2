@@ -369,3 +369,14 @@ def test_protocol_frame_and_structures_edge_branches(tmp_path: Path) -> None:
     )
     structures.validate_config(cfg_http3_active)
     assert cfg_http3_active.cloud_http3_port == 8443
+
+
+def test_structures_coverage_boost() -> None:
+    qp = structures.create_queued_publish(topic_name="topic", payload=b"payload")
+    assert qp.topic_name == "topic"
+    assert qp.payload == b"payload"
+    assert qp.qos == 1
+
+    ta = pb.TopicAuthorization()
+    ta.file_read = True
+    assert ta.file_read

@@ -55,7 +55,7 @@ rationale = "Declarative retrying library for robust task supervision and handsh
 [[dependency]]
 name = "uvloop"
 openwrt = "python3-uvloop"
-pip = "uvloop==0.22.1"
+pip = "uvloop==0.23.0"
 rationale = "Ultra-fast asyncio event loop implementation (libuv)"
 
 [[dependency]]

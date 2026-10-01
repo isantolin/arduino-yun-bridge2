@@ -270,3 +270,33 @@ async def test_lmdb_cache_len_contains_items(tmp_path: Path) -> None:
     assert await mem_kv.items() == [("mkey", b"mval")]
     await mem_kv.close()
     await kv.close()
+
+
+@pytest.mark.asyncio
+async def test_open_lmdb_env_dir_branch(tmp_path: Path) -> None:
+    cache = LmdbCache(str(tmp_path))
+    try:
+        await cache.set("k", b"v")
+        assert await cache.get("k") == b"v"
+    finally:
+        await cache.close()
+
+
+@pytest.mark.asyncio
+async def test_lmdb_deque_popleft_none_val(tmp_path: Path) -> None:
+    db_path = str(tmp_path / "deque.db")
+    q = LmdbDeque(db_path)
+    try:
+        mock_env = MagicMock()
+        mock_txn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.first.return_value = True
+        mock_cursor.key.return_value = b"\x00" * 8
+        mock_cursor.pop.return_value = None
+        mock_txn.cursor.return_value = mock_cursor
+        mock_env.begin.return_value.__enter__.return_value = mock_txn
+        q.env = mock_env
+        with pytest.raises(IndexError, match="popleft from empty deque"):
+            await q.popleft()
+    finally:
+        await q.close()

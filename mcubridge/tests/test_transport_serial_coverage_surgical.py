@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import mcubridge.protocol.mcubridge_pb2 as pb
 import pytest
 import serialx
 from cobs import cobsr
+from google.protobuf.message import Message as ProtobufMessage
+from pytest_mock import MockerFixture
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import protocol
 from mcubridge.protocol.frame import build_frame
@@ -203,3 +206,81 @@ async def test_correlate_frame_failure_status(mock_config: RuntimeConfig, mock_s
     assert pending.completion.is_set()
     assert pending.success is True
     assert pending.response_payload == b"content"
+
+
+@pytest.mark.asyncio
+async def test_connect_without_runner_fn(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+    transport = SerialTransport(mock_config, mock_state, None)
+    mock_run = AsyncMock()
+    setattr(transport, "_connect_and_run", mock_run)
+    await transport.connect()
+    mock_run.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_logging_not_debug_branches(
+    mock_config: RuntimeConfig, mock_state: RuntimeState, mocker: MockerFixture
+) -> None:
+    transport = SerialTransport(mock_config, mock_state, None)
+    mock_serial = AsyncMock()
+    transport.serial = mock_serial
+
+    mocker.patch("mcubridge.transport.serial.logger.is_enabled_for", return_value=False)
+    # 1. send_raw when logger is not debug
+    ok = await transport.send_raw(Command.CMD_GET_VERSION.value, b"")
+    assert ok is True
+
+    # 2. _process_packet when logger is not debug
+    payload = pb.VersionResponse(major=2, minor=8, patch=8)
+    encoded = cobsr.encode(build_frame(Command.CMD_GET_VERSION_RESP.value, 1, payload.SerializeToString()))
+    await getattr(transport, "_process_packet")(encoded)
+    assert mock_state.metrics.serial_bytes_received.value > 0
+
+
+@pytest.mark.asyncio
+async def test_process_packet_uninitialized_protobuf(
+    mock_config: RuntimeConfig, mock_state: RuntimeState, mocker: MockerFixture
+) -> None:
+    transport = SerialTransport(mock_config, mock_state, None)
+    mock_proto = MagicMock(spec=ProtobufMessage)
+    mock_proto.IsInitialized.return_value = False
+
+    mocker_frame = MagicMock()
+    mocker_frame.envelope.command_id = Command.CMD_GET_VERSION.value
+    mocker_frame.envelope.sequence_id = 1
+    mocker_frame.envelope.nonce = b"\x00" * 12
+    mocker_frame.payload = mock_proto
+
+    mocker.patch("mcubridge.transport.serial.parse_frame", return_value=mocker_frame)
+    initial_errors = mock_state.serial_decode_errors
+    await getattr(transport, "_process_packet")(b"\x00" * 20)
+    assert mock_state.serial_decode_errors == initial_errors + 1
+
+
+@pytest.mark.asyncio
+async def test_connect_and_run_negotiation_failure(
+    mock_config: RuntimeConfig, mock_state: RuntimeState, mocker: MockerFixture
+) -> None:
+    mock_config.serial_baud = 115200
+    mock_config.serial_safe_baud = 9600
+    mock_config.serial_port = "/dev/ttyS0"
+    transport = SerialTransport(mock_config, mock_state, None)
+
+    mock_serial_obj = AsyncMock()
+    mock_serial_obj.transport = MagicMock()
+
+    class _MockAsyncSerial:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            pass
+
+        async def __aenter__(self) -> Any:
+            return mock_serial_obj
+
+        async def __aexit__(self, *args: Any) -> None:
+            pass
+
+    mocker.patch("serialx.AsyncSerial", _MockAsyncSerial)
+    mocker.patch.object(transport, "_toggle_dtr", new=AsyncMock())
+    mocker.patch.object(transport, "_negotiate_baudrate", new=AsyncMock(return_value=False))
+    with pytest.raises(ConnectionError, match="Baudrate negotiation failed"):
+        await getattr(transport, "_connect_and_run")()

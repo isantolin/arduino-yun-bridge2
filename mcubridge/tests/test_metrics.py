@@ -248,3 +248,77 @@ async def test_emit_bridge_snapshot_attribute_error(runtime_state: RuntimeState,
     emit_snapshot: Callable[..., Awaitable[None]] = getattr(metrics_mod, "_emit_bridge_snapshot")
     await emit_snapshot(bad_state, enqueue, flavor="summary")
     assert enqueue.call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_publish_metrics_file_write_limit_rejection(runtime_state: RuntimeState) -> None:
+    event = asyncio.Event()
+    captured: dict[str, pb.CloudQueuedPublish] = {}
+
+    async def fake_enqueue(message: pb.CloudQueuedPublish) -> None:
+        captured["message"] = message
+        event.set()
+
+    runtime_state.file_storage_limit_rejections = 0
+    runtime_state.file_write_limit_rejections = 3
+    runtime_state.cloud_topic_prefix = "test/prefix"
+
+    task = asyncio.create_task(
+        publish_metrics(
+            runtime_state,
+            fake_enqueue,
+            interval=0.01,
+            min_interval=0.01,
+        )
+    )
+    async with asyncio.timeout(0.5):
+        await event.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    message = captured["message"]
+    props = [(p.key, p.value) for p in message.user_properties]
+    assert ("bridge-files", "write-limit") in props
+
+
+@pytest.mark.asyncio
+async def test_publish_bridge_snapshots_missing_intervals(runtime_state: RuntimeState) -> None:
+    calls = 0
+
+    async def _dummy_enqueue(_: pb.CloudQueuedPublish) -> None:
+        nonlocal calls
+        calls += 1
+
+    # Branch 1: summary_interval is 0.0 (disabled), handshake_interval is provided
+    task1 = asyncio.create_task(
+        publish_bridge_snapshots(
+            runtime_state,
+            _dummy_enqueue,
+            summary_interval=0.0,
+            handshake_interval=0.01,
+            min_interval=0.01,
+        )
+    )
+    await asyncio.sleep(0.03)
+    task1.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task1
+    assert calls >= 1
+
+    # Branch 2: summary_interval is provided, handshake_interval is 0.0 (disabled)
+    calls = 0
+    task2 = asyncio.create_task(
+        publish_bridge_snapshots(
+            runtime_state,
+            _dummy_enqueue,
+            summary_interval=0.01,
+            handshake_interval=0.0,
+            min_interval=0.01,
+        )
+    )
+    await asyncio.sleep(0.03)
+    task2.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task2
+    assert calls >= 1

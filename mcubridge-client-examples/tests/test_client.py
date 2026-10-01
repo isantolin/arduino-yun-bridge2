@@ -150,6 +150,22 @@ def test_env_functions(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     # 2. read_uci_general when not openwrt
     assert read_uci_general() == {}
 
+    # 2b. read_uci_general when openwrt but find_spec is None
+    def _mock_find_spec(_name: str) -> None:
+        return None
+
+    monkeypatch.setenv("MCUBRIDGE_FORCE_UCI", "1")
+    monkeypatch.setattr("importlib.util.find_spec", _mock_find_spec)
+    assert read_uci_general() == {}
+
+    # 2c. read_uci_general when openwrt and mcubridge.config.common is loaded
+    monkeypatch.undo()
+    monkeypatch.setenv("MCUBRIDGE_FORCE_UCI", "1")
+    uci_res = read_uci_general()
+    assert isinstance(uci_res, dict)
+    assert "serial_baud" in uci_res
+    monkeypatch.delenv("MCUBRIDGE_FORCE_UCI", raising=False)
+
     # 3. read_uci_general when get_uci_config is not callable
     assert read_uci_general(config_getter=cast(Any, "not_callable")) == {}
 

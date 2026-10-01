@@ -294,3 +294,33 @@ rationale = "Style guide enforcement and PEP 8 linter"
 name = "semgrep"
 pip = "semgrep==1.178.0"
 rationale = "Static AST analysis engine enforcing SIL-2 zero-suppression and deterministic coding rules"
+
+[[dev_dependency]]
+name = "pytest"
+pip = "pytest==9.1.1"
+rationale = "Primary testing framework and test runner"
+
+[[dev_dependency]]
+name = "pytest-asyncio"
+pip = "pytest-asyncio==1.4.0"
+rationale = "Asyncio integration for pytest managing event loop lifecycles"
+
+[[dev_dependency]]
+name = "pytest-timeout"
+pip = "pytest-timeout==2.5.0"
+rationale = "Test timeout monitor enforcing WCET safety limits during validation"
+
+[[dev_dependency]]
+name = "pytest-xdist"
+pip = "pytest-xdist==3.8.0"
+rationale = "Parallel test execution worker pool for high-speed deterministic test suites"
+
+[[dev_dependency]]
+name = "pytest-mock"
+pip = "pytest-mock==3.16.0"
+rationale = "Strongly-typed pytest wrapper for unittest.mock"
+
+[[dev_dependency]]
+name = "hypothesis"
+pip = "hypothesis==6.168.3"
+rationale = "Property-based testing and state machine fuzzing engine"

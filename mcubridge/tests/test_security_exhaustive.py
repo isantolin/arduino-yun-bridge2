@@ -101,3 +101,11 @@ def test_verify_crypto_integrity_chacha_failure(mocker: MockerFixture) -> None:
         side_effect=ValueError("ChaCha error"),
     )
     assert verify_crypto_integrity() is False
+
+
+def test_verify_crypto_integrity_chacha_invalid_tag(mocker: MockerFixture) -> None:
+    mocker.patch(
+        "cryptography.hazmat.primitives.ciphers.aead.ChaCha20Poly1305.encrypt",
+        return_value=b"\x00" * 20,
+    )
+    assert verify_crypto_integrity() is False

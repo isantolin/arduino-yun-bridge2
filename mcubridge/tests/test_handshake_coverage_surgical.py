@@ -10,6 +10,7 @@ import mcubridge.protocol.mcubridge_pb2 as pb
 import pytest
 from google.protobuf.message import Message as ProtobufMessage
 from mcubridge.config.settings import RuntimeConfig
+from mcubridge.protocol.protocol import Command
 from mcubridge.services.handshake import HandshakeState, SerialHandshakeManager, derive_serial_timing
 from mcubridge.state.context import RuntimeState, create_runtime_state
 
@@ -213,3 +214,47 @@ async def test_publish_handshake_event_cloud_enqueue(mock_config: RuntimeConfig,
     assert published_msg.topic_name == "br/system/bridge/handshake/value"
     snapshot = pb.HandshakeSnapshot.FromString(published_msg.payload)
     assert snapshot.event == "sync_success"
+
+
+@pytest.mark.asyncio
+async def test_synchronize_attempt_sync_send_failure(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+    async def _send_reset_ok_sync_fail(command_id: int, payload: object, seq_id: int | None = None) -> bool:
+        if command_id == Command.CMD_LINK_SYNC.value:
+            return False
+        return True
+
+    mock_send = AsyncMock(side_effect=_send_reset_ok_sync_fail)
+    mgr = _make_handshake_manager(mock_config, mock_state, send_frame=mock_send)
+    sync_attempt: Callable[[], Awaitable[bool]] = getattr(mgr, "_synchronize_attempt")
+    res = await sync_attempt()
+    assert res is False
+    assert mock_state.last_handshake_error == "link_sync_send_failed"
+
+
+@pytest.mark.asyncio
+async def test_handle_link_sync_resp_rate_limit_allowed(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+    mock_config.serial_handshake_min_interval = 0.5
+    mock_state.handshake_rate_until = 0.0
+    nonce = b"validnonce1234"
+    mock_state.link_handshake_nonce = nonce
+    mock_state.link_expected_tag = SerialHandshakeManager.calculate_handshake_tag(
+        mock_config.serial_shared_secret, nonce
+    )
+
+    mgr = _make_handshake_manager(mock_config, mock_state)
+    payload = pb.LinkSync(nonce=nonce, tag=mock_state.link_expected_tag)
+    res = await mgr.handle_link_sync_resp(1, payload)
+    assert res is True
+    assert mock_state.handshake_rate_until > 0.0
+
+
+@pytest.mark.asyncio
+async def test_fetch_capabilities_zero_delay(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
+    mgr = _make_handshake_manager(mock_config, mock_state)
+    mgr.capabilities_delay = 0.0
+    mock_fetch = AsyncMock(return_value=True)
+    setattr(mgr, "_fetch_capabilities", mock_fetch)
+
+    fetch_with_delay: Callable[[], Awaitable[None]] = getattr(mgr, "_fetch_capabilities_with_delay")
+    await fetch_with_delay()
+    mock_fetch.assert_awaited_once()

@@ -344,3 +344,46 @@ async def test_process_poll_and_terminate(test_config: RuntimeConfig, mock_bridg
     term_proc: Callable[..., Awaitable[int]] = getattr(svc, "_terminate_process")
     code = await term_proc(1234, mock_ctx, grace_period=0.1)
     assert code == 0
+
+
+@pytest.mark.asyncio
+async def test_enqueue_cloud_not_debug_and_drop(
+    test_config: RuntimeConfig, mock_bridge_state: RuntimeState, mocker: MockerFixture
+) -> None:
+    mock_serial = AsyncMock(spec=SerialTransport)
+    svc = BridgeService(test_config, mock_bridge_state, mock_serial)
+
+    mocker.patch("mcubridge.services.runtime.logger.is_enabled_for", return_value=False)
+    mocker.patch.object(svc, "_publish_cloud_message", new=AsyncMock(return_value=False))
+    mocker.patch.object(svc, "_spool_cloud_message_locked", new=AsyncMock(return_value=False))
+
+    while not mock_bridge_state.cloud_publish_queue.empty():
+        mock_bridge_state.cloud_publish_queue.get_nowait()
+
+    msg = pb.CloudQueuedPublish(topic_name="test/topic", payload=b"payload")
+    await svc.enqueue_cloud(msg)
+    assert mock_bridge_state.cloud_drop_counts.get("test/topic") == 1
+
+
+@pytest.mark.asyncio
+async def test_flush_cloud_spool_publish_fails_and_degraded(
+    test_config: RuntimeConfig, mock_bridge_state: RuntimeState, mocker: MockerFixture
+) -> None:
+    mock_serial = AsyncMock(spec=SerialTransport)
+    svc = BridgeService(test_config, mock_bridge_state, mock_serial)
+
+    spool = getattr(svc, "_cloud_spool")
+    await spool.append(pb.CloudQueuedPublish(topic_name="spool/topic", payload=b"data").SerializeToString())
+
+    # 1. _publish_cloud_message returns False -> triggers line 489-490 break
+    mocker.patch.object(svc, "_publish_cloud_message", new=AsyncMock(return_value=False))
+    flush_spool: Callable[[], Awaitable[None]] = getattr(svc, "_flush_cloud_spool_locked")
+    await flush_spool()
+    assert len(spool) == 1
+
+    # 2. cloud_spool_degraded is True -> line 504-507 (if not degraded: branch is skipped)
+    mock_bridge_state.cloud_spool_degraded = True
+    mock_bridge_state.cloud_spool_failure_reason = "simulated_error"
+    await flush_spool()
+    assert getattr(mock_bridge_state, "cloud_spool_degraded") is True
+    assert mock_bridge_state.cloud_spool_failure_reason == "simulated_error"

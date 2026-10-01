@@ -444,7 +444,6 @@ def test_ubus_handle_ping(mock_runtime: MockRuntimeFacade) -> None:
 
 @pytest.mark.asyncio
 async def test_ubus_service_run_loop(mock_runtime: MockRuntimeFacade, mocker: MockerFixture) -> None:
-    import mcubridge.services.ubus as ubus_mod
 
     mock_ubus: Any = MagicMock()
     loop_called = 0

@@ -8,7 +8,6 @@ from typing import Any, Callable, cast
 from unittest.mock import MagicMock
 
 import pytest
-from pytest_mock import MockerFixture
 
 # Dynamically load the standalone script
 _script_path = Path(__file__).resolve().parent.parent / "scripts" / "mcubridge_file_push.py"

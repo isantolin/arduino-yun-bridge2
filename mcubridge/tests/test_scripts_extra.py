@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import importlib.util
-import sys
 from collections.abc import Coroutine
 from pathlib import Path
 from typing import Any

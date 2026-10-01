@@ -111,7 +111,6 @@ def test_wait_for_tcp_ready_timeout() -> None:
 
 
 def test_ubus_service_start_retries_and_succeeds(mocker: MockerFixture) -> None:
-    import mcubridge.services.ubus as ubus_mod
 
     mock_ubus: Any = MagicMock()
     mock_conn: Any = MagicMock()

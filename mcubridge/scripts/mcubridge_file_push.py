@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import importlib
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated, Any, cast
 

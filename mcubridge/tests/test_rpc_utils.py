@@ -1,5 +1,4 @@
 import types
-from typing import Any
 from unittest.mock import MagicMock
 
 from mcubridge.config import common

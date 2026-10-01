@@ -417,21 +417,25 @@ async def test_serial_read_loop_branches(runtime_config: RuntimeConfig, runtime_
         await read_loop(mock_serial)
 
     mock_proc.assert_not_awaited()
-    assert getattr(transport, "_consecutive_crc_errors") == 0
+    assert transport.consecutive_crc_errors == 0
 
 
 @pytest.mark.asyncio
 async def test_serial_transport_connect_exceptions(
-    runtime_config: RuntimeConfig, runtime_state: RuntimeState, mocker: MockerFixture
+    runtime_config: RuntimeConfig, runtime_state: RuntimeState
 ) -> None:
-    transport = SerialTransport(runtime_config, runtime_state, AsyncMock())
+    async def _cancel_run() -> None:
+        raise asyncio.CancelledError()
 
-    mocker.patch.object(transport, "_connect_and_run", side_effect=asyncio.CancelledError())
-    await transport.connect()
+    transport_cancel = SerialTransport(runtime_config, runtime_state, AsyncMock(), runner_fn=_cancel_run)
+    await transport_cancel.connect()
 
-    mocker.patch.object(transport, "_connect_and_run", side_effect=SerialHandshakeFatal("Fatal"))
+    async def _fatal_run() -> None:
+        raise SerialHandshakeFatal("Fatal")
+
+    transport_fatal = SerialTransport(runtime_config, runtime_state, AsyncMock(), runner_fn=_fatal_run)
     with pytest.raises(SerialHandshakeFatal):
-        await transport.connect()
+        await transport_fatal.connect()
 
 
 @pytest.mark.asyncio
@@ -441,7 +445,7 @@ async def test_serial_correlate_frame_already_resolved(
     transport = SerialTransport(runtime_config, runtime_state, AsyncMock())
     cmd = PendingCommand(command_id=Command.CMD_DIGITAL_WRITE.value)
     cmd.mark_success(b"original")
-    setattr(transport, "_current", cmd)
+    transport.current_command = cmd
 
     correlate: Callable[[int, bytes], None] = getattr(transport, "_correlate_frame")
     correlate(protocol.Status.ACK.value, b"new_data")

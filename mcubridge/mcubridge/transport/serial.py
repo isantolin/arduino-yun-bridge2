@@ -17,6 +17,7 @@ import asyncio
 import errno
 import logging
 import sys
+from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
 
 import serialx
@@ -132,10 +133,12 @@ class SerialTransport:
         config: RuntimeConfig,
         state: RuntimeState,
         service: BridgeService | None,
+        runner_fn: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         self.config = config
         self.state = state
         self.service = service
+        self._runner_fn = runner_fn
         self.serial: serialx.AsyncSerial | None = None
 
         self._stop_event = asyncio.Event()
@@ -244,7 +247,10 @@ class SerialTransport:
     async def connect(self) -> None:
         """Single-shot connection method for compatibility."""
         try:
-            await self._connect_and_run()
+            if self._runner_fn is not None:
+                await self._runner_fn()
+            else:
+                await self._connect_and_run()
         except asyncio.CancelledError:
             logger.info("Serial transport cancelled")
         except SerialHandshakeFatal as exc:

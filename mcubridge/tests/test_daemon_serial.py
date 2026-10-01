@@ -75,8 +75,6 @@ async def test_serial_reader_task_reconnects(mocker: MockerFixture) -> None:
         mock_async_serial_cls,
     )
     mocker.patch("asyncio.sleep", mock_sleep)
-    mocker.patch.object(SerialTransport, "_toggle_dtr", AsyncMock())
-
     transport = SerialTransport(config, state, service)
     with pytest.raises(RuntimeError, match="Break Loop"):
         await transport.run()
@@ -84,5 +82,6 @@ async def test_serial_reader_task_reconnects(mocker: MockerFixture) -> None:
     # Verify behavior
     # Connect should be called at least twice (initial + retry)
     assert mock_async_serial_cls.call_count >= 2
+    assert mock_serial.set_modem_pins.call_count >= 2
     assert service.on_serial_connected.called
     assert service.on_serial_disconnected.called

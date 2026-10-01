@@ -17,7 +17,7 @@ script_path = Path(__file__).parent.parent / "scripts" / "pin_rest_cgi.py"
 spec = importlib.util.spec_from_file_location("pin_rest_cgi", str(script_path))
 if spec is None or spec.loader is None:
     raise ImportError("Could not load pin_rest_cgi.py")
-pin_rest_cgi = importlib.util.module_from_spec(spec)
+pin_rest_cgi: Any = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(pin_rest_cgi)
 application = pin_rest_cgi.application
 

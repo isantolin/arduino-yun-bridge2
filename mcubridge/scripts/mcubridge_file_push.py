@@ -47,13 +47,14 @@ def push_file(target_path: str, data: bytes, *, ubus_module: Any = None) -> None
         sys.exit(1)
 
 
+push_file_handler: Callable[..., None] = push_file
+
+
 @app.command()
 def main(
     source: Annotated[Path, typer.Argument(help="Source file to push")],
     target: Annotated[str, typer.Argument(help="Target path on the bridge")],
     mcu: Annotated[bool, typer.Option(help="Target MCU storage")] = False,
-    *,
-    pusher: Any = push_file,
 ) -> None:
     """Push file data to the bridge via UBUS or local gRPC IPC."""
     if not source.exists() or source.is_dir():
@@ -77,7 +78,7 @@ def main(
         payload_hex=hexdump,
     )
 
-    pusher(target_path, data)
+    push_file_handler(target_path, data)
 
 
 if __name__ == "__main__":

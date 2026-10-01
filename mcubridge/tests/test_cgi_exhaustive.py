@@ -20,7 +20,6 @@ spec = importlib.util.spec_from_file_location("pin_rest_cgi", str(script_path))
 if spec is None or spec.loader is None:
     raise ImportError("Could not load pin_rest_cgi.py")
 pin_rest_cgi = importlib.util.module_from_spec(spec)
-sys.modules["pin_rest_cgi"] = pin_rest_cgi
 spec.loader.exec_module(pin_rest_cgi)
 application = pin_rest_cgi.application
 

@@ -21,8 +21,6 @@ def load_script(name: str) -> Any:
     if spec is None or spec.loader is None:
         raise ImportError(f"Could not load {name}.py")
     module = importlib.util.module_from_spec(spec)
-    sys.modules[name.replace("-", "_")] = module
-
     spec.loader.exec_module(module)
     return module
 

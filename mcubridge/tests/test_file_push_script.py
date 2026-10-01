@@ -92,13 +92,18 @@ def test_main_cli_validation(tmp_path: Path) -> None:
     def mock_push(target: str, data: bytes) -> None:
         pushed_args.append((target, data))
 
-    # Push to Linux path
-    cli_main(test_file, "/tmp/sample.txt", mcu=False, pusher=mock_push)
-    assert len(pushed_args) == 1
-    assert pushed_args[0][0] == "tmp/sample.txt"
-    assert pushed_args[0][1] == b"content to push"
+    orig_handler = _file_push.push_file_handler
+    _file_push.push_file_handler = mock_push
+    try:
+        # Push to Linux path
+        cli_main(test_file, "/tmp/sample.txt", mcu=False)
+        assert len(pushed_args) == 1
+        assert pushed_args[0][0] == "tmp/sample.txt"
+        assert pushed_args[0][1] == b"content to push"
 
-    # Push to MCU path
-    cli_main(test_file, "/sketch.bin", mcu=True, pusher=mock_push)
-    assert len(pushed_args) == 2
-    assert pushed_args[1][0] == "mcu/sketch.bin"
+        # Push to MCU path
+        cli_main(test_file, "/sketch.bin", mcu=True)
+        assert len(pushed_args) == 2
+        assert pushed_args[1][0] == "mcu/sketch.bin"
+    finally:
+        _file_push.push_file_handler = orig_handler

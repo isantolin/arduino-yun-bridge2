@@ -9,7 +9,7 @@ from tools.audit import sync_runtime_deps
 def test_write_requirements_dry_run_does_not_write(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     requirements_path = tmp_path / "runtime.txt"
     monkeypatch.setattr(sync_runtime_deps, "REQUIREMENTS_PATH", requirements_path)
-    deps = [
+    deps: list[sync_runtime_deps.DepEntry] = [
         {
             "name": "sample",
             "openwrt": "python3-sample",
@@ -86,7 +86,7 @@ def test_update_workflows_preserves_action_inputs_and_updates_literal_pins(
     )
     monkeypatch.setattr(sync_runtime_deps, "ROOT", tmp_path)
 
-    deps = [
+    deps: list[sync_runtime_deps.DepEntry] = [
         {
             "name": "protobuf",
             "openwrt": "python3-protobuf",

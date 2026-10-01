@@ -48,7 +48,7 @@ class ManifestError(RuntimeError):
     """Raised when the manifest file is missing or malformed."""
 
 
-class _DepEntry(TypedDict):
+class DepEntry(TypedDict):
     name: str
     openwrt: str
     pip: str
@@ -75,7 +75,7 @@ class _DevDepEntry(TypedDict):
 
 @dataclass(slots=True, frozen=True)
 class ManifestData:
-    runtime: list[_DepEntry]
+    runtime: list[DepEntry]
     cpp: list[_CppDepEntry]
     dev: list[_DevDepEntry]
 
@@ -92,13 +92,13 @@ def load_manifest() -> ManifestData:
     entries = data.get("dependency")
     if not entries:
         raise ManifestError("Manifest must declare at least one dependency")
-    normalized_runtime: list[_DepEntry] = []
+    normalized_runtime: list[DepEntry] = []
     for entry in entries:
         openwrt = entry.get("openwrt", "").strip()
         pip_spec = entry.get("pip", "").strip()
         name = entry.get("name") or openwrt or "(unnamed)"
         normalized_runtime.append(
-            _DepEntry(
+            DepEntry(
                 name=name,
                 openwrt=openwrt,
                 pip=pip_spec,
@@ -135,14 +135,14 @@ def load_manifest() -> ManifestData:
     return ManifestData(runtime=normalized_runtime, cpp=normalized_cpp, dev=normalized_dev)
 
 
-def collect_pip_specs(deps: Sequence[_DepEntry]) -> list[str]:
+def collect_pip_specs(deps: Sequence[DepEntry]) -> list[str]:
     # Mantiene todo EXCEPTO los paquetes exclusivos de sistema (uci)
     specs = {dep["pip"] for dep in deps if dep.get("pip")}
     filtered = {s for s in specs if not any(s.startswith(p) for p in SYSTEM_ONLY_PACKAGES)}
     return sorted(filtered)
 
 
-def collect_openwrt_packages(deps: Sequence[_DepEntry], *, edge_only: bool = False) -> list[str]:
+def collect_openwrt_packages(deps: Sequence[DepEntry], *, edge_only: bool = False) -> list[str]:
     # Mantiene todo EXCEPTO los paquetes exclusivos de construcción (jinja2, etc)
     # Esto asegura que el APK sea ultra-lean.
     return [
@@ -160,14 +160,14 @@ def _write_if_changed(path: Path, content: str, *, dry_run: bool = False) -> boo
     return True
 
 
-def write_requirements(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
+def write_requirements(deps: Sequence[DepEntry], *, dry_run: bool = False) -> bool:
     pip_specs = collect_pip_specs(deps)
     content = ["# Generated via tools/audit/sync_runtime_deps.py; do not edit."]
     content.extend(pip_specs)
     return _write_if_changed(REQUIREMENTS_PATH, "\n".join(content) + "\n", dry_run=dry_run)
 
 
-def write_gateway_requirements(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
+def write_gateway_requirements(deps: Sequence[DepEntry], *, dry_run: bool = False) -> bool:
     gateway_deps = [dep for dep in deps if dep.get("gateway")]
     pip_specs = collect_pip_specs(gateway_deps)
     content = ["# Generated via tools/audit/sync_runtime_deps.py; do not edit."]
@@ -175,7 +175,7 @@ def write_gateway_requirements(deps: Sequence[_DepEntry], *, dry_run: bool = Fal
     return _write_if_changed(GATEWAY_REQUIREMENTS_PATH, "\n".join(content) + "\n", dry_run=dry_run)
 
 
-def update_pyproject(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
+def update_pyproject(deps: Sequence[DepEntry], *, dry_run: bool = False) -> bool:
     if not PYPROJECT_PATH.exists():
         return False
 
@@ -228,7 +228,7 @@ def format_openwrt_lines(tokens: Sequence[str]) -> list[str]:
 
 def _update_makefile(
     path: Path,
-    deps: Sequence[_DepEntry],
+    deps: Sequence[DepEntry],
     *,
     edge_only: bool = False,
     dry_run: bool = False,
@@ -260,11 +260,11 @@ def _update_makefile(
     return _write_if_changed(path, "\n".join(new_lines) + "\n", dry_run=dry_run)
 
 
-def update_makefile(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
+def update_makefile(deps: Sequence[DepEntry], *, dry_run: bool = False) -> bool:
     return _update_makefile(MAKEFILE_PATH, deps, edge_only=True, dry_run=dry_run)
 
 
-def update_gateway_makefile(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
+def update_gateway_makefile(deps: Sequence[DepEntry], *, dry_run: bool = False) -> bool:
     if not GATEWAY_MAKEFILE_PATH.exists():
         return False
     gateway_deps = [dep for dep in deps if dep.get("gateway")]
@@ -461,7 +461,7 @@ def _fetch_github_latest_version(repo: str) -> str | None:
     return None
 
 
-def _check_runtime_outdated(deps: Sequence[_DepEntry]) -> list[tuple[str, str, str]]:
+def _check_runtime_outdated(deps: Sequence[DepEntry]) -> list[tuple[str, str, str]]:
     outdated: list[tuple[str, str, str]] = []
     pip_specs = [(dep["pip"], dep["check_latest"]) for dep in deps if dep.get("pip")]
     for spec, should_check_latest in pip_specs:
@@ -528,7 +528,7 @@ def _check_cpp_outdated(cpp_deps: Sequence[_CppDepEntry]) -> list[tuple[str, str
 
 
 def check_latest_versions(
-    deps: Sequence[_DepEntry],
+    deps: Sequence[DepEntry],
     cpp_deps: Sequence[_CppDepEntry] = (),
     dev_deps: Sequence[_DevDepEntry] = (),
 ) -> list[tuple[str, str, str]]:
@@ -557,7 +557,7 @@ def _to_apk_version(version: str) -> str:
     return re.sub(r"\.dev(\d+)$", r"_pre\1", converted)
 
 
-def update_feeds(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
+def update_feeds(deps: Sequence[DepEntry], *, dry_run: bool = False) -> bool:
     if not FEEDS_DIR.exists():
         return False
 
@@ -650,7 +650,7 @@ def update_feeds(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
     return any_updated
 
 
-def update_workflows(deps: Sequence[_DepEntry], *, dry_run: bool = False) -> bool:
+def update_workflows(deps: Sequence[DepEntry], *, dry_run: bool = False) -> bool:
     workflows_dir = ROOT / ".github" / "workflows"
     actions_dir = ROOT / ".github" / "actions"
     if not workflows_dir.exists():

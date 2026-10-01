@@ -77,7 +77,7 @@ def _resolve_package_name(base_url: str, pkg_prefix: str) -> str | None:
             html = resp.read().decode("utf-8")
         matches = re.findall(rf'href="({re.escape(pkg_prefix)}[^\"]+\.apk)"', html)
         if matches:
-            return sorted(matches)[-1]
+            return max(matches)
     except (urllib.error.URLError, TimeoutError, OSError, UnicodeDecodeError) as e:
         log_error(f"[WARN] Could not list directory {base_url}: {e}")
     return None

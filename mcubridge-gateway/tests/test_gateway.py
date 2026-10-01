@@ -37,7 +37,7 @@ from typer.testing import CliRunner
 
 _RUN_STATE_MACHINE: Callable[[type[RuleBasedStateMachine]], None] = cast(
     Callable[[type[RuleBasedStateMachine]], None],
-    getattr(h_stateful, "run_state_machine_as_test"),
+    h_stateful.run_state_machine_as_test,
 )
 
 
@@ -653,12 +653,12 @@ def test_tsdb_sink_post_line_edge_paths(mocker: MockerFixture) -> None:
     # 1. Empty endpoint returns early
     sink_empty = TSDBSink(endpoint_url=None)
     assert not sink_empty.enabled
-    post_empty = getattr(sink_empty, "_post_line")
+    post_empty = sink_empty._post_line
     post_empty("mcu,device=dev1 value=1")
 
     sink = TSDBSink(endpoint_url="http://localhost:8428/write")
     assert sink.enabled
-    post_fn = getattr(sink, "_post_line")
+    post_fn = sink._post_line
 
     # 2. Status >= 400
     mock_resp = MagicMock()
@@ -696,7 +696,7 @@ async def test_tsdb_sink_ingest_telemetry_edge_paths() -> None:
 async def test_handle_telemetry_edge_paths(mock_gateway: ProtobufGateway, mocker: MockerFixture) -> None:
     import gateway
 
-    handle_telemetry = getattr(gateway, "_handle_telemetry")
+    handle_telemetry = gateway._handle_telemetry
     mock_gateway.tsdb_sink = TSDBSink(endpoint_url="http://localhost:8428/write")
     svc = CloudBridgeService(mock_gateway)
     mock_stream = AsyncMock()
@@ -784,7 +784,7 @@ async def test_session_disconnect_aborts_pending_commands_with_edge_branches(
 async def test_handle_telemetry_full_metrics_dimensions(mock_gateway: ProtobufGateway) -> None:
     import gateway
 
-    handle_telemetry = getattr(gateway, "_handle_telemetry")
+    handle_telemetry = gateway._handle_telemetry
     svc = CloudBridgeService(mock_gateway)
     mock_stream = AsyncMock()
 

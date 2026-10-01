@@ -555,7 +555,7 @@ async def test_clock_sync_loop_normal_exit_branch(mock_bridge_service: BridgeSer
     svc.state.connection_fsm.connect()
 
     await clock.start()
-    assert getattr(clock, "is_running") is True
+    assert clock.is_running
     await asyncio.sleep(0.01)
     await clock.stop()
-    assert getattr(clock, "is_running") is False
+    assert not clock.is_running

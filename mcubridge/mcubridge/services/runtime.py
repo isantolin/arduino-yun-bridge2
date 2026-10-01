@@ -674,7 +674,7 @@ class BridgeService:
                 response_topic=str(rt) if rt else "",
             )
 
-        topic_val = request.topic_name if request.topic_name else getattr(request, "topic", "")
+        topic_val = request.topic_name or getattr(request, "topic", "")
         with structlog.contextvars.bound_contextvars(topic=topic_val):
             if route := parse_topic(self.state.cloud_topic_prefix, topic_val):
                 if route.topic in (Topic.DIGITAL, Topic.ANALOG, Topic.CONSOLE, Topic.SPI):
@@ -1019,7 +1019,7 @@ class BridgeService:
     async def _handle_file_local_read(self, target: str, inbound: pb.CloudQueuedPublish) -> None:
         data = await self.safe_file_read(target)
         if data is not None:
-            inbound_topic = inbound.topic_name if inbound.topic_name else getattr(inbound, "topic", "")
+            inbound_topic = inbound.topic_name or getattr(inbound, "topic", "")
             if not inbound_topic.endswith(protocol.CLOUD_SUFFIX_RESPONSE):
                 await self.enqueue_cloud_publish(
                     self._file_response_topic(target),
@@ -1392,7 +1392,7 @@ class BridgeService:
             ctx.fsm.finish()
             return ctx.handle.returncode
 
-        if not ctx.is_terminating:
+        if not ctx.fsm.terminating.is_active:
             ctx.fsm.terminate()
 
         await anyio.to_thread.run_sync(

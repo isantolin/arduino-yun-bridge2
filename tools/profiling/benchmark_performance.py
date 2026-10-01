@@ -364,11 +364,11 @@ def main(
         ]
     )
 
-    for m in all_metrics:
-        md_lines.append(
-            f"| **{m.name}** | {m.operations:,} | {m.duration_sec:.3f} | "
-            f"{m.ops_per_sec:,.0f} | {m.throughput_mb_s:.2f} | {m.latency_us_per_op:.2f} |"
-        )
+    md_lines.extend(
+        f"| **{m.name}** | {m.operations:,} | {m.duration_sec:.3f} | "
+        f"{m.ops_per_sec:,.0f} | {m.throughput_mb_s:.2f} | {m.latency_us_per_op:.2f} |"
+        for m in all_metrics
+    )
 
     report_text = "\n".join(md_lines) + "\n"
     print("\n" + report_text)

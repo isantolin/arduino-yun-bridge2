@@ -30,7 +30,7 @@ logger = structlog.get_logger("protocol_fuzzer")
 
 _RUN_STATE_MACHINE: Callable[[type[RuleBasedStateMachine]], None] = cast(
     Callable[[type[RuleBasedStateMachine]], None],
-    getattr(h_stateful, "run_state_machine_as_test"),
+    h_stateful.run_state_machine_as_test,
 )
 
 

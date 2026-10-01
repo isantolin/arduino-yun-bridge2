@@ -123,7 +123,7 @@ def test_load_runtime_config_falls_back_to_defaults() -> None:
 
 
 def test_get_uci_config_flattens_nested_structures() -> None:
-    raw, _ = getattr(settings, "_load_raw_config")(
+    raw, _ = settings._load_raw_config(
         uci_getter=lambda: {
             "allowed_commands": ["ls", "uptime"],
             "topic_prefix": "br",
@@ -176,7 +176,7 @@ def test_load_runtime_config_http3() -> None:
 
 
 def test_settings_factory_bypass_defaults() -> None:
-    factory_fn = getattr(settings, "_runtime_config_factory")
+    factory_fn = settings._runtime_config_factory
     cfg = factory_fn(
         bypass_defaults=True,
         validate=False,
@@ -190,7 +190,7 @@ def test_settings_factory_bypass_defaults() -> None:
 
 
 def test_settings_load_raw_config_empty_uci() -> None:
-    load_raw_fn = getattr(settings, "_load_raw_config")
+    load_raw_fn = settings._load_raw_config
     empty_uci: dict[str, Any] = {}
     cfg_dict, source = load_raw_fn(uci_getter=lambda: empty_uci)
     assert source == "defaults"
@@ -219,7 +219,7 @@ def test_settings_load_runtime_config_from_json_unknown_override() -> None:
 def test_settings_normalize_config_property(
     cloud_en: Any, wd_en: Any, baud: Any, interval: float, secret_str: str
 ) -> None:
-    norm_fn = getattr(settings, "_normalize_config_dict")
+    norm_fn = settings._normalize_config_dict
     norm, secret = norm_fn(
         {
             "cloud_enabled": cloud_en,
@@ -293,7 +293,7 @@ def test_config_settings_and_logging_branches(runtime_config: settings.RuntimeCo
 
     # 1. _runtime_config_factory with pb_msg
     existing_msg = pb.RuntimeConfig(serial_port="/dev/test_factory")
-    factory_fn = getattr(settings, "_runtime_config_factory")
+    factory_fn = settings._runtime_config_factory
     res_factory = factory_fn(pb_msg=existing_msg)
     assert res_factory.serial_port == "/dev/test_factory"
 

@@ -205,7 +205,7 @@ async def test_spi_device_transfer() -> None:
     # Transfer with bytes while inactive (should call begin() automatically)
     assert not dev.is_active
     res1 = await dev.transfer(b"\x01\x02")
-    assert getattr(dev, "is_active") is True
+    assert dev.is_active
     assert res1 == b"\xaa\xbb"
     mock_spi_config.assert_awaited_once()
 

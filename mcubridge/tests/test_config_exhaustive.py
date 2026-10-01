@@ -122,9 +122,9 @@ def test_get_config_source() -> None:
 
 
 def test_coerce_value() -> None:
-    coerce_bool: Callable[[Any], bool] = getattr(settings, "_coerce_bool")
-    coerce_path: Callable[[Any], str] = getattr(settings, "_coerce_path")
-    coerce_commands: Callable[[Any], list[str]] = getattr(settings, "_coerce_commands")
+    coerce_bool: Callable[[Any], bool] = settings._coerce_bool
+    coerce_path: Callable[[Any], str] = settings._coerce_path
+    coerce_commands: Callable[[Any], list[str]] = settings._coerce_commands
 
     assert coerce_bool(True) is True
     assert coerce_bool("yes") is True
@@ -140,9 +140,7 @@ def test_coerce_value() -> None:
 
 
 def test_normalize_config_dict() -> None:
-    normalize_dict: Callable[[dict[str, Any]], tuple[dict[str, Any], bytes | None]] = getattr(
-        settings, "_normalize_config_dict"
-    )
+    normalize_dict: Callable[[dict[str, Any]], tuple[dict[str, Any], bytes | None]] = settings._normalize_config_dict
     norm, secret = normalize_dict(
         {
             "serial_shared_secret": "my_secret",

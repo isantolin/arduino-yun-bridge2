@@ -177,7 +177,7 @@ async def test_serial_transport_tcp_network_error_and_disconnect_paths(
 
         # Run connection attempt which will hit immediate EOF / disconnect
         with pytest.raises(ConnectionError, match="Wireless network connection lost"):
-            await getattr(transport, "_connect_and_run")()
+            await transport._connect_and_run()
 
         mock_service.on_serial_disconnected.assert_awaited_once()
     finally:
@@ -198,7 +198,7 @@ async def test_switch_local_baudrate_on_tcp_connection(
     transport.serial = mock_serialx
 
     # Baudrate switch helper
-    getattr(transport, "_switch_local_baudrate")(230400)
+    transport._switch_local_baudrate(230400)
     assert mock_serialx.transport.serial.baudrate == 230400
 
 
@@ -226,11 +226,11 @@ async def test_serial_transport_tcp_stop_event_branch(
 
     async def _stop_soon() -> None:
         await asyncio.sleep(0.05)
-        getattr(transport, "_stop_event").set()
+        transport._stop_event.set()
 
     asyncio.create_task(_stop_soon())
     # Should exit cleanly when wait_stop triggers
-    await getattr(transport, "_connect_and_run")()
+    await transport._connect_and_run()
 
     assert transport.serial is None
     server.close()
@@ -255,7 +255,7 @@ async def test_serial_transport_tcp_none_service_disconnect(
     transport = SerialTransport(runtime_config, runtime_state, None)
 
     with pytest.raises(ConnectionError, match="Wireless network connection lost"):
-        await getattr(transport, "_connect_and_run")()
+        await transport._connect_and_run()
 
     server.close()
     await server.wait_closed()

@@ -31,7 +31,7 @@ from mcubridge.state.context import (
 
 _RUN_STATE_MACHINE: Callable[[type[RuleBasedStateMachine]], None] = cast(
     Callable[[type[RuleBasedStateMachine]], None],
-    getattr(h_stateful, "run_state_machine_as_test"),
+    h_stateful.run_state_machine_as_test,
 )
 
 
@@ -107,7 +107,7 @@ class ProcessLifecycleStateMachine(RuleBasedStateMachine):
         ctx = self.active_contexts[pid]
         if ctx.fsm.spawning.is_active:
             ctx.fsm.start()
-            assert ctx.is_running
+            assert ctx.fsm.running.is_active
             assert ctx.status == ProcessState.RUNNING.value
 
     @rule(pid=processes)
@@ -115,16 +115,16 @@ class ProcessLifecycleStateMachine(RuleBasedStateMachine):
         ctx = self.active_contexts[pid]
         if ctx.fsm.running.is_active:
             ctx.fsm.terminate()
-            assert ctx.is_terminating
+            assert ctx.fsm.terminating.is_active
             assert ctx.status == ProcessState.TERMINATING.value
 
     @rule(pid=processes, exit_code=st.integers(min_value=0, max_value=255))
     def finish(self, pid: int, exit_code: int) -> None:
         ctx = self.active_contexts[pid]
-        if not ctx.is_exited:
+        if not ctx.fsm.exited.is_active:
             ctx.exit_code = exit_code
             ctx.fsm.finish()
-            assert ctx.is_exited
+            assert ctx.fsm.exited.is_active
             assert ctx.status == ProcessState.EXITED.value
 
     @invariant()
@@ -137,9 +137,6 @@ class ProcessLifecycleStateMachine(RuleBasedStateMachine):
                 ProcessState.TERMINATING.value,
                 ProcessState.EXITED.value,
             )
-            assert ctx.is_running == ctx.fsm.running.is_active
-            assert ctx.is_terminating == ctx.fsm.terminating.is_active
-            assert ctx.is_exited == ctx.fsm.exited.is_active
 
 
 class CloudLinkStateMachine(RuleBasedStateMachine):

@@ -33,11 +33,8 @@ from packaging.version import Version
 # DEPENDENCY VALIDATION (CRITICAL)
 # ═════════════════════════════════════════════════════════════════════════════
 REQUIRED_DEPS = ["jinja2", "google.protobuf", "nanopb"]
-MISSING_DEPS: list[str] = []
 
-for dep in REQUIRED_DEPS:
-    if importlib.util.find_spec(dep.split(".")[0]) is None:
-        MISSING_DEPS.append(dep)
+MISSING_DEPS: list[str] = [dep for dep in REQUIRED_DEPS if importlib.util.find_spec(dep.split(".")[0]) is None]
 
 HAS_BUF: bool = shutil.which("buf") is not None
 
@@ -811,8 +808,8 @@ def ensure_nanopb_core_files() -> None:
                 reraise=True,
             )
 
-            def _fetch_nanopb_file() -> bytes:
-                with urllib.request.urlopen(url, timeout=20) as response:
+            def _fetch_nanopb_file(target_url: str = url) -> bytes:
+                with urllib.request.urlopen(target_url, timeout=20) as response:
                     return response.read()
 
             try:

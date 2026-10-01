@@ -19,8 +19,8 @@ class MailboxClass : public bridge::BridgeObserver {
 
   MailboxClass();
   static void push(etl::span<const uint8_t> data);
-  static void requestRead();
-  static void requestAvailable();
+  static bool requestRead();
+  static bool requestAvailable();
   static void signalProcessed(uint32_t message_id);
 
   static void registerMessageCallback(MessageCallback cb) {

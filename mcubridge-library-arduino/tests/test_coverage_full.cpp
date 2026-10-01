@@ -153,8 +153,8 @@ void test_bridge_coverage() {
   Mailbox.push(etl::span<const uint8_t>(mbox_data, 3));
 
   Mailbox.onLost();
-  Mailbox.requestRead();
-  Mailbox.requestAvailable();
+  TEST_ASSERT_TRUE(Mailbox.requestRead());
+  TEST_ASSERT_TRUE(Mailbox.requestAvailable());
   Mailbox.signalProcessed(123);
 
   // 7. SPI

@@ -1,8 +1,8 @@
-import os
 import tempfile
 
 import pytest
 from mcubridge.state.storage import LmdbDeque
+import pathlib
 
 
 @pytest.mark.asyncio
@@ -37,5 +37,5 @@ async def test_mailbox_static_queue_overflow() -> None:
         # Queue should be empty now
         assert len(q) == 0
     finally:
-        if os.path.exists(path):
-            os.unlink(path)
+        if pathlib.Path(path).exists():
+            pathlib.Path(path).unlink()

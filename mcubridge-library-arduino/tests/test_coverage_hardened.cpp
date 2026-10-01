@@ -306,8 +306,8 @@ void test_mailbox_and_datastore_variants() {
   Mailbox.push(etl::span<const uint8_t>());
 
   // Mailbox callback and processed
-  Mailbox.requestRead();
-  Mailbox.requestAvailable();
+  TEST_ASSERT_TRUE(Mailbox.requestRead());
+  TEST_ASSERT_TRUE(Mailbox.requestAvailable());
   Mailbox.signalProcessed(999);
 
   // Fill mailbox queue via _onPush to trigger queue full path

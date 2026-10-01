@@ -28,9 +28,11 @@ def get_standalone_scripts() -> list[Path]:
 
     scripts: list[Path] = []
     for d in search_dirs:
-        for f in d.rglob("*.py"):
-            if f.name != "__init__.py" and "templates" not in str(f) and "tests" not in str(f):
-                scripts.append(f)
+        scripts.extend(
+            f
+            for f in d.rglob("*.py")
+            if f.name != "__init__.py" and "templates" not in str(f) and "tests" not in str(f)
+        )
     return sorted(scripts)
 
 

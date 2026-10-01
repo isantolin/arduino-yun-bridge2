@@ -67,7 +67,7 @@ class SpiDevice:
         payload = cast(bytes, data) if isinstance(data, (bytes, bytearray)) else bytes(data)
 
         resp = await self._stub.SpiTransfer(pb.SpiTransfer(data=payload))
-        return resp.data if resp.data else payload
+        return resp.data or payload
 
     @property
     def frequency(self) -> int:

@@ -216,8 +216,10 @@ def sync(
             "-o",
             "StrictHostKeyChecking=no",
             f"{user}@{target_host}",
-            "find /usr/lib/python3.13/site-packages -name '*.pyc' -delete 2>/dev/null || true; "
-            "rm -rf /tmp/luci-* 2>/dev/null || true",
+            (
+                "find /usr/lib/python3.13/site-packages -name '*.pyc' -delete 2>/dev/null || true; "
+                "rm -rf /tmp/luci-* 2>/dev/null || true"
+            ),
         ],
         check=True,
     )
@@ -230,12 +232,14 @@ def sync(
             "-o",
             "StrictHostKeyChecking=no",
             f"{user}@{target_host}",
-            "uci -q set mcubridge.general.serial_port='/dev/ttyS1' && "
-            "uci -q set mcubridge.general.serial_shared_secret="
-            "'8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe' && "
-            "uci -q set mcubridge.general.cloud_enabled='0' && "
-            "uci -q set mcubridge.general.debug='1' && "
-            "uci -q commit mcubridge",
+            (
+                "uci -q set mcubridge.general.serial_port='/dev/ttyS1' && "
+                "uci -q set mcubridge.general.serial_shared_secret="
+                "'8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe' && "
+                "uci -q set mcubridge.general.cloud_enabled='0' && "
+                "uci -q set mcubridge.general.debug='1' && "
+                "uci -q commit mcubridge"
+            ),
         ],
         check=True,
     )
@@ -248,10 +252,12 @@ def sync(
                 "-o",
                 "StrictHostKeyChecking=no",
                 f"{user}@{target_host}",
-                "killall -9 python3 2>/dev/null || true; "
-                "/etc/init.d/mcubridge restart; "
-                "/etc/init.d/rpcd restart; "
-                "/etc/init.d/uhttpd restart",
+                (
+                    "killall -9 python3 2>/dev/null || true; "
+                    "/etc/init.d/mcubridge restart; "
+                    "/etc/init.d/rpcd restart; "
+                    "/etc/init.d/uhttpd restart"
+                ),
             ],
             check=True,
         )

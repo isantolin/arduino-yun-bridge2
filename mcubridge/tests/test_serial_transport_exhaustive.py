@@ -39,7 +39,7 @@ def test_switch_local_baudrate_failure(mock_serial_setup: tuple[SerialTransport,
     type(mock_inner_serial).baudrate = PropertyMock(side_effect=OSError("Baudrate error"))
     mock_serial.transport.serial = mock_inner_serial
 
-    switch_fn = getattr(transport, "_switch_local_baudrate")
+    switch_fn = transport._switch_local_baudrate
     with pytest.raises(RuntimeError, match="UART access failed"):
         switch_fn(9600)
 
@@ -66,7 +66,7 @@ async def test_read_loop_cobs_decode_error(
         asyncio.CancelledError(),
     ]
 
-    read_loop_fn = getattr(transport, "_read_loop")
+    read_loop_fn = transport._read_loop
     with pytest.raises(asyncio.CancelledError):
         await read_loop_fn(mock_serial)
 
@@ -86,10 +86,10 @@ async def test_read_loop_crc_error_recovery(
         asyncio.CancelledError(),
     ]
 
-    read_loop_fn = getattr(transport, "_read_loop")
+    read_loop_fn = transport._read_loop
     with pytest.raises(asyncio.CancelledError):
         await read_loop_fn(mock_serial)
-    assert getattr(transport, "_consecutive_crc_errors") == 1
+    assert transport._consecutive_crc_errors == 1
 
 
 @pytest.mark.asyncio
@@ -106,10 +106,10 @@ async def test_read_loop_valid_frame_dispatch(
         asyncio.CancelledError(),
     ]
 
-    read_loop_fn = getattr(transport, "_read_loop")
+    read_loop_fn = transport._read_loop
     with pytest.raises(asyncio.CancelledError):
         await read_loop_fn(mock_serial)
-    assert getattr(transport, "_consecutive_crc_errors") == 0
+    assert transport._consecutive_crc_errors == 0
 
 
 @pytest.mark.asyncio

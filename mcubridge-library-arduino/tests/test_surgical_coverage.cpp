@@ -598,8 +598,8 @@ static void test_surgical_mailbox_datastore_edges() {
   ba.setSynchronized();
   uint8_t payload_bytes[] = {'h', 'e', 'l', 'l', 'o'};
   Mailbox.push(etl::span<const uint8_t>(payload_bytes, 5));
-  Mailbox.requestRead();
-  Mailbox.requestAvailable();
+  TEST_ASSERT_TRUE(Mailbox.requestRead());
+  TEST_ASSERT_TRUE(Mailbox.requestAvailable());
   Mailbox.signalProcessed(456U);
   DataStore.set("key", etl::span<const uint8_t>(payload_bytes, 5));
 

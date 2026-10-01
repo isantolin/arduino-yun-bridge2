@@ -45,9 +45,9 @@ def main(
 
         emulator_bin = REPO_ROOT / "mcubridge-library-arduino" / "tests" / "bridge_control_emulator"
         fuzz_pty = "/tmp/ttyBRIDGE_FUZZ"
-        if os.path.exists(fuzz_pty):
+        if Path(fuzz_pty).exists():
             try:
-                os.unlink(fuzz_pty)
+                Path(fuzz_pty).unlink()
             except OSError as exc:
                 sys.stderr.write(f"Warning unlinking {fuzz_pty}: {exc}\n")
 
@@ -66,7 +66,7 @@ def main(
         )
         try:
             for _ in range(20):
-                if os.path.exists(fuzz_pty):
+                if Path(fuzz_pty).exists():
                     break
                 time.sleep(0.2)
             else:
@@ -93,9 +93,9 @@ def main(
                 proc.wait(timeout=2.0)
             except subprocess.TimeoutExpired:
                 proc.kill()
-            if os.path.exists(fuzz_pty):
+            if Path(fuzz_pty).exists():
                 try:
-                    os.unlink(fuzz_pty)
+                    Path(fuzz_pty).unlink()
                 except OSError as exc:
                     sys.stderr.write(f"Warning unlinking {fuzz_pty}: {exc}\n")
         return

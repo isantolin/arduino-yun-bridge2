@@ -108,29 +108,27 @@ def load_manifest() -> ManifestData:
             )
         )
 
-    normalized_cpp: list[_CppDepEntry] = []
-    for entry in data.get("cpp_dependency", []):
-        normalized_cpp.append(
-            _CppDepEntry(
-                name=entry.get("name", "").strip(),
-                github=entry.get("github", "").strip(),
-                ref_type=entry.get("ref_type", "tags").strip(),
-                version=entry.get("version", "").strip(),
-                check_file=entry.get("check_file", "").strip(),
-                rationale=entry.get("rationale", "").strip(),
-                target_dir=entry.get("target_dir", "").strip(),
-            )
+    normalized_cpp: list[_CppDepEntry] = [
+        _CppDepEntry(
+            name=entry.get("name", "").strip(),
+            github=entry.get("github", "").strip(),
+            ref_type=entry.get("ref_type", "tags").strip(),
+            version=entry.get("version", "").strip(),
+            check_file=entry.get("check_file", "").strip(),
+            rationale=entry.get("rationale", "").strip(),
+            target_dir=entry.get("target_dir", "").strip(),
         )
+        for entry in data.get("cpp_dependency", [])
+    ]
 
-    normalized_dev: list[_DevDepEntry] = []
-    for entry in data.get("dev_dependency", []):
-        normalized_dev.append(
-            _DevDepEntry(
-                name=entry.get("name", "").strip(),
-                pip=entry.get("pip", "").strip(),
-                rationale=entry.get("rationale", "").strip(),
-            )
+    normalized_dev: list[_DevDepEntry] = [
+        _DevDepEntry(
+            name=entry.get("name", "").strip(),
+            pip=entry.get("pip", "").strip(),
+            rationale=entry.get("rationale", "").strip(),
         )
+        for entry in data.get("dev_dependency", [])
+    ]
 
     return ManifestData(runtime=normalized_runtime, cpp=normalized_cpp, dev=normalized_dev)
 
@@ -200,8 +198,7 @@ def update_pyproject(deps: Sequence[DepEntry], *, dry_run: bool = False) -> bool
         if not replaced and line.strip() == "dependencies = [":
             in_dependencies = True
             new_lines.append(line)
-            for spec in runtime_pip_specs:
-                new_lines.append(f'    "{spec}",')
+            new_lines.extend(f'    "{spec}",' for spec in runtime_pip_specs)
             replaced = True
             continue
 
@@ -619,7 +616,7 @@ def update_feeds(deps: Sequence[DepEntry], *, dry_run: bool = False) -> bool:
             pypi_mk_include = re.compile(r"(^\s*include\b.*\bpypi\.mk\b[^\n]*\n)", re.MULTILINE)
             if "PKG_BUILD_DIR:=" in new_content:
                 new_content = re.sub(r"[ \t]*PKG_BUILD_DIR:=[^\n]+\n", "", new_content)
-            new_content = pypi_mk_include.sub(lambda m: m.group(1) + build_dir_line, new_content, count=1)
+            new_content = pypi_mk_include.sub(lambda m, b=build_dir_line: m.group(1) + b, new_content, count=1)
         else:
             pkg_version = _to_apk_version(version)
             new_content = re.sub(r"PKG_VERSION:=[^\n]+", f"PKG_VERSION:={pkg_version}", content)

@@ -132,7 +132,7 @@ def _write_fake_uci_module(base_dir: Path, config: dict[str, str]) -> Path:
 
 def run_emulation(
     firmware_path: Path,
-    package_root: Path = Path("."),
+    package_root: Path = Path(),
     run_scripts: list[str] | None = None,
 ):
     state = EmulationState()
@@ -168,9 +168,9 @@ def run_emulation(
         sys.exit(1)
 
     # 1. Start Unified socat linking PTY to MCU EXEC
-    if os.path.exists(SOCAT_PORT0):
+    if Path(SOCAT_PORT0).exists():
         try:
-            os.unlink(SOCAT_PORT0)
+            Path(SOCAT_PORT0).unlink()
         except OSError as exc:
             logger.warning("Could not unlink existing PTY", path=SOCAT_PORT0, error=str(exc))
 
@@ -281,7 +281,7 @@ def run_emulation(
         # 4. Run scripts
         if run_scripts:
             for script in run_scripts:
-                if not os.path.exists(script):
+                if not Path(script).exists():
                     logger.error("Script not found", script=script)
                     all_success = False
                     break
@@ -344,7 +344,7 @@ cli = typer.Typer(help="Hardware Emulation Runner", add_completion=False)
 @cli.command()
 def main(
     firmware: Annotated[Path, typer.Option("--firmware", help="Path to MCU firmware binary")],
-    package_root: Annotated[Path, typer.Option("--package-root", help="Root of mcubridge package")] = Path("."),
+    package_root: Annotated[Path, typer.Option("--package-root", help="Root of mcubridge package")] = Path(),
     run_scripts: Annotated[list[str] | None, typer.Argument(help="Client scripts to run")] = None,
 ) -> None:
     run_emulation(

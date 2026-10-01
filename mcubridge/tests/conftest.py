@@ -155,7 +155,7 @@ def patched_get_default_config() -> dict[str, Any]:
 
 
 setattr(mcubridge.protocol.structures, "RuntimeConfig", PatchedRuntimeConfig)
-mcubridge.config.common.get_default_config = patched_get_default_config
+setattr(mcubridge.config.common, "get_default_config", patched_get_default_config)
 # ==============================================================================
 
 
@@ -202,7 +202,7 @@ def pytest_pyfunc_call(pyfuncitem: pytest.Function) -> bool | None:
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
-        kwargs = {name: pyfuncitem.funcargs[name] for name in getattr(pyfuncitem, "_fixtureinfo").argnames}
+        kwargs = {name: pyfuncitem.funcargs[name] for name in pyfuncitem._fixtureinfo.argnames}
         loop.run_until_complete(test_function(**kwargs))
     finally:
         try:
@@ -230,9 +230,9 @@ def force_gc_cleanup():
 
 
 # [TEST FIX] Global absolute path for temporary test data.
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-TMP_TESTS_DIR = os.path.join(PROJECT_ROOT, ".tmp_tests")
-os.makedirs(TMP_TESTS_DIR, exist_ok=True)
+PROJECT_ROOT = (Path(__file__).parent / ".." / "..").resolve()
+TMP_TESTS_DIR = str(PROJECT_ROOT / ".tmp_tests")
+Path(TMP_TESTS_DIR).mkdir(exist_ok=True, parents=True)
 
 # [TEST FIX] Global injection is needed before any tests run to ensure Settings validation passes.
 mcubridge.config.const.VOLATILE_STORAGE_PATHS = frozenset(
@@ -258,15 +258,15 @@ def isolate_test_paths() -> Iterator[None]:
     protocol.RUNTIME_CONFIG_DEFAULTS["file_system_root"] = unique_fs
     protocol.RUNTIME_CONFIG_DEFAULTS["cloud_spool_dir"] = unique_spool
 
-    os.makedirs(unique_fs, exist_ok=True)
-    os.makedirs(unique_spool, exist_ok=True)
+    Path(unique_fs).mkdir(exist_ok=True, parents=True)
+    Path(unique_spool).mkdir(exist_ok=True, parents=True)
 
     yield
 
     try:
-        if os.path.exists(unique_fs):
+        if Path(unique_fs).exists():
             shutil.rmtree(unique_fs)
-        if os.path.exists(unique_spool):
+        if Path(unique_spool).exists():
             shutil.rmtree(unique_spool)
     except OSError as e:
         structlog.get_logger("mcubridge.tests").warning("Teardown path cleanup notice", error=str(e))
@@ -288,7 +288,7 @@ def _remove_persistent_test_path(path: Path) -> None:
         return
 
     try:
-        os.unlink(path)
+        Path(path).unlink()
     except FileNotFoundError:
         structlog.get_logger("mcubridge.tests").debug("File not found during cleanup", path=str(path))
     except IsADirectoryError:
@@ -339,7 +339,7 @@ def runtime_config() -> RuntimeConfig:
         cloud_user=None,
         cloud_pass=None,
         cloud_tls=True,
-        cloud_cafile=os.path.join(TMP_TESTS_DIR, "test-ca.pem"),
+        cloud_cafile=str(Path(TMP_TESTS_DIR) / "test-ca.pem"),
         cloud_certfile=None,
         cloud_keyfile=None,
         topic_prefix=protocol.CLOUD_DEFAULT_TOPIC_PREFIX,

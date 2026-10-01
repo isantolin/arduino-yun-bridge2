@@ -104,18 +104,6 @@ class ProcessContext:
         self.status = ProcessState.RUNNING.value
         self.fsm = ProcessMachine(model=self, state_field="status", start_value=self.status)
 
-    @property
-    def is_running(self) -> bool:
-        return self.fsm.running.is_active
-
-    @property
-    def is_terminating(self) -> bool:
-        return self.fsm.terminating.is_active
-
-    @property
-    def is_exited(self) -> bool:
-        return self.fsm.exited.is_active
-
 
 class LinkConnectionState(StrEnum):
     """[SIL-2] Discrete physical connection states between MPU and MCU."""

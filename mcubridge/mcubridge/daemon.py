@@ -112,7 +112,7 @@ def run_daemon() -> None:
         for exc in handled.exceptions:
             logger.critical("Fatal grouped error", error=str(exc), exc_info=True)
         if unhandled is not None:
-            raise unhandled
+            raise unhandled from exc_group
         sys.exit(1)
     finally:
         if service is not None:

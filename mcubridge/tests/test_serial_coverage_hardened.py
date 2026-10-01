@@ -87,7 +87,7 @@ async def test_serial_transport_toggle_dtr(tmp_path: Path) -> None:
     transport, state, mock_serialx = _make_transport(tmp_path)
 
     # 1. Success
-    toggle_dtr: Callable[[], Awaitable[None]] = getattr(transport, "_toggle_dtr")
+    toggle_dtr: Callable[[], Awaitable[None]] = transport._toggle_dtr
     await toggle_dtr()
     assert mock_serialx.set_modem_pins.called
 
@@ -102,7 +102,7 @@ async def test_serial_transport_toggle_dtr(tmp_path: Path) -> None:
 async def test_serial_transport_baudrate_fallback(tmp_path: Path) -> None:
     transport, state, _ = _make_transport(tmp_path)
 
-    check_fallback: Callable[[], Awaitable[None]] = getattr(transport, "_check_baudrate_fallback")
+    check_fallback: Callable[[], Awaitable[None]] = transport._check_baudrate_fallback
 
     transport.consecutive_crc_errors = 1
     await check_fallback()
@@ -132,7 +132,7 @@ async def test_serial_transport_process_packet_anti_replay(tmp_path: Path) -> No
         nonce=old_nonce,
     )
 
-    process_packet: Callable[[bytes], Awaitable[None]] = getattr(transport, "_process_packet")
+    process_packet: Callable[[bytes], Awaitable[None]] = transport._process_packet
     await process_packet(cobsr.encode(raw_frame))
     # Replay must be dropped without advancing counter
     assert state.link_last_nonce_counter == 100
@@ -169,7 +169,7 @@ async def test_serial_transport_send_with_retries(tmp_path: Path) -> None:
 
     await asyncio.sleep(0.01)
     # Correlate response
-    current = getattr(transport, "_current")
+    current = transport._current
     if current is not None:
         current.mark_success(pb.DigitalReadResponse(value=1))
 

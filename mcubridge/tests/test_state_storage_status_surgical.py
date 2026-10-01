@@ -22,8 +22,8 @@ from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.state.status import status_writer, write_status_file
 from mcubridge.state.storage import LmdbCache, LmdbDeque
 
-_write_status_file: Any = getattr(status_mod, "_write_status_file")
-_vacuum_lmdb_env: Any = getattr(storage_mod, "_vacuum_lmdb_env")
+_write_status_file: Any = status_mod._write_status_file
+_vacuum_lmdb_env: Any = storage_mod._vacuum_lmdb_env
 
 
 @pytest.fixture
@@ -31,8 +31,8 @@ def state_setup(tmp_path: Path) -> Iterator[tuple[RuntimeState, RuntimeConfig]]:
 
     fs_root = f".tmp_tests/st-fs-{os.getpid()}-{time.time_ns()}"
     spool = f".tmp_tests/st-spool-{os.getpid()}-{time.time_ns()}"
-    os.makedirs(fs_root, exist_ok=True)
-    os.makedirs(spool, exist_ok=True)
+    Path(fs_root).mkdir(exist_ok=True, parents=True)
+    Path(spool).mkdir(exist_ok=True, parents=True)
     config = RuntimeConfig(
         file_system_root=fs_root,
         cloud_spool_dir=spool,
@@ -92,7 +92,7 @@ def test_write_status_file_handles_oserror() -> None:
 async def test_lmdb_deque_db_recreation_on_corruption(tmp_path: object) -> None:
     db_path = str(tmp_path) + "/corrupt_deque.db"
     # Write garbage to simulate corrupted database
-    with open(db_path, "wb") as f:
+    with Path(db_path).open("wb") as f:
         f.write(b"NOT A VALID LMDB FILE")
 
     deque = LmdbDeque(db_path, maxlen=10)
@@ -119,7 +119,7 @@ async def test_lmdb_deque_popleft_empty_raises(tmp_path: object) -> None:
 @pytest.mark.asyncio
 async def test_lmdb_cache_corruption_recovery(tmp_path: object) -> None:
     db_path = str(tmp_path) + "/corrupt_kv.db"
-    with open(db_path, "wb") as f:
+    with Path(db_path).open("wb") as f:
         f.write(b"GARBAGE")
 
     kv = LmdbCache(db_path)

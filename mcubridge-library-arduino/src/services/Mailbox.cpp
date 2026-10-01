@@ -23,12 +23,12 @@ typename MailboxClass::AvailableCallback MailboxClass::_available_callback;
 etl::circular_buffer<typename MailboxClass::MailboxBuffer, 8>
     MailboxClass::_queue;
 
-void MailboxClass::requestRead() {
-  (void)Bridge.sendFrame(rpc::CommandId::CMD_MAILBOX_READ);
+bool MailboxClass::requestRead() {
+  return Bridge.sendFrame(rpc::CommandId::CMD_MAILBOX_READ);
 }
 
-void MailboxClass::requestAvailable() {
-  (void)Bridge.sendFrame(rpc::CommandId::CMD_MAILBOX_AVAILABLE);
+bool MailboxClass::requestAvailable() {
+  return Bridge.sendFrame(rpc::CommandId::CMD_MAILBOX_AVAILABLE);
 }
 
 void MailboxClass::signalProcessed(uint32_t message_id) {

@@ -36,9 +36,9 @@ async def run_test(
         try:
             raw_pin_str = pin[1:] if pin[0].isalpha() else pin
             pin_number = int(raw_pin_str)
-        except ValueError:
+        except ValueError as exc:
             logger.error("Invalid pin format", pin=pin)
-            raise SystemExit(1)
+            raise SystemExit(1) from exc
 
         start_time = asyncio.get_running_loop().time()
         while True:

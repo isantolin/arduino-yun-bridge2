@@ -94,23 +94,22 @@ def load_manifest(path: Path) -> list[Target]:
             ssh=defaults_data.get("ssh"),
             tags=defaults_data.get("tags"),
         )
-        targets_list: list[ManifestTarget] = []
-        for t in data.get("targets", []):
-            targets_list.append(
-                ManifestTarget(
-                    name=t.get("name", ""),
-                    host=t.get("host"),
-                    local=t.get("local", False),
-                    user=t.get("user"),
-                    ssh=t.get("ssh"),
-                    tags=t.get("tags"),
-                    extra_args=t.get("extra_args"),
-                    timeout=t.get("timeout"),
-                    retries=t.get("retries"),
-                    env=t.get("env", {}),
-                    notes=t.get("notes"),
-                )
+        targets_list: list[ManifestTarget] = [
+            ManifestTarget(
+                name=t.get("name", ""),
+                host=t.get("host"),
+                local=t.get("local", False),
+                user=t.get("user"),
+                ssh=t.get("ssh"),
+                tags=t.get("tags"),
+                extra_args=t.get("extra_args"),
+                timeout=t.get("timeout"),
+                retries=t.get("retries"),
+                env=t.get("env", {}),
+                notes=t.get("notes"),
             )
+            for t in data.get("targets", [])
+        ]
         manifest = Manifest(targets=targets_list, defaults=defaults)
     except (OSError, tomllib.TOMLDecodeError, ValueError, TypeError) as e:
         print(f"Error parsing manifest {path}: {e}")
@@ -139,8 +138,8 @@ def load_manifest(path: Path) -> list[Target]:
         parsed.append(
             Target(
                 name=entry.name,
-                host=entry.host if entry.host else None,
-                user=user if user else None,
+                host=entry.host or None,
+                user=user or None,
                 ssh_args=ssh_args,
                 extra_args=extra_args,
                 tags=tags,

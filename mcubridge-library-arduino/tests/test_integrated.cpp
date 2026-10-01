@@ -56,7 +56,7 @@ void integrated_test_components() {
 #endif
 
 #if BRIDGE_ENABLE_MAILBOX
-  Mailbox.requestRead();
+  TEST_ASSERT_TRUE(Mailbox.requestRead());
 #endif
 
   Process.kill(123);

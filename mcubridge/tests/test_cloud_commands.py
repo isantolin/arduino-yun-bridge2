@@ -63,7 +63,7 @@ async def test_cloud_command_pin_dispatch_property(
             correlation_data=corr_id.to_bytes(8, "big"),
         )
 
-        handle_pin: Callable[[TopicRoute, pb.CloudQueuedPublish], Awaitable[None]] = getattr(svc, "_handle_pin")
+        handle_pin: Callable[[TopicRoute, pb.CloudQueuedPublish], Awaitable[None]] = svc._handle_pin
         await handle_pin(route, inbound)
 
         # Validate serial command was dispatched
@@ -116,7 +116,7 @@ async def test_publish_cloud_message_wraps_command_response(
             response_topic="cloud",
         )
 
-        publish_cloud_msg: Callable[[pb.CloudQueuedPublish], Awaitable[bool]] = getattr(svc, "_publish_cloud_message")
+        publish_cloud_msg: Callable[[pb.CloudQueuedPublish], Awaitable[bool]] = svc._publish_cloud_message
         published = await publish_cloud_msg(msg)
         assert published is True
 
@@ -149,7 +149,7 @@ async def test_mcu_pin_update_event_forwarding(
         initial_events = state.pin_events_count
         event = pb.PinUpdateEvent(pin=pin, value=value, timestamp_micros=timestamp)
 
-        on_pin_update: Callable[[int, pb.PinUpdateEvent], Awaitable[None]] = getattr(svc, "_on_mcu_pin_update_event")
+        on_pin_update: Callable[[int, pb.PinUpdateEvent], Awaitable[None]] = svc._on_mcu_pin_update_event
         await on_pin_update(0, event)
 
         assert state.pin_events_count == initial_events + 1

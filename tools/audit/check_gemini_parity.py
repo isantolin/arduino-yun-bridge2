@@ -50,15 +50,13 @@ def check_prompt_parity() -> list[str]:
         md_path = ROOT / ".agent" / "workflows" / f"{name}.md"
         toml_path = ROOT / ".github" / "commands" / f"{name}.toml"
 
-        for p in (md_path, toml_path):
-            if not p.exists():
-                errors.append(f"Missing file: {p}")
+        errors.extend(f"Missing file: {p}" for p in (md_path, toml_path) if not p.exists())
 
         if not md_path.exists() or not toml_path.exists():
             continue
 
         md_desc, md_prompt = _parse_md(md_path)
-        with open(toml_path, "rb") as f:
+        with Path(toml_path).open("rb") as f:
             toml_data = tomllib.load(f)
         toml_desc = toml_data.get("description", "")
         toml_prompt = toml_data.get("prompt", "").strip()
@@ -72,7 +70,7 @@ def check_prompt_parity() -> list[str]:
             md_lines = md_prompt.splitlines()
             toml_lines = toml_prompt.splitlines()
             detail = f"line counts differ: md={len(md_lines)}, toml={len(toml_lines)}"
-            for i, (l1, l2) in enumerate(zip(md_lines, toml_lines)):
+            for i, (l1, l2) in enumerate(zip(md_lines, toml_lines, strict=False)):
                 if l1 != l2:
                     detail = f"first diff at line {i + 1}:\n  .md  : {l1[:120]!r}\n  .toml: {l2[:120]!r}"
                     break

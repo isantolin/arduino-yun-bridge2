@@ -474,7 +474,7 @@ async def test_ubus_service_run_loop(mock_runtime: MockRuntimeFacade, mocker: Mo
 def test_get_ubus_type_resolution(mocker: MockerFixture) -> None:
     import mcubridge.services.ubus as ubus_mod
 
-    get_ubus_type = getattr(ubus_mod, "_get_ubus_type")
+    get_ubus_type = ubus_mod._get_ubus_type
 
     # When ubus is None
     mocker.patch.object(ubus_mod, "ubus", None)

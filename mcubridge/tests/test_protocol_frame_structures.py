@@ -333,7 +333,7 @@ def test_protocol_frame_and_structures_edge_branches(tmp_path: Path) -> None:
     # 3. structures._build_cached_ssl_context with valid cafile (line 179)
     ca_file = tmp_path / "test_ca.crt"
     ca_file.write_text("dummy ca content")
-    build_ctx = getattr(structures, "_build_cached_ssl_context")
+    build_ctx = structures._build_cached_ssl_context
     with pytest.raises(ssl.SSLError):
         # ssl.create_default_context with dummy ca will raise SSLError but covers line 179
         build_ctx(str(ca_file), "", "", False)

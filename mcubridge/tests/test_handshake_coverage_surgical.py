@@ -62,7 +62,7 @@ async def test_synchronize_attempt_send_frame_failure(mock_config: RuntimeConfig
     mock_send = AsyncMock(return_value=False)
     mgr = _make_handshake_manager(mock_config, mock_state, send_frame=mock_send)
 
-    sync_attempt: Callable[[], Awaitable[bool]] = getattr(mgr, "_synchronize_attempt")
+    sync_attempt: Callable[[], Awaitable[bool]] = mgr._synchronize_attempt
     res = await sync_attempt()
     assert res is False
 
@@ -73,7 +73,7 @@ async def test_synchronize_attempt_timeout_confirmation(mock_config: RuntimeConf
     mgr = _make_handshake_manager(mock_config, mock_state, send_frame=mock_send)
     mgr.timing.response_timeout_ms = 10
 
-    sync_attempt: Callable[[], Awaitable[bool]] = getattr(mgr, "_synchronize_attempt")
+    sync_attempt: Callable[[], Awaitable[bool]] = mgr._synchronize_attempt
     res = await sync_attempt()
     assert res is False
 
@@ -85,7 +85,7 @@ async def test_fetch_capabilities_send_failure_retries_exhausted(
     mock_send = AsyncMock(return_value=False)
     mgr = _make_handshake_manager(mock_config, mock_state, send_frame=mock_send)
 
-    fetch_caps: Callable[[], Awaitable[bool]] = getattr(mgr, "_fetch_capabilities")
+    fetch_caps: Callable[[], Awaitable[bool]] = mgr._fetch_capabilities
     res = await fetch_caps()
     assert res is False
 
@@ -100,7 +100,7 @@ async def test_fetch_capabilities_future_timeout_exception(
     mgr.retry_backoff_base = 0.0
     mgr.retry_backoff_max = 0.0
 
-    fetch_caps: Callable[[], Awaitable[bool]] = getattr(mgr, "_fetch_capabilities")
+    fetch_caps: Callable[[], Awaitable[bool]] = mgr._fetch_capabilities
     res = await fetch_caps()
     assert res is False
 
@@ -207,7 +207,7 @@ async def test_publish_handshake_event_cloud_enqueue(mock_config: RuntimeConfig,
     mock_enqueue = AsyncMock()
     mgr = _make_handshake_manager(mock_config, mock_state, enqueue_cloud=mock_enqueue)
 
-    publish_event: Callable[..., Awaitable[None]] = getattr(mgr, "_publish_handshake_event")
+    publish_event: Callable[..., Awaitable[None]] = mgr._publish_handshake_event
     await publish_event("sync_success")
     mock_enqueue.assert_called_once()
     published_msg = mock_enqueue.call_args[0][0]
@@ -223,7 +223,7 @@ async def test_synchronize_attempt_sync_send_failure(mock_config: RuntimeConfig,
 
     mock_send = AsyncMock(side_effect=_send_reset_ok_sync_fail)
     mgr = _make_handshake_manager(mock_config, mock_state, send_frame=mock_send)
-    sync_attempt: Callable[[], Awaitable[bool]] = getattr(mgr, "_synchronize_attempt")
+    sync_attempt: Callable[[], Awaitable[bool]] = mgr._synchronize_attempt
     res = await sync_attempt()
     assert res is False
     assert mock_state.last_handshake_error == "link_sync_send_failed"
@@ -251,8 +251,8 @@ async def test_fetch_capabilities_zero_delay(mock_config: RuntimeConfig, mock_st
     mgr = _make_handshake_manager(mock_config, mock_state)
     mgr.capabilities_delay = 0.0
     mock_fetch = AsyncMock(return_value=True)
-    setattr(mgr, "_fetch_capabilities", mock_fetch)
+    mgr._fetch_capabilities = mock_fetch
 
-    fetch_with_delay: Callable[[], Awaitable[None]] = getattr(mgr, "_fetch_capabilities_with_delay")
+    fetch_with_delay: Callable[[], Awaitable[None]] = mgr._fetch_capabilities_with_delay
     await fetch_with_delay()
     mock_fetch.assert_awaited_once()

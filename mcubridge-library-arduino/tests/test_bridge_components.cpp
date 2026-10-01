@@ -119,8 +119,8 @@ void test_mailbox_api() {
   // 2. Test sending commands
   uint8_t raw_payload[] = {0xAA, 0xBB, 0xCC};
   Mailbox.push(etl::span<const uint8_t>(raw_payload, 3));
-  Mailbox.requestRead();
-  Mailbox.requestAvailable();
+  TEST_ASSERT_TRUE(Mailbox.requestRead());
+  TEST_ASSERT_TRUE(Mailbox.requestAvailable());
   Mailbox.signalProcessed(456);
 
   // 3. Test receiving events (dispatching)

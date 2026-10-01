@@ -18,9 +18,9 @@ if _spec is None or _spec.loader is None:
 _file_push: Any = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_file_push)
 
-push_file = cast(Callable[..., None], getattr(_file_push, "push_file"))
-push_file_ubus = cast(Callable[..., bool], getattr(_file_push, "push_file_ubus"))
-cli_main = cast(Callable[..., None], getattr(_file_push, "main"))
+push_file = cast(Callable[..., None], _file_push.push_file)
+push_file_ubus = cast(Callable[..., bool], _file_push.push_file_ubus)
+cli_main = cast(Callable[..., None], _file_push.main)
 
 
 def test_push_file_ubus_success() -> None:

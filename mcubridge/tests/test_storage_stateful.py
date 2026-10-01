@@ -17,7 +17,7 @@ from mcubridge.state.storage import LmdbDeque
 
 _RUN_STATE_MACHINE: Callable[[type[RuleBasedStateMachine]], None] = cast(
     Callable[[type[RuleBasedStateMachine]], None],
-    getattr(h_stateful, "run_state_machine_as_test"),
+    h_stateful.run_state_machine_as_test,
 )
 
 

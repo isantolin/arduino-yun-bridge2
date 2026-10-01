@@ -90,8 +90,8 @@ if sys.platform == "linux":
     try:
         import serialx.platforms.serial_linux as _sl
 
-        _orig_after_configure = getattr(_sl.LinuxSerial, "_after_configure_port")
-        setattr(_sl.LinuxSerial, "_after_configure_port", _safe_after_configure)
+        _orig_after_configure = _sl.LinuxSerial._after_configure_port
+        _sl.LinuxSerial._after_configure_port = _safe_after_configure
     except (ImportError, AttributeError) as _exc:
         logger.debug("LinuxSerial monkey-patch skipped", error=str(_exc))
 
@@ -533,8 +533,8 @@ class SerialTransport:
                             await pending.completion.wait()
                             if pending.success:
                                 return pending.response_payload if pending.response_payload is not None else True
-                    except TimeoutError:
-                        raise self._RetryableSerialError()
+                    except TimeoutError as exc:
+                        raise self._RetryableSerialError() from exc
 
                     if pending.failure_status is not None:
                         raise self._FatalSerialError(pending.failure_status)

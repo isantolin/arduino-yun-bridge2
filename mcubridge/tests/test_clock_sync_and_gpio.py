@@ -503,6 +503,7 @@ async def test_clock_sync_loop_degraded_branch(
     clock.fsm.sync_success()
     assert clock.fsm.synchronized.is_active
 
+    assert svc.serial is not None
     svc.serial.send = AsyncMock(side_effect=TimeoutError("Sync timed out"))
     await clock.start()
     await asyncio.sleep(0.03)
@@ -521,6 +522,7 @@ async def test_clock_sync_loop_idle_exception_marks_unsupported(
     clock = ClockSyncService(svc, sync_interval_seconds=0.01)
     assert clock.fsm.idle.is_active
 
+    assert svc.serial is not None
     svc.serial.send = AsyncMock(side_effect=TimeoutError("Sync timed out"))
     await clock.start()
     await asyncio.sleep(0.03)
@@ -553,7 +555,7 @@ async def test_clock_sync_loop_normal_exit_branch(mock_bridge_service: BridgeSer
     svc.state.connection_fsm.connect()
 
     await clock.start()
-    assert clock.is_running is True
+    assert getattr(clock, "is_running") is True
     await asyncio.sleep(0.01)
     await clock.stop()
-    assert clock.is_running is False
+    assert getattr(clock, "is_running") is False

@@ -970,7 +970,8 @@ async def test_runtime_handle_datastore_empty_key_and_request_miss(
     svc.cloud_publisher = mock_pub
     await handle_ds(route_req, pb.CloudQueuedPublish(payload=b""))
     assert mock_pub.await_count == 1
-    published = mock_pub.await_args[0][0]
+    assert mock_pub.await_args is not None
+    published: pb.CloudQueuedPublish = mock_pub.await_args.args[0]
     assert "key1/request" in published.topic_name
     assert any(p.key == "bridge-error" and p.value == "datastore-miss" for p in published.user_properties)
 
@@ -1208,7 +1209,7 @@ async def test_runtime_cloud_session_rpc_commands_and_errors(
         sequence_id=3,
         command_request=pb.CommandRequest(
             command_path="rpc/SetPinMode",
-            payload=pb.PinMode(pin=13, mode=1).SerializeToString(),
+            payload=pb.PinMode(pin=13, mode=pb.PinModeType.PIN_OUTPUT).SerializeToString(),
         ),
     )
 

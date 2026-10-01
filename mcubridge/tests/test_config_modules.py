@@ -191,7 +191,8 @@ def test_settings_factory_bypass_defaults() -> None:
 
 def test_settings_load_raw_config_empty_uci() -> None:
     load_raw_fn = getattr(settings, "_load_raw_config")
-    cfg_dict, source = load_raw_fn(uci_getter=lambda: {})
+    empty_uci: dict[str, Any] = {}
+    cfg_dict, source = load_raw_fn(uci_getter=lambda: empty_uci)
     assert source == "defaults"
     assert "serial_port" in cfg_dict
 

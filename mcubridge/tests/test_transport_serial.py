@@ -103,7 +103,8 @@ async def test_process_packet_negotiation_ack_switches_local_baudrate() -> None:
         transport.serial = mock_serial
 
         transport.is_negotiating = True
-        transport.negotiation_future = asyncio.get_running_loop().create_future()
+        fut = asyncio.get_running_loop().create_future()
+        transport.negotiation_future = fut
 
         encoded = cobsr.encode(
             build_frame(
@@ -114,7 +115,7 @@ async def test_process_packet_negotiation_ack_switches_local_baudrate() -> None:
         )
         await getattr(transport, "_process_packet")(encoded)
 
-        assert await transport.negotiation_future
+        assert await fut
         assert mock_serial.transport.serial.baudrate == config.serial_baud
     finally:
         state.cleanup()

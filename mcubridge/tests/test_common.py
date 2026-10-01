@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import types
+from typing import Any
 from unittest.mock import MagicMock
 
 from mcubridge.config import common
@@ -71,7 +72,7 @@ def test_get_uci_config_without_get_all_returns_defaults() -> None:
 
     mock_uci_class = MagicMock(return_value=mock_uci_context)
 
-    fake_module = types.ModuleType("uci")
+    fake_module: Any = types.ModuleType("uci")
     fake_module.Uci = mock_uci_class
 
     config = common.get_uci_config(uci_module=fake_module)

@@ -202,6 +202,11 @@ class SerialHandshakeManager:
         self.fsm = HandshakeMachine(listeners=[self])
 
     @property
+    def timing(self) -> pb.HandshakeConfig:
+        """Return the active handshake timing configuration."""
+        return self._timing
+
+    @property
     def send_frame(self) -> SendFrameCallable:
         """Return the active frame transmission callable."""
         return self._send_frame

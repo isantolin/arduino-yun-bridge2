@@ -70,7 +70,7 @@ async def test_synchronize_attempt_send_frame_failure(mock_config: RuntimeConfig
 async def test_synchronize_attempt_timeout_confirmation(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     mock_send = AsyncMock(return_value=True)
     mgr = _make_handshake_manager(mock_config, mock_state, send_frame=mock_send)
-    mgr._timing.response_timeout_ms = 10
+    mgr.timing.response_timeout_ms = 10
 
     sync_attempt: Callable[[], Awaitable[bool]] = getattr(mgr, "_synchronize_attempt")
     res = await sync_attempt()
@@ -95,7 +95,7 @@ async def test_fetch_capabilities_future_timeout_exception(
 ) -> None:
     mock_send = AsyncMock(return_value=True)
     mgr = _make_handshake_manager(mock_config, mock_state, send_frame=mock_send)
-    mgr._timing.response_timeout_ms = 1
+    mgr.timing.response_timeout_ms = 1
     mgr.retry_backoff_base = 0.0
     mgr.retry_backoff_max = 0.0
 
@@ -178,8 +178,8 @@ def test_clear_handshake_expectations(mock_config: RuntimeConfig, mock_state: Ru
     mock_state.link_nonce_length = 8
 
     mgr.clear_handshake_expectations()
-    assert mock_state.link_handshake_nonce is None
-    assert mock_state.link_expected_tag is None
+    assert getattr(mock_state, "link_handshake_nonce") is None
+    assert getattr(mock_state, "link_expected_tag") is None
     assert mock_state.link_nonce_length == 0
 
 

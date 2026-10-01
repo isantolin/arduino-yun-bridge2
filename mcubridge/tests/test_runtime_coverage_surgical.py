@@ -295,7 +295,8 @@ async def test_handle_system_and_mcu_version(test_config: RuntimeConfig, mock_br
     mock_serial = AsyncMock(spec=SerialTransport)
     mock_serial.send.return_value = pb.VersionResponse(major=2, minor=8, patch=5).SerializeToString()
     svc = BridgeService(test_config, mock_bridge_state, mock_serial)
-    svc.cloud_publisher = AsyncMock()
+    mock_publisher = AsyncMock()
+    svc.cloud_publisher = mock_publisher
 
     handle_system: Callable[..., Awaitable[None]] = getattr(svc, "_handle_system")
 
@@ -322,7 +323,7 @@ async def test_handle_system_and_mcu_version(test_config: RuntimeConfig, mock_br
     route_summary = parse_topic(mock_bridge_state.cloud_topic_prefix, t_summary)
     assert route_summary is not None
     await handle_system(route_summary, pb.CloudQueuedPublish())
-    svc.cloud_publisher.assert_awaited()
+    mock_publisher.assert_awaited()
 
 
 @pytest.mark.asyncio

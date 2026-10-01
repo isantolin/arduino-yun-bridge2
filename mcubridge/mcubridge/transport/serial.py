@@ -172,7 +172,7 @@ class SerialTransport:
     @is_negotiating.setter
     def is_negotiating(self, val: bool) -> None:
         """Set whether baudrate negotiation is actively in progress."""
-        self._negotiating = bool(val)
+        self._negotiating = val
 
     @property
     def negotiation_future(self) -> asyncio.Future[bool] | None:
@@ -212,7 +212,7 @@ class SerialTransport:
     @consecutive_crc_errors.setter
     def consecutive_crc_errors(self, count: int) -> None:
         """Set the consecutive CRC errors count."""
-        self._consecutive_crc_errors = max(0, int(count))
+        self._consecutive_crc_errors = max(0, count)
 
     class _RetryableSerialError(Exception):
         """Marker exception to request another send attempt."""

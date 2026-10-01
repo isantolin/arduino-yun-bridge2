@@ -179,9 +179,9 @@ def test_env_functions(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_spi_device_transfer() -> None:
     mock_channel = MagicMock(spec=Channel)
-
     mock_stub = MagicMock(spec=LocalBridgeStub(mock_channel))
-    mock_stub.SpiConfigure = AsyncMock()
+    mock_spi_config = AsyncMock()
+    mock_stub.SpiConfigure = mock_spi_config
     mock_stub.SpiTransfer = AsyncMock(return_value=pb.SpiTransfer(data=b"\xaa\xbb"))
 
     dev = SpiDevice(mock_stub)
@@ -189,9 +189,9 @@ async def test_spi_device_transfer() -> None:
     # Transfer with bytes while inactive (should call begin() automatically)
     assert not dev.is_active
     res1 = await dev.transfer(b"\x01\x02")
-    assert dev.is_active is True
+    assert getattr(dev, "is_active") is True
     assert res1 == b"\xaa\xbb"
-    cast(AsyncMock, mock_stub.SpiConfigure).assert_awaited_once()
+    mock_spi_config.assert_awaited_once()
 
     # Transfer with sequence/list of ints while active
     res2 = await dev.transfer([0x03, 0x04])

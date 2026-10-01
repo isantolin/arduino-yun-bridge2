@@ -28,8 +28,8 @@ class MockRuntimeFacade:
         self.local_bridge_service.execute_mailbox_push = AsyncMock(return_value=pb.GenericResponse(status="ok"))
         self.local_bridge_service.execute_datastore_put = AsyncMock(return_value=pb.GenericResponse(status="ok"))
         self.local_bridge_service.execute_file_write = AsyncMock(return_value=pb.GenericResponse(status="ok"))
-        self.clock_sync = MagicMock()
-        self.gpio = MagicMock()
+        self.clock_sync: MagicMock | None = MagicMock()
+        self.gpio: MagicMock | None = MagicMock()
         self.poll_process = AsyncMock(
             return_value=pb.ProcessPollResponse(
                 status=0,

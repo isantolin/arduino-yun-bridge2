@@ -14,7 +14,7 @@ _script_path = Path(__file__).resolve().parent.parent / "scripts" / "mcubridge_f
 _spec = importlib.util.spec_from_file_location("mcubridge_file_push", str(_script_path))
 if _spec is None or _spec.loader is None:
     raise ImportError("Failed to load mcubridge_file_push.py")
-_file_push = importlib.util.module_from_spec(_spec)
+_file_push: Any = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_file_push)
 
 push_file = cast(Callable[..., None], getattr(_file_push, "push_file"))

@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 import tenacity
+from google.protobuf.message import Message as ProtobufMessage
 from hypothesis import given
 from hypothesis import strategies as st
 from mcubridge.config.settings import RuntimeConfig
@@ -291,8 +292,8 @@ async def test_handshake_sync_state_permutations(runtime_config: RuntimeConfig, 
     )
     sync_attempt: Callable[[], Awaitable[bool]] = getattr(hs, "_synchronize_attempt")
 
-    async def _send_and_fault(cmd: int, payload: Any) -> bool:
-        if cmd == Command.CMD_LINK_SYNC.value:
+    async def _send_and_fault(command_id: int, payload: bytes | ProtobufMessage, seq_id: int | None = None) -> bool:
+        if command_id == Command.CMD_LINK_SYNC.value:
             hs.fsm_state = HandshakeState.FAULT
         return True
 
@@ -394,9 +395,12 @@ async def test_handshake_fsm_state_override_and_unexpected_resp(
     assert res is False
     assert runtime_state.last_handshake_error == "unexpected_sync_resp"
 
+    def _empty_resolver(_prefix: str, _msg: object) -> str:
+        return ""
+
     mock_cloud.reset_mock()
     publish_event: Callable[..., Awaitable[None]] = getattr(hs, "_publish_handshake_event")
-    hs.topic_resolver = lambda *_a, **_k: ""
+    hs.topic_resolver = _empty_resolver
     await publish_event("test_event", reason="test_err")
     assert mock_cloud.await_count == 0
 

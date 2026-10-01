@@ -182,7 +182,7 @@ def test_status_writer_error_handling(runtime_config: RuntimeConfig, mocker: Moc
 
 def test_context_mark_states_without_link_sync_event(runtime_config: RuntimeConfig) -> None:
     state = create_runtime_state(runtime_config)
-    state.link_sync_event = None
+    state.link_sync_event = cast(Any, None)
 
     state.connection_fsm.disconnect()
     assert state.state == "disconnected"
@@ -218,7 +218,7 @@ def test_context_cleanup_none_handle_process(runtime_config: RuntimeConfig) -> N
 
 def test_state_context_uncovered_branch_hardening(runtime_config: RuntimeConfig) -> None:
     st = create_runtime_state(runtime_config)
-    st.serial_tx_allowed = None
+    st.serial_tx_allowed = cast(Any, None)
     st.connection_fsm.connect()
     assert st.is_connected
 
@@ -230,7 +230,7 @@ def test_state_context_uncovered_branch_hardening(runtime_config: RuntimeConfig)
     st3 = create_runtime_state(runtime_config)
     mock_proc1 = MagicMock(spec=asyncio.subprocess.Process)
     ctx1 = ProcessContext(mock_proc1)
-    ctx1.handle = None
+    ctx1.handle = cast(Any, None)
     st3.running_processes[1] = ctx1
 
     mock_proc2 = MagicMock(spec=asyncio.subprocess.Process)

@@ -104,14 +104,15 @@ def audit_config_suppressions() -> list[str]:
     findings: list[str] = []
     for ext in ("*.yml", "*.yaml", "*.toml", "*.json"):
         for cfg in ROOT.rglob(ext):
-            if any(part in cfg.parts for part in IGNORED_CONFIG_DIRS) or cfg.name in (
+            rel = cfg.relative_to(ROOT)
+            if any(part in rel.parts[:-1] for part in IGNORED_CONFIG_DIRS) or cfg.name in (
                 ".semgrep.yml",
                 ".semgrepignore",
             ):
                 continue
             for i, line in enumerate(cfg.read_text(encoding="utf-8").splitlines(), 1):
                 if SUPPRESSION.search(line):
-                    findings.append(f"Config Suppression: {cfg.relative_to(ROOT)}:{i} - '{line.strip()}'")
+                    findings.append(f"Config Suppression: {rel}:{i} - '{line.strip()}'")
     return findings
 
 

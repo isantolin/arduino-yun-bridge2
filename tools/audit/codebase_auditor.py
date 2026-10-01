@@ -62,8 +62,10 @@ def audit_semgrep() -> list[str]:
     res = run_command([semgrep_bin, "--config", str(config_path), "--json"])
     if isinstance(res, OSError):
         return [f"Semgrep Execution Error: {res}"]
+    if res.returncode != 0:
+        return [f"Semgrep Execution Error: {res.stderr.strip() or 'exit code ' + str(res.returncode)}"]
     if not res.stdout or not res.stdout.strip():
-        return [f"Semgrep Execution Error: {res.stderr.strip() or 'Empty output received from Semgrep'}"]
+        return ["Semgrep Execution Error: Empty output received from Semgrep"]
     try:
         data = json.loads(res.stdout)
     except json.JSONDecodeError as exc:

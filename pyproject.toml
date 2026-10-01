@@ -50,7 +50,7 @@ addopts = "-ra -vv -n 5 -p no:platformdirs"
 log_cli = true
 log_cli_level = "INFO"
 testpaths = ["mcubridge/tests", "mcubridge-client-examples/tests", "mcubridge-gateway/tests"]
-pythonpath = [".", "mcubridge", "mcubridge-client-examples", "mcubridge-gateway", "."]
+pythonpath = [".", "mcubridge", "mcubridge-client-examples", "mcubridge-gateway"]
 norecursedirs = ["openwrt-sdk", "feeds", ".git", ".tox", ".venv*", ".tmp_tests", ".*"]
 markers = [
     "fuzz: mark a test as a fuzz test",
@@ -64,7 +64,7 @@ filterwarnings = [
 typeCheckingMode = "strict"
 pythonVersion = "3.14"
 stubPath = "typings"
-extraPaths = ["typings/stubs", "mcubridge", "mcubridge-client-examples", "mcubridge-client-examples/tests", "mcubridge-gateway", "."]
+extraPaths = ["typings/stubs", "mcubridge", "mcubridge-client-examples", "mcubridge-client-examples/tests", "mcubridge-gateway"]
 include = [
     "mcubridge/mcubridge",
     "mcubridge/tests",

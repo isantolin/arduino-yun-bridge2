@@ -420,10 +420,11 @@ void BridgeClass::clearSafetyPins() { _safety_pins.clear(); }
 
 void BridgeClass::_serialize_and_send(const rpc_pb_RpcEnvelope& env) {
   if (!_stream) return;
-  const size_t len = rpc::serialize_frame(env, _tx_frame_buffer);
+  auto frame_buf = _tx_frame_buffer_span();
+  const size_t len = rpc::serialize_frame(env, frame_buf);
   if (len > 0)
     _packet_serial.send(*_stream,
-                        etl::span<const uint8_t>(_tx_frame_buffer.data(), len));
+                        etl::span<const uint8_t>(frame_buf.data(), len));
 }
 
 bool BridgeClass::_sendFrameRaw(const rpc_pb_RpcEnvelope& env,
@@ -445,12 +446,12 @@ void BridgeClass::_transmit(uint16_t command_id, uint16_t sequence_id,
   etl::array<uint8_t, rpc::RPC_AEAD_TAG_SIZE> tag = {};
   etl::span<const uint8_t> final_payload = payload;
   if (do_encrypt) {
+    auto crypto_buf = _crypto_buffer_span();
     if (!rpc::security::aead_encrypt_frame(raw_cmd, sequence_id, payload,
                                            _session_key, &_tx_nonce_counter,
-                                           _crypto_buffer, nonce, tag))
+                                           crypto_buf, nonce, tag))
       return;
-    final_payload =
-        etl::span<const uint8_t>(_crypto_buffer.data(), payload.size());
+    final_payload = etl::span<const uint8_t>(crypto_buf.data(), payload.size());
   }
   _tx_envelope = rpc_pb_RpcEnvelope_init_default;
   _tx_envelope.version = rpc::PROTOCOL_VERSION;
@@ -690,11 +691,10 @@ void BridgeClass::_handleSpiTransfer(const bridge::router::CommandContext& ctx,
   // [SIL-2/H-5] Use the shared _working_buffer instead of _rx_buffer.
   // _rx_buffer is owned by PacketSerial and can be written by a serial ISR
   // (on ESP32/SAMD) while a blocking SPI transfer is in progress.
-  size_t len =
-      etl::min(static_cast<size_t>(m.data.size), _working_buffer.size());
-  etl::copy_n(m.data.bytes, len, _working_buffer.begin());
-  size_t tr =
-      SPIService.transfer(etl::span<uint8_t>(_working_buffer.data(), len));
+  auto work_buf = _working_buffer_span();
+  size_t len = etl::min(static_cast<size_t>(m.data.size), work_buf.size());
+  etl::copy_n(m.data.bytes, len, work_buf.begin());
+  size_t tr = SPIService.transfer(etl::span<uint8_t>(work_buf.data(), len));
   if (tr == 0) {
     emitStatus(rpc::StatusCode::STATUS_ERROR);
     return;
@@ -702,8 +702,7 @@ void BridgeClass::_handleSpiTransfer(const bridge::router::CommandContext& ctx,
   rpc_pb_SpiTransferResponse resp = rpc_pb_SpiTransferResponse_init_default;
   const size_t to_copy = etl::min(len, sizeof(resp.data.bytes));
   resp.data.size = static_cast<pb_size_t>(to_copy);
-  if (to_copy > 0)
-    etl::copy_n(_working_buffer.data(), to_copy, resp.data.bytes);
+  if (to_copy > 0) etl::copy_n(work_buf.data(), to_copy, resp.data.bytes);
   if (!send(rpc::CommandId::CMD_SPI_TRANSFER_RESP, ctx.sequence_id, resp))
     emitStatus(rpc::StatusCode::STATUS_ERROR);
 }
@@ -864,13 +863,14 @@ bool BridgeClass::_sendEncryptedImpl(uint16_t raw_cmd, uint16_t seq,
           return true;
         });
   }
+  auto work_buf = _working_buffer_span();
   pb_ostream_t out_stream =
-      pb_ostream_from_buffer(_working_buffer.data(), rpc::MAX_PAYLOAD_SIZE);
+      pb_ostream_from_buffer(work_buf.data(), rpc::MAX_PAYLOAD_SIZE);
   if (!pb_encode(&out_stream, fields, src)) {
     return false;
   }
-  _transmit(raw_cmd, seq,
-            etl::span<const uint8_t>(_working_buffer.data(),
-                                     out_stream.bytes_written));
+  _transmit(
+      raw_cmd, seq,
+      etl::span<const uint8_t>(work_buf.data(), out_stream.bytes_written));
   return true;
 }

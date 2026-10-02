@@ -46,6 +46,9 @@
 #define NO_ERROR_STRINGS
 #define NO_WOLFSSL_MEMORY
 #define WC_NO_ASYNC
+#define NO_CODING
+#define NO_CERTS
+#define WOLFSSL_NO_MUTEX
 
 /* Protocol protections */
 #define NO_AES

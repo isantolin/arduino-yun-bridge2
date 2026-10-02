@@ -46,7 +46,9 @@ class MailboxClass : public bridge::BridgeObserver {
   static void _enqueue(etl::span<const uint8_t> data);
   static MessageCallback _message_callback;
   static AvailableCallback _available_callback;
-  static etl::circular_buffer<MailboxBuffer, 8> _queue;
+  static etl::circular_buffer<MailboxBuffer,
+                              bridge::config::MAX_MAILBOX_QUEUE_SIZE>
+      _queue;
 };
 
 using MailboxType = MailboxClass;

@@ -318,11 +318,27 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   etl::bitset<FLAG_COUNT> _state_flags;
 
   etl::callback_timer<bridge::scheduler::NUMBER_OF_TIMERS> _timers;
-  // Shared working buffer for transient operations (unencrypted encoding, SPI
-  // transfer)
-  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> _working_buffer;
-  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> _crypto_buffer;
-  etl::array<uint8_t, rpc::MAX_FRAME_SIZE> _tx_frame_buffer;
+  // [SIL-2/C-1] Unified Shared Memory Region.
+  // _working_buffer (64B), _crypto_buffer (64B), and _tx_frame_buffer (176B)
+  // have disjoint lifetimes within the TX pipeline:
+  //   1. _working_buffer: serialized payload (dead before _crypto_buffer write)
+  //   2. _crypto_buffer: AEAD ciphertext (dead before _tx_frame_buffer write)
+  //   3. _tx_frame_buffer: final framed output (dead after serial send)
+  // Unioning saves 128 bytes of SRAM on AVR targets.
+  union SharedBuffer {
+    etl::array<uint8_t, rpc::MAX_FRAME_SIZE> raw;
+  };
+  SharedBuffer _shared_mem;
+
+  etl::span<uint8_t> _working_buffer_span() {
+    return {_shared_mem.raw.data(), rpc::MAX_PAYLOAD_SIZE};
+  }
+  etl::span<uint8_t> _crypto_buffer_span() {
+    return {_shared_mem.raw.data(), rpc::MAX_PAYLOAD_SIZE};
+  }
+  etl::span<uint8_t> _tx_frame_buffer_span() {
+    return {_shared_mem.raw.data(), rpc::MAX_FRAME_SIZE};
+  }
   rpc_pb_RpcEnvelope _tx_envelope = rpc_pb_RpcEnvelope_init_zero;
 
   uint32_t _wcet_max_micros = 0;

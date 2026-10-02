@@ -20,7 +20,8 @@ typename MailboxClass::MessageCallback MailboxClass::_message_callback;
 
 typename MailboxClass::AvailableCallback MailboxClass::_available_callback;
 
-etl::circular_buffer<typename MailboxClass::MailboxBuffer, 8>
+etl::circular_buffer<typename MailboxClass::MailboxBuffer,
+                      bridge::config::MAX_MAILBOX_QUEUE_SIZE>
     MailboxClass::_queue;
 
 bool MailboxClass::requestRead() {

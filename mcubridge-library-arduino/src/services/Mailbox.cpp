@@ -48,8 +48,6 @@ void MailboxClass::_enqueue(etl::span<const uint8_t> data) {
   }
 }
 
-
-
 void MailboxClass::_onAvailableResponse(
     const rpc::payload::MailboxAvailableResponse& msg) {
   if (_available_callback) {

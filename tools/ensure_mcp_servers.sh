@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # [SIL-2 / Mission-Critical Tooling]
-# ensure_mcp_servers.sh: Verify, install, and activate Semgrep MCP, gRPCurl MCP,
+# ensure_mcp_servers.sh: Verify, install, and activate Semgrep MCP, Buf CLI (buf curl),
 # and Serial MCP Server in the local development environment.
 set -euo pipefail
 
@@ -28,12 +28,12 @@ for arg in "$@"; do
 done
 
 # Ensure user binaries are on PATH and repo is in PYTHONPATH
-export PATH="${HOME}/.local/bin:${HOME}/.cargo/bin:${HOME}/.local/go/bin:${PATH}"
+export PATH="${HOME}/.local/bin:${HOME}/.cargo/bin:${PATH}"
 export PYTHONPATH="${REPO_ROOT}:${REPO_ROOT}/mcubridge:${REPO_ROOT}/mcubridge-gateway:${PYTHONPATH:-}"
 mkdir -p "${HOME}/.local/bin" "${HOME}/.local/src"
 
 echo "================================================================="
-echo " McuBridge Local MCP Tooling Bootstrap & Activation Gate"
+echo " McuBridge Local Tooling Bootstrap & Activation Gate"
 echo "================================================================="
 
 # -----------------------------------------------------------------
@@ -63,66 +63,22 @@ else
 fi
 
 # -----------------------------------------------------------------
-# 2. grpcurl & grpcurl-mcp
+# 2. Buf CLI & buf curl (Native gRPC Probing over HTTP/2 & HTTP/3)
 # -----------------------------------------------------------------
-echo "[2/4] Checking grpcurl & grpcurl-mcp..."
-if ! command -v grpcurl &> /dev/null; then
-    echo "  -> grpcurl not found. Downloading prebuilt release..."
-    python3 -c "
-import urllib.request, tarfile, io, os
-url = 'https://github.com/fullstorydev/grpcurl/releases/download/v1.9.4/grpcurl_1.9.4_linux_x86_64.tar.gz'
-req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-with urllib.request.urlopen(req) as resp:
-    data = resp.read()
-with tarfile.open(fileobj=io.BytesIO(data), mode='r:gz') as tar:
-    for m in tar.getmembers():
-        if m.name == 'grpcurl':
-            target = os.path.expanduser('~/.local/bin/grpcurl')
-            with tar.extractfile(m) as f_in, open(target, 'wb') as f_out:
-                f_out.write(f_in.read())
-            os.chmod(target, 0o755)
-"
+echo "[2/4] Checking Buf CLI & buf curl..."
+if ! command -v buf &> /dev/null; then
+    echo "  ❌ Buf CLI ('buf') not found in PATH."
+    exit 1
 fi
-GRPCURL_VER=$(grpcurl -version 2>&1 || echo "unknown")
-echo "  -> grpcurl version: ${GRPCURL_VER}"
+BUF_VER=$(buf --version 2>&1 || echo "unknown")
+echo "  -> Buf CLI version: ${BUF_VER}"
 
-if [ ! -x "${HOME}/.local/bin/grpcurl-mcp" ]; then
-    echo "  -> grpcurl-mcp not found. Ensuring Go compiler and building from source..."
-    if ! command -v go &> /dev/null; then
-        echo "  -> Go toolchain missing. Installing standalone Go 1.23.6 to ~/.local/go..."
-        python3 -c "
-import urllib.request, tarfile, io, os
-url = 'https://go.dev/dl/go1.23.6.linux-amd64.tar.gz'
-req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-with urllib.request.urlopen(req) as resp:
-    data = resp.read()
-dest = os.path.expanduser('~/.local')
-with tarfile.open(fileobj=io.BytesIO(data), mode='r:gz') as tar:
-    tar.extractall(path=dest)
-go_bin = os.path.expanduser('~/.local/go/bin/go')
-sym = os.path.expanduser('~/.local/bin/go')
-if os.path.exists(sym) or os.path.islink(sym):
-    os.remove(sym)
-os.symlink(go_bin, sym)
-"
-    fi
-    echo "  -> Cloning and building wricardo/grpcurl-mcp..."
-    (
-        cd "${HOME}/.local/src"
-        rm -rf grpcurl-mcp
-        git clone --depth 1 https://github.com/wricardo/grpcurl-mcp.git
-        cd grpcurl-mcp
-        go build -o "${HOME}/.local/bin/grpcurl-mcp" main.go
-        chmod +x "${HOME}/.local/bin/grpcurl-mcp"
-    )
-fi
-
-echo "  -> Activating & testing grpcurl-mcp stdio..."
-GRPC_RESP=$(bash -c "echo '${INIT_PAYLOAD}' | ADDRESS='127.0.0.1:8443' timeout 4 '${HOME}/.local/bin/grpcurl-mcp' 2>/dev/null || true")
-if echo "${GRPC_RESP}" | grep -q "grpcReflectionServer"; then
-    echo "  ✅ grpcurl-mcp active and returned JSON-RPC capabilities."
+echo "  -> Verifying buf curl capability..."
+if buf curl --help &> /dev/null; then
+    echo "  ✅ Buf CLI active with native buf curl support (HTTP/2 + HTTP/3 QUIC)."
 else
-    echo "  ✅ grpcurl-mcp initialized."
+    echo "  ❌ buf curl command unavailable in current buf installation."
+    exit 1
 fi
 
 # -----------------------------------------------------------------
@@ -181,10 +137,6 @@ server_definitions = {
         'command': '${HOME}/.local/bin/semgrep',
         'args': ['mcp']
     },
-    'grpcurl-mcp': {
-        'command': '${HOME}/.local/bin/grpcurl-mcp',
-        'env': {'ADDRESS': '127.0.0.1:8443'}
-    },
     'serial-mcp-server': {
         'command': '${HOME}/.local/bin/serial-mcp-server',
         'args': ['serve']
@@ -202,6 +154,11 @@ for cfg in configs:
             data = {'mcpServers': {}}
     
     updated = False
+    # Remove obsolete grpcurl-mcp server superseded by native Buf CLI (buf curl)
+    if 'grpcurl-mcp' in data.get('mcpServers', {}):
+        del data['mcpServers']['grpcurl-mcp']
+        updated = True
+
     for srv_name, srv_def in server_definitions.items():
         if srv_name not in data['mcpServers'] or data['mcpServers'][srv_name] != srv_def:
             data['mcpServers'][srv_name] = srv_def
@@ -232,5 +189,5 @@ if [ "${START_GATEWAY}" -eq 1 ]; then
 fi
 
 echo "================================================================="
-echo " ✅ All 3 MCP servers installed, verified, and activated locally."
+echo " ✅ MCP servers and Buf CLI verified and activated locally."
 echo "================================================================="

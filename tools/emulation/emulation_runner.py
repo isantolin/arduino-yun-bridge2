@@ -70,82 +70,40 @@ class CloudVerifier:
         return wait_for_tcp_ready(self.host, self.port, timeout=timeout)
 
 
-def run_emulation(
-    firmware_path: Path,
-    package_root: Path = Path(),
-    run_scripts: list[str] | None = None,
-):
-    state = EmulationState()
-    cloud_verify = CloudVerifier(CLOUD_HOST, CLOUD_PORT)
+def _start_cloud_gateway(cloud_verify: CloudVerifier, state: EmulationState) -> subprocess.Popen[str] | None:
+    if cloud_verify.wait_for_ready(timeout=1.0):
+        return None
 
-    gateway_proc: subprocess.Popen[str] | None = None
-    if not cloud_verify.wait_for_ready(timeout=1.0):
-        logger.info("Starting Managed Cloud Gateway...")
-        gateway_env = dict(os.environ)
-        gateway_env["PYTHONUNBUFFERED"] = "1"
-        gateway_cmd = [
-            sys.executable,
-            "-u",
-            str(repo_root / "mcubridge-gateway" / "gateway.py"),
-            "--no-tls",
-            "--port",
-            str(CLOUD_PORT),
-        ]
-        gateway_proc = subprocess.Popen(
-            gateway_cmd,
-            env=gateway_env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
-        )
-        start_daemon_thread(stream_pump, "gateway", gateway_proc.stdout, state.on_line, "gateway")
+    logger.info("Starting Managed Cloud Gateway...")
+    gateway_env = dict(os.environ)
+    gateway_env["PYTHONUNBUFFERED"] = "1"
+    gateway_cmd = [
+        sys.executable,
+        "-u",
+        str(repo_root / "mcubridge-gateway" / "gateway.py"),
+        "--no-tls",
+        "--port",
+        str(CLOUD_PORT),
+    ]
+    gateway_proc = subprocess.Popen(
+        gateway_cmd,
+        env=gateway_env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+    start_daemon_thread(stream_pump, "gateway", gateway_proc.stdout, state.on_line, "gateway")
 
     if not cloud_verify.wait_for_ready():
         logger.error("Cloud Gateway not available")
-        if gateway_proc:
-            terminate_process_tree([gateway_proc], timeout=1.0)
+        terminate_process_tree([gateway_proc], timeout=1.0)
         sys.exit(1)
 
-    # 1. Start Unified socat linking PTY to MCU EXEC
-    Path(SOCAT_PORT0).unlink(missing_ok=True)
+    return gateway_proc
 
-    # [FIX] Ensure emulator filesystem root exists and is clean
-    emulator_fs_root = Path("/tmp/mcubridge-host-fs")
-    if emulator_fs_root.exists():
-        import shutil
 
-        try:
-            shutil.rmtree(emulator_fs_root)
-        except OSError as exc:
-            logger.error("Failed to clean emulator FS root", path=str(emulator_fs_root), error=str(exc))
-    emulator_fs_root.mkdir(parents=True, exist_ok=True)
-
-    logger.info("Starting Unified MCU Emulator via socat EXEC...")
-    # Use EXEC with default pipes. PTY is only created for the Daemon side.
-    # start_new_session isolates socat from terminal SIGHUP signals.
-    mcu_proc = subprocess.Popen(
-        [
-            "socat",
-            "-d",
-            "-d",
-            f"PTY,link={SOCAT_PORT0},raw,echo=0",
-            f"EXEC:{firmware_path.absolute()},pty,raw,echo=0",
-        ],
-        stderr=subprocess.PIPE,
-        bufsize=0,
-        start_new_session=True,
-    )
-    start_daemon_thread(stream_pump, "mcu-socat", mcu_proc.stderr, state.on_line, "mcu")
-
-    # Wait for PTY
-    if not wait_for_path_ready(SOCAT_PORT0, timeout=10.0, interval=0.1):
-        logger.error("Timeout waiting for unified PTY", path=SOCAT_PORT0)
-        terminate_process_tree([mcu_proc], timeout=1.0)
-        sys.exit(1)
-
-    # 3. Start Daemon
-    p_root = package_root.absolute()
+def _prepare_daemon_environment(p_root: Path, emulator_fs_root: Path) -> tuple[Path, dict[str, str], list[str]]:
     fake_uci_dir = Path(tempfile.mkdtemp(prefix="mcubridge_fake_uci_"))
 
     daemon_env = dict(os.environ)
@@ -195,6 +153,59 @@ def run_emulation(
     if os.environ.get("COVERAGE_FILE"):
         daemon_cmd.extend(["-m", "coverage", "run", "--append", "--rcfile", str(p_root / "pyproject.toml")])
     daemon_cmd.extend(["-m", "mcubridge.daemon"])
+
+    return fake_uci_dir, daemon_env, daemon_cmd
+
+
+def run_emulation(
+    firmware_path: Path,
+    package_root: Path = Path(),
+    run_scripts: list[str] | None = None,
+):
+    state = EmulationState()
+    cloud_verify = CloudVerifier(CLOUD_HOST, CLOUD_PORT)
+    gateway_proc = _start_cloud_gateway(cloud_verify, state)
+
+    # 1. Start Unified socat linking PTY to MCU EXEC
+    Path(SOCAT_PORT0).unlink(missing_ok=True)
+
+    # [FIX] Ensure emulator filesystem root exists and is clean
+    emulator_fs_root = Path("/tmp/mcubridge-host-fs")
+    if emulator_fs_root.exists():
+        import shutil
+
+        try:
+            shutil.rmtree(emulator_fs_root)
+        except OSError as exc:
+            logger.error("Failed to clean emulator FS root", path=str(emulator_fs_root), error=str(exc))
+    emulator_fs_root.mkdir(parents=True, exist_ok=True)
+
+    logger.info("Starting Unified MCU Emulator via socat EXEC...")
+    # Use EXEC with default pipes. PTY is only created for the Daemon side.
+    # start_new_session isolates socat from terminal SIGHUP signals.
+    mcu_proc = subprocess.Popen(
+        [
+            "socat",
+            "-d",
+            "-d",
+            f"PTY,link={SOCAT_PORT0},raw,echo=0",
+            f"EXEC:{firmware_path.absolute()},pty,raw,echo=0",
+        ],
+        stderr=subprocess.PIPE,
+        bufsize=0,
+        start_new_session=True,
+    )
+    start_daemon_thread(stream_pump, "mcu-socat", mcu_proc.stderr, state.on_line, "mcu")
+
+    # Wait for PTY
+    if not wait_for_path_ready(SOCAT_PORT0, timeout=10.0, interval=0.1):
+        logger.error("Timeout waiting for unified PTY", path=SOCAT_PORT0)
+        terminate_process_tree([mcu_proc], timeout=1.0)
+        sys.exit(1)
+
+    # 3. Start Daemon
+    p_root = package_root.absolute()
+    fake_uci_dir, daemon_env, daemon_cmd = _prepare_daemon_environment(p_root, emulator_fs_root)
     daemon_proc = None
     all_success = True
 

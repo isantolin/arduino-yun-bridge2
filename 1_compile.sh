@@ -289,6 +289,8 @@ check_python_module "black"
 check_python_module "packaging"
 check_python_module "typer"
 check_python_module "tenacity"
+check_python_module "mypy_protobuf"
+check_python_module "grpclib"
 check_python_module "patch_ng" || python3 -m pip install "patch-ng" >/dev/null 2>&1 || true
 
 # --- PROTOCOL & DEPS SYNC ---

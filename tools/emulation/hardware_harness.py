@@ -51,6 +51,15 @@ def _coerce_tags(value: Any) -> set[str]:
     return {str(item) for item in value}
 
 
+def _coerce_env(value: Any) -> dict[str, str]:
+    if not isinstance(value, dict):
+        return {}
+    res: dict[str, str] = {}
+    for k, v in cast(dict[Any, Any], value).items():
+        res[str(k)] = str(v)
+    return res
+
+
 def load_manifest(path: Path) -> list[Target]:
     if not path.exists():
         return []

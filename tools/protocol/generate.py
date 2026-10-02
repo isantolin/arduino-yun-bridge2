@@ -19,12 +19,15 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated, Any, cast
 
+import black
 import tenacity
 import typer
+from google.protobuf.descriptor import FieldDescriptor
 from google.protobuf.json_format import MessageToDict
 from jinja2 import Environment, FileSystemLoader
 from packaging.version import Version
@@ -169,12 +172,25 @@ def _proto_to_dict(msg: Any) -> dict[str, Any]:
     return MessageToDict(msg, preserving_proto_field_name=True, always_print_fields_with_no_presence=True)
 
 
+_FIELD_CONVERTERS: dict[int, tuple[str, Callable[[Any], Any]]] = {
+    FieldDescriptor.TYPE_STRING: ("str", lambda v: str(v) if v is not None else ""),
+    FieldDescriptor.TYPE_BYTES: ("bytes", lambda v: v.encode("utf-8") if isinstance(v, str) else (v or b"")),
+    FieldDescriptor.TYPE_BOOL: ("bool", lambda v: str(v).lower() in ("true", "1", "yes") if v is not None else False),
+    FieldDescriptor.TYPE_FLOAT: ("float", lambda v: float(v) if v is not None else 0.0),
+    FieldDescriptor.TYPE_DOUBLE: ("float", lambda v: float(v) if v is not None else 0.0),
+    FieldDescriptor.TYPE_INT32: ("int", lambda v: int(v) if v is not None else 0),
+    FieldDescriptor.TYPE_INT64: ("int", lambda v: int(v) if v is not None else 0),
+    FieldDescriptor.TYPE_UINT32: ("int", lambda v: int(v) if v is not None else 0),
+    FieldDescriptor.TYPE_UINT64: ("int", lambda v: int(v) if v is not None else 0),
+}
+
+
 def _load_runtime_config_fields(file_desc: Any, pb_module: Any) -> list[ConfigFieldDef]:
     runtime_config_desc = file_desc.message_types_by_name.get("RuntimeConfig")
-    runtime_config_fields: list[ConfigFieldDef] = []
     if not runtime_config_desc:
-        return runtime_config_fields
+        return []
 
+    runtime_config_fields: list[ConfigFieldDef] = []
     for field_desc in runtime_config_desc.fields:
         opts = field_desc.GetOptions()
         cfg_default = opts.Extensions[pb_module.config_default] if opts.HasExtension(pb_module.config_default) else None
@@ -186,31 +202,13 @@ def _load_runtime_config_fields(file_desc: Any, pb_module: Any) -> list[ConfigFi
         cfg_max = opts.Extensions[pb_module.config_max] if opts.HasExtension(pb_module.config_max) else None
         uci_opt = opts.Extensions[pb_module.uci_option] if opts.HasExtension(pb_module.uci_option) else None
 
-        py_type = "str"
-        typed_val: Any = None
         if field_desc.is_repeated:
-            py_type = "list"
-            typed_val = []
-        elif field_desc.type == field_desc.TYPE_STRING:
-            py_type = "str"
-            typed_val = str(cfg_default) if cfg_default is not None else ""
-        elif field_desc.type == field_desc.TYPE_BYTES:
-            py_type = "bytes"
-            typed_val = cfg_default.encode("utf-8") if cfg_default is not None else b""
-        elif field_desc.type == field_desc.TYPE_BOOL:
-            py_type = "bool"
-            typed_val = cfg_default.lower() in ("true", "1", "yes") if cfg_default is not None else False
-        elif field_desc.type in (field_desc.TYPE_FLOAT, field_desc.TYPE_DOUBLE):
-            py_type = "float"
-            typed_val = float(cfg_default) if cfg_default is not None else 0.0
-        elif field_desc.type in (
-            field_desc.TYPE_INT32,
-            field_desc.TYPE_INT64,
-            field_desc.TYPE_UINT32,
-            field_desc.TYPE_UINT64,
-        ):
-            py_type = "int"
-            typed_val = int(cfg_default) if cfg_default is not None else 0
+            py_type, typed_val = "list", []
+        else:
+            py_type, converter = _FIELD_CONVERTERS.get(
+                field_desc.type, ("str", lambda v: str(v) if v is not None else "")
+            )
+            typed_val = converter(cfg_default)
 
         runtime_config_fields.append(
             ConfigFieldDef(
@@ -668,115 +666,37 @@ class JinjaGenerator:
         *,
         create_parent: bool = False,
         executable: bool = False,
+        format_python: bool = False,
     ) -> None:
         if create_parent:
             out_path.parent.mkdir(parents=True, exist_ok=True)
         rendered = self.env.get_template(template_name).render(**context)
+        if format_python or out_path.suffix in (".py", ".pyi"):
+            rendered = black.format_str(rendered, mode=black.Mode())
         out_path.write_text(rendered, encoding="utf-8")
         if executable:
             out_path.chmod(0o755)
 
-    def generate_cpp_header(self, context: dict[str, Any], out_path: Path) -> None:
-        self.render_template("rpc_protocol.h.j2", context, out_path)
-
-    def generate_cpp_structs(self, context: dict[str, Any], out_path: Path) -> None:
-        self.render_template("rpc_structs.h.j2", context, out_path)
-
-    def generate_cpp_hw_config(self, context: dict[str, Any], out_path: Path) -> None:
-        self.render_template("rpc_hw_config.h.j2", context, out_path)
-
-    def generate_python(self, context: dict[str, Any], out_path: Path) -> None:
-        template_context = context | {
-            "constants": context["python_constants"],
-            "handshake_constants": context["python_handshake_constants"],
-        }
-        self.render_template("protocol.py.j2", template_context, out_path)
-
-    def generate_python_client(self, context: dict[str, Any], out_path: Path) -> None:
-        template_context = context | {"constants": context["client_constants"]}
-        self.render_template("protocol_client.py.j2", template_context, out_path)
-
-    def generate_uci_config(self, context: dict[str, Any], out_path: Path) -> None:
-        self.render_template("mcubridge_uci.j2", context, out_path, create_parent=True)
-
-    def generate_defaults_sh(self, context: dict[str, Any], out_path: Path) -> None:
-        self.render_template("defaults_sh.j2", context, out_path, create_parent=True, executable=True)
-
-    def generate_config_schema_json(self, context: dict[str, Any], out_path: Path) -> None:
-        self.render_template("config_schema_json.j2", context, out_path, create_parent=True)
-
 
 def update_metadata(version: str) -> None:
     targets = [
-        (
-            REPO_ROOT / "pyproject.toml",
-            r'version\s*=\s*"[^"]+"',
-            f'version = "{version}"',
-            1,
-        ),
+        (REPO_ROOT / "pyproject.toml", r'version\s*=\s*"[^"]+"', f'version = "{version}"', 1),
         (
             REPO_ROOT / "mcubridge" / "mcubridge" / "__init__.py",
             r'__version__\s*=\s*"[^"]+"',
             f'__version__ = "{version}"',
             1,
         ),
-        (
-            REPO_ROOT / "mcubridge" / "Makefile",
-            r"PKG_VERSION:=[^\n]+",
-            f"PKG_VERSION:={version}",
-            0,
-        ),
-        (
-            REPO_ROOT / "mcubridge-gateway" / "Makefile",
-            r"PKG_VERSION:=[^\n]+",
-            f"PKG_VERSION:={version}",
-            0,
-        ),
-        (
-            REPO_ROOT / "luci-app-mcubridge" / "Makefile",
-            r"PKG_VERSION:=[^\n]+",
-            f"PKG_VERSION:={version}",
-            0,
-        ),
-        (
-            REPO_ROOT / "mcubridge-library-arduino" / "library.properties",
-            r"version=[^\n]+",
-            f"version={version}",
-            0,
-        ),
+        (REPO_ROOT / "mcubridge" / "Makefile", r"PKG_VERSION:=[^\n]+", f"PKG_VERSION:={version}", 0),
+        (REPO_ROOT / "mcubridge-gateway" / "Makefile", r"PKG_VERSION:=[^\n]+", f"PKG_VERSION:={version}", 0),
+        (REPO_ROOT / "luci-app-mcubridge" / "Makefile", r"PKG_VERSION:=[^\n]+", f"PKG_VERSION:={version}", 0),
+        (REPO_ROOT / "mcubridge-library-arduino" / "library.properties", r"version=[^\n]+", f"version={version}", 0),
     ]
     for target_path, pattern, repl, count in targets:
         if target_path.exists():
-            content = target_path.read_text(encoding="utf-8")
-            updated = re.sub(pattern, repl, content, count=count)
+            updated = re.sub(pattern, repl, target_path.read_text(encoding="utf-8"), count=count)
             target_path.write_text(updated, encoding="utf-8")
             sys.stderr.write(f"Updated {target_path} to version {version}\n")
-
-
-def _format_python_file(path: Path) -> None:
-    """Post-process a generated Python file with black for canonical formatting. [SIL-2]"""
-    try:
-        res = subprocess.run(
-            [sys.executable, "-m", "black", "--quiet", str(path)],
-            check=False,
-            capture_output=True,
-        )
-        if res.returncode != 0:
-            res_fallback = subprocess.run(
-                ["black", "--quiet", str(path)],
-                check=False,
-                capture_output=True,
-            )
-            if res_fallback.returncode != 0:
-                raise RuntimeError(
-                    f"black is mandatory and failed to format {path}. "
-                    f"Ensure black is installed: {res_fallback.stderr.decode()}"
-                )
-    except FileNotFoundError as err:
-        raise RuntimeError(
-            f"black is mandatory and was not found in PATH or Python environment ({sys.executable}). "
-            f"Please install black (`pip install black` / `apt install python3-black`)."
-        ) from err
 
 
 def ensure_nanopb_core_files() -> None:
@@ -854,39 +774,17 @@ def check_incremental_build(args: Any, version: str) -> tuple[bool, Path, str]:
     return up_to_date, hash_file, current_hash
 
 
-def _copy_generated_python_files(proto_path: Path, args: Any) -> None:
-    py_pb2 = proto_path.parent / "mcubridge_pb2.py"
-    py_pb2_stub = proto_path.parent / "mcubridge_pb2.pyi"
-    if py_pb2.exists():
-        pb2_data = py_pb2.read_bytes()
-        if args.py:
-            (args.py.parent / "mcubridge_pb2.py").write_bytes(pb2_data)
-        if args.py_client:
-            (args.py_client.parent / "mcubridge_pb2.py").write_bytes(pb2_data)
-        py_pb2.unlink(missing_ok=True)
-    if py_pb2_stub.exists():
-        pb2_stub_text = py_pb2_stub.read_text()
-        pb2_stub_text = pb2_stub_text.replace(
-            "_Union[StructuredEntry, _Mapping]]",
-            "_Union[StructuredEntry, _Mapping[str, object]]]",
-        )
-        pb2_stub_data = pb2_stub_text.encode()
-        if args.py:
-            (args.py.parent / "mcubridge_pb2.pyi").write_bytes(pb2_stub_data)
-        if args.py_client:
-            (args.py_client.parent / "mcubridge_pb2.pyi").write_bytes(pb2_stub_data)
-        py_pb2_stub.unlink(missing_ok=True)
-
-    py_grpc = proto_path.parent / "mcubridge_grpc.py"
-    if py_grpc.exists():
-        grpc_text = py_grpc.read_text()
-        grpc_text = grpc_text.replace("import mcubridge_pb2", "from . import mcubridge_pb2")
-        grpc_data = grpc_text.encode()
-        if args.py:
-            (args.py.parent / "mcubridge_grpc.py").write_bytes(grpc_data)
-        if args.py_client:
-            (args.py_client.parent / "mcubridge_grpc.py").write_bytes(grpc_data)
-        py_grpc.unlink(missing_ok=True)
+def _dispatch_generated_file(
+    src: Path,
+    targets: list[Path | None],
+    transform: Callable[[str], str] | None = None,
+) -> None:
+    if not src.exists():
+        return
+    data = transform(src.read_text(encoding="utf-8")).encode("utf-8") if transform else src.read_bytes()
+    for target_dir in filter(None, targets):
+        (target_dir / src.name).write_bytes(data)
+    src.unlink(missing_ok=True)
 
 
 @dataclass
@@ -969,77 +867,88 @@ def main(
     proto_spec = load_spec_from_proto(proto_path)
     context = build_protocol_context(proto_spec, version)
 
-    # Move generated files to target locations
+    # Dispatch compiled protobuf and stub artifacts
     if proto_path.exists():
-        if args.cpp:
-            cpp_pb_h = proto_path.parent / "mcubridge.pb.h"
-            cpp_pb_c = proto_path.parent / "mcubridge.pb.c"
-            target_h = args.cpp.parent / "mcubridge.pb.h"
-            target_c = args.cpp.parent / "mcubridge.pb.c"
+        py_targets = [args.py.parent if args.py else None, args.py_client.parent if args.py_client else None]
+        cpp_targets = [args.cpp.parent if args.cpp else None]
 
-            if cpp_pb_h.exists():
-                target_h.write_bytes(cpp_pb_h.read_bytes())
-                # Fix pb.h include for relative path in Arduino library structure
-                h_text = target_h.read_text().replace("#include <pb.h>", '#include "../pb.h"')
-                target_h.write_text(h_text)
-                cpp_pb_h.unlink(missing_ok=True)
-            if cpp_pb_c.exists():
-                target_c.write_bytes(cpp_pb_c.read_bytes())
-                cpp_pb_c.unlink(missing_ok=True)
+        _dispatch_generated_file(
+            proto_path.parent / "mcubridge.pb.h",
+            cpp_targets,
+            lambda t: t.replace("#include <pb.h>", '#include "../pb.h"'),
+        )
+        _dispatch_generated_file(proto_path.parent / "mcubridge.pb.c", cpp_targets)
+        _dispatch_generated_file(proto_path.parent / "mcubridge_pb2.py", py_targets)
+        _dispatch_generated_file(
+            proto_path.parent / "mcubridge_pb2.pyi",
+            py_targets,
+            lambda t: t.replace(
+                "_Union[StructuredEntry, _Mapping]]",
+                "_Union[StructuredEntry, _Mapping[str, object]]]",
+            ),
+        )
+        _dispatch_generated_file(
+            proto_path.parent / "mcubridge_grpc.py",
+            py_targets,
+            lambda t: t.replace("import mcubridge_pb2", "from . import mcubridge_pb2"),
+        )
 
-        _copy_generated_python_files(proto_path, args)
+    # Render Jinja2 artifacts declaratively
+    py_context = context | {
+        "constants": context["python_constants"],
+        "handshake_constants": context["python_handshake_constants"],
+    }
+    py_client_context = context | {"constants": context["client_constants"]}
 
-    if args.cpp:
-        args.cpp.parent.mkdir(parents=True, exist_ok=True)
-        gen.generate_cpp_header(context, args.cpp)
-        sys.stderr.write(f"Generated {args.cpp}\n")
+    targets: list[tuple[str, dict[str, Any], Path | None, bool, bool]] = [
+        ("rpc_protocol.h.j2", context, args.cpp, False, False),
+        ("rpc_hw_config.h.j2", context, args.cpp.parent / "rpc_hw_config.h" if args.cpp else None, False, False),
+        ("rpc_structs.h.j2", context, args.cpp_structs, False, False),
+        ("protocol.py.j2", py_context, args.py, False, True),
+        ("protocol_client.py.j2", py_client_context, args.py_client, False, True),
+        (
+            "mcubridge_uci.j2",
+            context,
+            REPO_ROOT / "luci-app-mcubridge" / "root" / "etc" / "config" / "mcubridge",
+            False,
+            False,
+        ),
+        (
+            "defaults_sh.j2",
+            context,
+            REPO_ROOT / "mcubridge" / "scripts" / "defaults.sh",
+            True,
+            False,
+        ),
+        (
+            "config_schema_json.j2",
+            context,
+            REPO_ROOT
+            / "luci-app-mcubridge"
+            / "htdocs"
+            / "luci-static"
+            / "resources"
+            / "view"
+            / "mcubridge"
+            / "config_schema.json",
+            False,
+            False,
+        ),
+    ]
 
-        # Generate hardware config next to the main header
-        hw_config_path = args.cpp.parent / "rpc_hw_config.h"
-        gen.generate_cpp_hw_config(context, hw_config_path)
-        sys.stderr.write(f"Generated {hw_config_path}\n")
-
-    if args.cpp_structs:
-        args.cpp_structs.parent.mkdir(parents=True, exist_ok=True)
-        gen.generate_cpp_structs(context, args.cpp_structs)
-        sys.stderr.write(f"Generated {args.cpp_structs}\n")
-
-    if args.py:
-        args.py.parent.mkdir(parents=True, exist_ok=True)
-        gen.generate_python(context, args.py)
-        _format_python_file(args.py)
-        sys.stderr.write(f"Generated {args.py}\n")
-
-    if args.py_client:
-        args.py_client.parent.mkdir(parents=True, exist_ok=True)
-        gen.generate_python_client(context, args.py_client)
-        _format_python_file(args.py_client)
-        sys.stderr.write(f"Generated {args.py_client}\n")
-
-    # Generate unified system configuration artifacts from SSOT
-    uci_target = REPO_ROOT / "luci-app-mcubridge" / "root" / "etc" / "config" / "mcubridge"
-    if uci_target.parent.exists():
-        gen.generate_uci_config(context, uci_target)
-        sys.stderr.write(f"Generated {uci_target}\n")
-
-    defaults_sh_target = REPO_ROOT / "mcubridge" / "scripts" / "defaults.sh"
-    if defaults_sh_target.parent.exists():
-        gen.generate_defaults_sh(context, defaults_sh_target)
-        sys.stderr.write(f"Generated {defaults_sh_target}\n")
-
-    schema_json_target = (
-        REPO_ROOT
-        / "luci-app-mcubridge"
-        / "htdocs"
-        / "luci-static"
-        / "resources"
-        / "view"
-        / "mcubridge"
-        / "config_schema.json"
-    )
-    if schema_json_target.parent.exists():
-        gen.generate_config_schema_json(context, schema_json_target)
-        sys.stderr.write(f"Generated {schema_json_target}\n")
+    for template_name, ctx, target_path, executable, is_py in targets:
+        if target_path and (
+            target_path.parent.exists() or target_path in (args.cpp, args.cpp_structs, args.py, args.py_client)
+        ):
+            gen.render_template(
+                template_name,
+                ctx,
+                target_path,
+                create_parent=True,
+                executable=executable,
+                format_python=is_py,
+            )
+            sys.stderr.write(f"Generated {target_path}\n")
 
     # Save hash for incremental compilation
     hash_file.write_text(current_hash, encoding="utf-8")

@@ -1100,7 +1100,7 @@ class BridgeService:
             if content_type == PROTOBUF_CONTENT_TYPE or pl.startswith(b"\x0a"):
                 cmd = pb.ProcessRunAsync.FromString(pl).command
             else:
-                cmd = pl.decode().strip()
+                cmd = pl.decode("utf-8").strip()
             pid = await self.run_process(cmd)
         except (ProtobufDecodeError, UnicodeDecodeError, ValueError, OSError) as exc:
             logger.error("Shell run_async rejected", error=str(exc))

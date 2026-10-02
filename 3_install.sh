@@ -184,7 +184,7 @@ generate_random_hex() {
     if command -v python3 >/dev/null 2>&1; then
         value=$(python3 - "$length" <<'PY'
 import binascii, os, sys
-print(binascii.hexlify(os.urandom(int(sys.argv[1]))).decode(), end="")
+print(binascii.hexlify(os.urandom(int(sys.argv[1]))).decode("utf-8"), end="")
 PY
         )
     fi
@@ -199,7 +199,7 @@ generate_random_b64() {
     if command -v python3 >/dev/null 2>&1; then
         value=$(python3 - "$length" <<'PY'
 import base64, os, sys
-print(base64.b64encode(os.urandom(int(sys.argv[1]))).decode().rstrip('='), end="")
+print(base64.b64encode(os.urandom(int(sys.argv[1]))).decode("utf-8").rstrip('='), end="")
 PY
         )
     fi

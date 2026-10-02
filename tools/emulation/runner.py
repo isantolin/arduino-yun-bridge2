@@ -65,34 +65,17 @@ def main(
             if not wait_for_path_ready(fuzz_pty, timeout=4.0, interval=0.2):
                 raise RuntimeError("PTY device never appeared")
 
-            env = dict(os.environ)
-            env["PYTHONPATH"] = f"{REPO_ROOT}:{REPO_ROOT / 'mcubridge'}:{env.get('PYTHONPATH', '')}"
-            fuzzer_cmd = [
-                sys.executable,
-                str(REPO_ROOT / "tools" / "emulation" / "protocol_fuzzer.py"),
-                "--port",
-                str(fuzz_pty),
-                "--count",
-                str(fuzz_iterations),
-            ]
-            res_fuzz: subprocess.CompletedProcess[bytes] = subprocess.run(
-                fuzzer_cmd, env=env, cwd=str(REPO_ROOT), check=False
-            )
-            if res_fuzz.returncode != 0:
-                sys.exit(res_fuzz.returncode)
+            from tools.emulation.protocol_fuzzer import main as run_fuzzer
+
+            run_fuzzer(port=str(fuzz_pty), count=fuzz_iterations)
         finally:
             terminate_process_tree([proc], timeout=2.0)
             fuzz_pty.unlink(missing_ok=True)
         return
 
-    simavr_script = REPO_ROOT / "tools" / "emulation" / "simavr_runner.py"
-    res_mcu: subprocess.CompletedProcess[bytes] = subprocess.run(
-        [sys.executable, str(simavr_script), "--board", fqbn],
-        cwd=str(REPO_ROOT),
-        check=False,
-    )
-    if res_mcu.returncode != 0:
-        sys.exit(res_mcu.returncode)
+    from tools.emulation.simavr_runner import main as run_simavr
+
+    run_simavr(board=fqbn)
 
 
 if __name__ == "__main__":

@@ -11,7 +11,6 @@ import asyncio
 import fnmatch
 import io
 import socket
-import subprocess
 import sys
 import tarfile
 from pathlib import Path
@@ -23,12 +22,6 @@ import typer
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 app = typer.Typer(help="Synchronize local McuBridge source files into OpenWrt VM.", add_completion=False)
-
-
-def run_cmd(cmd: list[str], check: bool = True) -> subprocess.CompletedProcess[bytes]:
-    sys.stdout.write(f"[*] Executing local: {' '.join(cmd)}\n")
-    sys.stdout.flush()
-    return subprocess.run(cmd, check=check)
 
 
 def _is_ssh_reachable(host: str, port: int = 22, timeout: float = 1.0) -> bool:
@@ -147,14 +140,9 @@ def sync(
 
     # 0. Ensure protocol definitions, defaults and schemas are generated
     print("\n[0/7] Ensuring generated protocol definitions and schemas are up-to-date...")
-    run_cmd(
-        [
-            sys.executable,
-            str(REPO_ROOT / "tools" / "protocol" / "generate.py"),
-            "--spec",
-            str(REPO_ROOT / "tools" / "protocol" / "mcubridge.proto"),
-        ]
-    )
+    from tools.protocol.generate import main as generate_protocol
+
+    generate_protocol(spec_file=REPO_ROOT / "tools" / "protocol" / "mcubridge.proto")
 
     # 1. Sync mcubridge python package
     pkg_src = REPO_ROOT / "mcubridge" / "mcubridge"

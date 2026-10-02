@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
-"""
-Hardware Emulation Runner.
+"""[MIL-SPEC/SIL-2] Hardware Emulation Runner.
+
 Direct PTY-PTY link via socat, with MCU opening its PTY directly.
+Direct in-process client test execution and structured status health audit.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
+import runpy
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -23,6 +27,7 @@ import typer
 from mcubridge.config.logging import configure_logging
 from mcubridge.protocol import protocol
 
+from tools.audit.audit_bridge_status import audit_status_dict
 from tools.emulation.process_utils import (
     start_daemon_thread,
     stream_pump,
@@ -61,17 +66,9 @@ class EmulationState:
             logger.info("Process output", source=source, line=clean_line)
 
 
-class CloudVerifier:
-    def __init__(self, host: str, port: int) -> None:
-        self.host = host
-        self.port = port
-
-    def wait_for_ready(self, timeout: float = 30.0) -> bool:
-        return wait_for_tcp_ready(self.host, self.port, timeout=timeout)
-
-
-def _start_cloud_gateway(cloud_verify: CloudVerifier, state: EmulationState) -> subprocess.Popen[str] | None:
-    if cloud_verify.wait_for_ready(timeout=1.0):
+def _ensure_cloud_gateway(state: EmulationState) -> subprocess.Popen[str] | None:
+    """Ensure Cloud Gateway is running without redundant wrapper shims (Rule 2.1)."""
+    if wait_for_tcp_ready(CLOUD_HOST, CLOUD_PORT, timeout=1.0):
         return None
 
     logger.info("Starting Managed Cloud Gateway...")
@@ -95,12 +92,22 @@ def _start_cloud_gateway(cloud_verify: CloudVerifier, state: EmulationState) -> 
     )
     start_daemon_thread(stream_pump, "gateway", gateway_proc.stdout, state.on_line, "gateway")
 
-    if not cloud_verify.wait_for_ready():
-        logger.error("Cloud Gateway not available")
+    if not wait_for_tcp_ready(CLOUD_HOST, CLOUD_PORT, timeout=15.0):
+        logger.error("Cloud Gateway not available after spawn")
         terminate_process_tree([gateway_proc], timeout=1.0)
         sys.exit(1)
 
     return gateway_proc
+
+
+def _prepare_emulator_fs(fs_root: Path) -> None:
+    """Ensure emulator filesystem root directory is clean and prepared."""
+    if fs_root.exists():
+        try:
+            shutil.rmtree(fs_root)
+        except OSError as exc:
+            logger.error("Failed to clean emulator FS root", path=str(fs_root), error=str(exc))
+    fs_root.mkdir(parents=True, exist_ok=True)
 
 
 def _prepare_daemon_environment(p_root: Path, emulator_fs_root: Path) -> tuple[dict[str, str], list[str]]:
@@ -157,32 +164,106 @@ def _prepare_daemon_environment(p_root: Path, emulator_fs_root: Path) -> tuple[d
     return daemon_env, daemon_cmd
 
 
+def _wait_for_daemon_sync(status_file: Path, timeout: float = 15.0) -> bool:
+    """Wait for Daemon/MCU synchronization using declarative tenacity retry."""
+
+    def _is_synced() -> bool:
+        if not status_file.exists():
+            return False
+        try:
+            data = json.loads(status_file.read_text(encoding="utf-8"))
+            bridge = data.get("bridge", {})
+            return bool(isinstance(bridge, dict) and bridge.get("is_synchronized", False))
+        except (json.JSONDecodeError, OSError):
+            return False
+
+    sync_retryer = tenacity.Retrying(
+        stop=tenacity.stop_after_delay(timeout),
+        wait=tenacity.wait_fixed(0.25),
+        retry=tenacity.retry_if_result(lambda ok: not ok),
+        reraise=False,
+    )
+    try:
+        return bool(sync_retryer(_is_synced))
+    except tenacity.RetryError:
+        return False
+
+
+def _run_client_script(script_path: Path, device_id: str = "yun-01") -> bool:
+    """Execute client test script directly in-process via module main or runpy (Rule 37)."""
+    logger.info("Executing client test in-process", script=script_path.name)
+    try:
+        spec = importlib.util.spec_from_file_location(script_path.stem, script_path)
+        if spec is not None and spec.loader is not None:
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            main_fn = getattr(mod, "main", None)
+            if callable(main_fn):
+                main_fn(host=CLOUD_HOST, port=CLOUD_PORT, device_id=device_id)
+                logger.info("Script execution passed", script=script_path.name)
+                return True
+
+        orig_argv = sys.argv[:]
+        try:
+            sys.argv = [str(script_path), "--device-id", device_id]
+            runpy.run_path(str(script_path), run_name="__main__")
+        finally:
+            sys.argv = orig_argv
+
+        logger.info("Script execution passed", script=script_path.name)
+        return True
+    except SystemExit as exc:
+        if exc.code in (0, None):
+            logger.info("Script execution passed", script=script_path.name)
+            return True
+        logger.error("Script exited with error", script=script_path.name, code=exc.code)
+        return False
+    except (OSError, RuntimeError, ValueError, TypeError, AssertionError, TimeoutError) as exc:
+        logger.error("Script execution failed", script=script_path.name, error=str(exc))
+        return False
+
+
+def _audit_post_execution_status(status_file: Path) -> bool:
+    """Audit runtime status snapshot and active system health (SIL-2 / Rule 29)."""
+    if not status_file.exists():
+        logger.warning("Status file does not exist for post-execution audit", path=str(status_file))
+        return True
+
+    try:
+        status_data = json.loads(status_file.read_text(encoding="utf-8"))
+        if not isinstance(status_data, dict):
+            logger.error("Status file root is not a dictionary")
+            return False
+
+        status_errors = audit_status_dict(status_data)
+        if status_errors:
+            logger.error("Post-execution status health check failed", errors=status_errors)
+            for err in status_errors:
+                logger.error("Status audit anomaly", error=err)
+            return False
+
+        logger.info("Post-execution status health check passed (100% clean)")
+        return True
+    except (OSError, json.JSONDecodeError, ValueError, TypeError) as exc:
+        logger.error("Failed auditing bridge status", error=str(exc))
+        return False
+
+
 def run_emulation(
     firmware_path: Path,
     package_root: Path = Path(),
     run_scripts: list[str] | None = None,
-):
+) -> None:
     state = EmulationState()
-    cloud_verify = CloudVerifier(CLOUD_HOST, CLOUD_PORT)
-    gateway_proc = _start_cloud_gateway(cloud_verify, state)
+    gateway_proc = _ensure_cloud_gateway(state)
 
     # 1. Start Unified socat linking PTY to MCU EXEC
     Path(SOCAT_PORT0).unlink(missing_ok=True)
 
-    # [FIX] Ensure emulator filesystem root exists and is clean
     emulator_fs_root = Path("/tmp/mcubridge-host-fs")
-    if emulator_fs_root.exists():
-        import shutil
-
-        try:
-            shutil.rmtree(emulator_fs_root)
-        except OSError as exc:
-            logger.error("Failed to clean emulator FS root", path=str(emulator_fs_root), error=str(exc))
-    emulator_fs_root.mkdir(parents=True, exist_ok=True)
+    _prepare_emulator_fs(emulator_fs_root)
 
     logger.info("Starting Unified MCU Emulator via socat EXEC...")
-    # Use EXEC with default pipes. PTY is only created for the Daemon side.
-    # start_new_session isolates socat from terminal SIGHUP signals.
     mcu_proc = subprocess.Popen(
         [
             "socat",
@@ -221,39 +302,21 @@ def run_emulation(
         )
         start_daemon_thread(stream_pump, "daemon", daemon_proc.stdout, state.on_line, "daemon")
 
-        # Wait for Daemon/MCU sync using declarative tenacity retry
+        # Wait for Daemon/MCU sync
         logger.info("Waiting for Daemon/MCU synchronization...")
         status_file = Path("/tmp/mcubridge_status.json")
-
-        def _is_synced() -> bool:
-            if not status_file.exists():
-                return False
-            try:
-                data = json.loads(status_file.read_text(encoding="utf-8"))
-                return bool(data.get("bridge", {}).get("is_synchronized", False))
-            except (json.JSONDecodeError, OSError):
-                return False
-
-        sync_retryer = tenacity.Retrying(
-            stop=tenacity.stop_after_delay(15.0),
-            wait=tenacity.wait_fixed(0.25),
-            retry=tenacity.retry_if_result(lambda ok: not ok),
-            reraise=False,
-        )
-        try:
-            is_synced = sync_retryer(_is_synced)
-        except tenacity.RetryError:
-            is_synced = False
+        is_synced = _wait_for_daemon_sync(status_file, timeout=15.0)
 
         if is_synced:
             logger.info("Daemon/MCU synchronization established successfully.")
         else:
             logger.warning("Synchronization check timed out after 15s; proceeding with test execution.")
 
-        # 4. Run scripts
+        # 4. Run scripts via in-process library execution
         if run_scripts:
             for script in run_scripts:
-                if not Path(script).exists():
+                s_path = Path(script)
+                if not s_path.exists():
                     logger.error("Script not found", script=script)
                     all_success = False
                     break
@@ -261,17 +324,8 @@ def run_emulation(
                 with state.lock:
                     lines_before = len(state.output_lines)
 
-                try:
-                    # Run with captured output but echoing to parent stdout/stderr
-                    subprocess.run(
-                        [sys.executable, script, "--device-id", "yun-01"], env=daemon_env, check=True, timeout=60
-                    )
-                    logger.info("Script execution passed", script=script)
-                except (
-                    subprocess.CalledProcessError,
-                    subprocess.TimeoutExpired,
-                ) as exc:
-                    logger.error("Script execution failed", script=script, error=str(exc))
+                passed = _run_client_script(s_path, device_id="yun-01")
+                if not passed:
                     all_success = False
                     break
 
@@ -294,8 +348,14 @@ def run_emulation(
                     all_success = False
                     break
 
-                # Small cool-down between scripts to keep logs separated
+                # Small cool-down between scripts
                 time.sleep(1)
+
+        # 5. [SIL-2 / Rule 29] Mandatory Post-Execution Status Audit
+        if all_success:
+            status_clean = _audit_post_execution_status(status_file)
+            if not status_clean:
+                all_success = False
     except (OSError, RuntimeError, ValueError) as exc:
         logger.error("Emulation error", error=str(exc))
         all_success = False

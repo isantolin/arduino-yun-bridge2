@@ -73,17 +73,6 @@ jobs:
             fi
           fi
           echo "✅ No hardcoded secrets"
-      - name: Run Codebase Auditor (SIL-2 / MIL-SPEC Integrity)
-        if: matrix.env == 'lint' || matrix.env == 'codebase-auditor'
-        run: |
-          echo "Executing Codebase Auditor (AST Pokemon Exception & Suppression Audit)..."
-          python tools/audit/codebase_auditor.py
-          python tools/audit/audit_library_density.py
-      - name: Run Flake8 (PEP 8 Style Guide Enforcement)
-        if: matrix.env == 'lint'
-        run: |
-          echo "Executing Flake8 Style Guide Audit..."
-          flake8
       - name: Run Tox Environment
         run: tox -e ${{ matrix.env }}
 

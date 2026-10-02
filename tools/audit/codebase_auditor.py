@@ -166,12 +166,7 @@ app = typer.Typer(help="Audit codebase for SIL-2/MIL-SPEC violations and shims."
 @app.command()
 def main() -> None:
     """Execute Semgrep, config, protobuf, and sketch compliance audits."""
-    all_findings = (
-        audit_semgrep()
-        + audit_config_suppressions()
-        + audit_proto_integrity()
-        + audit_arduino_sketches()
-    )
+    all_findings = audit_semgrep() + audit_config_suppressions() + audit_proto_integrity() + audit_arduino_sketches()
 
     print("\n--- RESULTS ---")
     if not all_findings:

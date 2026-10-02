@@ -19,7 +19,7 @@ def test_validate_luci_rpc_endpoint_success() -> None:
     mock_rpc = MagicMock()
     mock_rpc.is_logged_in.return_value = True
 
-    with patch("tools.audit.validate_luci.OpenWrtRpc", return_value=mock_rpc):
+    with patch("openwrt_luci_rpc.OpenWrtRpc", return_value=mock_rpc):
         code = validate_luci.validate_luci_rpc_endpoint("192.168.1.1", "root", "secret")
         assert code == 0
         mock_rpc.is_logged_in.assert_called_once()
@@ -29,7 +29,7 @@ def test_validate_luci_rpc_endpoint_login_failure() -> None:
     mock_rpc = MagicMock()
     mock_rpc.is_logged_in.return_value = False
 
-    with patch("tools.audit.validate_luci.OpenWrtRpc", return_value=mock_rpc):
+    with patch("openwrt_luci_rpc.OpenWrtRpc", return_value=mock_rpc):
         code = validate_luci.validate_luci_rpc_endpoint("192.168.1.1", "root", "wrong")
         assert code == 1
         mock_rpc.is_logged_in.assert_called_once()
@@ -38,7 +38,7 @@ def test_validate_luci_rpc_endpoint_login_failure() -> None:
 def test_validate_luci_rpc_endpoint_exception_handling() -> None:
     from openwrt_luci_rpc.exceptions import InvalidLuciLoginError
 
-    with patch("tools.audit.validate_luci.OpenWrtRpc", side_effect=InvalidLuciLoginError("Bad auth")):
+    with patch("openwrt_luci_rpc.OpenWrtRpc", side_effect=InvalidLuciLoginError("Bad auth")):
         code = validate_luci.validate_luci_rpc_endpoint("192.168.1.1", "root", "bad")
         assert code == 1
 

@@ -22,6 +22,27 @@ return view.extend({
 		o.rmempty = false;
 		o.default = '0';
 
+		o = s.option(form.Value, 'respawn_threshold', _('Respawn Threshold (s)'),
+			_('Procd service respawn timeout threshold in seconds.'));
+		o.datatype = 'uinteger';
+		o.placeholder = '3600';
+		o.default = '3600';
+		o.rmempty = true;
+
+		o = s.option(form.Value, 'respawn_timeout', _('Respawn Timeout (s)'),
+			_('Procd service respawn restart delay timeout in seconds.'));
+		o.datatype = 'uinteger';
+		o.placeholder = '5';
+		o.default = '5';
+		o.rmempty = true;
+
+		o = s.option(form.Value, 'respawn_retry', _('Respawn Retry Count'),
+			_('Procd service respawn maximum retry count (0 for infinite).'));
+		o.datatype = 'uinteger';
+		o.placeholder = '0';
+		o.default = '0';
+		o.rmempty = true;
+
 		o = s.option(form.Value, 'serial_port', _('Serial Port'));
 		o.placeholder = '/dev/ttyATH0';
 		o.rmempty = false;

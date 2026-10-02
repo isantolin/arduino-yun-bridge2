@@ -95,7 +95,9 @@ async def test_session_client_cert_common_name(cloud_service: CloudBridgeService
     }
 
     async def async_iter():
-        yield pb.CloudEnvelope(protocol_version=PROTOCOL_VERSION, telemetry=pb.TelemetryReport(daemon_metrics_blob=b"data"))
+        yield pb.CloudEnvelope(
+            protocol_version=PROTOCOL_VERSION, telemetry=pb.TelemetryReport(daemon_metrics_blob=b"data")
+        )
 
     def _aiter(self: object):
         return async_iter()

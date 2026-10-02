@@ -193,7 +193,9 @@ FAIL
     assert xml.attrib["failures"] == "1"
 
 
-def test_hardware_harness_rotate_local(tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
+def test_hardware_harness_rotate_local(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
     fake_uci_dir = tmp_path / "etc" / "config"
     fake_uci_dir.mkdir(parents=True)
     mock_mod = MagicMock()
@@ -203,4 +205,3 @@ def test_hardware_harness_rotate_local(tmp_path: Path, capsys: pytest.CaptureFix
     captured = capsys.readouterr()
     assert "BRIDGE_SERIAL_SHARED_SECRET" in captured.out
     assert "aabbccddeeff11223344556677889900" in captured.out
-

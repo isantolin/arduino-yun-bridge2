@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import importlib
 import json
-import subprocess
 import sys
 from pathlib import Path
 from typing import Annotated, Any
@@ -130,22 +129,15 @@ def audit(
     data: dict[str, Any]
 
     if use_ubus:
-        if ubus is not None:
-            try:
-                conn: Any = ubus.connect()
-                data = conn.call("mcubridge", "status", {})
-            except (OSError, RuntimeError) as e:
-                print(f"❌ [STATUS AUDIT FAIL] Failed to query python-ubus: {e}", file=sys.stderr)
-                sys.exit(1)
-        else:
-            try:
-                proc = subprocess.run(
-                    ["ubus", "call", "mcubridge", "status"], capture_output=True, text=True, check=True
-                )
-                data = json.loads(proc.stdout)
-            except (subprocess.SubprocessError, OSError, json.JSONDecodeError) as e:
-                print(f"❌ [STATUS AUDIT FAIL] Failed to query UBUS CLI: {e}", file=sys.stderr)
-                sys.exit(1)
+        if ubus is None:
+            print("❌ [STATUS AUDIT FAIL] Native python-ubus module is not installed", file=sys.stderr)
+            sys.exit(1)
+        try:
+            conn: Any = ubus.connect()
+            data = conn.call("mcubridge", "status", {})
+        except (OSError, RuntimeError) as e:
+            print(f"❌ [STATUS AUDIT FAIL] Failed to query python-ubus: {e}", file=sys.stderr)
+            sys.exit(1)
     else:
         json_text = _resolve_json_payload(raw_json, status_path)
         try:

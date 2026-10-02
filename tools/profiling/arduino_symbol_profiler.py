@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
-"""Deep profiling of Arduino ELF files to identify largest symbols using Bloaty."""
+"""Deep profiling of Arduino ELF files to identify largest symbols using pyelftools."""
 
 from __future__ import annotations
 
 import re
-import shutil
-import subprocess
 import sys
 from pathlib import Path
 from typing import Annotated
+
+from elftools.common.exceptions import ELFError
+from elftools.elf.elffile import ELFFile
+from elftools.elf.sections import SymbolTableSection
 
 import typer
 
@@ -67,26 +69,43 @@ def detect_board_label(build_dir: Path, elf_path: Path) -> str:
     return parts[0] if len(parts) > 1 else "unknown-board"
 
 
-def profile_elf(build_dir: Path, elf_path: Path, bloaty_bin: str | None = None) -> str:
-    """Run Bloaty (or nm fallback) on the ELF file to extract symbol sizes."""
-    board = detect_board_label(build_dir, elf_path)
-    if bloaty_bin:
-        try:
-            cmd = [bloaty_bin, "-d", "symbols", "-n", "20", str(elf_path)]
-            out = subprocess.run(cmd, capture_output=True, text=True, check=True).stdout.strip()
-            return f"#### 🔍 Bloaty Symbol Profiling: {elf_path.name} ({board})\n\n```\n{out}\n```\n"
-        except (subprocess.CalledProcessError, OSError) as err:
-            sys.stderr.write(f"[WARN] Bloaty error profiling {elf_path}: {err}\n")
-
-    nm_bin = shutil.which("avr-nm") or shutil.which("nm") or "nm"
+def extract_symbols(elf_path: Path, limit: int = 20) -> list[str]:
+    """Extract top symbols by size directly using pure-Python pyelftools. [SIL-2 / Rule 37]"""
+    syms: list[tuple[int, str, str, str]] = []
     try:
-        cmd = [nm_bin, "--size-sort", "--print-size", "-C", str(elf_path)]
-        lines = subprocess.run(cmd, capture_output=True, text=True, check=True).stdout.strip().splitlines()
-        top_20 = lines[-20:][::-1]
-        formatted = "\n".join(f"- `{line.strip()}`" for line in top_20)
-        return f"#### 🔍 Symbol Profiling: {elf_path.name} ({board})\n\n{formatted}\n"
-    except (subprocess.CalledProcessError, OSError) as err:
-        return f"⚠️ Error profiling {elf_path}: {err}\n"
+        with elf_path.open("rb") as f:
+            elf = ELFFile(f)
+            for section in elf.iter_sections():
+                if isinstance(section, SymbolTableSection):
+                    for sym in section.iter_symbols():
+                        size = int(sym["st_size"])
+                        name = sym.name or ""
+                        if size > 0 and name:
+                            st_type = str(sym["st_info"]["type"]).removeprefix("STT_")
+                            sec_idx = sym["st_shndx"]
+                            sec_name = "UNK"
+                            if isinstance(sec_idx, int) and sec_idx < elf.num_sections():
+                                sec_name = elf.get_section(sec_idx).name
+                            syms.append((size, name, st_type, sec_name))
+    except (OSError, ValueError, ELFError) as err:
+        sys.stderr.write(f"[WARN] Failed to read ELF with pyelftools {elf_path}: {err}\n")
+        return []
+
+    syms.sort(key=lambda s: s[0], reverse=True)
+    return [f"- `{size:5d} B` **[{st_type} / {sec}]** `{name}`" for size, name, st_type, sec in syms[:limit]]
+
+
+def profile_elf(build_dir: Path, elf_path: Path) -> str:
+    """Extract symbol sizes using pure-Python pyelftools directly. [SIL-2 / Rule 37]"""
+    board = detect_board_label(build_dir, elf_path)
+    symbols = extract_symbols(elf_path)
+    if not symbols:
+        return (
+            f"#### 🔍 Symbol Profiling (pyelftools): {elf_path.name} ({board})\n\n"
+            "_No symbols found or file unreadable._\n"
+        )
+    formatted = "\n".join(symbols)
+    return f"#### 🔍 Symbol Profiling (pyelftools): {elf_path.name} ({board})\n\n{formatted}\n"
 
 
 cli = typer.Typer(help="Profile Arduino ELF symbols.", add_completion=False)
@@ -105,8 +124,7 @@ def main(
         sys.stderr.write(f"Error: {build_dir} not found.\n")
         return
 
-    bloaty_bin = shutil.which("bloaty")
-    reports = [profile_elf(build_dir, elf, bloaty_bin) for elf in sorted(build_dir.rglob("*.elf"))]
+    reports = [profile_elf(build_dir, elf) for elf in sorted(build_dir.rglob("*.elf"))]
     mem_report = parse_memory_logs(Path("arduino-logs")) or ""
 
     if not reports and not mem_report:

@@ -140,20 +140,14 @@ def test_audit_cli_ubus_success(mocker: MockerFixture) -> None:
     assert "STATUS AUDIT PASS" in result.stdout
 
 
-def test_audit_cli_ubus_subprocess_fallback(mocker: MockerFixture) -> None:
-    import subprocess
-    from unittest.mock import MagicMock
-
+def test_audit_cli_ubus_module_missing(mocker: MockerFixture) -> None:
     import tools.audit.audit_bridge_status as audit_mod
 
     mocker.patch.object(audit_mod, "ubus", None)
-    mock_proc = MagicMock()
-    mock_proc.stdout = json.dumps({"connected": True, "synchronized": True, "capabilities": {}})
-    mocker.patch.object(subprocess, "run", return_value=mock_proc)
-
     result = runner.invoke(cast(Any, app), ["--ubus"])
-    assert result.exit_code == 0
-    assert "STATUS AUDIT PASS" in result.stdout
+    assert result.exit_code == 1
+    assert "STATUS AUDIT FAIL" in result.stderr
+    assert "Native python-ubus module is not installed" in result.stderr
 
 
 def test_audit_cli_ubus_failure(mocker: MockerFixture) -> None:

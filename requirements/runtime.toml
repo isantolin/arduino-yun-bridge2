@@ -340,3 +340,8 @@ name = "pytest-embedded"
 pip = "pytest-embedded==2.9.3"
 rationale = "Embedded target testing harness and fixtures for hardware-in-the-loop and emulation suites"
 
+[[dev_dependency]]
+name = "pyelftools"
+pip = "pyelftools==0.33"
+rationale = "Pure-Python ELF symbol parser for Arduino firmware profiling and size analysis [SIL-2 / Rule 37]"
+

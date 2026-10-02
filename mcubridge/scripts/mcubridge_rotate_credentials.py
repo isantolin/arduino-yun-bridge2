@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import importlib
 import secrets
-import subprocess
 import sys
 from typing import Annotated, Any
 
@@ -22,9 +21,15 @@ try:
         raw_exc if isinstance(raw_exc, type) and issubclass(raw_exc, BaseException) else RuntimeError
     )
 except (ImportError, TypeError) as exc:
-    logger.debug("UCI module not available; CLI fallback will be used", error=str(exc))
+    logger.debug("Native OpenWrt UCI module unavailable", error=str(exc))
     uci = None
     UciException = RuntimeError
+
+try:
+    ubus: Any = importlib.import_module("ubus")
+except (ImportError, TypeError) as exc:
+    logger.debug("Native OpenWrt UBUS module unavailable", error=str(exc))
+    ubus = None
 
 app = typer.Typer(help="Rotate MCU Bridge shared secret.", add_completion=False)
 
@@ -46,12 +51,17 @@ def update_uci_credentials(new_secret: str, new_cloud_password: str) -> None:
 
 
 def restart_service() -> None:
-    """Restart the mcubridge service to apply new credentials."""
+    """Restart the mcubridge service via native OpenWrt UBUS. [SIL-2 / Rule 37]"""
+    if ubus is None:
+        logger.error("Native OpenWrt UBUS module unavailable")
+        raise RuntimeError("Native OpenWrt UBUS module unavailable")
     try:
-        subprocess.run(["/etc/init.d/mcubridge", "restart"], check=True, capture_output=True)
-        logger.info("Bridge service restarted successfully")
-    except subprocess.CalledProcessError as e:
-        logger.warning("Service restart failed", stderr=e.stderr.decode("utf-8"), exit_code=e.returncode)
+        conn: Any = ubus.connect()
+        conn.call("service", "restart", {"name": "mcubridge"})
+        logger.info("Bridge service restarted successfully via ubus")
+    except (OSError, RuntimeError) as e:
+        logger.error("Failed to restart service via ubus", error=str(e))
+        raise
 
 
 @app.command()

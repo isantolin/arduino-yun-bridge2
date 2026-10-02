@@ -22,8 +22,8 @@ from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.state.status import status_writer, write_status_file
 from mcubridge.state.storage import LmdbCache, LmdbDeque
 
-_write_status_file: Any = status_mod._write_status_file
-_vacuum_lmdb_env: Any = storage_mod._vacuum_lmdb_env
+_write_status_file = status_mod.write_status_file
+_vacuum_lmdb_env = storage_mod.vacuum_lmdb_env
 
 
 @pytest.fixture

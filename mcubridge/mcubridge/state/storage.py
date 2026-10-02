@@ -298,3 +298,6 @@ class LmdbCache:
         if self.env:
             self.env.close()
             self.env = None
+
+
+vacuum_lmdb_env = _vacuum_lmdb_env

@@ -244,7 +244,7 @@ def test_settings_normalize_config_property(
     assert norm["topic_authorization"]["datastore_put"] is True
     assert norm["unknown_extra_key"] == "val"
 
-    _, secret_none = norm_fn({"serial_shared_secret": None})
+    _, secret_none = settings.normalize_config_dict({"serial_shared_secret": None})
     assert secret_none is None
 
 

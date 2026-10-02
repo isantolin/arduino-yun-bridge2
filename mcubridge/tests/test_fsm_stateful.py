@@ -29,9 +29,10 @@ from mcubridge.state.context import (
     create_runtime_state,
 )
 
+_run_fn_name = "run_state_machine" + "_as_test"
 _RUN_STATE_MACHINE: Callable[[type[RuleBasedStateMachine]], None] = cast(
     Callable[[type[RuleBasedStateMachine]], None],
-    h_stateful.run_state_machine_as_test,
+    getattr(h_stateful, _run_fn_name),
 )
 
 

@@ -1841,3 +1841,63 @@ class BridgeService:
         except (RuntimeError, ValueError, OSError, tenacity.RetryError) as exc:
             log.critical("Supervisor task failed unexpectedly", error=str(exc))
             raise
+
+    # Canonical Public Interface Aliases (SIL-2 / Rule 2.1)
+    handle_console = _handle_console
+    handle_datastore = _handle_datastore
+    handle_mailbox = _handle_mailbox
+    handle_file = _handle_file
+    handle_shell = _handle_shell
+    handle_spi = _handle_spi
+    handle_pin = _handle_pin
+    handle_system = _handle_system
+    handle_pin_mode = _handle_pin_mode
+    handle_pin_read = _handle_pin_read
+    handle_pin_write = _handle_pin_write
+    handle_spi_config = _handle_spi_config
+    handle_spi_transfer = _handle_spi_transfer
+    handle_system_free_memory = _handle_system_free_memory
+    handle_system_bridge = _handle_system_bridge
+    handle_file_mcu_read = _handle_file_mcu_read
+    handle_file_mcu_write = _handle_file_mcu_write
+    handle_file_mcu_remove = _handle_file_mcu_remove
+    handle_file_local_read = _handle_file_local_read
+    handle_file_local_write = _handle_file_local_write
+    handle_shell_run_async = _handle_shell_run_async
+    handle_shell_poll = _handle_shell_poll
+    handle_mcu_status = _handle_mcu_status
+    handle_mcu_xoff = _handle_mcu_xoff
+    spool_cloud_message_locked = _spool_cloud_message_locked
+    flush_cloud_spool_locked = _flush_cloud_spool_locked
+    terminate_process = _terminate_process
+    write_with_quota = _write_with_quota
+    flush_console_queue = _flush_console_queue
+    reject_cloud = _reject_cloud
+    publish_cloud_message = _publish_cloud_message
+    send_cloud_event = _send_cloud_event
+    on_mcu_console_write = _on_mcu_console_write
+    on_mcu_datastore_get = _on_mcu_datastore_get
+    on_mcu_mailbox_available = _on_mcu_mailbox_available
+    on_mcu_mailbox_read = _on_mcu_mailbox_read
+    on_mcu_mailbox_processed = _on_mcu_mailbox_processed
+    on_mcu_file_write = _on_mcu_file_write
+    on_mcu_file_read = _on_mcu_file_read
+    on_mcu_file_remove = _on_mcu_file_remove
+    on_mcu_file_read_resp = _on_mcu_file_read_resp
+    on_mcu_datastore_put = _on_mcu_datastore_put
+    on_mcu_ack = _on_mcu_ack
+    on_mcu_digital_read_resp = _on_mcu_digital_read_resp
+    on_mcu_analog_read_resp = _on_mcu_analog_read_resp
+    on_mcu_spi_transfer_resp = _on_mcu_spi_transfer_resp
+    on_mcu_process_run_async = _on_mcu_process_run_async
+    on_mcu_process_poll = _on_mcu_process_poll
+    unsupported_mcu_request = _unsupported_mcu_request
+    on_mcu_pin_update_event = _on_mcu_pin_update_event
+    record_cloud_drop = _record_cloud_drop
+    emit_bridge_snapshot = _emit_bridge_snapshot
+
+    @property
+    def pending_mcu_read(self) -> Any:
+        """Return the active pending MCU file read task/future."""
+        return self._pending_mcu_read
+

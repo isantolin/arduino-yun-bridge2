@@ -1010,6 +1010,11 @@ def main(
         gen.generate_config_schema_json(context, schema_json_target)
         sys.stderr.write(f"Generated {schema_json_target}\n")
 
+    # Autogenerate third-party stubs via Pyright (Option B)
+    pyright_bin = shutil.which("pyright")
+    if pyright_bin:
+        subprocess.run([pyright_bin, "--createstub", "vulture"], cwd=str(REPO_ROOT), check=False, capture_output=True)
+
     # Save hash for incremental compilation
     hash_file.write_text(current_hash, encoding="utf-8")
 

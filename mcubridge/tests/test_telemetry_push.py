@@ -49,7 +49,7 @@ async def test_pure_telemetry_push_mode(test_config: RuntimeConfig, mock_bridge_
         payload=metrics.SerializeToString(),
     )
 
-    publish_cloud_msg: Callable[[pb.CloudQueuedPublish], Awaitable[bool]] = svc._publish_cloud_message
+    publish_cloud_msg: Callable[[pb.CloudQueuedPublish], Awaitable[bool]] = svc.publish_cloud_message
     published = await publish_cloud_msg(msg)
     assert published is True
 

@@ -370,7 +370,7 @@ async def test_flush_cloud_spool_publish_fails_and_degraded(
     mock_serial = AsyncMock(spec=SerialTransport)
     svc = BridgeService(test_config, mock_bridge_state, mock_serial)
 
-    spool = svc._cloud_spool
+    spool = svc.cloud_spool
     assert spool is not None
     await spool.append(pb.CloudQueuedPublish(topic_name="spool/topic", payload=b"data").SerializeToString())
 
@@ -380,9 +380,10 @@ async def test_flush_cloud_spool_publish_fails_and_degraded(
     await flush_spool()
     assert len(spool) == 1
 
-    # 2. cloud_spool_degraded is True -> line 504-507 (if not degraded: branch is skipped)
-    mock_bridge_state.cloud_spool_degraded = True
-    mock_bridge_state.cloud_spool_failure_reason = "simulated_error"
+    # 2. Storage error during peek triggers degradation (lines 491-494 and 511)
+    mock_bridge_state.cloud_spool_degraded = False
+    mock_bridge_state.cloud_spool_failure_reason = None
+    mocker.patch.object(spool, "peek", side_effect=OSError("simulated_error"))
     await flush_spool()
     assert mock_bridge_state.cloud_spool_degraded is True
     assert mock_bridge_state.cloud_spool_failure_reason == "simulated_error"

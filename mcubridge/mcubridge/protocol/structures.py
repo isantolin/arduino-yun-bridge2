@@ -192,6 +192,9 @@ def _build_cached_ssl_context(
     return context
 
 
+build_cached_ssl_context = _build_cached_ssl_context
+
+
 def get_ssl_context(cfg: pb.RuntimeConfig) -> Any | None:
     """Create an ssl.SSLContext based on cfg. [SIL-2]"""
     if not cfg.cloud_tls:

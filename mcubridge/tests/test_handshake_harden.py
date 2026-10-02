@@ -174,7 +174,8 @@ async def test_handshake_capabilities_retry(
 
     send_frame.side_effect = mock_send_frame
 
-    result = await manager._fetch_capabilities()
+    fetch_caps: Callable[[], Awaitable[bool]] = manager._fetch_capabilities
+    result = await fetch_caps()
     assert result
     assert send_frame.call_count == 3
 
@@ -199,7 +200,8 @@ async def test_handshake_capabilities_corrupt_payload(
 
     send_frame.side_effect = mock_send_frame_corrupt
 
-    result = await manager._fetch_capabilities()
+    fetch_caps_corrupt: Callable[[], Awaitable[bool]] = manager._fetch_capabilities
+    result = await fetch_caps_corrupt()
     assert not result
 
 

@@ -37,7 +37,7 @@ async def test_abrupt_disconnect_os_error() -> None:
     mock_serial = AsyncMock()
     mock_serial.readuntil.side_effect = OSError("hardware disconnect")
 
-    read_loop: Callable[..., Awaitable[None]] = transport._read_loop
+    read_loop: Callable[..., Awaitable[None]] = transport.read_loop
     await read_loop(mock_serial)
     assert mock_serial.readuntil.call_count == 1
 
@@ -48,7 +48,7 @@ async def test_negotiation_failure_and_disconnect() -> None:
     mock_serial = AsyncMock()
     mock_serial.readuntil.side_effect = [b"invalid\x00", asyncio.IncompleteReadError(b"", None)]
 
-    read_loop: Callable[..., Awaitable[None]] = transport._read_loop
+    read_loop: Callable[..., Awaitable[None]] = transport.read_loop
     await read_loop(mock_serial)
     assert not state.is_connected
 
@@ -78,7 +78,7 @@ async def test_read_loop_corrupted_frame_resilience(corrupt_payload: bytes) -> N
 
     mock_serial.readuntil.side_effect = mock_read
 
-    read_loop: Callable[..., Awaitable[None]] = transport._read_loop
+    read_loop: Callable[..., Awaitable[None]] = transport.read_loop
     with pytest.raises(TimeoutError):
         await asyncio.wait_for(read_loop(mock_serial), 0.05)
 

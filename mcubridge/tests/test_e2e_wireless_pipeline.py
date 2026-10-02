@@ -122,7 +122,7 @@ async def test_e2e_wireless_tcp_handshake_and_rpc_exchange(
     assert sync_ok is True
     assert runtime_state.is_synchronized is True
 
-    ver_ok = await service._request_mcu_version()
+    ver_ok = await service.request_mcu_version()
     assert ver_ok is True
     assert runtime_state.mcu_version == (2, 8, 5)
 

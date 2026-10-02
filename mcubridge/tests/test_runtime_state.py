@@ -78,7 +78,7 @@ def test_record_cloud_drop_increments_counter(runtime_config: RuntimeConfig) -> 
     try:
         service = BridgeService(runtime_config, state, AsyncMock())
         topic = "test/topic"
-        record_drop = service._record_cloud_drop
+        record_drop: Any = service._record_cloud_drop
         record_drop(topic)
 
         assert state.cloud_dropped_messages == 1
@@ -244,7 +244,8 @@ def test_state_context_uncovered_branch_hardening(runtime_config: RuntimeConfig)
 
 def test_context_storage_subdir_creation_error(runtime_state: RuntimeState, mocker: MockerFixture) -> None:
     mocker.patch.object(Path, "mkdir", side_effect=OSError("Permission denied"))
-    res = runtime_state._get_storage_subdir("test_dir")
+    get_storage_subdir: Any = runtime_state._get_storage_subdir
+    res = get_storage_subdir("test_dir")
     assert res is None
 
 
@@ -309,7 +310,8 @@ def test_context_edge_branches_and_properties(runtime_state: RuntimeState, mocke
     # 3. _get_storage_subdir when non_tmp path not allowed (line 557->564)
     runtime_state.allow_non_tmp_paths = False
     runtime_state.file_system_root = "/non_tmp_custom_root"
-    assert runtime_state._get_storage_subdir("datastore") is None
+    get_storage_subdir: Any = runtime_state._get_storage_subdir
+    assert get_storage_subdir("datastore") is None
 
     # 4. configure with non_tmp path not allowed covers (lines 593->598, 604->612, 618-619)
     runtime_state.configure()

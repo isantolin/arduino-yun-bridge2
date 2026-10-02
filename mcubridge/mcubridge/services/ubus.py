@@ -37,12 +37,15 @@ def _format_ubus_bytes(data: bytes) -> str:
         return f"<hex:{data.hex()}>"
 
 
-def _get_ubus_type(typ: str, ubus_module: Any = None) -> Any:
+def get_ubus_type(typ: str, ubus_module: Any = None) -> Any:
     """Resolve UBUS blobmsg type identifier safely."""
     target_ubus = ubus_module if ubus_module is not None else ubus
     if target_ubus is None:
         return 0
     return getattr(target_ubus, f"BLOBMSG_TYPE_{typ}", getattr(target_ubus, typ, 0))
+
+
+_get_ubus_type = get_ubus_type
 
 
 class BridgeRuntimeFacade(Protocol):

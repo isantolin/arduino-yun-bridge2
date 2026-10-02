@@ -653,12 +653,12 @@ def test_tsdb_sink_post_line_edge_paths(mocker: MockerFixture) -> None:
     # 1. Empty endpoint returns early
     sink_empty = TSDBSink(endpoint_url=None)
     assert not sink_empty.enabled
-    post_empty = sink_empty._post_line
+    post_empty: Callable[[str], None] = sink_empty._post_line
     post_empty("mcu,device=dev1 value=1")
 
     sink = TSDBSink(endpoint_url="http://localhost:8428/write")
     assert sink.enabled
-    post_fn = sink._post_line
+    post_fn: Callable[[str], None] = sink._post_line
 
     # 2. Status >= 400
     mock_resp = MagicMock()

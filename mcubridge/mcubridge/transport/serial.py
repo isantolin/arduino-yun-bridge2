@@ -90,10 +90,12 @@ if sys.platform == "linux":
     try:
         import serialx.platforms.serial_linux as _sl
 
-        _orig_after_configure = _sl.LinuxSerial._after_configure_port
+        _orig_after_configure = getattr(_sl.LinuxSerial, "_after_configure_port", None)
         _sl.LinuxSerial._after_configure_port = _safe_after_configure
     except (ImportError, AttributeError) as _exc:
         logger.debug("LinuxSerial monkey-patch skipped", error=str(_exc))
+
+safe_after_configure = _safe_after_configure
 
 
 if TYPE_CHECKING:
@@ -224,13 +226,20 @@ class SerialTransport:
             super().__init__(status)
             self.status = status
 
-    def _switch_local_baudrate(self, target_baud: int) -> None:
+    @property
+    def stop_event(self) -> asyncio.Event:
+        """Lifecycle stop event for serial transport."""
+        return self._stop_event
+
+    def switch_local_baudrate(self, target_baud: int) -> None:
         try:
             if self.serial and hasattr(self.serial.transport, "serial") and self.serial.transport.serial:
                 self.serial.transport.serial.baudrate = target_baud
                 logger.info("Local UART switched baudrate", baud=target_baud)
         except (AttributeError, OSError, ValueError, serialx.SerialException) as e:
             raise RuntimeError(f"UART access failed: {e}") from e
+
+    _switch_local_baudrate = switch_local_baudrate
 
     async def reset(self) -> None:
         async with self._flow_lock:
@@ -260,14 +269,14 @@ class SerialTransport:
             if self._runner_fn is not None:
                 await self._runner_fn()
             else:
-                await self._connect_and_run()
+                await self.connect_and_run()
         except asyncio.CancelledError:
             logger.info("Serial transport cancelled")
         except SerialHandshakeFatal as exc:
             logger.error("Fatal serial handshake error", error=str(exc))
             raise
 
-    async def _connect_and_run(self) -> None:
+    async def connect_and_run(self) -> None:
         url = resolve_serial_url(self.config.serial_port)
         is_network = url.startswith(("socket://", "tcp://", "wifi://", "rfc2217://"))
         connect_baud = self.config.serial_safe_baud or protocol.DEFAULT_SAFE_BAUDRATE
@@ -287,14 +296,14 @@ class SerialTransport:
             ) as self.serial:
                 self.state.serial_writer = self.serial.transport
                 if not is_network:
-                    await self._toggle_dtr()
+                    await self.toggle_dtr()
 
-                read_task = asyncio.get_running_loop().create_task(self._read_loop(self.serial))
+                read_task = asyncio.get_running_loop().create_task(self.read_loop(self.serial))
                 try:
                     if (
                         not is_network
                         and self.config.serial_baud != connect_baud
-                        and not await self._negotiate_baudrate(self.config.serial_baud)
+                        and not await self.negotiate_baudrate(self.config.serial_baud)
                     ):
                         raise ConnectionError("Baudrate negotiation failed")
 
@@ -327,7 +336,9 @@ class SerialTransport:
             self.state.serial_writer = None
             self.serial = None
 
-    async def _toggle_dtr(self) -> None:
+    _connect_and_run = connect_and_run
+
+    async def toggle_dtr(self) -> None:
         try:
             if self.serial:
                 await self.serial.set_modem_pins(dtr=False)
@@ -337,18 +348,20 @@ class SerialTransport:
         except (AttributeError, OSError, ValueError, serialx.SerialException, RuntimeError) as exc:
             logger.error("Unable to toggle DTR", port=self.config.serial_port, error=str(exc))
 
+    _toggle_dtr = toggle_dtr
+
     async def stop(self) -> None:
         self._stop_event.set()
         if self.serial:
             await self.serial.close()
 
-    async def _read_loop(self, serial: serialx.AsyncSerial) -> None:
+    async def read_loop(self, serial: serialx.AsyncSerial) -> None:
         while not self._stop_event.is_set():
             try:
                 packet_with_sep = await serial.readuntil(protocol.FRAME_DELIMITER)
                 packet_view = memoryview(packet_with_sep)[:-1]
                 if packet_view:
-                    await self._process_packet(packet_view)
+                    await self.process_packet(packet_view)
             except asyncio.LimitOverrunError:
                 self.state.serial_decode_errors += 1
                 await serial.read(protocol.MAX_SERIAL_FRAME_BYTES)
@@ -359,7 +372,9 @@ class SerialTransport:
                 logger.error("Error in serial read loop", error=str(exc))
                 break
 
-    async def _process_packet(self, encoded_packet: bytes | memoryview) -> None:
+    _read_loop = read_loop
+
+    async def process_packet(self, encoded_packet: bytes | memoryview) -> None:
         """Processes a packet from the serial stream. [FLATTENED] [SIL-2]"""
         raw_bytes = bytes(encoded_packet) if isinstance(encoded_packet, memoryview) else encoded_packet
         try:
@@ -368,7 +383,7 @@ class SerialTransport:
         except (cobsr.DecodeError, ValueError, TypeError, RuntimeError) as exc:
             logger.error("Malformed frame received from MCU", error=str(exc), raw_hex=raw_bytes.hex())
             self.state.serial_decode_errors += 1
-            await self._check_baudrate_fallback()
+            await self.check_baudrate_fallback()
             return
 
         envelope = decoded_frame.envelope
@@ -408,14 +423,16 @@ class SerialTransport:
             return
 
         # Correlation and Service dispatch
-        self._correlate_frame(cmd_id, payload)
+        self.correlate_frame(cmd_id, payload)
         if self.service:
             await self.service.handle_mcu_frame(cmd_id, seq_id, payload)
 
         self.state.metrics.serial_bytes_received.inc(len(encoded_packet))
         self.state.metrics.serial_frames_received.inc()
 
-    def _correlate_frame(self, command_id: int, payload: bytes | ProtobufMessage) -> None:
+    _process_packet = process_packet
+
+    def correlate_frame(self, command_id: int, payload: bytes | ProtobufMessage) -> None:
         pending = self._current
         logger.debug(
             "_correlate_frame entry", command_id=command_id, pending_cmd=(pending.command_id if pending else None)
@@ -480,13 +497,17 @@ class SerialTransport:
             logger.debug("Marking pending command success on success status")
             pending.mark_success(payload)
 
-    async def _check_baudrate_fallback(self) -> None:
+    _correlate_frame = correlate_frame
+
+    async def check_baudrate_fallback(self) -> None:
         self._consecutive_crc_errors += 1
         if self._consecutive_crc_errors >= self.config.serial_fallback_threshold:
             logger.error("Fallback to safe baudrate", baud=self.config.serial_safe_baud)
             self._consecutive_crc_errors = 0
             if self.config.serial_baud != self.config.serial_safe_baud:
-                await self._negotiate_baudrate(self.config.serial_safe_baud)
+                await self.negotiate_baudrate(self.config.serial_safe_baud)
+
+    _check_baudrate_fallback = check_baudrate_fallback
 
     async def send(
         self,
@@ -600,7 +621,7 @@ class SerialTransport:
             logger.error("Serial write failed", error=str(exc))
             return False
 
-    async def _negotiate_baudrate(self, target_baud: int) -> bool:
+    async def negotiate_baudrate(self, target_baud: int) -> bool:
         payload = pb.SetBaudratePacket(baudrate=target_baud)
         self._negotiating = True
         try:
@@ -615,6 +636,8 @@ class SerialTransport:
             return False
         finally:
             self._negotiating = False
+
+    _negotiate_baudrate = negotiate_baudrate
 
     async def acknowledge(self, command_id: int, seq_id: int, *, status: Status = Status.ACK) -> None:
         await self.send_raw(status.value, pb.AckPacket(command_id=command_id), seq_id)

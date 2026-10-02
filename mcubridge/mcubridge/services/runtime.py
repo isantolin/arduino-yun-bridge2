@@ -1221,7 +1221,13 @@ class BridgeService:
         pin = self._parse_pin(route.segments[0])
         if pin < 0:
             return
-        action = route.segments[1] if len(route.segments) == 2 else None
+        raw_action = route.segments[1] if len(route.segments) == 2 else None
+        action: PinAction | None = None
+        if raw_action is not None:
+            try:
+                action = PinAction(raw_action)
+            except ValueError:
+                return
         handler = self._pin_dispatch.get(action)
         if handler:
             await handler(route, pin, inbound)
@@ -1254,7 +1260,7 @@ class BridgeService:
 
     # --- Low-level Helpers ---
 
-    async def _request_mcu_version(self, inbound: pb.CloudQueuedPublish | None = None) -> bool:
+    async def request_mcu_version(self, inbound: pb.CloudQueuedPublish | None = None) -> bool:
         serial = self.serial
         if not serial:
             return False
@@ -1276,6 +1282,8 @@ class BridgeService:
             reply_context=inbound,
         )
         return True
+
+    _request_mcu_version = request_mcu_version
 
     async def _flush_console_queue(self) -> None:
         serial = self.serial

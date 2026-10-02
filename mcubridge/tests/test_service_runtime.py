@@ -427,7 +427,7 @@ def test_runtime_request_mcu_version_and_system_version(
         mock_serial.send = AsyncMock(return_value=v_resp)
         inbound = pb.CloudQueuedPublish(topic_name=f"{cfg.topic_prefix}/system/version/get", payload=b"")
 
-        req_mcu_version: Callable[[pb.CloudQueuedPublish], Awaitable[bool]] = service._request_mcu_version
+        req_mcu_version: Callable[[pb.CloudQueuedPublish], Awaitable[bool]] = service.request_mcu_version
         res = await req_mcu_version(inbound)
         assert res is True
         assert state.mcu_version == (major, minor, patch_ver)

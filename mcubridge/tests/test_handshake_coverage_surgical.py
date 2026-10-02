@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
 from unittest.mock import AsyncMock
 
 import mcubridge.protocol.mcubridge_pb2 as pb
@@ -62,8 +61,7 @@ async def test_synchronize_attempt_send_frame_failure(mock_config: RuntimeConfig
     mock_send = AsyncMock(return_value=False)
     mgr = _make_handshake_manager(mock_config, mock_state, send_frame=mock_send)
 
-    sync_attempt: Callable[[], Awaitable[bool]] = mgr._synchronize_attempt
-    res = await sync_attempt()
+    res = await mgr.synchronize_attempt()
     assert res is False
 
 
@@ -73,8 +71,7 @@ async def test_synchronize_attempt_timeout_confirmation(mock_config: RuntimeConf
     mgr = _make_handshake_manager(mock_config, mock_state, send_frame=mock_send)
     mgr.timing.response_timeout_ms = 10
 
-    sync_attempt: Callable[[], Awaitable[bool]] = mgr._synchronize_attempt
-    res = await sync_attempt()
+    res = await mgr.synchronize_attempt()
     assert res is False
 
 
@@ -85,8 +82,7 @@ async def test_fetch_capabilities_send_failure_retries_exhausted(
     mock_send = AsyncMock(return_value=False)
     mgr = _make_handshake_manager(mock_config, mock_state, send_frame=mock_send)
 
-    fetch_caps: Callable[[], Awaitable[bool]] = mgr._fetch_capabilities
-    res = await fetch_caps()
+    res = await mgr.fetch_capabilities()
     assert res is False
 
 
@@ -100,8 +96,7 @@ async def test_fetch_capabilities_future_timeout_exception(
     mgr.retry_backoff_base = 0.0
     mgr.retry_backoff_max = 0.0
 
-    fetch_caps: Callable[[], Awaitable[bool]] = mgr._fetch_capabilities
-    res = await fetch_caps()
+    res = await mgr.fetch_capabilities()
     assert res is False
 
 
@@ -207,8 +202,7 @@ async def test_publish_handshake_event_cloud_enqueue(mock_config: RuntimeConfig,
     mock_enqueue = AsyncMock()
     mgr = _make_handshake_manager(mock_config, mock_state, enqueue_cloud=mock_enqueue)
 
-    publish_event: Callable[..., Awaitable[None]] = mgr._publish_handshake_event
-    await publish_event("sync_success")
+    await mgr.publish_handshake_event("sync_success")
     mock_enqueue.assert_called_once()
     published_msg = mock_enqueue.call_args[0][0]
     assert published_msg.topic_name == "br/system/bridge/handshake/value"
@@ -223,8 +217,7 @@ async def test_synchronize_attempt_sync_send_failure(mock_config: RuntimeConfig,
 
     mock_send = AsyncMock(side_effect=_send_reset_ok_sync_fail)
     mgr = _make_handshake_manager(mock_config, mock_state, send_frame=mock_send)
-    sync_attempt: Callable[[], Awaitable[bool]] = mgr._synchronize_attempt
-    res = await sync_attempt()
+    res = await mgr.synchronize_attempt()
     assert res is False
     assert mock_state.last_handshake_error == "link_sync_send_failed"
 
@@ -251,8 +244,7 @@ async def test_fetch_capabilities_zero_delay(mock_config: RuntimeConfig, mock_st
     mgr = _make_handshake_manager(mock_config, mock_state)
     mgr.capabilities_delay = 0.0
     mock_fetch = AsyncMock(return_value=True)
-    mgr._fetch_capabilities = mock_fetch
+    mgr.fetch_capabilities = mock_fetch
 
-    fetch_with_delay: Callable[[], Awaitable[None]] = mgr._fetch_capabilities_with_delay
-    await fetch_with_delay()
+    await mgr.fetch_capabilities_with_delay()
     mock_fetch.assert_awaited_once()

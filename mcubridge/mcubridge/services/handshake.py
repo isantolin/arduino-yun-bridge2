@@ -283,7 +283,8 @@ class SerialHandshakeManager:
         """[SIL-2] Deterministic FSM transition gate via python-statemachine."""
         old_state = self.fsm_state
         try:
-            send_event = cast(Callable[[str], Any], self.fsm.send)
+            send_fn = self.fsm.send
+            send_event = cast(Callable[[str], Any], send_fn)
             send_event(event.value)
         except TransitionNotAllowed:
             self._logger.warning(
@@ -326,7 +327,7 @@ class SerialHandshakeManager:
             self.transition(HandshakeEvent.FAILURE)
             return False
 
-    async def _synchronize_attempt(self) -> bool:
+    async def synchronize_attempt(self) -> bool:
 
         # Transition to RESETTING
         self.transition(HandshakeEvent.START_SYNC)
@@ -394,6 +395,8 @@ class SerialHandshakeManager:
             self.transition(HandshakeEvent.SYNC_CONFIRMED)
 
         return self.fsm_state == HandshakeState.SYNCHRONIZED
+
+    _synchronize_attempt = synchronize_attempt
 
     async def handle_link_sync_resp(self, seq_id: int, payload: bytes | ProtobufMessage) -> bool:
         expected = self._state.link_handshake_nonce
@@ -496,12 +499,14 @@ class SerialHandshakeManager:
         asyncio.create_task(self._fetch_capabilities_with_delay())
         return True
 
-    async def _fetch_capabilities_with_delay(self) -> None:
+    async def fetch_capabilities_with_delay(self) -> None:
         if self.capabilities_delay > 0:
             await asyncio.sleep(self.capabilities_delay)
-        await self._fetch_capabilities()
+        await self.fetch_capabilities()
 
-    async def _fetch_capabilities(self) -> bool:
+    _fetch_capabilities_with_delay = fetch_capabilities_with_delay
+
+    async def fetch_capabilities(self) -> bool:
         loop = asyncio.get_running_loop()
         cmd_id = Command.CMD_GET_CAPABILITIES.value
         self._logger.debug("Starting capabilities discovery", command_id=f"0x{cmd_id:02X}")
@@ -543,6 +548,8 @@ class SerialHandshakeManager:
         except tenacity.RetryError as exc:
             self._logger.error("Capabilities exchange retries exhausted", error=str(exc))
             return False
+
+    _fetch_capabilities = fetch_capabilities
 
     async def handle_capabilities_resp(self, seq_id: int, payload: bytes | ProtobufMessage) -> bool:
         if self._capabilities_future and not self._capabilities_future.done():
@@ -615,7 +622,7 @@ class SerialHandshakeManager:
             extra=extra,
         )
 
-    async def _wait_for_link_sync_confirmation(self, nonce: bytes) -> bool:
+    async def wait_for_link_sync_confirmation(self, nonce: bytes) -> bool:
         timeout = (self._timing.response_timeout_ms / 1000.0) * 2 if self._timing.response_timeout_ms > 0 else 5.0
         try:
             async with asyncio.timeout(timeout):
@@ -625,6 +632,8 @@ class SerialHandshakeManager:
         except TimeoutError as exc:
             self._logger.warning("Timed out waiting for MCU link sync confirmation", error=str(exc))
             return False
+
+    _wait_for_link_sync_confirmation = wait_for_link_sync_confirmation
 
     def clear_handshake_expectations(self) -> None:
         if self._state.link_handshake_nonce is not None:
@@ -638,7 +647,7 @@ class SerialHandshakeManager:
         self._state.link_expected_tag = None
         self._state.link_nonce_length = 0
 
-    async def _publish_handshake_event(
+    async def publish_handshake_event(
         self,
         event: str,
         *,
@@ -666,6 +675,8 @@ class SerialHandshakeManager:
             )
             return
         await self._enqueue_cloud(message)
+
+    _publish_handshake_event = publish_handshake_event
 
     async def _handle_handshake_success(self) -> None:
         # [SIL-2] Direct metrics recording (No Wrapper)

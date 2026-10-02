@@ -330,13 +330,12 @@ def test_protocol_frame_and_structures_edge_branches(tmp_path: Path) -> None:
     raw_frame = frame.build_frame(command_id=1, sequence_id=1, payload=unmapped_msg)
     assert len(raw_frame) > 0
 
-    # 3. structures._build_cached_ssl_context with valid cafile (line 179)
+    # 3. structures.build_cached_ssl_context with valid cafile (line 179)
     ca_file = tmp_path / "test_ca.crt"
     ca_file.write_text("dummy ca content")
-    build_ctx = structures._build_cached_ssl_context
     with pytest.raises(ssl.SSLError):
         # ssl.create_default_context with dummy ca will raise SSLError but covers line 179
-        build_ctx(str(ca_file), "", "", False)
+        structures.build_cached_ssl_context(str(ca_file), "", "", False)
 
     # 4. structures.save_tls_session_ticket on cache without _mem (line 213->215)
     mock_env_cache = MagicMock()

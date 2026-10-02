@@ -51,7 +51,7 @@ async def test_switch_local_baudrate_failure_raises(mock_config: RuntimeConfig, 
     )
     transport.serial = mock_serial
 
-    switch_local_baudrate: Callable[[int], None] = transport._switch_local_baudrate
+    switch_local_baudrate: Callable[[int], None] = transport.switch_local_baudrate
     with pytest.raises(RuntimeError, match="UART access failed"):
         switch_local_baudrate(115200)
 
@@ -63,7 +63,7 @@ async def test_toggle_dtr_exception_handled(mock_config: RuntimeConfig, mock_sta
     mock_serial.set_modem_pins.side_effect = serialx.SerialException("DTR failed")
     transport.serial = mock_serial
 
-    toggle_dtr: Callable[[], Awaitable[None]] = transport._toggle_dtr
+    toggle_dtr: Callable[[], Awaitable[None]] = transport.toggle_dtr
     await toggle_dtr()
     mock_serial.set_modem_pins.assert_awaited_once_with(dtr=False)
 
@@ -78,7 +78,7 @@ async def test_read_loop_limit_overrun(mock_config: RuntimeConfig, mock_state: R
     ]
     mock_serial.read.return_value = b""
 
-    read_loop: Callable[..., Awaitable[None]] = transport._read_loop
+    read_loop: Callable[..., Awaitable[None]] = transport.read_loop
     await read_loop(mock_serial)
     assert mock_state.serial_decode_errors == 1
 
@@ -89,7 +89,7 @@ async def test_read_loop_generic_exception(mock_config: RuntimeConfig, mock_stat
     mock_serial = AsyncMock()
     mock_serial.readuntil.side_effect = OSError("Read hardware error")
 
-    read_loop: Callable[..., Awaitable[None]] = transport._read_loop
+    read_loop: Callable[..., Awaitable[None]] = transport.read_loop
     await read_loop(mock_serial)
     mock_serial.readuntil.assert_awaited_once_with(protocol.FRAME_DELIMITER)
 
@@ -107,7 +107,7 @@ async def test_process_packet_baudrate_negotiation_response(
 
     raw = cobsr.encode(build_frame(Command.CMD_SET_BAUDRATE_RESP.value, 1))
 
-    process_packet: Callable[[bytes], Awaitable[None]] = transport._process_packet
+    process_packet: Callable[[bytes], Awaitable[None]] = transport.process_packet
     await process_packet(raw)
     assert fut.done()
     assert fut.result() is True
@@ -125,7 +125,7 @@ async def test_correlate_frame_ack_with_protobuf_payload(mock_config: RuntimeCon
 
     # ACK payload for CMD_FILE_WRITE
     ack = pb.AckPacket(command_id=Command.CMD_FILE_WRITE.value)
-    correlate_frame: Callable[..., None] = transport._correlate_frame
+    correlate_frame: Callable[..., None] = transport.correlate_frame
     correlate_frame(Status.ACK.value, ack)
 
     pending.mark_success.assert_called_once_with(ack)
@@ -141,7 +141,7 @@ async def test_correlate_frame_ack_with_invalid_bytes(mock_config: RuntimeConfig
     transport.current_command = pending
 
     # Corrupted ACK payload (invalid protobuf bytes)
-    correlate_frame: Callable[..., None] = transport._correlate_frame
+    correlate_frame: Callable[..., None] = transport.correlate_frame
     correlate_frame(Status.ACK.value, b"\xff\xff\xff\xff")
     assert pending.ack_received is True
     pending.mark_success.assert_called_once_with(b"\xff\xff\xff\xff")
@@ -155,7 +155,7 @@ async def test_stop_sets_event_and_closes_serial(mock_config: RuntimeConfig, moc
 
     await transport.stop()
 
-    stop_event = transport._stop_event
+    stop_event = transport.stop_event
     assert stop_event.is_set()
     mock_serial.close.assert_awaited_once()
 
@@ -185,7 +185,7 @@ async def test_check_baudrate_fallback_triggers(mock_config: RuntimeConfig, mock
     transport = SerialTransport(mock_config, mock_state, None)
     transport.consecutive_crc_errors = mock_config.serial_fallback_threshold - 1
 
-    check_fallback: Callable[[], Awaitable[None]] = transport._check_baudrate_fallback
+    check_fallback: Callable[[], Awaitable[None]] = transport.check_baudrate_fallback
     await check_fallback()
     assert transport.consecutive_crc_errors == 0
 
@@ -201,7 +201,7 @@ async def test_correlate_frame_failure_status(mock_config: RuntimeConfig, mock_s
     transport.current_command = pending
 
     # Response to request matching
-    correlate_frame: Callable[..., None] = transport._correlate_frame
+    correlate_frame: Callable[..., None] = transport.correlate_frame
     correlate_frame(Command.CMD_FILE_READ_RESP.value, b"content")
     assert pending.completion.is_set()
     assert pending.success is True
@@ -212,7 +212,7 @@ async def test_correlate_frame_failure_status(mock_config: RuntimeConfig, mock_s
 async def test_connect_without_runner_fn(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     transport = SerialTransport(mock_config, mock_state, None)
     mock_run = AsyncMock()
-    transport._connect_and_run = mock_run
+    transport.connect_and_run = mock_run
     await transport.connect()
     mock_run.assert_awaited_once()
 
@@ -230,10 +230,10 @@ async def test_logging_not_debug_branches(
     ok = await transport.send_raw(Command.CMD_GET_VERSION.value, b"")
     assert ok is True
 
-    # 2. _process_packet when logger is not debug
+    # 2. process_packet when logger is not debug
     payload = pb.VersionResponse(major=2, minor=8, patch=8)
     encoded = cobsr.encode(build_frame(Command.CMD_GET_VERSION_RESP.value, 1, payload.SerializeToString()))
-    await transport._process_packet(encoded)
+    await transport.process_packet(encoded)
     assert mock_state.metrics.serial_bytes_received.value > 0
 
 
@@ -253,7 +253,7 @@ async def test_process_packet_uninitialized_protobuf(
 
     mocker.patch("mcubridge.transport.serial.parse_frame", return_value=mocker_frame)
     initial_errors = mock_state.serial_decode_errors
-    await transport._process_packet(b"\x00" * 20)
+    await transport.process_packet(b"\x00" * 20)
     assert mock_state.serial_decode_errors == initial_errors + 1
 
 
@@ -280,7 +280,7 @@ async def test_connect_and_run_negotiation_failure(
             pass
 
     mocker.patch("serialx.AsyncSerial", _MockAsyncSerial)
-    mocker.patch.object(transport, "_toggle_dtr", new=AsyncMock())
-    mocker.patch.object(transport, "_negotiate_baudrate", new=AsyncMock(return_value=False))
+    mocker.patch.object(transport, "toggle_dtr", new=AsyncMock())
+    mocker.patch.object(transport, "negotiate_baudrate", new=AsyncMock(return_value=False))
     with pytest.raises(ConnectionError, match="Baudrate negotiation failed"):
-        await transport._connect_and_run()
+        await transport.connect_and_run()

@@ -78,7 +78,7 @@ def test_record_cloud_drop_increments_counter(runtime_config: RuntimeConfig) -> 
     try:
         service = BridgeService(runtime_config, state, AsyncMock())
         topic = "test/topic"
-        record_drop: Any = service._record_cloud_drop
+        record_drop: Any = service.record_cloud_drop
         record_drop(topic)
 
         assert state.cloud_dropped_messages == 1
@@ -173,7 +173,7 @@ def test_status_writer_error_handling(runtime_config: RuntimeConfig, mocker: Moc
         snapshot = state.build_status_snapshot()
         mock_file = mocker.patch("mcubridge.state.status.STATUS_FILE")
         mock_file.parent.mkdir = MagicMock(side_effect=OSError("Permission denied"))
-        write_status: Callable[..., Any] = status_mod._write_status_file
+        write_status: Callable[..., Any] = status_mod.write_status_file
         write_status(snapshot)
         assert mock_file.parent.mkdir.called
     finally:
@@ -244,7 +244,7 @@ def test_state_context_uncovered_branch_hardening(runtime_config: RuntimeConfig)
 
 def test_context_storage_subdir_creation_error(runtime_state: RuntimeState, mocker: MockerFixture) -> None:
     mocker.patch.object(Path, "mkdir", side_effect=OSError("Permission denied"))
-    get_storage_subdir: Any = runtime_state._get_storage_subdir
+    get_storage_subdir: Any = runtime_state.get_storage_subdir
     res = get_storage_subdir("test_dir")
     assert res is None
 

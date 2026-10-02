@@ -211,3 +211,7 @@ def _build_bridge_snapshot_message(
         message_expiry_interval=const.BRIDGE_SNAPSHOT_EXPIRY_SECONDS,
         user_properties=((const.PROP_KEY_BRIDGE_SNAPSHOT, flavor),),
     )
+
+
+emit_bridge_snapshot = _emit_bridge_snapshot
+

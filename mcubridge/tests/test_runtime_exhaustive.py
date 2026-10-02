@@ -152,7 +152,7 @@ async def test_enqueue_cloud_spool_and_flush(
         payload=b"spooled_data",
     )
     await service.enqueue_cloud(msg)
-    spool = service._cloud_spool
+    spool = service.cloud_spool
     assert spool is not None
     assert len(spool) >= 1
 

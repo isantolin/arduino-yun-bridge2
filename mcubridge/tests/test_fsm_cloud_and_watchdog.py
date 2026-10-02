@@ -108,7 +108,7 @@ async def test_runtime_mcu_file_read_fsm_success(
         assert pending is not None
         assert pending.fsm.transferring.is_active
 
-        on_resp_fn: Any = service._on_mcu_file_read_resp
+        on_resp_fn: Any = service.on_mcu_file_read_resp
         # Send chunk 1
         await on_resp_fn(1, pb.FileReadResponse(content=b"part1 "))
         assert pending.fsm.transferring.is_active
@@ -121,7 +121,7 @@ async def test_runtime_mcu_file_read_fsm_success(
         await on_resp_fn(3, pb.FileReadResponse(content=b""))
         assert pending.fsm.completed.is_active
 
-    handle_fn: Any = service._handle_file_mcu_read
+    handle_fn: Any = service.handle_file_mcu_read
     async with asyncio.TaskGroup() as tg:
         tg.create_task(_simulate_mcu_responses())
         tg.create_task(handle_fn("/mcu/test.bin", ctx))
@@ -141,7 +141,7 @@ async def test_runtime_mcu_file_read_fsm_dispatch_fail(
     service.serial = serial_mock
 
     ctx = pb.CloudQueuedPublish(topic_name="mcu/fs/read", payload=b"")
-    handle_fn: Any = service._handle_file_mcu_read
+    handle_fn: Any = service.handle_file_mcu_read
     await handle_fn("/mcu/missing.bin", ctx)
 
     assert service.pending_mcu_read is None
@@ -160,7 +160,7 @@ async def test_runtime_mcu_file_read_fsm_timeout(
     service.serial = serial_mock
 
     ctx = pb.CloudQueuedPublish(topic_name="mcu/fs/read", payload=b"")
-    handle_fn: Any = service._handle_file_mcu_read
+    handle_fn: Any = service.handle_file_mcu_read
     await handle_fn("/mcu/unresponsive.bin", ctx)
 
     assert service.pending_mcu_read is None

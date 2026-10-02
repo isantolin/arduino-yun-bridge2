@@ -163,7 +163,7 @@ async def test_publish_bridge_snapshots_noop_when_disabled(
 async def test_emit_bridge_snapshot_error_paths(runtime_state: RuntimeState, mocker: MockerFixture) -> None:
     import mcubridge.metrics
 
-    emit_fn = mcubridge.metrics._emit_bridge_snapshot
+    emit_fn = mcubridge.metrics.emit_bridge_snapshot
     mock_log = mocker.patch("mcubridge.metrics.logger.error")
     mock_critical = mocker.patch("mcubridge.metrics.logger.critical")
 
@@ -245,7 +245,7 @@ async def test_emit_bridge_snapshot_attribute_error(runtime_state: RuntimeState,
     enqueue = AsyncMock()
     bad_state = MagicMock(spec=RuntimeState)
     bad_state.build_bridge_snapshot.side_effect = AttributeError("Missing attr")
-    emit_snapshot: Callable[..., Awaitable[None]] = metrics_mod._emit_bridge_snapshot
+    emit_snapshot: Callable[..., Awaitable[None]] = metrics_mod.emit_bridge_snapshot
     await emit_snapshot(bad_state, enqueue, flavor="summary")
     assert enqueue.call_count == 0
 

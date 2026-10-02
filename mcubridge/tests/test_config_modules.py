@@ -176,7 +176,7 @@ def test_load_runtime_config_http3() -> None:
 
 
 def test_settings_factory_bypass_defaults() -> None:
-    factory_fn: Any = settings._runtime_config_factory
+    factory_fn: Any = settings.runtime_config_factory
     cfg = factory_fn(
         bypass_defaults=True,
         validate=False,

@@ -22,6 +22,7 @@ app = typer.Typer(
 )
 
 
+@app.command()
 def main() -> None:
     """Execute all automated library density and architectural rule checks."""
     from tools.audit.codebase_auditor import audit_arduino_sketches, audit_semgrep

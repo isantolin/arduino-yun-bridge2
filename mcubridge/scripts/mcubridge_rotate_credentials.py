@@ -51,7 +51,7 @@ def restart_service() -> None:
         subprocess.run(["/etc/init.d/mcubridge", "restart"], check=True, capture_output=True)
         logger.info("Bridge service restarted successfully")
     except subprocess.CalledProcessError as e:
-        logger.warning("Service restart failed", stderr=e.stderr.decode(), exit_code=e.returncode)
+        logger.warning("Service restart failed", stderr=e.stderr.decode("utf-8"), exit_code=e.returncode)
 
 
 @app.command()

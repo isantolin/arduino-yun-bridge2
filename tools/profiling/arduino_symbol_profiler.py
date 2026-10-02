@@ -29,7 +29,8 @@ def parse_memory_logs(log_dir: Path) -> str | None:
     for p in logs:
         try:
             txt = p.read_text(encoding="utf-8")
-        except OSError:
+        except OSError as err:
+            sys.stderr.write(f"[WARN] Failed to read log file {p}: {err}\n")
             continue
         fm = re.search(r"Sketch uses (\d+) bytes \(([^)]+)\).*Maximum is (\d+) bytes", txt)
         rm = re.search(r"Global variables use (\d+) bytes \(([^)]+)\).*Maximum is (\d+) bytes", txt)

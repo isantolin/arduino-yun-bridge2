@@ -18,6 +18,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -170,38 +171,34 @@ def create_apk_disk(apk_dir: Path, sys_apk_dir: Path, repo_root: Path) -> str:
     apk_path = Path(apk_disk)
     with apk_path.open("wb") as f:
         f.truncate(APK_DISK_MB * 1024 * 1024)
-    run(["mkfs.ext4", "-F", apk_disk])
 
-    mnt = Path("mnt_apks")
-    mnt.mkdir(exist_ok=True)
-
-    run(["sudo", "mount", apk_disk, str(mnt)])
-    try:
-        # bin/ subdirectory — 3_install.sh expects APKs here
-        bin_dir = mnt / "bin"
-        run(["sudo", "mkdir", "-p", str(bin_dir)])
+    with tempfile.TemporaryDirectory(prefix="mcubridge_apks_") as temp_stage:
+        stage_dir = Path(temp_stage)
+        bin_dir = stage_dir / "bin"
+        bin_dir.mkdir(parents=True, exist_ok=True)
 
         apk_files = list(apk_dir.glob("*.apk"))
         for apk in apk_files:
-            run(["sudo", "cp", str(apk), str(bin_dir / apk.name)])
+            shutil.copy2(apk, bin_dir / apk.name)
         log_info(f"[INFO] Copied {len(apk_files)} project APKs to disk bin/.")
 
         sys_apk_files = list(sys_apk_dir.glob("*.apk"))
         for apk in sys_apk_files:
-            run(["sudo", "cp", str(apk), str(bin_dir / apk.name)])
+            shutil.copy2(apk, bin_dir / apk.name)
         log_info(f"[INFO] Copied {len(sys_apk_files)} system APKs to disk bin/.")
 
         # Copy deploy scripts
         for script in DEPLOY_SCRIPTS:
             src = repo_root / script
             if src.exists():
-                run(["sudo", "cp", str(src), str(mnt / script)])
-                run(["sudo", "chmod", "+x", str(mnt / script)])
+                dst = stage_dir / script
+                shutil.copy2(src, dst)
+                dst.chmod(0o755)
                 log_info(f"[INFO] Copied {script} to disk.")
             else:
                 log_error(f"[WARN] {script} not found at {src}")
-    finally:
-        run(["sudo", "umount", str(mnt)])
+
+        run(["mkfs.ext4", "-F", "-d", str(stage_dir), apk_disk])
 
     return apk_disk
 

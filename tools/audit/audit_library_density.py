@@ -23,21 +23,9 @@ app = typer.Typer(
 )
 
 
-def audit_arduino_sketches() -> list[str]:
-    """Audit reference Arduino .ino sketches for bounded synchronization watchdog loop."""
-    sketches = sorted((ROOT / "mcubridge-library-arduino" / "examples").glob("*/*.ino"))
-    sync_pattern = re.compile(r"Bridge\.isSynchronized\s*\(\s*\)")
-    return [
-        f"[{p.relative_to(ROOT)}] Rule 26 Violation: Sketch lacks bounded 'Bridge.isSynchronized()' in setup()."
-        for p in sketches
-        if "Bridge.begin" in (txt := p.read_text(encoding="utf-8")) and not sync_pattern.search(txt)
-    ]
-
-
-@app.command()
 def main() -> None:
     """Execute all automated library density and architectural rule checks."""
-    from tools.audit.codebase_auditor import audit_semgrep
+    from tools.audit.codebase_auditor import audit_arduino_sketches, audit_semgrep
 
     all_errors = audit_semgrep() + audit_arduino_sketches()
     if all_errors:

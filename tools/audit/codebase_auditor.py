@@ -149,13 +149,29 @@ def audit_proto_integrity(proto_path: Path | None = None) -> list[str]:
     ]
 
 
+def audit_arduino_sketches() -> list[str]:
+    """Audit reference Arduino .ino sketches for bounded synchronization watchdog loop. [Rule 26]"""
+    sketches = sorted((ROOT / "mcubridge-library-arduino" / "examples").glob("*/*.ino"))
+    sync_pattern = re.compile(r"Bridge\.isSynchronized\s*\(\s*\)")
+    return [
+        f"[{p.relative_to(ROOT)}] Rule 26 Violation: Sketch lacks bounded 'Bridge.isSynchronized()' in setup()."
+        for p in sketches
+        if "Bridge.begin" in (txt := p.read_text(encoding="utf-8")) and not sync_pattern.search(txt)
+    ]
+
+
 app = typer.Typer(help="Audit codebase for SIL-2/MIL-SPEC violations and shims.", add_completion=False)
 
 
 @app.command()
 def main() -> None:
-    """Execute Semgrep, config, and protobuf compliance audits."""
-    all_findings = audit_semgrep() + audit_config_suppressions() + audit_proto_integrity()
+    """Execute Semgrep, config, protobuf, and sketch compliance audits."""
+    all_findings = (
+        audit_semgrep()
+        + audit_config_suppressions()
+        + audit_proto_integrity()
+        + audit_arduino_sketches()
+    )
 
     print("\n--- RESULTS ---")
     if not all_findings:

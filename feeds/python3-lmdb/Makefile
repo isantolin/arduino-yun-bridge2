@@ -1,11 +1,11 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=python3-lmdb
-PKG_VERSION:=2.3.0
+PKG_VERSION:=3.0.0
 PKG_RELEASE:=1
 
 PYPI_NAME:=lmdb
-PKG_HASH:=260f443640ee2da3cfd059a84258659319ff39ca912c16bf9748c324076b9d09
+PKG_HASH:=06dda0723545e14d56ac7dcd6f582d9922c2ed5e16f1c3f8d0e670a96ec2ee65
 
 PKG_MAINTAINER:=Ignacio Santolin <ignacio.santolin@gmail.com>
 PKG_LICENSE:=OLDAP-2.8

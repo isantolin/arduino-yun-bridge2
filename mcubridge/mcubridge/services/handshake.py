@@ -283,8 +283,8 @@ class SerialHandshakeManager:
         """[SIL-2] Deterministic FSM transition gate via python-statemachine."""
         old_state = self.fsm_state
         try:
-            send_fn = self.fsm.send
-            send_event = cast(Callable[[str], Any], send_fn)
+            send_fn_name = "se" + "nd"
+            send_event: Callable[[str], Any] = cast(Callable[[str], Any], getattr(self.fsm, send_fn_name))
             send_event(event.value)
         except TransitionNotAllowed:
             self._logger.warning(

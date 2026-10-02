@@ -49,7 +49,7 @@ def svc(mock_config: RuntimeConfig, mock_state: RuntimeState) -> tuple[BridgeSer
 async def test_unsupported_mcu_request_no_serial(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
     service, _state, _ = svc
     service.serial = None
-    unsupported_fn: Callable[[int, int], Awaitable[bool]] = service._unsupported_mcu_request
+    unsupported_fn: Callable[[int, int], Awaitable[bool]] = service.unsupported_mcu_request
     res = await unsupported_fn(1, 0xFF)
     assert res is False
 
@@ -58,7 +58,7 @@ async def test_unsupported_mcu_request_no_serial(svc: tuple[BridgeService, Runti
 async def test_unsupported_mcu_request_sends(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
     service, _state, serial = svc
     serial.send.return_value = True
-    unsupported_fn: Callable[[int, int], Awaitable[bool]] = service._unsupported_mcu_request
+    unsupported_fn: Callable[[int, int], Awaitable[bool]] = service.unsupported_mcu_request
     res = await unsupported_fn(1, 0xFF)
     assert res is True
     serial.send.assert_called_once()
@@ -69,7 +69,7 @@ async def test_unsupported_mcu_request_sends(svc: tuple[BridgeService, RuntimeSt
 async def test_on_mcu_mailbox_available_no_serial(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
     service, _state, _ = svc
     service.serial = None
-    on_avail_fn: Callable[..., Awaitable[bool]] = service._on_mcu_mailbox_available
+    on_avail_fn: Callable[..., Awaitable[bool]] = service.on_mcu_mailbox_available
     res = await on_avail_fn(1, None)
     assert res is False
 
@@ -79,7 +79,7 @@ async def test_on_mcu_mailbox_available_with_items(svc: tuple[BridgeService, Run
     service, state, serial = svc
     serial.send.return_value = True
     await state.mailbox_queue.append(b"item1")
-    on_avail_fn: Callable[..., Awaitable[bool]] = service._on_mcu_mailbox_available
+    on_avail_fn: Callable[..., Awaitable[bool]] = service.on_mcu_mailbox_available
     res = await on_avail_fn(1, None)
     assert res is True
     serial.send.assert_called_once()
@@ -92,7 +92,7 @@ async def test_on_mcu_mailbox_available_with_items(svc: tuple[BridgeService, Run
 async def test_on_mcu_mailbox_read_no_serial(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
     service, _state, _ = svc
     service.serial = None
-    on_read_fn: Callable[..., Awaitable[bool]] = service._on_mcu_mailbox_read
+    on_read_fn: Callable[..., Awaitable[bool]] = service.on_mcu_mailbox_read
     res = await on_read_fn(1, None)
     assert res is False
 
@@ -101,7 +101,7 @@ async def test_on_mcu_mailbox_read_no_serial(svc: tuple[BridgeService, RuntimeSt
 async def test_on_mcu_mailbox_read_empty_queue(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
     service, _state, serial = svc
     serial.send.return_value = True
-    on_read_fn: Callable[..., Awaitable[bool]] = service._on_mcu_mailbox_read
+    on_read_fn: Callable[..., Awaitable[bool]] = service.on_mcu_mailbox_read
     res = await on_read_fn(1, None)
     assert res is True
     serial.send.assert_called_once()
@@ -116,7 +116,7 @@ async def test_on_mcu_mailbox_read_with_content(svc: tuple[BridgeService, Runtim
     serial.send.return_value = True
     await state.mailbox_queue.append(b"data1")
     await state.mailbox_queue.append(b"data2")
-    on_read_fn: Callable[..., Awaitable[bool]] = service._on_mcu_mailbox_read
+    on_read_fn: Callable[..., Awaitable[bool]] = service.on_mcu_mailbox_read
     res = await on_read_fn(1, None)
     assert res is True
     serial.send.assert_called_once()
@@ -139,7 +139,7 @@ async def test_on_mcu_mailbox_processed(
         captured.append(msg)
 
     service.cloud_publisher = _cap
-    on_proc_fn: Callable[..., Awaitable[None]] = service._on_mcu_mailbox_processed
+    on_proc_fn: Callable[..., Awaitable[None]] = service.on_mcu_mailbox_processed
     await on_proc_fn(1, p)
     assert len(captured) == 1
     assert captured[0].topic_name == f"{state.cloud_topic_prefix}/mailbox/processed"
@@ -150,7 +150,7 @@ async def test_on_mcu_file_write_no_serial(svc: tuple[BridgeService, RuntimeStat
     service, _state, _ = svc
     service.serial = None
     p = pb.FileWrite(path="test.txt", data=b"abc")
-    on_write_fn: Callable[..., Awaitable[bool]] = service._on_mcu_file_write
+    on_write_fn: Callable[..., Awaitable[bool]] = service.on_mcu_file_write
     res = await on_write_fn(1, p)
     assert res is False
 
@@ -162,7 +162,7 @@ async def test_on_mcu_file_write_unsafe_path(svc: tuple[BridgeService, RuntimeSt
     service.config.file_system_root = "/tmp/fs"
     serial.send.return_value = True
     p = pb.FileWrite(path="../../../etc/passwd", data=b"evil")
-    on_write_fn: Callable[..., Awaitable[bool]] = service._on_mcu_file_write
+    on_write_fn: Callable[..., Awaitable[bool]] = service.on_mcu_file_write
     res = await on_write_fn(1, p)
     assert res is True
     serial.send.assert_called_once()
@@ -174,7 +174,7 @@ async def test_on_mcu_file_write_success(svc: tuple[BridgeService, RuntimeState,
     service, _state, serial = svc
     serial.send.return_value = True
     p = pb.FileWrite(path="output.txt", data=b"valid data")
-    on_write_fn: Callable[..., Awaitable[bool]] = service._on_mcu_file_write
+    on_write_fn: Callable[..., Awaitable[bool]] = service.on_mcu_file_write
     res = await on_write_fn(1, p)
     assert res is True
     serial.send.assert_called_once()
@@ -186,7 +186,7 @@ async def test_on_mcu_file_read_no_serial(svc: tuple[BridgeService, RuntimeState
     service, _state, serial = svc
     service.serial = None
     p = pb.FileRead(path="missing.txt")
-    on_read_fn: Callable[..., Awaitable[None]] = service._on_mcu_file_read
+    on_read_fn: Callable[..., Awaitable[None]] = service.on_mcu_file_read
     await on_read_fn(1, p)
     assert service.serial is None
     serial.send.assert_not_called()
@@ -197,7 +197,7 @@ async def test_on_mcu_file_read_missing_file(svc: tuple[BridgeService, RuntimeSt
     service, _state, serial = svc
     serial.send.return_value = True
     p = pb.FileRead(path="nonexistent.txt")
-    on_read_fn: Callable[..., Awaitable[None]] = service._on_mcu_file_read
+    on_read_fn: Callable[..., Awaitable[None]] = service.on_mcu_file_read
     await on_read_fn(1, p)
     serial.send.assert_called_once()
     assert serial.send.call_args[0][0] == Status.ERROR.value
@@ -209,7 +209,7 @@ async def test_on_mcu_file_read_existing_nonempty(svc: tuple[BridgeService, Runt
     serial.send.return_value = True
     await service.safe_file_write("exists.txt", b"chunk-payload")
     p = pb.FileRead(path="exists.txt")
-    on_read_fn: Callable[..., Awaitable[None]] = service._on_mcu_file_read
+    on_read_fn: Callable[..., Awaitable[None]] = service.on_mcu_file_read
     await on_read_fn(1, p)
     assert serial.send.call_count >= 1
     call1 = serial.send.call_args_list[0]
@@ -224,7 +224,7 @@ async def test_on_mcu_file_read_existing_empty(svc: tuple[BridgeService, Runtime
     serial.send.return_value = True
     await service.safe_file_write("empty.txt", b"")
     p = pb.FileRead(path="empty.txt")
-    on_read_fn: Callable[..., Awaitable[None]] = service._on_mcu_file_read
+    on_read_fn: Callable[..., Awaitable[None]] = service.on_mcu_file_read
     await on_read_fn(1, p)
     serial.send.assert_called_once()
     assert serial.send.call_args[0][0] == Command.CMD_FILE_READ_RESP.value
@@ -237,7 +237,7 @@ async def test_on_mcu_file_remove_no_serial(svc: tuple[BridgeService, RuntimeSta
     service, _state, _ = svc
     service.serial = None
     p = pb.FileRemove(path="missing.txt")
-    on_remove_fn: Callable[..., Awaitable[bool]] = service._on_mcu_file_remove
+    on_remove_fn: Callable[..., Awaitable[bool]] = service.on_mcu_file_remove
     res = await on_remove_fn(1, p)
     assert res is False
 
@@ -247,7 +247,7 @@ async def test_on_mcu_file_remove_missing(svc: tuple[BridgeService, RuntimeState
     service, _state, serial = svc
     serial.send.return_value = True
     p = pb.FileRemove(path="nonexistent.txt")
-    on_remove_fn: Callable[..., Awaitable[bool]] = service._on_mcu_file_remove
+    on_remove_fn: Callable[..., Awaitable[bool]] = service.on_mcu_file_remove
     res = await on_remove_fn(1, p)
     assert res is True
     serial.send.assert_called_once()
@@ -260,7 +260,7 @@ async def test_on_mcu_file_remove_existing(svc: tuple[BridgeService, RuntimeStat
     serial.send.return_value = True
     await service.safe_file_write("to_del.txt", b"bye")
     p = pb.FileRemove(path="to_del.txt")
-    on_remove_fn: Callable[..., Awaitable[bool]] = service._on_mcu_file_remove
+    on_remove_fn: Callable[..., Awaitable[bool]] = service.on_mcu_file_remove
     res = await on_remove_fn(1, p)
     assert res is True
     serial.send.assert_called_once()
@@ -271,7 +271,7 @@ async def test_on_mcu_file_remove_existing(svc: tuple[BridgeService, RuntimeStat
 async def test_on_mcu_file_read_resp_no_pending(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
     service, _state, _ = svc
     p = pb.FileReadResponse(content=b"orphan")
-    on_read_resp: Callable[..., Awaitable[bool]] = service._on_mcu_file_read_resp
+    on_read_resp: Callable[..., Awaitable[bool]] = service.on_mcu_file_read_resp
     res = await on_read_resp(1, p)
     assert res is False
 
@@ -283,7 +283,7 @@ async def test_on_mcu_file_read_resp_accumulates_chunks(svc: tuple[BridgeService
     pending = _PendingMcuRead(future=fut, chunks=[])
     service.pending_mcu_read = pending
     p = pb.FileReadResponse(content=b"chunk1")
-    on_read_resp: Callable[..., Awaitable[bool]] = service._on_mcu_file_read_resp
+    on_read_resp: Callable[..., Awaitable[bool]] = service.on_mcu_file_read_resp
     res = await on_read_resp(1, p)
     assert res is True
     assert not fut.done()
@@ -297,7 +297,7 @@ async def test_on_mcu_file_read_resp_completes_future(svc: tuple[BridgeService, 
     pending = _PendingMcuRead(future=fut, chunks=[b"chunk1"])
     service.pending_mcu_read = pending
     p = pb.FileReadResponse(content=b"")  # EOF
-    on_read_resp: Callable[..., Awaitable[bool]] = service._on_mcu_file_read_resp
+    on_read_resp: Callable[..., Awaitable[bool]] = service.on_mcu_file_read_resp
     res = await on_read_resp(1, p)
     assert res is True
     assert fut.done()
@@ -312,7 +312,7 @@ async def test_on_mcu_file_read_resp_future_already_done(svc: tuple[BridgeServic
     pending = _PendingMcuRead(future=fut, chunks=[b"chunk1"])
     service.pending_mcu_read = pending
     p = pb.FileReadResponse(content=b"")  # EOF
-    on_read_resp: Callable[..., Awaitable[bool]] = service._on_mcu_file_read_resp
+    on_read_resp: Callable[..., Awaitable[bool]] = service.on_mcu_file_read_resp
     res = await on_read_resp(1, p)
     assert res is True
     assert fut.result() == b"prior"
@@ -322,7 +322,7 @@ async def test_on_mcu_file_read_resp_future_already_done(svc: tuple[BridgeServic
 async def test_on_mcu_datastore_put_cache_none(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
     service, state, _ = svc
     state.datastore_cache = None
-    on_put: Callable[..., Awaitable[bool]] = service._on_mcu_datastore_put
+    on_put: Callable[..., Awaitable[bool]] = service.on_mcu_datastore_put
     p = pb.DatastorePut(key="mode", value=b"auto")
     res = await on_put(1, p)
     assert res is True
@@ -336,7 +336,7 @@ async def test_on_mcu_ack_valid(
     configure_logging(debug=True, console=True)
     p = pb.AckPacket(command_id=0x01)
     caplog.set_level(logging.DEBUG)
-    on_ack: Callable[..., Awaitable[None]] = service._on_mcu_ack
+    on_ack: Callable[..., Awaitable[None]] = service.on_mcu_ack
     await on_ack(1, p)
     assert "MCU ACK received" in caplog.text
 
@@ -349,7 +349,7 @@ async def test_on_mcu_ack_raw_bytes(
     configure_logging(debug=True, console=True)
     valid_bytes = pb.AckPacket(command_id=0x02).SerializeToString()
     caplog.set_level(logging.DEBUG)
-    on_ack: Callable[..., Awaitable[None]] = service._on_mcu_ack
+    on_ack: Callable[..., Awaitable[None]] = service.on_mcu_ack
     await on_ack(1, valid_bytes)
     assert "MCU ACK received" in caplog.text
 
@@ -360,7 +360,7 @@ async def test_on_mcu_ack_corrupt_bytes(
 ) -> None:
     service, _state, _serial = svc
     caplog.set_level(logging.ERROR)
-    on_ack: Callable[..., Awaitable[None]] = service._on_mcu_ack
+    on_ack: Callable[..., Awaitable[None]] = service.on_mcu_ack
     await on_ack(1, b"\xff\xff\xff")
     assert "Failed to decode MCU ACK packet" in caplog.text
 
@@ -376,7 +376,7 @@ async def test_handle_mcu_status_ok_no_payload(
         captured.append(msg)
 
     service.cloud_publisher = _cap
-    handle_status: Callable[..., Awaitable[None]] = service._handle_mcu_status
+    handle_status: Callable[..., Awaitable[None]] = service.handle_mcu_status
     await handle_status(Status.OK, 1, b"")
     assert len(captured) == 1
     assert captured[0].topic_name == f"{state.cloud_topic_prefix}/system/status"
@@ -396,7 +396,7 @@ async def test_handle_mcu_status_error_with_generic_response(
 
     service.cloud_publisher = _cap
     p = pb.GenericResponse(status="error", message="hardware fault")
-    handle_status: Callable[..., Awaitable[None]] = service._handle_mcu_status
+    handle_status: Callable[..., Awaitable[None]] = service.handle_mcu_status
     await handle_status(Status.ERROR, 1, p)
     assert len(captured) == 1
     assert captured[0].topic_name == f"{state.cloud_topic_prefix}/system/status"
@@ -416,7 +416,7 @@ async def test_handle_mcu_status_error_with_protobuf_message(
 
     service.cloud_publisher = _cap
     p = pb.AckPacket(command_id=0x05)
-    handle_status: Callable[..., Awaitable[None]] = service._handle_mcu_status
+    handle_status: Callable[..., Awaitable[None]] = service.handle_mcu_status
     await handle_status(Status.OK, 1, p)
     assert len(captured) == 1
     assert captured[0].topic_name == f"{state.cloud_topic_prefix}/system/status"
@@ -436,7 +436,7 @@ async def test_handle_mcu_status_with_hex_payload(
 
     service.cloud_publisher = _cap
     raw = b"\xca\xfe\xba\xbe"
-    handle_status: Callable[..., Awaitable[None]] = service._handle_mcu_status
+    handle_status: Callable[..., Awaitable[None]] = service.handle_mcu_status
     await handle_status(Status.OK, 1, raw)
     assert len(captured) == 1
     assert captured[0].topic_name == f"{state.cloud_topic_prefix}/system/status"
@@ -461,7 +461,7 @@ async def test_on_mcu_digital_read_resp(
     state.pending_digital_reads.append(req)
 
     p = pb.DigitalReadResponse(value=1)
-    on_digital_read: Callable[..., Awaitable[None]] = service._on_mcu_digital_read_resp
+    on_digital_read: Callable[..., Awaitable[None]] = service.on_mcu_digital_read_resp
     await on_digital_read(1, p)
     assert len(captured) == 1
     assert captured[0].topic_name == f"{state.cloud_topic_prefix}/d/13/value"
@@ -485,7 +485,7 @@ async def test_on_mcu_analog_read_resp(
     state.pending_analog_reads.append(req)
 
     p = pb.AnalogReadResponse(value=1023)
-    on_analog_read: Callable[..., Awaitable[None]] = service._on_mcu_analog_read_resp
+    on_analog_read: Callable[..., Awaitable[None]] = service.on_mcu_analog_read_resp
     await on_analog_read(1, p)
     assert len(captured) == 1
     assert captured[0].topic_name == f"{state.cloud_topic_prefix}/a/2/value"
@@ -502,7 +502,7 @@ async def test_on_mcu_spi_resp(svc: tuple[BridgeService, RuntimeState, AsyncMock
 
     service.cloud_publisher = _cap
     p = pb.SpiTransferResponse(data=b"\xde\xad")
-    on_spi_resp: Callable[..., Awaitable[None]] = service._on_mcu_spi_transfer_resp
+    on_spi_resp: Callable[..., Awaitable[None]] = service.on_mcu_spi_transfer_resp
     await on_spi_resp(1, p)
     assert len(captured) == 1
     assert captured[0].topic_name == f"{state.cloud_topic_prefix}/spi/transfer/resp"
@@ -514,7 +514,7 @@ async def test_on_mcu_process_run_async_no_serial(svc: tuple[BridgeService, Runt
     service, _state, _ = svc
     service.serial = None
     p = pb.ProcessRunAsync(command="echo hi")
-    on_run_async: Callable[..., Awaitable[bool]] = service._on_mcu_process_run_async
+    on_run_async: Callable[..., Awaitable[bool]] = service.on_mcu_process_run_async
     res = await on_run_async(1, p)
     assert res is False
 
@@ -524,7 +524,7 @@ async def test_on_mcu_process_run_async_disallowed(svc: tuple[BridgeService, Run
     service, _state, serial = svc
     serial.send.return_value = True
     p = pb.ProcessRunAsync(command="rm -rf /")
-    on_run_async: Callable[..., Awaitable[bool]] = service._on_mcu_process_run_async
+    on_run_async: Callable[..., Awaitable[bool]] = service.on_mcu_process_run_async
     res = await on_run_async(1, p)
     assert res is False
     serial.send.assert_called_once()
@@ -538,7 +538,7 @@ async def test_on_mcu_process_run_async_allowed(
     service, _state, serial = svc
     serial.send.return_value = True
     p = pb.ProcessRunAsync(command="echo hello")
-    on_run_async: Callable[..., Awaitable[bool]] = service._on_mcu_process_run_async
+    on_run_async: Callable[..., Awaitable[bool]] = service.on_mcu_process_run_async
     result = await on_run_async(1, p)
     assert result is True
     args = serial.send.call_args[0]
@@ -556,7 +556,7 @@ async def test_on_mcu_process_run_async_pid_zero(
     service, _state, serial = svc
     serial.send.return_value = True
     p = pb.ProcessRunAsync(command="disallowed_command_xyz_12345")
-    on_run_async: Callable[..., Awaitable[bool]] = service._on_mcu_process_run_async
+    on_run_async: Callable[..., Awaitable[bool]] = service.on_mcu_process_run_async
     result = await on_run_async(1, p)
     assert result is False
 
@@ -566,7 +566,7 @@ async def test_on_mcu_process_poll_no_serial(svc: tuple[BridgeService, RuntimeSt
     service, _state, _ = svc
     service.serial = None
     p = pb.ProcessPoll(pid=10)
-    on_poll: Callable[..., Awaitable[bool]] = service._on_mcu_process_poll
+    on_poll: Callable[..., Awaitable[bool]] = service.on_mcu_process_poll
     res = await on_poll(1, p)
     assert res is False
 
@@ -580,7 +580,7 @@ async def test_on_mcu_process_poll_with_result(
     pid = await service.run_process("echo hello")
     assert pid > 0
     p = pb.ProcessPoll(pid=pid)
-    on_poll: Callable[..., Awaitable[bool]] = service._on_mcu_process_poll
+    on_poll: Callable[..., Awaitable[bool]] = service.on_mcu_process_poll
     result = await on_poll(1, p)
     assert result is True
     args = serial.send.call_args[0]

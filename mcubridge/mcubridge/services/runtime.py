@@ -1895,9 +1895,3 @@ class BridgeService:
     on_mcu_pin_update_event = _on_mcu_pin_update_event
     record_cloud_drop = _record_cloud_drop
     emit_bridge_snapshot = _emit_bridge_snapshot
-
-    @property
-    def pending_mcu_read(self) -> Any:
-        """Return the active pending MCU file read task/future."""
-        return self._pending_mcu_read
-

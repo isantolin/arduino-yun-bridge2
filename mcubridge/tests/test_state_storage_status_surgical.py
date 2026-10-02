@@ -7,7 +7,6 @@ import os
 import time
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
 from unittest.mock import MagicMock
 
 import anyio.to_thread

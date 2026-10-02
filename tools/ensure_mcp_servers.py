@@ -66,7 +66,7 @@ def _start_gateway_if_needed() -> None:
 
     print("  -> Starting McuBridge Gateway on port 8443 in background...")
     gateway_script = REPO_ROOT / "mcubridge-gateway" / "gateway.py"
-    with open(GATEWAY_LOG_FILE, "a", encoding="utf-8") as log_f:
+    with Path(GATEWAY_LOG_FILE).open("a", encoding="utf-8") as log_f:
         proc = subprocess.Popen(
             [sys.executable, str(gateway_script), "--no-tls", "--port", "8443"],
             stdout=log_f,
@@ -118,7 +118,7 @@ def _check_semgrep() -> Path:
             check=False,
         )
     except subprocess.TimeoutExpired:
-        pass
+        print("  -> Semgrep MCP handshake timed out as expected for persistent stdio server.")
     print("  ✅ Semgrep MCP stdio verified.")
     return Path(semgrep_bin)
 
@@ -156,7 +156,14 @@ def _check_serial_mcp() -> Path:
             if clone_dir.exists():
                 shutil.rmtree(clone_dir)
             subprocess.run(
-                ["git", "clone", "--depth", "1", "https://github.com/adancurusul/serial-mcp-server.git", str(clone_dir)],
+                [
+                    "git",
+                    "clone",
+                    "--depth",
+                    "1",
+                    "https://github.com/adancurusul/serial-mcp-server.git",
+                    str(clone_dir),
+                ],
                 check=True,
             )
             subprocess.run([cargo_bin, "build", "--release"], cwd=str(clone_dir), check=True)

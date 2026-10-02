@@ -60,7 +60,11 @@ def test_sync_mcp_configs(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> No
             if cfg.exists():
                 try:
                     raw_data = json.loads(cfg.read_text(encoding="utf-8"))
-                    if isinstance(raw_data, dict) and "mcpServers" in raw_data and isinstance(raw_data["mcpServers"], dict):
+                    if (
+                        isinstance(raw_data, dict)
+                        and "mcpServers" in raw_data
+                        and isinstance(raw_data["mcpServers"], dict)
+                    ):
                         data = raw_data
                 except (json.JSONDecodeError, OSError):
                     data = {"mcpServers": {}}

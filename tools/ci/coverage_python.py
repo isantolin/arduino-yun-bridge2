@@ -114,6 +114,9 @@ def main(
 
     print(f"Required pure branch test coverage of {min_branch}% reached. Pure branch coverage: {summary_str}")
 
+    if not emit_json and json_path.exists():
+        json_path.unlink()
+
 
 if __name__ == "__main__":
     app()

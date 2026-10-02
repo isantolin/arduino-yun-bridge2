@@ -26,6 +26,8 @@ aio-mqtt-master/
 bin/
 build/
 openwrt-build/
+rpmbuild/
+mcubridge-gateway/rpmbuild/
 *.ipk
 *.o
 *.so

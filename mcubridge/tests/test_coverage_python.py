@@ -69,9 +69,7 @@ def test_coverage_python_pytest_failure(tmp_path: Path, monkeypatch: pytest.Monk
     assert exc_info.value.code == 2
 
 
-def test_coverage_python_branch_coverage_under_threshold(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_coverage_python_branch_coverage_under_threshold(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     output_dir = tmp_path / "coverage"
     output_dir.mkdir(parents=True, exist_ok=True)
 

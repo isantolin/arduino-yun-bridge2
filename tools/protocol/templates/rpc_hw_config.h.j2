@@ -7,6 +7,7 @@
 #ifndef RPC_HW_CONFIG_H
 #define RPC_HW_CONFIG_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 namespace bridge::config {
@@ -61,6 +62,10 @@ inline constexpr uint16_t RPC_SHA256_DIGEST_SIZE = {{ hardware.sha256_digest_siz
 inline constexpr uint16_t RPC_SHA256_KAT_BUFFER_SIZE = {{ hardware.sha256_kat_buffer_size }}U;
 inline constexpr uint16_t RPC_HKDF_HANDSHAKE_KEY_LENGTH = {{ hardware.hkdf_handshake_key_length }}U;
 inline constexpr uint16_t RPC_HKDF_HANDSHAKE_FULL_TAG_SIZE = {{ hardware.hkdf_handshake_full_tag_size }}U;
+
+// Static bounds for safety pins and pin subscriptions
+inline constexpr size_t MAX_SAFETY_PINS = {{ hardware.max_safety_pins }}U;
+inline constexpr size_t MAX_PIN_SUBSCRIPTIONS = {{ hardware.max_pin_subscriptions }}U;
 
 } // namespace bridge::config
 

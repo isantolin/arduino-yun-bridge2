@@ -17,9 +17,9 @@ start_service() {
     local watchdog_enabled="${MCUBRIDGE_DEFAULT_WATCHDOG_ENABLED:-0}"
     local watchdog_interval="${MCUBRIDGE_DEFAULT_WATCHDOG_INTERVAL:-5.0}"
     local allow_non_tmp_paths="${MCUBRIDGE_DEFAULT_ALLOW_NON_TMP_PATHS:-0}"
-    local respawn_threshold="3600"
-    local respawn_timeout="5"
-    local respawn_retry="0"
+    local respawn_threshold="${MCUBRIDGE_DEFAULT_RESPAWN_THRESHOLD:-3600}"
+    local respawn_timeout="${MCUBRIDGE_DEFAULT_RESPAWN_TIMEOUT:-5}"
+    local respawn_retry="${MCUBRIDGE_DEFAULT_RESPAWN_RETRY:-0}"
 
     if command -v uci >/dev/null 2>&1; then
         spool_dir="$(uci -q get mcubridge.general.cloud_spool_dir || echo "$spool_dir")"

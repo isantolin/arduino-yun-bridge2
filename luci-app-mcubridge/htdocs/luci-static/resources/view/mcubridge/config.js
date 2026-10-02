@@ -4,7 +4,7 @@
 'require uci';
 
 return view.extend({
-	render: function() {
+	render: function () {
 		var m, s, o;
 
 		m = new form.Map('mcubridge', _('McuBridge Configuration'),
@@ -27,7 +27,7 @@ return view.extend({
 		o.rmempty = false;
 
 		o = s.option(form.ListValue, 'serial_baud', _('Serial Baud Rate'));
-		['2400', '4800', '9600', '19200', '38400', '57600', '115200', '230400', '460800', '500000', '921600', '1000000'].forEach(function(b) {
+		['2400', '4800', '9600', '19200', '38400', '57600', '115200', '230400', '460800', '500000', '921600', '1000000'].forEach(function (b) {
 			o.value(b);
 		});
 		o.default = '115200';
@@ -35,7 +35,7 @@ return view.extend({
 
 		o = s.option(form.ListValue, 'serial_safe_baud', _('Safe Serial Baud Rate'),
 			_('Initial baudrate for negotiation. Use 115200 for safety.'));
-		['2400', '4800', '9600', '19200', '38400', '57600', '115200', '230400', '460800', '500000', '921600', '1000000'].forEach(function(b) {
+		['2400', '4800', '9600', '19200', '38400', '57600', '115200', '230400', '460800', '500000', '921600', '1000000'].forEach(function (b) {
 			o.value(b);
 		});
 		o.default = '115200';
@@ -72,7 +72,7 @@ return view.extend({
 		o.placeholder = '/etc/ssl/certs/ca-certificates.crt';
 		o.depends('cloud_tls', '1');
 		o.rmempty = true;
-		o.validate = function(section_id, value) {
+		o.validate = function (section_id, value) {
 			if (!value || value === '') return true;
 			if (!value.startsWith('/')) return _('CA file path must be absolute.');
 			return true;
@@ -94,7 +94,7 @@ return view.extend({
 			_('Base prefix used for messages (for example br/d/<pin>).'));
 		o.placeholder = 'br';
 		o.rmempty = false;
-		o.validate = function(section_id, value) {
+		o.validate = function (section_id, value) {
 			if (!value || value === '') return _('Topic prefix cannot be empty.');
 			if (/[#+]/.test(value)) return _('Topic prefix cannot contain wildcards.');
 			return true;
@@ -104,7 +104,7 @@ return view.extend({
 			_('Directory used to spool messages when the Cloud Gateway is unavailable. Keep this on /tmp (tmpfs) or an external mount to avoid Flash wear.'));
 		o.placeholder = '/tmp/mcubridge/spool';
 		o.rmempty = false;
-		o.validate = function(section_id, value) {
+		o.validate = function (section_id, value) {
 			if (!value || value === '') return _('Spool directory cannot be empty.');
 			if (!value.startsWith('/')) return _('Spool directory must be an absolute path.');
 			if (value.startsWith('/tmp') || value.startsWith('/run') || value.startsWith('/var/run') || value.startsWith('/mnt')) return true;
@@ -146,7 +146,7 @@ return view.extend({
 			['cloud_allow_analog_read', _('Allow analog read'), _('Allow reads via br/a/<pin>/read.')]
 		];
 
-		cloud_acl_options.forEach(function(opt) {
+		cloud_acl_options.forEach(function (opt) {
 			o = s.option(form.Flag, opt[0], opt[1], opt[2]);
 			o.rmempty = false;
 			o.default = '1';

@@ -36,7 +36,7 @@ from grpclib.server import Server, Stream
 from mcubridge.config.logging import configure_logging
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol.mcubridge_grpc import CloudBridgeBase, LocalBridgeBase
-from mcubridge.protocol.protocol import DEFAULT_CLOUD_PORT
+from mcubridge.protocol.protocol import DEFAULT_CLOUD_PORT, PROTOCOL_VERSION
 from statemachine import State, StateMachine
 
 logger = structlog.get_logger("mcubridge.gateway")
@@ -307,7 +307,7 @@ async def _handle_ping(
     envelope: pb.CloudEnvelope,
 ) -> None:
     pong = pb.CloudEnvelope(
-        protocol_version=2,
+        protocol_version=PROTOCOL_VERSION,
         device_id="CLOUD_GW",
         sequence_id=envelope.sequence_id,
         pong=pb.KeepalivePong(roundtrip_ms=0),
@@ -511,7 +511,7 @@ class CloudBridgeService(CloudBridgeBase):
 
             try:
                 async for envelope in stream:
-                    if not envelope.IsInitialized() or envelope.protocol_version != 2:
+                    if not envelope.IsInitialized() or envelope.protocol_version != PROTOCOL_VERSION:
                         logger.warning("Invalid cloud envelope")
                         continue
 
@@ -855,7 +855,7 @@ class ProtobufGateway:
         seq = self._sequence_id
 
         req_envelope = pb.CloudEnvelope(
-            protocol_version=2,
+            protocol_version=PROTOCOL_VERSION,
             device_id="CLOUD_GW",
             sequence_id=seq,
             timestamp_utc=int(time.time()),

@@ -31,7 +31,7 @@ from hypothesis import strategies as st
 import hypothesis.stateful as h_stateful
 from hypothesis.stateful import RuleBasedStateMachine, invariant, rule
 from mcubridge.protocol import mcubridge_pb2 as pb
-from mcubridge.protocol.protocol import DEFAULT_CLOUD_PORT
+from mcubridge.protocol.protocol import DEFAULT_CLOUD_PORT, PROTOCOL_VERSION
 from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
@@ -60,7 +60,7 @@ async def test_session_ping_pong(cloud_service: CloudBridgeService) -> None:
     mock_stream.peer.cert.return_value = None
 
     ping_envelope = pb.CloudEnvelope(
-        protocol_version=2,
+        protocol_version=PROTOCOL_VERSION,
         device_id="DEV_001",
         sequence_id=10,
         ping=pb.KeepalivePing(interval_ms=1000),
@@ -95,7 +95,7 @@ async def test_session_client_cert_common_name(cloud_service: CloudBridgeService
     }
 
     async def async_iter():
-        yield pb.CloudEnvelope(protocol_version=2, telemetry=pb.TelemetryReport(daemon_metrics_blob=b"data"))
+        yield pb.CloudEnvelope(protocol_version=PROTOCOL_VERSION, telemetry=pb.TelemetryReport(daemon_metrics_blob=b"data"))
 
     def _aiter(self: object):
         return async_iter()
@@ -114,11 +114,11 @@ async def test_session_event_and_command_response(cloud_service: CloudBridgeServ
     mock_stream.peer.cert.return_value = None
 
     event_envelope = pb.CloudEnvelope(
-        protocol_version=2,
+        protocol_version=PROTOCOL_VERSION,
         event=pb.EventNotification(event_type="boot", severity="info", description="MCU reset"),
     )
     cmd_resp_envelope = pb.CloudEnvelope(
-        protocol_version=2,
+        protocol_version=PROTOCOL_VERSION,
         command_response=pb.CommandResponse(status_code=200, error_message="", payload=b""),
     )
 
@@ -175,7 +175,7 @@ async def test_session_unhandled_and_oserror(cloud_service: CloudBridgeService) 
     mock_stream.peer.cert.return_value = None
 
     async def async_iter():
-        yield pb.CloudEnvelope(protocol_version=2)
+        yield pb.CloudEnvelope(protocol_version=PROTOCOL_VERSION)
         raise OSError("Connection reset by peer")
 
     def _aiter(self: object):
@@ -384,7 +384,7 @@ async def test_gateway_payload_dispatch_empty_or_unhandled(cloud_service: CloudB
     mock_stream.peer.cert.return_value = None
 
     empty_envelope = pb.CloudEnvelope(
-        protocol_version=2,
+        protocol_version=PROTOCOL_VERSION,
         device_id="DEV_EMPTY",
         sequence_id=99,
     )
@@ -497,13 +497,13 @@ async def test_fleet_metrics_and_telemetry_flow(cloud_service: CloudBridgeServic
         watchdog_enabled=True,
     )
     telemetry_envelope = pb.CloudEnvelope(
-        protocol_version=2,
+        protocol_version=PROTOCOL_VERSION,
         device_id="test-yun-01",
         sequence_id=1,
         telemetry=pb.TelemetryReport(daemon_metrics_blob=metrics.SerializeToString()),
     )
     event_envelope = pb.CloudEnvelope(
-        protocol_version=2,
+        protocol_version=PROTOCOL_VERSION,
         device_id="test-yun-01",
         sequence_id=2,
         event=pb.EventNotification(event_type="alarm", severity="warning", description="temp high"),
@@ -569,7 +569,7 @@ async def test_tsdb_sink_async_post_mocked(mocker: MockerFixture) -> None:
     sink = TSDBSink(endpoint_url="http://localhost:8428/write")
     metrics = pb.DaemonMetrics(cloud_queue_depth=1)
     envelope = pb.CloudEnvelope(
-        protocol_version=2,
+        protocol_version=PROTOCOL_VERSION,
         telemetry=pb.TelemetryReport(daemon_metrics_blob=metrics.SerializeToString()),
     )
 
@@ -597,7 +597,7 @@ async def test_send_command_success_and_correlation(mock_gateway: ProtobufGatewa
         key = list(mock_gateway.pending_commands.keys())[0]
         seq = key[1]
         resp_envelope = pb.CloudEnvelope(
-            protocol_version=2,
+            protocol_version=PROTOCOL_VERSION,
             device_id="device-test",
             sequence_id=seq,
             command_response=pb.CommandResponse(status_code=200, payload=b"OK"),
@@ -708,7 +708,7 @@ async def test_handle_telemetry_edge_paths(mock_gateway: ProtobufGateway, mocker
     )
     init_val = raw_metric or 0.0
     envelope_empty = pb.CloudEnvelope(
-        protocol_version=2,
+        protocol_version=PROTOCOL_VERSION,
         device_id="edge-1",
         telemetry=pb.TelemetryReport(daemon_metrics_blob=b""),
     )
@@ -720,7 +720,7 @@ async def test_handle_telemetry_edge_paths(mock_gateway: ProtobufGateway, mocker
 
     # 2. Corrupted metrics blob
     envelope_corrupt = pb.CloudEnvelope(
-        protocol_version=2,
+        protocol_version=PROTOCOL_VERSION,
         device_id="edge-1",
         telemetry=pb.TelemetryReport(daemon_metrics_blob=b"\xff\xff\xff"),
     )
@@ -812,7 +812,7 @@ async def test_handle_telemetry_full_metrics_dimensions(mock_gateway: ProtobufGa
     )
 
     envelope = pb.CloudEnvelope(
-        protocol_version=2,
+        protocol_version=PROTOCOL_VERSION,
         device_id="edge-full",
         telemetry=pb.TelemetryReport(daemon_metrics_blob=metrics.SerializeToString()),
     )

@@ -1102,7 +1102,7 @@ async def test_runtime_cloud_session_non_command_envelope(
     svc = mock_bridge_service
 
     event_env = pb.CloudEnvelope(
-        protocol_version=2,
+        protocol_version=protocol.PROTOCOL_VERSION,
         event=pb.EventNotification(event_type="custom", severity="info", description="test"),
     )
 
@@ -1190,19 +1190,19 @@ async def test_runtime_cloud_session_rpc_commands_and_errors(
 ) -> None:
     svc = mock_bridge_service
 
-    pong_env = pb.CloudEnvelope(protocol_version=2, pong=pb.KeepalivePong())
+    pong_env = pb.CloudEnvelope(protocol_version=protocol.PROTOCOL_VERSION, pong=pb.KeepalivePong())
     cmd_ok = pb.CloudEnvelope(
-        protocol_version=2,
+        protocol_version=protocol.PROTOCOL_VERSION,
         sequence_id=1,
         command_request=pb.CommandRequest(command_path="rpc/GetVersion", payload=b""),
     )
     cmd_invalid = pb.CloudEnvelope(
-        protocol_version=2,
+        protocol_version=protocol.PROTOCOL_VERSION,
         sequence_id=2,
         command_request=pb.CommandRequest(command_path="rpc/UnknownMethod", payload=b"err"),
     )
     cmd_os_err = pb.CloudEnvelope(
-        protocol_version=2,
+        protocol_version=protocol.PROTOCOL_VERSION,
         sequence_id=3,
         command_request=pb.CommandRequest(
             command_path="rpc/SetPinMode",

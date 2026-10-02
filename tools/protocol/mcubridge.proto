@@ -493,6 +493,8 @@ option (rpc.pb.hardware) = {
   sha256_kat_buffer_size: 64
   hkdf_handshake_key_length: 32
   hkdf_handshake_full_tag_size: 32
+  max_safety_pins: 8
+  max_pin_subscriptions: 8
 };
 option (rpc.pb.status_reasons) = {
   invalid_path: "invalid_path"
@@ -1020,6 +1022,18 @@ message Hardware {
   ];
   uint32 hkdf_handshake_key_length = 40;
   uint32 hkdf_handshake_full_tag_size = 41;
+  uint32 max_safety_pins = 42 [
+    (cpp_name) = "MAX_SAFETY_PINS",
+    (cpp_type) = "size_t",
+    (py_name) = "MAX_SAFETY_PINS",
+    (py_type) = "int"
+  ];
+  uint32 max_pin_subscriptions = 43 [
+    (cpp_name) = "MAX_PIN_SUBSCRIPTIONS",
+    (cpp_type) = "size_t",
+    (py_name) = "MAX_PIN_SUBSCRIPTIONS",
+    (py_type) = "int"
+  ];
 }
 
 message Handshake {
@@ -1823,6 +1837,21 @@ message RuntimeConfig {
     (config_desc) = "QUIC congestion control algorithm",
     (uci_option) = "cloud_http3_congestion_control"
   ];
+  uint32 respawn_threshold = 51 [
+    (config_default) = "3600",
+    (config_desc) = "Procd service respawn timeout threshold in seconds",
+    (uci_option) = "respawn_threshold"
+  ];
+  uint32 respawn_timeout = 52 [
+    (config_default) = "5",
+    (config_desc) = "Procd service respawn restart delay timeout in seconds",
+    (uci_option) = "respawn_timeout"
+  ];
+  uint32 respawn_retry = 53 [
+    (config_default) = "0",
+    (config_desc) = "Procd service respawn maximum retry count (0 for infinite)",
+    (uci_option) = "respawn_retry"
+  ];
 }
 
 message DigitalReadResponse {
@@ -1963,6 +1992,18 @@ message SpiTransfer {
 message SpiTransferResponse {
   option (msg_cloud_topic) = "spi/transfer/resp";
   bytes data = 1;
+}
+
+enum SpiBitOrder {
+  SPI_BIT_ORDER_LSB_FIRST = 0;
+  SPI_BIT_ORDER_MSB_FIRST = 1;
+}
+
+enum SpiDataMode {
+  SPI_DATA_MODE_0 = 0;
+  SPI_DATA_MODE_1 = 4;
+  SPI_DATA_MODE_2 = 8;
+  SPI_DATA_MODE_3 = 12;
 }
 
 message SpiConfig {

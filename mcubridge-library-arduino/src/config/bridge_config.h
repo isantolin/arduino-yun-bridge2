@@ -65,10 +65,6 @@ inline constexpr bool ENABLE_SPI = BRIDGE_ENABLE_SPI;
 #define BRIDGE_ENABLE_POST_TESTS 1
 #endif
 
-// [SIL-2] Static bounds for safety pins and pin subscriptions
-inline constexpr size_t MAX_SAFETY_PINS = 8;
-inline constexpr size_t MAX_PIN_SUBSCRIPTIONS = 8;
-
 }  // namespace config
 
 namespace scheduler {

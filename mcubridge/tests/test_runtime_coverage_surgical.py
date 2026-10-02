@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 import mcubridge.protocol.mcubridge_pb2 as pb
 import pytest
 from mcubridge.config.settings import RuntimeConfig
+from mcubridge.protocol import protocol
 from mcubridge.protocol.protocol import Status
 from mcubridge.protocol.topics import parse_topic
 from mcubridge.services.runtime import BridgeService
@@ -238,7 +239,7 @@ async def test_cloud_events_and_direct_rpc_dispatch(
     mock_stream.send_message.assert_awaited_once()
 
     env = pb.CloudEnvelope(
-        protocol_version=2,
+        protocol_version=protocol.PROTOCOL_VERSION,
         sequence_id=88,
         command_request=pb.CommandRequest(
             command_path="rpc/DigitalWrite",

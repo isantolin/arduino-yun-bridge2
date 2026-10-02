@@ -528,7 +528,7 @@ class BridgeService:
             if message.correlation_data:
                 seq_id = int.from_bytes(message.correlation_data[:8], "big")
                 envelope = pb.CloudEnvelope(
-                    protocol_version=2,
+                    protocol_version=protocol.PROTOCOL_VERSION,
                     device_id=self.state.device_id,
                     sequence_id=seq_id,
                     command_response=pb.CommandResponse(
@@ -546,7 +546,7 @@ class BridgeService:
                 setattr(report, telemetry_attr, message.payload)
 
                 envelope = pb.CloudEnvelope(
-                    protocol_version=2,
+                    protocol_version=protocol.PROTOCOL_VERSION,
                     device_id=self.state.device_id,
                     sequence_id=0,
                     telemetry=report,
@@ -1755,7 +1755,7 @@ class BridgeService:
                                 err_msg = str(exc)
 
                             resp_env = pb.CloudEnvelope(
-                                protocol_version=2,
+                                protocol_version=protocol.PROTOCOL_VERSION,
                                 device_id=self.state.device_id,
                                 sequence_id=envelope.sequence_id,
                                 command_response=pb.CommandResponse(
@@ -1787,7 +1787,7 @@ class BridgeService:
 
     async def send_cloud_event(self, event_type: str, severity: str, description: str) -> None:
         envelope = pb.CloudEnvelope(
-            protocol_version=2,
+            protocol_version=protocol.PROTOCOL_VERSION,
             device_id=self.state.device_id,
             sequence_id=0,
             timestamp_utc=int(time.time()),

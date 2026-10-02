@@ -7,8 +7,11 @@ client examples from the host repository directly into the running OpenWrt VM.
 
 from __future__ import annotations
 
+import fnmatch
+import socket
 import subprocess
 import sys
+import tarfile
 from pathlib import Path
 from typing import Annotated
 
@@ -25,64 +28,64 @@ def run_cmd(cmd: list[str], check: bool = True) -> subprocess.CompletedProcess[b
     return subprocess.run(cmd, check=check)
 
 
+def _is_ssh_reachable(host: str, port: int = 22, timeout: float = 1.0) -> bool:
+    """Test TCP connectivity to SSH port via standard library socket."""
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
 def tar_push(src_dir: Path, remote_dest: str, host: str, user: str, excludes: list[str] | None = None) -> None:
     """Stream a local directory to a remote directory via tar over SSH."""
-    exclude_args: list[str] = []
-    if excludes:
-        for excl in excludes:
-            exclude_args.extend(["--exclude", excl])
-
     ssh_mkdir = ["ssh", "-o", "StrictHostKeyChecking=no", f"{user}@{host}", f"mkdir -p '{remote_dest}'"]
     run_cmd(ssh_mkdir, check=True)
 
-    tar_create = subprocess.Popen(
-        ["tar", "-C", str(src_dir), "-czf", "-"] + exclude_args + ["."],
-        stdout=subprocess.PIPE,
-    )
     ssh_extract = subprocess.Popen(
         ["ssh", "-o", "StrictHostKeyChecking=no", f"{user}@{host}", f"tar -xzf - -C '{remote_dest}'"],
-        stdin=tar_create.stdout,
+        stdin=subprocess.PIPE,
     )
-    if tar_create.stdout:
-        tar_create.stdout.close()
-    ssh_extract.wait()
-    tar_create.wait()
 
-    if tar_create.returncode != 0:
-        raise RuntimeError(f"tar create failed with code {tar_create.returncode}")
+    def _filter(tarinfo: tarfile.TarInfo) -> tarfile.TarInfo | None:
+        if excludes:
+            tar_path = Path(tarinfo.name)
+            for excl in excludes:
+                if fnmatch.fnmatch(tar_path.name, excl) or fnmatch.fnmatch(tarinfo.name, excl):
+                    return None
+        return tarinfo
+
+    try:
+        if ssh_extract.stdin is not None:
+            with tarfile.open(mode="w:gz", fileobj=ssh_extract.stdin) as tar:
+                tar.add(str(src_dir), arcname=".", filter=_filter)
+            ssh_extract.stdin.close()
+    except BrokenPipeError as exc:
+        sys.stderr.write(f"[*] Broken pipe streaming tar to {host}: {exc}\n")
+
+    ssh_extract.wait()
     if ssh_extract.returncode != 0:
         raise RuntimeError(f"tar extract on remote failed with code {ssh_extract.returncode}")
 
 
 def resolve_vm_ip(preferred: str) -> str:
     """Resolve active VM IP: preferred if reachable, else auto-detect from virbr0."""
-    res = subprocess.run(
-        ["ping", "-c", "1", "-W", "1", preferred],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        check=False,
-    )
-    if res.returncode == 0:
+    if _is_ssh_reachable(preferred):
         return preferred
 
-    try:
-        neigh = subprocess.run(["ip", "neigh", "show", "dev", "virbr0"], capture_output=True, text=True, check=True)
-        for line in neigh.stdout.splitlines():
-            parts = line.split()
-            if len(parts) >= 1:
-                candidate_ip = parts[0]
-                check = subprocess.run(
-                    ["ping", "-c", "1", "-W", "1", candidate_ip],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    check=False,
-                )
-                if check.returncode == 0:
-                    sys.stdout.write(f"[*] Auto-detected active VM IP on virbr0: {candidate_ip}\n")
-                    sys.stdout.flush()
-                    return candidate_ip
-    except (subprocess.SubprocessError, OSError) as exc:
-        sys.stderr.write(f"[*] Neighbor probe failed ({exc}), falling back to {preferred}\n")
+    arp_path = Path("/proc/net/arp")
+    if arp_path.exists():
+        try:
+            for line in arp_path.read_text(encoding="utf-8").splitlines()[1:]:
+                parts = line.split()
+                if len(parts) >= 6 and parts[5] == "virbr0" and parts[2] != "0x0":
+                    candidate_ip = parts[0]
+                    if _is_ssh_reachable(candidate_ip):
+                        sys.stdout.write(f"[*] Auto-detected active VM IP on virbr0: {candidate_ip}\n")
+                        sys.stdout.flush()
+                        return candidate_ip
+        except OSError as exc:
+            sys.stderr.write(f"[*] ARP table probe failed ({exc}), falling back to {preferred}\n")
     return preferred
 
 

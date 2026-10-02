@@ -8,11 +8,12 @@ Runs the full deployment pipeline inside a QEMU VM:
   3. Run 3_install.sh (system deps, project APKs, secrets, daemon start)
   4. Verify mcubridge is running
 
-Requires: qemu-system-mips, python3-pexpect, wget, e2fsprogs
+Requires: qemu-system-mips, python3-pexpect, e2fsprogs
 """
 
 from __future__ import annotations
 
+import gzip
 import re
 import shutil
 import subprocess
@@ -89,21 +90,7 @@ def run(cmd: list[str], check: bool = True) -> subprocess.CompletedProcess[bytes
 
 
 # ---------------------------------------------------------------------------
-# Image download
-# ---------------------------------------------------------------------------
-def download_images() -> None:
-    log_info("[INFO] Downloading OpenWrt images...")
-    if not Path(KERNEL_FILE).exists():
-        run(["wget", "-q", f"{BASE_URL}/{KERNEL_FILE}"])
-
-    if not Path(ROOTFS_IMG).exists():
-        run(["wget", "-q", "-O", ROOTFS_GZ, f"{BASE_URL}/{ROOTFS_GZ}"])
-        run(["gunzip", "-f", ROOTFS_GZ])
-        shutil.move(f"openwrt-{OPENWRT_VERSION}-malta-be-rootfs-ext4.img", ROOTFS_IMG)
-
-
-# ---------------------------------------------------------------------------
-# System APK download
+# Download helpers
 # ---------------------------------------------------------------------------
 def _urlretrieve_with_retry(url: str, filename: Path | str, attempts: int = 3) -> None:
     """Download a file via urllib.request with bounded exponential backoff using tenacity."""
@@ -116,6 +103,30 @@ def _urlretrieve_with_retry(url: str, filename: Path | str, attempts: int = 3) -
     retryer(urllib.request.urlretrieve, url, filename)
 
 
+# ---------------------------------------------------------------------------
+# Image download
+# ---------------------------------------------------------------------------
+def download_images() -> None:
+    log_info("[INFO] Downloading OpenWrt images...")
+    kernel_path = Path(KERNEL_FILE)
+    if not kernel_path.exists():
+        log_info(f"[INFO] Downloading kernel {KERNEL_FILE}...")
+        _urlretrieve_with_retry(f"{BASE_URL}/{KERNEL_FILE}", kernel_path)
+
+    rootfs_img = Path(ROOTFS_IMG)
+    if not rootfs_img.exists():
+        rootfs_gz = Path(ROOTFS_GZ)
+        log_info(f"[INFO] Downloading rootfs {ROOTFS_GZ}...")
+        _urlretrieve_with_retry(f"{BASE_URL}/{ROOTFS_GZ}", rootfs_gz)
+        log_info(f"[INFO] Decompressing {ROOTFS_GZ} -> {ROOTFS_IMG}...")
+        with gzip.open(rootfs_gz, "rb") as f_in, rootfs_img.open("wb") as f_out:
+            shutil.copyfileobj(f_in, f_out)
+        rootfs_gz.unlink(missing_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# System APK download
+# ---------------------------------------------------------------------------
 def download_system_apks(dest_dir: Path) -> None:
     """Download the required OpenWrt system APKs to a host folder."""
     log_info(f"[INFO] Downloading system APKs to {dest_dir}...")
@@ -156,7 +167,9 @@ def create_apk_disk(apk_dir: Path, sys_apk_dir: Path, repo_root: Path) -> str:
     """Create an ext4 disk with APKs in bin/ and deploy scripts at root."""
     log_info("[INFO] Creating APK data disk...")
     apk_disk = "apks.img"
-    run(["dd", "if=/dev/zero", f"of={apk_disk}", "bs=1M", f"count={APK_DISK_MB}"])
+    apk_path = Path(apk_disk)
+    with apk_path.open("wb") as f:
+        f.truncate(APK_DISK_MB * 1024 * 1024)
     run(["mkfs.ext4", "-F", apk_disk])
 
     mnt = Path("mnt_apks")
@@ -197,15 +210,9 @@ def create_extroot_disk() -> str:
     """Create an empty raw disk for extroot + swap."""
     log_info(f"[INFO] Creating {EXTROOT_DISK_MB}MB extroot disk...")
     extroot_disk = "extroot.img"
-    run(
-        [
-            "dd",
-            "if=/dev/zero",
-            f"of={extroot_disk}",
-            "bs=1M",
-            f"count={EXTROOT_DISK_MB}",
-        ]
-    )
+    extroot_path = Path(extroot_disk)
+    with extroot_path.open("wb") as f:
+        f.truncate(EXTROOT_DISK_MB * 1024 * 1024)
     return extroot_disk
 
 

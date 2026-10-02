@@ -27,8 +27,11 @@ import typer
 from mcubridge.config.logging import configure_logging
 from mcubridge.protocol import protocol
 from tools.emulation.process_utils import (
+    start_daemon_thread,
+    stream_pump,
     terminate_process_tree,
     wait_for_tcp_ready,
+    write_fake_uci_module,
 )
 
 repo_root = Path(__file__).resolve().parents[2]
@@ -93,8 +96,8 @@ def _spawn_simavr(
         )
         if simavr_proc.stdout is not None:
             slave_name = _read_pty_from_stream(simavr_proc.stdout, state)
-        _start_worker_thread(_stream_worker, "simavr-stdout", simavr_proc.stdout, state, "simavr-stdout")
-        _start_worker_thread(_stream_worker, "simavr-stderr", simavr_proc.stderr, state, "simavr-stderr")
+        start_daemon_thread(stream_pump, "simavr-stdout", simavr_proc.stdout, state.on_line, "simavr-stdout")
+        start_daemon_thread(stream_pump, "simavr-stderr", simavr_proc.stderr, state.on_line, "simavr-stderr")
     else:
         master_fd, slave_fd = pty.openpty()
         slave_name = os.ttyname(slave_fd)
@@ -113,7 +116,7 @@ def _spawn_simavr(
                 close_fds=True,
             )
             os.close(slave_fd)
-            _start_worker_thread(_stream_worker, "simavr-stderr", simavr_proc.stderr, state, "simavr-stderr")
+            start_daemon_thread(stream_pump, "simavr-stderr", simavr_proc.stderr, state.on_line, "simavr-stderr")
         except FileNotFoundError:
             logger.error("simavr binary not found on system. Please install libsimavr-dev and simavr")
             os.close(slave_fd)
@@ -147,7 +150,7 @@ def _ensure_cloud_gateway(state: SimavrState) -> subprocess.Popen[str] | None:
             text=True,
             bufsize=1,
         )
-        _start_worker_thread(_stream_worker, "gateway", gateway_proc.stdout, state, "gateway")
+        start_daemon_thread(stream_pump, "gateway", gateway_proc.stdout, state.on_line, "gateway")
 
     if not wait_for_tcp_ready(CLOUD_HOST, CLOUD_PORT, timeout=30.0):
         logger.error("Cloud Gateway not available for simavr")
@@ -178,7 +181,7 @@ def _setup_fake_uci(slave_name: str) -> tuple[Path, Path, dict[str, str]]:
         "storage_path": str(storage_path),
         "debug": "1",
     }
-    _write_fake_uci_module(fake_uci_dir, uci_config)
+    write_fake_uci_module(fake_uci_dir, uci_config, label="simavr runner")
 
     daemon_env = dict(os.environ)
     extra_paths = [
@@ -248,50 +251,6 @@ class SimavrState:
                 or '"new_state": "SYNCHRONIZED"' in clean_line
             ):
                 self.sync_event.set()
-
-
-def _start_worker_thread(target: Any, name: str, *args: Any) -> threading.Thread:
-    thread = threading.Thread(target=target, name=name, args=args, daemon=True)
-    thread.start()
-    return thread
-
-
-def _stream_worker(stream: Any, state: SimavrState, source: str) -> None:
-    if stream:
-        for line in iter(stream.readline, ""):
-            if not line:
-                break
-            state.on_line(str(line), source)
-
-
-def _write_fake_uci_module(base_dir: Path, config: dict[str, str]) -> Path:
-    module_path = base_dir / "uci.py"
-    module_source = (
-        "from __future__ import annotations\n"
-        "from typing import Any\n\n"
-        f"_CONFIG = {json.dumps(config, sort_keys=True)!r}\n\n"
-        "class Uci:\n"
-        "    def __enter__(self) -> 'Uci':\n"
-        "        return self\n\n"
-        "    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> bool:\n"
-        "        return False\n\n"
-        "    def get_all(self, package: str, section: str | None = None) -> dict[str, str]:\n"
-        "        if package != 'mcubridge':\n"
-        "            return {}\n"
-        "        if section not in (None, 'general'):\n"
-        "            return {}\n"
-        "        return dict(__import__('json').loads(_CONFIG))\n\n"
-        "    def get(self, package: str, section: str, option: str) -> str:\n"
-        "        return self.get_all(package, section)[option]\n\n"
-        "    def set(self, package: str, section: str, option: str, value: str) -> None:\n"
-        "        raise RuntimeError('fake UCI is read-only in e2e runner')\n\n"
-        "    def commit(self, package: str) -> None:\n"
-        "        return None\n\n"
-        "class UCI(Uci):\n"
-        '    """Mock UCI configuration adapter for emulation."""\n'
-    )
-    module_path.write_text(module_source, encoding="utf-8")
-    return module_path
 
 
 def _build_simavr_harness() -> Path | None:
@@ -388,8 +347,8 @@ def run_simavr_emulation(
         bufsize=1,
     )
 
-    _start_worker_thread(_stream_worker, "daemon-stdout", daemon_proc.stdout, state, "daemon-stdout")
-    _start_worker_thread(_stream_worker, "daemon-stderr", daemon_proc.stderr, state, "daemon-stderr")
+    start_daemon_thread(stream_pump, "daemon-stdout", daemon_proc.stdout, state.on_line, "daemon-stdout")
+    start_daemon_thread(stream_pump, "daemon-stderr", daemon_proc.stderr, state.on_line, "daemon-stderr")
 
     # Ensure daemon process started cleanly
     time.sleep(0.5)

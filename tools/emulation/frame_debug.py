@@ -46,11 +46,16 @@ class FrameDebugSnapshot:
         )
 
 
+_ENUM_BY_NAME: dict[str, int] = {
+    entry.name.upper(): entry.value for enum_cls in (protocol.Command, protocol.Status) for entry in enum_cls
+}
+_ENUM_BY_VALUE: dict[int, str] = {
+    entry.value: entry.name for enum_cls in (protocol.Command, protocol.Status) for entry in enum_cls
+}
+
+
 def name_for_command(command_id: int) -> str:
-    for enum_cls in (protocol.Command, protocol.Status):
-        if command_id in enum_cls:
-            return enum_cls(command_id).name
-    return f"UNKNOWN(0x{command_id:02X})"
+    return _ENUM_BY_VALUE.get(command_id, f"UNKNOWN(0x{command_id:02X})")
 
 
 def resolve_command(cmd_str: str) -> int:
@@ -58,17 +63,15 @@ def resolve_command(cmd_str: str) -> int:
     if not cmd_str:
         raise ValueError("command may not be empty")
 
-    cmd_str = cmd_str.strip()
-    if cmd_str.lower().startswith("0x"):
-        return int(cmd_str, 16)
-    if cmd_str.isdigit():
-        return int(cmd_str)
+    clean = cmd_str.strip()
+    if clean.lower().startswith("0x"):
+        return int(clean, 16)
+    if clean.isdigit():
+        return int(clean)
 
-    # Resolve by name
-    for enum_cls in (protocol.Command, protocol.Status):
-        for entry in enum_cls:
-            if entry.name.upper() == cmd_str.upper():
-                return entry.value
+    cmd_val = _ENUM_BY_NAME.get(clean.upper())
+    if cmd_val is not None:
+        return cmd_val
 
     raise ValueError(f"Unknown command: {cmd_str}")
 

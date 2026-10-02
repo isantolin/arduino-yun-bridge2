@@ -6,7 +6,6 @@ Direct PTY-PTY link via socat, with MCU opening its PTY directly.
 
 from __future__ import annotations
 
-import json
 import os
 import subprocess
 import sys
@@ -23,9 +22,12 @@ from mcubridge.config.logging import configure_logging
 from mcubridge.protocol import protocol
 
 from tools.emulation.process_utils import (
+    start_daemon_thread,
+    stream_pump,
     terminate_process_tree,
     wait_for_path_ready,
     wait_for_tcp_ready,
+    write_fake_uci_module,
 )
 
 repo_root = Path(__file__).resolve().parents[2]
@@ -66,70 +68,6 @@ class CloudVerifier:
         return wait_for_tcp_ready(self.host, self.port, timeout=timeout)
 
 
-def _start_worker_thread(target: Any, name: str, *args: Any) -> threading.Thread:
-    thread = threading.Thread(target=target, name=name, args=args, daemon=True)
-    thread.start()
-    return thread
-
-
-def _mcu_stderr_worker(mcu_proc: subprocess.Popen[bytes], state: EmulationState) -> None:
-    if mcu_proc.stderr:
-        for line in iter(mcu_proc.stderr.readline, b""):
-            if not line:
-                break
-            try:
-                decoded = line.decode("utf-8")
-            except UnicodeDecodeError:
-                decoded = f"<hex:{line.hex()}>"
-            state.on_line(decoded, "mcu")
-
-
-def _gateway_worker(gateway_proc: subprocess.Popen[str], state: EmulationState) -> None:
-    if gateway_proc.stdout:
-        for line in iter(gateway_proc.stdout.readline, ""):
-            if not line:
-                break
-            state.on_line(line, "gateway")
-
-
-def _daemon_worker(daemon_proc: subprocess.Popen[str], state: EmulationState) -> None:
-    if daemon_proc.stdout:
-        for line in iter(daemon_proc.stdout.readline, ""):
-            if not line:
-                break
-            state.on_line(line, "daemon")
-
-
-def _write_fake_uci_module(base_dir: Path, config: dict[str, str]) -> Path:
-    module_path = base_dir / "uci.py"
-    module_source = (
-        "from __future__ import annotations\n"
-        "from typing import Any\n\n"
-        f"_CONFIG = {json.dumps(config, sort_keys=True)!r}\n\n"
-        "class Uci:\n"
-        "    def __enter__(self) -> 'Uci':\n"
-        "        return self\n\n"
-        "    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> bool:\n"
-        "        return False\n\n"
-        "    def get_all(self, package: str, section: str | None = None) -> dict[str, str]:\n"
-        "        if package != 'mcubridge':\n"
-        "            return {}\n"
-        "        if section not in (None, 'general'):\n"
-        "            return {}\n"
-        "        return dict(__import__('json').loads(_CONFIG))\n\n"
-        "    def get(self, package: str, section: str, option: str) -> str:\n"
-        "        return self.get_all(package, section)[option]\n\n"
-        "    def set(self, package: str, section: str, option: str, value: str) -> None:\n"
-        "        raise RuntimeError('fake UCI is read-only in e2e runner')\n\n"
-        "    def commit(self, package: str) -> None:\n"
-        "        return None\n\n"
-        "class UCI(Uci):\n"
-        "    pass\n"
-    )
-    module_path.write_text(module_source, encoding="utf-8")
-    return module_path
-
-
 def run_emulation(
     firmware_path: Path,
     package_root: Path = Path(),
@@ -159,7 +97,7 @@ def run_emulation(
             text=True,
             bufsize=1,
         )
-        _start_worker_thread(_gateway_worker, "gateway", gateway_proc, state)
+        start_daemon_thread(stream_pump, "gateway", gateway_proc.stdout, state.on_line, "gateway")
 
     if not cloud_verify.wait_for_ready():
         logger.error("Cloud Gateway not available")
@@ -168,11 +106,7 @@ def run_emulation(
         sys.exit(1)
 
     # 1. Start Unified socat linking PTY to MCU EXEC
-    if Path(SOCAT_PORT0).exists():
-        try:
-            Path(SOCAT_PORT0).unlink()
-        except OSError as exc:
-            logger.warning("Could not unlink existing PTY", path=SOCAT_PORT0, error=str(exc))
+    Path(SOCAT_PORT0).unlink(missing_ok=True)
 
     # [FIX] Ensure emulator filesystem root exists and is clean
     emulator_fs_root = Path("/tmp/mcubridge-host-fs")
@@ -200,7 +134,7 @@ def run_emulation(
         bufsize=0,
         start_new_session=True,
     )
-    _start_worker_thread(_mcu_stderr_worker, "mcu-socat", mcu_proc, state)
+    start_daemon_thread(stream_pump, "mcu-socat", mcu_proc.stderr, state.on_line, "mcu")
 
     # Wait for PTY
     if not wait_for_path_ready(SOCAT_PORT0, timeout=10.0, interval=0.1):
@@ -253,7 +187,7 @@ def run_emulation(
         "file_system_root": str(emulator_fs_root),
         "storage_path": daemon_env["MCUBRIDGE_STORAGE_PATH"],
     }
-    _write_fake_uci_module(fake_uci_dir, uci_config)
+    write_fake_uci_module(fake_uci_dir, uci_config, label="e2e runner")
 
     daemon_cmd = [sys.executable, "-u"]
     if os.environ.get("COVERAGE_FILE"):
@@ -272,7 +206,7 @@ def run_emulation(
             text=True,
             bufsize=1,
         )
-        _start_worker_thread(_daemon_worker, "daemon", daemon_proc, state)
+        start_daemon_thread(stream_pump, "daemon", daemon_proc.stdout, state.on_line, "daemon")
 
         # Wait for Daemon/MCU sync
         logger.info("Waiting for stability (15s)...")

@@ -87,6 +87,30 @@ def audit_status_dict(data: dict[str, Any]) -> list[str]:
     return errors
 
 
+def _resolve_json_payload(raw_json: str | None, status_path: str | None) -> str:
+    """Resolve status JSON payload from CLI argument, explicit file, default file, or stdin."""
+    if raw_json:
+        return raw_json
+    if status_path:
+        p = Path(status_path)
+        if not p.exists():
+            print(f"❌ [STATUS AUDIT FAIL] Status file not found: {status_path}", file=sys.stderr)
+            sys.exit(1)
+        return p.read_text(encoding="utf-8")
+
+    default_path = Path("/tmp/mcubridge_status.json")
+    if default_path.exists():
+        return default_path.read_text(encoding="utf-8")
+    if not sys.stdin.isatty():
+        return sys.stdin.read()
+
+    print(
+        "❌ [STATUS AUDIT FAIL] No status file provided and /tmp/mcubridge_status.json does not exist",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+
 @app.command()
 def audit(
     status_path: Annotated[
@@ -123,28 +147,7 @@ def audit(
                 print(f"❌ [STATUS AUDIT FAIL] Failed to query UBUS CLI: {e}", file=sys.stderr)
                 sys.exit(1)
     else:
-        json_text: str = ""
-        if raw_json:
-            json_text = raw_json
-        elif status_path:
-            p = Path(status_path)
-            if not p.exists():
-                print(f"❌ [STATUS AUDIT FAIL] Status file not found: {status_path}", file=sys.stderr)
-                sys.exit(1)
-            json_text = p.read_text(encoding="utf-8")
-        else:
-            default_path = Path("/tmp/mcubridge_status.json")
-            if default_path.exists():
-                json_text = default_path.read_text(encoding="utf-8")
-            elif not sys.stdin.isatty():
-                json_text = sys.stdin.read()
-            else:
-                print(
-                    "❌ [STATUS AUDIT FAIL] No status file provided and /tmp/mcubridge_status.json does not exist",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
-
+        json_text = _resolve_json_payload(raw_json, status_path)
         try:
             data = json.loads(json_text)
         except json.JSONDecodeError as e:

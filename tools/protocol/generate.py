@@ -204,11 +204,11 @@ def _load_runtime_config_fields(file_desc: Any, pb_module: Any) -> list[ConfigFi
 
         if field_desc.is_repeated:
             py_type, typed_val = "list", []
-        else:
-            py_type, converter = _FIELD_CONVERTERS.get(
-                field_desc.type, ("str", lambda v: str(v) if v is not None else "")
-            )
+        elif field_desc.type in _FIELD_CONVERTERS:
+            py_type, converter = _FIELD_CONVERTERS[field_desc.type]
             typed_val = converter(cfg_default)
+        else:
+            py_type, typed_val = "message", None
 
         runtime_config_fields.append(
             ConfigFieldDef(

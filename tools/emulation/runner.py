@@ -7,9 +7,10 @@ import os
 from pathlib import Path
 import subprocess
 import sys
-import time
 from typing import Annotated
 import typer
+
+from tools.emulation.process_utils import terminate_process_tree, wait_for_path_ready
 
 cli = typer.Typer(
     help="[MIL-SPEC/SIL-2] McuBridge Emulation & Fuzzing Runner",
@@ -44,12 +45,8 @@ def main(
             subprocess.run(["bash", str(compile_script)], cwd=str(REPO_ROOT), check=True)
 
         emulator_bin = REPO_ROOT / "mcubridge-library-arduino" / "tests" / "bridge_control_emulator"
-        fuzz_pty = "/tmp/ttyBRIDGE_FUZZ"
-        if Path(fuzz_pty).exists():
-            try:
-                Path(fuzz_pty).unlink()
-            except OSError as exc:
-                sys.stderr.write(f"Warning unlinking {fuzz_pty}: {exc}\n")
+        fuzz_pty = Path("/tmp/ttyBRIDGE_FUZZ")
+        fuzz_pty.unlink(missing_ok=True)
 
         socat_cmd = [
             "socat",
@@ -65,11 +62,7 @@ def main(
             cwd=str(REPO_ROOT),
         )
         try:
-            for _ in range(20):
-                if Path(fuzz_pty).exists():
-                    break
-                time.sleep(0.2)
-            else:
+            if not wait_for_path_ready(fuzz_pty, timeout=4.0, interval=0.2):
                 raise RuntimeError("PTY device never appeared")
 
             env = dict(os.environ)
@@ -78,7 +71,7 @@ def main(
                 sys.executable,
                 str(REPO_ROOT / "tools" / "emulation" / "protocol_fuzzer.py"),
                 "--port",
-                fuzz_pty,
+                str(fuzz_pty),
                 "--count",
                 str(fuzz_iterations),
             ]
@@ -88,16 +81,8 @@ def main(
             if res_fuzz.returncode != 0:
                 sys.exit(res_fuzz.returncode)
         finally:
-            proc.terminate()
-            try:
-                proc.wait(timeout=2.0)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-            if Path(fuzz_pty).exists():
-                try:
-                    Path(fuzz_pty).unlink()
-                except OSError as exc:
-                    sys.stderr.write(f"Warning unlinking {fuzz_pty}: {exc}\n")
+            terminate_process_tree([proc], timeout=2.0)
+            fuzz_pty.unlink(missing_ok=True)
         return
 
     simavr_script = REPO_ROOT / "tools" / "emulation" / "simavr_runner.py"

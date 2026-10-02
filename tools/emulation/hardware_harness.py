@@ -51,106 +51,62 @@ def _coerce_tags(value: Any) -> set[str]:
     return {str(item) for item in value}
 
 
-@dataclass
-class ManifestDefaults:
-    user: str | None = None
-    timeout: float | None = None
-    retries: int = 0
-    ssh: list[str] | str | None = None
-    tags: list[str] | str | None = None
-
-
-@dataclass
-class ManifestTarget:
-    name: str
-    host: str | None = None
-    local: bool = False
-    user: str | None = None
-    ssh: list[str] | str | None = None
-    tags: list[str] | str | None = None
-    extra_args: list[str] | str | None = None
-    timeout: float | None = None
-    retries: int | None = None
-    env: dict[str, Any] = field(default_factory=dict[str, Any])
-    notes: str | None = None
-
-
-@dataclass
-class Manifest:
-    targets: list[ManifestTarget]
-    defaults: ManifestDefaults
-
-
 def load_manifest(path: Path) -> list[Target]:
     if not path.exists():
         return []
     try:
-        data = tomllib.loads(path.read_text())
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
         defaults_data = data.get("defaults", {})
-        defaults = ManifestDefaults(
-            user=defaults_data.get("user"),
-            timeout=defaults_data.get("timeout"),
-            retries=defaults_data.get("retries", 0),
-            ssh=defaults_data.get("ssh"),
-            tags=defaults_data.get("tags"),
-        )
-        targets_list: list[ManifestTarget] = [
-            ManifestTarget(
-                name=t.get("name", ""),
-                host=t.get("host"),
-                local=t.get("local", False),
-                user=t.get("user"),
-                ssh=t.get("ssh"),
-                tags=t.get("tags"),
-                extra_args=t.get("extra_args"),
-                timeout=t.get("timeout"),
-                retries=t.get("retries"),
-                env=t.get("env", {}),
-                notes=t.get("notes"),
+        default_ssh = _coerce_list(defaults_data.get("ssh"))
+        default_tags = _coerce_tags(defaults_data.get("tags"))
+        default_user = defaults_data.get("user")
+        default_timeout = defaults_data.get("timeout")
+        default_retries = defaults_data.get("retries", 0)
+
+        targets_data = data.get("targets", [])
+        if not targets_data:
+            return []
+
+        parsed: list[Target] = []
+        seen_names: set[str] = set()
+        for entry in targets_data:
+            name = entry.get("name", "")
+            if not name or name in seen_names:
+                continue
+            local = bool(entry.get("local", False))
+            host = entry.get("host")
+            if not local and not host:
+                continue
+            seen_names.add(name)
+
+            user = entry.get("user") if "user" in entry else default_user
+            ssh_args = _coerce_list(entry.get("ssh")) if "ssh" in entry else list(default_ssh)
+            tags = default_tags | _coerce_tags(entry.get("tags"))
+            extra_args = _coerce_list(entry.get("extra_args")) if "extra_args" in entry else []
+            timeout_val = entry.get("timeout") if "timeout" in entry else default_timeout
+            retries = entry.get("retries") if "retries" in entry else default_retries
+            raw_env = entry.get("env", {})
+            env = {str(k): str(v) for k, v in raw_env.items()} if isinstance(raw_env, dict) else {}
+
+            parsed.append(
+                Target(
+                    name=name,
+                    host=host or None,
+                    user=user or None,
+                    ssh_args=ssh_args,
+                    extra_args=extra_args,
+                    tags=tags,
+                    local=local,
+                    timeout=timeout_val,
+                    retries=retries,
+                    env=env,
+                    notes=entry.get("notes"),
+                )
             )
-            for t in data.get("targets", [])
-        ]
-        manifest = Manifest(targets=targets_list, defaults=defaults)
+        return parsed
     except (OSError, tomllib.TOMLDecodeError, ValueError, TypeError) as e:
         print(f"Error parsing manifest {path}: {e}")
         return []
-
-    if not manifest.targets:
-        return []
-
-    default_ssh = _coerce_list(manifest.defaults.ssh)
-    default_tags = _coerce_tags(manifest.defaults.tags)
-    parsed: list[Target] = []
-    seen_names: set[str] = set()
-    for entry in manifest.targets:
-        if not entry.name or entry.name in seen_names:
-            continue
-        seen_names.add(entry.name)
-        if not entry.local and not entry.host:
-            continue
-        user = entry.user if entry.user is not None else manifest.defaults.user
-        ssh_args = _coerce_list(entry.ssh) if entry.ssh is not None else list(default_ssh)
-        tags = default_tags | _coerce_tags(entry.tags)
-        extra_args = _coerce_list(entry.extra_args) if entry.extra_args is not None else []
-        timeout_val = entry.timeout if entry.timeout is not None else manifest.defaults.timeout
-        retries = entry.retries if entry.retries is not None else manifest.defaults.retries
-        env = {k: str(v) for k, v in entry.env.items()}
-        parsed.append(
-            Target(
-                name=entry.name,
-                host=entry.host or None,
-                user=user or None,
-                ssh_args=ssh_args,
-                extra_args=extra_args,
-                tags=tags,
-                local=entry.local,
-                timeout=timeout_val,
-                retries=retries,
-                env=env,
-                notes=entry.notes if entry.notes is not None else None,
-            )
-        )
-    return parsed
 
 
 async def run_command(

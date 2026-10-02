@@ -102,27 +102,6 @@ jobs:
         run: |
           mkdir -p arduino-build
           tox -e arduino-examples -- arduino-build
-      - name: Cache Bloaty binary
-        id: cache-bloaty
-        uses: actions/cache@v6
-        with:
-          path: /usr/local/bin/bloaty
-          key: bloaty-bin-v1.2
-      - name: Install Bloaty McBloatface
-        run: |
-          sudo apt-get update && sudo apt-get install -y cmake ninja-build libprotobuf-dev protobuf-compiler libre2-dev libcapstone-dev
-          if ! command -v bloaty >/dev/null 2>&1; then
-            export PATH="/usr/bin:$PATH"
-            git clone --depth=1 https://github.com/google/bloaty.git /tmp/bloaty
-            cmake -B /tmp/bloaty/build -S /tmp/bloaty -G Ninja \
-              -DCMAKE_BUILD_TYPE=Release \
-              -DBUILD_TESTING=OFF
-            cmake --build /tmp/bloaty/build --target bloaty -j$(nproc)
-            sudo cp /tmp/bloaty/build/bloaty /usr/local/bin/bloaty
-            rm -rf /tmp/bloaty
-          fi
-      - name: Verify Bloaty
-        run: bloaty --version
       - name: Profile Memory Usage
         if: always()
         run: |
@@ -362,7 +341,7 @@ jobs:
 
       - name: Generate Memory Summary
         run: |
-          # 1. Advanced Symbol Profiling (cat pre-generated report from Bloaty)
+          # 1. Advanced Symbol Profiling (cat pre-generated report via pyelftools)
           if [ -f arduino-logs/symbol_profile.md ]; then
             cat arduino-logs/symbol_profile.md >> "$GITHUB_STEP_SUMMARY"
           fi

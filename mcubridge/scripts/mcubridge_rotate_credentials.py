@@ -64,6 +64,29 @@ def restart_service() -> None:
         raise
 
 
+def generate_and_apply_credentials(
+    length: int = 32,
+    no_restart: bool = False,
+) -> tuple[str, str]:
+    """Generate and apply new credentials to UCI, returning (serial_secret, cloud_password). [SIL-2]"""
+    new_secret = secrets.token_hex(length)
+    new_cloud_password = secrets.token_urlsafe(max(24, length))
+    # [SIL-2] Sensitive data masked in logs
+    masked_secret = f"{new_secret[:4]}...{new_secret[-4:]}"
+    logger.info("Generating new shared secret", masked_secret=masked_secret)
+
+    update_uci_credentials(new_secret, new_cloud_password)
+    sys.stdout.write(f"SERIAL_SECRET={new_secret}\n")
+    sys.stdout.write(f"CLOUD_PASSWORD={new_cloud_password}\n")
+    sys.stdout.flush()
+
+    if not no_restart:
+        logger.info("Restarting bridge service...")
+        restart_service()
+
+    return new_secret, new_cloud_password
+
+
 @app.command()
 def main(
     length: Annotated[int, typer.Option("--length", help="Length of the random secret in bytes")] = 32,
@@ -79,20 +102,7 @@ def main(
             logger.info("Rotation aborted by user")
             sys.exit(0)
 
-    new_secret = secrets.token_hex(length)
-    new_cloud_password = secrets.token_urlsafe(max(24, length))
-    # [SIL-2] Sensitive data masked in logs
-    masked_secret = f"{new_secret[:4]}...{new_secret[-4:]}"
-    logger.info("Generating new shared secret", masked_secret=masked_secret)
-
-    update_uci_credentials(new_secret, new_cloud_password)
-    sys.stdout.write(f"SERIAL_SECRET={new_secret}\n")
-    sys.stdout.write(f"CLOUD_PASSWORD={new_cloud_password}\n")
-    sys.stdout.flush()
-
-    if not no_restart:
-        logger.info("Restarting bridge service...")
-        restart_service()
+    generate_and_apply_credentials(length=length, no_restart=no_restart)
 
 
 if __name__ == "__main__":

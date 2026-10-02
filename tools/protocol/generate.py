@@ -73,6 +73,20 @@ def _resolve_nanopb_protoc_dir() -> Path | None:
     return None
 
 
+def run_buf_format(proto_dir: Path) -> None:
+    """Run ``buf format -w`` declaratively on proto specs."""
+    try:
+        subprocess.run(
+            ["buf", "format", "-w"],
+            check=True,
+            capture_output=True,
+            text=True,
+            cwd=str(proto_dir),
+        )
+    except subprocess.CalledProcessError as e:
+        sys.stderr.write(f"Warning: buf format failed:\n{e.stderr}\n")
+
+
 def run_buf_generate(proto_dir: Path) -> None:
     """Run ``buf generate`` declaratively (replaces manual protoc/nanopb subprocess calls).
 
@@ -885,7 +899,8 @@ def main(
         proto_path = (proto_path.parent / "mcubridge.proto").resolve()
 
     if proto_path.exists():
-        sys.stderr.write(f"Compiling {proto_path} via buf generate...\n")
+        sys.stderr.write(f"Formatting and compiling {proto_path} via buf...\n")
+        run_buf_format(proto_path.parent)
         run_buf_generate(proto_path.parent)
 
     # Now load the compiled descriptor

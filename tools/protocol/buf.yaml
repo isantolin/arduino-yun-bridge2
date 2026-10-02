@@ -9,4 +9,5 @@ lint:
     - PACKAGE_DIRECTORY_MATCH
 breaking:
   use:
+    - WIRE
     - FILE

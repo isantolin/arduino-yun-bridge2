@@ -423,7 +423,7 @@ LOCAL_FEED_PATH="$REPO_ROOT/feeds"
 
 if [ -d "$LOCAL_FEED_PATH" ]; then
     # Sync overlay first
-    [ -x "$REPO_ROOT/tools/ci/sync_feed_overlay.sh" ] && "$REPO_ROOT/tools/ci/sync_feed_overlay.sh" --dest "$LOCAL_FEED_PATH"
+    [ -f "$REPO_ROOT/tools/ci/sync_feed_overlay.py" ] && python3 "$REPO_ROOT/tools/ci/sync_feed_overlay.py" --dest "$LOCAL_FEED_PATH"
     
     FEEDS_CONF="$SDK_DIR/feeds.conf"
     [ ! -f "$FEEDS_CONF" ] && cp "$SDK_DIR/feeds.conf.default" "$FEEDS_CONF"
@@ -790,10 +790,10 @@ fi
 # Build RPM package if rpmbuild is available
 if command -v rpmbuild >/dev/null 2>&1; then
     echo "[INFO] rpmbuild detected. Building RPM package for mcubridge-gateway..."
-    if [ -x "$REPO_ROOT/mcubridge-gateway/build_rpm.sh" ]; then
-        "$REPO_ROOT/mcubridge-gateway/build_rpm.sh" || echo "[WARN] RPM build failed"
+    if [ -f "$REPO_ROOT/mcubridge-gateway/build_rpm.py" ]; then
+        python3 "$REPO_ROOT/mcubridge-gateway/build_rpm.py" || echo "[WARN] RPM build failed"
     else
-        echo "[WARN] build_rpm.sh not executable or not found at $REPO_ROOT/mcubridge-gateway/build_rpm.sh"
+        echo "[WARN] build_rpm.py not found at $REPO_ROOT/mcubridge-gateway/build_rpm.py"
     fi
 else
     echo "[INFO] rpmbuild not found. Skipping RPM package build."

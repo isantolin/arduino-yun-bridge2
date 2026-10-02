@@ -1,7 +1,7 @@
 # Local McuBridge Feed (Generated)
 
 This directory is intentionally kept empty in Git. During a build, `1_compile.sh`
-runs `tools/sync_feed_overlay.sh` to create symlinks to the canonical package
+runs `tools/ci/sync_feed_overlay.py` to create symlinks to the canonical package
 sources from the repository root into this feed so the OpenWrt SDK can consume
 them via `src-link mcubridge ...` (no source copying).
 

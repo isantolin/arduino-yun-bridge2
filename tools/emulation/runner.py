@@ -29,22 +29,10 @@ def main(
     """Run MCU bridge emulation or protocol fuzzing suite."""
     if fuzz:
         _ = fqbn
-        fuzz_script = REPO_ROOT / "tools" / "ci" / "ci_fuzz.sh"
-        if fuzz_script.exists():
-            env: dict[str, str] = dict(os.environ)
-            env["PYTHONPATH"] = f"{REPO_ROOT}:{REPO_ROOT / 'mcubridge'}:{env.get('PYTHONPATH', '')}"
-            res_sh: subprocess.CompletedProcess[bytes] = subprocess.run(
-                ["bash", str(fuzz_script)], env=env, cwd=str(REPO_ROOT), check=False
-            )
-            if res_sh.returncode != 0:
-                sys.exit(res_sh.returncode)
-            return
-
         compile_script = REPO_ROOT / "tools" / "ci" / "compile_emulator.sh"
-        if compile_script.exists():
-            subprocess.run(["bash", str(compile_script)], cwd=str(REPO_ROOT), check=True)
-
         emulator_bin = REPO_ROOT / "mcubridge-library-arduino" / "tests" / "bridge_control_emulator"
+        if not emulator_bin.exists() and compile_script.exists():
+            subprocess.run(["bash", str(compile_script)], cwd=str(REPO_ROOT), check=True)
         fuzz_pty = Path("/tmp/ttyBRIDGE_FUZZ")
         fuzz_pty.unlink(missing_ok=True)
 

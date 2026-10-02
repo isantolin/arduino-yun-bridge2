@@ -279,6 +279,8 @@ class SerialHandshakeManager:
         elif old_state == HandshakeState.SYNCHRONIZED:
             self.on_exit_synchronized()
 
+    set_fsm_state = _set_fsm_state
+
     def transition(self, event: HandshakeEvent) -> HandshakeState:
         """[SIL-2] Deterministic FSM transition gate via python-statemachine."""
         old_state = self.fsm_state

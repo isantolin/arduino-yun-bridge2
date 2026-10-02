@@ -310,7 +310,7 @@ def test_context_edge_branches_and_properties(runtime_state: RuntimeState, mocke
     # 3. _get_storage_subdir when non_tmp path not allowed (line 557->564)
     runtime_state.allow_non_tmp_paths = False
     runtime_state.file_system_root = "/non_tmp_custom_root"
-    get_storage_subdir: Any = runtime_state._get_storage_subdir
+    get_storage_subdir: Any = runtime_state.get_storage_subdir
     assert get_storage_subdir("datastore") is None
 
     # 4. configure with non_tmp path not allowed covers (lines 593->598, 604->612, 618-619)

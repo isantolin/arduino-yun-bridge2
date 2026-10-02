@@ -214,4 +214,3 @@ def _build_bridge_snapshot_message(
 
 
 emit_bridge_snapshot = _emit_bridge_snapshot
-

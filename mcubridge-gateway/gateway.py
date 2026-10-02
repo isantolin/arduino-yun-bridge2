@@ -297,6 +297,8 @@ class TSDBSink:
             logger.warning("TSDB network write failed", error=str(e))
             raise
 
+    post_line = _post_line
+
 
 async def _handle_ping(
     _: CloudBridgeService,
@@ -363,6 +365,9 @@ async def _handle_telemetry(
 
     if service.gateway.tsdb_sink.enabled:
         await service.gateway.tsdb_sink.ingest_telemetry(device_id, envelope)
+
+
+handle_telemetry = _handle_telemetry
 
 
 async def _handle_event(

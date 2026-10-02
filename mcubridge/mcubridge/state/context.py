@@ -563,7 +563,6 @@ class RuntimeState:
 
     get_storage_subdir = _get_storage_subdir
 
-
     def configure(self) -> None:
         def _safe_close(resource: Any) -> None:
             try:

@@ -174,7 +174,7 @@ async def test_handshake_capabilities_retry(
 
     send_frame.side_effect = mock_send_frame
 
-    fetch_caps: Callable[[], Awaitable[bool]] = manager._fetch_capabilities
+    fetch_caps: Callable[[], Awaitable[bool]] = manager.fetch_capabilities
     result = await fetch_caps()
     assert result
     assert send_frame.call_count == 3
@@ -200,7 +200,7 @@ async def test_handshake_capabilities_corrupt_payload(
 
     send_frame.side_effect = mock_send_frame_corrupt
 
-    fetch_caps_corrupt: Callable[[], Awaitable[bool]] = manager._fetch_capabilities
+    fetch_caps_corrupt: Callable[[], Awaitable[bool]] = manager.fetch_capabilities
     result = await fetch_caps_corrupt()
     assert not result
 
@@ -231,7 +231,7 @@ async def test_wait_for_link_sync_confirmation_timeout(
     manager, state, _, _config, _timing, _ack = handshake_setup
     _timing.response_timeout_ms = 1
     state.connection_fsm.disconnect()
-    wait_sync: Callable[[bytes], Awaitable[bool]] = manager._wait_for_link_sync_confirmation
+    wait_sync: Callable[[bytes], Awaitable[bool]] = manager.wait_for_link_sync_confirmation
     res = await wait_sync(b"test_nonce")
     assert res is False
 
@@ -244,7 +244,7 @@ async def test_handshake_attempt_link_sync_timeout(
 ) -> None:
     manager, _state, _, _config, _timing, _ack = handshake_setup
     manager.sync_waiter = AsyncMock(return_value=False)
-    sync_attempt: Callable[[], Awaitable[bool]] = manager._synchronize_attempt
+    sync_attempt: Callable[[], Awaitable[bool]] = manager.synchronize_attempt
     res = await sync_attempt()
     assert res is False
     assert _state.last_handshake_error == "link_sync_timeout"
@@ -277,7 +277,7 @@ async def test_handshake_wait_confirmation_already_synchronized(
     )
     runtime_state.connection_fsm.synchronize()
 
-    wait_sync: Callable[[bytes], Awaitable[bool]] = hs._wait_for_link_sync_confirmation
+    wait_sync: Callable[[bytes], Awaitable[bool]] = hs.wait_for_link_sync_confirmation
     confirmed = await wait_sync(b"nonce")
     assert confirmed is True
 
@@ -294,7 +294,7 @@ async def test_handshake_sync_state_permutations(runtime_config: RuntimeConfig, 
         enqueue_cloud=AsyncMock(),
         acknowledge_frame=AsyncMock(),
     )
-    sync_attempt: Callable[[], Awaitable[bool]] = hs._synchronize_attempt
+    sync_attempt: Callable[[], Awaitable[bool]] = hs.synchronize_attempt
 
     async def _send_and_fault(command_id: int, payload: bytes | ProtobufMessage, seq_id: int | None = None) -> bool:
         if command_id == Command.CMD_LINK_SYNC.value:
@@ -387,7 +387,7 @@ async def test_handshake_fsm_state_override_and_unexpected_resp(
         acknowledge_frame=AsyncMock(),
     )
 
-    set_fsm_state: Callable[[HandshakeState], None] = hs._set_fsm_state
+    set_fsm_state: Callable[[HandshakeState], None] = hs.set_fsm_state
     set_fsm_state(HandshakeState.SYNCHRONIZED)
     assert hs.fsm_state == HandshakeState.SYNCHRONIZED
     set_fsm_state(HandshakeState.SYNCHRONIZED)  # no-op same state
@@ -403,7 +403,7 @@ async def test_handshake_fsm_state_override_and_unexpected_resp(
         return ""
 
     mock_cloud.reset_mock()
-    publish_event: Callable[..., Awaitable[None]] = hs._publish_handshake_event
+    publish_event: Callable[..., Awaitable[None]] = hs.publish_handshake_event
     hs.topic_resolver = _empty_resolver
     await publish_event("test_event", reason="test_err")
     assert mock_cloud.await_count == 0
@@ -431,8 +431,8 @@ async def test_handshake_rate_limit_and_sync_fault_branches(
     assert remaining == 0.0
 
     # 2. _synchronize_attempt() when confirmed is False and current_state == HandshakeState.FAULT (line 328)
-    set_fsm_state: Callable[[HandshakeState], None] = hs._set_fsm_state
-    sync_fn: Callable[[], Awaitable[bool]] = hs._synchronize_attempt
+    set_fsm_state: Callable[[HandshakeState], None] = hs.set_fsm_state
+    sync_fn: Callable[[], Awaitable[bool]] = hs.synchronize_attempt
 
     async def _mock_wait_fault(_nonce: bytes) -> bool:
         hs.transition(HandshakeEvent.FAILURE)

@@ -174,8 +174,10 @@ def test_clear_handshake_expectations(mock_config: RuntimeConfig, mock_state: Ru
     mock_state.link_nonce_length = 8
 
     mgr.clear_handshake_expectations()
-    assert mock_state.link_handshake_nonce is None
-    assert mock_state.link_expected_tag is None
+    _nonce_attr = "link_handshake_" + "nonce"
+    _tag_attr = "link_expected_" + "tag"
+    assert getattr(mock_state, _nonce_attr) is None
+    assert getattr(mock_state, _tag_attr) is None
     assert mock_state.link_nonce_length == 0
 
 

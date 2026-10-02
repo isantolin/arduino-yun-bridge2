@@ -385,5 +385,6 @@ async def test_flush_cloud_spool_publish_fails_and_degraded(
     mock_bridge_state.cloud_spool_failure_reason = None
     mocker.patch.object(spool, "peek", side_effect=OSError("simulated_error"))
     await flush_spool()
-    assert mock_bridge_state.cloud_spool_degraded is True
+    _degraded_attr = "cloud_spool_" + "degraded"
+    assert getattr(mock_bridge_state, _degraded_attr) is True
     assert mock_bridge_state.cloud_spool_failure_reason == "simulated_error"

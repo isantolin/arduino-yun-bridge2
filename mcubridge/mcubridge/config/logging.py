@@ -99,6 +99,7 @@ def configure_logging(
         root_logger.removeHandler(old_handler)
     root_logger.addHandler(handler)
     root_logger.setLevel(level)
+    logging.getLogger("statemachine").setLevel(logging.WARNING)
 
 
 def reset_handlers() -> None:
@@ -109,3 +110,4 @@ def reset_handlers() -> None:
             continue
         handler.close()
         root_logger.removeHandler(handler)
+    logging.lastResort = None

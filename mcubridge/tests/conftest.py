@@ -186,6 +186,10 @@ def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "asyncio: mark test to run on asyncio loop")
 
 
+def pytest_unconfigure(config: pytest.Config) -> None:
+    logging.lastResort = None
+
+
 @pytest.hookimpl(tryfirst=True)
 def pytest_pyfunc_call(pyfuncitem: pytest.Function) -> bool | None:
     """Fallback asyncio runner when pytest-asyncio is unavailable."""

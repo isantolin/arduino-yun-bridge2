@@ -103,7 +103,7 @@ def _start_cloud_gateway(cloud_verify: CloudVerifier, state: EmulationState) -> 
     return gateway_proc
 
 
-def _prepare_daemon_environment(p_root: Path, emulator_fs_root: Path) -> tuple[Path, dict[str, str], list[str]]:
+def _prepare_daemon_environment(p_root: Path, emulator_fs_root: Path) -> tuple[dict[str, str], list[str]]:
     fake_uci_dir = Path(tempfile.mkdtemp(prefix="mcubridge_fake_uci_"))
 
     daemon_env = dict(os.environ)
@@ -154,7 +154,7 @@ def _prepare_daemon_environment(p_root: Path, emulator_fs_root: Path) -> tuple[P
         daemon_cmd.extend(["-m", "coverage", "run", "--append", "--rcfile", str(p_root / "pyproject.toml")])
     daemon_cmd.extend(["-m", "mcubridge.daemon"])
 
-    return fake_uci_dir, daemon_env, daemon_cmd
+    return daemon_env, daemon_cmd
 
 
 def run_emulation(
@@ -205,7 +205,7 @@ def run_emulation(
 
     # 3. Start Daemon
     p_root = package_root.absolute()
-    fake_uci_dir, daemon_env, daemon_cmd = _prepare_daemon_environment(p_root, emulator_fs_root)
+    daemon_env, daemon_cmd = _prepare_daemon_environment(p_root, emulator_fs_root)
     daemon_proc = None
     all_success = True
 

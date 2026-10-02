@@ -94,8 +94,7 @@ def load_manifest(path: Path) -> list[Target]:
             extra_args = _coerce_list(entry.get("extra_args")) if "extra_args" in entry else []
             timeout_val = entry.get("timeout") if "timeout" in entry else default_timeout
             retries = entry.get("retries") if "retries" in entry else default_retries
-            raw_env = entry.get("env", {})
-            env = {str(k): str(v) for k, v in raw_env.items()} if isinstance(raw_env, dict) else {}
+            env = _coerce_env(entry.get("env"))
 
             parsed.append(
                 Target(

@@ -40,7 +40,10 @@ def test_create_source_tarball(tmp_path: Path) -> None:
 
 
 def test_main_missing_rpmbuild(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(build_rpm.shutil, "which", lambda cmd: None)
+    def mock_which_none(_cmd: str) -> str | None:
+        return None
+
+    monkeypatch.setattr(build_rpm.shutil, "which", mock_which_none)
     with pytest.raises(SystemExit) as exc:
         build_rpm.main(output_dir=tmp_path, build_dir=tmp_path / "rpmbuild")
     assert exc.value.code == 1
@@ -51,7 +54,10 @@ def test_main_rpmbuild_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     output_dir.mkdir(parents=True, exist_ok=True)
     custom_build = tmp_path / "rpmbuild"
 
-    monkeypatch.setattr(build_rpm.shutil, "which", lambda cmd: "/usr/bin/rpmbuild")
+    def mock_which_found(_cmd: str) -> str | None:
+        return "/usr/bin/rpmbuild"
+
+    monkeypatch.setattr(build_rpm.shutil, "which", mock_which_found)
 
     def mock_run(cmd: list[str], check: bool = False) -> MagicMock:
         _ = (cmd, check)

@@ -370,7 +370,7 @@ def run_simavr_emulation(
     state.capabilities_event.wait(timeout=5.0)
     time.sleep(1.0)
 
-    all_passed = _run_client_scripts(test_scripts, daemon_env, timeout_seconds)
+    all_passed = run_client_scripts(test_scripts, daemon_env, timeout_seconds)
     if all_passed:
         # [SIL-2 / Rule 29] Audit runtime status snapshot before teardown
         status_file = Path("/tmp/mcubridge_status.json")
@@ -392,7 +392,7 @@ def run_simavr_emulation(
     return all_passed
 
 
-def _run_single_client_script(script_path: Path, device_id: str = "yun-01") -> bool:
+def run_single_client_script(script_path: Path, device_id: str = "yun-01") -> bool:
     """Execute client test script directly in-process via module main or runpy (Rule 37)."""
     logger.info("Running client test in-process", script=script_path.name)
     try:
@@ -426,7 +426,7 @@ def _run_single_client_script(script_path: Path, device_id: str = "yun-01") -> b
         return False
 
 
-def _run_client_scripts(
+def run_client_scripts(
     test_scripts: list[Path],
     daemon_env: dict[str, str],
     timeout_seconds: float,
@@ -436,7 +436,7 @@ def _run_client_scripts(
         if not test_path.exists():
             logger.warning("Test script not found, skipping", path=str(test_path))
             continue
-        if not _run_single_client_script(test_path, device_id="yun-01"):
+        if not run_single_client_script(test_path, device_id="yun-01"):
             return False
     return True
 

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -12,7 +14,7 @@ from tools.emulation import emulation_runner
 
 
 def test_default_output_lines() -> None:
-    lines = emulation_runner._default_output_lines()
+    lines = emulation_runner.default_output_lines()
     assert isinstance(lines, list)
     assert len(lines) == 0
 
@@ -27,9 +29,13 @@ def test_emulation_state_on_line() -> None:
 
 
 def test_ensure_cloud_gateway_already_running(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(emulation_runner, "wait_for_tcp_ready", lambda *args, **kwargs: True)
+    def mock_wait_tcp(host: str, port: int, timeout: float = 1.0) -> bool:
+        _ = (host, port, timeout)
+        return True
+
+    monkeypatch.setattr(emulation_runner, "wait_for_tcp_ready", mock_wait_tcp)
     state = emulation_runner.EmulationState()
-    proc = emulation_runner._ensure_cloud_gateway(state)
+    proc = emulation_runner.ensure_cloud_gateway(state)
     assert proc is None
 
 
@@ -38,7 +44,7 @@ def test_prepare_emulator_fs(tmp_path: Path) -> None:
     fs_root.mkdir()
     (fs_root / "dummy.txt").write_text("dummy", encoding="utf-8")
 
-    emulation_runner._prepare_emulator_fs(fs_root)
+    emulation_runner.prepare_emulator_fs(fs_root)
     assert fs_root.exists()
     assert not (fs_root / "dummy.txt").exists()
 
@@ -49,7 +55,7 @@ def test_wait_for_daemon_sync_success(tmp_path: Path) -> None:
         json.dumps({"bridge": {"is_synchronized": True}}),
         encoding="utf-8",
     )
-    synced = emulation_runner._wait_for_daemon_sync(status_file, timeout=1.0)
+    synced = emulation_runner.wait_for_daemon_sync(status_file, timeout=1.0)
     assert synced is True
 
 
@@ -59,7 +65,7 @@ def test_wait_for_daemon_sync_failure(tmp_path: Path) -> None:
         json.dumps({"bridge": {"is_synchronized": False}}),
         encoding="utf-8",
     )
-    synced = emulation_runner._wait_for_daemon_sync(status_file, timeout=0.1)
+    synced = emulation_runner.wait_for_daemon_sync(status_file, timeout=0.1)
     assert synced is False
 
 
@@ -72,7 +78,7 @@ def test_run_client_script_with_main(tmp_path: Path) -> None:
         "    executed_args['device_id'] = device_id\n",
         encoding="utf-8",
     )
-    passed = emulation_runner._run_client_script(script, device_id="custom-01")
+    passed = emulation_runner.run_client_script(script, device_id="custom-01")
     assert passed is True
 
 
@@ -82,7 +88,7 @@ def test_run_client_script_failure(tmp_path: Path) -> None:
         "def main(host=None, port=None, device_id=None):\n    raise RuntimeError('simulated test failure')\n",
         encoding="utf-8",
     )
-    passed = emulation_runner._run_client_script(script, device_id="custom-01")
+    passed = emulation_runner.run_client_script(script, device_id="custom-01")
     assert passed is False
 
 
@@ -90,8 +96,12 @@ def test_audit_post_execution_status_clean(tmp_path: Path, monkeypatch: pytest.M
     status_file = tmp_path / "status.json"
     status_file.write_text(json.dumps({"metrics": {}, "bridge": {}}), encoding="utf-8")
 
-    monkeypatch.setattr(emulation_runner, "audit_status_dict", lambda data: [])
-    clean = emulation_runner._audit_post_execution_status(status_file)
+    def mock_audit_clean(data: dict[str, Any]) -> list[str]:
+        _ = data
+        return []
+
+    monkeypatch.setattr(emulation_runner, "audit_status_dict", mock_audit_clean)
+    clean = emulation_runner.audit_post_execution_status(status_file)
     assert clean is True
 
 
@@ -99,19 +109,38 @@ def test_audit_post_execution_status_anomalies(tmp_path: Path, monkeypatch: pyte
     status_file = tmp_path / "status.json"
     status_file.write_text(json.dumps({"metrics": {}, "bridge": {}}), encoding="utf-8")
 
-    monkeypatch.setattr(emulation_runner, "audit_status_dict", lambda data: ["Handshake failure streak > 0"])
-    clean = emulation_runner._audit_post_execution_status(status_file)
+    def mock_audit_anomalies(data: dict[str, Any]) -> list[str]:
+        _ = data
+        return ["Handshake failure streak > 0"]
+
+    monkeypatch.setattr(emulation_runner, "audit_status_dict", mock_audit_anomalies)
+    clean = emulation_runner.audit_post_execution_status(status_file)
     assert clean is False
 
 
 def test_run_emulation_pty_timeout(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(emulation_runner, "_ensure_cloud_gateway", lambda state: None)
-    monkeypatch.setattr(emulation_runner, "wait_for_path_ready", lambda *args, **kwargs: False)
+    def mock_ensure_gateway(state: emulation_runner.EmulationState) -> subprocess.Popen[str] | None:
+        _ = state
+        return None
 
-    mock_popen = MagicMock()
+    def mock_wait_path(path: str | Path, timeout: float = 10.0, interval: float = 0.1) -> bool:
+        _ = (path, timeout, interval)
+        return False
+
+    def mock_terminate_tree(procs: list[subprocess.Popen[Any]], timeout: float = 1.0) -> None:
+        _ = (procs, timeout)
+
+    mock_popen: subprocess.Popen[Any] = MagicMock()
     mock_popen.stderr = None
-    monkeypatch.setattr(emulation_runner.subprocess, "Popen", lambda *args, **kwargs: mock_popen)
-    monkeypatch.setattr(emulation_runner, "terminate_process_tree", lambda *args, **kwargs: None)
+
+    def mock_popen_fn(*args: object, **kwargs: object) -> subprocess.Popen[Any]:
+        _ = (args, kwargs)
+        return mock_popen
+
+    monkeypatch.setattr(emulation_runner, "ensure_cloud_gateway", mock_ensure_gateway)
+    monkeypatch.setattr(emulation_runner, "wait_for_path_ready", mock_wait_path)
+    monkeypatch.setattr(emulation_runner.subprocess, "Popen", mock_popen_fn)
+    monkeypatch.setattr(emulation_runner, "terminate_process_tree", mock_terminate_tree)
 
     firmware = tmp_path / "fake_firmware"
     firmware.touch()

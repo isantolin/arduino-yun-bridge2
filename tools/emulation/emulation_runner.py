@@ -19,7 +19,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any, cast
 
 import structlog
 import tenacity
@@ -48,13 +48,13 @@ configure_logging(console=True)
 logger = structlog.get_logger("emulation-runner")
 
 
-def _default_output_lines() -> list[tuple[str, str]]:
+def default_output_lines() -> list[tuple[str, str]]:
     return []
 
 
 @dataclass
 class EmulationState:
-    output_lines: list[tuple[str, str]] = field(default_factory=_default_output_lines)
+    output_lines: list[tuple[str, str]] = field(default_factory=default_output_lines)
     lock: threading.Lock = field(default_factory=threading.Lock)
 
     def on_line(self, line: str, source: str) -> None:
@@ -66,7 +66,7 @@ class EmulationState:
             logger.info("Process output", source=source, line=clean_line)
 
 
-def _ensure_cloud_gateway(state: EmulationState) -> subprocess.Popen[str] | None:
+def ensure_cloud_gateway(state: EmulationState) -> subprocess.Popen[str] | None:
     """Ensure Cloud Gateway is running without redundant wrapper shims (Rule 2.1)."""
     if wait_for_tcp_ready(CLOUD_HOST, CLOUD_PORT, timeout=1.0):
         return None
@@ -100,7 +100,7 @@ def _ensure_cloud_gateway(state: EmulationState) -> subprocess.Popen[str] | None
     return gateway_proc
 
 
-def _prepare_emulator_fs(fs_root: Path) -> None:
+def prepare_emulator_fs(fs_root: Path) -> None:
     """Ensure emulator filesystem root directory is clean and prepared."""
     if fs_root.exists():
         try:
@@ -164,16 +164,16 @@ def _prepare_daemon_environment(p_root: Path, emulator_fs_root: Path) -> tuple[d
     return daemon_env, daemon_cmd
 
 
-def _wait_for_daemon_sync(status_file: Path, timeout: float = 15.0) -> bool:
+def wait_for_daemon_sync(status_file: Path, timeout: float = 15.0) -> bool:
     """Wait for Daemon/MCU synchronization using declarative tenacity retry."""
 
     def _is_synced() -> bool:
         if not status_file.exists():
             return False
         try:
-            data = json.loads(status_file.read_text(encoding="utf-8"))
-            bridge = data.get("bridge", {})
-            return bool(isinstance(bridge, dict) and bridge.get("is_synchronized", False))
+            data = cast(dict[str, dict[str, object]], json.loads(status_file.read_text(encoding="utf-8")))
+            bridge = data.get("bridge")
+            return isinstance(bridge, dict) and bridge.get("is_synchronized") is True
         except (json.JSONDecodeError, OSError):
             return False
 
@@ -184,12 +184,12 @@ def _wait_for_daemon_sync(status_file: Path, timeout: float = 15.0) -> bool:
         reraise=False,
     )
     try:
-        return bool(sync_retryer(_is_synced))
+        return sync_retryer(_is_synced)
     except tenacity.RetryError:
         return False
 
 
-def _run_client_script(script_path: Path, device_id: str = "yun-01") -> bool:
+def run_client_script(script_path: Path, device_id: str = "yun-01") -> bool:
     """Execute client test script directly in-process via module main or runpy (Rule 37)."""
     logger.info("Executing client test in-process", script=script_path.name)
     try:
@@ -223,7 +223,7 @@ def _run_client_script(script_path: Path, device_id: str = "yun-01") -> bool:
         return False
 
 
-def _audit_post_execution_status(status_file: Path) -> bool:
+def audit_post_execution_status(status_file: Path) -> bool:
     """Audit runtime status snapshot and active system health (SIL-2 / Rule 29)."""
     if not status_file.exists():
         logger.warning("Status file does not exist for post-execution audit", path=str(status_file))
@@ -235,7 +235,7 @@ def _audit_post_execution_status(status_file: Path) -> bool:
             logger.error("Status file root is not a dictionary")
             return False
 
-        status_errors = audit_status_dict(status_data)
+        status_errors = audit_status_dict(cast(dict[str, Any], status_data))
         if status_errors:
             logger.error("Post-execution status health check failed", errors=status_errors)
             for err in status_errors:
@@ -255,13 +255,13 @@ def run_emulation(
     run_scripts: list[str] | None = None,
 ) -> None:
     state = EmulationState()
-    gateway_proc = _ensure_cloud_gateway(state)
+    gateway_proc = ensure_cloud_gateway(state)
 
     # 1. Start Unified socat linking PTY to MCU EXEC
     Path(SOCAT_PORT0).unlink(missing_ok=True)
 
     emulator_fs_root = Path("/tmp/mcubridge-host-fs")
-    _prepare_emulator_fs(emulator_fs_root)
+    prepare_emulator_fs(emulator_fs_root)
 
     logger.info("Starting Unified MCU Emulator via socat EXEC...")
     mcu_proc = subprocess.Popen(
@@ -305,7 +305,7 @@ def run_emulation(
         # Wait for Daemon/MCU sync
         logger.info("Waiting for Daemon/MCU synchronization...")
         status_file = Path("/tmp/mcubridge_status.json")
-        is_synced = _wait_for_daemon_sync(status_file, timeout=15.0)
+        is_synced = wait_for_daemon_sync(status_file, timeout=15.0)
 
         if is_synced:
             logger.info("Daemon/MCU synchronization established successfully.")
@@ -324,7 +324,7 @@ def run_emulation(
                 with state.lock:
                     lines_before = len(state.output_lines)
 
-                passed = _run_client_script(s_path, device_id="yun-01")
+                passed = run_client_script(s_path, device_id="yun-01")
                 if not passed:
                     all_success = False
                     break
@@ -353,14 +353,16 @@ def run_emulation(
 
         # 5. [SIL-2 / Rule 29] Mandatory Post-Execution Status Audit
         if all_success:
-            status_clean = _audit_post_execution_status(status_file)
+            status_clean = audit_post_execution_status(status_file)
             if not status_clean:
                 all_success = False
     except (OSError, RuntimeError, ValueError) as exc:
         logger.error("Emulation error", error=str(exc))
         all_success = False
     finally:
-        procs_to_terminate = [p for p in (daemon_proc, mcu_proc, gateway_proc) if p is not None]
+        procs_to_terminate: list[subprocess.Popen[Any]] = [
+            p for p in (daemon_proc, mcu_proc, gateway_proc) if p is not None
+        ]
         terminate_process_tree(procs_to_terminate, timeout=2.0)
 
     if not all_success:

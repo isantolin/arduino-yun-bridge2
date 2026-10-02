@@ -40,7 +40,7 @@ def test_coverage_python_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
                 encoding="utf-8",
             )
 
-    monkeypatch.setattr(coverage_python.coverage, "Coverage", DummyCoverage)
+    monkeypatch.setattr("coverage.Coverage", DummyCoverage)
 
     coverage_python.main(
         output_root=output_dir,
@@ -97,7 +97,7 @@ def test_coverage_python_branch_coverage_under_threshold(tmp_path: Path, monkeyp
                 encoding="utf-8",
             )
 
-    monkeypatch.setattr(coverage_python.coverage, "Coverage", DummyCoverage)
+    monkeypatch.setattr("coverage.Coverage", DummyCoverage)
 
     with pytest.raises(SystemExit) as exc_info:
         coverage_python.main(
@@ -126,7 +126,7 @@ def test_coverage_python_missing_json(tmp_path: Path, monkeypatch: pytest.Monkey
             # Does not write file
             pass
 
-    monkeypatch.setattr(coverage_python.coverage, "Coverage", DummyCoverage)
+    monkeypatch.setattr("coverage.Coverage", DummyCoverage)
 
     with pytest.raises(SystemExit) as exc_info:
         coverage_python.main(output_root=output_dir)

@@ -10,7 +10,6 @@ import sys
 from pathlib import Path
 from typing import Annotated
 
-import coverage
 import pytest
 import typer
 
@@ -88,6 +87,8 @@ def main(
         sys.exit(exit_code)
 
     # Generate JSON report via direct coverage library API [Rule 37]
+    import coverage
+
     json_path = output_root / "coverage.json"
     cov = coverage.Coverage(data_file=str(coverage_file))
     cov.load()

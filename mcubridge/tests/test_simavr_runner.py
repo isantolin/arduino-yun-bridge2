@@ -30,18 +30,18 @@ def test_run_single_client_script_with_main(tmp_path: Path) -> None:
         "    executed_args['device_id'] = device_id\n",
         encoding="utf-8",
     )
-    passed = simavr_runner._run_single_client_script(script, device_id="test-mcu-01")
+    passed = simavr_runner.run_single_client_script(script, device_id="test-mcu-01")
     assert passed is True
 
 
 def test_run_single_client_script_with_exit_code(tmp_path: Path) -> None:
     script_pass = tmp_path / "pass_exit.py"
     script_pass.write_text("import sys\nsys.exit(0)\n", encoding="utf-8")
-    assert simavr_runner._run_single_client_script(script_pass) is True
+    assert simavr_runner.run_single_client_script(script_pass) is True
 
     script_fail = tmp_path / "fail_exit.py"
     script_fail.write_text("import sys\nsys.exit(2)\n", encoding="utf-8")
-    assert simavr_runner._run_single_client_script(script_fail) is False
+    assert simavr_runner.run_single_client_script(script_fail) is False
 
 
 def test_run_single_client_script_exception(tmp_path: Path) -> None:
@@ -50,7 +50,7 @@ def test_run_single_client_script_exception(tmp_path: Path) -> None:
         "def main(host=None, port=None, device_id=None):\n    raise RuntimeError('boom')\n",
         encoding="utf-8",
     )
-    assert simavr_runner._run_single_client_script(script_err) is False
+    assert simavr_runner.run_single_client_script(script_err) is False
 
 
 def test_run_client_scripts(tmp_path: Path) -> None:
@@ -58,8 +58,32 @@ def test_run_client_scripts(tmp_path: Path) -> None:
     s1.write_text("def main(host=None, port=None, device_id=None):\n    pass\n", encoding="utf-8")
     missing = tmp_path / "does_not_exist.py"
 
-    passed = simavr_runner._run_client_scripts([s1, missing], {}, 10.0)
+    passed = simavr_runner.run_client_scripts([s1, missing], {}, 10.0)
     assert passed is True
+
+
+def _mock_simavr_success(
+    firmware_path: Path,
+    mcu: str,
+    frequency: int,
+    test_scripts: list[Path],
+    timeout_seconds: float = 90.0,
+    uart_id: str | None = None,
+) -> bool:
+    _ = (firmware_path, mcu, frequency, test_scripts, timeout_seconds, uart_id)
+    return True
+
+
+def _mock_simavr_failure(
+    firmware_path: Path,
+    mcu: str,
+    frequency: int,
+    test_scripts: list[Path],
+    timeout_seconds: float = 90.0,
+    uart_id: str | None = None,
+) -> bool:
+    _ = (firmware_path, mcu, frequency, test_scripts, timeout_seconds, uart_id)
+    return False
 
 
 def test_run_matrix_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -74,7 +98,7 @@ def test_run_matrix_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
         return subprocess.CompletedProcess(cmd, returncode=0)
 
     monkeypatch.setattr(subprocess, "run", mock_compile_run)
-    monkeypatch.setattr(simavr_runner, "run_simavr_emulation", lambda **kwargs: True)
+    monkeypatch.setattr(simavr_runner, "run_simavr_emulation", _mock_simavr_success)
     monkeypatch.setenv("SIMAVR_METRICS_DIR", str(tmp_path / "metrics"))
 
     fail_count = simavr_runner.run_matrix(sketch, timeout_seconds=5.0, test_scripts=[])
@@ -98,7 +122,7 @@ def test_run_matrix_compilation_skipped(tmp_path: Path, monkeypatch: pytest.Monk
         return subprocess.CompletedProcess(cmd, returncode=0)
 
     monkeypatch.setattr(subprocess, "run", mock_compile_skip)
-    monkeypatch.setattr(simavr_runner, "run_simavr_emulation", lambda **kwargs: True)
+    monkeypatch.setattr(simavr_runner, "run_simavr_emulation", _mock_simavr_success)
     monkeypatch.setenv("SIMAVR_METRICS_DIR", str(tmp_path / "metrics"))
 
     fail_count = simavr_runner.run_matrix(sketch, timeout_seconds=5.0, test_scripts=[])
@@ -121,7 +145,7 @@ def test_run_matrix_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
         return subprocess.CompletedProcess(cmd, returncode=0)
 
     monkeypatch.setattr(subprocess, "run", mock_compile_run)
-    monkeypatch.setattr(simavr_runner, "run_simavr_emulation", lambda **kwargs: False)
+    monkeypatch.setattr(simavr_runner, "run_simavr_emulation", _mock_simavr_failure)
     monkeypatch.setenv("SIMAVR_METRICS_DIR", str(tmp_path / "metrics"))
 
     fail_count = simavr_runner.run_matrix(sketch, timeout_seconds=5.0, test_scripts=[])

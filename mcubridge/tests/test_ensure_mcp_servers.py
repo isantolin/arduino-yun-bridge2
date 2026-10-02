@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import cast
 from unittest.mock import MagicMock
 
 import pytest
@@ -13,14 +14,14 @@ from tools import ensure_mcp_servers
 
 def test_is_port_listening_closed() -> None:
     # Port 1 is rarely if ever open locally
-    assert not ensure_mcp_servers._is_port_listening("127.0.0.1", 1, timeout_sec=0.1)
+    assert not ensure_mcp_servers.is_port_listening("127.0.0.1", 1, timeout_sec=0.1)
 
 
 def test_stop_gateway_no_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     fake_pid = tmp_path / "gateway.pid"
     monkeypatch.setattr(ensure_mcp_servers, "GATEWAY_PID_FILE", fake_pid)
     # Should not raise
-    ensure_mcp_servers._stop_gateway()
+    ensure_mcp_servers.terminate_gateway()
     assert not fake_pid.exists()
 
 
@@ -32,7 +33,7 @@ def test_stop_gateway_with_pid(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) 
     mock_kill = MagicMock(side_effect=ProcessLookupError)
     monkeypatch.setattr(ensure_mcp_servers.os, "kill", mock_kill)
 
-    ensure_mcp_servers._stop_gateway()
+    ensure_mcp_servers.terminate_gateway()
     assert not fake_pid.exists()
     mock_kill.assert_called_once_with(999999, 15)
 
@@ -65,7 +66,7 @@ def test_sync_mcp_configs(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> No
                         and "mcpServers" in raw_data
                         and isinstance(raw_data["mcpServers"], dict)
                     ):
-                        data = raw_data
+                        data = cast(dict[str, dict[str, object]], raw_data)
                 except (json.JSONDecodeError, OSError):
                     data = {"mcpServers": {}}
 
@@ -97,7 +98,7 @@ def test_sync_mcp_configs(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> No
 
 def test_main_stop_gateway(monkeypatch: pytest.MonkeyPatch) -> None:
     mock_stop = MagicMock()
-    monkeypatch.setattr(ensure_mcp_servers, "_stop_gateway", mock_stop)
+    monkeypatch.setattr(ensure_mcp_servers, "terminate_gateway", mock_stop)
 
     ensure_mcp_servers.main(stop_gateway=True)
     mock_stop.assert_called_once()

@@ -13,7 +13,7 @@ import socket
 import subprocess
 import sys
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, cast
 
 import typer
 
@@ -28,7 +28,7 @@ GATEWAY_PID_FILE = Path("/tmp/mcubridge_gateway_local.pid")
 GATEWAY_LOG_FILE = Path("/tmp/mcubridge_gateway_local.log")
 
 
-def _is_port_listening(host: str, port: int, timeout_sec: float = 1.0) -> bool:
+def is_port_listening(host: str, port: int, timeout_sec: float = 1.0) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.settimeout(timeout_sec)
         try:
@@ -38,7 +38,7 @@ def _is_port_listening(host: str, port: int, timeout_sec: float = 1.0) -> bool:
             return False
 
 
-def _stop_gateway() -> None:
+def terminate_gateway() -> None:
     if not GATEWAY_PID_FILE.exists():
         print("[INFO] No running gateway PID file found.")
         return
@@ -60,7 +60,7 @@ def _stop_gateway() -> None:
 
 def _start_gateway_if_needed() -> None:
     print("[*] Checking local McuBridge gRPC Gateway on 127.0.0.1:8443...")
-    if _is_port_listening("127.0.0.1", 8443):
+    if is_port_listening("127.0.0.1", 8443):
         print("  ✅ Gateway already active and listening on port 8443.")
         return
 
@@ -92,7 +92,7 @@ def _check_semgrep() -> Path:
             )
         semgrep_bin = shutil.which("semgrep") or str(HOME / ".local" / "bin" / "semgrep")
 
-    res = subprocess.run([str(semgrep_bin), "--version"], capture_output=True, text=True, check=False)
+    res = subprocess.run([semgrep_bin, "--version"], capture_output=True, text=True, check=False)
     print(f"  -> Semgrep version: {res.stdout.strip()}")
 
     init_payload = json.dumps(
@@ -110,7 +110,7 @@ def _check_semgrep() -> Path:
 
     try:
         subprocess.run(
-            [str(semgrep_bin), "mcp"],
+            [semgrep_bin, "mcp"],
             input=init_payload,
             capture_output=True,
             text=True,
@@ -182,7 +182,7 @@ def _check_serial_mcp() -> Path:
     return Path(serial_bin)
 
 
-def _sync_mcp_configs(semgrep_path: Path, serial_mcp_path: Path) -> None:
+def sync_mcp_configs(semgrep_path: Path, serial_mcp_path: Path) -> None:
     print("[4/4] Verifying MCP configurations in workspace and user environments...")
     configs = [
         REPO_ROOT / ".agent" / "mcp_config.json",
@@ -206,7 +206,7 @@ def _sync_mcp_configs(semgrep_path: Path, serial_mcp_path: Path) -> None:
             try:
                 raw_data = json.loads(cfg.read_text(encoding="utf-8"))
                 if isinstance(raw_data, dict) and "mcpServers" in raw_data and isinstance(raw_data["mcpServers"], dict):
-                    data = raw_data
+                    data = cast(dict[str, dict[str, object]], raw_data)
             except (json.JSONDecodeError, OSError):
                 data = {"mcpServers": {}}
 
@@ -236,7 +236,7 @@ def main(
     stop_gateway: Annotated[bool, typer.Option("--stop-gateway", help="Stop local McuBridge gRPC Gateway")] = False,
 ) -> None:
     if stop_gateway:
-        _stop_gateway()
+        terminate_gateway()
         return
 
     print("=================================================================")
@@ -246,7 +246,7 @@ def main(
     semgrep_path = _check_semgrep()
     _check_buf()
     serial_mcp_path = _check_serial_mcp()
-    _sync_mcp_configs(semgrep_path, serial_mcp_path)
+    sync_mcp_configs(semgrep_path, serial_mcp_path)
 
     # Gemini parity audit
     try:

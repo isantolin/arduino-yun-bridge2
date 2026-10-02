@@ -8,17 +8,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import requests.exceptions
-from openwrt_luci_rpc import OpenWrtRpc
-from openwrt_luci_rpc.exceptions import (
-    InvalidLuciLoginError,
-    InvalidLuciTokenError,
-    LuciConfigError,
-    LuciRpcMethodNotFoundError,
-    LuciRpcUnknownError,
-    PageNotFoundError,
-)
-
 
 def validate_luci_app() -> int:
     repo_root = Path(__file__).resolve().parents[2]
@@ -87,6 +76,17 @@ def validate_luci_app() -> int:
 
 def validate_luci_rpc_endpoint(host: str, user: str = "root", password: str = "") -> int:
     """Validate active LuCI RPC endpoints on a live OpenWrt device via openwrt-luci-rpc."""
+    import requests.exceptions
+    from openwrt_luci_rpc import OpenWrtRpc
+    from openwrt_luci_rpc.exceptions import (
+        InvalidLuciLoginError,
+        InvalidLuciTokenError,
+        LuciConfigError,
+        LuciRpcMethodNotFoundError,
+        LuciRpcUnknownError,
+        PageNotFoundError,
+    )
+
     sys.stdout.write(f"[LuCI-RPC] Testing connection to LuCI RPC on {host}...\n")
     try:
         rpc = OpenWrtRpc(host, user, password)

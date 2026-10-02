@@ -1894,4 +1894,3 @@ class BridgeService:
     unsupported_mcu_request = _unsupported_mcu_request
     on_mcu_pin_update_event = _on_mcu_pin_update_event
     record_cloud_drop = _record_cloud_drop
-    emit_bridge_snapshot = _emit_bridge_snapshot

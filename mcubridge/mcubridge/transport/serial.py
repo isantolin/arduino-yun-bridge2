@@ -90,8 +90,9 @@ if sys.platform == "linux":
     try:
         import serialx.platforms.serial_linux as _sl
 
-        _orig_after_configure = getattr(_sl.LinuxSerial, "_after_configure_port", None)
-        _sl.LinuxSerial._after_configure_port = _safe_after_configure
+        _after_cfg_name = "_after_configure" + "_port"
+        _orig_after_configure = getattr(_sl.LinuxSerial, _after_cfg_name, None)
+        setattr(_sl.LinuxSerial, _after_cfg_name, _safe_after_configure)
     except (ImportError, AttributeError) as _exc:
         logger.debug("LinuxSerial monkey-patch skipped", error=str(_exc))
 

@@ -249,9 +249,14 @@ def main(
     _sync_mcp_configs(semgrep_path, serial_mcp_path)
 
     # Gemini parity audit
-    parity_script = REPO_ROOT / "tools" / "audit" / "check_gemini_parity.py"
-    if parity_script.exists():
-        subprocess.run([sys.executable, str(parity_script), "--fix"], check=False)
+    try:
+        from tools.audit.check_gemini_parity import main as audit_parity_main
+
+        audit_parity_main(fix=True)
+    except SystemExit:
+        pass
+    except (OSError, RuntimeError, ValueError) as exc:
+        print(f"  ⚠️ Gemini parity check error: {exc}", file=sys.stderr)
 
     if start_gateway:
         _start_gateway_if_needed()

@@ -8,9 +8,11 @@ running full E2E client verification suites.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import pty
+import runpy
 import shutil
 import subprocess
 import sys
@@ -390,42 +392,52 @@ def run_simavr_emulation(
     return all_passed
 
 
+def _run_single_client_script(script_path: Path, device_id: str = "yun-01") -> bool:
+    """Execute client test script directly in-process via module main or runpy (Rule 37)."""
+    logger.info("Running client test in-process", script=script_path.name)
+    try:
+        spec = importlib.util.spec_from_file_location(script_path.stem, script_path)
+        if spec is not None and spec.loader is not None:
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            main_fn = getattr(mod, "main", None)
+            if callable(main_fn):
+                main_fn(host=CLOUD_HOST, port=CLOUD_PORT, device_id=device_id)
+                logger.info("Test passed", script=script_path.name)
+                return True
+
+        orig_argv = sys.argv[:]
+        try:
+            sys.argv = [str(script_path), "--device-id", device_id]
+            runpy.run_path(str(script_path), run_name="__main__")
+        finally:
+            sys.argv = orig_argv
+
+        logger.info("Test passed", script=script_path.name)
+        return True
+    except SystemExit as exc:
+        if exc.code in (0, None):
+            logger.info("Test passed", script=script_path.name)
+            return True
+        logger.error("Test failed with exit code", script=script_path.name, code=exc.code)
+        return False
+    except (OSError, RuntimeError, ValueError, TypeError, AssertionError, TimeoutError) as exc:
+        logger.error("Test failed with exception", script=script_path.name, error=str(exc))
+        return False
+
+
 def _run_client_scripts(
     test_scripts: list[Path],
     daemon_env: dict[str, str],
     timeout_seconds: float,
 ) -> bool:
+    _ = (daemon_env, timeout_seconds)
     for test_path in test_scripts:
         if not test_path.exists():
             logger.warning("Test script not found, skipping", path=str(test_path))
             continue
-
-        test_env = dict(daemon_env)
-        test_env["MCUBRIDGE_GATEWAY_HOST"] = CLOUD_HOST
-        test_env["MCUBRIDGE_GATEWAY_PORT"] = str(CLOUD_PORT)
-        test_env["MCUBRIDGE_DEVICE_ID"] = "yun-01"
-
-        logger.info("Running client test", script=test_path.name)
-        test_res = subprocess.run(
-            [sys.executable, str(test_path), "--device-id", "yun-01"],
-            env=test_env,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            timeout=timeout_seconds,
-            check=False,
-        )
-
-        if test_res.returncode != 0:
-            logger.error(
-                "Test failed",
-                script=test_path.name,
-                code=test_res.returncode,
-                stdout=test_res.stdout,
-                stderr=test_res.stderr,
-            )
+        if not _run_single_client_script(test_path, device_id="yun-01"):
             return False
-        logger.info("Test passed", script=test_path.name)
     return True
 
 
@@ -454,6 +466,126 @@ def _teardown_simavr(
         storage_p = Path(storage_path)
         if storage_p.exists():
             shutil.rmtree(storage_p)
+
+
+MATRIX_BOARDS: list[tuple[str, str]] = [
+    ("arduino:avr:mega", "Arduino Mega 2560 (ATmega2560)"),
+    ("arduino:avr:yun", "Arduino Yún (ATmega32u4)"),
+    ("arduino:avr:uno", "Arduino Uno (ATmega328P)"),
+]
+
+
+def run_matrix(
+    sketch_path: Path,
+    timeout_seconds: float = 90.0,
+    test_scripts: list[Path] | None = None,
+) -> int:
+    """Execute multi-board simavr emulation matrix natively in Python (Rule 37)."""
+    build_base_dir = repo_root / "build" / "simavr"
+    summary_dir_str = os.environ.get("SIMAVR_METRICS_DIR")
+    summary_dir = Path(summary_dir_str) if summary_dir_str else build_base_dir
+    summary_dir.mkdir(parents=True, exist_ok=True)
+    build_base_dir.mkdir(parents=True, exist_ok=True)
+
+    if test_scripts is None:
+        test_paths = [
+            repo_root / "mcubridge-client-examples" / "tests" / "test_smoke_connection.py",
+            repo_root / "mcubridge-client-examples" / "examples" / "led13_test.py",
+            repo_root / "mcubridge-client-examples" / "examples" / "console_test.py",
+            repo_root / "mcubridge-client-examples" / "examples" / "mailbox_read_test.py",
+        ]
+    else:
+        test_paths = test_scripts
+
+    compile_script = repo_root / "tools" / "ci" / "compile_simavr_firmware.sh"
+
+    compilation_status: list[str] = []
+    emulation_status: list[str] = []
+    fail_count = 0
+
+    for board_fqbn, board_name in MATRIX_BOARDS:
+        slug = board_fqbn.replace(":", "-")
+        out_dir = build_base_dir / slug
+        out_dir.mkdir(parents=True, exist_ok=True)
+        firmware_elf = out_dir / "firmware.elf"
+        firmware_elf.unlink(missing_ok=True)
+
+        logger.info("=" * 80)
+        logger.info("Testing Board in simavr matrix", board=board_fqbn, name=board_name)
+        logger.info("=" * 80)
+
+        compile_res = subprocess.run(
+            ["bash", str(compile_script), str(sketch_path), board_fqbn, str(out_dir)],
+            check=False,
+        )
+
+        if compile_res.returncode == 0 and firmware_elf.exists():
+            compilation_status.append("✅ Compiled")
+            uart_id: str | None = None
+            sketch_str = str(sketch_path)
+            if ("BridgeBluetooth" in sketch_str or "BridgeWiFi" in sketch_str) and board_fqbn == "arduino:avr:mega":
+                uart_id = "1"
+
+            mcu = BOARD_TO_MCU.get(board_fqbn.lower(), "atmega2560")
+            success = run_simavr_emulation(
+                firmware_path=firmware_elf,
+                mcu=mcu,
+                frequency=16000000,
+                test_scripts=test_paths,
+                timeout_seconds=timeout_seconds,
+                uart_id=uart_id,
+            )
+            if success:
+                logger.info("Emulation PASSED for board", board=board_fqbn)
+                emulation_status.append("✅ Passed (100% E2E)")
+            else:
+                logger.error("Emulation FAILED for board", board=board_fqbn)
+                emulation_status.append("❌ Failed")
+                fail_count += 1
+        elif firmware_elf.exists():
+            compilation_status.append("❌ Failed")
+            emulation_status.append("❌ Failed")
+            fail_count += 1
+        else:
+            compilation_status.append("⚠️ Skipped (Flash/RAM limit exceeded)")
+            emulation_status.append("⏭️ Skipped (No binary)")
+            logger.info("Emulation skipped (target memory limit exceeded)", board=board_fqbn)
+
+    summary_file = summary_dir / "simavr_summary.md"
+    rows: list[str] = [
+        "### 🔬 simavr AVR Hardware Emulation Matrix (Cycle-Accurate)\n",
+        "| Board / Target | MCU Architecture | Firmware Compilation | Hardware Emulation (PTY/UART) | Result |",
+        "| :--- | :---: | :---: | :---: | :---: |",
+    ]
+
+    for (board_fqbn, board_name), c_stat, e_stat in zip(
+        MATRIX_BOARDS, compilation_status, emulation_status, strict=True
+    ):
+        if "Passed" in e_stat:
+            overall = "✅ PASS"
+        elif "Skipped" in e_stat:
+            overall = "⏭️ SKIPPED"
+        else:
+            overall = "❌ FAIL"
+        rows.append(f"| **{board_name}**<br>`{board_fqbn}` | AVR 8-bit | {c_stat} | {e_stat} | **{overall}** |")
+
+    summary_content = "\n".join(rows) + "\n"
+    summary_file.write_text(summary_content, encoding="utf-8")
+    print(summary_content)
+
+    step_summary = os.environ.get("GITHUB_STEP_SUMMARY")
+    if step_summary:
+        try:
+            with Path(step_summary).open("a", encoding="utf-8") as f:
+                f.write(summary_content)
+        except OSError as exc:
+            logger.warning("Could not write to GITHUB_STEP_SUMMARY", error=str(exc))
+
+    simavr_logs_dir = repo_root / "simavr-logs"
+    if simavr_logs_dir.exists():
+        shutil.copy2(summary_file, simavr_logs_dir / "simavr_summary.md")
+
+    return fail_count
 
 
 app = typer.Typer(
@@ -534,24 +666,11 @@ def main(
                 )
                 effective_sketch = canonical_sketch
 
-        matrix_script = repo_root / "tools" / "ci" / "ci_simavr_matrix.sh"
-        if matrix_script.exists():
-            env = dict(os.environ)
-            res: subprocess.CompletedProcess[bytes] = subprocess.run(
-                ["bash", str(matrix_script), str(effective_sketch)],
-                env=env,
-                cwd=str(repo_root),
-                check=False,
-            )
-            simavr_logs_dir = repo_root / "simavr-logs"
-            if simavr_logs_dir.exists():
-                summary_src = repo_root / "build" / "simavr" / "simavr_summary.md"
-                if summary_src.exists():
-                    shutil.copy2(summary_src, simavr_logs_dir / "simavr_summary.md")
-
-            if res.returncode != 0:
-                sys.exit(res.returncode)
-            return
+        test_paths = [Path(s) for s in scripts] if scripts else None
+        fail_count = run_matrix(effective_sketch, timeout_seconds=timeout, test_scripts=test_paths)
+        if fail_count != 0:
+            sys.exit(fail_count)
+        return
 
     effective_firmware = firmware or Path(f"build/simavr/{board.replace(':', '-')}/firmware.elf")
     mcu = BOARD_TO_MCU.get(board.lower(), board.lower())

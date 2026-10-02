@@ -54,6 +54,7 @@ def test_main_rpmbuild_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr(build_rpm.shutil, "which", lambda cmd: "/usr/bin/rpmbuild")
 
     def mock_run(cmd: list[str], check: bool = False) -> MagicMock:
+        _ = (cmd, check)
         # Create a mock rpm file in rpmbuild/RPMS
         rpms_dir = custom_build / "RPMS" / "noarch"
         rpms_dir.mkdir(parents=True, exist_ok=True)

@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import mcubridge.protocol.mcubridge_pb2 as pb
 import pytest
-from mcubridge.config.logging import configure_logging
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.protocol import Command, Status
 from mcubridge.services.runtime import BridgeService, _PendingMcuRead
@@ -330,39 +328,41 @@ async def test_on_mcu_datastore_put_cache_none(svc: tuple[BridgeService, Runtime
 
 @pytest.mark.asyncio
 async def test_on_mcu_ack_valid(
-    svc: tuple[BridgeService, RuntimeState, AsyncMock], caplog: pytest.LogCaptureFixture
+    svc: tuple[BridgeService, RuntimeState, AsyncMock], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     service, _state, _serial = svc
-    configure_logging(debug=True, console=True)
+    mock_debug = MagicMock()
+    monkeypatch.setattr("mcubridge.services.runtime.logger.debug", mock_debug)
     p = pb.AckPacket(command_id=0x01)
-    caplog.set_level(logging.DEBUG)
     on_ack: Callable[..., Awaitable[None]] = service.on_mcu_ack
     await on_ack(1, p)
-    assert "MCU ACK received" in caplog.text
+    mock_debug.assert_called_once_with("MCU ACK received", command_id="0x01")
 
 
 @pytest.mark.asyncio
 async def test_on_mcu_ack_raw_bytes(
-    svc: tuple[BridgeService, RuntimeState, AsyncMock], caplog: pytest.LogCaptureFixture
+    svc: tuple[BridgeService, RuntimeState, AsyncMock], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     service, _state, _serial = svc
-    configure_logging(debug=True, console=True)
+    mock_debug = MagicMock()
+    monkeypatch.setattr("mcubridge.services.runtime.logger.debug", mock_debug)
     valid_bytes = pb.AckPacket(command_id=0x02).SerializeToString()
-    caplog.set_level(logging.DEBUG)
     on_ack: Callable[..., Awaitable[None]] = service.on_mcu_ack
     await on_ack(1, valid_bytes)
-    assert "MCU ACK received" in caplog.text
+    mock_debug.assert_called_once_with("MCU ACK received", command_id="0x02")
 
 
 @pytest.mark.asyncio
 async def test_on_mcu_ack_corrupt_bytes(
-    svc: tuple[BridgeService, RuntimeState, AsyncMock], caplog: pytest.LogCaptureFixture
+    svc: tuple[BridgeService, RuntimeState, AsyncMock], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     service, _state, _serial = svc
-    caplog.set_level(logging.ERROR)
+    mock_error = MagicMock()
+    monkeypatch.setattr("mcubridge.services.runtime.logger.error", mock_error)
     on_ack: Callable[..., Awaitable[None]] = service.on_mcu_ack
     await on_ack(1, b"\xff\xff\xff")
-    assert "Failed to decode MCU ACK packet" in caplog.text
+    mock_error.assert_called_once()
+    assert "Failed to decode MCU ACK packet" in mock_error.call_args[0][0]
 
 
 @pytest.mark.asyncio

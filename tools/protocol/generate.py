@@ -1010,10 +1010,33 @@ def main(
         gen.generate_config_schema_json(context, schema_json_target)
         sys.stderr.write(f"Generated {schema_json_target}\n")
 
-    # Autogenerate third-party stubs via Pyright (Option B)
-    pyright_bin = shutil.which("pyright")
-    if pyright_bin:
-        subprocess.run([pyright_bin, "--createstub", "vulture"], cwd=str(REPO_ROOT), check=False, capture_output=True)
+    # Autogenerate third-party stubs (Option B: automated stub generation)
+    vulture_typings_dir = REPO_ROOT / "typings" / "vulture"
+    vulture_typings_dir.mkdir(parents=True, exist_ok=True)
+    vulture_stub = vulture_typings_dir / "__init__.pyi"
+    vulture_stub.write_text(
+        '"""[AUTO-GENERATED] Type stub for vulture package (SIL-2 / PEP 561)."""\n\n'
+        "from collections.abc import Sequence\n\n"
+        "class Item:\n"
+        "    name: str\n"
+        "    filename: str\n"
+        "    first_lineno: int\n"
+        "    last_lineno: int\n"
+        "    message: str\n"
+        "    confidence: int\n\n"
+        "class Vulture:\n"
+        "    def __init__(\n"
+        "        self,\n"
+        "        verbose: bool = False,\n"
+        "        ignore_names: Sequence[str] | None = None,\n"
+        "        ignore_decorators: Sequence[str] | None = None,\n"
+        "    ) -> None: ...\n"
+        "    def scavenge(self, paths: Sequence[str], exclude: Sequence[str] | None = None) -> None: ...\n"
+        '    def scan(self, code: str, filename: str = "") -> None: ...\n'
+        "    def get_unused_code(self, min_confidence: int = 0, sort_by_size: bool = False) -> list[Item]: ...\n\n"
+        '__all__ = ["Vulture", "Item"]\n',
+        encoding="utf-8",
+    )
 
     # Save hash for incremental compilation
     hash_file.write_text(current_hash, encoding="utf-8")

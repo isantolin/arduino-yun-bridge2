@@ -126,6 +126,9 @@ exclude = '''
   | typings
   | openwrt-sdk.*
   | tools/protocol/templates
+  | .*_pb2\.py
+  | .*_pb2\.pyi
+  | .*_grpc\.py
 )/
 '''
 

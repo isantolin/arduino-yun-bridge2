@@ -104,7 +104,7 @@ def test_sync_push_file_sftp(tmp_path: Path) -> None:
 def test_tar_push_asyncssh(tmp_path: Path) -> None:
     source_dir = tmp_path / "src"
     source_dir.mkdir()
-    (source_dir / "sample.py").write_text("print('sample')", encoding="utf-8")
+    (source_dir / "sample.py").write_text("print('sample')\n", encoding="utf-8")
 
     mock_proc = AsyncMock()
     mock_proc.stdin = MagicMock()

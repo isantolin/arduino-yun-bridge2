@@ -123,8 +123,7 @@ def test_load_runtime_config_falls_back_to_defaults() -> None:
 
 
 def test_get_uci_config_flattens_nested_structures() -> None:
-    load_raw_fn: Any = settings._load_raw_config
-    raw, _ = load_raw_fn(
+    raw, _ = settings.load_raw_config(
         uci_getter=lambda: {
             "allowed_commands": ["ls", "uptime"],
             "topic_prefix": "br",
@@ -191,9 +190,8 @@ def test_settings_factory_bypass_defaults() -> None:
 
 
 def test_settings_load_raw_config_empty_uci() -> None:
-    load_raw_fn: Any = settings._load_raw_config
     empty_uci: dict[str, Any] = {}
-    cfg_dict, source = load_raw_fn(uci_getter=lambda: empty_uci)
+    cfg_dict, source = settings.load_raw_config(uci_getter=lambda: empty_uci)
     assert source == "defaults"
     assert "serial_port" in cfg_dict
 
@@ -220,8 +218,7 @@ def test_settings_load_runtime_config_from_json_unknown_override() -> None:
 def test_settings_normalize_config_property(
     cloud_en: Any, wd_en: Any, baud: Any, interval: float, secret_str: str
 ) -> None:
-    norm_fn: Any = settings._normalize_config_dict
-    norm, secret = norm_fn(
+    norm, secret = settings.normalize_config_dict(
         {
             "cloud_enabled": cloud_en,
             "cloud_tls": cloud_en,
@@ -292,10 +289,9 @@ def test_config_settings_and_logging_branches(runtime_config: settings.RuntimeCo
     from mcubridge.config.logging import configure_logging
     from mcubridge.protocol import mcubridge_pb2 as pb
 
-    # 1. _runtime_config_factory with pb_msg
+    # 1. runtime_config_factory with pb_msg
     existing_msg = pb.RuntimeConfig(serial_port="/dev/test_factory")
-    factory_fn: Any = settings._runtime_config_factory
-    res_factory = factory_fn(pb_msg=existing_msg)
+    res_factory = settings.runtime_config_factory(pb_msg=existing_msg)
     assert res_factory.serial_port == "/dev/test_factory"
 
     # 2. load_runtime_config_from_json with dict and serial_shared_secret

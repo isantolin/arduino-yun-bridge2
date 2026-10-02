@@ -238,3 +238,11 @@ def load_runtime_config_from_json(
     validate_config(msg)
     _config_source[0] = "json"
     return msg
+
+
+coerce_bool = _coerce_bool
+coerce_path = _coerce_path
+coerce_commands = _coerce_commands
+runtime_config_factory = _runtime_config_factory
+load_raw_config = _load_raw_config
+normalize_config_dict = _normalize_config_dict

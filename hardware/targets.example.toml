@@ -4,7 +4,7 @@
 [defaults]
 # SSH user applied when a target does not specify one.
 user = "root"
-# Optional SSH arguments passed to tools/hardware_smoke_test.sh via repeated --ssh flags.
+# Optional SSH arguments passed to targets.
 ssh = ["-o StrictHostKeyChecking=no", "-i ~/.ssh/id_ed25519"]
 # Maximum seconds to wait for each smoke run before declaring a timeout.
 timeout = 90

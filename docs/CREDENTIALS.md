@@ -71,7 +71,7 @@ The **Services → McuBridge → Credentials & TLS** page now shows an "Arduino 
 ## Verifying the new material
 
 1. Rebuild or re-upload your Arduino sketch so it includes the updated `#define BRIDGE_SERIAL_SHARED_SECRET "..."` line (or the header where you stored that snippet).
-2. Run `tools/ci/hardware_smoke_test.sh --host <mcu>` or use the LuCI "Run smoke test" button to confirm Linux ↔ MCU communication still succeeds.
+2. Run `python3 tools/emulation/hardware_harness.py run --host <mcu>` or use the LuCI "Run smoke test" button to confirm Linux ↔ MCU communication still succeeds.
 3. Check daemon logs via `logread | grep mcubridge` or the LuCI status panel for `handshake` entries. Any `serial handshake rejected` messages typically mean the MCU firmware did not pick up the new header yet.
 
 ## Operational checklist

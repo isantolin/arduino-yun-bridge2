@@ -324,3 +324,19 @@ rationale = "Strongly-typed pytest wrapper for unittest.mock"
 name = "hypothesis"
 pip = "hypothesis==6.168.3"
 rationale = "Property-based testing and state machine fuzzing engine"
+
+[[dev_dependency]]
+name = "asyncssh"
+pip = "asyncssh==2.24.0"
+rationale = "Asynchronous SSH and SFTP client for QEMU OpenWrt deployment and remote execution"
+
+[[dev_dependency]]
+name = "openwrt-luci-rpc"
+pip = "openwrt-luci-rpc==1.1.17"
+rationale = "Native OpenWrt LuCI JSON-RPC client for automated web interface and UBUS testing"
+
+[[dev_dependency]]
+name = "pytest-embedded"
+pip = "pytest-embedded==2.9.3"
+rationale = "Embedded target testing harness and fixtures for hardware-in-the-loop and emulation suites"
+

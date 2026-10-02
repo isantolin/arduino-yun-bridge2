@@ -230,7 +230,7 @@ def run_emulation(
             reraise=False,
         )
         try:
-            is_synced = bool(sync_retryer(_is_synced))
+            is_synced = sync_retryer(_is_synced)
         except tenacity.RetryError:
             is_synced = False
 

@@ -8,6 +8,17 @@ import subprocess
 import sys
 from pathlib import Path
 
+import requests.exceptions
+from openwrt_luci_rpc import OpenWrtRpc
+from openwrt_luci_rpc.exceptions import (
+    InvalidLuciLoginError,
+    InvalidLuciTokenError,
+    LuciConfigError,
+    LuciRpcMethodNotFoundError,
+    LuciRpcUnknownError,
+    PageNotFoundError,
+)
+
 
 def validate_luci_app() -> int:
     repo_root = Path(__file__).resolve().parents[2]
@@ -74,5 +85,42 @@ def validate_luci_app() -> int:
     return 1
 
 
+def validate_luci_rpc_endpoint(host: str, user: str = "root", password: str = "") -> int:
+    """Validate active LuCI RPC endpoints on a live OpenWrt device via openwrt-luci-rpc."""
+    sys.stdout.write(f"[LuCI-RPC] Testing connection to LuCI RPC on {host}...\n")
+    try:
+        rpc = OpenWrtRpc(host, user, password)
+        if rpc.is_logged_in():
+            sys.stdout.write(f"  ✔ Connected to LuCI on {host}, authenticated successfully\n")
+            return 0
+        sys.stderr.write(f"  ✖ Failed to authenticate to LuCI on {host}\n")
+        return 1
+    except (
+        InvalidLuciLoginError,
+        InvalidLuciTokenError,
+        LuciConfigError,
+        LuciRpcMethodNotFoundError,
+        LuciRpcUnknownError,
+        PageNotFoundError,
+        requests.exceptions.RequestException,
+        OSError,
+        ValueError,
+    ) as exc:
+        sys.stderr.write(f"  ✖ LuCI RPC connection failed: {exc}\n")
+        return 1
+
+
+def main() -> int:
+    exit_code = validate_luci_app()
+    if "--rpc-host" in sys.argv:
+        idx = sys.argv.index("--rpc-host")
+        if idx + 1 < len(sys.argv):
+            rpc_host = sys.argv[idx + 1]
+            rpc_res = validate_luci_rpc_endpoint(rpc_host)
+            if rpc_res != 0:
+                return rpc_res
+    return exit_code
+
+
 if __name__ == "__main__":
-    sys.exit(validate_luci_app())
+    sys.exit(main())

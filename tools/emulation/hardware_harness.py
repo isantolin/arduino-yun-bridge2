@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated, Any, cast
 
+import asyncssh
 import typer
 
 from tools.audit.audit_bridge_status import audit_status_dict
@@ -149,6 +150,18 @@ async def run_command(
         return (1, None, str(e))
 
 
+async def run_ssh_command(
+    host: str,
+    user: str,
+    cmd: str,
+    timeout: float = 300.0,
+) -> tuple[int, str, str]:
+    """Execute command on remote host directly via asyncssh without fallbacks."""
+    async with asyncssh.connect(host, username=user, known_hosts=None) as conn:
+        res = await asyncio.wait_for(conn.run(cmd), timeout=timeout)
+        return res.exit_status or 0, str(res.stdout or ""), str(res.stderr or "")
+
+
 app = typer.Typer(help="Hardware test target harness runner.", add_completion=False)
 
 
@@ -263,13 +276,19 @@ def run(
                 }
                 code, _stdout, stderr = await run_command(cmd, cwd=REPO_ROOT, env=env, timeout=timeout)
             else:
+                assert target_host is not None
+                target_u = target_user or "root"
                 remote_cmd = (
                     f"MCUBRIDGE_NON_INTERACTIVE=1 PYTHONPATH=/tmp/mcubridge-client-examples "
                     f"python3 /tmp/mcubridge-client-examples/examples/{t_file} "
                     f"--host '{gateway_host}' --port {gateway_port} --device-id '{device_id}'"
                 )
-                cmd = ["ssh"] + ssh_args + [f"{target_user}@{target_host}", remote_cmd]
-                code, _stdout, stderr = await run_command(cmd, cwd=REPO_ROOT, timeout=timeout)
+                code, _stdout, stderr = await run_ssh_command(
+                    host=target_host,
+                    user=target_u,
+                    cmd=remote_cmd,
+                    timeout=timeout,
+                )
 
             elapsed = time.time() - t0
             passed = code == 0
@@ -304,20 +323,18 @@ def run(
                 sys.stderr.write(f"[WARN] Failed to parse /tmp/mcubridge_status.json: {e}\n")
                 status_errors = [f"Failed to parse /tmp/mcubridge_status.json: {e}"]
     else:
+        assert target_host is not None
+        target_u = target_user or "root"
         try:
             remote_read_cmd = (
                 "ubus call mcubridge status 2>/dev/null || cat /tmp/mcubridge_status.json 2>/dev/null || echo ''"
             )
-            res = subprocess.run(
-                ["ssh"] + ssh_args + [f"{target_user}@{target_host}", remote_read_cmd],
-                capture_output=True,
-                text=True,
-                timeout=10,
-                check=False,
+            _, status_out, _ = asyncio.run(
+                run_ssh_command(host=target_host, user=target_u, cmd=remote_read_cmd, timeout=10.0)
             )
-            if res.stdout.strip():
-                status_errors = audit_status_dict(json.loads(res.stdout))
-        except (subprocess.SubprocessError, OSError, json.JSONDecodeError, ValueError, TypeError) as e:
+            if status_out.strip():
+                status_errors = audit_status_dict(json.loads(status_out.strip()))
+        except (OSError, json.JSONDecodeError, ValueError, TypeError) as e:
             sys.stderr.write(f"[WARN] Failed to retrieve remote status via UBUS/file: {e}\n")
             status_errors = [f"Failed to retrieve remote status via UBUS/file: {e}"]
 
@@ -354,14 +371,6 @@ def rotate(
     """Rotate MCU Bridge shared credentials on remote hardware or local rootfs."""
     import re
 
-    ssh_extra = ssh_args or [
-        "-o",
-        "StrictHostKeyChecking=no",
-        "-o",
-        "UserKnownHostsFile=/dev/null",
-        "-o",
-        "LogLevel=ERROR",
-    ]
     rotate_script = REPO_ROOT / "mcubridge" / "scripts" / "mcubridge_rotate_credentials.py"
 
     secret: str | None = None
@@ -395,12 +404,11 @@ def rotate(
         if no_restart:
             remote_cmd += " --no-restart"
 
-        cmd = ["ssh"] + ssh_extra + [f"{user}@{host}", remote_cmd]
-        proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
-        if proc.returncode != 0:
-            print(f"Error running remote rotation on {host}: {proc.stderr}", file=sys.stderr)
-            sys.exit(proc.returncode)
-        output = proc.stdout
+        rot_code, rot_out, rot_err = asyncio.run(run_ssh_command(host=host, user=user, cmd=remote_cmd, timeout=30.0))
+        if rot_code != 0:
+            print(f"Error running remote rotation on {host}: {rot_err}", file=sys.stderr)
+            sys.exit(rot_code)
+        output = rot_out
     else:
         print("Error: Either --host or --local is required.", file=sys.stderr)
         sys.exit(1)

@@ -7,7 +7,9 @@ client examples from the host repository directly into the running OpenWrt VM.
 
 from __future__ import annotations
 
+import asyncio
 import fnmatch
+import io
 import socket
 import subprocess
 import sys
@@ -15,6 +17,7 @@ import tarfile
 from pathlib import Path
 from typing import Annotated
 
+import asyncssh
 import typer
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -23,7 +26,7 @@ app = typer.Typer(help="Synchronize local McuBridge source files into OpenWrt VM
 
 
 def run_cmd(cmd: list[str], check: bool = True) -> subprocess.CompletedProcess[bytes]:
-    sys.stdout.write(f"[*] Executing: {' '.join(cmd)}\n")
+    sys.stdout.write(f"[*] Executing local: {' '.join(cmd)}\n")
     sys.stdout.flush()
     return subprocess.run(cmd, check=check)
 
@@ -37,15 +40,30 @@ def _is_ssh_reachable(host: str, port: int = 22, timeout: float = 1.0) -> bool:
         return False
 
 
-def tar_push(src_dir: Path, remote_dest: str, host: str, user: str, excludes: list[str] | None = None) -> None:
-    """Stream a local directory to a remote directory via tar over SSH."""
-    ssh_mkdir = ["ssh", "-o", "StrictHostKeyChecking=no", f"{user}@{host}", f"mkdir -p '{remote_dest}'"]
-    run_cmd(ssh_mkdir, check=True)
+def run_remote_ssh(
+    cmd: str,
+    host: str,
+    user: str = "root",
+    timeout: float = 30.0,
+    check: bool = True,
+) -> tuple[int, str, str]:
+    """Execute a shell command on remote host directly via asyncssh."""
+    sys.stdout.write(f"[*] Remote SSH ({user}@{host}): {cmd}\n")
+    sys.stdout.flush()
 
-    ssh_extract = subprocess.Popen(
-        ["ssh", "-o", "StrictHostKeyChecking=no", f"{user}@{host}", f"tar -xzf - -C '{remote_dest}'"],
-        stdin=subprocess.PIPE,
-    )
+    async def _run() -> tuple[int, str, str]:
+        async with asyncssh.connect(host, username=user, known_hosts=None) as conn:
+            res = await asyncio.wait_for(conn.run(cmd), timeout=timeout)
+            return res.exit_status or 0, str(res.stdout or ""), str(res.stderr or "")
+
+    code, out, err = asyncio.run(_run())
+    if check and code != 0:
+        raise RuntimeError(f"Remote command failed on {host} (exit {code}): {err}")
+    return code, out, err
+
+
+def tar_push(src_dir: Path, remote_dest: str, host: str, user: str, excludes: list[str] | None = None) -> None:
+    """Stream a local directory to a remote directory via tar over asyncssh."""
 
     def _filter(tarinfo: tarfile.TarInfo) -> tarfile.TarInfo | None:
         if excludes:
@@ -55,17 +73,23 @@ def tar_push(src_dir: Path, remote_dest: str, host: str, user: str, excludes: li
                     return None
         return tarinfo
 
-    try:
-        if ssh_extract.stdin is not None:
-            with tarfile.open(mode="w:gz", fileobj=ssh_extract.stdin) as tar:
-                tar.add(str(src_dir), arcname=".", filter=_filter)
-            ssh_extract.stdin.close()
-    except BrokenPipeError as exc:
-        sys.stderr.write(f"[*] Broken pipe streaming tar to {host}: {exc}\n")
+    buf = io.BytesIO()
+    with tarfile.open(mode="w:gz", fileobj=buf) as tar:
+        tar.add(str(src_dir), arcname=".", filter=_filter)
+    tar_bytes = buf.getvalue()
 
-    ssh_extract.wait()
-    if ssh_extract.returncode != 0:
-        raise RuntimeError(f"tar extract on remote failed with code {ssh_extract.returncode}")
+    async def _async_tar() -> None:
+        async with asyncssh.connect(host, username=user, known_hosts=None) as conn:
+            await conn.run(f"mkdir -p '{remote_dest}'", check=True)
+            proc = await conn.create_process(f"tar -xzf - -C '{remote_dest}'")
+            proc.stdin.write(tar_bytes)
+            await proc.stdin.drain()
+            proc.stdin.write_eof()
+            await proc.wait()
+            if proc.exit_status != 0:
+                raise RuntimeError(f"tar extract on remote failed with code {proc.exit_status}")
+
+    asyncio.run(_async_tar())
 
 
 def resolve_vm_ip(preferred: str) -> str:
@@ -90,20 +114,22 @@ def resolve_vm_ip(preferred: str) -> str:
 
 
 def push_file(local_file: Path, remote_dest: str, host: str, user: str, mode: str | None = None) -> None:
-    """Copy a single file to remote destination and optionally set permissions."""
-    parent_dir = str(Path(remote_dest).parent)
-    ssh_cmd = f"mkdir -p '{parent_dir}' && cat > '{remote_dest}'"
-    if mode:
-        ssh_cmd += f" && chmod {mode} '{remote_dest}'"
+    """Copy a single file to remote destination and optionally set permissions via asyncssh SFTP."""
     sys.stdout.write(f"[*] Pushing: {local_file} -> {remote_dest}\n")
     sys.stdout.flush()
-    proc = subprocess.Popen(
-        ["ssh", "-o", "StrictHostKeyChecking=no", f"{user}@{host}", ssh_cmd],
-        stdin=subprocess.PIPE,
-    )
-    proc.communicate(input=local_file.read_bytes())
-    if proc.returncode != 0:
-        raise RuntimeError(f"Failed to push {local_file} to {remote_dest} (code {proc.returncode})")
+
+    async def _async_push() -> None:
+        async with (
+            asyncssh.connect(host, username=user, known_hosts=None) as conn,
+            conn.start_sftp_client() as sftp,
+        ):
+            parent_dir = str(Path(remote_dest).parent)
+            await sftp.makedirs(parent_dir, exist_ok=True)
+            await sftp.put(str(local_file), remote_dest)
+            if mode:
+                await sftp.chmod(remote_dest, int(mode, 8))
+
+    asyncio.run(_async_push())
 
 
 @app.command()
@@ -213,55 +239,43 @@ def sync(
 
     # Clean old bytecode and LuCI caches on remote
     print("\n[*] Cleaning stale remote .pyc bytecode and LuCI caches...")
-    run_cmd(
-        [
-            "ssh",
-            "-o",
-            "StrictHostKeyChecking=no",
-            f"{user}@{target_host}",
-            (
-                "find /usr/lib/python3.13/site-packages -name '*.pyc' -delete 2>/dev/null || true; "
-                "rm -rf /tmp/luci-* 2>/dev/null || true"
-            ),
-        ],
+    run_remote_ssh(
+        (
+            "find /usr/lib/python3.13/site-packages -name '*.pyc' -delete 2>/dev/null || true; "
+            "rm -rf /tmp/luci-* 2>/dev/null || true"
+        ),
+        host=target_host,
+        user=user,
         check=True,
     )
 
     # Ensure UCI configuration matches hardware setup
     print("\n[*] Verifying UCI configuration on remote VM...")
-    run_cmd(
-        [
-            "ssh",
-            "-o",
-            "StrictHostKeyChecking=no",
-            f"{user}@{target_host}",
-            (
-                "uci -q set mcubridge.general.serial_port='/dev/ttyS1' && "
-                "uci -q set mcubridge.general.serial_shared_secret="
-                "'8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe' && "
-                "uci -q set mcubridge.general.cloud_enabled='0' && "
-                "uci -q set mcubridge.general.debug='1' && "
-                "uci -q commit mcubridge"
-            ),
-        ],
+    run_remote_ssh(
+        (
+            "uci -q set mcubridge.general.serial_port='/dev/ttyS1' && "
+            "uci -q set mcubridge.general.serial_shared_secret="
+            "'8c6ecc8216447ee1525c0743737f3a5c0eef0c03a045ab50e5ea95687e826ebe' && "
+            "uci -q set mcubridge.general.cloud_enabled='0' && "
+            "uci -q set mcubridge.general.debug='1' && "
+            "uci -q commit mcubridge"
+        ),
+        host=target_host,
+        user=user,
         check=True,
     )
 
     if restart:
         print("\n[*] Restarting mcubridge and web services...")
-        run_cmd(
-            [
-                "ssh",
-                "-o",
-                "StrictHostKeyChecking=no",
-                f"{user}@{target_host}",
-                (
-                    "killall -9 python3 2>/dev/null || true; "
-                    "/etc/init.d/mcubridge restart; "
-                    "/etc/init.d/rpcd restart; "
-                    "/etc/init.d/uhttpd restart"
-                ),
-            ],
+        run_remote_ssh(
+            (
+                "killall -9 python3 2>/dev/null || true; "
+                "/etc/init.d/mcubridge restart; "
+                "/etc/init.d/rpcd restart; "
+                "/etc/init.d/uhttpd restart"
+            ),
+            host=target_host,
+            user=user,
             check=True,
         )
 

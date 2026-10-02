@@ -61,6 +61,10 @@ struct ByteBuffer {
     }
     return static_cast<int>(data[pos]);
   }
+
+  etl::span<const uint8_t> span() const {
+    return etl::span<const uint8_t>(data.data(), len);
+  }
 };
 
 // ---------------------------------------------------------------------------

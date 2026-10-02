@@ -128,7 +128,8 @@ async def run_command(
         env=env,
     )
     try:
-        stdout_bytes, stderr_bytes = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        async with asyncio.timeout(timeout):
+            stdout_bytes, stderr_bytes = await proc.communicate()
 
         def safe_decode(b: bytes) -> str:
             try:

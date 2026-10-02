@@ -187,7 +187,8 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
         if reader is None:
             return None
         try:
-            return await asyncio.wait_for(reader.readuntil(protocol.FRAME_DELIMITER), timeout=0.1)
+            async with asyncio.timeout(0.1):
+                return await reader.readuntil(protocol.FRAME_DELIMITER)
         except (TimeoutError, asyncio.IncompleteReadError, OSError):
             return None
 

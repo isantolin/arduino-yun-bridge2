@@ -880,7 +880,8 @@ class ProtobufGateway:
 
         try:
             await stream.send_message(req_envelope)
-            return await asyncio.wait_for(future, timeout=timeout_seconds)
+            async with asyncio.timeout(timeout_seconds):
+                return await future
         finally:
             self.pending_commands.pop(key, None)
 

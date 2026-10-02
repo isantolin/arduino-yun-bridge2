@@ -80,7 +80,8 @@ async def test_read_loop_corrupted_frame_resilience(corrupt_payload: bytes) -> N
 
     read_loop: Callable[..., Awaitable[None]] = transport.read_loop
     with pytest.raises(TimeoutError):
-        await asyncio.wait_for(read_loop(mock_serial), 0.05)
+        async with asyncio.timeout(0.05):
+            await read_loop(mock_serial)
 
 
 @pytest.mark.asyncio

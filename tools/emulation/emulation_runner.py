@@ -6,6 +6,7 @@ Direct PTY-PTY link via socat, with MCU opening its PTY directly.
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -17,6 +18,7 @@ from pathlib import Path
 from typing import Annotated
 
 import structlog
+import tenacity
 import typer
 from mcubridge.config.logging import configure_logging
 from mcubridge.protocol import protocol
@@ -208,9 +210,34 @@ def run_emulation(
         )
         start_daemon_thread(stream_pump, "daemon", daemon_proc.stdout, state.on_line, "daemon")
 
-        # Wait for Daemon/MCU sync
-        logger.info("Waiting for stability (15s)...")
-        time.sleep(15)
+        # Wait for Daemon/MCU sync using declarative tenacity retry
+        logger.info("Waiting for Daemon/MCU synchronization...")
+        status_file = Path("/tmp/mcubridge_status.json")
+
+        def _is_synced() -> bool:
+            if not status_file.exists():
+                return False
+            try:
+                data = json.loads(status_file.read_text(encoding="utf-8"))
+                return bool(data.get("bridge", {}).get("is_synchronized", False))
+            except (json.JSONDecodeError, OSError):
+                return False
+
+        sync_retryer = tenacity.Retrying(
+            stop=tenacity.stop_after_delay(15.0),
+            wait=tenacity.wait_fixed(0.25),
+            retry=tenacity.retry_if_result(lambda ok: not ok),
+            reraise=False,
+        )
+        try:
+            is_synced = bool(sync_retryer(_is_synced))
+        except tenacity.RetryError:
+            is_synced = False
+
+        if is_synced:
+            logger.info("Daemon/MCU synchronization established successfully.")
+        else:
+            logger.warning("Synchronization check timed out after 15s; proceeding with test execution.")
 
         # 4. Run scripts
         if run_scripts:

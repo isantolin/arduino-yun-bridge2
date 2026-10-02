@@ -191,3 +191,16 @@ FAIL
 
     xml = suite.to_xml()
     assert xml.attrib["failures"] == "1"
+
+
+def test_hardware_harness_rotate_local(tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_uci_dir = tmp_path / "etc" / "config"
+    fake_uci_dir.mkdir(parents=True)
+    mock_mod = MagicMock()
+    mock_mod.generate_and_apply_credentials.return_value = ("aabbccddeeff11223344556677889900", "cloudpass12345")
+    monkeypatch.setattr(hardware_harness, "_load_rotate_module", lambda: mock_mod)
+    hardware_harness.rotate(local=fake_uci_dir, length=32, force=True, no_restart=True)
+    captured = capsys.readouterr()
+    assert "BRIDGE_SERIAL_SHARED_SECRET" in captured.out
+    assert "aabbccddeeff11223344556677889900" in captured.out
+

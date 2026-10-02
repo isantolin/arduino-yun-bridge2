@@ -350,6 +350,18 @@ def run(
         sys.exit(1)
 
 
+def _load_rotate_module() -> Any:
+    import importlib.util
+
+    script_path = REPO_ROOT / "mcubridge" / "scripts" / "mcubridge_rotate_credentials.py"
+    spec = importlib.util.spec_from_file_location("mcubridge_rotate_credentials", str(script_path))
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load {script_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 @app.command()
 def rotate(
     host: Annotated[str | None, typer.Option("--host", help="Target McuBridge host (IP or DNS)")] = None,
@@ -370,32 +382,17 @@ def rotate(
     """Rotate MCU Bridge shared credentials on remote hardware or local rootfs."""
     import re
 
-    rotate_script = REPO_ROOT / "mcubridge" / "scripts" / "mcubridge_rotate_credentials.py"
-
     secret: str | None = None
+    output: str = ""
 
     if local:
         if not local.is_dir():
             print(f"Error: --local directory {local} does not exist", file=sys.stderr)
             sys.exit(1)
-        cmd = [
-            sys.executable,
-            str(rotate_script),
-            "--length",
-            str(length),
-        ]
-        if force:
-            cmd.append("--force")
-        if no_restart:
-            cmd.append("--no-restart")
-
-        env = dict(os.environ)
-        env["UCI_CONFIG_DIR"] = str(local)
-        proc = subprocess.run(cmd, env=env, capture_output=True, text=True, check=False)
-        if proc.returncode != 0:
-            print(f"Error running local rotation: {proc.stderr}", file=sys.stderr)
-            sys.exit(proc.returncode)
-        output = proc.stdout
+        os.environ["UCI_CONFIG_DIR"] = str(local)
+        mod = _load_rotate_module()
+        secret, _ = mod.generate_and_apply_credentials(length=length, no_restart=no_restart)
+        output = f"SERIAL_SECRET={secret}\n"
     elif host:
         remote_cmd = f"/usr/bin/mcubridge-rotate-credentials --length {length}"
         if force:

@@ -130,6 +130,7 @@ def audit_proto_integrity(proto_path: Path | None = None) -> list[str]:
     module_dir = target.parent
     checks: list[tuple[str, Path, tuple[str, ...]]] = [
         ("Buf Lint Violation", module_dir, ("lint",)),
+        ("Buf Build Failure", module_dir, ("build",)),
         ("Buf Format Violation", ROOT, ("format", "-d", str(module_dir), "--exit-code")),
     ]
     if (ROOT / ".git").exists() and target == (ROOT / "tools" / "protocol" / "mcubridge.proto"):

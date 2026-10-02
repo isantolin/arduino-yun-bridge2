@@ -1,6 +1,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+#include <unity.h>
 
 #define BRIDGE_ENABLE_TEST_INTERFACE 1
 #include "Bridge.h"

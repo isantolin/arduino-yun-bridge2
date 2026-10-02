@@ -654,7 +654,14 @@ class BridgeService:
                 if not isinstance(p, ProtobufMessage) and command_id in protocol.COMMAND_TO_PB:
                     msg_cls = protocol.COMMAND_TO_PB[command_id]
                     p = msg_cls()
-                    p.ParseFromString(cast(bytes, payload))
+                    try:
+                        p.ParseFromString(cast(bytes, payload))
+                    except ProtobufDecodeError as exc:
+                        logger.error("Failed to decode MCU Protobuf payload", error=str(exc))
+                        self.state.serial_decode_errors += 1
+                        self.state.metrics.serial_decode_errors.inc()
+                        await serial.send(Status.MALFORMED.value, b"")
+                        return
 
                 if await handler(sequence_id, p) is not False and command_id not in _STATUS_VALUES:
                     await serial.acknowledge(command_id, sequence_id)
@@ -1236,11 +1243,19 @@ class BridgeService:
         if not self.serial:
             return
         pl = await self.serial.send(Command.CMD_GET_FREE_MEMORY.value, b"")
-        if isinstance(pl, bytes):
+        val: int | None = None
+        if isinstance(pl, pb.FreeMemoryResponse):
+            val = pl.value
+        elif isinstance(pl, bytes):
+            try:
+                val = pb.FreeMemoryResponse.FromString(pl).value
+            except ProtobufDecodeError as exc:
+                logger.error("Failed to decode FreeMemoryResponse payload", error=str(exc))
+        if val is not None:
             tp = get_topic_for_message(self.state.cloud_topic_prefix, pb.FreeMemoryResponse) or ""
             await self.enqueue_cloud_publish(
                 tp,
-                str(pb.FreeMemoryResponse.FromString(pl).value).encode(),
+                str(val).encode("utf-8"),
                 reply_context=inbound,
             )
 
@@ -1265,10 +1280,15 @@ class BridgeService:
         if not serial:
             return False
         pl = await serial.send(Command.CMD_GET_VERSION.value, b"")
+        p: pb.VersionResponse | None = None
         if isinstance(pl, pb.VersionResponse):
             p = pl
         elif isinstance(pl, bytes):
-            p = pb.VersionResponse.FromString(pl)
+            try:
+                p = pb.VersionResponse.FromString(pl)
+            except ProtobufDecodeError as exc:
+                logger.error("Failed to decode VersionResponse payload", error=str(exc))
+                return False
         else:
             return False
         self.state.mcu_version = (p.major, p.minor, p.patch)

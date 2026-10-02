@@ -3,6 +3,7 @@
 #endif
 #include <Arduino.h>
 #include <etl/array.h>
+#include <unity.h>
 
 #include "Bridge.h"
 #include "BridgeTestInterface.h"

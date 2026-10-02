@@ -36,8 +36,6 @@ class MailboxClass : public bridge::BridgeObserver {
     _enqueue(etl::span<const uint8_t>(field.bytes, field.size));
   }
 
-  static void _onPush(const rpc::payload::MailboxPush& msg);
-  static void _onReadResponse(const rpc::payload::MailboxReadResponse& msg);
   static void _onAvailableResponse(
       const rpc::payload::MailboxAvailableResponse& msg);
 

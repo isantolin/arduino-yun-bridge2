@@ -544,12 +544,16 @@ static void test_surgical_mailbox_datastore_edges() {
   push_msg.data.bytes[0] = 'a';
   push_msg.data.bytes[1] = 'b';
   etl::array<int, 10> push_steps{};
-  etl::for_each(push_steps.begin(), push_steps.end(),
-                [&](int) { Mailbox._onPush(push_msg); });
+  etl::for_each(push_steps.begin(), push_steps.end(), [&](int) {
+    Mailbox._onEnqueuePayload<rpc::payload::MailboxPush,
+                              &rpc::payload::MailboxPush::data>(push_msg);
+  });
 
   rpc::payload::MailboxReadResponse read_resp = {};
   read_resp.content.size = 2;
-  Mailbox._onReadResponse(read_resp);
+  Mailbox._onEnqueuePayload<rpc::payload::MailboxReadResponse,
+                            &rpc::payload::MailboxReadResponse::content>(
+      read_resp);
 
   // 3. Mailbox callbacks & process
   Mailbox.registerAvailableCallback(
@@ -569,7 +573,8 @@ static void test_surgical_mailbox_datastore_edges() {
   TEST_ASSERT_TRUE(g_msg_received);
 
   // Process with queue non-empty but null message callback
-  Mailbox._onPush(push_msg);
+  Mailbox._onEnqueuePayload<rpc::payload::MailboxPush,
+                            &rpc::payload::MailboxPush::data>(push_msg);
   Mailbox.registerMessageCallback(MailboxClass::MessageCallback());
   Mailbox.process();
   Mailbox.onLost();

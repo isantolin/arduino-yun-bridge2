@@ -587,3 +587,16 @@ async def test_on_mcu_process_poll_with_result(
     assert args[0] == Command.CMD_PROCESS_POLL_RESP.value
     assert isinstance(args[1], pb.ProcessPollResponse)
     await service.kill_process(pid)
+
+
+@pytest.mark.asyncio
+async def test_handle_mcu_frame_corrupt_protobuf_payload(
+    svc: tuple[BridgeService, RuntimeState, AsyncMock],
+) -> None:
+    service, state, mock_serial = svc
+    initial_errors = state.serial_decode_errors
+
+    await service.handle_mcu_frame(Command.CMD_PIN_UPDATE_EVENT.value, 10, b"\xff\xff\xff\xff")
+
+    assert state.serial_decode_errors == initial_errors + 1
+    mock_serial.send.assert_awaited_once_with(Status.MALFORMED.value, b"")

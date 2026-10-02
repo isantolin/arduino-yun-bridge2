@@ -1,6 +1,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+#include <unity.h>
 
 #include "protocol/rpc_structs.h"
 #include "test_support.h"

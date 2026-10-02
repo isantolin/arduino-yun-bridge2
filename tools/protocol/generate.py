@@ -101,10 +101,35 @@ def run_buf_generate(proto_dir: Path) -> None:
         sys.exit(1)
 
 
+EXPLICIT_CMD_TO_PB_CLASS: dict[str, str] = {
+    "CMD_GET_VERSION_RESP": "VersionResponse",
+    "CMD_GET_FREE_MEMORY_RESP": "FreeMemoryResponse",
+    "CMD_GET_CAPABILITIES_RESP": "Capabilities",
+    "CMD_SET_PIN_MODE": "PinMode",
+    "CMD_SET_BAUDRATE": "SetBaudratePacket",
+    "CMD_DIGITAL_READ": "PinRead",
+    "CMD_ANALOG_READ": "PinRead",
+    "CMD_PIN_SUBSCRIBE": "PinSubscribeRequest",
+    "CMD_SPI_SET_CONFIG": "SpiConfig",
+    "CMD_CLOCK_SYNC": "ClockSyncRequest",
+    "CMD_LINK_SYNC_RESP": "LinkSync",
+}
+
+
 def cmd_name_to_pb_class(cmd_name: str) -> str:
     """Convert CMD_X_Y style command name to CamelCase class name."""
     clean_name = cmd_name.removeprefix("CMD_")
     return "".join("Response" if seg == "RESP" else seg.capitalize() for seg in clean_name.split("_"))
+
+
+def resolve_cmd_to_pb_class(cmd_name: str, pb_module: Any) -> str | None:
+    """Resolve command name to its canonical Protobuf message class name. [SIL-2]"""
+    if (explicit := EXPLICIT_CMD_TO_PB_CLASS.get(cmd_name)) and hasattr(pb_module, explicit):
+        return explicit
+    candidate = cmd_name_to_pb_class(cmd_name)
+    if hasattr(pb_module, candidate):
+        return candidate
+    return None
 
 
 @dataclass
@@ -548,7 +573,7 @@ def _build_command_context(spec: ProtocolSpec, pb_module: Any) -> dict[str, Any]
     command_to_pb = [
         (command.name, class_name)
         for command in spec.commands
-        if hasattr(pb_module, (class_name := cmd_name_to_pb_class(command.name)))
+        if (class_name := resolve_cmd_to_pb_class(command.name, pb_module)) is not None
     ]
     return {
         "request_response_pairs": request_response_pairs,

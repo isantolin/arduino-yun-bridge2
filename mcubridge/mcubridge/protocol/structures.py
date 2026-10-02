@@ -272,16 +272,18 @@ def replace_cloud_publish(message: pb.CloudQueuedPublish, **kwargs: Any) -> pb.C
     newpb_obj.CopyFrom(message)
     for k, v in kwargs.items():
         if k == "user_properties":
-            del newpb_obj.user_properties[:]
-            newpb_obj.user_properties.extend(
-                [
-                    item if isinstance(item, pb.UserProperty) else pb.UserProperty(key=item[0], value=item[1])
-                    for item in (v or ())
-                ]
-            )
+            newpb_obj.ClearField("user_properties")
+            if v:
+                newpb_obj.user_properties.extend(
+                    [
+                        item if isinstance(item, pb.UserProperty) else pb.UserProperty(key=item[0], value=item[1])
+                        for item in v
+                    ]
+                )
         elif k == "subscription_identifier":
-            del newpb_obj.subscription_identifier[:]
-            newpb_obj.subscription_identifier.extend(v or ())
+            newpb_obj.ClearField("subscription_identifier")
+            if v:
+                newpb_obj.subscription_identifier.extend(v)
         else:
             setattr(newpb_obj, k, v)
     return newpb_obj

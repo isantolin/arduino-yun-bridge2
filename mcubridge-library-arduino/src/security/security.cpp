@@ -99,8 +99,10 @@ static size_t build_aad(uint16_t cmd_id, uint16_t seq_id,
 
   etl::fill(out_ad.begin(), out_ad.end(), 0U);
   pb_ostream_t stream = pb_ostream_from_buffer(out_ad.data(), out_ad.size());
-  (void)pb_encode(&stream, rpc::Payload::get_fields<rpc_pb_RpcEnvelope>(),
-                  &aad_env);
+  if (!pb_encode(&stream, rpc::Payload::get_fields<rpc_pb_RpcEnvelope>(),
+                 &aad_env)) {
+    return 0U;
+  }
   return stream.bytes_written;
 }
 

@@ -1,5 +1,6 @@
 #define BRIDGE_ENABLE_TEST_INTERFACE 1
 #include <etl/array.h>
+#include <unity.h>
 
 #include "Bridge.h"
 #include "BridgeTestInterface.h"

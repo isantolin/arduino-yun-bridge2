@@ -6,6 +6,7 @@
 #endif
 #include <etl/array.h>
 #include <etl/numeric.h>
+#include <unity.h>
 
 #include "Bridge.h"
 #include "BridgeTestInterface.h"

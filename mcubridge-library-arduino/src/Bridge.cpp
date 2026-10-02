@@ -141,9 +141,15 @@ const BridgeClass::DispatchEntry BridgeClass::k_dispatch_table[] = {
 #endif
 #if BRIDGE_ENABLE_MAILBOX
     {rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_PUSH),
-     &BridgeClass::_dispatchStaticWithMsg<&MailboxClass::_onPush, rpc_pb_MailboxPush, true, false>},
+     &BridgeClass::_dispatchStaticWithMsg<
+         &MailboxClass::_onEnqueuePayload<rpc_pb_MailboxPush,
+                                          &rpc_pb_MailboxPush::data>,
+         rpc_pb_MailboxPush, true, false>},
     {rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_READ_RESP),
-     &BridgeClass::_dispatchStaticWithMsg<&MailboxClass::_onReadResponse, rpc_pb_MailboxReadResponse, false, false, false>},
+     &BridgeClass::_dispatchStaticWithMsg<
+         &MailboxClass::_onEnqueuePayload<rpc_pb_MailboxReadResponse,
+                                          &rpc_pb_MailboxReadResponse::content>,
+         rpc_pb_MailboxReadResponse, false, false, false>},
     {rpc::to_underlying(rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP),
      &BridgeClass::_dispatchStaticWithMsg<&MailboxClass::_onAvailableResponse, rpc_pb_MailboxAvailableResponse, false, false, false>},
 #endif

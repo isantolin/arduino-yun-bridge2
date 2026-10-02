@@ -48,16 +48,7 @@ void MailboxClass::_enqueue(etl::span<const uint8_t> data) {
   }
 }
 
-void MailboxClass::_onPush(const rpc::payload::MailboxPush& msg) {
-  _onEnqueuePayload<rpc::payload::MailboxPush,
-                    &rpc::payload::MailboxPush::data>(msg);
-}
 
-void MailboxClass::_onReadResponse(
-    const rpc::payload::MailboxReadResponse& msg) {
-  _onEnqueuePayload<rpc::payload::MailboxReadResponse,
-                    &rpc::payload::MailboxReadResponse::content>(msg);
-}
 
 void MailboxClass::_onAvailableResponse(
     const rpc::payload::MailboxAvailableResponse& msg) {

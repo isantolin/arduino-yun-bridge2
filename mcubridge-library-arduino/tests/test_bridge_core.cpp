@@ -46,7 +46,8 @@ void test_bridge_handshake() {
 
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> pl_buf;
   pb_ostream_t pbos = pb_ostream_from_buffer(pl_buf.data(), pl_buf.size());
-  (void)pb_encode(&pbos, rpc::Payload::get_fields<decltype(msg)>(), &msg);
+  TEST_ASSERT_TRUE(
+      pb_encode(&pbos, rpc::Payload::get_fields<decltype(msg)>(), &msg));
 
   // 2. Build LinkSync frame using FrameBuilder
   etl::array<uint8_t, rpc::MAX_FRAME_SIZE> frame_raw;
@@ -91,7 +92,8 @@ void test_bridge_process_rx() {
 
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> pl_buf;
   pb_ostream_t pbos = pb_ostream_from_buffer(pl_buf.data(), pl_buf.size());
-  (void)pb_encode(&pbos, rpc::Payload::get_fields<decltype(msg)>(), &msg);
+  TEST_ASSERT_TRUE(
+      pb_encode(&pbos, rpc::Payload::get_fields<decltype(msg)>(), &msg));
 
   etl::array<uint8_t, rpc::MAX_FRAME_SIZE> frame_raw;
   etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> frame_nonce = {};
@@ -122,7 +124,8 @@ void test_bridge_dedup_console_write() {
 
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> pl_buf;
   pb_ostream_t pbos = pb_ostream_from_buffer(pl_buf.data(), pl_buf.size());
-  (void)pb_encode(&pbos, rpc::Payload::get_fields<decltype(msg)>(), &msg);
+  TEST_ASSERT_TRUE(
+      pb_encode(&pbos, rpc::Payload::get_fields<decltype(msg)>(), &msg));
 
   etl::array<uint8_t, rpc::MAX_FRAME_SIZE> frame_raw;
   etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> frame_nonce = {};
@@ -163,7 +166,8 @@ void test_bridge_status_ack() {
 
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> pl_buf;
   pb_ostream_t pbos = pb_ostream_from_buffer(pl_buf.data(), pl_buf.size());
-  (void)pb_encode(&pbos, rpc::Payload::get_fields<decltype(p)>(), &p);
+  TEST_ASSERT_TRUE(
+      pb_encode(&pbos, rpc::Payload::get_fields<decltype(p)>(), &p));
 
   etl::array<uint8_t, rpc::MAX_FRAME_SIZE> frame_raw;
   etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> frame_nonce = {};

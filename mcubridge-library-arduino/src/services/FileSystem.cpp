@@ -83,7 +83,6 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
 
         if (!res->has_more) {
           rpc::payload::FileReadResponse empty_p = {};
-          empty_p.content.size = 0U;
           (void)Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 0, empty_p);
           finished = true;
           return;

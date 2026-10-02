@@ -369,6 +369,7 @@ async def test_flush_cloud_spool_publish_fails_and_degraded(
 ) -> None:
     mock_serial = AsyncMock(spec=SerialTransport)
     svc = BridgeService(test_config, mock_bridge_state, mock_serial)
+    svc.cloud_stream = AsyncMock()
 
     spool = svc.cloud_spool
     assert spool is not None

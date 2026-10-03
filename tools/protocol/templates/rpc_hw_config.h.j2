@@ -19,6 +19,7 @@ inline constexpr uint16_t MAX_PENDING_TX_FRAMES = {{ hardware.max_pending_tx_fra
 inline constexpr uint16_t CONSOLE_RX_BUFFER_SIZE = {{ hardware.console_rx_buffer_size_avr }}U;
 inline constexpr uint16_t CONSOLE_TX_BUFFER_SIZE = {{ hardware.console_tx_buffer_size_avr }}U;
 inline constexpr uint16_t MAILBOX_RX_BUFFER_SIZE = {{ hardware.mailbox_rx_buffer_size_avr }}U;
+inline constexpr uint16_t MAX_MAILBOX_QUEUE_SIZE = {{ hardware.max_mailbox_queue_size_other }}U;
 #else
 inline constexpr uint16_t MAX_OBSERVERS = {{ hardware.max_observers_other }}U;
 inline constexpr uint16_t RX_BUFFER_SIZE = {{ hardware.rx_buffer_size_other }}U;
@@ -26,6 +27,7 @@ inline constexpr uint16_t MAX_PENDING_TX_FRAMES = {{ hardware.max_pending_tx_fra
 inline constexpr uint16_t CONSOLE_RX_BUFFER_SIZE = {{ hardware.console_rx_buffer_size_other }}U;
 inline constexpr uint16_t CONSOLE_TX_BUFFER_SIZE = {{ hardware.console_tx_buffer_size_other }}U;
 inline constexpr uint16_t MAILBOX_RX_BUFFER_SIZE = {{ hardware.mailbox_rx_buffer_size_other }}U;
+inline constexpr uint16_t MAX_MAILBOX_QUEUE_SIZE = {{ hardware.max_mailbox_queue_size_other }}U;
 #endif
 
 inline constexpr uint16_t RX_HISTORY_SIZE = {{ hardware.rx_history_size }}U;

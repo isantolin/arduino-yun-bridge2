@@ -36,6 +36,10 @@ inline constexpr bool ENABLE_WATCHDOG = true;
 // [SIL-2] Maximum time to wait for Linux handshake before entering safe state.
 inline constexpr uint32_t SYNC_TIMEOUT_MS = rpc::SYNC_TIMEOUT_MS;
 
+#ifndef MAILBOX_QUEUE_CAPACITY
+#define MAILBOX_QUEUE_CAPACITY 4  // Capacidad de elementos en la cola
+#endif
+
 // --- Feature Flags (Manual overrides via build system) ---
 #ifndef BRIDGE_ENABLE_DATASTORE
 #define BRIDGE_ENABLE_DATASTORE 1

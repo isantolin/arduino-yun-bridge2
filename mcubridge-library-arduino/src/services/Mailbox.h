@@ -9,7 +9,13 @@
 #include <etl/vector.h>
 
 #include "Bridge.h"
+#include "config/bridge_config.h"
 #include "protocol/rpc_structs.h"
+
+#if !defined(MAILBOX_QUEUE_CAPACITY) || (MAILBOX_QUEUE_CAPACITY == 0)
+#undef MAILBOX_QUEUE_CAPACITY
+#define MAILBOX_QUEUE_CAPACITY 4
+#endif
 
 class MailboxClass : public bridge::BridgeObserver {
  public:
@@ -42,13 +48,12 @@ class MailboxClass : public bridge::BridgeObserver {
   static void process();
   void onLost() override;
 
+ // Reemplazar en Mailbox.h (sección private):
  private:
   static void _enqueue(etl::span<const uint8_t> data);
   static MessageCallback _message_callback;
   static AvailableCallback _available_callback;
-  static etl::circular_buffer<MailboxBuffer,
-                              bridge::config::MAX_MAILBOX_QUEUE_SIZE>
-      _queue;
+  static etl::circular_buffer<MailboxBuffer, MAILBOX_QUEUE_CAPACITY> _queue;
 };
 
 using MailboxType = MailboxClass;

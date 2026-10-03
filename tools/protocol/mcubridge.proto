@@ -964,7 +964,6 @@ message Hardware {
   uint32 console_tx_buffer_size_avr = 10;
   uint32 console_tx_buffer_size_other = 11;
   uint32 mailbox_rx_buffer_size_avr = 12;
-  uint32 max_mailbox_queue_size_other = 10;
   uint32 mailbox_rx_buffer_size_other = 13;
   uint32 max_pending_datastore = 14;
   uint32 max_pending_process_polls = 15;
@@ -1035,6 +1034,7 @@ message Hardware {
     (py_name) = "MAX_PIN_SUBSCRIPTIONS",
     (py_type) = "int"
   ];
+  uint32 max_mailbox_queue_size_other = 44;
 }
 
 message Handshake {

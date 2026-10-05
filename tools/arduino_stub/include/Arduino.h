@@ -1,29 +1,21 @@
 #pragma once
 
-#include <stddef.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
-// Bring standard C fixed-width types into global namespace for Arduino compatibility
-#ifdef __cplusplus
-using ::int16_t;
-using ::int32_t;
-using ::int8_t;
-using ::size_t;
-using ::uint16_t;
-using ::uint32_t;
-using ::uint8_t;
-#endif
-
-// Basic Arduino types
+// Basic types
 using boolean = bool;
 using byte = uint8_t;
 using word = uint16_t;
 
-#ifndef _NEW
-#define _NEW
+// Placement new/delete for tests that reconstruct objects in-place.
+// Protected by __GLIBCXX__ to avoid conflict with standard library <new>
+// header.
+#ifndef __GLIBCXX__
 inline void* operator new(size_t, void* ptr) noexcept { return ptr; }
 inline void operator delete(void*, void*) noexcept {}
 #endif
@@ -45,23 +37,15 @@ inline void operator delete(void*, void*) noexcept {}
 #define DEC 10
 #define HEX 16
 
+// Math macros
 template <typename T>
 inline T abs(T x) {
   return (x > 0) ? x : -x;
 }
-
 #undef min
 #undef max
-
-template <typename T>
-inline T min(T a, T b) {
-  return (a < b) ? a : b;
-}
-
-template <typename T>
-inline T max(T a, T b) {
-  return (a > b) ? a : b;
-}
+using std::max;
+using std::min;
 
 // Replace round macro with a template to avoid conflict with cmath
 template <typename T>
@@ -69,6 +53,9 @@ inline long round(T x) {
   return (x >= 0) ? static_cast<long>(x + 0.5) : static_cast<long>(x - 0.5);
 }
 
+// Stub functions
+// Allow host tests to override timing behavior (e.g., time travel) by defining
+// ARDUINO_STUB_CUSTOM_MILLIS before including Arduino headers.
 #ifdef ARDUINO_STUB_CUSTOM_MILLIS
 unsigned long millis();
 unsigned long micros();
@@ -78,16 +65,19 @@ inline unsigned long millis() { return 0; }
 inline unsigned long micros() { return 0; }
 inline void delay(unsigned long) {}
 #endif
-
+// Fix: Comment out unused parameter name to avoid compiler warning
 inline void delayMicroseconds(unsigned int /*us*/) {}
 inline void yield() {}
 inline void pinMode(uint8_t, uint8_t) {}
 inline void digitalWrite(uint8_t, uint8_t) {}
 inline int digitalRead(uint8_t) { return LOW; }
 
+// --- FIXED: Missing Analog Stubs ---
 inline void analogWrite(uint8_t, int) {}
 inline int analogRead(uint8_t) { return 0; }
+// -----------------------------------
 
+// Helper class for string manipulation (minimal stub)
 class String {
  public:
   static constexpr size_t kCapacity = 64;
@@ -96,7 +86,7 @@ class String {
 
   String(int v) {
     char buf[16];
-    (void)snprintf(buf, sizeof(buf), "%d", v);
+    (void)::snprintf(buf, sizeof(buf), "%d", v);
     assign(buf);
   }
 
@@ -107,66 +97,68 @@ class String {
     if (!s) return true;
     size_t slen = strlen(s);
     if (length_ + slen < kCapacity) {
-      memcpy(data_ + length_, s, slen);
+      strcpy(data_ + length_, s);
       length_ += slen;
-      data_[length_] = '\0';
       return true;
     }
     return false;
   }
 
   bool operator==(const String& other) const {
-    return strcmp(data_, other.data_) == 0;
+    return ::strcmp(data_, other.data_) == 0;
   }
 
   bool operator==(const char* other) const {
-    return strcmp(data_, (other ? other : "")) == 0;
+    return ::strcmp(data_, (other ? other : "")) == 0;
   }
 
  private:
   void assign(const char* s) {
     const char* src = s ? s : "";
-    size_t slen = strlen(src);
-    if (slen >= kCapacity) {
-      slen = kCapacity - 1;
-    }
-    memcpy(data_, src, slen);
-    data_[slen] = '\0';
-    length_ = slen;
+    ::strncpy(data_, src, kCapacity - 1);
+    data_[kCapacity - 1] = '\0';
+    length_ = ::strlen(data_);
   }
 
   char data_[kCapacity] = {};
   size_t length_ = 0;
 };
 
+// F macro for Flash strings (no-op on host)
 class __FlashStringHelper;
 #define F(str) (reinterpret_cast<const __FlashStringHelper*>(str))
 
+// PROGMEM macros (no-op on host)
 #define PROGMEM
 #define PSTR(s) (s)
 #define pgm_read_byte(p) (*reinterpret_cast<const uint8_t*>(p))
 #define pgm_read_word(p) (*reinterpret_cast<const uint16_t*>(p))
 
 inline size_t strnlen_P(const char* s, size_t maxlen) {
-  const char* end = static_cast<const char*>(memchr(s, '\0', maxlen));
-  return (end == nullptr) ? maxlen : static_cast<size_t>(end - s);
+  // Basic implementation for host stub
+  const char* end = (const char*)memchr(s, '\0', maxlen);
+  if (end == nullptr) return maxlen;
+  return end - s;
 }
 
 inline void* memcpy_P(void* dest, const void* src, size_t n) {
   return memcpy(dest, src, n);
 }
 
+// Forward declarations
 class Print;
 
+// Printable interface stub
 class Printable {
  public:
   virtual ~Printable() = default;
   virtual size_t printTo(Print& p) const = 0;
 };
 
+// Base classes needed for HardwareSerial
 class Print {
  public:
-  virtual ~Print() = default;
+  virtual ~Print() = default;  // Added virtual destructor for safety
 
   virtual size_t write(uint8_t) = 0;
   virtual size_t write(const uint8_t* buffer, size_t size) {
@@ -179,7 +171,7 @@ class Print {
     }
     return n;
   }
-
+  // Stub print methods
   size_t print(const char[]) { return 0; }
   size_t print(char) { return 0; }
   size_t print(int, int = 10) { return 0; }
@@ -192,7 +184,7 @@ class Print {
 
 class Stream : public Print {
  public:
-  virtual ~Stream() = default;
+  virtual ~Stream() = default;  // Added virtual destructor for safety
 
   virtual int available() = 0;
   virtual int read() = 0;
@@ -205,31 +197,34 @@ class Stream : public Print {
     while (count < length) {
       int c = read();
       if (c < 0) break;
-      *buffer++ = static_cast<char>(c);
+      *buffer++ = (char)c;
       count++;
     }
     return count;
   }
 
   size_t readBytes(uint8_t* buffer, size_t length) {
-    return readBytes(reinterpret_cast<char*>(buffer), length);
+    return readBytes((char*)buffer, length);
   }
 };
 
 extern Stream* g_arduino_stream_delegate;
 
+// HardwareSerial stub
 class HardwareSerial : public Stream {
  public:
   void begin(unsigned long) {}
   void end() {}
 
+  // Fix: Unhide base class write(const uint8_t*, size_t)
   using Print::write;
 
   size_t write(uint8_t c) override {
     return g_arduino_stream_delegate ? g_arduino_stream_delegate->write(c) : 1;
   }
   int available() override {
-    return g_arduino_stream_delegate ? g_arduino_stream_delegate->available() : 0;
+    return g_arduino_stream_delegate ? g_arduino_stream_delegate->available()
+                                     : 0;
   }
   int read() override {
     return g_arduino_stream_delegate ? g_arduino_stream_delegate->read() : -1;
@@ -245,16 +240,22 @@ class HardwareSerial : public Stream {
 extern HardwareSerial Serial;
 extern HardwareSerial Serial1;
 
+// C++17 constexpr constrain
 template <typename T>
 constexpr T constrain(T value, T minimum, T maximum) {
   return (value < minimum) ? minimum : ((value > maximum) ? maximum : value);
 }
 
+// Bit manipulation macros
 #define bitRead(value, bit) (((value) >> (bit)) & 1)
 #define bitSet(value, bit) ((value) |= (1UL << (bit)))
 #define bitClear(value, bit) ((value) &= ~(1UL << (bit)))
 #define bitWrite(value, bit, bitvalue) \
   (bitvalue ? bitSet(value, bit) : bitClear(value, bit))
 
+// Interrupts (Stubs for host tests)
+// In a host test environment, we generally run single-threaded logic tests,
+// so disabling/enabling interrupts can be treated as no-ops.
+// These are required because Bridge.cpp uses them for atomic state access.
 inline void noInterrupts() {}
 inline void interrupts() {}

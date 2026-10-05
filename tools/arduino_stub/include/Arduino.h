@@ -1,3 +1,33 @@
+#pragma once
+
+#include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+// Bring standard C fixed-width types into global namespace for Arduino compatibility
+#ifdef __cplusplus
+using ::int16_t;
+using ::int32_t;
+using ::int8_t;
+using ::size_t;
+using ::uint16_t;
+using ::uint32_t;
+using ::uint8_t;
+#endif
+
+// Basic Arduino types
+using boolean = bool;
+using byte = uint8_t;
+using word = uint16_t;
+
+#ifndef _NEW
+#define _NEW
+inline void* operator new(size_t, void* ptr) noexcept { return ptr; }
+inline void operator delete(void*, void*) noexcept {}
+#endif
+
 // Constants
 #define HIGH 1
 #define LOW 0
@@ -66,7 +96,7 @@ class String {
 
   String(int v) {
     char buf[16];
-    (void)::snprintf(buf, sizeof(buf), "%d", v);
+    (void)snprintf(buf, sizeof(buf), "%d", v);
     assign(buf);
   }
 
@@ -75,9 +105,9 @@ class String {
 
   bool concat(const char* s) {
     if (!s) return true;
-    size_t slen = ::strlen(s);
+    size_t slen = strlen(s);
     if (length_ + slen < kCapacity) {
-      ::memcpy(data_ + length_, s, slen);
+      memcpy(data_ + length_, s, slen);
       length_ += slen;
       data_[length_] = '\0';
       return true;
@@ -86,21 +116,21 @@ class String {
   }
 
   bool operator==(const String& other) const {
-    return ::strcmp(data_, other.data_) == 0;
+    return strcmp(data_, other.data_) == 0;
   }
 
   bool operator==(const char* other) const {
-    return ::strcmp(data_, (other ? other : "")) == 0;
+    return strcmp(data_, (other ? other : "")) == 0;
   }
 
  private:
   void assign(const char* s) {
     const char* src = s ? s : "";
-    size_t slen = ::strlen(src);
+    size_t slen = strlen(src);
     if (slen >= kCapacity) {
       slen = kCapacity - 1;
     }
-    ::memcpy(data_, src, slen);
+    memcpy(data_, src, slen);
     data_[slen] = '\0';
     length_ = slen;
   }
@@ -118,12 +148,12 @@ class __FlashStringHelper;
 #define pgm_read_word(p) (*reinterpret_cast<const uint16_t*>(p))
 
 inline size_t strnlen_P(const char* s, size_t maxlen) {
-  const char* end = static_cast<const char*>(::memchr(s, '\0', maxlen));
+  const char* end = static_cast<const char*>(memchr(s, '\0', maxlen));
   return (end == nullptr) ? maxlen : static_cast<size_t>(end - s);
 }
 
 inline void* memcpy_P(void* dest, const void* src, size_t n) {
-  return ::memcpy(dest, src, n);
+  return memcpy(dest, src, n);
 }
 
 class Print;

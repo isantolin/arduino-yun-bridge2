@@ -157,7 +157,7 @@ rationale = "Declarative CLI application builder for MPU diagnostic utilities an
 [[dependency]]
 name = "black"
 openwrt = "python3-black"
-pip = "black==26.5.1"
+pip = "black==26.10.0"
 rationale = "PEP 8 canonical code formatter required for generated code and development environments [BUILD-ONLY]"
 
 [[dependency]]
@@ -322,12 +322,12 @@ rationale = "Strongly-typed pytest wrapper for unittest.mock"
 
 [[dev_dependency]]
 name = "hypothesis"
-pip = "hypothesis==6.168.3"
+pip = "hypothesis==6.168.4"
 rationale = "Property-based testing and state machine fuzzing engine"
 
 [[dev_dependency]]
 name = "asyncssh"
-pip = "asyncssh==2.24.0"
+pip = "asyncssh==2.24.1"
 rationale = "Asynchronous SSH and SFTP client for QEMU OpenWrt deployment and remote execution"
 
 [[dev_dependency]]

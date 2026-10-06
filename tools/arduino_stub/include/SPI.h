@@ -22,11 +22,11 @@ class SPISettings {
 
 class SPIClass {
  public:
-  void begin() {}
-  void end() {}
-  void beginTransaction(SPISettings settings) { (void)settings; }
-  void endTransaction() {}
-  uint8_t transfer(uint8_t data) {
+  static void begin() {}
+  static void end() {}
+  static void beginTransaction(SPISettings settings) { (void)settings; }
+  static void endTransaction() {}
+  static uint8_t transfer(uint8_t data) {
     if (bridge::test::fault::consume(
             bridge::test::fault::FaultPoint::SPI_TIMEOUT)) {
       bridge::test::fault::advance_clock_ms(1000U);

@@ -322,7 +322,7 @@ rationale = "Strongly-typed pytest wrapper for unittest.mock"
 
 [[dev_dependency]]
 name = "hypothesis"
-pip = "hypothesis==6.168.4"
+pip = "hypothesis==6.168.5"
 rationale = "Property-based testing and state machine fuzzing engine"
 
 [[dev_dependency]]
@@ -344,4 +344,3 @@ rationale = "Embedded target testing harness and fixtures for hardware-in-the-lo
 name = "pyelftools"
 pip = "pyelftools==0.33"
 rationale = "Pure-Python ELF symbol parser for Arduino firmware profiling and size analysis [SIL-2 / Rule 37]"
-

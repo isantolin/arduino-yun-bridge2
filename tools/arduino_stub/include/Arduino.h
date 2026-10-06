@@ -92,9 +92,9 @@ class String {
  public:
   static constexpr size_t kCapacity = 64;
 
-  String(const char* s = "") { assign(s); }
+  explicit String(const char* s = "") { assign(s); }
 
-  String(int v) {
+  explicit String(int v) {
     char buf[16];
     (void)snprintf(buf, sizeof(buf), "%d", v);
     assign(buf);
@@ -180,19 +180,19 @@ class Print {
     return n;
   }
 
-  size_t print(const char[]) { return 0; }
-  size_t print(char) { return 0; }
-  size_t print(int, int = 10) { return 0; }
-  size_t println(const char[]) { return 0; }
-  size_t println(int, int = 10) { return 0; }
-  size_t println(void) { return 0; }
-  size_t print(const __FlashStringHelper*) { return 0; }
-  size_t println(const __FlashStringHelper*) { return 0; }
+  static size_t print(const char[]) { return 0; }
+  static size_t print(char) { return 0; }
+  static size_t print(int, int = 10) { return 0; }
+  static size_t println(const char[]) { return 0; }
+  static size_t println(int, int = 10) { return 0; }
+  static size_t println(void) { return 0; }
+  static size_t print(const __FlashStringHelper*) { return 0; }
+  static size_t println(const __FlashStringHelper*) { return 0; }
 };
 
 class Stream : public Print {
  public:
-  virtual ~Stream() = default;
+  ~Stream() override = default;
 
   virtual int available() = 0;
   virtual int read() = 0;
@@ -220,8 +220,8 @@ extern Stream* g_arduino_stream_delegate;
 
 class HardwareSerial : public Stream {
  public:
-  void begin(unsigned long) {}
-  void end() {}
+  static void begin(unsigned long) {}
+  static void end() {}
 
   using Print::write;
 

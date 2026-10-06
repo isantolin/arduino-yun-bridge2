@@ -244,6 +244,14 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y g++ socat
+      - name: Install Arduino CLI and AVR core
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/bin"
+          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | BINDIR="$GITHUB_WORKSPACE/bin" sh
+          echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
+          export PATH="$GITHUB_WORKSPACE/bin:$PATH"
+          arduino-cli core update-index
+          arduino-cli core install arduino:avr
       - name: Run Fuzzing Campaign
         run: tox -e fuzz
 

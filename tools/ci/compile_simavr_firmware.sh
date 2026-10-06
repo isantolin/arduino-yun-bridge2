@@ -74,14 +74,14 @@ BUILD_FLAGS=(
 mkdir -p "$OUTPUT_DIR"
 OUTPUT_DIR="$(cd "$OUTPUT_DIR" && pwd)"
 echo "[simavr-build] Compiling $SKETCH_PATH for $FQBN..."
-python3 "${ROOT_DIR}/tools/arduino_core_metadata.py" \
-    --fqbn "$FQBN" \
-    --json-output "${OUTPUT_DIR}/arduino_core_metadata.json"
 TMP_LOG="$(mktemp /tmp/simavr_compile_XXXXXX.log)"
 trap 'rm -f "$TMP_LOG"' EXIT
 
 if arduino-cli compile --clean "${BUILD_FLAGS[@]}" "$SKETCH_PATH" > "$TMP_LOG" 2>&1; then
     cp "$TMP_LOG" "${OUTPUT_DIR}/compile.log"
+    python3 "${ROOT_DIR}/tools/arduino_core_metadata.py" \
+        --fqbn "$FQBN" \
+        --json-output "${OUTPUT_DIR}/arduino_core_metadata.json"
     SKETCH_NAME="$(basename "$(dirname "$SKETCH_PATH")")"
     ELF_FILE="${OUTPUT_DIR}/${SKETCH_NAME}.ino.elf"
 

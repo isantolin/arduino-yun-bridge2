@@ -18,9 +18,8 @@
 #else
 // Transparent UART Coprocessor Stream for AVR architectures / hardware
 // emulation
-#if defined(HAVE_HWSERIAL1) || defined(ARDUINO_AVR_MEGA2560) || \
-    defined(ARDUINO_AVR_MEGA) || defined(ARDUINO_AVR_YUN) ||    \
-    defined(ARDUINO_ARCH_SAMD) || defined(ARDUINO_ARCH_SAM)
+#if defined(HAVE_HWSERIAL1) || defined(ARDUINO_ARCH_SAMD) || \
+    defined(ARDUINO_ARCH_SAM)
 #define WIFI_UART_STREAM Serial1
 #else
 #define WIFI_UART_STREAM Serial

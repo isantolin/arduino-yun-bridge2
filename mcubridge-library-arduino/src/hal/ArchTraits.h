@@ -19,6 +19,8 @@ enum class ArchId : uint8_t {
 #if defined(ARDUINO_ARCH_AVR)
 #include <avr/wdt.h>
 #define BRIDGE_CURRENT_ARCH_ID ArchId::ARCH_AVR
+#elif defined(ARDUINO_ARCH_SAMD)
+#define BRIDGE_CURRENT_ARCH_ID ArchId::ARCH_SAMD
 #elif defined(ARDUINO_ARCH_ESP32)
 #include <esp_task_wdt.h>
 #define BRIDGE_CURRENT_ARCH_ID ArchId::ARCH_ESP32

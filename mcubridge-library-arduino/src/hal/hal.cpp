@@ -22,22 +22,10 @@ namespace {
 using Traits = CurrentArchTraits;
 
 constexpr uint8_t CURRENT_ARCH =
-    (Traits::id == ArchId::ARCH_AVR)    ? rpc::RPC_ARCH_AVR
-    : (Traits::id == ArchId::ARCH_HOST) ? rpc::RPC_ARCH_SAMD
-                                        : 0;
-
-constexpr uint8_t DIGITAL_PINS =
-    (Traits::id == ArchId::ARCH_AVR)
-        ? static_cast<uint8_t>(bridge::config::DIGITAL_PINS)
-    : (Traits::id == ArchId::ARCH_HOST)
-        ? static_cast<uint8_t>(bridge::config::SAMD_DIGITAL_PINS)
-        : static_cast<uint8_t>(bridge::config::SAMD_DIGITAL_PINS);
-
-constexpr uint8_t ANALOG_PINS =
-    (Traits::id == ArchId::ARCH_AVR)
-        ? static_cast<uint8_t>(bridge::config::ANALOG_PINS)
-    : (Traits::id == ArchId::ARCH_HOST)
-        ? static_cast<uint8_t>(bridge::config::SAMD_ANALOG_PINS)
+    (Traits::id == ArchId::ARCH_AVR)     ? rpc::RPC_ARCH_AVR
+    : (Traits::id == ArchId::ARCH_ESP32) ? rpc::RPC_ARCH_ESP32
+    : (Traits::id == ArchId::ARCH_SAMD || Traits::id == ArchId::ARCH_HOST)
+        ? rpc::RPC_ARCH_SAMD
         : 0;
 
 }  // namespace
@@ -66,12 +54,7 @@ void _forceSafePins(etl::index_sequence<Is...>) {
 }  // namespace
 
 void forceSafeState() {
-  if constexpr (Traits::id == ArchId::ARCH_AVR) {
-    _forceSafePins(etl::make_index_sequence<bridge::config::DIGITAL_PINS>{});
-  } else {
-    _forceSafePins(
-        etl::make_index_sequence<bridge::config::SAMD_DIGITAL_PINS>{});
-  }
+  _forceSafePins(etl::make_index_sequence<NUM_DIGITAL_PINS>{});
 }
 
 void watchdog_kick() {
@@ -250,7 +233,7 @@ void fillCapabilities(rpc_pb_Capabilities& caps) {
 #if defined(BRIDGE_ENABLE_DAC)
   caps.dac = true;
 #endif
-#if defined(ARDUINO_ARCH_AVR) && defined(SERIAL_PORT_HARDWARE1)
+#if defined(ARDUINO_ARCH_AVR) && defined(HAVE_HWSERIAL1)
   caps.hw_serial1 = true;
 #endif
 #if defined(BRIDGE_ENABLE_FPU)
@@ -273,8 +256,8 @@ void fillCapabilities(rpc_pb_Capabilities& caps) {
 }
 
 void getPinCounts(uint8_t& digital, uint8_t& analog) {
-  digital = DIGITAL_PINS;
-  analog = ANALOG_PINS;
+  digital = bridge::config::DIGITAL_PINS;
+  analog = bridge::config::ANALOG_PINS;
 }
 uint8_t getArchId() { return CURRENT_ARCH; }
 

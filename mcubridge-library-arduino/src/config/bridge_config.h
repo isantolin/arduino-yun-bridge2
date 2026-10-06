@@ -1,6 +1,7 @@
 #ifndef BRIDGE_CONFIG_H
 #define BRIDGE_CONFIG_H
 
+#include <Arduino.h>
 #include <stdint.h>
 
 #include "protocol/rpc_hw_config.h"
@@ -9,26 +10,14 @@
 namespace bridge {
 namespace config {
 
-/**
- * [SIL-2] Hardware Abstraction Metadata
- * These values are derived from mcubridge.proto or detected via compiler
- * defines. Strictly Zero-Redundancy: Inherits constants from generated protocol
- * headers.
- */
-
-#if defined(ARDUINO_ARCH_AVR)
-inline constexpr bool IS_AVR = true;
-inline constexpr uint8_t DIGITAL_PINS = AVR_DIGITAL_PINS;
-inline constexpr uint8_t ANALOG_PINS = AVR_ANALOG_PINS;
-#elif defined(ARDUINO_ARCH_SAMD)
-inline constexpr bool IS_AVR = false;
-inline constexpr uint8_t DIGITAL_PINS = SAMD_DIGITAL_PINS;
-inline constexpr uint8_t ANALOG_PINS = SAMD_ANALOG_PINS;
-#else
-inline constexpr bool IS_AVR = false;
-inline constexpr uint8_t DIGITAL_PINS = FALLBACK_MAX_PIN;
-inline constexpr uint8_t ANALOG_PINS = AVR_ANALOG_PINS;
+// Pin counts come from the selected Arduino core.
+#if !defined(NUM_DIGITAL_PINS) || !defined(NUM_ANALOG_INPUTS)
+#error "The Arduino core must define NUM_DIGITAL_PINS and NUM_ANALOG_INPUTS"
 #endif
+static_assert(NUM_DIGITAL_PINS <= UINT8_MAX);
+static_assert(NUM_ANALOG_INPUTS <= UINT8_MAX);
+inline constexpr uint8_t DIGITAL_PINS = NUM_DIGITAL_PINS;
+inline constexpr uint8_t ANALOG_PINS = NUM_ANALOG_INPUTS;
 
 inline constexpr bool SAFE_START_PINS_ENABLED = true;
 inline constexpr bool ENABLE_WATCHDOG = true;

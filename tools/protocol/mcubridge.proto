@@ -478,11 +478,6 @@ option (rpc.pb.hardware) = {
   flow_control_xon_threshold: 16
   hkdf_key_length: 32
   key_and_digest_buffer_size: 64
-  avr_digital_pins: 14
-  avr_analog_pins: 6
-  samd_digital_pins: 20
-  samd_analog_pins: 8
-  fallback_max_pin: 32
   fallback_free_memory: 1024
   capabilities_feat_extended: 1
   serial_timeout_ms: 50
@@ -987,11 +982,8 @@ message Hardware {
   ];
   uint32 hkdf_key_length = 25;
   uint32 key_and_digest_buffer_size = 26;
-  uint32 avr_digital_pins = 27;
-  uint32 avr_analog_pins = 28;
-  uint32 samd_digital_pins = 29;
-  uint32 samd_analog_pins = 30;
-  uint32 fallback_max_pin = 31;
+  reserved 27 to 31;
+  reserved "avr_digital_pins", "avr_analog_pins", "samd_digital_pins", "samd_analog_pins", "fallback_max_pin";
   uint32 fallback_free_memory = 32;
   uint32 capabilities_feat_extended = 33;
   uint32 serial_timeout_ms = 34 [

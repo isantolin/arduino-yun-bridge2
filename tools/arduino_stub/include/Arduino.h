@@ -35,9 +35,9 @@ inline void operator delete(void*, void*) noexcept {}
 #define OUTPUT 1
 #define INPUT_PULLUP 2
 #define LED_BUILTIN 13
-#ifndef NUM_DIGITAL_PINS
-#define NUM_DIGITAL_PINS 30
-#endif
+// Host tests use the Uno core's pin-count contract.
+#define NUM_DIGITAL_PINS 20
+#define NUM_ANALOG_INPUTS 6
 
 // Print bases
 #define BIN 2

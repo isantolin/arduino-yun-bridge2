@@ -1,4 +1,5 @@
 #include "Unity/src/unity.h"
+#include "config/bridge_config.h"
 #include "hal/hal.h"
 #include "protocol/rpc_protocol.h"
 #include "protocol/rpc_structs.h"
@@ -42,6 +43,8 @@ void test_hal_weak_defaults_without_mock() {
   rpc_pb_Capabilities caps = rpc_pb_Capabilities_init_default;
   bridge::hal::fillCapabilities(caps);
   TEST_ASSERT_FALSE(caps.sd);
+  TEST_ASSERT_EQUAL_UINT8(NUM_DIGITAL_PINS, caps.dig);
+  TEST_ASSERT_EQUAL_UINT8(NUM_ANALOG_INPUTS, caps.ana);
 
   g_host_has_sd = original_sd;
   g_host_fs_enabled = original_fs;

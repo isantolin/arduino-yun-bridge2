@@ -263,8 +263,7 @@ void BridgeClass::setStream(Stream& stream) {
   if constexpr (bridge::hal::CurrentArchTraits::id ==
                 bridge::hal::ArchId::ARCH_AVR) {
     if (_stream == &Serial
-#if defined(HAVE_HWSERIAL1) || defined(ARDUINO_AVR_MEGA2560) || \
-    defined(ARDUINO_AVR_MEGA) || defined(ARDUINO_AVR_YUN)
+#if defined(HAVE_HWSERIAL1)
         || _stream == &Serial1
 #endif
     ) {

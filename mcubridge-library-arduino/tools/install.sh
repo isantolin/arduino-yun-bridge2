@@ -172,20 +172,21 @@ if [ ! -d "$LIB_DIR/wolfssl" ] && [ ! -d "$LIB_DIR/wolfSSL" ]; then
 fi
 for wdir in "$LIB_DIR/wolfSSL" "$LIB_DIR/wolfssl"; do
     if [ -d "$wdir" ]; then
-        mkdir -p "$wdir/src"
+        mkdir -p "$wdir/src" "$wdir/wolfssl"
         if [ -f "$wdir/IDE/ARDUINO/wolfssl.h" ]; then
             cp "$wdir/IDE/ARDUINO/wolfssl.h" "$wdir/src/wolfssl.h"
             cp "$wdir/IDE/ARDUINO/wolfssl.h" "$wdir/wolfssl.h"
         fi
         cp "$LIB_ROOT/src/user_settings.h" "$wdir/src/user_settings.h"
         cp "$LIB_ROOT/src/user_settings.h" "$wdir/user_settings.h"
+        cp "$LIB_ROOT/src/user_settings.h" "$wdir/wolfssl/user_settings.h"
         rm -f "$wdir/wolfssl.h" "$wdir/src"/*.c 2>/dev/null || true
         if ! grep -q "includes=" "$wdir/library.properties" 2>/dev/null; then
             echo "includes=wolfssl.h" >> "$wdir/library.properties"
         fi
         for wcf in "$wdir/src/wolfcrypt/src/wc_port.c" "$wdir/wolfcrypt/src/wc_port.c"; do
             if [ -f "$wcf" ]; then
-                sed -i 's/#if defined(WOLFSSL_GMTIME)/#if defined(WOLFSSL_GMTIME) \&\& !defined(HAVE_GMTIME_R)/' "$wcf" || true
+                sed -i 's/#if defined(WOLFSSL_GMTIME)/#if defined(WOLFSSL_GMTIME) \&\& !defined(HAVE_GMTIME_R)/' "$wcf"
             fi
         done
     fi

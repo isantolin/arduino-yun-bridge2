@@ -48,6 +48,7 @@ jobs:
       - name: Install Arduino CLI and AVR core metadata
         if: matrix.env == 'cppcheck' || matrix.env == 'lint' || matrix.env == 'arduino'
         run: |
+          mkdir -p "$GITHUB_WORKSPACE/bin"
           curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | BINDIR="$GITHUB_WORKSPACE/bin" sh
           echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
           export PATH="$GITHUB_WORKSPACE/bin:$PATH"
@@ -212,6 +213,7 @@ jobs:
           sudo apt-get install -y g++ socat
       - name: Install Arduino CLI and AVR core metadata
         run: |
+          mkdir -p "$GITHUB_WORKSPACE/bin"
           curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | BINDIR="$GITHUB_WORKSPACE/bin" sh
           echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
           export PATH="$GITHUB_WORKSPACE/bin:$PATH"

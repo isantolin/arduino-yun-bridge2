@@ -9,6 +9,7 @@ import subprocess
 import sys
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
+from typing import cast
 
 HOST_TEST_FQBN = "arduino:avr:uno"
 REQUIRED_PIN_MACROS = (
@@ -41,7 +42,7 @@ class ArduinoCoreMetadata:
 
 
 def _read_variant_macros(header: Path, seen: set[Path] | None = None) -> dict[str, str]:
-    visited = set() if seen is None else seen
+    visited: set[Path] = set() if seen is None else seen
     resolved_header = header.resolve()
     if resolved_header in visited:
         return {}
@@ -158,18 +159,40 @@ def write_metadata_json(metadata: ArduinoCoreMetadata, path: Path) -> None:
 
 def read_metadata_json(path: Path) -> ArduinoCoreMetadata:
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data: object = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise RuntimeError(f"Could not read Arduino core metadata from {path}: {exc}") from exc
     expected_fields = {field.name for field in fields(ArduinoCoreMetadata)}
-    if not isinstance(data, dict) or set(data) != expected_fields:
+    if not isinstance(data, dict):
         raise ValueError(f"Invalid Arduino core metadata shape in {path}")
-    string_fields = {"fqbn", "mcu"}
-    if any(not isinstance(data[name], str) for name in string_fields) or any(
-        type(data[name]) is not int for name in expected_fields - string_fields
-    ):
+    metadata = cast(dict[str, object], data)
+    if set(metadata) != expected_fields:
+        raise ValueError(f"Invalid Arduino core metadata shape in {path}")
+
+    fqbn, mcu = metadata["fqbn"], metadata["mcu"]
+    if not isinstance(fqbn, str) or not isinstance(mcu, str):
         raise ValueError(f"Invalid Arduino core metadata values in {path}")
-    return ArduinoCoreMetadata(**data)
+    integer_fields: dict[str, int] = {}
+    for name in expected_fields - {"fqbn", "mcu"}:
+        value = metadata[name]
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise ValueError(f"Invalid Arduino core metadata value for {name} in {path}")
+        integer_fields[name] = value
+
+    return ArduinoCoreMetadata(
+        fqbn=fqbn,
+        mcu=mcu,
+        frequency_hz=integer_fields["frequency_hz"],
+        led_builtin=integer_fields["led_builtin"],
+        digital_pins=integer_fields["digital_pins"],
+        analog_inputs=integer_fields["analog_inputs"],
+        spi_ss=integer_fields["spi_ss"],
+        spi_mosi=integer_fields["spi_mosi"],
+        spi_miso=integer_fields["spi_miso"],
+        spi_sck=integer_fields["spi_sck"],
+        i2c_sda=integer_fields["i2c_sda"],
+        i2c_scl=integer_fields["i2c_scl"],
+    )
 
 
 def main() -> int:

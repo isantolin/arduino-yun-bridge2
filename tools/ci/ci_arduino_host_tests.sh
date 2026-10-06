@@ -6,10 +6,13 @@ LIB_DIR="${ROOT_DIR}/mcubridge-library-arduino"
 SRC_DIR="${LIB_DIR}/src"
 TEST_DIR="${LIB_DIR}/tests"
 STUB_DIR="${ROOT_DIR}/tools/arduino_stub/include"
-
 BUILD_DIR="${LIB_DIR}/build-host-local"
 OBJ_DIR="${BUILD_DIR}/objs"
-mkdir -p "${OBJ_DIR}"
+METADATA_DIR="${BUILD_DIR}/generated"
+mkdir -p "${OBJ_DIR}" "${METADATA_DIR}"
+python3 "${ROOT_DIR}/tools/arduino_core_metadata.py" \
+    --host-test \
+    --write-header "${METADATA_DIR}/ArduinoCoreMetadata.h"
 
 # Use system Python directly
 PYTHON_CMD=$(command -v python3 || command -v python)
@@ -106,6 +109,7 @@ BASE_FLAGS=(
     -I"${SRC_DIR}/config" \
     -I"${SRC_DIR}/protocol" \
     -I"${TEST_DIR}/Unity/src" \
+    -I"${METADATA_DIR}" \
     -I"${STUB_DIR}" \
     -I"${TEST_DIR}" \
     -I"$ETL_PATH" \

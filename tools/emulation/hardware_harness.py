@@ -17,6 +17,7 @@ from tools.emulation.process_utils import terminate_pid_tree
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLE_MANIFEST = REPO_ROOT / "hardware" / "targets.example.toml"
+LED_BUILTIN_TESTS = frozenset({"led13_test.py", "all_features_test.py"})
 
 
 @dataclass
@@ -58,6 +59,18 @@ def _coerce_env(value: Any) -> dict[str, str]:
     for k, v in cast(dict[Any, Any], value).items():
         res[str(k)] = str(v)
     return res
+
+
+def requires_led_builtin_pin(test_name: str) -> bool:
+    return test_name in LED_BUILTIN_TESTS
+
+
+def led_pin_arguments(test_name: str, led_builtin_pin: int | None) -> list[str]:
+    if not requires_led_builtin_pin(test_name):
+        return []
+    if led_builtin_pin is None:
+        raise typer.BadParameter("--led-builtin-pin is required when running led13_test.py or all_features_test.py")
+    return ["--pin", str(led_builtin_pin)]
 
 
 def load_manifest(path: Path) -> list[Target]:
@@ -187,6 +200,10 @@ def run(
     gateway_host: Annotated[str, typer.Option("--gateway-host", help="Gateway host")] = "127.0.0.1",
     gateway_port: Annotated[int, typer.Option("--gateway-port", help="Gateway port")] = 8443,
     device_id: Annotated[str, typer.Option("--device-id", help="Explicit target device ID")] = "yun-01",
+    led_builtin_pin: Annotated[
+        int | None,
+        typer.Option("--led-builtin-pin", help="LED_BUILTIN from the target Arduino core"),
+    ] = None,
     test_name: Annotated[
         str | None, typer.Option("--test", help="Specific test name to run (e.g. led13_test.py)")
     ] = None,
@@ -206,6 +223,8 @@ def run(
         tests_to_run = [clean_name]
     else:
         tests_to_run = available_tests
+
+    pin_arguments = {name: led_pin_arguments(name, led_builtin_pin) for name in tests_to_run}
 
     is_local = local or (host is None and target is None)
     target_host = host
@@ -265,6 +284,7 @@ def run(
                     "--device-id",
                     device_id,
                 ]
+                cmd.extend(pin_arguments[t_file])
                 env = {
                     "REPO_ROOT": str(REPO_ROOT),
                     "PYTHONPATH": f"{examples_parent}:{REPO_ROOT / 'mcubridge'}:{REPO_ROOT}",
@@ -282,6 +302,7 @@ def run(
                     f"python3 /tmp/mcubridge-client-examples/examples/{t_file} "
                     f"--host '{gateway_host}' --port {gateway_port} --device-id '{device_id}'"
                 )
+                remote_cmd += "".join(f" {argument}" for argument in pin_arguments[t_file])
                 code, _stdout, stderr = await run_ssh_command(
                     host=target_host,
                     user=target_u,

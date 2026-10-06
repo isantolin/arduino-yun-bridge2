@@ -157,7 +157,7 @@ uci commit mcubridge
 
 - **Rotación de secretos:** Ejecuta la pestaña *Credentials & TLS* en LuCI para invocar `/usr/bin/mcubridge-rotate-credentials`. Esto regenera `mcubridge.general.serial_shared_secret`, refresca la contraseña del cloud, reinicia el daemon y expone el snippet `#define BRIDGE_SERIAL_SHARED_SECRET "..."`.
 - **Smoke test de hardware:** Ejecuta `/usr/bin/mcubridge-hw-smoke` para validar el enlace local, credenciales y una ida y vuelta real de gRPC/IPC.
-- **Harness multi-dispositivo:** Ejecuta `python3 tools/emulation/hardware_harness.py` en paralelo para verificar toda la flota de MCUs de forma centralizada.
+- **Harness multi-dispositivo:** Ejecuta `python3 tools/emulation/hardware_harness.py run` para verificar los ejemplos en hardware. Si ejecutas `led13_test.py` o `all_features_test.py`, pasa `--led-builtin-pin` con el `LED_BUILTIN` del core de la placa objetivo; el harness no asume el pin 13.
 - **Frame debug en Linux:** Para inspeccionar tráfico binario del enlace serie, detén `mcubridge` y ejecuta `python3 tools/emulation/frame_debug.py --port /dev/ttyATH0 --command CMD_LINK_RESET --read-response`.
 
 ## Despliegue seguro

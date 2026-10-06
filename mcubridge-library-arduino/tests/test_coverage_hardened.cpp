@@ -533,7 +533,7 @@ void test_bridge_additional_coverage() {
     ba.dispatch(env);
   }
 
-  // 2. Trigger CMD_ANALOG_READ with pin >= DIGITAL_PINS to test error path
+  // 2. Trigger CMD_ANALOG_READ with pin >= NUM_DIGITAL_PINS to test error path
   {
     rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
     env.version = rpc::PROTOCOL_VERSION;
@@ -545,7 +545,7 @@ void test_bridge_additional_coverage() {
     ba.dispatch(env);
   }
 
-  // 3. Trigger CMD_DIGITAL_READ with pin >= DIGITAL_PINS to test error path
+  // 3. Trigger CMD_DIGITAL_READ with pin >= NUM_DIGITAL_PINS to test error path
   {
     rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
     env.version = rpc::PROTOCOL_VERSION;

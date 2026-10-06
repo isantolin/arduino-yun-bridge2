@@ -8,6 +8,7 @@ Direct in-process client test execution and structured status health audit.
 from __future__ import annotations
 
 import importlib.util
+import inspect
 import json
 import os
 import runpy
@@ -26,6 +27,7 @@ import tenacity
 import typer
 from mcubridge.config.logging import configure_logging
 from mcubridge.protocol import protocol
+from tools.arduino_core_metadata import read_metadata_json
 
 from tools.audit.audit_bridge_status import audit_status_dict
 from tools.emulation.process_utils import (
@@ -43,6 +45,7 @@ repo_root = Path(__file__).resolve().parents[2]
 SOCAT_PORT0 = "/tmp/ttyBRIDGE0"
 CLOUD_HOST = "127.0.0.1"
 CLOUD_PORT = protocol.DEFAULT_CLOUD_PORT
+CORE_METADATA_PATH = repo_root / "build" / "emulation" / "arduino_core_metadata.json"
 
 configure_logging(console=True)
 logger = structlog.get_logger("emulation-runner")
@@ -189,7 +192,11 @@ def wait_for_daemon_sync(status_file: Path, timeout: float = 15.0) -> bool:
         return False
 
 
-def run_client_script(script_path: Path, device_id: str = "yun-01") -> bool:
+def run_client_script(
+    script_path: Path,
+    device_id: str = "yun-01",
+    led_builtin_pin: int | None = None,
+) -> bool:
     """Execute client test script directly in-process via module main or runpy (Rule 37)."""
     logger.info("Executing client test in-process", script=script_path.name)
     try:
@@ -199,7 +206,17 @@ def run_client_script(script_path: Path, device_id: str = "yun-01") -> bool:
             spec.loader.exec_module(mod)
             main_fn = getattr(mod, "main", None)
             if callable(main_fn):
-                main_fn(host=CLOUD_HOST, port=CLOUD_PORT, device_id=device_id)
+                main_parameters = inspect.signature(main_fn).parameters
+                kwargs: dict[str, object] = {
+                    "host": CLOUD_HOST,
+                    "port": CLOUD_PORT,
+                    "device_id": device_id,
+                }
+                if "led_builtin_pin" in main_parameters:
+                    if led_builtin_pin is None:
+                        raise ValueError(f"{script_path.name} requires LED_BUILTIN from its Arduino core")
+                    kwargs["led_builtin_pin"] = led_builtin_pin
+                main_fn(**kwargs)
                 logger.info("Script execution passed", script=script_path.name)
                 return True
 
@@ -253,6 +270,7 @@ def run_emulation(
     firmware_path: Path,
     package_root: Path = Path(),
     run_scripts: list[str] | None = None,
+    led_builtin_pin: int | None = None,
 ) -> None:
     state = EmulationState()
     gateway_proc = ensure_cloud_gateway(state)
@@ -324,7 +342,11 @@ def run_emulation(
                 with state.lock:
                     lines_before = len(state.output_lines)
 
-                passed = run_client_script(s_path, device_id="yun-01")
+                passed = run_client_script(
+                    s_path,
+                    device_id="yun-01",
+                    led_builtin_pin=led_builtin_pin,
+                )
                 if not passed:
                     all_success = False
                     break
@@ -381,10 +403,15 @@ def main(
     package_root: Annotated[Path, typer.Option("--package-root", help="Root of mcubridge package")] = Path(),
     run_scripts: Annotated[list[str] | None, typer.Argument(help="Client scripts to run")] = None,
 ) -> None:
+    scripts = run_scripts or []
+    led_builtin_pin = None
+    if any(Path(script).name in {"led13_test.py", "all_features_test.py"} for script in scripts):
+        led_builtin_pin = read_metadata_json(CORE_METADATA_PATH).led_builtin
     run_emulation(
         firmware_path=firmware,
         package_root=package_root,
-        run_scripts=run_scripts or [],
+        run_scripts=scripts,
+        led_builtin_pin=led_builtin_pin,
     )
 
 

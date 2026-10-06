@@ -5,7 +5,12 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 LIB_DIR="${ROOT_DIR}/mcubridge-library-arduino"
 SRC_DIR="${LIB_DIR}/src"
 STUB_DIR="${ROOT_DIR}/tools/arduino_stub/include"
+METADATA_DIR="${ROOT_DIR}/build/clang-tidy"
 ARDUINO_LIBS="${ARDUINO_LIB_DIR:-$HOME/Arduino/libraries}"
+
+python3 "${ROOT_DIR}/tools/arduino_core_metadata.py" \
+    --host-test \
+    --write-header "${METADATA_DIR}/ArduinoCoreMetadata.h"
 
 # Ensure Arduino libraries are present
 if [ ! -d "$ARDUINO_LIBS/Embedded_Template_Library" ]; then
@@ -22,6 +27,7 @@ INCLUDES=(
     "-I${SRC_DIR}"
     "-I${SRC_DIR}/config"
     "-I${SRC_DIR}/protocol"
+    "-I${METADATA_DIR}"
     "-I${STUB_DIR}"
     "-I${ETL_INC}"
     "-I${WOLFSSL_DIR}"

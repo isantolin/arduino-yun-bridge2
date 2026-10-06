@@ -71,15 +71,20 @@ def test_wait_for_daemon_sync_failure(tmp_path: Path) -> None:
 
 def test_run_client_script_with_main(tmp_path: Path) -> None:
     script = tmp_path / "test_script.py"
+    result_file = tmp_path / "led_pin.txt"
     script.write_text(
-        "executed_args = {}\n"
-        "def main(host=None, port=None, device_id=None):\n"
-        "    global executed_args\n"
-        "    executed_args['device_id'] = device_id\n",
+        "from pathlib import Path\n"
+        "def main(host=None, port=None, device_id=None, led_builtin_pin=None):\n"
+        f"    Path({str(result_file)!r}).write_text(str(led_builtin_pin), encoding='utf-8')\n",
         encoding="utf-8",
     )
-    passed = emulation_runner.run_client_script(script, device_id="custom-01")
+    passed = emulation_runner.run_client_script(
+        script,
+        device_id="custom-01",
+        led_builtin_pin=7,
+    )
     assert passed is True
+    assert result_file.read_text(encoding="utf-8") == "7"
 
 
 def test_run_client_script_failure(tmp_path: Path) -> None:

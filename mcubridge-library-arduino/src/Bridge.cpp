@@ -123,13 +123,13 @@ const BridgeClass::DispatchEntry BridgeClass::k_dispatch_table[] = {
      &BridgeClass::_dispatchMemberWithCtxMsg<
          &BridgeClass::_handlePinRead<
              rpc_pb_DigitalReadResponse, rpc::CommandId::CMD_DIGITAL_READ_RESP,
-             bridge::config::DIGITAL_PINS, ::digitalRead>,
+             NUM_DIGITAL_PINS, ::digitalRead>,
          rpc_pb_PinRead, false, true>},
     {rpc::to_underlying(rpc::CommandId::CMD_ANALOG_READ),
      &BridgeClass::_dispatchMemberWithCtxMsg<
          &BridgeClass::_handlePinRead<
              rpc_pb_AnalogReadResponse, rpc::CommandId::CMD_ANALOG_READ_RESP,
-             bridge::config::ANALOG_PINS, ::analogRead>,
+             NUM_ANALOG_INPUTS, ::analogRead>,
          rpc_pb_PinRead, false, true>},
     {rpc::to_underlying(rpc::CommandId::CMD_PIN_SUBSCRIBE),
      &BridgeClass::_dispatchMemberWithCtxMsg<&BridgeClass::_handlePinSubscribe, rpc_pb_PinSubscribeRequest, true, false>},

@@ -6,6 +6,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "ArduinoCoreMetadata.h"
+
 // Bring standard C fixed-width types into global namespace for Arduino compatibility
 #ifdef __cplusplus
 using ::int16_t;
@@ -34,10 +36,22 @@ inline void operator delete(void*, void*) noexcept {}
 #define INPUT 0
 #define OUTPUT 1
 #define INPUT_PULLUP 2
-#define LED_BUILTIN 13
-// Host tests use the Uno core's pin-count contract.
-#define NUM_DIGITAL_PINS 20
-#define NUM_ANALOG_INPUTS 6
+
+#if !defined(F_CPU) || !defined(LED_BUILTIN) || !defined(NUM_DIGITAL_PINS) || \
+    !defined(NUM_ANALOG_INPUTS) || !defined(PIN_SPI_SS) ||                 \
+    !defined(PIN_SPI_MOSI) || !defined(PIN_SPI_MISO) ||                    \
+    !defined(PIN_SPI_SCK) || !defined(PIN_WIRE_SDA) ||                     \
+    !defined(PIN_WIRE_SCL)
+#error "Generate ArduinoCoreMetadata.h from the selected Arduino core"
+#endif
+
+struct ArduinoStubPinState {
+  uint8_t mode{0xFF};
+  uint8_t value{0xFF};
+};
+
+extern ArduinoStubPinState g_arduino_stub_pin_states[NUM_DIGITAL_PINS];
+void resetArduinoStubPinStates();
 
 // Print bases
 #define BIN 2
@@ -81,8 +95,16 @@ inline void delay(unsigned long) {}
 
 inline void delayMicroseconds(unsigned int /*us*/) {}
 inline void yield() {}
-inline void pinMode(uint8_t, uint8_t) {}
-inline void digitalWrite(uint8_t, uint8_t) {}
+inline void pinMode(uint8_t pin, uint8_t mode) {
+  if (pin < NUM_DIGITAL_PINS) {
+    g_arduino_stub_pin_states[pin].mode = mode;
+  }
+}
+inline void digitalWrite(uint8_t pin, uint8_t value) {
+  if (pin < NUM_DIGITAL_PINS) {
+    g_arduino_stub_pin_states[pin].value = value;
+  }
+}
 inline int digitalRead(uint8_t) { return LOW; }
 
 inline void analogWrite(uint8_t, int) {}

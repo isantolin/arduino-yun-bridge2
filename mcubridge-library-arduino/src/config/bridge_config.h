@@ -14,11 +14,19 @@ namespace config {
 #if !defined(NUM_DIGITAL_PINS) || !defined(NUM_ANALOG_INPUTS)
 #error "The Arduino core must define NUM_DIGITAL_PINS and NUM_ANALOG_INPUTS"
 #endif
+#if !defined(PIN_SPI_SS) || !defined(PIN_SPI_MOSI) ||  \
+    !defined(PIN_SPI_MISO) || !defined(PIN_SPI_SCK) || \
+    !defined(PIN_WIRE_SDA) || !defined(PIN_WIRE_SCL)
+#error "The Arduino core must define native SPI and I2C pin identifiers"
+#endif
 static_assert(NUM_DIGITAL_PINS <= UINT8_MAX);
 static_assert(NUM_ANALOG_INPUTS <= UINT8_MAX);
-inline constexpr uint8_t DIGITAL_PINS = NUM_DIGITAL_PINS;
-inline constexpr uint8_t ANALOG_PINS = NUM_ANALOG_INPUTS;
-
+static_assert(PIN_SPI_SS < NUM_DIGITAL_PINS);
+static_assert(PIN_SPI_MOSI < NUM_DIGITAL_PINS);
+static_assert(PIN_SPI_MISO < NUM_DIGITAL_PINS);
+static_assert(PIN_SPI_SCK < NUM_DIGITAL_PINS);
+static_assert(PIN_WIRE_SDA < NUM_DIGITAL_PINS);
+static_assert(PIN_WIRE_SCL < NUM_DIGITAL_PINS);
 inline constexpr bool SAFE_START_PINS_ENABLED = true;
 inline constexpr bool ENABLE_WATCHDOG = true;
 

@@ -33,7 +33,17 @@ constexpr uint8_t CURRENT_ARCH =
 namespace {
 template <size_t I>
 void _forceSinglePin() {
-  if constexpr (I < 2) {
+  if constexpr (I == PIN_SPI_SS) {
+    ::pinMode(static_cast<uint8_t>(I), OUTPUT);
+    ::digitalWrite(static_cast<uint8_t>(I), HIGH);
+  } else if constexpr (I == PIN_SPI_SCK || I == PIN_SPI_MOSI) {
+    ::pinMode(static_cast<uint8_t>(I), OUTPUT);
+    ::digitalWrite(static_cast<uint8_t>(I), LOW);
+  } else if constexpr (I == PIN_SPI_MISO) {
+    ::pinMode(static_cast<uint8_t>(I), INPUT);
+  } else if constexpr (I == PIN_WIRE_SDA || I == PIN_WIRE_SCL) {
+    ::pinMode(static_cast<uint8_t>(I), INPUT_PULLUP);
+  } else if constexpr (I < 2) {
     // [SIL-2] Preserve primary UART communication pins (RX/TX) for supervisor
     // link
     return;
@@ -256,8 +266,8 @@ void fillCapabilities(rpc_pb_Capabilities& caps) {
 }
 
 void getPinCounts(uint8_t& digital, uint8_t& analog) {
-  digital = bridge::config::DIGITAL_PINS;
-  analog = bridge::config::ANALOG_PINS;
+  digital = NUM_DIGITAL_PINS;
+  analog = NUM_ANALOG_INPUTS;
 }
 uint8_t getArchId() { return CURRENT_ARCH; }
 

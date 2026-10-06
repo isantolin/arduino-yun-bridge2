@@ -17,6 +17,7 @@ logger = structlog.get_logger("all-features-test")
 
 
 async def run_test(
+    led_builtin_pin: int,
     host: str | None = None,
     port: int | None = None,
     device_id: str | None = None,
@@ -26,9 +27,9 @@ async def run_test(
     async with bridge_session(host=host, port=port, device_id=device_id, topic_prefix=topic_prefix) as (_channel, stub):
         # 1. LED test
         logger.info("Testing LED (Digital Write)...")
-        await stub.DigitalWrite(pb.DigitalWrite(pin=13, value=1))
+        await stub.DigitalWrite(pb.DigitalWrite(pin=led_builtin_pin, value=1))
         await asyncio.sleep(0.5)
-        await stub.DigitalWrite(pb.DigitalWrite(pin=13, value=0))
+        await stub.DigitalWrite(pb.DigitalWrite(pin=led_builtin_pin, value=0))
         logger.info("LED test passed.")
 
         # 2. Analog Write test
@@ -64,12 +65,13 @@ async def run_test(
 
 
 def main(
+    led_builtin_pin: int,
     host: str | None = None,
     port: int | None = None,
     device_id: str | None = None,
     topic_prefix: str = "br",
 ) -> None:
-    asyncio.run(run_test(host, port, device_id, topic_prefix))
+    asyncio.run(run_test(led_builtin_pin, host, port, device_id, topic_prefix))
 
 
 cli = typer.Typer(help="Unified e2e feature test using direct LocalBridgeStub through Gateway.", add_completion=False)
@@ -77,12 +79,13 @@ cli = typer.Typer(help="Unified e2e feature test using direct LocalBridgeStub th
 
 @cli.command()
 def cli_main(
+    led_builtin_pin: Annotated[int, typer.Option("--pin", help="Pin number from the target core's LED_BUILTIN")],
     host: Annotated[str | None, typer.Option("--host", help="Cloud Gateway host")] = None,
     port: Annotated[int | None, typer.Option("--port", help="Cloud Gateway port")] = None,
     device_id: Annotated[str | None, typer.Option("--device-id", help="Target device ID")] = None,
     topic_prefix: Annotated[str, typer.Option("--topic-prefix", help="Topic prefix")] = "br",
 ) -> None:
-    main(host, port, device_id, topic_prefix)
+    main(led_builtin_pin, host, port, device_id, topic_prefix)
 
 
 if __name__ == "__main__":

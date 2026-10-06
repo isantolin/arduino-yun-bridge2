@@ -45,6 +45,14 @@ jobs:
       - name: Install Build Tools
         if: matrix.env == 'arduino'
         run: sudo apt-get update && sudo apt-get install -y g++ make
+      - name: Install Arduino CLI and AVR core metadata
+        if: matrix.env == 'cppcheck' || matrix.env == 'lint' || matrix.env == 'arduino'
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | BINDIR="$GITHUB_WORKSPACE/bin" sh
+          echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
+          export PATH="$GITHUB_WORKSPACE/bin:$PATH"
+          arduino-cli core update-index
+          arduino-cli core install arduino:avr
       - name: Check for Hardcoded Secrets
         if: matrix.env == 'lint'
         run: |
@@ -202,6 +210,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y g++ socat
+      - name: Install Arduino CLI and AVR core metadata
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | BINDIR="$GITHUB_WORKSPACE/bin" sh
+          echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
+          export PATH="$GITHUB_WORKSPACE/bin:$PATH"
+          arduino-cli core update-index
+          arduino-cli core install arduino:avr
       - name: Install Arduino Dependencies
         run: |
           ./mcubridge-library-arduino/tools/install.sh

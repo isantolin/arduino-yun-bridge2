@@ -272,7 +272,7 @@ void test_bridge_coverage() {
   bridge::hal::getArchId();
   bridge::hal::memory_fence();
   bridge::hal::watchdog_kick();
-  [[maybe_unused]] bool _unused_pin = (0 < bridge::config::DIGITAL_PINS);
+  [[maybe_unused]] bool _unused_pin = (0 < NUM_DIGITAL_PINS);
 
   // 11. FSM & Timers & Retransmission
   printf("  - Step 11: FSM & Timers\n");

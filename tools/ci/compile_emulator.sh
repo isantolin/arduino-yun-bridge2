@@ -11,6 +11,7 @@ LIB_DIR="${ROOT_DIR}/mcubridge-library-arduino"
 SRC_DIR="${LIB_DIR}/src"
 TEST_DIR="${LIB_DIR}/tests"
 STUB_DIR="${ROOT_DIR}/tools/arduino_stub/include"
+METADATA_DIR="${ROOT_DIR}/build/emulation"
 
 # Find library paths (local or system)
 ARDUINO_LIBS="${ARDUINO_LIB_DIR:-$HOME/Arduino/libraries}"
@@ -33,6 +34,11 @@ PACKETSERIAL_PATH="$ARDUINO_LIBS/PacketSerial"
 
 # Use system Python
 GEN_PYTHON=$(command -v python3 || command -v python)
+mkdir -p "${METADATA_DIR}"
+"${GEN_PYTHON}" "${ROOT_DIR}/tools/arduino_core_metadata.py" \
+    --host-test \
+    --write-header "${METADATA_DIR}/ArduinoCoreMetadata.h" \
+    --json-output "${METADATA_DIR}/arduino_core_metadata.json"
 
 echo "[emulator] Verifying library paths..."
 ls -la "${PACKETSERIAL_PATH}" || echo "PACKETSERIAL_PATH not found"
@@ -76,6 +82,7 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -I"${SRC_DIR}" \
     -I"${SRC_DIR}/config" \
     -I"${TEST_DIR}/mocks" \
+    -I"${METADATA_DIR}" \
     -I"${STUB_DIR}" \
     -I"${TEST_DIR}" \
     -I"${ETL_PATH}" \
@@ -111,6 +118,7 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
     -I"${SRC_DIR}" \
     -I"${SRC_DIR}/config" \
     -I"${TEST_DIR}/mocks" \
+    -I"${METADATA_DIR}" \
     -I"${STUB_DIR}" \
     -I"${TEST_DIR}" \
     -I"${ETL_PATH}" \

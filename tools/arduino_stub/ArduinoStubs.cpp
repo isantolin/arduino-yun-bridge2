@@ -2,6 +2,16 @@
 #include "BridgeFaultInjection.h"  // IWYU pragma: keep
 #include "SPI.h"
 
+#include <etl/algorithm.h>
+
+ArduinoStubPinState g_arduino_stub_pin_states[NUM_DIGITAL_PINS]{};
+
+void resetArduinoStubPinStates() {
+  etl::fill(g_arduino_stub_pin_states,
+            g_arduino_stub_pin_states + NUM_DIGITAL_PINS,
+            ArduinoStubPinState{});
+}
+
 SPIClass SPI;
 HardwareSerial Serial __attribute__((weak));
 HardwareSerial Serial1 __attribute__((weak));

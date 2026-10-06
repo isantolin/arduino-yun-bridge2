@@ -108,7 +108,6 @@ namespace {
 
 constexpr size_t RX_BUFFER_CAPACITY = 256;
 constexpr size_t PTY_NAME_CAPACITY = 128;
-constexpr uint32_t DEFAULT_AVR_FREQUENCY = 16000000UL;
 constexpr size_t BATCH_INSTRUCTION_CYCLES = 50000;
 constexpr size_t DRAIN_BATCH_CYCLES = 256;
 constexpr size_t HOST_FIFO_CAPACITY = 2048;
@@ -359,17 +358,19 @@ class SimavrHardwareBridge {
 }  // namespace
 
 int main(int argc, char* argv[]) {
-  if (argc < 2) {
-    fprintf(stderr, "Usage: %s <firmware.elf> [mcu] [frequency_hz] [uart_id]\n",
+  if (argc < 4) {
+    fprintf(stderr, "Usage: %s <firmware.elf> <mcu> <frequency_hz> [uart_id]\n",
             argv[0]);
     return 1;
   }
 
   const etl::string_view firmware_file = argv[1];
-  const etl::string_view mcu_name = (argc > 2) ? argv[2] : "atmega2560";
-  const uint32_t frequency =
-      (argc > 3) ? static_cast<uint32_t>(strtoul(argv[3], nullptr, 10))
-                 : DEFAULT_AVR_FREQUENCY;
+  const etl::string_view mcu_name = argv[2];
+  const uint32_t frequency = static_cast<uint32_t>(strtoul(argv[3], nullptr, 10));
+  if (frequency == 0) {
+    fprintf(stderr, "[ERROR] AVR CPU frequency must be non-zero.\n");
+    return 1;
+  }
   const char uart_id = (argc > 4) ? argv[4][0] : '\0';
 
   signal(SIGINT, sig_handler);

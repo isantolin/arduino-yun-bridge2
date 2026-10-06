@@ -9,6 +9,7 @@ running full E2E client verification suites.
 from __future__ import annotations
 
 import importlib.util
+import inspect
 import json
 import os
 import pty
@@ -28,6 +29,7 @@ import tenacity
 import typer
 from mcubridge.config.logging import configure_logging
 from mcubridge.protocol import protocol
+from tools.arduino_core_metadata import read_metadata_json, resolve_core_metadata
 from tools.emulation.process_utils import (
     start_daemon_thread,
     stream_pump,
@@ -214,15 +216,13 @@ def _setup_fake_uci(slave_name: str) -> tuple[Path, Path, dict[str, str]]:
     return fake_uci_dir, storage_path, daemon_env
 
 
-BOARD_TO_MCU: dict[str, str] = {
-    "arduino:avr:yun": "atmega32u4",
-    "arduino:avr:uno": "atmega328p",
-    "arduino:avr:mega": "atmega2560",
-    "arduino:avr:leonardo": "atmega32u4",
-    "atmega328p": "atmega328p",
-    "atmega32u4": "atmega32u4",
-    "atmega2560": "atmega2560",
-}
+def default_client_test_paths() -> list[Path]:
+    return [
+        repo_root / "mcubridge-client-examples" / "tests" / "test_smoke_connection.py",
+        repo_root / "mcubridge-client-examples" / "examples" / "led13_test.py",
+        repo_root / "mcubridge-client-examples" / "examples" / "console_test.py",
+        repo_root / "mcubridge-client-examples" / "examples" / "mailbox_read_test.py",
+    ]
 
 
 def _empty_output_lines() -> list[tuple[str, str]]:
@@ -305,6 +305,7 @@ def run_simavr_emulation(
     firmware_path: Path,
     mcu: str,
     frequency: int,
+    led_builtin_pin: int,
     test_scripts: list[Path],
     timeout_seconds: float = 90.0,
     uart_id: str | None = None,
@@ -370,7 +371,7 @@ def run_simavr_emulation(
     state.capabilities_event.wait(timeout=5.0)
     time.sleep(1.0)
 
-    all_passed = run_client_scripts(test_scripts, daemon_env, timeout_seconds)
+    all_passed = run_client_scripts(test_scripts, daemon_env, timeout_seconds, led_builtin_pin=led_builtin_pin)
     if all_passed:
         # [SIL-2 / Rule 29] Audit runtime status snapshot before teardown
         status_file = Path("/tmp/mcubridge_status.json")
@@ -392,7 +393,11 @@ def run_simavr_emulation(
     return all_passed
 
 
-def run_single_client_script(script_path: Path, device_id: str = "yun-01") -> bool:
+def run_single_client_script(
+    script_path: Path,
+    device_id: str = "yun-01",
+    led_builtin_pin: int | None = None,
+) -> bool:
     """Execute client test script directly in-process via module main or runpy (Rule 37)."""
     logger.info("Running client test in-process", script=script_path.name)
     try:
@@ -402,7 +407,17 @@ def run_single_client_script(script_path: Path, device_id: str = "yun-01") -> bo
             spec.loader.exec_module(mod)
             main_fn = getattr(mod, "main", None)
             if callable(main_fn):
-                main_fn(host=CLOUD_HOST, port=CLOUD_PORT, device_id=device_id)
+                main_parameters = inspect.signature(main_fn).parameters
+                kwargs: dict[str, object] = {
+                    "host": CLOUD_HOST,
+                    "port": CLOUD_PORT,
+                    "device_id": device_id,
+                }
+                if "led_builtin_pin" in main_parameters:
+                    if led_builtin_pin is None:
+                        raise ValueError(f"{script_path.name} requires LED_BUILTIN from its Arduino core")
+                    kwargs["led_builtin_pin"] = led_builtin_pin
+                main_fn(**kwargs)
                 logger.info("Test passed", script=script_path.name)
                 return True
 
@@ -430,13 +445,14 @@ def run_client_scripts(
     test_scripts: list[Path],
     daemon_env: dict[str, str],
     timeout_seconds: float,
+    led_builtin_pin: int,
 ) -> bool:
     _ = (daemon_env, timeout_seconds)
     for test_path in test_scripts:
         if not test_path.exists():
             logger.warning("Test script not found, skipping", path=str(test_path))
             continue
-        if not run_single_client_script(test_path, device_id="yun-01"):
+        if not run_single_client_script(test_path, device_id="yun-01", led_builtin_pin=led_builtin_pin):
             return False
     return True
 
@@ -487,15 +503,7 @@ def run_matrix(
     summary_dir.mkdir(parents=True, exist_ok=True)
     build_base_dir.mkdir(parents=True, exist_ok=True)
 
-    if test_scripts is None:
-        test_paths = [
-            repo_root / "mcubridge-client-examples" / "tests" / "test_smoke_connection.py",
-            repo_root / "mcubridge-client-examples" / "examples" / "led13_test.py",
-            repo_root / "mcubridge-client-examples" / "examples" / "console_test.py",
-            repo_root / "mcubridge-client-examples" / "examples" / "mailbox_read_test.py",
-        ]
-    else:
-        test_paths = test_scripts
+    test_paths = default_client_test_paths() if test_scripts is None else test_scripts
 
     compile_script = repo_root / "tools" / "ci" / "compile_simavr_firmware.sh"
 
@@ -521,16 +529,19 @@ def run_matrix(
 
         if compile_res.returncode == 0 and firmware_elf.exists():
             compilation_status.append("✅ Compiled")
+            metadata = read_metadata_json(out_dir / "arduino_core_metadata.json")
+            if metadata.fqbn != board_fqbn:
+                raise RuntimeError(f"Firmware for {board_fqbn} has metadata for {metadata.fqbn}")
             uart_id: str | None = None
             sketch_str = str(sketch_path)
             if ("BridgeBluetooth" in sketch_str or "BridgeWiFi" in sketch_str) and board_fqbn == "arduino:avr:mega":
                 uart_id = "1"
 
-            mcu = BOARD_TO_MCU.get(board_fqbn.lower(), "atmega2560")
             success = run_simavr_emulation(
                 firmware_path=firmware_elf,
-                mcu=mcu,
-                frequency=16000000,
+                mcu=metadata.mcu,
+                frequency=metadata.frequency_hz,
+                led_builtin_pin=metadata.led_builtin,
                 test_scripts=test_paths,
                 timeout_seconds=timeout_seconds,
                 uart_id=uart_id,
@@ -613,13 +624,17 @@ def main(
         ),
     ] = "arduino:avr:mega",
     frequency: Annotated[
-        int,
+        int | None,
         typer.Option(
             "--frequency",
             "-F",
-            help="AVR CPU clock frequency in Hz (default: 16MHz)",
+            help="Explicit AVR CPU clock override; otherwise use the selected Arduino core's F_CPU",
         ),
-    ] = 16000000,
+    ] = None,
+    led_builtin_pin: Annotated[
+        int | None,
+        typer.Option("--led-builtin-pin", help="Explicit LED_BUILTIN pin for raw MCU targets"),
+    ] = None,
     sketch: Annotated[
         Path | None,
         typer.Option(
@@ -653,18 +668,11 @@ def main(
 ) -> None:
     """Entrypoint for the simavr hardware emulation runner."""
     if sketch is not None:
+        if frequency is not None or led_builtin_pin is not None:
+            raise typer.BadParameter("Sketch matrix runs always use metadata from each target Arduino core")
         effective_sketch = sketch
         if not effective_sketch.exists():
-            canonical_sketch = (
-                repo_root / "mcubridge-library-arduino" / "examples" / "BridgeControl" / "BridgeControl.ino"
-            )
-            if canonical_sketch.exists():
-                logger.warning(
-                    "Requested sketch not found on disk, falling back to canonical BridgeControl sketch",
-                    requested=str(sketch),
-                    fallback=str(canonical_sketch),
-                )
-                effective_sketch = canonical_sketch
+            raise typer.BadParameter(f"Sketch does not exist: {effective_sketch}")
 
         test_paths = [Path(s) for s in scripts] if scripts else None
         fail_count = run_matrix(effective_sketch, timeout_seconds=timeout, test_scripts=test_paths)
@@ -672,8 +680,21 @@ def main(
             sys.exit(fail_count)
         return
 
+    if frequency is not None and frequency <= 0:
+        raise typer.BadParameter("frequency must be greater than zero")
+
+    metadata = resolve_core_metadata(board) if ":" in board else None
+    if metadata is None:
+        if frequency is None or led_builtin_pin is None:
+            raise typer.BadParameter("Raw MCU targets require both --frequency and --led-builtin-pin")
+        effective_frequency = frequency
+        effective_led_pin = led_builtin_pin
+    else:
+        effective_frequency = frequency if frequency is not None else metadata.frequency_hz
+        effective_led_pin = led_builtin_pin if led_builtin_pin is not None else metadata.led_builtin
+
     effective_firmware = firmware or Path(f"build/simavr/{board.replace(':', '-')}/firmware.elf")
-    mcu = BOARD_TO_MCU.get(board.lower(), board.lower())
+    mcu = metadata.mcu if metadata is not None else board.lower()
 
     # Auto-detect UART ID based on firmware name if not explicitly specified
     effective_uart = uart
@@ -684,21 +705,13 @@ def main(
         else:
             effective_uart = "0"
 
-    if scripts:
-        test_paths = [Path(s) for s in scripts]
-    else:
-        test_paths = [
-            repo_root / "mcubridge-client-examples" / "tests" / "test_smoke_connection.py",
-            repo_root / "mcubridge-client-examples" / "examples" / "led13_test.py",
-            repo_root / "mcubridge-client-examples" / "examples" / "console_test.py",
-            repo_root / "mcubridge-client-examples" / "examples" / "mailbox_read_test.py",
-        ]
+    test_paths = [Path(s) for s in scripts] if scripts else default_client_test_paths()
 
     logger.info(
         "Starting simavr runner",
         board=board,
         mcu=mcu,
-        frequency=frequency,
+        frequency=effective_frequency,
         firmware=str(effective_firmware),
         uart=effective_uart,
     )
@@ -706,7 +719,8 @@ def main(
     success = run_simavr_emulation(
         firmware_path=effective_firmware,
         mcu=mcu,
-        frequency=frequency,
+        frequency=effective_frequency,
+        led_builtin_pin=effective_led_pin,
         test_scripts=test_paths,
         timeout_seconds=timeout,
         uart_id=effective_uart,

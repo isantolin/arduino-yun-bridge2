@@ -16,7 +16,7 @@ logger = structlog.get_logger(__name__)
 
 
 async def run_test(
-    pin: int,
+    led_builtin_pin: int,
     host: str | None = None,
     port: int | None = None,
     device_id: str | None = None,
@@ -26,12 +26,12 @@ async def run_test(
     async with bridge_session(host=host, port=port, device_id=device_id, topic_prefix=topic_prefix) as (_channel, stub):
         logger.info("--- Starting LED Pin Control Test ---")
 
-        logger.info("Turning pin state", pin=pin, state="ON")
-        await stub.DigitalWrite(pb.DigitalWrite(pin=pin, value=1))
+        logger.info("Turning built-in LED state", pin=led_builtin_pin, state="ON")
+        await stub.DigitalWrite(pb.DigitalWrite(pin=led_builtin_pin, value=1))
         await asyncio.sleep(2)
 
-        logger.info("Turning pin state", pin=pin, state="OFF")
-        await stub.DigitalWrite(pb.DigitalWrite(pin=pin, value=0))
+        logger.info("Turning built-in LED state", pin=led_builtin_pin, state="OFF")
+        await stub.DigitalWrite(pb.DigitalWrite(pin=led_builtin_pin, value=0))
         await asyncio.sleep(2)
 
     logger.info("--- LED Test Complete ---")
@@ -39,13 +39,13 @@ async def run_test(
 
 
 def main(
-    pin: int = 13,
+    led_builtin_pin: int,
     host: str | None = None,
     port: int | None = None,
     device_id: str | None = None,
     topic_prefix: str = "br",
 ) -> None:
-    asyncio.run(run_test(pin, host, port, device_id, topic_prefix))
+    asyncio.run(run_test(led_builtin_pin, host, port, device_id, topic_prefix))
 
 
 cli = typer.Typer(help="Test generic pin control using direct LocalBridgeStub through Gateway.", add_completion=False)
@@ -53,7 +53,7 @@ cli = typer.Typer(help="Test generic pin control using direct LocalBridgeStub th
 
 @cli.command()
 def cli_main(
-    pin: Annotated[int, typer.Argument(help="Pin number")] = 13,
+    led_builtin_pin: Annotated[int, typer.Option("--pin", help="Pin number from the target core's LED_BUILTIN")],
     host: Annotated[str | None, typer.Option("--host", help="Cloud Gateway host")] = None,
     port: Annotated[int | None, typer.Option("--port", help="Cloud Gateway port")] = None,
     device_id: Annotated[
@@ -61,7 +61,7 @@ def cli_main(
     ] = None,
     topic_prefix: Annotated[str, typer.Option("--topic-prefix", help="Topic prefix")] = "br",
 ) -> None:
-    main(pin, host, port, device_id, topic_prefix)
+    main(led_builtin_pin, host, port, device_id, topic_prefix)
 
 
 if __name__ == "__main__":

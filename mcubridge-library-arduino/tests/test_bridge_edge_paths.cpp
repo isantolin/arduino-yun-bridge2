@@ -1,4 +1,5 @@
 #define BRIDGE_ENABLE_TEST_INTERFACE
+#include <Arduino.h>
 #include <etl/exception.h>
 #include <unity.h>
 
@@ -833,6 +834,26 @@ void test_architectural_extensions_edge_paths() {
   ba.setSynchronized();
 }
 
+void test_force_safe_state_uses_core_bus_pin_map() {
+  resetArduinoStubPinStates();
+  bridge::hal::forceSafeState();
+
+  TEST_ASSERT_EQUAL_UINT8(OUTPUT, g_arduino_stub_pin_states[PIN_SPI_SS].mode);
+  TEST_ASSERT_EQUAL_UINT8(HIGH, g_arduino_stub_pin_states[PIN_SPI_SS].value);
+  TEST_ASSERT_EQUAL_UINT8(OUTPUT, g_arduino_stub_pin_states[PIN_SPI_SCK].mode);
+  TEST_ASSERT_EQUAL_UINT8(LOW, g_arduino_stub_pin_states[PIN_SPI_SCK].value);
+  TEST_ASSERT_EQUAL_UINT8(OUTPUT, g_arduino_stub_pin_states[PIN_SPI_MOSI].mode);
+  TEST_ASSERT_EQUAL_UINT8(LOW, g_arduino_stub_pin_states[PIN_SPI_MOSI].value);
+  TEST_ASSERT_EQUAL_UINT8(INPUT, g_arduino_stub_pin_states[PIN_SPI_MISO].mode);
+  TEST_ASSERT_EQUAL_UINT8(INPUT_PULLUP,
+                          g_arduino_stub_pin_states[PIN_WIRE_SDA].mode);
+  TEST_ASSERT_EQUAL_UINT8(INPUT_PULLUP,
+                          g_arduino_stub_pin_states[PIN_WIRE_SCL].mode);
+
+  TEST_ASSERT_EQUAL_UINT8(0xFF, g_arduino_stub_pin_states[0].mode);
+  TEST_ASSERT_EQUAL_UINT8(0xFF, g_arduino_stub_pin_states[1].mode);
+}
+
 }  // namespace
 
 int main() {
@@ -850,5 +871,6 @@ int main() {
   RUN_TEST(test_encrypted_rx_nonce_paths);
   RUN_TEST(test_fault_injection_harness_paths);
   RUN_TEST(test_architectural_extensions_edge_paths);
+  RUN_TEST(test_force_safe_state_uses_core_bus_pin_map);
   return UNITY_END();
 }

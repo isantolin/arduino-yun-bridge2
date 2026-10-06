@@ -18,6 +18,10 @@ BUILD_DIR="${ROOT_DIR}/coverage/build-arduino-${ARDUINO_COVERAGE_RUN_ID}"
 rm -rf "${BUILD_DIR}"
 mkdir -p "${BUILD_DIR}/objs"
 mkdir -p "${OUTPUT_ROOT}"
+METADATA_DIR="${BUILD_DIR}/generated"
+python3 "${ROOT_DIR}/tools/arduino_core_metadata.py" \
+    --host-test \
+    --write-header "${METADATA_DIR}/ArduinoCoreMetadata.h"
 
 # Setup dependencies in Arduino libraries directory
 echo "[coverage_arduino] Installing library dependencies..."
@@ -89,7 +93,7 @@ BASE_FLAGS=(
     "-DBRIDGE_ENABLE_PROCESS=1" "-DBRIDGE_ENABLE_SPI=1"
     "-DUNITY_INCLUDE_DOUBLE"
     "-I${SRC_ROOT}" "-I${SRC_ROOT}/config" "-I${SRC_ROOT}/protocol"
-    "-I${STUB_INCLUDE}" "-I${TEST_ROOT}"
+    "-I${METADATA_DIR}" "-I${STUB_INCLUDE}" "-I${TEST_ROOT}"
     "-I${ETL_PATH}" "-I${ETL_PATH}/include" "-I${ETL_PATH}/arduino"
     "-I${WOLFSSL_PATH}" "-I${WOLFSSL_INC}"
     "-I${PACKETSERIAL_PATH}" "-I${PACKETSERIAL_PATH}/src"
@@ -102,7 +106,7 @@ TP_FLAGS=(
     "-DARDUINO=100" "-DBRIDGE_HOST_TEST=1" "-DWOLFSSL_USER_SETTINGS"
     "-DETL_NO_STL"
     "-I${SRC_ROOT}" "-I${SRC_ROOT}/config" "-I${SRC_ROOT}/protocol"
-    "-I${STUB_INCLUDE}" "-I${TEST_ROOT}"
+    "-I${METADATA_DIR}" "-I${STUB_INCLUDE}" "-I${TEST_ROOT}"
     "-I${ETL_PATH}" "-I${ETL_PATH}/include" "-I${ETL_PATH}/arduino"
     "-I${WOLFSSL_PATH}" "-I${WOLFSSL_INC}"
     "-I${PACKETSERIAL_PATH}" "-I${PACKETSERIAL_PATH}/src"

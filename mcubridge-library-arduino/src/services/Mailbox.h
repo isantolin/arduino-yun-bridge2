@@ -48,7 +48,7 @@ class MailboxClass : public bridge::BridgeObserver {
   static void process();
   void onLost() override;
 
- // Reemplazar en Mailbox.h (sección private):
+  // Reemplazar en Mailbox.h (sección private):
  private:
   static void _enqueue(etl::span<const uint8_t> data);
   static MessageCallback _message_callback;

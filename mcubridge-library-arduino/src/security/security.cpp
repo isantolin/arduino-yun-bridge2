@@ -33,7 +33,7 @@ static bool constant_time_equal(const uint8_t* a, const uint8_t* b,
                          }) == 0;
 }
 
-// --- HKDF Implementation ---
+// --- HKDF & HMAC Implementation ---
 
 bool handshake_authenticate(etl::span<const uint8_t> secret,
                             etl::span<const uint8_t> nonce,
@@ -52,16 +52,25 @@ bool handshake_authenticate(etl::span<const uint8_t> secret,
             rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH.end(), info.begin());
 #endif
 
-  wc_HKDF(WC_SHA256, secret.data(), static_cast<word32>(secret.size()),
-          salt.data(), static_cast<word32>(salt.size()), info.data(),
-          static_cast<word32>(info.size()), handshake_key.data(),
-          static_cast<word32>(handshake_key.size()));
+  // [FAIL-CLOSED] Validar retorno de derivación HKDF
+  int hkdf_res = wc_HKDF(WC_SHA256, secret.data(), static_cast<word32>(secret.size()),
+                         salt.data(), static_cast<word32>(salt.size()), info.data(),
+                         static_cast<word32>(info.size()), handshake_key.data(),
+                         static_cast<word32>(handshake_key.size()));
+  if (hkdf_res != 0) {
+    secure_zero(etl::span<uint8_t>(handshake_key.data(), handshake_key.size()));
+    return false;
+  }
 
+  // [FAIL-CLOSED] Validar retorno en cada paso del motor HMAC
   Hmac hmac_engine;
-  wc_HmacSetKey(&hmac_engine, WC_SHA256, handshake_key.data(),
-                rpc::RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH);
-  wc_HmacUpdate(&hmac_engine, nonce.data(), static_cast<word32>(nonce.size()));
-  wc_HmacFinal(&hmac_engine, out_tag.data());
+  if (wc_HmacSetKey(&hmac_engine, WC_SHA256, handshake_key.data(),
+                    rpc::RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH) != 0 ||
+      wc_HmacUpdate(&hmac_engine, nonce.data(), static_cast<word32>(nonce.size())) != 0 ||
+      wc_HmacFinal(&hmac_engine, out_tag.data()) != 0) {
+    secure_zero(etl::span<uint8_t>(handshake_key.data(), handshake_key.size()));
+    return false;
+  }
 
   bool tag_ok = true;
   if (!received_tag.empty()) {
@@ -88,10 +97,13 @@ void derive_session_key(etl::span<const uint8_t> secret,
             rpc::RPC_HANDSHAKE_HKDF_INFO_SESSION.end(), info.begin());
 #endif
 
-  wc_HKDF(WC_SHA256, secret.data(), static_cast<word32>(secret.size()),
-          nonce.data(), static_cast<word32>(nonce.size()), info.data(),
-          static_cast<word32>(info.size()), out_key.data(),
-          static_cast<word32>(out_key.size()));
+  // [FAIL-CLOSED] Limpiar clave en caso de fallo de HKDF
+  if (wc_HKDF(WC_SHA256, secret.data(), static_cast<word32>(secret.size()),
+              nonce.data(), static_cast<word32>(nonce.size()), info.data(),
+              static_cast<word32>(info.size()), out_key.data(),
+              static_cast<word32>(out_key.size())) != 0) {
+    etl::fill(out_key.begin(), out_key.end(), 0U);
+  }
 }
 
 static size_t build_aad(uint16_t cmd_id, uint16_t seq_id,
@@ -128,11 +140,6 @@ bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
   const uint64_t current_nonce = nonce_counter ? *nonce_counter : 0;
 
   etl::fill(out_nonce.begin(), out_nonce.end(), 0U);
-  // [SIL-2/H-4] Compile-time verification of the nonce layout:
-  // bytes [0..2] = "MCU" prefix (3 bytes)
-  // byte  [3]   = 0x00 padding (zeroed by fill above)
-  // bytes [4..11] = 64-bit counter big-endian (8 bytes)
-  // Total = 12 bytes == AEAD_NONCE_SIZE.
   static_assert(3U + 1U + sizeof(uint64_t) == rpc::RPC_AEAD_NONCE_SIZE,
                 "[SIL-2] Nonce layout mismatch: prefix(3) + pad(1) + "
                 "counter(8) must equal RPC_AEAD_NONCE_SIZE");
@@ -143,6 +150,10 @@ bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
 
   etl::array<uint8_t, 16> ad;
   const size_t ad_len = build_aad(cmd_id, seq_id, etl::span<uint8_t>(ad));
+  if (ad_len == 0U) {
+    // [FAIL-CLOSED] Error al codificar AAD Protobuf: abortar cifrado inmediatamente
+    return false;
+  }
 
   return wc_ChaCha20Poly1305_Encrypt(
              const_cast<byte*>(key.data()), out_nonce.data(),
@@ -159,6 +170,10 @@ bool aead_decrypt_frame(uint16_t cmd_id, uint16_t seq_id,
                         etl::span<uint8_t> out_payload) {
   etl::array<uint8_t, 16> ad;
   const size_t ad_len = build_aad(cmd_id, seq_id, etl::span<uint8_t>(ad));
+  if (ad_len == 0U) {
+    // [FAIL-CLOSED] Error al codificar AAD Protobuf: abortar descifrado inmediatamente
+    return false;
+  }
 
   return wc_ChaCha20Poly1305_Decrypt(
              const_cast<byte*>(key.data()), const_cast<byte*>(nonce.data()),
@@ -231,7 +246,9 @@ bool run_cryptographic_self_tests() {
   // 1. SHA256 KAT
   const size_t msg_len = kat_sha256_msg.size();
   memcpy_P(buffer.data(), kat_sha256_msg.data(), msg_len);
-  wc_Sha256Hash(buffer.data(), static_cast<word32>(msg_len), actual.data());
+  if (wc_Sha256Hash(buffer.data(), static_cast<word32>(msg_len), actual.data()) != 0) {
+    return false;
+  }
 
   etl::array<uint8_t, rpc::RPC_SHA256_DIGEST_SIZE> expected_buf;
   memcpy_P(expected_buf.data(), kat_sha256_expected.data(),
@@ -244,12 +261,16 @@ bool run_cryptographic_self_tests() {
   const size_t key_len = kat_hmac_key.size();
   memcpy_P(key_buf.data(), kat_hmac_key.data(), key_len);
 
-  wc_HmacSetKey(&hmac, WC_SHA256, key_buf.data(), static_cast<word32>(key_len));
+  if (wc_HmacSetKey(&hmac, WC_SHA256, key_buf.data(), static_cast<word32>(key_len)) != 0) {
+    return false;
+  }
 
   const size_t data_len = kat_hmac_data.size();
   memcpy_P(buffer.data(), kat_hmac_data.data(), data_len);
-  wc_HmacUpdate(&hmac, buffer.data(), static_cast<word32>(data_len));
-  wc_HmacFinal(&hmac, actual.data());
+  if (wc_HmacUpdate(&hmac, buffer.data(), static_cast<word32>(data_len)) != 0 ||
+      wc_HmacFinal(&hmac, actual.data()) != 0) {
+    return false;
+  }
 
   memcpy_P(expected_buf.data(), kat_hmac_expected.data(),
            rpc::RPC_SHA256_DIGEST_SIZE);

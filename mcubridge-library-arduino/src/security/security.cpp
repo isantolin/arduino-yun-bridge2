@@ -18,6 +18,10 @@
 #include "../protocol/rpc_structs.h"
 #include "pb_encode.h"
 
+#ifndef RPC_NONCE_COUNTER_MASK
+#define RPC_NONCE_COUNTER_MASK 0xFFFFFFFFFFFFFFFFULL
+#endif
+
 namespace rpc {
 namespace security {
 
@@ -112,7 +116,15 @@ bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
                         etl::span<uint8_t> out_payload,
                         etl::span<uint8_t> out_nonce,
                         etl::span<uint8_t> out_tag) {
-  if (nonce_counter) (*nonce_counter)++;
+  // 1. Validar y prevenir el desbordamiento (wrap-around) del contador de 64 bits
+  if (nonce_counter) {
+    if (*nonce_counter >= RPC_NONCE_COUNTER_MASK) {
+      // PROTECCIÓN CRÍTICA: Se aborta el cifrado para evitar la reutilización de Nonce
+      return false;
+    }
+    (*nonce_counter)++;
+  }
+
   const uint64_t current_nonce = nonce_counter ? *nonce_counter : 0;
 
   etl::fill(out_nonce.begin(), out_nonce.end(), 0U);

@@ -21,11 +21,7 @@ import structlog
 import tenacity
 from google.protobuf.message import (
     DecodeError as ProtobufDecodeError,
-)
-from google.protobuf.message import (
     EncodeError as ProtobufSerializationError,
-)
-from google.protobuf.message import (
     Message as ProtobufMessage,
 )
 from grpclib.client import Channel

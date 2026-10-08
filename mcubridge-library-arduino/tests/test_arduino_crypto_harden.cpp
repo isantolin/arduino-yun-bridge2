@@ -14,6 +14,9 @@
 #define RPC_NONCE_COUNTER_MASK 0xFFFFFFFFFFFFFFFFULL
 #endif
 
+void setUp(void) {}
+void tearDown(void) {}
+
 void test_bridge_nonce_overflow_protection() {
   // 1. Configurar el contador de nonce en el penúltimo valor posible (2^64 - 2)
   uint64_t nonce_counter = RPC_NONCE_COUNTER_MASK - 1;
@@ -67,6 +70,11 @@ void test_cryptographic_self_tests_run() {
 }
 
 int main(int argc, char** argv) {
+  UNITY_BEGIN();
+  RUN_TEST(test_bridge_nonce_overflow_protection);
+  RUN_TEST(test_cryptographic_self_tests_run);
+  return UNITY_END();
+}
   UNITY_BEGIN();
   RUN_TEST(test_bridge_nonce_overflow_protection);
   RUN_TEST(test_cryptographic_self_tests_run);

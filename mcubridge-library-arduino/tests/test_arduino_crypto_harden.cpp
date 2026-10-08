@@ -3,10 +3,10 @@
  * Copyright (C) 2025-2026 Ignacio Santolin and contributors
  */
 
-#include <unity.h>
 #include <etl/algorithm.h>
 #include <etl/array.h>
 #include <etl/span.h>
+#include <unity.h>
 
 #include "../src/config/bridge_config.h"
 #include "../src/protocol/rpc_structs.h"
@@ -17,15 +17,15 @@ namespace {
 constexpr uint16_t kCommandId =
     rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE);
 constexpr uint16_t kSequenceId = 1U;
-constexpr etl::array<uint8_t, rpc::RPC_HANDSHAKE_NONCE_LENGTH> kHandshakeNonce = {
-    1U, 2U, 3U, 4U, 5U, 6U, 7U, 8U, 9U, 10U, 11U, 12U, 13U, 14U, 15U, 16U};
+constexpr etl::array<uint8_t, rpc::RPC_HANDSHAKE_NONCE_LENGTH> kHandshakeNonce =
+    {1U, 2U, 3U, 4U, 5U, 6U, 7U, 8U, 9U, 10U, 11U, 12U, 13U, 14U, 15U, 16U};
 constexpr etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> kAeadKey = {1U};
 constexpr etl::array<uint8_t, 8U> kPayload = {
     {'T', 'E', 'S', 'T', 'D', 'A', 'T', 'A'}};
 constexpr etl::array<uint8_t, 13U> kSecret = {
     {'s', 'h', 'a', 'r', 'e', 'd', '-', 's', 'e', 'c', 'r', 'e', 't'}};
 
-}
+}  // namespace
 
 void setUp(void) {}
 void tearDown(void) {}
@@ -33,8 +33,8 @@ void tearDown(void) {}
 void test_handshake_authenticate_rejects_invalid_buffers(void) {
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_TAG_LENGTH> output_tag = {0xAAU};
   const bool empty_secret_result = rpc::security::handshake_authenticate(
-      etl::span<const uint8_t>(), kHandshakeNonce,
-      etl::span<const uint8_t>(), output_tag);
+      etl::span<const uint8_t>(), kHandshakeNonce, etl::span<const uint8_t>(),
+      output_tag);
   TEST_ASSERT_FALSE(empty_secret_result);
   TEST_ASSERT_EQUAL_UINT8(0U, output_tag[0]);
 
@@ -69,11 +69,11 @@ void test_handshake_authenticate_truncates_and_checks_tag(void) {
 
 void test_derive_session_key_clears_invalid_outputs(void) {
   etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> empty_secret_output = {0xA5U};
-  rpc::security::derive_session_key(etl::span<const uint8_t>(),
-                                    kHandshakeNonce, empty_secret_output);
-  const bool empty_secret_cleared = etl::all_of(
-      empty_secret_output.begin(), empty_secret_output.end(),
-      [](uint8_t value) { return value == 0U; });
+  rpc::security::derive_session_key(etl::span<const uint8_t>(), kHandshakeNonce,
+                                    empty_secret_output);
+  const bool empty_secret_cleared =
+      etl::all_of(empty_secret_output.begin(), empty_secret_output.end(),
+                  [](uint8_t value) { return value == 0U; });
   TEST_ASSERT_TRUE(empty_secret_cleared);
 
   etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE - 1U> short_output = {0xA5U};
@@ -117,8 +117,8 @@ void test_aead_encrypt_rejects_invalid_buffer_sizes(void) {
 
   etl::array<uint8_t, kPayload.size() - 1U> short_output = {};
   const bool insufficient_output = rpc::security::aead_encrypt_frame(
-      kCommandId, kSequenceId, kPayload, kAeadKey, &nonce_counter,
-      short_output, nonce, tag);
+      kCommandId, kSequenceId, kPayload, kAeadKey, &nonce_counter, short_output,
+      nonce, tag);
   TEST_ASSERT_FALSE(insufficient_output);
   TEST_ASSERT_EQUAL_UINT64(0U, nonce_counter);
 }
@@ -140,15 +140,15 @@ void test_aead_decrypt_validates_buffers_and_tag(void) {
   TEST_ASSERT_FALSE(invalid_key);
 
   etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE - 1U> short_nonce = {};
-  const bool invalid_nonce = rpc::security::aead_decrypt_frame(
-      kCommandId, kSequenceId, ciphertext, kAeadKey, short_nonce, tag,
-      plaintext);
+  const bool invalid_nonce =
+      rpc::security::aead_decrypt_frame(kCommandId, kSequenceId, ciphertext,
+                                        kAeadKey, short_nonce, tag, plaintext);
   TEST_ASSERT_FALSE(invalid_nonce);
 
   etl::array<uint8_t, rpc::RPC_AEAD_TAG_SIZE - 1U> short_tag = {};
-  const bool invalid_tag_size = rpc::security::aead_decrypt_frame(
-      kCommandId, kSequenceId, ciphertext, kAeadKey, nonce, short_tag,
-      plaintext);
+  const bool invalid_tag_size =
+      rpc::security::aead_decrypt_frame(kCommandId, kSequenceId, ciphertext,
+                                        kAeadKey, nonce, short_tag, plaintext);
   TEST_ASSERT_FALSE(invalid_tag_size);
 
   etl::array<uint8_t, kPayload.size() - 1U> short_output = {};
@@ -169,8 +169,8 @@ void test_aead_decrypt_validates_buffers_and_tag(void) {
 }
 
 void test_nonce_counter_accepts_random_prefix_and_rejects_replay(void) {
-  etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> nonce = {
-      0x12U, 0x34U, 0x56U, 0x78U};
+  etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> nonce = {0x12U, 0x34U, 0x56U,
+                                                         0x78U};
   nonce[11] = 1U;
   uint64_t last_seen_counter = 0U;
 

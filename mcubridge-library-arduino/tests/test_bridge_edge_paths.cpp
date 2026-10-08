@@ -700,7 +700,16 @@ void test_architectural_extensions_edge_paths() {
   Bridge.setWatchdogTimeout(0);
   TEST_ASSERT_EQUAL_UINT32(0, Bridge.getWatchdogTimeout());
 
+  ba.clearSynchronized();
+  Bridge.setWatchdogTimeout(100);
+  ba.invokeWatchdog();
+  TEST_ASSERT_FALSE(Bridge.isSynchronized());
+
+  Bridge.setWatchdogTimeout(0);
   ba.setSynchronized();
+  ba.invokeWatchdog();
+  TEST_ASSERT_TRUE(Bridge.isSynchronized());
+
   rpc_pb_ClockSyncRequest sync_req = rpc_pb_ClockSyncRequest_init_default;
   sync_req.host_time_us = 987654321ULL;
   etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> buf;

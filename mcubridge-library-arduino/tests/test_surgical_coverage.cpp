@@ -70,6 +70,10 @@ void test_surgical_bridge_errors() {
 }
 
 void test_surgical_fsm_resets() {
+  bridge::fsm::BridgeFsm unstarted_fsm;
+  TEST_ASSERT_FALSE(unstarted_fsm.isSynchronized());
+  TEST_ASSERT_FALSE(unstarted_fsm.isAwaitingAck());
+
   static BiStream stream;
   stream.clear();
   reset_bridge_core(Bridge, stream);
@@ -82,6 +86,31 @@ void test_surgical_fsm_resets() {
   ba.trigger(bridge::fsm::EvReset());
   TEST_ASSERT_FALSE(Bridge.isSynchronized());
   TEST_ASSERT_FALSE(ba.isAwaitingAck());
+}
+
+void test_surgical_link_reset_payload_paths() {
+  static BiStream stream;
+  stream.clear();
+  reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
+
+  rpc_pb_RpcEnvelope envelope = rpc_pb_RpcEnvelope_init_zero;
+  envelope.version = rpc::PROTOCOL_VERSION;
+  envelope.command_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_RESET);
+  envelope.sequence_id = 42U;
+  ba.dispatch(envelope);
+
+  TEST_ASSERT_FALSE(Bridge.isSynchronized());
+  TEST_ASSERT_FALSE(ba.isAwaitingAck());
+
+  ba.setSynchronized();
+  rpc_pb_DigitalWrite unexpected_payload = rpc_pb_DigitalWrite_init_default;
+  rpc::Payload::set<rpc_pb_DigitalWrite>(envelope, unexpected_payload);
+  envelope.sequence_id = 43U;
+  ba.dispatch(envelope);
+
+  TEST_ASSERT_FALSE(Bridge.isSynchronized());
 }
 
 void test_surgical_security_failures() {
@@ -159,7 +188,14 @@ void test_surgical_tasks_flow() {
   ba.invokeSerialTask();
   // XON path
   stream.clear();
+  ba.setSerialTaskXoffSent(true);
   ba.invokeSerialTask();
+  TEST_ASSERT_FALSE(ba.isSerialXoffSent());
+
+  ba.setNullStream();
+  ba.invokeSerialTask();
+  TEST_ASSERT_FALSE(ba.isSerialXoffSent());
+  Bridge.setStream(stream);
 
   // TimerTask ACK timeout
   ba.setSynchronized();
@@ -178,6 +214,37 @@ void test_surgical_tasks_flow() {
   TEST_ASSERT_FALSE(ba.isAwaitingAck());
 }
 
+class FlowControlStream final : public Stream {
+ public:
+  int available() override {
+    const int result =
+        _available_calls++ == 0
+            ? 0
+            : static_cast<int>(bridge::config::FLOW_CONTROL_XON_THRESHOLD);
+    return result;
+  }
+  int read() override { return -1; }
+  int peek() override { return -1; }
+  size_t write(uint8_t) override { return 1U; }
+  size_t write(const uint8_t*, size_t size) override { return size; }
+  void flush() override {}
+
+ private:
+  int _available_calls = 0;
+};
+
+void test_surgical_serial_flow_control_hysteresis() {
+  FlowControlStream stream;
+  reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
+  ba.setSerialTaskXoffSent(true);
+
+  ba.invokeSerialTask();
+
+  TEST_ASSERT_TRUE(ba.isSerialXoffSent());
+}
+
 void test_surgical_send_fail_branches() {
   static BiStream stream;
   stream.clear();
@@ -186,10 +253,15 @@ void test_surgical_send_fail_branches() {
   ba.setSynchronized();
 
   // 1. _flushPendingTxQueue early return: tx disabled
-  // Enqueue a frame then disable TX — flush should abort (line 591 branch)
+  // Sending non-system traffic is blocked while TX is disabled.
   ba.setTxEnabled(false);
   ba.clearPendingTxQueue();
-  // Nothing should crash
+  const bool non_system_blocked =
+      Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, 99, {});
+  TEST_ASSERT_FALSE(non_system_blocked);
+  const bool system_command_allowed =
+      Bridge.sendFrame(rpc::CommandId::CMD_GET_VERSION, 100);
+  TEST_ASSERT_TRUE(system_command_allowed);
   ba.setTxEnabled(true);
 
   // 2. _handleSetBaudrate: same baudrate guard (line 667 branch)
@@ -803,8 +875,10 @@ int main() {
   UNITY_BEGIN();
   RUN_TEST(test_surgical_bridge_errors);
   RUN_TEST(test_surgical_fsm_resets);
+  RUN_TEST(test_surgical_link_reset_payload_paths);
   RUN_TEST(test_surgical_security_failures);
   RUN_TEST(test_surgical_tasks_flow);
+  RUN_TEST(test_surgical_serial_flow_control_hysteresis);
   RUN_TEST(test_surgical_send_fail_branches);
   RUN_TEST(test_surgical_extra_branches);
   RUN_TEST(test_surgical_mailbox_datastore_edges);

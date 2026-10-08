@@ -75,7 +75,7 @@ def test_parse_memory_logs(tmp_path: Path) -> None:
 
 def test_extract_symbols_real_elf() -> None:
     repo_root = Path(__file__).resolve().parents[2]
-    elf_path = repo_root / "arduino-build" / "arduino-avr-yun" / "BridgeControl" / "BridgeControl.ino.elf"
+    elf_path = repo_root / "arduino-build" / "arduino-avr-mega" / "BridgeControl" / "BridgeControl.ino.elf"
     if not elf_path.exists():
         pytest.skip(f"Build artifact not found: {elf_path}")
 
@@ -106,7 +106,7 @@ def test_profile_elf_valid_and_invalid(tmp_path: Path) -> None:
 
     # 2. Real ELF if available
     repo_root = Path(__file__).resolve().parents[2]
-    real_elf = repo_root / "arduino-build" / "arduino-avr-yun" / "BridgeControl" / "BridgeControl.ino.elf"
+    real_elf = repo_root / "arduino-build" / "arduino-avr-mega" / "BridgeControl" / "BridgeControl.ino.elf"
     if real_elf.exists():
         real_output = profile_elf(repo_root / "arduino-build", real_elf)
         assert "Symbol Profiling (pyelftools)" in real_output

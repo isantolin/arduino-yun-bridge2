@@ -55,7 +55,7 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 - **Soporte Nativo Inalámbrico (WiFi TCP & Bluetooth SPP/BLE) (v2.8.5)**: Expansión del transporte a enlaces inalámbricos transparentes. Se implementa `AsyncTcpConnection` y detección automática de prefijos de red (`tcp://`, `wifi://`, `socket://`) en el Linux MPU daemon, junto con ejemplos de referencia en Arduino (`BridgeWiFi.ino` y `BridgeBluetooth.ino`). Mantiene idéntica máquina de estados, framing COBS/R, CRC32 y encriptación ChaCha20-Poly1305 sobre sockets de red.
 - **Actualización Nanopb 0.4.9.2 & Deserialización Estática Zero-Copy (`pb_decode_noinit`)**: Migración de todo el ecosistema C++ y herramientas de generación a la versión oficial Nanopb 0.4.9.2, adoptando `pb_decode_noinit` para eliminar limpiezas `memset` redundantes en estructuras estáticas pre-inicializadas.
 - **Persistencia de Session Tickets TLS 1.3 para 0-RTT en LMDB**: Persistencia criptográfica y recuperación determinista de tickets de sesión TLS 1.3 en la caché transaccional LMDB (`RuntimeState.tls_session_cache`), permitiendo reconexiones 0-RTT ultrarrápidas del Cloud Gateway ante caídas de enlace.
-- **Suite Unificada de Benchmarks & Memory Profiling (`tools/profiling/benchmark_performance.py`)**: Herramienta de benchmarking integral para medir throughput y latencia de framing COBS/R (> 460k decodes/s, ~26.7 MB/s), criptografía AEAD (> 155k ops/s), serialización Protobuf (> 385k ops/s) y memoria máxima del proceso.
+- **Suite Unificada de Benchmarks & Memory Profiling (`tools/profiling/benchmark_performance.py`)**: Ejecuta microbenchmarks host-side de framing COBS/R, AEAD, Protobuf y LMDB, y reporta RSS/VMS y asignaciones trazadas del proceso Python. Los valores dependen del runner y no representan latencia/rendimiento AVR, SRAM del MCU ni WCET. La medición AVR requiere instrumentación separada en el target o en el emulador.
 
 ### Novedades (julio 2026)
 
@@ -204,7 +204,7 @@ EOF
 
 ## Documentación Técnica y Normativa
 
-- [Manual de Seguridad Funcional SIL-2](file:///home/ignaciosantolin/arduino-yun-bridge2/docs/safety/SIL2_SAFETY_MANUAL.md): Especificación formal de arquitectura Zero-Heap, POST de hardware, Stack Sentinel y WCET.
+- [Manual de Seguridad Funcional SIL-2](file:///home/ignaciosantolin/arduino-yun-bridge2/docs/safety/SIL2_SAFETY_MANUAL.md): Arquitectura Zero-Heap, POST de hardware, Stack Sentinel y monitorización del máximo observado de `Bridge.process()`; no constituye una prueba formal de WCET.
 - [Política de Seguridad Criptográfica FIPS 140-3](file:///home/ignaciosantolin/arduino-yun-bridge2/docs/security/FIPS140_3_SECURITY_POLICY.md): Límites criptográficos, roles, Known-Answer Tests (KATs) y zeroización.
 - [Especificación del Protocolo Binario](file:///home/ignaciosantolin/arduino-yun-bridge2/docs/PROTOCOL.md): Encuadre COBS/R, CRC32, AEAD y tablas de comandos.
 

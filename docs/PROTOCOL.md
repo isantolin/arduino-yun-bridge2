@@ -82,12 +82,14 @@ La librería C++ utiliza intensivamente `constexpr` e `if constexpr` para:
 Qué se centraliza en `mcubridge.proto` (y se genera a Python/C++ vía el generador):
 
 - **Layouts de payload**: cada mensaje RPC tiene un mensaje protobuf (`ConsoleWrite`, `ProcessPoll`, `AckPacket`, etc.) con campos tipados y tamaños máximos definidos por las opciones del generador.
+- **Defaults compartidos y metadatos de configuración**: los defaults de `RuntimeConfig`, las constantes referenciadas y los defaults de tópicos se declaran en el schema. Los bindings/clientes consumen los valores generados; UCI puede sobrescribir las opciones de despliegue.
+- **Reservas de compatibilidad**: los nombres y números retirados permanecen reservados en el schema. Buf comprueba compatibilidad de wire (`WIRE`); el API fuente de los bindings generados sí puede cambiar.
 
 Este documento **no duplica listados enumerados** para evitar drift; esos catálogos se consideran canónicos en `mcubridge.proto` y en los bindings generados.
 
-Qué **no** se centraliza en el spec (porque es decisión de despliegue/runtime):
+Qué **sigue** siendo una decisión de despliegue/runtime y no forma parte del contrato compartido:
 
-- **Defaults de OpenWrt/daemon**: `DEFAULT_CLOUD_HOST`, `DEFAULT_CLOUD_PORT`, rutas `/tmp`, spool dir, límites de colas del daemon, parámetros del exporter/metrics, timeouts en segundos de tareas del daemon, etc. Esto vive en UCI y en `mcubridge/mcubridge/const.py`.
+- **Valores propios del despliegue**: rutas `/tmp`, directorios de spool, parámetros del exporter/metrics, límites de colas locales y timeouts operativos del daemon. Se configuran en UCI y en la configuración de runtime; no son defaults compartidos del protocolo.
 
 Al ejecutar:
 
@@ -786,11 +788,11 @@ Notas:
 
 El MCU expone operaciones deterministas del bus SPI de hardware para control de periféricos:
 
-- **`0xB0` (176) CMD_SPI_BEGIN (Linux → MCU)**: Payload protobuf `SpiBegin { clock_divider, data_mode, bit_order }`. Inicializa el periférico SPI con la configuración solicitada. Requiere confirmación `STATUS_ACK`.
+- **`0xB0` (176) CMD_SPI_BEGIN (Linux → MCU)**: Payload vacío. Inicia el bus SPI y requiere confirmación `STATUS_ACK`.
 - **`0xB1` (177) CMD_SPI_TRANSFER (Linux → MCU)**: Payload protobuf `SpiTransfer { data: bytes }`. Realiza una transferencia síncrona full-duplex de bytes sobre el bus SPI. Espera respuesta directa de negocio.
 - **`0xB2` (178) CMD_SPI_TRANSFER_RESP (MCU → Linux)**: Payload protobuf `SpiTransferResponse { data: bytes }`. Retorna los datos leídos del bus durante la transferencia.
-- **`0xB3` (179) CMD_SPI_END (Linux → MCU)**: Payload vacío o `SpiEnd {}`. Desactiva el bus SPI liberando los pines asociados. Requiere confirmación `STATUS_ACK`.
-- **`0xB4` (180) CMD_SPI_SET_CONFIG (Linux → MCU)**: Payload protobuf `SpiConfig { clock_divider, data_mode, bit_order }`. Ajusta la configuración de reloj y modo sin reiniciar el bus. Requiere `STATUS_ACK`.
+- **`0xB3` (179) CMD_SPI_END (Linux → MCU)**: Payload vacío. Desactiva el bus SPI liberando los pines asociados y requiere confirmación `STATUS_ACK`.
+- **`0xB4` (180) CMD_SPI_SET_CONFIG (Linux → MCU)**: Payload protobuf `SpiConfig { bit_order: SpiBitOrder, data_mode: SpiDataMode, frequency: uint32 }`; `frequency` se expresa en Hz. Los valores de ambos enums se definen canónicamente en `mcubridge.proto`. Requiere `STATUS_ACK`.
 
 ### 5.9 Sincronización de Reloj (Clock Sync: 0xC0 – 0xC1 / 192 – 193)
 
@@ -1049,5 +1051,3 @@ pinMode(m.pin, OUTPUT);
 digitalWrite(m.pin, m.value ? HIGH : LOW);
 ```
 Esto previene que pines no inicializados o en estado de alta impedancia (tri-state) activen accidentalmente resistencias internas de pull-up débiles al recibir comandos de escritura alta, asegurando una conducción firme a nivel lógico de 5V (o 3.3V según la arquitectura) hacia la carga o actuador.
-
-

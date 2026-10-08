@@ -25,6 +25,7 @@ The sketches under `mcubridge-library-arduino/examples/` act as smoke tests for 
 - Reference implementation for connecting to the centralized `mcubridge-gateway` cloud hub.
 - Demonstrates real-time sensor/pin telemetry streaming via `Bridge.sendPinEvent()` over the `CHANNEL_TELEMETRY` channel.
 - Handles remote actuator and control RPCs issued by northbound cloud clients and correlated via `sequence_id`.
+- If the local telemetry send fails, the example turns off `LED_BUILTIN` and, when Console support is enabled, emits a diagnostic through the Bridge Console. A successful local send is not a cloud-delivery acknowledgement.
 
 ## Quick build and upload
 
@@ -37,11 +38,13 @@ arduino-cli upload --fqbn arduino:avr:mcu --port /dev/ttyACM0 \
   mcubridge-library-arduino/examples/<SketchDir>
 ```
 
+The current CI memory matrix builds the examples on Mega; Uno and Yún builds are skipped when they exceed flash/RAM limits. A green matrix does not imply those sketches fit on Uno or Yún.
+
 Tips:
 
 1. Set `BRIDGE_SERIAL_SHARED_SECRET` in the sketch using the snippet from LuCI's *Credentials & TLS* tab (or `python3 tools/hardware_harness.py rotate`) before flashing.
 2. PlatformIO users can point `src_dir` to the example inside an `arduino_yun` environment to reuse the same macros.
-3. After uploading, open the 115200 baud serial monitor to watch the logs that correlate with the Python daemon.
+3. The Bridge UART carries COBS-framed binary traffic; do not attach a text serial monitor to that port while the Bridge is running. Use the Bridge Console/Gateway for text diagnostics, or `tools/frame_debug.py` for frame-level inspection from Linux.
 
 ## Suggested validation flow
 

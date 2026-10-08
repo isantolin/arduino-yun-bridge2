@@ -25,7 +25,7 @@ flowchart TD
         G --> H{Stack Sentinel Check}
         H -- Overflow/Corrupt --> E
         H -- Intact --> I[Execute Tasks / Watchdog Kick]
-        I --> J[WCET Execution Time Tracking]
+        I --> J[Observed Process-Time Tracking]
         J --> G
     end
 ```
@@ -57,10 +57,10 @@ At system startup (`Bridge.begin()`), the HAL executes `bridge::hal::run_power_o
   - Free stack margin is $\ge$ `MIN_STACK_MARGIN_BYTES` (64 bytes on AVR).
 * If corrupted, the system trips a safety interlock and enters `FAULT`.
 
-### 2.5 Worst-Case Execution Time (WCET) Monitoring
-* **High-Resolution Cycle Timing**: Each invocation of `BridgeClass::process()` measures elapsed microsecond duration via `bridge::hal::micros()`.
-* **Peak Tracking**: The maximum processing duration is recorded in `_wcet_max_micros` and accessible via `Bridge.getWcetMaxMicros()`.
-* **Loop Guarantees**: Guarantees that communication tasks never starve critical hardware control loops.
+### 2.5 Runtime Execution-Time Monitoring (Observed Maximum, Not WCET Proof)
+* Each `BridgeClass::process()` invocation measures elapsed time with `micros()` and updates `_wcet_max_micros`, exposed through `Bridge.getWcetMaxMicros()`.
+* This is the maximum observed duration of calls to `Bridge.process()` during a run. It does not measure the caller's full loop or operations outside that call, such as application sensor reads and `Bridge.sendPinEvent()`.
+* An observed maximum is not a proven worst-case execution-time bound and does not guarantee that communication tasks cannot starve application work. A WCET claim requires target-specific bounds for execution paths, interrupts, and serial workloads, plus validation on the intended hardware. Host benchmarks and functional simavr runs alone do not establish that bound.
 
 ### 2.6 Hardware Watchdog Integration
 * **Watchdog Supervision**: Hardware watchdog timer enabled at 4-second timeout (`wdt_enable(WDTO_4S)` on AVR, `esp_task_wdt` on ESP32, and Procd watchdog in OpenWrt).

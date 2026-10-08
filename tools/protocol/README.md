@@ -2,7 +2,8 @@
 
 The files in this directory describe the RPC protocol shared between the MCU
 (Arduino) and the MPU (Linux). The canonical definition lives in `mcubridge.proto`
-(enums, constants, Cloud topics).
+(messages, enums, constants, runtime configuration defaults, command metadata,
+and Cloud topics).
 Running the generator updates all derived artifacts to stay in sync.
 
 ```bash

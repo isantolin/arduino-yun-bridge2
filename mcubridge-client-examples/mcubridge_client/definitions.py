@@ -3,9 +3,12 @@ from __future__ import annotations
 import os
 from enum import IntEnum
 
+from .protocol import (
+    CLOUD_DEFAULT_TOPIC_PREFIX as DEFAULT_TOPIC_PREFIX,
+    DEFAULT_CLOUD_PORT as DEFAULT_GATEWAY_PORT,
+)
+
 DEFAULT_GATEWAY_HOST: str = "127.0.0.1"
-DEFAULT_GATEWAY_PORT: int = 8443
-DEFAULT_TOPIC_PREFIX: str = "br"
 
 
 class SpiBitOrder(IntEnum):
@@ -28,7 +31,7 @@ def build_bridge_args(
     host: str | None = None,
     port: int | None = None,
     device_id: str | None = None,
-    topic_prefix: str = "br",
+    topic_prefix: str = DEFAULT_TOPIC_PREFIX,
 ) -> dict[str, str | int]:
     """Build Bridge constructor keyword arguments from CLI/env parameters targeting Gateway."""
     args: dict[str, str | int] = {}

@@ -11,6 +11,7 @@ from typing import Final
 {% for const in constants -%}
 {{ const.name }}: Final[{{ const.type }}] = {{ const.value }}
 {% endfor %}
+CLOUD_DEFAULT_TOPIC_PREFIX: Final[str] = {{ cloud_defaults.default_topic_prefix|tojson }}
 
 # Capabilities
 {% for cap, val in capabilities.items() -%}
@@ -32,7 +33,7 @@ class Command(IntEnum):
 # CLOUD Topic Helpers
 class Topic:
     """CLOUD topic path builder and matcher (SIL-2)."""
-    PREFIX: str = "br"
+    PREFIX: str = CLOUD_DEFAULT_TOPIC_PREFIX
 
     @staticmethod
     def build(topic: str, *segments: str | int, prefix: str | None = None) -> str:

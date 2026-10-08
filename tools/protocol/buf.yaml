@@ -7,7 +7,7 @@ lint:
     - FILE_LOWER_SNAKE_CASE
   except:
     - PACKAGE_DIRECTORY_MATCH
+# Generated source APIs may be retired; wire-level compatibility remains enforced.
 breaking:
   use:
     - WIRE
-    - FILE

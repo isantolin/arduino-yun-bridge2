@@ -238,15 +238,20 @@ def audit_proto_usage() -> list[str]:
             options.Extensions[pb.cpp_name],
         }
         if field_desc.name not in config_references and not any(name and is_referenced(name) for name in names):
-            findings.append(f"Unused Protobuf constant: Constants.{field_desc.name}={getattr(constants, field_desc.name)}")
+            findings.append(
+                "Unused Protobuf constant: "
+                f"Constants.{field_desc.name}={getattr(constants, field_desc.name)}"
+            )
 
     reflected_enum_names = {"Command", "Status"}
     for enum_desc in pb.DESCRIPTOR.enum_types_by_name.values():
         if enum_desc.name in reflected_enum_names:
             continue
-        for value_desc in enum_desc.values:
-            if not is_referenced(value_desc.name):
-                findings.append(f"Unused Protobuf enum value: {enum_desc.name}.{value_desc.name}")
+        findings.extend(
+            f"Unused Protobuf enum value: {enum_desc.name}.{value_desc.name}"
+            for value_desc in enum_desc.values
+            if not is_referenced(value_desc.name)
+        )
 
     return findings
 

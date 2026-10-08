@@ -47,8 +47,8 @@ class SpiDevice:
             return
         cfg = pb.SpiConfig(
             frequency=self._frequency,
-            bit_order=self._bit_order.value,
-            data_mode=self._mode.value,
+            bit_order=pb.SpiBitOrder.Value(self._bit_order.name),
+            data_mode=pb.SpiDataMode.Value(self._mode.name),
         )
         await self._stub.SpiConfigure(cfg)
         self._active = True

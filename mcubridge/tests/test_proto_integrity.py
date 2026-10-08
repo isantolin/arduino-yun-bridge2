@@ -5,7 +5,6 @@ from pathlib import Path
 import subprocess
 
 from google.protobuf import descriptor_pb2
-from google.protobuf import descriptor_pb2
 from google.protobuf.descriptor import FieldDescriptor
 import pytest
 from typer.testing import CliRunner
@@ -187,7 +186,7 @@ def test_protobuf_descriptor_purged_elements() -> None:
 
     channel_enum = next(enum for enum in descriptor_file.enum_type if enum.name == "ChannelId")
     reserved_channel_numbers = {
-        number for item in channel_enum.reserved_range for number in range(item.start, item.end)
+        number for item in channel_enum.reserved_range for number in range(item.start, item.end + 1)
     }
     assert {1, 3} <= reserved_channel_numbers
     assert {"CHANNEL_CONSOLE", "CHANNEL_DATA"} <= set(channel_enum.reserved_name)
@@ -280,6 +279,20 @@ def test_spi_config_uses_canonical_enums() -> None:
         "SPI_DATA_MODE_2": 8,
         "SPI_DATA_MODE_3": 12,
     }
+
+
+@pytest.mark.parametrize(
+    "data_mode",
+    [
+        pb.SpiDataMode.SPI_DATA_MODE_0,
+        pb.SpiDataMode.SPI_DATA_MODE_1,
+        pb.SpiDataMode.SPI_DATA_MODE_2,
+        pb.SpiDataMode.SPI_DATA_MODE_3,
+    ],
+)
+def test_spi_data_modes_round_trip(data_mode: int) -> None:
+    restored = pb.SpiConfig.FromString(pb.SpiConfig(data_mode=data_mode).SerializeToString())
+    assert restored.data_mode == data_mode
 
 
 def test_rpc_envelope_strong_typing() -> None:

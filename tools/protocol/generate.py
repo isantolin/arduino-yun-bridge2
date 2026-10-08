@@ -242,17 +242,18 @@ def _load_runtime_config_fields(file_desc: Any, pb_module: Any) -> list[ConfigFi
         opts = field_desc.GetOptions()
         has_literal_default = opts.HasExtension(pb_module.config_default)
         has_default_ref = opts.HasExtension(pb_module.config_default_ref)
-        default_ref: str | None = None
+        config_default_ref: str | None = None
         if has_literal_default and has_default_ref:
             raise ValueError(f"RuntimeConfig field '{field_desc.name}' has both default value and default reference")
         if has_default_ref:
-            default_ref = opts.Extensions[pb_module.config_default_ref]
-            source_name, separator, field_name = default_ref.partition(".")
+            reference = opts.Extensions[pb_module.config_default_ref]
+            config_default_ref = reference
+            source_name, separator, field_name = reference.partition(".")
             source = default_sources.get(source_name)
             if not separator or not field_name or source is None:
-                raise ValueError(f"Invalid RuntimeConfig default reference '{default_ref}'")
+                raise ValueError(f"Invalid RuntimeConfig default reference '{reference}'")
             if field_name not in source.DESCRIPTOR.fields_by_name:
-                raise ValueError(f"Unknown RuntimeConfig default reference '{default_ref}'")
+                raise ValueError(f"Unknown RuntimeConfig default reference '{reference}'")
             cfg_default = getattr(source, field_name)
         else:
             cfg_default = opts.Extensions[pb_module.config_default] if has_literal_default else None
@@ -286,7 +287,7 @@ def _load_runtime_config_fields(file_desc: Any, pb_module: Any) -> list[ConfigFi
                 min_val=cfg_min,
                 max_val=cfg_max,
                 uci_option=uci_opt,
-                config_default_ref=default_ref,
+                config_default_ref=config_default_ref,
                 client_constant=client_constant,
             )
         )

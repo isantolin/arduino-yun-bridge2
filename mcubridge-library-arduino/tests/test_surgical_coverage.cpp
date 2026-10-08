@@ -176,6 +176,66 @@ void test_surgical_security_failures() {
   TEST_ASSERT_FALSE(dec_ok);
 }
 
+void test_surgical_authenticated_digital_write_frame() {
+  static BiStream stream;
+  stream.clear();
+  reset_bridge_core(Bridge, stream);
+  resetArduinoStubPinStates();
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
+
+  etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> session_key = {0x15U};
+  ba.setSessionKey(session_key);
+  ba.setRxNonceCounter(0U);
+
+  rpc_pb_DigitalWrite request = rpc_pb_DigitalWrite_init_default;
+  request.pin = 13U;
+  request.value = 1U;
+  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload = {};
+  pb_ostream_t payload_stream =
+      pb_ostream_from_buffer(payload.data(), payload.size());
+  const bool payload_encoded =
+      pb_encode(&payload_stream,
+                rpc::Payload::get_fields<rpc_pb_DigitalWrite>(), &request);
+  TEST_ASSERT_TRUE(payload_encoded);
+
+  const uint16_t command_id =
+      rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE);
+  constexpr uint16_t sequence_id = 951U;
+  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> ciphertext = {};
+  etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> nonce = {};
+  etl::array<uint8_t, rpc::RPC_AEAD_TAG_SIZE> tag = {};
+  uint64_t tx_nonce_counter = 0U;
+  const bool encrypted = rpc::security::aead_encrypt_frame(
+      command_id, sequence_id,
+      etl::span<const uint8_t>(payload.data(), payload_stream.bytes_written),
+      session_key, &tx_nonce_counter, ciphertext, nonce, tag);
+  TEST_ASSERT_TRUE(encrypted);
+
+  const rpc_pb_RpcEnvelope envelope = rpc::build_envelope(
+      command_id, sequence_id,
+      etl::span<const uint8_t>(ciphertext.data(), payload_stream.bytes_written),
+      nonce, tag);
+  etl::array<uint8_t, rpc::MAX_FRAME_SIZE> raw_frame = {};
+  const size_t raw_frame_size = rpc::serialize_frame(envelope, raw_frame);
+  TEST_ASSERT_TRUE(raw_frame_size > 0U);
+
+  etl::array<uint8_t, rpc::MAX_FRAME_SIZE + 16U> encoded_frame = {};
+  const size_t encoded_size =
+      TestCOBS::encode(raw_frame.data(), raw_frame_size, encoded_frame.data());
+  TEST_ASSERT_TRUE(encoded_size > 0U);
+  stream.feed(encoded_frame.data(), encoded_size);
+  const uint8_t delimiter = rpc::RPC_FRAME_DELIMITER;
+  stream.feed(&delimiter, 1U);
+
+  Bridge.process();
+
+  TEST_ASSERT_TRUE(Bridge.isSynchronized());
+  TEST_ASSERT_EQUAL_UINT8(OUTPUT, g_arduino_stub_pin_states[13U].mode);
+  TEST_ASSERT_EQUAL_UINT8(HIGH, g_arduino_stub_pin_states[13U].value);
+  TEST_ASSERT_TRUE(stream.tx_buf.len > 0U);
+}
+
 void test_surgical_tasks_flow() {
   static BiStream stream;
   stream.clear();
@@ -877,6 +937,7 @@ int main() {
   RUN_TEST(test_surgical_fsm_resets);
   RUN_TEST(test_surgical_link_reset_payload_paths);
   RUN_TEST(test_surgical_security_failures);
+  RUN_TEST(test_surgical_authenticated_digital_write_frame);
   RUN_TEST(test_surgical_tasks_flow);
   RUN_TEST(test_surgical_serial_flow_control_hysteresis);
   RUN_TEST(test_surgical_send_fail_branches);

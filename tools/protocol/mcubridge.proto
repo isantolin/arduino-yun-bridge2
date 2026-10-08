@@ -1225,6 +1225,8 @@ extend google.protobuf.FieldOptions {
   double config_min = 1025;
   double config_max = 1026;
   string uci_option = 1027;
+  string telemetry_topic_match = 1028;
+  bool telemetry_topic_default = 1029;
 }
 
 enum Status {
@@ -2321,10 +2323,10 @@ message KeepalivePong {
 }
 
 message TelemetryReport {
-  bytes daemon_metrics_blob = 1;
-  bytes system_status_blob = 2;
-  bytes bridge_snapshot_blob = 3;
-  bytes handshake_snapshot_blob = 4;
+  bytes daemon_metrics_blob = 1 [(telemetry_topic_match) = "metrics"];
+  bytes system_status_blob = 2 [(telemetry_topic_default) = true];
+  bytes bridge_snapshot_blob = 3 [(telemetry_topic_match) = "summary"];
+  bytes handshake_snapshot_blob = 4 [(telemetry_topic_match) = "handshake"];
 }
 
 message CommandRequest {

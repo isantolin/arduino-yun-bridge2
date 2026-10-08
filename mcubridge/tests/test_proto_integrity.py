@@ -138,6 +138,27 @@ def test_protobuf_descriptor_purged_elements() -> None:
     assert "cloud_expiry_default" not in constant_fields
 
 
+def test_telemetry_routing_table_matches_schema_metadata() -> None:
+    expected_map = {
+        "metrics": "daemon_metrics_blob",
+        "summary": "bridge_snapshot_blob",
+        "handshake": "handshake_snapshot_blob",
+    }
+    assert expected_map == protocol.TELEMETRY_TOPIC_FIELD_MAP
+    assert protocol.TELEMETRY_DEFAULT_FIELD == "system_status_blob"
+
+    fields_by_name = pb.TelemetryReport.DESCRIPTOR.fields_by_name
+    assert set(expected_map.values()) | {protocol.TELEMETRY_DEFAULT_FIELD} == set(fields_by_name)
+    for topic_match, field_name in expected_map.items():
+        options = fields_by_name[field_name].GetOptions()
+        assert options.HasExtension(pb.telemetry_topic_match)
+        assert options.Extensions[pb.telemetry_topic_match] == topic_match
+
+    default_options = fields_by_name[protocol.TELEMETRY_DEFAULT_FIELD].GetOptions()
+    assert default_options.HasExtension(pb.telemetry_topic_default)
+    assert default_options.Extensions[pb.telemetry_topic_default] is True
+
+
 def test_rpc_envelope_strong_typing() -> None:
     """SIL-2: Verify RpcEnvelope channel_id and qos fields are bound to strongly-typed enums."""
     env_fields = pb.RpcEnvelope.DESCRIPTOR.fields_by_name

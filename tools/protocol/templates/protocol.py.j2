@@ -181,6 +181,13 @@ CLOUD_COMMAND_SUBSCRIPTIONS: Final[tuple[tuple[Topic, tuple[str, ...], int], ...
 
 CLOUD_DEFAULT_TOPIC_PREFIX: Final[str] = {{ cloud_defaults.default_topic_prefix|tojson }}
 
+TELEMETRY_TOPIC_FIELD_MAP: Final[dict[str, str]] = {
+{%- for topic_match, field_name in telemetry_topic_field_map.items() %}
+    {{ topic_match|tojson }}: {{ field_name|tojson }},
+{%- endfor %}
+}
+TELEMETRY_DEFAULT_FIELD: Final[str] = {{ telemetry_default_field|tojson }}
+
 # Runtime Configuration Defaults & Metadata (SSOT from mcubridge.proto)
 RUNTIME_CONFIG_DEFAULTS: Final[dict[str, Any]] = {
 {%- for f in runtime_config_fields %}

@@ -110,12 +110,6 @@ _PRE_SYNC_ALLOWED_COMMANDS: Final = {
 
 _STATUS_VALUES: Final = {s.value for s in Status}
 
-_TELEMETRY_TOPIC_FIELD_MAP: Final[dict[str, str]] = {
-    "metrics": "daemon_metrics_blob",
-    "summary": "bridge_snapshot_blob",
-    "handshake": "handshake_snapshot_blob",
-}
-
 
 @dataclass
 class _PendingMcuRead:
@@ -536,8 +530,12 @@ class BridgeService:
                 # Telemetry report
                 report = pb.TelemetryReport()
                 telemetry_attr = next(
-                    (attr for key, attr in _TELEMETRY_TOPIC_FIELD_MAP.items() if key in message.topic_name),
-                    "system_status_blob",
+                    (
+                        field_name
+                        for topic_match, field_name in protocol.TELEMETRY_TOPIC_FIELD_MAP.items()
+                        if topic_match in message.topic_name
+                    ),
+                    protocol.TELEMETRY_DEFAULT_FIELD,
                 )
                 setattr(report, telemetry_attr, message.payload)
 

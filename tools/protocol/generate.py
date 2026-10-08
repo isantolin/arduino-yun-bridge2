@@ -647,6 +647,44 @@ def _build_descriptor_context(spec: ProtocolSpec, pb_module: Any) -> dict[str, A
     }
 
 
+def _build_telemetry_field_context(pb_module: Any) -> tuple[dict[str, str], str]:
+    telemetry_fields = pb_module.TelemetryReport.DESCRIPTOR.fields
+    topic_match_extension = pb_module.telemetry_topic_match
+    topic_default_extension = pb_module.telemetry_topic_default
+    topic_field_map: dict[str, str] = {}
+    default_field: str | None = None
+
+    for field_desc in telemetry_fields:
+        options = field_desc.GetOptions()
+        has_topic_match = options.HasExtension(topic_match_extension)
+        has_default = options.HasExtension(topic_default_extension)
+        if has_topic_match and has_default:
+            raise ValueError(f"Telemetry field '{field_desc.name}' cannot be both matched and default")
+
+        if has_topic_match:
+            topic_match = options.Extensions[topic_match_extension]
+            if not topic_match:
+                raise ValueError(f"Telemetry field '{field_desc.name}' has an empty topic match")
+            if topic_match in topic_field_map:
+                raise ValueError(f"Duplicate telemetry topic match '{topic_match}'")
+            topic_field_map[topic_match] = field_desc.name
+        elif has_default:
+            if not options.Extensions[topic_default_extension]:
+                raise ValueError(f"Telemetry default marker for '{field_desc.name}' must be true")
+            if default_field is not None:
+                raise ValueError(f"Multiple telemetry default fields: '{default_field}' and '{field_desc.name}'")
+            default_field = field_desc.name
+        else:
+            raise ValueError(f"Telemetry field '{field_desc.name}' has no routing metadata")
+
+    if default_field is None:
+        raise ValueError("TelemetryReport must define exactly one default field")
+    if not topic_field_map:
+        raise ValueError("TelemetryReport must define at least one topic match")
+
+    return topic_field_map, default_field
+
+
 def build_protocol_context(spec: ProtocolSpec, version: str) -> dict[str, Any]:
     """Build all template data from the protocol model and its descriptors."""
     constant_context = _build_constant_context(spec, version)
@@ -654,6 +692,7 @@ def build_protocol_context(spec: ProtocolSpec, version: str) -> dict[str, Any]:
     action_context = _build_action_context(spec)
     command_context = _build_command_context(spec, spec.pb_module)
     descriptor_context = _build_descriptor_context(spec, spec.pb_module)
+    telemetry_topic_field_map, telemetry_default_field = _build_telemetry_field_context(spec.pb_module)
     return {
         **constant_context,
         **handshake_context,
@@ -672,6 +711,8 @@ def build_protocol_context(spec: ProtocolSpec, version: str) -> dict[str, Any]:
         "commands": spec.commands,
         "topics": spec.topics,
         "message_topics": spec.message_topics,
+        "telemetry_topic_field_map": telemetry_topic_field_map,
+        "telemetry_default_field": telemetry_default_field,
         "hardware": spec.hardware,
     }
 

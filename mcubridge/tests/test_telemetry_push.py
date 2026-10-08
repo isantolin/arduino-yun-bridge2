@@ -30,7 +30,22 @@ def mock_bridge_state(test_config: RuntimeConfig) -> RuntimeState:
 
 
 @pytest.mark.asyncio
-async def test_pure_telemetry_push_mode(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
+@pytest.mark.parametrize(
+    ("topic_name", "telemetry_field"),
+    [
+        ("br/system/metrics", "daemon_metrics_blob"),
+        ("br/system/bridge/summary/value", "bridge_snapshot_blob"),
+        ("br/system/bridge/handshake/value", "handshake_snapshot_blob"),
+        ("br/system/status", "system_status_blob"),
+        ("br/other/topic", "system_status_blob"),
+    ],
+)
+async def test_pure_telemetry_push_mode(
+    topic_name: str,
+    telemetry_field: str,
+    test_config: RuntimeConfig,
+    mock_bridge_state: RuntimeState,
+) -> None:
     """Validate that BridgeService operates in Pure Telemetry Push mode without local HTTP exporter."""
     svc = BridgeService(test_config, mock_bridge_state, MagicMock())
 
@@ -44,9 +59,10 @@ async def test_pure_telemetry_push_mode(test_config: RuntimeConfig, mock_bridge_
     svc.cloud_stream = stream_mock
 
     metrics = pb.DaemonMetrics(cloud_queue_depth=0, cloud_dropped_messages=10)
+    payload = metrics.SerializeToString() if telemetry_field == "daemon_metrics_blob" else b"telemetry-payload"
     msg = pb.CloudQueuedPublish(
-        topic_name="br/system/metrics",
-        payload=metrics.SerializeToString(),
+        topic_name=topic_name,
+        payload=payload,
     )
 
     publish_cloud_msg: Callable[[pb.CloudQueuedPublish], Awaitable[bool]] = svc.publish_cloud_message
@@ -56,4 +72,5 @@ async def test_pure_telemetry_push_mode(test_config: RuntimeConfig, mock_bridge_
     stream_mock.send_message.assert_awaited_once()
     envelope: pb.CloudEnvelope = stream_mock.send_message.await_args[0][0]
     assert envelope.WhichOneof("payload") == "telemetry"
-    assert envelope.telemetry.daemon_metrics_blob == metrics.SerializeToString()
+    assert getattr(envelope.telemetry, telemetry_field) == payload
+    assert {field.name for field, _ in envelope.telemetry.ListFields()} == {telemetry_field}

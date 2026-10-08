@@ -37,9 +37,9 @@ void SPIServiceClass::setConfig(const rpc::payload::SpiConfig& config) {
     default:
       break;
   }
-  _settings = SPISettings(config.frequency,
-                          static_cast<decltype(MSBFIRST)>(config.bit_order),
-                          data_mode);
+  _settings =
+      SPISettings(config.frequency,
+                  static_cast<decltype(MSBFIRST)>(config.bit_order), data_mode);
 }
 
 size_t SPIServiceClass::transfer(etl::span<uint8_t> buffer) {

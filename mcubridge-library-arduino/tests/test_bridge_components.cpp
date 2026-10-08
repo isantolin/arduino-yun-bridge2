@@ -204,26 +204,26 @@ void test_spi_data_modes_map_to_native_settings() {
 
   config.data_mode = rpc_pb_SpiDataMode_SPI_DATA_MODE_0;
   SPIService.setConfig(config);
-  TEST_ASSERT_EQUAL_UINT32(
-      1, SPIService.transfer(etl::span<uint8_t>(payload.data(), payload.size())));
+  TEST_ASSERT_EQUAL_UINT32(1, SPIService.transfer(etl::span<uint8_t>(
+                                  payload.data(), payload.size())));
   TEST_ASSERT_EQUAL_UINT8(SPI_MODE0, SPI.last_settings.data_mode);
 
   config.data_mode = rpc_pb_SpiDataMode_SPI_DATA_MODE_1;
   SPIService.setConfig(config);
-  TEST_ASSERT_EQUAL_UINT32(
-      1, SPIService.transfer(etl::span<uint8_t>(payload.data(), payload.size())));
+  TEST_ASSERT_EQUAL_UINT32(1, SPIService.transfer(etl::span<uint8_t>(
+                                  payload.data(), payload.size())));
   TEST_ASSERT_EQUAL_UINT8(SPI_MODE1, SPI.last_settings.data_mode);
 
   config.data_mode = rpc_pb_SpiDataMode_SPI_DATA_MODE_2;
   SPIService.setConfig(config);
-  TEST_ASSERT_EQUAL_UINT32(
-      1, SPIService.transfer(etl::span<uint8_t>(payload.data(), payload.size())));
+  TEST_ASSERT_EQUAL_UINT32(1, SPIService.transfer(etl::span<uint8_t>(
+                                  payload.data(), payload.size())));
   TEST_ASSERT_EQUAL_UINT8(SPI_MODE2, SPI.last_settings.data_mode);
 
   config.data_mode = rpc_pb_SpiDataMode_SPI_DATA_MODE_3;
   SPIService.setConfig(config);
-  TEST_ASSERT_EQUAL_UINT32(
-      1, SPIService.transfer(etl::span<uint8_t>(payload.data(), payload.size())));
+  TEST_ASSERT_EQUAL_UINT32(1, SPIService.transfer(etl::span<uint8_t>(
+                                  payload.data(), payload.size())));
   TEST_ASSERT_EQUAL_UINT8(SPI_MODE3, SPI.last_settings.data_mode);
   TEST_ASSERT_EQUAL_UINT8(LSBFIRST, SPI.last_settings.bit_order);
   TEST_ASSERT_EQUAL_UINT32(config.frequency, SPI.last_settings.clock);

@@ -54,8 +54,10 @@ def test_parse_memory_logs(tmp_path: Path) -> None:
     )
     nano_log = log_dir / "arduino-esp32-nano_nora__BridgeWiFi.log"
     nano_log.write_text(
-        "Sketch uses 12345 bytes (42%) of program storage space. Maximum is 28672 bytes.\n"
-        "Global variables use 1024 bytes (40%) of dynamic memory. Maximum is 2560 bytes.\n",
+        "El Sketch usa 12345 bytes (42%) del espacio de almacenamiento de programa. "
+        "El máximo es 3145728 bytes.\n"
+        "Las variables Globales usan 1024 bytes (1%) de la memoria dinámica, "
+        "dejando 326656 bytes para las variables locales. El máximo es 327680 bytes.\n",
         encoding="utf-8",
     )
     result = parse_memory_logs(log_dir)
@@ -63,6 +65,8 @@ def test_parse_memory_logs(tmp_path: Path) -> None:
     assert "### 📊 Arduino Memory Usage" in result
     assert "Arduino MKR WiFi 1010" in result
     assert "Arduino Nano ESP32" in result
+    assert "3,145,728 B" in result
+    assert "327,680 B" in result
     assert "`BridgeControl`" in result
     assert "`BridgeWiFi`" in result
     assert "12,345 / 28,672 B" in result

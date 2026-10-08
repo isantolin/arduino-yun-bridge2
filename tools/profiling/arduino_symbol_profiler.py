@@ -36,8 +36,17 @@ def parse_memory_logs(log_dir: Path) -> str | None:
         except OSError as err:
             sys.stderr.write(f"[WARN] Failed to read log file {p}: {err}\n")
             continue
-        fm = re.search(r"Sketch uses (\d+) bytes \(([^)]+)\).*Maximum is (\d+) bytes", txt)
-        rm = re.search(r"Global variables use (\d+) bytes \(([^)]+)\).*Maximum is (\d+) bytes", txt)
+        fm = re.search(
+            r"(?:Sketch uses|El Sketch usa) (\d+) bytes \(([^)]+)\).*?(?:Maximum is|El máximo es) (\d+) bytes",
+            txt,
+            re.IGNORECASE,
+        )
+        rm = re.search(
+            r"(?:Global variables use|Las variables Globales usan) "
+            r"(\d+) bytes \(([^)]+)\).*?(?:Maximum is|El máximo es) (\d+) bytes",
+            txt,
+            re.IGNORECASE,
+        )
         if fm and rm:
             parts = p.stem.split("__", 1)
             bname = BOARD_LABELS.get(parts[0], parts[0])

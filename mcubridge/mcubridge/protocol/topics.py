@@ -8,22 +8,14 @@ from __future__ import annotations
 
 import functools
 import posixpath
-from typing import Final
 
 import structlog
 from google.protobuf.message import Message as ProtobufMessage
 
-from .protocol import COMMAND_TO_TOPIC, MESSAGE_TO_TOPIC, Topic
+from .protocol import COMMAND_TO_TOPIC, MESSAGE_TO_TOPIC, TOPIC_ALIASES, Topic
 from .structures import TopicRoute
 
 logger = structlog.get_logger(__name__)
-
-
-_TOPIC_ALIASES: Final[dict[str, Topic]] = {
-    "digital": Topic.DIGITAL,
-    "analog": Topic.ANALOG,
-    "shell": Topic.SHELL,
-}
 
 
 def topic_path(prefix: str, topic: str | Topic, *segments: str | int) -> str:
@@ -71,7 +63,7 @@ def parse_topic(prefix: str, topic_name: str) -> TopicRoute | None:
         return None
 
     seg = topic_segs[len(prefix_segs)].lower()
-    topic_enum = _TOPIC_ALIASES.get(seg)
+    topic_enum = TOPIC_ALIASES.get(seg)
     if topic_enum is None:
         try:
             topic_enum = Topic(seg)

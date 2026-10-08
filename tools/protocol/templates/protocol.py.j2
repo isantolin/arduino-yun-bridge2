@@ -68,6 +68,12 @@ ACK_ONLY_COMMANDS: Final[frozenset[int]] = frozenset({
     {%- endfor %}
 })
 
+PRE_SYNC_ALLOWED_COMMANDS: Final[frozenset[int]] = frozenset({
+    {%- for cmd in pre_sync_allowed_commands %}
+    Command.{{ cmd.name }}.value,
+    {%- endfor %}
+})
+
 # Commands that expect a direct response without a prior ACK.
 # The MCU responds directly with CMD_*_RESP without sending STATUS_ACK first.
 RESPONSE_ONLY_COMMANDS: Final[frozenset[int]] = frozenset({
@@ -148,6 +154,14 @@ class Topic(StrEnum):
     {%- for topic in topics %}
     {{ topic.name }} = "{{ topic.value }}"  # {{ topic.description }}
     {%- endfor %}
+
+TOPIC_ALIASES: Final[dict[str, Topic]] = {
+    {%- for topic in topics %}
+    {%- for alias in topic.aliases %}
+    {{ alias|tojson }}: Topic.{{ topic.name }},
+    {%- endfor %}
+    {%- endfor %}
+}
 
 
 class CommonAction:

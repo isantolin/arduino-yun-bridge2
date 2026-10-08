@@ -103,11 +103,6 @@ logger = structlog.get_logger("mcubridge.service")
 McuHandler = Callable[[int, bytes | ProtobufMessage], Coroutine[Any, Any, bool | bytes | ProtobufMessage | None]]
 
 
-_PRE_SYNC_ALLOWED_COMMANDS: Final = {
-    Command.CMD_LINK_SYNC_RESP.value,
-    Command.CMD_LINK_RESET_RESP.value,
-}
-
 _STATUS_VALUES: Final = {s.value for s in Status}
 
 
@@ -639,7 +634,11 @@ class BridgeService:
         serial = self.serial
         if not serial:
             return
-        if not (self.state.is_synchronized or command_id in _STATUS_VALUES or command_id in _PRE_SYNC_ALLOWED_COMMANDS):
+        if not (
+            self.state.is_synchronized
+            or command_id in _STATUS_VALUES
+            or command_id in protocol.PRE_SYNC_ALLOWED_COMMANDS
+        ):
             return
 
         with structlog.contextvars.bound_contextvars(cmd_id=command_id, seq_id=sequence_id):

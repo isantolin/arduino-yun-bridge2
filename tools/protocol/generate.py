@@ -155,6 +155,7 @@ class CommandDef:
     description: str | None = None
     requires_ack: bool = False
     expects_direct_response: bool = False
+    pre_sync_allowed: bool = False
     cloud_topic: str | None = None
 
 
@@ -329,6 +330,7 @@ def load_spec_from_proto(proto_path: Path, pb_module: Any = None) -> ProtocolSpe
                 description=opts.description or None,
                 requires_ack=opts.requires_ack,
                 expects_direct_response=opts.expects_direct_response,
+                pre_sync_allowed=opts.pre_sync_allowed,
                 cloud_topic=opts.cloud_topic or None,
             )
         )
@@ -594,6 +596,7 @@ def _build_command_context(spec: ProtocolSpec, pb_module: Any) -> dict[str, Any]
         "response_to_req_map": response_to_req_map,
         "command_to_pb": command_to_pb,
         "ack_commands": [command for command in spec.commands if command.requires_ack],
+        "pre_sync_allowed_commands": [command for command in spec.commands if command.pre_sync_allowed],
         "response_only_commands": [command for command in spec.commands if command.expects_direct_response],
     }
 

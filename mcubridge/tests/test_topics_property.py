@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from hypothesis import assume, given
 from hypothesis import strategies as st
-from mcubridge.protocol.protocol import COMMAND_TO_TOPIC, Topic
+from mcubridge.protocol.protocol import COMMAND_TO_TOPIC, TOPIC_ALIASES, Topic
 from mcubridge.protocol.topics import (
     get_topic_for_message,
     parse_topic,
@@ -52,7 +52,7 @@ def test_parse_topic_mismatched_prefix_rejected(
 @given(
     prefix=_SAFE_TEXT,
     invalid_service=st.text(alphabet="abcdefghijklmnopqrstuvwxyz", min_size=8, max_size=16).filter(
-        lambda s: s not in {t.value for t in Topic} and s not in {"digital", "analog", "shell"}
+        lambda s: s not in {topic.value for topic in Topic} and s not in TOPIC_ALIASES
     ),
     segments=st.lists(_SAFE_TEXT, max_size=2),
 )
@@ -102,6 +102,21 @@ def test_topics_canonical_service_paths() -> None:
     assert topic_path("p", Topic.SHELL, "123", "kill") == "p/sh/123/kill"
     assert topic_path("p", Topic.CONSOLE, "write") == "p/console/write"
     assert topic_path("p", Topic.MAILBOX, "push") == "p/mailbox/push"
+
+
+def test_topic_aliases_resolve_to_canonical_topics() -> None:
+    expected_aliases = {
+        "analog": Topic.ANALOG,
+        "digital": Topic.DIGITAL,
+        "shell": Topic.SHELL,
+    }
+    assert expected_aliases == TOPIC_ALIASES
+
+    for alias, expected_topic in TOPIC_ALIASES.items():
+        route = parse_topic("prefix", f"prefix/{alias}/13/read")
+        assert route is not None
+        assert route.topic == expected_topic
+        assert route.segments == ("13", "read")
 
 
 def test_topics_edge_cases() -> None:

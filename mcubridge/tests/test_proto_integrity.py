@@ -159,6 +159,26 @@ def test_telemetry_routing_table_matches_schema_metadata() -> None:
     assert default_options.Extensions[pb.telemetry_topic_default] is True
 
 
+def test_pre_sync_command_set_matches_schema_metadata() -> None:
+    expected_names = {"CMD_LINK_SYNC_RESP", "CMD_LINK_RESET_RESP"}
+    command_values = pb.Command.DESCRIPTOR.values
+    actual_names = {
+        command.name for command in command_values if command.GetOptions().Extensions[pb.cmd_opts].pre_sync_allowed
+    }
+
+    assert expected_names == actual_names
+    assert {protocol.Command[name].value for name in expected_names} == protocol.PRE_SYNC_ALLOWED_COMMANDS
+
+
+def test_topic_aliases_match_schema_metadata() -> None:
+    topic_configs = pb.DESCRIPTOR.GetOptions().Extensions[pb.topics]
+    expected_aliases = {
+        alias: protocol.Topic[topic_config.name] for topic_config in topic_configs for alias in topic_config.aliases
+    }
+
+    assert expected_aliases == protocol.TOPIC_ALIASES
+
+
 def test_rpc_envelope_strong_typing() -> None:
     """SIL-2: Verify RpcEnvelope channel_id and qos fields are bound to strongly-typed enums."""
     env_fields = pb.RpcEnvelope.DESCRIPTOR.fields_by_name

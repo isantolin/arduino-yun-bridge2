@@ -70,6 +70,8 @@ void test_cryptographic_self_tests_run(void) {
 }
 
 int main(int argc, char** argv) {
+  (void)argc;
+  (void)argv;
   UNITY_BEGIN();
   RUN_TEST(test_bridge_nonce_overflow_protection);
   RUN_TEST(test_cryptographic_self_tests_run);

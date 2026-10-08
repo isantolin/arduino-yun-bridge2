@@ -237,10 +237,10 @@ def test_smoke_connection_cli_invocation(monkeypatch: pytest.MonkeyPatch) -> Non
     runner = CliRunner()
     res = runner.invoke(
         cast(Any, test_smoke_connection.cli),
-        ["--host", "127.0.0.1", "--port", "8443", "--device-id", "yun-01", "--topic-prefix", "test"],
+        ["--host", "127.0.0.1", "--port", "8443", "--device-id", "yun-01"],
     )
     assert res.exit_code == 0
-    mock_run.assert_awaited_once_with("127.0.0.1", 8443, "yun-01", "test")
+    mock_run.assert_awaited_once_with("127.0.0.1", 8443, "yun-01")
 
 
 @pytest.mark.asyncio

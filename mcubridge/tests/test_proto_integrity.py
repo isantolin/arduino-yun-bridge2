@@ -282,15 +282,16 @@ def test_spi_config_uses_canonical_enums() -> None:
 
 
 @pytest.mark.parametrize(
-    "data_mode",
+    "data_mode_name",
     [
-        pb.SpiDataMode.SPI_DATA_MODE_0,
-        pb.SpiDataMode.SPI_DATA_MODE_1,
-        pb.SpiDataMode.SPI_DATA_MODE_2,
-        pb.SpiDataMode.SPI_DATA_MODE_3,
+        pb.SpiDataMode.Name(pb.SpiDataMode.SPI_DATA_MODE_0),
+        pb.SpiDataMode.Name(pb.SpiDataMode.SPI_DATA_MODE_1),
+        pb.SpiDataMode.Name(pb.SpiDataMode.SPI_DATA_MODE_2),
+        pb.SpiDataMode.Name(pb.SpiDataMode.SPI_DATA_MODE_3),
     ],
 )
-def test_spi_data_modes_round_trip(data_mode: int) -> None:
+def test_spi_data_modes_round_trip(data_mode_name: str) -> None:
+    data_mode = pb.SpiDataMode.Value(data_mode_name)
     restored = pb.SpiConfig.FromString(pb.SpiConfig(data_mode=data_mode).SerializeToString())
     assert restored.data_mode == data_mode
 

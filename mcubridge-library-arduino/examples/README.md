@@ -40,6 +40,7 @@ arduino-cli upload --fqbn arduino:avr:mcu --port /dev/ttyACM0 \
 ```
 
 The CI compilation matrix builds every example for Arduino Mega 2560, MKR WiFi 1010, and Nano ESP32. Cycle-accurate simavr emulation remains AVR-only and runs on the Mega; it does not emulate the SAMD or ESP32 boards.
+The matrix installs the AVR, SAMD, and Arduino ESP32 cores plus WiFiNINA, and sets the C++17 flags required by the library. Manual builds must use equivalent core configuration.
 
 Tips:
 

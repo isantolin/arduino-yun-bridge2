@@ -21,7 +21,14 @@
 #endif
 
 // clang-format off
+#if defined(ARDUINO_BOARD)
+#pragma push_macro("ARDUINO_BOARD")
+#undef ARDUINO_BOARD
 #include <Embedded_Template_Library.h>
+#pragma pop_macro("ARDUINO_BOARD")
+#else
+#include <Embedded_Template_Library.h>
+#endif
 #include <wolfssl.h>
 #include <wolfssl/wolfcrypt/settings.h>
 #include <etl/algorithm.h>

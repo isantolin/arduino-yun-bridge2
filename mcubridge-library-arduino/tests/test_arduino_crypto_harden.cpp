@@ -17,7 +17,7 @@
 void setUp(void) {}
 void tearDown(void) {}
 
-void test_bridge_nonce_overflow_protection() {
+void test_bridge_nonce_overflow_protection(void) {
   // 1. Configurar el contador de nonce en el penúltimo valor posible (2^64 - 2)
   uint64_t nonce_counter = RPC_NONCE_COUNTER_MASK - 1;
 
@@ -62,7 +62,7 @@ void test_bridge_nonce_overflow_protection() {
   TEST_ASSERT_EQUAL_UINT64(RPC_NONCE_COUNTER_MASK, nonce_counter);
 }
 
-void test_cryptographic_self_tests_run() {
+void test_cryptographic_self_tests_run(void) {
 #if BRIDGE_ENABLE_POST_TESTS
   bool post_res = rpc::security::run_cryptographic_self_tests();
   TEST_ASSERT_TRUE_MESSAGE(post_res, "Cryptographic POST (SHA256, HMAC, ChaCha20Poly1305 KATs) failed!");
@@ -70,11 +70,6 @@ void test_cryptographic_self_tests_run() {
 }
 
 int main(int argc, char** argv) {
-  UNITY_BEGIN();
-  RUN_TEST(test_bridge_nonce_overflow_protection);
-  RUN_TEST(test_cryptographic_self_tests_run);
-  return UNITY_END();
-}
   UNITY_BEGIN();
   RUN_TEST(test_bridge_nonce_overflow_protection);
   RUN_TEST(test_cryptographic_self_tests_run);

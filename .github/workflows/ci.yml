@@ -16,6 +16,7 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  PYTHONWARNINGS: error
 
 jobs:
   # ═══════════════════════════════════════════════════════════════════════════
@@ -41,7 +42,9 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y cppcheck unzip clang-tidy
           sudo npm install -g @bufbuild/buf
-          python -m pip install semgrep protobuf mypy-protobuf vulture pytest pyrefly types-protobuf types-psutil types-pexpect flake8 ruff pyelftools
+          semgrep_requirement=$(python -c 'import tomllib; from pathlib import Path; manifest = tomllib.loads(Path("requirements/runtime.toml").read_text(encoding="utf-8")); print(next(item["pip"] for item in manifest["dev_dependency"] if item["name"] == "semgrep"))')
+          uv tool install "$semgrep_requirement"
+          python -m pip check
       - name: Install Build Tools
         if: matrix.env == 'arduino'
         run: sudo apt-get update && sudo apt-get install -y g++ make
@@ -125,7 +128,7 @@ jobs:
         with:
           name: arduino-logs
           path: arduino-logs
-          if-no-files-found: ignore
+          if-no-files-found: error
 
   # ═══════════════════════════════════════════════════════════════════════════
   # STAGE 2: Tests (after fast checks pass) - ~10min total
@@ -162,14 +165,14 @@ jobs:
           name: coverage-python
           path: coverage/python
           include-hidden-files: true
-          if-no-files-found: ignore
+          if-no-files-found: error
       - name: Upload Arduino Coverage
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: coverage-arduino-host
           path: coverage/arduino
-          if-no-files-found: ignore
+          if-no-files-found: error
 
   arduino-emulation:
     name: Arduino Emulation (${{ matrix.name }})
@@ -291,7 +294,7 @@ jobs:
         with:
           name: simavr-logs
           path: simavr-logs
-          if-no-files-found: ignore
+          if-no-files-found: error
 
   # ═══════════════════════════════════════════════════════════════════════════
   # STAGE 3: Consolidation - ~2min
@@ -314,58 +317,51 @@ jobs:
         with:
           name: coverage-python
           path: coverage/python
-        continue-on-error: true
 
       - name: Download Arduino Coverage
         uses: actions/download-artifact@v8
         with:
           name: coverage-arduino-host
           path: coverage/arduino
-        continue-on-error: true
 
       - name: Download Arduino Logs
         uses: actions/download-artifact@v8
         with:
           name: arduino-logs
           path: arduino-logs
-        continue-on-error: true
 
       - name: Download simavr Logs
         uses: actions/download-artifact@v8
         with:
           name: simavr-logs
           path: simavr-logs
-        continue-on-error: true
 
       - name: Verify Artifacts
         run: |
           echo "### Artifact Verification"
-          ls -R
-          if [ -d "arduino-logs" ]; then
-            echo "Contents of arduino-logs:"
-            ls -la arduino-logs/
-          fi
-          if [ -d "simavr-logs" ]; then
-            echo "Contents of simavr-logs:"
-            ls -la simavr-logs/
-          fi
+          for artifact in \
+            coverage/python/.coverage \
+            coverage/arduino/summary.txt \
+            arduino-logs/symbol_profile.md \
+            simavr-logs/simavr_summary.md; do
+            if [[ ! -f "$artifact" ]]; then
+              echo "::error::Required CI artifact missing: $artifact" >&2
+              exit 1
+            fi
+          done
 
       - name: Generate Coverage Summary
         run: |
-          python -m pip install --upgrade pip setuptools
-          pip install coverage
+          python -m pip install coverage
+          python -m pip check
           echo "## 📊 Test & Coverage Summary" >> "$GITHUB_STEP_SUMMARY"
-          if [ -f coverage/python/.coverage ]; then
-            echo "### 🐍 Python Coverage (coverage.py native)" >> "$GITHUB_STEP_SUMMARY"
-            coverage report --data-file=coverage/python/.coverage --format=markdown --fail-under=0 --ignore-errors >> "$GITHUB_STEP_SUMMARY" || true
-          fi
-          if [ -f coverage/arduino/summary.txt ]; then
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "### ⚡ Arduino MCU C++ Coverage (gcovr)" >> "$GITHUB_STEP_SUMMARY"
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
-            cat coverage/arduino/summary.txt >> "$GITHUB_STEP_SUMMARY"
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
-          fi
+          echo "### 🐍 Python Coverage (coverage.py native)" >> "$GITHUB_STEP_SUMMARY"
+          coverage report --data-file=coverage/python/.coverage --format=markdown --fail-under=0 >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### ⚡ Arduino MCU C++ Coverage (gcovr)" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat coverage/arduino/summary.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Generate Memory Summary
         run: |
@@ -384,7 +380,6 @@ jobs:
           PYTHONPATH: .:mcubridge:mcubridge-client-examples:typings
         run: |
           # 1. Mandatory Protocol Generation (Required for imports)
-          pip install jinja2 nanopb
           python tools/protocol/generate.py \
             --spec tools/protocol/mcubridge.proto \
             --py mcubridge/mcubridge/protocol/protocol.py \
@@ -407,4 +402,4 @@ jobs:
           name: coverage-combined
           path: coverage/
           include-hidden-files: true
-          if-no-files-found: ignore
+          if-no-files-found: error

@@ -86,10 +86,11 @@ SOURCES=(
 UNITY_DIR="${TEST_DIR}/Unity/src"
 UNITY_OBJ="${OBJ_DIR}/unity.o"
 if [ -f "${UNITY_DIR}/unity.c" ]; then
-    g++ -std=c++17 -x c++ -c -O2 -DUNITY_INCLUDE_DOUBLE "${UNITY_DIR}/unity.c" -o "${UNITY_OBJ}"
+    g++ -std=c++17 -x c++ -c -O2 -Wall -Wextra -Werror \
+        -DUNITY_INCLUDE_DOUBLE "${UNITY_DIR}/unity.c" -o "${UNITY_OBJ}"
 else
-    echo "[WARN] Unity not found at ${UNITY_DIR}; test assertions will fail."
-    UNITY_OBJ=""
+    echo "[ERROR] Unity not found at ${UNITY_DIR}; refusing to run tests without assertions." >&2
+    exit 1
 fi
 
 # Base flags without -std for C compatibility
@@ -99,7 +100,6 @@ BASE_FLAGS=(
     -Wall
     -Wextra
     -Werror
-    -Wno-unused-parameter
     -DBRIDGE_FAULT_INJECTION=1
     -DARDUINO_STUB_CUSTOM_MILLIS=1
     -DWOLFSSL_USER_SETTINGS
@@ -124,6 +124,7 @@ BASE_FLAGS=(
 # Compile common sources to objects in parallel
 echo "[host-cpp] Compiling common sources in parallel..."
 OBJECTS=()
+pids=()
 for src in "${SOURCES[@]}"; do
     obj_name=$(basename "${src}")
     obj="${OBJ_DIR}/${obj_name}.o"
@@ -134,8 +135,19 @@ for src in "${SOURCES[@]}"; do
     else
         g++ -std=c++17 "${BASE_FLAGS[@]}" -c "${src}" -o "${obj}" &
     fi
+    pids+=($!)
 done
-wait
+
+compile_failed=0
+for pid in "${pids[@]}"; do
+    if ! wait "${pid}"; then
+        compile_failed=1
+    fi
+done
+if [[ "${compile_failed}" -ne 0 ]]; then
+    echo "[host-cpp] One or more common source compilations failed." >&2
+    exit 1
+fi
 
 # Test suites
 TEST_FILES=(
@@ -171,9 +183,11 @@ for test_file in "${TEST_FILES[@]}"; do
                     LOCAL_OBJECTS+=("${obj}")
                 fi
             done
-            g++ -std=c++17 "${BASE_FLAGS[@]}" "${test_file}" "${LOCAL_OBJECTS[@]}" "${UNITY_OBJ}" -o "${BUILD_DIR}/${test_name}" 2>&1
+            g++ -std=c++17 "${BASE_FLAGS[@]}" "${test_file}" "${LOCAL_OBJECTS[@]}" "${UNITY_OBJ}" \
+                -Wl,--fatal-warnings -o "${BUILD_DIR}/${test_name}" 2>&1
         else
-            g++ -std=c++17 "${BASE_FLAGS[@]}" "${test_file}" "${OBJECTS[@]}" "${UNITY_OBJ}" -o "${BUILD_DIR}/${test_name}" 2>&1
+            g++ -std=c++17 "${BASE_FLAGS[@]}" "${test_file}" "${OBJECTS[@]}" "${UNITY_OBJ}" \
+                -Wl,--fatal-warnings -o "${BUILD_DIR}/${test_name}" 2>&1
         fi
         if [ $? -eq 0 ]; then
             :

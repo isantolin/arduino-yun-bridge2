@@ -113,23 +113,28 @@ compile_sketch() {
     BOARD_NAME="${FQBN//:/-}"
     LOG_FILE="${_LOG_DIR}/${BOARD_NAME}__${sketch_name}.log"
 
-    local COMMON_FLAGS="-fno-strict-aliasing -DWOLFSSL_USER_SETTINGS -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1"
-    local LINK_FLAGS=()
+    local COMMON_FLAGS="-fno-strict-aliasing -Wall -Wextra -Werror -DWOLFSSL_USER_SETTINGS -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1"
+    local LINK_FLAGS=(
+        "--build-property" "compiler.c.elf.extra_flags=-Wl,--fatal-warnings"
+        "--build-property" "compiler.cpp.elf.extra_flags=-Wl,--fatal-warnings"
+        "--build-property" "compiler.elf.extra_flags=-Wl,--fatal-warnings"
+    )
     if [[ "$FQBN" == arduino:avr:* ]]; then
-        COMMON_FLAGS+=" -flto -Wno-lto-type-mismatch"
+        COMMON_FLAGS+=" -flto"
         LINK_FLAGS=(
-            "--build-property" "compiler.c.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch"
-            "--build-property" "compiler.cpp.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch"
-            "--build-property" "compiler.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch"
+            "--build-property" "compiler.c.elf.extra_flags=-flto -fno-strict-aliasing -Wl,--fatal-warnings"
+            "--build-property" "compiler.cpp.elf.extra_flags=-flto -fno-strict-aliasing -Wl,--fatal-warnings"
+            "--build-property" "compiler.elf.extra_flags=-flto -fno-strict-aliasing -Wl,--fatal-warnings"
         )
     fi
     local BUILD_FLAGS=(
         "--fqbn" "$FQBN"
         "--library" "$LIB_PATH"
         "--libraries" "$USER_LIB_DIR"
-        "--warnings" "default"
+        "--warnings" "all"
         "--build-property" "compiler.cpp.extra_flags=-std=gnu++17 -fno-exceptions $COMMON_FLAGS -DETL_NO_STL"
         "--build-property" "compiler.c.extra_flags=-std=gnu11 $COMMON_FLAGS"
+        "--build-property" "compiler.S.extra_flags=-Wall -Wextra -Werror"
     )
     BUILD_FLAGS+=("${LINK_FLAGS[@]}")
 

@@ -80,13 +80,13 @@ def test_run_single_client_script_exception(tmp_path: Path) -> None:
     assert simavr_runner.run_single_client_script(script_err) is False
 
 
-def test_run_client_scripts(tmp_path: Path) -> None:
+def test_run_client_scripts_fails_for_missing_script(tmp_path: Path) -> None:
     s1 = tmp_path / "s1.py"
     s1.write_text("def main(host=None, port=None, device_id=None):\n    pass\n", encoding="utf-8")
     missing = tmp_path / "does_not_exist.py"
 
     passed = simavr_runner.run_client_scripts([s1, missing], {}, 10.0, led_builtin_pin=9)
-    assert passed is True
+    assert passed is False
 
 
 def _mock_simavr_success(

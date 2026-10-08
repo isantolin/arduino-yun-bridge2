@@ -103,6 +103,7 @@ BASE_FLAGS=(
 # Flags without coverage instrumentation (vendor/third-party code).
 TP_FLAGS=(
     "-O2" "-g" "-fPIC"
+    "-Wall" "-Wextra" "-Werror"
     "-DARDUINO=100" "-DBRIDGE_HOST_TEST=1" "-DWOLFSSL_USER_SETTINGS"
     "-DETL_NO_STL"
     "-I${SRC_ROOT}" "-I${SRC_ROOT}/config" "-I${SRC_ROOT}/protocol"
@@ -161,9 +162,11 @@ for suite in "${TEST_SUITES[@]}"; do
     suite_src="${TEST_ROOT}/${suite}.cpp"
     suite_bin="${BUILD_DIR}/${suite}"
     if [ "${suite}" = "test_hal_weak_defaults" ]; then
-        g++ -std=c++17 "${BASE_FLAGS[@]}" "${suite_src}" "${OBJECTS[@]}" "${UNITY_OBJ}" -o "${suite_bin}"
+        g++ -std=c++17 "${BASE_FLAGS[@]}" "${suite_src}" "${OBJECTS[@]}" "${UNITY_OBJ}" \
+            -Wl,--fatal-warnings -o "${suite_bin}"
     else
-        g++ -std=c++17 "${BASE_FLAGS[@]}" "${suite_src}" "${OBJECTS[@]}" "${MOCK_OBJ}" "${UNITY_OBJ}" -o "${suite_bin}"
+        g++ -std=c++17 "${BASE_FLAGS[@]}" "${suite_src}" "${OBJECTS[@]}" "${MOCK_OBJ}" "${UNITY_OBJ}" \
+            -Wl,--fatal-warnings -o "${suite_bin}"
     fi
     "${suite_bin}"
 done

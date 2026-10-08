@@ -7,13 +7,13 @@ if ! command -v clang-format &> /dev/null; then
     # Try system package managers or sudo pip
     if command -v dnf &> /dev/null; then
         echo "[ensure_clang_format] Installing clang-format via dnf (sudo)..."
-        sudo dnf install -y clang-format || true
+        sudo dnf install -y clang-format
     elif command -v apt-get &> /dev/null; then
         echo "[ensure_clang_format] Installing clang-format via apt-get (sudo)..."
-        sudo apt-get update && sudo apt-get install -y clang-format || true
+        sudo apt-get update && sudo apt-get install -y clang-format
     elif command -v pip &> /dev/null; then
         echo "[ensure_clang_format] Installing clang-format via pip (sudo)..."
-        sudo pip install --break-system-packages clang-format || true
+        sudo pip install --break-system-packages clang-format
     fi
 fi
 

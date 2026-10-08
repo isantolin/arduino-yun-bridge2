@@ -38,17 +38,18 @@ if [ ! -f "${LIB_DIR}/src/protocol/rpc_protocol.h" ]; then
         --py-client "${ROOT_DIR}/mcubridge-client-examples/mcubridge_client/protocol.py"
 fi
 
-COMMON_FLAGS="-flto -fno-strict-aliasing -Wno-lto-type-mismatch -DWOLFSSL_USER_SETTINGS -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1 -DSERIAL_RX_BUFFER_SIZE=256 -DSERIAL_TX_BUFFER_SIZE=256"
+COMMON_FLAGS="-flto -fno-strict-aliasing -Wall -Wextra -Werror -DWOLFSSL_USER_SETTINGS -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1 -DSERIAL_RX_BUFFER_SIZE=256 -DSERIAL_TX_BUFFER_SIZE=256"
 BUILD_FLAGS=(
     "--fqbn" "$FQBN"
     "--library" "$LIB_DIR"
     "--libraries" "$USER_LIB_DIR"
-    "--warnings" "default"
+    "--warnings" "all"
     "--build-property" "compiler.cpp.extra_flags=-std=gnu++17 -fno-exceptions $COMMON_FLAGS -DETL_NO_STL -I$USER_LIB_DIR/Embedded_Template_Library/include"
     "--build-property" "compiler.c.extra_flags=-std=gnu11 $COMMON_FLAGS -I$USER_LIB_DIR/Embedded_Template_Library/include"
-    "--build-property" "compiler.c.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch"
-    "--build-property" "compiler.cpp.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch"
-    "--build-property" "compiler.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch"
+    "--build-property" "compiler.S.extra_flags=-Wall -Wextra -Werror"
+    "--build-property" "compiler.c.elf.extra_flags=-flto -fno-strict-aliasing -Wl,--fatal-warnings"
+    "--build-property" "compiler.cpp.elf.extra_flags=-flto -fno-strict-aliasing -Wl,--fatal-warnings"
+    "--build-property" "compiler.elf.extra_flags=-flto -fno-strict-aliasing -Wl,--fatal-warnings"
     "--build-path" "$OUTPUT_DIR"
 )
 
@@ -81,13 +82,7 @@ if arduino-cli compile --clean "${BUILD_FLAGS[@]}" "$SKETCH_PATH" > "$TMP_LOG" 2
     fi
 else
     cp "$TMP_LOG" "${OUTPUT_DIR}/compile.log"
-    if [ "$FQBN" = "arduino:avr:mega" ]; then
-        echo "ERROR: Critical failure compiling for $FQBN!" >&2
-        cat "$TMP_LOG" >&2
-        exit 1
-    else
-        echo "[simavr-build] ⚠ $FQBN compilation skipped (non-critical, Flash/RAM limit exceeded on small AVR board)"
-        rm -f "${OUTPUT_DIR}/firmware.elf"
-        exit 0
-    fi
+    echo "ERROR: Compilation failed for $FQBN." >&2
+    cat "$TMP_LOG" >&2
+    exit 1
 fi

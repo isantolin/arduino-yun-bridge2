@@ -37,6 +37,9 @@ INCLUDES=(
 
 COMPILE_FLAGS=(
     "-std=c++17"
+    "-Wall"
+    "-Wextra"
+    "-Werror"
     "-DPROGMEM="
     "-DPB_PROTO_HEADER_VERSION=40"
     "-DWOLFSSL_USER_SETTINGS"
@@ -49,7 +52,7 @@ SOURCES=($(find "${SRC_DIR}" -name "*.cpp" ! -name "pb_*.c" ! -name "*.pb.c"))
 
 for src in "${SOURCES[@]}"; do
     echo "[clang-tidy] Checking $(basename "$src")..."
-    clang-tidy "$src" -- "${COMPILE_FLAGS[@]}"
+    clang-tidy --warnings-as-errors='*' "$src" -- "${COMPILE_FLAGS[@]}"
 done
 
 echo "[clang-tidy] All C++ sources passed static analysis successfully."

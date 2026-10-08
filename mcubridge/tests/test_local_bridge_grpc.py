@@ -472,6 +472,12 @@ async def test_local_bridge_execute_rpc(tmp_path: Path) -> None:
     res_dw = pb.GenericResponse.FromString(res_dw_bytes)
     assert res_dw.status == "ok"
 
+    mock_serial.send.return_value = False
+    res_dw_failed_bytes = await local_svc.execute_rpc("DigitalWrite", req_dw.SerializeToString())
+    assert pb.GenericResponse.FromString(res_dw_failed_bytes).status == "error"
+
+    mock_serial.send.return_value = True
+
     # 2. DigitalRead
     mock_serial.send.return_value = pb.DigitalReadResponse(value=1)
     req_dr = pb.PinRead(pin=13)
@@ -491,6 +497,21 @@ async def test_local_bridge_execute_rpc(tmp_path: Path) -> None:
     # 4. Unknown method raises ValueError
     with pytest.raises(ValueError, match="Unknown RPC method"):
         await local_svc.execute_rpc("NonExistent", b"")
+
+
+@pytest.mark.asyncio
+async def test_local_bridge_write_methods_report_failed_serial_send(tmp_path: Path) -> None:
+    _, local_svc, mock_serial = _make_service(_make_config(tmp_path))
+    mock_serial.send.return_value = False
+
+    pin_mode_response = await local_svc.execute_set_pin_mode(pb.PinMode(pin=13, mode=pb.PIN_OUTPUT))
+    digital_write_response = await local_svc.execute_digital_write(pb.DigitalWrite(pin=13, value=1))
+    analog_write_response = await local_svc.execute_analog_write(pb.AnalogWrite(pin=9, value=128))
+
+    assert pin_mode_response.status == "error"
+    assert digital_write_response.status == "error"
+    assert analog_write_response.status == "error"
+    assert mock_serial.send.await_count == 3
 
 
 @pytest.mark.asyncio

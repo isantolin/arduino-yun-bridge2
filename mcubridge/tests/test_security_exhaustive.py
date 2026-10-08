@@ -3,128 +3,88 @@ This file is part of Arduino MCU Ecosystem v2.
 Copyright (C) 2025-2026 Ignacio Santolin and contributors
 """
 
-import struct
 import pytest
 
-from mcubridge.protocol.protocol import (
-    NONCE_COUNTER_MASK,
-    RPC_AEAD_NONCE_SIZE,
-    RPC_AEAD_TAG_SIZE,
-)
-from mcubridge.security import (
-    SecurityError,
-    SecurityManager,
-    aead_decrypt_frame,
-    aead_encrypt_frame,
+from mcubridge.protocol import protocol
+from mcubridge.protocol.frame import build_frame, parse_frame
+from mcubridge.security.security import (
+    extract_nonce_counter,
+    generate_nonce_with_counter,
+    validate_nonce_counter,
+    verify_crypto_integrity,
 )
 
 
 def test_security_nonce_validation_via_public_api() -> None:
-    """
-    Verifies nonce decoding and validation using the public API
-    without using mocker.patch() on internal logic.
-    """
-    key = b"\x0f" * 32
+    """Verify AEAD round-trip and monotonic nonce validation through public APIs."""
+    key = b"\x0f" * protocol.AEAD_KEY_SIZE
     cmd_id = 0x0001
     seq_id = 0x0001
     payload = b"AUTHENTICATED_DATA_PAYLOAD"
 
-    counter_val = 42
-    ciphertext, nonce, tag = aead_encrypt_frame(
-        cmd_id=cmd_id,
-        seq_id=seq_id,
+    nonce, next_counter = generate_nonce_with_counter(41)
+
+    assert next_counter == 42
+    assert len(nonce) == protocol.AEAD_NONCE_SIZE
+    assert extract_nonce_counter(nonce) == next_counter
+
+    raw_frame = build_frame(
+        command_id=cmd_id,
+        sequence_id=seq_id,
         payload=payload,
-        key=key,
-        counter=counter_val,
-    )
-
-    decrypted_payload = aead_decrypt_frame(
-        cmd_id=cmd_id,
-        seq_id=seq_id,
-        ciphertext=ciphertext,
-        key=key,
         nonce=nonce,
-        tag=tag,
+        session_key=key,
     )
+    decoded = parse_frame(raw_frame, session_key=key)
 
-    assert decrypted_payload == payload
+    assert decoded.payload == payload
 
-    corrupted_nonce = b"BAD" + nonce[3:]
-    with pytest.raises((ValueError, SecurityError)):
-        aead_decrypt_frame(
-            cmd_id=cmd_id,
-            seq_id=seq_id,
-            ciphertext=ciphertext,
-            key=key,
-            nonce=corrupted_nonce,
-            tag=tag,
-        )
+    is_valid, updated_counter = validate_nonce_counter(nonce, 41)
+    assert is_valid
+    assert updated_counter == next_counter
+
+    replay_valid, replay_counter = validate_nonce_counter(nonce, next_counter)
+    assert not replay_valid
+    assert replay_counter == next_counter
+
+    malformed_valid, malformed_counter = validate_nonce_counter(nonce[:-1], 41)
+    assert not malformed_valid
+    assert malformed_counter == 41
 
 
 def test_security_nonce_overflow_boundary_public_api() -> None:
-    """
-    Verifies nonce counter upper boundary (2^64 - 1) and rejection of
-    overflowed values via the public encryption API.
-    """
-    key = b"\x1a" * 32
-    cmd_id = 0x0002
-    seq_id = 0x0001
-    payload = b"BOUNDARY_TEST"
+    """Verify the final representable counter is emitted and the next one is rejected."""
+    nonce, next_counter = generate_nonce_with_counter(protocol.NONCE_COUNTER_MASK - 1)
 
-    _, nonce, _ = aead_encrypt_frame(
-        cmd_id=cmd_id,
-        seq_id=seq_id,
-        payload=payload,
-        key=key,
-        counter=NONCE_COUNTER_MASK,
-    )
-    assert len(nonce) == RPC_AEAD_NONCE_SIZE
-
-    extracted_counter = struct.unpack(">Q", nonce[4:12])[0]
-    assert extracted_counter == NONCE_COUNTER_MASK
+    assert next_counter == protocol.NONCE_COUNTER_MASK
+    assert len(nonce) == protocol.AEAD_NONCE_SIZE
+    assert extract_nonce_counter(nonce) == protocol.NONCE_COUNTER_MASK
 
     with pytest.raises(ValueError, match="Nonce counter overflow"):
-        aead_encrypt_frame(
-            cmd_id=cmd_id,
-            seq_id=seq_id,
-            payload=payload,
-            key=key,
-            counter=NONCE_COUNTER_MASK + 1,
-        )
+        generate_nonce_with_counter(protocol.NONCE_COUNTER_MASK)
 
 
-def test_security_manager_replay_attack_prevention() -> None:
-    """
-    Verifies that SecurityManager prevents replay attacks for old or repeated
-    nonces during normal incoming frame decryption.
-    """
-    secret = b"SECRET_KEY_EXHAUSTIVE_TEST_32B"
-    sec_mgr = SecurityManager(secret=secret)
-    session_key = b"\x2b" * 32
-    sec_mgr.set_session_key(session_key)
+def test_security_nonce_monotonic_sequence_public_api() -> None:
+    """Verify increasing counters pass while repeated and older counters fail."""
+    nonce_100, counter_100 = generate_nonce_with_counter(99)
+    nonce_101, counter_101 = generate_nonce_with_counter(counter_100)
 
-    cmd_id = 0x0003
-    seq_id = 0x0001
-    payload = b"REPLAY_PREVENTION_TEST"
+    assert counter_100 == 100
+    assert counter_101 == 101
 
-    ct1, nonce1, tag1 = aead_encrypt_frame(
-        cmd_id=cmd_id, seq_id=seq_id, payload=payload, key=session_key, counter=100
-    )
-    ct2, nonce2, tag2 = aead_encrypt_frame(
-        cmd_id=cmd_id, seq_id=seq_id, payload=payload, key=session_key, counter=101
-    )
+    first_valid, first_counter = validate_nonce_counter(nonce_100, 0)
+    assert first_valid
+    assert first_counter == counter_100
 
-    res1 = sec_mgr.decrypt_incoming_frame(
-        cmd_id=cmd_id, seq_id=seq_id, ciphertext=ct1, nonce=nonce1, tag=tag1
-    )
-    assert res1 == payload
+    second_valid, second_counter = validate_nonce_counter(nonce_101, first_counter)
+    assert second_valid
+    assert second_counter == counter_101
 
-    res2 = sec_mgr.decrypt_incoming_frame(
-        cmd_id=cmd_id, seq_id=seq_id, ciphertext=ct2, nonce=nonce2, tag=tag2
-    )
-    assert res2 == payload
+    replay_valid, replay_counter = validate_nonce_counter(nonce_100, second_counter)
+    assert not replay_valid
+    assert replay_counter == second_counter
 
-    with pytest.raises(SecurityError):
-        sec_mgr.decrypt_incoming_frame(
-            cmd_id=cmd_id, seq_id=seq_id, ciphertext=ct1, nonce=nonce1, tag=tag1
-        )
+
+def test_security_crypto_integrity_public_api() -> None:
+    """Verify the cryptographic Known Answer Tests remain green."""
+    assert verify_crypto_integrity()

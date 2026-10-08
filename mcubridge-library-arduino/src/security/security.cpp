@@ -18,10 +18,6 @@
 #include "../protocol/rpc_structs.h"
 #include "pb_encode.h"
 
-#ifndef RPC_NONCE_COUNTER_MASK
-#define RPC_NONCE_COUNTER_MASK 0xFFFFFFFFFFFFFFFFULL
-#endif
-
 namespace rpc {
 namespace security {
 
@@ -42,10 +38,12 @@ bool handshake_authenticate(etl::span<const uint8_t> secret,
   // Validar que el secreto no esté vacío y que el buffer de salida sea
   // suficiente
   if (secret.empty() || out_tag.size() < rpc::RPC_HANDSHAKE_TAG_LENGTH) {
+    etl::fill(out_tag.begin(), out_tag.end(), 0U);
     return false;
   }
 
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH> handshake_key = {};
+  etl::array<uint8_t, rpc::RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH> hmac_tag = {};
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_HKDF_SALT.size()> salt;
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH.size()> info;
 #if defined(__AVR__) || defined(ARDUINO_ARCH_AVR)
@@ -75,21 +73,25 @@ bool handshake_authenticate(etl::span<const uint8_t> secret,
                     rpc::RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH) != 0 ||
       wc_HmacUpdate(&hmac_engine, nonce.data(),
                     static_cast<word32>(nonce.size())) != 0 ||
-      wc_HmacFinal(&hmac_engine, out_tag.data()) != 0) {
+      wc_HmacFinal(&hmac_engine, hmac_tag.data()) != 0) {
     secure_zero(etl::span<uint8_t>(handshake_key.data(), handshake_key.size()));
+    secure_zero(etl::span<uint8_t>(hmac_tag.data(), hmac_tag.size()));
+    etl::fill(out_tag.begin(), out_tag.end(), 0U);
     return false;
   }
 
+  etl::copy_n(hmac_tag.begin(), rpc::RPC_HANDSHAKE_TAG_LENGTH, out_tag.begin());
   bool tag_ok = true;
   if (!received_tag.empty()) {
     if (received_tag.size() != rpc::RPC_HANDSHAKE_TAG_LENGTH) {
       tag_ok = false;
     } else {
-      tag_ok = constant_time_equal(out_tag.data(), received_tag.data(),
+      tag_ok = constant_time_equal(hmac_tag.data(), received_tag.data(),
                                    rpc::RPC_HANDSHAKE_TAG_LENGTH);
     }
   }
   secure_zero(etl::span<uint8_t>(handshake_key.data(), handshake_key.size()));
+  secure_zero(etl::span<uint8_t>(hmac_tag.data(), hmac_tag.size()));
   return tag_ok;
 }
 
@@ -97,6 +99,7 @@ void derive_session_key(etl::span<const uint8_t> secret,
                         etl::span<const uint8_t> nonce,
                         etl::span<uint8_t> out_key) {
   if (secret.empty() || out_key.size() < rpc::RPC_AEAD_KEY_SIZE) {
+    secure_zero(out_key);
     return;
   }
 
@@ -150,7 +153,7 @@ bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
 
   // Prevenir desbordamiento (wrap-around) del contador de 64 bits
   if (nonce_counter) {
-    if (*nonce_counter >= RPC_NONCE_COUNTER_MASK) {
+    if (*nonce_counter >= rpc::RPC_NONCE_COUNTER_MASK) {
       return false;  // Abortar cifrado para evitar reutilizar Nonce
     }
     (*nonce_counter)++;
@@ -212,16 +215,7 @@ bool validate_frame_nonce(etl::span<const uint8_t> nonce,
     return false;
   }
 
-  // Validar estructura básica del Nonce: [0..2] = Prefijo ("MPU" o "MCU")
-  const bool is_mpu_prefix =
-      (nonce[0] == 'M' && nonce[1] == 'P' && nonce[2] == 'U');
-  const bool is_mcu_prefix =
-      (nonce[0] == 'M' && nonce[1] == 'C' && nonce[2] == 'U');
-
-  if (!is_mpu_prefix && !is_mcu_prefix) {
-    return false;
-  }
-
+  // El MPU usa un prefijo aleatorio; solo el sufijo contiene el contador.
   const auto nonce_sub = nonce.subspan(4);
   etl::byte_stream_reader n_reader(nonce_sub.data(), nonce_sub.size(),
                                    etl::endian::big);

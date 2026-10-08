@@ -71,12 +71,12 @@ class LocalBridgeService(LocalBridgeBase):
     async def execute_set_pin_mode(self, req: pb.PinMode) -> pb.GenericResponse:
         serial = self.runtime_service.serial
         res = (await serial.send(Command.CMD_SET_PIN_MODE.value, req)) if serial else None
-        return pb.GenericResponse(status="ok" if res is not None else "error")
+        return pb.GenericResponse(status="ok" if res is not None and res is not False else "error")
 
     async def execute_digital_write(self, req: pb.DigitalWrite) -> pb.GenericResponse:
         serial = self.runtime_service.serial
         res = (await serial.send(Command.CMD_DIGITAL_WRITE.value, req)) if serial else None
-        return pb.GenericResponse(status="ok" if res is not None else "error")
+        return pb.GenericResponse(status="ok" if res is not None and res is not False else "error")
 
     async def execute_digital_read(self, req: pb.PinRead) -> pb.DigitalReadResponse:
         serial = self.runtime_service.serial
@@ -86,7 +86,7 @@ class LocalBridgeService(LocalBridgeBase):
     async def execute_analog_write(self, req: pb.AnalogWrite) -> pb.GenericResponse:
         serial = self.runtime_service.serial
         res = (await serial.send(Command.CMD_ANALOG_WRITE.value, req)) if serial else None
-        return pb.GenericResponse(status="ok" if res is not None else "error")
+        return pb.GenericResponse(status="ok" if res is not None and res is not False else "error")
 
     async def execute_analog_read(self, req: pb.PinRead) -> pb.AnalogReadResponse:
         serial = self.runtime_service.serial

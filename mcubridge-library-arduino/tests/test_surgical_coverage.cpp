@@ -27,6 +27,24 @@ void handle_error(const etl::exception& e);
 
 using bridge::test::TestAccessor;
 
+size_t inject_serial_frame(BiStream& stream,
+                           const rpc_pb_RpcEnvelope& envelope) {
+  etl::array<uint8_t, rpc::MAX_FRAME_SIZE> raw_frame = {};
+  const size_t raw_frame_size = rpc::serialize_frame(envelope, raw_frame);
+  if (raw_frame_size == 0U) return 0U;
+
+  etl::array<uint8_t, rpc::MAX_FRAME_SIZE + 16U> encoded_frame = {};
+  const size_t encoded_size =
+      TestCOBS::encode(raw_frame.data(), raw_frame_size, encoded_frame.data());
+  if (encoded_size == 0U) return 0U;
+
+  stream.feed(encoded_frame.data(), encoded_size);
+  const uint8_t delimiter = rpc::RPC_FRAME_DELIMITER;
+  stream.feed(&delimiter, 1U);
+  Bridge.process();
+  return encoded_size;
+}
+
 void setUp(void) {}
 void tearDown(void) {}
 
@@ -216,24 +234,75 @@ void test_surgical_authenticated_digital_write_frame() {
       command_id, sequence_id,
       etl::span<const uint8_t>(ciphertext.data(), payload_stream.bytes_written),
       nonce, tag);
-  etl::array<uint8_t, rpc::MAX_FRAME_SIZE> raw_frame = {};
-  const size_t raw_frame_size = rpc::serialize_frame(envelope, raw_frame);
-  TEST_ASSERT_TRUE(raw_frame_size > 0U);
-
-  etl::array<uint8_t, rpc::MAX_FRAME_SIZE + 16U> encoded_frame = {};
-  const size_t encoded_size =
-      TestCOBS::encode(raw_frame.data(), raw_frame_size, encoded_frame.data());
-  TEST_ASSERT_TRUE(encoded_size > 0U);
-  stream.feed(encoded_frame.data(), encoded_size);
-  const uint8_t delimiter = rpc::RPC_FRAME_DELIMITER;
-  stream.feed(&delimiter, 1U);
-
-  Bridge.process();
-
+  const size_t injected_size = inject_serial_frame(stream, envelope);
+  TEST_ASSERT_TRUE(injected_size > 0U);
   TEST_ASSERT_TRUE(Bridge.isSynchronized());
   TEST_ASSERT_EQUAL_UINT8(OUTPUT, g_arduino_stub_pin_states[13U].mode);
   TEST_ASSERT_EQUAL_UINT8(HIGH, g_arduino_stub_pin_states[13U].value);
   TEST_ASSERT_TRUE(stream.tx_buf.len > 0U);
+}
+
+void test_surgical_receive_security_gate_variants() {
+  static BiStream stream;
+  stream.clear();
+  resetArduinoStubPinStates();
+  reset_bridge_core(Bridge, stream, 0U, nullptr);
+  auto& no_secret_bridge = TestAccessor::create(Bridge);
+  no_secret_bridge.setSynchronized();
+
+  rpc_pb_DigitalWrite plaintext_write = rpc_pb_DigitalWrite_init_default;
+  plaintext_write.pin = 13U;
+  plaintext_write.value = 1U;
+  rpc_pb_RpcEnvelope plaintext_envelope = rpc_pb_RpcEnvelope_init_zero;
+  plaintext_envelope.version = rpc::PROTOCOL_VERSION;
+  plaintext_envelope.command_id =
+      rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE);
+  plaintext_envelope.sequence_id = 952U;
+  rpc::Payload::set<rpc_pb_DigitalWrite>(plaintext_envelope, plaintext_write);
+
+  const size_t plaintext_size = inject_serial_frame(stream, plaintext_envelope);
+  TEST_ASSERT_TRUE(plaintext_size > 0U);
+  TEST_ASSERT_EQUAL_UINT8(OUTPUT, g_arduino_stub_pin_states[13U].mode);
+  TEST_ASSERT_EQUAL_UINT8(HIGH, g_arduino_stub_pin_states[13U].value);
+
+  stream.clear();
+  resetArduinoStubPinStates();
+  reset_bridge_core(Bridge, stream);
+  const uint8_t rejected_pin_mode_before = g_arduino_stub_pin_states[14U].mode;
+  const uint8_t rejected_pin_value_before =
+      g_arduino_stub_pin_states[14U].value;
+  rpc_pb_DigitalWrite rejected_write = rpc_pb_DigitalWrite_init_default;
+  rejected_write.pin = 14U;
+  rejected_write.value = 1U;
+  rpc_pb_RpcEnvelope rejected_envelope = rpc_pb_RpcEnvelope_init_zero;
+  rejected_envelope.version = rpc::PROTOCOL_VERSION;
+  rejected_envelope.command_id =
+      rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE);
+  rejected_envelope.sequence_id = 953U;
+  rpc::Payload::set<rpc_pb_DigitalWrite>(rejected_envelope, rejected_write);
+
+  const size_t rejected_size = inject_serial_frame(stream, rejected_envelope);
+  TEST_ASSERT_TRUE(rejected_size > 0U);
+  TEST_ASSERT_FALSE(Bridge.isSynchronized());
+  TEST_ASSERT_EQUAL_UINT8(rejected_pin_mode_before,
+                          g_arduino_stub_pin_states[14U].mode);
+  TEST_ASSERT_EQUAL_UINT8(rejected_pin_value_before,
+                          g_arduino_stub_pin_states[14U].value);
+  TEST_ASSERT_TRUE(stream.tx_buf.len > 0U);
+
+  stream.clear();
+  reset_bridge_core(Bridge, stream);
+  auto& system_bridge = TestAccessor::create(Bridge);
+  system_bridge.setSynchronized();
+  rpc_pb_RpcEnvelope reset_envelope = rpc_pb_RpcEnvelope_init_zero;
+  reset_envelope.version = rpc::PROTOCOL_VERSION;
+  reset_envelope.command_id =
+      rpc::to_underlying(rpc::CommandId::CMD_LINK_RESET);
+  reset_envelope.sequence_id = 954U;
+
+  const size_t reset_size = inject_serial_frame(stream, reset_envelope);
+  TEST_ASSERT_TRUE(reset_size > 0U);
+  TEST_ASSERT_FALSE(Bridge.isSynchronized());
 }
 
 void test_surgical_tasks_flow() {
@@ -938,6 +1007,7 @@ int main() {
   RUN_TEST(test_surgical_link_reset_payload_paths);
   RUN_TEST(test_surgical_security_failures);
   RUN_TEST(test_surgical_authenticated_digital_write_frame);
+  RUN_TEST(test_surgical_receive_security_gate_variants);
   RUN_TEST(test_surgical_tasks_flow);
   RUN_TEST(test_surgical_serial_flow_control_hysteresis);
   RUN_TEST(test_surgical_send_fail_branches);

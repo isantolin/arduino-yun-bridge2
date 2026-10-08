@@ -12,7 +12,6 @@ from elftools.elf.sections import SymbolTableSection
 
 import typer
 
-
 BOARD_LABELS = {
     "arduino-avr-mega": "Arduino Mega 2560",
     "arduino-samd-mkrwifi1010": "Arduino MKR WiFi 1010",
@@ -103,10 +102,7 @@ def profile_elf(build_dir: Path, elf_path: Path) -> str:
     board = detect_board_label(build_dir, elf_path)
     symbols = extract_symbols(elf_path)
     if not symbols:
-        return (
-            f"#### 🔍 Symbol Profiling (pyelftools): {elf_path.name} ({board})\n\n"
-            "_No symbols found._\n"
-        )
+        return f"#### 🔍 Symbol Profiling (pyelftools): {elf_path.name} ({board})\n\n_No symbols found._\n"
     formatted = "\n".join(symbols)
     return f"#### 🔍 Symbol Profiling (pyelftools): {elf_path.name} ({board})\n\n{formatted}\n"
 

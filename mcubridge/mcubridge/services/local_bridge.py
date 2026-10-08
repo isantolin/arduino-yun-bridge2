@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import secrets
 from collections.abc import Callable, Coroutine
 from typing import TYPE_CHECKING, Any, Final
@@ -368,6 +369,28 @@ class LocalBridgeService(LocalBridgeBase):
                 self.runtime_service.console_queues.remove(queue)
 
 
+def _rpc_handler_name(method_name: str) -> str:
+    return f"execute_{re.sub(r'(?<!^)(?=[A-Z])', '_', method_name).lower()}"
+
+
+def _build_rpc_dispatch_table() -> dict[
+    str,
+    tuple[
+        type[ProtobufMessage],
+        Callable[[LocalBridgeService, Any], Coroutine[Any, Any, ProtobufMessage]],
+    ],
+]:
+    methods = pb.DESCRIPTOR.services_by_name["LocalBridge"].methods
+    return {
+        method.name: (
+            getattr(pb, method.input_type.name),
+            getattr(LocalBridgeService, _rpc_handler_name(method.name)),
+        )
+        for method in methods
+        if not method.client_streaming and not method.server_streaming
+    }
+
+
 RPC_DISPATCH_TABLE: Final[
     dict[
         str,
@@ -376,27 +399,4 @@ RPC_DISPATCH_TABLE: Final[
             Callable[[LocalBridgeService, Any], Coroutine[Any, Any, ProtobufMessage]],
         ],
     ]
-] = {
-    "SetPinMode": (pb.PinMode, LocalBridgeService.execute_set_pin_mode),
-    "DigitalWrite": (pb.DigitalWrite, LocalBridgeService.execute_digital_write),
-    "DigitalRead": (pb.PinRead, LocalBridgeService.execute_digital_read),
-    "AnalogWrite": (pb.AnalogWrite, LocalBridgeService.execute_analog_write),
-    "AnalogRead": (pb.PinRead, LocalBridgeService.execute_analog_read),
-    "PinSubscribe": (pb.PinSubscribeRequest, LocalBridgeService.execute_pin_subscribe),
-    "DatastorePut": (pb.DatastorePut, LocalBridgeService.execute_datastore_put),
-    "DatastoreGet": (pb.DatastoreGet, LocalBridgeService.execute_datastore_get),
-    "MailboxPush": (pb.MailboxPush, LocalBridgeService.execute_mailbox_push),
-    "MailboxRead": (pb.SubscribeRequest, LocalBridgeService.execute_mailbox_read),
-    "FileWrite": (pb.FileWrite, LocalBridgeService.execute_file_write),
-    "FileRead": (pb.FileRead, LocalBridgeService.execute_file_read),
-    "FileRemove": (pb.FileRemove, LocalBridgeService.execute_file_remove),
-    "ProcessRunAsync": (pb.ProcessRunAsync, LocalBridgeService.execute_process_run_async),
-    "ProcessPoll": (pb.ProcessPoll, LocalBridgeService.execute_process_poll),
-    "ProcessKill": (pb.ProcessKill, LocalBridgeService.execute_process_kill),
-    "SpiTransfer": (pb.SpiTransfer, LocalBridgeService.execute_spi_transfer),
-    "SpiConfigure": (pb.SpiConfig, LocalBridgeService.execute_spi_configure),
-    "GetVersion": (pb.SubscribeRequest, LocalBridgeService.execute_get_version),
-    "GetFreeMemory": (pb.SubscribeRequest, LocalBridgeService.execute_get_free_memory),
-    "GetStatus": (pb.SubscribeRequest, LocalBridgeService.execute_get_status),
-    "Publish": (pb.CloudQueuedPublish, LocalBridgeService.execute_publish),
-}
+] = _build_rpc_dispatch_table()

@@ -13,6 +13,7 @@ from grpclib.server import Stream
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol.protocol import Command
+from mcubridge.services.local_bridge import RPC_DISPATCH_TABLE
 from mcubridge.services.runtime import BridgeService, LocalBridgeService
 from mcubridge.state.context import ProcessContext, create_runtime_state
 
@@ -39,6 +40,20 @@ def _make_mock_stream(req_msg: object) -> MagicMock:
     stream.recv_message = AsyncMock(return_value=req_msg)
     stream.send_message = AsyncMock()
     return stream
+
+
+def test_rpc_dispatch_table_matches_unary_service_descriptor() -> None:
+    methods = pb.DESCRIPTOR.services_by_name["LocalBridge"].methods
+    unary_methods = {
+        method.name: method for method in methods if not method.client_streaming and not method.server_streaming
+    }
+
+    assert set(RPC_DISPATCH_TABLE) == set(unary_methods)
+    assert "SubscribeConsole" not in RPC_DISPATCH_TABLE
+    for name, method in unary_methods.items():
+        request_type, handler = RPC_DISPATCH_TABLE[name]
+        assert request_type.DESCRIPTOR.full_name == method.input_type.full_name
+        assert callable(handler)
 
 
 @pytest.mark.asyncio

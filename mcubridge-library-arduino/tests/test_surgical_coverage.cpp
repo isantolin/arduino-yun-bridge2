@@ -576,8 +576,9 @@ static void test_surgical_extra_branches() {
     env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_SPI_SET_CONFIG);
     env.sequence_id = 46;
     env.which_payload_type = rpc_pb_RpcEnvelope_spi_config_tag;
-    env.payload_type.spi_config.bit_order = 0U;
-    env.payload_type.spi_config.data_mode = 0U;
+    env.payload_type.spi_config.bit_order =
+        rpc_pb_SpiBitOrder_SPI_BIT_ORDER_LSB_FIRST;
+    env.payload_type.spi_config.data_mode = rpc_pb_SpiDataMode_SPI_DATA_MODE_0;
     ba.dispatch(env);
   }
 
@@ -670,8 +671,9 @@ static void test_surgical_extra_branches() {
     env.sequence_id = 80;
     env.which_payload_type = rpc_pb_RpcEnvelope_spi_config_tag;
     env.payload_type.spi_config.frequency = 1000000;
-    env.payload_type.spi_config.bit_order = MSBFIRST;
-    env.payload_type.spi_config.data_mode = SPI_MODE0;
+    env.payload_type.spi_config.bit_order =
+        rpc_pb_SpiBitOrder_SPI_BIT_ORDER_MSB_FIRST;
+    env.payload_type.spi_config.data_mode = rpc_pb_SpiDataMode_SPI_DATA_MODE_0;
     ba.dispatch(env);
 
     env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_SPI_BEGIN);

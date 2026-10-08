@@ -217,8 +217,8 @@ void test_all_structs_roundtrip() {
   test_roundtrip([]() {
     rpc::payload::SpiConfig p = {};
     p.frequency = 1;
-    p.bit_order = 2;
-    p.data_mode = 3;
+    p.bit_order = rpc_pb_SpiBitOrder_SPI_BIT_ORDER_MSB_FIRST;
+    p.data_mode = rpc_pb_SpiDataMode_SPI_DATA_MODE_3;
     return p;
   }());
   TEST_ASSERT_TRUE(count > 0);

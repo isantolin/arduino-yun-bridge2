@@ -10,7 +10,7 @@ from typing import Annotated
 
 import structlog
 import typer
-from mcubridge_client import Topic, pb
+from mcubridge_client import CLOUD_DEFAULT_TOPIC_PREFIX, Topic, pb
 from mcubridge_client.cli import bridge_session, configure_logging
 
 configure_logging()
@@ -21,10 +21,10 @@ async def run_test(
     host: str | None = None,
     port: int | None = None,
     device_id: str | None = None,
-    topic_prefix: str = "br",
+    topic_prefix: str = CLOUD_DEFAULT_TOPIC_PREFIX,
 ) -> None:
 
-    async with bridge_session(host=host, port=port, device_id=device_id, topic_prefix=topic_prefix) as (_channel, stub):
+    async with bridge_session(host=host, port=port, device_id=device_id) as (_channel, stub):
 
         async def console_listener() -> None:
             try:
@@ -77,7 +77,7 @@ def main(
     host: str | None = None,
     port: int | None = None,
     device_id: str | None = None,
-    topic_prefix: str = "br",
+    topic_prefix: str = CLOUD_DEFAULT_TOPIC_PREFIX,
 ) -> None:
     asyncio.run(run_test(host, port, device_id, topic_prefix))
 
@@ -90,7 +90,7 @@ def cli_main(
     host: Annotated[str | None, typer.Option("--host", help="Cloud Gateway host")] = None,
     port: Annotated[int | None, typer.Option("--port", help="Cloud Gateway port")] = None,
     device_id: Annotated[str | None, typer.Option("--device-id", help="Target device ID")] = None,
-    topic_prefix: Annotated[str, typer.Option("--topic-prefix", help="Topic prefix")] = "br",
+    topic_prefix: Annotated[str, typer.Option("--topic-prefix", help="Topic prefix")] = CLOUD_DEFAULT_TOPIC_PREFIX,
 ) -> None:
     main(host, port, device_id, topic_prefix)
 

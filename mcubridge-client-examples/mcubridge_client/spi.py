@@ -6,8 +6,8 @@ from collections.abc import Sequence
 from typing import cast
 
 from . import mcubridge_pb2 as pb
-from .definitions import SpiBitOrder, SpiMode
 from .mcubridge_grpc import LocalBridgeStub
+from .protocol import SpiBitOrder, SpiDataMode
 
 SpiBuffer = bytes | bytearray | Sequence[int]
 
@@ -23,15 +23,13 @@ class SpiDevice:
         self,
         stub: LocalBridgeStub,
         frequency: int = 4000000,
-        bit_order: SpiBitOrder = SpiBitOrder.MSBFIRST,
-        mode: SpiMode = SpiMode.MODE0,
-        topic_prefix: str = "br",
+        bit_order: SpiBitOrder = SpiBitOrder.SPI_BIT_ORDER_MSB_FIRST,
+        mode: SpiDataMode = SpiDataMode.SPI_DATA_MODE_0,
     ):
         self._stub = stub
         self._frequency = frequency
         self._bit_order = bit_order
         self._mode = mode
-        self._topic_prefix = topic_prefix
         self._active = False
 
     async def __aenter__(self) -> SpiDevice:
@@ -78,7 +76,7 @@ class SpiDevice:
         return self._bit_order
 
     @property
-    def mode(self) -> SpiMode:
+    def mode(self) -> SpiDataMode:
         return self._mode
 
     @property

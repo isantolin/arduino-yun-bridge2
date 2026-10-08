@@ -223,8 +223,8 @@ void test_dispatch_valid_payload_handlers_unique_seq() {
       []() {
         rpc::payload::SpiConfig p;
         p.frequency = 1000000;
-        p.bit_order = 1;
-        p.data_mode = 0;
+        p.bit_order = rpc_pb_SpiBitOrder_SPI_BIT_ORDER_MSB_FIRST;
+        p.data_mode = rpc_pb_SpiDataMode_SPI_DATA_MODE_0;
         return p;
       }(),
       buf);

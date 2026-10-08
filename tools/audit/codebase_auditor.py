@@ -6,11 +6,13 @@ using Semgrep declarative analysis, strict config suppression audits, and Protob
 
 from __future__ import annotations
 
+import io
 import json
 from pathlib import Path
 import re
 import shutil
 import subprocess
+import tokenize
 from typing import cast
 
 import typer
@@ -149,6 +151,106 @@ def audit_proto_integrity(proto_path: Path | None = None) -> list[str]:
     ]
 
 
+def audit_proto_usage() -> list[str]:
+    """Find generated constants and enum values with no source or test references."""
+    from mcubridge.protocol import mcubridge_pb2 as pb
+
+    source_roots = (
+        ROOT / "mcubridge" / "mcubridge",
+        ROOT / "mcubridge" / "tests",
+        ROOT / "mcubridge-client-examples",
+        ROOT / "mcubridge-gateway",
+        ROOT / "mcubridge-library-arduino",
+        ROOT / "luci-app-mcubridge",
+        ROOT / "tools",
+    )
+    source_suffixes = {".py", ".pyi", ".h", ".hpp", ".cpp", ".c", ".ino", ".js", ".uc", ".sh", ".j2"}
+    ignored_parts = {
+        ".git",
+        ".tox",
+        ".tmp_tests",
+        ".venv",
+        "build",
+        "coverage",
+        "dist",
+        "node_modules",
+        "openwrt-sdk",
+        "__pycache__",
+    }
+    generated_names = {
+        "config_schema.json",
+        "defaults.sh",
+        "mcubridge.pb.c",
+        "mcubridge.pb.h",
+        "rpc_hw_config.h",
+        "rpc_protocol.h",
+        "rpc_structs.h",
+    }
+    identifiers: set[str] = set()
+    for source_root in source_roots:
+        if not source_root.exists():
+            continue
+        for path in source_root.rglob("*"):
+            if (
+                not path.is_file()
+                or path.suffix not in source_suffixes
+                or ignored_parts.intersection(path.parts)
+                or path.name in generated_names
+                or path.name.endswith(("_pb2.py", "_pb2.pyi", "_grpc.py"))
+                or (path.name == "protocol.py" and path.parent.name in {"protocol", "mcubridge_client"})
+            ):
+                continue
+            content = path.read_text(encoding="utf-8")
+            if path.suffix in {".py", ".pyi"}:
+                identifiers.update(
+                    token.string
+                    for token in tokenize.generate_tokens(io.StringIO(content).readline)
+                    if token.type == tokenize.NAME
+                )
+            else:
+                content_without_comments = re.sub(r"/\*.*?\*/|//[^\n]*", " ", content, flags=re.DOTALL)
+                identifiers.update(re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", content_without_comments))
+
+    identifier_suffixes = identifiers.copy()
+    for token in identifiers:
+        identifier_suffixes.update(
+            token[index + 1 :] for index, character in enumerate(token) if character == "_"
+        )
+
+    def is_referenced(name: str) -> bool:
+        return name in identifier_suffixes
+
+    findings: list[str] = []
+    file_options = pb.DESCRIPTOR.GetOptions()
+    constants = file_options.Extensions[pb.constants]
+    config_references = {
+        field.GetOptions().Extensions[pb.config_default_ref].partition(".")[2]
+        for field in pb.RuntimeConfig.DESCRIPTOR.fields
+        if field.GetOptions().HasExtension(pb.config_default_ref)
+        and field.GetOptions().Extensions[pb.config_default_ref].startswith("constants.")
+    }
+
+    for field_desc in pb.Constants.DESCRIPTOR.fields:
+        options = field_desc.GetOptions()
+        names = {
+            field_desc.name,
+            options.Extensions[pb.py_name],
+            options.Extensions[pb.cpp_name],
+        }
+        if field_desc.name not in config_references and not any(name and is_referenced(name) for name in names):
+            findings.append(f"Unused Protobuf constant: Constants.{field_desc.name}={getattr(constants, field_desc.name)}")
+
+    reflected_enum_names = {"Command", "Status"}
+    for enum_desc in pb.DESCRIPTOR.enum_types_by_name.values():
+        if enum_desc.name in reflected_enum_names:
+            continue
+        for value_desc in enum_desc.values:
+            if not is_referenced(value_desc.name):
+                findings.append(f"Unused Protobuf enum value: {enum_desc.name}.{value_desc.name}")
+
+    return findings
+
+
 def audit_arduino_sketches() -> list[str]:
     """Audit reference Arduino .ino sketches for bounded synchronization watchdog loop. [Rule 26]"""
     sketches = sorted((ROOT / "mcubridge-library-arduino" / "examples").glob("*/*.ino"))
@@ -166,7 +268,13 @@ app = typer.Typer(help="Audit codebase for SIL-2/MIL-SPEC violations and shims."
 @app.command()
 def main() -> None:
     """Execute Semgrep, config, protobuf, and sketch compliance audits."""
-    all_findings = audit_semgrep() + audit_config_suppressions() + audit_proto_integrity() + audit_arduino_sketches()
+    all_findings = (
+        audit_semgrep()
+        + audit_config_suppressions()
+        + audit_proto_integrity()
+        + audit_proto_usage()
+        + audit_arduino_sketches()
+    )
 
     print("\n--- RESULTS ---")
     if not all_findings:

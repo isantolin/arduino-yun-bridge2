@@ -5,36 +5,35 @@ from __future__ import annotations
 from grpclib.client import Channel as Channel
 
 from . import mcubridge_pb2
-from .definitions import (
-    SpiBitOrder as SpiBitOrder,
-)
-from .definitions import (
-    SpiMode as SpiMode,
-)
-from .definitions import (
-    build_bridge_args as build_bridge_args,
-)
-from .env import dump_client_env as dump_client_env
-from .mcubridge_grpc import LocalBridgeStub as LocalBridgeStub
-from .mcubridge_pb2 import CloudQueuedPublish as CloudQueuedPublish
+
+from .definitions import build_bridge_args
+from .env import dump_client_env
+from .mcubridge_grpc import LocalBridgeStub
+from .mcubridge_pb2 import CloudQueuedPublish
 from .protocol import (
-    Command as Command,
+    CLOUD_DEFAULT_TOPIC_PREFIX,
+    Command,
+    DEFAULT_CLOUD_HOST,
+    DEFAULT_CLOUD_PORT,
+    SpiBitOrder,
+    SpiDataMode,
+    Topic,
 )
-from .protocol import (
-    Topic as Topic,
-)
-from .spi import SpiDevice as SpiDevice
+from .spi import SpiDevice
 
 pb = mcubridge_pb2
 
 __all__ = [
     "Channel",
+    "CLOUD_DEFAULT_TOPIC_PREFIX",
     "CloudQueuedPublish",
     "Command",
+    "DEFAULT_CLOUD_HOST",
+    "DEFAULT_CLOUD_PORT",
     "LocalBridgeStub",
     "SpiBitOrder",
+    "SpiDataMode",
     "SpiDevice",
-    "SpiMode",
     "Topic",
     "build_bridge_args",
     "dump_client_env",

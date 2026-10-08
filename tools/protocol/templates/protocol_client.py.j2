@@ -11,6 +11,9 @@ from typing import Final
 {% for const in constants -%}
 {{ const.name }}: Final[{{ const.type }}] = {{ const.value }}
 {% endfor %}
+{% for const in client_runtime_config_constants -%}
+{{ const.name }}: Final[{{ const.type }}] = {% if const.type == 'str' %}{{ const.value|tojson }}{% else %}{{ const.value }}{% endif %}
+{% endfor %}
 CLOUD_DEFAULT_TOPIC_PREFIX: Final[str] = {{ cloud_defaults.default_topic_prefix|tojson }}
 
 # Capabilities
@@ -28,6 +31,17 @@ class Status(IntEnum):
 class Command(IntEnum):
     {%- for cmd in commands %}
     {{ cmd.name }} = {{ cmd.value }}  # {{ cmd.description|default('None', true)|wordwrap(80)|replace('\n', '\n    # ') }}
+    {%- endfor %}
+
+# SPI Enums
+class SpiBitOrder(IntEnum):
+    {%- for value in spi_bit_orders %}
+    {{ value.name }} = {{ value.value }}
+    {%- endfor %}
+
+class SpiDataMode(IntEnum):
+    {%- for value in spi_data_modes %}
+    {{ value.name }} = {{ value.value }}
     {%- endfor %}
 
 # CLOUD Topic Helpers

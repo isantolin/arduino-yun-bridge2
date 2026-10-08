@@ -164,8 +164,8 @@ void test_bridge_coverage() {
   SPIService.begin();
   rpc::payload::SpiConfig spi_cfg;
   spi_cfg.frequency = 1000000;
-  spi_cfg.bit_order = 1;
-  spi_cfg.data_mode = 0;
+  spi_cfg.bit_order = rpc_pb_SpiBitOrder_SPI_BIT_ORDER_MSB_FIRST;
+  spi_cfg.data_mode = rpc_pb_SpiDataMode_SPI_DATA_MODE_0;
   SPIService.setConfig(spi_cfg);
   uint8_t spi_buf[2] = {0, 0};
   SPIService.transfer(etl::span<uint8_t>(spi_buf, 2));

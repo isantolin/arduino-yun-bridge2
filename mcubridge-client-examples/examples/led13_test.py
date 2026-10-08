@@ -20,10 +20,9 @@ async def run_test(
     host: str | None = None,
     port: int | None = None,
     device_id: str | None = None,
-    topic_prefix: str = "br",
 ) -> None:
 
-    async with bridge_session(host=host, port=port, device_id=device_id, topic_prefix=topic_prefix) as (_channel, stub):
+    async with bridge_session(host=host, port=port, device_id=device_id) as (_channel, stub):
         logger.info("--- Starting LED Pin Control Test ---")
 
         logger.info("Turning built-in LED state", pin=led_builtin_pin, state="ON")
@@ -43,9 +42,8 @@ def main(
     host: str | None = None,
     port: int | None = None,
     device_id: str | None = None,
-    topic_prefix: str = "br",
 ) -> None:
-    asyncio.run(run_test(led_builtin_pin, host, port, device_id, topic_prefix))
+    asyncio.run(run_test(led_builtin_pin, host, port, device_id))
 
 
 cli = typer.Typer(help="Test generic pin control using direct LocalBridgeStub through Gateway.", add_completion=False)
@@ -59,9 +57,8 @@ def cli_main(
     device_id: Annotated[
         str | None, typer.Option("--device-id", help="Explicit target device ID", envvar="MCUBRIDGE_DEVICE_ID")
     ] = None,
-    topic_prefix: Annotated[str, typer.Option("--topic-prefix", help="Topic prefix")] = "br",
 ) -> None:
-    main(led_builtin_pin, host, port, device_id, topic_prefix)
+    main(led_builtin_pin, host, port, device_id)
 
 
 if __name__ == "__main__":

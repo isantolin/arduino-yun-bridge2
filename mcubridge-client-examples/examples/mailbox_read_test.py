@@ -19,11 +19,10 @@ async def run_test(
     host: str | None = None,
     port: int | None = None,
     device_id: str | None = None,
-    topic_prefix: str = "br",
     max_polls: int = 1,
 ) -> None:
 
-    async with bridge_session(host=host, port=port, device_id=device_id, topic_prefix=topic_prefix) as (_channel, stub):
+    async with bridge_session(host=host, port=port, device_id=device_id) as (_channel, stub):
         logger.info("--- Starting Mailbox Read Test ---")
 
         # --- Send phase ---
@@ -62,10 +61,9 @@ def main(
     host: str | None = None,
     port: int | None = None,
     device_id: str | None = None,
-    topic_prefix: str = "br",
     max_polls: int = 1,
 ) -> None:
-    asyncio.run(run_test(host, port, device_id, topic_prefix, max_polls))
+    asyncio.run(run_test(host, port, device_id, max_polls))
 
 
 cli = typer.Typer(
@@ -81,10 +79,9 @@ def cli_main(
     device_id: Annotated[
         str | None, typer.Option("--device-id", help="Explicit target device ID", envvar="MCUBRIDGE_DEVICE_ID")
     ] = None,
-    topic_prefix: Annotated[str, typer.Option("--topic-prefix", help="Topic prefix")] = "br",
     max_polls: Annotated[int, typer.Option("--max-polls", help="Max read attempts (0=infinite)")] = 1,
 ) -> None:
-    main(host, port, device_id, topic_prefix, max_polls)
+    main(host, port, device_id, max_polls)
 
 
 if __name__ == "__main__":

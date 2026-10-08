@@ -4,6 +4,8 @@ from collections.abc import Sequence
 from pathlib import Path
 import subprocess
 
+from google.protobuf import descriptor_pb2
+from google.protobuf import descriptor_pb2
 from google.protobuf.descriptor import FieldDescriptor
 import pytest
 from typer.testing import CliRunner
@@ -11,7 +13,7 @@ from typer.testing import CliRunner
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol import protocol
 from tools.audit import codebase_auditor
-from tools.audit.codebase_auditor import app, audit_proto_integrity
+from tools.audit.codebase_auditor import app, audit_proto_integrity, audit_proto_usage
 
 runner = CliRunner()
 
@@ -28,6 +30,10 @@ def test_audit_proto_integrity_clean() -> None:
     """SIL-2: Verify canonical mcubridge.proto contains zero dead or abandoned definitions."""
     findings = audit_proto_integrity()
     assert findings == []
+
+
+def test_audit_proto_usage_clean() -> None:
+    assert audit_proto_usage() == []
 
 
 def test_audit_proto_integrity_catches_buf_violations(tmp_path: Path) -> None:
@@ -131,12 +137,61 @@ def test_protobuf_descriptor_purged_elements() -> None:
     assert "aead_algorithm" not in handshake_fields
     assert "aead_description" not in handshake_fields
 
-    # 4. No dead constants
+    # 4. Retired constants are absent and their field numbers/names remain reserved.
     constant_fields = pb.Constants.DESCRIPTOR.fields_by_name
-    assert "default_serial_fallback_threshold" not in constant_fields
-    assert "cloud_expiry_shell" not in constant_fields
-    assert "cloud_expiry_default" not in constant_fields
+    retired_constants = {
+        "max_command_id",
+        "invalid_id_sentinel",
+        "rpc_null_terminator",
+        "rpc_command_stride",
+        "rpc_command_group_shift",
+        "rpc_command_group_offset",
+        "rpc_timer_overflow_threshold",
+        "process_default_exit_code",
+        "min_frame_size",
+        "crc_initial",
+        "crc_polynomial",
+        "digital_low",
+        "digital_high",
+        "gpio_command_min",
+        "gpio_command_max",
+        "console_command_min",
+        "console_command_max",
+        "datastore_command_min",
+        "datastore_command_max",
+        "mailbox_command_min",
+        "mailbox_command_max",
+        "filesystem_command_min",
+        "filesystem_command_max",
+        "process_command_min",
+        "process_command_max",
+        "spi_command_min",
+        "spi_command_max",
+        "default_reconnect_delay",
+        "clock_command_min",
+        "clock_command_max",
+    }
+    assert retired_constants.isdisjoint(constant_fields)
 
+    descriptor_file = descriptor_pb2.FileDescriptorProto()
+    descriptor_file.ParseFromString(file_desc.serialized_pb)
+    constants_proto = next(message for message in descriptor_file.message_type if message.name == "Constants")
+    reserved_constant_numbers = {
+        number for item in constants_proto.reserved_range for number in range(item.start, item.end)
+    }
+    expected_reserved_numbers = (
+        set(range(14, 21)) | {24, 27, 29, 31, 33, 34} | set(range(39, 54)) | {67, 68}
+    )
+    assert expected_reserved_numbers <= reserved_constant_numbers
+    assert retired_constants <= set(constants_proto.reserved_name)
+
+    channel_enum = next(enum for enum in descriptor_file.enum_type if enum.name == "ChannelId")
+    reserved_channel_numbers = {
+        number for item in channel_enum.reserved_range for number in range(item.start, item.end)
+    }
+    assert {1, 3} <= reserved_channel_numbers
+    assert {"CHANNEL_CONSOLE", "CHANNEL_DATA"} <= set(channel_enum.reserved_name)
+    assert {"CHANNEL_CONSOLE", "CHANNEL_DATA"}.isdisjoint(pb.ChannelId.DESCRIPTOR.values_by_name)
 
 def test_telemetry_routing_table_matches_schema_metadata() -> None:
     expected_map = {
@@ -179,6 +234,54 @@ def test_topic_aliases_match_schema_metadata() -> None:
     assert expected_aliases == protocol.TOPIC_ALIASES
 
 
+def test_runtime_config_defaults_reference_canonical_metadata() -> None:
+    fields = pb.RuntimeConfig.DESCRIPTOR.fields_by_name
+    expected_references = {
+        "serial_baud": "constants.default_baudrate",
+        "serial_safe_baud": "constants.default_safe_baudrate",
+        "cloud_port": "constants.default_cloud_port",
+        "topic_prefix": "cloud_defaults.default_topic_prefix",
+        "console_queue_limit_bytes": "constants.default_console_queue_limit_bytes",
+        "serial_handshake_fatal_failures": "constants.default_serial_handshake_fatal_failures",
+        "process_max_output_bytes": "constants.default_process_max_output_bytes",
+        "cloud_http3_port": "constants.default_cloud_port",
+    }
+    for field_name, reference in expected_references.items():
+        options = fields[field_name].GetOptions()
+        assert options.HasExtension(pb.config_default_ref)
+        assert options.Extensions[pb.config_default_ref] == reference
+        assert not options.HasExtension(pb.config_default)
+
+    assert protocol.RUNTIME_CONFIG_DEFAULTS["serial_baud"] == protocol.DEFAULT_BAUDRATE
+    assert protocol.RUNTIME_CONFIG_DEFAULTS["serial_safe_baud"] == protocol.DEFAULT_SAFE_BAUDRATE
+    assert protocol.RUNTIME_CONFIG_DEFAULTS["cloud_port"] == protocol.DEFAULT_CLOUD_PORT
+    assert protocol.RUNTIME_CONFIG_DEFAULTS["cloud_http3_port"] == protocol.DEFAULT_CLOUD_PORT
+    assert protocol.RUNTIME_CONFIG_DEFAULTS["topic_prefix"] == protocol.CLOUD_DEFAULT_TOPIC_PREFIX
+    assert protocol.RUNTIME_CONFIG_DEFAULTS["reconnect_delay"] == protocol.DEFAULT_RECONNECT_DELAY
+    assert protocol.RUNTIME_CONFIG_DEFAULTS["console_queue_limit_bytes"] == protocol.DEFAULT_CONSOLE_QUEUE_LIMIT_BYTES
+    assert (
+        protocol.RUNTIME_CONFIG_DEFAULTS["serial_handshake_fatal_failures"]
+        == protocol.DEFAULT_SERIAL_HANDSHAKE_FATAL_FAILURES
+    )
+    assert protocol.RUNTIME_CONFIG_DEFAULTS["process_max_output_bytes"] == protocol.DEFAULT_PROCESS_MAX_OUTPUT_BYTES
+
+
+def test_spi_config_uses_canonical_enums() -> None:
+    fields = pb.SpiConfig.DESCRIPTOR.fields_by_name
+    assert fields["bit_order"].type == FieldDescriptor.TYPE_ENUM
+    assert fields["bit_order"].enum_type is not None
+    assert fields["bit_order"].enum_type.name == "SpiBitOrder"
+    assert fields["data_mode"].type == FieldDescriptor.TYPE_ENUM
+    assert fields["data_mode"].enum_type is not None
+    assert fields["data_mode"].enum_type.name == "SpiDataMode"
+    assert {value.name: value.number for value in fields["data_mode"].enum_type.values} == {
+        "SPI_DATA_MODE_0": 0,
+        "SPI_DATA_MODE_1": 4,
+        "SPI_DATA_MODE_2": 8,
+        "SPI_DATA_MODE_3": 12,
+    }
+
+
 def test_rpc_envelope_strong_typing() -> None:
     """SIL-2: Verify RpcEnvelope channel_id and qos fields are bound to strongly-typed enums."""
     env_fields = pb.RpcEnvelope.DESCRIPTOR.fields_by_name
@@ -200,7 +303,7 @@ def test_rpc_envelope_strong_typing() -> None:
         version=2,
         command_id=0x01,
         sequence_id=0x0A,
-        channel_id=pb.ChannelId.CHANNEL_DATA,
+        channel_id=pb.ChannelId.CHANNEL_CONTROL,
         qos=pb.QosProfile.QOS_BEST_EFFORT,
     )
     serialized = envelope.SerializeToString()
@@ -211,7 +314,7 @@ def test_rpc_envelope_strong_typing() -> None:
     assert restored.version == 2
     assert restored.command_id == 0x01
     assert restored.sequence_id == 0x0A
-    assert restored.channel_id == pb.ChannelId.CHANNEL_DATA
+    assert restored.channel_id == pb.ChannelId.CHANNEL_CONTROL
     assert restored.qos == pb.QosProfile.QOS_BEST_EFFORT
 
 

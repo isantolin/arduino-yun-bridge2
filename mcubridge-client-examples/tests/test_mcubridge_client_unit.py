@@ -11,10 +11,11 @@ import structlog
 from hypothesis import given, settings
 from hypothesis import strategies as st
 from mcubridge_client import (
+    CLOUD_DEFAULT_TOPIC_PREFIX,
     LocalBridgeStub,
     SpiBitOrder,
+    SpiDataMode,
     SpiDevice,
-    SpiMode,
     build_bridge_args,
     dump_client_env,
     pb,
@@ -45,7 +46,6 @@ async def test_cli_bridge_session() -> None:
         host="127.0.0.1",
         port=8443,
         device_id="yun-01",
-        topic_prefix="br",
         channel_factory=lambda _h, _p: mock_chan,
     ) as (chan, stub):
         assert chan is mock_chan
@@ -110,12 +110,17 @@ def test_env_dump_client_env(capsys: pytest.CaptureFixture[str]) -> None:
 def test_definitions_build_bridge_args(monkeypatch: pytest.MonkeyPatch) -> None:
     """build_bridge_args builds dictionary targeting Gateway with explicit device_id."""
     monkeypatch.delenv("MCUBRIDGE_DEVICE_ID", raising=False)
-    args = build_bridge_args(host="127.0.0.1", port=8443, device_id="yun-01", topic_prefix="br")
+    args = build_bridge_args(
+        host="127.0.0.1",
+        port=8443,
+        device_id="yun-01",
+        topic_prefix=CLOUD_DEFAULT_TOPIC_PREFIX,
+    )
     assert args == {
         "host": "127.0.0.1",
         "port": 8443,
         "device_id": "yun-01",
-        "topic_prefix": "br",
+        "topic_prefix": CLOUD_DEFAULT_TOPIC_PREFIX,
     }
     # Explicit device_id is required: missing device_id raises ValueError
     with pytest.raises(ValueError, match="Explicit target device_id is required"):
@@ -133,11 +138,16 @@ async def test_spi_device_lifecycle_and_transfer() -> None:
 
     mock_stub.SpiTransfer = AsyncMock(side_effect=_mock_spi_transfer)
 
-    dev = SpiDevice(mock_stub, frequency=2000000, bit_order=SpiBitOrder.LSBFIRST, mode=SpiMode.MODE1)
+    dev = SpiDevice(
+        mock_stub,
+        frequency=2000000,
+        bit_order=SpiBitOrder.SPI_BIT_ORDER_LSB_FIRST,
+        mode=SpiDataMode.SPI_DATA_MODE_1,
+    )
 
     assert dev.frequency == 2000000
-    assert dev.bit_order == SpiBitOrder.LSBFIRST
-    assert dev.mode == SpiMode.MODE1
+    assert dev.bit_order == SpiBitOrder.SPI_BIT_ORDER_LSB_FIRST
+    assert dev.mode == SpiDataMode.SPI_DATA_MODE_1
 
     async with dev as active_dev:
         assert active_dev is dev
@@ -146,8 +156,8 @@ async def test_spi_device_lifecycle_and_transfer() -> None:
         # Verify protobuf SpiConfig payload was sent accurately
         cfg_pb = mock_stub.SpiConfigure.call_args[0][0]
         assert cfg_pb.frequency == 2000000
-        assert cfg_pb.bit_order == SpiBitOrder.LSBFIRST.value
-        assert cfg_pb.data_mode == SpiMode.MODE1.value
+        assert cfg_pb.bit_order == SpiBitOrder.SPI_BIT_ORDER_LSB_FIRST.value
+        assert cfg_pb.data_mode == SpiDataMode.SPI_DATA_MODE_1.value
 
         # Idempotent begin
         await dev.begin()
@@ -213,9 +223,9 @@ async def test_smoke_connection_run_test() -> None:
     mock_stub = MagicMock()
     mock_sess.return_value.__aenter__.return_value = (mock_chan, mock_stub)
     await test_smoke_connection.run_test(
-        host="127.0.0.1", port=8443, device_id="yun-01", topic_prefix="br", session_factory=mock_sess
+        host="127.0.0.1", port=8443, device_id="yun-01", session_factory=mock_sess
     )
-    mock_sess.assert_called_once_with(host="127.0.0.1", port=8443, device_id="yun-01", topic_prefix="br")
+    mock_sess.assert_called_once_with(host="127.0.0.1", port=8443, device_id="yun-01")
 
 
 def test_smoke_connection_cli_invocation(monkeypatch: pytest.MonkeyPatch) -> None:

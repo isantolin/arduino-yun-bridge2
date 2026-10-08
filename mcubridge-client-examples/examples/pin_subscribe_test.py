@@ -24,12 +24,11 @@ async def run_test(
     host: str | None = None,
     port: int | None = None,
     device_id: str | None = None,
-    topic_prefix: str = "br",
 ) -> None:
     """Execute autonomous pin subscription test lifecycle."""
     logger.info("--- Starting Pin Subscription Test ---")
 
-    async with bridge_session(host=host, port=port, device_id=device_id, topic_prefix=topic_prefix) as (_channel, stub):
+    async with bridge_session(host=host, port=port, device_id=device_id) as (_channel, stub):
         mode_upper = mode.upper()
         pb_mode = getattr(pb.PinModeType, f"PIN_{mode_upper}", pb.PinModeType.PIN_INPUT)
 
@@ -91,7 +90,6 @@ def main(
     host: str | None = None,
     port: int | None = None,
     device_id: str | None = None,
-    topic_prefix: str = "br",
 ) -> None:
     """CLI runner entry point."""
     asyncio.run(
@@ -104,7 +102,6 @@ def main(
             host=host,
             port=port,
             device_id=device_id,
-            topic_prefix=topic_prefix,
         )
     )
 
@@ -127,7 +124,6 @@ def cli_main(
     device_id: Annotated[
         str | None, typer.Option("--device-id", help="Explicit target device ID", envvar="MCUBRIDGE_DEVICE_ID")
     ] = None,
-    topic_prefix: Annotated[str, typer.Option("--topic-prefix", help="Topic prefix")] = "br",
 ) -> None:
     """Execute pin subscription test."""
     main(
@@ -139,7 +135,6 @@ def cli_main(
         host=host,
         port=port,
         device_id=device_id,
-        topic_prefix=topic_prefix,
     )
 
 

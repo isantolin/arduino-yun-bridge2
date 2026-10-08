@@ -7,12 +7,10 @@ from grpclib.client import Channel
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge_client import LocalBridgeStub
 from mcubridge_client.definitions import (
-    DEFAULT_GATEWAY_PORT,
-    DEFAULT_TOPIC_PREFIX,
     build_bridge_args,
 )
 from mcubridge_client.env import dump_client_env, is_openwrt, read_uci_general
-from mcubridge_client.protocol import CLOUD_DEFAULT_TOPIC_PREFIX, DEFAULT_CLOUD_PORT, Topic
+from mcubridge_client.protocol import CLOUD_DEFAULT_TOPIC_PREFIX, DEFAULT_CLOUD_HOST, DEFAULT_CLOUD_PORT, Topic
 from mcubridge_client.spi import SpiDevice
 
 
@@ -142,13 +140,14 @@ def test_definitions_build_bridge_args() -> None:
 
 
 def test_client_defaults_match_generated_protocol(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("MCUBRIDGE_GATEWAY_HOST", raising=False)
+    monkeypatch.delenv("MCUBRIDGE_CLOUD_HOST", raising=False)
     monkeypatch.delenv("MCUBRIDGE_GATEWAY_PORT", raising=False)
     monkeypatch.delenv("MCUBRIDGE_CLOUD_PORT", raising=False)
 
-    assert DEFAULT_GATEWAY_PORT == DEFAULT_CLOUD_PORT
-    assert DEFAULT_TOPIC_PREFIX == CLOUD_DEFAULT_TOPIC_PREFIX
     assert Topic.PREFIX == CLOUD_DEFAULT_TOPIC_PREFIX
     args = build_bridge_args(device_id="dev1")
+    assert args["host"] == DEFAULT_CLOUD_HOST
     assert args["port"] == DEFAULT_CLOUD_PORT
     assert args["topic_prefix"] == CLOUD_DEFAULT_TOPIC_PREFIX
 

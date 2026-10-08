@@ -177,6 +177,8 @@ class ConfigFieldDef:
     min_val: float | None
     max_val: float | None
     uci_option: str | None
+    config_default_ref: str | None
+    client_constant: bool
 
 
 def _default_config_fields() -> list[ConfigFieldDef]:
@@ -230,10 +232,30 @@ def _load_runtime_config_fields(file_desc: Any, pb_module: Any) -> list[ConfigFi
     if not runtime_config_desc:
         return []
 
+    file_options = file_desc.GetOptions()
+    default_sources = {
+        "constants": file_options.Extensions[pb_module.constants],
+        "cloud_defaults": file_options.Extensions[pb_module.cloud_defaults],
+    }
     runtime_config_fields: list[ConfigFieldDef] = []
     for field_desc in runtime_config_desc.fields:
         opts = field_desc.GetOptions()
-        cfg_default = opts.Extensions[pb_module.config_default] if opts.HasExtension(pb_module.config_default) else None
+        has_literal_default = opts.HasExtension(pb_module.config_default)
+        has_default_ref = opts.HasExtension(pb_module.config_default_ref)
+        default_ref: str | None = None
+        if has_literal_default and has_default_ref:
+            raise ValueError(f"RuntimeConfig field '{field_desc.name}' has both default value and default reference")
+        if has_default_ref:
+            default_ref = opts.Extensions[pb_module.config_default_ref]
+            source_name, separator, field_name = default_ref.partition(".")
+            source = default_sources.get(source_name)
+            if not separator or not field_name or source is None:
+                raise ValueError(f"Invalid RuntimeConfig default reference '{default_ref}'")
+            if field_name not in source.DESCRIPTOR.fields_by_name:
+                raise ValueError(f"Unknown RuntimeConfig default reference '{default_ref}'")
+            cfg_default = getattr(source, field_name)
+        else:
+            cfg_default = opts.Extensions[pb_module.config_default] if has_literal_default else None
         cfg_desc = opts.Extensions[pb_module.config_desc] if opts.HasExtension(pb_module.config_desc) else ""
         cfg_volatile = (
             opts.Extensions[pb_module.config_volatile] if opts.HasExtension(pb_module.config_volatile) else False
@@ -241,6 +263,9 @@ def _load_runtime_config_fields(file_desc: Any, pb_module: Any) -> list[ConfigFi
         cfg_min = opts.Extensions[pb_module.config_min] if opts.HasExtension(pb_module.config_min) else None
         cfg_max = opts.Extensions[pb_module.config_max] if opts.HasExtension(pb_module.config_max) else None
         uci_opt = opts.Extensions[pb_module.uci_option] if opts.HasExtension(pb_module.uci_option) else None
+        client_constant = (
+            opts.Extensions[pb_module.client_constant] if opts.HasExtension(pb_module.client_constant) else False
+        )
 
         if field_desc.is_repeated:
             py_type, typed_val = "list", []
@@ -255,12 +280,14 @@ def _load_runtime_config_fields(file_desc: Any, pb_module: Any) -> list[ConfigFi
                 name=field_desc.name,
                 field_type=py_type,
                 default_value=typed_val,
-                raw_default=cfg_default or "",
+                raw_default=str(cfg_default) if cfg_default is not None else "",
                 description=cfg_desc,
                 is_volatile=cfg_volatile,
                 min_val=cfg_min,
                 max_val=cfg_max,
                 uci_option=uci_opt,
+                config_default_ref=default_ref,
+                client_constant=client_constant,
             )
         )
     return runtime_config_fields
@@ -458,7 +485,11 @@ def _build_runtime_config_constants(spec: ProtocolSpec, python_constants: list[d
     existing_constant_names = {constant["name"] for constant in python_constants}
     runtime_config_constants: list[dict[str, Any]] = []
     for config_field in spec.runtime_config_fields:
-        if config_field.default_value is None or config_field.field_type == "list":
+        if (
+            config_field.default_value is None
+            or config_field.field_type == "list"
+            or config_field.config_default_ref is not None
+        ):
             continue
         const_name = f"DEFAULT_{config_field.name.upper()}"
         if const_name in existing_constant_names:
@@ -471,6 +502,25 @@ def _build_runtime_config_constants(spec: ProtocolSpec, python_constants: list[d
             value = str(config_field.default_value)
         runtime_config_constants.append({"name": const_name, "type": config_field.field_type, "value": value})
     return runtime_config_constants
+
+
+def _build_client_runtime_config_constants(spec: ProtocolSpec) -> list[dict[str, Any]]:
+    client_constants: list[dict[str, Any]] = []
+    for config_field in spec.runtime_config_fields:
+        if not config_field.client_constant:
+            continue
+        if config_field.default_value is None:
+            raise ValueError(f"Client constant '{config_field.name}' must have a default value")
+        if config_field.field_type not in {"str", "bool", "int", "float"}:
+            raise ValueError(f"Unsupported client constant type '{config_field.field_type}'")
+        client_constants.append(
+            {
+                "name": f"DEFAULT_{config_field.name.upper()}",
+                "type": config_field.field_type,
+                "value": config_field.default_value,
+            }
+        )
+    return client_constants
 
 
 def _build_handshake_context(spec: ProtocolSpec, pb_module: Any) -> dict[str, Any]:
@@ -703,6 +753,7 @@ def build_protocol_context(spec: ProtocolSpec, version: str) -> dict[str, Any]:
         **command_context,
         **descriptor_context,
         "runtime_config_constants": _build_runtime_config_constants(spec, constant_context["python_constants"]),
+        "client_runtime_config_constants": _build_client_runtime_config_constants(spec),
         "runtime_config_fields": spec.runtime_config_fields,
         "capabilities": spec.capabilities,
         "architectures": spec.architectures,
@@ -716,6 +767,14 @@ def build_protocol_context(spec: ProtocolSpec, version: str) -> dict[str, Any]:
         "message_topics": spec.message_topics,
         "telemetry_topic_field_map": telemetry_topic_field_map,
         "telemetry_default_field": telemetry_default_field,
+        "spi_bit_orders": [
+            {"name": value.name, "value": value.number}
+            for value in spec.pb_module.SpiBitOrder.DESCRIPTOR.values
+        ],
+        "spi_data_modes": [
+            {"name": value.name, "value": value.number}
+            for value in spec.pb_module.SpiDataMode.DESCRIPTOR.values
+        ],
         "hardware": spec.hardware,
     }
 
@@ -833,6 +892,7 @@ def check_incremental_build(args: Any, version: str) -> tuple[bool, Path, str]:
     proto_path = args.spec.resolve()
     h = hashlib.sha256()
     h.update(proto_path.read_bytes())
+    h.update(Path(__file__).resolve().read_bytes())
     h.update(version.encode("utf-8"))
     templates_dir = Path(__file__).resolve().parent / "templates"
     if templates_dir.exists():

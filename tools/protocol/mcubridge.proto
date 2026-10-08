@@ -383,46 +383,18 @@ option (rpc.pb.constants) = {
   default_ack_timeout_ms: 200
   default_retry_limit: 5
   max_pending_tx_frames: 2
-  max_command_id: 256
-  invalid_id_sentinel: 65535
-  rpc_null_terminator: 0
-  rpc_command_stride: 2
-  rpc_command_group_shift: 4
-  rpc_command_group_offset: 3
-  rpc_timer_overflow_threshold: 2147483648
   uint8_mask: 255
   uint16_max: 65535
   bootloader_magic: 3735929054
-  process_default_exit_code: 255
   crc_size: 4
   crc_covered_header_size: 7
-  min_frame_size: 39
   crc32_mask: 4294967295
-  crc_initial: 4294967295
   nonce_counter_mask: 18446744073709551615
-  crc_polynomial: 3988292384
   frame_delimiter: 0
-  digital_low: 0
-  digital_high: 1
   status_code_min: 48
   status_code_max: 63
   system_command_min: 64
   system_command_max: 79
-  gpio_command_min: 80
-  gpio_command_max: 95
-  console_command_min: 96
-  console_command_max: 111
-  datastore_command_min: 112
-  datastore_command_max: 127
-  mailbox_command_min: 128
-  mailbox_command_max: 143
-  filesystem_command_min: 144
-  filesystem_command_max: 159
-  process_command_min: 160
-  process_command_max: 175
-  spi_command_min: 176
-  spi_command_max: 191
-  default_reconnect_delay: 5
   max_serial_frame_bytes: 1024
   default_serial_handshake_fatal_failures: 15
   cloud_expiry_pin: 5
@@ -432,8 +404,6 @@ option (rpc.pb.constants) = {
   default_console_queue_limit_bytes: 16384
   sync_timeout_ms: 30000
   max_datastore_value_size: 255
-  clock_command_min: 192
-  clock_command_max: 207
 };
 option (rpc.pb.handshake) = {
   nonce_length: 16
@@ -576,6 +546,8 @@ option (rpc.pb.topics) = {
 };
 
 message Constants {
+  reserved 14 to 20, 24, 27, 29, 31, 33 to 34, 39 to 53, 67 to 68;
+  reserved "max_command_id", "invalid_id_sentinel", "rpc_null_terminator", "rpc_command_stride", "rpc_command_group_shift", "rpc_command_group_offset", "rpc_timer_overflow_threshold", "process_default_exit_code", "min_frame_size", "crc_initial", "crc_polynomial", "digital_low", "digital_high", "gpio_command_min", "gpio_command_max", "console_command_min", "console_command_max", "datastore_command_min", "datastore_command_max", "mailbox_command_min", "mailbox_command_max", "filesystem_command_min", "filesystem_command_max", "process_command_min", "process_command_max", "spi_command_min", "spi_command_max", "default_reconnect_delay", "clock_command_min", "clock_command_max";
   uint32 aead_nonce_size = 1 [
     (cpp_name) = "RPC_AEAD_NONCE_SIZE",
     (cpp_type) = "size_t",
@@ -658,46 +630,6 @@ message Constants {
     (py_name) = "MAX_PENDING_TX_FRAMES",
     (py_type) = "int"
   ];
-  uint32 max_command_id = 14 [
-    (cpp_name) = "RPC_MAX_COMMAND_ID",
-    (cpp_type) = "uint16_t"
-  ];
-  uint32 invalid_id_sentinel = 15 [
-    (cpp_name) = "RPC_INVALID_ID_SENTINEL",
-    (cpp_type) = "uint16_t",
-    (py_name) = "INVALID_ID_SENTINEL",
-    (py_type) = "int"
-  ];
-  uint32 rpc_null_terminator = 16 [
-    (cpp_name) = "RPC_NULL_TERMINATOR",
-    (cpp_type) = "char",
-    (py_name) = "NULL_TERMINATOR",
-    (py_type) = "int"
-  ];
-  uint32 rpc_command_stride = 17 [
-    (cpp_name) = "RPC_COMMAND_STRIDE",
-    (cpp_type) = "uint8_t",
-    (py_name) = "COMMAND_STRIDE",
-    (py_type) = "int"
-  ];
-  uint32 rpc_command_group_shift = 18 [
-    (cpp_name) = "RPC_COMMAND_GROUP_SHIFT",
-    (cpp_type) = "uint8_t",
-    (py_name) = "COMMAND_GROUP_SHIFT",
-    (py_type) = "int"
-  ];
-  uint32 rpc_command_group_offset = 19 [
-    (cpp_name) = "RPC_COMMAND_GROUP_OFFSET",
-    (cpp_type) = "uint8_t",
-    (py_name) = "COMMAND_GROUP_OFFSET",
-    (py_type) = "int"
-  ];
-  uint32 rpc_timer_overflow_threshold = 20 [
-    (cpp_name) = "RPC_TIMER_OVERFLOW_THRESHOLD",
-    (cpp_type) = "uint32_t",
-    (py_name) = "TIMER_OVERFLOW_THRESHOLD",
-    (py_type) = "int"
-  ];
   uint32 uint8_mask = 21 [
     (cpp_name) = "RPC_UINT8_MASK",
     (cpp_type) = "uint8_t",
@@ -716,12 +648,6 @@ message Constants {
     (py_name) = "BOOTLOADER_MAGIC",
     (py_type) = "int"
   ];
-  uint32 process_default_exit_code = 24 [
-    (cpp_name) = "RPC_PROCESS_DEFAULT_EXIT_CODE",
-    (cpp_type) = "uint8_t",
-    (py_name) = "PROCESS_DEFAULT_EXIT_CODE",
-    (py_type) = "int"
-  ];
   uint32 crc_size = 25 [
     (cpp_name) = "RPC_CRC_SIZE",
     (cpp_type) = "size_t",
@@ -734,22 +660,10 @@ message Constants {
     (py_name) = "CRC_COVERED_HEADER_SIZE",
     (py_type) = "int"
   ];
-  uint32 min_frame_size = 27 [
-    (cpp_name) = "RPC_MIN_FRAME_SIZE",
-    (cpp_type) = "size_t",
-    (py_name) = "MIN_FRAME_SIZE",
-    (py_type) = "int"
-  ];
   uint32 crc32_mask = 28 [
     (cpp_name) = "RPC_CRC32_MASK",
     (cpp_type) = "uint32_t",
     (py_name) = "CRC32_MASK",
-    (py_type) = "int"
-  ];
-  uint32 crc_initial = 29 [
-    (cpp_name) = "RPC_CRC_INITIAL",
-    (cpp_type) = "uint32_t",
-    (py_name) = "CRC_INITIAL",
     (py_type) = "int"
   ];
   uint64 nonce_counter_mask = 30 [
@@ -758,29 +672,11 @@ message Constants {
     (py_name) = "NONCE_COUNTER_MASK",
     (py_type) = "int"
   ];
-  uint32 crc_polynomial = 31 [
-    (cpp_name) = "RPC_CRC_POLYNOMIAL",
-    (cpp_type) = "uint32_t",
-    (py_name) = "CRC_POLYNOMIAL",
-    (py_type) = "int"
-  ];
   uint32 frame_delimiter = 32 [
     (cpp_name) = "RPC_FRAME_DELIMITER",
     (cpp_type) = "uint8_t",
     (py_name) = "FRAME_DELIMITER",
     (py_type) = "bytes"
-  ];
-  uint32 digital_low = 33 [
-    (cpp_name) = "RPC_DIGITAL_LOW",
-    (cpp_type) = "uint8_t",
-    (py_name) = "DIGITAL_LOW",
-    (py_type) = "int"
-  ];
-  uint32 digital_high = 34 [
-    (cpp_name) = "RPC_DIGITAL_HIGH",
-    (cpp_type) = "uint8_t",
-    (py_name) = "DIGITAL_HIGH",
-    (py_type) = "int"
   ];
   uint32 status_code_min = 35 [
     (cpp_name) = "RPC_STATUS_CODE_MIN",
@@ -804,94 +700,6 @@ message Constants {
     (cpp_name) = "RPC_SYSTEM_COMMAND_MAX",
     (cpp_type) = "uint16_t",
     (py_name) = "SYSTEM_COMMAND_MAX",
-    (py_type) = "int"
-  ];
-  uint32 gpio_command_min = 39 [
-    (cpp_name) = "RPC_GPIO_COMMAND_MIN",
-    (cpp_type) = "uint16_t",
-    (py_name) = "GPIO_COMMAND_MIN",
-    (py_type) = "int"
-  ];
-  uint32 gpio_command_max = 40 [
-    (cpp_name) = "RPC_GPIO_COMMAND_MAX",
-    (cpp_type) = "uint16_t",
-    (py_name) = "GPIO_COMMAND_MAX",
-    (py_type) = "int"
-  ];
-  uint32 console_command_min = 41 [
-    (cpp_name) = "RPC_CONSOLE_COMMAND_MIN",
-    (cpp_type) = "uint16_t",
-    (py_name) = "CONSOLE_COMMAND_MIN",
-    (py_type) = "int"
-  ];
-  uint32 console_command_max = 42 [
-    (cpp_name) = "RPC_CONSOLE_COMMAND_MAX",
-    (cpp_type) = "uint16_t",
-    (py_name) = "CONSOLE_COMMAND_MAX",
-    (py_type) = "int"
-  ];
-  uint32 datastore_command_min = 43 [
-    (cpp_name) = "RPC_DATASTORE_COMMAND_MIN",
-    (cpp_type) = "uint16_t",
-    (py_name) = "DATASTORE_COMMAND_MIN",
-    (py_type) = "int"
-  ];
-  uint32 datastore_command_max = 44 [
-    (cpp_name) = "RPC_DATASTORE_COMMAND_MAX",
-    (cpp_type) = "uint16_t",
-    (py_name) = "DATASTORE_COMMAND_MAX",
-    (py_type) = "int"
-  ];
-  uint32 mailbox_command_min = 45 [
-    (cpp_name) = "RPC_MAILBOX_COMMAND_MIN",
-    (cpp_type) = "uint16_t",
-    (py_name) = "MAILBOX_COMMAND_MIN",
-    (py_type) = "int"
-  ];
-  uint32 mailbox_command_max = 46 [
-    (cpp_name) = "RPC_MAILBOX_COMMAND_MAX",
-    (cpp_type) = "uint16_t",
-    (py_name) = "MAILBOX_COMMAND_MAX",
-    (py_type) = "int"
-  ];
-  uint32 filesystem_command_min = 47 [
-    (cpp_name) = "RPC_FILESYSTEM_COMMAND_MIN",
-    (cpp_type) = "uint16_t",
-    (py_name) = "FILESYSTEM_COMMAND_MIN",
-    (py_type) = "int"
-  ];
-  uint32 filesystem_command_max = 48 [
-    (cpp_name) = "RPC_FILESYSTEM_COMMAND_MAX",
-    (cpp_type) = "uint16_t",
-    (py_name) = "FILESYSTEM_COMMAND_MAX",
-    (py_type) = "int"
-  ];
-  uint32 process_command_min = 49 [
-    (cpp_name) = "RPC_PROCESS_COMMAND_MIN",
-    (cpp_type) = "uint16_t",
-    (py_name) = "PROCESS_COMMAND_MIN",
-    (py_type) = "int"
-  ];
-  uint32 process_command_max = 50 [
-    (cpp_name) = "RPC_PROCESS_COMMAND_MAX",
-    (cpp_type) = "uint16_t",
-    (py_name) = "PROCESS_COMMAND_MAX",
-    (py_type) = "int"
-  ];
-  uint32 spi_command_min = 51 [
-    (cpp_name) = "RPC_SPI_COMMAND_MIN",
-    (cpp_type) = "uint16_t",
-    (py_name) = "SPI_COMMAND_MIN",
-    (py_type) = "int"
-  ];
-  uint32 spi_command_max = 52 [
-    (cpp_name) = "RPC_SPI_COMMAND_MAX",
-    (cpp_type) = "uint16_t",
-    (py_name) = "SPI_COMMAND_MAX",
-    (py_type) = "int"
-  ];
-  uint32 default_reconnect_delay = 53 [
-    (py_name) = "DEFAULT_RECONNECT_DELAY",
     (py_type) = "int"
   ];
   uint32 max_serial_frame_bytes = 54 [
@@ -934,18 +742,6 @@ message Constants {
     (py_name) = "MAX_DATASTORE_VALUE_SIZE",
     (py_type) = "int",
     (client_constant) = true
-  ];
-  uint32 clock_command_min = 67 [
-    (cpp_name) = "RPC_CLOCK_COMMAND_MIN",
-    (cpp_type) = "uint16_t",
-    (py_name) = "CLOCK_COMMAND_MIN",
-    (py_type) = "int"
-  ];
-  uint32 clock_command_max = 68 [
-    (cpp_name) = "RPC_CLOCK_COMMAND_MAX",
-    (cpp_type) = "uint16_t",
-    (py_name) = "CLOCK_COMMAND_MAX",
-    (py_type) = "int"
   ];
 }
 
@@ -1232,6 +1028,7 @@ extend google.protobuf.FieldOptions {
   string uci_option = 1027;
   string telemetry_topic_match = 1028;
   bool telemetry_topic_default = 1029;
+  string config_default_ref = 1030;
 }
 
 enum Status {
@@ -1516,10 +1313,10 @@ enum Command {
 }
 
 enum ChannelId {
+  reserved 1, 3;
+  reserved "CHANNEL_CONSOLE", "CHANNEL_DATA";
   CHANNEL_CONTROL = 0;
-  CHANNEL_CONSOLE = 1;
   CHANNEL_TELEMETRY = 2;
-  CHANNEL_DATA = 3;
 }
 
 enum QosProfile {
@@ -1628,22 +1425,23 @@ message RuntimeConfig {
     (uci_option) = "serial_port"
   ];
   uint32 serial_baud = 2 [
-    (config_default) = "115200",
+    (config_default_ref) = "constants.default_baudrate",
     (config_desc) = "Operating serial baud rate",
     (uci_option) = "serial_baud"
   ];
   uint32 serial_safe_baud = 3 [
-    (config_default) = "115200",
+    (config_default_ref) = "constants.default_safe_baudrate",
     (config_desc) = "Safe fallback serial baud rate",
     (uci_option) = "serial_safe_baud"
   ];
   string cloud_host = 4 [
     (config_default) = "127.0.0.1",
     (config_desc) = "Cloud Gateway host IP or domain",
-    (uci_option) = "cloud_host"
+    (uci_option) = "cloud_host",
+    (client_constant) = true
   ];
   uint32 cloud_port = 5 [
-    (config_default) = "8443",
+    (config_default_ref) = "constants.default_cloud_port",
     (config_min) = 1,
     (config_max) = 65535,
     (config_desc) = "Cloud Gateway port",
@@ -1676,7 +1474,7 @@ message RuntimeConfig {
     (uci_option) = "cloud_keyfile"
   ];
   string topic_prefix = 12 [
-    (config_default) = "br",
+    (config_default_ref) = "cloud_defaults.default_topic_prefix",
     (config_desc) = "Topic prefix for cloud messages",
     (uci_option) = "topic_prefix"
   ];
@@ -1730,7 +1528,7 @@ message RuntimeConfig {
     (uci_option) = "debug"
   ];
   uint32 console_queue_limit_bytes = 23 [
-    (config_default) = "16384",
+    (config_default_ref) = "constants.default_console_queue_limit_bytes",
     (config_desc) = "Maximum buffered console output bytes"
   ];
   uint32 mailbox_queue_limit = 24 [
@@ -1766,7 +1564,7 @@ message RuntimeConfig {
     (config_desc) = "Minimum interval between handshakes in seconds"
   ];
   uint32 serial_handshake_fatal_failures = 32 [
-    (config_default) = "15",
+    (config_default_ref) = "constants.default_serial_handshake_fatal_failures",
     (config_desc) = "Handshake failures triggering daemon restart"
   ];
   bool cloud_enabled = 33 [
@@ -1798,7 +1596,7 @@ message RuntimeConfig {
     (uci_option) = "cloud_spool_dir"
   ];
   uint32 process_max_output_bytes = 38 [
-    (config_default) = "65536",
+    (config_default_ref) = "constants.default_process_max_output_bytes",
     (config_desc) = "Maximum process output bytes",
     (uci_option) = "process_max_output_bytes"
   ];
@@ -1828,7 +1626,7 @@ message RuntimeConfig {
     (uci_option) = "cloud_http3_enabled"
   ];
   uint32 cloud_http3_port = 49 [
-    (config_default) = "8443",
+    (config_default_ref) = "constants.default_cloud_port",
     (config_min) = 1,
     (config_max) = 65535,
     (config_desc) = "HTTP/3 UDP port",
@@ -2009,8 +1807,8 @@ enum SpiDataMode {
 }
 
 message SpiConfig {
-  uint32 bit_order = 1;
-  uint32 data_mode = 2;
+  SpiBitOrder bit_order = 1;
+  SpiDataMode data_mode = 2;
   uint32 frequency = 3;
 }
 

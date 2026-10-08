@@ -127,8 +127,8 @@ void test_spi_timeout_and_error_paths() {
   SPIService.begin();
   rpc::payload::SpiConfig sc;
   sc.frequency = 4000000;
-  sc.bit_order = 1;
-  sc.data_mode = 0;
+  sc.bit_order = rpc_pb_SpiBitOrder_SPI_BIT_ORDER_MSB_FIRST;
+  sc.data_mode = rpc_pb_SpiDataMode_SPI_DATA_MODE_0;
   SPIService.setConfig(sc);
 
   etl::array<uint8_t, 4> buf = {1, 2, 3, 4};

@@ -9,7 +9,7 @@ from typing import Annotated
 
 import structlog
 import typer
-from mcubridge_client import Topic, pb
+from mcubridge_client import CLOUD_DEFAULT_TOPIC_PREFIX, Topic, pb
 from mcubridge_client.cli import bridge_session, configure_logging
 
 configure_logging()
@@ -21,10 +21,10 @@ async def run_test(
     host: str | None = None,
     port: int | None = None,
     device_id: str | None = None,
-    topic_prefix: str = "br",
+    topic_prefix: str = CLOUD_DEFAULT_TOPIC_PREFIX,
 ) -> None:
     logger.info("--- Starting UNIFIED ALL-FEATURES E2E Test ---")
-    async with bridge_session(host=host, port=port, device_id=device_id, topic_prefix=topic_prefix) as (_channel, stub):
+    async with bridge_session(host=host, port=port, device_id=device_id) as (_channel, stub):
         # 1. LED test
         logger.info("Testing LED (Digital Write)...")
         await stub.DigitalWrite(pb.DigitalWrite(pin=led_builtin_pin, value=1))
@@ -69,7 +69,7 @@ def main(
     host: str | None = None,
     port: int | None = None,
     device_id: str | None = None,
-    topic_prefix: str = "br",
+    topic_prefix: str = CLOUD_DEFAULT_TOPIC_PREFIX,
 ) -> None:
     asyncio.run(run_test(led_builtin_pin, host, port, device_id, topic_prefix))
 
@@ -83,7 +83,7 @@ def cli_main(
     host: Annotated[str | None, typer.Option("--host", help="Cloud Gateway host")] = None,
     port: Annotated[int | None, typer.Option("--port", help="Cloud Gateway port")] = None,
     device_id: Annotated[str | None, typer.Option("--device-id", help="Target device ID")] = None,
-    topic_prefix: Annotated[str, typer.Option("--topic-prefix", help="Topic prefix")] = "br",
+    topic_prefix: Annotated[str, typer.Option("--topic-prefix", help="Topic prefix")] = CLOUD_DEFAULT_TOPIC_PREFIX,
 ) -> None:
     main(led_builtin_pin, host, port, device_id, topic_prefix)
 

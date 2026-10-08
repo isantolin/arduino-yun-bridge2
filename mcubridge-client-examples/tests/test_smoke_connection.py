@@ -19,15 +19,11 @@ async def run_test(
     host: str | None = None,
     port: int | None = None,
     device_id: str | None = None,
-    topic_prefix: str = "br",
     session_factory: Any = bridge_session,
 ) -> None:
     dump_client_env(logger)
 
-    async with session_factory(host=host, port=port, device_id=device_id, topic_prefix=topic_prefix) as (
-        _channel,
-        _stub,
-    ):
+    async with session_factory(host=host, port=port, device_id=device_id) as (_channel, _stub):
         logger.info("Bridge channel initialized via bridge_session")
 
 
@@ -46,10 +42,9 @@ def main(
     device_id: Annotated[
         str | None, typer.Option("--device-id", help="Explicit target device ID", envvar="MCUBRIDGE_DEVICE_ID")
     ] = None,
-    topic_prefix: Annotated[str, typer.Option("--topic-prefix", help="Topic prefix")] = "br",
 ) -> None:
     configure_logging()
-    asyncio.run(executor_fn(host, port, device_id, topic_prefix))
+    asyncio.run(executor_fn(host, port, device_id))
 
 
 if __name__ == "__main__":

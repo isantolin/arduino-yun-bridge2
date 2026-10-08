@@ -16,7 +16,7 @@ from typing import Any, cast
 
 import structlog
 
-from .definitions import DEFAULT_GATEWAY_HOST, DEFAULT_GATEWAY_PORT
+from .protocol import DEFAULT_CLOUD_HOST, DEFAULT_CLOUD_PORT
 
 logger = structlog.get_logger(__name__)
 
@@ -72,13 +72,13 @@ def dump_client_env(logger: Any | None = None) -> None:
         os.environ.get("MCUBRIDGE_GATEWAY_HOST")
         or os.environ.get("MCUBRIDGE_CLOUD_HOST")
         or (cfg.get("cloud_host") if cfg else None)
-        or DEFAULT_GATEWAY_HOST
+        or DEFAULT_CLOUD_HOST
     )
     port = (
         os.environ.get("MCUBRIDGE_GATEWAY_PORT")
         or os.environ.get("MCUBRIDGE_CLOUD_PORT")
         or (cfg.get("cloud_port") if cfg else None)
-        or DEFAULT_GATEWAY_PORT
+        or DEFAULT_CLOUD_PORT
     )
     device_id = os.environ.get("MCUBRIDGE_DEVICE_ID") or (cfg.get("device_id") if cfg else None) or "<unspecified>"
     _emit(f"  gateway_host='{host}'")

@@ -25,12 +25,11 @@ async def bridge_session(
     host: str | None = None,
     port: int | None = None,
     device_id: str | None = None,
-    topic_prefix: str = "br",
     channel_factory: Callable[[str, int], Channel] | None = None,
 ) -> AsyncGenerator[tuple[Channel, LocalBridgeStub]]:
     """Connect Channel + LocalBridgeStub directly to Cloud Gateway and guarantee close on exit."""
     dump_client_env(structlog.get_logger(__name__))
-    bridge_args = build_bridge_args(host=host, port=port, device_id=device_id, topic_prefix=topic_prefix)
+    bridge_args = build_bridge_args(host=host, port=port, device_id=device_id)
     effective_host = str(bridge_args["host"])
     effective_port = int(str(bridge_args["port"]))
     effective_device = str(bridge_args["device_id"])

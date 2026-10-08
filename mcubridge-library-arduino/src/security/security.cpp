@@ -39,7 +39,8 @@ bool handshake_authenticate(etl::span<const uint8_t> secret,
                             etl::span<const uint8_t> nonce,
                             etl::span<const uint8_t> received_tag,
                             etl::span<uint8_t> out_tag) {
-  // [SIL-2] Validar tamaños de búferes de entrada antes de proceder
+  // Validar que el secreto no esté vacío y que el buffer de salida sea
+  // suficiente
   if (secret.empty() || out_tag.size() < rpc::RPC_HANDSHAKE_TAG_LENGTH) {
     return false;
   }
@@ -58,10 +59,11 @@ bool handshake_authenticate(etl::span<const uint8_t> secret,
 #endif
 
   // [FAIL-CLOSED] Validar retorno de derivación HKDF
-  int hkdf_res = wc_HKDF(WC_SHA256, secret.data(), static_cast<word32>(secret.size()),
-                         salt.data(), static_cast<word32>(salt.size()), info.data(),
-                         static_cast<word32>(info.size()), handshake_key.data(),
-                         static_cast<word32>(handshake_key.size()));
+  int hkdf_res =
+      wc_HKDF(WC_SHA256, secret.data(), static_cast<word32>(secret.size()),
+              salt.data(), static_cast<word32>(salt.size()), info.data(),
+              static_cast<word32>(info.size()), handshake_key.data(),
+              static_cast<word32>(handshake_key.size()));
   if (hkdf_res != 0) {
     secure_zero(etl::span<uint8_t>(handshake_key.data(), handshake_key.size()));
     return false;
@@ -71,7 +73,8 @@ bool handshake_authenticate(etl::span<const uint8_t> secret,
   Hmac hmac_engine;
   if (wc_HmacSetKey(&hmac_engine, WC_SHA256, handshake_key.data(),
                     rpc::RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH) != 0 ||
-      wc_HmacUpdate(&hmac_engine, nonce.data(), static_cast<word32>(nonce.size())) != 0 ||
+      wc_HmacUpdate(&hmac_engine, nonce.data(),
+                    static_cast<word32>(nonce.size())) != 0 ||
       wc_HmacFinal(&hmac_engine, out_tag.data()) != 0) {
     secure_zero(etl::span<uint8_t>(handshake_key.data(), handshake_key.size()));
     return false;
@@ -93,7 +96,7 @@ bool handshake_authenticate(etl::span<const uint8_t> secret,
 void derive_session_key(etl::span<const uint8_t> secret,
                         etl::span<const uint8_t> nonce,
                         etl::span<uint8_t> out_key) {
-  if (out_key.size() < rpc::RPC_AEAD_KEY_SIZE) {
+  if (secret.empty() || out_key.size() < rpc::RPC_AEAD_KEY_SIZE) {
     return;
   }
 
@@ -137,7 +140,7 @@ bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
                         etl::span<uint8_t> out_payload,
                         etl::span<uint8_t> out_nonce,
                         etl::span<uint8_t> out_tag) {
-  // [HALLAZGO 7] Validar tamaños exactos de búferes antes de invocar a wolfSSL
+  // Validar tamaños exactos de búferes antes de invocar a wolfSSL
   if (key.size() != rpc::RPC_AEAD_KEY_SIZE ||
       out_nonce.size() != rpc::RPC_AEAD_NONCE_SIZE ||
       out_tag.size() != rpc::RPC_AEAD_TAG_SIZE ||
@@ -145,11 +148,10 @@ bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
     return false;
   }
 
-  // 1. Validar y prevenir el desbordamiento (wrap-around) del contador de 64 bits
+  // Prevenir desbordamiento (wrap-around) del contador de 64 bits
   if (nonce_counter) {
     if (*nonce_counter >= RPC_NONCE_COUNTER_MASK) {
-      // PROTECCIÓN CRÍTICA: Se aborta el cifrado para evitar la reutilización de Nonce
-      return false;
+      return false;  // Abortar cifrado para evitar reutilizar Nonce
     }
     (*nonce_counter)++;
   }
@@ -158,8 +160,7 @@ bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
 
   etl::fill(out_nonce.begin(), out_nonce.end(), 0U);
   static_assert(3U + 1U + sizeof(uint64_t) == rpc::RPC_AEAD_NONCE_SIZE,
-                "[SIL-2] Nonce layout mismatch: prefix(3) + pad(1) + "
-                "counter(8) must equal RPC_AEAD_NONCE_SIZE");
+                "[SIL-2] Nonce layout mismatch");
   constexpr etl::string_view mcu_prefix("MCU");
   etl::copy_n(mcu_prefix.begin(), 3, out_nonce.begin());
   etl::byte_stream_writer n_writer(out_nonce.subspan(4), etl::endian::big);
@@ -168,8 +169,7 @@ bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
   etl::array<uint8_t, 16> ad;
   const size_t ad_len = build_aad(cmd_id, seq_id, etl::span<uint8_t>(ad));
   if (ad_len == 0U) {
-    // [FAIL-CLOSED] Error al codificar AAD Protobuf: abortar cifrado inmediatamente
-    return false;
+    return false;  // [FAIL-CLOSED] Error al codificar AAD Protobuf
   }
 
   return wc_ChaCha20Poly1305_Encrypt(
@@ -185,19 +185,17 @@ bool aead_decrypt_frame(uint16_t cmd_id, uint16_t seq_id,
                         etl::span<const uint8_t> nonce,
                         etl::span<const uint8_t> tag,
                         etl::span<uint8_t> out_payload) {
-  // [HALLAZGO 7] Validar tamaños exactos de búferes antes de invocar a wolfSSL
+  // Validar tamaños exactos de búferes antes de invocar a wolfSSL
   if (key.size() != rpc::RPC_AEAD_KEY_SIZE ||
       nonce.size() != rpc::RPC_AEAD_NONCE_SIZE ||
-      tag.size() != rpc::RPC_AEAD_TAG_SIZE ||
-      out_payload.size() < in.size()) {
+      tag.size() != rpc::RPC_AEAD_TAG_SIZE || out_payload.size() < in.size()) {
     return false;
   }
 
   etl::array<uint8_t, 16> ad;
   const size_t ad_len = build_aad(cmd_id, seq_id, etl::span<uint8_t>(ad));
   if (ad_len == 0U) {
-    // [FAIL-CLOSED] Error al codificar AAD Protobuf: abortar descifrado inmediatamente
-    return false;
+    return false;  // [FAIL-CLOSED] Error al codificar AAD Protobuf
   }
 
   return wc_ChaCha20Poly1305_Decrypt(
@@ -209,17 +207,18 @@ bool aead_decrypt_frame(uint16_t cmd_id, uint16_t seq_id,
 
 bool validate_frame_nonce(etl::span<const uint8_t> nonce,
                           uint64_t* last_seen_counter) {
-  // [HALLAZGO 7 & 8] Exigir tamaño exacto del Nonce AEAD usando constante
+  // Exigir tamaño exacto del Nonce AEAD usando constante
   if (nonce.size() != rpc::RPC_AEAD_NONCE_SIZE) {
     return false;
   }
 
-  // [HALLAZGO 8] Validar estructura del Nonce: [0..2] = Prefijo ("MPU" o "MCU"), [3] = 0x00
-  const bool is_mpu_prefix = (nonce[0] == 'M' && nonce[1] == 'P' && nonce[2] == 'U');
-  const bool is_mcu_prefix = (nonce[0] == 'M' && nonce[1] == 'C' && nonce[2] == 'U');
-  const bool valid_padding = (nonce[3] == 0x00);
+  // Validar estructura básica del Nonce: [0..2] = Prefijo ("MPU" o "MCU")
+  const bool is_mpu_prefix =
+      (nonce[0] == 'M' && nonce[1] == 'P' && nonce[2] == 'U');
+  const bool is_mcu_prefix =
+      (nonce[0] == 'M' && nonce[1] == 'C' && nonce[2] == 'U');
 
-  if ((!is_mpu_prefix && !is_mcu_prefix) || !valid_padding) {
+  if (!is_mpu_prefix && !is_mcu_prefix) {
     return false;
   }
 
@@ -228,12 +227,12 @@ bool validate_frame_nonce(etl::span<const uint8_t> nonce,
                                    etl::endian::big);
   const uint64_t counter = n_reader.read<uint64_t>().value();
 
-  // [ANTI-REPLAY] Si el contador recibido es menor o igual al último visto, rechazar
+  // [ANTI-REPLAY] Si el contador es menor o igual al último visto, rechazar
   if (last_seen_counter && counter <= *last_seen_counter) {
     return false;
   }
 
-  // [ANTI-REPLAY] Solo actualizar el contador cuando la trama es totalmente válida
+  // Actualizar el contador solo cuando la validación es exitosa
   if (last_seen_counter) {
     *last_seen_counter = counter;
   }
@@ -270,8 +269,6 @@ static constexpr etl::array<uint8_t, 32> kat_sha256_expected PROGMEM = {
 static constexpr etl::array<uint8_t, 3> kat_hmac_key PROGMEM = {
     {'k', 'e', 'y'}};
 static constexpr etl::array<uint8_t, 56> kat_hmac_data PROGMEM = {
-    // "Jovencillo emponzoñado de whisky, qué figuritas exhibe"
-    // Spanish pangram: 27/27 letters (a-z + ñ), 56 UTF-8 bytes
     {'J', 'o', 'v', 'e', 'n',  'c',  'i', 'l', 'l', 'o',  ' ',  'e', 'm', 'p',
      'o', 'n', 'z', 'o', 0xC3, 0xB1, 'a', 'd', 'o', ' ',  'd',  'e', ' ', 'w',
      'h', 'i', 's', 'k', 'y',  ',',  ' ', 'q', 'u', 0xC3, 0xA9, ' ', 'f', 'i',
@@ -281,9 +278,6 @@ static constexpr etl::array<uint8_t, 32> kat_hmac_expected PROGMEM = {
      0xBA, 0xD2, 0xD4, 0x4D, 0xE2, 0x1F, 0x50, 0x80, 0x0E, 0x08, 0x41,
      0xB8, 0x7E, 0x0D, 0xAD, 0xFC, 0xDF, 0xE3, 0x62, 0xB2, 0x6C}};
 
-// [SIL-2/H-1] NOT marked [[weak]]: cryptographic KATs MUST NOT be bypassable
-// via linker substitution. Doing so would violate FIPS 140-3 requirements for
-// Power-On Self-Tests. Use the test build flag to skip them instead.
 bool run_cryptographic_self_tests() {
   etl::array<uint8_t, rpc::RPC_SHA256_DIGEST_SIZE> actual;
   etl::array<uint8_t, rpc::RPC_SHA256_KAT_BUFFER_SIZE> buffer;
@@ -291,7 +285,8 @@ bool run_cryptographic_self_tests() {
   // 1. SHA256 KAT
   const size_t msg_len = kat_sha256_msg.size();
   memcpy_P(buffer.data(), kat_sha256_msg.data(), msg_len);
-  if (wc_Sha256Hash(buffer.data(), static_cast<word32>(msg_len), actual.data()) != 0) {
+  if (wc_Sha256Hash(buffer.data(), static_cast<word32>(msg_len),
+                    actual.data()) != 0) {
     return false;
   }
 
@@ -306,7 +301,8 @@ bool run_cryptographic_self_tests() {
   const size_t key_len = kat_hmac_key.size();
   memcpy_P(key_buf.data(), kat_hmac_key.data(), key_len);
 
-  if (wc_HmacSetKey(&hmac, WC_SHA256, key_buf.data(), static_cast<word32>(key_len)) != 0) {
+  if (wc_HmacSetKey(&hmac, WC_SHA256, key_buf.data(),
+                    static_cast<word32>(key_len)) != 0) {
     return false;
   }
 

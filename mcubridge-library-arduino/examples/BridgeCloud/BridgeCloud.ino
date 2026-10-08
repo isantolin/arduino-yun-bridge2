@@ -101,6 +101,12 @@ void loop() {
         static_cast<uint16_t>(analogRead(SENSOR_PIN));
 
     // [SIL-2 / Zero-Heap] Enviar evento de telemetría directamente al Gateway
-    Bridge.sendPinEvent(SENSOR_PIN, sensor_reading);
+    if (!Bridge.sendPinEvent(SENSOR_PIN, sensor_reading)) {
+      digitalWrite(LED_BUILTIN, LOW);
+#if BRIDGE_ENABLE_CONSOLE
+      Console.println(F("BridgeCloud: telemetria no enviada."));
+      Console.process();
+#endif
+    }
   }
 }

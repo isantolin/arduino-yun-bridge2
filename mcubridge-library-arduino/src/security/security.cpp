@@ -40,8 +40,7 @@ bool handshake_authenticate(etl::span<const uint8_t> secret,
                             etl::span<const uint8_t> received_tag,
                             etl::span<uint8_t> out_tag) {
   // [SIL-2] Validar tamaños de búferes de entrada antes de proceder
-  if (secret.size() < rpc::RPC_HANDSHAKE_HKDF_SALT.size() ||
-      out_tag.size() < rpc::RPC_HANDSHAKE_TAG_LENGTH) {
+  if (secret.empty() || out_tag.size() < rpc::RPC_HANDSHAKE_TAG_LENGTH) {
     return false;
   }
 

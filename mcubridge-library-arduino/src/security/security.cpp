@@ -39,6 +39,12 @@ bool handshake_authenticate(etl::span<const uint8_t> secret,
                             etl::span<const uint8_t> nonce,
                             etl::span<const uint8_t> received_tag,
                             etl::span<uint8_t> out_tag) {
+  // [SIL-2] Validar tamaños de búferes de entrada antes de proceder
+  if (secret.size() < rpc::RPC_HANDSHAKE_HKDF_SALT.size() ||
+      out_tag.size() < rpc::RPC_HANDSHAKE_TAG_LENGTH) {
+    return false;
+  }
+
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH> handshake_key = {};
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_HKDF_SALT.size()> salt;
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_HKDF_INFO_AUTH.size()> info;
@@ -88,6 +94,10 @@ bool handshake_authenticate(etl::span<const uint8_t> secret,
 void derive_session_key(etl::span<const uint8_t> secret,
                         etl::span<const uint8_t> nonce,
                         etl::span<uint8_t> out_key) {
+  if (out_key.size() < rpc::RPC_AEAD_KEY_SIZE) {
+    return;
+  }
+
   etl::array<uint8_t, rpc::RPC_HANDSHAKE_HKDF_INFO_SESSION.size()> info;
 #if defined(__AVR__) || defined(ARDUINO_ARCH_AVR)
   memcpy_P(info.data(), rpc::RPC_HANDSHAKE_HKDF_INFO_SESSION.data(),
@@ -128,6 +138,14 @@ bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
                         etl::span<uint8_t> out_payload,
                         etl::span<uint8_t> out_nonce,
                         etl::span<uint8_t> out_tag) {
+  // [HALLAZGO 7] Validar tamaños exactos de búferes antes de invocar a wolfSSL
+  if (key.size() != rpc::RPC_AEAD_KEY_SIZE ||
+      out_nonce.size() != rpc::RPC_AEAD_NONCE_SIZE ||
+      out_tag.size() != rpc::RPC_AEAD_TAG_SIZE ||
+      out_payload.size() < in.size()) {
+    return false;
+  }
+
   // 1. Validar y prevenir el desbordamiento (wrap-around) del contador de 64 bits
   if (nonce_counter) {
     if (*nonce_counter >= RPC_NONCE_COUNTER_MASK) {
@@ -168,6 +186,14 @@ bool aead_decrypt_frame(uint16_t cmd_id, uint16_t seq_id,
                         etl::span<const uint8_t> nonce,
                         etl::span<const uint8_t> tag,
                         etl::span<uint8_t> out_payload) {
+  // [HALLAZGO 7] Validar tamaños exactos de búferes antes de invocar a wolfSSL
+  if (key.size() != rpc::RPC_AEAD_KEY_SIZE ||
+      nonce.size() != rpc::RPC_AEAD_NONCE_SIZE ||
+      tag.size() != rpc::RPC_AEAD_TAG_SIZE ||
+      out_payload.size() < in.size()) {
+    return false;
+  }
+
   etl::array<uint8_t, 16> ad;
   const size_t ad_len = build_aad(cmd_id, seq_id, etl::span<uint8_t>(ad));
   if (ad_len == 0U) {
@@ -184,8 +210,17 @@ bool aead_decrypt_frame(uint16_t cmd_id, uint16_t seq_id,
 
 bool validate_frame_nonce(etl::span<const uint8_t> nonce,
                           uint64_t* last_seen_counter) {
-  // [SIL-2] Exigir tamaño exacto del Nonce AEAD sin usar literales mágicos
+  // [HALLAZGO 7 & 8] Exigir tamaño exacto del Nonce AEAD usando constante
   if (nonce.size() != rpc::RPC_AEAD_NONCE_SIZE) {
+    return false;
+  }
+
+  // [HALLAZGO 8] Validar estructura del Nonce: [0..2] = Prefijo ("MPU" o "MCU"), [3] = 0x00
+  const bool is_mpu_prefix = (nonce[0] == 'M' && nonce[1] == 'P' && nonce[2] == 'U');
+  const bool is_mcu_prefix = (nonce[0] == 'M' && nonce[1] == 'C' && nonce[2] == 'U');
+  const bool valid_padding = (nonce[3] == 0x00);
+
+  if ((!is_mpu_prefix && !is_mcu_prefix) || !valid_padding) {
     return false;
   }
 
@@ -199,7 +234,7 @@ bool validate_frame_nonce(etl::span<const uint8_t> nonce,
     return false;
   }
 
-  // [ANTI-REPLAY] Solo actualizar el contador cuando la trama es válida
+  // [ANTI-REPLAY] Solo actualizar el contador cuando la trama es totalmente válida
   if (last_seen_counter) {
     *last_seen_counter = counter;
   }

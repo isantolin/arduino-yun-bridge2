@@ -184,15 +184,26 @@ bool aead_decrypt_frame(uint16_t cmd_id, uint16_t seq_id,
 
 bool validate_frame_nonce(etl::span<const uint8_t> nonce,
                           uint64_t* last_seen_counter) {
-  if (nonce.size() < 12) return false;
+  // [SIL-2] Exigir tamaño exacto del Nonce AEAD sin usar literales mágicos
+  if (nonce.size() != rpc::RPC_AEAD_NONCE_SIZE) {
+    return false;
+  }
+
   const auto nonce_sub = nonce.subspan(4);
   etl::byte_stream_reader n_reader(nonce_sub.data(), nonce_sub.size(),
                                    etl::endian::big);
   const uint64_t counter = n_reader.read<uint64_t>().value();
+
+  // [ANTI-REPLAY] Si el contador recibido es menor o igual al último visto, rechazar
   if (last_seen_counter && counter <= *last_seen_counter) {
     return false;
   }
-  if (last_seen_counter) *last_seen_counter = counter;
+
+  // [ANTI-REPLAY] Solo actualizar el contador cuando la trama es válida
+  if (last_seen_counter) {
+    *last_seen_counter = counter;
+  }
+
   return true;
 }
 

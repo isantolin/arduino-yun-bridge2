@@ -213,9 +213,10 @@ def audit_proto_usage() -> list[str]:
 
     identifier_suffixes = identifiers.copy()
     for token in identifiers:
-        identifier_suffixes.update(
-            token[index + 1 :] for index, character in enumerate(token) if character == "_"
-        )
+        suffix = token
+        while "_" in suffix:
+            suffix = suffix.partition("_")[2]
+            identifier_suffixes.add(suffix)
 
     def is_referenced(name: str) -> bool:
         return name in identifier_suffixes
@@ -239,8 +240,7 @@ def audit_proto_usage() -> list[str]:
         }
         if field_desc.name not in config_references and not any(name and is_referenced(name) for name in names):
             findings.append(
-                "Unused Protobuf constant: "
-                f"Constants.{field_desc.name}={getattr(constants, field_desc.name)}"
+                f"Unused Protobuf constant: Constants.{field_desc.name}={getattr(constants, field_desc.name)}"
             )
 
     reflected_enum_names = {"Command", "Status"}

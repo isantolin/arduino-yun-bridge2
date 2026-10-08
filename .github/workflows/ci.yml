@@ -99,14 +99,17 @@ jobs:
         run: |
           curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
           echo "$GITHUB_WORKSPACE/bin" >> $GITHUB_PATH
-      - name: Install Arduino Dependencies
+      - name: Install Arduino Cores and Dependencies
         run: |
           arduino-cli core update-index
-          arduino-cli core install arduino:avr
+          arduino-cli core install arduino:avr arduino:samd arduino:esp32
           arduino-cli lib install "Embedded Template Library ETL"
+          arduino-cli lib install WiFiNINA
       - uses: ./.github/actions/setup-python-tox
         with:
           cache-suffix: arduino-examples
+      - name: Install ESP32 build dependency
+        run: python -m pip install pyserial
       - name: Compile Examples
         run: |
           mkdir -p arduino-build

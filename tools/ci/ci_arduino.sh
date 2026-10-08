@@ -27,13 +27,17 @@ fi
 echo "Updating core index..."
 arduino-cli core update-index || { echo "Failed to update core index"; exit 1; }
 
-# Install AVR core (for MCU)
-echo "Installing arduino:avr core..."
-arduino-cli core install arduino:avr || { echo "Failed to install arduino:avr core"; exit 1; }
+# Install the supported board cores used by the compile matrix.
+echo "Installing Arduino AVR, SAMD, and ESP32 cores..."
+arduino-cli core install arduino:avr arduino:samd arduino:esp32 || {
+    echo "Failed to install required Arduino board cores" >&2
+    exit 1
+}
 
 # Install official dependencies
 echo "Installing official libraries..."
 arduino-cli lib install wolfSSL || { echo "Failed to install wolfSSL"; exit 1; }
+arduino-cli lib install WiFiNINA || { echo "Failed to install WiFiNINA"; exit 1; }
 
 # Find actual wolfSSL installation path (casing varies)
 WOLF_ROOT=""
@@ -67,8 +71,8 @@ echo "Installing libraries..."
 # Define library path (current repo's library folder)
 LIB_PATH="$PWD/mcubridge-library-arduino"
 
-# Define target boards (Matrix Build)
-TARGET_BOARDS=("arduino:avr:yun" "arduino:avr:uno" "arduino:avr:mega")
+# Define memory-capable, library-supported target boards.
+TARGET_BOARDS=("arduino:avr:mega" "arduino:samd:mkrwifi1010" "arduino:esp32:nano_nora")
 EXAMPLES_DIR="$LIB_PATH/examples"
 BUILD_OUTPUT_DIR="${1:-}"
 
@@ -107,15 +111,27 @@ compile_sketch() {
     sketch_dir=$(dirname "$sketch")
     sketch_name=$(basename "$sketch_dir")
     BOARD_NAME="${FQBN//:/-}"
-    LOG_FILE="${_LOG_DIR}/${BOARD_NAME}_${sketch_name}.log"
+    LOG_FILE="${_LOG_DIR}/${BOARD_NAME}__${sketch_name}.log"
 
-    COMMON_FLAGS="-flto -fno-strict-aliasing -Wno-lto-type-mismatch -DWOLFSSL_USER_SETTINGS -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1"
-    local BUILD_FLAGS=("--fqbn" "$FQBN" "--library" "$LIB_PATH" "--libraries" "$USER_LIB_DIR" "--warnings" "default"
-                 "--build-property" "compiler.cpp.extra_flags=-std=gnu++17 -fno-exceptions $COMMON_FLAGS -DETL_NO_STL"
-                 "--build-property" "compiler.c.extra_flags=-std=gnu11 $COMMON_FLAGS"
-                 "--build-property" "compiler.c.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch"
-                 "--build-property" "compiler.cpp.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch"
-                 "--build-property" "compiler.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch")
+    local COMMON_FLAGS="-fno-strict-aliasing -DWOLFSSL_USER_SETTINGS -DPB_BUFFER_ONLY=1 -DPB_NO_ERRMSG=1"
+    local LINK_FLAGS=()
+    if [[ "$FQBN" == arduino:avr:* ]]; then
+        COMMON_FLAGS+=" -flto -Wno-lto-type-mismatch"
+        LINK_FLAGS=(
+            "--build-property" "compiler.c.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch"
+            "--build-property" "compiler.cpp.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch"
+            "--build-property" "compiler.elf.extra_flags=-flto -fno-strict-aliasing -Wno-lto-type-mismatch"
+        )
+    fi
+    local BUILD_FLAGS=(
+        "--fqbn" "$FQBN"
+        "--library" "$LIB_PATH"
+        "--libraries" "$USER_LIB_DIR"
+        "--warnings" "default"
+        "--build-property" "compiler.cpp.extra_flags=-std=gnu++17 -fno-exceptions $COMMON_FLAGS -DETL_NO_STL"
+        "--build-property" "compiler.c.extra_flags=-std=gnu11 $COMMON_FLAGS"
+    )
+    BUILD_FLAGS+=("${LINK_FLAGS[@]}")
 
     BUILD_FLAGS+=("${EXTRA_PROPS[@]}")
 
@@ -135,23 +151,17 @@ compile_sketch() {
         echo "✓ $sketch_name ($FQBN)"
         if [ -n "${ARDUINO_METRICS_DIR:-}" ]; then
             mkdir -p "$ARDUINO_METRICS_DIR"
-            cp "$LOG_FILE" "$ARDUINO_METRICS_DIR/${BOARD_NAME}_${sketch_name}.log"
+            cp "$LOG_FILE" "$ARDUINO_METRICS_DIR/${BOARD_NAME}__${sketch_name}.log"
         fi
         return 0
     else
         if [ -n "${ARDUINO_METRICS_DIR:-}" ]; then
             mkdir -p "$ARDUINO_METRICS_DIR"
-            cp "$LOG_FILE" "$ARDUINO_METRICS_DIR/${BOARD_NAME}_${sketch_name}.log"
+            cp "$LOG_FILE" "$ARDUINO_METRICS_DIR/${BOARD_NAME}__${sketch_name}.log"
         fi
-        # Critical failure only for mega
-        if [ "$FQBN" == "arduino:avr:mega" ]; then
-            echo "✗ $sketch_name failed for $FQBN!"
-            cat "$LOG_FILE" >&2
-            return 1
-        fi
-        # Non-mega: memory overflow is expected — just warn
-        echo "⚠ $sketch_name skipped for $FQBN (non-critical, likely memory overflow)"
-        return 0
+        echo "✗ $sketch_name failed for $FQBN!"
+        cat "$LOG_FILE" >&2
+        return 1
     fi
 }
 

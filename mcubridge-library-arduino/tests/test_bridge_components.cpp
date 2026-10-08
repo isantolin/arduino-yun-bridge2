@@ -10,6 +10,7 @@
 #include "services/DataStore.h"
 #include "services/Mailbox.h"
 #include "services/Process.h"
+#include "services/SPIService.h"
 #include "test_support.h"
 
 // Define the global delegates and stubs for HardwareSerial stub
@@ -194,6 +195,41 @@ void test_send_pin_event_api() {
   TEST_ASSERT_FALSE(unsync_result);
 }
 
+void test_spi_data_modes_map_to_native_settings() {
+  SPIService.begin();
+  etl::array<uint8_t, 1> payload = {0xA5};
+  rpc::payload::SpiConfig config = {};
+  config.frequency = 1000000;
+  config.bit_order = rpc_pb_SpiBitOrder_SPI_BIT_ORDER_LSB_FIRST;
+
+  config.data_mode = rpc_pb_SpiDataMode_SPI_DATA_MODE_0;
+  SPIService.setConfig(config);
+  TEST_ASSERT_EQUAL_UINT32(
+      1, SPIService.transfer(etl::span<uint8_t>(payload.data(), payload.size())));
+  TEST_ASSERT_EQUAL_UINT8(SPI_MODE0, SPI.last_settings.data_mode);
+
+  config.data_mode = rpc_pb_SpiDataMode_SPI_DATA_MODE_1;
+  SPIService.setConfig(config);
+  TEST_ASSERT_EQUAL_UINT32(
+      1, SPIService.transfer(etl::span<uint8_t>(payload.data(), payload.size())));
+  TEST_ASSERT_EQUAL_UINT8(SPI_MODE1, SPI.last_settings.data_mode);
+
+  config.data_mode = rpc_pb_SpiDataMode_SPI_DATA_MODE_2;
+  SPIService.setConfig(config);
+  TEST_ASSERT_EQUAL_UINT32(
+      1, SPIService.transfer(etl::span<uint8_t>(payload.data(), payload.size())));
+  TEST_ASSERT_EQUAL_UINT8(SPI_MODE2, SPI.last_settings.data_mode);
+
+  config.data_mode = rpc_pb_SpiDataMode_SPI_DATA_MODE_3;
+  SPIService.setConfig(config);
+  TEST_ASSERT_EQUAL_UINT32(
+      1, SPIService.transfer(etl::span<uint8_t>(payload.data(), payload.size())));
+  TEST_ASSERT_EQUAL_UINT8(SPI_MODE3, SPI.last_settings.data_mode);
+  TEST_ASSERT_EQUAL_UINT8(LSBFIRST, SPI.last_settings.bit_order);
+  TEST_ASSERT_EQUAL_UINT32(config.frequency, SPI.last_settings.clock);
+  SPIService.end();
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_all_handlers_coverage);
@@ -202,5 +238,6 @@ int main() {
   RUN_TEST(test_datastore_api);
   RUN_TEST(test_mailbox_api);
   RUN_TEST(test_send_pin_event_api);
+  RUN_TEST(test_spi_data_modes_map_to_native_settings);
   return UNITY_END();
 }

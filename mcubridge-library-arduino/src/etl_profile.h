@@ -8,6 +8,9 @@
 #ifndef ETL_NO_STL
 #define ETL_NO_STL
 #endif
+#if defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_SAMD)
+#define ETL_FORCE_STD_INITIALIZER_LIST
+#endif
 #define ETL_STL_NOT_AVAILABLE
 #define ETL_NO_RTTI
 #define ETL_LOG_ERRORS

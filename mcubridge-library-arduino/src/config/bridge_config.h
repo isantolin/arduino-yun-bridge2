@@ -7,6 +7,27 @@
 #include "protocol/rpc_hw_config.h"
 #include "protocol/rpc_protocol.h"
 
+#if defined(ARDUINO_ARCH_ESP32)
+#ifndef PIN_SPI_SS
+#define PIN_SPI_SS SS
+#endif
+#ifndef PIN_SPI_MOSI
+#define PIN_SPI_MOSI MOSI
+#endif
+#ifndef PIN_SPI_MISO
+#define PIN_SPI_MISO MISO
+#endif
+#ifndef PIN_SPI_SCK
+#define PIN_SPI_SCK SCK
+#endif
+#ifndef PIN_WIRE_SDA
+#define PIN_WIRE_SDA SDA
+#endif
+#ifndef PIN_WIRE_SCL
+#define PIN_WIRE_SCL SCL
+#endif
+#endif
+
 namespace bridge {
 namespace config {
 

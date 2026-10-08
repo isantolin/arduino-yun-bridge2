@@ -15,6 +15,10 @@
 #define WOLFSSL_API
 #define USE_SLOW_SHA256
 
+#if defined(ARDUINO_ARCH_SAMD)
+#undef WOLFSSL_ARDUINO
+#endif
+
 /* Let wolfSSL handle types using architecture hints */
 #if defined(__AVR__) || defined(ARDUINO_ARCH_AVR)
 #define WC_16BIT_CPU

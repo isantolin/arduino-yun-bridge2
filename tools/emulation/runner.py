@@ -20,7 +20,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
 @cli.command()
 def main(
-    fqbn: Annotated[str, typer.Option("--fqbn", help="Target MCU FQBN")] = "arduino:avr:uno",
+    fqbn: Annotated[str, typer.Option("--fqbn", help="Target AVR MCU FQBN")] = "arduino:avr:mega",
     fuzz: Annotated[bool, typer.Option("--fuzz", help="Execute protocol fuzzing campaign")] = False,
     fuzz_iterations: Annotated[int, typer.Option("--fuzz-iterations", help="Number of fuzzing iterations")] = 500,
 ) -> None:

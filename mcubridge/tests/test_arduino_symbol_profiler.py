@@ -21,9 +21,15 @@ runner = CliRunner()
 
 def test_detect_board_label() -> None:
     build_dir = Path("/tmp/build")
-    elf_path = Path("/tmp/build/arduino-avr-yun/BridgeControl/BridgeControl.ino.elf")
+    elf_path = Path("/tmp/build/arduino-avr-mega/BridgeControl/BridgeControl.ino.elf")
     label = detect_board_label(build_dir, elf_path)
-    assert label == "arduino:avr:yun"
+    assert label == "Arduino Mega 2560"
+
+    mkr_elf = Path("/tmp/build/arduino-samd-mkrwifi1010/BridgeControl/BridgeControl.ino.elf")
+    assert detect_board_label(build_dir, mkr_elf) == "Arduino MKR WiFi 1010"
+
+    nano_elf = Path("/tmp/build/arduino-esp32-nano_nora/BridgeControl/BridgeControl.ino.elf")
+    assert detect_board_label(build_dir, nano_elf) == "Arduino Nano ESP32"
 
     generic_path = Path("/tmp/build/generic_board/firmware.elf")
     label_generic = detect_board_label(build_dir, generic_path)
@@ -40,8 +46,14 @@ def test_parse_memory_logs(tmp_path: Path) -> None:
     assert parse_memory_logs(log_dir) is None
 
     # 3. Directory with valid log returns markdown table
-    log_file = log_dir / "arduino-avr-yun_BridgeControl.log"
+    log_file = log_dir / "arduino-samd-mkrwifi1010__BridgeControl.log"
     log_file.write_text(
+        "Sketch uses 12345 bytes (42%) of program storage space. Maximum is 28672 bytes.\n"
+        "Global variables use 1024 bytes (40%) of dynamic memory. Maximum is 2560 bytes.\n",
+        encoding="utf-8",
+    )
+    nano_log = log_dir / "arduino-esp32-nano_nora__BridgeWiFi.log"
+    nano_log.write_text(
         "Sketch uses 12345 bytes (42%) of program storage space. Maximum is 28672 bytes.\n"
         "Global variables use 1024 bytes (40%) of dynamic memory. Maximum is 2560 bytes.\n",
         encoding="utf-8",
@@ -49,7 +61,10 @@ def test_parse_memory_logs(tmp_path: Path) -> None:
     result = parse_memory_logs(log_dir)
     assert result is not None
     assert "### 📊 Arduino Memory Usage" in result
-    assert "Arduino Yún" in result
+    assert "Arduino MKR WiFi 1010" in result
+    assert "Arduino Nano ESP32" in result
+    assert "`BridgeControl`" in result
+    assert "`BridgeWiFi`" in result
     assert "12,345 / 28,672 B" in result
     assert "1,024 / 2,560 B" in result
 

@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 #
-# Compile Arduino Bridge firmware for simavr emulation across supported AVR boards:
-#   - arduino:avr:yun  (ATmega32u4)
-#   - arduino:avr:uno  (ATmega328P)
-#   - arduino:avr:mega (ATmega2560)
+# Compile Arduino Bridge firmware for AVR-based simavr emulation.
+# The CI emulation matrix uses the Mega; Uno and Yún are not memory-capable
+# targets for the current reference sketches.
 #
 
 set -euo pipefail

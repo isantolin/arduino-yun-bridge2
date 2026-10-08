@@ -2,22 +2,22 @@
  * BridgeBluetooth.ino - Reference Example for Arduino MCU Bridge 2 over
  * Bluetooth SPP
  *
- * Demonstrates SIL-2 Zero-Heap RPC bridge over Bluetooth serial stream.
- * Compatible with ESP32 (BluetoothSerial) and transparent BLE/SPP UART modules.
+ * Demonstrates SIL-2 Zero-Heap RPC bridge over a Bluetooth serial stream.
+ * Uses Classic SPP on ESP32 targets that provide it and Serial1 with external
+ * Bluetooth UART modules on BLE-only or non-ESP32 targets.
  */
 
 #include <Arduino.h>
-#if defined(ESP32)
+#if defined(ESP32) && defined(CONFIG_BT_SPP_ENABLED)
 #include <BluetoothSerial.h>
 BluetoothSerial SerialBT;
 #define BT_STREAM SerialBT
 #elif defined(HAVE_HWSERIAL1) || defined(ARDUINO_ARCH_SAMD) || \
-    defined(ARDUINO_ARCH_SAM)
-// For boards with dedicated secondary hardware serial
+    defined(ARDUINO_ARCH_SAM) || defined(ESP32)
 #define BT_STREAM Serial1
-#else
 // For single-UART boards (e.g. Arduino Uno / Nano) connected to Bluetooth
 // module on primary Serial
+#else
 #define BT_STREAM Serial
 #endif
 #include <Bridge.h>
@@ -33,10 +33,10 @@ void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
   digitalWrite(LED_BUILTIN, LOW);
 
-#if defined(ESP32)
+#if defined(ESP32) && defined(CONFIG_BT_SPP_ENABLED)
   SerialBT.begin("McuBridge_Device");
 #elif defined(HAVE_HWSERIAL1) || defined(ARDUINO_ARCH_SAMD) || \
-    defined(ARDUINO_ARCH_SAM)
+    defined(ARDUINO_ARCH_SAM) || defined(ESP32)
   Serial1.begin(115200);
 #else
   Serial.begin(115200);

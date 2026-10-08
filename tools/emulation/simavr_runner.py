@@ -486,8 +486,6 @@ def _teardown_simavr(
 
 MATRIX_BOARDS: list[tuple[str, str]] = [
     ("arduino:avr:mega", "Arduino Mega 2560 (ATmega2560)"),
-    ("arduino:avr:yun", "Arduino Yún (ATmega32u4)"),
-    ("arduino:avr:uno", "Arduino Uno (ATmega328P)"),
 ]
 
 
@@ -553,14 +551,10 @@ def run_matrix(
                 logger.error("Emulation FAILED for board", board=board_fqbn)
                 emulation_status.append("❌ Failed")
                 fail_count += 1
-        elif firmware_elf.exists():
-            compilation_status.append("❌ Failed")
-            emulation_status.append("❌ Failed")
-            fail_count += 1
         else:
-            compilation_status.append("⚠️ Skipped (Flash/RAM limit exceeded)")
-            emulation_status.append("⏭️ Skipped (No binary)")
-            logger.info("Emulation skipped (target memory limit exceeded)", board=board_fqbn)
+            compilation_status.append("❌ Failed")
+            emulation_status.append("⏭️ Not run (firmware unavailable)")
+            fail_count += 1
 
     summary_file = summary_dir / "simavr_summary.md"
     rows: list[str] = [
@@ -620,7 +614,7 @@ def main(
         typer.Option(
             "--board",
             "-b",
-            help="Arduino board FQBN or MCU name (e.g. arduino:avr:mega, atmega2560, arduino:avr:yun)",
+            help="AVR board FQBN or MCU name (e.g. arduino:avr:mega, atmega2560)",
         ),
     ] = "arduino:avr:mega",
     frequency: Annotated[

@@ -18,6 +18,7 @@ The sketches under `mcubridge-library-arduino/examples/` act as smoke tests for 
 
 - Implements a wireless Bluetooth SPP (Serial Port Profile) or BLE UART bridge.
 - Provides a wireless bridge interface for cable-free deployment (e.g. ESP32 `BluetoothSerial`).
+- Uses the Nano ESP32's `Serial1` for an external transparent Bluetooth UART module; its ESP32-S3 does not provide Classic SPP through `BluetoothSerial`.
 - Connects transparently to the daemon running on `/dev/rfcomm0` or a virtual serial port.
 
 ## BridgeCloud
@@ -38,7 +39,7 @@ arduino-cli upload --fqbn arduino:avr:mcu --port /dev/ttyACM0 \
   mcubridge-library-arduino/examples/<SketchDir>
 ```
 
-The current CI memory matrix builds the examples on Mega; Uno and Yún builds are skipped when they exceed flash/RAM limits. A green matrix does not imply those sketches fit on Uno or Yún.
+The CI compilation matrix builds every example for Arduino Mega 2560, MKR WiFi 1010, and Nano ESP32. Cycle-accurate simavr emulation remains AVR-only and runs on the Mega; it does not emulate the SAMD or ESP32 boards.
 
 Tips:
 

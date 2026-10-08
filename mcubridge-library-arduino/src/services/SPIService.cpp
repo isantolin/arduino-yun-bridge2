@@ -20,7 +20,26 @@ void SPIServiceClass::end() {
 }
 
 void SPIServiceClass::setConfig(const rpc::payload::SpiConfig& config) {
-  _settings = SPISettings(config.frequency, config.bit_order, config.data_mode);
+  auto data_mode = static_cast<decltype(SPI_MODE0)>(config.data_mode);
+  switch (config.data_mode) {
+    case rpc_pb_SpiDataMode_SPI_DATA_MODE_0:
+      data_mode = SPI_MODE0;
+      break;
+    case rpc_pb_SpiDataMode_SPI_DATA_MODE_1:
+      data_mode = SPI_MODE1;
+      break;
+    case rpc_pb_SpiDataMode_SPI_DATA_MODE_2:
+      data_mode = SPI_MODE2;
+      break;
+    case rpc_pb_SpiDataMode_SPI_DATA_MODE_3:
+      data_mode = SPI_MODE3;
+      break;
+    default:
+      break;
+  }
+  _settings = SPISettings(config.frequency,
+                          static_cast<decltype(MSBFIRST)>(config.bit_order),
+                          data_mode);
 }
 
 size_t SPIServiceClass::transfer(etl::span<uint8_t> buffer) {

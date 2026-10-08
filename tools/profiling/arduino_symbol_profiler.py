@@ -15,6 +15,13 @@ from elftools.elf.sections import SymbolTableSection
 import typer
 
 
+BOARD_LABELS = {
+    "arduino-avr-mega": "Arduino Mega 2560",
+    "arduino-samd-mkrwifi1010": "Arduino MKR WiFi 1010",
+    "arduino-esp32-nano_nora": "Arduino Nano ESP32",
+}
+
+
 def parse_memory_logs(log_dir: Path) -> str | None:
     """Parse Arduino compilation logs and extract Flash and RAM usage table."""
     if not log_dir.exists() or not log_dir.is_dir():
@@ -22,11 +29,6 @@ def parse_memory_logs(log_dir: Path) -> str | None:
     logs = sorted(log_dir.glob("*.log"))
     if not logs:
         return None
-    mapping = {
-        "arduino-avr-yun": "Arduino Yún",
-        "arduino-avr-uno": "Arduino Uno",
-        "arduino-avr-mega": "Arduino Mega",
-    }
     rows: list[str] = []
     for p in logs:
         try:
@@ -37,8 +39,8 @@ def parse_memory_logs(log_dir: Path) -> str | None:
         fm = re.search(r"Sketch uses (\d+) bytes \(([^)]+)\).*Maximum is (\d+) bytes", txt)
         rm = re.search(r"Global variables use (\d+) bytes \(([^)]+)\).*Maximum is (\d+) bytes", txt)
         if fm and rm:
-            parts = p.stem.split("_", 1)
-            bname = mapping.get(parts[0], parts[0])
+            parts = p.stem.split("__", 1)
+            bname = BOARD_LABELS.get(parts[0], parts[0])
             sketch = parts[1] if len(parts) > 1 else parts[0]
             rows.append(
                 f"| {bname} | `{sketch}` | {int(fm.group(1)):,} / {int(fm.group(3)):,} B | {fm.group(2)} | "
@@ -63,6 +65,8 @@ def detect_board_label(build_dir: Path, elf_path: Path) -> str:
         parts = elf_path.parts
 
     for part in parts:
+        if part in BOARD_LABELS:
+            return BOARD_LABELS[part]
         if part.startswith("arduino-"):
             return part.replace("-", ":", 2)
 

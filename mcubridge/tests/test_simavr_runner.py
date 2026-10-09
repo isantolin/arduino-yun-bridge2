@@ -152,9 +152,7 @@ def test_run_matrix_success(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
 
     fail_count = simavr_runner.run_matrix(sketch, timeout_seconds=5.0, test_scripts=[])
     assert fail_count == 0
-    assert simavr_runner.MATRIX_BOARDS == [
-        ("arduino:avr:mega", "Arduino Mega 2560 (ATmega2560)")
-    ]
+    assert simavr_runner.MATRIX_BOARDS == [("arduino:avr:mega", "Arduino Mega 2560 (ATmega2560)")]
     assert captured_metadata == [("core-selected-mcu", 8_000_000, 6)]
 
     summary_file = tmp_path / "metrics" / "simavr_summary.md"

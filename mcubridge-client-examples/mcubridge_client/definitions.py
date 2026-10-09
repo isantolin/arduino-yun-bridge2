@@ -4,6 +4,7 @@ import os
 
 from .protocol import CLOUD_DEFAULT_TOPIC_PREFIX, DEFAULT_CLOUD_HOST, DEFAULT_CLOUD_PORT
 
+
 def build_bridge_args(
     host: str | None = None,
     port: int | None = None,
@@ -13,16 +14,10 @@ def build_bridge_args(
     """Build Bridge constructor keyword arguments from CLI/env parameters targeting Gateway."""
     args: dict[str, str | int] = {}
     effective_host = (
-        host
-        or os.environ.get("MCUBRIDGE_GATEWAY_HOST")
-        or os.environ.get("MCUBRIDGE_CLOUD_HOST")
-        or DEFAULT_CLOUD_HOST
+        host or os.environ.get("MCUBRIDGE_GATEWAY_HOST") or os.environ.get("MCUBRIDGE_CLOUD_HOST") or DEFAULT_CLOUD_HOST
     )
     raw_port = (
-        port
-        or os.environ.get("MCUBRIDGE_GATEWAY_PORT")
-        or os.environ.get("MCUBRIDGE_CLOUD_PORT")
-        or DEFAULT_CLOUD_PORT
+        port or os.environ.get("MCUBRIDGE_GATEWAY_PORT") or os.environ.get("MCUBRIDGE_CLOUD_PORT") or DEFAULT_CLOUD_PORT
     )
     effective_port = int(raw_port)
     effective_device = device_id or os.environ.get("MCUBRIDGE_DEVICE_ID")

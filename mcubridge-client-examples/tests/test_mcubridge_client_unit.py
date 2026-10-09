@@ -222,9 +222,7 @@ async def test_smoke_connection_run_test() -> None:
     mock_chan = MagicMock()
     mock_stub = MagicMock()
     mock_sess.return_value.__aenter__.return_value = (mock_chan, mock_stub)
-    await test_smoke_connection.run_test(
-        host="127.0.0.1", port=8443, device_id="yun-01", session_factory=mock_sess
-    )
+    await test_smoke_connection.run_test(host="127.0.0.1", port=8443, device_id="yun-01", session_factory=mock_sess)
     mock_sess.assert_called_once_with(host="127.0.0.1", port=8443, device_id="yun-01")
 
 

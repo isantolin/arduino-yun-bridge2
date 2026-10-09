@@ -14,7 +14,6 @@ from elftools.elf.sections import SymbolTableSection
 
 import typer
 
-
 BOARD_LABELS = {
     "arduino-avr-mega": "Arduino Mega 2560",
     "arduino-samd-mkrwifi1010": "Arduino MKR WiFi 1010",

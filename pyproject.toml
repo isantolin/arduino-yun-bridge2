@@ -29,8 +29,8 @@ dependencies = [
     "serialx==1.11.0",
     "shellingham==1.5.4",
     "structlog==26.1.0",
-    "tenacity==9.1.4",
-    "typer==0.27.2",
+    "tenacity==9.2.1",
+    "typer==0.27.3",
     "uvloop==0.23.0",
 ]
 

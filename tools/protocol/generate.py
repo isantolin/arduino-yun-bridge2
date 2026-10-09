@@ -769,12 +769,10 @@ def build_protocol_context(spec: ProtocolSpec, version: str) -> dict[str, Any]:
         "telemetry_topic_field_map": telemetry_topic_field_map,
         "telemetry_default_field": telemetry_default_field,
         "spi_bit_orders": [
-            {"name": value.name, "value": value.number}
-            for value in spec.pb_module.SpiBitOrder.DESCRIPTOR.values
+            {"name": value.name, "value": value.number} for value in spec.pb_module.SpiBitOrder.DESCRIPTOR.values
         ],
         "spi_data_modes": [
-            {"name": value.name, "value": value.number}
-            for value in spec.pb_module.SpiDataMode.DESCRIPTOR.values
+            {"name": value.name, "value": value.number} for value in spec.pb_module.SpiDataMode.DESCRIPTOR.values
         ],
         "hardware": spec.hardware,
     }

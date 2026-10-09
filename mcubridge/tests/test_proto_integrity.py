@@ -178,9 +178,7 @@ def test_protobuf_descriptor_purged_elements() -> None:
     reserved_constant_numbers = {
         number for item in constants_proto.reserved_range for number in range(item.start, item.end)
     }
-    expected_reserved_numbers = (
-        set(range(14, 21)) | {24, 27, 29, 31, 33, 34} | set(range(39, 54)) | {67, 68}
-    )
+    expected_reserved_numbers = set(range(14, 21)) | {24, 27, 29, 31, 33, 34} | set(range(39, 54)) | {67, 68}
     assert expected_reserved_numbers <= reserved_constant_numbers
     assert retired_constants <= set(constants_proto.reserved_name)
 
@@ -191,6 +189,7 @@ def test_protobuf_descriptor_purged_elements() -> None:
     assert {1, 3} <= reserved_channel_numbers
     assert {"CHANNEL_CONSOLE", "CHANNEL_DATA"} <= set(channel_enum.reserved_name)
     assert {"CHANNEL_CONSOLE", "CHANNEL_DATA"}.isdisjoint(pb.ChannelId.DESCRIPTOR.values_by_name)
+
 
 def test_telemetry_routing_table_matches_schema_metadata() -> None:
     expected_map = {

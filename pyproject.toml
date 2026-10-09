@@ -59,6 +59,7 @@ markers = [
 ]
 filterwarnings = [
     "error",
+    "ignore:`project.license` as a TOML table is deprecated:Warning",
 ]
 
 [tool.pyright]

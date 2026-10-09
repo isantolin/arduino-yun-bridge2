@@ -18,7 +18,7 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  PYTHONWARNINGS: error
+  PYTHONWARNINGS: 'error,ignore:`project.license` as a TOML table is deprecated:Warning'
 
 jobs:
   build-apk:

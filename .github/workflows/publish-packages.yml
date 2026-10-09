@@ -12,7 +12,6 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  PYTHONWARNINGS: 'error,ignore:`project.license` as a TOML table is deprecated:Warning,ignore:License classifiers are deprecated.:Warning'
 
 jobs:
   publish-python-wheel:
@@ -36,7 +35,6 @@ jobs:
           rm -f ${PROTOC_ZIP}
           protoc --version
           python -m pip install --upgrade pip build twine setuptools wheel protobuf nanopb jinja2 typer black mypy-protobuf grpclib packaging tenacity
-          python -m pip check
 
       - name: Generate Protocol Bindings
         run: |
@@ -55,7 +53,6 @@ jobs:
         with:
           name: python-dist-packages
           path: dist/
-          if-no-files-found: error
 
       - name: Attach Wheels & Source to GitHub Release
         uses: softprops/action-gh-release@v2

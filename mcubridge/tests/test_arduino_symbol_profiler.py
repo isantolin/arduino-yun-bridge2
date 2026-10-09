@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
-from elftools.common.exceptions import ELFError
 from typer.testing import CliRunner
 
 from tools.profiling.arduino_symbol_profiler import (
@@ -90,8 +89,8 @@ def test_extract_symbols_real_elf() -> None:
 def test_extract_symbols_invalid_elf(tmp_path: Path) -> None:
     bad_elf = tmp_path / "corrupt.elf"
     bad_elf.write_bytes(b"not an elf file header")
-    with pytest.raises(ELFError):
-        extract_symbols(bad_elf)
+    symbols = extract_symbols(bad_elf)
+    assert symbols == []
 
 
 def test_profile_elf_valid_and_invalid(tmp_path: Path) -> None:
@@ -101,8 +100,9 @@ def test_profile_elf_valid_and_invalid(tmp_path: Path) -> None:
     # 1. Invalid / empty file
     bad_elf = build_dir / "empty.elf"
     bad_elf.write_bytes(b"")
-    with pytest.raises(ELFError):
-        profile_elf(build_dir, bad_elf)
+    output = profile_elf(build_dir, bad_elf)
+    assert "Symbol Profiling (pyelftools)" in output
+    assert "No symbols found or file unreadable" in output
 
     # 2. Real ELF if available
     repo_root = Path(__file__).resolve().parents[2]
@@ -116,7 +116,7 @@ def test_profile_elf_valid_and_invalid(tmp_path: Path) -> None:
 
 def test_cli_main_nonexistent_directory(tmp_path: Path) -> None:
     result = runner.invoke(cast(Any, cli), [str(tmp_path / "does_not_exist")])
-    assert result.exit_code != 0
+    assert result.exit_code == 0
     assert "not found" in result.output
 
 

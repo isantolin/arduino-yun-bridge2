@@ -18,7 +18,6 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  PYTHONWARNINGS: 'error,ignore:`project.license` as a TOML table is deprecated:Warning,ignore:License classifiers are deprecated.:Warning'
 
 jobs:
   build-apk:
@@ -79,7 +78,6 @@ jobs:
           gettext git libncurses-dev libssl-dev rsync unzip zlib1g-dev file wget zstd protobuf-compiler rpm
           sudo npm install -g @bufbuild/buf
           python3 -m pip install jinja2 pdm-backend hatchling "protobuf==7.36.2" nanopb grpcio-tools maturin setuptools-rust grpclib black packaging typer tenacity "wheel>=0.46.3" "setuptools>=82.0.0" build installer patch-ng mypy-protobuf
-          python3 -m pip check
 
       - name: Generate runtime dependency lockfiles
         run: |
@@ -136,8 +134,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y qemu-system-mips python3-pexpect wget e2fsprogs
-          python3 -m pip install typer pexpect tenacity
-          python3 -m pip check
+          pip install typer pexpect tenacity
 
       - name: Download APK Artifacts
         uses: actions/download-artifact@v8

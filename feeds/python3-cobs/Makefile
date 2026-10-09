@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=python3-cobs
 PKG_VERSION:=1.2.2
-PKG_RELEASE:=2
+PKG_RELEASE:=1
 
 PYPI_NAME:=cobs
 PKG_HASH:=dbdd5e32111d72786f83d0c269215dcd6ac629b1ac1962c6878221f3b2ca98da

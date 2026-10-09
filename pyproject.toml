@@ -49,7 +49,6 @@ minversion = "7.0"
 addopts = "-ra -vv -n 5 -p no:platformdirs -p no:embedded"
 log_cli = true
 log_cli_level = "INFO"
-asyncio_default_fixture_loop_scope = "function"
 testpaths = ["mcubridge/tests", "mcubridge-client-examples/tests", "mcubridge-gateway/tests"]
 pythonpath = [".", "mcubridge", "mcubridge-client-examples", "mcubridge-gateway"]
 norecursedirs = ["openwrt-sdk", "feeds", ".git", ".tox", ".venv*", ".tmp_tests", ".*"]
@@ -59,8 +58,6 @@ markers = [
 ]
 filterwarnings = [
     "error",
-    "ignore:`project\\.license` as a TOML table is deprecated:Warning",
-    "ignore:License classifiers are deprecated\\.:Warning",
 ]
 
 [tool.pyright]

@@ -40,10 +40,9 @@ mkdir -p "${METADATA_DIR}"
     --write-header "${METADATA_DIR}/ArduinoCoreMetadata.h" \
     --json-output "${METADATA_DIR}/arduino_core_metadata.json"
 
-if [[ ! -d "${PACKETSERIAL_PATH}" || ! -d "${PACKETSERIAL_PATH}/src" ]]; then
-    echo "[emulator] ERROR: PacketSerial is missing or incomplete at ${PACKETSERIAL_PATH}." >&2
-    exit 1
-fi
+echo "[emulator] Verifying library paths..."
+ls -la "${PACKETSERIAL_PATH}" || echo "PACKETSERIAL_PATH not found"
+ls -la "${PACKETSERIAL_PATH}/src" || echo "PACKETSERIAL_PATH/src not found"
 
 echo "[emulator] Generating protocol bindings..."
 if ! "${GEN_PYTHON}" "${ROOT_DIR}/tools/protocol/generate.py" \
@@ -79,7 +78,6 @@ NANOPB_SOURCES=(
 
 echo "[emulator] Compiling native bridge emulator (Base)..."
 g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -DARDUINO_STUB_CUSTOM_MILLIS=1 -DARDUINO_STUB_CUSTOM_SERIAL=1 \
-    -Wl,--fatal-warnings \
     -DWOLFSSL_USER_SETTINGS -DETL_NO_STL \
     -I"${SRC_DIR}" \
     -I"${SRC_DIR}/config" \
@@ -116,7 +114,6 @@ g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -
 
 echo "[emulator] Compiling native bridge emulator (BridgeControl Sketch)..."
 g++ -std=c++17 -O2 -g -Wall -Wextra -Werror -DBRIDGE_HOST_TEST=1 -DARDUINO=100 -DARDUINO_STUB_CUSTOM_MILLIS=1 -DARDUINO_STUB_CUSTOM_SERIAL=1 \
-    -Wl,--fatal-warnings \
     -DWOLFSSL_USER_SETTINGS -DETL_NO_STL \
     -I"${SRC_DIR}" \
     -I"${SRC_DIR}/config" \

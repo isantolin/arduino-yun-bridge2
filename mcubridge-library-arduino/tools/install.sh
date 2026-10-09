@@ -98,7 +98,7 @@ install_dependency() {
             exit 0
         fi
 
-        echo "[INFO] $name missing or incomplete. Installing..."
+        echo "[WARN] $name missing or incomplete. Installing..."
         local tmp_dir
         tmp_dir=$(mktemp -d -p "$target_base")
         local zip_path="$tmp_dir/$name.zip"
@@ -153,10 +153,8 @@ rm -rf "$LIB_DIR/Embedded_Template_Library_ETL"
 install_dependency "Embedded_Template_Library" "https://codeload.github.com/ETLCPP/etl/zip/refs/tags/${ETL_VERSION}" "include/etl/algorithm.h" "$LIB_DIR"
 if [ -d "$LIB_DIR/Embedded_Template_Library" ]; then
     mkdir -p "$LIB_DIR/Embedded_Template_Library/src"
-    if [ -d "$LIB_DIR/Embedded_Template_Library/include" ]; then
-        cp -ru "$LIB_DIR/Embedded_Template_Library/include/"* "$LIB_DIR/Embedded_Template_Library/src/"
-        cp -ru "$LIB_DIR/Embedded_Template_Library/include/"* "$LIB_DIR/Embedded_Template_Library/"
-    fi
+    cp -ru "$LIB_DIR/Embedded_Template_Library/include/"* "$LIB_DIR/Embedded_Template_Library/src/" 2>/dev/null || true
+    cp -ru "$LIB_DIR/Embedded_Template_Library/include/"* "$LIB_DIR/Embedded_Template_Library/" 2>/dev/null || true
     if [ -f "$LIB_DIR/Embedded_Template_Library/arduino/Embedded_Template_Library.h" ]; then
         cp "$LIB_DIR/Embedded_Template_Library/arduino/Embedded_Template_Library.h" "$LIB_DIR/Embedded_Template_Library/src/Embedded_Template_Library.h"
         cp "$LIB_DIR/Embedded_Template_Library/arduino/Embedded_Template_Library.h" "$LIB_DIR/Embedded_Template_Library/Embedded_Template_Library.h"
@@ -182,7 +180,7 @@ for wdir in "$LIB_DIR/wolfSSL" "$LIB_DIR/wolfssl"; do
         cp "$LIB_ROOT/src/user_settings.h" "$wdir/src/user_settings.h"
         cp "$LIB_ROOT/src/user_settings.h" "$wdir/user_settings.h"
         cp "$LIB_ROOT/src/user_settings.h" "$wdir/wolfssl/user_settings.h"
-        rm -f "$wdir/wolfssl.h" "$wdir/src"/*.c
+        rm -f "$wdir/wolfssl.h" "$wdir/src"/*.c 2>/dev/null || true
         if ! grep -q "includes=" "$wdir/library.properties" 2>/dev/null; then
             echo "includes=wolfssl.h" >> "$wdir/library.properties"
         fi

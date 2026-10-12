@@ -157,7 +157,7 @@ rationale = "Declarative CLI application builder for MPU diagnostic utilities an
 [[dependency]]
 name = "black"
 openwrt = "python3-black"
-pip = "black==26.10.0"
+pip = "black==26.10.1"
 rationale = "PEP 8 canonical code formatter required for generated code and development environments [BUILD-ONLY]"
 
 [[dependency]]
@@ -322,7 +322,7 @@ rationale = "Strongly-typed pytest wrapper for unittest.mock"
 
 [[dev_dependency]]
 name = "hypothesis"
-pip = "hypothesis==6.168.5"
+pip = "hypothesis==6.169.0"
 rationale = "Property-based testing and state machine fuzzing engine"
 
 [[dev_dependency]]

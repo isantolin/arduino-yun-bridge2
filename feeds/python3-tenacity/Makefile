@@ -22,6 +22,17 @@ PYTHON3_PKG_BUILD_VARS += \
 
 define Build/Prepare
 	$(call Build/Prepare/Default)
+	# [FIX] tenacity 9.2.1 uses hatchling+hatch-vcs as build-system.
+	# hatch-vcs -> setuptools-scm -> vcs-versioning>=2.3.2.dev0 chain causes
+	# unmet dependency errors in the SDK hostpkg environment.
+	# Strip hatch-vcs from build requires and inject static version directly.
+	sed -i 's/requires = \["hatchling", "hatch-vcs"\]/requires = ["hatchling"]/g' $(PKG_BUILD_DIR)/pyproject.toml 2>/dev/null || true
+	sed -i 's/dynamic = \["version"\]/version = "$(PKG_VERSION)"/g' $(PKG_BUILD_DIR)/pyproject.toml 2>/dev/null || true
+	sed -i '/\[tool.hatch.version\]/d' $(PKG_BUILD_DIR)/pyproject.toml 2>/dev/null || true
+	sed -i '/source = "vcs"/d' $(PKG_BUILD_DIR)/pyproject.toml 2>/dev/null || true
+	sed -i '/\[tool.hatch.build.hooks.vcs\]/d' $(PKG_BUILD_DIR)/pyproject.toml 2>/dev/null || true
+	sed -i '/version-file/d' $(PKG_BUILD_DIR)/pyproject.toml 2>/dev/null || true
+	# Legacy setuptools_scm cleanup (belt-and-suspenders)
 	sed -i '/setuptools_scm/d' $(PKG_BUILD_DIR)/pyproject.toml 2>/dev/null || true
 	sed -i '/\[tool.setuptools_scm\]/d' $(PKG_BUILD_DIR)/pyproject.toml 2>/dev/null || true
 	sed -i 's/use_scm_version=True/version="$(PKG_VERSION)"/g' $(PKG_BUILD_DIR)/setup.py 2>/dev/null || true

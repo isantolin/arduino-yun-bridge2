@@ -141,28 +141,41 @@ void test_surgical_security_failures() {
       rpc::security::handshake_authenticate(secret, nonce, bad_tag, out_tag);
   TEST_ASSERT_FALSE(ok);
 
-  // 2. aead_encrypt_frame with null nonce_counter
+  // 2. aead_encrypt_frame rejects a null nonce_counter to prevent reuse
   etl::array<uint8_t, 4> in = {1, 2, 3, 4};
   etl::array<uint8_t, 32> key = {0};
   etl::array<uint8_t, 4> out_payload = {0};
   etl::array<uint8_t, 12> out_nonce = {0};
   etl::array<uint8_t, 16> out_tag2 = {0};
-  bool enc_ok = rpc::security::aead_encrypt_frame(
+  const bool enc_ok = rpc::security::aead_encrypt_frame(
       1, 1, in, key, nullptr, out_payload, out_nonce, out_tag2);
-  TEST_ASSERT(enc_ok);
+  TEST_ASSERT_FALSE(enc_ok);
+  const bool outputs_unchanged =
+      etl::all_of(out_payload.begin(), out_payload.end(),
+                  [](uint8_t value) { return value == 0U; }) &&
+      etl::all_of(out_nonce.begin(), out_nonce.end(),
+                  [](uint8_t value) { return value == 0U; }) &&
+      etl::all_of(out_tag2.begin(), out_tag2.end(),
+                  [](uint8_t value) { return value == 0U; });
+  TEST_ASSERT_TRUE(outputs_unchanged);
 
   // 3. validate_frame_nonce with null last_seen_counter
   etl::array<uint8_t, 12> valid_nonce = {0};
   valid_nonce[0] = 'M';
   valid_nonce[1] = 'C';
   valid_nonce[2] = 'U';
-  bool val_ok = rpc::security::validate_frame_nonce(valid_nonce, nullptr);
-  TEST_ASSERT(val_ok);
+  valid_nonce[11] = 1U;
+  const bool missing_replay_state =
+      rpc::security::validate_frame_nonce(valid_nonce, nullptr);
+  TEST_ASSERT_FALSE(missing_replay_state);
 
   // 4. validate_frame_nonce with nonce of size < 12
   etl::array<uint8_t, 10> short_nonce = {0};
-  bool short_ok = rpc::security::validate_frame_nonce(short_nonce, nullptr);
+  uint64_t short_nonce_last_seen = 0U;
+  const bool short_ok = rpc::security::validate_frame_nonce(
+      short_nonce, &short_nonce_last_seen);
   TEST_ASSERT_FALSE(short_ok);
+  TEST_ASSERT_EQUAL_UINT64(0U, short_nonce_last_seen);
 
   // 5. Handshake authenticate empty tag
   bool empty_tag_ok = rpc::security::handshake_authenticate(

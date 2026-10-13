@@ -144,7 +144,7 @@ bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
                         etl::span<uint8_t> out_nonce,
                         etl::span<uint8_t> out_tag) {
   // Validar tamaños exactos de búferes antes de invocar a wolfSSL
-  if (key.size() != rpc::RPC_AEAD_KEY_SIZE ||
+  if (!nonce_counter || key.size() != rpc::RPC_AEAD_KEY_SIZE ||
       out_nonce.size() != rpc::RPC_AEAD_NONCE_SIZE ||
       out_tag.size() != rpc::RPC_AEAD_TAG_SIZE ||
       out_payload.size() < in.size()) {
@@ -152,14 +152,12 @@ bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
   }
 
   // Prevenir desbordamiento (wrap-around) del contador de 64 bits
-  if (nonce_counter) {
-    if (*nonce_counter >= rpc::RPC_NONCE_COUNTER_MASK) {
-      return false;  // Abortar cifrado para evitar reutilizar Nonce
-    }
-    (*nonce_counter)++;
+  if (*nonce_counter >= rpc::RPC_NONCE_COUNTER_MASK) {
+    return false;  // Abortar cifrado para evitar reutilizar Nonce
   }
+  (*nonce_counter)++;
 
-  const uint64_t current_nonce = nonce_counter ? *nonce_counter : 0;
+  const uint64_t current_nonce = *nonce_counter;
 
   etl::fill(out_nonce.begin(), out_nonce.end(), 0U);
   static_assert(sizeof(uint32_t) + sizeof(uint64_t) == rpc::RPC_AEAD_NONCE_SIZE,
@@ -216,7 +214,7 @@ bool aead_decrypt_frame(uint16_t cmd_id, uint16_t seq_id,
 bool validate_frame_nonce(etl::span<const uint8_t> nonce,
                           uint64_t* last_seen_counter) {
   // Exigir tamaño exacto del Nonce AEAD usando constante
-  if (nonce.size() != rpc::RPC_AEAD_NONCE_SIZE) {
+  if (!last_seen_counter || nonce.size() != rpc::RPC_AEAD_NONCE_SIZE) {
     return false;
   }
 
@@ -227,14 +225,12 @@ bool validate_frame_nonce(etl::span<const uint8_t> nonce,
   const uint64_t counter = n_reader.read<uint64_t>().value();
 
   // [ANTI-REPLAY] Si el contador es menor o igual al último visto, rechazar
-  if (last_seen_counter && counter <= *last_seen_counter) {
+  if (counter <= *last_seen_counter) {
     return false;
   }
 
   // Actualizar el contador solo cuando la validación es exitosa
-  if (last_seen_counter) {
-    *last_seen_counter = counter;
-  }
+  *last_seen_counter = counter;
 
   return true;
 }

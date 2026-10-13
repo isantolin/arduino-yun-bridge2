@@ -197,9 +197,9 @@ void test_nonce_counter_accepts_random_prefix_and_rejects_replay(void) {
 
   etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> newer_nonce = nonce;
   newer_nonce[11] = 2U;
-  const bool no_counter_tracking =
+  const bool missing_counter_rejected =
       rpc::security::validate_frame_nonce(newer_nonce, nullptr);
-  TEST_ASSERT_TRUE(no_counter_tracking);
+  TEST_ASSERT_FALSE(missing_counter_rejected);
 
   etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> mpu_nonce = {};
   etl::byte_stream_writer mpu_prefix_writer(
@@ -214,14 +214,16 @@ void test_nonce_counter_accepts_random_prefix_and_rejects_replay(void) {
   TEST_ASSERT_EQUAL_UINT64(3U, mpu_last_seen_counter);
 
   etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE - 1U> short_nonce = {};
+  uint64_t size_test_counter = 0U;
   const bool short_nonce_rejected =
-      rpc::security::validate_frame_nonce(short_nonce, nullptr);
+      rpc::security::validate_frame_nonce(short_nonce, &size_test_counter);
   TEST_ASSERT_FALSE(short_nonce_rejected);
 
   etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE + 1U> long_nonce = {};
   const bool long_nonce_rejected =
-      rpc::security::validate_frame_nonce(long_nonce, nullptr);
+      rpc::security::validate_frame_nonce(long_nonce, &size_test_counter);
   TEST_ASSERT_FALSE(long_nonce_rejected);
+  TEST_ASSERT_EQUAL_UINT64(0U, size_test_counter);
 }
 
 void test_bridge_nonce_overflow_protection(void) {

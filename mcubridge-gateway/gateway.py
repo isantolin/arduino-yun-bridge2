@@ -10,7 +10,8 @@ import asyncio
 import inspect
 import logging
 import sys
-from typing import Any, Callable, Coroutine, Dict, TypeVar
+from typing import Any, TypeVar
+from collections.abc import Callable, Coroutine
 
 import anyio
 import grpc
@@ -105,7 +106,7 @@ class GatewayLocalBridgeService:
 class GatewayDaemon:
     """Main gateway daemon process supervisor with gRPC server lifecycle support."""
 
-    def __init__(self, config: Dict[str, Any] | None = None) -> None:
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
         self.config = config or {}
         self.host = str(self.config.get("host", "127.0.0.1"))
         self.port = int(self.config.get("port", 8443))

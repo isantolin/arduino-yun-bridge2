@@ -10,8 +10,7 @@ import asyncio
 import inspect
 import logging
 import sys
-from typing import Any, TypeVar
-from collections.abc import Callable, Coroutine
+from typing import Any, Callable, Coroutine, Dict, TypeVar
 
 import anyio
 import grpc
@@ -40,7 +39,7 @@ class GatewayLocalBridgeService:
             return
 
         try:
-            res = context.abort(code, details)
+            res: Any = context.abort(code, details)
             if inspect.isawaitable(res):
                 await res
         except (grpc.RpcError, AttributeError, RuntimeError) as exc:
@@ -60,7 +59,7 @@ class GatewayLocalBridgeService:
         """
         self.logger.debug("Gateway forwarding RPC method: %s", method_name)
 
-        handler = getattr(self.daemon_client, method_name, None)
+        handler: Any = getattr(self.daemon_client, method_name, None)
         if handler is None or not callable(handler):
             error_msg = f"Daemon client does not support method '{method_name}'"
             self.logger.error(error_msg)
@@ -69,19 +68,21 @@ class GatewayLocalBridgeService:
 
         try:
             # Unwrap any decorated functions or partials
-            unwrapped_handler = inspect.unwrap(handler)
+            unwrapped_handler: Any = inspect.unwrap(handler)
             is_async = (
                 inspect.iscoroutinefunction(handler)
                 or inspect.iscoroutinefunction(unwrapped_handler)
             )
 
             if is_async:
-                return await handler(request, context=context)
+                res: Any = handler(request, context=context)
+                if inspect.isawaitable(res):
+                    return await res
+                return res
 
             # Offload blocking synchronous call to thread pool to prevent loop starvation
-            return await anyio.to_thread.run_sync(
-                lambda: handler(request, context=context)
-            )
+            sync_fn: Callable[[], Any] = lambda: handler(request, context=context)
+            return await anyio.to_thread.run_sync(sync_fn)
         except (grpc.RpcError, AttributeError, RuntimeError, ValueError) as exc:
             self.logger.error("Error during RPC execution for %s: %s", method_name, exc)
             await self._safe_abort(context, grpc.StatusCode.INTERNAL, str(exc))
@@ -106,7 +107,7 @@ class GatewayLocalBridgeService:
 class GatewayDaemon:
     """Main gateway daemon process supervisor with gRPC server lifecycle support."""
 
-    def __init__(self, config: dict[str, Any] | None = None) -> None:
+    def __init__(self, config: Dict[str, Any] | None = None) -> None:
         self.config = config or {}
         self.host = str(self.config.get("host", "127.0.0.1"))
         self.port = int(self.config.get("port", 8443))
@@ -124,7 +125,8 @@ class GatewayDaemon:
         self.service = GatewayLocalBridgeService(daemon_client)
 
         try:
-            self.server = grpc.aio.server()
+            create_server: Any = grpc.aio.server
+            self.server = create_server()
             bind_address = f"{self.host}:{self.port}"
             self.server.add_insecure_port(bind_address)
             await self.server.start()

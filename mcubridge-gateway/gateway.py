@@ -5,7 +5,6 @@ Refactored to eliminate explicit per-RPC method boilerplate using dynamic dispat
 
 from __future__ import annotations
 
-import asyncio
 import inspect
 import logging
 from typing import Any, Callable, Coroutine, Dict, TypeVar

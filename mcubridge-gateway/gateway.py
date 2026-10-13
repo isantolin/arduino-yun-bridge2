@@ -10,16 +10,22 @@ import asyncio
 import inspect
 import logging
 import sys
-from typing import Any, TypeVar
-from collections.abc import Callable, Coroutine
+from typing import Any, Callable, Coroutine, Dict, TypeVar
 
 import anyio
 import grpc
 import grpc.aio
+import typer
 
 logger = logging.getLogger("mcubridge.gateway")
 
 T = TypeVar("T")
+
+app = typer.Typer(
+    name="mcubridge-gateway",
+    help="Managed Cloud Gateway daemon service for mcubridge.",
+    add_completion=False,
+)
 
 
 class GatewayLocalBridgeService:
@@ -82,8 +88,7 @@ class GatewayLocalBridgeService:
                 return res
 
             # Offload blocking synchronous call to thread pool to prevent loop starvation
-            def sync_fn() -> Any:
-                return handler(request, context=context)
+            sync_fn: Callable[[], Any] = lambda: handler(request, context=context)
             return await anyio.to_thread.run_sync(sync_fn)
         except (grpc.RpcError, AttributeError, RuntimeError, ValueError) as exc:
             self.logger.error("Error during RPC execution for %s: %s", method_name, exc)
@@ -109,7 +114,7 @@ class GatewayLocalBridgeService:
 class GatewayDaemon:
     """Main gateway daemon process supervisor with gRPC server lifecycle support."""
 
-    def __init__(self, config: dict[str, Any] | None = None) -> None:
+    def __init__(self, config: Dict[str, Any] | None = None) -> None:
         self.config = config or {}
         self.host = str(self.config.get("host", "127.0.0.1"))
         self.port = int(self.config.get("port", 8443))
@@ -148,17 +153,20 @@ class GatewayDaemon:
         logger.info("GatewayLocalBridgeService stopped.")
 
 
-async def main() -> None:
-    """CLI Entry point for starting the Managed Cloud Gateway process."""
-    logging.basicConfig(level=logging.INFO)
-    logger.info("Starting Managed Cloud Gateway daemon process...")
+async def _run_gateway(host: str, port: int, once: bool) -> None:
+    """Internal async execution loop for Gateway daemon."""
+    logger.info("Starting Managed Cloud Gateway daemon process on %s:%d...", host, port)
 
     class LocalMockDaemonClient:
         async def Echo(self, request: Any, context: Any = None) -> Any:
             return request
 
-    daemon = GatewayDaemon({"host": "127.0.0.1", "port": 8443})
+    daemon = GatewayDaemon({"host": host, "port": port})
     await daemon.start(LocalMockDaemonClient())
+
+    if once:
+        await daemon.stop()
+        return
 
     try:
         while daemon.is_running:
@@ -167,12 +175,23 @@ async def main() -> None:
         await daemon.stop()
 
 
-if __name__ == "__main__":
+@app.command()
+def main(
+    host: str = typer.Option("127.0.0.1", "--host", help="Host address to bind (default: 127.0.0.1)"),
+    port: int = typer.Option(8443, "--port", help="Port to bind (default: 8443)"),
+    once: bool = typer.Option(False, "--once", help="Run startup verification once and exit immediately."),
+) -> None:
+    """CLI Entry point for starting the Managed Cloud Gateway process."""
+    logging.basicConfig(level=logging.INFO)
     try:
-        asyncio.run(main())
+        asyncio.run(_run_gateway(host, port, once))
     except (KeyboardInterrupt, SystemExit):
         sys.exit(0)
-    except (grpc.RpcError, OSError, RuntimeError, ValueError) as e:
-        sys.stderr.write(f"[FATAL] Cloud Gateway crash: {e}\n")
+    except (grpc.RpcError, OSError, RuntimeError, ValueError) as exc:
+        sys.stderr.write(f"[FATAL] Cloud Gateway crash: {exc}\n")
         sys.stderr.flush()
         sys.exit(1)
+
+
+if __name__ == "__main__":
+    app()

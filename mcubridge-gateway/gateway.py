@@ -10,8 +10,7 @@ import asyncio
 import inspect
 import logging
 import sys
-from typing import Any, TypeVar
-from collections.abc import Callable, Coroutine
+from typing import Any, Callable, Coroutine, Dict, TypeVar
 
 import anyio
 import grpc
@@ -82,8 +81,7 @@ class GatewayLocalBridgeService:
                 return res
 
             # Offload blocking synchronous call to thread pool to prevent loop starvation
-            def sync_fn() -> Any:
-                return handler(request, context=context)
+            sync_fn: Callable[[], Any] = lambda: handler(request, context=context)
             return await anyio.to_thread.run_sync(sync_fn)
         except (grpc.RpcError, AttributeError, RuntimeError, ValueError) as exc:
             self.logger.error("Error during RPC execution for %s: %s", method_name, exc)
@@ -109,7 +107,7 @@ class GatewayLocalBridgeService:
 class GatewayDaemon:
     """Main gateway daemon process supervisor with gRPC server lifecycle support."""
 
-    def __init__(self, config: dict[str, Any] | None = None) -> None:
+    def __init__(self, config: Dict[str, Any] | None = None) -> None:
         self.config = config or {}
         self.host = str(self.config.get("host", "127.0.0.1"))
         self.port = int(self.config.get("port", 8443))
@@ -127,8 +125,8 @@ class GatewayDaemon:
         self.service = GatewayLocalBridgeService(daemon_client)
 
         try:
-            create_server: Any = grpc.aio.server
-            self.server = create_server()
+            server_factory: Any = getattr(grpc.aio, "server")
+            self.server = server_factory()
             bind_address = f"{self.host}:{self.port}"
             self.server.add_insecure_port(bind_address)
             await self.server.start()

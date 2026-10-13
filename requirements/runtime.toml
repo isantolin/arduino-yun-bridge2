@@ -43,7 +43,7 @@ rationale = "Expose fleet-wide runtime metrics via the Prometheus Python client 
 [[dependency]]
 name = "serialx"
 openwrt = "python3-serialx"
-pip = "serialx==1.12.0"
+pip = "serialx==1.11.0"
 rationale = "Native sync/async serial stack with modem-pin controls and typed transports"
 
 [[dependency]]
@@ -184,13 +184,6 @@ openwrt = "python3-packaging"
 pip = "packaging==26.3"
 rationale = "Standardized core utilities for Python package version parsing and requirement specifiers"
 
-[[dependency]]
-name = "grpcio"
-openwrt = "python3-grpcio"
-pip = "grpcio==1.84.0"
-gateway = true
-rationale = "C-extension gRPC runtime required for gateway operations"
-
 
 # =============================================================================
 # C++ / Arduino Microcontroller Dependencies (SIL-2 Zero-Heap)
@@ -291,11 +284,6 @@ rationale = "Type stubs for psutil required by pyrefly"
 name = "types-pexpect"
 pip = "types-pexpect==4.9.0.20260518"
 rationale = "Type stubs for pexpect required by pyrefly"
-
-[[dev_dependency]]
-name = "types-grpcio"
-pip = "types-grpcio==1.84.0.20260928"
-rationale = "Type stubs for grpc required by pyrefly and static analysis tools"
 
 [[dev_dependency]]
 name = "flake8"

@@ -26,13 +26,12 @@ dependencies = [
     "protobuf==7.36.2",
     "psutil==7.2.2",
     "python-statemachine==3.2.1",
-    "serialx==1.12.0",
+    "serialx==1.11.0",
     "shellingham==1.5.4",
     "structlog==26.1.0",
     "tenacity==9.2.1",
     "typer==0.27.3",
     "uvloop==0.23.0",
-    "types-grpcio==1.84.0.20260928",
 ]
 
 [tool.pyrefly.errors]
@@ -65,14 +64,7 @@ filterwarnings = [
 typeCheckingMode = "strict"
 pythonVersion = "3.14"
 stubPath = "typings"
-extraPaths = [
-    "typings/stubs",
-    "typings/stubs/grpc-stubs",
-    "mcubridge",
-    "mcubridge-client-examples",
-    "mcubridge-client-examples/tests",
-    "mcubridge-gateway"
-]
+extraPaths = ["typings/stubs", "mcubridge", "mcubridge-client-examples", "mcubridge-client-examples/tests", "mcubridge-gateway"]
 include = [
     "mcubridge/mcubridge",
     "mcubridge/tests",
@@ -211,9 +203,6 @@ exclude = [
 
 [tool.pyrefly]
 project-includes = [
-    "typings/stubs",
-    "typings", 
-    ".",
     "mcubridge/mcubridge",
     "mcubridge/tests",
     "mcubridge-client-examples",
@@ -222,13 +211,8 @@ project-includes = [
     "mcubridge/scripts",
     "tools",
 ]
-search-path = [
-    "typings/stubs",
-    "typings",
-    "."]
 project-excludes = [
     "openwrt-sdk",
-    "feeds",
     "tools/protocol/templates",
     ".tox",
     ".venv",
@@ -245,7 +229,14 @@ project-excludes = [
     "*__pyrefly_virtual_*",
     "**/.*",
 ]
+search-path = [
+    "typings/stubs",
+    "mcubridge",
+    "mcubridge-client-examples",
+    "mcubridge-client-examples/tests",
+    "mcubridge-gateway",
+]
 python-version = "3.14.0"
-site-package-path = ["typings", "typings/stubs"]
+site-package-path = ["typings"]
 infer-with-first-use = false
 min-severity = "warn"

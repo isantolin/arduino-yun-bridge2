@@ -1,3 +1,0 @@
-from typing import Any
-
-def server(*args: Any, **kwargs: Any) -> Any: ...

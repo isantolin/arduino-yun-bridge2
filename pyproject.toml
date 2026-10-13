@@ -32,6 +32,7 @@ dependencies = [
     "tenacity==9.2.1",
     "typer==0.27.3",
     "uvloop==0.23.0",
+    "types-grpcio==1.84.0.20260928",
 ]
 
 [tool.pyrefly.errors]

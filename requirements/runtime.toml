@@ -290,7 +290,6 @@ name = "types-grpcio"
 pip = "types-grpcio==1.84.0.20260928"
 rationale = "Type stubs for grpc required by pyrefly and static analysis tools"
 
-
 [[dev_dependency]]
 name = "flake8"
 pip = "flake8==7.4.1"

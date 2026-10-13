@@ -184,6 +184,13 @@ openwrt = "python3-packaging"
 pip = "packaging==26.3"
 rationale = "Standardized core utilities for Python package version parsing and requirement specifiers"
 
+[[dependency]]
+name = "grpcio"
+openwrt = "python3-grpcio"
+pip = "grpcio==1.84.0"
+gateway = true
+rationale = "C-extension gRPC runtime required for gateway operations"
+
 
 # =============================================================================
 # C++ / Arduino Microcontroller Dependencies (SIL-2 Zero-Heap)

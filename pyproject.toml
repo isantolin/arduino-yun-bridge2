@@ -65,7 +65,14 @@ filterwarnings = [
 typeCheckingMode = "strict"
 pythonVersion = "3.14"
 stubPath = "typings"
-extraPaths = ["typings/stubs", "mcubridge", "mcubridge-client-examples", "mcubridge-client-examples/tests", "mcubridge-gateway"]
+extraPaths = [
+    "typings/stubs",
+    "typings/stubs/grpc-stubs",
+    "mcubridge",
+    "mcubridge-client-examples",
+    "mcubridge-client-examples/tests",
+    "mcubridge-gateway"
+]
 include = [
     "mcubridge/mcubridge",
     "mcubridge/tests",
@@ -215,6 +222,14 @@ project-includes = [
     "mcubridge/scripts",
     "tools",
 ]
+search-path = [
+    "typings/stubs",
+    "typings/stubs/grpc-stubs",
+    "mcubridge",
+    "mcubridge-client-examples",
+    "mcubridge-client-examples/tests",
+    "mcubridge-gateway",
+]
 project-excludes = [
     "openwrt-sdk",
     "tools/protocol/templates",
@@ -233,14 +248,7 @@ project-excludes = [
     "*__pyrefly_virtual_*",
     "**/.*",
 ]
-search-path = [
-    "typings/stubs",
-    "mcubridge",
-    "mcubridge-client-examples",
-    "mcubridge-client-examples/tests",
-    "mcubridge-gateway",
-]
 python-version = "3.14.0"
-site-package-path = ["typings"]
+site-package-path = ["typings", "typings/stubs"]
 infer-with-first-use = false
 min-severity = "warn"

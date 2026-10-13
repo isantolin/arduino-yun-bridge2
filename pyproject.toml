@@ -204,6 +204,9 @@ exclude = [
 
 [tool.pyrefly]
 project-includes = [
+    "typings/stubs",
+    "typings", 
+    ".",
     "mcubridge/mcubridge",
     "mcubridge/tests",
     "mcubridge-client-examples",

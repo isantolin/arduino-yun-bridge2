@@ -6,6 +6,7 @@ Refactored to eliminate explicit per-RPC method boilerplate using dynamic dispat
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 from typing import Any, Callable, Coroutine, Dict, TypeVar
 
@@ -43,18 +44,18 @@ class GatewayLocalBridgeService:
             error_msg = f"Daemon client does not support method '{method_name}'"
             self.logger.error(error_msg)
             if context is not None and hasattr(context, "abort"):
-                import grpc
+                import grpc  # type: ignore[import-untyped]
                 await context.abort(grpc.StatusCode.UNIMPLEMENTED, error_msg)
             raise AttributeError(error_msg)
 
         try:
-            if asyncio.iscoroutinefunction(handler):
+            if inspect.iscoroutinefunction(handler):
                 return await handler(request, context=context)
             return handler(request, context=context)
         except Exception as exc:
             self.logger.error("Error during RPC execution for %s: %s", method_name, exc)
             if context is not None and hasattr(context, "abort"):
-                import grpc
+                import grpc  # type: ignore[import-untyped]
                 await context.abort(grpc.StatusCode.INTERNAL, str(exc))
             raise
 

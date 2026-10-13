@@ -1,7 +1,7 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=python3-serialx
-PKG_VERSION:=1.11.0
+PKG_VERSION:=1.12.0
 PKG_RELEASE:=1
 
 PYPI_NAME:=serialx

@@ -1,6 +1,5 @@
 """Unit tests for mcubridge-gateway dynamic RPC forwarding."""
 
-import asyncio
 from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
@@ -26,12 +25,12 @@ async def test_forward_rpc_explicit_calls(mock_daemon_client: MagicMock) -> None
 
     res_pin = await service.SetPinMode({"pin": 13, "mode": "OUTPUT"})
     assert res_pin == {"status": "OK", "pin": 13, "mode": "OUTPUT"}
-    set_pin_mock = cast(AsyncMock, getattr(mock_daemon_client, "SetPinMode"))
+    set_pin_mock = cast(AsyncMock, mock_daemon_client.SetPinMode)
     set_pin_mock.assert_awaited_once_with({"pin": 13, "mode": "OUTPUT"}, context=None)
 
     res_write = await service.DigitalWrite({"pin": 13, "val": 1})
     assert res_write == {"status": "OK", "pin": 13, "val": 1}
-    digital_write_mock = cast(AsyncMock, getattr(mock_daemon_client, "DigitalWrite"))
+    digital_write_mock = cast(AsyncMock, mock_daemon_client.DigitalWrite)
     digital_write_mock.assert_awaited_once_with({"pin": 13, "val": 1}, context=None)
 
 
@@ -42,7 +41,7 @@ async def test_dynamic_dispatch_any_rpc_method(mock_daemon_client: MagicMock) ->
     # Calling an arbitrary method not explicitly defined on the class
     res = await service.CustomUnknownRPC({"req": "test"})
     assert res == {"status": "OK", "custom": True}
-    custom_rpc_mock = cast(AsyncMock, getattr(mock_daemon_client, "CustomUnknownRPC"))
+    custom_rpc_mock = cast(AsyncMock, mock_daemon_client.CustomUnknownRPC)
     custom_rpc_mock.assert_awaited_once_with({"req": "test"}, context=None)
 
 

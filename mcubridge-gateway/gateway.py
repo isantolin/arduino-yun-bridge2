@@ -42,7 +42,7 @@ class GatewayLocalBridgeService:
             res = context.abort(code, details)
             if inspect.isawaitable(res):
                 await res
-        except Exception as exc:
+        except (grpc.RpcError, AttributeError, RuntimeError) as exc:
             # context.abort in sync gRPC raises an internal exception to stop execution
             self.logger.debug("gRPC context abort raised exception: %s", exc)
 
@@ -81,7 +81,7 @@ class GatewayLocalBridgeService:
             return await anyio.to_thread.run_sync(
                 lambda: handler(request, context=context)
             )
-        except Exception as exc:
+        except (grpc.RpcError, AttributeError, RuntimeError, ValueError) as exc:
             self.logger.error("Error during RPC execution for %s: %s", method_name, exc)
             await self._safe_abort(context, grpc.StatusCode.INTERNAL, str(exc))
             raise
@@ -129,7 +129,7 @@ class GatewayDaemon:
             await self.server.start()
             self._running = True
             logger.info("GatewayLocalBridgeService started listening on %s", bind_address)
-        except Exception as exc:
+        except (grpc.RpcError, OSError, RuntimeError) as exc:
             sys.stderr.write(f"[ERROR] Failed to bind/start Cloud Gateway on {self.host}:{self.port}: {exc}\n")
             sys.stderr.flush()
             self._running = False
@@ -165,7 +165,9 @@ async def main() -> None:
 if __name__ == "__main__":
     try:
         asyncio.run(main())
-    except Exception as e:
+    except (KeyboardInterrupt, SystemExit):
+        sys.exit(0)
+    except (grpc.RpcError, OSError, RuntimeError, ValueError) as e:
         sys.stderr.write(f"[FATAL] Cloud Gateway crash: {e}\n")
         sys.stderr.flush()
         sys.exit(1)

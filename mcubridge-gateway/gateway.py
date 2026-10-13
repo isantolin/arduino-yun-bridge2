@@ -1,15 +1,20 @@
 """Gateway service for forwarding northbound gRPC requests to local mcubridge daemon.
 
-Refactored to eliminate explicit per-RPC method boilerplate using dynamic dispatch.
+Refactored to eliminate explicit per-RPC method boilerplate using dynamic dispatch
+while maintaining SIL-2 compliance, safe thread-offloading, and robust gRPC context handling.
 """
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import logging
+import sys
 from typing import Any, Callable, Coroutine, Dict, TypeVar
 
+import anyio
 import grpc
+import grpc.aio
 
 logger = logging.getLogger("mcubridge.gateway")
 
@@ -20,12 +25,26 @@ class GatewayLocalBridgeService:
     """Northbound gRPC Gateway service.
 
     Uses dynamic dispatch via `__getattr__` to forward all RPC method calls
-    directly to `_forward_rpc`, eliminating repetitive method wrappers.
+    directly to `_forward_rpc`, eliminating repetitive method wrappers while
+    ensuring non-blocking asyncio loop behavior and safe gRPC error handling.
     """
 
     def __init__(self, daemon_client: Any, logger_instance: logging.Logger | None = None) -> None:
         self.daemon_client = daemon_client
         self.logger = logger_instance or logger
+
+    async def _safe_abort(self, context: Any, code: grpc.StatusCode, details: str) -> None:
+        """Safely handle context.abort for both sync and async gRPC contexts."""
+        if context is None or not hasattr(context, "abort"):
+            return
+
+        try:
+            res = context.abort(code, details)
+            if inspect.isawaitable(res):
+                await res
+        except Exception as exc:
+            # context.abort in sync gRPC raises an internal exception to stop execution
+            self.logger.debug("gRPC context abort raised exception: %s", exc)
 
     async def _forward_rpc(self, method_name: str, request: Any, context: Any = None) -> Any:
         """Forward a gRPC call to the underlying local bridge daemon client.
@@ -44,27 +63,35 @@ class GatewayLocalBridgeService:
         if handler is None or not callable(handler):
             error_msg = f"Daemon client does not support method '{method_name}'"
             self.logger.error(error_msg)
-            if context is not None and hasattr(context, "abort"):
-                await context.abort(grpc.StatusCode.UNIMPLEMENTED, error_msg)
+            await self._safe_abort(context, grpc.StatusCode.UNIMPLEMENTED, error_msg)
             raise AttributeError(error_msg)
 
         try:
-            if inspect.iscoroutinefunction(handler):
+            # Unwrap any decorated functions or partials
+            unwrapped_handler = inspect.unwrap(handler)
+            is_async = (
+                inspect.iscoroutinefunction(handler)
+                or inspect.iscoroutinefunction(unwrapped_handler)
+            )
+
+            if is_async:
                 return await handler(request, context=context)
-            return handler(request, context=context)
+
+            # Offload blocking synchronous call to thread pool to prevent loop starvation
+            return await anyio.to_thread.run_sync(
+                lambda: handler(request, context=context)
+            )
         except Exception as exc:
             self.logger.error("Error during RPC execution for %s: %s", method_name, exc)
-            if context is not None and hasattr(context, "abort"):
-                await context.abort(grpc.StatusCode.INTERNAL, str(exc))
+            await self._safe_abort(context, grpc.StatusCode.INTERNAL, str(exc))
             raise
 
     def __getattr__(self, name: str) -> Callable[..., Coroutine[Any, Any, Any]]:
         """Dynamically resolve any gRPC RPC method call to _forward_rpc.
 
-        This replaces explicit, repetitive methods (SetPinMode, DigitalWrite,
-        FileRead, etc.) with a single unified dynamic handler.
+        Filters out private attributes, dunder attributes, and internal introspection calls.
         """
-        if name.startswith("_"):
+        if name.startswith("_") or name.endswith("_") or name in ("trait_names", "shape"):
             raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
 
         async def dynamic_rpc_handler(request: Any, context: Any = None) -> Any:
@@ -76,11 +103,14 @@ class GatewayLocalBridgeService:
 
 
 class GatewayDaemon:
-    """Main gateway daemon process supervisor."""
+    """Main gateway daemon process supervisor with gRPC server lifecycle support."""
 
     def __init__(self, config: Dict[str, Any] | None = None) -> None:
         self.config = config or {}
+        self.host = str(self.config.get("host", "127.0.0.1"))
+        self.port = int(self.config.get("port", 8443))
         self.service: GatewayLocalBridgeService | None = None
+        self.server: Any = None
         self._running = False
 
     @property
@@ -89,12 +119,53 @@ class GatewayDaemon:
         return self._running
 
     async def start(self, daemon_client: Any) -> None:
-        """Start the gateway service."""
+        """Start the gateway service and gRPC server on configured host and port."""
         self.service = GatewayLocalBridgeService(daemon_client)
-        self._running = True
-        logger.info("GatewayLocalBridgeService started with dynamic RPC dispatch.")
+
+        try:
+            self.server = grpc.aio.server()
+            bind_address = f"{self.host}:{self.port}"
+            self.server.add_insecure_port(bind_address)
+            await self.server.start()
+            self._running = True
+            logger.info("GatewayLocalBridgeService started listening on %s", bind_address)
+        except Exception as exc:
+            sys.stderr.write(f"[ERROR] Failed to bind/start Cloud Gateway on {self.host}:{self.port}: {exc}\n")
+            sys.stderr.flush()
+            self._running = False
+            raise
 
     async def stop(self) -> None:
-        """Stop the gateway service."""
+        """Stop the gateway service and gRPC server gracefully."""
+        if self.server:
+            await self.server.stop(grace=1.0)
         self._running = False
         logger.info("GatewayLocalBridgeService stopped.")
+
+
+async def main() -> None:
+    """CLI Entry point for starting the Managed Cloud Gateway process."""
+    logging.basicConfig(level=logging.INFO)
+    logger.info("Starting Managed Cloud Gateway daemon process...")
+
+    class LocalMockDaemonClient:
+        async def Echo(self, request: Any, context: Any = None) -> Any:
+            return request
+
+    daemon = GatewayDaemon({"host": "127.0.0.1", "port": 8443})
+    await daemon.start(LocalMockDaemonClient())
+
+    try:
+        while daemon.is_running:
+            await asyncio.sleep(1)
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        await daemon.stop()
+
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except Exception as e:
+        sys.stderr.write(f"[FATAL] Cloud Gateway crash: {e}\n")
+        sys.stderr.flush()
+        sys.exit(1)

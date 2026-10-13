@@ -45,6 +45,18 @@ def test_cli_exposes_dry_run_option() -> None:
     assert "--check-latest" in result.stdout
 
 
+def test_nanopb_core_file_list_is_synced_to_installer() -> None:
+    manifest = sync_runtime_deps.load_manifest()
+    nanopb_core = next(dep for dep in manifest.cpp if dep["name"] == "nanopb_core")
+    installer = sync_runtime_deps.ARDUINO_INSTALL_SCRIPT_PATH.read_text(encoding="utf-8")
+    expected_array = "NANOPB_CORE_FILES=(" + " ".join(f'"{name}"' for name in nanopb_core["files"]) + ")"
+
+    assert nanopb_core["files"]
+    assert f'NANOPB_VERSION="{nanopb_core["version"]}"' in installer
+    assert expected_array in installer
+    assert not sync_runtime_deps.update_cpp_install_script(manifest.cpp, dry_run=True)
+
+
 def test_main_dry_run_reports_up_to_date_when_no_changes() -> None:
     result = CliRunner().invoke(sync_runtime_deps.cli, ["--dry-run"])
 

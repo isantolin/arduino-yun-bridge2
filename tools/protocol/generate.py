@@ -17,12 +17,13 @@ import re
 import shutil
 import subprocess
 import sys
+import tomllib
 import urllib.error
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Annotated, Any, cast
+from typing import Annotated, Any, TypeGuard, cast
 
 import black
 import tenacity
@@ -84,7 +85,7 @@ def run_buf_format(proto_dir: Path) -> None:
             cwd=str(proto_dir),
         )
     except subprocess.CalledProcessError as e:
-        sys.stderr.write(f"Warning: buf format failed:\n{e.stderr}\n")
+        raise RuntimeError(f"buf format failed:\n{e.stderr}") from e
 
 
 def run_buf_generate(proto_dir: Path) -> None:
@@ -814,7 +815,8 @@ class JinjaGenerator:
         rendered = self.env.get_template(template_name).render(**context)
         if format_python or out_path.suffix in (".py", ".pyi"):
             rendered = black.format_str(rendered, mode=black.Mode())
-        out_path.write_text(rendered, encoding="utf-8")
+        if not out_path.is_file() or out_path.read_text(encoding="utf-8") != rendered:
+            out_path.write_text(rendered, encoding="utf-8")
         if executable:
             out_path.chmod(0o755)
 
@@ -835,33 +837,26 @@ def update_metadata(version: str) -> None:
     ]
     for target_path, pattern, repl, count in targets:
         if target_path.exists():
-            updated = re.sub(pattern, repl, target_path.read_text(encoding="utf-8"), count=count)
-            target_path.write_text(updated, encoding="utf-8")
-            sys.stderr.write(f"Updated {target_path} to version {version}\n")
+            original = target_path.read_text(encoding="utf-8")
+            updated = re.sub(pattern, repl, original, count=count)
+            if updated != original:
+                target_path.write_text(updated, encoding="utf-8")
+                sys.stderr.write(f"Updated {target_path} to version {version}\n")
 
 
 def ensure_nanopb_core_files() -> None:
     """Ensure the core Nanopb C files exist in mcubridge-library-arduino/src/."""
 
     src_dir = REPO_ROOT / "mcubridge-library-arduino" / "src"
-    version = "nanopb-0.4.9.2"
-    base_url = f"https://raw.githubusercontent.com/nanopb/nanopb/{version}/"
-    files = [
-        "pb.h",
-        "pb_common.h",
-        "pb_common.c",
-        "pb_decode.h",
-        "pb_decode.c",
-        "pb_encode.h",
-        "pb_encode.c",
-    ]
+    version, files = _load_nanopb_core_spec()
+    base_url = f"https://raw.githubusercontent.com/nanopb/nanopb/nanopb-{version}/"
 
     src_dir.mkdir(parents=True, exist_ok=True)
-    for f in files:
-        target = src_dir / f
+    for file_name in files:
+        target = src_dir / file_name
         if not target.exists():
-            url = base_url + f
-            sys.stderr.write(f"Downloading core Nanopb file: {f} from {url}...\n")
+            url = base_url + file_name
+            sys.stderr.write(f"Downloading core Nanopb file: {file_name} from {url}...\n")
             retryer = tenacity.Retrying(
                 stop=tenacity.stop_after_attempt(3),
                 wait=tenacity.wait_exponential(multiplier=1.0, min=1.0, max=5.0),
@@ -883,36 +878,175 @@ def ensure_nanopb_core_files() -> None:
                 ValueError,
                 tenacity.RetryError,
             ) as e:
-                sys.stderr.write(f"Error downloading {f} after retries: {e}\n")
+                sys.stderr.write(f"Error downloading {file_name} after retries: {e}\n")
                 sys.exit(1)
 
 
-def check_incremental_build(args: Any, version: str) -> tuple[bool, Path, str]:
-    proto_path = args.spec.resolve()
+def _load_nanopb_core_spec() -> tuple[str, list[str]]:
+    manifest_path = REPO_ROOT / "requirements" / "runtime.toml"
+    try:
+        with manifest_path.open("rb") as manifest_file:
+            manifest: object = tomllib.load(manifest_file)
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        raise RuntimeError(f"Cannot load dependency manifest {manifest_path}: {exc}") from exc
+
+    if not _is_string_keyed_mapping(manifest):
+        raise RuntimeError(f"Invalid dependency manifest structure: {manifest_path}")
+    dependencies = manifest.get("cpp_dependency")
+    if not isinstance(dependencies, list):
+        raise RuntimeError(f"Dependency manifest has no C++ dependency list: {manifest_path}")
+
+    matches = [
+        candidate
+        for candidate in cast(list[object], dependencies)
+        if _is_string_keyed_mapping(candidate) and candidate.get("name") == "nanopb_core"
+    ]
+    if len(matches) != 1:
+        raise RuntimeError(f"Expected one nanopb_core entry in {manifest_path}, found {len(matches)}")
+
+    dependency = matches[0]
+    version = dependency.get("version")
+    raw_files = dependency.get("files")
+    if not isinstance(version, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.+-]*", version):
+        raise RuntimeError(f"Invalid nanopb_core version in {manifest_path}")
+    if not isinstance(raw_files, list) or not raw_files:
+        raise RuntimeError(f"Invalid nanopb_core file list in {manifest_path}")
+    files: list[str] = []
+    for file_name in cast(list[object], raw_files):
+        if not isinstance(file_name, str) or not re.fullmatch(r"[A-Za-z0-9_.-]+", file_name):
+            raise RuntimeError(f"Invalid nanopb_core file list in {manifest_path}")
+        files.append(file_name)
+    if len(set(files)) != len(files):
+        raise RuntimeError(f"Duplicate nanopb_core files in {manifest_path}")
+    return version, files
+
+
+def _is_string_keyed_mapping(value: object) -> TypeGuard[dict[str, object]]:
+    if not isinstance(value, dict):
+        return False
+    mapping = cast(dict[object, object], value)
+    return all(isinstance(key, str) for key in mapping)
+
+
+def _resolve_proto_path(spec_path: Path) -> Path:
+    resolved_spec = spec_path.resolve()
+    return (resolved_spec.parent / "mcubridge.proto").resolve() if resolved_spec.suffix == ".toml" else resolved_spec
+
+
+def _template_target_specs(args: Any, repo_root: Path) -> list[tuple[str, str, Path | None, bool, bool]]:
+    return [
+        ("rpc_protocol.h.j2", "common", args.cpp, False, False),
+        (
+            "rpc_hw_config.h.j2",
+            "common",
+            args.cpp.parent / "rpc_hw_config.h" if args.cpp else None,
+            False,
+            False,
+        ),
+        ("rpc_structs.h.j2", "common", args.cpp_structs, False, False),
+        ("protocol.py.j2", "python", args.py, False, True),
+        ("protocol_client.py.j2", "client", args.py_client, False, True),
+        (
+            "mcubridge_uci.j2",
+            "common",
+            repo_root / "luci-app-mcubridge" / "root" / "etc" / "config" / "mcubridge",
+            False,
+            False,
+        ),
+        ("defaults_sh.j2", "common", repo_root / "mcubridge" / "scripts" / "defaults.sh", True, False),
+        (
+            "config_schema_json.j2",
+            "common",
+            repo_root
+            / "luci-app-mcubridge"
+            / "htdocs"
+            / "luci-static"
+            / "resources"
+            / "view"
+            / "mcubridge"
+            / "config_schema.json",
+            False,
+            False,
+        ),
+    ]
+
+
+def expected_generation_outputs(args: Any, *, repo_root: Path = REPO_ROOT) -> list[Path]:
+    explicit_outputs = [path for path in (args.cpp, args.cpp_structs, args.py, args.py_client) if path]
+    outputs = list(explicit_outputs)
+    if args.cpp:
+        outputs.extend((args.cpp.parent / "mcubridge.pb.h", args.cpp.parent / "mcubridge.pb.c"))
+
+    python_output_dirs = {path.parent for path in (args.py, args.py_client) if path}
+    for output_dir in python_output_dirs:
+        outputs.extend(
+            output_dir / file_name for file_name in ("mcubridge_pb2.py", "mcubridge_pb2.pyi", "mcubridge_grpc.py")
+        )
+
+    explicit_output_dirs = {path.parent for path in explicit_outputs}
+    outputs.extend(
+        target
+        for _, _, target, _, _ in _template_target_specs(args, repo_root)
+        if target and (target.parent.exists() or target in explicit_outputs or target.parent in explicit_output_dirs)
+    )
+    return list(dict.fromkeys(outputs))
+
+
+def _generation_input_paths(args: Any, proto_path: Path, repo_root: Path) -> list[Path]:
+    templates_dir = repo_root / "tools" / "protocol" / "templates"
+    template_paths = sorted(templates_dir.glob("*.j2"))
+    if not template_paths:
+        raise FileNotFoundError(f"No protocol templates found in {templates_dir}")
+
+    input_paths = [
+        args.spec.resolve(),
+        proto_path,
+        Path(__file__).resolve(),
+        proto_path.parent / "buf.yaml",
+        proto_path.parent / "buf.gen.yaml",
+        proto_path.parent / "mcubridge.options",
+        repo_root / "requirements" / "runtime.toml",
+        repo_root / ".github" / "actions" / "setup-protoc" / "action.yml",
+        *template_paths,
+    ]
+    version_path = repo_root / "VERSION"
+    if version_path.is_file():
+        input_paths.append(version_path)
+
+    unique_paths = list(dict.fromkeys(path.resolve() for path in input_paths))
+    missing = [path for path in unique_paths if not path.is_file()]
+    if missing:
+        missing_list = ", ".join(str(path) for path in missing)
+        raise FileNotFoundError(f"Protocol generation inputs are missing: {missing_list}")
+    return unique_paths
+
+
+def check_incremental_build(args: Any, version: str, *, repo_root: Path = REPO_ROOT) -> tuple[bool, Path, str]:
+    proto_path = _resolve_proto_path(args.spec)
+    input_paths = _generation_input_paths(args, proto_path, repo_root)
     h = hashlib.sha256()
-    h.update(proto_path.read_bytes())
-    h.update(Path(__file__).resolve().read_bytes())
+    for input_path in input_paths:
+        try:
+            input_name = input_path.relative_to(repo_root.resolve()).as_posix()
+        except ValueError:
+            input_name = input_path.as_posix()
+        input_content = input_path.read_bytes()
+        h.update(input_name.encode("utf-8"))
+        h.update(len(input_content).to_bytes(8, "big"))
+        h.update(input_content)
+    buf_version = subprocess.run(["buf", "--version"], check=True, capture_output=True, text=True).stdout.strip()
+    if not buf_version:
+        raise RuntimeError("buf --version returned an empty version")
+    h.update(b"buf-version\0")
+    h.update(buf_version.encode("utf-8"))
     h.update(version.encode("utf-8"))
-    templates_dir = Path(__file__).resolve().parent / "templates"
-    if templates_dir.exists():
-        for t_file in sorted(templates_dir.glob("*.j2")):
-            h.update(t_file.read_bytes())
     current_hash = h.hexdigest()
 
     hash_file = proto_path.parent / ".mcubridge.proto.hash"
-
-    # Check if all output files exist
-    outputs = [args.cpp, args.cpp_structs, args.py, args.py_client]
-    outputs_exist = all(out.exists() for out in outputs if out)
-
-    # Also check if mcubridge_pb2.py exists in target locations
-    if outputs_exist:
-        if args.py and not (args.py.parent / "mcubridge_pb2.py").exists():
-            outputs_exist = False
-        if args.py_client and not (args.py_client.parent / "mcubridge_pb2.py").exists():
-            outputs_exist = False
-
-    up_to_date = bool(outputs_exist and hash_file.exists() and hash_file.read_text().strip() == current_hash)
+    outputs_exist = all(output.is_file() for output in expected_generation_outputs(args, repo_root=repo_root))
+    up_to_date = bool(
+        outputs_exist and hash_file.is_file() and hash_file.read_text(encoding="utf-8").strip() == current_hash
+    )
     return up_to_date, hash_file, current_hash
 
 
@@ -922,10 +1056,12 @@ def _dispatch_generated_file(
     transform: Callable[[str], str] | None = None,
 ) -> None:
     if not src.exists():
-        return
+        raise FileNotFoundError(f"Expected generated protocol artifact is missing: {src}")
     data = transform(src.read_text(encoding="utf-8")).encode("utf-8") if transform else src.read_bytes()
     for target_dir in filter(None, targets):
-        (target_dir / src.name).write_bytes(data)
+        target = target_dir / src.name
+        if not target.is_file() or target.read_bytes() != data:
+            target.write_bytes(data)
     src.unlink(missing_ok=True)
 
 
@@ -946,7 +1082,7 @@ def ensure_vulture_stub() -> None:
     vulture_dir = REPO_ROOT / "typings" / "vulture"
     vulture_dir.mkdir(parents=True, exist_ok=True)
     stub_file = vulture_dir / "__init__.pyi"
-    stub_file.write_text(
+    stub_content = (
         '"""[AUTO-GENERATED] Type stub for vulture package (SIL-2 / PEP 561)."""\n\n'
         "from collections.abc import Sequence\n\n"
         "class Item:\n"
@@ -966,9 +1102,10 @@ def ensure_vulture_stub() -> None:
         "    def scavenge(self, paths: Sequence[str], exclude: Sequence[str] | None = None) -> None: ...\n"
         '    def scan(self, code: str, filename: str = "") -> None: ...\n'
         "    def get_unused_code(self, min_confidence: int = 0, sort_by_size: bool = False) -> list[Item]: ...\n\n"
-        '__all__ = ["Vulture", "Item"]\n',
-        encoding="utf-8",
+        '__all__ = ["Vulture", "Item"]\n'
     )
+    if not stub_file.is_file() or stub_file.read_text(encoding="utf-8") != stub_content:
+        stub_file.write_text(stub_content, encoding="utf-8")
 
 
 @cli.command()
@@ -989,52 +1126,49 @@ def main(
     if version == "0.0.0":
         sys.stderr.write(f"Warning: VERSION file not found at {VERSION_PATH}, using fallback.\n")
 
+    update_metadata(version)
+    proto_path = _resolve_proto_path(args.spec)
+    if not proto_path.is_file():
+        raise FileNotFoundError(f"Protocol specification not found: {proto_path}")
+
     up_to_date, hash_file, current_hash = check_incremental_build(args, version)
     if up_to_date:
         sys.stderr.write("Protocol bindings up-to-date, skipping generation.\n")
         return
 
-    update_metadata(version)
-
-    # Compile the protobuf via buf generate (declarative, replaces manual protoc/nanopb subprocess calls)
-    proto_path = args.spec.resolve()
-    if proto_path.suffix == ".toml":
-        proto_path = (proto_path.parent / "mcubridge.proto").resolve()
-
-    if proto_path.exists():
-        sys.stderr.write(f"Formatting and compiling {proto_path} via buf...\n")
-        run_buf_format(proto_path.parent)
-        run_buf_generate(proto_path.parent)
+    sys.stderr.write(f"Formatting and compiling {proto_path} via buf...\n")
+    run_buf_format(proto_path.parent)
+    _, hash_file, current_hash = check_incremental_build(args, version)
+    run_buf_generate(proto_path.parent)
 
     # Now load the compiled descriptor
     proto_spec = load_spec_from_proto(proto_path)
     context = build_protocol_context(proto_spec, version)
 
     # Dispatch compiled protobuf and stub artifacts
-    if proto_path.exists():
-        py_targets = [args.py.parent if args.py else None, args.py_client.parent if args.py_client else None]
-        cpp_targets = [args.cpp.parent if args.cpp else None]
+    py_targets = [args.py.parent if args.py else None, args.py_client.parent if args.py_client else None]
+    cpp_targets = [args.cpp.parent if args.cpp else None]
 
-        _dispatch_generated_file(
-            proto_path.parent / "mcubridge.pb.h",
-            cpp_targets,
-            lambda t: t.replace("#include <pb.h>", '#include "../pb.h"'),
-        )
-        _dispatch_generated_file(proto_path.parent / "mcubridge.pb.c", cpp_targets)
-        _dispatch_generated_file(proto_path.parent / "mcubridge_pb2.py", py_targets)
-        _dispatch_generated_file(
-            proto_path.parent / "mcubridge_pb2.pyi",
-            py_targets,
-            lambda t: t.replace(
-                "_Union[StructuredEntry, _Mapping]]",
-                "_Union[StructuredEntry, _Mapping[str, object]]]",
-            ),
-        )
-        _dispatch_generated_file(
-            proto_path.parent / "mcubridge_grpc.py",
-            py_targets,
-            lambda t: t.replace("import mcubridge_pb2", "from . import mcubridge_pb2"),
-        )
+    _dispatch_generated_file(
+        proto_path.parent / "mcubridge.pb.h",
+        cpp_targets,
+        lambda t: t.replace("#include <pb.h>", '#include "../pb.h"'),
+    )
+    _dispatch_generated_file(proto_path.parent / "mcubridge.pb.c", cpp_targets)
+    _dispatch_generated_file(proto_path.parent / "mcubridge_pb2.py", py_targets)
+    _dispatch_generated_file(
+        proto_path.parent / "mcubridge_pb2.pyi",
+        py_targets,
+        lambda t: t.replace(
+            "_Union[StructuredEntry, _Mapping]]",
+            "_Union[StructuredEntry, _Mapping[str, object]]]",
+        ),
+    )
+    _dispatch_generated_file(
+        proto_path.parent / "mcubridge_grpc.py",
+        py_targets,
+        lambda t: t.replace("import mcubridge_pb2", "from . import mcubridge_pb2"),
+    )
 
     # Render Jinja2 artifacts declaratively
     py_context = context | {
@@ -1042,56 +1176,28 @@ def main(
         "handshake_constants": context["python_handshake_constants"],
     }
     py_client_context = context | {"constants": context["client_constants"]}
-
-    targets: list[tuple[str, dict[str, Any], Path | None, bool, bool]] = [
-        ("rpc_protocol.h.j2", context, args.cpp, False, False),
-        ("rpc_hw_config.h.j2", context, args.cpp.parent / "rpc_hw_config.h" if args.cpp else None, False, False),
-        ("rpc_structs.h.j2", context, args.cpp_structs, False, False),
-        ("protocol.py.j2", py_context, args.py, False, True),
-        ("protocol_client.py.j2", py_client_context, args.py_client, False, True),
-        (
-            "mcubridge_uci.j2",
-            context,
-            REPO_ROOT / "luci-app-mcubridge" / "root" / "etc" / "config" / "mcubridge",
-            False,
-            False,
-        ),
-        (
-            "defaults_sh.j2",
-            context,
-            REPO_ROOT / "mcubridge" / "scripts" / "defaults.sh",
-            True,
-            False,
-        ),
-        (
-            "config_schema_json.j2",
-            context,
-            REPO_ROOT
-            / "luci-app-mcubridge"
-            / "htdocs"
-            / "luci-static"
-            / "resources"
-            / "view"
-            / "mcubridge"
-            / "config_schema.json",
-            False,
-            False,
-        ),
-    ]
-
-    for template_name, ctx, target_path, executable, is_py in targets:
+    template_contexts = {"common": context, "python": py_context, "client": py_client_context}
+    explicit_outputs = (args.cpp, args.cpp_structs, args.py, args.py_client)
+    for template_name, context_name, target_path, executable, is_py in _template_target_specs(args, REPO_ROOT):
         if target_path and (
-            target_path.parent.exists() or target_path in (args.cpp, args.cpp_structs, args.py, args.py_client)
+            target_path.parent.exists()
+            or target_path in explicit_outputs
+            or target_path.parent in {path.parent for path in explicit_outputs if path}
         ):
             gen.render_template(
                 template_name,
-                ctx,
+                template_contexts[context_name],
                 target_path,
                 create_parent=True,
                 executable=executable,
                 format_python=is_py,
             )
             sys.stderr.write(f"Generated {target_path}\n")
+
+    missing_outputs = [output for output in expected_generation_outputs(args) if not output.is_file()]
+    if missing_outputs:
+        missing_list = ", ".join(str(output) for output in missing_outputs)
+        raise RuntimeError(f"Protocol generation did not create expected artifacts: {missing_list}")
 
     # Save hash for incremental compilation
     hash_file.write_text(current_hash, encoding="utf-8")

@@ -65,6 +65,7 @@ class _CppDepEntry(TypedDict):
     check_file: str
     rationale: str
     target_dir: str
+    files: list[str]
 
 
 class _DevDepEntry(TypedDict):
@@ -108,18 +109,28 @@ def load_manifest() -> ManifestData:
             )
         )
 
-    normalized_cpp: list[_CppDepEntry] = [
-        _CppDepEntry(
-            name=entry.get("name", "").strip(),
-            github=entry.get("github", "").strip(),
-            ref_type=entry.get("ref_type", "tags").strip(),
-            version=entry.get("version", "").strip(),
-            check_file=entry.get("check_file", "").strip(),
-            rationale=entry.get("rationale", "").strip(),
-            target_dir=entry.get("target_dir", "").strip(),
+    normalized_cpp: list[_CppDepEntry] = []
+    for entry in data.get("cpp_dependency", []):
+        raw_files = entry.get("files", [])
+        if not isinstance(raw_files, list):
+            raise ManifestError(f"Invalid files list for C++ dependency: {entry.get('name', '(unnamed)')}")
+        files: list[str] = []
+        for file_name in cast(list[object], raw_files):
+            if not isinstance(file_name, str) or not re.fullmatch(r"[A-Za-z0-9_.-]+", file_name):
+                raise ManifestError(f"Invalid files list for C++ dependency: {entry.get('name', '(unnamed)')}")
+            files.append(file_name)
+        normalized_cpp.append(
+            _CppDepEntry(
+                name=entry.get("name", "").strip(),
+                github=entry.get("github", "").strip(),
+                ref_type=entry.get("ref_type", "tags").strip(),
+                version=entry.get("version", "").strip(),
+                check_file=entry.get("check_file", "").strip(),
+                rationale=entry.get("rationale", "").strip(),
+                target_dir=entry.get("target_dir", "").strip(),
+                files=files,
+            )
         )
-        for entry in data.get("cpp_dependency", [])
-    ]
 
     normalized_dev: list[_DevDepEntry] = [
         _DevDepEntry(
@@ -295,6 +306,12 @@ def update_cpp_install_script(cpp_deps: Sequence[_CppDepEntry], *, dry_run: bool
             continue
         val = f"{dep['ref_type']}/{dep['version']}" if dep["ref_type"] == "heads" else dep["version"]
         lines.append(f'{var_name}="{val}"')
+        if dep["name"] == "nanopb_core":
+            files = dep["files"]
+            if not files:
+                raise ManifestError("nanopb_core must list its runtime files")
+            quoted_files = " ".join(f'"{file_name}"' for file_name in files)
+            lines.append(f"NANOPB_CORE_FILES=({quoted_files})")
 
     rendered_block = "\n".join(lines)
     parts_before = content.split(CPP_BLOCK_START)

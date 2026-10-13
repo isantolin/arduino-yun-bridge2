@@ -145,6 +145,7 @@ WOLFSSL_VERSION="v5.9.4-stable"
 PACKETSERIAL_REF="heads/master"
 UNITY_VERSION="v2.7.0"
 NANOPB_VERSION="0.4.9.2"
+NANOPB_CORE_FILES=("pb.h" "pb_common.h" "pb_common.c" "pb_decode.h" "pb_decode.c" "pb_encode.h" "pb_encode.c")
 # --- [AUTO-GENERATED C++ DEPENDENCIES END] ---
 
 # 1. Official Dependencies (Library Manager)
@@ -205,15 +206,7 @@ install_nanopb_core() {
     local target_dir="${LIB_ROOT}/src"
     local version="nanopb-${NANOPB_VERSION}"
     local base_url="https://raw.githubusercontent.com/nanopb/nanopb/${version}"
-    local files=(
-        "pb.h"
-        "pb_common.h"
-        "pb_common.c"
-        "pb_decode.h"
-        "pb_decode.c"
-        "pb_encode.h"
-        "pb_encode.c"
-    )
+    local files=("${NANOPB_CORE_FILES[@]}")
 
     mkdir -p "$target_dir"
     for f in "${files[@]}"; do

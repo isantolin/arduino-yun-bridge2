@@ -5,6 +5,7 @@ Refactored to eliminate explicit per-RPC method boilerplate using dynamic dispat
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import logging
 from typing import Any, Callable, Coroutine, Dict, TypeVar
@@ -82,6 +83,11 @@ class GatewayDaemon:
         self.config = config or {}
         self.service: GatewayLocalBridgeService | None = None
         self._running = False
+
+    @property
+    def is_running(self) -> bool:
+        """Return whether the gateway daemon service is currently running."""
+        return self._running
 
     async def start(self, daemon_client: Any) -> None:
         """Start the gateway service."""

@@ -725,10 +725,15 @@ class BridgeService:
                 message_expiry_interval=protocol.CLOUD_EXPIRY_CONSOLE,
             )
 
-    async def _on_mcu_datastore_put(self, _seq: int, p: pb.DatastorePut) -> bool:
+    async def store_and_publish_datastore_value(
+        self, key: str, value: bytes, *, reply_context: Any | None = None
+    ) -> None:
         if self.state.datastore_cache is not None:
-            await self.state.datastore_cache.set(p.key, p.value)
-        await self.publish_datastore_value(p.key, p.value)
+            await self.state.datastore_cache.set(key, value)
+        await self.publish_datastore_value(key, value, reply_context=reply_context)
+
+    async def _on_mcu_datastore_put(self, _seq: int, p: pb.DatastorePut) -> bool:
+        await self.store_and_publish_datastore_value(p.key, p.value)
         return True
 
     async def _on_mcu_datastore_get(self, _seq: int, p: pb.DatastoreGet) -> bool:
@@ -940,9 +945,7 @@ class BridgeService:
                 logger.warning("Failed to construct DatastorePut message", key=key, error=str(exc))
                 return
             if len(ds_put.key.encode()) <= protocol.MAX_DATASTORE_KEY_LENGTH and len(ds_put.value) <= 512:
-                if self.state.datastore_cache is not None:
-                    await self.state.datastore_cache.set(ds_put.key, ds_put.value)
-                await self.publish_datastore_value(ds_put.key, ds_put.value, reply_context=inbound)
+                await self.store_and_publish_datastore_value(ds_put.key, ds_put.value, reply_context=inbound)
         elif route.identifier == DatastoreAction.GET:
             cache = cast(Any, self.state.datastore_cache)
             val = (await cache.get(key)) if cache else None

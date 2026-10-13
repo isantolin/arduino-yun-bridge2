@@ -1,21 +1,13 @@
-"""Security primitives for military-grade cryptographic operations.
+"""Cryptographic helpers for the MCU Bridge protocol.
 
-[MIL-SPEC COMPLIANCE]
-This module provides security primitives resistant to:
-- Memory inspection after use (secure_zero)
-- Anti-replay attacks via monotonic counters in AEAD nonces.
-
-Reference standards:
-- NIST SP 800-90A (secure random)
-- FIPS 140-3 (cryptographic module requirements)
-- RFC 8439 (ChaCha20 and Poly1305)
+The implementation uses RFC 8439 AEAD and project-defined KATs. These helpers
+do not imply FIPS 140-3 validation or process-wide secret zeroization.
 """
 
 from __future__ import annotations
 
 import ctypes
 import os
-import secrets
 
 import structlog
 from cryptography.hazmat.primitives import hashes, hmac
@@ -29,25 +21,20 @@ logger = structlog.get_logger("mcubridge.security")
 
 
 def secure_zero(data: bytearray | memoryview) -> None:
-    """Securely zero memory, resistant to interpreter optimization. [MIL-SPEC]
-
-    The first pass (slice assignment) zeroes the Python-visible buffer.
-    The second pass (ctypes.memset) defeats compiler/interpreter dead-store
-    elimination on the underlying C memory.  Both passes MUST succeed;
-    a failure in either is a security violation and propagates as-is.
-    """
+    """Overwrite this mutable buffer in place; other copies are not covered."""
     data[:] = protocol.FRAME_DELIMITER * len(data)
     buf = (ctypes.c_char * len(data)).from_buffer(data)
     ctypes.memset(ctypes.addressof(buf), 0, len(data))
 
 
 def generate_nonce_with_counter(counter: int) -> tuple[bytes, int]:
-    """Generate a 12-byte AEAD nonce with monotonic counter."""
+    """Generate an MPU-originated AEAD nonce with a directional prefix and counter."""
     if counter >= protocol.NONCE_COUNTER_MASK or counter < 0:
         raise ValueError("Nonce counter overflow")
     new_counter = counter + 1
-    random_bytes = protocol.AEAD_NONCE_SIZE - protocol.HANDSHAKE_NONCE_COUNTER_BYTES
-    nonce = secrets.token_bytes(random_bytes) + new_counter.to_bytes(protocol.HANDSHAKE_NONCE_COUNTER_BYTES, "big")
+    prefix_bytes = protocol.AEAD_NONCE_SIZE - protocol.HANDSHAKE_NONCE_COUNTER_BYTES
+    prefix = protocol.MPU_AEAD_NONCE_PREFIX.to_bytes(prefix_bytes, "big")
+    nonce = prefix + new_counter.to_bytes(protocol.HANDSHAKE_NONCE_COUNTER_BYTES, "big")
     return nonce, new_counter
 
 

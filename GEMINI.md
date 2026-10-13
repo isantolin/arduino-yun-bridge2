@@ -1,17 +1,17 @@
-# GEMINI.md: Your AI Assistant's Guide to Arduino MCU Bridge 2 (SIL-2/MIL-SPEC)
+# GEMINI.md: Engineering Guide to Arduino MCU Bridge 2
 
-This document provides a comprehensive overview of the Arduino MCU Bridge 2 project, optimized for AI agents following aerospace and medical engineering standards.
+This document provides engineering context for the Arduino MCU Bridge 2 project. References to safety and cryptographic standards describe goals or technical references, not certification status.
 
 ## Project Overview
 
-Arduino MCU Bridge 2 is a modern, high-performance communication system between Arduino-compatible microcontrollers (MCU) and Linux-based microprocessors (MPU). It adheres to **SIL-2** safety standards and **MIL-SPEC** (FIPS 140-3) integrity.
+Arduino MCU Bridge 2 is a communication system between Arduino-compatible microcontrollers (MCU) and Linux-based microprocessors (MPU). This repository does not establish IEC 61508 SIL-2 certification, MIL-SPEC compliance, or FIPS 140-3 validation.
 
 ### Key Technologies & Standards
 
 *   **Python:** Main daemon (3.13.9+), `asyncio` for high-concurrency with `uvloop` integration, Protobuf for all protocol-crossing structures, `cryptography` for AEAD, LMDB transactional storage with TLS 1.3 0-RTT session ticket persistence, `ubus` for native OpenWrt IPC, `psutil` for process lifecycle management and memory telemetry, `python-statemachine` for deterministic SIL-2 state machines across handshake, link connection, process lifecycle, and cloud gateway, `tenacity` for declarative asynchronous retries and exponential backoff, `anyio` (`anyio.Path` and `anyio.to_thread`) for asynchronous, zero-block file I/O operations and thread pools, and protobuf bindings for payload serialization.
 *   **C++:** Arduino library (C++17), **Zero-Heap** (no STL, no `malloc`), `etl::fsm` for deterministic states, `wolfSSL` for AEAD, and Nanopb (0.4.9.2) with `pb_decode_noinit` for zero-copy, de-bloated payload parsing (ChaCha20-Poly1305).
-*   **Safety (SIL-2):** Static allocation only, SRAM POST, stack sentinel monitoring, WCET runtime tracking, O(1) jump tables for dispatch, rigorous validation gates.
-*   **Cryptography (FIPS 140-3):** Mandatory boot-time Known-Answer Tests (KATs) for SHA-256, HMAC-SHA256, and ChaCha20-Poly1305 AEAD with non-weak linkage.
+*   **Safety-oriented mechanisms:** Static allocation in selected firmware paths, SRAM POST, stack sentinel monitoring, observed execution-time tracking, and validation gates.
+*   **Cryptography:** Startup Known-Answer Tests (KATs) for SHA-256, HMAC-SHA256, and ChaCha20-Poly1305; these tests are not FIPS 140-3 module validation.
 *   **OpenWrt:** Target OS is **OpenWrt 25.12.5** (APK based).
 *   **Communication:** Custom binary RPC over serial UART and transparent wireless links (WiFi TCP + Bluetooth SPP) (COBS/R + CRC32) + AEAD encryption + Protobuf Cloud Gateway (gRPC over HTTP/3 (QUIC) with HTTP/2 fallback support and 0-RTT TLS 1.3 session resumption) for external cloud connectivity + Local IPC over native OpenWrt UBUS and Northbound Gateway gRPC for distributed clients. Protocol validation uses O(1) `etl::find` logic.
 
@@ -80,7 +80,7 @@ Arduino MCU Bridge 2 is a modern, high-performance communication system between 
 
 
 
-## SIL-2 Safety & FIPS 140-3 Cryptographic Subsystems
+## Safety Mechanisms & Cryptographic Self-Tests
 
 1. **SRAM Power-On Self-Test (POST):**
     - Non-destructive March tests execute at boot using alternating bit patterns (`0x55`, `0xAA`, `0x00`, `0xFF`) to verify memory cell integrity.
@@ -89,7 +89,7 @@ Arduino MCU Bridge 2 is a modern, high-performance communication system between 
     - Deterministic transition to `enterSafeState()` upon canary corruption.
 3. **Worst-Case Execution Time (WCET) Tracking:**
     - Microsecond timing tracking via `micros()` records peak loop iteration time (`_wcet_max_micros`), ensuring deterministic task bounds under hardware watchdog thresholds (4s).
-4. **FIPS 140-3 Cryptographic Validation (KATs):**
+4. **Cryptographic Known-Answer Tests (not FIPS validation):**
     - Known-Answer Tests executed at boot for SHA-256, HMAC-SHA256, and ChaCha20-Poly1305 AEAD.
     - Strictly non-weak linkage (`[[weak]]` prohibited) ensuring cryptographic validation cannot be bypassed.
 
@@ -140,8 +140,8 @@ Arduino MCU Bridge 2 is a modern, high-performance communication system between 
 
 ## Status
 
-**Current Version:** v2.8.8 - **Flight-Ready**
-The ecosystem is fully refactored and modernized. Primary service components utilize `AsyncMock` for testing, ensuring high interface fidelity. The C++ library follows strict SIL-2 guidelines with O(1) dispatching and strong typing. End-to-end testing verifies the complete integration between the Python daemon and the C++ logic across both wired UART and wireless TCP/WiFi streams.
+**Current Version:** v2.8.8
+The repository contains unit and integration tests for the Python daemon and C++ library. Test results and implementation mechanisms do not establish flight readiness or independent safety/cryptographic certification.
 
 ### DIRECTIVA DE TESTING Y DOBLES DE PRUEBA (MIL-SPEC / ZERO-CHEAT):
 

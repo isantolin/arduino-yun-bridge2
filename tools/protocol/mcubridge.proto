@@ -420,6 +420,8 @@ option (rpc.pb.handshake) = {
   hkdf_output_length: 32
   nonce_random_bytes: 8
   nonce_counter_bytes: 8
+  mcu_aead_nonce_prefix: 1296258304
+  mpu_aead_nonce_prefix: 1297110272
 };
 option (rpc.pb.hardware) = {
   max_observers_avr: 4
@@ -885,7 +887,10 @@ message Handshake {
     (py_name) = "HANDSHAKE_HKDF_INFO_AUTH",
     (py_type) = "bytes"
   ];
-  string hkdf_info_session = 14;
+  string hkdf_info_session = 14 [
+    (py_name) = "HANDSHAKE_HKDF_INFO_SESSION",
+    (py_type) = "bytes"
+  ];
   uint32 hkdf_output_length = 15 [
     (cpp_name) = "RPC_HANDSHAKE_HKDF_OUTPUT_LENGTH",
     (cpp_type) = "unsigned int",
@@ -902,6 +907,18 @@ message Handshake {
     (cpp_name) = "RPC_HANDSHAKE_NONCE_COUNTER_BYTES",
     (cpp_type) = "unsigned int",
     (py_name) = "HANDSHAKE_NONCE_COUNTER_BYTES",
+    (py_type) = "int"
+  ];
+  uint32 mcu_aead_nonce_prefix = 18 [
+    (cpp_name) = "RPC_MCU_AEAD_NONCE_PREFIX",
+    (cpp_type) = "uint32_t",
+    (py_name) = "MCU_AEAD_NONCE_PREFIX",
+    (py_type) = "int"
+  ];
+  uint32 mpu_aead_nonce_prefix = 19 [
+    (cpp_name) = "RPC_MPU_AEAD_NONCE_PREFIX",
+    (cpp_type) = "uint32_t",
+    (py_name) = "MPU_AEAD_NONCE_PREFIX",
     (py_type) = "int"
   ];
 }

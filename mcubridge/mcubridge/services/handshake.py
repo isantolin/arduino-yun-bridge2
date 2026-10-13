@@ -738,7 +738,7 @@ class SerialHandshakeManager:
             algorithm=hashes.SHA256(),
             length=protocol.AEAD_KEY_SIZE,
             salt=nonce,
-            info=b"session-key",
+            info=protocol.HANDSHAKE_HKDF_INFO_SESSION,
         )
         return hkdf.derive(secret)
 

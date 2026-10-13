@@ -1,14 +1,15 @@
-# FIPS 140-3 Security Policy: Arduino MCU Bridge 2
+# Cryptographic Implementation Profile (Not a FIPS 140-3 Security Policy)
 
-**Standard Compliance:** FIPS 140-3 (Level 1/2), NIST SP 800-38D, NIST SP 800-56C Rev 2, RFC 8439  
-**Module Name:** Arduino MCU Bridge 2 Cryptographic Subsystem  
+**Status:** This document describes project implementation details only. It is not a CMVP-issued FIPS 140-3 Security Policy, and this repository does not claim FIPS 140-3 validation or provide a validation certificate number. KATs, library use, and standards references are not evidence of module validation.
+**References:** RFC 8439, RFC 5869, NIST SP 800-56C Rev 2
+**Implementation:** Arduino MCU Bridge 2 cryptographic code
 **Software Version:** v2.8.5+  
 
 ---
 
-## 1. Cryptographic Boundary & Ports
+## 1. Implementation Scope (Not a Validated Cryptographic Boundary)
 
-The cryptographic module boundary encompasses the mutual handshake, session key derivation, and authenticated encryption layers connecting the Arduino MCU (C++ / wolfCrypt) and the Linux MPU (Python / `cryptography`).
+The implementation includes a mutual handshake, session-key derivation, and authenticated encryption connecting the Arduino MCU (C++ / wolfCrypt) and Linux MPU (Python / `cryptography`). This description is not an assessed or validated cryptographic-module boundary.
 
 ```mermaid
 graph LR
@@ -47,40 +48,40 @@ graph LR
 
 ---
 
-## 3. Cryptographic Algorithms & Self-Tests (KATs)
+## 3. Implemented Algorithms & Project Self-Tests
 
-### 3.1 Approved Algorithms
+### 3.1 Algorithms and References
 
 | Algorithm | Standard | Key Size | Purpose |
 | :--- | :--- | :--- | :--- |
-| **ChaCha20-Poly1305** | RFC 8439 / SP 800-38D equiv. | 256-bit | Authenticated Encryption with Associated Data (AEAD) |
-| **HKDF-SHA256** | RFC 5869 / SP 800-56C Rev 2 | 256-bit | Key Derivation Function (KDF) |
-| **HMAC-SHA256** | FIPS 198-1 / FIPS 180-4 | 256-bit | Handshake Mutual Verification Tag |
-| **SHA-256** | FIPS 180-4 | 256-bit | Cryptographic Hashing |
+| **ChaCha20-Poly1305** | RFC 8439 | 256-bit | Authenticated Encryption with Associated Data (AEAD) |
+| **HKDF-SHA256** | RFC 5869; NIST SP 800-56C Rev 2 reference | 256-bit | Key Derivation Function (KDF) |
+| **HMAC-SHA256** | FIPS 198-1 / FIPS 180-4 references | 256-bit | Handshake Mutual Verification Tag |
+| **SHA-256** | FIPS 180-4 reference | 256-bit | Cryptographic Hashing |
 
-### 3.2 Power-Up Known-Answer Tests (KATs)
-Before entering any operational state, both endpoints independently execute Power-On Self-Tests:
-1. **SHA-256 KAT**: Standard NIST test vector verifying digest generation.
-2. **HMAC-SHA256 KAT**: Hardcoded verification tag calculation against RFC 2202 test vectors.
-3. **ChaCha20-Poly1305 KAT**: RFC 8439 Section 2.8.2 standard test vector with AAD, validating ciphertext encryption and Poly1305 authentication tag calculation.
-4. **Failure Behavior**: If any KAT returns an invalid result, the cryptographic engine enters a hard `FAULT` state and refuses all cryptographic operations.
+### 3.2 Startup Known-Answer Tests (KATs)
+The endpoints run project-owned known-answer tests before normal operation:
+1. **SHA-256 KAT**: Checks the digest for the configured test input.
+2. **HMAC-SHA256 KAT**: Checks the implementation's configured HMAC test vector.
+3. **ChaCha20-Poly1305 KAT**: Checks ciphertext and tag for the implementation's configured key, nonce, AAD, and plaintext.
+4. **Failure behavior**: A failed check prevents normal cryptographic operation.
+
+These functional regression checks are not CAVP testing or FIPS 140-3 module validation.
 
 ---
 
 ## 4. Key Management & Zeroization
 
 ### 4.1 Ephemeral Key Derivation
-Session keys are derived via HKDF-SHA256 over a fresh 16-byte cryptographically secure random nonce exchanged during handshake:
-$$K_{session} = \text{HKDF-Expand}(\text{HKDF-Extract}(Salt, K_{master}), \text{"McuBridgeSessionKey-v2"}, 32)$$
+Session keys are derived using HKDF-SHA256 with the shared secret as input key material, the handshake nonce as salt, the canonical `session-key` info string, and the configured 32-byte output length.
 
 ### 4.2 Anti-Replay Nonce Layout
-Every encrypted frame carries a 12-byte nonce:
-$$\text{Nonce} = \underbrace{\text{Prefix}}_{\text{3 bytes: "MCU"/"MPU"}} \parallel \underbrace{\text{0x00}}_{\text{1 byte pad}} \parallel \underbrace{\text{Counter}}_{\text{8 bytes: strictly monotonic}}$$
-Frames with nonces $\le$ `last_seen_counter` are immediately discarded as replay attempts.
+Every encrypted frame carries a 12-byte nonce: a four-byte direction prefix (`MCU\0` for MCU-originated frames or `MPU\0` for MPU-originated frames), followed by an eight-byte big-endian counter.
+The canonical prefixes are generated from `mcubridge.proto`. Current receivers validate the nonce length and monotonic counter suffix; they do not reject frames based on the prefix, preserving interoperability with existing peers. Replay checks compare the counter to the last accepted counter.
 
 ### 4.3 Key Zeroization (*Safe Memory Scrubbing*)
 * **C++ MCU**: Memory containing $K_{session}$ and intermediate buffers is zeroized using `wc_ForceZero()` to defeat compiler dead-store elimination.
-* **Python MPU**: Secure zeroization performed via two-pass `ctypes.memset()` overriding underlying memory buffers.
+* **Python MPU**: `secure_zero()` overwrites the supplied mutable `bytearray` or writable `memoryview`. It cannot guarantee removal of immutable copies or every copy retained by the interpreter, allocator, or native libraries; it is not a process-wide zeroization guarantee.
 
 ### 4.4 TLS 1.3 0-RTT Session Ticket Management (Cloud Gateway)
 * **Storage**: Ephemeral session tickets for fast gRPC 0-RTT re-handshakes are cached in LMDB (`RuntimeState.tls_session_cache`) with process-level access permissions.

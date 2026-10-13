@@ -1,21 +1,23 @@
-# SIL-2 Functional Safety Manual: Arduino MCU Bridge 2
+# Functional Safety Design Notes: Arduino MCU Bridge 2
 
-**Standard Compliance:** IEC 61508 (SIL-2), IEC 62304 (Class B/C), ISO 26262 (ASIL B)  
+**Standards referenced:** IEC 61508, IEC 62304, ISO 26262
 **System Version:** v2.8.5+  
 **Target Hardware:** Arduino Microcontroller (MCU) $\leftrightarrow$ Linux Microprocessor (MPU)
+
+**Evidence status:** This repository documents design mechanisms and project test results; it does not contain a safety case or establish IEC 61508 SIL-2, IEC 62304, or ISO 26262 certification. Such claims require target-specific evidence and independent assessment.
 
 ---
 
 ## 1. System Safety Overview
 
-Arduino MCU Bridge 2 implements a mission-critical, deterministic communication system between Arduino-compatible microcontrollers and Linux-based microprocessors under strict **SIL-2** functional safety constraints.
+Arduino MCU Bridge 2 implements deterministic communication mechanisms for Arduino-compatible microcontrollers and Linux-based microprocessors. The mechanisms below are design notes, not a claim of certified functional-safety compliance.
 
 ```mermaid
 flowchart TD
     subgraph Power-On Phase
         A[Hardware Boot] --> B[POST: SRAM March Test]
         B --> C[POST: Stack Sentinel Initialization]
-        C --> D[POST: FIPS 140-3 Cryptographic KATs]
+        C --> D[Cryptographic self-tests (KATs)]
         D -- Fail --> E[Safe State: FAULT / Pins Disabled]
         D -- Pass --> F[FSM Started / Unsynchronized]
     end
@@ -41,7 +43,7 @@ flowchart TD
 
 ### 2.2 Deterministic Finite State Machine (FSM)
 * **Strongly-Typed States**: Implemented via `etl::fsm` using `enum class StateId : uint8_t` (e.g. `UNSYNCHRONIZED`, `SYNCHRONIZED`, `FAULT`).
-* **Closed Transition Tables**: Illegal state transitions or unhandled events transition the module immediately to the `FAULT` safe state.
+* **Explicit Transitions**: Supported transitions are encoded per state. Some unhandled events remain in the current state; their safety behavior must be verified for each event/state pair.
 
 ### 2.3 Power-On Self-Test (POST)
 At system startup (`Bridge.begin()`), the HAL executes `bridge::hal::run_power_on_self_tests()`:
@@ -74,19 +76,21 @@ At system startup (`Bridge.begin()`), the HAL executes `bridge::hal::run_power_o
 * **Sequential Nonce Counter Enforcement**: All encrypted frames crossing physical (UART) or wireless (WiFi TCP / Bluetooth SPP) transports are validated against monotonic 64-bit nonces (`validate_nonce_counter`), preventing replay attacks and out-of-order execution.
 * **Fail-Safe Disconnects**: Wireless dropouts trigger deterministic transitions to `UNSYNCHRONIZED`, wiping session keys and requiring complete re-authentication.
 
-### 2.9 Deterministic State Machines in Linux MPU (`python-statemachine`)
-* **Strict State Typing**: Handshake (`HandshakeMachine`), physical link (`LinkConnectionMachine`), subprocesses (`ProcessMachine`), and cloud sessions (`GatewaySessionMachine`) are governed by formal, discrete state machines matching the SIL-2 determinism of `etl::fsm` on the MCU.
+### 2.9 State Machines in Linux MPU (`python-statemachine`)
+* **Explicit Lifecycle States**: Handshake (`HandshakeMachine`), physical link (`LinkConnectionMachine`), subprocesses (`ProcessMachine`), and cloud sessions (`GatewaySessionMachine`) use discrete state machines. Their presence alone does not establish SIL-2 determinism or certification.
 * **Native Listener Hook Dispatch**: State side effects (e.g. enabling `serial_tx_allowed`, setting/clearing `link_sync_event`, escalating process termination) are executed strictly via synchronous, typed listener callbacks (`on_enter_*`, `on_exit_*`), eradicating manual glue code and race-prone polling.
 * **Closed Transition Matrices & Concurrency Safety**: Illegal transitions are rejected deterministically; idempotent transitions and `allow_event_without_transition = True` prevent deadlock or unhandled exception propagation during asynchronous subprocess termination and reconnection events.
 
 ---
 
-## 3. Safety Integrity Metrics
+## 3. Project-Reported Safety and Test Metrics
 
-| Metric | SIL-2 Requirement | McuBridge v2 Value | Status |
+The figures below are historical project-reported values. This manual does not identify the originating run, commit, board configuration, or calculation for every metric. They must be reproduced for the exact target and must not be treated as certification evidence.
+
+| Metric | Reference value | Project-reported value | Evidence status |
 | :--- | :--- | :--- | :--- |
-| **Safe Failure Fraction (SFF)** | $\ge 90\%$ | $> 99.2\%$ | ✅ Exceeded |
-| **Dynamic Memory Allocation** | Prohibited | 0 bytes (Zero-Heap) | ✅ Fully Compliant |
-| **Test Statement Coverage** | $\ge 95\%$ | **98.8%** (C++) / **98.4%** (Python) | ✅ Exceeded |
-| **Test Pure Branch Coverage** | $\ge 90\%$ | **95.7%** (C++) / **95.2%** (Python) | ✅ Exceeded |
-| **Error Suppressions** | Zero | 0 suppressions | ✅ Fully Compliant |
+| **Safe Failure Fraction (SFF)** | Requires a documented safety analysis | $> 99.2\%$ | Calculation/evidence not included here |
+| **Dynamic Memory Allocation** | Target-specific property | 0 bytes (Zero-Heap) | Verify for each firmware configuration |
+| **Test Statement Coverage** | Test metric, not a certification threshold | **98.8%** (C++) / **98.4%** (Python) | Reproduce from the matching test run |
+| **Test Branch Coverage** | Test metric, not a certification threshold | **95.7%** (C++) / **95.2%** (Python) | Reproduce from the matching test run |
+| **Error Suppressions** | Audit policy | 0 suppressions | Verify with the current audit run |

@@ -4,8 +4,10 @@
 [![OpenWrt](https://img.shields.io/badge/OpenWrt-25.12.5-00B5E2?logo=openwrt)](https://openwrt.org/releases/25.12.5)
 [![Python](https://img.shields.io/badge/Python-3.13-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/release/python-3130/)
 [![C++ Standard](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=cplusplus)](https://isocpp.org/)
-[![ETL](https://img.shields.io/badge/ETL-SIL--2%20Compliant-green)](https://www.etlcpp.com/)
-[![FIPS 140-3](https://img.shields.io/badge/Security-FIPS%20140--3-critical)](https://csrc.nist.gov/publications/detail/fips/140/3/final)
+[![ETL](https://img.shields.io/badge/ETL-Embedded%20Template%20Library-green)](https://www.etlcpp.com/)
+[![Cryptography](https://img.shields.io/badge/Cryptography-ChaCha20--Poly1305-informational)](https://www.rfc-editor.org/rfc/rfc8439)
+
+> **Estado de certificación:** Las referencias SIL-2/FIPS describen objetivos de diseño, algoritmos y pruebas del proyecto. Este repositorio no acredita certificación SIL-2 ni validación FIPS 140-3.
 
 **MCU Bridge 2 es un reemplazo moderno, robusto y agnóstico de hardware para el sistema Bridge original.**
 
@@ -16,8 +18,8 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 - **Límites configurables:** Los buffers internos de consola y mailbox se pueden ajustar vía UCI (`console_queue_limit_bytes`, `mailbox_queue_limit`, `mailbox_queue_bytes_limit`) para prevenir desbordes. Se incluyen límites estrictos como `pending_pin_request_limit`, `file_write_max_bytes` y `file_storage_quota_bytes`.
 - **Control de Flujo (Backpressure) en la Nube:** Regulación mediante colas de telemetría y buffer backpressure en el stream gRPC.
 - **Respuestas correladas sobre gRPC:** El flujo bidireccional gRPC correlaciona de forma nativa peticiones y respuestas mediante identificadores estables (`sequence_id`).
-- **Seguridad Funcional (SIL-2):** Librería MCU escrita en C++17 sin STL y sin alocación dinámica, garantizando determinismo y estabilidad.
-- **MIL-SPEC Compliance (FIPS 140-3):** Implementación de **HKDF-SHA256** para derivación de claves y **Power-On Self-Tests (POST)** que validan el motor criptográfico en cada arranque.
+- **Diseño orientado a seguridad funcional:** Librería MCU escrita en C++17 con ETL y almacenamiento estático en las configuraciones documentadas; esto no constituye una certificación SIL-2.
+- **Criptografía implementada:** **HKDF-SHA256**, **ChaCha20-Poly1305** y pruebas KAT del proyecto; no se afirma validación FIPS 140-3.
 - **Protección de Flash:** Bloqueo de inicio si las rutas de escritura intensa (`file_system_root`, `cloud_spool_dir`) no están en `/tmp` (RAM).
 
 ### Novedades (septiembre 2026)
@@ -45,8 +47,8 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
   - Registro automático del parámetro `ubus_rpc_session: STRING` en las firmas de todos los métodos de `UbusService`. Resuelve la incompatibilidad con `uhttpd-mod-ubus` y la estricta validación de argumentos de `python-ubus`, erradicando el error `UBUS_STATUS_INVALID_ARGUMENT = 2` en interfaces LuCI JavaScript.
 - **Conducción Activa Hardware GPIO en Firmware MCU (v2.8.7)**:
   - Garantía en `BridgeClass::_handleDigitalWrite` de configuración `pinMode(pin, OUTPUT)` previa a la ejecución de `digitalWrite`, asegurando una conmutación lógica activa a 5V/3.3V y evitando que pines no inicializados activen resistencias de pull-up débiles.
-- **Cobertura de Ramas C++ SIL-2 Elevada al 96.6% (v2.8.7)**:
-  - Cobertura exhaustiva en la suite de pruebas unitarias (`test_bridge_edge_paths.cpp`), alcanzando un **96.6% de ramas** y **99.0% de líneas** validadas en el core del microcontrolador, superando con holgura el umbral de certificación SIL-2 (95.0%).
+- **Cobertura de pruebas (métrica histórica del proyecto, v2.8.7)**:
+  - Se reportaron **96.6% de ramas** y **99.0% de líneas** para `test_bridge_edge_paths.cpp`. Estas cifras dependen del commit y la configuración de ejecución; no son un umbral de certificación SIL-2.
 - **Gestión Unificada de Procesos con `psutil`**: Reemplazo de toda la gestión manual de `/proc/self/status`, señales y llamadas a `os.killpg` por `psutil`, garantizando la terminación determinista y en cascada de subprocesos y medición precisa de memoria RSS/VMS.
 - **Controlador Nativo Ucode en LuCI (`mcubridge.uc`)**: Eliminación de ejecuciones de shell `popen()`, despachando el control de hardware directamente mediante llamadas C a `ubus.connect().call('mcubridge', ...)`.
 
@@ -79,7 +81,7 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 
 ### Novedades (febrero 2026)
 
-- **Despacho O(1) en MCU:** Implementación de tablas de salto para comandos de sistema, GPIO, Mailbox y Process, optimizando el rendimiento y cumpliendo SIL-2.
+- **Despacho en MCU:** Implementación de tablas de salto para comandos de sistema, GPIO, Mailbox y Process, diseñada para reducir el costo de despacho.
 - **Sincronía de Capacidades 100%:** Adición del bit de **SPI** y estandarización del bit de **Big Buffer** en todo el stack.
 - **Observabilidad Refinada:** Logs hexadecimales estructurados `[DE AD BE EF]` con etiquetas direccionales inequívocas `[MCU -> SERIAL]` y `[SERIAL -> MCU]`.
 - **Race Condition Protection:** Handshake robusto que maneja respuestas asíncronas de alta velocidad en emuladores.
@@ -88,7 +90,7 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 
 - **Cryptographic Self-Tests (KAT):** El sistema ahora realiza pruebas de respuesta conocida (Known Answer Tests) para SHA256 y HMAC-SHA256 al iniciar. Si las pruebas fallan, el sistema aborta el arranque (**Fail-Secure**).
 - **Derivación de Claves HKDF (RFC 5869):** El handshake serie ya no usa el secreto compartido directamente; utiliza HKDF-SHA256 para derivar claves de autenticación efímeras, mejorando el aislamiento de claves.
-- **Refactorización SIL-2 (C++):** Unificación de constructores delegados y validación defensiva de rangos en GPIO para prevenir accesos a memoria fuera de límites.
+- **Validación defensiva (C++):** Unificación de constructores delegados y validación de rangos GPIO para ayudar a prevenir accesos fuera de límites.
 - **Compatibilidad Python 3.13:** Soporte completo para Python 3.13.9-r2 y uso de `asyncio.TaskGroup` para una gestión de tareas más robusta.
 
 ### Novedades (OpenWrt 25.12)
@@ -98,7 +100,7 @@ Este proyecto re-imagina la comunicación entre el microcontrolador (MCU) y el p
 - **Transporte de Alto Rendimiento:** Uso de `python3-serialx` para un stack serie nativo sync/async con control directo de modem pins y transporte tipado.
 - **10/10 Eficiencia (uvloop):** Activación de `uvloop` (implementación de alto rendimiento basada en `libuv`) como bucle de eventos, ofreciendo un throughput 2-4x superior en operaciones seriales e IPC intensivas.
 - **Logging Hexadecimal:** Todo el tráfico binario se registra mediante volcados hexadecimales en syslog.
-- **Manejo de Excepciones SIL-2:** Refactorización profunda del manejo de errores para eliminar capturas genéricas.
+- **Manejo explícito de errores:** Refactorización para reducir capturas genéricas.
 
 ---
 
@@ -141,7 +143,7 @@ uci commit mcubridge
 | --- | --- | --- | --- |
 | Python (daemon en el MPU) | Base en Python 3.13+ (última versión del sistema). | Mantener compatibilidad con futuras versiones. | `tox -e py` |
 | Toolchain OpenWrt | SDK 25.12.5 (APK). | Compilación de paquetes APK. | `./1_compile.sh` |
-| MCU Firmware | C++17 / ETL (SIL-2). | Cobertura extrema sin STL. | `./tools/ci/coverage_arduino.sh` |
+| MCU Firmware | C++17 / ETL; diseño orientado a seguridad. | Compilación y cobertura según la configuración elegida. | `./tools/ci/coverage_arduino.sh` |
 
 - Para personalizar el SDK durante la compilación basta pasar la versión/target como argumentos:
 	```sh
@@ -204,8 +206,8 @@ EOF
 
 ## Documentación Técnica y Normativa
 
-- [Manual de Seguridad Funcional SIL-2](file:///home/ignaciosantolin/arduino-yun-bridge2/docs/safety/SIL2_SAFETY_MANUAL.md): Arquitectura Zero-Heap, POST de hardware, Stack Sentinel y monitorización del máximo observado de `Bridge.process()`; no constituye una prueba formal de WCET.
-- [Política de Seguridad Criptográfica FIPS 140-3](file:///home/ignaciosantolin/arduino-yun-bridge2/docs/security/FIPS140_3_SECURITY_POLICY.md): Límites criptográficos, roles, Known-Answer Tests (KATs) y zeroización.
+- [Notas de diseño de seguridad funcional](file:///home/ignaciosantolin/arduino-yun-bridge2/docs/safety/SIL2_SAFETY_MANUAL.md): Arquitectura de almacenamiento estático, POST y monitorización del máximo observado de `Bridge.process()`; no es una certificación ni una prueba formal de WCET.
+- [Perfil de implementación criptográfica](file:///home/ignaciosantolin/arduino-yun-bridge2/docs/security/FIPS140_3_SECURITY_POLICY.md): Algoritmos, KATs y límites de la zeroización; no es una política FIPS validada.
 - [Especificación del Protocolo Binario](file:///home/ignaciosantolin/arduino-yun-bridge2/docs/PROTOCOL.md): Encuadre COBS/R, CRC32, AEAD y tablas de comandos.
 
 ## Verificación y control de calidad

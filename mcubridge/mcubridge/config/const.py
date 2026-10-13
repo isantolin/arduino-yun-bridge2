@@ -1,6 +1,6 @@
 """Operational constants for MCU Bridge daemon components.
 
-[SIL-2 COMPLIANCE - IEC 61508]
+[Protocol single-source-of-truth]
 All protocol sizes, cryptographic parameters, and configuration defaults
 MUST be imported directly from the canonical Single Source of Truth
 (mcubridge.protocol.protocol / mcubridge.proto) per Rule 15.

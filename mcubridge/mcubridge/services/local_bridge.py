@@ -106,9 +106,7 @@ class LocalBridgeService(LocalBridgeBase):
         return pb.PinSubscribeResponse(pin=req.pin, success=bool(res.get("status") == "ok"))
 
     async def execute_datastore_put(self, req: pb.DatastorePut) -> pb.GenericResponse:
-        if self.runtime_service.state.datastore_cache is not None:
-            await self.runtime_service.state.datastore_cache.set(req.key, req.value)
-        await self.runtime_service.publish_datastore_value(req.key, req.value)
+        await self.runtime_service.store_and_publish_datastore_value(req.key, req.value)
         return pb.GenericResponse(status="ok")
 
     async def execute_datastore_get(self, req: pb.DatastoreGet) -> pb.DatastoreGetResponse:

@@ -11,9 +11,9 @@
 - **OpenWrt 25.12.5 Support**: Hardened for the latest APK-based OpenWrt release.
 - **100% E2E Coverage**: Restored and expanded end-to-end testing to cover all example clients.
 
-### 2. OpenWrt 25.12 & SIL-2 Modernization (C++17)
+### 2. OpenWrt 25.12 & Safety-Oriented Modernization (C++17)
 - **C++17 Migration**: Leveraging modern language features (lambdas, structured bindings) for cleaner, safer code.
-- **Strict SIL-2 Compliance**: All C-style casts replaced with `reinterpret_cast`/`static_cast` and reinforced memory safety.
+- **Safety-oriented implementation work**: C-style casts replaced with `reinterpret_cast`/`static_cast` and memory-safety checks added; these changes do not establish SIL-2 certification.
 - **O(1) C++ Dispatch**: Replaced switch/case with jump tables for deterministic execution.
 - **Python 3.13.9+**: Full compatibility and optimization using uvloop and Protobuf.
 - **Mutual Auth Handshake**: Robust HKDF-SHA256 based synchronization with anti-replay protection.
@@ -33,7 +33,7 @@
 - **SPI Service**: Full implementation of the SPI capability bit with a dedicated RPC service.
 
 ### 4. Deterministic FSM Ecosystem & Declarative Resilience (v2.8.7 - Q3 2026 - RELEASED)
-- **Ecosystem-Wide `python-statemachine`**: Formal SIL-2 deterministic state machines across all critical lifecycle boundaries:
+- **Ecosystem-Wide `python-statemachine`**: Explicit lifecycle state machines across selected boundaries; this is not a formal SIL-2 assessment:
   - `HandshakeMachine`: Eradicated manual state mapping and glue code; registered `SerialHandshakeManager` as listener with native hooks (`on_enter_synchronized`, `on_exit_synchronized`, `after_transition`).
   - `LinkConnectionMachine`: Strongly-typed physical connection states (`disconnected`, `connected`, `synchronized`) with idempotent transitions.
   - `ProcessMachine`: Deterministic subprocess lifecycle states (`spawning`, `running`, `terminating`, `exited`) with graceful termination escalation.

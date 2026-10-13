@@ -162,11 +162,16 @@ bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
   const uint64_t current_nonce = nonce_counter ? *nonce_counter : 0;
 
   etl::fill(out_nonce.begin(), out_nonce.end(), 0U);
-  static_assert(3U + 1U + sizeof(uint64_t) == rpc::RPC_AEAD_NONCE_SIZE,
+  static_assert(sizeof(uint32_t) + sizeof(uint64_t) == rpc::RPC_AEAD_NONCE_SIZE,
                 "[SIL-2] Nonce layout mismatch");
-  constexpr etl::string_view mcu_prefix("MCU");
-  etl::copy_n(mcu_prefix.begin(), 3, out_nonce.begin());
-  etl::byte_stream_writer n_writer(out_nonce.subspan(4), etl::endian::big);
+  static_assert(
+      rpc::RPC_MCU_AEAD_NONCE_PREFIX != rpc::RPC_MPU_AEAD_NONCE_PREFIX,
+      "AEAD nonce prefixes must be direction-specific");
+  etl::byte_stream_writer prefix_writer(out_nonce.subspan(0U, sizeof(uint32_t)),
+                                        etl::endian::big);
+  prefix_writer.write<uint32_t>(rpc::RPC_MCU_AEAD_NONCE_PREFIX);
+  etl::byte_stream_writer n_writer(out_nonce.subspan(sizeof(uint32_t)),
+                                   etl::endian::big);
   n_writer.write<uint64_t>(current_nonce);
 
   etl::array<uint8_t, 16> ad;
@@ -215,7 +220,7 @@ bool validate_frame_nonce(etl::span<const uint8_t> nonce,
     return false;
   }
 
-  // El MPU usa un prefijo aleatorio; solo el sufijo contiene el contador.
+  // Keep the suffix check prefix-agnostic for backward wire compatibility.
   const auto nonce_sub = nonce.subspan(4);
   etl::byte_stream_reader n_reader(nonce_sub.data(), nonce_sub.size(),
                                    etl::endian::big);

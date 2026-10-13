@@ -2,6 +2,8 @@
 
 Este documento unifica y reemplaza documentación histórica y dispersa.
 
+> **Estado de cumplimiento:** Las referencias a SIL-2/IEC 61508 describen objetivos y mecanismos de diseño. Este documento no constituye una evaluación de seguridad funcional ni acredita una certificación.
+
 ## Mini-diagrama (flujos y direccionalidad)
 
 ```
@@ -63,13 +65,13 @@ Todos los payloads del protocolo se definen como mensajes en `tools/protocol/mcu
 - **Python (daemon):** usa clases `Packet` generadas en `structures.py` sobre `google.protobuf`.
 - **C++ (MCU):** usa nanopb para codificar/decodificar payloads sin heap dinámico en runtime. Los tipos se exponen como `rpc_pb_*` structs nativos serializados y deserializados vía `rpc::Payload::serialize` y `rpc::Payload::parse`.
 
-El generador produce automáticamente `rpc::Payload::parse<T>(const rpc_pb_RpcEnvelope&)` sobre nanopb/protobuf, garantizando robustez SIL-2.
+El generador produce automáticamente `rpc::Payload::parse<T>(const rpc_pb_RpcEnvelope&)` sobre nanopb/protobuf, manteniendo las restricciones de tamaño definidas para los targets.
 
 ### Validación Estática (C++)
 La librería C++ utiliza el namespace `rpc::Payload` para un desempaquetado de datos seguro y tipado.
 
 ### Despacho de Comandos (Binary Search Dispatch)
-El MCU utiliza un despacho basado en una tabla estática `k_dispatch_table[]` ordenada por `command_id`, almacenada en PROGMEM para AVR. El lookup se realiza con `etl::lower_bound` (O(log N) sobre tabla contigua), eliminando el overhead de switch/case y la dependencia en rangos de enum contiguos. Esto garantiza un tiempo de despacho determinista y acotado, elimina la redundancia de código y minimiza el uso de RAM al ubicar la tabla en Flash (PROGMEM), cumpliendo con los requisitos más estrictos de SIL-2.
+El MCU utiliza un despacho basado en una tabla estática `k_dispatch_table[]` ordenada por `command_id`, almacenada en PROGMEM para AVR. El lookup se realiza con `etl::lower_bound` (O(log N) sobre tabla contigua), evitando la dependencia en rangos de enum contiguos y reduciendo el uso de RAM. El costo y los límites temporales deben medirse en cada target; esta implementación no acredita por sí sola una conformidad SIL-2.
 
 - **Contrato de tópicos público**: prefijo por defecto, sufijos y tokens canónicos que impactan interoperabilidad (`CLOUD_DEFAULT_TOPIC_PREFIX`, `CLOUD_SUFFIX_*`, `STATUS_REASON_*`).
 
@@ -132,7 +134,7 @@ El protocolo binario MCU Bridge 2 está diseñado para ser completamente agnóst
 - **RuntimeState**: mantiene el estado mutable (colas de red, handshake, spool, métricas, caché de session tickets TLS 1.3) y expone snapshots consistentes para status local (JSON/UBUS) y telemetría gRPC Cloud.
 - **High-Performance Unified Transport**: El daemon utiliza `SerialTransport` con soporte polimórfico transparente para `serialx.AsyncSerial` (UART POSIX) y `AsyncTcpConnection` (WiFi TCP / sockets de red).
 - **gRPC Bidirectional Stream (HTTP/3 QUIC + TLS 1.3 0-RTT)**: gestiona la comunicación asíncrona tipada y de baja latencia con el Cloud Gateway, soportando reanudación de sesión 0-RTT mediante tickets de sesión persistidos en LMDB.
-- **MCU Firmware (mcubridge-library-arduino)**: implementa el protocolo binario bajo normativa SIL-2 (C++17, Zero-Heap, Nanopb 0.4.9.2 con `pb_decode_noinit`).
+- **MCU Firmware (mcubridge-library-arduino)**: implementa el protocolo binario con objetivos de almacenamiento estático y uso de Nanopb 0.4.9.2 (`pb_decode_noinit`); no se afirma certificación SIL-2.
 - **Instrumentación**: el daemon escribe `/tmp/mcubridge_status.json` (snapshot en tmpfs para LuCI/UBUS; se pierde al reboot) y transmite periódicamente telemetría consolidada en `br/system/metrics` hacia el Cloud Gateway mediante streaming gRPC.
 
 ## Seguridad
@@ -156,7 +158,7 @@ El protocolo binario MCU Bridge 2 está diseñado para ser completamente agnóst
 
 ## Máquinas de Estados (FSM)
 
-El ecosistema implementa máquinas de estados deterministas y fuertemente tipadas tanto en C++ (`etl::fsm`) como en Python (`python-statemachine`), garantizando previsibilidad, ausencia de deadlocks y recuperabilidad determinista bajo estándares SIL-2.
+El ecosistema implementa máquinas de estados explícitas en C++ (`etl::fsm`) y Python (`python-statemachine`). Sus propiedades, transiciones no manejadas y recuperación deben verificarse con pruebas; su uso no garantiza ausencia de deadlocks ni certificación SIL-2.
 
 ### 1. Link Handshake FSM (`HandshakeMachine` — Python Daemon)
 
@@ -263,7 +265,7 @@ Las transferencias de archivos y peticiones de almacenamiento entre MPU y MCU se
 
 ---
 
-### 7. ETL FSM (MCU Firmware) — IEC 61508 / SIL 2
+### 7. ETL FSM (MCU Firmware) — Diseño de estados
 
 Máquina de estados estática en el MCU (C++) para la gestión del enlace RPC.
 Implementada con `etl::fsm` y `enum class StateId : uint8_t` para cero conversiones narrowing.
@@ -316,7 +318,7 @@ FaultState::on_enter_state() → hal::forceSafeState() [SIL-2]
 
 ---
 
-## Estado Seguro (Fail-Safe State) — IEC 61508 / SIL 2
+## Estado seguro (Fail-Safe) — comportamiento implementado
 
 Esta sección documenta formalmente el comportamiento del sistema ante condiciones de fallo, cumpliendo con los requisitos de Seguridad Funcional.
 
@@ -487,7 +489,7 @@ Los frames se encapsulan con **Consistent Overhead Byte Stuffing (COBS)** y cada
 ### 3.1.1 Seguridad AEAD (ChaCha20-Poly1305)
 
 Si el enlace está sincronizado y el comando no está en la lista de exclusión:
-- **Nonce (12 bytes):** Prefijo "MCU" o "DMN" + 8 bytes de contador monótono.
+- **Nonce (12 bytes):** Prefijo direccional de 4 bytes (`MCU\0` MCU → MPU, `MPU\0` MPU → MCU) + contador monótono de 8 bytes en big-endian. El prefijo se genera desde las opciones canónicas de `mcubridge.proto`.
 - **Payload:** Datos cifrados.
 - **Tag (16 bytes):** Firma de autenticidad Poly1305 sobre el Header (Associated Data) + Payload.
 
@@ -501,7 +503,7 @@ CRC32 (4 bytes, Big Endian) sobre Header + Nonce + Payload + Tag. Polinomio IEEE
 | :--- | :--- | :--- | :--- |
 | **Criptografía AEAD** | Cifrado y Autenticación | **wolfCrypt** (ChaCha20-Poly1305). | **cryptography** (OpenSSL backend). |
 | **COBS/R** | Framing / Escaping | **Externa**: `PacketSerial2` (`COBSR`). | **Externa**: `cobs` (módulo `cobsr` de PyPI). |
-| **CRC32** | Integridad adicional | **Interna**: `etl::crc32` (ETL SIL-2 certified). | **Interna**: `binascii.crc32` (IEEE 802.3 standard). |
+| **CRC32** | Integridad adicional | **Interna**: `etl::crc32` (ETL). | **Interna**: `binascii.crc32` (IEEE 802.3). |
 | **Payload Serialization** | Codificación de payloads | **nanopb/protobuf** (sin heap dinámico en runtime). | **protobuf** (`google.protobuf`, clases `Packet` en `structures.py`). |
 | **Endianness** | Byte Order | `etl::endian::big`. | `struct.pack('>...')` (Big Endian). |
 
@@ -1032,7 +1034,7 @@ Esto permite que llamadas directas desde interfaces LuCI JavaScript (`call('mcub
 Para prevenir la saturación de CPU observada en bucles de polling cooperativo sobre procesadores embebidos mononúcleo (como MIPS 24Kc en QEMU y hardware router real), `UbusService` desacopla el despacho de eventos de UBUS en un hilo dedicado (`threading.Thread(name="ubus-worker", daemon=True)`).
 
 1. **Bucle de Bombeo Bloqueante en Kernel**: El worker thread invoca `ubus.loop(250)` en una llamada de sistema bloqueante a nivel de socket de kernel. Si no hay mensajes entrantes, el hilo duerme en el kernel con 0% de utilización de CPU.
-2. **Despacho Seguro a Event Loop Asíncrono**: Cuando se recibe una llamada UBUS que requiere comunicación con el MCU o lógica asíncrona, el callback síncrono delega la corutina al bucle principal de asyncio mediante `asyncio.run_coroutine_threadsafe(coro, self._loop)`, garantizando sincronización thread-safe y determinismo SIL-2 sin contención de hilos.
+2. **Despacho al Event Loop Asíncrono**: Cuando se recibe una llamada UBUS que requiere comunicación con el MCU o lógica asíncrona, el callback síncrono delega la corutina al bucle principal de asyncio mediante `asyncio.run_coroutine_threadsafe(coro, self._loop)`. Esto facilita el despacho thread-safe, pero no acredita por sí solo ausencia de contención ni conformidad SIL-2.
 
 ### 10.5 Endpoint REST CGI de Alta Eficiencia (`/www/cgi-bin/mcubridge-pin`)
 

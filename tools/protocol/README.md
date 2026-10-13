@@ -19,4 +19,4 @@ The command refreshes:
 - `mcubridge-library-arduino/src/protocol/mcubridge.pb.h` + `.pb.c` — C Nanopb 0.4.9.2 structs from `mcubridge.proto`.
 - `mcubridge-client-examples/mcubridge_client/protocol.py` — Python client library enums and protocol constants.
 
-The Python module is consumed by the MCU bridge daemon, while the Arduino headers are used by the firmware. Both outputs guarantee zero-heap, zero-copy, and SIL-2 memory safety compliance.
+The Python module is consumed by the MCU bridge daemon, while the Arduino headers are used by the firmware. The firmware bindings are generated for statically bounded Nanopb structures; generation alone does not establish zero-heap behavior on every target or SIL-2 certification.

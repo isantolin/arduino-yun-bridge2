@@ -156,7 +156,7 @@ bool checkStackOverflow();
 uint16_t getFreeStackMargin();
 
 /**
- * @brief [SIL-2/FIPS 140-3] Run Power-On Self-Tests (SRAM March Test, Memory
+ * @brief Run Power-On Self-Tests (SRAM March Test, Memory
  * Sentinel & Crypto KATs).
  * @return true if all self-tests pass, false otherwise.
  */

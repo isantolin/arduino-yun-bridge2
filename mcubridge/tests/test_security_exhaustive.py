@@ -27,6 +27,11 @@ def test_security_nonce_validation_via_public_api() -> None:
     assert next_counter == 42
     assert len(nonce) == protocol.AEAD_NONCE_SIZE
     assert extract_nonce_counter(nonce) == next_counter
+    prefix_size = protocol.AEAD_NONCE_SIZE - protocol.HANDSHAKE_NONCE_COUNTER_BYTES
+    mpu_prefix = protocol.MPU_AEAD_NONCE_PREFIX.to_bytes(prefix_size, "big")
+    mcu_prefix = protocol.MCU_AEAD_NONCE_PREFIX.to_bytes(prefix_size, "big")
+    assert mpu_prefix != mcu_prefix
+    assert nonce[:prefix_size] == mpu_prefix
 
     raw_frame = build_frame(
         command_id=cmd_id,
@@ -39,9 +44,22 @@ def test_security_nonce_validation_via_public_api() -> None:
 
     assert decoded.payload == payload
 
+    peer_nonce = mcu_prefix + nonce[prefix_size:]
+    peer_frame = build_frame(
+        command_id=cmd_id,
+        sequence_id=seq_id,
+        payload=payload,
+        nonce=peer_nonce,
+        session_key=key,
+    )
+    assert parse_frame(peer_frame, session_key=key).payload == payload
+
     is_valid, updated_counter = validate_nonce_counter(nonce, 41)
     assert is_valid
     assert updated_counter == next_counter
+    peer_valid, peer_counter = validate_nonce_counter(peer_nonce, 41)
+    assert peer_valid
+    assert peer_counter == next_counter
 
     replay_valid, replay_counter = validate_nonce_counter(nonce, next_counter)
     assert not replay_valid

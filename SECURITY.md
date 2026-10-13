@@ -23,14 +23,14 @@ If you discover a potential security vulnerability in this project, please repor
 
 ## Security Architecture
 
-Arduino MCU Bridge 2 is built with security and robustness as primary goals, especially for industrial and safety-critical environments (**SIL-2 compliant**).
+Arduino MCU Bridge 2 is designed with security and robustness goals for industrial and safety-related environments. This repository does not establish IEC 61508 SIL-2 certification or FIPS 140-3 validation; the mechanisms below describe implementation choices, not a certification claim.
 
 ### 1. Handshake & Encryption
 All communication (physical UART, wireless WiFi TCP, or Bluetooth SPP) requires a successful mutual handshake using a pre-shared secret.
 - **Mutual Authentication:** HMAC-SHA256 used to authenticate the link during synchronization.
 - **AEAD (ChaCha20-Poly1305):** All functional data is encrypted and authenticated using mission-critical ChaCha20-Poly1305.
 - **Anti-Replay:** Monotonic nonces with counter validation prevent replay attacks on both the handshake and functional frames.
-- **MIL-SPEC Compliance:** HKDF-SHA256 (RFC 5869) for session key derivation following NIST standards.
+- **Cryptographic references:** HKDF-SHA256 (RFC 5869) is used for session-key derivation. Use of a referenced algorithm does not establish MIL-SPEC or FIPS 140-3 compliance.
 - **TLS 1.3 0-RTT:** Cloud Gateway connections support secure 0-RTT session ticket resumption with single-use anti-replay enforcement.
 
 ### 2. Integrity

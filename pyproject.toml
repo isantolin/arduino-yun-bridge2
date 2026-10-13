@@ -222,14 +222,7 @@ project-includes = [
     "mcubridge/scripts",
     "tools",
 ]
-search-path = [
-    "typings/stubs",
-    "typings/stubs/grpc-stubs",
-    "mcubridge",
-    "mcubridge-client-examples",
-    "mcubridge-client-examples/tests",
-    "mcubridge-gateway",
-]
+search-path = ["typings/stubs", "typings", "."]
 project-excludes = [
     "openwrt-sdk",
     "tools/protocol/templates",

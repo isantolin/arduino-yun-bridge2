@@ -287,7 +287,7 @@ rationale = "Type stubs for pexpect required by pyrefly"
 
 [[dev_dependency]]
 name = "types-grpcio"
-pip = "types-grpcio==1.68.0.20260101"
+pip = "types-grpcio==1.84.0.20260928"
 rationale = "Type stubs for grpc required by pyrefly and static analysis tools"
 
 

@@ -29,9 +29,7 @@ from mcubridge.state.context import (
     create_runtime_state,
 )
 
-run_state_machine_as_test: Callable[[type[RuleBasedStateMachine]], None] = getattr(
-    h_stateful, "run_state_machine_as_test"
-)
+run_state_machine_as_test: Callable[[type[RuleBasedStateMachine]], None] = h_stateful.run_state_machine_as_test
 
 
 class LinkConnectionStateMachine(RuleBasedStateMachine):

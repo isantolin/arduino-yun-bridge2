@@ -347,9 +347,7 @@ async def test_process_poll_and_terminate(test_config: RuntimeConfig, mock_bridg
 
 
 @pytest.mark.asyncio
-async def test_enqueue_cloud_not_debug_and_drop(
-    test_config: RuntimeConfig, mock_bridge_state: RuntimeState
-) -> None:
+async def test_enqueue_cloud_not_debug_and_drop(test_config: RuntimeConfig, mock_bridge_state: RuntimeState) -> None:
     test_config.cloud_enabled = True
     test_config.cloud_spool_dir = ""
     mock_serial = AsyncMock(spec=SerialTransport)

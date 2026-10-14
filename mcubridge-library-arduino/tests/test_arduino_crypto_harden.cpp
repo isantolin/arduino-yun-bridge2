@@ -139,9 +139,8 @@ void test_aead_decrypt_validates_buffers_and_tag(void) {
                          expected_mcu_prefix.size()),
       etl::endian::big);
   prefix_writer.write<uint32_t>(rpc::RPC_MCU_AEAD_NONCE_PREFIX);
-  const bool mcu_prefix_matches =
-      etl::equal(expected_mcu_prefix.begin(), expected_mcu_prefix.end(),
-                 nonce.begin());
+  const bool mcu_prefix_matches = etl::equal(
+      expected_mcu_prefix.begin(), expected_mcu_prefix.end(), nonce.begin());
   TEST_ASSERT_TRUE(mcu_prefix_matches);
 
   etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE - 1U> short_key = {};
@@ -203,13 +202,12 @@ void test_nonce_counter_accepts_random_prefix_and_rejects_replay(void) {
 
   etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> mpu_nonce = {};
   etl::byte_stream_writer mpu_prefix_writer(
-      etl::span<uint8_t>(mpu_nonce.data(), sizeof(uint32_t)),
-      etl::endian::big);
+      etl::span<uint8_t>(mpu_nonce.data(), sizeof(uint32_t)), etl::endian::big);
   mpu_prefix_writer.write<uint32_t>(rpc::RPC_MPU_AEAD_NONCE_PREFIX);
   mpu_nonce[rpc::RPC_AEAD_NONCE_SIZE - 1U] = 3U;
   uint64_t mpu_last_seen_counter = 2U;
-  const bool peer_prefix_accepted = rpc::security::validate_frame_nonce(
-      mpu_nonce, &mpu_last_seen_counter);
+  const bool peer_prefix_accepted =
+      rpc::security::validate_frame_nonce(mpu_nonce, &mpu_last_seen_counter);
   TEST_ASSERT_TRUE(peer_prefix_accepted);
   TEST_ASSERT_EQUAL_UINT64(3U, mpu_last_seen_counter);
 

@@ -78,7 +78,7 @@ async def _emit_metrics_snapshot(
     )
 
 
-async def _emit_bridge_snapshot(
+async def emit_bridge_snapshot(
     state: RuntimeState,
     enqueue: PublishEnqueue,
     flavor: str,
@@ -167,7 +167,7 @@ async def publish_bridge_snapshots(
             async def _summary_loop() -> None:
                 while True:
                     try:
-                        await _emit_bridge_snapshot(state, enqueue, flavor="summary")
+                        await emit_bridge_snapshot(state, enqueue, flavor="summary")
                     except asyncio.CancelledError:
                         raise
                     except (OSError, RuntimeError) as e:
@@ -181,7 +181,7 @@ async def publish_bridge_snapshots(
             async def _handshake_loop() -> None:
                 while True:
                     try:
-                        await _emit_bridge_snapshot(state, enqueue, flavor="handshake")
+                        await emit_bridge_snapshot(state, enqueue, flavor="handshake")
                     except asyncio.CancelledError:
                         raise
                     except (OSError, RuntimeError) as e:
@@ -211,6 +211,3 @@ def _build_bridge_snapshot_message(
         message_expiry_interval=const.BRIDGE_SNAPSHOT_EXPIRY_SECONDS,
         user_properties=((const.PROP_KEY_BRIDGE_SNAPSHOT, flavor),),
     )
-
-
-emit_bridge_snapshot = _emit_bridge_snapshot

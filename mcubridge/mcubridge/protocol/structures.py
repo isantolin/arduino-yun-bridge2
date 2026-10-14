@@ -169,7 +169,7 @@ def validate_config(cfg: pb.RuntimeConfig) -> None:
 
 
 @functools.lru_cache(maxsize=4)
-def _build_cached_ssl_context(
+def build_cached_ssl_context(
     cloud_cafile: str, cloud_certfile: str, cloud_keyfile: str, cloud_tls_insecure: bool
 ) -> ssl.SSLContext:
     if cloud_cafile:
@@ -192,16 +192,13 @@ def _build_cached_ssl_context(
     return context
 
 
-build_cached_ssl_context = _build_cached_ssl_context
-
-
 def get_ssl_context(cfg: pb.RuntimeConfig) -> Any | None:
     """Create an ssl.SSLContext based on cfg. [SIL-2]"""
     if not cfg.cloud_tls:
         return None
 
     try:
-        return _build_cached_ssl_context(
+        return build_cached_ssl_context(
             cfg.cloud_cafile, cfg.cloud_certfile, cfg.cloud_keyfile, cfg.cloud_tls_insecure
         )
     except (OSError, ssl.SSLError, ValueError) as exc:

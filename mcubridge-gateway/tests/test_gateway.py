@@ -35,9 +35,7 @@ from mcubridge.protocol.protocol import DEFAULT_CLOUD_PORT, PROTOCOL_VERSION
 from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
-run_state_machine_as_test: Callable[[type[RuleBasedStateMachine]], None] = getattr(
-    h_stateful, "run_state_machine_as_test"
-)
+run_state_machine_as_test: Callable[[type[RuleBasedStateMachine]], None] = h_stateful.run_state_machine_as_test
 
 
 @pytest.fixture

@@ -25,9 +25,7 @@ from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol import protocol
 from mcubridge.protocol.frame import build_frame
 
-run_state_machine_as_test: Callable[[type[RuleBasedStateMachine]], None] = getattr(
-    h_stateful, "run_state_machine_as_test"
-)
+run_state_machine_as_test: Callable[[type[RuleBasedStateMachine]], None] = h_stateful.run_state_machine_as_test
 
 cli = typer.Typer(help="[MIL-SPEC/SIL-2] McuBridge Protocol Stateful Fuzzer", add_completion=False)
 logger = structlog.get_logger("protocol_fuzzer")

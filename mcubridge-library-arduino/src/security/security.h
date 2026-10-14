@@ -44,7 +44,8 @@ void derive_session_key(etl::span<const uint8_t> secret,
 
 /**
  * @brief Encrypt a frame and populate its nonce/tag.
- * @param nonce_counter Non-null monotonic counter required to prevent nonce reuse.
+ * @param nonce_counter Non-null monotonic counter required to prevent nonce
+ * reuse.
  */
 bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
                         etl::span<const uint8_t> in,

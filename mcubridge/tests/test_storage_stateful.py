@@ -14,9 +14,7 @@ from hypothesis import strategies as st
 from hypothesis.stateful import Bundle, RuleBasedStateMachine, invariant, rule
 from mcubridge.state.storage import LmdbDeque
 
-run_state_machine_as_test: Callable[[type[RuleBasedStateMachine]], None] = getattr(
-    h_stateful, "run_state_machine_as_test"
-)
+run_state_machine_as_test: Callable[[type[RuleBasedStateMachine]], None] = h_stateful.run_state_machine_as_test
 
 
 class LmdbDequeDiskStateMachine(RuleBasedStateMachine):

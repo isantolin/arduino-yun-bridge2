@@ -53,7 +53,7 @@ def set_digital_pin(pin: int, value: int) -> bool:
     if ubus_bin:
         try:
             args = [ubus_bin, "call", "mcubridge", "digital_write", json.dumps(payload)]
-            proc = subprocess.run(args, capture_output=True, text=True, timeout=5)
+            proc = subprocess.run(args, check=False, capture_output=True, text=True, timeout=5)
             if proc.returncode == 0:
                 parsed: Any = json.loads(proc.stdout) if proc.stdout.strip() else {}
                 if isinstance(parsed, dict):

@@ -172,8 +172,8 @@ void test_surgical_security_failures() {
   // 4. validate_frame_nonce with nonce of size < 12
   etl::array<uint8_t, 10> short_nonce = {0};
   uint64_t short_nonce_last_seen = 0U;
-  const bool short_ok = rpc::security::validate_frame_nonce(
-      short_nonce, &short_nonce_last_seen);
+  const bool short_ok =
+      rpc::security::validate_frame_nonce(short_nonce, &short_nonce_last_seen);
   TEST_ASSERT_FALSE(short_ok);
   TEST_ASSERT_EQUAL_UINT64(0U, short_nonce_last_seen);
 
@@ -610,7 +610,8 @@ static void test_surgical_extra_branches() {
   // 9. Send non-system command when tx disabled
   ba.setTxEnabled(false);
   rpc::payload::DigitalWrite dw_payload = {};
-  TEST_ASSERT_FALSE(Bridge.send(rpc::CommandId::CMD_DIGITAL_WRITE, 0, dw_payload));
+  TEST_ASSERT_FALSE(
+      Bridge.send(rpc::CommandId::CMD_DIGITAL_WRITE, 0, dw_payload));
   ba.setTxEnabled(true);
 
   // 10. Dispatch XOFF, XON, GetFreeMemory, GetCapabilities

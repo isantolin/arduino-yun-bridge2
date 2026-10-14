@@ -149,9 +149,7 @@ def collect_pip_specs(deps: Sequence[DepEntry], *, gateway: bool = False) -> lis
     specs = {
         dep["pip"]
         for dep in deps
-        if dep.get("pip")
-        and dep["name"] not in BUILD_ONLY_PACKAGES
-        and (gateway or dep.get("edge", True))
+        if dep.get("pip") and dep["name"] not in BUILD_ONLY_PACKAGES and (gateway or dep.get("edge", True))
     }
     filtered = {s for s in specs if not any(s.startswith(p) for p in SYSTEM_ONLY_PACKAGES)}
     return sorted(filtered)

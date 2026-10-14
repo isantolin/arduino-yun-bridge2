@@ -53,6 +53,3 @@ def write_status_file(payload: ProtobufMessage, status_file: Path | None = None)
     except (ValueError, OSError) as exc:
         logger.error("Failed to write atomic status file", error=str(exc))
         return False
-
-
-_write_status_file = write_status_file

@@ -48,7 +48,7 @@ def ubus_call(obj: str, method: str, params: dict[str, Any] | None = None) -> di
             args = [ubus_bin, "call", obj, method]
             if payload:
                 args.append(json.dumps(payload))
-            proc = subprocess.run(args, capture_output=True, text=True, timeout=5)
+            proc = subprocess.run(args, check=False, capture_output=True, text=True, timeout=5)
             if proc.returncode == 0 and proc.stdout.strip():
                 parsed: Any = json.loads(proc.stdout)
                 if isinstance(parsed, dict):

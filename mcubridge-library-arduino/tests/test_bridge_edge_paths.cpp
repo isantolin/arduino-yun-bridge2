@@ -309,6 +309,22 @@ void test_packet_received_security_paths() {
   ba.invokePacketReceived(etl::span<const uint8_t>(wire.data(), wire_len));
   TEST_ASSERT_TRUE(Bridge.isSynchronized());
   TEST_ASSERT_FALSE(ba.isAwaitingAck());
+
+  // Edge case: encrypted payload with tag size < 16 bytes
+  rpc_pb_RpcEnvelope short_tag_frame = rpc_pb_RpcEnvelope_init_default;
+  short_tag_frame.version = rpc::PROTOCOL_VERSION;
+  short_tag_frame.command_id =
+      rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE);
+  short_tag_frame.sequence_id = 501;
+  short_tag_frame.which_payload_type =
+      rpc_pb_RpcEnvelope_encrypted_payload_with_tag_tag;
+  short_tag_frame.payload_type.encrypted_payload_with_tag.size = 10;
+  etl::fill_n(short_tag_frame.payload_type.encrypted_payload_with_tag.bytes, 10,
+              0xAA);
+  etl::array<uint8_t, rpc::MAX_FRAME_SIZE> wire2;
+  size_t wire_len2 = rpc::serialize_frame(short_tag_frame, wire2);
+  ba.invokePacketReceived(etl::span<const uint8_t>(wire2.data(), wire_len2));
+  TEST_ASSERT_TRUE(Bridge.isSynchronized());
 }
 
 void test_console_and_policy_edges() {

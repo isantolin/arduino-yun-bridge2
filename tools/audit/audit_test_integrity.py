@@ -297,9 +297,7 @@ def audit_test_only_hooks() -> list[str]:
             if f.suffix in {".h", ".cpp"} and not f.name.startswith("pb_") and "protocol/mcubridge.pb" not in str(f)
         ]
         if cpp_examples_dir.exists():
-            cpp_prod_files.extend(
-                [f for f in cpp_examples_dir.rglob("*") if f.suffix in {".h", ".cpp", ".ino"}]
-            )
+            cpp_prod_files.extend([f for f in cpp_examples_dir.rglob("*") if f.suffix in {".h", ".cpp", ".ino"}])
         cpp_test_files = [f for f in cpp_test_dir.rglob("*") if f.suffix in {".h", ".cpp"}]
 
         cpp_prod_text = "\n".join(f.read_text(encoding="utf-8", errors="ignore") for f in cpp_prod_files)

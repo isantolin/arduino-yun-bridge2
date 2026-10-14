@@ -52,15 +52,13 @@ def svc(mock_config: RuntimeConfig, mock_state: RuntimeState) -> tuple[BridgeSer
 # 1. Declarative Contract Verification (All Registry Entries)
 # -----------------------------------------------------------------------------
 
+
 def test_protocol_registry_coverage(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
     """Certifies that all known Commands have defined handlers or default fallbacks."""
     service, _state, _serial = svc
     for cmd in Command:
         cmd_name = cmd.name.lower().removeprefix("cmd_")
-        handler = (
-            getattr(service, f"on_mcu_{cmd_name}", None)
-            or getattr(service, f"_on_mcu_{cmd_name}", None)
-        )
+        handler = getattr(service, f"on_mcu_{cmd_name}", None) or getattr(service, f"_on_mcu_{cmd_name}", None)
         # Commands are either explicitly handled or caught by unsupported_mcu_request fallback
         assert handler is not None or callable(service.unsupported_mcu_request)
 
@@ -69,8 +67,9 @@ def test_protocol_registry_coverage(svc: tuple[BridgeService, RuntimeState, Asyn
 # 2. Unsupported Request Fallback Tests
 # -----------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
-@pytest.mark.parametrize("has_serial, expected_result", [(False, False), (True, True)])
+@pytest.mark.parametrize(("has_serial", "expected_result"), [(False, False), (True, True)])
 async def test_unsupported_mcu_request(
     svc: tuple[BridgeService, RuntimeState, AsyncMock],
     has_serial: bool,
@@ -93,6 +92,7 @@ async def test_unsupported_mcu_request(
 # -----------------------------------------------------------------------------
 # 3. Mailbox Operations Conformance Suite
 # -----------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_mailbox_available_scenarios(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
@@ -157,6 +157,7 @@ async def test_mailbox_processed(svc: tuple[BridgeService, RuntimeState, AsyncMo
 # -----------------------------------------------------------------------------
 # 4. FileSystem Operations Conformance Suite
 # -----------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_file_write_scenarios(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
@@ -252,6 +253,7 @@ async def test_file_read_resp_chunking(svc: tuple[BridgeService, RuntimeState, A
 # 5. Process Execution Conformance Suite
 # -----------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_process_run_async_and_poll(svc: tuple[BridgeService, RuntimeState, AsyncMock]) -> None:
     service, _state, serial = svc
@@ -288,6 +290,7 @@ async def test_process_run_async_and_poll(svc: tuple[BridgeService, RuntimeState
 # -----------------------------------------------------------------------------
 # 6. Status and Pin Telemetry Conformance Suite
 # -----------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_status_reporting_and_ack(

@@ -332,11 +332,7 @@ class HandshakeStateMachine(RuleBasedStateMachine):
 
     @rule()
     def start_sync(self) -> None:
-        if (
-            self.fsm.unsynchronized.is_active
-            or self.fsm.synchronized.is_active
-            or self.fsm.fault.is_active
-        ):
+        if self.fsm.unsynchronized.is_active or self.fsm.synchronized.is_active or self.fsm.fault.is_active:
             self.fsm.start_sync()
             assert self.fsm.resetting.is_active
 
@@ -832,4 +828,3 @@ async def test_handshake_rate_limit_and_sync_fault_branches(
     set_fsm_state(HandshakeState.UNSYNCHRONIZED)
     res_mismatch = await sync_fn()
     assert res_mismatch is False
-

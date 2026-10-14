@@ -12,7 +12,7 @@ import json
 import shutil
 import subprocess
 import sys
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 
 import structlog
 import typer
@@ -30,7 +30,7 @@ except (ImportError, TypeError) as exc:
 def set_digital_pin(pin: int, value: int) -> bool:
     """Set digital pin state via OpenWrt UBUS IPC."""
     payload: dict[str, Any] = {
-        "pin": int(pin),
+        "pin": pin,
         "value": 1 if value else 0,
         "ubus_rpc_session": "",
     }
@@ -40,8 +40,10 @@ def set_digital_pin(pin: int, value: int) -> bool:
             conn: Any = ubus.connect()
             if conn is not None:
                 res: Any = conn.call("mcubridge", "digital_write", payload)
-                if isinstance(res, dict) and res.get("status") == "ok":
-                    return True
+                if isinstance(res, dict):
+                    res_dict: dict[str, Any] = cast(dict[str, Any], res)
+                    if res_dict.get("status") == "ok":
+                        return True
                 logger.warning("UBUS digital_write replied with non-ok status", response=res)
                 return False
         except (OSError, RuntimeError, AttributeError) as exc:
@@ -54,8 +56,10 @@ def set_digital_pin(pin: int, value: int) -> bool:
             proc = subprocess.run(args, capture_output=True, text=True, timeout=5)
             if proc.returncode == 0:
                 parsed: Any = json.loads(proc.stdout) if proc.stdout.strip() else {}
-                if isinstance(parsed, dict) and parsed.get("status") == "ok":
-                    return True
+                if isinstance(parsed, dict):
+                    parsed_dict: dict[str, Any] = cast(dict[str, Any], parsed)
+                    if parsed_dict.get("status") == "ok":
+                        return True
         except (subprocess.SubprocessError, OSError, json.JSONDecodeError) as exc:
             logger.debug("CLI ubus digital_write failed", error=str(exc))
 

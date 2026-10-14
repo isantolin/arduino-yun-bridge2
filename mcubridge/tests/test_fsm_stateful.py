@@ -10,12 +10,18 @@ Formally tests state invariants across:
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from typing import Any
 from unittest.mock import MagicMock
 
+import hypothesis.stateful as h_stateful
 from hypothesis import strategies as st
-from hypothesis.stateful import Bundle, RuleBasedStateMachine, invariant, rule, run_state_machine_as_test
+from hypothesis.stateful import Bundle, RuleBasedStateMachine, invariant, rule
 from mcubridge.config.settings import RuntimeConfig
+
+run_state_machine_as_test: Callable[[type[RuleBasedStateMachine]], None] = getattr(
+    h_stateful, "run_state_machine_as_test"
+)
 from mcubridge.state.context import (
     CloudLinkMachine,
     CloudLinkState,

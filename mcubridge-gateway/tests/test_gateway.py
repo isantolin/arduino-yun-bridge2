@@ -26,13 +26,18 @@ from collections.abc import Callable
 from grpclib.const import Status
 from grpclib.exceptions import GRPCError
 from grpclib.reflection.service import ServerReflection
+import hypothesis.stateful as h_stateful
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from hypothesis.stateful import RuleBasedStateMachine, invariant, rule, run_state_machine_as_test
+from hypothesis.stateful import RuleBasedStateMachine, invariant, rule
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol.protocol import DEFAULT_CLOUD_PORT, PROTOCOL_VERSION
 from pytest_mock import MockerFixture
 from typer.testing import CliRunner
+
+run_state_machine_as_test: Callable[[type[RuleBasedStateMachine]], None] = getattr(
+    h_stateful, "run_state_machine_as_test"
+)
 
 
 @pytest.fixture

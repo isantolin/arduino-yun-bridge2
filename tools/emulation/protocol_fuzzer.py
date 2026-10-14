@@ -10,11 +10,17 @@ from __future__ import annotations
 
 import asyncio
 from binascii import crc32
+from collections.abc import Callable
 from typing import Annotated, ClassVar
 
 from cobs import cobsr
 from hypothesis import strategies as st
-from hypothesis.stateful import RuleBasedStateMachine, invariant, rule, run_state_machine_as_test
+import hypothesis.stateful as h_stateful
+from hypothesis.stateful import RuleBasedStateMachine, invariant, rule
+
+run_state_machine_as_test: Callable[[type[RuleBasedStateMachine]], None] = getattr(
+    h_stateful, "run_state_machine_as_test"
+)
 import serialx
 import structlog
 import typer

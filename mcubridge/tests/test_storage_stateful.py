@@ -4,13 +4,19 @@ from __future__ import annotations
 
 import asyncio
 import collections
+from collections.abc import Callable
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+import hypothesis.stateful as h_stateful
 import pytest
 from hypothesis import strategies as st
-from hypothesis.stateful import Bundle, RuleBasedStateMachine, invariant, rule, run_state_machine_as_test
+from hypothesis.stateful import Bundle, RuleBasedStateMachine, invariant, rule
 from mcubridge.state.storage import LmdbDeque
+
+run_state_machine_as_test: Callable[[type[RuleBasedStateMachine]], None] = getattr(
+    h_stateful, "run_state_machine_as_test"
+)
 
 
 class LmdbDequeDiskStateMachine(RuleBasedStateMachine):

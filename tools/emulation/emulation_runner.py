@@ -403,6 +403,7 @@ def main(
     package_root: Annotated[Path, typer.Option("--package-root", help="Root of mcubridge package")] = Path(),
     run_scripts: Annotated[list[str] | None, typer.Argument(help="Client scripts to run")] = None,
 ) -> None:
+    os.environ["MCUBRIDGE_NON_INTERACTIVE"] = "1"
     scripts = run_scripts or []
     led_builtin_pin = None
     if any(Path(script).name in {"led13_test.py", "all_features_test.py"} for script in scripts):

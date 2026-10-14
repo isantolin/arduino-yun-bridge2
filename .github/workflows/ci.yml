@@ -209,7 +209,7 @@ jobs:
         with:
           cache-suffix: emulation
       - name: Install Python Dependencies
-        run: pip install -r requirements/runtime.txt nanopb black
+        run: pip install -r requirements/runtime.txt -r mcubridge-gateway/requirements.txt nanopb black
       - name: Install Emulation Tools
         run: |
           sudo apt-get update

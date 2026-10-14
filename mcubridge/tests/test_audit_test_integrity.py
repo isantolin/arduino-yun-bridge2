@@ -83,7 +83,8 @@ def test_audit_cpp_tests_detects_empty_assertions(tmp_path: Path) -> None:
 
 def test_main_cli_success() -> None:
     """Verify main() CLI executes cleanly without raising SystemExit on compliant repo."""
-    main(strict=True)
+    res = main(strict=True)
+    assert res is None
 
 
 def test_main_cli_failure_on_violations(tmp_path: Path) -> None:

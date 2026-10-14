@@ -300,7 +300,8 @@ def audit_test_only_hooks() -> list[str]:
         cpp_test_text = "\n".join(f.read_text(encoding="utf-8", errors="ignore") for f in cpp_test_files)
 
         func_decl = re.compile(
-            r"^\s*(?:(?:static|inline|virtual|explicit|friend)\s+)*[\w:<>&*~]+\s+([a-zA-Z_]\w+)\s*\([^;{]*\)\s*(?:const)?\s*(?:override)?\s*(?:noexcept)?\s*[{;]",
+            r"^\s*(?:(?:static|inline|virtual|explicit|friend)\s+)*[\w:<>&*~]+\s+([a-zA-Z_]\w+)\s*"
+            r"\([^;{]*\)\s*(?:const)?\s*(?:override)?\s*(?:noexcept)?\s*[{;]",
             re.MULTILINE,
         )
 

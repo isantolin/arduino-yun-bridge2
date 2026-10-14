@@ -1,11 +1,11 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=python3-serialx
-PKG_VERSION:=1.11.0
+PKG_VERSION:=1.13.0
 PKG_RELEASE:=1
 
 PYPI_NAME:=serialx
-PKG_HASH:=38a4b60212d994449c9f3314c523ec629f1ccf629f4767b3867c7a5381366ab9
+PKG_HASH:=0f9ecfb157ff04beb280cd01fce6cca36a5092af861dbb31072e636bd3b8f547
 
 PKG_MAINTAINER:=Ignacio Santolin <isantolin@gmail.com>
 PKG_LICENSE:=Apache-2.0

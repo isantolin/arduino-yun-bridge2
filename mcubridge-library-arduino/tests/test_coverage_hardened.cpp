@@ -38,15 +38,20 @@ void capture_poll_handler(rpc::StatusCode /*status*/, uint16_t /*exit_code*/,
                           etl::span<const uint8_t>, etl::span<const uint8_t>) {}
 void datastore_get_handler(etl::string_view, etl::span<const uint8_t>) {}
 void dummy_cmd_handler(const rpc_pb_RpcEnvelope&) {}
+void dummy_status_handler(rpc::StatusCode, etl::span<const uint8_t>) {}
 }  // namespace
 
 void test_bridge_emit_status_variants() {
   BiStream stream;
   reset_bridge_core(Bridge, stream);
 
-  // Test all status variants to cover string_view, FlashString, and span paths
+  // Exercise with active status handler to cover callback dispatch branches
+  Bridge.onStatus(BridgeClass::StatusHandler::create<dummy_status_handler>());
   Bridge.emitStatus(rpc::StatusCode::STATUS_OK);
   Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR, etl::string_view("Error"));
+
+  // Clear handler to cover inactive status handler branches
+  Bridge.onStatus(BridgeClass::StatusHandler());
   Bridge.emitStatus(rpc::StatusCode::STATUS_MALFORMED, F("FlashError"));
 
   // Empty variants
@@ -750,6 +755,17 @@ void test_uncovered_branch_and_coverage_boost() {
   Process.runAsync(
       etl::string_view(large_cmd_buf.data(), 59), {},
       etl::delegate<void(int32_t)>::create<capture_async_handler>());
+
+  // 5. Test _handleStatusMalformed with active status handler
+  {
+    Bridge.onStatus(BridgeClass::StatusHandler::create<dummy_status_handler>());
+    rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
+    env.version = rpc::PROTOCOL_VERSION;
+    env.command_id = (uint16_t)rpc::StatusCode::STATUS_MALFORMED;
+    env.sequence_id = 123;
+    ba.dispatch(env);
+    Bridge.onStatus(BridgeClass::StatusHandler());
+  }
 }
 
 int main() {

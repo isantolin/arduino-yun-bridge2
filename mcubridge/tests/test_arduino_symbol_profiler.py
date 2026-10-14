@@ -122,9 +122,14 @@ def test_cli_main_nonexistent_directory(tmp_path: Path) -> None:
 
 def test_cli_main_with_output(tmp_path: Path) -> None:
     repo_root = Path(__file__).resolve().parents[2]
-    build_dir = repo_root / "arduino-build" / "arduino-avr-yun"
-    if not build_dir.exists():
-        pytest.skip(f"Build dir not found: {build_dir}")
+    candidate_dirs = [
+        repo_root / "arduino-build" / "arduino-avr-mega",
+        repo_root / "arduino-build" / "arduino-samd-mkrwifi1010",
+        repo_root / "arduino-build" / "arduino-esp32-nano_nora",
+    ]
+    build_dir = next((d for d in candidate_dirs if d.exists() and list(d.rglob("*.elf"))), None)
+    if build_dir is None:
+        pytest.skip("No build artifacts found for supported target boards (Mega, MKR WiFi 1010, Nano ESP32)")
 
     out_file = tmp_path / "report.md"
     result = runner.invoke(cast(Any, cli), [str(build_dir), "--output", str(out_file)])

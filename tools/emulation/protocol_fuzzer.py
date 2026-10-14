@@ -14,13 +14,9 @@ from collections.abc import Callable
 from typing import Annotated, ClassVar
 
 from cobs import cobsr
-from hypothesis import strategies as st
 import hypothesis.stateful as h_stateful
+from hypothesis import strategies as st
 from hypothesis.stateful import RuleBasedStateMachine, invariant, rule
-
-run_state_machine_as_test: Callable[[type[RuleBasedStateMachine]], None] = getattr(
-    h_stateful, "run_state_machine_as_test"
-)
 import serialx
 import structlog
 import typer
@@ -28,6 +24,10 @@ import typer
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol import protocol
 from mcubridge.protocol.frame import build_frame
+
+run_state_machine_as_test: Callable[[type[RuleBasedStateMachine]], None] = getattr(
+    h_stateful, "run_state_machine_as_test"
+)
 
 cli = typer.Typer(help="[MIL-SPEC/SIL-2] McuBridge Protocol Stateful Fuzzer", add_completion=False)
 logger = structlog.get_logger("protocol_fuzzer")

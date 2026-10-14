@@ -18,10 +18,6 @@ import hypothesis.stateful as h_stateful
 from hypothesis import strategies as st
 from hypothesis.stateful import Bundle, RuleBasedStateMachine, invariant, rule
 from mcubridge.config.settings import RuntimeConfig
-
-run_state_machine_as_test: Callable[[type[RuleBasedStateMachine]], None] = getattr(
-    h_stateful, "run_state_machine_as_test"
-)
 from mcubridge.state.context import (
     CloudLinkMachine,
     CloudLinkState,
@@ -31,6 +27,10 @@ from mcubridge.state.context import (
     ProcessContext,
     ProcessState,
     create_runtime_state,
+)
+
+run_state_machine_as_test: Callable[[type[RuleBasedStateMachine]], None] = getattr(
+    h_stateful, "run_state_machine_as_test"
 )
 
 

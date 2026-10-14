@@ -60,10 +60,13 @@ int main(int argc, char** argv) {
 
   while (g_running) {
     Bridge.process();
-    while (Console.available()) {
+    etl::array<uint8_t, 32> echo_buf{};
+    const size_t avail =
+        etl::min(static_cast<size_t>(Console.available()), echo_buf.size());
+    etl::for_each(echo_buf.begin(), echo_buf.begin() + avail, [](uint8_t) {
       int c = Console.read();
       if (c >= 0) Console.write(static_cast<uint8_t>(c));
-    }
+    });
     Console.process();
     usleep(1000);
   }

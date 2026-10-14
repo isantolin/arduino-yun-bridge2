@@ -155,13 +155,13 @@ template <size_t N>
     const ByteBuffer<N>& buffer, size_t& cursor,
     rpc_pb_RpcEnvelope& out_frame) {
   etl::array<uint8_t, 1024> decoded_buf;
-  const uint8_t* const buf_begin = buffer.data;
-  const uint8_t* const buf_end = buffer.data + buffer.len;
+  const uint8_t* const buf_begin = buffer.data.data();
+  const uint8_t* const buf_end = buffer.data.data() + buffer.len;
 
   bool frame_found = false;
   etl::array<uint8_t, N> scan_tokens{};
   const size_t remaining = buffer.len > cursor ? buffer.len - cursor : 0;
-  etl::find_if(scan_tokens.begin(), scan_tokens.begin() + remaining, [&](uint8_t) {
+  auto scan_it = etl::find_if(scan_tokens.begin(), scan_tokens.begin() + remaining, [&](uint8_t) {
     if (cursor >= buffer.len) return true;
     if (buffer.data[cursor] == rpc::RPC_FRAME_DELIMITER) {
       cursor++;
@@ -186,6 +186,7 @@ template <size_t N>
     }
     return false;
   });
+  (void)scan_it;
 
   return frame_found;
 }

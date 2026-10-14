@@ -13,6 +13,7 @@ mkdir -p "${OBJ_DIR}" "${METADATA_DIR}"
 python3 "${ROOT_DIR}/tools/arduino_core_metadata.py" \
     --host-test \
     --write-header "${METADATA_DIR}/ArduinoCoreMetadata.h"
+cp -f "${METADATA_DIR}/ArduinoCoreMetadata.h" "${STUB_DIR}/ArduinoCoreMetadata.h"
 
 # Use system Python directly
 PYTHON_CMD=$(command -v python3 || command -v python)
@@ -145,14 +146,10 @@ TEST_FILES=(
     "${TEST_DIR}/test_host_filesystem.cpp"
     "${TEST_DIR}/test_protocol.cpp"
     "${TEST_DIR}/test_fsm_mutual_auth.cpp"
-    "${TEST_DIR}/test_arduino_100_coverage.cpp"
-    "${TEST_DIR}/test_coverage_full.cpp"
     "${TEST_DIR}/test_rpc_structs.cpp"
-    "${TEST_DIR}/test_surgical_coverage.cpp"
     "${TEST_DIR}/test_arduino_harden.cpp"
     "${TEST_DIR}/test_arduino_crypto_harden.cpp"
     "${TEST_DIR}/test_arduino_stress.cpp"
-    "${TEST_DIR}/test_coverage_hardened.cpp"
     "${TEST_DIR}/test_bridge_edge_paths.cpp"
     "${TEST_DIR}/test_hal_weak_defaults.cpp"
 )

@@ -32,20 +32,29 @@ void setup() {
   // This prevents "Rejecting MCU frame before link synchronisation" errors.
   // Non-blocking LED blink continues while waiting for handshake.
   {
+    constexpr size_t OUTER_STEPS = 300;
+    constexpr size_t INNER_STEPS = 50;
+    etl::array<uint8_t, OUTER_STEPS> outer_ticks{};
+    etl::array<uint8_t, INNER_STEPS> inner_polls{};
     const uint32_t sync_deadline = millis() + bridge::config::SYNC_TIMEOUT_MS;
-    long lastBlink = 0;
     bool ledState = false;
-    while (!Bridge.isSynchronized()) {
-      if (static_cast<int32_t>(millis() - sync_deadline) > 0) {
-        Bridge.enterSafeState();
-        break;
-      }
-      Bridge.process();
-      if (millis() - lastBlink > 100) {
-        lastBlink = millis();
-        ledState = !ledState;
-        digitalWrite(13, ledState ? HIGH : LOW);
-      }
+    auto sync_it = etl::find_if(outer_ticks.begin(), outer_ticks.end(), [&](uint8_t) {
+      if (Bridge.isSynchronized()) return true;
+      if (static_cast<int32_t>(millis() - sync_deadline) > 0) return true;
+      ledState = !ledState;
+      digitalWrite(13, ledState ? HIGH : LOW);
+      auto inner_it = etl::find_if(inner_polls.begin(), inner_polls.end(), [&](uint8_t) {
+        if (Bridge.isSynchronized()) return true;
+        Bridge.process();
+        delay(2);
+        return false;
+      });
+      (void)inner_it;
+      return Bridge.isSynchronized();
+    });
+    (void)sync_it;
+    if (!Bridge.isSynchronized()) {
+      Bridge.enterSafeState();
     }
   }
 
@@ -59,12 +68,14 @@ void loop() {
   Bridge.process();
 
   // Example: Echo serial console input back to verify bi-directional link
-  while (Console.available()) {
+  etl::array<uint8_t, 32> echo_buf{};
+  const size_t avail = etl::min(static_cast<size_t>(Console.available()), echo_buf.size());
+  etl::for_each(echo_buf.begin(), echo_buf.begin() + avail, [](uint8_t) {
     int c = Console.read();
     if (c >= 0) {
       Console.write(static_cast<uint8_t>(c));
     }
-  }
+  });
 
   /*
   static long lastPrint = 0;

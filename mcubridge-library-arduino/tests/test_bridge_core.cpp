@@ -1,8 +1,11 @@
 #ifndef BRIDGE_ENABLE_TEST_INTERFACE
 #define BRIDGE_ENABLE_TEST_INTERFACE 1
 #endif
+#include <BridgeFaultInjection.h>
 #include <etl/array.h>
+#include <etl/numeric.h>
 #include <etl/span.h>
+#include <etl/string_view.h>
 #include <unity.h>
 
 #include "Bridge.h"
@@ -228,6 +231,201 @@ void test_bridge_handshake_timeout_not_sync() {
   TEST_ASSERT_FALSE(ba.isFault());
 }
 
+namespace {
+void dummy_status_handler(rpc::StatusCode, etl::span<const uint8_t>) {}
+}
+
+void test_bridge_queue_full_and_flow_control() {
+  reset_bridge();
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
+
+  etl::array<uint16_t, bridge::config::MAX_PENDING_TX_FRAMES> seq_ids{};
+  etl::iota(seq_ids.begin(), seq_ids.end(), 100);
+  etl::for_each(seq_ids.begin(), seq_ids.end(), [](uint16_t seq) {
+    TEST_ASSERT_TRUE(Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, seq));
+  });
+  TEST_ASSERT_TRUE(ba.isAwaitingAck());
+  TEST_ASSERT_FALSE(Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, 105));
+
+  Bridge.signalXoff();
+  Bridge.signalXon();
+  TEST_ASSERT_TRUE(Bridge.isSynchronized());
+}
+
+void test_bridge_emit_status_variants() {
+  reset_bridge();
+  Bridge.onStatus(BridgeClass::StatusHandler::create<dummy_status_handler>());
+  Bridge.emitStatus(rpc::StatusCode::STATUS_OK);
+  Bridge.emitStatus(rpc::StatusCode::STATUS_ERROR, etl::string_view("Error"));
+
+  Bridge.onStatus(BridgeClass::StatusHandler());
+  Bridge.emitStatus(rpc::StatusCode::STATUS_MALFORMED, F("FlashError"));
+  Bridge.emitStatus(rpc::StatusCode::STATUS_OK, etl::string_view(""));
+  Bridge.emitStatus(rpc::StatusCode::STATUS_OK, (const __FlashStringHelper*)nullptr);
+  TEST_ASSERT_TRUE(Bridge.isPostPassed());
+}
+
+void test_bridge_send_responses_table() {
+  reset_bridge();
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
+
+  uint8_t data[] = "d";
+
+  TEST_ASSERT_TRUE(Bridge.send(rpc::CommandId::CMD_GET_VERSION_RESP, 1, []() {
+    rpc::payload::VersionResponse p;
+    p.major = 1;
+    p.minor = 2;
+    p.patch = 3;
+    return p;
+  }()));
+  TEST_ASSERT_TRUE(Bridge.send(rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, 1, []() {
+    rpc::payload::FreeMemoryResponse p;
+    p.value = 1024;
+    return p;
+  }()));
+  TEST_ASSERT_TRUE(Bridge.send(rpc::CommandId::CMD_GET_CAPABILITIES_RESP, 1,
+                               rpc::payload::Capabilities{}));
+  TEST_ASSERT_TRUE(Bridge.send(rpc::CommandId::CMD_DIGITAL_READ_RESP, 1, []() {
+    rpc::payload::DigitalReadResponse p;
+    p.value = 1;
+    return p;
+  }()));
+  TEST_ASSERT_TRUE(Bridge.send(rpc::CommandId::CMD_ANALOG_READ_RESP, 1, []() {
+    rpc::payload::AnalogReadResponse p;
+    p.value = 512;
+    return p;
+  }()));
+
+  rpc::payload::DatastoreGetResponse dgr;
+  rpc::payload::copy_to_pb_bytes(dgr.value, data, 1);
+  TEST_ASSERT_TRUE(Bridge.send(rpc::CommandId::CMD_DATASTORE_GET_RESP, 1, dgr));
+
+  rpc::payload::FileReadResponse frr;
+  rpc::payload::copy_to_pb_bytes(frr.content, data, 1);
+  TEST_ASSERT_TRUE(Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 1, frr));
+
+  TEST_ASSERT_TRUE(Bridge.send(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP, 1, []() {
+    rpc::payload::ProcessRunAsyncResponse p;
+    p.pid = 123;
+    return p;
+  }()));
+
+  rpc::payload::ProcessPollResponse ppr;
+  rpc::payload::copy_to_pb_bytes(ppr.stdout_data, data, 1);
+  rpc::payload::copy_to_pb_bytes(ppr.stderr_data, data, 1);
+  TEST_ASSERT_TRUE(Bridge.send(rpc::CommandId::CMD_PROCESS_POLL_RESP, 1, ppr));
+
+  rpc::payload::SpiTransferResponse strr;
+  rpc::payload::copy_to_pb_bytes(strr.data, data, 1);
+  TEST_ASSERT_TRUE(Bridge.send(rpc::CommandId::CMD_SPI_TRANSFER_RESP, 1, strr));
+}
+
+void test_bridge_dispatch_status_and_unknown() {
+  reset_bridge();
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
+
+  rpc_pb_RpcEnvelope f = rpc_pb_RpcEnvelope_init_default;
+  f.command_id = (uint16_t)rpc::StatusCode::STATUS_OK;
+  ba.dispatch(f);
+  TEST_ASSERT_TRUE(Bridge.isSynchronized());
+
+  f.command_id = 999;
+  ba.dispatch(f);
+
+  rpc_pb_RpcEnvelope f_gap = rpc_pb_RpcEnvelope_init_default;
+  f_gap.command_id = 65;
+  ba.dispatch(f_gap);
+
+  f.command_id = (uint16_t)rpc::StatusCode::STATUS_MALFORMED;
+  ba.dispatch(f);
+  TEST_ASSERT_FALSE(Bridge.isSynchronized());
+}
+
+void test_bridge_post_failure() {
+  bridge::test::fault::enable(
+      bridge::test::fault::FaultPoint::BRIDGE_FORCE_POST_FAIL);
+  Bridge.begin(115200, "secret");
+  bridge::test::fault::reset();
+  reset_bridge();
+  TEST_ASSERT_TRUE(Bridge.isPostPassed());
+}
+
+void test_bridge_frame_errors_and_zero_spi() {
+  reset_bridge();
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
+
+  // 1. Frame too short -> STATUS_MALFORMED
+  uint8_t malformed[] = {0x01, 0x02};
+  ba.invokePacketReceived(etl::span<const uint8_t>(malformed, sizeof(malformed)));
+
+  // 2. Frame with bad CRC -> STATUS_CRC_MISMATCH
+  etl::array<uint8_t, rpc::MAX_FRAME_SIZE> frame_raw;
+  rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
+  env.version = rpc::PROTOCOL_VERSION;
+  env.command_id = (uint16_t)rpc::CommandId::CMD_GET_VERSION;
+  size_t len = rpc::serialize_frame(env, frame_raw);
+  if (len > 4) {
+    frame_raw[len - 1] ^= 0xFF;  // corrupt CRC
+    ba.invokePacketReceived(etl::span<const uint8_t>(frame_raw.data(), len));
+  }
+
+  // 3. Zero-length SPI transfer -> to_copy == 0
+  rpc_pb_RpcEnvelope f_zero_spi = rpc_pb_RpcEnvelope_init_default;
+  f_zero_spi.version = rpc::PROTOCOL_VERSION;
+  f_zero_spi.command_id = (uint16_t)rpc::CommandId::CMD_SPI_TRANSFER;
+  f_zero_spi.sequence_id = 99;
+  ba.dispatch(f_zero_spi);
+
+  TEST_ASSERT_TRUE(Bridge.isSynchronized());
+}
+
+class FlowControlTestStream : public Stream {
+ public:
+  int avail = 0;
+  int available() override { return avail; }
+  int read() override { return -1; }
+  int peek() override { return -1; }
+  size_t write(uint8_t) override { return 1; }
+  size_t write(const uint8_t*, size_t s) override { return s; }
+  void flush() override {}
+};
+
+void test_bridge_serial_tasks_and_flow_control() {
+  BiStream base_stream;
+  reset_bridge_core(Bridge, base_stream);
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
+
+  // Test serial flow control high and low watermarks
+  FlowControlTestStream fs;
+  reset_bridge_core(Bridge, fs);
+  fs.avail = 100;
+  ba.invokeSerialTask();
+  fs.avail = 5;
+  ba.invokeSerialTask();
+  reset_bridge_core(Bridge, base_stream);
+
+  // Test ack timeouts until max retransmit
+  ba.setSynchronized();
+  ba.trigger(bridge::fsm::EvSendCritical());
+  TEST_ASSERT_TRUE(ba.isAwaitingAck());
+  ba.onAckTimeout();
+  ba.onAckTimeout();
+  ba.onAckTimeout();
+  ba.onAckTimeout();
+
+  // Test baudrate change callback and watchdog invoke
+  ba.setPendingBaudrate(rpc::RPC_DEFAULT_BAUDRATE);
+  ba.onBaudrateChange();
+  ba.invokeWatchdog();
+
+  TEST_ASSERT_TRUE(Bridge.isPostPassed());
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_bridge_initialization);
@@ -240,5 +438,12 @@ int main() {
   RUN_TEST(test_bridge_wcet_tracking);
   RUN_TEST(test_bridge_begin_null_secret);
   RUN_TEST(test_bridge_handshake_timeout_not_sync);
+  RUN_TEST(test_bridge_queue_full_and_flow_control);
+  RUN_TEST(test_bridge_emit_status_variants);
+  RUN_TEST(test_bridge_send_responses_table);
+  RUN_TEST(test_bridge_dispatch_status_and_unknown);
+  RUN_TEST(test_bridge_post_failure);
+  RUN_TEST(test_bridge_frame_errors_and_zero_spi);
+  RUN_TEST(test_bridge_serial_tasks_and_flow_control);
   return UNITY_END();
 }

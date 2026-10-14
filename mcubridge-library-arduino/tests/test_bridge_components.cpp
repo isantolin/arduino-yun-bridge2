@@ -8,6 +8,7 @@
 #include "BridgeTestInterface.h"
 #include "services/Console.h"
 #include "services/DataStore.h"
+#include "services/FileSystem.h"
 #include "services/Mailbox.h"
 #include "services/Process.h"
 #include "services/SPIService.h"
@@ -242,6 +243,56 @@ static void test_rpc_mgr_callback(const rpc::payload::DatastoreGetResponse&) {
   g_rpc_mgr_cb_called = true;
 }
 
+static void dummy_fs_read(etl::span<const uint8_t>) {}
+static void dummy_process_run(int32_t) {}
+static void dummy_process_poll(rpc::StatusCode, uint16_t,
+                               etl::span<const uint8_t>,
+                               etl::span<const uint8_t>) {}
+
+void test_component_extended_operations() {
+  BiStream stream;
+  reset_bridge_comp(stream);
+
+  // Mailbox
+  uint8_t mbox_data[16] = {1, 2, 3};
+  Mailbox.push(etl::span<const uint8_t>(mbox_data, 3));
+  Mailbox.onLost();
+  TEST_ASSERT_TRUE(Mailbox.requestRead());
+  TEST_ASSERT_TRUE(Mailbox.requestAvailable());
+  Mailbox.signalProcessed(123);
+
+  // FileSystem
+  FileSystem.read("test.txt", etl::delegate<void(etl::span<const uint8_t>)>::create<dummy_fs_read>());
+  FileSystem.write("test.txt", etl::span<const uint8_t>(mbox_data, 3));
+  FileSystem.remove("test.txt");
+
+  rpc::payload::FileReadResponse fr_p;
+  rpc::payload::copy_to_pb_bytes(fr_p.content, mbox_data, 3);
+  FileSystem._onResponse(fr_p);
+
+  // Process
+  Process.runAsync("ls", etl::span<const etl::string_view>(),
+                   etl::delegate<void(int32_t)>::create<dummy_process_run>());
+  Process.kill(1);
+  Process.poll(1, etl::delegate<void(rpc::StatusCode, uint16_t, etl::span<const uint8_t>, etl::span<const uint8_t>)>::create<dummy_process_poll>());
+
+  rpc::payload::ProcessRunAsyncResponse prar;
+  prar.pid = 123;
+  Process._onRunAsyncResponse(prar);
+
+  rpc::payload::ProcessPollResponse ppr_p;
+  ppr_p.status = 0;
+  ppr_p.exit_code = 0;
+  Process._onPollResponse(ppr_p);
+
+  // SPI uninitialized transfer
+  SPIService.end();
+  uint8_t spi_buf[2] = {0, 0};
+  SPIService.transfer(etl::span<uint8_t>(spi_buf, 2));
+
+  TEST_ASSERT_TRUE(Bridge.isSynchronized());
+}
+
 void test_pending_rpc_manager() {
   bridge::PendingRpcManager<rpc::payload::DatastoreGetResponse, 2> mgr;
   TEST_ASSERT_TRUE(mgr.empty());
@@ -280,6 +331,7 @@ int main() {
   RUN_TEST(test_mailbox_api);
   RUN_TEST(test_send_pin_event_api);
   RUN_TEST(test_spi_data_modes_map_to_native_settings);
+  RUN_TEST(test_component_extended_operations);
   RUN_TEST(test_pending_rpc_manager);
   return UNITY_END();
 }

@@ -113,12 +113,12 @@ void ProcessClass::_onPollResponse(
   _pending_polls.dispatch(
       msg, [](const PendingPoll& pending,
               const rpc::payload::ProcessPollResponse& response) {
-        pending.second(
-            static_cast<rpc::StatusCode>(response.status), response.exit_code,
-            etl::span<const uint8_t>(response.stdout_data.bytes,
-                                     response.stdout_data.size),
-            etl::span<const uint8_t>(response.stderr_data.bytes,
-                                     response.stderr_data.size));
+        pending.second(static_cast<rpc::StatusCode>(response.status),
+                       response.exit_code,
+                       etl::span<const uint8_t>(response.stdout_data.bytes,
+                                                response.stdout_data.size),
+                       etl::span<const uint8_t>(response.stderr_data.bytes,
+                                                response.stderr_data.size));
       });
 }
 

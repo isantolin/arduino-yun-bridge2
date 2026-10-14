@@ -1053,18 +1053,15 @@ class BridgeService:
             return
         try:
             p = pb.SpiConfig.FromString(inbound.payload)
-            await self.serial.send(Command.CMD_SPI_SET_CONFIG.value, p)
+            await self.local_bridge_service.execute_spi_configure(p)
         except (ProtobufDecodeError, TypeError, ValueError) as exc:
             logger.error("SPI config error", error=str(exc))
 
     async def handle_spi_transfer(self, _route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         if not inbound.payload or not self.serial:
             return
-        res = await self.serial.send(
-            Command.CMD_SPI_TRANSFER.value,
-            pb.SpiTransfer(data=inbound.payload),
-        )
-        if isinstance(res, bytes):
+        res = await self.local_bridge_service.execute_spi_transfer(pb.SpiTransfer(data=inbound.payload))
+        if res.data:
             await self.enqueue_cloud_publish(
                 topic_path(
                     self.state.cloud_topic_prefix,
@@ -1072,13 +1069,24 @@ class BridgeService:
                     SpiAction.TRANSFER,
                     protocol.CLOUD_SUFFIX_RESPONSE,
                 ),
-                pb.SpiTransferResponse.FromString(res).data,
+                res.data,
                 reply_context=inbound,
             )
 
     async def handle_spi(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
-        if self.serial and (handler := self._spi_dispatch.get(route.identifier)):
-            await handler(route, inbound)
+        if not self.serial:
+            return
+        match route.identifier:
+            case SpiAction.BEGIN:
+                await self.serial.send(Command.CMD_SPI_BEGIN.value, b"")
+            case SpiAction.END:
+                await self.serial.send(Command.CMD_SPI_END.value, b"")
+            case SpiAction.CONFIG:
+                await self.handle_spi_config(route, inbound)
+            case SpiAction.TRANSFER:
+                await self.handle_spi_transfer(route, inbound)
+            case _:
+                pass
 
     async def _reply_cloud_ok(self, *segments: Any, success: bool, inbound: pb.CloudQueuedPublish) -> None:
         if inbound.correlation_data or inbound.response_topic:
@@ -1092,8 +1100,8 @@ class BridgeService:
         if not self.serial:
             return
         val = int(inbound.payload) if inbound.payload.isdigit() else 0
-        success = bool(await self.serial.send(Command.CMD_SET_PIN_MODE.value, pb.PinMode(pin=pin, mode=cast(Any, val))))
-        await self._reply_cloud_ok(route.topic, str(pin), PinAction.MODE, success=success, inbound=inbound)
+        res = await self.local_bridge_service.execute_set_pin_mode(pb.PinMode(pin=pin, mode=cast(Any, val)))
+        await self._reply_cloud_ok(route.topic, str(pin), PinAction.MODE, success=(res.status == "ok"), inbound=inbound)
 
     async def handle_pin_read(self, route: TopicRoute, pin: int, inbound: pb.CloudQueuedPublish) -> None:
         if not self.serial:
@@ -1123,11 +1131,11 @@ class BridgeService:
         if not self.serial:
             return
         val = int(inbound.payload) if inbound.payload.isdigit() else 0
-        is_dig = route.topic == Topic.DIGITAL
-        cmd = Command.CMD_DIGITAL_WRITE if is_dig else Command.CMD_ANALOG_WRITE
-        msg = pb.DigitalWrite(pin=pin, value=val) if is_dig else pb.AnalogWrite(pin=pin, value=val)
-        success = bool(await self.serial.send(cmd.value, msg))
-        await self._reply_cloud_ok(route.topic, str(pin), success=success, inbound=inbound)
+        if route.topic == Topic.DIGITAL:
+            res = await self.local_bridge_service.execute_digital_write(pb.DigitalWrite(pin=pin, value=val))
+        else:
+            res = await self.local_bridge_service.execute_analog_write(pb.AnalogWrite(pin=pin, value=val))
+        await self._reply_cloud_ok(route.topic, str(pin), success=(res.status == "ok"), inbound=inbound)
 
     async def handle_pin(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         if not self.serial:
@@ -1142,9 +1150,13 @@ class BridgeService:
                 action = PinAction(raw_action)
             except ValueError:
                 return
-        handler = self._pin_dispatch.get(action)
-        if handler:
-            await handler(route, pin, inbound)
+        match action:
+            case PinAction.MODE:
+                await self.handle_pin_mode(route, pin, inbound)
+            case PinAction.READ:
+                await self.handle_pin_read(route, pin, inbound)
+            case None:
+                await self.handle_pin_write(route, pin, inbound)
 
     async def handle_system_free_memory(self, _route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         if not self.serial:
@@ -1177,8 +1189,22 @@ class BridgeService:
         )
 
     async def handle_system(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
-        if self.serial and (handler := self._system_dispatch.get(route.identifier)):
-            await handler(route, inbound)
+        if not self.serial:
+            return
+        match route.identifier:
+            case SystemAction.BOOTLOADER:
+                await self.serial.send(
+                    Command.CMD_ENTER_BOOTLOADER.value,
+                    pb.EnterBootloader(magic=protocol.BOOTLOADER_MAGIC),
+                )
+            case SystemAction.FREE_MEMORY:
+                await self.handle_system_free_memory(route, inbound)
+            case SystemAction.VERSION:
+                await self.request_mcu_version(inbound)
+            case SystemAction.BRIDGE:
+                await self.handle_system_bridge(route, inbound)
+            case _:
+                pass
 
     # --- Low-level Helpers ---
 

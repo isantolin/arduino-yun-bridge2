@@ -250,9 +250,8 @@ void test_pending_rpc_manager() {
   TEST_ASSERT_EQUAL(2, mgr.capacity());
   TEST_ASSERT_EQUAL(2, mgr.available());
 
-  auto h = bridge::PendingRpcManager<
-      rpc::payload::DatastoreGetResponse,
-      2>::HandlerType::create<test_rpc_mgr_callback>();
+  auto h = bridge::PendingRpcManager<rpc::payload::DatastoreGetResponse, 2>::
+      HandlerType::create<test_rpc_mgr_callback>();
   TEST_ASSERT_TRUE(mgr.push(h));
   TEST_ASSERT_EQUAL(1, mgr.size());
   TEST_ASSERT_TRUE(mgr.push(h));

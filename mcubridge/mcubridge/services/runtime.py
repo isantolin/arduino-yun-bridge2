@@ -120,15 +120,15 @@ class BridgeService:
     state: RuntimeState
     serial: SerialTransport | None
     _cloud_channel: Channel | None
-    _cloud_stream: Any | None
+    cloud_stream: Any | None
 
     handshake: SerialHandshakeManager
     _storage_lock: asyncio.Lock
     _mcu_read_lock: asyncio.Lock
-    _pending_mcu_read: _PendingMcuRead | None
+    pending_mcu_read: _PendingMcuRead | None
     _process_slots: asyncio.Semaphore
     _cloud_publish_lock: asyncio.Lock
-    _cloud_spool: LmdbDeque | None
+    cloud_spool: LmdbDeque | None
     mcu_registry: dict[int, McuHandler]
     ipc_requests: dict[bytes, asyncio.Queue[pb.CloudQueuedPublish]]
     console_queues: list[asyncio.Queue[pb.CloudQueuedPublish]]
@@ -137,7 +137,7 @@ class BridgeService:
     gpio: GpioService
     local_bridge_service: LocalBridgeService
     _tg: asyncio.TaskGroup | None
-    _cloud_publisher: Callable[[pb.CloudQueuedPublish], Awaitable[None]] | None
+    cloud_publisher: Callable[[pb.CloudQueuedPublish], Awaitable[None]] | None
 
     def __init__(
         self,
@@ -149,8 +149,8 @@ class BridgeService:
         handshake: SerialHandshakeManager | None = None,
     ) -> None:
         self.config, self.state, self.serial = config, state, serial
-        self._cloud_publisher = cloud_publisher
-        self._cloud_channel, self._cloud_stream = None, None
+        self.cloud_publisher = cloud_publisher
+        self._cloud_channel, self.cloud_stream = None, None
         self.watchdog: WatchdogKeepalive | None = None
         self.ipc_requests = {}
         self.console_queues = []
@@ -171,12 +171,12 @@ class BridgeService:
             logger_=logger,
         )
 
-        self._storage_lock, self._mcu_read_lock, self._pending_mcu_read = asyncio.Lock(), asyncio.Lock(), None
+        self._storage_lock, self._mcu_read_lock, self.pending_mcu_read = asyncio.Lock(), asyncio.Lock(), None
         self._process_slots = asyncio.Semaphore(state.process_max_concurrent)
         self._cloud_publish_lock = asyncio.Lock()
-        self._cloud_spool = None
+        self.cloud_spool = None
         if self.config.cloud_spool_dir:
-            self._cloud_spool = LmdbDeque(
+            self.cloud_spool = LmdbDeque(
                 path=str(Path(self.config.cloud_spool_dir) / "spool_lmdb"), maxlen=self.state.cloud_queue_limit
             )
         # [SIL-2] O(1) MCU Dispatch Registry
@@ -184,29 +184,29 @@ class BridgeService:
         self._shell_dispatch: Final[
             dict[ShellAction, Callable[[int, pb.CloudQueuedPublish], Coroutine[Any, Any, Any]]]
         ] = {
-            ShellAction.RUN_ASYNC: self._handle_shell_run_async,
-            ShellAction.POLL: self._handle_shell_poll,
+            ShellAction.RUN_ASYNC: self.handle_shell_run_async,
+            ShellAction.POLL: self.handle_shell_poll,
             ShellAction.KILL: lambda pid, _inb: self.kill_process(pid),
         }
         self._topic_dispatch: Final[
             dict[Topic, Callable[[TopicRoute, pb.CloudQueuedPublish], Coroutine[Any, Any, None]]]
         ] = {
-            Topic.CONSOLE: self._handle_console,
-            Topic.DATASTORE: self._handle_datastore,
-            Topic.MAILBOX: self._handle_mailbox,
-            Topic.FILE: self._handle_file,
-            Topic.SHELL: self._handle_shell,
-            Topic.SPI: self._handle_spi,
-            Topic.DIGITAL: self._handle_pin,
-            Topic.ANALOG: self._handle_pin,
-            Topic.SYSTEM: self._handle_system,
+            Topic.CONSOLE: self.handle_console,
+            Topic.DATASTORE: self.handle_datastore,
+            Topic.MAILBOX: self.handle_mailbox,
+            Topic.FILE: self.handle_file,
+            Topic.SHELL: self.handle_shell,
+            Topic.SPI: self.handle_spi,
+            Topic.DIGITAL: self.handle_pin,
+            Topic.ANALOG: self.handle_pin,
+            Topic.SYSTEM: self.handle_system,
         }
         self._pin_dispatch: Final[
             dict[PinAction | None, Callable[[TopicRoute, int, pb.CloudQueuedPublish], Coroutine[Any, Any, None]]]
         ] = {
-            PinAction.MODE: self._handle_pin_mode,
-            PinAction.READ: self._handle_pin_read,
-            None: self._handle_pin_write,
+            PinAction.MODE: self.handle_pin_mode,
+            PinAction.READ: self.handle_pin_read,
+            None: self.handle_pin_write,
         }
         self._spi_dispatch: Final[
             dict[SpiAction | str, Callable[[TopicRoute, pb.CloudQueuedPublish], Coroutine[Any, Any, Any]]]
@@ -217,8 +217,8 @@ class BridgeService:
             SpiAction.END: lambda _r, _i: (
                 self.serial.send(Command.CMD_SPI_END.value, b"") if self.serial else asyncio.sleep(0)
             ),
-            SpiAction.CONFIG: self._handle_spi_config,
-            SpiAction.TRANSFER: self._handle_spi_transfer,
+            SpiAction.CONFIG: self.handle_spi_config,
+            SpiAction.TRANSFER: self.handle_spi_transfer,
         }
         self._system_dispatch: Final[
             dict[SystemAction | str, Callable[[TopicRoute, pb.CloudQueuedPublish], Coroutine[Any, Any, Any]]]
@@ -231,64 +231,24 @@ class BridgeService:
                 if self.serial
                 else asyncio.sleep(0)
             ),
-            SystemAction.FREE_MEMORY: self._handle_system_free_memory,
-            SystemAction.VERSION: lambda _r, inbound: self._request_mcu_version(inbound),
-            SystemAction.BRIDGE: self._handle_system_bridge,
+            SystemAction.FREE_MEMORY: self.handle_system_free_memory,
+            SystemAction.VERSION: lambda _r, inbound: self.request_mcu_version(inbound),
+            SystemAction.BRIDGE: self.handle_system_bridge,
         }
         self._file_mcu_dispatch: Final[
             dict[FileAction | str, Callable[[str, pb.CloudQueuedPublish], Coroutine[Any, Any, None]]]
         ] = {
-            FileAction.READ: self._handle_file_mcu_read,
-            FileAction.WRITE: self._handle_file_mcu_write,
-            FileAction.REMOVE: self._handle_file_mcu_remove,
+            FileAction.READ: self.handle_file_mcu_read,
+            FileAction.WRITE: self.handle_file_mcu_write,
+            FileAction.REMOVE: self.handle_file_mcu_remove,
         }
         self._file_local_dispatch: Final[
             dict[FileAction | str, Callable[[str, pb.CloudQueuedPublish], Coroutine[Any, Any, Any]]]
         ] = {
-            FileAction.READ: self._handle_file_local_read,
-            FileAction.WRITE: self._handle_file_local_write,
+            FileAction.READ: self.handle_file_local_read,
+            FileAction.WRITE: self.handle_file_local_write,
             FileAction.REMOVE: lambda target, _inb: self.safe_file_remove(target),
         }
-
-    @property
-    def cloud_stream(self) -> Any | None:
-        """Return the active gRPC cloud stream handle."""
-        return self._cloud_stream
-
-    @cloud_stream.setter
-    def cloud_stream(self, stream: Any | None) -> None:
-        """Set or update the active gRPC cloud stream handle."""
-        self._cloud_stream = stream
-
-    @property
-    def cloud_spool(self) -> Any | None:
-        """Return the active cloud spool storage."""
-        return self._cloud_spool
-
-    @cloud_spool.setter
-    def cloud_spool(self, spool: Any | None) -> None:
-        """Set the active cloud spool storage."""
-        self._cloud_spool = spool
-
-    @property
-    def pending_mcu_read(self) -> Any | None:
-        """Return the pending MCU read operation."""
-        return self._pending_mcu_read
-
-    @pending_mcu_read.setter
-    def pending_mcu_read(self, val: Any | None) -> None:
-        """Set the pending MCU read operation."""
-        self._pending_mcu_read = val
-
-    @property
-    def cloud_publisher(self) -> Callable[[pb.CloudQueuedPublish], Awaitable[None]] | None:
-        """Return the injected cloud publisher callback."""
-        return self._cloud_publisher
-
-    @cloud_publisher.setter
-    def cloud_publisher(self, publisher: Callable[[pb.CloudQueuedPublish], Awaitable[None]] | None) -> None:
-        """Set the injected cloud publisher callback."""
-        self._cloud_publisher = publisher
 
     async def send_mcu_ok(self, payload: bytes | ProtobufMessage = b"") -> bool:
         return bool(self.serial and await self.serial.send(Status.OK.value, payload))
@@ -296,7 +256,7 @@ class BridgeService:
     async def send_mcu_error(self, message: str) -> bool:
         return bool(self.serial and await self.serial.send(Status.ERROR.value, pb.GenericResponse(message=message)))
 
-    async def _unsupported_mcu_request(
+    async def unsupported_mcu_request(
         self, _seq: int, _payload: Any, msg: str = protocol.STATUS_REASON_COMMAND_VALIDATION_FAILED
     ) -> Any:
         if not self.serial:
@@ -308,22 +268,22 @@ class BridgeService:
         registry: dict[int, McuHandler] = {}
         for enum_val in pb.Command.DESCRIPTOR.values:
             cmd_name = enum_val.name.lower().removeprefix("cmd_")
-            handler = getattr(self, f"_on_mcu_{cmd_name}", None)
+            handler = getattr(self, f"on_mcu_{cmd_name}", None) or getattr(self, f"_on_mcu_{cmd_name}", None)
             if handler:
                 registry[enum_val.number] = handler
 
         # Special status, flow-control and handshake entries
         for s in Status:
             if s != Status.ACK:
-                registry[s.value] = functools.partial(self._handle_mcu_status, s)
-        registry[Status.ACK.value] = self._on_mcu_ack
-        registry[Command.CMD_XON.value] = self._handle_mcu_xon
-        registry[Command.CMD_XOFF.value] = self._handle_mcu_xoff
+                registry[s.value] = functools.partial(self.handle_mcu_status, s)
+        registry[Status.ACK.value] = self.on_mcu_ack
+        registry[Command.CMD_XON.value] = self.handle_mcu_xon
+        registry[Command.CMD_XOFF.value] = self.handle_mcu_xoff
         registry[Command.CMD_DIGITAL_READ.value] = functools.partial(
-            self._unsupported_mcu_request, msg=protocol.STATUS_REASON_UNSUPPORTED_DIGITAL_READ
+            self.unsupported_mcu_request, msg=protocol.STATUS_REASON_UNSUPPORTED_DIGITAL_READ
         )
         registry[Command.CMD_ANALOG_READ.value] = functools.partial(
-            self._unsupported_mcu_request, msg=protocol.STATUS_REASON_UNSUPPORTED_ANALOG_READ
+            self.unsupported_mcu_request, msg=protocol.STATUS_REASON_UNSUPPORTED_ANALOG_READ
         )
         registry[Command.CMD_GET_CAPABILITIES_RESP.value] = self.handshake.handle_capabilities_resp
         registry[Command.CMD_LINK_SYNC_RESP.value] = self.handshake.handle_link_sync_resp
@@ -351,8 +311,8 @@ class BridgeService:
             for q in list(self.console_queues):
                 q.put_nowait(resolved_message)
 
-        if self._cloud_publisher is not None:
-            await self._cloud_publisher(resolved_message)
+        if self.cloud_publisher is not None:
+            await self.cloud_publisher(resolved_message)
             return
 
         if not self.config.cloud_enabled:
@@ -361,12 +321,12 @@ class BridgeService:
         self.state.cloud_publish_queue.put_nowait(resolved_message)
         try:
             async with self._cloud_publish_lock:
-                await self._flush_cloud_spool_locked()
-                if await self._publish_cloud_message(resolved_message):
+                await self.flush_cloud_spool_locked()
+                if await self.publish_cloud_message(resolved_message):
                     return
-                if await self._spool_cloud_message_locked(resolved_message):
+                if await self.spool_cloud_message_locked(resolved_message):
                     return
-                self._record_cloud_drop(resolved_message.topic_name)
+                self.record_cloud_drop(resolved_message.topic_name)
         finally:
             try:
                 self.state.cloud_publish_queue.get_nowait()
@@ -416,15 +376,15 @@ class BridgeService:
 
     async def flush_cloud_spool(self) -> None:
         async with self._cloud_publish_lock:
-            await self._flush_cloud_spool_locked()
+            await self.flush_cloud_spool_locked()
 
-    def _record_cloud_drop(self, topic_name: str) -> None:
+    def record_cloud_drop(self, topic_name: str) -> None:
         self.state.cloud_drop_counts[topic_name] = self.state.cloud_drop_counts.get(topic_name, 0) + 1
         self.state.cloud_dropped_messages += 1
         self.state.metrics.cloud_messages_dropped.inc()
 
-    async def _spool_cloud_message_locked(self, message: pb.CloudQueuedPublish) -> bool:
-        spool = self._cloud_spool
+    async def spool_cloud_message_locked(self, message: pb.CloudQueuedPublish) -> bool:
+        spool = self.cloud_spool
         if spool is None:
             return False
         try:
@@ -448,9 +408,9 @@ class BridgeService:
             logger.error("Serialization failure for spool message", error=str(exc))
             return False
 
-    async def _flush_cloud_spool_locked(self) -> None:
-        spool = self._cloud_spool
-        if not self._cloud_stream or spool is None:
+    async def flush_cloud_spool_locked(self) -> None:
+        spool = self.cloud_spool
+        if not self.cloud_stream or spool is None:
             return
 
         while len(spool) > 0:
@@ -478,7 +438,7 @@ class BridgeService:
                 self.state.cloud_spool_failure_reason = str(exc)
                 break
 
-            if not await self._publish_cloud_message(queued):
+            if not await self.publish_cloud_message(queued):
                 break
 
             try:
@@ -504,8 +464,8 @@ class BridgeService:
             self.state.cloud_spool_degraded = True
             self.state.cloud_spool_failure_reason = str(exc)
 
-    async def _publish_cloud_message(self, message: pb.CloudQueuedPublish) -> bool:
-        if not self._cloud_stream:
+    async def publish_cloud_message(self, message: pb.CloudQueuedPublish) -> bool:
+        if not self.cloud_stream:
             return False
 
         try:
@@ -550,7 +510,7 @@ class BridgeService:
                 )
 
             # Send CloudEnvelope via gRPC
-            await self._cloud_stream.send_message(envelope)
+            await self.cloud_stream.send_message(envelope)
 
             self.state.metrics.cloud_messages_published.inc()
             return True
@@ -566,7 +526,7 @@ class BridgeService:
         self.serial = None
         # [SIL-2] Async spool close is handled by run() finally block.
         # cleanup() only nullifies the reference to prevent double-close.
-        self._cloud_spool = None
+        self.cloud_spool = None
         self.state.cleanup()
 
     async def on_serial_connected(self) -> None:
@@ -574,8 +534,8 @@ class BridgeService:
         self.ubus_service.notify("connection_state", {"connected": True})
         await self.handshake.synchronize()
         if self.state.is_synchronized:
-            await self._request_mcu_version()
-            await self._flush_console_queue()
+            await self.request_mcu_version()
+            await self.flush_console_queue()
             version_str = (
                 f"{self.state.mcu_version[0]}.{self.state.mcu_version[1]}.{self.state.mcu_version[2]}"
                 if self.state.mcu_version is not None
@@ -697,7 +657,7 @@ class BridgeService:
                     if self.state.topic_authorization
                     else False
                 ):
-                    await self._reject_cloud(request, route.topic, action)
+                    await self.reject_cloud(request, route.topic, action)
                     return
 
                 # Unified Dispatch
@@ -708,16 +668,16 @@ class BridgeService:
 
     # --- Business Logic Implementation ---
 
-    async def _handle_mcu_xon(self, _seq: int, payload: Any) -> None:
+    async def handle_mcu_xon(self, _seq: int, payload: Any) -> None:
         self.state.mcu_is_paused = False
         self.state.serial_tx_allowed.set()
-        await self._flush_console_queue()
+        await self.flush_console_queue()
 
-    async def _handle_mcu_xoff(self, _seq: int, payload: Any) -> None:
+    async def handle_mcu_xoff(self, _seq: int, payload: Any) -> None:
         self.state.mcu_is_paused = True
         self.state.serial_tx_allowed.clear()
 
-    async def _on_mcu_console_write(self, _seq: int, p: pb.ConsoleWrite) -> None:
+    async def on_mcu_console_write(self, _seq: int, p: pb.ConsoleWrite) -> None:
         if p.data:
             await self.enqueue_cloud_publish(
                 get_topic_for_message(self.state.cloud_topic_prefix, p) or "",
@@ -732,11 +692,11 @@ class BridgeService:
             await self.state.datastore_cache.set(key, value)
         await self.publish_datastore_value(key, value, reply_context=reply_context)
 
-    async def _on_mcu_datastore_put(self, _seq: int, p: pb.DatastorePut) -> bool:
+    async def on_mcu_datastore_put(self, _seq: int, p: pb.DatastorePut) -> bool:
         await self.store_and_publish_datastore_value(p.key, p.value)
         return True
 
-    async def _on_mcu_datastore_get(self, _seq: int, p: pb.DatastoreGet) -> bool:
+    async def on_mcu_datastore_get(self, _seq: int, p: pb.DatastoreGet) -> bool:
         serial = self.serial
         if not serial:
             return False
@@ -748,7 +708,7 @@ class BridgeService:
         )
         return bool(res)
 
-    async def _on_mcu_mailbox_push(self, _seq: int, p: pb.MailboxPush) -> bool:
+    async def on_mcu_mailbox_push(self, _seq: int, p: pb.MailboxPush) -> bool:
         await self.state.mailbox_incoming_queue.append(p.data)
         await self.enqueue_cloud_publish(
             get_topic_for_message(self.state.cloud_topic_prefix, p) or "",
@@ -756,7 +716,7 @@ class BridgeService:
         )
         return True
 
-    async def _on_mcu_mailbox_available(self, _seq: int, p: Any) -> bool:
+    async def on_mcu_mailbox_available(self, _seq: int, p: Any) -> bool:
         serial = self.serial
         if not serial:
             return False
@@ -767,7 +727,7 @@ class BridgeService:
         )
         return bool(res)
 
-    async def _on_mcu_mailbox_read(self, _seq: int, p: Any) -> bool:
+    async def on_mcu_mailbox_read(self, _seq: int, p: Any) -> bool:
         serial = self.serial
         if not serial:
             return False
@@ -782,7 +742,7 @@ class BridgeService:
         )
         return bool(res)
 
-    async def _on_mcu_mailbox_processed(self, _seq: int, p: pb.MailboxProcessed) -> None:
+    async def on_mcu_mailbox_processed(self, _seq: int, p: pb.MailboxProcessed) -> None:
         await self.enqueue_cloud_publish(
             topic_name=get_topic_for_message(self.state.cloud_topic_prefix, p) or "",
             payload=p.SerializeToString(),
@@ -792,12 +752,12 @@ class BridgeService:
     async def _respond_mcu_op(self, success: bool, fail_msg: str) -> bool:
         return await (self.send_mcu_ok() if success else self.send_mcu_error(fail_msg))
 
-    async def _on_mcu_file_write(self, _seq: int, p: pb.FileWrite) -> bool:
+    async def on_mcu_file_write(self, _seq: int, p: pb.FileWrite) -> bool:
         if not self.serial:
             return False
         return await self._respond_mcu_op(await self.safe_file_write(p.path, p.data), "Write failed")
 
-    async def _on_mcu_file_read(self, _seq: int, p: pb.FileRead) -> None:
+    async def on_mcu_file_read(self, _seq: int, p: pb.FileRead) -> None:
         if not self.serial:
             return
         data = await self.safe_file_read(p.path)
@@ -810,23 +770,23 @@ class BridgeService:
             for chunk in iter_chunks(data, protocol.MAX_PAYLOAD_SIZE - 3):
                 await self.serial.send(Command.CMD_FILE_READ_RESP.value, pb.FileReadResponse(content=chunk))
 
-    async def _on_mcu_file_remove(self, _seq: int, p: pb.FileRemove) -> bool:
+    async def on_mcu_file_remove(self, _seq: int, p: pb.FileRemove) -> bool:
         if not self.serial:
             return False
         return await self._respond_mcu_op(await self.safe_file_remove(p.path), "Remove failed")
 
-    async def _on_mcu_file_read_resp(self, _seq: int, p: pb.FileReadResponse) -> bool:
-        if not self._pending_mcu_read:
+    async def on_mcu_file_read_resp(self, _seq: int, p: pb.FileReadResponse) -> bool:
+        if not self.pending_mcu_read:
             return False
         if p.content:
-            self._pending_mcu_read.fsm.receive_chunk()
-            self._pending_mcu_read.chunks.append(p.content)
-        elif not self._pending_mcu_read.future.done():
-            self._pending_mcu_read.fsm.complete()
-            self._pending_mcu_read.future.set_result(b"".join(self._pending_mcu_read.chunks))
+            self.pending_mcu_read.fsm.receive_chunk()
+            self.pending_mcu_read.chunks.append(p.content)
+        elif not self.pending_mcu_read.future.done():
+            self.pending_mcu_read.fsm.complete()
+            self.pending_mcu_read.future.set_result(b"".join(self.pending_mcu_read.chunks))
         return True
 
-    async def _on_mcu_process_run_async(self, _seq: int, p: pb.ProcessRunAsync) -> bool:
+    async def on_mcu_process_run_async(self, _seq: int, p: pb.ProcessRunAsync) -> bool:
         if not self.serial:
             return False
         if p.command and is_command_allowed(self.state.allowed_policy, p.command):
@@ -840,7 +800,7 @@ class BridgeService:
         await self.send_mcu_error("Exec failed")
         return False
 
-    async def _on_mcu_process_poll(self, _seq: int, p: pb.ProcessPoll) -> bool:
+    async def on_mcu_process_poll(self, _seq: int, p: pb.ProcessPoll) -> bool:
         serial = self.serial
         if not serial:
             return False
@@ -861,13 +821,13 @@ class BridgeService:
             reply_context=req.reply_context if req else None,
         )
 
-    async def _on_mcu_spi_transfer_resp(self, _seq: int, p: pb.SpiTransferResponse) -> None:
+    async def on_mcu_spi_transfer_resp(self, _seq: int, p: pb.SpiTransferResponse) -> None:
         await self.enqueue_cloud_publish(
             get_topic_for_message(self.state.cloud_topic_prefix, p) or "",
             p.data,
         )
 
-    async def _on_mcu_ack(self, _seq: int, payload: bytes | ProtobufMessage) -> None:
+    async def on_mcu_ack(self, _seq: int, payload: bytes | ProtobufMessage) -> None:
         try:
             if isinstance(payload, ProtobufMessage):
                 p = cast(pb.AckPacket, payload)
@@ -877,26 +837,26 @@ class BridgeService:
         except (ProtobufDecodeError, TypeError, ValueError) as e:
             logger.error("Failed to decode MCU ACK packet", error=str(e))
 
-    async def _on_mcu_digital_read_resp(self, _seq: int, p: pb.DigitalReadResponse) -> None:
+    async def on_mcu_digital_read_resp(self, _seq: int, p: pb.DigitalReadResponse) -> None:
         await self._on_pin_resp(p, Topic.DIGITAL, self.state.pending_digital_reads)
 
-    async def _on_mcu_analog_read_resp(self, _seq: int, p: pb.AnalogReadResponse) -> None:
+    async def on_mcu_analog_read_resp(self, _seq: int, p: pb.AnalogReadResponse) -> None:
         await self._on_pin_resp(p, Topic.ANALOG, self.state.pending_analog_reads)
 
-    async def _on_mcu_process_kill(self, _seq: int, p: pb.ProcessKill) -> None:
+    async def on_mcu_process_kill(self, _seq: int, p: pb.ProcessKill) -> None:
         await self.kill_process(p.pid)
 
-    async def _on_mcu_clock_sync_resp(self, _seq: int, p: pb.ClockSyncResponse) -> bool:
+    async def on_mcu_clock_sync_resp(self, _seq: int, p: pb.ClockSyncResponse) -> bool:
         self.clock_sync.record_sync(p)
         return False
 
-    async def _on_mcu_pin_subscribe_resp(self, _seq: int, p: pb.PinSubscribeResponse) -> None:
+    async def on_mcu_pin_subscribe_resp(self, _seq: int, p: pb.PinSubscribeResponse) -> None:
         logger.info("MCU confirmed pin subscription", pin=p.pin, success=p.success)
 
-    async def _on_mcu_pin_update_event(self, _seq: int, p: pb.PinUpdateEvent) -> None:
+    async def on_mcu_pin_update_event(self, _seq: int, p: pb.PinUpdateEvent) -> None:
         await self.gpio.handle_pin_update_event(p)
 
-    async def _handle_mcu_status(self, status: Status, seq_id: int, payload: bytes | ProtobufMessage) -> None:
+    async def handle_mcu_status(self, status: Status, seq_id: int, payload: bytes | ProtobufMessage) -> None:
         text = ""
         if payload:
             try:
@@ -926,12 +886,12 @@ class BridgeService:
 
     # --- Direct Service Request Handlers (Cleaned) ---
 
-    async def _handle_console(self, _route: TopicRoute | None, inbound: pb.CloudQueuedPublish) -> None:
+    async def handle_console(self, _route: TopicRoute | None, inbound: pb.CloudQueuedPublish) -> None:
         if pl := inbound.payload:
             self.state.console_to_mcu_queue.append(pl)
-            await self._flush_console_queue()
+            await self.flush_console_queue()
 
-    async def _handle_datastore(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
+    async def handle_datastore(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         key_parts = list(route.remainder)
         key = "/".join(key_parts)
         pl = inbound.payload
@@ -954,7 +914,7 @@ class BridgeService:
             elif route.remainder and route.remainder[-1] == "request":
                 await self.publish_datastore_value(key, b"", reply_context=inbound, error="datastore-miss")
 
-    async def _handle_mailbox(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
+    async def handle_mailbox(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         serial = self.serial
         if not serial:
             return
@@ -976,7 +936,7 @@ class BridgeService:
                 reply_context=inbound,
             )
 
-    async def _handle_file(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
+    async def handle_file(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         serial = self.serial
         if not serial:
             return
@@ -1009,7 +969,7 @@ class BridgeService:
             reply_context=inbound,
         )
 
-    async def _handle_file_mcu_write(self, target: str, inbound: pb.CloudQueuedPublish) -> None:
+    async def handle_file_mcu_write(self, target: str, inbound: pb.CloudQueuedPublish) -> None:
         serial = self.serial
         if serial and await serial.send(
             Command.CMD_FILE_WRITE.value,
@@ -1017,16 +977,16 @@ class BridgeService:
         ):
             await self._publish_file_write_ack(target, inbound)
 
-    async def _handle_file_mcu_remove(self, target: str, _inbound: pb.CloudQueuedPublish) -> None:
+    async def handle_file_mcu_remove(self, target: str, _inbound: pb.CloudQueuedPublish) -> None:
         serial = self.serial
         if serial:
             await serial.send(Command.CMD_FILE_REMOVE.value, pb.FileRemove(path=target.removeprefix(MCU_FS_PREFIX)))
 
-    async def _handle_file_local_write(self, target: str, inbound: pb.CloudQueuedPublish) -> None:
+    async def handle_file_local_write(self, target: str, inbound: pb.CloudQueuedPublish) -> None:
         if await self.safe_file_write(target, inbound.payload):
             await self._publish_file_write_ack(target, inbound)
 
-    async def _handle_file_local_read(self, target: str, inbound: pb.CloudQueuedPublish) -> None:
+    async def handle_file_local_read(self, target: str, inbound: pb.CloudQueuedPublish) -> None:
         data = await self.safe_file_read(target)
         if data is not None:
             inbound_topic = inbound.topic_name or getattr(inbound, "topic", "")
@@ -1037,7 +997,7 @@ class BridgeService:
                     reply_context=inbound,
                 )
 
-    async def _handle_file_mcu_read(self, target: str, ctx: pb.CloudQueuedPublish) -> None:
+    async def handle_file_mcu_read(self, target: str, ctx: pb.CloudQueuedPublish) -> None:
         serial = self.serial
         if not serial:
             return
@@ -1045,7 +1005,7 @@ class BridgeService:
         async with self._mcu_read_lock:
             pending = _PendingMcuRead(asyncio.get_running_loop().create_future())
             pending.fsm.start_transfer()
-            self._pending_mcu_read = pending
+            self.pending_mcu_read = pending
             if not await serial.send_raw(
                 Command.CMD_FILE_READ.value,
                 pb.FileRead(path=target.removeprefix(MCU_FS_PREFIX)),
@@ -1058,7 +1018,7 @@ class BridgeService:
                     user_properties=((PROP_KEY_BRIDGE_ERROR, protocol.STATUS_REASON_MCU_FILE_READ_DISPATCH_FAILED),),
                     reply_context=ctx,
                 )
-                self._pending_mcu_read = None
+                self.pending_mcu_read = None
                 return
             try:
                 timeout_seconds = max(0.1, self.state.serial_response_timeout_ms / 1000.0)
@@ -1079,9 +1039,9 @@ class BridgeService:
                     reply_context=ctx,
                 )
             finally:
-                self._pending_mcu_read = None
+                self.pending_mcu_read = None
 
-    async def _handle_shell(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
+    async def handle_shell(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         raw_act = route.segments[0] if route.segments else None
         if not raw_act:
             logger.warning("Shell operation rejected: missing action segment", topic=route.raw)
@@ -1096,7 +1056,7 @@ class BridgeService:
             if handler := self._shell_dispatch.get(act):
                 await handler(pid, inbound)
 
-    async def _handle_shell_run_async(self, _pid: int, inbound: pb.CloudQueuedPublish) -> None:
+    async def handle_shell_run_async(self, _pid: int, inbound: pb.CloudQueuedPublish) -> None:
         pl = inbound.payload
         try:
             content_type = getattr(inbound, "content_type", None)
@@ -1122,7 +1082,7 @@ class BridgeService:
             reply_context=inbound,
         )
 
-    async def _handle_shell_poll(self, pid: int, inbound: pb.CloudQueuedPublish) -> None:
+    async def handle_shell_poll(self, pid: int, inbound: pb.CloudQueuedPublish) -> None:
         batch = await self.poll_process(pid)
         await self.enqueue_cloud_publish(
             topic_path(
@@ -1137,7 +1097,7 @@ class BridgeService:
             reply_context=inbound,
         )
 
-    async def _handle_spi_config(self, _route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
+    async def handle_spi_config(self, _route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         if not self.serial:
             return
         try:
@@ -1146,7 +1106,7 @@ class BridgeService:
         except (ProtobufDecodeError, TypeError, ValueError) as exc:
             logger.error("SPI config error", error=str(exc))
 
-    async def _handle_spi_transfer(self, _route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
+    async def handle_spi_transfer(self, _route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         if not inbound.payload or not self.serial:
             return
         res = await self.serial.send(
@@ -1165,7 +1125,7 @@ class BridgeService:
                 reply_context=inbound,
             )
 
-    async def _handle_spi(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
+    async def handle_spi(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         if self.serial and (handler := self._spi_dispatch.get(route.identifier)):
             await handler(route, inbound)
 
@@ -1177,14 +1137,14 @@ class BridgeService:
                 reply_context=inbound,
             )
 
-    async def _handle_pin_mode(self, route: TopicRoute, pin: int, inbound: pb.CloudQueuedPublish) -> None:
+    async def handle_pin_mode(self, route: TopicRoute, pin: int, inbound: pb.CloudQueuedPublish) -> None:
         if not self.serial:
             return
         val = int(inbound.payload) if inbound.payload.isdigit() else 0
         success = bool(await self.serial.send(Command.CMD_SET_PIN_MODE.value, pb.PinMode(pin=pin, mode=cast(Any, val))))
         await self._reply_cloud_ok(route.topic, str(pin), PinAction.MODE, success=success, inbound=inbound)
 
-    async def _handle_pin_read(self, route: TopicRoute, pin: int, inbound: pb.CloudQueuedPublish) -> None:
+    async def handle_pin_read(self, route: TopicRoute, pin: int, inbound: pb.CloudQueuedPublish) -> None:
         if not self.serial:
             return
         cmd = Command.CMD_DIGITAL_READ if route.topic == Topic.DIGITAL else Command.CMD_ANALOG_READ
@@ -1208,7 +1168,7 @@ class BridgeService:
                 reply_context=inbound,
             )
 
-    async def _handle_pin_write(self, route: TopicRoute, pin: int, inbound: pb.CloudQueuedPublish) -> None:
+    async def handle_pin_write(self, route: TopicRoute, pin: int, inbound: pb.CloudQueuedPublish) -> None:
         if not self.serial:
             return
         val = int(inbound.payload) if inbound.payload.isdigit() else 0
@@ -1218,7 +1178,7 @@ class BridgeService:
         success = bool(await self.serial.send(cmd.value, msg))
         await self._reply_cloud_ok(route.topic, str(pin), success=success, inbound=inbound)
 
-    async def _handle_pin(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
+    async def handle_pin(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         if not self.serial:
             return
         pin = self._parse_pin(route.segments[0])
@@ -1235,7 +1195,7 @@ class BridgeService:
         if handler:
             await handler(route, pin, inbound)
 
-    async def _handle_system_free_memory(self, _route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
+    async def handle_system_free_memory(self, _route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         if not self.serial:
             return
         pl = await self.serial.send(Command.CMD_GET_FREE_MEMORY.value, b"")
@@ -1255,7 +1215,7 @@ class BridgeService:
                 reply_context=inbound,
             )
 
-    async def _handle_system_bridge(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
+    async def handle_system_bridge(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         flavor = route.segments[1] if len(route.segments) > 1 else "summary"
         snap = self.state.build_handshake_snapshot() if flavor == "handshake" else self.state.build_bridge_snapshot()
         await self.enqueue_cloud_publish(
@@ -1265,7 +1225,7 @@ class BridgeService:
             reply_context=inbound,
         )
 
-    async def _handle_system(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
+    async def handle_system(self, route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
         if self.serial and (handler := self._system_dispatch.get(route.identifier)):
             await handler(route, inbound)
 
@@ -1299,9 +1259,7 @@ class BridgeService:
         )
         return True
 
-    _request_mcu_version = request_mcu_version
-
-    async def _flush_console_queue(self) -> None:
+    async def flush_console_queue(self) -> None:
         serial = self.serial
         if not serial:
             return
@@ -1352,7 +1310,7 @@ class BridgeService:
                         async with asyncio.timeout(float(self.state.process_timeout)):
                             ctx.exit_code = await ctx.handle.wait()
                     except TimeoutError:
-                        ctx.exit_code = await self._terminate_process(
+                        ctx.exit_code = await self.terminate_process(
                             pid, ctx, grace_period=PROCESS_TERM_GRACE_PERIOD_SECONDS
                         )
                     await asyncio.sleep(60.0)
@@ -1408,7 +1366,7 @@ class BridgeService:
                     stderr_truncated=te,
                 )
 
-    async def _terminate_process(self, pid: int, ctx: ProcessContext, *, grace_period: float) -> int:
+    async def terminate_process(self, pid: int, ctx: ProcessContext, *, grace_period: float) -> int:
         if ctx.handle.returncode is not None:
             ctx.fsm.finish()
             return ctx.handle.returncode
@@ -1431,7 +1389,7 @@ class BridgeService:
             if not ctx:
                 return False, "PID not found"
             try:
-                ctx.exit_code = await self._terminate_process(pid, ctx, grace_period=PROCESS_TERM_GRACE_PERIOD_SECONDS)
+                ctx.exit_code = await self.terminate_process(pid, ctx, grace_period=PROCESS_TERM_GRACE_PERIOD_SECONDS)
                 return True, None
             except (OSError, ProcessLookupError) as exc:
                 logger.error("Process termination failed", error=str(exc))
@@ -1446,7 +1404,7 @@ class BridgeService:
 
     async def safe_file_write(self, p_str: str, data: bytes) -> bool:
         path = self._get_safe_path(p_str)
-        return bool(path and await self._write_with_quota(path, data))
+        return bool(path and await self.write_with_quota(path, data))
 
     async def safe_file_read(self, p_str: str) -> bytes | None:
         if not (path := self._get_safe_path(p_str)):
@@ -1467,7 +1425,7 @@ class BridgeService:
             logger.debug("Safe file remove failed", path=str(path), error=str(exc))
             return False
 
-    async def _write_with_quota(self, path: Path | anyio.Path, data: bytes) -> bool:
+    async def write_with_quota(self, path: Path | anyio.Path, data: bytes) -> bool:
         async with self._storage_lock:
             try:
                 usage = await anyio.to_thread.run_sync(psutil.disk_usage, self.config.file_system_root)
@@ -1494,7 +1452,7 @@ class BridgeService:
             return "write" if len(r.segments) == 1 else (r.segments[1].lower() if len(r.segments) > 1 else None)
         return "in" if r.topic == Topic.CONSOLE and r.identifier == "in" else (r.identifier or None)
 
-    async def _reject_cloud(self, ctx: Any, tp: Topic | str, act: str) -> None:
+    async def reject_cloud(self, ctx: Any, tp: Topic | str, act: str) -> None:
         val = tp.value if isinstance(tp, Topic) else tp
         await self.enqueue_cloud_status_report(
             pb.StatusReport(status=403, topic=val, action=act, reason="forbidden"),
@@ -1613,12 +1571,12 @@ class BridgeService:
             raise
         finally:
             with anyio.CancelScope(shield=True):
-                if self._cloud_spool is not None:
+                if self.cloud_spool is not None:
                     try:
-                        await self._cloud_spool.close()
+                        await self.cloud_spool.close()
                     except (lmdb.Error, OSError) as exc:
                         logger.debug("cloud_spool close failed during teardown", error=str(exc))
-                    self._cloud_spool = None
+                    self.cloud_spool = None
                 self.cleanup()
                 STATUS_FILE.unlink(missing_ok=True)
                 logger.info("MCU Bridge daemon stopped.")
@@ -1698,7 +1656,7 @@ class BridgeService:
         stub = CloudBridgeStub(channel)
         try:
             async with stub.Session.open(metadata={"x-device-id": self.state.device_id}) as stream:
-                self._cloud_stream = stream
+                self.cloud_stream = stream
                 logger.info("Connected to Cloud Gateway via gRPC.")
 
                 # Persist TLS 1.3 / QUIC session ticket for 0-RTT resumption [SIL-2]
@@ -1711,7 +1669,7 @@ class BridgeService:
                     )
 
                 # Emit status online event
-                await self._send_cloud_event("status_online", "info", "Device online")
+                await self.send_cloud_event("status_online", "info", "Device online")
                 await self.flush_cloud_spool()
 
                 try:
@@ -1777,7 +1735,7 @@ class BridgeService:
                     raise ConnectionError(f"Cloud session stream disconnected: {exc}") from exc
         finally:
             self.state.cloud_fsm.degrade()
-            self._cloud_stream = None
+            self.cloud_stream = None
             self._cloud_channel = None
             channel.close()
 
@@ -1793,7 +1751,7 @@ class BridgeService:
                 description=description,
             ),
         )
-        if self._cloud_stream:
+        if self.cloud_stream:
             if logger.is_enabled_for(logging.DEBUG):
                 logger.debug(
                     "[MPU -> GATEWAY] [EVENT:%s] [SEVERITY:%s] %s",
@@ -1801,9 +1759,7 @@ class BridgeService:
                     severity,
                     description,
                 )
-            await self._cloud_stream.send_message(envelope)
-
-    _send_cloud_event = send_cloud_event
+            await self.cloud_stream.send_message(envelope)
 
     async def supervise(
         self,
@@ -1857,56 +1813,3 @@ class BridgeService:
         except (RuntimeError, ValueError, OSError, tenacity.RetryError) as exc:
             log.critical("Supervisor task failed unexpectedly", error=str(exc))
             raise
-
-    # Canonical Public Interface Aliases (SIL-2 / Rule 2.1)
-    handle_console = _handle_console
-    handle_datastore = _handle_datastore
-    handle_mailbox = _handle_mailbox
-    handle_file = _handle_file
-    handle_shell = _handle_shell
-    handle_spi = _handle_spi
-    handle_pin = _handle_pin
-    handle_system = _handle_system
-    handle_pin_mode = _handle_pin_mode
-    handle_pin_read = _handle_pin_read
-    handle_pin_write = _handle_pin_write
-    handle_spi_config = _handle_spi_config
-    handle_spi_transfer = _handle_spi_transfer
-    handle_system_free_memory = _handle_system_free_memory
-    handle_system_bridge = _handle_system_bridge
-    handle_file_mcu_read = _handle_file_mcu_read
-    handle_file_mcu_write = _handle_file_mcu_write
-    handle_file_mcu_remove = _handle_file_mcu_remove
-    handle_file_local_read = _handle_file_local_read
-    handle_file_local_write = _handle_file_local_write
-    handle_shell_run_async = _handle_shell_run_async
-    handle_shell_poll = _handle_shell_poll
-    handle_mcu_status = _handle_mcu_status
-    handle_mcu_xoff = _handle_mcu_xoff
-    spool_cloud_message_locked = _spool_cloud_message_locked
-    flush_cloud_spool_locked = _flush_cloud_spool_locked
-    terminate_process = _terminate_process
-    write_with_quota = _write_with_quota
-    flush_console_queue = _flush_console_queue
-    reject_cloud = _reject_cloud
-    publish_cloud_message = _publish_cloud_message
-    send_cloud_event = _send_cloud_event
-    on_mcu_console_write = _on_mcu_console_write
-    on_mcu_datastore_get = _on_mcu_datastore_get
-    on_mcu_mailbox_available = _on_mcu_mailbox_available
-    on_mcu_mailbox_read = _on_mcu_mailbox_read
-    on_mcu_mailbox_processed = _on_mcu_mailbox_processed
-    on_mcu_file_write = _on_mcu_file_write
-    on_mcu_file_read = _on_mcu_file_read
-    on_mcu_file_remove = _on_mcu_file_remove
-    on_mcu_file_read_resp = _on_mcu_file_read_resp
-    on_mcu_datastore_put = _on_mcu_datastore_put
-    on_mcu_ack = _on_mcu_ack
-    on_mcu_digital_read_resp = _on_mcu_digital_read_resp
-    on_mcu_analog_read_resp = _on_mcu_analog_read_resp
-    on_mcu_spi_transfer_resp = _on_mcu_spi_transfer_resp
-    on_mcu_process_run_async = _on_mcu_process_run_async
-    on_mcu_process_poll = _on_mcu_process_poll
-    unsupported_mcu_request = _unsupported_mcu_request
-    on_mcu_pin_update_event = _on_mcu_pin_update_event
-    record_cloud_drop = _record_cloud_drop

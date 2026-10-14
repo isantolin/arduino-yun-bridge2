@@ -1154,14 +1154,7 @@ def main(
     )
     _dispatch_generated_file(proto_path.parent / "mcubridge.pb.c", cpp_targets)
     _dispatch_generated_file(proto_path.parent / "mcubridge_pb2.py", py_targets)
-    _dispatch_generated_file(
-        proto_path.parent / "mcubridge_pb2.pyi",
-        py_targets,
-        lambda t: t.replace(
-            "_Union[StructuredEntry, _Mapping]]",
-            "_Union[StructuredEntry, _Mapping[str, object]]]",
-        ),
-    )
+    _dispatch_generated_file(proto_path.parent / "mcubridge_pb2.pyi", py_targets)
     _dispatch_generated_file(
         proto_path.parent / "mcubridge_grpc.py",
         py_targets,

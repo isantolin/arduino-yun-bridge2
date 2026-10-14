@@ -14,9 +14,8 @@ from collections.abc import Callable
 from typing import Any, cast
 from unittest.mock import MagicMock
 
-import hypothesis.stateful as h_stateful
 from hypothesis import strategies as st
-from hypothesis.stateful import Bundle, RuleBasedStateMachine, invariant, rule
+from hypothesis.stateful import Bundle, RuleBasedStateMachine, invariant, rule, run_state_machine_as_test
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.state.context import (
     CloudLinkMachine,
@@ -27,12 +26,6 @@ from mcubridge.state.context import (
     ProcessContext,
     ProcessState,
     create_runtime_state,
-)
-
-_run_fn_name = "run_state_machine" + "_as_test"
-_RUN_STATE_MACHINE: Callable[[type[RuleBasedStateMachine]], None] = cast(
-    Callable[[type[RuleBasedStateMachine]], None],
-    getattr(h_stateful, _run_fn_name),
 )
 
 
@@ -308,19 +301,19 @@ class FileTransferStateMachine(RuleBasedStateMachine):
 
 def test_link_connection_state_machine() -> None:
     """Execute Hypothesis RuleBasedStateMachine on LinkConnectionMachine."""
-    _RUN_STATE_MACHINE(LinkConnectionStateMachine)
+    run_state_machine_as_test(LinkConnectionStateMachine)
 
 
 def test_process_lifecycle_state_machine() -> None:
     """Execute Hypothesis RuleBasedStateMachine on ProcessMachine."""
-    _RUN_STATE_MACHINE(ProcessLifecycleStateMachine)
+    run_state_machine_as_test(ProcessLifecycleStateMachine)
 
 
 def test_cloud_link_state_machine() -> None:
     """Execute Hypothesis RuleBasedStateMachine on CloudLinkMachine."""
-    _RUN_STATE_MACHINE(CloudLinkStateMachine)
+    run_state_machine_as_test(CloudLinkStateMachine)
 
 
 def test_file_transfer_state_machine() -> None:
     """Execute Hypothesis RuleBasedStateMachine on FileTransferMachine."""
-    _RUN_STATE_MACHINE(FileTransferStateMachine)
+    run_state_machine_as_test(FileTransferStateMachine)

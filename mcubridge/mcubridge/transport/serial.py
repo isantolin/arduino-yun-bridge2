@@ -66,7 +66,7 @@ except ImportError as exc:
 _orig_after_configure: Any = None
 
 
-def _safe_after_configure(self: Any, orig_fn: Any = None) -> None:
+def safe_after_configure(self: Any, orig_fn: Any = None) -> None:
     fn = orig_fn if orig_fn is not None else _orig_after_configure
     try:
         if fn is not None:
@@ -91,13 +91,11 @@ if sys.platform == "linux":
     try:
         import serialx.platforms.serial_linux as _sl
 
-        _after_cfg_name = "_after_configure" + "_port"
+        _after_cfg_name = "_after_configure_port"
         _orig_after_configure = getattr(_sl.LinuxSerial, _after_cfg_name, None)
-        setattr(_sl.LinuxSerial, _after_cfg_name, _safe_after_configure)
+        setattr(_sl.LinuxSerial, _after_cfg_name, safe_after_configure)
     except (ImportError, AttributeError) as _exc:
         logger.debug("LinuxSerial monkey-patch skipped", error=str(_exc))
-
-safe_after_configure = _safe_after_configure
 
 
 if TYPE_CHECKING:
@@ -145,78 +143,18 @@ class SerialTransport:
         self._runner_fn = runner_fn
         self.serial: serialx.AsyncSerial | None = None
 
-        self._stop_event = asyncio.Event()
-        self._negotiating = False
-        self._negotiation_future: asyncio.Future[bool] | None = None
-        self._consecutive_crc_errors = 0
-        self._tx_sequence_id = 0
+        self.stop_event = asyncio.Event()
+        self.is_negotiating = False
+        self.negotiation_future: asyncio.Future[bool] | None = None
+        self.consecutive_crc_errors = 0
+        self.tx_sequence_id = 0
 
-        self._current: PendingCommand | None = None
+        self.current_command: PendingCommand | None = None
         self._flow_lock = asyncio.Lock()
 
         self._ack_timeout = max(self.config.serial_retry_timeout or 0, SERIAL_MIN_ACK_TIMEOUT)
         self._response_timeout = max(self.config.serial_response_timeout or 0, self._ack_timeout)
-        self._max_attempts = max(1, self.config.serial_retry_attempts or 1)
-
-    @property
-    def tx_sequence_id(self) -> int:
-        """Return the current outbound serial sequence ID."""
-        return self._tx_sequence_id
-
-    @tx_sequence_id.setter
-    def tx_sequence_id(self, val: int) -> None:
-        """Set outbound serial sequence ID."""
-        self._tx_sequence_id = val & protocol.UINT16_MAX
-
-    @property
-    def is_negotiating(self) -> bool:
-        """Return whether baudrate negotiation is actively in progress."""
-        return self._negotiating
-
-    @is_negotiating.setter
-    def is_negotiating(self, val: bool) -> None:
-        """Set whether baudrate negotiation is actively in progress."""
-        self._negotiating = val
-
-    @property
-    def negotiation_future(self) -> asyncio.Future[bool] | None:
-        """Return the active baudrate negotiation future."""
-        return self._negotiation_future
-
-    @negotiation_future.setter
-    def negotiation_future(self, fut: asyncio.Future[bool] | None) -> None:
-        """Set the active baudrate negotiation future."""
-        self._negotiation_future = fut
-
-    @property
-    def current_command(self) -> Any | None:
-        """Return the active pending serial command."""
-        return self._current
-
-    @current_command.setter
-    def current_command(self, cmd: Any | None) -> None:
-        """Set the active pending serial command."""
-        self._current = cmd
-
-    @property
-    def max_attempts(self) -> int:
-        """Return the maximum retry attempts for serial commands."""
-        return self._max_attempts
-
-    @max_attempts.setter
-    def max_attempts(self, attempts: int) -> None:
-        """Set the maximum retry attempts for serial commands."""
-        self._max_attempts = max(1, attempts)
-
-    @property
-    def consecutive_crc_errors(self) -> int:
-        """Return the consecutive CRC errors count."""
-        return self._consecutive_crc_errors
-
-    @consecutive_crc_errors.setter
-    def consecutive_crc_errors(self, count: int) -> None:
-        """Set the consecutive CRC errors count."""
-        self._consecutive_crc_errors = max(0, count)
+        self.max_attempts = max(1, self.config.serial_retry_attempts or 1)
 
     class _RetryableSerialError(Exception):
         """Marker exception to request another send attempt."""
@@ -228,11 +166,6 @@ class SerialTransport:
             super().__init__(status)
             self.status = status
 
-    @property
-    def stop_event(self) -> asyncio.Event:
-        """Lifecycle stop event for serial transport."""
-        return self._stop_event
-
     def switch_local_baudrate(self, target_baud: int) -> None:
         try:
             if self.serial and hasattr(self.serial.transport, "serial") and self.serial.transport.serial:
@@ -241,13 +174,11 @@ class SerialTransport:
         except (AttributeError, OSError, ValueError, serialx.SerialException) as e:
             raise RuntimeError(f"UART access failed: {e}") from e
 
-    _switch_local_baudrate = switch_local_baudrate
-
     async def reset(self) -> None:
         async with self._flow_lock:
-            if self._current:
-                self._current.mark_failure(Status.TIMEOUT.value)
-            self._current = None
+            if self.current_command:
+                self.current_command.mark_failure(Status.TIMEOUT.value)
+            self.current_command = None
             self.state.link_last_nonce_counter = 0
 
     async def run(self) -> None:
@@ -259,7 +190,7 @@ class SerialTransport:
             reraise=True,
         )
         try:
-            await retryer(self._connect_and_run)
+            await retryer(self.connect_and_run)
         except (asyncio.CancelledError, SystemExit) as exc:
             logger.info("Serial transport lifecycle terminated", reason=type(exc).__name__)
         except SerialHandshakeFatal:
@@ -313,7 +244,7 @@ class SerialTransport:
                         await self.service.on_serial_connected()
 
                     # Wait for either stop event or read task failure
-                    wait_stop = asyncio.create_task(self._stop_event.wait())
+                    wait_stop = asyncio.create_task(self.stop_event.wait())
                     done, _ = await asyncio.wait([wait_stop, read_task], return_when=asyncio.FIRST_COMPLETED)
                     if not wait_stop.done():
                         wait_stop.cancel()
@@ -338,8 +269,6 @@ class SerialTransport:
             self.state.serial_writer = None
             self.serial = None
 
-    _connect_and_run = connect_and_run
-
     async def toggle_dtr(self) -> None:
         try:
             if self.serial:
@@ -350,15 +279,13 @@ class SerialTransport:
         except (AttributeError, OSError, ValueError, serialx.SerialException, RuntimeError) as exc:
             logger.error("Unable to toggle DTR", port=self.config.serial_port, error=str(exc))
 
-    _toggle_dtr = toggle_dtr
-
     async def stop(self) -> None:
-        self._stop_event.set()
+        self.stop_event.set()
         if self.serial:
             await self.serial.close()
 
     async def read_loop(self, serial: serialx.AsyncSerial) -> None:
-        while not self._stop_event.is_set():
+        while not self.stop_event.is_set():
             try:
                 packet_with_sep = await serial.readuntil(protocol.FRAME_DELIMITER)
                 packet_view = memoryview(packet_with_sep)[:-1]
@@ -373,8 +300,6 @@ class SerialTransport:
             except (OSError, RuntimeError, ValueError, TypeError, serialx.SerialException) as exc:
                 logger.error("Error in serial read loop", error=str(exc))
                 break
-
-    _read_loop = read_loop
 
     async def process_packet(self, encoded_packet: bytes | memoryview) -> None:
         """Processes a packet from the serial stream. [FLATTENED] [SIL-2]"""
@@ -401,13 +326,13 @@ class SerialTransport:
             )
 
         if (
-            self._negotiating
-            and self._negotiation_future
-            and not self._negotiation_future.done()
+            self.is_negotiating
+            and self.negotiation_future
+            and not self.negotiation_future.done()
             and cmd_id == protocol.Command.CMD_SET_BAUDRATE_RESP.value
         ):
-            self._switch_local_baudrate(self.config.serial_baud)
-            self._negotiation_future.set_result(True)
+            self.switch_local_baudrate(self.config.serial_baud)
+            self.negotiation_future.set_result(True)
             return
 
         # Anti-replay validation
@@ -432,10 +357,8 @@ class SerialTransport:
         self.state.metrics.serial_bytes_received.inc(len(encoded_packet))
         self.state.metrics.serial_frames_received.inc()
 
-    _process_packet = process_packet
-
     def correlate_frame(self, command_id: int, payload: bytes | ProtobufMessage) -> None:
-        pending = self._current
+        pending = self.current_command
         logger.debug(
             "_correlate_frame entry", command_id=command_id, pending_cmd=(pending.command_id if pending else None)
         )
@@ -499,17 +422,13 @@ class SerialTransport:
             logger.debug("Marking pending command success on success status")
             pending.mark_success(payload)
 
-    _correlate_frame = correlate_frame
-
     async def check_baudrate_fallback(self) -> None:
-        self._consecutive_crc_errors += 1
-        if self._consecutive_crc_errors >= self.config.serial_fallback_threshold:
+        self.consecutive_crc_errors += 1
+        if self.consecutive_crc_errors >= self.config.serial_fallback_threshold:
             logger.error("Fallback to safe baudrate", baud=self.config.serial_safe_baud)
-            self._consecutive_crc_errors = 0
+            self.consecutive_crc_errors = 0
             if self.config.serial_baud != self.config.serial_safe_baud:
                 await self.negotiate_baudrate(self.config.serial_safe_baud)
-
-    _check_baudrate_fallback = check_baudrate_fallback
 
     async def send(
         self,
@@ -532,10 +451,10 @@ class SerialTransport:
 
         async with self._flow_lock:
             pending = PendingCommand(command_id=command_id, expected_resp_ids=list(expected_responses(command_id)))
-            self._current = pending
+            self.current_command = pending
             try:
                 retryer = tenacity.AsyncRetrying(
-                    stop=tenacity.stop_after_attempt(self._max_attempts),
+                    stop=tenacity.stop_after_attempt(self.max_attempts),
                     wait=tenacity.wait_exponential(
                         multiplier=SERIAL_HANDSHAKE_BACKOFF_BASE, max=SERIAL_HANDSHAKE_BACKOFF_MAX
                     ),
@@ -571,7 +490,7 @@ class SerialTransport:
                 pending.mark_failure(Status.TIMEOUT.value)
                 return False
             finally:
-                self._current = None
+                self.current_command = None
 
     async def send_raw(self, command_id: int, payload: bytes | ProtobufMessage, seq_id: int | None = None) -> bool:
         """Low-level send logic without tracking."""
@@ -586,8 +505,8 @@ class SerialTransport:
                 logger.error("Timed out waiting for serial TX flow control")
 
         if seq_id is None:
-            self._tx_sequence_id = (self._tx_sequence_id + 1) & protocol.UINT16_MAX
-            seq_id = self._tx_sequence_id
+            self.tx_sequence_id = (self.tx_sequence_id + 1) & protocol.UINT16_MAX
+            seq_id = self.tx_sequence_id
 
         is_excluded = is_system_command(command_id)
         nonce = protocol.ZERO_NONCE
@@ -625,21 +544,19 @@ class SerialTransport:
 
     async def negotiate_baudrate(self, target_baud: int) -> bool:
         payload = pb.SetBaudratePacket(baudrate=target_baud)
-        self._negotiating = True
+        self.is_negotiating = True
         try:
-            self._negotiation_future = asyncio.get_running_loop().create_future()
+            self.negotiation_future = asyncio.get_running_loop().create_future()
             if not await self.send_raw(protocol.Command.CMD_SET_BAUDRATE.value, payload):
                 return False
             async with asyncio.timeout(SERIAL_BAUDRATE_NEGOTIATION_TIMEOUT):
-                await self._negotiation_future
+                await self.negotiation_future
             return True
         except (TimeoutError, OSError, RuntimeError, ValueError, serialx.SerialException) as exc:
             logger.error("Baudrate negotiation failed", error=str(exc))
             return False
         finally:
-            self._negotiating = False
-
-    _negotiate_baudrate = negotiate_baudrate
+            self.is_negotiating = False
 
     async def acknowledge(self, command_id: int, seq_id: int, *, status: Status = Status.ACK) -> None:
         await self.send_raw(status.value, pb.AckPacket(command_id=command_id), seq_id)

@@ -1763,22 +1763,6 @@ message GenericResponse {
   string message = 2;
 }
 
-message StructuredEntry {
-  string key = 1;
-  oneof value {
-    string string_value = 2;
-    bytes bytes_value = 3;
-    bool bool_value = 4;
-    int64 int_value = 5;
-    float float_value = 6;
-    bool null_value = 7;
-  }
-}
-
-message StructuredPayload {
-  repeated StructuredEntry entries = 1;
-}
-
 message AckPacket {
   uint32 command_id = 1;
 }
@@ -1920,12 +1904,6 @@ message ProcessStats {
   string name = 1;
   float cpu_percent = 2;
   uint64 memory_rss_bytes = 3;
-}
-
-message ServiceHealth {
-  string name = 1;
-  string status = 2;
-  uint32 restarts = 3;
 }
 
 message AllowedCommandPolicy {

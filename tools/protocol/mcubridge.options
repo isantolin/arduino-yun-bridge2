@@ -26,8 +26,6 @@ rpc.pb.GenericResponse.message     max_size:48
 rpc.pb.Capabilities.board_name     max_size:16
 
 # Exclude Telemetry structures from MCU firmware compilation
-rpc.pb.StructuredEntry        skip_message:true
-rpc.pb.StructuredPayload      skip_message:true
 rpc.pb.SupervisorSnapshot     skip_message:true
 rpc.pb.SystemStatus           skip_message:true
 rpc.pb.SerialLinkSnapshot     skip_message:true

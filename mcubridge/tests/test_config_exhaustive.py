@@ -118,6 +118,7 @@ def test_runtime_config_factory() -> None:
 
 
 def test_get_config_source() -> None:
+    load_runtime_config()
     assert get_config_source() in ("uci", "defaults", "cli")
 
 

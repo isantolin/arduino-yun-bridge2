@@ -11,16 +11,6 @@ import structlog
 logger = structlog.get_logger("mcubridge.state.metrics")
 
 
-class _ValueGetter:
-    """Helper for backward-compatibility with tests inspecting ._value.get()."""
-
-    def __init__(self, val: int | float) -> None:
-        self._val = val
-
-    def get(self) -> int | float:
-        return self._val
-
-
 @dataclass
 class CounterMetric:
     """Lightweight deterministic counter primitive."""
@@ -33,10 +23,6 @@ class CounterMetric:
     @property
     def value(self) -> int:
         return self._count
-
-    @property
-    def _value(self) -> _ValueGetter:
-        return _ValueGetter(self._count)
 
 
 @dataclass

@@ -27,10 +27,10 @@ class SpiDevice:
         mode: SpiDataMode = SpiDataMode.SPI_DATA_MODE_0,
     ):
         self._stub = stub
-        self._frequency = frequency
-        self._bit_order = bit_order
-        self._mode = mode
-        self._active = False
+        self.frequency = frequency
+        self.bit_order = bit_order
+        self.mode = mode
+        self.is_active = False
 
     async def __aenter__(self) -> SpiDevice:
         """Enter context: begin SPI session."""
@@ -43,42 +43,26 @@ class SpiDevice:
 
     async def begin(self) -> None:
         """Initialize the SPI bus on the MCU."""
-        if self._active:
+        if self.is_active:
             return
         cfg = pb.SpiConfig(
-            frequency=self._frequency,
-            bit_order=pb.SpiBitOrder.Value(self._bit_order.name),
-            data_mode=pb.SpiDataMode.Value(self._mode.name),
+            frequency=self.frequency,
+            bit_order=pb.SpiBitOrder.Value(self.bit_order.name),
+            data_mode=pb.SpiDataMode.Value(self.mode.name),
         )
         await self._stub.SpiConfigure(cfg)
-        self._active = True
+        self.is_active = True
 
     async def end(self) -> None:
         """Deinitialize the SPI bus on the MCU."""
-        self._active = False
+        self.is_active = False
 
     async def transfer(self, data: SpiBuffer) -> bytes:
         """Perform a full-duplex SPI transfer."""
-        if not self._active:
+        if not self.is_active:
             await self.begin()
 
         payload = cast(bytes, data) if isinstance(data, (bytes, bytearray)) else bytes(data)
 
         resp = await self._stub.SpiTransfer(pb.SpiTransfer(data=payload))
-        return resp.data or payload
-
-    @property
-    def frequency(self) -> int:
-        return self._frequency
-
-    @property
-    def bit_order(self) -> SpiBitOrder:
-        return self._bit_order
-
-    @property
-    def mode(self) -> SpiDataMode:
-        return self._mode
-
-    @property
-    def is_active(self) -> bool:
-        return self._active
+        return resp.data

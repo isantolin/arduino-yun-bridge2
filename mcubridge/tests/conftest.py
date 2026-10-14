@@ -154,10 +154,8 @@ def patched_get_default_config() -> dict[str, Any]:
     return cfg
 
 
-_runtime_cfg_attr = "Runtime" + "Config"
-setattr(mcubridge.protocol.structures, _runtime_cfg_attr, PatchedRuntimeConfig)
-_get_default_cfg_attr = "get_default_" + "config"
-setattr(mcubridge.config.common, _get_default_cfg_attr, patched_get_default_config)
+mcubridge.protocol.structures.RuntimeConfig = PatchedRuntimeConfig
+mcubridge.config.common.get_default_config = patched_get_default_config
 # ==============================================================================
 
 

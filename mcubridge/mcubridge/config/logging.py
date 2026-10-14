@@ -23,6 +23,9 @@ def hexdump_processor(_: Any, __: str, event_dict: structlog.types.EventDict) ->
     return event_dict
 
 
+_CURRENT_HANDLER: logging.Handler | None = None
+
+
 def configure_logging(
     config: RuntimeConfig | None = None,
     *,
@@ -33,6 +36,7 @@ def configure_logging(
 
     Centralized Single Source of Truth for logging configuration across the ecosystem.
     """
+    global _CURRENT_HANDLER
     if debug is not None:
         is_debug = debug
     elif config is not None:
@@ -92,22 +96,21 @@ def configure_logging(
     handler.setFormatter(formatter)
 
     root_logger = logging.getLogger()
-    for old_handler in root_logger.handlers[:]:
-        if "LogCapture" in type(old_handler).__name__:
-            continue
-        old_handler.close()
-        root_logger.removeHandler(old_handler)
+    if _CURRENT_HANDLER is not None and _CURRENT_HANDLER in root_logger.handlers:
+        root_logger.removeHandler(_CURRENT_HANDLER)
+        _CURRENT_HANDLER.close()
     root_logger.addHandler(handler)
+    _CURRENT_HANDLER = handler
     root_logger.setLevel(level)
     logging.getLogger("statemachine").setLevel(logging.WARNING)
 
 
 def reset_handlers() -> None:
     """Close and clear all handlers on the root logger."""
+    global _CURRENT_HANDLER
     root_logger = logging.getLogger()
-    for handler in root_logger.handlers[:]:
-        if "LogCapture" in type(handler).__name__:
-            continue
-        handler.close()
-        root_logger.removeHandler(handler)
+    if _CURRENT_HANDLER is not None and _CURRENT_HANDLER in root_logger.handlers:
+        root_logger.removeHandler(_CURRENT_HANDLER)
+        _CURRENT_HANDLER.close()
+        _CURRENT_HANDLER = None
     logging.lastResort = None

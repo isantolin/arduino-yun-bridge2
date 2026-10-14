@@ -181,70 +181,25 @@ class SerialHandshakeManager:
     ) -> None:
         self._config = config
         self._state = state
-        self._timing = serial_timing
-        self._send_frame = send_frame
+        self.timing = serial_timing
+        self.send_frame = send_frame
         self._enqueue_cloud = enqueue_cloud
         self._acknowledge_frame = acknowledge_frame
-        self._sync_waiter: Callable[[bytes], Awaitable[bool]] = (
-            sync_waiter if sync_waiter is not None else self._wait_for_link_sync_confirmation
+        self.sync_waiter: Callable[[bytes], Awaitable[bool]] = (
+            sync_waiter if sync_waiter is not None else self.wait_for_link_sync_confirmation
         )
-        self._topic_resolver: Callable[[str, Any], str | None] = (
+        self.topic_resolver: Callable[[str, Any], str | None] = (
             topic_resolver if topic_resolver is not None else get_topic_for_message
         )
         self._logger = logger_ or logger
         self._fatal_threshold = max(1, config.serial_handshake_fatal_failures)
         # [SIL-2] Serialize handshake timing as protobuf.
-        self._reset_payload = self._timing
+        self._reset_payload = self.timing
         self.capabilities_delay: float = 2.0
         self.retry_backoff_base: float = SERIAL_HANDSHAKE_BACKOFF_BASE
         self.retry_backoff_max: float = SERIAL_HANDSHAKE_BACKOFF_MAX
-        self._capabilities_future: asyncio.Future[bytes | ProtobufMessage] | None = None
+        self.capabilities_future: asyncio.Future[bytes | ProtobufMessage] | None = None
         self.fsm = HandshakeMachine(listeners=[self])
-
-    @property
-    def timing(self) -> pb.HandshakeConfig:
-        """Return the active handshake timing configuration."""
-        return self._timing
-
-    @property
-    def send_frame(self) -> SendFrameCallable:
-        """Return the active frame transmission callable."""
-        return self._send_frame
-
-    @send_frame.setter
-    def send_frame(self, fn: SendFrameCallable) -> None:
-        """Set the active frame transmission callable."""
-        self._send_frame = fn
-
-    @property
-    def sync_waiter(self) -> Callable[[bytes], Awaitable[bool]]:
-        """Return the active sync confirmation waiter callable."""
-        return self._sync_waiter
-
-    @sync_waiter.setter
-    def sync_waiter(self, waiter: Callable[[bytes], Awaitable[bool]]) -> None:
-        """Set the active sync confirmation waiter callable."""
-        self._sync_waiter = waiter
-
-    @property
-    def topic_resolver(self) -> Callable[[str, Any], str | None]:
-        """Return the active topic resolver callable."""
-        return self._topic_resolver
-
-    @topic_resolver.setter
-    def topic_resolver(self, resolver: Callable[[str, Any], str | None]) -> None:
-        """Set the active topic resolver callable."""
-        self._topic_resolver = resolver
-
-    @property
-    def capabilities_future(self) -> asyncio.Future[bytes | ProtobufMessage] | None:
-        """Return the active capabilities future."""
-        return self._capabilities_future
-
-    @capabilities_future.setter
-    def capabilities_future(self, fut: asyncio.Future[bytes | ProtobufMessage] | None) -> None:
-        """Set the active capabilities future."""
-        self._capabilities_future = fut
 
     @property
     def fsm_state(self) -> HandshakeState:
@@ -252,7 +207,7 @@ class SerialHandshakeManager:
 
     @fsm_state.setter
     def fsm_state(self, new_state: HandshakeState) -> None:
-        self._set_fsm_state(new_state)
+        self.set_fsm_state(new_state)
 
     def on_enter_synchronized(self) -> None:
         """[SIL-2] Native hook executed on entering synchronized state."""
@@ -266,7 +221,7 @@ class SerialHandshakeManager:
         """[SIL-2] Native observer recording deterministic state metrics."""
         self._state.metrics.handshake_state.state(HandshakeState(target.value))
 
-    def _set_fsm_state(self, new_state: HandshakeState) -> None:
+    def set_fsm_state(self, new_state: HandshakeState) -> None:
         """Explicit state override and metric alignment."""
         old_state = self.fsm_state
         if old_state == new_state:
@@ -279,15 +234,11 @@ class SerialHandshakeManager:
         elif old_state == HandshakeState.SYNCHRONIZED:
             self.on_exit_synchronized()
 
-    set_fsm_state = _set_fsm_state
-
     def transition(self, event: HandshakeEvent) -> HandshakeState:
         """[SIL-2] Deterministic FSM transition gate via python-statemachine."""
         old_state = self.fsm_state
         try:
-            send_fn_name = "se" + "nd"
-            send_event: Callable[[str], Any] = cast(Callable[[str], Any], getattr(self.fsm, send_fn_name))
-            send_event(event.value)
+            self.fsm.send(event.value)
         except TransitionNotAllowed:
             self._logger.warning(
                 "Invalid FSM transition rejected",
@@ -319,7 +270,7 @@ class SerialHandshakeManager:
             self._state.handshake_attempts += 1
             self._state.metrics.handshake_attempts.inc()
             self.transition(HandshakeEvent.RESET)  # Ensure clean slate
-            return await self._synchronize_attempt()
+            return await self.synchronize_attempt()
 
         try:
             ok: bool = await retryer(_attempt)
@@ -342,7 +293,7 @@ class SerialHandshakeManager:
         self._state.link_nonce_length = protocol.HANDSHAKE_NONCE_LENGTH
         self._state.link_expected_tag = self.calculate_handshake_tag(self._config.serial_shared_secret, nonce)
 
-        reset_ok = await self._send_frame(
+        reset_ok = await self.send_frame(
             Command.CMD_LINK_RESET.value,
             self._reset_payload,
         )
@@ -363,7 +314,7 @@ class SerialHandshakeManager:
         our_tag = self.calculate_handshake_tag(self._config.serial_shared_secret, nonce)
         # [SIL-2] Serialize LINK_SYNC as protobuf.
         sync_payload = pb.LinkSync(nonce=nonce, tag=our_tag)
-        sync_ok = await self._send_frame(Command.CMD_LINK_SYNC.value, sync_payload)
+        sync_ok = await self.send_frame(Command.CMD_LINK_SYNC.value, sync_payload)
         if not sync_ok:
             self.clear_handshake_expectations()
             await self.handle_handshake_failure("link_sync_send_failed")
@@ -378,7 +329,7 @@ class SerialHandshakeManager:
         if self.fsm_state == HandshakeState.SYNCING:
             self.transition(HandshakeEvent.SYNC_SENT)
 
-        confirmed = await self._sync_waiter(nonce)
+        confirmed = await self.sync_waiter(nonce)
         current_state = cast(HandshakeState, self.fsm_state)
 
         if not confirmed:
@@ -397,8 +348,6 @@ class SerialHandshakeManager:
             self.transition(HandshakeEvent.SYNC_CONFIRMED)
 
         return self.fsm_state == HandshakeState.SYNCHRONIZED
-
-    _synchronize_attempt = synchronize_attempt
 
     async def handle_link_sync_resp(self, seq_id: int, payload: bytes | ProtobufMessage) -> bool:
         expected = self._state.link_handshake_nonce
@@ -498,15 +447,13 @@ class SerialHandshakeManager:
         self.clear_handshake_expectations()
         await self._handle_handshake_success()
         self._logger.info("MCU link synchronised", nonce=payload.hex())
-        asyncio.create_task(self._fetch_capabilities_with_delay())
+        asyncio.create_task(self.fetch_capabilities_with_delay())
         return True
 
     async def fetch_capabilities_with_delay(self) -> None:
         if self.capabilities_delay > 0:
             await asyncio.sleep(self.capabilities_delay)
         await self.fetch_capabilities()
-
-    _fetch_capabilities_with_delay = fetch_capabilities_with_delay
 
     async def fetch_capabilities(self) -> bool:
         loop = asyncio.get_running_loop()
@@ -525,16 +472,16 @@ class SerialHandshakeManager:
         )
 
         async def _attempt() -> bool:
-            self._capabilities_future = loop.create_future()
-            ok = await self._send_frame(cmd_id, b"")
+            self.capabilities_future = loop.create_future()
+            ok = await self.send_frame(cmd_id, b"")
             if not ok:
-                self._capabilities_future = None
+                self.capabilities_future = None
                 raise TimeoutError("Send failed")
 
             try:
-                timeout = (self._timing.response_timeout_ms / 1000.0) if self._timing.response_timeout_ms > 0 else 5.0
+                timeout = (self.timing.response_timeout_ms / 1000.0) if self.timing.response_timeout_ms > 0 else 5.0
                 async with asyncio.timeout(timeout):
-                    payload = await self._capabilities_future
+                    payload = await self.capabilities_future
                 self._parse_capabilities(payload)
                 return True
             except TimeoutError:
@@ -543,7 +490,7 @@ class SerialHandshakeManager:
                 self._logger.error("[SIL-2] Capabilities payload corrupt; aborting", error=str(exc))
                 return False
             finally:
-                self._capabilities_future = None
+                self.capabilities_future = None
 
         try:
             return await retryer(_attempt)
@@ -551,11 +498,9 @@ class SerialHandshakeManager:
             self._logger.error("Capabilities exchange retries exhausted", error=str(exc))
             return False
 
-    _fetch_capabilities = fetch_capabilities
-
     async def handle_capabilities_resp(self, seq_id: int, payload: bytes | ProtobufMessage) -> bool:
-        if self._capabilities_future and not self._capabilities_future.done():
-            self._capabilities_future.set_result(payload)
+        if self.capabilities_future and not self.capabilities_future.done():
+            self.capabilities_future.set_result(payload)
         return True
 
     def _parse_capabilities(self, payload: bytes | ProtobufMessage) -> None:
@@ -617,7 +562,7 @@ class SerialHandshakeManager:
             extra["fatal_unix"] = self._state.handshake_fatal_unix
             if self._state.handshake_fatal_detail:
                 extra["fatal_detail"] = self._state.handshake_fatal_detail
-        await self._publish_handshake_event(
+        await self.publish_handshake_event(
             "failure",
             reason=reason,
             detail=fatal_detail if is_fatal else detail,
@@ -625,7 +570,7 @@ class SerialHandshakeManager:
         )
 
     async def wait_for_link_sync_confirmation(self, nonce: bytes) -> bool:
-        timeout = (self._timing.response_timeout_ms / 1000.0) * 2 if self._timing.response_timeout_ms > 0 else 5.0
+        timeout = (self.timing.response_timeout_ms / 1000.0) * 2 if self.timing.response_timeout_ms > 0 else 5.0
         try:
             async with asyncio.timeout(timeout):
                 if not self._state.is_synchronized:
@@ -634,8 +579,6 @@ class SerialHandshakeManager:
         except TimeoutError as exc:
             self._logger.warning("Timed out waiting for MCU link sync confirmation", error=str(exc))
             return False
-
-    _wait_for_link_sync_confirmation = wait_for_link_sync_confirmation
 
     def clear_handshake_expectations(self) -> None:
         if self._state.link_handshake_nonce is not None:
@@ -665,7 +608,7 @@ class SerialHandshakeManager:
         snapshot.fsm_state = self.fsm_state
 
         message = create_queued_publish(
-            topic_name=self._topic_resolver(self._state.cloud_topic_prefix, snapshot) or "",
+            topic_name=self.topic_resolver(self._state.cloud_topic_prefix, snapshot) or "",
             payload=snapshot.SerializeToString(),
             content_type=PROTOBUF_CONTENT_TYPE,
             user_properties=((PROP_KEY_BRIDGE_EVENT, "handshake"),),
@@ -677,8 +620,6 @@ class SerialHandshakeManager:
             )
             return
         await self._enqueue_cloud(message)
-
-    _publish_handshake_event = publish_handshake_event
 
     async def _handle_handshake_success(self) -> None:
         # [SIL-2] Direct metrics recording (No Wrapper)
@@ -692,7 +633,7 @@ class SerialHandshakeManager:
         self._state.handshake_successes += 1
         self._state.metrics.handshake_successes.inc()
         duration = round(self._state.handshake_last_duration, 3)
-        await self._publish_handshake_event(
+        await self.publish_handshake_event(
             "success",
             extra={"duration_seconds": duration},
         )

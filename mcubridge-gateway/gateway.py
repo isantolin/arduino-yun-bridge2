@@ -269,7 +269,7 @@ class TSDBSink:
             metrics = pb.DaemonMetrics()
             metrics.ParseFromString(envelope.telemetry.daemon_metrics_blob)
             line = self.format_line_protocol(device_id, metrics)
-            await asyncio.to_thread(self._post_line, line)
+            await asyncio.to_thread(self.post_line, line)
         except (DecodeError, OSError, ValueError) as exc:
             logger.warning("TSDB telemetry ingestion error", device_id=device_id, error=str(exc))
 
@@ -279,7 +279,7 @@ class TSDBSink:
         retry=tenacity.retry_if_exception_type((urllib.error.URLError, TimeoutError, OSError)),
         retry_error_callback=lambda _rs: None,
     )
-    def _post_line(self, line: str) -> None:
+    def post_line(self, line: str) -> None:
         """Execute blocking HTTP POST within dedicated thread with tenacity retries."""
         if not self.endpoint_url:
             return
@@ -297,8 +297,6 @@ class TSDBSink:
             logger.warning("TSDB network write failed", error=str(e))
             raise
 
-    post_line = _post_line
-
 
 async def _handle_ping(
     _: CloudBridgeService,
@@ -315,7 +313,7 @@ async def _handle_ping(
     await stream.send_message(pong)
 
 
-async def _handle_telemetry(
+async def handle_telemetry(
     service: CloudBridgeService,
     device_id: str,
     _: Stream[pb.CloudEnvelope, pb.CloudEnvelope],
@@ -367,9 +365,6 @@ async def _handle_telemetry(
         await service.gateway.tsdb_sink.ingest_telemetry(device_id, envelope)
 
 
-handle_telemetry = _handle_telemetry
-
-
 async def _handle_event(
     service: CloudBridgeService,
     device_id: str,
@@ -410,7 +405,7 @@ _PayloadHandler = Callable[
 
 _PAYLOAD_HANDLERS: Final[dict[str, _PayloadHandler]] = {
     "ping": _handle_ping,
-    "telemetry": _handle_telemetry,
+    "telemetry": handle_telemetry,
     "event": _handle_event,
     "command_response": _handle_command_response,
 }

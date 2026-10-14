@@ -163,7 +163,7 @@ async def test_handshake_capabilities_retry(
     async def mock_send_frame(cmd: int, *args: Any, **kwargs: Any) -> bool:
         nonlocal attempts
         attempts += 1
-        fut: Any = getattr(manager, "_capabilities_future", None)
+        fut: Any = manager.capabilities_future
         if attempts < 3:
             if fut is not None and not fut.done():
                 fut.set_exception(TimeoutError("mock timeout"))
@@ -193,7 +193,7 @@ async def test_handshake_capabilities_corrupt_payload(
     timing.response_timeout_ms = 200
 
     async def mock_send_frame_corrupt(cmd: int, *args: Any, **kwargs: Any) -> bool:
-        fut: Any = getattr(manager, "_capabilities_future", None)
+        fut: Any = manager.capabilities_future
         if fut is not None and not fut.done():
             asyncio.create_task(manager.handle_capabilities_resp(1, b"\x80"))
         return True

@@ -550,7 +550,7 @@ class RuntimeState:
     def mailbox_incoming_queue_depth(self) -> int:
         return len(self.mailbox_incoming_queue)
 
-    def _get_storage_subdir(self, subdir: str) -> Path | None:
+    def get_storage_subdir(self, subdir: str) -> Path | None:
         """Resolve, validate, and create a managed storage directory under file_system_root. [SIL-2]"""
         if (self.allow_non_tmp_paths or self.file_system_root.startswith("/tmp/")) and self.file_system_root:
             directory = Path(self.file_system_root) / subdir
@@ -560,8 +560,6 @@ class RuntimeState:
             except (OSError, RuntimeError) as exc:
                 logger.warning("Storage directory creation failed", subdir=subdir, error=str(exc))
         return None
-
-    get_storage_subdir = _get_storage_subdir
 
     def configure(self) -> None:
         def _safe_close(resource: Any) -> None:
@@ -590,7 +588,7 @@ class RuntimeState:
         self.console_to_mcu_queue = collections.deque[bytes](maxlen=self.mailbox_queue_limit)
 
         def _create_spool(subdir: str) -> Any:
-            if directory := self._get_storage_subdir(subdir):
+            if directory := self.get_storage_subdir(subdir):
                 try:
                     return LmdbDeque(path=str(directory / "spool_lmdb"), maxlen=self.mailbox_queue_limit)
                 except (OSError, RuntimeError) as exc:
@@ -601,7 +599,7 @@ class RuntimeState:
         self.mailbox_incoming_queue = _create_spool("mailbox_in")
 
         # [SIL-2] Initialize datastore with LMDB for ACID persistence
-        if ds_dir := self._get_storage_subdir("datastore"):
+        if ds_dir := self.get_storage_subdir("datastore"):
             try:
                 self.datastore_cache = LmdbCache(str(ds_dir / "data_lmdb"))
             except (OSError, RuntimeError):
@@ -609,7 +607,7 @@ class RuntimeState:
                 self.datastore_cache = None
 
         # [SIL-2] Initialize TLS 1.3 / QUIC 0-RTT session ticket cache with LMDB
-        if tls_dir := self._get_storage_subdir("tls_sessions"):
+        if tls_dir := self.get_storage_subdir("tls_sessions"):
             try:
                 self.tls_session_cache = LmdbCache(str(tls_dir / "tls_lmdb"))
             except (OSError, RuntimeError):

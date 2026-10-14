@@ -45,9 +45,6 @@ def get_ubus_type(typ: str, ubus_module: Any = None) -> Any:
     return getattr(target_ubus, f"BLOBMSG_TYPE_{typ}", getattr(target_ubus, typ, 0))
 
 
-_get_ubus_type = get_ubus_type
-
-
 class BridgeRuntimeFacade(Protocol):
     """Facade protocol decoupling UbusService from full BridgeService implementation."""
 
@@ -113,46 +110,10 @@ class UbusService:
         loop: asyncio.AbstractEventLoop | None = None,
     ) -> None:
         self.runtime = runtime
-        self._ubus: Any = ubus_module if ubus_module is not None else ubus
-        self._conn: Any = None
-        self._is_active = False
-        self._loop: asyncio.AbstractEventLoop | None = loop
-
-    @property
-    def loop(self) -> asyncio.AbstractEventLoop | None:
-        """Return the target event loop for coroutine execution."""
-        return self._loop
-
-    @loop.setter
-    def loop(self, loop: asyncio.AbstractEventLoop | None) -> None:
-        """Set the target event loop for coroutine execution."""
-        self._loop = loop
-
-    @property
-    def is_active(self) -> bool:
-        """Return whether UBUS connection is active and registered."""
-        return self._is_active
-
-    @is_active.setter
-    def is_active(self, val: bool) -> None:
-        """Set UBUS active state."""
-        self._is_active = val
-
-    @property
-    def connection(self) -> Any:
-        """Return raw UBUS connection handle."""
-        return self._conn
-
-    @connection.setter
-    def connection(self, conn: Any) -> None:
-        """Set raw UBUS connection handle."""
-        self._conn = conn
-        self._is_active = conn is not None
-
-    @property
-    def ubus_backend(self) -> Any:
-        """Return underlying UBUS module backend."""
-        return self._ubus
+        self.ubus_backend: Any = ubus_module if ubus_module is not None else ubus
+        self.connection: Any = None
+        self.is_active = False
+        self.loop: asyncio.AbstractEventLoop | None = loop
 
     def start(
         self,
@@ -160,12 +121,12 @@ class UbusService:
         retry_wait: tenacity.wait.wait_base | None = None,
     ) -> bool:
         """Connect to ubusd and register the 'mcubridge' object with bounded backoff."""
-        if self._ubus is None:
+        if self.ubus_backend is None:
             logger.debug("python-ubus module not available in this environment; skipping UBUS registration")
             return False
 
         def _connect() -> Any:
-            if (conn := self._ubus.connect()) is None:
+            if (conn := self.ubus_backend.connect()) is None:
                 raise OSError("ubus.connect() returned None")
             return conn
 
@@ -180,20 +141,20 @@ class UbusService:
         )
 
         try:
-            self._conn = retryer(_connect)
+            self.connection = retryer(_connect)
             self.register_methods()
-            self._is_active = True
+            self.is_active = True
             logger.info("McuBridge registered successfully on OpenWrt UBUS ('mcubridge')")
             return True
         except (OSError, RuntimeError, tenacity.RetryError) as exc:
             logger.warning("Failed to connect to ubusd after retries", error=str(exc))
-            self._conn = None
-            self._is_active = False
+            self.connection = None
+            self.is_active = False
             return False
 
     def register_methods(self) -> None:
         """Register RPC methods on the active UBUS connection."""
-        if self._conn is None or self._ubus is None:
+        if self.connection is None or self.ubus_backend is None:
             return
 
         def _make_handler(handler: Any) -> Any:
@@ -212,26 +173,26 @@ class UbusService:
             name: {
                 "method": _make_handler(getattr(self, f"ubus_handle_{name}")),
                 "signature": {
-                    **{arg: _get_ubus_type(typ, self._ubus) for arg, typ in args},
-                    "ubus_rpc_session": _get_ubus_type("STRING", self._ubus),
+                    **{arg: get_ubus_type(typ, self.ubus_backend) for arg, typ in args},
+                    "ubus_rpc_session": get_ubus_type("STRING", self.ubus_backend),
                 },
             }
             for name, args in _UBUS_METHOD_SIGS
         }
 
-        if hasattr(self._conn, "add") and callable(self._conn.add):
-            self._conn.add("mcubridge", methods)
-        elif hasattr(self._ubus, "add") and callable(self._ubus.add):
-            self._ubus.add("mcubridge", methods)
+        if hasattr(self.connection, "add") and callable(self.connection.add):
+            self.connection.add("mcubridge", methods)
+        elif hasattr(self.ubus_backend, "add") and callable(self.ubus_backend.add):
+            self.ubus_backend.add("mcubridge", methods)
 
     async def run(self) -> None:
         """Background loop to process incoming OpenWrt UBUS events directly in asyncio."""
-        if self._conn is None or self._ubus is None or not hasattr(self._ubus, "loop"):
+        if self.connection is None or self.ubus_backend is None or not hasattr(self.ubus_backend, "loop"):
             return
         logger.info("Starting OpenWrt UBUS event loop")
         try:
-            while self._is_active:
-                self._ubus.loop(0)
+            while self.is_active:
+                self.ubus_backend.loop(0)
                 await asyncio.sleep(0.05)
         except asyncio.CancelledError:
             logger.info("OpenWrt UBUS event loop cancelled")
@@ -456,13 +417,13 @@ class UbusService:
 
     def notify(self, event_type: str, data: dict[str, Any]) -> bool:
         """Broadcast a native UBUS event notification (e.g. 'mcubridge.sync')."""
-        if self._conn is None or not self._is_active:
+        if self.connection is None or not self.is_active:
             return False
         try:
-            if hasattr(self._conn, "send") and callable(self._conn.send):
-                self._conn.send(f"mcubridge.{event_type}", data)
-            elif self._ubus is not None and hasattr(self._ubus, "send") and callable(self._ubus.send):
-                self._ubus.send(f"mcubridge.{event_type}", data)
+            if hasattr(self.connection, "send") and callable(self.connection.send):
+                self.connection.send(f"mcubridge.{event_type}", data)
+            elif self.ubus_backend is not None and hasattr(self.ubus_backend, "send") and callable(self.ubus_backend.send):
+                self.ubus_backend.send(f"mcubridge.{event_type}", data)
             return True
         except (OSError, RuntimeError) as exc:
             logger.debug("Failed to send UBUS notification", event_name=event_type, error=str(exc))
@@ -474,7 +435,7 @@ class UbusService:
             current_loop = asyncio.get_running_loop()
             current_loop.create_task(coro)
         except RuntimeError:
-            loop = self._loop
+            loop = self.loop
             if loop is not None and loop.is_running():
                 asyncio.run_coroutine_threadsafe(coro, loop)
                 return
@@ -482,16 +443,16 @@ class UbusService:
 
     def stop(self) -> None:
         """Disconnect from ubusd."""
-        self._is_active = False
-        if self._conn is not None:
+        self.is_active = False
+        if self.connection is not None:
             try:
-                if hasattr(self._conn, "close") and callable(self._conn.close):
-                    self._conn.close()
-                elif hasattr(self._conn, "disconnect") and callable(self._conn.disconnect):
-                    self._conn.disconnect()
-                elif self._ubus is not None and hasattr(self._ubus, "disconnect") and callable(self._ubus.disconnect):
-                    self._ubus.disconnect()
+                if hasattr(self.connection, "close") and callable(self.connection.close):
+                    self.connection.close()
+                elif hasattr(self.connection, "disconnect") and callable(self.connection.disconnect):
+                    self.connection.disconnect()
+                elif self.ubus_backend is not None and hasattr(self.ubus_backend, "disconnect") and callable(self.ubus_backend.disconnect):
+                    self.ubus_backend.disconnect()
             except (OSError, RuntimeError) as exc:
                 logger.debug("Error during UBUS disconnect", error=str(exc))
             finally:
-                self._conn = None
+                self.connection = None

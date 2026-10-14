@@ -36,12 +36,12 @@ _PATH_FIELD_NAMES: Final[frozenset[str]] = frozenset(
 _TOPIC_AUTH_FIELDS: Final[frozenset[str]] = frozenset(pb.TopicAuthorization.DESCRIPTOR.fields_by_name)
 
 
-def _coerce_bool(v: Any) -> bool:
+def coerce_bool(v: Any) -> bool:
     """Coerce string, int, or boolean value to boolean. [SIL-2]"""
     return v if isinstance(v, bool) else str(v).lower() in ("1", "true", "yes", "on")
 
 
-def _coerce_path(v: Any) -> str:
+def coerce_path(v: Any) -> str:
     """Normalize file and socket paths, supporting URL schemas and user expansion. [SIL-2]"""
     s_val = str(v).strip()
     is_url = s_val.startswith(("tcp://", "wifi://", "socket://")) or (
@@ -54,7 +54,7 @@ def _coerce_path(v: Any) -> str:
     return s_val
 
 
-def _coerce_commands(v: Any) -> list[str]:
+def coerce_commands(v: Any) -> list[str]:
     """Coerce commands to a clean list of strings. [SIL-2]"""
     if isinstance(v, (list, tuple)):
         items = cast(list[object] | tuple[object, ...], v)
@@ -64,7 +64,7 @@ def _coerce_commands(v: Any) -> list[str]:
     return [] if v is None else [str(v)]
 
 
-def _runtime_config_factory(
+def runtime_config_factory(
     pb_msg: pb.RuntimeConfig | None = None,
     *,
     bypass_defaults: bool = False,
@@ -93,10 +93,10 @@ def _runtime_config_factory(
 if TYPE_CHECKING:
     RuntimeConfig = pb.RuntimeConfig
 else:
-    RuntimeConfig = _runtime_config_factory
+    RuntimeConfig = runtime_config_factory
 
 
-def _load_raw_config(uci_getter: Callable[[], dict[str, Any]] | None = None) -> tuple[dict[str, Any], str]:
+def load_raw_config(uci_getter: Callable[[], dict[str, Any]] | None = None) -> tuple[dict[str, Any], str]:
     """Load configuration from defaults and UCI (SIL 2).
 
     Precedence (highest first): UCI -> Defaults.
@@ -128,7 +128,7 @@ def get_config_source() -> str:
     return _config_source[0]
 
 
-def _normalize_config_dict(raw: dict[str, Any]) -> tuple[dict[str, Any], bytes | None]:
+def normalize_config_dict(raw: dict[str, Any]) -> tuple[dict[str, Any], bytes | None]:
     """Normalize raw dictionary keys and types for Protobuf ParseDict. [SIL-2]"""
     norm: dict[str, Any] = {}
     auth: dict[str, bool] = {}
@@ -142,14 +142,14 @@ def _normalize_config_dict(raw: dict[str, Any]) -> tuple[dict[str, Any], bytes |
             continue
 
         if k == "allowed_commands":
-            norm[k] = _coerce_commands(v)
+            norm[k] = coerce_commands(v)
             continue
 
         if (field := fields.get(k)) is not None:
             if field.type == FieldDescriptor.TYPE_BOOL:
-                norm[k] = _coerce_bool(v)
+                norm[k] = coerce_bool(v)
             elif k in _PATH_FIELD_NAMES:
-                norm[k] = _coerce_path(v)
+                norm[k] = coerce_path(v)
             elif field.type == FieldDescriptor.TYPE_STRING:
                 norm[k] = str(v).strip() if v is not None else ""
             else:
@@ -159,7 +159,7 @@ def _normalize_config_dict(raw: dict[str, Any]) -> tuple[dict[str, Any], bytes |
         if k.startswith(("cloud_allow_", "allow_")):
             prefix = "cloud_allow_" if k.startswith("cloud_allow_") else "allow_"
             auth_key = k.removeprefix(prefix)
-            auth_bool = _coerce_bool(v)
+            auth_bool = coerce_bool(v)
             if auth_key in _TOPIC_AUTH_FIELDS:
                 auth[auth_key] = auth_bool
             else:
@@ -184,9 +184,9 @@ def load_runtime_config(
     if raw_loader is not None:
         raw_values, source = raw_loader()
     elif uci_getter is not None:
-        raw_values, source = _load_raw_config(uci_getter=uci_getter)
+        raw_values, source = load_raw_config(uci_getter=uci_getter)
     else:
-        raw_values, source = _load_raw_config()
+        raw_values, source = load_raw_config()
     merged_values = get_default_config() | raw_values
     if overrides:
         merged_values |= overrides
@@ -194,7 +194,7 @@ def load_runtime_config(
     _config_source[0] = source
 
     msg = pb.RuntimeConfig()
-    norm_dict, secret = _normalize_config_dict(merged_values)
+    norm_dict, secret = normalize_config_dict(merged_values)
     try:
         json_format.ParseDict(norm_dict, msg, ignore_unknown_fields=True)
         if secret is not None:
@@ -224,13 +224,13 @@ def load_runtime_config_from_json(
     if isinstance(data, (str, bytes)):
         json_format.Parse(data, msg, ignore_unknown_fields=True)
     else:
-        norm_data, secret = _normalize_config_dict(data)
+        norm_data, secret = normalize_config_dict(data)
         json_format.ParseDict(norm_data, msg, ignore_unknown_fields=True)
         if secret is not None:
             msg.serial_shared_secret = secret
 
     if overrides:
-        norm_overrides, ov_secret = _normalize_config_dict(overrides)
+        norm_overrides, ov_secret = normalize_config_dict(overrides)
         json_format.ParseDict(norm_overrides, msg, ignore_unknown_fields=True)
         if ov_secret is not None:
             msg.serial_shared_secret = ov_secret
@@ -238,11 +238,3 @@ def load_runtime_config_from_json(
     validate_config(msg)
     _config_source[0] = "json"
     return msg
-
-
-coerce_bool = _coerce_bool
-coerce_path = _coerce_path
-coerce_commands = _coerce_commands
-runtime_config_factory = _runtime_config_factory
-load_raw_config = _load_raw_config
-normalize_config_dict = _normalize_config_dict

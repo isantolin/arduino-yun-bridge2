@@ -15,8 +15,7 @@ from typing import Annotated, ClassVar, cast
 
 from cobs import cobsr
 from hypothesis import strategies as st
-import hypothesis.stateful as h_stateful
-from hypothesis.stateful import RuleBasedStateMachine, invariant, rule
+from hypothesis.stateful import RuleBasedStateMachine, invariant, rule, run_state_machine_as_test
 import serialx
 import structlog
 import typer
@@ -27,12 +26,6 @@ from mcubridge.protocol.frame import build_frame
 
 cli = typer.Typer(help="[MIL-SPEC/SIL-2] McuBridge Protocol Stateful Fuzzer", add_completion=False)
 logger = structlog.get_logger("protocol_fuzzer")
-
-_run_fn_name = "run_state_machine" + "_as_test"
-_RUN_STATE_MACHINE: Callable[[type[RuleBasedStateMachine]], None] = cast(
-    Callable[[type[RuleBasedStateMachine]], None],
-    getattr(h_stateful, _run_fn_name),
-)
 
 
 class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
@@ -227,7 +220,7 @@ def main(
     ProtocolFuzzerStateMachine.baudrate = baud
 
     try:
-        _RUN_STATE_MACHINE(ProtocolFuzzerStateMachine)
+        run_state_machine_as_test(ProtocolFuzzerStateMachine)
         logger.info("fuzzing_complete", steps=count)
     except KeyboardInterrupt:
         logger.info("fuzzing_interrupted_by_user")

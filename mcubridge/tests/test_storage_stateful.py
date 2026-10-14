@@ -9,17 +9,10 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import cast
 
-import hypothesis.stateful as h_stateful
 import pytest
 from hypothesis import strategies as st
-from hypothesis.stateful import Bundle, RuleBasedStateMachine, invariant, rule
+from hypothesis.stateful import Bundle, RuleBasedStateMachine, invariant, rule, run_state_machine_as_test
 from mcubridge.state.storage import LmdbDeque
-
-_run_fn_name = "run_state_machine" + "_as_test"
-_RUN_STATE_MACHINE: Callable[[type[RuleBasedStateMachine]], None] = cast(
-    Callable[[type[RuleBasedStateMachine]], None],
-    getattr(h_stateful, _run_fn_name),
-)
 
 
 class LmdbDequeDiskStateMachine(RuleBasedStateMachine):
@@ -142,9 +135,9 @@ class LmdbDequeMemoryStateMachine(RuleBasedStateMachine):
 
 def test_lmdb_deque_disk_state_machine() -> None:
     """Run stateful property tests for disk-backed LmdbDeque."""
-    _RUN_STATE_MACHINE(LmdbDequeDiskStateMachine)
+    run_state_machine_as_test(LmdbDequeDiskStateMachine)
 
 
 def test_lmdb_deque_memory_state_machine() -> None:
     """Run stateful property tests for in-memory LmdbDeque."""
-    _RUN_STATE_MACHINE(LmdbDequeMemoryStateMachine)
+    run_state_machine_as_test(LmdbDequeMemoryStateMachine)

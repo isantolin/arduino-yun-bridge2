@@ -28,18 +28,11 @@ from grpclib.exceptions import GRPCError
 from grpclib.reflection.service import ServerReflection
 from hypothesis import given, settings
 from hypothesis import strategies as st
-import hypothesis.stateful as h_stateful
-from hypothesis.stateful import RuleBasedStateMachine, invariant, rule
+from hypothesis.stateful import RuleBasedStateMachine, invariant, rule, run_state_machine_as_test
 from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol.protocol import DEFAULT_CLOUD_PORT, PROTOCOL_VERSION
 from pytest_mock import MockerFixture
 from typer.testing import CliRunner
-
-_run_fn_name = "run_state_machine" + "_as_test"
-_RUN_STATE_MACHINE: Callable[[type[RuleBasedStateMachine]], None] = cast(
-    Callable[[type[RuleBasedStateMachine]], None],
-    getattr(h_stateful, _run_fn_name),
-)
 
 
 @pytest.fixture
@@ -375,7 +368,7 @@ class GatewaySessionStateMachine(RuleBasedStateMachine):
 
 def test_gateway_session_machine_lifecycle() -> None:
     """Execute Hypothesis RuleBasedStateMachine on GatewaySessionMachine."""
-    _RUN_STATE_MACHINE(GatewaySessionStateMachine)
+    run_state_machine_as_test(GatewaySessionStateMachine)
 
 
 @pytest.mark.asyncio

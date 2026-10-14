@@ -1044,9 +1044,7 @@ def check_incremental_build(args: Any, version: str, *, repo_root: Path = REPO_R
 
     hash_file = proto_path.parent / ".mcubridge.proto.hash"
     outputs_exist = all(output.is_file() for output in expected_generation_outputs(args, repo_root=repo_root))
-    up_to_date = bool(
-        outputs_exist and hash_file.is_file() and hash_file.read_text(encoding="utf-8").strip() == current_hash
-    )
+    up_to_date = outputs_exist and hash_file.is_file() and hash_file.read_text(encoding="utf-8").strip() == current_hash
     return up_to_date, hash_file, current_hash
 
 

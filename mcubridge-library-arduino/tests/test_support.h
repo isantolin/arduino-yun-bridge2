@@ -155,35 +155,39 @@ template <size_t N>
     const ByteBuffer<N>& buffer, size_t& cursor,
     rpc_pb_RpcEnvelope& out_frame) {
   etl::array<uint8_t, 1024> decoded_buf;
+  const uint8_t* const buf_begin = buffer.data;
+  const uint8_t* const buf_end = buffer.data + buffer.len;
 
-  while (cursor < buffer.len) {
+  bool frame_found = false;
+  etl::array<uint8_t, N> scan_tokens{};
+  const size_t remaining = buffer.len > cursor ? buffer.len - cursor : 0;
+  etl::find_if(scan_tokens.begin(), scan_tokens.begin() + remaining, [&](uint8_t) {
+    if (cursor >= buffer.len) return true;
     if (buffer.data[cursor] == rpc::RPC_FRAME_DELIMITER) {
       cursor++;
-      continue;
+      return false;
     }
-
-    const uint8_t* const begin_ptr = &buffer.data[cursor];
-    const uint8_t* const end_buf_ptr = &buffer.data[buffer.len];
-    const uint8_t* const delim_ptr =
-        etl::find(begin_ptr, end_buf_ptr, rpc::RPC_FRAME_DELIMITER);
+    const uint8_t* const begin_ptr = buf_begin + cursor;
+    const uint8_t* const delim_ptr = etl::find(begin_ptr, buf_end, rpc::RPC_FRAME_DELIMITER);
     const size_t segment_len = static_cast<size_t>(delim_ptr - begin_ptr);
     const size_t end = cursor + segment_len;
 
-    size_t decoded_len =
-        TestCOBS::decode(&buffer.data[cursor], segment_len, decoded_buf.data());
+    const size_t decoded_len = TestCOBS::decode(begin_ptr, segment_len, decoded_buf.data());
+    cursor = end;
 
     if (decoded_len >= rpc::RPC_CRC_SIZE + 2U) {
       auto result = rpc::parse_frame(
           etl::span<const uint8_t>(decoded_buf.data(), decoded_len));
       if (result) {
         out_frame = result.value();
-        cursor = end;
+        frame_found = true;
         return true;
       }
     }
-    cursor = end;
-  }
-  return false;
+    return false;
+  });
+
+  return frame_found;
 }
 
 // ---------------------------------------------------------------------------

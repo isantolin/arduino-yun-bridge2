@@ -485,9 +485,14 @@ void test_console_edges() {
 
   // Full buffer write when send fails (retains data)
   ba.setTxEnabled(false);
-  for (size_t i = 0; i < 70; ++i) {
-    Console.write('A' + (i % 26));
-  }
+  etl::array<uint8_t, 70> console_chars{};
+  size_t char_idx = 0;
+  etl::generate(console_chars.begin(), console_chars.end(), [&char_idx]() {
+    return static_cast<uint8_t>('A' + (char_idx++ % 26));
+  });
+  etl::for_each(console_chars.begin(), console_chars.end(), [](uint8_t c) {
+    Console.write(c);
+  });
   ba.setTxEnabled(true);
   Console.onLost();
 }
@@ -625,6 +630,7 @@ void test_filesystem_edges() {
 
   // 11. Observer onLost
   FileSystem.onLost();
+  Bridge.enterSafeState();
   TEST_ASSERT_FALSE(Bridge.isSynchronized());
 }
 
@@ -690,9 +696,10 @@ void test_mailbox_edges() {
   mb_msg.data.bytes[0] = 1;
   mb_msg.data.bytes[1] = 2;
   mb_msg.data.bytes[2] = 3;
-  for (int i = 0; i < 5; ++i) {
+  constexpr etl::array<uint8_t, 5> push_attempts{};
+  etl::for_each(push_attempts.begin(), push_attempts.end(), [&mb_msg](uint8_t) {
     MailboxClass::_onEnqueuePayload<rpc_pb_MailboxPush, &rpc_pb_MailboxPush::data>(mb_msg);
-  }
+  });
 
   // Available response with and without callback
   rpc::payload::MailboxAvailableResponse av_resp = {};

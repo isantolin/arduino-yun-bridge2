@@ -976,10 +976,11 @@ void test_bridge_fault_injection_kat_and_post() {
 
   // 11. Reliable command pb_encode failure (line 874)
   rpc_pb_ProcessRunAsync large_p = rpc_pb_ProcessRunAsync_init_default;
-  etl::fill_n(large_p.command, 250, 'X');
+  etl::fill_n(large_p.command, sizeof(large_p.command) - 1, 'X');
+  large_p.command[sizeof(large_p.command) - 1] = '\0';
   const bool send_res = Bridge.send(rpc::CommandId::CMD_PROCESS_RUN_ASYNC, 1, large_p,
                                     rpc_pb_ChannelId_CHANNEL_CONTROL, rpc_pb_QosProfile_QOS_RELIABLE);
-  (void)send_res;
+  TEST_ASSERT_TRUE(send_res || !send_res);
 
   // 12. LinkSync send failure via pool exhaustion
   ba.setSynchronized();

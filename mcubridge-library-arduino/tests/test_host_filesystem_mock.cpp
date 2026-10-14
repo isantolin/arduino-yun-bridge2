@@ -42,13 +42,17 @@ static bool ensure_host_parent_directories(const PathString& full_path) {
   struct stat st = {};
   if (::stat(parent_dir.c_str(), &st) == 0) return S_ISDIR(st.st_mode);
 
-  auto slash_it = etl::find(parent_dir.begin() + 1, parent_dir.end(), '/');
-  while (slash_it != parent_dir.end()) {
-    *slash_it = '\0';
-    if (::mkdir(parent_dir.c_str(), 0755) != 0 && errno != EEXIST) return false;
-    *slash_it = '/';
-    slash_it = etl::find(slash_it + 1, parent_dir.end(), '/');
-  }
+  bool mkdir_ok = true;
+  etl::for_each(parent_dir.begin() + 1, parent_dir.end(), [&](char& ch) {
+    if (mkdir_ok && ch == '/') {
+      ch = '\0';
+      if (::mkdir(parent_dir.c_str(), 0755) != 0 && errno != EEXIST) {
+        mkdir_ok = false;
+      }
+      ch = '/';
+    }
+  });
+  if (!mkdir_ok) return false;
   if (::mkdir(parent_dir.c_str(), 0755) != 0 && errno != EEXIST) return false;
   return true;
 }

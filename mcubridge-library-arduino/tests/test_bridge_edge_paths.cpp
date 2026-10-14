@@ -711,9 +711,14 @@ void test_architectural_extensions_edge_paths() {
 
   // Safety pins registration and overflow
   Bridge.clearSafetyPins();
-  for (uint8_t p = 1; p <= 10; ++p) {
+  etl::array<uint8_t, 10> pin_range{};
+  uint8_t current_pin = 1;
+  etl::generate(pin_range.begin(), pin_range.end(), [&current_pin]() {
+    return current_pin++;
+  });
+  etl::for_each(pin_range.begin(), pin_range.end(), [](uint8_t p) {
     Bridge.registerSafetyPin(p, BridgeClass::SafetyPinState::SAFE_PIN_LOW);
-  }
+  });
   Bridge.registerSafetyPin(1, BridgeClass::SafetyPinState::SAFE_PIN_HIGH);
   Bridge.enterSafeState();
   Bridge.clearSafetyPins();
@@ -800,14 +805,19 @@ void test_architectural_extensions_edge_paths() {
   ba.dispatch(sub_update);
 
   // Fill subscriptions to full capacity (8 max) then attempt 9th
-  for (uint8_t p = 10; p < 18; ++p) {
+  etl::array<uint8_t, 8> sub_pins{};
+  uint8_t sub_pin_val = 10;
+  etl::generate(sub_pins.begin(), sub_pins.end(), [&sub_pin_val]() {
+    return sub_pin_val++;
+  });
+  etl::for_each(sub_pins.begin(), sub_pins.end(), [&ba, &buf](uint8_t p) {
     rpc_pb_PinSubscribeRequest s = rpc_pb_PinSubscribeRequest_init_default;
     s.pin = p;
     s.enabled = true;
     auto f = make_payload_frame(
         rpc::to_underlying(rpc::CommandId::CMD_PIN_SUBSCRIBE), 310 + p, s, buf);
     ba.dispatch(f);
-  }
+  });
   rpc_pb_PinSubscribeRequest sub_overflow =
       rpc_pb_PinSubscribeRequest_init_default;
   sub_overflow.pin = 50;

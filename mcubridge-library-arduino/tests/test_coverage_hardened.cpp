@@ -38,7 +38,6 @@ void capture_poll_handler(rpc::StatusCode /*status*/, uint16_t /*exit_code*/,
                           etl::span<const uint8_t>, etl::span<const uint8_t>) {}
 void datastore_get_handler(etl::string_view, etl::span<const uint8_t>) {}
 void dummy_cmd_handler(const rpc_pb_RpcEnvelope&) {}
-void dummy_status_handler(rpc::StatusCode, etl::span<const uint8_t>) {}
 }  // namespace
 
 void test_bridge_emit_status_variants() {
@@ -436,7 +435,6 @@ void test_bridge_template_coverage() {
 
   // Mock handlers
   Bridge.onCommand(BridgeClass::CommandHandler::create<dummy_cmd_handler>());
-  Bridge.onStatus(BridgeClass::StatusHandler::create<dummy_status_handler>());
   TEST_ASSERT_TRUE(Bridge.isSynchronized());
 }
 
@@ -758,7 +756,6 @@ int main() {
   (void)poll_handler;
   (void)async_handler;
   (void)dummy_cmd_handler;
-  (void)dummy_status_handler;
   UNITY_BEGIN();
   RUN_TEST(test_bridge_emit_status_variants);
   RUN_TEST(test_bridge_queue_full_and_retransmit);

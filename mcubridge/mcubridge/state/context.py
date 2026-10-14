@@ -485,10 +485,6 @@ class RuntimeState:
         return self.connection_fsm.synchronized.is_active
 
     @property
-    def is_disconnected(self) -> bool:
-        return self.connection_fsm.disconnected.is_active
-
-    @property
     def is_cloud_connected(self) -> bool:
         return self.cloud_fsm.connected_http3.is_active or self.cloud_fsm.connected_http2.is_active
 
@@ -543,12 +539,6 @@ class RuntimeState:
     def allowed_commands(self) -> tuple[str, ...]:
         """Return the current allowed command list from policy."""
         return tuple(self.allowed_policy.entries)
-
-    def mailbox_queue_depth(self) -> int:
-        return len(self.mailbox_queue)
-
-    def mailbox_incoming_queue_depth(self) -> int:
-        return len(self.mailbox_incoming_queue)
 
     def get_storage_subdir(self, subdir: str) -> Path | None:
         """Resolve, validate, and create a managed storage directory under file_system_root. [SIL-2]"""

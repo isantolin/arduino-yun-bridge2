@@ -37,11 +37,10 @@ def test_configure_updates_derived_values(runtime_config: RuntimeConfig) -> None
 def test_connection_fsm_connect_updates_state(runtime_config: RuntimeConfig) -> None:
     state = create_runtime_state(runtime_config)
     try:
-        assert state.is_disconnected
+        assert not state.is_connected
         state.connection_fsm.connect()
         assert state.is_connected
         assert not state.is_synchronized
-        assert not state.is_disconnected
     finally:
         state.cleanup()
 
@@ -301,13 +300,10 @@ def test_context_edge_branches_and_properties(runtime_state: RuntimeState, mocke
     mocker.patch("psutil.Process", side_effect=psutil.NoSuchProcess(pid=99999999))
     terminate_pid_tree(99999999)
 
-    # 2. properties: allowed_commands, mailbox_queue_depth, mailbox_incoming_queue_depth (lines 547, 550, 553)
-
+    # 2. properties: allowed_commands
     assert isinstance(runtime_state.allowed_commands, tuple)
-    assert runtime_state.mailbox_queue_depth() >= 0
-    assert runtime_state.mailbox_incoming_queue_depth() >= 0
 
-    # 3. _get_storage_subdir when non_tmp path not allowed (line 557->564)
+    # 3. _get_storage_subdir when non_tmp path not allowed
     runtime_state.allow_non_tmp_paths = False
     runtime_state.file_system_root = "/non_tmp_custom_root"
     get_storage_subdir: Any = runtime_state.get_storage_subdir

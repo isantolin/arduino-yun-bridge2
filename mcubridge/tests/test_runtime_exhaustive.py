@@ -53,7 +53,7 @@ async def test_on_serial_connected_and_disconnected(
     assert state.mcu_version == (1, 0, 0)
 
     await service.on_serial_disconnected()
-    assert state.is_disconnected is True
+    assert not state.is_connected
 
 
 @pytest.mark.asyncio

@@ -173,8 +173,6 @@ void init() {
 
 __attribute__((weak)) bool hasSD() { return false; }
 
-__attribute__((weak)) bool hasSPI() { return false; }
-
 __attribute__((weak)) etl::expected<void, HalError> writeFile(
     etl::string_view, etl::span<const uint8_t>) {
   return etl::unexpected<HalError>(HalError::NOT_IMPLEMENTED);

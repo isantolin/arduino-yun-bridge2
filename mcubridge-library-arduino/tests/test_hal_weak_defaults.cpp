@@ -20,7 +20,6 @@ void test_hal_weak_defaults_without_mock() {
   g_host_fs_enabled = false;
 
   TEST_ASSERT_FALSE(bridge::hal::hasSD());
-  TEST_ASSERT_FALSE(bridge::hal::hasSPI());
 
   const auto write_res =
       bridge::hal::writeFile("test.txt", etl::span<const uint8_t>());

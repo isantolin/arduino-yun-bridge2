@@ -232,10 +232,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   }
 
   using CommandHandler = etl::delegate<void(const rpc_pb_RpcEnvelope&)>;
-  using StatusHandler =
-      etl::delegate<void(rpc::StatusCode, etl::span<const uint8_t>)>;
   void onCommand(CommandHandler h) { _command_handler = h; }
-  void onStatus(StatusHandler h) { _status_handler = h; }
 
   __attribute__((noinline)) void _dispatchCommand(
       const rpc_pb_RpcEnvelope& envelope);
@@ -288,7 +285,6 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   Stream* _stream = nullptr;
   HardwareSerial* _hardware_serial = nullptr;
   CommandHandler _command_handler;
-  StatusHandler _status_handler;
   uint16_t _last_command_id = 0;
   uint16_t _tx_sequence_id = 0;
   uint8_t _retry_count = 0;
@@ -550,21 +546,6 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
     resp.value = static_cast<uint32_t>(bridge::hal::getFreeMemory());
   }
 
-  inline void _handleGetVersion(const bridge::router::CommandContext& ctx) {
-    _handleSimpleQuery<rpc_pb_VersionResponse,
-                       rpc::CommandId::CMD_GET_VERSION_RESP, _fillVersion>(ctx);
-  }
-  inline void _handleGetFreeMemory(const bridge::router::CommandContext& ctx) {
-    _handleSimpleQuery<rpc_pb_FreeMemoryResponse,
-                       rpc::CommandId::CMD_GET_FREE_MEMORY_RESP,
-                       _fillFreeMemory>(ctx);
-  }
-  inline void _handleGetCapabilities(
-      const bridge::router::CommandContext& ctx) {
-    _handleSimpleQuery<rpc_pb_Capabilities,
-                       rpc::CommandId::CMD_GET_CAPABILITIES_RESP,
-                       bridge::hal::fillCapabilities>(ctx);
-  }
   __attribute__((noinline)) void _handleLinkSync(
       const bridge::router::CommandContext& ctx, const rpc_pb_LinkSync& m);
   void _handleLinkReset(const bridge::router::CommandContext& ctx);

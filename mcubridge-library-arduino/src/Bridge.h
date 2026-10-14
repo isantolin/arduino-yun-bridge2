@@ -136,6 +136,14 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   template <typename T = etl::span<const uint8_t>>
   void emitStatus(rpc::StatusCode s,
                   const T& payload = etl::span<const uint8_t>()) {
+    if (_status_handler.is_valid()) {
+      if constexpr (etl::is_same_v<T, etl::span<const uint8_t>>) {
+        _status_handler(s, payload);
+      } else if constexpr (etl::is_same_v<T, etl::string_view>) {
+        _status_handler(s, etl::span<const uint8_t>(
+            reinterpret_cast<const uint8_t*>(payload.data()), payload.size()));
+      }
+    }
     if constexpr (etl::is_same_v<T, etl::span<const uint8_t>>) {
       if (!sendFrame(s, 0, payload)) {
         enterSafeState();
@@ -232,7 +240,10 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   }
 
   using CommandHandler = etl::delegate<void(const rpc_pb_RpcEnvelope&)>;
+  using StatusHandler =
+      etl::delegate<void(rpc::StatusCode, etl::span<const uint8_t>)>;
   void onCommand(CommandHandler h) { _command_handler = h; }
+  void onStatus(StatusHandler h) { _status_handler = h; }
 
   __attribute__((noinline)) void _dispatchCommand(
       const rpc_pb_RpcEnvelope& envelope);
@@ -285,6 +296,7 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   Stream* _stream = nullptr;
   HardwareSerial* _hardware_serial = nullptr;
   CommandHandler _command_handler;
+  StatusHandler _status_handler;
   uint16_t _last_command_id = 0;
   uint16_t _tx_sequence_id = 0;
   uint8_t _retry_count = 0;

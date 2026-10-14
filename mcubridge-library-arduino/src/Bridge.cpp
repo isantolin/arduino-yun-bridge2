@@ -706,6 +706,10 @@ void BridgeClass::_handleSpiTransfer(const bridge::router::CommandContext& ctx,
 
 void BridgeClass::_handleStatusMalformed(
     const bridge::router::CommandContext&) {
+  if (_status_handler.is_valid()) {
+    _status_handler(rpc::StatusCode::STATUS_MALFORMED,
+                    etl::span<const uint8_t>());
+  }
   enterSafeState();
 }
 

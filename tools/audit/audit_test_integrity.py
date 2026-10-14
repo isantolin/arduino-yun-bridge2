@@ -105,6 +105,7 @@ ALLOWLIST_CPP_PUBLIC_APIS = {
     "setWatchdogTimeout",
     "getWatchdogTimeout",
     "onCommand",
+    "onStatus",
     "peek",
     "flush",
     "remove",
@@ -287,6 +288,7 @@ def audit_test_only_hooks() -> list[str]:
 
     # 2. C++ Analysis
     cpp_prod_dir = ROOT / "mcubridge-library-arduino" / "src"
+    cpp_examples_dir = ROOT / "mcubridge-library-arduino" / "examples"
     cpp_test_dir = ROOT / "mcubridge-library-arduino" / "tests"
     if cpp_prod_dir.exists() and cpp_test_dir.exists():
         cpp_prod_files = [
@@ -294,6 +296,10 @@ def audit_test_only_hooks() -> list[str]:
             for f in cpp_prod_dir.rglob("*")
             if f.suffix in {".h", ".cpp"} and not f.name.startswith("pb_") and "protocol/mcubridge.pb" not in str(f)
         ]
+        if cpp_examples_dir.exists():
+            cpp_prod_files.extend(
+                [f for f in cpp_examples_dir.rglob("*") if f.suffix in {".h", ".cpp", ".ino"}]
+            )
         cpp_test_files = [f for f in cpp_test_dir.rglob("*") if f.suffix in {".h", ".cpp"}]
 
         cpp_prod_text = "\n".join(f.read_text(encoding="utf-8", errors="ignore") for f in cpp_prod_files)

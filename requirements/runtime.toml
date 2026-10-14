@@ -293,7 +293,7 @@ rationale = "Style guide enforcement and PEP 8 linter"
 
 [[dev_dependency]]
 name = "semgrep"
-pip = "semgrep==1.180.0"
+pip = "semgrep==1.181.0"
 rationale = "Static AST analysis engine enforcing SIL-2 zero-suppression and deterministic coding rules"
 
 [[dev_dependency]]

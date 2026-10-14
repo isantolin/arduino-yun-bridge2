@@ -768,9 +768,9 @@ void BridgeClass::_handleLinkReset(const bridge::router::CommandContext& ctx) {
   _timers.set_period(bridge::scheduler::TIMER_HANDSHAKE_TIMEOUT,
                      _response_timeout_ms);
   _timers.start(bridge::scheduler::TIMER_HANDSHAKE_TIMEOUT);
-  if (!sendFrame(rpc::CommandId::CMD_LINK_RESET_RESP, ctx.sequence_id)) {
-    enterSafeState();
-  }
+  const bool sent =
+      sendFrame(rpc::CommandId::CMD_LINK_RESET_RESP, ctx.sequence_id);
+  (void)sent;
 }
 
 void BridgeClass::_handleStatusAck(
@@ -833,14 +833,12 @@ bool BridgeClass::_isSecurityCheckPassed(uint16_t cmd) const {
 }
 
 void BridgeClass::signalXoff() {
-  if (!sendFrame(rpc::CommandId::CMD_XOFF)) {
-    enterSafeState();
-  }
+  const bool sent = sendFrame(rpc::CommandId::CMD_XOFF);
+  (void)sent;
 }
 void BridgeClass::signalXon() {
-  if (!sendFrame(rpc::CommandId::CMD_XON)) {
-    enterSafeState();
-  }
+  const bool sent = sendFrame(rpc::CommandId::CMD_XON);
+  (void)sent;
 }
 
 bool BridgeClass::_decodePayload(const bridge::router::CommandContext& ctx,
@@ -862,7 +860,7 @@ bool BridgeClass::_sendEncryptedImpl(uint16_t raw_cmd, uint16_t seq,
                                      const void* src,
                                      rpc_pb_ChannelId /*channel_id*/,
                                      rpc_pb_QosProfile qos) {
-  if (!_state_flags.test(FLAG_TX_ENABLED) && !rpc::is_system_command(raw_cmd)) {
+  if (!_state_flags.test(FLAG_TX_ENABLED)) {
     return false;
   }
   if (qos == rpc_pb_QosProfile_QOS_RELIABLE && is_reliable_cmd(raw_cmd)) {

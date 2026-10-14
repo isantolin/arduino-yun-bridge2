@@ -209,7 +209,7 @@ jobs:
         with:
           cache-suffix: emulation
       - name: Install Python Dependencies
-        run: pip install -r requirements/runtime.txt nanopb
+        run: pip install -r requirements/runtime.txt nanopb black
       - name: Install Emulation Tools
         run: |
           sudo apt-get update
@@ -384,7 +384,7 @@ jobs:
           PYTHONPATH: .:mcubridge:mcubridge-client-examples:typings
         run: |
           # 1. Mandatory Protocol Generation (Required for imports)
-          pip install jinja2 nanopb
+          pip install jinja2 nanopb black
           python tools/protocol/generate.py \
             --spec tools/protocol/mcubridge.proto \
             --py mcubridge/mcubridge/protocol/protocol.py \

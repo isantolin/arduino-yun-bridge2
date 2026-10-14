@@ -227,6 +227,13 @@ void test_spi_data_modes_map_to_native_settings() {
   TEST_ASSERT_EQUAL_UINT8(SPI_MODE3, SPI.last_settings.data_mode);
   TEST_ASSERT_EQUAL_UINT8(LSBFIRST, SPI.last_settings.bit_order);
   TEST_ASSERT_EQUAL_UINT32(config.frequency, SPI.last_settings.clock);
+
+  config.data_mode = static_cast<rpc_pb_SpiDataMode>(99);
+  SPIService.setConfig(config);
+  TEST_ASSERT_EQUAL_UINT32(1, SPIService.transfer(etl::span<uint8_t>(
+                                  payload.data(), payload.size())));
+  TEST_ASSERT_EQUAL_UINT8(SPI_MODE0, SPI.last_settings.data_mode);
+
   SPIService.end();
 }
 

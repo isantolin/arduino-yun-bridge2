@@ -84,7 +84,10 @@ void setup() {
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
 
-  while (WiFi.status() != WL_CONNECTED) {
+  constexpr unsigned long WIFI_CONNECT_TIMEOUT_MS = 10000;
+  const unsigned long wifi_deadline = millis() + WIFI_CONNECT_TIMEOUT_MS;
+  while (WiFi.status() != WL_CONNECTED &&
+         static_cast<int32_t>(millis() - wifi_deadline) <= 0) {
     delay(250);
   }
 
@@ -105,7 +108,9 @@ void setup() {
       }
     }
 
-    digitalWrite(LED_BUILTIN, HIGH);
+    if (Bridge.isSynchronized()) {
+      digitalWrite(LED_BUILTIN, HIGH);
+    }
   }
 }
 
@@ -121,7 +126,20 @@ void loop() {
           client.connect(BRIDGE_HOST, BRIDGE_PORT)) {
         Bridge.setStream(client);
         Bridge.begin(rpc::RPC_DEFAULT_BAUDRATE, BRIDGE_SERIAL_SHARED_SECRET);
-        digitalWrite(LED_BUILTIN, HIGH);
+        {
+          const uint32_t sync_deadline =
+              millis() + bridge::config::SYNC_TIMEOUT_MS;
+          while (!Bridge.isSynchronized()) {
+            if (static_cast<int32_t>(millis() - sync_deadline) > 0) {
+              Bridge.enterSafeState();
+              break;
+            }
+            Bridge.process();
+          }
+        }
+        if (Bridge.isSynchronized()) {
+          digitalWrite(LED_BUILTIN, HIGH);
+        }
       }
     }
   }

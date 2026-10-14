@@ -46,8 +46,10 @@ void FileSystemClass::_onWrite(const rpc::payload::FileWrite& msg) {
   auto res = bridge::hal::writeFile(
       etl::string_view(msg.path),
       etl::span<const uint8_t>(msg.data.bytes, msg.data.size));
-  (void)Bridge.sendFrame(res ? rpc::StatusCode::STATUS_OK
-                             : rpc::StatusCode::STATUS_ERROR);
+  if (!Bridge.sendFrame(res ? rpc::StatusCode::STATUS_OK
+                            : rpc::StatusCode::STATUS_ERROR)) {
+    Bridge.enterSafeState();
+  }
 }
 
 void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
@@ -70,7 +72,9 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
         auto res = bridge::hal::readFileChunk(
             path, offset, etl::span<uint8_t>(buffer.data(), buffer.size()));
         if (!res) {
-          (void)Bridge.sendFrame(rpc::StatusCode::STATUS_ERROR);
+          if (!Bridge.sendFrame(rpc::StatusCode::STATUS_ERROR)) {
+            Bridge.enterSafeState();
+          }
           finished = true;
           return;
         }
@@ -79,11 +83,17 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
         rpc::Payload::copy_to_pb_bytes(
             p.content,
             etl::span<const uint8_t>(buffer.data(), res->bytes_read));
-        (void)Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 0, p);
+        if (!Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 0, p)) {
+          Bridge.enterSafeState();
+          finished = true;
+          return;
+        }
 
         if (!res->has_more) {
           rpc::payload::FileReadResponse empty_p = {};
-          (void)Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 0, empty_p);
+          if (!Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 0, empty_p)) {
+            Bridge.enterSafeState();
+          }
           finished = true;
           return;
         }
@@ -94,8 +104,10 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
 
 void FileSystemClass::_onRemove(const rpc::payload::FileRemove& msg) {
   auto res = bridge::hal::removeFile(etl::string_view(msg.path));
-  (void)Bridge.sendFrame(res ? rpc::StatusCode::STATUS_OK
-                             : rpc::StatusCode::STATUS_ERROR);
+  if (!Bridge.sendFrame(res ? rpc::StatusCode::STATUS_OK
+                            : rpc::StatusCode::STATUS_ERROR)) {
+    Bridge.enterSafeState();
+  }
 }
 
 void FileSystemClass::_onResponse(const rpc::payload::FileReadResponse& msg) {

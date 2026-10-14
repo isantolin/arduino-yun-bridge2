@@ -20,23 +20,13 @@ void SPIServiceClass::end() {
 }
 
 void SPIServiceClass::setConfig(const rpc::payload::SpiConfig& config) {
-  auto data_mode = static_cast<decltype(SPI_MODE0)>(config.data_mode);
-  switch (config.data_mode) {
-    case rpc_pb_SpiDataMode_SPI_DATA_MODE_0:
-      data_mode = SPI_MODE0;
-      break;
-    case rpc_pb_SpiDataMode_SPI_DATA_MODE_1:
-      data_mode = SPI_MODE1;
-      break;
-    case rpc_pb_SpiDataMode_SPI_DATA_MODE_2:
-      data_mode = SPI_MODE2;
-      break;
-    case rpc_pb_SpiDataMode_SPI_DATA_MODE_3:
-      data_mode = SPI_MODE3;
-      break;
-    default:
-      break;
-  }
+  constexpr decltype(SPI_MODE0) SPI_MODES[] = {SPI_MODE0, SPI_MODE1, SPI_MODE2, SPI_MODE3};
+  const size_t mode_idx = static_cast<size_t>(config.data_mode >> 2U);
+  const auto data_mode =
+      (mode_idx < sizeof(SPI_MODES) / sizeof(SPI_MODES[0]) &&
+       (config.data_mode & 0x03U) == 0U)
+          ? SPI_MODES[mode_idx]
+          : SPI_MODE0;
   _settings =
       SPISettings(config.frequency,
                   static_cast<decltype(MSBFIRST)>(config.bit_order), data_mode);

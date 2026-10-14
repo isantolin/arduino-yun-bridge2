@@ -157,6 +157,7 @@ def audit_proto_usage() -> list[str]:
 
     source_roots = (
         ROOT / "mcubridge" / "mcubridge",
+        ROOT / "mcubridge" / "scripts",
         ROOT / "mcubridge" / "tests",
         ROOT / "mcubridge-client-examples",
         ROOT / "mcubridge-gateway",
@@ -253,6 +254,15 @@ def audit_proto_usage() -> list[str]:
             if not is_referenced(value_desc.name)
         )
 
+    extension_message_types = {
+        ext.message_type.name for ext in pb.DESCRIPTOR.extensions_by_name.values() if ext.message_type
+    }
+    for message_desc in pb.DESCRIPTOR.message_types_by_name.values():
+        if message_desc.name in extension_message_types:
+            continue
+        if not is_referenced(message_desc.name):
+            findings.append(f"Unused Protobuf message: {message_desc.name}")
+
     return findings
 
 
@@ -260,11 +270,20 @@ def audit_arduino_sketches() -> list[str]:
     """Audit reference Arduino .ino sketches for bounded synchronization watchdog loop. [Rule 26]"""
     sketches = sorted((ROOT / "mcubridge-library-arduino" / "examples").glob("*/*.ino"))
     sync_pattern = re.compile(r"Bridge\.isSynchronized\s*\(\s*\)")
-    return [
-        f"[{p.relative_to(ROOT)}] Rule 26 Violation: Sketch lacks bounded 'Bridge.isSynchronized()' in setup()."
-        for p in sketches
-        if "Bridge.begin" in (txt := p.read_text(encoding="utf-8")) and not sync_pattern.search(txt)
-    ]
+    bound_pattern = re.compile(r"(?:SYNC_TIMEOUT|sync_deadline|enterSafeState)")
+    violations: list[str] = []
+    for p in sketches:
+        txt = p.read_text(encoding="utf-8")
+        if "Bridge.begin" in txt:
+            if not sync_pattern.search(txt):
+                violations.append(
+                    f"[{p.relative_to(ROOT)}] Rule 26 Violation: Sketch lacks bounded 'Bridge.isSynchronized()' in setup()."
+                )
+            elif not bound_pattern.search(txt):
+                violations.append(
+                    f"[{p.relative_to(ROOT)}] Rule 26 Violation: Sketch 'Bridge.isSynchronized()' loop is unbounded (missing timeout/safe state)."
+                )
+    return violations
 
 
 app = typer.Typer(help="Audit codebase for SIL-2/MIL-SPEC violations and shims.", add_completion=False)

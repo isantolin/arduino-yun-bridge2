@@ -228,7 +228,7 @@ void test_bridge_coverage() {
 
   rpc::payload::ProcessKill pk;
   pk.pid = 1;
-  Process._onKillNotification(pk);
+  Process.reset();
 
   rpc_pb_RpcEnvelope f_pk = {};
   f_pk.command_id = (uint16_t)rpc::CommandId::CMD_PROCESS_KILL;

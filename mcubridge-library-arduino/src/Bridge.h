@@ -535,7 +535,9 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
   void _handleSimpleQuery(const bridge::router::CommandContext& ctx) {
     RespType resp = {};
     FillFn(resp);
-    (void)send(RespCmd, ctx.sequence_id, resp);
+    if (!send(RespCmd, ctx.sequence_id, resp)) {
+      emitStatus(rpc::StatusCode::STATUS_ERROR);
+    }
   }
 
   static inline void _fillVersion(rpc_pb_VersionResponse& resp) {

@@ -32,9 +32,14 @@ void setup() {
   // This prevents "Rejecting MCU frame before link synchronisation" errors.
   // Non-blocking LED blink continues while waiting for handshake.
   {
+    const uint32_t sync_deadline = millis() + bridge::config::SYNC_TIMEOUT_MS;
     long lastBlink = 0;
     bool ledState = false;
     while (!Bridge.isSynchronized()) {
+      if (static_cast<int32_t>(millis() - sync_deadline) > 0) {
+        Bridge.enterSafeState();
+        break;
+      }
       Bridge.process();
       if (millis() - lastBlink > 100) {
         lastBlink = millis();
@@ -44,7 +49,9 @@ void setup() {
     }
   }
 
-  digitalWrite(13, HIGH);  // Indicate handshake complete
+  if (Bridge.isSynchronized()) {
+    digitalWrite(13, HIGH);  // Indicate handshake complete
+  }
 }
 
 void loop() {

@@ -330,11 +330,9 @@ void BridgeClass::begin(uint32_t baudrate, const char* secret) {
   // [SIL-2/H-2] Handshake response watchdog: fires EvTimeout if MPU does not
   // complete CMD_LINK_SYNC within _response_timeout_ms after a reset.
   // Period is refreshed dynamically on every CMD_LINK_RESET.
-  _timers.register_timer(
-      []() { Bridge._onHandshakeTimeout(); },
-      static_cast<uint16_t>(
-          etl::min(static_cast<uint32_t>(UINT16_MAX), _response_timeout_ms)),
-      etl::timer::mode::SINGLE_SHOT);
+  _timers.register_timer([]() { Bridge._onHandshakeTimeout(); },
+                         _response_timeout_ms,
+                         etl::timer::mode::SINGLE_SHOT);
 
   _packet_serial.setPacketHandler(
       etl::delegate<void(etl::span<const uint8_t>)>::create<
@@ -749,7 +747,9 @@ void BridgeClass::_handleLinkSync(const bridge::router::CommandContext& ctx,
   // [SIL-2/H-2] Handshake complete: cancel the watchdog timer so it does not
   // fire a spurious EvTimeout after a successful synchronisation.
   _timers.stop(bridge::scheduler::TIMER_HANDSHAKE_TIMEOUT);
-  (void)send(rpc::CommandId::CMD_LINK_SYNC_RESP, ctx.sequence_id, resp);
+  if (!send(rpc::CommandId::CMD_LINK_SYNC_RESP, ctx.sequence_id, resp)) {
+    enterSafeState();
+  }
 }
 
 void BridgeClass::_handleLinkReset(const bridge::router::CommandContext& ctx) {
@@ -769,7 +769,9 @@ void BridgeClass::_handleLinkReset(const bridge::router::CommandContext& ctx) {
   _timers.set_period(bridge::scheduler::TIMER_HANDSHAKE_TIMEOUT,
                      _response_timeout_ms);
   _timers.start(bridge::scheduler::TIMER_HANDSHAKE_TIMEOUT);
-  (void)sendFrame(rpc::CommandId::CMD_LINK_RESET_RESP, ctx.sequence_id);
+  if (!sendFrame(rpc::CommandId::CMD_LINK_RESET_RESP, ctx.sequence_id)) {
+    enterSafeState();
+  }
 }
 
 void BridgeClass::_handleStatusAck(
@@ -831,8 +833,16 @@ bool BridgeClass::_isSecurityCheckPassed(uint16_t cmd) const {
   return _fsm.isSynchronized();
 }
 
-void BridgeClass::signalXoff() { (void)sendFrame(rpc::CommandId::CMD_XOFF); }
-void BridgeClass::signalXon() { (void)sendFrame(rpc::CommandId::CMD_XON); }
+void BridgeClass::signalXoff() {
+  if (!sendFrame(rpc::CommandId::CMD_XOFF)) {
+    enterSafeState();
+  }
+}
+void BridgeClass::signalXon() {
+  if (!sendFrame(rpc::CommandId::CMD_XON)) {
+    enterSafeState();
+  }
+}
 
 bool BridgeClass::_decodePayload(const bridge::router::CommandContext& ctx,
                                  const pb_msgdesc_t* fields, void* dest) {

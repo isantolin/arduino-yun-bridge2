@@ -99,12 +99,6 @@ void ProcessClass::kill(int32_t pid) {
       etl::string_view(rpc::status_reason::PROCESS_KILL_FAILED));
 }
 
-void ProcessClass::_onKillNotification(const rpc::payload::ProcessKill&) {
-  // Linux notifies MCU that a process was killed. Clear local queues only —
-  // do NOT re-send CMD_PROCESS_KILL (that would create an echo loop).
-  reset();
-}
-
 void ProcessClass::_onRunAsyncResponse(
     const rpc::payload::ProcessRunAsyncResponse& msg) {
   if (_pending_run_async.empty()) return;

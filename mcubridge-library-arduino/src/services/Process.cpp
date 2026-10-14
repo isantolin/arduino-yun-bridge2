@@ -101,21 +101,25 @@ void ProcessClass::kill(int32_t pid) {
 
 void ProcessClass::_onRunAsyncResponse(
     const rpc::payload::ProcessRunAsyncResponse& msg) {
-  if (_pending_run_async.empty()) return;
-  const ProcessRunHandler handler = _pending_run_async.front();
-  _pending_run_async.pop();
-  handler(static_cast<int32_t>(msg.pid));
+  _pending_run_async.dispatch(
+      msg, [](const ProcessRunHandler& handler,
+              const rpc::payload::ProcessRunAsyncResponse& response) {
+        handler(static_cast<int32_t>(response.pid));
+      });
 }
 
 void ProcessClass::_onPollResponse(
     const rpc::payload::ProcessPollResponse& msg) {
-  if (_pending_polls.empty()) return;
-  const PendingPoll pending = _pending_polls.front();
-  _pending_polls.pop();
-  pending.second(
-      static_cast<rpc::StatusCode>(msg.status), msg.exit_code,
-      etl::span<const uint8_t>(msg.stdout_data.bytes, msg.stdout_data.size),
-      etl::span<const uint8_t>(msg.stderr_data.bytes, msg.stderr_data.size));
+  _pending_polls.dispatch(
+      msg, [](const PendingPoll& pending,
+              const rpc::payload::ProcessPollResponse& response) {
+        pending.second(
+            static_cast<rpc::StatusCode>(response.status), response.exit_code,
+            etl::span<const uint8_t>(response.stdout_data.bytes,
+                                     response.stdout_data.size),
+            etl::span<const uint8_t>(response.stderr_data.bytes,
+                                     response.stderr_data.size));
+      });
 }
 
 void ProcessClass::reset() {

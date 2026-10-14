@@ -237,6 +237,41 @@ void test_spi_data_modes_map_to_native_settings() {
   SPIService.end();
 }
 
+static bool g_rpc_mgr_cb_called = false;
+static void test_rpc_mgr_callback(const rpc::payload::DatastoreGetResponse&) {
+  g_rpc_mgr_cb_called = true;
+}
+
+void test_pending_rpc_manager() {
+  bridge::PendingRpcManager<rpc::payload::DatastoreGetResponse, 2> mgr;
+  TEST_ASSERT_TRUE(mgr.empty());
+  TEST_ASSERT_FALSE(mgr.full());
+  TEST_ASSERT_EQUAL(0, mgr.size());
+  TEST_ASSERT_EQUAL(2, mgr.capacity());
+  TEST_ASSERT_EQUAL(2, mgr.available());
+
+  auto h = bridge::PendingRpcManager<
+      rpc::payload::DatastoreGetResponse,
+      2>::HandlerType::create<test_rpc_mgr_callback>();
+  TEST_ASSERT_TRUE(mgr.push(h));
+  TEST_ASSERT_EQUAL(1, mgr.size());
+  TEST_ASSERT_TRUE(mgr.push(h));
+  TEST_ASSERT_FALSE(mgr.push(h));
+  TEST_ASSERT_TRUE(mgr.full());
+
+  rpc::payload::DatastoreGetResponse resp = {};
+  g_rpc_mgr_cb_called = false;
+  TEST_ASSERT_TRUE(mgr.dispatch(
+      resp, [](const auto& handler, const auto& msg) { handler(msg); }));
+  TEST_ASSERT_TRUE(g_rpc_mgr_cb_called);
+  TEST_ASSERT_EQUAL(1, mgr.size());
+  mgr.pop();
+  TEST_ASSERT_TRUE(mgr.empty());
+  TEST_ASSERT_FALSE(mgr.dispatch(resp, [](const auto&, const auto&) {}));
+  mgr.clear();
+  TEST_ASSERT_TRUE(mgr.empty());
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_all_handlers_coverage);
@@ -246,5 +281,6 @@ int main() {
   RUN_TEST(test_mailbox_api);
   RUN_TEST(test_send_pin_event_api);
   RUN_TEST(test_spi_data_modes_map_to_native_settings);
+  RUN_TEST(test_pending_rpc_manager);
   return UNITY_END();
 }

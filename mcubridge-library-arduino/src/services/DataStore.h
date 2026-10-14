@@ -4,12 +4,12 @@
 #undef min
 #undef max
 #include <etl/delegate.h>
-#include <etl/queue.h>
 #include <etl/span.h>
 #include <etl/string.h>
 #include <etl/string_view.h>
 
 #include "Bridge.h"
+#include "protocol/PendingRpc.h"
 #include "protocol/rpc_structs.h"
 
 class DataStoreClass : public bridge::BridgeObserver {
@@ -25,7 +25,9 @@ class DataStoreClass : public bridge::BridgeObserver {
 
   void onLost() override { _pending_gets.clear(); }
 
-  etl::queue<GetHandler, bridge::config::MAX_PENDING_DATASTORE> _pending_gets;
+  bridge::PendingRpcManager<rpc::payload::DatastoreGetResponse,
+                            bridge::config::MAX_PENDING_DATASTORE, GetHandler>
+      _pending_gets;
 };
 
 using DataStoreType = DataStoreClass;

@@ -8,6 +8,7 @@
 #include <etl/string_view.h>
 
 #include "Bridge.h"
+#include "protocol/PendingRpc.h"
 #include "protocol/rpc_structs.h"
 
 class FileSystemClass : public bridge::BridgeObserver {
@@ -24,10 +25,11 @@ class FileSystemClass : public bridge::BridgeObserver {
   static void _onRemove(const rpc::payload::FileRemove& msg);
   void _onResponse(const rpc::payload::FileReadResponse& msg);
 
-  void onLost() override { _read_handler = FileSystemReadHandler{}; }
+  void onLost() override { _pending_reads.clear(); }
 
- private:
-  FileSystemReadHandler _read_handler;
+  bridge::PendingRpcManager<rpc::payload::FileReadResponse, 1,
+                            FileSystemReadHandler>
+      _pending_reads;
 };
 
 using FileSystemType = FileSystemClass;

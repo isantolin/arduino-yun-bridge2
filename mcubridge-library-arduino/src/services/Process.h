@@ -4,12 +4,12 @@
 #undef min
 #undef max
 #include <etl/delegate.h>
-#include <etl/queue.h>
 #include <etl/span.h>
 #include <etl/string_view.h>
 #include <etl/utility.h>
 
 #include "Bridge.h"
+#include "protocol/PendingRpc.h"
 #include "protocol/rpc_protocol.h"
 #include "protocol/rpc_structs.h"
 
@@ -34,9 +34,13 @@ class ProcessClass : public bridge::BridgeObserver {
 
   void onLost() override { reset(); }
 
-  etl::queue<ProcessRunHandler, bridge::config::MAX_PENDING_PROCESS_POLLS>
+  bridge::PendingRpcManager<rpc::payload::ProcessRunAsyncResponse,
+                            bridge::config::MAX_PENDING_PROCESS_POLLS,
+                            ProcessRunHandler>
       _pending_run_async;
-  etl::queue<PendingPoll, bridge::config::MAX_PENDING_PROCESS_POLLS>
+  bridge::PendingRpcManager<rpc::payload::ProcessPollResponse,
+                            bridge::config::MAX_PENDING_PROCESS_POLLS,
+                            PendingPoll>
       _pending_polls;
 };
 

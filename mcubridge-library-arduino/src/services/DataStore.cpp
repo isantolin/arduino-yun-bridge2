@@ -37,14 +37,14 @@ void DataStoreClass::get(etl::string_view key,
 
 void DataStoreClass::_onResponse(
     const rpc::payload::DatastoreGetResponse& msg) {
-  if (_pending_gets.empty()) return;
-
-  const GetHandler handler = _pending_gets.front();
-  _pending_gets.pop();
-  if (!handler.is_valid()) return;
-
-  handler(etl::string_view(),
-          etl::span<const uint8_t>(msg.value.bytes, msg.value.size));
+  _pending_gets.dispatch(
+      msg, [](const GetHandler& handler,
+              const rpc::payload::DatastoreGetResponse& response) {
+        if (!handler.is_valid()) return;
+        handler(etl::string_view(),
+                etl::span<const uint8_t>(response.value.bytes,
+                                         response.value.size));
+      });
 }
 
 DataStoreType DataStore;

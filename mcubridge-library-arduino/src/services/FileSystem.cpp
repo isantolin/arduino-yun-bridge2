@@ -27,7 +27,8 @@ void FileSystemClass::write(etl::string_view path,
 void FileSystemClass::read(
     etl::string_view path,
     typename FileSystemClass::FileSystemReadHandler handler) {
-  _read_handler = handler;
+  _pending_reads.clear();
+  _pending_reads.push(handler);
   rpc::payload::FileRead p = {};
   rpc::Payload::copy_to_pb_string(p.path, path);
 
@@ -107,11 +108,12 @@ void FileSystemClass::_onRemove(const rpc::payload::FileRemove& msg) {
 }
 
 void FileSystemClass::_onResponse(const rpc::payload::FileReadResponse& msg) {
-  if (_read_handler.is_valid()) {
-    auto handler = _read_handler;
-    if (msg.content.size == 0U) {
-      _read_handler = FileSystemReadHandler{};
-    }
+  if (_pending_reads.empty()) return;
+  const FileSystemReadHandler handler = _pending_reads.front();
+  if (msg.content.size == 0U) {
+    _pending_reads.pop();
+  }
+  if (handler.is_valid()) {
     handler(etl::span<const uint8_t>(msg.content.bytes, msg.content.size));
   }
 }

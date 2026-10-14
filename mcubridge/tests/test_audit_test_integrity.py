@@ -8,6 +8,8 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from tools.audit.audit_test_integrity import (
     audit_cpp_tests,
     audit_python_tests,
@@ -81,7 +83,14 @@ def test_audit_cpp_tests_detects_empty_assertions(tmp_path: Path) -> None:
 
 def test_main_cli_success() -> None:
     """Verify main() CLI executes cleanly without raising SystemExit on compliant repo."""
-    try:
+    main(strict=True)
+
+
+def test_main_cli_failure_on_violations(tmp_path: Path) -> None:
+    """Verify main() CLI exits with code 1 when violations are detected."""
+    fake_test = tmp_path / "mcubridge" / "tests" / "test_empty.py"
+    fake_test.parent.mkdir(parents=True, exist_ok=True)
+    fake_test.write_text("def test_empty(): pass\n", encoding="utf-8")
+    with patch("tools.audit.audit_test_integrity.ROOT", tmp_path), pytest.raises(SystemExit) as exc:
         main(strict=True)
-    except SystemExit as exc:
-        assert exc.code == 0
+    assert exc.value.code == 1

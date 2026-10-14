@@ -266,7 +266,11 @@ def audit_test_only_hooks() -> list[str]:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 name = node.name
                 if (
-                    name.startswith(("__", "ubus_handle_", "on_mcu_", "handle_", "_on_mcu_", "on_enter_", "on_exit_")) or name[0].isupper() or name in IGNORED_IDENTIFIERS or len(name) < 4 or name in ALLOWLIST_PY_HELPERS
+                    name.startswith(("__", "ubus_handle_", "on_mcu_", "handle_", "_on_mcu_", "on_enter_", "on_exit_"))
+                    or name[0].isupper()
+                    or name in IGNORED_IDENTIFIERS
+                    or len(name) < 4
+                    or name in ALLOWLIST_PY_HELPERS
                 ):
                     continue
 

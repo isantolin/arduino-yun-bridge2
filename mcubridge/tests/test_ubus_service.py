@@ -452,6 +452,7 @@ async def test_ubus_service_run_loop(mock_runtime: MockRuntimeFacade, mocker: Mo
     mock_ubus.loop.assert_not_called()
 
     service.connection = MagicMock()
+    service.is_active = True
 
     async def cancel_soon() -> None:
         await asyncio.sleep(0.02)
@@ -527,6 +528,7 @@ def test_ubus_service_notify_branches(mock_runtime: MockRuntimeFacade, mocker: M
 
     mock_conn = MagicMock()
     service.connection = mock_conn
+    service.is_active = True
 
     # Successful notification
     assert service.notify("sync", {"status": "ok"}) is True
@@ -540,12 +542,14 @@ def test_ubus_service_notify_branches(mock_runtime: MockRuntimeFacade, mocker: M
     mock_ubus = MagicMock(spec=["send"])
     service_fb = UbusService(mock_runtime, ubus_module=mock_ubus)
     service_fb.connection = object()
+    service_fb.is_active = True
     assert service_fb.notify("sync", {"status": "ok"}) is True
     mock_ubus.send.assert_called_once_with("mcubridge.sync", {"status": "ok"})
 
     # Fallback when neither _conn nor ubus has send method
     service_no_send = UbusService(mock_runtime, ubus_module=MagicMock(spec=[]))
     service_no_send.connection = object()
+    service_no_send.is_active = True
     assert service_no_send.notify("sync", {"status": "ok"}) is True
 
 

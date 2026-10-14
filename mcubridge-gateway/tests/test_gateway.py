@@ -36,8 +36,8 @@ from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
 run_state_machine_as_test: Callable[[type[RuleBasedStateMachine]], None] = cast(
-    Any, h_stateful.run_state_machine_as_test
-)
+    Any, h_stateful
+).run_state_machine_as_test
 
 
 @pytest.fixture

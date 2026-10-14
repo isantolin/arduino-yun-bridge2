@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 from binascii import crc32
 from collections.abc import Callable
-from typing import Annotated, ClassVar
+from typing import Annotated, Any, ClassVar, cast
 
 from cobs import cobsr
 import hypothesis.stateful as h_stateful
@@ -25,7 +25,9 @@ from mcubridge.protocol import mcubridge_pb2 as pb
 from mcubridge.protocol import protocol
 from mcubridge.protocol.frame import build_frame
 
-run_state_machine_as_test: Callable[[type[RuleBasedStateMachine]], None] = h_stateful.run_state_machine_as_test
+run_state_machine_as_test: Callable[[type[RuleBasedStateMachine]], None] = cast(
+    Any, h_stateful
+).run_state_machine_as_test
 
 cli = typer.Typer(help="[MIL-SPEC/SIL-2] McuBridge Protocol Stateful Fuzzer", add_completion=False)
 logger = structlog.get_logger("protocol_fuzzer")

@@ -30,8 +30,8 @@ from mcubridge.state.context import (
 )
 
 run_state_machine_as_test: Callable[[type[RuleBasedStateMachine]], None] = cast(
-    Any, h_stateful.run_state_machine_as_test
-)
+    Any, h_stateful
+).run_state_machine_as_test
 
 
 class LinkConnectionStateMachine(RuleBasedStateMachine):

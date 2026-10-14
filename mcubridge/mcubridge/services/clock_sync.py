@@ -68,12 +68,29 @@ class ClockSyncService:
         """Return reference to active background worker task, if any."""
         return self._task
 
+    async def run(self) -> None:
+        """Run periodic clock synchronization worker within supervisor TaskGroup. [SIL-2]"""
+        self._is_running = True
+        try:
+            await self._sync_loop()
+        finally:
+            self._is_running = False
+            self.fsm.disconnect()
+
     async def start(self) -> None:
         """Start periodic clock synchronization background worker."""
         if self._is_running:
             return
         self._is_running = True
         self._task = asyncio.create_task(self._sync_loop(), name="clock-sync-worker")
+
+    def stop_sync(self) -> None:
+        """Synchronously request stop of clock synchronization worker."""
+        self._is_running = False
+        if self._task and not self._task.done():
+            self._task.cancel()
+            self._task = None
+        self.fsm.disconnect()
 
     async def stop(self) -> None:
         """Stop periodic clock synchronization background worker."""

@@ -144,9 +144,15 @@ def load_manifest() -> ManifestData:
     return ManifestData(runtime=normalized_runtime, cpp=normalized_cpp, dev=normalized_dev)
 
 
-def collect_pip_specs(deps: Sequence[DepEntry]) -> list[str]:
-    # Mantiene todo EXCEPTO los paquetes exclusivos de sistema (uci)
-    specs = {dep["pip"] for dep in deps if dep.get("pip")}
+def collect_pip_specs(deps: Sequence[DepEntry], *, gateway: bool = False) -> list[str]:
+    # Mantiene todo EXCEPTO los paquetes exclusivos de sistema (uci), build-only y edge=false
+    specs = {
+        dep["pip"]
+        for dep in deps
+        if dep.get("pip")
+        and dep["name"] not in BUILD_ONLY_PACKAGES
+        and (gateway or dep.get("edge", True))
+    }
     filtered = {s for s in specs if not any(s.startswith(p) for p in SYSTEM_ONLY_PACKAGES)}
     return sorted(filtered)
 
@@ -178,7 +184,7 @@ def write_requirements(deps: Sequence[DepEntry], *, dry_run: bool = False) -> bo
 
 def write_gateway_requirements(deps: Sequence[DepEntry], *, dry_run: bool = False) -> bool:
     gateway_deps = [dep for dep in deps if dep.get("gateway")]
-    pip_specs = collect_pip_specs(gateway_deps)
+    pip_specs = collect_pip_specs(gateway_deps, gateway=True)
     content = ["# Generated via tools/audit/sync_runtime_deps.py; do not edit."]
     content.extend(pip_specs)
     return _write_if_changed(GATEWAY_REQUIREMENTS_PATH, "\n".join(content) + "\n", dry_run=dry_run)
@@ -189,13 +195,7 @@ def update_pyproject(deps: Sequence[DepEntry], *, dry_run: bool = False) -> bool
         return False
 
     # Collect only runtime dependencies for project.dependencies
-    runtime_pip_specs = sorted(
-        [
-            dep["pip"]
-            for dep in deps
-            if (dep.get("pip") and not any(dep["pip"].startswith(p) for p in SYSTEM_ONLY_PACKAGES))
-        ]
-    )
+    runtime_pip_specs = collect_pip_specs(deps)
 
     content = PYPROJECT_PATH.read_text(encoding="utf-8")
 

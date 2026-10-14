@@ -277,11 +277,13 @@ def audit_arduino_sketches() -> list[str]:
         if "Bridge.begin" in txt:
             if not sync_pattern.search(txt):
                 violations.append(
-                    f"[{p.relative_to(ROOT)}] Rule 26 Violation: Sketch lacks bounded 'Bridge.isSynchronized()' in setup()."
+                    f"[{p.relative_to(ROOT)}] Rule 26 Violation: "
+                    "Sketch lacks bounded 'Bridge.isSynchronized()' in setup()."
                 )
             elif not bound_pattern.search(txt):
                 violations.append(
-                    f"[{p.relative_to(ROOT)}] Rule 26 Violation: Sketch 'Bridge.isSynchronized()' loop is unbounded (missing timeout/safe state)."
+                    f"[{p.relative_to(ROOT)}] Rule 26 Violation: "
+                    "Sketch 'Bridge.isSynchronized()' loop is unbounded (missing timeout/safe state)."
                 )
     return violations
 

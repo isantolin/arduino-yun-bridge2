@@ -23,7 +23,7 @@ def hexdump_processor(_: Any, __: str, event_dict: structlog.types.EventDict) ->
     return event_dict
 
 
-_CURRENT_HANDLER: logging.Handler | None = None
+_current_handler: logging.Handler | None = None
 
 
 def configure_logging(
@@ -36,7 +36,7 @@ def configure_logging(
 
     Centralized Single Source of Truth for logging configuration across the ecosystem.
     """
-    global _CURRENT_HANDLER
+    global _current_handler
     if debug is not None:
         is_debug = debug
     elif config is not None:
@@ -96,21 +96,21 @@ def configure_logging(
     handler.setFormatter(formatter)
 
     root_logger = logging.getLogger()
-    if _CURRENT_HANDLER is not None and _CURRENT_HANDLER in root_logger.handlers:
-        root_logger.removeHandler(_CURRENT_HANDLER)
-        _CURRENT_HANDLER.close()
+    if _current_handler is not None and _current_handler in root_logger.handlers:
+        root_logger.removeHandler(_current_handler)
+        _current_handler.close()
     root_logger.addHandler(handler)
-    _CURRENT_HANDLER = handler
+    _current_handler = handler
     root_logger.setLevel(level)
     logging.getLogger("statemachine").setLevel(logging.WARNING)
 
 
 def reset_handlers() -> None:
     """Close and clear all handlers on the root logger."""
-    global _CURRENT_HANDLER
+    global _current_handler
     root_logger = logging.getLogger()
-    if _CURRENT_HANDLER is not None and _CURRENT_HANDLER in root_logger.handlers:
-        root_logger.removeHandler(_CURRENT_HANDLER)
-        _CURRENT_HANDLER.close()
-        _CURRENT_HANDLER = None
+    if _current_handler is not None and _current_handler in root_logger.handlers:
+        root_logger.removeHandler(_current_handler)
+        _current_handler.close()
+        _current_handler = None
     logging.lastResort = None

@@ -163,7 +163,7 @@ rationale = "PEP 8 canonical code formatter required for generated code and deve
 [[dependency]]
 name = "nanopb"
 openwrt = "nanopb"
-pip = "nanopb==0.4.9.1"
+pip = "nanopb==0.4.9.2"
 rationale = "Zero-heap C protobuf generator and runtime library [BUILD-ONLY]"
 
 [[dependency]]

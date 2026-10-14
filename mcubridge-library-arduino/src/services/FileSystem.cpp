@@ -46,9 +46,10 @@ void FileSystemClass::_onWrite(const rpc::payload::FileWrite& msg) {
   auto res = bridge::hal::writeFile(
       etl::string_view(msg.path),
       etl::span<const uint8_t>(msg.data.bytes, msg.data.size));
-  if (!Bridge.sendFrame(res ? rpc::StatusCode::STATUS_OK
-                            : rpc::StatusCode::STATUS_ERROR)) {
-    Bridge.enterSafeState();
+  const bool sent = Bridge.sendFrame(res ? rpc::StatusCode::STATUS_OK
+                                         : rpc::StatusCode::STATUS_ERROR);
+  if (!sent) {
+    return;
   }
 }
 
@@ -72,9 +73,8 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
         auto res = bridge::hal::readFileChunk(
             path, offset, etl::span<uint8_t>(buffer.data(), buffer.size()));
         if (!res) {
-          if (!Bridge.sendFrame(rpc::StatusCode::STATUS_ERROR)) {
-            Bridge.enterSafeState();
-          }
+          const bool sent = Bridge.sendFrame(rpc::StatusCode::STATUS_ERROR);
+          (void)sent;
           finished = true;
           return;
         }
@@ -84,16 +84,15 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
             p.content,
             etl::span<const uint8_t>(buffer.data(), res->bytes_read));
         if (!Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 0, p)) {
-          Bridge.enterSafeState();
           finished = true;
           return;
         }
 
         if (!res->has_more) {
           rpc::payload::FileReadResponse empty_p = {};
-          if (!Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 0, empty_p)) {
-            Bridge.enterSafeState();
-          }
+          const bool sent =
+              Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 0, empty_p);
+          (void)sent;
           finished = true;
           return;
         }
@@ -104,9 +103,10 @@ void FileSystemClass::_onRead(const rpc::payload::FileRead& msg) {
 
 void FileSystemClass::_onRemove(const rpc::payload::FileRemove& msg) {
   auto res = bridge::hal::removeFile(etl::string_view(msg.path));
-  if (!Bridge.sendFrame(res ? rpc::StatusCode::STATUS_OK
-                            : rpc::StatusCode::STATUS_ERROR)) {
-    Bridge.enterSafeState();
+  const bool sent = Bridge.sendFrame(res ? rpc::StatusCode::STATUS_OK
+                                         : rpc::StatusCode::STATUS_ERROR);
+  if (!sent) {
+    return;
   }
 }
 

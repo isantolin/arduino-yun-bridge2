@@ -230,7 +230,7 @@ def build_qemu_cmd(apk_disk: str, extroot_disk: str) -> list[str]:
         "-drive",
         f"file={extroot_disk},format=raw,if=ide",  # sdc — extroot target
         "-append",
-        "root=/dev/sda console=ttyS0",
+        "root=/dev/sda rw console=ttyS0",
         "-nographic",
         "-serial",
         "mon:stdio",

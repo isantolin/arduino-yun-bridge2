@@ -10,8 +10,7 @@ from __future__ import annotations
 
 import asyncio
 from binascii import crc32
-from collections.abc import Callable
-from typing import Annotated, ClassVar, cast
+from typing import Annotated, ClassVar
 
 from cobs import cobsr
 from hypothesis import strategies as st

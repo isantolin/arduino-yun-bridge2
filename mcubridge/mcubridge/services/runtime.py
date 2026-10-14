@@ -522,6 +522,7 @@ class BridgeService:
 
     def cleanup(self) -> None:
         self.ubus_service.stop()
+        self.clock_sync.stop_sync()
 
         self.serial = None
         # [SIL-2] Async spool close is handled by run() finally block.
@@ -1515,7 +1516,7 @@ class BridgeService:
                 tg.create_task(
                     self.supervise(
                         "clock-sync",
-                        self.clock_sync.start,
+                        self.clock_sync.run,
                     )
                 )
 

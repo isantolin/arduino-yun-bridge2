@@ -386,7 +386,7 @@ class UbusService:
 
     def run_sync(self, coro: Any) -> Any:
         """Execute a coroutine synchronously in a running or fresh event loop. [SIL-2]"""
-        target_loop = self._loop
+        target_loop = self.loop
         if target_loop is not None and target_loop.is_running():
             try:
                 current_loop = asyncio.get_running_loop()
@@ -422,7 +422,11 @@ class UbusService:
         try:
             if hasattr(self.connection, "send") and callable(self.connection.send):
                 self.connection.send(f"mcubridge.{event_type}", data)
-            elif self.ubus_backend is not None and hasattr(self.ubus_backend, "send") and callable(self.ubus_backend.send):
+            elif (
+                self.ubus_backend is not None
+                and hasattr(self.ubus_backend, "send")
+                and callable(self.ubus_backend.send)
+            ):
                 self.ubus_backend.send(f"mcubridge.{event_type}", data)
             return True
         except (OSError, RuntimeError) as exc:
@@ -450,7 +454,11 @@ class UbusService:
                     self.connection.close()
                 elif hasattr(self.connection, "disconnect") and callable(self.connection.disconnect):
                     self.connection.disconnect()
-                elif self.ubus_backend is not None and hasattr(self.ubus_backend, "disconnect") and callable(self.ubus_backend.disconnect):
+                elif (
+                    self.ubus_backend is not None
+                    and hasattr(self.ubus_backend, "disconnect")
+                    and callable(self.ubus_backend.disconnect)
+                ):
                     self.ubus_backend.disconnect()
             except (OSError, RuntimeError) as exc:
                 logger.debug("Error during UBUS disconnect", error=str(exc))

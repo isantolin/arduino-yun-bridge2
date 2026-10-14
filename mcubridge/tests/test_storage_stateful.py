@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import collections
-from collections.abc import Callable
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import cast
 
 import pytest
 from hypothesis import strategies as st

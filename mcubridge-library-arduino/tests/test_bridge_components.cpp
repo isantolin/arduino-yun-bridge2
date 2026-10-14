@@ -600,7 +600,8 @@ void test_filesystem_edges() {
   // 8. Large file multi-chunk reading
   etl::array<uint8_t, 100> large_data;
   large_data.fill(0xAA);
-  bridge::hal::writeFile("test_large.txt", large_data);
+  auto res_w1 = bridge::hal::writeFile("test_large.txt", large_data);
+  TEST_ASSERT_TRUE(res_w1.has_value());
   rpc_pb_FileRead req_large = {};
   strncpy(req_large.path, "test_large.txt", sizeof(req_large.path));
   FileSystem._onRead(req_large);
@@ -615,7 +616,8 @@ void test_filesystem_edges() {
   ba.setTxEnabled(true);
 
   // 10. Empty file (to_copy == 0)
-  bridge::hal::writeFile("empty.txt", etl::span<const uint8_t>());
+  auto res_w2 = bridge::hal::writeFile("empty.txt", etl::span<const uint8_t>());
+  TEST_ASSERT_TRUE(res_w2.has_value());
   rpc_pb_FileRead fread_empty = {};
   const char* empty_path = "empty.txt";
   etl::copy_n(empty_path, strlen(empty_path), fread_empty.path);
@@ -623,6 +625,7 @@ void test_filesystem_edges() {
 
   // 11. Observer onLost
   FileSystem.onLost();
+  TEST_ASSERT_FALSE(Bridge.isSynchronized());
 }
 
 void test_spi_edges() {

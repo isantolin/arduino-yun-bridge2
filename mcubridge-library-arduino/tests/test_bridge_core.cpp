@@ -14,9 +14,29 @@
 #include "hal/hal.h"
 #include "security/security.h"
 #include "services/Console.h"
+#include "services/SPIService.h"
 #include "test_support.h"  // IWYU pragma: keep
 
 using namespace bridge::test;
+
+class FlowControlStream final : public Stream {
+ public:
+  int available() override {
+    const int result =
+        _available_calls++ == 0
+            ? 0
+            : static_cast<int>(bridge::config::FLOW_CONTROL_XON_THRESHOLD);
+    return result;
+  }
+  int read() override { return -1; }
+  int peek() override { return -1; }
+  size_t write(uint8_t) override { return 1U; }
+  size_t write(const uint8_t*, size_t size) override { return size; }
+  void flush() override {}
+
+ private:
+  int _available_calls = 0;
+};
 
 void setUp() {}
 void tearDown() {}
@@ -943,6 +963,7 @@ void test_bridge_fault_injection_kat_and_post() {
   ba.onAckTimeout();
 
   // 10. handleSpiTransfer with to_copy > 0 and send failure
+  SPIService.begin();
   rpc_pb_SpiTransfer spi_req_data = rpc_pb_SpiTransfer_init_default;
   spi_req_data.data.size = 2;
   spi_req_data.data.bytes[0] = 0x11;
@@ -969,6 +990,32 @@ void test_bridge_fault_injection_kat_and_post() {
   env_sync_ex.sequence_id = 151;
   env_sync_ex.which_payload_type = rpc_pb_RpcEnvelope_link_sync_tag;
   ba.dispatch(env_sync_ex);
+
+  // 13. Flow control hysteresis (line 368 branch 4)
+  FlowControlStream fc_stream;
+  reset_bridge_core(Bridge, fc_stream);
+  auto& ba_fc = TestAccessor::create(Bridge);
+  ba_fc.setSynchronized();
+  ba_fc.setSerialTaskXoffSent(true);
+  ba_fc.invokeSerialTask();
+  TEST_ASSERT_TRUE(ba_fc.isSerialXoffSent());
+
+  // 14. Unknown PinMode (line 579)
+  rpc_pb_PinMode pm_inv = rpc_pb_PinMode_init_default;
+  pm_inv.pin = 13;
+  pm_inv.mode = static_cast<rpc_pb_PinModeType>(99);
+  rpc_pb_RpcEnvelope env_pm = rpc_pb_RpcEnvelope_init_default;
+  env_pm.version = rpc::PROTOCOL_VERSION;
+  env_pm.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_SET_PIN_MODE);
+  env_pm.sequence_id = 63;
+  rpc::Payload::set<rpc_pb_PinMode>(env_pm, pm_inv);
+  ba_fc.dispatch(env_pm);
+
+  // 15. Baudrate begin with failed POST (line 309)
+  bridge::test::fault::enable(bridge::test::fault::FaultPoint::KAT_SHA256_MISMATCH);
+  Bridge.begin(115200, "secret");
+  bridge::test::fault::disable(bridge::test::fault::FaultPoint::KAT_SHA256_MISMATCH);
+
   reset_bridge_core(Bridge, stream);
 }
 

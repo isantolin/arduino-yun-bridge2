@@ -198,9 +198,7 @@ def get_ssl_context(cfg: pb.RuntimeConfig) -> Any | None:
         return None
 
     try:
-        return build_cached_ssl_context(
-            cfg.cloud_cafile, cfg.cloud_certfile, cfg.cloud_keyfile, cfg.cloud_tls_insecure
-        )
+        return build_cached_ssl_context(cfg.cloud_cafile, cfg.cloud_certfile, cfg.cloud_keyfile, cfg.cloud_tls_insecure)
     except (OSError, ssl.SSLError, ValueError) as exc:
         raise RuntimeError(f"TLS setup failed: {exc}") from exc
 

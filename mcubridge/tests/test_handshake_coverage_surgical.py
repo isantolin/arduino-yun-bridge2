@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import secrets
 from unittest.mock import AsyncMock
 
 import mcubridge.protocol.mcubridge_pb2 as pb
@@ -169,8 +170,8 @@ async def test_handle_capabilities_resp_success(mock_config: RuntimeConfig, mock
 
 def test_clear_handshake_expectations(mock_config: RuntimeConfig, mock_state: RuntimeState) -> None:
     mgr = _make_handshake_manager(mock_config, mock_state)
-    mock_state.link_handshake_nonce = b"12345678"
-    mock_state.link_expected_tag = b"abcdefgh"
+    mock_state.link_handshake_nonce = secrets.token_bytes(8)
+    mock_state.link_expected_tag = secrets.token_bytes(8)
     mock_state.link_nonce_length = 8
 
     mgr.clear_handshake_expectations()

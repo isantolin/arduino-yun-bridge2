@@ -381,12 +381,11 @@ async def test_flush_cloud_spool_publish_fails_and_degraded(
     await flush_spool()
     assert len(spool) == 1
 
-    # 2. Storage error during peek triggers degradation (lines 491-494 and 511)
     mock_bridge_state.cloud_spool_degraded = False
     mock_bridge_state.cloud_spool_failure_reason = None
     mock_stream.send_message.side_effect = None
     failing_peek = AsyncMock(side_effect=OSError("simulated_error"))
     spool.peek = failing_peek
     await flush_spool()
-    assert mock_bridge_state.cloud_spool_degraded is True
+    assert mock_bridge_state.cloud_spool_degraded
     assert mock_bridge_state.cloud_spool_failure_reason == "simulated_error"

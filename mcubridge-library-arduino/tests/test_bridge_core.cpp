@@ -8,8 +8,11 @@
 #include <etl/string_view.h>
 #include <unity.h>
 
+#include <Arduino.h>
 #include "Bridge.h"
 #include "BridgeTestInterface.h"
+#include "hal/hal.h"
+#include "security/security.h"
 #include "services/Console.h"
 #include "test_support.h"  // IWYU pragma: keep
 
@@ -426,6 +429,549 @@ void test_bridge_serial_tasks_and_flow_control() {
   TEST_ASSERT_TRUE(Bridge.isPostPassed());
 }
 
+void test_bridge_replay_and_security_edges() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
+
+  // Replay detection (Same nonce counter)
+  rpc_pb_RpcEnvelope f = rpc_pb_RpcEnvelope_init_default;
+  f.version = rpc::PROTOCOL_VERSION;
+  f.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_LINK_SYNC);
+  f.sequence_id = 1;
+  f.payload_type.encrypted_payload_with_tag.size = 32;
+  ba.dispatch(f);
+  ba.dispatch(f);
+
+  // Security failures
+  etl::array<uint8_t, 32> secret = {0};
+  etl::array<uint8_t, 12> nonce = {0};
+  etl::array<uint8_t, 16> out_tag = {0};
+  etl::array<uint8_t, 5> bad_tag = {0};
+  bool ok = rpc::security::handshake_authenticate(secret, nonce, bad_tag, out_tag);
+  TEST_ASSERT_FALSE(ok);
+
+  etl::array<uint8_t, 4> in = {1, 2, 3, 4};
+  etl::array<uint8_t, 32> key = {0};
+  etl::array<uint8_t, 4> out_payload = {0};
+  etl::array<uint8_t, 12> out_nonce = {0};
+  etl::array<uint8_t, 16> out_tag2 = {0};
+  const bool enc_ok = rpc::security::aead_encrypt_frame(
+      1, 1, in, key, nullptr, out_payload, out_nonce, out_tag2);
+  TEST_ASSERT_FALSE(enc_ok);
+
+  etl::array<uint8_t, 12> valid_nonce = {0};
+  valid_nonce[0] = 'M';
+  valid_nonce[1] = 'P';
+  valid_nonce[2] = 'U';
+  valid_nonce[11] = 1U;
+  const bool missing_replay_state = rpc::security::validate_frame_nonce(valid_nonce, nullptr);
+  TEST_ASSERT_FALSE(missing_replay_state);
+
+  etl::array<uint8_t, 10> short_nonce = {0};
+  uint64_t short_nonce_last_seen = 0U;
+  const bool short_ok = rpc::security::validate_frame_nonce(short_nonce, &short_nonce_last_seen);
+  TEST_ASSERT_FALSE(short_ok);
+
+  bool empty_tag_ok = rpc::security::handshake_authenticate(
+      secret, nonce, etl::span<const uint8_t>(), out_tag);
+  TEST_ASSERT_TRUE(empty_tag_ok);
+
+  uint64_t last_seen = 100;
+  etl::array<uint8_t, 12> old_nonce = {0};
+  old_nonce[0] = 'M';
+  old_nonce[1] = 'P';
+  old_nonce[2] = 'U';
+  old_nonce[11] = 50;
+  bool old_ok = rpc::security::validate_frame_nonce(old_nonce, &last_seen);
+  TEST_ASSERT_FALSE(old_ok);
+
+  etl::array<uint8_t, 16> wrong_tag;
+  wrong_tag.fill(0xFF);
+  bool tag_mismatch_ok = rpc::security::handshake_authenticate(secret, nonce, wrong_tag, out_tag);
+  TEST_ASSERT_FALSE(tag_mismatch_ok);
+
+  etl::array<uint8_t, 4> dec_out = {0};
+  bool dec_ok = rpc::security::aead_decrypt_frame(1, 1, in, key, valid_nonce, out_tag, dec_out);
+  TEST_ASSERT_FALSE(dec_ok);
+}
+
+void test_bridge_fsm_resets_and_link_reset() {
+  bridge::fsm::BridgeFsm unstarted_fsm;
+  TEST_ASSERT_FALSE(unstarted_fsm.isSynchronized());
+  TEST_ASSERT_FALSE(unstarted_fsm.isAwaitingAck());
+
+  BiStream stream;
+  reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+
+  ba.trigger(bridge::fsm::EvReset());
+  ba.trigger(bridge::fsm::EvHandshakeStart());
+  ba.trigger(bridge::fsm::EvReset());
+  ba.setSynchronized();
+  ba.trigger(bridge::fsm::EvReset());
+  TEST_ASSERT_FALSE(Bridge.isSynchronized());
+  TEST_ASSERT_FALSE(ba.isAwaitingAck());
+
+  // Link reset with zero envelope
+  ba.setSynchronized();
+  rpc_pb_RpcEnvelope envelope = rpc_pb_RpcEnvelope_init_zero;
+  envelope.version = rpc::PROTOCOL_VERSION;
+  envelope.command_id = rpc::to_underlying(rpc::CommandId::CMD_LINK_RESET);
+  envelope.sequence_id = 42U;
+  ba.dispatch(envelope);
+  TEST_ASSERT_FALSE(Bridge.isSynchronized());
+
+  // Link reset with unexpected payload
+  ba.setSynchronized();
+  rpc_pb_DigitalWrite unexpected_payload = rpc_pb_DigitalWrite_init_default;
+  rpc::Payload::set<rpc_pb_DigitalWrite>(envelope, unexpected_payload);
+  envelope.sequence_id = 43U;
+  ba.dispatch(envelope);
+  TEST_ASSERT_FALSE(Bridge.isSynchronized());
+
+  // LinkReset with empty payload type
+  rpc_pb_RpcEnvelope env_hc = rpc_pb_RpcEnvelope_init_default;
+  env_hc.which_payload_type = 0;
+  bridge::router::CommandContext hc_ctx(
+      &env_hc, static_cast<uint16_t>(rpc::CommandId::CMD_LINK_RESET), 44, false, false);
+  ba.handleLinkReset(hc_ctx);
+
+  // LinkReset with HandshakeConfig payload
+  envelope.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_LINK_RESET);
+  envelope.sequence_id = 90;
+  envelope.which_payload_type = rpc_pb_RpcEnvelope_encrypted_payload_with_tag_tag;
+  rpc_pb_HandshakeConfig hs_cfg = rpc_pb_HandshakeConfig_init_default;
+  hs_cfg.ack_timeout_ms = 500;
+  hs_cfg.ack_retry_limit = 5;
+  hs_cfg.response_timeout_ms = 2000;
+  pb_ostream_t hs_os = pb_ostream_from_buffer(
+      envelope.payload_type.encrypted_payload_with_tag.bytes, 100);
+  pb_encode(&hs_os, rpc_pb_HandshakeConfig_fields, &hs_cfg);
+  envelope.payload_type.encrypted_payload_with_tag.size =
+      static_cast<pb_size_t>(hs_os.bytes_written);
+  ba.dispatch(envelope);
+}
+
+void test_bridge_dispatch_extra_branches() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
+
+  // 1. _flushPendingTxQueue early return: tx disabled
+  ba.setTxEnabled(false);
+  ba.clearPendingTxQueue();
+  const bool non_system_blocked =
+      Bridge.sendFrame(rpc::CommandId::CMD_CONSOLE_WRITE, 99, {});
+  TEST_ASSERT_FALSE(non_system_blocked);
+  const bool system_command_allowed =
+      Bridge.sendFrame(rpc::CommandId::CMD_GET_VERSION, 100);
+  TEST_ASSERT_TRUE(system_command_allowed);
+  ba.setTxEnabled(true);
+
+  // 2. Set baudrate guards: same baudrate and zero baudrate
+  ba.setPendingBaudrate(115200U);
+  rpc_pb_RpcEnvelope env = rpc_pb_RpcEnvelope_init_default;
+  env.version = rpc::PROTOCOL_VERSION;
+  env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_SET_BAUDRATE);
+  env.sequence_id = 10;
+  env.which_payload_type = rpc_pb_RpcEnvelope_set_baudrate_packet_tag;
+  env.payload_type.set_baudrate_packet.baudrate = 115200U;
+  ba.dispatch(env);
+
+  env.sequence_id = 11;
+  env.payload_type.set_baudrate_packet.baudrate = 0U;
+  ba.dispatch(env);
+
+  // Valid baudrate change
+  env.sequence_id = 12;
+  env.payload_type.set_baudrate_packet.baudrate = 57600U;
+  ba.dispatch(env);
+
+  // 3. Enter bootloader: wrong magic and valid magic
+  env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_ENTER_BOOTLOADER);
+  env.sequence_id = 13;
+  env.which_payload_type = rpc_pb_RpcEnvelope_enter_bootloader_tag;
+  env.payload_type.enter_bootloader.magic = 0xDEAD;  // wrong magic
+  ba.dispatch(env);
+
+  env.sequence_id = 14;
+  env.payload_type.enter_bootloader.magic = 0xDEADBEEFU;
+  ba.dispatch(env);
+
+  // 4. Digital/analog read and write out of bounds pin
+  env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_DIGITAL_WRITE);
+  env.sequence_id = 40;
+  env.which_payload_type = rpc_pb_RpcEnvelope_digital_write_tag;
+  env.payload_type.digital_write.pin = 255U;
+  env.payload_type.digital_write.value = 1U;
+  ba.dispatch(env);
+
+  env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_ANALOG_WRITE);
+  env.sequence_id = 41;
+  env.which_payload_type = rpc_pb_RpcEnvelope_analog_write_tag;
+  env.payload_type.analog_write.pin = 255U;
+  env.payload_type.analog_write.value = 500U;
+  ba.dispatch(env);
+
+  env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_SET_PIN_MODE);
+  env.sequence_id = 42;
+  env.which_payload_type = rpc_pb_RpcEnvelope_pin_mode_tag;
+  env.payload_type.pin_mode.pin = 255U;
+  env.payload_type.pin_mode.mode = rpc_pb_PinModeType_PIN_OUTPUT;
+  ba.dispatch(env);
+
+  // Unknown pin mode on valid pin
+  env.payload_type.pin_mode.pin = 0U;
+  env.payload_type.pin_mode.mode = static_cast<rpc_pb_PinModeType>(0xFF);
+  ba.dispatch(env);
+
+  env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_DIGITAL_READ);
+  env.sequence_id = 43;
+  env.which_payload_type = rpc_pb_RpcEnvelope_pin_read_tag;
+  env.payload_type.pin_read.pin = 255U;
+  ba.dispatch(env);
+
+  env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_ANALOG_READ);
+  env.sequence_id = 44;
+  env.which_payload_type = rpc_pb_RpcEnvelope_pin_read_tag;
+  env.payload_type.pin_read.pin = 255U;
+  ba.dispatch(env);
+
+  // Digital/Analog read send fail (tx disabled)
+  ba.setTxEnabled(false);
+  env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_DIGITAL_READ);
+  env.sequence_id = 45;
+  env.payload_type.pin_read.pin = 0U;
+  ba.dispatch(env);
+
+  env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_ANALOG_READ);
+  env.sequence_id = 46;
+  env.payload_type.pin_read.pin = 0U;
+  ba.dispatch(env);
+  ba.setTxEnabled(true);
+
+  // 5. Send non-system command when tx disabled
+  ba.setTxEnabled(false);
+  rpc::payload::DigitalWrite dw_payload = {};
+  TEST_ASSERT_FALSE(Bridge.send(rpc::CommandId::CMD_DIGITAL_WRITE, 0, dw_payload));
+  ba.setTxEnabled(true);
+
+  // 6. XOFF, XON, GetFreeMemory, GetCapabilities dispatch
+  env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_XOFF);
+  env.sequence_id = 50;
+  env.which_payload_type = 0;
+  ba.dispatch(env);
+
+  env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_XON);
+  env.sequence_id = 51;
+  ba.dispatch(env);
+
+  env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_GET_FREE_MEMORY);
+  env.sequence_id = 52;
+  ba.dispatch(env);
+
+  env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_GET_CAPABILITIES);
+  env.sequence_id = 53;
+  ba.dispatch(env);
+
+  // 7. Malformed MailboxReadResp, MailboxAvailableResp, valid Process responses
+  env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_MAILBOX_READ_RESP);
+  env.sequence_id = 60;
+  env.which_payload_type = rpc_pb_RpcEnvelope_digital_write_tag;
+  ba.dispatch(env);
+
+  env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP);
+  env.sequence_id = 61;
+  ba.dispatch(env);
+
+  env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP);
+  env.sequence_id = 62;
+  env.which_payload_type = rpc_pb_RpcEnvelope_process_run_async_response_tag;
+  env.payload_type.process_run_async_response.pid = 123;
+  ba.dispatch(env);
+
+  env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_PROCESS_POLL_RESP);
+  env.sequence_id = 63;
+  env.which_payload_type = rpc_pb_RpcEnvelope_process_poll_response_tag;
+  env.payload_type.process_poll_response.exit_code = 0;
+  env.payload_type.process_poll_response.finished = true;
+  ba.dispatch(env);
+
+  // 8. SPI config & begin/end dispatch
+  env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_SPI_SET_CONFIG);
+  env.sequence_id = 80;
+  env.which_payload_type = rpc_pb_RpcEnvelope_spi_config_tag;
+  env.payload_type.spi_config.frequency = 1000000;
+  env.payload_type.spi_config.bit_order = rpc_pb_SpiBitOrder_SPI_BIT_ORDER_MSB_FIRST;
+  env.payload_type.spi_config.data_mode = rpc_pb_SpiDataMode_SPI_DATA_MODE_0;
+  ba.dispatch(env);
+
+  env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_SPI_BEGIN);
+  env.sequence_id = 81;
+  env.which_payload_type = 0;
+  ba.dispatch(env);
+
+  env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_SPI_END);
+  env.sequence_id = 82;
+  ba.dispatch(env);
+
+  // 9. Status responses
+  env.command_id = static_cast<uint16_t>(rpc::StatusCode::STATUS_OK);
+  env.sequence_id = 91;
+  ba.dispatch(env);
+
+  env.command_id = static_cast<uint16_t>(rpc::StatusCode::STATUS_MALFORMED);
+  env.sequence_id = 92;
+  ba.dispatch(env);
+
+  // 10. LinkSync with empty shared secret
+  ba.clearSharedSecret();
+  env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_LINK_SYNC);
+  env.sequence_id = 93;
+  env.which_payload_type = rpc_pb_RpcEnvelope_link_sync_tag;
+  env.payload_type.link_sync.nonce.size = 16U;
+  ba.dispatch(env);
+
+  // 11. Stale handshake timeout & 0 pending baudrate change
+  ba.setSynchronized();
+  ba.onHandshakeTimeout();
+  ba.setPendingBaudrate(0);
+  ba.onBaudrateChange();
+}
+
+size_t inject_serial_frame(BiStream& stream,
+                           const rpc_pb_RpcEnvelope& envelope) {
+  etl::array<uint8_t, rpc::MAX_FRAME_SIZE> raw_frame = {};
+  const size_t raw_frame_size = rpc::serialize_frame(envelope, raw_frame);
+  if (raw_frame_size == 0U) return 0U;
+
+  etl::array<uint8_t, rpc::MAX_FRAME_SIZE + 16U> encoded_frame = {};
+  const size_t encoded_size =
+      TestCOBS::encode(raw_frame.data(), raw_frame_size, encoded_frame.data());
+  if (encoded_size == 0U) return 0U;
+
+  stream.feed(encoded_frame.data(), encoded_size);
+  const uint8_t delimiter = rpc::RPC_FRAME_DELIMITER;
+  stream.feed(&delimiter, 1U);
+  Bridge.process();
+  return encoded_size;
+}
+
+void test_bridge_authenticated_digital_write_frame() {
+  BiStream stream;
+  stream.clear();
+  reset_bridge_core(Bridge, stream);
+  resetArduinoStubPinStates();
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setSynchronized();
+
+  etl::array<uint8_t, rpc::RPC_AEAD_KEY_SIZE> session_key = {0x15U};
+  ba.setSessionKey(session_key);
+  ba.setRxNonceCounter(0U);
+
+  rpc_pb_DigitalWrite request = rpc_pb_DigitalWrite_init_default;
+  request.pin = 13U;
+  request.value = 1U;
+  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> payload = {};
+  pb_ostream_t payload_stream =
+      pb_ostream_from_buffer(payload.data(), payload.size());
+  const bool payload_encoded =
+      pb_encode(&payload_stream,
+                rpc::Payload::get_fields<rpc_pb_DigitalWrite>(), &request);
+  TEST_ASSERT_TRUE(payload_encoded);
+
+  const uint16_t command_id =
+      rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE);
+  constexpr uint16_t sequence_id = 951U;
+  etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> ciphertext = {};
+  etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> nonce = {};
+  etl::array<uint8_t, rpc::RPC_AEAD_TAG_SIZE> tag = {};
+  uint64_t tx_nonce_counter = 0U;
+  const bool encrypted = rpc::security::aead_encrypt_frame(
+      command_id, sequence_id,
+      etl::span<const uint8_t>(payload.data(), payload_stream.bytes_written),
+      session_key, &tx_nonce_counter, ciphertext, nonce, tag,
+      rpc::RPC_MPU_AEAD_NONCE_PREFIX);
+  TEST_ASSERT_TRUE(encrypted);
+
+  const rpc_pb_RpcEnvelope envelope = rpc::build_envelope(
+      command_id, sequence_id,
+      etl::span<const uint8_t>(ciphertext.data(), payload_stream.bytes_written),
+      nonce, tag);
+  const size_t injected_size = inject_serial_frame(stream, envelope);
+  TEST_ASSERT_TRUE(injected_size > 0U);
+  TEST_ASSERT_TRUE(Bridge.isSynchronized());
+  TEST_ASSERT_EQUAL_UINT8(OUTPUT, g_arduino_stub_pin_states[13U].mode);
+  TEST_ASSERT_EQUAL_UINT8(HIGH, g_arduino_stub_pin_states[13U].value);
+  TEST_ASSERT_TRUE(stream.tx_buf.len > 0U);
+}
+
+void test_bridge_receive_security_gate_variants() {
+  BiStream stream;
+  stream.clear();
+  resetArduinoStubPinStates();
+  reset_bridge_core(Bridge, stream, 0U, nullptr);
+  auto& no_secret_bridge = TestAccessor::create(Bridge);
+  no_secret_bridge.setSynchronized();
+
+  rpc_pb_DigitalWrite plaintext_write = rpc_pb_DigitalWrite_init_default;
+  plaintext_write.pin = 13U;
+  plaintext_write.value = 1U;
+  rpc_pb_RpcEnvelope plaintext_envelope = rpc_pb_RpcEnvelope_init_zero;
+  plaintext_envelope.version = rpc::PROTOCOL_VERSION;
+  plaintext_envelope.command_id =
+      rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE);
+  plaintext_envelope.sequence_id = 952U;
+  rpc::Payload::set<rpc_pb_DigitalWrite>(plaintext_envelope, plaintext_write);
+
+  const size_t plaintext_size = inject_serial_frame(stream, plaintext_envelope);
+  TEST_ASSERT_TRUE(plaintext_size > 0U);
+  TEST_ASSERT_EQUAL_UINT8(OUTPUT, g_arduino_stub_pin_states[13U].mode);
+  TEST_ASSERT_EQUAL_UINT8(HIGH, g_arduino_stub_pin_states[13U].value);
+
+  stream.clear();
+  resetArduinoStubPinStates();
+  reset_bridge_core(Bridge, stream);
+  const uint8_t rejected_pin_mode_before = g_arduino_stub_pin_states[14U].mode;
+  const uint8_t rejected_pin_value_before =
+      g_arduino_stub_pin_states[14U].value;
+  rpc_pb_DigitalWrite rejected_write = rpc_pb_DigitalWrite_init_default;
+  rejected_write.pin = 14U;
+  rejected_write.value = 1U;
+  rpc_pb_RpcEnvelope rejected_envelope = rpc_pb_RpcEnvelope_init_zero;
+  rejected_envelope.version = rpc::PROTOCOL_VERSION;
+  rejected_envelope.command_id =
+      rpc::to_underlying(rpc::CommandId::CMD_DIGITAL_WRITE);
+  rejected_envelope.sequence_id = 953U;
+  rpc::Payload::set<rpc_pb_DigitalWrite>(rejected_envelope, rejected_write);
+
+  const size_t rejected_size = inject_serial_frame(stream, rejected_envelope);
+  TEST_ASSERT_TRUE(rejected_size > 0U);
+  TEST_ASSERT_FALSE(Bridge.isSynchronized());
+  TEST_ASSERT_EQUAL_UINT8(rejected_pin_mode_before,
+                          g_arduino_stub_pin_states[14U].mode);
+  TEST_ASSERT_EQUAL_UINT8(rejected_pin_value_before,
+                          g_arduino_stub_pin_states[14U].value);
+  TEST_ASSERT_TRUE(stream.tx_buf.len > 0U);
+
+  stream.clear();
+  reset_bridge_core(Bridge, stream);
+  auto& system_bridge = TestAccessor::create(Bridge);
+  system_bridge.setSynchronized();
+  rpc_pb_RpcEnvelope reset_envelope = rpc_pb_RpcEnvelope_init_zero;
+  reset_envelope.version = rpc::PROTOCOL_VERSION;
+  reset_envelope.command_id =
+      rpc::to_underlying(rpc::CommandId::CMD_LINK_RESET);
+  reset_envelope.sequence_id = 954U;
+
+  const size_t reset_size = inject_serial_frame(stream, reset_envelope);
+  TEST_ASSERT_TRUE(reset_size > 0U);
+  TEST_ASSERT_FALSE(Bridge.isSynchronized());
+}
+
+static bool s_custom_cmd_called = false;
+static void dummy_custom_cmd(const rpc_pb_RpcEnvelope&) {
+  s_custom_cmd_called = true;
+}
+
+static bool s_status_called = false;
+static void dummy_status_cb(rpc::StatusCode, etl::span<const uint8_t>) {
+  s_status_called = true;
+}
+
+void test_bridge_fault_injection_kat_and_post() {
+  // 1. Serial task null stream
+
+  // 3. Serial task null stream
+  BiStream stream;
+  reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+  ba.setNullStream();
+  ba.invokeSerialTask();
+  Bridge.setStream(stream);
+
+  // 4. Unknown command with custom handler registered
+  ba.setSynchronized();
+  s_custom_cmd_called = false;
+  Bridge.onCommand(etl::delegate<void(const rpc_pb_RpcEnvelope&)>::create<&dummy_custom_cmd>());
+  rpc_pb_RpcEnvelope f_unk = rpc_pb_RpcEnvelope_init_default;
+  f_unk.version = rpc::PROTOCOL_VERSION;
+  f_unk.command_id = 999;
+  ba.dispatch(f_unk);
+  TEST_ASSERT_TRUE(s_custom_cmd_called);
+  Bridge.onCommand(BridgeClass::CommandHandler());
+
+  // 5. Status malformed with status handler registered
+  s_status_called = false;
+  Bridge.onStatus(BridgeClass::StatusHandler::create<&dummy_status_cb>());
+  rpc_pb_RpcEnvelope env_mal = rpc_pb_RpcEnvelope_init_default;
+  env_mal.version = rpc::PROTOCOL_VERSION;
+  env_mal.command_id = static_cast<uint16_t>(rpc::StatusCode::STATUS_MALFORMED);
+  ba.dispatch(env_mal);
+  TEST_ASSERT_TRUE(s_status_called);
+  Bridge.onStatus(BridgeClass::StatusHandler());
+
+  // 6. LinkSync send failure
+  ba.setSynchronized();
+  ba.setTxEnabled(false);
+  rpc_pb_RpcEnvelope env_sync = rpc_pb_RpcEnvelope_init_default;
+  env_sync.version = rpc::PROTOCOL_VERSION;
+  env_sync.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_LINK_SYNC);
+  env_sync.sequence_id = 150;
+  env_sync.which_payload_type = rpc_pb_RpcEnvelope_link_sync_tag;
+  ba.dispatch(env_sync);
+  ba.setTxEnabled(true);
+
+  // 7. Decode payload with null fields or null dest
+  bridge::router::CommandContext ctx(nullptr, 0, 0, false, false);
+  TEST_ASSERT_FALSE(ba.decodePayload(ctx, nullptr, (void*)1));
+  TEST_ASSERT_FALSE(ba.decodePayload(ctx, (const pb_msgdesc_t*)1, nullptr));
+
+  // 8. Flush pending tx queue when queue is not empty but tx disabled
+  ba.setSynchronized();
+  ba.fillPendingTxQueue();
+  ba.setTxEnabled(false);
+  ba.flushPendingTxQueue();
+  ba.setTxEnabled(true);
+  ba.clearPendingTxQueue();
+
+  // 9. onAckTimeout when not awaiting ACK
+  ba.setSynchronized();
+  ba.onAckTimeout();
+
+  // 10. handleSpiTransfer with to_copy > 0 and send failure
+  rpc_pb_SpiTransfer spi_req_data = rpc_pb_SpiTransfer_init_default;
+  spi_req_data.data.size = 2;
+  spi_req_data.data.bytes[0] = 0x11;
+  spi_req_data.data.bytes[1] = 0x22;
+  bridge::router::CommandContext spi_ctx_data(nullptr, static_cast<uint16_t>(rpc::CommandId::CMD_SPI_TRANSFER), 99, false, false);
+  ba.handleSpiTransfer(spi_ctx_data, spi_req_data);
+  ba.setTxEnabled(false);
+  ba.handleSpiTransfer(spi_ctx_data, spi_req_data);
+  ba.setTxEnabled(true);
+
+  // 11. Reliable command pb_encode failure (line 874)
+  rpc_pb_ProcessRunAsync large_p = rpc_pb_ProcessRunAsync_init_default;
+  etl::fill_n(large_p.command, 250, 'X');
+  const bool send_res = Bridge.send(rpc::CommandId::CMD_PROCESS_RUN_ASYNC, 1, large_p,
+                                    rpc_pb_ChannelId_CHANNEL_CONTROL, rpc_pb_QosProfile_QOS_RELIABLE);
+  (void)send_res;
+
+  // 12. LinkSync send failure via pool exhaustion
+  ba.setSynchronized();
+  ba.exhaustTxPayloadPool();
+  rpc_pb_RpcEnvelope env_sync_ex = rpc_pb_RpcEnvelope_init_default;
+  env_sync_ex.version = rpc::PROTOCOL_VERSION;
+  env_sync_ex.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_LINK_SYNC);
+  env_sync_ex.sequence_id = 151;
+  env_sync_ex.which_payload_type = rpc_pb_RpcEnvelope_link_sync_tag;
+  ba.dispatch(env_sync_ex);
+  reset_bridge_core(Bridge, stream);
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_bridge_initialization);
@@ -445,5 +991,11 @@ int main() {
   RUN_TEST(test_bridge_post_failure);
   RUN_TEST(test_bridge_frame_errors_and_zero_spi);
   RUN_TEST(test_bridge_serial_tasks_and_flow_control);
+  RUN_TEST(test_bridge_replay_and_security_edges);
+  RUN_TEST(test_bridge_fsm_resets_and_link_reset);
+  RUN_TEST(test_bridge_dispatch_extra_branches);
+  RUN_TEST(test_bridge_authenticated_digital_write_frame);
+  RUN_TEST(test_bridge_receive_security_gate_variants);
+  RUN_TEST(test_bridge_fault_injection_kat_and_post);
   return UNITY_END();
 }

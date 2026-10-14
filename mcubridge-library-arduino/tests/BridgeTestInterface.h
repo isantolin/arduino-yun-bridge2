@@ -111,6 +111,11 @@ class TestAccessor : public BridgeClass {
   void setTimerLastTick(uint32_t tick) { _timer_last_tick_ms = tick; }
   void setHardwareSerial(HardwareSerial* serial) { _hardware_serial = serial; }
   void clearPendingTxQueue() { _clearPendingTxQueue(); }
+  void flushPendingTxQueue() { _flushPendingTxQueue(); }
+  bool decodePayload(const bridge::router::CommandContext& ctx,
+                     const pb_msgdesc_t* fields, void* dest) {
+    return _decodePayload(ctx, fields, dest);
+  }
   void exhaustTxPayloadPool() { exhaustTxPayloadPoolRecursive(); }
   void enqueueNullPendingFrame(uint16_t command_id, uint16_t sequence_id,
                                size_t length) {

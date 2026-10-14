@@ -142,14 +142,12 @@ TEST_SUITES=(
     "test_host_filesystem"
     "test_protocol"
     "test_fsm_mutual_auth"
-    "test_coverage_hardened"
     "test_bridge_edge_paths"
     "test_hal_weak_defaults"
     "test_arduino_harden"
     "test_arduino_crypto_harden"
     "test_arduino_stress"
     "test_rpc_structs"
-    "test_surgical_coverage"
 )
 
 echo "[coverage_arduino] Compilando y ejecutando suites..."

@@ -384,23 +384,16 @@ def _load_rotate_module() -> Any:
     return module
 
 
-@app.command()
 def rotate(
-    host: Annotated[str | None, typer.Option("--host", help="Target McuBridge host (IP or DNS)")] = None,
-    user: Annotated[str, typer.Option("--user", help="SSH username")] = "root",
-    local: Annotated[
-        Path | None,
-        typer.Option("--local", help="Rotate credentials inside local UCI config directory without SSH"),
-    ] = None,
-    emit_sketch_snippet: Annotated[
-        Path | None,
-        typer.Option("--emit-sketch-snippet", help="Write BRIDGE_SERIAL_SHARED_SECRET snippet to file"),
-    ] = None,
-    length: Annotated[int, typer.Option("--length", help="Length of the random secret in bytes")] = 32,
-    force: Annotated[bool, typer.Option("--force", "-f", help="Force rotation without confirmation")] = False,
-    no_restart: Annotated[bool, typer.Option("--no-restart", help="Skip service restart")] = False,
-    ssh_args: Annotated[list[str] | None, typer.Option("--ssh", help="Extra SSH options")] = None,
-    rotate_loader: Annotated[Callable[[], Any] | None, typer.Option(hidden=True)] = None,
+    host: str | None = None,
+    user: str = "root",
+    local: Path | None = None,
+    emit_sketch_snippet: Path | None = None,
+    length: int = 32,
+    force: bool = False,
+    no_restart: bool = False,
+    ssh_args: list[str] | None = None,
+    rotate_loader: Callable[[], Any] | None = None,
 ) -> None:
     """Rotate MCU Bridge shared credentials on remote hardware or local rootfs."""
     import re
@@ -453,6 +446,36 @@ def rotate(
         print(f"[INFO] Wrote sketch snippet to {emit_sketch_snippet}")
 
     print("\n" + snippet)
+
+
+@app.command("rotate")
+def rotate_cmd(
+    host: Annotated[str | None, typer.Option("--host", help="Target McuBridge host (IP or DNS)")] = None,
+    user: Annotated[str, typer.Option("--user", help="SSH username")] = "root",
+    local: Annotated[
+        Path | None,
+        typer.Option("--local", help="Rotate credentials inside local UCI config directory without SSH"),
+    ] = None,
+    emit_sketch_snippet: Annotated[
+        Path | None,
+        typer.Option("--emit-sketch-snippet", help="Write BRIDGE_SERIAL_SHARED_SECRET snippet to file"),
+    ] = None,
+    length: Annotated[int, typer.Option("--length", help="Length of the random secret in bytes")] = 32,
+    force: Annotated[bool, typer.Option("--force", "-f", help="Force rotation without confirmation")] = False,
+    no_restart: Annotated[bool, typer.Option("--no-restart", help="Skip service restart")] = False,
+    ssh_args: Annotated[list[str] | None, typer.Option("--ssh", help="Extra SSH options")] = None,
+) -> None:
+    """Rotate MCU Bridge shared credentials on remote hardware or local rootfs."""
+    rotate(
+        host=host,
+        user=user,
+        local=local,
+        emit_sketch_snippet=emit_sketch_snippet,
+        length=length,
+        force=force,
+        no_restart=no_restart,
+        ssh_args=ssh_args,
+    )
 
 
 if __name__ == "__main__":

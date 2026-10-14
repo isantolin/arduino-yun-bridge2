@@ -853,6 +853,9 @@ bool BridgeClass::_sendEncryptedImpl(uint16_t raw_cmd, uint16_t seq,
                                      const void* src,
                                      rpc_pb_ChannelId /*channel_id*/,
                                      rpc_pb_QosProfile qos) {
+  if (!_state_flags.test(FLAG_TX_ENABLED) && !rpc::is_system_command(raw_cmd)) {
+    return false;
+  }
   if (qos == rpc_pb_QosProfile_QOS_RELIABLE && is_reliable_cmd(raw_cmd)) {
     return _enqueuePendingTx(
         raw_cmd, seq, [fields, src](uint8_t* dst, size_t cap, size_t& written) {

@@ -1049,8 +1049,6 @@ class BridgeService:
         )
 
     async def handle_spi_config(self, _route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
-        if not self.serial:
-            return
         try:
             p = pb.SpiConfig.FromString(inbound.payload)
             await self.local_bridge_service.execute_spi_configure(p)
@@ -1058,7 +1056,7 @@ class BridgeService:
             logger.error("SPI config error", error=str(exc))
 
     async def handle_spi_transfer(self, _route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
-        if not inbound.payload or not self.serial:
+        if not inbound.payload:
             return
         res = await self.local_bridge_service.execute_spi_transfer(pb.SpiTransfer(data=inbound.payload))
         if res.data:
@@ -1097,8 +1095,6 @@ class BridgeService:
             )
 
     async def handle_pin_mode(self, route: TopicRoute, pin: int, inbound: pb.CloudQueuedPublish) -> None:
-        if not self.serial:
-            return
         val = int(inbound.payload) if inbound.payload.isdigit() else 0
         res = await self.local_bridge_service.execute_set_pin_mode(pb.PinMode(pin=pin, mode=cast(Any, val)))
         await self._reply_cloud_ok(route.topic, str(pin), PinAction.MODE, success=(res.status == "ok"), inbound=inbound)
@@ -1128,8 +1124,6 @@ class BridgeService:
             )
 
     async def handle_pin_write(self, route: TopicRoute, pin: int, inbound: pb.CloudQueuedPublish) -> None:
-        if not self.serial:
-            return
         val = int(inbound.payload) if inbound.payload.isdigit() else 0
         if route.topic == Topic.DIGITAL:
             res = await self.local_bridge_service.execute_digital_write(pb.DigitalWrite(pin=pin, value=val))
@@ -1159,22 +1153,12 @@ class BridgeService:
                 await self.handle_pin_write(route, pin, inbound)
 
     async def handle_system_free_memory(self, _route: TopicRoute, inbound: pb.CloudQueuedPublish) -> None:
-        if not self.serial:
-            return
-        pl = await self.serial.send(Command.CMD_GET_FREE_MEMORY.value, b"")
-        val: int | None = None
-        if isinstance(pl, pb.FreeMemoryResponse):
-            val = pl.value
-        elif isinstance(pl, bytes):
-            try:
-                val = pb.FreeMemoryResponse.FromString(pl).value
-            except ProtobufDecodeError as exc:
-                logger.error("Failed to decode FreeMemoryResponse payload", error=str(exc))
-        if val is not None:
+        resp = await self.local_bridge_service.execute_get_free_memory(pb.SubscribeRequest())
+        if resp.value > 0:
             tp = get_topic_for_message(self.state.cloud_topic_prefix, pb.FreeMemoryResponse) or ""
             await self.enqueue_cloud_publish(
                 tp,
-                str(val).encode("utf-8"),
+                str(resp.value).encode("utf-8"),
                 reply_context=inbound,
             )
 

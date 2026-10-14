@@ -843,6 +843,10 @@ async def test_runtime_handle_system_free_memory_non_bytes(
     await handle_sys(route, pb.CloudQueuedPublish(payload=b""))
     assert mock_serial.send.called
 
+    mock_serial.send = AsyncMock(return_value=pb.FreeMemoryResponse(value=1024).SerializeToString())
+    await handle_sys(route, pb.CloudQueuedPublish(payload=b""))
+    assert mock_serial.send.called
+
 
 @pytest.mark.asyncio
 async def test_runtime_cloud_spool_locked_limit_errors(
@@ -1059,6 +1063,23 @@ async def test_runtime_handle_spi_and_pin_edge_branches(
     route_spi_xfer = TopicRoute(raw="", prefix="bridge", topic=Topic.SPI, segments=("transfer",))
     await handle_spi(route_spi_xfer, pb.CloudQueuedPublish(payload=b"data"))
     assert mock_serial.send.called
+
+    mock_serial.send.return_value = pb.SpiTransferResponse(data=b"resp").SerializeToString()
+    await handle_spi(route_spi_xfer, pb.CloudQueuedPublish(payload=b"data"))
+
+    mock_serial.send.reset_mock()
+    route_spi_end = TopicRoute(raw="", prefix="bridge", topic=Topic.SPI, segments=("end",))
+    await handle_spi(route_spi_end, pb.CloudQueuedPublish(payload=b""))
+    assert mock_serial.send.called
+
+    route_spi_unknown = TopicRoute(raw="", prefix="bridge", topic=Topic.SPI, segments=("unknown_action",))
+    await handle_spi(route_spi_unknown, pb.CloudQueuedPublish(payload=b""))
+
+    route_sys_boot = TopicRoute(raw="", prefix="bridge", topic=Topic.SYSTEM, segments=("bootloader",))
+    await svc.handle_system(route_sys_boot, pb.CloudQueuedPublish(payload=b""))
+
+    route_sys_unknown = TopicRoute(raw="", prefix="bridge", topic=Topic.SYSTEM, segments=("unknown_sys",))
+    await svc.handle_system(route_sys_unknown, pb.CloudQueuedPublish(payload=b""))
 
     mock_serial.send.reset_mock()
     svc.serial = None

@@ -161,31 +161,34 @@ template <size_t N>
   bool frame_found = false;
   etl::array<uint8_t, N> scan_tokens{};
   const size_t remaining = buffer.len > cursor ? buffer.len - cursor : 0;
-  auto scan_it = etl::find_if(scan_tokens.begin(), scan_tokens.begin() + remaining, [&](uint8_t) {
-    if (cursor >= buffer.len) return true;
-    if (buffer.data[cursor] == rpc::RPC_FRAME_DELIMITER) {
-      cursor++;
-      return false;
-    }
-    const uint8_t* const begin_ptr = buf_begin + cursor;
-    const uint8_t* const delim_ptr = etl::find(begin_ptr, buf_end, rpc::RPC_FRAME_DELIMITER);
-    const size_t segment_len = static_cast<size_t>(delim_ptr - begin_ptr);
-    const size_t end = cursor + segment_len;
+  auto scan_it = etl::find_if(
+      scan_tokens.begin(), scan_tokens.begin() + remaining, [&](uint8_t) {
+        if (cursor >= buffer.len) return true;
+        if (buffer.data[cursor] == rpc::RPC_FRAME_DELIMITER) {
+          cursor++;
+          return false;
+        }
+        const uint8_t* const begin_ptr = buf_begin + cursor;
+        const uint8_t* const delim_ptr =
+            etl::find(begin_ptr, buf_end, rpc::RPC_FRAME_DELIMITER);
+        const size_t segment_len = static_cast<size_t>(delim_ptr - begin_ptr);
+        const size_t end = cursor + segment_len;
 
-    const size_t decoded_len = TestCOBS::decode(begin_ptr, segment_len, decoded_buf.data());
-    cursor = end;
+        const size_t decoded_len =
+            TestCOBS::decode(begin_ptr, segment_len, decoded_buf.data());
+        cursor = end;
 
-    if (decoded_len >= rpc::RPC_CRC_SIZE + 2U) {
-      auto result = rpc::parse_frame(
-          etl::span<const uint8_t>(decoded_buf.data(), decoded_len));
-      if (result) {
-        out_frame = result.value();
-        frame_found = true;
-        return true;
-      }
-    }
-    return false;
-  });
+        if (decoded_len >= rpc::RPC_CRC_SIZE + 2U) {
+          auto result = rpc::parse_frame(
+              etl::span<const uint8_t>(decoded_buf.data(), decoded_len));
+          if (result) {
+            out_frame = result.value();
+            frame_found = true;
+            return true;
+          }
+        }
+        return false;
+      });
   (void)scan_it;
 
   return frame_found;

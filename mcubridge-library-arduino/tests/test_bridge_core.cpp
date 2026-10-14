@@ -1,6 +1,7 @@
 #ifndef BRIDGE_ENABLE_TEST_INTERFACE
 #define BRIDGE_ENABLE_TEST_INTERFACE 1
 #endif
+#include <Arduino.h>
 #include <BridgeFaultInjection.h>
 #include <etl/array.h>
 #include <etl/numeric.h>
@@ -8,7 +9,6 @@
 #include <etl/string_view.h>
 #include <unity.h>
 
-#include <Arduino.h>
 #include "Bridge.h"
 #include "BridgeTestInterface.h"
 #include "hal/hal.h"
@@ -256,7 +256,7 @@ void test_bridge_handshake_timeout_not_sync() {
 
 namespace {
 void dummy_status_handler(rpc::StatusCode, etl::span<const uint8_t>) {}
-}
+}  // namespace
 
 void test_bridge_queue_full_and_flow_control() {
   reset_bridge();
@@ -285,7 +285,8 @@ void test_bridge_emit_status_variants() {
   Bridge.onStatus(BridgeClass::StatusHandler());
   Bridge.emitStatus(rpc::StatusCode::STATUS_MALFORMED, F("FlashError"));
   Bridge.emitStatus(rpc::StatusCode::STATUS_OK, etl::string_view(""));
-  Bridge.emitStatus(rpc::StatusCode::STATUS_OK, (const __FlashStringHelper*)nullptr);
+  Bridge.emitStatus(rpc::StatusCode::STATUS_OK,
+                    (const __FlashStringHelper*)nullptr);
   TEST_ASSERT_TRUE(Bridge.isPostPassed());
 }
 
@@ -303,11 +304,12 @@ void test_bridge_send_responses_table() {
     p.patch = 3;
     return p;
   }()));
-  TEST_ASSERT_TRUE(Bridge.send(rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, 1, []() {
-    rpc::payload::FreeMemoryResponse p;
-    p.value = 1024;
-    return p;
-  }()));
+  TEST_ASSERT_TRUE(
+      Bridge.send(rpc::CommandId::CMD_GET_FREE_MEMORY_RESP, 1, []() {
+        rpc::payload::FreeMemoryResponse p;
+        p.value = 1024;
+        return p;
+      }()));
   TEST_ASSERT_TRUE(Bridge.send(rpc::CommandId::CMD_GET_CAPABILITIES_RESP, 1,
                                rpc::payload::Capabilities{}));
   TEST_ASSERT_TRUE(Bridge.send(rpc::CommandId::CMD_DIGITAL_READ_RESP, 1, []() {
@@ -329,11 +331,12 @@ void test_bridge_send_responses_table() {
   rpc::payload::copy_to_pb_bytes(frr.content, data, 1);
   TEST_ASSERT_TRUE(Bridge.send(rpc::CommandId::CMD_FILE_READ_RESP, 1, frr));
 
-  TEST_ASSERT_TRUE(Bridge.send(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP, 1, []() {
-    rpc::payload::ProcessRunAsyncResponse p;
-    p.pid = 123;
-    return p;
-  }()));
+  TEST_ASSERT_TRUE(
+      Bridge.send(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP, 1, []() {
+        rpc::payload::ProcessRunAsyncResponse p;
+        p.pid = 123;
+        return p;
+      }()));
 
   rpc::payload::ProcessPollResponse ppr;
   rpc::payload::copy_to_pb_bytes(ppr.stdout_data, data, 1);
@@ -383,7 +386,8 @@ void test_bridge_frame_errors_and_zero_spi() {
 
   // 1. Frame too short -> STATUS_MALFORMED
   uint8_t malformed[] = {0x01, 0x02};
-  ba.invokePacketReceived(etl::span<const uint8_t>(malformed, sizeof(malformed)));
+  ba.invokePacketReceived(
+      etl::span<const uint8_t>(malformed, sizeof(malformed)));
 
   // 2. Frame with bad CRC -> STATUS_CRC_MISMATCH
   etl::array<uint8_t, rpc::MAX_FRAME_SIZE> frame_raw;
@@ -469,7 +473,8 @@ void test_bridge_replay_and_security_edges() {
   etl::array<uint8_t, 12> nonce = {0};
   etl::array<uint8_t, 16> out_tag = {0};
   etl::array<uint8_t, 5> bad_tag = {0};
-  bool ok = rpc::security::handshake_authenticate(secret, nonce, bad_tag, out_tag);
+  bool ok =
+      rpc::security::handshake_authenticate(secret, nonce, bad_tag, out_tag);
   TEST_ASSERT_FALSE(ok);
 
   etl::array<uint8_t, 4> in = {1, 2, 3, 4};
@@ -486,12 +491,14 @@ void test_bridge_replay_and_security_edges() {
   valid_nonce[1] = 'P';
   valid_nonce[2] = 'U';
   valid_nonce[11] = 1U;
-  const bool missing_replay_state = rpc::security::validate_frame_nonce(valid_nonce, nullptr);
+  const bool missing_replay_state =
+      rpc::security::validate_frame_nonce(valid_nonce, nullptr);
   TEST_ASSERT_FALSE(missing_replay_state);
 
   etl::array<uint8_t, 10> short_nonce = {0};
   uint64_t short_nonce_last_seen = 0U;
-  const bool short_ok = rpc::security::validate_frame_nonce(short_nonce, &short_nonce_last_seen);
+  const bool short_ok =
+      rpc::security::validate_frame_nonce(short_nonce, &short_nonce_last_seen);
   TEST_ASSERT_FALSE(short_ok);
 
   bool empty_tag_ok = rpc::security::handshake_authenticate(
@@ -509,11 +516,13 @@ void test_bridge_replay_and_security_edges() {
 
   etl::array<uint8_t, 16> wrong_tag;
   wrong_tag.fill(0xFF);
-  bool tag_mismatch_ok = rpc::security::handshake_authenticate(secret, nonce, wrong_tag, out_tag);
+  bool tag_mismatch_ok =
+      rpc::security::handshake_authenticate(secret, nonce, wrong_tag, out_tag);
   TEST_ASSERT_FALSE(tag_mismatch_ok);
 
   etl::array<uint8_t, 4> dec_out = {0};
-  bool dec_ok = rpc::security::aead_decrypt_frame(1, 1, in, key, valid_nonce, out_tag, dec_out);
+  bool dec_ok = rpc::security::aead_decrypt_frame(1, 1, in, key, valid_nonce,
+                                                  out_tag, dec_out);
   TEST_ASSERT_FALSE(dec_ok);
 }
 
@@ -555,13 +564,15 @@ void test_bridge_fsm_resets_and_link_reset() {
   rpc_pb_RpcEnvelope env_hc = rpc_pb_RpcEnvelope_init_default;
   env_hc.which_payload_type = 0;
   bridge::router::CommandContext hc_ctx(
-      &env_hc, static_cast<uint16_t>(rpc::CommandId::CMD_LINK_RESET), 44, false, false);
+      &env_hc, static_cast<uint16_t>(rpc::CommandId::CMD_LINK_RESET), 44, false,
+      false);
   ba.handleLinkReset(hc_ctx);
 
   // LinkReset with HandshakeConfig payload
   envelope.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_LINK_RESET);
   envelope.sequence_id = 90;
-  envelope.which_payload_type = rpc_pb_RpcEnvelope_encrypted_payload_with_tag_tag;
+  envelope.which_payload_type =
+      rpc_pb_RpcEnvelope_encrypted_payload_with_tag_tag;
   rpc_pb_HandshakeConfig hs_cfg = rpc_pb_HandshakeConfig_init_default;
   hs_cfg.ack_timeout_ms = 500;
   hs_cfg.ack_retry_limit = 5;
@@ -676,7 +687,8 @@ void test_bridge_dispatch_extra_branches() {
   // 5. Send non-system command when tx disabled
   ba.setTxEnabled(false);
   rpc::payload::DigitalWrite dw_payload = {};
-  TEST_ASSERT_FALSE(Bridge.send(rpc::CommandId::CMD_DIGITAL_WRITE, 0, dw_payload));
+  TEST_ASSERT_FALSE(
+      Bridge.send(rpc::CommandId::CMD_DIGITAL_WRITE, 0, dw_payload));
   ba.setTxEnabled(true);
 
   // 6. XOFF, XON, GetFreeMemory, GetCapabilities dispatch
@@ -703,11 +715,13 @@ void test_bridge_dispatch_extra_branches() {
   env.which_payload_type = rpc_pb_RpcEnvelope_digital_write_tag;
   ba.dispatch(env);
 
-  env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP);
+  env.command_id =
+      static_cast<uint16_t>(rpc::CommandId::CMD_MAILBOX_AVAILABLE_RESP);
   env.sequence_id = 61;
   ba.dispatch(env);
 
-  env.command_id = static_cast<uint16_t>(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP);
+  env.command_id =
+      static_cast<uint16_t>(rpc::CommandId::CMD_PROCESS_RUN_ASYNC_RESP);
   env.sequence_id = 62;
   env.which_payload_type = rpc_pb_RpcEnvelope_process_run_async_response_tag;
   env.payload_type.process_run_async_response.pid = 123;
@@ -725,7 +739,8 @@ void test_bridge_dispatch_extra_branches() {
   env.sequence_id = 80;
   env.which_payload_type = rpc_pb_RpcEnvelope_spi_config_tag;
   env.payload_type.spi_config.frequency = 1000000;
-  env.payload_type.spi_config.bit_order = rpc_pb_SpiBitOrder_SPI_BIT_ORDER_MSB_FIRST;
+  env.payload_type.spi_config.bit_order =
+      rpc_pb_SpiBitOrder_SPI_BIT_ORDER_MSB_FIRST;
   env.payload_type.spi_config.data_mode = rpc_pb_SpiDataMode_SPI_DATA_MODE_0;
   ba.dispatch(env);
 
@@ -916,7 +931,8 @@ void test_bridge_fault_injection_kat_and_post() {
   // 4. Unknown command with custom handler registered
   ba.setSynchronized();
   s_custom_cmd_called = false;
-  Bridge.onCommand(etl::delegate<void(const rpc_pb_RpcEnvelope&)>::create<&dummy_custom_cmd>());
+  Bridge.onCommand(etl::delegate<void(const rpc_pb_RpcEnvelope&)>::create<
+                   &dummy_custom_cmd>());
   rpc_pb_RpcEnvelope f_unk = rpc_pb_RpcEnvelope_init_default;
   f_unk.version = rpc::PROTOCOL_VERSION;
   f_unk.command_id = 999;
@@ -968,7 +984,9 @@ void test_bridge_fault_injection_kat_and_post() {
   spi_req_data.data.size = 2;
   spi_req_data.data.bytes[0] = 0x11;
   spi_req_data.data.bytes[1] = 0x22;
-  bridge::router::CommandContext spi_ctx_data(nullptr, static_cast<uint16_t>(rpc::CommandId::CMD_SPI_TRANSFER), 99, false, false);
+  bridge::router::CommandContext spi_ctx_data(
+      nullptr, static_cast<uint16_t>(rpc::CommandId::CMD_SPI_TRANSFER), 99,
+      false, false);
   ba.handleSpiTransfer(spi_ctx_data, spi_req_data);
   ba.setTxEnabled(false);
   ba.handleSpiTransfer(spi_ctx_data, spi_req_data);
@@ -978,8 +996,9 @@ void test_bridge_fault_injection_kat_and_post() {
   rpc_pb_ProcessRunAsync large_p = rpc_pb_ProcessRunAsync_init_default;
   etl::fill_n(large_p.command, sizeof(large_p.command) - 1, 'X');
   large_p.command[sizeof(large_p.command) - 1] = '\0';
-  const bool send_res = Bridge.send(rpc::CommandId::CMD_PROCESS_RUN_ASYNC, 1, large_p,
-                                    rpc_pb_ChannelId_CHANNEL_CONTROL, rpc_pb_QosProfile_QOS_RELIABLE);
+  const bool send_res = Bridge.send(rpc::CommandId::CMD_PROCESS_RUN_ASYNC, 1,
+                                    large_p, rpc_pb_ChannelId_CHANNEL_CONTROL,
+                                    rpc_pb_QosProfile_QOS_RELIABLE);
   TEST_ASSERT_TRUE(send_res || !send_res);
 
   // 12. LinkSync send failure via pool exhaustion
@@ -1013,9 +1032,11 @@ void test_bridge_fault_injection_kat_and_post() {
   ba_fc.dispatch(env_pm);
 
   // 15. Baudrate begin with failed POST (line 309)
-  bridge::test::fault::enable(bridge::test::fault::FaultPoint::KAT_SHA256_MISMATCH);
+  bridge::test::fault::enable(
+      bridge::test::fault::FaultPoint::KAT_SHA256_MISMATCH);
   Bridge.begin(115200, "secret");
-  bridge::test::fault::disable(bridge::test::fault::FaultPoint::KAT_SHA256_MISMATCH);
+  bridge::test::fault::disable(
+      bridge::test::fault::FaultPoint::KAT_SHA256_MISMATCH);
 
   reset_bridge_core(Bridge, stream);
 }

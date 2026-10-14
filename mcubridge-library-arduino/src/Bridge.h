@@ -141,7 +141,8 @@ class BridgeClass : public etl::observable<bridge::BridgeObserver,
         _status_handler(s, payload);
       } else if constexpr (etl::is_same_v<T, etl::string_view>) {
         _status_handler(s, etl::span<const uint8_t>(
-            reinterpret_cast<const uint8_t*>(payload.data()), payload.size()));
+                               reinterpret_cast<const uint8_t*>(payload.data()),
+                               payload.size()));
       }
     }
     if constexpr (etl::is_same_v<T, etl::span<const uint8_t>>) {

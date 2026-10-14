@@ -25,7 +25,8 @@
 #if defined(__clang__)
 #define ETL_COMPILER_CLANG
 #define ETL_CPP17_SUPPORTED 1
-#elif defined(__AVR__) || defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266) || defined(__GNUC__)
+#elif defined(__AVR__) || defined(ARDUINO_ARCH_ESP32) || \
+    defined(ARDUINO_ARCH_ESP8266) || defined(__GNUC__)
 #define ETL_COMPILER_GCC
 #define ETL_CPP17_SUPPORTED 1
 #else

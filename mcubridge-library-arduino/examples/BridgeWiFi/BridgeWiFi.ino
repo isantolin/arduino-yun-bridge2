@@ -88,12 +88,13 @@ void setup() {
   const unsigned long wifi_deadline = millis() + WIFI_CONNECT_TIMEOUT_MS;
   constexpr size_t MAX_WIFI_ATTEMPTS = 40;  // 40 * 250ms = 10000ms
   etl::array<uint8_t, MAX_WIFI_ATTEMPTS> wifi_attempts{};
-  auto wifi_it = etl::find_if(wifi_attempts.begin(), wifi_attempts.end(), [&](uint8_t) {
-    if (WiFi.status() == WL_CONNECTED) return true;
-    if (static_cast<int32_t>(millis() - wifi_deadline) > 0) return true;
-    delay(250);
-    return false;
-  });
+  auto wifi_it =
+      etl::find_if(wifi_attempts.begin(), wifi_attempts.end(), [&](uint8_t) {
+        if (WiFi.status() == WL_CONNECTED) return true;
+        if (static_cast<int32_t>(millis() - wifi_deadline) > 0) return true;
+        delay(250);
+        return false;
+      });
   (void)wifi_it;
 
   // Connect to Python MPU Bridge daemon over TCP with authentication
@@ -108,18 +109,21 @@ void setup() {
       etl::array<uint8_t, OUTER_STEPS> outer_ticks{};
       etl::array<uint8_t, INNER_STEPS> inner_polls{};
       const uint32_t sync_deadline = millis() + bridge::config::SYNC_TIMEOUT_MS;
-      auto sync_it = etl::find_if(outer_ticks.begin(), outer_ticks.end(), [&](uint8_t) {
-        if (Bridge.isSynchronized()) return true;
-        if (static_cast<int32_t>(millis() - sync_deadline) > 0) return true;
-        auto inner_it = etl::find_if(inner_polls.begin(), inner_polls.end(), [&](uint8_t) {
-          if (Bridge.isSynchronized()) return true;
-          Bridge.process();
-          delay(2);
-          return false;
-        });
-        (void)inner_it;
-        return Bridge.isSynchronized();
-      });
+      auto sync_it =
+          etl::find_if(outer_ticks.begin(), outer_ticks.end(), [&](uint8_t) {
+            if (Bridge.isSynchronized()) return true;
+            if (static_cast<int32_t>(millis() - sync_deadline) > 0) return true;
+            auto inner_it = etl::find_if(inner_polls.begin(), inner_polls.end(),
+                                         [&](uint8_t) {
+                                           if (Bridge.isSynchronized())
+                                             return true;
+                                           Bridge.process();
+                                           delay(2);
+                                           return false;
+                                         });
+            (void)inner_it;
+            return Bridge.isSynchronized();
+          });
       (void)sync_it;
       if (!Bridge.isSynchronized()) {
         Bridge.enterSafeState();
@@ -151,18 +155,22 @@ void loop() {
           etl::array<uint8_t, INNER_STEPS> inner_polls{};
           const uint32_t sync_deadline =
               millis() + bridge::config::SYNC_TIMEOUT_MS;
-          auto sync_it = etl::find_if(outer_ticks.begin(), outer_ticks.end(), [&](uint8_t) {
-            if (Bridge.isSynchronized()) return true;
-            if (static_cast<int32_t>(millis() - sync_deadline) > 0) return true;
-            auto inner_it = etl::find_if(inner_polls.begin(), inner_polls.end(), [&](uint8_t) {
-              if (Bridge.isSynchronized()) return true;
-              Bridge.process();
-              delay(2);
-              return false;
-            });
-            (void)inner_it;
-            return Bridge.isSynchronized();
-          });
+          auto sync_it = etl::find_if(
+              outer_ticks.begin(), outer_ticks.end(), [&](uint8_t) {
+                if (Bridge.isSynchronized()) return true;
+                if (static_cast<int32_t>(millis() - sync_deadline) > 0)
+                  return true;
+                auto inner_it = etl::find_if(inner_polls.begin(),
+                                             inner_polls.end(), [&](uint8_t) {
+                                               if (Bridge.isSynchronized())
+                                                 return true;
+                                               Bridge.process();
+                                               delay(2);
+                                               return false;
+                                             });
+                (void)inner_it;
+                return Bridge.isSynchronized();
+              });
           (void)sync_it;
           if (!Bridge.isSynchronized()) {
             Bridge.enterSafeState();

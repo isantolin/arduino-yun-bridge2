@@ -4,19 +4,20 @@
 #include <unity.h>
 
 #define BRIDGE_ENABLE_TEST_INTERFACE 1
+#include <BridgeFaultInjection.h>
+#include <etl/algorithm.h>
+#include <etl/array.h>
+#include <etl/span.h>
+
 #include "Bridge.h"
 #include "BridgeTestInterface.h"
+#include "hal/hal.h"
 #include "services/Console.h"
 #include "services/DataStore.h"
 #include "services/FileSystem.h"
 #include "services/Mailbox.h"
 #include "services/Process.h"
 #include "services/SPIService.h"
-#include <BridgeFaultInjection.h>
-#include <etl/algorithm.h>
-#include <etl/array.h>
-#include <etl/span.h>
-#include "hal/hal.h"
 #include "test_support.h"
 
 // Define the global delegates and stubs for HardwareSerial stub
@@ -267,7 +268,9 @@ void test_component_extended_operations() {
   Mailbox.signalProcessed(123);
 
   // FileSystem
-  FileSystem.read("test.txt", etl::delegate<void(etl::span<const uint8_t>)>::create<dummy_fs_read>());
+  FileSystem.read(
+      "test.txt",
+      etl::delegate<void(etl::span<const uint8_t>)>::create<dummy_fs_read>());
   FileSystem.write("test.txt", etl::span<const uint8_t>(mbox_data, 3));
   FileSystem.remove("test.txt");
 
@@ -279,7 +282,9 @@ void test_component_extended_operations() {
   Process.runAsync("ls", etl::span<const etl::string_view>(),
                    etl::delegate<void(int32_t)>::create<dummy_process_run>());
   Process.kill(1);
-  Process.poll(1, etl::delegate<void(rpc::StatusCode, uint16_t, etl::span<const uint8_t>, etl::span<const uint8_t>)>::create<dummy_process_poll>());
+  Process.poll(1, etl::delegate<void(
+                      rpc::StatusCode, uint16_t, etl::span<const uint8_t>,
+                      etl::span<const uint8_t>)>::create<dummy_process_poll>());
 
   rpc::payload::ProcessRunAsyncResponse prar;
   prar.pid = 123;
@@ -329,7 +334,9 @@ void test_pending_rpc_manager() {
 
 static int32_t s_captured_pid = 0;
 static void capture_async_handler(int32_t pid) { s_captured_pid = pid; }
-static void capture_poll_handler(rpc::StatusCode, uint16_t, etl::span<const uint8_t>, etl::span<const uint8_t>) {}
+static void capture_poll_handler(rpc::StatusCode, uint16_t,
+                                 etl::span<const uint8_t>,
+                                 etl::span<const uint8_t>) {}
 
 void test_process_edges() {
   BiStream stream;
@@ -337,9 +344,11 @@ void test_process_edges() {
   auto& ba = TestAccessor::create(Bridge);
 
   // 1. Process poll and kill API
-  Process.poll(123, ProcessType::ProcessPollHandler::create<&capture_poll_handler>());
+  Process.poll(
+      123, ProcessType::ProcessPollHandler::create<&capture_poll_handler>());
   Process.kill(456);
-  Process.runAsync("ls", {}, etl::delegate<void(int32_t)>::create<&capture_async_handler>());
+  Process.runAsync(
+      "ls", {}, etl::delegate<void(int32_t)>::create<&capture_async_handler>());
 
   // 2. Observer notification onLost
   Process.onLost();
@@ -348,8 +357,11 @@ void test_process_edges() {
 
   // 3. Queue full and trigger full-queue error callback path (-1)
   s_captured_pid = 0;
-  Process.runAsync("ls", {}, etl::delegate<void(int32_t)>::create<&capture_async_handler>());
-  Process.runAsync("pwd", {}, etl::delegate<void(int32_t)>::create<&capture_async_handler>());
+  Process.runAsync(
+      "ls", {}, etl::delegate<void(int32_t)>::create<&capture_async_handler>());
+  Process.runAsync(
+      "pwd", {},
+      etl::delegate<void(int32_t)>::create<&capture_async_handler>());
   TEST_ASSERT_EQUAL(-1, s_captured_pid);
   TEST_ASSERT_EQUAL(1, Process._pending_run_async.size());
 
@@ -366,23 +378,28 @@ void test_process_edges() {
   // 5. Oversized arg failure
   etl::array<char, rpc::MAX_PAYLOAD_SIZE + 1> long_arg_storage = {};
   long_arg_storage.fill('a');
-  const etl::string_view oversized_arg(long_arg_storage.data(), rpc::MAX_PAYLOAD_SIZE);
-  etl::array<etl::string_view, 2> overflow_args = {oversized_arg, etl::string_view("y")};
-  Process.runAsync("x", etl::span<const etl::string_view>(overflow_args.data(), 2),
-                   etl::delegate<void(int32_t)>::create<&capture_async_handler>());
+  const etl::string_view oversized_arg(long_arg_storage.data(),
+                                       rpc::MAX_PAYLOAD_SIZE);
+  etl::array<etl::string_view, 2> overflow_args = {oversized_arg,
+                                                   etl::string_view("y")};
+  Process.runAsync(
+      "x", etl::span<const etl::string_view>(overflow_args.data(), 2),
+      etl::delegate<void(int32_t)>::create<&capture_async_handler>());
   TEST_ASSERT_EQUAL(-1, s_captured_pid);
 
   // 6. Prepend-space capacity failure
   etl::array<char, rpc::MAX_PAYLOAD_SIZE> near_full_cmd = {};
   near_full_cmd.fill('c');
   etl::array<etl::string_view, 1> single_arg = {etl::string_view("z")};
-  Process.runAsync(etl::string_view(near_full_cmd.data(), rpc::MAX_PAYLOAD_SIZE - 1U),
-                   etl::span<const etl::string_view>(single_arg.data(), 1),
-                   etl::delegate<void(int32_t)>::create<&capture_async_handler>());
+  Process.runAsync(
+      etl::string_view(near_full_cmd.data(), rpc::MAX_PAYLOAD_SIZE - 1U),
+      etl::span<const etl::string_view>(single_arg.data(), 1),
+      etl::delegate<void(int32_t)>::create<&capture_async_handler>());
   TEST_ASSERT_EQUAL(-1, s_captured_pid);
 
   // 7. Empty command
-  Process.runAsync("", {}, etl::delegate<void(int32_t)>::create<&capture_async_handler>());
+  Process.runAsync(
+      "", {}, etl::delegate<void(int32_t)>::create<&capture_async_handler>());
 
   // 8. Safe state with invalid handler
   Bridge.enterSafeState();
@@ -393,9 +410,11 @@ void test_process_edges() {
 
   // 9. Poll queue full path and empty response
   Process.reset();
-  Process.poll(10, ProcessType::ProcessPollHandler::create<&capture_poll_handler>());
+  Process.poll(
+      10, ProcessType::ProcessPollHandler::create<&capture_poll_handler>());
   TEST_ASSERT_EQUAL(1, Process._pending_polls.size());
-  Process.poll(11, ProcessType::ProcessPollHandler::create<&capture_poll_handler>());
+  Process.poll(
+      11, ProcessType::ProcessPollHandler::create<&capture_poll_handler>());
 
   Process._pending_run_async.clear();
   rpc_pb_ProcessRunAsyncResponse pr_empty = {};
@@ -414,18 +433,23 @@ void test_process_edges() {
   char huge_cmd[80];
   etl::fill_n(huge_cmd, 79, 'q');
   huge_cmd[79] = '\0';
-  Process.runAsync(huge_cmd, {}, etl::delegate<void(int32_t)>::create<&capture_async_handler>());
+  Process.runAsync(
+      huge_cmd, {},
+      etl::delegate<void(int32_t)>::create<&capture_async_handler>());
   Process.runAsync(huge_cmd, {}, ProcessType::ProcessRunHandler{});
 
-  // 12. Non-empty args that fit into command_buffer (covers line 40 false branch)
+  // 12. Non-empty args that fit into command_buffer (covers line 40 false
+  // branch)
   etl::string_view valid_args[1] = {etl::string_view("-la")};
-  Process.runAsync("ls", etl::span<const etl::string_view>(valid_args, 1),
-                   etl::delegate<void(int32_t)>::create<&capture_async_handler>());
+  Process.runAsync(
+      "ls", etl::span<const etl::string_view>(valid_args, 1),
+      etl::delegate<void(int32_t)>::create<&capture_async_handler>());
 
   // 13. Send failure with valid and invalid handler (covers line 64)
   ba.setSynchronized();
   ba.setTxEnabled(false);
-  Process.runAsync("ls", {}, etl::delegate<void(int32_t)>::create<&capture_async_handler>());
+  Process.runAsync(
+      "ls", {}, etl::delegate<void(int32_t)>::create<&capture_async_handler>());
   Process.runAsync("ls", {}, ProcessType::ProcessRunHandler{});
   ba.setTxEnabled(true);
 
@@ -467,7 +491,8 @@ void test_console_edges() {
   TEST_ASSERT_EQUAL(3, Console.available());
   TEST_ASSERT_EQUAL((int)'X', Console.read());
 
-  // Fill _tx_buffer completely then write with buffer when tx disabled to hit line 43
+  // Fill _tx_buffer completely then write with buffer when tx disabled to hit
+  // line 43
   auto& ba = TestAccessor::create(Bridge);
   etl::array<uint8_t, bridge::config::CONSOLE_TX_BUFFER_SIZE> fill = {};
   fill.fill('x');
@@ -490,9 +515,8 @@ void test_console_edges() {
   etl::generate(console_chars.begin(), console_chars.end(), [&char_idx]() {
     return static_cast<uint8_t>('A' + (char_idx++ % 26));
   });
-  etl::for_each(console_chars.begin(), console_chars.end(), [](uint8_t c) {
-    Console.write(c);
-  });
+  etl::for_each(console_chars.begin(), console_chars.end(),
+                [](uint8_t c) { Console.write(c); });
   ba.setTxEnabled(true);
   Console.onLost();
 }
@@ -515,7 +539,8 @@ void test_datastore_edges() {
   DataStore._onResponse(ds_resp);
 
   // Pending gets full
-  auto dummy_handler = DataStoreClass::GetHandler::create<&dummy_ds_edge_handler>();
+  auto dummy_handler =
+      DataStoreClass::GetHandler::create<&dummy_ds_edge_handler>();
   etl::array<int, 10> get_steps{};
   etl::for_each(get_steps.begin(), get_steps.end(),
                 [&](int) { DataStore.get("k", dummy_handler); });
@@ -523,7 +548,8 @@ void test_datastore_edges() {
   // Valid handler with response (covers lines 43, 44, 46)
   DataStore._pending_gets.clear();
   s_ds_edge_called = false;
-  DataStore.get("k_valid", DataStoreClass::GetHandler::create<&dummy_ds_valid_handler>());
+  DataStore.get("k_valid",
+                DataStoreClass::GetHandler::create<&dummy_ds_valid_handler>());
   rpc::payload::DatastoreGetResponse ds_resp_val = {};
   ds_resp_val.value.size = 2;
   ds_resp_val.value.bytes[0] = 0x55;
@@ -569,14 +595,16 @@ void test_filesystem_edges() {
   FileSystem._onResponse(rresp);
 
   // 3. Read response with valid handler
-  FileSystem.read("test.txt",
+  FileSystem.read(
+      "test.txt",
       FileSystemClass::FileSystemReadHandler::create<&dummy_fs_edge_handler>());
   FileSystem._onResponse(rresp);
 
   // 4. Synchronized write, read, remove
   uint8_t data[] = {1, 2, 3};
   FileSystem.write("test.txt", etl::span<const uint8_t>(data, 3));
-  FileSystem.read("test.txt",
+  FileSystem.read(
+      "test.txt",
       FileSystemClass::FileSystemReadHandler::create<&dummy_fs_edge_handler>());
   FileSystem.remove("test.txt");
 
@@ -595,12 +623,14 @@ void test_filesystem_edges() {
   FileSystem._onRead(fread_nonexistent);
 
   // 7. _onRead timeout via fault injection
-  bridge::test::fault::enable(bridge::test::fault::FaultPoint::FILESYSTEM_TIMEOUT);
+  bridge::test::fault::enable(
+      bridge::test::fault::FaultPoint::FILESYSTEM_TIMEOUT);
   rpc_pb_FileRead fread_valid = {};
   const char* val_path = "test.txt";
   etl::copy_n(val_path, strlen(val_path), fread_valid.path);
   FileSystem._onRead(fread_valid);
-  bridge::test::fault::disable(bridge::test::fault::FaultPoint::FILESYSTEM_TIMEOUT);
+  bridge::test::fault::disable(
+      bridge::test::fault::FaultPoint::FILESYSTEM_TIMEOUT);
 
   // 8. Large file multi-chunk reading
   etl::array<uint8_t, 100> large_data;
@@ -698,13 +728,15 @@ void test_mailbox_edges() {
   mb_msg.data.bytes[2] = 3;
   constexpr etl::array<uint8_t, 5> push_attempts{};
   etl::for_each(push_attempts.begin(), push_attempts.end(), [&mb_msg](uint8_t) {
-    MailboxClass::_onEnqueuePayload<rpc_pb_MailboxPush, &rpc_pb_MailboxPush::data>(mb_msg);
+    MailboxClass::_onEnqueuePayload<rpc_pb_MailboxPush,
+                                    &rpc_pb_MailboxPush::data>(mb_msg);
   });
 
   // Available response with and without callback
   rpc::payload::MailboxAvailableResponse av_resp = {};
   av_resp.count = 2;
-  Mailbox.registerAvailableCallback(MailboxClass::AvailableCallback::create<&mb_avail_cb>());
+  Mailbox.registerAvailableCallback(
+      MailboxClass::AvailableCallback::create<&mb_avail_cb>());
   Mailbox._onAvailableResponse(av_resp);
   TEST_ASSERT_EQUAL(2, s_mb_avail);
   Mailbox.registerAvailableCallback(MailboxClass::AvailableCallback{});
@@ -716,7 +748,8 @@ void test_mailbox_edges() {
 
   // Process with registered message callback
   s_mb_msg_called = false;
-  Mailbox.registerMessageCallback(MailboxClass::MessageCallback::create<&mb_msg_cb>());
+  Mailbox.registerMessageCallback(
+      MailboxClass::MessageCallback::create<&mb_msg_cb>());
   Mailbox.process();
   TEST_ASSERT_TRUE(s_mb_msg_called);
   Mailbox.registerMessageCallback(MailboxClass::MessageCallback{});

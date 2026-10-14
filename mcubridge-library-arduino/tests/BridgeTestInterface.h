@@ -139,14 +139,16 @@ class TestAccessor : public BridgeClass {
   void setRxNonceCounter(uint64_t counter) { _rx_nonce_counter = counter; }
 
   void fillPendingTxQueue() {
-    const size_t capacity = _pending_tx_queue.max_size() - _pending_tx_queue.size();
+    const size_t capacity =
+        _pending_tx_queue.max_size() - _pending_tx_queue.size();
     etl::array<uint8_t, 16> fill_tokens{};
     const size_t needed = etl::min(capacity, fill_tokens.size());
-    etl::for_each(fill_tokens.begin(), fill_tokens.begin() + needed, [this](uint8_t) {
-      if (!_pending_tx_queue.full()) {
-        _pending_tx_queue.push_back({1, 1, nullptr, 0});
-      }
-    });
+    etl::for_each(fill_tokens.begin(), fill_tokens.begin() + needed,
+                  [this](uint8_t) {
+                    if (!_pending_tx_queue.full()) {
+                      _pending_tx_queue.push_back({1, 1, nullptr, 0});
+                    }
+                  });
   }
   void setNullStream() { _stream = nullptr; }
   void setLastRxMs(uint32_t ms) { _last_rx_ms = ms; }

@@ -729,9 +729,8 @@ void test_architectural_extensions_edge_paths() {
   Bridge.clearSafetyPins();
   etl::array<uint8_t, 10> pin_range{};
   uint8_t current_pin = 1;
-  etl::generate(pin_range.begin(), pin_range.end(), [&current_pin]() {
-    return current_pin++;
-  });
+  etl::generate(pin_range.begin(), pin_range.end(),
+                [&current_pin]() { return current_pin++; });
   etl::for_each(pin_range.begin(), pin_range.end(), [](uint8_t p) {
     Bridge.registerSafetyPin(p, BridgeClass::SafetyPinState::SAFE_PIN_LOW);
   });
@@ -823,9 +822,8 @@ void test_architectural_extensions_edge_paths() {
   // Fill subscriptions to full capacity (8 max) then attempt 9th
   etl::array<uint8_t, 8> sub_pins{};
   uint8_t sub_pin_val = 10;
-  etl::generate(sub_pins.begin(), sub_pins.end(), [&sub_pin_val]() {
-    return sub_pin_val++;
-  });
+  etl::generate(sub_pins.begin(), sub_pins.end(),
+                [&sub_pin_val]() { return sub_pin_val++; });
   etl::for_each(sub_pins.begin(), sub_pins.end(), [&ba, &buf](uint8_t p) {
     rpc_pb_PinSubscribeRequest s = rpc_pb_PinSubscribeRequest_init_default;
     s.pin = p;

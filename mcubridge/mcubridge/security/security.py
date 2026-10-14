@@ -38,18 +38,29 @@ def generate_nonce_with_counter(counter: int) -> tuple[bytes, int]:
     return nonce, new_counter
 
 
-def extract_nonce_counter(nonce: bytes) -> int:
-    """Extract the counter from a 12-byte nonce."""
+def extract_nonce_counter(
+    nonce: bytes,
+    expected_prefix: int | None = protocol.MCU_AEAD_NONCE_PREFIX,
+) -> int:
+    """Extract the counter from a 12-byte nonce, validating directional prefix."""
     if len(nonce) != protocol.AEAD_NONCE_SIZE:
         raise ValueError(f"Nonce must be {protocol.AEAD_NONCE_SIZE} bytes, got {len(nonce)}")
     counter_offset = protocol.AEAD_NONCE_SIZE - protocol.HANDSHAKE_NONCE_COUNTER_BYTES
+    if expected_prefix is not None:
+        prefix_val = int.from_bytes(nonce[:counter_offset], "big")
+        if prefix_val != expected_prefix:
+            raise ValueError(f"Nonce prefix mismatch: expected {expected_prefix:#010x}, got {prefix_val:#010x}")
     return int.from_bytes(nonce[counter_offset:], "big")
 
 
-def validate_nonce_counter(nonce: bytes, last_counter: int) -> tuple[bool, int]:
-    """Validate nonce counter is strictly greater than last seen."""
+def validate_nonce_counter(
+    nonce: bytes,
+    last_counter: int,
+    expected_prefix: int = protocol.MCU_AEAD_NONCE_PREFIX,
+) -> tuple[bool, int]:
+    """Validate nonce counter is strictly greater than last seen and prefix matches expected source."""
     try:
-        current = extract_nonce_counter(nonce)
+        current = extract_nonce_counter(nonce, expected_prefix=expected_prefix)
     except ValueError as exc:
         logger.warning("Failed to extract nonce counter", error=str(exc))
         return False, last_counter

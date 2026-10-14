@@ -15,6 +15,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "protocol/rpc_protocol.h"
+
 /* [WOLFSSL] Core headers */
 #include <wolfssl.h>
 #include <wolfssl/wolfcrypt/hmac.h>
@@ -52,7 +54,8 @@ bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
                         etl::span<const uint8_t> key, uint64_t* nonce_counter,
                         etl::span<uint8_t> out_payload,
                         etl::span<uint8_t> out_nonce,
-                        etl::span<uint8_t> out_tag);
+                        etl::span<uint8_t> out_tag,
+                        uint32_t nonce_prefix = rpc::RPC_MCU_AEAD_NONCE_PREFIX);
 
 /**
  * @brief Securely decrypt a frame's payload.

@@ -162,7 +162,7 @@ void test_surgical_security_failures() {
   // 3. validate_frame_nonce with null last_seen_counter
   etl::array<uint8_t, 12> valid_nonce = {0};
   valid_nonce[0] = 'M';
-  valid_nonce[1] = 'C';
+  valid_nonce[1] = 'P';
   valid_nonce[2] = 'U';
   valid_nonce[11] = 1U;
   const bool missing_replay_state =
@@ -186,7 +186,7 @@ void test_surgical_security_failures() {
   uint64_t last_seen = 100;
   etl::array<uint8_t, 12> old_nonce = {0};
   old_nonce[0] = 'M';
-  old_nonce[1] = 'C';
+  old_nonce[1] = 'P';
   old_nonce[2] = 'U';
   old_nonce[11] = 50;
   bool old_ok = rpc::security::validate_frame_nonce(old_nonce, &last_seen);
@@ -240,7 +240,8 @@ void test_surgical_authenticated_digital_write_frame() {
   const bool encrypted = rpc::security::aead_encrypt_frame(
       command_id, sequence_id,
       etl::span<const uint8_t>(payload.data(), payload_stream.bytes_written),
-      session_key, &tx_nonce_counter, ciphertext, nonce, tag);
+      session_key, &tx_nonce_counter, ciphertext, nonce, tag,
+      rpc::RPC_MPU_AEAD_NONCE_PREFIX);
   TEST_ASSERT_TRUE(encrypted);
 
   const rpc_pb_RpcEnvelope envelope = rpc::build_envelope(

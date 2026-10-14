@@ -192,6 +192,180 @@ def list_targets(
         print(f"  - {t.name} (host={t.host}, local={t.local}, tags={t.tags})")
 
 
+def _resolve_tests_to_run(examples_dir: Path, test_name: str | None) -> list[str]:
+    available_tests = sorted([p.name for p in examples_dir.glob("*_test.py") if not p.name.startswith((".", "_"))])
+    if not test_name:
+        return available_tests
+    clean_name = test_name if test_name.endswith(".py") else f"{test_name}.py"
+    if clean_name not in available_tests:
+        print(f"Error: test '{test_name}' not found. Available tests: {available_tests}")
+        sys.exit(2)
+    return [clean_name]
+
+
+def _resolve_target_execution(
+    target: str | None,
+    host: str | None,
+    user: str,
+    local: bool,
+    manifest_path: Path,
+) -> tuple[bool, str | None, str, list[str]]:
+    is_local = local or (host is None and target is None)
+    target_host = host
+    target_user = user
+    ssh_args: list[str] = ["-o", "StrictHostKeyChecking=no"]
+
+    if target and not local:
+        manifest_targets = load_manifest(manifest_path)
+        matched = [t for t in manifest_targets if t.name == target]
+        if not matched:
+            print(f"Error: target '{target}' not found in manifest {manifest_path}")
+            sys.exit(2)
+        tgt = matched[0]
+        is_local = tgt.local
+        target_host = tgt.host
+        target_user = tgt.user or user
+        ssh_args = tgt.ssh_args or ssh_args
+
+    return is_local, target_host, target_user, ssh_args
+
+
+def _sync_test_scripts(examples_parent: Path, target_host: str, target_user: str) -> None:
+    from tools.emulation.sync_to_vm import tar_push
+
+    print(f"[*] Synchronizing test scripts to {target_host}...")
+    tar_push(
+        src_dir=examples_parent,
+        remote_dest="/tmp/mcubridge-client-examples",
+        host=target_host,
+        user=target_user,
+        excludes=["__pycache__", "*.pyc", "*.pyo"],
+    )
+
+
+async def _execute_single_test(
+    t_file: str,
+    *,
+    is_local: bool,
+    target_host: str | None,
+    target_user: str,
+    examples_parent: Path,
+    examples_dir: Path,
+    gateway_host: str,
+    gateway_port: int,
+    device_id: str,
+    pin_args: list[str],
+    timeout: float,
+) -> tuple[str, bool, float, str | None]:
+    import time
+
+    sys.stdout.write(f"[*] Running {t_file}... ")
+    sys.stdout.flush()
+    t0 = time.time()
+
+    if is_local:
+        cmd = [
+            sys.executable,
+            str(examples_dir / t_file),
+            "--host",
+            gateway_host,
+            "--port",
+            str(gateway_port),
+            "--device-id",
+            device_id,
+        ]
+        cmd.extend(pin_args)
+        env = {
+            "REPO_ROOT": str(REPO_ROOT),
+            "PYTHONPATH": f"{examples_parent}:{REPO_ROOT / 'mcubridge'}:{REPO_ROOT}",
+            "MCUBRIDGE_NON_INTERACTIVE": "1",
+            "MCUBRIDGE_GATEWAY_HOST": gateway_host,
+            "MCUBRIDGE_GATEWAY_PORT": str(gateway_port),
+            "MCUBRIDGE_DEVICE_ID": device_id,
+        }
+        code, stdout, stderr = await run_command(cmd, cwd=REPO_ROOT, env=env, timeout=timeout)
+    else:
+        assert target_host is not None
+        target_u = target_user or "root"
+        remote_cmd = (
+            f"MCUBRIDGE_NON_INTERACTIVE=1 PYTHONPATH=/tmp/mcubridge-client-examples "
+            f"python3 /tmp/mcubridge-client-examples/examples/{t_file} "
+            f"--host '{gateway_host}' --port {gateway_port} --device-id '{device_id}'"
+        )
+        remote_cmd += "".join(f" {arg}" for arg in pin_args)
+        code, stdout, stderr = await run_ssh_command(
+            host=target_host,
+            user=target_u,
+            cmd=remote_cmd,
+            timeout=timeout,
+        )
+
+    elapsed = time.time() - t0
+    passed = code == 0
+    status_label = "✅ [PASS]" if passed else "❌ [FAIL]"
+    print(f"{status_label} ({elapsed:.2f}s)")
+    if stdout and stdout.strip():
+        for line in stdout.strip().splitlines():
+            print(f"      {line}")
+    if stderr and stderr.strip():
+        for line in stderr.strip().splitlines():
+            print(f"      [stderr] {line}")
+    return (t_file, passed, elapsed, stderr if not passed else None)
+
+
+def _audit_post_run_status(is_local: bool, target_host: str | None, target_user: str) -> list[str]:
+    if is_local:
+        status_file = Path("/tmp/mcubridge_status.json")
+        if not status_file.exists():
+            return []
+        try:
+            return audit_status_dict(json.loads(status_file.read_text(encoding="utf-8")))
+        except (OSError, json.JSONDecodeError, ValueError, TypeError) as e:
+            sys.stderr.write(f"[WARN] Failed to parse /tmp/mcubridge_status.json: {e}\n")
+            return [f"Failed to parse /tmp/mcubridge_status.json: {e}"]
+
+    assert target_host is not None
+    target_u = target_user or "root"
+    try:
+        remote_read_cmd = (
+            "ubus call mcubridge status 2>/dev/null || cat /tmp/mcubridge_status.json 2>/dev/null || echo ''"
+        )
+        _, status_out, _ = asyncio.run(
+            run_ssh_command(host=target_host, user=target_u, cmd=remote_read_cmd, timeout=10.0)
+        )
+        if status_out.strip():
+            return audit_status_dict(json.loads(status_out.strip()))
+        return []
+    except (OSError, json.JSONDecodeError, ValueError, TypeError) as e:
+        sys.stderr.write(f"[WARN] Failed to retrieve remote status via UBUS/file: {e}\n")
+        return [f"Failed to retrieve remote status via UBUS/file: {e}"]
+
+
+def _report_results_and_exit(
+    results: list[tuple[str, bool, float, str | None]],
+    status_errors: list[str],
+) -> None:
+    passed_count = sum(1 for _, p, _, _ in results if p)
+    failed_count = len(results) - passed_count
+    total_time = sum(el for _, _, el, _ in results)
+
+    print("========================================================")
+    print(f"SUMMARY: {passed_count} passed, {failed_count} failed in {total_time:.2f}s")
+    print("========================================================")
+
+    if status_errors:
+        print("❌ [STATUS AUDIT FAIL] Post-test status health check failed:")
+        for err in status_errors:
+            print(f"   • {err}")
+        sys.exit(1)
+
+    if failed_count > 0:
+        for name, p, _, err in results:
+            if not p:
+                print(f"  ❌ {name}: {err or 'Unknown failure'}")
+        sys.exit(1)
+
+
 @app.command()
 def run(
     target: Annotated[str | None, typer.Option("--target", "-t", help="Target name from manifest")] = None,
@@ -214,35 +388,10 @@ def run(
     """Execute the suite of _test.py client tests locally or on remote physical hardware."""
     examples_parent = REPO_ROOT / "mcubridge-client-examples"
     examples_dir = examples_parent / "examples"
-    available_tests = sorted([p.name for p in examples_dir.glob("*_test.py") if not p.name.startswith((".", "_"))])
-
-    if test_name:
-        clean_name = test_name if test_name.endswith(".py") else f"{test_name}.py"
-        if clean_name not in available_tests:
-            print(f"Error: test '{test_name}' not found. Available tests: {available_tests}")
-            sys.exit(2)
-        tests_to_run = [clean_name]
-    else:
-        tests_to_run = available_tests
-
+    tests_to_run = _resolve_tests_to_run(examples_dir, test_name)
     pin_arguments = {name: led_pin_arguments(name, led_builtin_pin) for name in tests_to_run}
 
-    is_local = local or (host is None and target is None)
-    target_host = host
-    target_user = user
-    ssh_args: list[str] = ["-o", "StrictHostKeyChecking=no"]
-
-    if target and not local:
-        manifest_targets = load_manifest(manifest_path)
-        matched = [t for t in manifest_targets if t.name == target]
-        if not matched:
-            print(f"Error: target '{target}' not found in manifest {manifest_path}")
-            sys.exit(2)
-        tgt = matched[0]
-        is_local = tgt.local
-        target_host = tgt.host
-        target_user = tgt.user or user
-        ssh_args = tgt.ssh_args or ssh_args
+    is_local, target_host, target_user, _ = _resolve_target_execution(target, host, user, local, manifest_path)
 
     print("========================================================")
     print(" McuBridge Hardware Physical Test Suite Runner")
@@ -253,123 +402,30 @@ def run(
     print("--------------------------------------------------------")
 
     if not is_local and target_host:
-        from tools.emulation.sync_to_vm import tar_push
+        _sync_test_scripts(examples_parent, target_host, target_user)
 
-        print(f"[*] Synchronizing test scripts to {target_host}...")
-        tar_push(
-            src_dir=examples_parent,
-            remote_dest="/tmp/mcubridge-client-examples",
-            host=target_host,
-            user=target_user,
-            excludes=["__pycache__", "*.pyc", "*.pyo"],
-        )
-
-    results: list[tuple[str, bool, float, str | None]] = []
-
-    async def _execute_all() -> None:
-        import time
-
+    async def _execute_all() -> list[tuple[str, bool, float, str | None]]:
+        res: list[tuple[str, bool, float, str | None]] = []
         for t_file in tests_to_run:
-            sys.stdout.write(f"[*] Running {t_file}... ")
-            sys.stdout.flush()
-            t0 = time.time()
-
-            if is_local:
-                cmd = [
-                    sys.executable,
-                    str(examples_dir / t_file),
-                    "--host",
-                    gateway_host,
-                    "--port",
-                    str(gateway_port),
-                    "--device-id",
-                    device_id,
-                ]
-                cmd.extend(pin_arguments[t_file])
-                env = {
-                    "REPO_ROOT": str(REPO_ROOT),
-                    "PYTHONPATH": f"{examples_parent}:{REPO_ROOT / 'mcubridge'}:{REPO_ROOT}",
-                    "MCUBRIDGE_NON_INTERACTIVE": "1",
-                    "MCUBRIDGE_GATEWAY_HOST": gateway_host,
-                    "MCUBRIDGE_GATEWAY_PORT": str(gateway_port),
-                    "MCUBRIDGE_DEVICE_ID": device_id,
-                }
-                code, _stdout, stderr = await run_command(cmd, cwd=REPO_ROOT, env=env, timeout=timeout)
-            else:
-                assert target_host is not None
-                target_u = target_user or "root"
-                remote_cmd = (
-                    f"MCUBRIDGE_NON_INTERACTIVE=1 PYTHONPATH=/tmp/mcubridge-client-examples "
-                    f"python3 /tmp/mcubridge-client-examples/examples/{t_file} "
-                    f"--host '{gateway_host}' --port {gateway_port} --device-id '{device_id}'"
-                )
-                remote_cmd += "".join(f" {argument}" for argument in pin_arguments[t_file])
-                code, _stdout, stderr = await run_ssh_command(
-                    host=target_host,
-                    user=target_u,
-                    cmd=remote_cmd,
-                    timeout=timeout,
-                )
-
-            elapsed = time.time() - t0
-            passed = code == 0
-            status_label = "✅ [PASS]" if passed else "❌ [FAIL]"
-            print(f"{status_label} ({elapsed:.2f}s)")
-            if _stdout and _stdout.strip():
-                for line in _stdout.strip().splitlines():
-                    print(f"      {line}")
-            if stderr and stderr.strip():
-                for line in stderr.strip().splitlines():
-                    print(f"      [stderr] {line}")
-            results.append((t_file, passed, elapsed, stderr if not passed else None))
-
-    asyncio.run(_execute_all())
-
-    passed_count = sum(1 for _, p, _, _ in results if p)
-    failed_count = len(results) - passed_count
-    total_time = sum(el for _, _, el, _ in results)
-
-    print("========================================================")
-    print(f"SUMMARY: {passed_count} passed, {failed_count} failed in {total_time:.2f}s")
-    print("========================================================")
-
-    # [SIL-2] Status Snapshot Post-Run Integrity Gate
-    status_errors: list[str] = []
-    if is_local:
-        status_file = Path("/tmp/mcubridge_status.json")
-        if status_file.exists():
-            try:
-                status_errors = audit_status_dict(json.loads(status_file.read_text(encoding="utf-8")))
-            except (OSError, json.JSONDecodeError, ValueError, TypeError) as e:
-                sys.stderr.write(f"[WARN] Failed to parse /tmp/mcubridge_status.json: {e}\n")
-                status_errors = [f"Failed to parse /tmp/mcubridge_status.json: {e}"]
-    else:
-        assert target_host is not None
-        target_u = target_user or "root"
-        try:
-            remote_read_cmd = (
-                "ubus call mcubridge status 2>/dev/null || cat /tmp/mcubridge_status.json 2>/dev/null || echo ''"
+            test_res = await _execute_single_test(
+                t_file,
+                is_local=is_local,
+                target_host=target_host,
+                target_user=target_user,
+                examples_parent=examples_parent,
+                examples_dir=examples_dir,
+                gateway_host=gateway_host,
+                gateway_port=gateway_port,
+                device_id=device_id,
+                pin_args=pin_arguments[t_file],
+                timeout=timeout,
             )
-            _, status_out, _ = asyncio.run(
-                run_ssh_command(host=target_host, user=target_u, cmd=remote_read_cmd, timeout=10.0)
-            )
-            if status_out.strip():
-                status_errors = audit_status_dict(json.loads(status_out.strip()))
-        except (OSError, json.JSONDecodeError, ValueError, TypeError) as e:
-            sys.stderr.write(f"[WARN] Failed to retrieve remote status via UBUS/file: {e}\n")
-            status_errors = [f"Failed to retrieve remote status via UBUS/file: {e}"]
+            res.append(test_res)
+        return res
 
-    if status_errors:
-        print("❌ [STATUS AUDIT FAIL] Post-test status health check failed:")
-        for err in status_errors:
-            print(f"   • {err}")
-        sys.exit(1)
-
-    if failed_count > 0:
-        for name, p, _, err in results:
-            if not p:
-                print(f"  ❌ {name}: {err or 'Unknown failure'}")
-        sys.exit(1)
+    results = asyncio.run(_execute_all())
+    status_errors = _audit_post_run_status(is_local, target_host, target_user)
+    _report_results_and_exit(results, status_errors)
 
 
 def _load_rotate_module() -> Any:

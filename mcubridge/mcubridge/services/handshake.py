@@ -48,9 +48,6 @@ from ..protocol.structures import (
     create_queued_publish,
 )
 from ..protocol.topics import get_topic_for_message
-from ..security.security import (
-    secure_zero,
-)
 from ..state.context import RuntimeState
 
 os.environ.setdefault("CRYPTOGRAPHY_OPENSSL_NO_LEGACY", "1")
@@ -582,13 +579,13 @@ class SerialHandshakeManager:
             return False
 
     def clear_handshake_expectations(self) -> None:
-        if self._state.link_handshake_nonce is not None:
-            nonce_buf = bytearray(self._state.link_handshake_nonce)
-            secure_zero(nonce_buf)
-        if self._state.link_expected_tag is not None:
-            tag_buf = bytearray(self._state.link_expected_tag)
-            secure_zero(tag_buf)
+        """Clear handshake ephemeral state.
 
+        CPython bytes objects are immutable and managed by the Python object allocator
+        and garbage collector. In-place zeroization of copies via bytearray and ctypes.memset
+        does not scrub the original immutable bytes in memory; we drop references explicitly
+        by setting them to None to allow prompt garbage collection.
+        """
         self._state.link_handshake_nonce = None
         self._state.link_expected_tag = None
         self._state.link_nonce_length = 0

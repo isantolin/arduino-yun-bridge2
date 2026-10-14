@@ -15,6 +15,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Any, Final, cast
@@ -28,7 +29,7 @@ import typer
 import uvloop
 from google.protobuf.message import DecodeError
 from google.protobuf.message import Message as ProtobufMessage
-from grpclib.const import Status
+from grpclib.const import Cardinality, Handler, Status
 from grpclib.exceptions import GRPCError
 from grpclib.protocol import Peer
 from grpclib.reflection.service import ServerReflection
@@ -591,7 +592,46 @@ class CloudBridgeService(CloudBridgeBase):
                 await stream.send_message(pb.CommandResponse(status_code=504, payload=str(exc).encode("utf-8")))
 
 
-class GatewayLocalBridgeService(LocalBridgeBase):
+@dataclass(frozen=True, slots=True)
+class GatewayRpcSpec:
+    name: str
+    request_type: type[ProtobufMessage]
+    response_type: type[ProtobufMessage]
+    default_factory: Callable[[], ProtobufMessage]
+
+
+GATEWAY_RPC_SPECS: Final[tuple[GatewayRpcSpec, ...]] = (
+    GatewayRpcSpec("SetPinMode", pb.PinMode, pb.GenericResponse, lambda: pb.GenericResponse(status="error")),
+    GatewayRpcSpec("DigitalWrite", pb.DigitalWrite, pb.GenericResponse, lambda: pb.GenericResponse(status="error")),
+    GatewayRpcSpec("DigitalRead", pb.PinRead, pb.DigitalReadResponse, pb.DigitalReadResponse),
+    GatewayRpcSpec("AnalogWrite", pb.AnalogWrite, pb.GenericResponse, lambda: pb.GenericResponse(status="error")),
+    GatewayRpcSpec("AnalogRead", pb.PinRead, pb.AnalogReadResponse, pb.AnalogReadResponse),
+    GatewayRpcSpec(
+        "PinSubscribe", pb.PinSubscribeRequest, pb.PinSubscribeResponse, lambda: pb.PinSubscribeResponse(success=False)
+    ),
+    GatewayRpcSpec("DatastorePut", pb.DatastorePut, pb.GenericResponse, lambda: pb.GenericResponse(status="error")),
+    GatewayRpcSpec("DatastoreGet", pb.DatastoreGet, pb.DatastoreGetResponse, pb.DatastoreGetResponse),
+    GatewayRpcSpec("MailboxPush", pb.MailboxPush, pb.GenericResponse, lambda: pb.GenericResponse(status="error")),
+    GatewayRpcSpec("MailboxRead", pb.SubscribeRequest, pb.MailboxReadResponse, pb.MailboxReadResponse),
+    GatewayRpcSpec("FileWrite", pb.FileWrite, pb.GenericResponse, lambda: pb.GenericResponse(status="error")),
+    GatewayRpcSpec("FileRead", pb.FileRead, pb.FileReadResponse, pb.FileReadResponse),
+    GatewayRpcSpec("FileRemove", pb.FileRemove, pb.GenericResponse, lambda: pb.GenericResponse(status="error")),
+    GatewayRpcSpec(
+        "ProcessRunAsync", pb.ProcessRunAsync, pb.ProcessRunAsyncResponse, lambda: pb.ProcessRunAsyncResponse(pid=0)
+    ),
+    GatewayRpcSpec(
+        "ProcessPoll", pb.ProcessPoll, pb.ProcessPollResponse, lambda: pb.ProcessPollResponse(finished=True)
+    ),
+    GatewayRpcSpec("ProcessKill", pb.ProcessKill, pb.GenericResponse, lambda: pb.GenericResponse(status="error")),
+    GatewayRpcSpec("SpiTransfer", pb.SpiTransfer, pb.SpiTransferResponse, pb.SpiTransferResponse),
+    GatewayRpcSpec("SpiConfigure", pb.SpiConfig, pb.GenericResponse, lambda: pb.GenericResponse(status="error")),
+    GatewayRpcSpec("GetVersion", pb.SubscribeRequest, pb.VersionResponse, pb.VersionResponse),
+    GatewayRpcSpec("GetFreeMemory", pb.SubscribeRequest, pb.FreeMemoryResponse, pb.FreeMemoryResponse),
+    GatewayRpcSpec("GetStatus", pb.SubscribeRequest, pb.BridgeStatus, pb.BridgeStatus),
+)
+
+
+class GatewayLocalBridgeService:
     """[SIL-2] Northbound LocalBridge gRPC service hosted on the Gateway for clients.
 
     Routes all typed LocalBridge RPCs to the explicitly specified edge device.
@@ -599,6 +639,33 @@ class GatewayLocalBridgeService(LocalBridgeBase):
 
     def __init__(self, gateway: ProtobufGateway) -> None:
         self.gateway = gateway
+
+    def __getattr__(self, name: str) -> Any:
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+
+    def __mapping__(self) -> dict[str, Handler]:
+        mapping: dict[str, Handler] = {
+            f"/rpc.pb.LocalBridge/{spec.name}": Handler(
+                getattr(self, spec.name),
+                Cardinality.UNARY_UNARY,
+                spec.request_type,
+                spec.response_type,
+            )
+            for spec in GATEWAY_RPC_SPECS
+        }
+        mapping["/rpc.pb.LocalBridge/Publish"] = Handler(
+            self.Publish,
+            Cardinality.UNARY_UNARY,
+            pb.CloudQueuedPublish,
+            pb.CloudQueuedPublish,
+        )
+        mapping["/rpc.pb.LocalBridge/SubscribeConsole"] = Handler(
+            self.SubscribeConsole,
+            Cardinality.UNARY_STREAM,
+            pb.SubscribeRequest,
+            pb.CloudQueuedPublish,
+        )
+        return mapping
 
     def resolve_device_id(self, stream: Stream[Any, Any]) -> str | None:
         """Extract explicit target device ID from request metadata."""
@@ -663,71 +730,6 @@ class GatewayLocalBridgeService(LocalBridgeBase):
                 )
                 await stream.send_message(default_resp)
 
-    async def SetPinMode(self, stream: Stream[pb.PinMode, pb.GenericResponse]) -> None:
-        await self._forward_rpc(stream, "SetPinMode", pb.GenericResponse, pb.GenericResponse(status="error"))
-
-    async def DigitalWrite(self, stream: Stream[pb.DigitalWrite, pb.GenericResponse]) -> None:
-        await self._forward_rpc(stream, "DigitalWrite", pb.GenericResponse, pb.GenericResponse(status="error"))
-
-    async def DigitalRead(self, stream: Stream[pb.PinRead, pb.DigitalReadResponse]) -> None:
-        await self._forward_rpc(stream, "DigitalRead", pb.DigitalReadResponse, pb.DigitalReadResponse())
-
-    async def AnalogWrite(self, stream: Stream[pb.AnalogWrite, pb.GenericResponse]) -> None:
-        await self._forward_rpc(stream, "AnalogWrite", pb.GenericResponse, pb.GenericResponse(status="error"))
-
-    async def AnalogRead(self, stream: Stream[pb.PinRead, pb.AnalogReadResponse]) -> None:
-        await self._forward_rpc(stream, "AnalogRead", pb.AnalogReadResponse, pb.AnalogReadResponse())
-
-    async def PinSubscribe(self, stream: Stream[pb.PinSubscribeRequest, pb.PinSubscribeResponse]) -> None:
-        await self._forward_rpc(stream, "PinSubscribe", pb.PinSubscribeResponse, pb.PinSubscribeResponse(success=False))
-
-    async def DatastorePut(self, stream: Stream[pb.DatastorePut, pb.GenericResponse]) -> None:
-        await self._forward_rpc(stream, "DatastorePut", pb.GenericResponse, pb.GenericResponse(status="error"))
-
-    async def DatastoreGet(self, stream: Stream[pb.DatastoreGet, pb.DatastoreGetResponse]) -> None:
-        await self._forward_rpc(stream, "DatastoreGet", pb.DatastoreGetResponse, pb.DatastoreGetResponse())
-
-    async def MailboxPush(self, stream: Stream[pb.MailboxPush, pb.GenericResponse]) -> None:
-        await self._forward_rpc(stream, "MailboxPush", pb.GenericResponse, pb.GenericResponse(status="error"))
-
-    async def MailboxRead(self, stream: Stream[pb.SubscribeRequest, pb.MailboxReadResponse]) -> None:
-        await self._forward_rpc(stream, "MailboxRead", pb.MailboxReadResponse, pb.MailboxReadResponse())
-
-    async def FileWrite(self, stream: Stream[pb.FileWrite, pb.GenericResponse]) -> None:
-        await self._forward_rpc(stream, "FileWrite", pb.GenericResponse, pb.GenericResponse(status="error"))
-
-    async def FileRead(self, stream: Stream[pb.FileRead, pb.FileReadResponse]) -> None:
-        await self._forward_rpc(stream, "FileRead", pb.FileReadResponse, pb.FileReadResponse())
-
-    async def FileRemove(self, stream: Stream[pb.FileRemove, pb.GenericResponse]) -> None:
-        await self._forward_rpc(stream, "FileRemove", pb.GenericResponse, pb.GenericResponse(status="error"))
-
-    async def ProcessRunAsync(self, stream: Stream[pb.ProcessRunAsync, pb.ProcessRunAsyncResponse]) -> None:
-        await self._forward_rpc(
-            stream, "ProcessRunAsync", pb.ProcessRunAsyncResponse, pb.ProcessRunAsyncResponse(pid=0)
-        )
-
-    async def ProcessPoll(self, stream: Stream[pb.ProcessPoll, pb.ProcessPollResponse]) -> None:
-        await self._forward_rpc(stream, "ProcessPoll", pb.ProcessPollResponse, pb.ProcessPollResponse(finished=True))
-
-    async def ProcessKill(self, stream: Stream[pb.ProcessKill, pb.GenericResponse]) -> None:
-        await self._forward_rpc(stream, "ProcessKill", pb.GenericResponse, pb.GenericResponse(status="error"))
-
-    async def SpiTransfer(self, stream: Stream[pb.SpiTransfer, pb.SpiTransferResponse]) -> None:
-        await self._forward_rpc(stream, "SpiTransfer", pb.SpiTransferResponse, pb.SpiTransferResponse())
-
-    async def SpiConfigure(self, stream: Stream[pb.SpiConfig, pb.GenericResponse]) -> None:
-        await self._forward_rpc(stream, "SpiConfigure", pb.GenericResponse, pb.GenericResponse(status="error"))
-
-    async def GetVersion(self, stream: Stream[pb.SubscribeRequest, pb.VersionResponse]) -> None:
-        await self._forward_rpc(stream, "GetVersion", pb.VersionResponse, pb.VersionResponse())
-
-    async def GetFreeMemory(self, stream: Stream[pb.SubscribeRequest, pb.FreeMemoryResponse]) -> None:
-        await self._forward_rpc(stream, "GetFreeMemory", pb.FreeMemoryResponse, pb.FreeMemoryResponse())
-
-    async def GetStatus(self, stream: Stream[pb.SubscribeRequest, pb.BridgeStatus]) -> None:
-        await self._forward_rpc(stream, "GetStatus", pb.BridgeStatus, pb.BridgeStatus())
-
     async def Publish(self, stream: Stream[pb.CloudQueuedPublish, pb.CloudQueuedPublish]) -> None:
         req = await stream.recv_message()
         if req is None:
@@ -778,6 +780,26 @@ class GatewayLocalBridgeService(LocalBridgeBase):
             finally:
                 if device_id in self.gateway.console_queues and queue in self.gateway.console_queues[device_id]:
                     self.gateway.console_queues[device_id].remove(queue)
+
+    @classmethod
+    def create_forwarder(cls, spec: GatewayRpcSpec) -> Callable[[Any, Stream[Any, Any]], Awaitable[None]]:
+        async def forwarder(self: GatewayLocalBridgeService, stream: Stream[Any, Any]) -> None:
+            await self._forward_rpc(
+                stream,
+                spec.name,
+                spec.response_type,
+                spec.default_factory(),
+            )
+
+        forwarder.__name__ = spec.name
+        forwarder.__qualname__ = f"GatewayLocalBridgeService.{spec.name}"
+        return forwarder
+
+
+for _spec in GATEWAY_RPC_SPECS:
+    setattr(GatewayLocalBridgeService, _spec.name, GatewayLocalBridgeService.create_forwarder(_spec))
+
+LocalBridgeBase.register(GatewayLocalBridgeService)
 
 
 class ProtobufGateway:

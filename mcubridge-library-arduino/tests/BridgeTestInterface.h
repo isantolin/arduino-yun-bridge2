@@ -133,6 +133,7 @@ class TestAccessor : public BridgeClass {
     etl::copy_n(key.begin(), etl::min(key.size(), _session_key.size()),
                 _session_key.begin());
   }
+  etl::span<const uint8_t> getSessionKey() const { return _session_key; }
   void setRxNonceCounter(uint64_t counter) { _rx_nonce_counter = counter; }
 
   void fillPendingTxQueue() {

@@ -179,8 +179,10 @@ void test_aead_decrypt_validates_buffers_and_tag(void) {
 }
 
 void test_nonce_counter_accepts_random_prefix_and_rejects_replay(void) {
-  etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> nonce = {0x12U, 0x34U, 0x56U,
-                                                         0x78U};
+  etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> nonce = {};
+  etl::byte_stream_writer prefix_writer(
+      etl::span<uint8_t>(nonce.data(), sizeof(uint32_t)), etl::endian::big);
+  prefix_writer.write<uint32_t>(rpc::RPC_MPU_AEAD_NONCE_PREFIX);
   nonce[11] = 1U;
   uint64_t last_seen_counter = 0U;
 
@@ -194,6 +196,27 @@ void test_nonce_counter_accepts_random_prefix_and_rejects_replay(void) {
   TEST_ASSERT_FALSE(replayed_nonce);
   TEST_ASSERT_EQUAL_UINT64(1U, last_seen_counter);
 
+  // Anti-reflection: nonces with MCU prefix must be rejected
+  etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> mcu_reflected_nonce = {};
+  etl::byte_stream_writer mcu_prefix_writer(
+      etl::span<uint8_t>(mcu_reflected_nonce.data(), sizeof(uint32_t)),
+      etl::endian::big);
+  mcu_prefix_writer.write<uint32_t>(rpc::RPC_MCU_AEAD_NONCE_PREFIX);
+  mcu_reflected_nonce[11] = 2U;
+  const bool reflected_rejected = rpc::security::validate_frame_nonce(
+      mcu_reflected_nonce, &last_seen_counter);
+  TEST_ASSERT_FALSE(reflected_rejected);
+  TEST_ASSERT_EQUAL_UINT64(1U, last_seen_counter);
+
+  // Nonces with random/arbitrary prefix must be rejected
+  etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> random_prefix_nonce = {
+      0x12U, 0x34U, 0x56U, 0x78U};
+  random_prefix_nonce[11] = 2U;
+  const bool random_rejected = rpc::security::validate_frame_nonce(
+      random_prefix_nonce, &last_seen_counter);
+  TEST_ASSERT_FALSE(random_rejected);
+  TEST_ASSERT_EQUAL_UINT64(1U, last_seen_counter);
+
   etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> newer_nonce = nonce;
   newer_nonce[11] = 2U;
   const bool missing_counter_rejected =
@@ -201,9 +224,9 @@ void test_nonce_counter_accepts_random_prefix_and_rejects_replay(void) {
   TEST_ASSERT_FALSE(missing_counter_rejected);
 
   etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> mpu_nonce = {};
-  etl::byte_stream_writer mpu_prefix_writer(
+  etl::byte_stream_writer mpu_writer(
       etl::span<uint8_t>(mpu_nonce.data(), sizeof(uint32_t)), etl::endian::big);
-  mpu_prefix_writer.write<uint32_t>(rpc::RPC_MPU_AEAD_NONCE_PREFIX);
+  mpu_writer.write<uint32_t>(rpc::RPC_MPU_AEAD_NONCE_PREFIX);
   mpu_nonce[rpc::RPC_AEAD_NONCE_SIZE - 1U] = 3U;
   uint64_t mpu_last_seen_counter = 2U;
   const bool peer_prefix_accepted =

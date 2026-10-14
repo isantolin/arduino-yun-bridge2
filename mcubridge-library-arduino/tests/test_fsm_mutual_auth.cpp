@@ -52,6 +52,19 @@ void test_fsm_timeout_to_fault() {
   TEST_ASSERT(ba.isFault());
 }
 
+void test_fsm_handshake_ev_send_critical_to_fault() {
+  BiStream stream;
+  reset_bridge_core(Bridge, stream);
+  auto& ba = TestAccessor::create(Bridge);
+  ba.trigger(bridge::fsm::EvHandshakeStart());
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(bridge::fsm::StateId::HANDSHAKE),
+                        static_cast<int>(ba.get_state_id()));
+  ba.trigger(bridge::fsm::EvSendCritical());
+  // Fail-safe requirement: EvSendCritical during handshake must transition to
+  // FAULT
+  TEST_ASSERT(ba.isFault());
+}
+
 }  // namespace
 
 int main() {
@@ -60,5 +73,6 @@ int main() {
   RUN_TEST(test_mutual_auth_success);
   RUN_TEST(test_mutual_auth_failure_to_startup);
   RUN_TEST(test_fsm_timeout_to_fault);
+  RUN_TEST(test_fsm_handshake_ev_send_critical_to_fault);
   return UNITY_END();
 }

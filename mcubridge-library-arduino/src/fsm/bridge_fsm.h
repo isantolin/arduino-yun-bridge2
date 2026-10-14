@@ -107,7 +107,10 @@ class HandshakeState
   etl::fsm_state_id_t on_event(const EvTimeout&) {
     return static_cast<etl::fsm_state_id_t>(StateId::FAULT);
   }
-  etl::fsm_state_id_t on_event_unknown(const etl::imessage&) {
+  etl::fsm_state_id_t on_event_unknown(const etl::imessage& msg) {
+    if (msg.get_message_id() == EvSendCritical::ID) {
+      return static_cast<etl::fsm_state_id_t>(StateId::FAULT);
+    }
     return get_state_id();
   }
 };

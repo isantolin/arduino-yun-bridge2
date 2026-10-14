@@ -542,18 +542,51 @@ void test_encrypted_rx_nonce_paths() {
   size_t cursor = 0;
   rpc_pb_RpcEnvelope encrypted;
   if (extract_encrypted_frame(stream.tx_buf, cursor, encrypted, 4)) {
-    rpc_pb_RpcEnvelope valid_env = encrypted;
+    // 1. Anti-reflection test: Looping back MCU's own frame must be rejected by
+    // anti-reflection
+    etl::array<uint8_t, rpc::MAX_FRAME_SIZE> reflected_wire;
+    size_t reflected_wire_len = rpc::serialize_frame(
+        encrypted,
+        etl::span<uint8_t>(reflected_wire.data(), reflected_wire.size()));
+    ba.invokePacketReceived(
+        etl::span<const uint8_t>(reflected_wire.data(), reflected_wire_len));
 
-    // 1. Success case
+    // 2. Legitimate incoming MPU frame: encrypted with
+    // RPC_MPU_AEAD_NONCE_PREFIX
+    etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> mpu_pl = {};
+    pb_ostream_t pl_stream =
+        pb_ostream_from_buffer(mpu_pl.data(), mpu_pl.size());
+    const bool pb_ok = pb_encode(
+        &pl_stream, rpc::Payload::get_fields<rpc_pb_ConsoleWrite>(), &cmsg);
+    TEST_ASSERT_TRUE(pb_ok);
+
+    etl::array<uint8_t, rpc::MAX_PAYLOAD_SIZE> mpu_ciphertext = {};
+    etl::array<uint8_t, rpc::RPC_AEAD_NONCE_SIZE> mpu_nonce = {};
+    etl::array<uint8_t, rpc::RPC_AEAD_TAG_SIZE> mpu_tag = {};
+    uint64_t mpu_tx_counter = 0U;
+    const bool enc_ok = rpc::security::aead_encrypt_frame(
+        rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE), 902,
+        etl::span<const uint8_t>(mpu_pl.data(), pl_stream.bytes_written),
+        ba.getSessionKey(), &mpu_tx_counter, mpu_ciphertext, mpu_nonce, mpu_tag,
+        rpc::RPC_MPU_AEAD_NONCE_PREFIX);
+    TEST_ASSERT_TRUE(enc_ok);
+
+    rpc_pb_RpcEnvelope valid_env = rpc::build_envelope(
+        rpc::to_underlying(rpc::CommandId::CMD_CONSOLE_WRITE), 902,
+        etl::span<const uint8_t>(mpu_ciphertext.data(),
+                                 pl_stream.bytes_written),
+        mpu_nonce, mpu_tag);
+
+    // 3. Success case: valid MPU frame accepted
     etl::array<uint8_t, rpc::MAX_FRAME_SIZE> wire;
     size_t wire_len = rpc::serialize_frame(
         valid_env, etl::span<uint8_t>(wire.data(), wire.size()));
     ba.invokePacketReceived(etl::span<const uint8_t>(wire.data(), wire_len));
 
-    // 2. Replay attack (nonce reuse)
+    // 4. Replay attack: nonce reuse rejected
     ba.invokePacketReceived(etl::span<const uint8_t>(wire.data(), wire_len));
 
-    // 3. Decrypt failure (corrupt tag/payload bytes)
+    // 5. Decrypt failure: corrupt tag/payload bytes rejected
     rpc_pb_RpcEnvelope tampered = valid_env;
     tampered.sequence_id = 999;
     if (tampered.payload_type.encrypted_payload_with_tag.size > 0) {

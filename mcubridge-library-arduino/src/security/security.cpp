@@ -142,7 +142,7 @@ bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
                         etl::span<const uint8_t> key, uint64_t* nonce_counter,
                         etl::span<uint8_t> out_payload,
                         etl::span<uint8_t> out_nonce,
-                        etl::span<uint8_t> out_tag) {
+                        etl::span<uint8_t> out_tag, uint32_t nonce_prefix) {
   // Validar tamaños exactos de búferes antes de invocar a wolfSSL
   if (!nonce_counter || key.size() != rpc::RPC_AEAD_KEY_SIZE ||
       out_nonce.size() != rpc::RPC_AEAD_NONCE_SIZE ||
@@ -167,7 +167,7 @@ bool aead_encrypt_frame(uint16_t cmd_id, uint16_t seq_id,
       "AEAD nonce prefixes must be direction-specific");
   etl::byte_stream_writer prefix_writer(out_nonce.subspan(0U, sizeof(uint32_t)),
                                         etl::endian::big);
-  prefix_writer.write<uint32_t>(rpc::RPC_MCU_AEAD_NONCE_PREFIX);
+  prefix_writer.write<uint32_t>(nonce_prefix);
   etl::byte_stream_writer n_writer(out_nonce.subspan(sizeof(uint32_t)),
                                    etl::endian::big);
   n_writer.write<uint64_t>(current_nonce);
@@ -218,11 +218,24 @@ bool validate_frame_nonce(etl::span<const uint8_t> nonce,
     return false;
   }
 
-  // Keep the suffix check prefix-agnostic for backward wire compatibility.
-  const auto nonce_sub = nonce.subspan(4);
+  // [ANTI-REFLECTION] Validar que los primeros 4 bytes coincidan estrictamente
+  // con RPC_MPU_AEAD_NONCE_PREFIX
+  etl::byte_stream_reader prefix_reader(nonce.data(), sizeof(uint32_t),
+                                        etl::endian::big);
+  const auto prefix_val = prefix_reader.read<uint32_t>();
+  if (!prefix_val.has_value() ||
+      prefix_val.value() != rpc::RPC_MPU_AEAD_NONCE_PREFIX) {
+    return false;
+  }
+
+  const auto nonce_sub = nonce.subspan(sizeof(uint32_t));
   etl::byte_stream_reader n_reader(nonce_sub.data(), nonce_sub.size(),
                                    etl::endian::big);
-  const uint64_t counter = n_reader.read<uint64_t>().value();
+  const auto counter_val = n_reader.read<uint64_t>();
+  if (!counter_val.has_value()) {
+    return false;
+  }
+  const uint64_t counter = counter_val.value();
 
   // [ANTI-REPLAY] Si el contador es menor o igual al último visto, rechazar
   if (counter <= *last_seen_counter) {

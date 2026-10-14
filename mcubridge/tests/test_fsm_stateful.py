@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 import hypothesis.stateful as h_stateful
@@ -29,7 +29,9 @@ from mcubridge.state.context import (
     create_runtime_state,
 )
 
-run_state_machine_as_test: Callable[[type[RuleBasedStateMachine]], None] = h_stateful.run_state_machine_as_test
+run_state_machine_as_test: Callable[[type[RuleBasedStateMachine]], None] = cast(
+    Any, h_stateful.run_state_machine_as_test
+)
 
 
 class LinkConnectionStateMachine(RuleBasedStateMachine):

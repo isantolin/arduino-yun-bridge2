@@ -27,13 +27,16 @@ def secure_zero(data: bytearray | memoryview) -> None:
     ctypes.memset(ctypes.addressof(buf), 0, len(data))
 
 
-def generate_nonce_with_counter(counter: int) -> tuple[bytes, int]:
-    """Generate an MPU-originated AEAD nonce with a directional prefix and counter."""
+def generate_nonce_with_counter(
+    counter: int,
+    prefix_val: int = protocol.MPU_AEAD_NONCE_PREFIX,
+) -> tuple[bytes, int]:
+    """Generate an AEAD nonce with a directional prefix and counter."""
     if counter >= protocol.NONCE_COUNTER_MASK or counter < 0:
         raise ValueError("Nonce counter overflow")
     new_counter = counter + 1
     prefix_bytes = protocol.AEAD_NONCE_SIZE - protocol.HANDSHAKE_NONCE_COUNTER_BYTES
-    prefix = protocol.MPU_AEAD_NONCE_PREFIX.to_bytes(prefix_bytes, "big")
+    prefix = prefix_val.to_bytes(prefix_bytes, "big")
     nonce = prefix + new_counter.to_bytes(protocol.HANDSHAKE_NONCE_COUNTER_BYTES, "big")
     return nonce, new_counter
 

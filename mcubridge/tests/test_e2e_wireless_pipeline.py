@@ -191,7 +191,9 @@ async def test_e2e_wireless_tcp_analog_read_and_datastore(
 
                 elif cmd_id == protocol.Command.CMD_ANALOG_READ.value:
                     ack_pb = pb.AckPacket(command_id=protocol.Command.CMD_ANALOG_READ.value)
-                    nonce1, mcu_counter = generate_nonce_with_counter(mcu_counter)
+                    nonce1, mcu_counter = generate_nonce_with_counter(
+                        mcu_counter, prefix_val=protocol.MCU_AEAD_NONCE_PREFIX
+                    )
                     ack_frame = build_frame(
                         protocol.Status.ACK.value,
                         rx_seq,
@@ -203,7 +205,9 @@ async def test_e2e_wireless_tcp_analog_read_and_datastore(
                     await writer.drain()
 
                     resp_pb = pb.AnalogReadResponse(value=742)
-                    nonce2, mcu_counter = generate_nonce_with_counter(mcu_counter)
+                    nonce2, mcu_counter = generate_nonce_with_counter(
+                        mcu_counter, prefix_val=protocol.MCU_AEAD_NONCE_PREFIX
+                    )
                     resp_frame = build_frame(
                         protocol.Command.CMD_ANALOG_READ_RESP.value,
                         rx_seq,

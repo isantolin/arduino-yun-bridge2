@@ -781,8 +781,8 @@ class GatewayLocalBridgeService:
                 if device_id in self.gateway.console_queues and queue in self.gateway.console_queues[device_id]:
                     self.gateway.console_queues[device_id].remove(queue)
 
-    @classmethod
-    def create_forwarder(cls, spec: GatewayRpcSpec) -> Callable[[Any, Stream[Any, Any]], Awaitable[None]]:
+    @staticmethod
+    def create_forwarder(spec: GatewayRpcSpec) -> Callable[[Any, Stream[Any, Any]], Awaitable[None]]:
         async def forwarder(self: GatewayLocalBridgeService, stream: Stream[Any, Any]) -> None:
             await self._forward_rpc(
                 stream,

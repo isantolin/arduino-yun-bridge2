@@ -7,7 +7,6 @@ anti-replay counters, baudrate fallback, DTR toggling, and framing error conditi
 from __future__ import annotations
 
 import asyncio
-import secrets
 import tempfile
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -20,7 +19,7 @@ import serialx
 from cobs import cobsr
 from mcubridge.config.settings import RuntimeConfig
 from mcubridge.protocol.frame import build_frame
-from mcubridge.protocol.protocol import Command, Status
+from mcubridge.protocol.protocol import MCU_AEAD_NONCE_PREFIX, Command, Status
 from mcubridge.state.context import create_runtime_state
 from mcubridge.transport.serial import SerialTransport
 
@@ -124,7 +123,7 @@ async def test_serial_transport_process_packet_anti_replay(tmp_path: Path) -> No
     state.link_last_nonce_counter = 100
 
     # Build valid frame with counter <= last_counter (replay attempt)
-    old_nonce = secrets.token_bytes(4) + (90).to_bytes(8, "big")
+    old_nonce = MCU_AEAD_NONCE_PREFIX.to_bytes(4, "big") + (90).to_bytes(8, "big")
     raw_frame = build_frame(
         command_id=Command.CMD_DIGITAL_READ_RESP.value,
         sequence_id=1,
@@ -138,7 +137,7 @@ async def test_serial_transport_process_packet_anti_replay(tmp_path: Path) -> No
     assert state.link_last_nonce_counter == 100
 
     # Valid newer counter
-    new_nonce = secrets.token_bytes(4) + (105).to_bytes(8, "big")
+    new_nonce = MCU_AEAD_NONCE_PREFIX.to_bytes(4, "big") + (105).to_bytes(8, "big")
     raw_frame_valid = build_frame(
         command_id=Command.CMD_DIGITAL_READ_RESP.value,
         sequence_id=2,

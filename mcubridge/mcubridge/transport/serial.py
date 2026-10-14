@@ -66,10 +66,11 @@ except ImportError as exc:
 _orig_after_configure: Any = None
 
 
-def _safe_after_configure(self: Any) -> None:
+def _safe_after_configure(self: Any, orig_fn: Any = None) -> None:
+    fn = orig_fn if orig_fn is not None else _orig_after_configure
     try:
-        if _orig_after_configure is not None:
-            _orig_after_configure(self)
+        if fn is not None:
+            fn(self)
     except OSError as exc:
         if exc.errno in (errno.EIO, errno.EINVAL, errno.ENOTTY, errno.EOPNOTSUPP):
             logger.debug("Ignoring unsupported ioctl during serial configuration", errno=exc.errno)

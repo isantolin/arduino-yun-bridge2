@@ -269,19 +269,14 @@ def test_logging_discover_syslog_and_none(runtime_config: settings.RuntimeConfig
         configure_logging(debug=True, console=True)
 
 
-def test_uci_edge_branches(mocker: MockerFixture) -> None:
-    import builtins
-
-    orig_import = builtins.__import__
-
-    def mock_import(name: str, *args: Any, **kwargs: Any) -> Any:
-        if name == "uci":
-            raise ImportError("Mocked missing uci")
-        return orig_import(name, *args, **kwargs)
-
-    mocker.patch("builtins.__import__", side_effect=mock_import)
+def test_uci_edge_branches() -> None:
+    # 1. Test when native uci module import fails (ImportError in host environment)
     result = common.get_uci_config()
     assert result == common.get_default_config()
+
+    # 2. Test when injected uci module lacks Uci/UCI class
+    dummy_module = object()
+    assert common.get_uci_config(uci_module=dummy_module) == common.get_default_config()
 
 
 def test_config_settings_and_logging_branches(runtime_config: settings.RuntimeConfig, mocker: MockerFixture) -> None:

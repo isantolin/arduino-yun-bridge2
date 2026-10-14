@@ -189,13 +189,11 @@ def test_load_runtime_config_with_overrides() -> None:
     assert cfg.topic_authorization.digital_read is True
 
 
-def test_load_runtime_config_uci_invalid_fatal(mocker: MockerFixture) -> None:
-    mocker.patch("mcubridge.config.settings._load_raw_config", return_value=({"topic_prefix": ""}, "uci"))
+def test_load_runtime_config_uci_invalid_fatal() -> None:
     with pytest.raises(RuntimeError, match="Invalid system configuration"):
-        load_runtime_config()
+        load_runtime_config(raw_loader=lambda: ({"topic_prefix": ""}, "uci"))
 
 
-def test_load_runtime_config_cli_invalid_fatal(mocker: MockerFixture) -> None:
-    mocker.patch("mcubridge.config.settings._load_raw_config", return_value=({"topic_prefix": ""}, "defaults"))
+def test_load_runtime_config_cli_invalid_fatal() -> None:
     with pytest.raises(ValueError, match="topic_prefix: value length must be at least 1"):
         load_runtime_config(overrides={"topic_prefix": ""})

@@ -371,32 +371,29 @@ def test_serial_safe_after_configure_branches(mocker: MockerFixture) -> None:
     import termios
     import mcubridge.transport.serial as serial_mod
 
-    safe_after_configure: Callable[[Any], None] = serial_mod.safe_after_configure
+    safe_after_configure: Callable[..., None] = serial_mod.safe_after_configure
 
     mock_self = MagicMock()
     mock_self._fileno = None
-    mock_orig = mocker.patch(
-        "mcubridge.transport.serial._orig_after_configure", side_effect=OSError(errno.EINVAL, "Invalid argument")
-    )
-    safe_after_configure(mock_self)
+    mock_orig = MagicMock(side_effect=OSError(errno.EINVAL, "Invalid argument"))
+    safe_after_configure(mock_self, orig_fn=mock_orig)
 
     mock_orig.side_effect = OSError(errno.EACCES, "Permission denied")
     with pytest.raises(OSError, match="Permission denied"):
-        safe_after_configure(mock_self)
+        safe_after_configure(mock_self, orig_fn=mock_orig)
 
     mock_orig.side_effect = None
     mock_orig.return_value = None
     mock_self._fileno = 42
     mocker.patch("termios.tcgetattr", side_effect=termios.error("mock termios failure"))
-    safe_after_configure(mock_self)
+    safe_after_configure(mock_self, orig_fn=mock_orig)
     assert mock_self._fileno == 42
 
-    mocker.patch("mcubridge.transport.serial._orig_after_configure", None)
     mock_tcset = mocker.patch("termios.tcsetattr")
     cc_list: list[int] = [0] * 32
     attrs: list[Any] = [0, 0, 0, 0, 0, 0, cc_list]
     mocker.patch("termios.tcgetattr", return_value=attrs)
-    safe_after_configure(mock_self)
+    safe_after_configure(mock_self, orig_fn=None)
     mock_tcset.assert_called_once()
     assert cc_list[termios.VMIN] == 1
     assert cc_list[termios.VTIME] == 0

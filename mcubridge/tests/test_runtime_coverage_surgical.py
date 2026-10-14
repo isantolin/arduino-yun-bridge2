@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -347,14 +348,13 @@ async def test_process_poll_and_terminate(test_config: RuntimeConfig, mock_bridg
 
 @pytest.mark.asyncio
 async def test_enqueue_cloud_not_debug_and_drop(
-    test_config: RuntimeConfig, mock_bridge_state: RuntimeState, mocker: MockerFixture
+    test_config: RuntimeConfig, mock_bridge_state: RuntimeState
 ) -> None:
+    test_config.cloud_enabled = True
+    test_config.cloud_spool_dir = ""
     mock_serial = AsyncMock(spec=SerialTransport)
     svc = BridgeService(test_config, mock_bridge_state, mock_serial)
-
-    mocker.patch("mcubridge.services.runtime.logger.is_enabled_for", return_value=False)
-    mocker.patch.object(svc, "_publish_cloud_message", new=AsyncMock(return_value=False))
-    mocker.patch.object(svc, "_spool_cloud_message_locked", new=AsyncMock(return_value=False))
+    logging.getLogger("mcubridge.service").setLevel(logging.INFO)
 
     while not mock_bridge_state.cloud_publish_queue.empty():
         mock_bridge_state.cloud_publish_queue.get_nowait()
@@ -366,18 +366,19 @@ async def test_enqueue_cloud_not_debug_and_drop(
 
 @pytest.mark.asyncio
 async def test_flush_cloud_spool_publish_fails_and_degraded(
-    test_config: RuntimeConfig, mock_bridge_state: RuntimeState, mocker: MockerFixture
+    test_config: RuntimeConfig, mock_bridge_state: RuntimeState
 ) -> None:
     mock_serial = AsyncMock(spec=SerialTransport)
     svc = BridgeService(test_config, mock_bridge_state, mock_serial)
-    svc.cloud_stream = AsyncMock()
+    mock_stream = AsyncMock()
+    mock_stream.send_message.side_effect = OSError("Connection error")
+    svc.cloud_stream = mock_stream
 
     spool = svc.cloud_spool
     assert spool is not None
     await spool.append(pb.CloudQueuedPublish(topic_name="spool/topic", payload=b"data").SerializeToString())
 
-    # 1. _publish_cloud_message returns False -> triggers line 489-490 break
-    mocker.patch.object(svc, "_publish_cloud_message", new=AsyncMock(return_value=False))
+    # 1. _publish_cloud_message returns False when send_message raises OSError -> triggers break
     flush_spool: Callable[[], Awaitable[None]] = svc.flush_cloud_spool_locked
     await flush_spool()
     assert len(spool) == 1
@@ -385,7 +386,9 @@ async def test_flush_cloud_spool_publish_fails_and_degraded(
     # 2. Storage error during peek triggers degradation (lines 491-494 and 511)
     mock_bridge_state.cloud_spool_degraded = False
     mock_bridge_state.cloud_spool_failure_reason = None
-    mocker.patch.object(spool, "peek", side_effect=OSError("simulated_error"))
+    mock_stream.send_message.side_effect = None
+    failing_peek = AsyncMock(side_effect=OSError("simulated_error"))
+    spool.peek = failing_peek
     await flush_spool()
     _degraded_attr = "cloud_spool_" + "degraded"
     assert getattr(mock_bridge_state, _degraded_attr) is True

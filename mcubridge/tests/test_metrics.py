@@ -209,18 +209,14 @@ async def test_publish_metrics_oserror_recovery(runtime_state: RuntimeState) -> 
 
 
 @pytest.mark.asyncio
-async def test_publish_bridge_snapshots_loop_error_recovery(runtime_state: RuntimeState, mocker: MockerFixture) -> None:
+async def test_publish_bridge_snapshots_loop_error_recovery(runtime_state: RuntimeState) -> None:
     calls = 0
 
     async def _failing_enqueue(_: pb.CloudQueuedPublish) -> None:
-        pass
-
-    async def _failing_emit(*_: object, **__: object) -> None:
         nonlocal calls
         calls += 1
-        raise OSError("Loop IO failure")
+        raise RuntimeError("Loop IO failure")
 
-    mocker.patch("mcubridge.metrics._emit_bridge_snapshot", side_effect=_failing_emit)
     task = asyncio.create_task(
         publish_bridge_snapshots(
             runtime_state,

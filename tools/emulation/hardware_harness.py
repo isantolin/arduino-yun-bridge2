@@ -5,6 +5,7 @@ import json
 import os
 import sys
 import tomllib
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated, Any, cast
@@ -399,6 +400,7 @@ def rotate(
     force: Annotated[bool, typer.Option("--force", "-f", help="Force rotation without confirmation")] = False,
     no_restart: Annotated[bool, typer.Option("--no-restart", help="Skip service restart")] = False,
     ssh_args: Annotated[list[str] | None, typer.Option("--ssh", help="Extra SSH options")] = None,
+    rotate_loader: Annotated[Callable[[], Any] | None, typer.Option(hidden=True)] = None,
 ) -> None:
     """Rotate MCU Bridge shared credentials on remote hardware or local rootfs."""
     import re
@@ -411,7 +413,7 @@ def rotate(
             print(f"Error: --local directory {local} does not exist", file=sys.stderr)
             sys.exit(1)
         os.environ["UCI_CONFIG_DIR"] = str(local)
-        mod = _load_rotate_module()
+        mod = (rotate_loader or _load_rotate_module)()
         secret, _ = mod.generate_and_apply_credentials(length=length, no_restart=no_restart)
         output = f"SERIAL_SECRET={secret}\n"
     elif host:

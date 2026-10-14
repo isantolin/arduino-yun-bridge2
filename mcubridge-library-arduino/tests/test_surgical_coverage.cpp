@@ -610,7 +610,7 @@ static void test_surgical_extra_branches() {
   // 9. Send non-system command when tx disabled
   ba.setTxEnabled(false);
   rpc::payload::DigitalWrite dw_payload = {};
-  (void)Bridge.send(rpc::CommandId::CMD_DIGITAL_WRITE, 0, dw_payload);
+  TEST_ASSERT_FALSE(Bridge.send(rpc::CommandId::CMD_DIGITAL_WRITE, 0, dw_payload));
   ba.setTxEnabled(true);
 
   // 10. Dispatch XOFF, XON, GetFreeMemory, GetCapabilities

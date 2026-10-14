@@ -66,20 +66,22 @@ rules:
           - pattern: patch.object($OBJ, $ATTR, ...)
           - pattern: $MONKEYPATCH.setattr($OBJ, $ATTR, ...)
           - pattern: setattr($OBJ, $ATTR, ...)
+          - pattern: $MOCKER.patch($ATTR, ...)
+          - pattern: patch($ATTR, ...)
       - metavariable-regex:
           metavariable: $ATTR
-          regex: "^[\"']_.*[\"']$"
+          regex: "(\\._[^\"'/]+[\"']$)|(^[\"']_)"
     paths:
       include:
         - "**/tests/**"
 
   # ==============================================================================
-  # RULE 11 & DIRECTIVA DE TESTING: PROHIBICIÓN DE MUTACIÓN DE SYS.MODULES (PYTHON)
+  # RULE 11 & DIRECTIVA DE TESTING: PROHIBICIÓN DE MUTACIÓN DE SYS.MODULES Y BUILTINS (PYTHON)
   # ==============================================================================
   - id: milspec-ban-sys-modules-mock
     languages: [python]
     severity: ERROR
-    message: "MIL-SPEC Directive Violation: Mutating 'sys.modules' dictionary to fake system dependencies is strictly prohibited. Inject callables or dependency modules via constructor/function arguments (DI)."
+    message: "MIL-SPEC Directive Violation: Mutating 'sys.modules' or 'builtins.__import__' to fake system dependencies is strictly prohibited. Inject callables or dependency modules via constructor/function arguments (DI)."
     patterns:
       - pattern-either:
           - pattern: $MOCKER.patch.dict("sys.modules", ...)
@@ -90,6 +92,9 @@ rules:
           - pattern: "sys.modules[...] = ..."
           - pattern: "sys.modules.pop(...)"
           - pattern: "del sys.modules[...]"
+          - pattern: $MOCKER.patch("builtins.__import__", ...)
+          - pattern: patch("builtins.__import__", ...)
+          - pattern: $MONKEYPATCH.setattr(builtins, "__import__", ...)
     paths:
       include:
         - "**/tests/**"

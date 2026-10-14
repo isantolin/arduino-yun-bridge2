@@ -444,19 +444,12 @@ def test_ubus_handle_ping(mock_runtime: MockRuntimeFacade) -> None:
 
 @pytest.mark.asyncio
 async def test_ubus_service_run_loop(mock_runtime: MockRuntimeFacade, mocker: MockerFixture) -> None:
-
     mock_ubus: Any = MagicMock()
-    loop_called = 0
-
-    def fake_loop(timeout: int) -> None:
-        nonlocal loop_called
-        loop_called += 1
-
-    mock_ubus.loop = fake_loop
+    mock_ubus.loop = MagicMock()
     service = UbusService(mock_runtime, ubus_module=mock_ubus)
     # When not active, run returns immediately
     await service.run()
-    assert loop_called == 0
+    mock_ubus.loop.assert_not_called()
 
     service.connection = MagicMock()
 
@@ -468,7 +461,7 @@ async def test_ubus_service_run_loop(mock_runtime: MockRuntimeFacade, mocker: Mo
         tg.create_task(service.run())
         tg.create_task(cancel_soon())
 
-    assert loop_called > 0
+    assert mock_ubus.loop.call_count > 0
 
 
 def test_get_ubus_type_resolution(mocker: MockerFixture) -> None:

@@ -34,6 +34,8 @@ from mcubridge.state.storage import LmdbDeque
 from mcubridge.transport.serial import SerialTransport
 from pytest_mock import MockerFixture
 
+from tools.testing.mock_stream import MockGrpcStream
+
 
 def _make_config() -> RuntimeConfig:
     fs_root = f".tmp_tests/fs-{time.time_ns()}"
@@ -256,34 +258,20 @@ async def test_connect_cloud_session(mock_bridge_service: BridgeService, mocker:
     envelope_cmd.command_request.payload = b""
     envelope_cmd.sequence_id = 1234
 
-    class AsyncStreamMock:
-        def __init__(self) -> None:
-            self.send_message = AsyncMock()
-
-        def __aiter__(self):
-            async def _gen():
-                yield envelope_pong
-                yield envelope_cmd
-
-            return _gen()
-
-    mock_stream = AsyncStreamMock()
-    mock_open_ctx = AsyncMock()
-    mock_open_ctx.__aenter__.return_value = mock_stream
-    mock_open_ctx.__aexit__.return_value = None
+    mock_stream = MockGrpcStream(inbound=[envelope_pong, envelope_cmd])
 
     mocker.patch("mcubridge.services.runtime.Channel")
     mock_stub_cls = mocker.patch("mcubridge.services.runtime.CloudBridgeStub")
 
     mock_stub = MagicMock()
-    mock_stub.Session.open.return_value = mock_open_ctx
+    mock_stub.Session.open.return_value = mock_stream
     mock_stub_cls.return_value = mock_stub
 
     await svc.connect_cloud_session(None)
     assert svc.state.connected_via_http3 is True
     assert mock_stream.send_message.await_count == 2
-    assert mock_stream.send_message.await_args_list[0][0][0].event.event_type == "status_online"
-    resp = mock_stream.send_message.await_args_list[1][0][0]
+    assert mock_stream.sent_messages[0].event.event_type == "status_online"
+    resp = mock_stream.sent_messages[1]
     assert resp.sequence_id == 1234
     assert resp.command_response.status_code == 200
 
@@ -1127,31 +1115,8 @@ async def test_runtime_cloud_session_non_command_envelope(
         event=pb.EventNotification(event_type="custom", severity="info", description="test"),
     )
 
-    class MockStream:
-        def __init__(self, items: list[pb.CloudEnvelope]) -> None:
-            self._items = items
-
-        async def __aenter__(self) -> MockStream:
-            return self
-
-        async def __aexit__(self, _exc_type: Any, _exc_val: Any, _exc_tb: Any) -> None:
-            pass
-
-        def __aiter__(self) -> MockStream:
-            self._iter = iter(self._items)
-            return self
-
-        async def __anext__(self) -> pb.CloudEnvelope:
-            try:
-                return next(self._iter)
-            except StopIteration as exc:
-                raise StopAsyncIteration from exc
-
-        async def send_message(self, _msg: Any) -> None:
-            pass
-
     mock_stub = MagicMock()
-    mock_stub.Session.open.return_value = MockStream([event_env])
+    mock_stub.Session.open.return_value = MockGrpcStream(inbound=[event_env])
 
     mocker.patch("mcubridge.services.runtime.Channel")
     mocker.patch("mcubridge.services.runtime.CloudBridgeStub", return_value=mock_stub)
@@ -1167,11 +1132,11 @@ async def test_send_cloud_event_branches(mock_bridge_service: BridgeService) -> 
     service.cloud_stream = None
     await service.send_cloud_event("heartbeat", "info", "test_msg")
 
-    mock_stream = AsyncMock()
+    mock_stream = MockGrpcStream[Any, pb.CloudEnvelope]()
     service.cloud_stream = mock_stream
     await service.send_cloud_event("heartbeat", "info", "test_msg")
     mock_stream.send_message.assert_awaited_once()
-    envelope = mock_stream.send_message.call_args[0][0]
+    envelope = mock_stream.sent_message
     assert envelope.event.event_type == "heartbeat"
     assert envelope.event.description == "test_msg"
 
@@ -1231,31 +1196,10 @@ async def test_runtime_cloud_session_rpc_commands_and_errors(
         ),
     )
 
-    sent_envelopes: list[pb.CloudEnvelope] = []
-
-    class MockRpcStream:
-        def __init__(self) -> None:
-            self._items = [pong_env, cmd_ok, cmd_invalid, cmd_os_err]
-            self._idx = 0
-
-        async def __aenter__(self) -> MockRpcStream:
-            return self
-
-        async def __aexit__(self, _exc_type: Any, _exc_val: Any, _exc_tb: Any) -> None:
-            pass
-
-        def __aiter__(self) -> MockRpcStream:
-            return self
-
-        async def __anext__(self) -> pb.CloudEnvelope:
-            if self._idx < len(self._items):
-                item = self._items[self._idx]
-                self._idx += 1
-                return item
-            raise ConnectionError("connection reset by peer")
-
-        async def send_message(self, msg: pb.CloudEnvelope) -> None:
-            sent_envelopes.append(msg)
+    mock_stream = MockGrpcStream[pb.CloudEnvelope, pb.CloudEnvelope](
+        inbound=[pong_env, cmd_ok, cmd_invalid, cmd_os_err],
+        aiter_exception=ConnectionError("connection reset by peer"),
+    )
 
     # Configure boundary mock_serial: returns version on CMD_GET_VERSION, raises OSError on CMD_SET_PIN_MODE
     async def mock_serial_send(cmd: int, _payload: Any) -> Any:
@@ -1268,7 +1212,7 @@ async def test_runtime_cloud_session_rpc_commands_and_errors(
     svc.serial = mock_serial
 
     mock_stub = MagicMock()
-    mock_stub.Session.open.return_value = MockRpcStream()
+    mock_stub.Session.open.return_value = mock_stream
 
     mocker.patch("mcubridge.services.runtime.Channel")
     mocker.patch("mcubridge.services.runtime.CloudBridgeStub", return_value=mock_stub)
@@ -1281,6 +1225,7 @@ async def test_runtime_cloud_session_rpc_commands_and_errors(
         await svc.connect_cloud_session(MagicMock())
 
     # Envelope 0 is the initial status_online event from connect_cloud_session
+    sent_envelopes = mock_stream.sent_messages
     assert len(sent_envelopes) == 4
     assert sent_envelopes[0].event.event_type == "status_online"
     assert sent_envelopes[1].command_response.status_code == 200

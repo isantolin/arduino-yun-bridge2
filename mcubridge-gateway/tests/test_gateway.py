@@ -36,6 +36,8 @@ from mcubridge.protocol.protocol import DEFAULT_CLOUD_PORT, PROTOCOL_VERSION
 from pytest_mock import MockerFixture
 from typer.testing import CliRunner
 
+from tools.testing.mock_stream import MockGrpcStream, MockPeer
+
 run_state_machine_as_test: Callable[[type[RuleBasedStateMachine]], None] = cast(
     Any, h_stateful
 ).run_state_machine_as_test
@@ -53,67 +55,41 @@ def cloud_service(mock_gateway: ProtobufGateway) -> CloudBridgeService:
 
 @pytest.mark.asyncio
 async def test_session_ping_pong(cloud_service: CloudBridgeService) -> None:
-    mock_stream: AsyncMock = AsyncMock()
-    mock_stream.peer = MagicMock()
-    mock_stream.peer.addr.return_value = ("127.0.0.1", 54321)
-    mock_stream.peer.cert.return_value = None
-
     ping_envelope = pb.CloudEnvelope(
         protocol_version=PROTOCOL_VERSION,
         device_id="DEV_001",
         sequence_id=10,
         ping=pb.KeepalivePing(interval_ms=1000),
     )
+    mock_stream = MockGrpcStream[pb.CloudEnvelope, pb.CloudEnvelope](inbound=[ping_envelope])
 
-    async def async_iter():
-        yield ping_envelope
-
-    def _aiter(self: object):
-        return async_iter()
-
-    mock_stream.__aiter__ = _aiter
-
-    await cloud_service.Session(mock_stream)
+    await cloud_service.Session(mock_stream.as_stream())
 
     assert mock_stream.send_message.called
-    sent_pong = mock_stream.send_message.call_args[0][0]
+    sent_pong = mock_stream.sent_message
     assert sent_pong.sequence_id == 10
     assert sent_pong.WhichOneof("payload") == "pong"
 
 
 @pytest.mark.asyncio
 async def test_session_client_cert_common_name(cloud_service: CloudBridgeService) -> None:
-    mock_stream: AsyncMock = AsyncMock()
-    mock_stream.peer = MagicMock()
-    mock_stream.peer.addr.return_value = ("10.0.0.1", 12345)
-    mock_stream.peer.cert.return_value = {
-        "subject": [
-            [("countryName", "US")],
-            [("commonName", "device-mips-01")],
-        ]
-    }
-
-    async def async_iter():
-        yield pb.CloudEnvelope(
+    inbound = [
+        pb.CloudEnvelope(
             protocol_version=PROTOCOL_VERSION, telemetry=pb.TelemetryReport(daemon_metrics_blob=b"data")
         )
+    ]
+    mock_stream = MockGrpcStream[pb.CloudEnvelope, pb.CloudEnvelope](
+        inbound=inbound,
+        peer_addr=("10.0.0.1", 12345),
+        client_cn="device-mips-01",
+    )
 
-    def _aiter(self: object):
-        return async_iter()
-
-    mock_stream.__aiter__ = _aiter
-
-    await cloud_service.Session(mock_stream)
+    await cloud_service.Session(mock_stream.as_stream())
     assert "device-mips-01" not in cloud_service.gateway.connections
 
 
 @pytest.mark.asyncio
 async def test_session_event_and_command_response(cloud_service: CloudBridgeService) -> None:
-    mock_stream: AsyncMock = AsyncMock()
-    mock_stream.peer = MagicMock()
-    mock_stream.peer.addr.return_value = ("127.0.0.1", 9999)
-    mock_stream.peer.cert.return_value = None
-
     event_envelope = pb.CloudEnvelope(
         protocol_version=PROTOCOL_VERSION,
         event=pb.EventNotification(event_type="boot", severity="info", description="MCU reset"),
@@ -122,17 +98,12 @@ async def test_session_event_and_command_response(cloud_service: CloudBridgeServ
         protocol_version=PROTOCOL_VERSION,
         command_response=pb.CommandResponse(status_code=200, error_message="", payload=b""),
     )
+    mock_stream = MockGrpcStream[pb.CloudEnvelope, pb.CloudEnvelope](
+        inbound=[event_envelope, cmd_resp_envelope],
+        peer_addr=("127.0.0.1", 9999),
+    )
 
-    async def async_iter():
-        yield event_envelope
-        yield cmd_resp_envelope
-
-    def _aiter(self: object):
-        return async_iter()
-
-    mock_stream.__aiter__ = _aiter
-
-    await cloud_service.Session(mock_stream)
+    await cloud_service.Session(mock_stream.as_stream())
     assert len(cloud_service.gateway.connections) == 0
 
 
@@ -170,20 +141,12 @@ def test_cli_help() -> None:
 
 @pytest.mark.asyncio
 async def test_session_unhandled_and_oserror(cloud_service: CloudBridgeService) -> None:
-    mock_stream: AsyncMock = AsyncMock()
-    mock_stream.peer = MagicMock()
-    mock_stream.peer.addr.return_value = ("127.0.0.1", 1234)
-    mock_stream.peer.cert.return_value = None
-
-    async def async_iter():
-        yield pb.CloudEnvelope(protocol_version=PROTOCOL_VERSION)
-        raise OSError("Connection reset by peer")
-
-    def _aiter(self: object):
-        return async_iter()
-
-    mock_stream.__aiter__ = _aiter
-    await cloud_service.Session(mock_stream)
+    mock_stream = MockGrpcStream[pb.CloudEnvelope, pb.CloudEnvelope](
+        inbound=[pb.CloudEnvelope(protocol_version=PROTOCOL_VERSION)],
+        peer_addr=("127.0.0.1", 1234),
+        aiter_exception=OSError("Connection reset by peer"),
+    )
+    await cloud_service.Session(mock_stream.as_stream())
     assert len(cloud_service.gateway.connections) == 0
 
 
@@ -272,14 +235,10 @@ async def test_protobuf_gateway_http3_run(mocker: MockerFixture) -> None:
 async def test_cloud_bridge_service_cert_parse_error() -> None:
     gw = ProtobufGateway(use_tls=False)
     service = CloudBridgeService(gw)
-
-    mock_stream = AsyncMock()
-    mock_stream.peer = MagicMock()
-    mock_stream.peer.addr.return_value = ("127.0.0.1", 12345)
-    # Return invalid cert subject structure to trigger parsing error
-    mock_stream.peer.cert.return_value = {"subject": [None]}
-
-    await service.Session(mock_stream)
+    mock_stream = MockGrpcStream[pb.CloudEnvelope, pb.CloudEnvelope](
+        peer_addr=("127.0.0.1", 12345), peer_cert={"subject": [None]}
+    )
+    await service.Session(mock_stream.as_stream())
     assert len(gw.connections) == 0
 
 
@@ -287,34 +246,20 @@ async def test_cloud_bridge_service_cert_parse_error() -> None:
 async def test_cloud_bridge_service_session_cancelled() -> None:
     gw = ProtobufGateway(use_tls=False)
     service = CloudBridgeService(gw)
-    mock_stream = AsyncMock()
-    mock_stream.peer = MagicMock()
-    mock_stream.peer.addr.return_value = ("127.0.0.1", 12345)
-    mock_stream.peer.cert.return_value = None
-    mock_stream.__aiter__.side_effect = asyncio.CancelledError()
+    mock_stream = MockGrpcStream[pb.CloudEnvelope, pb.CloudEnvelope](
+        peer_addr=("127.0.0.1", 12345), aiter_exception=asyncio.CancelledError()
+    )
     with pytest.raises(asyncio.CancelledError):
-        await service.Session(mock_stream)
+        await service.Session(mock_stream.as_stream())
 
 
 @pytest.mark.asyncio
 async def test_session_invalid_envelope_validation(cloud_service: CloudBridgeService) -> None:
-    mock_stream: AsyncMock = AsyncMock()
-    mock_stream.peer = MagicMock()
-    mock_stream.peer.addr.return_value = ("127.0.0.1", 54321)
-    mock_stream.peer.cert.return_value = None
-
     # Invalid envelope with wrong protocol_version (fails native check)
     invalid_envelope = pb.CloudEnvelope(protocol_version=99, device_id="DEV_001")
+    mock_stream = MockGrpcStream[pb.CloudEnvelope, pb.CloudEnvelope](inbound=[invalid_envelope])
 
-    async def async_iter():
-        yield invalid_envelope
-
-    def _aiter(self: object):
-        return async_iter()
-
-    mock_stream.__aiter__ = _aiter
-
-    await cloud_service.Session(mock_stream)
+    await cloud_service.Session(mock_stream.as_stream())
     assert not mock_stream.send_message.called
 
 
@@ -379,26 +324,16 @@ def test_gateway_session_machine_lifecycle() -> None:
 
 @pytest.mark.asyncio
 async def test_gateway_payload_dispatch_empty_or_unhandled(cloud_service: CloudBridgeService) -> None:
-    mock_stream: AsyncMock = AsyncMock()
-    mock_stream.peer = MagicMock()
-    mock_stream.peer.addr.return_value = ("127.0.0.1", 55555)
-    mock_stream.peer.cert.return_value = None
-
     empty_envelope = pb.CloudEnvelope(
         protocol_version=PROTOCOL_VERSION,
         device_id="DEV_EMPTY",
         sequence_id=99,
     )
+    mock_stream = MockGrpcStream[pb.CloudEnvelope, pb.CloudEnvelope](
+        inbound=[empty_envelope], peer_addr=("127.0.0.1", 55555)
+    )
 
-    async def async_iter():
-        yield empty_envelope
-
-    def _aiter(self: object) -> Any:
-        return async_iter()
-
-    mock_stream.__aiter__ = _aiter
-
-    await cloud_service.Session(mock_stream)
+    await cloud_service.Session(mock_stream.as_stream())
     assert not mock_stream.send_message.called
 
 
@@ -409,42 +344,38 @@ def test_extract_peer_identity() -> None:
     assert auth is False
 
     # 2. peer with address only
-    mock_peer = MagicMock()
-    mock_peer.addr.return_value = ("192.168.1.50", 44321)
-    mock_peer.cert.return_value = None
+    mock_peer = MockPeer(addr=("192.168.1.50", 44321))
     device_id, auth = extract_peer_identity(mock_peer)
     assert device_id == "anonymous-192.168.1.50:44321"
     assert auth is False
 
     # 3. peer with CN certificate
-    mock_peer.cert.return_value = {
-        "subject": [
-            [("countryName", "US")],
-            [("commonName", "test-device-01")],
-        ]
-    }
-    device_id, auth = extract_peer_identity(mock_peer)
+    mock_peer_cn = MockPeer(common_name="test-device-01")
+    device_id, auth = extract_peer_identity(mock_peer_cn)
     assert device_id == "test-device-01"
     assert auth is True
 
     # 4. peer with malformed cert subject
-    mock_peer.cert.return_value = {"subject": [None]}
+    mock_peer_bad = MockPeer(cert={"subject": [None]})
     with pytest.raises(ValueError, match="Failed to parse client certificate"):
-        extract_peer_identity(mock_peer)
+        extract_peer_identity(mock_peer_bad)
 
     # 5. peer with valid cert subject but missing commonName
-    mock_peer.cert.return_value = {
-        "subject": [
-            [("countryName", "US")],
-            [("organizationName", "Acme Inc")],
-        ]
-    }
-    device_id_no_cn, auth_no_cn = extract_peer_identity(mock_peer)
+    mock_peer_no_cn = MockPeer(
+        addr=("192.168.1.50", 44321),
+        cert={
+            "subject": [
+                [("countryName", "US")],
+                [("organizationName", "Acme Inc")],
+            ]
+        },
+    )
+    device_id_no_cn, auth_no_cn = extract_peer_identity(mock_peer_no_cn)
     assert device_id_no_cn == "anonymous-192.168.1.50:44321"
     assert auth_no_cn is False
 
     # 6. metadata with x-device-id
-    device_id_meta, auth_meta = extract_peer_identity(mock_peer, {"x-device-id": "yun-meta-01"})
+    device_id_meta, auth_meta = extract_peer_identity(mock_peer_no_cn, {"x-device-id": "yun-meta-01"})
     assert device_id_meta == "yun-meta-01"
     assert auth_meta is False
 
@@ -486,11 +417,6 @@ async def test_auth_interceptor_flow() -> None:
 
 @pytest.mark.asyncio
 async def test_fleet_metrics_and_telemetry_flow(cloud_service: CloudBridgeService) -> None:
-    mock_stream: AsyncMock = AsyncMock()
-    mock_stream.peer = MagicMock()
-    mock_stream.peer.addr.return_value = ("10.0.0.2", 12345)
-    mock_stream.peer.cert.return_value = {"subject": [[("commonName", "test-yun-01")]]}
-
     metrics = pb.DaemonMetrics(
         cloud_queue_depth=4,
         link_synchronised=True,
@@ -509,17 +435,13 @@ async def test_fleet_metrics_and_telemetry_flow(cloud_service: CloudBridgeServic
         sequence_id=2,
         event=pb.EventNotification(event_type="alarm", severity="warning", description="temp high"),
     )
+    mock_stream = MockGrpcStream[pb.CloudEnvelope, pb.CloudEnvelope](
+        inbound=[telemetry_envelope, event_envelope],
+        peer_addr=("10.0.0.2", 12345),
+        client_cn="test-yun-01",
+    )
 
-    async def async_iter():
-        yield telemetry_envelope
-        yield event_envelope
-
-    def _aiter(self: object):
-        return async_iter()
-
-    mock_stream.__aiter__ = _aiter
-
-    await cloud_service.Session(mock_stream)
+    await cloud_service.Session(mock_stream.as_stream())
 
     gw = cloud_service.gateway
     assert isinstance(gw.metrics, FleetMetrics)
@@ -762,15 +684,12 @@ async def test_session_disconnect_aborts_pending_commands_with_edge_branches(
     mock_gateway.pending_commands[("other-dev", 3)] = fut_other
 
     # Mock stream raising CancelledError immediately
-    mock_stream = AsyncMock()
-    mock_stream.__aiter__.side_effect = asyncio.CancelledError()
-    mock_peer = MagicMock()
-    mock_peer.cert.return_value = {"subject": [[("commonName", "disc-dev")]]}
-    mock_stream.peer = mock_peer
-    mock_stream.metadata = {}
+    mock_stream = MockGrpcStream[pb.CloudEnvelope, pb.CloudEnvelope](
+        client_cn="disc-dev", aiter_exception=asyncio.CancelledError()
+    )
 
     with pytest.raises(asyncio.CancelledError):
-        await svc.Session(mock_stream)
+        await svc.Session(mock_stream.as_stream())
 
     assert fut_target.done()
     assert isinstance(fut_target.exception(), ConnectionResetError)
@@ -1005,69 +924,57 @@ async def test_gateway_local_bridge_service_dispatch(mock_gateway: ProtobufGatew
         )
     )
     mock_gateway.send_command = mock_send
-    stream_valid = AsyncMock()
-    stream_valid.metadata = {"x-device-id": "dev-1"}
-    stream_valid.recv_message = AsyncMock(return_value=pb.DigitalWrite(pin=13, value=1))
-    await local_svc.DigitalWrite(stream_valid)
+    stream_valid = MockGrpcStream(request=pb.DigitalWrite(pin=13, value=1), metadata={"x-device-id": "dev-1"})
+    await local_svc.DigitalWrite(stream_valid.as_stream())
     mock_send.assert_awaited_once()
-    assert stream_valid.send_message.call_args[0][0].status == "ok"
+    assert stream_valid.sent_message.status == "ok"
 
     # 4. SubscribeConsole explicit device resolution
-    stream_sub_no_dev = AsyncMock()
-    stream_sub_no_dev.metadata = {}
-    stream_sub_no_dev.recv_message = AsyncMock(return_value=pb.SubscribeRequest())
+    stream_sub_no_dev = MockGrpcStream(request=pb.SubscribeRequest(), metadata={})
     with pytest.raises(GRPCError) as sub_exc_info:
-        await local_svc.SubscribeConsole(stream_sub_no_dev)
+        await local_svc.SubscribeConsole(stream_sub_no_dev.as_stream())
     assert sub_exc_info.value.status == Status.INVALID_ARGUMENT
 
-    stream_sub_unknown = AsyncMock()
-    stream_sub_unknown.metadata = {"x-device-id": "dev-missing"}
-    stream_sub_unknown.recv_message = AsyncMock(return_value=pb.SubscribeRequest())
+    stream_sub_unknown = MockGrpcStream(
+        request=pb.SubscribeRequest(), metadata={"x-device-id": "dev-missing"}
+    )
     with pytest.raises(GRPCError) as sub_unavail:
-        await local_svc.SubscribeConsole(stream_sub_unknown)
+        await local_svc.SubscribeConsole(stream_sub_unknown.as_stream())
     assert sub_unavail.value.status == Status.UNAVAILABLE
 
     # 5. Metadata resolution edge cases
-    stream_empty_meta = AsyncMock()
-    stream_empty_meta.metadata = None
-    assert local_svc.resolve_device_id(stream_empty_meta) is None
+    stream_empty_meta = MockGrpcStream(metadata=None)
+    assert local_svc.resolve_device_id(stream_empty_meta.as_stream()) is None
 
-    stream_empty_list = AsyncMock()
-    stream_empty_list.metadata = {"x-device-id": []}
-    assert local_svc.resolve_device_id(stream_empty_list) is None
+    stream_empty_list = MockGrpcStream(metadata={"x-device-id": []})
+    assert local_svc.resolve_device_id(stream_empty_list.as_stream()) is None
 
-    stream_bytes_meta = AsyncMock()
-    stream_bytes_meta.metadata = {"device-id": b"dev-bytes"}
-    assert local_svc.resolve_device_id(stream_bytes_meta) == "dev-bytes"
+    stream_bytes_meta = MockGrpcStream(metadata={"device-id": b"dev-bytes"})
+    assert local_svc.resolve_device_id(stream_bytes_meta.as_stream()) == "dev-bytes"
 
-    stream_str_meta = AsyncMock()
-    stream_str_meta.metadata = {"device_id": "dev-str"}
-    assert local_svc.resolve_device_id(stream_str_meta) == "dev-str"
+    stream_str_meta = MockGrpcStream(metadata={"device_id": "dev-str"})
+    assert local_svc.resolve_device_id(stream_str_meta.as_stream()) == "dev-str"
 
-    stream_list_bytes = AsyncMock()
-    stream_list_bytes.metadata = {"x-device-id": [b"dev-first"]}
-    assert local_svc.resolve_device_id(stream_list_bytes) == "dev-first"
+    stream_list_bytes = MockGrpcStream(metadata={"x-device-id": [b"dev-first"]})
+    assert local_svc.resolve_device_id(stream_list_bytes.as_stream()) == "dev-first"
 
     # 6. Stream returns None (client disconnect before sending request)
-    stream_none = AsyncMock()
-    stream_none.metadata = {"x-device-id": "dev-1"}
-    stream_none.recv_message = AsyncMock(return_value=None)
-    await local_svc.DigitalWrite(stream_none)
+    stream_none = MockGrpcStream(request=None, metadata={"x-device-id": "dev-1"})
+    await local_svc.DigitalWrite(stream_none.as_stream())
     stream_none.send_message.assert_not_called()
 
     # 7. Error forwarding branches (non-200 status code and TimeoutError)
-    stream_err = AsyncMock()
-    stream_err.metadata = {"x-device-id": "dev-1"}
-    stream_err.recv_message = AsyncMock(return_value=pb.DigitalWrite(pin=13, value=1))
+    stream_err = MockGrpcStream(request=pb.DigitalWrite(pin=13, value=1), metadata={"x-device-id": "dev-1"})
     mock_send_err = AsyncMock(return_value=pb.CommandResponse(status_code=500, error_message="fail"))
     mock_gateway.send_command = mock_send_err
-    await local_svc.DigitalWrite(stream_err)
-    assert stream_err.send_message.call_args[0][0].status == "error"
+    await local_svc.DigitalWrite(stream_err.as_stream())
+    assert stream_err.sent_message.status == "error"
 
+    stream_err.reset()
     mock_send_timeout = AsyncMock(side_effect=TimeoutError("timed out"))
     mock_gateway.send_command = mock_send_timeout
-    await local_svc.DigitalWrite(stream_err)
-    assert stream_err.send_message.call_args[0][0].status == "error"
+    await local_svc.DigitalWrite(stream_err.as_stream())
+    assert stream_err.sent_message.status == "error"
 
     # 8. Exhaustive invocation of all LocalBridge RPC methods on connected device
     rpc_cases = [
@@ -1097,47 +1004,41 @@ async def test_gateway_local_bridge_service_dispatch(mock_gateway: ProtobufGatew
         (local_svc.GetStatus, pb.SubscribeRequest(), pb.BridgeStatus()),
     ]
     for rpc_fn, req_msg, resp_msg in rpc_cases:
-        rpc_stream = AsyncMock()
-        rpc_stream.metadata = {"x-device-id": "dev-1"}
-        rpc_stream.recv_message = AsyncMock(return_value=req_msg)
+        rpc_stream = MockGrpcStream(request=req_msg, metadata={"x-device-id": "dev-1"})
         mock_gateway.send_command = AsyncMock(
             return_value=pb.CommandResponse(status_code=200, payload=resp_msg.SerializeToString())
         )
-        await rpc_fn(rpc_stream)
-        rpc_stream.send_message.assert_called_once()
+        await rpc_fn(rpc_stream.as_stream())
+        assert rpc_stream.send_message.called
 
     # 9. Publish RPC (console routing and missing device_id)
-    stream_pub_no_dev = AsyncMock()
-    stream_pub_no_dev.metadata = {}
-    stream_pub_no_dev.recv_message = AsyncMock(return_value=pb.CloudQueuedPublish(topic_name="br/test"))
-    await local_svc.Publish(stream_pub_no_dev)
-    stream_pub_no_dev.send_message.assert_called_once()
+    # 9. Publish RPC (console routing and missing device_id)
+    stream_pub_no_dev = MockGrpcStream(request=pb.CloudQueuedPublish(topic_name="br/test"), metadata={})
+    await local_svc.Publish(stream_pub_no_dev.as_stream())
+    assert stream_pub_no_dev.send_message.called
 
-    stream_pub_none = AsyncMock()
-    stream_pub_none.metadata = {"x-device-id": "dev-1"}
-    stream_pub_none.recv_message = AsyncMock(return_value=None)
-    await local_svc.Publish(stream_pub_none)
+    stream_pub_none = MockGrpcStream(request=None, metadata={"x-device-id": "dev-1"})
+    await local_svc.Publish(stream_pub_none.as_stream())
 
     # Console queue subscription and publishing flow
     console_q: asyncio.Queue[pb.CloudQueuedPublish] = asyncio.Queue()
     mock_gateway.console_queues["dev-1"] = [console_q]
-    stream_pub_console = AsyncMock()
-    stream_pub_console.metadata = {"x-device-id": "dev-1"}
     pub_console_msg = pb.CloudQueuedPublish(topic_name="br/console/write", payload=b"ping")
-    stream_pub_console.recv_message = AsyncMock(return_value=pub_console_msg)
+    stream_pub_console = MockGrpcStream(request=pub_console_msg, metadata={"x-device-id": "dev-1"})
     mock_gateway.send_command = AsyncMock(
         return_value=pb.CommandResponse(status_code=200, payload=pub_console_msg.SerializeToString())
     )
-    await local_svc.Publish(stream_pub_console)
+    await local_svc.Publish(stream_pub_console.as_stream())
     assert not console_q.empty()
     queued_item = console_q.get_nowait()
     assert queued_item.topic_name == "br/console/write"
 
     # 10. SubscribeConsole active delivery and termination
-    stream_sub_active = AsyncMock()
-    stream_sub_active.metadata = {"x-device-id": "dev-1"}
-    stream_sub_active.recv_message = AsyncMock(return_value=pb.SubscribeRequest())
-    stream_sub_active.send_message = AsyncMock(side_effect=RuntimeError("stream disconnect"))
+    stream_sub_active = MockGrpcStream(
+        request=pb.SubscribeRequest(),
+        metadata={"x-device-id": "dev-1"},
+        send_exception=RuntimeError("stream disconnect"),
+    )
 
     async def _feed_console() -> None:
         await asyncio.sleep(0.01)
@@ -1145,35 +1046,31 @@ async def test_gateway_local_bridge_service_dispatch(mock_gateway: ProtobufGatew
             q.put_nowait(pb.CloudQueuedPublish(topic_name="br/console/out", payload=b"hello"))
 
     asyncio.create_task(_feed_console())
-    await local_svc.SubscribeConsole(stream_sub_active)
-    stream_sub_active.send_message.assert_awaited_once()
+    await local_svc.SubscribeConsole(stream_sub_active.as_stream())
+    assert stream_sub_active.send_message.called
 
     # SubscribeConsole when recv_message returns None
-    stream_sub_none = AsyncMock()
-    stream_sub_none.metadata = {"x-device-id": "dev-1"}
-    stream_sub_none.recv_message = AsyncMock(return_value=None)
-    await local_svc.SubscribeConsole(stream_sub_none)
+    stream_sub_none = MockGrpcStream(request=None, metadata={"x-device-id": "dev-1"})
+    await local_svc.SubscribeConsole(stream_sub_none.as_stream())
 
     # 11. Publish with non-console topic (covers branch 707->710)
-    stream_pub_non_console = AsyncMock()
-    stream_pub_non_console.metadata = {"x-device-id": "dev-1"}
     pub_data_msg = pb.CloudQueuedPublish(topic_name="br/telemetry/data", payload=b"123")
-    stream_pub_non_console.recv_message = AsyncMock(return_value=pub_data_msg)
+    stream_pub_non_console = MockGrpcStream(request=pub_data_msg, metadata={"x-device-id": "dev-1"})
     mock_gateway.send_command = AsyncMock(
         return_value=pb.CommandResponse(status_code=200, payload=pub_data_msg.SerializeToString())
     )
-    await local_svc.Publish(stream_pub_non_console)
+    await local_svc.Publish(stream_pub_non_console.as_stream())
 
     # 12. SubscribeConsole when device_id removed from console_queues before exit (covers branch 738)
-    stream_sub_cleanup = AsyncMock()
-    stream_sub_cleanup.metadata = {"x-device-id": "dev-1"}
-    stream_sub_cleanup.recv_message = AsyncMock(return_value=pb.SubscribeRequest())
-
     async def _fail_and_clear_queues(_msg: Any) -> None:
         mock_gateway.console_queues.pop("dev-1", None)
         raise RuntimeError("stream aborted")
 
-    stream_sub_cleanup.send_message = AsyncMock(side_effect=_fail_and_clear_queues)
+    stream_sub_cleanup = MockGrpcStream(
+        request=pb.SubscribeRequest(),
+        metadata={"x-device-id": "dev-1"},
+        send_side_effect=_fail_and_clear_queues,
+    )
 
     async def _feed_console_cleanup() -> None:
         await asyncio.sleep(0.01)
@@ -1181,7 +1078,7 @@ async def test_gateway_local_bridge_service_dispatch(mock_gateway: ProtobufGatew
             q.put_nowait(pb.CloudQueuedPublish(topic_name="br/console/out", payload=b"bye"))
 
     asyncio.create_task(_feed_console_cleanup())
-    await local_svc.SubscribeConsole(stream_sub_cleanup)
+    await local_svc.SubscribeConsole(stream_sub_cleanup.as_stream())
 
 
 def test_tsdb_sink_invalid_scheme() -> None:
@@ -1206,12 +1103,9 @@ async def test_gateway_session_cancelled() -> None:
     gw = ProtobufGateway(use_tls=False)
     svc = CloudBridgeService(gw)
 
-    mock_stream = AsyncMock()
-    mock_stream.__aiter__.side_effect = asyncio.CancelledError()
-    mock_peer = MagicMock()
-    mock_peer.cert.return_value = {"subject": [[("commonName", "test-dev")]]}
-    mock_stream.peer = mock_peer
-    mock_stream.metadata = {}
+    mock_stream = MockGrpcStream[pb.CloudEnvelope, pb.CloudEnvelope](
+        client_cn="test-dev", aiter_exception=asyncio.CancelledError()
+    )
 
     with pytest.raises(asyncio.CancelledError):
-        await svc.Session(mock_stream)
+        await svc.Session(mock_stream.as_stream())

@@ -39,6 +39,14 @@ edge = false
 rationale = "Expose fleet-wide runtime metrics via the Prometheus Python client on mcubridge-gateway"
 
 [[dependency]]
+name = "httpx"
+openwrt = "python3-httpx"
+pip = "httpx==0.28.1"
+gateway = true
+edge = false
+rationale = "High-performance native async HTTP client for TSDB metrics ingestion and tooling"
+
+[[dependency]]
 name = "serialx"
 openwrt = "python3-serialx"
 pip = "serialx==1.14.0"

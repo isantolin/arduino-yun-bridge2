@@ -3,17 +3,15 @@
 
 from __future__ import annotations
 
-import json
 import re
 import sys
 import tomllib
-import urllib.error
-import urllib.request
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Any, TypedDict, cast
 
+import httpx
 import tenacity
 import typer
 from packaging.requirements import InvalidRequirement, Requirement
@@ -375,31 +373,27 @@ def _parse_pip_spec(spec: str) -> tuple[str, str]:
 
 
 def fetch_url_with_retry(
-    req: urllib.request.Request,
+    url: str,
+    headers: dict[str, str] | None = None,
     timeout: float = 10.0,
     attempts: int = 3,
-) -> bytes:
-    """Fetch URL contents with exponential backoff using tenacity."""
+) -> httpx.Response:
+    """Fetch URL contents with exponential backoff using tenacity and HTTPX."""
     retryer = tenacity.Retrying(
         stop=tenacity.stop_after_attempt(attempts),
         wait=tenacity.wait_exponential(multiplier=0.5, min=0.5, max=4.0),
-        retry=tenacity.retry_if_exception_type((urllib.error.URLError, TimeoutError, OSError)),
+        retry=tenacity.retry_if_exception_type((httpx.HTTPError, TimeoutError, OSError)),
         reraise=True,
     )
-
-    def _call() -> bytes:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return resp.read()
-
-    return retryer(_call)
+    return retryer(httpx.get, url, headers=headers, timeout=timeout)
 
 
 def _fetch_latest_version(package_name: str, *, include_prerelease: bool = False) -> str | None:
     """Query PyPI JSON API for the latest release version using packaging.Version."""
     url = f"https://pypi.org/pypi/{package_name}/json"
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "McuBridge-DepsSync/2.8"})
-        data = json.loads(fetch_url_with_retry(req, timeout=10.0).decode("utf-8"))
+        resp = fetch_url_with_retry(url, headers={"User-Agent": "McuBridge-DepsSync/2.8"}, timeout=10.0)
+        data = resp.json()
         if "releases" in data and data["releases"]:
             parsed_versions: list[Version] = []
             for v_str in data["releases"]:
@@ -415,7 +409,7 @@ def _fetch_latest_version(package_name: str, *, include_prerelease: bool = False
                 parsed_versions.sort()
                 return str(parsed_versions[-1])
         return str(data["info"]["version"])
-    except (urllib.error.URLError, ValueError, KeyError, tenacity.RetryError) as exc:
+    except (httpx.HTTPError, ValueError, KeyError, tenacity.RetryError) as exc:
         sys.stderr.write(f"[WARN] Failed fetching latest version for {package_name}: {exc}\n")
         return None
 
@@ -424,62 +418,36 @@ def _fetch_pypi_sdist_hash(package_name: str, version: str) -> str | None:
     """Fetch SHA-256 hash of the sdist package from PyPI JSON API."""
     url = f"https://pypi.org/pypi/{package_name}/{version}/json"
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "McuBridge-DepsSync/2.8"})
-        data = json.loads(fetch_url_with_retry(req, timeout=10.0).decode("utf-8"))
+        resp = fetch_url_with_retry(url, headers={"User-Agent": "McuBridge-DepsSync/2.8"}, timeout=10.0)
+        data = resp.json()
         for file_info in data.get("urls", []):
             if file_info.get("packagetype") == "sdist":
                 return str(file_info.get("digests", {}).get("sha256") or "")
         return None
-    except (urllib.error.URLError, ValueError, KeyError, tenacity.RetryError) as exc:
+    except (httpx.HTTPError, ValueError, KeyError, tenacity.RetryError) as exc:
         sys.stderr.write(f"[WARN] Failed fetching sdist hash for {package_name}=={version}: {exc}\n")
         return None
 
 
 def _fetch_github_latest_version(repo: str) -> str | None:
-    """Query GitHub API for latest release or tag using standard library."""
+    """Query GitHub API for latest release or tag using HTTPX."""
+    headers = {"User-Agent": "McuBridge-DepsSync/2.8", "Accept": "application/vnd.github.v3+json"}
     url = f"https://api.github.com/repos/{repo}/releases/latest"
-    req = urllib.request.Request(
-        url,
-        headers={"User-Agent": "McuBridge-DepsSync/2.8", "Accept": "application/vnd.github.v3+json"},
-    )
     try:
-        data = cast(dict[str, Any], json.loads(fetch_url_with_retry(req, timeout=8.0).decode("utf-8")))
+        resp = fetch_url_with_retry(url, headers=headers, timeout=8.0)
+        data = cast(dict[str, Any], resp.json())
         tag: Any = data.get("tag_name")
         if tag is not None:
             return str(tag)
-    except (
-        urllib.error.URLError,
-        json.JSONDecodeError,
-        KeyError,
-        IndexError,
-        UnicodeDecodeError,
-        tenacity.RetryError,
-        TimeoutError,
-        OSError,
-    ) as exc:
+    except (httpx.HTTPError, ValueError, KeyError, IndexError, tenacity.RetryError) as exc:
         sys.stderr.write(f"[DEBUG] GitHub latest release failed for {repo} ({exc}), falling back to tags...\n")
         tag_url = f"https://api.github.com/repos/{repo}/tags"
-        tag_req = urllib.request.Request(
-            tag_url,
-            headers={"User-Agent": "McuBridge-DepsSync/2.8", "Accept": "application/vnd.github.v3+json"},
-        )
         try:
-            tags_data = cast(
-                list[dict[str, Any]],
-                json.loads(fetch_url_with_retry(tag_req, timeout=8.0).decode("utf-8")),
-            )
+            tag_resp = fetch_url_with_retry(tag_url, headers=headers, timeout=8.0)
+            tags_data = cast(list[dict[str, Any]], tag_resp.json())
             if tags_data and "name" in tags_data[0]:
                 return str(tags_data[0]["name"])
-        except (
-            urllib.error.URLError,
-            json.JSONDecodeError,
-            KeyError,
-            IndexError,
-            UnicodeDecodeError,
-            tenacity.RetryError,
-            TimeoutError,
-            OSError,
-        ) as tag_exc:
+        except (httpx.HTTPError, ValueError, KeyError, IndexError, tenacity.RetryError) as tag_exc:
             sys.stderr.write(f"[WARN] GitHub tags query failed for {repo}: {tag_exc}\n")
             return None
     return None
@@ -660,7 +628,8 @@ def update_feeds(deps: Sequence[DepEntry], *, dry_run: bool = False) -> bool:
                 new_content,
             )
 
-        if "PKG_HASH:=" in content:
+        version_changed = new_content != content
+        if "PKG_HASH:=" in content and (version_changed or bool(re.search(r"PKG_HASH:=\s*$", content, re.MULTILINE))):
             new_hash = _fetch_pypi_sdist_hash(pip_name, version)
             if new_hash:
                 new_content = re.sub(r"PKG_HASH:=[^\n]+", f"PKG_HASH:={new_hash}", new_content)

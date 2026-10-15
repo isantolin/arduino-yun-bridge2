@@ -384,7 +384,7 @@ jobs:
           PYTHONPATH: .:mcubridge:mcubridge-client-examples:typings
         run: |
           # 1. Mandatory Protocol Generation (Required for imports)
-          pip install jinja2 nanopb black
+          pip install jinja2 nanopb black httpx
           python tools/protocol/generate.py \
             --spec tools/protocol/mcubridge.proto \
             --py mcubridge/mcubridge/protocol/protocol.py \

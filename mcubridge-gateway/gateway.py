@@ -11,9 +11,6 @@ from __future__ import annotations
 import asyncio
 import ssl
 import time
-import urllib.error
-import urllib.parse
-import urllib.request
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
@@ -21,6 +18,7 @@ from pathlib import Path
 from typing import Annotated, Any, Final, cast
 
 import grpclib.events
+import httpx
 import prometheus_client
 import structlog
 import structlog.contextvars
@@ -220,17 +218,22 @@ class FleetMetrics:
 class TSDBSink:
     """[SIL-2] Time-Series Database ingestion adapter supporting Line Protocol."""
 
-    def __init__(self, endpoint_url: str | None = None) -> None:
+    def __init__(
+        self,
+        endpoint_url: str | None = None,
+        client: httpx.AsyncClient | None = None,
+    ) -> None:
         if endpoint_url:
-            parsed = urllib.parse.urlsplit(endpoint_url)
+            parsed = httpx.URL(endpoint_url)
             if parsed.scheme not in ("http", "https"):
                 raise ValueError(f"Invalid TSDB scheme '{parsed.scheme}'; must be 'http' or 'https'")
         self.endpoint_url = endpoint_url
         self.enabled = bool(endpoint_url)
-        self.opener = urllib.request.build_opener(
-            urllib.request.HTTPHandler(),
-            urllib.request.HTTPSHandler(),
-        )
+        self.client = client if client is not None else httpx.AsyncClient(timeout=5.0)
+
+    async def aclose(self) -> None:
+        """Close underlying HTTP client."""
+        await self.client.aclose()
 
     @staticmethod
     def format_line_protocol(
@@ -270,31 +273,29 @@ class TSDBSink:
             metrics = pb.DaemonMetrics()
             metrics.ParseFromString(envelope.telemetry.daemon_metrics_blob)
             line = self.format_line_protocol(device_id, metrics)
-            await asyncio.to_thread(self.post_line, line)
+            await self.post_line(line)
         except (DecodeError, OSError, ValueError) as exc:
             logger.warning("TSDB telemetry ingestion error", device_id=device_id, error=str(exc))
 
     @tenacity.retry(
         stop=tenacity.stop_after_attempt(2),
         wait=tenacity.wait_none(),
-        retry=tenacity.retry_if_exception_type((urllib.error.URLError, TimeoutError, OSError)),
+        retry=tenacity.retry_if_exception_type((httpx.HTTPError, TimeoutError, OSError)),
         retry_error_callback=lambda _rs: None,
     )
-    def post_line(self, line: str) -> None:
-        """Execute blocking HTTP POST within dedicated thread with tenacity retries."""
+    async def post_line(self, line: str) -> None:
+        """Execute asynchronous HTTP POST with tenacity retries."""
         if not self.endpoint_url:
             return
-        req = urllib.request.Request(
-            self.endpoint_url,
-            data=line.encode("utf-8"),
-            headers={"Content-Type": "text/plain; charset=utf-8"},
-            method="POST",
-        )
         try:
-            with self.opener.open(req, timeout=5.0) as resp:
-                if resp.status >= 400:
-                    logger.warning("TSDB server responded with status error", status=resp.status)
-        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            resp = await self.client.post(
+                self.endpoint_url,
+                content=line.encode("utf-8"),
+                headers={"Content-Type": "text/plain; charset=utf-8"},
+            )
+            if resp.status_code >= 400:
+                logger.warning("TSDB server responded with status error", status=resp.status_code)
+        except (httpx.HTTPError, TimeoutError, OSError) as e:
             logger.warning("TSDB network write failed", error=str(e))
             raise
 
@@ -945,7 +946,10 @@ class ProtobufGateway:
         logger.info("gRPC Cloud Gateway running", scheme=scheme, host=self.host, port=self.port)
         if self.http3_enabled:
             logger.info("HTTP/3 (QUIC) capability enabled", port=self.http3_port, alt_svc=f'h3=":{self.http3_port}"')
-        await self.server.wait_closed()
+        try:
+            await self.server.wait_closed()
+        finally:
+            await self.tsdb_sink.aclose()
 
 
 app = typer.Typer(help="MCU Bridge Protobuf Gateway", add_completion=False)

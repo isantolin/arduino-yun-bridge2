@@ -18,14 +18,13 @@ import shutil
 import subprocess
 import sys
 import tomllib
-import urllib.error
-import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Annotated, Any, TypeGuard, cast
 
 import black
+import httpx
 import tenacity
 import typer
 from google.protobuf.descriptor import FieldDescriptor
@@ -869,19 +868,20 @@ def ensure_nanopb_core_files() -> None:
             retryer = tenacity.Retrying(
                 stop=tenacity.stop_after_attempt(3),
                 wait=tenacity.wait_exponential(multiplier=1.0, min=1.0, max=5.0),
-                retry=tenacity.retry_if_exception_type((urllib.error.URLError, OSError, TimeoutError)),
+                retry=tenacity.retry_if_exception_type((httpx.HTTPError, OSError, TimeoutError)),
                 reraise=True,
             )
 
             def _fetch_nanopb_file(target_url: str = url) -> bytes:
-                with urllib.request.urlopen(target_url, timeout=20) as response:
-                    return response.read()
+                resp = httpx.get(target_url, timeout=20.0, follow_redirects=True)
+                resp.raise_for_status()
+                return resp.content
 
             try:
                 content = retryer(_fetch_nanopb_file)
                 target.write_bytes(content)
             except (
-                urllib.error.URLError,
+                httpx.HTTPError,
                 OSError,
                 ValueError,
                 tenacity.RetryError,

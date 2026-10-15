@@ -18,11 +18,11 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import urllib.error
-import urllib.request
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Annotated, Any
+
+import httpx
 
 import tenacity
 import typer
@@ -88,13 +88,12 @@ class _ApkLinkParser(HTMLParser):
 
 def _resolve_package_name(base_url: str, pkg_prefix: str) -> str | None:
     try:
-        with urllib.request.urlopen(base_url, timeout=15) as resp:
-            html = resp.read().decode("utf-8")
+        resp = httpx.get(base_url, timeout=15.0)
         parser = _ApkLinkParser(pkg_prefix)
-        parser.feed(html)
+        parser.feed(resp.text)
         if parser.matches:
             return max(parser.matches)
-    except (urllib.error.URLError, TimeoutError, OSError, UnicodeDecodeError) as e:
+    except (httpx.HTTPError, TimeoutError, OSError) as e:
         log_error(f"[WARN] Could not list directory {base_url}: {e}")
     return None
 
@@ -107,15 +106,24 @@ def run(cmd: list[str], check: bool = True) -> subprocess.CompletedProcess[bytes
 # ---------------------------------------------------------------------------
 # Download helpers
 # ---------------------------------------------------------------------------
-def _urlretrieve_with_retry(url: str, filename: Path | str, attempts: int = 3) -> None:
-    """Download a file via urllib.request with bounded exponential backoff using tenacity."""
+def _download_file_with_retry(url: str, filename: Path | str, attempts: int = 3) -> None:
+    """Download a file via HTTPX with bounded exponential backoff using tenacity."""
+    target_path = Path(filename)
     retryer = tenacity.Retrying(
         stop=tenacity.stop_after_attempt(attempts),
         wait=tenacity.wait_exponential(multiplier=1.0, min=1.0, max=10.0),
-        retry=tenacity.retry_if_exception_type((urllib.error.URLError, TimeoutError, OSError)),
+        retry=tenacity.retry_if_exception_type((httpx.HTTPError, TimeoutError, OSError)),
         reraise=True,
     )
-    retryer(urllib.request.urlretrieve, url, filename)
+
+    def _download() -> None:
+        with httpx.stream("GET", url, timeout=30.0, follow_redirects=True) as resp:
+            resp.raise_for_status()
+            with target_path.open("wb") as f_out:
+                for chunk in resp.iter_bytes():
+                    f_out.write(chunk)
+
+    retryer(_download)
 
 
 # ---------------------------------------------------------------------------
@@ -126,13 +134,13 @@ def download_images() -> None:
     kernel_path = Path(KERNEL_FILE)
     if not kernel_path.exists():
         log_info(f"[INFO] Downloading kernel {KERNEL_FILE}...")
-        _urlretrieve_with_retry(f"{BASE_URL}/{KERNEL_FILE}", kernel_path)
+        _download_file_with_retry(f"{BASE_URL}/{KERNEL_FILE}", kernel_path)
 
     rootfs_img = Path(ROOTFS_IMG)
     if not rootfs_img.exists():
         rootfs_gz = Path(ROOTFS_GZ)
         log_info(f"[INFO] Downloading rootfs {ROOTFS_GZ}...")
-        _urlretrieve_with_retry(f"{BASE_URL}/{ROOTFS_GZ}", rootfs_gz)
+        _download_file_with_retry(f"{BASE_URL}/{ROOTFS_GZ}", rootfs_gz)
         log_info(f"[INFO] Decompressing {ROOTFS_GZ} -> {ROOTFS_IMG}...")
         with gzip.open(rootfs_gz, "rb") as f_in, rootfs_img.open("wb") as f_out:
             shutil.copyfileobj(f_in, f_out)
@@ -156,9 +164,9 @@ def download_system_apks(dest_dir: Path) -> None:
         url = f"{base_url}/{filename}"
         log_info(f"[INFO] Downloading {url} -> {file_path}")
         try:
-            _urlretrieve_with_retry(url, file_path)
-        except urllib.error.HTTPError as e:
-            if e.code == 404:
+            _download_file_with_retry(url, file_path)
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
                 log_info(f"[WARN] {filename} returned 404, attempting dynamic resolution from {base_url}...")
                 pkg_prefix = filename.split("-202")[0] if "-202" in filename else filename.split("-")[0]
                 resolved_name = _resolve_package_name(base_url, pkg_prefix)
@@ -166,11 +174,11 @@ def download_system_apks(dest_dir: Path) -> None:
                     resolved_url = f"{base_url}/{resolved_name}"
                     resolved_file_path = dest_dir / resolved_name
                     log_info(f"[INFO] Resolved to {resolved_url} -> {resolved_file_path}")
-                    _urlretrieve_with_retry(resolved_url, resolved_file_path)
+                    _download_file_with_retry(resolved_url, resolved_file_path)
                     continue
             log_error(f"[ERROR] Failed to download {url}: {e}")
             raise
-        except (urllib.error.URLError, OSError, tenacity.RetryError) as e:
+        except (httpx.HTTPError, OSError, tenacity.RetryError) as e:
             log_error(f"[ERROR] Failed to download {url} after retries: {e}")
             raise
 

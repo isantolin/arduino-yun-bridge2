@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import socket
 import threading
-import urllib.error
-import urllib.request
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
+import httpx
 import pytest
 import tenacity
 from mcubridge.config.settings import RuntimeConfig
@@ -151,30 +150,26 @@ def test_ubus_service_start_retry_exhaustion() -> None:
 def test_fetch_url_with_retry_succeeds(mocker: MockerFixture) -> None:
     attempts = 0
 
-    def _mock_urlopen(req: Any, timeout: float = 10.0) -> Any:
+    def _mock_get(url: str, headers: Any = None, timeout: float = 10.0) -> Any:
         nonlocal attempts
         attempts += 1
         if attempts == 1:
-            raise urllib.error.URLError("Temporary DNS glitch")
-        resp = MagicMock()
-        resp.read.return_value = b"OK"
-        resp.__enter__.return_value = resp
-        resp.__exit__.return_value = False
+            raise httpx.ConnectError("Temporary DNS glitch")
+        resp = MagicMock(spec=httpx.Response)
+        resp.content = b"OK"
         return resp
 
-    mocker.patch.object(urllib.request, "urlopen", side_effect=_mock_urlopen)
-    req = urllib.request.Request("http://test.local/pkg")
-    content = fetch_url_with_retry(req, attempts=3)
-    assert content == b"OK"
+    mocker.patch.object(httpx, "get", side_effect=_mock_get)
+    resp = fetch_url_with_retry("http://test.local/pkg", attempts=3)
+    assert resp.content == b"OK"
     assert attempts == 2
 
 
 def test_fetch_url_with_retry_exhaustion(mocker: MockerFixture) -> None:
     mocker.patch.object(
-        urllib.request,
-        "urlopen",
-        side_effect=urllib.error.URLError("Fatal host unreachable"),
+        httpx,
+        "get",
+        side_effect=httpx.ConnectError("Fatal host unreachable"),
     )
-    req = urllib.request.Request("http://test.local/pkg")
-    with pytest.raises(urllib.error.URLError):
-        fetch_url_with_retry(req, attempts=2)
+    with pytest.raises(httpx.HTTPError):
+        fetch_url_with_retry("http://test.local/pkg", attempts=2)

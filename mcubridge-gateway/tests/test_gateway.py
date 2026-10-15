@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 
+import httpx
 import pytest
 from gateway import (
     CloudBridgeService,
@@ -566,23 +567,21 @@ def test_tsdb_sink_formatting_and_ingestion() -> None:
 
 @pytest.mark.asyncio
 async def test_tsdb_sink_async_post_mocked(mocker: MockerFixture) -> None:
-    sink = TSDBSink(endpoint_url="http://localhost:8428/write")
+    mock_client = AsyncMock(spec=httpx.AsyncClient)
+    mock_resp = MagicMock(spec=httpx.Response)
+    mock_resp.status_code = 204
+    mock_client.post.return_value = mock_resp
+
+    sink = TSDBSink(endpoint_url="http://localhost:8428/write", client=mock_client)
     metrics = pb.DaemonMetrics(cloud_queue_depth=1)
     envelope = pb.CloudEnvelope(
         protocol_version=PROTOCOL_VERSION,
         telemetry=pb.TelemetryReport(daemon_metrics_blob=metrics.SerializeToString()),
     )
 
-    mock_open = mocker.patch("urllib.request.OpenerDirector.open")
-    mock_resp = MagicMock()
-    mock_resp.status = 204
-    mock_resp.__enter__.return_value = mock_resp
-    mock_resp.__exit__.return_value = False
-    mock_open.return_value = mock_resp
-
     spy_format = mocker.spy(sink, "format_line_protocol")
     await sink.ingest_telemetry("yun-node-1", envelope)
-    assert mock_open.called
+    assert mock_client.post.called
     assert spy_format.call_count == 1
 
 
@@ -648,31 +647,29 @@ async def test_protobuf_gateway_metrics_port_run(mocker: MockerFixture) -> None:
     assert mock_metrics_server.called
 
 
-def test_tsdb_sink_post_line_edge_paths(mocker: MockerFixture) -> None:
-    import urllib.error
-
+@pytest.mark.asyncio
+async def test_tsdb_sink_post_line_edge_paths() -> None:
     # 1. Empty endpoint returns early
     sink_empty = TSDBSink(endpoint_url=None)
     assert not sink_empty.enabled
-    post_empty: Callable[[str], None] = sink_empty.post_line
-    post_empty("mcu,device=dev1 value=1")
+    await sink_empty.post_line("mcu,device=dev1 value=1")
 
-    sink = TSDBSink(endpoint_url="http://localhost:8428/write")
+    mock_client = AsyncMock(spec=httpx.AsyncClient)
+    sink = TSDBSink(endpoint_url="http://localhost:8428/write", client=mock_client)
     assert sink.enabled
-    post_fn: Callable[[str], None] = sink.post_line
 
     # 2. Status >= 400
-    mock_resp = MagicMock()
-    mock_resp.status = 500
-    mock_resp.__enter__.return_value = mock_resp
-    mock_open = mocker.patch("urllib.request.OpenerDirector.open", return_value=mock_resp)
-    post_fn("mcu,device=dev1 value=1")
-    assert mock_open.call_count == 1
+    mock_resp = MagicMock(spec=httpx.Response)
+    mock_resp.status_code = 500
+    mock_client.post.return_value = mock_resp
+    await sink.post_line("mcu,device=dev1 value=1")
+    assert mock_client.post.call_count == 1
 
-    # 3. URLError network failure (tenacity retries 2 attempts total)
-    mock_open.side_effect = urllib.error.URLError("Refused")
-    post_fn("mcu,device=dev1 value=1")
-    assert mock_open.call_count == 3
+    # 3. HTTPError network failure (tenacity retries 2 attempts total)
+    mock_client.post.reset_mock()
+    mock_client.post.side_effect = httpx.ConnectError("Refused")
+    await sink.post_line("mcu,device=dev1 value=1")
+    assert mock_client.post.call_count == 2
 
 
 @pytest.mark.asyncio
@@ -684,13 +681,12 @@ async def test_tsdb_sink_ingest_telemetry_edge_paths() -> None:
     await sink_disabled.ingest_telemetry("dev1", envelope)
 
     # 2. Corrupted metrics blob caught and logged
-    sink = TSDBSink(endpoint_url="http://localhost:8428/write")
+    mock_client = AsyncMock(spec=httpx.AsyncClient)
+    sink = TSDBSink(endpoint_url="http://localhost:8428/write", client=mock_client)
     assert sink.enabled
-    mock_opener = MagicMock()
-    sink.opener = mock_opener
     envelope_corrupt = pb.CloudEnvelope(telemetry=pb.TelemetryReport(daemon_metrics_blob=b"\xff\xff\xff"))
     await sink.ingest_telemetry("dev1", envelope_corrupt)
-    mock_opener.open.assert_not_called()
+    mock_client.post.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -724,7 +720,7 @@ async def test_handle_telemetry_edge_paths(mock_gateway: ProtobufGateway, mocker
         device_id="edge-1",
         telemetry=pb.TelemetryReport(daemon_metrics_blob=b"\xff\xff\xff"),
     )
-    mocker.patch("urllib.request.OpenerDirector.open")
+    mocker.patch.object(mock_gateway.tsdb_sink.client, "post", new_callable=AsyncMock)
     await handle_telemetry(svc, "edge-1", mock_stream, envelope_corrupt)
     telemetry_val2 = mock_gateway.metrics.registry.get_sample_value(
         "mcubridge_device_telemetry_total", {"device_id": "edge-1"}

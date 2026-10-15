@@ -147,29 +147,29 @@ rules:
   # RULE 25: CANONICAL SINGLETON IN ARDUINO SKETCHES (C++)
   # ==============================================================================
   - id: sil2-ban-non-canonical-bridge
-    languages: [cpp]
+    languages: [generic]
     severity: ERROR
     message: "SIL-2 Rule 25 Violation: Declared non-canonical BridgeClass instance. Must use canonical singleton 'Bridge'."
     patterns:
-      - pattern: BridgeClass $VAR(...);
-      - pattern-not: BridgeClass Bridge(...);
+      - pattern: BridgeClass $VAR
+      - pattern-not: BridgeClass Bridge
     paths:
       include:
-        - "**/examples/**"
+        - "**/mcubridge-library-arduino/examples/**/*.ino"
 
   # ==============================================================================
-  # RULE 26: MANDATORY SHARED SECRET IN ARDUINO SKETCHES (C++)
+  # RULE 26: MANDATORY SHARED SECRET & BOUNDED SYNC IN ARDUINO SKETCHES (C++)
   # ==============================================================================
   - id: sil2-ban-unauthenticated-bridge-begin
-    languages: [cpp]
+    languages: [generic]
     severity: ERROR
     message: "SIL-2 Rule 26 Violation: Bridge.begin() called without BRIDGE_SERIAL_SHARED_SECRET."
     patterns:
       - pattern: Bridge.begin(...)
-      - pattern-not: Bridge.begin($STREAM, BRIDGE_SERIAL_SHARED_SECRET)
+      - pattern-not: Bridge.begin(..., BRIDGE_SERIAL_SHARED_SECRET)
     paths:
       include:
-        - "**/examples/**"
+        - "**/mcubridge-library-arduino/examples/**/*.ino"
 
   # ==============================================================================
   # RULE 11: DISCARDED SUT CALLS IN C++ TESTS (C++)

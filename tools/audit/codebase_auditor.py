@@ -13,16 +13,42 @@ import re
 import shutil
 import subprocess
 import tokenize
+import tomllib
 from typing import cast
 
 import typer
+import yaml
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 IGNORED_CONFIG_DIRS = {".tox", ".git", "openwrt-sdk", "typings", ".tmp_tests"}
-SUPPRESSION = re.compile(
-    r"(ignore_errors|suppress|disable_warnings|continue_on_error|skip_validation)\s*[:=]\s*(true|1|yes)",
-    re.IGNORECASE,
+FORBIDDEN_SUPPRESSIONS = frozenset(
+    {
+        "ignore_errors",
+        "suppress",
+        "disable_warnings",
+        "continue_on_error",
+        "skip_validation",
+    }
 )
+
+
+def _find_dict_suppressions(data: object, prefix: str = "") -> list[str]:
+    violations: list[str] = []
+    if isinstance(data, dict):
+        d = cast(dict[object, object], data)
+        for k, v in d.items():
+            key_name = str(k).lower()
+            current_path = f"{prefix}.{k}" if prefix else str(k)
+            if key_name in FORBIDDEN_SUPPRESSIONS and (
+                v is True or (isinstance(v, (str, int)) and str(v).lower() in ("true", "1", "yes"))
+            ):
+                violations.append(f"{current_path} = {v!r}")
+            violations.extend(_find_dict_suppressions(v, current_path))
+    elif isinstance(data, list):
+        items = cast(list[object], data)
+        for idx, item in enumerate(items):
+            violations.extend(_find_dict_suppressions(item, f"{prefix}[{idx}]"))
+    return violations
 
 
 def run_command(
@@ -103,6 +129,7 @@ def audit_semgrep() -> list[str]:
 
 
 def audit_config_suppressions() -> list[str]:
+    """Audit config files (.yml, .yaml, .toml, .json) for suppression directives [Rule 4]."""
     findings: list[str] = []
     for ext in ("*.yml", "*.yaml", "*.toml", "*.json"):
         for cfg in ROOT.rglob(ext):
@@ -112,9 +139,20 @@ def audit_config_suppressions() -> list[str]:
                 ".semgrepignore",
             ):
                 continue
-            for i, line in enumerate(cfg.read_text(encoding="utf-8").splitlines(), 1):
-                if SUPPRESSION.search(line):
-                    findings.append(f"Config Suppression: {rel}:{i} - '{line.strip()}'")
+            try:
+                content = cfg.read_text(encoding="utf-8")
+                parsed_docs: list[object] = []
+                if cfg.suffix == ".json":
+                    parsed_docs.append(json.loads(content))
+                elif cfg.suffix == ".toml":
+                    parsed_docs.append(tomllib.loads(content))
+                elif cfg.suffix in (".yaml", ".yml"):
+                    parsed_docs.extend(yaml.safe_load_all(content))
+
+                for doc in parsed_docs:
+                    findings.extend(f"Config Suppression: {rel} - '{v}'" for v in _find_dict_suppressions(doc))
+            except (OSError, ValueError, yaml.YAMLError) as exc:
+                findings.append(f"Config Parse Error: {rel} - {exc}")
     return findings
 
 

@@ -1,25 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Check if clang-format is in PATH
+# Check if clang-format is in PATH strictly (no fallbacks or sudo mutations)
 if ! command -v clang-format &> /dev/null; then
-    echo "[ensure_clang_format] clang-format not found. Attempting to install..."
-    # Try system package managers or sudo pip
-    if command -v dnf &> /dev/null; then
-        echo "[ensure_clang_format] Installing clang-format via dnf (sudo)..."
-        sudo dnf install -y clang-format || true
-    elif command -v apt-get &> /dev/null; then
-        echo "[ensure_clang_format] Installing clang-format via apt-get (sudo)..."
-        sudo apt-get update && sudo apt-get install -y clang-format || true
-    elif command -v pip &> /dev/null; then
-        echo "[ensure_clang_format] Installing clang-format via pip (sudo)..."
-        sudo pip install --break-system-packages clang-format || true
-    fi
-fi
-
-# Re-check if clang-format is in PATH
-if ! command -v clang-format &> /dev/null; then
-    echo "[ERROR] clang-format still not found in PATH after installation attempts." >&2
+    echo "[ERROR] 'clang-format' binary not found in PATH." >&2
     exit 1
 fi
 

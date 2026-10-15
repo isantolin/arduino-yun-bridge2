@@ -14,13 +14,13 @@ Requires: qemu-system-mips, python3-pexpect, e2fsprogs
 from __future__ import annotations
 
 import gzip
-import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import urllib.error
 import urllib.request
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -73,13 +73,27 @@ SYS_APKS = [
 ]
 
 
+class _ApkLinkParser(HTMLParser):
+    def __init__(self, prefix: str) -> None:
+        super().__init__()
+        self.prefix = prefix
+        self.matches: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.lower() == "a":
+            for name, val in attrs:
+                if name.lower() == "href" and val and val.startswith(self.prefix) and val.endswith(".apk"):
+                    self.matches.append(val)
+
+
 def _resolve_package_name(base_url: str, pkg_prefix: str) -> str | None:
     try:
         with urllib.request.urlopen(base_url, timeout=15) as resp:
             html = resp.read().decode("utf-8")
-        matches = re.findall(rf'href="({re.escape(pkg_prefix)}[^\"]+\.apk)"', html)
-        if matches:
-            return max(matches)
+        parser = _ApkLinkParser(pkg_prefix)
+        parser.feed(html)
+        if parser.matches:
+            return max(parser.matches)
     except (urllib.error.URLError, TimeoutError, OSError, UnicodeDecodeError) as e:
         log_error(f"[WARN] Could not list directory {base_url}: {e}")
     return None

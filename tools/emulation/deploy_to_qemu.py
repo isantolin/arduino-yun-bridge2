@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import re
 import sys
 import tomllib
 from pathlib import Path
@@ -27,9 +26,12 @@ def get_pkg_release(pkg_name: str) -> str:
     if not makefile.exists():
         makefile = REPO_ROOT / pkg_name / "Makefile"
     if makefile.exists():
-        m = re.search(r"PKG_RELEASE:=(\d+)", makefile.read_text(encoding="utf-8"))
-        if m:
-            return f"r{m.group(1)}"
+        for line in makefile.read_text(encoding="utf-8").splitlines():
+            key, sep, val = line.partition(":=")
+            if sep and key.strip() == "PKG_RELEASE":
+                clean_val = val.strip()
+                if clean_val.isdigit():
+                    return f"r{clean_val}"
     return "r1"
 
 

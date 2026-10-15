@@ -452,8 +452,6 @@ def rotate(
     rotate_loader: Callable[[], Any] | None = None,
 ) -> None:
     """Rotate MCU Bridge shared credentials on remote hardware or local rootfs."""
-    import re
-
     secret: str | None = None
     output: str = ""
 
@@ -481,9 +479,18 @@ def rotate(
         print("Error: Either --host or --local is required.", file=sys.stderr)
         sys.exit(1)
 
-    match = re.search(r"SERIAL_SECRET=([a-fA-F0-9]+)", output)
-    if match:
-        secret = match.group(1)
+    for line in output.splitlines():
+        key, sep, val = line.partition("=")
+        if sep and key.strip() == "SERIAL_SECRET":
+            chars: list[str] = []
+            for c in val.strip():
+                if c in "0123456789abcdefABCDEF":
+                    chars.append(c)
+                else:
+                    break
+            if chars:
+                secret = "".join(chars)
+                break
 
     if not secret:
         print(f"Warning: Could not extract SERIAL_SECRET from output:\n{output}", file=sys.stderr)

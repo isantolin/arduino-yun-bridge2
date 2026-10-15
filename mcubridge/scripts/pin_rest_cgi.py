@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import importlib
 import os
-import re
 from typing import Annotated, Any, cast
 from wsgiref.handlers import CGIHandler
 
@@ -72,15 +71,20 @@ def application(environ: dict[str, Any], start_response: Any) -> list[bytes]:
         configure_logging(config)
 
         path = environ.get("PATH_INFO") or environ.get("REQUEST_URI") or ""
-        match = re.search(r"/(?:pin|digital)/(\d+)", path)
-        if not match:
+        path_only = path.split("?", 1)[0]
+        segments = [s for s in path_only.split("/") if s]
+        pin: int | None = None
+        for i, segment in enumerate(segments[:-1]):
+            if segment in ("pin", "digital") and segments[i + 1].isdigit():
+                pin = int(segments[i + 1])
+                break
+
+        if pin is None:
             return json_res(
                 start_response,
                 "400 Bad Request",
                 pb.PinControlResponse(status="error", message="Invalid path"),
             )
-
-        pin = int(match.group(1))
         if environ.get("REQUEST_METHOD") != "POST":
             return json_res(
                 start_response,

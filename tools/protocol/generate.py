@@ -658,7 +658,16 @@ def _build_descriptor_context(spec: ProtocolSpec, pb_module: Any) -> dict[str, A
     all_message_names = list(file_desc.message_types_by_name)
     options_path = (REPO_ROOT / "tools" / "protocol" / "mcubridge.options").resolve()
     options_content = options_path.read_text(encoding="utf-8")
-    skipped_messages = set(re.findall(r"rpc\.pb\.(\w+)\s+skip_message:true", options_content))
+    skipped_messages: set[str] = set()
+    for line in options_content.splitlines():
+        trimmed = line.strip()
+        if not trimmed or trimmed.startswith("#"):
+            continue
+        parts = trimmed.split()
+        if len(parts) >= 2 and parts[0].startswith("rpc.pb.") and "skip_message:true" in parts[1:]:
+            msg_name = parts[0].removeprefix("rpc.pb.")
+            if msg_name.isidentifier():
+                skipped_messages.add(msg_name)
     all_structs = [
         {"name": name} for name in all_message_names if name not in skipped_messages and name != "RpcContainer"
     ]

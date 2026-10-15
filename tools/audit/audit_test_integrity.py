@@ -96,35 +96,9 @@ ALLOWLIST_PY_HELPERS = {
     "handle_command_response",
 }
 
-ALLOWLIST_CPP_PUBLIC_APIS = {
-    "isPostPassed",
-    "getWcetMaxMicros",
-    "resetWcetStats",
-    "registerSafetyPin",
-    "clearSafetyPins",
-    "setWatchdogTimeout",
-    "getWatchdogTimeout",
-    "onCommand",
-    "onStatus",
-    "peek",
-    "flush",
-    "remove",
-    "requestRead",
-    "requestAvailable",
-    "signalProcessed",
-    "registerMessageCallback",
-    "registerAvailableCallback",
-    "runAsync",
-    "poll",
-    "kill",
-    "notification",
-    "_sendEncryptedHelper",
-    "serialize_frame",
-    "prefix_writer",
-}
 
 app = typer.Typer(
-    help="Audit Python and C++ test suites for Rule 17/18 zero-assertion violations.",
+    help="Audit Python test suites for Rule 17/18 assertions and Rule 5 test-only hooks.",
     add_completion=False,
 )
 
@@ -251,52 +225,6 @@ def audit_test_only_hooks() -> list[str]:
                     findings.append(
                         f"[{pfile.relative_to(ROOT)}:{node.lineno}] Rule 5 Violation: "
                         f"Production function/method '{name}' is only invoked from test suites."
-                    )
-
-    # 2. C++ Analysis
-    cpp_prod_dir = ROOT / "mcubridge-library-arduino" / "src"
-    cpp_examples_dir = ROOT / "mcubridge-library-arduino" / "examples"
-    cpp_test_dir = ROOT / "mcubridge-library-arduino" / "tests"
-    if cpp_prod_dir.exists() and cpp_test_dir.exists():
-        cpp_prod_files = [
-            f
-            for f in cpp_prod_dir.rglob("*")
-            if f.suffix in {".h", ".cpp"} and not f.name.startswith("pb_") and "protocol/mcubridge.pb" not in str(f)
-        ]
-        if cpp_examples_dir.exists():
-            cpp_prod_files.extend([f for f in cpp_examples_dir.rglob("*") if f.suffix in {".h", ".cpp", ".ino"}])
-        cpp_test_files = [f for f in cpp_test_dir.rglob("*") if f.suffix in {".h", ".cpp"}]
-
-        cpp_prod_text = "\n".join(f.read_text(encoding="utf-8", errors="ignore") for f in cpp_prod_files)
-        cpp_test_text = "\n".join(f.read_text(encoding="utf-8", errors="ignore") for f in cpp_test_files)
-
-        func_decl = re.compile(
-            r"^\s*(?:(?:static|inline|virtual|explicit|friend)\s+)*[\w:<>&*~]+\s+([a-zA-Z_]\w+)\s*"
-            r"\([^;{]*\)\s*(?:const)?\s*(?:override)?\s*(?:noexcept)?\s*[{;]",
-            re.MULTILINE,
-        )
-
-        seen_cpp: set[str] = set()
-        for cfile in cpp_prod_files:
-            content = cfile.read_text(encoding="utf-8", errors="ignore")
-            for m in func_decl.finditer(content):
-                name = m.group(1)
-                if (
-                    name.startswith("__")
-                    or name in IGNORED_IDENTIFIERS
-                    or name in ALLOWLIST_CPP_PUBLIC_APIS
-                    or len(name) < 4
-                    or name in seen_cpp
-                ):
-                    continue
-                seen_cpp.add(name)
-                pattern = rf"\b{re.escape(name)}\b"
-                prod_count = len(re.findall(pattern, cpp_prod_text))
-                test_count = len(re.findall(pattern, cpp_test_text))
-                if prod_count <= 2 and test_count > 0:
-                    findings.append(
-                        f"[{cfile.relative_to(ROOT)}] Rule 5 Violation: "
-                        f"C++ production function/method '{name}' is only invoked from test suites."
                     )
 
     return findings

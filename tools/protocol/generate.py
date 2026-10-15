@@ -874,7 +874,6 @@ def ensure_nanopb_core_files() -> None:
             except (
                 urllib.error.URLError,
                 OSError,
-                TimeoutError,
                 ValueError,
                 tenacity.RetryError,
             ) as e:

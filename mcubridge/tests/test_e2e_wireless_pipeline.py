@@ -96,7 +96,7 @@ async def test_e2e_wireless_tcp_handshake_and_rpc_exchange(
             try:
                 writer.close()
                 await writer.wait_closed()
-            except (OSError, ConnectionError) as exc:
+            except OSError as exc:
                 logger.debug("Mock TCP server socket close handled", error=str(exc))
 
     # Start mock MCU TCP listener
@@ -224,7 +224,7 @@ async def test_e2e_wireless_tcp_analog_read_and_datastore(
             try:
                 writer.close()
                 await writer.wait_closed()
-            except (OSError, ConnectionError) as exc:
+            except OSError as exc:
                 logger.debug("Mock WiFi server socket close handled", error=str(exc))
 
     server = await asyncio.start_server(mock_mcu_server, "127.0.0.1", 0)

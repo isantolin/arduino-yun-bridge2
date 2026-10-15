@@ -38,7 +38,6 @@ from mcubridge.config.settings import (
 )
 from mcubridge.protocol.protocol import DEFAULT_SERIAL_SHARED_SECRET
 from mcubridge.security.security import verify_crypto_integrity
-from mcubridge.services.handshake import SerialHandshakeFatal
 from mcubridge.services.runtime import BridgeService
 from mcubridge.state.context import RuntimeState, create_runtime_state
 from mcubridge.transport.serial import SerialTransport
@@ -85,12 +84,10 @@ def run_daemon() -> None:
     except KeyboardInterrupt:
         logger.info("Daemon interrupted by user.")
     except (
-        TimeoutError,
         OSError,
         RuntimeError,
         ValueError,
         TypeError,
-        SerialHandshakeFatal,
         tenacity.RetryError,
     ) as exc:
         logger.critical("Fatal error", error=str(exc), exc_info=not isinstance(exc, RuntimeError))
@@ -102,8 +99,6 @@ def run_daemon() -> None:
                 RuntimeError,
                 ValueError,
                 TypeError,
-                TimeoutError,
-                SerialHandshakeFatal,
                 tenacity.RetryError,
             )
         )

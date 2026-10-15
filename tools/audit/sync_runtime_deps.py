@@ -403,7 +403,7 @@ def _fetch_latest_version(package_name: str, *, include_prerelease: bool = False
                 parsed_versions.sort()
                 return str(parsed_versions[-1])
         return str(data["info"]["version"])
-    except (urllib.error.URLError, ValueError, KeyError, json.JSONDecodeError, tenacity.RetryError) as exc:
+    except (urllib.error.URLError, ValueError, KeyError, tenacity.RetryError) as exc:
         sys.stderr.write(f"[WARN] Failed fetching latest version for {package_name}: {exc}\n")
         return None
 
@@ -418,7 +418,7 @@ def _fetch_pypi_sdist_hash(package_name: str, version: str) -> str | None:
             if file_info.get("packagetype") == "sdist":
                 return str(file_info.get("digests", {}).get("sha256") or "")
         return None
-    except (urllib.error.URLError, ValueError, KeyError, json.JSONDecodeError, tenacity.RetryError) as exc:
+    except (urllib.error.URLError, ValueError, KeyError, tenacity.RetryError) as exc:
         sys.stderr.write(f"[WARN] Failed fetching sdist hash for {package_name}=={version}: {exc}\n")
         return None
 

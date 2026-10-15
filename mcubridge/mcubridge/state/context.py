@@ -708,7 +708,7 @@ class RuntimeState:
                     memory_rss_bytes=curr_mem,
                 )
             )
-        except (psutil.NoSuchProcess, OSError, ProcessLookupError, AttributeError) as exc:
+        except (psutil.NoSuchProcess, OSError, AttributeError) as exc:
             logger.debug("Failed to sample daemon process metrics", error=str(exc))
 
         for p_ctx in list(self.running_processes.values()):
@@ -727,7 +727,7 @@ class RuntimeState:
                                 memory_rss_bytes=sub_mem,
                             )
                         )
-                    except (psutil.NoSuchProcess, OSError, ProcessLookupError) as exc:
+                    except (psutil.NoSuchProcess, OSError) as exc:
                         logger.debug("Subprocess disappeared during telemetry collection", pid=pid, error=str(exc))
                         continue
 
@@ -823,7 +823,7 @@ class RuntimeState:
                 if ctx and ctx.handle:
                     try:
                         ctx.handle.terminate()
-                    except (OSError, ProcessLookupError) as e:
+                    except OSError as e:
                         logger.debug("Process termination cleanup notice", error=e)
             self.running_processes.clear()
 

@@ -111,7 +111,7 @@ async def test_serial_transport_tcp_connect_and_stream(
             try:
                 writer.close()
                 await writer.wait_closed()
-            except (OSError, ConnectionError) as exc:
+            except OSError as exc:
                 logger.debug("Socket close warning suppressed", error=str(exc))
 
     server = await asyncio.start_server(handle_client, "127.0.0.1", 0)

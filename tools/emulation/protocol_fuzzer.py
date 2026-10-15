@@ -74,7 +74,7 @@ class ProtocolFuzzerStateMachine(RuleBasedStateMachine):
             writer.close()
             try:
                 await writer.wait_closed()
-            except (OSError, TimeoutError) as exc:
+            except OSError as exc:
                 logger.warning("writer_close_warning", error=str(exc))
             self.writer = None
             self.reader = None

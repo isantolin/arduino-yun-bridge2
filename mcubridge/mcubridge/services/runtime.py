@@ -1328,7 +1328,7 @@ class BridgeService:
             try:
                 ctx.exit_code = await self.terminate_process(pid, ctx, grace_period=PROCESS_TERM_GRACE_PERIOD_SECONDS)
                 return True, None
-            except (OSError, ProcessLookupError) as exc:
+            except OSError as exc:
                 logger.error("Process termination failed", error=str(exc))
                 return False, str(exc)
             finally:
@@ -1495,13 +1495,11 @@ class BridgeService:
         except* asyncio.CancelledError:
             logger.info("Daemon shutdown initiated (Cancelled).")
         except* (
-            TimeoutError,
             OSError,
             RuntimeError,
             ValueError,
             TypeError,
             tenacity.RetryError,
-            SerialHandshakeFatal,
         ) as exc_group:
             for e in exc_group.exceptions:
                 logger.critical("Fatal task error", error=str(e), exc_info=True)
@@ -1639,7 +1637,7 @@ class BridgeService:
                                 resp_payload = b""
                                 status_code = 404
                                 err_msg = str(exc)
-                            except (OSError, RuntimeError, TimeoutError) as exc:
+                            except (OSError, RuntimeError) as exc:
                                 logger.error("RPC execution error on device", error=str(exc))
                                 resp_payload = b""
                                 status_code = 500

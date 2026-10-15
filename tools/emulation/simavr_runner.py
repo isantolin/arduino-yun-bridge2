@@ -438,7 +438,7 @@ def run_single_client_script(
             return True
         logger.error("Test failed with exit code", script=script_path.name, code=exc.code)
         return False
-    except (OSError, RuntimeError, ValueError, TypeError, AssertionError, TimeoutError) as exc:
+    except (OSError, RuntimeError, ValueError, TypeError, AssertionError) as exc:
         logger.error("Test failed with exception", script=script_path.name, error=str(exc))
         return False
 

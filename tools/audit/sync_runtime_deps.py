@@ -68,17 +68,18 @@ class _CppDepEntry(TypedDict):
     files: list[str]
 
 
-class _DevDepEntry(TypedDict):
+class DevDepEntry(TypedDict):
     name: str
     pip: str
     rationale: str
+    check_latest: bool
 
 
 @dataclass(slots=True, frozen=True)
 class ManifestData:
     runtime: list[DepEntry]
     cpp: list[_CppDepEntry]
-    dev: list[_DevDepEntry]
+    dev: list[DevDepEntry]
 
 
 def load_manifest() -> ManifestData:
@@ -132,11 +133,12 @@ def load_manifest() -> ManifestData:
             )
         )
 
-    normalized_dev: list[_DevDepEntry] = [
-        _DevDepEntry(
+    normalized_dev: list[DevDepEntry] = [
+        DevDepEntry(
             name=entry.get("name", "").strip(),
             pip=entry.get("pip", "").strip(),
             rationale=entry.get("rationale", "").strip(),
+            check_latest=bool(entry.get("check_latest", True)),
         )
         for entry in data.get("dev_dependency", [])
     ]
@@ -323,16 +325,26 @@ def update_cpp_install_script(cpp_deps: Sequence[_CppDepEntry], *, dry_run: bool
     return True
 
 
-def update_tox_dev_deps(dev_deps: Sequence[_DevDepEntry], *, dry_run: bool = False) -> bool:
-    """Synchronize pinned versions in tox.ini with manifest dev_dependency declarations."""
+def update_tox_dev_deps(
+    dev_deps: Sequence[DevDepEntry],
+    runtime_deps: Sequence[DepEntry] = (),
+    *,
+    dry_run: bool = False,
+) -> bool:
+    """Synchronize pinned versions in tox.ini with manifest declarations."""
     if not TOX_PATH.exists():
         return False
     content = TOX_PATH.read_text(encoding="utf-8")
     new_content = content
-    for dep in dev_deps:
-        name, version = _parse_pip_spec(dep["pip"])
+    all_specs = [d["pip"] for d in dev_deps if d.get("pip")] + [d["pip"] for d in runtime_deps if d.get("pip")]
+    for spec in all_specs:
+        name, version = _parse_pip_spec(spec)
         if name and version:
-            new_content = re.sub(rf"\b{re.escape(name)}==[^\s\n]+", f"{name}=={version}", new_content)
+            new_content = re.sub(
+                rf"(?m)^([ \t]*){re.escape(name)}==[^\s\n]+",
+                rf"\g<1>{name}=={version}",
+                new_content,
+            )
 
     if new_content == content:
         return False
@@ -501,9 +513,11 @@ def _check_runtime_outdated(deps: Sequence[DepEntry]) -> list[tuple[str, str, st
     return outdated
 
 
-def _check_dev_outdated(dev_deps: Sequence[_DevDepEntry]) -> list[tuple[str, str, str]]:
+def _check_dev_outdated(dev_deps: Sequence[DevDepEntry]) -> list[tuple[str, str, str]]:
     outdated: list[tuple[str, str, str]] = []
     for dev_dep in dev_deps:
+        if not dev_dep.get("check_latest", True):
+            continue
         name, pinned = _parse_pip_spec(dev_dep["pip"])
         if not pinned:
             continue
@@ -540,7 +554,7 @@ def _check_cpp_outdated(cpp_deps: Sequence[_CppDepEntry]) -> list[tuple[str, str
 def check_latest_versions(
     deps: Sequence[DepEntry],
     cpp_deps: Sequence[_CppDepEntry] = (),
-    dev_deps: Sequence[_DevDepEntry] = (),
+    dev_deps: Sequence[DevDepEntry] = (),
 ) -> list[tuple[str, str, str]]:
     """Return list of (package, pinned, latest) for outdated packages using packaging.Version & GitHub API."""
     outdated = _check_runtime_outdated(deps)
@@ -756,7 +770,7 @@ def main(
     updated_gw_req = write_gateway_requirements(deps, dry_run=no_write)
     updated_gw_makefile = update_gateway_makefile(deps, dry_run=no_write)
     updated_cpp = update_cpp_install_script(cpp_deps, dry_run=no_write)
-    updated_tox = update_tox_dev_deps(dev_deps, dry_run=no_write)
+    updated_tox = update_tox_dev_deps(dev_deps, deps, dry_run=no_write)
     updated_workflows = update_workflows(deps, dry_run=no_write)
 
     changed_paths: list[str] = []

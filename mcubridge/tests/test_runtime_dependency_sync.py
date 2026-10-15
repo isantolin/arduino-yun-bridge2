@@ -99,3 +99,34 @@ def test_update_workflows_preserves_action_inputs_and_updates_literal_pins(
 
     assert action_file.read_text(encoding="utf-8") == 'PROTOC_VERSION="${{ inputs.version }}"\n'
     assert workflow_file.read_text(encoding="utf-8") == "PROTOC_VERSION=36.2\nprotobuf==7.36.2\n"
+
+
+def test_update_tox_dev_deps_syncs_pinned_versions_without_prefix_collision(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tox_file = tmp_path / "tox.ini"
+    tox_file.write_text(
+        "deps =\n    protobuf==1.0.0\n    mypy-protobuf==5.0.0\n    types-protobuf==7.30.0\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(sync_runtime_deps, "TOX_PATH", tox_file)
+
+    dev_deps: list[sync_runtime_deps.DevDepEntry] = [
+        {"name": "mypy-protobuf", "pip": "mypy-protobuf==5.1.0", "rationale": "", "check_latest": True},
+        {"name": "types-protobuf", "pip": "types-protobuf==7.35.1", "rationale": "", "check_latest": True},
+    ]
+    runtime_deps: list[sync_runtime_deps.DepEntry] = [
+        {
+            "name": "protobuf",
+            "openwrt": "python3-protobuf",
+            "pip": "protobuf==7.36.2",
+            "check_latest": True,
+            "gateway": True,
+            "edge": True,
+        },
+    ]
+
+    assert sync_runtime_deps.update_tox_dev_deps(dev_deps, runtime_deps)
+    expected = "deps =\n    protobuf==7.36.2\n    mypy-protobuf==5.1.0\n    types-protobuf==7.35.1\n"
+    assert tox_file.read_text(encoding="utf-8") == expected

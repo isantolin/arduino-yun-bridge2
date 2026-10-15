@@ -166,7 +166,7 @@ rationale = "PEP 8 canonical code formatter required for generated code and deve
 [[dependency]]
 name = "nanopb"
 openwrt = "nanopb"
-pip = "nanopb==0.4.9.2"
+pip = "nanopb==0.4.9.1"
 rationale = "Zero-heap C protobuf generator and runtime library [BUILD-ONLY]"
 
 [[dependency]]
@@ -376,3 +376,29 @@ rationale = "Formal YAML parser for workflow frontmatter and configuration audit
 name = "types-pyyaml"
 pip = "types-PyYAML==6.0.12.20260906"
 rationale = "Type stubs for PyYAML static analysis validation (pyrefly/pyright)"
+
+[[dev_dependency]]
+name = "setuptools"
+pip = "setuptools==84.0.0"
+rationale = "Core packaging and distribution utilities for Python environments"
+
+[[dev_dependency]]
+name = "rich"
+pip = "rich==15.0.0"
+rationale = "Terminal formatting and structured diagnostics output"
+
+[[dev_dependency]]
+name = "clang-format"
+pip = "clang-format==22.1.8"
+check_latest = false
+rationale = "Deterministic C++ and Arduino code formatter matching clang-format 22.x toolchain"
+
+[[dev_dependency]]
+name = "pytest-cov"
+pip = "pytest-cov==7.1.0"
+rationale = "Pytest plugin for measuring line and branch code coverage"
+
+[[dev_dependency]]
+name = "gcovr"
+pip = "gcovr==8.6"
+rationale = "C++ code coverage analysis utility parsing gcov instrumentation data"

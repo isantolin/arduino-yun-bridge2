@@ -134,6 +134,5 @@ def test_update_tox_dev_deps_syncs_pinned_versions_without_prefix_collision(
 
 def test_sync_runtime_deps_user_agent_reflects_ecosystem_version() -> None:
     expected_version = sync_runtime_deps.VERSION_PATH.read_text(encoding="utf-8").strip()
-    assert sync_runtime_deps.ECOSYSTEM_VERSION == expected_version
-    assert sync_runtime_deps.USER_AGENT == f"McuBridge-DepsSync/{expected_version}"
-
+    assert expected_version == sync_runtime_deps.ECOSYSTEM_VERSION
+    assert f"McuBridge-DepsSync/{expected_version}" == sync_runtime_deps.USER_AGENT

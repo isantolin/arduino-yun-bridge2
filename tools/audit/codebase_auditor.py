@@ -304,41 +304,13 @@ def audit_proto_usage() -> list[str]:
     return findings
 
 
-def audit_arduino_sketches() -> list[str]:
-    """Audit reference Arduino .ino sketches for bounded synchronization watchdog loop. [Rule 26]"""
-    sketches = sorted((ROOT / "mcubridge-library-arduino" / "examples").glob("*/*.ino"))
-    sync_pattern = re.compile(r"Bridge\.isSynchronized\s*\(\s*\)")
-    bound_pattern = re.compile(r"(?:SYNC_TIMEOUT|sync_deadline|enterSafeState)")
-    violations: list[str] = []
-    for p in sketches:
-        txt = p.read_text(encoding="utf-8")
-        if "Bridge.begin" in txt:
-            if not sync_pattern.search(txt):
-                violations.append(
-                    f"[{p.relative_to(ROOT)}] Rule 26 Violation: "
-                    "Sketch lacks bounded 'Bridge.isSynchronized()' in setup()."
-                )
-            elif not bound_pattern.search(txt):
-                violations.append(
-                    f"[{p.relative_to(ROOT)}] Rule 26 Violation: "
-                    "Sketch 'Bridge.isSynchronized()' loop is unbounded (missing timeout/safe state)."
-                )
-    return violations
-
-
 app = typer.Typer(help="Audit codebase for SIL-2/MIL-SPEC violations and shims.", add_completion=False)
 
 
 @app.command()
 def main() -> None:
-    """Execute Semgrep, config, protobuf, and sketch compliance audits."""
-    all_findings = (
-        audit_semgrep()
-        + audit_config_suppressions()
-        + audit_proto_integrity()
-        + audit_proto_usage()
-        + audit_arduino_sketches()
-    )
+    """Execute Semgrep, config, and protobuf compliance audits."""
+    all_findings = audit_semgrep() + audit_config_suppressions() + audit_proto_integrity() + audit_proto_usage()
 
     print("\n--- RESULTS ---")
     if not all_findings:

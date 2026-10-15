@@ -171,6 +171,15 @@ rules:
       include:
         - "**/mcubridge-library-arduino/examples/**/*.ino"
 
+  - id: sil2-ban-unbounded-sync-loop
+    languages: [generic]
+    severity: ERROR
+    message: "SIL-2 Rule 26 Violation: Sketch 'Bridge.isSynchronized()' loop is unbounded (missing timeout/safe state)."
+    pattern: while (!Bridge.isSynchronized())
+    paths:
+      include:
+        - "**/mcubridge-library-arduino/examples/**/*.ino"
+
   # ==============================================================================
   # RULE 11: DISCARDED SUT CALLS IN C++ TESTS (C++)
   # ==============================================================================

@@ -25,9 +25,9 @@ app = typer.Typer(
 @app.command()
 def main() -> None:
     """Execute all automated library density and architectural rule checks."""
-    from tools.audit.codebase_auditor import audit_arduino_sketches, audit_semgrep
+    from tools.audit.codebase_auditor import audit_semgrep
 
-    all_errors = audit_semgrep() + audit_arduino_sketches()
+    all_errors = audit_semgrep()
     if all_errors:
         print("❌ ARCHITECTURAL & LIBRARY DENSITY AUDIT FAILURES:", file=sys.stderr)
         for err in all_errors:

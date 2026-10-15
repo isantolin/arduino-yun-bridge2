@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-import argparse
 import json
 import subprocess
 import sys
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
-from typing import cast
+from typing import Annotated, cast
 
 import parse
+import typer
 
 HOST_TEST_FQBN = "arduino:avr:uno"
 REQUIRED_PIN_MACROS = (
@@ -205,29 +205,53 @@ def read_metadata_json(path: Path) -> ArduinoCoreMetadata:
     )
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    target = parser.add_mutually_exclusive_group(required=True)
-    target.add_argument("--fqbn")
-    target.add_argument("--host-test", action="store_true")
-    parser.add_argument("--write-header", type=Path)
-    parser.add_argument("--json-output", type=Path)
-    args = parser.parse_args()
-    if args.write_header is None and args.json_output is None:
-        parser.error("at least one of --write-header or --json-output is required")
+app = typer.Typer(help=__doc__, add_completion=False)
 
-    fqbn = HOST_TEST_FQBN if args.host_test else args.fqbn
+
+@app.command()
+def main_cmd(
+    fqbn: Annotated[str | None, typer.Option("--fqbn", help="Target Arduino board FQBN")] = None,
+    host_test: Annotated[bool, typer.Option("--host-test", help="Use host test FQBN (arduino:avr:uno)")] = False,
+    header_path: Annotated[Path | None, typer.Option("--write-header", help="Write C++ header to path")] = None,
+    json_path: Annotated[Path | None, typer.Option("--json-output", help="Write JSON metadata to path")] = None,
+) -> None:
+    if not host_test and not fqbn:
+        print(
+            "Arduino core metadata error: at least one of --fqbn or --host-test is required",
+            file=sys.stderr,
+        )
+        raise typer.Exit(code=2)
+    if host_test and fqbn:
+        print("Arduino core metadata error: --fqbn and --host-test are mutually exclusive", file=sys.stderr)
+        raise typer.Exit(code=2)
+    if header_path is None and json_path is None:
+        print(
+            "Arduino core metadata error: at least one of --write-header or --json-output is required",
+            file=sys.stderr,
+        )
+        raise typer.Exit(code=2)
+
+    target_fqbn = HOST_TEST_FQBN if host_test else cast(str, fqbn)
     try:
-        metadata = resolve_core_metadata(fqbn)
-        if args.write_header is not None:
-            write_header(metadata, args.write_header)
-        if args.json_output is not None:
-            write_metadata_json(metadata, args.json_output)
+        metadata = resolve_core_metadata(target_fqbn)
+        if header_path is not None:
+            write_header(metadata, header_path)
+        if json_path is not None:
+            write_metadata_json(metadata, json_path)
     except (OSError, RuntimeError, ValueError) as exc:
         print(f"Arduino core metadata error: {exc}", file=sys.stderr)
-        return 1
-    return 0
+        raise typer.Exit(code=1) from exc
+
+
+def main(argv: list[str] | None = None) -> int:
+    try:
+        app(args=argv, standalone_mode=False)
+        return 0
+    except typer.Exit as exc:
+        return exc.exit_code
+    except SystemExit as exc:
+        return int(exc.code) if exc.code is not None else 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    app()
